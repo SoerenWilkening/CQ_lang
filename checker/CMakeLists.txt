@@ -17,7 +17,7 @@ target_compile_options(cqe_rt PRIVATE -Wall -Wextra)
 # entry is keyed by its sources' content; the stamp only spares a rerun of the (cheap) check.
 file(GLOB CQCHECK_TOOL_INPUTS CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/rt/*" "${CMAKE_CURRENT_SOURCE_DIR}/oracle/*"
-     "${CMAKE_CURRENT_SOURCE_DIR}/cqcheck/*.py"
+     "${CMAKE_CURRENT_SOURCE_DIR}/cqcheck/*.py" "${CMAKE_CURRENT_SOURCE_DIR}/native/*"
      "${CMAKE_SOURCE_DIR}/pass/lib/taint/*" "${CMAKE_SOURCE_DIR}/pass/lib/spine/*"
      "${CMAKE_SOURCE_DIR}/pass/lib/abi/*" "${CMAKE_SOURCE_DIR}/pass/lib/Common.cpp"
      "${CMAKE_SOURCE_DIR}/pass/include/*")

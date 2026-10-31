@@ -197,6 +197,7 @@ from __future__ import annotations
 import dataclasses
 import functools
 import json
+import os
 import re
 import sys
 from collections import Counter
@@ -741,6 +742,53 @@ class _OutOfBudget(Exception):
     pass
 
 
+def _match_input(ours: List[_Ev], sites: List[_Site], nS: int, capped: List[bool], cands: List[List[int]],
+                 ckind: List[str], free_ok: List[bool], partner, comm: List[set], full: List[Tuple],
+                 nan_eq: bool) -> List[int]:
+    """_match_c's search problem as native/match_c.cpp reads it: every value it compares interned to
+    an id (equal values, equal ids), each gate's register comparisons per target width class."""
+    ids: Dict[Any, int] = {}
+
+    def iid(v: Any) -> int:
+        k = (type(v) is str, v)
+        got = ids.get(k)
+        if got is None:
+            got = ids[k] = len(ids)
+        return got
+
+    widths: Dict[Any, int] = {}
+    for afn, rfn, w in full:
+        widths.setdefault(w, len(widths))
+    wlist = list(widths) or [None]   # at least one width class: the reader takes one id per class
+    n = len(ours)
+    need_ord = any(comm)
+    data = [n, nS, len(sites), len(wlist), MATCH_BUDGET] + [1 if c else 0 for c in capped]
+    for i, e in enumerate(ours):
+        afn, rfn, w = full[i]
+        sup = sorted(e.support)
+        data += [1 if ckind[i] == "theta" else 0, 0, 1 if free_ok[i] else 0,
+                 0 if e.target is None else 1, 0 if e.target is None else int(e.target), len(sup)]
+        data += [int(r) for r in sup]
+        data += [1 if e.pred[s] else 0 for s in range(nS)]
+        data += [iid(afn[s]) for s in range(nS)]
+        data += [iid(_fpv(rfn[s], w, nan_eq)) for s in range(nS)]
+        data += [widths[w], len(cands[i])] + list(cands[i])
+        if partner[i] is None:
+            data += [-1, 0]
+        else:
+            data += [partner[i][0], len(partner[i][1])] + sorted(partner[i][1])
+        data += [len(comm[i])] + sorted(comm[i])
+        data += [1 if need_ord and k != i and _ordered(e, ours[k]) else 0 for k in range(n)]
+    for st in sites:
+        data.append(1 if st.kind == "theta" else 0)
+        for s in range(nS):
+            occ = st.occ[s]
+            data.append(len(occ))
+            for epos, a, r in occ:
+                data += [epos, iid(a)] + [iid(_fpv(r, w, nan_eq)) for w in wlist]
+    return data
+
+
 def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
              capped: Sequence[bool] = ()) -> List[str]:
     """Match the C sites to our gates (module docstring). A site inside a loop is one gate per trip
@@ -921,27 +969,51 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
         return False
 
     unprep: set = set()
-    # First without the order (the memo then needs no order state, so the search stays small): if no
-    # matching exists at all, the order cannot help. Then with the order, from scratch.
-    check_order[0] = False
-    budget[0] = float("inf")         # the order-free search keeps its old, unbudgeted memoized form
-    found_any = dfs(0, start, frozenset(), frozenset())
-    found = False
-    if found_any:
-        any_assign, any_unprep = list(assign), set(unprep)
-        check_order[0] = True
-        failed.clear()
-        unprep.clear()
-        budget[0] = MATCH_BUDGET
-        try:
-            found = dfs(0, start, frozenset(), frozenset())
-        except _OutOfBudget:
-            return [f"the matching of {len(ours)} lowered gates to the C sites exceeded {MATCH_BUDGET} search "
-                    f"nodes without an order-consistent matching"]
-        if not found:
-            assign[:] = any_assign
+
+    def search_py() -> Tuple[int, bool, bool, List[Optional[int]], set]:
+        # First without the order (the memo then needs no order state, so the search stays small): if
+        # no matching exists at all, the order cannot help. Then with the order, from scratch.
+        check_order[0] = False
+        budget[0] = float("inf")     # the order-free search keeps its old, unbudgeted memoized form
+        found_any = dfs(0, start, frozenset(), frozenset())
+        found = False
+        if found_any:
+            any_assign, any_unprep = list(assign), set(unprep)
+            check_order[0] = True
+            failed.clear()
             unprep.clear()
-            unprep.update(any_unprep)
+            budget[0] = MATCH_BUDGET
+            try:
+                found = dfs(0, start, frozenset(), frozenset())
+            except _OutOfBudget:
+                return 2, found_any, False, list(assign), set(unprep)
+            if not found:
+                assign[:] = any_assign
+                unprep.clear()
+                unprep.update(any_unprep)
+        return 0, found_any, found, list(assign), set(unprep)
+
+    # cq-8m6v: the same two searches in C++ (checker/native/match_c.cpp), node for node; the Python
+    # search stays the reference: $CQ_MATCH=py runs it alone, $CQ_MATCH=check runs both and fails on
+    # any difference
+    mode = os.environ.get("CQ_MATCH", "native")
+    if mode == "py":
+        got = search_py()
+    else:
+        from cqcheck import native
+        data = _match_input(ours, sites, nS, capped, cands, ckind, free_ok, partner, comm, full, nan_eq)
+        got = native.match_c(data, len(ours))
+        if mode == "check":
+            want = search_py()
+            if want != got:
+                raise CompareError(f"cq: chk-compare: native matcher {got} != Python {want}")
+    status, found_any, found, assign_, unprep_ = got
+    assign[:] = assign_
+    unprep.clear()
+    unprep.update(unprep_)
+    if status == 2:
+        return [f"the matching of {len(ours)} lowered gates to the C sites exceeded {MATCH_BUDGET} search "
+                f"nodes without an order-consistent matching"]
     if not found:
         if found_any:
             hits0: List[List[Tuple[int, _Ev]]] = [[] for _ in range(nS)]

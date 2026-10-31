@@ -12,7 +12,8 @@ CORPUS_TRIPLE = "x86_64-apple-macosx16.0.0"
 
 
 def main() -> int:
-    from cqcheck import oracle, run, sampling
+    from cqcheck import native, oracle, run, sampling
+    native.lib()
     run.runtime_objects(CORPUS_TRIPLE)
     sampling._rt_object()
     oracle.toolchain()
