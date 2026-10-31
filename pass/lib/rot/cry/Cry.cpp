@@ -56,7 +56,9 @@
 #include "cq/Predicate.h"
 #include "cq/Uncompute.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/ValueHandle.h"
@@ -177,12 +179,136 @@ void controlledRy(LoweringContext &ctx, Value *flag, Value *rail, RailType w, Va
   ctx.unc().setRole(id, Role::Frozen);
 }
 
+const Function *functionOf(const Value *v) {
+  if (auto *I = dyn_cast<Instruction>(v))
+    return I->getFunction();
+  if (auto *A = dyn_cast<Argument>(v))
+    return A->getParent();
+  return nullptr;
+}
+
 // Forget what an earlier lowering of the same original theta (a loop body lowered again) left.
 void forgetStale(FnState &st, const CallInst &T) {
   st.of.erase(&T);
   for (const User *U : T.users())
     if (isa<PHINode>(U))
       st.of.erase(U);
+}
+
+// The original blocks reachable from the end of T's block without passing def's block (another
+// instance of def's value there). cyclic: T's block is among them.
+DenseSet<const BasicBlock *> reachFrom(const Instruction &T, const Value *def, bool &cyclic) {
+  const BasicBlock *db = nullptr;
+  if (auto *D = dyn_cast<Instruction>(def))
+    db = D->getParent();
+  DenseSet<const BasicBlock *> reach;
+  SmallVector<const BasicBlock *, 16> work(succ_begin(T.getParent()), succ_end(T.getParent()));
+  while (!work.empty()) {
+    const BasicBlock *b = work.pop_back_val();
+    if (b == db || !reach.insert(b).second)
+      continue;
+    for (const BasicBlock *s : successors(b))
+      work.push_back(s);
+  }
+  cyclic = reach.count(T.getParent());
+  return reach;
+}
+
+bool isAfter(const Instruction &T, const DenseSet<const BasicBlock *> &reach, const Instruction *I) {
+  if (I->getParent() == T.getParent() && I != &T && T.comesBefore(I))
+    return true;
+  return reach.count(I->getParent());
+}
+
+// A cast that names its operand's rail (rule 3: a representation change, no gate).
+bool isAlias(const Instruction *I) {
+  if (isa<FreezeInst>(I))
+    return true;
+  if (auto *C = dyn_cast<BitCastInst>(I))
+    return C->getSrcTy()->getPrimitiveSizeInBits() == C->getDestTy()->getPrimitiveSizeInBits();
+  return false;
+}
+
+// cq-sx24. A second prep of R changes its rail in place (xorc, Ry under the flag). Every original
+// value naming the register before this prep (an earlier prep, a merge of it) keeps its old value in
+// the C program: a reader of it lowered after T (a phi edge after T, or a non-phi user T reaches,
+// which -O1 may have sunk past T) must not read the re-prepared rail. Rule 10's adjoint undo (an
+// overlapping prep) is sound only when nothing read the rail in between, and such a reader reads it
+// in between in program order: cq::unimplemented. With disjoint predicates the rail is not undone,
+// and the reader reads a copy taken just before the prep (the pre-rotation copy, cq-s32y: a Garbage
+// rail that read the register, KeptEntangled from the copy on: the prep's xorc writes the register
+// before the Ry that keeps it under A4). A phi reading the old value after
+// T, an alias cast of it read after T, or a reader inside a cycle around T: cq::unimplemented.
+void preserveOldValue(LoweringContext &ctx, FnState &st, Register &R, CallInst &T, bool overlap) {
+  SmallVector<const Value *, 4> olds;
+  for (auto &[w, r] : st.of)
+    if (r == &R && w != &T && functionOf(w) == T.getFunction())
+      // A value not dominating T has no reader that T reaches without a new instance of it.
+      if (auto *I = dyn_cast<Instruction>(w); !I || st.dt->dominates(I, &T))
+        olds.push_back(w);
+  SmallVector<const Value *, 4> needCopy;
+  for (const Value *w : olds) {
+    bool cyclic = false;
+    DenseSet<const BasicBlock *> reach = reachFrom(T, w, cyclic);
+    const Instruction *reader = nullptr;
+    bool copyOk = true;
+    SmallVector<std::pair<const Value *, bool>, 8> work{{w, true}};   // (value, is w itself)
+    SmallPtrSet<const Value *, 8> seen;
+    while (!work.empty() && !reader) {
+      auto [v, self] = work.pop_back_val();
+      if (!seen.insert(v).second)
+        continue;
+      for (const Use &U : v->uses()) {
+        auto *I = dyn_cast<Instruction>(U.getUser());
+        if (!I || I == &T)
+          continue;
+        bool after;
+        if (auto *phi = dyn_cast<PHINode>(I))
+          after = isAfter(T, reach, phi->getIncomingBlock(U)->getTerminator());
+        else
+          after = isAfter(T, reach, I);
+        if (after) {
+          reader = I;
+          copyOk = self && !isa<PHINode>(I) && !cyclic;
+          break;
+        }
+        if (isAlias(I))
+          work.push_back({I, false});
+      }
+    }
+    if (!reader)
+      continue;
+    if (overlap)
+      unimplemented("rot-cry: a second prep of a register whose earlier value " + describe(w) +
+                        " is read after it (by " + describe(reader) +
+                        "); rule 10 undoes the first prep by its adjoint only when nothing read the "
+                        "register in between (cq-sx24)",
+                    &T);
+    if (!copyOk)
+      unimplemented("rot-cry: a second prep of a register whose earlier value " + describe(w) +
+                        " is read after it (by " + describe(reader) +
+                        ") through a phi, an alias cast or a cycle around the prep (cq-sx24)",
+                    &T);
+    needCopy.push_back(w);
+  }
+  if (needCopy.empty())
+    return;
+  abi::CoreSpec a{abi::Core::Alloc, R.w};
+  CallInst *c = ctx.emitCore(a, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), R.w))});
+  RailId cid = ctx.unc().recordSeed(c);
+  abi::CoreSpec cp{abi::Core::Copy, R.w};
+  CallInst *cc = ctx.emitCore(cp, {R.rail, c});
+  ctx.unc().recordCore(cc, cp, {Operand{R.rail, true}, Operand{c, true}}, cid);
+  // The prep's xorc writes the register in place before its Ry: the copy read the register and the
+  // Ry right after makes it KeptEntangled (A4); it is so from the copy on, never uncomputed across
+  // the xorc.
+  ctx.unc().setRole(cid, Role::KeptEntangled);
+  for (const Value *w : needCopy) {
+    Operand o = ctx.operand(w);
+    if (!o.handle || o.v != R.rail)
+      internalError("rot-cry: an earlier value of a register is not bound to its rail", w);
+    ctx.rebind(w, {Operand{c, true}});
+  }
 }
 
 } // namespace
@@ -342,6 +468,8 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
   bool overlap = false;
   for (const Prep &p : R->active)
     overlap |= !(p.eff & q).isBottom();
+  if (!fresh)
+    preserveOldValue(ctx, st, *R, T, overlap);
   if (overlap) {
     if (R->rail->getNumUses() != R->uses)
       unimplemented("rot-cry: a second prep of a register read since its first prep (rule 10 undoes "

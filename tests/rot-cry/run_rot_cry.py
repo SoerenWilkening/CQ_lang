@@ -4,7 +4,8 @@
 Structural checks only; the bead's acceptance is §6 (`python3 -m cqcheck run <owned> --oracle both`).
 Per probe module in probes/: cq-lower (with its built-in structural verifier) exits 0, plain cq-verify
 accepts the output, and each `; CHECK <fn>: <text>` occurs in <fn>'s lowered body (`%{{name}}`
-matches any local), each `; CHECK-COUNT <fn>: <text> <n>` exactly n times. Outputs go to
+matches any local), each `; CHECK-COUNT <fn>: <text> <n>` exactly n times. A probe with `; FATAL: <text>` must instead make
+cq-lower fail with <text> in its message (cq::unimplemented). Outputs go to
 build/tests/rot-cry/out/.
 """
 import argparse
@@ -41,7 +42,14 @@ def main() -> int:
         r = subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-lower", "-S", str(p),
                             "-o", str(dest)], capture_output=True, text=True)
         reasons = []
-        if r.returncode != 0:
+        fatal = re.search(r"^; FATAL: (.*)$", p.read_text(), re.M)
+        if fatal:
+            # cq::unimplemented: cq-lower fails and its message contains the expected text.
+            if r.returncode == 0:
+                reasons.append("cq-lower succeeded, expected: " + fatal.group(1))
+            elif fatal.group(1).strip() not in r.stderr:
+                reasons.append("cq-lower: " + (r.stderr.strip().splitlines() or ["?"])[0])
+        elif r.returncode != 0:
             reasons.append("cq-lower: " + (r.stderr.strip().splitlines() or ["?"])[0])
         else:
             v = subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-verify", "-disable-output",
