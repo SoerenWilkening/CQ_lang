@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """tests/loops-classical (cq-w1-loops-classical): the module's probes through the real plugin.
 
-For probes/loops.O1.ll it checks, and fails on:
+For probes/loops.O1.ll (and slots.O1.ll, rule6.O1.ll) it checks, and fails on:
   - cq-lower (with its built-in structural verifier) exits 0, and plain cq-verify accepts the output;
   - no CQ.h surface call is left; every entry with a loop pushes and pops (the reverse ran);
   - every entry is §6-equal to its own C program (`python3 -m cqcheck user`, the C oracle).
+For rule6.O1.ll it also checks the kept rails at trip counts 2 and 3 (cq-b13w, CR rule 6 on carried values).
 The owned examples' acceptance is `python3 -m cqcheck run <examples> --oracle both` (the bead).
 Outputs go to build/tests/loops-classical/out/.
 """
@@ -28,6 +29,15 @@ FATAL = [(PROBES / "slots_fatal_crossgate.O1.ll", "a non-diagonal gate in a clas
          # cq-pkjc: a quantum arm's classical conjunct (select(i != 0, q[i], false)) the trip does not establish.
          (PROBES / "fatal_armguard.O1.ll", "a block of a classically bounded loop body whose classical guard "
           "(rule 8: the classical factor of its predicate")]
+# cq-b13w: CR rule 6 on carried values. Each entry's last parameter is the trip count; the kept rails (role, width)
+# at n = 2 and n = 3 must be exactly the straight-line rule 6 multiset below.
+RULE6_PROBE = PROBES / "rule6.O1.ll"
+RULE6 = {"r_b3": [("frozen", "i32"), ("measured", "i32")],
+         "r_c2": [("measured", "i32")],
+         "r_sub": [("frozen", "i32"), ("measured", "i32")],
+         "r_live": [("frozen", "i32"), ("measured", "i32"), ("measured", "i32")],
+         "r_fneg": [("frozen", "f64"), ("measured", "f64")],
+         "r_c3": [("frozen", "i32"), ("measured", "i32")]}
 ENTRIES = ["p_acc", "p_brk", "p_nest", "p_mod", "p_nb", "p_horner", "p_arm", "p_phase", "p_cjoin", "p_tphase", "p_bwb", "p_g2"]
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 
@@ -69,25 +79,56 @@ def check_probe(a, probe: Path, entries, out: Path) -> int:
     return failures
 
 
+def check_kept(probe: Path, lowered: Path, entry: str, want) -> str:
+    """'' when every sample with trip count 2 or 3 keeps exactly `want` (role, width), else why not."""
+    import collections
+    import tempfile
+    sys.path.insert(0, str(ROOT / "checker"))
+    from cqcheck import run, sampling, user
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp)
+        lowp = work / f"user_{entry}.lowered.ll"
+        lowp.write_text(lowered.read_text())
+        spec, exdir = user.build_spec(probe.read_text(), entry, work, user.handle_cell_params(lowp, entry))
+        c_module = next(exdir.glob("*.O1.ll"))
+        ss = sampling.sample_set(spec, exdir, exempt_baseline=False)
+        chosen = [x for x in ss.samples if int(x["args"][-1], 16) in (2, 3)][:24]
+        if not chosen:
+            return "no sample with trip count 2 or 3"
+        hist = collections.Counter()
+        for r in run.run_samples(lowp, spec, chosen, "ours", 4, c_module=c_module):
+            hist[tuple(sorted((k.get("role"), k.get("w")) for k in (r.kept or [])))] += 1
+        if set(hist) != {tuple(sorted(want))}:
+            return "kept rails " + str(dict(hist)) + ", want " + str(sorted(want))
+    return ""
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", required=True)
     ap.add_argument("--entry", action="append", help="check only these entries of loops.O1.ll")
-    ap.add_argument("--group", action="append", choices=["loops", "slots", "fatal"],
+    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "fatal"],
                     help="run only these probe groups (default: all)")
     a = ap.parse_args()
     out = ROOT / "build" / "tests" / "loops-classical" / "out"
     out.mkdir(parents=True, exist_ok=True)
     failures = 0
-    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "fatal"]))
+    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "fatal"]))
     groups = []
     if "loops" in want:
         groups.append((PROBE, a.entry or ENTRIES))
     if "slots" in want:
         groups.append((SLOT_PROBE, SLOT_ENTRIES))
+    if "rule6" in want:
+        groups.append((RULE6_PROBE, list(RULE6)))
     for probe, entries in groups:
         failures += check_probe(a, probe, entries, out)
+    if "rule6" in want:
+        for e, kept in RULE6.items():
+            why = check_kept(RULE6_PROBE, out / (RULE6_PROBE.stem + ".lowered.ll"), e, kept)
+            print(("FAIL " if why else "ok   ") + e + " kept" + ("" if not why else ": " + why))
+            failures += bool(why)
     if "fatal" in want:
         for probe, msg in FATAL:
             r = subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-lower", "-S", str(probe), "-o",

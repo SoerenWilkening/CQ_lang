@@ -25,6 +25,14 @@
 //  classical disjuncts only. Every body instruction is lowered under the trip rail a_{j-1}
 //  (lowerInstruction's tripFlag, cq-99f7): a cq_theta / cq_phi in the trip is controlled by it. No predicate is kept: the mirror uncomputes every a_j, the last included.
 //
+//  Rule 6 on carried values (cq-b13w, outermost loop, Unit::planRuleSix). A carried value read only
+//  by a chain of bijective updates in the header (the next value the chain's last rail, perhaps rotated
+//  in place) cleans each old rail in its trip, the previous trip's register included, so the trip's
+//  last rail is the register (kept, never mirrored nor copied out). Trip 0 cleans the initial rail: a
+//  seed minted for the loop, this function's own rail when nothing reads it once the loop is entered
+//  (lcw-h2 c2: the register before the loop), or else a copy of it. Case 3 cleans through the advancing
+//  select (125). An unrotated chain is a register only when its final value is read after the loop.
+//
 //  Slot memory (rule 20, cq-sujx). A load or store of a slot object at a classical offset goes
 //  through mem::lowerSlotLoad / lowerSlotStore once in the trip (the spine's dispatch): a cell loaded
 //  per trip is an alias (kept, never undone), a register stored back changes nothing, a seed or
@@ -93,6 +101,116 @@ namespace cq::loops {
 namespace {
 
 bool samePred(const Pred &a, const Pred &b) { return (a & !b).isBottom() && (b & !a).isBottom(); }
+
+// CR rule 6's bijections in y (the list of rule 6, but a select of updates and a controlled swap,
+// which a carried value's single reader cannot be): add, sub, xor with an operand other than y, mul
+// by an odd literal, fneg, bswap, fshl/fshr with y in both value slots. bitreverse has no template.
+bool bijectiveIn(const Instruction &U, const Value *Y) {
+  if (auto *bo = dyn_cast<BinaryOperator>(&U); bo && bo->getType()->isIntegerTy()) {
+    Value *a0 = bo->getOperand(0), *a1 = bo->getOperand(1);
+    if (a0 == a1 || (a0 != Y && a1 != Y))
+      return false;
+    auto opc = bo->getOpcode();
+    if (opc == Instruction::Add || opc == Instruction::Sub || opc == Instruction::Xor)
+      return true;
+    if (opc == Instruction::Mul) {
+      auto *k = dyn_cast<ConstantInt>(a0 == Y ? a1 : a0);
+      return k && k->getValue()[0];
+    }
+    return false;
+  }
+  if (auto *un = dyn_cast<UnaryOperator>(&U))
+    return un->getOpcode() == Instruction::FNeg && un->getOperand(0) == Y;
+  if (auto *II = dyn_cast<IntrinsicInst>(&U)) {
+    Intrinsic::ID id = II->getIntrinsicID();
+    if (id == Intrinsic::bswap)
+      return II->getArgOperand(0) == Y;
+    if (id == Intrinsic::fshl || id == Intrinsic::fshr)
+      return II->getArgOperand(0) == Y && II->getArgOperand(1) == Y && II->getArgOperand(2) != Y;
+  }
+  return false;
+}
+
+struct Inv {
+  abi::TemplateSpec spec;
+  SmallVector<Operand, 3> ops;
+};
+
+// The template spelling of an inverse (CR §1.2 shapes): binary "" / "hl" / "lh", a literal first
+// operand of a commutative op swapped behind the rail.
+Inv normalized(abi::TemplateSpec spec, SmallVector<Operand, 3> ops) {
+  if (ops.size() == 2) {
+    if (ops[0].handle && ops[1].handle) {
+      spec.shape = "";
+    } else if (ops[0].handle) {
+      spec.shape = "hl";
+    } else if (spec.op == "add" || spec.op == "xor" || spec.op == "mul") {
+      std::swap(ops[0], ops[1]);
+      spec.shape = "hl";
+    } else {
+      spec.shape = "lh";
+    }
+  } else if (ops.size() == 3) {
+    std::string sh;
+    bool all = true;
+    for (const Operand &o : ops) {
+      sh += o.handle ? 'q' : 'l';
+      all &= o.handle;
+    }
+    spec.shape = all ? "" : sh;
+  }
+  return Inv{std::move(spec), std::move(ops)};
+}
+
+APInt oddInverse(const APInt &k) {
+  APInt x(k.getBitWidth(), 1);
+  for (int i = 0; i < 7; ++i)   // Newton: x <- x (2 - k x), doubling the correct bits
+    x = x * (APInt(k.getBitWidth(), 2) - k * x);
+  return x;
+}
+
+// The inverse of U = f(Y, z) in Y, read from yp (U's value): the template and its operands.
+Inv inverseOf(LoweringContext &ctx, Instruction &U, const Value *Y, Operand yp) {
+  if (!bijectiveIn(U, Y))
+    internalError("loops-classical: rule 6 inverse of an update that is no bijection in the carried value", &U);
+  abi::TemplateSpec spec;
+  spec.w = railTypeOf(U.getType());
+  if (auto *bo = dyn_cast<BinaryOperator>(&U)) {
+    unsigned i = bo->getOperand(0) == Y ? 0 : 1;
+    Value *Z = bo->getOperand(1 - i);
+    switch (bo->getOpcode()) {
+    case Instruction::Add:
+      spec.op = "sub";
+      return normalized(spec, {yp, ctx.operand(Z)});   // y = y' - z
+    case Instruction::Xor:
+      spec.op = "xor";
+      return normalized(spec, {yp, ctx.operand(Z)});   // y = y' ^ z
+    case Instruction::Sub:
+      if (i == 0) {
+        spec.op = "add";
+        return normalized(spec, {yp, ctx.operand(Z)}); // y' = y - z: y = y' + z
+      }
+      spec.op = "sub";
+      return normalized(spec, {ctx.operand(Z), yp});   // y' = z - y: y = z - y'
+    default: {                                         // mul by an odd literal k: y = y' * k^-1
+      auto *k = cast<ConstantInt>(Z);
+      spec.op = "mul";
+      return normalized(spec, {yp, Operand{ConstantInt::get(k->getType(), oddInverse(k->getValue())), false}});
+    }
+    }
+  }
+  if (isa<UnaryOperator>(U)) {
+    spec.op = "fneg";
+    return normalized(spec, {yp});
+  }
+  auto *II = cast<IntrinsicInst>(&U);
+  if (II->getIntrinsicID() == Intrinsic::bswap) {
+    spec.op = "bswap";   // an involution
+    return normalized(spec, {yp});
+  }
+  spec.op = II->getIntrinsicID() == Intrinsic::fshl ? "fshr" : "fshl";   // a rotation's inverse
+  return normalized(spec, {yp, yp, ctx.operand(II->getArgOperand(2))});
+}
 
 struct Disj {
   const Value *v;
@@ -203,6 +321,33 @@ private:
   }
 
   void check(Loop &L, Case c);
+
+  // CR rule 6 on a carried value (cq-b13w). A quantum header phi p read only by a chain of updates
+  // U_1 = f_1(p, z_1), U_2 = f_2(U_1, z_2), ... in the header, each a bijection in its predecessor and
+  // its predecessor's only reader (so no z_i reads p), whose next value is the last U or it rotated in
+  // place (cq_theta chain), is cleaned in its trip: each old rail (U_{i-1}; p's, which is the previous
+  // trip's last U or the initial value in trip 0) is recomputed by t = f_i^-1(U_i, z_i) and cleaned
+  // (Uncompute::cleanupBijective), so the trip's last U is the carried register itself (kept, never
+  // undone by the reverse loop, never copied out). Case 3 asks the same of the select advancing it:
+  // y'' = a ? F(y) : y, t = a ? F^-1(y'') : y'' (125), the trip-local U_i uncomputed first.
+  // A garbage U (no rotation) is a register only when the loop's final value is read after the
+  // loop: else rule 5 uncomputes the whole chain and the old value is never dead (rule 6, 42).
+  struct R6 {
+    PHINode *p;
+    SmallVector<Instruction *, 2> U;   // the update chain, U.back() the next value's rail
+    bool rotated;
+    bool initDirect;   // the initial rail is this function's own and dead after the loop entry: trip 0 cleans it
+  };
+  std::vector<R6> plan6;
+  DenseSet<const Value *> keptFinal;   // the final rails of cleaned chains: read after the loop in place
+  const R6 *r6Of(const PHINode *p) const {
+    for (const R6 &r : plan6)
+      if (r.p == p)
+        return &r;
+    return nullptr;
+  }
+  void planRuleSix(Loop &L, Case c);
+  bool initDead(Loop &L, const Value *init, const PHINode *p);
   void disjuncts(const Value *v, bool pos, SmallVectorImpl<Disj> &out, SmallPtrSetImpl<const Value *> &inner);
   // Lowers L with the builder at `cur`; its exit edge goes to T. Returns the exit operand of every
   // value of L read after it (quantum ones only).
@@ -231,6 +376,125 @@ void Unit::disjuncts(const Value *c, bool positive, SmallVectorImpl<Disj> &out,
     return;
   }
   out.push_back({c, positive});
+}
+
+// Is the initial value of p a rail this function made for itself (a template result, or a classical
+// value cq_theta minted, rotated in place any number of times) that nothing reads once the loop is
+// entered? Its readers other than p and its own rotations must be phi incomings on edges no path
+// from the loop reaches (the zero-trip edge of the loop's guard).
+bool Unit::initDead(Loop &L, const Value *init, const PHINode *p) {
+  if (!isQ(init))
+    return true;   // a seed minted for the loop
+  SmallVector<const Instruction *, 4> A;
+  for (const Value *x = init;;) {
+    auto *I = dyn_cast<Instruction>(x);
+    if (!I)
+      return false;
+    A.push_back(I);
+    if (auto *CB = dyn_cast<CallInst>(I); CB && calls::classify(*CB, ctx.T, ctx.S) == calls::Class::Theta) {
+      if (isQ(CB->getArgOperand(1)))
+        return false;
+      x = CB->getArgOperand(0);
+      if (!isQ(x))
+        break;   // minted by this cq_theta
+      continue;
+    }
+    if (isa<BinaryOperator>(I) || isa<UnaryOperator>(I))
+      break;
+    return false;
+  }
+  DenseSet<const BasicBlock *> reach;
+  SmallVector<const BasicBlock *, 16> work{L.getHeader()};
+  while (!work.empty()) {
+    const BasicBlock *b = work.pop_back_val();
+    if (!reach.insert(b).second)
+      continue;
+    for (const BasicBlock *s : successors(b))
+      work.push_back(s);
+  }
+  for (const Instruction *a : A)
+    for (const Use &u : a->uses()) {
+      const User *usr = u.getUser();
+      if (usr == p || is_contained(A, usr))
+        continue;
+      auto *phi = dyn_cast<PHINode>(usr);
+      if (!phi || reach.count(phi->getIncomingBlock(u)))
+        return false;
+    }
+  return true;
+}
+
+void Unit::planRuleSix(Loop &L, Case c) {
+  BasicBlock *header = L.getHeader(), *latch = L.getLoopLatch(), *pre = L.getLoopPredecessor();
+  if (L.getExitingBlock() != latch)
+    return;   // a trip may end before the update: the exit value is not the chain's
+  const bool c3 = c == Case::ClassicalBoundQuantumExit;
+  if (!c3 && !qp(header).isTop())
+    return;
+  for (PHINode &p : header->phis()) {
+    if (!isQ(&p) || !(p.getType()->isIntegerTy() || p.getType()->isFloatingPointTy()) || !p.hasOneUse())
+      continue;
+    // The next value: the last update, or it rotated in place by unconditional cq_theta calls with
+    // classical angles.
+    SmallVector<const Instruction *, 4> chain;
+    const Value *nx = p.getIncomingValueForBlock(latch);
+    bool rotated = false, ok = true;
+    while (auto *CB = dyn_cast<CallInst>(nx)) {
+      if (calls::classify(*CB, ctx.T, ctx.S) != calls::Class::Theta)
+        break;
+      nx = CB->getArgOperand(0);
+    }
+    SmallVector<Instruction *, 2> ups;
+    for (const Value *x = &p;;) {
+      if (!x->hasOneUse()) {
+        ok = false;
+        break;
+      }
+      auto *W = dyn_cast<Instruction>(const_cast<User *>(*x->user_begin()));
+      if (!W || W->getParent() != header || !bijectiveIn(*W, x) || !isQ(W)) {
+        ok = false;
+        break;
+      }
+      ups.push_back(W);
+      if (W == nx)
+        break;
+      x = W;
+    }
+    if (!ok)
+      continue;
+    Instruction *U = ups.back();
+    nx = p.getIncomingValueForBlock(latch);
+    while (nx != U) {
+      auto *CB = dyn_cast<CallInst>(nx);
+      if (!CB || !L.contains(CB) || calls::classify(*CB, ctx.T, ctx.S) != calls::Class::Theta ||
+          isQ(CB->getArgOperand(1)) || !samePred(qp(CB->getParent()), qp(header))) {
+        ok = false;
+        break;
+      }
+      chain.push_back(CB);
+      rotated = true;
+      nx = CB->getArgOperand(0);
+    }
+    if (!ok || (c3 && rotated))
+      continue;
+    chain.push_back(U);
+    // Nothing else in the loop reads the chain (the clean-up of the next trip frees it); a reader after
+    // the loop reads the final rail.
+    bool live = false;
+    for (const Instruction *x : chain)
+      for (const User *usr : x->users()) {
+        if (usr == &p || is_contained(chain, usr))
+          continue;
+        auto *ui = dyn_cast<Instruction>(usr);
+        if (!ui || L.contains(ui))
+          ok = false;
+        else
+          live = true;
+      }
+    if (!ok || (!rotated && !live))
+      continue;
+    plan6.push_back({&p, ups, rotated, initDead(L, p.getIncomingValueForBlock(pre), &p)});
+  }
 }
 
 void Unit::check(Loop &L, Case c) {
@@ -360,6 +624,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
                       v);
   }
 
+  plan6.clear();
+  if (outermost)
+    planRuleSix(L, c);
+
   // Entry: the trip predicate, the seeds.
   unsigned seedScope = 0;
   Value *aInit = nullptr;
@@ -388,7 +656,27 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   for (PHINode &p : header->phis()) {
     Operand o = ctx.operand(p.getIncomingValueForBlock(pre));
     bool q = isQ(&p);
-    if (q) {
+    if (const R6 *r = q ? r6Of(&p) : nullptr) {
+      // Trip 0 cleans the rail its phi names: a fresh seed, this function's own dead rail, or else a
+      // copy of the initial value (which then stays as it is, as in straight-line code). Each is kept
+      // for Uncompute: the trip's clean-up frees it.
+      Value *h;
+      if (!o.handle) {
+        h = asHandle(o, p.getType());
+      } else if (r->initDirect) {
+        h = o.v;
+      } else {
+        RailType w = railTypeOf(p.getType());
+        CallInst *c0 = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                                    {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+        CallInst *cc = ctx.emitCore(abi::CoreSpec{abi::Core::Copy, w}, {o.v, c0});
+        ctx.unc().noteUse(ctx.unc().idOf(o.v), cc);
+        ctx.unc().recordExternal(c0, Role::UserRegister);
+        h = c0;
+      }
+      ctx.unc().setRole(ctx.unc().idOf(h), Role::UserRegister);
+      inits.push_back({h, true});
+    } else if (q) {
       Value *h = asHandle(o, p.getType());
       if (o.handle && outermost)
         externalInits.push_back(h);
@@ -505,6 +793,43 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         if (o.handle)
           internalError("loops-classical: a classical carried value whose next is a rail", cv.orig);
         nexts.push_back(o.v);
+      } else if (const R6 *r = r6Of(cv.orig)) {
+        Operand u = ctx.operand(r->U.back());
+        if (!o.handle || !u.handle || o.v != u.v || !isa<Instruction>(o.v) ||
+            cast<Instruction>(o.v)->getParent() != H)
+          internalError("loops-classical: rule 6 on a carried value whose update is not its next rail in the "
+                        "header's segment",
+                        cv.orig);
+        RailType w = railTypeOf(cv.orig->getType());
+        RailId old = ctx.unc().idOf(cv.np);
+        if (!c3) {
+          if (!r->rotated)
+            ctx.unc().setRole(ctx.unc().idOf(o.v), Role::UserRegister);
+          for (unsigned i = r->U.size(); i-- > 0;) {
+            const Value *prev = i ? r->U[i - 1] : r->p;
+            Inv inv = inverseOf(ctx, *r->U[i], prev, ctx.operand(r->U[i]));
+            ctx.unc().cleanupBijective(i ? ctx.unc().idOf(ctx.operand(prev).v) : old, inv.spec, inv.ops);
+          }
+          keptFinal.insert(o.v);
+          nexts.push_back(o.v);
+        } else {
+          // y'' = a ? f(y) : y; t = a ? f^-1(y'') : y''. The inner f^-1(y'') is garbage the clean-up
+          // reads (noted as a use of y so the clean-up follows it); f(y) is uncomputed first (rule 5).
+          Value *sel = select(aPhi, o, Operand{cv.np, true}, w);
+          ctx.unc().setRole(ctx.unc().idOf(sel), Role::UserRegister);
+          Value *inner = sel;
+          for (unsigned i = r->U.size(); i-- > 0;) {
+            Inv inv = inverseOf(ctx, *r->U[i], i ? r->U[i - 1] : r->p, Operand{inner, true});
+            inner = ctx.emitTemplate(inv.spec, inv.ops);
+            ctx.unc().noteUse(old, cast<Instruction>(inner));
+          }
+          abi::TemplateSpec ss;
+          ss.op = "select";
+          ss.w = w;
+          ctx.unc().cleanupBijective(old, ss, {Operand{aPhi, true}, Operand{inner, true}, Operand{sel, true}});
+          keptFinal.insert(sel);
+          nexts.push_back(sel);
+        }
       } else if (c3) {
         nexts.push_back(select(aPhi, o, Operand{cv.np, true}, railTypeOf(cv.orig->getType())));
       } else {
@@ -744,6 +1069,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       RailType w = railTypeOf(v->getType());
       if (!op.handle)
         internalError("loops-classical: a quantum value read after the loop whose exit value is classical", v);
+      if (keptFinal.count(op.v)) {
+        // A cleaned chain's final rail is the register itself: the reverse never touches it.
+        ctx.rebind(v, {op});
+        continue;
+      }
       CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
                                  {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
       RailId fid = ctx.unc().recordSeed(f);
