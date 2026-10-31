@@ -427,9 +427,22 @@ def _drivers():
     return drivers
 
 
+CELLS_C_SIDE = "    } else {          /* the setup's cqrt_alloc_i"
+
+
 def _driver_source(spec: DriverSpec, samples: Sequence[dict]) -> str:
-    return DRIVER_PRELUDE + _drivers().driver_source(spec, list(samples), before_call=BEFORE_CALL,
-                                                     after_call=AFTER_CALL, main_name=DRIVER_MAIN)
+    src = _drivers().driver_source(spec, list(samples), before_call=BEFORE_CALL,
+                                   after_call=AFTER_CALL, main_name=DRIVER_MAIN)
+    # handle cells (cq-oou2): the object the C program sees is its N cells (cqo_rt.c __cqo_cells_object)
+    for w in sorted({a["cells"]["w"] for c in spec.calls for a in c["args"] if a.get("cells")}):
+        head = f"static void cqd_cells_i{w}(void *p, int n, const unsigned long long *v) {{"
+        i = src.find(head)
+        j = src.find(CELLS_C_SIDE, i)
+        if i < 0 or j < 0:
+            raise OracleError(f"cq: unimplemented: chk-oracle: the driver's handle cell writer for i{w} not found")
+        j = src.index("\n", j) + 1
+        src = (src[:j] + f"        __cqo_cells_object(p, (unsigned long long)n * {max(1, w // 8)});\n" + src[j:])
+    return DRIVER_PRELUDE + "void __cqo_cells_object(void *, unsigned long long);\n" + src
 
 
 def executable(o1: Path, spec: DriverSpec, samples: Sequence[dict] = (),

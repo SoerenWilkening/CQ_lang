@@ -178,6 +178,17 @@ void __cqo_alloca(void *p, uint64_t n) {
     sh_clear(p, n);
 }
 
+/* Handle cells (cq-rbe6, cq-oou2): the C program's view of a driver object whose setup fills it with
+ * rail handles is an array of its N cells (drivers.py), so the object ends after N cells of the C
+ * type, not where the setup's `int q[N]` ends: 60's bool *q has 4 elements, not 16. */
+void __cqo_cells_object(void *p, uint64_t n) {
+    objvec *ts[3] = {&stack_objs, &heap_objs, &global_objs};
+    uintptr_t a = (uintptr_t)p;
+    for (int t = 0; t < 3; t++)
+        for (size_t i = 0; i < ts[t]->n; i++)
+            if (ts[t]->v[i].lo == a && a + n < ts[t]->v[i].hi) ts[t]->v[i].hi = a + n;
+}
+
 /* An object of the current frame that already holds its value: a byval parameter copy. */
 void __cqo_object(void *p, uint64_t n) { ov_push(&stack_objs, (uintptr_t)p, (uintptr_t)p + n); }
 

@@ -1698,7 +1698,10 @@ class ProbeBuild:
                     ptrs.append(txt)
                     ident = D._ident_of(txt)
                     if ident:
-                        regs.append(f"__cqd_reg((void *)&{ident}, sizeof({ident}));")
+                        # handle cells (cq-oou2): the C program's view is the N cells (oracle: __cqo_cells_object)
+                        size = (f"{a['cells']['n'] * max(1, a['cells']['w'] // 8)}" if a.get("cells")
+                                else f"sizeof({ident})")
+                        regs.append(f"__cqd_reg((void *)&{ident}, {size});")
                 else:
                     actual.append(f"a{j}")
             body = body.replace(f"CQD_CALL_{ci};", f"(void){fn}({', '.join(actual)});")
