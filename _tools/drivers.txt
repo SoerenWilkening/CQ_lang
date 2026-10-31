@@ -191,3 +191,4 @@
 191_alias_params_2d_qram|int alias_params(unsigned,double,int,int);int qram_2d(unsigned,double,unsigned,double,int);|alias_params(1,.5,3,4);qram_2d(5,.5,2,.3,9)
 192_realloc_vla_global_guarded|int realloc_shrink(unsigned,double,unsigned char);int realloc_qsize(unsigned,double,unsigned char);int vla_qram(unsigned,double,int,unsigned);int guarded_global(unsigned,double,unsigned,unsigned,double,int);|realloc_shrink(6,.5,7);realloc_qsize(6,.5,7);vla_qram(5,.5,9,3);guarded_global(5,.5,2,3,.3,9)
 193_narrow_quantum_return|int narrow_bool_consumer(int,double,int);int narrow_short_consumer(short,double,short);long wide_long_consumer(long,double,long);|narrow_bool_consumer(0,.5,1);narrow_short_consumer(0,.5,3);wide_long_consumer(0,.5,5)
+194_complex_builtin_lifted|double complex_mul_builtin(double,double,double,double,double);double complex_div_builtin(double,double,double,double,double,double);|complex_mul_builtin(0,.5,1,2,3);complex_div_builtin(1,2,0,.5,1,.25)

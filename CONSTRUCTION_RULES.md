@@ -839,11 +839,14 @@ Added 2026-10-27: 186 `free_qram` (QRAM lifetime end at `free`, `qram_realloc`, 
 Added 2026-10-31: 193 `narrow_quantum_return` (rule 19: entries returning an unmeasured `_Bool`, `short` and `long`
 quantum value; the first two return the `i32` handle, the `long` carries it zero-extended; consumers inlined by clang).
 
+Added 2026-10-31: 194 `complex_builtin_lifted` (rule 18 with the REAL builtin bodies: complex multiplication and
+division without defining `__muldc3`/`__divdc3`, so the pinned compiler-rt 19.1.7 bodies of the injection bundle are
+lifted: inline `__compiler_rt_logb`/`scalbn`/`fmax` with `ctlz`, `sadd.sat`, `smax`, no libm call, no loop, no `a_K`;
+the `__muldc3` call sits under a quantum NaN-check predicate and is called unguarded and merged, rule 19; 169–174 define
+their own helpers and witness the lifted-musl shape instead).
+
 To write (2026-10-27): an irreducible loop (`goto` into a loop body with a quantum exit) under rule 14's
 `fix-irreducible` bullet; a `switch` with a reachable default (rule 13); an inline `asm` with a quantum
-operand, as a declared clone (rule 27). (2026-10-29): complex multiplication and division WITHOUT
-defining the builtin, so the pinned compiler-rt 19.1.7 `__muldc3`/`__divdc3` bodies (inline
-`__compiler_rt_logb`/`scalbn`/`fmax`: `ctlz`, `sadd.with.overflow`, no libm call) are the lifted bodies
-(rule 18; 169–174 define their own and witness the lifted-musl shape instead).
+operand, as a declared clone (rule 27).
 
 Out of scope by §0: an `-O0`+mem2reg or `-O2` variant of any example.

@@ -112,6 +112,9 @@ def tmpl(op, pred, w, w2, v):
         elif op == 'umin': r = min(a, b)
         elif op == 'uadd_sat': r = min(a + b, M(n))
         elif op == 'usub_sat': r = max(a - b, 0)
+        elif op in ('sadd_sat', 'ssub_sat'):   # llvm.sadd.sat / llvm.ssub.sat (194: compiler-rt's inline scalbn)
+            sa, sb = sx(a, n), sx(b, n); t = sa + sb if op == 'sadd_sat' else sa - sb
+            r = max(-(1 << (n - 1)), min(t, (1 << (n - 1)) - 1)) & M(n)
         elif op == 'uadd_overflow': r = a + b > M(n)
         elif op == 'usub_overflow': r = a < b
         elif op == 'umul_overflow': r = a * b > M(n)
