@@ -1029,10 +1029,24 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
     return;
   }
 
-  // y' = f(y, ...): the first operand that is a cleanable dead rail f is a bijection in.
+  // y' = f(y, ...): the first operand that is a cleanable dead rail f is a bijection in. An old y that
+  // another live garbage rail still needs for its uncompute (a sibling arm 3y of y ^ 7 that a later
+  // select reads, 920_pu) is not cleaned here: CR rule 6 applies after that rail is uncomputed, to the
+  // composite update, which is the later consumer's (the select's merge clean-up, cq-hge5).
+  auto neededLater = [&](Value *Y) {
+    for (User *u : Y->users()) {
+      auto *U = dyn_cast<Instruction>(u);
+      if (!U || U == &I || U->getType()->isVoidTy() || !spine::shared(ctx).binds.count(U) ||
+          !ctx.operand(U).handle || !ruleFiveGarbage(ctx, U))
+        continue;
+      if (!deadAfter(ctx, U, &I))
+        return true;
+    }
+    return false;
+  };
   SmallVector<Value *, 3> dead;
   for (Value *Y : I.operands())
-    if (!is_contained(dead, Y) && cleanable(ctx, Y) && deadAfter(ctx, Y, &I))
+    if (!is_contained(dead, Y) && cleanable(ctx, Y) && deadAfter(ctx, Y, &I) && !neededLater(Y))
       dead.push_back(Y);
   // CR rule 6, both operands dead (cq-12cr): when exactly one is garbage rule 5 uncomputes anyway, the
   // other is cleaned (its inverse reads the garbage, whose _unc follows in its usual place); when that
