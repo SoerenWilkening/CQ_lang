@@ -3,7 +3,8 @@
  *   h:<width>:<hex>  a fresh known rail of that width token holding the value, passed as its handle;
  *   l:<hex>          a literal (up to 64 bits) of the declared parameter type;
  *   p:<hex bytes>    a pointer to a buffer holding those bytes (memory order).
- * Prints, per line, the returned rail's value as hex (a handle result) or "void". The trace goes to
+ * Prints, per line, the returned rail's value as hex (a handle result), the returned i32 itself as hex
+ * when the line starts with '=' (a QRAM bus), or "void". The trace goes to
  * $CQE_TRACE as usual; a violation ends the run through the core. */
 #include <stdint.h>
 #include <stdio.h>
@@ -27,7 +28,8 @@ int main(void) {
   char line[8192];
   while (fgets(line, sizeof line, stdin)) {
     line[strcspn(line, "\n")] = 0;
-    char *sym = strtok(line, " "), *sig = strtok(NULL, " ");
+    int raw = line[0] == '=';
+    char *sym = strtok(line + raw, " "), *sig = strtok(NULL, " ");
     if (!sym || !sig)
       continue;
     void *argv[16];
@@ -62,6 +64,8 @@ int main(void) {
     cqe_dispatch(sym, sig, n, argv, &r);
     if (!strncmp(sig, "void|", 5)) {
       printf("void\n");
+    } else if (raw) {
+      printf("%x\n", (unsigned)r);
     } else {
       const cqe_val *o = cqe_rail(r);
       for (uint32_t i = o->nw; i-- > 0;) printf(i + 1 == o->nw ? "%llx" : "%016llx", (unsigned long long)o->w[i]);

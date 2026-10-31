@@ -1119,9 +1119,11 @@ class TmplCall:
         if cls._tmp is None:
             cls._tmp = tempfile.TemporaryDirectory()
             build_harness(HERE / "tmpl_call.c", Path(cls._tmp.name) / "tmpl_call")
+        t = Path(cls._tmp.name) / "trace.jsonl"
         p = subprocess.run([str(Path(cls._tmp.name) / "tmpl_call")], input="".join(l + "\n" for l in lines),
-                           capture_output=True, text=True, env=dict(os.environ, CQE_TRACE="/dev/null"))
-        return p.returncode, p.stdout.split()
+                           capture_output=True, text=True, env=dict(os.environ, CQE_TRACE=str(t)))
+        bad = [e for e in (json.loads(l) for l in t.read_text().splitlines() if l.strip()) if e["ev"] == "violation"]
+        return (p.returncode if not bad else bad), p.stdout.split()
 
 
 _FMT16 = {"f16": (5, 10), "bf16": (8, 7)}
@@ -1196,6 +1198,23 @@ class Fma16(unittest.TestCase):
             self.assertEqual(rc, 0)
             for (a, b, c), w, g in zip(cases, want, out):
                 self.assertEqual(int(g, 16), w, (fmt, hex(a), hex(b), hex(c)))
+
+
+
+class Bf16Memory(unittest.TestCase):
+    """cq-7n88: rt-mem accepts the bf16 element width (a 2-byte fp element, CR §1.1): QROM and QRAM."""
+
+    def test_qrom_load_bf16(self):
+        rc, out = TmplCall.call(["cq_template_qrom_load_bf16 i32|ptr,i64,i32 p:3412785600ff l:3 h:i8:1",
+                                 "cq_template_qrom_load_bf16 i32|ptr,i64,i32 p:3412785600ff l:3 h:i8:3"])
+        self.assertEqual((rc, out), (0, ["5678", "0"]))  # little-endian cell 1; out of range reads 0
+
+    def test_qram_bf16(self):
+        rc, out = TmplCall.call(["=cqrt_qram_alloc_bf16 i32|i32 l:4",
+                                 "cqrt_qram_store_bf16 void|i32,i32,i32 l:51000000 h:i8:2 h:bf16:3f80",
+                                 "cqrt_qram_load_bf16 i32|i32,i32 l:51000000 h:i8:2",
+                                 "cqrt_qram_load_bf16 i32|i32,i32 l:51000000 h:i8:1"])
+        self.assertEqual((rc, out), (0, ["51000000", "void", "3f80", "0"]))
 
 
 if __name__ == "__main__":

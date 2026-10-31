@@ -145,6 +145,12 @@ static int parse_width(const char *tok, wdesc *d) {
   snprintf(d->tok, sizeof d->tok, "%s", tok);
   char *end = NULL;
   unsigned long n = strtoul(tok + 1, &end, 10);
+  if (!strcmp(tok, "bf16")) { /* bfloat16 (cq-9ge width token): a 2-byte fp element */
+    d->kind = 'f';
+    d->bits = 16;
+    d->alloc = 2;
+    return 1;
+  }
   if (!end || *end || n == 0) return 0;
   if (tok[0] == 'f') {
     d->kind = 'f';
