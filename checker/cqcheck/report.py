@@ -327,6 +327,34 @@ def _compare(ours_results, other_results, against: str, spec) -> Tuple[str, List
     return (PASS, []) if not reasons else (FAIL, [f"{against}: {r}" for r in reasons])
 
 
+def _prebuild(ex: Example, ours: Path, need_ref_run: bool) -> None:
+    """The executables of the §6 run, built while the sample set is generated (cq-8m6v): the C
+    oracle's program (the sampler runs it too), then ours and the reference in the evaluator. Each is
+    the cache entry the run itself asks for (the drivers depend on the DriverSpec and the drivers.txt
+    pointer expressions only), so the run finds it built; a failure here is ignored and met again,
+    with its own reason, when the run asks for the same build."""
+    from cqcheck import drivers, oracle, run
+    try:
+        spec = drivers.driver_spec(ex.name, ex.dir)
+    except Exception:  # noqa: BLE001 - the run reports it
+        return
+    for build in (lambda: oracle.executable(ex.o1, spec), lambda: run.build(ours, spec, []),
+                  (lambda: run.build(ex.reference, spec, [])) if need_ref_run else None):
+        if build is None:
+            continue
+        try:
+            build()
+        except Exception:  # noqa: BLE001 - see the docstring
+            pass
+
+
+def _start_prebuild(ex: Example, ours: Path, need_ref_run: bool):
+    import threading
+    t = threading.Thread(target=_prebuild, args=(ex, ours, need_ref_run), daemon=True)
+    t.start()
+    return t
+
+
 class _SkipDiff(Exception):
     pass
 
@@ -375,6 +403,7 @@ def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_erro
     need_ref_run = want_ref and not matched
 
     if need_ref_run or want_c:
+        pre = _start_prebuild(ex, ours, need_ref_run)
         try:
             spec = sibling("drivers", "driver_spec")(ex.name, ex.dir)
             samples = sibling("sampling", "sample_set")(spec, ex.dir).samples
@@ -405,6 +434,8 @@ def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_erro
                 except Exception as e:  # noqa: BLE001
                     c_oracle = ERROR
                     reasons.append(_exc_reason("c_oracle", e))
+        if pre is not None:
+            pre.join()
 
     return Verdict(ex.name, s6, c_oracle, verifier, diff_lines, reasons)
 

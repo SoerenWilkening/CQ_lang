@@ -92,6 +92,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -308,6 +309,29 @@ def _cache_root() -> Path:
     return Path(os.environ.get("CQE_CACHE", str(REPO / "build" / "cqcheck-cache")))
 
 
+def tool_root() -> Path:
+    """The checker's tool cache (cq-8m6v): what serves every example and depends only on checker
+    sources and the toolchain (the evaluator runtime objects, the probe runtime object). $CQ_TOOL_CACHE,
+    default <build>/cqcheck-tools; `cmake --build` fills it (target cqcheck_tools, cqcheck.prebuild).
+    Content-keyed like every other cache: a stale or empty one only costs a rebuild."""
+    return Path(os.environ.get("CQ_TOOL_CACHE",
+                               str(Path(os.environ.get("CQ_BUILD_DIR", str(REPO / "build"))) / "cqcheck-tools")))
+
+
+_KEY_LOCKS: Dict[str, Any] = {}
+_KEY_LOCKS_LOCK = threading.Lock()
+
+
+def key_lock(key: Any):
+    """One lock per cache entry within this process (cq-8m6v): a second builder of the same entry
+    waits for the first and then finds it, instead of building it again beside it."""
+    with _KEY_LOCKS_LOCK:
+        lk = _KEY_LOCKS.get(str(key))
+        if lk is None:
+            lk = _KEY_LOCKS[str(key)] = threading.Lock()
+        return lk
+
+
 def _sh(cmd: Sequence[str], cwd: Optional[Path] = None) -> None:
     p = subprocess.run(list(cmd), cwd=cwd, capture_output=True, text=True)
     if p.returncode:
@@ -328,16 +352,33 @@ def runtime_objects(triple: str, rt_sources: Optional[Sequence[Path]] = None) ->
         h.update(s.read_bytes())
     for hdr in sorted(RT_DIR.glob("*.h")):  # cqe.h, cq_standin.h
         h.update(hdr.read_bytes())
-    d = _cache_root() / "rt" / h.hexdigest()[:24]
+    d = tool_root() / "rt" / h.hexdigest()[:24]
     objs = [d / (s.stem + ".o") for s in srcs]
     if all(o.exists() for o in objs):
         return objs
-    tmp = Path(tempfile.mkdtemp(prefix="rt.", dir=_ensure(_cache_root() / "rt")))
-    for s in srcs:
-        _sh([CLANG, "-std=c17", "-O1", "-w", "-target", triple, "-I", str(RT_DIR), "-c", str(s), "-o",
-             str(tmp / (s.stem + ".o"))])
-    _publish(tmp, d)
+    with key_lock(d):
+        if all(o.exists() for o in objs):
+            return objs
+        tmp = Path(tempfile.mkdtemp(prefix="rt.", dir=_ensure(tool_root() / "rt")))
+        _parallel([[CLANG, "-std=c17", "-O1", "-w", "-target", triple, "-I", str(RT_DIR), "-c", str(s), "-o",
+                    str(tmp / (s.stem + ".o"))] for s in srcs])
+        _publish(tmp, d)
     return objs
+
+
+def _parallel(cmds: Sequence[Sequence[str]], cwd: Optional[Path] = None) -> None:
+    """_sh over independent commands, up to $CQCHECK_JOBS (at least 2) at a time; the first failure
+    in command order is raised, as running them in order would raise it."""
+    if len(cmds) <= 1:
+        for c in cmds:
+            _sh(c, cwd)
+        return
+    from concurrent.futures import ThreadPoolExecutor
+    n = max(2, min(len(cmds), default_jobs()))
+    with ThreadPoolExecutor(max_workers=n) as ex:
+        futs = [ex.submit(_sh, c, cwd) for c in cmds]
+    for f in futs:
+        f.result()
 
 
 def _ensure(p: Path) -> Path:
@@ -389,6 +430,14 @@ def build(lowered: Path, spec: DriverSpec, samples: Sequence[dict] = (),
     final = _cache_root() / "prog" / h.hexdigest()[:24]
     if (final / "prog").exists():
         return final / "prog"
+    with key_lock(final):
+        return _build_locked(final, lowered, drv, triple, objs, ctext if c_module else None, extra_sources)
+
+
+def _build_locked(final: Path, lowered: Path, drv: str, triple: str, objs: Sequence[Path],
+                  ctext: Optional[str], extra_sources: Sequence[Path]) -> Path:
+    if (final / "prog").exists():
+        return final / "prog"
     # A failed build is cached too (cq-3ebz): the same inputs fail the same way, so every later call
     # raises the recorded BuildError without rerunning clang, llvm-link and stubgen.
     failed = final.with_name(final.name + ".build_error")
@@ -396,7 +445,7 @@ def build(lowered: Path, spec: DriverSpec, samples: Sequence[dict] = (),
         raise BuildError(failed.read_text())
     tmp = Path(tempfile.mkdtemp(prefix="prog.", dir=_ensure(_cache_root() / "prog")))
     try:
-        _build_into(tmp, lowered, drv, triple, objs, ctext if c_module else None, extra_sources)
+        _build_into(tmp, lowered, drv, triple, objs, ctext, extra_sources)
     except BuildError as e:
         shutil.rmtree(tmp, ignore_errors=True)
         ftmp = failed.with_name(f"{failed.name}.{os.getpid()}.tmp")
@@ -420,9 +469,8 @@ def build(lowered: Path, spec: DriverSpec, samples: Sequence[dict] = (),
 def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[Path],
                 ctext: Optional[str], extra_sources: Sequence[Path]) -> None:
     """The toolchain steps of build: tmp/prog from the lowered module and the driver source."""
-    (tmp / "driver.c").write_text(drv)
     shutil.copy(lowered, tmp / "lowered.ll")
-    _sh([CLANG, "-O1", "-w", "-target", triple, "-S", "-emit-llvm", "driver.c", "-o", "driver.ll"], cwd=tmp)
+    shutil.copy(driver_ll(drv, triple), tmp / "driver.ll")
     # the lowered module in canonical text, then its classical CR §2 rows rewritten (cq-ltoq)
     _sh([LLVM_LINK, "-S", "lowered.ll", "-o", "lowered.canon.ll"], cwd=tmp)
     try:
@@ -444,11 +492,9 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
     steps = re.sub(r"(?m)^declare [^\n]*@__sanitizer_cov_(?!trace_pc\()\w+\([^\n]*\n", "", steps)
     (tmp / "lowered.steps.ll").write_text(steps)
     _sh([LLVM_LINK, "-S", "lowered.steps.ll", "driver.ll", "-o", "linked.ll"], cwd=tmp)
-    cargs = []
     if ctext is not None:
         (tmp / "c_module.ll").write_text(ctext)
-        cargs = ["--c-module", "c_module.ll"]
-    _sh([sys.executable, str(RT_DIR / "stubgen.py"), "linked.ll", *cargs, "-o", "stubs.ll"], cwd=tmp)
+    _stubgen(tmp / "linked.ll", tmp / "c_module.ll" if ctext is not None else None, tmp / "stubs.ll")
     extra_objs = []
     for i, e in enumerate(extra_sources):
         o = tmp / f"extra{i}.o"
@@ -456,6 +502,46 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
         extra_objs.append(str(o))
     _sh([CLANG, "-O0", "-w", "-target", triple, *[str(o) for o in objs], *extra_objs, "linked.ll", "stubs.ll",
          "-lm", "-o", "prog"], cwd=tmp)
+
+
+def driver_ll(drv: str, triple: str) -> Path:
+    """The driver source compiled to IR, cached by its content (cq-8m6v): the driver depends on the
+    DriverSpec only, so both sides of an example (ours, the reference) share one compile."""
+    h = hashlib.sha256("\0".join([_VERSION, CLANG, triple, drv]).encode()).hexdigest()[:24]
+    out = _cache_root() / "drv" / f"{h}.ll"
+    if out.exists():
+        return out
+    with key_lock(out):
+        if not out.exists():
+            tmp = Path(tempfile.mkdtemp(prefix="drv.", dir=_ensure(_cache_root() / "drv")))
+            try:
+                (tmp / "driver.c").write_text(drv)
+                _sh([CLANG, "-O1", "-w", "-target", triple, "-S", "-emit-llvm", "driver.c", "-o", "driver.ll"],
+                    cwd=tmp)
+                os.replace(tmp / "driver.ll", out)
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
+    return out
+
+
+_STUBGEN = None
+
+
+def _stubgen(linked: Path, c_module: Optional[Path], out: Path) -> None:
+    """checker/rt/stubgen.py, in this process (cq-8m6v: no interpreter start per build); a failure is
+    the BuildError its command line gave: `stubgen.py failed (1): cq: stubgen: <why>`."""
+    global _STUBGEN
+    if _STUBGEN is None:
+        import importlib.util
+        spec_ = importlib.util.spec_from_file_location("cqcheck_stubgen", RT_DIR / "stubgen.py")
+        mod = importlib.util.module_from_spec(spec_)
+        spec_.loader.exec_module(mod)
+        _STUBGEN = mod
+    try:
+        text, _ = _STUBGEN.generate([linked.read_text()], [c_module.read_text()] if c_module else [])
+    except (_STUBGEN.StubError, OSError) as e:
+        raise BuildError("stubgen.py failed (1): " + f"cq: stubgen: {e}"[-2000:])
+    out.write_text(text)
 
 
 # ---- CR §2 on the lowered module's classical instructions (cq-ltoq) ----------------------------

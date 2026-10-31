@@ -1573,12 +1573,21 @@ _CC = ["-w", "-O0", "-target", "x86_64-apple-macosx"]
 
 def _rt_object() -> Path:
     """The object of the probe runtime (RUNTIME_C with its process-wide #defines), compiled once per
-    content and kept in the sample cache: the same object serves every example (cq-wx6s), whose own
+    content and kept in the tool cache (run.tool_root): the same object serves every example (cq-wx6s), whose own
     counts come from its driver."""
     defs = {"HANG_CPU_S": HANG_CPU_S, "CQD_HDR_CAP": f"{HDR_CAP}LL", "CQD_RSS_CAP": f"{RSS_CAP}LL"}
     text = ("".join(f"#define {k} {v}\n" for k, v in defs.items()) + RUNTIME_C).encode()
     h = hashlib.sha256(text + str(LLVM_BIN).encode()).hexdigest()[:20]
-    obj = _cache_dir() / "rt" / f"{h}.o"
+    from cqcheck import run as _run
+    obj = _run.tool_root() / "probe-rt" / f"{h}.o"
+    if obj.exists():
+        return obj
+    with _run.key_lock(obj):
+        _build_rt_object(obj, text)
+    return obj
+
+
+def _build_rt_object(obj: Path, text: bytes) -> None:
     if not obj.exists():
         obj.parent.mkdir(parents=True, exist_ok=True)
         tmp = obj.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp.o")
@@ -1590,7 +1599,6 @@ def _rt_object() -> Path:
         if r.returncode != 0:
             D.unimplemented(f"probe runtime build failed:\n{r.stderr[-3000:]}")
         os.replace(tmp, obj)
-    return obj
 
 
 _LD: List[List[str]] = []
@@ -1710,7 +1718,13 @@ class ProbeBuild:
 
     def _link(self):
         w = self.work
-        objs = [self._compile("probe.ll"), self._compile("driver.c", "-include", "stdbool.h"), str(_rt_object())]
+        # the two compiles are independent: run side by side (cq-8m6v); a failure is reported as the
+        # first in this order would be
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            fp = ex.submit(self._compile, "probe.ll")
+            fd = ex.submit(self._compile, "driver.c", "-include", "stdbool.h")
+        objs = [fp.result(), fd.result(), str(_rt_object())]
         r = subprocess.run(_ld_command(objs, str(self.exe)), capture_output=True, text=True)
         if r.returncode != 0:
             undef = re.findall(r'^\s+"_([^"]+)", referenced from', r.stderr, re.M)

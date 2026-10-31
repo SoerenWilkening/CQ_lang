@@ -145,6 +145,14 @@ def _atomic_dir(final: Path, fill) -> Path:
     """Build into a fresh temp dir and rename it into place (concurrent builders are safe)."""
     if final.exists():
         return final
+    from .run import key_lock
+    with key_lock(final):   # cq-8m6v: a concurrent builder of the same entry in this process waits
+        return _atomic_dir_locked(final, fill)
+
+
+def _atomic_dir_locked(final: Path, fill) -> Path:
+    if final.exists():
+        return final
     final.parent.mkdir(parents=True, exist_ok=True)
     tmp = Path(tempfile.mkdtemp(prefix=final.name + ".", dir=final.parent))
     try:
