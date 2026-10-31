@@ -131,6 +131,9 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/Operator.h"
+#include "llvm/ADT/MapVector.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
@@ -206,6 +209,7 @@ struct Uncompute::Impl {
     SmallVector<unsigned, 2> writes;
     SmallVector<Instruction *, 2> uses; // noted, beyond the IR users of handle
     SmallVector<Instruction *, 2> hits; // noted non-diagonal gates
+    SmallVector<Instruction *, 1> aliasHits; // cq-zh7z: gates on another handle that may name this rail
     SmallVector<unsigned, 4> readerRecs; // records with this rail among their reads
     SmallVector<RailId, 2> cleanupReaders; // rails whose rule 6 clean-up reads this rail
     std::optional<Cleanup> cleanup;
@@ -255,6 +259,90 @@ struct Uncompute::Impl {
   // ---- merges (U1) ------------------------------------------------------------------------------
 
   bool isMerge(RailId g) const { return !rails[g].arms.empty(); }
+
+  // ---- memory aliases of handles (cq-zh7z) ------------------------------------------------------
+  // A handle reaches memory by a store of it (a slot cell) and is read back by a load, which is a
+  // rail of its own (recordExternal). The cells a rail may sit in: the pointers its handle (or a
+  // merge naming it) was stored to or loaded from.
+  static void cellsOf(const Value *h, SmallVectorImpl<const Value *> &out) {
+    if (auto *ld = dyn_cast<LoadInst>(h))
+      out.push_back(ld->getPointerOperand());
+    for (const User *u : h->users())
+      if (auto *st = dyn_cast<StoreInst>(u); st && st->getValueOperand() == h)
+        out.push_back(st->getPointerOperand());
+  }
+  void railCells(RailId y, SmallVectorImpl<const Value *> &out) const {
+    for (RailId n : names(y))
+      if (rails[n].handle)
+        cellsOf(rails[n].handle, out);
+  }
+  // Base object plus constant and variable byte offsets, through GEPs.
+  struct Addr {
+    const Value *base;
+    APInt off{64, 0};
+    MapVector<Value *, APInt> vars;
+    bool exact = true;
+  };
+  static Addr decompose(const Value *p, const DataLayout &DL) {
+    Addr a;
+    for (unsigned depth = 0; depth < 16; ++depth) {
+      p = p->stripPointerCasts();
+      auto *g = dyn_cast<GEPOperator>(p);
+      if (!g)
+        break;
+      if (!g->collectOffset(DL, 64, a.vars, a.off)) {
+        a.exact = false;
+        p = getUnderlyingObject(p);
+        break;
+      }
+      p = g->getPointerOperand();
+    }
+    a.base = p;
+    return a;
+  }
+  static bool identified(const Value *v) { return isa<AllocaInst>(v) || isa<GlobalVariable>(v); }
+  // False only when the two 4-byte cells provably differ.
+  static bool mayAlias(const Value *p, const Value *q, const DataLayout &DL) {
+    if (p == q)
+      return true;
+    Addr a = decompose(p, DL), b = decompose(q, DL);
+    if (a.base != b.base) {
+      const Value *ua = getUnderlyingObject(a.base), *ub = getUnderlyingObject(b.base);
+      return !(ua != ub && identified(ua) && identified(ub));
+    }
+    if (!a.exact || !b.exact || a.vars.size() != b.vars.size())
+      return true;
+    for (auto &kv : a.vars) {
+      auto it = b.vars.find(kv.first);
+      if (it == b.vars.end() || it->second != kv.second)
+        return true;
+    }
+    APInt d = a.off - b.off;
+    return d.abs().ult(4);
+  }
+  // A gate on target may hit every other live rail that sits in a cell target's handle may share.
+  void noteAliasHits(RailId target, Instruction *gate) {
+    const DataLayout &DL = gate->getModule()->getDataLayout();
+    SmallVector<RailId, 4> self = leaves(target);
+    SmallVector<const Value *, 4> mine;
+    for (RailId t : self)
+      railCells(t, mine);
+    if (mine.empty())
+      return;
+    for (RailId y = 0; y < rails.size(); ++y) {
+      Rail &ry = rails[y];
+      if (isMerge(y) || ry.released || ry.popBus != kNone || is_contained(self, y))
+        continue;
+      SmallVector<const Value *, 4> theirs;
+      railCells(y, theirs);
+      bool hit = false;
+      for (const Value *p : mine)
+        for (const Value *q : theirs)
+          hit = hit || mayAlias(p, q, DL);
+      if (hit)
+        ry.aliasHits.push_back(gate);
+    }
+  }
 
   bool isMergeHandle(const Value *v) const {
     auto it = byHandle.find(v);
@@ -628,19 +716,23 @@ struct Uncompute::Impl {
     return {bb, before};
   }
 
-  // The barrier events of g's item: (event, isHit) that must not precede the item.
-  SmallVector<std::pair<Instruction *, bool>, 4> barriers(RailId g) const {
-    SmallVector<std::pair<Instruction *, bool>, 4> out;
+  // The barrier events of g's item: (event, kind) that must not precede the item.
+  enum class Bar { Hit, Write, AliasHit };
+  SmallVector<std::pair<Instruction *, Bar>, 4> barriers(RailId g) const {
+    SmallVector<std::pair<Instruction *, Bar>, 4> out;
     auto eventsOf = [&](RailId x, auto &&isAfterBase, bool popsFirst = false) {
       const Rail &rx = rails[x];
       for (Instruction *h : rx.hits)
         if (isAfterBase(h))
-          out.push_back({h, true});
+          out.push_back({h, Bar::Hit});
+      for (Instruction *h : rx.aliasHits)
+        if (isAfterBase(h))
+          out.push_back({h, Bar::AliasHit});
       if (x == g)
         return; // g's own writes are undone by its item
       for (unsigned w : rx.writes)
         if (isAfterBase(records[w].forward) && !(popsFirst && storePopped(w)))
-          out.push_back({records[w].forward, false});
+          out.push_back({records[w].forward, Bar::Write});
     };
     const Rail &r = rails[g];
     if (r.cleanup) {
@@ -685,10 +777,12 @@ struct Uncompute::Impl {
       eventsOf(g, afterDef);
     } else {
       for (Instruction *h : r.hits)
-        out.push_back({h, true});
+        out.push_back({h, Bar::Hit});
+      for (Instruction *h : r.aliasHits)
+        out.push_back({h, Bar::AliasHit});
     }
     // De-duplicate (an event may be reachable through several records).
-    SmallVector<std::pair<Instruction *, bool>, 4> uniq;
+    SmallVector<std::pair<Instruction *, Bar>, 4> uniq;
     for (auto &e : out)
       if (!is_contained(uniq, e))
         uniq.push_back(e);
@@ -1001,7 +1095,7 @@ struct Uncompute::Impl {
                             " where the merge does not choose it",
                         T);
     }
-    for (auto [e, isHit] : barriers(a))
+    for (auto [e, kind] : barriers(a))
       if (e->getParent() == P || reaches(e->getParent(), P))
         unimplemented("uncompute: a barrier precedes the resolution of an unchosen arm of a kept merged handle, " +
                           describe(ra.handle),
@@ -1208,7 +1302,7 @@ struct Uncompute::Impl {
       internalError("uncompute: no insertion point for " + describe(r.handle));
     // Rule 5's invariant.
     bool kept = false;
-    for (auto [e, isHit] : barriers(g)) {
+    for (auto [e, kind] : barriers(g)) {
       bool violated;
       if (e->getParent() == pos.bb)
         violated = !(pos.before == e || pos.before->comesBefore(e));
@@ -1218,9 +1312,18 @@ struct Uncompute::Impl {
         violated = false;
       if (!violated)
         continue;
-      if (!isHit)
+      if (kind == Bar::Write)
         unimplemented("uncompute: an in-place write on an operand rail precedes the earliest uncompute of " +
                           describe(r.handle),
+                      e);
+      // cq-zh7z: the gate's handle may name an operand rail through memory (a store or load of a
+      // cell that may hold it). Rule 5 needs the _unc before the gate when it is that rail, and CR §0 needs
+      // it cleaned when it is not; which one holds is only known at run time.
+      if (kind == Bar::AliasHit)
+        unimplemented("uncompute: a non-diagonal gate on a handle that may name an operand rail of " +
+                          describe(r.handle) +
+                          " through a slot cell precedes its earliest uncompute (whether it hits that rail is "
+                          "decided at run time)",
                       e);
       kept = true;
     }
@@ -1440,12 +1543,14 @@ void Uncompute::noteNonDiagonal(RailId target, Instruction *gate) {
                       gate);
       impl->rails[a].hits.push_back(gate);
     }
-    x.hits.push_back(gate);
+    impl->rails[target].hits.push_back(gate);
+    impl->noteAliasHits(target, gate);
     return;
   }
   if (x.released)
     internalError("uncompute: gate on " + describe(x.handle) + " after it was uncomputed and freed", gate);
   x.hits.push_back(gate);
+  impl->noteAliasHits(target, gate);
 }
 
 void Uncompute::cleanupBijective(RailId oldRail, const abi::TemplateSpec &inverse, ArrayRef<Operand> ops) {

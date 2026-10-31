@@ -1939,6 +1939,109 @@ J:
   f.U.flushAtExit(f.ret());
 }
 
+// ---- cq-zh7z: a gate on a handle loaded from a slot cell that may hold an operand rail ----------
+
+// b1's shape: x sits in cell i, a fresh seed is stored to cell m, cell i is reloaded (%l: x when
+// m != i, the seed when m == i) and rotated, and g, which read x, is read after the Ry. Rule 5 needs
+// g's _unc before the Ry when %l is x, and CR §0 needs it cleaned when it is not: unimplemented.
+const char *kAliasIr = R"(
+define i32 @f(i32 %a0, i64 %i, i64 %m, double %th) {
+  %cells = alloca i32, i64 4
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %pi = getelementptr inbounds i32, ptr %cells, i64 %i
+  store i32 %x, ptr %pi
+  %g = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  %z = call i32 @cqrt_alloc_i32(i32 0)
+  %pm = getelementptr inbounds i32, ptr %cells, i64 %m
+  store i32 %z, ptr %pm
+  %pj = getelementptr inbounds i32, ptr %cells, i64 IDX
+  %l = load i32, ptr %pj
+  call void @cqrt_ry_i32(i32 %l, double %th)
+  %q = call i32 @cq_template_mul_i32_hl(i32 %g, i32 3)
+  %r = call i32 @cqrt_measure_i32(i32 %q)
+  ret i32 %r
+})";
+
+void aliasCase(const char *idx) {
+  std::string ir = kAliasIr;
+  ir.replace(ir.find("IDX"), 3, idx);
+  Fx f(ir);
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 0));
+  f.T("g", "hl");
+  f.U.setRole(f.S("z"), Role::UserRegister);
+  f.U.recordExternal(f.I("l"), Role::UserRegister);
+  f.U.noteNonDiagonal(f.id("l"), f.call("cqrt_ry_i32", 1));
+  f.U.setRole(f.T("q", "hl"), Role::Measured);
+  f.U.flushAtExit(f.ret());
+}
+
+void fatal_alias_slot_reload() { aliasCase("%i"); }
+
+void alias_distinct_cell() {
+  // x in cell 0, the seed in cell 1, the Ry on a reload of cell 1: never x, so g is cleaned after
+  // its consumer as before.
+  std::string ir = kAliasIr;
+  ir.replace(ir.find("i64 %i\n  store i32 %x"), 6, "i64 0");
+  ir.replace(ir.find("i64 %m\n  store i32 %z"), 6, "i64 1");
+  ir.replace(ir.find("IDX"), 3, "1");
+  Fx f(ir);
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 0));
+  f.T("g", "hl");
+  f.U.setRole(f.S("z"), Role::UserRegister);
+  f.U.recordExternal(f.I("l"), Role::UserRegister);
+  f.U.noteNonDiagonal(f.id("l"), f.call("cqrt_ry_i32", 1));
+  f.U.setRole(f.T("q", "hl"), Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%cells = alloca i32, i64 4, align 4",
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%pi = getelementptr inbounds i32, ptr %cells, i64 0",
+                        "store i32 %x, ptr %pi, align 4",
+                        "%g = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "%z = call i32 @cqrt_alloc_i32(i32 0)",
+                        "%pm = getelementptr inbounds i32, ptr %cells, i64 1",
+                        "store i32 %z, ptr %pm, align 4",
+                        "%pj = getelementptr inbounds i32, ptr %cells, i64 1",
+                        "%l = load i32, ptr %pj, align 4",
+                        "call void @cqrt_ry_i32(i32 %l, double %th)",
+                        "%q = call i32 @cq_template_mul_i32_hl(i32 %g, i32 3)",
+                        "call void @cq_template_add_i32_hl_unc(i32 %g, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %g)",
+                        "%r = call i32 @cqrt_measure_i32(i32 %q)",
+                        "ret i32 %r",
+                    });
+}
+
+// The reverse direction: g read a reload %l of cell i, and the Ry is on x, which sits in cell i.
+void fatal_alias_slot_direct() {
+  Fx f(R"(
+define i32 @f(i32 %a0, i64 %i, double %th) {
+  %cells = alloca i32, i64 4
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %pi = getelementptr inbounds i32, ptr %cells, i64 %i
+  store i32 %x, ptr %pi
+  %pj = getelementptr inbounds i32, ptr %cells, i64 %i
+  %l = load i32, ptr %pj
+  %g = call i32 @cq_template_add_i32_hl(i32 %l, i32 1)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %q = call i32 @cq_template_mul_i32_hl(i32 %g, i32 3)
+  %r = call i32 @cqrt_measure_i32(i32 %q)
+  ret i32 %r
+})");
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 0));
+  f.U.recordExternal(f.I("l"), Role::UserRegister);
+  f.T("g", "hl");
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 1));
+  f.U.setRole(f.T("q", "hl"), Role::Measured);
+  f.U.flushAtExit(f.ret());
+}
+
 const std::map<std::string, std::function<void()>> kPositive = {
     {"reverse_dependency_order", reverse_dependency_order},
     {"independent_most_recent_first", independent_most_recent_first},
@@ -1975,6 +2078,7 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"merge_kept_unchosen_edge", merge_kept_unchosen_edge},
     {"merge_kept_rotated", merge_kept_rotated},
     {"merge_kept_nested_phi_edge", merge_kept_nested_phi_edge},
+    {"alias_distinct_cell", alias_distinct_cell},
 };
 
 const std::map<std::string, std::function<void()>> kFatal = {
@@ -1995,6 +2099,8 @@ const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_merge_nested_select_edge", fatal_merge_nested_select_edge},
     {"fatal_merge_nested_select_edge_rev", fatal_merge_nested_select_edge_rev},
     {"fatal_merge_unchosen_loop", fatal_merge_unchosen_loop},
+    {"fatal_alias_slot_reload", fatal_alias_slot_reload},
+    {"fatal_alias_slot_direct", fatal_alias_slot_direct},
 };
 
 } // namespace
