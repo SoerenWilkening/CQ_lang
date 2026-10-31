@@ -491,6 +491,15 @@ class TripProofs(unittest.TestCase):
             self.assertIn("power of two", g[t].why)
         self.assertEqual(g["4"].kind, "missing", g["4"])
 
+    def test_domain_proof(self):
+        # cq-97oj kind 2: 121's while loop runs 5 trips only when cap >= 5, and then the fill loop's
+        # store s[cap - 1] leaves the 4-byte buffer; 4 trips (cap = 4) stays unproved
+        g = self.gaps_of("121", "quantum_strlen:%19", ("4", "5"))
+        self.assertEqual(g["5"].kind, "impossible", g["5"])
+        self.assertIn("domain proof", g["5"].why)
+        self.assertIn("4-byte object", g["5"].why)
+        self.assertEqual(g["4"].kind, "missing", g["4"])
+
     def test_nested_zero_trips(self):
         # cq-oou2: 68's inner loop is entered unguarded on every outer trip (j = 0 < i holds)
         g = self.gaps_of("68", "nested_quantum_loops:%15", ("0",))
