@@ -292,7 +292,8 @@ Value *fromRecord(LoweringContext &ctx, const RailHist &r) {
     }
     static const std::pair<const char *, Intrinsic::ID> bin[] = {
         {"smax", Intrinsic::smax}, {"smin", Intrinsic::smin}, {"umax", Intrinsic::umax},
-        {"umin", Intrinsic::umin}, {"uadd_sat", Intrinsic::uadd_sat}, {"usub_sat", Intrinsic::usub_sat}};
+        {"umin", Intrinsic::umin}, {"uadd_sat", Intrinsic::uadd_sat}, {"usub_sat", Intrinsic::usub_sat},
+        {"sadd_sat", Intrinsic::sadd_sat}, {"ssub_sat", Intrinsic::ssub_sat}};
     for (auto &[bn, id] : bin)
       if (op == bn)
         return B.CreateBinaryIntrinsic(id, x, y);

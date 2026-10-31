@@ -216,7 +216,7 @@ static const char *const tmpl_ops[] = {
     "add", "sub", "mul", "udiv", "sdiv", "urem", "srem", "and", "or", "xor", "shl", "lshr", "ashr", "fadd", "fsub",
     "fmul", "fdiv", "frem", "fneg", "icmp", "fcmp", "fcmps", "select", "zext", "sext", "trunc", "fpext", "fptrunc",
     "sitofp", "uitofp", "fptosi", "fptoui", "bitcast", "fma", "fshl", "fshr", "abs", "ctlz", "cttz", "ctpop", "bswap",
-    "smax", "smin", "umax", "umin", "uadd_sat", "usub_sat", "uadd_overflow", "sadd_overflow", "usub_overflow",
+    "smax", "smin", "umax", "umin", "uadd_sat", "usub_sat", "sadd_sat", "ssub_sat", "uadd_overflow", "sadd_overflow", "usub_overflow",
     "ssub_overflow", "umul_overflow", "smul_overflow", "fabs", "copysign", "fmax", "fmin", "floor", "ceil", "rint",
     "round", "sqrt", "is_fpclass", "qrom_load", NULL};
 static const char *const icmp_preds[] = {"eq", "ne", "ugt", "uge", "ult", "ule", "sgt", "sge", "slt", "sle", NULL};

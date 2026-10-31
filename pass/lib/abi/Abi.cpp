@@ -230,6 +230,8 @@ const OpInfo kOps[] = {
     {"umin", Arity::Binary, Dom::Int, Comm::Int, false},
     {"uadd_sat", Arity::Binary, Dom::Int, Comm::Int, false},
     {"usub_sat", Arity::Binary, Dom::Int, Comm::No, false},
+    {"sadd_sat", Arity::Binary, Dom::Int, Comm::Int, false},
+    {"ssub_sat", Arity::Binary, Dom::Int, Comm::No, false},
     {"uadd_overflow", Arity::Binary, Dom::Int, Comm::Int, false},
     {"sadd_overflow", Arity::Binary, Dom::Int, Comm::Int, false},
     {"umul_overflow", Arity::Binary, Dom::Int, Comm::Int, false},

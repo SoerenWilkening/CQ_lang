@@ -1,6 +1,6 @@
 /* Template family: compare, select, min/max, abs, overflow, saturation (cq-w0-tmpl-cmp).
  *
- * Ops: icmp select smax smin umax umin abs {u,s}{add,sub,mul}_overflow uadd_sat usub_sat.
+ * Ops: icmp select smax smin umax umin abs {u,s}{add,sub,mul}_overflow {u,s}{add,sub}_sat.
  * Semantics: CONSTRUCTION_RULES §1.2 and §2 (normative), BACKEND_ABI §2.4, §2.5 and §2.7. Every
  * operation is generic over the width: values are little-endian 64-bit words, any N >= 1.
  *
@@ -199,7 +199,7 @@ static int put_i1(cqe_val *out, int b) {
 
 enum op_t {
   OP_ICMP, OP_SELECT, OP_SMAX, OP_SMIN, OP_UMAX, OP_UMIN, OP_ABS,
-  OP_UADDO, OP_SADDO, OP_USUBO, OP_SSUBO, OP_UMULO, OP_SMULO, OP_UADDSAT, OP_USUBSAT
+  OP_UADDO, OP_SADDO, OP_USUBO, OP_SSUBO, OP_UMULO, OP_SMULO, OP_UADDSAT, OP_USUBSAT, OP_SADDSAT, OP_SSUBSAT
 };
 
 static const struct { const char *name; enum op_t op; int nargs; } OPS[] = {
@@ -210,7 +210,7 @@ static const struct { const char *name; enum op_t op; int nargs; } OPS[] = {
     {"sadd_overflow", OP_SADDO, 2}, {"usub_overflow", OP_USUBO, 2},
     {"ssub_overflow", OP_SSUBO, 2}, {"umul_overflow", OP_UMULO, 2},
     {"smul_overflow", OP_SMULO, 2}, {"uadd_sat", OP_UADDSAT, 2},
-    {"usub_sat", OP_USUBSAT, 2},
+    {"usub_sat", OP_USUBSAT, 2}, {"sadd_sat", OP_SADDSAT, 2}, {"ssub_sat", OP_SSUBSAT, 2},
 };
 #define NOPS (sizeof OPS / sizeof OPS[0])
 
@@ -301,6 +301,18 @@ static int eval(enum op_t op, const cqe_tname *t, const cqe_val *args, width_t W
     if (ucmp(a, b, W.nw) < 0) memset(r, 0, W.nw * sizeof(uint64_t));
     else sub(r, a, b, W);
     return put(out, r, W.bits, 'i');
+  case OP_SADDSAT:
+  case OP_SSUBSAT: {   /* BACKEND_ABI §2.7: signed a ± b clamped to [-2^(W-1), 2^(W-1)-1] */
+    int sa = sign(a, W), sb = sign(b, W), isadd = op == OP_SADDSAT;
+    if (isadd) add(r, a, b, W); else sub(r, a, b, W);
+    if ((isadd ? sa == sb : sa != sb) && sign(r, W) != sa) {
+      uint32_t k = W.bits - 1;
+      memset(r, sa ? 0 : 0xff, W.nw * sizeof(uint64_t));
+      mask_top(r, W.nw, W.bits);
+      if (sa) r[k / 64] |= 1ULL << (k % 64); else r[k / 64] &= ~(1ULL << (k % 64));
+    }
+    return put(out, r, W.bits, 'i');
+  }
   default: break;
   }
   cqe_fail("tmpl_cmp: internal: op %s not dispatched", t->op);

@@ -142,6 +142,8 @@ std::string intrinsicOp(Intrinsic::ID id) {
   case Intrinsic::umin: return "umin";
   case Intrinsic::uadd_sat: return "uadd_sat";
   case Intrinsic::usub_sat: return "usub_sat";
+  case Intrinsic::sadd_sat: return "sadd_sat";
+  case Intrinsic::ssub_sat: return "ssub_sat";
   case Intrinsic::uadd_with_overflow: return "uadd_overflow";
   case Intrinsic::sadd_with_overflow: return "sadd_overflow";
   case Intrinsic::umul_with_overflow: return "umul_overflow";
@@ -261,7 +263,9 @@ void lowerIntrinsic(LoweringContext &ctx, IntrinsicInst &II) {
   case Intrinsic::umax:
   case Intrinsic::umin:
   case Intrinsic::uadd_sat:
-  case Intrinsic::usub_sat: data = 2; break;
+  case Intrinsic::usub_sat:
+  case Intrinsic::sadd_sat:
+  case Intrinsic::ssub_sat: data = 2; break;
   case Intrinsic::fma:
   case Intrinsic::fshl:
   case Intrinsic::fshr: data = 3; break;
