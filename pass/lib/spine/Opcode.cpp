@@ -464,6 +464,12 @@ void lowerMeasure(LoweringContext &ctx, CallInst &call) {
     spine::bindOperand(ctx, &call, x);
     return;
   }
+  // cq-ihlt: a value whose only quantum sources a callee measured is classical; its sources' rails
+  // are re-read in the caller right after the clone call (rule 2) and cq_measure reads it classically.
+  if (Value *c = spine::calleeCollapse(ctx, x.v, call)) {
+    spine::bindOperand(ctx, &call, Operand{c, false});
+    return;
+  }
   RailType w = rt(call.getArgOperand(0)->getType(), &call);
   CallInst *m = ctx.emitCore(abi::CoreSpec{abi::Core::Measure, w}, {x.v});
   // V1 (cq-7p6): a measurement the user wrote carries !cq.measure, the uniqued empty tuple.

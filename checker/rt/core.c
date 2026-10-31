@@ -396,7 +396,11 @@ void cqe__mark_nd(int32_t h) {
   rails[h].frozen = 1;
   rails[h].t_nd = cqe__tick();
 }
+/* CR rule 2, BACKEND_ABI 1.3 (cq-ihlt): measuring a measured rail again is a classical re-read of
+ * its outcome; the rail's measurement (and its time, which kept_entangled reads) stays the first. */
 void cqe__mark_measured(int32_t h) {
+  if (rails[h].measured)
+    return;
   rails[h].measured = 1;
   rails[h].known = 1;
   rails[h].t_meas = cqe__tick();

@@ -38,6 +38,7 @@
 //    guards, which commutes with the measurement of its sources.
 #include "SpineInternal.h"
 
+#include "llvm/ADT/SetVector.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IntrinsicInst.h"
@@ -138,9 +139,20 @@ SmallVector<Value *, 3> writeReads(const RailHist::Write &w) {
 
 enum Cls : uint8_t { No = 0, Classical = 1, Measured = 2 };
 
-Cls classify(Shared &sh, Value *h, DenseMap<Value *, Cls> &memo) {
+// cq-ihlt: `assumed` (when given) collects the rails a clone call measured that the classification
+// treats as measured: a rail noted in Shared::calleeMeasured whose clone call is before the builder's
+// point.
+Cls classify(Shared &sh, Value *h, DenseMap<Value *, Cls> &memo, SetVector<Value *> *assumed = nullptr) {
   if (outcomeAt(sh, h))
     return Measured;
+  if (assumed) {
+    auto cm = sh.calleeMeasured.find(h);
+    if (cm != sh.calleeMeasured.end() && sh.dominatesCurrent(cm->second.call) &&
+        (!cm->second.out || outAvailable(sh, cm->second.out))) {
+      assumed->insert(h);
+      return Measured;
+    }
+  }
   auto mi = memo.find(h);
   if (mi != memo.end())
     return mi->second;
@@ -153,7 +165,7 @@ Cls classify(Shared &sh, Value *h, DenseMap<Value *, Cls> &memo) {
     return No;
   Cls c = Classical;
   auto join = [&](Value *v, const Instruction *at) {
-    Cls k = staleRead(sh, v, at) ? No : classify(sh, v, memo);
+    Cls k = staleRead(sh, v, at) ? No : classify(sh, v, memo, assumed);
     c = k == No || c == No ? No : std::max(c, k);
   };
   if (r.tmpl) {
@@ -406,6 +418,130 @@ Value *collapse(LoweringContext &ctx, Value *handle) {
   if (classify(sh, handle, memo) != Measured)
     return nullptr;
   return recompute(ctx, handle);
+}
+
+namespace {
+
+// Does F (an original function with a body) measure its formal `idx` (a cq_measure_* of the formal,
+// or a call passing it to an in-module function that does)? Always: on every path to a return (the
+// measuring call dominates every return). Some: on some path only.
+enum class Meas : uint8_t { None, Some, Always };
+
+Meas formalMeasured(Shared &sh, const Function &F, unsigned idx, SmallPtrSet<const Function *, 8> &onStack) {
+  if (F.isDeclaration() || idx >= F.arg_size() || !onStack.insert(&F).second)
+    return Meas::None;
+  const Argument *A = F.getArg(idx);
+  SmallVector<const ReturnInst *, 4> rets;
+  for (const BasicBlock &BB : F)
+    if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
+      rets.push_back(R);
+  Meas r = Meas::None;
+  for (const Use &U : A->uses()) {
+    auto *CB = dyn_cast<CallBase>(U.getUser());
+    if (!CB || !CB->isArgOperand(&U))
+      continue;
+    const Function *G = CB->getCalledFunction();
+    if (!G)
+      continue;
+    Meas m = Meas::None;
+    if (G->isDeclaration()) {
+      if (G->getName().starts_with("cq_measure_"))
+        m = Meas::Always;
+    } else {
+      m = formalMeasured(sh, *G, CB->getArgOperandNo(&U), onStack);
+    }
+    if (m == Meas::None)
+      continue;
+    if (m == Meas::Always)
+      for (const ReturnInst *R : rets)
+        if (!sh.dt(F).dominates(CB, R))
+          m = Meas::Some;
+    r = std::max(r, m);
+  }
+  onStack.erase(&F);
+  return r;
+}
+
+} // namespace
+
+void noteCalleeMeasures(LoweringContext &ctx, const CallBase &orig, BasicBlock *start, Instruction *before) {
+  Shared &sh = shared(ctx);
+  const Function *F = orig.getCalledFunction();
+  if (!F || F->isDeclaration())
+    return;
+  for (unsigned i = 0; i < orig.arg_size(); ++i) {
+    const Value *a = orig.getArgOperand(i);
+    auto b = sh.binds.find(a);
+    if (b == sh.binds.end() || b->second.size() != 1 || !b->second.front().handle)
+      continue;
+    Value *h = b->second.front().v;
+    if (outcomeAt(sh, h))
+      continue;
+    SmallPtrSet<const Function *, 8> onStack;
+    Meas m = formalMeasured(sh, *F, i, onStack);
+    if (m == Meas::None)
+      continue;
+    Shared::CalleeMeasure cm;
+    cm.call = &orig;
+    cm.arg = a;
+    cm.always = m == Meas::Always;
+    // The emitted clone call: a call of a "__cq_q_" function with h among its arguments, emitted by
+    // this call's lowering in the block it began in.
+    for (auto it = before ? std::next(before->getIterator()) : start->begin(); it != start->end(); ++it) {
+      auto *c = dyn_cast<CallInst>(&*it);
+      if (!c || !c->getCalledFunction() || !c->getCalledFunction()->getName().starts_with("__cq_q_") ||
+          !is_contained(c->args(), h))
+        continue;
+      if (cm.out)
+        cm.why = "two clone calls take the rail";
+      cm.out = c;
+    }
+    if (!cm.out && cm.why.empty())
+      cm.why = "the clone call taking the rail is not in the block the call's lowering began in";
+    if (ctx.currentFlag() && cm.why.empty())
+      cm.why = "the clone call is under a quantum predicate (a _ctl clone)";
+    sh.calleeMeasured[h] = cm;
+  }
+}
+
+Value *calleeCollapse(LoweringContext &ctx, Value *handle, const Instruction &at) {
+  Shared &sh = shared(ctx);
+  if (sh.calleeMeasured.empty())
+    return nullptr;
+  DenseMap<Value *, Cls> memo;
+  SetVector<Value *> assumed;
+  if (classify(sh, handle, memo, &assumed) != Measured || assumed.empty())
+    return nullptr;
+  for (Value *src : assumed) {
+    Shared::CalleeMeasure cm = sh.calleeMeasured.lookup(src);
+    std::string pre = "spine: cq_measure of a value whose quantum source a callee measured (rule 2 re-read, cq-ihlt): ";
+    if (!cm.always)
+      unimplemented(pre + "the callee measures it on some paths only", &at);
+    if (!cm.why.empty())
+      unimplemented(pre + cm.why, &at);
+    for (bool open : sh.gateLogOpen)
+      if (open)
+        unimplemented(pre + "a gate log is open", &at);
+    IRBuilder<> &B = ctx.B();
+    IRBuilderBase::InsertPointGuard guard(B);
+    B.SetInsertPoint(cm.out->getParent(), std::next(cm.out->getIterator()));
+    Type *t = cm.arg->getType();
+    if (!t->isIntegerTy() && !t->isHalfTy() && !t->isBFloatTy() && !t->isFloatTy() && !t->isDoubleTy() &&
+        !t->isX86_FP80Ty())
+      unimplemented(pre + "a rail of IR type that is not iN/half/bfloat/float/double/x86_fp80", &at);
+    CallInst *m = ctx.emitCore(abi::CoreSpec{abi::Core::Measure, railTypeOf(t)}, {src});
+    // The lowering of the user's cq_measure: it carries the V1 provenance marker.
+    m->setMetadata("cq.measure", MDNode::get(ctx.M.getContext(), {}));
+    if (m->getType() != t)
+      internalError("spine: re-read cqrt_measure result type differs from the actual's", &at);
+    ctx.unc().setRole(ctx.unc().idOf(src), Role::Measured);
+    sh.measured[src] = {cm.call, m};
+    sh.calleeMeasured.erase(src);
+  }
+  Value *v = collapse(ctx, handle);
+  if (!v)
+    internalError("spine: a callee-measured source did not collapse its reader (cq-ihlt)", &at);
+  return v;
 }
 
 } // namespace cq::spine

@@ -614,10 +614,13 @@ static void gate_measure(call_t *c, const char *w) {
   int32_t h = as_i32(&c->raw[0]);
   if (!operand(c, h, w))
     return;
+  int reread = cqe__measured(h);   /* CR rule 2, ABI 1.3 (cq-ihlt): a classical re-read, no measure event */
   cqe__mark_measured(h);
-  char *hx = cqe__hexa(cqe__val(h));
-  cqe__logf("{\"ev\":\"measure\",\"h\":%d,\"v\":\"%s\",\"w\":\"%s\"}", (int)h, hx, w);
-  free(hx);
+  if (!reread) {
+    char *hx = cqe__hexa(cqe__val(h));
+    cqe__logf("{\"ev\":\"measure\",\"h\":%d,\"v\":\"%s\",\"w\":\"%s\"}", (int)h, hx, w);
+    free(hx);
+  }
   store_val(c->ret, c->rty, cqe__val(h));
 }
 

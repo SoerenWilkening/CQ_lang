@@ -329,7 +329,13 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
       if (cs && cs->isEntry())
         return lowerInline(ctx, CB, *cs);
     }
-    return calls::lowerLifted(ctx, CB);
+    Instruction *before = ctx.B().GetInsertPoint() == ctx.B().GetInsertBlock()->begin()
+                              ? nullptr
+                              : &*std::prev(ctx.B().GetInsertPoint());
+    BasicBlock *startBlock = ctx.B().GetInsertBlock();
+    calls::lowerLifted(ctx, CB);
+    // cq-ihlt: the rails whose formal the callee measures (rule 2 re-read in the caller).
+    return noteCalleeMeasures(ctx, CB, startBlock, before);
   }
   case Class::Indirect: return calls::lowerIndirect(ctx, CB);
   case Class::Declared: return calls::lowerDeclared(ctx, CB);

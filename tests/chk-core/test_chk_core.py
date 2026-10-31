@@ -158,6 +158,13 @@ class Violations(unittest.TestCase):
     def test_no_family(self):
         self.assertEqual(self.what("v_no_family.ll"), ["no_family"])
 
+    def test_measure_reread(self):
+        # cq-ihlt: a second cqrt_measure of a measured rail re-reads it (one measure event, same value)
+        r = go("measure_reread.ll", *self.ARGS, [5, 0.5])
+        self.assertEqual(r.violations, [])
+        self.assertEqual(len(r.measured), 1)
+        self.assertEqual(r.outputs["ret"][0]["v"]["v"], hex(2 * int(r.measured[0]["v"], 16)))
+
     def test_default_runtime_links_family_constructors(self):
         """Without rt_sources, run.py links every checker/rt/*.c as objects, so a merged family's
         registering constructor is present (tmpl-int's add here)."""

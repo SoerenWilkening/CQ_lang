@@ -108,6 +108,18 @@ struct Shared {
   std::vector<bool> gateLogOpen;
   // Rule 2: rail handle -> (the original cq_measure call, the classical outcome).
   llvm::DenseMap<const llvm::Value *, std::pair<const llvm::Instruction *, llvm::Value *>> measured;
+  // cq-ihlt (Collapse.cpp): a rail passed to a rule 18 clone whose callee measures that formal. `call`
+  // is the original call, `out` the emitted clone call (nullptr when it could not be identified),
+  // `arg` the original actual, `always` whether the callee measures it on every path to a return,
+  // `why` a non-empty reason when the re-read is not built for this call.
+  struct CalleeMeasure {
+    const llvm::Instruction *call = nullptr;
+    llvm::CallInst *out = nullptr;
+    const llvm::Value *arg = nullptr;
+    bool always = false;
+    std::string why;
+  };
+  llvm::DenseMap<const llvm::Value *, CalleeMeasure> calleeMeasured;
   // Rule 2 classical collapse (Collapse.cpp): how each rail the spine's emitters minted got its
   // basis value, and the classical recomputations already emitted.
   llvm::DenseMap<const llvm::Value *, RailHist> hist;
@@ -178,6 +190,16 @@ void noteTemplate(Shared &, llvm::CallInst *fwd, const abi::TemplateSpec &, llvm
 void noteCore(Shared &, llvm::CallInst *call, const abi::CoreSpec &, llvm::ArrayRef<llvm::Value *>);
 llvm::Value *outcomeAt(Shared &, llvm::Value *handle);
 llvm::Value *collapse(LoweringContext &, llvm::Value *handle);
+// cq-ihlt (decision A on rule 2): after calls::lowerLifted emitted a clone call, note every rail
+// passed to it whose formal the callee measures. calleeCollapse(h, at): when the rail h is classical
+// only because a callee measured its quantum sources, emit for each such source a cqrt_measure on its
+// rail right after the clone call (a classical re-read of the measured rail, CR rule 2), mark it
+// measured, and return h's classical recomputation; nullptr when that does not make h classical.
+// `start`/`before`: the output block and the instruction before the builder's point when the call's
+// lowering began (nullptr: the block's start).
+void noteCalleeMeasures(LoweringContext &, const llvm::CallBase &orig, llvm::BasicBlock *start,
+                        llvm::Instruction *before);
+llvm::Value *calleeCollapse(LoweringContext &, llvm::Value *handle, const llvm::Instruction &at);
 
 // cq-s32y (PreRotation.cpp). Before a cq_theta on an existing rail h is lowered: when a use of its
 // operand v (or of another value bound to h) is not before the rotation, h is copied into a fresh
