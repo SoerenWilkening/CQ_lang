@@ -724,5 +724,78 @@ long double wide(unsigned x, unsigned y) {
         self.assertEqual(got, [f80(2.0**128), f80(2.0**128), f80(5.0)])
 
 
+class Collapse(unittest.TestCase):
+    """CR rule 2, owner ruling cq-r6bc (bead cq-y1ll): a cq_measure counts as a gate only when its operand
+    is not classical by the data-flow collapse (computed only from measured rails and classical values,
+    before or after the measurement); otherwise the site logs kind "read" and nothing is measured."""
+
+    def test_measure_counting(self):
+        o1 = compile_c("collapse", """
+#include <fenv.h>
+int after(int x0, double t) { int x = x0; cq_theta(&x, t); int m = cq_measure(x); int y = x + 1; return m + cq_measure(y); }
+int still_q(int x0, int z0, double t) {
+    int x = x0, z = z0; cq_theta(&x, t); cq_theta(&z, t);
+    int m = cq_measure(x); int y = x + z; return m + cq_measure(y); }
+int before(int x0, double t, int c) { int x = x0; cq_theta(&x, t); int y = x * c + 3; int m = cq_measure(x); return m + cq_measure(y); }
+int reread(int x0, double t) { int x = x0; cq_theta(&x, t); int a = cq_measure(x); return a + cq_measure(x); }
+__attribute__((noinline)) static int rd(int v, int k) { int m = cq_measure(v); return m > k ? m : k; }
+int in_callee(int x0, double t, int k, int c) { int x = x0; cq_theta(&x, t); int y = x + c; int m = rd(x, k); return m + cq_measure(y); }
+int arm_q(int x0, int z0, double t, int k) {
+    int x = x0, z = z0, m = 0; cq_theta(&x, t); cq_theta(&z, t);
+    if (x > k) m = z;
+    int mx = cq_measure(x); return mx + cq_measure(m); }
+int arm_c(int x0, double t, int k, int c) {
+    int x = x0, m = c; cq_theta(&x, t);
+    if (x > k) m = c + 5;
+    int mx = cq_measure(x); return mx + cq_measure(m); }
+int rotated(int x0, double t, double u) { int x = x0; cq_theta(&x, t); int m = cq_measure(x); cq_theta(&x, u); return m + cq_measure(x); }
+int stored(int x0, int z0, double t, int i) {
+    int x = x0, z = z0, a[2]; cq_theta(&x, t); cq_theta(&z, t);
+    a[0] = x + 1; a[1] = z; int m = cq_measure(x); return m + cq_measure(a[i & 1]); }
+double fenv_tested(double x0, double th, double c, double k) {
+    double x = x0; cq_theta(&x, th);
+    fesetround(FE_UPWARD); feclearexcept(FE_INEXACT);
+    double y = x * c;
+    if (y > k) feraiseexcept(FE_INEXACT);
+    int f = fetestexcept(FE_INEXACT);
+    return cq_measure(y) + (double)cq_measure(f); }
+""")
+        sp = spec("collapse", "int after(int,double);int still_q(int,int,double);int before(int,double,int);"
+                  "int reread(int,double);int in_callee(int,double,int,int);int arm_q(int,int,double,int);"
+                  "int arm_c(int,double,int,int);int rotated(int,double,double);int stored(int,int,double,int);"
+                  "double fenv_tested(double,double,double,double)",
+                  [("after", ["int", "double"]), ("still_q", ["int", "int", "double"]),
+                   ("before", ["int", "double", "int"]), ("reread", ["int", "double"]),
+                   ("in_callee", ["int", "double", "int", "int"]), ("arm_q", ["int", "int", "double", "int"]),
+                   ("arm_c", ["int", "double", "int", "int"]), ("rotated", ["int", "double", "double"]),
+                   ("stored", ["int", "int", "double", "int"]),
+                   ("fenv_tested", ["double", "double", "double", "double"])])
+        S = lambda c, *a: {"call": c, "args": list(a)}
+        cases = [  # (sample, gates, classical reads)
+            (S(0, i32(5), HALF), 1, 1),
+            (S(1, i32(5), i32(7), HALF), 2, 0),
+            (S(2, i32(5), HALF, i32(3)), 1, 1),
+            (S(3, i32(5), HALF), 1, 1),
+            (S(4, i32(5), HALF, i32(2), i32(9)), 1, 1),
+            (S(5, i32(5), i32(7), HALF, i32(2)), 2, 0),     # m = x > k ? z : 0, z never measured
+            (S(5, i32(1), i32(7), HALF, i32(2)), 2, 0),     # the arm not run: still z's merge
+            (S(6, i32(5), HALF, i32(2), i32(9)), 1, 1),     # m = x > k ? c + 5 : c: classical with x
+            (S(6, i32(1), HALF, i32(2), i32(9)), 1, 1),
+            (S(7, i32(5), HALF, HALF), 2, 0),               # rotated again: a new rail
+            (S(8, i32(5), i32(7), HALF, i32(0)), 1, 1),     # a[0] = x + 1
+            (S(8, i32(5), i32(7), HALF, i32(1)), 2, 0),     # a[1] = z
+            (S(9, f64(1.5), HALF, f64(3.0), f64(4.0)), 1, 1),   # 65: f collapses with y
+            (S(9, f64(0.5), HALF, f64(3.0), f64(4.0)), 1, 1),
+        ]
+        for smp, gates, reads in cases:
+            rr = oracle.run_sample(o1, sp, smp)
+            self.assertEqual(rr.violations, [], smp)
+            ev = oracle.trace_sample(o1, sp, smp)
+            got = [e["kind"] for e in ev if e["ev"] == "site" and e["kind"] in ("measure", "read")]
+            self.assertEqual((got.count("measure"), got.count("read")), (gates, reads), (smp, ev))
+            self.assertEqual(len(rr.measured), gates, smp)
+            self.assertFalse(any(r.get("kind") == "read" for r in rr.rotations), smp)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
