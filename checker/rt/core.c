@@ -887,19 +887,60 @@ static void log_shot_end(long k, int code, int timeout, const char *out, const c
 
 /* -- theta -- */
 
+/* $CQE_THETA_ALL "-" (cq-8m6v: run.py pipes its batch, no files): the schedules come first on stdin,
+ * ended by a line "%%"; the driver reads its records from the rest of stdin (CQD_SAMPLES "-"). Read
+ * by a constructor, before the driver's main touches stdin, into the system heap. */
+static char *theta_stdin;
+
+__attribute__((constructor(102))) static void theta_stdin_ctor(void) {
+  const char *th = getenv("CQE_THETA_ALL");
+  if (!th || strcmp(th, "-") != 0)
+    return;
+  size_t cap = 1 << 16, n = 0, line = 0;
+  char *b = malloc_zone_malloc(malloc_default_zone(), cap);
+  int c;
+  while (b && (c = getc(stdin)) != EOF) {
+    if (n + 2 > cap) {
+      cap *= 2;
+      b = malloc_zone_realloc(malloc_default_zone(), b, cap);
+      if (!b)
+        break;
+    }
+    b[n++] = (char)c;
+    if (c == '\n') {
+      if (n - line == 3 && b[line] == '%' && b[line + 1] == '%') {
+        n = line;
+        break;
+      }
+      line = n;
+    }
+  }
+  if (!b) {
+    fprintf(stderr, "cq: chk-core: out of memory reading the theta schedules\n");
+    abort();
+  }
+  b[n] = 0;
+  theta_stdin = b;
+}
+
 static void theta_all_load(const char *path) {
   theta_all_set = 1;
-  FILE *f = fopen(path, "rb");
-  if (!f)
-    shot_die("cannot open $CQE_THETA_ALL");
-  fseek(f, 0, SEEK_END);
-  long n = ftell(f);
-  fseek(f, 0, SEEK_SET);
-  theta_all = sys_alloc((size_t)n + 1);
-  if (fread(theta_all, 1, (size_t)n, f) != (size_t)n)
-    shot_die("cannot read $CQE_THETA_ALL");
-  theta_all[n] = 0;
-  fclose(f);
+  if (!strcmp(path, "-")) {
+    static char none[1];
+    theta_all = theta_stdin ? theta_stdin : none;
+  } else {
+    FILE *f = fopen(path, "rb");
+    if (!f)
+      shot_die("cannot open $CQE_THETA_ALL");
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    theta_all = sys_alloc((size_t)n + 1);
+    if (fread(theta_all, 1, (size_t)n, f) != (size_t)n)
+      shot_die("cannot read $CQE_THETA_ALL");
+    theta_all[n] = 0;
+    fclose(f);
+  }
   size_t cap = 0;
   for (char *p = theta_all; *p;) {
     char *nl = strchr(p, '\n');

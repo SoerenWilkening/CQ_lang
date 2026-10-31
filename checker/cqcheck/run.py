@@ -1229,59 +1229,80 @@ def _shot_result(side: str, sample: dict, pre: List[dict], evs: List[dict], end:
                    {"freed": end["freed"], "fdig": end["fdig"]} if "freed" in end else None)
 
 
+_WORK: Dict[int, Path] = {}
+
+
+def _work_dir() -> Path:
+    """This thread's runner directory (trace, capture files), made once and removed at exit."""
+    k = threading.get_ident()
+    d = _WORK.get(k)
+    if d is None or not d.is_dir():
+        d = _WORK[k] = Path(tempfile.mkdtemp(prefix="cqe-run."))
+        (d / "shot").mkdir()
+        if len(_WORK) == 1:
+            import atexit
+            atexit.register(lambda: [shutil.rmtree(x, ignore_errors=True) for x in list(_WORK.values())])
+    return d
+
+
 def _run_part(prog: Path, items: Sequence[Tuple[dict, str, Optional[str]]], side: str,
               timeout: float) -> List[RunResult]:
     """(sample, record, theta) items in runner processes, in order: one runner over all of them, and a
     fresh one after a sample a runner did not finish."""
     out: List[RunResult] = []
-    with tempfile.TemporaryDirectory(prefix="cqe-run.") as wd:
-        w = Path(wd)
-        theta_all = None
-        if any(th is not None for _, _, th in items):
-            theta_all = w / "theta"
-            theta_all.write_text("".join(f"@{k}\n{th}" for k, (_, _, th) in enumerate(items) if th is not None))
-        (w / "shot").mkdir()
-        pos = 0
-        while pos < len(items):
-            (w / "samples").write_text("".join(rec for _, rec, _ in items[pos:]))
-            trace = w / "trace.jsonl"
-            env = dict(os.environ, CQE_TRACE=str(trace), CQD_SAMPLES=str(w / "samples"),
-                       CQE_COMPACT="0" if os.environ.get("CQE_COMPACT") == "0" else "1",   # 0: diagnostics
-                       CQE_SHOT_DIR=str(w / "shot"), CQE_SHOT_BASE=str(pos),
-                       CQE_SHOT_TIMEOUT=repr(float(timeout)), CQE_SHOT_STEPS=str(int(STEP_BUDGET)))
-            env.pop("CQE_THETA", None)
-            env.pop("CQE_THETA_ALL", None)
-            if theta_all is not None:
-                env["CQE_THETA_ALL"] = str(theta_all)
-            # a backstop only; capped below poll()'s int32 milliseconds (cq-vo6v: 47301 uncached
-            # samples in one runner overflowed it, an OverflowError for 56 and 156)
-            budget = min((2 * timeout + 2) * (len(items) - pos) + 60, 2_000_000.0)
-            try:
-                p = subprocess.run([str(prog)], cwd=wd, env=env, capture_output=True, timeout=budget)
-                code, killed = p.returncode, False
-                setup_out, err = p.stdout.decode(errors="replace"), p.stderr.decode(errors="replace")
-            except subprocess.TimeoutExpired as e:
-                code, killed = None, True
-                setup_out, err = (e.stdout or b"").decode(errors="replace"), (e.stderr or b"").decode(errors="replace")
-            # the trace is read one line and one shot at a time (cq-8m6v): a finished shot becomes its
-            # RunResult and its events are dropped, so memory holds one sample's events at a time
-            pre, done, open_shots = _stream_shots(trace, side, items, setup_out, timeout)
-            while pos < len(items) and pos in done:
-                out.append(done.pop(pos))
-                pos += 1
-            if pos == len(items):
-                break
-            # the runner ended inside sample pos: that sample fails, the rest run in a new runner
-            events, bad = _with_bad(pre + open_shots.get(pos, []))
-            if killed:
-                extra = [{"what": "timeout", "h": None, "msg": f"no exit within {timeout}s"}]
-            elif code == 3 and "cqd: sample" in err:
-                extra = [{"what": "sample", "h": None, "msg": err.strip()[-500:]}]
-            else:
-                extra = [{"what": "runner", "h": None,
-                          "msg": f"the runner ended (status {code}) inside this sample: {err.strip()[-500:]}"}]
-            out.append(_result(side, items[pos][0], events, setup_out, None if killed else code, extra + bad))
+    # cq-8m6v: the batch goes in on stdin (the theta schedules, a "%%" line, then the records:
+    # core.c, drivers.driver_source), and the trace and capture files live in this thread's
+    # work directory, made once per process
+    w = _work_dir()
+    # the program's own working directory is fresh per batch, as before: what a sample writes there
+    # (a host effect's file) never reaches another batch
+    wd = tempfile.mkdtemp(prefix="cwd.", dir=w)
+    theta_all = None
+    if any(th is not None for _, _, th in items):
+        theta_all = "".join(f"@{k}\n{th}" for k, (_, _, th) in enumerate(items) if th is not None) + "%%\n"
+    pos = 0
+    while pos < len(items):
+        stdin = (theta_all or "") + "".join(rec for _, rec, _ in items[pos:])
+        trace = w / "trace.jsonl"
+        env = dict(os.environ, CQE_TRACE=str(trace), CQD_SAMPLES="-",
+                   CQE_COMPACT="0" if os.environ.get("CQE_COMPACT") == "0" else "1",   # 0: diagnostics
+                   CQE_SHOT_DIR=str(w / "shot"), CQE_SHOT_BASE=str(pos),
+                   CQE_SHOT_TIMEOUT=repr(float(timeout)), CQE_SHOT_STEPS=str(int(STEP_BUDGET)))
+        env.pop("CQE_THETA", None)
+        env.pop("CQE_THETA_ALL", None)
+        if theta_all is not None:
+            env["CQE_THETA_ALL"] = "-"
+        # a backstop only; capped below poll()'s int32 milliseconds (cq-vo6v: 47301 uncached
+        # samples in one runner overflowed it, an OverflowError for 56 and 156)
+        budget = min((2 * timeout + 2) * (len(items) - pos) + 60, 2_000_000.0)
+        try:
+            p = subprocess.run([str(prog)], cwd=wd, env=env, capture_output=True, timeout=budget,
+                               input=stdin.encode())
+            code, killed = p.returncode, False
+            setup_out, err = p.stdout.decode(errors="replace"), p.stderr.decode(errors="replace")
+        except subprocess.TimeoutExpired as e:
+            code, killed = None, True
+            setup_out, err = (e.stdout or b"").decode(errors="replace"), (e.stderr or b"").decode(errors="replace")
+        # the trace is read one line and one shot at a time (cq-8m6v): a finished shot becomes its
+        # RunResult and its events are dropped, so memory holds one sample's events at a time
+        pre, done, open_shots = _stream_shots(trace, side, items, setup_out, timeout)
+        while pos < len(items) and pos in done:
+            out.append(done.pop(pos))
             pos += 1
+        if pos == len(items):
+            break
+        # the runner ended inside sample pos: that sample fails, the rest run in a new runner
+        events, bad = _with_bad(pre + open_shots.get(pos, []))
+        if killed:
+            extra = [{"what": "timeout", "h": None, "msg": f"no exit within {timeout}s"}]
+        elif code == 3 and "cqd: sample" in err:
+            extra = [{"what": "sample", "h": None, "msg": err.strip()[-500:]}]
+        else:
+            extra = [{"what": "runner", "h": None,
+                      "msg": f"the runner ended (status {code}) inside this sample: {err.strip()[-500:]}"}]
+        out.append(_result(side, items[pos][0], events, setup_out, None if killed else code, extra + bad))
+        pos += 1
+    shutil.rmtree(wd, ignore_errors=True)
     return out
 
 

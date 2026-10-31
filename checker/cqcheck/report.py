@@ -414,18 +414,24 @@ def _prebuild(ex: Example, ours: Path, need_ref_run: bool) -> None:
         spec = drivers.driver_spec(ex.name, ex.dir)
     except Exception:  # noqa: BLE001 - the run reports it
         return
-    for build in (lambda: oracle.executable(ex.o1, spec), lambda: run.build(ours, spec, []),
-                  (lambda: run.build(ex.reference, spec, [])) if need_ref_run else None):
-        if build is None:
-            continue
+    def one(build) -> None:
         try:
             build()
         except Exception:  # noqa: BLE001 - see the docstring
             pass
 
+    # side by side: each is a chain of tool starts that waits on nothing of the others
+    builds = [lambda: oracle.executable(ex.o1, spec), lambda: run.build(ours, spec, [])]
+    if need_ref_run:
+        builds.append(lambda: run.build(ex.reference, spec, []))
+    ts = [threading.Thread(target=one, args=(b,), daemon=True) for b in builds]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+
 
 def _start_prebuild(ex: Example, ours: Path, need_ref_run: bool):
-    import threading
     t = threading.Thread(target=_prebuild, args=(ex, ours, need_ref_run), daemon=True)
     t.start()
     return t
