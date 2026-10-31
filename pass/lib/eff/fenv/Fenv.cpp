@@ -46,7 +46,11 @@
 // flags rail is an output"). The final quantum MODE is kept for the same reason (orchestrator
 // decision under rule 23 and NORTHSTAR goal 2, recorded on cq-w1-eff-fenv). A state is final when no
 // instruction that may change it is reachable after the current one in the original function: the
-// module re-decides after every instruction it lowers and sets Role::Output then.
+// module re-decides after every instruction it lowers and sets Role::Output then. A state rail
+// rule 2 makes classical (its sources measured, before or after it was computed: owner ruling
+// cq-r6bc) is no output: it is uncomputed and its classical value written back to the host at the
+// collapse point, feraiseexcept(v) / fesetround(m) (65; writeBack, after every measurement and
+// every instruction this module lowers).
 //
 // ANCHOR. The state is no SSA value of the original program, so the spine's flushBefore could
 // resolve a state rail at the end of its block before a later block reads it. Every rail this
@@ -215,6 +219,8 @@ struct State {
   bool traps = false;
   AllocaInst *anchor = nullptr;
   DenseSet<const Value *> output;          // rails this module set Role::Output
+  // Rule 2 collapse probes (writeBack): private binding keys, one per state piece (0 FLAGS, 1 MODE).
+  Instruction *probeKey[2] = {nullptr, nullptr};
   // Analyses of original functions (the walked one and any rule-19 inlined callee).
   std::map<const Function *, std::unique_ptr<DominatorTree>> dt;
   std::map<const Function *, std::unique_ptr<LoopInfo>> li;
@@ -521,12 +527,99 @@ void requireWritable(LoweringContext &ctx, State &st, const Instruction &I) {
                   bad);
 }
 
-// After every lowered instruction: a state rail with no possible writer ahead is final, an output.
-// A writer inside a loop is ignored here: if it ever wrote the quantum part, requireWritable stops it.
+void setFlags(LoweringContext &ctx, State &st, Value *f);
+void setMode(LoweringContext &ctx, State &st, Value *m);
+
+// The classical value rail h holds at the builder's point when rule 2 collapses it (every source a
+// measured rail or classical, at least one measured), else nullptr. The spine's collapse is reached
+// through LoweringContext::operand: h is bound to a private key of this module, a detached
+// instruction no original program has, so the query reads exactly what operand() of an original
+// value bound to h would read. The keys are never freed: a binding outlives this module's state.
+Value *collapsedValue(LoweringContext &ctx, State &st, unsigned which, Value *h) {
+  Instruction *&key = st.probeKey[which];
+  if (!key) {
+    key = new AllocaInst(Type::getInt32Ty(C(ctx)), 0, nullptr, Align(4), "", static_cast<Instruction *>(nullptr));
+    ctx.bindFields(key, {Operand{h, true}});
+  } else {
+    ctx.rebind(key, {Operand{h, true}});
+  }
+  Operand op = ctx.operand(key);
+  return op.handle ? nullptr : op.v;
+}
+
+// CR rule 2 with rule 23 (owner ruling cq-r6bc, 2026-10-29): a FLAGS or MODE rail computed only from
+// measured rails and classical values (data flow, not program order: it may predate the
+// measurement) collapses. Its rail is uncomputed (Role::Garbage again if this module had made it
+// the final output; the spine's flush uncomputes it while its measured sources hold the outcome),
+// and its classical value is written to the HOST environment at the collapse point:
+// feraiseexcept(v) for the flags (v = 0 raises nothing), fesetround(m) for the mode. The quantum
+// part is then empty / classical, so rule 23's final-rail output covers only what stays quantum.
+// Called after every measurement (afterMeasure) and after every instruction this module lowers (a
+// state set from a saved part may already be classical). Saved parts in fenv_t / fexcept_t objects
+// stay rails until a restore makes them the state. The write-back is a single unconditional host
+// write, so the point must be one every path of the entry function passes with no quantum predicate.
+void writeBack(LoweringContext &ctx, State &st, const Instruction &I) {
+  for (unsigned which = 0; which < 2; ++which) {
+    Value *h = which == 0 ? st.flags : st.mode;
+    if (!h)
+      continue;
+    if (which == 0 ? !outDominates(st.flagsAt, ctx.B().GetInsertBlock())
+                   : !outDominates(st.modeAt, ctx.B().GetInsertBlock()))
+      continue;   // not the state on every path here: no collapse is read (requireValid refuses a use)
+    Value *v = collapsedValue(ctx, st, which, h);
+    if (!v)
+      continue;
+    const char *what = which == 0 ? "flags" : "rounding mode";
+    auto refuse = [&](const char *why) {
+      unimplemented(std::string("eff-fenv: rule 2 collapses the quantum ") + what + " (its sources are measured) " +
+                        why + "; its host write-back has no single point (rule 23)",
+                    &I);
+    };
+    if (!ctx.S.isEntry() || I.getFunction() != st.orig)
+      refuse("in a clone or a rule-19 inlined callee");
+    if (loopInfo(st, *I.getFunction()).getLoopFor(I.getParent()))
+      refuse("inside a loop");
+    if (predicateFlag(ctx))
+      refuse("under a quantum predicate");
+    if (!classicallyTop(ctx, st, I.getParent()))
+      refuse("in a block a classical branch chooses");
+    Type *i32Ty = Type::getInt32Ty(C(ctx));
+    FunctionCallee f = ctx.M.getOrInsertFunction(which == 0 ? "feraiseexcept" : "fesetround",
+                                                 FunctionType::get(i32Ty, {i32Ty}, false));
+    if (v->getType() != i32Ty)
+      internalError("eff-fenv: a collapsed fenv state of a type other than i32", &I);
+    ctx.B().CreateCall(f, {v});
+    if (st.output.erase(h))
+      ctx.unc().setRole(ctx.unc().idOf(h), Role::Garbage);
+    if (which == 0) {
+      setFlags(ctx, st, nullptr);
+    } else {
+      setMode(ctx, st, nullptr);
+      st.modeVal = v;
+      st.modeValAt = &I;
+    }
+  }
+}
+
+// A cq_measure of the CQ.h surface (cq_measure_<T>).
+bool isMeasure(const Instruction &I) {
+  auto *CB = dyn_cast<CallBase>(&I);
+  const Function *G = CB ? CB->getCalledFunction() : nullptr;
+  return G && G->getName().starts_with("cq_measure");
+}
+
+// After every lowered instruction (and every measurement): a state rail with no possible writer and
+// no measurement ahead is final, an output. A measurement ahead may make it classical (rule 2,
+// writeBack), and an output's sources are freed after their last use, which its later uncompute
+// would need. A writer or measurement inside a loop is ignored here: if it ever wrote the quantum
+// part, requireWritable stops it; a collapse there is refused by writeBack.
 void settle(LoweringContext &ctx, State &st, const Instruction &I) {
+  writeBack(ctx, st, I);
   LoopInfo &LI = loopInfo(st, *I.getFunction());
   auto final = [&](bool (*writes)(const Instruction &)) {
-    return !anyAfter(I, [&](const Instruction &n) { return writes(n) && !LI.getLoopFor(n.getParent()); });
+    return !anyAfter(I, [&](const Instruction &n) {
+      return (writes(n) || isMeasure(n)) && !LI.getLoopFor(n.getParent());
+    });
   };
   if (st.flags && !st.output.count(st.flags) && final(writesFlags)) {
     ctx.unc().setRole(ctx.unc().idOf(st.flags), Role::Output);
@@ -1168,6 +1261,17 @@ void lowerFenvCall(LoweringContext &ctx, CallBase &CB) {
     break;
   }
   settle(ctx, st, CB);
+}
+
+// After the spine lowered a cq_measure: rule 2 may have made the quantum state classical (65).
+void afterMeasure(LoweringContext &ctx, CallInst &measure) {
+  auto &m = states();
+  auto it = m.find(&ctx.out());
+  if (it == m.end() || !it->second || !it->second->orig || it->second->orig->getParent() != measure.getModule())
+    return;
+  State &st = *it->second;
+  if (st.flags || st.mode)
+    settle(ctx, st, measure);
 }
 
 } // namespace cq::fenv
