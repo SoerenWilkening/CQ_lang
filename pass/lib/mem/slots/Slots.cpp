@@ -19,10 +19,16 @@
 //    re-emitted over i32 cells (-O1's byte GEPs over i8 cells are cell indices, 58). An access at
 //    another width than the cell (a bit view, 63) is unimplemented.
 //  - A _Bool cell (one-byte cells whose loads all carry !range [0, 2) and whose stores all store a
-//    zext from i1 or the constant 0 / 1) holds an i1 rail; its i8 load is bound to that i1 rail.
+//    zext from i1 or the constant 0 / 1) holds an i1 rail.
+//
+//    Its i8 load is bound to that i1 rail when every use truncates it to i1; when no use does, to a
+//    zext_i1_to_i8 of the rail (a fresh rail); both at once is unimplemented.
 //
 // Cell contents. A slot cell is homogeneous (rule 20): a classical store materialises its value as a
-// seed rail alloc_<W>(v) (rule 7). A store under a quantum predicate stores
+// seed rail alloc_<W>(v) (rule 7). A classical store into a cell that keeps its seed (dynamic,
+// escaping, parameter or extern global object) whose cell the same block overwrites before any
+// access of the object or call that may touch it is dead and emits nothing (115: store 0 then the
+// cq_theta result). A store under a quantum predicate stores
 // select(predicate, value, old) into a fresh rail (rules 9, 20).
 //
 // Rails through memory. Uncompute (rule 5) sees SSA uses only, so a rail read back through a cell must
@@ -609,6 +615,48 @@ Operand readCell(LoweringContext &ctx, FnState &st, const Site &s, const Instruc
   return Operand{h, true};
 }
 
+// CR rules 7 and 20 (cq-c9il): a classical store whose cell is overwritten in the same block before any
+// instruction may read, write or hand out the object stores a seed nothing can read: it is dead and
+// emits nothing. -O1 writes `x[i] = 0; cq_theta(&x[i], t)` as store 0, then a store of the cq_theta
+// result into the same cell (115, 178: the stored 0 is the cq_theta's classical operand, minted by
+// the cq_theta itself). Materialising the seed into a cell that is read back at run-time cells would
+// make it a register that the overwrite leaks.
+bool deadClassicalStore(LoweringContext &ctx, FnState &st, const ObjInfo &info, ObjectId o, const StoreInst &S,
+                        const Addr &cell) {
+  if (S.isVolatile() || S.isAtomic())
+    return false;
+  for (auto it = std::next(S.getIterator()); it != S.getParent()->end(); ++it) {
+    const Instruction &I = *it;
+    if (auto *O = dyn_cast<StoreInst>(&I)) {
+      if (!hasObject(ctx, O->getPointerOperand(), o))
+        continue;
+      return !O->isVolatile() && !O->isAtomic() && O->getValueOperand()->getType() == S.getValueOperand()->getType() &&
+             !ctx.T.isFatPointer(O->getPointerOperand(), ctx.S) &&
+             sameCell(decompose(O->getPointerOperand(), ctx.M.getDataLayout()), cell);
+    }
+    if (auto *ld = dyn_cast<LoadInst>(&I)) {
+      if (hasObject(ctx, ld->getPointerOperand(), o))
+        return false;
+      continue;
+    }
+    if (isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I) || isa<VAArgInst>(I)) {
+      if (hasObject(ctx, I.getOperand(0), o))
+        return false;
+      continue;
+    }
+    auto *CB = dyn_cast<CallBase>(&I);
+    if (!CB || isa<DbgInfoIntrinsic>(CB) || isCqSurface(*CB))
+      continue;
+    for (const Use &u : CB->args())
+      if (hasObject(ctx, u.get(), o))
+        return false;   // a memory intrinsic, a lifetime marker or a call handed the object
+    if (CB->mayReadOrWriteMemory() &&
+        (info.escaping || info.kind == RootKind::Param || info.kind == RootKind::Global))
+      return false;
+  }
+  return false;
+}
+
 bool isThetaResult(const Value *v) {
   if (auto *z = dyn_cast<ZExtInst>(v); z && z->getSrcTy()->isIntegerTy(1))
     v = z->getOperand(0);
@@ -685,6 +733,31 @@ void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
   cellRail(*s.info, ld.getType(), ld);
   Operand h = readCell(ctx, st, s, ld, ld.getType());
   st.lowered[&ld] = h;
+  if (s.info->boolCells) {
+    // A _Bool cell holds an i1 rail behind i8 memory. The trunc i8 -> i1 of the load names that rail
+    // (spine, cq-sj2j: rule 3, no gate); any other use reads the i8 value, which is the rail widened
+    // (cq-c9il): a zext_i1_to_i8 into a fresh rail, so every reader gets a rail of its operand's width.
+    bool narrow = false, wide = false;
+    for (const Use &u : ld.uses()) {
+      auto *t = dyn_cast<TruncInst>(u.getUser());
+      if (t && t->getDestTy()->isIntegerTy(1))
+        narrow = true;
+      else
+        wide = true;
+    }
+    if (narrow && wide)
+      unimplemented("mem-slots: a _Bool cell load read both as its i1 rail (trunc) and at i8 (the trunc names "
+                    "the rail, the i8 reader needs a widened copy: rule 3 views, cq-c9il)",
+                    &ld);
+    if (wide) {
+      abi::TemplateSpec spec;
+      spec.op = "zext";
+      spec.w = RailType{Kind::Int, 1};
+      spec.to = RailType{Kind::Int, 8};
+      ctx.emitTemplate(spec, {h}, &ld);
+      return;
+    }
+  }
   ctx.bindFields(&ld, {h});
 }
 
@@ -719,6 +792,14 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
     // Rule 20: a slot cell is homogeneous; a classical store materialises a seed rail (rule 7).
     if (v->getType()->isPointerTy())
       unimplemented("mem-slots: a pointer stored into a slot object", &stI);
+    // A seed that a cell keeps (a dynamic, escaping, parameter or extern global object) but that is
+    // overwritten before anything can read it is never materialised (rules 7, 20; cq-c9il).
+    bool staticCell = (s.info->kind == RootKind::Local || s.info->kind == RootKind::Heap) && !s.info->escaping &&
+                      !isDynamic(ctx, st, *s.info, s.o);
+    bool localGlobal =
+        s.info->kind == RootKind::Global && cast<GlobalVariable>(s.info->root)->hasLocalLinkage();
+    if (!staticCell && !localGlobal && deadClassicalStore(ctx, st, *s.info, s.o, stI, s.a))
+      return;
     Value *x = val.v;
     if (s.info->boolCells)
       x = B.CreateTrunc(x, Type::getInt1Ty(ctx.M.getContext()));
