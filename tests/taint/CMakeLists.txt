@@ -24,3 +24,6 @@ cq_add_unit_test(taint_libwriter taint_libwriter.cpp)
 # still depends on it given the join (shared/fallthrough case blocks, if/else-if joins).
 cq_add_unit_test(taint_joinchoice taint_joinchoice.cpp)
 target_compile_definitions(taint_joinchoice PRIVATE CQ_SPEC_DIR="${CQ_SPEC_DIR}")
+# cq-wxch: a loop exit through select c, t, true / select c, false, f / xor x, true keeps its
+# classical disjunct (rule 14 case 3).
+cq_add_unit_test(taint_exitselect taint_exitselect.cpp)

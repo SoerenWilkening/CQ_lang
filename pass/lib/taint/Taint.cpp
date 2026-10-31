@@ -1040,6 +1040,26 @@ static void forcingLeaves(const Value *C, bool exitOn, Analyzer &A,
     forcingLeaves(a, !exitOn, A, quantum, out);
     return;
   }
+  // cq-wxch: the negated-condition selects, as spine's loops::classify splits them (cq-dtvp):
+  // select c, t, true is !c | t and select c, false, f is !c & f. -O1 writes `i + 1 >= n || q` as
+  // select(i + 1 < n, q, true).
+  if (auto *Sel = dyn_cast<SelectInst>(C); Sel && Sel->getType()->isIntegerTy(1)) {
+    const Value *c = Sel->getCondition(), *t = Sel->getTrueValue(), *f = Sel->getFalseValue();
+    if (match(f, m_One())) {
+      if (exitOn) {
+        forcingLeaves(c, false, A, quantum, out);
+        forcingLeaves(t, true, A, quantum, out);
+      }
+      return;
+    }
+    if (match(t, m_Zero())) {
+      if (!exitOn) {
+        forcingLeaves(c, true, A, quantum, out);
+        forcingLeaves(f, false, A, quantum, out);
+      }
+      return;
+    }
+  }
 }
 
 // Rule 14: a loop whose next trip depends on a tainted terminator advances every carried value by a
