@@ -870,6 +870,12 @@ void Walker::emitTerminator(BasicBlock *b) {
           unimplemented("spine: an entry returning a quantum value of non-integer C type (§1.1 names no "
                         "encoding of a handle in it)",
                         t);
+        // cq-juf6 (orchestrator decision under CR §1.1, rule 19 and principle 2): an i32 handle does
+        // not fit an i1/i8/i16 C return, and truncating it would return another rail's handle.
+        if (rt->getIntegerBitWidth() < 32)
+          unimplemented("spine: an entry returning a quantum value in a C return type narrower than i32 "
+                        "(rule 19 keeps the C signature, §1.1's handle is an i32; SPEC_ISSUES)",
+                        t);
         v = B.CreateZExtOrTrunc(op.v, rt);
       }
       nr = B.CreateRet(v);

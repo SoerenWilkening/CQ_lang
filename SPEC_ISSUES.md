@@ -34,3 +34,9 @@ Entry format:
 - Disagreement: callee_measure computes y = x + c (c classical), then readout(x, k) measures x's rail inside the clone, then `cq_measure(y)`. y's only quantum source is measured, so the reference's `cqrt_measure_i32(%6)` (y) should be a classical read with no measurement. The header itself says x's measurement "collapses ... through y = x + c, the entangled y".
 - Evidence: `cqcheck run 136_callee_measure --oracle both` on branch cq-y1ll (C oracle counts a measure only for a non-collapsed operand): s6 pass, c fail "our measurement(s) [1] (rails [2]) match no C measurement". Same shape likely in 102 raise_handled (hit = select(x > k, s, seed), measured after x); 102 does not lower today (eff-tape unimplemented), not checked.
 - Bead: cq-9hwg
+
+## Entry returning a quantum value narrower than i32 (976_u06 probe, no corpus example)
+- Rule: CR rule 19 (an entry returning an unmeasured quantum value "keeps its C signature and returns the handle") vs §1.1 (every quantum value is an `i32` handle; narrow handle arguments at externally visible signatures widen with the C ABI's zeroext/signext).
+- Gap: for `_Bool`, `char` or `short` returns (IR `i1`/`i8`/`i16`) the C signature cannot hold the `i32` handle; truncating it returns another rail's handle. CR does not say whether the entry's return widens to `i32` (as §1.1 does for arguments), is measured, or is outside the language. 161 and 162 return `i32`.
+- Ours meanwhile: `cq::unimplemented` (orchestrator decision under §1.1, rule 19 and principle 2); `i64` returns stay a zext of the handle.
+- Bead: cq-juf6
