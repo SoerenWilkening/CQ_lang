@@ -44,7 +44,8 @@ from cqcheck.contracts import Verdict, to_json
 PASS, FAIL, ERROR, NOT_RUN = "pass", "fail", "error", "not-run"
 
 ROOT = Path(__file__).resolve().parents[2]
-LLVM_BIN = Path(os.environ.get("CQ_LLVM_BIN", "/usr/local/opt/llvm@19/bin"))
+DEFAULT_LLVM_BIN = Path("/usr/local/opt/llvm@19/bin")      # CLAUDE.md Pins
+LLVM_BIN = Path(os.environ.get("CQ_LLVM_BIN", str(DEFAULT_LLVM_BIN)))
 K_CHECK = 4  # CLAUDE.md: both sides run at K = 4.
 
 

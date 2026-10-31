@@ -63,6 +63,15 @@ def _one(ex: report.Example, ours_dir: Optional[Path], oracle: str) -> Verdict:
     return report.evaluate(ex, lowered, oracle, lower_error=err, diff_out=diff_out)
 
 
+def stores_progress(ours_dir: Optional[Path], oracle: str) -> bool:
+    """Only our pass, both oracles, the pinned CQ_spec and the pinned toolchain feed progress
+    (cq-8dr6; cq-lum1: a non-default CQ_LLVM_BIN lowers and runs with another LLVM)."""
+    return (ours_dir is None and oracle == "both" and "CQ_PLUGIN" not in os.environ
+            and report.spec_dir() == (report.ROOT.parent / "CQ_spec").resolve()
+            and all(p.resolve() == report.DEFAULT_LLVM_BIN.resolve()
+                    for p in (report.LLVM_BIN, Path(os.environ.get("CQ_LLVM_BIN", str(report.DEFAULT_LLVM_BIN))))))
+
+
 def _run_examples(a, examples, ours_dir) -> List[Verdict]:
     if not a.full:
         os.environ["CQ_QUICK"] = "1"          # sampling.quick_mode and report: fast development run
@@ -77,10 +86,8 @@ def _run_examples(a, examples, ours_dir) -> List[Verdict]:
         futs = {pool.submit(_one, e, ours_dir, a.oracle): e for e in examples}
         for f in concurrent.futures.as_completed(futs):
             v = f.result()
-            ours_pass = (ours_dir is None and a.oracle == "both" and "CQ_PLUGIN" not in os.environ
-                         and report.spec_dir() == (report.ROOT.parent / "CQ_spec").resolve())
-            if ours_pass:
-                report.save_verdict(v)        # only our pass, both oracles, feeds progress (cq-8dr6)
+            if stores_progress(ours_dir, a.oracle):
+                report.save_verdict(v)
             by_name[v.example] = v
             ok = report.requested_green(v)
             print(f"{'ok  ' if ok else 'FAIL'} {v.example}  s6={v.s6} c={v.c_oracle} verifier={v.verifier}"

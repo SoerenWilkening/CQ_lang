@@ -387,6 +387,24 @@ class Cli(unittest.TestCase):
         # cq-8dr6: a run with --ours is not our pass; it never reaches the progress store
         self.assertNotIn("04_value_arm_ifelse", report.load_verdicts())
 
+    def test_progress_needs_the_pinned_toolchain(self):
+        # cq-lum1: a run with a non-default CQ_LLVM_BIN lowers and runs with another LLVM; its
+        # verdicts never reach the progress store
+        from unittest import mock
+        env = {k: v for k, v in os.environ.items() if k not in ("CQ_PLUGIN", "CQ_LLVM_BIN", "CQ_SPEC_DIR")}
+        with mock.patch.dict(os.environ, env, clear=True):
+            self.assertTrue(cli.stores_progress(None, "both"))
+            self.assertFalse(cli.stores_progress(None, "ref"))
+            self.assertFalse(cli.stores_progress(Path(TMP), "both"))
+            with mock.patch.dict(os.environ, {"CQ_LLVM_BIN": "/usr/local/opt/llvm@18/bin"}):
+                self.assertFalse(cli.stores_progress(None, "both"))
+            with mock.patch.dict(os.environ, {"CQ_LLVM_BIN": str(report.DEFAULT_LLVM_BIN)}):
+                self.assertTrue(cli.stores_progress(None, "both"))
+            with mock.patch.object(report, "LLVM_BIN", Path("/usr/local/opt/llvm@18/bin")):
+                self.assertFalse(cli.stores_progress(None, "both"))
+            with mock.patch.dict(os.environ, {"CQ_PLUGIN": str(REAL_PLUGIN)}):
+                self.assertFalse(cli.stores_progress(None, "both"))
+
     def test_resolve(self):
         self.assertEqual(report.resolve_examples(["4"])[0].name, "04_value_arm_ifelse")
         self.assertEqual(report.resolve_examples(["04_value"])[0].name, "04_value_arm_ifelse")
