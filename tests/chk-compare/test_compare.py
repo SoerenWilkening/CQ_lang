@@ -395,6 +395,26 @@ class COracle(unittest.TestCase):
         self.assertFalse(c.equal)
         self.assertTrue(any("f:5" in r for r in c.reasons), c.reasons)
 
+    def test_dropped_global_phase_keeps_its_reach(self):
+        # 152 (bead cq-7bvs): a loop's cq_phi site reached on every trip where its predicate holds; on
+        # this group trip 1's phase fires at every sample, so it is a dropped global phase. Trip 2's
+        # phase (on a) must take trip 2's reach, after the theta between them that reads a, not trip
+        # 1's reach (the earliest), which would put it before that theta.
+        c_side = side("c", lambda a, b, s: dict(
+            rots=[self.csite("f", 1, "theta", 1.0, a), self.csite("f", 5, "phi", 0.5),
+                  self.csite("f", 2, "theta", 2.0, a)] + ([self.csite("f", 5, "phi", 0.5)] if a else []),
+            kept=[]))
+        ours = side("o", lambda a, b, s: dict(
+            rots=[ry(1, 1.0), ph(21, 1, 0.5), ry(1, 2.0), ph(22, a, 0.5)], kept=[keep(1, a), keep(2, b)]))
+        c = compare(ours, c_side, QKEY, "c")
+        self.assertTrue(c.equal, c.reasons)
+        # the global phase taking a reach hides no difference: trip 2's phase missing, or on b
+        for rots in ([ry(1, 1.0), ph(21, 1, 0.5), ry(1, 2.0)],
+                     [ry(1, 1.0), ph(21, 1, 0.5), ry(1, 2.0), ph(22, 2, 0.5)]):
+            ours = side("o", lambda a, b, s: dict(
+                rots=[dict(r, fv=b) if r.get("fv") == 2 else r for r in rots], kept=[keep(1, a), keep(2, b)]))
+            self.assertFalse(compare(ours, c_side, QKEY, "c").equal)
+
     def test_order_against_dependent_gate(self):
         # the C program puts the phase on a&b before the Ry on b; the lowered order reverses them
         c_first = side("c", lambda a, b, s: dict(

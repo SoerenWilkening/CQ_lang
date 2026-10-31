@@ -26,7 +26,9 @@ What is compared (CR §6, CLAUDE.md "The §6 checker"):
   skips the call leaves no reach, so a site's k-th reach is not one gate across samples: a gate
   firing at a sample takes the site's earliest reach there not yet taken that agrees with it. Every
   reach must be taken, except phi reaches forming the same multiset of angles at every sample (a
-  global phase). The pairs must be in an order consistent with every sample's hit order. One gate
+  global phase). A dropped global phase may take its site's earliest reach not yet taken, or none
+  (it keeps its place among the gates of its site). The pairs must be in an order consistent with
+  every sample's hit order. One gate
   takes no C reach (bead cq-9gi3): CR rule 10's un-prep, by which a second prep of a rail nothing
   read since undoes the first by its adjoint under the conjunction flag. A lowered Ry (or
   angle-rail Ry) i reads as the un-prep of the earlier gate j when j takes a C reach, at every
@@ -739,9 +741,15 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
     taken that agrees with it in angle (and register, for theta). Every reach must be taken, except
     a constant multiset of classical-angle phi reaches (a global phase). capped[s] marks a sample
     truncated at its cut (the a_K rule) or ended early (the abort rule): a gate firing there with no
-    reach left lies past the cut or the end."""
+    reach left lies past the cut or the end. A dropped global phase (`glob`) is not compared, but it
+    stays in lowered order between the live gates, as its C reaches stay between theirs: it may take
+    the site's earliest reach not yet taken, or none (bead cq-7bvs; without it a live gate of the
+    same site would take that reach, out of order)."""
     reasons: List[str] = []
     capped = list(capped)
+    opt_ids = {e.idx for e in glob}
+    ours = sorted(list(ours) + list(glob), key=lambda e: e.idx)
+    opt = [e.idx in opt_ids for e in ours]
     nS = len(capped) if capped else len(ours[0].pred) if ours else len(sites[0].occ) if sites else 0
     capped = capped or [False] * nS
     P = [s for s in range(nS) if not capped[s]]
@@ -759,7 +767,8 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
     full = [lfull(e) for e in ours]
     ckind = ["theta" if e.kind in ("ry", "ryq") else "phi" for e in ours]
     cands = [[j for j, st in enumerate(sites) if st.kind == ckind[i]] for i in range(len(ours))]
-    free_ok = [not any(e.pred[s] for s in P) and bool(C) for e in ours]   # fires only on capped samples
+    free_ok = [opt[i] or (not any(e.pred[s] for s in P) and bool(C))      # fires only on capped samples
+               for i, e in enumerate(ours)]
     Used = Tuple[int, ...]           # per (site, sample) a bitmask of the reaches taken
 
     def take(i: int, j: int, used: Used, hits: Optional[List[List[Tuple[int, _Ev]]]] = None
@@ -963,7 +972,7 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
             used = take(i, assign[i], used, hits)
     # an unmatched gate on a capped sample must not precede a dependent gate that sample reached
     for i, x in enumerate(ours):
-        if assign[i] is not None or i in unprep:
+        if assign[i] is not None or i in unprep or opt[i]:
             continue
         for s in C:
             if not x.pred[s]:
