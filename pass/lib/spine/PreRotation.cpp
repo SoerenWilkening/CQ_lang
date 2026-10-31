@@ -38,6 +38,10 @@
 //    with i == j), the rotation hits a copy instead: c = alloc 0, copy_<W>(h, c), v bound to c while
 //    T is lowered (T names c) and back to h after it. Otherwise (the corpus's load, cq_theta, store
 //    back: 61, 124) h is rotated in place as before.
+//  - Register states (cq-6qum). When the cq_theta is rule 2's (uncontrolled, classical angle), v is
+//    a rule 10 register state (Shared::statePreps) and v is read after T, the rotation hits a copy
+//    the same way: rot-cry keeps h as the register (a later disjoint prep xors into it), so h must
+//    keep v's value. A read inside a cycle where v is invariant: cq::unimplemented.
 #include "SpineInternal.h"
 
 #include "cq/Abi.h"
@@ -326,7 +330,7 @@ bool cellReadAfter(Shared &sh, const Instruction &T, const LoadInst &L) {
 
 } // namespace
 
-std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T) {
+std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T, bool uncontrolled) {
   if (T.arg_size() != 2)
     internalError("spine: cq_theta with other than two arguments", &T);
   const Value *v = T.getArgOperand(0);
@@ -337,8 +341,9 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T) {
     return std::nullopt;   // a classical value or a measured rail: the rotation mints its own rail
   Shared &sh = shared(ctx);
   Value *h = x.v;
-  if (auto *L = dyn_cast<LoadInst>(v); L && cellReadAfter(sh, T, *L)) {
-    // cq-xu07: rotate a copy; the cell and every holder of h keep the unrotated rail.
+  // A rotation of a copy: the cell (cq-xu07) or the register (cq-6qum) and every holder of h keep
+  // the unrotated rail.
+  auto rotateCopy = [&]() {
     RailType w = railTypeOf(v->getType());
     CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
                                {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
@@ -348,7 +353,7 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T) {
     ctx.unc().recordCore(cc, cp, {Operand{h, true}, Operand{c, true}}, cid);
     auto it = sh.binds.find(v);
     if (it == sh.binds.end() || it->second.size() != 1 || it->second.front().v != h)
-      internalError("spine: the load operand of an in-place cq_theta is not bound to one rail", &T);
+      internalError("spine: the operand of a cq_theta on a copy is not bound to one rail", &T);
     it->second.assign({Operand{c, true}});
     PendingCopy pc;
     pc.v = v;
@@ -357,6 +362,24 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T) {
     pc.rec.c = c;
     pc.rotCopy = true;
     return pc;
+  };
+  if (auto *L = dyn_cast<LoadInst>(v); L && cellReadAfter(sh, T, *L))
+    return rotateCopy();   // cq-xu07
+  // cq-6qum. v is a rule 10 register state (a prep, a controlled rotation or a merge of them; rot-cry
+  // keeps preparing the register's rail h for the C variable v was read from) and rule 2 rotates it
+  // uncontrolled while v is still read after the rotation: in C, v (and the register) keep their
+  // value and only the cq_theta's result is rotated. The Ry hits a copy; h stays the register, so a
+  // later disjoint prep of it never lands on the rotated rail (w3: r and y would share one rail).
+  if (uncontrolled && sh.statePreps.count(v)) {
+    bool cyc = false;
+    DenseSet<const BasicBlock *> r = reachFrom(&T, v, cyc);
+    if (const Instruction *u = useAfter(sh, v, &T, r)) {
+      if (cyc)
+        unimplemented("spine: a register state rotated by rule 2 is read after the rotation (by " + describe(u) +
+                          ") inside a cycle where the value is invariant (cq-6qum)",
+                      &T);
+      return rotateCopy();
+    }
   }
   hoistReaders(ctx, T, v, h);
 
@@ -454,7 +477,7 @@ void finishPreRotation(LoweringContext &ctx, std::optional<PendingCopy> &pc) {
   auto it = sh.binds.find(pc->v);
   if (pc->rotCopy) {
     if (it == sh.binds.end() || it->second.size() != 1 || it->second.front().v != pc->rec.c)
-      internalError("spine: the load operand of a cq_theta on a copy changed its binding during the rotation",
+      internalError("spine: the operand of a cq_theta on a copy changed its binding during the rotation",
                     pc->rec.T);
     it->second.assign({Operand{pc->rec.h, true}});
     pc.reset();

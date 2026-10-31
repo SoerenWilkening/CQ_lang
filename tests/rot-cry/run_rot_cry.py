@@ -4,7 +4,8 @@
 Structural checks only; the bead's acceptance is §6 (`python3 -m cqcheck run <owned> --oracle both`).
 Per probe module in probes/: cq-lower (with its built-in structural verifier) exits 0, plain cq-verify
 accepts the output, and each `; CHECK <fn>: <text>` occurs in <fn>'s lowered body (`%{{name}}`
-matches any local), each `; CHECK-COUNT <fn>: <text> <n>` exactly n times. A probe with `; FATAL: <text>` must instead make
+matches any local; `%[[NAME]]` matches any local and binds NAME for the probe's later CHECK lines,
+where a second `%[[NAME]]` must be the same local), each `; CHECK-COUNT <fn>: <text> <n>` exactly n times. A probe with `; FATAL: <text>` must instead make
 cq-lower fail with <text> in its message (cq::unimplemented). Outputs go to
 build/tests/rot-cry/out/.
 """
@@ -22,9 +23,20 @@ def function_text(module: str, fn: str) -> str:
     return m.group(0) if m else ""
 
 
-def check_pattern(text: str) -> "re.Pattern":
+def check_pattern(text: str, binds: "dict | None" = None) -> "re.Pattern":
     rx = re.escape(text.strip())
     rx = re.sub(r"%\\\{\\\{\w+\\\}\\\}", r"%[\\w.]+", rx)
+    seen = set()
+
+    def var(m):
+        name = m.group(1)
+        if binds is not None and name in binds:
+            return "%" + re.escape(binds[name]) + r"\b"
+        if name in seen:
+            return f"%(?P={name})" + r"\b"
+        seen.add(name)
+        return f"%(?P<{name}>[\\w.]+)"
+    rx = re.sub(r"%\\\[\\\[(\w+)\\\]\\\]", var, rx)
     return re.compile(rx)
 
 
@@ -57,6 +69,7 @@ def main() -> int:
             if v.returncode != 0:
                 reasons.append("cq-verify: " + (v.stderr.strip().splitlines() or ["?"])[0])
             module = dest.read_text()
+            binds = {}
             for line in p.read_text().splitlines():
                 m = re.match(r"; CHECK(-COUNT)? (\w+): (.*)$", line)
                 if not m:
@@ -70,8 +83,12 @@ def main() -> int:
                     got = len(check_pattern(text).findall(body))
                     if got != int(n):
                         reasons.append(f"{m.group(2)}: '{text}' occurs {got} times, expected {n}")
-                elif not check_pattern(m.group(3)).search(body):
-                    reasons.append(f"{m.group(2)}: missing '{m.group(3)}'")
+                else:
+                    found = check_pattern(m.group(3), binds).search(body)
+                    if not found:
+                        reasons.append(f"{m.group(2)}: missing '{m.group(3)}'")
+                    else:
+                        binds.update(found.groupdict())
         failures += bool(reasons)
         print(f"{'ok' if not reasons else 'FAIL':4} probe {p.name}" + "".join("\n     " + x for x in reasons))
     print(f"{len(probes) - failures}/{len(probes)} ok")
