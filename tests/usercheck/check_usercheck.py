@@ -11,7 +11,8 @@ Fails on any of:
             out of the matching budget (cq-sujz)
   unit      in process: the verdict of out-of-budget reasons is undecided (2), never differs; a
             --samples subset keeps classical groups whole, smallest first; a template's literal
-            operand is no rail position
+            operand is no rail position, nor xorc_controlled's literal (c, h, lit) or push's word
+            (cq-oylm, src/xorc_cells.ll)
   mutant    a wrong lowered module is not rejected (exit 1): built from 01's reference with the Ry's
             angle negated, the add computed before the Ry (only cq_theta substitution sees it), the
             measured rail replaced by its classical input, and an empty body (ret 0); from 60's
@@ -103,9 +104,27 @@ def unit():
                                    ("@cq_template_fadd_f64_hl_rm_exc", 3, 2, False),
                                    ("@cq_template_add_i32", 2, 1, True),
                                    ("@cqrt_and_i1", 3, 2, True), ("@cqrt_xorc_i32", 2, 1, False),
-                                   ("@cqrt_alloc_i1", 1, 0, False), ("@cqrt_qram_load_i32_hl", 2, 1, False)):
+                                   ("@cqrt_alloc_i1", 1, 0, False), ("@cqrt_qram_load_i32_hl", 2, 1, False),
+                                   # cq-oylm: xorc_controlled is (c, h, lit); push's word is no rail
+                                   ("@cqrt_xorc_i32_controlled", 3, 0, True),
+                                   ("@cqrt_xorc_i32_controlled", 3, 1, True),
+                                   ("@cqrt_xorc_i32_controlled", 3, 2, False), ("@cqrt_push", 1, 0, False),
+                                   ("@cqrt_ry_i32_controlled", 3, 2, False),
+                                   ("@cqrt_tape_write_i32_controlled", 3, 1, False),
+                                   ("@cqrt_qram_store_i8_controlled", 4, 0, True),
+                                   ("@cqrt_qram_store_i8_controlled", 4, 1, False)):
         got = U._rail_position(callee, k, nargs)
         (ok if got == want else fail)(f"unit rail position {callee}#{k}", f"{got}")
+    # widths per operand: a control is an i1 rail whatever the gate's width
+    for callee, nargs, k, want in (("@cqrt_xorc_i32_controlled", 3, 0, 1), ("@cqrt_xorc_i32_controlled", 3, 1, 32),
+                                   ("@cqrt_copy_i8_controlled", 3, 2, 8), ("@cqrt_ry_i16_controlled", 3, 0, 1)):
+        got = U._rail_width(callee, k, nargs)
+        (ok if got == want else fail)(f"unit rail width {callee}#{k}", f"{got}" + ("" if got == want else f", want {want}"))
+    # cq-oylm repro (review cq-9edz): f's i32 cell is xorc's classical literal, g's is its target handle
+    from pathlib import Path as _P
+    got = {fn: U.handle_cell_params(_P(SRC / "xorc_cells.ll"), fn) for fn in ("f", "g", "k")}
+    want = {"f": {}, "g": {0: 32}, "k": {}}
+    (ok if got == want else fail)("unit handle cells xorc_controlled", f"{got}" + ("" if got == want else f", want {want}"))
 
 
 def mutants(ref_text):

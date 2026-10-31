@@ -200,19 +200,70 @@ def entry_prototype(o1_text: str, fn: str) -> Tuple[str, List[str]]:
 
 
 _WIDTH = re.compile(r"_i(\d+)(?![0-9])")
-# cqrt operations with classical integer operands (an allocation's value, a QRAM size or cell index,
-# a tape literal) or with handles that are no rails (QRAM arrays, tapes): never evidence of a rail
-_CQRT_NOT_RAIL = re.compile(r"@cqrt_(alloc|qram_|tape_)")
+ANY_WIDTH = -1        # a rail operand of any width (cqrt_free, a template whose name gives none)
+_TW = r"(i\d+|f\d+|bf16)"
 
 
-def _rail_position(callee: str, k: int, nargs: int) -> bool:
-    """Argument k of a call to callee is a rail handle (BACKEND_ABI.md core and template naming)."""
+def _w(t: str) -> int:
+    """A rail width from an ABI type suffix: iN its N; an fp rail 0 (no cell is seeded with one)."""
+    return int(t[1:]) if t.startswith("i") else 0
+
+
+def _core_widths(name: str, nargs: int) -> List[Optional[int]]:
+    """Per argument of `@cqrt_<name>`, its rail width (0: a rail no cell is seeded with, an f64
+    angle or an index of unstated width; ANY_WIDTH: any) or None (no rail: a classical literal,
+    angle, size, pointer or word, a QRAM bus or a tape), by the signatures of BACKEND_ABI.md §1."""
+    m = re.fullmatch(r"(alloc_.*|qram_alloc_.*|qram_realloc_.*|qram_free|tape_alloc|tape_fmt|push|pop"
+                     r"|tape_write_.*_lit|tape_write_str_lit)", name)
+    if m:
+        return [None] * nargs                                   # alloc(lit), push(w): "Rails. None"
+    if name == "free":
+        return [ANY_WIDTH]
+    m = re.fullmatch(r"measure_" + _TW, name)
+    if m:
+        return [_w(m.group(1))]
+    m = re.fullmatch(r"ry_" + _TW + r"(_qangle)?(_controlled)?", name)
+    if m:
+        w = _w(m.group(1))
+        return ([1] if m.group(3) else []) + [w] + ([0] if m.group(2) else [None])   # [c,] h, θ | A
+    if name == "rz_i1":
+        return [1, None]                                        # (f, θ)
+    if name in ("rz_qangle", "rz_qangle_controlled"):
+        return ([1] if name.endswith("_controlled") else []) + [0]                    # [c,] A
+    if name in ("not_i1", "and_i1", "or_i1", "xor_i1", "abort_i1"):
+        return [1] * nargs
+    m = re.fullmatch(r"(copy|xorc)_" + _TW + r"(_controlled)?", name)
+    if m:
+        w = _w(m.group(2))
+        return ([1] if m.group(3) else []) + ([w, w] if m.group(1) == "copy" else [w, None])  # (s, d) | (h, lit)
+    m = re.fullmatch(r"qram_(store|load)_" + _TW + r"(_hl)?(_controlled)?(_unc)?", name)
+    if m:
+        w = _w(m.group(2))
+        idx = None if m.group(3) else 0
+        out = ([w] if m.group(1) == "load" and m.group(5) else [])                    # load_unc's h
+        out += ([1] if m.group(4) else []) + [None, idx]                              # [c,] a, idx | j
+        out += [w] if m.group(1) == "store" else []                                   # store's v
+        return out
+    m = re.fullmatch(r"tape_(fmt|effect)_controlled", name)
+    if m:
+        return [1, None, None]                                  # (c, t, fmt | name)
+    m = re.fullmatch(r"tape_write_" + _TW + r"(_controlled)?", name)
+    if m:
+        return ([1] if m.group(2) else []) + [None, _w(m.group(1))]                   # [c,] t, h
+    unimplemented(f"a call of @cqrt_{name}: no BACKEND_ABI.md §1 signature known to the handle-cell scan")
+
+
+def _rail_width(callee: str, k: int, nargs: int) -> Optional[int]:
+    """The rail width of argument k of a call to callee (ANY_WIDTH, or 0 for a width no cell is
+    seeded with), or None when it is no rail handle (BACKEND_ABI.md core signatures and template
+    naming)."""
     if callee.startswith("@cqrt_"):
-        if _CQRT_NOT_RAIL.match(callee):
-            return False
-        return not (callee.startswith("@cqrt_xorc_") and k == 1)     # xorc(h, c): c is classical
+        ws = _core_widths(callee[len("@cqrt_"):], nargs)
+        if len(ws) != nargs:
+            unimplemented(f"a call of {callee} with {nargs} arguments (BACKEND_ABI.md §1 gives {len(ws)})")
+        return ws[k]
     if not callee.startswith("@cq_template_"):
-        return False
+        return None
     parts = callee[len("@cq_template_"):].split("_")
     unc = parts[-1] == "unc"
     if unc:
@@ -221,12 +272,20 @@ def _rail_position(callee: str, k: int, nargs: int) -> bool:
         parts.pop()
     if parts[-1] in ("rm", "rmq"):
         if parts.pop() == "rm" and k == nargs - 1:
-            return False                     # the classical rounding mode, after the data operands
+            return None                      # the classical rounding mode, after the data operands
     # the shape: one letter per data operand, `l` a literal (ABI "cq_template_<op>...[_<shape>]"); an
     # _unc form takes the output handle first, select its condition handle before the arms
     shape = parts[-1] if len(parts) > 2 and re.fullmatch(r"[hlq]+", parts[-1]) else ""
     off = (1 if unc else 0) + (1 if parts[0] == "select" else 0)
-    return not (0 <= k - off < len(shape) and shape[k - off] == "l")
+    if 0 <= k - off < len(shape) and shape[k - off] == "l":
+        return None
+    m = _WIDTH.search(callee)
+    return int(m.group(1)) if m else ANY_WIDTH
+
+
+def _rail_position(callee: str, k: int, nargs: int) -> bool:
+    """Argument k of a call to callee is a rail handle."""
+    return _rail_width(callee, k, nargs) is not None
 
 
 def _handle_widths(mod, f, v: str, seen: set) -> Tuple[bool, set]:
@@ -244,12 +303,12 @@ def _handle_widths(mod, f, v: str, seen: set) -> Tuple[bool, set]:
                 if v not in a.split():
                     continue
                 if inst.callee.startswith(("@cqrt_", "@cq_template_")):
-                    if not _rail_position(inst.callee, k, len(inst.call_args)):
+                    w = _rail_width(inst.callee, k, len(inst.call_args))
+                    if w is None:
                         continue
                     used = True
-                    m = _WIDTH.search(inst.callee)
-                    if m:
-                        widths.add(int(m.group(1)))
+                    if w != ANY_WIDTH:
+                        widths.add(w)
                 elif inst.callee in mod.functions:
                     g = mod.functions[inst.callee]
                     if k < len(g.params):
