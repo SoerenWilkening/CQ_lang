@@ -28,6 +28,11 @@ std::pair<Operand, Operand> resultFields(LoweringContext &, const llvm::ReturnIn
 llvm::SmallVector<Operand, 8> loadHostCells(LoweringContext &, const llvm::Value *src, llvm::Type *cellTy,
                                             uint64_t n, llvm::function_ref<uint64_t(const llvm::Value *root)> bound,
                                             const llvm::Instruction &at);
+// cq-oocu (107): the cell size of the fat pointer ptr (0 while its idx is the constant 0 and no access fixed
+// it); and, in a clone, the caller's handle cells a Slot-pointee triple formal A is bound to (nullptr when A is
+// no such bound formal).
+uint64_t storedCell(LoweringContext &, const llvm::Value *ptr);
+llvm::Value *boundSlotObject(LoweringContext &, const llvm::Argument &A);
 // A pointer loaded from a QRAM of pointers (or through a fat pointer over such QRAMs) is bound by its
 // loader with ctx.bindFields(load, {tag, idx}), two i32 rails; fatptr's derivation reads them back.
 }

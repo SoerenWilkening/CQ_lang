@@ -19,6 +19,8 @@
 #include "llvm/IR/Operator.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include "../mem/slots/SlotsInternal.h"
+
 using namespace llvm;
 
 namespace cq::spine {
@@ -143,8 +145,8 @@ bool quantumTagImpl(LoweringContext &ctx, const Value *p, SmallPtrSetImpl<const 
   // accesses are rule 21's, checked against the cell count (fatptr boundSlotLoad).
   if (auto *A = dyn_cast<Argument>(p); A && !ctx.S.isEntry() && A->getType()->isPointerTy()) {
     PtrFormal pf = ctx.T.pointerFormal(ctx.S, A->getArgNo());
-    if (pf.abi == PtrAbi::TripleCount && pf.pointee == ObjClass::Slot)
-      return true;
+    if (pf.abi == PtrAbi::TripleCount && pf.pointee == ObjClass::Slot && !mem::isPointerKindFormal(ctx, *A))
+      return true;   // cq-oocu: a pointer-kind formal's accesses are mem-slots' (107)
   }
   if (!ctx.T.isFatPointer(p, ctx.S) && !isQ(ctx, p))
     return false;

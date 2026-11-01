@@ -2184,6 +2184,25 @@ HostTriple hostTriple(LoweringContext &ctx, const Value *ptr, const Instruction 
     objTy = gv->getValueType();
     bytes = DL.getTypeAllocSize(objTy).getFixedValue();
   }
+  if (auto *st = dyn_cast<StructType>(objTy); st && isa<AllocaInst>(a.root)) {
+    // cq-oocu (CR rules 20, 21; 107): a local slot record with a pointer-kind field crosses as ONE cell (the
+    // record), at its start: (object, tag, idx 0, count 1).
+    std::function<bool(Type *)> hasPtr = [&](Type *t) {
+      if (auto *s2 = dyn_cast<StructType>(t))
+        return llvm::any_of(s2->elements(), hasPtr);
+      if (auto *a2 = dyn_cast<ArrayType>(t))
+        return hasPtr(a2->getElementType());
+      return t->isPointerTy();
+    };
+    if (hasPtr(st)) {
+      if (a.off != 0 || !a.terms.empty())
+        unimplemented("mem-qram: a pointer into a slot record with a pointer-kind field crossing a clone boundary "
+                      "other than at the record's start (rule 21 triple)",
+                      &at);
+      LLVMContext &C = ctx.M.getContext();
+      return {a.root, ConstantInt::get(Type::getInt32Ty(C), 0), ConstantInt::get(Type::getInt32Ty(C), 1), bytes};
+    }
+  }
   uint64_t cb = scalarCellBytes(objTy, DL, &at);
   // mem-slots' cells are the scalar element; an object accessed at another width has other cells
   // (a bit view, or -O1's punned local, 90).

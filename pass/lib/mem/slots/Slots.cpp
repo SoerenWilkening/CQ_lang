@@ -71,6 +71,8 @@
 // DYNAMIC object's cell is a register (58's memset).
 #include "cq/Memory.h"
 #include "SlotsTest.h"
+#include "SlotsInternal.h"
+#include "../../fatptr/FatPtrInternal.h"
 
 #include <functional>
 #include <map>
@@ -329,7 +331,9 @@ struct ObjInfo {
   // scalar field at its own offset; a handle field is an i32 cell, a classical field keeps its C type and
   // its value in memory. recTy is the new layout (a literal struct of the cells). cellBytes is 0.
   bool record = false;
-  struct Field { int64_t off; Type *ty; int handle = -1; };   // handle: -1 not decided
+  // cq-oocu (CR rules 20, 21; 107): a field of POINTER KIND (its type a pointer) holds a fat pointer as two
+  // i32 handles, tag then idx, at recTy elements rec and rec + 1; every other cell is recTy element rec.
+  struct Field { int64_t off; Type *ty; int handle = -1; unsigned rec = 0; };   // handle: -1 not decided
   SmallVector<Field, 4> fields;
   StructType *recTy = nullptr;
   // A BYTE-CELL object (90): a local scalar object that a memory intrinsic writes and that is read at a
@@ -353,6 +357,8 @@ struct FnState {
   std::unique_ptr<DominatorTree> DT;
   std::unique_ptr<LoopInfo> LI;
   DenseMap<const Instruction *, Operand> lowered;   // slot load / store -> the handle the cell holds after it
+  // cq-oocu (107): an access of a pointer-kind cell -> the idx handle the cell holds after it (lowered: the tag).
+  DenseMap<const Instruction *, Operand> loweredIdx;
   DenseSet<const Value *> registers;                // new-IR handles known never to be resolved here
   DenseSet<const Instruction *> copies;             // slot stores lowered as a basis copy (cq-dr4o)
   DenseMap<const Instruction *, ViewVal> views;     // stores into a view object -> the value they left (63)
@@ -675,8 +681,8 @@ void flattenRecord(Type *t, int64_t off, const DataLayout &DL, SmallVectorImpl<O
       flattenRecord(a->getElementType(), off + int64_t(k) * es, DL, out, at);
     return;
   }
-  if (!t->isIntegerTy() && !t->isFloatingPointTy())
-    unimplemented("mem-slots: a slot record with a field that is not an integer or floating point (a pointer or "
+  if (!t->isIntegerTy() && !t->isFloatingPointTy() && !t->isPointerTy())
+    unimplemented("mem-slots: a slot record with a field that is not an integer, floating point or pointer (a "
                   "vector field)",
                   at);
   out.push_back(ObjInfo::Field{off, t});
@@ -1217,11 +1223,24 @@ void decideFields(LoweringContext &ctx, FnState &st, ObjInfo &info, ObjectId o) 
     for (const Instruction &X : instructions(*st.F))
       if (cloneWritesCell(ctx, info, o, X, cell, sz))
         h = true;
+    if (f.ty->isPointerTy() && !h)
+      unimplemented("mem-slots: a pointer field of a slot record that no write fills with a fat pointer (a "
+                    "classical pointer beside handle fields: rules 20, 21)",
+                    info.root);
     f.handle = h;
   }
   SmallVector<Type *, 4> cells;
-  for (const ObjInfo::Field &f : info.fields)
+  for (ObjInfo::Field &f : info.fields) {
+    f.rec = cells.size();
+    if (f.ty->isPointerTy()) {
+      // cq-oocu (107): a pointer-kind cell is two handles (tag, idx), rule 21's fat pointer.
+      if (info.kind != RootKind::Local)
+        unimplemented("mem-slots: a pointer-kind field of an sret/byval record parameter (rules 20, 21, 26)",
+                      info.root);
+      cells.push_back(handleTy(ctx.M.getContext()));
+    }
     cells.push_back(f.handle ? handleTy(ctx.M.getContext()) : f.ty);
+  }
   info.recTy = StructType::get(ctx.M.getContext(), cells);
 }
 
@@ -1320,7 +1339,8 @@ Value *cellPointer(LoweringContext &ctx, const Site &s, const Instruction &I) {
     int k = fieldAt(*s.info, s.a.off);
     if (k < 0 || !s.a.terms.empty() || !s.info->recTy)
       internalError("mem-slots: a record cell pointer that is not one field", &I);
-    return k == 0 ? base.v : B.CreateStructGEP(s.info->recTy, base.v, unsigned(k));
+    unsigned r = s.info->fields[unsigned(k)].rec;
+    return r == 0 ? base.v : B.CreateStructGEP(s.info->recTy, base.v, r);
   }
   int64_t cb = int64_t(s.info->cellBytes);
   if (s.a.off % cb)
@@ -2913,10 +2933,466 @@ Type *cloneCellType(LoweringContext &ctx, const Specialization &S, unsigned argN
   return fp ? fp : any;
 }
 
+namespace {
+
+// ---- pointer-kind cells (cq-oocu; CR rules 20, 21; 107) ------------------------------------------
+//
+// A slot record's pointer field is a cell of POINTER KIND: it holds a fat pointer as two handles (tag,
+// idx; recTy elements rec and rec + 1). Its idx counts cells of the UNIT, the scalar element size of every
+// object the pointers stored into the cell may point to (rule 21: idx is always a cell index).
+//  - Caller (a local record, not dynamic, not escaping): a store of a pointer is unguarded; its tag is a
+//    classical tag (a seed) or the fresh rail of a quantum-condition select whose only use is the store
+//    (moved into the cell); its idx is classical (a seed). A load of a pointer is bound to the handles the
+//    dominating store or clone call left; every access through the loaded pointer is at the unit. An integer
+//    access of the cell in the caller (ptrtoint / inttoptr at the access) is unimplemented.
+//  - Clone (a T4 Triple formal onto a slot object whose accessed cells are of pointer kind: two mask digits
+//    per cell, §1.4): the object is one record (hostTriple: cell count 1), so its cells are at the object
+//    itself (an idx other than 0 accesses past it: outside the domain). An i64 load is ptrtoint AT THE
+//    LOAD: the integer is carried as its provenance T (the tag handle, which stays in the cell) plus the
+//    byte offset unit * I (zext, shl), base[T] never materialised; the integer may only flow through add /
+//    sub of classical constants into an i64 store into the same cell, which is inttoptr AT
+//    THE STORE keeping T: the new idx (lshr, trunc) is the rule-18 copy-out into the idx half (the caller
+//    reloads it, the twin zeroes it and restores the old idx). Anything else is unimplemented.
+
+bool ptrField(const ObjInfo &info, int64_t off) {
+  if (!info.record)
+    return false;
+  int k = fieldAt(info, off);
+  return k >= 0 && info.fields[unsigned(k)].ty->isPointerTy();
+}
+
+// The i32 pointer of half h (0 tag, 1 idx) of the pointer-kind cell of a caller's record.
+Value *halfPointer(LoweringContext &ctx, const Site &s, const Instruction &I, unsigned h) {
+  Operand base = ctx.operand(s.a.root);
+  int k = fieldAt(*s.info, s.a.off);
+  if (base.handle || k < 0 || !s.a.terms.empty() || !s.info->recTy)
+    internalError("mem-slots: a pointer-kind cell half that is not one field of a record", &I);
+  unsigned r = s.info->fields[unsigned(k)].rec + h;
+  return r == 0 ? base.v : ctx.B().CreateStructGEP(s.info->recTy, base.v, r);
+}
+
+// The unit of the pointer-kind cell at (root, off) of F: the scalar element size of every object the
+// pointers F stores there may point to.
+uint64_t storedPtrUnit(LoweringContext &ctx, const Function &F, const Value *root, int64_t off,
+                       const Instruction &at) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  uint64_t unit = 0;
+  for (const Instruction &X : instructions(F)) {
+    auto *S = dyn_cast<StoreInst>(&X);
+    if (!S)
+      continue;
+    Addr a = decompose(S->getPointerOperand(), DL);
+    if (!a.ok || a.root != root || !a.terms.empty() || a.off != off)
+      continue;
+    if (!S->getValueOperand()->getType()->isPointerTy())
+      unimplemented("mem-slots: an integer stored into a pointer-kind slot cell by its owner (inttoptr at the store "
+                    "in the caller: rule 21)",
+                    S);
+    SmallVector<const Value *, 4> objs;
+    getUnderlyingObjects(S->getValueOperand(), objs);
+    for (const Value *o : objs) {
+      Type *t = nullptr;
+      if (auto *ai = dyn_cast<AllocaInst>(o))
+        t = ai->getAllocatedType();
+      else if (auto *gv = dyn_cast<GlobalVariable>(o))
+        t = gv->getValueType();
+      if (!t || scalarCellType(t)->isStructTy() || scalarCellType(t)->isVectorTy())
+        unimplemented("mem-slots: a pointer-kind slot cell holding a pointer into an object that is not a local or "
+                      "global array of scalars (its cell unit, rule 21)",
+                      S);
+      uint64_t u = DL.getTypeAllocSize(scalarCellType(t)).getFixedValue();
+      if (unit && u != unit)
+        unimplemented("mem-slots: a pointer-kind slot cell holding pointers into objects of two cell sizes (rule 21)",
+                      S);
+      unit = u;
+    }
+  }
+  if (!unit)
+    unimplemented("mem-slots: a pointer-kind slot cell into which its owner stores no pointer (its cell unit)", &at);
+  return unit;
+}
+
+// In a clone: formal A is a T4 Triple onto a caller's slot object whose cells the clone accesses are all of
+// pointer kind (two mask digits per accessed cell).
+} // namespace
+
+bool isPointerKindFormal(LoweringContext &ctx, const Argument &A) {
+  if (ctx.S.isEntry() || !A.getType()->isPointerTy())
+    return false;
+  PtrFormal pf = ctx.T.pointerFormal(ctx.S, A.getArgNo());
+  if (pf.abi == PtrAbi::Raw || pf.pointee != ObjClass::Slot)
+    return false;
+  const DataLayout &DL = ctx.M.getDataLayout();
+  std::set<std::pair<int64_t, uint64_t>> cells;
+  for (const Instruction &X : instructions(*A.getParent())) {
+    const Value *p = isa<LoadInst>(X) || isa<StoreInst>(X) ? accessPtr(&X) : nullptr;
+    if (!p)
+      continue;
+    Addr a = decompose(p, DL);
+    if (!a.ok || a.root != &A)
+      continue;
+    Type *t = isa<LoadInst>(X) ? X.getType() : cast<StoreInst>(X).getValueOperand()->getType();
+    cells.insert({a.terms.empty() ? a.off : INT64_MIN, storeBytes(DL, t)});
+  }
+  // TripleCount (CR rule 21: the callee loads through it) carries the record's cell count 1; the clone's cells
+  // are at idx 0 of the object, an idx beyond it would access past the record (outside the domain).
+  if (cells.empty() || pf.digits != 2 + 2 * cells.size())
+    return false;
+  for (auto &[off, sz] : cells)
+    if (off == INT64_MIN || sz != 8)
+      unimplemented("mem-slots: a clone accessing a caller's pointer-kind cell at a run-time offset or at another "
+                    "width than the pointer (rule 21)",
+                    &A);
+  return true;
+}
+
+namespace {
+
+bool sameSpec(const Specialization &a, const Specialization &b) {
+  return a.F == b.F && a.mask == b.mask && a.ctl == b.ctl && a.pure == b.pure && a.adj == b.adj && a.depth == b.depth;
+}
+
+// In a clone: the unit of the pointer-kind cell at byte off of pointer-kind formal A, over every call site
+// of this clone (each passes a local record of its caller).
+uint64_t formalPtrUnit(LoweringContext &ctx, const Argument &A, int64_t off, const Instruction &at) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  uint64_t unit = 0;
+  for (const Specialization &C : ctx.T.specializations()) {
+    if (!C.F || C.F->isDeclaration())
+      continue;
+    for (const Instruction &X : instructions(*C.F)) {
+      auto *CB = dyn_cast<CallBase>(&X);
+      const Specialization *cs = CB && CB->getCalledFunction() == ctx.S.F ? ctx.T.calleeSpecialization(*CB, C) : nullptr;
+      if (!cs || !sameSpec(*cs, ctx.S))
+        continue;
+      if (A.getArgNo() >= CB->arg_size())
+        internalError("mem-slots: a call of a clone with fewer operands than its formals", CB);
+      Addr a = decompose(CB->getArgOperand(A.getArgNo()), DL);
+      if (!a.ok || !a.terms.empty() || !isa<AllocaInst>(a.root))
+        unimplemented("mem-slots: a pointer-kind slot cell handed to a clone other than as a local record of its "
+                      "caller (its cell unit, rule 21)",
+                      CB);
+      uint64_t u = storedPtrUnit(ctx, *C.F, a.root, a.off + off, *CB);
+      if (unit && u != unit)
+        unimplemented("mem-slots: a clone handed pointer-kind cells of two cell units by its callers (rule 21)", &at);
+      unit = u;
+    }
+  }
+  if (!unit)
+    unimplemented("mem-slots: a clone with a pointer-kind formal and no call site (its cell unit)", &at);
+  return unit;
+}
+
+// The (tag, idx) handles the caller's pointer-kind cell s holds at I.
+std::pair<Operand, Operand> readPtrCell(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &I) {
+  Type *pty = s.info->fields[unsigned(fieldAt(*s.info, s.a.off))].ty;
+  const Instruction *src = sourceOf(ctx, st, *s.info, s.o, &I, s.a, pty);
+  if (!src)
+    unimplemented("mem-slots: a read of a pointer-kind slot cell that no dominating store or clone call of this "
+                  "function wrote (a run-time read of a fat pointer's handles: rule 21)",
+                  &I);
+  if (auto c = st.callOut.find(src); c != st.callOut.end()) {
+    auto t = c->second.find(s.a.off), i = c->second.find(s.a.off + 4);
+    if (t == c->second.end() || i == c->second.end())
+      internalError("mem-slots: a clone call's pointer-kind cell without both handles", &I);
+    return {t->second, i->second};
+  }
+  auto t = st.lowered.find(src), i = st.loweredIdx.find(src);
+  if (t == st.lowered.end() || i == st.loweredIdx.end())
+    internalError("mem-slots: the access a pointer-kind cell read forwards from has not been lowered", &I);
+  return {t->second, i->second};
+}
+
+// The clone writes only the idx half of the pointer-kind cell at byte off of formal argNo: each of its stores
+// there is inttoptr at the store of an integer derived from its own load of that cell (the tag stays).
+const LoadInst *cellLoadOrigin(const Value *v, const Value *root, int64_t off, const DataLayout &DL);
+
+void checkCloneKeepsTag(LoweringContext &ctx, const Specialization &S, unsigned argNo, int64_t off,
+                        const Instruction &at) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  const Argument *A = S.F->getArg(argNo);
+  for (const Instruction &X : instructions(*S.F)) {
+    if (auto *CB = dyn_cast<CallBase>(&X)) {
+      for (const Use &u : CB->args())
+        if (getUnderlyingObject(u.get()) == A && !isa<IntrinsicInst>(CB))
+          unimplemented("mem-slots: a clone handing a caller's pointer-kind cell on to a call (rules 18, 21)", &at);
+      continue;
+    }
+    auto *St = dyn_cast<StoreInst>(&X);
+    if (!St)
+      continue;
+    Addr a = decompose(St->getPointerOperand(), DL);
+    if (!a.ok || a.root != A)
+      continue;
+    if (!a.terms.empty() || a.off != off || !St->getValueOperand()->getType()->isIntegerTy(64) ||
+        !cellLoadOrigin(St->getValueOperand(), A, off, DL))
+      unimplemented("mem-slots: a clone writing a caller's pointer-kind cell other than by an integer derived from "
+                    "its own load of the cell (the tag it stores is unknown: rule 21)",
+                    St);
+  }
+}
+
+// The i64 load of cell (root, off) the integer v derives from through add / sub of classical constants, else
+// nullptr.
+const LoadInst *cellLoadOrigin(const Value *v, const Value *root, int64_t off, const DataLayout &DL) {
+  for (unsigned d = 0; d < 64; ++d) {
+    if (auto *L = dyn_cast<LoadInst>(v)) {
+      Addr a = decompose(L->getPointerOperand(), DL);
+      return a.ok && a.root == root && a.terms.empty() && a.off == off && L->getType()->isIntegerTy(64) ? L : nullptr;
+    }
+    auto *BO = dyn_cast<BinaryOperator>(v);
+    if (!BO || !isa<ConstantInt>(BO->getOperand(1)))
+      return nullptr;
+    // Not a disjoint or: its disjointness is a fact about base[T] + offset, not about the offset alone.
+    bool ok = BO->getOpcode() == Instruction::Add || BO->getOpcode() == Instruction::Sub;
+    if (!ok)
+      return nullptr;
+    v = BO->getOperand(0);
+  }
+  return nullptr;
+}
+
+// Every value derived from the clone's i64 load L of a pointer-kind cell is only offset arithmetic (add, sub of a
+// classical constant) ending in
+// an i64 store into that cell (the integer is never observed as a number, so base[T] is never needed).
+void checkOffsetOnly(const LoadInst &L, const Value *root, int64_t off, const DataLayout &DL) {
+  SmallVector<const Value *, 8> work{&L};
+  SmallPtrSet<const Value *, 8> seen{&L};
+  while (!work.empty()) {
+    const Value *v = work.pop_back_val();
+    for (const Use &u : v->uses()) {
+      const User *U = u.getUser();
+      if (auto *St = dyn_cast<StoreInst>(U); St && St->getValueOperand() == v) {
+        Addr a = decompose(St->getPointerOperand(), DL);
+        if (a.ok && a.root == root && a.terms.empty() && a.off == off)
+          continue;
+      }
+      if (auto *BO = dyn_cast<BinaryOperator>(U); BO && BO->getOperand(0) == v && isa<ConstantInt>(BO->getOperand(1)) &&
+                                                  (BO->getOpcode() == Instruction::Add ||
+                                                   BO->getOpcode() == Instruction::Sub)) {
+        if (seen.insert(BO).second)
+          work.push_back(BO);
+        continue;
+      }
+      unimplemented("mem-slots: a clone's integer read from a caller's pointer-kind cell observed as a number "
+                    "(base[tag] is not passed: rule 21 object table)",
+                    U);
+    }
+  }
+}
+
+Value *i64Tmpl(LoweringContext &ctx, StringRef op, Value *h, uint64_t k) {
+  abi::TemplateSpec spec;
+  spec.op = op.str();
+  spec.w = RailType{Kind::Int, 64};
+  spec.shape = "hl";
+  return ctx.emitTemplate(spec, {Operand{h, true}, Operand{ConstantInt::get(Type::getInt64Ty(ctx.M.getContext()), k), false}});
+}
+
+Value *castTmpl(LoweringContext &ctx, StringRef op, unsigned from, unsigned to, Value *h) {
+  abi::TemplateSpec spec;
+  spec.op = op.str();
+  spec.w = RailType{Kind::Int, from};
+  spec.to = RailType{Kind::Int, to};
+  return ctx.emitTemplate(spec, {Operand{h, true}});
+}
+
+void lowerPtrCellCloneAccess(LoweringContext &ctx, FnState &st, Instruction &I, const Argument &A, const Addr &a) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  IRBuilder<> &B = ctx.B();
+  LLVMContext &C = ctx.M.getContext();
+  Type *i8 = Type::getInt8Ty(C), *i32 = handleTy(C);
+  Value *obj = fatptr::boundSlotObject(ctx, A);
+  if (!obj)
+    internalError("mem-slots: a pointer-kind triple formal that fatptr did not bind", &A);
+  auto half = [&](unsigned h) {
+    int64_t o = a.off + 4 * int64_t(h);
+    return o == 0 ? obj : B.CreateConstInBoundsGEP1_64(i8, obj, uint64_t(o));
+  };
+  uint64_t unit = formalPtrUnit(ctx, A, a.off, I);
+  if (ctx.currentFlag() || !ctx.currentPredicate().isTop())
+    unimplemented("mem-slots: a clone accessing a caller's pointer-kind cell under a quantum predicate", &I);
+  if (auto *L = dyn_cast<LoadInst>(&I)) {
+    if (!L->getType()->isIntegerTy(64))
+      unimplemented("mem-slots: a clone loading a caller's pointer-kind cell other than as an i64 (rule 21)", L);
+    checkOffsetOnly(*L, &A, a.off, DL);
+    LoadInst *T = B.CreateAlignedLoad(i32, half(0), Align(4));
+    LoadInst *X = B.CreateAlignedLoad(i32, half(1), Align(4));
+    for (Value *h : {(Value *)T, (Value *)X}) {
+      ctx.unc().recordExternal(h, Role::UserRegister);   // the caller's rails in its cell
+      st.registers.insert(h);
+    }
+    // ptrtoint at the load: base[T] + unit * I, carried as the byte offset unit * I.
+    Value *o = castTmpl(ctx, "zext", 32, 64, X);
+    if (unit != 1)
+      o = isPowerOf2_64(unit) ? i64Tmpl(ctx, "shl", o, Log2_64(unit)) : i64Tmpl(ctx, "mul", o, unit);
+    st.lowered[L] = Operand{T, true};
+    st.loweredIdx[L] = Operand{X, true};
+    ctx.bindFields(L, {Operand{o, true}});
+    return;
+  }
+  auto *St = cast<StoreInst>(&I);
+  const LoadInst *L = cellLoadOrigin(St->getValueOperand(), &A, a.off, DL);
+  if (!L || !St->getValueOperand()->getType()->isIntegerTy(64))
+    unimplemented("mem-slots: a clone writing a caller's pointer-kind cell other than by an integer derived from "
+                  "its own load of the cell (the tag it stores is unknown: rule 21)",
+                  St);
+  auto lt = st.lowered.find(L);
+  if (lt == st.lowered.end())
+    internalError("mem-slots: a pointer-kind cell's store before the load its integer derives from", St);
+  for (const Instruction &X : instructions(*A.getParent()))
+    if (auto *O = dyn_cast<StoreInst>(&X); O && O != St && decompose(O->getPointerOperand(), DL).root == &A)
+      unimplemented("mem-slots: a clone storing into a caller's pointer-kind cells more than once (one slot result "
+                    "per cell)",
+                    O);
+  Operand o = ctx.operand(St->getValueOperand());
+  if (!o.handle)
+    internalError("mem-slots: a pointer-kind cell's derived integer is classical", St);
+  // inttoptr at the store keeps the provenance T: idx = (u - base[T]) / unit.
+  Value *x = o.v;
+  if (unit != 1)
+    x = isPowerOf2_64(unit) ? i64Tmpl(ctx, "lshr", x, Log2_64(unit)) : i64Tmpl(ctx, "udiv", x, unit);
+  x = castTmpl(ctx, "trunc", 64, 32, x);
+  // The rule-18 copy-out (alloc 0, copy, store; calls' finalize builds the twin from it).
+  RailType w{Kind::Int, 32};
+  CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {ConstantInt::get(i32, 0)});
+  RailId cid = ctx.unc().recordSeed(c);
+  abi::CoreSpec cp{abi::Core::Copy, w};
+  CallInst *cc = ctx.emitCore(cp, {x, c});
+  ctx.unc().recordCore(cc, cp, {Operand{x, true}, Operand{c, true}}, cid);
+  ctx.unc().setRole(cid, Role::Result);
+  st.registers.insert(c);
+  B.CreateAlignedStore(c, half(1), Align(4));
+  st.lowered[St] = lt->second;
+  st.loweredIdx[St] = Operand{c, true};
+}
+
+void lowerPtrCellStore(LoweringContext &ctx, FnState &st, StoreInst &stI, const Site &s) {
+  const Value *v = stI.getValueOperand();
+  if (!v->getType()->isPointerTy())
+    unimplemented("mem-slots: an integer stored into a pointer-kind slot cell by its owner (inttoptr at the store "
+                  "in the caller: rule 21)",
+                  &stI);
+  if (ctx.currentFlag() || !ctx.currentPredicate().isTop())
+    unimplemented("mem-slots: a fat pointer stored into a pointer-kind slot cell under a quantum predicate (rules 9, "
+                  "20, 21)",
+                  &stI);
+  if (s.info->kind != RootKind::Local || s.info->escaping || isDynamic(ctx, st, *s.info, s.o))
+    unimplemented("mem-slots: a pointer-kind slot cell of a record that is not a static local", &stI);
+  // The pointer's roots must be the objects themselves (fatptr's idx is relative to its root: a classical GEP
+  // root inside an object would put the clone's moved idx relative to that interior point).
+  {
+    SmallVector<const Value *, 4> work{v};
+    while (!work.empty()) {
+      const Value *x = work.pop_back_val();
+      if (auto *sel = dyn_cast<SelectInst>(x)) {
+        work.push_back(sel->getTrueValue());
+        work.push_back(sel->getFalseValue());
+        continue;
+      }
+      if (!isa<AllocaInst>(x) && !isa<GlobalVariable>(x))
+        unimplemented("mem-slots: a pointer stored into a pointer-kind slot cell that is not a select over objects' "
+                      "starts (an interior root: rule 21's idx is relative to the object)",
+                      &stI);
+    }
+  }
+  uint64_t unit = storedPtrUnit(ctx, *st.F, s.a.root, s.a.off, stI);
+  uint64_t cell = fatptr::storedCell(ctx, v);
+  if (cell && cell != unit)
+    unimplemented("mem-slots: a fat pointer stored into a pointer-kind cell whose cell size is not its objects' "
+                  "element size (rule 21)",
+                  &stI);
+  auto [tag, idx] = fatptr::storedFields(ctx, v);
+  auto seed = [&](Operand &f) {
+    CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 32}}, {f.v});
+    ctx.unc().recordSeed(a);
+    f = Operand{a, true};
+  };
+  if (tag.handle) {
+    auto *sel = dyn_cast<SelectInst>(v);
+    if (!sel || !v->hasOneUse() || !ctx.T.isQuantum(sel->getCondition(), ctx.S))
+      unimplemented("mem-slots: a fat pointer whose tag rail may have another holder stored into a pointer-kind "
+                    "slot cell (cq-dr4o: only a quantum select's own tag is moved into the cell)",
+                    &stI);
+  } else {
+    seed(tag);
+  }
+  if (idx.handle)
+    unimplemented("mem-slots: a fat pointer with a quantum cell index stored into a pointer-kind slot cell (its idx "
+                  "rail may have another holder: cq-dr4o)",
+                  &stI);
+  seed(idx);
+  ctx.B().CreateAlignedStore(tag.v, halfPointer(ctx, s, stI, 0), Align(4));
+  ctx.B().CreateAlignedStore(idx.v, halfPointer(ctx, s, stI, 1), Align(4));
+  st.lowered[&stI] = tag;
+  st.loweredIdx[&stI] = idx;
+}
+
+void lowerPtrCellLoad(LoweringContext &ctx, FnState &st, LoadInst &ld, const Site &s) {
+  if (!ld.getType()->isPointerTy())
+    unimplemented("mem-slots: an integer load of a pointer-kind slot cell by its owner (ptrtoint at the load in the "
+                  "caller: rule 21)",
+                  &ld);
+  const DataLayout &DL = ctx.M.getDataLayout();
+  uint64_t unit = storedPtrUnit(ctx, *st.F, s.a.root, s.a.off, ld);
+  for (const Use &u : ld.uses()) {
+    Type *t = nullptr;
+    if (auto *l = dyn_cast<LoadInst>(u.getUser()); l && l->getPointerOperand() == &ld)
+      t = l->getType();
+    else if (auto *w = dyn_cast<StoreInst>(u.getUser()); w && w->getPointerOperand() == &ld)
+      t = w->getValueOperand()->getType();
+    if (!t || DL.getTypeAllocSize(t).getFixedValue() != unit)
+      unimplemented("mem-slots: a pointer loaded from a pointer-kind slot cell used other than by an access at its "
+                    "cell unit (rule 21)",
+                    u.getUser());
+  }
+  auto [tag, idx] = readPtrCell(ctx, st, s, ld);
+  if (!tag.handle || !idx.handle)
+    internalError("mem-slots: a pointer-kind cell holding a classical value", &ld);
+  st.lowered[&ld] = tag;
+  st.loweredIdx[&ld] = idx;
+  ctx.bindFields(&ld, {tag, idx});
+}
+
+// Routes an access of a pointer-kind cell (caller or clone side); false when I is no such access.
+bool lowerPtrCell(LoweringContext &ctx, FnState &st, Instruction &I) {
+  const Value *ptr = accessPtr(&I);
+  ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
+  if (objs.size() != 1 || ctx.T.classOf(objs.front()) != ObjClass::Slot)
+    return false;
+  Addr a = decompose(ptr, ctx.M.getDataLayout());
+  if (!a.ok)
+    return false;
+  if (auto *A = dyn_cast<Argument>(a.root)) {
+    if (!isPointerKindFormal(ctx, *A))
+      return false;
+    lowerPtrCellCloneAccess(ctx, st, I, *A, a);
+    return true;
+  }
+  if (ctx.T.objectOf(a.root) != objs.front())
+    return false;
+  ObjInfo &info = objInfo(ctx, st, a.root, objs.front());
+  if (!info.record)
+    return false;
+  decideFields(ctx, st, info, objs.front());
+  if (!a.terms.empty() || !ptrField(info, a.off))
+    return false;
+  Site s{objs.front(), &info, a};
+  if (auto *ld = dyn_cast<LoadInst>(&I))
+    lowerPtrCellLoad(ctx, st, *ld, s);
+  else
+    lowerPtrCellStore(ctx, st, cast<StoreInst>(I), s);
+  return true;
+}
+
+} // namespace
+
 void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
   if (calls::lowerVaAreaLoad(ctx, ld))
     return;   // CR §1.4 (95): a read of a variadic clone's save area
   FnState &st = stateOf(ctx, ld);
+  if (!ld.isVolatile() && !ld.isAtomic() && lowerPtrCell(ctx, st, ld))
+    return;   // cq-oocu (107): a pointer-kind cell
   if (!ctx.T.isQuantum(&ld, ctx.S)) {
     Site s = siteOf(ctx, st, ld, ld.getPointerOperand(), ld.getType());
     if (s.beyond)
@@ -3048,6 +3524,8 @@ void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
 void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
   FnState &st = stateOf(ctx, stI);
   const Value *v = stI.getValueOperand();
+  if (!stI.isVolatile() && !stI.isAtomic() && lowerPtrCell(ctx, st, stI))
+    return;   // cq-oocu (107): a pointer-kind cell
   {
     // 90: a classical store wider than its byte cells writes one seed per cell (little-endian bytes).
     ArrayRef<ObjectId> objs = ctx.T.provenance(stI.getPointerOperand(), ctx.S);
@@ -3610,6 +4088,15 @@ SmallVector<Value *, 4> slotCellsBeforeCall(LoweringContext &ctx, const CallBase
     if (forwardedFrom(ctx, *ca.S, argNo, c) >= 0)
       continue;   // T5: no slot result, so no old content for a twin
     Site cs = cellSite(ca, c);
+    if (ptrField(*cs.info, cs.a.off)) {
+      // cq-oocu (107): the clone writes only the cell's idx half (the tag stays): its old idx.
+      checkCloneKeepsTag(ctx, *ca.S, argNo, cellOffset(*cs.info, c), orig);
+      Operand i = readPtrCell(ctx, st, cs, orig).second;
+      if (!i.handle)
+        internalError("mem-slots: a pointer-kind cell holding a classical idx", &orig);
+      out.push_back(i.v);
+      continue;
+    }
     Type *ty = cs.info->record ? cs.info->fields[c].ty : cs.info->cellTy;
     if (!sourceOf(ctx, st, *cs.info, cs.o, &orig, cs.a, ty) && !anyWriteReaches(ctx, st, cs, orig)) {
       out.push_back(PoisonValue::get(i32));   // never written: the twin restores nothing defined (31, 52, 163)
@@ -3651,6 +4138,10 @@ SmallVector<Value *, 4> slotCellsAfterCall(LoweringContext &ctx, const CallBase 
     if (forwardedFrom(ctx, *ca.S, argNo, c) >= 0)
       continue;
     Site cs = cellSite(ca, c);
+    if (ptrField(*cs.info, cs.a.off)) {
+      old.push_back(readPtrCell(ctx, st, cs, orig).second.v);   // cq-oocu: the idx half's old handle
+      continue;
+    }
     Type *cty = cs.info->record ? cs.info->fields[c].ty : cs.info->cellTy;
     if (const Instruction *src = sourceOf(ctx, st, *cs.info, cs.o, &orig, cs.a, cty)) {
       if (auto it = st.lowered.find(src); it != st.lowered.end() && it->second.handle)
@@ -3685,6 +4176,15 @@ SmallVector<Value *, 4> slotCellsAfterCall(LoweringContext &ctx, const CallBase 
                       "call (two holders of one rail: cq-dr4o)",
                       &orig);
       st.callOut[&orig][cs.a.off] = h;
+      continue;
+    }
+    if (ptrField(*cs.info, cs.a.off)) {
+      // cq-oocu (107): the tag handle stays in the cell; the clone stored a new idx handle.
+      Operand t = readPtrCell(ctx, st, cs, orig).first;
+      LoadInst *h = B.CreateAlignedLoad(handleTy(ctx.M.getContext()), halfPointer(ctx, cs, orig, 1), Align(4));
+      st.callOut[&orig][cs.a.off] = t;
+      st.callOut[&orig][cs.a.off + 4] = Operand{h, true};
+      out.push_back(h);
       continue;
     }
     LoadInst *h = B.CreateAlignedLoad(handleTy(ctx.M.getContext()), cellPointer(ctx, cs, orig), Align(4));

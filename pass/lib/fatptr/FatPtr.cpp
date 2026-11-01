@@ -543,8 +543,13 @@ Fat deriveLoaded(LoweringContext &ctx, const LoadInst &ld, bool emit) {
   ArrayRef<ObjectId> src = ctx.T.provenance(ld.getPointerOperand(), ctx.S);
   if (src.empty())
     unimplemented("fatptr: a pointer loaded through a pointer with no known object (rule 21)", &ld);
+  // cq-oocu (107): a pointer loaded at a classical offset from a slot record's pointer-kind cell; mem-slots
+  // binds its (tag, idx) handles. Its roots are those of the pointers this function stores into that object
+  // (a clone call writing the cell keeps their provenance: mem-slots checkCloneKeepsTag).
+  bool slotCell = src.size() == 1 && ctx.T.classOf(src.front()) == ObjClass::Slot &&
+                  !ctx.T.isFatPointer(ld.getPointerOperand(), ctx.S) && !isQ(ctx, ld.getPointerOperand());
   for (ObjectId o : src)
-    if (ctx.T.classOf(o) != ObjClass::Qram)
+    if (ctx.T.classOf(o) != ObjClass::Qram && !slotCell)
       unimplemented("fatptr: a pointer loaded through a fat pointer from slot or classical memory (rule 21, 189)",
                     &ld);
   SmallVector<ObjectId, 4> mine(ctx.T.provenance(&ld, ctx.S).begin(), ctx.T.provenance(&ld, ctx.S).end());
@@ -569,7 +574,7 @@ Fat deriveLoaded(LoweringContext &ctx, const LoadInst &ld, bool emit) {
         addRoots(f, {r});
     if (s.cell) {
       if (f.cell && f.cell != s.cell)
-        unimplemented("fatptr: a QRAM of pointers holding pointers of two cell sizes", &ld);
+        unimplemented("fatptr: a QRAM or slot cell of pointers holding pointers of two cell sizes", &ld);
       f.cell = s.cell;
     }
   }
@@ -1344,6 +1349,13 @@ std::pair<Operand, Operand> resultFields(LoweringContext &ctx, const ReturnInst 
       unimplemented("fatptr: a clone's fat-pointer result at another cell size than its triple formal's", &ret);
   }
   return storedFields(ctx, rv);
+}
+
+uint64_t storedCell(LoweringContext &ctx, const Value *ptr) { return derive(ctx, ptr, /*emit=*/false).cell; }
+
+Value *boundSlotObject(LoweringContext &ctx, const Argument &A) {
+  Bound *b = boundOf(ctx, &A);
+  return b && b->pointee == ObjClass::Slot ? b->object : nullptr;
 }
 
 std::pair<Operand, Operand> storedFields(LoweringContext &ctx, const Value *ptr) {

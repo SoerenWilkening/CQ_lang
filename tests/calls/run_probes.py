@@ -26,6 +26,15 @@ TWIN_ALIAS = ("cq: unimplemented: uncompute: a clone call whose twin may read a 
               "another route than the writing pointer")
 # (probe, entry, opt flags, expectation, regexes the lowered module must contain)
 CASES = [
+    # cq-oocu (107's union_slot): a slot record's pointer-kind cell (tag, idx) a clone reads as an integer and
+    # writes back (ptrtoint at the load, inttoptr at the store keeping the tag); int and long cells, add and sub.
+    ("ptr_cell", "pc_two", [], "pass", [r"call fastcc void @__cq_q_step_0011\(ptr %\d+, i32 \d+, i32 0, i32 1\)",
+                                        r"call void @__cq_q_step_0011_unc\("]),
+    ("ptr_cell", "pc_long", [], "pass", [r"cq_template_lshr_i64_hl\(i32 %\d+, i64 3\)"]),
+    ("ptr_cell_interior", "pc_interior", [], "fatal: cq: unimplemented: mem-slots: a pointer stored into a "
+     "pointer-kind slot cell that is not a select over objects' starts", []),
+    ("ptr_cell_observed", "pc_observed", [], "fatal: cq: unimplemented: mem-slots: a clone's integer read from a "
+     "caller's pointer-kind cell observed as a number", []),
     # cq-pgen (109's put, T5 cellForward): a clone storing a formal's handle unchanged into a caller cell: no
     # copy-out, no twin; once and in a classically bounded loop over a VLA.
     ("forward_cell", "fwd_once", [], "pass", [r"define internal fastcc void @__cq_q_put_01\(ptr %0, i32 %1\) \{\n  store i32 %1, ptr %0"]),
