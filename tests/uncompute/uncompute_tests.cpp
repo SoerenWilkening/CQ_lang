@@ -3004,6 +3004,159 @@ X:
   f.U.recordDeferred({s}, {}, [U, s](IRBuilder<> &B) { U->emitMirror(s, B); }, {x, a});
 }
 
+
+// ---- cq-lqz3: a deferred reverse placed at a join after an earlier merge of its exit rail ----------
+
+// 177's shape: the exit rail t of a classical loop is merged in the loop's exit block X (f_eval's result
+// phi) and read in P (the phase), and a later Ry on x (H^n) follows in Q, before the return block R. The
+// reverse reads x, so it must run before the Ry: flushBefore(P's terminator) places it in P although the
+// merge %m lies in X. The bypass variant adds an edge X -> Q that avoids P: the reverse is not placed in
+// P (a path from the loop would skip it), and at the return the Ry precedes it (unimplemented, t is not
+// kept).
+const char *kDefJoin = R"(
+define i32 @f(i32 %a0, double %th, i32 %n, i1 %k) {
+entry:
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  br label %L
+L:
+  %i = phi i32 [ 0, %entry ], [ %i2, %L ]
+  %t = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  %i2 = add i32 %i, 1
+  %c = icmp slt i32 %i2, %n
+  br i1 %c, label %L, label %X
+X:
+  %m = phi i32 [ %t, %L ]
+  XBR
+P:
+  %u = call i32 @cq_template_mul_i32_hl(i32 %m, i32 3)
+  %r = call i32 @cqrt_measure_i32(i32 %u)
+  br label %Q
+Q:
+  %rr = phi i32 [ %r, %P ], PHIX
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  br label %R
+R:
+  %s = call i32 @cqrt_measure_i32(i32 %x)
+  %o = add i32 %rr, %s
+  ret i32 %o
+})";
+
+void deferredJoin(bool bypass) {
+  std::string ir = kDefJoin;
+  ir.replace(ir.find("XBR"), 3, bypass ? "br i1 %k, label %P, label %Q" : "br label %P");
+  ir.replace(ir.find(", PHIX"), 6, bypass ? ", [ 0, %X ]" : "");
+  Fx f(ir);
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 0));
+  unsigned s = f.U.openScope();
+  RailId t = f.T("t", "hl");
+  f.U.closeScope(s);
+  Uncompute *U = &f.U;
+  f.U.recordDeferred({s}, {t}, [U, s](IRBuilder<> &B) { U->emitMirror(s, B); }, {x});
+  f.U.recordMerge(f.I("m"));
+  f.U.setRole(f.T("u", "hl"), Role::Measured);
+  f.U.flushBefore(f.I("u")->getParent()->getTerminator());
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 1));
+  f.U.setRole(x, Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check("deferred_join_placement",
+          {
+              "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+              "call void @cqrt_ry_i32(i32 %x, double %th)",
+              "br label %L",
+              "%i = phi i32 [ 0, %entry ], [ %i2, %L ]",
+              "%t = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+              "%i2 = add i32 %i, 1",
+              "%c = icmp slt i32 %i2, %n",
+              "br i1 %c, label %L, label %X",
+              "%m = phi i32 [ %t, %L ]",
+              "br label %0",
+              "%u = call i32 @cq_template_mul_i32_hl(i32 %m, i32 3)",
+              "call void @cq_template_add_i32_hl_unc(i32 %t, i32 %x, i32 1)",
+              "call void @cqrt_free(i32 %t)",
+              "br label %P",
+              "%r = call i32 @cqrt_measure_i32(i32 %u)",
+              "br label %Q",
+              "%rr = phi i32 [ %r, %P ]",
+              "call void @cqrt_ry_i32(i32 %x, double %th)",
+              "br label %R",
+              "%s = call i32 @cqrt_measure_i32(i32 %x)",
+              "%o = add i32 %rr, %s",
+              "ret i32 %o",
+          });
+}
+
+void deferred_join_placement() { deferredJoin(false); }
+void fatal_deferred_join_bypass() { deferredJoin(true); }
+
+// ---- cq-lqz3: a pointer from outside the frame never names a cell of a non-escaping alloca ---------
+
+// 185's shape: the Ry on the reload %l of qa[j] takes its angle from a classical load of tk[i] (tk a
+// formal). The formal cannot point into qa or sa (neither escapes), so the rail y in sa, read by g
+// through %ly, is not reached through that load: g is cleaned after its consumer.
+void alias_formal_local() {
+  Fx f(R"(
+define i32 @f(i32 %a0, i32 %a1, ptr %tk, i64 %i, i64 %j, double %th) {
+  %qa = alloca i32, i64 4
+  %sa = alloca i32, i64 4
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %pi = getelementptr inbounds i32, ptr %qa, i64 %i
+  store i32 %x, ptr %pi
+  %y = call i32 @cqrt_alloc_i32(i32 %a1)
+  call void @cqrt_ry_i32(i32 %y, double %th)
+  %si = getelementptr inbounds i32, ptr %sa, i64 %i
+  store i32 %y, ptr %si
+  %pt = getelementptr inbounds double, ptr %tk, i64 %i
+  %d = load double, ptr %pt
+  %pj = getelementptr inbounds i32, ptr %qa, i64 %j
+  %l = load i32, ptr %pj
+  %sj = getelementptr inbounds i32, ptr %sa, i64 %j
+  %ly = load i32, ptr %sj
+  %g = call i32 @cq_template_add_i32_hl(i32 %ly, i32 1)
+  call void @cqrt_ry_i32(i32 %l, double %d)
+  %q = call i32 @cq_template_mul_i32_hl(i32 %g, i32 3)
+  %r = call i32 @cqrt_measure_i32(i32 %q)
+  ret i32 %r
+})");
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 0));
+  RailId y = f.reg("y", 0);
+  f.U.noteNonDiagonal(y, f.call("cqrt_ry_i32", 1));
+  RailId l = f.U.recordCellLoad(f.I("l"), {x});
+  f.U.recordCellLoad(f.I("ly"), {y});
+  f.T("g", "hl");
+  f.U.noteNonDiagonal(l, f.call("cqrt_ry_i32", 2));
+  f.U.setRole(f.T("q", "hl"), Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%qa = alloca i32, i64 4, align 4",
+                        "%sa = alloca i32, i64 4, align 4",
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%pi = getelementptr inbounds i32, ptr %qa, i64 %i",
+                        "store i32 %x, ptr %pi, align 4",
+                        "%y = call i32 @cqrt_alloc_i32(i32 %a1)",
+                        "call void @cqrt_ry_i32(i32 %y, double %th)",
+                        "%si = getelementptr inbounds i32, ptr %sa, i64 %i",
+                        "store i32 %y, ptr %si, align 4",
+                        "%pt = getelementptr inbounds double, ptr %tk, i64 %i",
+                        "%d = load double, ptr %pt, align 8",
+                        "%pj = getelementptr inbounds i32, ptr %qa, i64 %j",
+                        "%l = load i32, ptr %pj, align 4",
+                        "%sj = getelementptr inbounds i32, ptr %sa, i64 %j",
+                        "%ly = load i32, ptr %sj, align 4",
+                        "%g = call i32 @cq_template_add_i32_hl(i32 %ly, i32 1)",
+                        "call void @cqrt_ry_i32(i32 %l, double %d)",
+                        "%q = call i32 @cq_template_mul_i32_hl(i32 %g, i32 3)",
+                        "call void @cq_template_add_i32_hl_unc(i32 %g, i32 %ly, i32 1)",
+                        "call void @cqrt_free(i32 %g)",
+                        "%r = call i32 @cqrt_measure_i32(i32 %q)",
+                        "ret i32 %r",
+                    });
+}
+
 const std::map<std::string, std::function<void()>> kPositive = {
     {"reverse_dependency_order", reverse_dependency_order},
     {"independent_most_recent_first", independent_most_recent_first},
@@ -3056,6 +3209,8 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"alias_copy_distinct_array", alias_copy_distinct_array},
     {"cells_distinct", cells_distinct},
     {"deferred_qram_store", deferred_qram_store},
+    {"deferred_join_placement", deferred_join_placement},
+    {"alias_formal_local", alias_formal_local},
 };
 
 const std::map<std::string, std::function<void()>> kFatal = {
@@ -3090,6 +3245,7 @@ const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_cells_distinct_unnoted", fatal_cells_distinct_unnoted},
     {"fatal_cells_distinct_direct_read", fatal_cells_distinct_direct_read},
     {"fatal_deferred_no_anchor", fatal_deferred_no_anchor},
+    {"fatal_deferred_join_bypass", fatal_deferred_join_bypass},
 };
 
 } // namespace

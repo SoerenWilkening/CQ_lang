@@ -535,7 +535,18 @@ struct Uncompute::Impl {
     Addr a = decompose(p.ptr, DL), b = decompose(q.ptr, DL);
     if (a.base != b.base) {
       const Value *ua = getUnderlyingObject(a.base), *ub = getUnderlyingObject(b.base);
-      return !(ua != ub && identified(ua) && identified(ub));
+      if (ua != ub && identified(ua) && identified(ub))
+        return false;
+      // cq-lqz3: a pointer from outside the frame (a formal, a global, a loaded pointer, a call's result)
+      // never points into an alloca whose address does not escape (185: a load of tk[i] next to the slot
+      // arrays k[] and c[]).
+      auto outside = [](const Value *u) {
+        return isa<Argument>(u) || isa<GlobalValue>(u) || isa<LoadInst>(u) || isa<CallBase>(u);
+      };
+      if (ua != ub && ((isa<AllocaInst>(ua) && outside(ub) && !reachable(ua)) ||
+                       (isa<AllocaInst>(ub) && outside(ua) && !reachable(ub))))
+        return false;
+      return true;
     }
     if (!a.exact || !b.exact || a.vars.size() != b.vars.size() || p.size == 0 || q.size == 0)
       return true;
@@ -2183,9 +2194,24 @@ struct Uncompute::Impl {
     SmallVector<Instruction *, 8> as = deferredAnchors(d);
     if (as.empty())
       return false;
-    for (Instruction *a : as)
-      if (a->getParent() != point->getParent() || !a->comesBefore(point))
+    // cq-lqz3: a use in an earlier block (a merge of the exit value at a classical join before P: 177's
+    // f_eval result phi, read by the phase in P) is before P when its block reaches P's and P's does not
+    // reach it, P is on no cycle, and every path leaving the loop reaches P: the blocks the region reaches
+    // without passing P are all built and none returns (the item runs once, guarded by whether the loop
+    // ran).
+    bool earlier = false;
+    for (Instruction *a : as) {
+      if (a->getParent() == point->getParent()) {
+        if (!a->comesBefore(point))
+          return false;
+        continue;
+      }
+      if (!reaches(a->getParent(), point->getParent()) || reaches(point->getParent(), a->getParent()))
         return false;
+      earlier = true;
+    }
+    if (earlier && (onCycle(point->getParent()) || !funnelsTo(d, point->getParent())))
+      return false;
     // Never inside another region whose own records are still pending (a later rule-14 loop's trip, its
     // back edges cut while it flushes per trip, or a cq_invert region): the item would run per trip.
     const BasicBlock *P = point->getParent();
@@ -2201,6 +2227,31 @@ struct Uncompute::Impl {
       }
     }
     return true;
+  }
+
+  // Every path leaving d's region reaches P: the blocks the region reaches without passing P are built
+  // (terminated) and none of them returns, and the region reaches P.
+  bool funnelsTo(const Deferred &d, const BasicBlock *P) const {
+    SmallPtrSet<const BasicBlock *, 16> seen;
+    SmallVector<const BasicBlock *, 16> work(d.region.begin(), d.region.end());
+    for (const BasicBlock *b : work)
+      seen.insert(b);
+    bool hitsP = false;
+    while (!work.empty()) {
+      const BasicBlock *b = work.pop_back_val();
+      const Instruction *t = b->getTerminator();
+      if (!t || isa<ReturnInst>(t))
+        return false;
+      for (const BasicBlock *sb : successors(t)) {
+        if (sb == P) {
+          hitsP = true;
+          continue;
+        }
+        if (seen.insert(sb).second)
+          work.push_back(sb);
+      }
+    }
+    return hitsP;
   }
 
   static RailType createdType(const Record &rec) {
