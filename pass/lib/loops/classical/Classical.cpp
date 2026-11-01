@@ -2376,6 +2376,7 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
       for (Use &u : I.operands())
         if (auto *d = dyn_cast<Instruction>(u.get()); d && !rev.count(d->getParent()))
           outside.push_back(&u);
+    DenseMap<std::pair<Instruction *, BasicBlock *>, Value *> carried;
     for (Use *u : outside) {
       auto *d = cast<Instruction>(u->get());
       if (d->getParent() == &Out.getEntryBlock())
@@ -2384,7 +2385,10 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
       // block before the reverse (the guard's block dominates every reverse block)
       auto *ui = cast<Instruction>(u->getUser());
       BasicBlock *at = isa<PHINode>(ui) ? cast<PHINode>(ui)->getIncomingBlock(*u) : guardBlock;
-      u->set(carryTo(at, d->getParent(), d, PoisonValue::get(d->getType()), d->getName()));
+      Value *&c = carried[{d, at}];
+      if (!c)
+        c = carryTo(at, d->getParent(), d, PoisonValue::get(d->getType()), d->getName());
+      u->set(c);
     }
     BZ.CreateBr(join);
     BX.SetInsertPoint(join);
