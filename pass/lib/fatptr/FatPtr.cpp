@@ -917,3 +917,10 @@ Triple passAcrossCall(LoweringContext &ctx, const Value *ptr) {
 }
 
 } // namespace cq::fatptr
+
+namespace cq::fatptr {
+// P1 (cq-arch 2026-11-01): stub until fatptr builds it.
+void bindFormal(LoweringContext &, const llvm::Argument &formal, llvm::Value *, Operand, Operand, llvm::Value *) {
+  unimplemented("fatptr: bindFormal (P1: a clone's triple pointer formal, rule 21, 190, 191)", &formal);
+}
+} // namespace cq::fatptr

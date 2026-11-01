@@ -1041,3 +1041,11 @@ void emitTwin(LoweringContext &ctx, CallBase &lowered) {
 }
 
 } // namespace cq::calls
+
+namespace cq::calls {
+// C1 (cq-arch 2026-11-01): stub until stream A builds it.
+void lowerLiftedVia(LoweringContext &, llvm::CallBase &site, llvm::ArrayRef<unsigned>) {
+  unimplemented("calls: lowerLiftedVia (C1: a call lowered as a direct call of a clone via an argument map, 106)",
+                &site);
+}
+} // namespace cq::calls

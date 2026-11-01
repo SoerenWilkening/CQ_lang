@@ -54,6 +54,11 @@ public:
   // dominated by each rail's definition and every use and reader item of each lies before P on every
   // path; otherwise an internal error.
   void resolveAt(llvm::Instruction *P, llvm::ArrayRef<RailId> rails);
+  // U6 (cq-arch 2026-11-01, CR rules 5, 18, §1.3): the call group of fwd (recordCall made) reads QRAM bus
+  // `bus` as it is now, version k = the stores recorded on it so far (its twin recompute-reads it): its item
+  // follows POP(j) of every store recorded on bus after this note and precedes POP(k) and the bus's release,
+  // as a QRAM load reading v_k (A2). Consumer: mem-qram noteCalleeQramStores.
+  void noteCallBusRead(llvm::CallInst *fwd, RailId bus);
   RailId idOf(llvm::Value *handle) const;
   void setRole(RailId, Role);
   void noteUse(RailId, llvm::Instruction *consumer);

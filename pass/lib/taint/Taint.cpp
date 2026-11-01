@@ -3980,3 +3980,10 @@ TaintInfo computeTaint(llvm::Module &M, const TaintOptions &opts) {
   return T;
 }
 } // namespace cq
+
+namespace cq {
+// T4 (cq-arch 2026-11-01): stub until taint builds it.
+PtrFormal TaintInfo::pointerFormal(const Specialization &callee, unsigned) const {
+  unimplemented("taint: pointerFormal (T4: how a clone's pointer formal crosses the call, 190, 191)", callee.F);
+}
+} // namespace cq

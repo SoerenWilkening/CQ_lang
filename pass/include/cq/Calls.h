@@ -21,5 +21,9 @@ void lowerDeclared(LoweringContext &, llvm::CallBase &);
 void lowerVarargs(LoweringContext &, llvm::Instruction &);
 void lowerAsm(LoweringContext &, llvm::CallBase &);
 void emitTwin(LoweringContext &, llvm::CallBase &lowered);
+// C1 (cq-arch 2026-11-01, CR rule 24; 106): site lowered as a direct call of T.calleeSpecialization(site, S),
+// formal k = site operand argMap[k] (pthread_create(t, attr, f, p): argMap = {3}); M1, recordCall and the
+// twin as for a plain clone call. site's own result is not bound (the consumer binds it). Consumer: eff-conc.
+void lowerLiftedVia(LoweringContext &, llvm::CallBase &site, llvm::ArrayRef<unsigned> argMap);
 void finalize(llvm::Module &);
 }

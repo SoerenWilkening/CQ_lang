@@ -3114,3 +3114,10 @@ void Uncompute::emitMirror(unsigned s, IRBuilder<> &B) {
 }
 
 } // namespace cq
+
+namespace cq {
+// U6 (cq-arch 2026-11-01): stub until stream A builds it.
+void Uncompute::noteCallBusRead(llvm::CallInst *fwd, RailId) {
+  unimplemented("uncompute: noteCallBusRead (U6: a clone call group reading a QRAM bus, 191)", fwd);
+}
+} // namespace cq

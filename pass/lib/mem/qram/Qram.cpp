@@ -1889,3 +1889,17 @@ void reallocQram(LoweringContext &ctx, CallBase &CB) {
   ctx.bind(&CB, qramBase(ctx, o));
 }
 } // namespace cq::mem
+
+namespace cq::mem {
+// M2, M2b, U3 (cq-arch 2026-11-01): stubs until mem-qram builds them.
+unsigned calleeQramStoreCount(const TaintInfo &, const Specialization &callee) {
+  unimplemented("mem-qram: calleeQramStoreCount (M2: a clone's stores through Qram-pointee formals, 191)", callee.F);
+}
+llvm::SmallVector<llvm::Value *, 2> emitCalleeQramStores(LoweringContext &) {
+  unimplemented("mem-qram: emitCalleeQramStores (M2b: a clone's deferred QRAM stores, 191)");
+}
+void noteCalleeQramStores(LoweringContext &, const llvm::CallBase &orig, const Specialization &, llvm::CallInst *,
+                          llvm::ArrayRef<llvm::Value *>) {
+  unimplemented("mem-qram: noteCalleeQramStores (U3: a clone call's QRAM stores on the caller's bus, 191)", &orig);
+}
+} // namespace cq::mem

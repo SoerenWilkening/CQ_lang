@@ -46,4 +46,20 @@ void allocateQram(LoweringContext &, llvm::Instruction &site);    // mem-qram
 void endQramLifetime(LoweringContext &, ObjectId, llvm::Instruction *at);  // mem-qram
 void reallocQram(LoweringContext &, llvm::CallBase &realloc);   // mem-qram (M5, cq-arch 2026-11-01)
 void lowerMemIntrinsic(LoweringContext &, llvm::MemIntrinsic &);  // mem-qram
+// M2 (cq-arch 2026-11-01, CR rules 18, 20, 21; 191). mem-qram: the number of the clone's stores through
+// Qram-pointee formals (T4), in program order (a store under a branch, in a loop or under a quantum
+// predicate: unimplemented). Consumer calls resultLayout: that many i32 handles after the result's leaves
+// (void with one store: i32; otherwise a literal struct {result leaves..., i32 x N}).
+unsigned calleeQramStoreCount(const TaintInfo &, const Specialization &callee);
+// M2b. mem-qram, in a clone: a store through a bound Qram formal is lowered as the rule-18 copy-out (alloc
+// 0, copy, Role::Result), no store. Called by Construct emitCloneReturn after flushAtExit, with the builder
+// before the ret: emits cqrt_qram_store_<W>[_hl](bus, idx, copy) in program order, records nothing, returns
+// the copies (appended to the return). Finalize drops these trailing stores from the twin.
+llvm::SmallVector<llvm::Value *, 2> emitCalleeQramStores(LoweringContext &);
+// U3. mem-qram, caller side: called by calls right after recordCall for every call with a Qram-pointee
+// triple formal (storedRails possibly empty): Uncompute::noteCallBusRead(fwd, bus) per bus the call reads,
+// then per stored rail in order recordCore(fwd, QramStore[_hl], {bus, idx, v}, bus) with idx the actual's
+// idx plus the store's constant offset in the clone.
+void noteCalleeQramStores(LoweringContext &, const llvm::CallBase &orig, const Specialization &callee,
+                          llvm::CallInst *fwd, llvm::ArrayRef<llvm::Value *> storedRails);
 }

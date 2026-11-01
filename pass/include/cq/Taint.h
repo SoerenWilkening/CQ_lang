@@ -23,6 +23,15 @@ struct Specialization { llvm::Function *F; Mask mask; bool ctl = false, pure = f
 using ObjectId = unsigned;                           // alloca, global, heap site, SROA field column
 enum class ObjClass : uint8_t { Classical, Slot, Qram };   // QROM is a load kind on a Classical object
 enum class OffsetKind : uint8_t { Classical, Quantum };
+// T4 (cq-arch 2026-11-01, CR rule 21, §1.4; 190, 191): how a pointer formal of a clone crosses the call.
+// Raw: the caller's pointer (31, 122); Triple: (object, tag, i32 idx) (191); TripleCount: the triple then
+// the object's i32 cell count (190: the callee loads at a run-time offset into a slot or host object).
+enum class PtrAbi : uint8_t { Raw, Triple, TripleCount };
+struct PtrFormal {
+  PtrAbi abi;
+  ObjClass pointee;  // Classical = host cells, Slot = handle cells, Qram = the object is the i32 bus handle
+  unsigned digits;   // this formal's mask digits (tag and idx included for a triple)
+};
 struct TaintOptions { std::vector<abi::CloneSpec> roots; }; // library-build and stress roots
 class TaintInfo {
 public:
@@ -42,6 +51,9 @@ public:
   // (cq_theta through the formal or a pointer derived from it); empty for a non-pointer formal.
   // Unimplemented: a variable offset, accesses of several sizes, an escape of the formal.
   llvm::SmallVector<unsigned, 4> cellsRotated(const Specialization &callee, unsigned argNo) const;
+  // T4: pointer formal argNo of clone `callee` (non-pointer formal: internal error; pointee objects of
+  // mixed class: unimplemented).
+  PtrFormal pointerFormal(const Specialization &callee, unsigned argNo) const;
   ObjectId objectOf(const llvm::Value *siteOrGlobal) const;
   ObjClass classOf(ObjectId) const;
   bool mayHoldHandle(ObjectId) const;
