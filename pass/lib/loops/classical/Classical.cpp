@@ -419,12 +419,14 @@ private:
   bool nested = false;
   BasicBlock *resetAt = nullptr;
   bool reversed = false;
+  BasicBlock *revAt = nullptr;   // where this unit's reverse begins (a trip-local sub-loop: inside the parent's trip)
   std::function<void()> finish;
   unsigned ownSeedScope = ~0u;
   std::vector<unsigned> hostScopes;   // the enclosing units' scopes (Uncompute F2)
   struct Sub {
     std::shared_ptr<Unit> unit;
     unsigned entrySeg;
+    BasicBlock *cont;   // the sub-unit's continuation (its forward exit into the parent)
   };
   std::vector<Sub> subs;
   DenseMap<const BasicBlock *, BasicBlock *> throughSub;   // a sub-unit's continuation -> the parent segment entering it
@@ -1544,7 +1546,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         ctx.B().CreateBr(ob(sx));
         edgeFrom[{sl->getExitingBlock(), sx}] = bk;
         throughSub[bk] = entry;
-        subs.push_back({sub, unsigned(segs.size() - 1)});
+        subs.push_back({sub, unsigned(segs.size() - 1), bk});
         cur = nullptr;
         continue;
       }
@@ -1877,6 +1879,7 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
   FunctionCallee pop = abi::declare(M, abi::CoreSpec{abi::Core::Pop});
   IntegerType *i32 = Type::getInt32Ty(C);
   reversed = true;
+  revAt = BX.GetInsertBlock();
   const unsigned n = segs.size();
   // A segment is the blocks from its head to its block segs[i].bb, which keeps its terminator: one
   // block, unless an item placed inside it split it (flushTrips' entering edge finds the head).
@@ -1909,6 +1912,22 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
     }
     if (!segOf.count(segs[i].bb) || segOf.lookup(segs[i].bb) != i)
       internalError("loops-classical: a segment's head does not reach its block", segs[i].bb->getTerminator());
+  }
+  // cq-x00t (CR rules 5, 14; 176): a trip-local sub-loop's reverse pops the frames its forward trips
+  // pushed, so nothing of this region may be pushed between the sub-loop's exit and that reverse. This
+  // region pushes a segment's path record (below) at the start of the segment's block segs[i].bb, after
+  // any item placed in the segment, and its read-back values at that block's terminator. So the reverse
+  // must lie in the segment the sub-loop exits into, before segs[i].bb.
+  for (const Sub &sb : subs) {
+    BasicBlock *at = sb.unit->revAt;
+    if (!at)
+      continue;
+    auto it = segOf.find(at);
+    unsigned i = it == segOf.end() ? n : it->second;
+    if (i == n || at == segs[i].bb || !is_contained(predecessors(headOf[i]), sb.cont))
+      unimplemented("loops-classical: a trip-local sub-loop's reverse placed outside the segment its loop exits "
+                    "into (a record of the parent pushed between the sub-loop's exit and its reverse)",
+                    sb.unit->top.getHeader()->getTerminator());
   }
   DenseSet<const BasicBlock *> region;
   for (auto &kv : segOf)
@@ -2210,7 +2229,9 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
     cf->insertInto(hd, hd->begin());
     for (BasicBlock *p : predecessors(hd))
       cf->addIncoming(ConstantInt::get(i32, find(uniq, mapPred(p)) - uniq.begin()), p);
-    IRBuilder<>(hd, hd->getFirstInsertionPt()).CreateCall(push, {cf});
+    // After any item placed in the segment (a trip-local sub-loop's reverse pops the frames under it).
+    BasicBlock *pb = segs[i].bb;
+    IRBuilder<>(pb, pb->getFirstInsertionPt()).CreateCall(push, {cf});
     CallInst *k = B.CreateCall(pop);
     if (!anchor && any_of(uniq, [&](BasicBlock *p) { return !region.count(p); }))
       anchor = k;
