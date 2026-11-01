@@ -1480,11 +1480,113 @@ Value *qramBusOf(LoweringContext &ctx, const Value *root, const Instruction &at)
   return busOf(q, root, &q.cols[0], at);
 }
 
+#ifdef CQ_M6_WRITE_SLOT_CELLS
+// Rule 22 into a slot array through mem-slots' write path (M6 writeSlotCells, cq-arch 2026-11-01): the
+// cells the intrinsic may touch, j below the length's bound (a classical constant length: exactly; a
+// quantum length: its upper bound, LLVM's known bits and range facts), take their new values, guarded by
+// len >u (j + 1) * cb - 1 for a quantum length (an i1 rail per cell; mem-slots makes the cell
+// select(guard, new, old) and restores the slot on uncompute). Every source cell is read before any write
+// (memmove's overlap): a slot source through readSlotCells (M4), a classical source by host loads; a
+// memset's fill is its splatted literal. A QRAM or fat-pointer source, a quantum fill and a run-time
+// classical length are unimplemented.
+void lowerSlotIntrinsicM6(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  LLVMContext &C = ctx.M.getContext();
+  IRBuilder<> &B = ctx.B();
+  FnState &st = stateOf(ctx, MI);
+  Addr a = decompose(MI.getDest(), DL);
+  if (!a.ok || ctx.T.objectOf(a.root) != o)
+    unimplemented("mem-qram: a memory intrinsic into a slot object whose destination is not its object plus GEP "
+                  "offsets",
+                  &MI);
+  ObjInfo &info = objInfo(ctx, st, a.root, o);
+  Type *cellTy = cellType(ctx, st, info, o);
+  RailType w = info.boolCells ? RailType{Kind::Int, 1} : railTypeOf(cellTy);
+  uint64_t cb = info.cellBytes;
+  if (a.off % int64_t(cb))
+    unimplemented("mem-qram: a memory intrinsic into a slot object starting inside a cell (a bit view, 63)", &MI);
+  // The length: a classical constant, or a quantum rail (its logical value beneath one zext).
+  const Value *lenV = MI.getLength();
+  if (auto *z = dyn_cast<ZExtInst>(lenV); z && ctx.T.isQuantum(z->getOperand(0), ctx.S))
+    lenV = z->getOperand(0);
+  Operand len = ctx.operand(lenV);
+  uint64_t n = 0;
+  if (!len.handle) {
+    auto *cl = dyn_cast<ConstantInt>(len.v);
+    if (!cl)
+      unimplemented("mem-qram: a memcpy/memmove into a slot array with a run-time classical length (a loop)", &MI);
+    if (cl->getZExtValue() % cb)
+      unimplemented("mem-qram: a memory intrinsic into a slot array over a part of a cell (a bit view, 63)", &MI);
+    n = cl->getZExtValue() / cb;
+  } else {
+    if (!wholeCells(lenV, cb, DL))
+      unimplemented("mem-qram: a quantum-length memory intrinsic into a slot array over a part of a cell (a bit "
+                    "view, 63)",
+                    &MI);
+    n = (upperBound(lenV, DL, MI) + cb - 1) / cb;
+  }
+  if (n == 0)
+    return;
+  // The values, every source cell read first.
+  SmallVector<Operand, 8> vals;
+  if (auto *MS = dyn_cast<MemSetInst>(&MI)) {
+    Operand fill = ctx.operand(MS->getValue());
+    if (fill.handle)
+      unimplemented("mem-qram: a memset of a slot object with a quantum fill byte (rule 22)", &MI);
+    Value *v = splatCell(ctx, fill.v, cellTy);
+    vals.assign(n, Operand{v, false});
+  } else {
+    const Value *src = cast<MemTransferInst>(MI).getSource();
+    if (ctx.T.isFatPointer(src, ctx.S))
+      unimplemented("mem-qram: a memcpy/memmove into a slot array from a quantum (fat) source pointer (rule 21, 90)",
+                    &MI);
+    ArrayRef<ObjectId> so = ctx.T.provenance(src, ctx.S);
+    bool classical = true;
+    for (ObjectId x : so)
+      classical &= ctx.T.classOf(x) == ObjClass::Classical;
+    if (so.size() == 1 && ctx.T.classOf(so.front()) == ObjClass::Slot) {
+      vals = readSlotCells(ctx, src, cellTy, n, MI);
+    } else if (classical) {
+      Operand sp = ctx.operand(src);
+      if (sp.handle)
+        internalError("mem-qram: a classical memcpy source bound to a rail", &MI);
+      for (uint64_t j = 0; j < n; ++j) {
+        Value *p = j ? B.CreateInBoundsGEP(Type::getInt8Ty(C), sp.v, ConstantInt::get(Type::getInt64Ty(C), j * cb))
+                     : sp.v;
+        vals.push_back(Operand{B.CreateLoad(cellTy, p), false});
+      }
+    } else {
+      unimplemented("mem-qram: a memcpy/memmove into a slot array from a QRAM or a mixed-class source", &MI);
+    }
+  }
+  // The guards of a quantum length.
+  SmallVector<Value *, 8> guards;
+  if (len.handle) {
+    unsigned lw = lenV->getType()->getIntegerBitWidth();
+    for (uint64_t j = 0; j < n; ++j) {
+      abi::TemplateSpec cmp;
+      cmp.op = "icmp";
+      cmp.pred = "ugt";
+      cmp.w = RailType{Kind::Int, lw};
+      cmp.shape = "hl";
+      guards.push_back(ctx.emitTemplate(cmp, {len, Operand{ConstantInt::get(IntegerType::get(C, lw), (j + 1) * cb - 1), false}}));
+    }
+  }
+  (void)w;
+  writeSlotCells(ctx, MI.getDest(), cellTy, vals, guards, MI);
+}
+#endif
+
 void lowerMemIntrinsic(LoweringContext &ctx, MemIntrinsic &MI) {
   ArrayRef<ObjectId> objs = ctx.T.provenance(MI.getDest(), ctx.S);
   if (ctx.T.isFatPointer(MI.getDest(), ctx.S))
     unimplemented("mem-qram: a memory intrinsic through a quantum destination pointer (rules 21, 22)", &MI);
   if (objs.size() == 1 && ctx.T.classOf(objs.front()) == ObjClass::Slot) {
+#ifdef CQ_M6_WRITE_SLOT_CELLS
+    // M6: a quantum-length memset and every memcpy/memmove go through mem-slots' write path.
+    if (!isa<MemSetInst>(&MI) || ctx.operand(MI.getLength()).handle)
+      return lowerSlotIntrinsicM6(ctx, MI, objs.front());
+#endif
     if (auto *MS = dyn_cast<MemSetInst>(&MI))
       return lowerSlotMemset(ctx, *MS, objs.front());
     unimplemented("mem-qram: a memcpy/memmove into a slot array (rule 22: each cell takes the source handle or a "
