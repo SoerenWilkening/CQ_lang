@@ -15,6 +15,7 @@
 #include <optional>
 
 #include "cq/Abi.h"
+#include "cq/Memory.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
@@ -1294,6 +1295,14 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
     }
     return false;
   };
+  // CR rule 6, a cell chosen by a classical index (cq-bfz4, 190): the old value is a run-time slot load
+  // whose cells mem-slots knows statically (registers cleaned, seeds skipped, on a classical branch).
+  for (Value *Y : I.operands())
+    if (auto *ld = dyn_cast<LoadInst>(Y); ld && mem::indexedCellLoadDead(ctx, *ld, I))
+      if (auto inv = inverseOf(ctx, I, Y, yp)) {
+        mem::cleanIndexedCellLoad(ctx, *ld, I, inv->spec, inv->ops);
+        return;
+      }
   SmallVector<Value *, 3> dead;
   for (Value *Y : I.operands())
     if (!is_contained(dead, Y) && cleanable(ctx, Y) && deadAtCleanup(ctx, Y, ctx.operand(Y).v, &I) && !neededLater(Y))

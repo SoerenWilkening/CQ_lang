@@ -86,6 +86,17 @@ struct DeclaredCells { llvm::Type *cellTy; llvm::SmallVector<Operand, 8> atCall;
 DeclaredCells declaredCellsAtCall(LoweringContext &, const llvm::CallBase &orig, unsigned argNo);
 void noteDeclaredWrites(LoweringContext &, const llvm::CallBase &orig, unsigned argNo, unsigned pseudoRail,
                         llvm::ArrayRef<Operand> atCall);
+// R6 (cq-bfz4, CR rule 6 'a cell chosen by a classical index'; 190). mem-slots, consumer spine ruleSixAfter:
+// indexedCellLoadDead: ld is a slot load at a run-time classical offset of a dynamic local object, outside
+// any quantum predicate and any cycle, whose one use is update (in ld's block), and nothing reads the object
+// but ld (no other load, no call handed it, no copy out of it); every cell holds at ld a statically known
+// rail: a seed (rule 7) or a cq_theta register whose IR names are only stored into the object.
+// cleanIndexedCellLoad, after update y' = f(ld, ...) is lowered, f a bijection in ld with inverse(ops) = ld:
+// a classical branch on the cell index skips the seed cells; on the register cells t = inverse(ops),
+// copy(t, ld), inverse_unc, free t, free ld. update's result must be only measured (else unimplemented).
+bool indexedCellLoadDead(LoweringContext &, const llvm::LoadInst &ld, const llvm::Instruction &update);
+void cleanIndexedCellLoad(LoweringContext &, const llvm::LoadInst &ld, llvm::Instruction &update,
+                          const abi::TemplateSpec &inverse, llvm::ArrayRef<Operand> ops);
 void allocateSlots(LoweringContext &, llvm::Instruction &site);   // mem-slots
 void endSlotLifetime(LoweringContext &, ObjectId, llvm::Instruction *at);  // mem-slots
 void lowerQromLoad(LoweringContext &, llvm::LoadInst &);          // mem-qrom

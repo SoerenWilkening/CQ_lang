@@ -6,7 +6,8 @@ Structural checks only; the bead's acceptance is §6 (`python3 -m cqcheck run 18
 
   - probes/*.ll: synthetic modules. Each `; CHECK <fn>: <text>` must occur in <fn>'s lowered body
     (`%{{name}}` matches any local), each `; CHECK-COUNT <fn>: <text> <n>` exactly n times; the output
-    must pass plain cq-verify. A probe with `; EXPECT-ERROR: <text>` must instead make cq-lower exit
+    must pass plain cq-verify; each `; USERCHECK <fn>` must be §6-equal to its C program (cqcheck user). A
+    probe with `; EXPECT-ERROR: <text>` must instead make cq-lower exit
     non-zero with <text> on stderr (an internal error, never a lowering).
   - the owned examples: cq-lower (with its built-in verifier) exits 0, cq-verify accepts the output, no
     CQ.h surface call is left. The normalized textual diff against the reference is printed as a quality
@@ -85,6 +86,14 @@ def probes(a) -> int:
                         reasons.append(f"{m.group(2)}: '{text}' occurs {got} times, expected {n}")
                 elif not check_pattern(m.group(3)).search(body):
                     reasons.append(f"{m.group(2)}: missing '{m.group(3)}'")
+            # `; USERCHECK <fn>` (cq-bfz4): <fn> must also be §6-equal to its own C program (the probe's -O1 IR
+            # with cq_theta as the identity: `python3 -m cqcheck user`).
+            for fn in re.findall(r"^; USERCHECK (\w+)$", src, re.M):
+                c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(p), "--lowered", str(dest),
+                                    "--entry", fn], capture_output=True, text=True, cwd=ROOT / "checker")
+                if c.returncode != 0 or "PASS" not in c.stdout + c.stderr:
+                    reasons.append(f"{fn}: §6 against the C program: " +
+                                   ((c.stdout + c.stderr).strip().splitlines() or ["?"])[-1])
         failures += bool(reasons)
         print(f"{'ok' if not reasons else 'FAIL':4} probe {p.name}" + "".join("\n     " + x for x in reasons))
     return failures

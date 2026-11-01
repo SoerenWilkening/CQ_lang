@@ -373,6 +373,7 @@ struct FnState {
   DenseMap<const Instruction *, Operand> loweredIdx;
   DenseSet<const Value *> registers;                // new-IR handles known never to be resolved here
   DenseSet<const Instruction *> copies;             // slot stores lowered as a basis copy (cq-dr4o)
+  DenseSet<const Value *> seeds;                    // cq-bfz4: seeds of dynamic cells kept as Role::Seed
   DenseMap<const Instruction *, ViewVal> views;     // stores into a view object -> the value they left (63)
   struct CellRead { const Instruction *I; Addr a; uint64_t size; LoadInst *h = nullptr; };
   SmallVector<CellRead, 8> cellReads;               // accesses lowered as a run-time read of a local cell (M3)
@@ -1595,6 +1596,33 @@ RailType cellRail(const ObjInfo &info, Type *ty, const Instruction &I) {
   return railTypeOf(ty);
 }
 
+// cq-bfz4: the i64 cell index of an access of a scalar-cell slot array at a run-time or nonzero offset, in
+// the new IR (null for cell 0 of a constant offset), as cellPointer computes it.
+Value *cellIndex(LoweringContext &ctx, const Site &s, const Instruction &I) {
+  IRBuilder<> &B = ctx.B();
+  int64_t cb = int64_t(s.info->cellBytes);
+  if (s.info->record || s.info->colStride || s.a.off % cb)
+    internalError("mem-slots: cellIndex of a record, a field column or an offset inside a cell", &I);
+  Type *i64 = Type::getInt64Ty(ctx.M.getContext());
+  Value *idx = nullptr;
+  for (auto &[v, stride] : s.a.terms) {
+    if (stride % cb || v->getType()->isPointerTy())
+      internalError("mem-slots: cellIndex of a stride inside a cell or a walked pointer", &I);
+    Operand x = ctx.operand(v);
+    if (x.handle)
+      internalError("mem-slots: a quantum index into a slot object (QRAM, rule 20)", &I);
+    Value *t = B.CreateSExtOrTrunc(x.v, i64);
+    if (stride / cb != 1)
+      t = B.CreateMul(t, ConstantInt::get(i64, stride / cb, true));
+    idx = idx ? B.CreateAdd(idx, t) : t;
+  }
+  if (s.a.off) {
+    Value *k = ConstantInt::get(i64, s.a.off / cb, true);
+    idx = idx ? B.CreateAdd(idx, k) : k;
+  }
+  return idx;
+}
+
 // The i32 cell pointer of an access, in the new IR.
 Value *cellPointer(LoweringContext &ctx, const Site &s, const Instruction &I) {
   IRBuilder<> &B = ctx.B();
@@ -2588,12 +2616,114 @@ bool cellDeadAfter(LoweringContext &ctx, const Holder &h, const Instruction *S) 
   return true;
 }
 
+// cq-bfz4: the original values that name handle h: the value of a lowered store that left h in its cell,
+// a lowered load that read h, and their views and in-place rotations (freeze, bitcast, cq_theta).
+void railNames(FnState &st, const Value *h, SmallPtrSetImpl<const Value *> &out) {
+  SmallVector<const Value *, 8> work;
+  for (auto &[I, op] : st.lowered) {
+    if (!op.handle || op.v != h)
+      continue;
+    const Value *n = I;
+    if (auto *X = dyn_cast<StoreInst>(I))
+      n = X->getValueOperand();
+    else if (!isa<LoadInst>(I))
+      continue;
+    if (!isa<Constant>(n) && out.insert(n).second)
+      work.push_back(n);
+  }
+  while (!work.empty()) {
+    const Value *x = work.pop_back_val();
+    for (const User *u : x->users()) {
+      auto *c = dyn_cast<CallInst>(u);
+      bool same = isa<FreezeInst>(u) || isa<BitCastInst>(u) ||
+                  (c && c->getCalledFunction() && c->getCalledFunction()->getName().starts_with("cq_theta_") &&
+                   c->arg_size() && c->getArgOperand(0) == x);
+      if (same && out.insert(u).second)
+        work.push_back(u);
+    }
+  }
+}
+
+// cq-bfz4 (orchestrator decision 2026-11-01, revising cq-dr4o; CR rules 2, 20, 190 memmove_overlap and
+// escape): one rail may sit in several cells (and SSA names) as long as nothing writes it in place: C's
+// copies then hold equal values, and a read never writes a rail (rule 4). True when a non-diagonal in-place
+// write on a rail named by `names` or held by a cell of `objs` may follow `at` (reachable from it): a
+// cq_theta (rule 2) whose operand is such a name, a load of such an object, or a value chosen among
+// handles (a phi or a classical select), or a call of a function with a body (a clone, rule 18; an
+// indirect call) handed a pointer into such an object or such a name. A callee with no body (rule 27, a
+// declared clone: its twin restores the cells) and the cq_ surface otherwise are no in-place write.
+bool inPlaceMayFollow(LoweringContext &ctx, FnState &st, const Instruction &at, ArrayRef<ObjectId> objs,
+                      const SmallPtrSetImpl<const Value *> *names) {
+  auto inObjs = [&](const Value *p) {
+    if (!p->getType()->isPointerTy())
+      return false;
+    for (ObjectId x : ctx.T.provenance(p, ctx.S))
+      if (is_contained(objs, x))
+        return true;
+    return false;
+  };
+  auto mayBeRail = [&](const Value *x) {
+    for (unsigned g = 0; g < 64; ++g) {
+      if (names && names->count(x))
+        return true;
+      if (isa<FreezeInst>(x) || isa<CastInst>(x)) {
+        x = cast<Instruction>(x)->getOperand(0);
+        continue;
+      }
+      if (auto *c = dyn_cast<CallInst>(x); c && c->getCalledFunction() &&
+                                          c->getCalledFunction()->getName().starts_with("cq_theta_") &&
+                                          c->arg_size()) {
+        x = c->getArgOperand(0);
+        continue;
+      }
+      if (auto *ld = dyn_cast<LoadInst>(x))
+        return inObjs(ld->getPointerOperand());
+      return isa<PHINode>(x) || isa<SelectInst>(x);
+    }
+    return true;
+  };
+  auto hit = [&](const Instruction &I) {
+    auto *CB = dyn_cast<CallBase>(&I);
+    if (!CB || isa<DbgInfoIntrinsic>(CB))
+      return false;
+    const Function *f = CB->getCalledFunction();
+    if (f && f->getName().starts_with("cq_theta_"))
+      return CB->arg_size() && ctx.T.isQuantum(CB->getArgOperand(0), ctx.S) && mayBeRail(CB->getArgOperand(0));
+    if (isCqSurface(*CB) || isa<IntrinsicInst>(CB) || (f && f->isDeclaration()))
+      return false;
+    for (const Use &u : CB->args())
+      if (inObjs(u.get()) || (ctx.T.isQuantum(u.get(), ctx.S) && mayBeRail(u.get())))
+        return true;
+    return false;
+  };
+  const BasicBlock *AB = at.getParent();
+  for (auto it = std::next(at.getIterator()); it != AB->end(); ++it)
+    if (hit(*it))
+      return true;
+  SmallPtrSet<const BasicBlock *, 16> seen;
+  SmallVector<const BasicBlock *, 16> work(succ_begin(AB), succ_end(AB));
+  while (!work.empty()) {
+    const BasicBlock *b = work.pop_back_val();
+    if (!seen.insert(b).second)
+      continue;
+    for (const Instruction &I : *b)
+      if (hit(I))
+        return true;
+    work.append(succ_begin(b), succ_end(b));
+  }
+  return false;
+}
+
 // CR rule 20 slot store, C value semantics (cq-dr4o): the rail replaces the cell, and C copies the
 // value. When the handle S stores may still be read after S through another holder (a cell other
 // than S's, or an SSA value naming the rail), the two C objects would share one rail and an in-place
 // gate on one (rule 2) would change the other: S then stores a basis copy (CR §0). It is a move (the
-// handle itself, no gate) when no other holder can be read after S.
-bool needsCopy(LoweringContext &ctx, FnState &st, const StoreInst &S, const Site &dest) {
+// handle itself, no gate) when no other holder can be read after S, and (cq-bfz4) the cells share the
+// rail when no in-place write on any holder may follow S (inPlaceMayFollow).
+// holderMayBeRead: the read half of that test; it leaves the rail's names and its holders' objects in
+// namesOut and objsOut for inPlaceMayFollow (needsCopy below).
+bool holderMayBeRead(LoweringContext &ctx, FnState &st, const StoreInst &S, const Site &dest,
+                     SmallPtrSetImpl<const Value *> &namesOut, SmallVectorImpl<ObjectId> &objsOut) {
   const DataLayout &DL = ctx.M.getDataLayout();
   const Value *v = S.getValueOperand();
   // A constant names no rail (its store is a seed, rule 7), and its users span the module (121: the 'a'
@@ -2677,6 +2807,10 @@ bool needsCopy(LoweringContext &ctx, FnState &st, const StoreInst &S, const Site
       if (h && !(h->o == dest.o && sameCell(h->a, dest.a)))
         holders.push_back(*h);
     }
+  namesOut.insert(names.begin(), names.end());
+  for (const Holder &h : holders)
+    if (!is_contained(objsOut, h.o))
+      objsOut.push_back(h.o);
   // A name read after S, with or without another memory holder (cq-7hpb: b[j] = x; ... x). A later plain store of a name into a slot cell is not a read: that store is
   // decided the same way when it is lowered, with S's cell among its holders.
   auto slotStoreOf = [&](const Instruction *U, const Value *n) {
@@ -2769,6 +2903,14 @@ bool needsCopy(LoweringContext &ctx, FnState &st, const StoreInst &S, const Site
       return true;
   }
   return false;
+}
+
+bool needsCopy(LoweringContext &ctx, FnState &st, const StoreInst &S, const Site &dest) {
+  SmallPtrSet<const Value *, 8> names;
+  SmallVector<ObjectId, 4> objs{dest.o};
+  if (!holderMayBeRead(ctx, st, S, dest, names, objs))
+    return false;
+  return inPlaceMayFollow(ctx, st, S, objs, &names);
 }
 
 // ---- bit views of a value object (63) ---------------------------------------------------------
@@ -3149,6 +3291,26 @@ bool cellsHoldRegisters(LoweringContext &ctx, FnState &st, ObjectId o) {
   return false;
 }
 
+// cq-bfz4: every store into the object writes its own cell once: a classical constant offset, outside any
+// cycle, no two stores of one cell.
+bool storesOnce(LoweringContext &ctx, FnState &st, ObjectId o) {
+  if (!st.LI)
+    st.LI = std::make_unique<LoopInfo>(*st.DT);
+  const DataLayout &DL = ctx.M.getDataLayout();
+  SmallVector<Access, 8> stores;
+  for (const Access &a : accessesOf(ctx, *st.F, o)) {
+    if (!isa<StoreInst>(a.I))
+      continue;
+    if (!a.a.ok || !a.a.terms.empty() || st.LI->getLoopFor(a.I->getParent()))
+      return false;
+    for (const Access &b : stores)
+      if (!differentCell(a.a, b.a, storeBytes(DL, a.ty), storeBytes(DL, b.ty)))
+        return false;
+    stores.push_back(a);
+  }
+  return true;
+}
+
 void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &I, Type *ty, Operand val,
                  StoreWhat what) {
   using What = StoreWhat;
@@ -3211,12 +3373,17 @@ void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &
         }
         // The cells of a dynamic slot array are registers (58, 59: seeded |0>, kept).
         ctx.unc().setRole(id, Role::UserRegister);
-        if (what == What::Seed && !cellsHoldRegisters(ctx, st, s.o)) {
+        if (what == What::Seed && (!cellsHoldRegisters(ctx, st, s.o) ||
+                                   (storesOnce(ctx, st, s.o) && !inPlaceMayFollow(ctx, st, I, {s.o}, nullptr)))) {
           // Rule 7 (129's f seeds): no user register ever enters the object's cells (no cq_theta result
           // stored there or applied to a load of it, no clone handed a pointer into it), so a seed keeps its
           // classical value: released at the object's lifetime end (endSlotLifetime). It is no register for
-          // the run-time reads (each names it, M3), so its release follows them.
+          // the run-time reads (each names it, M3), so its release follows them. cq-bfz4 (190): registers
+          // may enter the cells, but no in-place write on a cell may follow the seed's store
+          // (inPlaceMayFollow) and no store overwrites a cell (storesOnce: freeOverwrittenSeed frees an
+          // overwritten seed itself, 121): the seed is never written either.
           st.releasable[s.a.root].push_back(val.v);
+          st.seeds.insert(val.v);
           break;
         }
         st.registers.insert(val.v);
@@ -4740,6 +4907,16 @@ void writeSlotCells(LoweringContext &ctx, const Value *ptr, Type *cellTy, ArrayR
                   &at);
   RailType w = cellRail(*s.info, cellTy, at);
   LLVMContext &C = ctx.M.getContext();
+  // cq-bfz4: the objects and SSA names that may hold a source rail besides the written cell.
+  SmallVector<ObjectId, 4> objs{s.o};
+  if (auto *MT = dyn_cast<MemTransferInst>(&at))
+    for (ObjectId x : ctx.T.provenance(MT->getSource(), ctx.S))
+      if (!is_contained(objs, x))
+        objs.push_back(x);
+  SmallPtrSet<const Value *, 8> names;
+  for (const Operand &v : vals)
+    if (v.handle)
+      railNames(st, v.v, names);
   for (size_t i = 0; i < vals.size(); ++i) {
     Site c = s;
     c.a.off += int64_t(i * cellStride(*s.info));
@@ -4766,6 +4943,11 @@ void writeSlotCells(LoweringContext &ctx, const Value *ptr, Type *cellTy, ArrayR
       ctx.unc().recordSeed(a);
       val = Operand{a, true};
       what = StoreWhat::Seed;
+    } else if (!inPlaceMayFollow(ctx, st, at, objs, &names)) {
+      // cq-bfz4: no in-place write on a holder may follow: the cell takes the handle itself, as a slot
+      // store does (190's memmove: cells 0 and 1 both x).
+      val = v;
+      what = st.registers.count(v.v) ? StoreWhat::Register : StoreWhat::Computed;
     } else {
       // C copies the value (cq-dr4o): the cell gets its own rail, a basis copy (the source still holds it).
       CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(C, w))});
@@ -5444,6 +5626,185 @@ Value *reloadFatCell(LoweringContext &ctx, const Value *root, Type *ty, int64_t 
   LoadInst *h = ctx.B().CreateAlignedLoad(handleTy(ctx.M.getContext()), cellPointer(ctx, s, orig), Align(4));
   st.fatOut[&orig][{root, byte}] = Operand{h, true};
   return h;
+}
+
+// R6 (cq-bfz4, CR rule 6 'a cell chosen by a classical index'; 190's memmove_overlap). The cells' rails as
+// of ld when ld is that shape (see Memory.h), each with true for a seed; nullopt otherwise.
+namespace {
+struct IndexedCells {
+  Site s;
+  SmallVector<std::pair<Value *, bool>, 8> cells;
+};
+std::optional<IndexedCells> indexedCells(LoweringContext &ctx, const LoadInst &ld, const Instruction &U) {
+  if (ld.isVolatile() || ld.isAtomic() || !ctx.T.isQuantum(&ld, ctx.S) || ctx.T.isFatPointer(ld.getPointerOperand(), ctx.S))
+    return std::nullopt;
+  ArrayRef<ObjectId> objs = ctx.T.provenance(ld.getPointerOperand(), ctx.S);
+  if (objs.size() != 1 || ctx.T.classOf(objs.front()) != ObjClass::Slot)
+    return std::nullopt;
+  if (!ld.hasOneUse() || ld.user_back() != &U || U.getParent() != ld.getParent() || !ctx.currentPredicate().isTop() ||
+      ctx.currentFlag())
+    return std::nullopt;
+  FnState &st = stateOf(ctx, ld);
+  auto lw = st.lowered.find(&ld);
+  if (lw == st.lowered.end() || !lw->second.handle || lw->second.v != ctx.operand(&ld).v)
+    return std::nullopt;
+  Addr a0 = decompose(ld.getPointerOperand(), ctx.M.getDataLayout());
+  if (!a0.ok || a0.terms.empty())
+    return std::nullopt;
+  Site s = siteOf(ctx, st, ld, ld.getPointerOperand(), ld.getType());
+  ObjectId o = s.o;
+  auto *AI = dyn_cast<AllocaInst>(s.a.root);
+  if (s.beyond || !AI || s.info->kind != RootKind::Local || s.info->escaping || s.info->record || s.info->view ||
+      s.info->boolCells || s.info->colStride || !isDynamic(ctx, st, *s.info, o) || !s.info->cellBytes)
+    return std::nullopt;
+  if (!st.LI)
+    st.LI = std::make_unique<LoopInfo>(*st.DT);
+  if (st.LI->getLoopFor(ld.getParent()))
+    return std::nullopt;
+  // Nothing reads the object but ld: its other accesses are plain stores, memory intrinsics into it read
+  // only it (or classical memory), and no call is handed it.
+  for (const Access &x : accessesOf(ctx, *st.F, o))
+    if (x.I != &ld && !isa<StoreInst>(x.I))
+      return std::nullopt;
+  for (const Instruction &X : instructions(*st.F)) {
+    if (auto *MT = dyn_cast<MemTransferInst>(&X)) {
+      if (hasObject(ctx, MT->getSource(), o) && !hasObject(ctx, MT->getDest(), o))
+        return std::nullopt;
+      continue;
+    }
+    if (auto *CB = dyn_cast<CallBase>(&X); CB && !isa<MemIntrinsic>(CB) && !isa<DbgInfoIntrinsic>(CB) &&
+                                         !(isa<IntrinsicInst>(CB) && cast<IntrinsicInst>(CB)->isLifetimeStartOrEnd()))
+      for (const Use &u : CB->args())
+        if (hasObject(ctx, u.get(), o))
+          return std::nullopt;
+  }
+  std::optional<TypeSize> total = AI->getAllocationSize(ctx.M.getDataLayout());
+  if (!total || total->isScalable())
+    return std::nullopt;
+  uint64_t cb = s.info->cellBytes, n = total->getFixedValue() / cb;
+  IndexedCells out{s, {}};
+  for (uint64_t c = 0; c < n; ++c) {
+    Addr ac = s.a;
+    ac.terms.clear();
+    ac.off = int64_t(c * cb);
+    const Instruction *src = sourceOf(ctx, st, *s.info, o, &ld, ac, ld.getType());
+    if (!src)
+      return std::nullopt;
+    Operand h;
+    if (auto co = st.callOut.find(src); co != st.callOut.end()) {
+      auto k = co->second.find(ac.off);
+      if (k == co->second.end())
+        return std::nullopt;
+      h = k->second;
+    } else if (auto lo = st.lowered.find(src); lo != st.lowered.end() && isa<StoreInst>(src)) {
+      h = lo->second;
+    } else {
+      return std::nullopt;
+    }
+    if (!h.handle)
+      return std::nullopt;
+    if (st.seeds.count(h.v)) {
+      out.cells.push_back({h.v, true});
+      continue;
+    }
+    // A register: a cq_theta result (rule 2) whose every IR name is only stored into this object.
+    if (!st.registers.count(h.v))
+      return std::nullopt;
+    bool theta = false;
+    for (auto &[X, op] : st.lowered) {
+      if (!op.handle || op.v != h.v)
+        continue;
+      auto *XS = dyn_cast<StoreInst>(X);
+      if (!XS)
+        return std::nullopt;
+      const Value *V = XS->getValueOperand();
+      if (!isThetaResult(ctx, V, h))
+        return std::nullopt;
+      theta = true;
+      for (const User *u : V->users()) {
+        auto *us = dyn_cast<StoreInst>(u);
+        if (!us || us->getValueOperand() != V || !hasObject(ctx, us->getPointerOperand(), o))
+          return std::nullopt;
+      }
+    }
+    if (!theta)
+      return std::nullopt;
+    out.cells.push_back({h.v, false});
+  }
+  return out;
+}
+} // namespace
+
+bool indexedCellLoadDead(LoweringContext &ctx, const LoadInst &ld, const Instruction &update) {
+  return indexedCells(ctx, ld, update).has_value();
+}
+
+void cleanIndexedCellLoad(LoweringContext &ctx, const LoadInst &ld, Instruction &update,
+                          const abi::TemplateSpec &inverse, ArrayRef<Operand> ops) {
+  std::optional<IndexedCells> ic = indexedCells(ctx, ld, update);
+  if (!ic)
+    internalError("mem-slots: cleanIndexedCellLoad of a load that is not a dead indexed cell load", &ld);
+  // The update's result is kept by its measurement (rule 2): its record is never undone, so nothing
+  // re-reads the old value after the clean-up.
+  for (const User *u : update.users()) {
+    auto *m = dyn_cast<CallBase>(u);
+    if (!m || !m->getCalledFunction() || !m->getCalledFunction()->getName().starts_with("cq_measure_"))
+      unimplemented("mem-slots: rule 6 on a slot cell chosen by a classical index whose bijective update is used "
+                    "other than by a measurement (its _unc would re-read the cleaned register)",
+                    &update);
+  }
+  bool anyRegister = false, anySeed = false;
+  for (auto &[h, seed] : ic->cells)
+    (seed ? anySeed : anyRegister) = true;
+  if (!anyRegister)
+    return;   // a seed is freed directly (rule 7)
+  IRBuilder<> &B = ctx.B();
+  LLVMContext &C = ctx.M.getContext();
+  Module &M = ctx.M;
+  Value *h = ctx.operand(&ld).v;
+  Value *idx = cellIndex(ctx, ic->s, ld);
+  if (!idx)
+    internalError("mem-slots: an indexed cell load with no run-time cell index", &ld);
+  // Split the current block at the builder: its head (and its predecessors' edges) move to a fresh block
+  // H, the clean-up runs from H on the branch, and the walk continues in the original block (which keeps
+  // the program's later code and every reference to it as an edge's source).
+  BasicBlock *P = B.GetInsertBlock();
+  Function *F = P->getParent();
+  BasicBlock::iterator ip = B.GetInsertPoint();
+  BasicBlock *H = BasicBlock::Create(C, "", F, P);
+  H->splice(H->end(), P, P->begin(), ip);
+  for (BasicBlock *pr : SmallVector<BasicBlock *, 4>(predecessors(P)))
+    if (pr != H)
+      pr->getTerminator()->replaceSuccessorWith(P, H);
+  BasicBlock *Cl = BasicBlock::Create(C, "", F, P);
+  B.SetInsertPoint(H);
+  if (anySeed) {
+    // A classical branch on the index (CR rule 6, 190): the seed cells are skipped.
+    Value *isSeed = nullptr;
+    for (size_t c = 0; c < ic->cells.size(); ++c)
+      if (ic->cells[c].second) {
+        Value *e = B.CreateICmpEQ(idx, ConstantInt::get(idx->getType(), c));
+        isSeed = isSeed ? B.CreateOr(isSeed, e) : e;
+      }
+    B.CreateCondBr(isSeed, P, Cl);
+  } else {
+    B.CreateBr(Cl);
+  }
+  B.SetInsertPoint(Cl);
+  // Rule 6: t = f^-1(y', ...); copy(t, old); f^-1_unc(t, ...); free t; free old.
+  SmallVector<Value *, 4> args;
+  for (const Operand &o : ops)
+    args.push_back(o.v);
+  CallInst *t = B.CreateCall(abi::declare(M, inverse, false), args);
+  RailType w = railTypeOf(ld.getType());
+  ctx.emitCore(abi::CoreSpec{abi::Core::Copy, w}, {t, h});
+  SmallVector<Value *, 5> uargs{t};
+  uargs.append(args.begin(), args.end());
+  B.CreateCall(abi::declare(M, inverse, true), uargs);
+  ctx.emitCore(abi::CoreSpec{abi::Core::Free, {}}, {t});
+  ctx.emitCore(abi::CoreSpec{abi::Core::Free, {}}, {h});
+  B.CreateBr(P);
+  B.SetInsertPoint(P, P->begin());
 }
 
 } // namespace cq::mem

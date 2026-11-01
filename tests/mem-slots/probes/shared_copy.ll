@@ -1,8 +1,9 @@
 ; cq-dr4o, CR rule 20 with C value semantics: s[k] = q[j] stores the handle of an alias load of q while
 ; q[j] (and the cq_theta result %x, which may be the same rail when j == i) is still read after the
 ; store. The cell gets its own rail, a basis copy (CR §0): alloc 0, copy_i32; the in-place rotation of
-; s[m] then never touches q's rail. The store of %x back into q[i] is a copy too (cq-7hpb): %x is still
-; read (measured) after it, so x and q[i] are two C objects.
+; s[m] then never touches q's rail. The store of %x back into q[i] shares the rail (cq-bfz4, revising
+; cq-7hpb): %x is still read (measured) after it, but no in-place write on x or a cell of q follows (the
+; rotation is of a cell of s, which got its own copy), so x and q[i] hold equal values on one rail.
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)
@@ -35,4 +36,4 @@ define i32 @shared_copy(i32 %i, i32 %j, i32 %k, i32 %m, double %t) {
 ; CHECK shared_copy: %{{c}} = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK shared_copy: call void @cqrt_copy_i32(i32 %{{w}}, i32 %{{c}})
 ; CHECK shared_copy: store i32 %{{c}}, ptr %{{pk}}, align 4
-; CHECK-COUNT shared_copy: call void @cqrt_copy_i32( 2
+; CHECK-COUNT shared_copy: call void @cqrt_copy_i32( 1
