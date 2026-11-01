@@ -25,7 +25,7 @@ sys.path.insert(0, str(ROOT / "checker"))
 from cqcheck import report  # noqa: E402
 
 OWNED = ["18_bit_views", "58_register_array", "60_qft", "32_volatile_local", "59_controlled_ry_bits", "63_f80_union_slot",
-         "67_static_global_slot", "75_heap_array", "94_atomics", "187_quantum_sort_swap"]
+         "67_static_global_slot", "75_heap_array", "94_atomics", "187_quantum_sort_swap", "124_callee_controlled_ry_in_loop"]
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 OUT = ROOT / "build" / "tests" / "mem-slots" / "out"
 

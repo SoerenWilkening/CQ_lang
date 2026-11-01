@@ -2404,7 +2404,7 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
                       "zext is a representation change (spine, cq-sj2j)",
                       &stI);
     }
-  if (val.handle && !ctx.currentFlag())
+  if (val.handle && ctx.currentPredicate().isTop() && !ctx.currentFlag())
     if (const Instruction *src = sourceOf(ctx, st, *s.info, s.o, &stI, s.a, v->getType()))
       if (auto it = st.lowered.find(src);
           it != st.lowered.end() && it->second.handle && it->second.v == val.v && !needsCopy(ctx, st, stI, s)) {
@@ -2412,6 +2412,16 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
         // cell read: 58, 60, 124's step through `int *r`) and no other holder of it is read after the store
         // (else C's two objects get two rails, cq-7hpb): the rail replaces the cell with itself; nothing is
         // emitted.
+        st.lowered[&stI] = val;
+        return;
+      }
+  if (val.handle && !ctx.currentPredicate().isTop())
+    if (const Instruction *src = sourceOf(ctx, st, *s.info, s.o, &stI, s.a, v->getType()))
+      if (auto it = st.lowered.find(src); it != st.lowered.end() && it->second.handle && it->second.v == val.v) {
+        // The cell already holds the stored rail: a cq_theta in place under the predicate (rule 10) of the
+        // rail a load of this cell read, select(p, h, h) = h (59 below; 124's step through `int *r`, the
+        // clone's rotation of a caller cell, T3 cellsRotated: it writes no handle there). Nothing is
+        // emitted, before mergedCloneStore would take it for an arm store.
         st.lowered[&stI] = val;
         return;
       }
