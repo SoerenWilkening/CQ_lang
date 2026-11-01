@@ -3899,7 +3899,7 @@ std::optional<RegUpdate> registerUpdate(LoweringContext &ctx, FnState &st, const
   if (!ruShapeOf(ctx, S, s.o, s.info->boolCells, L, Z))
     return std::nullopt;
   if (ctx.currentFlag() || !ctx.currentPredicate().isTop())
-    internalError("mem-slots: a register update of a register array under a quantum predicate", &S);
+    unimplemented("mem-slots: a register update of a register array under a quantum predicate or trip flag", &S);
   Operand y = ctx.operand(L), z = ctx.operand(Z);
   auto *fwd = dyn_cast<CallInst>(val.v);
   bool unc = false;
@@ -4030,6 +4030,10 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
     return;
   if (Value *flag = ctx.currentFlag(); flag && !freshCell(ctx, st, s, stI)) {
     (void)flag;
+    if (const LoadInst *L = nullptr, *Z = nullptr;
+        registerArray(ctx, st, *s.info, s.o) && ruShapeOf(ctx, stI, s.o, s.info->boolCells, L, Z))
+      unimplemented("mem-slots: a register update of a register array under a quantum predicate or trip flag",
+                    &stI);
     // Rules 9, 20: under a quantum predicate the cell receives select(predicate, value, old).
     Operand old = readCell(ctx, st, s, stI, v->getType());
     if (val.handle && old.handle && val.v == old.v) {
@@ -4636,7 +4640,8 @@ SmallVector<Value *, 4> slotCellsAfterCall(LoweringContext &ctx, const CallBase 
 // rule-6 clean-up, which Uncompute does not see, so every item that reads such a rail runs before any such
 // clean-up can: a template reading one is a register itself, kept (no _unc), or undone in its own block with
 // no clean-up between its forward and its _unc (a block runs whole, so no other block's clean-up can come
-// between them either). Any other reader of such a rail is unimplemented.
+// between them either). A template whose result is pushed (undone by a reverse loop) or merged, a pushed rail
+// of the array, and any other reader of such a rail are unimplemented.
 void finishSlots(LoweringContext &ctx) {
   for (auto &[key, stp] : states()) {
     if (key.first != &ctx.out() || !stp || stp->ruFrees.empty())
@@ -4675,8 +4680,13 @@ void finishSlots(LoweringContext &ctx) {
                         dyn_cast<Instruction>(u));
         if (frees.count(c))
           ++nFree;
-        if (abi::parseCore(cf->getName()))
+        if (std::optional<abi::CoreSpec> core = abi::parseCore(cf->getName())) {
+          if (core->op == abi::Core::Push)
+            unimplemented("mem-slots: a rail of a register-updated slot array pushed for a reverse (read after a "
+                          "register update may have freed it)",
+                          c);
           continue;   // a core gate: control, rotation, measurement, the clean-up's copy and free
+        }
         bool unc = false;
         if (!abi::parseTemplate(cf->getName(), &unc))
           unimplemented("mem-slots: a rail of a register-updated slot array read by a call that is not a template "
@@ -4687,8 +4697,13 @@ void finishSlots(LoweringContext &ctx) {
         for (User *ru : c->users()) {
           auto *uc = dyn_cast<CallInst>(ru);
           Function *uf = uc ? uc->getCalledFunction() : nullptr;
+          std::optional<abi::CoreSpec> core = uf ? abi::parseCore(uf->getName()) : std::nullopt;
+          if (!uf || (core && core->op == abi::Core::Push))
+            unimplemented("mem-slots: a template reading a rail of a register-updated slot array whose result is "
+                          "merged or pushed (undone elsewhere, after a register update may have freed that rail)",
+                          c);
           bool u2 = false;
-          if (!uf || !abi::parseTemplate(uf->getName(), &u2) || !u2 || uc->getArgOperand(0) != c)
+          if (!abi::parseTemplate(uf->getName(), &u2) || !u2 || uc->getArgOperand(0) != c)
             continue;
           if (uc->getParent() != c->getParent() || !c->comesBefore(uc) || ruBetween(c, uc))
             unimplemented("mem-slots: a template reading a rail of a register-updated slot array is undone outside "
