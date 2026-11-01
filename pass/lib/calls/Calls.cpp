@@ -292,7 +292,7 @@ ResultLayout resultLayout(const TaintInfo &T, const Specialization &S, const Val
   Type *rt = S.F->getReturnType();
   if (rt->isVoidTy())
     return r;
-  if (!isComposite(rt) && !scalarRailType(rt))
+  if (!isComposite(rt) && !scalarRailType(rt) && !(rt->isPointerTy() && !T.resultQuantum(S, 0)))
     unimplemented("calls: a clone with a pointer result (rule 21 fat-pointer result: fatptr)", at);
   if (packedIntegerResult(*S.F))
     unimplemented("calls: a clone whose integer result is packed from several fields (159, 166: cq-0umd)", at);
@@ -439,14 +439,15 @@ bool pointsToSlot(LoweringContext &ctx, const Value *actual) {
 // rail is kept entangled), and a merged cell needs every arm kept. The cells are the scalar leaves of
 // the object's C type (taint's cell indices from the object's root), read with M4 as of the call.
 void noteRotatedCells(LoweringContext &ctx, CallBase &CB, const Specialization &S,
-                      const std::vector<FormalLayout> &fs, CallInst *fwd) {
-  for (unsigned i = 0; i < CB.arg_size() && i < fs.size(); ++i) {
+                      const std::vector<FormalLayout> &fs, CallInst *fwd, ArrayRef<unsigned> argMap = {}) {
+  unsigned nArgs = argMap.empty() ? CB.arg_size() : unsigned(argMap.size());
+  for (unsigned i = 0; i < nArgs && i < fs.size(); ++i) {
     if (!fs[i].pointer)
       continue;
     SmallVector<unsigned, 4> cells = ctx.T.cellsRotated(S, i);
     if (cells.empty())
       continue;
-    const Value *actual = CB.getArgOperand(i);
+    const Value *actual = CB.getArgOperand(argMap.empty() ? i : argMap[i]);
     if (!pointsToSlot(ctx, actual))
       internalError("calls: a clone rotates a cell of an object that is not a slot object", &CB);
     const Value *root = getUnderlyingObject(actual);
@@ -473,25 +474,32 @@ void noteRotatedCells(LoweringContext &ctx, CallBase &CB, const Specialization &
   }
 }
 
-CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization &S, Value *flag) {
+CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization &S, Value *flag,
+                        ArrayRef<unsigned> argMap = {}) {
+  // C1: formal k takes CB's operand argMap[k] (identity when argMap is empty).
+  unsigned nArgs = argMap.empty() ? CB.arg_size() : unsigned(argMap.size());
+  auto op = [&](unsigned k) { return argMap.empty() ? k : argMap[k]; };
+  for (unsigned k : argMap)
+    if (k >= CB.arg_size())
+      internalError("calls: an argument map past the call's operands", &CB);
   Function *C = materialize(ctx.M, S);
   std::vector<FormalLayout> fs = formalLayout(ctx.T, S, &CB);
   SmallVector<Value *, 8> args;
   CloneCall r{nullptr, {}, false, false, resultLayout(ctx.T, S, &CB), {}, {}};
   // The pointer formals into a caller's slot object that the clone writes (T2), their old cells (M1).
   SmallVector<unsigned, 2> slotArgs;
-  for (unsigned i = 0; i < CB.arg_size() && i < fs.size(); ++i)
-    if (fs[i].pointer && pointsToSlot(ctx, CB.getArgOperand(i)) && !ctx.T.cellsWritten(S, i).empty()) {
+  for (unsigned i = 0; i < nArgs && i < fs.size(); ++i)
+    if (fs[i].pointer && pointsToSlot(ctx, CB.getArgOperand(op(i))) && !ctx.T.cellsWritten(S, i).empty()) {
       if (fs[i].abi != PtrAbi::Raw)
         unimplemented("calls: a clone writing a caller's slot object through a triple pointer formal (T4, M1)",
                       &CB);
-      if (CB.isByValArgument(i))
+      if (CB.isByValArgument(op(i)))
         unimplemented("calls: a byval slot record a clone writes (rules 20, 26: 164)", &CB);
       slotArgs.push_back(i);
       // A non-constant i32 old cell is a handle (a slot cell is homogeneous, rule 20; poison where never
       // written): a read of the twin's item. A classical i32 cell of a record would be refused by
       // recordCall's lookup, never read as a handle silently.
-      for (Value *v : mem::slotCellsBeforeCall(ctx, CB, i))
+      for (Value *v : mem::slotCellsBeforeCall(ctx, CB, i, argMap))
         r.extra.push_back(Operand{v, !isa<Constant>(v) && v->getType()->isIntegerTy(32)});
     }
   if (S.ctl) {
@@ -501,15 +509,15 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
   }
   struct ByVal { unsigned k; Type *T; Align al; };
   SmallVector<ByVal, 2> byvals;
-  if (CB.arg_size() != fs.size())
+  if (nArgs != fs.size())
     unimplemented("calls: a call whose argument count differs from the callee's formals (a variadic clone per "
                   "call-site arity, CR §1.4)",
                   &CB);
-  for (unsigned i = 0; i < CB.arg_size(); ++i) {
-    const Value *a = CB.getArgOperand(i);
+  for (unsigned i = 0; i < nArgs; ++i) {
+    const Value *a = CB.getArgOperand(op(i));
     if (fs[i].pointer && fs[i].abi != PtrAbi::Raw) {
       // T4 (CR rule 21, §1.4): the triple (object, tag, idx) and, for TripleCount, the cell count.
-      if (CB.isByValArgument(i))
+      if (CB.isByValArgument(op(i)))
         unimplemented("calls: a byval formal passed as a rule 21 triple", &CB);
       fatptr::Triple t = fatptr::passAcrossCall(ctx, a);
       Value *vs[4] = {t.object, t.tag, t.idx, t.cellCount};
@@ -538,7 +546,7 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
       if (!fs[i].q[k] && o.handle)
         internalError("calls: a rail passed where the clone's mask is classical", &CB);
       Value *v = o.v;
-      if (CB.isByValArgument(i) && byvalCopied(*S.F->getArg(i))) {
+      if (CB.isByValArgument(op(i)) && byvalCopied(*S.F->getArg(i))) {
         if (pointsToSlot(ctx, a))
           unimplemented("calls: a slot record passed by value to a clone that may write its copy (the copy "
                         "would need the record's lowered layout on both sides: rules 20, 26)",
@@ -547,9 +555,9 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
         // a snapshot the caller takes here, and the snapshot is what the forward and the twin receive:
         // the twin, run later, recomputes from the values the forward saw, whatever the caller has
         // written into its object since.
-        Type *T = CB.getParamByValType(i);
+        Type *T = CB.getParamByValType(op(i));
         const DataLayout &DL = ctx.M.getDataLayout();
-        Align al = CB.getParamAlign(i).value_or(DL.getABITypeAlign(T));
+        Align al = CB.getParamAlign(op(i)).value_or(DL.getABITypeAlign(T));
         AllocaInst *snap = ctx.B().CreateAlloca(T, DL.getAllocaAddrSpace(), nullptr, "byval.snap");
         snap->setAlignment(al);
         ctx.B().CreateMemCpy(snap, al, v, al, DL.getTypeAllocSize(T));
@@ -566,12 +574,12 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
     r.call->addParamAttr(b.k, Attribute::getWithByValType(C->getContext(), b.T));
     r.call->addParamAttr(b.k, Attribute::getWithAlignment(C->getContext(), b.al));
   }
-  r.handle = !CB.getType()->isVoidTy() && !r.res.composite && r.res.anyQ();
+  r.handle = !S.F->getReturnType()->isVoidTy() && !r.res.composite && r.res.anyQ();
   r.fieldwise = r.res.composite && r.res.anyQ();
   for (unsigned i : slotArgs)
-    for (Value *h : mem::slotCellsAfterCall(ctx, CB, i, r.call))
+    for (Value *h : mem::slotCellsAfterCall(ctx, CB, i, r.call, argMap))
       r.slotOuts.push_back(h);
-  noteRotatedCells(ctx, CB, S, fs, r.call);
+  noteRotatedCells(ctx, CB, S, fs, r.call, argMap);
   return r;
 }
 
@@ -1196,8 +1204,36 @@ void emitTwin(LoweringContext &ctx, CallBase &lowered) {
 
 namespace cq::calls {
 // C1 (cq-arch 2026-11-01): stub until stream A builds it.
-void lowerLiftedVia(LoweringContext &, llvm::CallBase &site, llvm::ArrayRef<unsigned>) {
-  unimplemented("calls: lowerLiftedVia (C1: a call lowered as a direct call of a clone via an argument map, 106)",
-                &site);
+// C1 (CR rule 24, 106): site is lowered as the direct call of taint's callee specialization for it (the
+// start routine's clone at a pthread_create), formal k taking site's operand argMap[k]. M1 (with the map),
+// recordCall and the twin as for a plain clone call. site's own result is the consumer's to bind; the
+// clone's result is a result of the call group (undone by the twin) and bound to nothing.
+void lowerLiftedVia(LoweringContext &ctx, llvm::CallBase &site, llvm::ArrayRef<unsigned> argMap) {
+  capture(ctx);
+  const Specialization *cs = ctx.T.calleeSpecialization(site, ctx.S);
+  if (!cs)
+    internalError("calls: lowerLiftedVia of a call taint gives no callee specialization", &site);
+  if (cs->isEntry() || cs->F->isDeclaration())
+    internalError("calls: lowerLiftedVia of a call whose callee specialization is not a lifted clone", &site);
+  if (argMap.size() != cs->F->arg_size())
+    internalError("calls: lowerLiftedVia's argument map does not name one operand per formal", &site);
+  Value *flag = cs->ctl ? ctlFlag(ctx, site) : nullptr;
+  CloneCall r = emitCloneCall(ctx, site, *cs, flag, argMap);
+  if (r.res.qramFormal)
+    unimplemented("calls: lowerLiftedVia of a clone with a triple formal onto a QRAM object (U3)", &site);
+  SmallVector<Value *, 4> outs;
+  if (r.fieldwise) {
+    for (unsigned k = 0; k < r.res.leaves.size(); ++k)
+      if (r.res.q[k])
+        outs.push_back(ctx.B().CreateExtractValue(r.call, {k}));
+  } else if (r.handle) {
+    outs.push_back(r.call);
+  }
+  if (outs.empty() && r.slotOuts.empty()) {
+    if (!r.extra.empty())
+      internalError("calls: old slot cells passed to a clone that reloads none", &site);
+    return;
+  }
+  ctx.unc().recordCall(r.call, outs, r.slotOuts, r.extra);
 }
 } // namespace cq::calls
