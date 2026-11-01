@@ -293,6 +293,15 @@ std::vector<CallInst *> LoweringContext::endGateLog(unsigned token) {
   return std::move(sh.gateLogs[token]);
 }
 
+void LoweringContext::bindWalkedPointer(const PHINode *phi, WalkedPtr w) {
+  impl->sh->walked[phi] = w;   // a nested K-loop registers its phi again in each outer trip
+}
+
+const WalkedPtr *LoweringContext::walkedPointer(const Value *v) const {
+  auto it = impl->sh->walked.find(v);
+  return it == impl->sh->walked.end() ? nullptr : &it->second;
+}
+
 unsigned LoweringContext::K(const llvm::Loop *L) const {
   if (!L)
     internalError("spine: K() of no loop");

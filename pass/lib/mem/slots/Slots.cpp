@@ -262,6 +262,34 @@ Addr decompose(const Value *p, const DataLayout &DL) {
       p = bc->getOperand(0);
       continue;
     }
+    // cq-9w75 (CR rule 14 f981c89): a pointer walked by a constant step, phi [start, gep(phi, step)], is
+    // start + j*step: a term (phi, step) whose operand is the trip index j a K-loop binds per trip
+    // (LoweringContext::walkedPointer). Elsewhere the term is an unknown classical index.
+    if (auto *phi = dyn_cast<PHINode>(p); phi && phi->getNumIncomingValues() == 2) {
+      const Value *start = nullptr;
+      int64_t step = 0;
+      for (unsigned k = 0; k < 2 && !start; ++k) {
+        auto *g = dyn_cast<GEPOperator>(phi->getIncomingValue(k));
+        APInt c(DL.getIndexTypeSizeInBits(phi->getType()), 0);
+        const Value *other = phi->getIncomingValue(1 - k);
+        if (g && g->getPointerOperand() == phi && g->accumulateConstantOffset(DL, c) && other != phi) {
+          start = other;
+          step = c.getSExtValue();
+        }
+      }
+      if (start && step != 0) {
+        bool merged = false;
+        for (auto &t : a.terms)
+          if (t.first == phi) {
+            t.second += step;
+            merged = true;
+          }
+        if (!merged)
+          a.terms.push_back({phi, step});
+        p = start;
+        continue;
+      }
+    }
     if (isa<AllocaInst>(p) || isa<Argument>(p) || isa<GlobalVariable>(p) || isa<CallBase>(p)) {
       a.root = p;
       a.ok = true;
@@ -1178,7 +1206,7 @@ void decideFields(LoweringContext &ctx, FnState &st, ObjInfo &info, ObjectId o) 
 
 // ---- emission -----------------------------------------------------------------------------------
 
-struct Site { ObjectId o; ObjInfo *info; Addr a; };
+struct Site { ObjectId o; ObjInfo *info; Addr a; bool beyond = false; };
 
 Site siteOf(LoweringContext &ctx, FnState &st, const Instruction &I, const Value *ptr, Type *ty) {
   ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
@@ -1198,6 +1226,33 @@ Site siteOf(LoweringContext &ctx, FnState &st, const Instruction &I, const Value
     internalError("mem-slots: the address root is not the object taint names", &I);
   ObjInfo &info = objInfo(ctx, st, a.root, objs.front());
   uint64_t bytes = ctx.M.getDataLayout().getTypeAllocSize(ty).getFixedValue();
+  // cq-9w75 (CR rule 14 f981c89): in a K-loop trip a walked pointer's term is the constant trip index, so
+  // the access is at a classical cell, folded here. A cell beyond the object (a trip the C program does
+  // not run) reads |0> (rule 21).
+  bool beyond = false;
+  if (any_of(a.terms, [&](const auto &t) { return ctx.walkedPointer(t.first) != nullptr; })) {
+    for (auto it = a.terms.begin(); it != a.terms.end();) {
+      if (!ctx.walkedPointer(it->first)) {
+        ++it;
+        continue;
+      }
+      auto *j = dyn_cast<ConstantInt>(ctx.operand(it->first).v);
+      if (!j)
+        internalError("mem-slots: a walked pointer not bound to its trip index", &I);
+      a.off += j->getSExtValue() * it->second;
+      it = a.terms.erase(it);
+    }
+    if (!a.terms.empty())
+      unimplemented("mem-slots: a walked slot access with a run-time index besides the trip (its rule 21 bound check)",
+                    &I);
+    auto *al = dyn_cast<AllocaInst>(a.root);
+    std::optional<TypeSize> total = al ? al->getAllocationSize(ctx.M.getDataLayout()) : std::nullopt;
+    if (!total || total->isScalable())
+      unimplemented("mem-slots: a walked slot access into an object of no static size (its rule 21 bound check)", &I);
+    beyond = a.off < 0 || uint64_t(a.off) + bytes > total->getFixedValue();
+  }
+  if (beyond && (info.record || info.view))
+    unimplemented("mem-slots: a walked access beyond a slot record or view object", &I);
   if (info.record) {
     decideFields(ctx, st, info, objs.front());
     if (!a.terms.empty())
@@ -1222,7 +1277,7 @@ Site siteOf(LoweringContext &ctx, FnState &st, const Instruction &I, const Value
                   &I);
   if (info.boolCells && !ty->isIntegerTy(8))
     internalError("mem-slots: a _Bool cell accessed as another type", &I);
-  return Site{objs.front(), &info, a};
+  return Site{objs.front(), &info, a, beyond};
 }
 
 RailType cellRail(const ObjInfo &info, Type *ty, const Instruction &I) {
@@ -1254,6 +1309,10 @@ Value *cellPointer(LoweringContext &ctx, const Site &s, const Instruction &I) {
   for (auto &[v, stride] : s.a.terms) {
     if (stride % cb)
       unimplemented("mem-slots: a GEP stride that is not a whole number of cells", &I);
+    if (v->getType()->isPointerTy() && !ctx.walkedPointer(v))
+      unimplemented("mem-slots: a slot access through a walked pointer outside a K-loop trip (its index is not "
+                    "bound: rule 14 case 1 pointer inductions)",
+                    &I);
     Operand x = ctx.operand(v);
     if (x.handle)
       internalError("mem-slots: a quantum index into a slot object (QRAM, rule 20)", &I);
@@ -1556,6 +1615,14 @@ bool classicalCell(LoweringContext &ctx, FnState &st, const Site &s) {
 
 // The handle a cell holds at I (a load, or the old value at a guarded store).
 Operand readCell(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &I, Type *ty) {
+  if (s.beyond) {
+    // Rule 21 (cq-9w75): a cell beyond the object reads |0>, a seed of its own.
+    RailType w = cellRail(*s.info, ty, I);
+    CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                               {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+    ctx.unc().recordSeed(z);
+    return Operand{z, true};
+  }
   if (const Instruction *src = sourceOf(ctx, st, *s.info, s.o, &I, s.a, ty)) {
     if (isa<CallBase>(src)) {
       auto c = st.callOut.find(src);
@@ -2561,6 +2628,8 @@ void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
   FnState &st = stateOf(ctx, ld);
   if (!ctx.T.isQuantum(&ld, ctx.S)) {
     Site s = siteOf(ctx, st, ld, ld.getPointerOperand(), ld.getType());
+    if (s.beyond)
+      unimplemented("mem-slots: a walked access beyond its slot object other than a load (rule 21)", &ld);
     if (!s.info->record || !classicalCell(ctx, st, s))
       unimplemented("mem-slots: a classical load from a slot cell that holds a handle", &ld);
     // Rules 20, 26: a classical field of a record is ordinary memory (the clone reads and writes it there).
@@ -2702,6 +2771,8 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
         if (ctx.currentFlag() || !ctx.currentPredicate().isTop())
           unimplemented("mem-slots: a classical store split per cell under a quantum predicate", &stI);
         Site s = siteOf(ctx, st, stI, stI.getPointerOperand(), info.cellTy);
+        if (s.beyond)
+          unimplemented("mem-slots: a walked access beyond its slot object other than a load (rule 21)", &stI);
         RailType w = cellRail(info, info.cellTy, stI);
         IRBuilder<> &B = ctx.B();
         for (uint64_t k = 0; k < n / info.cellBytes; ++k) {
@@ -2722,6 +2793,8 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
     }
   }
   Site s = siteOf(ctx, st, stI, stI.getPointerOperand(), v->getType());
+  if (s.beyond)
+    unimplemented("mem-slots: a walked access beyond its slot object other than a load (rule 21)", &stI);
   if (s.info->view)
     return lowerViewStore(ctx, st, stI, s);
   RailType w = cellRail(*s.info, v->getType(), stI);
@@ -2838,6 +2911,8 @@ SmallVector<Operand, 8> readSlotCells(LoweringContext &ctx, const Value *ptr, Ty
                                       Instruction &at) {
   FnState &st = stateOf(ctx, at);
   Site s = siteOf(ctx, st, at, ptr, cellTy);
+  if (s.beyond)
+    unimplemented("mem-slots: a walked access beyond its slot object other than a load (rule 21)", &at);
   if (s.info->view || s.info->boolCells)
     unimplemented("mem-slots: a host effect reading a bit-view or _Bool slot object", &at);
   if (s.info->escaping)
@@ -2868,6 +2943,8 @@ void writeSlotCells(LoweringContext &ctx, const Value *ptr, Type *cellTy, ArrayR
   if (ctx.T.isFatPointer(ptr, ctx.S))
     unimplemented("mem-slots: writeSlotCells through a fat pointer (rule 21)", &at);
   Site s = siteOf(ctx, st, at, ptr, cellTy);
+  if (s.beyond)
+    unimplemented("mem-slots: a walked access beyond its slot object other than a load (rule 21)", &at);
   if (s.info->view || s.info->boolCells || s.info->record)
     unimplemented("mem-slots: a memory intrinsic writing a bit-view, _Bool or record slot object", &at);
   if (!s.a.terms.empty())
@@ -2934,6 +3011,8 @@ void lowerSlotAtomic(LoweringContext &ctx, Instruction &I) {
     unimplemented("mem-slots: an atomic read-modify-write through a fat pointer (rule 21)", &I);
   Type *ty = rmw ? rmw->getValOperand()->getType() : cx->getNewValOperand()->getType();
   Site s = siteOf(ctx, st, I, ptr, ty);
+  if (s.beyond)
+    unimplemented("mem-slots: a walked access beyond its slot object other than a load (rule 21)", &I);
   if (s.info->view || s.info->boolCells)
     unimplemented("mem-slots: an atomic read-modify-write of a bit-view or _Bool slot cell", &I);
   if (ctx.currentFlag())

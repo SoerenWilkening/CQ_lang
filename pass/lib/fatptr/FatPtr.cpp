@@ -564,6 +564,28 @@ Fat derive(LoweringContext &ctx, const Value *p, bool emit, bool eager) {
     return deriveGEP(ctx, *g, emit);
   if (auto *sel = dyn_cast<SelectInst>(p))
     return deriveSelect(ctx, *sel, emit, eager);
+  if (const WalkedPtr *w = ctx.walkedPointer(p)) {
+    // cq-9w75 (CR rule 14 f981c89): a K-loop's walked pointer is start + j*step bytes in trip j, the
+    // phi bound to the constant j: the start's fat pointer moved by j*step / cell cells (classical).
+    Fat f = derive(ctx, w->start, emit);
+    if (!emit) {
+      if (!f.idxRail())
+        f.idx = Operand{nullptr, false};
+      return f;
+    }
+    auto *j = dyn_cast<ConstantInt>(ctx.operand(p).v);
+    if (!j)
+      internalError("fatptr: a walked pointer not bound to its trip index", p);
+    int64_t bytes = j->getSExtValue() * w->step;
+    if (bytes == 0)
+      return f;
+    if (f.cell == 0 || bytes % int64_t(f.cell) != 0)
+      unimplemented("fatptr: a walked pointer whose step is not a whole number of the pointer's cells", p);
+    if (f.idxRail())
+      unimplemented("fatptr: a walked pointer whose start has a quantum cell index", p);
+    f.idx = Operand{ctx.B().CreateAdd(f.idx.v, ConstantInt::get(i64(ctx), bytes / int64_t(f.cell))), false};
+    return f;
+  }
   if (isa<PHINode>(p))
     unimplemented("fatptr: a phi of fat pointers (rule 21 merge over edge predicates)", p);
   if (auto *ld = dyn_cast<LoadInst>(p))

@@ -132,7 +132,19 @@ bool quantumTagImpl(LoweringContext &ctx, const Value *p, SmallPtrSetImpl<const 
       p = ac->getPointerOperand();
       continue;
     }
+    // cq-9w75: a K-loop's walked pointer is its start moved by the trip (LoweringContext::walkedPointer).
+    if (const WalkedPtr *w = ctx.walkedPointer(p)) {
+      p = w->start;
+      continue;
+    }
     break;
+  }
+  // P1 (190): a clone's slot triple formal with a cell count is bound by fatptr (bindFormal); its
+  // accesses are rule 21's, checked against the cell count (fatptr boundSlotLoad).
+  if (auto *A = dyn_cast<Argument>(p); A && !ctx.S.isEntry() && A->getType()->isPointerTy()) {
+    PtrFormal pf = ctx.T.pointerFormal(ctx.S, A->getArgNo());
+    if (pf.abi == PtrAbi::TripleCount && pf.pointee == ObjClass::Slot)
+      return true;
   }
   if (!ctx.T.isFatPointer(p, ctx.S) && !isQ(ctx, p))
     return false;

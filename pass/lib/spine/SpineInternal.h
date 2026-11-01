@@ -101,6 +101,7 @@ struct Shared {
   llvm::IRBuilder<> B;
   llvm::DenseMap<const llvm::Value *, llvm::SmallVector<Operand, 4>> binds;
   llvm::DenseMap<const llvm::BasicBlock *, llvm::BasicBlock *> blocks;
+  llvm::DenseMap<const llvm::Value *, WalkedPtr> walked;   // cq-9w75: walked pointer phis of K-loops
   std::unique_ptr<Uncompute> unc;
   std::unique_ptr<PathPredicates> preds;
   std::optional<Pred> curPred;
