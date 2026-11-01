@@ -3664,6 +3664,50 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
       }
     }
   }
+  // cq-lv9a: a cell is a scalar leaf of the pointee object's C type (an int[4] has four 4-byte cells,
+  // a struct one cell per scalar field at its offset); a store names every cell it overlaps. Every object
+  // the formal may point to must have the same leaves. An object with no C type (a heap block) falls back
+  // to cells of the store size (all stores of one size, at multiples of it).
+  std::optional<std::vector<Range>> leaves;
+  bool typed = !objs.empty();
+  for (ObjectId o : objs) {
+    const Site &site = I.sites[I.objects[o].site];
+    llvm::Type *ty = nullptr;
+    if (auto *AI = dyn_cast<llvm::AllocaInst>(site.v); AI && !AI->isArrayAllocation())
+      ty = AI->getAllocatedType();
+    else if (auto *GV = dyn_cast<llvm::GlobalVariable>(site.v))
+      ty = GV->getValueType();
+    else if (auto *AR = dyn_cast<llvm::Argument>(site.v); AR && (AR->hasByValAttr() || AR->hasStructRetAttr()))
+      ty = AR->hasByValAttr() ? AR->getParamByValType() : AR->getParamStructRetType();
+    if (!ty || site.stride != 0) {
+      typed = false;
+      break;
+    }
+    std::vector<Range> lv;
+    std::function<void(llvm::Type *, int64_t)> walk = [&](llvm::Type *t, int64_t at) {
+      if (auto *ST = dyn_cast<llvm::StructType>(t)) {
+        const llvm::StructLayout *SL = DL.getStructLayout(ST);
+        for (unsigned k = 0; k < ST->getNumElements(); ++k)
+          walk(ST->getElementType(k), at + int64_t(SL->getElementOffset(k)));
+      } else if (auto *AT = dyn_cast<llvm::ArrayType>(t)) {
+        uint64_t es = DL.getTypeAllocSize(AT->getElementType());
+        for (uint64_t k = 0; k < AT->getNumElements(); ++k)
+          walk(AT->getElementType(), at + int64_t(k * es));
+      } else if (auto *VT = dyn_cast<llvm::FixedVectorType>(t)) {
+        uint64_t es = DL.getTypeAllocSize(VT->getElementType());
+        for (unsigned k = 0; k < VT->getNumElements(); ++k)
+          walk(VT->getElementType(), at + int64_t(k * es));
+      } else {
+        lv.push_back({at, DL.getTypeStoreSize(t)});
+      }
+    };
+    walk(ty, 0);
+    if (leaves && (leaves->size() != lv.size() ||
+                   !std::equal(lv.begin(), lv.end(), leaves->begin(),
+                               [](const Range &a, const Range &b) { return a.off == b.off && a.size == b.size; })))
+      refuse("pointee objects of different layouts", A);
+    leaves = std::move(lv);
+  }
   SmallVector<unsigned, 4> out;
   uint64_t size = 0;
   for (const W &w : writes) {
@@ -3680,6 +3724,21 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
       continue;
     if (!base)
       refuse("a pointee offset that differs between the clone's callers", w.st);
+    if (typed) {
+      int64_t at = *base + w.off;
+      bool any = false;
+      for (unsigned k = 0; k < leaves->size(); ++k) {
+        const Range &c = (*leaves)[k];
+        if (at < c.off + int64_t(c.size) && c.off < at + int64_t(w.size)) {
+          any = true;
+          if (!is_contained(out, k))
+            out.push_back(k);
+        }
+      }
+      if (!any)
+        refuse("a store outside the pointee object's cells", w.st);
+      continue;
+    }
     if (size && w.size != size)
       refuse("stores of several sizes through the formal", w.st);
     size = w.size;
