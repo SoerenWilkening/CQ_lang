@@ -254,6 +254,14 @@ BasicBlock *Walker::next(const BasicBlock *x, const BasicBlock *s) {
     BasicBlock *d = DT.findNearestCommonDominator(const_cast<BasicBlock *>(x), y);
     if (d && isQuantumTerm(ctx, d->getTerminator()))
       return y;
+    // cq-v11y: y is also an arm still to run when some quantum branch before x reaches both x and y
+    // without dominating them (y joins a classical arm not containing x and a quantum edge out of the
+    // arm that contains x: 169's __divdc3 block %45, reached from %35's classical false edge and from
+    // %37's quantum false edge inside the true arm).
+    for (unsigned q = 0; q < i; ++q)
+      if (reach[q].test(i) && reach[q].test(j) && isQuantumTerm(ctx, L[q]->getTerminator()) &&
+          !(unitOf.count(L[q]) && unitOf.lookup(L[q])->getHeader() != L[q]))
+        return y;
   }
   return const_cast<BasicBlock *>(s);
 }
