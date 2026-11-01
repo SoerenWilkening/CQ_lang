@@ -162,20 +162,22 @@ std::optional<CellCopyOut> cellCopyOut(StoreInst *SI) {
   auto *zero = f ? dyn_cast<Constant>(f->getArgOperand(0)) : nullptr;
   if (!a || a->op != abi::Core::Alloc || !zero || !zero->isNullValue())
     return std::nullopt;
-  CallInst *copy = nullptr;
+  // One copy-out rail, possibly written by several copies (a clone storing into the cell on some paths:
+  // the entry copies the old content in, each arm store copies the old out and its value in; cq-vxgm).
+  SmallVector<CallInst *, 2> copies;
   for (User *U : f->users()) {
     if (U == SI)
       continue;
     auto *cp = dyn_cast<CallInst>(U);
     std::optional<abi::CoreSpec> c =
         cp && cp->getCalledFunction() ? abi::parseCore(cp->getCalledFunction()->getName()) : std::nullopt;
-    if (!c || c->op != abi::Core::Copy || c->ctl || cp->getArgOperand(1) != f || cp->getArgOperand(0) == f || copy)
+    if (!c || c->op != abi::Core::Copy || c->ctl || cp->getArgOperand(1) != f || cp->getArgOperand(0) == f)
       return std::nullopt;
-    copy = cp;
+    copies.push_back(cp);
   }
-  if (!copy || f->getNumUses() != 2)
+  if (copies.empty() || f->getNumUses() != copies.size() + 1)
     return std::nullopt;
-  return CellCopyOut{SI, f, copy, A, off.getSExtValue()};
+  return CellCopyOut{SI, f, copies.front(), A, off.getSExtValue()};
 }
 
 // The cell copy-outs of F, in formal order then ascending offset (the twin's trailing old cells).

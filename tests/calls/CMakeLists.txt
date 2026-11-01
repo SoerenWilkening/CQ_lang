@@ -7,7 +7,7 @@ set(CQ_CALLS_CASES
   noop_no_clone noop_clone_namespace_absent drop_retargeted keep_classical_caller keep_address_taken
   keep_used_global drop_mutual_recursion drop_chain keep_live_chain drop_external_original
   drop_dead_references keep_shared_references declared_clone_only twin_only
-  twin_define twin_fieldwise twin_slot_cell twin_chain twin_pure twin_declared twin_return_phi)
+  twin_define twin_fieldwise twin_slot_cell twin_slot_cell_arms twin_chain twin_pure twin_declared twin_return_phi)
 foreach(c ${CQ_CALLS_CASES})
   add_test(NAME calls.${c} COMMAND calls_finalize_tests ${c})
 endforeach()
