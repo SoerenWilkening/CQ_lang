@@ -531,6 +531,77 @@ define internal fastcc void @__cq_q_f_1_unc(i32 %o, i32 %x) {
 
 // 07-shaped: the entry calls the twin of a lowered clone; finalize defines it from the clone's body
 // with the copy-out turned into an XOR into %out.
+// A field-wise result (CR §1.4, 165/64): { handle, classical i64, handle }. The twin takes one out per
+// handle field, in field order; each copy-out targets its out, the classical field and the insertvalue
+// chain go.
+const char *kTwinFieldwise = R"(
+define i32 @entry(i32 %a, double %t, i64 %c) {
+  %q = call i32 @cqrt_alloc_i32(i32 %a)
+  call void @cqrt_ry_i32(i32 %q, double %t)
+  %r = call fastcc { i32, i64, i32 } @__cq_q_g_10(i32 %q, i64 %c)
+  %h0 = extractvalue { i32, i64, i32 } %r, 0
+  %h2 = extractvalue { i32, i64, i32 } %r, 2
+  call void @__cq_q_g_10_unc(i32 %h0, i32 %h2, i32 %q, i64 %c)
+  call void @cqrt_free(i32 %h0)
+  call void @cqrt_free(i32 %h2)
+  %m = call i32 @cqrt_measure_i32(i32 %q)
+  ret i32 %m
+}
+
+define internal fastcc { i32, i64, i32 } @g(i32 %v, i64 %c) {
+  %s = mul i32 %v, %v
+  %d = add i64 %c, 1
+  %t = add i32 %v, 1
+  %a = insertvalue { i32, i64, i32 } poison, i32 %s, 0
+  %b = insertvalue { i32, i64, i32 } %a, i64 %d, 1
+  %e = insertvalue { i32, i64, i32 } %b, i32 %t, 2
+  ret { i32, i64, i32 } %e
+}
+
+define internal fastcc { i32, i64, i32 } @__cq_q_g_10(i32 %0, i64 %1) {
+  %3 = call i32 @cq_template_mul_i32(i32 %0, i32 %0)
+  %4 = add i64 %1, 1
+  %5 = call i32 @cq_template_add_i32_hl(i32 %0, i32 1)
+  %6 = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_copy_i32(i32 %3, i32 %6)
+  %7 = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_copy_i32(i32 %5, i32 %7)
+  call void @cq_template_add_i32_hl_unc(i32 %5, i32 %0, i32 1)
+  call void @cqrt_free(i32 %5)
+  call void @cq_template_mul_i32_unc(i32 %3, i32 %0, i32 %0)
+  call void @cqrt_free(i32 %3)
+  %8 = insertvalue { i32, i64, i32 } poison, i32 %6, 0
+  %9 = insertvalue { i32, i64, i32 } %8, i64 %4, 1
+  %10 = insertvalue { i32, i64, i32 } %9, i32 %7, 2
+  ret { i32, i64, i32 } %10
+}
+
+declare void @__cq_q_g_10_unc(i32, i32, i32, i64)
+declare i32 @cqrt_alloc_i32(i32)
+declare void @cqrt_ry_i32(i32, double)
+declare i32 @cqrt_measure_i32(i32)
+declare void @cqrt_free(i32)
+declare void @cqrt_copy_i32(i32, i32)
+declare i32 @cq_template_mul_i32(i32, i32)
+declare i32 @cq_template_add_i32_hl(i32, i32)
+declare void @cq_template_mul_i32_unc(i32, i32, i32)
+declare void @cq_template_add_i32_hl_unc(i32, i32, i32)
+)";
+
+const char *kTwinFieldwiseExpected = R"(define internal void @__cq_q_g_10_unc(i32 %out0, i32 %out1, i32 %0, i64 %1) {
+  %3 = call i32 @cq_template_mul_i32(i32 %0, i32 %0)
+  %4 = add i64 %1, 1
+  %5 = call i32 @cq_template_add_i32_hl(i32 %0, i32 1)
+  call void @cqrt_copy_i32(i32 %3, i32 %out0)
+  call void @cqrt_copy_i32(i32 %5, i32 %out1)
+  call void @cq_template_add_i32_hl_unc(i32 %5, i32 %0, i32 1)
+  call void @cqrt_free(i32 %5)
+  call void @cq_template_mul_i32_unc(i32 %3, i32 %0, i32 %0)
+  call void @cqrt_free(i32 %3)
+  ret void
+}
+)";
+
 const char *kTwinDefine = R"(
 define i32 @entry(i32 %a, double %t, i32 %c) {
   %q = call i32 @cqrt_alloc_i32(i32 %a)
@@ -894,6 +965,14 @@ void twinDefine() {
   });
 }
 
+void twinFieldwise() {
+  expectTwins("twin_fieldwise", kTwinFieldwise, {"__cq_q_g_10_unc"}, {}, [](Module &M) {
+    std::string got = printFn(M, "__cq_q_g_10_unc");
+    if (got != kTwinFieldwiseExpected)
+      fail("twin_fieldwise", "twin body:\n" + got + "expected:\n" + kTwinFieldwiseExpected);
+  });
+}
+
 void twinChain() {
   expectTwins("twin_chain", kTwinChain, {"__cq_q_g_100_unc", "__cq_q_h_10_unc"}, {}, [](Module &M) {
     Function *T = M.getFunction("__cq_q_g_100_unc");
@@ -1024,6 +1103,7 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"declared_clone_only", [] { expectDropped("declared_clone_only", kDeclaredOnly, {}); }},
     {"twin_only", [] { expectDropped("twin_only", kTwinOnly, {"f"}); }},
     {"twin_define", twinDefine},
+    {"twin_fieldwise", twinFieldwise},
     {"twin_chain", twinChain},
     {"twin_pure", twinPure},
     {"twin_declared", twinDeclared},
