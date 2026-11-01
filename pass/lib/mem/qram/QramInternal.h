@@ -2,6 +2,8 @@
 // accesses of a fat pointer whose provenance holds QRAM objects.
 #pragma once
 
+#include <utility>
+
 #include "cq/Common.h"
 #include "cq/Lowering.h"
 #include "llvm/IR/Instruction.h"
@@ -18,6 +20,9 @@ uint64_t qramElemBytes(LoweringContext &, const llvm::Value *root, const llvm::I
 // is the logical index rail, a classical one an i64 cell index. Returns the fresh recorded rail.
 llvm::Value *qramLoadAt(LoweringContext &, const llvm::Value *root, Operand idx, llvm::Type *ty,
                         const llvm::Instruction &at);
+// The (tag, idx) halves of the pointer cell idx of the QRAM of pointers at root, loaded unguarded.
+std::pair<llvm::Value *, llvm::Value *> qramLoadPtrAt(LoweringContext &, const llvm::Value *root, Operand idx,
+                                                      const llvm::Instruction &at);
 // One store of the handle v (type ty) at cell idx of the QRAM at root, _controlled on flag when not null.
 void qramStoreAt(LoweringContext &, const llvm::Value *root, Operand idx, llvm::Type *ty, llvm::Value *v,
                  llvm::Value *flag, const llvm::Instruction &at);

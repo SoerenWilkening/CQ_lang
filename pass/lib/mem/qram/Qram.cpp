@@ -58,6 +58,7 @@
 // an object the same way.
 #include "cq/Memory.h"
 #include "QramInternal.h"
+#include "../../fatptr/FatPtrInternal.h"
 
 #include <functional>
 #include <map>
@@ -713,8 +714,9 @@ void lowerSlotMemset(LoweringContext &ctx, MemSetInst &MS, ObjectId o) {
 // column at offset 0.
 struct Column {
   uint64_t off = 0;          // byte offset of the field inside one element
-  Type *cellTy = nullptr;
+  Type *cellTy = nullptr;    // a pointer cell: ptr, its two columns (tag, idx) at the same offset
   RailType w{};
+  uint8_t ptrPart = 0;       // 0 a scalar cell; 1 the tag, 2 the idx half of a pointer cell (rule 21, 88)
 };
 
 struct QramObj {
@@ -769,8 +771,19 @@ void leaves(Type *t, uint64_t off, const DataLayout &DL, SmallVectorImpl<Column>
   }
   if (t->isVectorTy())
     unimplemented("mem-qram: a QRAM object of vector type (aggr, rule 25)", at);
-  if (t->isPointerTy())
-    unimplemented("mem-qram: a QRAM object whose cells are pointers (a QRAM of pointers, rule 21, 88)", at);
+  if (t->isPointerTy()) {
+    // A QRAM of pointers holds fat pointers (rule 21, 88): one i32 column for the tag, one for the idx
+    // (a cell index), both at the cell's offset and indexed alike.
+    for (uint8_t part : {uint8_t(1), uint8_t(2)}) {
+      Column c;
+      c.off = off;
+      c.cellTy = t;
+      c.w = RailType{Kind::Int, 32};
+      c.ptrPart = part;
+      out.push_back(c);
+    }
+    return;
+  }
   if (!t->isIntegerTy() && !t->isFloatingPointTy())
     unimplemented("mem-qram: a QRAM object whose cells are not integers or floating point", at);
   Column c;
@@ -825,7 +838,8 @@ ObjectId soleQram(LoweringContext &ctx, const Value *ptr, const Instruction &I) 
 
 // A QRAM object's pointer escapes when it reaches anything but loads, stores, address arithmetic, the
 // memory and lifetime intrinsics, a compare, free, or realloc (whose result is the same object, CR §1.3).
-bool qramEscapes(const Value *root) {
+bool qramEscapes(LoweringContext &ctx, const Value *root) {
+  const DataLayout &DL = ctx.M.getDataLayout();
   SmallVector<const Value *, 8> work{root};
   SmallPtrSet<const Value *, 16> seen{root};
   while (!work.empty()) {
@@ -840,6 +854,23 @@ bool qramEscapes(const Value *root) {
       if (auto *st = dyn_cast<StoreInst>(usr)) {
         if (st->getPointerOperand() == v && st->getValueOperand() != v)
           continue;
+        if (st->getValueOperand() == v && st->getPointerOperand() != v) {
+          // Stored as a value into a local QRAM of pointers of this function (rule 21, 88): the
+          // pointer goes on through every pointer load from that object.
+          Addr d = decompose(st->getPointerOperand(), DL);
+          bool qram = d.ok && isa<AllocaInst>(d.root) && !ctx.T.provenance(st->getPointerOperand(), ctx.S).empty();
+          for (ObjectId x : qram ? ctx.T.provenance(st->getPointerOperand(), ctx.S) : ArrayRef<ObjectId>())
+            qram &= ctx.T.classOf(x) == ObjClass::Qram;
+          if (!qram)
+            return true;
+          for (const Instruction &I : instructions(*st->getFunction()))
+            if (auto *ld = dyn_cast<LoadInst>(&I); ld && ld->getType()->isPointerTy()) {
+              Addr la = decompose(ld->getPointerOperand(), DL);
+              if (la.ok && la.root == d.root && seen.insert(ld).second)
+                work.push_back(ld);
+            }
+          continue;
+        }
         return true;
       }
       if (isa<GetElementPtrInst>(usr) || isa<BitCastInst>(usr) || isa<AddrSpaceCastInst>(usr) ||
@@ -929,6 +960,8 @@ void ensureGlobalCtor(LoweringContext &ctx, GlobalVariable &gv, const QramObj &q
     for (uint64_t j = 0; j < n; ++j)
       for (unsigned k = 0; k < q.cols.size(); ++k) {
         const Column &c = q.cols[k];
+        if (c.ptrPart)
+          unimplemented("mem-qram: a global QRAM of pointers with an initializer", &gv);
         Constant *v = ConstantFoldLoadFromConst(init, c.cellTy, APInt(64, j * q.elemBytes + c.off), DL);
         if (!v || (!isa<ConstantInt>(v) && !isa<ConstantFP>(v)))
           unimplemented("mem-qram: a global QRAM initializer cell that is not a number", &gv);
@@ -1044,6 +1077,8 @@ Value *elemIndex(LoweringContext &ctx, Value *jb, int64_t e) {
 }
 
 bool sameCellType(const DataLayout &DL, Type *access, const Column &c) {
+  if (c.ptrPart || access->isPointerTy())
+    return c.ptrPart == 1 && access->isPointerTy() && DL.getTypeAllocSize(access) == DL.getTypeAllocSize(c.cellTy);
   if (!access->isIntegerTy() && !access->isFloatingPointTy())
     return false;
   RailType r = railTypeOf(access);
@@ -1071,6 +1106,8 @@ SmallVector<Hit, 8> cellsIn(const DataLayout &DL, const QramObj &q, int64_t off,
         continue;
       if (lo != s || hi != s + sz)
         unimplemented("mem-qram: a QRAM access or memory intrinsic covering part of a cell (a bit view, 63)", &I);
+      if (c.ptrPart)
+        unimplemented("mem-qram: a memory intrinsic or wide store over a QRAM of pointers (rule 21)", &I);
       out.push_back({&c, e, uint64_t(s - off)});
     }
   return out;
@@ -1347,6 +1384,18 @@ Value *qramLoadAt(LoweringContext &ctx, const Value *root, Operand idx, Type *ty
   return emitLoad(ctx, busOf(q, root, &c, at), c, fatIndex(ctx, idx));
 }
 
+std::pair<Value *, Value *> qramLoadPtrAt(LoweringContext &ctx, const Value *root, Operand idx,
+                                          const Instruction &at) {
+  QramObj &q = qramObj(ctx, root, at);
+  const Column *c = q.at(0);
+  if (!c || c->ptrPart != 1)
+    unimplemented("mem-qram: a pointer load through a fat pointer of a QRAM whose first cell is not a pointer", &at);
+  QIndex ix = fatIndex(ctx, idx);
+  Value *tag = emitLoad(ctx, busOf(q, root, c, at), c[0], ix);
+  Value *i = emitLoad(ctx, busOf(q, root, c + 1, at), c[1], ix);
+  return {tag, i};
+}
+
 void qramStoreAt(LoweringContext &ctx, const Value *root, Operand idx, Type *ty, Value *v, Value *flag,
                  const Instruction &at) {
   QramObj &q = qramObj(ctx, root, at);
@@ -1377,6 +1426,17 @@ void lowerMemIntrinsic(LoweringContext &ctx, MemIntrinsic &MI) {
 // template.
 void lowerQramLoad(LoweringContext &ctx, LoadInst &ld) {
   QAccess acc = qramAccess(ctx, ld.getPointerOperand(), ld);
+  if (ld.getType()->isPointerTy()) {
+    // A pointer cell (rule 21, 88): its tag and idx halves, the loaded fat pointer's two fields.
+    const Column *col = exactCell(ctx, *acc.q, acc.a, ld.getType());
+    if (!col)
+      unimplemented("mem-qram: a pointer load from a QRAM cell that is not a pointer (a bit view, 63)", &ld);
+    QIndex idx = cellIndex(ctx, *acc.q, acc.a, ld);
+    Value *tag = emitLoad(ctx, busOf(*acc.q, acc.a.root, col, ld), col[0], idx);
+    Value *ix = emitLoad(ctx, busOf(*acc.q, acc.a.root, col + 1, ld), col[1], idx);
+    ctx.bindFields(&ld, {Operand{tag, true}, Operand{ix, true}});
+    return;
+  }
   if (!ld.getType()->isIntegerTy() && !ld.getType()->isFloatingPointTy())
     unimplemented("mem-qram: a QRAM access of a non-scalar or pointer value (rules 21, 25)", &ld);
   const Column *col = exactCell(ctx, *acc.q, acc.a, ld.getType());
@@ -1394,6 +1454,20 @@ void lowerQramStore(LoweringContext &ctx, StoreInst &st) {
   Value *val = st.getValueOperand();
   QAccess acc = qramAccess(ctx, st.getPointerOperand(), st);
   Value *flag = ctx.currentFlag();
+  if (val->getType()->isPointerTy()) {
+    // A pointer stored into a QRAM of pointers (rule 21, 88): its fat (tag, idx) into the two halves,
+    // classical fields as seeds (rule 7).
+    const Column *col = exactCell(ctx, *acc.q, acc.a, val->getType());
+    if (!col)
+      unimplemented("mem-qram: a pointer stored into a QRAM cell that is not a pointer (a bit view, 63)", &st);
+    QIndex idx = cellIndex(ctx, *acc.q, acc.a, st);
+    auto [tag, ix] = fatptr::storedFields(ctx, val);
+    Value *tv = tag.handle ? tag.v : seedOf(ctx, col[0].w, tag.v);
+    Value *iv = ix.handle ? ix.v : seedOf(ctx, col[1].w, ix.v);
+    emitStore(ctx, busOf(*acc.q, acc.a.root, col, st), col[0], idx, tv, flag);
+    emitStore(ctx, busOf(*acc.q, acc.a.root, col + 1, st), col[1], idx, iv, flag);
+    return;
+  }
   Operand v = ctx.operand(val);
   const Column *col = exactCell(ctx, *acc.q, acc.a, val->getType());
   if (!col) {
@@ -1417,7 +1491,7 @@ void allocateQram(LoweringContext &ctx, Instruction &site) {
   LLVMContext &C = ctx.M.getContext();
   IRBuilder<> &B = ctx.B();
   Type *i32 = Type::getInt32Ty(C), *i64 = Type::getInt64Ty(C);
-  if (qramEscapes(&site))
+  if (qramEscapes(ctx, &site))
     unimplemented("mem-qram: a QRAM object whose pointer escapes to a call (the callee reaches the bus through a "
                   "rule 21 triple and its stores are the twin's: rule 18)",
                   &site);

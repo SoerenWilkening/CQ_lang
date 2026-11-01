@@ -41,6 +41,7 @@
 //  - Predicate: none needed. The QROM reads 0 at an index >= n (§2), touches no state, and its
 //    result is a value arm like any template under a quantum predicate.
 #include "cq/Memory.h"
+#include "QromInternal.h"
 
 #include <algorithm>
 #include <optional>
@@ -262,6 +263,32 @@ void lowerQromLoad(LoweringContext &ctx, LoadInst &ld) {
     ops.push_back(Operand{ConstantInt::get(i64, stride), false});
   ops.push_back(ix);
   ctx.emitTemplate(spec, ops, &ld);
+}
+
+// Rule 21 over classical memory: the QROM of a fat pointer's root (a classical pointer into a static
+// object: a constant byte offset from an alloca or global) at a rail cell index.
+Value *qromLoadAt(LoweringContext &ctx, const Value *root, Operand idx, Type *ty, const Instruction &at) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  Type *i64 = Type::getInt64Ty(ctx.M.getContext());
+  if (!idx.handle)
+    internalError("mem-qrom: qromLoadAt at a classical index", &at);
+  if (!(ty->isIntegerTy() || ty->isFloatingPointTy()))
+    unimplemented("mem-qrom: a QROM load of a non-scalar or pointer value through a fat pointer (rule 21)", &at);
+  APInt off(64, 0);
+  const Value *obj = root->stripAndAccumulateConstantOffsets(DL, off, /*AllowNonInbounds=*/true);
+  std::optional<uint64_t> bytes = staticBytes(obj, DL);
+  if (!bytes || off.isNegative())
+    unimplemented("mem-qrom: a fat-pointer QROM over a root whose extent is not static", &at);
+  uint64_t size = DL.getTypeAllocSize(ty).getFixedValue();
+  uint64_t o = off.getZExtValue();
+  uint64_t n = *bytes >= o + size ? (*bytes - o - size) / size + 1 : 0;
+  Operand base = ctx.operand(root);
+  if (base.handle)
+    internalError("mem-qrom: a QROM base pointer bound to a rail", root);
+  abi::TemplateSpec spec;
+  spec.op = "qrom_load";
+  spec.w = railTypeOf(ty);
+  return ctx.emitTemplate(spec, {Operand{base.v, false}, Operand{ConstantInt::get(i64, n), false}, idx});
 }
 
 } // namespace cq::mem

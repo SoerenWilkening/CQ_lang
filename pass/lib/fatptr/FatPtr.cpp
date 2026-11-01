@@ -46,6 +46,9 @@
 
 #include "cq/Abi.h"
 #include "../mem/qram/QramInternal.h"
+#include "../mem/qrom/QromInternal.h"
+#include "FatPtrInternal.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -116,11 +119,13 @@ bool classicalMemoryOnly(LoweringContext &ctx, const Value *p) {
 // A root is a classical pointer into classical memory, or the site itself of a QRAM object (its
 // classical base, rule 21; a classical GEP into a QRAM is derived onto that root's idx).
 bool isRoot(LoweringContext &ctx, const Value *p) {
-  if (isa<Constant>(p) && !isa<GlobalVariable>(p))
-    return true;
   if (isQ(ctx, p) || ctx.T.isFatPointer(p, ctx.S))
     return false;
-  return classicalMemoryOnly(ctx, p) || mem::isQramRoot(ctx, p);
+  if (classicalMemoryOnly(ctx, p))
+    return true;
+  if (isa<GEPOperator>(p) || isa<BitCastOperator>(p) || isa<AddrSpaceCastOperator>(p))
+    return false;
+  return mem::isQramRoot(ctx, p);
 }
 
 void addRoots(Fat &dst, ArrayRef<const Value *> src) {
@@ -255,46 +260,75 @@ Fat deriveGEP(LoweringContext &ctx, const GEPOperator &g, bool emit) {
     if (f.cell == 0 || c % int64_t(f.cell) != 0)
       unimplemented("fatptr: a constant GEP offset that is not a whole number of cells", &g);
   }
-  if (qTerm) {
-    if (f.idxRail() || !cTerms.empty() || c != 0 || !isa<ConstantInt>(f.idx.v) ||
-        !cast<ConstantInt>(f.idx.v)->isZero())
-      unimplemented("fatptr: a quantum GEP index added to a non-zero cell index (idx arithmetic on a rail)", &g);
-    bool sext = false;
-    const Value *ix = stripIndexCast(ctx, qTerm, sext);
-    if (!ix->getType()->isIntegerTy() || ix->getType()->getIntegerBitWidth() > 64)
-      unimplemented("fatptr: a quantum GEP index wider than 64 bits", &g);
-    f.idxBits = ix->getType()->getIntegerBitWidth();
-    f.idxSext = sext && f.idxBits < 64;
-    if (emit) {
-      Operand r = ctx.operand(ix);
-      if (!r.handle)
-        internalError("fatptr: the logical index of a quantum GEP index is not a rail", ix);
-      f.idx = r;
-    } else {
-      f.idx = Operand{nullptr, true};
+  if (!qTerm && !f.idxRail()) {
+    if (cTerms.empty() && c == 0)
+      return f;
+    if (!emit) {
+      f.idx = Operand{nullptr, false};
+      return f;
     }
+    IRBuilder<> &B = ctx.B();
+    Value *idx = f.idx.v;
+    for (Value *v : cTerms) {
+      Operand o = ctx.operand(v);
+      if (o.handle)
+        internalError("fatptr: a classical GEP index bound to a rail", v);
+      Value *x = B.CreateSExtOrTrunc(o.v, i64(ctx));
+      idx = B.CreateAdd(idx, x);
+    }
+    if (c != 0)
+      idx = B.CreateAdd(idx, ConstantInt::get(i64(ctx), c / int64_t(f.cell)));
+    f.idx = Operand{idx, false};
     return f;
   }
-  if (cTerms.empty() && c == 0)
-    return f;
-  if (f.idxRail())
-    unimplemented("fatptr: a classical GEP offset added to a rail cell index (idx arithmetic on a rail)", &g);
+  // A rail cell index (rule 21): the base's rail idx and/or the quantum term's logical index, plus the
+  // classical part (the base's classical idx, the classical terms, the constant), added at the rail's
+  // width (an index past the object is undefined, outside the domain). The adds are templates.
+  const Value *ix = nullptr;
+  bool qsext = false;
+  if (qTerm) {
+    ix = stripIndexCast(ctx, qTerm, qsext);
+    if (!ix->getType()->isIntegerTy() || ix->getType()->getIntegerBitWidth() > 64)
+      unimplemented("fatptr: a quantum GEP index wider than 64 bits", &g);
+  }
+  unsigned W = f.idxRail() ? f.idxBits : ix->getType()->getIntegerBitWidth();
+  bool sext = f.idxRail() ? f.idxSext : (qsext && W < 64);
+  if (f.idxRail() && ix && ix->getType()->getIntegerBitWidth() != W)
+    unimplemented("fatptr: a quantum GEP index of another width than the pointer's rail cell index", &g);
+  bool classicalPart = !cTerms.empty() || c != 0 ||
+                       (!f.idxRail() && !(isa<ConstantInt>(f.idx.v) && cast<ConstantInt>(f.idx.v)->isZero()));
   if (!emit) {
-    f.idx = Operand{nullptr, false};
+    f.idxBits = W;
+    f.idxSext = sext;
+    f.idx = Operand{nullptr, true};
     return f;
   }
   IRBuilder<> &B = ctx.B();
-  Value *idx = f.idx.v;
-  for (Value *v : cTerms) {
-    Operand o = ctx.operand(v);
-    if (o.handle)
-      internalError("fatptr: a classical GEP index bound to a rail", v);
-    Value *x = B.CreateSExtOrTrunc(o.v, i64(ctx));
-    idx = B.CreateAdd(idx, x);
+  Operand rail{nullptr, true};
+  if (f.idxRail())
+    rail = f.idx;
+  if (ix) {
+    Operand r = ctx.operand(ix);
+    if (!r.handle)
+      internalError("fatptr: the logical index of a quantum GEP index is not a rail", ix);
+    rail = rail.v ? Operand{tmpl(ctx, "add", intRail(W), {rail, r}, ""), true} : r;
   }
-  if (c != 0)
-    idx = B.CreateAdd(idx, ConstantInt::get(i64(ctx), c / int64_t(f.cell)));
-  f.idx = Operand{idx, false};
+  if (classicalPart) {
+    Value *cs = f.idxRail() ? ConstantInt::get(i64(ctx), 0) : f.idx.v;
+    for (Value *v : cTerms) {
+      Operand o = ctx.operand(v);
+      if (o.handle)
+        internalError("fatptr: a classical GEP index bound to a rail", v);
+      cs = B.CreateAdd(cs, B.CreateSExtOrTrunc(o.v, i64(ctx)));
+    }
+    if (c != 0)
+      cs = B.CreateAdd(cs, ConstantInt::get(i64(ctx), c / int64_t(f.cell)));
+    Value *k = B.CreateTrunc(cs, IntegerType::get(ctx.M.getContext(), W));
+    rail = Operand{tmpl(ctx, "add", intRail(W), {rail, Operand{k, false}}, "hl"), true};
+  }
+  f.idxBits = W;
+  f.idxSext = sext;
+  f.idx = rail;
   return f;
 }
 
@@ -358,6 +392,67 @@ Fat deriveSelect(LoweringContext &ctx, const SelectInst &sel, bool emit, bool ea
   return f;
 }
 
+// A pointer loaded from a QRAM of pointers (rule 21, 88): its (tag, idx) are the two i32 rails its
+// loader bound. Its roots are the roots of the pointers this function stores into the objects the load
+// reads, restricted to the load's provenance; its cell size their common one.
+Fat deriveLoaded(LoweringContext &ctx, const LoadInst &ld, bool emit) {
+  static unsigned depth = 0;
+  struct Guard {
+    Guard() { ++depth; }
+    ~Guard() { --depth; }
+  } guard;
+  if (depth > 8)
+    unimplemented("fatptr: pointers loaded from a QRAM of pointers nested more than 8 deep", &ld);
+  ArrayRef<ObjectId> src = ctx.T.provenance(ld.getPointerOperand(), ctx.S);
+  if (src.empty())
+    unimplemented("fatptr: a pointer loaded through a pointer with no known object (rule 21)", &ld);
+  for (ObjectId o : src)
+    if (ctx.T.classOf(o) != ObjClass::Qram)
+      unimplemented("fatptr: a pointer loaded through a fat pointer from slot or classical memory (rule 21, 189)",
+                    &ld);
+  SmallVector<ObjectId, 4> mine(ctx.T.provenance(&ld, ctx.S).begin(), ctx.T.provenance(&ld, ctx.S).end());
+  auto intersects = [](ArrayRef<ObjectId> a, ArrayRef<ObjectId> b) {
+    for (ObjectId x : a)
+      if (llvm::is_contained(b, x))
+        return true;
+    return false;
+  };
+  Fat f;
+  for (const Instruction &I : instructions(*ctx.S.F)) {
+    auto *st = dyn_cast<StoreInst>(&I);
+    if (!st || !st->getValueOperand()->getType()->isPointerTy() ||
+        !intersects(ctx.T.provenance(st->getPointerOperand(), ctx.S), src))
+      continue;
+    Fat s = derive(ctx, st->getValueOperand(), /*emit=*/false);
+    for (const Value *r : s.roots)
+      if (intersects(ctx.T.provenance(r, ctx.S), mine))
+        addRoots(f, {r});
+    if (s.cell) {
+      if (f.cell && f.cell != s.cell)
+        unimplemented("fatptr: a QRAM of pointers holding pointers of two cell sizes", &ld);
+      f.cell = s.cell;
+    }
+  }
+  if (f.roots.empty())
+    unimplemented("fatptr: a pointer loaded from a QRAM into which this function stores no pointer of its "
+                  "provenance",
+                  &ld);
+  llvm::sort(f.roots, [&](const Value *x, const Value *y) { return rootNumber(ctx, x) < rootNumber(ctx, y); });
+  f.idxBits = 32;
+  f.idxSext = false;
+  if (!emit) {
+    f.tag = Operand{nullptr, true};
+    f.idx = Operand{nullptr, true};
+    return f;
+  }
+  SmallVector<Operand, 4> fl = ctx.fields(&ld);
+  if (fl.size() != 2 || !fl[0].handle || !fl[1].handle)
+    internalError("fatptr: a pointer loaded from a QRAM bound to other than its (tag, idx) rails", &ld);
+  f.tag = fl[0];
+  f.idx = fl[1];
+  return f;
+}
+
 Fat derive(LoweringContext &ctx, const Value *p, bool emit, bool eager) {
   if (!p->getType()->isPointerTy())
     internalError("fatptr: derive of a non-pointer", p);
@@ -373,8 +468,8 @@ Fat derive(LoweringContext &ctx, const Value *p, bool emit, bool eager) {
     return deriveSelect(ctx, *sel, emit, eager);
   if (isa<PHINode>(p))
     unimplemented("fatptr: a phi of fat pointers (rule 21 merge over edge predicates)", p);
-  if (isa<LoadInst>(p))
-    unimplemented("fatptr: a pointer loaded through a fat pointer (rule 21, 189)", p);
+  if (auto *ld = dyn_cast<LoadInst>(p))
+    return deriveLoaded(ctx, *ld, emit);
   if (isa<Argument>(p))
     unimplemented("fatptr: a fat pointer parameter (rule 21 clone-boundary triple)", p);
   if (isa<IntToPtrInst>(p))
@@ -559,31 +654,74 @@ Value *guardOf(LoweringContext &ctx, const Fat &f, const Value *r, Value *flag) 
 }
 } // namespace
 
-// Rule 21: a load through a fat pointer over QRAM objects is one pure access per object, executed
-// unguarded at idx, merged by a select chain on the flags tag == k (the first root innermost, the
-// complement), like any multi-way merge (rule 9).
+// Rule 21: a load through a fat pointer is one pure access per object of its provenance, executed
+// unguarded at idx (a QRAM load; a QROM of a classical object at a rail idx), merged by a select chain
+// on the flags tag == k (the first root innermost, the complement), like any multi-way merge (rule 9).
+// A pointer load (a QRAM of pointers, 88) merges its tag and idx halves alike and binds them as the
+// load's two fields.
 void lowerLoad(LoweringContext &ctx, LoadInst &ld) {
   Fat f = derive(ctx, ld.getPointerOperand(), /*emit=*/true);
-  checkQramRoots(ctx, f, ld);
   Type *ty = ld.getType();
-  if (!ty->isIntegerTy() && !ty->isFloatingPointTy())
-    unimplemented("fatptr: a load of a pointer or aggregate through a fat pointer (rule 21, 189)", &ld);
+  bool ptr = ty->isPointerTy();
+  if (!ptr && !ty->isIntegerTy() && !ty->isFloatingPointTy())
+    unimplemented("fatptr: a load of an aggregate or vector through a fat pointer (rules 21, 25, 26)", &ld);
   SmallVector<const Value *, 4> roots;
   for (const Value *r : f.roots)
     if (mayName(ctx, f, r))
       roots.push_back(r);
   if (roots.empty())
     internalError("fatptr: a fat pointer naming none of its roots", &ld);
-  SmallVector<Value *, 4> hs;
-  for (const Value *r : roots)
-    hs.push_back(mem::qramLoadAt(ctx, r, f.idx, ty, ld));
-  Operand acc{hs[0], true};
-  for (unsigned i = 1; i < roots.size(); ++i) {
-    Operand eq = icmp(ctx, CmpInst::ICMP_EQ, 32, f.tag,
-                      Operand{ConstantInt::get(i32(ctx), rootNumber(ctx, roots[i])), false});
-    acc = Operand{tmpl(ctx, "select", railTypeOf(ty), {eq, Operand{hs[i], true}, acc}, ""), true};
+  SmallVector<std::pair<Value *, Value *>, 4> hs;   // per root: the value (ptr: tag, idx)
+  for (const Value *r : roots) {
+    if (mem::isQramRoot(ctx, r)) {
+      if (f.cell && f.cell != mem::qramElemBytes(ctx, r, ld))
+        unimplemented("fatptr: a fat pointer whose cell size is not its QRAM object's element size", &ld);
+      if (ptr)
+        hs.push_back(mem::qramLoadPtrAt(ctx, r, f.idx, ld));
+      else
+        hs.push_back({mem::qramLoadAt(ctx, r, f.idx, ty, ld), nullptr});
+      continue;
+    }
+    if (!ptr && classicalMemoryOnly(ctx, r) && f.idxRail()) {
+      uint64_t size = ctx.M.getDataLayout().getTypeAllocSize(ty).getFixedValue();
+      if (f.cell && f.cell != size)
+        unimplemented("fatptr: a fat-pointer QROM whose cell size is not the loaded type's size", &ld);
+      hs.push_back({mem::qromLoadAt(ctx, r, f.idx, ty, ld), nullptr});
+      continue;
+    }
+    unimplemented("fatptr: a load through a fat pointer from a slot object, a host object at a classical idx, or "
+                  "a pointer from classical memory (rule 21 guarded slot select / host access, 189)",
+                  &ld);
   }
-  ctx.bind(&ld, acc.v);
+  auto merge = [&](RailType w, auto pick) {
+    Operand acc{pick(hs[0]), true};
+    for (unsigned i = 1; i < roots.size(); ++i) {
+      Operand eq = icmp(ctx, CmpInst::ICMP_EQ, 32, f.tag,
+                        Operand{ConstantInt::get(i32(ctx), rootNumber(ctx, roots[i])), false});
+      acc = Operand{tmpl(ctx, "select", w, {eq, Operand{pick(hs[i]), true}, acc}, ""), true};
+    }
+    return acc;
+  };
+  if (ptr) {
+    Operand tag = merge(intRail(32), [](auto &p) { return p.first; });
+    Operand idx = merge(intRail(32), [](auto &p) { return p.second; });
+    ctx.bindFields(&ld, {tag, idx});
+    return;
+  }
+  ctx.bind(&ld, merge(railTypeOf(ty), [](auto &p) { return p.first; }).v);
+}
+
+std::pair<Operand, Operand> storedFields(LoweringContext &ctx, const Value *ptr) {
+  Fat f = derive(ctx, ptr, /*emit=*/true);
+  Operand idx = f.idx;
+  if (!idx.handle) {
+    idx = Operand{ctx.B().CreateTrunc(idx.v, i32(ctx)), false};
+  } else if (f.idxBits < 32) {
+    idx = Operand{tmpl(ctx, f.idxSext ? "sext" : "zext", intRail(f.idxBits), {idx}, "", "", intRail(32)), true};
+  } else if (f.idxBits > 32) {
+    idx = Operand{tmpl(ctx, "trunc", intRail(f.idxBits), {idx}, "", "", intRail(32)), true};
+  }
+  return {f.tag, idx};
 }
 
 // Rule 21: a store through a fat pointer over QRAM objects is the _controlled store into each object
