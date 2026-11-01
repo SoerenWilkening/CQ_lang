@@ -537,7 +537,8 @@ unsigned calleeTag(const Module &M, const Function &F) { return tagOf(M, F); }
 
 // Rule 21 over classical memory: the QROM of a fat pointer's root (a classical pointer into a static
 // object: a constant byte offset from an alloca or global) at a rail cell index.
-Value *qromLoadAt(LoweringContext &ctx, const Value *root, Operand idx, Type *ty, const Instruction &at) {
+Value *qromLoadAt(LoweringContext &ctx, const Value *root, Operand idx, unsigned idxBits, bool idxSext, Type *ty,
+                  const Instruction &at) {
   const DataLayout &DL = ctx.M.getDataLayout();
   Type *i64 = Type::getInt64Ty(ctx.M.getContext());
   if (!idx.handle)
@@ -551,14 +552,41 @@ Value *qromLoadAt(LoweringContext &ctx, const Value *root, Operand idx, Type *ty
     unimplemented("mem-qrom: a fat-pointer QROM over a root whose extent is not static", &at);
   uint64_t size = DL.getTypeAllocSize(ty).getFixedValue();
   uint64_t o = off.getZExtValue();
-  uint64_t n = *bytes >= o + size ? (*bytes - o - size) / size + 1 : 0;
+  // cq-b244: the k whole cells of the object before root are in-bounds at idx -k .. -1 (a signed idx; an
+  // unsigned one never reaches them); the table starts at the first of them and the index moves up by k
+  // (exact in the low W bits: every in-domain idx + k is below n <= 2^W).
+  uint64_t k = idxSext ? o / size : 0;
+  uint64_t first = o - k * size;
+  uint64_t n = *bytes >= first + size ? (*bytes - first - size) / size + 1 : 0;
   Operand base = ctx.operand(root);
   if (base.handle)
     internalError("mem-qrom: a QROM base pointer bound to a rail", root);
+  Value *table = base.v;
+  if (k != 0) {
+    if (idxBits == 0 || idxBits > 64)
+      internalError("mem-qrom: a fat-pointer QROM index of no width", &at);
+    unsigned W = std::max(idxBits, n > 1 ? Log2_64_Ceil(n) : 1u);
+    if (W > 64)
+      unimplemented("mem-qrom: a fat-pointer QROM of 2^64 or more cells", &at);
+    auto tmpl = [&](StringRef op, unsigned w, ArrayRef<Operand> ops, StringRef shape, std::optional<unsigned> to) {
+      abi::TemplateSpec s;
+      s.op = op.str();
+      s.w = RailType{Kind::Int, w};
+      if (to)
+        s.to = RailType{Kind::Int, *to};
+      s.shape = shape.str();
+      return Operand{ctx.emitTemplate(s, ops), true};
+    };
+    if (W > idxBits)
+      idx = tmpl(idxSext ? "sext" : "zext", idxBits, {idx}, "", W);
+    idx = tmpl("add", W, {idx, Operand{ConstantInt::get(ctx.M.getContext(), APInt(W, k)), false}}, "hl", std::nullopt);
+    table = ctx.B().CreateInBoundsGEP(Type::getInt8Ty(ctx.M.getContext()), table,
+                                      ConstantInt::get(i64, -int64_t(k * size)));
+  }
   abi::TemplateSpec spec;
   spec.op = "qrom_load";
   spec.w = railTypeOf(ty);
-  return ctx.emitTemplate(spec, {Operand{base.v, false}, Operand{ConstantInt::get(i64, n), false}, idx});
+  return ctx.emitTemplate(spec, {Operand{table, false}, Operand{ConstantInt::get(i64, n), false}, idx});
 }
 
 } // namespace cq::mem

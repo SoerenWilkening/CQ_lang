@@ -148,3 +148,37 @@ int f_field_store(int x0, double th, int k, int y0, double ty, int c, int i) {
     s[i].h = y + c;
   return cq_measure(s[0].h + s[1].h + s[2].h + s[i].g);
 }
+/* cq-b244: roots inside their objects (&t[4]) reach the cells before them at negative cell indices */
+static const int NT1[8] = {10, 11, 12, 13, 14, 15, 16, 17};
+static const int NT2[8] = {20, 21, 22, 23, 24, 25, 26, 27};
+/* a QROM read through a summed rail index (zext term, then -4 cells) */
+int f_neg_qrom(unsigned x0, double th) {
+  unsigned x = x0; cq_theta(&x, th);
+  const int *p = (x & 1) ? &NT1[4] : &NT2[4];
+  int d = (int)((x >> 1) & 7) - 4;
+  return cq_measure(p[d]);
+}
+/* a QROM read through a lone sign-extended rail index (in-domain: -4 .. 3) */
+int f_neg_qrom_sext(unsigned x0, double th) {
+  unsigned x = x0; cq_theta(&x, th);
+  const int *p = (x & 1) ? &NT1[4] : &NT2[4];
+  int d = ((int)x) >> 28;
+  return cq_measure(p[d]);
+}
+int NG1[8], NG2[8];
+/* address compares of a summed rail index below the root */
+int f_neg_cmp(unsigned x0, double th) {
+  unsigned x = x0; cq_theta(&x, th);
+  int *p = (x & 1) ? &NG1[4] : &NG2[4];
+  int *r = p + ((x >> 1) & 7) - 4;
+  return cq_measure(r < &NG1[3]) + 2 * cq_measure(r == &NG1[2]);
+}
+/* an inttoptr of an address moved below the root (a negative ptrtoint difference) */
+int f_neg_inttoptr(unsigned x0, double th, int v) {
+  unsigned x = x0; cq_theta(&x, th);
+  int a[8] = {v, v + 1, v + 2, v + 3, v + 4, v + 5, v + 6, v + 7}, b[8] = {9, 8, 7, 6, 5, 4, 3, 2};
+  int *p = (x & 1) ? &a[4] : &b[4];
+  unsigned long u = (unsigned long)p + ((x >> 1) & 7) * 4;
+  int *r = (int *)(u - 16);
+  return cq_measure(*r);
+}

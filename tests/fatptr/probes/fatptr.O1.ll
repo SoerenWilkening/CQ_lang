@@ -11,6 +11,11 @@ target triple = "x86_64-apple-macosx16.0.0"
 @QB = internal unnamed_addr constant [300 x i32] [i32 5, i32 0, i32 0, i32 0, i32 0, i32 0, i32 60, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 1000, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 2550, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 2620, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 2990], align 16
 @__const.f_ptr_roundtrip.b = private unnamed_addr constant [4 x i32] [i32 10, i32 11, i32 12, i32 13], align 16
 @__const.f_ptr_roundtrip.c = private unnamed_addr constant [4 x i32] [i32 20, i32 21, i32 22, i32 23], align 16
+@NT1 = internal unnamed_addr constant [8 x i32] [i32 10, i32 11, i32 12, i32 13, i32 14, i32 15, i32 16, i32 17], align 16
+@NT2 = internal unnamed_addr constant [8 x i32] [i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27], align 16
+@NG1 = global [8 x i32] zeroinitializer, align 16
+@NG2 = global [8 x i32] zeroinitializer, align 16
+@__const.f_neg_inttoptr.b = private unnamed_addr constant [8 x i32] [i32 9, i32 8, i32 7, i32 6, i32 5, i32 4, i32 3, i32 2], align 16
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @f_ne_two(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
@@ -564,6 +569,106 @@ define i32 @f_field_store(i32 noundef %0, double noundef %1, i32 noundef %2, i32
   %38 = tail call i32 @cq_measure_si32(i32 noundef %37) #10
   call void @llvm.lifetime.end.p0(i64 36, ptr nonnull %8) #10
   ret i32 %38
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @f_neg_qrom(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
+  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #9
+  %4 = and i32 %3, 1
+  %5 = icmp eq i32 %4, 0
+  %6 = select i1 %5, ptr getelementptr inbounds (i8, ptr @NT2, i64 16), ptr getelementptr inbounds (i8, ptr @NT1, i64 16)
+  %7 = lshr i32 %3, 1
+  %8 = and i32 %7, 7
+  %9 = zext nneg i32 %8 to i64
+  %10 = getelementptr i32, ptr %6, i64 %9
+  %11 = getelementptr i8, ptr %10, i64 -16
+  %12 = load i32, ptr %11, align 4, !tbaa !6
+  %13 = tail call i32 @cq_measure_si32(i32 noundef %12) #10
+  ret i32 %13
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @f_neg_qrom_sext(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
+  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #9
+  %4 = and i32 %3, 1
+  %5 = icmp eq i32 %4, 0
+  %6 = select i1 %5, ptr getelementptr inbounds (i8, ptr @NT2, i64 16), ptr getelementptr inbounds (i8, ptr @NT1, i64 16)
+  %7 = ashr i32 %3, 28
+  %8 = sext i32 %7 to i64
+  %9 = getelementptr inbounds i32, ptr %6, i64 %8
+  %10 = load i32, ptr %9, align 4, !tbaa !6
+  %11 = tail call i32 @cq_measure_si32(i32 noundef %10) #10
+  ret i32 %11
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @f_neg_cmp(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
+  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #9
+  %4 = and i32 %3, 1
+  %5 = icmp eq i32 %4, 0
+  %6 = select i1 %5, ptr getelementptr inbounds (i8, ptr @NG2, i64 16), ptr getelementptr inbounds (i8, ptr @NG1, i64 16)
+  %7 = lshr i32 %3, 1
+  %8 = and i32 %7, 7
+  %9 = zext nneg i32 %8 to i64
+  %10 = getelementptr inbounds i32, ptr %6, i64 %9
+  %11 = getelementptr inbounds i8, ptr %10, i64 -16
+  %12 = icmp ult ptr %11, getelementptr inbounds (i8, ptr @NG1, i64 12)
+  %13 = zext i1 %12 to i32
+  %14 = tail call i32 @cq_measure_si32(i32 noundef %13) #10
+  %15 = icmp eq ptr %11, getelementptr inbounds (i8, ptr @NG1, i64 8)
+  %16 = zext i1 %15 to i32
+  %17 = tail call i32 @cq_measure_si32(i32 noundef %16) #10
+  %18 = shl nsw i32 %17, 1
+  %19 = add nsw i32 %18, %14
+  ret i32 %19
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @f_neg_inttoptr(i32 noundef %0, double noundef %1, i32 noundef %2) local_unnamed_addr #0 {
+  %4 = alloca [8 x i32], align 16
+  %5 = alloca [8 x i32], align 16
+  %6 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #9
+  call void @llvm.lifetime.start.p0(i64 32, ptr nonnull %4) #10
+  store i32 %2, ptr %4, align 16, !tbaa !6
+  %7 = getelementptr inbounds i8, ptr %4, i64 4
+  %8 = add nsw i32 %2, 1
+  store i32 %8, ptr %7, align 4, !tbaa !6
+  %9 = getelementptr inbounds i8, ptr %4, i64 8
+  %10 = add nsw i32 %2, 2
+  store i32 %10, ptr %9, align 8, !tbaa !6
+  %11 = getelementptr inbounds i8, ptr %4, i64 12
+  %12 = add nsw i32 %2, 3
+  store i32 %12, ptr %11, align 4, !tbaa !6
+  %13 = getelementptr inbounds i8, ptr %4, i64 16
+  %14 = add nsw i32 %2, 4
+  store i32 %14, ptr %13, align 16, !tbaa !6
+  %15 = getelementptr inbounds i8, ptr %4, i64 20
+  %16 = add nsw i32 %2, 5
+  store i32 %16, ptr %15, align 4, !tbaa !6
+  %17 = getelementptr inbounds i8, ptr %4, i64 24
+  %18 = add nsw i32 %2, 6
+  store i32 %18, ptr %17, align 8, !tbaa !6
+  %19 = getelementptr inbounds i8, ptr %4, i64 28
+  %20 = add nsw i32 %2, 7
+  store i32 %20, ptr %19, align 4, !tbaa !6
+  call void @llvm.lifetime.start.p0(i64 32, ptr nonnull %5) #10
+  call void @llvm.memcpy.p0.p0.i64(ptr noundef nonnull align 16 dereferenceable(32) %5, ptr noundef nonnull align 16 dereferenceable(32) @__const.f_neg_inttoptr.b, i64 32, i1 false)
+  %21 = and i32 %6, 1
+  %22 = icmp eq i32 %21, 0
+  %23 = getelementptr inbounds i8, ptr %5, i64 16
+  %24 = select i1 %22, ptr %23, ptr %13
+  %25 = ptrtoint ptr %24 to i64
+  %26 = shl i32 %6, 1
+  %27 = and i32 %26, 28
+  %28 = zext nneg i32 %27 to i64
+  %29 = add nsw i64 %28, -16
+  %30 = add i64 %29, %25
+  %31 = inttoptr i64 %30 to ptr
+  %32 = load i32, ptr %31, align 4, !tbaa !6
+  %33 = call i32 @cq_measure_si32(i32 noundef %32) #10
+  call void @llvm.lifetime.end.p0(i64 32, ptr nonnull %5) #10
+  call void @llvm.lifetime.end.p0(i64 32, ptr nonnull %4) #10
+  ret i32 %33
 }
 
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }

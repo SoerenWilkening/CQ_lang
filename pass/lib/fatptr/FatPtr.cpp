@@ -23,7 +23,8 @@
 //        width and extension. A sum on a rail idx (a second rail term, a classical term or a constant
 //        cell offset, or a rail term onto a non-zero classical idx) is computed at sumWidth (32, or
 //        the widest rail; 64 for a classical object of 2^32 cells or more or of unknown extent): each
-//        rail widened by its own extension, then add templates; idx is then an unsigned rail.
+//        rail widened by its own extension, then add templates; idx is then a rail read unsigned, or
+//        signed when a root lies inside its object (&t[4]: in-bounds indices down to -4, cq-b244).
 //      * a select: the spine calls lower(sel) once, at the select (patch spine-dispatch-ptrselect);
 //        lower computes tag and idx there and binds them as the select's two fields. A quantum
 //        condition gives tag = select_i32(cond, tag_t, tag_f) (a classical tag when both arms have
@@ -53,6 +54,7 @@
 #include <set>
 #include <optional>
 #include <string>
+#include <tuple>
 
 #include "cq/Abi.h"
 #include "cq/Memory.h"
@@ -393,19 +395,25 @@ const Value *stripIndexCast(LoweringContext &ctx, const Value *v, bool &sext) {
   return v;
 }
 
-// The width of a summed rail cell index (cq-qf4c): the C index width (at least int, 32), or the
-// widest summand. LLVM sums at i64; the sum's low W bits are exact, and so is its unsigned reading at W
-// whenever every in-domain cell index is below 2^W: always for a QRAM (qram_alloc takes an i32 cell
-// count, BACKEND_ABI), and for a classical object whose static cell count is below 2^W. Otherwise 64.
-unsigned sumWidth(LoweringContext &ctx, const Fat &f, unsigned widest) {
-  unsigned W = std::max(32u, widest);
-  if (W >= 64)
-    return 64;
+// cq-b244: the in-domain cell indices relative to a fat pointer's roots, [lo, hi] over all of them. A root
+// at a constant offset inside a static object (&t[4]) reaches the cells before it at negative indices
+// ((&t[4])[-1] is t[3]): lo = -(offset / cell), hi = (bytes - offset) / cell (one past the end included).
+// A QRAM root, a triple formal (its idx crosses as an i32, mem::hostTriple) and NULL are at their object's
+// start with fewer than 2^32 cells. nullopt: a root whose object extent or offset is not static.
+struct IdxRange {
+  int64_t lo = 0;
+  uint64_t hi = 0;
+};
+std::optional<IdxRange> relRange(LoweringContext &ctx, ArrayRef<const Value *> roots, uint64_t cell) {
+  if (cell == 0)
+    return std::nullopt;
   const DataLayout &DL = ctx.M.getDataLayout();
-  for (const Value *r : f.roots) {
-    // A triple formal's object has fewer than 2^32 cells (its idx crosses as an i32, mem::hostTriple).
-    if (mem::isQramRoot(ctx, r) || boundOf(ctx, r) || isa<ConstantPointerNull>(r))
+  IdxRange R;
+  for (const Value *r : roots) {
+    if (mem::isQramRoot(ctx, r) || boundOf(ctx, r) || isa<ConstantPointerNull>(r)) {
+      R.hi = std::max(R.hi, (uint64_t(1) << 32) - 1);
       continue;
+    }
     APInt off(64, 0);
     const Value *obj = r->stripAndAccumulateConstantOffsets(DL, off, /*AllowNonInbounds=*/true);
     std::optional<uint64_t> bytes;
@@ -414,10 +422,76 @@ unsigned sumWidth(LoweringContext &ctx, const Fat &f, unsigned widest) {
     else if (auto *ai = dyn_cast<AllocaInst>(obj))
       if (auto sz = ai->getAllocationSize(DL); sz && !sz->isScalable())
         bytes = sz->getFixedValue();
-    if (!bytes || f.cell == 0 || *bytes / f.cell >= (uint64_t(1) << W))
-      return 64;
+    if (!bytes || off.isNegative() || off.getZExtValue() > *bytes)
+      return std::nullopt;
+    uint64_t o = off.getZExtValue();
+    if (o / cell > uint64_t(INT64_MAX))
+      return std::nullopt;
+    R.lo = std::min(R.lo, -int64_t(o / cell));
+    R.hi = std::max(R.hi, (*bytes - o) / cell);
   }
-  return W;
+  return R;
+}
+
+// A root at a constant offset of at least one cell inside a static object: its fat pointers may carry a
+// negative in-bounds cell index (cq-b244).
+bool mayPrecede(LoweringContext &ctx, ArrayRef<const Value *> roots, uint64_t cell) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  for (const Value *r : roots) {
+    if (mem::isQramRoot(ctx, r) || boundOf(ctx, r) || isa<ConstantPointerNull>(r))
+      continue;
+    APInt off(64, 0);
+    r->stripAndAccumulateConstantOffsets(DL, off, /*AllowNonInbounds=*/true);
+    if (off.isNegative() || (cell ? off.getZExtValue() >= cell : !off.isZero()))
+      return true;
+  }
+  return false;
+}
+
+// The extension that reads every in-domain index of R exactly from its low W bits: zext when none is
+// negative and all are below 2^W, sext when all lie in the signed W-bit range; nullopt otherwise.
+std::optional<bool> readsAt(const IdxRange &R, unsigned W) {
+  if (W >= 64)
+    return R.lo < 0;
+  if (R.lo >= 0 && R.hi < (uint64_t(1) << W))
+    return false;
+  if (R.lo >= -(int64_t(1) << (W - 1)) && R.hi < (uint64_t(1) << (W - 1)))
+    return true;
+  return std::nullopt;
+}
+
+// A rail idx of W bits holding a cell index relative to roots, from an i64 or W-bit computation that is
+// exact in its low W bits (a ptrtoint difference, a QRAM-stored i32 field): its extension, or
+// unimplemented when its in-domain indices are not all readable at W (cq-b244). Roots that all start
+// their objects keep the unsigned reading (their indices are non-negative).
+bool idxSextAt(LoweringContext &ctx, ArrayRef<const Value *> roots, uint64_t cell, unsigned W, const Value *at) {
+  // No cell size: every pointer the idx comes from has the constant idx 0 (Fat::cell), read either way.
+  if (cell == 0 || !mayPrecede(ctx, roots, cell))
+    return false;
+  std::optional<IdxRange> R = relRange(ctx, roots, cell);
+  std::optional<bool> sx = R ? readsAt(*R, W) : std::nullopt;
+  if (!sx)
+    unimplemented("fatptr: a " + std::to_string(W) + "-bit cell index relative to a root inside its object whose "
+                      "in-bounds indices (some negative) do not fit it",
+                  at);
+  return *sx;
+}
+
+// The width of a summed rail cell index (cq-qf4c): the C index width (at least int, 32), or the
+// widest summand. LLVM sums at i64; the sum's low W bits are exact, and so is its unsigned reading at W
+// whenever every in-domain cell index is below 2^W: always for a QRAM (qram_alloc takes an i32 cell
+// count, BACKEND_ABI), and for a classical object whose static cell count is below 2^W. Otherwise 64.
+// cq-b244: read signed instead when a root lies inside its object (relRange) and every in-domain index
+// fits the signed range at W. Returns {W, sext}.
+std::pair<unsigned, bool> sumWidth(LoweringContext &ctx, const Fat &f, unsigned widest) {
+  unsigned W = std::max(32u, widest);
+  if (W >= 64)
+    return {64, false};
+  std::optional<IdxRange> R = relRange(ctx, f.roots, f.cell);
+  std::optional<bool> sx = R ? readsAt(*R, W) : std::nullopt;
+  if (!sx)
+    return {64, false};
+  return {W, *sx};
 }
 
 Fat deriveGEP(LoweringContext &ctx, const GEPOperator &g, bool emit) {
@@ -504,8 +578,10 @@ Fat deriveGEP(LoweringContext &ctx, const GEPOperator &g, bool emit) {
   bool sum = classicalPart || (f.idxRail() && ix);
   unsigned ixW = ix ? ix->getType()->getIntegerBitWidth() : 0;
   bool ixSext = qsext && ixW < 64;
-  unsigned W = sum ? sumWidth(ctx, f, std::max(f.idxRail() ? f.idxBits : 0u, ixW)) : f.idxRail() ? f.idxBits : ixW;
-  bool sext = sum ? false : f.idxRail() ? f.idxSext : ixSext;
+  unsigned W = f.idxRail() ? f.idxBits : ixW;
+  bool sext = f.idxRail() ? f.idxSext : ixSext;
+  if (sum)
+    std::tie(W, sext) = sumWidth(ctx, f, std::max(f.idxRail() ? f.idxBits : 0u, ixW));
   if (!emit) {
     f.idxBits = W;
     f.idxSext = sext;
@@ -698,12 +774,19 @@ Fat deriveLoaded(LoweringContext &ctx, const LoadInst &ld, bool emit) {
     return false;
   };
   Fat f;
+  bool negative = false;   // a stored pointer's idx may be negative (cq-b244)
   for (const Instruction &I : instructions(*ctx.S.F)) {
     auto *st = dyn_cast<StoreInst>(&I);
     if (!st || !st->getValueOperand()->getType()->isPointerTy() ||
         !intersects(ctx.T.provenance(st->getPointerOperand(), ctx.S), src))
       continue;
     Fat s = derive(ctx, st->getValueOperand(), /*emit=*/false);
+    if (s.idx.handle) {
+      negative |= s.idxSext;
+    } else {
+      auto *ci = dyn_cast_or_null<ConstantInt>(s.idx.v);
+      negative |= !ci || ci->isNegative();
+    }
     if (s.trips)
       unimplemented("fatptr: a pointer to K-loop trip objects stored into a QRAM of pointers (R1)", st);
     f.nullMoved |= s.nullMoved;
@@ -722,7 +805,7 @@ Fat deriveLoaded(LoweringContext &ctx, const LoadInst &ld, bool emit) {
                   &ld);
   llvm::sort(f.roots, [&](const Value *x, const Value *y) { return rootNumber(ctx, x) < rootNumber(ctx, y); });
   f.idxBits = 32;
-  f.idxSext = false;
+  f.idxSext = negative && idxSextAt(ctx, f.roots, f.cell, 32, &ld);   // the stored i32 field (cq-b244)
   if (!emit) {
     f.tag = Operand{nullptr, true};
     f.idx = Operand{nullptr, true};
@@ -815,7 +898,7 @@ Fat deriveCallResult(LoweringContext &ctx, const CallBase &CB, bool emit) {
   }
   llvm::sort(f.roots, [&](const Value *x, const Value *y) { return rootNumber(ctx, x) < rootNumber(ctx, y); });
   f.idxBits = 32;
-  f.idxSext = false;
+  f.idxSext = idxSextAt(ctx, f.roots, f.cell, 32, &CB);   // the returned i32 field (cq-b244)
   if (!emit) {
     f.tag = Operand{nullptr, true};
     f.idx = Operand{nullptr, true};
@@ -1088,12 +1171,15 @@ Fat deriveIntToPtr(LoweringContext &ctx, const IntToPtrInst &I, bool emit) {
     f.idx = Operand{nullptr, isQ(ctx, I.getOperand(0)) || baseRail};
     if (!f.idx.handle)
       f.idxBits = 64;
+    // A root inside its object (cq-b244): a negative difference, read signed (a classical i64 is exact).
+    f.idxSext = f.idx.handle ? idxSextAt(ctx, f.roots, f.cell, 32, &I) : mayPrecede(ctx, f.roots, f.cell);
     return f;
   }
   Fat sh = deriveIntToPtr(ctx, I, /*emit=*/false);
   f.tag = sh.tag;
   f.idx = sh.idx;
   f.idxBits = sh.idxBits;
+  f.idxSext = sh.idxSext;
   SmallVector<Operand, 4> fl = ctx.fields(&I);
   if (fl.size() != 2)
     internalError("fatptr: an inttoptr bound to other than its (tag, idx)", &I);
@@ -1168,7 +1254,9 @@ Fat derivePtrMask(LoweringContext &ctx, const IntrinsicInst &pm, bool emit, bool
   f.cell = a.cell;
   f.tag = a.tag;
   f.idxBits = a.idxRail() ? std::max(32u, a.idxBits) : 64;
-  f.idxSext = false;
+  // A root inside its object (cq-b244): the masked address may precede it, a negative idx read signed.
+  f.idxSext = a.idxRail() || a.tagRail() ? idxSextAt(ctx, f.roots, f.cell, f.idxBits, &pm)
+                                         : mayPrecede(ctx, f.roots, f.cell);
   if (!emit) {
     f.idx = Operand{nullptr, a.idxRail() || a.tagRail()};
     return f;
@@ -1194,8 +1282,8 @@ Fat derivePtrMask(LoweringContext &ctx, const IntrinsicInst &pm, bool emit, bool
     d = Operand{tmpl(ctx, "sub", intRail(64), {masked, base}, masked.handle ? "" : "lh"), true};
   if (a.cell != 1) {
     Constant *sh = ConstantInt::get(i64(ctx), Log2_64(a.cell));
-    d = d.handle ? Operand{tmpl(ctx, "lshr", intRail(64), {d, Operand{sh, false}}, "hl"), true}
-                 : Operand{ctx.B().CreateLShr(d.v, sh), false};
+    d = d.handle ? Operand{tmpl(ctx, f.idxSext ? "ashr" : "lshr", intRail(64), {d, Operand{sh, false}}, "hl"), true}
+                 : Operand{f.idxSext ? ctx.B().CreateAShr(d.v, sh) : ctx.B().CreateLShr(d.v, sh), false};
   }
   if (d.handle && f.idxBits < 64)
     d = Operand{tmpl(ctx, "trunc", intRail(64), {d}, "", "", intRail(f.idxBits)), true};
@@ -1729,7 +1817,7 @@ void lowerLoad(LoweringContext &ctx, LoadInst &ld) {
       uint64_t size = ctx.M.getDataLayout().getTypeAllocSize(ty).getFixedValue();
       if (f.cell && f.cell != size)
         unimplemented("fatptr: a fat-pointer QROM whose cell size is not the loaded type's size", &ld);
-      hs.push_back({mem::qromLoadAt(ctx, r, f.idx, ty, ld), nullptr});
+      hs.push_back({mem::qromLoadAt(ctx, r, f.idx, f.idxBits, f.idxSext, ty, ld), nullptr});
       continue;
     }
     unimplemented("fatptr: a load through a fat pointer from a slot object, a host object at a classical idx, or "
@@ -2071,10 +2159,14 @@ void lowerIntToPtr(LoweringContext &ctx, Instruction &I) {
   uint64_t cell = shape.cell;
   Operand idx = off;
   if (cell != 1) {
+    // A root inside its object (cq-b244): the difference may be negative, a signed division (exact: an
+    // in-domain address lies on a cell of the root).
+    bool sx = shape.idxSext;
     Constant *k = ConstantInt::get(i64(ctx), isPowerOf2_64(cell) ? Log2_64(cell) : cell);
-    StringRef op = isPowerOf2_64(cell) ? "lshr" : "udiv";
+    StringRef op = isPowerOf2_64(cell) ? (sx ? "ashr" : "lshr") : (sx ? "sdiv" : "udiv");
     idx = idx.handle ? Operand{tmpl(ctx, op, intRail(64), {idx, Operand{k, false}}, "hl"), true}
-                     : Operand{isPowerOf2_64(cell) ? ctx.B().CreateLShr(idx.v, k) : ctx.B().CreateUDiv(idx.v, k),
+                     : Operand{isPowerOf2_64(cell) ? (sx ? ctx.B().CreateAShr(idx.v, k) : ctx.B().CreateLShr(idx.v, k))
+                                                   : (sx ? ctx.B().CreateSDiv(idx.v, k) : ctx.B().CreateUDiv(idx.v, k)),
                                false};
   }
   if (idx.handle)
