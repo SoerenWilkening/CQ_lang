@@ -12,7 +12,8 @@
 //    or constant expression) or a lifetime marker: nothing outside the program can see it (48: the
 //    internal never-written @tiny; 32: the non-escaping volatile local). LLVM's CaptureTracking is not
 //    used, because it counts every volatile access as a capture.
-//  - An unobservable access is the plain access (rule 24): with nothing quantum (classical pointer,
+//  - An unobservable access is the plain access (rule 24); a store into an unobservable object nothing
+//    loads from is dead and emits nothing (169). Otherwise, with nothing quantum (classical pointer,
 //    classical value, classical memory) it is copied without `volatile` (48's reference: "a plain
 //    classical load"); otherwise it is routed as the plain access is (rule 20): a slot object to
 //    mem::lowerSlotLoad/Store, a QRAM object to mem::lowerQramLoad/Store, a quantum offset into
@@ -97,6 +98,25 @@ bool unobservable(const Value *ptr) {
   return addressStaysInside(obj);
 }
 
+// Does anything read the unobservable object ptr points into (a load through any derived address)?
+bool everRead(const Value *ptr) {
+  const Value *obj = getUnderlyingObject(ptr, /*MaxLookup=*/0);
+  SmallVector<const Value *, 8> work{obj};
+  SmallPtrSet<const Value *, 16> seen{obj};
+  while (!work.empty()) {
+    const Value *v = work.pop_back_val();
+    for (const User *usr : v->users()) {
+      if (isa<LoadInst>(usr))
+        return true;
+      if ((isa<GEPOperator>(usr) || isa<BitCastOperator>(usr) || isa<AddrSpaceCastOperator>(usr) ||
+           isa<PHINode>(usr) || isa<SelectInst>(usr)) &&
+          seen.insert(usr).second)
+        work.push_back(usr);
+    }
+  }
+  return false;
+}
+
 bool involvesQuantum(LoweringContext &ctx, Instruction &I, const Value *ptr) {
   if (!I.getType()->isVoidTy() && ctx.T.isQuantum(&I, ctx.S))
     return true;
@@ -179,6 +199,11 @@ void lowerVolatile(LoweringContext &ctx, Instruction &I) {
     unimplemented("eff-conc: a volatile atomic access", &I);
   bool q = involvesQuantum(ctx, I, ptr);
   if (unobservable(ptr)) {
+    // The plain access (rule 24). A store into an object nothing reads and nothing outside sees is dead:
+    // nothing (169's FORCE_EVAL in ilogb, stored volatile under a quantum predicate: "the volatile store
+    // stays nothing").
+    if (isa<StoreInst>(I) && !everRead(ptr))
+      return;
     if (!q)
       return copyClassical(ctx, I, /*dropVolatile=*/true);
     return routePlain(ctx, I, ptr, "an unobservable volatile access");
