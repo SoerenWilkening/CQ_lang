@@ -179,7 +179,8 @@ class FakeSiblings:
             ("oracle", "run_samples"): lambda p, s, smps, **kw: [
                 (self.calls.append(("oracle",)), self.oracle_run(smp))[1] for smp in smps],
             ("oracle", "run_result"): lambda sr, s, o1: rr("c"),
-            ("compare", "compare"): lambda a, b, against, classical_key=None: (
+            # cq-ia96: against the C program report also passes registers= (the cq_theta register webs)
+            ("compare", "compare"): lambda a, b, against, classical_key=None, registers=None: (
                 self.calls.append(("compare", against, classical_key)), self.compare_reasons)[1],
             ("compare", "classical_key_from_driver"): lambda d: (self.calls.append(("key", d)),
                                                                  self.key)[1],

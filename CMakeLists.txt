@@ -48,6 +48,25 @@ function(cq_add_unit_test name)
   add_test(NAME ${name} COMMAND ${name})
 endfunction()
 
+# cq_add_python_unit_classes(<prefix> <script> <workdir> <env>): one test <prefix>-<Class> per
+# unittest.TestCase class of <script>, each under heavy.sh's cap on its own (cq-fbii, owner
+# 2026-11-01: a suite that only passes per class is registered per class). New classes register on
+# the next configure.
+function(cq_add_python_unit_classes prefix script workdir env)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${script}")
+  file(STRINGS "${script}" lines REGEX "^class [A-Za-z0-9_]+\\(unittest\\.TestCase\\)")
+  if(NOT lines)
+    message(FATAL_ERROR "cq: no unittest.TestCase class in ${script}")
+  endif()
+  foreach(l ${lines})
+    string(REGEX REPLACE "^class ([A-Za-z0-9_]+).*" "\\1" cls "${l}")
+    add_test(NAME ${prefix}-${cls}
+      COMMAND ${Python3_EXECUTABLE} ${script} -v ${cls}
+      WORKING_DIRECTORY ${workdir})
+    set_tests_properties(${prefix}-${cls} PROPERTIES ENVIRONMENT "${env}" TIMEOUT 600)
+  endforeach()
+endfunction()
+
 file(GLOB CQ_TEST_CMAKE CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/tests/*/CMakeLists.txt")
 foreach(f ${CQ_TEST_CMAKE})
   get_filename_component(d "${f}" DIRECTORY)
