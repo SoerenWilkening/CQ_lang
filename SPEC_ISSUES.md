@@ -30,17 +30,6 @@ Entry format:
   heap_linked_list.lowered.ll line 36.
 - Bead: cq-n7e9
 
-## 107 (CR rule 21): a triple formal the callee loads through, passed without its cell count
-- Rule: CR rule 21: "when the callee loads through the pointer, the object's cell count follows the
-  triple as a compiler-added `i32` (no mask digit, 190)".
-- Disagreement: 107's union_slot passes `&u` to `bump`, which loads `u->v` through it, as
-  `@__cq_q_bump_0011(ptr %6, i32 3, i32 0)`: no cell count (and the twin takes `(ptr, i32, i32, old
-  tag, old idx)`). We follow CR: the cell count 1 follows the triple (the record is one cell). Signatures
-  are not compared by §6, so the verdict does not depend on it.
-- Evidence: pointer_int_union.lowered.ll, union_slot's call of `@__cq_q_bump_0011` and the header
-  ("NO object table is passed").
-- Bead: cq-47n3
-
 ## 117 (CR rule 12, §6 item 2): one phase on a disjunction vs per-edge phases
 - Rule: CR rule 12: inside a `_ctl` clone `cq_phi` is `rz_i1(pred, θ)`, pred the block's predicate;
   §6 item 2 compares the rotation list gate by gate up to reordering and rail renaming.
