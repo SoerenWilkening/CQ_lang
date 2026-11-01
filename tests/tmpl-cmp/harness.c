@@ -423,10 +423,10 @@ int main(int argc, char **argv) {
   }
   static const char *ops[] = {"icmp", "select", "smax", "smin", "umax", "umin", "abs",
                               "uadd_overflow", "sadd_overflow", "usub_overflow", "ssub_overflow",
-                              "umul_overflow", "smul_overflow", "uadd_sat", "usub_sat"};
+                              "umul_overflow", "smul_overflow", "uadd_sat", "usub_sat", "sadd_sat", "ssub_sat"};
   for (size_t i = 0; i < sizeof ops / sizeof ops[0]; ++i)
     if (!lookup(ops[i])) { fprintf(stderr, "FAIL: %s not registered\n", ops[i]); ++nmismatch; }
-  if (nreg != (int)(sizeof ops / sizeof ops[0])) { fprintf(stderr, "FAIL: %d ops registered, want 15\n", nreg); ++nmismatch; }
+  if (nreg != (int)(sizeof ops / sizeof ops[0])) { fprintf(stderr, "FAIL: %d ops registered, want %d\n", nreg, (int)(sizeof ops / sizeof ops[0])); ++nmismatch; }
   printf("registered ops: %d\n", nreg);
   size_t ne = sizeof TABLE / sizeof TABLE[0];
   for (size_t i = 0; i < ne; ++i) {

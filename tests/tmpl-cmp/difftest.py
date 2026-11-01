@@ -34,6 +34,7 @@ BINOPS = {  # template op -> IR producing %r (iW) or %f (i1) from %x, %y
     "smax": ("llvm.smax", "val"), "smin": ("llvm.smin", "val"),
     "umax": ("llvm.umax", "val"), "umin": ("llvm.umin", "val"),
     "uadd_sat": ("llvm.uadd.sat", "val"), "usub_sat": ("llvm.usub.sat", "val"),
+    "sadd_sat": ("llvm.sadd.sat", "val"), "ssub_sat": ("llvm.ssub.sat", "val"),
     "uadd_overflow": ("llvm.uadd.with.overflow", "ovf"), "sadd_overflow": ("llvm.sadd.with.overflow", "ovf"),
     "usub_overflow": ("llvm.usub.with.overflow", "ovf"), "ssub_overflow": ("llvm.ssub.with.overflow", "ovf"),
     "umul_overflow": ("llvm.umul.with.overflow", "ovf"), "smul_overflow": ("llvm.smul.with.overflow", "ovf"),
@@ -55,6 +56,8 @@ MUTANTS = [
     ("mul-carry-lost", "    p[i + nw] = (uint64_t)c;\n", ""),
     ("abs-no-neg", "    if (sign(a, W)) {", "    if (0) {"),
     ("uaddsat-no-saturate", "memset(r, 0xff, W.nw * sizeof(uint64_t));", ";"),
+    ("ssat-clamp-swapped", "memset(r, sa ? 0 : 0xff, W.nw", "memset(r, sa ? 0xff : 0, W.nw"),
+    ("ssubsat-cond", "(isadd ? sa == sb : sa != sb)", "(isadd ? sa == sb : sa == sb)"),
     ("smax-is-umax", "case OP_SMAX: return put(out, scmp(a, b, W) >= 0", "case OP_SMAX: return put(out, ucmp(a, b, W.nw) >= 0"),
     ("out-preset-unchecked", "if (!out->w || out->bits != bits || out->kind != kind || out->nw != need) {", "if (!out->w) {"),
 ]
