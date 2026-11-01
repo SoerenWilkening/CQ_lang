@@ -1,6 +1,7 @@
 ; Rule 22, a run-time length of whole double cells (k * 8 bytes) from cell 1 with a classical fill byte
 ; %f: the cell value is the byte splat over 8 bytes as a double; the loop starts at cell 1, the length
-; is k cells (the byte length shifted right by 3).
+; is k cells (the byte length shifted right by 3). Two f64 allocs: the loop's seed and mem-slots' copy of
+; the rotated register on its store back (cq-dr4o).
 declare double @cq_theta_f64(double, double)
 declare double @cq_measure_f64(double)
 declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)
@@ -23,5 +24,5 @@ define double @memset_offset_double(i32 %k, i8 %f, i32 %i, double %t) {
 ; CHECK memset_offset_double: mul i64 %{{z}}, 72340172838076673
 ; CHECK memset_offset_double: bitcast i64 %{{w}} to double
 ; CHECK memset_offset_double: add i64 1, %{{j}}
-; CHECK-COUNT memset_offset_double: @cqrt_alloc_f64( 1
+; CHECK-COUNT memset_offset_double: @cqrt_alloc_f64( 2
 ; CHECK-COUNT memset_offset_double: call void @cqrt_free( 0

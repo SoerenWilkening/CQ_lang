@@ -1,6 +1,7 @@
-; A load through a fat pointer (rule 21 per-object guarded access) is not built in this module: an
-; internal error, never a lowering.
-; EXPECT-ERROR: cq: unimplemented: fatptr: a load through a fat pointer
+; A load through a fat pointer over host objects at a classical idx (rule 21: a host load checking the
+; idx against the object's cell count) is not built: an internal error, never a lowering. (Over QRAM
+; objects, and over host objects at a rail idx as a QROM, it is: 84, 88, 167.)
+; EXPECT-ERROR: cq: unimplemented: fatptr: a load through a fat pointer from a slot object, a host object at a classical idx
 declare i32 @cq_theta_ui32(i32, double)
 declare i32 @cq_measure_si32(i32)
 @A = internal global [4 x i32] [i32 1, i32 2, i32 3, i32 4]
