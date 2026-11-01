@@ -185,33 +185,21 @@ SEARCH_BATCH = 48
 HANG_CPU_S = 20               # CPU seconds of one sample (ITIMER_PROF in the worker)
 HANG_WALL_S = 120             # wall seconds with no byte from the probe server
 
-# The cost budget (owner ruling 2026-11-01, cq-g8md; CR §6, coverage): a sample runs at most this many
+# The cost budget (owner rulings 2026-11-01, cq-g8md; CR §6, coverage): a sample runs at most this many
 # loop-header executions, counted on the C oracle (the probe counts the same headers, and stops a sample
-# there as a timeout). A trip target whose only reaching inputs run past it is reported as uncovered,
-# with the cheapest reaching input found and its cost (uncovered_targets); it is never compared, never
-# counted green, never removed. `cqcheck run --cost-budget N` sets it; the budget is the checker's.
+# there as a timeout). Default 2^12 (owner 2026-11-01: the pre-cq-g8md limit). Nothing ever runs past
+# it (owner override 2026-11-01: "this would take too much time"): a trip target no input reaches
+# within it, while the budget stopped some constructed input, is reported as uncovered with the
+# stopped inputs and their cost "> budget" (uncovered_targets); never compared, never counted green,
+# never removed. `cqcheck run --cost-budget N` sets it; the budget is the checker's.
 COST_BUDGET_ENV = "CQ_COST_BUDGET"
-DEFAULT_COST_BUDGET = 1 << 20
+DEFAULT_COST_BUDGET = 1 << 12
+NS_PER_HEADER_GUARD = 100     # hang guards of a run: 100 ns of CPU per header execution (at least 2 s)
 
 
 def cost_budget() -> int:
     v = os.environ.get(COST_BUDGET_ENV)
     return int(v, 0) if v else DEFAULT_COST_BUDGET
-
-
-# The search for an uncovered target's reaching input (uncovered_targets): runs past the budget, each
-# of at most the witness cap header executions, WITNESS_WORK caps of them in all. A limit of the
-# search, never of the claim: a target it finds no input for stays MISSING (an ERROR verdict), never
-# uncovered.
-WITNESS_CAP_ENV = "CQ_WITNESS_CAP"
-DEFAULT_WITNESS_CAP = 1 << 32
-WITNESS_WORK = 2              # witness caps of header executions over all of one example's runs
-NS_PER_HEADER_GUARD = 100     # hang guards of a long run: 100 ns of CPU per header execution
-
-
-def witness_cap() -> int:
-    v = os.environ.get(WITNESS_CAP_ENV)
-    return int(v, 0) if v else DEFAULT_WITNESS_CAP
 
 
 def oracle_timeout_ms(cap: int) -> int:
@@ -3451,7 +3439,7 @@ def _cache_key(spec: DriverSpec, example_dir: Path, exempt_baseline: bool = True
     # compiles in (taint, the loop classifier): all decide trips, caps and reached sites (narrow review)
     h.update(_oracle.SRC_KEY.encode())
     # the cost budget and the witness search's limits (cq-g8md): they decide samples and uncovered targets
-    h.update(f"budget {cost_budget()} {hdr_cap()} {witness_cap()} {WITNESS_WORK}\n".encode())
+    h.update(f"budget {cost_budget()} {hdr_cap()} no-past-budget\n".encode())
     return h.hexdigest()[:20]
 
 
@@ -3771,7 +3759,10 @@ def trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_sit
 #               oracle's clean run): it is the target's sample (a search miss, fixed);
 #   IMPOSSIBLE  at least one constructed input reaches it, and every one that does is outside the
 #               domain (an access past an object, an LLVM-undefined §2 row, a "ub" or "crash" note of
-#               the oracle);
+#               the oracle), and the cost budget stopped no constructed input (cq-hsan, CR §6 of
+#               CQ_spec afef520: an exhausted budget proves nothing; a run the budget cut may reach
+#               the target cleanly later). With a stopped input there is no proof here: the target
+#               is uncovered (uncovered_targets), unless a static proof (gaps.loop_facts) excludes it;
 #   IMPOSSIBLE  (exhaustion) no input of any drivers.txt call reaches it, every input enumerated: each
 #               call's inputs are integer quantum scalars of at most EXHAUST_BITS bits in all and
 #               floating-point classical arguments the function uses only as cq_theta / cq_phi angles
@@ -3793,8 +3784,9 @@ def trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_sit
 # (cost_budget(), owner ruling 2026-11-01) in its trip mode. A target is at most K + 1 trips of one
 # activation, so a run past the budget (a classical loop over a large bound, 58's n near 2^31) shows
 # only what it reached before it; it is no witness of a clean reach, but an undefined access it noted
-# before the budget still is one (the oracle notes it when it happens). A target still empty after
-# them goes to uncovered_targets, which runs the inputs the budget stopped past it.
+# before the budget still is one (the oracle notes it when it happens), and only when the budget
+# stopped no constructed input. A target still empty after them while the budget stopped some input
+# is uncovered (uncovered_targets); nothing runs past the budget (owner 2026-11-01).
 
 
 def trip_construct_values(ct: D.CType, base: int) -> List[int]:
@@ -4014,6 +4006,9 @@ def construct_trip_targets(spec, example_dir, g: "Gen", searcher: "Searcher", ou
         eobs = searcher.observe([(c, list(a)) for c, a in exh])
         if any(r.failed or r.outcome != "ret" or run_undefined(r, o, searcher.rows_by_site) for r, o in zip(eruns, eobs)):
             exh = None
+    # cq-hsan: the constructed inputs the cost budget stopped (a run cut there may reach any target later)
+    stopped = sum(1 for kr in kruns if kr is not None and kr.failed and "tripcap" in kr.notes)
+    ub_only: Set[Tuple[str, str]] = set()     # targets whose in-budget reaches are all undefined
     for lpo in out:
         for target, e in lpo["trips"].items():
             if "empty" not in e:
@@ -4022,7 +4017,7 @@ def construct_trip_targets(spec, example_dir, g: "Gen", searcher: "Searcher", ou
                                       searcher.rows_by_site)
             if kind == "found":
                 lpo["trips"][target] = {"sample": g.add_subst(cands[i][0], list(cands[i][1]), smp[i].get("subst"))}
-            elif kind == "ub":
+            elif kind == "ub" and not stopped:
                 lpo["trips"][target] = {"empty": why, "witness": smp[i], "proof": kind}
             elif exh is not None and not any(trip_hit(r.events, r.loops, lpo["loop"], int(target)) for r in eruns):
                 lpo["trips"][target] = {"empty": (
@@ -4031,9 +4026,17 @@ def construct_trip_targets(spec, example_dir, g: "Gen", searcher: "Searcher", ou
                     f"arguments only angles) returns inside the domain in the C oracle with trip counts "
                     f"{sorted({rec['n'] for r in eruns for rec in r.events if rec.get('ev') == 'trip' and rec.get('loop') == lpo['loop']})} "
                     f"(exhaustion; cq-oou2)"), "proof": "exhaustion"}
+            elif kind == "ub":
+                ub_only.add((lpo["loop"], target))
+                # cq-hsan, CR §6 (afef520): the budget stopped some constructed inputs before they
+                # could reach it, and an exhausted budget proves nothing: no proof here; the target
+                # is uncovered (uncovered_targets) unless a static proof excludes it
+                e["empty"] += (f"; every reach within the budget is undefined as LLVM defines it (e.g. "
+                               f"{json.dumps(smp[i], sort_keys=True)}), but {stopped} constructed inputs stopped at "
+                               f"the cost budget of {cost_budget()} before reaching it: no proof (cq-hsan)")
             else:
                 e["empty"] += f"; {why} (cq-oou2)"
-    uncovered_targets(spec, example_dir, g, searcher, out, cands, smp, kruns, obs)
+    uncovered_targets(spec, example_dir, g, searcher, out, cands, smp, kruns, obs, ub_only)
 
 
 def _arg_distance(g: "Gen", ci: int, args: Sequence[str]) -> int:
@@ -4054,177 +4057,50 @@ def _arg_distance(g: "Gen", ci: int, args: Sequence[str]) -> int:
     return d
 
 
-def _reach_cost(r, loop: str, t: int) -> Optional[int]:
-    """The header executions after which a trip-mode run first gives `t` trips of `loop` (the trip
-    event's "h"; a capped record ends the run, so its cost is the run's)."""
-    hs = [int(e["h"]) for e in r.events if e.get("ev") == "trip" and e.get("loop") == loop and int(e["n"]) == t
-          and "h" in e]
-    if hs:
-        return min(hs)
-    return _run_cost(r) if trip_hit([], r.loops, loop, t) else None
+UNCOVERED_LISTED = 5          # stopped inputs named in an uncovered line (all are counted)
 
 
-def _run_cost(r) -> Optional[int]:
-    n = [int(e["n"]) for e in r.events if e.get("ev") == "ticks"]
-    if n:
-        return n[-1]
-    hs = [int(e["h"]) for e in r.events if "h" in e]
-    return max(hs) if hs else None
-
-
-def uncovered_targets(spec, example_dir, g: "Gen", searcher: "Searcher", out: List[dict], cands, smp, kruns, obs) -> None:
+def uncovered_targets(spec, example_dir, g: "Gen", searcher: "Searcher", out: List[dict], cands, smp, kruns, obs,
+                      ub_only: Optional[Set[Tuple[str, str]]] = None) -> None:
     """The trip targets still empty after the search and the constructed inputs within the budget
-    (owner ruling 2026-11-01 on 117, cq-g8md; CR §6, coverage). A target LLVM's or TripFacts' proofs
-    already exclude (gaps.loop_facts) is left to them. For the rest, the constructed inputs the budget
-    stopped (oracle cut at K, base inputs before substituted ones, nearest to the drivers.txt call
-    first) run again up to the witness cap, WITNESS_WORK caps of header executions in all, until every
-    such target has a clean reach: an unsubstituted input in the probe build first (its trip counts
-    and its domain), and only one whose probe run may reach a target in the oracle's trip mode, which
-    decides the count and its cost. For each target:
+    (owner rulings 2026-11-01 on 117, cq-g8md, cq-hsan; CR §6, coverage). Nothing runs past the
+    budget. A target LLVM's or TripFacts' static proofs exclude (gaps.loop_facts) is left to them
+    (dead). Of the rest, while the budget stopped some constructed input (its cut run may reach any
+    target later), each target is
 
-      uncovered  an input that reaches it on a clean run (it returns or stops at the K cutoff, no
-                 undefined access noted) whose probe run up to the witness cap is inside the domain
-                 (no access outside an object, no LLVM-undefined CR §2 row): the cheapest such input
-                 of those run, with the header executions at which it reaches the target and in all.
-                 Reported, never compared and never counted green (gaps.UNCOVERED);
-      dead       every input that reaches it, past the budget included, is undefined (trip_proof's
-                 "ub" over the runs past the budget) and the search decided every input the budget
-                 stopped (each run to its end within the cap, in the probe or the oracle): a target
-                 reachable only through poison or an access outside an object (117 at t >= 33: shl
-                 nuw i32 1, 32 is poison and the branch on it undefined), IMPOSSIBLE with that proof;
-      uncovered  with no witness: the search stopped before deciding every input the budget stopped
-                 (its work limit left some not run, or a run stopped at the witness cap). CR §6
-                 (CQ_spec afef520): exhausting a search or work budget proves nothing, so the target
-                 is UNCOVERED, listed with what was tried, never dead and never green (cq-3nla: a
-                 work-limit stop read the inputs it never ran as non-reachers, a target turned dead);
-      missing    otherwise (every such input decided, none reaching it inside the domain, or a reach
-                 the domain check cannot decide)."""
-    from cqcheck import gaps, oracle
+      uncovered  listed with the constructed inputs the budget stopped (how many, the nearest the
+                 drivers.txt call first, base inputs before substituted ones) and their cost "> budget":
+                 whether one of them reaches it is not known. Never compared, never green, never dead
+                 (CR §6, CQ_spec afef520: an exhausted budget proves nothing; cq-3nla, cq-hsan), and so
+                 for a target every in-budget reach of which is undefined (`ub_only`: construct_trip_targets
+                 found no proof since the budget stopped an input).
+
+    With no stopped input the target stays as construct_trip_targets left it (MISSING: no constructed
+    input reaches it inside the domain, each run to its end)."""
+    from cqcheck import gaps
     todo = [(lpo, t) for lpo in out for t, e in lpo["trips"].items() if "empty" in e and "proof" not in e]
     if not todo:
         return
+    over = [i for i, kr in enumerate(kruns) if kr is not None and kr.failed and "tripcap" in kr.notes]
+    if not over:
+        return
     facts = gaps.loop_facts(example_dir, LLVM_BIN)
     todo = [(lpo, t) for lpo, t in todo if not facts.get(lpo["loop"], gaps.LoopFacts()).impossible(lpo["loop"], int(t))]
-    if not todo:
-        return
-    budget, cap = cost_budget(), witness_cap()
-    over = [i for i, kr in enumerate(kruns) if kr is not None and kr.failed and "tripcap" in kr.notes]
+    budget = cost_budget()
     over.sort(key=lambda i: ("subst" in smp[i], _arg_distance(g, cands[i][0], cands[i][1]), i))
-    o1 = sorted(Path(example_dir).glob("*.O1.ll"))[0]
-    rows = searcher.rows_by_site
-    kruns2, obs2 = list(kruns), list(obs)
-    ran: Dict[int, object] = {}
-    clean: Dict[int, bool] = {}
-
-    def run_at_cap(sm: dict):
-        (r,) = oracle.run_samples(o1, spec, [sm], timeout_ms=oracle_timeout_ms(cap), tripcap=cap, trips_only=True)
-        return r
-
-    def in_domain(i: int, r, o: Optional["Obs"] = None) -> Tuple[bool, Optional["Obs"]]:
-        """Whether candidate i, run past the budget as `r`, is inside the domain: its run is clean and
-        the probe run of its input (its base's, for a substituted one) up to the cap is valid."""
-        if r.failed or not (r.outcome == "ret" or _cap_clean(r)) or run_undefined(r, None, rows):
-            return False, None
-        base = {"call": smp[i]["call"], "args": smp[i]["args"]}
-        br = r if "subst" not in smp[i] else run_at_cap(base)
-        if o is None:
-            (o,) = searcher.pb.run([base], hdrcap=cap, hang_s=max(HANG_CPU_S, cap * NS_PER_HEADER_GUARD // 10 ** 9))
-        o.cap_ok = _cap_clean(br)
-        if "subst" in smp[i] and (br.failed or not (br.outcome == "ret" or _cap_clean(br))
-                                  or run_undefined(br, None, rows)):
-            return False, o
-        return _valid(o, rows), o
-
-    def witnessed(lpo, t) -> bool:
-        return any(clean.get(i) and _reach_cost(r, lpo["loop"], int(t)) is not None for i, r in ran.items())
-
-    lid = {lp.key(): lp.id for lp in searcher.pb.ins.loops}
-    hang = max(HANG_CPU_S, cap * NS_PER_HEADER_GUARD // 10 ** 9)
-
-    def probe_may_hit(o: "Obs") -> bool:
-        # the probe counts header executions: the oracle's t is the probe's t, or t + 1 where a header
-        # run may only exit (trip_classes; gaps.LoopFacts.region_exit); 0 is a guard skip in both
-        return any(u in o.t.get(lid.get(lpo["loop"], -1), []) for lpo, t in todo
-                   for u in ((int(t), int(t) + 1) if facts.get(lpo["loop"], gaps.LoopFacts()).region_exit else (int(t),)))
-
-    work = 0
-    # cq-3nla: the inputs of `over` the search left undecided (not run when the work limit stopped
-    # it, or stopped at the witness cap in the probe or the oracle): while any is, no target is dead
-    undecided = 0
-    capped = 0
-    for n, i in enumerate(over):
-        if all(witnessed(lpo, t) for lpo, t in todo):
-            break
-        if work >= WITNESS_WORK * cap:
-            undecided += len(over) - n
-            break
-        o = None
-        if "subst" not in smp[i]:
-            # the probe build first (several times faster than the oracle at -O0): an input whose
-            # probe run up to the cap reaches no target needs no oracle run; one the cap stopped is
-            # undecided (it may reach a target past the cap)
-            (o,) = searcher.pb.run([{"call": smp[i]["call"], "args": smp[i]["args"]}], hdrcap=cap, hang_s=hang)
-            work += max(o.hdrs, 1)
-            if o.end == "timeout":
-                undecided += 1
-                capped += 1
-                continue
-            if not probe_may_hit(o):
-                continue
-        r = run_at_cap(smp[i])
-        ran[i] = r
-        if "tripcap" in r.notes:
-            undecided += 1
-            capped += 1
-        work += cap if "tripcap" in r.notes else (_run_cost(r) or cap)
-        kruns2[i] = r
-        if any(_reach_cost(r, lpo["loop"], int(t)) is not None for lpo, t in todo):
-            clean[i], o = in_domain(i, r, o)
-            if o is not None:
-                obs2[i] = o
+    listed = [{k: v for k, v in smp[i].items()} for i in over[:UNCOVERED_LISTED]]
+    names = "; ".join(json.dumps(w, sort_keys=True) for w in listed)
     for lpo, t in todo:
-        hits = sorted((_reach_cost(r, lpo["loop"], int(t)), i) for i, r in ran.items()
-                      if clean.get(i) and _reach_cost(r, lpo["loop"], int(t)) is not None)
-        e = lpo["trips"][t]
         zero = f" ({lpo['zero']})" if int(t) == 0 and lpo.get("zero") else ""
-        if hits:
-            h, i = hits[0]
-            total = _run_cost(ran[i])
-            w = {k: v for k, v in smp[i].items()}
-            lpo["trips"][t] = {
-                "empty": (f"uncovered: no input within the cost budget of {budget} loop-header executions (C oracle) "
-                          f"runs {t} trips of {lpo['loop']}{zero}; the cheapest reaching input found, "
-                          f"{json.dumps(w, sort_keys=True)}, reaches it after {h} header executions and runs "
-                          f"{total if total is not None else 'more'} in all, inside the domain (of {len(ran)} inputs "
-                          f"run past the budget, nearest the drivers.txt call first, up to {cap} each; cq-g8md)"),
-                "uncovered": {"witness": w, "reach": h, "cost": total, "budget": budget}}
-            continue
-        kind, j, why = trip_proof(lpo["loop"], int(t), cands, kruns2, obs2, searcher.valid, rows)
-        if kind == "ub" and not undecided:
-            lpo["trips"][t] = {"empty": why + f" (past the cost budget of {budget}, up to {cap} header executions; "
-                                              f"a target reached only outside the domain is dead, cq-g8md)",
-                               "witness": smp[j], "proof": kind}
-            continue
-        if undecided:
-            # CR §6 (afef520): a search or work budget exhausted proves nothing: UNCOVERED, with what was tried
-            tried = (f"of the {len(over)} inputs the budget stopped (nearest the drivers.txt call first), the search "
-                     f"past it ran {len(ran)} in the oracle up to {cap} header executions each and spent {work} of its "
-                     f"{WITNESS_WORK * cap} header executions of work; {undecided} were left undecided "
-                     f"({capped} stopped at that cap, {undecided - capped} not run when the work limit stopped it)")
-            ub = (f"; every reach seen is outside the domain ({why}), which proves nothing while inputs are undecided"
-                  if kind == "ub" else "")
-            lpo["trips"][t] = {
-                "empty": (f"uncovered: no input within the cost budget of {budget} loop-header executions (C oracle) "
-                          f"runs {t} trips of {lpo['loop']}{zero}, and no reaching input was witnessed past it: "
-                          f"{tried}{ub}; never dead, never compared (CR §6: exhausting a search budget proves "
-                          f"nothing; cq-3nla)"),
-                "uncovered": {"witness": None, "reach": None, "cost": None, "budget": budget,
-                              "tried": len(ran), "inputs": len(over), "undecided": undecided, "capped": capped,
-                              "work": work, "cap": cap}}
-            continue
-        if over:
-            e["empty"] += (f"; past the cost budget of {budget}: {len(ran)} of the {len(over)} inputs the budget "
-                           f"stopped ran up to {cap} header executions, none reaching it inside the domain (cq-g8md)")
+        ub = (" Every in-budget reach of it is undefined as LLVM defines it, which proves nothing while the "
+              "budget stopped inputs (cq-hsan)." if ub_only and (lpo["loop"], t) in ub_only else "")
+        lpo["trips"][t] = {
+            "empty": (f"uncovered: no input within the cost budget of {budget} loop-header executions (C oracle) "
+                      f"runs {t} trips of {lpo['loop']}{zero}; {len(over)} constructed inputs ran past the budget "
+                      f"(cost > {budget} each) and were stopped there, nothing runs past it, so whether they reach "
+                      f"it is not known; the nearest the drivers.txt call: {names}.{ub} Never compared, never "
+                      f"green (CR §6; cq-g8md)"),
+            "uncovered": {"stopped": listed, "n_stopped": len(over), "cost": f"> {budget}", "budget": budget}}
 
 
 def confirm_trips(ss: SampleSet, trip_run: Callable[[dict], Tuple[List[dict], List[dict]]]) -> List[str]:

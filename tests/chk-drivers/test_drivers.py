@@ -1404,10 +1404,10 @@ COST_LINE = "906_probe_cost|int f(int);|f(3)"
 
 
 class CostBudget(unittest.TestCase):
-    """cq-g8md (owner ruling 2026-11-01): within the budget the target is a sample; past it, the
-    cheapest reaching input found is reported as uncovered with its cost, never a sample; reached
-    only through an undefined shift it is dead; with no reach within the witness cap it stays
-    missing. The budget and witness cap are shrunk (4096 and 2^16 header executions) to keep it small."""
+    """cq-g8md, cq-hsan, cq-3nla (owner rulings 2026-11-01): within the budget the target is a sample;
+    nothing runs past the budget; a target no input reaches within it while it stopped constructed
+    inputs is uncovered with those inputs and cost "> budget", never a sample and never dead; reached
+    only through an undefined shift with no input stopped, it is dead."""
 
     def target(self, c_text, env):
         saved = {k: os.environ.get(k) for k in env}
@@ -1438,62 +1438,76 @@ class CostBudget(unittest.TestCase):
                     os.environ[k] = v
 
     def test_uncovered_past_the_budget(self):
-        from cqcheck import gaps
-        e, zero, _ = self.target(COST_C, {"CQ_COST_BUDGET": "4096", "CQ_WITNESS_CAP": "65536"})
+        e, zero, _ = self.target(COST_C, {"CQ_COST_BUDGET": "4096"})
         self.assertIn("guard branch", zero)
         t0 = e["trips"]["0"]
         self.assertNotIn("sample", t0)
+        self.assertNotIn("proof", t0)
         u = t0["uncovered"]
-        self.assertEqual(u["witness"]["args"], ["0x0000000f"])       # t = 15, the nearest constructed input
-        self.assertGreater(u["reach"], 4096)
-        self.assertGreaterEqual(u["cost"], u["reach"])
-        self.assertEqual(u["budget"], 4096)
+        # the stopped inputs, nearest the drivers.txt call f(3) first: t = 5 is the first past 4096
+        self.assertEqual(u["stopped"][0]["args"], ["0x00000005"])
+        self.assertGreater(u["n_stopped"], len(u["stopped"]) - 1)
+        self.assertEqual((u["cost"], u["budget"]), ("> 4096", 4096))
         self.assertTrue(t0["empty"].startswith("uncovered: "))
         self.assertIn(zero, t0["empty"])
 
+    def test_nothing_runs_past_the_budget(self):
+        # owner override 2026-11-01: no oracle or probe run past the budget anywhere (was: reruns up
+        # to a witness cap of 2^32 header executions)
+        from cqcheck import oracle
+        caps = []
+        orig_or, orig_pb = oracle.run_samples, S.ProbeBuild.run
+
+        def rs(o1, spec, smp, *a, **k):
+            caps.append(("oracle", k.get("tripcap")))
+            return orig_or(o1, spec, smp, *a, **k)
+
+        def pr(pb, samples, hdrcap=None, hang_s=None):
+            caps.append(("probe", hdrcap))
+            return orig_pb(pb, samples, hdrcap, hang_s)
+        oracle.run_samples, S.ProbeBuild.run = rs, pr
+        try:
+            self.target(COST_C, {"CQ_COST_BUDGET": "4096"})
+        finally:
+            oracle.run_samples, S.ProbeBuild.run = orig_or, orig_pb
+        self.assertTrue(caps)
+        self.assertEqual([c for c in caps if c[1] is not None and c[1] > 4096], [])
+
     def test_within_the_budget_it_is_a_sample(self):
-        # mutant of the budget: the same target with the default budget is a sample, never uncovered
-        e, _, g = self.target(COST_C, {"CQ_WITNESS_CAP": "65536"})
+        # mutant of the budget: the same target with a budget of 2^20 is a sample, never uncovered
+        e, _, g = self.target(COST_C, {"CQ_COST_BUDGET": str(1 << 20)})
         self.assertIn("sample", e["trips"]["0"])
         self.assertNotIn("uncovered", e["trips"]["0"])
 
     def test_reached_only_through_poison_is_dead(self):
+        # every constructed input runs to its end within 2^20 (t > 20 returns at once): every reach
+        # of trip 0 (t >= 13) shifts by 32 or more, so the target is dead (cq-oou2's proof)
         from cqcheck import gaps
-        e, _, _ = self.target(COST_UB_C, {"CQ_COST_BUDGET": "4096", "CQ_WITNESS_CAP": "262144"})
+        e, _, _ = self.target(COST_UB_C, {"CQ_COST_BUDGET": str(1 << 20)})
         t0 = e["trips"]["0"]
         self.assertNotIn("uncovered", t0)
         self.assertEqual(t0.get("proof"), "ub")
         self.assertEqual(gaps.classify_reason(t0["empty"]), gaps.IMPOSSIBLE)
 
-    def test_no_reach_within_the_cap_is_uncovered_without_witness(self):
-        # cq-3nla, CR §6 (afef520): a cap too small stops the runs past the budget before any reach;
-        # a search budget exhausted proves nothing: uncovered, with what was tried, no witness
-        from cqcheck import gaps
-        e, _, _ = self.target(COST_C, {"CQ_COST_BUDGET": "4096", "CQ_WITNESS_CAP": "8192"})
+    def test_ub_reach_with_stopped_inputs_is_uncovered(self):
+        # cq-hsan, CR §6 (afef520): the same program at 15500: every in-budget reach (t = 15, 16) is
+        # undefined, but the budget stopped constructed inputs (t = 17, any of which might reach
+        # it cleanly as far as the checker knows): no proof, uncovered (the old proof made it dead)
+        e, _, _ = self.target(COST_UB_C, {"CQ_COST_BUDGET": "15500"})
         t0 = e["trips"]["0"]
         self.assertNotIn("proof", t0)
-        u = t0["uncovered"]
-        self.assertIsNone(u["witness"])
-        self.assertGreater(u["undecided"], 0)
-        self.assertTrue(t0["empty"].startswith("uncovered: "))
-        self.assertIn("left undecided", t0["empty"])
+        self.assertIn("uncovered", t0)
+        self.assertIn("(cq-hsan)", t0["empty"])
 
-    def test_work_limit_stop_is_never_dead(self):
+    def test_oob_reach_with_stopped_inputs_is_never_dead(self):
         # cq-3nla (review w2a-chk3-n1 finding 1): t = 15 reaches trip 0 only through an access outside
-        # an object, t = 16 cleanly but after more work than the limit leaves; the work limit stops the
-        # search before t = 16 runs. Before the fix the target was dead (proof ub) on t = 15 alone, a
-        # MISSING turned PASS; it is uncovered without a witness. With a cap large enough for
-        # t = 16 the same target is uncovered with t = 16 as its witness.
-        from cqcheck import gaps
-        e, _, _ = self.target(COST_WORK_C, {"CQ_COST_BUDGET": "4096", "CQ_WITNESS_CAP": "20000"})
+        # an object, t = 16 cleanly; at 14500 header executions t = 15 runs within the budget, t = 16
+        # is stopped after reaching it (at 13014 header executions, too costly to compare): the oob
+        # reach is no proof, the target is uncovered with t = 16 the nearest stopped input
+        e, _, _ = self.target(COST_WORK_C, {"CQ_COST_BUDGET": "14500"})
         t0 = e["trips"]["0"]
         self.assertNotIn("proof", t0)
-        self.assertIsNone(t0["uncovered"]["witness"])
-        self.assertIn("not run when the work limit stopped it", t0["empty"])
-        e, _, _ = self.target(COST_WORK_C, {"CQ_COST_BUDGET": "4096", "CQ_WITNESS_CAP": "131072"})
-        t0 = e["trips"]["0"]
-        self.assertNotIn("proof", t0)
-        self.assertEqual(t0["uncovered"]["witness"]["args"], ["0x00000010"])
+        self.assertEqual(t0["uncovered"]["stopped"][0]["args"], ["0x00000010"])
 
     def test_gaps_and_report(self):
         from cqcheck import gaps, report

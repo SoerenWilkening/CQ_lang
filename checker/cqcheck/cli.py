@@ -72,7 +72,8 @@ def stores_progress(ours_dir: Optional[Path], oracle: str) -> bool:
     cost budget."""
     # cq-g8md: only at the default cost budget (a lower one would turn targets uncovered, CR §6)
     budget = os.environ.get("CQ_COST_BUDGET")
-    if budget and int(budget, 0) != 1 << 20:
+    from cqcheck.sampling import DEFAULT_COST_BUDGET
+    if budget and int(budget, 0) != DEFAULT_COST_BUDGET:
         return False
     return (ours_dir is None and oracle == "both" and "CQ_PLUGIN" not in os.environ
             and report.spec_dir() == (report.ROOT.parent / "CQ_spec").resolve()
@@ -202,8 +203,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                      help="default-mode samples and the textual diff (the gate); without it a quick run")
     run.add_argument("-j", "--jobs", type=int, default=0, help="examples at a time (default $CQCHECK_JOBS or 1)")
     run.add_argument("--cost-budget", type=lambda x: int(x, 0), default=None,
-                     help="loop-header executions per sample on the C oracle (default 2^20, owner ruling "
-                          "2026-11-01, cq-g8md); a trip target reached only past it is reported uncovered")
+                     help="loop-header executions per sample on the C oracle (default 2^12, owner rulings "
+                          "2026-11-01, cq-g8md); nothing runs past it, a trip target not reached within it "
+                          "while it stopped an input is reported uncovered")
     sub.add_parser("selftest")
     sub.add_parser("baseline")
     sub.add_parser("progress")

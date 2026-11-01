@@ -11,10 +11,11 @@ and K+1 for every loop, and a seeded set over the classical arguments. sampling.
                   count the loop cannot run, proved below): reported, never failing;
   MISSING         the sampler did not find an input (a search that gave up, a reason this module does
                   not know): the §6 checks that used the sample set are not green (report.evaluate);
-  UNCOVERED       a trip target whose only reaching inputs found run the C program past the checker's cost
-                  budget (owner ruling 2026-11-01, cq-g8md; CR §6, coverage): reported with the cheapest
-                  reaching input found and its cost, never compared, never counted green, never removed;
-                  not failing (the gate: no comparison failed and every uncovered target listed);
+  UNCOVERED       a trip target no input reaches within the checker's cost budget while the budget
+                  stopped some constructed input (owner rulings 2026-11-01, cq-g8md, cq-hsan; CR §6,
+                  coverage): reported with the stopped inputs and their cost "> budget" (nothing runs
+                  past it), never compared, never counted green, never dead, never removed; not
+                  failing (the gate: no comparison failed and every uncovered target listed);
   NOTE            the totalization rows (CR §2 rows an instruction can reach) the search did not hit:
                   reported, never failing. They are sampling.py's own coverage aid, not a class
                   CLAUDE.md "Inputs" lists (orchestrator decision under CLAUDE.md Inputs, cq-h4pn,

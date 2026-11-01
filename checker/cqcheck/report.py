@@ -26,8 +26,8 @@ passed over that sample set into ERROR (FAIL stays FAIL), each with a ``sampling
 A class no input can fill (``sampling: impossible: ...``) and the totalization rows the search did
 not hit (``sampling: note: ...``) are reasons only. A trip target whose only reaching inputs run past
 the checker's cost budget (``sampling: uncovered: ...``, owner ruling 2026-11-01, cq-g8md; CR §6,
-coverage) is a reason too, with its cheapest reaching input and cost, or (a search or work budget
-exhausted, cq-3nla, CR §6 of CQ_spec afef520) with what the search tried. The verdict fields stay
+coverage) is a reason too, with the inputs the budget stopped and their cost "> budget" (nothing
+runs past the budget; an exhausted budget proves nothing, CR §6 of CQ_spec afef520, cq-3nla, cq-hsan). The verdict fields stay
 PASS when no comparison failed (the frozen Verdict), but the example's state is UNCOVERED, not green
 (state(): owner ruling 2026-11-01, "never counted green"): the gate accepts it (accepted()) when
 no comparison failed and every uncovered target is listed; green(), the progress table and the green
