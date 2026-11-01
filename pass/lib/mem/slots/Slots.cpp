@@ -248,6 +248,10 @@ struct FnState {
   // A clone's stores into a caller cell under quantum predicates (51): (block predicate, value) per store
   // lowered so far, keyed by the cell's byte offset; merged into one slot result at the last of them.
   std::map<int64_t, std::vector<std::pair<Pred, Operand>>> cloneArms;
+  // cq-vxgm (rule 20 guarded store): a caller cell a clone writes on some returning paths only, keyed by
+  // (formal, byte offset): the caller's handle loaded at the clone's entry and the fresh slot result f the
+  // clone stores into the cell there (f = old; each arm store makes it the stored value).
+  std::map<std::pair<const Value *, int64_t>, std::pair<Value *, Value *>> guardedCells;
 };
 
 // One state per (output function, original function): rule 19 inlining lowers a callee's body into
@@ -2026,8 +2030,8 @@ void lowerViewStore(LoweringContext &ctx, FnState &st, StoreInst &stI, const Sit
 // predicate, are one value at the join: the select tree over the arms (rule 9, selectChain), copied out
 // once (rule 18: alloc 0, copy, store the copy, Role::Result) at the last of them. No store emits anything
 // before. The cell's rail is the floating-point view when some access of it is floating point (51's
-// punned i64 stores of a double: a bitcast). Unimplemented: arms that do not cover every path (the select
-// would need the caller's old content), an arm store some other store may reach, and a load of the cell in
+// punned i64 stores of a double: a bitcast). Arms that do not cover every path select the caller's old
+// content there (cq-vxgm). Unimplemented: an arm store some other store may reach, and a load of the cell in
 // the clone.
 bool mergedCloneStore(LoweringContext &ctx, FnState &st, const Site &s, StoreInst &stI, Operand val) {
   if (s.info->kind != RootKind::Param || ctx.S.isEntry() || !ctx.currentFlag() || s.info->view ||
@@ -2078,11 +2082,27 @@ bool mergedCloneStore(LoweringContext &ctx, FnState &st, const Site &s, StoreIns
   Pred any = arms.front().first;
   for (auto &a : arms)
     any = any | a.first;
-  if (!any.isTop())
-    unimplemented("mem-slots: a clone's arm stores into a caller cell that leave it unwritten on some path (the "
-                  "select would read the caller's old content)",
-                  &stI);
-  Value *sel = selectChain(ctx, arms, w);
+  SmallVector<std::pair<Pred, Operand>, 4> chain(arms.begin(), arms.end());
+  if (!any.isTop()) {
+    // cq-vxgm (owner 2026-11-01, rule 20 guarded store): the clone always writes the cell; where no arm
+    // stores, the select's arm is the cell's old content, the caller's handle loaded here (calls'
+    // finalize gives the twin old_k for this load, which precedes the copy-out).
+    for (const StoreInst *x : stores)
+      if (x->getValueOperand()->getType() != cellTy)
+        unimplemented("mem-slots: a clone's arm stores of several types into a caller cell that leave it "
+                      "unwritten on some path (the old content's type is the caller's)",
+                      x);
+    for (auto &a : arms)
+      if (!a.first.classicalFactor(ctx.T, ctx.S).isTop())
+        unimplemented("mem-slots: a clone's arm stores into a caller cell under quantum predicates inside "
+                      "classical arms that leave it unwritten on some path",
+                      &stI);
+    LoadInst *old = ctx.B().CreateAlignedLoad(handleTy(ctx.M.getContext()), cellPointer(ctx, s, stI), Align(4));
+    ctx.unc().recordExternal(old, Role::UserRegister);   // the caller's rail: never the clone's
+    st.registers.insert(old);
+    chain.push_back({!any, Operand{old, true}});
+  }
+  Value *sel = selectChain(ctx, chain, w);
   CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
   RailId cid = ctx.unc().recordSeed(c);
   abi::CoreSpec cp{abi::Core::Copy, w};
@@ -2153,24 +2173,73 @@ void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &
             unimplemented("mem-slots: a clone storing into a caller's cell that an earlier store of the clone may "
                           "have filled (two slot results for one cell)",
                           &I);
-        // cq-vxgm: the caller reloads the cell after the call and cleans its old content (rule 6), so the
-        // clone writes it on every path that returns. A store under a classical condition that leaves the
-        // cell unwritten on a returning path would need the old content copied out there (orchestrator
-        // decision on cq-vxgm, owner may override); not built.
+        RailType w = cellRail(*s.info, ty, I);
+        // cq-vxgm (owner 2026-11-01, rule 20 guarded store): the caller reloads the cell after the call and
+        // cleans its old content (rule 6), so the clone always writes it. When a returning path leaves the
+        // cell unwritten (a store under a classical condition), the cell's content at return is
+        // select(arm predicate, value, old) in a fresh rail f, copied out: at the clone's entry
+        // old = load cell, f = alloc_<W>(0), copy(old, f), store f into the cell; at each arm store
+        // copy(old, f), copy(v, f) (copy is an XOR: f = v on the arm, old elsewhere). The twin (calls'
+        // finalize) replays the copies into the cell's handle, zeroing it, and stores old_k back.
         {
           Pred written = ctx.preds().block(I.getParent());
           for (const Access &a : accessesOf(ctx, *st.F, s.o))
             if ((isa<StoreInst>(a.I) || isRMW(a.I)) && !differentCell(a.a, s.a, storeBytes(DL, a.ty), storeBytes(DL, ty)))
               written = written | ctx.preds().block(a.I->getParent());
+          bool partial = false;
           for (const BasicBlock &bb : *st.F)
             if (isa<ReturnInst>(bb.getTerminator()) && !(ctx.preds().block(&bb) & !written).isBottom())
-              unimplemented("mem-slots: a clone storing into a caller's cell on some paths only (a returning path "
-                            "leaves the cell unwritten: its old content would be copied out there, cq-vxgm)",
+              partial = true;
+          if (partial) {
+            if (!s.a.terms.empty() || s.info->view || s.info->boolCells)
+              unimplemented("mem-slots: a clone storing on some paths only into a caller cell at a run-time offset "
+                            "or of a bit-view or _Bool object",
                             &I);
+            for (const Access &a : accessesOf(ctx, *st.F, s.o)) {
+              if (differentCell(a.a, s.a, storeBytes(DL, a.ty), storeBytes(DL, ty)))
+                continue;
+              if (!isa<StoreInst>(a.I))
+                unimplemented("mem-slots: a clone reading or atomically updating a caller cell it writes on some "
+                              "paths only (the cell holds the slot result from the clone's entry)",
+                              a.I);
+              if (!sameCell(a.a, s.a) || a.ty != ty)
+                unimplemented("mem-slots: a clone writing a caller cell on some paths only through another view "
+                              "of it",
+                              a.I);
+            }
+            auto key = std::make_pair(s.a.root, s.a.off);
+            auto g = st.guardedCells.find(key);
+            if (g == st.guardedCells.end()) {
+              IRBuilderBase::InsertPointGuard guard(B);
+              BasicBlock &E = ctx.out().getEntryBlock();
+              B.SetInsertPoint(&E, E.getFirstInsertionPt());
+              LoadInst *old = B.CreateAlignedLoad(handleTy(ctx.M.getContext()), cellPointer(ctx, s, I), Align(4));
+              ctx.unc().recordExternal(old, Role::UserRegister);   // the caller's rail: never the clone's
+              st.registers.insert(old);
+              CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                                         {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+              RailId fid = ctx.unc().recordSeed(f);
+              abi::CoreSpec cp{abi::Core::Copy, w};
+              CallInst *cc = ctx.emitCore(cp, {old, f});
+              ctx.unc().recordCore(cc, cp, {Operand{old, true}, Operand{f, true}}, fid);
+              ctx.unc().setRole(fid, Role::Result);
+              st.registers.insert(f);
+              B.CreateAlignedStore(f, cellPointer(ctx, s, I), Align(4));
+              g = st.guardedCells.emplace(key, std::pair<Value *, Value *>(old, f)).first;
+            }
+            Value *old = g->second.first, *f = g->second.second;
+            RailId fid = ctx.unc().idOf(f);
+            abi::CoreSpec cp{abi::Core::Copy, w};
+            CallInst *c1 = ctx.emitCore(cp, {old, f});
+            ctx.unc().recordCore(c1, cp, {Operand{old, true}, Operand{f, true}}, fid);
+            CallInst *c2 = ctx.emitCore(cp, {val.v, f});
+            ctx.unc().recordCore(c2, cp, {val, Operand{f, true}}, fid);
+            st.lowered[&I] = Operand{f, true};
+            return;
+          }
         }
         // Literally alloc_<W>(0), copy(v, c), store c (calls' finalize rewrites this sequence in the twin),
         // a seed included (it stays the clone's, freed directly).
-        RailType w = cellRail(*s.info, ty, I);
         CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
                                    {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
         RailId cid = ctx.unc().recordSeed(c);

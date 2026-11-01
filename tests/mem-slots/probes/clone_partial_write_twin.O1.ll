@@ -63,4 +63,7 @@ attributes #5 = { nounwind }
 !8 = !{!"omnipotent char", !9, i64 0}
 !9 = !{!"Simple C/C++ TBAA"}
 
-; EXPECT-ERROR: mem-slots: a clone storing into a caller's cell on some paths only
+; CHECK-COUNT __cq_q_f_101: call void @cqrt_copy_i32( 3
+; CHECK-COUNT __cq_q_f_101: store i32 1
+; CHECK clone_partial_write_twin: call void @__cq_q_f_101_unc(
+; CHECK __cq_q_f_101_unc: store i32 %old0, ptr
