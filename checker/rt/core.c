@@ -229,6 +229,14 @@ static unsigned long long shot_trace_cap = 32ULL << 20;
 static unsigned long long shot_output_cap = 8ULL << 20;
 static unsigned long long trace_rotate = 64ULL << 20;
 static void shot_over(const char *what, unsigned long long cap); /* shots, below */
+/* The violation cap (cq-r8-chk176): a running sample that logs more than $CQE_SHOT_VIOL_MAX violations
+ * (default 256; 0: no cap) ends there with a "violation_cap" violation, as at a disk cap. The sample
+ * already fails (any violation does); the cap only stops a lowering that loops over violations (176:
+ * 350k bad_handle/pop_empty events, 32 MiB a sample) from costing seconds and hundreds of MB per sample
+ * in the trace, its parse and the comparison's reasons. */
+static unsigned long long shot_viol_n;                /* violations the running sample logged */
+static unsigned long long shot_viol_cap = 256;
+static void shot_over_violations(void);              /* shots, below */
 
 static unsigned long long env_bytes(const char *name, unsigned long long dflt) {
   const char *v = getenv(name);
@@ -275,6 +283,7 @@ void cqe__init(void) {
   compact = cm && !strcmp(cm, "1");
   shot_trace_cap = env_bytes("CQE_SHOT_TRACE_MAX", shot_trace_cap);
   shot_output_cap = env_bytes("CQE_SHOT_OUTPUT_MAX", shot_output_cap);
+  shot_viol_cap = env_bytes("CQE_SHOT_VIOL_MAX", shot_viol_cap);
   trace_rotate = env_bytes("CQE_TRACE_ROTATE", trace_rotate);
   unsigned long long fmax = env_bytes("CQE_FILE_MAX", 256ULL << 20);
   struct rlimit rl;
@@ -356,6 +365,8 @@ void cqe__violation(const char *what, int32_t h, const char *fmt, ...) {
   else
     cqe__logf("{\"ev\":\"violation\",\"what\":\"%s\",\"h\":null,\"msg\":\"%s\"}", what, e);
   free(e);
+  if (++shot_viol_n > shot_viol_cap)
+    shot_over_violations();
 }
 
 void cqe_fail(const char *fmt, ...) {
@@ -1109,6 +1120,22 @@ static void shot_over(const char *what, unsigned long long cap) {
   siglongjmp(R->jb, 1);
 }
 
+/* A running sample past the violation cap: a "violation_cap" violation, and the sample ends as at a
+ * disk cap (SIGXFSZ, its worker with it). Outside a sample: nothing (the setup is not capped). */
+static void shot_over_violations(void) {
+  if (!sample_running() || R->jkind == J_SIGNAL)
+    return;
+  cpu_timer_set(0);
+  R->jkind = J_SIGNAL; /* before the violation below: its own line does not come back here */
+  R->code = -SIGXFSZ;
+  R->timeout = 0;
+  unsigned long long cap = shot_viol_cap;
+  shot_viol_cap = ~0ULL;
+  cqe__violation("violation_cap", -1, "cq-r8-chk176: the sample logged more than %llu violations; the sample ends here",
+                 cap);
+  siglongjmp(R->jb, 1);
+}
+
 static void shot_output_check(void) {
   if (!sample_running())
     return;
@@ -1440,6 +1467,7 @@ int cqe__shot_enter(int idx) {
   R->progress++;
   shot_steps = 0;
   shot_trace_n = 0;
+  shot_viol_n = 0;
   R->in_sample = 1;
   cpu_timer_set(R->timeout_s);
   return 1;

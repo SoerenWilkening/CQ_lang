@@ -78,6 +78,8 @@ RunResult fields (JSON-serializable):
   clean       the free events [{"h", "v", "known", "w"}]
   violations  the trace's violation events [{"what", "h", "msg"}] plus run failures:
               build, sample, timeout, signal, no_exit (the process ended without the exit event),
+              trace_cap and violation_cap (core.c: a sample past a disk cap or $CQE_SHOT_VIOL_MAX
+              violations, default 256, ends there),
               runner (the runner process ended inside this sample), trace (an unparsable line)
 """
 from __future__ import annotations
@@ -1404,7 +1406,7 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
 
 
 _RUNS_VERSION = "eval-runs-2"
-_CAP_VARS = ("CQE_SHOT_TRACE_MAX", "CQE_SHOT_OUTPUT_MAX", "CQE_FILE_MAX")   # core.c's disk caps
+_CAP_VARS = ("CQE_SHOT_TRACE_MAX", "CQE_SHOT_OUTPUT_MAX", "CQE_FILE_MAX", "CQE_SHOT_VIOL_MAX")   # core.c's caps
 _RESULT_FIELDS = ("outputs", "measured", "rotations", "kept", "clean", "violations")
 
 

@@ -253,8 +253,9 @@ class DiskCaps(unittest.TestCase):
     def setUp(self):
         self._cache = tempfile.TemporaryDirectory()
         self._env = {k: os.environ.get(k) for k in ("CQE_CACHE", "CQE_SHOT_TRACE_MAX", "CQE_SHOT_OUTPUT_MAX",
-                                                     "CQE_TRACE_ROTATE")}
+                                                     "CQE_TRACE_ROTATE", "CQE_SHOT_VIOL_MAX")}
         os.environ["CQE_CACHE"] = self._cache.name
+        os.environ["CQE_SHOT_VIOL_MAX"] = "0"     # the disk caps alone (ViolationCap tests the violation cap)
 
     def tearDown(self):
         for k, v in self._env.items():
@@ -305,6 +306,41 @@ class DiskCaps(unittest.TestCase):
         got = self.batch(self.V, ns)
         self.assertEqual([to_json(r) for r in got], want)
         self.assertEqual([self.whats(r).count("bad_handle") for r in got], ns)
+
+
+class ViolationCap(unittest.TestCase):
+    """cq-r8-chk176: a sample past $CQE_SHOT_VIOL_MAX violations (default 256) ends there with a
+    violation_cap violation, as at a disk cap; the samples around it are unaffected and keep every
+    violation below the cap. 176's lowering logged 350k violations a sample (32 MiB of trace, seconds
+    and ~300 MB each), and its run passed heavy.sh's 2 GB cap."""
+
+    V = DiskCaps.V
+    tearDown, batch, whats = DiskCaps.tearDown, DiskCaps.batch, DiskCaps.whats
+
+    def setUp(self):
+        DiskCaps.setUp(self)
+        os.environ.pop("CQE_SHOT_VIOL_MAX", None)     # the default
+
+    def test_violation_cap_default(self):
+        rs = self.batch(self.V, [3, 10 ** 8, 256, 4])
+        self.assertEqual(self.whats(rs[0]), ["bad_handle"] * 3)
+        self.assertEqual(self.whats(rs[2]), ["bad_handle"] * 256)   # at the cap: not past it
+        self.assertEqual(self.whats(rs[3]), ["bad_handle"] * 4)
+        w = self.whats(rs[1])
+        self.assertEqual(w.count("bad_handle"), 257)
+        self.assertIn("violation_cap", w)
+        self.assertNotIn("trace_cap", w)
+        self.assertIn("signal", w)
+        self.assertIn("more than 256 violations", next(v["msg"] for v in rs[1].violations
+                                                      if v["what"] == "violation_cap"))
+
+    def test_violation_cap_env(self):
+        os.environ["CQE_SHOT_VIOL_MAX"] = "10"
+        rs = self.batch(self.V, [10, 11, 2])
+        self.assertEqual(self.whats(rs[0]), ["bad_handle"] * 10)
+        self.assertEqual(self.whats(rs[1]).count("bad_handle"), 11)
+        self.assertIn("violation_cap", self.whats(rs[1]))
+        self.assertEqual(self.whats(rs[2]), ["bad_handle"] * 2)
 
 
 class Sweep(unittest.TestCase):
