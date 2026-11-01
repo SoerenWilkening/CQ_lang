@@ -1092,15 +1092,32 @@ class UnPrep(unittest.TestCase):
             return dict(rots=rots, kept=[keep(3, r, "i32"), keep(4, 0, "i32")])
         return side("o", build)
 
-    def check(self, ours, c, equal, needle=None):
-        r = compare(ours, c, QKEY, "c")
-        self.assertEqual(r.equal, equal, r.reasons)
+    # cq-ia96, cq-yzuc: f:0 and f:1 are one register, f:1 seeding it afresh (r = 0 before it)
+    REGS = {"f:0": (("@f", 0), frozenset()), "f:1": (("@f", 0), frozenset())}
+
+    def check(self, ours, c, equal, needle=None, registers=REGS):
+        reasons = _compare(ours, c, "c", classical_key=QKEY, registers=registers)
+        self.assertEqual(not reasons, equal, reasons)
         if needle:
-            self.assertTrue(any(needle in x for x in r.reasons), r.reasons)
+            self.assertTrue(any(needle in x for x in reasons), reasons)
 
     def test_unprep_accepted(self):
         # fails before cq-9gi3: "corresponds to no C site"
         self.check(self.ours(), self.c(), True)
+
+    def test_unprep_without_registers_rejected(self):
+        # cq-yzuc: without the C program's register webs no overwrite is known
+        self.check(self.ours(), self.c(), False, "no C site", registers=None)
+
+    def test_unprep_before_in_place_rotation_rejected(self):
+        # cq-yzuc: f:1 rotates f:0's value in place (CQ.h): a second Ry on r, no overwrite
+        regs = {"f:0": (("@f", 0), frozenset()), "f:1": (("@f", 0), frozenset({"f:0"}))}
+        self.check(self.ours(), self.c(), False, "no C site", registers=regs)
+
+    def test_unprep_before_other_register_rejected(self):
+        # cq-yzuc: f:1 prepares another register
+        regs = {"f:0": (("@f", 0), frozenset()), "f:1": (("@f", 9), frozenset())}
+        self.check(self.ours(), self.c(), False, "no C site", registers=regs)
 
     def test_unprep_wrong_angle_rejected(self):
         for th in (self.T1, -self.T1 + 0.25, -self.T2):

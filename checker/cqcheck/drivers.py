@@ -716,15 +716,19 @@ def theta_sites(mod: Module, closure: bool = True) -> List[ThetaSite]:
     return out
 
 
-def theta_registers(mod: Module) -> Dict[str, Tuple[str, int]]:
-    """Per cq_theta site ("fn:site", T1.1), its register web (bead cq-ia96): the sites whose results
+def theta_registers(mod: Module) -> Dict[str, Tuple[Tuple[str, int], FrozenSet[str]]]:
+    """Per cq_theta site ("fn:site", T1.1), (its register web, its seed sources) (beads cq-ia96,
+    cq-yzuc). The web: the sites whose results
     are values of one C register by SSA alone, CR rule 10's "a phi of cq_theta(v, θ) against v (or
     two thetas of one seed)". Within a function, the results of cq_theta calls, phis and selects are
     joined through phi incomings, select arms and a cq_theta's register operand; parameters,
     constants and every other instruction join nothing (two registers seeded from one argument stay
     apart). A register carried through memory or across a call is not followed: its sites are
-    different webs. The web is (function, a representative's index)."""
-    out: Dict[str, Tuple[str, int]] = {}
+    different webs. The web is (function, a representative's index). The seed sources: the sites
+    whose results reach the site's register operand through the same joins (a cq_theta of a value
+    some earlier cq_theta returned is an in-place rotation of that register, CQ.h; a site whose
+    sources exclude J seeds the register afresh, CR rule 10's overwrite of J)."""
+    out: Dict[str, Tuple[Tuple[str, int], FrozenSet[str]]] = {}
     for f in mod.functions.values():
         parent: Dict[str, str] = {}
 
@@ -740,6 +744,7 @@ def theta_registers(mod: Module) -> Dict[str, Tuple[str, int]]:
                              or (ins.op == "call" and ins.callee and ins.callee.startswith("@cq_theta_"))):
                 joinable[ins.dest] = ins
                 parent[ins.dest] = ins.dest
+        srcs_of: Dict[str, List[str]] = {}
         for v, ins in joinable.items():
             if ins.op == "phi":
                 srcs = [m.group(1) for m in (re.match(r"\s*(?:\S+\s+)?\[\s*(%[-A-Za-z$._0-9]+)\s*,", o)
@@ -748,9 +753,33 @@ def theta_registers(mod: Module) -> Dict[str, Tuple[str, int]]:
                 srcs = [o.split()[-1] for o in ins.operands[1:3] if o.split()]
             else:
                 srcs = [ins.call_args[0].split()[-1]] if ins.call_args else []
-            for u in srcs:
-                if u in joinable:
-                    parent[find(u)] = find(v)
+            srcs_of[v] = [u for u in srcs if u in joinable]
+            for u in srcs_of[v]:
+                parent[find(u)] = find(v)
+        site_of: Dict[str, str] = {}
+        ordinal = 0
+        for ins in f.insts():
+            if not (ins.op == "call" and ins.callee and site_kind(ins.callee)):
+                continue
+            ordinal += 1
+            if ins.callee.startswith("@cq_theta_") and ins.dest:
+                name = f.name[1:]
+                if name.startswith('"'):
+                    name = name[1:-1]
+                site_of[ins.dest] = f"{name}:{ordinal - 1}"
+
+        def sources(vals: List[str]) -> FrozenSet[str]:
+            seen, work, got = set(), list(vals), set()
+            while work:
+                u = work.pop()
+                if u in seen:
+                    continue
+                seen.add(u)
+                if u in site_of:
+                    got.add(site_of[u])
+                    continue                      # an earlier rotation: its own sources are its seed
+                work += srcs_of.get(u, [])
+            return frozenset(got)
         ordinal = 0
         for ins in f.insts():
             if not (ins.op == "call" and ins.callee and site_kind(ins.callee)):
@@ -761,7 +790,8 @@ def theta_registers(mod: Module) -> Dict[str, Tuple[str, int]]:
                 if name.startswith('"'):
                     name = name[1:-1]
                 root = find(ins.dest) if ins.dest in parent else None
-                out[f"{name}:{ordinal - 1}"] = (f.name, joinable[root].index if root else -ins.index - 1)
+                seed = sources(srcs_of.get(ins.dest, [])) if ins.dest else frozenset()
+                out[f"{name}:{ordinal - 1}"] = ((f.name, joinable[root].index if root else -ins.index - 1), seed)
     return out
 
 

@@ -37,11 +37,11 @@ What is compared (CR §6, CLAUDE.md "The §6 checker"):
   no gate on the target fires between j and i, and a later gate on the target fires (the
   overwriting prep), each such first later gate taking a C reach. An Ry whose angle is the identity
   where its control fires (CR §1.3) is no gate and takes no reach, but still counts as a gate on its
-  target there for this reading (bead cq-mopw); as the overwriting prep k it stands only where the
-  C program overwrites j's reach by an identity reach of k's angle and register value: the next
-  reach after j's of a site of the same register (one SSA web of the .O1.ll, `registers`), at one
-  site over the samples, each such reach backing one k (beads cq-q15r, cq-ia96). Anything else is
-  unmatched. A
+  target there for this reading (bead cq-mopw). Every k, idle or not, stands only where the C
+  program overwrites j's reach by a reach of k's angle and register value: the next reach after
+  j's of a site of the same register (one SSA web of the .O1.ll, `registers`) that seeds it afresh
+  (not an in-place cq_theta of j's value), at one site over the samples, each such reach backing one
+  k (beads cq-q15r, cq-ia96, cq-yzuc). Anything else is unmatched. A
   `cq_invert` region (the
   sites between an invert_begin and its matching invert_end, nesting by depth) is read under CR rule
   17: its sites are taken in reverse order with their angles negated (a region inside a region is so
@@ -732,12 +732,15 @@ def _unprep_partners(ours: List[_Ev], idle: Sequence[_Ev] = (), back: Optional[_
     (CR §1.3, dropped from `ours`, as the C side drops its identity reaches). An Ry's position among
     the gates on its target is its control (cpred), its angle aside, so an idle Ry counts for j's
     choice and for between. An idle prep can be the overwrite of rule 10 (`r = 0; cq_theta(&r, NaN)`
-    undoes the earlier prep), but it takes no C reach in the matching, so the C program's own
-    overwrite is found here instead (beads cq-q15r, cq-ia96): `back(j, k, s)` gives, at an uncapped
-    sample s, the C program's overwrite of j's reach there by an identity reach of k's angle and
-    register value ((its site, (s, its position)), or None; _match_c's _c_backing). An idle k
-    stands only when back finds it at every uncapped sample where i fires, all at one C site, and
-    no C reach backs two idle ks; without `back` an idle k never stands."""
+    undoes the earlier prep).
+
+    The overwrite must be the C program's (beads cq-q15r, cq-ia96, cq-yzuc): `back(j, k, s)` gives,
+    at an uncapped sample s, the C program's overwrite of j's reach there by a reach of k's angle
+    and register value that seeds j's register afresh ((its site, (s, its position)), or None;
+    _match_c's _c_backing); an in-place second cq_theta of the register is no overwrite. k, live or
+    idle, stands only when back finds it at every uncapped sample where i fires, all at one C site,
+    and no C reach backs two ks; without `back` no un-prep stands. A live k also takes its own C
+    reach in the matching (ks); an idle k takes none."""
     out: List[Optional[Tuple[int, FrozenSet[int]]]] = [None] * len(ours)
     if not ours:
         return out
@@ -800,8 +803,8 @@ def _unprep_partners(ours: List[_Ev], idle: Sequence[_Ev] = (), back: Optional[_
                 break
             if implied and k[0] == "o":
                 ks.add(k[1])
-            elif implied and not (capped and capped[s]):
-                got = back(p, idle[k[1]], s) if back is not None else None
+            if implied and not (capped and capped[s]):
+                got = back(p, ev(k), s) if back is not None else None
                 if got is None:
                     ok = False
                     break
@@ -815,13 +818,23 @@ def _unprep_partners(ours: List[_Ev], idle: Sequence[_Ev] = (), back: Optional[_
 
 def _c_backing(sites: List[_Site], ident: Dict[Tuple, List[List[Tuple[int, Any, Optional[int]]]]],
                registers: Dict[str, Any], nan_eq: bool) -> _Back:
-    """back(j, k, s) for _unprep_partners (bead cq-ia96): CR rule 10's overwrite in the C program at
-    sample s. j's reach is a reach of a theta site with j's angle and register value there; the
-    overwrite is the next reach after it, in the C program's (rule-17) order, of a site of the same
-    register (`registers`, drivers.theta_registers: one SSA web); it must be an identity reach (k is
-    idle) with k's angle class and register value. Returns (its site, (s, its position)), or None."""
-    def reg(key: Tuple) -> Any:
+    """back(j, k, s) for _unprep_partners (beads cq-ia96, cq-yzuc): CR rule 10's overwrite in the C
+    program at sample s. j's reach is a reach of a theta site J with j's angle and register value
+    there; the overwrite is the next reach after it, in the C program's (rule-17) order, of a site K
+    of the same register (`registers`, drivers.theta_registers: one SSA web) that seeds the register
+    afresh (J is not among K's seed sources: an in-place cq_theta of J's value is a second Ry on the
+    register, CQ.h, never an overwrite), with k's angle class and register value, and an identity
+    reach exactly where k's angle is the identity. Returns (its site, (s, its position)), or None."""
+    def entry(key: Tuple) -> Any:
         return registers.get(f"{key[0]}:{key[1]}")
+
+    def reg(key: Tuple) -> Any:
+        e = entry(key)
+        return e[0] if e is not None else None
+
+    def fresh(jkey: Tuple, kkey: Tuple) -> bool:
+        e = entry(kkey)
+        return e is not None and f"{jkey[0]}:{jkey[1]}" not in e[1]
 
     by_reg: Dict[Any, List[Tuple[Tuple, bool, List[List[Tuple[int, Any, Optional[int]]]]]]] = {}
     for st in sites:
@@ -837,6 +850,7 @@ def _c_backing(sites: List[_Site], ident: Dict[Tuple, List[List[Tuple[int, Any, 
         jv = _fpv(j.tclass[1][s], w, nan_eq)
         ka = _fpv(k.rawang[s], "f64", nan_eq) if k.rawang and k.rawang[s] is not None else None
         kv = _fpv(k.tclass[1][s], k.tclass[0], nan_eq) if k.tclass else None
+        kid = not k.pred[s]                          # k's angle is the identity at s
         found = None
         for chain in by_reg.values():
             reaches = sorted((ep, a, r, key, isid) for key, isid, occ in chain for ep, a, r in occ[s])
@@ -844,7 +858,8 @@ def _c_backing(sites: List[_Site], ident: Dict[Tuple, List[List[Tuple[int, Any, 
                 if isid or a != ja or _fpv(r, w, nan_eq) != jv or n + 1 == len(reaches):
                     continue
                 ep2, a2, r2, key2, isid2 = reaches[n + 1]
-                if isid2 and a2 == ka and _fpv(r2, k.tclass[0] if k.tclass else None, nan_eq) == kv:
+                if isid2 == kid and a2 == ka and fresh(key, key2) \
+                        and _fpv(r2, k.tclass[0] if k.tclass else None, nan_eq) == kv:
                     if found is not None and found != (key2, (s, ep2)):
                         return None                  # ambiguous: two C overwrites fit
                     found = (key2, (s, ep2))
@@ -1328,9 +1343,10 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             registers: Optional[Dict[str, Any]] = None) -> List[str]:
     """§6 equality of `ours` and `other` over all samples; the reasons, empty when equal.
 
-    `registers` (optional, against "c"; drivers.theta_registers of the C program's .O1.ll, bead
-    cq-ia96): the register web of each cq_theta site. Without it an identity-angle Ry never stands
-    as rule 10's overwriting prep (an un-prep before one is then unmatched).
+    `registers` (optional, against "c"; drivers.theta_registers of the C program's .O1.ll, beads
+    cq-ia96, cq-yzuc): the register web and seed sources of each cq_theta site, which tell CR rule
+    10's overwrite from an in-place rotation. Without it no rule-10 un-prep stands (it is then an
+    unmatched gate).
 
     `against` is "ref" (other = the reference lowered.ll in the evaluator) or "c" (other = the C
     oracle). `classical_key` (optional, e.g. classical_key_from_driver(spec)) gives the classical

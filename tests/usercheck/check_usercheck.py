@@ -23,7 +23,8 @@ Fails on any of:
             reference, five wrong phases or Ry that only varied handle cells expose (cq-rbe6); from
             133's, an un-prep whose overwriting prep is an Ry(NaN) with no C reach (cq-q15r); from
             src/ia96/p.c's (green itself), an un-prep whose Ry(NaN) only another register's earlier
-            NaN prep could back (m4, m5; cq-ia96)
+            NaN prep could back (m4, m5; cq-ia96); from src/yzuc's b.c (b_good green) and b2.c, an
+            un-prep before an in-place second cq_theta, NaN or finite (b_mut, b2_mut; cq-yzuc)
   error     a missing entry or main(argc, argv) is not an error (exit 2)
 
 Every run goes through the CLI (`python3 -m cqcheck user` from checker/), as cqcc --cq-check runs it.
@@ -164,14 +165,16 @@ def unit_mopw(spec_root):
     # after it, an identity reach of k's angle class and value
     jsite = ("prep_twice", 1, "theta")
     zsite = ("f", 1, "theta")
-    same = {"prep_twice:1": 1, "prep_twice:2": 1, "f:1": 2}
+    same = {"prep_twice:1": (1, frozenset()), "prep_twice:2": (1, frozenset()), "f:1": (2, frozenset())}
+    inplace = dict(same, **{"prep_twice:2": (1, frozenset({"prep_twice:1"}))})
     for name, occ, ident, regs, want in (
             ("overwrite", [(3, t1, 5)], {site: [[(4, "NaN", 5)], [], []]}, same, (site, (0, 4))),
             ("other register", [(3, t1, 5)], {zsite: [[(4, "NaN", 5)], [], []]}, same, None),
             ("before j", [(3, t1, 5)], {site: [[(2, "NaN", 5)], [], []]}, same, None),
             ("a reach of the register between", [(3, t1, 5), (4, t1, 9)], {site: [[(6, "NaN", 5)], [], []]},
              same, None),
-            ("other value", [(3, t1, 5)], {site: [[(4, "NaN", 6)], [], []]}, same, None)):
+            ("other value", [(3, t1, 5)], {site: [[(4, "NaN", 6)], [], []]}, same, None),
+            ("in place (cq-yzuc)", [(3, t1, 5)], {site: [[(4, "NaN", 5)], [], []]}, inplace, None)):
         sites = [C._Site(jsite, "theta", [occ, [], []])]
         got = C._c_backing(sites, ident, regs, True)(j, k, 0)
         (ok if got == want else fail)(f"unit C overwrite {name}", f"{got}" + ("" if got == want else f", want {want}"))
@@ -179,10 +182,18 @@ def unit_mopw(spec_root):
                               "prep_twice:1", "prep_twice:2", True),
                              (spec_root / "examples" / "133_state_prep_overwrite" / "state_prep_overwrite.O1.ll",
                               "prep_twice:0", "prep_twice:1", False),
-                             (SRC / "ia96" / "p.O1.ll", "f:1", "f:2", False)):
+                             (SRC / "ia96" / "p.O1.ll", "f:1", "f:2", False),
+                             (SRC / "yzuc" / "b.O1.ll", "f:0", "f:1", True)):
         regs = D.theta_registers(D.read_module(path))
-        got = regs[a] == regs[b]
+        got = regs[a][0] == regs[b][0]
         (ok if got == want else fail)(f"unit one register {path.name} {a} {b}", f"{got}")
+    # cq-yzuc: b.c's second cq_theta rotates a in place (its seed is f:0's value); 133's second
+    # prep of r seeds it afresh
+    for path, a, b, want in ((SRC / "yzuc" / "b.O1.ll", "f:1", "f:0", True),
+                             (spec_root / "examples" / "133_state_prep_overwrite" / "state_prep_overwrite.O1.ll",
+                              "prep_twice:2", "prep_twice:1", False)):
+        got = b in D.theta_registers(D.read_module(path))[a][1]
+        (ok if got == want else fail)(f"unit in place {path.name} {a} of {b}", f"{got}")
 
 
 def mutants(ref_text):
@@ -291,6 +302,12 @@ def main():
         expect("program ia96 p (f)", 0, user(ia / "p.O1.ll", ia / "p.lowered.ll", "f"))
         for m in ("m4", "m5"):
             expect(f"mutant ia96 {m}", 1, user(ia / "p.O1.ll", ia / f"{m}.lowered.ll", "f"))
+        # cq-yzuc (review of cq-ia96): an in-place second cq_theta of a is no overwrite, so Ry(-.5)
+        # before it is no un-prep, whether its angle is NaN (b) or finite (b2)
+        yz = SRC / "yzuc"
+        expect("program yzuc b_good (f)", 0, user(yz / "b.O1.ll", yz / "b_good.lowered.ll", "f"))
+        expect("mutant yzuc b_mut", 1, user(yz / "b.O1.ll", yz / "b_mut.lowered.ll", "f"))
+        expect("mutant yzuc b2_mut", 1, user(yz / "b2.O1.ll", yz / "b2_mut.lowered.ll", "f"))
 
         expect("error: no such entry", 2, user(o1, d / "add_classical_const.lowered.ll", "nosuch"))
         argv = tmp / "argv"
