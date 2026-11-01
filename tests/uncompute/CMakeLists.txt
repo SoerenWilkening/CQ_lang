@@ -13,7 +13,7 @@ set(CQ_UNC_CASES
   merge_arm_local merge_kept_arm_local merge_kept_unchosen_edge merge_kept_rotated merge_kept_nested_phi_edge alias_distinct_cell
   alias_copy_distinct_array cell_load_garbage cell_load_kept
   deferred_kept_through_memory
-  call_two_results call_all_kept call_slotout_unused call_reads resolve_at pointee_before_store cells_distinct)
+  call_two_results call_all_kept call_slotout_unused call_reads resolve_at pointee_before_store cells_distinct deferred_qram_store)
 foreach(c ${CQ_UNC_CASES})
   add_test(NAME uncompute.${c} COMMAND uncompute_tests ${c})
 endforeach()
@@ -48,6 +48,7 @@ set(CQ_UNC_FATAL
   "fatal_alias_second_array_rev=cq: unimplemented: uncompute: a non-diagonal gate on a handle that may name an operand rail of %g through a slot cell"
   "fatal_cells_distinct_unnoted=cq: unimplemented: uncompute: a non-diagonal gate on a handle that may name an operand rail of %g through a slot cell"
   "fatal_cells_distinct_direct_read=cq: unimplemented: uncompute: a non-diagonal gate on a handle that may name an operand rail of %g through a slot cell"
+  "fatal_deferred_no_anchor=cq: internal error: uncompute: recordDeferred without exit rails and without a QRAM bus"
   "fatal_alias_memcpy=cq: unimplemented: uncompute: a non-diagonal gate on a handle that may name an operand rail of %g through a slot cell"
   "fatal_merge_unchosen_loop=cq: unimplemented: uncompute: an arm of a kept merged handle, %a, freed at the end of an edge where the merge does not choose it, is reached again")
 foreach(entry ${CQ_UNC_FATAL})

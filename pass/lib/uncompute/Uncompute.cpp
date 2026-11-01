@@ -163,6 +163,14 @@
 //    An exit rail with no IR use outside the region (it reaches later code only through memory: cell-load
 //    merges, M3) that became kept is not copied and not undone: every trip's instance keeps its role
 //    (rule 5, rule 14 case 1; 179). An owned record reading it is still undone.
+//  - F1b (cq-arch 2026-11-01; CR rule 14, §1.3: 72, 188). A QRAM store recorded in the item's scopes is
+//    popped by the item's mirror (its POP is owned) and makes the item a writer of that bus b (one the
+//    scopes do not allocate): the item follows POP(j) of every store recorded on b after the scopes and
+//    the un-copy of every load of b reading a version at or above the last owned POP, it reads b (b's
+//    release, cqrt_qram_free, follows it), and every earlier POP or load un-copy that must follow an
+//    owned POP follows the item. Every use of b after the loop anchors the item, and a later store on b
+//    that is popped before the item is no barrier of it. exitRails may be empty when b has a use after
+//    the loop; otherwise an empty list is an internal error.
 //  - resolveAt(P, rails) (U5, cq-arch 2026-11-01; CR rule 5): emits right before P, readers first, the
 //    items of the listed pending rails (kept or resolved ones are skipped), with rule 5's barrier check.
 //    Precondition, else an internal error: each rail's definition dominates P, none of its uses comes
@@ -312,6 +320,8 @@ struct Uncompute::Impl {
     SmallPtrSet<const BasicBlock *, 8> region; // the blocks of the owned records
     RailId pseudo = kNone;
     BasicBlock *placedAt = nullptr;            // the block the program continues in after the item
+    // F1b: the QRAM buses an owned store writes, each with the highest popK among its owned POPs.
+    SmallVector<std::pair<RailId, unsigned>, 1> buses;
   };
   struct Scope {
     unsigned begin, end;
@@ -832,6 +842,23 @@ struct Uncompute::Impl {
         for (RailId o : readersOf(x))
           if (o != g && rails[o].ownedBy != rails[g].deferred && !is_contained(out, o))
             out.push_back(o);
+      // F1b: a writer of bus b follows POP(j) of every store recorded on b after its scopes and the
+      // un-copy of every load of b made after them (a later version, k at or above its last owned POP).
+      for (auto [b, top] : d.buses) {
+        SmallVector<RailId, 8> later;
+        for (RailId p : rails[b].pops)
+          if (rails[p].popK > top && rails[p].ownedBy == kNone)
+            later.push_back(p);
+        for (RailId l : rails[b].loads)
+          for (auto [bus, k] : rails[l].versions)
+            if (bus == b && k >= top && rails[l].ownedBy != rails[g].deferred)
+              later.push_back(l);
+        for (RailId o : later) {
+          o = ownerOf(o, g);
+          if (o != g && !is_contained(out, o))
+            out.push_back(o);
+        }
+      }
       return out;
     }
     SmallVector<RailId, 4> ns = names(g);
@@ -857,10 +884,20 @@ struct Uncompute::Impl {
       if (o != g && !is_contained(out, o))
         out.push_back(o);
     }
-    for (RailId o : versionBefore(g))
-      if (!is_contained(out, o))
+    for (RailId o : versionBefore(g)) {
+      o = ownerOf(o, g); // F1b: an owned POP or load is undone by its deferred item
+      if (o != g && !is_contained(out, o))
         out.push_back(o);
+    }
     return out;
+  }
+  // The item that undoes o as seen from g: o itself, or the pseudo rail of the deferred item that owns
+  // o while that item is not placed (and g is not owned by it).
+  RailId ownerOf(RailId o, RailId g) const {
+    unsigned di = rails[o].ownedBy;
+    if (di != kNone && rails[g].ownedBy != di && rails[g].deferred != di && !rails[defs[di].pseudo].released)
+      return defs[di].pseudo;
+    return o;
   }
 
   // A2 (cq-w6ie): the QRAM version order, items that must precede g's item beyond its readers.
@@ -1820,8 +1857,12 @@ struct Uncompute::Impl {
     IRBuilder<> *mirror = nullptr;
   };
 
+  // F1b: while a deferred item placed at a return emits its mirror, the items placed for that return
+  // before it (a later POP on a bus the item writes) are done.
+  const BasicBlock *mirrorExit = nullptr;
   bool done(RailId g, const Ctx &c) const {
-    return rails[g].released || (c.mode == Mode::Exit && rails[g].exitsDone.count(c.point->getParent()));
+    return rails[g].released || (c.mode == Mode::Exit && rails[g].exitsDone.count(c.point->getParent())) ||
+           (c.mode == Mode::Mirror && mirrorExit && rails[g].exitsDone.count(mirrorExit));
   }
 
   // Readers first; ties by most recent rail first.
@@ -2125,6 +2166,12 @@ struct Uncompute::Impl {
           if (i->getParent() && !beforeOrIn(d, i->getParent()))
             as.push_back(i);
       }
+    // F1b: every use of a bus the item writes after the loop (its loads and stores there).
+    for (auto [b, top] : d.buses)
+      for (RailId n : names(b))
+        for (User *u : rails[n].handle->users())
+          if (auto *i = dyn_cast<Instruction>(u); i && i->getParent() && !beforeOrIn(d, i->getParent()))
+            as.push_back(i);
     return as;
   }
 
@@ -2209,8 +2256,9 @@ struct Uncompute::Impl {
       for (Instruction *h : rails[x].aliasHits)
         if (!aliasRuledOut(h, via))
           evs.push_back(h);
+      bool written = any_of(d.buses, [&](const std::pair<RailId, unsigned> &bt) { return bt.first == x; });
       for (unsigned w : rails[x].writes)
-        if (rails[x].ownedBy == kNone)
+        if (rails[x].ownedBy == kNone && !(written && storePopped(w))) // F1b: a later store is popped first
           evs.push_back(records[w].forward);
       for (Instruction *e : evs) {
         if (!e->getParent() || !afterRegion(d, e->getParent()))
@@ -2325,7 +2373,9 @@ struct Uncompute::Impl {
       rails[x].role = Role::Garbage;
     }
     rails[g].released = true;
+    mirrorExit = c.mode == Mode::Exit ? c.point->getParent() : nullptr;
     d.emit(B);
+    mirrorExit = nullptr;
     for (auto [x, role] : keptExits)
       if (!rails[x].released)
         internalError("uncompute: the deferred reverse loop did not undo its kept exit rail", rails[x].handle);
@@ -3246,11 +3296,12 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
 void Uncompute::recordDeferred(ArrayRef<unsigned> scopes, ArrayRef<RailId> exitRails,
                                std::function<void(IRBuilder<> &)> emit, ArrayRef<RailId> reads) {
   Impl &I = *impl;
-  if (exitRails.empty() || !emit)
-    internalError("uncompute: recordDeferred without exit rails or an emitter");
+  if (!emit)
+    internalError("uncompute: recordDeferred without an emitter");
   unsigned di = I.defs.size();
   Impl::Deferred d;
   d.emit = std::move(emit);
+  Value *firstStore = nullptr;
   for (unsigned s : scopes) {
     if (s >= I.scopes.size() || I.scopes[s].open)
       internalError("uncompute: recordDeferred over a scope that is not closed: " + std::to_string(s));
@@ -3258,7 +3309,33 @@ void Uncompute::recordDeferred(ArrayRef<unsigned> scopes, ArrayRef<RailId> exitR
       d.region.insert(I.records[rec].forward->getParent());
       if (isCreator(I.info[rec].kind) && I.info[rec].item != kNone)
         I.rails[I.info[rec].item].ownedBy = di;
+      // F1b: a QRAM store of the scopes is popped by the item's mirror, which makes it a writer of the bus.
+      if (I.info[rec].kind == RecKind::QramStore && I.info[rec].item != kNone && I.isPop(I.info[rec].item)) {
+        RailId p = I.info[rec].item, b = I.rails[p].popBus;
+        I.rails[p].ownedBy = di;
+        if (I.rails[b].ownedBy == di)
+          continue; // a bus the loop allocates is the item's own
+        if (!firstStore)
+          firstStore = I.records[rec].forward;
+        auto it = find_if(d.buses, [&](const std::pair<RailId, unsigned> &bt) { return bt.first == b; });
+        if (it == d.buses.end())
+          d.buses.push_back({b, I.rails[p].popK});
+        else
+          it->second = std::max(it->second, I.rails[p].popK);
+      }
     }
+  }
+  if (exitRails.empty()) {
+    // F1b: no exit rail is allowed when a bus the item writes is used after the loop (those uses anchor it).
+    bool busUsed = false;
+    for (auto [b, top] : d.buses)
+      for (RailId n : I.names(b))
+        for (User *u : I.rails[n].handle->users())
+          if (auto *ui = dyn_cast<Instruction>(u); ui && ui->getParent() && !I.beforeOrIn(d, ui->getParent()))
+            busUsed = true;
+    if (!busUsed)
+      internalError("uncompute: recordDeferred without exit rails and without a QRAM bus its stores write that is "
+                    "used after the loop");
   }
   for (RailId x : exitRails) {
     Impl::Rail &rx = I.rail(x, "recordDeferred");
@@ -3269,10 +3346,15 @@ void Uncompute::recordDeferred(ArrayRef<unsigned> scopes, ArrayRef<RailId> exitR
   }
   RailId g = I.rails.size();
   I.rails.emplace_back();
-  I.rails.back().handle = I.rails[d.exits.front()].handle;
+  I.rails.back().handle = d.exits.empty() ? firstStore : I.rails[d.exits.front()].handle;
   I.rails.back().deferred = di;
   d.pseudo = g;
-  for (RailId r : reads) {
+  // F1b: the item reads each bus it writes, so the bus's release follows it.
+  SmallVector<RailId, 8> allReads(reads.begin(), reads.end());
+  for (auto [b, top] : d.buses)
+    if (!is_contained(allReads, b))
+      allReads.push_back(b);
+  for (RailId r : allReads) {
     Impl::Rail &rr = I.rail(r, "recordDeferred");
     if (rr.ownedBy == di)
       internalError("uncompute: recordDeferred: a read rail owned by the item", rr.handle);

@@ -2897,6 +2897,112 @@ void fatal_cells_distinct_direct_read() {
 }
 
 
+// ---- F1b: a QRAM store in a classically bounded loop -----------------------------------------------
+
+// 72/188's shape: each trip stores t = x + 1 into a[i]; after the loop a[0] = w is stored and a[j] is
+// loaded (l) and read by u, which is measured. No SSA value leaves the loop (no exit rail): the bus's
+// uses after the loop anchor the reverse. Order: l's un-copy, POP of the later store and w's _unc, the
+// reverse loop (its POP of a[i] = t and t's _unc), then the bus's release. EXTRA adds nothing or a load
+// of the bus before the loop (lb, read by v): its un-copy follows the reverse (the cell holds v_0 again).
+const char *kDefQram = R"(
+define i32 @f(i32 %a0, i32 %n, i32 %j, double %th) {
+entry:
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %a = call i32 @cqrt_qram_alloc_i32(i32 4)
+  br label %L
+L:
+  %i = phi i32 [ 0, %entry ], [ %i2, %L ]
+  %t = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  call void @cqrt_qram_store_i32_hl(i32 %a, i32 %i, i32 %t)
+  %i2 = add i32 %i, 1
+  %c = icmp slt i32 %i2, %n
+  br i1 %c, label %L, label %X
+X:
+  %w = call i32 @cq_template_add_i32_hl(i32 %x, i32 2)
+  call void @cqrt_qram_store_i32_hl(i32 %a, i32 0, i32 %w)
+  %l = call i32 @cqrt_qram_load_i32_hl(i32 %a, i32 %j)
+  %u = call i32 @cq_template_mul_i32_hl(i32 %l, i32 3)
+  %r = call i32 @cqrt_measure_i32(i32 %u)
+  ret i32 %r
+})";
+
+void deferred_qram_store() {
+  Fx f(kDefQram);
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  RailId a = f.core(f.call("cqrt_qram_alloc_i32"), abi::Core::QramAlloc, "l", ~0u);
+  unsigned s = f.U.openScope();
+  f.T("t", "hl");
+  f.core(f.call("cqrt_qram_store_i32_hl", 0), abi::Core::QramStore, "hlh", a);
+  f.U.closeScope(s);
+  Uncompute *U = &f.U;
+  f.U.recordDeferred({s}, {}, [U, s](IRBuilder<> &B) { U->emitMirror(s, B); }, {x, a});
+  f.T("w", "hl");
+  f.core(f.call("cqrt_qram_store_i32_hl", 1), abi::Core::QramStore, "hlh", a);
+  f.core(f.call("cqrt_qram_load_i32_hl"), abi::Core::QramLoad, "hl", ~0u);
+  f.U.setRole(f.T("u", "hl"), Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%a = call i32 @cqrt_qram_alloc_i32(i32 4)",
+                        "br label %L",
+                        "%i = phi i32 [ 0, %entry ], [ %i2, %L ]",
+                        "%t = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "call void @cqrt_qram_store_i32_hl(i32 %a, i32 %i, i32 %t)",
+                        "%i2 = add i32 %i, 1",
+                        "%c = icmp slt i32 %i2, %n",
+                        "br i1 %c, label %L, label %0",
+                        "%w = call i32 @cq_template_add_i32_hl(i32 %x, i32 2)",
+                        "call void @cqrt_qram_store_i32_hl(i32 %a, i32 0, i32 %w)",
+                        "%l = call i32 @cqrt_qram_load_i32_hl(i32 %a, i32 %j)",
+                        "%u = call i32 @cq_template_mul_i32_hl(i32 %l, i32 3)",
+                        "call void @cqrt_qram_load_i32_hl_unc(i32 %l, i32 %a, i32 %j)",
+                        "call void @cqrt_free(i32 %l)",
+                        "call void @cqrt_qram_store_i32_hl_unc(i32 %a, i32 0, i32 %w)",
+                        "call void @cq_template_add_i32_hl_unc(i32 %w, i32 %x, i32 2)",
+                        "call void @cqrt_free(i32 %w)",
+                        "call void @cqrt_qram_store_i32_hl_unc(i32 %a, i32 %i, i32 %t)",
+                        "call void @cq_template_add_i32_hl_unc(i32 %t, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %t)",
+                        "br label %X",
+                        "call void @cqrt_qram_free(i32 %a)",
+                        "%r = call i32 @cqrt_measure_i32(i32 %u)",
+                        "ret i32 %r",
+                    });
+}
+
+// No exit rail and no use of the bus after the loop: nothing anchors the reverse.
+void fatal_deferred_no_anchor() {
+  Fx f(R"(
+define i32 @f(i32 %a0, i32 %n, double %th) {
+entry:
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %a = call i32 @cqrt_qram_alloc_i32(i32 4)
+  br label %L
+L:
+  %i = phi i32 [ 0, %entry ], [ %i2, %L ]
+  %t = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  call void @cqrt_qram_store_i32_hl(i32 %a, i32 %i, i32 %t)
+  %i2 = add i32 %i, 1
+  %c = icmp slt i32 %i2, %n
+  br i1 %c, label %L, label %X
+X:
+  %r = call i32 @cqrt_measure_i32(i32 %x)
+  ret i32 %r
+})");
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  RailId a = f.core(f.call("cqrt_qram_alloc_i32"), abi::Core::QramAlloc, "l", ~0u);
+  unsigned s = f.U.openScope();
+  f.T("t", "hl");
+  f.core(f.call("cqrt_qram_store_i32_hl", 0), abi::Core::QramStore, "hlh", a);
+  f.U.closeScope(s);
+  Uncompute *U = &f.U;
+  f.U.recordDeferred({s}, {}, [U, s](IRBuilder<> &B) { U->emitMirror(s, B); }, {x, a});
+}
 
 const std::map<std::string, std::function<void()>> kPositive = {
     {"reverse_dependency_order", reverse_dependency_order},
@@ -2949,6 +3055,7 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"alias_distinct_cell", alias_distinct_cell},
     {"alias_copy_distinct_array", alias_copy_distinct_array},
     {"cells_distinct", cells_distinct},
+    {"deferred_qram_store", deferred_qram_store},
 };
 
 const std::map<std::string, std::function<void()>> kFatal = {
@@ -2982,6 +3089,7 @@ const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_alias_memcpy", fatal_alias_memcpy},
     {"fatal_cells_distinct_unnoted", fatal_cells_distinct_unnoted},
     {"fatal_cells_distinct_direct_read", fatal_cells_distinct_direct_read},
+    {"fatal_deferred_no_anchor", fatal_deferred_no_anchor},
 };
 
 } // namespace

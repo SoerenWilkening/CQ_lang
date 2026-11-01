@@ -1,5 +1,5 @@
 // Frozen interface (cq-arch, with owner amendments A2 and A4 of 2026-10-27 and freeze beads cq-k1w, cq-bq0 (U1),
-// cq-fx3s (F1), M3, U2 and M3b (cq-arch 2026-11-01)).
+// cq-fx3s (F1), M3, U2, M3b and F1b (cq-arch 2026-11-01)).
 // Changes only under cq-arch's freeze rule.
 #pragma once
 
@@ -80,6 +80,11 @@ public:
   // are owned by the item (no flush resolves them; emit mirrors them); exitRails (owned) are read after
   // the loop; reads are the rails the item reads (not owned). emit is called once, with the builder at
   // the end of a fresh unterminated block, and leaves it at the end of an unterminated block.
+  // F1b (cq-arch 2026-11-01, CR rule 14, §1.3): a QRAM store record in the item's scopes makes the item
+  // a writer of that bus: the item follows POP(j) of every store recorded on the bus after the item's
+  // scopes closed and the un-copy of every load of the bus made after them, and precedes the bus's
+  // release (cqrt_qram_free); exitRails may be empty when the scopes hold such a store and the bus has
+  // a use after the loop (the placement anchors are then those uses).
   void recordDeferred(llvm::ArrayRef<unsigned> scopes, llvm::ArrayRef<RailId> exitRails,
                       std::function<void(llvm::IRBuilder<> &)> emit, llvm::ArrayRef<RailId> reads);
   // K1: storage owned by module uncompute.
