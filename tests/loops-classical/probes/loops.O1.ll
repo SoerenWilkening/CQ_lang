@@ -332,6 +332,45 @@ define i32 @p_g2(i32 noundef %0, double noundef %1, i32 noundef %2, i32 noundef 
   ret i32 %17
 }
 
+; Function Attrs: nounwind ssp uwtable
+define i32 @p_edge_seed(i32 noundef %0, double noundef %1, i32 noundef %2, i32 noundef %3) local_unnamed_addr #0 {
+  %5 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #4
+  %6 = icmp sgt i32 %3, 0
+  br i1 %6, label %7, label %12
+
+7:                                                ; preds = %4
+  %8 = icmp sgt i32 %2, 0
+  br label %9
+
+9:                                                ; preds = %7, %14
+  %10 = phi i32 [ 0, %7 ], [ %20, %14 ]
+  %11 = phi i32 [ 0, %7 ], [ %19, %14 ]
+  br i1 %8, label %22, label %14
+
+12:                                               ; preds = %14, %4
+  %13 = phi i32 [ 0, %4 ], [ %19, %14 ]
+  ret i32 %13
+
+14:                                               ; preds = %22, %9
+  %15 = phi i32 [ 0, %9 ], [ %26, %22 ]
+  %16 = icmp eq i32 %15, 3
+  %17 = zext i1 %16 to i32
+  %18 = tail call i32 @cq_measure_si32(i32 noundef %17) #5
+  %19 = add nsw i32 %18, %11
+  %20 = add nuw nsw i32 %10, 1
+  %21 = icmp eq i32 %20, %3
+  br i1 %21, label %12, label %9, !llvm.loop !26
+
+22:                                               ; preds = %9, %22
+  %23 = phi i32 [ %27, %22 ], [ 0, %9 ]
+  %24 = phi i32 [ %26, %22 ], [ 0, %9 ]
+  %25 = lshr i32 %5, %23
+  %26 = add i32 %25, %24
+  %27 = add nuw nsw i32 %23, 1
+  %28 = icmp eq i32 %27, %2
+  br i1 %28, label %14, label %22, !llvm.loop !27
+}
+
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
 declare i32 @llvm.smax.i32(i32, i32) #3
 
@@ -371,3 +410,5 @@ attributes #5 = { nounwind }
 !23 = distinct !{!23, !7, !8}
 !24 = distinct !{!24, !7, !8}
 !25 = distinct !{!25, !7, !8}
+!26 = distinct !{!26, !7, !8}
+!27 = distinct !{!27, !7, !8}

@@ -89,3 +89,15 @@ int p_g2(int x0, double th, int n, int k) {
   for (i = 0; i < n; i++) { if (x == i + k) break; cq_phi(0.5); }
   return cq_measure(x);
 }
+/* 176: a classical incoming (the inner loop's zero-trip skip) of a phi of handles at a body join: a seed on that edge */
+int p_edge_seed(unsigned x0, double t, int n, int m) {
+  unsigned x = x0;
+  cq_theta(&x, t);
+  int c = 0;
+  for (int r = 0; r < m; r++) {
+    unsigned v = 0;
+    for (int i = 0; i < n; i++) v += x >> i;
+    c += cq_measure(v == 3u);
+  }
+  return c;
+}

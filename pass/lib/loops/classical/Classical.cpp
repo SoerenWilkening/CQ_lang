@@ -990,6 +990,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       cp->addIncoming(select(aPhi, ctx.operand(v), Operand{cp, true}, railTypeOf(v->getType())), cur);
   };
 
+  // The seeds minted for classical incomings of phis of handles (mintEdgeSeeds below), per (phi, edge source).
+  DenseMap<std::pair<const PHINode *, const BasicBlock *>, Value *> edgeSeed;
   auto emitPhis = [&](BasicBlock *b, bool real) {
     for (PHINode &p : b->phis()) {
       bool q = isQ(&p);
@@ -1021,6 +1023,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           unimplemented("loops-classical: two edges of a classical join leave one output block", &p);
         Operand o = ctx.operand(p.getIncomingValue(i));
         if (q && !o.handle)
+          if (auto e = edgeSeed.find({&p, u}); e != edgeSeed.end())
+            o = Operand{e->second, true};
+        if (q && !o.handle)
           unimplemented("loops-classical: a classical incoming of a phi of handles inside the loop body", &p);
         if (!q && o.handle)
           internalError("loops-classical: a classical phi with a rail incoming", &p);
@@ -1029,6 +1034,26 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       if (q)
         ctx.unc().recordMerge(np);
       ctx.bind(&p, np);
+    }
+  };
+
+  // Rule 7 (176): a classical incoming of a phi of handles at a classical join of the body (the value on
+  // the edge u -> s, e.g. -O1's zero-trip skip of an inner accumulator loop) is a seed rail minted at the
+  // end of u's output block, in u's segment, before u's branch: its item (a direct release) follows the
+  // merge's readers, and u's segment runs on every path through s's edge from u.
+  auto mintEdgeSeeds = [&](BasicBlock *u, BasicBlock *s) {
+    if (s == header || !L.contains(s) || subOf(s))
+      return;
+    for (PHINode &p : s->phis()) {
+      if (!isQ(&p) || edgeSeed.count({&p, u}))
+        continue;
+      Value *v = p.getIncomingValueForBlock(u);
+      Operand o = ctx.operand(v);
+      if (o.handle)
+        continue;
+      if (!(p.getType()->isIntegerTy() || p.getType()->isFloatingPointTy()))
+        continue;   // emitPhis refuses the phi itself
+      edgeSeed[{&p, u}] = seed(o.v, railTypeOf(p.getType()));
     }
   };
 
@@ -1069,6 +1094,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         edgeFrom[{u, s}] = cur;
         if (k != EK::Real)
           return;
+        mintEdgeSeeds(u, s);
         ctx.B().CreateBr(target(s));
         cur = nullptr;
         return;
@@ -1087,6 +1113,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       Operand cnd = ctx.operand(br->getCondition());
       if (cnd.handle)
         internalError("loops-classical: a classical branch on a rail", t);
+      for (BasicBlock *s : successors(u))
+        mintEdgeSeeds(u, s);
       ctx.B().CreateCondBr(cnd.v, target(br->getSuccessor(0)), target(br->getSuccessor(1)));
       for (BasicBlock *s : successors(u))
         edgeFrom[{u, s}] = cur;
@@ -1108,6 +1136,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       Operand cnd = ctx.operand(sw->getCondition());
       if (cnd.handle)
         internalError("loops-classical: a classical switch on a rail", t);
+      for (BasicBlock *s : successors(u))
+        mintEdgeSeeds(u, s);
       SwitchInst *ns = ctx.B().CreateSwitch(cnd.v, target(sw->getDefaultDest()), sw->getNumCases());
       for (auto &cs : sw->cases())
         ns->addCase(cs.getCaseValue(), target(cs.getCaseSuccessor()));
