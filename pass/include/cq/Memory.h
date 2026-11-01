@@ -42,6 +42,10 @@ llvm::SmallVector<llvm::Value *, 4> slotCellsBeforeCall(LoweringContext &, const
                                                         llvm::ArrayRef<unsigned> argMap = {});
 llvm::SmallVector<llvm::Value *, 4> slotCellsAfterCall(LoweringContext &, const llvm::CallBase &orig, unsigned argNo,
                                                        llvm::CallInst *lowered, llvm::ArrayRef<unsigned> argMap = {});
+// T3c (cq-budv, CR rules 5, 18, 20; 117). mem-slots, consumer calls noteRotatedCells: the rails the cells of
+// the slot object ptr points to may hold at `at` (a clone call rotating any of its cells in place,
+// TaintInfo::kAnyCell). A dynamic local or heap slot array only; any other object is unimplemented.
+llvm::SmallVector<llvm::Value *, 8> slotRailsMayHold(LoweringContext &, const llvm::Value *ptr, llvm::Instruction &at);
 void allocateSlots(LoweringContext &, llvm::Instruction &site);   // mem-slots
 void endSlotLifetime(LoweringContext &, ObjectId, llvm::Instruction *at);  // mem-slots
 void lowerQromLoad(LoweringContext &, llvm::LoadInst &);          // mem-qrom

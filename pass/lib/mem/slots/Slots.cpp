@@ -948,6 +948,8 @@ bool mayWrite(LoweringContext &ctx, const ObjInfo &info, ObjectId o, const Instr
         // classical re-read would see a seed's or a measured rail's old value). The read is a run-time read
         // of the cell (the object is dynamic: its cells are registers, 124's r).
         for (unsigned c : ctx.T.cellsRotated(*S, i)) {
+          if (c == TaintInfo::kAnyCell)
+            return true;   // cq-budv: a rotation at a variable offset may hit any cell
           Addr w = pa;
           w.off += cellOffset(info, c);
           if (!differentCell(w, cell, cellSizeAt(info, w.off, DL), size))
@@ -3002,6 +3004,51 @@ SmallVector<Operand, 8> readSlotCells(LoweringContext &ctx, const Value *ptr, Ty
       cellRail(*c.info, cellTy, at);
     }
     out.push_back(readCell(ctx, st, c, at, cellTy));
+  }
+  return out;
+}
+
+// T3 consumer (cq-budv, CR rules 5, 18, 20; 117): the rails the cells of the slot object ptr points to may
+// hold at `at`, a clone call rotating any of its cells in place (TaintInfo::kAnyCell). Restricted to a
+// DYNAMIC local or heap object: every rail in its cells is a register (a seed, a cq_theta result in place,
+// an alias load's handle), each the handle some lowered access or memory intrinsic of this function left
+// or read in a cell (st.lowered, st.callOut). Any other object is unimplemented (a static object's cells
+// are named one by one by T3's cell list).
+SmallVector<Value *, 8> slotRailsMayHold(LoweringContext &ctx, const Value *ptr, Instruction &at) {
+  FnState &st = stateOf(ctx, at);
+  const DataLayout &DL = ctx.M.getDataLayout();
+  ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
+  Addr a = decompose(ptr, DL);
+  if (objs.size() != 1 || !a.ok)
+    unimplemented("mem-slots: the rails a clone may rotate in place through a pointer into other than one slot "
+                  "object (T3 any cell)",
+                  &at);
+  ObjectId o = objs.front();
+  ObjInfo &info = objInfo(ctx, st, a.root, o);
+  if ((info.kind != RootKind::Local && info.kind != RootKind::Heap) || info.record || info.view ||
+      !isDynamic(ctx, st, info, o))
+    unimplemented("mem-slots: a clone rotating any cell (T3, a variable offset) of a slot object that is not a "
+                  "dynamic local or heap array",
+                  &at);
+  SmallVector<Value *, 8> out;
+  auto add = [&](const Operand &h) {
+    if (h.handle && h.v && !is_contained(out, h.v))
+      out.push_back(h.v);
+  };
+  for (auto &[I, h] : st.lowered)
+    if (const Value *p = accessPtr(I); p && hasObject(ctx, p, o))
+      add(h);
+  for (auto &[I, cells] : st.callOut) {
+    const Value *p = nullptr;
+    if (auto *MI = dyn_cast<MemIntrinsic>(I))
+      p = MI->getRawDest();
+    bool mine = p ? hasObject(ctx, p, o) : false;
+    if (auto *CB = dyn_cast<CallBase>(I); CB && !p)
+      for (const Use &u : CB->args())
+        mine |= hasObject(ctx, u.get(), o);
+    if (mine)
+      for (auto &[off, h] : cells)
+        add(h);
   }
   return out;
 }

@@ -4092,7 +4092,9 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
           // 117: T2 at a variable offset: a store back of a rotation of the cell's own quantum load (an
           // in-place cq_theta on a runtime-indexed cell) leaves the handle in the cell; allowed when every
           // write through the formal is such a round trip (checked below).
-          const llvm::LoadInst *r = rotated ? nullptr : inPlaceRoot(SI, true);
+          // T3 (cq-budv, 117): such a round trip rotates the rail of whichever cell the offset names at
+          // run time: any cell (kAnyCell).
+          const llvm::LoadInst *r = inPlaceRoot(SI, true);
           if (!r || !lanesOfValue(I, *SS, r).any())
             refuse("a store through the formal at a variable offset", SI);
           varInPlace.push_back(SI);
@@ -4165,6 +4167,8 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
       if (!r || !lanesOfValue(I, *SS, r).any())
         refuse("a store through the formal beside an in-place rotation at a variable offset", w.st);
     }
+  if (rotated && !varInPlace.empty())
+    return {TaintInfo::kAnyCell};
   SmallVector<unsigned, 4> out;
   uint64_t size = 0;
   for (const W &w : writes) {

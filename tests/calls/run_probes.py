@@ -38,6 +38,8 @@ CASES = [
     ("twin_kept_overflow", "tk", [], "pass", []),
     # cq-kkgh: a clone's in-place rotation of a by-value formal is a non-diagonal gate on the caller's rail.
     ("byvalue_rotated", "p5", [], "pass", []),
+    # cq-budv (117): an in-place rotation at a variable offset (T3 kAnyCell) of a runtime-length slot array.
+    ("rotated_any", "ra", [], "pass", [r"call fastcc void @__cq_q_rot_all_100\("]),
     ("depth_lt0", "r1", [], "fatal: cq: unimplemented: loops-cutoff: a quantum-depth recursion cut at K with B > K "
      "or no bound", []),
     ("depth_lt_m1", "r15", [], "fatal: cq: unimplemented: loops-cutoff: a quantum-depth recursion cut at K with "

@@ -605,6 +605,13 @@ void noteRotatedCells(LoweringContext &ctx, CallBase &CB, const Specialization &
     const Value *actual = CB.getArgOperand(argMap.empty() ? i : argMap[i]);
     if (!pointsToSlot(ctx, actual))
       internalError("calls: a clone rotates a cell of an object that is not a slot object", &CB);
+    if (cells.front() == TaintInfo::kAnyCell) {
+      // cq-budv (117): a rotation at a variable offset may hit any cell: every rail the object's cells may
+      // hold at the call is hit by a non-diagonal gate there.
+      for (Value *h : mem::slotRailsMayHold(ctx, actual, CB))
+        ctx.unc().noteNonDiagonal(ctx.unc().idOf(h), fwd);
+      continue;
+    }
     const Value *root = getUnderlyingObject(actual);
     Type *cellTy = nullptr;
     if (auto *AI = dyn_cast<AllocaInst>(root); AI && !AI->isArrayAllocation()) {

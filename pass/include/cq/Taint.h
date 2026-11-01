@@ -49,7 +49,9 @@ public:
   // T3 (cq-arch 2026-11-01, CR rules 5, 18, 20): the pointee cells (ascending cell indices of the object
   // argNo points to, at the size of the access) that the clone `callee` may apply a non-diagonal gate to
   // (cq_theta through the formal or a pointer derived from it); empty for a non-pointer formal.
-  // Unimplemented: a variable offset, accesses of several sizes, an escape of the formal.
+  // Unimplemented: accesses of several sizes, an escape of the formal. cq-budv (117): an in-place
+  // rotation at a variable offset may hit any cell: the answer is then {kAnyCell} alone.
+  static constexpr unsigned kAnyCell = ~0u;
   llvm::SmallVector<unsigned, 4> cellsRotated(const Specialization &callee, unsigned argNo) const;
   // T5 (A-taint 2026-11-01, CR rules 18, 20; 109's put): the formal j whose handle the clone `callee` stores
   // UNCHANGED into cell `cell` (as cellsWritten counts it) of the object argNo points to, or -1. Exactly:
