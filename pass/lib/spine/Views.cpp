@@ -29,6 +29,34 @@
 //    the narrow operand (no gate). An icmp eq/ne whose operands are views, skipped or classical zexts
 //    or constants is lowered at width M: ne at i1 is xor_i1 (113's `q2 ^= q1`), any other is
 //    icmp_<pred>_iM; rule 6 reads a narrowed xor's narrow operands (Shared::narrowXor).
+//  - Cell view (cq-nd2i). A quantum load of a _Bool slot cell (boolCellAccess) is a narrow value of
+//    width 1: an icmp eq/ne reading it narrows (114's q[m-1] ^= q[m-2] is xor_i1 of the two cells'
+//    rails). At the compare the load is registered as a view of its cell's i1 rail (View::cell): the
+//    rail mem-slots bound it to, or the operand of the zext_i1_to_i8 mem-slots took at the load for an
+//    i8 reader (then the compare must be in the load's output block with no rotation of the rail
+//    since the load: else unimplemented). A cell view never takes part in a view phi. A classical
+//    _Bool cell load is read narrow as its trunc to i1.
+//
+//  Packed integers (cq-0umd; CR rules 26 and 3: -O1's ABI coercion of struct { int, int } to one i64
+//  in 159 and 166 is classical arithmetic on the coercion and emits no gate).
+//  - A packed value is bound field-wise (Shared::packs: its bit boundaries {0, ..., N}; one Operand
+//    per field, low bits first: a handle, or a classical value of the field's width, the constant 0
+//    where the packing leaves the bits zero).
+//  - Packing (lowerPack). A quantum or disjoint whose every use is a packing or disjoint, an unpacking
+//    read (trunc, lshr by a constant) or a field consumer (a call argument whose callee unpacks the
+//    formal into several fields, a ret, an insertvalue's inserted value); a quantum zext or shl by a
+//    constant whose every use is a packing shl or or, or such a call argument. zext of x: (x, 0); shl
+//    by C: the fields moved up, the bits shifted out dropped; or disjoint: the union, a quantum field
+//    taken whole where the other side is zero across it (any other overlap of a quantum field is
+//    unimplemented), classical pieces or'ed classically. A classical operand is seen through its own
+//    zext / shl / or-disjoint structure. A call argument takes its callee formal's boundaries
+//    (unpackCuts); reshaping splits zero and classical fields only, never a quantum one.
+//  - Unpacking. A trunc to M of a field-wise value is its field [0, M); an lshr by C its fields moved
+//    down (the result packed again, one field bound as that field). A result with only classical
+//    fields is one classical iN rebuilt from them (bindPacked).
+//  - A value another module binds field-wise (a clone's formal, a clone call's result) gets its
+//    boundaries from its readers at the first read (unpackCuts: taint's intFields rule); a different
+//    field count is unimplemented.
 #include "SpineInternal.h"
 
 #include "cq/Abi.h"
