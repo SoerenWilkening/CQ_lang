@@ -57,6 +57,7 @@ Function *materialize(Module &M, const Specialization &S) {
   return NF;
 }
 void lowerLifted(LoweringContext &, CallBase &) { unimplemented("calls: calls::lowerLifted"); }
+void lowerLiftedVia(LoweringContext &, CallBase &, ArrayRef<unsigned>) { unimplemented("calls: calls::lowerLiftedVia"); }
 void lowerIndirect(LoweringContext &, CallBase &) { unimplemented("calls: calls::lowerIndirect"); }
 void lowerDeclared(LoweringContext &, CallBase &) { unimplemented("calls: calls::lowerDeclared"); }
 void lowerVarargs(LoweringContext &, Instruction &) { unimplemented("calls: calls::lowerVarargs"); }
