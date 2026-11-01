@@ -433,15 +433,21 @@ std::optional<IdxRange> relRange(LoweringContext &ctx, ArrayRef<const Value *> r
   return R;
 }
 
-// A root at a constant offset of at least one cell inside a static object: its fat pointers may carry a
-// negative in-bounds cell index (cq-b244).
+// A root at a constant offset of at least one cell inside its object, or one whose place in its object is
+// unknown (a pointer argument, a loaded pointer): its fat pointers may carry a negative in-bounds cell
+// index (cq-b244). A global, an alloca, an allocation call's result and a heap record start their objects.
 bool mayPrecede(LoweringContext &ctx, ArrayRef<const Value *> roots, uint64_t cell) {
   const DataLayout &DL = ctx.M.getDataLayout();
   for (const Value *r : roots) {
-    if (mem::isQramRoot(ctx, r) || boundOf(ctx, r) || isa<ConstantPointerNull>(r))
+    if (mem::isQramRoot(ctx, r) || boundOf(ctx, r) || isa<ConstantPointerNull>(r) || isSlotRoot(ctx, r) ||
+        mem::hostRecord(ctx, r))
       continue;
     APInt off(64, 0);
-    r->stripAndAccumulateConstantOffsets(DL, off, /*AllowNonInbounds=*/true);
+    const Value *obj = r->stripAndAccumulateConstantOffsets(DL, off, /*AllowNonInbounds=*/true);
+    auto *CB = dyn_cast<CallBase>(obj);
+    bool allocation = CB && CB->hasRetAttr(Attribute::NoAlias) && CB->getFnAttr(Attribute::AllocKind).isValid();
+    if (!isa<GlobalVariable>(obj) && !isa<AllocaInst>(obj) && !allocation)
+      return true;
     if (off.isNegative() || (cell ? off.getZExtValue() >= cell : !off.isZero()))
       return true;
   }
@@ -471,8 +477,9 @@ bool idxSextAt(LoweringContext &ctx, ArrayRef<const Value *> roots, uint64_t cel
   std::optional<IdxRange> R = relRange(ctx, roots, cell);
   std::optional<bool> sx = R ? readsAt(*R, W) : std::nullopt;
   if (!sx)
-    unimplemented("fatptr: a " + std::to_string(W) + "-bit cell index relative to a root inside its object whose "
-                      "in-bounds indices (some negative) do not fit it",
+    unimplemented("fatptr: a " + std::to_string(W) + "-bit cell index relative to a root that may lie inside its "
+                      "object (a constant offset into it, or an unknown place: a pointer argument or a loaded "
+                      "pointer) whose in-bounds indices, some negative, are unknown or do not fit it",
                   at);
   return *sx;
 }
