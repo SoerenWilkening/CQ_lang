@@ -379,7 +379,9 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
     return mem::endSlotLifetime(ctx, o, &CB);
   }
   case Class::Realloc:
-    unimplemented("spine: realloc of a slot or QRAM block has no entry in Memory.h (rule 16)", &CB);
+    if (objectsClass(ctx, &CB) == ObjClass::Qram)
+      return mem::reallocQram(ctx, CB);   // M5 (cq-arch 2026-11-01)
+    unimplemented("spine: realloc of a slot block has no entry in Memory.h (rule 16)", &CB);
   case Class::MemIntrinsic: return mem::lowerMemIntrinsic(ctx, cast<MemIntrinsic>(CB));
   case Class::TemplateIntrinsic: return lowerOpcode(ctx, CB);
   case Class::LibmIntrinsic: return calls::lowerLifted(ctx, CB);

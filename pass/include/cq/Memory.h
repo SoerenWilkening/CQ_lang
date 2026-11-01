@@ -27,5 +27,6 @@ void lowerQramLoad(LoweringContext &, llvm::LoadInst &);          // mem-qram
 void lowerQramStore(LoweringContext &, llvm::StoreInst &);        // mem-qram
 void allocateQram(LoweringContext &, llvm::Instruction &site);    // mem-qram
 void endQramLifetime(LoweringContext &, ObjectId, llvm::Instruction *at);  // mem-qram
+void reallocQram(LoweringContext &, llvm::CallBase &realloc);   // mem-qram (M5, cq-arch 2026-11-01)
 void lowerMemIntrinsic(LoweringContext &, llvm::MemIntrinsic &);  // mem-qram
 }
