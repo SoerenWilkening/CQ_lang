@@ -29,6 +29,9 @@ CASES = [
      "below its proved depth bound 3", []),
     ("depth_classical_formal", "r13", [], "fatal: cq: unimplemented: calls: a quantum-depth recursion cut at "
      "level 1 below its proved depth bound 3", []),
+    # cq-09xh: a byval formal stays byval; the caller passes a snapshot, which the twin gets too.
+    ("byval", "b3", [], "pass", [r"call i32 @__cq_q_f_\w+\(ptr byval\(%struct\.B\)"]),
+    ("byval", "b_twin", [], "pass", [r"call void @__cq_q_f_\w+_unc\(i32 %\w+, ptr %byval\.snap"]),
 ]
 
 

@@ -12,7 +12,9 @@
 //    handle), then one parameter per formal, an i32 handle where S's mask digit is 1, the formal's C
 //    type where it is 0; the result is an i32 handle when taint records it quantum (rule 18: "result
 //    taint is recorded per clone"), else the C type, void for void. The clone keeps the original's
-//    calling convention and carries no attributes. Its body is the spine's (construct()).
+//    calling convention and carries no attributes but byval on a byval formal (cq-09xh; the call
+//    passes a snapshot of the caller's object taken at the call, byval, and the twin gets that
+//    snapshot). Its body is the spine's (construct()).
 //    Aggregate and pointer formals and results (rules 21, 25, 26: field digits, fat-pointer triples,
 //    flattened results) and packed integer results are unimplemented here.
 //  - materialize has no TaintInfo in its signature, but the result kind is taint's record. It is
@@ -353,6 +355,8 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
     args.push_back(f);
     r.ops.push_back(Operand{f, true});
   }
+  struct ByVal { unsigned k; Type *T; Align al; };
+  SmallVector<ByVal, 2> byvals;
   if (CB.arg_size() != fs.size())
     unimplemented("calls: a call whose argument count differs from the callee's formals (a variadic clone per "
                   "call-site arity, CR §1.4)",
@@ -372,12 +376,31 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
         unimplemented("calls: a measured (collapsed, rule 2) value passed where the clone's mask is quantum", &CB);
       if (!fs[i].q[k] && o.handle)
         internalError("calls: a rail passed where the clone's mask is classical", &CB);
-      args.push_back(o.v);
-      r.ops.push_back(o);
+      Value *v = o.v;
+      if (CB.isByValArgument(i)) {
+        // byval (cq-09xh): the clone gets a copy of the object as of the call. The copy is made from
+        // a snapshot the caller takes here, and the snapshot is what the forward and the twin receive:
+        // the twin, run later, recomputes from the values the forward saw, whatever the caller has
+        // written into its object since.
+        Type *T = CB.getParamByValType(i);
+        const DataLayout &DL = ctx.M.getDataLayout();
+        Align al = CB.getParamAlign(i).value_or(DL.getABITypeAlign(T));
+        AllocaInst *snap = ctx.B().CreateAlloca(T, DL.getAllocaAddrSpace(), nullptr, "byval.snap");
+        snap->setAlignment(al);
+        ctx.B().CreateMemCpy(snap, al, v, al, DL.getTypeAllocSize(T));
+        v = snap;
+        byvals.push_back({unsigned(args.size()), T, al});
+      }
+      args.push_back(v);
+      r.ops.push_back(Operand{v, o.handle});
     }
   }
   r.call = ctx.B().CreateCall(C, args);
   r.call->setCallingConv(C->getCallingConv());
+  for (const ByVal &b : byvals) {
+    r.call->addParamAttr(b.k, Attribute::getWithByValType(C->getContext(), b.T));
+    r.call->addParamAttr(b.k, Attribute::getWithAlignment(C->getContext(), b.al));
+  }
   r.handle = !CB.getType()->isVoidTy() && !r.res.composite && r.res.anyQ();
   r.fieldwise = r.res.composite && r.res.anyQ();
   return r;
@@ -687,6 +710,19 @@ Function *materialize(Module &M, const Specialization &S) {
   }
   Function *NF = Function::Create(FT, GlobalValue::InternalLinkage, name, &M);
   NF->setCallingConv(S.F->getCallingConv());
+  // A byval formal stays byval (cq-09xh): the clone writes its own copy, never the caller's object.
+  unsigned p = S.ctl ? 1 : 0;
+  std::vector<FormalLayout> fl = formalLayout(T, S, S.F);
+  for (Argument &A : S.F->args()) {
+    if (A.hasByValAttr()) {
+      NF->addParamAttr(p, Attribute::getWithByValType(C, A.getParamByValType()));
+      if (MaybeAlign al = A.getParamAlign())
+        NF->addParamAttr(p, Attribute::getWithAlignment(C, *al));
+    }
+    if (A.hasInAllocaAttr() || A.hasPreallocatedAttr())
+      unimplemented("calls: an inalloca or preallocated formal of a clone", &A);
+    p += unsigned(fl[A.getArgNo()].leaves.size());
+  }
   return NF;
 }
 

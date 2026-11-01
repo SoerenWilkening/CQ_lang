@@ -148,11 +148,23 @@ void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &s
                       .str(),
                   at);
   };
+  auto inFrame = [&](const Value *p) {
+    const Value *u = getUnderlyingObject(p);
+    auto *A = dyn_cast<Argument>(u);
+    return isa<AllocaInst>(u) || (A && A->getParent() == &F && A->hasByValAttr());
+  };
   for (Instruction &I : instructions(F)) {
     if (auto *SI = dyn_cast<StoreInst>(&I)) {
-      if (!isa<AllocaInst>(getUnderlyingObject(SI->getPointerOperand())))
+      // The clone's frame: its allocas and its byval formals (the callee's own copy, cq-09xh; the twin
+      // gets the caller's snapshot, which nothing reads after the twin).
+      if (!inFrame(SI->getPointerOperand()))
         refuse("a store to memory outside the clone's frame", &I);
       continue;
+    }
+    if (auto *MI = dyn_cast<MemIntrinsic>(&I)) {
+      if (!inFrame(MI->getRawDest()))
+        refuse("a memory intrinsic writing outside the clone's frame", &I);
+      continue;   // a byval snapshot (cq-09xh) or another write of the frame
     }
     if (I.mayWriteToMemory() && !isa<CallBase>(I))
       refuse("a memory write", &I);
