@@ -1135,8 +1135,7 @@ void Walker::emitBlock(BasicBlock *b) {
     // continues in the current output block; the end's block resumes after the end marker.
     if (sh.blocks.count(b))
       internalError("spine: a block of a cq_invert region with an output block of its own", b->getTerminator());
-    if (unitOf.count(b) || guards.count(b))
-      internalError("spine: a loop or classical guard inside a cq_invert region", b->getTerminator());
+    // A loop or a classical guard of the region is eff-invert's too (rule 17; cq-xjw2).
     sh.blocks[b] = ctx.B().GetInsertBlock();
     for (Instruction &I : *b) {
       visited.insert(&I);
@@ -1422,8 +1421,6 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
     }
     return;
   }
-  if (S.adj)
-    unimplemented("spine: an _adj clone (rule 17)", S.F);
   Function &F = *S.F;
 
   LoweringContext ctx(M, T, S, KO);
@@ -1545,7 +1542,10 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
     BasicBlock *entry = &sh.out->getEntryBlock();
     sh.blocks[&F.getEntryBlock()] = entry;
   }
-  Walker(ctx, F, DT, LI).run();
+  if (S.adj)
+    invert::lowerAdjointBody(ctx, F);   // rule 17: the _adj clone's body is the adjoint of the clone's (cq-xjw2)
+  else
+    Walker(ctx, F, DT, LI).run();
 
   if (last) {
     finishEntries(M);

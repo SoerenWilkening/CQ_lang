@@ -9,7 +9,11 @@
 // Effects.h  (rules 16, 17, 23, 24)
 namespace cq::tape   { void lowerHostEffect(LoweringContext &, llvm::CallBase &);
                        void lowerNoreturn(LoweringContext &, llvm::CallBase &); }
-namespace cq::invert { void lowerRegion(LoweringContext &, llvm::CallInst &begin, llvm::CallInst &end); }
+namespace cq::invert { void lowerRegion(LoweringContext &, llvm::CallInst &begin, llvm::CallInst &end);
+                       // I1 (cq-arch, cq-xjw2): the body of an _adj clone (S.adj): F's whole body (one void
+                       // return) as one region; formals bound, preds computed, builder at the end of the
+                       // clone's empty entry block; emits ret void and flushAtExit.
+                       void lowerAdjointBody(LoweringContext &, llvm::Function &F); }
 namespace cq::fenv   { void lowerConstrained(LoweringContext &, llvm::CallBase &);
                        void lowerFenvCall(LoweringContext &, llvm::CallBase &);
                        // cq-xu2l (freeze amendment on cq-arch): after every lowered cq_measure, the
