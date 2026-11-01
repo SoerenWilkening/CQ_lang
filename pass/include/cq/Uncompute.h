@@ -85,8 +85,12 @@ public:
   // scopes closed and the un-copy of every load of the bus made after them, and precedes the bus's
   // release (cqrt_qram_free); exitRails may be empty when the scopes hold such a store and the bus has
   // a use after the loop (the placement anchors are then those uses).
+  // F2 (cq-arch 2026-11-01, CR rules 5, 14; 176): hostScopes, the scopes of an enclosing rule-14 region
+  // whose trip the item runs in (a trip-local sub-loop's reverse): their pending records do not keep the
+  // item from a local placement inside that region (they are the region's own, undone by its reverse).
   void recordDeferred(llvm::ArrayRef<unsigned> scopes, llvm::ArrayRef<RailId> exitRails,
-                      std::function<void(llvm::IRBuilder<> &)> emit, llvm::ArrayRef<RailId> reads);
+                      std::function<void(llvm::IRBuilder<> &)> emit, llvm::ArrayRef<RailId> reads,
+                      llvm::ArrayRef<unsigned> hostScopes = {});
   // K1: storage owned by module uncompute.
 private:
   struct Impl; std::shared_ptr<Impl> impl;

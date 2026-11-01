@@ -60,6 +60,9 @@ MEASURED = {"m_r8": [("measured", "i32"), ("kept_entangled", "i32"), ("measured"
 MEASURED_SEC6 = ["m_join", "m_join2"]
 # cq-50qq: m_join2 at c == d == 0 (measured nowhere): x alone is kept (frozen), y is cleaned under the classical flag.
 MEASURED_NONE = {"m_join2": [("frozen", "i32")]}
+# 176: a trip-local sub-loop (value(x) read by the oracle flag only) reversed inside its parent's trip.
+TRIPLOCAL_PROBE = PROBES / "triplocal.O1.ll"
+TRIPLOCAL = ["t_grover"]
 ENTRIES = ["p_acc", "p_brk", "p_nest", "p_mod", "p_nb", "p_horner", "p_arm", "p_phase", "p_cjoin", "p_tphase", "p_bwb", "p_g2"]
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 
@@ -132,13 +135,13 @@ def main() -> int:
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", required=True)
     ap.add_argument("--entry", action="append", help="check only these entries of loops.O1.ll")
-    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "fatal"],
+    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "fatal", "triplocal"],
                     help="run only these probe groups (default: all)")
     a = ap.parse_args()
     out = ROOT / "build" / "tests" / "loops-classical" / "out"
     out.mkdir(parents=True, exist_ok=True)
     failures = 0
-    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "fatal"]))
+    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "fatal", "triplocal"]))
     groups = []
     if "loops" in want:
         groups.append((PROBE, a.entry or ENTRIES))
@@ -152,6 +155,8 @@ def main() -> int:
         groups.append((MEASURED_PROBE, list(MEASURED) + MEASURED_SEC6))
     if "hoisted" in want:
         groups.append((HOISTED_PROBE, HOISTED))
+    if "triplocal" in want:
+        groups.append((TRIPLOCAL_PROBE, TRIPLOCAL))
     for probe, entries in groups:
         failures += check_probe(a, probe, entries, out)
     for group, probe, table in (("rule6", RULE6_PROBE, RULE6), ("deferred", DEFERRED_PROBE, DEFERRED),

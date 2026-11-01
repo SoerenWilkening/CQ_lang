@@ -318,6 +318,7 @@ struct Uncompute::Impl {
     std::function<void(IRBuilder<> &)> emit;
     SmallVector<RailId, 8> reads;
     SmallPtrSet<const BasicBlock *, 8> region; // the blocks of the owned records
+    SmallVector<unsigned, 8> hostScopes;       // F2: an enclosing region's scopes (its trip hosts the item)
     RailId pseudo = kNone;
     BasicBlock *placedAt = nullptr;            // the block the program continues in after the item
     // F1b: the QRAM buses an owned store writes, each with the highest popK among its owned POPs.
@@ -2215,9 +2216,12 @@ struct Uncompute::Impl {
     // Never inside another region whose own records are still pending (a later rule-14 loop's trip, its
     // back edges cut while it flushes per trip, or a cq_invert region): the item would run per trip.
     const BasicBlock *P = point->getParent();
-    for (const Scope &sc : scopes) {
+    for (unsigned si = 0; si < scopes.size(); ++si) {
+      const Scope &sc = scopes[si];
       if (sc.open)
         return false;
+      if (is_contained(d.hostScopes, si))
+        continue;   // F2: the hosting region's own records (its reverse undoes them)
       for (unsigned rec = sc.begin; rec < sc.end; ++rec) {
         RailId it = info[rec].item;
         if (it == kNone || rails[it].ownedBy == rails[g].deferred || !resolvable(it))
@@ -3345,13 +3349,15 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
 }
 
 void Uncompute::recordDeferred(ArrayRef<unsigned> scopes, ArrayRef<RailId> exitRails,
-                               std::function<void(IRBuilder<> &)> emit, ArrayRef<RailId> reads) {
+                               std::function<void(IRBuilder<> &)> emit, ArrayRef<RailId> reads,
+                               ArrayRef<unsigned> hostScopes) {
   Impl &I = *impl;
   if (!emit)
     internalError("uncompute: recordDeferred without an emitter");
   unsigned di = I.defs.size();
   Impl::Deferred d;
   d.emit = std::move(emit);
+  d.hostScopes.assign(hostScopes.begin(), hostScopes.end());
   Value *firstStore = nullptr;
   for (unsigned s : scopes) {
     if (s >= I.scopes.size() || I.scopes[s].open)

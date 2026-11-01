@@ -85,6 +85,7 @@
 #include "cq/Loops.h"
 #include "../cutoff/Exits.h"
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -349,6 +350,28 @@ private:
   DenseMap<const BasicBlock *, BasicBlock *> obMap;
   std::vector<Value *> externalInits;   // handles defined outside the region read through header phis
   std::vector<std::pair<BasicBlock *, BasicBlock *>> heads;   // every loop's output header H and its entry block
+
+  // Trip-local sub-loops (CR rules 5, 14; 176): a classically bounded sub-loop whose quantum values read
+  // after it die within the parent's trip is its own unit, with its own reverse loop placed in the
+  // parent's trip after the readers of its exit values (the deferred reverse of cq-fx3s, one per trip).
+  // nested: this unit is such a sub-loop; resetAt: the parent's output header (where "the sub-loop ran"
+  // is false again). The parent finishes it (flushTrips, the deferred item) inside its own flushTrips,
+  // after flushing the segment the sub-loop is entered from.
+  bool nested = false;
+  BasicBlock *resetAt = nullptr;
+  bool reversed = false;
+  std::function<void()> finish;
+  unsigned ownSeedScope = ~0u;
+  std::vector<unsigned> hostScopes;   // the enclosing units' scopes (Uncompute F2)
+  struct Sub {
+    std::shared_ptr<Unit> unit;
+    unsigned entrySeg;
+  };
+  std::vector<Sub> subs;
+  DenseMap<const BasicBlock *, BasicBlock *> throughSub;   // a sub-unit's continuation -> the parent segment entering it
+  DenseSet<const BasicBlock *> subBlocks;                  // the blocks of the sub-units' regions
+  std::vector<std::pair<Instruction *, unsigned>> entering;   // per segment, an entering edge (flushTrips)
+  bool tripLocal(Loop &sl, Loop &L);
 
   bool isQ(const Value *v) {
     if (isa<Constant>(v) || isa<BasicBlock>(v) || isa<MetadataAsValue>(v))
@@ -628,6 +651,57 @@ void Unit::planRuleSix(Loop &L, Case c) {
 }
 
 // A clone call that has a twin (U2): a quantum result field, or a caller cell it stores a handle into.
+// A sub-loop sl of L (case 1) is trip-local when the quantum values of sl read after it are read, through
+// their forward slice, only by instructions of L's trip outside every sub-loop of L (no header phi of L,
+// no store, no call, nothing after L), sl writes no quantum value to memory, makes no non-diagonal gate
+// and calls nothing but the CQ.h surface: its rails are dead before the trip ends, so its reverse runs in
+// the trip, before any later gate of the trip on the rails it read (rule 5; 176's value(x) loops before
+// A^dag / A).
+bool Unit::tripLocal(Loop &sl, Loop &L) {
+  if (!qp(sl.getHeader()).isTop() || !sl.getSubLoops().empty())
+    return false;
+  bool any = false;
+  for (BasicBlock *b : sl.blocks())
+    for (Instruction &I : *b) {
+      if (auto *si = dyn_cast<StoreInst>(&I); si && isQ(si->getValueOperand()))
+        return false;
+      if (auto *CB = dyn_cast<CallBase>(&I)) {
+        if (isa<DbgInfoIntrinsic>(CB))
+          continue;
+        calls::Class k = calls::classify(*CB, ctx.T, ctx.S);
+        if (k != calls::Class::Classical && k != calls::Class::TemplateIntrinsic && k != calls::Class::Phi)
+          return false;
+        if (k == calls::Class::Classical && CB->mayWriteToMemory())
+          return false;
+      }
+      if (!isQ(&I))
+        continue;
+      SmallVector<const Instruction *, 8> work;
+      SmallPtrSet<const Instruction *, 16> seen;
+      for (const User *u : I.users())
+        if (auto *ui = dyn_cast<Instruction>(u); ui && !sl.contains(ui))
+          work.push_back(ui);
+      while (!work.empty()) {
+        const Instruction *x = work.pop_back_val();
+        if (!seen.insert(x).second)
+          continue;
+        any = true;
+        if (!L.contains(x) || (x->getParent() == L.getHeader() && isa<PHINode>(x)) || isa<StoreInst>(x) ||
+            isa<CallBase>(x) || isa<ReturnInst>(x))
+          return false;
+        for (Loop *o : L.getSubLoops())
+          if (o->contains(x))
+            return false;
+        if (x->isTerminator())
+          continue;
+        for (const User *u : x->users())
+          if (auto *ui = dyn_cast<Instruction>(u))
+            work.push_back(ui);
+      }
+    }
+  return any;
+}
+
 bool Unit::twinOf(const CallBase &CB) const {
   const Specialization *S = ctx.T.calleeSpecialization(CB, ctx.S);
   if (!S)
@@ -867,7 +941,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   unsigned seedScope = 0;
   Value *aInit = nullptr;
   if (outermost)
-    seedScope = ctx.unc().openScope();
+    ownSeedScope = seedScope = ctx.unc().openScope();
   // a_{-1} is minted inside the outermost loop's seed scope, so Z tears it down after the reverse (cq-t71u): under
   // a classical guard its definition does not dominate the return and no exit flush could free it. An atom rail
   // flag() returns has no record in the scope and is untouched.
@@ -1387,6 +1461,27 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       BasicBlock *sx = exits::liveExit(*sl);
       if (!sx || !L.contains(sx))
         unimplemented("loops-classical: a sub-loop that leaves its parent loop", sl->getHeader()->getTerminator());
+      if (!c3 && sc == Case::ClassicalBound && anyReal && sl->getExitingBlock() && tripLocal(*sl, L)) {
+        // A trip-local sub-loop (176): its own unit, entered from the segment just opened at its header.
+        BasicBlock *entry = cur;
+        size_t nb = Out.size();
+        auto sub = std::make_shared<Unit>(ctx, *sl);
+        sub->nested = true;
+        sub->resetAt = H;
+        sub->run(sc);
+        unsigned k = 0;
+        for (BasicBlock &ob2 : Out)
+          if (k++ >= nb)
+            subBlocks.insert(&ob2);
+        subBlocks.insert(sub->subBlocks.begin(), sub->subBlocks.end());
+        BasicBlock *bk = ctx.B().GetInsertBlock();
+        ctx.B().CreateBr(ob(sx));
+        edgeFrom[{sl->getExitingBlock(), sx}] = bk;
+        throughSub[bk] = entry;
+        subs.push_back({sub, unsigned(segs.size() - 1)});
+        cur = nullptr;
+        continue;
+      }
       for (auto &[v, op] : lowerLoop(*sl, sc, ob(sx), false))
         ctx.rebind(v, {op});
       continue;
@@ -1472,6 +1567,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           exits.push_back(x);
         continue;
       }
+      if (nested)
+        unimplemented("loops-classical: a trip-local sub-loop whose value read after it is not its own rail (a "
+                      "copy-out per trip)",
+                      cast<Instruction>(v));
       CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
                                  {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
       RailId fid = ctx.unc().recordSeed(f);
@@ -1508,6 +1607,42 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         if (!is_contained(exits, x))
           exits.push_back(x);
       }
+    if (nested) {
+      // Finished by the parent (Unit::flushTrips): the reverse runs in the parent's trip.
+      Instruction *xt = nullptr;
+      for (BasicBlock *p : predecessors(T))
+        xt = p->getTerminator();
+      if (!xt)
+        internalError("loops-classical: the loop's exit block has no predecessor", latch->getTerminator());
+      for (RailId x : exits)
+        U.noteUse(x, xt);
+      BasicBlock *Cont = newBlock();
+      BranchInst::Create(Cont, T);
+      std::weak_ptr<Unit> wself = shared_from_this();
+      finish = [wself, T, Cont, seedScope, scs, exits, ownedH]() {
+        auto self = wself.lock();
+        self->flushTrips();
+        if (exits.empty()) {
+          T->getTerminator()->eraseFromParent();
+          IRBuilder<> B(T);
+          self->reverse(B, T, seedScope, false);
+          B.CreateBr(Cont);
+          return;
+        }
+        std::vector<RailId> reads;
+        for (unsigned sc : scs)
+          for (const Record &r : self->U.scopeRecords(sc))
+            for (const Operand &o : r.ops)
+              if (o.handle && !ownedH.count(o.v))
+                if (RailId x = self->U.idOf(o.v); !is_contained(reads, x))
+                  reads.push_back(x);
+        self->U.recordDeferred(scs, exits,
+                               [self, T, seedScope](IRBuilder<> &B) { self->reverse(B, T, seedScope, true); },
+                               reads, self->hostScopes);
+      };
+      ctx.B().SetInsertPoint(Cont);
+      return {};
+    }
     if (exits.empty()) {
       flushTrips();
       IRBuilder<> B(T);
@@ -1584,25 +1719,68 @@ Value *fromInt(IRBuilder<> &B, Value *x, Type *t) {
 // reached from a gate of another segment only by a path that re-executes the record (a later trip),
 // so only the acyclic trip may count as "between" for Uncompute's barrier check.
 void Unit::flushTrips() {
+  // An edge entering each segment, taken before any item is placed: an item placed inside a segment
+  // (a trip-local sub-loop's reverse, 176) splits its block, the head and the incoming edges moving to a
+  // fresh block (Uncompute::placeDeferred), so the segment's head is found again through this edge.
+  entering.assign(segs.size(), {nullptr, 0});
+  for (unsigned i = 0; i < segs.size(); ++i)
+    for (BasicBlock *p : predecessors(segs[i].bb)) {
+      Instruction *t = p->getTerminator();
+      for (unsigned k = 0; k < t->getNumSuccessors(); ++k)
+        if (t->getSuccessor(k) == segs[i].bb && !entering[i].first)
+          entering[i] = {t, k};
+    }
   BasicBlock *cut = newBlock();
   new UnreachableInst(Mod.getContext(), cut);
-  std::vector<std::tuple<Instruction *, unsigned, BasicBlock *>> backEdges;
-  for (auto &[H, from] : heads)
+  std::vector<std::tuple<Instruction *, unsigned, unsigned>> backEdges;   // (terminator, successor, head index)
+  std::vector<std::pair<Instruction *, unsigned>> headEntry(heads.size(), {nullptr, 0});
+  for (unsigned h = 0; h < heads.size(); ++h) {
+    auto [H, from] = heads[h];
+    Instruction *ft = from->getTerminator();
+    for (unsigned k = 0; ft && k < ft->getNumSuccessors(); ++k)
+      if (ft->getSuccessor(k) == H)
+        headEntry[h] = {ft, k};
     for (BasicBlock *p : predecessors(H)) {
       if (p == from)
         continue;
       Instruction *t = p->getTerminator();
       for (unsigned k = 0; k < t->getNumSuccessors(); ++k)
-        if (t->getSuccessor(k) == H && !is_contained(backEdges, std::make_tuple(t, k, H)))
-          backEdges.push_back({t, k, H});
+        if (t->getSuccessor(k) == H && !is_contained(backEdges, std::make_tuple(t, k, h)))
+          backEdges.push_back({t, k, h});
     }
-  for (auto &[t, k, H] : backEdges)
+  }
+  for (auto &[t, k, h] : backEdges)
     t->setSuccessor(k, cut);
-  for (const Seg &s : segs)
-    U.flushBefore(s.bb->getTerminator());
-  for (auto &[t, k, H] : backEdges)
-    t->setSuccessor(k, H);
+  auto finishSubs = [&](unsigned upTo) {
+    for (Sub &sb : subs)
+      if (sb.entrySeg < upTo && sb.unit->finish) {
+        sb.unit->hostScopes = hostScopes;
+        sb.unit->hostScopes.push_back(ownSeedScope);
+        for (const Seg &sg : segs)
+          sb.unit->hostScopes.push_back(sg.scope);
+        auto f = std::move(sb.unit->finish);
+        sb.unit->finish = nullptr;
+        f();
+      }
+  };
+  for (unsigned i = 0; i < segs.size(); ++i) {
+    U.flushBefore(segs[i].bb->getTerminator());
+    finishSubs(i + 1);
+  }
+  finishSubs(~0u);
+  for (unsigned h = 0; h < heads.size(); ++h)
+    if (headEntry[h].first)
+      heads[h].first = headEntry[h].first->getSuccessor(headEntry[h].second);
+  for (auto &[t, k, h] : backEdges)
+    t->setSuccessor(k, heads[h].first);
   cut->eraseFromParent();
+  // Every trip-local sub-loop's reverse must have been placed in this region's trip (its exit values'
+  // readers are the trip's): otherwise it would run once, after the loop, for the last trip only.
+  for (Sub &sb : subs)
+    if (!sb.unit->reversed)
+      unimplemented("loops-classical: a trip-local sub-loop's reverse could not be placed inside its parent's "
+                    "trip (rule 14 in a rule-14 trip)",
+                    sb.unit->top.getHeader()->getTerminator());
 }
 
 void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guarded) {
@@ -1611,10 +1789,55 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
   FunctionCallee push = abi::declare(M, abi::CoreSpec{abi::Core::Push});
   FunctionCallee pop = abi::declare(M, abi::CoreSpec{abi::Core::Pop});
   IntegerType *i32 = Type::getInt32Ty(C);
+  reversed = true;
   const unsigned n = segs.size();
+  // A segment is the blocks from its head to its block segs[i].bb, which keeps its terminator: one
+  // block, unless an item placed inside it split it (flushTrips' entering edge finds the head).
+  std::vector<BasicBlock *> headOf(n);
+  DenseMap<const BasicBlock *, unsigned> segOf;
+  std::vector<SmallVector<BasicBlock *, 4>> blocksOf(n);
+  for (unsigned i = 0; i < n; ++i)
+    headOf[i] = i < entering.size() && entering[i].first ? entering[i].first->getSuccessor(entering[i].second)
+                                                         : segs[i].bb;
+  DenseSet<const BasicBlock *> stops;
+  for (unsigned i = 0; i < n; ++i) {
+    stops.insert(headOf[i]);
+    stops.insert(segs[i].bb);
+  }
+  for (unsigned i = 0; i < n; ++i) {
+    SmallVector<BasicBlock *, 8> work{headOf[i]};
+    while (!work.empty()) {
+      BasicBlock *b = work.pop_back_val();
+      if (segOf.count(b))
+        continue;
+      segOf[b] = i;
+      blocksOf[i].push_back(b);
+      if (b == segs[i].bb)
+        continue;
+      for (BasicBlock *x : successors(b))
+        if (!stops.count(x) && !subBlocks.count(x))
+          work.push_back(x);
+        else if (x == segs[i].bb)
+          work.push_back(x);
+    }
+    if (!segOf.count(segs[i].bb) || segOf.lookup(segs[i].bb) != i)
+      internalError("loops-classical: a segment's head does not reach its block", segs[i].bb->getTerminator());
+  }
   DenseSet<const BasicBlock *> region;
-  for (const Seg &s : segs)
-    region.insert(s.bb);
+  for (auto &kv : segOf)
+    region.insert(kv.first);
+  // The forward predecessor of a segment: a sub-unit's continuation stands for the segment entering it.
+  auto mapPred = [&](BasicBlock *p) -> BasicBlock * {
+    if (auto it = throughSub.find(p); it != throughSub.end())
+      return it->second;
+    return p;
+  };
+  auto predsOf = [&](unsigned i) {
+    SmallVector<BasicBlock *, 4> ps;
+    for (BasicBlock *p : predecessors(headOf[i]))
+      ps.push_back(p);
+    return ps;
+  };
 
   // Forward dominance over the region (the entry E outside it is the root).
   std::vector<BitVector> dom(n, BitVector(n, true));
@@ -1625,10 +1848,11 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
       for (unsigned i = 0; i < n; ++i) {
         BitVector d(n, true);
         bool anyPred = false;
-        for (BasicBlock *p : predecessors(segs[i].bb)) {
+        for (BasicBlock *p0 : predsOf(i)) {
+          BasicBlock *p = mapPred(p0);
           anyPred = true;
           if (region.count(p))
-            d &= dom[segIdx.lookup(p)];
+            d &= dom[segOf.lookup(p)];
           else
             d.reset();
         }
@@ -1654,8 +1878,9 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
     for (const Seg &s : segs)
       for (const Record &r : U.scopeRecords(s.scope))
         fresh.insert(r.forward);
-    for (const Seg &s : segs)
-      for (Instruction &I : *s.bb) {
+    for (unsigned si = 0; si < n; ++si)
+      for (BasicBlock *sbb : blocksOf[si])
+      for (Instruction &I : *sbb) {
         auto *call = dyn_cast<CallInst>(&I);
         Function *callee = call ? call->getCalledFunction() : nullptr;
         if (!callee || crossGate)
@@ -1671,12 +1896,28 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
   auto checkDeferred = [&](BasicBlock *bb, BasicBlock::iterator from) {
     if (!crossGate)
       return;
-    for (auto it = from; it != bb->end(); ++it)
+    for (auto it = from; it != bb->end(); ++it) {
+      // The release of a seed never written (rule 7: an edge seed of the trip, 176) reads no other rail
+      // and its own is never a gate's target: no later trip's gate can change what it undoes.
+      if (auto *fr = dyn_cast<CallInst>(&*it); fr && fr->getCalledFunction() && fr->arg_size() == 1) {
+        std::optional<abi::CoreSpec> cs = abi::parseCore(fr->getCalledFunction()->getName());
+        auto *src = dyn_cast<CallInst>(fr->getArgOperand(0));
+        std::optional<abi::CoreSpec> as =
+            src && src->getCalledFunction() ? abi::parseCore(src->getCalledFunction()->getName()) : std::nullopt;
+        if (cs && cs->op == abi::Core::Free && as && as->op == abi::Core::Alloc &&
+            all_of(src->users(), [&](const User *u) {
+              return u == fr || isa<PHINode>(u) || isa<SelectInst>(u) ||
+                     (isa<CallInst>(u) && cast<CallInst>(u)->getCalledFunction() &&
+                      cast<CallInst>(u)->getCalledFunction()->getName() == "cqrt_push");
+            }))
+          continue;
+      }
       if (isa<CallInst>(*it))
         unimplemented("loops-classical: a non-diagonal gate in a classically bounded loop on a rail that is not "
                       "made in its own trip, while the reverse loop still undoes a record (rule 5's invariant "
                       "across trips: a later trip's gate may touch a rail an earlier trip's record read)",
                       crossGate);
+    }
   };
 
   // Rule 5's invariant within the deferral (cq-vqid): an item the reverse loop undoes reads the rails
@@ -1691,8 +1932,9 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
     Value *target;
   };
   std::vector<Gate> gates;
-  for (const Seg &s : segs)
-    for (Instruction &I : *s.bb)
+  for (unsigned si = 0; si < n; ++si)
+    for (BasicBlock *sbb : blocksOf[si])
+    for (Instruction &I : *sbb)
       if (auto *call = dyn_cast<CallInst>(&I))
         if (Function *callee = call->getCalledFunction())
           if (std::optional<abi::CoreSpec> cs = abi::parseCore(callee->getName());
@@ -1738,7 +1980,7 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
       work.push_back(b);
     while (!work.empty()) {
       const BasicBlock *b = work.pop_back_val();
-      if (!region.count(b) || !seen.insert(b).second)
+      if (!(region.count(b) || subBlocks.count(b)) || !seen.insert(b).second)
         continue;
       if (b == db) {
         if (G->getParent() == b && G->comesBefore(d))
@@ -1820,7 +2062,7 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
     for (Instruction *I : mirror)
       for (Use &u : I->operands())
         if (auto *d = dyn_cast<Instruction>(u.get()); d && region.count(d->getParent()) && !is_contained(needs, d)) {
-          if (!dom[i].test(segIdx.lookup(d->getParent())))
+          if (!dom[i].test(segOf.lookup(d->getParent())))
             internalError("loops-classical: a mirror item reads a value defined in a segment that does not dominate "
                           "its own",
                           d);
@@ -1868,19 +2110,20 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
     }
     // Where the reverse goes next: the reverse of the forward predecessor.
     SmallVector<BasicBlock *, 4> uniq;
-    for (BasicBlock *p : predecessors(segs[i].bb))
-      if (!is_contained(uniq, p))
-        uniq.push_back(p);
-    auto back = [&](BasicBlock *p) { return region.count(p) ? R[segIdx.lookup(p)] : Z; };
+    for (BasicBlock *p : predsOf(i))
+      if (!is_contained(uniq, mapPred(p)))
+        uniq.push_back(mapPred(p));
+    auto back = [&](BasicBlock *p) { return region.count(p) ? R[segOf.lookup(p)] : Z; };
     if (uniq.size() == 1) {
       B.CreateBr(back(uniq[0]));
       continue;
     }
-    PHINode *cf = PHINode::Create(i32, pred_size(segs[i].bb), "from");
-    cf->insertInto(segs[i].bb, segs[i].bb->begin());
-    for (BasicBlock *p : predecessors(segs[i].bb))
-      cf->addIncoming(ConstantInt::get(i32, find(uniq, p) - uniq.begin()), p);
-    IRBuilder<>(segs[i].bb, segs[i].bb->getFirstInsertionPt()).CreateCall(push, {cf});
+    BasicBlock *hd = headOf[i];
+    PHINode *cf = PHINode::Create(i32, pred_size(hd), "from");
+    cf->insertInto(hd, hd->begin());
+    for (BasicBlock *p : predecessors(hd))
+      cf->addIncoming(ConstantInt::get(i32, find(uniq, mapPred(p)) - uniq.begin()), p);
+    IRBuilder<>(hd, hd->getFirstInsertionPt()).CreateCall(push, {cf});
     CallInst *k = B.CreateCall(pop);
     if (!anchor && any_of(uniq, [&](BasicBlock *p) { return !region.count(p); }))
       anchor = k;
@@ -1900,13 +2143,15 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
         internalError("loops-classical: the loop's exit block is not reached from exactly one segment");
       exitSeg = p;
     }
-    BasicBlock *start = R[segIdx.lookup(exitSeg)];
+    BasicBlock *start = R[segOf.lookup(exitSeg)];
     Value *ran = ConstantInt::getTrue(C);
     if (guarded) {
       BasicBlock *at = BX.GetInsertBlock();
       SSAUpdater up;
       up.Initialize(Type::getInt1Ty(C), "ran");
       up.AddAvailableValue(&Out.getEntryBlock(), ConstantInt::getFalse(C));
+      if (resetAt)
+        up.AddAvailableValue(resetAt, ConstantInt::getFalse(C));   // a trip-local sub-loop: per parent trip
       up.AddAvailableValue(X, ConstantInt::getTrue(C));
       ran = up.GetValueAtEndOfBlock(at);
     }
