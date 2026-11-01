@@ -34,3 +34,6 @@ cq_add_unit_test(taint_cellswritten taint_cellswritten.cpp)
 cq_add_unit_test(taint_ptrinduction taint_ptrinduction.cpp)
 # cq-tzqz (108): llvm.threadlocal.address(@g) names @g's object (objectOf), one thread (rule 24).
 cq_add_unit_test(taint_threadlocal taint_threadlocal.cpp)
+# cq-prvy (95, 109): va_start's save area holds the variadic actuals' handles; va_copy copies the
+# va_list's area pointers; the va_arg reads are quantum (CR §1.4, rules 3, 20).
+cq_add_unit_test(taint_varargs taint_varargs.cpp)

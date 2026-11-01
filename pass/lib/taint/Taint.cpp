@@ -224,6 +224,9 @@ private:
   void fenvRecord(const Instruction &I, uint8_t before) { cur->fenvAt[&I] = {before, fenvCur}; }
   void transferFenvCall(CallBase &CB, StringRef cname, ArrayRef<Value *> actuals, unsigned rn);
   void fenvAfterCall(CallBase &CB);
+  // CR §1.4, rules 3, 20 (95, 109; cq-prvy): the variadic actuals' save area and va_list copies.
+  void transferVaStart(CallBase &CB);
+  void transferVaCopy(CallBase &CB);
 
   // Sites and objects.
   unsigned siteFor(const Value *V, SiteKind k, const Function *owner);
@@ -1807,6 +1810,105 @@ void Analyzer::transferMemIntrinsic(MemIntrinsic &MI) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Variadic functions (CR §1.4, rules 3 and 20; 95, 109; cq-prvy).
+//
+// A variadic clone is specialised per call-site arity, so cur's formals past F's fixed parameters are
+// the variadic actuals. llvm.va_start(ap) is the target ABI's spill of them (x86-64 SysV: va_list is
+// { i32 gp_offset, i32 fp_offset, ptr overflow_arg_area, ptr reg_save_area }): one object of this
+// frame, named by the va_start call, that both area pointers point into. -O1's own va_arg code reads
+// the actuals back through those pointers at classical run-time offsets, so the object is uniform: when
+// any variadic actual is quantum every cell holds a handle (the classical actuals are promoted to
+// rails, 95's reference), and its pointer actuals are the pointers it may hold.
+static constexpr int64_t kVaOverflowOff = 8, kVaRegSaveOff = 16, kVaListSize = 24;
+
+void Analyzer::transferVaStart(CallBase &CB) {
+  const Triple TT(st.M->getTargetTriple());
+  if (TT.getArch() != Triple::x86_64)
+    unimplemented("taint: llvm.va_start on a target other than x86-64 SysV", &CB);
+  unsigned area = siteFor(&CB, SiteKind::Alloca, cur->F);
+  bool anyQ = false, anyPtr = false;
+  PtrInfo held;
+  Lanes heldLanes(2);
+  for (unsigned i = cur->F->arg_size(); i < cur->formal.size(); ++i) {
+    if (cur->formal[i].any())
+      anyQ = true;
+    if (i < cur->formalTy.size() && cur->formalTy[i] && cur->formalTy[i]->isPointerTy()) {
+      anyPtr = true;
+      if (i < cur->formalPtr.size())
+        held.join(cur->formalPtr[i]);
+      if (cur->formal[i].size() >= 2) {
+        if (cur->formal[i].test(0))
+          heldLanes.set(0);
+        if (cur->formal[i].test(1))
+          heldLanes.set(1);
+      }
+    }
+  }
+  PtrInfo cells;
+  cells.init = true;
+  cells.top = true;
+  cells.sites.push_back(area);
+  if (anyQ) {
+    recordWrite(CB, cells, 0, true, nullptr, nullptr, nullptr);
+    cur->anyQuantum = true;
+  }
+  PointerType *PT = PointerType::get(CB.getContext(), 0);
+  if (anyPtr && held.init)
+    recordWrite(CB, cells, 8, false, PT, &held, &heldLanes);
+  // ap's two area pointers point into the area (classical: the offsets are the ABI's).
+  PtrInfo ap = P(CB.getArgOperand(0));
+  Lanes classical(2);
+  for (int64_t off : {kVaOverflowOff, kVaRegSaveOff}) {
+    PtrInfo at = ap;
+    if (auto e = ap.exact())
+      at.c = *e + off;
+    else
+      at.top = true;
+    recordWrite(CB, at, 8, false, PT, &cells, &classical);
+  }
+}
+
+void Analyzer::transferVaCopy(CallBase &CB) {
+  // va_copy(dst, src): src's va_list cells into dst's, pointer cell by pointer cell.
+  PtrInfo dst = P(CB.getArgOperand(0)), src = P(CB.getArgOperand(1));
+  PointerType *PT = PointerType::get(CB.getContext(), 0);
+  for (int64_t off = 0; off < kVaListSize; off += 8) {
+    PtrInfo s = src, d = dst;
+    if (auto e = src.exact())
+      s.c = *e + off;
+    else
+      s.top = true;
+    if (auto e = dst.exact())
+      d.c = *e + off;
+    else
+      d.top = true;
+    PtrInfo moved;
+    bool any = false, tagQ = false, idxQ = false;
+    for (ObjectId oid : objectsOf(s)) {
+      Object &O = st.objects[oid];
+      if (O.mayHoldHandle())
+        unimplemented("taint: va_copy of a va_list that holds a handle", &CB);
+      if (!(O.anyPtr || !O.ptrCells.empty()))
+        continue;
+      any = true;
+      moved.join(O.stored);
+      for (auto &[SI, sp] : O.storedBy)
+        moved.join(sp);
+      tagQ = tagQ || O.storedTagQ;
+      idxQ = idxQ || O.storedIdxQ;
+    }
+    if (!any)
+      continue;
+    Lanes pl(2);
+    if (tagQ)
+      pl.set(0);
+    if (idxQ)
+      pl.set(1);
+    recordWrite(CB, d, 8, false, PT, &moved, &pl);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Calls.
 
 std::optional<uint64_t> Analyzer::rangeBound(const Value *V) {
@@ -2489,9 +2591,7 @@ void Analyzer::transferCall(CallBase &CB) {
     case Intrinsic::experimental_noalias_scope_decl:
     case Intrinsic::invariant_start:
     case Intrinsic::invariant_end:
-    case Intrinsic::vastart:
     case Intrinsic::vaend:
-    case Intrinsic::vacopy:
     case Intrinsic::stackrestore:
     case Intrinsic::donothing:
     case Intrinsic::trap:
@@ -2499,6 +2599,12 @@ void Analyzer::transferCall(CallBase &CB) {
     case Intrinsic::ubsantrap:
       if (id == Intrinsic::trap || id == Intrinsic::ubsantrap)
         cur->hasEffect = true;
+      return;
+    case Intrinsic::vastart:
+      transferVaStart(CB);
+      return;
+    case Intrinsic::vacopy:
+      transferVaCopy(CB);
       return;
     case Intrinsic::stacksave: {
       PtrInfo q;
