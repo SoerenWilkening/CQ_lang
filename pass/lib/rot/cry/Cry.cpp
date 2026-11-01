@@ -13,6 +13,9 @@
 //
 //  - In place. cq_theta of a rail x (66, 113's CRy on q2): ry_<W>_controlled(flag, x, θ). Rule 2's
 //    "on an existing handle it rotates that rail in place" under the flag. Nothing to reset.
+//    A quantum angle (rule 15, cq-t3rd: rot-qangle delegates here) is the same case with
+//    ry_<W>_qangle_controlled(flag, x, A): the register bookkeeping (locked, dirty) is the classical
+//    angle's, so a later prep of the rotated register stops loudly.
 //  - Prep of a classical value v. The register is found through the merge phis the theta reaches
 //    (directly, or through a phi already bound to a register: 133 prep_twice's second if). A new
 //    register is allocated at the prep with its STRAIGHT-THROUGH value s: the phi's classical
@@ -501,9 +504,10 @@ Alias mayAlias(LoweringContext &ctx, const CallInst &T, const DominatorTree &dt,
 }
 
 // ry_<W>_controlled(flag, rail, θ): a non-diagonal gate on the rail (A4), which is frozen (rule 10).
+// qangle (cq-t3rd, rule 15): θ is an f64 angle rail, ry_<W>_qangle_controlled(flag, rail, A).
 void controlledRy(LoweringContext &ctx, Value *flag, Value *rail, RailType w, Value *angle, const CallInst &T,
-                  const DominatorTree &dt) {
-  abi::CoreSpec spec{abi::Core::Ry, w, /*ctl=*/true};
+                  const DominatorTree &dt, bool qangle = false) {
+  abi::CoreSpec spec{qangle ? abi::Core::RyQAngle : abi::Core::Ry, w, /*ctl=*/true};
   RailId id = ctx.unc().idOf(rail);
   if (flag == rail) {
     // CR §1.3: an in-place target is never one of its own controls. The flag is read into a fresh
@@ -683,8 +687,6 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
     internalError("rot-cry: cq_theta with other than two arguments", &T);
   const Value *v = T.getArgOperand(0);
   Operand angle = ctx.operand(T.getArgOperand(1));
-  if (angle.handle)
-    internalError("rot-cry: a quantum angle (rules 11, 15: rot::lowerQuantumAngleTheta)", &T);
   RailType w = railTypeOf(v->getType());
   const Function &F = *T.getFunction();
   FnState &st = state(ctx, F);
@@ -696,9 +698,16 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
   Pred q = ctx.currentPredicate();
 
   Operand x = ctx.operand(v);
+  // cq-t3rd: a quantum angle (rule 15, from rot::lowerQuantumAngleTheta) is built on the in-place
+  // case only, with the classical angle's register bookkeeping and ry_<W>_qangle_controlled.
+  if (angle.handle && !x.handle)
+    internalError("rot-cry: a prep of a classical value with a quantum angle reached rot-cry (rot-qangle refuses it)",
+                  &T);
   if (x.handle) {
     // In place (rule 2 under the flag): the register is the operand's rail.
     Value *rail = ctx.rail(v);
+    if (angle.handle && angle.v == rail)
+      unimplemented("rot-qangle: cq_theta of a rail by its own value as the angle (target among the controls)", &T);
     Register *R = nullptr;
     if (auto it = st.of.find(v); it != st.of.end() && it->second->rail == rail)
       R = it->second;
@@ -721,7 +730,7 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
       d = d | p.eff;
     R->dirty = d;
     R->active.clear();
-    controlledRy(ctx, flag, rail, w, angle.v, T, *st.dt);
+    controlledRy(ctx, flag, rail, w, angle.v, T, *st.dt, angle.handle);
     R->uses = rail->getNumUses();
     st.of[&T] = R;
     for (const User *U : T.users())

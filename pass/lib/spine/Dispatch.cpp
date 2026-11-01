@@ -302,6 +302,10 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
     bool uncontrolled = ctx.currentPredicate().isTop() && !shared(ctx).tripFlag;
     std::optional<PendingCopy> pre = beginPreRotation(ctx, *CI, uncontrolled);
     if (isQ(ctx, CI->getArgOperand(1))) {
+      // cq-t3rd: under a flag it is rule 10's in-place rotation (rot-cry), a register state as the
+      // classical angle's.
+      if (ctx.currentFlag())
+        shared(ctx).statePreps.insert(CI);
       rot::lowerQuantumAngleTheta(ctx, *CI, ctx.currentFlag());          // rules 11, 15
     } else if (Value *flag = ctx.currentFlag()) {
       shared(ctx).statePreps.insert(CI);                                  // a merge of it: cq-gtcn

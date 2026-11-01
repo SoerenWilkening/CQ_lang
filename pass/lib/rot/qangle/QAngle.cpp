@@ -21,9 +21,13 @@
 //  - No quantum predicate in scope: ry_<W>_qangle(h, A). The rail is rotated: a user register (38),
 //    and the rotation is a non-diagonal gate on it (A4: garbage that read it before stays allocated).
 //  - Under a quantum predicate (flag c): ry_<W>_qangle_controlled(c, h, A) in place on a rail, which is
-//    frozen (rule 10's in-place case with a quantum angle). An in-place target is never one of its own
-//    controls (CR §1.3): a flag that IS the target is first read into a fresh i1 rail, which stays
-//    allocated by A4 (as rule 10 does). A prep of a CLASSICAL value under a quantum predicate is rule
+//    frozen: rule 10's in-place case with a quantum angle, lowered by rot-cry's lowerControlledTheta
+//    (cq-t3rd) so the register bookkeeping is the classical angle's: a register the rail holds is
+//    locked and dirty where the rotation runs, and a later prep of it stops loudly instead of writing
+//    xorc/Ry onto the rotated state. An in-place target is never one of its own controls (CR §1.3,
+//    rot-cry's controlledRy: a flag that IS the target is read into a fresh i1 rail, kept by A4; two
+//    slot-cell loads that may be one cell are tested, cq-x80e). A prep of a CLASSICAL value under a
+//    quantum predicate is rule
 //    10's register (the merge phi names one rail with the straight-through value; a second prep undoes
 //    the first): with a quantum angle that is not built yet and is an internal error here.
 //  - The target being the angle rail itself (cq_theta_f64(x, x)) is not built yet.
@@ -58,21 +62,6 @@ Value *angleRail(LoweringContext &ctx, CallInst &call, const Value *angle) {
   return a.v;
 }
 
-// CR §1.3: an in-place target is never one of its own controls. A flag that is the target rail is
-// read into a fresh i1 rail (alloc 0, xor_i1); that copy read the register before its rotation, so
-// it stays allocated (A4), as rule 10 keeps it.
-Value *flagApartFrom(LoweringContext &ctx, Value *flag, Value *target) {
-  if (flag != target)
-    return flag;
-  RailType i1{Kind::Int, 1};
-  CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(ctx.M.getContext())});
-  ctx.unc().recordSeed(f);
-  abi::CoreSpec x{abi::Core::XorI1, i1};
-  CallInst *c = ctx.emitCore(x, {flag, f});
-  ctx.unc().recordCore(c, x, {Operand{flag, true}, Operand{f, true}}, ctx.unc().idOf(f));
-  return f;
-}
-
 } // namespace
 
 void lowerQuantumAngleTheta(LoweringContext &ctx, CallInst &call, Value *flag) {
@@ -82,6 +71,8 @@ void lowerQuantumAngleTheta(LoweringContext &ctx, CallInst &call, Value *flag) {
   Value *A = angleRail(ctx, call, call.getArgOperand(1));
   RailType w = railTypeOf(v->getType());
   Operand x = ctx.operand(v);
+  if (flag && x.handle)
+    return lowerControlledTheta(ctx, call, flag);   // rule 10 in place, quantum angle (cq-t3rd)
   Value *h;
   if (x.handle) {
     h = x.v;   // rule 2: a rotation of an existing rail is in place
@@ -97,16 +88,10 @@ void lowerQuantumAngleTheta(LoweringContext &ctx, CallInst &call, Value *flag) {
     ctx.unc().recordSeed(alloc);
     h = alloc;
   }
-  CallInst *ry;
-  if (flag) {
-    flag = flagApartFrom(ctx, flag, h);
-    ry = ctx.emitCore(abi::CoreSpec{abi::Core::RyQAngle, w, /*ctl=*/true}, {flag, h, A});
-  } else {
-    ry = ctx.emitCore(abi::CoreSpec{abi::Core::RyQAngle, w}, {h, A});
-  }
+  CallInst *ry = ctx.emitCore(abi::CoreSpec{abi::Core::RyQAngle, w}, {h, A});
   RailId id = ctx.unc().idOf(h);
   ctx.unc().noteNonDiagonal(id, ry);
-  ctx.unc().setRole(id, flag ? Role::Frozen : Role::UserRegister);
+  ctx.unc().setRole(id, Role::UserRegister);
   ctx.bind(&call, h);
 }
 
