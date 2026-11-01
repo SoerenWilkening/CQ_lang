@@ -1099,8 +1099,9 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
   }
 
   // Classical values: pops at the head of R(F) and RE(e), pushes at the end of S(F) and on E(e).
-  FunctionCallee push = abi::declare(M, abi::CoreSpec{abi::Core::Push});
-  FunctionCallee pop = abi::declare(M, abi::CoreSpec{abi::Core::Pop});
+  // Declared on first use: a region with no classical control flow uses no stack.
+  auto push = [&]() { return abi::declare(M, abi::CoreSpec{abi::Core::Push}); };
+  auto pop = [&]() { return abi::declare(M, abi::CoreSpec{abi::Core::Pop}); };
   auto popList = [&](BasicBlock *X) {
     SetVector<Value *> vs;
     for (CallInst *c : placed[X])
@@ -1125,7 +1126,7 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
   for (unsigned s = 0; s < nS; ++s) {
     XB.SetInsertPoint(S[s]);
     for (Value *v : PS[s])
-      pushValue(XB, push, v, cast<Instruction>(v));
+      pushValue(XB, push(), v, cast<Instruction>(v));
     if (s == R.SE) {
       XB.CreateBr(REexit);
       continue;
@@ -1157,10 +1158,10 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
     const Edge &E = R.edges[e];
     XB.SetInsertPoint(Eb[e]);
     for (Value *v : PE[e])
-      pushValue(XB, push, v, cast<Instruction>(v));
+      pushValue(XB, push(), v, cast<Instruction>(v));
     const auto &preds = R.segs[E.to].pred;
     if (preds.size() > 1)
-      XB.CreateCall(push, {XB.getInt32(std::find(preds.begin(), preds.end(), e) - preds.begin())});
+      XB.CreateCall(push(), {XB.getInt32(std::find(preds.begin(), preds.end(), e) - preds.begin())});
     XB.CreateBr(S[E.to]);
   }
   // Classical phis of segment heads: one incoming per edge block.
@@ -1190,7 +1191,7 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
     XB.SetInsertPoint(X);
     DenseMap<Value *, Value *> popped;
     for (unsigned i = pops.size(); i-- > 0;)
-      popped[pops[i]] = popValue(XB, pop, pops[i]->getType(), cast<Instruction>(pops[i]));
+      popped[pops[i]] = popValue(XB, pop(), pops[i]->getType(), cast<Instruction>(pops[i]));
     for (CallInst *c : placed[X]) {
       if (c->getParent())
         c->removeFromParent();
@@ -1221,7 +1222,7 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
     } else if (preds.size() == 1) {
       XB.CreateBr(REb[preds[0]]);
     } else {
-      SwitchInst *sw = XB.CreateSwitch(XB.CreateCall(pop), REb[preds.back()], preds.size() - 1);
+      SwitchInst *sw = XB.CreateSwitch(XB.CreateCall(pop()), REb[preds.back()], preds.size() - 1);
       for (unsigned k = 0; k + 1 < preds.size(); ++k)
         sw->addCase(XB.getInt32(k), REb[preds[k]]);
     }
