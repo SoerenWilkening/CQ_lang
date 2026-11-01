@@ -27,6 +27,7 @@
 #include "SpineInternal.h"
 #include "../loops/cutoff/Exits.h"
 #include "../fatptr/FatPtrInternal.h"
+#include "../eff/conc/Setjmp.h"
 
 #include "cq/Aggregates.h"
 #include "cq/Effects.h"
@@ -161,6 +162,11 @@ private:
   // phi identified with a carried value's final state). The walker does not merge them again.
   DenseSet<const PHINode *> unitBoundPhis;
   std::vector<const Instruction *> blockDefs;           // original quantum defs in the current output block
+  // CR rule 24 (101): setjmp diamonds on a quantum test (conc::setjmpDiamond), by head; their normal arms
+  // and joins, to the head.
+  DenseMap<const BasicBlock *, conc::SetjmpDiamond> sjByHead;
+  DenseMap<const BasicBlock *, const BasicBlock *> sjArmHead, sjJoinHead;
+  void lowerSetjmpJoin(PHINode &phi, const conc::SetjmpDiamond &d);
   SmallVector<const BasicBlock *, 4> openRegions;       // ipdoms of quantum terminators not yet reached
   std::unique_ptr<TargetLibraryInfoImpl> tlii;
   std::unique_ptr<TargetLibraryInfo> tli;
@@ -296,6 +302,15 @@ void Walker::plan() {
       L.push_back(*it);
     }
   }
+  // CR rule 24 (101): a setjmp diamond. Its test is quantum (taint: a longjmp under a quantum predicate
+  // makes the setjmp's result quantum); nothing of the test is emitted (emitBody, lowerSetjmpJoin).
+  for (BasicBlock *b : L)
+    if (isQuantumTerm(ctx, b->getTerminator()))
+      if (std::optional<conc::SetjmpDiamond> d = conc::setjmpDiamond(ctx, *b)) {
+        sjByHead.insert({b, *d});
+        sjArmHead[d->normal] = b;
+        sjJoinHead[d->join] = b;
+      }
   for (Loop *lp : LI.getTopLevelLoops()) {
     if (pureClassical(*lp)) {
       for (Loop *sub : lp->getLoopsInPreorder())
@@ -951,6 +966,41 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
     ctx.unc().flushAtExit(nr);
     return;
   }
+  if (conc::cloneEscapes(ctx.T, ctx.S)) {
+    // CR rule 24 (101): the result (copied out as below) then the escaped flag lowerLongjmp copied out
+    // (calls::materialize: {result, escaped}, or escaped alone for a void clone).
+    Value *esc = conc::cloneEscapedFlag(ctx);
+    if (!esc)
+      unimplemented("spine: an escaping clone's return reached before its longjmp in the walk (rule 24)", ret);
+    Value *v = esc;
+    if (Value *rv = ret->getReturnValue()) {
+      Type *rty = rv->getType();
+      if (rty->isAggregateType() || rty->isVectorTy() || rty->isPointerTy() || copiedOut.count(rv))
+        unimplemented("spine: an escaping clone (rule 24) with a composite or pointer result or a return phi", ret);
+      Operand op = ctx.operand(rv);
+      Value *res = op.v;
+      if (op.handle) {
+        RailType w = railTypeOf(rty);
+        CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                                   {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+        RailId fid = ctx.unc().recordSeed(f);
+        abi::CoreSpec cp{abi::Core::Copy, w};
+        CallInst *c = ctx.emitCore(cp, {op.v, f});
+        ctx.unc().recordCore(c, cp, {op, Operand{f, true}}, fid);
+        ctx.unc().setRole(fid, Role::Result);
+        res = f;
+      }
+      auto *st = dyn_cast<StructType>(C->getReturnType());
+      if (!st || st->getNumElements() != 2 || st->getElementType(0) != res->getType())
+        internalError("spine: an escaping clone whose return type is not {result, escaped}", ret);
+      v = B.CreateInsertValue(B.CreateInsertValue(PoisonValue::get(st), res, {0u}), esc, {1u});
+    }
+    if (v->getType() != C->getReturnType())
+      internalError("spine: an escaping clone's return value is not of its return type", ret);
+    ReturnInst *nr = B.CreateRet(v);
+    ctx.unc().flushAtExit(nr);
+    return;
+  }
   // M2/M2b (191): the clone's stores through triple formals onto a QRAM object are emitted after the
   // body's uncompute and their copied-out rails returned after the result (calls::cloneResultType).
   unsigned stores = 0;
@@ -1308,6 +1358,10 @@ void Walker::emitBlock(BasicBlock *b) {
   while (!openRegions.empty() && openRegions.back() == b)
     openRegions.pop_back();
   sh.curPred = ctx.preds().block(b).quantumPart(ctx.T, ctx.S);
+  // Rule 24 (101): a setjmp's first-return arm always runs (an escape happens inside its call): the
+  // head's predicate, not the test's.
+  if (auto a = sjArmHead.find(b); a != sjArmHead.end())
+    sh.curPred = ctx.preds().block(a->second).quantumPart(ctx.T, ctx.S);
 
   if (unitOf.count(b)) {
     // The header's guard comes first: the unit runs only under it (cq-uevr).
@@ -1387,6 +1441,11 @@ void Walker::emitBlock(BasicBlock *b) {
   for (PHINode &phi : b->phis()) {
     sh.cur = &phi;
     visited.insert(&phi);
+    if (auto j = sjJoinHead.find(b); j != sjJoinHead.end()) {
+      lowerSetjmpJoin(phi, sjByHead.find(j->second)->second);
+      blockDefs.push_back(&phi);
+      continue;
+    }
     if (unitBoundPhis.count(&phi)) {
       if (auto ie = inEdges.find(b); ie != inEdges.end() && ie->second.size() > 1)
         joinUnitPhi(phi, ie->second);
@@ -1488,6 +1547,8 @@ void Walker::emitBody(BasicBlock *b, const Instruction *resume) {
     Instruction &I = *it;
     sh.cur = &I;
     visited.insert(&I);
+    if (auto d = sjByHead.find(b); d != sjByHead.end() && (&I == d->second.setjmp || &I == d->second.cmp))
+      continue;   // rule 24 (101): the host setjmp is not executed; its test is the escaped flag
     if (auto *CB = dyn_cast<CallInst>(&I);
         CB && calls::classify(*CB, ctx.T, ctx.S) == calls::Class::InvertBegin) {
       // Rule 17: eff-invert owns the bracketed region, up to and including its end marker.
@@ -1540,6 +1601,25 @@ void Walker::emitBody(BasicBlock *b, const Instruction *resume) {
     }
   }
   emitTerminator(b);
+}
+
+// CR rule 24 (101): a phi of a setjmp diamond's join is select(escaped, value on setjmp's second return,
+// value from the first-return arm), escaped the flag the arm's escaping call returned.
+void Walker::lowerSetjmpJoin(PHINode &phi, const conc::SetjmpDiamond &d) {
+  Value *esc = conc::escapedOut(ctx, *d.call);
+  if (!esc)
+    internalError("spine: a setjmp join reached before its escaping call was lowered", &phi);
+  if (!spine::isQ(ctx, &phi))
+    unimplemented("spine: a classical phi at a setjmp join (rule 24)", &phi);
+  Operand e = ctx.operand(phi.getIncomingValueForBlock(d.head));
+  Operand n = ctx.operand(phi.getIncomingValueForBlock(d.normal));
+  abi::TemplateSpec spec;
+  spec.op = "select";
+  spec.w = railTypeOf(phi.getType());
+  std::string shape = std::string(e.handle ? "h" : "l") + (n.handle ? "h" : "l");
+  spec.shape = shape == "hh" ? "" : shape;
+  Value *m = ctx.emitTemplate(spec, {Operand{esc, true}, e, n});
+  spine::bindOperand(ctx, &phi, Operand{m, true});
 }
 
 void Walker::run() {

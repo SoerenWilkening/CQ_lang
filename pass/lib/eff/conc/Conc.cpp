@@ -33,9 +33,7 @@
 // lowerThreadCall (rule 24, 106): pthread_create(t, attr, f, p) is the direct call f(p) (a quantum job:
 // calls::lowerLiftedVia with argMap {3}; a classical one: the original), status 0; pthread_join with a null
 // result pointer and the mutex locks are no-ops, status 0.
-// lowerSetjmp, lowerLongjmp: unimplemented. The setjmp diamond with an escaped flag
-// (101) needs the taint/pred DeadEnd fix (cq-jwdf: `call @longjmp; unreachable` is taken as a dead end,
-// so code after `if (q) longjmp(...)` would get the top predicate and a wrong circuit).
+// lowerSetjmp, lowerLongjmp: Setjmp.cpp (101's escaped-flag construction, contract at its top).
 #include "cq/Calls.h"
 #include "cq/Effects.h"
 #include "cq/Memory.h"
@@ -289,18 +287,6 @@ void lowerThreadCall(LoweringContext &ctx, CallBase &CB) {
   if (n == "pthread_mutex_lock" || n == "pthread_mutex_unlock" || n == "pthread_mutex_trylock")
     return bindZero();   // rule 24: one thread, no contention: no-ops
   unimplemented("eff-conc: a thread call other than pthread_create, pthread_join or a mutex lock (rule 24)", &CB);
-}
-
-void lowerSetjmp(LoweringContext &, CallBase &CB) {
-  unimplemented("eff-conc: setjmp in a lowered function (rule 24, 101: the escaped-flag diamond; blocked "
-                "on cq-jwdf, longjmp is not a dead end)",
-                &CB);
-}
-
-void lowerLongjmp(LoweringContext &, CallBase &CB) {
-  unimplemented("eff-conc: longjmp under a quantum predicate (rule 24, 101: an escaped-flag result; blocked "
-                "on cq-jwdf, longjmp is not a dead end)",
-                &CB);
 }
 
 } // namespace cq::conc

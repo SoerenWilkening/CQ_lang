@@ -182,6 +182,10 @@ struct Shared {
   // hoistedDefs into the current block's definitions after the dispatch that hoisted them.
   llvm::DenseSet<const llvm::Instruction *> hoisted;
   std::vector<const llvm::Instruction *> hoistedDefs;
+  // CR rule 24 (101, eff/conc/Setjmp.cpp): in an escaping clone, the escaped rail its longjmp copied out;
+  // in a caller, the escaped rail of each lowered call of an escaping clone (original call -> rail).
+  llvm::Value *cloneEscaped = nullptr;
+  llvm::DenseMap<const llvm::CallBase *, llvm::Value *> escapedOut;
 
   Shared(llvm::Module &M, const loops::KOptions &KO) : M(M), KO(KO), B(M.getContext()) {}
   llvm::DominatorTree &dt(const llvm::Function &F);

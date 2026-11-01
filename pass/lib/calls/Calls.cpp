@@ -62,6 +62,7 @@
 #include "cq/Uncompute.h"
 #include "../spine/SpineInternal.h"
 #include "../fatptr/FatPtrInternal.h"
+#include "../eff/conc/Setjmp.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/ValueTracking.h"
@@ -1184,6 +1185,15 @@ Function *materialize(Module &M, const Specialization &S) {
       rt = StructType::get(C, {rt, handleTy(C)});
     }
   }
+  if (conc::cloneEscapes(T, S)) {
+    // CR rule 24 (101): a clone that escapes by longjmp under a quantum predicate returns its escaped
+    // flag (an i32 handle) as the last field: {result, escaped}, or the handle alone for a void clone.
+    if (fenv::cloneCarriesEnv(T, S) || rl.qramFormal || rl.stores || rl.composite)
+      unimplemented("calls: an escaping clone (rule 24) carrying the floating-point environment, QRAM stores or a "
+                    "composite result",
+                    S.F);
+    rt = rt->isVoidTy() ? static_cast<Type *>(handleTy(C)) : StructType::get(C, {rt, handleTy(C)});
+  }
   FunctionType *FT = FunctionType::get(rt, ps, false);
 
   if (Function *ex = M.getFunction(name)) {
@@ -1257,6 +1267,35 @@ void bindEnvResult(LoweringContext &ctx, CallBase &CB, const CloneCall &r) {
   fenv::afterCloneCall(ctx, CB, flags);
 }
 
+// CR rule 24 (101): the call of a clone that escapes by longjmp, in the first-return arm of its setjmp
+// diamond (conc::setjmpDiamond). Its result is {result, escaped} (escaped alone for a void callee): both
+// handles are the call's outs, undone together by the twin (U2); the walker merges the diamond's join on
+// escaped (conc::escapedOut).
+static void lowerEscapingCall(LoweringContext &ctx, CallBase &CB, const Specialization &S) {
+  if (!conc::isSetjmpArmCall(ctx, CB))
+    unimplemented("calls: a call of a clone that escapes by longjmp outside the first-return arm of its setjmp "
+                  "diamond (rule 24: nested frames, the caller's own escaped flag)",
+                  &CB);
+  CloneCall r = emitCloneCall(ctx, CB, S, nullptr);
+  if (r.fieldwise || r.res.qramFormal || !r.slotOuts.empty() || !r.extra.empty())
+    unimplemented("calls: an escaping clone call (rule 24) with a field-wise result, QRAM stores or slot cells", &CB);
+  SmallVector<Value *, 2> outs;
+  Value *esc = r.call;
+  if (!CB.getType()->isVoidTy()) {
+    if (r.handle != ctx.T.isQuantum(&CB, ctx.S))
+      internalError("calls: the call's result kind and taint's disagree", &CB);
+    Value *res = ctx.B().CreateExtractValue(r.call, {0u});
+    esc = ctx.B().CreateExtractValue(r.call, {1u});
+    if (r.handle)
+      outs.push_back(res);
+    ctx.bind(&CB, res);
+  }
+  outs.push_back(esc);
+  ctx.unc().recordCall(r.call, outs, {}, {});
+  fatptr::finishSlotTableCall(ctx, r.call);
+  conc::noteEscapedOut(ctx, CB, esc);
+}
+
 void lowerLifted(LoweringContext &ctx, CallBase &CB) {
   capture(ctx);
   const Specialization *cs = ctx.T.calleeSpecialization(CB, ctx.S);
@@ -1289,6 +1328,8 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
     emitDeclaredCall(ctx, CB, *cs->F, cs->mask, flag);
     return;
   }
+  if (conc::cloneEscapes(ctx.T, *cs))
+    return lowerEscapingCall(ctx, CB, *cs);
   CloneCall r = emitCloneCall(ctx, CB, *cs, nullptr);
   if (fenv::cloneCarriesEnv(ctx.T, *cs))
     return bindEnvResult(ctx, CB, r);
