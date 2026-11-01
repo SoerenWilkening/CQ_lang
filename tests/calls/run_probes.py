@@ -5,6 +5,7 @@ Each case names a probe (probes/<name>.O1.ll, clang -O1 of probes/<name>.c), its
 what it must give:
   - "pass": cq-lower exits 0, plain cq-verify accepts the output, every regex in `match` occurs in the
     lowered module, and the entry is §6-equal to its own C program (`python3 -m cqcheck user`, the C oracle);
+  - "lower": as "pass" without the §6 run (the case says why the checker cannot run it);
   - "fatal: <text>": cq-lower stops with that error (an unimplemented shape, never a silent output).
 Outputs go to build/tests/calls/out/.
 """
@@ -32,6 +33,11 @@ CASES = [
     # cq-09xh: a byval formal stays byval; the caller passes a snapshot, which the twin gets too.
     ("byval", "b3", [], "pass", [r"call i32 @__cq_q_f_\w+\(ptr byval\(%struct\.B\)"]),
     ("byval", "b_twin", [], "pass", [r"call void @__cq_q_f_\w+_unc\(i32 %\w+, ptr %byval\.snap"]),
+    # cq-h8vd: a declared clone of an LLVM math intrinsic takes the libm name's K (CQ_K, the per-function flag).
+    # libm_k is "lower" (no §6 run): cqcheck user does not read llvm.used, which CQ_K emits (cq-tntm).
+    ("libm_k", "k1", [], "lower", [r"call i32 @__cq_q_sin_1\(i32 %\w+, i32 53\)",
+                                   r"call i32 @__cq_q_atan2_10\(i32 %\w+, double %\w+, i32 77\)"]),
+    ("libm_flag", "k4", ["-cq-k=expf=9"], "pass", [r"call i32 @__cq_q_expf_1\(i32 %\w+, i32 9\)"]),
 ]
 
 
@@ -68,8 +74,9 @@ def main() -> int:
             for m in match:
                 if not re.search(m, text):
                     why.append("no match for " + m)
-            c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(src), "--lowered", str(lowered),
-                                "--entry", entry], capture_output=True, text=True, cwd=ROOT / "checker")
+            c = subprocess.CompletedProcess([], 0, "PASS", "") if expect == "lower" else subprocess.run(
+                [sys.executable, "-m", "cqcheck", "user", "--o1", str(src), "--lowered", str(lowered),
+                 "--entry", entry], capture_output=True, text=True, cwd=ROOT / "checker")
             if c.returncode != 0 or "PASS" not in c.stdout + c.stderr:
                 why.append("§6 against the C program: " + ((c.stdout + c.stderr).strip().splitlines() or ["?"])[-1])
         print(("FAIL " if why else "ok   ") + probe + ":" + entry + ("" if not why else ": " + "; ".join(why)))

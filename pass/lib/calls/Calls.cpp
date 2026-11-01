@@ -447,10 +447,26 @@ std::string calleeName(const Function &F, const Value *at) {
                 at);
 }
 
-// K of a declared clone (rule 27, §0: flag, CQ_K, global flag, default 4).
-// Rule 27: the trailing i32 K of a declared clone is the callee's K (flag, CQ_K, global, default 4).
-Value *declaredK(LoweringContext &ctx, const Function &F) {
-  return ConstantInt::get(Type::getInt32Ty(ctx.M.getContext()), ctx.K(F));
+// Rule 27: the trailing i32 K of a declared clone is the callee's K (flag, CQ_K, global, default 4),
+// resolved on the callee's C name (cq-h8vd): an LLVM math intrinsic's callee is the libm function
+// (rule 18), so llvm.exp.f64 resolves as exp. LoweringContext::K keys on a Function's name: an
+// existing function of that name is asked, else a declaration made for the question and erased.
+Value *declaredK(LoweringContext &ctx, const Function &F, const Value *at) {
+  std::string n = calleeName(F, at);
+  unsigned K;
+  if (n == F.getName()) {
+    K = ctx.K(F);
+  } else if (GlobalValue *G = ctx.M.getNamedValue(n)) {
+    auto *NF = dyn_cast<Function>(G);
+    if (!NF)
+      unimplemented("calls: the libm name @" + n + " of an LLVM math intrinsic names a global that is not a function", at);
+    K = ctx.K(*NF);
+  } else {
+    Function *tmp = Function::Create(F.getFunctionType(), GlobalValue::ExternalLinkage, n, &ctx.M);
+    K = ctx.K(*tmp);
+    tmp->eraseFromParent();
+  }
+  return ConstantInt::get(Type::getInt32Ty(ctx.M.getContext()), K);
 }
 
 // The declared clone of F for CB (rule 27): declared here, called at the builder.
@@ -468,7 +484,7 @@ CallInst *emitDeclaredCall(LoweringContext &ctx, CallBase &CB, Function &F, Stri
     ops.push_back(Operand{flag, true});
   }
   appendActuals(ctx, CB, mask, args, ops);
-  Value *K = declaredK(ctx, F);
+  Value *K = declaredK(ctx, F, &CB);
   args.push_back(K);
   ops.push_back(Operand{K, false});
   Type *rt = CB.getType();
