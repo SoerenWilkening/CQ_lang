@@ -82,6 +82,7 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Analysis/CFG.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
@@ -172,6 +173,8 @@ Addr decompose(const Value *p, const DataLayout &DL) {
   return a;
 }
 
+uint64_t storeBytes(const DataLayout &DL, Type *t) { return DL.getTypeStoreSize(t).getFixedValue(); }
+
 // ---- per-object facts ---------------------------------------------------------------------------
 
 enum class RootKind : uint8_t { Local, Heap, Param, Global };
@@ -203,6 +206,7 @@ struct FnState {
   DenseSet<const Value *> registers;                // new-IR handles known never to be resolved here
   DenseSet<const Instruction *> copies;             // slot stores lowered as a basis copy (cq-dr4o)
   DenseMap<const Instruction *, ViewVal> views;     // stores into a view object -> the value they left (63)
+  SmallVector<const Instruction *, 8> cellReads;    // accesses lowered as a run-time read of a local cell (M3)
   std::map<const Value *, ObjInfo> objs;
 };
 
@@ -381,6 +385,67 @@ ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId 
 
 // ---- may-write and forwarding -------------------------------------------------------------------
 
+// A call may reach code that accesses an internal global whose address never escapes (67) only by
+// calling, transitively, a function that accesses it. Calls of a declaration or an indirect call reach
+// the module again only through a function whose address is taken (the module is the whole program).
+// Computed once per (module, global): the functions from which an access may be reached.
+bool callMayTouchInternalGlobal(const CallBase &CB, const GlobalVariable &gv) {
+  static std::map<const GlobalVariable *, DenseSet<const Function *>> cache;
+  auto it = cache.find(&gv);
+  if (it == cache.end()) {
+    DenseSet<const Function *> R;
+    SmallVector<const Value *, 8> work{&gv};
+    SmallPtrSet<const Value *, 16> seen{&gv};
+    while (!work.empty()) {
+      const Value *v = work.pop_back_val();
+      for (const User *u : v->users()) {
+        if (auto *I = dyn_cast<Instruction>(u))
+          R.insert(I->getFunction());
+        else if (seen.insert(u).second)
+          work.push_back(u);   // a constant expression over the global
+      }
+    }
+    const Module &M = *gv.getParent();
+    bool changed = true;
+    while (changed) {
+      changed = false;
+      bool reentry = false;
+      for (const Function *f : R)
+        reentry |= f->hasAddressTaken();
+      for (const Function &F : M) {
+        if (R.count(&F) || F.isDeclaration())
+          continue;
+        bool reaches = false;
+        for (const Instruction &I : instructions(F))
+          if (auto *C = dyn_cast<CallBase>(&I)) {
+            const Function *g = C->getCalledFunction();
+            if (isa<DbgInfoIntrinsic>(C) || (g && g->isIntrinsic()))
+              continue;
+            if (g ? (R.count(g) || (g->isDeclaration() && reentry)) : reentry)
+              reaches = true;
+          }
+        if (reaches) {
+          R.insert(&F);
+          changed = true;
+        }
+      }
+    }
+    it = cache.emplace(&gv, std::move(R)).first;
+  }
+  const DenseSet<const Function *> &R = it->second;
+  const Function *g = CB.getCalledFunction();
+  bool reentry = false;
+  for (const Function *f : R)
+    reentry |= f->hasAddressTaken();
+  if (!g)
+    return reentry;
+  if (g->isIntrinsic())
+    return false;
+  if (g->isDeclaration())
+    return reentry;
+  return R.count(g);
+}
+
 bool mayWrite(LoweringContext &ctx, const ObjInfo &info, ObjectId o, const Instruction &I, const Addr &cell,
               uint64_t size) {
   const DataLayout &DL = ctx.M.getDataLayout();
@@ -403,6 +468,8 @@ bool mayWrite(LoweringContext &ctx, const ObjInfo &info, ObjectId o, const Instr
     return hasObject(ctx, MI->getDest(), o);
   if (CB->onlyReadsMemory())
     return false;
+  if (info.kind == RootKind::Global && !info.escaping && cast<GlobalVariable>(info.root)->hasLocalLinkage())
+    return callMayTouchInternalGlobal(*CB, *cast<GlobalVariable>(info.root));
   if (info.escaping || info.kind == RootKind::Param || info.kind == RootKind::Global)
     return true;
   for (const Use &u : CB->args())
@@ -620,6 +687,92 @@ Value *cellPointer(LoweringContext &ctx, const Site &s, const Instruction &I) {
   return B.CreateInBoundsGEP(i32, base.v, idx);
 }
 
+// The rails the lowered stores of this function may have left in the cell I reads at run time (M3): every
+// store into the object whose cell may be I's and from which I is reachable, unless a store of exactly that
+// cell later in the store's block overwrites it first. Returns false (and sets allRegisters) when there is
+// none. A store that may reach I but is not lowered yet (a later store on a back edge), or a memory
+// intrinsic writing the object, leaves rails this load cannot name: allowed only when every lowered arm is
+// a register (the cells of 58/59/74: registers, kept), otherwise unimplemented.
+bool cellArms(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &I, Type *ty,
+              SmallVectorImpl<RailId> &arms, bool &allRegisters) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  uint64_t size = DL.getTypeStoreSize(ty).getFixedValue();
+  bool unnamed = false;
+  for (const Instruction &X : instructions(*st.F))
+    if (auto *MI = dyn_cast<MemIntrinsic>(&X); MI && hasObject(ctx, MI->getDest(), s.o) &&
+                                               isPotentiallyReachable(MI, &I, nullptr, st.DT.get()))
+      unnamed = true;
+  for (const Access &a : accessesOf(ctx, *st.F, s.o)) {
+    auto *S = dyn_cast<StoreInst>(a.I);
+    if (!S || S == &I || differentCell(a.a, s.a, storeBytes(DL, a.ty), size))
+      continue;
+    if (!isPotentiallyReachable(S, &I, nullptr, st.DT.get()))
+      continue;
+    bool killed = false;
+    for (auto it = std::next(S->getIterator()); it != S->getParent()->end() && !killed; ++it) {
+      if (&*it == &I)
+        break;
+      if (auto *X = dyn_cast<StoreInst>(&*it))
+        killed = hasObject(ctx, X->getPointerOperand(), s.o) && !X->isVolatile() && !X->isAtomic() &&
+                 !ctx.T.isFatPointer(X->getPointerOperand(), ctx.S) &&
+                 storeBytes(DL, X->getValueOperand()->getType()) == storeBytes(DL, a.ty) &&
+                 sameCell(decompose(X->getPointerOperand(), DL), a.a);
+    }
+    if (killed)
+      continue;
+    auto it = st.lowered.find(S);
+    if (it == st.lowered.end()) {
+      unnamed = true;
+      continue;
+    }
+    if (!st.registers.count(it->second.v))
+      allRegisters = false;
+    RailId r = ctx.unc().idOf(it->second.v);
+    if (!is_contained(arms, r))
+      arms.push_back(r);
+  }
+  if (unnamed && !allRegisters)
+    unimplemented("mem-slots: a run-time read of a slot cell that may hold a computed rail and a rail this load "
+                  "cannot name yet (a store on a back edge, or a memory intrinsic: 187)",
+                  &I);
+  return !arms.empty();
+}
+
+// CR rule 2 through memory (M3, 179): a rail stored into a cell is MEASURED when some load of the object
+// that may read it measures its value (directly, or through a rule 3 view: trunc to i1 of a _Bool cell,
+// freeze). A measured rail is kept (rule 5), so its operands are cleaned as soon as its own computation
+// has read them; deciding it at the store, before the loop that reads it is lowered, is what lets a
+// classically bounded loop clean them in their own trip (179's y[i] = icmp(...): "a user register, not
+// garbage").
+bool measuredThroughMemory(LoweringContext &ctx, FnState &st, const StoreInst &S, const Site &s) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  uint64_t sz = storeBytes(DL, S.getValueOperand()->getType());
+  auto measures = [](const Value *v) {
+    SmallVector<const Value *, 4> work{v};
+    SmallPtrSet<const Value *, 8> seen{v};
+    while (!work.empty()) {
+      const Value *x = work.pop_back_val();
+      for (const User *u : x->users()) {
+        if (auto *c = dyn_cast<CallInst>(u); c && c->getCalledFunction() &&
+                                             c->getCalledFunction()->getName().starts_with("cq_measure_"))
+          return true;
+        bool view = isa<FreezeInst>(u) || (isa<TruncInst>(u) && cast<TruncInst>(u)->getDestTy()->isIntegerTy(1));
+        if (view && seen.insert(u).second)
+          work.push_back(u);
+      }
+    }
+    return false;
+  };
+  for (const Access &a : accessesOf(ctx, *st.F, s.o)) {
+    auto *L = dyn_cast<LoadInst>(a.I);
+    if (!L || differentCell(a.a, s.a, storeBytes(DL, a.ty), sz) || !isPotentiallyReachable(&S, L, nullptr, st.DT.get()))
+      continue;
+    if (measures(L))
+      return true;
+  }
+  return false;
+}
+
 // The handle a cell holds at I (a load, or the old value at a guarded store).
 Operand readCell(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &I, Type *ty) {
   if (const Instruction *src = sourceOf(ctx, st, *s.info, s.o, &I, s.a, ty)) {
@@ -643,6 +796,18 @@ Operand readCell(LoweringContext &ctx, FnState &st, const Site &s, const Instruc
     break;
   }
   LoadInst *h = ctx.B().CreateAlignedLoad(handleTy(ctx.M.getContext()), cellPointer(ctx, s, I), Align(4));
+  if (s.info->kind == RootKind::Local || s.info->kind == RootKind::Heap) {
+    // M3 (CR rules 5, 20): the handle names one of the rails the stores of this function may have left
+    // in the cell. When one of them is not a register, the load is a merge over them (recordCellLoad):
+    // its readers' clean-ups come before theirs, and a kept role on it keeps them.
+    st.cellReads.push_back(&I);
+    SmallVector<RailId, 4> arms;
+    bool allRegisters = true;
+    if (cellArms(ctx, st, s, I, ty, arms, allRegisters) && !allRegisters) {
+      ctx.unc().recordCellLoad(h, arms);
+      return Operand{h, true};
+    }
+  }
   ctx.unc().recordExternal(h, Role::UserRegister);
   st.registers.insert(h);
   return Operand{h, true};
@@ -964,8 +1129,6 @@ bool needsCopy(LoweringContext &ctx, FnState &st, const StoreInst &S, const Site
 //    narrower store wrote past V is unimplemented, as is a load or store starting before the value it
 //    reads, a load no dominating store reaches unchanged, a run-time offset, and a store under a
 //    quantum predicate.
-
-uint64_t storeBytes(const DataLayout &DL, Type *t) { return DL.getTypeStoreSize(t).getFixedValue(); }
 
 // The latest store into the view object whose bytes overlap [at.off, at.off + n) and reach I unchanged.
 const StoreInst *viewSource(LoweringContext &ctx, FnState &st, const ObjInfo &info, ObjectId o, const Instruction *I,
@@ -1301,6 +1464,8 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
     st.copies.insert(&stI);
   } else {
     what = st.registers.count(val.v) || isThetaResult(v) ? What::Register : What::Computed;
+    if (what == What::Register)
+      st.registers.insert(val.v);   // a cq_theta result is a user register (rule 2)
   }
 
   if (what != What::Register) {
@@ -1314,11 +1479,27 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
                       &stI);
       if (isDynamic(ctx, st, *s.info, s.o)) {
         // A copy into a dynamic cell is that cell's register, like its seed (58, 59; cq-dr4o).
-        if (what == What::Computed)
-          unimplemented("mem-slots: a computed rail stored into a slot cell that is read back at a run-time "
-                        "cell (its clean-up needs a memory-aware uncompute or the loops module's reverse loop: "
-                        "52, 67, 75)",
-                        &stI);
+        if (what == What::Computed) {
+          // M3: a computed rail stays garbage; each run-time read of the cell after it names it
+          // (recordCellLoad), so its clean-up follows them. A read lowered before this store that this
+          // store may reach (a back edge) named the cell's rails without it.
+          const DataLayout &DL = ctx.M.getDataLayout();
+          uint64_t sz = storeBytes(DL, v->getType());
+          for (const Instruction *R : st.cellReads) {
+            const Value *rp = getLoadStorePointerOperand(R);
+            Type *rt = isa<LoadInst>(R) ? R->getType() : cast<StoreInst>(R)->getValueOperand()->getType();
+            if (hasObject(ctx, rp, s.o) && !differentCell(decompose(rp, DL), s.a, storeBytes(DL, rt), sz) &&
+                isPotentiallyReachable(&stI, R, nullptr, st.DT.get()))
+              unimplemented("mem-slots: a computed rail stored into a slot cell that an earlier-lowered run-time "
+                            "read may see on a back edge (the cell's rail is loop-carried through memory: 187)",
+                            &stI);
+          }
+          if (measuredThroughMemory(ctx, st, stI, s)) {
+            ctx.unc().setRole(id, Role::Measured);
+            st.registers.insert(val.v);
+          }
+          break;
+        }
         // The cells of a dynamic slot array are registers (58, 59: seeded |0>, kept).
         ctx.unc().setRole(id, Role::UserRegister);
         st.registers.insert(val.v);

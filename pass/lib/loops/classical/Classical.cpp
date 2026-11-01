@@ -100,7 +100,9 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IntrinsicInst.h"
@@ -111,6 +113,42 @@ using namespace llvm;
 namespace cq::loops {
 
 namespace {
+
+// CR rule 2 through memory (M3): some load of S's object that S may reach measures the loaded value
+// (directly or through a trunc to i1 / freeze view). mem-slots then gave S's rail Role::Measured at the
+// store (Slots.cpp, measuredThroughMemory, which also requires the load's cell to may-alias S's); this is
+// the same test coarsened to the object, so a rail it calls kept may still be garbage there (the reverse
+// then frees it before a read names it: an internal error, never a wrong circuit).
+bool measuredThroughMemory(LoweringContext &ctx, const StoreInst &S) {
+  ArrayRef<ObjectId> mine = ctx.T.provenance(S.getPointerOperand(), ctx.S);
+  auto measures = [](const Value *v) {
+    SmallVector<const Value *, 4> work{v};
+    SmallPtrSet<const Value *, 8> seen{v};
+    while (!work.empty()) {
+      const Value *x = work.pop_back_val();
+      for (const User *u : x->users()) {
+        if (auto *c = dyn_cast<CallInst>(u); c && c->getCalledFunction() &&
+                                             c->getCalledFunction()->getName().starts_with("cq_measure_"))
+          return true;
+        bool view = isa<FreezeInst>(u) || (isa<TruncInst>(u) && cast<TruncInst>(u)->getDestTy()->isIntegerTy(1));
+        if (view && seen.insert(u).second)
+          work.push_back(u);
+      }
+    }
+    return false;
+  };
+  for (const Instruction &I : instructions(*S.getFunction())) {
+    auto *L = dyn_cast<LoadInst>(&I);
+    if (!L || !L->getPointerOperand()->getType()->isPointerTy())
+      continue;
+    bool shared = false;
+    for (ObjectId o : ctx.T.provenance(L->getPointerOperand(), ctx.S))
+      shared |= is_contained(mine, o);
+    if (shared && isPotentiallyReachable(&S, L) && measures(L))
+      return true;
+  }
+  return false;
+}
 
 bool samePred(const Pred &a, const Pred &b) { return (a & !b).isBottom() && (b & !a).isBottom(); }
 
@@ -1144,6 +1182,33 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       ctx.unc().setRole(fid, Role::Output);
       ctx.rebind(v, {Operand{f, true}});
     }
+    // M3 (CR rules 5, 20): a rail a trip made and stored into a slot cell may be read after the loop
+    // through the cell (a run-time read names it, Uncompute::recordCellLoad): it is an exit rail, so the
+    // reverse runs after those reads and the clean-ups of their readers (75, 179).
+    for (unsigned sc : scs)
+      for (const Record &r : U.scopeRecords(sc)) {
+        if (r.forward->getType()->isVoidTy() || !std::holds_alternative<abi::TemplateSpec>(r.spec))
+          continue;   // a seed stored into a cell is that cell's register (58, 59), never an exit
+        bool stored = any_of(r.forward->users(), [&](const User *u) {
+          auto *si = dyn_cast<StoreInst>(u);
+          return si && si->getValueOperand() == r.forward;
+        });
+        if (!stored)
+          continue;
+        // A rail mem-slots made Measured at its store is kept: the reverse never undoes it, and its
+        // reads after the loop need not wait for the reverse (179's y[i]).
+        bool kept = false;
+        for (BasicBlock *bb : L.blocks())
+          for (Instruction &I : *bb)
+            if (auto *si = dyn_cast<StoreInst>(&I); si && ctx.T.isQuantum(si->getValueOperand(), ctx.S) &&
+                                                    ctx.operand(si->getValueOperand()).v == r.forward)
+              kept |= measuredThroughMemory(ctx, *si);
+        if (kept)
+          continue;
+        RailId x = U.idOf(r.forward);
+        if (!is_contained(exits, x))
+          exits.push_back(x);
+      }
     if (exits.empty()) {
       flushTrips();
       IRBuilder<> B(T);

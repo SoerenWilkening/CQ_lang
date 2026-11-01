@@ -20,7 +20,8 @@
 //    value is unknown); a quantum or non-classical pointer argument; a classical pointer that is not a
 //    %s conversion of printf or a constant C string of a readonly parameter of an effect; a function
 //    pointer argument (a callback); raise/kill/signal-family callees, whose meaning depends on the
-//    module's signal table (102); an entry inside a clone (its _unc twin would replay it).
+//    module's signal table (102); an entry inside a _ctl or _adj clone. An entry inside a plain clone is
+//    the clone's own tape entry (67); inside a _pure clone (what a twin recomputes through) it is dropped.
 //
 // lowerNoreturn: a noreturn call under a quantum predicate (45, 102, 108) is cqrt_abort_i1(f), f the
 // current block's flag, kept (Role::Abort: never _unc'd, never freed) and measured by the backend at the
@@ -408,9 +409,19 @@ void requireEntry(LoweringContext &ctx, CallBase &CB, const char *what) {
 } // namespace
 
 void lowerHostEffect(LoweringContext &ctx, CallBase &CB) {
-  requireEntry(ctx, CB, "a tape entry");
+  if (CB.getFunction() != ctx.S.F)
+    unimplemented("eff-tape: a tape entry inside an inlined callee (rule 19)", &CB);
   if (!CB.getType()->isVoidTy() && !CB.use_empty())
     unimplemented("eff-tape: the result of a host effect is used (the call is never executed)", &CB);
+  // A clone appends its entries to its own tape each time it runs (67: "one tape per function"). Its
+  // _unc twin recomputes through the _pure clone (CR §1.4, 119), which is the clone without its effects:
+  // tape entries are write-once and never replayed, so the _pure clone emits none.
+  if (ctx.S.pure)
+    return;
+  if (!ctx.S.isEntry() && (ctx.S.ctl || ctx.S.adj))
+    unimplemented("eff-tape: a tape entry inside a _ctl or _adj clone (its predicate includes the caller's "
+                  "control)",
+                  &CB);
   const Function *F = calleeOf(CB);
   if (!F)
     internalError("eff-tape: a host effect with no direct callee", &CB);
