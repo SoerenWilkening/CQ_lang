@@ -12,6 +12,6 @@ define void @param_cells(ptr %q, i32 %i, double %t) {
 }
 ; CHECK param_cells: %{{h}} = load i32, ptr %{{p}}, align 4
 ; CHECK param_cells: call void @cqrt_ry_i32(i32 %{{h}}, double %{{t}})
-; CHECK param_cells: store i32 %{{h}}, ptr %{{p}}, align 4
+; CHECK-COUNT param_cells: store i32 0
 ; CHECK-COUNT param_cells: cqrt_alloc 0
 ; CHECK-COUNT param_cells: cqrt_free 0

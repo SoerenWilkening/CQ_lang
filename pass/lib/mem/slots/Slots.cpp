@@ -69,6 +69,7 @@
 // Rails of memset/memcpy writes (mem-qram, rule 22) follow the same rules: a seed written into a
 // DYNAMIC object's cell is a register (58's memset).
 #include "cq/Memory.h"
+#include "SlotsTest.h"
 
 #include <map>
 #include <optional>
@@ -101,6 +102,11 @@
 using namespace llvm;
 
 namespace cq::mem {
+
+detail::CellsWrittenFn &detail::cellsWrittenOverride() {
+  static CellsWrittenFn f;
+  return f;
+}
 
 namespace {
 
@@ -190,6 +196,7 @@ struct ObjInfo {
   RootKind kind;
   const Value *root;
   uint64_t cellBytes = 0;
+  Type *cellTy = nullptr;   // the cell's C type (the scalar element; for a parameter or heap block, its accesses')
   bool boolCells = false;
   bool escaping = false;
   bool view = false;  // accessed at more than one width: a value object read and written through bit views (63)
@@ -217,6 +224,9 @@ struct FnState {
   struct CellRead { const Instruction *I; Addr a; uint64_t size; };
   SmallVector<CellRead, 8> cellReads;               // accesses lowered as a run-time read of a local cell (M3)
   std::map<const Value *, ObjInfo> objs;
+  // M1: a clone call handed a pointer into a slot object -> (byte offset of a cell it writes -> the handle
+  // the caller loaded from that cell right after the call: slotCellsAfterCall).
+  DenseMap<const Instruction *, std::map<int64_t, Operand>> callOut;
 };
 
 // One state per (output function, original function): rule 19 inlining lowers a callee's body into
@@ -298,6 +308,27 @@ bool isHostEffect(LoweringContext &ctx, const CallBase &CB) {
   return calls::classify(CB, ctx.T, ctx.S) == calls::Class::HostEffect;
 }
 
+// M1 (CR rules 18, 20): a call of a quantum clone (rule 18). A slot object handed to one through a pointer
+// that the call does not capture is not an escape: the clone accesses the caller's cells while it runs and
+// writes exactly the cells TaintInfo::cellsWritten names (the caller loads their new handles right after
+// the call, slotCellsAfterCall).
+const Specialization *cloneCallee(LoweringContext &ctx, const CallBase &CB) {
+  const Function *f = CB.getCalledFunction();
+  if (!f || f->isDeclaration() || isa<IntrinsicInst>(CB))
+    return nullptr;
+  return ctx.T.calleeSpecialization(CB, ctx.S);
+}
+
+SmallVector<unsigned, 4> cellsWrittenBy(LoweringContext &ctx, const Specialization &S, unsigned argNo) {
+  if (detail::cellsWrittenOverride())
+    return detail::cellsWrittenOverride()(S, argNo);
+  return ctx.T.cellsWritten(S, argNo);
+}
+
+bool cloneArgUse(LoweringContext &ctx, const CallBase &CB, const Use &u) {
+  return CB.isArgOperand(&u) && CB.doesNotCapture(CB.getArgOperandNo(&u)) && cloneCallee(ctx, CB);
+}
+
 bool escapes(LoweringContext &ctx, const Value *root) {
   SmallVector<const Value *, 8> work{root};
   SmallPtrSet<const Value *, 16> seen{root};
@@ -340,6 +371,8 @@ bool escapes(LoweringContext &ctx, const Value *root) {
           continue;   // the end of a heap block's lifetime, not an escape
         if (isHostEffect(ctx, *CB))
           continue;   // a tape entry reads the cells (99)
+        if (cloneArgUse(ctx, *CB, u))
+          continue;   // M1: the clone's accesses are the call's (slotCellsBeforeCall / After)
         if (auto *II = dyn_cast<IntrinsicInst>(CB))
           if (II->getIntrinsicID() == Intrinsic::lifetime_start || II->getIntrinsicID() == Intrinsic::lifetime_end)
             continue;
@@ -368,9 +401,14 @@ bool boolRange(const LoadInst *ld) {
   return lo && hi && lo->isZero() && hi->getZExtValue() == 2;
 }
 
-uint64_t scalarCellBytes(Type *t, const DataLayout &DL, const Value *at) {
+Type *scalarCellType(Type *t) {
   while (auto *at2 = dyn_cast<ArrayType>(t))
     t = at2->getElementType();
+  return t;
+}
+
+uint64_t scalarCellBytes(Type *t, const DataLayout &DL, const Value *at) {
+  t = scalarCellType(t);
   if (t->isStructTy())
     unimplemented("mem-slots: a slot record (a struct object holding handles: sret/byval, rule 20, 163, 164)", at);
   if (t->isVectorTy())
@@ -392,9 +430,11 @@ ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId 
   if (auto *ai = dyn_cast<AllocaInst>(root)) {
     info.kind = RootKind::Local;
     info.cellBytes = scalarCellBytes(ai->getAllocatedType(), DL, ai);
+    info.cellTy = scalarCellType(ai->getAllocatedType());
   } else if (auto *gv = dyn_cast<GlobalVariable>(root)) {
     info.kind = RootKind::Global;
     info.cellBytes = scalarCellBytes(gv->getValueType(), DL, gv);
+    info.cellTy = scalarCellType(gv->getValueType());
   } else {
     info.kind = isa<Argument>(root) ? RootKind::Param : RootKind::Heap;
     for (const Access &a : accessesOf(ctx, *st.F, o)) {
@@ -402,6 +442,7 @@ ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId 
       if (info.cellBytes && info.cellBytes != b)
         unimplemented("mem-slots: a parameter or heap slot object accessed at two widths (a bit view, 63)", a.I);
       info.cellBytes = b;
+      info.cellTy = a.ty;
     }
     if (!info.cellBytes)
       unimplemented("mem-slots: a parameter or heap slot object this function never loads or stores (its cell "
@@ -516,11 +557,52 @@ bool mayWrite(LoweringContext &ctx, const ObjInfo &info, ObjectId o, const Instr
     return false;
   if (info.kind == RootKind::Global && !info.escaping && cast<GlobalVariable>(info.root)->hasLocalLinkage())
     return callMayTouchInternalGlobal(*CB, *cast<GlobalVariable>(info.root));
+  if ((info.kind == RootKind::Local || info.kind == RootKind::Heap) && !info.escaping)
+    if (const Specialization *S = cloneCallee(ctx, *CB)) {
+      // M1: the clone writes the cells cellsWritten names, at their offsets from the pointer it is handed.
+      for (unsigned i = 0; i < CB->arg_size(); ++i) {
+        if (!hasObject(ctx, CB->getArgOperand(i), o))
+          continue;
+        Addr pa = decompose(CB->getArgOperand(i), DL);
+        if (!pa.ok || !pa.terms.empty())
+          return true;
+        for (unsigned c : cellsWrittenBy(ctx, *S, i)) {
+          Addr w = pa;
+          w.off += int64_t(c * info.cellBytes);
+          if (!differentCell(w, cell, info.cellBytes, size))
+            return true;
+        }
+      }
+      return false;
+    }
   if (info.escaping || info.kind == RootKind::Param || info.kind == RootKind::Global)
     return true;
   for (const Use &u : CB->args())
     if (hasObject(ctx, u.get(), o))
       return true;
+  return false;
+}
+
+// M1: the clone call X writes exactly the cell at `cell` (size bytes) of object o.
+bool cloneWritesCell(LoweringContext &ctx, const ObjInfo &info, ObjectId o, const Instruction &X, const Addr &cell,
+                     uint64_t size) {
+  auto *CB = dyn_cast<CallBase>(&X);
+  const Specialization *S = CB ? cloneCallee(ctx, *CB) : nullptr;
+  if (!S || size != info.cellBytes)
+    return false;
+  for (unsigned i = 0; i < CB->arg_size(); ++i) {
+    if (!hasObject(ctx, CB->getArgOperand(i), o))
+      continue;
+    Addr pa = decompose(CB->getArgOperand(i), ctx.M.getDataLayout());
+    if (!pa.ok || !pa.terms.empty())
+      continue;
+    for (unsigned c : cellsWrittenBy(ctx, *S, i)) {
+      Addr w = pa;
+      w.off += int64_t(c * info.cellBytes);
+      if (sameCell(w, cell))
+        return true;
+    }
+  }
   return false;
 }
 
@@ -633,6 +715,12 @@ const Instruction *sourceOf(LoweringContext &ctx, FnState &st, const ObjInfo &in
     if (!best || st.DT->dominates(best, a.I))
       best = a.I;
   }
+  // M1: a clone call that writes the cell leaves there the handle the caller loads right after it.
+  if ((info.kind == RootKind::Local || info.kind == RootKind::Heap) && !info.escaping)
+    for (const Instruction &X : instructions(*st.F))
+      if (&X != L && cloneWritesCell(ctx, info, o, X, cell, size) && st.DT->dominates(&X, L) &&
+          clearBetween(ctx, info, o, &X, L, cell, size) && (!best || st.DT->dominates(best, &X)))
+        best = &X;
   return best;
 }
 
@@ -770,6 +858,29 @@ bool cellArms(LoweringContext &ctx, FnState &st, const Site &s, const Instructio
     if (auto *MI = dyn_cast<MemIntrinsic>(&X); MI && hasObject(ctx, MI->getDest(), s.o) &&
                                                isPotentiallyReachable(MI, &I, nullptr, st.DT.get()))
       unnamed = true;
+  for (const Instruction &X : instructions(*st.F)) {
+    auto *CB = dyn_cast<CallBase>(&X);
+    if (!CB || !cloneCallee(ctx, *CB) || !mayWrite(ctx, *s.info, s.o, X, s.a, size) ||
+        !isPotentiallyReachable(&X, &I, nullptr, st.DT.get()))
+      continue;
+    // M1: a clone call that may write the cell: its new handles are the caller's loads after it.
+    auto c = st.callOut.find(&X);
+    if (c == st.callOut.end()) {
+      unnamed = true;
+      continue;
+    }
+    for (auto &[off, h] : c->second) {
+      Addr w = s.a;
+      w.off = off;
+      w.terms.clear();
+      if (differentCell(w, s.a, s.info->cellBytes, size) && s.a.terms.empty())
+        continue;
+      allRegisters = false;
+      RailId r = ctx.unc().idOf(h.v);
+      if (!is_contained(arms, r))
+        arms.push_back(r);
+    }
+  }
   for (const Access &a : accessesOf(ctx, *st.F, s.o)) {
     if (isRMW(a.I) && a.I != &I && !differentCell(a.a, s.a, storeBytes(DL, a.ty), size) &&
         isPotentiallyReachable(a.I, &I, nullptr, st.DT.get()))
@@ -923,6 +1034,9 @@ bool classicalCell(LoweringContext &ctx, FnState &st, const Site &s) {
     if (auto *MI = dyn_cast<MemIntrinsic>(&X); MI && hasObject(ctx, MI->getDest(), s.o))
       return false;
   uint64_t size = s.info->cellBytes;
+  for (const Instruction &X : instructions(*st.F))
+    if (auto *CB = dyn_cast<CallBase>(&X); CB && cloneCallee(ctx, *CB) && mayWrite(ctx, *s.info, s.o, X, s.a, size))
+      return false;   // M1: a clone may store a handle into it
   for (const Access &a : accessesOf(ctx, *st.F, s.o)) {
     if (isa<LoadInst>(a.I) || differentCell(a.a, s.a, storeBytes(DL, a.ty), size))
       continue;
@@ -937,6 +1051,15 @@ bool classicalCell(LoweringContext &ctx, FnState &st, const Site &s) {
 // The handle a cell holds at I (a load, or the old value at a guarded store).
 Operand readCell(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &I, Type *ty) {
   if (const Instruction *src = sourceOf(ctx, st, *s.info, s.o, &I, s.a, ty)) {
+    if (isa<CallBase>(src)) {
+      auto c = st.callOut.find(src);
+      auto k = c == st.callOut.end() ? std::map<int64_t, Operand>::iterator() : c->second.find(s.a.off);
+      if (c == st.callOut.end() || k == c->second.end())
+        unimplemented("mem-slots: a load of a cell a clone call wrote whose new handle the caller did not load "
+                      "(mem::slotCellsAfterCall, M1)",
+                      &I);
+      return k->second;
+    }
     auto it = st.lowered.find(src);
     if (it == st.lowered.end())
       internalError("mem-slots: the access a slot load forwards from has not been lowered", &I);
@@ -1560,8 +1683,9 @@ void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &
     case RootKind::Param:
       if (!ctx.S.isEntry()) {
         // M1 clone side (CR rule 18, cq-arch T2 + M1): a handle stored into a caller's cell is a slot
-        // result: the rule-18 copy-out (alloc 0, copy, the copy's handle into the cell, Role::Result). The caller loads it after the call and frees it after the twin, which
-        // finalize aims at it and which restores the cell's old content.
+        // result: the rule-18 copy-out (alloc 0, copy, the copy's handle into the cell, Role::Result). The
+        // caller loads it after the call and frees it after the twin, which finalize aims at it and which
+        // restores the cell's old content.
         const DataLayout &DL = ctx.M.getDataLayout();
         for (const Access &a : accessesOf(ctx, *st.F, s.o))
           if (a.I != &I && st.lowered.count(a.I) && (isa<StoreInst>(a.I) || isRMW(a.I)) &&
@@ -1724,6 +1848,17 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
                       "zext is a representation change (spine, cq-sj2j)",
                       &stI);
     }
+  if (val.handle && !ctx.currentFlag())
+    if (const Instruction *src = sourceOf(ctx, st, *s.info, s.o, &stI, s.a, v->getType()))
+      if (auto it = st.lowered.find(src);
+          it != st.lowered.end() && it->second.handle && it->second.v == val.v && !needsCopy(ctx, st, stI, s)) {
+        // The cell already holds the stored rail (a cq_theta in place, rule 2, of the rail a load of this
+        // cell read: 58, 60, 124's step through `int *r`) and no other holder of it is read after the store
+        // (else C's two objects get two rails, cq-7hpb): the rail replaces the cell with itself; nothing is
+        // emitted.
+        st.lowered[&stI] = val;
+        return;
+      }
   if (Value *flag = ctx.currentFlag()) {
     (void)flag;
     // Rules 9, 20: under a quantum predicate the cell receives select(predicate, value, old).
@@ -1901,12 +2036,196 @@ void endSlotLifetime(LoweringContext &ctx, ObjectId, Instruction *at) {
     ctx.bindFields(CB, {Operand{nc, false}});
 }
 
-SmallVector<Value *, 4> slotCellsBeforeCall(LoweringContext &, const CallBase &orig, unsigned) {
-  unimplemented("mem-slots: mem::slotCellsBeforeCall (M1, a slot object passed to a quantum clone)", &orig);
+// ---- M1: a slot object handed to a quantum clone ------------------------------------------------
+//
+// CONTRACT (cq-arch M1 + T2, 2026-11-01; CR rules 18, 20, §1.4). calls lowers a call of a quantum clone; for
+// each argument that points into a caller's slot object it calls slotCellsBeforeCall before emitting the
+// forward call and slotCellsAfterCall with the builder right after it, and passes their results to
+// Uncompute::recordCall as `extra` and `slotOuts`.
+//  - The cells: TaintInfo::cellsWritten(callee, argNo), cell indices counted from the pointer handed over
+//    (the formal's cell 0), in the caller object's cells.
+//  - Before: each cell's content as of the call: the handle (or the classical value of a classical cell)
+//    a dominating access left there, a run-time load of the cell (Uncompute::recordCellLoad over the rails
+//    the function's writes may have left there) when only some path wrote it, poison i32 when no write of
+//    this function may reach the call.
+//  - After: one `load i32` per cell, right after the call; a later load of the cell that the call reaches
+//    with no write in between forwards to it (no IR), a run-time read names it (M3).
+//  - Every rail that may be in a cell of the object at the call is used by the forward call (noteUse). When
+//    the call has a twin (a quantum result, or a cell the clone writes), a rail in a cell the clone may only
+//    read must also outlive the twin, which recordCall does not see (its reads are the handles among fwd's
+//    arguments and `extra`): such a rail must be a register or otherwise kept; a garbage or seed rail there
+//    is unimplemented (it needs the call item to read it).
+//  - A slot object whose pointer goes only to such calls (not captured: `nocapture`) and to loads and
+//    stores is not escaping; a call writes only the cells cellsWritten names.
+// Not built: a parameter or global slot object handed to a clone that writes it, a pointer at a run-time
+// offset, a bit-view or _Bool object; rule 6 clean-up of an old rail the clone overwrote when the twin never
+// runs (every result kept): the twin restores the old content, so the old rail is read by it and cleaned
+// after it by its own role.
+
+namespace {
+
+struct CloneArg { const Specialization *S; Site s; SmallVector<unsigned, 4> cells; };
+
+std::string describeValue(const Value *v) {
+  std::string t;
+  raw_string_ostream os(t);
+  v->printAsOperand(os, false);
+  return os.str();
 }
 
-SmallVector<Value *, 4> slotCellsAfterCall(LoweringContext &, const CallBase &orig, unsigned, CallInst *) {
-  unimplemented("mem-slots: mem::slotCellsAfterCall (M1, a slot object passed to a quantum clone)", &orig);
+CloneArg cloneArg(LoweringContext &ctx, FnState &st, const CallBase &orig, unsigned argNo) {
+  const Specialization *S = cloneCallee(ctx, orig);
+  if (!S)
+    internalError("mem-slots: slotCellsBeforeCall/After of a call that is not a quantum clone call", &orig);
+  const Value *ptr = orig.getArgOperand(argNo);
+  ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
+  if (objs.size() != 1 || ctx.T.classOf(objs.front()) != ObjClass::Slot)
+    internalError("mem-slots: slotCellsBeforeCall/After of an argument that does not point into one slot object",
+                  &orig);
+  Addr a = decompose(ptr, ctx.M.getDataLayout());
+  if (!a.ok)
+    unimplemented("mem-slots: a pointer handed to a clone whose address is not an object plus GEP offsets", &orig);
+  if (!a.terms.empty())
+    unimplemented("mem-slots: a pointer into a slot object at a run-time offset handed to a clone", &orig);
+  ObjInfo &info = objInfo(ctx, st, a.root, objs.front());
+  CloneArg r{S, Site{objs.front(), &info, a}, cellsWrittenBy(ctx, *S, argNo)};
+  if (r.cells.empty())
+    return r;
+  if (info.view || info.boolCells)
+    unimplemented("mem-slots: a bit-view or _Bool slot object handed to a clone that writes it", &orig);
+  if (info.kind != RootKind::Local && info.kind != RootKind::Heap)
+    unimplemented("mem-slots: a parameter or global slot object handed to a clone that writes it", &orig);
+  if (info.escaping)
+    unimplemented("mem-slots: a slot object whose pointer escapes handed to a clone that writes it", &orig);
+  if (a.off % int64_t(info.cellBytes))
+    unimplemented("mem-slots: a pointer handed to a clone that is not at a whole cell", &orig);
+  return r;
+}
+
+Site cellSite(const CloneArg &ca, unsigned c) {
+  Site s = ca.s;
+  s.a.off += int64_t(c * ca.s.info->cellBytes);
+  return s;
+}
+
+// Some write of this function into a cell that may be s's may reach I.
+bool anyWriteReaches(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &I) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  uint64_t size = s.info->cellBytes;
+  for (const Instruction &X : instructions(*st.F)) {
+    if (&X == &I || !(isa<StoreInst>(X) || isRMW(&X) || isa<CallBase>(X)))
+      continue;
+    if (!mayWrite(ctx, *s.info, s.o, X, s.a, size))
+      continue;
+    (void)DL;
+    if (isPotentiallyReachable(&X, &I, nullptr, st.DT.get()))
+      return true;
+  }
+  return false;
+}
+
+// The rails a lowered write of this function may still have left in some cell of object o at I.
+SmallVector<Value *, 8> railsInObjectAt(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &I) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  SmallVector<Value *, 8> out;
+  auto add = [&](Value *h) {
+    if (!is_contained(out, h))
+      out.push_back(h);
+  };
+  for (const Access &a : accessesOf(ctx, *st.F, s.o)) {
+    if (!(isa<StoreInst>(a.I) || isRMW(a.I)))
+      continue;
+    auto it = st.lowered.find(a.I);
+    if (it == st.lowered.end() || !it->second.handle)
+      continue;
+    SmallPtrSet<const Instruction *, 4> defs;
+    if (auto *R = dyn_cast<Instruction>(a.a.root))
+      defs.insert(R);
+    for (auto &t : a.a.terms)
+      if (auto *T = dyn_cast<Instruction>(t.first))
+        defs.insert(T);
+    uint64_t sz = storeBytes(DL, a.ty);
+    auto kill = [&](const Instruction &X) {
+      auto *so = dyn_cast<StoreInst>(&X);
+      return so && !so->isVolatile() && !so->isAtomic() && hasObject(ctx, so->getPointerOperand(), s.o) &&
+             !ctx.T.isFatPointer(so->getPointerOperand(), ctx.S) &&
+             storeBytes(DL, so->getValueOperand()->getType()) == sz &&
+             sameCell(decompose(so->getPointerOperand(), DL), a.a);
+    };
+    if (reachesUnkilled(*a.I, defs, kill, [&](const Instruction &X) { return &X == &I; }))
+      add(it->second.v);
+  }
+  for (auto &[X, cells] : st.callOut)
+    if (X != &I && isPotentiallyReachable(X, &I, nullptr, st.DT.get()))
+      for (auto &[off, h] : cells)
+        add(h.v);
+  return out;
+}
+
+} // namespace
+
+SmallVector<Value *, 4> slotCellsBeforeCall(LoweringContext &ctx, const CallBase &orig, unsigned argNo) {
+  FnState &st = stateOf(ctx, orig);
+  CloneArg ca = cloneArg(ctx, st, orig, argNo);
+  SmallVector<Value *, 4> out;
+  Type *i32 = handleTy(ctx.M.getContext());
+  for (unsigned c : ca.cells) {
+    Site cs = cellSite(ca, c);
+    Type *ty = cs.info->cellTy;
+    if (!sourceOf(ctx, st, *cs.info, cs.o, &orig, cs.a, ty) && !anyWriteReaches(ctx, st, cs, orig)) {
+      out.push_back(PoisonValue::get(i32));   // never written: the twin restores nothing defined (31, 52, 163)
+      continue;
+    }
+    Operand v = readCell(ctx, st, cs, orig, ty);
+    if (!v.handle)
+      internalError("mem-slots: a cell a clone writes holds a classical value before the call", &orig);
+    out.push_back(v.v);
+  }
+  return out;
+}
+
+SmallVector<Value *, 4> slotCellsAfterCall(LoweringContext &ctx, const CallBase &orig, unsigned argNo,
+                                           CallInst *lowered) {
+  FnState &st = stateOf(ctx, orig);
+  CloneArg ca = cloneArg(ctx, st, orig, argNo);
+  if (!lowered)
+    internalError("mem-slots: slotCellsAfterCall without the lowered call", &orig);
+  // The rails the clone may read through the pointer are read by the call; one it only reads must also
+  // outlive a twin (see the contract above).
+  bool twin = false;
+  if (!orig.getType()->isVoidTy())
+    twin |= is_contained(ctx.T.fieldMask(&orig, ctx.S), true);
+  for (unsigned i = 0; i < orig.arg_size(); ++i)
+    if (orig.getArgOperand(i)->getType()->isPointerTy() && !cellsWrittenBy(ctx, *ca.S, i).empty())
+      twin = true;
+  SmallVector<Value *, 4> old;
+  for (unsigned c : ca.cells) {
+    Site cs = cellSite(ca, c);
+    if (const Instruction *src = sourceOf(ctx, st, *cs.info, cs.o, &orig, cs.a, cs.info->cellTy)) {
+      if (auto it = st.lowered.find(src); it != st.lowered.end() && it->second.handle)
+        old.push_back(it->second.v);
+    } else {
+      old.push_back(nullptr);   // a run-time content: every rail it may be is passed as the twin's operand
+    }
+  }
+  bool runTimeOld = is_contained(old, nullptr);
+  for (Value *h : railsInObjectAt(ctx, st, ca.s, orig)) {
+    ctx.unc().noteUse(ctx.unc().idOf(h), lowered);
+    if (twin && !st.registers.count(h) && (runTimeOld || !is_contained(old, h)))
+      unimplemented("mem-slots: a garbage or seed rail in a caller cell that a clone with a twin may read (it must "
+                    "outlive the twin, which recordCall does not see: the call item must read it): " +
+                        describeValue(h),
+                    &orig);
+  }
+  SmallVector<Value *, 4> out;
+  IRBuilder<> &B = ctx.B();
+  for (unsigned c : ca.cells) {
+    Site cs = cellSite(ca, c);
+    LoadInst *h = B.CreateAlignedLoad(handleTy(ctx.M.getContext()), cellPointer(ctx, cs, orig), Align(4));
+    st.callOut[&orig][cs.a.off] = Operand{h, true};
+    out.push_back(h);
+  }
+  return out;
 }
 
 } // namespace cq::mem
