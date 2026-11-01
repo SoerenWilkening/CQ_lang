@@ -50,6 +50,7 @@
 
 #include <functional>
 #include <map>
+#include <set>
 #include <optional>
 #include <string>
 
@@ -90,6 +91,9 @@ struct Fat {
   uint64_t cell = 0;                    // cell size in bytes, 0 = not fixed yet (idx is the constant 0)
   SmallVector<const Value *, 4> roots;  // in tag order
   const struct TripPtr *trips = nullptr;   // R1: the trip objects of a K-loop's exit phi (91)
+  // NULL (a root, tag 0) may carry a non-zero idx: a GEP with an offset applied to a pointer that may be
+  // NULL (85: false, so a compare with NULL is the tag compare alone).
+  bool nullMoved = false;
   bool tagRail() const { return tag.handle; }
   bool idxRail() const { return idx.handle; }
 };
@@ -97,6 +101,10 @@ struct Fat {
 // ---- object table ----------------------------------------------------------------------------
 
 unsigned rootNumber(LoweringContext &ctx, const Value *root) {
+  // NULL is tag 0 in every function's table (85): a clone's result crosses into its caller's table, where
+  // the clone's NULL must still be NULL; its base is the address 0.
+  if (isa<ConstantPointerNull>(root))
+    return 0;
   const Function *F = ctx.S.F;
   unsigned n = 0;
   SmallPtrSet<const Value *, 32> seen;
@@ -313,7 +321,8 @@ unsigned sumWidth(LoweringContext &ctx, const Fat &f, unsigned widest) {
     return 64;
   const DataLayout &DL = ctx.M.getDataLayout();
   for (const Value *r : f.roots) {
-    if (mem::isQramRoot(ctx, r))
+    // A triple formal's object has fewer than 2^32 cells (its idx crosses as an i32, mem::hostTriple).
+    if (mem::isQramRoot(ctx, r) || boundOf(ctx, r) || isa<ConstantPointerNull>(r))
       continue;
     APInt off(64, 0);
     const Value *obj = r->stripAndAccumulateConstantOffsets(DL, off, /*AllowNonInbounds=*/true);
@@ -351,6 +360,10 @@ Fat deriveGEP(LoweringContext &ctx, const GEPOperator &g, bool emit) {
     unimplemented("fatptr: a GEP with a variable index onto a pointer to K-loop trip objects (R1)", &g);
   const Value *qTerm = nullptr;
   SmallVector<Value *, 2> cTerms;
+  if (!vars.empty() || !cst.isZero())
+    for (const Value *r : f.roots)
+      if (isa<ConstantPointerNull>(r))
+        f.nullMoved = true;
   for (auto &[v, scale] : vars) {
     int64_t s = scale.getSExtValue();
     if (s < 0)
@@ -471,6 +484,7 @@ Fat deriveSelect(LoweringContext &ctx, const SelectInst &sel, bool emit, bool ea
   Fat f;
   addRoots(f, t.roots);
   addRoots(f, e.roots);
+  f.nullMoved = t.nullMoved || e.nullMoved;
   llvm::sort(f.roots, [&](const Value *x, const Value *y) { return rootNumber(ctx, x) < rootNumber(ctx, y); });
   if (t.cell && e.cell && t.cell != e.cell)
     unimplemented("fatptr: a select of pointers with different cell sizes", &sel);
@@ -549,6 +563,7 @@ Fat deriveLoaded(LoweringContext &ctx, const LoadInst &ld, bool emit) {
     Fat s = derive(ctx, st->getValueOperand(), /*emit=*/false);
     if (s.trips)
       unimplemented("fatptr: a pointer to K-loop trip objects stored into a QRAM of pointers (R1)", st);
+    f.nullMoved |= s.nullMoved;
     for (const Value *r : s.roots)
       if (intersects(ctx.T.provenance(r, ctx.S), mine))
         addRoots(f, {r});
@@ -579,6 +594,97 @@ Fat deriveLoaded(LoweringContext &ctx, const LoadInst &ld, bool emit) {
 }
 
 Fat deriveIntToPtr(LoweringContext &ctx, const IntToPtrInst &I, bool emit);
+
+// The roots a clone's pointer result is derived from (85): its formals and NULL, through selects, phis,
+// GEPs and casts. Any other origin (a local, a global, a loaded or computed pointer) is unimplemented.
+// nullMoved: NULL is reached through a GEP with an offset (Fat::nullMoved).
+void calleeResultRoots(const Function &G, SmallVectorImpl<const Value *> &out, bool &nullMoved, const Value *at) {
+  std::set<std::pair<const Value *, bool>> seen;
+  SmallVector<std::pair<const Value *, bool>, 8> work;   // (value, a GEP with an offset lies above it)
+  for (const BasicBlock &BB : G)
+    if (auto *RI = dyn_cast<ReturnInst>(BB.getTerminator()))
+      work.push_back({RI->getReturnValue(), false});
+  while (!work.empty()) {
+    auto [v, moved] = work.pop_back_val();
+    if (!seen.insert({v, moved}).second)
+      continue;
+    if (isa<Argument>(v) || isa<ConstantPointerNull>(v)) {
+      if (llvm::find(out, v) == out.end())
+        out.push_back(v);
+      if (isa<ConstantPointerNull>(v) && moved)
+        nullMoved = true;
+    } else if (auto *sel = dyn_cast<SelectInst>(v)) {
+      work.push_back({sel->getTrueValue(), moved});
+      work.push_back({sel->getFalseValue(), moved});
+    } else if (auto *phi = dyn_cast<PHINode>(v)) {
+      for (const Value *in : phi->incoming_values())
+        work.push_back({in, moved});
+    } else if (auto *g = dyn_cast<GEPOperator>(v)) {
+      work.push_back({g->getPointerOperand(), moved || !g->hasAllZeroIndices()});
+    } else if (auto *bc = dyn_cast<BitCastOperator>(v)) {
+      work.push_back({bc->getOperand(0), moved});
+    } else {
+      unimplemented("fatptr: a clone's fat-pointer result not derived from its triple formals or NULL (rule 21 "
+                    "object table across the call)",
+                    at);
+    }
+  }
+}
+
+// The host or slot root (and its cells) each actual crossed a clone boundary as, in this output function
+// (passAcrossCall): the roots of a clone's fat-pointer result in the caller's table.
+struct Crossed {
+  const Value *root;
+  uint64_t cell;
+};
+std::map<const Function *, DenseMap<const Value *, Crossed>> &crossings() {
+  static std::map<const Function *, DenseMap<const Value *, Crossed>> m;
+  return m;
+}
+
+// Rule 21 (85): a clone's fat-pointer result, bound by calls as its two i32 rails (tag, idx) in this
+// function's table. Its roots are the roots its triple actuals crossed as (the clone's tag is the actual's
+// tag), and NULL (tag 0) when the clone may return NULL; its cell size the actuals' common one.
+Fat deriveCallResult(LoweringContext &ctx, const CallBase &CB, bool emit) {
+  const Specialization *cs = ctx.T.calleeSpecialization(CB, ctx.S);
+  const Function *G = CB.getCalledFunction();
+  if (!cs || cs->isEntry() || !G || cs->F != G || G->isDeclaration())
+    unimplemented("fatptr: a fat pointer returned by a call that is not a lifted clone (rule 21)", &CB);
+  SmallVector<const Value *, 4> cr;
+  Fat f;
+  calleeResultRoots(*G, cr, f.nullMoved, &CB);
+  for (const Value *r : cr) {
+    if (isa<ConstantPointerNull>(r)) {
+      addRoots(f, {r});
+      continue;
+    }
+    unsigned argNo = cast<Argument>(r)->getArgNo();
+    if (ctx.T.pointerFormal(*cs, argNo).abi == PtrAbi::Raw)
+      unimplemented("fatptr: a clone's fat-pointer result derived from a raw pointer formal (rule 21)", &CB);
+    auto &m = crossings()[&ctx.out()];
+    auto it = m.find(CB.getArgOperand(argNo));
+    if (it == m.end())
+      internalError("fatptr: a clone's fat-pointer result whose triple actual has not crossed", &CB);
+    addRoots(f, {it->second.root});
+    if (f.cell && f.cell != it->second.cell)
+      unimplemented("fatptr: a clone's fat-pointer result over triple actuals of two cell sizes", &CB);
+    f.cell = it->second.cell;
+  }
+  llvm::sort(f.roots, [&](const Value *x, const Value *y) { return rootNumber(ctx, x) < rootNumber(ctx, y); });
+  f.idxBits = 32;
+  f.idxSext = false;
+  if (!emit) {
+    f.tag = Operand{nullptr, true};
+    f.idx = Operand{nullptr, true};
+    return f;
+  }
+  SmallVector<Operand, 4> fl = ctx.fields(&CB);
+  if (fl.size() != 2 || !fl[0].handle || !fl[1].handle)
+    internalError("fatptr: a clone's fat-pointer result bound to other than its (tag, idx) rails", &CB);
+  f.tag = fl[0];
+  f.idx = fl[1];
+  return f;
+}
 
 Fat derive(LoweringContext &ctx, const Value *p, bool emit, bool eager) {
   if (!p->getType()->isPointerTy())
@@ -624,6 +730,7 @@ Fat derive(LoweringContext &ctx, const Value *p, bool emit, bool eager) {
     // cq-9w75 (CR rule 14 f981c89): a K-loop's walked pointer is start + j*step bytes in trip j, the
     // phi bound to the constant j: the start's fat pointer moved by j*step / cell cells (classical).
     Fat f = derive(ctx, w->start, emit);
+    f.nullMoved |= llvm::any_of(f.roots, [](const Value *r) { return isa<ConstantPointerNull>(r); });
     if (!emit) {
       if (!f.idxRail())
         f.idx = Operand{nullptr, false};
@@ -652,8 +759,8 @@ Fat derive(LoweringContext &ctx, const Value *p, bool emit, bool eager) {
     unimplemented("fatptr: a fat pointer parameter (rule 21 clone-boundary triple)", p);
   if (auto *ip = dyn_cast<IntToPtrInst>(p))
     return deriveIntToPtr(ctx, *ip, emit);
-  if (isa<CallBase>(p))
-    unimplemented("fatptr: a fat pointer returned by a call (rule 21 clone-boundary triple)", p);
+  if (auto *cb = dyn_cast<CallBase>(p))
+    return deriveCallResult(ctx, *cb, emit);
   if (classicalMemoryOnly(ctx, p) == false && !isQ(ctx, p))
     unimplemented("fatptr: a root pointer into slot or QRAM memory", p);
   unimplemented("fatptr: a quantum pointer of this kind", p);
@@ -808,6 +915,7 @@ Fat deriveIntToPtr(LoweringContext &ctx, const IntToPtrInst &I, bool emit) {
   Fat src = derive(ctx, pi->getPointerOperand(), /*emit=*/false);
   Fat f;
   f.roots = src.roots;
+  f.nullMoved = llvm::any_of(src.roots, [](const Value *r) { return isa<ConstantPointerNull>(r); });
   f.cell = accessCell(ctx, I);
   f.idxBits = 32;
   f.idxSext = false;
@@ -838,6 +946,8 @@ Fat deriveIntToPtr(LoweringContext &ctx, const IntToPtrInst &I, bool emit) {
 bool distinctLocalAllocas(LoweringContext &ctx, const Fat &a, const Fat &b) {
   for (const Fat *f : {&a, &b})
     for (const Value *r : f->roots) {
+      if (isa<ConstantPointerNull>(r))
+        continue;   // NULL (tag 0) is no allocation's address (85)
       auto *ai = dyn_cast<AllocaInst>(r);
       if (!ai || ai->getFunction() != ctx.S.F)
         return false;
@@ -960,6 +1070,8 @@ namespace {
 // The fat pointer's roots, each a QRAM object of cell size f.cell (rule 21 over QRAM objects).
 void checkQramRoots(LoweringContext &ctx, const Fat &f, const Instruction &I) {
   for (const Value *r : f.roots) {
+    if (isa<ConstantPointerNull>(r))
+      continue;   // a store through NULL is undefined: outside the domain
     if (!mem::isQramRoot(ctx, r))
       unimplemented("fatptr: a load or store through a fat pointer into a slot or host object (rule 21 guarded "
                     "slot select / host access)",
@@ -1082,11 +1194,20 @@ void lowerLoad(LoweringContext &ctx, LoadInst &ld) {
   if (!ptr && !ty->isIntegerTy() && !ty->isFloatingPointTy())
     unimplemented("fatptr: a load of an aggregate or vector through a fat pointer (rules 21, 25, 26)", &ld);
   SmallVector<const Value *, 4> roots;
+  // NULL (tag 0, 85) contributes 0: a load through it is undefined, so the complement of the other
+  // objects' guards reads the constant 0 (the select chain starts from it).
+  bool null = false;
   for (const Value *r : f.roots)
-    if (mayName(ctx, f, r))
-      roots.push_back(r);
+    if (mayName(ctx, f, r)) {
+      if (isa<ConstantPointerNull>(r))
+        null = true;
+      else
+        roots.push_back(r);
+    }
   if (roots.empty())
     internalError("fatptr: a fat pointer naming none of its roots", &ld);
+  if (null && (ptr || !f.tag.handle))
+    unimplemented("fatptr: a pointer load, or a load at a classical tag, through a fat pointer that may be NULL", &ld);
   SmallVector<std::pair<Value *, Value *>, 4> hs;   // per root: the value (ptr: tag, idx)
   for (const Value *r : roots) {
     if (Bound *b = boundOf(ctx, r); b && b->pointee == ObjClass::Slot) {
@@ -1095,6 +1216,8 @@ void lowerLoad(LoweringContext &ctx, LoadInst &ld) {
       hs.push_back({boundSlotLoad(ctx, *b, f, ty, ld), nullptr});
       continue;
     }
+    if (Bound *b = boundOf(ctx, r); b && b->pointee == ObjClass::Classical)
+      unimplemented("fatptr: a load through a host triple formal (its cell count, rule 21)", &ld);
     if (mem::isQramRoot(ctx, r)) {
       if (f.cell && f.cell != mem::qramElemBytes(ctx, r, ld))
         unimplemented("fatptr: a fat pointer whose cell size is not its QRAM object's element size", &ld);
@@ -1116,11 +1239,11 @@ void lowerLoad(LoweringContext &ctx, LoadInst &ld) {
                   &ld);
   }
   auto merge = [&](RailType w, auto pick) {
-    Operand acc{pick(hs[0]), true};
-    for (unsigned i = 1; i < roots.size(); ++i) {
+    Operand acc = null ? Operand{Constant::getNullValue(ty), false} : Operand{pick(hs[0]), true};
+    for (unsigned i = null ? 0 : 1; i < roots.size(); ++i) {
       Operand eq = icmp(ctx, CmpInst::ICMP_EQ, 32, f.tag,
                         Operand{ConstantInt::get(i32(ctx), rootNumber(ctx, roots[i])), false});
-      acc = Operand{tmpl(ctx, "select", w, {eq, Operand{pick(hs[i]), true}, acc}, ""), true};
+      acc = Operand{tmpl(ctx, "select", w, {eq, Operand{pick(hs[i]), true}, acc}, acc.handle ? "" : "hl"), true};
     }
     return acc;
   };
@@ -1204,6 +1327,25 @@ SmallVector<Operand, 8> loadHostCells(LoweringContext &ctx, const Value *src, Ty
   return out;
 }
 
+std::pair<Operand, Operand> resultFields(LoweringContext &ctx, const ReturnInst &ret) {
+  const Value *rv = ret.getReturnValue();
+  Fat f = derive(ctx, rv, /*emit=*/false);
+  for (const Value *r : f.roots) {
+    if (isa<ConstantPointerNull>(r))
+      continue;
+    const Bound *b = boundOf(ctx, r);
+    if (!b)
+      unimplemented("fatptr: a clone's fat-pointer result into an object of its own (a local, a global: rule 21 "
+                    "object table across the call)",
+                    &ret);
+    if (b->pointee == ObjClass::Qram)
+      unimplemented("fatptr: a clone's fat-pointer result into a QRAM triple formal (rule 21, M2)", &ret);
+    if (f.cell && f.cell != b->cell)
+      unimplemented("fatptr: a clone's fat-pointer result at another cell size than its triple formal's", &ret);
+  }
+  return storedFields(ctx, rv);
+}
+
 std::pair<Operand, Operand> storedFields(LoweringContext &ctx, const Value *ptr) {
   Fat f = derive(ctx, ptr, /*emit=*/true);
   if (f.trips)
@@ -1239,9 +1381,11 @@ void lowerStore(LoweringContext &ctx, StoreInst &st) {
     v = Operand{seed, true};
   }
   for (const Value *r : f.roots) {
-    if (!mayName(ctx, f, r))
+    if (!mayName(ctx, f, r) || isa<ConstantPointerNull>(r))
       continue;
     if (const Bound *b = boundOf(ctx, r)) {
+      if (b->pointee != ObjClass::Qram)
+        unimplemented("fatptr: a store through a slot or host triple formal (rule 21)", &st);
       // M2b: the store is the clone's copy-out, emitted after its body's uncompute. Its cell must still
       // be addressable there: the formal's own idx rail, or a classical index.
       if (f.idx.handle && f.idx.v != b->idx.v)
@@ -1271,6 +1415,12 @@ Value *lowerCompare(LoweringContext &ctx, ICmpInst &cmp) {
           unimplemented("fatptr: a compare through a pointer to K-loop trip objects with a root other than null (R1)",
                         &cmp);
   }
+  // p == NULL (85): over NULL and distinct allocations of this function, a pointer of tag 0 is NULL itself
+  // unless an offset moved it (nullMoved), and no allocation's address is NULL: the tag compare decides.
+  auto isNull = [](const Value *v) { return isa<ConstantPointerNull>(v->stripPointerCasts()); };
+  if ((eq || ne) && (isNull(cmp.getOperand(0)) || isNull(cmp.getOperand(1))) && !a.nullMoved && !b.nullMoved &&
+      distinctLocalAllocas(ctx, a, b))
+    return asRail(ctx, tagEqual(ctx, p, a, b));
   if ((eq || ne) && sameCell && (a.trips || b.trips || distinctLocalAllocas(ctx, a, b))) {
     // Distinct allocations of this function: same object (tag), then same cell (idx); ne is
     // tag != tag' or idx != idx'. A classical term that decides alone is folded.
@@ -1384,6 +1534,51 @@ void lowerIntToPtr(LoweringContext &ctx, Instruction &I) {
 // The cell size every lifted clone a pointer is passed to as a T4 triple accesses through its formal
 // must be the caller's cell size cellBytes (and, onto a QRAM, its cell type): the triple's idx and cell
 // count are in the caller's cells.
+// The cell size of a host-pointee triple formal (85): the scale of its GEPs' variable terms and the size of
+// its accesses, through GEPs, casts, selects and phis; a compare or return of a derived pointer is no
+// access. Two sizes, an escape (a store of the pointer, a call) or none at all are unimplemented.
+uint64_t hostFormalCellBytes(const Argument &A) {
+  const DataLayout &DL = A.getParent()->getParent()->getDataLayout();
+  uint64_t cell = 0;
+  auto see = [&](uint64_t c, const Value *at) {
+    if (c == 0 || (cell && cell != c))
+      unimplemented("fatptr: a host triple formal used at two cell sizes (a bit view, 63)", at);
+    cell = c;
+  };
+  SmallPtrSet<const Value *, 16> seen;
+  SmallVector<const Value *, 8> work{&A};
+  while (!work.empty()) {
+    const Value *v = work.pop_back_val();
+    if (!seen.insert(v).second)
+      continue;
+    for (const Use &u : v->uses()) {
+      const User *U = u.getUser();
+      if (auto *g = dyn_cast<GEPOperator>(U); g && g->getPointerOperand() == v) {
+        MapVector<Value *, APInt> vars;
+        APInt cst(64, 0);
+        if (!g->collectOffset(DL, 64, vars, cst))
+          unimplemented("fatptr: a GEP whose offset is not linear in its indices", g);
+        for (auto &[x, scale] : vars)
+          see(scale.getZExtValue(), g);
+        work.push_back(g);
+      } else if (isa<BitCastOperator>(U) || isa<SelectInst>(U) || isa<PHINode>(U)) {
+        work.push_back(U);
+      } else if (auto *ld = dyn_cast<LoadInst>(U)) {
+        see(DL.getTypeAllocSize(ld->getType()).getFixedValue(), ld);
+      } else if (auto *st = dyn_cast<StoreInst>(U); st && st->getPointerOperand() == v) {
+        see(DL.getTypeAllocSize(st->getValueOperand()->getType()).getFixedValue(), st);
+      } else if (isa<ReturnInst>(U) || isa<ICmpInst>(U)) {
+        continue;
+      } else {
+        unimplemented("fatptr: a host triple formal whose pointer escapes (rule 21)", U);
+      }
+    }
+  }
+  if (!cell)
+    unimplemented("fatptr: a host triple formal its clone never indexes or accesses (its cells are the caller's)", &A);
+  return cell;
+}
+
 void checkCalleeCells(LoweringContext &ctx, const Value *ptr, uint64_t cellBytes, Type *qramCellTy) {
   const DataLayout &DL = ctx.M.getDataLayout();
   for (const Use &u : ptr->uses()) {
@@ -1397,6 +1592,14 @@ void checkCalleeCells(LoweringContext &ctx, const Value *ptr, uint64_t cellBytes
     unsigned argNo = CB->getArgOperandNo(&u);
     if (argNo >= G->arg_size() || ctx.T.pointerFormal(*cs, argNo).abi == PtrAbi::Raw)
       continue;
+    PtrFormal pf = ctx.T.pointerFormal(*cs, argNo);
+    if (pf.pointee == ObjClass::Classical) {
+      if (hostFormalCellBytes(*G->getArg(argNo)) != cellBytes)
+        unimplemented("fatptr: a clone indexing a rule 21 triple formal at another cell size than the caller's "
+                      "object (a bit view, 63)",
+                      CB);
+      continue;
+    }
     Type *t = mem::formalCellType(*G->getArg(argNo));
     if (DL.getTypeAllocSize(t).getFixedValue() != cellBytes || (qramCellTy && t != qramCellTy))
       unimplemented("fatptr: a clone accessing a rule 21 triple formal at another cell type than the caller's "
@@ -1435,6 +1638,7 @@ Triple passAcrossCall(LoweringContext &ctx, const Value *ptr) {
     Operand base = ctx.operand(h.root);
     if (base.handle)
       internalError("fatptr: a slot or host object bound to a rail", h.root);
+    crossings()[&ctx.out()][ptr] = Crossed{h.root, h.cellBytes};
     return Triple{base.v, ConstantInt::get(i32(ctx), rootNumber(ctx, h.root)), h.idx, h.cellCount};
   }
   Fat f = derive(ctx, ptr, /*emit=*/false);
@@ -1521,9 +1725,15 @@ void bindFormal(LoweringContext &ctx, const Argument &formal, Value *object, Ope
     break;
   }
   case ObjClass::Classical:
-    unimplemented("fatptr: a triple formal onto a host object (its loads beyond the cell count, rule 21)", &formal);
+    // 85: a host object's pointer the clone derives and returns. Its loads and stores stay unimplemented
+    // (lowerLoad, lowerStore: a load beyond the cell count, rule 21).
+    if (idx.handle)
+      unimplemented("fatptr: a host triple formal at a quantum cell index (rule 21)", &formal);
+    b.cell = hostFormalCellBytes(formal);
+    break;
   }
-  b.cell = DL.getTypeAllocSize(b.cellTy).getFixedValue();
+  if (b.cellTy)
+    b.cell = DL.getTypeAllocSize(b.cellTy).getFixedValue();
   if (!boundFormals()[&ctx.out()].try_emplace(&formal, b).second)
     internalError("fatptr: a triple formal bound twice", &formal);
 }

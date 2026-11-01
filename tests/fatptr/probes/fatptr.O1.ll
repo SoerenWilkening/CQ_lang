@@ -14,10 +14,10 @@ target triple = "x86_64-apple-macosx16.0.0"
 define i32 @f_ne_two(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
   %3 = alloca [4 x i32], align 16
   %4 = alloca [4 x i32], align 16
-  %5 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #6
-  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %3) #7
+  %5 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #7
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %3) #8
   call void @llvm.memset.p0.i64(ptr noundef nonnull align 16 dereferenceable(16) %3, i8 0, i64 16, i1 false)
-  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %4) #7
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %4) #8
   call void @llvm.memset.p0.i64(ptr noundef nonnull align 16 dereferenceable(16) %4, i8 0, i64 16, i1 false)
   %6 = and i32 %5, 1
   %7 = icmp eq i32 %6, 0
@@ -32,9 +32,9 @@ define i32 @f_ne_two(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
   %16 = getelementptr inbounds i32, ptr %4, i64 %15
   %17 = icmp ne ptr %12, %16
   %18 = zext i1 %17 to i32
-  %19 = call i32 @cq_measure_si32(i32 noundef %18) #7
-  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #7
-  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %3) #7
+  %19 = call i32 @cq_measure_si32(i32 noundef %18) #8
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #8
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %3) #8
   ret i32 %19
 }
 
@@ -56,12 +56,12 @@ define i32 @f_eq_three(i32 noundef %0, double noundef %1) local_unnamed_addr #0 
   %3 = alloca [4 x i32], align 16
   %4 = alloca [4 x i32], align 16
   %5 = alloca [4 x i32], align 16
-  %6 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #6
-  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %3) #7
+  %6 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #7
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %3) #8
   call void @llvm.memset.p0.i64(ptr noundef nonnull align 16 dereferenceable(16) %3, i8 0, i64 16, i1 false)
-  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %4) #7
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %4) #8
   call void @llvm.memset.p0.i64(ptr noundef nonnull align 16 dereferenceable(16) %4, i8 0, i64 16, i1 false)
-  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %5) #7
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %5) #8
   call void @llvm.memset.p0.i64(ptr noundef nonnull align 16 dereferenceable(16) %5, i8 0, i64 16, i1 false)
   %7 = and i32 %6, 1
   %8 = icmp eq i32 %7, 0
@@ -82,10 +82,10 @@ define i32 @f_eq_three(i32 noundef %0, double noundef %1) local_unnamed_addr #0 
   %23 = getelementptr inbounds i32, ptr %19, i64 %22
   %24 = icmp eq ptr %16, %23
   %25 = zext i1 %24 to i32
-  %26 = call i32 @cq_measure_si32(i32 noundef %25) #7
-  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %5) #7
-  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #7
-  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %3) #7
+  %26 = call i32 @cq_measure_si32(i32 noundef %25) #8
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %5) #8
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #8
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %3) #8
   ret i32 %26
 }
 
@@ -93,10 +93,10 @@ define i32 @f_eq_three(i32 noundef %0, double noundef %1) local_unnamed_addr #0 
 define i32 @f_eq_arms(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
   %3 = alloca [4 x i32], align 16
   %4 = alloca [4 x i32], align 16
-  %5 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #6
-  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %3) #7
+  %5 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #7
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %3) #8
   call void @llvm.memset.p0.i64(ptr noundef nonnull align 16 dereferenceable(16) %3, i8 0, i64 16, i1 false)
-  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %4) #7
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %4) #8
   call void @llvm.memset.p0.i64(ptr noundef nonnull align 16 dereferenceable(16) %4, i8 0, i64 16, i1 false)
   %6 = and i32 %5, 1
   %7 = icmp eq i32 %6, 0
@@ -115,15 +115,15 @@ define i32 @f_eq_arms(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
   %20 = getelementptr inbounds i32, ptr %3, i64 %19
   %21 = icmp eq ptr %16, %20
   %22 = zext i1 %21 to i32
-  %23 = call i32 @cq_measure_si32(i32 noundef %22) #7
-  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #7
-  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %3) #7
+  %23 = call i32 @cq_measure_si32(i32 noundef %22) #8
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #8
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %3) #8
   ret i32 %23
 }
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @f_lt_global(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
-  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #6
+  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #7
   %4 = and i32 %3, 1
   %5 = icmp eq i32 %4, 0
   %6 = select i1 %5, ptr getelementptr inbounds (i8, ptr @G, i64 16), ptr @G
@@ -137,13 +137,13 @@ define i32 @f_lt_global(i32 noundef %0, double noundef %1) local_unnamed_addr #0
   %14 = getelementptr inbounds i32, ptr @G, i64 %13
   %15 = icmp ult ptr %10, %14
   %16 = zext i1 %15 to i32
-  %17 = tail call i32 @cq_measure_si32(i32 noundef %16) #7
+  %17 = tail call i32 @cq_measure_si32(i32 noundef %16) #8
   ret i32 %17
 }
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @f_eq_signed(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
-  %3 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %1) #6
+  %3 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %1) #7
   %4 = srem i32 %3, 4
   %5 = sext i32 %4 to i64
   %6 = getelementptr inbounds i32, ptr getelementptr inbounds (i8, ptr @G, i64 16), i64 %5
@@ -153,7 +153,7 @@ define i32 @f_eq_signed(i32 noundef %0, double noundef %1) local_unnamed_addr #0
   %10 = getelementptr inbounds i32, ptr getelementptr inbounds (i8, ptr @H, i64 16), i64 %9
   %11 = icmp eq ptr %6, %10
   %12 = zext i1 %11 to i32
-  %13 = tail call i32 @cq_measure_si32(i32 noundef %12) #7
+  %13 = tail call i32 @cq_measure_si32(i32 noundef %12) #8
   ret i32 %13
 }
 
@@ -161,8 +161,8 @@ declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr #2
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @f_rail_off(i32 noundef %0, double noundef %1, i8 noundef zeroext %2, double noundef %3, i32 noundef %4) local_unnamed_addr #0 {
-  %6 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #6
-  %7 = tail call zeroext i8 @cq_theta_ui8(i8 noundef zeroext %2, double noundef %3) #6
+  %6 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #7
+  %7 = tail call zeroext i8 @cq_theta_ui8(i8 noundef zeroext %2, double noundef %3) #7
   %8 = and i32 %6, 1
   %9 = icmp eq i32 %8, 0
   %10 = select i1 %9, ptr @QB, ptr @QA
@@ -173,7 +173,7 @@ define i32 @f_rail_off(i32 noundef %0, double noundef %1, i8 noundef zeroext %2,
   %15 = zext i8 %7 to i64
   %16 = getelementptr inbounds i32, ptr %14, i64 %15
   %17 = load i32, ptr %16, align 4, !tbaa !6
-  %18 = tail call i32 @cq_measure_si32(i32 noundef %17) #7
+  %18 = tail call i32 @cq_measure_si32(i32 noundef %17) #8
   ret i32 %18
 }
 
@@ -183,11 +183,11 @@ declare zeroext i8 @cq_theta_ui8(i8 noundef zeroext, double noundef) local_unnam
 define i32 @f_rail_off_store(i32 noundef %0, double noundef %1, i8 noundef zeroext %2, double noundef %3, i32 noundef %4, i32 noundef %5) local_unnamed_addr #0 {
   %7 = alloca [300 x i32], align 16
   %8 = alloca [300 x i32], align 16
-  %9 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #6
-  %10 = tail call zeroext i8 @cq_theta_ui8(i8 noundef zeroext %2, double noundef %3) #6
-  call void @llvm.lifetime.start.p0(i64 1200, ptr nonnull %7) #7
+  %9 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #7
+  %10 = tail call zeroext i8 @cq_theta_ui8(i8 noundef zeroext %2, double noundef %3) #7
+  call void @llvm.lifetime.start.p0(i64 1200, ptr nonnull %7) #8
   call void @llvm.memset.p0.i64(ptr noundef nonnull align 16 dereferenceable(1200) %7, i8 0, i64 1200, i1 false)
-  call void @llvm.lifetime.start.p0(i64 1200, ptr nonnull %8) #7
+  call void @llvm.lifetime.start.p0(i64 1200, ptr nonnull %8) #8
   call void @llvm.memset.p0.i64(ptr noundef nonnull align 16 dereferenceable(1200) %8, i8 0, i64 1200, i1 false)
   %11 = and i32 %9, 1
   %12 = icmp eq i32 %11, 0
@@ -208,9 +208,9 @@ define i32 @f_rail_off_store(i32 noundef %0, double noundef %1, i8 noundef zeroe
   %26 = load i32, ptr %25, align 4, !tbaa !6
   %27 = shl nsw i32 %26, 1
   %28 = add nsw i32 %27, %24
-  %29 = tail call i32 @cq_measure_si32(i32 noundef %28) #7
-  call void @llvm.lifetime.end.p0(i64 1200, ptr nonnull %8) #7
-  call void @llvm.lifetime.end.p0(i64 1200, ptr nonnull %7) #7
+  %29 = tail call i32 @cq_measure_si32(i32 noundef %28) #8
+  call void @llvm.lifetime.end.p0(i64 1200, ptr nonnull %8) #8
+  call void @llvm.lifetime.end.p0(i64 1200, ptr nonnull %7) #8
   ret i32 %29
 }
 
@@ -219,8 +219,8 @@ define i32 @f_ptr_roundtrip(i32 noundef %0, double noundef %1, i32 noundef %2) l
   %4 = alloca [4 x i32], align 16
   %5 = alloca [4 x i32], align 16
   %6 = alloca [4 x i32], align 16
-  %7 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #6
-  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %4) #7
+  %7 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #7
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %4) #8
   store i32 %2, ptr %4, align 16, !tbaa !6
   %8 = getelementptr inbounds i8, ptr %4, i64 4
   %9 = add nsw i32 %2, 1
@@ -231,9 +231,9 @@ define i32 @f_ptr_roundtrip(i32 noundef %0, double noundef %1, i32 noundef %2) l
   %12 = getelementptr inbounds i8, ptr %4, i64 12
   %13 = add nsw i32 %2, 3
   store i32 %13, ptr %12, align 4, !tbaa !6
-  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %5) #7
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %5) #8
   call void @llvm.memcpy.p0.p0.i64(ptr noundef nonnull align 16 dereferenceable(16) %5, ptr noundef nonnull align 16 dereferenceable(16) @__const.f_ptr_roundtrip.b, i64 16, i1 false)
-  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %6) #7
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %6) #8
   call void @llvm.memcpy.p0.p0.i64(ptr noundef nonnull align 16 dereferenceable(16) %6, ptr noundef nonnull align 16 dereferenceable(16) @__const.f_ptr_roundtrip.c, i64 16, i1 false)
   %14 = and i32 %7, 1
   %15 = icmp eq i32 %14, 0
@@ -254,10 +254,10 @@ define i32 @f_ptr_roundtrip(i32 noundef %0, double noundef %1, i32 noundef %2) l
   %30 = inttoptr i64 %29 to ptr
   %31 = load i32, ptr %30, align 4, !tbaa !6
   %32 = add nsw i32 %31, %2
-  %33 = call i32 @cq_measure_si32(i32 noundef %32) #7
-  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %6) #7
-  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %5) #7
-  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #7
+  %33 = call i32 @cq_measure_si32(i32 noundef %32) #8
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %6) #8
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %5) #8
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #8
   ret i32 %33
 }
 
@@ -267,8 +267,8 @@ declare void @llvm.memcpy.p0.p0.i64(ptr noalias nocapture writeonly, ptr noalias
 ; Function Attrs: nounwind ssp uwtable
 define i32 @f_int_to_ptr(i32 noundef %0, double noundef %1, i32 noundef %2) local_unnamed_addr #0 {
   %4 = alloca [4 x i32], align 16
-  %5 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #6
-  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %4) #7
+  %5 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #7
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %4) #8
   store i32 %2, ptr %4, align 16, !tbaa !6
   %6 = getelementptr inbounds i8, ptr %4, i64 4
   %7 = add nsw i32 %2, 1
@@ -286,16 +286,16 @@ define i32 @f_int_to_ptr(i32 noundef %0, double noundef %1, i32 noundef %2) loca
   %16 = or disjoint i64 %15, %12
   %17 = inttoptr i64 %16 to ptr
   %18 = load i32, ptr %17, align 4, !tbaa !6
-  %19 = call i32 @cq_measure_si32(i32 noundef %18) #7
-  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #7
+  %19 = call i32 @cq_measure_si32(i32 noundef %18) #8
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #8
   ret i32 %19
 }
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @f_ptrmask(i32 noundef %0, double noundef %1, i32 noundef %2) local_unnamed_addr #0 {
   %4 = alloca [8 x i16], align 16
-  %5 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #6
-  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %4) #7
+  %5 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #7
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %4) #8
   %6 = trunc i32 %2 to i16
   store i16 %6, ptr %4, align 16, !tbaa !10
   %7 = getelementptr inbounds i8, ptr %4, i64 2
@@ -322,13 +322,70 @@ define i32 @f_ptrmask(i32 noundef %0, double noundef %1, i32 noundef %2) local_u
   %21 = load i16, ptr %17, align 2, !tbaa !10
   %22 = sext i16 %21 to i32
   %23 = add nsw i32 %22, %20
-  %24 = tail call i32 @cq_measure_si32(i32 noundef %23) #7
-  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #7
+  %24 = tail call i32 @cq_measure_si32(i32 noundef %23) #8
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #8
   ret i32 %24
 }
 
 ; Function Attrs: mustprogress nocallback nofree nosync nounwind speculatable willreturn memory(none)
 declare ptr @llvm.ptrmask.p0.i64(ptr, i64) #5
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @f_ret_ptr(i32 noundef %0, double noundef %1, i32 noundef %2) local_unnamed_addr #0 {
+  %4 = alloca [4 x i32], align 16
+  %5 = alloca [2 x i32], align 4
+  %6 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #7
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %4) #8
+  store i32 %2, ptr %4, align 16, !tbaa !6
+  %7 = getelementptr inbounds i8, ptr %4, i64 4
+  %8 = add nsw i32 %2, 1
+  store i32 %8, ptr %7, align 4, !tbaa !6
+  %9 = getelementptr inbounds i8, ptr %4, i64 8
+  %10 = add nsw i32 %2, 2
+  store i32 %10, ptr %9, align 8, !tbaa !6
+  %11 = getelementptr inbounds i8, ptr %4, i64 12
+  %12 = add nsw i32 %2, 3
+  store i32 %12, ptr %11, align 4, !tbaa !6
+  call void @llvm.lifetime.start.p0(i64 8, ptr nonnull %5) #8
+  %13 = add nsw i32 %2, 7
+  store i32 %13, ptr %5, align 4, !tbaa !6
+  %14 = getelementptr inbounds i8, ptr %5, i64 4
+  %15 = add nsw i32 %2, 9
+  store i32 %15, ptr %14, align 4, !tbaa !6
+  %16 = call fastcc ptr @pick2(ptr noundef nonnull %4, ptr noundef nonnull %5, i32 noundef %6)
+  %17 = icmp eq ptr %16, null
+  br i1 %17, label %20, label %18
+
+18:                                               ; preds = %3
+  %19 = load i32, ptr %16, align 4, !tbaa !6
+  br label %20
+
+20:                                               ; preds = %3, %18
+  %21 = phi i32 [ %19, %18 ], [ -1, %3 ]
+  %22 = call i32 @cq_measure_si32(i32 noundef %21) #8
+  call void @llvm.lifetime.end.p0(i64 8, ptr nonnull %5) #8
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #8
+  ret i32 %22
+}
+
+; Function Attrs: mustprogress nofree noinline norecurse nosync nounwind ssp willreturn memory(none) uwtable
+define internal fastcc ptr @pick2(ptr noundef readnone %0, ptr noundef readnone %1, i32 noundef %2) unnamed_addr #6 {
+  %4 = and i32 %2, 2
+  %5 = icmp eq i32 %4, 0
+  %6 = lshr i32 %2, 2
+  %7 = and i32 %6, 1
+  %8 = zext nneg i32 %7 to i64
+  %9 = getelementptr inbounds i32, ptr %1, i64 %8
+  %10 = select i1 %5, ptr null, ptr %9
+  %11 = lshr i32 %2, 1
+  %12 = and i32 %11, 3
+  %13 = zext nneg i32 %12 to i64
+  %14 = getelementptr inbounds i32, ptr %0, i64 %13
+  %15 = and i32 %2, 1
+  %16 = icmp eq i32 %15, 0
+  %17 = select i1 %16, ptr %10, ptr %14
+  ret ptr %17
+}
 
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #1 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
@@ -336,8 +393,9 @@ attributes #2 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protect
 attributes #3 = { mustprogress nocallback nofree nounwind willreturn memory(argmem: write) }
 attributes #4 = { mustprogress nocallback nofree nounwind willreturn memory(argmem: readwrite) }
 attributes #5 = { mustprogress nocallback nofree nosync nounwind speculatable willreturn memory(none) }
-attributes #6 = { nomerge nounwind }
-attributes #7 = { nounwind }
+attributes #6 = { mustprogress nofree noinline norecurse nosync nounwind ssp willreturn memory(none) uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
+attributes #7 = { nomerge nounwind }
+attributes #8 = { nounwind }
 
 !llvm.module.flags = !{!0, !1, !2, !3, !4}
 !llvm.ident = !{!5}

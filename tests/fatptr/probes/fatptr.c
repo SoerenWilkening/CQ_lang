@@ -88,3 +88,14 @@ int f_ptrmask(unsigned x0, double th, int v) {
   short *q = __builtin_align_down(p, 8);
   return cq_measure(*q + *p);
 }
+/* a clone's fat-pointer result (85): {tag, idx} over two triple formals and NULL, a NULL test, a load */
+__attribute__((noinline)) static int *pick2(int *a, int *b, unsigned k) {
+  int *q = (k & 2) ? b + ((k >> 2) & 1) : (int *)0, *r = a + ((k >> 1) & 3);
+  return (k & 1) ? r : q;
+}
+int f_ret_ptr(unsigned x0, double th, int a0) {
+  unsigned x = x0; cq_theta(&x, th);
+  int a[4] = {a0, a0 + 1, a0 + 2, a0 + 3}, b[2] = {a0 + 7, a0 + 9};
+  int *p = pick2(a, b, x);
+  return cq_measure(p ? *p : -1);
+}

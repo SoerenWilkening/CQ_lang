@@ -26,6 +26,7 @@
 // itself is pred's.
 #include "SpineInternal.h"
 #include "../loops/cutoff/Exits.h"
+#include "../fatptr/FatPtrInternal.h"
 
 #include "cq/Aggregates.h"
 #include "cq/Effects.h"
@@ -807,8 +808,13 @@ bool Walker::emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigne
   Type *rty = rv->getType();
   bool fieldwise = false;
   unsigned nLeaves = 0;
+  bool fat = rty->isPointerTy() && ctx.T.resultQuantum(ctx.S, 0);   // rule 21 (85): {tag, idx}
   SmallVector<unsigned, 4> pcuts = rty->isIntegerTy() ? spine::packedCuts(rv) : SmallVector<unsigned, 4>{};
-  if (pcuts.size() > 2 && st) {
+  if (fat) {
+    pcuts.clear();
+    nLeaves = 2;
+    fieldwise = true;
+  } else if (pcuts.size() > 2 && st) {
     nLeaves = pcuts.size() - 1;   // cq-0umd: a packed integer result's fields
     fieldwise = true;
   } else if (rty->isAggregateType() || rty->isVectorTy()) {
@@ -825,8 +831,16 @@ bool Walker::emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigne
   {
     // CR §1.4: a literal struct of the result's leaves, handles where quantum; each quantum leaf is
     // copied out into a fresh rail (rule 18) like a scalar result.
-    SmallVector<Operand, 4> leaves = pcuts.size() > 2 ? spine::packFields(ctx, rv, pcuts) : aggr::flattenResult(ctx, rv);
+    SmallVector<Operand, 4> leaves;
+    if (fat) {
+      auto [tag, idx] = fatptr::resultFields(ctx, *ret);
+      leaves = {tag, idx};
+    } else {
+      leaves = pcuts.size() > 2 ? spine::packFields(ctx, rv, pcuts) : aggr::flattenResult(ctx, rv);
+    }
     auto leafTy = [&](unsigned k) -> Type * {
+      if (fat)
+        return Type::getInt32Ty(ctx.M.getContext());
       if (pcuts.size() > 2)
         return IntegerType::get(ctx.M.getContext(), pcuts[k + 1] - pcuts[k]);
       return spine::resultFieldTypes(*ctx.S.F)[k];
@@ -836,7 +850,7 @@ bool Walker::emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigne
     for (unsigned k = 0; k < leaves.size(); ++k) {
       const Operand &o = leaves[k];
       Value *v = o.v;
-      bool rq = ctx.T.resultQuantum(ctx.S, k);
+      bool rq = fat || ctx.T.resultQuantum(ctx.S, k);
       if (o.handle && !rq)
         internalError("spine: a clone result field that is a rail where taint records it classical", ret);
       if (!o.handle && rq) {

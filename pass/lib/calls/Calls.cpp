@@ -351,6 +351,9 @@ struct ResultLayout {
   // cq-0umd (166): an aggregate result with a packed integer leaf: the fields per leaf (the leaves are
   // then the fields, a packed leaf split); empty when every leaf is one field.
   SmallVector<unsigned, 4> leafFields;
+  // Rule 21 (85): a quantum pointer result is the fat pointer {i32 tag, i32 idx}, both handles, in the
+  // caller's object table (fatptr: the clone's result roots are its triple formals and NULL, tag 0).
+  bool fatPtr = false;
   bool anyQ() const { return is_contained(q, true); }
 };
 
@@ -373,6 +376,15 @@ ResultLayout resultLayout(const TaintInfo &T, const Specialization &S, const Val
     r.qramFormal = hasQramTriple(T, S);
     if (r.qramFormal)
       r.stores = mem::calleeQramStoreCount(T, S);
+    return r;
+  }
+  if (rt->isPointerTy() && T.resultQuantum(S, 0)) {
+    if (hasQramTriple(T, S))
+      unimplemented("calls: a clone with a fat-pointer result and a triple formal onto a QRAM (rule 21, M2)", at);
+    Type *i32 = Type::getInt32Ty(rt->getContext());
+    r.composite = r.fatPtr = true;
+    r.leaves = {i32, i32};
+    r.q = {true, true};
     return r;
   }
   if (!isComposite(rt) && !scalarRailType(rt) && !(rt->isPointerTy() && !T.resultQuantum(S, 0)))
@@ -744,8 +756,10 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
 void bindFieldwiseResult(LoweringContext &ctx, CallBase &CB, CallInst *call, const ResultLayout &res,
                          ArrayRef<Value *> slotOuts = {}, ArrayRef<Operand> extra = {}) {
   SmallVector<bool, 4> tq = ctx.T.fieldMask(&CB, ctx.S);
-  if (res.cuts.size() > 2 || !res.leafFields.empty())
-    tq = res.q;   // cq-0umd: a packed integer result's fields are the callee's (resultQuantum)
+  if (res.cuts.size() > 2 || !res.leafFields.empty() || res.fatPtr)
+    tq = res.q;   // cq-0umd: a packed integer result's fields are the callee's (resultQuantum); 85: {tag, idx}
+  if (res.fatPtr && !ctx.T.isFatPointer(&CB, ctx.S))
+    internalError("calls: a clone's fat-pointer result where taint says the call's pointer is not fat", &CB);
   if (tq.size() != res.q.size() || !std::equal(tq.begin(), tq.end(), res.q.begin()))
     internalError("calls: the clone's result fields and taint's field mask of the call disagree", &CB);
   SmallVector<Operand, 4> ops;
