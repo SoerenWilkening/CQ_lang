@@ -84,6 +84,11 @@ public:
   void noteUse(RailId, llvm::Instruction *consumer);
   void noteNonDiagonal(RailId target, llvm::Instruction *gate);
   void cleanupBijective(RailId oldRail, const abi::TemplateSpec &inverse, llvm::ArrayRef<Operand>);
+  // U8 (cq-xivx, CR rule 18, §1.4 _inv<c>): rule 6 clean-up of oldRail through a call: its item emits
+  // inv(args..., old handle) (inv's calling convention) and then frees oldRail. The handles of args and
+  // alsoReads are the clean-up's reads (as cleanupBijective's operands: placement, barriers, pruning).
+  void cleanupByCall(RailId oldRail, llvm::Function *inv, llvm::ArrayRef<Operand> args,
+                     llvm::ArrayRef<llvm::Value *> alsoReads);
   void flushBefore(llvm::Instruction *point);       // due _unc + cqrt_free, reverse dependency order
   // U7 (cq-nqa6, CR rules 5, 8, 9): flushBefore, and also, before P, the item of each arm-local rail (defined
   // in a block that does not dominate P, every use and reader item before P, every path from its block

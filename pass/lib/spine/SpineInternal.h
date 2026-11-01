@@ -202,6 +202,13 @@ void pushLoopUnit(LoweringContext &, const llvm::Loop &);
 void popLoopUnit(LoweringContext &, const llvm::Loop &);
 // CR rule 6 after an original instruction is lowered, or a quantum-join phi merged (Opcode.cpp).
 void ruleSixAfter(LoweringContext &, llvm::Instruction &);
+// cq-xivx (CR §1.4 _inv<c>, rule 18; Opcode.cpp): rule 6's inverse of one bijective update U of Y,
+// the template and its forward operands computing Y from yp (U's value). operandOf resolves U's other
+// operands, readsY tells whether one reads Y (then U is no bijection in Y). nullopt: no rule 6 bijection.
+struct InverseStep { abi::TemplateSpec spec; llvm::SmallVector<Operand, 3> ops; };
+std::optional<InverseStep> inverseStep(llvm::Instruction &U, llvm::Value *Y, Operand yp,
+                                       llvm::function_ref<Operand(llvm::Value *)> operandOf,
+                                       llvm::function_ref<bool(llvm::Value *)> readsY);
 
 // Rule 2 classical collapse (Collapse.cpp, contract at its top). noteTemplate/noteCore keep the
 // histories (called by emitTemplate/emitCore); collapse returns the classical value a rail holds at

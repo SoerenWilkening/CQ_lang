@@ -31,7 +31,9 @@ std::string name(const CoreSpec &);
 llvm::FunctionCallee declare(llvm::Module &, const CoreSpec &);
 std::optional<CoreSpec> parseCore(llvm::StringRef symbol);
 struct CloneSpec { std::string fn; Mask mask; std::vector<uint64_t> bounds;
-                   bool ctl = false, pure = false, adj = false; unsigned depth = 0; bool unc = false; };
+                   bool ctl = false, pure = false, adj = false; unsigned depth = 0; bool unc = false;
+                   // cq-xivx (CR §1.4 INVERSE-UPDATE kind): the cells of `_inv<c>{_<c'>}`, empty for none.
+                   std::vector<unsigned> inv = {}; };
 std::string name(const CloneSpec &);
 std::optional<CloneSpec> parseClone(llvm::StringRef symbol);
 std::string asmCloneFn(const llvm::InlineAsm &);    // "asm_" + first 16 lowercase hex of sha256(asm string as LLVM spells it, one NUL byte, constraint string)

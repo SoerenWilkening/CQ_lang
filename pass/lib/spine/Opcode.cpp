@@ -831,7 +831,12 @@ APInt oddInverse(const APInt &k) {
 // CR rule 6's bijections: when U = f(y, ...) is a bijection in y for every value of its other
 // operands (which do not read y), the inverse computing y from yp (the rail holding f's value).
 // Nothing is emitted. The caller has established that y is cleanable and dead.
-std::optional<Inverse> inverseOf(LoweringContext &ctx, Instruction &U, Value *Y, Operand yp) {
+// cq-xivx: the case analysis is inverseStepWith's, over resolvers for the other operands (operandOf) and
+// for "does this value read y" (readsY), so the _inv<c> clone (calls, CR §1.4) reuses it over a callee's
+// original body.
+std::optional<Inverse> inverseStepWith(Instruction &U, Value *Y, Operand yp,
+                                       function_ref<Operand(Value *)> operandOf,
+                                       function_ref<bool(Value *)> readsY) {
   abi::TemplateSpec spec;
   // The value field of {u,s}{add,sub}.with.overflow is the add or sub itself (cq-6r4r, 112).
   auto *ovf = dyn_cast<IntrinsicInst>(&U);
@@ -847,9 +852,9 @@ std::optional<Inverse> inverseOf(LoweringContext &ctx, Instruction &U, Value *Y,
     Value *Z = U.getOperand(1 - i);
     spec.w = rt(a0->getType(), &U);
     if (opc == Instruction::Add || opc == Instruction::Sub || opc == Instruction::Xor) {
-      if (reads(ctx, Z, Y))
+      if (readsY(Z))
         return std::nullopt;
-      Operand z = ctx.operand(Z);
+      Operand z = operandOf(Z);
       if (opc == Instruction::Add) {
         spec.op = "sub";
         return normalized(spec, {yp, z});            // y = y' - z
@@ -893,13 +898,18 @@ std::optional<Inverse> inverseOf(LoweringContext &ctx, Instruction &U, Value *Y,
       return normalized(spec, {yp});                 // an involution
     }
     if ((id == Intrinsic::fshl || id == Intrinsic::fshr) && II->getArgOperand(0) == Y &&
-        II->getArgOperand(1) == Y && !reads(ctx, II->getArgOperand(2), Y)) {
+        II->getArgOperand(1) == Y && !readsY(II->getArgOperand(2))) {
       spec.op = id == Intrinsic::fshl ? "fshr" : "fshl";   // a rotation's inverse
       spec.w = rt(U.getType(), &U);
-      return normalized(spec, {yp, yp, ctx.operand(II->getArgOperand(2))});
+      return normalized(spec, {yp, yp, operandOf(II->getArgOperand(2))});
     }
   }
   return std::nullopt;
+}
+
+std::optional<Inverse> inverseOf(LoweringContext &ctx, Instruction &U, Value *Y, Operand yp) {
+  return inverseStepWith(
+      U, Y, yp, [&](Value *Z) { return ctx.operand(Z); }, [&](Value *Z) { return reads(ctx, Z, Y); });
 }
 
 void clean(LoweringContext &ctx, Value *y, const Inverse &inv) {
@@ -1331,6 +1341,16 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
       clean(ctx, Y, *inv);
       return;
     }
+}
+
+
+// cq-xivx (CR §1.4 _inv<c>, rule 18): rule 6's per-instruction inverse over caller-supplied resolvers.
+std::optional<InverseStep> inverseStep(Instruction &U, Value *Y, Operand yp, function_ref<Operand(Value *)> operandOf,
+                                       function_ref<bool(Value *)> readsY) {
+  std::optional<Inverse> inv = inverseStepWith(U, Y, yp, operandOf, readsY);
+  if (!inv)
+    return std::nullopt;
+  return InverseStep{inv->spec, inv->ops};
 }
 
 } // namespace spine

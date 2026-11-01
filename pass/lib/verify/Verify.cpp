@@ -375,7 +375,7 @@ private:
   // the forward call may be the _pure spelling or not.
   bool isForwardOf(const CallBase &CB, const abi::CloneSpec &Twin) {
     const Sig &S = Sigs.get(CB);
-    if (S.kind != Kind::Clone || S.unc)
+    if (S.kind != Kind::Clone || S.unc || !S.clone->inv.empty())
       return false;
     const abi::CloneSpec &C = *S.clone;
     return C.fn == Twin.fn && C.mask == Twin.mask && C.bounds == Twin.bounds && C.ctl == Twin.ctl &&
@@ -454,6 +454,15 @@ private:
       return;
     }
     if (Sg && Sg->kind == Kind::Clone) {
+      // cq-xivx (CR §1.4 _inv<c>): the clone copies f_c^-1 of the cell's new content onto the trailing old
+      // rails (one per cell of the group), returning each to |0>.
+      if (!Sg->clone->inv.empty() && !Sg->unc) {
+        unsigned n = Sg->clone->inv.size();
+        for (unsigned i = CB->arg_size() >= n ? CB->arg_size() - n : 0; i < CB->arg_size(); ++i)
+          if (H.count(CB->getArgOperand(i)))
+            set(S, CB->getArgOperand(i), SK);
+        return;
+      }
       if (Sg->unc)
         for (const Value *V : CB->args())
           if (H.count(V) && originsAny(V, [&](const Value *R) { return isForwardCloneResult(R, *Sg->clone); }))

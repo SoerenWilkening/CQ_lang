@@ -557,6 +557,8 @@ std::string cloneName(const CloneSpec &s) {
     n += "_adj";
   if (s.depth)
     n += "_d" + std::to_string(s.depth);
+  for (size_t i = 0; i < s.inv.size(); ++i)
+    n += (i == 0 ? "_inv" : "_") + std::to_string(s.inv[i]);
   if (s.unc)
     n += "_unc";
   return n;
@@ -570,6 +572,31 @@ std::optional<CloneSpec> parseCloneImpl(StringRef sym) {
   size_t n = t.size();
   // Suffixes, right to left, in the reverse of their fixed order.
   if (n && t[n - 1] == "unc") { s.unc = true; --n; }
+  // cq-xivx: "_inv" cell { "_" cell }: trailing decimal tokens back to an "inv<N>" token. A reading that
+  // leaves no mask is not this suffix (a fn or mask token that merely looks like one).
+  {
+    size_t k = n;
+    while (k > 0 && allDigits(t[k - 1]))
+      --k;
+    if (k > 1 && t[k - 1].size() > 3 && t[k - 1].starts_with("inv") && allDigits(t[k - 1].drop_front(3))) {
+      std::vector<unsigned> cells;
+      bool ok = true;
+      for (size_t i = k - 1; i < n && ok; ++i) {
+        StringRef c = i == k - 1 ? t[i].drop_front(3) : t[i];
+        unsigned v;
+        ok = canonicalDecimal(c, true) && !c.getAsInteger(10, v);
+        if (ok)
+          cells.push_back(v);
+      }
+      bool maskLeft = false;
+      for (size_t i = 0; i + 1 < k; ++i)
+        maskLeft |= isMask(t[i]);
+      if (ok && maskLeft) {
+        s.inv = std::move(cells);
+        n = k - 1;
+      }
+    }
+  }
   if (n && t[n - 1].size() > 1 && t[n - 1][0] == 'd' && canonicalDecimal(t[n - 1].drop_front(), false)) {
     if (t[n - 1].drop_front().getAsInteger(10, s.depth))
       return std::nullopt;

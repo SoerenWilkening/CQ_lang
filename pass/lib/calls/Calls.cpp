@@ -66,6 +66,8 @@
 #include "../eff/conc/Setjmp.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Analysis/CFG.h"
+#include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/ConstantRange.h"
 #include "llvm/IR/Constants.h"
@@ -107,7 +109,7 @@ abi::CloneSpec cloneSpecOf(const Specialization &S) {
 
 bool sameFields(const abi::CloneSpec &a, const abi::CloneSpec &b) {
   return a.fn == b.fn && a.mask == b.mask && a.bounds == b.bounds && a.ctl == b.ctl && a.pure == b.pure &&
-         a.adj == b.adj && a.depth == b.depth && a.unc == b.unc;
+         a.adj == b.adj && a.depth == b.depth && a.unc == b.unc && a.inv == b.inv;
 }
 
 // The CR §1.4 name of cs; unimplemented when the right-to-left reading does not give cs back.
@@ -1298,6 +1300,402 @@ static void lowerEscapingCall(LoweringContext &ctx, CallBase &CB, const Speciali
   conc::noteEscapedOut(ctx, CB, esc);
 }
 
+// ---- INVERSE-UPDATE clones (cq-xivx; CR §1.4 `_inv<c>`, rule 18, rule 6) ------------------------------
+//
+// A clone that overwrites a caller cell c with a rule-6 bijection f_c of the cell's old value, the old value
+// dead in the caller after the call: the caller's rule 6 clean-up of the old rail is the call
+// `__cq_q_<fn>_<mask>_inv<c>(args..., old)` (its item, Uncompute U8), then cqrt_free(old). The _inv clone
+// loads the cell's new content y', computes f_c^-1 fresh by rule 6's per-instruction inverses
+// (spine::inverseStep: sub for add, the odd literal's inverse for mul, fshr for fshl, ...), copies it onto
+// the old rail, uncomputes and frees its own rails. c is the cell's position among the call's old cell
+// handles (the twin's trailing operands, slot order).
+//
+// Scope (narrow, owner 2026-11-01). Built: a void or single-result clone call that writes one caller slot
+// object through a raw pointer formal, no _ctl; a written integer or floating cell whose callee update is
+// one store at a constant cell offset of the formal, outside any cycle and on every path (its block
+// post-dominates the entry), of a chain of rule-6 bijections down to a load of the same cell that dominates
+// the store, each step's other operands constants or scalar formals. Not a chain of bijections (a step
+// rule 6 cannot invert, a value that does not read the old cell): no clean-up, as rule 6 asks. The old rail
+// is cleaned only when it is the caller's register (Role::UserRegister; seeds and garbage are rules 7 and
+// 5) and provably dead after the call: every original reader of it precedes the call, and it sits in no
+// other cell. Unimplemented, with the instruction: coupled cells (a swap: the group `_inv<c>_<c'>`), a
+// composite or merged update (127, 125 shapes), an operand the callee computes, two stores to the cell, a
+// conditional or looping store, a _ctl clone, a caller that writes the object again after the call, a call
+// in a cycle.
+namespace {
+
+// I's block lies on a cycle.
+bool inCycle(const Instruction *I, const DominatorTree *DT) {
+  const BasicBlock *b = I->getParent();
+  for (const BasicBlock *succ : successors(b))
+    if (isPotentiallyReachable(succ, b, nullptr, DT))
+      return true;
+  return false;
+}
+
+struct InvChain {
+  SmallVector<Instruction *, 4> steps;   // outermost (the stored value) first
+  SmallVector<Value *, 4> chainOps;      // the operand of steps[k] that carries the old value
+  LoadInst *load = nullptr;              // the load of the old cell content
+  StoreInst *store = nullptr;
+};
+
+// (base, constant byte offset) of a pointer in the callee.
+std::pair<const Value *, int64_t> baseOffset(const Value *p, const DataLayout &DL) {
+  APInt off(DL.getIndexTypeSizeInBits(p->getType()), 0);
+  const Value *b = p->stripAndAccumulateConstantOffsets(DL, off, /*AllowNonInbounds=*/true);
+  return {b, off.getSExtValue()};
+}
+
+bool readsAny(const Value *v, const SmallPtrSetImpl<const Value *> &loads, unsigned depth = 0) {
+  if (loads.count(v))
+    return true;
+  auto *I = dyn_cast<Instruction>(v);
+  if (!I || depth > 64)
+    return depth > 64;
+  if (isa<LoadInst>(I))
+    return false;
+  for (const Value *op : I->operands())
+    if (readsAny(op, loads, depth + 1))
+      return true;
+  return false;
+}
+
+// The callee's update of cell `cell` of formal argNo, as a chain of rule-6 bijections. nullopt: no rule-6
+// bijection of the old content (no clean-up). Unimplemented shapes stop with the instruction.
+std::optional<InvChain> invChainOf(const Specialization &S, unsigned argNo, unsigned cell, const std::vector<FormalLayout> &fs,
+                                   const CallBase &site) {
+  Function &F = *S.F;
+  const DataLayout &DL = F.getParent()->getDataLayout();
+  Argument *A = F.getArg(argNo);
+  SmallVector<StoreInst *, 2> stores;
+  SmallPtrSet<const Value *, 4> loads;
+  Type *cellTy = nullptr;
+  for (Instruction &I : instructions(F)) {
+    auto *st = dyn_cast<StoreInst>(&I);
+    if (!st)
+      continue;
+    auto [b, off] = baseOffset(st->getPointerOperand(), DL);
+    if (b != A)
+      continue;
+    uint64_t sz = DL.getTypeStoreSize(st->getValueOperand()->getType());
+    if (off == int64_t(cell * sz)) {
+      stores.push_back(st);
+      cellTy = st->getValueOperand()->getType();
+    }
+  }
+  if (stores.size() != 1)
+    unimplemented("calls: _inv<c> (CR §1.4): a clone cell written by " + std::to_string(stores.size()) +
+                      " stores at a constant offset (one store of a bijective update is built)",
+                  &site);
+  StoreInst *st = stores.front();
+  if (!cellTy->isIntegerTy() && !cellTy->isFloatingPointTy())
+    return std::nullopt;
+  for (Instruction &I : instructions(F))
+    if (auto *ld = dyn_cast<LoadInst>(&I); ld && ld->getType() == cellTy) {
+      auto [b, off] = baseOffset(ld->getPointerOperand(), DL);
+      if (b == A && off == int64_t(cell * DL.getTypeStoreSize(cellTy)))
+        loads.insert(ld);
+    }
+  Value *V = st->getValueOperand();
+  if (!readsAny(V, loads)) {
+    // The new content reads another cell's old content through this formal: coupled cells (a swap).
+    SmallPtrSet<const Value *, 4> others;
+    for (Instruction &I : instructions(F))
+      if (auto *ld = dyn_cast<LoadInst>(&I); ld && baseOffset(ld->getPointerOperand(), DL).first == A &&
+                                             !loads.count(ld))
+        others.insert(ld);
+    if (readsAny(V, others))
+      unimplemented("calls: _inv<c>_<c'> (CR §1.4): coupled cells whose updates read each other's old values (the "
+                    "group form)",
+                    st);
+    return std::nullopt;   // the new content is no function of the old one in this cell
+  }
+  InvChain ch;
+  ch.store = st;
+  Value *cur = V;
+  while (!loads.count(cur)) {
+    auto *I = dyn_cast<Instruction>(cur);
+    if (!I)
+      return std::nullopt;
+    SmallVector<unsigned, 2> carry;
+    for (unsigned k = 0; k < I->getNumOperands(); ++k)
+      if (readsAny(I->getOperand(k), loads))
+        carry.push_back(k);
+    if (carry.size() != 1 || isa<SelectInst>(I) || isa<PHINode>(I))
+      unimplemented("calls: _inv<c> (CR §1.4): a cell update that is a composite or merged function of the old "
+                    "content (rule 6, 125/127 shapes)",
+                    I);
+    for (unsigned k = 0; k < I->getNumOperands(); ++k) {
+      if (k == carry[0])
+        continue;
+      Value *z = I->getOperand(k);
+      if (isa<Constant>(z))
+        continue;
+      auto *za = dyn_cast<Argument>(z);
+      if (!za || fs[za->getArgNo()].pointer || fs[za->getArgNo()].leaves.size() != 1 ||
+          !fs[za->getArgNo()].cuts.empty())
+        unimplemented("calls: _inv<c> (CR §1.4): an operand of a cell update the callee computes (only constants "
+                      "and scalar formals are built)",
+                      I);
+    }
+    ch.steps.push_back(I);
+    ch.chainOps.push_back(I->getOperand(carry[0]));
+    cur = I->getOperand(carry[0]);
+  }
+  ch.load = cast<LoadInst>(cur);
+  DominatorTree DT(F);
+  PostDominatorTree PDT(F);
+  if (!DT.dominates(ch.load, st))
+    unimplemented("calls: _inv<c> (CR §1.4): the old cell content read by a load that does not precede the store",
+                  ch.load);
+  if (!PDT.dominates(st->getParent(), &F.getEntryBlock()) || inCycle(st, &DT))
+    unimplemented("calls: _inv<c> (CR §1.4): a conditional or looping cell update", st);
+  if (ch.steps.empty())
+    return std::nullopt;   // the cell is stored back unchanged
+  return ch;
+}
+
+// The CR §1.4 _inv clone of C (the forward clone of S) for cell position `pos`: (forward args..., old).
+Function *materializeInv(Module &M, const Specialization &S, Function *C, unsigned pos, unsigned argNo,
+                         unsigned cell, const InvChain &ch, const std::vector<FormalLayout> &fs, const CallBase &site) {
+  abi::CloneSpec cs = cloneSpecOf(S);
+  cs.inv = {pos};
+  std::string name = checkedName(cs, &site);
+  if (Function *G = M.getFunction(name)) {
+    if (G->isDeclaration())
+      internalError("calls: an _inv clone declared without a body", &site);
+    return G;
+  }
+  LLVMContext &Cx = M.getContext();
+  Type *i32 = Type::getInt32Ty(Cx);
+  SmallVector<Type *, 8> params(C->getFunctionType()->params().begin(), C->getFunctionType()->params().end());
+  params.push_back(i32);
+  Function *G = Function::Create(FunctionType::get(Type::getVoidTy(Cx), params, false), GlobalValue::InternalLinkage,
+                                 name, M);
+  if (G->getName() != name)
+    internalError("calls: _inv clone symbol collision", &site);
+  G->setCallingConv(C->getCallingConv());
+  auto paramOf = [&](unsigned formal) {
+    unsigned k = S.ctl ? 1 : 0;
+    for (unsigned j = 0; j < formal; ++j)
+      k += fs[j].leaves.size();
+    return k;
+  };
+  IRBuilder<> B(BasicBlock::Create(Cx, "", G));
+  const DataLayout &DL = M.getDataLayout();
+  uint64_t cellOff = cell * DL.getTypeStoreSize(ch.store->getValueOperand()->getType());
+  Value *cellPtr = G->getArg(paramOf(argNo));
+  if (cellOff)
+    cellPtr = B.CreateConstGEP1_64(Type::getInt8Ty(Cx), cellPtr, cellOff);
+  Value *yp = B.CreateAlignedLoad(i32, cellPtr, Align(4));
+  SmallPtrSet<const Value *, 4> loadSet{ch.load};
+  auto operandOf = [&](Value *z) -> Operand {
+    if (auto *za = dyn_cast<Argument>(z); za && za->getParent() == S.F)
+      return Operand{G->getArg(paramOf(za->getArgNo())), bool(fs[za->getArgNo()].q[0])};
+    if (isa<Constant>(z))
+      return Operand{z, false};
+    internalError("calls: _inv clone: an operand that is neither a formal nor a constant", z);
+  };
+  auto readsY = [&](Value *z) { return readsAny(z, loadSet); };
+  struct Emitted { abi::TemplateSpec spec; SmallVector<Value *, 3> args; CallInst *t; };
+  SmallVector<Emitted, 4> done;
+  Operand cur{yp, true};
+  for (unsigned k = 0; k < ch.steps.size(); ++k) {
+    std::optional<spine::InverseStep> inv = spine::inverseStep(*ch.steps[k], ch.chainOps[k], cur, operandOf, readsY);
+    if (!inv)
+      internalError("calls: _inv clone: a step the dry run inverted has no inverse", ch.steps[k]);
+    SmallVector<Value *, 3> args;
+    for (const Operand &o : inv->ops)
+      args.push_back(o.v);
+    CallInst *t = B.CreateCall(abi::declare(M, inv->spec, false), args);
+    done.push_back({inv->spec, args, t});
+    cur = Operand{t, true};
+  }
+  abi::TemplateSpec last = done.back().spec;
+  RailType w = last.to ? *last.to : last.w;
+  B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Copy, w}), {cur.v, G->getArg(params.size() - 1)});
+  for (auto it = done.rbegin(); it != done.rend(); ++it) {
+    SmallVector<Value *, 4> uargs{it->t};
+    uargs.append(it->args.begin(), it->args.end());
+    B.CreateCall(abi::declare(M, it->spec, true), uargs);
+    B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Free, {}}), {it->t});
+  }
+  B.CreateRetVoid();
+  return G;
+}
+
+// Is every inverse step a rule-6 bijection (a dry run over placeholders)?
+bool chainInvertible(const Specialization &S, const InvChain &ch, const std::vector<FormalLayout> &fs) {
+  LLVMContext &Cx = S.F->getContext();
+  Value *ph = PoisonValue::get(Type::getInt32Ty(Cx));
+  SmallPtrSet<const Value *, 4> loadSet{ch.load};
+  for (unsigned k = 0; k < ch.steps.size(); ++k) {
+    auto operandOf = [&](Value *z) -> Operand {
+      if (auto *za = dyn_cast<Argument>(z))
+        return Operand{z, bool(fs[za->getArgNo()].q[0])};
+      return Operand{z, false};
+    };
+    auto readsY = [&](Value *z) { return readsAny(z, loadSet); };
+    if (!spine::inverseStep(*ch.steps[k], ch.chainOps[k], Operand{ph, true}, operandOf, readsY))
+      return false;
+  }
+  return true;
+}
+
+// The caller's old rail h of a cell the call overwrites is dead after the call (CR rule 6 Dead, narrow):
+// h is the caller's register, not measured, every original reader of a value bound to h precedes the call,
+// and the only store of it is into the very cell the call overwrites. The object is a local whose address
+// reaches only loads, stores into it, constant GEPs, lifetime markers and this call.
+bool oldDeadAfter(LoweringContext &ctx, CallBase &CB, Value *h, const Value *actual, int64_t cellOff) {
+  spine::Shared &sh = spine::shared(ctx);
+  std::optional<Role> role = ctx.unc().liveRole(ctx.unc().idOf(h));
+  if (!role || *role != Role::UserRegister || sh.measured.count(h))
+    return false;
+  const DataLayout &DL = ctx.M.getDataLayout();
+  auto [root, aoff] = baseOffset(actual, DL);
+  if (!isa<AllocaInst>(root))
+    return false;
+  int64_t target = aoff + cellOff;
+  DominatorTree &DT = sh.dt(*CB.getFunction());
+  SmallPtrSet<const Value *, 8> A;
+  for (auto &[w, ops] : sh.binds)
+    if (ops.size() == 1 && ops.front().handle && ops.front().v == h)
+      A.insert(w);
+  for (auto &[w, v] : sh.views)
+    if (v.rail == h)
+      A.insert(w);
+  for (const Value *w : A) {
+    SmallVector<const Use *, 8> uses;
+    spine::readingUses(sh, w, uses);
+    for (const Use *U : uses) {
+      auto *ui = dyn_cast<Instruction>(U->getUser());
+      if (!ui || ui->getFunction() != CB.getFunction() || ui == &CB || !DT.dominates(ui, &CB))
+        return false;
+      if (isa<ReturnInst>(ui) || isa<PHINode>(ui))
+        return false;
+      if (auto *st = dyn_cast<StoreInst>(ui)) {
+        auto [b, o] = baseOffset(st->getPointerOperand(), DL);
+        if (st->getValueOperand() != w || b != root || o != target)
+          return false;
+      }
+    }
+  }
+  // The object's address: no copy of the rail elsewhere through memory.
+  SmallVector<const Value *, 8> ptrs{root};
+  SmallPtrSet<const Value *, 8> seen;
+  while (!ptrs.empty()) {
+    const Value *p = ptrs.pop_back_val();
+    if (!seen.insert(p).second)
+      continue;
+    for (const User *u : p->users()) {
+      if (isa<LoadInst>(u))
+        continue;
+      if (auto *s2 = dyn_cast<StoreInst>(u); s2 && s2->getPointerOperand() == p && s2->getValueOperand() != p)
+        continue;
+      if (auto *g = dyn_cast<GetElementPtrInst>(u); g && g->hasAllConstantIndices()) {
+        ptrs.push_back(g);
+        continue;
+      }
+      if (auto *II = dyn_cast<IntrinsicInst>(u); II && II->isLifetimeStartOrEnd())
+        continue;
+      if (u == &CB)
+        continue;
+      return false;
+    }
+  }
+  return true;
+}
+
+// After the clone call r (phase 2: recordCall made), the _inv<c> clean-up of every dead old cell rail.
+void cleanDeadCells(LoweringContext &ctx, CallBase &CB, const Specialization &S, const CloneCall &r,
+                    ArrayRef<Value *> outs) {
+  std::vector<FormalLayout> fs = formalLayout(ctx.T, S, &CB);
+  unsigned pos = 0;
+  for (unsigned i = 0; i < CB.arg_size() && i < fs.size(); ++i) {
+    // The formals emitCloneCall passed old cells for (its slotArgs): not an object table (M7).
+    if (!fs[i].pointer || (fs[i].abi != PtrAbi::Raw && fatptr::slotTableActual(ctx, CB.getArgOperand(i))) ||
+        !pointsToSlot(ctx, CB.getArgOperand(i)))
+      continue;
+    SmallVector<unsigned, 4> cells = ctx.T.cellsWritten(S, i);
+    for (unsigned c : cells) {
+      if (ctx.T.cellForward(S, i, c) >= 0)
+        continue;
+      unsigned k = pos++;
+      if (k >= r.extra.size() || k >= r.slotOuts.size())
+        internalError("calls: _inv<c>: fewer old or new cell handles than cells the clone writes", &CB);
+      const Operand &old = r.extra[k];
+      if (!old.handle || !isa<Instruction>(old.v))
+        continue;
+      if (fs[i].abi != PtrAbi::Raw)
+        continue;   // a triple formal (107's idx half): the twin's, not built here
+      // The caller's cell: a scalar or an array of scalars local (records and other objects: not built here).
+      auto *AI = dyn_cast<AllocaInst>(getUnderlyingObject(CB.getArgOperand(i)));
+      Type *et = AI ? AI->getAllocatedType() : nullptr;
+      while (et && et->isArrayTy())
+        et = et->getArrayElementType();
+      if (!et || !(et->isIntegerTy() || et->isFloatingPointTy()))
+        continue;
+      uint64_t cellBytes = ctx.M.getDataLayout().getTypeStoreSize(et);
+      if (!oldDeadAfter(ctx, CB, old.v, CB.getArgOperand(i), int64_t(c * cellBytes)))
+        continue;
+      std::optional<InvChain> ch = invChainOf(S, i, c, fs, CB);
+      if (!ch || !chainInvertible(S, *ch, fs))
+        continue;
+      if (ctx.M.getDataLayout().getTypeStoreSize(ch->store->getValueOperand()->getType()) != cellBytes)
+        unimplemented("calls: _inv<c> (CR §1.4): a callee store of another width than the caller's cell", ch->store);
+      // Rule 6 group (CR §1.4): an update of this cell reading another written cell's old content.
+      for (unsigned c2 : cells)
+        if (c2 != c)
+          for (Instruction *I : ch->steps)
+            for (Value *op : I->operands())
+              if (auto *ld = dyn_cast<LoadInst>(op)) {
+                auto [b, o] = baseOffset(ld->getPointerOperand(), S.F->getParent()->getDataLayout());
+                if (b == S.F->getArg(i) && o == int64_t(c2 * cellBytes))
+                  unimplemented("calls: _inv<c>_<c'> (CR §1.4): coupled cells whose updates read each other's old "
+                                "values (the group form)",
+                                &CB);
+              }
+      if (S.ctl)
+        unimplemented("calls: _inv<c> (CR §1.4) of a _ctl clone call", &CB);
+      const DominatorTree &DT = spine::shared(ctx).dt(*CB.getFunction());
+      if (inCycle(&CB, &DT))
+        unimplemented("calls: _inv<c> (CR §1.4) of a clone call in a cycle", &CB);
+      auto [root, aoff] = baseOffset(CB.getArgOperand(i), ctx.M.getDataLayout());
+      for (const Instruction &X : instructions(*CB.getFunction())) {
+        if (&X == &CB || !X.mayWriteToMemory() || !isPotentiallyReachable(&CB, &X, nullptr, &DT))
+          continue;
+        if (auto *II = dyn_cast<IntrinsicInst>(&X); II && II->isLifetimeStartOrEnd())
+          continue;
+        const Value *wp = nullptr;
+        if (auto *st = dyn_cast<StoreInst>(&X))
+          wp = st->getPointerOperand();
+        bool hits = !wp;   // a call or another writer: may write the object unless it cannot reach it
+        if (auto *cb2 = dyn_cast<CallBase>(&X)) {
+          hits = false;
+          for (const Use &u : cb2->args())
+            if (u->getType()->isPointerTy() && getUnderlyingObject(u.get()) == root)
+              hits = true;
+        }
+        if (wp && getUnderlyingObject(wp) == root)
+          hits = true;
+        if (hits)
+          unimplemented("calls: _inv<c> (CR §1.4): the caller writes the cell's object again after the call (the "
+                        "clean-up reads the cell's new content)",
+                        &X);
+      }
+      Function *G = materializeInv(ctx.M, S, r.call->getCalledFunction(), k, i, c, *ch, fs, CB);
+      SmallVector<Value *, 4> reads(outs.begin(), outs.end());
+      reads.push_back(r.slotOuts[k]);
+      if (outs.empty() && r.slotOuts[0] != r.slotOuts[k])
+        reads.push_back(r.slotOuts[0]);   // the call group's leader: its twin reads the old rail
+      ctx.unc().cleanupByCall(ctx.unc().idOf(old.v), G, r.ops, reads);
+    }
+  }
+}
+
+} // namespace
+
 void lowerLifted(LoweringContext &ctx, CallBase &CB) {
   capture(ctx);
   const Specialization *cs = ctx.T.calleeSpecialization(CB, ctx.S);
@@ -1355,6 +1753,7 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
       internalError("calls: old slot cells passed to a clone that reloads none", &CB);
     ctx.unc().recordCall(r.call, outs, r.slotOuts, r.extra);
     fatptr::finishSlotTableCall(ctx, r.call);
+    cleanDeadCells(ctx, CB, *cs, r, outs);
     return;
   }
   bindResult(ctx, CB, r.call, r.handle, r.ops);

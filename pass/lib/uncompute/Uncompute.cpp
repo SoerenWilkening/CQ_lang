@@ -276,6 +276,7 @@ struct Uncompute::Impl {
     abi::TemplateSpec inverse;
     SmallVector<Operand, 3> ops;
     SmallVector<RailId, 3> reads;
+    Function *via = nullptr;   // U8: the clean-up is the call via(ops..., old) (inverse unused)
   };
   struct Rail {
     Value *handle = nullptr;
@@ -1820,6 +1821,16 @@ struct Uncompute::Impl {
       }
       return track(B.CreateCall(uncOf(fwd, false), argsOf(fwd, nullptr)));
     }
+    if (r.cleanup && r.cleanup->via) {
+      // U8 (cq-xivx): via(ops..., old) zeroes old; free old.
+      SmallVector<Value *, 6> args;
+      for (const Operand &o : r.cleanup->ops)
+        args.push_back(o.v);
+      args.push_back(r.handle);
+      CallInst *c = track(B.CreateCall(r.cleanup->via, args));
+      c->setCallingConv(r.cleanup->via->getCallingConv());
+      return emitRelease(g, B);
+    }
     if (r.cleanup) {
       // Rule 6: t = f^-1(ops); copy(t, old); f^-1_unc(t, ops); free t; free old.
       Module &M = *B.GetInsertBlock()->getModule();
@@ -3341,6 +3352,18 @@ void Uncompute::cleanupBijective(RailId oldRail, const abi::TemplateSpec &invers
     }
   }
   impl->rails[oldRail].cleanup = std::move(cl);
+}
+
+void Uncompute::cleanupByCall(RailId oldRail, Function *inv, ArrayRef<Operand> args, ArrayRef<Value *> alsoReads) {
+  if (!inv)
+    internalError("uncompute: cleanupByCall without a function");
+  SmallVector<Operand, 6> ops(args.begin(), args.end());
+  for (Value *v : alsoReads)
+    ops.push_back(Operand{v, true});
+  cleanupBijective(oldRail, abi::TemplateSpec{}, ops);
+  Impl::Rail &x = impl->rails[oldRail];
+  x.cleanup->via = inv;
+  x.cleanup->ops.assign(args.begin(), args.end());
 }
 
 void Uncompute::flushBefore(Instruction *point) { flushBefore(point, nullptr); }
