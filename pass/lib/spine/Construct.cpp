@@ -26,6 +26,7 @@
 // itself is pred's.
 #include "SpineInternal.h"
 
+#include "cq/Aggregates.h"
 #include "cq/Effects.h"
 #include "cq/Rotation.h"
 #include "cq/Switch.h"
@@ -706,6 +707,35 @@ void Walker::lowerUnit(Loop &lp) {
       visited.insert(&I);
 }
 
+// The k-th scalar leaf type of a type (depth first, as aggr flattens it).
+Type *leafTypeAt(Type *t, unsigned k) {
+  std::function<Type *(Type *, unsigned &)> walk = [&](Type *u, unsigned &i) -> Type * {
+    if (auto *st = dyn_cast<StructType>(u)) {
+      for (Type *e : st->elements())
+        if (Type *r = walk(e, i))
+          return r;
+      return nullptr;
+    }
+    if (auto *a = dyn_cast<ArrayType>(u)) {
+      for (uint64_t j = 0; j < a->getNumElements(); ++j)
+        if (Type *r = walk(a->getElementType(), i))
+          return r;
+      return nullptr;
+    }
+    if (auto *v = dyn_cast<FixedVectorType>(u)) {
+      if (i < v->getNumElements())
+        return v->getElementType();
+      i -= v->getNumElements();
+      return nullptr;
+    }
+    return i-- == 0 ? u : nullptr;
+  };
+  unsigned i = k;
+  if (Type *r = walk(t, i))
+    return r;
+  internalError("spine: a leaf index past the type's leaves");
+}
+
 // Rule 18 copy-out at a clone's return (cq-b0w, orchestrator decision: the spine owns it). A
 // quantum result r is copied into a fresh rail f = cqrt_alloc_<W>(0); cqrt_copy_<W>(r, f), f is kept
 // (Role::Result: the caller frees it after the twin) and returned; flushAtExit then uncomputes the
@@ -718,8 +748,57 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
   Function *C = ctx.B().GetInsertBlock()->getParent();
   ReturnInst *nr;
   if (Value *rv = ret->getReturnValue()) {
-    if (rv->getType()->isAggregateType())
-      unimplemented("spine: a clone returning an aggregate (rule 18 copy-out per field: aggr/calls)", ret);
+    Type *rty = rv->getType();
+    bool fieldwise = false;
+    unsigned nLeaves = 0;
+    if (rty->isAggregateType() || rty->isVectorTy()) {
+      nLeaves = unsigned(ctx.T.fieldMask(rv, ctx.S).size());
+      for (unsigned k = 0; k < nLeaves; ++k)
+        fieldwise |= ctx.T.resultQuantum(ctx.S, k);
+    }
+    if (fieldwise) {
+      // CR §1.4: a literal struct of the result's leaves, handles where quantum; each quantum leaf is
+      // copied out into a fresh rail (rule 18) like a scalar result.
+      auto *st = dyn_cast<StructType>(C->getReturnType());
+      SmallVector<Operand, 4> leaves = aggr::flattenResult(ctx, rv);
+      if (!st || st->getNumElements() != leaves.size())
+        internalError("spine: a clone's field-wise result type does not match its result's fields", ret);
+      Value *agg = PoisonValue::get(st);
+      SmallVector<Value *, 4> vals;
+      for (unsigned k = 0; k < leaves.size(); ++k) {
+        const Operand &o = leaves[k];
+        Value *v = o.v;
+        bool rq = ctx.T.resultQuantum(ctx.S, k);
+        if (o.handle && !rq)
+          internalError("spine: a clone result field that is a rail where taint records it classical", ret);
+        if (!o.handle && rq) {
+          // A classical value on this path of a field taint records quantum: a seed rail holding it.
+          RailType w = railTypeOf(leafTypeAt(rty, k));
+          CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {o.v});
+          ctx.unc().setRole(ctx.unc().recordSeed(f), Role::Result);
+          v = f;
+        } else if (o.handle) {
+          RailType w = railTypeOf(rty->isVectorTy() ? cast<VectorType>(rty)->getElementType()
+                                                    : leafTypeAt(rty, k));
+          CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                                     {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+          RailId fid = ctx.unc().recordSeed(f);
+          abi::CoreSpec cp{abi::Core::Copy, w};
+          CallInst *c = ctx.emitCore(cp, {o.v, f});
+          ctx.unc().recordCore(c, cp, {o, Operand{f, true}}, fid);
+          ctx.unc().setRole(fid, Role::Result);
+          v = f;
+        }
+        if (v->getType() != st->getElementType(k))
+          internalError("spine: a clone result field of another type than the clone's field", ret);
+        vals.push_back(v);
+      }
+      for (unsigned k = 0; k < vals.size(); ++k)
+        agg = B.CreateInsertValue(agg, vals[k], {k});
+      nr = B.CreateRet(agg);
+      ctx.unc().flushAtExit(nr);
+      return;
+    }
     Operand op = ctx.operand(rv);
     Value *v = op.v;
     if (copiedOut.count(rv)) {
@@ -1309,19 +1388,45 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
     Function *C = calls::materialize(M, S);
     sh.out = C;
     unsigned off = S.ctl ? 1 : 0;
-    if (C->arg_size() != F.arg_size() + off)
-      unimplemented("spine: a clone whose formals are not one per original formal (aggregate or pointer "
-                    "fields: calls/aggr/fatptr)",
-                    C);
     if (S.ctl)
       entryFlag = C->getArg(0);
+    // CR §1.4 (calls::materialize's ABI): one parameter per scalar leaf of each formal, a handle where
+    // taint's field mask is quantum; a composite formal is bound field-wise (rules 25, 26).
+    unsigned p = off;
     for (unsigned i = 0; i < F.arg_size(); ++i) {
-      Argument *p = C->getArg(i + off);
-      bool q = spine::isQ(ctx, F.getArg(i));
-      if (q)
-        ctx.unc().recordExternal(p, Role::UserRegister);   // the caller's rail: never freed here
-      spine::bindOperand(ctx, F.getArg(i), Operand{p, q});
+      Argument *A = F.getArg(i);
+      SmallVector<bool, 4> fm = T.fieldMask(A, S);
+      bool composite = A->getType()->isStructTy() || A->getType()->isArrayTy() || A->getType()->isVectorTy();
+      if (p + fm.size() > C->arg_size())
+        internalError("spine: a clone with fewer parameters than its formals' fields", C);
+      if (!composite) {
+        Argument *P = C->getArg(p++);
+        bool q = spine::isQ(ctx, A);
+        if (q)
+          ctx.unc().recordExternal(P, Role::UserRegister);   // the caller's rail: never freed here
+        spine::bindOperand(ctx, A, Operand{P, q});
+        continue;
+      }
+      SmallVector<Operand, 4> ops;
+      for (bool q : fm) {
+        Argument *P = C->getArg(p++);
+        if (q != P->getType()->isIntegerTy(32) && q)
+          internalError("spine: a quantum field parameter that is not a handle", C);
+        if (q)
+          ctx.unc().recordExternal(P, Role::UserRegister);
+        ops.push_back(Operand{P, q});
+      }
+      if (any_of(ops, [](const Operand &o) { return o.handle; }))
+        ctx.bindFields(A, ops);
+      else
+        unimplemented("spine: a classical composite formal of a clone (bound field-wise only with a quantum "
+                      "field)",
+                      A);
     }
+    if (p != C->arg_size())
+      unimplemented("spine: a clone with more parameters than its formals' fields (a variadic clone per "
+                    "call-site arity, calls::lowerVarargs)",
+                    C);
   }
 
   DominatorTree &DT = sh.dt(F);

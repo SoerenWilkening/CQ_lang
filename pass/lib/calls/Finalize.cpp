@@ -201,12 +201,18 @@ Function *twinSource(Module &M, Function &fwd) {
 void defineTwin(Module &M, Function &twin, Function &src) {
   LLVMContext &C = M.getContext();
   Type *h = Type::getInt32Ty(C);
-  if (src.getReturnType() != h || twin.arg_size() != src.arg_size() + 1)
+  // Outs: one for an i32 handle result, one per handle field of a field-wise result (CR §1.4).
+  auto *srt = dyn_cast<StructType>(src.getReturnType());
+  if ((src.getReturnType() != h && !srt) || twin.arg_size() <= src.arg_size())
     internalError("calls: calls::finalize: twin @" + twin.getName().str() + " does not match the clone @" +
-                      src.getName().str() + " (an i32 handle result, its arguments after out)",
+                      src.getName().str() + " (an i32 handle result or a struct of fields, its arguments after the outs)",
+                  &twin);
+  unsigned nOuts = twin.arg_size() - src.arg_size();
+  if (!srt && nOuts != 1)
+    internalError("calls: calls::finalize: twin @" + twin.getName().str() + " of a one-handle clone with several outs",
                   &twin);
   for (unsigned i = 0; i < src.arg_size(); ++i)
-    if (twin.getArg(i + 1)->getType() != src.getArg(i)->getType())
+    if (twin.getArg(i + nOuts)->getType() != src.getArg(i)->getType())
       internalError("calls: calls::finalize: twin @" + twin.getName().str() + " argument types differ from @" +
                         src.getName().str(),
                     &twin);
@@ -214,11 +220,11 @@ void defineTwin(Module &M, Function &twin, Function &src) {
   checkReplayable(src, twin, seen);
 
   ValueToValueMapTy VM;
-  Argument *out = twin.getArg(0);
-  out->setName("out");
+  for (unsigned j = 0; j < nOuts; ++j)
+    twin.getArg(j)->setName(nOuts == 1 ? "out" : "out" + std::to_string(j));
   for (unsigned i = 0; i < src.arg_size(); ++i) {
-    VM[src.getArg(i)] = twin.getArg(i + 1);
-    twin.getArg(i + 1)->setName(src.getArg(i)->getName());
+    VM[src.getArg(i)] = twin.getArg(i + nOuts);
+    twin.getArg(i + nOuts)->setName(src.getArg(i)->getName());
   }
   SmallVector<ReturnInst *, 4> rets;
   CloneFunctionInto(&twin, &src, VM, CloneFunctionChangeType::LocalChangesOnly, rets);
@@ -227,50 +233,92 @@ void defineTwin(Module &M, Function &twin, Function &src) {
   twin.setLinkage(GlobalValue::InternalLinkage);
 
   SmallVector<Instruction *, 4> dead;
+  // The copy-out of rule 18: f = cqrt_alloc_<W>(0), cqrt_copy_<W>(r, f), ..., ret f: the copy is made
+  // to target `out` instead and f goes.
+  auto retarget = [&](Value *rv, Argument *out, ReturnInst *R) {
+    auto *f = dyn_cast_or_null<CallInst>(rv);
+    std::optional<abi::CoreSpec> a =
+        f && f->getCalledFunction() ? abi::parseCore(f->getCalledFunction()->getName()) : std::nullopt;
+    auto *zero = f ? dyn_cast<Constant>(f->getArgOperand(0)) : nullptr;
+    // A classical arm seeds its result rail with its value (cq-mjwb); its twin would XOR that
+    // constant into out, which is not built yet.
+    if (a && a->op == abi::Core::Alloc && zero && !zero->isNullValue())
+      unimplemented("calls: calls::finalize: a clone return seeded with a classical value (its twin would "
+                    "XOR the constant into out)",
+                    R);
+    if (!a || a->op != abi::Core::Alloc || !zero || !zero->isNullValue())
+      unimplemented("calls: calls::finalize: a clone return that is not the rule 18 copy-out (a fresh |0> "
+                    "rail returned)",
+                    R);
+    SmallVector<CallInst *, 2> copies;
+    for (User *U : f->users()) {
+      if (isa<ReturnInst>(U) || isa<PHINode>(U) || isa<InsertValueInst>(U))
+        continue;
+      auto *cp = dyn_cast<CallInst>(U);
+      std::optional<abi::CoreSpec> c =
+          cp && cp->getCalledFunction() ? abi::parseCore(cp->getCalledFunction()->getName()) : std::nullopt;
+      if (!c || c->op != abi::Core::Copy || c->ctl || cp->getArgOperand(1) != f || cp->getArgOperand(0) == f)
+        unimplemented("calls: calls::finalize: a clone's result rail used other than by its copy-out", U);
+      copies.push_back(cp);
+    }
+    if (copies.size() != 1)
+      unimplemented("calls: calls::finalize: a clone's result rail written by other than one copy", f);
+    copies.front()->setArgOperand(1, out);
+    if (!is_contained(dead, f))
+      dead.push_back(f);
+  };
   for (ReturnInst *R : rets) {
-    // The copy-out of rule 18: f = cqrt_alloc_<W>(0), cqrt_copy_<W>(r, f), ..., ret f; or, for a
-    // return phi chosen classically, one such f per incoming edge and ret phi(f...) (cq-mjwb, 119).
-    // The same f on several incoming edges (a switch's duplicate edges) is rewritten once.
-    SmallSetVector<Value *, 2> results;
-    auto *rp = dyn_cast_or_null<PHINode>(R->getReturnValue());
-    if (rp && rp->hasOneUse())
-      results.insert(rp->incoming_values().begin(), rp->incoming_values().end());
-    else
-      results.insert(R->getReturnValue());
-    for (Value *rv : results) {
-      auto *f = dyn_cast_or_null<CallInst>(rv);
-      std::optional<abi::CoreSpec> a =
-          f && f->getCalledFunction() ? abi::parseCore(f->getCalledFunction()->getName()) : std::nullopt;
-      auto *zero = f ? dyn_cast<Constant>(f->getArgOperand(0)) : nullptr;
-      // A classical arm seeds its result rail with its value (cq-mjwb); its twin would XOR that
-      // constant into out, which is not built yet.
-      if (a && a->op == abi::Core::Alloc && zero && !zero->isNullValue())
-        unimplemented("calls: calls::finalize: a clone return seeded with a classical value (its twin would "
-                      "XOR the constant into out)",
-                      R);
-      if (!a || a->op != abi::Core::Alloc || !zero || !zero->isNullValue())
-        unimplemented("calls: calls::finalize: a clone return that is not the rule 18 copy-out (a fresh |0> "
-                      "rail returned)",
-                      R);
-      SmallVector<CallInst *, 2> copies;
-      for (User *U : f->users()) {
-        if (U == R || U == rp)
-          continue;
-        auto *cp = dyn_cast<CallInst>(U);
-        std::optional<abi::CoreSpec> c =
-            cp && cp->getCalledFunction() ? abi::parseCore(cp->getCalledFunction()->getName()) : std::nullopt;
-        if (!c || c->op != abi::Core::Copy || c->ctl || cp->getArgOperand(1) != f || cp->getArgOperand(0) == f)
-          unimplemented("calls: calls::finalize: a clone's result rail used other than by its copy-out", U);
-        copies.push_back(cp);
+    Value *ret = R->getReturnValue();
+    PHINode *rp = nullptr;
+    SmallVector<Instruction *, 4> chain;
+    if (srt) {
+      // A field-wise result: the insertvalue chain of the return; its handle fields (the copy-outs, in
+      // field order) are the outs.
+      SmallVector<Value *, 4> fields(srt->getNumElements(), nullptr);
+      Value *v = ret;
+      while (auto *iv = dyn_cast<InsertValueInst>(v)) {
+        if (iv->getNumIndices() != 1 || !iv->hasOneUse())
+          unimplemented("calls: calls::finalize: a field-wise clone return that is not one insertvalue chain", R);
+        if (!fields[iv->getIndices()[0]])
+          fields[iv->getIndices()[0]] = iv->getInsertedValueOperand();
+        chain.push_back(iv);
+        v = iv->getAggregateOperand();
       }
-      if (copies.size() != 1)
-        unimplemented("calls: calls::finalize: a clone's result rail written by other than one copy", f);
-      copies.front()->setArgOperand(1, out);
-      if (!is_contained(dead, f))
-        dead.push_back(f);
+      if (!isa<PoisonValue>(v) && !isa<UndefValue>(v))
+        unimplemented("calls: calls::finalize: a field-wise clone return that is not built from poison", R);
+      unsigned j = 0;
+      for (unsigned k = 0; k < fields.size(); ++k) {
+        auto *f = dyn_cast_or_null<CallInst>(fields[k]);
+        std::optional<abi::CoreSpec> a =
+            f && f->getCalledFunction() ? abi::parseCore(f->getCalledFunction()->getName()) : std::nullopt;
+        if (!a || a->op != abi::Core::Alloc)
+          continue;   // a classical field
+        if (j >= nOuts)
+          internalError("calls: calls::finalize: a field-wise clone return with more handle fields than its twin's outs",
+                        R);
+        retarget(f, twin.getArg(j++), R);
+      }
+      if (j != nOuts)
+        internalError("calls: calls::finalize: a field-wise clone return with fewer handle fields than its twin's outs",
+                      R);
+    } else {
+      // The same f on several incoming edges (a switch's duplicate edges) is rewritten once; a return
+      // phi chosen classically has one f per incoming edge (cq-mjwb, 119).
+      SmallSetVector<Value *, 2> results;
+      rp = dyn_cast_or_null<PHINode>(ret);
+      if (rp && rp->hasOneUse())
+        results.insert(rp->incoming_values().begin(), rp->incoming_values().end());
+      else {
+        rp = nullptr;
+        results.insert(ret);
+      }
+      for (Value *rv : results)
+        retarget(rv, twin.getArg(0), R);
     }
     ReturnInst::Create(C, nullptr, R->getIterator());
     R->eraseFromParent();
+    for (Instruction *iv : chain)
+      iv->eraseFromParent();
     if (rp)
       rp->eraseFromParent();
   }

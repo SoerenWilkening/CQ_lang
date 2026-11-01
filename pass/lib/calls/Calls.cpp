@@ -48,6 +48,7 @@
 #include "cq/Calls.h"
 
 #include "cq/Abi.h"
+#include "cq/Aggregates.h"
 #include "cq/Common.h"
 #include "cq/Loops.h"
 #include "cq/Lowering.h"
@@ -109,37 +110,153 @@ bool scalarRailType(Type *t) {
          t->isX86_FP80Ty();
 }
 
-// An integer result packed from narrower fields (taint's resultQuantum reads it as several fields, 159).
-bool packedIntegerResult(const Function &F) {
-  if (!F.getReturnType()->isIntegerTy())
-    return false;
+// An integer result, or an integer field of a composite result, packed from narrower fields by the
+// C ABI's coercion (zext / shl / or disjoint: 159, 166). Its fields are the struct's (cq-0umd).
+bool packedInteger(const Value *V) {
   using namespace PatternMatch;
+  Value *X, *Y;
+  const APInt *C;
+  return (match(V, m_DisjointOr(m_Shl(m_ZExt(m_Value(X)), m_APInt(C)), m_ZExt(m_Value(Y)))) ||
+          match(V, m_DisjointOr(m_ZExt(m_Value(Y)), m_Shl(m_ZExt(m_Value(X)), m_APInt(C))))) &&
+         C->getZExtValue() % 8 == 0;
+}
+
+bool packedIntegerResult(const Function &F) {
   for (const BasicBlock &BB : F)
     if (auto *RI = dyn_cast<ReturnInst>(BB.getTerminator()))
-      if (Value *V = RI->getReturnValue()) {
-        Value *X, *Y;
-        const APInt *C;
-        if (match(V, m_DisjointOr(m_Shl(m_ZExt(m_Value(X)), m_APInt(C)), m_ZExt(m_Value(Y)))) ||
-            match(V, m_DisjointOr(m_ZExt(m_Value(Y)), m_Shl(m_ZExt(m_Value(X)), m_APInt(C)))))
-          if (C->getZExtValue() % 8 == 0)
+      if (const Value *V = RI->getReturnValue()) {
+        if (V->getType()->isIntegerTy())
+          return packedInteger(V);
+        for (const Value *v = V; auto *iv = dyn_cast<InsertValueInst>(v); v = iv->getAggregateOperand())
+          if (iv->getInsertedValueOperand()->getType()->isIntegerTy() && packedInteger(iv->getInsertedValueOperand()))
             return true;
         return false;
       }
   return false;
 }
 
-// Is the result of a clone of S an i32 handle? (void: no result.)
-bool resultIsHandle(const TaintInfo &T, const Specialization &S, const Value *at) {
+bool isComposite(Type *t) { return t->isStructTy() || t->isArrayTy() || t->isVectorTy(); }
+
+// The scalar leaves of a type, depth first, left to right (struct and array elements, vector lanes):
+// the fields aggr binds a composite value to (rules 25, 26).
+void leafTypes(Type *t, SmallVectorImpl<Type *> &out, const Value *at) {
+  if (auto *st = dyn_cast<StructType>(t)) {
+    for (Type *e : st->elements())
+      leafTypes(e, out, at);
+  } else if (auto *a = dyn_cast<ArrayType>(t)) {
+    for (uint64_t k = 0; k < a->getNumElements(); ++k)
+      leafTypes(a->getElementType(), out, at);
+  } else if (auto *v = dyn_cast<FixedVectorType>(t)) {
+    for (unsigned k = 0; k < v->getNumElements(); ++k)
+      out.push_back(v->getElementType());
+  } else if (isa<ScalableVectorType>(t)) {
+    unimplemented("calls: a scalable vector across a call", at);
+  } else {
+    out.push_back(t);
+  }
+}
+
+// The clone ABI of one formal (CR §1.4): one parameter per scalar leaf, an i32 handle where taint's
+// field mask is quantum, the leaf's C type where it is classical; a pointer formal is the caller's
+// classical pointer (a pointee that holds no handle at the call, not a fat pointer).
+struct FormalLayout {
+  SmallVector<Type *, 4> leaves;
+  SmallVector<bool, 4> q;
+  bool pointer = false;
+};
+
+std::vector<FormalLayout> formalLayout(const TaintInfo &T, const Specialization &S, const Value *at) {
+  std::vector<FormalLayout> fs;
+  unsigned need = 0, nPtr = 0;
+  for (Argument &A : S.F->args()) {
+    FormalLayout f;
+    leafTypes(A.getType(), f.leaves, &A);
+    f.q = T.fieldMask(&A, S);
+    if (f.q.size() != f.leaves.size())
+      internalError("calls: taint's field mask of a formal does not have one entry per scalar leaf", &A);
+    f.pointer = A.getType()->isPointerTy();
+    for (Type *l : f.leaves)
+      if (l->isPointerTy() && !f.pointer)
+        unimplemented("calls: an aggregate formal with a pointer field (rule 21 fat-pointer fields)", &A);
+    if (f.pointer) {
+      if (f.q[0] || T.isFatPointer(&A, S))
+        unimplemented("calls: a fat-pointer formal (rule 21 triple (object, tag, idx): fatptr)", &A);
+      for (ObjectId o : T.provenance(&A, S))
+        if (T.classOf(o) == ObjClass::Qram)
+          unimplemented("calls: a pointer formal into a QRAM object (rule 21 triple: fatptr, mem-qram)", &A);
+      ++nPtr;
+    } else {
+      need += f.leaves.size();
+    }
+    fs.push_back(std::move(f));
+  }
+  // The name's digits (taint's mask) must say the same, formal by formal.
+  const std::string &m = S.mask;
+  if (nPtr > 1)
+    unimplemented("calls: a clone with several pointer formals (the per-formal mask layout is taint's: T1)", at);
+  if (nPtr == 0 && m.size() != need)
+    unimplemented("calls: a clone whose mask has another digit count than its formals' scalar fields (a "
+                  "packed-integer formal, 159: cq-0umd)",
+                  at);
+  if (nPtr == 1 && m.size() <= need)
+    internalError("calls: a pointer formal with no mask digit", at);
+  size_t d = 0;
+  for (FormalLayout &f : fs) {
+    if (f.pointer) {
+      size_t n = m.size() - need;
+      for (size_t k = 0; k < n; ++k)
+        if (m[d + k] != '0')
+          unimplemented("calls: a pointer formal whose pointee holds a handle at the call (rule 20 slot "
+                        "pointer: the caller-side old handles, phase 2)",
+                        at);
+      d += n;
+      continue;
+    }
+    for (bool q : f.q)
+      if ((m[d++] == '1') != q)
+        internalError("calls: taint's mask and field mask of a formal disagree", at);
+  }
+  return fs;
+}
+
+// The clone ABI of the result (CR §1.4): void; one scalar (an i32 handle when taint records it
+// quantum, rule 18, else the C type); a composite with a quantum leaf is a literal struct of its leaves
+// (a nested aggregate flattened, 166), handles where quantum; a composite with none is the C type.
+struct ResultLayout {
+  bool composite = false;
+  SmallVector<Type *, 4> leaves;
+  SmallVector<bool, 4> q;
+  bool anyQ() const { return is_contained(q, true); }
+};
+
+ResultLayout resultLayout(const TaintInfo &T, const Specialization &S, const Value *at) {
+  ResultLayout r;
   Type *rt = S.F->getReturnType();
   if (rt->isVoidTy())
-    return false;
-  if (!scalarRailType(rt))
-    unimplemented("calls: a clone with an aggregate, vector or pointer result (rules 18, 21, 25: field-wise "
-                  "result, aggr/fatptr)",
-                  at);
+    return r;
+  if (!isComposite(rt) && !scalarRailType(rt))
+    unimplemented("calls: a clone with a pointer result (rule 21 fat-pointer result: fatptr)", at);
   if (packedIntegerResult(*S.F))
-    unimplemented("calls: a clone whose integer result is packed from several fields (159, aggr)", at);
-  return T.resultQuantum(S, 0);
+    unimplemented("calls: a clone whose integer result is packed from several fields (159, 166: cq-0umd)", at);
+  r.composite = isComposite(rt);
+  leafTypes(rt, r.leaves, at);
+  for (unsigned k = 0; k < r.leaves.size(); ++k) {
+    r.q.push_back(T.resultQuantum(S, k));
+    if (r.q.back() && !scalarRailType(r.leaves[k]))
+      unimplemented("calls: a clone result with a quantum pointer field (rule 21: fatptr)", at);
+  }
+  return r;
+}
+
+Type *cloneResultType(LLVMContext &C, const ResultLayout &r, Type *orig) {
+  if (orig->isVoidTy() || !r.anyQ())
+    return orig;
+  if (!r.composite)
+    return handleTy(C);
+  SmallVector<Type *, 4> es;
+  for (unsigned k = 0; k < r.leaves.size(); ++k)
+    es.push_back(r.q[k] ? handleTy(C) : r.leaves[k]);
+  return StructType::get(C, es);
 }
 
 // The placeholder spec of a clone-call record (see the contract).
@@ -219,22 +336,67 @@ void ordinaryCall(LoweringContext &ctx, CallBase &CB) {
 struct CloneCall {
   CallInst *call;
   SmallVector<Operand, 8> ops;
-  bool handle;   // the result is a rail (taint's per-clone record)
+  bool handle;      // the result is one rail (taint's per-clone record)
+  bool fieldwise;   // the result is a literal struct of fields with a handle among them
+  ResultLayout res;
 };
 CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization &S, Value *flag) {
   Function *C = materialize(ctx.M, S);
+  std::vector<FormalLayout> fs = formalLayout(ctx.T, S, &CB);
   SmallVector<Value *, 8> args;
-  CloneCall r{nullptr, {}, false};
+  CloneCall r{nullptr, {}, false, false, resultLayout(ctx.T, S, &CB)};
   if (S.ctl) {
     Value *f = flag ? flag : ctlFlag(ctx, CB);
     args.push_back(f);
     r.ops.push_back(Operand{f, true});
   }
-  appendActuals(ctx, CB, S.mask, args, r.ops);
+  if (CB.arg_size() != fs.size())
+    unimplemented("calls: a call whose argument count differs from the callee's formals (a variadic clone per "
+                  "call-site arity, CR §1.4)",
+                  &CB);
+  for (unsigned i = 0; i < CB.arg_size(); ++i) {
+    const Value *a = CB.getArgOperand(i);
+    SmallVector<Operand, 4> leaves;
+    if (isComposite(a->getType()))
+      leaves = aggr::flattenResult(ctx, a);
+    else
+      leaves.push_back(ctx.operand(a));
+    if (leaves.size() != fs[i].leaves.size())
+      internalError("calls: an actual with another field count than its formal", &CB);
+    for (unsigned k = 0; k < leaves.size(); ++k) {
+      const Operand &o = leaves[k];
+      if (fs[i].q[k] && !o.handle)
+        unimplemented("calls: a measured (collapsed, rule 2) value passed where the clone's mask is quantum", &CB);
+      if (!fs[i].q[k] && o.handle)
+        internalError("calls: a rail passed where the clone's mask is classical", &CB);
+      args.push_back(o.v);
+      r.ops.push_back(o);
+    }
+  }
   r.call = ctx.B().CreateCall(C, args);
   r.call->setCallingConv(C->getCallingConv());
-  r.handle = !CB.getType()->isVoidTy() && resultIsHandle(ctx.T, S, &CB);
+  r.handle = !CB.getType()->isVoidTy() && !r.res.composite && r.res.anyQ();
+  r.fieldwise = r.res.composite && r.res.anyQ();
   return r;
+}
+
+// Binds a field-wise result (CR §1.4: a literal struct of handles and classical values): one
+// extractvalue per field right after the call, the field operands bound to CB (aggr reads them), and
+// the handles recorded as the call's results, undone together by the twin (U2).
+void bindFieldwiseResult(LoweringContext &ctx, CallBase &CB, CallInst *call, const ResultLayout &res) {
+  SmallVector<bool, 4> tq = ctx.T.fieldMask(&CB, ctx.S);
+  if (tq.size() != res.q.size() || !std::equal(tq.begin(), tq.end(), res.q.begin()))
+    internalError("calls: the clone's result fields and taint's field mask of the call disagree", &CB);
+  SmallVector<Operand, 4> ops;
+  SmallVector<Value *, 4> outs;
+  for (unsigned k = 0; k < res.leaves.size(); ++k) {
+    Value *e = ctx.B().CreateExtractValue(call, {k});
+    ops.push_back(Operand{e, res.q[k]});
+    if (res.q[k])
+      outs.push_back(e);
+  }
+  ctx.unc().recordCall(call, outs, {}, {});
+  ctx.bindFields(&CB, ops);
 }
 
 // The C name a declared clone is named after (CR §1.4 fn). Rule 18: an LLVM math intrinsic on a
@@ -405,24 +567,16 @@ Function *materialize(Module &M, const Specialization &S) {
   LLVMContext &C = M.getContext();
   abi::CloneSpec cs = cloneSpecOf(S);
   std::string name = checkedName(cs, S.F);
+  if (S.F->isVarArg())
+    unimplemented("calls: a clone of a variadic function (per call-site arity, lowerVarargs)", S.F);
 
-  if (S.mask.size() != S.F->arg_size())
-    unimplemented("calls: a clone whose mask is not one digit per formal (aggregate or pointer fields: aggr/fatptr)",
-                  S.F);
   SmallVector<Type *, 8> ps;
   if (S.ctl)
     ps.push_back(handleTy(C));
-  for (unsigned i = 0; i < S.F->arg_size(); ++i) {
-    Type *t = S.F->getArg(i)->getType();
-    if (!scalarRailType(t))
-      unimplemented("calls: a clone with a pointer, aggregate or vector formal (rules 21, 25, 26)", S.F->getArg(i));
-    ps.push_back(S.mask[i] == '1' ? handleTy(C) : t);
-  }
-  Type *rt = S.F->getReturnType();
-  if (resultIsHandle(T, S, S.F))
-    rt = handleTy(C);
-  if (S.F->isVarArg())
-    unimplemented("calls: a clone of a variadic function (per call-site arity, lowerVarargs)", S.F);
+  for (const FormalLayout &f : formalLayout(T, S, S.F))
+    for (unsigned k = 0; k < f.leaves.size(); ++k)
+      ps.push_back(f.q[k] ? handleTy(C) : f.leaves[k]);
+  Type *rt = cloneResultType(C, resultLayout(T, S, S.F), S.F->getReturnType());
   FunctionType *FT = FunctionType::get(rt, ps, false);
 
   if (Function *ex = M.getFunction(name)) {
@@ -462,6 +616,8 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
     return;
   }
   CloneCall r = emitCloneCall(ctx, CB, *cs, nullptr);
+  if (r.fieldwise)
+    return bindFieldwiseResult(ctx, CB, r.call, r.res);
   bindResult(ctx, CB, r.call, r.handle, r.ops);
 }
 
@@ -549,6 +705,10 @@ void lowerIndirect(LoweringContext &ctx, CallBase &CB) {
     CallInst *call = nullptr;
     if (specs[k]) {
       CloneCall r = emitCloneCall(ctx, CB, *specs[k], specs[k]->ctl ? flag : nullptr);
+      if (r.fieldwise)
+        unimplemented("calls: an indirect call whose candidates return several fields with a handle (the merge "
+                      "of literal structs of handles)",
+                      &CB);
       call = r.call;
       if (hasResult && r.handle != handle)
         unimplemented("calls: an indirect-call candidate whose result kind (handle / classical) differs from "
