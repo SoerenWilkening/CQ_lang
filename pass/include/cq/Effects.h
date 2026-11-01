@@ -25,8 +25,9 @@ namespace cq::fenv   { void lowerConstrained(LoweringContext &, llvm::CallBase &
                        // E1 (cq-ibkc, freeze amendment on cq-arch; CR rule 23, 82): the clone ABI of the
                        // environment. Contract at the end of eff/fenv/Fenv.cpp: a clone of S that carries it
                        // takes (mode, flags) as two trailing i32 parameters and returns the new flags handle
-                       // as its result's last field.
-                       bool cloneCarriesEnv(const Specialization &S);
+                       // as its result's last field. Decided on the run's taint T (cq-xhv4: a callee reached
+                       // by an ordinary classical call is the host's, not followed).
+                       bool cloneCarriesEnv(const TaintInfo &T, const Specialization &S);
                        std::array<Operand, 2> envArgs(LoweringContext &, llvm::CallBase &site);
                        void afterCloneCall(LoweringContext &, llvm::CallBase &site, llvm::Value *flagsOut);
                        void bindCloneEnv(LoweringContext &, llvm::Argument *mode, llvm::Argument *flags);

@@ -108,7 +108,7 @@ using namespace llvm;
 namespace cq::fenv {
 
 // E1 (proposed Effects.h freeze amendment; contract at the end of this file).
-bool cloneCarriesEnv(const Specialization &S);
+bool cloneCarriesEnv(const TaintInfo &T, const Specialization &S);
 std::array<Operand, 2> envArgs(LoweringContext &, CallBase &site);
 void afterCloneCall(LoweringContext &, CallBase &site, Value *flagsOut);
 void bindCloneEnv(LoweringContext &, Argument *mode, Argument *flags);
@@ -207,15 +207,54 @@ bool bodyTouchesFenv(const Function &F, SmallPtrSetImpl<const Function *> &seen)
   return false;
 }
 
-// E1 (82): does a clone of F carry the environment? F's body, with the bodies it calls directly,
-// does constrained floating-point work or calls <fenv.h> (CR rule 23: "a clone that does constrained
-// FP work takes the caller's mode and flags rail and returns the new flags rail beside its result").
-// Syntactic, so the caller, the clone's construction and the twin agree on the ABI.
-bool carriesEnvImpl(const Function &F) {
-  if (F.isDeclaration())
+// E1 (82): does a clone of S carry the environment? S.F's own body does constrained floating-point work,
+// calls <fenv.h> or a rounding intrinsic, or makes an indirect call (it may reach anything), or a call in
+// it lifts a clone (taint's callee specialization from S) that carries it (CR rule 23: "a clone that
+// does constrained FP work takes the caller's mode and flags rail and returns the new flags rail beside
+// its result"). A callee reached by an ordinary (classical) call is not followed: it runs on the host,
+// what it raises is the host part (173, 174: __divsc3's logbf of a classical argument reaches the
+// strictfp ilogbf; the reference clone takes no environment; cq-xhv4). Decided on the taint of the run,
+// so the caller, the clone's construction and the twin agree on the ABI.
+bool ownBodyTouchesFenv(const Function &F) {
+  for (const BasicBlock &BB : F)
+    for (const Instruction &I : BB) {
+      auto *CB = dyn_cast<CallBase>(&I);
+      if (!CB)
+        continue;
+      if (isa<ConstrainedFPIntrinsic>(CB) || fenvFn(*CB) != FenvFn::None)
+        return true;
+      if (auto *II = dyn_cast<IntrinsicInst>(CB))
+        if (II->getIntrinsicID() == Intrinsic::set_rounding || II->getIntrinsicID() == Intrinsic::get_rounding)
+          return true;
+      if (!CB->getCalledFunction() && !CB->isInlineAsm())
+        return true;   // an indirect call may reach anything
+    }
+  return false;
+}
+
+bool carriesEnvImpl(const TaintInfo &T, const Specialization &S, SmallPtrSetImpl<const Specialization *> &seen) {
+  if (!S.F || S.F->isDeclaration() || S.isEntry())
     return false;
-  SmallPtrSet<const Function *, 8> seen;
-  return bodyTouchesFenv(F, seen);
+  if (!seen.insert(&S).second)
+    return false;   // a cycle of lifted calls: its bodies are judged where they are first reached
+  if (ownBodyTouchesFenv(*S.F))
+    return true;
+  for (const BasicBlock &BB : *S.F)
+    for (const Instruction &I : BB) {
+      auto *CB = dyn_cast<CallBase>(&I);
+      const Function *G = CB ? CB->getCalledFunction() : nullptr;
+      if (!G || G->isDeclaration() || G->isIntrinsic())
+        continue;
+      if (const Specialization *cs = T.calleeSpecialization(*CB, S))
+        if (carriesEnvImpl(T, *cs, seen))
+          return true;
+    }
+  return false;
+}
+
+bool carriesEnvImpl(const TaintInfo &T, const Specialization &S) {
+  SmallPtrSet<const Specialization *, 8> seen;
+  return carriesEnvImpl(T, S, seen);
 }
 
 // --------------------------------------------------------------------------------------------
@@ -280,7 +319,7 @@ State &state(LoweringContext &ctx, const Module *M) {
 // lowered without them would round in the host mode and drop what it raises (silent wrong output).
 State &state(LoweringContext &ctx, const Instruction &I) {
   State &st = state(ctx, I.getModule());
-  if (!ctx.S.isEntry() && ctx.S.F && I.getFunction() == ctx.S.F && !st.cloneBound && carriesEnvImpl(*ctx.S.F))
+  if (!ctx.S.isEntry() && ctx.S.F && I.getFunction() == ctx.S.F && !st.cloneBound && carriesEnvImpl(ctx.T, ctx.S))
     unimplemented("eff-fenv: a clone that does floating-point environment work was materialized without the "
                   "caller's mode and flags (rule 23 clone ABI, 82: the calls and spine consumers of "
                   "fenv::cloneCarriesEnv / envArgs / bindCloneEnv / cloneExitFlags / afterCloneCall)",
@@ -641,7 +680,7 @@ void requireWritable(LoweringContext &ctx, State &st, const Instruction &I) {
     // E1 (82): a call of a clone carrying the environment takes the state and returns the new flags.
     if (G && n.getFunction() == ctx.S.F && calls::classify(*CB, ctx.T, ctx.S) == calls::Class::Lift)
       if (const Specialization *cs = ctx.T.calleeSpecialization(*CB, ctx.S);
-          cs && !cs->isEntry() && carriesEnvImpl(*cs->F))
+          cs && !cs->isEntry() && carriesEnvImpl(ctx.T, *cs))
         return false;
     bad = &n;
     return true;
@@ -1420,7 +1459,7 @@ void afterMeasure(LoweringContext &ctx, CallInst &measure) {
 // E1 (CR rule 23, 82): the clone ABI of the environment. Proposed as a freeze amendment of Effects.h
 // (declarations below, consumers calls and spine); until it lands they are declared here.
 //
-//  - cloneCarriesEnv(S): a clone of S takes two trailing i32 parameters after every other one (the
+//  - cloneCarriesEnv(T, S): a clone of S (by the run's taint T: carriesEnvImpl) takes two trailing i32 parameters after every other one (the
 //    caller's MODE, a classical FE_* value, then its FLAGS, a handle) and returns the new FLAGS handle
 //    as the LAST field of its result: `i32` alone for a clone whose result is otherwise void, else a
 //    literal struct of its result fields (C types where classical, handles where quantum; the M2 store
@@ -1442,9 +1481,7 @@ namespace {
 State &stateOfCall(LoweringContext &ctx, const Instruction &I) { return state(ctx, I); }
 } // namespace
 
-bool cloneCarriesEnv(const Specialization &S) {
-  return S.F && !S.isEntry() && carriesEnvImpl(*S.F);
-}
+bool cloneCarriesEnv(const TaintInfo &T, const Specialization &S) { return carriesEnvImpl(T, S); }
 
 std::array<Operand, 2> envArgs(LoweringContext &ctx, CallBase &site) {
   State &st = stateOfCall(ctx, site);
@@ -1477,7 +1514,7 @@ void afterCloneCall(LoweringContext &ctx, CallBase &site, Value *flagsOut) {
 }
 
 void bindCloneEnv(LoweringContext &ctx, Argument *mode, Argument *flags) {
-  if (ctx.S.isEntry() || !cloneCarriesEnv(ctx.S))
+  if (ctx.S.isEntry() || !cloneCarriesEnv(ctx.T, ctx.S))
     internalError("eff-fenv: bindCloneEnv in a function that does not carry the environment", mode);
   if (!mode->getType()->isIntegerTy(32) || !flags->getType()->isIntegerTy(32))
     internalError("eff-fenv: a clone's trailing mode and flags parameters are not i32", mode);
