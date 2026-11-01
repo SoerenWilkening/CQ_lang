@@ -329,8 +329,18 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
    `t = f⁻¹(y', …)` fresh, `copy_<W>(t, y_old)`, `_unc` of `t`, free `y_old`. When the old value is
    still needed to uncompute other rails, those are uncomputed first and then this rule applies (to
    the composite update, 127).
-   - *Dead:* nothing reads the old value after the update: no SSA use, no load of a cell that still
-     holds its handle, no measurement, no escape (`ret`, a call argument, memory that is read later).
+   - *Dead:* asked at the CLEAN-UP POINT, not at the update instruction (the clean-up is an
+     uncompute and its placement is free, §0). The clean-up is placed after the old value's last
+     reader in the function (every SSA use, every load of a cell that still holds its handle, and
+     every `_unc` that re-reads it) and before the first non-diagonal gate on the rail that holds
+     its bijective image; it cleans the old rail from whatever bijective image is live there (`y'`,
+     or a later bijective image of `y'`: the composite update). A later reader of the old value
+     never keeps it, it only moves the clean-up (94: the cmpxchg `select` reads the old x after the
+     fetch-add; x is cleaned from `x + c` after the select). The old value is kept only when no
+     such point exists: it escapes (`ret`, a call argument the callee keeps, memory read after the
+     function returns), it is measured (rule 2 instead), or a reader of it follows a non-diagonal
+     gate on its image (the program itself keeps both values live). Ruling 2026-11-01 (CQ_lang2
+     cq-k7f8); one placement rule for every opcode, never a per-opcode exemption.
    - *Every such rail:* the rule is not an optimisation and has no other trigger. It applies to a
      rotated user register (01, 38, 180) as to a template result (127). A kept old value is a
      which-path record of the rail that replaced it: a later non-diagonal gate on `y'` or on an
@@ -779,6 +789,15 @@ order), never as absolute numbers: host addresses differ per run and QRAM bases 
 
 Byte identity of traces is never required.
 
+A checker that samples inputs reports its coverage honestly and never narrows the claim. A coverage
+target of its own making (a loop trip class, a branch) whose cheapest reaching input runs the C
+program past the checker's stated cost budget is reported as uncovered, with that input and its
+cost; it is never counted as compared, never counted as a failure of the compiler, and never made
+to disappear by changing the example or by lowering the budget (117: the inner k-loop's zero-trip
+exit is reached only at t = 32, after 2^31 − 1 trips of the earlier j; the claim at t = 32 stands,
+the sampler says it did not witness it). The budget is the checker's, not the spec's. Ruling
+2026-11-01 (CQ_lang2 checker, 117).
+
 ## 7. Examples normalised under these rules (done 2026-10-26)
 
 | rule | examples that currently deviate | change |
@@ -786,7 +805,7 @@ Byte identity of traces is never required.
 | §1.4 mask order | 06, 07, 09, 24, 31, 33, 34, 35, 36, 37, 64, 143; `_ctl` after the mask in 102, 117, 124 | rename clones left-to-right |
 | §1.4 dead originals | 06, 07 (kept the unlifted body with no classical caller) | dropped |
 | §1.4 slot twins | 107, 108, 122, 31, 52, 106 (129 since 2026-10-27: no twin, rule 6 in the caller) | twin takes `(outs…, args…, old handles)` |
-| 18 copy-out | 36, 51, 82, 95, 109 | copy result to a fresh rail |
+| 18 copy-out | 36, 51, 82, 95, 109; 163 (2026-11-01: the sret slot results were stored as template rails) | copy result to a fresh rail |
 | 9 merge spelling | 143, 121 | `cq_template_select_<W>` |
 | 4 out-of-place | 113, 114 (in-place `xor_i1` on user registers), 107, 91 (xor-merge), 121 (`xorc_i8` on a `|0⟩`) | fresh-rail templates |
 | 8 i1 gates | 69, 84, 90 (`and_i1` template as flag; 12 and 86 use the conjunction as data and keep the template), 23/49/54/123 (OR by CNOT+Toffoli), 118 (`select_i1_lh` as OR) | `and_i1`/`or_i1` for flags |

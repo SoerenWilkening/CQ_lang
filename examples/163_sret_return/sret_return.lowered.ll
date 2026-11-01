@@ -1,7 +1,8 @@
 ; HAND-WRITTEN. Rules: 26, 20, 18, 4, 5, 7, §1.4.
 ; Checked: r.a + r.b + r.c (measured).
-; Clean: the two quantum field rails of the sret slot (r.a, r.b; zeroed in place by the twin, freed by the caller) and
-;        the partial sum r.b + r.a.
+; Clean: the clone's two template rails (x + c, x * c; uncomputed inside the clone, rule 18), the two copy rails the
+;        clone stores into the sret slot (r.a, r.b; zeroed in place by the twin, freed by the caller) and the partial
+;        sum r.b + r.a.
 ; Kept: the register x (frozen) and the measured result rail.
 ; Rotations: Ry(tx) on x.
 ; A 24-byte struct is returned through an SRET pointer: the caller passes the address of a local, the callee stores the
@@ -10,11 +11,14 @@
 ; r.b = x * c are quantum, so cells a and b are 4-byte HANDLE cells; r.c = c is classical and stays a classical i64
 ; cell (rule 26: classical fields stay classical). The record is { i32, i32, i64 }, so -O1's byte-offset geps (8, 16)
 ; are re-emitted at the record's own offsets (4, 8). The clone __cq_q_mk_00010 (§1.4, one digit per field of the slot
-; parameter, none quantum on entry, then x quantum, c classical) writes the two handles and the classical c straight
-; into the slot (no copy-out: a store into a slot is the result's home, 31) and returns void. The caller loads the
-; handles (no gate), adds out of place (rule 4), and once the sum is formed runs the twin _unc(args..., old slot
-; contents in slot order): it loads the handles from the slot, zeroes each in place by its producer's _unc (as 31) and
-; restores the slot's prior contents (never written before the call: poison); the caller then frees both rails.
+; parameter, none quantum on entry, then x quantum, c classical) computes each quantum field, COPIES it into a fresh
+; rail and stores the copy's handle into the slot (rule 18: a slot result is a result, as 31's hi), stores the
+; classical c, uncomputes its two templates and returns void. The caller loads the handles (no gate), adds out of
+; place (rule 4), and once the sum is formed runs the twin _unc(args..., old slot contents in slot order): it loads
+; the copies' handles from the slot, recomputes each field, XORs it out of the copy with copy_<W> (as 31), uncomputes
+; the recomputation and restores the slot's prior contents (never written before the call: poison); the caller then
+; frees both copy rails. Regenerated 2026-11-01 (CQ_lang2 cq-svyn): the first version stored the template rails
+; directly and cited 31 for it; 31 copies out.
 source_filename = "sret_return.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
@@ -33,31 +37,45 @@ define i64 @sret_return(i64 noundef %0, double noundef %1, i64 noundef %2) {
   %12 = call i32 @cq_template_add_i64_hl(i32 %9, i64 %11)    ; IR: %12 = add nsw i64 %9, %11  [result rail]
   call void @cq_template_add_i64_unc(i32 %9, i32 %8, i32 %6)    ; IR: uncompute %9
   call void @cqrt_free(i32 %9)    ; IR: release the %9 rail (|0>)
-  call fastcc void @__cq_q_mk_00010_unc(ptr %4, i32 %5, i64 %2, i32 poison, i32 poison, i64 poison)    ; IR: adjoint of the call: the twin zeroes the slot's two rails in place and restores the slot's contents from before the call (never written: poison)
-  call void @cqrt_free(i32 %6)    ; IR: release the r.a rail (|0>)
-  call void @cqrt_free(i32 %8)    ; IR: release the r.b rail (|0>)
+  call fastcc void @__cq_q_mk_00010_unc(ptr %4, i32 %5, i64 %2, i32 poison, i32 poison, i64 poison)    ; IR: adjoint of the call: the twin zeroes the slot's two copy rails in place and restores the slot's contents from before the call (never written: poison)
+  call void @cqrt_free(i32 %6)    ; IR: release the r.a copy rail (|0>)
+  call void @cqrt_free(i32 %8)    ; IR: release the r.b copy rail (|0>)
   %13 = call i64 @cqrt_measure_i64(i32 %12)    ; IR: %13 = cq_measure_sl(%12)
   ret i64 %13    ; IR: llvm.lifetime.end(%4) (nothing); ret i64 %13
 }
 
 define internal fastcc void @__cq_q_mk_00010(ptr %0, i32 %1, i64 %2) {
   %4 = call i32 @cq_template_add_i64_hl(i32 %1, i64 %2)    ; IR: %4 = add nsw i64 %2, %1  (commutative: handle first)  [r.a]
-  store i32 %4, ptr %0, align 8    ; IR: store i64 %4, ptr %0  (the handle into cell a)
-  %5 = getelementptr inbounds i8, ptr %0, i64 4    ; IR: %5 = getelementptr %0, 8  (cell b)
-  %6 = call i32 @cq_template_mul_i64_hl(i32 %1, i64 %2)    ; IR: %6 = mul nsw i64 %2, %1  [r.b]
-  store i32 %6, ptr %5, align 4    ; IR: store i64 %6, ptr %5  (the handle into cell b)
-  %7 = getelementptr inbounds i8, ptr %0, i64 8    ; IR: %7 = getelementptr %0, 16  (cell c, classical)
-  store i64 %2, ptr %7, align 8    ; IR: store i64 %2, ptr %7  (classical)
-  ret void    ; IR: ret void  (the slot holds the result; the rails are the caller's to uncompute through the twin)
+  %5 = call i32 @cqrt_alloc_i64(i64 0)    ; IR: store i64 %4, ptr %0  [slot result rail a]
+  call void @cqrt_copy_i64(i32 %4, i32 %5)    ; IR: store i64 %4, ptr %0  [copy r.a out, rule 18]
+  store i32 %5, ptr %0, align 8    ; IR: store i64 %4, ptr %0  (the copy's handle into cell a)
+  %6 = getelementptr inbounds i8, ptr %0, i64 4    ; IR: %5 = getelementptr %0, 8  (cell b)
+  %7 = call i32 @cq_template_mul_i64_hl(i32 %1, i64 %2)    ; IR: %6 = mul nsw i64 %2, %1  [r.b]
+  %8 = call i32 @cqrt_alloc_i64(i64 0)    ; IR: store i64 %6, ptr %5  [slot result rail b]
+  call void @cqrt_copy_i64(i32 %7, i32 %8)    ; IR: store i64 %6, ptr %5  [copy r.b out, rule 18]
+  store i32 %8, ptr %6, align 4    ; IR: store i64 %6, ptr %5  (the copy's handle into cell b)
+  %9 = getelementptr inbounds i8, ptr %0, i64 8    ; IR: %7 = getelementptr %0, 16  (cell c, classical)
+  store i64 %2, ptr %9, align 8    ; IR: store i64 %2, ptr %7  (classical)
+  call void @cq_template_mul_i64_hl_unc(i32 %7, i32 %1, i64 %2)    ; IR: uncompute %6 (rule 18: the clone's body is uncomputed, the copies survive)
+  call void @cqrt_free(i32 %7)    ; IR: release the %6 rail (|0>)
+  call void @cq_template_add_i64_hl_unc(i32 %4, i32 %1, i64 %2)    ; IR: uncompute %4
+  call void @cqrt_free(i32 %4)    ; IR: release the %4 rail (|0>)
+  ret void    ; IR: ret void  (the slot holds the copies; they are the caller's to zero through the twin and free)
 }
 
 define internal fastcc void @__cq_q_mk_00010_unc(ptr %0, i32 %1, i64 %2, i32 %3, i32 %4, i64 %5) {
-  %7 = load i32, ptr %0, align 8    ; IR: the handle the clone stored into cell a
+  %7 = load i32, ptr %0, align 8    ; IR: the copy's handle the clone stored into cell a
   %8 = getelementptr inbounds i8, ptr %0, i64 4    ; IR: cell b
-  %9 = load i32, ptr %8, align 4    ; IR: the handle the clone stored into cell b
+  %9 = load i32, ptr %8, align 4    ; IR: the copy's handle the clone stored into cell b
   %10 = getelementptr inbounds i8, ptr %0, i64 8    ; IR: cell c
-  call void @cq_template_mul_i64_hl_unc(i32 %9, i32 %1, i64 %2)    ; IR: uncompute %6 (r.b) in place; the caller frees it
-  call void @cq_template_add_i64_hl_unc(i32 %7, i32 %1, i64 %2)    ; IR: uncompute %4 (r.a) in place; the caller frees it
+  %11 = call i32 @cq_template_add_i64_hl(i32 %1, i64 %2)    ; IR: recompute %4 (r.a)
+  call void @cqrt_copy_i64(i32 %11, i32 %7)    ; IR: xor r.a out of the slot's copy rail; the caller frees it
+  %12 = call i32 @cq_template_mul_i64_hl(i32 %1, i64 %2)    ; IR: recompute %6 (r.b)
+  call void @cqrt_copy_i64(i32 %12, i32 %9)    ; IR: xor r.b out of the slot's copy rail; the caller frees it
+  call void @cq_template_mul_i64_hl_unc(i32 %12, i32 %1, i64 %2)    ; IR: uncompute the recomputed %6
+  call void @cqrt_free(i32 %12)    ; IR: release it (|0>)
+  call void @cq_template_add_i64_hl_unc(i32 %11, i32 %1, i64 %2)    ; IR: uncompute the recomputed %4
+  call void @cqrt_free(i32 %11)    ; IR: release it (|0>)
   store i32 %3, ptr %0, align 8    ; IR: restore cell a's content from before the call (§1.4: old slot contents last)
   store i32 %4, ptr %8, align 4    ; IR: restore cell b
   store i64 %5, ptr %10, align 8    ; IR: restore cell c
@@ -66,6 +84,7 @@ define internal fastcc void @__cq_q_mk_00010_unc(ptr %0, i32 %1, i64 %2, i32 %3,
 
 declare i32 @cqrt_alloc_i64(i64)
 declare void @cqrt_ry_i64(i32, double)
+declare void @cqrt_copy_i64(i32, i32)
 declare i32 @cq_template_add_i64_hl(i32, i64)
 declare void @cq_template_add_i64_hl_unc(i32, i32, i64)
 declare i32 @cq_template_mul_i64_hl(i32, i64)
