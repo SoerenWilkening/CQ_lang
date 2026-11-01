@@ -562,6 +562,27 @@ void defineTwin(Module &M, Function &twin, Function &src) {
       f->eraseFromParent();
     else
       internalError("calls: calls::finalize: a clone's result rail still used after its twin rewrite", f);
+
+  // Rule 14's kept overflow predicate a_K = alloc_i1(0); and_i1(a_n, test, a_K), never freed, read by
+  // nothing: the forward keeps it (one per activation); the twin, which only uncomputes the forward's
+  // outs, does not compute it (169: "__cq_q_ilogb_1_unc itself keeps nothing"). Its test is the twin's
+  // garbage as in the forward, uncomputed there.
+  SmallVector<CallInst *, 2> keptK;
+  for (Instruction &I : instructions(twin)) {
+    auto *a = dyn_cast<CallInst>(&I);
+    std::optional<abi::CoreSpec> c =
+        a && a->getCalledFunction() ? abi::parseCore(a->getCalledFunction()->getName()) : std::nullopt;
+    if (!c || c->op != abi::Core::Alloc || !a->getType()->isIntegerTy(32) || a->getNumUses() != 1)
+      continue;
+    auto *g = dyn_cast<CallInst>(a->user_back());
+    if (g && g->getCalledFunction() && g->getCalledFunction()->getName() == "cqrt_and_i1" &&
+        g->arg_size() == 3 && g->getArgOperand(2) == a && g->getArgOperand(0) != a && g->getArgOperand(1) != a)
+      keptK.push_back(a);
+  }
+  for (CallInst *a : keptK) {
+    cast<Instruction>(a->user_back())->eraseFromParent();
+    a->eraseFromParent();
+  }
 }
 
 // Defines every called, undefined twin whose forward clone has a body (see the header).

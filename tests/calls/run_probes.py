@@ -28,6 +28,8 @@ TWIN_ALIAS = ("cq: unimplemented: uncompute: a clone call whose twin may read a 
 CASES = [
     # cq-5xde: a quantum-depth recursion is cut only under a proved depth bound B <= the cut level.
     ("depth_le0", "r4", [], "pass", []),
+    # cq-xhv4 (169): a twin computes no rule 14 kept overflow predicate a_K of its own (the forward keeps one).
+    ("twin_kept_overflow", "tk", [], "pass", []),
     # cq-kkgh: a clone's in-place rotation of a by-value formal is a non-diagonal gate on the caller's rail.
     ("byvalue_rotated", "p5", [], "pass", []),
     ("depth_lt0", "r1", [], "fatal: cq: unimplemented: loops-cutoff: a quantum-depth recursion cut at K with B > K "
