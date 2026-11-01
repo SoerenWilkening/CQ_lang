@@ -30,8 +30,10 @@
 //        the same one), idx = the select of the arms' idx (the same classical value stays classical);
 //        a classical condition is a classical select of classical fields. Later derivations reaching
 //        the select read its fields (its shape is re-derived from the IR without emitting).
+//      * an inttoptr (89, 107): bound by lowerIntToPtr as its two fields (tag, idx); its shape is the
+//        provenance of the ptrtoint its integer derives from, in cells of the accesses through it.
 //      * anything else quantum (a phi, a loaded pointer (189), a clone parameter (the clone-boundary
-//        triple), inttoptr, a call result) is unimplemented.
+//        triple), a call result) is unimplemented.
 //  - Compare (lowerCompare). eq/ne where every root of both pointers is a distinct alloca of this
 //    function: tags, then indices (tag == tag' and idx == idx', a data conjunction: and_i1 / or_i1 for
 //    ne). Every other compare is over addresses base[tag] + size * idx as i64 (rule 21): base[tag] is
@@ -39,10 +41,14 @@
 //    roots on the flags tag == k, the first root innermost (the complement); the idx is widened by its
 //    own extension and scaled by shl (power-of-two cell size) or mul. The result is always a rail (a
 //    classical outcome becomes an i1 seed rail).
-//  - Loads, stores, ptrtoint, inttoptr and the clone boundary are unimplemented in this module (the
-//    rule's other witnesses, wave-2 integration beads).
+//  - ptrtoint (lowerPtrToInt) is the address base[tag] + size * idx, as a compare builds it; it keeps the
+//    base[tag] it built. inttoptr (lowerIntToPtr) of an integer derived from ptrtoint(p) (taint's walk: add,
+//    disjoint or, sub of a constant, zext/sext) is p's tag and idx = trunc_i32((u - base[tag]) >> log2 size),
+//    size the access cell; an integer of unknown origin (range decoding) is unimplemented.
+//  - Loads, stores and the clone boundary: see lowerLoad, lowerStore and passAcrossCall.
 #include "cq/FatPtr.h"
 
+#include <functional>
 #include <map>
 #include <optional>
 #include <string>
@@ -59,6 +65,7 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Operator.h"
+#include "llvm/IR/PatternMatch.h"
 #include "llvm/Support/MathExtras.h"
 
 using namespace llvm;
@@ -535,6 +542,8 @@ Fat deriveLoaded(LoweringContext &ctx, const LoadInst &ld, bool emit) {
   return f;
 }
 
+Fat deriveIntToPtr(LoweringContext &ctx, const IntToPtrInst &I, bool emit);
+
 Fat derive(LoweringContext &ctx, const Value *p, bool emit, bool eager) {
   if (!p->getType()->isPointerTy())
     internalError("fatptr: derive of a non-pointer", p);
@@ -592,8 +601,8 @@ Fat derive(LoweringContext &ctx, const Value *p, bool emit, bool eager) {
     return deriveLoaded(ctx, *ld, emit);
   if (isa<Argument>(p))
     unimplemented("fatptr: a fat pointer parameter (rule 21 clone-boundary triple)", p);
-  if (isa<IntToPtrInst>(p))
-    unimplemented("fatptr: inttoptr of a quantum integer (rule 21 provenance decoding)", p);
+  if (auto *ip = dyn_cast<IntToPtrInst>(p))
+    return deriveIntToPtr(ctx, *ip, emit);
   if (isa<CallBase>(p))
     unimplemented("fatptr: a fat pointer returned by a call (rule 21 clone-boundary triple)", p);
   if (classicalMemoryOnly(ctx, p) == false && !isQ(ctx, p))
@@ -650,9 +659,9 @@ Operand idx64(LoweringContext &ctx, const Fat &f) {
   return Operand{tmpl(ctx, f.idxSext ? "sext" : "zext", intRail(f.idxBits), {f.idx}, "", "", intRail(64)), true};
 }
 
-// base[tag] + size * idx.
-Operand address(LoweringContext &ctx, const Fat &f, Bases &cache) {
-  Operand base = baseOf(ctx, f, cache);
+// base[tag] + size * idx (base: baseOf(f), when the caller already made it).
+Operand address(LoweringContext &ctx, const Fat &f, Bases &cache, std::optional<Operand> made = std::nullopt) {
+  Operand base = made ? *made : baseOf(ctx, f, cache);
   Operand off = idx64(ctx, f);
   if (auto *ci = dyn_cast<ConstantInt>(off.v); !off.handle && ci && ci->isZero())
     return base;
@@ -671,6 +680,109 @@ Operand address(LoweringContext &ctx, const Fat &f, Bases &cache) {
     }
   }
   return commutative(ctx, "add", 64, base, off);
+}
+
+// ---- ptrtoint / inttoptr (rule 21: the two crossings between the fat form and the flat address) ----
+
+// A ptrtoint fatptr lowered: the fat pointer it read and the base[tag] it built, which an inttoptr of an
+// integer derived from it reuses (idx = (addr - base[tag]) / size, the base cancelling exactly).
+struct Flat {
+  Fat f;
+  Operand base{nullptr, false};
+};
+std::map<const Function *, DenseMap<const Value *, Flat>> &flats() {
+  static std::map<const Function *, DenseMap<const Value *, Flat>> m;
+  return m;
+}
+
+// The pointer whose ptrtoint the integer v derives from, by the walk taint's provenance makes (add, disjoint
+// or, sub of a constant, zext/sext into the ptrtoint at scale 1; shl, mul and every other term are offsets):
+// nullptr when there is none, or when the ptrtoint appears twice or at a scale other than 1.
+const PtrToIntInst *derivedFrom(const Value *v) {
+  using namespace PatternMatch;
+  const PtrToIntInst *found = nullptr;
+  bool bad = false;
+  std::function<void(const Value *, bool)> go = [&](const Value *V, bool unit) {
+    const APInt *K;
+    const Value *X, *Y;
+    if (auto *PI = dyn_cast<PtrToIntInst>(V)) {
+      if (found || !unit)
+        bad = true;
+      found = PI;
+      return;
+    }
+    if (match(V, m_APInt(K)))
+      return;
+    if (match(V, m_Add(m_Value(X), m_Value(Y))) || match(V, m_DisjointOr(m_Value(X), m_Value(Y)))) {
+      go(X, unit);
+      go(Y, unit);
+      return;
+    }
+    if (match(V, m_Sub(m_Value(X), m_APInt(K))) || match(V, m_ZExtOrSExt(m_Value(X)))) {
+      go(X, unit);
+      return;
+    }
+  };
+  go(v, true);
+  return bad ? nullptr : found;
+}
+
+// The cell size of the inttoptr's pointer: the size of every load and store directly through it (rule 21:
+// idx is a cell index of the access type; the byte offset converts at the access).
+uint64_t accessCell(LoweringContext &ctx, const IntToPtrInst &I) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  uint64_t cell = 0;
+  for (const User *u : I.users()) {
+    Type *t = nullptr;
+    if (auto *ld = dyn_cast<LoadInst>(u); ld && ld->getPointerOperand() == &I)
+      t = ld->getType();
+    else if (auto *st = dyn_cast<StoreInst>(u); st && st->getPointerOperand() == &I)
+      t = st->getValueOperand()->getType();
+    else
+      unimplemented("fatptr: an inttoptr pointer used other than by a load or store through it (rule 21)", u);
+    uint64_t s = DL.getTypeAllocSize(t).getFixedValue();
+    if (cell && s != cell)
+      unimplemented("fatptr: an inttoptr pointer accessed at two cell sizes (rule 21)", &I);
+    cell = s;
+  }
+  if (!cell)
+    unimplemented("fatptr: an inttoptr pointer with no access through it (rule 21)", &I);
+  return cell;
+}
+
+Fat deriveIntToPtr(LoweringContext &ctx, const IntToPtrInst &I, bool emit) {
+  const PtrToIntInst *pi = derivedFrom(I.getOperand(0));
+  if (!pi)
+    unimplemented("fatptr: inttoptr of an integer of unknown origin (rule 21 range decoding over the candidate "
+                  "objects)",
+                  &I);
+  Fat src = derive(ctx, pi->getPointerOperand(), /*emit=*/false);
+  Fat f;
+  f.roots = src.roots;
+  f.cell = accessCell(ctx, I);
+  f.idxBits = 32;
+  f.idxSext = false;
+  if (!emit) {
+    // idx is a rail when the integer is one or base[tag] is (a rail tag over several roots).
+    bool baseRail = src.tag.handle && src.roots.size() > 1;
+    f.tag = Operand{nullptr, src.tag.handle};
+    f.idx = Operand{nullptr, isQ(ctx, I.getOperand(0)) || baseRail};
+    if (!f.idx.handle)
+      f.idxBits = 64;
+    return f;
+  }
+  Fat sh = deriveIntToPtr(ctx, I, /*emit=*/false);
+  f.tag = sh.tag;
+  f.idx = sh.idx;
+  f.idxBits = sh.idxBits;
+  SmallVector<Operand, 4> fl = ctx.fields(&I);
+  if (fl.size() != 2)
+    internalError("fatptr: an inttoptr bound to other than its (tag, idx)", &I);
+  if (fl[0].handle != f.tag.handle || fl[1].handle != f.idx.handle)
+    internalError("fatptr: an inttoptr's bound fields differ in kind from its shape", &I);
+  f.tag = fl[0];
+  f.idx = fl[1];
+  return f;
 }
 
 // Every root of both pointers a distinct alloca of this function (rule 21's tag reduction).
@@ -1020,12 +1132,85 @@ Value *lowerCompare(LoweringContext &ctx, ICmpInst &cmp) {
   return asRail(ctx, icmp(ctx, p, 64, x, y));
 }
 
-void lowerPtrToInt(LoweringContext &, Instruction &I) {
-  unimplemented("fatptr: ptrtoint of a fat pointer (rule 21 address)", &I);
+// Rule 21 (89, 107): ptrtoint of a fat pointer is its flat address base[tag] + size * idx (base[tag] the
+// select chain over the roots' host addresses, as a compare builds it), at the integer's width (a narrower
+// integer is the address truncated, as LLVM does).
+void lowerPtrToInt(LoweringContext &ctx, Instruction &I) {
+  auto *pi = dyn_cast<PtrToIntInst>(&I);
+  if (!pi)
+    internalError("fatptr: lowerPtrToInt of a non-ptrtoint", &I);
+  unsigned w = I.getType()->getIntegerBitWidth();
+  if (w > 64)
+    unimplemented("fatptr: ptrtoint to an integer wider than 64 bits", &I);
+  Flat fl;
+  fl.f = derive(ctx, pi->getPointerOperand(), /*emit=*/true);
+  for (const Value *r : fl.f.roots)
+    if (mem::isQramRoot(ctx, r))
+      unimplemented("fatptr: ptrtoint of a fat pointer into a QRAM object (rule 21 QRAM address space)", &I);
+  Bases cache;
+  fl.base = baseOf(ctx, fl.f, cache);
+  Operand a = address(ctx, fl.f, cache, fl.base);
+  if (w < 64)
+    a = a.handle ? Operand{tmpl(ctx, "trunc", intRail(64), {a}, "", "", intRail(w)), true}
+                 : Operand{ctx.B().CreateTrunc(a.v, I.getType()), false};
+  if (!flats()[&ctx.out()].try_emplace(&I, fl).second)
+    internalError("fatptr: a ptrtoint lowered twice", &I);
+  ctx.bindFields(&I, {a});
 }
 
-void lowerIntToPtr(LoweringContext &, Instruction &I) {
-  unimplemented("fatptr: inttoptr of a quantum integer (rule 21 provenance decoding)", &I);
+// Rule 21 (89, 107): inttoptr of an integer derived from ptrtoint(p) keeps p's provenance: tag = p's tag (the
+// same rail), idx = (addr - base[tag]) / size in cells of the access through the result (sub, lshr by log2
+// size, trunc to the logical i32 index rail; one past the end included). base[tag] is the one that ptrtoint
+// built (or, for a classical ptrtoint, the root's host address): no range test, so nothing depends on where
+// the host placed the objects. Only an integer of unknown origin would be decoded by range tests
+// (unimplemented). The result is bound as its two fields (tag, idx).
+void lowerIntToPtr(LoweringContext &ctx, Instruction &I) {
+  auto *ip = dyn_cast<IntToPtrInst>(&I);
+  if (!ip)
+    internalError("fatptr: lowerIntToPtr of a non-inttoptr", &I);
+  if (!I.getOperand(0)->getType()->isIntegerTy(64))
+    unimplemented("fatptr: inttoptr of an integer that is not an i64 (rule 21)", &I);
+  const PtrToIntInst *pi = derivedFrom(I.getOperand(0));
+  if (!pi)
+    unimplemented("fatptr: inttoptr of an integer of unknown origin (rule 21 range decoding over the candidate "
+                  "objects)",
+                  &I);
+  Fat shape = deriveIntToPtr(ctx, *ip, /*emit=*/false);
+  Operand tag{nullptr, false}, base{nullptr, false};
+  auto &fm = flats()[&ctx.out()];
+  if (auto it = fm.find(pi); it != fm.end()) {
+    tag = it->second.f.tag;
+    base = it->second.base;
+  } else {
+    // A classical ptrtoint (the spine copied it): p is one root, its tag a constant.
+    Fat f = derive(ctx, pi->getPointerOperand(), /*emit=*/true);
+    if (f.tag.handle)
+      internalError("fatptr: a ptrtoint of a quantum-tag pointer that fatptr did not lower", pi);
+    Bases cache;
+    tag = f.tag;
+    base = baseOf(ctx, f, cache);
+  }
+  if (tag.handle != shape.tag.handle)
+    internalError("fatptr: an inttoptr whose tag differs in kind from its ptrtoint's", &I);
+  Operand u = ctx.operand(I.getOperand(0));
+  Operand off;
+  if (!u.handle && !base.handle)
+    off = Operand{ctx.B().CreateSub(u.v, base.v), false};
+  else
+    off = Operand{tmpl(ctx, "sub", intRail(64), {u, base}, u.handle && base.handle ? "" : u.handle ? "hl" : "lh"),
+                  true};
+  uint64_t cell = shape.cell;
+  Operand idx = off;
+  if (cell != 1) {
+    Constant *k = ConstantInt::get(i64(ctx), isPowerOf2_64(cell) ? Log2_64(cell) : cell);
+    StringRef op = isPowerOf2_64(cell) ? "lshr" : "udiv";
+    idx = idx.handle ? Operand{tmpl(ctx, op, intRail(64), {idx, Operand{k, false}}, "hl"), true}
+                     : Operand{isPowerOf2_64(cell) ? ctx.B().CreateLShr(idx.v, k) : ctx.B().CreateUDiv(idx.v, k),
+                               false};
+  }
+  if (idx.handle)
+    idx = Operand{tmpl(ctx, "trunc", intRail(64), {idx}, "", "", intRail(32)), true};
+  ctx.bindFields(&I, {tag, idx});
 }
 
 // The cell size every lifted clone a pointer is passed to as a T4 triple accesses through its formal

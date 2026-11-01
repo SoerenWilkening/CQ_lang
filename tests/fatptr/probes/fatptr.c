@@ -63,3 +63,20 @@ int f_rail_off_store(unsigned x0, double t, unsigned char k0, double tk, int c, 
   (p + c)[k] = 7;
   return cq_measure(a[j] + 2 * b[j]);
 }
+/* 89/107 (rule 21): ptrtoint of a fat pointer over three objects with a rail cell index, integer arithmetic,
+ * inttoptr back (p's provenance, idx = (u - base[tag]) / 4), a load: one QROM per object merged on the tag */
+#include <stdint.h>
+int f_ptr_roundtrip(unsigned x0, double th, int v) {
+  unsigned x = x0; cq_theta(&x, th);
+  int a[4] = {v, v + 1, v + 2, v + 3}, b[4] = {10, 11, 12, 13}, c[4] = {20, 21, 22, 23};
+  int *p = ((x & 1) ? a : ((x & 2) ? b : c)) + ((x >> 2) & 1);
+  uintptr_t u = (uintptr_t)p + 4 * ((x >> 3) & 1) + 4;
+  return cq_measure(*(int *)u + v);
+}
+/* 107 union_int_to_ptr: inttoptr of a quantum offset onto a classical ptrtoint: one object, classical tag */
+int f_int_to_ptr(unsigned x0, double th, int w) {
+  unsigned x = x0; cq_theta(&x, th);
+  int a[4] = {w, w + 1, w + 2, w + 3};
+  uintptr_t u = (uintptr_t)a + 4 * (x & 3);
+  return cq_measure(*(int *)u);
+}
