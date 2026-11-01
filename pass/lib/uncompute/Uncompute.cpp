@@ -1042,7 +1042,10 @@ struct Uncompute::Impl {
         for (const Value *a : CB->args())
           if (a->getType()->isPointerTy())
             classifyAddr(a, S);
-        if (G->isIntrinsic() && !isa<MemIntrinsic>(CB) && !CB->onlyAccessesArgMemory())
+        // cq-hnqg: memory only the program cannot name (the constrained FP intrinsics' FP environment,
+        // CR rule 23 state that eff-fenv carries) is no C object; its pointer actuals are classified above.
+        if (G->isIntrinsic() && !isa<MemIntrinsic>(CB) && !CB->onlyAccessesArgMemory() &&
+            !CB->onlyAccessesInaccessibleMemory() && !CB->onlyAccessesInaccessibleMemOrArgMem())
           S.unbounded = true;
         else if (!G->isIntrinsic())
           summarize(*G, S, seen);
