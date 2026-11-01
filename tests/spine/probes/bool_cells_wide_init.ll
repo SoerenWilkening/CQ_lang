@@ -144,4 +144,4 @@ attributes #4 = { nomerge nounwind }
 !17 = distinct !{!17, !7, !8}
 !18 = distinct !{!18, !7, !8}
 ; CHECK-COUNT register_grid: @cq_template_zext_i1_to_i8( 0
-; CHECK-COUNT register_grid: call i32 @cqrt_alloc_i1(i1 false) 4
+; CHECK register_grid: call void @cqrt_ry_i1_controlled(
