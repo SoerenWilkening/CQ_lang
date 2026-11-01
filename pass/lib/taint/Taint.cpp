@@ -271,7 +271,7 @@ private:
   // Rule 14 re-roll by SCEV, rules 20/21 (cq-0hdy, 189, 190): a pointer header phi advanced by a
   // fixed classical GEP each trip is a function of the classical trip index j (start + j * step),
   // not a carried value: its offset is classical in the loop even when the exit is quantum.
-  bool classicalPtrInduction(const PHINode &PN);
+  bool classicalInduction(const PHINode &PN);
 
   void transfer(Instruction &I);
   void transferPhi(PHINode &PN, const SmallPtrSetImpl<const PHINode *> &headerQ);
@@ -1129,44 +1129,72 @@ void Analyzer::loopHeaderRule(SpecState &S, const BasicBlock *H,
       continue;
     if (!leaves.empty() && driving.count(&PN))
       continue;
-    if (classicalPtrInduction(PN))
+    if (classicalInduction(PN))
       continue;
     quantum.insert(&PN);
   }
 }
 
-bool Analyzer::classicalPtrInduction(const PHINode &PN) {
-  if (!PN.getType()->isPointerTy() || PN.getNumIncomingValues() != 2)
+bool Analyzer::classicalInduction(const PHINode &PN) {
+  // CR rule 14 (f981c89, cq-rmaf): an affine induction {start,+,step} -- a loop-invariant start and an
+  // unconditional classical step -- is not carried; in trip j its value is start + j*step, classical
+  // when the start is classical. Pointers step by GEPs, integers by add/sub of a classical invariant.
+  if (PN.getNumIncomingValues() != 2)
+    return false;
+  bool ptr = PN.getType()->isPointerTy();
+  if (!ptr && !PN.getType()->isIntegerTy())
     return false;
   FnInfo &fi = fn(cur->F);
   Loop *Lp = fi.LI->getLoopFor(PN.getParent());
   if (!Lp || Lp->getHeader() != PN.getParent())
     return false;
   const Value *start = nullptr, *next = nullptr;
+  const BasicBlock *latch = nullptr;
   for (unsigned i = 0; i < 2; ++i) {
-    if (Lp->contains(PN.getIncomingBlock(i)))
+    if (Lp->contains(PN.getIncomingBlock(i))) {
       next = PN.getIncomingValue(i);
-    else
+      latch = PN.getIncomingBlock(i);
+    } else {
       start = PN.getIncomingValue(i);
+    }
   }
   if (!start || !next || anyLane(L(start)))
     return false;
-  // next = a chain of GEPs from PN whose indices are constants or classical loop invariants.
+  auto invariantClassical = [&](const Value *X) {
+    if (isa<Constant>(X))
+      return true;
+    auto *XI = dyn_cast<Instruction>(X);
+    return !(XI && Lp->contains(XI)) && !anyLane(L(X));
+  };
+  // next = a chain of steps from PN, each in a block every trip reaching the latch runs (it dominates
+  // the latch: the step is unconditional).
+  const DominatorTree &DT = *fi.DT;
   const Value *V = next;
   unsigned steps = 0;
   while (V != &PN) {
-    auto *G = dyn_cast<GetElementPtrInst>(V);
-    if (!G || !Lp->contains(G))
+    auto *I = dyn_cast<Instruction>(V);
+    if (!I || !Lp->contains(I) || !DT.dominates(I->getParent(), latch))
       return false;
-    for (const Use &U : G->indices()) {
-      const Value *X = U.get();
-      if (isa<Constant>(X))
-        continue;
-      auto *XI = dyn_cast<Instruction>(X);
-      if ((XI && Lp->contains(XI)) || anyLane(L(X)))
+    if (ptr) {
+      auto *G = dyn_cast<GetElementPtrInst>(I);
+      if (!G)
+        return false;
+      for (const Use &U : G->indices())
+        if (!invariantClassical(U.get()))
+          return false;
+      V = G->getPointerOperand();
+    } else {
+      auto *BO = dyn_cast<BinaryOperator>(I);
+      if (!BO || (BO->getOpcode() != Instruction::Add && BO->getOpcode() != Instruction::Sub))
+        return false;
+      if (BO->getOpcode() == Instruction::Add && invariantClassical(BO->getOperand(0)) &&
+          !invariantClassical(BO->getOperand(1)))
+        V = BO->getOperand(1);
+      else if (invariantClassical(BO->getOperand(1)))
+        V = BO->getOperand(0);
+      else
         return false;
     }
-    V = G->getPointerOperand();
     ++steps;
   }
   return steps > 0;
@@ -1193,7 +1221,7 @@ void Analyzer::transferPhi(PHINode &PN, const SmallPtrSetImpl<const PHINode *> &
       }
   if (!allSame && !chosen)
     chosen = chosenAtDependentJoin(PN);
-  if (chosen && classicalPtrInduction(PN))
+  if (chosen && classicalInduction(PN))
     chosen = false; // the trip index chooses it, a classical value (cq-0hdy)
   if (PN.getType()->isPointerTy()) {
     PtrInfo p;

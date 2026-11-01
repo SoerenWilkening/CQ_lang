@@ -124,6 +124,11 @@ private:
   LoweringContext &ctx;
   Analyses &A;
   DenseSet<const Value *> mine;   // values this module has bound (bind, then rebind per trip)
+  // Classical values that differ from trip to trip: a classical header phi (an affine induction, CR
+  // rule 14 f981c89) and every classical value computed from one. Trips the C program does not run
+  // are computed too, so their copies carry no poison-generating flags (start + j*step may wrap past
+  // the exit trip) and a division by one is not built.
+  DenseSet<const Value *> perTrip;
 
   bool isQ(const Value *v) {
     if (isa<Constant>(v) || isa<BasicBlock>(v) || isa<MetadataAsValue>(v))
@@ -297,6 +302,11 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     return nullptr;
   };
   std::vector<std::pair<const Value *, PHINode *>> exitRebinds;   // body form: value -> its header phi
+  // CR rule 14 (f981c89): an affine induction (a classical header phi, taint) is not carried; when the
+  // program reads its exit value after the loop, a rail seeded with the start advances by
+  // select(q_j, rail + step, rail) for that read alone (never used in the loop).
+  DenseMap<PHINode *, Operand> exitRail;
+  std::vector<Instruction *> regionQReads;   // region form: quantum values read after the loop
   for (BasicBlock *b : L.blocks())
     for (Instruction &I : *b) {
       bool outside = false;
@@ -313,10 +323,25 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (regionForm) {
         if (!region.count(b))
           unimplemented("loops-cutoff: a value of a header-tested K-loop's body read after the loop", &I);
+        if (!isQ(&I)) {
+          // A classical value is the last region evaluation's, not the exit trip's: only an affine
+          // induction's exit value is built (its exit rail, CR rule 14).
+          auto *h = dyn_cast<PHINode>(&I);
+          if (!h || h->getParent() != H || !h->getType()->isIntegerTy())
+            unimplemented("loops-cutoff: a classical value of a K-loop's test region read after the loop that is "
+                          "not an affine induction's exit value",
+                          &I);
+          exitRail.insert({h, Operand{nullptr, false}});
+          exitRebinds.push_back({&I, h});
+        } else {
+          regionQReads.push_back(&I);
+        }
         continue;   // the last region evaluation holds it (frozen state)
       }
       PHINode *h = headerPhiWithNext(&I);
-      if (!h || !isQ(h))
+      if (h && !isQ(h) && h->getType()->isIntegerTy())
+        exitRail.insert({h, Operand{nullptr, false}});   // CR rule 14: an affine induction's exit value
+      if (!h || (!isQ(h) && !exitRail.count(h)))
         unimplemented("loops-cutoff: a value read after a K-loop that is not the latch incoming of a quantum "
                       "header phi",
                       &I);
@@ -358,7 +383,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
               break;
             }
         }
-        if (!h || (id && id != h) || !isQ(h))
+        if (h && !isQ(h) && h->getType()->isIntegerTy() && L.contains(u))
+          exitRail.insert({h, Operand{nullptr, false}});
+        if (!h || (id && id != h) || (!isQ(h) && !exitRail.count(h)))
           ok = false;
         else
           id = h;
@@ -374,16 +401,111 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     }
   }
 
+  // CR rule 14 (f981c89): an affine induction with a quantum loop-invariant start (a quantum header
+  // phi whose latch incoming is the phi plus or minus classical invariants, each step in a block that
+  // dominates the latch) is not carried either: in trip j it is ONE template from the start rail and
+  // the classical offset j*step (190: n - j). Only a read after the loop keeps a carried rail, the
+  // exit value, advancing by select on the trip predicate.
+  struct QInduction {
+    Operand start;                                   // the invariant start rail
+    std::vector<std::pair<bool, const Value *>> steps;  // (add?, classical invariant) from the phi out
+    Value *off = nullptr;                            // the classical offset of the current trip
+    std::optional<Operand> exitRail;                 // set when the value is read after the loop
+  };
+  DenseMap<PHINode *, QInduction> qind;
+  DominatorTree &DT = A.DT;
+  for (PHINode *h : hphis) {
+    if (!isQ(h) || !h->getType()->isIntegerTy())
+      continue;
+    Value *st = h->getIncomingValueForBlock(pre);
+    if (auto *SI = dyn_cast<Instruction>(st); SI && L.contains(SI))
+      continue;
+    auto invariant = [&](const Value *X) {
+      if (isa<Constant>(X))
+        return true;
+      auto *XI = dyn_cast<Instruction>(X);
+      return !(XI && L.contains(XI)) && !isQ(X);
+    };
+    std::vector<std::pair<bool, const Value *>> steps;
+    const Value *V = h->getIncomingValueForBlock(latch);
+    bool ok = true;
+    while (ok && V != h) {
+      auto *BO = dyn_cast<BinaryOperator>(V);
+      if (!BO || !L.contains(BO) || !DT.dominates(BO->getParent(), latch) ||
+          (BO->getOpcode() != Instruction::Add && BO->getOpcode() != Instruction::Sub)) {
+        ok = false;
+        break;
+      }
+      if (BO->getOpcode() == Instruction::Add && invariant(BO->getOperand(0)) && !invariant(BO->getOperand(1))) {
+        steps.push_back({true, BO->getOperand(0)});
+        V = BO->getOperand(1);
+      } else if (invariant(BO->getOperand(1))) {
+        steps.push_back({BO->getOpcode() == Instruction::Add, BO->getOperand(1)});
+        V = BO->getOperand(0);
+      } else {
+        ok = false;
+      }
+    }
+    if (!ok || steps.empty())
+      continue;
+    std::reverse(steps.begin(), steps.end());
+    QInduction qi;
+    qi.steps = std::move(steps);
+    qi.off = ConstantInt::get(h->getType(), 0);
+    qind.insert({h, std::move(qi)});
+  }
+  // Region form: the state is frozen once the loop exited, but an induction's trip value is not, so a
+  // read of one after the loop is its exit rail, and a region value computed from one is not built.
+  for (Instruction *I : regionQReads) {
+    if (auto *h = dyn_cast<PHINode>(I); h && qind.count(h)) {
+      exitRebinds.push_back({I, h});
+      continue;
+    }
+    SmallVector<const Value *, 8> work{I};
+    SmallPtrSet<const Value *, 16> seen;
+    while (!work.empty()) {
+      const Value *V = work.pop_back_val();
+      auto *VI = dyn_cast<Instruction>(V);
+      if (!VI || !L.contains(VI) || !seen.insert(V).second)
+        continue;
+      if (auto *h = dyn_cast<PHINode>(VI); h && qind.count(const_cast<PHINode *>(h)))
+        unimplemented("loops-cutoff: a value of a K-loop's test region computed from an affine induction with a "
+                      "quantum start, read after the loop",
+                      I);
+      if (isa<PHINode>(VI))
+        continue;
+      for (const Use &U : VI->operands())
+        work.push_back(U.get());
+    }
+  }
+  for (auto &[v, h] : exitRebinds)
+    if (auto it = qind.find(h); it != qind.end())
+      it->second.exitRail = Operand{};
+  for (auto &[P, h] : exitPhis)
+    if (auto it = qind.find(h); it != qind.end())
+      it->second.exitRail = Operand{};
+
   // The state: header phis bound to their initial values (a classical initial value of a quantum phi
   // becomes a seed rail).
   for (PHINode *h : hphis) {
-    if (!h->getType()->isIntegerTy() && !h->getType()->isFloatingPointTy())
+    // A classical pointer header phi is an affine induction (taint, CR rule 14: a walked pointer with a
+    // classical start): a classical value in each trip, nothing carried.
+    if (!h->getType()->isIntegerTy() && !h->getType()->isFloatingPointTy() && (isQ(h) || !h->getType()->isPointerTy()))
       unimplemented("loops-cutoff: a carried value that is not a scalar (aggregates, pointers)", h);
     Operand init = ctx.operand(h->getIncomingValueForBlock(pre));
     if (isQ(h) && !init.handle)
       init = Operand{seedRail(init.v, h->getType()), true};
     if (!isQ(h) && init.handle)
       internalError("loops-cutoff: a classical header phi with a rail initial value", h);
+    if (auto it = exitRail.find(h); it != exitRail.end())
+      it->second = Operand{seedRail(init.v, h->getType()), true};
+    if (!isQ(h))
+      perTrip.insert(h);
+    if (auto it = qind.find(h); it != qind.end()) {
+      it->second.start = init;
+      if (it->second.exitRail)
+        it->second.exitRail = init;   // select is out of place: the start rail is the trip-0 state
+    }
     set(h, init);
   }
 
@@ -429,7 +551,22 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         if (auto *II = dyn_cast<IntrinsicInst>(&I); II && (II->isLifetimeStartOrEnd() || isa<DbgInfoIntrinsic>(II)))
           effects = false;
         if (!effects) {
+          bool varies = !isQ(&I) && any_of(I.operands(), [&](const Use &U) { return perTrip.count(U.get()); });
+          if (varies && (I.getOpcode() == Instruction::UDiv || I.getOpcode() == Instruction::SDiv ||
+                         I.getOpcode() == Instruction::URem || I.getOpcode() == Instruction::SRem))
+            unimplemented("loops-cutoff: a classical division by a per-trip value of an affine induction in a K-loop "
+                          "(computed in trips the C program may not run)",
+                          &I);
           lowerInstruction(ctx, I);
+          if (varies) {
+            perTrip.insert(&I);
+            // A pointer is no operand of its own (memory resolves it per access: rules 20, 21).
+            if (auto *NI = I.getType()->isPointerTy() ? nullptr : dyn_cast<Instruction>(ctx.operand(&I).v);
+                NI && NI != &I) {
+              NI->dropPoisonGeneratingFlags();
+              NI->dropPoisonGeneratingMetadata();
+            }
+          }
           continue;
         }
         if (!tripFlag)
@@ -448,7 +585,41 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (!isQ(h)) {
         if (nx.handle)
           internalError("loops-cutoff: a classical carried value with a rail next value", h);
+        if (auto it = exitRail.find(h); it != exitRail.end()) {
+          // ex' = select(q, ex + (next - cur), ex): on every trip that ran, ex is the induction's value.
+          Operand cur = ctx.operand(h);
+          Value *step = ctx.B().CreateSub(nx.v, cur.v);
+          abi::TemplateSpec add;
+          add.op = "add";
+          add.w = railTypeOf(h->getType());
+          add.shape = "hl";
+          Value *inc = ctx.emitTemplate(add, {it->second, Operand{step, false}});
+          abi::TemplateSpec sel;
+          sel.op = "select";
+          sel.w = railTypeOf(h->getType());
+          it->second = Operand{ctx.emitTemplate(sel, {Operand{q, true}, Operand{inc, true}, it->second}), true};
+        }
         set(h, nx);
+        continue;
+      }
+      if (auto it = qind.find(h); it != qind.end()) {
+        QInduction &qi = it->second;
+        if (qi.exitRail) {
+          abi::TemplateSpec sel;
+          sel.op = "select";
+          sel.w = railTypeOf(h->getType());
+          sel.shape = nx.handle ? "" : "lh";
+          qi.exitRail = Operand{ctx.emitTemplate(sel, {Operand{q, true}, nx, *qi.exitRail}), true};
+        }
+        for (auto &[isAdd, c] : qi.steps) {
+          Value *cv = ctx.operand(c).v;
+          qi.off = isAdd ? ctx.B().CreateAdd(qi.off, cv) : ctx.B().CreateSub(qi.off, cv);
+        }
+        abi::TemplateSpec add;
+        add.op = "add";
+        add.w = railTypeOf(h->getType());
+        add.shape = "hl";
+        set(h, Operand{ctx.emitTemplate(add, {qi.start, Operand{qi.off, false}}), true});
         continue;
       }
       Operand cur = ctx.operand(h);
@@ -495,10 +666,19 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     ctx.unc().setRole(ctx.unc().idOf(q), Role::KeptOverflow);
 
   // Exit values (body form): the final state of the header phi.
+  auto exitOf = [&](PHINode *h) {
+    if (auto qt = qind.find(h); qt != qind.end()) {
+      if (!qt->second.exitRail)
+        internalError("loops-cutoff: an affine induction's exit value with no exit rail", h);
+      return *qt->second.exitRail;
+    }
+    auto it = exitRail.find(h);
+    return it != exitRail.end() ? it->second : ctx.operand(h);
+  };
   for (auto &[v, h] : exitRebinds)
-    ctx.rebind(v, {ctx.operand(h)});
+    ctx.rebind(v, {exitOf(h)});
   for (auto &[P, h] : exitPhis) {
-    Operand f = ctx.operand(h);
+    Operand f = exitOf(h);
     if (top)
       ctx.bindFields(P, {f});
     else

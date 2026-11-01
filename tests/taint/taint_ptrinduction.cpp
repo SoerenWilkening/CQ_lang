@@ -1,8 +1,9 @@
 // cq-0hdy: a pointer header phi advanced by a fixed classical GEP per trip is the trip index's
 // function start + j * step (rule 14 re-rolled by SCEV, 189, 190), so its offset stays classical in
 // a loop with a quantum exit and the object it walks stays a slot array (rule 20; 190's memcmp clone).
-// A pointer advanced by a quantum step, or chosen by the exit, stays quantum; an integer counter
-// read after the loop stays a carried rail (05).
+// A pointer advanced by a quantum step, or chosen by the exit, stays quantum. An integer counter is an
+// affine induction too (CR rule 14 at f981c89, cq-rmaf): classical in the loop; only its reads after
+// the loop are quantum (taint's exit read), the exit rail loops-cutoff builds (87's n).
 #include <cstdio>
 #include <string>
 
@@ -96,7 +97,7 @@ done:
   ret i32 %mz
 }
 
-; An integer counter beside the pointer walk, read after the loop: still a carried rail (05).
+; An integer counter beside the pointer walk, read after the loop: classical in the loop (cq-rmaf).
 define i32 @count(i32 %x0, double %tx) {
 entry:
   %a = alloca [4 x i32], align 4
@@ -233,7 +234,7 @@ int main() {
   expectClass(T, Q, "a", cq::ObjClass::Qram);
 
   Function &N = *M->getFunction("count");
-  expectQ(T, N, {{"p", false}, {"n", true}, {"n1", true}});
+  expectQ(T, N, {{"p", false}, {"n", false}, {"n1", false}});
   expectClass(T, N, "a", cq::ObjClass::Slot);
 
   Function &W = *M->getFunction("walks");

@@ -160,8 +160,9 @@ int main() {
   for (const char *f : {"sel_or", "sel_and", "xor_not"})
     expectQ(T, *M->getFunction(f),
             {{"i", false}, {"i1", false}, {"c", false}, {"v", true}, {"v1", true}, {"q", true}});
-  // No classical disjunct forces the exit: every header phi is quantum (K cutoff).
-  expectQ(T, *M->getFunction("sel_or_wrong_polarity"), {{"i", true}, {"v", true}});
+  // No classical disjunct forces the exit (K cutoff): the carried value is quantum, the counter an
+  // affine induction, classical in the loop (CR rule 14 at f981c89, cq-rmaf).
+  expectQ(T, *M->getFunction("sel_or_wrong_polarity"), {{"i", false}, {"v", true}});
 
   outs() << "taint_exitselect: " << checks << " checks, " << failures << " failures\n";
   return failures ? 1 : 0;
