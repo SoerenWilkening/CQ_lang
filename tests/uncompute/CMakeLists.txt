@@ -13,7 +13,7 @@ set(CQ_UNC_CASES
   merge_kept_arm_local merge_kept_unchosen_edge merge_kept_rotated merge_kept_nested_phi_edge alias_distinct_cell
   alias_copy_distinct_array cell_load_garbage cell_load_kept
   deferred_kept_through_memory
-  call_two_results call_all_kept call_slotout_unused call_reads)
+  call_two_results call_all_kept call_slotout_unused call_reads resolve_at)
 foreach(c ${CQ_UNC_CASES})
   add_test(NAME uncompute.${c} COMMAND uncompute_tests ${c})
 endforeach()
@@ -31,6 +31,8 @@ set(CQ_UNC_FATAL
   "fatal_unknown_handle=cq: internal error: uncompute: recordTemplate: .* is not a recorded rail"
   "fatal_merge_kept_role=cq: unimplemented: uncompute: a kept role on a classical select over handles"
   "fatal_cell_load_empty=cq: internal error: uncompute: recordCellLoad: a cell load that may name no rail"
+  "fatal_resolve_at_used=cq: internal error: uncompute: resolveAt: %t is still used after the point"
+  "fatal_resolve_at_bypass=cq: internal error: uncompute: resolveAt: a path from the definition of %s reaches a return without passing the point"
   "fatal_call_mixed=cq: unimplemented: uncompute: a call whose results are partly kept"
   "fatal_merge_nondiagonal=cq: unimplemented: uncompute: a non-diagonal gate on a merged handle"
   "fatal_merge_arm_local=cq: unimplemented: uncompute: an arm of a merged handle, .* cq-ut4k"

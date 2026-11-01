@@ -151,6 +151,12 @@
 //    An exit rail with no IR use outside the region (it reaches later code only through memory: cell-load
 //    merges, M3) that became kept is not copied and not undone: every trip's instance keeps its role
 //    (rule 5, rule 14 case 1; 179). An owned record reading it is still undone.
+//  - resolveAt(P, rails) (U5, cq-arch 2026-11-01; CR rule 5): emits right before P, readers first, the
+//    items of the listed pending rails (kept or resolved ones are skipped), with rule 5's barrier check.
+//    Precondition, else an internal error: each rail's definition dominates P, none of its uses comes
+//    at or after P, every pending reader of it is in the list, and every path from its definition to
+//    a return passes P (it is resolved for good there, CR §0). A merge or a deferred item's rail is an
+//    internal error.
 //  - scopeRecords(s): the records created while s was open (nested scopes included), program order.
 //    The ArrayRef is valid until the next record* call. Scopes close last-in-first-out.
 //
@@ -1571,6 +1577,12 @@ struct Uncompute::Impl {
     }
     if (!pos.before)
       internalError("uncompute: no insertion point for " + describe(r.handle));
+    placeAt(g, pos, local);
+  }
+
+  // Emits g's item at pos after rule 5's barrier check (local: resolved for good).
+  void placeAt(RailId g, Pos pos, bool local) {
+    Rail &r = rails[g];
     // Rule 5's invariant.
     bool kept = false;
     for (auto [e, kind] : barriers(g)) {
@@ -2586,6 +2598,63 @@ void Uncompute::flushBefore(Instruction *point) {
       continue;
     I.place(g, c);
   }
+}
+
+void Uncompute::resolveAt(Instruction *P, ArrayRef<RailId> list) {
+  impl->pruneCleanups();
+  Impl &I = *impl;
+  if (!P || !P->getParent())
+    internalError("uncompute: resolveAt needs an instruction in a block");
+  BasicBlock *Pb = P->getParent();
+  SmallVector<RailId, 16> cands;
+  for (RailId g : list) {
+    Impl::Rail &x = I.rail(g, "resolveAt");
+    if (x.ownedBy != kNone || x.deferred != kNone || I.isMerge(g))
+      internalError("uncompute: resolveAt: " + describe(x.handle) +
+                        " is a merge or belongs to a deferred item (resolved with it)",
+                    P);
+    if (!I.resolvable(g) || !x.exitsDone.empty())
+      continue; // kept, or resolved already
+    if (!is_contained(cands, g))
+      cands.push_back(g);
+  }
+  for (RailId g : cands) {
+    Impl::Rail &x = I.rails[g];
+    const BasicBlock *D = I.defBlock(g);
+    const Instruction *def = x.creator != kNone ? I.records[x.creator].forward : dyn_cast<Instruction>(x.handle);
+    if (!Impl::dominates(D, Pb) || (D == Pb && def && !def->comesBefore(P)))
+      internalError("uncompute: resolveAt: the definition of " + describe(x.handle) + " does not dominate the point", P);
+    for (Instruction *a : I.anchors(g))
+      if (a == P || Impl::after(a, P))
+        internalError("uncompute: resolveAt: " + describe(x.handle) + " is still used after the point", a);
+    for (RailId o : I.readersOf(g))
+      if (I.resolvable(o) && !I.rails[o].released && I.rails[o].exitsDone.empty() && !is_contained(cands, o))
+        internalError("uncompute: resolveAt: " + describe(x.handle) + " is read by the pending item of " +
+                          describe(I.rails[o].handle) + ", which is not resolved with it",
+                      P);
+    // CR §0: resolved for good here, so every path from its definition to a return passes the point.
+    SmallPtrSet<const BasicBlock *, 16> seen{D};
+    SmallVector<const BasicBlock *, 16> work{D};
+    while (!work.empty()) {
+      const BasicBlock *b = work.pop_back_val();
+      if (b == Pb)
+        continue; // passes the point (a definition in Pb comes before it, checked above)
+      const Instruction *t = b->getTerminator();
+      if (!t || isa<ReturnInst>(t) || isa<UnreachableInst>(t)) {
+        if (t && isa<ReturnInst>(t))
+          internalError("uncompute: resolveAt: a path from the definition of " + describe(x.handle) +
+                            " reaches a return without passing the point",
+                        P);
+        continue;
+      }
+      for (const BasicBlock *sb : successors(t))
+        if (seen.insert(sb).second)
+          work.push_back(sb);
+    }
+  }
+  for (RailId g : I.order(cands))
+    if (I.resolvable(g))
+      I.placeAt(g, {Pb, P}, true);
 }
 
 void Uncompute::flushAtExit(ReturnInst *ret) {

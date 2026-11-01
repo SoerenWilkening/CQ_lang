@@ -1686,6 +1686,77 @@ void call_reads() {
                     });
 }
 
+// U5: resolveAt. t (garbage over x) is defined and used in the guarded block G; every path from G to
+// the return passes X, so resolveAt(first instruction of X, {t}) emits t's _unc and free there.
+const char *kResolveAt = R"(
+define i32 @f(i32 %a0, double %th, i1 %c) {
+entry:
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  br i1 %c, label %G, label %Y
+G:
+  %t = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  call void @cqrt_ry_i32(i32 %t, double %th)
+  br label %X
+X:
+  %r = call i32 @cqrt_measure_i32(i32 %x)
+  ret i32 %r
+Y:
+  ret i32 0
+})";
+
+void resolve_at() {
+  Fx f(kResolveAt);
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  RailId t = f.T("t", "hl");
+  f.U.setRole(x, Role::Measured);
+  (void)t;
+  f.U.resolveAt(f.I("r"), {t});
+  f.U.flushAtExit(f.ret(0));
+  f.U.flushAtExit(f.ret(1));
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "br i1 %c, label %G, label %Y",
+                        "%t = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "call void @cqrt_ry_i32(i32 %t, double %th)",
+                        "br label %X",
+                        "call void @cq_template_add_i32_hl_unc(i32 %t, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %t)",
+                        "%r = call i32 @cqrt_measure_i32(i32 %x)",
+                        "ret i32 %r",
+                        "ret i32 0",
+                    });
+}
+
+// U5: t is still used at the point: an internal error.
+void fatal_resolve_at_used() {
+  Fx f(kResolveAt);
+  RailId x = f.reg("x", 0);
+  RailId t = f.T("t", "hl");
+  (void)x;
+  f.U.resolveAt(f.call("cqrt_ry_i32", 1), {t});
+}
+
+// U5: a path from x's definition reaches a return (Y) without passing the point in X.
+const char *kResolveBypass = R"(
+define i32 @f(i32 %a0, i1 %c) {
+entry:
+  %s = call i32 @cqrt_alloc_i32(i32 %a0)
+  br i1 %c, label %A, label %B
+A:
+  ret i32 1
+B:
+  ret i32 0
+})";
+
+void fatal_resolve_at_bypass() {
+  Fx f(kResolveBypass);
+  RailId s = f.S("s");
+  f.U.resolveAt(f.ret(0), {s});
+}
+
 // U2: one result kept and the other not: the twin would zero the kept one.
 void fatal_call_mixed() {
   Fx f(kCall2m);
@@ -2602,6 +2673,7 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"call_all_kept", call_all_kept},
     {"call_slotout_unused", call_slotout_unused},
     {"call_reads", call_reads},
+    {"resolve_at", resolve_at},
     {"merge_all_arms_kept", merge_all_arms_kept},
     {"merge_template_then_garbage", merge_template_then_garbage},
     {"merge_noted_use", merge_noted_use},
@@ -2619,6 +2691,8 @@ const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_use_after_free", fatal_use_after_free},
     {"fatal_cell_load_empty", fatal_cell_load_empty},
     {"fatal_call_mixed", fatal_call_mixed},
+    {"fatal_resolve_at_used", fatal_resolve_at_used},
+    {"fatal_resolve_at_bypass", fatal_resolve_at_bypass},
     {"fatal_operand_mismatch", fatal_operand_mismatch},
     {"fatal_unflushed_arm", fatal_unflushed_arm},
     {"fatal_scope_order", fatal_scope_order},
