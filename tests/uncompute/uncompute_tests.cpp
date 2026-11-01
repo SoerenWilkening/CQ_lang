@@ -1606,6 +1606,40 @@ void call_all_kept() {
                     });
 }
 
+// cq-b73i: a slotOut (the after-call load of a cell the clone wrote) that nothing reads. The item
+// follows the load's definition, not just the forward call (it names the load's handle).
+const char *kCallSlot = R"(
+declare void @__cq_q_fill_11(ptr, i32)
+define i32 @f(i32 %a0, double %th) {
+entry:
+  %a = alloca [2 x i32], align 4
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %old = load i32, ptr %a, align 4
+  call void @__cq_q_fill_11(ptr %a, i32 %x)
+  %c = load i32, ptr %a, align 4
+  ret i32 0
+})";
+
+void call_slotout_unused() {
+  Fx f(kCallSlot);
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  f.U.recordCall(f.call("__cq_q_fill_11"), {}, {f.I("c")}, {Operand{f.I("old"), false}});
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%a = alloca [2 x i32], align 4",
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%old = load i32, ptr %a, align 4",
+                        "call void @__cq_q_fill_11(ptr %a, i32 %x)",
+                        "%c = load i32, ptr %a, align 4",
+                        "call void @__cq_q_fill_11_unc(ptr %a, i32 %x, i32 %old)",
+                        "call void @cqrt_free(i32 %c)",
+                        "ret i32 0",
+                    });
+}
+
 // U2: one result kept and the other not: the twin would zero the kept one.
 void fatal_call_mixed() {
   Fx f(kCall2m);
@@ -2520,6 +2554,7 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"deferred_kept_through_memory", deferred_kept_through_memory},
     {"call_two_results", call_two_results},
     {"call_all_kept", call_all_kept},
+    {"call_slotout_unused", call_slotout_unused},
     {"merge_all_arms_kept", merge_all_arms_kept},
     {"merge_template_then_garbage", merge_template_then_garbage},
     {"merge_noted_use", merge_noted_use},

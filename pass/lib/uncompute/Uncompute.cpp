@@ -834,6 +834,17 @@ struct Uncompute::Impl {
     SmallVector<Instruction *, 8> out;
     if (r.creator != kNone)
       out.push_back(records[r.creator].forward);
+    if (r.group != kNone && r.creator != kNone && info[r.creator].kind == RecKind::Call) {
+      // cq-b73i: the group's item names every member's handle and extra operand, so it follows their
+      // definitions even when nothing uses them (a slotOut loaded after the call and never read).
+      const CallGroup &cg = groups[r.group];
+      for (RailId m : cg.members)
+        if (auto *i = dyn_cast<Instruction>(rails[m].handle))
+          out.push_back(i);
+      for (Value *e : cg.extra)
+        if (auto *i = dyn_cast<Instruction>(e); i && i->getParent() && !(i->getParent() == cg.fwd->getParent() && i->comesBefore(cg.fwd)))
+          out.push_back(i);
+    }
     for (unsigned w : r.writes)
       out.push_back(records[w].forward);
     // U1: a use of a merge that may name g is a use of g.
