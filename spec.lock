@@ -1,9 +1,9 @@
 # CQ_spec pin, written by tools/spec_lock.py --write. Spec: examples/, CONSTRUCTION_RULES.md, CQ.h.
 # Also locked because we consume them: BACKEND_ABI.md (non-normative, CONSTRUCTION_RULES.md wins over it)
 # and _tools/drivers.txt (input data). A drift in either of those two is a re-pin, not a spec issue.
-commit f981c893802e1ba9b9e2c58fda2695bcefc9b375
+commit 47b0a385ebde2650bfc79c62f326923219a0a25b
 4298e0cc4d87721844e45980371d2b775e18d6c912756d176dc289868f58c22c  BACKEND_ABI.md
-960af34437735055c1fc85512055d59b9184e0591c873dc954972a522fcdf338  CONSTRUCTION_RULES.md
+73a5dc97aa00a1b7d2a5c6db66ba155d05a05ab7b2198bd071cd3d857544668e  CONSTRUCTION_RULES.md
 4290e32abc609eb893d5f8baa3f412164a7452493abbbe65f1b85e98ef291a12  CQ.h
 0b304021b1b55dab81353c47d278fd8abc2732d998815ae22fcca744f38c2466  _tools/drivers.txt
 721d422960294e2fe9c8821f9365f47679bd71dc815f2594c84f2cd3de8f7611  examples/01_add_classical_const/add_classical_const.O1.ll
@@ -56,7 +56,7 @@ c93d2bd81563fc466e4bde8cfa4b52e0331e81c8ff5e0456c5f7dcc1a3bb9c68  examples/105_p
 df89224c0a05aeb0e71055bf4eb862faff2ac8b9dadf684c76d555fa3a47abef  examples/106_fork_join/fork_join.lowered.ll
 caacd30bc65b76e2230dc2959f1ca362f949faeef51fb97f064a4b0df7bb2385  examples/107_pointer_int_union/pointer_int_union.O1.ll
 2fa113c81699b7a8648c1a92f489c3f9ba319e2ac81b8f2125a2272fdd3caa66  examples/107_pointer_int_union/pointer_int_union.c
-89742fdd8e7d24cbd1ba0f5835eb35dbbbeb59d8272cbcfbcaa281ee304d4c05  examples/107_pointer_int_union/pointer_int_union.lowered.ll
+04c3350e9f4faa522d517709454066b9e494979d20d86346ff8701c9390963e3  examples/107_pointer_int_union/pointer_int_union.lowered.ll
 1e44dfb4401fefb9ab13c9f86e15dea4b03b6388459d33f8840f7567a2a4ca55  examples/108_arch_primitives/arch_primitives.O1.ll
 dfc56a060f49221ca3a79000a6fe55d1be790b3aa9bd492755a399291b3a0cf8  examples/108_arch_primitives/arch_primitives.c
 a80e977eab2e93a6302059011a95db73913fdf1d5761a5ea9c8a37d90fa72565  examples/108_arch_primitives/arch_primitives.lowered.ll
