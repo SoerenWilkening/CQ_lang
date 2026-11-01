@@ -87,6 +87,7 @@
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/TargetParser/Triple.h"
 #include "llvm/Analysis/ValueTracking.h"
@@ -1739,6 +1740,89 @@ void noteDistinctStore(LoweringContext &ctx, FnState &st, const Site &s, const I
       ctx.unc().noteCellsDistinct(R.h, vi);
 }
 
+// cq-2t04 (CR rules 7, 20; 121): a classical store S into a cell of a dynamic local object, outside any
+// quantum predicate, whose old content is a seed nothing has read: the old rail is in a known basis state and
+// no other holder reads it, so it is released right there (the cell's handle loaded and freed), before the new
+// seed takes the cell. Built only when every write that may reach S's cell is a classical store (one of them
+// dominating S and covering the cell: the same cell, or the whole object), or the same address stored after S
+// in S's block of an outermost loop whose address advances every trip (a later trip's S writes another cell),
+// and no read of the object can reach S.
+void freeOverwrittenSeed(LoweringContext &ctx, FnState &st, const Site &s, const StoreInst &S) {
+  if (!(s.info->kind == RootKind::Local || s.info->kind == RootKind::Heap) || s.info->escaping ||
+      s.info->record || s.info->view || !isDynamic(ctx, st, *s.info, s.o) || ctx.currentFlag() ||
+      !ctx.currentPredicate().isTop())
+    return;
+  const DataLayout &DL = ctx.M.getDataLayout();
+  uint64_t size = storeBytes(DL, S.getValueOperand()->getType());
+  auto classicalStore = [&](const Instruction &X) {
+    auto *x = dyn_cast<StoreInst>(&X);
+    return x && !x->isVolatile() && !x->isAtomic() && !ctx.T.isQuantum(x->getValueOperand(), ctx.S) &&
+           !ctx.T.isFatPointer(x->getPointerOperand(), ctx.S) &&
+           ctx.preds().block(x->getParent()).quantumPart(ctx.T, ctx.S).isTop();
+  };
+  auto *root = dyn_cast<AllocaInst>(s.info->root);
+  auto covers = [&](const StoreInst &x) {
+    Addr a = decompose(x.getPointerOperand(), DL);
+    if (sameCell(a, s.a) && storeBytes(DL, x.getValueOperand()->getType()) == size)
+      return true;
+    if (!root || root->isArrayAllocation() || !a.ok || !a.terms.empty() || a.root != root || a.off != 0)
+      return false;
+    return storeBytes(DL, x.getValueOperand()->getType()) >= DL.getTypeAllocSize(root->getAllocatedType());
+  };
+  auto advancesLater = [&](const Instruction &X) {
+    auto *x = dyn_cast<StoreInst>(&X);
+    if (!x || x->getPointerOperand() != S.getPointerOperand() || x->getParent() != S.getParent() ||
+        !S.comesBefore(x))
+      return false;
+    if (!st.LI)
+      st.LI = std::make_unique<LoopInfo>(*st.DT);
+    Loop *L = st.LI->getLoopFor(S.getParent());
+    ScalarEvolution *SE = seOf(S.getPointerOperand());
+    if (!L || L->getParentLoop() || !SE)
+      return false;
+    auto *ar = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(const_cast<Value *>(S.getPointerOperand())));
+    if (!ar || ar->getLoop()->getHeader() != L->getHeader() || !ar->isAffine() || !ar->hasNoSelfWrap())
+      return false;
+    auto *step = dyn_cast<SCEVConstant>(ar->getStepRecurrence(*SE));
+    return step && !step->getValue()->isZero() &&
+           step->getAPInt().abs().uge(APInt(step->getAPInt().getBitWidth(), size));
+  };
+  bool dominated = false;
+  for (const Instruction &X : instructions(*st.F)) {
+    if (&X == &S)
+      continue;
+    if (auto *II = dyn_cast<IntrinsicInst>(&X); II && II->isLifetimeStartOrEnd())
+      continue;
+    bool reads = false;
+    if (auto *ld = dyn_cast<LoadInst>(&X))
+      reads = hasObject(ctx, ld->getPointerOperand(), s.o);
+    else if (auto *CB = dyn_cast<CallBase>(&X); CB && !isCqSurface(*CB))
+      reads = any_of(CB->args(), [&](const Use &u) { return hasObject(ctx, u.get(), s.o); });
+    else if (isRMW(&X))
+      reads = hasObject(ctx, X.getOperand(0), s.o);
+    if (reads) {
+      if (isPotentiallyReachable(&X, &S, nullptr, st.DT.get())) 
+        return;
+      continue;
+    }
+    if (!(isa<StoreInst>(X) || isa<CallBase>(X)) || !mayWrite(ctx, *s.info, s.o, X, s.a, size) ||
+        !isPotentiallyReachable(&X, &S, nullptr, st.DT.get()))
+      continue;
+    if (classicalStore(X)) {
+      dominated |= st.DT->dominates(&X, &S) && covers(cast<StoreInst>(X));
+      continue;
+    }
+    if (advancesLater(X))
+      continue;
+    return;
+  }
+  if (!dominated)
+    return;
+  IRBuilder<> &B = ctx.B();
+  LoadInst *h = B.CreateAlignedLoad(handleTy(ctx.M.getContext()), cellPointer(ctx, s, S), Align(4));
+  ctx.emitCore(abi::CoreSpec{abi::Core::Free, {}}, {h});
+}
+
 // The handle a cell holds at I (a load, or the old value at a guarded store).
 Operand readCell(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &I, Type *ty) {
   if (s.beyond) {
@@ -3068,8 +3152,10 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
                       !isDynamic(ctx, st, *s.info, s.o);
     bool localGlobal =
         s.info->kind == RootKind::Global && cast<GlobalVariable>(s.info->root)->hasLocalLinkage();
-    if (!staticCell && !localGlobal && deadClassicalStore(ctx, st, *s.info, s.o, stI, s.a))
+    if (!staticCell && !localGlobal && deadClassicalStore(ctx, st, *s.info, s.o, stI, s.a)) {
+      freeOverwrittenSeed(ctx, st, s, stI);   // cq-2t04: the cell's old seed, before the cq_theta's own seed
       return;
+    }
     if (s.info->record && classicalCell(ctx, st, s)) {
       // Rules 20, 26: a classical field of a record keeps its C value in memory (163's c, 164's b and c).
       B.CreateAlignedStore(val.v, cellPointer(ctx, s, stI), stI.getAlign());
@@ -3088,6 +3174,7 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
       x = B.CreateTrunc(x, Type::getInt1Ty(ctx.M.getContext()));
     if (x->getType() != irTypeOf(ctx.M.getContext(), w))
       internalError("mem-slots: a classical stored value of another type than its cell's rail", &stI);
+    freeOverwrittenSeed(ctx, st, s, stI);
     CallInst *alloc = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {x});
     ctx.unc().recordSeed(alloc);
     val = Operand{alloc, true};
