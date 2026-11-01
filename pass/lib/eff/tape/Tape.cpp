@@ -24,8 +24,8 @@
 //  - Unimplemented (an internal error, nothing emitted): a used result (the call never runs, so its
 //    value is unknown); a quantum or non-classical pointer argument; a classical pointer that is not a
 //    %s conversion of printf or a constant C string of a readonly parameter of an effect; a function
-//    pointer argument (a callback); raise/kill/signal-family callees, whose meaning depends on the
-//    module's signal table (102); an entry inside a _ctl or _adj clone. An entry inside a plain clone is
+//    pointer argument (a callback); kill/signal-family callees other than raise (raise(sig): the delivery
+//    entry, then the module's handler as a _ctl clone call, or the abort arm, lowerRaise, 102); an entry inside a _ctl or _adj clone. An entry inside a plain clone is
 //    the clone's own tape entry (67); inside a _pure clone (what a twin recomputes through) it is dropped.
 //
 // lowerNoreturn: a noreturn call under a quantum predicate (45, 102, 108) is cqrt_abort_i1(f), f the
@@ -436,6 +436,117 @@ void requireEntry(LoweringContext &ctx, CallBase &CB, const char *what) {
     unimplemented(std::string("eff-tape: ") + what + " inside a clone (its _unc twin would replay it)", &CB);
 }
 
+// The abort arm (rule 16): snapshots of the rails later modified in place, then abort_i1(flag), the flag kept.
+void abortArm(LoweringContext &ctx, CallBase &CB, Value *flag) {
+  auto targets = laterInPlaceTargets(ctx, CB);
+
+  // A merged handle (a select/phi of rails, rule 9) cannot be kept itself: copy it out (Uncompute's
+  // contract). A rail minted by a call (template, seed, gate) is kept as it is (45).
+  RailType i1{Kind::Int, 1};
+  if (!isa<CallInst>(flag)) {
+    CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(ctx.M.getContext())});
+    RailId fid = ctx.unc().recordSeed(f);
+    abi::CoreSpec cp{abi::Core::Copy, i1};
+    CallInst *c = ctx.emitCore(cp, {flag, f});
+    ctx.unc().recordCore(c, cp, {Operand{flag, true}, Operand{f, true}}, fid);
+    flag = f;
+  }
+
+  for (auto &t : targets) {
+    Value *h = t.first;
+    if (h == flag)
+      unimplemented("eff-tape: the abort flag itself is modified in place after the noreturn arm", &CB);
+    RailType w = railTypeOf(t.second->getType());
+    CallInst *s = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                               {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+    RailId sid = ctx.unc().recordSeed(s);
+    abi::CoreSpec cp{abi::Core::Copy, w, /*ctl=*/true};
+    CallInst *c = ctx.emitCore(cp, {flag, h, s});
+    ctx.unc().recordCore(c, cp, {Operand{flag, true}, Operand{h, true}, Operand{s, true}}, sid);
+    ctx.unc().setRole(sid, Role::Abort);   // the abort branch's value of h: kept, never freed
+  }
+
+  ctx.emitCore(abi::CoreSpec{abi::Core::AbortI1, i1}, {flag});
+  ctx.unc().setRole(ctx.unc().idOf(flag), Role::Abort);
+}
+
+// The default action of a signal on the target (Darwin's <sys/signal.h> numbering).
+enum class SigDefault { Terminate, Ignore, Stop, Unknown };
+SigDefault signalDefault(const Module &M, int64_t sig) {
+  if (!Triple(M.getTargetTriple()).isOSDarwin() || sig < 1 || sig > 31)
+    return SigDefault::Unknown;
+  switch (sig) {
+  case 16: case 19: case 20: case 23: case 28: case 29:   // URG, CONT, CHLD, IO, WINCH, INFO
+    return SigDefault::Ignore;
+  case 17: case 18: case 21: case 22:                     // STOP, TSTP, TTIN, TTOU
+    return SigDefault::Stop;
+  default:
+    return SigDefault::Terminate;
+  }
+}
+
+// CR rule 16 (102): raise(sig) under a quantum predicate, read against the module's signal table (the
+// signal(sig, h) calls of the module: closed world, as taint reads it). The delivery is an effect entry
+// (cqrt_tape_effect_controlled(flag, tape, "raise"), the signal number its field). Then: a handler h the
+// module installs for sig runs as h(sig) under the predicate (taint's _ctl clone of h, calls::lowerLiftedVia);
+// with no handler, a signal whose default action terminates is the abort arm (abort_i1(flag), 45); one whose
+// default action is to ignore it has nothing more. Unimplemented: a run-time signal number, a sigaction in
+// the module, a signal() of sig whose handler is not a function the module defines (SIG_IGN, SIG_DFL, a
+// declaration, a run-time value), several handlers, a stop signal, a non-Darwin target.
+void lowerRaise(LoweringContext &ctx, CallBase &CB, Value *flag) {
+  auto *sigC = dyn_cast<ConstantInt>(CB.getArgOperand(0));
+  if (!sigC)
+    unimplemented("eff-tape: raise of a signal number that is not a constant", &CB);
+  int64_t sig = sigC->getSExtValue();
+  SmallPtrSet<const Function *, 2> handlers;
+  for (const Function &G : ctx.M)
+    for (const User *u : G.users()) {
+      auto *C = dyn_cast<CallBase>(u);
+      if (!C || C->getCalledOperand() != &G || !G.isDeclaration())
+        continue;
+      StringRef n = G.getName();
+      if (n == "sigaction" || n == "bsd_signal" || n == "sigset")
+        unimplemented("eff-tape: raise in a module that installs handlers through " + n.str() + " (102)", &CB);
+      if (n != "signal" || C->arg_size() != 2)
+        continue;
+      auto *s = dyn_cast<ConstantInt>(C->getArgOperand(0));
+      if (!s)
+        unimplemented("eff-tape: raise in a module with a signal() call of a run-time signal number", &CB);
+      if (s->getSExtValue() != sig)
+        continue;
+      auto *H = dyn_cast<Function>(C->getArgOperand(1)->stripPointerCasts());
+      if (!H || H->isDeclaration())
+        unimplemented("eff-tape: raise of a signal whose installed handler is not a function the module defines "
+                      "(SIG_IGN, SIG_DFL or a run-time handler)",
+                      &CB);
+      handlers.insert(H);
+    }
+  if (handlers.size() > 1)
+    unimplemented("eff-tape: raise of a signal the module installs several handlers for", &CB);
+  SigDefault dflt = signalDefault(ctx.M, sig);
+  if (handlers.empty() && (dflt == SigDefault::Stop || dflt == SigDefault::Unknown))
+    unimplemented("eff-tape: raise of a signal with no handler whose default action is not terminate or ignore",
+                  &CB);
+  if (handlers.empty() && dflt == SigDefault::Terminate)
+    requireEntry(ctx, CB, "a terminating raise");
+  const Specialization *cs = handlers.empty() ? nullptr : ctx.T.calleeSpecialization(CB, ctx.S);
+  if (!handlers.empty() && (!cs || cs->F != *handlers.begin() || !cs->ctl))
+    internalError("eff-tape: raise of a handled signal under a quantum predicate whose callee taint does not "
+                  "name as the handler's _ctl clone",
+                  &CB);
+
+  Value *tape = tapeOf(ctx);
+  ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffect, {}, /*ctl=*/true}, {flag, tape, effectName(ctx.M, "raise")});
+  emitField(ctx, CB, 0, 0, tape, flag);
+  if (cs) {
+    unsigned argMap[1] = {0};
+    calls::lowerLiftedVia(ctx, CB, argMap);
+    return;
+  }
+  if (dflt == SigDefault::Terminate)
+    abortArm(ctx, CB, flag);
+}
+
 } // namespace
 
 void lowerHostEffect(LoweringContext &ctx, CallBase &CB) {
@@ -543,6 +654,10 @@ void lowerHostEffect(LoweringContext &ctx, CallBase &CB) {
   if (!flag)
     unimplemented("eff-tape: a host effect with a quantum argument under no quantum predicate is neither a "
                   "printf entry nor a controlled effect entry (§1.11 has no uncontrolled effect)", &CB);
+  if (F->getName() == "raise" && CB.arg_size() == 1) {
+    lowerRaise(ctx, CB, flag);
+    return;
+  }
   if (signalFamily(F->getName()))
     unimplemented("eff-tape: a signal-family host call (its meaning depends on the module's signal table, 102)",
                   &CB);
@@ -577,36 +692,7 @@ void lowerNoreturn(LoweringContext &ctx, CallBase &CB) {
   if (!flag)
     unimplemented("eff-tape: a noreturn call whose quantum predicate is top (an unconditional abort)", &CB);
 
-  auto targets = laterInPlaceTargets(ctx, CB);
-
-  // A merged handle (a select/phi of rails, rule 9) cannot be kept itself: copy it out (Uncompute's
-  // contract). A rail minted by a call (template, seed, gate) is kept as it is (45).
-  RailType i1{Kind::Int, 1};
-  if (!isa<CallInst>(flag)) {
-    CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(ctx.M.getContext())});
-    RailId fid = ctx.unc().recordSeed(f);
-    abi::CoreSpec cp{abi::Core::Copy, i1};
-    CallInst *c = ctx.emitCore(cp, {flag, f});
-    ctx.unc().recordCore(c, cp, {Operand{flag, true}, Operand{f, true}}, fid);
-    flag = f;
-  }
-
-  for (auto &t : targets) {
-    Value *h = t.first;
-    if (h == flag)
-      unimplemented("eff-tape: the abort flag itself is modified in place after the noreturn arm", &CB);
-    RailType w = railTypeOf(t.second->getType());
-    CallInst *s = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
-                               {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
-    RailId sid = ctx.unc().recordSeed(s);
-    abi::CoreSpec cp{abi::Core::Copy, w, /*ctl=*/true};
-    CallInst *c = ctx.emitCore(cp, {flag, h, s});
-    ctx.unc().recordCore(c, cp, {Operand{flag, true}, Operand{h, true}, Operand{s, true}}, sid);
-    ctx.unc().setRole(sid, Role::Abort);   // the abort branch's value of h: kept, never freed
-  }
-
-  ctx.emitCore(abi::CoreSpec{abi::Core::AbortI1, i1}, {flag});
-  ctx.unc().setRole(ctx.unc().idOf(flag), Role::Abort);
+  abortArm(ctx, CB, flag);
 }
 
 } // namespace cq::tape
