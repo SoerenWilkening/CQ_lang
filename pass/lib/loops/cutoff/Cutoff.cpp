@@ -34,8 +34,10 @@
 // Nested K-loops are lowered the same way inside each trip, seeded by the trip predicate & the inner
 // header's predicate within the trip (68, 153).
 //
-// Not built yet (internal errors, never a fallback): an instruction with effects in the body (needs
-// the trip predicate as control: cq-99f7), a classical branch or a switch in the body, a classical-
+// An instruction with effects in the body (a call, a store, an allocation, a phase or a rotation) is
+// lowered under the trip predicate q_j & its block's trip-local predicate (rule 14 case 2, cq-99f7's
+// tripFlag); a pure instruction or a load is computed in every trip.
+// Not built yet (internal errors, never a fallback): a classical branch or a switch in the body, a classical-
 // bound sub-loop, several latches or pre-header incomings, an exit value that is not as described.
 #include "cq/Loops.h"
 
@@ -196,10 +198,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       }
       if (I.isTerminator())
         unimplemented("loops-cutoff: a terminator other than br inside a K-loop body", &I);
-      if (isa<CallBase>(I) || I.mayHaveSideEffects() || I.mayReadOrWriteMemory())
-        unimplemented("loops-cutoff: an instruction with effects or a call in a K-loop body (its control is the "
-                      "trip predicate: cq-99f7)",
-                      &I);
     }
   }
 
@@ -419,10 +417,24 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
             unimplemented("loops-cutoff: a classical phi inside a K-loop body", &P);
           set(&P, Operand{lowerMerge(ctx, P), true});
         }
+      Value *tripFlag = nullptr;   // q & the block's trip-local predicate, made on first need
       for (Instruction &I : *b) {
         if (isa<PHINode>(I) || I.isTerminator())
           continue;
-        lowerInstruction(ctx, I);
+        // Rule 14 case 2: an instruction with effects (a call, a store, an allocation, a phase) runs in
+        // trip j only where the trip runs, so it is lowered under the trip predicate (cq-99f7's
+        // tripFlag: the spine conjoins the block's own quantum predicate). A pure instruction or a load
+        // is computed in every trip; its value only reaches state through the select on q.
+        bool effects = isa<CallBase>(I) || I.mayHaveSideEffects() || I.mayWriteToMemory();
+        if (auto *II = dyn_cast<IntrinsicInst>(&I); II && (II->isLifetimeStartOrEnd() || isa<DbgInfoIntrinsic>(II)))
+          effects = false;
+        if (!effects) {
+          lowerInstruction(ctx, I);
+          continue;
+        }
+        if (!tripFlag)
+          tripFlag = conj(q, local.find(b)->second, b->getTerminator());
+        lowerInstruction(ctx, I, tripFlag);
       }
     }
   };
