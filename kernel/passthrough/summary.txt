@@ -1,11 +1,12 @@
 CQ_lang2 kernel tier 1 (passthrough), bead cq-w1-kernel-t1
 linux release     v6.12 (https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git)
-linux commit      
+linux commit      adc218676eef25575469234709c2d87185ca223a
 config            x86_64_defconfig (ARCH=x86_64 LLVM=1, KCFLAGS=-O1, kcc adds -emit-llvm)
 toolchain         brew llvm@19 19.1.7 (clang, opt), lld@19 19.1.7
-plugin            /Users/sorenwilkening/Desktop/Projects/CQ_lang2/build/pass/libCQLower.so
-plugin sha256     016069537d19bbe764f7d45b6c8f16de7ea8c788bc079cc0311d982a37584221 (every verdict below is a result recorded under this hash)
-pass              CQ_lang2 00fa84ef38b6462e968e09c06fe4607727e62a06 (HEAD of the plugin's checkout when the report was written)
+plugin            /Users/sorenwilkening/Desktop/Projects/wt/kernel-src/check/plugin/5bd6d5cca14d7fcc5edcd95e3aa679669f4c43b7def23b5594794e01d2b0a3c2/libCQLower.so
+plugin sha256     5bd6d5cca14d7fcc5edcd95e3aa679669f4c43b7def23b5594794e01d2b0a3c2 (every verdict below is a result recorded under this hash)
+pass              CQ_lang2 5a064952ea25651c83a3275c8953cd1e63bb8a74 (HEAD of /Users/sorenwilkening/Desktop/Projects/CQ_lang2 when copied)
+plugin origin     snap.sh copy of /Users/sorenwilkening/Desktop/Projects/CQ_lang2/build/pass/libCQLower.so (mtime 2026-10-31T22:14:32+0100)
 identity          opt -passes=cq-lower X  ==  opt X   (byte for byte, bitcode output; owner
                   ruling on cq-arch 2026-10-27; control.sh shows the comparison sees a rewrite)
 scope             every C file kbuild compiles to an object for `vmlinux modules` of the config,
@@ -14,13 +15,17 @@ scope             every C file kbuild compiles to an object for `vmlinux modules
                   (*.mod.c, .vmlinux.export.c; modpost reads ELF). Opt level: KCFLAGS=-O1, except
                   where the kernel's Makefiles set their own later (listed under opt level).
 
-TUs               2
-  bitcode         2
+TUs               2852
+  bitcode         2852
 bitcode TUs by verdict
-  differ          1
-  identical       1
+  identical       2852
 bitcode TUs by opt level
-  -O1             2
+  -O0             1
+  -O1             2822
+  -O2             3
+  -O3             1
+  -Os             25
 bitcode TUs by triple
-  x86_64-apple-macosx16.0.0   1
-  x86_64-unknown-linux-gnu    1
+  i386-unknown-linux-code16   6
+  i386-unknown-linux-gnu      2
+  x86_64-unknown-linux-gnu    2844
