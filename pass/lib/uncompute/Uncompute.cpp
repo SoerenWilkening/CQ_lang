@@ -3152,8 +3152,9 @@ void Uncompute::noteNonDiagonal(RailId target, Instruction *gate) {
 }
 
 void Uncompute::noteCellsDistinct(Instruction *loadA, Instruction *loadB) {
-  if (!loadA || !loadB || !isa<LoadInst>(loadA) || !isa<LoadInst>(loadB))
-    internalError("uncompute: noteCellsDistinct takes two loads of slot cells", loadA ? loadA : loadB);
+  if (!loadA || !loadB || !isa<LoadInst>(loadA))
+    internalError("uncompute: noteCellsDistinct takes a load of a slot cell and a load or a stored rail",
+                  loadA ? loadA : loadB);
   if (loadA == loadB)
     internalError("uncompute: noteCellsDistinct of a load with itself", loadA);
   impl->distinctLoads.insert({loadA, loadB});

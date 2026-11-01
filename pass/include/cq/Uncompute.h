@@ -42,7 +42,9 @@ public:
   // (recordCellLoad loads or user-register loads) that read provably different cells of one object with
   // no store of a pre-existing handle into the object between them: at run time they name different
   // rails (one rail per cell, cq-dr4o), so a non-diagonal gate on one is no AliasHit on a record reading
-  // the other. mem-slots calls it for each such pair it lowers.
+  // the other. mem-slots calls it for each such pair it lowers. M3c (cq-arch 2026-11-01, 114): loadB may
+  // instead be a fresh rail mem-slots stored into another cell than loadA's after loadA, with no handle
+  // of the object ever moved between its cells: loadA never names it either.
   void noteCellsDistinct(llvm::Instruction *loadA, llvm::Instruction *loadB);
   // U2 (cq-arch 2026-11-01, CR §1.4, rules 18, 27): the result rails of one clone call fwd, undone
   // together by its twin. outs: one handle per quantum result field in field order (fwd itself for a

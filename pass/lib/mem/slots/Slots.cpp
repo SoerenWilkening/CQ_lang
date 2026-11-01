@@ -355,7 +355,7 @@ struct FnState {
   DenseSet<const Value *> registers;                // new-IR handles known never to be resolved here
   DenseSet<const Instruction *> copies;             // slot stores lowered as a basis copy (cq-dr4o)
   DenseMap<const Instruction *, ViewVal> views;     // stores into a view object -> the value they left (63)
-  struct CellRead { const Instruction *I; Addr a; uint64_t size; };
+  struct CellRead { const Instruction *I; Addr a; uint64_t size; LoadInst *h = nullptr; };
   SmallVector<CellRead, 8> cellReads;               // accesses lowered as a run-time read of a local cell (M3)
   std::map<const Value *, ObjInfo> objs;
   // M1: a clone call handed a pointer into a slot object -> (byte offset of a cell it writes -> the handle
@@ -1633,6 +1633,112 @@ bool classicalCell(LoweringContext &ctx, FnState &st, const Site &s) {
   return true;
 }
 
+// M3b (CR rules 5, 20; 114): an earlier run-time read R of a cell of the same object that is provably another
+// cell than I's in the same activation of every enclosing loop (R dominates I, no value of either address is
+// redefined between them, no write into the object between them) names another rail at run time (one rail per
+// cell): Uncompute::noteCellsDistinct, so a gate on one is no alias hit on a record reading the other.
+void noteDistinctReads(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &I, uint64_t size,
+                       LoadInst *h) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  for (const FnState::CellRead &R : st.cellReads) {
+    if (!R.h || R.a.root != s.a.root || !differentCell(R.a, s.a, R.size, size) || !st.DT->dominates(R.I, &I))
+      continue;
+    const BasicBlock *BR = R.I->getParent(), *BI = I.getParent();
+    SmallPtrSet<const BasicBlock *, 16> mid;
+    if (BR != BI)
+      mid = between(BR, BI);
+    auto redefined = [&](const Value *v) {
+      auto *d = dyn_cast<Instruction>(v);
+      return d && mid.count(d->getParent());
+    };
+    bool ok = !redefined(R.a.root) && !redefined(s.a.root);
+    for (auto &t : R.a.terms)
+      ok &= !redefined(t.first);
+    for (auto &t : s.a.terms)
+      ok &= !redefined(t.first);
+    if (BR != BI && (onCycleWithin(BI, mid) || mid.count(BR)))
+      ok = false;
+    auto writes = [&](BasicBlock::const_iterator from, BasicBlock::const_iterator to) {
+      for (auto it = from; it != to; ++it)
+        if (it->mayWriteToMemory() && !isa<DbgInfoIntrinsic>(&*it)) {
+          if (auto *si = dyn_cast<StoreInst>(&*it)) {
+            if (!hasObject(ctx, si->getPointerOperand(), s.o))
+              continue;
+            // A store of a rail made after R's load (a fresh computation, 114's q[m-1] ^= ...) is no
+            // pre-existing handle: neither cell can come to hold R's rail through it.
+            auto lw = st.lowered.find(si);
+            auto *vi = lw == st.lowered.end() || !lw->second.handle ? nullptr : dyn_cast<Instruction>(lw->second.v);
+            if (vi && vi != R.h && vi->getParent() == R.h->getParent() && R.h->comesBefore(vi) &&
+                !isa<LoadInst>(vi))
+              continue;
+          }
+          if (auto *II = dyn_cast<IntrinsicInst>(&*it); II && II->isLifetimeStartOrEnd())
+            continue;
+          if (auto *CB = dyn_cast<CallBase>(&*it); CB && isCqSurface(*CB))
+            continue;
+          return true;
+        }
+      return false;
+    };
+    if (ok && BR == BI)
+      ok = !writes(std::next(R.I->getIterator()), I.getIterator());
+    if (ok && BR != BI) {
+      ok = !writes(std::next(R.I->getIterator()), BR->end()) && !writes(BI->begin(), I.getIterator());
+      for (const BasicBlock *b : mid)
+        if (b != BI)
+          ok &= !writes(b->begin(), b->end());
+    }
+    (void)DL;
+    if (ok)
+      ctx.unc().noteCellsDistinct(R.h, h);
+  }
+}
+
+// M3b (114): a fresh computed rail v stored at S into a cell of a dynamic object that provably differs
+// from the cell an earlier run-time read R of the same activation read (R dominates S, v made after R's
+// load) is never the rail R names: not in this activation (v did not exist at R), and not in a later one
+// when no store of the function moves a handle loaded from the object into another of its cells.
+void noteDistinctStore(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &S, uint64_t size,
+                       Value *v) {
+  auto *vi = dyn_cast<Instruction>(v);
+  if (!vi || isa<LoadInst>(vi) || st.cellReads.empty())
+    return;
+  const DataLayout &DL = ctx.M.getDataLayout();
+  // No move: every store into the object whose value is (a view or in-place rotation of) a load of the
+  // object stores it back into that load's own cell.
+  for (const Access &a : accessesOf(ctx, *st.F, s.o)) {
+    auto *X = dyn_cast<StoreInst>(a.I);
+    if (!X)
+      continue;
+    const Value *x = X->getValueOperand();
+    for (unsigned g = 0; g < 16; ++g) {
+      if (auto *c = dyn_cast<CastInst>(x)) {
+        x = c->getOperand(0);
+        continue;
+      }
+      if (auto *fz = dyn_cast<FreezeInst>(x)) {
+        x = fz->getOperand(0);
+        continue;
+      }
+      auto *c = dyn_cast<CallInst>(x);
+      if (c && c->getCalledFunction() && c->getCalledFunction()->getName().starts_with("cq_theta_")) {
+        x = c->getArgOperand(0);
+        continue;
+      }
+      break;
+    }
+    if (auto *ld = dyn_cast<LoadInst>(x); ld && hasObject(ctx, ld->getPointerOperand(), s.o) &&
+                                          !sameCell(decompose(ld->getPointerOperand(), DL), a.a))
+      return;
+    if (isa<PHINode>(x) || isa<SelectInst>(x))
+      return;   // a handle chosen among others may be a moved one
+  }
+  for (const FnState::CellRead &R : st.cellReads)
+    if (R.h && R.a.root == s.a.root && differentCell(R.a, s.a, R.size, size) && st.DT->dominates(R.I, &S) &&
+        vi->getParent() == R.h->getParent() && R.h->comesBefore(vi))
+      ctx.unc().noteCellsDistinct(R.h, vi);
+}
+
 // The handle a cell holds at I (a load, or the old value at a guarded store).
 Operand readCell(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &I, Type *ty) {
   if (s.beyond) {
@@ -1685,13 +1791,18 @@ Operand readCell(LoweringContext &ctx, FnState &st, const Site &s, const Instruc
     // M3 (CR rules 5, 20): the handle names one of the rails the stores of this function may have left
     // in the cell. When one of them is not a register, the load is a merge over them (recordCellLoad):
     // its readers' clean-ups come before theirs, and a kept role on it keeps them.
-    st.cellReads.push_back({&I, s.a, storeBytes(ctx.M.getDataLayout(), ty)});
+    uint64_t size = storeBytes(ctx.M.getDataLayout(), ty);
     SmallVector<RailId, 4> arms;
     bool allRegisters = true;
     if (cellArms(ctx, st, s, I, ty, arms, allRegisters) && !allRegisters) {
       ctx.unc().recordCellLoad(h, arms);
-      return Operand{h, true};
+    } else {
+      ctx.unc().recordExternal(h, Role::UserRegister);
+      st.registers.insert(h);
     }
+    noteDistinctReads(ctx, st, s, I, size, h);
+    st.cellReads.push_back({&I, s.a, size, h});
+    return Operand{h, true};
   }
   ctx.unc().recordExternal(h, Role::UserRegister);
   st.registers.insert(h);
@@ -2398,6 +2509,7 @@ void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &
                             "read may see on a back edge (the cell's rail is loop-carried through memory: 187)",
                             &I);
           }
+          noteDistinctStore(ctx, st, s, I, sz, val.v);
           if (measuredThroughMemory(ctx, st, I, ty, s)) {
             ctx.unc().setRole(id, Role::Measured);
             st.registers.insert(val.v);
