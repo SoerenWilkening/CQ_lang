@@ -76,6 +76,11 @@
 //        unimplemented; cleanupBijective(m) is an internal error; Role::Seed on m is an internal error.
 //      * an arm whose definition does not dominate the return where it would be resolved (a phi
 //        over arm-local garbage handles) is unimplemented (cq-ut4k).
+//  - recordCellLoad(load, mayName) (M3, cq-arch 2026-11-01; CR rules 5, 20): load is a new-IR load of
+//    a slot cell's handle that names at run time one of mayName (recorded, unfreed rails). It is a
+//    merge as above with mayName as its arms: never resolved itself, a use of it is a use of every arm,
+//    a barrier on it binds every arm. It has no join, so a kept role on it (or on a merge naming it)
+//    keeps every resolvable arm, with no edge logic. mayName empty is an internal error.
 //
 // Emission. Each resolvable rail g is resolved once, as one ITEM: its records undone in reverse
 // (or its rule 6 clean-up, or nothing for a direct seed free), then cqrt_free / cqrt_qram_free.
@@ -241,6 +246,7 @@ struct Uncompute::Impl {
     SmallPtrSet<const BasicBlock *, 2> exitsDone; // returns this rail was placed for
     SmallVector<RailId, 2> arms;       // U1: non-empty iff this rail is a merge (its handle aliases one arm)
     SmallVector<RailId, 2> mergedInto; // U1: the merges that name this rail as an arm
+    bool cellLoad = false;             // M3: a merge that is a load of a slot cell's handle
     // A2 (cq-w6ie): QRAM versions. A bus's stores s_1..s_m (program order) are POP items of their
     // own; a load records, per bus it may read, the number k of stores made before it (it reads v_k).
     RailId popBus = kNone;             // POP(popK) of this bus: a pseudo rail, handle = the store call
@@ -918,7 +924,7 @@ struct Uncompute::Impl {
     // A kept role on a classical select (m itself or nested) with a resolvable arm: keeping only the
     // chosen arm needs a branch on the condition (cq-aqeq). Checked before anything is changed.
     for (RailId n : closure(m))
-      if (isMerge(n) && !isa<PHINode>(rails[n].handle))
+      if (isMerge(n) && !rails[n].cellLoad && !isa<PHINode>(rails[n].handle))
         for (RailId a : leaves(n))
           if (live.count(a))
             unimplemented("uncompute: a kept role on a classical select over handles whose arm " +
@@ -943,6 +949,18 @@ struct Uncompute::Impl {
   // the arm (through nested merges too, cq-sodl) chooses it; any other edge leaves it unchosen there,
   // and it is resolved at the end of that edge's block.
   void keepPhi(RailId m, Role role, const DenseSet<RailId> &live, SmallVector<RailId, 4> chain = {}) {
+    if (rails[m].cellLoad) {
+      // M3: a cell load has no join; every arm it may name is kept (nested merges keep theirs).
+      for (RailId a : SmallVector<RailId, 2>(rails[m].arms)) {
+        if (isMerge(a)) {
+          keepPhi(a, role, live, chain);
+          rails[a].role = role;
+        } else if (live.count(a)) {
+          rails[a].role = role;
+        }
+      }
+      return;
+    }
     Value *mh = rails[m].handle;
     auto *phi = dyn_cast<PHINode>(mh);
     if (!phi)
@@ -2173,6 +2191,31 @@ RailId Uncompute::recordMerge(Instruction *merged) {
   }
   RailId m = I.newRail(merged, Role::Garbage, "recordMerge");
   I.rails[m].arms = arms;
+  for (RailId a : arms)
+    I.rails[a].mergedInto.push_back(m);
+  return m;
+}
+
+RailId Uncompute::recordCellLoad(Instruction *load, ArrayRef<RailId> mayName) {
+  Impl &I = *impl;
+  if (!load || !load->getParent())
+    internalError("uncompute: recordCellLoad needs an instruction in a block");
+  if (mayName.empty())
+    internalError("uncompute: recordCellLoad: a cell load that may name no rail", load);
+  SmallVector<RailId, 2> arms;
+  for (RailId a : mayName) {
+    I.rail(a, "recordCellLoad");
+    if (I.anyReleased(a))
+      internalError("uncompute: recordCellLoad: arm " + describe(I.rails[a].handle) +
+                        " was already uncomputed and freed",
+                    load);
+    I.checkEdgeRead(a, load, "recordCellLoad");
+    if (!is_contained(arms, a))
+      arms.push_back(a);
+  }
+  RailId m = I.newRail(load, Role::Garbage, "recordCellLoad");
+  I.rails[m].arms = arms;
+  I.rails[m].cellLoad = true;
   for (RailId a : arms)
     I.rails[a].mergedInto.push_back(m);
   return m;

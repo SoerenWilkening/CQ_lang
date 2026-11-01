@@ -1310,6 +1310,88 @@ entry:
   ret i32 %r
 })";
 
+// M3 (cq-arch 2026-11-01): a load of a slot cell's handle that may name either stored rail is a merge
+// over both: the template reading the load reads both arms, so both are uncomputed after it.
+const char *kCell = R"(
+define i32 @f(i32 %a0, double %th, i1 %c) {
+entry:
+  %p = alloca i32
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %ha = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  %hb = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)
+  %v = select i1 %c, i32 %ha, i32 %hb
+  store i32 %v, ptr %p
+  %m = load i32, ptr %p
+  %y = call i32 @cq_template_mul_i32_hl(i32 %m, i32 3)
+  %r = call i32 @cqrt_measure_i32(i32 %y)
+  ret i32 %r
+})";
+
+void cell_load_garbage() {
+  Fx f(kCell);
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  RailId a = f.T("ha", "hl");
+  RailId b = f.T("hb", "hl");
+  RailId m = f.U.recordCellLoad(f.I("m"), {a, b});
+  if (f.id("m") != m) {
+    ++failures;
+    errs() << "FAIL cell_load_garbage: idOf(load) is not recordCellLoad's rail\n";
+  }
+  f.U.setRole(f.T("y", "hl"), Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%p = alloca i32, align 4",
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%ha = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "%hb = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)",
+                        "%v = select i1 %c, i32 %ha, i32 %hb",
+                        "store i32 %v, ptr %p, align 4",
+                        "%m = load i32, ptr %p, align 4",
+                        "%y = call i32 @cq_template_mul_i32_hl(i32 %m, i32 3)",
+                        "call void @cq_template_shl_i32_hl_unc(i32 %hb, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %hb)",
+                        "call void @cq_template_add_i32_hl_unc(i32 %ha, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %ha)",
+                        "%r = call i32 @cqrt_measure_i32(i32 %y)",
+                        "ret i32 %r",
+                    });
+}
+
+// M3: a kept role on the load keeps every rail it may name (a load has no join to resolve at).
+void cell_load_kept() {
+  Fx f(kCell);
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  RailId a = f.T("ha", "hl");
+  RailId b = f.T("hb", "hl");
+  RailId m = f.U.recordCellLoad(f.I("m"), {a, b});
+  f.U.setRole(m, Role::Measured);
+  f.U.setRole(f.T("y", "hl"), Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%p = alloca i32, align 4",
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%ha = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "%hb = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)",
+                        "%v = select i1 %c, i32 %ha, i32 %hb",
+                        "store i32 %v, ptr %p, align 4",
+                        "%m = load i32, ptr %p, align 4",
+                        "%y = call i32 @cq_template_mul_i32_hl(i32 %m, i32 3)",
+                        "%r = call i32 @cqrt_measure_i32(i32 %y)",
+                        "ret i32 %r",
+                    });
+}
+
+// M3: a cell load that may name nothing is an internal error.
+void fatal_cell_load_empty() {
+  Fx f(kCell);
+  f.U.recordCellLoad(f.I("m"), {});
+}
+
 // The merged handle measured: the consumer copies it out into a fresh rail and keeps that rail
 // (compute-copy-uncompute, CR §0); the merge stays garbage and both arms are uncomputed after the copy.
 // Kept: x and the copy (one rail with the chosen arm's value), as in 135's classical-control spelling.
@@ -2208,6 +2290,8 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"ex162_consumer", ex162_consumer},
     {"ex144_rule6", ex144_rule6},
     {"merge_measured", merge_measured},
+    {"cell_load_garbage", cell_load_garbage},
+    {"cell_load_kept", cell_load_kept},
     {"merge_all_arms_kept", merge_all_arms_kept},
     {"merge_template_then_garbage", merge_template_then_garbage},
     {"merge_noted_use", merge_noted_use},
@@ -2223,6 +2307,7 @@ const std::map<std::string, std::function<void()>> kPositive = {
 
 const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_use_after_free", fatal_use_after_free},
+    {"fatal_cell_load_empty", fatal_cell_load_empty},
     {"fatal_operand_mismatch", fatal_operand_mismatch},
     {"fatal_unflushed_arm", fatal_unflushed_arm},
     {"fatal_scope_order", fatal_scope_order},

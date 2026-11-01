@@ -1,5 +1,5 @@
 // Frozen interface (cq-arch, with owner amendments A2 and A4 of 2026-10-27 and freeze beads cq-k1w, cq-bq0 (U1),
-// cq-fx3s (F1)).
+// cq-fx3s (F1), M3 (cq-arch 2026-11-01)).
 // Changes only under cq-arch's freeze rule.
 #pragma once
 
@@ -33,6 +33,11 @@ public:
   // U1 (freeze bead cq-bq0, CR rule 9 at a58c3a4): a classical select or a complete phi whose every
   // value operand is a recorded rail; its handle is an alias (idOf works), never freed itself.
   RailId recordMerge(llvm::Instruction *merged);
+  // M3 (cq-arch 2026-11-01, CR rules 5, 20): load (a new-IR load of a slot cell's handle) names at run
+  // time one of mayName (recorded, unfreed rails the stores may have left in the cell). A merge (U1)
+  // over those arms: never resolved itself; a use of it is a use of every arm; a barrier on it binds
+  // every arm; a kept role on it keeps every arm. mayName empty is an internal error.
+  RailId recordCellLoad(llvm::Instruction *load, llvm::ArrayRef<RailId> mayName);
   RailId idOf(llvm::Value *handle) const;
   void setRole(RailId, Role);
   void noteUse(RailId, llvm::Instruction *consumer);
