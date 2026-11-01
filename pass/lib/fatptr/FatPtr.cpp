@@ -45,6 +45,7 @@
 #include <string>
 
 #include "cq/Abi.h"
+#include "../mem/qram/QramInternal.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -112,10 +113,14 @@ bool classicalMemoryOnly(LoweringContext &ctx, const Value *p) {
   return true;
 }
 
+// A root is a classical pointer into classical memory, or the site itself of a QRAM object (its
+// classical base, rule 21; a classical GEP into a QRAM is derived onto that root's idx).
 bool isRoot(LoweringContext &ctx, const Value *p) {
-  if (isa<Constant>(p))
+  if (isa<Constant>(p) && !isa<GlobalVariable>(p))
     return true;
-  return !isQ(ctx, p) && classicalMemoryOnly(ctx, p);
+  if (isQ(ctx, p) || ctx.T.isFatPointer(p, ctx.S))
+    return false;
+  return classicalMemoryOnly(ctx, p) || mem::isQramRoot(ctx, p);
 }
 
 void addRoots(Fat &dst, ArrayRef<const Value *> src) {
@@ -390,8 +395,8 @@ Value *rootBase(LoweringContext &ctx, const Value *root, Bases &bases) {
   if (Value *b = bases.lookup(root))
     return b;
   for (ObjectId o : ctx.T.provenance(root, ctx.S))
-    if (ctx.T.classOf(o) != ObjClass::Classical)
-      unimplemented("fatptr: the address of a slot or QRAM object (rule 21 QRAM base)", root);
+    if (ctx.T.classOf(o) == ObjClass::Slot)
+      unimplemented("fatptr: the address of a slot object (rule 21)", root);
   Operand r = ctx.operand(root);
   if (r.handle)
     internalError("fatptr: a root pointer bound to a rail", root);
@@ -512,16 +517,97 @@ FatPtr lower(LoweringContext &ctx, const Value *ptr) {
   return out;
 }
 
-void lowerLoad(LoweringContext &, LoadInst &ld) {
-  unimplemented("fatptr: a load through a fat pointer (rule 21 per-object guarded access; Memory.h has no "
-                "per-object entry)",
-                &ld);
+namespace {
+// The fat pointer's roots, each a QRAM object of cell size f.cell (rule 21 over QRAM objects).
+void checkQramRoots(LoweringContext &ctx, const Fat &f, const Instruction &I) {
+  for (const Value *r : f.roots) {
+    if (!mem::isQramRoot(ctx, r))
+      unimplemented("fatptr: a load or store through a fat pointer into a slot or host object (rule 21 guarded "
+                    "slot select / host access)",
+                    &I);
+    if (f.cell && f.cell != mem::qramElemBytes(ctx, r, I))
+      unimplemented("fatptr: a fat pointer whose cell size is not its QRAM object's element size", &I);
+  }
 }
 
-void lowerStore(LoweringContext &, StoreInst &st) {
-  unimplemented("fatptr: a store through a fat pointer (rule 21 per-object guarded access; Memory.h has no "
-                "per-object entry)",
-                &st);
+// Whether the fat pointer may name root (a classical tag names one root only).
+bool mayName(LoweringContext &ctx, const Fat &f, const Value *r) {
+  if (f.tag.handle)
+    return true;
+  auto *k = dyn_cast<ConstantInt>(f.tag.v);
+  if (!k)
+    internalError("fatptr: a classical tag that is not a constant");
+  return k->getZExtValue() == rootNumber(ctx, r);
+}
+
+// The guard of root r: tag == r's number, conjoined with the current flag (a fresh i1 rail,
+// alloc_i1(false) + and_i1(flag, eq, g), 84). nullptr = unguarded.
+Value *guardOf(LoweringContext &ctx, const Fat &f, const Value *r, Value *flag) {
+  if (!f.tag.handle)
+    return flag;
+  Operand eq = icmp(ctx, CmpInst::ICMP_EQ, 32, f.tag, Operand{ConstantInt::get(i32(ctx), rootNumber(ctx, r)), false});
+  if (!eq.handle)
+    internalError("fatptr: a tag compare of a rail tag that is classical");
+  if (!flag)
+    return eq.v;
+  CallInst *g = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, intRail(1)}, {ConstantInt::getFalse(ctx.M.getContext())});
+  RailId gid = ctx.unc().recordSeed(g);
+  abi::CoreSpec andSpec{abi::Core::AndI1, intRail(1)};
+  CallInst *c = ctx.emitCore(andSpec, {flag, eq.v, g});
+  ctx.unc().recordCore(c, andSpec, {Operand{flag, true}, eq, Operand{g, true}}, gid);
+  return g;
+}
+} // namespace
+
+// Rule 21: a load through a fat pointer over QRAM objects is one pure access per object, executed
+// unguarded at idx, merged by a select chain on the flags tag == k (the first root innermost, the
+// complement), like any multi-way merge (rule 9).
+void lowerLoad(LoweringContext &ctx, LoadInst &ld) {
+  Fat f = derive(ctx, ld.getPointerOperand(), /*emit=*/true);
+  checkQramRoots(ctx, f, ld);
+  Type *ty = ld.getType();
+  if (!ty->isIntegerTy() && !ty->isFloatingPointTy())
+    unimplemented("fatptr: a load of a pointer or aggregate through a fat pointer (rule 21, 189)", &ld);
+  SmallVector<const Value *, 4> roots;
+  for (const Value *r : f.roots)
+    if (mayName(ctx, f, r))
+      roots.push_back(r);
+  if (roots.empty())
+    internalError("fatptr: a fat pointer naming none of its roots", &ld);
+  SmallVector<Value *, 4> hs;
+  for (const Value *r : roots)
+    hs.push_back(mem::qramLoadAt(ctx, r, f.idx, ty, ld));
+  Operand acc{hs[0], true};
+  for (unsigned i = 1; i < roots.size(); ++i) {
+    Operand eq = icmp(ctx, CmpInst::ICMP_EQ, 32, f.tag,
+                      Operand{ConstantInt::get(i32(ctx), rootNumber(ctx, roots[i])), false});
+    acc = Operand{tmpl(ctx, "select", railTypeOf(ty), {eq, Operand{hs[i], true}, acc}, ""), true};
+  }
+  ctx.bind(&ld, acc.v);
+}
+
+// Rule 21: a store through a fat pointer over QRAM objects is the _controlled store into each object
+// under its guard (tag == k, and the current flag), the value one handle shared by every object (a
+// classical value is one seed, rule 7; 84).
+void lowerStore(LoweringContext &ctx, StoreInst &st) {
+  Fat f = derive(ctx, st.getPointerOperand(), /*emit=*/true);
+  checkQramRoots(ctx, f, st);
+  Value *val = st.getValueOperand();
+  Type *ty = val->getType();
+  if (!ty->isIntegerTy() && !ty->isFloatingPointTy())
+    unimplemented("fatptr: a store of a pointer or aggregate through a fat pointer (rule 21)", &st);
+  Value *flag = ctx.currentFlag();
+  Operand v = ctx.operand(val);
+  if (!v.handle) {
+    CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(ty)}, {v.v});
+    ctx.unc().recordSeed(seed);
+    v = Operand{seed, true};
+  }
+  for (const Value *r : f.roots) {
+    if (!mayName(ctx, f, r))
+      continue;
+    mem::qramStoreAt(ctx, r, f.idx, ty, v.v, guardOf(ctx, f, r, flag), st);
+  }
 }
 
 Value *lowerCompare(LoweringContext &ctx, ICmpInst &cmp) {

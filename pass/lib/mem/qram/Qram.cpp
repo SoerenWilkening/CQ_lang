@@ -57,6 +57,7 @@
 // are restated below verbatim (the "addresses" to "isDynamic" sections) so that both modules classify
 // an object the same way.
 #include "cq/Memory.h"
+#include "QramInternal.h"
 
 #include <functional>
 #include <map>
@@ -71,8 +72,11 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Analysis/ConstantFolding.h"
+#include "llvm/Analysis/MemoryBuiltins.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/CFG.h"
+#include "llvm/IR/ConstantRange.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Dominators.h"
@@ -704,18 +708,36 @@ void lowerSlotMemset(LoweringContext &ctx, MemSetInst &MS, ObjectId o) {
 
 // ==== QRAM objects (rule 20) ======================================================================
 
-// The facts of one QRAM object as this output function sees it.
-struct QramObj {
-  const Value *root = nullptr;
-  ObjectId o = 0;
+// One bus per scalar field column (rule 20: an array of structs is one object per scalar field column,
+// all indexed by the same index rail, field-wise as in rule 26, 168). A scalar-element object is one
+// column at offset 0.
+struct Column {
+  uint64_t off = 0;          // byte offset of the field inside one element
   Type *cellTy = nullptr;
-  uint64_t cellBytes = 0;
   RailType w{};
-  Value *handle = nullptr;   // the bus a (new IR)
 };
 
+struct QramObj {
+  const Value *site = nullptr;     // the alloca, global or heap call
+  uint64_t elemBytes = 0;          // E: cell index j addresses bytes [j*E, (j+1)*E) of the object
+  SmallVector<Column, 2> cols;     // ascending off
+  // The buses (new IR, one per column) each root pointer of the object names: the allocation site (or
+  // the global), and each realloc result (CR §1.3: a' replaces a for every access through it).
+  std::map<const Value *, SmallVector<Value *, 2>> buses;
+  const Column *at(uint64_t fo) const {
+    for (const Column &c : cols)
+      if (c.off == fo)
+        return &c;
+    return nullptr;
+  }
+  unsigned indexOf(const Column *c) const { return unsigned(c - cols.data()); }
+};
+
+// Keyed by site, not by ObjectId: taint names one object per field column (rule 20), so a site's
+// columns are several ObjectIds of one QramObj.
 struct QramState {
-  std::map<const Value *, QramObj> objs;   // original root -> object
+  std::map<const Value *, QramObj> objs;
+  DenseMap<const Value *, const Value *> siteOf;   // a realloc result -> its block's site
 };
 
 std::map<const Function *, QramState> &qramStates() {
@@ -723,19 +745,70 @@ std::map<const Function *, QramState> &qramStates() {
   return s;
 }
 
-// The scalar cell type of a sized object type (arrays stripped).
-Type *scalarCell(Type *t, const Value *at) {
-  while (auto *a = dyn_cast<ArrayType>(t))
-    t = a->getElementType();
-  if (t->isStructTy())
-    unimplemented("mem-qram: a QRAM object of struct type (one object per field column, rule 26, 168)", at);
+int64_t floorDiv(int64_t a, int64_t b) {
+  int64_t q = a / b;
+  if ((a % b) != 0 && ((a < 0) != (b < 0)))
+    --q;
+  return q;
+}
+
+uint64_t storeBytes(const DataLayout &DL, Type *t) { return DL.getTypeStoreSize(t).getFixedValue(); }
+
+void leaves(Type *t, uint64_t off, const DataLayout &DL, SmallVectorImpl<Column> &out, const Value *at) {
+  if (auto *st = dyn_cast<StructType>(t)) {
+    const StructLayout *L = DL.getStructLayout(st);
+    for (unsigned i = 0; i < st->getNumElements(); ++i)
+      leaves(st->getElementType(i), off + L->getElementOffset(i).getFixedValue(), DL, out, at);
+    return;
+  }
+  if (auto *a = dyn_cast<ArrayType>(t)) {
+    uint64_t es = DL.getTypeAllocSize(a->getElementType()).getFixedValue();
+    for (uint64_t i = 0; i < a->getNumElements(); ++i)
+      leaves(a->getElementType(), off + i * es, DL, out, at);
+    return;
+  }
   if (t->isVectorTy())
     unimplemented("mem-qram: a QRAM object of vector type (aggr, rule 25)", at);
+  if (t->isPointerTy())
+    unimplemented("mem-qram: a QRAM object whose cells are pointers (a QRAM of pointers, rule 21, 88)", at);
   if (!t->isIntegerTy() && !t->isFloatingPointTy())
-    unimplemented("mem-qram: a QRAM object whose cells are not integers or floating point (a QRAM of pointers, "
-                  "rule 21)",
-                  at);
-  return t;
+    unimplemented("mem-qram: a QRAM object whose cells are not integers or floating point", at);
+  Column c;
+  c.off = off;
+  c.cellTy = t;
+  c.w = railTypeOf(t);
+  out.push_back(c);
+}
+
+// The layout of a sized object type: arrays stripped to the element, the element's scalar leaves as
+// its columns (one for a scalar element).
+QramObj layoutOf(Type *t, const DataLayout &DL, const Value *at) {
+  while (auto *a = dyn_cast<ArrayType>(t))
+    t = a->getElementType();
+  QramObj q;
+  q.elemBytes = DL.getTypeAllocSize(t).getFixedValue();
+  if (!q.elemBytes)
+    unimplemented("mem-qram: a QRAM object of zero-sized elements", at);
+  leaves(t, 0, DL, q.cols, at);
+  if (q.cols.empty())
+    unimplemented("mem-qram: a QRAM object with no scalar field", at);
+  return q;
+}
+
+// A heap block's element: the one type every load and store of the object in F uses.
+QramObj heapLayout(LoweringContext &ctx, const Function &F, ObjectId o, const Value *site) {
+  Type *t = nullptr;
+  for (const Access &a : accessesOf(ctx, F, o)) {
+    if (!t)
+      t = a.ty;
+    else if (t != a.ty)
+      unimplemented("mem-qram: a heap QRAM accessed as two types (a bit view, 63)", a.I);
+  }
+  if (!t)
+    unimplemented("mem-qram: a heap QRAM this function never loads or stores (its cell type is known only to "
+                  "another function)",
+                  site);
+  return layoutOf(t, ctx.M.getDataLayout(), site);
 }
 
 // The object a QRAM access or allocation site names: exactly one object of class Qram.
@@ -743,11 +816,59 @@ ObjectId soleQram(LoweringContext &ctx, const Value *ptr, const Instruction &I) 
   ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
   if (objs.size() != 1)
     unimplemented("mem-qram: a QRAM access or site whose pointer has " + std::to_string(objs.size()) +
-                      " objects (rule 21 fat pointer, or a field-column split)",
+                      " objects (rule 21 fat pointer)",
                   &I);
   if (ctx.T.classOf(objs.front()) != ObjClass::Qram)
     internalError("mem-qram: the object is not a QRAM", &I);
   return objs.front();
+}
+
+// A QRAM object's pointer escapes when it reaches anything but loads, stores, address arithmetic, the
+// memory and lifetime intrinsics, a compare, free, or realloc (whose result is the same object, CR §1.3).
+bool qramEscapes(const Value *root) {
+  SmallVector<const Value *, 8> work{root};
+  SmallPtrSet<const Value *, 16> seen{root};
+  while (!work.empty()) {
+    const Value *v = work.pop_back_val();
+    for (const Use &u : v->uses()) {
+      const User *usr = u.getUser();
+      if (auto *ld = dyn_cast<LoadInst>(usr)) {
+        if (ld->getPointerOperand() == v)
+          continue;
+        return true;
+      }
+      if (auto *st = dyn_cast<StoreInst>(usr)) {
+        if (st->getPointerOperand() == v && st->getValueOperand() != v)
+          continue;
+        return true;
+      }
+      if (isa<GetElementPtrInst>(usr) || isa<BitCastInst>(usr) || isa<AddrSpaceCastInst>(usr) ||
+          isa<PHINode>(usr) || isa<SelectInst>(usr) || isa<GEPOperator>(usr)) {
+        if (seen.insert(usr).second)
+          work.push_back(usr);
+        continue;
+      }
+      if (isa<ICmpInst>(usr))
+        continue;
+      if (auto *CB = dyn_cast<CallBase>(usr)) {
+        if (isa<DbgInfoIntrinsic>(CB) || isa<MemIntrinsic>(CB) || isCqSurface(*CB))
+          continue;
+        if (isFree(*CB) && CB->arg_size() && CB->getArgOperand(0) == v)
+          continue;
+        if (getReallocatedOperand(CB) == v) {
+          if (seen.insert(CB).second)
+            work.push_back(CB);
+          continue;
+        }
+        if (auto *II = dyn_cast<IntrinsicInst>(CB))
+          if (II->getIntrinsicID() == Intrinsic::lifetime_start || II->getIntrinsicID() == Intrinsic::lifetime_end)
+            continue;
+        return true;
+      }
+      return true;
+    }
+  }
+  return false;
 }
 
 // The classical base address of a QRAM object (rule 21): 0x4000_0000_0000_0000 + 0x1000 * n, a
@@ -759,10 +880,23 @@ Constant *qramBase(LoweringContext &ctx, ObjectId o) {
   return ConstantExpr::getIntToPtr(ConstantInt::get(Type::getInt64Ty(C), a), PointerType::get(C, 0));
 }
 
-// Rule 20: a global QRAM is allocated ONCE by a module constructor (160): cqrt_qram_alloc_<W>(n), the
-// handle kept in the global's first four bytes (a classical word), and each non-zero element of the
-// initializer stored by its own _hl store of a seed that is freed at once (the store copies it; a
-// global QRAM's stores are never popped).
+// The largest value a quantum size can take (LLVM's known bits and range facts on the original IR):
+// rule 20 / §1.3, a quantum size allocates at its upper bound.
+uint64_t upperBound(const Value *v, const DataLayout &DL, const Instruction &I) {
+  if (!v->getType()->isIntegerTy())
+    internalError("mem-qram: a size that is not an integer", &I);
+  APInt m = computeKnownBits(v, DL).getMaxValue();
+  APInt r = computeConstantRange(v, /*ForSigned=*/false).getUnsignedMax();
+  APInt b = APIntOps::umin(m, r);
+  if (b.getActiveBits() > 40)
+    unimplemented("mem-qram: a quantum size with no usable upper bound (rule 20: allocated at its bound)", &I);
+  return b.getZExtValue();
+}
+
+// Rule 20: a global QRAM is allocated ONCE by a module constructor (160): cqrt_qram_alloc_<W>(n) per
+// column, the handle of column k kept in the global's bytes [4k, 4k + 4) (classical words), and each
+// non-zero initializer cell stored by its own _hl store of a seed that is freed at once (the store
+// copies it; a global QRAM's stores are never popped).
 void ensureGlobalCtor(LoweringContext &ctx, GlobalVariable &gv, const QramObj &q) {
   Module &M = ctx.M;
   LLVMContext &C = M.getContext();
@@ -770,59 +904,56 @@ void ensureGlobalCtor(LoweringContext &ctx, GlobalVariable &gv, const QramObj &q
   if (M.getFunction(name))
     return;
   const DataLayout &DL = M.getDataLayout();
-  if (DL.getTypeAllocSize(gv.getValueType()).getFixedValue() < 4)
-    unimplemented("mem-qram: a global QRAM smaller than a handle (the global keeps the bus handle)", &gv);
+  uint64_t size = DL.getTypeAllocSize(gv.getValueType()).getFixedValue();
+  if (size < 4 * q.cols.size())
+    unimplemented("mem-qram: a global QRAM smaller than its bus handles (the global keeps one handle per column)",
+                  &gv);
   if (gv.isConstant())
     internalError("mem-qram: a constant global is a QRAM", &gv);
   if (!gv.hasInitializer())
     unimplemented("mem-qram: a global QRAM defined in another translation unit (the constructor is its "
                   "definer's)",
                   &gv);
-  uint64_t n = DL.getTypeAllocSize(gv.getValueType()).getFixedValue() / q.cellBytes;
+  uint64_t n = size / q.elemBytes;
   if (n > UINT32_MAX)
     unimplemented("mem-qram: a global QRAM of more than 2^32 cells", &gv);
   Function *F = Function::Create(FunctionType::get(Type::getVoidTy(C), false), GlobalValue::InternalLinkage, name, M);
   IRBuilder<> B(BasicBlock::Create(C, "", F));
-  Value *a = B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::QramAlloc, q.w}),
-                          {ConstantInt::get(Type::getInt32Ty(C), n)});
-  // Non-zero initial cells: alloc_<W>(v); store_hl(a, j, v); free(v).
+  Type *i32 = Type::getInt32Ty(C);
+  SmallVector<Value *, 2> a;
+  for (const Column &c : q.cols)
+    a.push_back(B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::QramAlloc, c.w}), {ConstantInt::get(i32, n)}));
   Constant *init = gv.getInitializer();
   if (!init->isNullValue()) {
-    SmallVector<Constant *, 16> cells;
-    std::function<void(Constant *)> flatten = [&](Constant *c) {
-      if (c->getType() == q.cellTy) {
-        cells.push_back(c);
-        return;
+    FunctionType *freeTy = FunctionType::get(Type::getVoidTy(C), {i32}, false);
+    for (uint64_t j = 0; j < n; ++j)
+      for (unsigned k = 0; k < q.cols.size(); ++k) {
+        const Column &c = q.cols[k];
+        Constant *v = ConstantFoldLoadFromConst(init, c.cellTy, APInt(64, j * q.elemBytes + c.off), DL);
+        if (!v || (!isa<ConstantInt>(v) && !isa<ConstantFP>(v)))
+          unimplemented("mem-qram: a global QRAM initializer cell that is not a number", &gv);
+        if (v->isNullValue())
+          continue;
+        Value *h = B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Alloc, c.w}), {v});
+        B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::QramStore, c.w, false, true}),
+                     {a[k], ConstantInt::get(i32, j), h});
+        B.CreateCall(M.getOrInsertFunction("cqrt_free", freeTy), {h});
       }
-      auto *at = dyn_cast<ArrayType>(c->getType());
-      if (!at)
-        unimplemented("mem-qram: a global QRAM initializer that is not an array of its cells", &gv);
-      for (uint64_t i = 0; i < at->getNumElements(); ++i)
-        flatten(c->getAggregateElement(unsigned(i)));
-    };
-    flatten(init);
-    FunctionType *freeTy = FunctionType::get(Type::getVoidTy(C), {Type::getInt32Ty(C)}, false);
-    for (size_t j = 0; j < cells.size(); ++j) {
-      Constant *v = cells[j];
-      if (v->isNullValue())
-        continue;
-      if (!isa<ConstantInt>(v) && !isa<ConstantFP>(v))
-        unimplemented("mem-qram: a global QRAM initializer cell that is not a number", &gv);
-      Value *h = B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Alloc, q.w}), {v});
-      B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::QramStore, q.w, false, true}),
-                   {a, ConstantInt::get(Type::getInt32Ty(C), j), h});
-      B.CreateCall(M.getOrInsertFunction("cqrt_free", freeTy), {h});
-    }
   }
-  B.CreateAlignedStore(a, &gv, Align(4));
+  for (unsigned k = 0; k < a.size(); ++k)
+    B.CreateAlignedStore(a[k], k ? B.CreateConstInBoundsGEP1_64(Type::getInt8Ty(C), &gv, 4 * k) : (Value *)&gv,
+                         Align(4));
   B.CreateRetVoid();
   appendToGlobalCtors(M, F, 65535);
 }
 
-// The QRAM object behind an access's root, with its bus handle in this output function.
-QramObj &qramObj(LoweringContext &ctx, const Value *root, ObjectId o, const Instruction &I) {
+// The QRAM object reached through root, with its buses in this output function.
+QramObj &qramObj(LoweringContext &ctx, const Value *root, const Instruction &I) {
   QramState &st = qramStates()[&ctx.out()];
-  auto it = st.objs.find(root);
+  const Value *site = st.siteOf.lookup(root);
+  if (!site)
+    site = root;
+  auto it = st.objs.find(site);
   if (it != st.objs.end())
     return it->second;
   auto *gv = const_cast<GlobalVariable *>(dyn_cast<GlobalVariable>(root));
@@ -831,25 +962,38 @@ QramObj &qramObj(LoweringContext &ctx, const Value *root, ObjectId o, const Inst
       unimplemented("mem-qram: a QRAM access through a parameter (the caller's bus crosses the call as a rule 21 "
                     "triple)",
                     &I);
-    internalError("mem-qram: a QRAM access to a local or heap object whose allocation was not lowered", &I);
+    unimplemented("mem-qram: a QRAM access to a site that was not allocated as a QRAM (field columns of "
+                  "different classes, rule 20, or an allocation not lowered before the access)",
+                  &I);
   }
   if (gv->isThreadLocal())
     unimplemented("mem-qram: a thread-local QRAM (rule 24)", &I);
-  QramObj q;
-  q.root = root;
-  q.o = o;
-  q.cellTy = scalarCell(gv->getValueType(), gv);
-  q.cellBytes = ctx.M.getDataLayout().getTypeAllocSize(q.cellTy).getFixedValue();
-  q.w = railTypeOf(q.cellTy);
+  QramObj q = layoutOf(gv->getValueType(), ctx.M.getDataLayout(), gv);
+  q.site = gv;
   ensureGlobalCtor(ctx, *gv, q);
-  // The entry loads the bus handle once (classical); the bus is the program's visible state: an
+  // The entry loads each bus handle once (classical); the bus is the program's visible state: an
   // output, never popped or freed (rule 20, 160).
   Function &out = ctx.out();
+  LLVMContext &C = ctx.M.getContext();
   IRBuilder<> EB(&out.getEntryBlock(), out.getEntryBlock().getFirstInsertionPt());
-  LoadInst *h = EB.CreateAlignedLoad(Type::getInt32Ty(ctx.M.getContext()), gv, Align(4));
-  ctx.unc().recordExternal(h, Role::Output);
-  q.handle = h;
-  return st.objs.emplace(root, q).first->second;
+  SmallVector<Value *, 2> hs;
+  for (unsigned k = 0; k < q.cols.size(); ++k) {
+    Value *p = k ? EB.CreateConstInBoundsGEP1_64(Type::getInt8Ty(C), gv, 4 * k) : (Value *)gv;
+    LoadInst *h = EB.CreateAlignedLoad(Type::getInt32Ty(C), p, Align(4));
+    ctx.unc().recordExternal(h, Role::Output);
+    hs.push_back(h);
+  }
+  q.buses[gv] = hs;
+  return st.objs.emplace(gv, std::move(q)).first->second;
+}
+
+Value *busOf(const QramObj &q, const Value *root, const Column *c, const Instruction &I) {
+  auto it = q.buses.find(root);
+  if (it == q.buses.end())
+    unimplemented("mem-qram: a QRAM access whose root pointer is neither the allocation nor a realloc result "
+                  "lowered before it",
+                  &I);
+  return it->second[q.indexOf(c)];
 }
 
 // The cell index of a QRAM access: a quantum index rail (the logical index, rule 20) or a classical i32
@@ -859,16 +1003,7 @@ struct QIndex {
   bool quantum;
 };
 
-QIndex qramIndex(LoweringContext &ctx, const QramObj &q, const Addr &a, Type *accessTy, const Instruction &I) {
-  const DataLayout &DL = ctx.M.getDataLayout();
-  LLVMContext &C = ctx.M.getContext();
-  IRBuilder<> &B = ctx.B();
-  if (DL.getTypeAllocSize(accessTy).getFixedValue() != q.cellBytes || railTypeOf(accessTy).bits != q.w.bits ||
-      railTypeOf(accessTy).kind != q.w.kind)
-    unimplemented("mem-qram: a QRAM access at another type than its cell (a bit view, 63)", &I);
-  int64_t cb = int64_t(q.cellBytes);
-  if (a.off % cb)
-    unimplemented("mem-qram: a QRAM access at a constant byte offset that is not a whole cell", &I);
+const std::pair<const Value *, int64_t> *quantumTerm(LoweringContext &ctx, const Addr &a, const Instruction &I) {
   const std::pair<const Value *, int64_t> *qt = nullptr;
   for (auto &t : a.terms)
     if (ctx.T.isQuantum(t.first, ctx.S)) {
@@ -876,13 +1011,162 @@ QIndex qramIndex(LoweringContext &ctx, const QramObj &q, const Addr &a, Type *ac
         unimplemented("mem-qram: a QRAM address with two quantum index terms (flattened 2-D form, 191)", &I);
       qt = &t;
     }
-  if (qt) {
-    if (a.terms.size() != 1 || a.off != 0)
-      unimplemented("mem-qram: a quantum QRAM index plus a constant or classical offset (the index arithmetic is "
-                    "a template)",
+  return qt;
+}
+
+// The classical variable part of an address in elements (i64), nullptr when there is none.
+Value *classicalElems(LoweringContext &ctx, const QramObj &q, const Addr &a, const Instruction &I) {
+  IRBuilder<> &B = ctx.B();
+  Type *i64 = Type::getInt64Ty(ctx.M.getContext());
+  int64_t E = int64_t(q.elemBytes);
+  Value *j = nullptr;
+  for (auto &[v, stride] : a.terms) {
+    if (stride % E)
+      unimplemented("mem-qram: a QRAM GEP stride that is not a whole number of elements", &I);
+    Operand x = ctx.operand(v);
+    if (x.handle)
+      internalError("mem-qram: a quantum term in a classical QRAM address", &I);
+    Value *t = B.CreateSExtOrTrunc(x.v, i64);
+    if (stride / E != 1)
+      t = B.CreateMul(t, ConstantInt::get(i64, stride / E, true));
+    j = j ? B.CreateAdd(j, t) : t;
+  }
+  return j;
+}
+
+// The i32 cell index jb + e.
+Value *elemIndex(LoweringContext &ctx, Value *jb, int64_t e) {
+  LLVMContext &C = ctx.M.getContext();
+  if (!jb)
+    return ConstantInt::get(Type::getInt32Ty(C), e, true);
+  Value *x = e ? ctx.B().CreateAdd(jb, ConstantInt::get(Type::getInt64Ty(C), e, true)) : jb;
+  return ctx.B().CreateTrunc(x, Type::getInt32Ty(C));
+}
+
+bool sameCellType(const DataLayout &DL, Type *access, const Column &c) {
+  if (!access->isIntegerTy() && !access->isFloatingPointTy())
+    return false;
+  RailType r = railTypeOf(access);
+  return DL.getTypeAllocSize(access) == DL.getTypeAllocSize(c.cellTy) && r.bits == c.w.bits && r.kind == c.w.kind;
+}
+
+// The cells of one element-aligned run of bytes [off, off + len) (from the address's classical base).
+struct Hit {
+  const Column *col;
+  int64_t elem;   // element index relative to the base
+  uint64_t rel;   // the cell's first byte relative to off
+};
+
+SmallVector<Hit, 8> cellsIn(const DataLayout &DL, const QramObj &q, int64_t off, uint64_t len, const Instruction &I) {
+  SmallVector<Hit, 8> out;
+  int64_t E = int64_t(q.elemBytes);
+  if (len / q.elemBytes > (1u << 16))
+    unimplemented("mem-qram: a QRAM write over more than 65536 elements unrolled per cell", &I);
+  int64_t end = off + int64_t(len);
+  for (int64_t e = floorDiv(off, E); e * E < end; ++e)
+    for (const Column &c : q.cols) {
+      int64_t s = e * E + int64_t(c.off), sz = int64_t(storeBytes(DL, c.cellTy));
+      int64_t lo = std::max(s, off), hi = std::min(s + sz, end);
+      if (lo >= hi)
+        continue;
+      if (lo != s || hi != s + sz)
+        unimplemented("mem-qram: a QRAM access or memory intrinsic covering part of a cell (a bit view, 63)", &I);
+      out.push_back({&c, e, uint64_t(s - off)});
+    }
+  return out;
+}
+
+Value *seedOf(LoweringContext &ctx, RailType w, Value *v) {
+  CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {v});
+  ctx.unc().recordSeed(seed);
+  return seed;
+}
+
+// ONE cqrt_qram_load_<W>[_hl](a, idx | j): a fresh rail (copy-out, the cells unchanged), undone by its
+// _unc against the same cell contents (recordCore).
+Value *emitLoad(LoweringContext &ctx, Value *bus, const Column &c, QIndex idx) {
+  abi::CoreSpec spec{abi::Core::QramLoad, c.w, false, !idx.quantum};
+  CallInst *h = ctx.emitCore(spec, {bus, idx.v});
+  ctx.unc().recordCore(h, spec, {Operand{bus, true}, Operand{idx.v, idx.quantum}}, 0);
+  return h;
+}
+
+// ONE cqrt_qram_store_<W>[_hl][_controlled]([flag,] a, idx | j, v), v a handle, recorded on the bus.
+void emitStore(LoweringContext &ctx, Value *bus, const Column &c, QIndex idx, Value *v, Value *flag) {
+  abi::CoreSpec spec{abi::Core::QramStore, c.w, flag != nullptr, !idx.quantum};
+  SmallVector<Value *, 4> args;
+  SmallVector<Operand, 4> ops;
+  if (flag) {
+    args.push_back(flag);
+    ops.push_back(Operand{flag, true});
+  }
+  args.append({bus, idx.v, v});
+  ops.append({Operand{bus, true}, Operand{idx.v, idx.quantum}, Operand{v, true}});
+  CallInst *call = ctx.emitCore(spec, args);
+  ctx.unc().recordCore(call, spec, ops, ctx.unc().idOf(bus));
+}
+
+// The cell of `bits` bits at byte `rel` of the little-endian integer x, as a value of cellTy.
+Value *bytesToCell(LoweringContext &ctx, Value *x, uint64_t rel, Type *cellTy) {
+  IRBuilder<> &B = ctx.B();
+  LLVMContext &C = ctx.M.getContext();
+  if (rel)
+    x = B.CreateLShr(x, ConstantInt::get(x->getType(), rel * 8));
+  unsigned bits = unsigned(cellTy->getPrimitiveSizeInBits().getFixedValue());
+  Value *v = B.CreateTrunc(x, IntegerType::get(C, bits));
+  if (!cellTy->isIntegerTy())
+    v = B.CreateBitCast(v, cellTy);
+  return v;
+}
+
+// The fill byte b repeated over the cell (rule 22).
+Value *splatCell(LoweringContext &ctx, Value *b, Type *cellTy) {
+  IRBuilder<> &B = ctx.B();
+  LLVMContext &C = ctx.M.getContext();
+  unsigned storeBits = unsigned(ctx.M.getDataLayout().getTypeStoreSize(cellTy).getFixedValue()) * 8;
+  IntegerType *wide = IntegerType::get(C, storeBits);
+  Value *splat = B.CreateMul(B.CreateZExt(b, wide), ConstantInt::get(wide, APInt::getSplat(storeBits, APInt(8, 1))));
+  return bytesToCell(ctx, splat, 0, cellTy);
+}
+
+struct QAccess {
+  QramObj *q;
+  Addr a;
+};
+
+QAccess qramAccess(LoweringContext &ctx, const Value *ptr, const Instruction &I) {
+  soleQram(ctx, ptr, I);
+  Addr a = decompose(ptr, ctx.M.getDataLayout());
+  if (!a.ok)
+    unimplemented("mem-qram: a QRAM access whose address is not an object plus GEP offsets (rule 21)", &I);
+  if (ctx.T.isFatPointer(a.root, ctx.S) || ctx.operand(a.root).handle)
+    unimplemented("mem-qram: a QRAM access through a quantum base pointer (rule 21)", &I);
+  return {&qramObj(ctx, a.root, I), a};
+}
+
+// The single cell a load or store of accessTy names (its column) and its index, or nullptr when the
+// access is not exactly one cell.
+const Column *exactCell(LoweringContext &ctx, const QramObj &q, const Addr &a, Type *accessTy) {
+  int64_t E = int64_t(q.elemBytes);
+  int64_t ec = floorDiv(a.off, E);
+  const Column *col = q.at(uint64_t(a.off - ec * E));
+  if (!col || !sameCellType(ctx.M.getDataLayout(), accessTy, *col))
+    return nullptr;
+  return col;
+}
+
+QIndex cellIndex(LoweringContext &ctx, const QramObj &q, const Addr &a, const Instruction &I) {
+  int64_t E = int64_t(q.elemBytes);
+  int64_t ec = floorDiv(a.off, E);
+  if (const auto *qt = quantumTerm(ctx, a, I)) {
+    if (a.terms.size() != 1 || ec != 0)
+      unimplemented("mem-qram: a quantum QRAM index plus a constant or classical element offset (the index "
+                    "arithmetic is a template)",
                     &I);
-    if (qt->second != cb)
-      unimplemented("mem-qram: a quantum QRAM index whose GEP stride is not one cell (the scaling is a template)", &I);
+    if (qt->second != E)
+      unimplemented("mem-qram: a quantum QRAM index whose GEP stride is not one element (the scaling is a "
+                    "template)",
+                    &I);
     // The logical index: the GEP index stripped of its widening casts (address arithmetic, rule 20). A
     // negative sign-extended index points before the object (undefined, outside the domain).
     const Value *idx = qt->first;
@@ -902,151 +1186,406 @@ QIndex qramIndex(LoweringContext &ctx, const QramObj &q, const Addr &a, Type *ac
       internalError("mem-qram: the logical QRAM index is not an integer rail", &I);
     return {ix.v, true};
   }
-  Type *i64 = Type::getInt64Ty(C);
-  Value *j = nullptr;
-  for (auto &[v, stride] : a.terms) {
-    if (stride % cb)
-      unimplemented("mem-qram: a QRAM GEP stride that is not a whole number of cells", &I);
-    Value *t = B.CreateSExtOrTrunc(ctx.operand(v).v, i64);
-    if (stride / cb != 1)
-      t = B.CreateMul(t, ConstantInt::get(i64, stride / cb, true));
-    j = j ? B.CreateAdd(j, t) : t;
-  }
-  Value *k = ConstantInt::get(i64, a.off / cb, true);
-  j = j ? (a.off ? B.CreateAdd(j, k) : j) : k;
-  return {B.CreateTrunc(j, Type::getInt32Ty(C)), false};
+  return {elemIndex(ctx, classicalElems(ctx, q, a, I), ec), false};
 }
 
-struct QAccess {
-  QramObj *q;
-  QIndex idx;
-};
+// A classical value of type ty stored over the whole cells it covers at a classical address: one _hl
+// store per cell of the value's bytes (rule 20: each access is per cell; 84's `store i64` of two i32
+// cells), each value a fresh seed (rule 7).
+void storeClassicalBytes(LoweringContext &ctx, const QAccess &acc, Value *val, Type *ty, Value *flag,
+                         const Instruction &I) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  LLVMContext &C = ctx.M.getContext();
+  IRBuilder<> &B = ctx.B();
+  if (quantumTerm(ctx, acc.a, I))
+    unimplemented("mem-qram: a QRAM store at a quantum index of a value wider or other than its cell (a bit "
+                  "view, 63)",
+                  &I);
+  if (ty->isPointerTy() || ty->isStructTy() || ty->isArrayTy())
+    unimplemented("mem-qram: a QRAM store of a pointer or aggregate value (rules 21, 26)", &I);
+  uint64_t bytes = storeBytes(DL, ty);
+  unsigned prim = unsigned(ty->getPrimitiveSizeInBits().getFixedValue());
+  if (prim != bytes * 8 && !ty->isIntegerTy())
+    unimplemented("mem-qram: a QRAM store of a padded non-integer value over several cells", &I);
+  Value *x = val;
+  if (!ty->isIntegerTy())
+    x = B.CreateBitCast(x, IntegerType::get(C, prim));
+  if (prim != bytes * 8)
+    x = B.CreateZExt(x, IntegerType::get(C, unsigned(bytes * 8)));
+  const QramObj &q = *acc.q;
+  Value *jb = classicalElems(ctx, q, acc.a, I);
+  for (const Hit &h : cellsIn(DL, q, acc.a.off, bytes, I)) {
+    Value *v = seedOf(ctx, h.col->w, bytesToCell(ctx, x, h.rel, h.col->cellTy));
+    emitStore(ctx, busOf(q, acc.a.root, h.col, I), *h.col, {elemIndex(ctx, jb, h.elem), false}, v, flag);
+  }
+}
 
-QAccess qramAccess(LoweringContext &ctx, const Value *ptr, Type *accessTy, const Instruction &I) {
-  ObjectId o = soleQram(ctx, ptr, I);
-  Addr a = decompose(ptr, ctx.M.getDataLayout());
-  if (!a.ok)
-    unimplemented("mem-qram: a QRAM access whose address is not an object plus GEP offsets (rule 21)", &I);
-  if (ctx.T.isFatPointer(a.root, ctx.S) || ctx.operand(a.root).handle)
-    unimplemented("mem-qram: a QRAM access through a quantum base pointer (rule 21)", &I);
-  QramObj &q = qramObj(ctx, a.root, o, I);
-  if (q.o != o)
-    internalError("mem-qram: the access's root is another object than its provenance", &I);
-  if (!accessTy->isIntegerTy() && !accessTy->isFloatingPointTy())
-    unimplemented("mem-qram: a QRAM access of a non-scalar or pointer value (rules 21, 25)", &I);
-  return {&q, qramIndex(ctx, q, a, accessTy, I)};
+// Rule 22 over a QRAM destination: a classical length is one _hl store per covered cell (memset: one
+// shared basis-state seed per cell type, 30, 55; memcpy/memmove: each cell the source cell's value, a
+// seed of a classical source byte run (73, 168) or a _hl load of a QRAM source cell). All source cells
+// are read before any store (memmove). Under a quantum predicate the stores are _controlled.
+void lowerQramIntrinsic(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  IRBuilder<> &B = ctx.B();
+  LLVMContext &C = ctx.M.getContext();
+  (void)o;
+  QAccess acc = qramAccess(ctx, MI.getDest(), MI);
+  if (quantumTerm(ctx, acc.a, MI))
+    unimplemented("mem-qram: a memory intrinsic at a quantum offset into a QRAM (rule 20, last row)", &MI);
+  Operand len = ctx.operand(MI.getLength());
+  if (len.handle)
+    unimplemented("mem-qram: a memory intrinsic into a QRAM with a quantum length (rule 22's guarded cells, 90)",
+                  &MI);
+  auto *cl = dyn_cast<ConstantInt>(len.v);
+  if (!cl)
+    unimplemented("mem-qram: a run-time-length memory intrinsic into a QRAM (its per-cell stores need a loop "
+                  "whose pops a reverse loop makes)",
+                  &MI);
+  const QramObj &q = *acc.q;
+  Value *flag = ctx.currentFlag();
+  Value *jb = classicalElems(ctx, q, acc.a, MI);
+  SmallVector<Hit, 8> hits = cellsIn(DL, q, acc.a.off, cl->getZExtValue(), MI);
+  SmallVector<Value *, 8> vals;
+
+  if (auto *MS = dyn_cast<MemSetInst>(&MI)) {
+    Operand fill = ctx.operand(MS->getValue());
+    if (fill.handle)
+      unimplemented("mem-qram: a memset of a QRAM with a quantum fill byte (rule 22)", &MI);
+    std::map<std::pair<unsigned, unsigned>, Value *> seeds;   // one shared seed per cell type (rule 22)
+    for (const Hit &h : hits) {
+      Value *&s = seeds[{unsigned(h.col->w.kind), h.col->w.bits}];
+      if (!s)
+        s = seedOf(ctx, h.col->w, splatCell(ctx, fill.v, h.col->cellTy));
+      vals.push_back(s);
+    }
+  } else {
+    auto *MT = cast<MemTransferInst>(&MI);
+    const Value *src = MT->getSource();
+    if (ctx.T.isFatPointer(src, ctx.S))
+      unimplemented("mem-qram: a memcpy/memmove into a QRAM from a quantum pointer (rule 21)", &MI);
+    ArrayRef<ObjectId> so = ctx.T.provenance(src, ctx.S);
+    bool host = llvm::all_of(so, [&](ObjectId x) { return ctx.T.classOf(x) == ObjClass::Classical; });
+    if (host) {
+      Operand sp = ctx.operand(src);
+      if (sp.handle)
+        internalError("mem-qram: a classical memcpy source bound to a rail", &MI);
+      for (const Hit &h : hits) {
+        Value *v = nullptr;
+        if (auto *k = dyn_cast<Constant>(src))
+          v = ConstantFoldLoadFromConstPtr(const_cast<Constant *>(k), h.col->cellTy, APInt(64, h.rel), DL);
+        if (!v) {
+          Value *p = h.rel ? B.CreateConstInBoundsGEP1_64(Type::getInt8Ty(C), sp.v, h.rel) : sp.v;
+          v = B.CreateAlignedLoad(h.col->cellTy, p, commonAlignment(MT->getSourceAlign().valueOrOne(), h.rel));
+        }
+        vals.push_back(seedOf(ctx, h.col->w, v));
+      }
+    } else if (so.size() == 1 && ctx.T.classOf(so.front()) == ObjClass::Qram) {
+      QAccess sacc = qramAccess(ctx, src, MI);
+      if (quantumTerm(ctx, sacc.a, MI))
+        unimplemented("mem-qram: a memcpy/memmove from a quantum offset of a QRAM (rule 20, last row)", &MI);
+      const QramObj &sq = *sacc.q;
+      Value *sjb = classicalElems(ctx, sq, sacc.a, MI);
+      int64_t SE = int64_t(sq.elemBytes);
+      for (const Hit &h : hits) {
+        int64_t p = sacc.a.off + int64_t(h.rel);
+        int64_t se = floorDiv(p, SE);
+        const Column *sc = sq.at(uint64_t(p - se * SE));
+        if (!sc || sc->cellTy != h.col->cellTy)
+          unimplemented("mem-qram: a memcpy/memmove between QRAMs whose cells do not line up (a bit view, 63)", &MI);
+        vals.push_back(emitLoad(ctx, busOf(sq, sacc.a.root, sc, MI), *sc, {elemIndex(ctx, sjb, se), false}));
+      }
+    } else {
+      unimplemented("mem-qram: a memcpy/memmove into a QRAM from a slot array or several objects (the source "
+                    "handles are mem-slots' cell reads, 73)",
+                    &MI);
+    }
+  }
+  for (size_t i = 0; i < hits.size(); ++i) {
+    const Hit &h = hits[i];
+    emitStore(ctx, busOf(q, acc.a.root, h.col, MI), *h.col, {elemIndex(ctx, jb, h.elem), false},
+              vals[i], flag);
+  }
+}
+
+// The column at offset 0 of the object at root whose cell is accessed as ty.
+const Column &firstColumn(LoweringContext &ctx, const QramObj &q, llvm::Type *ty, const Instruction &at) {
+  const Column *c = q.at(0);
+  if (!c || !sameCellType(ctx.M.getDataLayout(), ty, *c))
+    unimplemented("mem-qram: a fat-pointer access of a QRAM at another type or field than its first cell (a bit "
+                  "view or a field column through a fat pointer)",
+                  &at);
+  return *c;
+}
+
+QIndex fatIndex(LoweringContext &ctx, Operand idx) {
+  if (idx.handle)
+    return {idx.v, true};
+  return {ctx.B().CreateTrunc(idx.v, Type::getInt32Ty(ctx.M.getContext())), false};
 }
 
 } // namespace
 
-void lowerMemIntrinsic(LoweringContext &ctx, MemIntrinsic &MI) {
-  if (auto *MS = dyn_cast<MemSetInst>(&MI)) {
-    ArrayRef<ObjectId> objs = ctx.T.provenance(MS->getDest(), ctx.S);
-    if (objs.size() == 1 && ctx.T.classOf(objs.front()) == ObjClass::Slot)
-      return lowerSlotMemset(ctx, *MS, objs.front());
+bool isQramRoot(LoweringContext &ctx, const Value *root) {
+  if (isa<GlobalVariable>(root)) {
+    for (ObjectId o : ctx.T.provenance(root, ctx.S))
+      if (ctx.T.classOf(o) == ObjClass::Qram)
+        return true;
+    return false;
   }
-  unimplemented("mem-qram: mem::lowerMemIntrinsic", &MI);
+  QramState &st = qramStates()[&ctx.out()];
+  const Value *site = st.siteOf.lookup(root);
+  return st.objs.count(site ? site : root) != 0;
 }
 
-// Rule 20, §1.3: ONE cqrt_qram_load_<W>[_hl](a, idx | j) -> a fresh rail (copy-out, the cells
-// unchanged), undone by its _unc against the same cell contents. A load is pure, so it is executed
-// unguarded under a quantum predicate (rule 21's reading): its result is a value arm like any template.
+uint64_t qramElemBytes(LoweringContext &ctx, const Value *root, const Instruction &at) {
+  return qramObj(ctx, root, at).elemBytes;
+}
+
+Value *qramLoadAt(LoweringContext &ctx, const Value *root, Operand idx, Type *ty, const Instruction &at) {
+  QramObj &q = qramObj(ctx, root, at);
+  const Column &c = firstColumn(ctx, q, ty, at);
+  return emitLoad(ctx, busOf(q, root, &c, at), c, fatIndex(ctx, idx));
+}
+
+void qramStoreAt(LoweringContext &ctx, const Value *root, Operand idx, Type *ty, Value *v, Value *flag,
+                 const Instruction &at) {
+  QramObj &q = qramObj(ctx, root, at);
+  const Column &c = firstColumn(ctx, q, ty, at);
+  emitStore(ctx, busOf(q, root, &c, at), c, fatIndex(ctx, idx), v, flag);
+}
+
+void lowerMemIntrinsic(LoweringContext &ctx, MemIntrinsic &MI) {
+  ArrayRef<ObjectId> objs = ctx.T.provenance(MI.getDest(), ctx.S);
+  if (ctx.T.isFatPointer(MI.getDest(), ctx.S))
+    unimplemented("mem-qram: a memory intrinsic through a quantum destination pointer (rules 21, 22)", &MI);
+  if (objs.size() == 1 && ctx.T.classOf(objs.front()) == ObjClass::Slot) {
+    if (auto *MS = dyn_cast<MemSetInst>(&MI))
+      return lowerSlotMemset(ctx, *MS, objs.front());
+    unimplemented("mem-qram: a memcpy/memmove into a slot array (rule 22: each cell takes the source handle or a "
+                  "seed)",
+                  &MI);
+  }
+  if (objs.size() == 1 && ctx.T.classOf(objs.front()) == ObjClass::Qram)
+    return lowerQramIntrinsic(ctx, MI, objs.front());
+  unimplemented("mem-qram: a memory intrinsic whose destination has " + std::to_string(objs.size()) +
+                    " objects or is classical memory with a quantum operand",
+                &MI);
+}
+
+// Rule 20, §1.3: ONE cqrt_qram_load_<W>[_hl](a, idx | j) -> a fresh rail. A load is pure, so it is
+// executed unguarded under a quantum predicate (rule 21's reading): its result is a value arm like any
+// template.
 void lowerQramLoad(LoweringContext &ctx, LoadInst &ld) {
-  QAccess acc = qramAccess(ctx, ld.getPointerOperand(), ld.getType(), ld);
-  abi::CoreSpec spec{abi::Core::QramLoad, acc.q->w, false, !acc.idx.quantum};
-  CallInst *h = ctx.emitCore(spec, {acc.q->handle, acc.idx.v});
-  ctx.unc().recordCore(h, spec, {Operand{acc.q->handle, true}, Operand{acc.idx.v, acc.idx.quantum}}, 0);
-  ctx.bind(&ld, h);
+  QAccess acc = qramAccess(ctx, ld.getPointerOperand(), ld);
+  if (!ld.getType()->isIntegerTy() && !ld.getType()->isFloatingPointTy())
+    unimplemented("mem-qram: a QRAM access of a non-scalar or pointer value (rules 21, 25)", &ld);
+  const Column *col = exactCell(ctx, *acc.q, acc.a, ld.getType());
+  if (!col)
+    unimplemented("mem-qram: a QRAM access at another type than its cell (a bit view, 63)", &ld);
+  QIndex idx = cellIndex(ctx, *acc.q, acc.a, ld);
+  ctx.bind(&ld, emitLoad(ctx, busOf(*acc.q, acc.a.root, col, ld), *col, idx));
 }
 
 // Rule 20, §1.3: ONE cqrt_qram_store_<W>[_hl][_controlled]([c,] a, idx | j, v), v always a handle (a
 // classical value is first a seed, rule 7), under the current quantum predicate's flag when there is
 // one. It is recorded on the bus: the bus's item pops its stores last-in-first-out (a global bus is an
-// output and is never popped).
+// output and is never popped). A classical value over several whole cells is one store per cell.
 void lowerQramStore(LoweringContext &ctx, StoreInst &st) {
   Value *val = st.getValueOperand();
-  QAccess acc = qramAccess(ctx, st.getPointerOperand(), val->getType(), st);
+  QAccess acc = qramAccess(ctx, st.getPointerOperand(), st);
   Value *flag = ctx.currentFlag();
   Operand v = ctx.operand(val);
-  if (!v.handle) {
-    if (railTypeOf(val->getType()).bits != acc.q->w.bits)
-      internalError("mem-qram: a stored value of another width than the cell", &st);
-    CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, acc.q->w}, {v.v});
-    ctx.unc().recordSeed(seed);
-    v = Operand{seed, true};
+  const Column *col = exactCell(ctx, *acc.q, acc.a, val->getType());
+  if (!col) {
+    if (v.handle)
+      unimplemented("mem-qram: a QRAM access at another type than its cell (a bit view, 63)", &st);
+    return storeClassicalBytes(ctx, acc, v.v, val->getType(), flag, st);
   }
-  abi::CoreSpec spec{abi::Core::QramStore, acc.q->w, flag != nullptr, !acc.idx.quantum};
-  SmallVector<Value *, 4> args;
-  SmallVector<Operand, 4> ops;
-  if (flag) {
-    args.push_back(flag);
-    ops.push_back(Operand{flag, true});
-  }
-  args.append({acc.q->handle, acc.idx.v, v.v});
-  ops.append({Operand{acc.q->handle, true}, Operand{acc.idx.v, acc.idx.quantum}, v});
-  CallInst *call = ctx.emitCore(spec, args);
-  RailId bus = ctx.unc().idOf(acc.q->handle);
-  ctx.unc().recordCore(call, spec, ops, bus);
+  QIndex idx = cellIndex(ctx, *acc.q, acc.a, st);
+  if (!v.handle)
+    v = Operand{seedOf(ctx, col->w, v.v), true};
+  emitStore(ctx, busOf(*acc.q, acc.a.root, col, st), *col, idx, v.v, flag);
 }
 
-// Rule 20: a local (alloca) or heap QRAM is ONE cqrt_qram_alloc_<W>(n) at its allocation site, all
-// cells |0> (C's indeterminate initial contents read 0, §6). The bus is a Seed rail: Uncompute pops its
-// stores last-in-first-out and releases it with cqrt_qram_free once nothing reads it. The original
-// pointer is bound to the object's QRAM base address (rule 21).
+// Rule 20: a local (alloca) or heap QRAM is ONE cqrt_qram_alloc_<W>(n) per column at its allocation
+// site, all cells |0> (C's indeterminate initial contents read 0, §6); a quantum size allocates at its
+// upper bound (§1.3). Each bus is a Seed rail: Uncompute pops its stores last-in-first-out and releases
+// it with cqrt_qram_free once nothing reads it. The original pointer is bound to the object's QRAM base
+// address (rule 21). A heap block has no host block: the allocator call is not emitted.
 void allocateQram(LoweringContext &ctx, Instruction &site) {
   const DataLayout &DL = ctx.M.getDataLayout();
   LLVMContext &C = ctx.M.getContext();
-  ObjectId o = soleQram(ctx, &site, site);
-  if (escapes(&site))
+  IRBuilder<> &B = ctx.B();
+  Type *i32 = Type::getInt32Ty(C), *i64 = Type::getInt64Ty(C);
+  if (qramEscapes(&site))
     unimplemented("mem-qram: a QRAM object whose pointer escapes to a call (the callee reaches the bus through a "
                   "rule 21 triple and its stores are the twin's: rule 18)",
                   &site);
   QramObj q;
-  q.root = &site;
-  q.o = o;
   Value *n = nullptr;
+  auto constCells = [&](uint64_t cells) {
+    if (cells > UINT32_MAX)
+      unimplemented("mem-qram: a QRAM of more than 2^32 cells", &site);
+    return ConstantInt::get(i32, cells);
+  };
   if (auto *ai = dyn_cast<AllocaInst>(&site)) {
-    q.cellTy = scalarCell(ai->getAllocatedType(), ai);
-    q.cellBytes = DL.getTypeAllocSize(q.cellTy).getFixedValue();
-    uint64_t per = DL.getTypeAllocSize(ai->getAllocatedType()).getFixedValue() / q.cellBytes;
+    q = layoutOf(ai->getAllocatedType(), DL, ai);
+    uint64_t per = DL.getTypeAllocSize(ai->getAllocatedType()).getFixedValue() / q.elemBytes;
     if (auto *c = dyn_cast<ConstantInt>(ai->getArraySize())) {
-      uint64_t cells = per * c->getZExtValue();
-      if (cells > UINT32_MAX)
-        unimplemented("mem-qram: a QRAM of more than 2^32 cells", ai);
-      n = ConstantInt::get(Type::getInt32Ty(C), cells);
+      n = constCells(per * c->getZExtValue());
     } else {
       Operand cnt = ctx.operand(ai->getArraySize());
-      if (cnt.handle)
-        unimplemented("mem-qram: a QRAM of quantum size (allocated at its upper bound, rule 20)", ai);
-      Value *x = ctx.B().CreateZExtOrTrunc(cnt.v, Type::getInt32Ty(C));
-      n = per == 1 ? x : ctx.B().CreateMul(x, ConstantInt::get(Type::getInt32Ty(C), per));
+      if (cnt.handle) {
+        n = constCells(per * upperBound(ai->getArraySize(), DL, site));
+      } else {
+        Value *x = B.CreateZExtOrTrunc(cnt.v, i32);
+        n = per == 1 ? x : B.CreateMul(x, ConstantInt::get(i32, per));
+      }
+    }
+  } else if (auto *CB = dyn_cast<CallBase>(&site)) {
+    q = heapLayout(ctx, *site.getFunction(), soleQram(ctx, &site, site), &site);
+    Attribute A = CB->getFnAttr(Attribute::AllocSize);
+    if (!A.isValid())
+      unimplemented("mem-qram: a heap QRAM from an allocator without an allocsize attribute", &site);
+    auto [ai0, ai1] = A.getAllocSizeArgs();
+    SmallVector<unsigned, 2> args{ai0};
+    if (ai1)
+      args.push_back(*ai1);
+    bool allConst = true;
+    uint64_t cbytes = 1;
+    Value *bytes = nullptr;
+    for (unsigned k : args) {
+      const Value *orig = CB->getArgOperand(k);
+      Operand op = ctx.operand(orig);
+      Value *x;
+      if (op.handle) {
+        x = ConstantInt::get(i64, upperBound(orig, DL, site));
+      } else {
+        x = B.CreateZExtOrTrunc(op.v, i64);
+      }
+      if (auto *c = dyn_cast<ConstantInt>(x))
+        cbytes *= c->getZExtValue();
+      else
+        allConst = false;
+      bytes = bytes ? B.CreateMul(bytes, x) : x;
+    }
+    if (allConst) {
+      n = constCells(cbytes / q.elemBytes);
+    } else {
+      Value *cells = B.CreateUDiv(bytes, ConstantInt::get(i64, q.elemBytes));
+      n = B.CreateTrunc(cells, i32);
     }
   } else {
-    unimplemented("mem-qram: a heap QRAM block (rule 20; realloc and free under a predicate, 91, 186)", &site);
+    internalError("mem-qram: a QRAM allocation site that is neither an alloca nor a call", &site);
   }
-  q.w = railTypeOf(q.cellTy);
-  abi::CoreSpec spec{abi::Core::QramAlloc, q.w};
-  CallInst *a = ctx.emitCore(spec, {n});
-  ctx.unc().recordCore(a, spec, {Operand{n, false}}, 0);
-  q.handle = a;
+  q.site = &site;
+  // Taint classifies each field column on its own (rule 20). The site has no host block once it is a
+  // QRAM, so every access of every column must be a QRAM access.
+  for (const Instruction &I : instructions(*site.getFunction())) {
+    const Value *p = nullptr;
+    if (auto *ld = dyn_cast<LoadInst>(&I))
+      p = ld->getPointerOperand();
+    else if (auto *s = dyn_cast<StoreInst>(&I))
+      p = s->getPointerOperand();
+    else if (auto *mi = dyn_cast<MemIntrinsic>(&I))
+      p = mi->getDest();
+    if (!p)
+      continue;
+    Addr pa = decompose(p, DL);
+    if (!pa.ok || pa.root != &site)
+      continue;
+    for (ObjectId x : ctx.T.provenance(p, ctx.S))
+      if (ctx.T.classOf(x) != ObjClass::Qram)
+        unimplemented("mem-qram: an array of structs whose field columns are of different classes (a QRAM "
+                      "column beside a slot or classical column, rule 20)",
+                      &I);
+  }
+  SmallVector<Value *, 2> hs;
+  for (const Column &c : q.cols) {
+    abi::CoreSpec spec{abi::Core::QramAlloc, c.w};
+    CallInst *a = ctx.emitCore(spec, {n});
+    ctx.unc().recordCore(a, spec, {Operand{n, false}}, 0);
+    hs.push_back(a);
+  }
+  q.buses[&site] = hs;
   QramState &st = qramStates()[&ctx.out()];
-  if (!st.objs.emplace(&site, q).second)
+  if (!st.objs.emplace(&site, std::move(q)).second)
     unimplemented("mem-qram: a QRAM allocation site executed twice in one output function (a loop or an "
                   "inlined call re-allocating the object)",
                   &site);
-  ctx.bind(&site, qramBase(ctx, o));
+  ctx.bind(&site, qramBase(ctx, soleQram(ctx, &site, site)));
 }
 
-// The end of a local QRAM's scope (llvm.lifetime.end): nothing is emitted here. The bus's item (every
-// store popped, then cqrt_qram_free) is Uncompute's, placed once nothing reads the bus; no access
-// follows the lifetime end, so the release is at or before the end of the object's life.
+// The end of a local QRAM's scope (llvm.lifetime.end) or of a heap QRAM (free, rule 16, 186): nothing is
+// emitted here (a heap QRAM has no host block to free). The bus's item (every store popped, then
+// cqrt_qram_free) is Uncompute's, placed once nothing reads the bus; no access follows the lifetime end
+// (an access after free is undefined, outside the domain), so the release is at or before the end of the
+// object's life, on every path, whether the free is conditional or not.
 void endQramLifetime(LoweringContext &ctx, ObjectId o, Instruction *at) {
-  if (!at || !isa<IntrinsicInst>(at))
-    unimplemented("mem-qram: free of a heap QRAM block (rule 20)", at);
+  auto *CB = dyn_cast_or_null<CallBase>(at);
+  bool lifetimeEnd = CB && isa<IntrinsicInst>(CB) &&
+                     cast<IntrinsicInst>(CB)->getIntrinsicID() == Intrinsic::lifetime_end;
+  if (!lifetimeEnd && !(CB && isFree(*CB)))
+    unimplemented("mem-qram: a QRAM lifetime end at other than lifetime.end or free (stackrestore, 192)", at);
+  (void)o;
+  Addr a = decompose(CB->getArgOperand(lifetimeEnd ? 1 : 0), ctx.M.getDataLayout());
   QramState &st = qramStates()[&ctx.out()];
-  for (auto &[root, q] : st.objs)
-    if (q.o == o)
-      return;
+  const Value *site = a.ok ? st.siteOf.lookup(a.root) : nullptr;
+  if (a.ok && st.objs.count(site ? site : a.root))
+    return;
   internalError("mem-qram: the lifetime end of a QRAM this function did not allocate", at);
+}
+
+// M5 (cq-arch 2026-11-01), CR §1.3: realloc of a heap QRAM is cqrt_qram_realloc_<W>(a, n) -> a' per
+// column, n the new size in cells (a quantum size: its upper bound), recorded with Uncompute (its _unc
+// after every store through a' was popped). a' replaces a for every access through the realloc result;
+// the result is bound to the same QRAM base (the same object, no cell moves).
+void reallocQram(LoweringContext &ctx, CallBase &CB) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  LLVMContext &C = ctx.M.getContext();
+  IRBuilder<> &B = ctx.B();
+  Type *i32 = Type::getInt32Ty(C), *i64 = Type::getInt64Ty(C);
+  ObjectId o = soleQram(ctx, &CB, CB);
+  const Value *old = getReallocatedOperand(&CB);
+  if (!old)
+    internalError("mem-qram: reallocQram of a call that is not a realloc", &CB);
+  if (soleQram(ctx, old, CB) != o)
+    internalError("mem-qram: a realloc whose result is another object than its operand", &CB);
+  if (ctx.currentFlag())
+    unimplemented("mem-qram: a realloc of a QRAM under a quantum predicate (the logical size would be a merge)", &CB);
+  Addr a = decompose(old, DL);
+  if (!a.ok || a.off || !a.terms.empty())
+    unimplemented("mem-qram: a realloc of a pointer that is not the block's root", &CB);
+  QramObj &q = qramObj(ctx, a.root, CB);
+  auto it = q.buses.find(a.root);
+  if (it == q.buses.end())
+    unimplemented("mem-qram: a realloc of a QRAM pointer root lowered after it", &CB);
+  SmallVector<Value *, 2> olds = it->second;
+  Attribute A = CB.getFnAttr(Attribute::AllocSize);
+  if (!A.isValid() || A.getAllocSizeArgs().second)
+    unimplemented("mem-qram: a realloc without a one-argument allocsize attribute", &CB);
+  const Value *size = CB.getArgOperand(A.getAllocSizeArgs().first);
+  Operand sz = ctx.operand(size);
+  Value *n;
+  if (sz.handle) {
+    uint64_t cells = upperBound(size, DL, CB) / q.elemBytes;
+    if (cells > UINT32_MAX)
+      unimplemented("mem-qram: a QRAM of more than 2^32 cells", &CB);
+    n = ConstantInt::get(i32, cells);
+  } else if (auto *c = dyn_cast<ConstantInt>(sz.v)) {
+    n = ConstantInt::get(i32, c->getZExtValue() / q.elemBytes);
+  } else {
+    n = B.CreateTrunc(B.CreateUDiv(B.CreateZExtOrTrunc(sz.v, i64), ConstantInt::get(i64, q.elemBytes)), i32);
+  }
+  SmallVector<Value *, 2> hs;
+  for (unsigned k = 0; k < q.cols.size(); ++k) {
+    abi::CoreSpec spec{abi::Core::QramRealloc, q.cols[k].w};
+    CallInst *a2 = ctx.emitCore(spec, {olds[k], n});
+    ctx.unc().recordCore(a2, spec, {Operand{olds[k], true}, Operand{n, false}}, 0);
+    hs.push_back(a2);
+  }
+  q.buses[&CB] = hs;
+  qramStates()[&ctx.out()].siteOf[&CB] = q.site;
+  ctx.bind(&CB, qramBase(ctx, o));
 }
 } // namespace cq::mem
