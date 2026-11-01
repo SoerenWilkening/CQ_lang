@@ -12,9 +12,9 @@
 //    handle), then one parameter per formal, an i32 handle where S's mask digit is 1, the formal's C
 //    type where it is 0; the result is an i32 handle when taint records it quantum (rule 18: "result
 //    taint is recorded per clone"), else the C type, void for void. The clone keeps the original's
-//    calling convention and carries no attributes but byval on a byval formal (cq-09xh; the call
-//    passes a snapshot of the caller's object taken at the call, byval, and the twin gets that
-//    snapshot). Its body is the spine's (construct()).
+//    calling convention and carries no attributes but byval on a byval formal the callee may write
+//    (cq-09xh; the call passes a snapshot of the caller's object taken at the call, byval, and the twin
+//    gets that snapshot); a read-only byval formal is the caller's pointer. Its body is the spine's (construct()).
 //    Aggregate and pointer formals and results (rules 21, 25, 26: field digits, fat-pointer triples,
 //    flattened results) and packed integer results are unimplemented here.
 //  - materialize has no TaintInfo in its signature, but the result kind is taint's record. It is
@@ -196,26 +196,26 @@ std::vector<FormalLayout> formalLayout(const TaintInfo &T, const Specialization 
     }
     fs.push_back(std::move(f));
   }
-  // The name's digits (taint's mask) must say the same, formal by formal.
+  // The name's digits (taint's mask) must say the same, formal by formal. A pointer formal's digits
+  // describe its pointee (one per cell or record field, '1' where the caller's cell holds a handle at
+  // the call, rule 20): the clone gets the caller's pointer either way and loads the handles from the
+  // cells (mem-slots' clone side); the twin reads them as the forward did (uncompute keeps every rail
+  // that may sit in the object until after the twin, and a write into it between the two is a
+  // barrier, cq-fwto). How many digits each pointer formal has is taint's (T1, not in Taint.h): with
+  // several pointer formals the digits are not split, and fieldMask alone gives the scalar formals'.
   const std::string &m = S.mask;
-  if (nPtr > 1)
-    unimplemented("calls: a clone with several pointer formals (the per-formal mask layout is taint's: T1)", at);
   if (nPtr == 0 && m.size() != need)
     unimplemented("calls: a clone whose mask has another digit count than its formals' scalar fields (a "
                   "packed-integer formal, 159: cq-0umd)",
                   at);
-  if (nPtr == 1 && m.size() <= need)
+  if (nPtr > 0 && m.size() < need + nPtr)
     internalError("calls: a pointer formal with no mask digit", at);
+  if (nPtr > 1)
+    return fs;
   size_t d = 0;
   for (FormalLayout &f : fs) {
     if (f.pointer) {
-      size_t n = m.size() - need;
-      for (size_t k = 0; k < n; ++k)
-        if (m[d + k] != '0')
-          unimplemented("calls: a pointer formal whose pointee holds a handle at the call (rule 20 slot "
-                        "pointer: the caller-side old handles, phase 2)",
-                        at);
-      d += n;
+      d += m.size() - need;
       continue;
     }
     for (bool q : f.q)
@@ -352,6 +352,12 @@ struct CloneCall {
   SmallVector<Value *, 4> slotOuts;
 };
 
+// A byval formal the callee may write is a private copy (cq-09xh): the clone keeps byval and the call
+// passes a snapshot. A read-only byval formal needs no copy: the clone reads the caller's object, as
+// the forward call ran, and the twin reads it unchanged (a write into it before the twin is an
+// uncompute barrier, cq-fwto). 164: a slot record (handle cells) passed read-only by value.
+bool byvalCopied(const Argument &A) { return A.hasByValAttr() && !A.onlyReadsMemory(); }
+
 // Does the caller's actual point into a slot object (rule 20)?
 bool pointsToSlot(LoweringContext &ctx, const Value *actual) {
   for (ObjectId o : ctx.T.provenance(actual, ctx.S))
@@ -405,7 +411,11 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
       if (!fs[i].q[k] && o.handle)
         internalError("calls: a rail passed where the clone's mask is classical", &CB);
       Value *v = o.v;
-      if (CB.isByValArgument(i)) {
+      if (CB.isByValArgument(i) && byvalCopied(*S.F->getArg(i))) {
+        if (pointsToSlot(ctx, a))
+          unimplemented("calls: a slot record passed by value to a clone that may write its copy (the copy "
+                        "would need the record's lowered layout on both sides: rules 20, 26)",
+                        &CB);
         // byval (cq-09xh): the clone gets a copy of the object as of the call. The copy is made from
         // a snapshot the caller takes here, and the snapshot is what the forward and the twin receive:
         // the twin, run later, recomputes from the values the forward saw, whatever the caller has
@@ -758,11 +768,12 @@ Function *materialize(Module &M, const Specialization &S) {
   }
   Function *NF = Function::Create(FT, GlobalValue::InternalLinkage, name, &M);
   NF->setCallingConv(S.F->getCallingConv());
-  // A byval formal stays byval (cq-09xh): the clone writes its own copy, never the caller's object.
+  // A byval formal the callee may write stays byval (cq-09xh): the clone writes its own copy, never
+  // the caller's object. A read-only one is the caller's pointer (byvalCopied).
   unsigned p = S.ctl ? 1 : 0;
   std::vector<FormalLayout> fl = formalLayout(T, S, S.F);
   for (Argument &A : S.F->args()) {
-    if (A.hasByValAttr()) {
+    if (byvalCopied(A)) {
       NF->addParamAttr(p, Attribute::getWithByValType(C, A.getParamByValType()));
       if (MaybeAlign al = A.getParamAlign())
         NF->addParamAttr(p, Attribute::getWithAlignment(C, *al));
