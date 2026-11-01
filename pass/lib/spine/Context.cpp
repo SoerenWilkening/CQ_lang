@@ -27,6 +27,36 @@ std::string describe(const Value *v) {
   return os.str();
 }
 
+// cq-ylrk: a runtime call's literal undef or poison argument (or such an element of a constant vector
+// or aggregate) is pinned to 0, a refinement LLVM itself may make. Uncompute spells a _unc from its
+// forward call's arguments, and two uses of one undef may differ (each use of undef is free), so a
+// select template on an undef arm and its _unc would read different values: the rail freed dirty.
+Constant *pinUndef(Constant *C) {
+  if (isa<UndefValue>(C))
+    return Constant::getNullValue(C->getType());
+  if (!isa<ConstantAggregate>(C))
+    return C;
+  SmallVector<Constant *, 8> elts;
+  bool changed = false;
+  for (unsigned i = 0; i < C->getNumOperands(); ++i) {
+    Constant *e = cast<Constant>(C->getOperand(i)), *pe = pinUndef(e);
+    changed |= pe != e;
+    elts.push_back(pe);
+  }
+  if (!changed)
+    return C;
+  if (auto *VT = dyn_cast<VectorType>(C->getType()); VT && isa<ConstantVector>(C))
+    return ConstantVector::get(elts);
+  if (auto *ST = dyn_cast<StructType>(C->getType()))
+    return ConstantStruct::get(ST, elts);
+  return ConstantArray::get(cast<ArrayType>(C->getType()), elts);
+}
+
+Value *pinned(Value *v) {
+  auto *C = dyn_cast<Constant>(v);
+  return C && !isa<GlobalValue>(C) ? pinUndef(C) : v;
+}
+
 // cq-8un4: the loop units running now, innermost last, per spine state (a child context shares its
 // parent's). Pushed and popped by the walker around its loops:: call (pushLoopUnit / popLoopUnit).
 thread_local DenseMap<const spine::Shared *, std::vector<const Loop *>> loopUnits;
@@ -214,7 +244,11 @@ BasicBlock *LoweringContext::block(const BasicBlock *orig) {
   return it->second;
 }
 
-Value *LoweringContext::emitTemplate(const abi::TemplateSpec &spec, ArrayRef<Operand> ops, const Value *orig) {
+Value *LoweringContext::emitTemplate(const abi::TemplateSpec &spec, ArrayRef<Operand> opsIn, const Value *orig) {
+  SmallVector<Operand, 4> ops(opsIn.begin(), opsIn.end());
+  for (Operand &o : ops)
+    if (!o.handle)
+      o.v = pinned(o.v);   // cq-ylrk
   FunctionCallee fc = abi::declare(M, spec, /*unc=*/false);
   FunctionType *ft = fc.getFunctionType();
   if (ft->getNumParams() != ops.size())
@@ -239,7 +273,10 @@ Value *LoweringContext::emitTemplate(const abi::TemplateSpec &spec, ArrayRef<Ope
   return call;
 }
 
-CallInst *LoweringContext::emitCore(const abi::CoreSpec &spec, ArrayRef<Value *> args) {
+CallInst *LoweringContext::emitCore(const abi::CoreSpec &spec, ArrayRef<Value *> argsIn) {
+  SmallVector<Value *, 4> args;
+  for (Value *a : argsIn)
+    args.push_back(pinned(a));   // cq-ylrk
   FunctionCallee fc = abi::declare(M, spec);
   FunctionType *ft = fc.getFunctionType();
   if (ft->getNumParams() != args.size())
