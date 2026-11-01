@@ -1,9 +1,9 @@
 # CQ_spec pin, written by tools/spec_lock.py --write. Spec: examples/, CONSTRUCTION_RULES.md, CQ.h.
 # Also locked because we consume them: BACKEND_ABI.md (non-normative, CONSTRUCTION_RULES.md wins over it)
 # and _tools/drivers.txt (input data). A drift in either of those two is a re-pin, not a spec issue.
-commit 7bdd9cd7956370097e7f1536e613f361036760aa
+commit cbda16a6b9a1ddf2b9acc00b566fd811850897c6
 4298e0cc4d87721844e45980371d2b775e18d6c912756d176dc289868f58c22c  BACKEND_ABI.md
-52bd77345df5a71ad3d684948bcbb4f5bdec40a14f869cdfe3250357f3969da7  CONSTRUCTION_RULES.md
+9104a8ef308976be0af7e942bd4ae010c7a6462e7e7a8790d6f3d98caf7c450a  CONSTRUCTION_RULES.md
 4290e32abc609eb893d5f8baa3f412164a7452493abbbe65f1b85e98ef291a12  CQ.h
 0b304021b1b55dab81353c47d278fd8abc2732d998815ae22fcca744f38c2466  _tools/drivers.txt
 721d422960294e2fe9c8821f9365f47679bd71dc815f2594c84f2cd3de8f7611  examples/01_add_classical_const/add_classical_const.O1.ll
@@ -242,7 +242,7 @@ b7fff76bcf151a0e8e2b24be194798222d9c66d967d94380c872aa4e5cc8bb12  examples/161_o
 80831e01eb25d6eab50ac7930f643ea8ea0233fa867065604d64566170544555  examples/162_quantum_return_entry/quantum_return_entry.lowered.ll
 277ffa0447ddfa32699b62a8bcb8c1b1aab54c2e0c074722ae9e8b850fc7b5f6  examples/163_sret_return/sret_return.O1.ll
 57c04b4156328ddb43f621899d0eee0fb8edf4f4ffa97868f61443eff3d74eb6  examples/163_sret_return/sret_return.c
-9eb3906cf0d3743f0cbcfefb560b4dc3d21a47c905956b90125644a1da1c3374  examples/163_sret_return/sret_return.lowered.ll
+84a8a1a0dffd90d7a9f8d42090fd510c8221cff3bdff81cd2d2de6fb756ae5fa  examples/163_sret_return/sret_return.lowered.ll
 37c5de777067ef953f6d6984d4dcf3a963f9fd2a8b89c3705a5a39f53209276a  examples/164_byval_large/byval_large.O1.ll
 23f6d37d07f69a12ee4a3b98c0d8fc2d5ce1727203501b4385a4b0f100891a93  examples/164_byval_large/byval_large.c
 fc8ab47df79f33a3b55c106407c75a22cfd8bbbc3feb5eca0bc391756911e33a  examples/164_byval_large/byval_large.lowered.ll
