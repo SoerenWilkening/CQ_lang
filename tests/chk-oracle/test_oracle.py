@@ -1081,5 +1081,72 @@ int handled(int x0, double t, int k) {
             self.counts(o1, sp, [(S(0, i32(5), HALF, i32(3)), want), (S(0, i32(1), HALF, i32(3)), want)])
 
 
+class RunnerLeases(unittest.TestCase):
+    """cq-5f7p: a runner another thread holds is never closed by the LRU eviction, so two evaluations
+    in flight at once (threads of one process, MAX_RUNNERS small) never lose their runner directory
+    (114 and 118 errored 'FileNotFoundError: .../cqo-run.*/samples' under load)."""
+
+    SRC = "int f_q(int x0, double t) { int x = x0; cq_theta(&x, t); return x + %d; }\n"
+
+    def setUp(self):
+        oracle.close_runners()
+        self.max = oracle.MAX_RUNNERS
+        oracle.MAX_RUNNERS = 1   # every lease of a second executable evicts the first, if idle
+
+    def tearDown(self):
+        oracle.MAX_RUNNERS = self.max
+        oracle.close_runners()
+
+    def prog(self, n: int):
+        name = f"lease{n}"
+        o1 = compile_c(name, self.SRC % n)
+        sp = spec(name, "int f_q(int,double)", [("f_q", ["int", "double"])])
+        samples = [{"call": 0, "args": [i32(v), HALF]} for v in range(20)]
+        exe = oracle.executable(o1, sp, oracle._pointer_samples(sp, samples))
+        return exe, sp, samples, oracle.isolated(oracle.program(o1)[0])
+
+    def batch(self, exe, sp, samples, iso):
+        return [next(e["v"] for e in r.events if e["ev"] == "ret")
+                for r in oracle._run_batch(exe, sp, samples, oracle.DEFAULT_TIMEOUT_MS, oracle.DEFAULT_TRIPCAP, iso)]
+
+    def test_eviction_spares_a_leased_runner(self):
+        (e1, s1, x1, i1), (e2, s2, x2, i2) = self.prog(1), self.prog(2)
+        with oracle._lease(e1, 0) as r1:
+            with oracle._lease(e2, 0) as r2:   # before cq-5f7p this closed r1 and removed its directory
+                self.assertTrue(r1.dir.is_dir())
+                r2.run(s2, x2, oracle.DEFAULT_TIMEOUT_MS, oracle.DEFAULT_TRIPCAP, i2)
+            runs = r1.run(s1, x1, oracle.DEFAULT_TIMEOUT_MS, oracle.DEFAULT_TRIPCAP, i1)
+            self.assertEqual(len(runs), len(x1))
+        with oracle._lease(e2, 0):             # now r1 is idle: it is evicted and closed
+            pass
+        self.assertFalse(r1.dir.exists())
+
+    def test_two_evaluations_concurrently(self):
+        import threading
+        progs = [self.prog(3), self.prog(4)]
+        want = [[i32(v + 3) for v in range(20)], [i32(v + 4) for v in range(20)]]
+        start = threading.Barrier(2)
+        errors, got = [], [[], []]
+
+        def one(j):
+            try:
+                start.wait()
+                for _ in range(40):
+                    got[j].append(self.batch(*progs[j]))
+            except Exception as e:  # noqa: BLE001  (reported below, with its thread)
+                errors.append(f"{j}: {type(e).__name__}: {e}")
+
+        ts = [threading.Thread(target=one, args=(j,)) for j in (0, 1)]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join()
+        self.assertEqual(errors, [])
+        for j in (0, 1):
+            self.assertEqual(len(got[j]), 40)
+            for g in got[j]:
+                self.assertEqual([int(v, 16) for v in g], [int(v, 16) for v in want[j]])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

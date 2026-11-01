@@ -96,6 +96,7 @@ CLI: ``python3 -m cqcheck.oracle <NN_name|O1.ll> [--samples JSON] [--driver JSON
 from __future__ import annotations
 
 import atexit
+import contextlib
 import ctypes
 import dataclasses
 import hashlib
@@ -604,6 +605,10 @@ class Runner:
         self.dir = Path(tempfile.mkdtemp(prefix="cqo-run."))
         self.lock = threading.Lock()
         self.pid = os.getpid()   # a runner belongs to the Python process that started it
+        # cq-5f7p: leases (_lease) and retirement are counted under _RUNNERS_LOCK; a retired runner
+        # (evicted from _RUNNERS, or found dead) is closed by its last lessee, never under a lease
+        self.users = 0
+        self.retired = False
         self.p = subprocess.Popen([str(exe), "--serve"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                   stderr=subprocess.DEVNULL, text=True, bufsize=1)
 
@@ -652,31 +657,55 @@ MAX_RUNNERS = 8   # idle runner processes kept per Python process
 _RUNNERS_LOCK = threading.Lock()
 
 
-def _runner(exe: Path, part: int) -> Runner:
+def _retire(r: Runner) -> bool:
+    """Under _RUNNERS_LOCK: mark `r` retired (no longer in _RUNNERS); True when the caller is to close
+    it now, i.e. no lease holds it. A leased one is closed by its last lessee (cq-5f7p: closing it
+    under a lease removed its directory between _lease and run, a FileNotFoundError on 'samples')."""
+    r.retired = True
+    return r.users == 0 and r.pid == os.getpid()
+
+
+@contextlib.contextmanager
+def _lease(exe: Path, part: int):
+    """The runner of (exe, part), held for the body: no other thread closes it meanwhile."""
     key = (str(exe), part)
+    close = []
     with _RUNNERS_LOCK:
         r = _RUNNERS.pop(key, None)
         if r is not None and not r.alive():
-            if r.pid == os.getpid():
-                r.close()
+            if _retire(r):
+                close.append(r)
             r = None
-        old = []
-        while len(_RUNNERS) >= MAX_RUNNERS:
-            old.append(_RUNNERS.pop(next(iter(_RUNNERS))))
-        r = _RUNNERS[key] = r or Runner(exe)
-    for o in old:
-        with o.lock:   # never while a batch runs on it
+        if r is None:
+            r = Runner(exe)
+        r.users += 1
+        _RUNNERS[key] = r                      # most recently used last
+        # past MAX_RUNNERS the least recently used idle runners go; leased ones stay until released
+        for k in [k for k, o in _RUNNERS.items() if o.users == 0][:max(0, len(_RUNNERS) - MAX_RUNNERS)]:
+            o = _RUNNERS.pop(k)
+            if _retire(o):
+                close.append(o)
+    for o in close:
+        with o.lock:
             o.close()
-    return r
+    try:
+        yield r
+    finally:
+        with _RUNNERS_LOCK:
+            r.users -= 1
+            last = r.retired and r.users == 0 and r.pid == os.getpid()
+        if last:
+            with r.lock:
+                r.close()
 
 
 def close_runners() -> None:
     """End every runner process of this Python process (also run at exit)."""
     with _RUNNERS_LOCK:
-        rs = list(_RUNNERS.values())
+        rs = [r for r in _RUNNERS.values() if _retire(r)]   # a leased one closes at its release
         _RUNNERS.clear()
     for r in rs:
-        if r.pid == os.getpid():
+        with r.lock:
             r.close()
 
 
@@ -744,11 +773,14 @@ def _run_batch(exe: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]], t
     from concurrent.futures import ThreadPoolExecutor
     n = 1 if whole else max(1, min(PARTS, _jobs_cap(), len(samples) // MIN_PART))
     if n == 1:
-        return _runner(exe, 0).run(spec, samples, timeout_ms, tripcap, iso, trips_only)
+        with _lease(exe, 0) as r:
+            return r.run(spec, samples, timeout_ms, tripcap, iso, trips_only)
     parts = [list(range(j, len(samples), n)) for j in range(n)]
     with ThreadPoolExecutor(max_workers=n) as ex:
-        done = list(ex.map(lambda jx: _runner(exe, jx[0]).run(spec, [samples[i] for i in jx[1]], timeout_ms,
-                                                              tripcap, iso, trips_only), enumerate(parts)))
+        def part(jx):
+            with _lease(exe, jx[0]) as r:
+                return r.run(spec, [samples[i] for i in jx[1]], timeout_ms, tripcap, iso, trips_only)
+        done = list(ex.map(part, enumerate(parts)))
     runs: List[Optional[SampleRun]] = [None] * len(samples)
     for ix, part in zip(parts, done):
         for i, r in zip(ix, part):
