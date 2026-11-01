@@ -1757,6 +1757,61 @@ void fatal_resolve_at_bypass() {
   f.U.resolveAt(f.ret(0), {s});
 }
 
+// cq-fwto: a clone with a classical pointer formal, recorded as a template (one result). A later store
+// into the object is a barrier: its twin goes before it when its last use does (pointee_before_store),
+// and is unimplemented when the result is still read after the store (fatal_pointee_write).
+const char *kPointee = R"(
+declare i32 @__cq_q_g_01(ptr, i32)
+define i64 @f(i32 %a0, double %th, i64 %q) {
+entry:
+  %s = alloca i64, align 8
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  store i64 %q, ptr %s, align 8
+  %r = call i32 @__cq_q_g_01(ptr %s, i32 %x)
+  %t = call i32 @cq_template_add_i32_hl(i32 %r, i32 1)
+  store i64 7, ptr %s, align 8
+  %m = call i32 @cqrt_measure_i32(i32 %t)
+  %u = call i32 @cq_template_add_i32_hl(i32 %r, i32 2)
+  ret i64 0
+})";
+
+void pointee_before_store() {
+  Fx f(kPointee);
+  // Without %u: the twin of %r follows %t and precedes the store.
+  f.I("u")->eraseFromParent();
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  f.T("r", "lh");
+  RailId t = f.T("t", "hl");
+  f.U.setRole(t, Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%s = alloca i64, align 8",
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "store i64 %q, ptr %s, align 8",
+                        "%r = call i32 @__cq_q_g_01(ptr %s, i32 %x)",
+                        "%t = call i32 @cq_template_add_i32_hl(i32 %r, i32 1)",
+                        "call void @__cq_q_g_01_unc(i32 %r, ptr %s, i32 %x)",
+                        "call void @cqrt_free(i32 %r)",
+                        "store i64 7, ptr %s, align 8",
+                        "%m = call i32 @cqrt_measure_i32(i32 %t)",
+                        "ret i64 0",
+                    });
+}
+
+void fatal_pointee_write() {
+  Fx f(kPointee);
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  f.T("r", "lh");
+  RailId t = f.T("t", "hl");
+  f.T("u", "hl");
+  f.U.setRole(t, Role::Measured);
+  f.U.flushAtExit(f.ret());
+}
+
 // U2: one result kept and the other not: the twin would zero the kept one.
 void fatal_call_mixed() {
   Fx f(kCall2m);
@@ -2674,6 +2729,7 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"call_slotout_unused", call_slotout_unused},
     {"call_reads", call_reads},
     {"resolve_at", resolve_at},
+    {"pointee_before_store", pointee_before_store},
     {"merge_all_arms_kept", merge_all_arms_kept},
     {"merge_template_then_garbage", merge_template_then_garbage},
     {"merge_noted_use", merge_noted_use},
@@ -2691,6 +2747,7 @@ const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_use_after_free", fatal_use_after_free},
     {"fatal_cell_load_empty", fatal_cell_load_empty},
     {"fatal_call_mixed", fatal_call_mixed},
+    {"fatal_pointee_write", fatal_pointee_write},
     {"fatal_resolve_at_used", fatal_resolve_at_used},
     {"fatal_resolve_at_bypass", fatal_resolve_at_bypass},
     {"fatal_operand_mismatch", fatal_operand_mismatch},

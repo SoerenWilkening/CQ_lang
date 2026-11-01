@@ -903,8 +903,56 @@ struct Uncompute::Impl {
     return {bb, before};
   }
 
+  enum class Bar { Hit, Write, AliasHit, PointeeWrite };
+  // cq-fwto (orchestrator decision under CR rule 5, NORTHSTAR p2): a clone's twin reads the objects its
+  // pointer arguments point to when it runs, so every instruction after the forward call that may write
+  // one of them is a barrier of the call's item: a store, an atomic or a memory intrinsic whose address
+  // may overlap the object, or a call (other than one uncompute emitted or one that only reads memory)
+  // taking a pointer that may (not a runtime gate or template). A clone call counts: a classical store
+  // inside it is not visible here.
+  template <typename AfterFn>
+  void pointeeWrites(CallInst *fwd, AfterFn &&isAfter, SmallVectorImpl<std::pair<Instruction *, Bar>> &out) const {
+    const DataLayout &DL = fwd->getModule()->getDataLayout();
+    SmallVector<Cell, 4> objs;
+    for (Value *a : fwd->args())
+      if (a->getType()->isPointerTy())
+        objs.push_back({a, 0});
+    if (objs.empty())
+      return;
+    auto hits = [&](const Value *p, uint64_t size) {
+      return any_of(objs, [&](const Cell &c) { return mayAlias(c, {p, size}, DL); });
+    };
+    for (Instruction &i : instructions(*fwd->getFunction())) {
+      if (&i == fwd || emitted.count(&i) || !isAfter(&i))
+        continue;
+      bool w = false;
+      if (auto *st = dyn_cast<StoreInst>(&i))
+        w = hits(st->getPointerOperand(), accessSize(st->getValueOperand()->getType(), DL));
+      else if (auto *rmw = dyn_cast<AtomicRMWInst>(&i))
+        w = hits(rmw->getPointerOperand(), 0);
+      else if (auto *cx = dyn_cast<AtomicCmpXchgInst>(&i))
+        w = hits(cx->getPointerOperand(), 0);
+      else if (auto *mi = dyn_cast<MemIntrinsic>(&i))
+        w = hits(mi->getRawDest(), 0);
+      else if (auto *cb = dyn_cast<CallBase>(&i)) {
+        if (auto *ii = dyn_cast<IntrinsicInst>(cb); ii && (ii->isLifetimeStartOrEnd() || ii->isAssumeLikeIntrinsic()))
+          continue;
+        if (cb->onlyReadsMemory())
+          continue;
+        // Runtime gates and templates (a QROM table read included) write no C object.
+        if (Function *cf = cb->getCalledFunction();
+            cf && (cf->getName().starts_with("cq_template_") || cf->getName().starts_with("cqrt_")))
+          continue;
+        for (Value *a : cb->args())
+          if (a->getType()->isPointerTy() && hits(a, 0))
+            w = true;
+      }
+      if (w)
+        out.push_back({&i, Bar::PointeeWrite});
+    }
+  }
+
   // The barrier events of g's item: (event, kind) that must not precede the item.
-  enum class Bar { Hit, Write, AliasHit };
   SmallVector<std::pair<Instruction *, Bar>, 4> barriers(RailId g) const {
     SmallVector<std::pair<Instruction *, Bar>, 4> out;
     auto eventsOf = [&](RailId x, auto &&isAfterBase, bool popsFirst = false) {
@@ -947,6 +995,8 @@ struct Uncompute::Impl {
     for (unsigned rec : undone(g)) {
       const Instruction *f = records[rec].forward;
       auto afterRec = [&](const Instruction *e) { return e != f && after(e, f); };
+      if (info[rec].kind == RecKind::Call || info[rec].kind == RecKind::Template) // a clone call (one result: a template record)
+        pointeeWrites(cast<CallInst>(records[rec].forward), afterRec, out);
       // A2: a later store on a load's bus is popped before the load is un-copied (not a barrier),
       // unless the bus keeps its stores.
       bool popsFirst = info[rec].kind == RecKind::QramLoad;
@@ -1595,6 +1645,11 @@ struct Uncompute::Impl {
         violated = false;
       if (!violated)
         continue;
+      if (kind == Bar::PointeeWrite)
+        unimplemented("uncompute: a write that may change an object a clone call's pointer argument points to lies "
+                      "between the call and its twin's earliest placement, " + describe(r.handle) +
+                          " (cq-fwto: the twin reads the object when it runs)",
+                      e);
       if (kind == Bar::Write)
         unimplemented("uncompute: an in-place write on an operand rail precedes the earliest uncompute of " +
                           describe(r.handle),
