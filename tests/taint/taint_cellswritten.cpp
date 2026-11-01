@@ -4,7 +4,7 @@
 // a quantum store at a variable offset (unimplemented, in a forked child). cq-ee23: stores through
 // pointers derived by ptrtoint/add/inttoptr ({2}, 31-style C '*(int*)((uintptr_t)p+8)'), freeze ({1}),
 // insertvalue/extractvalue ({3}); an integer made of the formal stored to memory is the escape
-// (unimplemented).
+// (unimplemented). T3: cellsRotated of a rotation in place through the formal ({1}; cellsWritten {}).
 #include <cstdio>
 #include <string>
 #include <sys/wait.h>
@@ -150,6 +150,26 @@ define internal void @intescape(i32 %v, ptr %p) {
   ret void
 }
 
+define i32 @e4(i32 %x0, double %th, double %t) {
+  %o = alloca [4 x i32], align 4
+  %x = tail call i32 @cq_theta_si32(i32 %x0, double %th)
+  %g = getelementptr inbounds i8, ptr %o, i64 4
+  store i32 %x, ptr %g, align 4
+  call void @rot(ptr %o, double %t, i32 %x)
+  %l = load i32, ptr %g, align 4
+  %m = tail call i32 @cq_measure_si32(i32 %l)
+  ret i32 %m
+}
+
+; T3: *(p + 1) = cq_theta(*(p + 1)): a rotation in place of cell 1, no handle write
+define internal void @rot(ptr %p, double %t, i32 %x) {
+  %q = getelementptr inbounds i8, ptr %p, i64 4
+  %v = load i32, ptr %q, align 4
+  %r = tail call i32 @cq_theta_si32(i32 %v, double %t)
+  store i32 %r, ptr %q, align 4
+  ret void
+}
+
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 )";
@@ -180,13 +200,22 @@ int main() {
   struct Case { const char *fn; unsigned arg; SmallVector<unsigned, 4> want; };
   for (const Case &c : {Case{"split", 2, {0}}, Case{"split", 0, {}}, Case{"second", 1, {1}},
                         Case{"classical", 1, {}}, Case{"viaint", 1, {2}}, Case{"viafreeze", 1, {1}},
-                        Case{"viaagg", 1, {3}}}) {
+                        Case{"viaagg", 1, {3}}, Case{"rot", 0, {}}}) {
     const cq::Specialization *S = cloneOf(T, M->getFunction(c.fn));
     CHECK(S, "no clone of @" << c.fn);
     if (!S)
       continue;
     SmallVector<unsigned, 4> got = T.cellsWritten(*S, c.arg);
     CHECK(got == c.want, "@" << c.fn << " formal " << c.arg << ": " << str(got) << ", want " << str(c.want));
+  }
+  // T3: cellsRotated.
+  for (const Case &c : {Case{"rot", 0, {1}}, Case{"second", 1, {}}, Case{"split", 2, {}}}) {
+    const cq::Specialization *S = cloneOf(T, M->getFunction(c.fn));
+    CHECK(S, "no clone of @" << c.fn);
+    if (!S)
+      continue;
+    SmallVector<unsigned, 4> got = T.cellsRotated(*S, c.arg);
+    CHECK(got == c.want, "@" << c.fn << " formal " << c.arg << " rotated: " << str(got) << ", want " << str(c.want));
   }
 
   // Unimplemented shapes, each in a child.

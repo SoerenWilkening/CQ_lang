@@ -37,6 +37,11 @@ public:
   // T2 (cq-arch 2026-11-01): the pointee cells (ascending cell indices of the object argNo points to) that
   // the clone `callee` may store a handle into (rules 18, 20); empty for a non-pointer formal.
   llvm::SmallVector<unsigned, 4> cellsWritten(const Specialization &callee, unsigned argNo) const;
+  // T3 (cq-arch 2026-11-01, CR rules 5, 18, 20): the pointee cells (ascending cell indices of the object
+  // argNo points to, at the size of the access) that the clone `callee` may apply a non-diagonal gate to
+  // (cq_theta through the formal or a pointer derived from it); empty for a non-pointer formal.
+  // Unimplemented: a variable offset, accesses of several sizes, an escape of the formal.
+  llvm::SmallVector<unsigned, 4> cellsRotated(const Specialization &callee, unsigned argNo) const;
   ObjectId objectOf(const llvm::Value *siteOrGlobal) const;
   ObjClass classOf(ObjectId) const;
   bool mayHoldHandle(ObjectId) const;

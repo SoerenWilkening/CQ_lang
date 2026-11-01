@@ -3530,8 +3530,21 @@ const PtrInfo &ptrOrDie(const ImplState &I, const SpecState &SS, const llvm::Val
 // store's size. Unimplemented: a write through the formal at a variable offset, by a memory
 // intrinsic, an atomic or a call, an escape of the formal, a pointee offset that differs between the
 // callers, stores of several sizes, or an offset that is not a multiple of the size.
-llvm::SmallVector<unsigned, 4> TaintInfo::cellsWritten(const Specialization &S, unsigned argNo) const {
-  const ImplState &I = needImpl(impl);
+namespace {
+// True when SI stores back a cq_theta of a load of the cell it stores to: a rotation of the rail the
+// cell holds, in place (124's step: *r = cq_theta(*r)); the cell keeps its handle.
+bool rotatesInPlace(const llvm::StoreInst *SI) {
+  auto *C = dyn_cast<llvm::CallInst>(SI->getValueOperand());
+  const llvm::Function *G = C ? C->getCalledFunction() : nullptr;
+  if (!G || !G->getName().starts_with("cq_theta_") || C->arg_size() < 1)
+    return false;
+  auto *L = dyn_cast<llvm::LoadInst>(C->getArgOperand(0));
+  return L && L->getPointerOperand() == SI->getPointerOperand() && L->getType() == SI->getValueOperand()->getType();
+}
+
+// T2 cellsWritten (rotated = false) and T3 cellsRotated (rotated = true): one walk over the formal.
+llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &T, const Specialization &S,
+                                           unsigned argNo, bool rotated) {
   SpecState *SS = stateOf(I, S);
   llvm::Function *F = SS->F;
   if (argNo >= F->arg_size() || !F->getArg(argNo)->getType()->isPointerTy())
@@ -3542,7 +3555,11 @@ llvm::SmallVector<unsigned, 4> TaintInfo::cellsWritten(const Specialization &S, 
   const PtrInfo &fp = ptrOrDie(I, *SS, A, tmp);
   SmallVector<ObjectId, 4> objs = objectsFor(I, fp);
   auto refuse = [&](const llvm::Twine &why, const llvm::Value *at) {
-    unimplemented(("taint: cellsWritten: " + why + " (T2, a clone's writes through a pointer formal)").str(), at);
+    unimplemented(("taint: " + llvm::Twine(rotated ? "cellsRotated" : "cellsWritten") + ": " + why +
+                   (rotated ? " (T3, a clone's rotations through a pointer formal)"
+                            : " (T2, a clone's writes through a pointer formal)"))
+                      .str(),
+                  at);
   };
   struct W { int64_t off; uint64_t size; const llvm::StoreInst *st; };
   SmallVector<W, 4> writes;
@@ -3652,11 +3669,14 @@ llvm::SmallVector<unsigned, 4> TaintInfo::cellsWritten(const Specialization &S, 
   for (const W &w : writes) {
     std::optional<int64_t> base = fp.exact();
     bool handle = S.ctl || lanesOfValue(I, *SS, w.st->getValueOperand()).any() ||
-                  lanesOfValue(I, *SS, w.st->getPointerOperand()).any() || controlTainted(w.st->getParent(), S);
+                  lanesOfValue(I, *SS, w.st->getPointerOperand()).any() || T.controlTainted(w.st->getParent(), S);
     for (ObjectId o : objs)
       if (I.objects[o].cellHandle(base ? std::optional<int64_t>(*base + w.off) : std::nullopt, w.size))
         handle = true;
-    if (!handle)
+    // T3: a rotation in place is no handle write (the cell keeps its rail); it is the rotated cell.
+    if (rotatesInPlace(w.st) != rotated)
+      continue;
+    if (!handle && !rotated)
       continue;
     if (!base)
       refuse("a pointee offset that differs between the clone's callers", w.st);
@@ -3672,6 +3692,19 @@ llvm::SmallVector<unsigned, 4> TaintInfo::cellsWritten(const Specialization &S, 
   }
   llvm::sort(out);
   return out;
+}
+} // namespace
+
+llvm::SmallVector<unsigned, 4> TaintInfo::cellsWritten(const Specialization &S, unsigned argNo) const {
+  return formalCells(needImpl(impl), *this, S, argNo, false);
+}
+
+// T3 (cq-arch 2026-11-01; CR rules 5, 18, 20): the cells of the object formal argNo points to that the
+// clone S may apply a non-diagonal gate to: a store back of cq_theta(load of the same cell) through the
+// formal (constant offsets from it), the rotation in place of the rail the cell holds. The same walk and
+// refusals as cellsWritten; a pointer passed on to a call is unimplemented there (no transitive answer).
+llvm::SmallVector<unsigned, 4> TaintInfo::cellsRotated(const Specialization &S, unsigned argNo) const {
+  return formalCells(needImpl(impl), *this, S, argNo, true);
 }
 
 llvm::ArrayRef<ObjectId> TaintInfo::provenance(const llvm::Value *ptr, const Specialization &S) const {
