@@ -4635,6 +4635,25 @@ void cleanSuperseded(LoweringContext &ctx, FnState &st, const Site &s, const Reg
   st.ruBase[s.o] = base.v;
 }
 
+// cq-m3mu (CR rule 10): the rule 10 prep a stored value is, through in-place cq_theta rotations of it:
+// a cq_theta of a classical value under a quantum predicate (rot-cry's register, an Ry superposition
+// that exists only where its arm runs), else nullptr.
+const CallInst *statePrepOf(LoweringContext &ctx, const Value *v) {
+  for (unsigned depth = 0; depth < 64; ++depth) {
+    auto *CI = dyn_cast<CallInst>(v);
+    const Function *F = CI ? CI->getCalledFunction() : nullptr;
+    if (!F || !F->getName().starts_with("cq_theta_") || CI->arg_size() != 2)
+      return nullptr;
+    const Value *x = CI->getArgOperand(0);
+    if (ctx.T.isQuantum(x, ctx.S)) {
+      v = x;   // in place on an existing rail: the prep, if any, is below it
+      continue;
+    }
+    return ctx.preds().block(CI->getParent()).quantumPart(ctx.T, ctx.S).isTop() ? nullptr : CI;
+  }
+  return nullptr;
+}
+
 } // namespace
 
 void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
@@ -4755,6 +4774,20 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
     }
     if (!val.handle && s.info->boolCells)
       val.v = B.CreateTrunc(val.v, Type::getInt1Ty(ctx.M.getContext()));
+    // cq-m3mu: a rule 10 prep stored into the cell under its predicate. In C the cell IS the prepared
+    // register (Ry superposition where the arm ran, the old value elsewhere); rule 10 builds that as
+    // one rail (xorc then controlled Ry onto the register), never a select copy of the rotated rail,
+    // which would copy a label of the superposition and leave the prep's rail entangled (125). The
+    // cell as rule 10's register is not built.
+    if (const CallInst *prep = val.handle ? statePrepOf(ctx, v) : nullptr) {
+      std::string d;
+      raw_string_ostream os(d);
+      prep->printAsOperand(os, false);
+      unimplemented("mem-slots: a rule 10 state prep (" + os.str() +
+                        ") stored into a slot cell under a quantum predicate: the cell as rule 10's register "
+                        "is not built (a select merge would copy the rotated rail, cq-m3mu)",
+                    &stI);
+    }
     const Pred &p = ctx.currentPredicate();
     Value *sel = selectChain(ctx, {{p, val}, {!p, old}}, w);
     val = Operand{sel, true};
