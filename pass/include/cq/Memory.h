@@ -20,6 +20,15 @@ void lowerSlotAtomic(LoweringContext &, llvm::Instruction &rmwOrCmpxchg);
 // value for a cell no handle reaches. Nothing is written; reading does not change roles.
 llvm::SmallVector<Operand, 8> readSlotCells(LoweringContext &, const llvm::Value *ptr, llvm::Type *cellTy,
                                             uint64_t n, llvm::Instruction &at);
+// M1 (cq-arch 2026-11-01). mem-slots, consumer calls (CR rules 18, 20, §1.4): a pointer to a caller's slot
+// object passed as argNo of a quantum clone call. Before: the old contents of the cells the clone may write
+// (TaintInfo::cellsWritten), ascending by cell, at the cell's C type (a handle, a classical value, or poison
+// where never written); calls passes them as recordCall's `extra`. After (called right after `lowered`): emits
+// the handle loads of those cells and binds the original's later loads of them; calls passes them as
+// recordCall's `slotOuts`.
+llvm::SmallVector<llvm::Value *, 4> slotCellsBeforeCall(LoweringContext &, const llvm::CallBase &orig, unsigned argNo);
+llvm::SmallVector<llvm::Value *, 4> slotCellsAfterCall(LoweringContext &, const llvm::CallBase &orig, unsigned argNo,
+                                                       llvm::CallInst *lowered);
 void allocateSlots(LoweringContext &, llvm::Instruction &site);   // mem-slots
 void endSlotLifetime(LoweringContext &, ObjectId, llvm::Instruction *at);  // mem-slots
 void lowerQromLoad(LoweringContext &, llvm::LoadInst &);          // mem-qrom

@@ -1753,4 +1753,12 @@ void endSlotLifetime(LoweringContext &ctx, ObjectId, Instruction *at) {
     ctx.bindFields(CB, {Operand{nc, false}});
 }
 
+SmallVector<Value *, 4> slotCellsBeforeCall(LoweringContext &, const CallBase &orig, unsigned) {
+  unimplemented("mem-slots: mem::slotCellsBeforeCall (M1, a slot object passed to a quantum clone)", &orig);
+}
+
+SmallVector<Value *, 4> slotCellsAfterCall(LoweringContext &, const CallBase &orig, unsigned, CallInst *) {
+  unimplemented("mem-slots: mem::slotCellsAfterCall (M1, a slot object passed to a quantum clone)", &orig);
+}
+
 } // namespace cq::mem

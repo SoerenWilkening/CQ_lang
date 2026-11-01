@@ -34,6 +34,9 @@ public:
   llvm::ArrayRef<Specialization> specializations() const;
   const Specialization *calleeSpecialization(const llvm::CallBase &, const Specialization &caller) const;
   bool resultQuantum(const Specialization &, unsigned field) const;   // per-clone record (rule 18)
+  // T2 (cq-arch 2026-11-01): the pointee cells (ascending cell indices of the object argNo points to) that
+  // the clone `callee` may store a handle into (rules 18, 20); empty for a non-pointer formal.
+  llvm::SmallVector<unsigned, 4> cellsWritten(const Specialization &callee, unsigned argNo) const;
   ObjectId objectOf(const llvm::Value *siteOrGlobal) const;
   ObjClass classOf(ObjectId) const;
   bool mayHoldHandle(ObjectId) const;

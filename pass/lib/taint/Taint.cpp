@@ -3351,6 +3351,10 @@ const Specialization *TaintInfo::calleeSpecialization(const llvm::CallBase &CB,
   internalError("taint: callee specialization not published", &CB);
 }
 
+llvm::SmallVector<unsigned, 4> TaintInfo::cellsWritten(const Specialization &S, unsigned argNo) const {
+  unimplemented("taint: TaintInfo::cellsWritten (T2, a clone's writes through a pointer formal)", S.F);
+}
+
 bool TaintInfo::resultQuantum(const Specialization &S, unsigned field) const {
   const ImplState &I = needImpl(impl);
   SpecState *SS = stateOf(I, S);
