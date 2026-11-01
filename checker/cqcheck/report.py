@@ -26,10 +26,13 @@ passed over that sample set into ERROR (FAIL stays FAIL), each with a ``sampling
 A class no input can fill (``sampling: impossible: ...``) and the totalization rows the search did
 not hit (``sampling: note: ...``) are reasons only. A trip target whose only reaching inputs run past
 the checker's cost budget (``sampling: uncovered: ...``, owner ruling 2026-11-01, cq-g8md; CR §6,
-coverage) is a reason too, with its cheapest reaching input and cost: the example's gate is that no
-comparison failed and every uncovered target is listed, so the verdicts stay PASS; it is never
-counted as compared or green on its own. The table counts such examples apart (``uncovered``) and
-shows their first uncovered line, and ``cqcheck run`` prints them as ``ok*`` with every such line.
+coverage) is a reason too, with its cheapest reaching input and cost, or (a search or work budget
+exhausted, cq-3nla, CR §6 of CQ_spec afef520) with what the search tried. The verdict fields stay
+PASS when no comparison failed (the frozen Verdict), but the example's state is UNCOVERED, not green
+(state(): owner ruling 2026-11-01, "never counted green"): the gate accepts it (accepted()) when
+no comparison failed and every uncovered target is listed; green(), the progress table and the green
+counts do not. The table counts such examples apart and shows their first uncovered line, and
+``cqcheck run`` and the baseline print them as ``UNCOVERED`` with every such line.
 
 The §6 run composes the sibling checker modules through the functions named in ``SIBLING_API``. A
 function that a sibling does not provide yet makes the check ERROR with
@@ -618,15 +621,36 @@ def uncovered(v: Verdict) -> List[str]:
     return [r for r in v.reasons if r.startswith("sampling: uncovered:")]
 
 
-def green(v: Verdict) -> bool:
-    """Version 1's per-example condition: §6, C oracle and verifier all PASS."""
+GREEN, UNCOVERED, FAILING = "green", "uncovered", "fail"
+
+
+def accepted(v: Verdict) -> bool:
+    """The gate (owner ruling 2026-11-01, cq-g8md): §6, C oracle and verifier all PASS, no comparison
+    failed; uncovered targets, each listed in the reasons, are allowed."""
     return v.s6 == PASS and v.c_oracle == PASS and v.verifier == PASS
 
 
-def requested_green(v: Verdict) -> bool:
-    """Every check the run asked for passed (NOT_RUN is the caller's choice of oracle)."""
+def green(v: Verdict) -> bool:
+    """Version 1's per-example condition: §6, C oracle and verifier all PASS, and no uncovered target
+    (an example with one is UNCOVERED, never counted green: CR §6, coverage)."""
+    return accepted(v) and not uncovered(v)
+
+
+def state(v: Verdict) -> str:
+    """GREEN, UNCOVERED (accepted by the gate, not green) or FAILING."""
+    return GREEN if green(v) else UNCOVERED if accepted(v) else FAILING
+
+
+def requested_accepted(v: Verdict) -> bool:
+    """Every check the run asked for passed (NOT_RUN is the caller's choice of oracle); uncovered
+    targets allowed (the gate)."""
     return all(x in (PASS, NOT_RUN) for x in (v.s6, v.c_oracle)) and v.verifier == PASS \
         and (v.s6, v.c_oracle) != (NOT_RUN, NOT_RUN)
+
+
+def requested_green(v: Verdict) -> bool:
+    """requested_accepted with no uncovered target."""
+    return requested_accepted(v) and not uncovered(v)
 
 
 # --------------------------------------------------------------------------------------------
@@ -656,7 +680,7 @@ def load_verdicts() -> Dict[str, Verdict]:
 def format_table(verdicts: Sequence[Verdict]) -> str:
     rows = [("example", "s6", "c_oracle", "verifier", "diff", "first reason")]
     for v in verdicts:
-        unc = uncovered(v) if green(v) else []
+        unc = uncovered(v) if accepted(v) else []
         rows.append((v.example, v.s6, v.c_oracle, v.verifier,
                      "-" if v.diff_lines is None else str(v.diff_lines),
                      unc[0] if unc else v.reasons[0] if v.reasons else ""))
@@ -665,8 +689,9 @@ def format_table(verdicts: Sequence[Verdict]) -> str:
     n = len(verdicts)
     counts = {k: sum(1 for v in verdicts if getattr(v, k) == PASS) for k in ("s6", "c_oracle", "verifier")}
     lines.append(f"{n} examples: s6 pass {counts['s6']}, c_oracle pass {counts['c_oracle']}, "
-                 f"verifier pass {counts['verifier']}, all three {sum(1 for v in verdicts if green(v))} "
-                 f"(of them with uncovered targets listed: {sum(1 for v in verdicts if green(v) and uncovered(v))}), "
+                 f"verifier pass {counts['verifier']}, green {sum(1 for v in verdicts if green(v))}, "
+                 f"uncovered {sum(1 for v in verdicts if state(v) == UNCOVERED)} (all three pass, every uncovered "
+                 f"target listed; not green), "
                  f"textual match {sum(1 for v in verdicts if v.diff_lines == 0)}")
     return "\n".join(lines)
 

@@ -3,7 +3,8 @@
   run <NN_name…|--all> [--ours DIR] [--oracle ref|c|both] [--json OUT] [--full] [-j N] [--cost-budget N]
       One Verdict per example (report.evaluate). Without --ours, our lowering is the example's
       .O1.ll through `opt -passes=cq-lower` at K = 4. Every verdict is stored for `progress`, and
-      each normalized diff is written next to it. Exit 0 iff every requested check passed.
+      each normalized diff is written next to it. Exit 0 iff every requested check passed (the gate:
+      an UNCOVERED example, every uncovered target listed, is accepted though not green).
       Quick by default (sampling.quick_mode: small random sets and search budget, no textual
       diff); --full for the default-mode samples and the diff. -j N examples at a time.
   selftest, baseline      chk-selftest (mutants.selftest(), mutants.baseline())
@@ -101,10 +102,11 @@ def _run_examples(a, examples, ours_dir) -> List[Verdict]:
             if stores_progress(ours_dir, a.oracle):
                 report.save_verdict(v)
             by_name[v.example] = v
-            ok = report.requested_green(v)
+            ok = report.requested_accepted(v)
             unc = report.uncovered(v) if ok else []
-            # cq-g8md: green under the gate (no comparison failed) with its uncovered targets listed
-            print(f"{('ok* ' if unc else 'ok  ') if ok else 'FAIL'} {v.example}  s6={v.s6} c={v.c_oracle} "
+            # cq-g8md: accepted by the gate (no comparison failed) with its uncovered targets listed,
+            # but UNCOVERED, never green (owner ruling 2026-11-01)
+            print(f"{('UNCOVERED ' if unc else 'ok  ') if ok else 'FAIL'} {v.example}  s6={v.s6} c={v.c_oracle} "
                   f"verifier={v.verifier}" + (f"  {len(unc)} uncovered target(s)" if unc else "")
                   + ("" if ok or not v.reasons else f"  {v.reasons[0][:200]}"), flush=True)
             for u in unc:
@@ -154,7 +156,8 @@ def cmd_run(a) -> int:
     if len(verdicts) != len(examples):
         print(f"cq: {len(examples)} examples, {len(verdicts)} verdicts", file=sys.stderr)
         return 1
-    return 0 if all(report.requested_green(v) for v in verdicts) else 1
+    # the gate: every requested check passed, uncovered targets listed (UNCOVERED examples included)
+    return 0 if all(report.requested_accepted(v) for v in verdicts) else 1
 
 
 def cmd_progress(a) -> int:

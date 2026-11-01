@@ -1466,10 +1466,20 @@ class CostBudget(unittest.TestCase):
                                                ss, Path("."), S.LLVM_BIN) if g_.where.startswith("trips")]
         self.assertEqual([(g_.kind, g_.where) for g_ in found], [(gaps.UNCOVERED, "trips: f:%8 trip 0")])
         v = Verdict("x", report.PASS, report.PASS, report.PASS, None, ["sampling: " + why])
-        self.assertTrue(report.green(v))
+        # accepted by the gate, never green (owner ruling 2026-11-01): its state is UNCOVERED
+        self.assertTrue(report.accepted(v))
+        self.assertFalse(report.green(v))
+        self.assertEqual(report.state(v), report.UNCOVERED)
+        self.assertTrue(report.requested_accepted(v))
+        self.assertFalse(report.requested_green(v))
         self.assertEqual(report.uncovered(v), ["sampling: " + why])
         table = report.format_table([v])
-        self.assertIn("of them with uncovered targets listed: 1", table)
+        self.assertIn("green 0, uncovered 1", table)
+        # the progress table counts it failing, never passing (not green)
+        from cqcheck import progress
+        cr = "## 3. Rules\n1. **A rule.** text — 117\n## 4. Next\n"
+        rows, _ = progress.build_table(cr, {"117_qpe_counting": v}, {"117": "117_qpe_counting"})
+        self.assertEqual(rows, [("1 A rule", "117", "", "117")])
         self.assertIn("sampling: uncovered:", table.splitlines()[1])
 
 

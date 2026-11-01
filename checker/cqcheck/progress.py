@@ -7,7 +7,8 @@ headers in cq-arch's partition), as are non-numeric items such as "new example r
 rule or sub-case with no clause is listed with no witnesses.
 
 `passing`/`failing` read the verdicts the last `cqcheck run` stored (report.verdict_store()). An
-example passes iff its §6, C-oracle and verifier verdicts are all pass; an example with no stored
+example passes iff it is green (report.green: §6, C-oracle and verifier verdicts all pass and no
+uncovered target; an UNCOVERED example is listed as failing: never counted green); an example with no stored
 verdict is failing (nothing proved it). tests/progress.tsv has the columns rule, witnesses,
 passing, failing; each of the last three is a comma-separated list of example numbers.
 """

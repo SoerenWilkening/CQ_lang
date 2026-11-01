@@ -264,8 +264,10 @@ def _control(ex: report.Example, substitution: bool) -> Outcome:
     try:
         v = report.evaluate(ex, ex.reference, short_circuit=False, reference_mode=True,
                             substitution=substitution)
-        return Outcome("control", cid, ex.name, "", report.green(v),
-                       [] if report.green(v) else ["the reference is not green against itself and its C program"], v)
+        # the gate (cq-g8md): a reference with uncovered targets listed is an accepted control (UNCOVERED)
+        return Outcome("control", cid, ex.name, "", report.accepted(v),
+                       ([] if report.green(v) else ["UNCOVERED: accepted by the gate, not green"])
+                       if report.accepted(v) else ["the reference is not green against itself and its C program"], v)
     except Exception as e:  # noqa: BLE001 - reported, never green
         return Outcome("control", cid, ex.name, "", False, [f"{type(e).__name__}: {e}"])
 
@@ -443,8 +445,11 @@ def baseline(only: Optional[Sequence[str]] = None) -> int:
                         [f"baseline: {type(e).__name__}: {e}"])
         with lock:
             (store / f"{ex.name}.json").write_text(to_json(v) + "\n")
-            print(f"{'ok  ' if report.green(v) else 'FAIL'} {ex.name}  s6={v.s6} c={v.c_oracle} "
-                  f"verifier={v.verifier}" + (f"  {v.reasons[0][:200]}" if v.reasons and not report.green(v) else ""),
+            st = report.state(v)
+            unc = report.uncovered(v) if st == report.UNCOVERED else []
+            print(f"{'ok  ' if st == report.GREEN else 'UNCOVERED' if unc else 'FAIL'} {ex.name}  s6={v.s6} "
+                  f"c={v.c_oracle} verifier={v.verifier}"
+                  + (f"  {unc[0][:200]}" if unc else f"  {v.reasons[0][:200]}" if v.reasons and st != report.GREEN else ""),
                   flush=True)
         return v
 
@@ -455,4 +460,4 @@ def baseline(only: Optional[Sequence[str]] = None) -> int:
     if len(verdicts) != len(examples):
         print(f"cq: {len(examples)} examples, {len(verdicts)} verdicts", file=sys.stderr)
         return 1
-    return 0 if all(report.green(v) for v in verdicts) else 1
+    return 0 if all(report.accepted(v) for v in verdicts) else 1       # the gate: UNCOVERED accepted
