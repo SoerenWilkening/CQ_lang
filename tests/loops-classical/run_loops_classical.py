@@ -56,6 +56,9 @@ HOISTED = ["fk3", "fk1", "c4"]
 # over joins whose phis are still being filled; SSAUpdater made them poison).
 CARRY_PROBE = PROBES / "guard_carry.O1.ll"
 CARRY = ["g_carry"]
+# cq-nqa6: a multi-exit case-3 loop (bound at the header, quantum exit at the latch) whose counter is read after it.
+MXREAD_PROBE = PROBES / "mx_read.O1.ll"
+MXREAD = ["p_find", "p_find2"]
 MEASURED = {"m_r8": [("measured", "i32"), ("kept_entangled", "i32"), ("measured", "i32")],
             "m_r8b": [("measured", "i32"), ("measured", "i32")],
             "m_r8c": [("measured", "i32"), ("kept_entangled", "i32"), ("measured", "i32")]}
@@ -142,13 +145,13 @@ def main() -> int:
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", required=True)
     ap.add_argument("--entry", action="append", help="check only these entries of loops.O1.ll")
-    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram"],
+    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread"],
                     help="run only these probe groups (default: all)")
     a = ap.parse_args()
     out = ROOT / "build" / "tests" / "loops-classical" / "out"
     out.mkdir(parents=True, exist_ok=True)
     failures = 0
-    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram"]))
+    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread"]))
     groups = []
     if "loops" in want:
         groups.append((PROBE, a.entry or ENTRIES))
@@ -162,6 +165,8 @@ def main() -> int:
         groups.append((MEASURED_PROBE, list(MEASURED) + MEASURED_SEC6))
     if "hoisted" in want:
         groups.append((HOISTED_PROBE, HOISTED))
+    if "mxread" in want:
+        groups.append((MXREAD_PROBE, MXREAD))
     if "triplocal" in want:
         groups.append((TRIPLOCAL_PROBE, TRIPLOCAL))
     if "qram" in want:

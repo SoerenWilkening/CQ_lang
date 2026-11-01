@@ -53,6 +53,7 @@
 #include <vector>
 
 #include "cq/Abi.h"
+#include "cq/Calls.h"
 #include "cq/Predicate.h"
 #include "cq/Uncompute.h"
 #include "llvm/ADT/DenseMap.h"
@@ -429,6 +430,14 @@ bool storedOnlyElsewhere(const DataLayout &DL, const CallInst *def, const LoadIn
 bool leavesDistinct(LoweringContext &ctx, Value *a, Value *b) {
   if (a == b)
     return false;
+  // cq-nqa6 (117's grover_1000_ctl: cRy(pred, x[i])): a _ctl clone's entry flag names no rail the clone
+  // reaches otherwise. The clone is marked, and calls::finalize checks that invariant at each of its call
+  // sites (kCtlDistinctAttr) or stops with cq::unimplemented.
+  for (Value *v : {a, b})
+    if (auto *A = dyn_cast<Argument>(v); A && ctx.S.ctl && A->getParent() == &ctx.out() && A->getArgNo() == 0) {
+      ctx.out().addFnAttr(calls::kCtlDistinctAttr);
+      return true;
+    }
   if (isa<CallInst>(a) && isa<CallInst>(b))
     return true;
   if (confined(a) || confined(b))

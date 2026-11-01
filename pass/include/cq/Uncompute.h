@@ -73,6 +73,11 @@ public:
   void noteNonDiagonal(RailId target, llvm::Instruction *gate);
   void cleanupBijective(RailId oldRail, const abi::TemplateSpec &inverse, llvm::ArrayRef<Operand>);
   void flushBefore(llvm::Instruction *point);       // due _unc + cqrt_free, reverse dependency order
+  // U7 (cq-nqa6, CR rules 5, 8, 9): flushBefore, and also, before P, the item of each arm-local rail (defined
+  // in a block that does not dominate P, every use and reader item before P, every path from its block
+  // reaching P) under its block's selector, and each deferred item that is then ready, to a fixed point.
+  // liveLater: the handles an instruction lowered after P may still read (the caller's contract).
+  void flushBefore(llvm::Instruction *point, llvm::ArrayRef<llvm::Value *> *liveLater);
   void flushAtExit(llvm::ReturnInst *);
   unsigned openScope(); void closeScope(unsigned);
   llvm::ArrayRef<Record> scopeRecords(unsigned) const;

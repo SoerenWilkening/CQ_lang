@@ -59,6 +59,8 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 
+#include <optional>
+
 #include <string>
 
 using namespace llvm;
@@ -608,9 +610,172 @@ void defineTwins(Module &M) {
   }
 }
 
+// cq-nqa6: the _ctl entry-flag invariant (kCtlDistinctAttr) at every call site of a marked clone. The
+// flag's handle leaves (through phis and selects) must each be one of: the caller's own entry flag (the
+// caller is then marked in turn); a rail made by a gate call whose handle, or a merge of it, reaches
+// only gate calls and the entry flag of _ctl clone calls (a predicate flag); a load of a cell of a local
+// slot array (an alloca reached through GEPs) whose address reaches only GEPs, loads, stores of a
+// handle into it and lifetime markers (the clone cannot reach its cells), when no other actual of the
+// call has a leaf that is a load of that array or a value stored into it (a slot cell holds a rail no
+// other cell holds, so no other cell names it either). Anything else is cq::unimplemented.
+void handleLeaves(Value *v, SmallVectorImpl<Value *> &out, SmallPtrSetImpl<Value *> &seen) {
+  if (!seen.insert(v).second)
+    return;
+  if (auto *P = dyn_cast<PHINode>(v)) {
+    for (Value *u : P->incoming_values())
+      handleLeaves(u, out, seen);
+    return;
+  }
+  if (auto *S = dyn_cast<SelectInst>(v)) {
+    handleLeaves(S->getTrueValue(), out, seen);
+    handleLeaves(S->getFalseValue(), out, seen);
+    return;
+  }
+  out.push_back(v);
+}
+
+bool gateCallee(const Function *G) {
+  return G && ((G->getName().starts_with("cqrt_") && !G->getName().starts_with("cqrt_qram") &&
+                !G->getName().starts_with("cqrt_push") && !G->getName().starts_with("cqrt_tape")) ||
+               G->getName().starts_with("cq_template_"));
+}
+
+bool isCtlCall(const CallInst *CI, unsigned opNo) {
+  const Function *G = CI->getCalledFunction();
+  if (!G || opNo != 0 || !isClone(*G))
+    return false;
+  std::optional<abi::CloneSpec> n = abi::parseClone(G->getName());
+  return n && n->ctl;
+}
+
+bool flagOnly(Value *h) {
+  SmallVector<Value *, 8> work{h};
+  SmallPtrSet<Value *, 8> seen;
+  while (!work.empty()) {
+    Value *v = work.pop_back_val();
+    if (!seen.insert(v).second)
+      continue;
+    for (Use &U : v->uses()) {
+      User *u = U.getUser();
+      if (isa<PHINode>(u) || isa<SelectInst>(u)) {
+        work.push_back(u);
+        continue;
+      }
+      auto *CI = dyn_cast<CallInst>(u);
+      if (CI && (gateCallee(CI->getCalledFunction()) || isCtlCall(CI, U.getOperandNo())))
+        continue;
+      return false;
+    }
+  }
+  return true;
+}
+
+// The local slot array a load reads a cell of, when its address does not escape; nullptr otherwise.
+AllocaInst *privateArray(LoadInst *L) {
+  auto *A = dyn_cast<AllocaInst>(getUnderlyingObject(L->getPointerOperand()));
+  if (!A)
+    return nullptr;
+  SmallVector<Value *, 8> work{A};
+  SmallPtrSet<Value *, 8> seen;
+  while (!work.empty()) {
+    Value *v = work.pop_back_val();
+    if (!seen.insert(v).second)
+      continue;
+    for (Use &U : v->uses()) {
+      User *u = U.getUser();
+      if (isa<GetElementPtrInst>(u)) {
+        work.push_back(u);
+        continue;
+      }
+      if (isa<LoadInst>(u))
+        continue;
+      if (auto *St = dyn_cast<StoreInst>(u); St && U.getOperandNo() == St->getPointerOperandIndex() &&
+                                             !St->getValueOperand()->getType()->isPointerTy())
+        continue;
+      if (auto *II = dyn_cast<IntrinsicInst>(u); II && II->isLifetimeStartOrEnd())
+        continue;
+      return nullptr;
+    }
+  }
+  return A;
+}
+
+void checkCtlDistinct(Module &M) {
+  SmallVector<Function *, 8> work;
+  SmallPtrSet<Function *, 8> marked;
+  for (Function &F : M)
+    if (F.hasFnAttribute(kCtlDistinctAttr) && marked.insert(&F).second)
+      work.push_back(&F);
+  while (!work.empty()) {
+    Function *C = work.pop_back_val();
+    for (User *U : C->users()) {
+      auto *CI = dyn_cast<CallInst>(U);
+      if (!CI || CI->getCalledOperand() != C || CI->arg_size() == 0)
+        unimplemented("calls: a use of a _ctl clone that relies on its entry flag naming no other rail, other "
+                      "than a direct call (cq-nqa6)",
+                      U);
+      Function *F = CI->getFunction();
+      SmallVector<Value *, 4> leaves;
+      SmallPtrSet<Value *, 8> seen;
+      handleLeaves(CI->getArgOperand(0), leaves, seen);
+      for (Value *l : leaves) {
+        if (auto *A = dyn_cast<Argument>(l); A && A->getParent() == F && A->getArgNo() == 0 && isClone(*F)) {
+          std::optional<abi::CloneSpec> n = abi::parseClone(F->getName());
+          if (n && n->ctl) {
+            if (marked.insert(F).second)
+              work.push_back(F);
+            continue;
+          }
+        }
+        if (auto *G = dyn_cast<CallInst>(l); G && gateCallee(G->getCalledFunction()) && flagOnly(G))
+          continue;
+        if (auto *L = dyn_cast<LoadInst>(l))
+          if (AllocaInst *A = privateArray(L)) {
+            // The rails A's cells may hold: its loads and the values stored into it.
+            SmallPtrSet<Value *, 16> held;
+            SmallVector<Value *, 8> ptrs{A};
+            SmallPtrSet<Value *, 8> pseen;
+            while (!ptrs.empty()) {
+              Value *p = ptrs.pop_back_val();
+              if (!pseen.insert(p).second)
+                continue;
+              for (User *u : p->users()) {
+                if (isa<GetElementPtrInst>(u))
+                  ptrs.push_back(u);
+                else if (isa<LoadInst>(u))
+                  held.insert(u);
+                else if (auto *St = dyn_cast<StoreInst>(u)) {
+                  SmallVector<Value *, 4> sl;
+                  SmallPtrSet<Value *, 8> ss;
+                  handleLeaves(St->getValueOperand(), sl, ss);
+                  held.insert(sl.begin(), sl.end());
+                }
+              }
+            }
+            bool clash = false;
+            for (unsigned i = 1; i < CI->arg_size() && !clash; ++i) {
+              SmallVector<Value *, 4> al;
+              SmallPtrSet<Value *, 8> as;
+              handleLeaves(CI->getArgOperand(i), al, as);
+              clash = any_of(al, [&](Value *x) { return held.count(x); });
+            }
+            if (!clash)
+              continue;
+          }
+        unimplemented("calls: a _ctl call whose entry flag may name a rail the clone reaches otherwise (the "
+                      "clone's controlled Ry relies on it, cq-nqa6)",
+                      l);
+      }
+    }
+  }
+  for (Function *C : marked)
+    C->removeFnAttr(kCtlDistinctAttr);
+}
+
 } // namespace
 
 void finalize(Module &M) {
+  checkCtlDistinct(M);
   SmallVector<Function *, 8> clones;
   for (Function &F : M) {
     if (!isClone(F))

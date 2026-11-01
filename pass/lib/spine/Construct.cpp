@@ -553,7 +553,23 @@ void Walker::maybeFlush(Instruction *term) {
       if (auto *ui = dyn_cast<Instruction>(U->getUser()); ui && !visited.count(ui))
         return;
   }
-  ctx.unc().flushBefore(term);
+  // cq-nqa6 (U7): the handles a later instruction may still read (every binding of an original value
+  // with a reading use not lowered yet), so arm-local rails nothing reads any more are resolved here.
+  std::vector<Value *> liveLater;
+  for (auto &[orig, ops] : sh.binds) {
+    SmallVector<const Use *, 8> uses;
+    spine::readingUses(sh, orig, uses);
+    bool later = any_of(uses, [&](const Use *U) {
+      auto *ui = dyn_cast<Instruction>(U->getUser());
+      return ui && !visited.count(ui);
+    });
+    if (later)
+      for (const Operand &o : ops)
+        if (o.handle)
+          liveLater.push_back(o.v);
+  }
+  ArrayRef<Value *> live(liveLater);
+  ctx.unc().flushBefore(term, &live);
 }
 
 void Walker::jump(const BasicBlock *from, const BasicBlock *to) {

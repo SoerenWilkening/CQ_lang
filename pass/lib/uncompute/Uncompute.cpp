@@ -2187,10 +2187,115 @@ struct Uncompute::Impl {
     return as;
   }
 
+  // cq-nqa6 (U7, CR rules 5, 8, 9): an ARM-LOCAL rail at a flush point P (flushBefore with the caller's
+  // liveness): defined in a block D that does not dominate P (a classical arm), read after the arm's join
+  // (a merge, a phase's flags), every use and reader item already before P, and no instruction lowered
+  // after P reading it (live: the caller's set, through every merge naming it). Its item is placed at P
+  // for good under D's selector, as cq-ut4k does at a return: D and P on no cycle, every path from D
+  // reaches P, the handle never reaches memory, a clone call or a return (only gate calls, merges and
+  // classical selects read it), no call group or QRAM version.
+  bool spanReady(RailId g, Instruction *point, const DenseSet<RailId> &live) const {
+    const Rail &r = rails[g];
+    if (r.ownedBy != kNone || r.deferred != kNone || !resolvable(g) || !r.exitsDone.empty() || r.group != kNone ||
+        r.popBus != kNone || r.qram || r.cleanup || !r.versions.empty())
+      return false;
+    BasicBlock *P = point->getParent();
+    const BasicBlock *D = defBlock(g);
+    if (D == P || dominates(D, P) || onCycle(D) || onCycle(P) || !reaches(D, P))
+      return false;
+    for (RailId n : names(g)) {
+      if (live.count(n))
+        return false;
+      for (User *u : rails[n].handle->users()) {
+        if (isa<PHINode>(u) || isa<SelectInst>(u))
+          continue;   // a merge: names(g) covers it
+        auto *ci = dyn_cast<CallInst>(u);
+        const Function *G = ci ? ci->getCalledFunction() : nullptr;
+        if (!G || !(G->getName().starts_with("cqrt_") || G->getName().starts_with("cq_template_")) ||
+            G->getName().starts_with("cqrt_qram") || G->getName().starts_with("cqrt_push") ||
+            G->getName().starts_with("cqrt_tape"))
+          return false;
+      }
+    }
+    SmallVector<Instruction *, 12> as = anchors(g);
+    for (RailId o : readersOf(g))
+      for (auto &kv : itemEnd)
+        if (kv.first.first == o)
+          as.push_back(kv.second);
+    for (Instruction *a : as) {
+      const BasicBlock *A = a->getParent();
+      if (!A)
+        return false;
+      if (A == P) {
+        if (!a->comesBefore(point))
+          return false;
+        continue;
+      }
+      if (!reaches(A, P) || reaches(P, A))
+        return false;
+    }
+    // Every path from D reaches P: the blocks D reaches without passing P are built and none returns.
+    SmallPtrSet<const BasicBlock *, 16> seen{D};
+    SmallVector<const BasicBlock *, 16> work{D};
+    while (!work.empty()) {
+      const BasicBlock *b = work.pop_back_val();
+      const Instruction *t = b->getTerminator();
+      if (!t || isa<ReturnInst>(t) || isa<UnreachableInst>(t))
+        return false;
+      for (const BasicBlock *sb : successors(t))
+        if (sb != P && seen.insert(sb).second)
+          work.push_back(sb);
+    }
+    return true;
+  }
+
+  // Places an arm-local rail's item before P's terminator `point`, in a block of its own entered under
+  // D's selector (true on every path through D, false elsewhere; cq-ut4k's carryTo), its operands that
+  // do not dominate that block carried to it (poison on the paths that skip D). P keeps its tail and
+  // terminator (a caller's references to P as an edge source stay valid); P's head moves to a fresh
+  // block H before it.
+  void placeSpan(RailId g, Instruction *point) {
+    BasicBlock *P = point->getParent();
+    BasicBlock *D = const_cast<BasicBlock *>(defBlock(g));
+    Instruction *prev = point->getPrevNode();
+    placeAt(g, {P, point}, true);
+    Instruction *first = prev ? prev->getNextNode() : &P->front();
+    if (first == point)
+      return;   // kept (a barrier): nothing emitted
+    Instruction *last = point->getPrevNode();
+    Function *F = P->getParent();
+    LLVMContext &Cx = F->getContext();
+    BasicBlock *H = BasicBlock::Create(Cx, "", F, P);
+    H->splice(H->end(), P, P->begin(), first->getIterator());
+    for (BasicBlock *pr : SmallVector<BasicBlock *, 4>(predecessors(P)))
+      if (pr != H)
+        pr->getTerminator()->replaceSuccessorWith(P, H);
+    BasicBlock *U = BasicBlock::Create(Cx, P->getName() + ".cq.arm", F, P);
+    U->splice(U->end(), P, first->getIterator(), std::next(last->getIterator()));
+    BranchInst *br = BranchInst::Create(U, P, ConstantInt::getTrue(Cx), H);
+    emitted.insert(br);
+    emitted.insert(BranchInst::Create(P, U));
+    br->setCondition(carryTo(H, true, D, ConstantInt::getTrue(Cx), ConstantInt::getFalse(Cx), "cq.on"));
+    DenseMap<Value *, Value *> carried;
+    for (Instruction &I : *U)
+      for (Use &u : I.operands()) {
+        auto *op = dyn_cast<Instruction>(u.get());
+        if (!op || op->getParent() == U || dominates(op->getParent(), U))
+          continue;
+        Value *&c = carried[op];
+        if (!c) {
+          if (op->getParent() == &F->getEntryBlock())
+            internalError("uncompute: an arm item operand in the entry that does not dominate the item", op);
+          c = carryTo(U, false, op->getParent(), op, PoisonValue::get(op->getType()), op->getName());
+        }
+        u.set(c);
+      }
+  }
+
   // flushBefore(P) may place the item only where every use of its exit rails after the loop lies in
   // P's block before P (and there is at least one: before the exit values' readers are lowered there
   // is none). Uses still to be lowered are the caller's contract, as for any rail flushBefore resolves.
-  bool deferredLocalReady(RailId g, Instruction *point) const {
+  bool deferredLocalReady(RailId g, Instruction *point, bool span = false) const {
     const Deferred &d = defs[rails[g].deferred];
     SmallVector<Instruction *, 8> as = deferredAnchors(d);
     if (as.empty())
@@ -2226,7 +2331,11 @@ struct Uncompute::Impl {
         RailId it = info[rec].item;
         if (it == kNone || rails[it].ownedBy == rails[g].deferred || !resolvable(it))
           continue;
-        if (reaches(records[rec].forward->getParent(), P))
+        // cq-nqa6 (span mode): only a pending record P lies inside (on one cycle with it) is such a region;
+        // one before P on no cycle with it is an earlier item still to come (a reader, or a rail the item
+        // reads: ordered by readersOf).
+        if (reaches(records[rec].forward->getParent(), P) &&
+            (!span || reaches(P, records[rec].forward->getParent())))
           return false;
       }
     }
@@ -3188,7 +3297,9 @@ void Uncompute::cleanupBijective(RailId oldRail, const abi::TemplateSpec &invers
   impl->rails[oldRail].cleanup = std::move(cl);
 }
 
-void Uncompute::flushBefore(Instruction *point) {
+void Uncompute::flushBefore(Instruction *point) { flushBefore(point, nullptr); }
+
+void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
   if (!point || !point->getParent())
     internalError("uncompute: flushBefore needs an instruction in a block");
   Impl &I = *impl;
@@ -3219,12 +3330,44 @@ void Uncompute::flushBefore(Instruction *point) {
   I.resolve(cands, c);
   // F1: a deferred item goes last, once every use of its exit rails after the loop lies before P in
   // P's block and every reader of them is resolved.
-  for (RailId g : deferred) {
-    if (!I.deferredLocalReady(g, point))
-      continue;
-    if (any_of(I.readersOf(g), [&](RailId o) { return I.resolvable(o) && !I.done(o, c); }))
-      continue;
-    I.place(g, c);
+  if (!liveLater) {
+    for (RailId g : deferred) {
+      if (!I.deferredLocalReady(g, point))
+        continue;
+      if (any_of(I.readersOf(g), [&](RailId o) { return I.resolvable(o) && !I.done(o, c); }))
+        continue;
+      I.place(g, c);
+    }
+    return;
+  }
+  // cq-nqa6 (U7): arm-local rails and deferred items, to a fixed point (an item may be a reader of the
+  // other kind: 117's C-block compare reads the reverse loop's exit rail, which reads the trip-0 test).
+  DenseSet<RailId> live;
+  for (Value *h : *liveLater)
+    if (auto it = I.byHandle.find(h); it != I.byHandle.end())
+      for (RailId l : I.leaves(it->second))
+        for (RailId n : I.names(l))
+          live.insert(n);
+  for (bool progress = true; progress;) {
+    progress = false;
+    SmallVector<RailId, 16> span;
+    for (RailId g = 0; g < I.rails.size(); ++g)
+      if (I.spanReady(g, point, live))
+        span.push_back(g);
+    I.dropBlocked(span, c, false);
+    for (RailId g : I.order(span))
+      if (I.resolvable(g)) {
+        I.placeSpan(g, point);
+        progress = true;
+      }
+    for (RailId g = 0; g < I.rails.size(); ++g) {
+      if (I.rails[g].deferred == kNone || !I.resolvable(g) || !I.deferredLocalReady(g, point, true))
+        continue;
+      if (any_of(I.readersOf(g), [&](RailId o) { return I.resolvable(o) && !I.done(o, c); }))
+        continue;
+      I.place(g, c);
+      progress = true;
+    }
   }
 }
 

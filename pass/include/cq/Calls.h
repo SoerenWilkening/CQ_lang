@@ -33,4 +33,10 @@ void emitTwin(LoweringContext &, llvm::CallBase &lowered);
 // twin as for a plain clone call. site's own result is not bound (the consumer binds it). Consumer: eff-conc.
 void lowerLiftedVia(LoweringContext &, llvm::CallBase &site, llvm::ArrayRef<unsigned> argMap);
 void finalize(llvm::Module &);
+// cq-nqa6 (CR §1.4 _ctl, rule 10; 117): a string function attribute a _ctl clone carries when its lowering
+// relied on its entry flag (formal 0) naming no rail the clone reaches otherwise (rot-cry: a controlled Ry
+// on a cell or formal under it). finalize checks that at every call site (the flag a rail minted and kept
+// to gate calls, a cell of a local slot array whose address does not escape and whose rails no other
+// actual names, or a marked caller's own entry flag), cq::unimplemented otherwise, and removes it.
+inline constexpr const char *kCtlDistinctAttr = "cq-ctl-distinct";
 }
