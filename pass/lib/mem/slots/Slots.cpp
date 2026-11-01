@@ -1558,9 +1558,32 @@ void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &
       }
       break;
     case RootKind::Param:
-      if (!ctx.S.isEntry())
-        unimplemented("mem-slots: a store into a caller's slot cell from a clone (rule 18 copy-out and twin, 31)",
-                      &I);
+      if (!ctx.S.isEntry()) {
+        // M1 clone side (CR rule 18, cq-arch T2 + M1): a handle stored into a caller's cell is a slot
+        // result: the rule-18 copy-out (alloc 0, copy, the copy's handle into the cell, Role::Result). The caller loads it after the call and frees it after the twin, which
+        // finalize aims at it and which restores the cell's old content.
+        const DataLayout &DL = ctx.M.getDataLayout();
+        for (const Access &a : accessesOf(ctx, *st.F, s.o))
+          if (a.I != &I && st.lowered.count(a.I) && (isa<StoreInst>(a.I) || isRMW(a.I)) &&
+              !differentCell(a.a, s.a, storeBytes(DL, a.ty), storeBytes(DL, ty)) &&
+              isPotentiallyReachable(a.I, &I, nullptr, st.DT.get()))
+            unimplemented("mem-slots: a clone storing into a caller's cell that an earlier store of the clone may "
+                          "have filled (two slot results for one cell)",
+                          &I);
+        // Literally alloc_<W>(0), copy(v, c), store c (calls' finalize rewrites this sequence in the twin),
+        // a seed included (it stays the clone's, freed directly).
+        RailType w = cellRail(*s.info, ty, I);
+        CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                                   {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+        RailId cid = ctx.unc().recordSeed(c);
+        abi::CoreSpec cp{abi::Core::Copy, w};
+        CallInst *cc = ctx.emitCore(cp, {val.v, c});
+        ctx.unc().recordCore(cc, cp, {val, Operand{c, true}}, cid);
+        ctx.unc().setRole(cid, Role::Result);
+        val = Operand{c, true};
+        st.registers.insert(val.v);
+        break;
+      }
       ctx.unc().setRole(id, Role::Output);
       st.registers.insert(val.v);
       break;
