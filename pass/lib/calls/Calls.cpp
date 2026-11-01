@@ -66,6 +66,7 @@
 #include "llvm/IR/ConstantRange.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Dominators.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Metadata.h"
@@ -1148,14 +1149,104 @@ void lowerDeclared(LoweringContext &ctx, CallBase &CB) {
   emitDeclaredCall(ctx, CB, *F, mask, flag);
 }
 
+// Does F (or a defined callee of it) have a non-pure gate (CR rule 19: a rotation, a phase, a store,
+// tape or any other effect)? Conservative: every memory write and every call of a declaration other
+// than cq_measure or a memory-free intrinsic counts.
+bool bodyHasNonPureGate(const Function &F, SmallPtrSetImpl<const Function *> &seen) {
+  if (!seen.insert(&F).second)
+    return false;
+  for (const Instruction &I : instructions(F)) {
+    if (auto *CB = dyn_cast<CallBase>(&I)) {
+      const Function *G = CB->getCalledFunction();
+      if (!G)
+        return true;
+      if (G->isIntrinsic()) {
+        if (CB->doesNotAccessMemory() || isa<DbgInfoIntrinsic>(CB) || G->getIntrinsicID() == Intrinsic::lifetime_start ||
+            G->getIntrinsicID() == Intrinsic::lifetime_end)
+          continue;
+        return true;
+      }
+      if (G->getName().starts_with("cq_measure_"))
+        continue;
+      if (G->isDeclaration() || bodyHasNonPureGate(*G, seen))
+        return true;
+      continue;
+    }
+    if (I.mayWriteToMemory())
+      return true;
+  }
+  return false;
+}
+
+// CR rule 19 (97): a function pointer loaded at a quantum index is a QROM of callee tags (mem-qrom binds
+// the load to the tag rail, Q1). One equality flag on the tag per candidate except the last (the
+// complement), every candidate clone called unguarded, the results merged by a select chain with the
+// complement innermost; the spine uncomputes twins and flags.
+void lowerQromIndirect(LoweringContext &ctx, CallBase &CB, Operand tag) {
+  SmallVector<std::pair<Function *, unsigned>, 4> cands = mem::qromCallees(ctx, CB.getCalledOperand());
+  if (cands.empty())
+    unimplemented("calls: a quantum function pointer that is not a load from a QROM of callee tags (rule 19)", &CB);
+  if (!ctx.currentPredicate().isTop() || ctx.S.ctl)
+    unimplemented("calls: a function pointer loaded at a quantum index under a quantum predicate (rule 19's _ctl "
+                  "candidates)",
+                  &CB);
+  if (CB.getType()->isVoidTy() || !ctx.T.isQuantum(&CB, ctx.S))
+    unimplemented("calls: a function pointer loaded at a quantum index whose call has no quantum result (rule 19: "
+                  "the merge is of results)",
+                  &CB);
+  std::string mask = siteMask(ctx, CB);
+  SmallVector<Value *, 4> flags, results;
+  for (unsigned k = 0; k < cands.size(); ++k) {
+    Function *G = cands[k].first;
+    if (G->getFunctionType() != CB.getFunctionType())
+      unimplemented("calls: a QROM callee candidate whose type differs from the call's", &CB);
+    if (G->isDeclaration())
+      unimplemented("calls: a declared (rule 27) candidate of a QROM of callee tags", &CB);
+    SmallPtrSet<const Function *, 8> seen;
+    if (bodyHasNonPureGate(*G, seen))
+      unimplemented("calls: a QROM callee candidate with a non-pure gate (rule 19: called unguarded only when "
+                    "pure; its _ctl clone under the candidate's flag is not built)",
+                    &CB);
+    const Specialization *s = candidateSpec(ctx, CB, *G, mask, false);
+    if (!s || s->isEntry())
+      unimplemented("calls: a QROM callee candidate with no lifted specialization for the call's mask", &CB);
+    if (fenv::cloneCarriesEnv(*s))
+      unimplemented("calls: a QROM callee candidate carrying the floating-point environment (E1)", &CB);
+    if (k + 1 < cands.size()) {
+      abi::TemplateSpec eq;
+      eq.op = "icmp";
+      eq.pred = "eq";
+      eq.w = RailType{Kind::Int, 32};
+      eq.shape = "hl";
+      flags.push_back(ctx.emitTemplate(eq, {tag, Operand{ConstantInt::get(Type::getInt32Ty(ctx.M.getContext()),
+                                                                           cands[k].second),
+                                                          false}}));
+    }
+    CloneCall r = emitCloneCall(ctx, CB, *s, nullptr);
+    if (r.res.qramFormal || !r.slotOuts.empty() || !r.extra.empty() || r.fieldwise || !r.handle)
+      unimplemented("calls: a QROM callee candidate whose result is not one rail (slot or QRAM writes, fields, a "
+                    "classical result)",
+                    &CB);
+    ctx.unc().recordTemplate(r.call, callRecordSpec(CB.getType()), r.ops);
+    results.push_back(r.call);
+  }
+  abi::TemplateSpec sel;
+  sel.op = "select";
+  sel.w = railTypeOf(CB.getType());
+  Value *v = results.back();
+  for (unsigned k = unsigned(flags.size()); k-- > 0;)
+    v = ctx.emitTemplate(sel, {Operand{flags[k], true}, Operand{results[k], true}, Operand{v, true}});
+  ctx.bind(&CB, v);
+}
+
 void lowerIndirect(LoweringContext &ctx, CallBase &CB) {
   capture(ctx);
   const Value *callee = CB.getCalledOperand();
   Operand fp = ctx.operand(callee);
-  if (fp.handle || ctx.T.isQuantum(callee, ctx.S))
-    unimplemented("calls: a function pointer loaded at a quantum index (rule 19: a QROM of callee tags, every "
-                  "candidate clone called unguarded and merged by select)",
-                  &CB);
+  if (fp.handle)
+    return lowerQromIndirect(ctx, CB, fp);
+  if (ctx.T.isQuantum(callee, ctx.S))
+    unimplemented("calls: a quantum function pointer with no tag rail (rule 19: a QROM of callee tags)", &CB);
   // The static callee set: clang's !callees, else every address-taken function of the call's type.
   SmallVector<Function *, 4> cands;
   if (MDNode *md = CB.getMetadata(LLVMContext::MD_callees)) {

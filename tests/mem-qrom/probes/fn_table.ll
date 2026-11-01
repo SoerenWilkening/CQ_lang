@@ -1,6 +1,7 @@
 ; A function pointer read at a quantum index from a constant table (97): mem-qrom lowers the load as a
 ; QROM of callee tags over the derived table @fps.cqtag ([2 x i32] [1, 2]) and binds it to the tag rail;
-; the call through it is rule 19's dispatch (calls), not built yet: the expected stop is there, past the load.
+; the call through it is rule 19's dispatch (calls, cq-bcn4): one equality flag on the tag for dbl, both
+; clones called unguarded, merged by select with sq (the complement) innermost.
 @fps = internal unnamed_addr constant [2 x ptr] [ptr @dbl, ptr @sq], align 16
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -23,4 +24,8 @@ define i32 @fn_table(i32 %x0, double %t, i32 %c) {
   %m = call i32 @cq_measure_si32(i32 %r)
   ret i32 %m
 }
-; EXPECT-ERROR: cq: unimplemented: calls: a function pointer loaded at a quantum index
+; CHECK fn_table: call i32 @cq_template_qrom_load_i32(ptr @fps.cqtag, i64 2, i32 %{{i}})
+; CHECK fn_table: call i32 @cq_template_icmp_eq_i32_hl(i32 %{{t}}, i32 1)
+; CHECK-COUNT fn_table: call i32 @__cq_q_dbl_1( 1
+; CHECK-COUNT fn_table: call i32 @__cq_q_sq_1( 1
+; CHECK-COUNT fn_table: call i32 @cq_template_select_i32( 1
