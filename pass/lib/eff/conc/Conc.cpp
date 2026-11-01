@@ -29,10 +29,13 @@
 // mem::lowerSlotAtomic (M4, 94: load + op + store, cmpxchg's icmp eq + select + store); in QRAM or
 // classical memory with quantum data, and a call classified Atomic, they are unimplemented.
 //
-// lowerThreadCall, lowerSetjmp, lowerLongjmp: unimplemented. pthread_create as a direct call of the
-// clone (106) needs a synthesized call for calls::lowerLifted; the setjmp diamond with an escaped flag
+// lowerThreadCall (rule 24, 106): pthread_create(t, attr, f, p) is the direct call f(p) (a quantum job:
+// calls::lowerLiftedVia with argMap {3}; a classical one: the original), status 0; pthread_join with a null
+// result pointer and the mutex locks are no-ops, status 0.
+// lowerSetjmp, lowerLongjmp: unimplemented. The setjmp diamond with an escaped flag
 // (101) needs the taint/pred DeadEnd fix (cq-jwdf: `call @longjmp; unreachable` is taken as a dead end,
 // so code after `if (q) longjmp(...)` would get the top predicate and a wrong circuit).
+#include "cq/Calls.h"
 #include "cq/Effects.h"
 #include "cq/Memory.h"
 #include "cq/Predicate.h"
@@ -220,8 +223,47 @@ void lowerAtomic(LoweringContext &ctx, Instruction &I) {
   internalError("eff-conc: lowerAtomic of an instruction that is not atomic", &I);
 }
 
-void lowerThreadCall(LoweringContext &, CallBase &CB) {
-  unimplemented("eff-conc: a thread call (rule 24, 106: pthread_create as a direct call of the clone)", &CB);
+void lowerThreadCall(LoweringContext &ctx, CallBase &CB) {
+  const Function *g = CB.getCalledFunction();
+  StringRef n = g ? g->getName() : StringRef();
+  if (n.starts_with("\01_"))
+    n = n.drop_front(2);   // Darwin's spelling of some libc symbols (106: "\01_pthread_join")
+  auto bindZero = [&] {
+    if (!CB.getType()->isIntegerTy())
+      internalError("eff-conc: a thread call whose result is not an int status", &CB);
+    ctx.bind(&CB, ConstantInt::get(CB.getType(), 0));
+  };
+  if (n == "pthread_create" && CB.arg_size() == 4) {
+    // Rule 24 (106): the sequential schedule runs the start routine here: a direct call f(p), no host
+    // thread; the pthread_t is never written. A quantum job is the call of its clone (C1), a classical
+    // one the original's call. The status is 0.
+    auto *f = dyn_cast<Function>(CB.getArgOperand(2)->stripPointerCasts());
+    if (!f || f->isDeclaration() || f->arg_size() != 1)
+      unimplemented("eff-conc: pthread_create of a start routine that is not a defined function of one formal "
+                    "(rule 24)",
+                    &CB);
+    const Specialization *cs = ctx.T.calleeSpecialization(CB, ctx.S);
+    if (cs && !cs->isEntry()) {
+      unsigned argMap[1] = {3};
+      calls::lowerLiftedVia(ctx, CB, argMap);
+    } else {
+      Operand p = ctx.operand(CB.getArgOperand(3));
+      if (p.handle)
+        internalError("eff-conc: a classical thread job handed a rail", &CB);
+      ctx.B().CreateCall(const_cast<Function *>(f), {p.v});
+    }
+    return bindZero();
+  }
+  if (n == "pthread_join" && CB.arg_size() == 2) {
+    // Rule 24: the job ran at its create site; nothing joins. A requested exit value is not built.
+    auto *rv = dyn_cast<Constant>(CB.getArgOperand(1));
+    if (!rv || !rv->isNullValue())
+      unimplemented("eff-conc: pthread_join asking for the start routine's result (rule 24)", &CB);
+    return bindZero();
+  }
+  if (n == "pthread_mutex_lock" || n == "pthread_mutex_unlock" || n == "pthread_mutex_trylock")
+    return bindZero();   // rule 24: one thread, no contention: no-ops
+  unimplemented("eff-conc: a thread call other than pthread_create, pthread_join or a mutex lock (rule 24)", &CB);
 }
 
 void lowerSetjmp(LoweringContext &, CallBase &CB) {

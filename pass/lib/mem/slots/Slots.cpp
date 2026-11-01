@@ -337,12 +337,31 @@ bool isHostEffect(LoweringContext &ctx, const CallBase &CB) {
 // that the call does not capture is not an escape: the clone accesses the caller's cells while it runs and
 // writes exactly the cells TaintInfo::cellsWritten names (the caller loads their new handles right after
 // the call, slotCellsAfterCall).
+// Rule 24 (106): pthread_create(t, attr, f, p) with a defined start routine f is lowered as the direct call
+// f(p) (calls::lowerLiftedVia, argMap {3}); its start routine, else null.
+const Function *threadStart(const CallBase &CB) {
+  const Function *g = CB.getCalledFunction();
+  if (!g || g->getName() != "pthread_create" || CB.arg_size() != 4)
+    return nullptr;
+  auto *f = dyn_cast<Function>(CB.getArgOperand(2)->stripPointerCasts());
+  return f && !f->isDeclaration() && f->arg_size() == 1 ? f : nullptr;
+}
+
 const Specialization *cloneCallee(LoweringContext &ctx, const CallBase &CB) {
   const Function *f = CB.getCalledFunction();
+  if (threadStart(CB)) {
+    const Specialization *S = ctx.T.calleeSpecialization(CB, ctx.S);
+    return S && !S->isEntry() ? S : nullptr;
+  }
   if (!f || f->isDeclaration() || isa<IntrinsicInst>(CB))
     return nullptr;
   return ctx.T.calleeSpecialization(CB, ctx.S);
 }
+
+// The callee's formals of a clone call and the site operand each one takes (M1b: a lifted thread call's
+// formal 0 is operand 3).
+unsigned numFormals(const CallBase &CB) { return threadStart(CB) ? 1 : CB.arg_size(); }
+const Value *formalActual(const CallBase &CB, unsigned k) { return CB.getArgOperand(threadStart(CB) ? 3 : k); }
 
 SmallVector<unsigned, 4> cellsWrittenBy(LoweringContext &ctx, const Specialization &S, unsigned argNo) {
   if (detail::cellsWrittenOverride())
@@ -398,6 +417,8 @@ bool cloneArgUse(LoweringContext &ctx, const CallBase &CB, const Use &u) {
   if (!CB.isArgOperand(&u))
     return false;
   unsigned i = CB.getArgOperandNo(&u);
+  if (const Function *f = threadStart(CB))
+    return i == 3 && formalNotCaptured(*f->getArg(0)) && cloneCallee(ctx, CB);
   const Function *g = CB.getCalledFunction();
   bool noCapture = CB.doesNotCapture(i) || CB.isByValArgument(i) ||
                    (g && !g->isDeclaration() && i < g->arg_size() && formalNotCaptured(*g->getArg(i)));
@@ -742,10 +763,10 @@ bool mayWrite(LoweringContext &ctx, const ObjInfo &info, ObjectId o, const Instr
   if ((info.kind == RootKind::Local || info.kind == RootKind::Heap) && !info.escaping)
     if (const Specialization *S = cloneCallee(ctx, *CB)) {
       // M1: the clone writes the cells cellsWritten names, at their offsets from the pointer it is handed.
-      for (unsigned i = 0; i < CB->arg_size(); ++i) {
-        if (!hasObject(ctx, CB->getArgOperand(i), o))
+      for (unsigned i = 0; i < numFormals(*CB); ++i) {
+        if (!hasObject(ctx, formalActual(*CB, i), o))
           continue;
-        Addr pa = decompose(CB->getArgOperand(i), DL);
+        Addr pa = decompose(formalActual(*CB, i), DL);
         if (!pa.ok || !pa.terms.empty())
           return true;
         if (info.record) {
@@ -788,10 +809,10 @@ bool cloneWritesCell(LoweringContext &ctx, const ObjInfo &info, ObjectId o, cons
   const Specialization *S = CB ? cloneCallee(ctx, *CB) : nullptr;
   if (!S)
     return false;
-  for (unsigned i = 0; i < CB->arg_size(); ++i) {
-    if (!hasObject(ctx, CB->getArgOperand(i), o))
+  for (unsigned i = 0; i < numFormals(*CB); ++i) {
+    if (!hasObject(ctx, formalActual(*CB, i), o))
       continue;
-    Addr pa = decompose(CB->getArgOperand(i), ctx.M.getDataLayout());
+    Addr pa = decompose(formalActual(*CB, i), ctx.M.getDataLayout());
     if (!pa.ok || !pa.terms.empty())
       continue;
     for (unsigned c : cellsWrittenBy(ctx, *S, i)) {
@@ -2456,9 +2477,9 @@ void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
       uint64_t size = storeBytes(DL, ld.getType());
       Type *cty = nullptr;
       if (const Specialization *S = cloneCallee(ctx, *CB))
-        for (unsigned i = 0; i < CB->arg_size() && !cty; ++i) {
-          Addr pa = decompose(CB->getArgOperand(i), DL);
-          if (pa.ok && pa.terms.empty() && hasObject(ctx, CB->getArgOperand(i), s.o) && pa.root == s.a.root &&
+        for (unsigned i = 0; i < numFormals(*CB) && !cty; ++i) {
+          Addr pa = decompose(formalActual(*CB, i), DL);
+          if (pa.ok && pa.terms.empty() && hasObject(ctx, formalActual(*CB, i), s.o) && pa.root == s.a.root &&
               !cellsWrittenBy(ctx, *S, i).empty())
             cty = cloneCellType(ctx, *S, i, s.a.off - pa.off, size, ld);
         }
@@ -2895,7 +2916,9 @@ unsigned siteOperand(const CallBase &orig, unsigned argNo, ArrayRef<unsigned> ar
 const Specialization *calleeOf(LoweringContext &ctx, const CallBase &orig, ArrayRef<unsigned> argMap) {
   // A lifted call (argMap given) names a declaration (pthread_create); taint's calleeSpecialization of
   // the site is the clone the site is lowered as a call of.
-  return argMap.empty() ? cloneCallee(ctx, orig) : ctx.T.calleeSpecialization(orig, ctx.S);
+  if (argMap.empty() || threadStart(orig))
+    return cloneCallee(ctx, orig);
+  return ctx.T.calleeSpecialization(orig, ctx.S);
 }
 
 CloneArg cloneArg(LoweringContext &ctx, FnState &st, const CallBase &orig, unsigned argNo,
