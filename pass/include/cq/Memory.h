@@ -18,8 +18,10 @@ void lowerSlotAtomic(LoweringContext &, llvm::Instruction &rmwOrCmpxchg);
 // M4. mem-slots (CR rule 16, 99): the contents of n consecutive cells of type cellTy of the slot object at
 // ptr, as they are at `at` (a call the caller lowers in place of the host call): a handle, or a classical
 // value for a cell no handle reaches. Nothing is written; reading does not change roles.
+// M4b (cq-r7-91, CR rules 14, 20, 21; 91): the cells start firstByte bytes past ptr (consumer loops-cutoff:
+// a K-loop trip object's cells, read at the trip's end).
 llvm::SmallVector<Operand, 8> readSlotCells(LoweringContext &, const llvm::Value *ptr, llvm::Type *cellTy,
-                                            uint64_t n, llvm::Instruction &at);
+                                            uint64_t n, llvm::Instruction &at, int64_t firstByte = 0);
 // M6 (cq-arch 2026-11-01). mem-slots, consumer mem-qram (CR rules 6, 7, 9, 20, 22; 190, 90): the n =
 // vals.size() consecutive cells of type cellTy at ptr take vals[i] at `at` (a memory intrinsic the caller
 // lowers in place), each with lowerSlotStore's semantics (a classical value is a seed, rule 7; a handle is a

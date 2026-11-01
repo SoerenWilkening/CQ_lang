@@ -171,7 +171,9 @@ bool willView(Shared &sh, const PHINode &P, unsigned M, const Value *assume) {
   for (const Value *u : P.incoming_values()) {
     unsigned b = 0;
     const Value *n = narrowValue(sh, u, b);
-    if (n && !isa<Constant>(n) && (n == assume || registerState(sh, n)))
+    // The assumption holds only for a value not lowered yet: a lowered one is a register state or not
+    // (cq-r7-91: 91's phi [zext(load), 7], whose load is no register state, is no view at the phi).
+    if (n && !isa<Constant>(n) && ((n == assume && !sh.binds.count(n)) || registerState(sh, n)))
       return true;
   }
   return false;

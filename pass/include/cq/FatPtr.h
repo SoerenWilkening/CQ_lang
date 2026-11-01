@@ -26,4 +26,18 @@ Triple passAcrossCall(LoweringContext &, const llvm::Value *ptr);
 // Construct clone entry.
 void bindFormal(LoweringContext &, const llvm::Argument &formal, llvm::Value *object, Operand tag, Operand idx,
                 llvm::Value *cellCount);
+// R1 (cq-r7-91, CR rules 14, 20, 21; 91): TRIP OBJECTS. A K-loop's exit phi P whose loop incoming is an
+// allocation site of the loop (one object per (site, trip), rule 14) and whose other incomings are the null
+// pointer on edges that skip the loop is the fat pointer (tag, idx 0) over null and the trip objects. The loop
+// module reserves one tag per trip (reserveTripTags: n fresh tags past every root number and earlier
+// reservation), mints the tag rail and binds P with bindTripPointer, giving per trip object the handles of the
+// cells read after the loop as they are at the end of its trip. Through P: an eq/ne compare is a tag compare
+// (distinct allocations; each trip object is dereferenced in its trip, so non-null in the domain); a load at a
+// classical constant cell is the captured handles merged by select on tag == k (null dropped: a load through
+// null is undefined). Anything else through P is unimplemented.
+struct TripCell { int64_t byte; llvm::Type *ty; Operand h; };
+struct TripObject { unsigned tag; llvm::SmallVector<TripCell, 2> cells; };
+unsigned reserveTripTags(LoweringContext &, unsigned n);
+unsigned rootTag(LoweringContext &, const llvm::Value *root);   // a root's number (internal error otherwise)
+void bindTripPointer(LoweringContext &, const llvm::PHINode &P, Operand tag, llvm::ArrayRef<TripObject>);
 }

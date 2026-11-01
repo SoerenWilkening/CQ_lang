@@ -16,3 +16,8 @@ add_test(NAME loops-cutoff-multi-exit
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_multi_exit.py
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-r7-91: CR rules 14, 20, 21 trip objects (a malloc in a K-loop read after it through the last trip's pointer).
+add_test(NAME loops-cutoff-trip-objects
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_trip_objects.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

@@ -89,6 +89,7 @@ struct Fat {
   bool idxSext = false;
   uint64_t cell = 0;                    // cell size in bytes, 0 = not fixed yet (idx is the constant 0)
   SmallVector<const Value *, 4> roots;  // in tag order
+  const struct TripPtr *trips = nullptr;   // R1: the trip objects of a K-loop's exit phi (91)
   bool tagRail() const { return tag.handle; }
   bool idxRail() const { return idx.handle; }
 };
@@ -167,6 +168,33 @@ Bound *boundOf(LoweringContext &ctx, const Value *p) {
     return nullptr;
   auto jt = it->second.find(p);
   return jt == it->second.end() ? nullptr : &jt->second;
+}
+
+// R1 (cq-r7-91): a K-loop's exit phi over the trip objects of one allocation site, and null.
+struct TripPtr {
+  Operand tag{nullptr, true};
+  SmallVector<TripObject, 4> objs;
+};
+struct TripState {
+  DenseMap<const Value *, TripPtr> phis;
+  unsigned next = 0;   // the next free trip tag (0: none reserved yet)
+};
+std::map<const Function *, TripState> &tripStates() {
+  static std::map<const Function *, TripState> t;
+  return t;
+}
+const TripPtr *tripOf(LoweringContext &ctx, const Value *p) {
+  auto it = tripStates().find(&ctx.out());
+  if (it == tripStates().end())
+    return nullptr;
+  auto jt = it->second.phis.find(p);
+  return jt == it->second.phis.end() ? nullptr : &jt->second;
+}
+
+// A null pointer that is undefined to dereference (address space 0, the function does not define null).
+bool undefinedNull(LoweringContext &ctx, const Value *r) {
+  auto *n = dyn_cast<ConstantPointerNull>(r);
+  return n && !NullPointerIsDefined(ctx.S.F, n->getType()->getAddressSpace());
 }
 
 // A builder at the top of the clone's entry block (bindFormal runs before the walker makes it): a value
@@ -319,6 +347,8 @@ Fat deriveGEP(LoweringContext &ctx, const GEPOperator &g, bool emit) {
                         std::to_string(s) + " vs " + std::to_string(f.cell) + ")",
                     &g);
   };
+  if (f.trips && !vars.empty())
+    unimplemented("fatptr: a GEP with a variable index onto a pointer to K-loop trip objects (R1)", &g);
   const Value *qTerm = nullptr;
   SmallVector<Value *, 2> cTerms;
   for (auto &[v, scale] : vars) {
@@ -436,6 +466,8 @@ Fat deriveSelect(LoweringContext &ctx, const SelectInst &sel, bool emit, bool ea
   }
   Fat t = derive(ctx, sel.getTrueValue(), emit);
   Fat e = derive(ctx, sel.getFalseValue(), emit);
+  if (t.trips || e.trips)
+    unimplemented("fatptr: a select of a pointer to K-loop trip objects (R1)", &sel);
   Fat f;
   addRoots(f, t.roots);
   addRoots(f, e.roots);
@@ -515,6 +547,8 @@ Fat deriveLoaded(LoweringContext &ctx, const LoadInst &ld, bool emit) {
         !intersects(ctx.T.provenance(st->getPointerOperand(), ctx.S), src))
       continue;
     Fat s = derive(ctx, st->getValueOperand(), /*emit=*/false);
+    if (s.trips)
+      unimplemented("fatptr: a pointer to K-loop trip objects stored into a QRAM of pointers (R1)", st);
     for (const Value *r : s.roots)
       if (intersects(ctx.T.provenance(r, ctx.S), mine))
         addRoots(f, {r});
@@ -567,6 +601,17 @@ Fat derive(LoweringContext &ctx, const Value *p, bool emit, bool eager) {
     } else if (emit) {
       f.idx = Operand{idx64Of(ctx, *b), false};
     }
+    return f;
+  }
+  if (const TripPtr *t = tripOf(ctx, p)) {
+    // R1: the bound tag rail at the classical idx 0, over null and the trip objects.
+    Fat f;
+    for (const Value *in : cast<PHINode>(p)->incoming_values())
+      if (isa<ConstantPointerNull>(in) && llvm::find(f.roots, in) == f.roots.end())
+        f.roots.push_back(in);
+    f.trips = t;
+    f.tag = emit ? t->tag : Operand{nullptr, true};
+    f.idx = Operand{ConstantInt::get(i64(ctx), 0), false};
     return f;
   }
   if (isRoot(ctx, p))
@@ -901,6 +946,8 @@ FatPtr lower(LoweringContext &ctx, const Value *ptr) {
   } else {
     f = derive(ctx, ptr, /*emit=*/true);
   }
+  if (f.trips)
+    unimplemented("fatptr: lower() of a pointer to K-loop trip objects (R1: its objects are per trip)", ptr);
   FatPtr out{f.tag.v, f.tag.handle, f.idx.v, f.idx.handle, {}};
   for (const Value *r : f.roots)
     for (ObjectId o : ctx.T.provenance(r, ctx.S))
@@ -992,6 +1039,46 @@ void lowerLoad(LoweringContext &ctx, LoadInst &ld) {
   Fat f = derive(ctx, ld.getPointerOperand(), /*emit=*/true);
   Type *ty = ld.getType();
   bool ptr = ty->isPointerTy();
+  if (f.trips) {
+    // R1 (91, rules 20, 21): one slot load per trip object (its captured handle, no gate), merged by select
+    // on tag == k, the last trip innermost (the complement). The null root is dropped: a load through null
+    // is undefined, so the tag never names it on an in-domain path.
+    if (ptr || (!ty->isIntegerTy() && !ty->isFloatingPointTy()))
+      unimplemented("fatptr: a load of a pointer, aggregate or vector through a pointer to K-loop trip objects (R1)",
+                    &ld);
+    for (const Value *r : f.roots)
+      if (!undefinedNull(ctx, r))
+        unimplemented("fatptr: a load through a pointer to K-loop trip objects that may name another root (R1)", &ld);
+    auto *ci = f.idx.handle ? nullptr : dyn_cast<ConstantInt>(f.idx.v);
+    if (!ci)
+      unimplemented("fatptr: a load through a pointer to K-loop trip objects at a run-time or quantum cell (R1)", &ld);
+    int64_t byte = ci->isZero() ? 0 : ci->getSExtValue() * int64_t(f.cell);
+    SmallVector<std::pair<unsigned, Operand>, 4> arms;
+    for (const TripObject &o : f.trips->objs) {
+      const TripCell *c = nullptr;
+      for (const TripCell &x : o.cells)
+        if (x.byte == byte && x.ty == ty)
+          c = &x;
+      if (!c)
+        internalError("fatptr: a load through a pointer to K-loop trip objects at a cell the loop did not capture", &ld);
+      arms.push_back({o.tag, c->h});
+    }
+    if (arms.empty())
+      internalError("fatptr: a pointer to K-loop trip objects with no trip", &ld);
+    RailType w = railTypeOf(ty);
+    Operand acc = arms.back().second;
+    for (size_t i = arms.size() - 1; i-- > 0;) {
+      Operand eq = icmp(ctx, CmpInst::ICMP_EQ, 32, f.tag, Operand{ConstantInt::get(i32(ctx), arms[i].first), false});
+      if (!arms[i].second.handle && !acc.handle)
+        unimplemented("fatptr: a load through a pointer to K-loop trip objects whose cells are classical (R1)", &ld);
+      std::string shape = std::string(arms[i].second.handle ? "h" : "l") + (acc.handle ? "h" : "l");
+      acc = Operand{tmpl(ctx, "select", w, {eq, arms[i].second, acc}, shape == "hh" ? "" : shape), true};
+    }
+    if (!acc.handle)
+      unimplemented("fatptr: a load through a pointer to K-loop trip objects whose cell is classical (R1)", &ld);
+    ctx.bind(&ld, acc.v);
+    return;
+  }
   if (!ptr && !ty->isIntegerTy() && !ty->isFloatingPointTy())
     unimplemented("fatptr: a load of an aggregate or vector through a fat pointer (rules 21, 25, 26)", &ld);
   SmallVector<const Value *, 4> roots;
@@ -1049,6 +1136,8 @@ void lowerLoad(LoweringContext &ctx, LoadInst &ld) {
 SmallVector<Operand, 8> loadHostCells(LoweringContext &ctx, const Value *src, Type *cellTy, uint64_t n,
                                       function_ref<uint64_t(const Value *root)> bound, const Instruction &at) {
   Fat f = derive(ctx, src, /*emit=*/true);
+  if (f.trips)
+    unimplemented("fatptr: a memory intrinsic through a pointer to K-loop trip objects (R1)", &at);
   if (f.idxRail())
     unimplemented("fatptr: a memory intrinsic's fat source pointer at a quantum cell index (a QROM per cell, rules "
                   "20, 22)",
@@ -1117,6 +1206,8 @@ SmallVector<Operand, 8> loadHostCells(LoweringContext &ctx, const Value *src, Ty
 
 std::pair<Operand, Operand> storedFields(LoweringContext &ctx, const Value *ptr) {
   Fat f = derive(ctx, ptr, /*emit=*/true);
+  if (f.trips)
+    unimplemented("fatptr: a pointer to K-loop trip objects stored into memory (R1)", ptr);
   Operand idx = f.idx;
   if (!idx.handle) {
     idx = Operand{ctx.B().CreateTrunc(idx.v, i32(ctx)), false};
@@ -1133,6 +1224,8 @@ std::pair<Operand, Operand> storedFields(LoweringContext &ctx, const Value *ptr)
 // classical value is one seed, rule 7; 84).
 void lowerStore(LoweringContext &ctx, StoreInst &st) {
   Fat f = derive(ctx, st.getPointerOperand(), /*emit=*/true);
+  if (f.trips)
+    unimplemented("fatptr: a store through a pointer to K-loop trip objects after the loop (R1)", &st);
   checkQramRoots(ctx, f, st);
   Value *val = st.getValueOperand();
   Type *ty = val->getType();
@@ -1168,7 +1261,17 @@ Value *lowerCompare(LoweringContext &ctx, ICmpInst &cmp) {
   CmpInst::Predicate p = cmp.getPredicate();
   bool eq = p == CmpInst::ICMP_EQ, ne = p == CmpInst::ICMP_NE;
   bool sameCell = a.cell == 0 || b.cell == 0 || a.cell == b.cell;
-  if ((eq || ne) && sameCell && distinctLocalAllocas(ctx, a, b)) {
+  if (a.trips || b.trips) {
+    // R1: trip objects are distinct allocations, non-null in the domain; the roots must be null.
+    if (!(eq || ne) || (a.trips && b.trips))
+      unimplemented("fatptr: a compare through a pointer to K-loop trip objects other than eq/ne with null (R1)", &cmp);
+    for (const Fat *x : {&a, &b})
+      for (const Value *r : x->roots)
+        if (!undefinedNull(ctx, r))
+          unimplemented("fatptr: a compare through a pointer to K-loop trip objects with a root other than null (R1)",
+                        &cmp);
+  }
+  if ((eq || ne) && sameCell && (a.trips || b.trips || distinctLocalAllocas(ctx, a, b))) {
     // Distinct allocations of this function: same object (tag), then same cell (idx); ne is
     // tag != tag' or idx != idx'. A classical term that decides alone is folded.
     bool decides = ne;   // the term value that decides the result alone: false for eq, true for ne
@@ -1423,6 +1526,57 @@ void bindFormal(LoweringContext &ctx, const Argument &formal, Value *object, Ope
   b.cell = DL.getTypeAllocSize(b.cellTy).getFixedValue();
   if (!boundFormals()[&ctx.out()].try_emplace(&formal, b).second)
     internalError("fatptr: a triple formal bound twice", &formal);
+}
+
+// R1 (cq-r7-91, CR rules 14, 20, 21; 91). Trip tags lie past the object table's root numbers.
+unsigned reserveTripTags(LoweringContext &ctx, unsigned n) {
+  TripState &t = tripStates()[&ctx.out()];
+  if (t.next == 0) {
+    unsigned roots = 0;
+    SmallPtrSet<const Value *, 32> seen;
+    auto visit = [&](const Value *v) {
+      if (v->getType()->isPointerTy() && seen.insert(v).second)
+        ++roots;
+    };
+    for (const Argument &a : ctx.S.F->args())
+      visit(&a);
+    for (const BasicBlock &bb : *ctx.S.F)
+      for (const Instruction &I : bb) {
+        for (const Use &u : I.operands())
+          if (isa<Constant>(u.get()) && !isa<BasicBlock>(u.get()))
+            visit(u.get());
+        visit(&I);
+      }
+    t.next = roots + 1;
+  }
+  unsigned first = t.next;
+  t.next += n;
+  return first;
+}
+
+unsigned rootTag(LoweringContext &ctx, const Value *root) {
+  if (!isRoot(ctx, root))
+    internalError("fatptr: rootTag of a value that is not a root", root);
+  return rootNumber(ctx, root);
+}
+
+void bindTripPointer(LoweringContext &ctx, const PHINode &P, Operand tag, ArrayRef<TripObject> objs) {
+  if (!tag.handle || !tag.v->getType()->isIntegerTy(32))
+    internalError("fatptr: a trip pointer's tag that is not an i32 rail", &P);
+  const Value *site = nullptr;
+  for (const Value *in : P.incoming_values()) {
+    if (isa<ConstantPointerNull>(in))
+      continue;
+    if (site && site != in)
+      internalError("fatptr: a trip pointer phi with two non-null incomings", &P);
+    site = in;
+  }
+  if (!site)
+    internalError("fatptr: a trip pointer phi with no trip object", &P);
+  TripPtr t;
+  t.tag = tag;
+  t.objs.assign(objs.begin(), objs.end());
+  tripStates()[&ctx.out()].phis[&P] = std::move(t);
 }
 
 } // namespace cq::fatptr

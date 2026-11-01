@@ -48,6 +48,8 @@
 #include <vector>
 
 #include "Exits.h"
+#include "cq/FatPtr.h"
+#include "cq/Memory.h"
 #include "cq/Predicate.h"
 #include "cq/Uncompute.h"
 
@@ -342,10 +344,75 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // select(q_j, rail + step, rail) for that read alone (never used in the loop).
   DenseMap<PHINode *, Operand> exitRail;
   std::vector<Instruction *> regionQReads;   // region form: quantum values read after the loop
+  // TRIP OBJECTS (cq-r7-91, CR rules 14, 20, 21; 91): a malloc-like allocation in the loop whose pointer is
+  // read after the loop is one object per (site, trip). It is read only by phis P of the exit block on the
+  // latch's exit edge (the last trip's object) whose other incomings are null on edges that skip the loop.
+  // P is a fat pointer (fatptr R1) over null and the trip objects: its tag rail starts at null's tag and
+  // advances by select(q_j, tag of trip j, tag); the cells read through P after the loop are captured at the
+  // end of each trip. Built for a slot object (a block of handle cells), in a single-exit body-form K-loop at
+  // the top level, whose site's block dominates the latch and dereferences it (so the object is non-null in
+  // the domain), with P used after the loop only by eq/ne compares with null and loads at constant offsets.
+  struct TripPhi {
+    PHINode *P;
+    Instruction *site;
+    std::vector<std::pair<int64_t, Type *>> cells;   // (byte offset, type) read through P after the loop
+    unsigned tag0 = 0;
+    Operand tag{nullptr, true};
+    std::vector<fatptr::TripObject> objs;
+  };
+  std::vector<TripPhi> tripPhis;
+  auto tripSite = [&](Instruction &I) {
+    auto *CB = dyn_cast<CallBase>(&I);
+    if (!CB || !I.getType()->isPointerTy())
+      return false;
+    Attribute k = CB->getFnAttr(Attribute::AllocKind);
+    if (!k.isValid() || (AllocFnKind(k.getValueAsInt()) & AllocFnKind::Alloc) == AllocFnKind::Unknown)
+      return false;
+    return true;
+  };
   for (BasicBlock *b : L.blocks())
     for (Instruction &I : *b) {
       if (multi)
         break;   // multi-exit form: read below, through C's phis only
+      if (tripSite(I) && any_of(I.users(), [&](const User *u) {
+            return !L.contains(cast<Instruction>(u)->getParent());
+          })) {
+        if (regionForm || !top || !X)
+          unimplemented("loops-cutoff: an allocation of a K-loop read after the loop, outside a top-level single-exit "
+                        "body-form K-loop (rule 14 trip objects)",
+                        &I);
+        ArrayRef<ObjectId> objs = ctx.T.provenance(&I, ctx.S);
+        if (objs.size() != 1 || ctx.T.classOf(objs.front()) != ObjClass::Slot)
+          unimplemented("loops-cutoff: a K-loop trip object read after the loop that is not one slot object (a QRAM or "
+                        "host object per trip)",
+                        &I);
+        if (!A.DT.dominates(I.getParent(), latch))
+          unimplemented("loops-cutoff: a K-loop trip object whose allocation does not dominate the latch", &I);
+        bool deref = false;
+        for (auto it = std::next(I.getIterator()); it != I.getParent()->end(); ++it)
+          if (const Value *ap = getLoadStorePointerOperand(&*it); ap && ap->stripInBoundsConstantOffsets() == &I)
+            deref = true;
+        if (!deref)
+          unimplemented("loops-cutoff: a K-loop trip object not dereferenced in its allocation's block (it may be "
+                        "null: rule 21's tag compare needs distinct non-null objects)",
+                        &I);
+        for (const Use &U : I.uses()) {
+          auto *P = dyn_cast<PHINode>(U.getUser());
+          if (L.contains(cast<Instruction>(U.getUser())->getParent()))
+            continue;
+          if (!P || P->getParent() != X || P->getIncomingBlock(U) != latch)
+            unimplemented("loops-cutoff: a K-loop trip object read after the loop other than by a phi of the exit "
+                          "block on the latch's exit edge",
+                          &I);
+          if (any_of(tripPhis, [&](const TripPhi &t) { return t.P == P; }))
+            continue;
+          TripPhi tp;
+          tp.P = P;
+          tp.site = &I;
+          tripPhis.push_back(std::move(tp));
+        }
+        continue;
+      }
       bool outside = false;
       for (const Use &U : I.uses()) {
         auto *ui = cast<Instruction>(U.getUser());
@@ -384,11 +451,60 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
                       &I);
       exitRebinds.push_back({&I, h});
     }
+  for (TripPhi &tp : tripPhis) {
+    PHINode *P = tp.P;
+    const Pred &pH = ctx.preds().block(H);
+    if (!isQ(P))
+      unimplemented("loops-cutoff: a phi of K-loop trip objects that taint calls classical", P);
+    if (!pH.classicalFactor(ctx.T, ctx.S).isTop())
+      unimplemented("loops-cutoff: a phi of K-loop trip objects of a loop under a classical condition", P);
+    for (unsigned i = 0; i < P->getNumIncomingValues(); ++i) {
+      BasicBlock *u = P->getIncomingBlock(i);
+      Value *v = P->getIncomingValue(i);
+      if (L.contains(u)) {
+        if (u != latch || v != tp.site)
+          unimplemented("loops-cutoff: a phi of K-loop trip objects with another incoming from the loop", P);
+        continue;
+      }
+      if (!isa<ConstantPointerNull>(v) || !(ctx.preds().edge(u, X) & pH).isBottom())
+        unimplemented("loops-cutoff: a phi of K-loop trip objects whose incoming from outside the loop is not null on "
+                      "an edge that skips the loop",
+                      P);
+    }
+    // Its uses after the loop: eq/ne with null, loads at constant offsets (through constant GEPs).
+    const DataLayout &DL = ctx.M.getDataLayout();
+    SmallVector<std::pair<const Value *, int64_t>, 8> work{{P, 0}};
+    while (!work.empty()) {
+      auto [v, off] = work.pop_back_val();
+      for (const User *u : v->users()) {
+        if (auto *ld = dyn_cast<LoadInst>(u); ld && ld->getPointerOperand() == v && ld->isSimple()) {
+          std::pair<int64_t, Type *> c{off, ld->getType()};
+          if (!is_contained(tp.cells, c))
+            tp.cells.push_back(c);
+          continue;
+        }
+        if (auto *cmp = dyn_cast<ICmpInst>(u); cmp && v == P && cmp->isEquality() &&
+                                              (isa<ConstantPointerNull>(cmp->getOperand(0)) ||
+                                               isa<ConstantPointerNull>(cmp->getOperand(1))))
+          continue;
+        if (auto *g = dyn_cast<GEPOperator>(u); g && g->getPointerOperand() == v && g->isInBounds()) {
+          APInt o(64, 0);
+          if (g->accumulateConstantOffset(DL, o)) {
+            work.push_back({g, off + o.getSExtValue()});
+            continue;
+          }
+        }
+        unimplemented("loops-cutoff: a phi of K-loop trip objects used after the loop other than by an eq/ne compare "
+                      "with null or a load at a constant offset",
+                      cast<Instruction>(u));
+      }
+    }
+  }
   std::vector<std::pair<PHINode *, PHINode *>> exitPhis;   // exit phi -> header phi it denotes
   if (!regionForm && !multi) {
     const Pred &pH = ctx.preds().block(H);
     for (PHINode &P : X->phis()) {
-      if (!isQ(&P))
+      if (!isQ(&P) || any_of(tripPhis, [&](const TripPhi &t) { return t.P == &P; }))
         continue;
       PHINode *id = nullptr;
       bool ok = true, foreign = false;
@@ -644,6 +760,38 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     set(h, init);
   }
 
+  for (TripPhi &tp : tripPhis) {
+    tp.tag0 = fatptr::reserveTripTags(ctx, c);
+    const Value *null = nullptr;
+    for (const Value *v : tp.P->incoming_values())
+      if (isa<ConstantPointerNull>(v))
+        null = v;
+    unsigned t0 = null ? fatptr::rootTag(ctx, null) : 0;
+    tp.tag = Operand{seedRail(ConstantInt::get(Type::getInt32Ty(ctx.M.getContext()), t0),
+                              Type::getInt32Ty(ctx.M.getContext())),
+                     true};
+  }
+  // The end of trip j (q its predicate): each trip object's captured cells, and the tag's advance.
+  auto captureTrips = [&](Value *q, unsigned j) {
+    for (TripPhi &tp : tripPhis) {
+      fatptr::TripObject o;
+      o.tag = tp.tag0 + j;
+      for (auto &[off, ty] : tp.cells) {
+        SmallVector<Operand, 8> h = mem::readSlotCells(ctx, tp.site, ty, 1, *latch->getTerminator(), off);
+        o.cells.push_back(fatptr::TripCell{off, ty, h.front()});
+      }
+      tp.objs.push_back(std::move(o));
+      abi::TemplateSpec sel;
+      sel.op = "select";
+      sel.w = RailType{Kind::Int, 32};
+      sel.shape = "lh";
+      tp.tag = Operand{ctx.emitTemplate(sel, {Operand{q, true},
+                                              Operand{ConstantInt::get(Type::getInt32Ty(ctx.M.getContext()), o.tag), false},
+                                              tp.tag}),
+                       true};
+    }
+  };
+
   DenseSet<const PHINode *> boundThisTrip;
   std::function<void(BasicBlock *, Value *, const Pred &)> lowerInsts;   // one block's non-phi instructions
   auto lowerBlocks = [&](Value *q, const std::function<bool(const BasicBlock *)> &pick) {
@@ -870,6 +1018,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       lowerBlocks(q, all);
       if (multi)
         capture(q, all);
+      captureTrips(q, j);
       Value *qn = conj(q, cont, latch->getTerminator());
       if (qn == q)
         unimplemented("loops-cutoff: a K-loop whose back edge is taken on every path of a trip", latch->getTerminator());
@@ -903,6 +1052,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   }
   for (CPhi &cp : cphis)
     ctx.bindFields(cp.P, {cp.acc});
+  for (TripPhi &tp : tripPhis) {
+    fatptr::bindTripPointer(ctx, *tp.P, tp.tag, tp.objs);
+    ctx.bindFields(tp.P, {tp.tag});
+  }
 }
 
 } // namespace

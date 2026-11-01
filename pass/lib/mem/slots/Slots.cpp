@@ -2476,6 +2476,41 @@ void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &
   st.lowered[&I] = val;
 }
 
+// cq-r7-91 (CR rules 9, 20; whatever LLVM does, we do): the cells of a fresh uninitialized allocation (an
+// alloca, or a call whose allockind is alloc + uninitialized: malloc, not calloc) are undef until written. A
+// store under a quantum predicate into a plain cell that no write reached since its allocation is select(p,
+// v, undef), which LLVM folds to v: the store is unguarded (91's trip objects: "it runs unguarded under the
+// trip predicate because the object is fresh in its trip"). The allocation dominates the store, and a path
+// back to the store that does not re-execute the allocation (the store on a cycle of its own) is excluded.
+bool freshCell(LoweringContext &ctx, FnState &st, const Site &s, const StoreInst &S) {
+  if (!s.a.ok || s.beyond || s.info->view || s.info->boolCells || s.info->record || s.info->split ||
+      s.info->escaping || S.isVolatile() || S.isAtomic())
+    return false;
+  if (s.info->kind != RootKind::Heap && s.info->kind != RootKind::Local)
+    return false;
+  auto *R = dyn_cast<Instruction>(s.a.root);
+  if (!R || R->getFunction() != S.getFunction() || !st.DT->dominates(R, &S))
+    return false;
+  if (auto *CB = dyn_cast<CallBase>(R)) {
+    Attribute k = CB->getFnAttr(Attribute::AllocKind);
+    if (!k.isValid())
+      return false;
+    auto kind = AllocFnKind(k.getValueAsInt());
+    if ((kind & AllocFnKind::Alloc) == AllocFnKind::Unknown ||
+        (kind & AllocFnKind::Uninitialized) == AllocFnKind::Unknown)
+      return false;
+  } else if (!isa<AllocaInst>(R)) {
+    return false;
+  }
+  if (R->getParent() != S.getParent() && onCycleWithin(S.getParent(), between(R->getParent(), S.getParent())))
+    return false;
+  for (const Instruction &X : instructions(*st.F))
+    if (auto *MI = dyn_cast<MemIntrinsic>(&X); MI && hasObject(ctx, MI->getDest(), s.o))
+      return false;
+  uint64_t size = storeBytes(ctx.M.getDataLayout(), S.getValueOperand()->getType());
+  return clearBetween(ctx, *s.info, s.o, R, &S, s.a, size);
+}
+
 } // namespace
 
 void allocateSlots(LoweringContext &ctx, Instruction &site) {
@@ -2840,7 +2875,7 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
       }
   if (mergedCloneStore(ctx, st, s, stI, val))
     return;
-  if (Value *flag = ctx.currentFlag()) {
+  if (Value *flag = ctx.currentFlag(); flag && !freshCell(ctx, st, s, stI)) {
     (void)flag;
     // Rules 9, 20: under a quantum predicate the cell receives select(predicate, value, old).
     Operand old = readCell(ctx, st, s, stI, v->getType());
@@ -2914,7 +2949,7 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
 
 // Rule 16 (99): the cells a host effect's tape entry reads.
 SmallVector<Operand, 8> readSlotCells(LoweringContext &ctx, const Value *ptr, Type *cellTy, uint64_t n,
-                                      Instruction &at) {
+                                      Instruction &at, int64_t firstByte) {
   FnState &st = stateOf(ctx, at);
   Site s = siteOf(ctx, st, at, ptr, cellTy);
   if (s.beyond)
@@ -2928,7 +2963,7 @@ SmallVector<Operand, 8> readSlotCells(LoweringContext &ctx, const Value *ptr, Ty
     Site c = s;
     if (s.info->record)
       unimplemented("mem-slots: a host effect reading a slot record", &at);
-    c.a.off += int64_t(i * s.info->cellBytes);
+    c.a.off += firstByte + int64_t(i * s.info->cellBytes);
     if (!sourceOf(ctx, st, *c.info, c.o, &at, c.a, cellTy)) {
       // 73: a memory intrinsic reading a cell that only run-time stores wrote (a loop fill) reads the handle
       // in the cell at run time, as a quantum slot load does (M3: readCell names it as a cell read).
