@@ -1403,8 +1403,11 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
     Function *C = calls::materialize(M, S);
     sh.out = C;
     unsigned off = S.ctl ? 1 : 0;
-    if (S.ctl)
+    if (S.ctl) {
       entryFlag = C->getArg(0);
+      // The caller's control flag: a rail the clone reads (a flag composed from it, 124), never freed here.
+      ctx.unc().recordExternal(entryFlag, Role::UserRegister);
+    }
     // CR §1.4 (calls::materialize's ABI): one parameter per scalar leaf of each formal, a handle where
     // taint's field mask is quantum; a composite formal is bound field-wise (rules 25, 26).
     unsigned p = off;
