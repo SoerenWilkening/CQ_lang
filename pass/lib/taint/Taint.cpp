@@ -3703,6 +3703,65 @@ bool TaintInfo::resultQuantum(const Specialization &S, unsigned field) const {
   // zext/shl/or-disjoint pattern; otherwise the whole value.
   std::vector<std::pair<unsigned, unsigned>> ranges; // lane ranges
   if (RT->isAggregateType() || RT->isVectorTy()) {
+    // The packing cut of each integer leaf, at the insertvalue each return puts there last (or
+    // disjoint (shl (zext X), C), (zext Y), C a whole number of bytes).
+    std::vector<std::vector<unsigned>> leafCut;
+    std::vector<unsigned> leafLanes;
+    {
+      std::function<void(llvm::Type *, std::vector<llvm::Type *> &)> leavesOf = [&](llvm::Type *T,
+                                                                                  std::vector<llvm::Type *> &o) {
+        if (auto *ST = dyn_cast<llvm::StructType>(T)) {
+          for (llvm::Type *E : ST->elements())
+            leavesOf(E, o);
+        } else if (auto *AT = dyn_cast<llvm::ArrayType>(T)) {
+          for (uint64_t k = 0; k < AT->getNumElements(); ++k)
+            leavesOf(AT->getElementType(), o);
+        } else if (auto *VT = dyn_cast<llvm::FixedVectorType>(T)) {
+          for (unsigned k = 0; k < VT->getNumElements(); ++k)
+            o.push_back(VT->getElementType());
+        } else {
+          o.push_back(T);
+        }
+      };
+      std::vector<llvm::Type *> leaves;
+      leavesOf(RT, leaves);
+      leafCut.resize(leaves.size());
+      auto leafIndex = [&](llvm::ArrayRef<unsigned> idx) {
+        llvm::Type *T = RT;
+        unsigned first = 0;
+        for (unsigned i : idx) {
+          for (unsigned j = 0; j < i; ++j) {
+            std::vector<llvm::Type *> l;
+            leavesOf(T->isStructTy() ? T->getStructElementType(j) : T->getArrayElementType(), l);
+            first += unsigned(l.size());
+          }
+          T = T->isStructTy() ? T->getStructElementType(i) : T->getArrayElementType();
+        }
+        return first;
+      };
+      if (RT->isStructTy() || RT->isArrayTy())
+        for (llvm::BasicBlock &BB : *SS->F)
+          if (auto *RI = dyn_cast<llvm::ReturnInst>(BB.getTerminator()))
+            if (llvm::Value *V = RI->getReturnValue()) {
+              std::vector<bool> seen(leaves.size(), false);
+              for (llvm::Value *v = V; auto *IV = dyn_cast<llvm::InsertValueInst>(v); v = IV->getAggregateOperand()) {
+                llvm::Value *X = IV->getInsertedValueOperand();
+                unsigned k = leafIndex(IV->getIndices());
+                if (!X->getType()->isIntegerTy() || k >= leaves.size() || seen[k])
+                  continue;
+                seen[k] = true;
+                using namespace llvm::PatternMatch;
+                llvm::Value *A, *B;
+                const llvm::APInt *C;
+                if ((match(X, m_DisjointOr(m_Shl(m_ZExt(m_Value(A)), m_APInt(C)), m_ZExt(m_Value(B)))) ||
+                     match(X, m_DisjointOr(m_ZExt(m_Value(B)), m_Shl(m_ZExt(m_Value(A)), m_APInt(C))))) &&
+                    C->getZExtValue() % 8 == 0 && C->getZExtValue() > 0 &&
+                    C->getZExtValue() < X->getType()->getIntegerBitWidth())
+                  leafCut[k] = {unsigned(C->getZExtValue())};
+              }
+              break;   // the first return decides, as for a packed integer result (spine checks the rest)
+            }
+    }
     std::function<void(llvm::Type *, unsigned &)> walk = [&](llvm::Type *T, unsigned &lane) {
       if (auto *ST = dyn_cast<llvm::StructType>(T)) {
         for (llvm::Type *E : ST->elements())
@@ -3716,7 +3775,17 @@ bool TaintInfo::resultQuantum(const Specialization &S, unsigned field) const {
       } else {
         unsigned n = T->isIntegerTy() ? std::max(1u, (T->getIntegerBitWidth() + 7) / 8)
                                       : T->isPointerTy() ? 2 : 1;
-        ranges.push_back({lane, lane + n});
+        // cq-0umd (166, rule 26): an integer leaf the returns pack from fields (the coerced inner
+        // struct of { i64, double }) is one field per packed field, as for a packed integer result.
+        unsigned leaf = unsigned(leafLanes.size());
+        leafLanes.push_back(lane);
+        unsigned lo = 0;
+        if (leaf < leafCut.size())
+          for (unsigned c : leafCut[leaf]) {
+            ranges.push_back({lane + lo / 8, lane + c / 8});
+            lo = c;
+          }
+        ranges.push_back({lane + lo / 8, lane + n});
         lane += n;
       }
     };

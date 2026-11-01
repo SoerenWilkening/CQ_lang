@@ -273,6 +273,13 @@ llvm::SmallVector<unsigned, 4> unpackCuts(const llvm::Value *v);
 // The field boundaries of a packed integer as its writer packs it (taint's resultQuantum reading of a
 // returned coercion: or disjoint (shl (zext X), C), (zext Y)), {0, C, N}; {0, N} when it is no packing.
 llvm::SmallVector<unsigned, 4> packedCuts(const llvm::Value *v);
+// cq-0umd (166, rule 26): per scalar leaf of F's aggregate result type (depth first, as aggr flattens
+// it), the field boundaries of that leaf as F's returns pack it (packedCuts of the integer each return's
+// insertvalue chain puts there; {0, W} for an integer leaf no return packs, {} for a non-integer leaf).
+// Empty when F's result is not an aggregate. Returns that pack a leaf differently: unimplemented.
+llvm::SmallVector<llvm::SmallVector<unsigned, 4>, 4> resultLeafCuts(const llvm::Function &F);
+// The result's fields in that order: each leaf's type, a packed integer leaf split into its fields.
+llvm::SmallVector<llvm::Type *, 4> resultFieldTypes(const llvm::Function &F);
 
 // Binds orig to an operand with an explicit kind (classical collapse binds a quantum orig classically).
 void bindOperand(LoweringContext &, const llvm::Value *orig, Operand op);

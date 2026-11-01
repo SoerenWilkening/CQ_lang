@@ -24,6 +24,7 @@
 //  need nothing here beyond RailType (Common.h).
 #include "cq/Aggregates.h"
 
+#include <map>
 #include <optional>
 
 #include "cq/Abi.h"
@@ -108,14 +109,51 @@ void classicalLeaves(IRBuilder<> &B, Value *v, SmallVectorImpl<Operand> &out, co
   }
 }
 
-// The fields of an original value as leaves.
+// cq-0umd (166, rule 26): the fields per scalar leaf of a composite value whose packed integer leaf is
+// bound as several fields, per lowered function (another specialization of the same original binds its
+// own). A value with no entry has one field per leaf.
+std::map<std::pair<const Function *, const Value *>, SmallVector<unsigned, 4>> &leafFieldMap() {
+  static std::map<std::pair<const Function *, const Value *>, SmallVector<unsigned, 4>> m;
+  return m;
+}
+
+// The fields per leaf of v (scalar: the fields it is bound to, a packed integer's several).
+SmallVector<unsigned, 4> fieldsPerLeaf(LoweringContext &ctx, const Value *v) {
+  unsigned n = leafCount(v->getType(), v);
+  if (!isComposite(v->getType())) {
+    if (isa<Constant>(v) || !v->getType()->isIntegerTy())
+      return {1};
+    return {std::max(1u, unsigned(ctx.fields(v).size()))};
+  }
+  auto it = leafFieldMap().find({&ctx.out(), v});
+  if (it != leafFieldMap().end() && it->second.size() == n)
+    return it->second;
+  return SmallVector<unsigned, 4>(n, 1);
+}
+
+void setFieldsPerLeaf(LoweringContext &ctx, const Value *v, ArrayRef<unsigned> per) {
+  if (llvm::all_of(per, [](unsigned c) { return c == 1; }))
+    leafFieldMap().erase({&ctx.out(), v});
+  else
+    leafFieldMap()[{&ctx.out(), v}] = SmallVector<unsigned, 4>(per.begin(), per.end());
+}
+
+unsigned sumOf(ArrayRef<unsigned> a, unsigned from, unsigned to) {
+  unsigned s = 0;
+  for (unsigned k = from; k < to; ++k)
+    s += a[k];
+  return s;
+}
+
+// The fields of an original value as leaves (a packed integer leaf contributes its several fields).
 SmallVector<Operand, 4> leaves(LoweringContext &ctx, const Value *v) {
   SmallVector<Operand, 4> out;
   if (auto *c = dyn_cast<Constant>(v)) {
     constantLeaves(const_cast<Constant *>(c), out, v);
     return out;
   }
-  unsigned n = leafCount(v->getType(), v);
+  SmallVector<unsigned, 4> per = fieldsPerLeaf(ctx, v);
+  unsigned n = sumOf(per, 0, unsigned(per.size()));
   SmallVector<Operand, 4> fs = ctx.fields(v);
   if (fs.size() == 1 && isComposite(v->getType()) && fs.front().v->getType() == v->getType()) {
     if (fs.front().handle)
@@ -168,6 +206,8 @@ void bindResult(LoweringContext &ctx, const Value *orig, ArrayRef<Operand> ops) 
   bool anyRail = false;
   for (const Operand &o : ops)
     anyRail |= o.handle;
+  if (!anyRail && isComposite(t) && leafFieldMap().count({&ctx.out(), orig}))
+    unimplemented("aggr: a classical composite with a packed integer leaf bound field-wise (166, cq-0umd)", orig);
   if (!anyRail && isComposite(t)) {
     unsigned k = 0;
     Value *v = materialize(ctx.B(), t, ops, k);
@@ -732,22 +772,54 @@ unsigned constIndex(const Value *idx, const Instruction &I) {
 } // namespace
 
 void lowerExtractValue(LoweringContext &ctx, ExtractValueInst &I) {
-  SmallVector<Operand, 4> all = leaves(ctx, I.getAggregateOperand());
-  auto [first, count] = leafRange(I.getAggregateOperand()->getType(), I.getIndices(), &I);
-  if (first + count > all.size())
+  const Value *agg = I.getAggregateOperand();
+  SmallVector<Operand, 4> all = leaves(ctx, agg);
+  SmallVector<unsigned, 4> per = fieldsPerLeaf(ctx, agg);
+  auto [first, count] = leafRange(agg->getType(), I.getIndices(), &I);
+  if (first + count > per.size())
     internalError("aggr: extractvalue past the aggregate's leaves", &I);
-  bindResult(ctx, &I, ArrayRef<Operand>(all).slice(first, count));
+  unsigned f0 = sumOf(per, 0, first), fn = sumOf(per, first, first + count);
+  if (f0 + fn > all.size())
+    internalError("aggr: extractvalue past the aggregate's fields", &I);
+  ArrayRef<Operand> slice = ArrayRef<Operand>(all).slice(f0, fn);
+  if (!isComposite(I.getType()) && fn > 1) {
+    // A packed integer leaf (166): bound to its fields; spine reads them at the unpacking (Views.cpp).
+    ctx.bindFields(&I, slice);
+    return;
+  }
+  setFieldsPerLeaf(ctx, &I, ArrayRef<unsigned>(per).slice(first, count));
+  bindResult(ctx, &I, slice);
 }
 
 void lowerInsertValue(LoweringContext &ctx, InsertValueInst &I) {
-  SmallVector<Operand, 4> all = leaves(ctx, I.getAggregateOperand());
-  SmallVector<Operand, 4> ins = leaves(ctx, I.getInsertedValueOperand());
-  auto [first, count] = leafRange(I.getAggregateOperand()->getType(), I.getIndices(), &I);
-  if (count != ins.size() || first + count > all.size())
+  const Value *agg = I.getAggregateOperand(), *insV = I.getInsertedValueOperand();
+  SmallVector<Operand, 4> all = leaves(ctx, agg);
+  SmallVector<unsigned, 4> per = fieldsPerLeaf(ctx, agg);
+  SmallVector<unsigned, 4> insPer = fieldsPerLeaf(ctx, insV);
+  SmallVector<Operand, 4> ins = isComposite(insV->getType()) || isa<Constant>(insV) ? leaves(ctx, insV)
+                                                                                     : ctx.fields(insV);
+  if (!isComposite(insV->getType()) && !isa<Constant>(insV) && ins.size() != insPer.front())
+    internalError("aggr: insertvalue of a scalar bound to another field count", &I);
+  auto [first, count] = leafRange(agg->getType(), I.getIndices(), &I);
+  if (count != insPer.size() || first + count > per.size() || sumOf(insPer, 0, count) != ins.size())
     internalError("aggr: insertvalue leaf count mismatch", &I);
+  unsigned f0 = sumOf(per, 0, first), fn = sumOf(per, first, first + count);
+  if (f0 + fn > all.size())
+    internalError("aggr: insertvalue past the aggregate's fields", &I);
+  SmallVector<Operand, 4> out(all.begin(), all.begin() + f0);
+  out.append(ins.begin(), ins.end());
+  out.append(all.begin() + f0 + fn, all.end());
   for (unsigned i = 0; i < count; ++i)
-    all[first + i] = ins[i];
-  bindResult(ctx, &I, all);
+    per[first + i] = insPer[i];
+  setFieldsPerLeaf(ctx, &I, per);
+  bindResult(ctx, &I, out);
+}
+
+void bindLeafFields(LoweringContext &ctx, const Value *orig, ArrayRef<Operand> fields, ArrayRef<unsigned> perLeaf) {
+  if (perLeaf.size() != leafCount(orig->getType(), orig) || sumOf(perLeaf, 0, unsigned(perLeaf.size())) != fields.size())
+    internalError("aggr: bindLeafFields with field counts that are not the value's leaves", orig);
+  setFieldsPerLeaf(ctx, orig, perLeaf);
+  bindResult(ctx, orig, fields);
 }
 
 void lowerVectorOp(LoweringContext &ctx, Instruction &I) {

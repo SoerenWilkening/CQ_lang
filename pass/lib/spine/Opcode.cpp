@@ -509,6 +509,10 @@ bool cleanable(LoweringContext &ctx, Value *y) {
     return false;
   if (auto *sel = dyn_cast<SelectInst>(I); sel && !spine::isQ(ctx, sel->getCondition()))
     return false;
+  // A field of a clone call's composite result (an extractvalue of the lowered call, U2): the call's
+  // result rails are undone together by its twin (rule 18, 166), never one of them by rule 6.
+  if (isa<ExtractValueInst>(ctx.operand(y).v))
+    return false;
   return ctx.operand(y).handle;
 }
 

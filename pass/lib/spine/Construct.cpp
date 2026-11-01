@@ -799,35 +799,6 @@ void Walker::lowerUnit(Loop &lp) {
         visited.insert(&I);
 }
 
-// The k-th scalar leaf type of a type (depth first, as aggr flattens it).
-Type *leafTypeAt(Type *t, unsigned k) {
-  std::function<Type *(Type *, unsigned &)> walk = [&](Type *u, unsigned &i) -> Type * {
-    if (auto *st = dyn_cast<StructType>(u)) {
-      for (Type *e : st->elements())
-        if (Type *r = walk(e, i))
-          return r;
-      return nullptr;
-    }
-    if (auto *a = dyn_cast<ArrayType>(u)) {
-      for (uint64_t j = 0; j < a->getNumElements(); ++j)
-        if (Type *r = walk(a->getElementType(), i))
-          return r;
-      return nullptr;
-    }
-    if (auto *v = dyn_cast<FixedVectorType>(u)) {
-      if (i < v->getNumElements())
-        return v->getElementType();
-      i -= v->getNumElements();
-      return nullptr;
-    }
-    return i-- == 0 ? u : nullptr;
-  };
-  unsigned i = k;
-  if (Type *r = walk(t, i))
-    return r;
-  internalError("spine: a leaf index past the type's leaves");
-}
-
 // The field-wise result of a clone's return (CR §1.4, rule 18), when rv is one: vals gets one value per
 // leaf (the copied-out rail where quantum, the classical value otherwise), the clone's return type st
 // having `extra` more fields after them (E1's flags, cq-xhv4). False when rv is returned as one value.
@@ -842,7 +813,8 @@ bool Walker::emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigne
     fieldwise = true;
   } else if (rty->isAggregateType() || rty->isVectorTy()) {
     pcuts.clear();
-    nLeaves = unsigned(ctx.T.fieldMask(rv, ctx.S).size());
+    // The result's fields: its leaves, a packed integer leaf split (cq-0umd, 166).
+    nLeaves = unsigned(spine::resultFieldTypes(*ctx.S.F).size());
     for (unsigned k = 0; k < nLeaves; ++k)
       fieldwise |= ctx.T.resultQuantum(ctx.S, k);
   } else {
@@ -857,7 +829,7 @@ bool Walker::emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigne
     auto leafTy = [&](unsigned k) -> Type * {
       if (pcuts.size() > 2)
         return IntegerType::get(ctx.M.getContext(), pcuts[k + 1] - pcuts[k]);
-      return rty->isVectorTy() ? cast<VectorType>(rty)->getElementType() : leafTypeAt(rty, k);
+      return spine::resultFieldTypes(*ctx.S.F)[k];
     };
     if (!st || st->getNumElements() != leaves.size() + extra)
       internalError("spine: a clone's field-wise result type does not match its result's fields", ret);

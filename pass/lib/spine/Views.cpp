@@ -921,3 +921,96 @@ SmallVector<unsigned, 4> packedCuts(const Value *v) {
 }
 
 } // namespace cq::spine
+
+namespace cq::spine {
+
+namespace {
+void scalarLeaves(Type *t, SmallVectorImpl<Type *> &out) {
+  if (auto *st = dyn_cast<StructType>(t)) {
+    for (Type *e : st->elements())
+      scalarLeaves(e, out);
+  } else if (auto *a = dyn_cast<ArrayType>(t)) {
+    for (uint64_t j = 0; j < a->getNumElements(); ++j)
+      scalarLeaves(a->getElementType(), out);
+  } else if (auto *v = dyn_cast<FixedVectorType>(t)) {
+    for (unsigned j = 0; j < v->getNumElements(); ++j)
+      out.push_back(v->getElementType());
+  } else {
+    out.push_back(t);
+  }
+}
+
+// The first flattened leaf of the index path idx into t.
+unsigned leafIndexOf(Type *t, ArrayRef<unsigned> idx) {
+  unsigned first = 0;
+  for (unsigned i : idx) {
+    for (unsigned j = 0; j < i; ++j) {
+      Type *e = t->isStructTy() ? t->getStructElementType(j) : t->getArrayElementType();
+      SmallVector<Type *, 4> l;
+      scalarLeaves(e, l);
+      first += unsigned(l.size());
+    }
+    t = t->isStructTy() ? t->getStructElementType(i) : t->getArrayElementType();
+  }
+  return first;
+}
+} // namespace
+
+SmallVector<SmallVector<unsigned, 4>, 4> resultLeafCuts(const Function &F) {
+  Type *rt = F.getReturnType();
+  SmallVector<SmallVector<unsigned, 4>, 4> out;
+  if (!rt->isStructTy() && !rt->isArrayTy())
+    return out;
+  SmallVector<Type *, 4> leaves;
+  scalarLeaves(rt, leaves);
+  for (Type *t : leaves)
+    out.push_back(t->isIntegerTy() ? SmallVector<unsigned, 4>{0, t->getIntegerBitWidth()} : SmallVector<unsigned, 4>{});
+  bool first = true;
+  for (const BasicBlock &BB : F) {
+    auto *RI = dyn_cast<ReturnInst>(BB.getTerminator());
+    if (!RI || !RI->getReturnValue())
+      continue;
+    SmallVector<SmallVector<unsigned, 4>, 4> here = out;
+    if (!first)
+      for (unsigned k = 0; k < leaves.size(); ++k)
+        if (leaves[k]->isIntegerTy())
+          here[k] = {0, leaves[k]->getIntegerBitWidth()};
+    SmallVector<bool, 8> seen(leaves.size(), false);
+    for (const Value *v = RI->getReturnValue(); auto *iv = dyn_cast<InsertValueInst>(v); v = iv->getAggregateOperand()) {
+      const Value *ins = iv->getInsertedValueOperand();
+      if (!ins->getType()->isIntegerTy())
+        continue;
+      unsigned k = leafIndexOf(rt, iv->getIndices());
+      if (k >= leaves.size() || seen[k])
+        continue;   // a later insert of the same leaf wins
+      seen[k] = true;
+      SmallVector<unsigned, 4> c = packedCuts(ins);
+      if (c.size() > 2)
+        here[k] = c;
+    }
+    if (!first && here != out)
+      unimplemented("spine: a clone whose returns pack an aggregate result's integer leaf at different fields "
+                    "(rule 26, cq-0umd)",
+                    RI);
+    out = here;
+    first = false;
+  }
+  return out;
+}
+
+SmallVector<Type *, 4> resultFieldTypes(const Function &F) {
+  SmallVector<Type *, 4> leaves, out;
+  scalarLeaves(F.getReturnType(), leaves);
+  SmallVector<SmallVector<unsigned, 4>, 4> cuts = resultLeafCuts(F);
+  for (unsigned k = 0; k < leaves.size(); ++k) {
+    if (k < cuts.size() && cuts[k].size() > 2) {
+      for (unsigned j = 0; j + 1 < cuts[k].size(); ++j)
+        out.push_back(IntegerType::get(F.getContext(), cuts[k][j + 1] - cuts[k][j]));
+      continue;
+    }
+    out.push_back(leaves[k]);
+  }
+  return out;
+}
+
+} // namespace cq::spine
