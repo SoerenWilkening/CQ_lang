@@ -17,12 +17,7 @@
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
-
-#include <functional>
-#include <map>
-#include <string>
 
 using namespace llvm;
 
@@ -116,68 +111,10 @@ bool isLibmIntrinsic(Intrinsic::ID id) {
   }
 }
 
-// A library function LLVM knows by semantics (TargetLibraryInfo for the module's triple).
+// A library function LLVM knows by semantics (cq::libFuncOf, Common.h).
 bool knownLibFunc(const Function &F) {
-  static thread_local std::unique_ptr<TargetLibraryInfoImpl> impl;
-  static thread_local std::string triple;
-  const Module *M = F.getParent();
-  if (!impl || triple != M->getTargetTriple()) {
-    triple = M->getTargetTriple();
-    impl = std::make_unique<TargetLibraryInfoImpl>(Triple(triple));
-  }
-  TargetLibraryInfo TLI(*impl, &F);
   LibFunc lf;
-  if (TLI.getLibFunc(F, lf))
-    return true;
-  // cq-my17 (99): an asm label "\01_n" on a Mach-O target (global prefix '_') is the symbol of C
-  // function n (the Darwin headers label fwrite, fputs, ... this way). It is that library function
-  // when n's prototype is (TLI checks it on a scratch declaration named n).
-  StringRef n = F.getName();
-  const DataLayout &DL = M->getDataLayout();
-  if (!n.starts_with("\01") || DL.getGlobalPrefix() != '_' || !n.drop_front(1).starts_with("_"))
-    return false;
-  // Keyed by content (triple, name, prototype), never by a Function pointer another module may reuse.
-  std::string key = M->getTargetTriple() + '\n' + n.str() + '\n';
-  {
-    raw_string_ostream os(key);
-    F.getFunctionType()->print(os);
-  }
-  static thread_local std::map<std::string, bool> cache;
-  if (auto it = cache.find(key); it != cache.end())
-    return it->second;
-  LLVMContext C;
-  Module scratch("cq-libfunc", C);
-  scratch.setTargetTriple(M->getTargetTriple());
-  scratch.setDataLayout(DL);
-  // Rebuild the prototype in the scratch context (opaque pointers: every type is context-free here).
-  std::function<Type *(Type *)> tr = [&](Type *t) -> Type * {
-    if (t->isVoidTy()) return Type::getVoidTy(C);
-    if (t->isIntegerTy()) return Type::getIntNTy(C, t->getIntegerBitWidth());
-    if (t->isPointerTy()) return PointerType::get(C, t->getPointerAddressSpace());
-    if (t->isFloatTy()) return Type::getFloatTy(C);
-    if (t->isDoubleTy()) return Type::getDoubleTy(C);
-    if (t->isX86_FP80Ty()) return Type::getX86_FP80Ty(C);
-    if (t->isFP128Ty()) return Type::getFP128Ty(C);
-    return nullptr;
-  };
-  FunctionType *FT = F.getFunctionType();
-  Type *ret = tr(FT->getReturnType());
-  SmallVector<Type *, 8> ps;
-  bool ok = ret != nullptr;
-  for (Type *p : FT->params()) {
-    Type *t = tr(p);
-    ok = ok && t;
-    ps.push_back(t);
-  }
-  bool known = false;
-  if (ok) {
-    Function *D = Function::Create(FunctionType::get(ret, ps, FT->isVarArg()), GlobalValue::ExternalLinkage,
-                                   n.drop_front(2), &scratch);
-    TargetLibraryInfo STLI(*impl, D);
-    known = STLI.getLibFunc(*D, lf);
-  }
-  cache[key] = known;
-  return known;
+  return libFuncOf(F, lf);
 }
 
 // The <fenv.h> functions (C17 7.6, with the glibc/BSD trap-enable extensions); taint's isFenvCall

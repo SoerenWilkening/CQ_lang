@@ -85,16 +85,8 @@ namespace {
 // ------------------------------------------------------------------ recognition
 
 bool libFunc(const Function &F, LibFunc want) {
-  static thread_local std::unique_ptr<TargetLibraryInfoImpl> impl;
-  static thread_local std::string triple;
-  const Module *M = F.getParent();
-  if (!impl || triple != M->getTargetTriple()) {
-    triple = M->getTargetTriple();
-    impl = std::make_unique<TargetLibraryInfoImpl>(Triple(triple));
-  }
-  TargetLibraryInfo TLI(*impl, &F);
   LibFunc lf;
-  return TLI.getLibFunc(F, lf) && lf == want;
+  return libFuncOf(F, lf) && lf == want;
 }
 
 const Function *calleeOf(const CallBase &CB) {

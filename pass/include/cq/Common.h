@@ -5,6 +5,7 @@
 #include <string>
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Type.h"
@@ -21,4 +22,7 @@ llvm::Type *irTypeOf(llvm::LLVMContext &, RailType);
 llvm::IntegerType *handleTy(llvm::LLVMContext &);   // i32
 using Mask = std::string;                           // CR §1.4 digits, '1' = quantum, left to right
 struct Operand { llvm::Value *v; bool handle; };    // a rail handle, or a classical value of the new IR
+// cq-my17 (rule 16, 99): F is a library function LLVM knows (TargetLibraryInfo for the module's triple,
+// prototype checked), its LibFunc in lf; a Mach-O asm label "\01_n" names C function n.
+bool libFuncOf(const llvm::Function &F, llvm::LibFunc &lf);
 }
