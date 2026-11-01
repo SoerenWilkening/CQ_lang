@@ -96,7 +96,9 @@
 //  - noteCallReads(fwd, rails) (U4, cq-arch 2026-11-01; CR rule 5): rails in caller cells the clone call
 //    fwd reads (its twin recompute-reads them). They are reads of fwd's group item, as fwd's handle
 //    arguments are: their own items follow it, and a barrier on one binds it. It may come before or
-//    after fwd's recordCall.
+//    after fwd's recordCall (or its recordTemplate, a clone with one result). Beyond the noted ones, a
+//    clone call (a callee that is not a cq_template_ or cqrt_ function) with pointer arguments reads
+//    every pending rail that may sit in a cell of the objects they point to (railCells), cq-w2a-calls.
 //
 // Emission. Each resolvable rail g is resolved once, as one ITEM: its records undone in reverse
 // (or its rule 6 clean-up, or nothing for a direct seed free), then cqrt_free / cqrt_qram_free.
@@ -328,6 +330,48 @@ struct Uncompute::Impl {
       return;
     info[rec].reads.push_back(r);
     rails[r].readerRecs.push_back(rec);
+  }
+  // The record of a clone call (a U2 group's Call record, or a single result's template record).
+  unsigned callRecord(const CallInst *fwd) const {
+    for (unsigned k = 0; k < records.size(); ++k)
+      if (records[k].forward == fwd && (info[k].kind == RecKind::Call || info[k].kind == RecKind::Template))
+        return k;
+    return kNone;
+  }
+  // A clone call's twin reads the objects its pointer arguments point to (CR rule 5, 164: the handle
+  // cells of a slot record the clone loads): every pending rail that may sit in a cell of one of them
+  // when the call runs (railCells: stored there, or copied there by a memory intrinsic) is a read of
+  // the call's record, so its item follows the twin. U4's noted reads are a subset.
+  void addObjectReads(CallInst *fwd, unsigned rec) {
+    if (Function *cf = fwd->getCalledFunction();
+        !cf || cf->getName().starts_with("cq_template_") || cf->getName().starts_with("cqrt_"))
+      return;
+    const DataLayout &DL = fwd->getModule()->getDataLayout();
+    SmallVector<Cell, 4> objs;
+    for (Value *a : fwd->args())
+      if (a->getType()->isPointerTy())
+        objs.push_back({a, 0});
+    if (objs.empty())
+      return;
+    for (RailId g = 0; g < rails.size(); ++g) {
+      if (g == info[rec].item || isMerge(g) || rails[g].released || rails[g].popBus != kNone ||
+          rails[g].deferred != kNone)
+        continue;
+      if (auto *d = dyn_cast<Instruction>(rails[g].handle); d && !(d != fwd && after(fwd, d)))
+        continue;
+      SmallVector<Cell, 8> cells;
+      railCells(g, cells);
+      for (const Cell &c : cells)
+        if (any_of(objs, [&](const Cell &o) { return mayAlias(o, c, DL); })) {
+          addCallRead(rec, g);
+          break;
+        }
+    }
+  }
+  void takeCallReads(CallInst *fwd, unsigned rec) {
+    for (RailId r : callReads.lookup(fwd))
+      addCallRead(rec, r);
+    addObjectReads(fwd, rec);
   }
   SmallVector<unsigned, 4> openStack;
   DenseSet<const Instruction *> emitted;
@@ -722,22 +766,32 @@ struct Uncompute::Impl {
     return false;
   }
   void pruneCleanups() {
-    for (RailId g = 0; g < rails.size(); ++g) {
-      Rail &r = rails[g];
-      if (!r.cleanup || r.released)
-        continue;
-      bool drop = false;
-      for (RailId x : r.cleanup->reads)
-        if (garbageReads(x, g)) {
-          drop = true;
-          break;
-        }
-      if (!drop)
-        continue;
-      for (RailId x : r.cleanup->reads)
-        llvm::erase(rails[x].cleanupReaders, g);
-      r.cleanup.reset();
+    // To a fixed point: dropping one clean-up makes its rail plain garbage again, which may now be a
+    // garbage reader of an earlier clean-up's operand (164's clone: %6 = %7 - %3 kept while %7's own
+    // clean-up through the result was still there, then %7's dropped: a cycle).
+    for (bool again = true; again;) {
+      again = false;
+      for (RailId g = 0; g < rails.size(); ++g)
+        if (pruneOne(g))
+          again = true;
     }
+  }
+  bool pruneOne(RailId g) {
+    Rail &r = rails[g];
+    if (!r.cleanup || r.released)
+      return false;
+    bool drop = false;
+    for (RailId x : r.cleanup->reads)
+      if (garbageReads(x, g)) {
+        drop = true;
+        break;
+      }
+    if (!drop)
+      return false;
+    for (RailId x : r.cleanup->reads)
+      llvm::erase(rails[x].cleanupReaders, g);
+    r.cleanup.reset();
+    return true;
   }
 
   // Rails whose item reads g, directly or through a merge that may name g (U1).
@@ -2277,7 +2331,8 @@ Uncompute::Uncompute() : impl(std::make_shared<Impl>()) {}
 RailId Uncompute::recordTemplate(CallInst *fwd, const abi::TemplateSpec &spec, ArrayRef<Operand> ops) {
   impl->checkOps(fwd, ops, "recordTemplate");
   RailId out = impl->newRail(fwd, Role::Garbage, "recordTemplate");
-  impl->addRecord(fwd, spec, ops, out, RecKind::Template, false);
+  unsigned rec = impl->addRecord(fwd, spec, ops, out, RecKind::Template, false);
+  impl->takeCallReads(fwd, rec);
   return out;
 }
 
@@ -2486,8 +2541,7 @@ SmallVector<RailId, 4> Uncompute::recordCall(CallInst *fwd, ArrayRef<Value *> ou
   RailId lead = I.newRail(all.front(), Role::Garbage, "recordCall");
   I.rails[lead].group = gi;
   unsigned rec = I.addRecord(fwd, abi::TemplateSpec{}, ops, lead, RecKind::Call, false);
-  for (RailId r : I.callReads.lookup(fwd))
-    I.addCallRead(rec, r);
+  I.takeCallReads(fwd, rec);
   SmallVector<RailId, 4> ids{lead};
   for (size_t k = 1; k < all.size(); ++k) {
     RailId m = I.newRail(all[k], Role::Garbage, "recordCall");
@@ -2517,10 +2571,9 @@ void Uncompute::noteCallReads(CallInst *fwd, ArrayRef<RailId> reads) {
     SmallVector<RailId, 4> &v = I.callReads[fwd];
     if (!is_contained(v, r))
       v.push_back(r);
-    // Recorded already: the group's Call record reads it from now on.
-    for (const Impl::CallGroup &cg : I.groups)
-      if (cg.fwd == fwd)
-        I.addCallRead(I.rails[cg.members.front()].creator, r);
+    // Recorded already: the call's record reads it from now on.
+    if (unsigned rec = I.callRecord(fwd); rec != kNone)
+      I.addCallRead(rec, r);
   }
 }
 
