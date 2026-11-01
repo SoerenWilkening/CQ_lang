@@ -366,6 +366,46 @@ bool pointsToSlot(LoweringContext &ctx, const Value *actual) {
   return false;
 }
 
+// T3 (CR rules 5, 18, 20; A4): a clone rotating a caller cell's rail in place through a pointer formal
+// (124's step: cq_theta through int *r). Every rail the cell may hold at the call is hit by a
+// non-diagonal gate there: noteNonDiagonal, so a garbage item reading it goes before the call (or the
+// rail is kept entangled), and a merged cell needs every arm kept. The cells are the scalar leaves of
+// the object's C type (taint's cell indices from the object's root), read with M4 as of the call.
+void noteRotatedCells(LoweringContext &ctx, CallBase &CB, const Specialization &S,
+                      const std::vector<FormalLayout> &fs, CallInst *fwd) {
+  for (unsigned i = 0; i < CB.arg_size() && i < fs.size(); ++i) {
+    if (!fs[i].pointer)
+      continue;
+    SmallVector<unsigned, 4> cells = ctx.T.cellsRotated(S, i);
+    if (cells.empty())
+      continue;
+    const Value *actual = CB.getArgOperand(i);
+    if (!pointsToSlot(ctx, actual))
+      internalError("calls: a clone rotates a cell of an object that is not a slot object", &CB);
+    const Value *root = getUnderlyingObject(actual);
+    Type *cellTy = nullptr;
+    if (auto *AI = dyn_cast<AllocaInst>(root); AI && !AI->isArrayAllocation()) {
+      Type *t = AI->getAllocatedType();
+      while (auto *AT = dyn_cast<ArrayType>(t))
+        t = AT->getElementType();
+      if (t->isSingleValueType() && !t->isVectorTy())
+        cellTy = t;
+    }
+    if (!cellTy)
+      unimplemented("calls: a clone rotating a cell of an object that is not a local scalar or array (a record, a "
+                    "global or a heap block: T3 consumer)",
+                    &CB);
+    SmallVector<Operand, 8> ops = mem::readSlotCells(ctx, root, cellTy, uint64_t(cells.back()) + 1, CB);
+    for (unsigned c : cells) {
+      if (c >= ops.size())
+        internalError("calls: readSlotCells returned fewer cells than asked", &CB);
+      if (!ops[c].handle)
+        internalError("calls: a clone rotates a cell that holds no handle at the call", &CB);
+      ctx.unc().noteNonDiagonal(ctx.unc().idOf(ops[c].v), fwd);
+    }
+  }
+}
+
 CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization &S, Value *flag) {
   Function *C = materialize(ctx.M, S);
   std::vector<FormalLayout> fs = formalLayout(ctx.T, S, &CB);
@@ -444,6 +484,7 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
   for (unsigned i : slotArgs)
     for (Value *h : mem::slotCellsAfterCall(ctx, CB, i, r.call))
       r.slotOuts.push_back(h);
+  noteRotatedCells(ctx, CB, S, fs, r.call);
   return r;
 }
 
