@@ -15,6 +15,7 @@
 #include <optional>
 
 #include "cq/Abi.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IntrinsicInst.h"
@@ -645,6 +646,45 @@ bool deadAtCleanup(LoweringContext &ctx, Value *Y, Value *h, Instruction *at,
       return sel->getCondition() != w && spine::isQ(ctx, sel->getCondition());
     return false;   // an atomic's value operand is no update of it (the rmw updates the cell's old value)
   };
+  // A store's cell: an alloca of this function that taint classifies as slot cells (every object the
+  // pointer may name), at a classical offset.
+  auto localSlotCell = [&](const StoreInst *st) -> const AllocaInst * {
+    auto *AI = dyn_cast<AllocaInst>(getUnderlyingObject(st->getPointerOperand()));
+    if (!AI || AI->getFunction() != at->getFunction())
+      return nullptr;
+    ArrayRef<ObjectId> prov = ctx.T.provenance(st->getPointerOperand(), ctx.S);
+    if (prov.empty() || any_of(prov, [&](ObjectId o) { return ctx.T.classOf(o) != ObjClass::Slot; }) ||
+        ctx.T.offsetKind(st, ctx.S) != OffsetKind::Classical)
+      return nullptr;
+    return AI;
+  };
+  // Every load of the object (through constant GEPs); false when the address has any other use (a
+  // call argument, a stored or returned pointer, a memory intrinsic: the cell may be read elsewhere).
+  auto cellLoads = [&](const AllocaInst *AI, const std::function<void(const Instruction *)> &each) {
+    SmallVector<const Value *, 8> ptrs{AI};
+    SmallPtrSet<const Value *, 8> seenP;
+    while (!ptrs.empty()) {
+      const Value *p = ptrs.pop_back_val();
+      if (!seenP.insert(p).second)
+        continue;
+      for (const User *u : p->users()) {
+        if (auto *ld = dyn_cast<LoadInst>(u)) {
+          each(ld);
+          continue;
+        }
+        if (auto *s2 = dyn_cast<StoreInst>(u); s2 && s2->getPointerOperand() == p && s2->getValueOperand() != p)
+          continue;
+        if (auto *g = dyn_cast<GetElementPtrInst>(u); g && g->hasAllConstantIndices()) {
+          ptrs.push_back(g);
+          continue;
+        }
+        if (auto *II = dyn_cast<IntrinsicInst>(u); II && II->isLifetimeStartOrEnd())
+          continue;
+        return false;
+      }
+    }
+    return true;
+  };
   SmallVector<const Value *, 8> work(A.begin(), A.end());
   while (!work.empty()) {
     const Value *w = work.pop_back_val();
@@ -671,7 +711,19 @@ bool deadAtCleanup(LoweringContext &ctx, Value *Y, Value *h, Instruction *at,
       if (auto *st = dyn_cast<StoreInst>(ui)) {
         if (cellPtr && st->getValueOperand() == w && st->getPointerOperand() == cellPtr && DT.dominates(st, at))
           continue;
-        return false;
+        // cq-1jxg (owner 2026-11-01): a store into a local slot cell extends the reader set, it is no
+        // escape: the cell's loads read the rail (their values are its aliases, followed for escapes),
+        // and Uncompute places the clean-up after them (the new-IR store holds it to the scope exit
+        // when they come later). Only memory read after the function returns or a QRAM store keeps it.
+        const AllocaInst *cell = st->getValueOperand() == w ? localSlotCell(st) : nullptr;
+        if (!cell)
+          return false;
+        if (!cellLoads(cell, [&](const Instruction *ld) {
+              if (A.insert(ld).second)
+                work.push_back(ld);
+            }))
+          return false;
+        continue;
       }
       if (auto *cb = dyn_cast<CallBase>(ui)) {
         if (isa<IntrinsicInst>(cb) && cb->doesNotAccessMemory())

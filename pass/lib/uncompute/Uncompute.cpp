@@ -770,14 +770,17 @@ struct Uncompute::Impl {
         return true;
     return false;
   }
-  void pruneCleanups() {
+  // `only`: prune the clean-ups of these rails alone (a local flush, cq-1jxg). A pending clean-up whose
+  // operand is garbage now may find it kept later (a measurement after a later reader of the old value
+  // in another block), so the decision waits until the old rail itself is resolved.
+  void pruneCleanups(const SmallVectorImpl<RailId> *only = nullptr) {
     // To a fixed point: dropping one clean-up makes its rail plain garbage again, which may now be a
     // garbage reader of an earlier clean-up's operand (164's clone: %6 = %7 - %3 kept while %7's own
     // clean-up through the result was still there, then %7's dropped: a cycle).
     for (bool again = true; again;) {
       again = false;
       for (RailId g = 0; g < rails.size(); ++g)
-        if (pruneOne(g))
+        if ((!only || is_contained(*only, g)) && pruneOne(g))
           again = true;
     }
   }
@@ -3043,7 +3046,6 @@ void Uncompute::cleanupBijective(RailId oldRail, const abi::TemplateSpec &invers
 }
 
 void Uncompute::flushBefore(Instruction *point) {
-  impl->pruneCleanups();
   if (!point || !point->getParent())
     internalError("uncompute: flushBefore needs an instruction in a block");
   Impl &I = *impl;
@@ -3070,6 +3072,7 @@ void Uncompute::flushBefore(Instruction *point) {
     if (ok)
       cands.push_back(g);
   }
+  I.pruneCleanups(&cands);
   I.resolve(cands, c);
   // F1: a deferred item goes last, once every use of its exit rails after the loop lies before P in
   // P's block and every reader of them is resolved.
