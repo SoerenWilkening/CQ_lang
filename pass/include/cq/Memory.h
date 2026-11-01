@@ -20,6 +20,14 @@ void lowerSlotAtomic(LoweringContext &, llvm::Instruction &rmwOrCmpxchg);
 // value for a cell no handle reaches. Nothing is written; reading does not change roles.
 llvm::SmallVector<Operand, 8> readSlotCells(LoweringContext &, const llvm::Value *ptr, llvm::Type *cellTy,
                                             uint64_t n, llvm::Instruction &at);
+// M6 (cq-arch 2026-11-01). mem-slots, consumer mem-qram (CR rules 6, 7, 9, 20, 22; 190, 90): the n =
+// vals.size() consecutive cells of type cellTy at ptr take vals[i] at `at` (a memory intrinsic the caller
+// lowers in place), each with lowerSlotStore's semantics (a classical value is a seed, rule 7; a handle is a
+// basis copy into the cell); guards empty or guards[i] null = unguarded, else cell i = select(guards[i],
+// vals[i], old) into a fresh rail (the old handle comes back on uncompute, rule 22). Later loads, M3 cell
+// reads and slotCellsBefore/AfterCall see `at` as a named store of each cell.
+void writeSlotCells(LoweringContext &, const llvm::Value *ptr, llvm::Type *cellTy, llvm::ArrayRef<Operand> vals,
+                    llvm::ArrayRef<llvm::Value *> guards, llvm::Instruction &at);
 // M1 (cq-arch 2026-11-01). mem-slots, consumer calls (CR rules 18, 20, §1.4): a pointer to a caller's slot
 // object passed as argNo of a quantum clone call. Before: the old contents of the cells the clone may write
 // (TaintInfo::cellsWritten), ascending by cell, at the cell's C type (a handle, a classical value, or poison

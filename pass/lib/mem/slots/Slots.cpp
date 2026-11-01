@@ -742,6 +742,14 @@ bool cloneWritesCell(LoweringContext &ctx, const ObjInfo &info, ObjectId o, cons
   return false;
 }
 
+// M6: X wrote exactly this cell through writeSlotCells (a memory intrinsic lowered per cell).
+bool namedWrite(FnState &st, const Instruction &X, const Addr &cell, uint64_t size, const ObjInfo &info) {
+  if (!isa<MemIntrinsic>(X) || !cell.terms.empty() || cell.root != info.root || size != info.cellBytes)
+    return false;
+  auto it = st.callOut.find(&X);
+  return it != st.callOut.end() && it->second.count(cell.off);
+}
+
 // Blocks on a path from S's block to L's block that does not re-enter S's block (a path that re-enters
 // it re-executes S, whose write is then the one that reaches L). L's block is included.
 SmallPtrSet<const BasicBlock *, 16> between(const BasicBlock *BS, const BasicBlock *BL) {
@@ -854,8 +862,9 @@ const Instruction *sourceOf(LoweringContext &ctx, FnState &st, const ObjInfo &in
   // M1: a clone call that writes the cell leaves there the handle the caller loads right after it.
   if ((info.kind == RootKind::Local || info.kind == RootKind::Heap) && !info.escaping)
     for (const Instruction &X : instructions(*st.F))
-      if (&X != L && cloneWritesCell(ctx, info, o, X, cell, size) && st.DT->dominates(&X, L) &&
-          clearBetween(ctx, info, o, &X, L, cell, size) && (!best || st.DT->dominates(best, &X)))
+      if (&X != L && (cloneWritesCell(ctx, info, o, X, cell, size) || namedWrite(st, X, cell, size, info)) &&
+          st.DT->dominates(&X, L) && clearBetween(ctx, info, o, &X, L, cell, size) &&
+          (!best || st.DT->dominates(best, &X)))
         best = &X;
   return best;
 }
@@ -1080,8 +1089,25 @@ bool cellArms(LoweringContext &ctx, FnState &st, const Site &s, const Instructio
   bool unnamed = false;
   for (const Instruction &X : instructions(*st.F))
     if (auto *MI = dyn_cast<MemIntrinsic>(&X); MI && hasObject(ctx, MI->getDest(), s.o) &&
-                                               isPotentiallyReachable(MI, &I, nullptr, st.DT.get()))
-      unnamed = true;
+                                               isPotentiallyReachable(MI, &I, nullptr, st.DT.get())) {
+      auto c = st.callOut.find(MI);
+      if (c == st.callOut.end()) {
+        unnamed = true;   // not lowered through writeSlotCells (yet)
+        continue;
+      }
+      for (auto &[off, h] : c->second) {   // M6: the cells it wrote are named
+        Addr w = s.a;
+        w.off = off;
+        w.terms.clear();
+        if (differentCell(w, s.a, s.info->cellBytes, size) || !h.handle)
+          continue;
+        if (!st.registers.count(h.v))
+          allRegisters = false;
+        RailId r = ctx.unc().idOf(h.v);
+        if (!is_contained(arms, r))
+          arms.push_back(r);
+      }
+    }
   for (const Instruction &X : instructions(*st.F)) {
     auto *CB = dyn_cast<CallBase>(&X);
     if (!CB || !cloneCallee(ctx, *CB) || !mayWrite(ctx, *s.info, s.o, X, s.a, size) ||
@@ -2209,6 +2235,69 @@ SmallVector<Operand, 8> readSlotCells(LoweringContext &ctx, const Value *ptr, Ty
     out.push_back(readCell(ctx, st, c, at, cellTy));
   }
   return out;
+}
+
+// M6 (CR rules 7, 20, 22): a memory intrinsic's per-cell writes (mem-qram lowers the intrinsic).
+void writeSlotCells(LoweringContext &ctx, const Value *ptr, Type *cellTy, ArrayRef<Operand> vals,
+                    ArrayRef<Value *> guards, Instruction &at) {
+  FnState &st = stateOf(ctx, at);
+  if (!isa<MemIntrinsic>(at))
+    internalError("mem-slots: writeSlotCells at an instruction that is not a memory intrinsic", &at);
+  if (!guards.empty() && guards.size() != vals.size())
+    internalError("mem-slots: writeSlotCells with a guard list of another length than its values", &at);
+  if (ctx.T.isFatPointer(ptr, ctx.S))
+    unimplemented("mem-slots: writeSlotCells through a fat pointer (rule 21)", &at);
+  Site s = siteOf(ctx, st, at, ptr, cellTy);
+  if (s.info->view || s.info->boolCells || s.info->record)
+    unimplemented("mem-slots: a memory intrinsic writing a bit-view, _Bool or record slot object", &at);
+  if (!s.a.terms.empty())
+    unimplemented("mem-slots: a memory intrinsic writing slot cells at a run-time offset", &at);
+  if (ctx.currentFlag())
+    unimplemented("mem-slots: a memory intrinsic writing slot cells under a quantum predicate (the guards are "
+                  "the caller's)",
+                  &at);
+  RailType w = cellRail(*s.info, cellTy, at);
+  LLVMContext &C = ctx.M.getContext();
+  for (size_t i = 0; i < vals.size(); ++i) {
+    Site c = s;
+    c.a.off += int64_t(i * s.info->cellBytes);
+    Operand v = vals[i];
+    Value *g = guards.empty() ? nullptr : guards[i];
+    Operand val;
+    StoreWhat what;
+    if (g) {
+      if (g->getType() != handleTy(C))
+        internalError("mem-slots: a writeSlotCells guard that is not an i1 rail handle", &at);
+      Operand old = readCell(ctx, st, c, at, cellTy);
+      if (!old.handle)
+        internalError("mem-slots: a guarded cell write over a classical cell", &at);
+      abi::TemplateSpec sel;
+      sel.op = "select";
+      sel.w = w;
+      sel.shape = v.handle ? "" : "lh";
+      val = Operand{ctx.emitTemplate(sel, {Operand{g, true}, v, old}), true};
+      what = StoreWhat::Computed;
+    } else if (!v.handle) {
+      if (v.v->getType() != irTypeOf(C, w))
+        internalError("mem-slots: a writeSlotCells value of another type than the cell's rail", &at);
+      CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {v.v});
+      ctx.unc().recordSeed(a);
+      val = Operand{a, true};
+      what = StoreWhat::Seed;
+    } else {
+      // C copies the value (cq-dr4o): the cell gets its own rail, a basis copy (the source still holds it).
+      CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(C, w))});
+      RailId aid = ctx.unc().recordSeed(a);
+      abi::CoreSpec cp{abi::Core::Copy, w};
+      CallInst *cc = ctx.emitCore(cp, {v.v, a});
+      ctx.unc().recordCore(cc, cp, {v, Operand{a, true}}, aid);
+      val = Operand{a, true};
+      what = StoreWhat::Copy;
+    }
+    finishStore(ctx, st, c, at, cellTy, val, what);
+    st.callOut[&at][c.a.off] = st.lowered[&at];
+    st.lowered.erase(&at);
+  }
 }
 
 // Rule 24 (94): the single-thread meaning of an atomic read-modify-write of a slot cell.
