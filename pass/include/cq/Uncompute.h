@@ -88,9 +88,12 @@ public:
   // F2 (cq-arch 2026-11-01, CR rules 5, 14; 176): hostScopes, the scopes of an enclosing rule-14 region
   // whose trip the item runs in (a trip-local sub-loop's reverse): their pending records do not keep the
   // item from a local placement inside that region (they are the region's own, undone by its reverse).
+  // busUseFollows (F1c, 72, 188): exitRails is empty and a bus an owned store writes has a use after the
+  // loop in the original program that is not lowered yet (the loop is lowered before it); the uses anchor
+  // the item once they exist.
   void recordDeferred(llvm::ArrayRef<unsigned> scopes, llvm::ArrayRef<RailId> exitRails,
                       std::function<void(llvm::IRBuilder<> &)> emit, llvm::ArrayRef<RailId> reads,
-                      llvm::ArrayRef<unsigned> hostScopes = {});
+                      llvm::ArrayRef<unsigned> hostScopes = {}, bool busUseFollows = false);
   // K1: storage owned by module uncompute.
 private:
   struct Impl; std::shared_ptr<Impl> impl;

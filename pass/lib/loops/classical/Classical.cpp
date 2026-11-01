@@ -105,6 +105,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
@@ -772,15 +773,22 @@ void Unit::check(Loop &L, Case c) {
       if (isa<LoadInst>(I) || isa<StoreInst>(I)) {
         const Value *ptr = getLoadStorePointerOperand(&I);
         bool isStore = isa<StoreInst>(I);
-        if (isQ(ptr) || ctx.T.isFatPointer(ptr, ctx.S))
+        ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
+        // Rule 14 case 1 with rule 20 (72, 188): a QRAM or QROM access of one object in the trip goes through
+        // mem-qram per trip (a quantum offset included); its POP and un-copy are mirrored by the reverse
+        // loop with pushed operands (F1b). A pointer of one QRAM object at a quantum offset carries offset
+        // lanes only (no quantum tag: the spine routes it to mem-qram); a fat pointer over several objects
+        // (rule 21) is not built.
+        bool qram = objs.size() == 1 && ctx.T.classOf(objs.front()) == ObjClass::Qram;
+        bool qrom = !isStore && objs.size() == 1 && ctx.T.classOf(objs.front()) == ObjClass::Classical && isQ(ptr) &&
+                    isa<GlobalVariable>(getUnderlyingObject(ptr)) &&
+                    cast<GlobalVariable>(getUnderlyingObject(ptr))->isConstant();
+        if (c == Case::ClassicalBoundQuantumExit && (qram || qrom))
+          unimplemented(std::string("loops-classical: a QRAM or QROM access in a case-3 loop"), &I);
+        if ((ctx.T.isFatPointer(ptr, ctx.S) || isQ(ptr)) && !qram && !qrom)
           unimplemented(std::string("loops-classical: a ") + (isStore ? "store" : "load") +
                             " through a quantum (fat) pointer in a classically bounded loop (rule 21)",
                         &I);
-        for (ObjectId o : ctx.T.provenance(ptr, ctx.S))
-          if (ctx.T.classOf(o) == ObjClass::Qram)
-            unimplemented(std::string("loops-classical: a ") + (isStore ? "store into" : "load of") +
-                              " QRAM memory in a classically bounded loop (rule 14, 187, 188)",
-                          &I);
         continue;
       }
       if (I.mayWriteToMemory() && (isQ(&I) || any_of(I.operands(), [&](const Use &u) { return isQ(u.get()); })))
@@ -1643,7 +1651,27 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       ctx.B().SetInsertPoint(Cont);
       return {};
     }
-    if (exits.empty()) {
+    // F1b (72, 188): a QRAM store of the trip on an object the program accesses after the loop: its cell
+    // values are read there, so the reverse (which pops the store) is deferred after those accesses.
+    bool busAfter = false;
+    if (exits.empty() && !nested) {
+      DenseSet<ObjectId> stored;
+      for (BasicBlock *bb : L.blocks())
+        for (Instruction &I : *bb)
+          if (auto *si = dyn_cast<StoreInst>(&I))
+            for (ObjectId o : ctx.T.provenance(si->getPointerOperand(), ctx.S))
+              if (ctx.T.classOf(o) == ObjClass::Qram)
+                stored.insert(o);
+      for (BasicBlock &bb : F)
+        for (Instruction &I : bb)
+          if (!L.contains(&I) && (isa<LoadInst>(I) || isa<StoreInst>(I) || isa<CallBase>(I)))
+            for (const Use &u : I.operands())
+              if (u->getType()->isPointerTy() && !isa<Function>(u.get()))
+                for (ObjectId o : ctx.T.provenance(u.get(), ctx.S))
+                  if (stored.count(o) && !(isa<IntrinsicInst>(I) && cast<IntrinsicInst>(I).isLifetimeStartOrEnd()))
+                    busAfter = true;
+    }
+    if (exits.empty() && !busAfter) {
       flushTrips();
       IRBuilder<> B(T);
       reverse(B, T, seedScope, false);
@@ -1672,7 +1700,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     BranchInst::Create(Cont, T);
     auto self = shared_from_this();
     U.recordDeferred(scs, exits,
-                     [self, T, seedScope](IRBuilder<> &B) { self->reverse(B, T, seedScope, true); }, reads);
+                     [self, T, seedScope](IRBuilder<> &B) { self->reverse(B, T, seedScope, true); }, reads, {},
+                     busAfter);
     ctx.B().SetInsertPoint(Cont);
     return {};
   }

@@ -3350,7 +3350,7 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
 
 void Uncompute::recordDeferred(ArrayRef<unsigned> scopes, ArrayRef<RailId> exitRails,
                                std::function<void(IRBuilder<> &)> emit, ArrayRef<RailId> reads,
-                               ArrayRef<unsigned> hostScopes) {
+                               ArrayRef<unsigned> hostScopes, bool busUseFollows) {
   Impl &I = *impl;
   if (!emit)
     internalError("uncompute: recordDeferred without an emitter");
@@ -3390,7 +3390,7 @@ void Uncompute::recordDeferred(ArrayRef<unsigned> scopes, ArrayRef<RailId> exitR
         for (User *u : I.rails[n].handle->users())
           if (auto *ui = dyn_cast<Instruction>(u); ui && ui->getParent() && !I.beforeOrIn(d, ui->getParent()))
             busUsed = true;
-    if (!busUsed)
+    if (!busUsed && !(busUseFollows && !d.buses.empty()))
       internalError("uncompute: recordDeferred without exit rails and without a QRAM bus its stores write that is "
                     "used after the loop");
   }

@@ -1408,10 +1408,19 @@ void lowerQramIntrinsic(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o) {
 
   if (auto *MS = dyn_cast<MemSetInst>(&MI)) {
     Operand fill = ctx.operand(MS->getValue());
-    if (fill.handle)
-      unimplemented("mem-qram: a memset of a QRAM with a quantum fill byte (rule 22)", &MI);
+    if (fill.handle) {
+      // Rule 22 (72's memset_quantum_byte): a quantum fill byte into byte cells is the fill rail itself,
+      // stored into each cell (it stays live until the last of those stores is popped). Wider cells (a
+      // splat of the byte rail) are not built.
+      for (const Hit &h : hits)
+        if (!h.col->cellTy->isIntegerTy(8))
+          unimplemented("mem-qram: a memset of a QRAM with a quantum fill byte into cells wider than a byte (rule 22)",
+                        &MI);
+      for (size_t i = 0; i < hits.size(); ++i)
+        vals.push_back(fill.v);
+    }
     std::map<std::pair<unsigned, unsigned>, Value *> seeds;   // one shared seed per cell type (rule 22)
-    for (const Hit &h : hits) {
+    for (const Hit &h : fill.handle ? ArrayRef<Hit>() : ArrayRef<Hit>(hits)) {
       Value *&s = seeds[{unsigned(h.col->w.kind), h.col->w.bits}];
       if (!s)
         s = seedOf(ctx, h.col->w, splatCell(ctx, fill.v, h.col->cellTy));
