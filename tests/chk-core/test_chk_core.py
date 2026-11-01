@@ -243,6 +243,120 @@ class Violations(unittest.TestCase):
         self.assertTrue(all(w.sample is s for w, s in zip(workers, samples)))
 
 
+class DiskCaps(unittest.TestCase):
+    """cq-3fjt: no runner writes GBs. A sample past a cap ends with a trace_cap violation (as by
+    SIGXFSZ) and the samples around it are unaffected; a trace past $CQE_TRACE_ROTATE goes on in a
+    fresh runner with the same results. Each test has a cache of its own (a cap changes results)."""
+    V = ("int v(int,double)", "v", ["int", "double"])
+    P = ("int p(int,double)", "p", ["int", "double"])
+
+    def setUp(self):
+        self._cache = tempfile.TemporaryDirectory()
+        self._env = {k: os.environ.get(k) for k in ("CQE_CACHE", "CQE_SHOT_TRACE_MAX", "CQE_SHOT_OUTPUT_MAX",
+                                                     "CQE_TRACE_ROTATE")}
+        os.environ["CQE_CACHE"] = self._cache.name
+
+    def tearDown(self):
+        for k, v in self._env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        self._cache.cleanup()
+
+    def batch(self, fn, ns):
+        return run.run_samples(HERE / "disk_flood.ll", spec1(*fn), [{"call": 0, "args": [n, 0.5]} for n in ns],
+                               "ours", rt_sources=RT, extra_sources=FAM)
+
+    def whats(self, r):
+        return [v["what"] for v in r.violations]
+
+    def test_trace_cap(self):
+        os.environ["CQE_SHOT_TRACE_MAX"] = "200000"
+        rs = self.batch(self.V, [3, 10 ** 7, 4])
+        self.assertEqual(self.whats(rs[0]), ["bad_handle"] * 3)
+        self.assertEqual(self.whats(rs[2]), ["bad_handle"] * 4)
+        w = self.whats(rs[1])
+        self.assertIn("trace_cap", w)
+        self.assertIn("signal", w)
+        self.assertLess(w.count("bad_handle"), 3000)   # ~90 bytes each: it stopped at the cap
+        self.assertIn("cq-3fjt", next(v["msg"] for v in rs[1].violations if v["what"] == "trace_cap"))
+
+    def test_trace_cap_default(self):
+        # the default per-sample cap (32 MiB) stops the 15 GB sample of cq-3fjt's report
+        rs = self.batch(self.V, [10 ** 8])
+        self.assertIn("trace_cap", self.whats(rs[0]))
+
+    def test_output_cap(self):
+        os.environ["CQE_SHOT_OUTPUT_MAX"] = "100000"
+        rs = self.batch(self.P, [5, 10 ** 8, 6])
+        self.assertEqual([r.violations for r in (rs[0], rs[2])], [[], []])
+        self.assertEqual([r.outputs["stdout"] for r in (rs[0], rs[2])], ["xxxxx", "xxxxxx"])
+        self.assertIn("trace_cap", self.whats(rs[1]))
+        self.assertIn("stdout", next(v["msg"] for v in rs[1].violations if v["what"] == "trace_cap"))
+
+    def test_rotation_keeps_results(self):
+        ns = [50, 120, 7, 300, 1, 90, 200, 3]
+        want = [to_json(r) for r in self.batch(self.V, ns)]
+        self._cache.cleanup()
+        self._cache = tempfile.TemporaryDirectory()
+        os.environ["CQE_CACHE"] = self._cache.name
+        os.environ["CQE_TRACE_ROTATE"] = "20000"      # a rotation every few samples
+        got = self.batch(self.V, ns)
+        self.assertEqual([to_json(r) for r in got], want)
+        self.assertEqual([self.whats(r).count("bad_handle") for r in got], ns)
+
+
+class Sweep(unittest.TestCase):
+    """cq-3fjt: tmpdirs.sweep removes run dirs whose owner is dead and keeps every other one."""
+
+    def test_sweep(self):
+        from cqcheck import tmpdirs
+        dead = subprocess.Popen(["true"])
+        dead.wait()
+        with tempfile.TemporaryDirectory() as root:
+            r = Path(root)
+
+            def mk(name, owner=None, age=0.0):
+                d = r / name
+                (d / "shot").mkdir(parents=True)
+                (d / "trace.jsonl").write_text("x" * 1000)
+                if owner is not None:
+                    (d / "owner").write_text(f"{owner}\n")
+                if age:
+                    t = __import__("time").time() - age
+                    for q in (d / "shot", d / "trace.jsonl", d / "owner", d):
+                        if q.exists():
+                            os.utime(q, (t, t))
+                return d
+            gone = mk("cqe-run.dead", dead.pid)
+            gone_o = mk("cqo-run.dead", dead.pid)
+            live = mk("cqe-run.live", os.getpid(), age=10 * tmpdirs.LEGACY_AGE)   # old, but its owner lives
+            live_o = mk("cqo-run.live", os.getppid())
+            fresh = mk("cqe-run.noowner")                                        # mkdtemp before the owner file
+            old = mk("cqo-run.noowner", age=2 * tmpdirs.LEGACY_AGE)              # left by a pre-cq-3fjt run
+            other = mk("cqd-run.dead", dead.pid)                                 # not a run dir
+            removed = tmpdirs.sweep(r)
+            self.assertEqual(sorted(removed), sorted([gone, gone_o, old]))
+            for d in (live, live_o, fresh, other):
+                self.assertTrue(d.is_dir(), d)
+            for d in (gone, gone_o, old):
+                self.assertFalse(d.exists(), d)
+
+    def test_make_run_dir_names_its_owner(self):
+        from cqcheck import tmpdirs
+        d = tmpdirs.make_run_dir("cqe-run.")
+        try:
+            self.assertEqual(int((d / "owner").read_text()), os.getpid())
+            self.assertNotIn(d, tmpdirs.sweep(d.parent))
+            self.assertTrue(d.is_dir())
+        finally:
+            import shutil
+            shutil.rmtree(d)
+        w = run._work_dir()
+        self.assertEqual(int((w / "owner").read_text()), os.getpid())
+
+
 class ShotReset(unittest.TestCase):
     """cq-e2i9: a batch runs in one runner process that forks one child per sample (core.c, shots);
     nothing of sample i (rails, handles, violations, a dirty free, a signal, _exit, fenv, program

@@ -33,6 +33,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/wait.h>
@@ -215,6 +216,34 @@ static unsigned long nviolations;
 static int shot_muted;    /* a batch runner's own end (shots, end of file): nothing more is logged */
 static int shot_buffered; /* a shot worker: the trace is flushed at the end of each sample, not per line */
 
+/* Disk caps (cq-3fjt: one run's trace once reached 15 GB, a sample that looped over violations).
+ * A running sample that logs more than $CQE_SHOT_TRACE_MAX bytes (default 32 MiB), or whose stdout
+ * or stderr capture passes $CQE_SHOT_OUTPUT_MAX bytes (default 8 MiB), ends there with a "trace_cap"
+ * violation, as by signal SIGXFSZ (shot_over, in the shots below). A worker whose trace file passed
+ * $CQE_TRACE_ROTATE bytes (default 64 MiB) at the end of a sample ends the runner with status 99 and
+ * "cq: chk-core: trace rotation" on stderr; run.py goes on with a fresh runner and a fresh trace.
+ * RLIMIT_FSIZE ($CQE_FILE_MAX, default 256 MiB, SIGXFSZ ignored) is the backstop for every file the
+ * runner writes. 0 disables a cap. */
+static unsigned long long shot_trace_n;               /* bytes the running sample logged */
+static unsigned long long shot_trace_cap = 32ULL << 20;
+static unsigned long long shot_output_cap = 8ULL << 20;
+static unsigned long long trace_rotate = 64ULL << 20;
+static void shot_over(const char *what, unsigned long long cap); /* shots, below */
+
+static unsigned long long env_bytes(const char *name, unsigned long long dflt) {
+  const char *v = getenv(name);
+  if (!v || !*v)
+    return dflt;
+  unsigned long long n = strtoull(v, NULL, 10);
+  return n ? n : ~0ULL;
+}
+
+static void trace_count(size_t n) {
+  shot_trace_n += n;
+  if (shot_trace_n > shot_trace_cap)
+    shot_over("trace", shot_trace_cap);
+}
+
 static void at_exit_handler(void);
 
 /* Compact trace (cq-8m6v, $CQE_COMPACT=1, set by run.py's runner): only the events run.py reads
@@ -244,6 +273,16 @@ void cqe__init(void) {
   inited = 1;
   const char *cm = getenv("CQE_COMPACT");
   compact = cm && !strcmp(cm, "1");
+  shot_trace_cap = env_bytes("CQE_SHOT_TRACE_MAX", shot_trace_cap);
+  shot_output_cap = env_bytes("CQE_SHOT_OUTPUT_MAX", shot_output_cap);
+  trace_rotate = env_bytes("CQE_TRACE_ROTATE", trace_rotate);
+  unsigned long long fmax = env_bytes("CQE_FILE_MAX", 256ULL << 20);
+  struct rlimit rl;
+  if (fmax != ~0ULL && getrlimit(RLIMIT_FSIZE, &rl) == 0 && (rl.rlim_cur == RLIM_INFINITY || rl.rlim_cur > fmax)) {
+    rl.rlim_cur = rl.rlim_max != RLIM_INFINITY && rl.rlim_max < fmax ? rl.rlim_max : (rlim_t)fmax;
+    setrlimit(RLIMIT_FSIZE, &rl);
+  }
+  signal(SIGXFSZ, SIG_IGN); /* a write past the limit fails (EFBIG); the caps above say so first */
   const char *path = getenv("CQE_TRACE");
   if (path && *path) {
     trace_f = fopen(path, "w");
@@ -267,6 +306,7 @@ void cqe_log(const char *json_object) {
   fputc('\n', trace_f);
   if (!shot_buffered)
     fflush(trace_f);
+  trace_count(strlen(json_object) + 1);
 }
 
 /* printf-style log of one line. */
@@ -276,11 +316,12 @@ void cqe__logf(const char *fmt, ...) {
     return;
   va_list ap;
   va_start(ap, fmt);
-  vfprintf(trace_f, fmt, ap);
+  int n = vfprintf(trace_f, fmt, ap);
   va_end(ap);
   fputc('\n', trace_f);
   if (!shot_buffered)
     fflush(trace_f);
+  trace_count(n > 0 ? (size_t)n + 1 : 1);
 }
 
 /* JSON string body escaping into a heap buffer. */
@@ -784,6 +825,7 @@ struct shot_state {
   int out_fd, err_fd; /* read ends of the capture files */
   long freed_n;           /* the running sample's cqrt_free calls (cq-8m6v), and */
   unsigned long long freed_dig; /* FNV-1a-64 of their handles in order: the shot_end frame's summary */
+  int rotate;             /* worker: the trace passed $CQE_TRACE_ROTATE; the runner ends (cq-3fjt) */
 };
 
 #define FREED_DIG0 0xcbf29ce484222325ULL
@@ -1041,9 +1083,40 @@ __attribute__((noinline)) static void shot_over_budget(void) {
   siglongjmp(R->jb, 1);
 }
 
+static void shot_output_check(void);
+
 void __sanitizer_cov_trace_pc(void) {
   if (++shot_steps > shot_step_cap)
     shot_over_budget();
+  if (!(shot_steps & 0xffff))
+    shot_output_check();
+}
+
+/* A running sample past a disk cap (cq-3fjt, the trace section): a "trace_cap" violation, and the
+ * sample ends as by signal SIGXFSZ (its worker with it). Outside a sample: nothing (the setup's own
+ * output has only the RLIMIT_FSIZE backstop). */
+static void shot_over(const char *what, unsigned long long cap) {
+  if (!sample_running() || R->jkind == J_SIGNAL)
+    return;
+  cpu_timer_set(0);
+  R->jkind = J_SIGNAL; /* before the violation below: its own line does not come back here */
+  R->code = -SIGXFSZ;
+  R->timeout = 0;
+  shot_trace_cap = ~0ULL;
+  cqe__violation("trace_cap", -1, "cq-3fjt: the sample's %s passed %llu bytes; the sample ends here", what, cap);
+  fprintf(stderr, "cq: chk-core: the sample's %s passed %llu bytes (cq-3fjt disk cap)\n", what, cap);
+  fflush(stderr);
+  siglongjmp(R->jb, 1);
+}
+
+static void shot_output_check(void) {
+  if (!sample_running())
+    return;
+  struct stat st;
+  if (fstat(1, &st) == 0 && (unsigned long long)st.st_size > shot_output_cap)
+    shot_over("stdout", shot_output_cap);
+  if (R->err_fd >= 0 && fstat(2, &st) == 0 && (unsigned long long)st.st_size > shot_output_cap)
+    shot_over("stderr", shot_output_cap);
 }
 
 static void worker_on_signal(int sig) {
@@ -1282,6 +1355,11 @@ static void server_wait(void) {
   }
   if (!R->in_sample) {
     R->resume = R->next;
+    if (R->rotate) { /* cq-3fjt: run.py runs the rest in a fresh runner, with a fresh trace */
+      fflush(NULL);
+      fprintf(stderr, "cq: chk-core: trace rotation before record %ld\n", R->next);
+      real__exit(99);
+    }
     return;
   }
   /* the worker ended inside a sample: a signal it caught (J_SIGNAL), or a kill */
@@ -1294,7 +1372,8 @@ static void server_wait(void) {
     timeout = killed;
   }
   int ofd = open(shot_out, O_RDWR), efd = trace_f != stderr ? open(shot_err, O_RDWR) : -1;
-  char *out = ofd >= 0 ? take_capture(ofd, ofd, 0) : xcalloc(1, 1);
+  /* a sample past a disk cap (SIGXFSZ) failed already; its stdout is not read back (cq-3fjt) */
+  char *out = ofd >= 0 && code != -SIGXFSZ ? take_capture(ofd, ofd, 0) : xcalloc(1, 1);
   char *err = (efd >= 0 && code) ? take_capture(efd, efd, 4000) : xcalloc(1, 1);
   if (ofd >= 0)
     close(ofd);
@@ -1360,6 +1439,7 @@ int cqe__shot_enter(int idx) {
   R->jkind = J_NONE;
   R->progress++;
   shot_steps = 0;
+  shot_trace_n = 0;
   R->in_sample = 1;
   cpu_timer_set(R->timeout_s);
   return 1;
@@ -1371,6 +1451,7 @@ static void shot_finish(int code, int run_fns) {
     run_exit_fns();
   fflush(stdout);
   fflush(stderr);
+  shot_output_check();
   char *out = take_capture(1, R->out_fd, 0);
   char *err = R->err_fd >= 0 ? (code ? take_capture(2, R->err_fd, 4000) : (take_capture(2, R->err_fd, 1), xcalloc(1, 1)))
                              : xcalloc(1, 1);
@@ -1379,6 +1460,11 @@ static void shot_finish(int code, int run_fns) {
   R->next = R->cur + 1; /* before in_sample drops: the server never runs a finished sample again */
   R->in_sample = 0;
   R->progress++;
+  struct stat ts;
+  if (trace_f != stderr && fstat(fileno(trace_f), &ts) == 0 && (unsigned long long)ts.st_size > trace_rotate) {
+    R->rotate = 1; /* cq-3fjt: the server ends the runner (server_wait) */
+    real__exit(0);
+  }
   if (R->dirty) /* the sample left state the snapshot does not cover: a fresh worker goes on */
     real__exit(0);
   stack_restore();

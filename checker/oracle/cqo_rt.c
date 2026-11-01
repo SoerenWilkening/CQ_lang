@@ -42,6 +42,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/wait.h>
@@ -76,8 +77,11 @@ static void write_all(int fd, const char *p, size_t n) {
     }
 }
 
+static int trace_room(size_t n); /* the disk cap (cq-3fjt), below */
+
 static void ob_flush(obuf *o, int fd) {
     size_t n = o->n;
+    if (n && fd == trace_fd) trace_room(n);
     if (n) write_all(fd, o->b, n);
     o->n = 0;
 }
@@ -923,8 +927,10 @@ void __cqo_rec_up(int32_t on) {
 /* the step budget: loop-header executions of one sample (the setup's do not count; cq-u9al) */
 static uint64_t tripcap = 10000000;
 static void tick_progress(void);
+static void stdout_room(void);
 void __cqo_tick(void) {
     if (++ticks > tripcap) { note("tripcap"); _exit(98); }
+    if (!(ticks & 0xffff)) stdout_room();
     if (!(ticks & 0xfffff)) tick_progress();
 }
 
@@ -1089,6 +1095,7 @@ struct shot {
     obuf tr, st;
     int cap_set;              /* cap_n is known (the server's first record) */
     off_t cap_n;              /* the setup's part of the stdout file */
+    volatile int trace_over;  /* a worker found the trace past $CQO_TRACE_MAX (cq-3fjt) */
 };
 static struct shot *R;
 static int is_worker; /* set before the snapshot: stays set */
@@ -1102,6 +1109,29 @@ static void mark_dirty(void) { if (R) R->dirty = 1; }
 static void die(const char *what) {
     fprintf(stderr, "cqo: %s: %s\n", what, strerror(errno));
     real__exit(2);
+}
+
+/* Disk caps (cq-3fjt: one evaluator run's trace once reached 15 GB). A batch whose trace would pass
+ * $CQO_TRACE_MAX bytes (default 128 MiB; 0: no cap) ends with status 95 and a message on its stderr:
+ * oracle.py raises OracleError, an internal error of the checker and never a sample outcome. A worker
+ * that finds it so marks R and ends; its server ends the batch (server_wait). RLIMIT_FSIZE
+ * ($CQO_FILE_MAX, default 256 MiB, SIGXFSZ ignored) is the backstop for every file the batch writes,
+ * and a sample whose stdout passes CAP_RAW stops at the next 65536th loop header with the "internal
+ * stdout" note it would have got at its end. */
+static unsigned long long trace_max = 128ULL << 20;
+
+static int trace_room(size_t n) {
+    struct stat st;
+    if (!trace_max || trace_fd < 0 || fstat(trace_fd, &st) != 0 || (unsigned long long)st.st_size + n <= trace_max)
+        return 1;
+    if (R) R->trace_over = 1;
+    fprintf(stderr, "cqo: cq-3fjt: the batch's trace would pass %llu bytes ($CQO_TRACE_MAX)\n", trace_max);
+    real__exit(95);
+}
+
+static unsigned long long env_bytes(const char *name, unsigned long long dflt) {
+    const char *v = getenv(name);
+    return v && *v ? strtoull(v, 0, 10) : dflt;
 }
 
 /* -- host output (cq-e4jk) -- */
@@ -1122,6 +1152,7 @@ static void out_long(const char *s, size_t n) {
     size_t tot = (size_t)k + n + 1;
     if (!o || tot > OBUF_CAP) {
         if (o) ob_flush(o, trace_fd);
+        trace_room(tot);
         /* one write: other writers append to the same file */
         char *b = bigline + BIG_CAP;
         memcpy(b, pre, (size_t)k), memcpy(b + k, s, n), b[k + n] = '\n';
@@ -1169,6 +1200,17 @@ static void emit_stdout(void) {
     m += (size_t)sprintf(bigline + m, "\"}");
     out_long(bigline, m);
     if (ftruncate(cap_fd, R->cap_n) != 0) note("internal stdout: ftruncate: %s", strerror(errno));
+}
+
+/* cq-3fjt: a sample's stdout past CAP_RAW ends it now with the note emit_stdout gives at its end. */
+static void stdout_room(void) {
+    struct stat st;
+    if (cap_fd < 0 || !R || !sample_running() || fstat(cap_fd, &st) != 0) return;
+    size_t n = (size_t)st.st_size;
+    if (n > CAP_RAW + (size_t)R->cap_n) {
+        note("internal stdout: the sample printed %zu bytes (more than %zu)", n - (size_t)R->cap_n, CAP_RAW);
+        _exit(95);
+    }
 }
 
 /* The batch's stdout: a file of its own (unlinked), fd 1, unbuffered. */
@@ -1393,6 +1435,10 @@ static void server_wait(void) {
         die("waitpid");
     }
     timer_ms(ITIMER_REAL, 0, 0);
+    if (R->trace_over) {
+        fprintf(stderr, "cqo: cq-3fjt: the batch's trace would pass %llu bytes ($CQO_TRACE_MAX)\n", trace_max);
+        real__exit(95);
+    }
     ob_flush(&R->tr, trace_fd); /* what the worker left unwritten (whole lines) */
     ob_flush(&R->st, status_fd);
     if (!R->in_sample) { R->resume = R->next; return; }
@@ -1510,6 +1556,14 @@ int __cqo_drv_main(void); /* drivers.driver_source(..., main_name="__cqo_drv_mai
 
 /* One batch in this process; its exit status. */
 static int run_batch(const char *trace, const char *status, const char *subst_path) {
+    trace_max = env_bytes("CQO_TRACE_MAX", trace_max);
+    unsigned long long fmax = env_bytes("CQO_FILE_MAX", 256ULL << 20);
+    struct rlimit rl;
+    if (fmax && getrlimit(RLIMIT_FSIZE, &rl) == 0 && (rl.rlim_cur == RLIM_INFINITY || rl.rlim_cur > fmax)) {
+        rl.rlim_cur = rl.rlim_max != RLIM_INFINITY && rl.rlim_max < fmax ? rl.rlim_max : (rlim_t)fmax;
+        setrlimit(RLIMIT_FSIZE, &rl);
+    }
+    signal(SIGXFSZ, SIG_IGN); /* a write past the limit fails (EFBIG); trace_room says so first */
     trace_fd = open(trace, O_WRONLY | O_CREAT | O_APPEND | O_TRUNC, 0644);
     status_fd = open(status, O_WRONLY | O_CREAT | O_APPEND | O_TRUNC, 0644);
     if (trace_fd < 0 || status_fd < 0) { perror("cqo"); return 2; }

@@ -215,5 +215,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     user.add_argument("--entry", required=True)
     user.add_argument("--samples", type=int)
     a = p.parse_args(argv)
+    from cqcheck import tmpdirs
+    tmpdirs.sweep()   # cq-3fjt: run directories of killed checker processes
     return {"run": cmd_run, "selftest": cmd_selftest, "baseline": cmd_baseline,
             "progress": cmd_progress, "user": cmd_user}[a.cmd](a)

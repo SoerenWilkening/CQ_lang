@@ -732,6 +732,34 @@ int out_q(int x, int k) {
         self.assertEqual((rr.outputs["stdout"], rr.outputs["effects"]), ("x=5\n", [rm]))
 
 
+class DiskCaps(unittest.TestCase):
+    """cq-3fjt: a batch whose trace would pass $CQO_TRACE_MAX bytes is an OracleError (an internal
+    error of the checker, never a sample outcome), not GBs on disk; a batch under it is unaffected."""
+
+    def test_trace_cap(self):
+        import os
+        old = {k: os.environ.get(k) for k in ("CQO_TRACE_MAX", "CQE_CACHE")}
+        with tempfile.TemporaryDirectory() as cache:
+            os.environ["CQE_CACHE"] = cache
+            os.environ["CQO_TRACE_MAX"] = "200000"
+            try:
+                o1 = compile_c("diskcap", r"""
+int rot_q(int x0, double t, int n) { int x = x0; for (int i = 0; i < n; ++i) cq_theta(&x, t); return cq_measure(x); }
+""")
+                sp = spec("diskcap", "int rot_q(int,double,int)", [("rot_q", ["int", "double", "int"])])
+                rs = oracle.run_samples(o1, sp, [{"call": 0, "args": [i32(1), HALF, i32(3)]}], tripcap=10 ** 7)
+                self.assertEqual([(r.outcome, r.failed) for r in rs], [("ret", False)])
+                self.assertEqual(sum(e.get("kind") == "theta" for e in rs[0].events), 3)
+                with self.assertRaisesRegex(oracle.OracleError, "cq-3fjt"):
+                    oracle.run_samples(o1, sp, [{"call": 0, "args": [i32(1), HALF, i32(10 ** 6)]}], tripcap=10 ** 7)
+            finally:   # the runner of this program keeps the cap: no other test runs it
+                for k, v in old.items():
+                    if v is None:
+                        os.environ.pop(k, None)
+                    else:
+                        os.environ[k] = v
+
+
 class WideUIToF80(unittest.TestCase):
     """CR §2 (owner ruling cq-cqcj): uitofp from more than 128 bits to f80 is never negative (LLVM 19's
     ExpandLargeFpConvert sets the sign from the top bit; the oracle clears it)."""

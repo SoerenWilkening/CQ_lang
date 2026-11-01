@@ -1249,11 +1249,13 @@ _WORK: Dict[int, Path] = {}
 
 
 def _work_dir() -> Path:
-    """This thread's runner directory (trace, capture files), made once and removed at exit."""
+    """This thread's runner directory (trace, capture files), made once and removed at exit; it names
+    this process as its owner (tmpdirs, cq-3fjt: a killed process's is swept)."""
+    from cqcheck import tmpdirs
     k = threading.get_ident()
     d = _WORK.get(k)
     if d is None or not d.is_dir():
-        d = _WORK[k] = Path(tempfile.mkdtemp(prefix="cqe-run."))
+        d = _WORK[k] = tmpdirs.make_run_dir("cqe-run.")
         (d / "shot").mkdir()
         if len(_WORK) == 1:
             import atexit
@@ -1310,6 +1312,11 @@ def _run_part(prog: Path, items: Sequence[Tuple[dict, str, Optional[str]]], side
             pos += 1
         if pos == len(items):
             break
+        # cq-3fjt: the trace passed $CQE_TRACE_ROTATE after a finished sample (core.c): the rest run in
+        # a fresh runner with a fresh trace, nothing failed
+        if (not killed and code == 99 and "cq: chk-core: trace rotation" in err and pos not in open_shots
+                and not done):
+            continue
         # the runner ended inside sample pos: that sample fails, the rest run in a new runner
         events, bad = _with_bad(pre + open_shots.get(pos, []))
         if killed:
@@ -1377,6 +1384,9 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
     # not kept
     key = [_RUNS_VERSION, prog.parent.name, side, float(timeout), STEP_BUDGET, os.environ.get("CQE_COMPACT") == "0",
            [[preps[i][1], theta.get(i)] for i in todo]]
+    caps = [os.environ.get(v) for v in _CAP_VARS]   # cq-3fjt: a cap the caller set changes results
+    if any(caps):
+        key.append(caps)
     got = load_runs("eval", key)
     if got is not None:
         for i, d in zip(todo, got):
@@ -1394,6 +1404,7 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
 
 
 _RUNS_VERSION = "eval-runs-2"
+_CAP_VARS = ("CQE_SHOT_TRACE_MAX", "CQE_SHOT_OUTPUT_MAX", "CQE_FILE_MAX")   # core.c's disk caps
 _RESULT_FIELDS = ("outputs", "measured", "rotations", "kept", "clean", "violations")
 
 

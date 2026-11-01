@@ -602,7 +602,8 @@ class Runner:
 
     def __init__(self, exe: Path):
         self.exe = exe
-        self.dir = Path(tempfile.mkdtemp(prefix="cqo-run."))
+        from cqcheck import tmpdirs
+        self.dir = tmpdirs.make_run_dir("cqo-run.")   # owned by this process (cq-3fjt: swept if killed)
         self.lock = threading.Lock()
         self.pid = os.getpid()   # a runner belongs to the Python process that started it
         # cq-5f7p: leases (_lease) and retirement are counted under _RUNNERS_LOCK; a retired runner
