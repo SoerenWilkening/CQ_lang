@@ -48,6 +48,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Analysis/CFG.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/GlobalVariable.h"
@@ -196,6 +197,17 @@ SmallVector<CellCopyOut, 4> cellCopyOuts(Function &F) {
   return out;
 }
 
+// A classical value computed from the clone's arguments and constants alone (no memory read, no call,
+// no phi): the twin's replay computes the same value the forward did.
+bool argumentsOnly(const Value *v, unsigned depth = 0) {
+  if (isa<Argument>(v) || isa<Constant>(v))
+    return true;
+  auto *I = dyn_cast<Instruction>(v);
+  if (!I || depth > 32 || I->mayReadFromMemory() || isa<CallBase>(I) || isa<PHINode>(I))
+    return false;
+  return all_of(I->operands(), [&](const Use &u) { return argumentsOnly(u.get(), depth + 1); });
+}
+
 // Does replaying F (and the forward clones it calls) recompute its value and nothing else?
 void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &seen) {
   if (!seen.insert(&F).second)
@@ -217,7 +229,13 @@ void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &s
       // gets the caller's snapshot, which nothing reads after the twin).
       // A cell copy-out (phase 2): the twin of F restores the cell; a forward clone F calls is undone
       // by its own twin call in F's body.
-      if (!inFrame(SI->getPointerOperand()) && !cellCopyOut(SI))
+      // A classical store into a caller's object through a pointer formal of F itself, of a value of the
+      // arguments alone (163's sret field c): the twin writes the value the cell already holds (the
+      // object is not written between the call and its twin: an uncompute barrier, cq-fwto).
+      const Value *base = getUnderlyingObject(SI->getPointerOperand());
+      bool idempotent = isa<Argument>(base) && cast<Argument>(base)->getParent() == &F &&
+                        argumentsOnly(SI->getValueOperand()) && SI->isSimple();
+      if (!inFrame(SI->getPointerOperand()) && !cellCopyOut(SI) && !idempotent)
         refuse("a store to memory outside the clone's frame", &I);
       continue;
     }
@@ -322,14 +340,30 @@ void defineTwin(Module &M, Function &twin, Function &src) {
     Argument *old = twin.getArg(nOuts + src.arg_size() + k);
     if (old->getType() != st->getValueOperand()->getType())
       unimplemented("calls: calls::finalize: a twin's old cell of another type than the cell's handle", st);
+    // A load of the cell before the copy-out (122's read-modify-write, p->c += d) read the cell's content
+    // before the call; in the twin the cell holds the forward's copy instead, so it reads old_k. Any
+    // other load through the formal that may overlap the cell is unimplemented.
+    const DataLayout &DL = M.getDataLayout();
+    uint64_t cellSize = DL.getTypeStoreSize(st->getValueOperand()->getType());
     for (Instruction &I : instructions(src))
       if (auto *ld = dyn_cast<LoadInst>(&I)) {
         APInt o(64, 0);
-        const DataLayout &DL = M.getDataLayout();
         const Value *b = ld->getPointerOperand()->stripAndAccumulateConstantOffsets(DL, o, true);
-        if (b == co.formal)
-          unimplemented("calls: calls::finalize: a clone reading through a pointer formal it copies a rail out to",
-                        ld);
+        if (b != co.formal)
+          continue;
+        int64_t lo = o.getSExtValue();
+        uint64_t ls = DL.getTypeStoreSize(ld->getType());
+        if (lo + int64_t(ls) <= co.off || co.off + int64_t(cellSize) <= lo)
+          continue; // another cell
+        if (lo == co.off && ld->getType() == old->getType() && !isPotentiallyReachable(co.st, ld)) {
+          auto *tl = cast<LoadInst>(VM[ld]);
+          tl->replaceAllUsesWith(old);
+          tl->eraseFromParent();
+          continue;
+        }
+        unimplemented("calls: calls::finalize: a clone reading a caller cell through a pointer formal after (or "
+                      "beside) its copy-out to that cell",
+                      ld);
       }
     IRBuilder<> B(f);
     Value *at = twin.getArg(nOuts + co.formal->getArgNo());
