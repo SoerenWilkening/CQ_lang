@@ -32,7 +32,12 @@ ERRORS = {"vol_quantum_observable_error.O1.ll": "eff-conc: a volatile access to 
                                                 "quantum data",
           "setjmp_effect_error.O1.ll": "eff-conc: an escaping clone called as a _ctl clone",
           "setjmp_nested_error.O1.ll": "eff-conc: a setjmp diamond in a lowered function whose first-return arm "
-                                       "calls no clone that escapes"}
+                                       "calls no clone that escapes",
+          # cq-wskg: a longjmp through a defined noreturn wrapper under a quantum predicate.
+          "setjmp_wrapper_error.O1.ll": "eff-conc: a setjmp diamond in a lowered function whose first-return arm "
+                                        "calls no clone that escapes",
+          "setjmp_wrapper_p20_error.O1.ll": "eff-conc: a setjmp diamond whose first-return arm is not one block",
+          "setjmp_wrapper_p21_error.O1.ll": "eff-conc: a setjmp diamond whose first-return arm is not one block"}
 MODULES = {"conc.O1.ll": ENTRIES, "setjmp.O1.ll": ["p_sj_scalar", "p_sj_void", "p_sj_classical", "p_sj_qarm"]}
 _SJ = (r"cq_template_select_i32", r"call [^\n]*@(setjmp|longjmp)\(")
 # entry -> (regex that must match its body, regex that must not)

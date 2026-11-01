@@ -1715,6 +1715,13 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
                     &CB);
     return loops::lowerQuantumDepthRecursion(ctx, CB, K, B);
   }
+  if (!cs && (ctx.S.ctl || ctx.T.controlTainted(CB.getParent(), ctx.S)))
+    // cq-wskg: taint publishes a specialization for every lifted call under a quantum predicate
+    // (rule 19: _ctl or unguarded and merged). None is a call taint did not lift; the original call
+    // would run unconditionally.
+    unimplemented("calls: a call under a quantum predicate whose callee taint published no specialization "
+                  "for (rules 18, 19)",
+                  &CB);
   if (!cs || cs->isEntry()) {
     // An untainted callee or the in-place specialization: the ordinary call (rule 19's inline of an
     // entry returning a quantum value is the spine's).

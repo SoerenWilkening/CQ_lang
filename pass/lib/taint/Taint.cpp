@@ -2532,6 +2532,27 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
   cur->anyQuantum = true;
 }
 
+// cq-wskg (rule 24): a function with a body from which a direct call of longjmp may be reached through
+// direct calls of functions with bodies.
+static bool mayReachLongjmp(const Function *G) {
+  SmallPtrSet<const Function *, 8> seen;
+  SmallVector<const Function *, 8> work{G};
+  while (!work.empty()) {
+    const Function *F = work.pop_back_val();
+    if (F->isDeclaration() || !seen.insert(F).second)
+      continue;
+    for (const BasicBlock &BB : *F)
+      for (const Instruction &I : BB)
+        if (auto *C = dyn_cast<CallBase>(&I))
+          if (const Function *H = C->getCalledFunction()) {
+            if (H->isDeclaration() && H->getName().contains("longjmp"))
+              return true;
+            work.push_back(H);
+          }
+  }
+  return false;
+}
+
 // Whether a call may write through its argument operand argNo, by the call's attributes: the
 // parameter's readonly/readnone, and the call's memory effects on argument memory.
 static bool mayWriteThroughArg(const CallBase &CB, unsigned argNo) {
@@ -2899,7 +2920,8 @@ void Analyzer::transferCall(CallBase &CB) {
   if (CB.doesNotReturn()) {
     // abort_i1 / the longjmp flag (rules 16, 24): neither a gate nor a tape entry, so not a non-pure
     // body for rule 19.
-    if (G->getName().contains("longjmp") && (blockCT(CB.getParent()) || cur->ctl) &&
+    // cq-wskg: a defined noreturn callee that may reach longjmp (a wrapper) longjmps here too.
+    if ((G->getName().contains("longjmp") || mayReachLongjmp(G)) && (blockCT(CB.getParent()) || cur->ctl) &&
         !st.longjmpUnderQuantum) {
       st.longjmpUnderQuantum = true;
       st.changed = true;
