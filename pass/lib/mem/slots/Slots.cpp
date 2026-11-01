@@ -2404,10 +2404,8 @@ void endSlotLifetime(LoweringContext &ctx, ObjectId, Instruction *at) {
 //  - After: one `load i32` per cell, right after the call; a later load of the cell that the call reaches
 //    with no write in between forwards to it (no IR), a run-time read names it (M3).
 //  - Every rail that may be in a cell of the object at the call is used by the forward call (noteUse). When
-//    the call has a twin (a quantum result, or a cell the clone writes), a rail in a cell the clone may only
-//    read must also outlive the twin, which recordCall does not see (its reads are the handles among fwd's
-//    arguments and `extra`): such a rail must be a register or otherwise kept; a garbage or seed rail there
-//    is unimplemented (it needs the call item to read it).
+//    the call has a twin (a quantum result, or a cell the clone writes), a garbage or seed rail in a cell the
+//    clone may read is also read by the call's item (Uncompute::noteCallReads, U4): it outlives the twin.
 //  - A slot object whose pointer goes only to such calls (not captured: `nocapture`) and to loads and
 //    stores is not escaping; a call writes only the cells cellsWritten names.
 // Not built: a parameter or global slot object handed to a clone that writes it, a pointer at a run-time
@@ -2567,15 +2565,17 @@ SmallVector<Value *, 4> slotCellsAfterCall(LoweringContext &ctx, const CallBase 
       old.push_back(nullptr);   // a run-time content: every rail it may be is passed as the twin's operand
     }
   }
-  bool runTimeOld = is_contained(old, nullptr);
+  SmallVector<RailId, 8> reads;
   for (Value *h : railsInObjectAt(ctx, st, ca.s, orig)) {
-    ctx.unc().noteUse(ctx.unc().idOf(h), lowered);
-    if (twin && !st.registers.count(h) && (runTimeOld || !is_contained(old, h)))
-      unimplemented("mem-slots: a garbage or seed rail in a caller cell that a clone with a twin may read (it must "
-                    "outlive the twin, which recordCall does not see: the call item must read it): " +
-                        describeValue(h),
-                    &orig);
+    RailId id = ctx.unc().idOf(h);
+    ctx.unc().noteUse(id, lowered);
+    // U4: a rail the clone may read through the pointer outlives the twin, which recompute-reads it (52's
+    // tx cells); a cell's old content is already the twin's operand.
+    if (twin && !st.registers.count(h) && !is_contained(old, h) && !is_contained(reads, id))
+      reads.push_back(id);
   }
+  if (!reads.empty())
+    ctx.unc().noteCallReads(lowered, reads);
   SmallVector<Value *, 4> out;
   IRBuilder<> &B = ctx.B();
   for (unsigned c : ca.cells) {

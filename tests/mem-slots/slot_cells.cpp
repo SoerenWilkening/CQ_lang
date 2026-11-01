@@ -18,13 +18,11 @@
 //  - old: a[1] = 7 before the call: the seed alloc_i32(7) is the twin's old-content operand and is freed
 //    after the twin (106's a.out).
 //  - noreload: nothing reads the cells after the call: the twin and the free follow the after-call load.
-//    Fails until cq-b73i (uncompute places the item before the slotOut's definition when it has no use).
-//  - keep_cell0: a load of a[0] after the call forwards past it to r (the clone writes only cell 1). Fails
-//    until cq-b73i, like noreload.
+//  - keep_cell0: a load of a[0] after the call forwards past it to r (the clone writes only cell 1).
 //  - old_twin: as old, a[1] read by an add: the twin gets the seed as a[1]'s old content.
 //  - record: 163's sret record (see caseRecord).
-//  - garbage_read: a[0] = r + 1 (garbage) and the clone has a twin: unimplemented (the rail must outlive
-//    the twin, which recordCall does not see).
+//  - garbage_read: a[0] = r + 1 (garbage) and the clone has a twin: the garbage is uncomputed after the
+//    twin (Uncompute::noteCallReads, U4).
 //
 //   mem_slots_slot_cells            run every case
 //   mem_slots_slot_cells <case>     run one case
@@ -37,8 +35,6 @@
 #include <string>
 #include <vector>
 
-#include <sys/wait.h>
-#include <unistd.h>
 
 #include "cq/Abi.h"
 #include "cq/Calls.h"
@@ -293,37 +289,16 @@ void caseKeepCell0() {
 
 void caseGarbageRead() {
   const char *c = "garbage_read";
-  int pfd[2];
-  if (pipe(pfd) != 0)
-    std::exit(2);
-  std::fflush(nullptr);
-  pid_t pid = fork();
-  if (pid == 0) {
-    dup2(pfd[1], 2);
-    dup2(pfd[1], 1);
-    close(pfd[0]);
-    close(pfd[1]);
-    lower(c, module("  %g = add i32 %r, 1\n  store i32 %g, ptr %a, align 4\n", R"(
+  std::string b = lower(c, module("  %g = add i32 %r, 1\n  store i32 %g, ptr %a, align 4\n", R"(
   %v = load i32, ptr %a1, align 4
   %v0 = load i32, ptr %a, align 4
   %s = add i32 %v, %v0
   %m = call i32 @cq_measure_si32(i32 %s)
   ret i32 %m)"));
-    _exit(0);
-  }
-  close(pfd[1]);
-  std::string out;
-  char buf[512];
-  ssize_t k;
-  while ((k = read(pfd[0], buf, sizeof buf)) > 0)
-    out.append(buf, size_t(k));
-  close(pfd[0]);
-  int status = 0;
-  waitpid(pid, &status, 0);
-  if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
-    fail(c, "lowered; expected an unimplemented error");
-  else if (out.find("a garbage or seed rail in a caller cell that a clone with a twin may read") == std::string::npos)
-    fail(c, "wrong error: " + out.substr(0, 300));
+  // U4: the garbage g in a[0], read by the clone and recompute-read by its twin, is uncomputed after the twin.
+  expectInOrder(c, b, {R"((%\w+) = call i32 @cq_template_add_i32_hl\(i32 %\w+, i32 1\))",
+                       R"(call void @__cq_q_fill_\w+\()", R"(call void @__cq_q_fill_\w+_unc\()",
+                       R"(call void @cq_template_add_i32_hl_unc\()"});
 }
 
 // Rules 20, 26 (163's shape): an sret record { long a, b, c } filled by a clone that stores handles into
