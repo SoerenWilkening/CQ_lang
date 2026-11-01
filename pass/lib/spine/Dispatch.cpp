@@ -434,6 +434,12 @@ bool boolRangeLoad(const LoadInst *ld) {
 
 bool boolValueStore(const StoreInst *st) {
   const Value *v = st->getValueOperand();
+  if (auto *c = dyn_cast<ConstantInt>(v); c && c->getBitWidth() > 8 && c->getBitWidth() % 8 == 0) {
+    for (unsigned k = 0; k < c->getBitWidth() / 8; ++k)
+      if (c->getValue().extractBitsAsZExtValue(8, 8 * k) > 1)
+        return false;
+    return true;
+  }
   if (!v->getType()->isIntegerTy(8))
     return false;
   if (auto *z = dyn_cast<ZExtInst>(v))
