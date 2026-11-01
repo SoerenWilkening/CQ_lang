@@ -48,6 +48,7 @@
 //    results are Uncompute's to emit. Twin bodies are defined by finalize.
 //  - lowerVarargs and lowerAsm are unimplemented (variadic clones; inline asm is cq-w3-asm).
 #include "cq/Calls.h"
+#include "cq/FatPtr.h"
 
 #include "cq/Abi.h"
 #include "cq/Aggregates.h"
@@ -169,6 +170,11 @@ struct FormalLayout {
   SmallVector<Type *, 4> leaves;
   SmallVector<bool, 4> q;
   bool pointer = false;
+  // T4 (CR rule 21, §1.4): a pointer formal crossing as (object, tag, i32 idx[, i32 cell count]); the
+  // object is the caller's host pointer, or the i32 bus handle of a Qram pointee.
+  PtrAbi abi = PtrAbi::Raw;
+  ObjClass pointee = ObjClass::Classical;
+  unsigned digits = 0;
 };
 
 std::vector<FormalLayout> formalLayout(const TaintInfo &T, const Specialization &S, const Value *at) {
@@ -185,11 +191,33 @@ std::vector<FormalLayout> formalLayout(const TaintInfo &T, const Specialization 
       if (l->isPointerTy() && !f.pointer)
         unimplemented("calls: an aggregate formal with a pointer field (rule 21 fat-pointer fields)", &A);
     if (f.pointer) {
-      if (f.q[0] || T.isFatPointer(&A, S))
-        unimplemented("calls: a fat-pointer formal (rule 21 triple (object, tag, idx): fatptr)", &A);
-      for (ObjectId o : T.provenance(&A, S))
-        if (T.classOf(o) == ObjClass::Qram)
-          unimplemented("calls: a pointer formal into a QRAM object (rule 21 triple: fatptr, mem-qram)", &A);
+      PtrFormal pf = T.pointerFormal(S, A.getArgNo());
+      f.abi = pf.abi;
+      f.pointee = pf.pointee;
+      f.digits = pf.digits;
+      if (pf.abi == PtrAbi::Raw) {
+        if (f.q[0] || T.isFatPointer(&A, S))
+          internalError("calls: a fat-pointer formal taint passes as a raw pointer", &A);
+        for (ObjectId o : T.provenance(&A, S))
+          if (T.classOf(o) == ObjClass::Qram)
+            internalError("calls: a pointer formal into a QRAM object taint passes as a raw pointer", &A);
+      } else {
+        // T4 triple: object, tag, idx (handles where the digits say quantum), then the cell count.
+        Type *i32 = Type::getInt32Ty(A.getContext());
+        f.leaves.clear();
+        f.q.clear();
+        bool qramObj = pf.pointee == ObjClass::Qram;
+        f.leaves.push_back(qramObj ? static_cast<Type *>(i32) : A.getType());
+        f.q.push_back(qramObj);
+        f.leaves.push_back(i32);
+        f.q.push_back(false);
+        f.leaves.push_back(i32);
+        f.q.push_back(false);
+        if (pf.abi == PtrAbi::TripleCount) {
+          f.leaves.push_back(i32);
+          f.q.push_back(false);
+        }
+      }
       ++nPtr;
     } else {
       need += f.leaves.size();
@@ -208,14 +236,24 @@ std::vector<FormalLayout> formalLayout(const TaintInfo &T, const Specialization 
     unimplemented("calls: a clone whose mask has another digit count than its formals' scalar fields (a "
                   "packed-integer formal, 159: cq-0umd)",
                   at);
-  if (nPtr > 0 && m.size() < need + nPtr)
-    internalError("calls: a pointer formal with no mask digit", at);
-  if (nPtr > 1)
-    return fs;
+  size_t total = need;
+  for (const FormalLayout &f : fs)
+    if (f.pointer) {
+      if (f.digits == 0)
+        internalError("calls: a pointer formal with no mask digit", at);
+      total += f.digits;
+    }
+  if (total != m.size())
+    internalError("calls: taint's mask has another digit count than its formals (T4 digits)", at);
   size_t d = 0;
   for (FormalLayout &f : fs) {
     if (f.pointer) {
-      d += m.size() - need;
+      if (f.abi != PtrAbi::Raw) {
+        // The triple's tag and idx digits are the parameters' kinds.
+        f.q[1] = m[d] == '1';
+        f.q[2] = m[d + 1] == '1';
+      }
+      d += f.digits;
       continue;
     }
     for (bool q : f.q)
@@ -232,8 +270,22 @@ struct ResultLayout {
   bool composite = false;
   SmallVector<Type *, 4> leaves;
   SmallVector<bool, 4> q;
+  // M2 (191): the clone's stores through Qram-pointee formals, one i32 handle each after the leaves.
+  unsigned stores = 0;
+  bool qramFormal = false;
   bool anyQ() const { return is_contained(q, true); }
 };
+
+// Does a formal of S cross as a triple onto a Qram pointee (T4)?
+bool hasQramTriple(const TaintInfo &T, const Specialization &S) {
+  for (Argument &A : S.F->args())
+    if (A.getType()->isPointerTy()) {
+      PtrFormal pf = T.pointerFormal(S, A.getArgNo());
+      if (pf.abi != PtrAbi::Raw && pf.pointee == ObjClass::Qram)
+        return true;
+    }
+  return false;
+}
 
 ResultLayout resultLayout(const TaintInfo &T, const Specialization &S, const Value *at) {
   ResultLayout r;
@@ -251,10 +303,25 @@ ResultLayout resultLayout(const TaintInfo &T, const Specialization &S, const Val
     if (r.q.back() && !scalarRailType(r.leaves[k]))
       unimplemented("calls: a clone result with a quantum pointer field (rule 21: fatptr)", at);
   }
+  r.qramFormal = hasQramTriple(T, S);
+  if (r.qramFormal)
+    r.stores = mem::calleeQramStoreCount(T, S);
   return r;
 }
 
 Type *cloneResultType(LLVMContext &C, const ResultLayout &r, Type *orig) {
+  if (r.stores) {
+    // M2: the result's leaves (C type where classical, handles where quantum), then one handle per store;
+    // a void clone with one store returns that handle.
+    if (orig->isVoidTy() && r.stores == 1)
+      return handleTy(C);
+    SmallVector<Type *, 4> es;
+    for (unsigned k = 0; k < r.leaves.size(); ++k)
+      es.push_back(r.q[k] ? handleTy(C) : r.leaves[k]);
+    for (unsigned k = 0; k < r.stores; ++k)
+      es.push_back(handleTy(C));
+    return StructType::get(C, es);
+  }
   if (orig->isVoidTy() || !r.anyQ())
     return orig;
   if (!r.composite)
@@ -415,6 +482,9 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
   SmallVector<unsigned, 2> slotArgs;
   for (unsigned i = 0; i < CB.arg_size() && i < fs.size(); ++i)
     if (fs[i].pointer && pointsToSlot(ctx, CB.getArgOperand(i)) && !ctx.T.cellsWritten(S, i).empty()) {
+      if (fs[i].abi != PtrAbi::Raw)
+        unimplemented("calls: a clone writing a caller's slot object through a triple pointer formal (T4, M1)",
+                      &CB);
       if (CB.isByValArgument(i))
         unimplemented("calls: a byval slot record a clone writes (rules 20, 26: 164)", &CB);
       slotArgs.push_back(i);
@@ -437,6 +507,23 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
                   &CB);
   for (unsigned i = 0; i < CB.arg_size(); ++i) {
     const Value *a = CB.getArgOperand(i);
+    if (fs[i].pointer && fs[i].abi != PtrAbi::Raw) {
+      // T4 (CR rule 21, §1.4): the triple (object, tag, idx) and, for TripleCount, the cell count.
+      if (CB.isByValArgument(i))
+        unimplemented("calls: a byval formal passed as a rule 21 triple", &CB);
+      fatptr::Triple t = fatptr::passAcrossCall(ctx, a);
+      Value *vs[4] = {t.object, t.tag, t.idx, t.cellCount};
+      unsigned n = fs[i].abi == PtrAbi::TripleCount ? 4 : 3;
+      if (n == 4 && !t.cellCount)
+        internalError("calls: passAcrossCall gave no cell count for a TripleCount formal", &CB);
+      for (unsigned k = 0; k < n; ++k) {
+        if (!vs[k] || vs[k]->getType() != (fs[i].q[k] ? handleTy(ctx.M.getContext()) : fs[i].leaves[k]))
+          internalError("calls: passAcrossCall's triple does not match the formal's T4 layout", &CB);
+        args.push_back(vs[k]);
+        r.ops.push_back(Operand{vs[k], fs[i].q[k]});
+      }
+      continue;
+    }
     SmallVector<Operand, 4> leaves;
     if (isComposite(a->getType()))
       leaves = aggr::flattenResult(ctx, a);
@@ -506,6 +593,67 @@ void bindFieldwiseResult(LoweringContext &ctx, CallBase &CB, CallInst *call, con
   }
   ctx.unc().recordCall(call, outs, slotOuts, extra);
   ctx.bindFields(&CB, ops);
+}
+
+// M2/U3 (191): a clone with a triple formal onto a QRAM object. Its result is the C result's leaves then one
+// handle per store the clone made through such a formal (cloneResultType). The quantum leaves and the
+// stored rails are the call's outs, undone together by the twin (U2); mem-qram then records the stores
+// on the caller's bus, popped before the twin (U3 with U6).
+void bindQramCloneResult(LoweringContext &ctx, CallBase &CB, const Specialization &S, const CloneCall &r) {
+  const ResultLayout &res = r.res;
+  SmallVector<Value *, 4> outs, stored;
+  bool hasResult = !CB.getType()->isVoidTy();
+  if (res.stores == 0) {
+    if (r.fieldwise) {
+      SmallVector<Operand, 4> ops;
+      for (unsigned k = 0; k < res.leaves.size(); ++k) {
+        Value *e = ctx.B().CreateExtractValue(r.call, {k});
+        ops.push_back(Operand{e, res.q[k]});
+        if (res.q[k])
+          outs.push_back(e);
+      }
+      ctx.bindFields(&CB, ops);
+    } else if (hasResult) {
+      if (r.handle != ctx.T.isQuantum(&CB, ctx.S))
+        internalError("calls: the call's result kind and taint's disagree", &CB);
+      if (r.handle)
+        outs.push_back(r.call);
+      ctx.bind(&CB, r.call);
+    }
+  } else if (!hasResult && res.stores == 1) {
+    outs.push_back(r.call);
+    stored.push_back(r.call);
+  } else {
+    SmallVector<Operand, 4> ops;
+    for (unsigned k = 0; k < res.leaves.size(); ++k) {
+      Value *e = ctx.B().CreateExtractValue(r.call, {k});
+      ops.push_back(Operand{e, res.q[k]});
+      if (res.q[k])
+        outs.push_back(e);
+    }
+    for (unsigned k = 0; k < res.stores; ++k) {
+      Value *e = ctx.B().CreateExtractValue(r.call, {unsigned(res.leaves.size() + k)});
+      outs.push_back(e);
+      stored.push_back(e);
+    }
+    if (hasResult) {
+      if (res.composite) {
+        ctx.bindFields(&CB, ops);
+      } else {
+        if (ops.size() != 1 || ops[0].handle != ctx.T.isQuantum(&CB, ctx.S))
+          internalError("calls: the call's result kind and taint's disagree", &CB);
+        ctx.bind(&CB, ops[0].v);
+      }
+    }
+  }
+  if (outs.empty() && r.slotOuts.empty()) {
+    // Nothing to undo: no result rail, no store (a clone that only reads the bus classically).
+    if (!r.extra.empty())
+      internalError("calls: old slot cells passed to a clone that reloads none", &CB);
+    return;
+  }
+  ctx.unc().recordCall(r.call, outs, r.slotOuts, r.extra);
+  mem::noteCalleeQramStores(ctx, CB, S, r.call, stored);
 }
 
 // The C name a declared clone is named after (CR §1.4 fn). Rule 18: an LLVM math intrinsic on a
@@ -859,6 +1007,8 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
     return;
   }
   CloneCall r = emitCloneCall(ctx, CB, *cs, nullptr);
+  if (r.res.qramFormal)
+    return bindQramCloneResult(ctx, CB, *cs, r);
   if (r.fieldwise)
     return bindFieldwiseResult(ctx, CB, r.call, r.res, r.slotOuts, r.extra);
   if (!r.slotOuts.empty() || !r.extra.empty()) {
@@ -965,6 +1115,8 @@ void lowerIndirect(LoweringContext &ctx, CallBase &CB) {
     CallInst *call = nullptr;
     if (specs[k]) {
       CloneCall r = emitCloneCall(ctx, CB, *specs[k], specs[k]->ctl ? flag : nullptr);
+      if (r.res.qramFormal)
+        unimplemented("calls: an indirect-call candidate with a triple formal onto a QRAM object (U3)", &CB);
       if (!r.slotOuts.empty() || !r.extra.empty())
         unimplemented("calls: an indirect-call candidate that writes a caller's slot object (the merge of its "
                       "reloaded cells)",

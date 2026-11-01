@@ -424,6 +424,26 @@ void defineTwin(Module &M, Function &twin, Function &src) {
     st->setOperand(0, old);
   }
 
+  // M2b (191): the stores a clone makes through triple formals onto a QRAM object sit after its body's
+  // uncompute, right before the return (after them only the return value's insertvalues). They are the
+  // caller's to pop (U3) before it calls the twin, so the twin does not repeat them: dropped here, and
+  // their copied-out rails are XORed into the twin's outs like any result field.
+  for (ReturnInst *R : rets) {
+    SmallVector<Instruction *, 2> stores;
+    for (Instruction *I = R->getPrevNode(); I; I = I->getPrevNode()) {
+      if (isa<InsertValueInst>(I))
+        continue;
+      auto *c = dyn_cast<CallInst>(I);
+      std::optional<abi::CoreSpec> cs =
+          c && c->getCalledFunction() ? abi::parseCore(c->getCalledFunction()->getName()) : std::nullopt;
+      if (!cs || cs->op != abi::Core::QramStore || cs->ctl || cs->unc || !isa<Argument>(c->getArgOperand(0)))
+        break;
+      stores.push_back(c);
+    }
+    for (Instruction *I : stores)
+      I->eraseFromParent();
+  }
+
   SmallVector<Instruction *, 4> dead;
   // The copy-out of rule 18: f = cqrt_alloc_<W>(0), cqrt_copy_<W>(r, f), ..., ret f: the copy is made
   // to target `out` instead and f goes.

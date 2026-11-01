@@ -28,6 +28,8 @@
 
 #include "cq/Aggregates.h"
 #include "cq/Effects.h"
+#include "cq/FatPtr.h"
+#include "cq/Memory.h"
 #include "cq/Rotation.h"
 #include "cq/Switch.h"
 
@@ -761,6 +763,62 @@ Type *leafTypeAt(Type *t, unsigned k) {
 void Walker::emitCloneReturn(ReturnInst *ret) {
   IRBuilder<> &B = ctx.B();
   Function *C = ctx.B().GetInsertBlock()->getParent();
+  // M2/M2b (191): the clone's stores through triple formals onto a QRAM object are emitted after the
+  // body's uncompute and their copied-out rails returned after the result (calls::cloneResultType).
+  unsigned stores = 0;
+  for (Argument &A : ctx.S.F->args())
+    if (A.getType()->isPointerTy()) {
+      PtrFormal pf = ctx.T.pointerFormal(ctx.S, A.getArgNo());
+      if (pf.abi != PtrAbi::Raw && pf.pointee == ObjClass::Qram) {
+        stores = mem::calleeQramStoreCount(ctx.T, ctx.S);
+        break;
+      }
+    }
+  if (stores) {
+    Value *res = nullptr;
+    if (Value *rv = ret->getReturnValue()) {
+      Type *rty = rv->getType();
+      if (rty->isAggregateType() || rty->isVectorTy())
+        unimplemented("spine: a clone with QRAM stores through a triple formal and a composite result (M2)", ret);
+      Operand op = ctx.operand(rv);
+      res = op.v;
+      if (op.handle) {
+        RailType w = railTypeOf(rty);
+        CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                                   {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+        RailId fid = ctx.unc().recordSeed(f);
+        abi::CoreSpec cp{abi::Core::Copy, w};
+        CallInst *c = ctx.emitCore(cp, {op.v, f});
+        ctx.unc().recordCore(c, cp, {op, Operand{f, true}}, fid);
+        ctx.unc().setRole(fid, Role::Result);
+        res = f;
+      }
+    }
+    ReturnInst *nr = B.CreateRet(PoisonValue::get(C->getReturnType()));
+    ctx.unc().flushAtExit(nr);
+    B.SetInsertPoint(nr);
+    SmallVector<Value *, 2> rails = mem::emitCalleeQramStores(ctx);
+    if (rails.size() != stores)
+      internalError("spine: emitCalleeQramStores returned another count than calleeQramStoreCount", ret);
+    Value *v;
+    if (!res && stores == 1) {
+      v = rails[0];
+    } else {
+      auto *st = dyn_cast<StructType>(C->getReturnType());
+      if (!st || st->getNumElements() != (res ? 1u : 0u) + stores)
+        internalError("spine: a clone's result type does not match its result and QRAM stores", ret);
+      v = PoisonValue::get(st);
+      unsigned k = 0;
+      if (res)
+        v = B.CreateInsertValue(v, res, {k++});
+      for (Value *h : rails)
+        v = B.CreateInsertValue(v, h, {k++});
+    }
+    if (v->getType() != C->getReturnType())
+      internalError("spine: a clone's return value with QRAM stores is not of its return type", ret);
+    nr->setOperand(0, v);
+    return;
+  }
   ReturnInst *nr;
   if (Value *rv = ret->getReturnValue()) {
     Type *rty = rv->getType();
@@ -1413,6 +1471,37 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
     unsigned p = off;
     for (unsigned i = 0; i < F.arg_size(); ++i) {
       Argument *A = F.getArg(i);
+      if (A->getType()->isPointerTy()) {
+        PtrFormal pf = T.pointerFormal(S, i);
+        if (pf.abi != PtrAbi::Raw) {
+          // T4/P1 (CR rule 21, §1.4): (object, tag, idx[, cell count]); the bus of a Qram pointee and a
+          // quantum tag or idx are the caller's rails, never freed here.
+          unsigned n = pf.abi == PtrAbi::TripleCount ? 4 : 3;
+          if (p + n > C->arg_size())
+            internalError("spine: a clone with fewer parameters than its triple formal's", C);
+          Argument *obj = C->getArg(p), *tag = C->getArg(p + 1), *idx = C->getArg(p + 2);
+          Argument *cnt = n == 4 ? C->getArg(p + 3) : nullptr;
+          p += n;
+          bool objH = pf.pointee == ObjClass::Qram;
+          // The digits before this formal's: its tag and idx digits are the first two of its own.
+          size_t d = 0;
+          for (unsigned j = 0; j < i; ++j) {
+            Argument *Aj = F.getArg(j);
+            d += Aj->getType()->isPointerTy() ? T.pointerFormal(S, j).digits : T.fieldMask(Aj, S).size();
+          }
+          if (d + 2 > S.mask.size())
+            internalError("spine: a triple formal past the clone's mask", A);
+          bool tagH = S.mask[d] == '1', idxH = S.mask[d + 1] == '1';
+          if (objH)
+            ctx.unc().recordExternal(obj, Role::UserRegister);
+          if (tagH)
+            ctx.unc().recordExternal(tag, Role::UserRegister);
+          if (idxH)
+            ctx.unc().recordExternal(idx, Role::UserRegister);
+          fatptr::bindFormal(ctx, *A, obj, Operand{tag, tagH}, Operand{idx, idxH}, cnt);
+          continue;
+        }
+      }
       SmallVector<bool, 4> fm = T.fieldMask(A, S);
       bool composite = A->getType()->isStructTy() || A->getType()->isArrayTy() || A->getType()->isVectorTy();
       if (p + fm.size() > C->arg_size())
