@@ -14,6 +14,8 @@ What is compared (CR §6, CLAUDE.md "The §6 checker"):
 - every `cqrt_free` on our side sees a rail in a known classical basis state (CR §0);
 - oracle "ref" only: kept rails (live at exit, every role, A4's kept_entangled included) as a
   multiset of (type, value function over the group's samples);
+- oracle "c" only: the leak rule (CR §6 item 1, cq-tt2j): every rail of ours live at exit is a
+  frozen register, a measured value, an output, a result or a rule-kept rail (_leaks below);
 - the rotation list: (gate, target, angle or angle-rail value, control predicate per input), up to
   reordering of commuting gates (below) and renaming of rails. Rails are matched by (type,
   value function over the group's samples). A phase P(θ) on a flag is e^{iθ·f}: its predicate is the
@@ -1550,6 +1552,62 @@ def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult], ended: Sequence[
     return reasons
 
 
+# ---------------------------------------------------------------- the leak rule (against "c")
+
+# CR §6 item 1 (CQ_spec 47b0a38, ruling 2026-11-01 on cq-nyto; cq-tt2j): a rail still allocated at exit
+# is a frozen register (rule 10), a measured value, or a kept rail a rule names (6, 14, 26); any other
+# live rail is a leak and FAILS, with or without a reference. Against the reference the kept multiset
+# already decides it; against the C oracle (the C-oracle verdict; cqcheck user, which has no
+# clean-list) each live rail of ours is read by the role the evaluator gives it at exit (rt/core.c
+# exit_role) and what the run says of it:
+#   kept      measured, frozen (rotated), abort and tape rails (rules 5, 16), QRAM blocks (qram,
+#             qram_cell, qram_slot), kept_entangled (a source received a non-diagonal gate or a
+#             measurement after the rail was written: no _unc can clean it; rules 5 and 6), output (its
+#             handle sits in output memory at exit: an out-parameter's or output object's cell, a
+#             global, the object a returned pointer reaches; orchestrator decision on cq-tt2j), a
+#             result (the handle a handle-returning function returns, run.resolve_handle_rets:
+#             "result"), a seed that received an Ry (a register whose Ry was the identity);
+#   rule 23   at most one fenv_flags rail (the final flags rail is an output) and one fenv_mode rail;
+#   known     a rail in a known classical basis state (owner ruling 2026-11-01 on cq-tt2j: not a
+#             leak; LIVE_KNOWN_IS_LEAK below flips it);
+#   a_K       a "garbage" i1 rail, at most one per activation of a K-cut loop the C oracle recorded
+#             on the sample (rule 14's output predicate), any number on a capped or ended sample
+#             (activations past the cut are not recorded);
+#   leak      anything else: a rail its sources could still clean, left live.
+LIVE_KNOWN_IS_LEAK = False   # owner ruling 2026-11-01 (cq-tt2j): a live rail in a known basis state is no leak
+_KEPT_ROLES = frozenset(("measured", "frozen", "abort", "tape", "qram", "qram_cell", "qram_slot", "kept_entangled",
+                         "output"))
+_FENV_ROLES = ("fenv_flags", "fenv_mode")
+
+
+def _leaks(k: str, o: RunResult, c: RunResult, cut: bool) -> List[str]:
+    rotated = {e.get("h") for e in o.rotations or [] if isinstance(e, dict) and e.get("ev") in ("ry", "ry_qangle")}
+    acts = len({(r["loop"], r["act"]) for r in _loops(c)})
+    i1 = 0
+    fenv: Dict[str, int] = {}
+    bad = []
+    for ent in o.kept or []:
+        role = ent.get("role")
+        if role in _KEPT_ROLES or ent.get("result") or (role == "seed" and ent.get("h") in rotated):
+            continue
+        if not LIVE_KNOWN_IS_LEAK and (ent.get("known") is True or role == "seed"):
+            continue
+        if role in _FENV_ROLES:
+            fenv[role] = fenv.get(role, 0) + 1
+            if fenv[role] == 1:
+                continue
+        elif role == "garbage" and ent.get("w") == "i1":
+            i1 += 1
+            if cut or i1 <= acts:
+                continue
+        bad.append(f"{ent.get('h')} ({ent.get('w')} = {ent.get('v')}, {role})")
+    if not bad:
+        return []
+    return [f"sample {k}: our side leaves {len(bad)} rail(s) live at exit that are no frozen register, "
+            f"measured value, output, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): {', '.join(bad)}"
+            + (f"; {acts} K-cut loop activation(s) allow as many a_K rails" if acts else "")]
+
+
 # ---------------------------------------------------------------- the abort rule (against "c")
 
 _ENDS = ("noreturn:", "raise:")
@@ -1663,6 +1721,8 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
                 if (known is not None and not _int(known)) or (known is None and _int(c.get("v")) != 0):
                     reasons.append(f"sample {k}: {side} side frees rail {c.get('h')} = {c.get('v')} "
                                    f"not in a known basis state")
+        if oracle == "c":
+            reasons += _leaks(k, o, r_by[k], capped[k] or ended[k])
 
     # groups: classical arguments, then the structure of each side
     shape_of: Dict[int, Tuple] = {}

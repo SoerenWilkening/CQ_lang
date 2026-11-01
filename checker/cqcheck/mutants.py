@@ -83,6 +83,10 @@ CLASSES: Dict[str, Tuple[str, str, Optional[str]]] = {
                    r"violations on our side: .*'what': '(bad_handle|use_after_free)'"),
     "dropped_free": ("a clean rail is never freed: kept garbage at exit",
                      r"rail\(s\) .* kept on our side that the reference does not keep", None),
+    # CR §6 item 1 (cq-tt2j): a rail its sources could still clean, left live, is a leak against C too
+    "leaked_garbage": ("a rail is neither uncomputed nor freed: entangled garbage live at exit",
+                       r"rail\(s\) .* kept on our side that the reference does not keep",
+                       r"a leak; cq-tt2j"),
     # a Ry at another angle takes no cq_theta reach of the C program's (dispatch.c, substitution
     # matches the angle): its target keeps its value and the outputs may differ first (39)
     "changed_angle": ("a rotation or phase takes another angle", f"{_ROT_REF}|{_MEAS}|{_OUT_REF}",

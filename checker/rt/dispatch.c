@@ -100,6 +100,7 @@ uint64_t cqe__last_nd(int32_t h);
 int cqe__measured(int32_t h);
 int cqe__role(int32_t h);
 void cqe__setrole(int32_t h, int role);
+void cqe__setfenv(int32_t h, int bits); /* core.c (cq-tt2j) */
 void cqe__mark_written(int32_t h);
 void cqe__mark_nd(int32_t h);
 void cqe__mark_measured(int32_t h);
@@ -1177,8 +1178,13 @@ static void template_call(call_t *c, const char *sym) {
   if (r != 0)
     memset(out.w, 0, out.nw * sizeof *out.w);
   out.bits = rbits ? rbits : 1;
+  /* rule 23 (cq-tt2j): an _rmq template's last operand is the mode rail; an _exc result is flags */
+  if (ok && t.rm == 2 && nf > 0 && mask[nf - 1] == 'h')
+    cqe__setfenv(as_i32(&c->raw[off + nf - 1]), 2);
   if (!t.unc) {
     int32_t o = cqe__new(rw, &out, known && r == 0, 0);
+    if (t.exc)
+      cqe__setfenv(o, 1);
     for (int i = 0; i < nh; ++i)
       cqe__add_dep(o, hs[i]);
     sbuf b = {0};

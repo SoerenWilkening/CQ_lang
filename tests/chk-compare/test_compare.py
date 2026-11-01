@@ -562,6 +562,90 @@ class COracle(unittest.TestCase):
             self.assertTrue(any(why in r for r in c.reasons), (mutant, c.reasons))
 
 
+class LeakRule(unittest.TestCase):
+    """CR §6 item 1 (47b0a38, ruling 2026-11-01 on cq-nyto; cq-tt2j), against "c": a rail live at exit
+    is a frozen register, a measured value, an output, a result or a rule-kept rail; anything else
+    FAILS. A rail in a known basis state is no leak (owner ruling 2026-11-01 on cq-tt2j)."""
+
+    def c_side(self, loops=None):
+        cs = COracle().c_side()
+        if loops is not None:
+            cs = [dataclasses.replace(r, outputs=dict(r.outputs, loops=loops)) for r in cs]
+        return cs
+
+    def ours(self, extra):
+        return side("o", lambda a, b, s: dict(rots=[ry(1, 1.0), ry(2, 2.0), ph(7, a & b, 0.5)],
+                                              kept=[keep(1, a), keep(2, b)] + extra(a, b)))
+
+    @staticmethod
+    def leak(h, v, w, role, known=False):
+        return dict(keep(h, v, w, role), known=known)
+
+    def test_kept_roles_pass(self):
+        for role in ("measured", "abort", "tape", "qram_cell", "kept_entangled", "output"):
+            c = compare(self.ours(lambda a, b: [self.leak(9, a ^ b, "i8", role)]), self.c_side(), QKEY, "c")
+            self.assertTrue(c.equal, (role, c.reasons))
+
+    def test_output_in_memory_passes(self):
+        # the handle of the rail sits in an out-parameter's cell at exit (rt/core.c mark_outputs)
+        c = compare(self.ours(lambda a, b: [self.leak(9, a ^ b, "i32", "output")]), self.c_side(), QKEY, "c")
+        self.assertTrue(c.equal, c.reasons)
+
+    def test_garbage_fails(self):
+        # an entangled garbage rail its sources could still clean, left live (c8, c7)
+        c = compare(self.ours(lambda a, b: [self.leak(9, a ^ b, "i64", "garbage")]), self.c_side(), QKEY, "c")
+        self.assertFalse(c.equal)
+        self.assertTrue(any("a leak; cq-tt2j" in r and "9 (i64" in r for r in c.reasons), c.reasons)
+
+    def test_result_passes(self):
+        c = compare(self.ours(lambda a, b: [dict(self.leak(9, a ^ b, "i64", "garbage"), result=True)]),
+                    self.c_side(), QKEY, "c")
+        self.assertTrue(c.equal, c.reasons)
+
+    def test_known_basis_rail_passes(self):
+        # owner ruling 2026-11-01: a seed never rotated, a rail only written from known values
+        for ent in (self.leak(9, 5, "i32", "seed", known=True), self.leak(9, 5, "i32", "garbage", known=True)):
+            c = compare(self.ours(lambda a, b: [ent]), self.c_side(), QKEY, "c")
+            self.assertTrue(c.equal, (ent, c.reasons))
+
+    def test_known_basis_switch(self):
+        import cqcheck.compare as cmp
+        old = cmp.LIVE_KNOWN_IS_LEAK
+        cmp.LIVE_KNOWN_IS_LEAK = True
+        try:
+            c = compare(self.ours(lambda a, b: [self.leak(9, 5, "i32", "seed", known=True)]), self.c_side(), QKEY, "c")
+            self.assertFalse(c.equal)
+        finally:
+            cmp.LIVE_KNOWN_IS_LEAK = old
+
+    def test_rotated_seed_passes(self):
+        c = compare(side("o", lambda a, b, s: dict(rots=[ry(1, 1.0), ry(2, 2.0), ph(7, a & b, 0.5)],
+                                                   kept=[keep(1, a, role="seed"), keep(2, b)])),
+                    self.c_side(), QKEY, "c")
+        self.assertTrue(c.equal, c.reasons)
+
+    def test_rule23_one_flags_rail(self):
+        # the final flags rail is an output (rule 23); a second flags-lineage rail is a leak
+        one = [self.leak(9, 0, "i32", "fenv_flags")]
+        c = compare(self.ours(lambda a, b: one), self.c_side(), QKEY, "c")
+        self.assertTrue(c.equal, c.reasons)
+        c = compare(self.ours(lambda a, b: one + [self.leak(10, a, "i32", "fenv_mode")]), self.c_side(), QKEY, "c")
+        self.assertTrue(c.equal, c.reasons)
+        c = compare(self.ours(lambda a, b: one + [self.leak(10, a & b, "i32", "fenv_flags")]), self.c_side(), QKEY, "c")
+        self.assertFalse(c.equal)
+        self.assertTrue(any("a leak; cq-tt2j" in r and "fenv_flags" in r for r in c.reasons), c.reasons)
+
+    def test_a_k_per_recorded_activation(self):
+        rec = [{"loop": "f:%7", "act": 0, "n": 2, "capped": False}]
+        c = compare(self.ours(lambda a, b: [self.leak(9, 0, "i1", "garbage")]), self.c_side(rec), QKEY, "c")
+        self.assertTrue(c.equal, c.reasons)
+        c = compare(self.ours(lambda a, b: [self.leak(9, 0, "i1", "garbage"), self.leak(10, 0, "i1", "garbage")]),
+                    self.c_side(rec), QKEY, "c")
+        self.assertFalse(c.equal)
+        c = compare(self.ours(lambda a, b: [self.leak(9, 0, "i1", "garbage")]), self.c_side(), QKEY, "c")
+        self.assertFalse(c.equal)
+
+
 class FpModes(unittest.TestCase):
     """CR §2 NaN row (ruling 2026-10-27, bead cq-8dy): against "c" any NaN equals any NaN; against
     "ref" fp values are compared bit for bit. A NaN never equals a non-NaN in either mode."""
@@ -1052,8 +1136,10 @@ class AbortRule(unittest.TestCase):
         self.check(self.ours(flag=lambda s: 0), self.c(), False, "no kept abort flag")
 
     def test_abort_flag_needs_abort_role(self):
-        for role in ("frozen", "measured", "tape", "garbage"):
+        for role in ("frozen", "measured", "tape"):
             self.check(self.ours(role=role), self.c(), False, "no kept abort flag")
+        # a garbage i1 flag live on a returning sample is a leak first (cq-tt2j)
+        self.check(self.ours(role="garbage"), self.c(), False, "a leak; cq-tt2j")
 
     def test_abort_flag_one_on_returning_sample_rejected(self):
         self.check(self.ours(flag=lambda s: int(s >= 2)), self.c(), False, "returns and our abort flag")

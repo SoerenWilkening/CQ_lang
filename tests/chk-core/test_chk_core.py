@@ -1113,6 +1113,44 @@ class HandleReturn(unittest.TestCase):
         self.assertEqual([v["what"] for v in run.resolve_handle_rets(r, ["f"]).violations], ["ret_handle"])
 
 
+class ExitRoles(unittest.TestCase):
+    """cq-tt2j: the exit roles CR §6 item 1's leak rule reads (rt/core.c exit_role, mark_outputs)."""
+
+    def test_roles(self):
+        spec = DriverSpec(example="chk-core", protos=["int lk(int,double,double,int)"], setup="",
+                          calls=[{"fn": "lk", "args": [{"ctype": "int", "quantum": True},
+                                                       {"ctype": "double", "quantum": False},
+                                                       {"ctype": "double", "quantum": True},
+                                                       {"ctype": "int", "quantum": False}]}])
+        rs = run.run_samples(HERE / "exit_roles.ll", spec, [{"call": 0, "args": [3, 0.5, 2.0, 7]}], "ours")
+        r = rs[0]
+        self.assertEqual(r.violations, [])
+        live = {k["h"]: (k["role"], k.get("known")) for k in r.kept}
+        # handles in creation order: x y a b e e2 k h cnd md (z measured)
+        self.assertEqual(live[1][0], "frozen")
+        self.assertEqual(live[2][0], "frozen")
+        self.assertEqual(live[3][0], "output")       # @g holds it
+        self.assertEqual(live[4], ("garbage", False))  # only a dead frame's cell holds it
+        self.assertEqual(live[5][0], "fenv_flags")
+        self.assertEqual(live[6][0], "fenv_flags")
+        self.assertEqual(live[7], ("seed", True))
+        self.assertEqual(live[8], ("garbage", False))  # only a freed heap block holds it
+        self.assertEqual(live[9], ("garbage", False))
+        self.assertEqual(live[10][0], "fenv_mode")
+
+    def test_cells_module(self):
+        text = ("define void @f(ptr %p, i32 %h, i64 %n) {\n  store i32 %h, ptr %p, align 4\n"
+                "  store i64 %n, ptr %p, align 8\n  store { i32, double } zeroinitializer, ptr %p, align 8\n"
+                "  call void @llvm.memcpy.p0.p0.i64(ptr align 4 %p, ptr align 4 %p, i64 %n, i1 false)\n"
+                "  ret void\n}\n")
+        out = run.cells_module(text)
+        self.assertEqual(out.count("call void @__cqe_cell_note("), 3)
+        self.assertIn("call void @__cqe_cell_note(ptr %p, i64 ptrtoint (ptr getelementptr ({ i32, double }, "
+                      "ptr null, i32 1) to i64))", out)
+        self.assertIn("call void @__cqe_cell_note(ptr %p, i64 %n)", out)
+        self.assertIn("declare void @__cqe_cell_note(ptr, i64)", out)
+
+
 class HostClone(unittest.TestCase):
     """cq-aou6: a declared clone whose fn the host defines (libm, also through an llvm.<fn>.f64 intrinsic
     of the C module) computes the host's fn, as the C oracle links it; its twin XORs it out; K optional."""

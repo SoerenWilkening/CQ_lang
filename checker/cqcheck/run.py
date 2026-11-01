@@ -74,7 +74,10 @@ RunResult fields (JSON-serializable):
               phase {ev, f, fv, theta}, phase_qangle {ev, a, aval, ctl, ctlv}; theta is the hex bit
               pattern of the double; w and v are the Ry target's type and value at the gate
   kept        the exit event's live rails [{"h", "w", "v", "role"}], followed by the live QRAM cells
-              and slots of rt-mem's {"ev":"qram","op":"exit"} event (roles qram_cell, qram_slot)
+              and slots of rt-mem's {"ev":"qram","op":"exit"} event (roles qram_cell, qram_slot); a
+              core rail also has "known" (its known-basis flag, cq-tt2j) and the roles of rt/core.c's
+              header (output, fenv_flags, fenv_mode among them, cq-tt2j); a rail a handle-returning
+              function returns also has "result": true (cq-tt2j)
   clean       the free events [{"h", "v", "known", "w"}]
   violations  the trace's violation events [{"what", "h", "msg"}] plus run failures:
               build, sample, timeout, signal, no_exit (the process ended without the exit event),
@@ -483,6 +486,7 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
             tot = default_env_module(tot)
         if any(Path(o).name == "host_fx.o" for o in objs):  # cq-e4jk; a test's restricted runtime may omit it
             tot = host_effects_module(tot)
+        tot = cells_module(tot)  # cq-tt2j
         (tmp / "lowered.tot.ll").write_text(tot)
         (tmp / "handle_rets.json").write_text(json.dumps(handle_returning_fns(canon)))  # cq-n6a0
     except _Unimpl as e:
@@ -913,6 +917,7 @@ def resolve_handle_rets(r: RunResult, fns: Sequence[str]) -> RunResult:
         return r
     live = {k.get("h"): k for k in (r.kept or []) if isinstance(k, dict)}
     rets, viol = [], list(r.violations)
+    results = set()
     for e in r.outputs["ret"]:
         v = e.get("v")
         if e.get("fn") not in fns or not isinstance(v, dict):
@@ -928,8 +933,12 @@ def resolve_handle_rets(r: RunResult, fns: Sequence[str]) -> RunResult:
             rets.append(e)
             continue
         rets.append(dict(e, v={"w": v["w"], "v": rail["v"]}))
+        results.add(h)
+    # cq-tt2j: the returned rail is a result (CR §1.1), kept at exit by design (compare._leaks)
+    kept = [dict(k, result=True) if isinstance(k, dict) and k.get("h") in results else k for k in r.kept or []] \
+        if results else r.kept
     return RunResult(side=r.side, sample=r.sample, outputs=dict(r.outputs, ret=rets), measured=r.measured,
-                     rotations=r.rotations, kept=r.kept, clean=r.clean, violations=viol)
+                     rotations=r.rotations, kept=kept, clean=r.clean, violations=viol)
 
 
 # ---- run -------------------------------------------------------------------------------------
@@ -999,6 +1008,84 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
     return RunResult(side=side, sample=sample, outputs={"ret": rets, "stdout": stdout + tape_out, "exit": code,
                                                     "effects": direct_fx + tape_fx},
                      measured=measured, rotations=rots, kept=kept, clean=clean, violations=viol)
+
+
+# ---- output memory at exit (cq-tt2j) ----------------------------------------------------------
+#
+# CR §6 item 1's leak rule (compare._leaks) takes a rail whose handle sits in output memory at exit
+# as a named output. The evaluator finds those cells at exit (rt/core.c mark_outputs) among the cells
+# the lowered module wrote: cells_module has each store of a type holding an i32 (a handle's width)
+# and each memory intrinsic call __cqe_cell_note(ptr, bytes) right after it.
+
+_STORE = re.compile(r"^(?P<ind>\s+)store (?P<rest>.*)$")
+_MEMI = re.compile(r"^(?P<ind>\s+)(?:tail |musttail |notail )?call void @llvm\.mem(?:cpy|move|set)(?:\.inline)?\.[\w.]+"
+                   r"\((?P<args>.*)\)(?P<tail>[^()]*)$")
+
+
+def _lead_type(s: str) -> Tuple[str, str]:
+    """(the type that starts s, the rest): a bracketed aggregate or vector type, else the first token."""
+    s = s.lstrip()
+    if s[:1] in "[{<":
+        depth = 0
+        for i, ch in enumerate(s):
+            if ch in "([{<":
+                depth += 1
+            elif ch in ")]}>":
+                depth -= 1
+                if depth == 0:
+                    if s[:2] == "<{" and s[i + 1:i + 2] == ">":
+                        i += 1
+                    return s[:i + 1], s[i + 1:].strip()
+        raise _Unimpl(f"cells_module: unbalanced type in '{s}'")
+    t, _, rest = s.partition(" ")
+    return t, rest
+
+
+def cells_module(text: str) -> str:
+    """text with __cqe_cell_note calls after each handle-wide store and memory intrinsic (above)."""
+    out: List[str] = []
+    in_fn = used = False
+    for line in text.splitlines():
+        out.append(line)
+        if not in_fn:
+            in_fn = bool(_FN_START.match(line)) and line.rstrip().endswith("{")
+            continue
+        if line.startswith("}"):
+            in_fn = False
+            continue
+        m = _STORE.match(line)
+        if m:
+            rest = m.group("rest")
+            while rest.startswith(("volatile ", "atomic ")):
+                rest = rest.split(" ", 1)[1]
+            ops = _split_top(rest)
+            t, _ = _lead_type(ops[0])
+            if not re.search(r"\bi32\b", t):
+                continue
+            if len(ops) < 2 or not ops[1].startswith("ptr "):
+                raise _Unimpl(f"cells_module: store pointer operand of '{line.strip()}'")
+            ptr = ops[1].split()[1]
+            out.append(f"{m.group('ind')}call void @__cqe_cell_note(ptr {ptr}, "
+                       f"i64 ptrtoint (ptr getelementptr ({t}, ptr null, i32 1) to i64))")
+            used = True
+            continue
+        m = _MEMI.match(line)
+        if m:
+            args = _split_top(m.group("args"))
+            if len(args) < 3 or not args[0].startswith("ptr "):
+                raise _Unimpl(f"cells_module: memory intrinsic operands of '{line.strip()}'")
+            dst = args[0].split()[-1]
+            lt, lv = args[2].split(" ", 1) if " " in args[2] else (args[2], "")
+            if lt != "i64":
+                if lt in ("i32", "i16", "i8") and re.fullmatch(r"[0-9]+", lv):
+                    lt = "i64"
+                else:
+                    raise _Unimpl(f"cells_module: memory intrinsic length of '{line.strip()}'")
+            out.append(f"{m.group('ind')}call void @__cqe_cell_note(ptr {dst}, i64 {lv})")
+            used = True
+    if used and not re.search(r"(?m)^declare [^\n]*@__cqe_cell_note\(", text):
+        out.append("declare void @__cqe_cell_note(ptr, i64)")
+    return "\n".join(out) + "\n"
 
 
 def host_effects_module(text: str) -> str:

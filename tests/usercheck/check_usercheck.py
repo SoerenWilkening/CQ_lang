@@ -24,7 +24,9 @@ Fails on any of:
             133's, an un-prep whose overwriting prep is an Ry(NaN) with no C reach (cq-q15r); from
             src/ia96/p.c's (green itself), an un-prep whose Ry(NaN) only another register's earlier
             NaN prep could back (m4, m5; cq-ia96); from src/yzuc's b.c (b_good green) and b2.c, an
-            un-prep before an in-place second cq_theta, NaN or finite (b_mut, b2_mut; cq-yzuc)
+            un-prep before an in-place second cq_theta, NaN or finite (b_mut, b2_mut; cq-yzuc); from
+            src/leak, a garbage rail live at exit, rejected by CR §6 item 1's leak rule (m1_leak, c8_leak,
+            c7_leak; m1_good green; cq-tt2j)
   error     a missing entry or main(argc, argv) is not an error (exit 2)
 
 Every run goes through the CLI (`python3 -m cqcheck user` from checker/), as cqcc --cq-check runs it.
@@ -322,6 +324,17 @@ def main():
         expect("program yzuc b_good (f)", 0, user(yz / "b.O1.ll", yz / "b_good.lowered.ll", "f"))
         expect("mutant yzuc b_mut", 1, user(yz / "b.O1.ll", yz / "b_mut.lowered.ll", "f"))
         expect("mutant yzuc b2_mut", 1, user(yz / "b2.O1.ll", yz / "b2_mut.lowered.ll", "f"))
+        # cq-tt2j: CR §6 item 1's leak rule with no reference: a garbage rail live at exit fails. m1_leak is
+        # m1_good (fatptr review) minus one icmp _unc and its free (an i1 garbage rail; the reviewer's
+        # repro); c8_leak and c7_leak (cq-nyto's witnesses, an older pass) leave x + 3 live, its handle
+        # only in a dead frame's cell
+        lk = SRC / "leak"
+        expect("program leak m1_good (m1)", 0, user(lk / "m1.O1.ll", lk / "m1_good.lowered.ll", "m1", 20))
+        for n, e in (("m1_leak", "m1"), ("c8_leak", "c8"), ("c7_leak", "c7")):
+            got = user(lk / f"{e}.O1.ll", lk / f"{n}.lowered.ll", e, 20)
+            expect(f"mutant leak {n}", 1, got)
+            if got[0] == 1 and "a leak; cq-tt2j" not in got[1]:
+                fail(f"mutant leak {n}", "rejected, but not by the leak rule")
 
         expect("error: no such entry", 2, user(o1, d / "add_classical_const.lowered.ll", "nosuch"))
         argv = tmp / "argv"

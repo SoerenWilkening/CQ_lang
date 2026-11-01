@@ -133,6 +133,22 @@
       ]
     },
     {
+      "id": "71-leak-garbage",
+      "class": "leaked_garbage",
+      "example": "71_extern_global_output",
+      "note": "the clone's x * x rail is neither uncomputed nor freed: an entangled garbage rail live at exit, a leak by CR §6 item 1 (cq-tt2j); the sign rail @signflag holds stays an output",
+      "edits": [
+        {
+          "old": "  call void @cq_template_mul_i32_unc(i32 %5, i32 %0, i32 %0)",
+          "new": "  ; dropped"
+        },
+        {
+          "old": "  call void @cqrt_free(i32 %5)",
+          "new": "  ; dropped"
+        }
+      ]
+    },
+    {
       "id": "39-change-angle",
       "class": "changed_angle",
       "example": "39_controlled_rotation",
