@@ -47,6 +47,7 @@ declare void @cqrt_qram_store_i32_hl(i32, i32, i32)
 declare i32 @cqrt_qram_load_i32_hl(i32, i32)
 declare void @cqrt_qram_store_i32(i32, i32, i32)
 declare i32 @cqrt_qram_load_i32(i32, i32)
+declare i32 @cqrt_qram_realloc_i32(i32, i32)
 declare i32 @cq_template_and_i32_hl(i32, i32)
 declare i32 @cq_template_add_i32_hl(i32, i32)
 declare i32 @cq_template_add_i32(i32, i32)
@@ -778,6 +779,82 @@ define i32 @f(i32 %a0, double %th) {
                         "%m = call i32 @cqrt_measure_i32(i32 %s)",
                         "ret i32 %m",
                     });
+}
+
+// cq-vtfq (CR §1.3, 186's shape): a' = qram_realloc(a, 6) is a bus of its own. The store and load made
+// through a' are undone first, then qram_realloc_unc(a', 4) (n_old: a's qram_alloc size), then the
+// un-copy of the load made through a before the realloc, a's store's POP, and a's qram_free.
+void qram_realloc() {
+  Fx f(R"(
+define i32 @f(i32 %a0, double %th) {
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %a = call i32 @cqrt_qram_alloc_i32(i32 4)
+  %v1 = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  call void @cqrt_qram_store_i32(i32 %a, i32 %x, i32 %v1)
+  %l1 = call i32 @cqrt_qram_load_i32_hl(i32 %a, i32 1)
+  %a2 = call i32 @cqrt_qram_realloc_i32(i32 %a, i32 6)
+  call void @cqrt_qram_store_i32_hl(i32 %a2, i32 5, i32 %x)
+  %l2 = call i32 @cqrt_qram_load_i32(i32 %a2, i32 %x)
+  %s = call i32 @cq_template_add_i32(i32 %l1, i32 %l2)
+  %m = call i32 @cqrt_measure_i32(i32 %s)
+  ret i32 %m
+})");
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  RailId a = f.core(f.call("cqrt_qram_alloc_i32"), abi::Core::QramAlloc, "l", ~0u);
+  f.T("v1", "hl");
+  f.core(f.call("cqrt_qram_store_i32"), abi::Core::QramStore, "hhh", a);
+  f.core(f.call("cqrt_qram_load_i32_hl"), abi::Core::QramLoad, "hl", ~0u);
+  RailId a2 = f.core(f.call("cqrt_qram_realloc_i32"), abi::Core::QramRealloc, "hl", ~0u);
+  f.core(f.call("cqrt_qram_store_i32_hl"), abi::Core::QramStore, "hlh", a2);
+  f.core(f.call("cqrt_qram_load_i32"), abi::Core::QramLoad, "hh", ~0u);
+  f.U.setRole(f.T("s", "hh"), Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%a = call i32 @cqrt_qram_alloc_i32(i32 4)",
+                        "%v1 = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "call void @cqrt_qram_store_i32(i32 %a, i32 %x, i32 %v1)",
+                        "%l1 = call i32 @cqrt_qram_load_i32_hl(i32 %a, i32 1)",
+                        "%a2 = call i32 @cqrt_qram_realloc_i32(i32 %a, i32 6)",
+                        "call void @cqrt_qram_store_i32_hl(i32 %a2, i32 5, i32 %x)",
+                        "%l2 = call i32 @cqrt_qram_load_i32(i32 %a2, i32 %x)",
+                        "%s = call i32 @cq_template_add_i32(i32 %l1, i32 %l2)",
+                        "call void @cqrt_qram_load_i32_unc(i32 %l2, i32 %a2, i32 %x)",
+                        "call void @cqrt_free(i32 %l2)",
+                        "call void @cqrt_qram_store_i32_hl_unc(i32 %a2, i32 5, i32 %x)",
+                        "call void @cqrt_qram_realloc_i32_unc(i32 %a2, i32 4)",
+                        "call void @cqrt_qram_load_i32_hl_unc(i32 %l1, i32 %a, i32 1)",
+                        "call void @cqrt_free(i32 %l1)",
+                        "call void @cqrt_qram_store_i32_unc(i32 %a, i32 %x, i32 %v1)",
+                        "call void @cq_template_add_i32_hl_unc(i32 %v1, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %v1)",
+                        "call void @cqrt_qram_free(i32 %a)",
+                        "%m = call i32 @cqrt_measure_i32(i32 %s)",
+                        "ret i32 %m",
+                    });
+}
+
+// cq-vtfq: a kept realloc result (Output) never restores a: a's resolvable items are refused.
+void fatal_qram_realloc_kept() {
+  Fx f(R"(
+define i32 @f(i32 %a0, double %th) {
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %a = call i32 @cqrt_qram_alloc_i32(i32 4)
+  %a2 = call i32 @cqrt_qram_realloc_i32(i32 %a, i32 6)
+  call void @cqrt_qram_store_i32_hl(i32 %a2, i32 5, i32 %x)
+  ret i32 %a0
+})");
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  f.core(f.call("cqrt_qram_alloc_i32"), abi::Core::QramAlloc, "l", ~0u);
+  RailId a2 = f.core(f.call("cqrt_qram_realloc_i32"), abi::Core::QramRealloc, "hl", ~0u);
+  f.core(f.call("cqrt_qram_store_i32_hl"), abi::Core::QramStore, "hlh", a2);
+  f.U.setRole(a2, Role::Output);
+  f.U.flushAtExit(f.ret());
 }
 
 // cq-w6ie (A2): a read-modify-write on one bus (77's shape). Each store is its own POP item, popped
@@ -2428,6 +2505,7 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"seed_written_undone", seed_written_undone},
     {"qram_lifo", qram_lifo},
     {"qram_rmw", qram_rmw},
+    {"qram_realloc", qram_realloc},
     {"qram_kept_bus", qram_kept_bus},
     {"qram_pop_kept", qram_pop_kept},
     {"multi_exit", multi_exit},
@@ -2465,6 +2543,7 @@ const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_mirror_outside_reader", fatal_mirror_outside_reader},
     {"fatal_write_barrier", fatal_write_barrier},
     {"fatal_qram_kept_bus_barrier", fatal_qram_kept_bus_barrier},
+    {"fatal_qram_realloc_kept", fatal_qram_realloc_kept},
     {"fatal_unknown_handle", fatal_unknown_handle},
     {"fatal_merge_kept_role", fatal_merge_kept_role},
     {"fatal_merge_nondiagonal", fatal_merge_nondiagonal},

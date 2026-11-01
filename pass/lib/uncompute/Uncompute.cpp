@@ -28,8 +28,11 @@
 //        xor_i1 (involutions: undone by the same call, BACKEND_ABI §1.8, §1.9) and qram_store on the
 //        bus `out` (undone by its _unc as an item of its own, POP(k), see QRAM versions below);
 //      with a fresh result (`out` is ignored, the new rail's id is returned): qram_load (Role::Garbage,
-//        undone by its _unc(h, args...)), qram_alloc (Role::Seed, released by cqrt_qram_free), alloc
-//        (= recordSeed). Any other core gate is not reversible and is an internal error here.
+//        undone by its _unc(h, args...)), qram_alloc (Role::Seed, released by cqrt_qram_free),
+//        qram_realloc (cq-vtfq, CR §1.3: ops (a, classical n); a' is a bus of its own, Role::Seed, released
+//        by qram_realloc_<W>_unc(a', n_old) after every POP and load un-copy on a'; n_old is a's qram_alloc
+//        or qram_realloc size; a's qram_free, its POPs and its load un-copies follow that release; a kept a'
+//        with a resolvable item on a is unimplemented), alloc (= recordSeed). Any other core gate is not reversible and is an internal error here.
 //  - recordExternal(h, role): a rail with no producer (a formal, a clone's result, a loaded slot cell).
 //  - setRole: Garbage and Seed are resolvable; every other role is kept (never _unc'd, never freed).
 //    A Seed whose only writes are uncontrolled xorc is freed directly; a Seed with other writes is
@@ -189,6 +192,7 @@ enum class RecKind : uint8_t {
   Template,  // fresh out, undone by name_unc(out, args...)
   Seed,      // cqrt_alloc: nothing to undo, released by cqrt_free
   QramAlloc, // nothing to undo, released by cqrt_qram_free
+  QramRealloc, // CR §1.3 a' = qram_realloc_<W>(a, n): nothing to undo, released by qram_realloc_<W>_unc(a', n_old)
   QramLoad,  // fresh out, undone by name_unc(out, args...)
   Involution,// in place on out, undone by the same call
   QramStore, // in place on the object, undone by name_unc(args...)
@@ -268,6 +272,7 @@ struct Uncompute::Impl {
     SmallVector<RailId, 4> pops;       // on a bus: POP(1..m)
     SmallVector<RailId, 4> loads;      // on a bus: the loads that recorded a version on it
     SmallVector<std::pair<RailId, unsigned>, 1> versions; // on a load: (bus, k)
+    SmallVector<RailId, 1> reallocs;   // cq-vtfq: on a bus, the buses qram_realloc made from it (a')
     // cq-sodl: the edges this arm was freed on (the block P ending the edge, the kept merge m that
     // does not choose it there). A later read of the arm not through m on a path leaving P is caught.
     SmallVector<std::pair<BasicBlock *, RailId>, 1> edgeFrees;
@@ -649,6 +654,8 @@ struct Uncompute::Impl {
     const Rail &r = rails[g];
     if (r.cleanup || r.role != Role::Seed)
       return false;
+    if (r.creator != kNone && info[r.creator].kind == RecKind::QramRealloc)
+      return false; // cq-vtfq: its item reads the old bus, which is released after it
     for (unsigned w : r.writes)
       if (!info[w].preserving)
         return false;
@@ -770,11 +777,20 @@ struct Uncompute::Impl {
         for (auto [bus, k] : rails[l].versions)
           if (bus == r.popBus && k >= r.popK && !is_contained(out, l))
             out.push_back(l);
+      // cq-vtfq: a store through a is popped once every realloc result a' of a is undone (a is the
+      // bus again only after qram_realloc_unc).
+      for (RailId a2 : b.reallocs)
+        if (!is_contained(out, a2))
+          out.push_back(a2);
       return out;
     }
-    for (auto [bus, k] : r.versions)
+    for (auto [bus, k] : r.versions) {
       for (unsigned j = k; j < rails[bus].pops.size(); ++j)
         out.push_back(rails[bus].pops[j]);
+      for (RailId a2 : rails[bus].reallocs) // cq-vtfq: a load through a is un-copied after a' is undone
+        if (!is_contained(out, a2))
+          out.push_back(a2);
+    }
     out.append(r.pops.begin(), r.pops.end());
     return out;
   }
@@ -1296,16 +1312,60 @@ struct Uncompute::Impl {
     return a;
   }
 
+  // cq-vtfq: the logical size a bus was made with (qram_alloc's n, a realloc's n).
+  Value *busSize(RailId b) const {
+    const Rail &r = rails[b];
+    if (r.creator == kNone)
+      unimplemented("uncompute: a qram_realloc of a bus this function did not allocate (its logical size is not "
+                    "known here)",
+                    r.handle);
+    CallInst *f = records[r.creator].forward;
+    switch (info[r.creator].kind) {
+    case RecKind::QramAlloc:
+      return f->getArgOperand(0);
+    case RecKind::QramRealloc:
+      return f->getArgOperand(1);
+    default:
+      internalError("uncompute: a qram_realloc operand that is not a bus", f);
+    }
+  }
+
   CallInst *emitRelease(RailId g, IRBuilder<> &B) {
     Rail &r = rails[g];
     Module &M = *B.GetInsertBlock()->getModule();
     LLVMContext &C = M.getContext();
     FunctionType *FT = FunctionType::get(Type::getVoidTy(C), {Type::getInt32Ty(C)}, false);
+    if (r.creator != kNone && info[r.creator].kind == RecKind::QramRealloc) {
+      // CR §1.3: qram_realloc_<W>_unc(a', n_old); a is the bus again afterwards. a' reads a, so a's
+      // qram_free follows this item; a's POPs and load un-copies follow it by versionBefore.
+      CallInst *fwd = records[r.creator].forward;
+      RailId a = info[r.creator].reads.front();
+      FunctionType *UT = FunctionType::get(Type::getVoidTy(C), {Type::getInt32Ty(C), Type::getInt32Ty(C)}, false);
+      return track(B.CreateCall(declareFn(M, (fwd->getCalledFunction()->getName() + "_unc").str(), UT, fwd),
+                                {r.handle, busSize(a)}));
+    }
     return track(B.CreateCall(declareFn(M, r.qram ? "cqrt_qram_free" : "cqrt_free", FT, r.handle), {r.handle}));
   }
 
   Instruction *emitItem(RailId g, IRBuilder<> &B) {
     Rail &r = rails[g];
+    {
+      // cq-vtfq: an item that names a bus a (its qram_free, a POP, a load un-copy) runs after every
+      // realloc result a' of a is undone; a kept a' (never undone) leaves a replaced for good.
+      SmallVector<RailId, 2> buses;
+      if (r.qram)
+        buses.push_back(g);
+      if (r.popBus != kNone)
+        buses.push_back(r.popBus);
+      for (auto [b, k] : r.versions)
+        buses.push_back(b);
+      for (RailId b : buses)
+        for (RailId a2 : rails[b].reallocs)
+          if (rails[a2].cleanup || (rails[a2].role != Role::Seed && rails[a2].role != Role::Garbage))
+            unimplemented("uncompute: an item on a QRAM bus whose qram_realloc result is kept (the old bus is "
+                          "never restored)",
+                          rails[a2].handle);
+    }
     if (r.group != kNone && r.creator != kNone && info[r.creator].kind == RecKind::Call) {
       // U2: twin(outs..., fwd args..., extra...), then free every out and slotOut in order.
       const CallGroup &cg = groups[r.group];
@@ -1359,7 +1419,7 @@ struct Uncompute::Impl {
     }
     if (!directRelease(g)) {
       if (r.role == Role::Seed && r.creator != kNone && info[r.creator].kind != RecKind::Seed &&
-          info[r.creator].kind != RecKind::QramAlloc)
+          info[r.creator].kind != RecKind::QramAlloc && info[r.creator].kind != RecKind::QramRealloc)
         internalError("uncompute: Role::Seed on a rail not minted by alloc", r.handle);
       SmallVector<unsigned, 4> recs = undone(g);
       if (r.creator == kNone)
@@ -1380,6 +1440,7 @@ struct Uncompute::Impl {
           internalError("uncompute: a call group's record outside its leader's item", fwd);
         case RecKind::Seed:
         case RecKind::QramAlloc:
+        case RecKind::QramRealloc:
           break;
         }
       }
@@ -2196,8 +2257,26 @@ RailId Uncompute::recordCore(CallInst *fwd, const abi::CoreSpec &spec, ArrayRef<
     impl->info[rec].item = p;
     return out;
   }
-  case Core::QramRealloc:
-    unimplemented("uncompute: recordCore of qram_realloc", fwd);
+  case Core::QramRealloc: {
+    // cq-vtfq, CR §1.3: a' = qram_realloc_<W>(a, n) is a bus of its own (stores and loads through it
+    // record on it) whose release is qram_realloc_<W>_unc(a', n_old), after every POP and load un-copy
+    // on a'; it reads a, so a's own item (cqrt_qram_free) follows it, and so does every POP of a store
+    // and every un-copy of a load made through a (versionBefore). n is classical (a quantum size is
+    // resized at its upper bound by the caller).
+    if (ops.size() != 2 || !ops[0].handle || ops[1].handle)
+      internalError("uncompute: recordCore: qram_realloc takes (bus, classical n)", fwd);
+    RailId a = impl->lookup(ops[0].v, "recordCore", fwd);
+    if (impl->isMerge(a))
+      unimplemented("uncompute: a qram_realloc of a merged bus handle", fwd);
+    if (!impl->rails[a].qram)
+      internalError("uncompute: recordCore: qram_realloc of a rail that is not a QRAM bus", fwd);
+    impl->busSize(a); // known here, or unimplemented now rather than at the release
+    RailId r = impl->newRail(fwd, Role::Seed, "recordCore");
+    impl->rails[r].qram = true;
+    impl->addRecord(fwd, spec, ops, r, RecKind::QramRealloc, false);
+    impl->rails[a].reallocs.push_back(r);
+    return r;
+  }
   default:
     internalError("uncompute: recordCore: core gate " + fwd->getCalledFunction()->getName().str() +
                       " is not a reversible record",
