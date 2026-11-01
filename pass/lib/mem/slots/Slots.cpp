@@ -21,7 +21,8 @@
 //  - A _Bool cell (one-byte cells whose loads all carry !range [0, 2) and whose stores all store a
 //    zext from i1 or the constant 0 / 1) holds an i1 rail.
 //
-//    Its i8 load is bound to that i1 rail when every use truncates it to i1; when no use does, to a
+//    Its i8 load is bound to that i1 rail when every use truncates it to i1 or compares it (eq/ne) with
+//    another _Bool cell load or a constant 0 / 1 (the spine's cell view, cq-nd2i); when no use does, to a
 //    zext_i1_to_i8 of the rail (a fresh rail); both at once is unimplemented.
 //
 // Cell contents. A slot cell is homogeneous (rule 20): a classical store materialises its value as a
@@ -82,7 +83,11 @@
 #include "cq/Calls.h"
 #include "cq/Loops.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/PostDominators.h"
+#include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/TargetParser/Triple.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Support/KnownBits.h"
 #include "cq/Predicate.h"
@@ -122,7 +127,62 @@ struct Addr {
   int64_t off = 0;
   SmallVector<std::pair<const Value *, int64_t>, 2> terms;
   bool ok = false;
+  const Value *ptr = nullptr;   // the pointer decompose read; it addresses root + off0 + terms
+  int64_t off0 = 0;
 };
+
+// Scalar evolution of an original function (cq-nd2i), built once per function on first use.
+struct SEBundle {
+  TargetLibraryInfoImpl TLII;
+  TargetLibraryInfo TLI;
+  AssumptionCache AC;
+  DominatorTree DT;
+  LoopInfo LI;
+  ScalarEvolution SE;
+  explicit SEBundle(Function &F)
+      : TLII(Triple(F.getParent()->getTargetTriple())), TLI(TLII, &F), AC(F), DT(F), LI(DT),
+        SE(F, TLI, AC, DT, LI) {}
+};
+ScalarEvolution *seOf(const Value *v) {
+  const Function *F = nullptr;
+  if (auto *I = dyn_cast<Instruction>(v))
+    F = I->getFunction();
+  else if (auto *A = dyn_cast<Argument>(v))
+    F = A->getParent();
+  if (!F || F->isDeclaration())
+    return nullptr;
+  static std::map<const Function *, std::unique_ptr<SEBundle>> m;
+  auto &b = m[F];
+  if (!b)
+    b = std::make_unique<SEBundle>(const_cast<Function &>(*F));
+  return &b->SE;
+}
+
+// cq-nd2i (114): two addresses with different variable parts are different cells when scalar evolution
+// bounds their byte distance (at the same values of the SSA values they are computed from, the reading
+// differentCell has) outside the overlap range: q[m-1-l] against q[m-1] with l >= 2.
+bool distantBySCEV(const Addr &a, const Addr &b, uint64_t sizeA, uint64_t sizeB) {
+  if (!a.ptr || !b.ptr || !a.ptr->getType()->isPointerTy() || !b.ptr->getType()->isPointerTy())
+    return false;
+  ScalarEvolution *SE = seOf(isa<Instruction>(a.ptr) || isa<Argument>(a.ptr) ? a.ptr : b.ptr);
+  if (!SE || SE != seOf(isa<Instruction>(b.ptr) || isa<Argument>(b.ptr) ? b.ptr : a.ptr))
+    return false;
+  const SCEV *d = SE->getMinusSCEV(SE->getSCEV(const_cast<Value *>(a.ptr)), SE->getSCEV(const_cast<Value *>(b.ptr)));
+  if (isa<SCEVCouldNotCompute>(d) || !d->getType()->isIntegerTy())
+    return false;
+  ConstantRange r = SE->getSignedRange(d);
+  if (r.isFullSet() || r.getBitWidth() > 64)
+    return false;
+  // a's bytes start at d + (a.off - a.off0) - (b.off - b.off0) from b's.
+  int64_t adj = (a.off - a.off0) - (b.off - b.off0);
+  APInt lo = r.getSignedMin().sextOrTrunc(64), hi = r.getSignedMax().sextOrTrunc(64);
+  bool ov1 = false, ov2 = false;
+  APInt A(64, uint64_t(adj), true);
+  APInt mn = lo.sadd_ov(A, ov1), mx = hi.sadd_ov(A, ov2);
+  if (ov1 || ov2)
+    return false;
+  return mn.sge(APInt(64, sizeB)) || mx.sle(-APInt(64, sizeA));
+}
 
 bool sameCell(const Addr &a, const Addr &b) {
   if (!a.ok || !b.ok || a.root != b.root || a.off != b.off || a.terms.size() != b.terms.size())
@@ -135,16 +195,19 @@ bool sameCell(const Addr &a, const Addr &b) {
 
 // Provably different cells of the same object: same variable part, different constant part.
 bool differentCell(const Addr &a, const Addr &b, uint64_t sizeA, uint64_t sizeB) {
-  if (!a.ok || !b.ok || a.root != b.root || a.terms.size() != b.terms.size())
+  if (!a.ok || !b.ok || a.root != b.root)
     return false;
+  if (a.terms.size() != b.terms.size())
+    return distantBySCEV(a, b, sizeA, sizeB);
   for (size_t i = 0; i < a.terms.size(); ++i)
     if (a.terms[i] != b.terms[i])
-      return false;
+      return distantBySCEV(a, b, sizeA, sizeB);
   return a.off + int64_t(sizeA) <= b.off || b.off + int64_t(sizeB) <= a.off;
 }
 
 Addr decompose(const Value *p, const DataLayout &DL) {
   Addr a;
+  a.ptr = p;
   for (unsigned guard = 0; guard < 64; ++guard) {
     if (auto *g = dyn_cast<GEPOperator>(p)) {
       for (gep_type_iterator gti = gep_type_begin(g), e = gep_type_end(g); gti != e; ++gti) {
@@ -160,6 +223,29 @@ Addr decompose(const Value *p, const DataLayout &DL) {
         }
         if (isa<VectorType>(idx->getType()))
           return a;
+        // cq-nd2i (114): an index `add X, C` (sub, or disjoint) at the pointer index width is X plus C cells:
+        // the GEP's offset arithmetic wraps at that width, so the split is exact. q[m-1] = q + (m - 1) and
+        // q[m-2] = (q - 2) + m are then the same variable part and provably different cells.
+        while (auto *bo = dyn_cast<BinaryOperator>(idx)) {
+          auto *c = dyn_cast<ConstantInt>(bo->getOperand(1));
+          if (!c || idx->getType()->getIntegerBitWidth() != DL.getIndexTypeSizeInBits(g->getType()))
+            break;
+          int64_t k;
+          if (bo->getOpcode() == Instruction::Add)
+            k = c->getSExtValue();
+          else if (bo->getOpcode() == Instruction::Sub)
+            k = -c->getSExtValue();
+          else if (bo->getOpcode() == Instruction::Or && cast<PossiblyDisjointInst>(bo)->isDisjoint())
+            k = c->getSExtValue();
+          else
+            break;
+          a.off += k * stride;
+          idx = bo->getOperand(0);
+        }
+        if (auto *c = dyn_cast<ConstantInt>(idx)) {
+          a.off += c->getSExtValue() * stride;
+          continue;
+        }
         bool merged = false;
         for (auto &t : a.terms)
           if (t.first == idx) {
@@ -179,6 +265,7 @@ Addr decompose(const Value *p, const DataLayout &DL) {
     if (isa<AllocaInst>(p) || isa<Argument>(p) || isa<GlobalVariable>(p) || isa<CallBase>(p)) {
       a.root = p;
       a.ok = true;
+      a.off0 = a.off;
       llvm::sort(a.terms, [](const auto &x, const auto &y) { return x.first < y.first; });
       return a;
     }
@@ -2553,13 +2640,34 @@ void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
     // A _Bool cell holds an i1 rail behind i8 memory. The trunc i8 -> i1 of the load names that rail
     // (spine, cq-sj2j: rule 3, no gate); any other use reads the i8 value, which is the rail widened
     // (cq-c9il): a zext_i1_to_i8 into a fresh rail, so every reader gets a rail of its operand's width.
+    // cq-nd2i: an icmp eq/ne against another _Bool cell load or a constant 0 / 1 also reads the i1 rail (the
+    // spine's cell view narrows it to an i1 compare, Views.cpp), so it needs no widened copy.
+    auto boolCellLoad = [&](const Value *w) {
+      auto *l2 = dyn_cast<LoadInst>(w);
+      if (!l2 || !l2->getType()->isIntegerTy(8) || !boolRange(l2) || l2->isVolatile() || l2->isAtomic())
+        return false;
+      ArrayRef<ObjectId> objs = ctx.T.provenance(l2->getPointerOperand(), ctx.S);
+      Addr a2 = decompose(l2->getPointerOperand(), ctx.M.getDataLayout());
+      if (objs.size() != 1 || !a2.ok || ctx.T.classOf(objs.front()) != ObjClass::Slot)
+        return false;
+      return objInfo(ctx, st, a2.root, objs.front()).boolCells;
+    };
     bool narrow = false, wide = false;
     for (const Use &u : ld.uses()) {
       auto *t = dyn_cast<TruncInst>(u.getUser());
-      if (t && t->getDestTy()->isIntegerTy(1))
+      auto *c = dyn_cast<ICmpInst>(u.getUser());
+      if (t && t->getDestTy()->isIntegerTy(1)) {
         narrow = true;
-      else
+      } else if (c && c->isEquality()) {
+        const Value *other = c->getOperand(1 - u.getOperandNo());
+        auto *k = dyn_cast<ConstantInt>(other);
+        if ((k && k->getZExtValue() <= 1) || boolCellLoad(other))
+          narrow = true;
+        else
+          wide = true;
+      } else {
         wide = true;
+      }
     }
     if (narrow && wide)
       unimplemented("mem-slots: a _Bool cell load read both as its i1 rail (trunc) and at i8 (the trunc names "
