@@ -51,4 +51,8 @@ attributes #4 = { nounwind }
 !6 = !{!7, !7, i64 0}
 !7 = !{!"omnipotent char", !8, i64 0}
 !8 = !{!"Simple C/C++ TBAA"}
-; EXPECT-ERROR: cq: unimplemented: mem-slots: a bit view load starting before the value it reads
+; cq-i0fv: the load at byte 8 reads bytes 8..9 from the i16 store merged into the long double and bytes
+; 10..11 from the i16 store past it (it was an internal error 'a bit view load starting before the value').
+; CHECK view_tail_error: call i32 @cq_template_trunc_i80_to_i16(i32 %{{a}})
+; CHECK view_tail_error: call i32 @cq_template_shl_i32_hl(i32 %{{b}}, i32 16)
+; CHECK view_tail_error: call i32 @cq_template_or_i32(i32 %{{c}}, i32 %{{d}})

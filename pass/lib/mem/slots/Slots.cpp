@@ -1222,12 +1222,13 @@ bool needsCopy(LoweringContext &ctx, FnState &st, const StoreInst &S, const Site
 //  - a narrower store at byte offset r of a value V of N bits leaves the new value
 //    (V & ~mask) | (zext(word) << 8r), mask the word's bits within N (the word's bits past N fall off and
 //    the value records that bytes past it were written), bitcast back when V is floating point;
-//  - a load at byte offset r of V reads lshr(V, 8r), truncated to its width, or, when it reaches past
-//    V's bits, truncated to the bits V has and zero-extended (bytes past a stored value are padding the
-//    program never wrote: LLVM reads them as undef, 0 is one of its values). A load reaching bytes a
-//    narrower store wrote past V is unimplemented, as is a load or store starting before the value it
-//    reads, a load no dominating store reaches unchanged, a run-time offset, and a store under a
-//    quantum predicate.
+//  - a load reads each of its bytes from the value of the last store that wrote it (cq-i0fv): the bits of
+//    the latest overlapping value V (lshr(V, 8r), truncated), and the bytes before and past V from the
+//    values before it, each piece zero-extended and shifted to its place and or-ed together; bytes no
+//    store wrote are padding (LLVM reads them as undef, 0 is one of its values). A load reaching bytes a
+//    narrower store wrote past V is unimplemented, as is a store starting before the value it writes
+//    into, a load no dominating store reaches unchanged, bytes a store wrote on some path only, a
+//    run-time offset, and a store under a quantum predicate.
 
 // The latest store into the view object whose bytes overlap [at.off, at.off + n) and reach I unchanged.
 const StoreInst *viewSource(LoweringContext &ctx, FnState &st, const ObjInfo &info, ObjectId o, const Instruction *I,
@@ -1276,42 +1277,98 @@ Operand lit(LoweringContext &ctx, unsigned bits, const APInt &v) {
   return Operand{ConstantInt::get(IntegerType::get(ctx.M.getContext(), bits), v), false};
 }
 
-Value *readView(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &I, Type *ty) {
+// One piece of a bit view load: bits [8 * (byte - load offset), + bits) of the loaded value come from the
+// rail h (an integer of exactly `bits` bits); bytes no piece covers are padding the program never wrote
+// (LLVM reads them as undef, 0 is one of its values).
+struct ViewPiece { int64_t byte; unsigned bits; Value *h; };
+
+// The pieces of the bytes [a, b) as of I (cq-i0fv): the latest store overlapping them that reaches I
+// unchanged gives the bytes its value covers; the bytes before and past that value come from the stores
+// before it (each found the same way over its own range: a store the latest one does not overlap there
+// is not overwritten by it).
+void viewPieces(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &I, int64_t a, int64_t b,
+                bool top, SmallVectorImpl<ViewPiece> &out) {
   const DataLayout &DL = ctx.M.getDataLayout();
-  if (!ty->isIntegerTy() && !ty->isFloatingPointTy())
-    unimplemented("mem-slots: a bit view load of a non-scalar type", &I);
-  const StoreInst *src = viewSource(ctx, st, *s.info, s.o, &I, s.a, storeBytes(DL, ty));
-  if (!src)
-    unimplemented("mem-slots: a load of a bit-view slot object that no dominating store of this function reaches "
-                  "unchanged (63)",
-                  &I);
+  Addr at = s.a;
+  at.off = a;
+  const StoreInst *src = viewSource(ctx, st, *s.info, s.o, &I, at, uint64_t(b - a));
+  if (!src) {
+    if (top)
+      unimplemented("mem-slots: a load of a bit-view slot object that no dominating store of this function reaches "
+                    "unchanged (63)",
+                    &I);
+    // Padding only when no store of these bytes may reach I at all (one on some path only, a store in a
+    // classical branch, leaves bytes this load cannot name).
+    for (const Access &x : accessesOf(ctx, *st.F, s.o))
+      if (isa<StoreInst>(x.I) && x.a.off < b && a < x.a.off + int64_t(storeBytes(DL, x.ty)) &&
+          isPotentiallyReachable(x.I, &I, nullptr, st.DT.get()))
+        unimplemented("mem-slots: a bit view load of bytes a store of this function wrote on some path only", &I);
+    return;   // padding
+  }
   auto it = st.views.find(src);
   if (it == st.views.end())
     internalError("mem-slots: the store a bit view reads has not been lowered", &I);
   const ViewVal V = it->second;
-  int64_t rel = s.a.off - V.off;
-  if (rel < 0)
-    unimplemented("mem-slots: a bit view load starting before the value it reads", &I);
-  if (rel == 0 && ty == V.ty)
-    return V.h;
-  unsigned N = bitsOf(DL, V.ty), M = bitsOf(DL, ty);
-  if (8 * rel >= int64_t(N))
-    unimplemented("mem-slots: a bit view load of padding bytes only (past the stored value)", &I);
-  unsigned avail = N - unsigned(8 * rel);
-  if (M > avail && V.tailWritten)
-    unimplemented("mem-slots: a bit view load of bytes a narrower store wrote past the value it wrote into", &I);
-  RailType iN{Kind::Int, N};
+  unsigned N = bitsOf(DL, V.ty);
+  int64_t ve = V.off + int64_t((N + 7) / 8);   // the bytes V's value covers: [V.off, ve)
+  if (a >= ve)
+    unimplemented(V.tailWritten ? "mem-slots: a bit view load of bytes a narrower store wrote past the value it "
+                                  "wrote into"
+                                : "mem-slots: a bit view load of padding bytes only (past the stored value)",
+                  &I);
+  if (a < V.off)
+    viewPieces(ctx, st, s, I, a, V.off, false, out);
+  int64_t lo = std::max(a, V.off), hi = std::min(b, ve);
+  unsigned r = unsigned(8 * (lo - V.off)), len = std::min(unsigned(8 * (hi - V.off)), N) - r;
   Value *x = intView(ctx, V.h, V.ty);
-  if (rel)
-    x = viewTemplate(ctx, "lshr", iN, std::nullopt, {Operand{x, true}, lit(ctx, N, APInt(N, uint64_t(8 * rel)))},
-                     "hl");
-  unsigned keep = std::min(M, avail);
-  if (keep < N)
-    x = viewTemplate(ctx, "trunc", iN, RailType{Kind::Int, keep}, {Operand{x, true}});
-  if (keep < M)
-    x = viewTemplate(ctx, "zext", RailType{Kind::Int, keep}, RailType{Kind::Int, M}, {Operand{x, true}});
+  RailType iN{Kind::Int, N};
+  if (r)
+    x = viewTemplate(ctx, "lshr", iN, std::nullopt, {Operand{x, true}, lit(ctx, N, APInt(N, uint64_t(r)))}, "hl");
+  if (len < N)
+    x = viewTemplate(ctx, "trunc", iN, RailType{Kind::Int, len}, {Operand{x, true}});
+  out.push_back(ViewPiece{lo, len, x});
+  if (b > ve) {
+    if (V.tailWritten)
+      unimplemented("mem-slots: a bit view load of bytes a narrower store wrote past the value it wrote into", &I);
+    viewPieces(ctx, st, s, I, ve, b, false, out);
+  }
+}
+
+Value *readView(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &I, Type *ty) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  if (!ty->isIntegerTy() && !ty->isFloatingPointTy())
+    unimplemented("mem-slots: a bit view load of a non-scalar type", &I);
+  int64_t n = int64_t(storeBytes(DL, ty));
+  if (const StoreInst *src = viewSource(ctx, st, *s.info, s.o, &I, s.a, uint64_t(n))) {
+    auto it = st.views.find(src);
+    if (it != st.views.end() && it->second.off == s.a.off && it->second.ty == ty)
+      return it->second.h;   // the stored value itself
+  }
+  SmallVector<ViewPiece, 4> pieces;
+  viewPieces(ctx, st, s, I, s.a.off, s.a.off + n, true, pieces);
+  unsigned M = bitsOf(DL, ty);
+  RailType iM{Kind::Int, M};
+  Value *x = nullptr;
+  for (const ViewPiece &p : pieces) {
+    unsigned pos = unsigned(8 * (p.byte - s.a.off));
+    if (pos >= M)
+      continue;   // bits past the loaded type (a padding byte of an f80 load)
+    Value *y = p.h;
+    unsigned bits = p.bits;
+    if (pos + bits > M) {
+      y = viewTemplate(ctx, "trunc", RailType{Kind::Int, bits}, RailType{Kind::Int, M - pos}, {Operand{y, true}});
+      bits = M - pos;
+    }
+    if (bits < M)
+      y = viewTemplate(ctx, "zext", RailType{Kind::Int, bits}, iM, {Operand{y, true}});
+    if (pos)
+      y = viewTemplate(ctx, "shl", iM, std::nullopt, {Operand{y, true}, lit(ctx, M, APInt(M, pos))}, "hl");
+    x = x ? viewTemplate(ctx, "or", iM, std::nullopt, {Operand{x, true}, Operand{y, true}}) : y;
+  }
+  if (!x)
+    internalError("mem-slots: a bit view load with no piece inside its bits", &I);
   if (!ty->isIntegerTy())
-    x = viewTemplate(ctx, "bitcast", RailType{Kind::Int, M}, railTypeOf(ty), {Operand{x, true}});
+    x = viewTemplate(ctx, "bitcast", iM, railTypeOf(ty), {Operand{x, true}});
   return x;
 }
 
