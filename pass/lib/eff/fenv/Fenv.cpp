@@ -60,25 +60,30 @@
 // uses (Uncompute.cpp contract).
 //
 // LIMITS (each an internal compiler error, never an output):
-//  - the quantum part changes only in an entry function (a clone would have to return it to its
-//    caller), outside every loop (a loop-carried state), in a block every classical path of its
+//  - the quantum part changes only in an entry function or a clone carrying it (E1), outside every loop (a loop-carried state), in a block every classical path of its
 //    function reaches (a classical join would merge two states), and not in a rule-19 inlined
 //    callee; a read of a state rail must be dominated by its definition in the output;
 //  - feclearexcept with a quantum mask, and every environment call other than fesetround,
 //    fegetround, feraiseexcept and fetestexcept under a quantum predicate;
 //  - a classical constrained op that raises under a quantum predicate (its bits would be quantum);
-//  - a call, while the quantum part is live, to a function whose body may change the environment
-//    (lifted fenv state does not cross calls), and llvm.set.rounding while MODE is a handle;
+//  - a call, while the quantum part is live, to a function whose body may change the environment,
+//    unless it is a quantum call of a clone carrying the environment (E1, 82: the clone takes the
+//    caller's mode and flags and returns the new flags; contract at the end of this file), and
+//    llvm.set.rounding while MODE is a handle; in such a clone: a quantum MODE (in the caller at the
+//    call, or made in the clone), a _ctl clone, a call under a quantum predicate;
 //  - round.tonearestaway and the constrained libm intrinsics (pow, sin, nearbyint, lrint, ...).
 #include "cq/Effects.h"
 
+#include <array>
 #include <map>
 #include <memory>
 #include <optional>
 #include <string>
 
 #include "cq/Abi.h"
+#include "cq/Calls.h"
 #include "cq/Predicate.h"
+#include "cq/Taint.h"
 #include "cq/Uncompute.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
@@ -101,6 +106,13 @@
 using namespace llvm;
 
 namespace cq::fenv {
+
+// E1 (proposed Effects.h freeze amendment; contract at the end of this file).
+bool cloneCarriesEnv(const Specialization &S);
+std::array<Operand, 2> envArgs(LoweringContext &, CallBase &site);
+void afterCloneCall(LoweringContext &, CallBase &site, Value *flagsOut);
+void bindCloneEnv(LoweringContext &, Argument *mode, Argument *flags);
+Value *cloneExitFlags(LoweringContext &, ReturnInst &);
 
 namespace {
 
@@ -195,6 +207,17 @@ bool bodyTouchesFenv(const Function &F, SmallPtrSetImpl<const Function *> &seen)
   return false;
 }
 
+// E1 (82): does a clone of F carry the environment? F's body, with the bodies it calls directly,
+// does constrained floating-point work or calls <fenv.h> (CR rule 23: "a clone that does constrained
+// FP work takes the caller's mode and flags rail and returns the new flags rail beside its result").
+// Syntactic, so the caller, the clone's construction and the twin agree on the ABI.
+bool carriesEnvImpl(const Function &F) {
+  if (F.isDeclaration())
+    return false;
+  SmallPtrSet<const Function *, 8> seen;
+  return bodyTouchesFenv(F, seen);
+}
+
 // --------------------------------------------------------------------------------------------
 // Per-output-function state.
 
@@ -218,6 +241,10 @@ struct State {
   bool anyQuantumSave = false;
   bool traps = false;
   AllocaInst *anchor = nullptr;
+  // E1 (82): in a clone carrying the environment, the caller's classical mode (its trailing mode
+  // parameter) and whether bindCloneEnv bound the trailing parameters.
+  Value *cloneMode = nullptr;
+  bool cloneBound = false;
   DenseSet<const Value *> output;          // rails this module set Role::Output
   // Rule 2 collapse probes (writeBack): private binding keys, one per state piece (0 FLAGS, 1 MODE).
   Instruction *probeKey[2] = {nullptr, nullptr};
@@ -235,17 +262,30 @@ std::map<const Function *, std::unique_ptr<State>> &states() {
   return m;
 }
 
-State &state(LoweringContext &ctx, const Instruction &I) {
+State &state(LoweringContext &ctx, const Module *M) {
   auto &p = states()[&ctx.out()];
   // The walked original is taken from the first context that reaches this output function; a
   // rule-19 inlined callee is a different original lowered into the same output (requireWritable
   // refuses a quantum change there). An inlined callee's fenv call before any of the walked
   // function's would mis-record it, and then every quantum change is refused: loud, never wrong.
-  if (!p || (p->orig && p->orig->getParent() != I.getModule()))
+  if (!p || (p->orig && p->orig->getParent() != M))
     p = std::make_unique<State>();
   if (!p->orig)
     p->orig = ctx.S.F;
   return *p;
+}
+
+// The state of the function being lowered. In a clone carrying the environment (E1), nothing that
+// reads or changes it may be lowered before bindCloneEnv bound the caller's mode and flags: a clone
+// lowered without them would round in the host mode and drop what it raises (silent wrong output).
+State &state(LoweringContext &ctx, const Instruction &I) {
+  State &st = state(ctx, I.getModule());
+  if (!ctx.S.isEntry() && ctx.S.F && I.getFunction() == ctx.S.F && !st.cloneBound && carriesEnvImpl(*ctx.S.F))
+    unimplemented("eff-fenv: a clone that does floating-point environment work was materialized without the "
+                  "caller's mode and flags (rule 23 clone ABI, 82: the calls and spine consumers of "
+                  "fenv::cloneCarriesEnv / envArgs / bindCloneEnv / cloneExitFlags / afterCloneCall)",
+                  &I);
+  return st;
 }
 
 LoopInfo &loopInfo(State &st, const Function &F) {
@@ -562,9 +602,9 @@ bool anyLinearizedAfter(LoweringContext &ctx, State &st, const Instruction &I, P
 // path, or saving into an object on one classical path, would otherwise hold after the join on every
 // path (cq-1dlz).
 void requirePlaced(LoweringContext &ctx, State &st, const Instruction &I) {
-  if (!ctx.S.isEntry())
-    unimplemented("eff-fenv: the quantum floating-point environment changes in a clone (rule 23 state "
-                  "crossing a call: the clone would return it to its caller)",
+  if (!ctx.S.isEntry() && !st.cloneBound)
+    unimplemented("eff-fenv: the quantum floating-point environment changes in a clone that does not carry it "
+                  "(rule 23 clone ABI, 82)",
                   &I);
   if (I.getFunction() != st.orig)
     unimplemented("eff-fenv: the quantum floating-point environment changes in a rule-19 inlined callee", &I);
@@ -598,6 +638,11 @@ void requireWritable(LoweringContext &ctx, State &st, const Instruction &I) {
     SmallPtrSet<const Function *, 8> seen;
     if (CB->isInlineAsm() || (G && !bodyTouchesFenv(*G, seen)))
       return false;
+    // E1 (82): a call of a clone carrying the environment takes the state and returns the new flags.
+    if (G && n.getFunction() == ctx.S.F && calls::classify(*CB, ctx.T, ctx.S) == calls::Class::Lift)
+      if (const Specialization *cs = ctx.T.calleeSpecialization(*CB, ctx.S);
+          cs && !cs->isEntry() && carriesEnvImpl(*cs->F))
+        return false;
     bad = &n;
     return true;
   });
@@ -695,6 +740,8 @@ bool isMeasure(const Instruction &I) {
 // part, requireWritable stops it; a collapse there is refused by writeBack.
 void settle(LoweringContext &ctx, State &st, const Instruction &I) {
   writeBack(ctx, st, I);
+  if (st.cloneBound)
+    return;   // E1: a clone's final flags are copied out at its returns (cloneExitFlags), never an output
   LoopInfo &LI = loopInfo(st, *I.getFunction());
   auto final = [&](bool (*writes)(const Instruction &)) {
     auto later = [&](const Instruction &n) {
@@ -722,6 +769,10 @@ void setFlags(LoweringContext &ctx, State &st, Value *f) {
 }
 
 void setMode(LoweringContext &ctx, State &st, Value *m) {
+  if (m && st.cloneBound)
+    unimplemented("eff-fenv: a clone makes the rounding mode quantum (rule 23: a clone returns only the new "
+                  "flags rail, 82)",
+                  ctx.S.F);
   if (m == st.mode && !m)
     return;
   if (m || st.mode)
@@ -762,6 +813,8 @@ bool cacheValid(const State &st, const Instruction &I) {
 
 // The classical dynamic mode at I.
 Value *classicalMode(LoweringContext &ctx, State &st, const Instruction &I) {
+  if (st.cloneBound)
+    return st.cloneMode;   // E1: the caller's mode; bindCloneEnv refused a clone that changes it
   if (cacheValid(st, I))
     return st.modeVal;
   st.modeVal = hostGetRound(ctx);
@@ -1289,7 +1342,9 @@ void lowerFenvCall(LoweringContext &ctx, CallBase &CB) {
     Value *cur = nullptr, *sv = nullptr;
     if (st.flags) {
       requireValid(ctx, st.flagsAt, CB, "flags");
-      cur = andLit(ctx, st, st.flags, notClassical(ctx, m.v));
+      // FE_ALL_EXCEPT (82): every bit is reinstated from the saved part, the current rail is dropped.
+      if (!(cm && (*cm & kAllExcept) == kAllExcept))
+        cur = andLit(ctx, st, st.flags, notClassical(ctx, m.v));
     }
     if (s.flags) {
       bool covered = cm && s.mask && (*s.mask & ~*cm & kAllExcept) == 0;
@@ -1359,6 +1414,97 @@ void afterMeasure(LoweringContext &ctx, CallInst &measure) {
   State &st = *it->second;
   if (st.flags || st.mode)
     settle(ctx, st, measure);
+}
+
+// --------------------------------------------------------------------------------------------
+// E1 (CR rule 23, 82): the clone ABI of the environment. Proposed as a freeze amendment of Effects.h
+// (declarations below, consumers calls and spine); until it lands they are declared here.
+//
+//  - cloneCarriesEnv(S): a clone of S takes two trailing i32 parameters after every other one (the
+//    caller's MODE, a classical FE_* value, then its FLAGS, a handle) and returns the new FLAGS handle
+//    as the LAST field of its result: `i32` alone for a clone whose result is otherwise void, else a
+//    literal struct of its result fields (C types where classical, handles where quantum; the M2 store
+//    handles included) followed by i32. The twin's outs are every handle field in that order (the new
+//    flags last), then the clone's parameters (mode and flags included).
+//  - envArgs(ctx, site): caller, at the builder before the clone call: {mode (classical), flags
+//    (handle)}. An empty FLAGS becomes a fresh |0> seed first. Unimplemented: MODE a handle (a clone
+//    rounding in a quantum mode), a quantum predicate at the site (a _ctl clone's flags).
+//  - afterCloneCall(ctx, site, flagsOut): caller, right after the call and after recordCall recorded
+//    flagsOut (the extractvalue of the last field, or the call itself) as an out: FLAGS := flagsOut.
+//    This module may set flagsOut's role to Output (the final flags) afterwards.
+//  - bindCloneEnv(ctx, mode, flags): clone, at its entry after the formals are bound (before any
+//    instruction is lowered): MODE := mode (classical), FLAGS := flags (recorded here as the caller's
+//    rail, Role::UserRegister, never freed in the clone).
+//  - cloneExitFlags(ctx, ret): clone, at each return before the copy-outs: the FLAGS handle to copy
+//    out into the returned flags rail (alloc_i32(0), copy_i32, Role::Result, as the result's).
+
+namespace {
+State &stateOfCall(LoweringContext &ctx, const Instruction &I) { return state(ctx, I); }
+} // namespace
+
+bool cloneCarriesEnv(const Specialization &S) {
+  return S.F && !S.isEntry() && carriesEnvImpl(*S.F);
+}
+
+std::array<Operand, 2> envArgs(LoweringContext &ctx, CallBase &site) {
+  State &st = stateOfCall(ctx, site);
+  if (st.mode)
+    unimplemented("eff-fenv: a call of a clone carrying the environment while the rounding mode is quantum "
+                  "(rule 23 clone ABI with a mode handle)",
+                  &site);
+  if (predicateFlag(ctx))
+    unimplemented("eff-fenv: a call of a clone carrying the environment under a quantum predicate (its new "
+                  "flags rail would merge with the old under the predicate)",
+                  &site);
+  requireWritable(ctx, st, site);
+  Value *mode = classicalMode(ctx, st, site);
+  if (st.flags) {
+    requireValid(ctx, st.flagsAt, site, "flags");
+  } else {
+    CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i32Rail()}, {i32(ctx, 0)});
+    ctx.unc().recordSeed(z);
+    setFlags(ctx, st, z);
+  }
+  return {Operand{mode, false}, Operand{st.flags, true}};
+}
+
+void afterCloneCall(LoweringContext &ctx, CallBase &site, Value *flagsOut) {
+  State &st = stateOfCall(ctx, site);
+  if (!flagsOut || !flagsOut->getType()->isIntegerTy(32))
+    internalError("eff-fenv: afterCloneCall without the clone's returned flags handle", &site);
+  setFlags(ctx, st, flagsOut);
+  settle(ctx, st, site);
+}
+
+void bindCloneEnv(LoweringContext &ctx, Argument *mode, Argument *flags) {
+  if (ctx.S.isEntry() || !cloneCarriesEnv(ctx.S))
+    internalError("eff-fenv: bindCloneEnv in a function that does not carry the environment", mode);
+  if (!mode->getType()->isIntegerTy(32) || !flags->getType()->isIntegerTy(32))
+    internalError("eff-fenv: a clone's trailing mode and flags parameters are not i32", mode);
+  if (ctx.S.ctl)
+    unimplemented("eff-fenv: a _ctl clone carrying the environment (its raised bits under the entry flag)", ctx.S.F);
+  for (const BasicBlock &BB : *ctx.S.F)
+    for (const Instruction &I : BB)
+      if (writesMode(I))
+        unimplemented("eff-fenv: a clone that changes the rounding mode (rule 23: a clone returns only the new "
+                      "flags rail, 82)",
+                      &I);
+  State &st = state(ctx, ctx.S.F->getParent());
+  if (st.cloneBound)
+    internalError("eff-fenv: bindCloneEnv called twice for one clone", mode);
+  ctx.unc().recordExternal(flags, Role::UserRegister);
+  st.cloneBound = true;
+  st.cloneMode = mode;
+  st.flags = flags;
+  st.flagsAt = nullptr;   // defined at the clone's entry: on every path
+}
+
+Value *cloneExitFlags(LoweringContext &ctx, ReturnInst &ret) {
+  State &st = stateOfCall(ctx, ret);
+  if (!st.cloneBound || !st.flags)
+    internalError("eff-fenv: cloneExitFlags in a clone whose environment was not bound", &ret);
+  requireValid(ctx, st.flagsAt, ret, "flags");
+  return st.flags;
 }
 
 } // namespace cq::fenv
