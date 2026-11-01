@@ -10,7 +10,7 @@ set(CQ_UNC_CASES
   seed_xorc_direct seed_written_undone qram_lifo qram_rmw qram_realloc qram_kept_bus qram_pop_kept multi_exit arm_flush ex14_fmuladd
   ex42_measure_one_of_two ex162_consumer ex144_rule6
   merge_measured merge_all_arms_kept merge_template_then_garbage merge_noted_use merge_phi merge_nested
-  merge_arm_local merge_kept_arm_local merge_kept_unchosen_edge merge_kept_rotated merge_kept_nested_phi_edge alias_distinct_cell
+  merge_arm_local merge_kept_arm_local merge_kept_unchosen_edge merge_kept_rotated carried_phi_rotated carried_phi_unchosen_arm merge_kept_nested_phi_edge alias_distinct_cell
   alias_copy_distinct_array cell_load_garbage cell_load_kept
   deferred_kept_through_memory
   call_two_results call_all_kept call_slotout_unused call_reads resolve_at pointee_before_store cells_distinct deferred_qram_store
@@ -52,7 +52,8 @@ set(CQ_UNC_FATAL
   "fatal_deferred_no_anchor=cq: internal error: uncompute: recordDeferred without exit rails and without a QRAM bus"
   "fatal_deferred_join_bypass=cq: unimplemented: uncompute: a non-diagonal gate or an in-place write on a rail the deferred rule-14 reverse loop reads"
   "fatal_alias_memcpy=cq: unimplemented: uncompute: a non-diagonal gate on a handle that may name an operand rail of %g through a slot cell"
-  "fatal_merge_unchosen_loop=cq: unimplemented: uncompute: an arm of a kept merged handle, %a, freed at the end of an edge where the merge does not choose it, is reached again")
+  "fatal_merge_unchosen_loop=cq: unimplemented: uncompute: an arm of a kept merged handle, %a, freed at the end of an edge where the merge does not choose it, is reached again"
+  "fatal_carried_phi_some_paths=cq: unimplemented: uncompute: a non-diagonal gate on some paths only precedes the resolution of an unchosen arm")
 foreach(entry ${CQ_UNC_FATAL})
   string(FIND "${entry}" "=" eq)
   string(SUBSTRING "${entry}" 0 ${eq} c)

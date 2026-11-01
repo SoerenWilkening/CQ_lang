@@ -41,7 +41,18 @@ FATAL = [(PROBES / "slots_fatal_crossgate.O1.ll", "loops-classical: a non-diagon
           "slot cell is kept because a measured load after the loop may read it, but another write"),
          # cq-9o04 (review loopscl-h2 p29): an Ry the reverse loop must precede, then a read of the QRAM it pops.
          (PROBES / "fatal_qram_barrier.O1.ll", "uncompute: a non-diagonal gate or an in-place write on a rail the "
-          "deferred rule-14 reverse loop reads")]
+          "deferred rule-14 reverse loop reads"),
+         # cq-igqp: a carried register rotated in the trip on some paths only (its initial rail must be kept on the
+         # others' complement), a record before the loop undone after it against the rotated initial rail, the
+         # initial value read after the loop, a rotated seed of the loop.
+         (PROBES / "fatal_carried_arm.O1.ll", "uncompute: a non-diagonal gate on some paths only precedes the "
+          "resolution of an unchosen arm of a kept merged handle"),
+         (PROBES / "fatal_carried_read.O1.ll", "uncompute: a barrier in another block lies between a rail and its "
+          "uncompute"),
+         (PROBES / "fatal_carried_sunk.O1.ll", "spine: %4, bound to the rail cq_theta rotates in place (a rail its "
+          "operand's phi may name), is read after the rotation"),
+         (PROBES / "fatal_carried_seed.O1.ll", "loops-classical: a non-diagonal gate in a classically bounded loop on "
+          "a rail that a record undone by the reverse loop reads")]
 # cq-b13w: CR rule 6 on carried values. Each entry's last parameter is the trip count; the kept rails (role, width)
 # at n = 2 and n = 3 must be exactly the straight-line rule 6 multiset below.
 RULE6_PROBE = PROBES / "rule6.O1.ll"
@@ -69,6 +80,11 @@ CARRY = ["g_carry"]
 # cq-nqa6: a multi-exit case-3 loop (bound at the header, quantum exit at the latch) whose counter is read after it.
 MXREAD_PROBE = PROBES / "mx_read.O1.ll"
 MXREAD = ["p_find", "p_find2"]
+# cq-igqp: a carried register rotated in place in the trip (classical bound; quantum bound and exit, the cutoff): the
+# rail the header phi names on trip 0 is never uncomputed through and freed dirty.
+CARRIED_PROBE = PROBES / "carried_rot.O1.ll"
+CARRIED = ["p38", "p38_cut", "p38_cutx"]
+NO_REVERSE = ["p38_cut", "p38_cutx"]   # a quantum bound: unrolled to the cutoff K, no reverse loop
 MEASURED = {"m_r8": [("measured", "i32"), ("kept_entangled", "i32"), ("measured", "i32")],
             "m_r8b": [("measured", "i32"), ("measured", "i32")],
             "m_r8c": [("measured", "i32"), ("kept_entangled", "i32"), ("measured", "i32")]}
@@ -117,7 +133,7 @@ def check_probe(a, probe: Path, entries, out: Path) -> int:
             why.append("no lowered body")
         if SURFACE.search(b):
             why.append("a CQ.h surface call is left")
-        if e not in MEASURED_SEC6 and ("@cqrt_push(" not in b or "@cqrt_pop()" not in b):
+        if e not in MEASURED_SEC6 + NO_REVERSE and ("@cqrt_push(" not in b or "@cqrt_pop()" not in b):
             why.append("no push/pop: the reverse loop is missing")
         c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(probe), "--lowered", str(lowered),
                             "--entry", e], capture_output=True, text=True, cwd=ROOT / "checker")
@@ -159,13 +175,13 @@ def main() -> int:
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", required=True)
     ap.add_argument("--entry", action="append", help="check only these entries of loops.O1.ll")
-    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep"],
+    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried"],
                     help="run only these probe groups (default: all)")
     a = ap.parse_args()
     out = ROOT / "build" / "tests" / "loops-classical" / "out"
     out.mkdir(parents=True, exist_ok=True)
     failures = 0
-    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep"]))
+    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried"]))
     groups = []
     if "loops" in want:
         groups.append((PROBE, a.entry or ENTRIES))
@@ -189,6 +205,8 @@ def main() -> int:
         groups.append((CARRY_PROBE, CARRY))
     if "memkeep" in want:
         groups.append((MEMKEEP_PROBE, list(MEMKEEP)))
+    if "carried" in want:
+        groups.append((CARRIED_PROBE, CARRIED))
     for probe, entries in groups:
         failures += check_probe(a, probe, entries, out)
     for group, probe, table in (("rule6", RULE6_PROBE, RULE6), ("deferred", DEFERRED_PROBE, DEFERRED),

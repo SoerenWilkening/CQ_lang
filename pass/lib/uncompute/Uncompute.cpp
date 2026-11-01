@@ -41,6 +41,12 @@
 //    holds r). IR users of the handle are uses automatically.
 //  - noteNonDiagonal(x, g): g is a non-diagonal gate on x (Ry, a quantum-angle Ry; the caller decides,
 //    a computational-basis measurement is not one: 42). It is a barrier for every _unc that needs x.
+//    cq-igqp: when x's handle is a phi or select over handles that is not a merge (a classically
+//    bounded loop's header phi, recordExternal), g is also a gate on every rail it may name (through
+//    nested phis, selects and merges; re-read before every placement, since the back edge is filled
+//    after the gate): those rails are never uncomputed through it. An unchosen arm of a kept merge so
+//    hit on every path to its edge stays allocated there (A4); on some paths only: unimplemented. A
+//    rail already uncomputed and freed that such a gate reaches: unimplemented.
 //  - cleanupBijective(old, inverse, ops): rule 6. Instead of its producer's _unc, `old` is cleaned by
 //    t = inverse(ops); copy_<W>(t, old); inverse_unc(t, ops); free t; free old. It overrides old's
 //    role. ops are the inverse template's forward operands.
@@ -620,6 +626,69 @@ struct Uncompute::Impl {
     return out;
   }
 
+  // cq-igqp (CR §0, rules 5, 10): a phi or select over handles that is not a merge (a classically
+  // bounded loop's header phi, recordExternal) names at run time one of its incoming rails: the seed or
+  // the initial rail on entry, the previous trip's next value on the back edge. A non-diagonal gate on
+  // it is a gate on every rail it may name, so the hit goes to each of them (through nested phis,
+  // selects and merges): a rotated rail is never uncomputed through (a garbage one stays allocated,
+  // KeptEntangled) and is a barrier for every item that reads it. The phi may not be complete when the
+  // gate is noted (its back-edge incoming is added at the latch), so this runs again before every
+  // placement, to a fixed point. A rail already uncomputed and freed that such a gate reaches is
+  // unimplemented (its _unc ran against a rail the gate may have rotated).
+  SmallVector<RailId, 4> phiAliasLeaves(RailId g) const {
+    SmallVector<RailId, 4> out;
+    SmallVector<const Value *, 8> work;
+    SmallPtrSet<const Value *, 8> seen;
+    auto push = [&](const Value *v) {
+      if (auto *p = dyn_cast<PHINode>(v))
+        for (const Value *in : p->incoming_values())
+          work.push_back(in);
+      else if (auto *sl = dyn_cast<SelectInst>(v)) {
+        work.push_back(sl->getTrueValue());
+        work.push_back(sl->getFalseValue());
+      }
+    };
+    seen.insert(rails[g].handle);
+    push(rails[g].handle);
+    while (!work.empty()) {
+      const Value *v = work.pop_back_val();
+      if (!seen.insert(v).second || isa<Constant>(v))
+        continue;
+      auto it = byHandle.find(v);
+      if (it == byHandle.end()) {
+        push(v);   // an unrecorded phi or select over handles: look through it
+        continue;
+      }
+      for (RailId x : leaves(it->second))
+        if (x != g && !is_contained(out, x))
+          out.push_back(x);
+    }
+    return out;
+  }
+  void syncPhiHits() {
+    for (bool again = true; again;) {
+      again = false;
+      for (RailId g = 0; g < rails.size(); ++g) {
+        if (rails[g].hits.empty() || isMerge(g) ||
+            !(isa<PHINode>(rails[g].handle) || isa<SelectInst>(rails[g].handle)))
+          continue;
+        for (RailId x : phiAliasLeaves(g))
+          for (unsigned k = 0; k < rails[g].hits.size(); ++k) {
+            Instruction *gate = rails[g].hits[k];
+            if (is_contained(rails[x].hits, gate))
+              continue;
+            if (rails[x].released)
+              unimplemented("uncompute: a non-diagonal gate on " + describe(rails[g].handle) +
+                                " may rotate " + describe(rails[x].handle) +
+                                ", which it names at run time and which was already uncomputed and freed",
+                            gate);
+            rails[x].hits.push_back(gate);
+            again = true;
+          }
+      }
+    }
+  }
+
   bool anyReleased(RailId g) const {
     for (RailId x : leaves(g))
       if (rails[x].released)
@@ -820,6 +889,7 @@ struct Uncompute::Impl {
   // operand is garbage now may find it kept later (a measurement after a later reader of the old value
   // in another block), so the decision waits until the old rail itself is resolved.
   void pruneCleanups(const SmallVectorImpl<RailId> *only = nullptr) {
+    syncPhiHits();   // cq-igqp: before any placement
     // To a fixed point: dropping one clean-up makes its rail plain garbage again, which may now be a
     // garbage reader of an earlier clean-up's operand (164's clone: %6 = %7 - %3 kept while %7's own
     // clean-up through the result was still there, then %7's dropped: a cycle).
@@ -1616,6 +1686,34 @@ struct Uncompute::Impl {
         }
   }
 
+  // cq-igqp: does every path from g's definition to the end of P pass a block of hitBlocks (the blocks
+  // of non-diagonal gates on g or on a rail its item reads, each after g's record)? A gate in the
+  // definition's block covers every path when it follows the definition there.
+  bool hitOnEveryPath(RailId g, const SmallPtrSetImpl<const BasicBlock *> &hitBlocks, const BasicBlock *P) const {
+    const Rail &r = rails[g];
+    const BasicBlock *D = defBlock(g);
+    const Instruction *def = r.creator != kNone ? records[r.creator].forward : dyn_cast<Instruction>(r.handle);
+    for (auto [e, kind] : barriers(g))
+      if (e->getParent() == D && hitBlocks.count(D) && (!def || def->getParent() != D || def->comesBefore(e)))
+        return true;
+    if (D == P)
+      return false;
+    SmallPtrSet<const BasicBlock *, 16> seen;
+    SmallVector<const BasicBlock *, 16> work{D};
+    while (!work.empty()) {
+      const BasicBlock *b = work.pop_back_val();
+      if (const Instruction *t = b->getTerminator())
+        for (const BasicBlock *s : successors(t)) {
+          if (s == D || hitBlocks.count(s) || !seen.insert(s).second)
+            continue;   // a cycle back into D may meet a gate before the definition: D is not a cover
+          if (s == P)
+            return false;
+          work.push_back(s);
+        }
+    }
+    return true;
+  }
+
   // Resolve the arm a at the end of P, a block whose only successor is the join of the merge phi,
   // which does not choose a from P. After P, a is not read on that path: the merge (and every merge
   // that names a only through it) names another arm there.
@@ -1675,11 +1773,32 @@ struct Uncompute::Impl {
                             " where the merge does not choose it",
                         T);
     }
+    // cq-igqp (CR §0, rule 10): a non-diagonal gate on the arm (or on a rail its item reads) that runs on
+    // every path from the arm's definition to P leaves it entangled: it stays allocated on this path
+    // (kept, live at exit), as A4's KeptEntangled. A gate on some of those paths only (the arm could be
+    // cleaned on the others, CR §0), a gate through a slot cell (decided at run time) or an in-place
+    // write there is unimplemented.
+    SmallPtrSet<const BasicBlock *, 8> hitBlocks;
+    Instruction *firstBar = nullptr;
     for (auto [e, kind] : barriers(a))
-      if (e->getParent() == P || reaches(e->getParent(), P))
-        unimplemented("uncompute: a barrier precedes the resolution of an unchosen arm of a kept merged handle, " +
-                          describe(ra.handle),
-                      e);
+      if (e->getParent() == P || reaches(e->getParent(), P)) {
+        if (kind != Bar::Hit)
+          unimplemented("uncompute: a barrier precedes the resolution of an unchosen arm of a kept merged handle, " +
+                            describe(ra.handle),
+                        e);
+        hitBlocks.insert(e->getParent());
+        if (!firstBar)
+          firstBar = e;
+      }
+    if (firstBar) {
+      bool avoided = !hitOnEveryPath(a, hitBlocks, P);
+      if (avoided)
+        unimplemented("uncompute: a non-diagonal gate on some paths only precedes the resolution of an unchosen "
+                          "arm of a kept merged handle, " + describe(ra.handle) +
+                          " (it is entangled on those paths and must be cleaned on the others)",
+                      firstBar);
+      return;
+    }
     IRBuilder<> B(T);
     Instruction *end = emitItem(a, B);
     itemEnd[{a, P}] = end;
@@ -1994,14 +2113,31 @@ struct Uncompute::Impl {
     Rail &r = rails[g];
     // Rule 5's invariant.
     bool kept = false;
+    // cq-igqp: non-diagonal gates in other blocks that reach the placement keep g (A4) when g's
+    // definition dominates the placement and every path from it to the placement passes one of them
+    // (a carried register rotated in every trip, its initial rail named by the loop's header phi);
+    // otherwise unimplemented.
+    SmallPtrSet<const BasicBlock *, 8> crossHits;
+    Instruction *crossBar = nullptr;
+    bool crossOther = false;
+    for (auto [e, kind] : barriers(g))
+      if (e->getParent() != pos.bb && reaches(e->getParent(), pos.bb)) {
+        if (!crossBar || (kind != Bar::Hit && !crossOther))
+          crossBar = e;
+        crossOther = crossOther || kind != Bar::Hit;
+        crossHits.insert(e->getParent());
+      }
+    if (crossBar) {
+      if (crossOther || !dominates(defBlock(g), pos.bb) || !hitOnEveryPath(g, crossHits, pos.bb))
+        unimplemented("uncompute: a barrier in another block lies between a rail and its uncompute", crossBar);
+      kept = true;
+    }
     for (auto [e, kind] : barriers(g)) {
       bool violated;
       if (e->getParent() == pos.bb)
         violated = !(pos.before == e || pos.before->comesBefore(e));
-      else if (reaches(e->getParent(), pos.bb))
-        unimplemented("uncompute: a barrier in another block lies between a rail and its uncompute", e);
       else
-        violated = false;
+        violated = false;   // cross-block: decided above
       if (!violated)
         continue;
       if (kind == Bar::PointeeWrite)
@@ -3290,6 +3426,7 @@ std::optional<Role> Uncompute::liveRole(RailId r) const {
 }
 
 void Uncompute::setRole(RailId r, Role role) {
+  impl->syncPhiHits();   // cq-igqp: a kept merge resolves unchosen arms now (keepMerge)
   Impl &I = *impl;
   Impl::Rail &x = I.rail(r, "setRole");
   if (x.released || !x.exitsDone.empty())
@@ -3345,12 +3482,14 @@ void Uncompute::noteNonDiagonal(RailId target, Instruction *gate) {
     }
     impl->rails[target].hits.push_back(gate);
     impl->noteAliasHits(target, gate);
+    impl->syncPhiHits();   // cq-igqp: an arm may be a phi over handles
     return;
   }
   if (x.released)
     internalError("uncompute: gate on " + describe(x.handle) + " after it was uncomputed and freed", gate);
   x.hits.push_back(gate);
   impl->noteAliasHits(target, gate);
+  impl->syncPhiHits();   // cq-igqp: the rails a phi over handles may name
 }
 
 void Uncompute::noteCellsDistinct(Instruction *loadA, Instruction *loadB) {
@@ -3422,6 +3561,7 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
   if (!point || !point->getParent())
     internalError("uncompute: flushBefore needs an instruction in a block");
   Impl &I = *impl;
+  I.syncPhiHits();   // cq-igqp: before candidates are chosen
   Impl::Ctx c{Impl::Mode::Local, point, nullptr};
   BasicBlock *P = point->getParent();
   SmallVector<RailId, 16> cands, deferred;

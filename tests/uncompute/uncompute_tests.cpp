@@ -2307,6 +2307,118 @@ J:
                     });
 }
 
+// cq-igqp: a loop's header phi over handles (recordExternal, kept) names the garbage rail %g on trip 0;
+// the Ry on the phi rotates %g, so %g is never uncomputed through (KeptEntangled), though the phi's
+// back edge is filled after the gate is noted.
+void carried_phi_rotated() {
+  Fx f(R"(
+define i32 @f(i32 %a0, double %th, i1 %c) {
+entry:
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %g = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  br label %L
+L:
+  %p = phi i32 [ %g, %entry ], [ %g, %L ]
+  call void @cqrt_ry_i32(i32 %p, double %th)
+  br i1 %c, label %L, label %X
+X:
+  %r = call i32 @cqrt_measure_i32(i32 %p)
+  ret i32 %r
+})");
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  f.T("g", "hl");
+  auto *p = cast<PHINode>(f.I("p"));
+  RailId pid = f.U.recordExternal(p, Role::UserRegister);
+  f.U.noteNonDiagonal(pid, f.call("cqrt_ry_i32", 1));
+  p->setIncomingValue(1, p);   // the back edge, filled at the latch after the gate
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%g = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "br label %L",
+                        "%p = phi i32 [ %g, %entry ], [ %p, %L ]",
+                        "call void @cqrt_ry_i32(i32 %p, double %th)",
+                        "br i1 %c, label %L, label %X",
+                        "%r = call i32 @cqrt_measure_i32(i32 %p)",
+                        "ret i32 %r",
+                    });
+}
+
+// cq-igqp (p38): %g is also the zero-trip arm of a measured merge. On the loop's exit edge (unchosen there)
+// every path from %g's definition passed the Ry on the phi: %g stays allocated, nothing is undone.
+const char *kCarriedArm = R"(
+define i32 @f(i32 %a0, double %th, i1 %c, i1 %d, i1 %e) {
+entry:
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %g = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  br i1 %c, label %P, label %J
+P:
+  br label %L
+L:
+  %p = phi i32 [ %g, %P ], [ %p, %R ]
+  br i1 %e, label %Rot, label %R
+Rot:
+  call void @cqrt_ry_i32(i32 %p, double %th)
+  br label %R
+R:
+  br i1 %d, label %L, label %X
+X:
+  %o = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_copy_i32(i32 %p, i32 %o)
+  br label %J
+J:
+  %m = phi i32 [ %g, %entry ], [ %o, %X ]
+  %r = call i32 @cqrt_measure_i32(i32 %m)
+  ret i32 %r
+})";
+void carriedArm(Fx &f) {
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  f.T("g", "hl");
+  RailId pid = f.U.recordExternal(f.I("p"), Role::UserRegister);
+  f.U.noteNonDiagonal(pid, f.call("cqrt_ry_i32", 1));
+  RailId o = f.S("o");
+  f.core(f.call("cqrt_copy_i32"), abi::Core::Copy, "hh", o);
+  f.U.setRole(o, Role::Output);
+  f.U.setRole(f.U.recordMerge(f.I("m")), Role::Measured);
+  f.U.flushAtExit(f.ret());
+}
+void carried_phi_unchosen_arm() {
+  std::string src = kCarriedArm;
+  // The gate on every trip: drop the branch around it.
+  src.replace(src.find("br i1 %e, label %Rot, label %R"), std::string("br i1 %e, label %Rot, label %R").size(),
+              "br label %Rot");
+  Fx f(src);
+  carriedArm(f);
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%g = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "br i1 %c, label %P, label %J",
+                        "br label %L",
+                        "%p = phi i32 [ %g, %P ], [ %p, %R ]",
+                        "br label %Rot",
+                        "call void @cqrt_ry_i32(i32 %p, double %th)",
+                        "br label %R",
+                        "br i1 %d, label %L, label %X",
+                        "%o = call i32 @cqrt_alloc_i32(i32 0)",
+                        "call void @cqrt_copy_i32(i32 %p, i32 %o)",
+                        "br label %J",
+                        "%m = phi i32 [ %g, %entry ], [ %o, %X ]",
+                        "%r = call i32 @cqrt_measure_i32(i32 %m)",
+                        "ret i32 %r",
+                    });
+}
+// The gate under a branch of the trip: %g is rotated on some paths to the edge only.
+void fatal_carried_phi_some_paths() {
+  Fx f(kCarriedArm);
+  carriedArm(f);
+}
+
 // The unchosen arm s is still read by a pending garbage rail u on the loop edge: freeing s there would
 // leave u's uncompute without its operand. Unimplemented.
 void fatal_merge_unchosen_reader() {
@@ -3204,6 +3316,8 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"merge_kept_arm_local", merge_kept_arm_local},
     {"merge_kept_unchosen_edge", merge_kept_unchosen_edge},
     {"merge_kept_rotated", merge_kept_rotated},
+    {"carried_phi_rotated", carried_phi_rotated},
+    {"carried_phi_unchosen_arm", carried_phi_unchosen_arm},
     {"merge_kept_nested_phi_edge", merge_kept_nested_phi_edge},
     {"alias_distinct_cell", alias_distinct_cell},
     {"alias_copy_distinct_array", alias_copy_distinct_array},
@@ -3237,6 +3351,7 @@ const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_merge_nested_select_edge", fatal_merge_nested_select_edge},
     {"fatal_merge_nested_select_edge_rev", fatal_merge_nested_select_edge_rev},
     {"fatal_merge_unchosen_loop", fatal_merge_unchosen_loop},
+    {"fatal_carried_phi_some_paths", fatal_carried_phi_some_paths},
     {"fatal_alias_slot_reload", fatal_alias_slot_reload},
     {"fatal_alias_slot_direct", fatal_alias_slot_direct},
     {"fatal_alias_second_array", fatal_alias_second_array},

@@ -14,7 +14,8 @@
 //    yet that precedes T (a lazy reader such as fatptr's deriveGEP or a value -O1 sank, which reads w
 //    when it is finally emitted; cq-drcl: a user in a block T cannot reach, a sibling arm, is no
 //    reader after T). The operand v needing it gets the copy; any other value bound to h needing it
-//    is cq::unimplemented. No use after T: nothing is emitted (the common case is unchanged).
+//    is cq::unimplemented, as is one bound to a rail h may name at run time when h is a phi or select
+//    over handles (cq-igqp: a classically bounded loop's header phi names its initial rail on trip 0). No use after T: nothing is emitted (the common case is unchanged).
 //  - Classical guards (cq-drcl). The copy is emitted at T. A reader after T whose block's classical
 //    factor does not imply T's block's is reached by a path on which T did not run (a classical arm
 //    joined): it would need a merge of c and h at the classical join, cq::unimplemented.
@@ -497,9 +498,29 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T, b
 
   Value *snap = snapshotSwitchAtoms(ctx, T, h);   // cq-0hhk
 
-  // Any other value bound to h and read after the rotation would need a copy of its own.
+  // Any other value bound to h and read after the rotation would need a copy of its own. cq-igqp: so
+  // would a value bound to a rail h may name at run time (h a phi or select over handles: a classically
+  // bounded loop's header phi names its initial rail on trip 0), since the rotation hits that rail.
+  SmallPtrSet<const Value *, 8> aliases;
+  {
+    SmallVector<const Value *, 8> work{h};
+    while (!work.empty()) {
+      const Value *a = work.pop_back_val();
+      if (auto *p = dyn_cast<PHINode>(a)) {
+        for (const Value *in : p->incoming_values())
+          if (aliases.insert(in).second)
+            work.push_back(in);
+      } else if (auto *sl = dyn_cast<SelectInst>(a)) {
+        for (const Value *in : {sl->getTrueValue(), sl->getFalseValue()})
+          if (aliases.insert(in).second)
+            work.push_back(in);
+      }
+    }
+    aliases.erase(h);
+  }
   for (auto &[w, ops] : sh.binds) {
-    if (w == v || w == &T || ops.size() != 1 || !ops.front().handle || ops.front().v != h)
+    if (w == v || w == &T || ops.size() != 1 || !ops.front().handle ||
+        (ops.front().v != h && !aliases.count(ops.front().v)))
       continue;
     const Function *F = functionOf(w);
     const Instruction *P = F ? pointIn(sh, &T, F) : nullptr;
@@ -508,8 +529,10 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T, b
     bool cyc = false;
     DenseSet<const BasicBlock *> r = reachFrom(P, w, cyc);
     if (const Instruction *u = useAfter(sh, w, P, r))
-      unimplemented("spine: " + describe(w) + ", bound to the rail cq_theta rotates in place, is read after the "
-                        "rotation (by " + describe(u) + ") and is not the cq_theta's operand (cq-s32y)",
+      unimplemented("spine: " + describe(w) + ", bound to the rail cq_theta rotates in place" +
+                        (ops.front().v != h ? std::string(" (a rail its operand's phi may name)") : std::string()) +
+                        ", is read after the rotation (by " + describe(u) + ") and is not the cq_theta's operand "
+                        "(cq-s32y, cq-igqp)",
                     &T);
   }
 
