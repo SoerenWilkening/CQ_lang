@@ -153,6 +153,9 @@ struct Shared {
   llvm::DenseMap<const llvm::Value *, PreRot> preRot;
   // cq-nvfi: every non-diagonal gate (ry, ry_qangle, controlled or not) on a rail, in emission order.
   llvm::DenseMap<const llvm::Value *, llvm::SmallVector<llvm::CallInst *, 2>> rotations;
+  // cq-5ajv: for each non-diagonal gate (rotations) and each in-place write (RailHist::writes), the
+  // original instruction being lowered when it was emitted, then the inlined call sites outward.
+  llvm::DenseMap<const llvm::CallInst *, llvm::SmallVector<const llvm::Instruction *, 2>> gateAt;
   // cq-su3p (Views.cpp): rule 3 representation views of a narrow register. A view phi (iN) merges
   // zexts of one iM register's states and constants: it names the register's rail (bits M) and has
   // no wide rail unless a user needs one (then `binds` holds a zext template of the rail, taken at

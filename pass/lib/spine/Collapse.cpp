@@ -423,6 +423,14 @@ void noteTemplate(Shared &sh, CallInst *fwd, const abi::TemplateSpec &spec, Arra
   r.orig = orig;
 }
 
+static void noteGateAt(Shared &sh, CallInst *call) {
+  SmallVector<const Instruction *, 2> &at = sh.gateAt[call];
+  if (sh.cur)
+    at.push_back(sh.cur);
+  for (size_t i = sh.inlineStack.size(); i-- > 0;)
+    at.push_back(sh.inlineStack[i]);
+}
+
 void noteCore(Shared &sh, CallInst *call, const abi::CoreSpec &spec, ArrayRef<Value *> args) {
   if (spec.op == abi::Core::Alloc) {
     if (args.size() != 1)
@@ -436,6 +444,7 @@ void noteCore(Shared &sh, CallInst *call, const abi::CoreSpec &spec, ArrayRef<Va
     unsigned t = spec.ctl ? 1 : 0;
     if (t < args.size()) {
       sh.rotations[args[t]].push_back(call);
+      noteGateAt(sh, call);
       if (auto it = sh.hist.find(args[t]); it != sh.hist.end())
         it->second.opaque = true;
     }
@@ -444,8 +453,10 @@ void noteCore(Shared &sh, CallInst *call, const abi::CoreSpec &spec, ArrayRef<Va
   int t = xorTarget(spec, args.size());
   if (t < 0 || t >= int(args.size()))
     return;
-  if (auto it = sh.hist.find(args[t]); it != sh.hist.end())
+  if (auto it = sh.hist.find(args[t]); it != sh.hist.end()) {
     it->second.writes.push_back(RailHist::Write{spec, SmallVector<Value *, 3>(args.begin(), args.end()), call});
+    noteGateAt(sh, call);
+  }
 }
 
 Value *outcomeAt(Shared &sh, Value *h) {

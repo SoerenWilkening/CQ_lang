@@ -329,26 +329,40 @@ bool viewMerge(LoweringContext &ctx, PHINode &P) {
   if (!R)
     internalError("spine: a view phi with no rail incoming", &P);
 
-  // A constant incoming is R's value on its edge only where no prep of R ran: R was minted with that
-  // literal and every cq_theta bound to R lies off the edge.
+  // A constant incoming is R's value on its edge only where nothing changed R since its mint: R was
+  // minted with that literal, and every gate emitted on R so far (a non-diagonal gate, Shared::rotations,
+  // or an in-place write, RailHist::writes) stands for an original instruction off the edge. The gates
+  // themselves are read, not the cq_theta bindings: an in-place cq_theta's operand is rebound to its
+  // pre-rotation copy (finishPreRotation), so the cq_theta that minted and rotated R names R nowhere
+  // (cq-5ajv).
   if (!consts.empty()) {
     auto h = sh.hist.find(R);
     const ConstantInt *seed = h == sh.hist.end() ? nullptr : dyn_cast_or_null<ConstantInt>(h->second.seed);
+    SmallVector<CallInst *, 4> gates;
+    if (auto rt = sh.rotations.find(R); rt != sh.rotations.end())
+      gates.append(rt->second.begin(), rt->second.end());
+    if (h != sh.hist.end())
+      for (const RailHist::Write &w : h->second.writes)
+        gates.push_back(w.call);
     for (auto &[i, c] : consts) {
       if (!seed || seed->getBitWidth() != M || seed->getValue() != c->getValue().trunc(M))
         unimplemented("spine: a rule 10 merge through a representation change whose constant incoming " +
                           describe(c) + " is not its register's initial value",
                       &P);
       const Pred &e = ctx.preds().edge(P.getIncomingBlock(i), P.getParent());
-      for (auto &[w, ops] : sh.binds) {
-        auto *T = dyn_cast<CallInst>(w);
-        const Function *F = T ? T->getCalledFunction() : nullptr;
-        if (!F || !F->getName().starts_with("cq_theta_") || ops.size() != 1 || !ops.front().handle ||
-            ops.front().v != R)
-          continue;
-        if (!(ctx.preds().block(T->getParent()) & e).isBottom())
+      for (CallInst *g : gates) {
+        const Instruction *at = nullptr;
+        if (auto ga = sh.gateAt.find(g); ga != sh.gateAt.end())
+          for (const Instruction *a : ga->second)
+            if (a->getFunction() == P.getFunction()) {
+              at = a;
+              break;
+            }
+        if (!at || !(ctx.preds().block(at->getParent()) & e).isBottom())
           unimplemented("spine: a rule 10 merge through a representation change whose constant incoming " +
-                            describe(c) + " arrives on an edge where " + describe(T) + " may have rotated the register",
+                            describe(c) + " arrives on an edge where its register may have been changed by " +
+                            (at ? describe(at) : std::string("a gate emitted outside this function")) +
+                            " (cq-5ajv)",
                         &P);
       }
     }
@@ -441,8 +455,15 @@ bool lowerNarrow(LoweringContext &ctx, Instruction &I) {
   spec.shape = y.handle ? "" : "hl";
   if (M == 1 && cmp->getPredicate() == CmpInst::ICMP_NE) {
     spec.op = "xor";   // a != b on bits is a ^ b
-    sh.narrowXor[&I] = {sh.views.count(a) ? a : (isa<Constant>(a) ? a : intZext(a)->getOperand(0)),
-                        sh.views.count(b) ? b : (isa<Constant>(b) ? b : intZext(b)->getOperand(0))};
+    // A constant operand is recorded at the narrow width M (cq-b26g).
+    auto narrowOf = [&](const Value *w) -> const Value * {
+      if (sh.views.count(w))
+        return w;
+      if (auto *c = dyn_cast<ConstantInt>(w))
+        return ConstantInt::get(c->getContext(), c->getValue().trunc(M));
+      return intZext(w)->getOperand(0);
+    };
+    sh.narrowXor[&I] = {narrowOf(a), narrowOf(b)};
   } else {
     spec.op = "icmp";
     spec.pred = CmpInst::getPredicateName(cmp->getPredicate()).str();

@@ -46,7 +46,8 @@ def check_pattern(text: str) -> "re.Pattern":
 
 def probes(a) -> int:
     """Synthetic modules in probes/: cq-lower and plain cq-verify accept each; each `; CHECK <fn>: <text>` must occur in <fn>'s lowered body
-    (`%{{name}}` matches any local), each `; CHECK-COUNT <fn>: <text> <n>` exactly n times."""
+    (`%{{name}}` matches any local), each `; CHECK-COUNT <fn>: <text> <n>` exactly n times, each `; USERCHECK <fn>`
+    §6-equal to its C program."""
     failures = 0
     out = ROOT / "build" / "tests" / "spine" / "out"
     for p in sorted((Path(__file__).parent / "probes").glob("*.ll")):
@@ -74,6 +75,14 @@ def probes(a) -> int:
                         reasons.append(f"{m.group(2)}: '{text}' occurs {got} times, expected {n}")
                 elif not check_pattern(m.group(3)).search(body):
                     reasons.append(f"{m.group(2)}: missing '{m.group(3)}'")
+            # `; USERCHECK <fn>` (cq-5ajv, as tests/mem-slots): <fn> must also be §6-equal to its own C
+            # program (the probe's -O1 IR with cq_theta as the identity: `python3 -m cqcheck user`).
+            for fn in re.findall(r"^; USERCHECK (\w+)$", p.read_text(), re.M):
+                c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(p), "--lowered", str(dest),
+                                    "--entry", fn], capture_output=True, text=True, cwd=ROOT / "checker")
+                if c.returncode != 0 or "PASS" not in c.stdout + c.stderr:
+                    reasons.append(f"{fn}: §6 against the C program: " +
+                                   ((c.stdout + c.stderr).strip().splitlines() or ["?"])[-1])
         failures += bool(reasons)
         print(f"{'ok' if not reasons else 'FAIL':4} probe {p.name}" + "".join("\n     " + x for x in reasons))
     # probes/fatal/: each must stop cq-lower (non-zero exit, nothing written) with the text of its
