@@ -235,6 +235,10 @@ Class classify(const CallBase &CB, const TaintInfo &T, const Specialization &S) 
     // quantum value; the spine's dispatch decides), or a _ctl / merged callee under a predicate.
     if (qArg || qRes || qPred)
       return Class::Lift;
+    // cq-vnh9: every quantum input behind a pointer argument (a slot object, 52's reduce(tx, ...)):
+    // taint publishes a clone for the call, so it is lifted like any other.
+    if (const Specialization *C = T.calleeSpecialization(CB, S); C && !C->isEntry())
+      return Class::Lift;
     return Class::Classical;
   }
 
