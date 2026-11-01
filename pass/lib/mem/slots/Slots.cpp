@@ -72,6 +72,7 @@
 #include "cq/Memory.h"
 #include "SlotsTest.h"
 
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -1955,10 +1956,35 @@ bool needsCopy(LoweringContext &ctx, FnState &st, const StoreInst &S, const Site
       for (const BasicBlock *s : successors(b))
         bw.push_back(s);
   }
+  // cq-kwmu (CR rules 2, 20): an in-place cq_theta of a name whose result (through further in-place
+  // cq_theta) is only stored back into S's own cell rotates the cell's rail, not another holder's (61's
+  // prep: *x = cq_theta(*x); if (y > k) *x = cq_theta(*x), which -O1 writes as cq_theta of the first
+  // result). Any other use of such a result is a read and is checked as a name.
+  std::function<bool(const Value *, unsigned)> inPlaceOnDest = [&](const Value *x, unsigned depth) {
+    if (depth > 16 || x->use_empty())
+      return false;
+    for (const User *w : x->users()) {
+      if (auto *X = dyn_cast<StoreInst>(w)) {
+        if (X->getValueOperand() != x || X->isVolatile() || X->isAtomic() ||
+            ctx.T.isFatPointer(X->getPointerOperand(), ctx.S) || !hasObject(ctx, X->getPointerOperand(), dest.o) ||
+            !sameCell(decompose(X->getPointerOperand(), DL), dest.a) ||
+            DL.getTypeStoreSize(x->getType()) != DL.getTypeStoreSize(v->getType()))
+          return false;
+        continue;
+      }
+      auto *c = dyn_cast<CallInst>(w);
+      if (!c || !c->getCalledFunction() || !c->getCalledFunction()->getName().starts_with("cq_theta_") ||
+          c->getArgOperand(0) != x || !inPlaceOnDest(c, depth + 1))
+        return false;
+    }
+    return true;
+  };
   for (const Value *n : names)
     for (const User *u : n->users()) {
       auto *U = dyn_cast<Instruction>(u);
       if (!U || U == &S || slotStoreOf(U, n))
+        continue;
+      if (auto *c = dyn_cast<CallInst>(U); c && sameRail(c, n) && inPlaceOnDest(c, 0))
         continue;
       const BasicBlock *ub = U->getParent();
       if (auto *phi = dyn_cast<PHINode>(U)) {
