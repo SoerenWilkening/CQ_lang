@@ -1222,9 +1222,11 @@ bool cellArms(LoweringContext &ctx, FnState &st, const Site &s, const Instructio
 }
 
 // Some instruction `hit` accepts is reached from S (not through S again) on a path on which no instruction
-// `kill` accepts comes first; kill applies only while the path has not re-executed an instruction of defs.
+// `kill` accepts comes first; kill applies only while the path has not re-executed an instruction of defs,
+// and hit is told whether it has (fresh: S's address values are still the ones S used).
 bool reachesUnkilled(const Instruction &S, const SmallPtrSetImpl<const Instruction *> &defs,
-                     function_ref<bool(const Instruction &)> kill, function_ref<bool(const Instruction &)> hit) {
+                     function_ref<bool(const Instruction &)> kill,
+                     function_ref<bool(const Instruction &, bool fresh)> hit) {
   SmallVector<std::tuple<const BasicBlock *, BasicBlock::const_iterator, bool>, 16> work;
   std::set<std::pair<const BasicBlock *, bool>> seen;
   work.push_back({S.getParent(), std::next(S.getIterator()), true});
@@ -1239,7 +1241,7 @@ bool reachesUnkilled(const Instruction &S, const SmallPtrSetImpl<const Instructi
       }
       if (defs.count(&X))
         fresh = false;
-      if (hit(X))
+      if (hit(X, fresh))
         return true;
       if (fresh && kill(X)) {
         stop = true;
@@ -1274,6 +1276,9 @@ bool measuredThroughMemory(LoweringContext &ctx, FnState &st, const Instruction 
                                              c->getCalledFunction()->getName().starts_with("cq_measure_"))
           return true;
         bool view = isa<FreezeInst>(u) || (isa<TruncInst>(u) && cast<TruncInst>(u)->getDestTy()->isIntegerTy(1));
+        // A cmpxchg's old value is its field 0 (rule 24, 94).
+        if (auto *ev = dyn_cast<ExtractValueInst>(u); ev && isa<AtomicCmpXchgInst>(x) && ev->getIndices()[0] == 0)
+          view = true;
         if (view && seen.insert(u).second)
           work.push_back(u);
       }
@@ -1303,10 +1308,12 @@ bool measuredThroughMemory(LoweringContext &ctx, FnState &st, const Instruction 
                                                : cast<AtomicCmpXchgInst>(X).getNewValOperand()->getType());
     return true;
   };
-  auto hit = [&](const Instruction &X) {
+  auto hit = [&](const Instruction &X, bool fresh) {
     Addr a;
     uint64_t n = 0;
-    if (!(isa<LoadInst>(X) || isa<AtomicRMWInst>(X)) || !mine(X, a, n) || differentCell(a, s.a, n, sz))
+    // cq-3gdk: once the path re-executed an index of S's address, "provably another cell" no longer holds
+    // (a[i - 1] in the next trip is this trip's a[i]).
+    if (!(isa<LoadInst>(X) || isRMW(&X)) || !mine(X, a, n) || (fresh && differentCell(a, s.a, n, sz)))
       return false;
     return measures(&X);
   };
@@ -2672,7 +2679,7 @@ SmallVector<Value *, 8> railsInObjectAt(LoweringContext &ctx, FnState &st, const
              storeBytes(DL, so->getValueOperand()->getType()) == sz &&
              sameCell(decompose(so->getPointerOperand(), DL), a.a);
     };
-    if (reachesUnkilled(*a.I, defs, kill, [&](const Instruction &X) { return &X == &I; }))
+    if (reachesUnkilled(*a.I, defs, kill, [&](const Instruction &X, bool) { return &X == &I; }))
       add(it->second.v);
   }
   for (auto &[X, cells] : st.callOut)
