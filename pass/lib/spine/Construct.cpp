@@ -870,16 +870,28 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
     Type *rty = rv->getType();
     bool fieldwise = false;
     unsigned nLeaves = 0;
-    if (rty->isAggregateType() || rty->isVectorTy()) {
+    SmallVector<unsigned, 4> pcuts = rty->isIntegerTy() ? spine::packedCuts(rv) : SmallVector<unsigned, 4>{};
+    if (pcuts.size() > 2 && C->getReturnType()->isStructTy()) {
+      nLeaves = pcuts.size() - 1;   // cq-0umd: a packed integer result's fields
+      fieldwise = true;
+    } else if (rty->isAggregateType() || rty->isVectorTy()) {
+      pcuts.clear();
       nLeaves = unsigned(ctx.T.fieldMask(rv, ctx.S).size());
       for (unsigned k = 0; k < nLeaves; ++k)
         fieldwise |= ctx.T.resultQuantum(ctx.S, k);
+    } else {
+      pcuts.clear();
     }
     if (fieldwise) {
       // CR §1.4: a literal struct of the result's leaves, handles where quantum; each quantum leaf is
       // copied out into a fresh rail (rule 18) like a scalar result.
       auto *st = dyn_cast<StructType>(C->getReturnType());
-      SmallVector<Operand, 4> leaves = aggr::flattenResult(ctx, rv);
+      SmallVector<Operand, 4> leaves = pcuts.size() > 2 ? spine::packFields(ctx, rv, pcuts) : aggr::flattenResult(ctx, rv);
+      auto leafTy = [&](unsigned k) -> Type * {
+        if (pcuts.size() > 2)
+          return IntegerType::get(ctx.M.getContext(), pcuts[k + 1] - pcuts[k]);
+        return rty->isVectorTy() ? cast<VectorType>(rty)->getElementType() : leafTypeAt(rty, k);
+      };
       if (!st || st->getNumElements() != leaves.size())
         internalError("spine: a clone's field-wise result type does not match its result's fields", ret);
       Value *agg = PoisonValue::get(st);
@@ -892,13 +904,12 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
           internalError("spine: a clone result field that is a rail where taint records it classical", ret);
         if (!o.handle && rq) {
           // A classical value on this path of a field taint records quantum: a seed rail holding it.
-          RailType w = railTypeOf(leafTypeAt(rty, k));
+          RailType w = railTypeOf(leafTy(k));
           CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {o.v});
           ctx.unc().setRole(ctx.unc().recordSeed(f), Role::Result);
           v = f;
         } else if (o.handle) {
-          RailType w = railTypeOf(rty->isVectorTy() ? cast<VectorType>(rty)->getElementType()
-                                                    : leafTypeAt(rty, k));
+          RailType w = railTypeOf(leafTy(k));
           CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
                                      {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
           RailId fid = ctx.unc().recordSeed(f);
@@ -1530,7 +1541,10 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
           size_t d = 0;
           for (unsigned j = 0; j < i; ++j) {
             Argument *Aj = F.getArg(j);
-            d += Aj->getType()->isPointerTy() ? T.pointerFormal(S, j).digits : T.fieldMask(Aj, S).size();
+            SmallVector<unsigned, 4> cj = Aj->getType()->isIntegerTy() ? spine::unpackCuts(Aj) : SmallVector<unsigned, 4>{};
+            d += Aj->getType()->isPointerTy() ? T.pointerFormal(S, j).digits
+                 : cj.size() > 2              ? cj.size() - 1
+                                              : T.fieldMask(Aj, S).size();
           }
           if (d + 2 > S.mask.size())
             internalError("spine: a triple formal past the clone's mask", A);
@@ -1547,6 +1561,33 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
       }
       SmallVector<bool, 4> fm = T.fieldMask(A, S);
       bool composite = A->getType()->isStructTy() || A->getType()->isArrayTy() || A->getType()->isVectorTy();
+      // cq-0umd (rule 26): an integer formal the callee unpacks is the coerced struct's fields, one
+      // parameter each, a handle where the mask's digit is 1.
+      if (SmallVector<unsigned, 4> cuts = A->getType()->isIntegerTy() ? spine::unpackCuts(A)
+                                                                       : SmallVector<unsigned, 4>{};
+          cuts.size() > 2) {
+        size_t d = 0;
+        for (unsigned j = 0; j < i; ++j) {
+          Argument *Aj = F.getArg(j);
+          SmallVector<unsigned, 4> cj = Aj->getType()->isIntegerTy() ? spine::unpackCuts(Aj) : SmallVector<unsigned, 4>{};
+          d += Aj->getType()->isPointerTy() ? T.pointerFormal(S, j).digits
+               : cj.size() > 2              ? cj.size() - 1
+                                            : T.fieldMask(Aj, S).size();
+        }
+        unsigned n = cuts.size() - 1;
+        if (d + n > S.mask.size() || p + n > C->arg_size())
+          internalError("spine: a packed formal past the clone's mask or parameters", A);
+        SmallVector<Operand, 4> ops;
+        for (unsigned k = 0; k < n; ++k) {
+          Argument *P = C->getArg(p++);
+          bool q = S.mask[d + k] == '1';
+          if (q)
+            ctx.unc().recordExternal(P, Role::UserRegister);
+          ops.push_back(Operand{P, q});
+        }
+        spine::bindPacked(ctx, A, cuts, ops);
+        continue;
+      }
       if (p + fm.size() > C->arg_size())
         internalError("spine: a clone with fewer parameters than its formals' fields", C);
       if (!composite) {

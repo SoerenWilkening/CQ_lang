@@ -60,6 +60,7 @@
 #include "cq/Predicate.h"
 #include "cq/Taint.h"
 #include "cq/Uncompute.h"
+#include "../spine/SpineInternal.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/ValueTracking.h"
@@ -177,6 +178,9 @@ struct FormalLayout {
   PtrAbi abi = PtrAbi::Raw;
   ObjClass pointee = ObjClass::Classical;
   unsigned digits = 0;
+  // cq-0umd (rule 26): an integer formal the callee unpacks into fields (159's coerced struct): one
+  // leaf per field at spine::unpackCuts, the digits the mask's.
+  SmallVector<unsigned, 4> cuts;
 };
 
 std::vector<FormalLayout> formalLayout(const TaintInfo &T, const Specialization &S, const Value *at) {
@@ -186,6 +190,16 @@ std::vector<FormalLayout> formalLayout(const TaintInfo &T, const Specialization 
     FormalLayout f;
     leafTypes(A.getType(), f.leaves, &A);
     f.q = T.fieldMask(&A, S);
+    if (A.getType()->isIntegerTy()) {
+      SmallVector<unsigned, 4> cuts = spine::unpackCuts(&A);
+      if (cuts.size() > 2) {
+        f.cuts = cuts;
+        f.leaves.clear();
+        for (unsigned k = 0; k + 1 < cuts.size(); ++k)
+          f.leaves.push_back(IntegerType::get(A.getContext(), cuts[k + 1] - cuts[k]));
+        f.q.assign(f.leaves.size(), false);   // set from the mask's digits below
+      }
+    }
     if (f.q.size() != f.leaves.size())
       internalError("calls: taint's field mask of a formal does not have one entry per scalar leaf", &A);
     f.pointer = A.getType()->isPointerTy();
@@ -258,6 +272,11 @@ std::vector<FormalLayout> formalLayout(const TaintInfo &T, const Specialization 
       d += f.digits;
       continue;
     }
+    if (f.cuts.size() > 2) {
+      for (unsigned k = 0; k < f.q.size(); ++k)
+        f.q[k] = m[d++] == '1';
+      continue;
+    }
     for (bool q : f.q)
       if ((m[d++] == '1') != q)
         internalError("calls: taint's mask and field mask of a formal disagree", at);
@@ -275,6 +294,8 @@ struct ResultLayout {
   // M2 (191): the clone's stores through Qram-pointee formals, one i32 handle each after the leaves.
   unsigned stores = 0;
   bool qramFormal = false;
+  // cq-0umd: an integer result packed from fields (159): its field boundaries (composite = true).
+  SmallVector<unsigned, 4> cuts;
   bool anyQ() const { return is_contained(q, true); }
 };
 
@@ -301,10 +322,24 @@ ResultLayout resultLayout(const TaintInfo &T, const Specialization &S, const Val
   }
   if (!isComposite(rt) && !scalarRailType(rt) && !(rt->isPointerTy() && !T.resultQuantum(S, 0)))
     unimplemented("calls: a clone with a pointer result (rule 21 fat-pointer result: fatptr)", at);
-  if (packedIntegerResult(*S.F))
-    unimplemented("calls: a clone whose integer result is packed from several fields (159, 166: cq-0umd)", at);
-  r.composite = isComposite(rt);
-  leafTypes(rt, r.leaves, at);
+  if (packedIntegerResult(*S.F)) {
+    if (!rt->isIntegerTy())
+      unimplemented("calls: a clone whose aggregate result has an integer field packed from several fields (166: cq-0umd)", at);
+    for (const BasicBlock &BB : *S.F)
+      if (auto *RI = dyn_cast<ReturnInst>(BB.getTerminator())) {
+        SmallVector<unsigned, 4> c = spine::packedCuts(RI->getReturnValue());
+        if (!r.cuts.empty() && c != r.cuts)
+          unimplemented("calls: a clone whose returns pack its integer result at different fields", at);
+        r.cuts = c;
+      }
+  }
+  r.composite = isComposite(rt) || r.cuts.size() > 2;
+  if (r.cuts.size() > 2) {
+    for (unsigned k = 0; k + 1 < r.cuts.size(); ++k)
+      r.leaves.push_back(IntegerType::get(rt->getContext(), r.cuts[k + 1] - r.cuts[k]));
+  } else {
+    leafTypes(rt, r.leaves, at);
+  }
   for (unsigned k = 0; k < r.leaves.size(); ++k) {
     r.q.push_back(T.resultQuantum(S, k));
     if (r.q.back() && !scalarRailType(r.leaves[k]))
@@ -582,7 +617,9 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
       continue;
     }
     SmallVector<Operand, 4> leaves;
-    if (isComposite(a->getType()))
+    if (fs[i].cuts.size() > 2)
+      leaves = spine::packFields(ctx, a, fs[i].cuts);   // cq-0umd: the coerced struct's fields
+    else if (isComposite(a->getType()))
       leaves = aggr::flattenResult(ctx, a);
     else
       leaves.push_back(ctx.operand(a));
@@ -648,6 +685,8 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
 void bindFieldwiseResult(LoweringContext &ctx, CallBase &CB, CallInst *call, const ResultLayout &res,
                          ArrayRef<Value *> slotOuts = {}, ArrayRef<Operand> extra = {}) {
   SmallVector<bool, 4> tq = ctx.T.fieldMask(&CB, ctx.S);
+  if (res.cuts.size() > 2)
+    tq = res.q;   // cq-0umd: a packed integer result's fields are the callee's (resultQuantum)
   if (tq.size() != res.q.size() || !std::equal(tq.begin(), tq.end(), res.q.begin()))
     internalError("calls: the clone's result fields and taint's field mask of the call disagree", &CB);
   SmallVector<Operand, 4> ops;
