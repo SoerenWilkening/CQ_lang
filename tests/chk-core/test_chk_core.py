@@ -294,6 +294,22 @@ class ShotReset(unittest.TestCase):
         finally:
             run.STEP_BUDGET = saved
 
+    def test_runner_dying_at_startup_is_no_shot(self):
+        """cq-9a9i (speed review h2, owner 2026-11-01: a permanent rejection test): the per-thread trace
+        file is reused across batches; a runner that dies before core.c opens it (here /usr/bin/false)
+        must read as no shots, never as the previous batch's passing sample left in the file."""
+        w = run._work_dir()
+        (w / "trace.jsonl").write_text("".join(json.dumps(e) + "\n" for e in (
+            {"ev": "shot", "k": 0},
+            {"ev": "ret", "v": "0x7", "w": "i64", "call": 0, "fn": "f"},
+            {"ev": "exit", "live": []},
+            {"ev": "shot_end", "k": 0, "code": 0, "timeout": 0, "stdout": "", "stderr": "", "freed": 0,
+             "fdig": "0xcbf29ce484222325"})))
+        res = run._run_part("/usr/bin/false", [({"call": 0, "args": []}, "rec\n", None)], "ours", 5.0)
+        self.assertEqual(len(res), 1)
+        self.assertEqual(res[0].outputs["ret"], [], "the previous batch's ret was read back")
+        self.assertIn("runner", [v["what"] for v in res[0].violations])
+
     def test_timeout_ends_one_sample_only(self):
         """A sample that never returns (mode 6) is a timeout, by the step budget (cq-o4ul); the samples
         around it are clean."""
