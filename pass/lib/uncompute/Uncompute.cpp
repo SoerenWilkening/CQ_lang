@@ -277,6 +277,8 @@ struct Uncompute::Impl {
     SmallVector<Operand, 3> ops;
     SmallVector<RailId, 3> reads;
     Function *via = nullptr;   // U8: the clean-up is the call via(ops..., old) (inverse unused)
+    std::string unbuilt;                    // cq-p8r6: placed only to stop (cleanupUnbuilt)
+    const Instruction *unbuiltAt = nullptr;
   };
   struct Rail {
     Value *handle = nullptr;
@@ -1821,6 +1823,8 @@ struct Uncompute::Impl {
       }
       return track(B.CreateCall(uncOf(fwd, false), argsOf(fwd, nullptr)));
     }
+    if (r.cleanup && !r.cleanup->unbuilt.empty())
+      unimplemented(r.cleanup->unbuilt, r.cleanup->unbuiltAt);
     if (r.cleanup && r.cleanup->via) {
       // U8 (cq-xivx): via(ops..., old) zeroes old; free old.
       SmallVector<Value *, 6> args;
@@ -3381,6 +3385,20 @@ void Uncompute::cleanupByCall(RailId oldRail, Function *inv, ArrayRef<Operand> a
   Impl::Rail &x = impl->rails[oldRail];
   x.cleanup->via = inv;
   x.cleanup->ops.assign(args.begin(), args.end());
+}
+
+void Uncompute::cleanupUnbuilt(RailId oldRail, const std::string &what, const Instruction *at,
+                               ArrayRef<Value *> alsoReads) {
+  if (what.empty())
+    internalError("uncompute: cleanupUnbuilt without a description", at);
+  if (impl->isMerge(oldRail))
+    unimplemented(what + " (the old content a merged handle)", at);
+  SmallVector<Operand, 4> ops;
+  for (Value *v : alsoReads)
+    ops.push_back(Operand{v, true});
+  cleanupBijective(oldRail, abi::TemplateSpec{}, ops);
+  impl->rails[oldRail].cleanup->unbuilt = what;
+  impl->rails[oldRail].cleanup->unbuiltAt = at;
 }
 
 void Uncompute::flushBefore(Instruction *point) { flushBefore(point, nullptr); }

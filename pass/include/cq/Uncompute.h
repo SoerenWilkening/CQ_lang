@@ -92,6 +92,12 @@ public:
   // alsoReads are the clean-up's reads (as cleanupBijective's operands: placement, barriers, pruning).
   void cleanupByCall(RailId oldRail, llvm::Function *inv, llvm::ArrayRef<Operand> args,
                      llvm::ArrayRef<llvm::Value *> alsoReads);
+  // cq-p8r6 (CR rules 6, 18): a dead old cell rail a clone call overwrote whose clean-up (_inv<c>) is not
+  // built for its shape. Registered as cleanupByCall would be (same reads, so pruned exactly when the call's
+  // twin runs and restores the cell); a clean-up that survives to be placed stops with
+  // unimplemented(what, at) instead of keeping the old rail silently.
+  void cleanupUnbuilt(RailId oldRail, const std::string &what, const llvm::Instruction *at,
+                      llvm::ArrayRef<llvm::Value *> alsoReads);
   void flushBefore(llvm::Instruction *point);       // due _unc + cqrt_free, reverse dependency order
   // U7 (cq-nqa6, CR rules 5, 8, 9): flushBefore, and also, before P, the item of each arm-local rail (defined
   // in a block that does not dominate P, every use and reader item before P, every path from its block

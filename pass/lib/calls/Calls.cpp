@@ -1552,16 +1552,19 @@ bool chainInvertible(const Specialization &S, const InvChain &ch, const std::vec
 // h is the caller's register, not measured, every original reader of a value bound to h precedes the call,
 // and the only store of it is into the very cell the call overwrites. The object is a local whose address
 // reaches only loads, stores into it, constant GEPs, lifetime markers and this call.
-bool oldDeadAfter(LoweringContext &ctx, CallBase &CB, Value *h, const Value *actual, int64_t cellOff) {
+// cq-p8r6: Dead::Unknown where the narrow test cannot decide (a root that is not a local, an address that
+// reaches other users, a copy stored elsewhere) although no reader of h follows the call: its caller stops
+// loudly unless the call's twin restores the cell (Uncompute::cleanupUnbuilt).
+enum class Dead { No, Yes, Unknown };
+Dead oldDeadAfter(LoweringContext &ctx, CallBase &CB, Value *h, const Value *actual, std::optional<int64_t> cellOff) {
   spine::Shared &sh = spine::shared(ctx);
   std::optional<Role> role = ctx.unc().liveRole(ctx.unc().idOf(h));
   if (!role || *role != Role::UserRegister || sh.measured.count(h))
-    return false;
+    return Dead::No;
   const DataLayout &DL = ctx.M.getDataLayout();
   auto [root, aoff] = baseOffset(actual, DL);
-  if (!isa<AllocaInst>(root))
-    return false;
-  int64_t target = aoff + cellOff;
+  bool unknown = !isa<AllocaInst>(root) || !cellOff;
+  int64_t target = aoff + cellOff.value_or(0);
   DominatorTree &DT = sh.dt(*CB.getFunction());
   SmallPtrSet<const Value *, 8> A;
   for (auto &[w, ops] : sh.binds)
@@ -1576,16 +1579,18 @@ bool oldDeadAfter(LoweringContext &ctx, CallBase &CB, Value *h, const Value *act
     for (const Use *U : uses) {
       auto *ui = dyn_cast<Instruction>(U->getUser());
       if (!ui || ui->getFunction() != CB.getFunction() || ui == &CB || !DT.dominates(ui, &CB))
-        return false;
+        return Dead::No;
       if (isa<ReturnInst>(ui) || isa<PHINode>(ui))
-        return false;
+        return Dead::No;
       if (auto *st = dyn_cast<StoreInst>(ui)) {
         auto [b, o] = baseOffset(st->getPointerOperand(), DL);
         if (st->getValueOperand() != w || b != root || o != target)
-          return false;
+          unknown = true;
       }
     }
   }
+  if (unknown)
+    return Dead::Unknown;
   // The object's address: no copy of the rail elsewhere through memory.
   SmallVector<const Value *, 8> ptrs{root};
   SmallPtrSet<const Value *, 8> seen;
@@ -1606,10 +1611,10 @@ bool oldDeadAfter(LoweringContext &ctx, CallBase &CB, Value *h, const Value *act
         continue;
       if (u == &CB)
         continue;
-      return false;
+      return Dead::Unknown;
     }
   }
-  return true;
+  return Dead::Yes;
 }
 
 // After the clone call r (phase 2: recordCall made), the _inv<c> clean-up of every dead old cell rail.
@@ -1632,17 +1637,41 @@ void cleanDeadCells(LoweringContext &ctx, CallBase &CB, const Specialization &S,
       const Operand &old = r.extra[k];
       if (!old.handle || !isa<Instruction>(old.v))
         continue;
-      if (fs[i].abi != PtrAbi::Raw)
-        continue;   // a triple formal (107's idx half): the twin's, not built here
+      // cq-p8r6: the reads of this cell's clean-up: the call's results, the cell's new content, the call
+      // group's leader (its twin reads the old rail, so the clean-up is pruned when the twin runs).
+      SmallVector<Value *, 4> reads(outs.begin(), outs.end());
+      reads.push_back(r.slotOuts[k]);
+      if (outs.empty() && r.slotOuts[0] != r.slotOuts[k])
+        reads.push_back(r.slotOuts[0]);
+      // cq-p8r6 (CR rules 6, 18): a possibly dead old rail of a shape the _inv<c> kind is not built for: no
+      // silent keep; a stop unless the call's twin restores the cell.
+      auto unbuilt = [&](std::optional<int64_t> off, const char *shape) {
+        if (oldDeadAfter(ctx, CB, old.v, CB.getArgOperand(i), off) == Dead::No)
+          return;
+        ctx.unc().cleanupUnbuilt(ctx.unc().idOf(old.v),
+                                 std::string("calls: _inv<c> (CR §1.4, rule 18): the dead old content of a caller "
+                                             "cell a clone overwrote, ") +
+                                     shape + " (no twin restores it)",
+                                 &CB, reads);
+      };
+      if (fs[i].abi != PtrAbi::Raw) {
+        unbuilt(std::nullopt, "through a triple (fat-pointer) formal");   // 107's idx half: the twin restores it
+        continue;
+      }
       // The caller's cell: a scalar or an array of scalars local (records and other objects: not built here).
       auto *AI = dyn_cast<AllocaInst>(getUnderlyingObject(CB.getArgOperand(i)));
       Type *et = AI ? AI->getAllocatedType() : nullptr;
       while (et && et->isArrayTy())
         et = et->getArrayElementType();
-      if (!et || !(et->isIntegerTy() || et->isFloatingPointTy()))
+      if (!et || !(et->isIntegerTy() || et->isFloatingPointTy())) {
+        unbuilt(std::nullopt, "in a record, heap block or other object that is not a local scalar or array");
         continue;
+      }
       uint64_t cellBytes = ctx.M.getDataLayout().getTypeStoreSize(et);
-      if (!oldDeadAfter(ctx, CB, old.v, CB.getArgOperand(i), int64_t(c * cellBytes)))
+      Dead dead = oldDeadAfter(ctx, CB, old.v, CB.getArgOperand(i), int64_t(c * cellBytes));
+      if (dead == Dead::Unknown)
+        unbuilt(int64_t(c * cellBytes), "of an object whose address or old content reaches other users");
+      if (dead != Dead::Yes)
         continue;
       std::optional<InvChain> ch = invChainOf(S, i, c, fs, CB);
       if (!ch || !chainInvertible(S, *ch, fs))
@@ -1690,10 +1719,6 @@ void cleanDeadCells(LoweringContext &ctx, CallBase &CB, const Specialization &S,
                         &X);
       }
       Function *G = materializeInv(ctx.M, S, r.call->getCalledFunction(), k, i, c, *ch, fs, CB);
-      SmallVector<Value *, 4> reads(outs.begin(), outs.end());
-      reads.push_back(r.slotOuts[k]);
-      if (outs.empty() && r.slotOuts[0] != r.slotOuts[k])
-        reads.push_back(r.slotOuts[0]);   // the call group's leader: its twin reads the old rail
       ctx.unc().cleanupByCall(ctx.unc().idOf(old.v), G, r.ops, reads);
     }
   }
