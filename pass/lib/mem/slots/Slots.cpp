@@ -756,6 +756,16 @@ bool mayWrite(LoweringContext &ctx, const ObjInfo &info, ObjectId o, const Instr
           if (!differentCell(w, cell, cellSizeAt(info, w.off, DL), size))
             return true;
         }
+        // cq-nyto (1): a clone rotating the cell in place (T3 cellsRotated) changes its rail's state though
+        // not its handle: a later read does not forward the handle stored before the call (rule 2's
+        // classical re-read would see a seed's or a measured rail's old value). The read is a run-time read
+        // of the cell (the object is dynamic: its cells are registers, 124's r).
+        for (unsigned c : ctx.T.cellsRotated(*S, i)) {
+          Addr w = pa;
+          w.off += cellOffset(info, c);
+          if (!differentCell(w, cell, cellSizeAt(info, w.off, DL), size))
+            return true;
+        }
       }
       return false;
     }
@@ -2612,53 +2622,6 @@ SmallVector<Operand, 8> readSlotCells(LoweringContext &ctx, const Value *ptr, Ty
                     &at);
     out.push_back(readCell(ctx, st, c, at, cellTy));
   }
-  // cq-nyto (1): a clone call rotating a caller cell in place (T3 cellsRotated; calls reads the cell here
-  // as of the call) is built when the cell holds a quantum rail (124). A cell whose content at the call
-  // is classical, a seed rail (a classical value's, rule 7) or a rail already measured there would be
-  // read back after the call as that classical value (rule 2's classical re-read; the seed freed before
-  // the call): unimplemented until the rotation makes the rail opaque to that re-read.
-  if (auto *CB = dyn_cast<CallBase>(&at))
-    if (const Specialization *S = cloneCallee(ctx, *CB))
-      for (unsigned i = 0; i < CB->arg_size(); ++i) {
-        if (!CB->getArgOperand(i)->getType()->isPointerTy() || !hasObject(ctx, CB->getArgOperand(i), s.o))
-          continue;
-        SmallVector<unsigned, 4> rot = ctx.T.cellsRotated(*S, i);
-        if (rot.empty())
-          continue;
-        Addr pa = decompose(CB->getArgOperand(i), ctx.M.getDataLayout());
-        if (!pa.ok || !pa.terms.empty() || pa.root != s.a.root || s.info->cellBytes == 0 ||
-            (pa.off - s.a.off) % int64_t(s.info->cellBytes))
-          unimplemented("mem-slots: a clone rotating a caller cell handed over at a pointer that is not a constant "
-                        "cell offset (cq-nyto)",
-                        &at);
-        int64_t base = (pa.off - s.a.off) / int64_t(s.info->cellBytes);
-        for (unsigned c : rot) {
-          int64_t k = base + int64_t(c);
-          if (k < 0 || uint64_t(k) >= out.size())
-            continue;
-          const Operand &o = out[size_t(k)];
-          bool classical = !o.handle;
-          if (auto *a = dyn_cast<CallInst>(o.v); o.handle && a && a->getCalledFunction() &&
-                                                    a->getCalledFunction()->getName().starts_with("cqrt_alloc_")) {
-            classical = true;   // a seed, unless a rotation or a copy (of a quantum rail) wrote it
-            for (const User *u : a->users())
-              if (auto *w = dyn_cast<CallInst>(u); w && w->getCalledFunction())
-                if (auto spec = abi::parseCore(w->getCalledFunction()->getName()))
-                  if (spec->op == abi::Core::Ry || spec->op == abi::Core::RyQAngle || spec->op == abi::Core::Copy)
-                    classical = false;
-          }
-          if (o.handle)
-            for (const User *u : o.v->users())
-              if (auto *m = dyn_cast<CallInst>(u); m && m->getCalledFunction() &&
-                                                   m->getCalledFunction()->getName().starts_with("cqrt_measure"))
-                classical = true;
-          if (classical)
-            unimplemented("mem-slots: a clone rotating a caller cell in place whose content at the call is classical "
-                          "(a classical value, its seed or a measured rail; rule 2 would re-read it classically "
-                          "after the call: cq-nyto)",
-                          &at);
-        }
-      }
   return out;
 }
 

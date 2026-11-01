@@ -63,4 +63,7 @@ attributes #5 = { nounwind }
 !7 = !{!"int", !8, i64 0}
 !8 = !{!"omnipotent char", !9, i64 0}
 !9 = !{!"Simple C/C++ TBAA"}
-; EXPECT-ERROR: mem-slots: a clone rotating a caller cell in place whose content at the call is classical
+; CHECK clone_rotate_classical_cell: call fastcc void @__cq_q_step_1100(ptr %{{p}}
+; CHECK clone_rotate_classical_cell: %{{r}} = load i32, ptr %{{p}}, align 4
+; CHECK-COUNT clone_rotate_classical_cell: call i32 @cqrt_measure_i32( 2
+; CHECK-COUNT clone_rotate_classical_cell: call void @cqrt_free( 0
