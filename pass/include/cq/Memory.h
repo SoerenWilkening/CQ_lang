@@ -65,4 +65,11 @@ llvm::SmallVector<llvm::Value *, 2> emitCalleeQramStores(LoweringContext &);
 // idx plus the store's constant offset in the clone.
 void noteCalleeQramStores(LoweringContext &, const llvm::CallBase &orig, const Specialization &callee,
                           llvm::CallInst *fwd, llvm::ArrayRef<llvm::Value *> storedRails);
+// Q1 (cq-arch 2026-11-01, CR rules 19, 20, 21; 97). mem-qrom, consumer calls lowerIndirect: a function pointer
+// loaded at a quantum index from a constant table is a QROM over the derived table <global>.cqtag of callee tags;
+// lowerQromLoad binds the load to the i32 tag rail. qromCallees: the distinct functions the QROM's cells hold, with
+// their tags, ascending by tag (null cells excluded); empty when fp is not such a load. calleeTag: 1 + F's position
+// among the module's address-taken functions in module order (the pass's __cq_ clones excluded); 0 is null.
+llvm::SmallVector<std::pair<llvm::Function *, unsigned>, 4> qromCallees(LoweringContext &, const llvm::Value *fp);
+unsigned calleeTag(const llvm::Module &, const llvm::Function &);
 }
