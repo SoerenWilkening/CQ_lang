@@ -26,6 +26,10 @@ TWIN_ALIAS = ("cq: unimplemented: uncompute: a clone call whose twin may read a 
               "another route than the writing pointer")
 # (probe, entry, opt flags, expectation, regexes the lowered module must contain)
 CASES = [
+    # cq-pgen (109's put, T5 cellForward): a clone storing a formal's handle unchanged into a caller cell: no
+    # copy-out, no twin; once and in a classically bounded loop over a VLA.
+    ("forward_cell", "fwd_once", [], "pass", [r"define internal fastcc void @__cq_q_put_01\(ptr %0, i32 %1\) \{\n  store i32 %1, ptr %0"]),
+    ("forward_cell", "fwd_loop", [], "pass", [r"define internal fastcc void @__cq_q_put2_01\(ptr %0, i32 %1\) \{\n  store i32 %1, ptr %0"]),
     # cq-prvy (95): a variadic clone per call-site arity; its save area holds the actuals' handles.
     ("varargs", "vprobe", [], "pass", [r"call i32 @__cq_q_pick_001\(i32 poison, i32 %\d+, i32 %\d+\)"]),
     # cq-5xde: a quantum-depth recursion is cut only under a proved depth bound B <= the cut level.

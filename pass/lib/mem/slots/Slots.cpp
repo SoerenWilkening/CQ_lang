@@ -484,6 +484,23 @@ SmallVector<unsigned, 4> cellsWrittenBy(LoweringContext &ctx, const Specializati
   return ctx.T.cellsWritten(S, argNo);
 }
 
+// T5 (109): cell c of formal argNo is filled by the clone with formal j's handle unchanged (cellForward):
+// j, else -1.
+int forwardedFrom(LoweringContext &ctx, const Specialization &S, unsigned argNo, unsigned c) {
+  if (detail::cellsWrittenOverride())
+    return -1;
+  return ctx.T.cellForward(S, argNo, c);
+}
+
+// The cells of formal argNo the clone fills with a rail it mints (its slot results, undone by the twin).
+SmallVector<unsigned, 4> cellsMintedBy(LoweringContext &ctx, const Specialization &S, unsigned argNo) {
+  SmallVector<unsigned, 4> out;
+  for (unsigned c : cellsWrittenBy(ctx, S, argNo))
+    if (forwardedFrom(ctx, S, argNo, c) < 0)
+      out.push_back(c);
+  return out;
+}
+
 // The callee's formal A is never captured: its value reaches only addresses of loads, stores, atomics and
 // memory intrinsics (through GEPs, casts, phis and selects), compares, and formals of callees that capture
 // nothing either (-O1 leaves `nocapture` off some internal callees: 51's split).
@@ -2366,6 +2383,15 @@ void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &
       break;
     case RootKind::Param:
       if (!ctx.S.isEntry()) {
+        // T5 (109's put): the clone stores a formal's handle unchanged into the caller's cell (taint's
+        // cellForward): the cell holds the caller's own rail after the call; no copy-out, no twin for it.
+        if (auto *PA = dyn_cast<Argument>(s.a.root); PA && s.a.terms.empty() && s.a.off >= 0) {
+          uint64_t sz = storeBytes(ctx.M.getDataLayout(), ty);
+          int j = ctx.T.cellForward(ctx.S, PA->getArgNo(), unsigned(uint64_t(s.a.off) / sz));
+          auto *SI = dyn_cast<StoreInst>(&I);
+          if (j >= 0 && SI && SI->getValueOperand() == ctx.S.F->getArg(unsigned(j)))
+            break;
+        }
         // M1 clone side (CR rule 18, cq-arch T2 + M1): a handle stored into a caller's cell is a slot
         // result: the rule-18 copy-out (alloc 0, copy, the copy's handle into the cell, Role::Result). The
         // caller loads it after the call and frees it after the twin, which finalize aims at it and which
@@ -3294,6 +3320,8 @@ SmallVector<Value *, 4> slotCellsBeforeCall(LoweringContext &ctx, const CallBase
   SmallVector<Value *, 4> out;
   Type *i32 = handleTy(ctx.M.getContext());
   for (unsigned c : ca.cells) {
+    if (forwardedFrom(ctx, *ca.S, argNo, c) >= 0)
+      continue;   // T5: no slot result, so no old content for a twin
     Site cs = cellSite(ca, c);
     Type *ty = cs.info->record ? cs.info->fields[c].ty : cs.info->cellTy;
     if (!sourceOf(ctx, st, *cs.info, cs.o, &orig, cs.a, ty) && !anyWriteReaches(ctx, st, cs, orig)) {
@@ -3329,10 +3357,12 @@ SmallVector<Value *, 4> slotCellsAfterCall(LoweringContext &ctx, const CallBase 
   unsigned formals = argMap.empty() ? orig.arg_size() : argMap.size();
   for (unsigned i = 0; i < formals; ++i)
     if (orig.getArgOperand(siteOperand(orig, i, argMap))->getType()->isPointerTy() &&
-        !cellsWrittenBy(ctx, *ca.S, i).empty())
+        !cellsMintedBy(ctx, *ca.S, i).empty())
       twin = true;
   SmallVector<Value *, 4> old;
   for (unsigned c : ca.cells) {
+    if (forwardedFrom(ctx, *ca.S, argNo, c) >= 0)
+      continue;
     Site cs = cellSite(ca, c);
     Type *cty = cs.info->record ? cs.info->fields[c].ty : cs.info->cellTy;
     if (const Instruction *src = sourceOf(ctx, st, *cs.info, cs.o, &orig, cs.a, cty)) {
@@ -3357,6 +3387,19 @@ SmallVector<Value *, 4> slotCellsAfterCall(LoweringContext &ctx, const CallBase 
   IRBuilder<> &B = ctx.B();
   for (unsigned c : ca.cells) {
     Site cs = cellSite(ca, c);
+    if (int j = forwardedFrom(ctx, *ca.S, argNo, c); j >= 0) {
+      // T5 (109): the cell now holds the caller's rail the call passed as formal j.
+      const Value *act = orig.getArgOperand(siteOperand(orig, unsigned(j), argMap));
+      Operand h = ctx.operand(act);
+      if (!h.handle)
+        internalError("mem-slots: a forwarded cell's formal passed a classical value", &orig);
+      if (!act->hasOneUse())
+        unimplemented("mem-slots: a rail a clone forwards into a caller cell that the caller also reads after the "
+                      "call (two holders of one rail: cq-dr4o)",
+                      &orig);
+      st.callOut[&orig][cs.a.off] = h;
+      continue;
+    }
     LoadInst *h = B.CreateAlignedLoad(handleTy(ctx.M.getContext()), cellPointer(ctx, cs, orig), Align(4));
     st.callOut[&orig][cs.a.off] = Operand{h, true};
     out.push_back(h);

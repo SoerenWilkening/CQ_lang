@@ -4226,6 +4226,55 @@ llvm::SmallVector<unsigned, 4> TaintInfo::cellsWritten(const Specialization &S, 
   return formalCells(needImpl(impl), *this, S, argNo, false);
 }
 
+// T5 (109): see Taint.h. Structural over the clone's body; the narrow shape only.
+int TaintInfo::cellForward(const Specialization &S, unsigned argNo, unsigned cell) const {
+  const ImplState &I = needImpl(impl);
+  SpecState *SS = stateOf(I, S);
+  llvm::Function *F = SS->F;
+  if (S.ctl || S.adj || F->isDeclaration() || argNo >= F->arg_size() ||
+      !F->getArg(argNo)->getType()->isPointerTy())
+    return -1;
+  const llvm::Argument *A = F->getArg(argNo);
+  const llvm::DataLayout &DL = F->getDataLayout();
+  const llvm::StoreInst *only = nullptr;
+  int64_t onlyOff = 0;
+  // Every use of A: a store through A (or a constant GEP of it, used only by stores and loads), or a load.
+  SmallVector<std::pair<const llvm::Value *, int64_t>, 4> ptrs{{A, 0}};
+  for (unsigned k = 0; k < ptrs.size(); ++k) {
+    auto [P, off] = ptrs[k];
+    for (const llvm::User *U : P->users()) {
+      if (auto *L = dyn_cast<llvm::LoadInst>(U); L && L->getPointerOperand() == P && L->isSimple())
+        continue;
+      if (auto *St = dyn_cast<llvm::StoreInst>(U); St && St->getPointerOperand() == P && St->isSimple() &&
+                                                    St->getValueOperand() != P) {
+        if (only)
+          return -1;
+        only = St;
+        onlyOff = off;
+        continue;
+      }
+      if (auto *G = dyn_cast<llvm::GetElementPtrInst>(U); G && G->getPointerOperand() == P) {
+        llvm::APInt o(64, 0);
+        if (!G->accumulateConstantOffset(DL, o))
+          return -1;
+        ptrs.push_back({G, off + o.getSExtValue()});
+        continue;
+      }
+      return -1;
+    }
+  }
+  if (!only || only->getParent() != &F->getEntryBlock())
+    return -1;
+  auto *J = dyn_cast<llvm::Argument>(only->getValueOperand());
+  if (!J || J->getParent() != F || J->getArgNo() == argNo || !J->hasOneUse() ||
+      !(J->getType()->isIntegerTy() || J->getType()->isFloatingPointTy()) || !isQuantum(J, S))
+    return -1;
+  uint64_t size = DL.getTypeStoreSize(J->getType()).getFixedValue();
+  if (onlyOff < 0 || onlyOff % int64_t(size) != 0 || uint64_t(onlyOff) / size != cell)
+    return -1;
+  return int(J->getArgNo());
+}
+
 // T3 (cq-arch 2026-11-01; CR rules 5, 18, 20): the cells of the object formal argNo points to that the
 // clone S may apply a non-diagonal gate to: a store back of cq_theta(load of the same cell) through the
 // formal (constant offsets from it), the rotation in place of the rail the cell holds. The same walk and

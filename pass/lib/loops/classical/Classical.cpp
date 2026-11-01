@@ -635,8 +635,10 @@ bool Unit::twinOf(const CallBase &CB) const {
   if (!CB.getType()->isVoidTy() && is_contained(ctx.T.fieldMask(&CB, ctx.S), true))
     return true;
   for (unsigned i = 0; i < CB.arg_size(); ++i)
-    if (CB.getArgOperand(i)->getType()->isPointerTy() && !ctx.T.cellsWritten(*S, i).empty())
-      return true;
+    if (CB.getArgOperand(i)->getType()->isPointerTy())
+      for (unsigned c : ctx.T.cellsWritten(*S, i))
+        if (ctx.T.cellForward(*S, i, c) < 0)
+          return true;   // a minted slot result (T5: a forwarded formal's handle is none)
   return false;
 }
 

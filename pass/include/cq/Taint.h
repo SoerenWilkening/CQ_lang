@@ -51,6 +51,12 @@ public:
   // (cq_theta through the formal or a pointer derived from it); empty for a non-pointer formal.
   // Unimplemented: a variable offset, accesses of several sizes, an escape of the formal.
   llvm::SmallVector<unsigned, 4> cellsRotated(const Specialization &callee, unsigned argNo) const;
+  // T5 (A-taint 2026-11-01, CR rules 18, 20; 109's put): the formal j whose handle the clone `callee` stores
+  // UNCHANGED into cell `cell` (as cellsWritten counts it) of the object argNo points to, or -1. Exactly:
+  // the clone's only write through argNo is one store, in its entry block, of formal j (a quantum scalar
+  // whose only use is that store) at a constant offset from argNo; not a _ctl or _adj clone. The cell then
+  // holds the caller's own rail after the call: no copy-out in the clone, no twin for it in the caller.
+  int cellForward(const Specialization &callee, unsigned argNo, unsigned cell) const;
   // T4: pointer formal argNo of clone `callee` (non-pointer formal: internal error; pointee objects of
   // mixed class: unimplemented).
   PtrFormal pointerFormal(const Specialization &callee, unsigned argNo) const;
