@@ -452,6 +452,7 @@ public:
     std::vector<const cq::Specialization *> specs;
     DominatorTree DT;
     PostDominatorTree PDT;
+    LoopInfo LI;
     DenseMap<const Value *, Value *> sh;
     SmallPtrSet<const Instruction *, 32> orig;  // the function as clang wrote it: taint knows only these
     Type *I32;
@@ -464,7 +465,7 @@ public:
     SmallPtrSet<const Value *, 32> extra;
 
     Shadow(Instrumenter &In, Function &F, const cq::TaintInfo &T, const DenseSet<const Function *> &rc)
-        : In(In), F(F), T(T), DT(F), PDT(F), retCarried(rc) {
+        : In(In), F(F), T(T), DT(F), PDT(F), LI(DT), retCarried(rc) {
       I32 = In.I32;
       for (const cq::Specialization &S : T.specializations())
         if (S.F == &F)
@@ -680,6 +681,10 @@ public:
           unimplemented("rule 2 shadows: a multi-way terminator other than br/switch", Term);
         return nullptr;
       }
+      if (!q(c) && exitLoop(c, Term))
+        unimplemented("rule 2 shadows: a branch after a quantum-exit loop on a classical value of the loop "
+                      "(an exit read, CR rule 14)",
+                      Term);
       return q(c) ? c : nullptr;
     }
 
@@ -940,8 +945,85 @@ public:
 
     uint64_t bytes(Type *T) { return In.DL.getTypeStoreSize(T).getFixedValue(); }
 
+    // Exit reads (CR rule 14 f981c89, cq-rmaf, cq-4asj). Taint (Analyzer::exitRead) makes a value V
+    // defined in a loop whose exit is quantum quantum to every reader outside that loop (neither V
+    // nor the reader a pointer), also where V itself is classical in the loop (an affine induction:
+    // its exit value is the carried rail the circuit builds for the read). The quantum-exit loops are
+    // the pass's own rule-14 classification (loops::classify, which the trip caps use too): any
+    // specialization in which the loop is not ClassicalBound. Such a read of a V that carries no
+    // shadow of its own reads a node over the quantum conditions of those loops' terminators (as a
+    // merge under a quantum condition; SH_OPAQUE where none is available, never classical). One node
+    // per V serves every read it dominates, so a measured exit value is classical to later reads.
+    DenseMap<const Loop *, bool> qexitMemo;
+    bool quantumExit(const Loop *Lp) {
+      auto [it, fresh] = qexitMemo.try_emplace(Lp, false);
+      if (fresh)
+        for (const cq::Specialization *S : specs)
+          if (cq::loops::classify(*Lp, T, *S) != cq::loops::Case::ClassicalBound) {
+            it->second = true;
+            break;
+          }
+      return it->second;
+    }
+    DenseMap<const Value *, std::vector<std::pair<Instruction *, Value *>>> exitNodes;
+    // the outermost quantum-exit loop U reads V's exit value of (nullptr: no exit read, or V is carried)
+    const Loop *exitLoop(const Value *V, const Instruction *U) {
+      auto *J = dyn_cast<Instruction>(V);
+      if (!J || !orig.count(J) || carried(J) || J->getFunction() != &F || V->getType()->isPointerTy() ||
+          U->getType()->isPointerTy())
+        return nullptr;
+      const Loop *outer = nullptr;
+      for (const Loop *Lp = LI.getLoopFor(J->getParent()); Lp; Lp = Lp->getParentLoop())
+        if (!Lp->contains(U) && quantumExit(Lp))
+          outer = Lp;
+      return outer;
+    }
+    Value *exitRead(Value *V, Instruction *U, IRBuilder<> &B) {
+      const Loop *outer = exitLoop(V, U);
+      if (!outer)
+        return nullptr;
+      auto &known = exitNodes[V];
+      for (auto &[at, n] : known)
+        if (DT.dominates(at, U))
+          return n;
+      std::vector<Value *> deps;
+      for (BasicBlock *X : outer->blocks())
+        if (Value *c = quantumCond(X))
+          deps.push_back(availAt(c, U));
+      if (deps.empty())
+        deps.push_back(opaque());
+      Value *n = node(B, deps);
+      if (isZero(n))
+        return nullptr;
+      known.push_back({U, n});
+      return n;
+    }
+
     void visit(Instruction *I, bool retMerge, const std::vector<ReturnInst *> &rets,
                const std::vector<Value *> &qconds) {
+      // an exit read's operand denotes the exit value (exitRead): its node while I is shadowed
+      std::vector<std::pair<Value *, std::optional<Value *>>> saved;
+      {
+        IRBuilder<> B(I);
+        for (Value *V : I->operands())
+          if (none_of(saved, [&](auto &e) { return e.first == V; }))
+            if (Value *n = exitRead(V, I, B)) {
+              auto it = sh.find(V);
+              saved.push_back({V, it == sh.end() ? std::nullopt : std::optional<Value *>(it->second)});
+              sh[V] = n;
+            }
+      }
+      visitOne(I, retMerge, rets, qconds);
+      for (auto it = saved.rbegin(); it != saved.rend(); ++it) {
+        if (it->second)
+          sh[it->first] = *it->second;
+        else
+          sh.erase(it->first);
+      }
+    }
+
+    void visitOne(Instruction *I, bool retMerge, const std::vector<ReturnInst *> &rets,
+                  const std::vector<Value *> &qconds) {
       if (I->isTerminator()) {
         IRBuilder<> B(I);
         if (auto *R = dyn_cast<ReturnInst>(I)) {
