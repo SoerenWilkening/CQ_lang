@@ -111,13 +111,71 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/IntrinsicInst.h"
-#include "llvm/Transforms/Utils/SSAUpdater.h"
 
 using namespace llvm;
 
 namespace cq::loops {
 
 namespace {
+
+// cq-r8-d (185): the SSA value at the end of `at` of a variable that is `v` at the end of block D and
+// `dflt` at the entry (and at the end of `reset`, when given), with phis at the joins over the real predecessors. The construction is still
+// filling its own phis' incomings when a deferred reverse is placed, and SSAUpdater reads a block's
+// predecessors through its leading phi: an empty one hides them, and the value came out poison (a
+// `br i1 poison` guard, a free of poison). Uncompute's carryTo, for the loop's guard and reads.
+Value *carryTo(BasicBlock *at, BasicBlock *D, Value *v, Value *dflt, const Twine &name,
+              BasicBlock *reset = nullptr) {
+  DenseMap<BasicBlock *, Value *> memo;
+  std::vector<PHINode *> made;
+  std::function<Value *(BasicBlock *)> end = [&](BasicBlock *b) -> Value * {
+    if (b == D)
+      return v;
+    if (b == reset)
+      return dflt;
+    if (auto it = memo.find(b); it != memo.end())
+      return it->second;
+    SmallVector<BasicBlock *, 4> ps(predecessors(b));
+    if (ps.empty())
+      return memo[b] = dflt;
+    if (ps.size() == 1)
+      return memo[b] = end(ps[0]);
+    PHINode *phi = PHINode::Create(v->getType(), ps.size(), name);
+    phi->insertInto(b, b->begin());
+    memo[b] = phi;
+    made.push_back(phi);
+    for (BasicBlock *p : ps)
+      phi->addIncoming(end(p), p);
+    return phi;
+  };
+  Value *r = end(at);
+  for (bool changed = true; changed;) {
+    changed = false;
+    for (PHINode *&phi : made) {
+      if (!phi)
+        continue;
+      Value *same = nullptr;
+      bool trivial = true;
+      for (Value *in : phi->incoming_values()) {
+        if (in == phi || in == same)
+          continue;
+        if (same) {
+          trivial = false;
+          break;
+        }
+        same = in;
+      }
+      if (!trivial || !same)
+        continue;
+      phi->replaceAllUsesWith(same);
+      if (r == phi)
+        r = same;
+      phi->eraseFromParent();
+      phi = nullptr;
+      changed = true;
+    }
+  }
+  return r;
+}
 
 // CR rule 2 through memory (M3): some load of S's object that S may reach measures the loaded value
 // (directly or through a trunc to i1 / freeze view). mem-slots then gave S's rail Role::Measured at the
@@ -2165,6 +2223,7 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
   // loop ran: the value "the loop's exit block was passed" (false at the function's entry, true at
   // X), read at the start of the item.
   BasicBlock *join = nullptr;
+  BasicBlock *guardBlock = BX.GetInsertBlock();
   {
     BasicBlock *exitSeg = nullptr;
     for (BasicBlock *p : predecessors(X)) {
@@ -2175,14 +2234,8 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
     BasicBlock *start = R[segOf.lookup(exitSeg)];
     Value *ran = ConstantInt::getTrue(C);
     if (guarded) {
-      BasicBlock *at = BX.GetInsertBlock();
-      SSAUpdater up;
-      up.Initialize(Type::getInt1Ty(C), "ran");
-      up.AddAvailableValue(&Out.getEntryBlock(), ConstantInt::getFalse(C));
-      if (resetAt)
-        up.AddAvailableValue(resetAt, ConstantInt::getFalse(C));   // a trip-local sub-loop: per parent trip
-      up.AddAvailableValue(X, ConstantInt::getTrue(C));
-      ran = up.GetValueAtEndOfBlock(at);
+      // a trip-local sub-loop's guard is reset per parent trip (false at the end of resetAt)
+      ran = carryTo(guardBlock, X, ConstantInt::getTrue(C), ConstantInt::getFalse(C), "ran", resetAt);
     }
     if (auto *k = dyn_cast<ConstantInt>(ran); k && k->isOne()) {
       BX.CreateBr(start);
@@ -2219,11 +2272,11 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
       auto *d = cast<Instruction>(u->get());
       if (d->getParent() == &Out.getEntryBlock())
         continue;
-      SSAUpdater up;
-      up.Initialize(d->getType(), d->getName());
-      up.AddAvailableValue(&Out.getEntryBlock(), PoisonValue::get(d->getType()));
-      up.AddAvailableValue(d->getParent(), d);
-      up.RewriteUse(*u);
+      // the value at the use: at the end of the incoming block for a phi, else at the end of the
+      // block before the reverse (the guard's block dominates every reverse block)
+      auto *ui = cast<Instruction>(u->getUser());
+      BasicBlock *at = isa<PHINode>(ui) ? cast<PHINode>(ui)->getIncomingBlock(*u) : guardBlock;
+      u->set(carryTo(at, d->getParent(), d, PoisonValue::get(d->getType()), d->getName()));
     }
     BZ.CreateBr(join);
     BX.SetInsertPoint(join);

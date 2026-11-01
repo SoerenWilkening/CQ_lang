@@ -52,6 +52,10 @@ MEASURED_PROBE = PROBES / "measured_some.O1.ll"
 # cq-ot39: a quantum loop invariant LICM hoisted into the guarded preheader (resolved on the loop's exit path).
 HOISTED_PROBE = PROBES / "hoisted.O1.ll"
 HOISTED = ["fk3", "fk1", "c4"]
+# cq-r8-d (185): a guarded deferred reverse placed at the return after later loops (its guard and seed carried
+# over joins whose phis are still being filled; SSAUpdater made them poison).
+CARRY_PROBE = PROBES / "guard_carry.O1.ll"
+CARRY = ["g_carry"]
 MEASURED = {"m_r8": [("measured", "i32"), ("kept_entangled", "i32"), ("measured", "i32")],
             "m_r8b": [("measured", "i32"), ("measured", "i32")],
             "m_r8c": [("measured", "i32"), ("kept_entangled", "i32"), ("measured", "i32")]}
@@ -138,13 +142,13 @@ def main() -> int:
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", required=True)
     ap.add_argument("--entry", action="append", help="check only these entries of loops.O1.ll")
-    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "fatal", "triplocal", "qram"],
+    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram"],
                     help="run only these probe groups (default: all)")
     a = ap.parse_args()
     out = ROOT / "build" / "tests" / "loops-classical" / "out"
     out.mkdir(parents=True, exist_ok=True)
     failures = 0
-    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "fatal", "triplocal", "qram"]))
+    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram"]))
     groups = []
     if "loops" in want:
         groups.append((PROBE, a.entry or ENTRIES))
