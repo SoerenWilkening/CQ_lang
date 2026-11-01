@@ -2629,6 +2629,8 @@ Type *cloneCellType(LoweringContext &ctx, const Specialization &S, unsigned argN
 }
 
 void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
+  if (calls::lowerVaAreaLoad(ctx, ld))
+    return;   // CR §1.4 (95): a read of a variadic clone's save area
   FnState &st = stateOf(ctx, ld);
   if (!ctx.T.isQuantum(&ld, ctx.S)) {
     Site s = siteOf(ctx, st, ld, ld.getPointerOperand(), ld.getType());

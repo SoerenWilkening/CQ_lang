@@ -100,6 +100,9 @@ struct Shared {
   llvm::Function *out = nullptr;       // where the new IR goes
   llvm::IRBuilder<> B;
   llvm::DenseMap<const llvm::Value *, llvm::SmallVector<Operand, 4>> binds;
+  // CR §1.4 (95, 109): a variadic clone's variadic actuals (its parameters past the fixed formals),
+  // a handle where the mask's digit is 1; calls::lowerVarargs spills them at llvm.va_start.
+  llvm::SmallVector<Operand, 4> varargs;
   llvm::DenseMap<const llvm::BasicBlock *, llvm::BasicBlock *> blocks;
   llvm::DenseMap<const llvm::Value *, WalkedPtr> walked;   // cq-9w75: walked pointer phis of K-loops
   std::unique_ptr<Uncompute> unc;

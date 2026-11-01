@@ -19,6 +19,13 @@ void lowerLifted(LoweringContext &, llvm::CallBase &);
 void lowerIndirect(LoweringContext &, llvm::CallBase &);
 void lowerDeclared(LoweringContext &, llvm::CallBase &);
 void lowerVarargs(LoweringContext &, llvm::Instruction &);
+// CR §1.4, rule 20 (95, 109): a load of the variadic save area lowerVarargs spilled handles into (a read
+// by -O1's va_arg code): the slot's handle, recorded as a cell load over the actuals' rails; true when
+// ld reads such an area. Consumer: mem-slots lowerSlotLoad.
+bool lowerVaAreaLoad(LoweringContext &, llvm::LoadInst &);
+// Is o a variadic save area lowerVarargs spilled handles into (real host memory holding handles: its
+// address arithmetic is classical and copied, 95)? Consumer: spine Dispatch.
+bool isVaArea(LoweringContext &, ObjectId o);
 void lowerAsm(LoweringContext &, llvm::CallBase &);
 void emitTwin(LoweringContext &, llvm::CallBase &lowered);
 // C1 (cq-arch 2026-11-01, CR rule 24; 106): site lowered as a direct call of T.calleeSpecialization(site, S),

@@ -26,6 +26,8 @@ TWIN_ALIAS = ("cq: unimplemented: uncompute: a clone call whose twin may read a 
               "another route than the writing pointer")
 # (probe, entry, opt flags, expectation, regexes the lowered module must contain)
 CASES = [
+    # cq-prvy (95): a variadic clone per call-site arity; its save area holds the actuals' handles.
+    ("varargs", "vprobe", [], "pass", [r"call i32 @__cq_q_pick_001\(i32 poison, i32 %\d+, i32 %\d+\)"]),
     # cq-5xde: a quantum-depth recursion is cut only under a proved depth bound B <= the cut level.
     ("depth_le0", "r4", [], "pass", []),
     # cq-xhv4 (169): a twin computes no rule 14 kept overflow predicate a_K of its own (the forward keeps one).

@@ -31,8 +31,8 @@ bool involvesNonClassicalMemory(LoweringContext &ctx, const Value *ptr) {
   if (ctx.T.isFatPointer(ptr, ctx.S))
     return true;
   for (ObjectId o : ctx.T.provenance(ptr, ctx.S))
-    if (ctx.T.classOf(o) != ObjClass::Classical)
-      return true;
+    if (ctx.T.classOf(o) != ObjClass::Classical && !calls::isVaArea(ctx, o))
+      return true;   // a variadic save area is host memory holding handles (95): classical addresses
   return false;
 }
 

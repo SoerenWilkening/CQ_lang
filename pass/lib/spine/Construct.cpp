@@ -1692,6 +1692,20 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
                       "field)",
                       A);
     }
+    if (F.isVarArg()) {
+      // CR §1.4 (95, 109): the variadic actuals, one parameter each after the fixed formals' fields,
+      // their digits the mask's last.
+      unsigned nv = C->arg_size() - p - (fenv::cloneCarriesEnv(ctx.T, S) ? 2 : 0);
+      if (nv > S.mask.size())
+        internalError("spine: a variadic clone with more variadic parameters than mask digits", C);
+      for (unsigned k = 0; k < nv; ++k) {
+        Argument *P = C->getArg(p++);
+        bool q = S.mask[S.mask.size() - nv + k] == '1';
+        if (q)
+          ctx.unc().recordExternal(P, Role::UserRegister);   // the caller's rail: never freed here
+        sh.varargs.push_back(Operand{P, q});
+      }
+    }
     if (fenv::cloneCarriesEnv(ctx.T, S)) {
       // E1 (CR rule 23, 82): the caller's mode and flags, the two trailing parameters.
       if (p + 2 > C->arg_size())
