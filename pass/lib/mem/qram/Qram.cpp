@@ -1036,18 +1036,14 @@ struct QIndex {
   bool quantum;
 };
 
-const std::pair<const Value *, int64_t> *quantumTerm(LoweringContext &ctx, const Addr &a, const Instruction &I) {
-  const std::pair<const Value *, int64_t> *qt = nullptr;
+// The first quantum index term of the address, or nullptr (a classical address).
+const std::pair<const Value *, int64_t> *quantumTerm(LoweringContext &ctx, const Addr &a, const Instruction &) {
   for (auto &t : a.terms)
-    if (ctx.T.isQuantum(t.first, ctx.S)) {
-      if (qt)
-        unimplemented("mem-qram: a QRAM address with two quantum index terms (flattened 2-D form, 191)", &I);
-      qt = &t;
-    }
-  return qt;
+    if (ctx.T.isQuantum(t.first, ctx.S))
+      return &t;
+  return nullptr;
 }
 
-// The classical variable part of an address in elements (i64), nullptr when there is none.
 Value *classicalElems(LoweringContext &ctx, const QramObj &q, const Addr &a, const Instruction &I) {
   IRBuilder<> &B = ctx.B();
   Type *i64 = Type::getInt64Ty(ctx.M.getContext());
@@ -1192,38 +1188,112 @@ const Column *exactCell(LoweringContext &ctx, const QramObj &q, const Addr &a, T
   return col;
 }
 
+// The logical index rail of one quantum GEP index term: the index stripped of its widening casts
+// (address arithmetic, rule 20), with the extension that widens it (the innermost cast decides: a zext
+// makes every later widening a zext; an uncast index narrower than the pointer is sign-extended by the
+// GEP itself). A negative sign-extended index points before the object (undefined, outside the domain).
+struct LogicalIndex {
+  Value *rail;
+  unsigned bits;
+  bool sext;
+  bool zextOverSext;   // a zext of a sext: not one extension
+};
+
+LogicalIndex logicalIndex(LoweringContext &ctx, const Value *idx, const Instruction &I) {
+  bool sext = false, cast = false, zextOverSext = false;
+  for (;;) {
+    if (auto *z = dyn_cast<ZExtInst>(idx); z && ctx.T.isQuantum(z->getOperand(0), ctx.S)) {
+      idx = z->getOperand(0);
+      sext = false;
+      cast = true;
+      continue;
+    }
+    if (auto *s = dyn_cast<SExtInst>(idx); s && ctx.T.isQuantum(s->getOperand(0), ctx.S)) {
+      if (cast && !sext)
+        zextOverSext = true;
+      idx = s->getOperand(0);
+      sext = true;
+      cast = true;
+      continue;
+    }
+    break;
+  }
+  Operand ix = ctx.operand(idx);
+  if (!ix.handle || !idx->getType()->isIntegerTy())
+    internalError("mem-qram: the logical QRAM index is not an integer rail", &I);
+  unsigned bits = idx->getType()->getIntegerBitWidth();
+  if (!cast && bits < 64)
+    sext = true;
+  return {ix.v, bits, sext, zextOverSext};
+}
+
+// The cell index of a QRAM access. A quantum address is its logical index rail alone when it is the
+// address's only term at one element's stride with no element offset; otherwise rule 20's index
+// arithmetic as templates: each quantum term's logical index widened by its own extension to the C index
+// width (at least int, 32, or the widest index), scaled by its stride in elements (mul_hl, the 2-D
+// flattening r * cols + c, 191), the scaled terms added in GEP order, then the classical element offset
+// (the classical terms and the constant) added (add_hl, 192). A modular sum at that width is the exact
+// cell index: every in-domain cell index of a QRAM is below 2^32 (qram_alloc takes an i32 cell count).
 QIndex cellIndex(LoweringContext &ctx, const QramObj &q, const Addr &a, const Instruction &I) {
   int64_t E = int64_t(q.elemBytes);
   int64_t ec = floorDiv(a.off, E);
-  if (const auto *qt = quantumTerm(ctx, a, I)) {
-    if (a.terms.size() != 1 || ec != 0)
-      unimplemented("mem-qram: a quantum QRAM index plus a constant or classical element offset (the index "
-                    "arithmetic is a template)",
-                    &I);
-    if (qt->second != E)
-      unimplemented("mem-qram: a quantum QRAM index whose GEP stride is not one element (the scaling is a "
-                    "template)",
-                    &I);
-    // The logical index: the GEP index stripped of its widening casts (address arithmetic, rule 20). A
-    // negative sign-extended index points before the object (undefined, outside the domain).
-    const Value *idx = qt->first;
-    for (;;) {
-      if (auto *z = dyn_cast<ZExtInst>(idx); z && ctx.T.isQuantum(z->getOperand(0), ctx.S)) {
-        idx = z->getOperand(0);
-        continue;
-      }
-      if (auto *s = dyn_cast<SExtInst>(idx); s && ctx.T.isQuantum(s->getOperand(0), ctx.S)) {
-        idx = s->getOperand(0);
-        continue;
-      }
-      break;
+  if (!quantumTerm(ctx, a, I))
+    return {elemIndex(ctx, classicalElems(ctx, q, a, I), ec), false};
+  SmallVector<std::pair<LogicalIndex, int64_t>, 2> qs;   // logical index, stride in elements
+  Addr others = a;
+  others.terms.clear();
+  for (auto &t : a.terms) {
+    if (!ctx.T.isQuantum(t.first, ctx.S)) {
+      others.terms.push_back(t);
+      continue;
     }
-    Operand ix = ctx.operand(idx);
-    if (!ix.handle || !idx->getType()->isIntegerTy())
-      internalError("mem-qram: the logical QRAM index is not an integer rail", &I);
-    return {ix.v, true};
+    if (t.second % E)
+      unimplemented("mem-qram: a quantum QRAM index whose GEP stride is not a whole number of elements (a bit "
+                    "view)",
+                    &I);
+    qs.push_back({logicalIndex(ctx, t.first, I), t.second / E});
   }
-  return {elemIndex(ctx, classicalElems(ctx, q, a, I), ec), false};
+  if (qs.size() == 1 && qs[0].second == 1 && others.terms.empty() && ec == 0)
+    return {qs[0].first.rail, true};
+  unsigned Ws = 32;
+  for (auto &[li, k] : qs) {
+    if (li.zextOverSext)
+      unimplemented("mem-qram: a quantum QRAM index widened by a zext of a sext, in index arithmetic", &I);
+    Ws = std::max(Ws, li.bits);
+  }
+  LLVMContext &C = ctx.M.getContext();
+  RailType rw{Kind::Int, Ws};
+  auto tmpl = [&](StringRef op, ArrayRef<Operand> ops, StringRef shape) {
+    abi::TemplateSpec spec;
+    spec.op = op.str();
+    spec.w = rw;
+    spec.shape = shape.str();
+    return ctx.emitTemplate(spec, ops);
+  };
+  Value *rail = nullptr;
+  for (auto &[li, k] : qs) {
+    Value *r = li.rail;
+    if (li.bits < Ws) {
+      abi::TemplateSpec ext;
+      ext.op = li.sext ? "sext" : "zext";
+      ext.w = RailType{Kind::Int, li.bits};
+      ext.to = rw;
+      r = ctx.emitTemplate(ext, {Operand{r, true}});
+    }
+    if (k != 1)
+      r = tmpl("mul", {Operand{r, true}, Operand{ConstantInt::get(IntegerType::get(C, Ws), k, true), false}}, "hl");
+    rail = rail ? tmpl("add", {Operand{rail, true}, Operand{r, true}}, "") : r;
+  }
+  Value *j = classicalElems(ctx, q, others, I);
+  if (j || ec) {
+    Type *i64 = Type::getInt64Ty(C);
+    Value *k = j ? j : ConstantInt::get(i64, 0);
+    if (ec)
+      k = j ? ctx.B().CreateAdd(k, ConstantInt::get(i64, ec, true)) : ConstantInt::get(i64, ec, true);
+    k = ctx.B().CreateSExtOrTrunc(k, IntegerType::get(C, Ws));
+    rail = tmpl("add", {Operand{rail, true}, Operand{k, false}}, "hl");
+  }
+  return {rail, true};
 }
 
 // A classical value of type ty stored over the whole cells it covers at a classical address: one _hl
