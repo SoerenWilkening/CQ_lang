@@ -19,7 +19,8 @@ Fails on any of:
   mutant    a wrong lowered module is not rejected (exit 1): built from 01's reference with the Ry's
             angle negated, the add computed before the Ry (only cq_theta substitution sees it), the
             measured rail replaced by its classical input, and an empty body (ret 0); from 60's
-            reference, five wrong phases or Ry that only varied handle cells expose (cq-rbe6)
+            reference, five wrong phases or Ry that only varied handle cells expose (cq-rbe6); from
+            133's, an un-prep whose overwriting prep is an Ry(NaN) with no C reach (cq-q15r)
   error     a missing entry or main(argc, argv) is not an error (exit 2)
 
 Every run goes through the CLI (`python3 -m cqcheck user` from checker/), as cqcc --cq-check runs it.
@@ -143,13 +144,24 @@ def unit_mopw(spec_root):
     # under q (k): no gate (CR §1.3), yet the overwrite that makes i j's un-prep
     sign = 1 << 63
     t1, nan = 0x3ff363085206319c, 0x7ff4000000000000
-    tv = (32, (5, 5, 5))
+    tv = ("i32", (5, 5, 5))
     j = C._Ev(idx=0, kind="ry", target=3, tclass=tv, theta=t1, afn=None, pred=(1, 1, 0), cpred=(1, 1, 0))
     i = C._Ev(idx=1, kind="ry", target=3, tclass=tv, theta=t1 ^ sign, afn=None, pred=(1, 0, 0), cpred=(1, 0, 0))
     k = C._Ev(idx=2, kind="ry", target=3, tclass=tv, theta=nan, afn=None, pred=(0, 0, 0), cpred=(1, 0, 1))
     for name, idle, want in (("with the idle prep", [k], (0, frozenset())), ("without it", [], None)):
         got = C._unprep_partners([j, i], idle)[1]
         (ok if got == want else fail)(f"unit un-prep {name}", f"{got}" + ("" if got == want else f", want {want}"))
+    # cq-q15r: k stands only on an identity C reach of its angle and register at every sample its
+    # control fires (here 0 and 2)
+    k.rawang = (nan, None, nan)
+    site = ("prep_twice", 2, "theta")
+    for name, ident, want in (
+            ("backed", {site: [[(5, "NaN", 5)], [], [(5, "NaN", 5)]]}, 1),
+            ("no identity reach", {}, 0),
+            ("reach at one sample only", {site: [[(5, "NaN", 5)], [], []]}, 0),
+            ("other register", {site: [[(5, "NaN", 6)], [], [(5, "NaN", 5)]]}, 0)):
+        got = len(C._backed_idle([k], ident, True, [False] * 3))
+        (ok if got == want else fail)(f"unit idle prep {name}", f"{got}" + ("" if got == want else f", want {want}"))
 
 
 def mutants(ref_text):
@@ -173,6 +185,21 @@ def mutants(ref_text):
     body = re.search(r"(define i32 @add_classical\([^)]*\)[^{]*\{)(.*?)(\n\})", ref_text, re.S)
     out["empty"] = ref_text[:body.end(1)] + "\n  ret i32 0" + ref_text[body.start(3):]
     return out
+
+
+def mutant133(ref_text):
+    """cq-q15r (review of cq-mopw): 133's prep_const_incoming with an extra Ry(-t) right after the
+    prep and then an Ry(NaN) on r: the NaN Ry is an identity the C program has no reach for, so it is
+    no overwriting prep and the Ry(-t) is no rule-10 un-prep (a wrong circuit: the prep undone)."""
+    prep = "  call void @cqrt_ry_i32_controlled(i32 %6, i32 %7, double %3)"
+    lines = ref_text.split("\n")
+    at = [n for n, l in enumerate(lines) if l.startswith(prep)]
+    if len(at) != 1:
+        raise SystemExit(f"133's reference changed: {prep!r} is not there once")
+    extra = ["  %neg = fneg double %3",
+             "  call void @cqrt_ry_i32_controlled(i32 %6, i32 %7, double %neg)",
+             "  call void @cqrt_ry_i32_controlled(i32 %6, i32 %7, double 0x7FF8000000000000)"]
+    return "\n".join(lines[:at[0] + 1] + extra + lines[at[0] + 1:])
 
 
 def mutants60(ref_text):
@@ -231,6 +258,11 @@ def main():
             p = tmp / f"mutant60_{name}.ll"
             p.write_text(text)
             expect(f"mutant 60 {name}", 1, user(d60 / "qft.O1.ll", p, "qft"))
+
+        d133 = spec / "examples" / "133_state_prep_overwrite"
+        p = tmp / "mutant133_unprep_nan.ll"
+        p.write_text(mutant133((d133 / "state_prep_overwrite.lowered.ll").read_text()))
+        expect("mutant 133 unprep_nan", 1, user(d133 / "state_prep_overwrite.O1.ll", p, "prep_const_incoming"))
 
         expect("error: no such entry", 2, user(o1, d / "add_classical_const.lowered.ll", "nosuch"))
         argv = tmp / "argv"
