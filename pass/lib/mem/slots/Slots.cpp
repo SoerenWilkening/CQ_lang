@@ -2927,10 +2927,17 @@ SmallVector<Operand, 8> readSlotCells(LoweringContext &ctx, const Value *ptr, Ty
     if (s.info->record)
       unimplemented("mem-slots: a host effect reading a slot record", &at);
     c.a.off += int64_t(i * s.info->cellBytes);
-    if (!sourceOf(ctx, st, *c.info, c.o, &at, c.a, cellTy))
-      unimplemented("mem-slots: a host effect reading a slot cell that no dominating access of this function "
-                    "wrote (a run-time read at a host effect)",
-                    &at);
+    if (!sourceOf(ctx, st, *c.info, c.o, &at, c.a, cellTy)) {
+      // 73: a memory intrinsic reading a cell that only run-time stores wrote (a loop fill) reads the handle
+      // in the cell at run time, as a quantum slot load does (M3: readCell names it as a cell read).
+      if (!isa<MemIntrinsic>(at))
+        unimplemented("mem-slots: a host effect reading a slot cell that no dominating access of this function "
+                      "wrote (a run-time read at a host effect)",
+                      &at);
+      if (classicalCell(ctx, st, c))
+        unimplemented("mem-slots: a memory intrinsic reading at run time a slot cell no handle store reaches", &at);
+      cellRail(*c.info, cellTy, at);
+    }
     out.push_back(readCell(ctx, st, c, at, cellTy));
   }
   return out;

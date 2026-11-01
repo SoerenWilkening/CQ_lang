@@ -1451,9 +1451,25 @@ void lowerQramIntrinsic(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o) {
           unimplemented("mem-qram: a memcpy/memmove between QRAMs whose cells do not line up (a bit view, 63)", &MI);
         vals.push_back(emitLoad(ctx, busOf(sq, sacc.a.root, sc, MI), *sc, {elemIndex(ctx, sjb, se), false}));
       }
+    } else if (so.size() == 1 && ctx.T.classOf(so.front()) == ObjClass::Slot) {
+      // 73: a slot array source. The covered QRAM cells are consecutive cells of one type; their source
+      // cells are mem-slots' reads of the slot's cells at the copy (M4 readSlotCells): the handle a cell
+      // holds is stored as it is (the slot keeps it), a classical cell is a seed (rule 7).
+      Type *cellTy = hits.empty() ? nullptr : hits.front().col->cellTy;
+      uint64_t size = cellTy ? DL.getTypeAllocSize(cellTy).getFixedValue() : 0;
+      for (size_t i = 0; i < hits.size(); ++i)
+        if (hits[i].col->cellTy != cellTy || hits[i].rel != i * size)
+          unimplemented("mem-qram: a memcpy/memmove from a slot array into QRAM cells of several types or not "
+                        "consecutive (a struct column layout, 168)",
+                        &MI);
+      if (!hits.empty()) {
+        SmallVector<Operand, 8> cells = readSlotCells(ctx, src, cellTy, hits.size(), MI);
+        for (size_t i = 0; i < cells.size(); ++i)
+          vals.push_back(cells[i].handle ? cells[i].v : seedOf(ctx, hits[i].col->w, cells[i].v));
+      }
     } else {
-      unimplemented("mem-qram: a memcpy/memmove into a QRAM from a slot array or several objects (the source "
-                    "handles are mem-slots' cell reads, 73)",
+      unimplemented("mem-qram: a memcpy/memmove into a QRAM from several objects (rule 21's per-object source "
+                    "cells)",
                     &MI);
     }
   }
