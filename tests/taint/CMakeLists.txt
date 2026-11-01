@@ -32,3 +32,5 @@ cq_add_unit_test(taint_cellswritten taint_cellswritten.cpp)
 # cq-0hdy: a pointer walked by a fixed classical GEP per trip of a quantum-exit loop is a function of
 # the trip index (rule 14 by SCEV, 189, 190): classical offset, the object stays a slot array.
 cq_add_unit_test(taint_ptrinduction taint_ptrinduction.cpp)
+# cq-tzqz (108): llvm.threadlocal.address(@g) names @g's object (objectOf), one thread (rule 24).
+cq_add_unit_test(taint_threadlocal taint_threadlocal.cpp)

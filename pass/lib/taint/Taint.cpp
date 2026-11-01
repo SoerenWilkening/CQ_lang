@@ -3650,6 +3650,11 @@ bool TaintInfo::resultQuantum(const Specialization &S, unsigned field) const {
 
 ObjectId TaintInfo::objectOf(const llvm::Value *site) const {
   const ImplState &I = needImpl(impl);
+  // Rule 24, 108: one thread, so llvm.threadlocal.address(@g) is the base of @g's one object (a
+  // classical host intrinsic returning the object's address; its provenance is @g's).
+  if (auto *TL = dyn_cast<llvm::IntrinsicInst>(site);
+      TL && TL->getIntrinsicID() == llvm::Intrinsic::threadlocal_address)
+    site = TL->getArgOperand(0)->stripPointerCasts();
   auto it = I.siteOf.find(site);
   if (it == I.siteOf.end())
     internalError("taint: not a memory site of this module", site);
