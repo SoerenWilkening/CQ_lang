@@ -1280,6 +1280,9 @@ def _run_part(prog: Path, items: Sequence[Tuple[dict, str, Optional[str]]], side
     while pos < len(items):
         stdin = (theta_all or "") + "".join(rec for _, rec, _ in items[pos:])
         trace = w / "trace.jsonl"
+        # the trace file is reused per thread: a runner that dies before core.c opens it must read as
+        # no shots, never as the previous batch's (speed review h2)
+        trace.unlink(missing_ok=True)
         env = dict(os.environ, CQE_TRACE=str(trace), CQD_SAMPLES="-",
                    CQE_COMPACT="0" if os.environ.get("CQE_COMPACT") == "0" else "1",   # 0: diagnostics
                    CQE_SHOT_DIR=str(w / "shot"), CQE_SHOT_BASE=str(pos),
