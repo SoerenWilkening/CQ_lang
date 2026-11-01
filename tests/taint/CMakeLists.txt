@@ -29,3 +29,6 @@ target_compile_definitions(taint_joinchoice PRIVATE CQ_SPEC_DIR="${CQ_SPEC_DIR}"
 cq_add_unit_test(taint_exitselect taint_exitselect.cpp)
 # T2 (cq-arch 2026-11-01): TaintInfo::cellsWritten, a clone's handle stores through a pointer formal.
 cq_add_unit_test(taint_cellswritten taint_cellswritten.cpp)
+# cq-0hdy: a pointer walked by a fixed classical GEP per trip of a quantum-exit loop is a function of
+# the trip index (rule 14 by SCEV, 189, 190): classical offset, the object stays a slot array.
+cq_add_unit_test(taint_ptrinduction taint_ptrinduction.cpp)

@@ -268,6 +268,10 @@ private:
   const DenseMap<const BasicBlock *, SmallVector<const BasicBlock *, 4>> &joinEdgeCD(const BasicBlock *J);
   bool chosenAtDependentJoin(const PHINode &PN);
   void loopHeaderRule(SpecState &S, const BasicBlock *H, SmallPtrSetImpl<const PHINode *> &quantum);
+  // Rule 14 re-roll by SCEV, rules 20/21 (cq-0hdy, 189, 190): a pointer header phi advanced by a
+  // fixed classical GEP each trip is a function of the classical trip index j (start + j * step),
+  // not a carried value: its offset is classical in the loop even when the exit is quantum.
+  bool classicalPtrInduction(const PHINode &PN);
 
   void transfer(Instruction &I);
   void transferPhi(PHINode &PN, const SmallPtrSetImpl<const PHINode *> &headerQ);
@@ -1123,8 +1127,47 @@ void Analyzer::loopHeaderRule(SpecState &S, const BasicBlock *H,
       continue;
     if (!leaves.empty() && driving.count(&PN))
       continue;
+    if (classicalPtrInduction(PN))
+      continue;
     quantum.insert(&PN);
   }
+}
+
+bool Analyzer::classicalPtrInduction(const PHINode &PN) {
+  if (!PN.getType()->isPointerTy() || PN.getNumIncomingValues() != 2)
+    return false;
+  FnInfo &fi = fn(cur->F);
+  Loop *Lp = fi.LI->getLoopFor(PN.getParent());
+  if (!Lp || Lp->getHeader() != PN.getParent())
+    return false;
+  const Value *start = nullptr, *next = nullptr;
+  for (unsigned i = 0; i < 2; ++i) {
+    if (Lp->contains(PN.getIncomingBlock(i)))
+      next = PN.getIncomingValue(i);
+    else
+      start = PN.getIncomingValue(i);
+  }
+  if (!start || !next || anyLane(L(start)))
+    return false;
+  // next = a chain of GEPs from PN whose indices are constants or classical loop invariants.
+  const Value *V = next;
+  unsigned steps = 0;
+  while (V != &PN) {
+    auto *G = dyn_cast<GetElementPtrInst>(V);
+    if (!G || !Lp->contains(G))
+      return false;
+    for (const Use &U : G->indices()) {
+      const Value *X = U.get();
+      if (isa<Constant>(X))
+        continue;
+      auto *XI = dyn_cast<Instruction>(X);
+      if ((XI && Lp->contains(XI)) || anyLane(L(X)))
+        return false;
+    }
+    V = G->getPointerOperand();
+    ++steps;
+  }
+  return steps > 0;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1148,6 +1191,8 @@ void Analyzer::transferPhi(PHINode &PN, const SmallPtrSetImpl<const PHINode *> &
       }
   if (!allSame && !chosen)
     chosen = chosenAtDependentJoin(PN);
+  if (chosen && classicalPtrInduction(PN))
+    chosen = false; // the trip index chooses it, a classical value (cq-0hdy)
   if (PN.getType()->isPointerTy()) {
     PtrInfo p;
     for (const Value *In : PN.incoming_values())
