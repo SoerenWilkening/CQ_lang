@@ -8,9 +8,10 @@ For probes/conc.O1.ll it checks, and fails on:
     atomic store and load (the host performs them);
   - every entry is §6-equal to its own C program (`python3 -m cqcheck user`, the C oracle).
 probes/*_error.O1.ll must make cq-lower exit non-zero with the named eff-conc internal error: a quantum
-value stored to an observable volatile global, atomicrmw on quantum data (94's shape, not built), and
+value stored to an observable volatile global and
 setjmp/longjmp (101's shape, blocked on cq-jwdf). Update this test when those are built.
-p_vol_local is 32's shape (cq-r4cz): the unobservable volatile slot pair forwards as the plain access.
+p_vol_local is 32's shape (cq-r4cz): the unobservable volatile slot pair forwards as the plain access;
+p_atomic_rmw is 94's (M4): atomicrmw on a slot cell is load + add + store.
 The owned example's acceptance is `python3 -m cqcheck run 48_volatile_global --oracle both` (the bead).
 Outputs go to build/tests/eff-conc/out/.
 """
@@ -22,10 +23,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PROBES = Path(__file__).parent / "probes"
-ENTRIES = ["p_vol_internal", "p_vol_observable", "p_atomic_classical", "p_vol_local"]
+ENTRIES = ["p_vol_internal", "p_vol_observable", "p_atomic_classical", "p_vol_local", "p_atomic_rmw"]
 ERRORS = {"vol_quantum_observable_error.O1.ll": "eff-conc: a volatile access to observable memory involving "
                                                 "quantum data",
-          "atomicrmw_error.O1.ll": "eff-conc: atomicrmw on quantum data or non-classical memory",
           "setjmp_error.O1.ll": "eff-conc: setjmp in a lowered function"}
 # entry -> (regex that must match its body, regex that must not)
 SHAPES = {"p_vol_internal": (None, r"volatile"),
@@ -33,7 +33,8 @@ SHAPES = {"p_vol_internal": (None, r"volatile"),
                                None),
           "p_atomic_classical": (r"store atomic i32 %\d+, ptr @acell seq_cst[\s\S]*load atomic i32, ptr @acell seq_cst",
                                  None),
-          "p_vol_local": (None, r"volatile")}
+          "p_vol_local": (None, r"volatile"),
+          "p_atomic_rmw": (r"cq_template_add_i32_hl", r"atomicrmw")}
 
 
 def body(module: str, fn: str) -> str:

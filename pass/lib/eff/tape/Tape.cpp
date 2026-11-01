@@ -12,6 +12,11 @@
 //    lit); a classical pointer converted by %s is cqrt_tape_write_str_lit(t, s) (the backend copies the
 //    string at call time). The fields of a controlled entry are controlled by the same flag; literal
 //    fields have no controlled form (the entry's predicate covers them).
+//  - fwrite(buf, size, n, stdout) with constant size and n, buf one slot object of byte cells (99): one
+//    entry with the format "%c" repeated size * n times, then one i8 field per cell (mem::readSlotCells,
+//    M4): a handle cell is cqrt_tape_write_i8[_controlled] -> a fresh tape rail, a classical cell a
+//    literal. fputs(s, stdout) of a constant string without '%': an entry with format s, no fields.
+//    stdout is the function's tape; another stream is unimplemented.
 //  - Any other host effect under a quantum predicate is an effect entry (102):
 //    cqrt_tape_effect_controlled(c, t, name), name the callee as a string constant @.cq.effect.<name>,
 //    then the same fields for its arguments. Only the controlled form exists (an unconditional effect is
@@ -48,6 +53,7 @@
 #include "cq/Abi.h"
 #include "cq/Calls.h"
 #include "cq/Common.h"
+#include "cq/Memory.h"
 #include "cq/Predicate.h"
 #include "cq/Taint.h"
 #include "cq/Uncompute.h"
@@ -241,6 +247,30 @@ Constant *effectName(Module &M, StringRef name) {
   return gv;
 }
 
+// The C stream stdout (the function's tape, 99): a load of the C library's stdout object. Orchestrator
+// decision under CR rule 16 (owner may override): the stream object is recognised by its C library
+// symbol (Darwin's __stdoutp, the ISO name stdout), as TargetLibraryInfo recognises the callee; any
+// other stream is unimplemented.
+bool isStdout(const Value *v) {
+  auto *ld = dyn_cast<LoadInst>(v);
+  auto *gv = ld ? dyn_cast<GlobalVariable>(ld->getPointerOperand()) : nullptr;
+  return gv && gv->isDeclaration() && (gv->getName() == "__stdoutp" || gv->getName() == "stdout");
+}
+
+Constant *fwriteFormat(Module &M, uint64_t n) {
+  std::string g = ".cqfmt.fwrite" + std::to_string(n);
+  if (GlobalVariable *gv = M.getNamedGlobal(g))
+    return gv;
+  std::string f;
+  for (uint64_t i = 0; i < n; ++i)
+    f += "%c";
+  Constant *init = ConstantDataArray::getString(M.getContext(), f, /*AddNull=*/true);
+  auto *gv = new GlobalVariable(M, init->getType(), /*isConstant=*/true, GlobalValue::PrivateLinkage, init, g);
+  gv->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
+  gv->setAlignment(Align(1));
+  return gv;
+}
+
 bool signalFamily(StringRef n) {
   return n == "raise" || n == "kill" || n == "signal" || n == "sigaction" || n == "pthread_kill" ||
          n == "killpg" || n == "sigqueue";
@@ -426,6 +456,63 @@ void lowerHostEffect(LoweringContext &ctx, CallBase &CB) {
   if (!F)
     internalError("eff-tape: a host effect with no direct callee", &CB);
   Value *flag = ctx.currentFlag();
+
+  // fwrite(buf, size, n, stdout) of a slot buffer (99): one entry of size * n raw %c bytes, one i8 field
+  // per byte cell (a handle: a fresh tape rail; a classical cell: a literal).
+  if (libFunc(*F, LibFunc_fwrite)) {
+    auto *sz = dyn_cast<ConstantInt>(CB.getArgOperand(1));
+    auto *cnt = dyn_cast<ConstantInt>(CB.getArgOperand(2));
+    if (!sz || !cnt)
+      unimplemented("eff-tape: fwrite with a size or count that is not a constant", &CB);
+    if (!isStdout(CB.getArgOperand(3)))
+      unimplemented("eff-tape: fwrite to a stream other than stdout", &CB);
+    Value *buf = CB.getArgOperand(0);
+    if (ctx.T.isFatPointer(buf, ctx.S) || ctx.T.isQuantum(buf, ctx.S))
+      unimplemented("eff-tape: fwrite through a fat pointer (rule 21)", &CB);
+    bool slot = false, other = false;
+    for (ObjectId o : ctx.T.provenance(buf, ctx.S))
+      (ctx.T.classOf(o) == ObjClass::Slot ? slot : other) = true;
+    if (!slot || other)
+      unimplemented("eff-tape: fwrite of a buffer that is not one slot object", &CB);
+    uint64_t n = sz->getZExtValue() * cnt->getZExtValue();
+    LLVMContext &C = ctx.M.getContext();
+    SmallVector<Operand, 8> cells = mem::readSlotCells(ctx, buf, Type::getInt8Ty(C), n, CB);
+    Value *tape = tapeOf(ctx);
+    Constant *fmt = fwriteFormat(ctx.M, n);
+    if (flag)
+      ctx.emitCore(abi::CoreSpec{abi::Core::TapeFmt, {}, /*ctl=*/true}, {flag, tape, fmt});
+    else
+      ctx.emitCore(abi::CoreSpec{abi::Core::TapeFmt}, {tape, fmt});
+    RailType w{Kind::Int, 8};
+    for (const Operand &c : cells) {
+      if (!c.handle) {
+        ctx.emitCore(abi::CoreSpec{abi::Core::TapeWriteLit, w}, {tape, c.v});
+        continue;
+      }
+      CallInst *h2 = flag ? ctx.emitCore(abi::CoreSpec{abi::Core::TapeWrite, w, /*ctl=*/true}, {flag, tape, c.v})
+                          : ctx.emitCore(abi::CoreSpec{abi::Core::TapeWrite, w}, {tape, c.v});
+      ctx.unc().recordExternal(h2, Role::Tape);
+    }
+    return;
+  }
+  // fputs(s, stdout) of a constant string: an entry with format s and no fields (99). A '%' in s would
+  // be read as a conversion by the printf entry: unimplemented.
+  if (libFunc(*F, LibFunc_fputs)) {
+    Value *str = CB.getArgOperand(0);
+    StringRef text;
+    if (nonClassicalPointer(ctx, str) || !constantCString(str) || !getConstantStringInfo(str, text) ||
+        text.contains('%'))
+      unimplemented("eff-tape: fputs of a string that is not a constant without '%'", &CB);
+    if (!isStdout(CB.getArgOperand(1)))
+      unimplemented("eff-tape: fputs to a stream other than stdout", &CB);
+    Value *tape = tapeOf(ctx);
+    Value *sv = ctx.operand(str).v;
+    if (flag)
+      ctx.emitCore(abi::CoreSpec{abi::Core::TapeFmt, {}, /*ctl=*/true}, {flag, tape, sv});
+    else
+      ctx.emitCore(abi::CoreSpec{abi::Core::TapeFmt}, {tape, sv});
+    return;
+  }
 
   if (libFunc(*F, LibFunc_printf)) {
     Value *fmt = CB.getArgOperand(0);

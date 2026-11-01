@@ -67,6 +67,19 @@ define i32 @p_vol_local(i32 noundef %0, double noundef %1, i32 noundef %2) local
   ret i32 %9
 }
 
+; Function Attrs: nounwind ssp uwtable
+define i32 @p_atomic_rmw(i32 noundef %0, double noundef %1, i32 noundef %2) local_unnamed_addr #0 {
+  %4 = alloca i32, align 4
+  %5 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %1) #3
+  call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %4) #4
+  store i32 %5, ptr %4, align 4, !tbaa !10
+  %6 = atomicrmw add ptr %4, i32 %2 seq_cst, align 4
+  %7 = load i32, ptr %4, align 4, !tbaa !10
+  %8 = call i32 @cq_measure_si32(i32 noundef %7) #4
+  call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %4) #4
+  ret i32 %8
+}
+
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #1 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
 attributes #2 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }

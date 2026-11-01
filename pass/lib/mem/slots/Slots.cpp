@@ -76,6 +76,9 @@
 #include <utility>
 
 #include "cq/Abi.h"
+#include "cq/Calls.h"
+#include "cq/Loops.h"
+#include "llvm/Analysis/LoopInfo.h"
 #include "cq/Predicate.h"
 #include "cq/Uncompute.h"
 #include "llvm/ADT/DenseMap.h"
@@ -204,6 +207,7 @@ struct ViewVal {
 struct FnState {
   const Function *F = nullptr;
   std::unique_ptr<DominatorTree> DT;
+  std::unique_ptr<LoopInfo> LI;
   DenseMap<const Instruction *, Operand> lowered;   // slot load / store -> the handle the cell holds after it
   DenseSet<const Value *> registers;                // new-IR handles known never to be resolved here
   DenseSet<const Instruction *> copies;             // slot stores lowered as a basis copy (cq-dr4o)
@@ -286,7 +290,13 @@ bool isFree(const CallBase &CB) {
   return (k & AllocFnKind::Free) != AllocFnKind::Unknown;
 }
 
-bool escapes(const Value *root) {
+// A host effect (rule 16) never runs in the lowered program: its tape entry reads the cells it is handed
+// (readSlotCells, 99) and writes none.
+bool isHostEffect(LoweringContext &ctx, const CallBase &CB) {
+  return calls::classify(CB, ctx.T, ctx.S) == calls::Class::HostEffect;
+}
+
+bool escapes(LoweringContext &ctx, const Value *root) {
   SmallVector<const Value *, 8> work{root};
   SmallPtrSet<const Value *, 16> seen{root};
   while (!work.empty()) {
@@ -326,6 +336,8 @@ bool escapes(const Value *root) {
           continue;
         if (isFree(*CB) && CB->arg_size() && CB->getArgOperand(0) == v)
           continue;   // the end of a heap block's lifetime, not an escape
+        if (isHostEffect(ctx, *CB))
+          continue;   // a tape entry reads the cells (99)
         if (auto *II = dyn_cast<IntrinsicInst>(CB))
           if (II->getIntrinsicID() == Intrinsic::lifetime_start || II->getIntrinsicID() == Intrinsic::lifetime_end)
             continue;
@@ -394,7 +406,7 @@ ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId 
                     "size is known only to another function)",
                     root);
   }
-  info.escaping = escapes(root);
+  info.escaping = escapes(ctx, root);
   if (info.kind == RootKind::Local)
     for (const Access &a : accessesOf(ctx, *st.F, o))
       if (DL.getTypeAllocSize(a.ty).getFixedValue() != info.cellBytes)
@@ -498,7 +510,7 @@ bool mayWrite(LoweringContext &ctx, const ObjInfo &info, ObjectId o, const Instr
   }
   if (auto *MI = dyn_cast<MemIntrinsic>(CB))
     return hasObject(ctx, MI->getDest(), o);
-  if (CB->onlyReadsMemory())
+  if (CB->onlyReadsMemory() || isHostEffect(ctx, *CB))
     return false;
   if (info.kind == RootKind::Global && !info.escaping && cast<GlobalVariable>(info.root)->hasLocalLinkage())
     return callMayTouchInternalGlobal(*CB, *cast<GlobalVariable>(info.root));
@@ -719,6 +731,28 @@ Value *cellPointer(LoweringContext &ctx, const Site &s, const Instruction &I) {
   return B.CreateInBoundsGEP(i32, base.v, idx);
 }
 
+// A and B lie in one classically bounded loop (rule 14 case 1) and every loop holding either is one:
+// the loop is lowered once as a classical loop whose reverse undoes its trips last-in-first-out, so a
+// rail one trip stores into a cell and a later trip reads back (187) is undone after that later trip's
+// records that read it.
+bool sameClassicalLoop(LoweringContext &ctx, FnState &st, const Instruction *A, const Instruction *B) {
+  if (!st.LI)
+    st.LI = std::make_unique<LoopInfo>(*st.DT);
+  const Loop *LA = st.LI->getLoopFor(A->getParent()), *LB = st.LI->getLoopFor(B->getParent());
+  if (!LA || !LB)
+    return false;
+  bool common = false;
+  for (const Loop *l = LA; l; l = l->getParentLoop())
+    common |= l->contains(B->getParent());
+  if (!common)
+    return false;
+  for (const Loop *L0 : {LA, LB})
+    for (const Loop *l = L0; l; l = l->getParentLoop())
+      if (loops::classify(*l, ctx.T, ctx.S) != loops::Case::ClassicalBound)
+        return false;
+  return true;
+}
+
 // The rails the lowered stores of this function may have left in the cell I reads at run time (M3): every
 // store into the object whose cell may be I's and from which I is reachable, unless a store of exactly that
 // cell later in the store's block overwrites it first. Returns false (and sets allRegisters) when there is
@@ -757,7 +791,8 @@ bool cellArms(LoweringContext &ctx, FnState &st, const Site &s, const Instructio
       continue;
     auto it = st.lowered.find(S);
     if (it == st.lowered.end()) {
-      unnamed = true;
+      if (!sameClassicalLoop(ctx, st, S, &I))
+        unnamed = true;   // a trip-carried rail of the same classical loop is ordered by its reverse (187)
       continue;
     }
     if (!st.registers.count(it->second.v))
@@ -806,6 +841,29 @@ bool measuredThroughMemory(LoweringContext &ctx, FnState &st, const Instruction 
       return true;
   }
   return false;
+}
+
+// Rule 20 is per cell (orchestrator decision 2026-11-01 under rule 20, owner may override): a cell of a
+// static object (local or heap, not escaping, every read forwarded) is CLASSICAL when no write that may
+// reach it puts a handle there: every store that may write it stores a classical value outside any
+// quantum predicate, and no atomic read-modify-write or memory intrinsic writes the object.
+bool classicalCell(LoweringContext &ctx, FnState &st, const Site &s) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  if (s.info->boolCells || s.info->view)
+    return false;
+  for (const Instruction &X : instructions(*st.F))
+    if (auto *MI = dyn_cast<MemIntrinsic>(&X); MI && hasObject(ctx, MI->getDest(), s.o))
+      return false;
+  uint64_t size = s.info->cellBytes;
+  for (const Access &a : accessesOf(ctx, *st.F, s.o)) {
+    if (isa<LoadInst>(a.I) || differentCell(a.a, s.a, storeBytes(DL, a.ty), size))
+      continue;
+    auto *S = dyn_cast<StoreInst>(a.I);
+    if (!S || ctx.T.isQuantum(S->getValueOperand(), ctx.S) || ctx.T.isFatPointer(S->getPointerOperand(), ctx.S) ||
+        !ctx.preds().block(S->getParent()).quantumPart(ctx.T, ctx.S).isTop())
+      return false;
+  }
+  return true;
 }
 
 // The handle a cell holds at I (a load, or the old value at a guarded store).
@@ -890,14 +948,20 @@ bool deadClassicalStore(LoweringContext &ctx, FnState &st, const ObjInfo &info, 
   return false;
 }
 
-bool isThetaResult(const Value *v) {
+// The stored handle is the rail of a cq_theta result itself (a user register, rule 2), seen through the
+// views that name the same rail (a zext of an i1 into a _Bool cell, freeze). A zext the spine lowered
+// as a template into a fresh rail is not the register (cq-eq5x finding 1).
+bool isThetaResult(LoweringContext &ctx, const Value *v, const Operand &val) {
   if (auto *z = dyn_cast<ZExtInst>(v); z && z->getSrcTy()->isIntegerTy(1))
     v = z->getOperand(0);
   if (auto *fr = dyn_cast<FreezeInst>(v))
     v = fr->getOperand(0);
   auto *call = dyn_cast<CallInst>(v);
   const Function *f = call ? call->getCalledFunction() : nullptr;
-  return f && f->getName().starts_with("cq_theta_");
+  if (!f || !f->getName().starts_with("cq_theta_"))
+    return false;
+  Operand t = ctx.operand(call);
+  return t.handle && t.v == val.v;
 }
 
 
@@ -1352,7 +1416,7 @@ void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &
           uint64_t sz = storeBytes(DL, ty);
           for (const FnState::CellRead &R : st.cellReads) {
             if (R.a.root == s.a.root && !differentCell(R.a, s.a, R.size, sz) &&
-                isPotentiallyReachable(&I, R.I, nullptr, st.DT.get()))
+                isPotentiallyReachable(&I, R.I, nullptr, st.DT.get()) && !sameClassicalLoop(ctx, st, &I, R.I))
               unimplemented("mem-slots: a computed rail stored into a slot cell that an earlier-lowered run-time "
                             "read may see on a back edge (the cell's rail is loop-carried through memory: 187)",
                             &I);
@@ -1460,6 +1524,10 @@ void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
   cellRail(*s.info, ld.getType(), ld);
   Operand h = readCell(ctx, st, s, ld, ld.getType());
   st.lowered[&ld] = h;
+  if (!h.handle) {
+    ctx.bindFields(&ld, {h});   // a classical cell (rule 20 per cell)
+    return;
+  }
   if (s.info->boolCells) {
     // A _Bool cell holds an i1 rail behind i8 memory. The trunc i8 -> i1 of the load names that rail
     // (spine, cq-sj2j: rule 3, no gate); any other use reads the i8 value, which is the rail widened
@@ -1537,6 +1605,13 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
         s.info->kind == RootKind::Global && cast<GlobalVariable>(s.info->root)->hasLocalLinkage();
     if (!staticCell && !localGlobal && deadClassicalStore(ctx, st, *s.info, s.o, stI, s.a))
       return;
+    if (staticCell && classicalCell(ctx, st, s)) {
+      // Rule 20 per cell (99's 'z'): a cell of a static object that no store fills with a handle is a
+      // classical cell; every read of it forwards (static), so it holds the classical value and nothing
+      // is emitted.
+      st.lowered[&stI] = val;
+      return;
+    }
     Value *x = val.v;
     if (s.info->boolCells)
       x = B.CreateTrunc(x, Type::getInt1Ty(ctx.M.getContext()));
@@ -1559,12 +1634,34 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
     what = What::Copy;
     st.copies.insert(&stI);
   } else {
-    what = st.registers.count(val.v) || isThetaResult(v) ? What::Register : What::Computed;
+    what = st.registers.count(val.v) || isThetaResult(ctx, v, val) ? What::Register : What::Computed;
     if (what == What::Register)
       st.registers.insert(val.v);   // a cq_theta result is a user register (rule 2)
   }
 
   finishStore(ctx, st, s, stI, v->getType(), val, what);
+}
+
+// Rule 16 (99): the cells a host effect's tape entry reads.
+SmallVector<Operand, 8> readSlotCells(LoweringContext &ctx, const Value *ptr, Type *cellTy, uint64_t n,
+                                      Instruction &at) {
+  FnState &st = stateOf(ctx, at);
+  Site s = siteOf(ctx, st, at, ptr, cellTy);
+  if (s.info->view || s.info->boolCells)
+    unimplemented("mem-slots: a host effect reading a bit-view or _Bool slot object", &at);
+  if (s.info->escaping)
+    unimplemented("mem-slots: a host effect reading a slot object whose pointer escapes to a call", &at);
+  SmallVector<Operand, 8> out;
+  for (uint64_t i = 0; i < n; ++i) {
+    Site c = s;
+    c.a.off += int64_t(i * s.info->cellBytes);
+    if (!sourceOf(ctx, st, *c.info, c.o, &at, c.a, cellTy))
+      unimplemented("mem-slots: a host effect reading a slot cell that no dominating access of this function "
+                    "wrote (a run-time read at a host effect)",
+                    &at);
+    out.push_back(readCell(ctx, st, c, at, cellTy));
+  }
+  return out;
 }
 
 // Rule 24 (94): the single-thread meaning of an atomic read-modify-write of a slot cell.
