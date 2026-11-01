@@ -83,6 +83,8 @@
 #include "cq/Loops.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/PostDominators.h"
+#include "llvm/Analysis/ValueTracking.h"
+#include "llvm/Support/KnownBits.h"
 #include "cq/Predicate.h"
 #include "cq/Uncompute.h"
 #include "llvm/ADT/DenseMap.h"
@@ -713,8 +715,22 @@ bool mayWrite(LoweringContext &ctx, const ObjInfo &info, ObjectId o, const Instr
     if (II->getIntrinsicID() == Intrinsic::lifetime_start || II->getIntrinsicID() == Intrinsic::lifetime_end)
       return hasObject(ctx, II->getArgOperand(1), o);
   }
-  if (auto *MI = dyn_cast<MemIntrinsic>(CB))
-    return hasObject(ctx, MI->getDest(), o);
+  if (auto *MI = dyn_cast<MemIntrinsic>(CB)) {
+    if (!hasObject(ctx, MI->getDest(), o))
+      return false;
+    // cq-597j: the intrinsic writes bytes [dest, dest + len) only, len at most its upper bound (LLVM's known
+    // bits and range facts, as mem-qram's rule-22 cells: 90's memcpy of x & 3 bytes never reaches d[3]).
+    Addr d = decompose(MI->getDest(), DL);
+    if (!d.ok || !d.terms.empty() || !cell.ok || !cell.terms.empty() || d.root != cell.root)
+      return true;
+    const Value *len = MI->getLength();
+    APInt b = APIntOps::umin(computeKnownBits(len, DL).getMaxValue(),
+                             computeConstantRange(len, /*ForSigned=*/false).getUnsignedMax());
+    if (b.getActiveBits() > 40)
+      return true;
+    int64_t n = int64_t(b.getZExtValue());
+    return cell.off + int64_t(size) > d.off && cell.off < d.off + n;
+  }
   if (CB->onlyReadsMemory() || isHostEffect(ctx, *CB))
     return false;
   if (info.kind == RootKind::Global && !info.escaping && cast<GlobalVariable>(info.root)->hasLocalLinkage())
@@ -774,13 +790,37 @@ bool cloneWritesCell(LoweringContext &ctx, const ObjInfo &info, ObjectId o, cons
   return false;
 }
 
-// M6: X wrote exactly this cell through writeSlotCells (a memory intrinsic lowered per cell).
-bool namedWrite(FnState &st, const Instruction &X, const Addr &cell, uint64_t size, const ObjInfo &info) {
-  if (!(isa<MemIntrinsic>(X) || (info.split && isa<StoreInst>(X))) || !cell.terms.empty() ||
-      cell.root != info.root || size != info.cellBytes)
+// M6: X writes exactly this cell per cell: a memory intrinsic lowered through writeSlotCells (the cells
+// below its length's upper bound, mem-qram's rule-22 cells) or a classical store wider than its byte cells
+// (90's punned initializer, one seed per cell). Structural (cq-597j b): it does not depend on whether X
+// has been lowered yet (isDynamic asks before), so readCell finds the cell's handle in callOut once it has.
+bool namedWrite(LoweringContext &ctx, const Instruction &X, const Addr &cell, uint64_t size, const ObjInfo &info) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  if (!cell.ok || !cell.terms.empty() || cell.root != info.root || size != info.cellBytes || !info.cellBytes)
     return false;
-  auto it = st.callOut.find(&X);
-  return it != st.callOut.end() && it->second.count(cell.off);
+  int64_t from = 0, n = 0;
+  if (auto *MI = dyn_cast<MemIntrinsic>(&X)) {
+    Addr d = decompose(MI->getDest(), DL);
+    if (!d.ok || !d.terms.empty() || d.root != info.root)
+      return false;
+    const Value *len = MI->getLength();
+    APInt b = APIntOps::umin(computeKnownBits(len, DL).getMaxValue(),
+                             computeConstantRange(len, /*ForSigned=*/false).getUnsignedMax());
+    if (b.getActiveBits() > 40)
+      return false;
+    from = d.off;
+    n = int64_t((b.getZExtValue() + info.cellBytes - 1) / info.cellBytes * info.cellBytes);
+  } else if (auto *S = dyn_cast<StoreInst>(&X); S && info.split) {
+    uint64_t w = storeBytes(DL, S->getValueOperand()->getType());
+    Addr d = decompose(S->getPointerOperand(), DL);
+    if (w == info.cellBytes || !d.ok || !d.terms.empty() || d.root != info.root)
+      return false;
+    from = d.off;
+    n = int64_t(w);
+  } else {
+    return false;
+  }
+  return cell.off >= from && cell.off < from + n && (cell.off - from) % int64_t(info.cellBytes) == 0;
 }
 
 // Blocks on a path from S's block to L's block that does not re-enter S's block (a path that re-enters
@@ -895,7 +935,7 @@ const Instruction *sourceOf(LoweringContext &ctx, FnState &st, const ObjInfo &in
   // M1: a clone call that writes the cell leaves there the handle the caller loads right after it.
   if ((info.kind == RootKind::Local || info.kind == RootKind::Heap) && !info.escaping)
     for (const Instruction &X : instructions(*st.F))
-      if (&X != L && (cloneWritesCell(ctx, info, o, X, cell, size) || namedWrite(st, X, cell, size, info)) &&
+      if (&X != L && (cloneWritesCell(ctx, info, o, X, cell, size) || namedWrite(ctx, X, cell, size, info)) &&
           st.DT->dominates(&X, L) && clearBetween(ctx, info, o, &X, L, cell, size) &&
           (!best || st.DT->dominates(best, &X)))
         best = &X;
@@ -1372,6 +1412,14 @@ Operand readCell(LoweringContext &ctx, FnState &st, const Site &s, const Instruc
         unimplemented("mem-slots: a load of a cell a clone call wrote whose new handle the caller did not load "
                       "(mem::slotCellsAfterCall, M1)",
                       &I);
+      return k->second;
+    }
+    // cq-597j (a): a split classical store (90) or a memory intrinsic lowered through writeSlotCells (M6)
+    // names its cells' handles in callOut, per cell offset.
+    if (auto c = st.callOut.find(src); c != st.callOut.end()) {
+      auto k = c->second.find(s.a.off);
+      if (k == c->second.end())
+        internalError("mem-slots: a load forwards from a per-cell write that did not write its cell", &I);
       return k->second;
     }
     auto it = st.lowered.find(src);
