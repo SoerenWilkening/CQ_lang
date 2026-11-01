@@ -215,6 +215,21 @@ bool Walker::pureClassical(const Loop &lp) {
       if (auto *ld = dyn_cast<LoadInst>(&I))
         if (ctx.T.offsetKind(ld, ctx.S) == OffsetKind::Quantum)
           return false;
+      // A write into a QRAM or slot object (cq-dxii) is recorded per dynamic store, so the loop is not
+      // walked inline: it goes to rule 14's classical-bound construction (loops-classical).
+      const Value *dst = nullptr;
+      if (auto *st = dyn_cast<StoreInst>(&I))
+        dst = st->getPointerOperand();
+      else if (auto *mi = dyn_cast<MemIntrinsic>(&I))
+        dst = mi->getRawDest();
+      else if (auto *rmw = dyn_cast<AtomicRMWInst>(&I))
+        dst = rmw->getPointerOperand();
+      else if (auto *cx = dyn_cast<AtomicCmpXchgInst>(&I))
+        dst = cx->getPointerOperand();
+      if (dst)
+        for (ObjectId o : ctx.T.provenance(dst, ctx.S))
+          if (ctx.T.classOf(o) != ObjClass::Classical)
+            return false;
     }
   return true;
 }

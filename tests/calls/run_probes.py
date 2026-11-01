@@ -18,6 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PROBES = Path(__file__).parent / "probes"
 
+QRAM_LOOP = "fatal: cq: unimplemented: loops-classical: a store into QRAM memory in a classically bounded loop"
 # (probe, entry, opt flags, expectation, regexes the lowered module must contain)
 CASES = [
     # cq-5xde: a quantum-depth recursion is cut only under a proved depth bound B <= the cut level.
@@ -38,6 +39,14 @@ CASES = [
     ("libm_k", "k1", [], "lower", [r"call i32 @__cq_q_sin_1\(i32 %\w+, i32 53\)",
                                    r"call i32 @__cq_q_atan2_10\(i32 %\w+, double %\w+, i32 77\)"]),
     ("libm_flag", "k4", ["-cq-k=expf=9"], "pass", [r"call i32 @__cq_q_expf_1\(i32 %\w+, i32 9\)"]),
+    # cq-dxii: a classical loop writing into a QRAM or slot object is not pure classical (it reaches loops-classical;
+    # the QRAM probes stop there until loops-classical builds rule 14 over QRAM stores, then they become "pass").
+    ("qram_loop_stack", "t8", [], QRAM_LOOP, []),
+    ("qram_loop_columns", "t2", [], QRAM_LOOP, []),
+    ("qram_loop_stack8", "p9", [], QRAM_LOOP, []),
+    ("qram_loop_heap", "p10", [], QRAM_LOOP, []),
+    ("qram_loop_heap_branch", "p6", [], QRAM_LOOP, []),
+    ("slot_loop", "s1", [], "pass", [r"call void @cqrt_push"]),
 ]
 
 
