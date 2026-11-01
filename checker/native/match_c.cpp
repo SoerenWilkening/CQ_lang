@@ -43,9 +43,23 @@ struct Site {
   std::vector<std::vector<Occ>> occ;  // per sample
 };
 
+// The order state of compare.py's dfs (ordst). exc is keyed (sample, gate) here where compare.py keys
+// it (rail, sample, gate): a gate records the same position for every rail of its support at once and
+// is read only through its maximum per (sample, gate), so the two are in bijection (the rails of a key
+// are its gate's support) and the memo identifies exactly the same states (cq-uvgo: 117 at nS = 10
+// had 12 support rails per gate). The search keeps one order state, changed in place by order_ok and
+// restored from an undo log when a branch fails, so a frame holds no copy of it (cq-uvgo: a copy per
+// frame, 2408 frames deep, took gigabytes).
 struct OrdState {
   std::map<std::pair<int64_t, int>, int64_t> any, tgt;
-  std::map<std::tuple<int64_t, int, int>, int64_t> exc;
+  std::map<std::pair<int, int>, int64_t> exc;
+};
+
+struct Undo {
+  int which;      // 0 any, 1 tgt, 2 exc
+  int64_t a;
+  int b;
+  int64_t old;    // -1: the key was absent
 };
 
 struct OutOfBudget {};
@@ -65,6 +79,8 @@ struct Matcher {
   std::vector<uint8_t> unprep;
   std::unordered_set<std::string> failed;
   bool check_order = false;
+  OrdState os;              // the order state of the current node
+  std::vector<Undo> undo;   // order_ok's changes, newest last
   bool budgeted = false;
   int64_t budget = 0;
 
@@ -164,9 +180,39 @@ struct Matcher {
     return false;
   }
 
-  bool order_ok(int i, const std::vector<std::pair<int, int64_t>> &picks, const OrdState &in, OrdState &o) {
+  // set the map entry to p when p is larger; the old value goes on the undo log
+  template <class Map, class Key> void raise(int which, Map &mp, const Key &key, int64_t a, int b, int64_t p) {
+    auto it = mp.find(key);
+    int64_t old = it == mp.end() ? -1 : it->second;
+    if (p > old) {
+      undo.push_back({which, a, b, old});
+      mp[key] = p;
+    }
+  }
+
+  void rollback(size_t mark) {
+    while (undo.size() > mark) {
+      const Undo &u = undo.back();
+      if (u.which == 2) {
+        if (u.old < 0)
+          os.exc.erase({(int)u.a, u.b});
+        else
+          os.exc[{(int)u.a, u.b}] = u.old;
+      } else {
+        auto &mp = u.which == 0 ? os.any : os.tgt;
+        if (u.old < 0)
+          mp.erase({u.a, u.b});
+        else
+          mp[{u.a, u.b}] = u.old;
+      }
+      undo.pop_back();
+    }
+  }
+
+  // compare.py's order_ok on the current order state, in place (its changes logged on undo; on false
+  // the caller rolls them back)
+  bool order_ok(int i, const std::vector<std::pair<int, int64_t>> &picks) {
     const Gate &e = g[i];
-    o = in;
     bool comm_any = false;
     for (uint8_t c : e.comm)
       if (c) {
@@ -178,49 +224,39 @@ struct Matcher {
       int64_t p = pk.second;
       int64_t lim = -1;
       for (int64_t r : e.sup) {
-        auto it = o.tgt.find({r, s});
-        if (it != o.tgt.end() && it->second > lim)
+        auto it = os.tgt.find({r, s});
+        if (it != os.tgt.end() && it->second > lim)
           lim = it->second;
       }
       if (e.has_target) {
-        auto it = o.any.find({e.target, s});
-        int64_t v = it == o.any.end() ? -1 : it->second;
+        auto it = os.any.find({e.target, s});
+        int64_t v = it == os.any.end() ? -1 : it->second;
         if (v > lim)
           lim = v;
       }
-      for (auto &kv : o.exc) {
-        int s2 = std::get<1>(kv.first), k = std::get<2>(kv.first);
-        if (s2 == s && !e.comm[k] && kv.second > lim && e.ordered[k])
-          lim = kv.second;
+      for (auto it = os.exc.lower_bound({s, -1}); it != os.exc.end() && it->first.first == s; ++it) {
+        int k = it->first.second;
+        if (!e.comm[k] && it->second > lim && e.ordered[k])
+          lim = it->second;
       }
       if (p < lim)
         return false;
       if (comm_any) {
-        for (int64_t r : e.sup) {
-          auto key = std::make_tuple(r, s, i);
-          auto it = o.exc.find(key);
-          if (p > (it == o.exc.end() ? -1 : it->second))
-            o.exc[key] = p;
-        }
+        if (!e.sup.empty())     // one entry for every rail of the support (see OrdState)
+          raise(2, os.exc, std::make_pair(s, i), s, i, p);
         continue;
       }
-      for (int64_t r : e.sup) {
-        auto it = o.any.find({r, s});
-        if (p > (it == o.any.end() ? -1 : it->second))
-          o.any[{r, s}] = p;
-      }
-      if (e.has_target) {
-        auto it = o.tgt.find({e.target, s});
-        if (p > (it == o.tgt.end() ? -1 : it->second))
-          o.tgt[{e.target, s}] = p;
-      }
+      for (int64_t r : e.sup)
+        raise(0, os.any, std::make_pair(r, s), r, s, p);
+      if (e.has_target)
+        raise(1, os.tgt, std::make_pair(e.target, s), e.target, s, p);
     }
     return true;
   }
 
   static void put(std::string &k, const void *p, size_t n) { k.append((const char *)p, n); }
 
-  std::string key(int i, const Used &used, const Bits &unp, const Bits &fr, const OrdState &os) {
+  std::string key(int i, const Used &used, const Bits &unp, const Bits &fr) {
     std::string k;
     put(k, &i, sizeof i);
     put(k, used.data(), used.size() * 8);
@@ -243,17 +279,14 @@ struct Matcher {
     sz = (int64_t)os.exc.size();
     put(k, &sz, 8);
     for (auto &kv : os.exc) {
-      int64_t r = std::get<0>(kv.first);
-      int s = std::get<1>(kv.first), gi = std::get<2>(kv.first);
-      put(k, &r, 8);
-      put(k, &s, 4);
-      put(k, &gi, 4);
+      put(k, &kv.first.first, 4);
+      put(k, &kv.first.second, 4);
       put(k, &kv.second, 8);
     }
     return k;
   }
 
-  bool dfs(int i, const Used &used, const Bits &unp, const Bits &fr, const OrdState &os) {
+  bool dfs(int i, const Used &used, const Bits &unp, const Bits &fr) {
     if (i == n) {
       if (leftover(used))
         return false;
@@ -266,8 +299,9 @@ struct Matcher {
       }
       return true;
     }
-    std::string k = key(i, used, unp, fr, os);
-    if (failed.count(k))
+    // the key is not kept in the frame (it grows with the order state): built again at the failure,
+    // where the order state is the node's again
+    if (failed.count(key(i, used, unp, fr)))
       return false;
     if (budgeted) {
       budget -= 1;
@@ -278,31 +312,30 @@ struct Matcher {
       std::vector<std::pair<int, int64_t>> hl;
       Used nxt;
       if (take(i, j, used, nxt, &hl)) {
-        OrdState o2;
-        if (check_order) {
-          if (!order_ok(i, hl, os, o2))
-            continue;
-        } else {
-          o2 = os;
+        size_t mark = undo.size();
+        if (check_order && !order_ok(i, hl)) {
+          rollback(mark);
+          continue;
         }
         assign[i] = j;
-        if (dfs(i + 1, nxt, unp, fr, o2))
+        if (dfs(i + 1, nxt, unp, fr))
           return true;
+        rollback(mark);
       }
     }
     assign[i] = -1;
     int pj = g[i].partner_j;
     if (pj >= 0 && !bit(unp, pj) && !bit(fr, pj)) {
-      if (dfs(i + 1, used, with(unp, i), fr, os)) {
+      if (dfs(i + 1, used, with(unp, i), fr)) {
         unprep[i] = 1;
         return true;
       }
     }
     if (g[i].free_ok) {
-      if (dfs(i + 1, used, unp, with(fr, i), os))
+      if (dfs(i + 1, used, unp, with(fr, i)))
         return true;
     }
-    failed.insert(k);
+    failed.insert(key(i, used, unp, fr));
     return false;
   }
 };
@@ -391,13 +424,12 @@ extern "C" int64_t cq_match_c(const int64_t *in, int64_t nin, int64_t *out, int6
     return -2;
   Matcher::Used start(M.total_words, 0);
   Matcher::Bits empty((n + 63) / 64 + 1, 0);
-  OrdState none;
   M.assign.assign(n, -1);
   M.unprep.assign(n, 0);
   // first without the order and without a budget, then with both, from scratch
   M.check_order = false;
   M.budgeted = false;
-  bool found_any = M.dfs(0, start, empty, empty, none);
+  bool found_any = M.dfs(0, start, empty, empty);
   bool found = false;
   int64_t status = 0;
   if (found_any) {
@@ -405,11 +437,13 @@ extern "C" int64_t cq_match_c(const int64_t *in, int64_t nin, int64_t *out, int6
     std::vector<uint8_t> any_unprep = M.unprep;
     M.check_order = true;
     M.failed.clear();
+    M.os = OrdState();
+    M.undo.clear();
     M.unprep.assign(n, 0);
     M.budgeted = true;
     M.budget = M.budget_init;
     try {
-      found = M.dfs(0, start, empty, empty, none);
+      found = M.dfs(0, start, empty, empty);
     } catch (OutOfBudget &) {
       status = 2;
     }
