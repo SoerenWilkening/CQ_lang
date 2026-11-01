@@ -54,6 +54,14 @@ llvm::SmallVector<llvm::Value *, 8> slotRailsMayHold(LoweringContext &, const ll
 // value of a classical field (a host load). Anything else is unimplemented.
 bool hostRecord(LoweringContext &, const llvm::Value *root);
 Operand loadSlotCellAt(LoweringContext &, const llvm::Value *root, int64_t byte, llvm::Type *ty, llvm::Instruction &at);
+// M8 (cq-arch 2026-11-01, CR rules 5, 6, 20; 114). mem-slots, consumer spine construct: called once a
+// specialization's body is lowered (every item placed). A register array's rails (a slot array whose cells
+// rule 6 cleans at each register update y' = y ^ z, the old rail freed right after the store) are read by
+// no item that may run after such a clean-up freed them; anything else is unimplemented.
+void finishSlots(LoweringContext &);
+// M8. mem-slots, consumer loops-classical: handle is a register of a slot cell (kept, never resolved by
+// Uncompute: a seed or cq_theta register of a dynamic object, a register update's new rail, an alias load).
+bool isSlotRegister(LoweringContext &, const llvm::Value *handle);
 void allocateSlots(LoweringContext &, llvm::Instruction &site);   // mem-slots
 void endSlotLifetime(LoweringContext &, ObjectId, llvm::Instruction *at);  // mem-slots
 void lowerQromLoad(LoweringContext &, llvm::LoadInst &);          // mem-qrom

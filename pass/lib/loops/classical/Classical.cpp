@@ -95,6 +95,7 @@
 
 #include "cq/Abi.h"
 #include "cq/Calls.h"
+#include "cq/Memory.h"
 #include "cq/Predicate.h"
 #include "cq/Switch.h"
 
@@ -1743,6 +1744,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           return si && si->getValueOperand() == r.forward;
         });
         if (!stored)
+          continue;
+        // A register of a slot cell (a register update's new rail, 114) is kept: never undone, so no exit.
+        if (mem::isSlotRegister(ctx, r.forward))
           continue;
         // A rail mem-slots made Measured at its store is kept: the reverse never undoes it, and its
         // reads after the loop need not wait for the reverse (179's y[i]).

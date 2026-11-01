@@ -113,3 +113,4 @@ attributes #3 = { nounwind }
 !15 = distinct !{!15, !13, !14}
 ; CHECK-COUNT cells_distinct: call void @cqrt_ry_i1_controlled( 1
 ; CHECK-COUNT cells_distinct: call void @cq_template_icmp_eq_i32_hl_unc( 1
+; CHECK-COUNT cells_distinct: call void @cqrt_copy_i1( 2

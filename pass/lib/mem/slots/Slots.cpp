@@ -375,6 +375,12 @@ struct FnState {
   // (formal, byte offset): the caller's handle loaded at the clone's entry and the fresh slot result f the
   // clone stores into the cell there (f = old; each arm store makes it the stored value).
   std::map<std::pair<const Value *, int64_t>, std::pair<Value *, Value *>> guardedCells;
+  // Register updates (CR rules 6, 20; 114): per object, whether its every store has a register-update
+  // shape (1) or not (0); the new-IR base of each object that has one; the cqrt_free of each old rail they
+  // cleaned (finishSlots checks the items of the rails' other readers against them).
+  std::map<ObjectId, int> ruShape;
+  std::map<ObjectId, Value *> ruBase;
+  SmallVector<CallInst *, 8> ruFrees;
 };
 
 // One state per (output function, original function): rule 19 inlining lowers a callee's body into
@@ -3668,6 +3674,268 @@ void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
   ctx.bindFields(&ld, {h});
 }
 
+namespace {
+
+// ---- register updates (CR rules 6, 20; 114) ----------------------------------------------------
+//
+// CONTRACT. A REGISTER-UPDATE store S writes into a cell c of a slot object O the value y' = y ^ z (an xor
+// of two loads, or -O1's `icmp ne` of two loads of _Bool cells stored through its zext) where y is a load L of
+// exactly c in S's block before S with nothing between them that may write memory, and z a load of O at a
+// provably different cell. O is a REGISTER ARRAY when it is a dynamic local or heap object (not escaping,
+// no view, record or byte split, no atomic and no memory intrinsic on it) whose every store is a classical
+// store (a seed, rule 7) or a register-update store, both outside any quantum predicate, or a cq_theta
+// result stored back into the cell its operand was loaded from (rule 2, under a predicate too) or of a
+// classical value (a fresh register), with at
+// least one register update. Every rail ever in a cell of a register array is then a register (kept, never resolved by Uncompute; its loads are aliases): y'
+// takes Role::UserRegister, and the rail y that S supersedes (the cell was its only holder) is cleaned by
+// rule 6 right after the store, while y' and z are unchanged: t = y' ^ z, copy(t, y), uncompute t, free t,
+// free y (114: "the slot's old handle (no other reference) is cleaned by rule 6 right there, while the
+// control is still unchanged").
+//  - Dead (rule 6): no value that may name y is read after S: every load of O (but one that, as of S, read a
+//    provably different cell: it dominates S and no address value is redefined between), every value stored
+//    into O and every cq_theta result of either (through casts and freeze) has no use that a path from S
+//    reaches without redefining that value first; a handle merged by a phi or select is not followed
+//    (unimplemented).
+//  - Other readers: a garbage template whose operand is a rail of O must be undone before that rail is
+//    freed. finishSlots checks it once the body is lowered: each such template's _unc lies in its forward's
+//    block with no register-update clean-up between them (or it has none: kept). Any other call reading a
+//    rail of O (a clone call), or a phi or select over one, is unimplemented.
+//  - In a register array a register-update store whose operands are not the two loads' rails, whose y is not
+//    a register or is read after S, is unimplemented: the cells never mix registers with computed rails.
+
+const Value *stripViews(const Value *v) {
+  for (unsigned g = 0; g < 16; ++g) {
+    if (auto *c = dyn_cast<CastInst>(v); c && c->getSrcTy()->isIntegerTy() && c->getDestTy()->isIntegerTy()) {
+      v = c->getOperand(0);
+      continue;
+    }
+    if (auto *f = dyn_cast<FreezeInst>(v)) {
+      v = f->getOperand(0);
+      continue;
+    }
+    break;
+  }
+  return v;
+}
+
+bool isThetaCall(const Value *v) {
+  auto *c = dyn_cast<CallInst>(v);
+  return c && c->getCalledFunction() && c->getCalledFunction()->getName().starts_with("cq_theta_");
+}
+
+// S's register-update shape: L reads exactly S's cell (S's block, before S, no write between), Z another
+// cell of O.
+bool ruShapeOf(LoweringContext &ctx, const StoreInst &S, ObjectId o, bool boolCells, const LoadInst *&L,
+               const LoadInst *&Z) {
+  if (S.isVolatile() || S.isAtomic())
+    return false;
+  const DataLayout &DL = ctx.M.getDataLayout();
+  const Value *v = S.getValueOperand();
+  if (auto *z = dyn_cast<ZExtInst>(v); z && z->getSrcTy()->isIntegerTy(1))
+    v = z->getOperand(0);
+  const Value *a = nullptr, *b = nullptr;
+  if (auto *ic = dyn_cast<ICmpInst>(v);
+      ic && boolCells && ic->getPredicate() == ICmpInst::ICMP_NE && v != S.getValueOperand()) {   // 0/1 cells
+    a = ic->getOperand(0);
+    b = ic->getOperand(1);
+  } else if (auto *bo = dyn_cast<BinaryOperator>(v); bo && bo->getOpcode() == Instruction::Xor &&
+                                                      v == S.getValueOperand()) {
+    a = bo->getOperand(0);
+    b = bo->getOperand(1);
+  } else {
+    return false;
+  }
+  auto *la = dyn_cast<LoadInst>(a), *lb = dyn_cast<LoadInst>(b);
+  if (!la || !lb || la == lb || la->isVolatile() || lb->isVolatile() || la->isAtomic() || lb->isAtomic())
+    return false;
+  Addr sa = decompose(S.getPointerOperand(), DL);
+  uint64_t size = storeBytes(DL, S.getValueOperand()->getType());
+  if (!sa.ok)
+    return false;
+  for (int k = 0; k < 2; ++k) {
+    const LoadInst *l = k ? lb : la, *z = k ? la : lb;
+    if (!hasObject(ctx, l->getPointerOperand(), o) || !hasObject(ctx, z->getPointerOperand(), o))
+      continue;
+    if (l->getParent() != S.getParent() || !l->comesBefore(&S) || l->getType() != S.getValueOperand()->getType())
+      continue;
+    if (!sameCell(decompose(l->getPointerOperand(), DL), sa) ||
+        !differentCell(decompose(z->getPointerOperand(), DL), sa, storeBytes(DL, z->getType()), size))
+      continue;
+    bool writes = false;
+    for (auto it = std::next(l->getIterator()); &*it != &S; ++it)
+      writes |= it->mayWriteToMemory();
+    if (writes)
+      continue;
+    L = l;
+    Z = z;
+    return true;
+  }
+  return false;
+}
+
+bool registerArray(LoweringContext &ctx, FnState &st, ObjInfo &info, ObjectId o) {
+  if (auto it = st.ruShape.find(o); it != st.ruShape.end())
+    return it->second;
+  st.ruShape[o] = 0;
+  if (!(info.kind == RootKind::Local || info.kind == RootKind::Heap) || info.escaping || info.view ||
+      info.record || info.split || !isDynamic(ctx, st, info, o))
+    return false;
+  const DataLayout &DL = ctx.M.getDataLayout();
+  for (const Instruction &X : instructions(*st.F))
+    if (auto *MI = dyn_cast<MemIntrinsic>(&X); MI && hasObject(ctx, MI->getDest(), o))
+      return false;
+  bool any = false;
+  for (const Access &a : accessesOf(ctx, *st.F, o)) {
+    if (isRMW(a.I))
+      return false;
+    auto *S = dyn_cast<StoreInst>(a.I);
+    if (!S)
+      continue;
+    if (S->isVolatile() || S->isAtomic())
+      return false;
+    bool top = ctx.preds().block(S->getParent()).quantumPart(ctx.T, ctx.S).isTop();
+    const Value *v = S->getValueOperand();
+    if (!ctx.T.isQuantum(v, ctx.S)) {
+      if (!top)
+        return false;   // select(p, seed, old): a computed rail
+      continue;         // a seed
+    }
+    const LoadInst *L, *Z;
+    if (ruShapeOf(ctx, *S, o, info.boolCells, L, Z)) {
+      if (!top)
+        return false;
+      any = true;
+      continue;
+    }
+    const Value *x = stripViews(v);
+    if (isThetaCall(x)) {
+      const Value *arg = stripViews(cast<CallInst>(x)->getArgOperand(0));
+      if (!ctx.T.isQuantum(arg, ctx.S))
+        continue;   // a cq_theta of a classical value: a fresh register (115's `q[i] = 0; cq_theta(&q[i], t)`)
+      if (auto *ld = dyn_cast<LoadInst>(arg); ld && hasObject(ctx, ld->getPointerOperand(), o) &&
+                                              sameCell(decompose(ld->getPointerOperand(), DL), a.a))
+        continue;   // a cq_theta in place
+    }
+    return false;
+  }
+  st.ruShape[o] = any;
+  return any;
+}
+
+// The load X, as of S, read a provably different cell than S writes: X dominates S, the cells differ, and no
+// value of either address is redefined on a path from X to S (X's latest execution is in S's activation).
+bool readOtherCell(FnState &st, const Instruction &X, const Addr &ax, uint64_t sx, const StoreInst &S,
+                   const Addr &as, uint64_t ss) {
+  if (!ax.ok || !as.ok || ax.root != as.root || !differentCell(ax, as, sx, ss) || !st.DT->dominates(&X, &S))
+    return false;
+  const BasicBlock *BX = X.getParent(), *BS = S.getParent();
+  if (BX == BS)
+    return X.comesBefore(&S);
+  SmallPtrSet<const BasicBlock *, 16> mid = between(BX, BS);
+  if (mid.count(BX) || onCycleWithin(BS, mid))
+    return false;
+  auto redefined = [&](const Value *v) {
+    auto *d = dyn_cast<Instruction>(v);
+    return d && mid.count(d->getParent());
+  };
+  if (redefined(ax.root) || redefined(as.root))
+    return false;
+  for (const Addr *a : {&ax, &as})
+    for (auto &t : a->terms)
+      if (redefined(t.first))
+        return false;
+  return true;
+}
+
+// Rule 6 Dead for the rail S supersedes: some value that may name it is read after S.
+bool oldReadAfter(LoweringContext &ctx, FnState &st, const Site &s, const StoreInst &S) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  uint64_t size = storeBytes(DL, S.getValueOperand()->getType());
+  for (const Access &a : accessesOf(ctx, *st.F, s.o)) {
+    const Instruction *X = nullptr;
+    if (isa<LoadInst>(a.I)) {
+      if (readOtherCell(st, *a.I, a.a, storeBytes(DL, a.ty), S, s.a, size))
+        continue;   // names the rail of another cell (one rail per cell)
+      X = a.I;
+    }
+    else if (auto *T = dyn_cast<StoreInst>(a.I); T && T != &S)
+      X = dyn_cast<Instruction>(stripViews(T->getValueOperand()));
+    if (!X || !ctx.T.isQuantum(X, ctx.S))
+      continue;
+    SmallVector<const Instruction *, 8> work{X}, uses;
+    SmallPtrSet<const Instruction *, 8> seen{X};
+    while (!work.empty()) {
+      const Instruction *w = work.pop_back_val();
+      for (const User *u : w->users()) {
+        auto *ui = dyn_cast<Instruction>(u);
+        if (!ui)
+          return true;
+        if (isa<PHINode>(ui) || (isa<SelectInst>(ui) && cast<SelectInst>(ui)->getCondition() != w))
+          return true;   // a merged handle: not followed
+        uses.push_back(ui);
+        bool same = isa<CastInst>(ui) || isa<FreezeInst>(ui) ||
+                    (isThetaCall(ui) && cast<CallInst>(ui)->getArgOperand(0) == w);
+        if (same && seen.insert(ui).second)
+          work.push_back(ui);
+      }
+    }
+    SmallPtrSet<const Instruction *, 1> none;
+    for (const Instruction *U : uses)
+      if (reachesUnkilled(S, none, [&](const Instruction &I) { return &I == X; },
+                          [&](const Instruction &I, bool) { return &I == U; }))
+        return true;
+  }
+  return false;
+}
+
+struct RegUpdate { Value *old, *z; abi::TemplateSpec spec; };
+
+// S as a register update of a register array (nullopt: not one, lowered as before).
+std::optional<RegUpdate> registerUpdate(LoweringContext &ctx, FnState &st, const Site &s, const StoreInst &S,
+                                        const Operand &val) {
+  if (!registerArray(ctx, st, *s.info, s.o))
+    return std::nullopt;
+  const LoadInst *L = nullptr, *Z = nullptr;
+  if (!ruShapeOf(ctx, S, s.o, s.info->boolCells, L, Z))
+    return std::nullopt;
+  if (ctx.currentFlag() || !ctx.currentPredicate().isTop())
+    internalError("mem-slots: a register update of a register array under a quantum predicate", &S);
+  Operand y = ctx.operand(L), z = ctx.operand(Z);
+  auto *fwd = dyn_cast<CallInst>(val.v);
+  bool unc = false;
+  std::optional<abi::TemplateSpec> spec;
+  if (fwd && fwd->getCalledFunction())
+    spec = abi::parseTemplate(fwd->getCalledFunction()->getName(), &unc);
+  if (!y.handle || !z.handle || y.v == z.v || !val.handle || !spec || unc || spec->op != "xor" ||
+      !spec->shape.empty() || fwd->arg_size() != 2 ||
+      !((fwd->getArgOperand(0) == y.v && fwd->getArgOperand(1) == z.v) ||
+        (fwd->getArgOperand(0) == z.v && fwd->getArgOperand(1) == y.v)))
+    unimplemented("mem-slots: a register update of a register array whose stored rail is not the xor template "
+                  "of the two cells' rails (rule 6 through the cell)",
+                  &S);
+  if (!st.registers.count(y.v))
+    unimplemented("mem-slots: a register update of a register array whose old rail is not a register", &S);
+  if (oldReadAfter(ctx, st, s, S))
+    unimplemented("mem-slots: a register update of a register array whose old rail may still be read after the "
+                  "store (rule 6 Dead)",
+                  &S);
+  return RegUpdate{y.v, z.v, *spec};
+}
+
+// Rule 6 on the superseded rail, right after the store: t = y' ^ z; copy(t, y); t's _unc; free t; free y.
+void cleanSuperseded(LoweringContext &ctx, FnState &st, const Site &s, const RegUpdate &ru, Value *newRail) {
+  IRBuilder<> &B = ctx.B();
+  CallInst *t = B.CreateCall(abi::declare(ctx.M, ru.spec, false), {newRail, ru.z});
+  ctx.emitCore(abi::CoreSpec{abi::Core::Copy, ru.spec.w}, {t, ru.old});
+  B.CreateCall(abi::declare(ctx.M, ru.spec, true), {t, newRail, ru.z});
+  ctx.emitCore(abi::CoreSpec{abi::Core::Free, {}}, {t});
+  st.ruFrees.push_back(ctx.emitCore(abi::CoreSpec{abi::Core::Free, {}}, {ru.old}));
+  Operand base = ctx.operand(s.info->root);
+  st.ruBase[s.o] = base.v;
+}
+
+} // namespace
+
 void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
   FnState &st = stateOf(ctx, stI);
   const Value *v = stI.getValueOperand();
@@ -3816,6 +4084,9 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
     what = What::Seed;
   } else if (needsCopy(ctx, st, stI, s)) {
     // C copies the value (cq-dr4o): the cell gets its own rail, a basis copy of the stored one (CR §0).
+    if (const LoadInst *L = nullptr, *Z = nullptr;
+        registerArray(ctx, st, *s.info, s.o) && ruShapeOf(ctx, stI, s.o, s.info->boolCells, L, Z))
+      unimplemented("mem-slots: a register update of a register array whose new rail has another holder", &stI);
     Value *h = val.v;
     CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
                                {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
@@ -3826,6 +4097,14 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
     val = Operand{c, true};
     what = What::Copy;
     st.copies.insert(&stI);
+  } else if (std::optional<RegUpdate> ru = registerUpdate(ctx, st, s, stI, val)) {
+    // A register update (CR rules 6, 20; 114): y' is the cell's register, the superseded rail is cleaned.
+    ctx.unc().setRole(ctx.unc().idOf(val.v), Role::UserRegister);
+    st.registers.insert(val.v);
+    noteDistinctStore(ctx, st, s, stI, storeBytes(ctx.M.getDataLayout(), v->getType()), val.v);   // M3c
+    finishStore(ctx, st, s, stI, v->getType(), val, What::Register);
+    cleanSuperseded(ctx, st, s, *ru, val.v);
+    return;
   } else {
     what = st.registers.count(val.v) || isThetaResult(ctx, v, val) ? What::Register : What::Computed;
     if (what == What::Register)
@@ -4349,6 +4628,85 @@ SmallVector<Value *, 4> slotCellsAfterCall(LoweringContext &ctx, const CallBase 
     out.push_back(h);
   }
   return out;
+}
+
+
+// Register updates (CR rules 5, 6, 20; 114): the readers of a register array's rails, checked once the body
+// is lowered and every item placed. A rail a cell of the array held may be freed by a later register update's
+// rule-6 clean-up, which Uncompute does not see, so every item that reads such a rail runs before any such
+// clean-up can: a template reading one is a register itself, kept (no _unc), or undone in its own block with
+// no clean-up between its forward and its _unc (a block runs whole, so no other block's clean-up can come
+// between them either). Any other reader of such a rail is unimplemented.
+void finishSlots(LoweringContext &ctx) {
+  for (auto &[key, stp] : states()) {
+    if (key.first != &ctx.out() || !stp || stp->ruFrees.empty())
+      continue;
+    FnState &st = *stp;
+    DenseSet<const CallInst *> frees(st.ruFrees.begin(), st.ruFrees.end());
+    SmallPtrSet<const Value *, 4> bases;
+    for (auto &[o, b] : st.ruBase)
+      bases.insert(b);
+    SmallVector<Value *, 32> handles;
+    for (Instruction &I : instructions(ctx.out())) {
+      if (auto *ld = dyn_cast<LoadInst>(&I); ld && bases.count(getUnderlyingObject(ld->getPointerOperand())))
+        handles.push_back(ld);
+      if (auto *si = dyn_cast<StoreInst>(&I); si && bases.count(getUnderlyingObject(si->getPointerOperand())))
+        handles.push_back(si->getValueOperand());
+    }
+    auto ruBetween = [&](const Instruction *a, const Instruction *b) {
+      for (const Instruction *x = a->getNextNode(); x && x != b; x = x->getNextNode())
+        if (auto *c = dyn_cast<CallInst>(x); c && frees.count(c))
+          return true;
+      return false;
+    };
+    SmallPtrSet<const Value *, 32> seen;
+    for (Value *h : handles) {
+      if (!seen.insert(h).second)
+        continue;
+      unsigned nFree = 0;
+      for (User *u : h->users()) {
+        if (isa<StoreInst>(u))
+          continue;
+        auto *c = dyn_cast<CallInst>(u);
+        Function *cf = c ? c->getCalledFunction() : nullptr;
+        if (!cf)
+          unimplemented("mem-slots: a rail of a register-updated slot array read by a phi, select or indirect "
+                        "call",
+                        dyn_cast<Instruction>(u));
+        if (frees.count(c))
+          ++nFree;
+        if (abi::parseCore(cf->getName()))
+          continue;   // a core gate: control, rotation, measurement, the clean-up's copy and free
+        bool unc = false;
+        if (!abi::parseTemplate(cf->getName(), &unc))
+          unimplemented("mem-slots: a rail of a register-updated slot array read by a call that is not a template "
+                        "or a core gate",
+                        c);
+        if (unc || st.registers.count(c))
+          continue;   // an _unc is checked from its forward; a register is never undone
+        for (User *ru : c->users()) {
+          auto *uc = dyn_cast<CallInst>(ru);
+          Function *uf = uc ? uc->getCalledFunction() : nullptr;
+          bool u2 = false;
+          if (!uf || !abi::parseTemplate(uf->getName(), &u2) || !u2 || uc->getArgOperand(0) != c)
+            continue;
+          if (uc->getParent() != c->getParent() || !c->comesBefore(uc) || ruBetween(c, uc))
+            unimplemented("mem-slots: a template reading a rail of a register-updated slot array is undone outside "
+                          "its own block or after a register update may have freed that rail (rule 5)",
+                          c);
+        }
+      }
+      if (nFree > 1)
+        internalError("mem-slots: a register-updated slot array's rail freed twice", h);
+    }
+  }
+}
+
+bool isSlotRegister(LoweringContext &ctx, const Value *handle) {
+  for (auto &[key, stp] : states())
+    if (key.first == &ctx.out() && stp && stp->registers.count(handle))
+      return true;
+  return false;
 }
 
 } // namespace cq::mem

@@ -1762,6 +1762,7 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
     invert::lowerAdjointBody(ctx, F);   // rule 17: the _adj clone's body is the adjoint of the clone's (cq-xjw2)
   else
     Walker(ctx, F, DT, LI).run();
+  mem::finishSlots(ctx);   // M8: register arrays' readers against their rule-6 clean-ups (114)
 
   if (last) {
     finishEntries(M);
