@@ -66,9 +66,12 @@
 //     made (rule 17 defines no adjoint of a region with an output); a classical instruction reading a
 //     rail the region made; a non-diagonal gate or an in-place write in the region on a rail that a
 //     template of the region reads, at a point between that template and its uncompute (rule 5's
-//     invariant; cq-ja5h); a gate reading memory (a pointer operand) in a region whose skeleton
-//     writes memory (the adjoint runs every classical write first; cq-wvq3); a recorded write on a
-//     seed outside the seed's segment.
+//     invariant; cq-ja5h), an _adj clone call rotating such a rail included (cq-c969); a gate whose
+//     memory accesses the reverse reorders against a write: a gate reading memory (a pointer operand)
+//     or an _adj clone call (its body's classical accesses, transitively; it runs them in the reverse)
+//     against a skeleton write, a clone's write against the skeleton's accesses, against another gate's
+//     or on several trips (the adjoint runs every classical access first; cq-wvq3, cq-r6cv); a recorded
+//     write on a seed outside the seed's segment.
 //
 // References: Bennett.jl 824458d src/bennett_transform.jl:_bennett_default (lines 337-381) replays the
 // forward gate list in reverse order, each gate by its inverse (a self-inverse Toffoli/CNOT/NOT);
@@ -92,7 +95,11 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetVector.h"
+#include "llvm/Analysis/CaptureTracking.h"
 #include "llvm/Analysis/PostDominators.h"
+#include "llvm/Analysis/ValueTracking.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/Support/ModRef.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/ConstantFold.h"
 #include "llvm/IR/Constants.h"
@@ -561,6 +568,134 @@ Value *popValue(IRBuilder<> &B, FunctionCallee pop, Type *t, const Instruction *
 }
 
 // ------------------------------------------------------------------------------------------------
+// Classical memory footprints (step 6, cq-wvq3, cq-r6cv). The adjoint runs the skeleton's classical
+// memory accesses first, in forward order, and every gate after them, reversed: a gate's own memory
+// reads (a pointer operand) and a clone call's classical accesses (its _adj body runs them when the
+// call runs) move past the skeleton and past each other. A footprint is the set of locations accessed:
+// named globals, `local` (an alloca of the region's function whose address is not captured: no gate
+// reaches it), or `any`.
+
+struct Footprint {
+  bool any = false, local = false;
+  SmallPtrSet<const GlobalVariable *, 4> globals;
+  bool empty() const { return !any && !local && globals.empty(); }
+  void merge(const Footprint &o) {
+    any |= o.any;
+    local |= o.local;
+    globals.insert(o.globals.begin(), o.globals.end());
+  }
+  bool overlaps(const Footprint &o) const {
+    if ((any && !o.empty()) || (o.any && !empty()))
+      return true;
+    for (const GlobalVariable *g : globals)
+      if (o.globals.count(g))
+        return true;
+    return false;
+  }
+};
+struct MemFx {
+  Footprint r, w;
+};
+
+// The location ptr names. In a clone body (inClone) an alloca of the body is the clone's own frame: it
+// is not part of the footprint the call shows its caller.
+void addLocation(Footprint &f, const Value *ptr, bool read, bool inClone) {
+  const Value *o = getUnderlyingObject(ptr);
+  if (auto *gv = dyn_cast<GlobalVariable>(o)) {
+    if (read && gv->isConstant())
+      return;   // never written
+    f.globals.insert(gv);
+    return;
+  }
+  if (auto *a = dyn_cast<AllocaInst>(o)) {
+    if (inClone)
+      return;
+    if (!PointerMayBeCaptured(a, /*ReturnCaptures=*/true, /*StoreCaptures=*/true)) {
+      f.local = true;
+      return;
+    }
+  }
+  f.any = true;
+}
+
+// A classical instruction's footprint (of the skeleton, or of a clone body under its specialization).
+void instructionFx(const Instruction &I, MemFx &fx, bool inClone) {
+  if (auto *L = dyn_cast<LoadInst>(&I)) {
+    addLocation(fx.r, L->getPointerOperand(), true, inClone);
+    if (L->isVolatile() || !L->isUnordered())
+      fx.w.any = true;
+    return;
+  }
+  if (auto *St = dyn_cast<StoreInst>(&I)) {
+    addLocation(fx.w, St->getPointerOperand(), false, inClone);
+    if (St->isVolatile() || !St->isUnordered())
+      fx.r.any = true;
+    return;
+  }
+  if (auto *CB = dyn_cast<CallBase>(&I)) {
+    if (I.isLifetimeStartOrEnd() || isa<DbgInfoIntrinsic>(I) || CB->doesNotAccessMemory())
+      return;
+    if (auto *II = dyn_cast<IntrinsicInst>(&I); II && (II->getIntrinsicID() == Intrinsic::assume ||
+                                                      II->getIntrinsicID() == Intrinsic::experimental_noalias_scope_decl))
+      return;
+    MemoryEffects me = CB->getMemoryEffects();
+    if (me.getWithoutLoc(IRMemLocation::ArgMem).doesNotAccessMemory()) {
+      // Argument memory only: the objects its pointer arguments name.
+      for (const Value *a : CB->args())
+        if (a->getType()->isPointerTy()) {
+          if (isModSet(me.getModRef(IRMemLocation::ArgMem)))
+            addLocation(fx.w, a, false, inClone);
+          if (isRefSet(me.getModRef(IRMemLocation::ArgMem)))
+            addLocation(fx.r, a, true, inClone);
+        }
+      return;
+    }
+    fx.r.any = true;
+    if (!CB->onlyReadsMemory())
+      fx.w.any = true;
+    return;
+  }
+  if (I.mayReadFromMemory())
+    fx.r.any = true;
+  if (I.mayWriteToMemory())
+    fx.w.any = true;
+}
+
+// The classical footprint of a clone body (its specialization SP), transitively over the clones it calls.
+// Its quantum accesses (a slot cell's handle loaded or stored, a gate) are not classical memory.
+void cloneFx(const TaintInfo &T, const Specialization &SP, MemFx &fx, DenseSet<const Specialization *> &seen) {
+  if (!seen.insert(&SP).second)
+    return;
+  for (const BasicBlock &BB : *SP.F)
+    for (const Instruction &I : BB) {
+      if (auto *L = dyn_cast<LoadInst>(&I); L && T.isQuantum(L, SP))
+        continue;
+      if (auto *St = dyn_cast<StoreInst>(&I); St && T.isQuantum(St->getValueOperand(), SP))
+        continue;
+      if (auto *CB = dyn_cast<CallBase>(&I)) {
+        if (const Specialization *c = T.calleeSpecialization(*CB, SP)) {
+          // Its accesses through a pointer formal count as `any` (a formal is no alloca or global).
+          cloneFx(T, *c, fx, seen);
+          continue;
+        }
+        if (isFence(&I))
+          continue;   // CQ.h's barrier around a nested region's markers
+        switch (calls::classify(*CB, T, SP)) {
+        case calls::Class::Theta:
+        case calls::Class::Phi:
+        case calls::Class::Measure:
+        case calls::Class::InvertBegin:
+        case calls::Class::InvertEnd:
+          continue;
+        default:
+          break;
+        }
+      }
+      instructionFx(I, fx, /*inClone=*/true);
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
 // Steps 2 to 5.
 
 struct Maker {
@@ -637,6 +772,7 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
     S[s] = newBlock();
 
   DenseSet<const BasicBlock *> done;
+  DenseMap<const CallInst *, CallBase *> cloneOrig;   // output clone call -> the original call it lowers
   std::vector<std::pair<PHINode *, PHINode *>> classicalPhis;
   std::vector<std::pair<PHINode *, Value *>> carried;   // quantum phis with a back-edge incoming
   auto railOfIncoming = [&](Value *v, const PHINode &phi) -> Value * {
@@ -699,7 +835,14 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
       }
     auto [it, end] = R.body(b);
     for (; it != end; ++it) {
+      Instruction *prev = S[s]->empty() ? nullptr : &S[s]->back();
       lowerInstruction(ctx, *it);
+      // The clone calls this instruction lowered to, for their callee's memory effects (cq-r6cv).
+      if (auto *CB = dyn_cast<CallBase>(&*it))
+        for (auto o = prev ? std::next(prev->getIterator()) : S[s]->begin(); o != S[s]->end(); ++o)
+          if (auto *oc = dyn_cast<CallInst>(&*o); oc && oc->getCalledFunction() &&
+                                                  abi::parseClone(oc->getCalledFunction()->getName()))
+            cloneOrig[oc] = CB;
       if (B.GetInsertBlock() != S[s] || B.GetInsertPoint() != S[s]->end())
         unimplemented("eff-invert: control flow in the lowered body of a cq_invert region", &*it);
     }
@@ -755,26 +898,54 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
       if (gatePos.count(op))
         unimplemented("eff-invert: a classical instruction reading a rail made inside a cq_invert region", I);
 
-  // Memory: the skeleton runs every classical write before any reversed gate.
+  // Memory: the skeleton runs every classical access first, in forward order; the gates run after it,
+  // reversed. A gate reading memory (a pointer operand: everything it may reach) and an _adj clone call
+  // (its body's classical accesses, which its _adj body runs when the call runs; cq-r6cv) move past the
+  // skeleton and past each other. Any access a move may reorder against a write is unimplemented.
   {
-    const Instruction *writer = nullptr, *reader = nullptr;
+    MemFx skelFx;
     for (auto &[I, s] : skel)
-      if (I->mayWriteToMemory() && !I->isLifetimeStartOrEnd())
-        writer = I;
-    auto readsMemory = [](CallInst *c) {
-      for (Value *a : c->args())
-        if (a->getType()->isPointerTy())
-          return true;
-      return false;
+      instructionFx(*I, skelFx, /*inClone=*/false);
+    struct Moved {
+      CallInst *call;
+      unsigned seg;
+      MemFx fx;
     };
+    std::vector<Moved> moved;
     for (unsigned s = 0; s < nS; ++s)
-      for (const Gate &g : G[s])
-        if (readsMemory(g.call))
-          reader = g.call;
-    if (writer && reader)
-      unimplemented("eff-invert: a gate reading memory in a cq_invert region whose classical code writes memory "
-                    "(the adjoint runs every classical write first)",
-                    reader);
+      for (const Gate &g : G[s]) {
+        Moved m{g.call, s, {}};
+        for (Value *a : g.call->args())
+          if (a->getType()->isPointerTy())
+            m.fx.r.any = true;   // what it reads through the pointer: any object
+        if (g.kind == GK::Clone) {
+          CallBase *orig = cloneOrig.lookup(g.call);
+          const Specialization *sp = orig ? ctx.T.calleeSpecialization(*orig, ctx.S) : nullptr;
+          if (!sp)
+            internalError("eff-invert: an _adj clone call of a cq_invert region with no callee specialization",
+                          g.call);
+          DenseSet<const Specialization *> seen;
+          cloneFx(ctx.T, *sp, m.fx, seen);
+        }
+        if (!m.fx.r.empty() || !m.fx.w.empty())
+          moved.push_back(std::move(m));
+      }
+    auto stop = [&](const Instruction *at, const std::string &why) {
+      unimplemented("eff-invert: " + why + " (the adjoint runs the classical code first and the gates reversed)",
+                    at);
+    };
+    for (size_t i = 0; i < moved.size(); ++i) {
+      const Moved &a = moved[i];
+      if (a.fx.w.overlaps(skelFx.r) || a.fx.w.overlaps(skelFx.w))
+        stop(a.call, "a clone call writing memory the classical code of its cq_invert region accesses");
+      if (a.fx.r.overlaps(skelFx.w))
+        stop(a.call, "a gate reading memory in a cq_invert region whose classical code writes memory it may read");
+      if (!a.fx.w.empty() && !R.once(a.seg))
+        stop(a.call, "a clone call writing memory on several trips of a cq_invert region");
+      for (size_t j = 0; j < moved.size(); ++j)
+        if (j != i && (a.fx.w.overlaps(moved[j].fx.r) || a.fx.w.overlaps(moved[j].fx.w)))
+          stop(moved[j].call, "a gate accessing memory a clone call of the same cq_invert region writes");
+    }
   }
 
   // Makers and their cleaning.
@@ -910,7 +1081,10 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
       for (unsigned s = 0; s < nS; ++s)
         for (unsigned i = 0; i < G[s].size(); ++i) {
           const Gate &g = G[s][i];
-          if (g.call == m.call || writeTarget(g) != op)
+          // A clone call hits the rails it was noted non-diagonal on (its rotated cells and by-value
+          // formals, calls noteRotatedCells; cq-c969).
+          bool hit = g.kind == GK::Clone ? U.mayHit(op, g.call) : writeTarget(g) == op;
+          if (g.call == m.call || !hit)
             continue;
           bool safe;
           if (s == m.seg)
@@ -918,7 +1092,9 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
           else
             safe = R.dom[s].test(m.seg) && !R.sameCycle(s, m.seg);
           if (!safe)
-            unimplemented(std::string("eff-invert: a ") + (nonDiagonal(g) ? "non-diagonal gate" : "write") +
+            unimplemented(std::string("eff-invert: a ") +
+                              (g.kind == GK::Clone ? "clone call rotating a cell"
+                                                   : nonDiagonal(g) ? "non-diagonal gate" : "write") +
                               " inside a cq_invert region on a rail a template of the region reads (rule 5)",
                           g.call);
         }

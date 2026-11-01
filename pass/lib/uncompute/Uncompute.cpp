@@ -3246,6 +3246,23 @@ void Uncompute::noteCallReads(CallInst *fwd, ArrayRef<RailId> reads) {
 
 RailId Uncompute::idOf(Value *handle) const { return impl->lookup(handle, "idOf", handle); }
 
+bool Uncompute::mayHit(const Value *handle, const Instruction *gate) const {
+  auto it = impl->byHandle.find(handle);
+  if (it == impl->byHandle.end())
+    return false;
+  for (RailId g : impl->names(it->second))
+    if (is_contained(impl->rails[g].hits, gate))
+      return true;
+  for (RailId x : impl->leaves(it->second)) {
+    const Impl::Rail &r = impl->rails[x];
+    if (is_contained(r.hits, gate))
+      return true;
+    if (is_contained(r.aliasHits, gate) && !impl->aliasRuledOut(gate, handle))
+      return true;
+  }
+  return false;
+}
+
 std::optional<Role> Uncompute::liveRole(RailId r) const {
   const Impl::Rail &x = impl->rails[r];
   if (x.released || !x.exitsDone.empty())

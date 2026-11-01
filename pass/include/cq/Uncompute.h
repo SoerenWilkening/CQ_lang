@@ -83,6 +83,9 @@ public:
   std::optional<Role> liveRole(RailId) const;
   void noteUse(RailId, llvm::Instruction *consumer);
   void noteNonDiagonal(RailId target, llvm::Instruction *gate);
+  // U9 (cq-c969, CR rules 5, 17): may `gate` (noted by noteNonDiagonal, directly or as an alias hit not
+  // ruled out by M3b) hit a rail `handle` may name at run time? false for a value that is no recorded rail.
+  bool mayHit(const llvm::Value *handle, const llvm::Instruction *gate) const;
   void cleanupBijective(RailId oldRail, const abi::TemplateSpec &inverse, llvm::ArrayRef<Operand>);
   // U8 (cq-xivx, CR rule 18, §1.4 _inv<c>): rule 6 clean-up of oldRail through a call: its item emits
   // inv(args..., old handle) (inv's calling convention) and then frees oldRail. The handles of args and

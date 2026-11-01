@@ -9,7 +9,9 @@ For each probe file in CHECKED it checks, and fails on:
 probes/*_error.O1.ll must make cq-lower exit non-zero with an eff-invert internal error: a region whose
 quantum value is read after it (no adjoint under rule 17), markers -O1 duplicated into quantum arms
 (cq-asfn, not built yet; update this test when it is), a rotation between a region template and its
-uncompute (rule 5) and a classical conjunct of a quantum arm condition (rule 8 guard).
+uncompute (rule 5), a classical conjunct of a quantum arm condition (rule 8 guard), an _adj clone call
+whose classical memory accesses the reverse would reorder (cq-r6cv: mem_clone_*) and an _adj clone rotating
+a rail a region template reads (cq-c969, rule 5: clone_rot_error).
 probes/invert_loop.O1.ll (a classical loop in a region) and probes/invert_adj.O1.ll (an _adj clone) are
 checked like invert.O1.ll.
 The owned example's acceptance is `python3 -m cqcheck run 44_invert_bracket --oracle both` (the bead).
@@ -35,7 +37,17 @@ ERRORS = {"region_output_error.O1.ll": "eff-invert: a quantum value of a cq_inve
           "barrier_error.O1.ll": "eff-invert: a non-diagonal gate inside a cq_invert region on a rail a template "
                                  "of the region reads (rule 5)",
           "guard_error.O1.ll": "eff-invert: a quantum arm inside a cq_invert region whose block predicate has a "
-                               "classical conjunct"}
+                               "classical conjunct",
+          # cq-r6cv: an _adj clone's classical memory accesses move with the call to the reverse.
+          "mem_clone_qrom_error.O1.ll": "eff-invert: a gate accessing memory a clone call of the same cq_invert "
+                                        "region writes",
+          "mem_clone_pair_error.O1.ll": "eff-invert: a clone call writing memory the classical code of its "
+                                        "cq_invert region accesses",
+          "mem_clone_global_error.O1.ll": "eff-invert: a gate reading memory in a cq_invert region whose classical "
+                                          "code writes memory it may read",
+          # cq-c969: an _adj clone rotating a rail a region template reads (rule 5).
+          "clone_rot_error.O1.ll": "eff-invert: a clone call rotating a cell inside a cq_invert region on a rail a "
+                                   "template of the region reads (rule 5)"}
 
 
 def body(module: str, fn: str) -> str:
