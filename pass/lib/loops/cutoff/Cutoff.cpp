@@ -543,8 +543,26 @@ unsigned resolveK(const Function &F, const KOptions &KO) {
   return 4;
 }
 
-void lowerQuantumDepthRecursion(LoweringContext &, llvm::CallBase &CB, unsigned, std::optional<uint64_t>) {
-  unimplemented("loops-cutoff: loops::lowerQuantumDepthRecursion (rule 14 recursion with quantum depth)", &CB);
+// Rule 14, recursion with quantum depth (98): one clone per level _d1.._dC (taint publishes them), C =
+// min(K, B); the recursive call at level C is CUT: its value is a fresh |0> rail (a seed, rule 7: freed
+// directly once its readers are uncomputed), a void cut call is nothing. The overflow predicate "the cut
+// level would recurse once more" is kept iff B > K or no bound is known; that kept rail is not built yet
+// (unimplemented): with B <= K it is |0> on every branch and nothing is kept (98).
+void lowerQuantumDepthRecursion(LoweringContext &ctx, llvm::CallBase &CB, unsigned K, std::optional<uint64_t> B) {
+  if (!B || *B > K)
+    unimplemented("loops-cutoff: a quantum-depth recursion cut at K with B > K or no bound (the kept overflow "
+                  "predicate \"the cut level would recurse once more\", rule 14)",
+                  &CB);
+  if (CB.getType()->isVoidTy())
+    return;
+  Type *t = CB.getType();
+  if (!(t->isIntegerTy() || t->isFloatingPointTy()))
+    unimplemented("loops-cutoff: a cut recursive call with an aggregate, vector or pointer result (rule 14)", &CB);
+  RailType w = railTypeOf(t);
+  CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                             {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+  ctx.unc().recordSeed(z);
+  ctx.bind(&CB, z);
 }
 
 } // namespace cq::loops

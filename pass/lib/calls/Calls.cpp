@@ -49,11 +49,13 @@
 
 #include "cq/Abi.h"
 #include "cq/Common.h"
+#include "cq/Loops.h"
 #include "cq/Lowering.h"
 #include "cq/Predicate.h"
 #include "cq/Taint.h"
 #include "cq/Uncompute.h"
 
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
@@ -235,6 +237,28 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
   return r;
 }
 
+// The C name a declared clone is named after (CR §1.4 fn). Rule 18: an LLVM math intrinsic on a
+// quantum operand is the call of the libm function of the same name: llvm.<n>.<types> is n for a
+// double, nf for a float, nl for an x86_fp80 first operand (175).
+std::string calleeName(const Function &F, const Value *at) {
+  if (!F.isIntrinsic())
+    return F.getName().str();
+  StringRef n = F.getName();
+  if (!n.consume_front("llvm.") || n.empty())
+    internalError("calls: an intrinsic whose name is not llvm.<name>.<types>", at);
+  std::string base = n.take_until([](char c) { return c == '.'; }).str();
+  Type *t = F.arg_size() ? F.getFunctionType()->getParamType(0) : nullptr;
+  if (t && t->isDoubleTy())
+    return base;
+  if (t && t->isFloatTy())
+    return base + "f";
+  if (t && t->isX86_FP80Ty())
+    return base + "l";
+  unimplemented("calls: an LLVM math intrinsic whose first operand is not float, double or x86_fp80 (rule 18: no "
+                "libm name)",
+                at);
+}
+
 // K of a declared clone (rule 27, §0: flag, CQ_K, global flag, default 4).
 // Rule 27: the trailing i32 K of a declared clone is the callee's K (flag, CQ_K, global, default 4).
 Value *declaredK(LoweringContext &ctx, const Function &F) {
@@ -268,7 +292,7 @@ CallInst *emitDeclaredCall(LoweringContext &ctx, CallBase &CB, Function &F, Stri
   SmallVector<Type *, 8> ps;
   for (Value *a : args)
     ps.push_back(a->getType());
-  abi::CloneSpec cs{F.getName().str(), mask.str(), {}, ctl, false, false, 0, false};
+  abi::CloneSpec cs{calleeName(F, &CB), mask.str(), {}, ctl, false, false, 0, false};
   std::string name = checkedName(cs, &CB);
   FunctionType *FT = FunctionType::get(rt, ps, false);
   Function *D = ctx.M.getFunction(name);
@@ -339,6 +363,37 @@ bool resultKept(LoweringContext &ctx, const CallBase &CB) {
   return false;
 }
 
+// Does G's body reach a call of F (G == F included)?
+bool reaches(const Function *G, const Function *F) {
+  SmallPtrSet<const Function *, 16> seen{G};
+  SmallVector<const Function *, 16> work{G};
+  while (!work.empty()) {
+    const Function *X = work.pop_back_val();
+    for (const BasicBlock &BB : *X)
+      for (const Instruction &I : BB)
+        if (auto *C = dyn_cast<CallBase>(&I))
+          if (const Function *Y = C->getCalledFunction()) {
+            if (Y == F)
+              return true;
+            if (!Y->isDeclaration() && seen.insert(Y).second)
+              work.push_back(Y);
+          }
+  }
+  return false;
+}
+
+// A recursive call that taint cut (rule 14): no callee specialization, a callee with a body that
+// recurses back into this function, and a quantum argument or result.
+bool isCutRecursion(LoweringContext &ctx, const CallBase &CB) {
+  const Function *G = CB.getCalledFunction();
+  if (!G || G->isDeclaration() || ctx.S.isEntry() || !reaches(G, ctx.S.F))
+    return false;
+  bool q = !CB.getType()->isVoidTy() && ctx.T.isQuantum(&CB, ctx.S);
+  for (const Use &u : CB.args())
+    q |= ctx.T.isQuantum(u.get(), ctx.S);
+  return q;
+}
+
 } // namespace
 
 Function *materialize(Module &M, const Specialization &S) {
@@ -382,11 +437,17 @@ Function *materialize(Module &M, const Specialization &S) {
 
 void lowerLifted(LoweringContext &ctx, CallBase &CB) {
   capture(ctx);
-  if (CB.getCalledFunction() && CB.getCalledFunction()->isIntrinsic())
-    unimplemented("calls: an LLVM math intrinsic on a quantum operand: the libm call of the same name "
-                  "(rule 18; taint's specialization names the intrinsic, cq-3h6)",
-                  &CB);
   const Specialization *cs = ctx.T.calleeSpecialization(CB, ctx.S);
+  if (!cs && isCutRecursion(ctx, CB)) {
+    // Rule 14: the recursive call at the cut level (taint publishes no deeper level). This level is
+    // the cut one, so B = depth when depth < K; at depth K the bound is not known here.
+    const Function &G = *CB.getCalledFunction();
+    unsigned K = ctx.K(G);
+    std::optional<uint64_t> B;
+    if (ctx.S.depth < K)
+      B = ctx.S.depth;
+    return loops::lowerQuantumDepthRecursion(ctx, CB, K, B);
+  }
   if (!cs || cs->isEntry()) {
     // An untainted callee or the in-place specialization: the ordinary call (rule 19's inline of an
     // entry returning a quantum value is the spine's).
