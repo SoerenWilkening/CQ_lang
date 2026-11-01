@@ -35,7 +35,9 @@ What is compared (CR §6, CLAUDE.md "The §6 checker"):
   sample where i fires the latest gate on the target before i is j, i's angle is j's negated and
   the target holds its value at j, and i's predicate is exactly the overwrite predicate: j fires,
   no gate on the target fires between j and i, and a later gate on the target fires (the
-  overwriting prep), each such first later gate taking a C reach. Anything else is unmatched. A
+  overwriting prep), each such first later gate taking a C reach. An Ry whose angle is the identity
+  where its control fires (CR §1.3) is no gate and takes no reach, but still counts as a gate on its
+  target there for this reading (bead cq-mopw). Anything else is unmatched. A
   `cq_invert` region (the
   sites between an invert_begin and its matching invert_end, nesting by depth) is read under CR rule
   17: its sites are taken in reverse order with their angles negated (a region inside a region is so
@@ -373,6 +375,7 @@ class _Ev:
     label: str = ""
     flag: Optional[int] = None       # the flag rail of a classical-angle phase (ph)
     ctlfn: Dict[int, Tuple] = field(default_factory=dict)  # Ry: control rail -> its value per sample
+    cpred: Optional[Tuple[int, ...]] = None  # Ry: control on per sample, an identity angle included
 
 
 def _kept_by_h(rr: RunResult, memo: Optional[Dict[int, Dict[Any, List[Dict[str, Any]]]]] = None
@@ -450,8 +453,10 @@ def _dep(fn: Sequence[Any], regs: Dict[int, Tuple]) -> FrozenSet[int]:
     return frozenset(m for h in dep for m in same[varying[h]])
 
 
-def _lowered_events(runs: List[RunResult]) -> Tuple[List[_Ev], List[_Ev]]:
-    """Gate events of one side over one group: (kept events, dropped global phases)."""
+def _lowered_events(runs: List[RunResult]) -> Tuple[List[_Ev], List[_Ev], List[_Ev]]:
+    """Gate events of one side over one group: (kept events, dropped global phases, idle Ry: an Ry
+    whose control fires somewhere but whose angle is the identity wherever it does, CR §1.3; no
+    gate, but still the prep that overwrites its target for rule 10's un-prep, bead cq-mopw)."""
     n = len(runs[0].rotations or [])
     recs = [rr.rotations for rr in runs]
     S = range(len(runs))
@@ -466,6 +471,7 @@ def _lowered_events(runs: List[RunResult]) -> Tuple[List[_Ev], List[_Ev]]:
         r0 = recs[0][i]
         kind = _KIND[r0["ev"]]
         fired: List[int] = []
+        ctl_on: List[int] = []
         afn: List[Optional[int]] = []
         tvals: List[int] = []
         w = None
@@ -476,6 +482,7 @@ def _lowered_events(runs: List[RunResult]) -> Tuple[List[_Ev], List[_Ev]]:
                 on = int(bool(_int(rec["fv"])))
             else:
                 on = _ctl_on(rec)
+            ctl_on.append(on)
             # CR §2: ry/rz/phase with a non-finite angle (literal or angle rail) is the identity
             if theta is not None and _angle_identity(theta, nonfinite_is_identity=True):
                 on = 0
@@ -501,10 +508,13 @@ def _lowered_events(runs: List[RunResult]) -> Tuple[List[_Ev], List[_Ev]]:
                        tclass=(w, tuple(tvals)) if target is not None else None,
                        theta=theta, afn=tuple(afn) if kind in ("ryq", "phq") else None,
                        pred=tuple(fired), label=_describe(r0),
-                       flag=r0.get("f") if kind == "ph" else None, ctlfn=ctlfn))
-    live, glob = [], []
+                       flag=r0.get("f") if kind == "ph" else None, ctlfn=ctlfn,
+                       cpred=tuple(ctl_on) if kind in ("ry", "ryq") else None))
+    live, glob, idle = [], [], []
     for e in evs:
         if not any(e.pred):
+            if e.cpred is not None and any(e.cpred):
+                idle.append(e)
             continue
         if e.kind == "ph" and all(e.pred):
             glob.append(e)
@@ -516,7 +526,7 @@ def _lowered_events(runs: List[RunResult]) -> Tuple[List[_Ev], List[_Ev]]:
             sup |= {r for r, _ in _dep(e.afn, regs)}
         e.support = frozenset(sup)
         live.append(e)
-    return live, glob
+    return live, glob, idle
 
 
 def _describe(rec: Dict[str, Any]) -> str:
@@ -687,7 +697,7 @@ def _c_sites(runs: List[RunResult], nan_eq: bool, open_end: Sequence[bool] = ()
     return [sites[k] for k in sorted(sites, key=repr)], reasons
 
 
-def _unprep_partners(ours: List[_Ev]) -> List[Optional[Tuple[int, FrozenSet[int]]]]:
+def _unprep_partners(ours: List[_Ev], idle: Sequence[_Ev] = ()) -> List[Optional[Tuple[int, FrozenSet[int]]]]:
     """Per gate, its rule-10 un-prep reading (bead cq-9gi3), or None: (j, ks) when gate i is the
     adjoint of the earlier gate j and its predicate is exactly the overwrite predicate that rule 10
     implies. Lowered side only; _match_c additionally requires j and every k to take C reaches.
@@ -696,7 +706,13 @@ def _unprep_partners(ours: List[_Ev]) -> List[Optional[Tuple[int, FrozenSet[int]
     latest gate on i's target before i that fires at s is j (one j for all such s, of i's kind),
     i's angle is j's negated, and the target holds the value it held at j; and i's predicate is,
     at every sample, exactly: j fires, no gate on the target between j and i fires, and a gate on
-    the target after i fires (the overwriting prep k; ks collects the first such k per sample)."""
+    the target after i fires (the overwriting prep k; ks collects the first such k per sample).
+
+    `idle` (bead cq-mopw): the Ry gates whose angle is the identity wherever their control fires
+    (CR §1.3, dropped from `ours`, as the C side drops its identity reaches). An Ry's position among
+    the gates on its target is its control (cpred), its angle aside: an idle prep is still the
+    overwrite of rule 10 (`r = 0; cq_theta(&r, NaN)` undoes the earlier prep), so it counts for j,
+    between and k, and as k it needs no C reach (its C reach is the identity too, never in ks)."""
     out: List[Optional[Tuple[int, FrozenSet[int]]]] = [None] * len(ours)
     if not ours:
         return out
@@ -706,25 +722,37 @@ def _unprep_partners(ours: List[_Ev]) -> List[Optional[Tuple[int, FrozenSet[int]
     def angle(e: _Ev, s: int) -> Optional[int]:
         return e.theta if e.kind == "ry" else e.afn[s]
 
+    # every gate on a target, idle ones included, in emission order: ("o", index into ours) or
+    # ("i", index into idle)
+    allg = sorted([(e.idx, "o", g) for g, e in enumerate(ours)] + [(e.idx, "i", g) for g, e in enumerate(idle)])
+
+    def ev(t: Tuple[str, int]) -> _Ev:
+        return ours[t[1]] if t[0] == "o" else idle[t[1]]
+
+    def on(t: Tuple[str, int], s: int) -> int:
+        x = ev(t)
+        return (x.cpred if x.cpred is not None else x.pred)[s]
+
     for i, e in enumerate(ours):
         if e.kind not in ("ry", "ryq") or e.target is None:
             continue
-        on_t = [g for g, x in enumerate(ours) if x.target == e.target]
-        before = [g for g in on_t if g < i]
-        after = [g for g in on_t if g > i]
-        j: Optional[int] = None
+        on_t = [(kd, g) for idx, kd, g in allg if ev((kd, g)).target == e.target]
+        me = on_t.index(("o", i))
+        before = on_t[:me]
+        after = on_t[me + 1:]
+        j: Optional[Tuple[str, int]] = None
         ok = True
         for s in range(nS):
             if not e.pred[s]:
                 continue
-            last = next((g for g in reversed(before) if ours[g].pred[s]), None)
+            last = next((g for g in reversed(before) if on(g, s)), None)
             if last is None or (j is not None and last != j):
                 ok = False
                 break
             j = last
-        if not ok or j is None:
+        if not ok or j is None or j[0] != "o":
             continue
-        p = ours[j]
+        p = ours[j[1]]
         if p.kind != e.kind or p.tclass[0] != e.tclass[0]:
             continue
         for s in range(nS):
@@ -737,16 +765,16 @@ def _unprep_partners(ours: List[_Ev]) -> List[Optional[Tuple[int, FrozenSet[int]
             continue
         ks = set()
         for s in range(nS):
-            between = any(ours[g].pred[s] for g in before if g > j)
-            k = next((g for g in after if ours[g].pred[s]), None)
+            between = any(on(g, s) for g in before[before.index(j) + 1:])
+            k = next((g for g in after if on(g, s)), None)
             implied = bool(p.pred[s]) and not between and k is not None
             if implied != bool(e.pred[s]):
                 ok = False
                 break
-            if implied:
-                ks.add(k)
+            if implied and k[0] == "o":
+                ks.add(k[1])
         if ok:
-            out[i] = (j, frozenset(ks))
+            out[i] = (j[1], frozenset(ks))
     return out
 
 
@@ -805,7 +833,7 @@ def _match_input(ours: List[_Ev], sites: List[_Site], nS: int, capped: List[bool
 
 
 def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
-             capped: Sequence[bool] = ()) -> List[str]:
+             capped: Sequence[bool] = (), idle: Sequence[_Ev] = ()) -> List[str]:
     """Match the C sites to our gates (module docstring). A site inside a loop is one gate per trip
     on our side, and a trip that skips the call leaves no C reach: so each lowered gate belongs to
     one site, and at each sample the gate, where it fires, takes the site's earliest reach not yet
@@ -902,7 +930,7 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
 
     start: Used = tuple(0 for _ in range(len(sites) * nS))
     assign: List[Optional[int]] = [None] * len(ours)
-    partner = _unprep_partners(ours)
+    partner = _unprep_partners(ours, idle)
     failed: set = set()
     limit = max(1000, 4 * len(ours) + 100)
     if sys.getrecursionlimit() < limit:
@@ -1342,9 +1370,9 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
         tag = f"classical arguments {gk[0]} ({len(ks)} samples)"
         o_runs = [o_by[k] for k in ks]
         r_runs = [r_by[k] for k in ks]
-        o_evs, o_glob = _lowered_events(o_runs)
+        o_evs, o_glob, o_idle = _lowered_events(o_runs)
         if oracle == "ref":
-            r_evs, _ = _lowered_events(r_runs)
+            r_evs, _, _ = _lowered_events(r_runs)
             kept_o = _kept_multiset(o_runs)
             kept_r = _kept_multiset(r_runs)
             if kept_o != kept_r:
@@ -1364,7 +1392,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             if why_c:
                 reasons += [f"{tag}: {why}" for why in why_c]
                 continue
-            for why in _match_c(o_evs, o_glob, sites, nan_eq, [capped[k] or ended[k] for k in ks]):
+            for why in _match_c(o_evs, o_glob, sites, nan_eq, [capped[k] or ended[k] for k in ks], o_idle):
                 reasons.append(f"{tag}: {why}")
             for why in _check_ak(o_runs, r_runs, [ended[k] for k in ks]):
                 reasons.append(f"{tag}: {why}")

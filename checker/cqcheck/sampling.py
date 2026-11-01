@@ -2480,6 +2480,72 @@ def theta_reaches(spec: DriverSpec, example_dir: Path, sites: Dict[int, List["D.
     return out, bases
 
 
+_INVERT_DEPTH_CAP = 64
+
+
+def inverted_region_sites(mod: "D.Module") -> Set[str]:
+    """The keys ("fn:site") of the cq_theta sites some cq_invert region may reach (cq-mopw): a site
+    on a CFG path from an __cq_invert_begin call before its matching __cq_invert_end (nesting by
+    depth), and every site of a function called, or whose address is taken, at such a point, with
+    the functions reachable from it. Static and conservative: any path counts."""
+    def marker(ins) -> Optional[str]:
+        if ins.op == "call" and ins.callee:
+            k = D.site_kind(ins.callee)
+            if k in ("invert_begin", "invert_end"):
+                return k
+        return None
+
+    inside_fns: Set[str] = set()
+    inside_sites: Set[str] = set()
+    for f in mod.functions.values():
+        work: List[Tuple[str, int, int]] = []            # (block, first instruction, depth)
+        for b in f.order:
+            for i, ins in enumerate(f.blocks[b]):
+                if marker(ins) == "invert_begin":
+                    work.append((b, i + 1, 1))
+        seen: Set[Tuple[str, int, int]] = set()
+        while work:
+            b, i0, depth = work.pop()
+            if (b, i0, depth) in seen or b not in f.blocks:
+                continue
+            seen.add((b, i0, depth))
+            insts = f.blocks[b]
+            for ins in insts[i0:]:
+                m = marker(ins)
+                if m == "invert_begin":
+                    depth = min(depth + 1, _INVERT_DEPTH_CAP)
+                elif m == "invert_end":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                elif depth > 0:
+                    inside_sites.add((f.name, ins.index))
+                    if ins.op == "call" and ins.callee in mod.functions:
+                        inside_fns.add(ins.callee)
+                    for g in D._RE_GLOBAL.findall(ins.text):
+                        if g in mod.functions:
+                            inside_fns.add(g)
+            else:
+                for nb in insts[-1].successors() if insts else []:
+                    work.append((nb, 0, depth))
+    reach: Set[str] = set()
+    for fn in inside_fns:
+        reach |= D.reachable_functions(mod, fn)
+    out: Set[str] = set()
+    for f in mod.functions.values():
+        ordinal = 0
+        for ins in f.insts():
+            if not (ins.op == "call" and ins.callee and D.site_kind(ins.callee)):
+                continue
+            ordinal += 1
+            if ins.callee.startswith("@cq_theta_") and (f.name in reach or (f.name, ins.index) in inside_sites):
+                name = f.name[1:]
+                if name.startswith('"'):
+                    name = name[1:-1]
+                out.add(f"{name}:{ordinal - 1}")
+    return out
+
+
 def varied_params(spec: DriverSpec, ci: int) -> Set[Tuple[str, int]]:
     """The (function, parameter) pairs of driver call `ci` that the sampler varies as quantum
     scalars: a cq_theta site fed by one is substituted only where it is reached once (cq-lvkq)."""
@@ -3224,12 +3290,18 @@ def build_sample_set(spec: DriverSpec, example_dir: Path, exempt_baseline: bool 
     # same on both sides: reached once, in a module with no cq_invert region. In a loop the lowered
     # side reaches it on every unrolled trip and the C program only on taken ones; an inverted
     # region runs its reaches in reverse (61, 126, 130). Orchestrator decision, owner may override.
+    # cq-mopw: so does a site any cq_invert region may reach, whatever feeds it: the C program runs
+    # the region forward and the circuit its adjoint (CR rule 17), so two reaches of a region on one
+    # register leave the C program the later one's value and the circuit the earlier one's (61's
+    # invert_call, every argument classical under cqcheck user).
     inverted = any(n.startswith("@__cq_invert") or n.startswith("@cq_invert")
                    for n in list(mod.declares) + list(mod.functions))
+    in_region = inverted_region_sites(mod) if inverted else set()
     for ci in list(sites):
         varied = varied_params(spec, ci)
         sites[ci] = [st for st in sites[ci]
-                     if not (st.params & varied) or (not inverted and reaches.get(ci, {}).get(st.key(), 0) == 1)]
+                     if st.key() not in in_region
+                     and (not (st.params & varied) or (not inverted and reaches.get(ci, {}).get(st.key(), 0) == 1))]
     if any(sites.values()):
         sc = subst_classes(g, random.Random(seed + 3), sites, reaches, reach_bases)
         _merge_class(pc["edge"], sc["edge"])

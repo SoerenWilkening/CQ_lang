@@ -5,14 +5,17 @@ Fails on any of:
   program   a small C program (src/*.c) compiled by cqcc -S is not green under `cqcheck user` with its
             entry (exit 0)
   corpus    a CQ_spec example's reference lowered.ll is not green against its .O1.ll, with every entry
-            of its drivers.txt line and no quantum flags (default 01, 02, 42, 60, 120 and 117 at
-            --samples 200; --examples NN_name[:samples]... for others). 60 takes a pointer to handle
-            cells, 120's all-zero baseline reads q[-1][1] (outside the domain), 117's big groups run
-            out of the matching budget (cq-sujz)
+            of its drivers.txt line and no quantum flags (default 01, 02, 42, 60, 61, 120, 133 and
+            117 at --samples 200; --examples NN_name[:samples]... for others). 60 takes a pointer to
+            handle cells, 120's all-zero baseline reads q[-1][1] (outside the domain), 117's big
+            groups run out of the matching budget (cq-sujz); 61 calls prep inside a cq_invert region
+            and 133's prep_twice overwrites a prep with a NaN angle (cq-mopw)
   unit      in process: the verdict of out-of-budget reasons is undecided (2), never differs; a
             --samples subset keeps classical groups whole, smallest first; a template's literal
             operand is no rail position, nor xorc_controlled's literal (c, h, lit) or push's word
-            (cq-oylm, src/xorc_cells.ll)
+            (cq-oylm, src/xorc_cells.ll); cq-mopw: the sites a cq_invert region may reach (61:
+            prep's two and invert_theta's second, not invert_call's), and an Ry whose angle is the
+            identity still counts as the overwriting prep of a rule-10 un-prep
   mutant    a wrong lowered module is not rejected (exit 1): built from 01's reference with the Ry's
             angle negated, the add computed before the Ry (only cq_theta substitution sees it), the
             measured rail replaced by its classical input, and an empty body (ret 0); from 60's
@@ -36,7 +39,8 @@ SRC = HERE / "src"
 PROGRAMS = [("classical", "poly"), ("qmain", "main"), ("phase", "phase_if"), ("fromptr", "from_ptr"),
             ("fpq", "fpq")]
 DEFAULT_EXAMPLES = ["01_add_classical_const", "02_add_quantum_quantum", "42_measure_one_of_two", "60_qft",
-                    "120_multidim_array", "117_qpe_counting:200"]
+                    "61_invert_theta_and_call", "120_multidim_array", "133_state_prep_overwrite",
+                    "117_qpe_counting:200"]
 
 failures = []
 
@@ -75,7 +79,7 @@ def drivers_entries(spec, ex):
     raise SystemExit(f"{ex}: no drivers.txt line")
 
 
-def unit():
+def unit(spec_root):
     sys.path.insert(0, str(ROOT / "checker"))
     from cqcheck import user as U
     from cqcheck.contracts import DriverSpec
@@ -125,6 +129,27 @@ def unit():
     got = {fn: U.handle_cell_params(_P(SRC / "xorc_cells.ll"), fn) for fn in ("f", "g", "k")}
     want = {"f": {}, "g": {0: 32}, "k": {}}
     (ok if got == want else fail)("unit handle cells xorc_controlled", f"{got}" + ("" if got == want else f", want {want}"))
+    unit_mopw(spec_root)
+
+
+def unit_mopw(spec_root):
+    """cq-mopw: the two false rejects of the corpus references 61 (invert_call) and 133 (prep_twice)."""
+    from cqcheck import compare as C, drivers as D, sampling as S
+    mod = D.read_module(spec_root / "examples" / "61_invert_theta_and_call" / "invert_theta_and_call.O1.ll")
+    got = sorted(S.inverted_region_sites(mod))
+    want = ["invert_theta:2", "prep:0", "prep:1"]
+    (ok if got == want else fail)("unit inverted region sites (61)", f"{got}" + ("" if got == want else f", want {want}"))
+    # 133 prep_twice with t2 a NaN: Ry(t1) under p (j), its adjoint under p & q (i), then Ry(NaN)
+    # under q (k): no gate (CR §1.3), yet the overwrite that makes i j's un-prep
+    sign = 1 << 63
+    t1, nan = 0x3ff363085206319c, 0x7ff4000000000000
+    tv = (32, (5, 5, 5))
+    j = C._Ev(idx=0, kind="ry", target=3, tclass=tv, theta=t1, afn=None, pred=(1, 1, 0), cpred=(1, 1, 0))
+    i = C._Ev(idx=1, kind="ry", target=3, tclass=tv, theta=t1 ^ sign, afn=None, pred=(1, 0, 0), cpred=(1, 0, 0))
+    k = C._Ev(idx=2, kind="ry", target=3, tclass=tv, theta=nan, afn=None, pred=(0, 0, 0), cpred=(1, 0, 1))
+    for name, idle, want in (("with the idle prep", [k], (0, frozenset())), ("without it", [], None)):
+        got = C._unprep_partners([j, i], idle)[1]
+        (ok if got == want else fail)(f"unit un-prep {name}", f"{got}" + ("" if got == want else f", want {want}"))
 
 
 def mutants(ref_text):
@@ -174,7 +199,7 @@ def main():
     ap.add_argument("--examples", nargs="*", default=DEFAULT_EXAMPLES)
     a = ap.parse_args()
     spec = a.spec.resolve()
-    unit()
+    unit(spec)
     with tempfile.TemporaryDirectory(prefix="cqu-test-") as t:
         tmp = Path(t)
         for name, entry in PROGRAMS:
