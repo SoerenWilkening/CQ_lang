@@ -180,6 +180,10 @@ Class classify(const CallBase &CB, const TaintInfo &T, const Specialization &S) 
       // A VLA's lifetime ends here (rule 20, 192) when the scope holds a slot or QRAM object.
       return qPred || qArg ? Class::Dealloc : Class::Classical;
     }
+    case Intrinsic::ptrmask:
+      // Rule 21 (105): the mask of a fat pointer's flat address, 89's round trip (fatptr::lower), a
+      // sequence of integer templates over the address.
+      return qArg || qRes ? Class::TemplateIntrinsic : Class::Classical;
     case Intrinsic::trap: case Intrinsic::ubsantrap: case Intrinsic::debugtrap:
       return qPred ? Class::Noreturn : Class::Classical;
     case Intrinsic::vastart: case Intrinsic::vaend: case Intrinsic::vacopy:

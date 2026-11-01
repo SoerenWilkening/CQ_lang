@@ -395,7 +395,12 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
       return mem::reallocQram(ctx, CB);   // M5 (cq-arch 2026-11-01)
     unimplemented("spine: realloc of a slot block has no entry in Memory.h (rule 16)", &CB);
   case Class::MemIntrinsic: return mem::lowerMemIntrinsic(ctx, cast<MemIntrinsic>(CB));
-  case Class::TemplateIntrinsic: return lowerOpcode(ctx, CB);
+  case Class::TemplateIntrinsic:
+    if (auto *II = dyn_cast<IntrinsicInst>(&CB); II && II->getIntrinsicID() == Intrinsic::ptrmask) {
+      fatptr::lower(ctx, &CB);   // rule 21 (105): binds the masked pointer's (tag, idx) here
+      return;
+    }
+    return lowerOpcode(ctx, CB);
   case Class::LibmIntrinsic: return calls::lowerLifted(ctx, CB);
   case Class::Fenv:
     if (isa<ConstrainedFPIntrinsic>(CB))

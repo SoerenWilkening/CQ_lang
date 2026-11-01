@@ -80,3 +80,11 @@ int f_int_to_ptr(unsigned x0, double th, int w) {
   uintptr_t u = (uintptr_t)a + 4 * (x & 3);
   return cq_measure(*(int *)u);
 }
+/* cq-r7 (105): llvm.ptrmask of a fat pointer, the flat-address round trip (2-byte cells, mask -8) */
+int f_ptrmask(unsigned x0, double th, int v) {
+  unsigned x = x0; cq_theta(&x, th);
+  short a[8] __attribute__((aligned(16))) = {(short)v, 1, 2, 3, (short)(v + 4), 5, 6, 7};
+  short *p = a + (x & 7);
+  short *q = __builtin_align_down(p, 8);
+  return cq_measure(*q + *p);
+}

@@ -59,6 +59,7 @@
 #include "../mem/qrom/QromInternal.h"
 #include "FatPtrInternal.h"
 #include "llvm/IR/InstIterator.h"
+#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -249,6 +250,7 @@ bool sameClassical(const Operand &a, const Operand &b) { return !a.handle && !b.
 // ---- derivation ------------------------------------------------------------------------------
 
 Fat derive(LoweringContext &ctx, const Value *p, bool emit, bool eager = false);
+Fat derivePtrMask(LoweringContext &ctx, const IntrinsicInst &pm, bool emit, bool eager);
 
 Fat deriveRoot(LoweringContext &ctx, const Value *p, bool emit) {
   Fat f;
@@ -595,6 +597,8 @@ Fat derive(LoweringContext &ctx, const Value *p, bool emit, bool eager) {
     f.idx = Operand{ctx.B().CreateAdd(f.idx.v, ConstantInt::get(i64(ctx), bytes / int64_t(f.cell))), false};
     return f;
   }
+  if (auto *pm = dyn_cast<IntrinsicInst>(p); pm && pm->getIntrinsicID() == Intrinsic::ptrmask)
+    return derivePtrMask(ctx, *pm, emit, eager);
   if (isa<PHINode>(p))
     unimplemented("fatptr: a phi of fat pointers (rule 21 merge over edge predicates)", p);
   if (auto *ld = dyn_cast<LoadInst>(p))
@@ -827,9 +831,70 @@ Value *asRail(LoweringContext &ctx, Operand o) { return o.handle ? o.v : seedI1(
 
 } // namespace
 
+namespace {
+// llvm.ptrmask(p, m) (105; clang's __builtin_align_down / _up) masks p's FLAT ADDRESS: 89's round trip
+// (rule 21). u = base[tag] + size * idx, u' = u & m, and the result keeps p's provenance (ptrmask is
+// provenance-preserving): the same tag, idx = (u' - base[tag]) / size as an unsigned rail of p's idx
+// width (32 at the narrowest: the logical index rail). The spine lowers it once, at the call (lower);
+// later derivations read its bound fields. m is a classical constant that keeps cell alignment.
+Fat derivePtrMask(LoweringContext &ctx, const IntrinsicInst &pm, bool emit, bool eager) {
+  Fat a = derive(ctx, pm.getArgOperand(0), emit && eager);
+  auto *m = dyn_cast<ConstantInt>(pm.getArgOperand(1));
+  if (!m)
+    unimplemented("fatptr: llvm.ptrmask with a mask that is not a constant (rule 21)", &pm);
+  if (m->getBitWidth() != 64)
+    unimplemented("fatptr: llvm.ptrmask with a mask narrower than the 64-bit address", &pm);
+  if (a.cell == 0 || !isPowerOf2_64(a.cell) || (m->getZExtValue() & (a.cell - 1)) != 0)
+    unimplemented("fatptr: llvm.ptrmask whose result is not a whole cell of the pointer's object (rule 21)", &pm);
+  Fat f;
+  f.roots = a.roots;
+  f.cell = a.cell;
+  f.tag = a.tag;
+  f.idxBits = a.idxRail() ? std::max(32u, a.idxBits) : 64;
+  f.idxSext = false;
+  if (!emit) {
+    f.idx = Operand{nullptr, a.idxRail() || a.tagRail()};
+    return f;
+  }
+  if (!eager) {
+    SmallVector<Operand, 4> fl = ctx.fields(&pm);
+    if (fl.size() != 2)
+      internalError("fatptr: a llvm.ptrmask pointer bound to other than its (tag, idx)", &pm);
+    f.tag = fl[0];
+    f.idx = fl[1];
+    return f;
+  }
+  Bases cache;
+  Operand u = address(ctx, a, cache);
+  Operand masked = commutative(ctx, "and", 64, u, Operand{m, false});
+  Operand base = baseOf(ctx, a, cache);
+  Operand d;
+  if (!masked.handle && !base.handle)
+    d = Operand{ctx.B().CreateSub(masked.v, base.v), false};
+  else if (!base.handle)
+    d = Operand{tmpl(ctx, "sub", intRail(64), {masked, base}, "hl"), true};
+  else
+    d = Operand{tmpl(ctx, "sub", intRail(64), {masked, base}, masked.handle ? "" : "lh"), true};
+  if (a.cell != 1) {
+    Constant *sh = ConstantInt::get(i64(ctx), Log2_64(a.cell));
+    d = d.handle ? Operand{tmpl(ctx, "lshr", intRail(64), {d, Operand{sh, false}}, "hl"), true}
+                 : Operand{ctx.B().CreateLShr(d.v, sh), false};
+  }
+  if (d.handle && f.idxBits < 64)
+    d = Operand{tmpl(ctx, "trunc", intRail(64), {d}, "", "", intRail(f.idxBits)), true};
+  if (!d.handle)
+    f.idxBits = 64;
+  f.idx = d;
+  return f;
+}
+} // namespace
+
 FatPtr lower(LoweringContext &ctx, const Value *ptr) {
   Fat f;
-  if (auto *sel = dyn_cast<SelectInst>(ptr)) {
+  if (auto *pm = dyn_cast<IntrinsicInst>(ptr); pm && pm->getIntrinsicID() == Intrinsic::ptrmask) {
+    f = derive(ctx, ptr, /*emit=*/true, /*eager=*/true);
+    ctx.bindFields(pm, {f.tag, f.idx});
+  } else if (auto *sel = dyn_cast<SelectInst>(ptr)) {
     // The spine's call at the select (patch spine-dispatch-ptrselect): compute and bind its fields.
     f = derive(ctx, ptr, /*emit=*/true, /*eager=*/true);
     ctx.bindFields(sel, {f.tag, f.idx});
