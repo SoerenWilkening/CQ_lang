@@ -42,6 +42,12 @@ llvm::SmallVector<llvm::Value *, 4> slotCellsBeforeCall(LoweringContext &, const
                                                         llvm::ArrayRef<unsigned> argMap = {});
 llvm::SmallVector<llvm::Value *, 4> slotCellsAfterCall(LoweringContext &, const llvm::CallBase &orig, unsigned argNo,
                                                        llvm::CallInst *lowered, llvm::ArrayRef<unsigned> argMap = {});
+// cq-567j (CR rules 5, 18, 20). mem-slots, consumer calls: a pointer formal argNo of a quantum clone call
+// into caller slot objects whose cells the clone does not write (no slotCellsBeforeCall/After): every rail
+// those objects' cells may hold at the call is used by `lowered` (the forward call), and read by its item
+// when the call has a twin. Called right after `lowered` is emitted; argMap as M1b.
+void slotRailsReadByCall(LoweringContext &, const llvm::CallBase &orig, unsigned argNo, llvm::CallInst *lowered,
+                         llvm::ArrayRef<unsigned> argMap = {});
 // T3c (cq-budv, CR rules 5, 18, 20; 117). mem-slots, consumer calls noteRotatedCells: the rails the cells of
 // the slot object ptr points to may hold at `at` (a clone call rotating any of its cells in place,
 // TaintInfo::kAnyCell). A dynamic local or heap slot array only; any other object is unimplemented.

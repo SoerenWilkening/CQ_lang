@@ -5371,6 +5371,43 @@ SmallVector<Value *, 8> railsInObjectAt(LoweringContext &ctx, FnState &st, const
   return out;
 }
 
+// The call has a twin (a quantum result, or a cell the clone mints): the twin recompute-reads what the
+// clone read through its pointers.
+bool callHasTwin(LoweringContext &ctx, const CallBase &orig, const Specialization &S, ArrayRef<unsigned> argMap) {
+  bool twin = false;
+  if (argMap.empty()) {
+    if (!orig.getType()->isVoidTy())
+      twin |= is_contained(ctx.T.fieldMask(&orig, ctx.S), true);
+  } else if (Type *rt = S.F->getReturnType(); !rt->isVoidTy()) {
+    // A lifted call's own result is not the clone's (pthread_create's 0): the clone's result record is.
+    unsigned n = isa<StructType>(rt) ? cast<StructType>(rt)->getNumElements() : 1;
+    for (unsigned f = 0; f < n; ++f)
+      twin |= ctx.T.resultQuantum(S, f);
+  }
+  unsigned formals = argMap.empty() ? orig.arg_size() : argMap.size();
+  for (unsigned i = 0; i < formals; ++i)
+    if (orig.getArgOperand(siteOperand(orig, i, argMap))->getType()->isPointerTy() &&
+        !cellsMintedBy(ctx, S, i).empty())
+      twin = true;
+  return twin;
+}
+
+// Every rail that may be in a cell of s's object at the call is used by the forward call (noteUse); with a
+// twin, one the clone only reads is read by the call's item as well (U4: it outlives the twin, which
+// recompute-reads it, 52's tx cells). A cell's old content (`old`) is already the twin's operand.
+void noteObjectReadByCall(LoweringContext &ctx, FnState &st, const Site &s, const CallBase &orig, CallInst *lowered,
+                          bool twin, ArrayRef<Value *> old) {
+  SmallVector<RailId, 8> reads;
+  for (Value *h : railsInObjectAt(ctx, st, s, orig)) {
+    RailId id = ctx.unc().idOf(h);
+    ctx.unc().noteUse(id, lowered);
+    if (twin && !st.registers.count(h) && !is_contained(old, h) && !is_contained(reads, id))
+      reads.push_back(id);
+  }
+  if (!reads.empty())
+    ctx.unc().noteCallReads(lowered, reads);
+}
+
 } // namespace
 
 // D1 (cq-r8-d, CR rule 27 Pointers; 190): see Memory.h.
@@ -5470,21 +5507,7 @@ SmallVector<Value *, 4> slotCellsAfterCall(LoweringContext &ctx, const CallBase 
     internalError("mem-slots: slotCellsAfterCall without the lowered call", &orig);
   // The rails the clone may read through the pointer are read by the call; one it only reads must also
   // outlive a twin (see the contract above).
-  bool twin = false;
-  if (argMap.empty()) {
-    if (!orig.getType()->isVoidTy())
-      twin |= is_contained(ctx.T.fieldMask(&orig, ctx.S), true);
-  } else if (Type *rt = ca.S->F->getReturnType(); !rt->isVoidTy()) {
-    // A lifted call's own result is not the clone's (pthread_create's 0): the clone's result record is.
-    unsigned n = isa<StructType>(rt) ? cast<StructType>(rt)->getNumElements() : 1;
-    for (unsigned f = 0; f < n; ++f)
-      twin |= ctx.T.resultQuantum(*ca.S, f);
-  }
-  unsigned formals = argMap.empty() ? orig.arg_size() : argMap.size();
-  for (unsigned i = 0; i < formals; ++i)
-    if (orig.getArgOperand(siteOperand(orig, i, argMap))->getType()->isPointerTy() &&
-        !cellsMintedBy(ctx, *ca.S, i).empty())
-      twin = true;
+  bool twin = callHasTwin(ctx, orig, *ca.S, argMap);
   SmallVector<Value *, 4> old;
   for (unsigned c : ca.cells) {
     if (forwardedFrom(ctx, *ca.S, argNo, c) >= 0)
@@ -5502,17 +5525,7 @@ SmallVector<Value *, 4> slotCellsAfterCall(LoweringContext &ctx, const CallBase 
       old.push_back(nullptr);   // a run-time content: every rail it may be is passed as the twin's operand
     }
   }
-  SmallVector<RailId, 8> reads;
-  for (Value *h : railsInObjectAt(ctx, st, ca.s, orig)) {
-    RailId id = ctx.unc().idOf(h);
-    ctx.unc().noteUse(id, lowered);
-    // U4: a rail the clone may read through the pointer outlives the twin, which recompute-reads it (52's
-    // tx cells); a cell's old content is already the twin's operand.
-    if (twin && !st.registers.count(h) && !is_contained(old, h) && !is_contained(reads, id))
-      reads.push_back(id);
-  }
-  if (!reads.empty())
-    ctx.unc().noteCallReads(lowered, reads);
+  noteObjectReadByCall(ctx, st, ca.s, orig, lowered, twin, old);
   SmallVector<Value *, 4> out;
   IRBuilder<> &B = ctx.B();
   for (unsigned c : ca.cells) {
@@ -5546,6 +5559,25 @@ SmallVector<Value *, 4> slotCellsAfterCall(LoweringContext &ctx, const CallBase 
   return out;
 }
 
+
+// cq-567j (CR rules 5, 18, 20): a pointer into caller slot objects that a quantum clone only reads. Every
+// rail the objects' cells may hold at the call is used by the forward call, and read by its item when the
+// call has a twin (see noteObjectReadByCall). Conservative: the whole of each slot object the pointer may
+// name (taint does not narrow a read to cells).
+void slotRailsReadByCall(LoweringContext &ctx, const CallBase &orig, unsigned argNo, CallInst *lowered,
+                         ArrayRef<unsigned> argMap) {
+  FnState &st = stateOf(ctx, orig);
+  const Specialization *S = calleeOf(ctx, orig, argMap);
+  if (!S)
+    internalError("mem-slots: slotRailsReadByCall of a call that is not a quantum clone call", &orig);
+  if (!lowered)
+    internalError("mem-slots: slotRailsReadByCall without the lowered call", &orig);
+  const Value *ptr = orig.getArgOperand(siteOperand(orig, argNo, argMap));
+  bool twin = callHasTwin(ctx, orig, *S, argMap);
+  for (ObjectId o : ctx.T.provenance(ptr, ctx.S))
+    if (ctx.T.classOf(o) == ObjClass::Slot)
+      noteObjectReadByCall(ctx, st, Site{o, nullptr, Addr{}}, orig, lowered, twin, {});
+}
 
 // Register updates (CR rules 5, 6, 20; 114): the readers of a register array's rails, checked once the body
 // is lowered and every item placed. A rail a cell of the array held may be freed by a later register update's

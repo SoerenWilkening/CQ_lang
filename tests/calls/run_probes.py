@@ -26,6 +26,12 @@ TWIN_ALIAS = ("cq: unimplemented: uncompute: a clone call whose twin may read a 
               "another route than the writing pointer")
 # (probe, entry, opt flags, expectation, regexes the lowered module must contain)
 CASES = [
+    # cq-567j (gate 2a unc-h1 p16-p19): a clone that only reads a caller's slot cell through a pointer formal:
+    # the cell's rails are used by the forward call (and read by its item when it has a twin), never freed before.
+    ("read_only_ptr", "ro_bump", [], "pass", []),
+    ("read_only_ptr", "ro_phase", [], "pass", []),
+    ("read_only_ptr", "ro_result", [], "pass", []),
+    ("read_only_ptr", "ro_old", [], "pass", []),
     # cq-oocu (107's union_slot): a slot record's pointer-kind cell (tag, idx) a clone reads as an integer and
     # writes back (ptrtoint at the load, inttoptr at the store keeping the tag); int and long cells, add and sub.
     ("ptr_cell", "pc_two", [], "pass", [r"call fastcc void @__cq_q_step_0011\(ptr %\d+, i32 \d+, i32 0, i32 1\)",

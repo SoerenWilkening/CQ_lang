@@ -778,6 +778,11 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
   for (unsigned i : tableArgs)
     for (Value *h : fatptr::afterSlotTableCall(ctx, CB, i, S, r.call))
       r.slotOuts.push_back(h);
+  // cq-567j: a pointer into caller slot objects the clone only reads: their rails are read by the call.
+  for (unsigned i = 0; i < nArgs && i < fs.size(); ++i)
+    if (fs[i].pointer && !is_contained(slotArgs, i) && !is_contained(tableArgs, i) &&
+        pointsToSlot(ctx, CB.getArgOperand(op(i))))
+      mem::slotRailsReadByCall(ctx, CB, i, r.call, argMap);
   mem::noteProgramSlotCall(ctx, CB, S, r.call);   // 102: a _ctl clone's guarded store into a program slot
   noteRotatedCells(ctx, CB, S, fs, r.call, argMap);
   return r;
