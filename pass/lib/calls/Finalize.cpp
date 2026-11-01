@@ -258,8 +258,30 @@ bool readBefore(Function &F, StoreInst *SI) {
   return false;
 }
 
-// Does replaying F (and the forward clones it calls) recompute its value and nothing else?
-void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &seen) {
+// M2b (191): a store a clone makes through a triple formal onto a QRAM object, after its body's
+// uncompute: a non-ctl cqrt_qram_store on a formal bus followed, up to the return, only by such stores
+// and the return value's insertvalues. The twin drops it (the caller pops it, U3).
+bool trailingQramStore(const Instruction &I) {
+  auto isStore = [](const Instruction *J) {
+    auto *c = dyn_cast<CallInst>(J);
+    std::optional<abi::CoreSpec> cs =
+        c && c->getCalledFunction() ? abi::parseCore(c->getCalledFunction()->getName()) : std::nullopt;
+    return cs && cs->op == abi::Core::QramStore && !cs->ctl && !cs->unc && isa<Argument>(c->getArgOperand(0));
+  };
+  if (!isStore(&I))
+    return false;
+  for (const Instruction *J = I.getNextNode(); J; J = J->getNextNode()) {
+    if (isa<ReturnInst>(J))
+      return true;
+    if (!isa<InsertValueInst>(J) && !isStore(J))
+      return false;
+  }
+  return false;
+}
+
+// Does replaying F (and the forward clones it calls) recompute its value and nothing else? top: F is
+// the twin's own source, whose trailing QRAM stores the twin drops (M2b).
+void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &seen, bool top = false) {
   if (!seen.insert(&F).second)
     return;
   auto refuse = [&](const Twine &why, const Value *at) {
@@ -311,6 +333,8 @@ void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &s
     if (abi::parseTemplate(G->getName(), &unc))
       continue;
     if (std::optional<abi::CoreSpec> c = abi::parseCore(G->getName())) {
+      if (top && trailingQramStore(I))
+        continue;   // dropped from the twin below (M2b)
       if (nonPureCore(c->op))
         refuse("the core gate @" + G->getName(), &I);
       continue;
@@ -364,7 +388,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
                         src.getName().str(),
                     &twin);
   SmallPtrSet<Function *, 8> seen;
-  checkReplayable(src, twin, seen);
+  checkReplayable(src, twin, seen, true);
 
   ValueToValueMapTy VM;
   for (unsigned j = 0; j < nOuts; ++j)
@@ -435,12 +459,9 @@ void defineTwin(Module &M, Function &twin, Function &src) {
     for (Instruction *I = R->getPrevNode(); I; I = I->getPrevNode()) {
       if (isa<InsertValueInst>(I))
         continue;
-      auto *c = dyn_cast<CallInst>(I);
-      std::optional<abi::CoreSpec> cs =
-          c && c->getCalledFunction() ? abi::parseCore(c->getCalledFunction()->getName()) : std::nullopt;
-      if (!cs || cs->op != abi::Core::QramStore || cs->ctl || cs->unc || !isa<Argument>(c->getArgOperand(0)))
+      if (!trailingQramStore(*I))
         break;
-      stores.push_back(c);
+      stores.push_back(I);
     }
     for (Instruction *I : stores)
       I->eraseFromParent();

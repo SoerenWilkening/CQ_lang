@@ -290,8 +290,13 @@ bool hasQramTriple(const TaintInfo &T, const Specialization &S) {
 ResultLayout resultLayout(const TaintInfo &T, const Specialization &S, const Value *at) {
   ResultLayout r;
   Type *rt = S.F->getReturnType();
-  if (rt->isVoidTy())
+  if (rt->isVoidTy()) {
+    // M2 (191): a void clone storing through a QRAM triple formal returns those stores' rails.
+    r.qramFormal = hasQramTriple(T, S);
+    if (r.qramFormal)
+      r.stores = mem::calleeQramStoreCount(T, S);
     return r;
+  }
   if (!isComposite(rt) && !scalarRailType(rt) && !(rt->isPointerTy() && !T.resultQuantum(S, 0)))
     unimplemented("calls: a clone with a pointer result (rule 21 fat-pointer result: fatptr)", at);
   if (packedIntegerResult(*S.F))
