@@ -2975,7 +2975,12 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
   finishStore(ctx, st, s, stI, v->getType(), val, what);
 }
 
-// Rule 16 (99): the cells a host effect's tape entry reads.
+namespace {
+bool anyWriteReaches(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &I);
+} // namespace
+
+// Rule 16 (99): the cells a host effect's tape entry reads. Also calls::noteRotatedCells' T3 consumer: the
+// cells a clone rotates in place.
 SmallVector<Operand, 8> readSlotCells(LoweringContext &ctx, const Value *ptr, Type *cellTy, uint64_t n,
                                       Instruction &at, int64_t firstByte) {
   FnState &st = stateOf(ctx, at);
@@ -2993,15 +2998,25 @@ SmallVector<Operand, 8> readSlotCells(LoweringContext &ctx, const Value *ptr, Ty
       unimplemented("mem-slots: a host effect reading a slot record", &at);
     c.a.off += firstByte + int64_t(i * s.info->cellBytes);
     if (!sourceOf(ctx, st, *c.info, c.o, &at, c.a, cellTy)) {
-      // 73: a memory intrinsic reading a cell that only run-time stores wrote (a loop fill) reads the handle
-      // in the cell at run time, as a quantum slot load does (M3: readCell names it as a cell read).
-      if (!isa<MemIntrinsic>(at))
-        unimplemented("mem-slots: a host effect reading a slot cell that no dominating access of this function "
-                      "wrote (a run-time read at a host effect)",
-                      &at);
-      if (classicalCell(ctx, st, c))
-        unimplemented("mem-slots: a memory intrinsic reading at run time a slot cell no handle store reaches", &at);
-      cellRail(*c.info, cellTy, at);
+      if (isa<MemIntrinsic>(at)) {
+        // 73: a memory intrinsic reading a cell that only run-time stores wrote (a loop fill) reads the handle
+        // in the cell at run time, as a quantum slot load does (M3: readCell names it as a cell read).
+        if (classicalCell(ctx, st, c))
+          unimplemented("mem-slots: a memory intrinsic reading at run time a slot cell no handle store reaches", &at);
+        cellRail(*c.info, cellTy, at);
+      } else {
+        // cq-peeh (CR rule 20): with no dominating source the cell's handle is read at run time (readCell: a
+        // run-time read names every rail a write may have left there, M3), as a load after an in-place
+        // rotating clone call is (cq-nyto). That needs the cell to hold a handle: some write of this function
+        // reaches it (a never-written cell holds nothing), and it is not a classical cell of a static object
+        // (whose C value stays in memory, rule 20 per cell).
+        bool staticCell = (c.info->kind == RootKind::Local || c.info->kind == RootKind::Heap) &&
+                          !c.info->escaping && !isDynamic(ctx, st, *c.info, c.o);
+        if (!anyWriteReaches(ctx, st, c, at) || (staticCell && classicalCell(ctx, st, c)))
+          unimplemented("mem-slots: a host effect reading a slot cell that no dominating access of this function "
+                        "wrote (a run-time read at a host effect)",
+                        &at);
+      }
     }
     out.push_back(readCell(ctx, st, c, at, cellTy));
   }
