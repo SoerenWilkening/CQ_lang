@@ -136,6 +136,7 @@ private:
   // the exit trip) and a division by one is not built.
   DenseSet<const Value *> perTrip;
   DenseMap<const PHINode *, uint64_t> walkedTrip;   // walked pointer phi -> its trip index (cq-9w75)
+  DenseSet<const PHINode *> carriedPtr;             // quantum pointer phi carried as its tag (cq-z6q1, fatptr R2)
 
   bool nonClassicalMemory(const Value *p) {
     if (ctx.T.isFatPointer(p, ctx.S))
@@ -739,6 +740,19 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       set(h, Operand{ConstantInt::get(Type::getInt64Ty(ctx.M.getContext()), 0), false});
       continue;
     }
+    // cq-z6q1 (CR rules 14, 21; 189): a quantum pointer header phi is carried as its fat pointer's tag rail
+    // (fatptr R2: every incoming at the start of its objects, so idx is the classical 0 and not carried).
+    if (isQ(h) && h->getType()->isPointerTy()) {
+      if (exitRail.count(h) || qind.count(h))
+        unimplemented("loops-cutoff: a K-loop's carried pointer read after the loop", h);
+      fatptr::registerCarried(ctx, *h);
+      Operand init = fatptr::carriedTag(ctx, h->getIncomingValueForBlock(pre));
+      if (!init.handle)
+        init = Operand{seedRail(init.v, Type::getInt32Ty(ctx.M.getContext())), true};
+      carriedPtr.insert(h);
+      set(h, init);
+      continue;
+    }
     // A classical pointer header phi is an affine induction (taint, CR rule 14: a walked pointer with a
     // classical start): a classical value in each trip, nothing carried.
     if (!h->getType()->isIntegerTy() && !h->getType()->isFloatingPointTy() && (isQ(h) || !h->getType()->isPointerTy()))
@@ -925,7 +939,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   auto advance = [&](Value *q) {
     std::vector<Operand> next;
     for (PHINode *h : hphis)
-      next.push_back(walkedTrip.count(h) ? Operand{nullptr, false} : ctx.operand(h->getIncomingValueForBlock(latch)));
+      next.push_back(walkedTrip.count(h)    ? Operand{nullptr, false}
+                     : carriedPtr.count(h) ? fatptr::carriedTag(ctx, h->getIncomingValueForBlock(latch))
+                                           : ctx.operand(h->getIncomingValueForBlock(latch)));
     for (size_t i = 0; i < hphis.size(); ++i) {
       PHINode *h = hphis[i];
       Operand nx = next[i];
@@ -980,7 +996,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         continue;
       abi::TemplateSpec spec;
       spec.op = "select";
-      spec.w = railTypeOf(h->getType());
+      spec.w = carriedPtr.count(h) ? RailType{Kind::Int, 32} : railTypeOf(h->getType());   // R2: the tag rail
       std::string shape = std::string(nx.handle ? "h" : "l") + "h";
       spec.shape = shape == "hh" ? "" : shape;
       set(h, Operand{ctx.emitTemplate(spec, {Operand{q, true}, nx, cur}), true});

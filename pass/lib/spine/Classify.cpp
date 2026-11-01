@@ -385,7 +385,10 @@ Case classify(const Loop &L, const TaintInfo &T, const Specialization &S) {
       bool exitOnTrue = !L.contains(br->getSuccessor(0));
       bool q = quantumValue(T, S, br->getCondition()) || internal;
       if (!q) {
-        classicalBound = true;
+        // cq-z6q1 (189): a classical exit is a bound only when LLVM computes its exit count; a test of data
+        // read from memory (p->next == NULL) bounds nothing, and the loop is a K-loop.
+        if (exitCountKnown(*L.getHeader(), *X))
+          classicalBound = true;
         continue;
       }
       anyQuantum = true;

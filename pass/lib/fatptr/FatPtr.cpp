@@ -59,6 +59,7 @@
 #include "../mem/qram/QramInternal.h"
 #include "../mem/qrom/QromInternal.h"
 #include "FatPtrInternal.h"
+#include "llvm/Analysis/CFG.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/ADT/DenseMap.h"
@@ -146,6 +147,8 @@ bool isRoot(LoweringContext &ctx, const Value *p) {
     return true;
   if (isa<GEPOperator>(p) || isa<BitCastOperator>(p) || isa<AddrSpaceCastOperator>(p))
     return false;
+  if (mem::hostRecord(ctx, p))
+    return true;   // cq-z6q1: a heap slot record keeps its host block (its base is its host address, 189)
   return mem::isQramRoot(ctx, p);
 }
 
@@ -197,6 +200,52 @@ const TripPtr *tripOf(LoweringContext &ctx, const Value *p) {
     return nullptr;
   auto jt = it->second.phis.find(p);
   return jt == it->second.phis.end() ? nullptr : &jt->second;
+}
+
+// R2 (cq-z6q1, CR rules 14, 21; 189): a K-loop's quantum pointer header phi, carried by the loop as its tag
+// rail (the loop's binding of the phi), at the classical idx 0 of each of its roots.
+std::map<const Function *, DenseSet<const Value *>> &carriedPhis() {
+  static std::map<const Function *, DenseSet<const Value *>> c;
+  return c;
+}
+bool isCarried(LoweringContext &ctx, const Value *p) {
+  auto it = carriedPhis().find(&ctx.out());
+  return it != carriedPhis().end() && it->second.count(p);
+}
+
+// The byte size of a root's object: an alloca's, or an allocation call's constant allocsize.
+std::optional<uint64_t> objectBytes(LoweringContext &ctx, const Value *root) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  if (auto *ai = dyn_cast<AllocaInst>(root)) {
+    std::optional<TypeSize> t = ai->getAllocationSize(DL);
+    if (t && !t->isScalable())
+      return t->getFixedValue();
+    return std::nullopt;
+  }
+  if (auto *CB = dyn_cast<CallBase>(root)) {
+    Attribute as = CB->getFnAttr(Attribute::AllocSize);
+    if (as.isValid() && !as.getAllocSizeArgs().second)
+      if (auto *n = dyn_cast<ConstantInt>(CB->getArgOperand(as.getAllocSizeArgs().first)))
+        return n->getZExtValue();
+  }
+  return std::nullopt;
+}
+
+// A distinct allocation of this function: an alloca, or a noalias allocation call on no cycle (one object
+// per execution of the function, so its tag names one object).
+bool distinctAllocation(LoweringContext &ctx, const Value *r) {
+  auto *I = dyn_cast<Instruction>(r);
+  if (!I || I->getFunction() != ctx.S.F)
+    return false;
+  if (isa<AllocaInst>(I))
+    return true;
+  auto *CB = dyn_cast<CallBase>(I);
+  if (!CB || !CB->hasRetAttr(Attribute::NoAlias) || !CB->getFnAttr(Attribute::AllocKind).isValid())
+    return false;
+  for (const BasicBlock *s : successors(I->getParent()))
+    if (isPotentiallyReachable(s, I->getParent()))
+      return false;
+  return true;
 }
 
 // A null pointer that is undefined to dereference (address space 0, the function does not define null).
@@ -529,6 +578,60 @@ Fat deriveSelect(LoweringContext &ctx, const SelectInst &sel, bool emit, bool ea
   return f;
 }
 
+// cq-z6q1 (CR rule 21; 189): a pointer loaded from host memory (a slot record's classical pointer field or a
+// classical object) through a fat pointer. Its value is a host address decoded at run time by lowerLoad
+// (range tests over its roots); its roots are the pointers this function stores into the objects the load
+// reads, each a root at its start (idx 0: a node pointer), and NULL. Every object of the load's provenance
+// must be one of them (a pointer of unknown origin, or one stored by another function or a memory
+// intrinsic, is unimplemented). Its idx is the classical 0; its tag the rail lowerLoad bound.
+Fat deriveHostLoaded(LoweringContext &ctx, const LoadInst &ld, ArrayRef<ObjectId> src, bool emit) {
+  auto intersects = [](ArrayRef<ObjectId> a, ArrayRef<ObjectId> b) {
+    for (ObjectId x : a)
+      if (llvm::is_contained(b, x))
+        return true;
+    return false;
+  };
+  Fat f;
+  for (const Instruction &I : instructions(*ctx.S.F)) {
+    if (auto *MI = dyn_cast<MemIntrinsic>(&I); MI && intersects(ctx.T.provenance(MI->getDest(), ctx.S), src))
+      unimplemented("fatptr: a memory intrinsic writing memory a pointer is loaded from (rule 21)", &I);
+    auto *st = dyn_cast<StoreInst>(&I);
+    if (!st || !intersects(ctx.T.provenance(st->getPointerOperand(), ctx.S), src))
+      continue;
+    if (!st->getValueOperand()->getType()->isPointerTy())
+      continue;
+    const Value *v = st->getValueOperand();
+    if (!isa<ConstantPointerNull>(v) && (!isRoot(ctx, v) || isa<GEPOperator>(v) || !distinctAllocation(ctx, v)))
+      unimplemented("fatptr: a pointer stored into memory a fat pointer loads from that is not a distinct "
+                    "allocation's start or NULL (rule 21 decoded idx)",
+                    st);
+    addRoots(f, {v});
+  }
+  for (ObjectId o : ctx.T.provenance(&ld, ctx.S)) {
+    bool covered = false;
+    for (const Value *r : f.roots)
+      if (!isa<ConstantPointerNull>(r) && llvm::is_contained(ctx.T.provenance(r, ctx.S), o))
+        covered = true;
+    if (!covered)
+      unimplemented("fatptr: a pointer loaded from host memory that may hold a pointer this function does not "
+                    "store (unknown origin, rule 21)",
+                    &ld);
+  }
+  if (f.roots.empty())
+    unimplemented("fatptr: a pointer loaded from host memory into which this function stores no pointer", &ld);
+  llvm::sort(f.roots, [&](const Value *x, const Value *y) { return rootNumber(ctx, x) < rootNumber(ctx, y); });
+  f.idx = Operand{ConstantInt::get(i64(ctx), 0), false};
+  if (!emit) {
+    f.tag = Operand{nullptr, true};
+    return f;
+  }
+  SmallVector<Operand, 4> fl = ctx.fields(&ld);
+  if (fl.size() != 2)
+    internalError("fatptr: a pointer loaded from host memory bound to other than its (tag, idx)", &ld);
+  f.tag = fl[0];
+  return f;
+}
+
 // A pointer loaded from a QRAM of pointers (rule 21, 88): its (tag, idx) are the two i32 rails its
 // loader bound. Its roots are the roots of the pointers this function stores into the objects the load
 // reads, restricted to the load's provenance; its cell size their common one.
@@ -548,10 +651,12 @@ Fat deriveLoaded(LoweringContext &ctx, const LoadInst &ld, bool emit) {
   // (a clone call writing the cell keeps their provenance: mem-slots checkCloneKeepsTag).
   bool slotCell = src.size() == 1 && ctx.T.classOf(src.front()) == ObjClass::Slot &&
                   !ctx.T.isFatPointer(ld.getPointerOperand(), ctx.S) && !isQ(ctx, ld.getPointerOperand());
+  // cq-z6q1 (189): through a fat pointer from slot records' classical pointer fields or classical memory.
+  if (!slotCell && llvm::none_of(src, [&](ObjectId o) { return ctx.T.classOf(o) == ObjClass::Qram; }))
+    return deriveHostLoaded(ctx, ld, src, emit);
   for (ObjectId o : src)
     if (ctx.T.classOf(o) != ObjClass::Qram && !slotCell)
-      unimplemented("fatptr: a pointer loaded through a fat pointer from slot or classical memory (rule 21, 189)",
-                    &ld);
+      unimplemented("fatptr: a pointer loaded through a fat pointer from QRAM and other memory (rule 21)", &ld);
   SmallVector<ObjectId, 4> mine(ctx.T.provenance(&ld, ctx.S).begin(), ctx.T.provenance(&ld, ctx.S).end());
   auto intersects = [](ArrayRef<ObjectId> a, ArrayRef<ObjectId> b) {
     for (ObjectId x : a)
@@ -756,6 +861,25 @@ Fat derive(LoweringContext &ctx, const Value *p, bool emit, bool eager) {
   }
   if (auto *pm = dyn_cast<IntrinsicInst>(p); pm && pm->getIntrinsicID() == Intrinsic::ptrmask)
     return derivePtrMask(ctx, *pm, emit, eager);
+  if (isCarried(ctx, p)) {
+    // R2 (cq-z6q1): the loop's tag rail at the classical idx 0, over the roots of its incomings.
+    Fat f;
+    for (const Value *in : cast<PHINode>(p)->incoming_values()) {
+      if (in == p)
+        continue;
+      Fat s = derive(ctx, in, /*emit=*/false);
+      auto *ci = s.idx.handle ? nullptr : dyn_cast_or_null<ConstantInt>(s.idx.v);
+      if (s.trips || s.nullMoved || !ci || !ci->isZero())
+        unimplemented("fatptr: a K-loop's carried pointer whose incoming is not at the start of its objects (a "
+                      "carried idx, rule 21)",
+                      p);
+      addRoots(f, s.roots);
+    }
+    llvm::sort(f.roots, [&](const Value *x, const Value *y) { return rootNumber(ctx, x) < rootNumber(ctx, y); });
+    f.tag = emit ? ctx.operand(p) : Operand{nullptr, true};
+    f.idx = Operand{ConstantInt::get(i64(ctx), 0), false};
+    return f;
+  }
   if (isa<PHINode>(p))
     unimplemented("fatptr: a phi of fat pointers (rule 21 merge over edge predicates)", p);
   if (auto *ld = dyn_cast<LoadInst>(p))
@@ -954,8 +1078,8 @@ bool distinctLocalAllocas(LoweringContext &ctx, const Fat &a, const Fat &b) {
       if (isa<ConstantPointerNull>(r))
         continue;   // NULL (tag 0) is no allocation's address (85)
       auto *ai = dyn_cast<AllocaInst>(r);
-      if (!ai || ai->getFunction() != ctx.S.F)
-        return false;
+      if ((!ai || ai->getFunction() != ctx.S.F) && !distinctAllocation(ctx, r))
+        return false;   // cq-z6q1: a noalias allocation call on no cycle is one object too (189's nodes)
     }
   return true;
 }
@@ -1147,6 +1271,108 @@ Value *boundSlotLoad(LoweringContext &ctx, Bound &b, const Fat &f, Type *ty, con
   return v;
 }
 
+// cq-z6q1 (CR rule 21; 189): a fat pointer with a quantum tag at a classical constant idx whose roots are
+// heap slot records and classical host objects (distinct allocations of this function with a constant size)
+// and NULL.
+bool hostOrRecordRoots(LoweringContext &ctx, const Fat &f) {
+  if (!f.tag.handle || f.idx.handle || !isa<ConstantInt>(f.idx.v) || f.trips)
+    return false;
+  bool any = false;
+  for (const Value *r : f.roots) {
+    if (isa<ConstantPointerNull>(r))
+      continue;
+    if (boundOf(ctx, r) || mem::isQramRoot(ctx, r))
+      return false;
+    if (!mem::hostRecord(ctx, r) && !(classicalMemoryOnly(ctx, r) && distinctAllocation(ctx, r)))
+      return false;
+    any = true;
+  }
+  return any;
+}
+
+// A host address decoded at run time to its tag over the roots (rule 21, unknown origin): base[o] <= addr <=
+// base[o] + size (one-past included), the first matching root's tag; an address in no root's object (NULL)
+// is tag 0. A classical select chain, the last root innermost.
+Value *decodeTag(LoweringContext &ctx, Value *addrPtr, ArrayRef<const Value *> roots, const Instruction &at) {
+  IRBuilder<> &B = ctx.B();
+  Value *addr = B.CreatePtrToInt(addrPtr, i64(ctx));
+  Value *acc = ConstantInt::get(i32(ctx), 0);
+  for (size_t i = roots.size(); i-- > 0;) {
+    const Value *r = roots[i];
+    if (isa<ConstantPointerNull>(r))
+      continue;
+    std::optional<uint64_t> n = objectBytes(ctx, r);
+    if (!n)
+      unimplemented("fatptr: a run-time decoded pointer over an object of no constant size (rule 21)", &at);
+    Operand base = ctx.operand(r);
+    if (base.handle)
+      internalError("fatptr: a root pointer bound to a rail", r);
+    Value *in = B.CreateICmpULE(B.CreateSub(addr, B.CreatePtrToInt(base.v, i64(ctx))), ConstantInt::get(i64(ctx), *n));
+    acc = B.CreateSelect(in, ConstantInt::get(i32(ctx), rootNumber(ctx, r)), acc);
+  }
+  return acc;
+}
+
+// The load through such a fat pointer: one unguarded access per root at the classical byte offset (a heap
+// record's field: its handle, or the host load of a classical field; a classical object: a host load, which
+// must lie inside the object), merged by select on tag == k, the first root innermost (the complement; NULL
+// is dropped: a load through it is undefined). A loaded pointer is decoded per root at run time (decodeTag
+// over the roots of the loaded pointer, deriveHostLoaded) and the tags merged alike; its idx is 0.
+void lowerHostLoad(LoweringContext &ctx, LoadInst &ld, const Fat &f) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  Type *ty = ld.getType();
+  bool ptr = ty->isPointerTy();
+  int64_t idx = cast<ConstantInt>(f.idx.v)->getSExtValue();
+  if (idx != 0 && f.cell == 0)
+    internalError("fatptr: a non-zero cell index with no cell size", &ld);
+  int64_t byte = idx * int64_t(f.cell);
+  SmallVector<const Value *, 4> loadedRoots;
+  if (ptr) {
+    Fat lf = derive(ctx, &ld, /*emit=*/false);
+    loadedRoots.assign(lf.roots.begin(), lf.roots.end());
+  }
+  SmallVector<std::pair<const Value *, Operand>, 4> arms;
+  for (const Value *r : f.roots) {
+    if (isa<ConstantPointerNull>(r))
+      continue;
+    Operand v{nullptr, false};
+    if (mem::hostRecord(ctx, r)) {
+      v = mem::loadSlotCellAt(ctx, r, byte, ty, ld);
+    } else {
+      std::optional<uint64_t> n = objectBytes(ctx, r);
+      uint64_t size = DL.getTypeStoreSize(ty).getFixedValue();
+      if (!n || byte < 0 || uint64_t(byte) + size > *n)
+        unimplemented("fatptr: a load through a fat pointer past a host object it may name (rule 21 bound check)",
+                      &ld);
+      Value *base = ctx.operand(r).v;
+      Value *p = ctx.B().CreateInBoundsGEP(Type::getInt8Ty(ctx.M.getContext()), base,
+                                           ConstantInt::get(i64(ctx), byte));
+      v = Operand{ctx.B().CreateAlignedLoad(ty, p, ld.getAlign()), false};
+    }
+    if (ptr) {
+      if (v.handle)
+        internalError("fatptr: a pointer field holding a handle", &ld);
+      v = Operand{decodeTag(ctx, v.v, loadedRoots, ld), false};
+    }
+    arms.push_back({r, v});
+  }
+  if (arms.empty())
+    internalError("fatptr: a fat pointer naming none of its roots", &ld);
+  RailType w = ptr ? intRail(32) : railTypeOf(ty);
+  Operand acc = arms[0].second;
+  for (size_t i = 1; i < arms.size(); ++i) {
+    Operand eq = icmp(ctx, CmpInst::ICMP_EQ, 32, f.tag,
+                      Operand{ConstantInt::get(i32(ctx), rootNumber(ctx, arms[i].first)), false});
+    std::string shape = std::string(arms[i].second.handle ? "h" : "l") + (acc.handle ? "h" : "l");
+    acc = Operand{tmpl(ctx, "select", w, {eq, arms[i].second, acc}, shape == "hh" ? "" : shape), true};
+  }
+  if (ptr) {
+    ctx.bindFields(&ld, {acc, Operand{ConstantInt::get(i32(ctx), 0), false}});
+    return;
+  }
+  ctx.bindFields(&ld, {acc});
+}
+
 // Rule 21: a load through a fat pointer is one pure access per object of its provenance, executed
 // unguarded at idx (a QRAM load; a QROM of a classical object at a rail idx), merged by a select chain
 // on the flags tag == k (the first root innermost, the complement), like any multi-way merge (rule 9).
@@ -1198,6 +1424,10 @@ void lowerLoad(LoweringContext &ctx, LoadInst &ld) {
   }
   if (!ptr && !ty->isIntegerTy() && !ty->isFloatingPointTy())
     unimplemented("fatptr: a load of an aggregate or vector through a fat pointer (rules 21, 25, 26)", &ld);
+  if (hostOrRecordRoots(ctx, f)) {
+    lowerHostLoad(ctx, ld, f);
+    return;
+  }
   SmallVector<const Value *, 4> roots;
   // NULL (tag 0, 85) contributes 0: a load through it is undefined, so the complement of the other
   // objects' guards reads the constant 0 (the select chain starts from it).
@@ -1774,6 +2004,22 @@ unsigned reserveTripTags(LoweringContext &ctx, unsigned n) {
   unsigned first = t.next;
   t.next += n;
   return first;
+}
+
+// R2 (cq-z6q1, CR rules 14, 21; 189).
+void registerCarried(LoweringContext &ctx, const PHINode &P) {
+  carriedPhis()[&ctx.out()].insert(&P);
+  (void)derive(ctx, &P, /*emit=*/false);   // its shape: every incoming at the start of its objects
+}
+
+Operand carriedTag(LoweringContext &ctx, const Value *ptr) {
+  Fat f = derive(ctx, ptr, /*emit=*/true);
+  auto *ci = f.idx.handle ? nullptr : dyn_cast<ConstantInt>(f.idx.v);
+  if (f.trips || f.nullMoved || !ci || !ci->isZero())
+    unimplemented("fatptr: a K-loop's carried pointer value that is not at the start of its objects (a carried "
+                  "idx, rule 21)",
+                  ptr);
+  return f.tag;
 }
 
 unsigned rootTag(LoweringContext &ctx, const Value *root) {

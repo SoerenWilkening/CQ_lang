@@ -565,6 +565,38 @@ bool cloneArgUse(LoweringContext &ctx, const CallBase &CB, const Use &u) {
   return noCapture && cloneCallee(ctx, CB);
 }
 
+// cq-z6q1 (CR rules 20, 21; 189): a pointer stored as a value into a block of this function (an alloca or a
+// noalias allocation call, at a classical address naming it alone) stays inside the function as long as the
+// block does and every pointer loaded back from the block does: the block's site and those loads (through
+// any pointer whose provenance names the block, a fat pointer's among them) join the walk.
+bool storedLocally(LoweringContext &ctx, const StoreInst &st, SmallVectorImpl<const Value *> &work,
+                   SmallPtrSetImpl<const Value *> &seen) {
+  if (st.isVolatile() || st.isAtomic() || ctx.T.isFatPointer(st.getPointerOperand(), ctx.S))
+    return false;
+  const Value *dst = getUnderlyingObject(st.getPointerOperand());
+  auto *DI = dyn_cast<Instruction>(dst);
+  auto *CB = dyn_cast_or_null<CallBase>(DI);
+  if (!DI || DI->getFunction() != st.getFunction() ||
+      !(isa<AllocaInst>(DI) || (CB && CB->hasRetAttr(Attribute::NoAlias) && CB->getFnAttr(Attribute::AllocKind).isValid())))
+    return false;
+  ArrayRef<ObjectId> dobj = ctx.T.provenance(st.getPointerOperand(), ctx.S);
+  if (dobj.size() != 1)
+    return false;
+  for (const Instruction &I : instructions(*st.getFunction()))
+    if (auto *MI = dyn_cast<MemTransferInst>(&I);
+        MI && llvm::is_contained(ctx.T.provenance(MI->getSource(), ctx.S), dobj.front()))
+      return false;   // the block's pointers copied elsewhere
+  if (seen.insert(dst).second)
+    work.push_back(dst);
+  for (const Instruction &I : instructions(*st.getFunction()))
+    if (auto *ld = dyn_cast<LoadInst>(&I); ld && ld->getType()->isPointerTy() &&
+                                            llvm::is_contained(ctx.T.provenance(ld->getPointerOperand(), ctx.S),
+                                                               dobj.front()))
+      if (seen.insert(ld).second)
+        work.push_back(ld);
+  return true;
+}
+
 bool escapes(LoweringContext &ctx, const Value *root) {
   SmallVector<const Value *, 8> work{root};
   SmallPtrSet<const Value *, 16> seen{root};
@@ -580,6 +612,8 @@ bool escapes(LoweringContext &ctx, const Value *root) {
       if (auto *st = dyn_cast<StoreInst>(usr)) {
         if (st->getPointerOperand() == v && st->getValueOperand() != v)
           continue;
+        if (st->getPointerOperand() != v && storedLocally(ctx, *st, work, seen))
+          continue;   // cq-z6q1 (189): a classical pointer field of a local or heap block of this function
         return true;
       }
       if (auto *r = dyn_cast<AtomicRMWInst>(usr)) {
@@ -729,6 +763,70 @@ int64_t cellOffset(const ObjInfo &info, unsigned c) {
   return info.fields[c].off;
 }
 
+// cq-z6q1 (CR rules 20, 21; 189): a HEAP RECORD. A heap block of constant size whose accesses are at
+// classical constant byte offsets of more than one type (189's `struct node { int v; struct node *next; }`)
+// is a record: one cell per accessed field, at its own offset and of its own type (rule 20 per cell: a handle
+// field is an i32 cell, a classical field keeps its type and its value in host memory; a pointer field must
+// be classical). Accesses through a fat pointer naming the block (rule 21) are fatptr's: they are checked
+// there against the fields. The block stays the host allocation: the new layout (the cells' literal struct)
+// must keep every field's offset and fit the block. Fields overlapping, a run-time offset, or a memory
+// intrinsic: unimplemented.
+bool heapRecord(LoweringContext &ctx, FnState &st, ObjInfo &info, ObjectId o) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  SmallVector<Access, 8> acc = accessesOf(ctx, *st.F, o);
+  auto fat = [&](const Access &a) { return !a.a.ok && ctx.T.isFatPointer(accessPtr(a.I), ctx.S); };
+  std::optional<uint64_t> width;
+  bool widths = false;
+  for (const Access &a : acc) {
+    if (fat(a))
+      continue;
+    uint64_t b = DL.getTypeAllocSize(a.ty).getFixedValue();
+    widths |= width && *width != b;
+    width = b;
+  }
+  if (!widths)
+    return false;   // one cell width: a slot array (a pointer cell type stays unimplemented there)
+  std::optional<uint64_t> size;
+  if (auto *CB = dyn_cast<CallBase>(info.root)) {
+    Attribute as = CB->getFnAttr(Attribute::AllocSize);
+    if (as.isValid() && !as.getAllocSizeArgs().second)
+      if (auto *n = dyn_cast<ConstantInt>(CB->getArgOperand(as.getAllocSizeArgs().first)))
+        size = n->getZExtValue();
+  }
+  if (!size)
+    unimplemented("mem-slots: a heap block accessed at several types that is not of one constant allocsize (a "
+                  "heap record's extent)",
+                  info.root);
+  for (const Instruction &X : instructions(*st.F))
+    if (auto *MI = dyn_cast<MemIntrinsic>(&X); MI && hasObject(ctx, MI->getDest(), o))
+      unimplemented("mem-slots: a memory intrinsic on a heap record", &X);
+  std::map<int64_t, Type *> fields;
+  for (const Access &a : acc) {
+    if (fat(a))
+      continue;
+    if (!a.a.ok)
+      unimplemented("mem-slots: a heap record accessed through a pointer of no static offset", a.I);
+    if (!a.a.terms.empty() || a.a.root != info.root)
+      unimplemented("mem-slots: a heap record accessed at a run-time offset", a.I);
+    if (!a.ty->isIntegerTy() && !a.ty->isFloatingPointTy() && !a.ty->isPointerTy())
+      unimplemented("mem-slots: a heap record field that is not a scalar or a pointer", a.I);
+    auto [it, fresh] = fields.insert({a.a.off, a.ty});
+    if (!fresh && it->second != a.ty)
+      unimplemented("mem-slots: a heap record field accessed at two types (a bit view, 63)", a.I);
+  }
+  int64_t end = 0;
+  for (auto &[off, ty] : fields) {
+    if (off < end)
+      unimplemented("mem-slots: overlapping fields of a heap record (a bit view, 63)", info.root);
+    end = off + int64_t(storeBytes(DL, ty));
+    info.fields.push_back(ObjInfo::Field{off, ty});
+  }
+  if (end > int64_t(*size))
+    unimplemented("mem-slots: a heap record field past its block", info.root);
+  info.record = true;
+  return true;
+}
+
 ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId o) {
   auto it = st.objs.find(root);
   if (it != st.objs.end())
@@ -753,6 +851,10 @@ ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId 
     info.cellTy = scalarCellType(gv->getValueType());
   } else {
     info.kind = isa<Argument>(root) ? RootKind::Param : RootKind::Heap;
+    if (info.kind == RootKind::Heap && heapRecord(ctx, st, info, o)) {
+      info.escaping = escapes(ctx, root);
+      return st.objs.emplace(root, info).first->second;
+    }
     for (const Access &a : accessesOf(ctx, *st.F, o)) {
       uint64_t b = DL.getTypeAllocSize(a.ty).getFixedValue();
       if (info.cellBytes && info.cellBytes != b)
@@ -1223,7 +1325,7 @@ void decideFields(LoweringContext &ctx, FnState &st, ObjInfo &info, ObjectId o) 
     for (const Instruction &X : instructions(*st.F))
       if (cloneWritesCell(ctx, info, o, X, cell, sz))
         h = true;
-    if (f.ty->isPointerTy() && !h)
+    if (f.ty->isPointerTy() && !h && info.kind != RootKind::Heap)
       unimplemented("mem-slots: a pointer field of a slot record that no write fills with a fat pointer (a "
                     "classical pointer beside handle fields: rules 20, 21)",
                     info.root);
@@ -1232,23 +1334,32 @@ void decideFields(LoweringContext &ctx, FnState &st, ObjInfo &info, ObjectId o) 
   SmallVector<Type *, 4> cells;
   for (ObjInfo::Field &f : info.fields) {
     f.rec = cells.size();
-    if (f.ty->isPointerTy()) {
+    if (f.ty->isPointerTy() && f.handle) {
       // cq-oocu (107): a pointer-kind cell is two handles (tag, idx), rule 21's fat pointer.
       if (info.kind != RootKind::Local)
-        unimplemented("mem-slots: a pointer-kind field of an sret/byval record parameter (rules 20, 21, 26)",
+        unimplemented("mem-slots: a pointer-kind field of an sret/byval record parameter or of a heap record "
+                      "(rules 20, 21, 26)",
                       info.root);
       cells.push_back(handleTy(ctx.M.getContext()));
     }
     cells.push_back(f.handle ? handleTy(ctx.M.getContext()) : f.ty);
   }
   info.recTy = StructType::get(ctx.M.getContext(), cells);
+  if (info.kind == RootKind::Heap) {
+    // cq-z6q1: a heap record keeps its host block: every cell at its field's offset.
+    const StructLayout *SL = DL.getStructLayout(info.recTy);
+    for (unsigned k = 0; k < info.fields.size(); ++k)
+      if (int64_t(SL->getElementOffset(info.fields[k].rec)) != info.fields[k].off)
+        unimplemented("mem-slots: a heap record whose handle cells do not keep its fields' offsets", info.root);
+  }
 }
 
 // ---- emission -----------------------------------------------------------------------------------
 
 struct Site { ObjectId o; ObjInfo *info; Addr a; bool beyond = false; };
 
-Site siteOf(LoweringContext &ctx, FnState &st, const Instruction &I, const Value *ptr, Type *ty) {
+Site siteOf(LoweringContext &ctx, FnState &st, const Instruction &I, const Value *ptr, Type *ty,
+            int64_t extra = 0) {
   ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
   if (objs.size() != 1)
     unimplemented("mem-slots: a classical pointer into " + std::to_string(objs.size()) +
@@ -1261,6 +1372,7 @@ Site siteOf(LoweringContext &ctx, FnState &st, const Instruction &I, const Value
     unimplemented("mem-slots: a slot access whose address is not an object plus GEP offsets (a pointer phi, "
                   "select or load: no static cell index)",
                   &I);
+  a.off += extra;   // M7: a cell past the pointer (a fat-pointer load's byte offset)
   // A pointer formal's provenance is the caller's object (taint has no site for an argument).
   if (!isa<Argument>(a.root) && ctx.T.objectOf(a.root) != objs.front())
     internalError("mem-slots: the address root is not the object taint names", &I);
@@ -2783,6 +2895,38 @@ bool freshCell(LoweringContext &ctx, FnState &st, const Site &s, const StoreInst
 
 } // namespace
 
+// M7 (cq-z6q1, CR rules 20, 21; 189).
+bool hostRecord(LoweringContext &ctx, const Value *root) {
+  auto *I = dyn_cast<CallBase>(root);
+  if (!I || !I->getFnAttr(Attribute::AllocKind).isValid() || ctx.T.isQuantum(root, ctx.S))
+    return false;
+  ArrayRef<ObjectId> objs = ctx.T.provenance(root, ctx.S);
+  if (objs.size() != 1 || ctx.T.objectOf(root) != objs.front())
+    return false;
+  ObjectId o = objs.front();
+  if (ctx.T.classOf(o) != ObjClass::Slot)
+    return false;
+  FnState &st = stateOf(ctx, *I);
+  ObjInfo &info = objInfo(ctx, st, root, o);
+  return info.kind == RootKind::Heap && info.record;
+}
+
+Operand loadSlotCellAt(LoweringContext &ctx, const Value *root, int64_t byte, Type *ty, Instruction &at) {
+  if (!hostRecord(ctx, root))
+    unimplemented("mem-slots: a fat-pointer load from a slot object that is not a heap record (rule 21 guarded "
+                  "slot select)",
+                  &at);
+  FnState &st = stateOf(ctx, at);
+  Site s = siteOf(ctx, st, at, root, ty, byte);
+  if (classicalCell(ctx, st, s)) {
+    // A classical field (a pointer field among them) is host memory: the host load of it.
+    LoadInst *nl = ctx.B().CreateAlignedLoad(ty, cellPointer(ctx, s, at), ctx.M.getDataLayout().getABITypeAlign(ty));
+    return Operand{nl, false};
+  }
+  cellRail(*s.info, ty, at);
+  return readCell(ctx, st, s, at, ty);
+}
+
 void allocateSlots(LoweringContext &ctx, Instruction &site) {
   IRBuilder<> &B = ctx.B();
   LLVMContext &C = ctx.M.getContext();
@@ -2794,7 +2938,10 @@ void allocateSlots(LoweringContext &ctx, Instruction &site) {
                       " objects (an array of structs holding handles: one slot array per field column, 168)",
                   &site);
   ObjInfo &info = objInfo(ctx, st, &site, objs.front());
-  if (info.record) {
+  if (info.record && info.kind == RootKind::Heap) {
+    // cq-z6q1: a heap record is the host block itself (heapRecord: its cells fit at the fields' offsets).
+    decideFields(ctx, st, info, objs.front());
+  } else if (info.record) {
     auto *ai = dyn_cast<AllocaInst>(&site);
     if (!ai || !isa<ConstantInt>(ai->getArraySize()) || !cast<ConstantInt>(ai->getArraySize())->isOne())
       unimplemented("mem-slots: a slot record that is not one local struct object", &site);
@@ -2828,7 +2975,7 @@ void allocateSlots(LoweringContext &ctx, Instruction &site) {
       unimplemented("mem-slots: a heap slot block of quantum size (QRAM realloc, rule 16, 192)", &site);
     nc->setArgOperand(i, a.v);
   }
-  if (info.cellBytes != 4) {
+  if (!info.record && info.cellBytes != 4) {
     Attribute as = CB->getFnAttr(Attribute::AllocSize);
     if (!as.isValid())
       as = CB->getCalledFunction() ? CB->getCalledFunction()->getFnAttribute(Attribute::AllocSize) : Attribute();
@@ -2958,7 +3105,7 @@ bool ptrField(const ObjInfo &info, int64_t off) {
   if (!info.record)
     return false;
   int k = fieldAt(info, off);
-  return k >= 0 && info.fields[unsigned(k)].ty->isPointerTy();
+  return k >= 0 && info.fields[unsigned(k)].ty->isPointerTy() && info.fields[unsigned(k)].handle != 0;   // cq-z6q1
 }
 
 // The i32 pointer of half h (0 tag, 1 idx) of the pointer-kind cell of a caller's record.
@@ -3566,6 +3713,16 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
     unimplemented("mem-slots: a walked access beyond its slot object other than a load (rule 21)", &stI);
   if (s.info->view)
     return lowerViewStore(ctx, st, stI, s);
+  if (s.info->record && v->getType()->isPointerTy()) {
+    // cq-z6q1 (189): a heap record's pointer field is a classical cell (decideFields): the host pointer is
+    // stored as written.
+    Operand pv = ctx.operand(v);
+    if (pv.handle || !classicalCell(ctx, st, s) || ctx.currentFlag())
+      internalError("mem-slots: a record's pointer field written with other than a classical pointer", &stI);
+    ctx.B().CreateAlignedStore(pv.v, cellPointer(ctx, s, stI), stI.getAlign());
+    st.lowered[&stI] = pv;
+    return;
+  }
   RailType w = cellRail(*s.info, v->getType(), stI);
   IRBuilder<> &B = ctx.B();
 

@@ -1101,6 +1101,16 @@ void Analyzer::loopHeaderRule(SpecState &S, const BasicBlock *H,
     bool falseExits = !Lp->contains(BI->getSuccessor(1));
     if (trueExits == falseExits)
       continue;
+    if (!isQ(BI->getCondition())) {
+      // cq-z6q1 (CR rule 14; 189): a classical exit test bounds the loop only when LLVM computes its exit
+      // count (spine loops::classify alike); otherwise the loop is a K-loop and every carried value is.
+      auto key = std::make_pair(H, (const BasicBlock *)X);
+      auto it = fi.exitKnown.find(key);
+      if (it == fi.exitKnown.end())
+        it = fi.exitKnown.emplace(key, exitCountKnown(*H, *X)).first;
+      if (!it->second)
+        continue;
+    }
     curUser = BI;
     forcingLeaves(BI->getCondition(), trueExits, *this, isQ, leaves);
     curUser = nullptr;

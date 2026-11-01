@@ -37,6 +37,13 @@ void bindFormal(LoweringContext &, const llvm::Argument &formal, llvm::Value *ob
 // null is undefined). Anything else through P is unimplemented.
 struct TripCell { int64_t byte; llvm::Type *ty; Operand h; };
 struct TripObject { unsigned tag; llvm::SmallVector<TripCell, 2> cells; };
+// R2 (cq-z6q1, CR rules 14, 21; 189): a K-loop's quantum pointer header phi P is CARRIED as its tag alone:
+// the loop binds P (one operand, its i32 tag rail, rebound each trip) after registerCarried(P), which
+// checks that every incoming of P is at the start of its objects (idx the classical 0). derive of P is
+// then (the bound tag, idx 0) over the roots of its incomings. carriedTag: the tag of a value the loop
+// carries into P (its start, its next value), checked to be at idx 0.
+void registerCarried(LoweringContext &, const llvm::PHINode &P);
+Operand carriedTag(LoweringContext &, const llvm::Value *ptr);
 unsigned reserveTripTags(LoweringContext &, unsigned n);
 unsigned rootTag(LoweringContext &, const llvm::Value *root);   // a root's number (internal error otherwise)
 void bindTripPointer(LoweringContext &, const llvm::PHINode &P, Operand tag, llvm::ArrayRef<TripObject>);

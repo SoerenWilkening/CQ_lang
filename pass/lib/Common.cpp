@@ -8,6 +8,10 @@
 #include <string>
 
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Analysis/AssumptionCache.h"
+#include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
@@ -100,5 +104,22 @@ bool libFuncOf(const Function &F, LibFunc &lf) {
   }
   cache[key] = {known, lf};
   return known;
+}
+
+bool exitCountKnown(const BasicBlock &header, const BasicBlock &exiting) {
+  Function &F = const_cast<Function &>(*header.getParent());
+  DominatorTree DT(F);
+  LoopInfo LI(DT);
+  AssumptionCache AC(F);
+  TargetLibraryInfoImpl TLII(Triple(F.getParent()->getTargetTriple()));
+  TargetLibraryInfo TLI(TLII, &F);
+  ScalarEvolution SE(F, TLI, AC, DT, LI);
+  Loop *L = LI.getLoopFor(&header);
+  while (L && L->getHeader() != &header)
+    L = L->getParentLoop();
+  if (!L)
+    internalError("exitCountKnown: no loop headed by the block", header.getTerminator());
+  return !isa<SCEVCouldNotCompute>(
+      SE.getExitCount(L, &exiting, ScalarEvolution::SymbolicMaximum));
 }
 } // namespace cq

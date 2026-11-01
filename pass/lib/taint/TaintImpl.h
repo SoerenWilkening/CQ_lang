@@ -99,6 +99,8 @@ struct FnInfo {
   cq::taint_detail::DeadEnds dead;
   llvm::DenseMap<const llvm::BasicBlock *, llvm::SmallVector<const llvm::BasicBlock *, 2>> cdParents;
   std::vector<const llvm::BasicBlock *> rpo;
+  // cq-z6q1: per (loop header, exiting block), whether SCEV computes the exit's count (exitCountKnown).
+  std::map<std::pair<const llvm::BasicBlock *, const llvm::BasicBlock *>, bool> exitKnown;
   // cq-bxc4: per join J, per predecessor P, the branching blocks the edge P -> J is (transitively)
   // control dependent on within the paths that end in J (Analyzer::joinEdgeCD). Structural only.
   llvm::DenseMap<const llvm::BasicBlock *,

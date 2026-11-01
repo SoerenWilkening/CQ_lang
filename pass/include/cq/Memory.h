@@ -46,6 +46,14 @@ llvm::SmallVector<llvm::Value *, 4> slotCellsAfterCall(LoweringContext &, const 
 // the slot object ptr points to may hold at `at` (a clone call rotating any of its cells in place,
 // TaintInfo::kAnyCell). A dynamic local or heap slot array only; any other object is unimplemented.
 llvm::SmallVector<llvm::Value *, 8> slotRailsMayHold(LoweringContext &, const llvm::Value *ptr, llvm::Instruction &at);
+// M7 (cq-z6q1, CR rules 20, 21; 189). mem-slots, consumer fatptr: hostRecord: root is the allocation call of a
+// heap slot RECORD (a heap block accessed at several types at constant offsets: one cell per field, a handle
+// field an i32 cell, a classical field, a pointer field among them, its C value; the block keeps its host
+// layout, so its host address is its base). loadSlotCellAt: the field of such a record at byte `byte` read
+// as ty at `at` (a load through a fat pointer naming it): the handle the cell holds there, or the classical
+// value of a classical field (a host load). Anything else is unimplemented.
+bool hostRecord(LoweringContext &, const llvm::Value *root);
+Operand loadSlotCellAt(LoweringContext &, const llvm::Value *root, int64_t byte, llvm::Type *ty, llvm::Instruction &at);
 void allocateSlots(LoweringContext &, llvm::Instruction &site);   // mem-slots
 void endSlotLifetime(LoweringContext &, ObjectId, llvm::Instruction *at);  // mem-slots
 void lowerQromLoad(LoweringContext &, llvm::LoadInst &);          // mem-qrom
