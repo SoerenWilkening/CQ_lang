@@ -501,6 +501,43 @@ Value *classicalPhi(PHINode &phi, BasicBlock *join, IRBuilder<> &B,
         in.op = Operand{sink.seed(in.op.v, w), true};
       }
   }
+  if (anyHandle) {
+    // cq-88vg (52): an arm whose rail reaches the join along another edge too (defined before the
+    // classical choice: a register, a cell's handle loaded before the branch, a clone call's out) is
+    // copied into a fresh rail on its own edge, as 52's reference does. The phi then names rails local
+    // to their arms: a kept phi (measured, returned) keeps the copy chosen on each path, and the arm
+    // itself is resolved where it would be without the phi.
+    auto reachesOther = [&](const In &in) {
+      auto *d = dyn_cast<Instruction>(in.op.v);
+      if (!d)
+        return true;   // a formal or a constant handle: available on every edge
+      const BasicBlock *D = d->getParent();
+      SmallPtrSet<const BasicBlock *, 16> seen{D};
+      SmallVector<const BasicBlock *, 16> work{D};
+      while (!work.empty()) {
+        const BasicBlock *b = work.pop_back_val();
+        for (const In &o : ins)
+          if (o.out == b && o.out != in.out)
+            return true;
+        const Instruction *t = b->getTerminator();
+        if (!t || b == in.out)
+          continue;
+        for (const BasicBlock *s : successors(t))
+          if (s != join && seen.insert(s).second)
+            work.push_back(s);
+      }
+      return false;
+    };
+    IRBuilderBase::InsertPointGuard g(B);
+    std::vector<bool> copyIt(ins.size());
+    for (size_t k = 0; k < ins.size(); ++k)
+      copyIt[k] = ins[k].op.handle && reachesOther(ins[k]);
+    for (size_t k = 0; k < ins.size(); ++k)
+      if (copyIt[k]) {
+        B.SetInsertPoint(ins[k].out->getTerminator());
+        ins[k].op = Operand{sink.copy(ins[k].op.v, w), true};
+      }
+  }
   Type *ty = anyHandle ? ins[0].op.v->getType() : phi.getType();
   for (const In &in : ins)
     if (in.op.v->getType() != ty)
@@ -649,6 +686,15 @@ public:
     return call;
   }
   void merged(Instruction *m) override { ctx.unc().recordMerge(m); }
+  Value *copy(Value *h, RailType w) override {
+    CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                               {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+    RailId fid = ctx.unc().recordSeed(f);
+    abi::CoreSpec cp{abi::Core::Copy, w};
+    CallInst *c = ctx.emitCore(cp, {h, f});
+    ctx.unc().recordCore(c, cp, {Operand{h, true}, Operand{f, true}}, fid);
+    return f;
+  }
 };
 
 std::function<bool(unsigned)> quantumLikeFn(LoweringContext &ctx, std::shared_ptr<Oracle> O) {

@@ -344,17 +344,18 @@ void defineTwin(Module &M, Function &twin, Function &src) {
   SmallVector<CellCopyOut, 4> cells = cellCopyOuts(src);
   unsigned nCells = cells.size();
   auto *srt = dyn_cast<StructType>(src.getReturnType());
-  bool handleRet = src.getReturnType() == h || srt;
-  if ((!handleRet && nCells == 0) || twin.arg_size() < src.arg_size() + nCells + (handleRet ? 1 : 0))
+  // An i32 result is a handle when the twin has an out for it; with none (52's reduce: int n + 1 and
+  // two cell copy-outs) it is a classical result, which the twin drops.
+  if (twin.arg_size() < src.arg_size() + nCells)
+    internalError("calls: calls::finalize: twin @" + twin.getName().str() + " does not match the clone @" +
+                      src.getName().str() + " (its outs, the clone's arguments, then the old cells)",
+                  &twin);
+  unsigned nOuts = twin.arg_size() - src.arg_size() - nCells;
+  bool handleRet = srt || (src.getReturnType() == h && nOuts == 1);
+  if ((!handleRet && nCells == 0) || (!srt && nOuts > 1) || (!handleRet && nOuts != 0))
     internalError("calls: calls::finalize: twin @" + twin.getName().str() + " does not match the clone @" +
                       src.getName().str() + " (an i32 handle result or a struct of fields, its arguments after the outs)",
                   &twin);
-  unsigned nOuts = twin.arg_size() - src.arg_size() - nCells;
-  if (!srt && nOuts != (handleRet ? 1u : 0u))
-    internalError("calls: calls::finalize: twin @" + twin.getName().str() + " of a one-handle clone with several outs",
-                  &twin);
-  if (!srt && !handleRet && !src.getReturnType()->isVoidTy())
-    unimplemented("calls: calls::finalize: a twin of a clone with a classical result and cell copy-outs", &twin);
   for (unsigned i = 0; i < src.arg_size(); ++i)
     if (twin.getArg(i + nOuts)->getType() != src.getArg(i)->getType())
       internalError("calls: calls::finalize: twin @" + twin.getName().str() + " argument types differ from @" +

@@ -1291,6 +1291,13 @@ public:
     return seeds.back();
   }
   void merged(Instruction *m) override { merges.push_back(m); }
+  std::vector<CallInst *> copies;
+  Value *copy(Value *h, RailType w) override {
+    if (w.kind != Kind::Int || w.bits != 32)
+      internalError("test: copy width");
+    copies.push_back(B.CreateCall(alloc, {h}));
+    return copies.back();
+  }
 };
 
 static const char *MergeIR = R"(
@@ -1361,7 +1368,13 @@ static void testClassicalMerges() {
             sink.seeds[0]->getNextNode() == ob->getTerminator() && sink.seeds[0]->getArgOperand(0) == O->getArg(2),
         "classical phi: the classical arm is seeded at the end of its own edge's block");
   if (np && sink.seeds.size() == 1) {
-    CHECK(np->getIncomingValueForBlock(oa) == O->getArg(1), "classical phi: the handle arm on its edge");
+    // cq-88vg: the handle (a formal: it reaches the join along the other edge too) is copied into a
+    // fresh rail at the end of its own edge's block.
+    CHECK(sink.copies.size() == 1 && sink.copies[0]->getParent() == oa &&
+              sink.copies[0]->getNextNode() == oa->getTerminator() && sink.copies[0]->getArgOperand(0) == O->getArg(1),
+          "classical phi: the non-local handle arm is copied at the end of its own edge's block");
+    CHECK(sink.copies.size() == 1 && np->getIncomingValueForBlock(oa) == sink.copies[0],
+          "classical phi: the handle arm's copy on its edge");
     CHECK(np->getIncomingValueForBlock(ob) == sink.seeds[0], "classical phi: the seeded arm on its edge");
   }
   CHECK(sink.merges.size() == 1 && sink.merges[0] == mp, "classical phi: recorded as a merge (U1)");

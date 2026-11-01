@@ -168,6 +168,9 @@ public:
   // A fresh rail holding a classical value, recorded as a seed, at the builder's insertion point.
   virtual llvm::Value *seed(llvm::Value *classical, RailType) = 0;
   virtual void merged(llvm::Instruction *m) = 0;            // Uncompute::recordMerge
+  // cq-88vg: a fresh rail holding a basis copy of the rail h (cqrt_alloc_<W>(0), copy_<W>(h, f)),
+  // recorded as a seed with its copy, at the builder's insertion point.
+  virtual llvm::Value *copy(llvm::Value *h, RailType) = 0;
 };
 // The select's condition must be classical in the new IR (internal error otherwise).
 llvm::Value *classicalSelect(llvm::SelectInst &, llvm::IRBuilder<> &, MergeSink &);

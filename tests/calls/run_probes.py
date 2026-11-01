@@ -65,6 +65,9 @@ CASES = [
     ("twin_alias_cell", "ent_c1", [], "fatal: " + TWIN_ALIAS, []),
     ("twin_alias_cell_rmw", "te3", [], "fatal: " + TWIN_ALIAS, []),
     ("twin_distinct_cells", "ent_c2", [], "pass", []),
+    # cq-88vg: a measured classical switch phi over a clone's slot outs (52's shape): edge copies; the twin of a
+    # clone with a classical result and cell copy-outs.
+    ("switch_slot_arms", "sw", [], "pass", [r"call void @__cq_q_put2_\w+_unc\("]),
 ]
 
 
