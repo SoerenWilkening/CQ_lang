@@ -199,6 +199,7 @@ private:
   void emitBody(BasicBlock *b, const Instruction *resume);
   void emitTerminator(BasicBlock *b);
   void emitCloneReturn(ReturnInst *ret);
+  bool emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigned extra, SmallVectorImpl<Value *> &vals);
   Value *returnCopyOut(PHINode &phi);
   DenseSet<const Value *> copiedOut;                    // return phis copied out per edge (cq-mjwb)
   void lowerUnit(Loop &lp);
@@ -761,6 +762,70 @@ Type *leafTypeAt(Type *t, unsigned k) {
   internalError("spine: a leaf index past the type's leaves");
 }
 
+// The field-wise result of a clone's return (CR §1.4, rule 18), when rv is one: vals gets one value per
+// leaf (the copied-out rail where quantum, the classical value otherwise), the clone's return type st
+// having `extra` more fields after them (E1's flags, cq-xhv4). False when rv is returned as one value.
+bool Walker::emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigned extra,
+                             SmallVectorImpl<Value *> &vals) {
+  Type *rty = rv->getType();
+  bool fieldwise = false;
+  unsigned nLeaves = 0;
+  SmallVector<unsigned, 4> pcuts = rty->isIntegerTy() ? spine::packedCuts(rv) : SmallVector<unsigned, 4>{};
+  if (pcuts.size() > 2 && st) {
+    nLeaves = pcuts.size() - 1;   // cq-0umd: a packed integer result's fields
+    fieldwise = true;
+  } else if (rty->isAggregateType() || rty->isVectorTy()) {
+    pcuts.clear();
+    nLeaves = unsigned(ctx.T.fieldMask(rv, ctx.S).size());
+    for (unsigned k = 0; k < nLeaves; ++k)
+      fieldwise |= ctx.T.resultQuantum(ctx.S, k);
+  } else {
+    pcuts.clear();
+  }
+  if (!fieldwise)
+    return false;
+  {
+    // CR §1.4: a literal struct of the result's leaves, handles where quantum; each quantum leaf is
+    // copied out into a fresh rail (rule 18) like a scalar result.
+    SmallVector<Operand, 4> leaves = pcuts.size() > 2 ? spine::packFields(ctx, rv, pcuts) : aggr::flattenResult(ctx, rv);
+    auto leafTy = [&](unsigned k) -> Type * {
+      if (pcuts.size() > 2)
+        return IntegerType::get(ctx.M.getContext(), pcuts[k + 1] - pcuts[k]);
+      return rty->isVectorTy() ? cast<VectorType>(rty)->getElementType() : leafTypeAt(rty, k);
+    };
+    if (!st || st->getNumElements() != leaves.size() + extra)
+      internalError("spine: a clone's field-wise result type does not match its result's fields", ret);
+    for (unsigned k = 0; k < leaves.size(); ++k) {
+      const Operand &o = leaves[k];
+      Value *v = o.v;
+      bool rq = ctx.T.resultQuantum(ctx.S, k);
+      if (o.handle && !rq)
+        internalError("spine: a clone result field that is a rail where taint records it classical", ret);
+      if (!o.handle && rq) {
+        // A classical value on this path of a field taint records quantum: a seed rail holding it.
+        RailType w = railTypeOf(leafTy(k));
+        CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {o.v});
+        ctx.unc().setRole(ctx.unc().recordSeed(f), Role::Result);
+        v = f;
+      } else if (o.handle) {
+        RailType w = railTypeOf(leafTy(k));
+        CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                                   {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+        RailId fid = ctx.unc().recordSeed(f);
+        abi::CoreSpec cp{abi::Core::Copy, w};
+        CallInst *c = ctx.emitCore(cp, {o.v, f});
+        ctx.unc().recordCore(c, cp, {o, Operand{f, true}}, fid);
+        ctx.unc().setRole(fid, Role::Result);
+        v = f;
+      }
+      if (v->getType() != st->getElementType(k))
+        internalError("spine: a clone result field of another type than the clone's field", ret);
+      vals.push_back(v);
+    }
+  }
+  return true;
+}
+
 // Rule 18 copy-out at a clone's return (cq-b0w, orchestrator decision: the spine owns it). A
 // quantum result r is copied into a fresh rail f = cqrt_alloc_<W>(0); cqrt_copy_<W>(r, f), f is kept
 // (Role::Result: the caller frees it after the twin) and returned; flushAtExit then uncomputes the
@@ -773,7 +838,7 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
   Function *C = ctx.B().GetInsertBlock()->getParent();
   if (fenv::cloneCarriesEnv(ctx.T, ctx.S)) {
     // E1 (CR rule 23, 82): the final flags are copied out into a fresh rail (Role::Result, as the
-    // result's) and returned as the last field, after the result (void or scalar: calls::materialize).
+    // result's) and returned as the last field, after the result's (calls::materialize).
     LLVMContext &LC = ctx.M.getContext();
     auto copyOut = [&](Operand op, RailType w) {
       CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
@@ -785,9 +850,13 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
       ctx.unc().setRole(fid, Role::Result);
       return f;
     };
-    Value *res = nullptr;
+    SmallVector<Value *, 4> vals;
     auto *st = dyn_cast<StructType>(C->getReturnType());
-    if (Value *rv = ret->getReturnValue()) {
+    Value *rv = ret->getReturnValue();
+    if (rv && emitCloneFields(ret, rv, st, 1, vals)) {
+      // cq-xhv4: a field-wise result, its fields then the flags (calls::materialize).
+    } else if (rv) {
+      Value *res = nullptr;
       if (!st || st->getNumElements() != 2)
         internalError("spine: a clone carrying the environment whose result type is not {result, flags}", ret);
       Operand op = ctx.operand(rv);
@@ -796,14 +865,19 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
       res = op.handle ? copyOut(op, railTypeOf(rv->getType())) : op.v;
       if (res->getType() != st->getElementType(0))
         internalError("spine: a clone carrying the environment whose result field is of another type", ret);
+      vals.push_back(res);
     } else if (C->getReturnType() != handleTy(LC)) {
       internalError("spine: a void clone carrying the environment that does not return the flags handle", ret);
     }
     Value *flags = copyOut(Operand{fenv::cloneExitFlags(ctx, *ret), true}, RailType{Kind::Int, 32});
     Value *v = flags;
-    if (res) {
-      v = B.CreateInsertValue(PoisonValue::get(st), res, {0u});
-      v = B.CreateInsertValue(v, flags, {1u});
+    if (rv) {
+      vals.push_back(flags);
+      if (vals.size() != st->getNumElements())
+        internalError("spine: a clone carrying the environment whose result type is not {fields..., flags}", ret);
+      v = PoisonValue::get(st);
+      for (unsigned k = 0; k < vals.size(); ++k)
+        v = B.CreateInsertValue(v, vals[k], {k});
     }
     ReturnInst *nr = B.CreateRet(v);
     ctx.unc().flushAtExit(nr);
@@ -867,62 +941,9 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
   }
   ReturnInst *nr;
   if (Value *rv = ret->getReturnValue()) {
-    Type *rty = rv->getType();
-    bool fieldwise = false;
-    unsigned nLeaves = 0;
-    SmallVector<unsigned, 4> pcuts = rty->isIntegerTy() ? spine::packedCuts(rv) : SmallVector<unsigned, 4>{};
-    if (pcuts.size() > 2 && C->getReturnType()->isStructTy()) {
-      nLeaves = pcuts.size() - 1;   // cq-0umd: a packed integer result's fields
-      fieldwise = true;
-    } else if (rty->isAggregateType() || rty->isVectorTy()) {
-      pcuts.clear();
-      nLeaves = unsigned(ctx.T.fieldMask(rv, ctx.S).size());
-      for (unsigned k = 0; k < nLeaves; ++k)
-        fieldwise |= ctx.T.resultQuantum(ctx.S, k);
-    } else {
-      pcuts.clear();
-    }
-    if (fieldwise) {
-      // CR §1.4: a literal struct of the result's leaves, handles where quantum; each quantum leaf is
-      // copied out into a fresh rail (rule 18) like a scalar result.
-      auto *st = dyn_cast<StructType>(C->getReturnType());
-      SmallVector<Operand, 4> leaves = pcuts.size() > 2 ? spine::packFields(ctx, rv, pcuts) : aggr::flattenResult(ctx, rv);
-      auto leafTy = [&](unsigned k) -> Type * {
-        if (pcuts.size() > 2)
-          return IntegerType::get(ctx.M.getContext(), pcuts[k + 1] - pcuts[k]);
-        return rty->isVectorTy() ? cast<VectorType>(rty)->getElementType() : leafTypeAt(rty, k);
-      };
-      if (!st || st->getNumElements() != leaves.size())
-        internalError("spine: a clone's field-wise result type does not match its result's fields", ret);
-      Value *agg = PoisonValue::get(st);
-      SmallVector<Value *, 4> vals;
-      for (unsigned k = 0; k < leaves.size(); ++k) {
-        const Operand &o = leaves[k];
-        Value *v = o.v;
-        bool rq = ctx.T.resultQuantum(ctx.S, k);
-        if (o.handle && !rq)
-          internalError("spine: a clone result field that is a rail where taint records it classical", ret);
-        if (!o.handle && rq) {
-          // A classical value on this path of a field taint records quantum: a seed rail holding it.
-          RailType w = railTypeOf(leafTy(k));
-          CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {o.v});
-          ctx.unc().setRole(ctx.unc().recordSeed(f), Role::Result);
-          v = f;
-        } else if (o.handle) {
-          RailType w = railTypeOf(leafTy(k));
-          CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
-                                     {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
-          RailId fid = ctx.unc().recordSeed(f);
-          abi::CoreSpec cp{abi::Core::Copy, w};
-          CallInst *c = ctx.emitCore(cp, {o.v, f});
-          ctx.unc().recordCore(c, cp, {o, Operand{f, true}}, fid);
-          ctx.unc().setRole(fid, Role::Result);
-          v = f;
-        }
-        if (v->getType() != st->getElementType(k))
-          internalError("spine: a clone result field of another type than the clone's field", ret);
-        vals.push_back(v);
-      }
+    SmallVector<Value *, 4> vals;
+    if (emitCloneFields(ret, rv, dyn_cast<StructType>(C->getReturnType()), 0, vals)) {
+      Value *agg = PoisonValue::get(C->getReturnType());
       for (unsigned k = 0; k < vals.size(); ++k)
         agg = B.CreateInsertValue(agg, vals[k], {k});
       nr = B.CreateRet(agg);

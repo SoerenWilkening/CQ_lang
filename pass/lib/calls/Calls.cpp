@@ -1053,17 +1053,30 @@ Function *materialize(Module &M, const Specialization &S) {
   for (const FormalLayout &f : formalLayout(T, S, S.F))
     for (unsigned k = 0; k < f.leaves.size(); ++k)
       ps.push_back(f.q[k] ? handleTy(C) : f.leaves[k]);
-  Type *rt = cloneResultType(C, resultLayout(T, S, S.F), S.F->getReturnType());
+  ResultLayout rl = resultLayout(T, S, S.F);
+  Type *rt = cloneResultType(C, rl, S.F->getReturnType());
   if (fenv::cloneCarriesEnv(T, S)) {
     // E1 (CR rule 23, 82): the caller's mode and flags trail the parameters; the new flags handle is
-    // the result's last field (i32 alone for an otherwise void clone).
+    // the result's last field: i32 alone for an otherwise void clone, {result, i32} for a scalar result,
+    // and for a field-wise result (CR §1.4: its literal struct of leaves, handles where quantum) that
+    // struct's fields followed by i32 (cq-xhv4).
     ps.push_back(handleTy(C));
     ps.push_back(handleTy(C));
-    if (rt->isAggregateType() || rt->isVectorTy())
-      unimplemented("calls: a clone carrying the floating-point environment with a composite result or QRAM "
-                    "stores (E1: only a void or scalar result is built)",
-                    S.F);
-    rt = rt->isVoidTy() ? static_cast<Type *>(handleTy(C)) : StructType::get(C, {rt, handleTy(C)});
+    if (rl.qramFormal || rl.stores)
+      unimplemented("calls: a clone carrying the floating-point environment with QRAM stores (E1)", S.F);
+    if (rt->isVoidTy()) {
+      rt = handleTy(C);
+    } else if (rl.composite) {
+      if (!rl.anyQ())
+        unimplemented("calls: a clone carrying the floating-point environment with a classical composite result "
+                      "(E1: its leaves then the flags)",
+                      S.F);
+      SmallVector<Type *, 4> es(cast<StructType>(rt)->elements());
+      es.push_back(handleTy(C));
+      rt = StructType::get(C, es);
+    } else {
+      rt = StructType::get(C, {rt, handleTy(C)});
+    }
   }
   FunctionType *FT = FunctionType::get(rt, ps, false);
 
@@ -1095,8 +1108,34 @@ Function *materialize(Module &M, const Specialization &S) {
 // handle: the call's outs are the result (when a handle) then the flags, undone together by the twin (U2),
 // and the caller's FLAGS become the returned rail (fenv::afterCloneCall).
 void bindEnvResult(LoweringContext &ctx, CallBase &CB, const CloneCall &r) {
-  SmallVector<Value *, 2> outs;
+  SmallVector<Value *, 4> outs;
   Value *flags = r.call;
+  if (r.fieldwise) {
+    // cq-xhv4: a field-wise result (bindFieldwiseResult's binding) whose last field is the new flags.
+    const ResultLayout &res = r.res;
+    SmallVector<bool, 4> tq = ctx.T.fieldMask(&CB, ctx.S);
+    if (res.cuts.size() > 2)
+      tq = res.q;   // cq-0umd: a packed integer result's fields are the callee's (resultQuantum)
+    if (tq.size() != res.q.size() || !std::equal(tq.begin(), tq.end(), res.q.begin()))
+      internalError("calls: the clone's result fields and taint's field mask of the call disagree", &CB);
+    auto *st = dyn_cast<StructType>(r.call->getType());
+    if (!st || st->getNumElements() != res.leaves.size() + 1)
+      internalError("calls: a clone carrying the environment whose field-wise result is not {fields..., flags}",
+                    &CB);
+    SmallVector<Operand, 4> ops;
+    for (unsigned k = 0; k < res.leaves.size(); ++k) {
+      Value *e = ctx.B().CreateExtractValue(r.call, {k});
+      ops.push_back(Operand{e, res.q[k]});
+      if (res.q[k])
+        outs.push_back(e);
+    }
+    flags = ctx.B().CreateExtractValue(r.call, {unsigned(res.leaves.size())});
+    outs.push_back(flags);
+    ctx.unc().recordCall(r.call, outs, {}, {});
+    ctx.bindFields(&CB, ops);
+    fenv::afterCloneCall(ctx, CB, flags);
+    return;
+  }
   if (!CB.getType()->isVoidTy()) {
     bool q = ctx.T.isQuantum(&CB, ctx.S);
     if (r.handle != q)
