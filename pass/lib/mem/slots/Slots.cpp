@@ -182,7 +182,18 @@ struct ObjInfo {
   uint64_t cellBytes = 0;
   bool boolCells = false;
   bool escaping = false;
+  bool view = false;  // accessed at more than one width: a value object read and written through bit views (63)
   int dynamic = -1;   // -1 not computed
+};
+
+// What a store into a VIEW object left there (63): the value rail h of type ty covering the bytes
+// [off, off + store size of ty); tailWritten when a narrower store also wrote bytes past that range
+// (they are not in the rail).
+struct ViewVal {
+  Value *h = nullptr;
+  Type *ty = nullptr;
+  int64_t off = 0;
+  bool tailWritten = false;
 };
 
 struct FnState {
@@ -191,6 +202,7 @@ struct FnState {
   DenseMap<const Instruction *, Operand> lowered;   // slot load / store -> the handle the cell holds after it
   DenseSet<const Value *> registers;                // new-IR handles known never to be resolved here
   DenseSet<const Instruction *> copies;             // slot stores lowered as a basis copy (cq-dr4o)
+  DenseMap<const Instruction *, ViewVal> views;     // stores into a view object -> the value they left (63)
   std::map<const Value *, ObjInfo> objs;
 };
 
@@ -349,7 +361,11 @@ ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId 
                     root);
   }
   info.escaping = escapes(root);
-  if (info.cellBytes == 1) {
+  if (info.kind == RootKind::Local)
+    for (const Access &a : accessesOf(ctx, *st.F, o))
+      if (DL.getTypeAllocSize(a.ty).getFixedValue() != info.cellBytes)
+        info.view = true;
+  if (info.cellBytes == 1 && !info.view) {
     bool any = false, all = true;
     for (const Access &a : accessesOf(ctx, *st.F, o)) {
       any = true;
@@ -493,10 +509,8 @@ const Instruction *sourceOf(LoweringContext &ctx, FnState &st, const ObjInfo &in
   for (const Access &a : accessesOf(ctx, *st.F, o)) {
     if (a.I == L || a.ty != ty || !sameCell(a.a, cell))
       continue;
-    if (auto *ld = dyn_cast<LoadInst>(a.I); ld && (ld->isVolatile() || ld->isAtomic()))
-      continue;
-    if (auto *s = dyn_cast<StoreInst>(a.I); s && (s->isVolatile() || s->isAtomic()))
-      continue;
+    // A volatile or atomic access reaching mem-slots is the plain access (rule 24, cq-r4cz): eff-conc
+    // routes only an unobservable volatile access here, and an atomic one is plain single-threaded.
     if (ctx.T.isFatPointer(getLoadStorePointerOperand(a.I), ctx.S))
       continue;
     if (!st.DT->dominates(a.I, L))
@@ -540,6 +554,15 @@ Site siteOf(LoweringContext &ctx, FnState &st, const Instruction &I, const Value
     internalError("mem-slots: the address root is not the object taint names", &I);
   ObjInfo &info = objInfo(ctx, st, a.root, objs.front());
   uint64_t bytes = ctx.M.getDataLayout().getTypeAllocSize(ty).getFixedValue();
+  if (info.view) {
+    if (info.escaping)
+      unimplemented("mem-slots: a bit view of a slot object whose pointer escapes (63's construction needs every "
+                    "access in this function)",
+                    &I);
+    if (!a.terms.empty())
+      unimplemented("mem-slots: a bit view access of a slot object at a run-time offset", &I);
+    return Site{objs.front(), &info, a};
+  }
   if (bytes != info.cellBytes)
     unimplemented("mem-slots: a " + std::to_string(bytes) + "-byte access of " + std::to_string(info.cellBytes) +
                       "-byte slot cells (a bit view of a cell, 63)",
@@ -923,6 +946,190 @@ bool needsCopy(LoweringContext &ctx, FnState &st, const StoreInst &S, const Site
   return false;
 }
 
+// ---- bit views of a value object (63) ---------------------------------------------------------
+//
+// A non-escaping local object accessed at more than one width (a union, an f80 next to i32 words) is a
+// VALUE, not memory (CR rule 20, 63): every load is computed from the rails that the stores of this
+// function left in it, through rule 3/4 views, and no handle is stored into the cells. Each store leaves
+// a value rail covering its bytes (ViewVal):
+//  - a store whose bytes cover the bytes of the value it overwrites (or that overlaps no value) leaves
+//    the stored rail (a classical value: its seed, rule 7; a handle another holder may still read: a
+//    basis copy, cq-dr4o);
+//  - a narrower store at byte offset r of a value V of N bits leaves the new value
+//    (V & ~mask) | (zext(word) << 8r), mask the word's bits within N (the word's bits past N fall off and
+//    the value records that bytes past it were written), bitcast back when V is floating point;
+//  - a load at byte offset r of V reads lshr(V, 8r), truncated to its width, or, when it reaches past
+//    V's bits, truncated to the bits V has and zero-extended (bytes past a stored value are padding the
+//    program never wrote: LLVM reads them as undef, 0 is one of its values). A load reaching bytes a
+//    narrower store wrote past V is unimplemented, as is a load or store starting before the value it
+//    reads, a load no dominating store reaches unchanged, a run-time offset, and a store under a
+//    quantum predicate.
+
+uint64_t storeBytes(const DataLayout &DL, Type *t) { return DL.getTypeStoreSize(t).getFixedValue(); }
+
+// The latest store into the view object whose bytes overlap [at.off, at.off + n) and reach I unchanged.
+const StoreInst *viewSource(LoweringContext &ctx, FnState &st, const ObjInfo &info, ObjectId o, const Instruction *I,
+                            const Addr &at, uint64_t n) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  const StoreInst *best = nullptr;
+  for (const Access &a : accessesOf(ctx, *st.F, o)) {
+    auto *S = dyn_cast<StoreInst>(a.I);
+    if (!S || S == I)
+      continue;
+    if (!a.a.ok || !a.a.terms.empty() || a.a.root != at.root || ctx.T.isFatPointer(S->getPointerOperand(), ctx.S))
+      unimplemented("mem-slots: a store into a bit-view slot object at a run-time offset or through a fat pointer",
+                    S);
+    int64_t m = int64_t(storeBytes(DL, a.ty));
+    if (!(a.a.off < at.off + int64_t(n) && at.off < a.a.off + m))
+      continue;
+    if (!st.DT->dominates(S, I) || !clearBetween(ctx, info, o, S, I, at, n))
+      continue;
+    if (!best || st.DT->dominates(best, S))
+      best = S;
+  }
+  return best;
+}
+
+Value *viewTemplate(LoweringContext &ctx, StringRef op, RailType w, std::optional<RailType> to, ArrayRef<Operand> ops,
+                    StringRef shape = "") {
+  abi::TemplateSpec sp;
+  sp.op = op.str();
+  sp.w = w;
+  sp.to = to;
+  sp.shape = shape.str();
+  return ctx.emitTemplate(sp, ops);
+}
+
+unsigned bitsOf(const DataLayout &DL, Type *t) { return unsigned(DL.getTypeSizeInBits(t).getFixedValue()); }
+
+// The rail of v (type t) as an integer of t's bits.
+Value *intView(LoweringContext &ctx, Value *h, Type *t) {
+  if (t->isIntegerTy())
+    return h;
+  unsigned n = bitsOf(ctx.M.getDataLayout(), t);
+  return viewTemplate(ctx, "bitcast", railTypeOf(t), RailType{Kind::Int, n}, {Operand{h, true}});
+}
+
+Operand lit(LoweringContext &ctx, unsigned bits, const APInt &v) {
+  return Operand{ConstantInt::get(IntegerType::get(ctx.M.getContext(), bits), v), false};
+}
+
+Value *readView(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &I, Type *ty) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  if (!ty->isIntegerTy() && !ty->isFloatingPointTy())
+    unimplemented("mem-slots: a bit view load of a non-scalar type", &I);
+  const StoreInst *src = viewSource(ctx, st, *s.info, s.o, &I, s.a, storeBytes(DL, ty));
+  if (!src)
+    unimplemented("mem-slots: a load of a bit-view slot object that no dominating store of this function reaches "
+                  "unchanged (63)",
+                  &I);
+  auto it = st.views.find(src);
+  if (it == st.views.end())
+    internalError("mem-slots: the store a bit view reads has not been lowered", &I);
+  const ViewVal V = it->second;
+  int64_t rel = s.a.off - V.off;
+  if (rel < 0)
+    unimplemented("mem-slots: a bit view load starting before the value it reads", &I);
+  if (rel == 0 && ty == V.ty)
+    return V.h;
+  unsigned N = bitsOf(DL, V.ty), M = bitsOf(DL, ty);
+  if (8 * rel >= int64_t(N))
+    unimplemented("mem-slots: a bit view load of padding bytes only (past the stored value)", &I);
+  unsigned avail = N - unsigned(8 * rel);
+  if (M > avail && V.tailWritten)
+    unimplemented("mem-slots: a bit view load of bytes a narrower store wrote past the value it wrote into", &I);
+  RailType iN{Kind::Int, N};
+  Value *x = intView(ctx, V.h, V.ty);
+  if (rel)
+    x = viewTemplate(ctx, "lshr", iN, std::nullopt, {Operand{x, true}, lit(ctx, N, APInt(N, uint64_t(8 * rel)))},
+                     "hl");
+  unsigned keep = std::min(M, avail);
+  if (keep < N)
+    x = viewTemplate(ctx, "trunc", iN, RailType{Kind::Int, keep}, {Operand{x, true}});
+  if (keep < M)
+    x = viewTemplate(ctx, "zext", RailType{Kind::Int, keep}, RailType{Kind::Int, M}, {Operand{x, true}});
+  if (!ty->isIntegerTy())
+    x = viewTemplate(ctx, "bitcast", RailType{Kind::Int, M}, railTypeOf(ty), {Operand{x, true}});
+  return x;
+}
+
+void lowerViewStore(LoweringContext &ctx, FnState &st, StoreInst &stI, const Site &s) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  IRBuilder<> &B = ctx.B();
+  LLVMContext &C = ctx.M.getContext();
+  if (ctx.currentFlag())
+    unimplemented("mem-slots: a store into a bit-view slot object under a quantum predicate", &stI);
+  Value *v = stI.getValueOperand();
+  Type *ty = v->getType();
+  if (!ty->isIntegerTy() && !ty->isFloatingPointTy())
+    unimplemented("mem-slots: a bit view store of a non-scalar type", &stI);
+  uint64_t n = storeBytes(DL, ty);
+  Operand val = ctx.operand(v);
+  const StoreInst *src = viewSource(ctx, st, *s.info, s.o, &stI, s.a, n);
+  ViewVal V;
+  if (src) {
+    auto it = st.views.find(src);
+    if (it == st.views.end())
+      internalError("mem-slots: the store a bit view store writes into has not been lowered", &stI);
+    V = it->second;
+  }
+  if (!src || (s.a.off <= V.off && s.a.off + int64_t(n) >= V.off + int64_t(storeBytes(DL, V.ty)))) {
+    // The stored value is the object's value over its bytes.
+    Value *h = val.v;
+    RailType w = railTypeOf(ty);
+    if (!val.handle) {
+      CallInst *alloc = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {val.v});
+      ctx.unc().recordSeed(alloc);
+      h = alloc;
+    } else if (needsCopy(ctx, st, stI, s)) {
+      CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(C, w))});
+      RailId cid = ctx.unc().recordSeed(c);
+      abi::CoreSpec cp{abi::Core::Copy, w};
+      CallInst *cc = ctx.emitCore(cp, {val.v, c});
+      ctx.unc().recordCore(cc, cp, {Operand{val.v, true}, Operand{c, true}}, cid);
+      st.copies.insert(&stI);
+      h = c;
+    }
+    st.views[&stI] = ViewVal{h, ty, s.a.off, src && V.tailWritten};
+    st.lowered[&stI] = Operand{h, true};
+    return;
+  }
+  int64_t rel = s.a.off - V.off;
+  unsigned N = bitsOf(DL, V.ty), S = bitsOf(DL, ty);
+  if (rel < 0 || 8 * rel >= int64_t(N))
+    unimplemented("mem-slots: a bit view store starting before the value it writes into", &stI);
+  unsigned r = unsigned(8 * rel), k = std::min(S, N - r);
+  RailType iN{Kind::Int, N};
+  Value *vi = intView(ctx, V.h, V.ty);
+  Value *low = viewTemplate(ctx, "and", iN, std::nullopt, {Operand{vi, true}, lit(ctx, N, ~APInt::getBitsSet(N, r, r + k))},
+                            "hl");
+  Value *res;
+  if (val.handle) {
+    Value *w = val.v;
+    if (!ty->isIntegerTy())
+      w = viewTemplate(ctx, "bitcast", railTypeOf(ty), RailType{Kind::Int, S}, {Operand{w, true}});
+    if (S < N)
+      w = viewTemplate(ctx, "zext", RailType{Kind::Int, S}, iN, {Operand{w, true}});
+    else if (S > N)
+      w = viewTemplate(ctx, "trunc", RailType{Kind::Int, S}, iN, {Operand{w, true}});
+    if (r)
+      w = viewTemplate(ctx, "shl", iN, std::nullopt, {Operand{w, true}, lit(ctx, N, APInt(N, r))}, "hl");
+    res = viewTemplate(ctx, "or", iN, std::nullopt, {Operand{low, true}, Operand{w, true}});
+  } else {
+    Value *w = val.v;
+    if (!ty->isIntegerTy())
+      w = B.CreateBitCast(w, IntegerType::get(C, S));
+    w = B.CreateZExtOrTrunc(w, IntegerType::get(C, N));
+    if (r)
+      w = B.CreateShl(w, ConstantInt::get(w->getType(), r));
+    res = viewTemplate(ctx, "or", iN, std::nullopt, {Operand{low, true}, Operand{w, false}}, "hl");
+  }
+  if (!V.ty->isIntegerTy())
+    res = viewTemplate(ctx, "bitcast", iN, railTypeOf(V.ty), {Operand{res, true}});
+  st.views[&stI] = ViewVal{res, V.ty, V.off, V.tailWritten || r + S > N};
+  st.lowered[&stI] = Operand{res, true};
+}
+
 } // namespace
 
 void allocateSlots(LoweringContext &ctx, Instruction &site) {
@@ -986,6 +1193,12 @@ void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
                   "records, 163, 164)",
                   &ld);
   Site s = siteOf(ctx, st, ld, ld.getPointerOperand(), ld.getType());
+  if (s.info->view) {
+    Value *h = readView(ctx, st, s, ld, ld.getType());
+    st.lowered[&ld] = Operand{h, true};
+    ctx.bindFields(&ld, {Operand{h, true}});
+    return;
+  }
   cellRail(*s.info, ld.getType(), ld);
   Operand h = readCell(ctx, st, s, ld, ld.getType());
   st.lowered[&ld] = h;
@@ -1021,6 +1234,8 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
   FnState &st = stateOf(ctx, stI);
   const Value *v = stI.getValueOperand();
   Site s = siteOf(ctx, st, stI, stI.getPointerOperand(), v->getType());
+  if (s.info->view)
+    return lowerViewStore(ctx, st, stI, s);
   RailType w = cellRail(*s.info, v->getType(), stI);
   IRBuilder<> &B = ctx.B();
 
@@ -1038,6 +1253,13 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
     (void)flag;
     // Rules 9, 20: under a quantum predicate the cell receives select(predicate, value, old).
     Operand old = readCell(ctx, st, s, stI, v->getType());
+    if (val.handle && old.handle && val.v == old.v) {
+      // The cell already holds the stored rail (a cq_theta in place under the predicate, rule 10, of the
+      // rail the cell holds: 59's `if (q[i]) cq_theta(&q[i + 1], c)`): select(p, h, h) is h, the cell
+      // and the rail's role are unchanged and nothing is emitted.
+      st.lowered[&stI] = val;
+      return;
+    }
     if (!val.handle && s.info->boolCells)
       val.v = B.CreateTrunc(val.v, Type::getInt1Ty(ctx.M.getContext()));
     const Pred &p = ctx.currentPredicate();

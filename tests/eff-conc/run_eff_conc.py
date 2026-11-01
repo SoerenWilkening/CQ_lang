@@ -9,7 +9,8 @@ For probes/conc.O1.ll it checks, and fails on:
   - every entry is §6-equal to its own C program (`python3 -m cqcheck user`, the C oracle).
 probes/*_error.O1.ll must make cq-lower exit non-zero with the named eff-conc internal error: a quantum
 value stored to an observable volatile global, atomicrmw on quantum data (94's shape, not built), and
-setjmp/longjmp (101's shape, blocked on cq-jwdf), and 32's volatile slot (mem-slots, cq-r4cz). Update this test when those are built.
+setjmp/longjmp (101's shape, blocked on cq-jwdf). Update this test when those are built.
+p_vol_local is 32's shape (cq-r4cz): the unobservable volatile slot pair forwards as the plain access.
 The owned example's acceptance is `python3 -m cqcheck run 48_volatile_global --oracle both` (the bead).
 Outputs go to build/tests/eff-conc/out/.
 """
@@ -21,19 +22,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PROBES = Path(__file__).parent / "probes"
-ENTRIES = ["p_vol_internal", "p_vol_observable", "p_atomic_classical"]
+ENTRIES = ["p_vol_internal", "p_vol_observable", "p_atomic_classical", "p_vol_local"]
 ERRORS = {"vol_quantum_observable_error.O1.ll": "eff-conc: a volatile access to observable memory involving "
                                                 "quantum data",
           "atomicrmw_error.O1.ll": "eff-conc: atomicrmw on quantum data or non-classical memory",
-          "setjmp_error.O1.ll": "eff-conc: setjmp in a lowered function",
-          # cq-r4cz: mem-slots does not forward an unobservable volatile store to its load yet (32's shape).
-          "vol_local_error.O1.ll": "mem-slots: a computed rail stored into a slot cell"}
+          "setjmp_error.O1.ll": "eff-conc: setjmp in a lowered function"}
 # entry -> (regex that must match its body, regex that must not)
 SHAPES = {"p_vol_internal": (None, r"volatile"),
           "p_vol_observable": (r"load volatile i32, ptr @obs_counter[\s\S]*store volatile i32 %\d+, ptr @obs_counter",
                                None),
           "p_atomic_classical": (r"store atomic i32 %\d+, ptr @acell seq_cst[\s\S]*load atomic i32, ptr @acell seq_cst",
-                                 None)}
+                                 None),
+          "p_vol_local": (None, r"volatile")}
 
 
 def body(module: str, fn: str) -> str:

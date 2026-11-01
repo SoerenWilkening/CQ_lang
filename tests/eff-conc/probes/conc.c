@@ -26,3 +26,12 @@ int p_atomic_classical(int x0, double th, int c) {
     int v = __atomic_load_n(&acell, __ATOMIC_SEQ_CST);
     return cq_measure(x + v);
 }
+
+/* 32's shape (cq-r4cz): an unobservable volatile slot holding a quantum value is the plain slot access
+   (rule 24), so the volatile store forwards to its load. */
+int p_vol_local(int x0, double th, int c) {
+    int x = x0;
+    cq_theta(&x, th);
+    volatile int tmp = x + c;
+    return cq_measure(tmp * 2);
+}
