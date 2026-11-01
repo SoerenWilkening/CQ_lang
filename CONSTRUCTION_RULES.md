@@ -188,7 +188,7 @@ arguments. Strings are copied at call time. An in-place target is never one of i
 ### 1.4 Clone naming
 
 ```
-clone := "__cq_q_" fn "_" mask [ "_b" bound { "_" bound } ] [ "_ctl" ] [ "_pure" ] [ "_adj" ] [ "_d" depth ] [ "_unc" ]
+clone := "__cq_q_" fn "_" mask [ "_b" bound { "_" bound } ] [ "_ctl" ] [ "_pure" ] [ "_adj" ] [ "_d" depth ] [ "_inv" cell { "_" cell } ] [ "_unc" ]
 mask  := one digit per FIELD of the clone's formal list, LEFT TO RIGHT, 1 = quantum, 0 = classical.
          A scalar parameter is one field; an aggregate or pointer-to-slot parameter contributes
          one digit per field it carries (159 `shift_110`, 163 `mk_00010`, 129 `bump_1011`); a
@@ -219,7 +219,17 @@ created with a uniquifying constructor so that two distinct clones whose names w
 Result: one `i32` handle per quantum scalar result regardless of width, the C type for a classical
 result, a literal struct of scalar fields in field order for several results (a nested aggregate is
 flattened: 166 returns `{ i32, i32, double }`). Twin:
-`_unc(outs…, args…, old slot handles in slot order)`, `void`. A twin nobody calls is not defined.
+`_unc(outs…, args…, old slot handles in slot order)`, `void`; the old handles are those of exactly
+the cells, or halves of a pointer-kind cell, that the clone WRITES (107's bump writes the idx half:
+its twin takes the old idx only; ruling 2026-11-01, cq-47n3). A twin nobody calls is not defined.
+INVERSE-UPDATE kind `_inv<c>`: for a caller cell c the clone overwrites with a rule-6 bijection in
+the cell's old value, `__cq_q_<fn>_<mask>_inv<c>(args…, old handle of c)` reads the cell's new
+content, computes f_c⁻¹ fresh by the inverse chain (`sub` for `add`, the odd literal's modular
+inverse for `mul`, `fshr` for `fshl`, a `select` of inverses on the same condition, …), copies it
+onto the old rail with `copy_<W>`, uncomputes and frees its own rails, `void`; the caller then frees
+the old rail. Cells whose updates read each other's old values (a swap) form one group with one
+`_inv<c>_<c'>` taking all their old handles. Defined only when a call site uses it (rule 18;
+ruling 2026-11-01, cq-xivx).
 The original (unlifted) body is kept only while a classical call site still uses it; a callee whose
 every call was retargeted is dropped.
 
@@ -530,7 +540,13 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     recomputes, XORs each result out with `copy_<W>`, uncomputes, and the caller frees the result
     rails after the twin. Rule 6 clean-up of caller cells a clone overwrote happens in the CALLER
     after the call (the caller knows the old handles and whether they are dead; a clone is shared by
-    every call site with its mask). A callee that measures returns a classical value and has no twin. A
+    every call site with its mask): per dead cell the caller calls the clone's `_inv<c>` kind
+    (§1.4), which zeroes the old rail from the cell's new content, and then frees it. The caller
+    never rebuilds the inverse inline (no partial inlining; a recursive callee has none), and the
+    clone never cleans a caller cell itself (it does not know the cell's deadness). The `_inv` of a
+    cell and the `_unc` restoring the same cell never both run at one call site: a cell the twin
+    restores is read again by that twin, so its old value is not dead (rule 6). Ruling 2026-11-01
+    (cq-xivx); new example required (§8). A callee that measures returns a classical value and has no twin. A
     callee that stores into a caller's QRAM returns each stored value rail as an extra `i32`
     result (the pop needs it, §1.3); the caller pops that store at the object's lifetime end and
     then calls the twin, which takes those rails first (191).
@@ -641,8 +657,14 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     and handles) whenever the provenance has several objects or the callee needs a base (compare,
     `ptrtoint` whose base does not cancel); `tag` is a classical constant when the provenance is
     one object; when the callee loads through the pointer, the object's cell count follows the triple
-    as a compiler-added `i32` (no mask digit, 190). A slot or host load beyond the cell count reads
-    0 as a shared `|0⟩` seed rail (rule 7). A pointer decoded from a loaded host address carries its
+    as a compiler-added `i32` (no mask digit, 190; the count is passed whenever the callee loads
+    through the pointer, a uniform ABI). A slot or host load beyond the cell count reads
+    0 as a shared `|0⟩` seed rail (rule 7). The CHECK is emitted iff the index can lie outside the
+    object on a branch the circuit executes: a quantum `idx`, or a classical index whose access runs
+    under a quantum predicate the C program would not have reached (a K-loop trip, a hoisted arm:
+    190's memcmp). A classical index executed exactly when C executes it is a plain load with no
+    check (107's bump: the count is passed, the body ignores it; an out-of-range access there is
+    the C program's own undefined behaviour). Ruling 2026-11-01 (cq-47n3). A pointer decoded from a loaded host address carries its
     decoded `idx`; when that `idx` is the same classical value in every merged arm (a node pointer
     always points at cell 0), it is that classical value and the access stays a classical-offset
     access (189). — 84, 85, 86, 88, 89, 105, 107, 129.
@@ -780,6 +802,12 @@ that class are equal iff:
    e^{iθ·f} on every basis branch, where f is the flag's Boolean function of the inputs; which rail
    carries it is irrelevant. So `and_i1(a, b, t) · rz_i1(t, θ) · and_i1(a, b, t)` with t |0⟩ equals the
    doubly-controlled phase CCP(θ) on a, b (never a controlled Rz, which differs by a relative phase).
+   Phases are compared as a TOTAL, never one gate at a time: within a set of phases movable to a
+   common position, the two sides are equal iff Σ θ_k·f_k(inputs) agrees on every basis input
+   (mod 2π). So one phase on a disjunction of pairwise-disjoint predicates equals the per-edge
+   phases of the same angle (117: the reference kicks back O once per exit edge of is_marked, a
+   conforming pass fires one `rz_i1` on the block predicate, the OR of the edges; both are rule 8
+   constructions and §6 accepts both). Ruling 2026-11-01 (cq-u2mw).
 
 A phase whose control predicate (every enclosing arm predicate included) is constant over the quantum
 inputs once the classical arguments and the outcomes of the measurements executed before it are fixed,
@@ -833,6 +861,7 @@ UNCOVERED, never dead and never a PASS (cq-3nla turned an ERROR into a PASS this
 | 16 lifetime | 91 (`free` under a quantum predicate emits nothing; the block is uncomputed and freed at scope end where provable) | ruling 2026-10-26 |
 | 6 bijective cleanup | 125, 127 (also applied in 113, 114 to the superseded CNOT targets) | rewrite as the two witnesses |
 | 14 affine induction | 87 (p's idx carried as a rail, making s a QRAM; ruling 2026-11-01, regeneration owed) | slot array read at the classical trip index with the cell-count check, as 190's memcmp; n stays a carried rail |
+| 21 / §1.4 triple count, twin args | 107 (bump's triple lacked the cell count; its twin restored the unwritten tag half; regenerated 2026-11-01) | count follows the triple; the twin takes the old idx only |
 | 12 | 41 | header: deletion is scope-dependent |
 | 3 lane gate | 103 (dead `fadd_f32` on an unread lane) | remove |
 | §1.4 mask and bounds (2026-10-27) | 52 (`reduce_1000`: the `out` pointer carries two cells, so two digits), 98 (`chain_10`: the call-site bound `n & 3` must appear as `_b3`) | renamed `__cq_q_reduce_10000`, `__cq_q_chain_10_b3[_dN]` |
@@ -886,5 +915,9 @@ their own helpers and witness the lifted-musl shape instead).
 To write (2026-10-27): an irreducible loop (`goto` into a loop body with a quantum exit) under rule 14's
 `fix-irreducible` bullet; a `switch` with a reachable default (rule 13); an inline `asm` with a quantum
 operand, as a declared clone (rule 27).
+
+To write (2026-11-01): a clone that overwrites a caller cell with a rule-6 bijection whose old value is dead
+after the call (`p[0] = p[0] * 3 + n` in a noinline callee, the caller measures `a[0]`): the `_inv<c>` kind of
+§1.4 and rule 18 (CQ_lang2 cq-xivx, probes p18/p19); the same with two coupled cells (a swap) for the group form.
 
 Out of scope by §0: an `-O0`+mem2reg or `-O2` variant of any example.

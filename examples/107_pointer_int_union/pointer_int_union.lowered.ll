@@ -39,10 +39,13 @@
 ; pointer of u itself and NO object table is passed (rule 21: the provenance is one object and the callee needs no base,
 ; since base[T] cancels between the ptrtoint at the load and the inttoptr at the store). Mask per §1.4: tag 0, idx 0
 ; (classical; the object gets no digit), then one digit per pointee cell the callee accesses, the cell's tag and idx
-; halves, both handles at the call: __cq_q_bump_0011. The clone stores the new idx
-; rail into the slot; its _unc twin takes (args..., old slot handles in slot order) = (object, tag, idx, old tag, old
-; idx) per §1.4 (no outs: a void callee), recomputes the new idx from the old one, zeroes it and restores the slot. The
-; clones never touch the arrays.
+; halves, both handles at the call: __cq_q_bump_0011. The triple is followed by the object's cell count (1: the record
+; is one cell) as a compiler-added i32 with no digit (rule 21, as 190): the callee loads through the pointer. Its idx is
+; classical and executed exactly when C executes it, so the body has no bounds check and ignores the count. The clone
+; stores the new idx rail into the slot; its _unc twin takes (args..., old handles of what the clone WRITES) = (object,
+; tag, idx, count, old idx) per §1.4 (no outs: a void callee; the tag half is never written, so it is neither passed nor
+; restored; ruling 2026-11-01, cq-47n3), recomputes the new idx from the old one, zeroes it and restores the idx half.
+; The clones never touch the arrays. Regenerated 2026-11-01: the first version passed no count and restored both halves.
 source_filename = "pointer_int_union.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
@@ -165,7 +168,7 @@ define i32 @union_slot(i32 noundef %0, double noundef %1, i32 noundef %2) {
   store i32 %10, ptr %6, align 8    ; IR: store ptr %10, ptr %6: the tag handle into the slot
   %12 = getelementptr inbounds i8, ptr %6, i64 4    ; IR: the slot's idx half
   store i32 %11, ptr %12, align 4    ; IR: store ptr %10, ptr %6: the idx handle into the slot
-  call fastcc void @__cq_q_bump_0011(ptr %6, i32 3, i32 0)    ; IR: call @bump(%6): clone, &u as the rule-21 triple (object u, tag 3, cell idx 0); mask 0011: tag and idx classical, the accessed cell's two handles quantum
+  call fastcc void @__cq_q_bump_0011(ptr %6, i32 3, i32 0, i32 1)    ; IR: call @bump(%6): clone, &u as the rule-21 triple (object u, tag 3, cell idx 0) + the object-table cell count 1; mask 0011: tag and idx classical, the accessed cell's two handles quantum
   %13 = load i32, ptr %6, align 8    ; IR: %11 = load ptr, ptr %6: the tag handle in the slot (unchanged: %10; no gate)
   %14 = load i32, ptr %12, align 4    ; IR: %11: the new idx handle the clone stored (no gate)
   %15 = call i32 @cq_template_icmp_eq_i32_hl(i32 %13, i32 1)    ; IR: %12 = load i32, ptr %11: the object flag g_a = tag == 1 (else b)
@@ -181,7 +184,7 @@ define i32 @union_slot(i32 noundef %0, double noundef %1, i32 noundef %2) {
   call void @cqrt_free(i32 %16)    ; IR: release it (|0>)
   call void @cq_template_icmp_eq_i32_hl_unc(i32 %15, i32 %13, i32 1)    ; IR: uncompute g_a
   call void @cqrt_free(i32 %15)    ; IR: release it (|0>)
-  call fastcc void @__cq_q_bump_0011_unc(ptr %6, i32 3, i32 0, i32 %10, i32 %11)    ; IR: uncompute the call: twin (args..., old slot handles in slot order): zero the new idx from the old one, restore the slot
+  call fastcc void @__cq_q_bump_0011_unc(ptr %6, i32 3, i32 0, i32 1, i32 %11)    ; IR: uncompute the call: twin (args..., old handle of the half the clone wrote): zero the new idx from the old one, restore the idx half
   call void @cqrt_free(i32 %14)    ; IR: release the new idx rail (|0>)
   call void @cqrt_free(i32 %11)    ; IR: release the idx seed of %10 (never written, |0>; rule 7)
   call void @cq_template_select_i32_ll_unc(i32 %10, i32 %9, i32 2, i32 1)    ; IR: uncompute the pointer's tag %10
@@ -194,30 +197,30 @@ define i32 @union_slot(i32 noundef %0, double noundef %1, i32 noundef %2) {
   ret i32 %20    ; IR: ret i32 %14
 }
 
-define internal fastcc void @__cq_q_bump_0011(ptr %0, i32 %1, i32 %2) {
-  %4 = getelementptr inbounds { i32, i32 }, ptr %0, i32 %2    ; IR: %0: cell idx of object u (tag %1 = 3, classical; the one object of the triple)
-  %5 = load i32, ptr %4, align 8    ; IR: %2 = load i64, ptr %0: the cell is of pointer kind: its tag handle T (no gate; stays in the cell)
-  %6 = getelementptr inbounds i8, ptr %4, i64 4    ; IR: the cell's idx half
-  %7 = load i32, ptr %6, align 4    ; IR: %2: its idx handle I (no gate)
-  %8 = call i32 @cq_template_zext_i32_to_i64(i32 %7)    ; IR: %2 = ptrtoint at the load: base[T] + 4 * I, carried as provenance T plus the byte offset: I widened
-  %9 = call i32 @cq_template_shl_i64_hl(i32 %8, i64 2)    ; IR: %2: the byte offset 4 * I (= %2 - base[T])
-  %10 = call i32 @cq_template_add_i64_hl(i32 %9, i64 4)    ; IR: %3 = add i64 %2, 4: the byte offset of %3 (= %3 - base[T])
-  %11 = call i32 @cq_template_lshr_i64_hl(i32 %10, i64 2)    ; IR: store i64 %3, ptr %0: inttoptr at the store keeps the provenance T; idx = (%3 - base[T]) >> 2
-  %12 = call i32 @cq_template_trunc_i64_to_i32(i32 %11)    ; IR: store i64 %3: as the logical i32 index rail  [the new idx rail]
-  store i32 %12, ptr %6, align 4    ; IR: store i64 %3, ptr %0: the new idx handle into the cell (the tag T stays)
-  call void @cq_template_lshr_i64_hl_unc(i32 %11, i32 %10, i64 2)    ; IR: uncompute the rescale
+define internal fastcc void @__cq_q_bump_0011(ptr %0, i32 %1, i32 %2, i32 %3) {
+  %5 = getelementptr inbounds { i32, i32 }, ptr %0, i32 %2    ; IR: %0: cell idx of object u (tag %1 = 3, classical; the one object of the triple); %3 = the object's cell count (rule 21; unused here: the idx is classical and runs exactly when C runs it)
+  %6 = load i32, ptr %5, align 8    ; IR: %2 = load i64, ptr %0: the cell is of pointer kind: its tag handle T (no gate; stays in the cell)
+  %7 = getelementptr inbounds i8, ptr %5, i64 4    ; IR: the cell's idx half
+  %8 = load i32, ptr %7, align 4    ; IR: %2: its idx handle I (no gate)
+  %9 = call i32 @cq_template_zext_i32_to_i64(i32 %8)    ; IR: %2 = ptrtoint at the load: base[T] + 4 * I, carried as provenance T plus the byte offset: I widened
+  %10 = call i32 @cq_template_shl_i64_hl(i32 %9, i64 2)    ; IR: %2: the byte offset 4 * I (= %2 - base[T])
+  %11 = call i32 @cq_template_add_i64_hl(i32 %10, i64 4)    ; IR: %3 = add i64 %2, 4: the byte offset of %3 (= %3 - base[T])
+  %12 = call i32 @cq_template_lshr_i64_hl(i32 %11, i64 2)    ; IR: store i64 %3, ptr %0: inttoptr at the store keeps the provenance T; idx = (%3 - base[T]) >> 2
+  %13 = call i32 @cq_template_trunc_i64_to_i32(i32 %12)    ; IR: store i64 %3: as the logical i32 index rail  [the new idx rail]
+  store i32 %13, ptr %7, align 4    ; IR: store i64 %3, ptr %0: the new idx handle into the cell (the tag T stays)
+  call void @cq_template_lshr_i64_hl_unc(i32 %12, i32 %11, i64 2)    ; IR: uncompute the rescale
+  call void @cqrt_free(i32 %12)    ; IR: release it (|0>)
+  call void @cq_template_add_i64_hl_unc(i32 %11, i32 %10, i64 4)    ; IR: uncompute %3's offset
   call void @cqrt_free(i32 %11)    ; IR: release it (|0>)
-  call void @cq_template_add_i64_hl_unc(i32 %10, i32 %9, i64 4)    ; IR: uncompute %3's offset
+  call void @cq_template_shl_i64_hl_unc(i32 %10, i32 %9, i64 2)    ; IR: uncompute %2's offset
   call void @cqrt_free(i32 %10)    ; IR: release it (|0>)
-  call void @cq_template_shl_i64_hl_unc(i32 %9, i32 %8, i64 2)    ; IR: uncompute %2's offset
+  call void @cq_template_zext_i32_to_i64_unc(i32 %9, i32 %8)    ; IR: uncompute the widening
   call void @cqrt_free(i32 %9)    ; IR: release it (|0>)
-  call void @cq_template_zext_i32_to_i64_unc(i32 %8, i32 %7)    ; IR: uncompute the widening
-  call void @cqrt_free(i32 %8)    ; IR: release it (|0>)
   ret void    ; IR: ret void  (the cell holds (T, new idx); the old idx stays the caller's)
 }
 
 define internal fastcc void @__cq_q_bump_0011_unc(ptr %0, i32 %1, i32 %2, i32 %3, i32 %4) {
-  %6 = getelementptr inbounds { i32, i32 }, ptr %0, i32 %2    ; IR: the cell (%3, %4: the old tag and idx handles, in slot order, passed by the caller)
+  %6 = getelementptr inbounds { i32, i32 }, ptr %0, i32 %2    ; IR: the cell (%3: the cell count, unused as in the clone; %4: the old idx handle, the half the clone wrote, passed by the caller)
   %7 = getelementptr inbounds i8, ptr %6, i64 4    ; IR: the cell's idx half
   %8 = load i32, ptr %7, align 4    ; IR: the new idx handle in the cell (no gate)
   %9 = call i32 @cq_template_zext_i32_to_i64(i32 %4)    ; IR: recompute the widening from the old idx
@@ -233,8 +236,7 @@ define internal fastcc void @__cq_q_bump_0011_unc(ptr %0, i32 %1, i32 %2, i32 %3
   call void @cqrt_free(i32 %10)    ; IR: release it (|0>)
   call void @cq_template_zext_i32_to_i64_unc(i32 %9, i32 %4)    ; IR: uncompute the widening
   call void @cqrt_free(i32 %9)    ; IR: release it (|0>)
-  store i32 %3, ptr %6, align 8    ; IR: restore the cell: the old tag handle
-  store i32 %4, ptr %7, align 4    ; IR: restore the cell: the old idx handle
+  store i32 %4, ptr %7, align 4    ; IR: restore the idx half of the cell: the old idx handle (the tag half was never written)
   ret void    ; IR: ret void
 }
 
