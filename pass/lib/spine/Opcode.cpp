@@ -776,14 +776,19 @@ APInt oddInverse(const APInt &k) {
 // Nothing is emitted. The caller has established that y is cleanable and dead.
 std::optional<Inverse> inverseOf(LoweringContext &ctx, Instruction &U, Value *Y, Operand yp) {
   abi::TemplateSpec spec;
-  if (auto *bo = dyn_cast<BinaryOperator>(&U); bo && bo->getType()->isIntegerTy()) {
-    auto opc = bo->getOpcode();
-    Value *a0 = bo->getOperand(0), *a1 = bo->getOperand(1);
+  // The value field of {u,s}{add,sub}.with.overflow is the add or sub itself (cq-6r4r, 112).
+  auto *ovf = dyn_cast<IntrinsicInst>(&U);
+  const char *vop = ovf ? overflowValueOp(ovf->getIntrinsicID()) : nullptr;
+  auto *bo = dyn_cast<BinaryOperator>(&U);
+  if ((bo && bo->getType()->isIntegerTy()) || vop) {
+    std::string v = vop ? vop : "";
+    auto opc = bo ? bo->getOpcode() : v == "add" ? Instruction::Add : v == "sub" ? Instruction::Sub : Instruction::Mul;
+    Value *a0 = U.getOperand(0), *a1 = U.getOperand(1);
     if (a0 == a1 || (Y != a0 && Y != a1))
       return std::nullopt;
     unsigned i = Y == a0 ? 0 : 1;
-    Value *Z = bo->getOperand(1 - i);
-    spec.w = rt(bo->getType(), bo);
+    Value *Z = U.getOperand(1 - i);
+    spec.w = rt(a0->getType(), &U);
     if (opc == Instruction::Add || opc == Instruction::Sub || opc == Instruction::Xor) {
       if (reads(ctx, Z, Y))
         return std::nullopt;
@@ -1166,13 +1171,23 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
   if (!(isa<BinaryOperator>(I) || isa<UnaryOperator>(I) || isa<IntrinsicInst>(I) || isa<SelectInst>(I) ||
         isa<PHINode>(I)))
     return;
-  if (I.getType()->isVoidTy() || I.getType()->isVectorTy() || I.getType()->isStructTy())
-    return;
   auto &binds = spine::shared(ctx).binds;
   auto bi = binds.find(&I);
-  if (bi == binds.end() || bi->second.size() != 1 || !bi->second[0].handle)
-    return;
-  Operand yp = ctx.operand(&I);
+  Operand yp;
+  auto *ovf = dyn_cast<IntrinsicInst>(&I);
+  if (ovf && overflowValueOp(ovf->getIntrinsicID())) {
+    // {value, overflow}: y' is the value field's rail (cq-6r4r); the overflow field's template reads y
+    // too, a reader that only moves the clean-up.
+    if (bi == binds.end() || bi->second.size() != 2 || !bi->second[0].handle)
+      return;
+    yp = bi->second[0];
+  } else {
+    if (I.getType()->isVoidTy() || I.getType()->isVectorTy() || I.getType()->isStructTy())
+      return;
+    if (bi == binds.end() || bi->second.size() != 1 || !bi->second[0].handle)
+      return;
+    yp = ctx.operand(&I);
+  }
 
   if (auto *phi = dyn_cast<PHINode>(&I)) {
     SmallVector<Value *, 4> arms(phi->incoming_values().begin(), phi->incoming_values().end());
