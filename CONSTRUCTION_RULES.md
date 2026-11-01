@@ -753,7 +753,11 @@ that class are equal iff:
 1. **Permutation part.** Run as a classical reversible program on basis inputs (each `cq_theta`
    input replaced by a chosen bit pattern, templates evaluated by §2), the named output registers
    equal the C program evaluated classically on the same inputs under §2, and every rail the
-   example declares clean is `0`.
+   example declares clean is `0`. A rail still allocated at exit is a frozen register (rule 10), a
+   measured value, or a kept rail a rule names (6, 14, 26); any other live rail is a leak and FAILS,
+   with or without a reference: a user program under the checker has no clean-list, so every rail
+   it does not name is clean (ruling 2026-11-01, CQ_lang2 cq-nyto: an entangled rail live at exit
+   that the checker did not see).
 2. **Rotation list.** The sequence of `(gate, target register, angle or angle-rail expression,
    control predicate as a Boolean function of the inputs)` is equal up to reordering of gates
    with disjoint support, reordering of any two phases (classical-angle or angle-rail: diagonal
@@ -795,7 +799,9 @@ program past the checker's stated cost budget is reported as uncovered, with tha
 cost; it is never counted as compared, never counted as a failure of the compiler, and never made
 to disappear by changing the example or by lowering the budget (117: the inner k-loop's zero-trip
 exit is reached only at t = 32, after 2^31 − 1 trips of the earlier j; the claim at t = 32 stands,
-the sampler says it did not witness it). The budget is the checker's, not the spec's. Ruling
+the sampler says it did not witness it). The budget is the checker's, not the spec's. Exhausting a
+search or work budget proves nothing: a target the checker could not prove dead from range facts is
+UNCOVERED, never dead and never a PASS (cq-3nla turned an ERROR into a PASS this way). Ruling
 2026-11-01 (CQ_lang2 checker, 117).
 
 ## 7. Examples normalised under these rules (done 2026-10-26)
