@@ -562,18 +562,32 @@ RailType i1Rail() { return RailType{Kind::Int, 1}; }
 
 class CtxSink final : public GateSink {
   LoweringContext &ctx;
+  // cq-2p1p: the output value an atom's IR value is read through where it is carried to a classical
+  // join by a phi (JoinRepair carry mode); otherwise the spine's binding.
+  const std::map<unsigned, Value *> *over = nullptr;
+  Value *overridden(unsigned var) const {
+    if (!over)
+      return nullptr;
+    auto it = over->find(var);
+    return it == over->end() ? nullptr : it->second;
+  }
+  Operand orig(unsigned var) {
+    if (Value *x = overridden(var))
+      return Operand{x, ctx.T.isQuantum(atomOf(var).v, ctx.S)};
+    return ctx.operand(atomOf(var).v);
+  }
 
   Value *atomValue(unsigned var) {
     const Atom &a = atomOf(var);
     switch (a.kind) {
     case AtomKind::Cond: {
-      Operand op = ctx.operand(a.v);
+      Operand op = orig(var);
       if (op.handle)
         internalError("pred: a classical atom whose operand is a rail", a.v);
       return op.v;
     }
     case AtomKind::Eq: {
-      Operand op = ctx.operand(a.v);
+      Operand op = orig(var);
       if (op.handle)
         internalError("pred: a classical switch atom whose scrutinee is a rail", a.v);
       return ctx.B().CreateICmpEQ(op.v, ConstantInt::get(op.v->getType(), a.c));
@@ -607,7 +621,7 @@ class CtxSink final : public GateSink {
   }
 
 public:
-  explicit CtxSink(LoweringContext &ctx) : ctx(ctx) {}
+  explicit CtxSink(LoweringContext &ctx, const std::map<unsigned, Value *> *over = nullptr) : ctx(ctx), over(over) {}
 
   Value *atomRail(unsigned var) override {
     const Atom &a = atomOf(var);
@@ -615,6 +629,8 @@ public:
     case AtomKind::Cond:
       if (!ctx.T.isQuantum(a.v, ctx.S))
         return seed(atomValue(var));   // a classical term of a mixed flag (rule 8, c || q)
+      if (Value *x = overridden(var))
+        return x;
       return ctx.rail(a.v);
     case AtomKind::Eq: {
       // A3: a case flag is the equality template on the scrutinee with the case value as literal.
@@ -624,7 +640,7 @@ public:
       spec.w = railTypeOf(a.v->getType());
       spec.shape = "hl";
       Value *lit = ConstantInt::get(a.v->getType(), a.c);
-      return ctx.emitTemplate(spec, {Operand{ctx.rail(a.v), true}, Operand{lit, false}});
+      return ctx.emitTemplate(spec, {Operand{overridden(var) ? overridden(var) : ctx.rail(a.v), true}, Operand{lit, false}});
     }
     case AtomKind::Entry:
       return const_cast<Value *>(a.v);
@@ -653,6 +669,8 @@ public:
   }
 
   Value *liveNegation(unsigned var) override {
+    if (overridden(var))
+      return nullptr;
     const Atom &a = atomOf(var);
     Value *h;
     if (a.kind == AtomKind::Cond && ctx.T.isQuantum(a.v, ctx.S))
@@ -736,7 +754,7 @@ class JoinRepair {
   std::function<bool(unsigned)> ql;
   std::unique_ptr<DominatorTree> dt;
   std::map<std::tuple<unsigned, unsigned, BasicBlock *>, Value *> flagMemo;
-  std::map<std::tuple<Value *, unsigned, BasicBlock *>, Value *> valueMemo;
+  std::map<std::tuple<Value *, unsigned, unsigned, BasicBlock *>, Value *> valueMemo;
   std::map<std::vector<Value *>, Value *> phiMemo;
 
   DominatorTree &DT() {
@@ -943,7 +961,7 @@ class JoinRepair {
   }
 
   // The nearest block at or above U (through unique predecessors) with several predecessors.
-  BasicBlock *joinAbove(BasicBlock *U, const Value *what) {
+  BasicBlock *joinAbove(BasicBlock *U, const Value *what, const std::string &read) {
     BasicBlock *J = U;
     SmallPtrSet<BasicBlock *, 16> seen;
     while (BasicBlock *s = J->getUniquePredecessor()) {
@@ -953,7 +971,7 @@ class JoinRepair {
     }
     if (pred_empty(J))
       unimplemented("pred: a predicate or merge arm reads a value minted where it does not reach the point, and no "
-                    "classical join above the point carries it on every edge on which it is read (cq-2p1p)",
+                    "classical join above the point carries it on every edge on which it is read (cq-2p1p): " + read,
                     what);
     return J;
   }
@@ -1012,7 +1030,30 @@ public:
     }
     if (depth > 64)
       unimplemented("pred: per-edge flags nested deeper than 64 classical joins (cq-2p1p)", what);
-    BasicBlock *J = joinAbove(U, what);
+    BasicBlock *J = joinAbove(U, what, "the predicate " + describe(n));
+    {
+      // Per-edge flags need every atom the point reads to exist where J's edges leave. When one is
+      // minted between J and the point (a later arm's own condition), the atoms that do not reach are
+      // carried to the point instead, each by a phi over the joins above it with a |0> seed (false)
+      // on an edge where the predicate, restricted by that edge's facts, does not read it; the flag is
+      // then computed at the point as usual (its classical seeds make it exact on every path).
+      std::set<unsigned> sup;
+      m.support(n, sup);
+      bool perEdge = true;
+      for (unsigned v : sup)
+        if (Value *x = atomValue(v); x && reaches(x, U, pt) && !reaches(x, J, J->begin()))
+          perEdge = false;
+      if (!perEdge) {
+        std::map<unsigned, Value *> over;
+        for (unsigned v : sup)
+          if (Value *x = atomValue(v); x && !reaches(x, U, pt))
+            over[v] = carry(x, ql(v), RailType{Kind::Int, 1}, Carry{n, care, int(v)}, U, pt, what);
+        IRBuilderBase::InsertPointGuard g2(ctx.B());
+        ctx.B().SetInsertPoint(U, pt);
+        CtxSink sink(ctx, &over);
+        return materialize(n, sink, ql);
+      }
+    }
     std::set<unsigned> vars;
     classicalVars(n, vars);
     classicalVars(care, vars);
@@ -1035,26 +1076,42 @@ public:
     return flagAt(n, care, ctx.B().GetInsertBlock(), ctx.B().GetInsertPoint(), what);
   }
 
-  // The operand op of a merge arm whose predicate is armNode, at (U, pt).
-  Value *valueAt(Value *v, bool handle, RailType w, unsigned armNode, BasicBlock *U, BasicBlock::iterator pt,
-                 const Value *what, unsigned depth = 0) {
+  // What a carried value is needed for: a merge arm (var < 0), unneeded on an edge where `node` (its
+  // predicate) restricted by the edge's facts is false; or atom `var` of the predicate `node` under
+  // `care`, unneeded where the restricted predicate does not read it.
+  struct Carry { unsigned node, care; int var; };
+
+  // The value v at (U, pt), carried by phis over the classical joins above the point.
+  Value *carry(Value *v, bool handle, RailType w, Carry k, BasicBlock *U, BasicBlock::iterator pt,
+               const Value *what, unsigned depth = 0) {
     if (reaches(v, U, pt))
       return v;
     if (depth > 64)
-      unimplemented("pred: a merge arm carried across more than 64 classical joins (cq-2p1p)", what);
-    BasicBlock *J = joinAbove(U, what);
+      unimplemented("pred: a value carried across more than 64 classical joins (cq-2p1p)", what);
+    std::string vs;
+    raw_string_ostream(vs) << *v;
+    BasicBlock *J = joinAbove(U, what, (k.var < 0 ? "the merge arm " : "the atom ") + vs + " under " + describe(k.node));
     std::set<unsigned> vars;
-    classicalVars(armNode, vars);
+    classicalVars(k.node, vars);
+    classicalVars(k.care, vars);
     std::vector<std::pair<BasicBlock *, Value *>> per;
     for (BasicBlock *p : uniquePreds(J)) {
-      unsigned c = edgeFacts(p, J, vars);
-      unsigned a = c == Bdd::F ? Bdd::F : m.restrict(armNode, c);
-      auto key = std::make_tuple(v, a, p);
+      unsigned c = m.andOp(k.care, edgeFacts(p, J, vars));
+      unsigned a = c == Bdd::F ? Bdd::F : m.restrict(k.node, c);
+      bool unneeded;
+      if (k.var < 0) {
+        unneeded = a == Bdd::F;
+      } else {
+        std::set<unsigned> sup;
+        m.support(a, sup);
+        unneeded = c == Bdd::F || !sup.count(unsigned(k.var));
+      }
+      auto key = std::make_tuple(v, a, c, p);
       Value *x;
       if (auto it = valueMemo.find(key); it != valueMemo.end()) {
         x = it->second;
-      } else if (a == Bdd::F) {
-        // The arm is never chosen on this edge: a fresh |0> rail (rule 7), or the null value.
+      } else if (unneeded) {
+        // Never read on this edge: a fresh |0> rail (rule 7), or the null value.
         if (handle) {
           IRBuilderBase::InsertPointGuard g(ctx.B());
           ctx.B().SetInsertPoint(p->getTerminator());
@@ -1064,7 +1121,8 @@ public:
         }
         valueMemo[key] = x;
       } else {
-        x = valueMemo[key] = valueAt(v, handle, w, a, p, p->getTerminator()->getIterator(), what, depth + 1);
+        x = valueMemo[key] =
+            carry(v, handle, w, Carry{a, c, k.var}, p, p->getTerminator()->getIterator(), what, depth + 1);
       }
       per.push_back({p, x});
     }
@@ -1072,7 +1130,8 @@ public:
   }
 
   Operand operandHere(const Operand &op, RailType w, unsigned armNode, const Value *what) {
-    return Operand{valueAt(op.v, op.handle, w, armNode, ctx.B().GetInsertBlock(), ctx.B().GetInsertPoint(), what),
+    return Operand{carry(op.v, op.handle, w, Carry{armNode, Bdd::T, -1}, ctx.B().GetInsertBlock(),
+                         ctx.B().GetInsertPoint(), what),
                    op.handle};
   }
 };
