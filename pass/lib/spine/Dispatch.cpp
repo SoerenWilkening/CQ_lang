@@ -297,9 +297,10 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
     if (!CI)
       internalError("spine: cq_theta through invoke", &CB);
     // cq-s32y: a use of the operand after an in-place rotation reads a copy taken before the Ry.
-    // cq-6qum: rule 2's (uncontrolled, classical angle) rotation of a register state rotates a copy.
-    bool ruleTwo = !isQ(ctx, CI->getArgOperand(1)) && ctx.currentPredicate().isTop() && !shared(ctx).tripFlag;
-    std::optional<PendingCopy> pre = beginPreRotation(ctx, *CI, ruleTwo);
+    // cq-6qum: an uncontrolled rotation of a register state rotates a copy: rule 2's (classical
+    // angle) and rule 15's (quantum angle, cq-r9j0) alike.
+    bool uncontrolled = ctx.currentPredicate().isTop() && !shared(ctx).tripFlag;
+    std::optional<PendingCopy> pre = beginPreRotation(ctx, *CI, uncontrolled);
     if (isQ(ctx, CI->getArgOperand(1))) {
       rot::lowerQuantumAngleTheta(ctx, *CI, ctx.currentFlag());          // rules 11, 15
     } else if (Value *flag = ctx.currentFlag()) {

@@ -38,7 +38,8 @@
 //    with i == j), the rotation hits a copy instead: c = alloc 0, copy_<W>(h, c), v bound to c while
 //    T is lowered (T names c) and back to h after it. Otherwise (the corpus's load, cq_theta, store
 //    back: 61, 124) h is rotated in place as before.
-//  - Register states (cq-6qum). When the cq_theta is rule 2's (uncontrolled, classical angle), v is
+//  - Register states (cq-6qum). When the cq_theta is uncontrolled (rule 2's classical angle, or rule
+//    15's quantum angle: cq-r9j0), v is
 //    a rule 10 register state (Shared::statePreps) and v is read after T, the rotation hits a copy
 //    the same way: rot-cry keeps h as the register (a later disjoint prep xors into it), so h must
 //    keep v's value. A read inside a cycle where v is invariant: cq::unimplemented.
@@ -451,7 +452,8 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T, b
   if (auto *L = dyn_cast<LoadInst>(v); L && cellReadAfter(sh, T, *L))
     return rotateCopy();   // cq-xu07
   // cq-6qum. v is a rule 10 register state (a prep, a controlled rotation or a merge of them; rot-cry
-  // keeps preparing the register's rail h for the C variable v was read from) and rule 2 rotates it
+  // keeps preparing the register's rail h for the C variable v was read from) and rule 2 (or rule 15
+  // with a quantum angle, cq-r9j0) rotates it
   // uncontrolled while v is still read after the rotation: in C, v (and the register) keep their
   // value and only the cq_theta's result is rotated. The Ry hits a copy; h stays the register, so a
   // later disjoint prep of it never lands on the rotated rail (w3: r and y would share one rail).

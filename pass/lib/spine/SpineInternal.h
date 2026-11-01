@@ -251,7 +251,7 @@ llvm::Value *calleeCollapse(LoweringContext &, llvm::Value *handle, const llvm::
 // cq-xu07: when v is a load whose cell (or another holder of the cell's rail) may be read after the
 // rotation, the Ry hits the copy instead (rotCopy): v is bound to c while the cq_theta is lowered and
 // back to h after it, so the cell, v and every other holder keep the unrotated rail.
-// cq-6qum: likewise (rotCopy) when the cq_theta is rule 2's (uncontrolled, classical angle), v is a
+// cq-6qum: likewise (rotCopy) when the cq_theta is uncontrolled (rule 2, or rule 15: cq-r9j0), v is a
 // rule 10 register state (Shared::statePreps) and v is read after the rotation: the register keeps h.
 struct PendingCopy {
   const llvm::Value *v = nullptr;
