@@ -109,6 +109,10 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
 void lowerIndirect(LoweringContext &, CallBase &) { unimplemented("calls: calls::lowerIndirect"); }
 void lowerDeclared(LoweringContext &, CallBase &) { unimplemented("calls: calls::lowerDeclared"); }
 void lowerVarargs(LoweringContext &, Instruction &) { unimplemented("calls: calls::lowerVarargs"); }
+// No variadic save area exists here (lowerVarargs, which makes them, is unimplemented in this double):
+// the queries answer as the real ones do on an empty area table.
+bool lowerVaAreaLoad(LoweringContext &, LoadInst &) { return false; }
+bool isVaArea(LoweringContext &, ObjectId) { return false; }
 void lowerAsm(LoweringContext &, CallBase &) { unimplemented("calls: calls::lowerAsm"); }
 void emitTwin(LoweringContext &, CallBase &) { unimplemented("calls: calls::emitTwin"); }
 void lowerLiftedVia(LoweringContext &, CallBase &, ArrayRef<unsigned>) {
