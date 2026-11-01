@@ -57,7 +57,10 @@
 #include "cq/Uncompute.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Analysis/ValueTracking.h"
+#include "llvm/IR/ConstantRange.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Metadata.h"
@@ -556,6 +559,104 @@ bool isCutRecursion(LoweringContext &ctx, const CallBase &CB) {
   return q;
 }
 
+// Rule 14's B for a quantum-depth recursion of G (cq-5xde): a bound on the recursion depth, proved, or
+// none. The proof: G recurses only through direct calls of itself (every other callee in G does not
+// reach G, no use of G but a direct call as the callee); a formal i such that every recursive call passes
+// arg_i + (-1) and runs only on an edge whose branch condition (icmp of arg_i against a constant)
+// excludes arg_i == 0 (so arg_i - 1 never wraps unsigned and arg_i falls by exactly 1 per level); and
+// every call of G from outside G that starts a chain reaching S passes an actual whose unsigned range
+// is [0, B]. Then the call at level d runs only when the top-level actual is at least d + 1, so no call
+// at a level d >= B runs. B is the smallest such bound over the qualifying formals. The chains reaching
+// S (a level clone) start at the level-0 clones of G whose bounds are S's (taint copies a level-0
+// clone's bounds into each of its levels): those calls are the ones counted.
+std::optional<uint64_t> provedDepthBound(const TaintInfo &T, const Specialization &S) {
+  const Function &G = *S.F;
+  using namespace PatternMatch;
+  SmallVector<const CallBase *, 4> rec;
+  for (const BasicBlock &BB : G)
+    for (const Instruction &I : BB)
+      if (auto *C = dyn_cast<CallBase>(&I)) {
+        const Function *Y = C->getCalledFunction();
+        if (Y == &G)
+          rec.push_back(C);
+        else if (!Y || (!Y->isDeclaration() && reaches(Y, &G)))
+          return std::nullopt;
+      }
+  SmallVector<const CallBase *, 4> outside;
+  for (const User *u : G.users()) {
+    auto *C = dyn_cast<CallBase>(u);
+    if (!C || C->getCalledOperand() != &G)
+      return std::nullopt;
+    if (C->getFunction() == &G)
+      continue;
+    bool starts = false;
+    for (const Specialization &SH : T.specializations())
+      if (SH.F == C->getFunction())
+        if (const Specialization *cs = T.calleeSpecialization(*C, SH))
+          starts |= cs->F == &G && cs->depth == 0 && cs->bounds == S.bounds;
+    if (starts)
+      outside.push_back(C);
+  }
+  if (rec.empty() || outside.empty())
+    return std::nullopt;
+  DominatorTree DT(const_cast<Function &>(G));
+  std::optional<uint64_t> best;
+  for (unsigned i = 0; i < G.arg_size(); ++i) {
+    const Argument *A = G.getArg(i);
+    if (!A->getType()->isIntegerTy())
+      continue;
+    unsigned W = A->getType()->getIntegerBitWidth();
+    bool ok = true;
+    for (const CallBase *RC : rec) {
+      if (!match(RC->getArgOperand(i), m_Add(m_Specific(A), m_AllOnes()))) {
+        ok = false;
+        break;
+      }
+      // The values arg_i can take where RC runs, from the branches whose edges dominate RC's block.
+      ConstantRange allowed = ConstantRange::getFull(W);
+      const BasicBlock *at = RC->getParent();
+      for (auto *N = DT.getNode(at); N && N->getIDom(); N = N->getIDom()) {
+        const BasicBlock *D = N->getIDom()->getBlock();
+        auto *Br = dyn_cast<BranchInst>(D->getTerminator());
+        if (!Br || !Br->isConditional())
+          continue;
+        ICmpInst::Predicate pr;
+        const APInt *c;
+        bool lhs = match(Br->getCondition(), m_ICmp(pr, m_Specific(A), m_APInt(c)));
+        if (!lhs && match(Br->getCondition(), m_ICmp(pr, m_APInt(c), m_Specific(A))))
+          pr = ICmpInst::getSwappedPredicate(pr);
+        else if (!lhs)
+          continue;
+        for (unsigned s = 0; s < 2; ++s)
+          if (Br->getSuccessor(s) != Br->getSuccessor(1 - s) &&
+              DT.dominates(BasicBlockEdge(D, Br->getSuccessor(s)), at))
+            allowed = allowed.intersectWith(ConstantRange::makeExactICmpRegion(
+                s == 0 ? pr : ICmpInst::getInversePredicate(pr), *c));
+      }
+      if (allowed.contains(APInt::getZero(W))) {
+        ok = false;
+        break;
+      }
+    }
+    if (!ok)
+      continue;
+    std::optional<uint64_t> B;
+    for (const CallBase *C : outside) {
+      ConstantRange R = computeConstantRange(C->getArgOperand(i), /*ForSigned=*/false, /*UseInstrInfo=*/true);
+      APInt hi = R.getUnsignedMax();
+      if (R.isFullSet() || R.isWrappedSet() || hi.getActiveBits() > 63) {
+        B.reset();
+        ok = false;
+        break;
+      }
+      B = std::max<uint64_t>(B.value_or(0), hi.getZExtValue());
+    }
+    if (ok && B)
+      best = best ? std::min(*best, *B) : *B;
+  }
+  return best;
+}
+
 } // namespace
 
 Function *materialize(Module &M, const Specialization &S) {
@@ -593,13 +694,19 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
   capture(ctx);
   const Specialization *cs = ctx.T.calleeSpecialization(CB, ctx.S);
   if (!cs && isCutRecursion(ctx, CB)) {
-    // Rule 14: the recursive call at the cut level (taint publishes no deeper level). This level is
-    // the cut one, so B = depth when depth < K; at depth K the bound is not known here.
+    // Rule 14: the recursive call at the cut level C = ctx.S.depth (taint publishes no deeper level).
+    // The cut is a |0> seed only when a proved depth bound B has B <= C (no call at level C runs);
+    // taint's cut level comes from the actual's range, which bounds the depth only under the proof
+    // (cq-5xde). A proved B > C (taint cut too early) or no proof: the kept overflow predicate.
     const Function &G = *CB.getCalledFunction();
     unsigned K = ctx.K(G);
     std::optional<uint64_t> B;
-    if (ctx.S.depth < K)
-      B = ctx.S.depth;
+    if (ctx.S.F == &G)
+      B = provedDepthBound(ctx.T, ctx.S);
+    if (B && *B > ctx.S.depth && *B <= K)
+      unimplemented("calls: a quantum-depth recursion cut at level " + std::to_string(ctx.S.depth) +
+                        " below its proved depth bound " + std::to_string(*B) + " (rule 14)",
+                    &CB);
     return loops::lowerQuantumDepthRecursion(ctx, CB, K, B);
   }
   if (!cs || cs->isEntry()) {

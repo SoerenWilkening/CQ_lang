@@ -28,3 +28,9 @@ foreach(entry ${CQ_CALLS_FATAL})
   add_test(NAME calls.${c} COMMAND calls_finalize_tests ${c})
   set_tests_properties(calls.${c} PROPERTIES PASS_REGULAR_EXPRESSION "${re}")
 endforeach()
+
+# Review-fix probes through the real cq-lower plugin (cq-5xde, cq-09xh, cq-h8vd, ...): run_probes.py's CASES.
+add_test(NAME calls.probes
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
