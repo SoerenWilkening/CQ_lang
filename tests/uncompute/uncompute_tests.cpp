@@ -2808,6 +2808,96 @@ declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1))");
   f.U.flushAtExit(f.ret());
 }
 
+
+// ---- M3b: two reloads of provably different cells name different rails ----------------------------
+
+// 114's shape: x sits in cell i, y in cell j (mem-slots proved i != j, e.g. j = i + 1 by SCEV); g reads
+// the reload %lb of cell j and the Ry is on the reload %la of cell i. Without noteCellsDistinct the Ry
+// may hit y through the cells (the variable indices are not comparable here): an AliasHit. With it,
+// %la never names the rail %lb names, so g is cleaned after its consumer. RD selects the read: %lb
+// (ruled out) or %y itself (another route to y: still a barrier).
+const char *kDistinctIr = R"(
+define i32 @f(i32 %a0, i32 %a1, i64 %i, i64 %j, double %th) {
+  %cells = alloca i32, i64 4
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %pi = getelementptr inbounds i32, ptr %cells, i64 %i
+  store i32 %x, ptr %pi
+  %y = call i32 @cqrt_alloc_i32(i32 %a1)
+  call void @cqrt_ry_i32(i32 %y, double %th)
+  %pj = getelementptr inbounds i32, ptr %cells, i64 %j
+  store i32 %y, ptr %pj
+  %la = load i32, ptr %pi
+  %lb = load i32, ptr %pj
+  %g = call i32 @cq_template_add_i32_hl(i32 RD, i32 1)
+  call void @cqrt_ry_i32(i32 %la, double %th)
+  %q = call i32 @cq_template_mul_i32_hl(i32 %g, i32 3)
+  %r = call i32 @cqrt_measure_i32(i32 %q)
+  ret i32 %r
+})";
+
+void distinctCase(const char *rd, bool note, Fx *&out, std::string &keep) {
+  keep = kDistinctIr;
+  keep.replace(keep.find("RD"), 2, rd);
+  out = new Fx(keep);
+  Fx &f = *out;
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 0));
+  RailId y = f.reg("y", 0);
+  f.U.noteNonDiagonal(y, f.call("cqrt_ry_i32", 1));
+  RailId la = f.U.recordCellLoad(f.I("la"), {x});
+  f.U.recordCellLoad(f.I("lb"), {y});
+  if (note)
+    f.U.noteCellsDistinct(f.I("la"), f.I("lb"));
+  f.T("g", "hl");
+  f.U.noteNonDiagonal(la, f.call("cqrt_ry_i32", 2));
+  f.U.setRole(f.T("q", "hl"), Role::Measured);
+  f.U.flushAtExit(f.ret());
+}
+
+void cells_distinct() {
+  Fx *fp;
+  std::string ir;
+  distinctCase("%lb", true, fp, ir);
+  std::unique_ptr<Fx> own(fp);
+  fp->check(__func__, {
+                          "%cells = alloca i32, i64 4, align 4",
+                          "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                          "call void @cqrt_ry_i32(i32 %x, double %th)",
+                          "%pi = getelementptr inbounds i32, ptr %cells, i64 %i",
+                          "store i32 %x, ptr %pi, align 4",
+                          "%y = call i32 @cqrt_alloc_i32(i32 %a1)",
+                          "call void @cqrt_ry_i32(i32 %y, double %th)",
+                          "%pj = getelementptr inbounds i32, ptr %cells, i64 %j",
+                          "store i32 %y, ptr %pj, align 4",
+                          "%la = load i32, ptr %pi, align 4",
+                          "%lb = load i32, ptr %pj, align 4",
+                          "%g = call i32 @cq_template_add_i32_hl(i32 %lb, i32 1)",
+                          "call void @cqrt_ry_i32(i32 %la, double %th)",
+                          "%q = call i32 @cq_template_mul_i32_hl(i32 %g, i32 3)",
+                          "call void @cq_template_add_i32_hl_unc(i32 %g, i32 %lb, i32 1)",
+                          "call void @cqrt_free(i32 %g)",
+                          "%r = call i32 @cqrt_measure_i32(i32 %q)",
+                          "ret i32 %r",
+                      });
+}
+
+// The same pair without the note: the AliasHit stands.
+void fatal_cells_distinct_unnoted() {
+  Fx *fp;
+  std::string ir;
+  distinctCase("%lb", false, fp, ir);
+}
+
+// g reads y itself, not through %lb: the note says nothing about that route.
+void fatal_cells_distinct_direct_read() {
+  Fx *fp;
+  std::string ir;
+  distinctCase("%y", true, fp, ir);
+}
+
+
+
 const std::map<std::string, std::function<void()>> kPositive = {
     {"reverse_dependency_order", reverse_dependency_order},
     {"independent_most_recent_first", independent_most_recent_first},
@@ -2858,6 +2948,7 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"merge_kept_nested_phi_edge", merge_kept_nested_phi_edge},
     {"alias_distinct_cell", alias_distinct_cell},
     {"alias_copy_distinct_array", alias_copy_distinct_array},
+    {"cells_distinct", cells_distinct},
 };
 
 const std::map<std::string, std::function<void()>> kFatal = {
@@ -2889,6 +2980,8 @@ const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_alias_second_array", fatal_alias_second_array},
     {"fatal_alias_second_array_rev", fatal_alias_second_array_rev},
     {"fatal_alias_memcpy", fatal_alias_memcpy},
+    {"fatal_cells_distinct_unnoted", fatal_cells_distinct_unnoted},
+    {"fatal_cells_distinct_direct_read", fatal_cells_distinct_direct_read},
 };
 
 } // namespace

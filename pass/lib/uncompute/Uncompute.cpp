@@ -84,6 +84,12 @@
 //    merge as above with mayName as its arms: never resolved itself, a use of it is a use of every arm,
 //    a barrier on it binds every arm. It has no join, so a kept role on it (or on a merge naming it)
 //    keeps every resolvable arm, with no edge logic. mayName empty is an internal error.
+//  - noteCellsDistinct(a, b) (M3b, cq-arch 2026-11-01; CR rules 5, 20): the loads a and b of slot cells
+//    name different rails at run time (mem-slots proved the cells different, one rail per cell). A
+//    non-diagonal gate whose target handle is a (or b) is then no AliasHit barrier on the item of a
+//    record that reads b (or a) itself: the alias hit it left on a rail b may name is skipped when that
+//    rail is reached through the read of b. A direct hit (a merge arm both loads may name) and every
+//    other route to the rail stay barriers.
 //  - recordCall(fwd, outs, slotOuts, extra) (U2, cq-arch 2026-11-01; CR §1.4, rules 18, 27): the result
 //    rails of one clone call. The first member (outs, then slotOuts) is the leader: it carries a Call
 //    record over fwd's arguments and extra (their handles are its reads) and the group's one item; every
@@ -373,6 +379,20 @@ struct Uncompute::Impl {
     addObjectReads(fwd, rec);
   }
   SmallVector<unsigned, 4> openStack;
+  // M3b: pairs of loads proven to name different rails (both orders), and the target handles each
+  // noted non-diagonal gate was noted on.
+  DenseSet<std::pair<const Value *, const Value *>> distinctLoads;
+  DenseMap<const Instruction *, SmallVector<const Value *, 1>> gateTargets;
+  // An alias hit of gate on a rail reached through a read of handle `via` that M3b rules out: every
+  // handle the gate was noted on names a different rail than via at run time.
+  bool aliasRuledOut(const Instruction *gate, const Value *via) const {
+    if (!via || distinctLoads.empty())
+      return false;
+    auto it = gateTargets.find(gate);
+    if (it == gateTargets.end() || it->second.empty())
+      return false;
+    return all_of(it->second, [&](const Value *t) { return distinctLoads.count({t, via}) > 0; });
+  }
   DenseSet<const Instruction *> emitted;
   DenseMap<std::pair<RailId, const BasicBlock *>, Instruction *> itemEnd;
   // cq-ut4k: rails pending at the return being flushed whose definition does not dominate it (an arm
@@ -1209,13 +1229,13 @@ struct Uncompute::Impl {
   // The barrier events of g's item: (event, kind) that must not precede the item.
   SmallVector<std::pair<Instruction *, Bar>, 4> barriers(RailId g) const {
     SmallVector<std::pair<Instruction *, Bar>, 4> out;
-    auto eventsOf = [&](RailId x, auto &&isAfterBase, bool popsFirst = false) {
+    auto eventsOf = [&](RailId x, auto &&isAfterBase, bool popsFirst = false, const Value *via = nullptr) {
       const Rail &rx = rails[x];
       for (Instruction *h : rx.hits)
         if (isAfterBase(h))
           out.push_back({h, Bar::Hit});
       for (Instruction *h : rx.aliasHits)
-        if (isAfterBase(h))
+        if (isAfterBase(h) && !aliasRuledOut(h, via)) // M3b
           out.push_back({h, Bar::AliasHit});
       if (x == g)
         return; // g's own writes are undone by its item
@@ -1242,7 +1262,7 @@ struct Uncompute::Impl {
       };
       for (RailId x0 : r.cleanup->reads)
         for (RailId x : leaves(x0))
-          eventsOf(x, afterAll);
+          eventsOf(x, afterAll, false, rails[x0].handle);
       eventsOf(g, afterAll);
       return out;
     }
@@ -1256,7 +1276,7 @@ struct Uncompute::Impl {
       bool popsFirst = info[rec].kind == RecKind::QramLoad;
       for (RailId x0 : info[rec].reads)
         for (RailId x : leaves(x0)) // U1: a read of a merge reads one of its arms
-          eventsOf(x, afterRec, popsFirst);
+          eventsOf(x, afterRec, popsFirst, rails[x0].handle);
     }
     // Hits on g itself after it was minted (a rotated seed or result is never freed).
     if (r.creator != kNone) {
@@ -2173,19 +2193,22 @@ struct Uncompute::Impl {
     // Rule 5: every rail the item reads (and every exit rail) must still hold the value its records
     // read. A non-diagonal gate or an in-place write after the loop that the placement does not
     // precede would be undone against the changed rail.
-    SmallVector<RailId, 8> xs;
+    // (rail, the handle it is read through: M3b rules out some alias hits for a read of a load).
+    SmallVector<std::pair<RailId, const Value *>, 8> xs;
     for (RailId x0 : d.reads)
       for (RailId x : leaves(x0))
-        if (!is_contained(xs, x))
-          xs.push_back(x);
+        if (!is_contained(xs, std::make_pair(x, (const Value *)rails[x0].handle)))
+          xs.push_back({x, rails[x0].handle});
     for (RailId x : d.exits)
-      if (!is_contained(xs, x))
-        xs.push_back(x);
+      if (!is_contained(xs, std::make_pair(x, (const Value *)nullptr)))
+        xs.push_back({x, nullptr});
     Instruction *barrier = nullptr;
     RailId barrierRail = kNone;
-    for (RailId x : xs) {
+    for (auto [x, via] : xs) {
       SmallVector<Instruction *, 8> evs(rails[x].hits.begin(), rails[x].hits.end());
-      evs.append(rails[x].aliasHits.begin(), rails[x].aliasHits.end());
+      for (Instruction *h : rails[x].aliasHits)
+        if (!aliasRuledOut(h, via))
+          evs.push_back(h);
       for (unsigned w : rails[x].writes)
         if (rails[x].ownedBy == kNone)
           evs.push_back(records[w].forward);
@@ -3000,6 +3023,8 @@ void Uncompute::noteNonDiagonal(RailId target, Instruction *gate) {
   Impl::Rail &x = impl->rail(target, "noteNonDiagonal");
   if (!gate)
     internalError("uncompute: noteNonDiagonal without a gate", x.handle);
+  if (!is_contained(impl->gateTargets[gate], x.handle))
+    impl->gateTargets[gate].push_back(x.handle);
   impl->checkEdgeRead(target, gate, "noteNonDiagonal");
   if (impl->isMerge(target)) {
     // cq-bv91: the gate hits the arm the merge chose; every arm must already be kept (setRole first),
@@ -3019,6 +3044,15 @@ void Uncompute::noteNonDiagonal(RailId target, Instruction *gate) {
     internalError("uncompute: gate on " + describe(x.handle) + " after it was uncomputed and freed", gate);
   x.hits.push_back(gate);
   impl->noteAliasHits(target, gate);
+}
+
+void Uncompute::noteCellsDistinct(Instruction *loadA, Instruction *loadB) {
+  if (!loadA || !loadB || !isa<LoadInst>(loadA) || !isa<LoadInst>(loadB))
+    internalError("uncompute: noteCellsDistinct takes two loads of slot cells", loadA ? loadA : loadB);
+  if (loadA == loadB)
+    internalError("uncompute: noteCellsDistinct of a load with itself", loadA);
+  impl->distinctLoads.insert({loadA, loadB});
+  impl->distinctLoads.insert({loadB, loadA});
 }
 
 void Uncompute::cleanupBijective(RailId oldRail, const abi::TemplateSpec &inverse, ArrayRef<Operand> ops) {

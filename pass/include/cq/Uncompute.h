@@ -1,5 +1,5 @@
 // Frozen interface (cq-arch, with owner amendments A2 and A4 of 2026-10-27 and freeze beads cq-k1w, cq-bq0 (U1),
-// cq-fx3s (F1), M3 and U2 (cq-arch 2026-11-01)).
+// cq-fx3s (F1), M3, U2 and M3b (cq-arch 2026-11-01)).
 // Changes only under cq-arch's freeze rule.
 #pragma once
 
@@ -38,6 +38,12 @@ public:
   // over those arms: never resolved itself; a use of it is a use of every arm; a barrier on it binds
   // every arm; a kept role on it keeps every arm. mayName empty is an internal error.
   RailId recordCellLoad(llvm::Instruction *load, llvm::ArrayRef<RailId> mayName);
+  // M3b (cq-arch 2026-11-01, CR rules 5, 20): loadA and loadB are two new-IR loads of slot cells
+  // (recordCellLoad loads or user-register loads) that read provably different cells of one object with
+  // no store of a pre-existing handle into the object between them: at run time they name different
+  // rails (one rail per cell, cq-dr4o), so a non-diagonal gate on one is no AliasHit on a record reading
+  // the other. mem-slots calls it for each such pair it lowers.
+  void noteCellsDistinct(llvm::Instruction *loadA, llvm::Instruction *loadB);
   // U2 (cq-arch 2026-11-01, CR §1.4, rules 18, 27): the result rails of one clone call fwd, undone
   // together by its twin. outs: one handle per quantum result field in field order (fwd itself for a
   // single i32 result, else extractvalues of fwd); slotOuts: handles the caller loaded from cells the
