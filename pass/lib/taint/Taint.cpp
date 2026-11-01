@@ -1813,6 +1813,10 @@ std::optional<uint64_t> Analyzer::rangeBound(const Value *V) {
   if (!V->getType()->isIntegerTy())
     return std::nullopt;
   ConstantRange R = computeConstantRange(V, /*ForSigned=*/false, /*UseInstrInfo=*/true);
+  // The known bits too (190: memcmp(.., x & 3)'s length is `zext nneg (x & 3) to i64`, a cast
+  // computeConstantRange does not look through): both are LLVM's range facts of V.
+  R = R.intersectWith(ConstantRange::fromKnownBits(computeKnownBits(V, st.M->getDataLayout()), /*IsSigned=*/false),
+                      ConstantRange::Unsigned);
   if (R.isFullSet() || R.isWrappedSet())
     return std::nullopt;
   APInt hi = R.getUnsignedMax();
