@@ -706,18 +706,26 @@ def _run_uncached(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]],
                 _SAMPLE_MEMO.pop(next(iter(_SAMPLE_MEMO)))
         skeys = [json.dumps(s, sort_keys=True) for s in samples]
         todo = [i for i, sk in enumerate(skeys) if sk not in memo]
+        fresh: Dict[str, Dict[str, Any]] = {}
         if todo:
             ran = _run_batch(exe, spec, [samples[i] for i in todo], timeout_ms, tripcap, iso)
             with _MEMO_LOCK:
                 for i, r in zip(todo, ran):
-                    memo[skeys[i]] = {f: getattr(r, f) for f in _RUN_FIELDS}
-        got = [memo[sk] for sk in skeys]
+                    d = fresh[skeys[i]] = {f: getattr(r, f) for f in _RUN_FIELDS}
+                    # bounded (a trip search runs very many samples): past MEMO_EVENTS events an
+                    # executable's memo takes no more, and those samples simply run again when asked
+                    n = len(d["events"]) + 1
+                    if memo.get("\0events", 0) + n <= MEMO_EVENTS:
+                        memo[skeys[i]] = d
+                        memo["\0events"] = memo.get("\0events", 0) + n
+        got = [fresh.get(sk) or memo[sk] for sk in skeys]
         save_runs("oracle", key, got)
     return [SampleRun(index=i, sample=s, **{f: (list(v) if isinstance(v, list) else v) for f, v in d.items()})
             for i, (s, d) in enumerate(zip(samples, got))]
 
 
-_SAMPLE_MEMO: Dict[Tuple, Dict[str, Dict[str, Any]]] = {}
+_SAMPLE_MEMO: Dict[Tuple, Dict[str, Any]] = {}
+MEMO_EVENTS = 50_000          # trace events kept per executable's memo
 _MEMO_LOCK = threading.Lock()
 
 
