@@ -65,7 +65,7 @@ ObjectId soleObject(LoweringContext &ctx, const Value *ptr, const Instruction &a
 // the condition has a classical factor, so no edge predicate uses it as one atom) has no rail to
 // compute: its terms are the flags and the classical factor is a classical branch.
 bool onlyFactoredConditions(LoweringContext &ctx, const Instruction &I) {
-  if (!I.getType()->isIntegerTy(1) || I.use_empty())
+  if (!I.getType()->isIntegerTy(1) || I.use_empty() || spine::shared(ctx).conditionAsData)
     return false;
   Pred whole = Pred::atom(&I);
   for (const User *u : I.users()) {
@@ -648,6 +648,16 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
 namespace cq {
 
 void lowerInstruction(LoweringContext &ctx, Instruction &I) { lowerInstruction(ctx, I, nullptr); }
+
+void lowerConditionAsData(LoweringContext &ctx, Instruction &I) {
+  if (!I.getType()->isIntegerTy(1) || !spine::isQ(ctx, &I))
+    internalError("spine: lowerConditionAsData of a value that is not a quantum i1", &I);
+  spine::Shared &sh = spine::shared(ctx);
+  bool saved = sh.conditionAsData;
+  sh.conditionAsData = true;
+  lowerInstruction(ctx, I, nullptr);
+  sh.conditionAsData = saved;
+}
 
 void lowerInstruction(LoweringContext &ctx, Instruction &I, Value *tripFlag) {
   if (isa<PHINode>(I) || I.isTerminator())

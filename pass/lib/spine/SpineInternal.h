@@ -140,6 +140,8 @@ struct Shared {
   // and the conjunction flag minted for it (nullptr until currentFlag() asks under a non-top predicate).
   llvm::Value *tripFlag = nullptr;
   llvm::Value *tripConj = nullptr;
+  // cq-s7c4: lowerConditionAsData in progress: a factored branch condition is still computed as data.
+  bool conditionAsData = false;
   std::vector<const llvm::CallBase *> inlineStack;
   // cq-s32y: a register's pre-rotation value read after its in-place rotation reads a copy taken
   // just before the Ry (PreRotation.cpp). orig -> (the cq_theta, the rotated rail h, the copy c, the

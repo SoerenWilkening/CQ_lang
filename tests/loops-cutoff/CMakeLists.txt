@@ -26,3 +26,8 @@ add_test(NAME loops-cutoff-b-bound
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_b_bound.py
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-s7c4: CR rule 14 mixed exits `c || q`: c is a classical bound only when it bounds the trip count.
+add_test(NAME loops-cutoff-mixed-exit
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_mixed_exit.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

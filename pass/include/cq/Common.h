@@ -29,4 +29,9 @@ bool libFuncOf(const llvm::Function &F, llvm::LibFunc &lf);
 // SCEV computes (its symbolic maximum): a classical exit test that bounds the trip count. A classical exit
 // whose count LLVM cannot compute (189's NULL read from memory) is no classical bound. Its own analyses.
 bool exitCountKnown(const llvm::BasicBlock &header, const llvm::BasicBlock &exiting);
+// cq-s7c4 (CR rule 14): one disjunct `cond` of an exit test of the loop headed by `header` (the loop exits
+// when cond == exitIfTrue) bounds the trip count on its own: SCEV computes a symbolic maximum for it. A
+// classical disjunct of a quantum exit (`stop || q`, `stop` loop-invariant) that bounds nothing makes no
+// classical bound (case 2, not case 3).
+bool exitCondCountKnown(const llvm::BasicBlock &header, const llvm::Value &cond, bool exitIfTrue);
 }

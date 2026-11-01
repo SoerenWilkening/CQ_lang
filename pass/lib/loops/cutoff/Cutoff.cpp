@@ -918,7 +918,16 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
             unimplemented("loops-cutoff: a classical division by a per-trip value of an affine induction in a K-loop "
                           "(computed in trips the C program may not run)",
                           &I);
-          lowerInstruction(ctx, I);
+          // cq-s7c4: a quantum i1 the trip's branches read is one atom of the trip predicates here
+          // (edgeCond), so it is computed whole even where pred factored its condition (`stop || q`).
+          bool tripAtom = I.getType()->isIntegerTy(1) && isQ(&I) && any_of(I.users(), [&](const User *u) {
+                            auto *br = dyn_cast<BranchInst>(u);
+                            return br && br->isConditional() && br->getCondition() == &I && L.contains(br->getParent());
+                          });
+          if (tripAtom)
+            lowerConditionAsData(ctx, I);
+          else
+            lowerInstruction(ctx, I);
           if (varies) {
             perTrip.insert(&I);
             // A pointer is no operand of its own (memory resolves it per access: rules 20, 21).

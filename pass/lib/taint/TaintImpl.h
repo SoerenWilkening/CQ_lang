@@ -105,6 +105,8 @@ struct FnInfo {
   std::vector<const llvm::BasicBlock *> rpo;
   // cq-z6q1: per (loop header, exiting block), whether SCEV computes the exit's count (exitCountKnown).
   std::map<std::pair<const llvm::BasicBlock *, const llvm::BasicBlock *>, bool> exitKnown;
+  // cq-s7c4: per (classical disjunct of a quantum exit test, exit polarity), exitCondCountKnown.
+  std::map<std::pair<const llvm::Value *, bool>, bool> condKnown;
   // cq-bxc4: per join J, per predecessor P, the branching blocks the edge P -> J is (transitively)
   // control dependent on within the paths that end in J (Analyzer::joinEdgeCD). Structural only.
   llvm::DenseMap<const llvm::BasicBlock *,

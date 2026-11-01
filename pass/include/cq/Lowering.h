@@ -66,6 +66,9 @@ void construct(llvm::Module &, const TaintInfo &, const Specialization &, const 
 void lowerOpcode(LoweringContext &, llvm::Instruction &);
 void lowerInstruction(LoweringContext &, llvm::Instruction &);   // the spine's dispatch of one non-phi, non-terminator
 void lowerInstruction(LoweringContext &, llvm::Instruction &, llvm::Value *tripFlag);   // cq-99f7: under a loop trip's i1 rail
+// cq-s7c4: lowerInstruction(ctx, I) for a quantum i1 that a K-loop reads whole as its trip's exit atom: I is
+// computed as data (its rail bound) even where pred factored its branch's condition (`c || q`, rule 8).
+void lowerConditionAsData(LoweringContext &, llvm::Instruction &);
 void lowerTheta(LoweringContext &, llvm::CallInst &);
 void lowerMeasure(LoweringContext &, llvm::CallInst &);
 }

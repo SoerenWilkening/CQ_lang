@@ -1140,32 +1140,36 @@ bool Analyzer::chosenAtDependentJoin(const PHINode &PN) {
 }
 
 // Classical leaves of an exit condition that force the exit on their own (polarity: the value of C
-// that takes the exit edge).
+// that takes the exit edge). cq-s7c4 (CR rule 14): a classical leaf of a quantum exit test counts only
+// when it bounds the trip count (`known`, spine loops::classify alike); `stop || q` with `stop`
+// loop-invariant bounds nothing, the loop is a K-loop and every carried value is quantum.
 static void forcingLeaves(const Value *C, bool exitOn, Analyzer &A,
                           function_ref<bool(const Value *)> quantum,
-                          SmallVectorImpl<const Value *> &out) {
+                          SmallVectorImpl<const Value *> &out,
+                          function_ref<bool(const Value *, bool)> known) {
   using namespace PatternMatch;
   const Value *a, *b;
   if (!quantum(C)) {
-    out.push_back(C);
+    if (known(C, exitOn))
+      out.push_back(C);
     return;
   }
   if (match(C, m_LogicalOr(m_Value(a), m_Value(b)))) {
     if (exitOn) {
-      forcingLeaves(a, true, A, quantum, out);
-      forcingLeaves(b, true, A, quantum, out);
+      forcingLeaves(a, true, A, quantum, out, known);
+      forcingLeaves(b, true, A, quantum, out, known);
     }
     return;
   }
   if (match(C, m_LogicalAnd(m_Value(a), m_Value(b)))) {
     if (!exitOn) {
-      forcingLeaves(a, false, A, quantum, out);
-      forcingLeaves(b, false, A, quantum, out);
+      forcingLeaves(a, false, A, quantum, out, known);
+      forcingLeaves(b, false, A, quantum, out, known);
     }
     return;
   }
   if (match(C, m_Not(m_Value(a)))) {
-    forcingLeaves(a, !exitOn, A, quantum, out);
+    forcingLeaves(a, !exitOn, A, quantum, out, known);
     return;
   }
   // cq-wxch: the negated-condition selects, as spine's loops::classify splits them (cq-dtvp):
@@ -1175,15 +1179,15 @@ static void forcingLeaves(const Value *C, bool exitOn, Analyzer &A,
     const Value *c = Sel->getCondition(), *t = Sel->getTrueValue(), *f = Sel->getFalseValue();
     if (match(f, m_One())) {
       if (exitOn) {
-        forcingLeaves(c, false, A, quantum, out);
-        forcingLeaves(t, true, A, quantum, out);
+        forcingLeaves(c, false, A, quantum, out, known);
+        forcingLeaves(t, true, A, quantum, out, known);
       }
       return;
     }
     if (match(t, m_Zero())) {
       if (!exitOn) {
-        forcingLeaves(c, true, A, quantum, out);
-        forcingLeaves(f, false, A, quantum, out);
+        forcingLeaves(c, true, A, quantum, out, known);
+        forcingLeaves(f, false, A, quantum, out, known);
       }
       return;
     }
@@ -1229,8 +1233,17 @@ void Analyzer::loopHeaderRule(SpecState &S, const BasicBlock *H,
       if (!it->second)
         continue;
     }
+    auto known = [&](const Value *C, bool exitOn) {
+      if (C == BI->getCondition())
+        return true;   // a classical exit test, checked above
+      auto key = std::make_pair(C, exitOn);
+      auto it = fi.condKnown.find(key);
+      if (it == fi.condKnown.end())
+        it = fi.condKnown.emplace(key, exitCondCountKnown(*H, *C, exitOn)).first;
+      return it->second;
+    };
     curUser = BI;
-    forcingLeaves(BI->getCondition(), trueExits, *this, isQ, leaves);
+    forcingLeaves(BI->getCondition(), trueExits, *this, isQ, leaves, known);
     curUser = nullptr;
   }
   // Header phis the classical leaves depend on, through the loop body.

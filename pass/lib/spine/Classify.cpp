@@ -371,7 +371,7 @@ namespace loops {
 // Rule 14. An exit is quantum when its condition is, or when its exiting block is control dependent
 // on a quantum terminator inside the loop. A loop with a quantum exit has a classical bound when
 // some exit is classical or a quantum exit condition has a classical disjunct of its exit test
-// (`c || q`, 26, 121, 130, 139).
+// (`c || q`, 26, 121, 130, 139), each bounding the trip count (SCEV computes its count).
 Case classify(const Loop &L, const TaintInfo &T, const Specialization &S) {
   SmallVector<BasicBlock *, 4> exiting;
   L.getExitingBlocks(exiting);
@@ -489,8 +489,10 @@ Case classify(const Loop &L, const TaintInfo &T, const Specialization &S) {
         continue;
       SmallVector<std::pair<const Value *, bool>, 4> ds;
       disjuncts(br->getCondition(), exitOnTrue, ds);
+      // cq-s7c4: a classical disjunct is a bound only when it bounds the trip count on its own, as a
+      // classical exit must (cq-z6q1): `stop || q` with `stop` loop-invariant is a K-loop (case 2).
       for (auto &d : ds)
-        if (!quantumValue(T, S, d.first))
+        if (!quantumValue(T, S, d.first) && exitCondCountKnown(*L.getHeader(), *d.first, d.second))
           classicalBound = true;
     } else if (isa<SwitchInst>(t)) {
       if (quantumTerm(X) || internal)

@@ -106,7 +106,8 @@ bool libFuncOf(const Function &F, LibFunc &lf) {
   return known;
 }
 
-bool exitCountKnown(const BasicBlock &header, const BasicBlock &exiting) {
+namespace {
+template <typename Fn> bool withSCEV(const BasicBlock &header, Fn fn) {
   Function &F = const_cast<Function &>(*header.getParent());
   DominatorTree DT(F);
   LoopInfo LI(DT);
@@ -119,7 +120,21 @@ bool exitCountKnown(const BasicBlock &header, const BasicBlock &exiting) {
     L = L->getParentLoop();
   if (!L)
     internalError("exitCountKnown: no loop headed by the block", header.getTerminator());
-  return !isa<SCEVCouldNotCompute>(
-      SE.getExitCount(L, &exiting, ScalarEvolution::SymbolicMaximum));
+  return fn(SE, *L);
+}
+} // namespace
+
+bool exitCountKnown(const BasicBlock &header, const BasicBlock &exiting) {
+  return withSCEV(header, [&](ScalarEvolution &SE, Loop &L) {
+    return !isa<SCEVCouldNotCompute>(SE.getExitCount(&L, &exiting, ScalarEvolution::SymbolicMaximum));
+  });
+}
+
+bool exitCondCountKnown(const BasicBlock &header, const Value &cond, bool exitIfTrue) {
+  return withSCEV(header, [&](ScalarEvolution &SE, Loop &L) {
+    ScalarEvolution::ExitLimit EL =
+        SE.computeExitLimitFromCond(&L, const_cast<Value *>(&cond), exitIfTrue, /*ControlsOnlyExit=*/false);
+    return !isa<SCEVCouldNotCompute>(EL.SymbolicMaxNotTaken);
+  });
 }
 } // namespace cq
