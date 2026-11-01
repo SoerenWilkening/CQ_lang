@@ -43,7 +43,7 @@ llvm::BasicBlock *liveExit(const llvm::Loop &L);
 // loop reaches through blocks entered only from the loop, or when a dead-end exit has an effect.
 Unit unitOf(const llvm::Loop &L);
 
-// The cutoff bound B of a quantum-exit loop (CR rule 14): loops::tripBound, and when that knows none, in
+// The cutoff bound B of a quantum-exit loop (CR rule 14): the least of loops::tripBound and, in
 // a clone with `_b` bounds (CR §1.4: "a clone's loop cutoffs use only these bounds and its own range
 // facts"; 190's memcmp `_b3`), the trip count's maximum over the bounded formals' ranges [0, b]. With
 // several live exits a trip that ends in the body counts (the header-tested "minus one" applies only

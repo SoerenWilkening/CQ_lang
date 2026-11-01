@@ -1229,10 +1229,13 @@ std::optional<uint64_t> cutoffBound(const Loop &L, ScalarEvolution &SE, const Ta
   L.getExitingBlocks(exiting);
   // The header-tested "minus one" (its last header run only tests) holds when every exit is the region's.
   bool minusOne = regionForm && all_of(exiting, [&](const BasicBlock *e) { return region.count(e) != 0; });
+  // B is the least of every known bound: SCEV's constant maximum and, in a clone with `_b` bounds, the
+  // trip count's maximum over the bounded formals (cq-zge7: an unsigned i32 trip count has the constant
+  // maximum 0xFFFFFFFF, which must not hide a smaller `_b` bound).
   std::optional<uint64_t> n;
   if (unsigned c = SE.getSmallConstantMaxTripCount(&L))
     n = c;
-  else if (!S.bounds.empty()) {
+  if (!S.bounds.empty()) {
     // CR §1.4: one bound per quantum integer formal whose call-site range bounded it, in formal order.
     const SCEV *btc = SE.getSymbolicMaxBackedgeTakenCount(&L);
     if (!isa<SCEVCouldNotCompute>(btc)) {
@@ -1267,7 +1270,7 @@ std::optional<uint64_t> cutoffBound(const Loop &L, ScalarEvolution &SE, const Ta
                      !SE.getUnsignedRangeMin(tcb).isZero();
         APInt mx = SE.getUnsignedRangeMax(tcb);
         if (exact && !mx.isMaxValue() && mx.getActiveBits() <= 32 && !mx.isZero())
-          n = mx.getZExtValue();
+          n = n ? std::min<uint64_t>(*n, mx.getZExtValue()) : mx.getZExtValue();
       }
     }
   }

@@ -21,3 +21,8 @@ add_test(NAME loops-cutoff-trip-objects
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_trip_objects.py
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-zge7: a clone's _b bound below SCEV's constant maximum (an unsigned i32 trip count) still bounds the cutoff.
+add_test(NAME loops-cutoff-b-bound
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_b_bound.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
