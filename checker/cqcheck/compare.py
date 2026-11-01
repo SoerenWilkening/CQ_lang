@@ -988,10 +988,11 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
                 hits[s].append((st.occ[s][hit][0], e))
         return tuple(new) if new is not None else None
 
-    def leftover(used: Used) -> List[str]:
-        """Reaches not taken that are not a global phase."""
+    def leftover(used: Used, only: Optional[Sequence[int]] = None) -> List[str]:
+        """Reaches not taken that are not a global phase (of the sites `only`, default all)."""
         why: List[str] = []
-        for j, st in enumerate(sites):
+        for j in range(len(sites)) if only is None else only:
+            st = sites[j]
             left = [[(t, o) for t, o in enumerate(st.occ[s]) if not (used[j * nS + s] >> t) & 1]
                     for s in range(nS)]
             bad: List[Tuple[int, int]] = []
@@ -1021,6 +1022,8 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
         return why
 
     start: Used = tuple(0 for _ in range(len(sites) * nS))
+    # a site a gate can never take (take refuses it from the start, so from every state) is no candidate
+    cands = [[j for j in cands[i] if take(i, j, start) is not None] for i in range(len(ours))]
     assign: List[Optional[int]] = [None] * len(ours)
     partner = _unprep_partners(ours, idle, _c_backing(sites, ident or {}, registers, nan_eq) if registers else None,
                                capped)
@@ -1075,9 +1078,13 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
     # failing search factorial. Out of budget is a failure with that reason, never a pass.
     budget = [MATCH_BUDGET]
 
-    def dfs(i: int, used: Used, unp: FrozenSet[int], free: FrozenSet[int], ordst: Tuple = ((), (), ())) -> bool:
-        if i == len(ours):
-            return not leftover(used) and not any(partner[u][1] & (unp | free) for u in unp)
+    comp: List[List[int]] = [list(range(len(ours))), list(range(len(sites)))]   # the component searched
+
+    def dfs(p: int, used: Used, unp: FrozenSet[int], free: FrozenSet[int], ordst: Tuple = ((), (), ())) -> bool:
+        G = comp[0]
+        if p == len(G):
+            return not leftover(used, comp[1]) and not any(partner[u][1] & (unp | free) for u in unp)
+        i = G[p]
         if (i, used, unp, free, ordst) in failed:
             return False
         budget[0] -= 1
@@ -1091,15 +1098,15 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
                 if o2 is None:
                     continue
                 assign[i] = j
-                if dfs(i + 1, nxt, unp, free, o2):
+                if dfs(p + 1, nxt, unp, free, o2):
                     return True
         assign[i] = None
         if partner[i] is not None and partner[i][0] not in unp | free:
-            if dfs(i + 1, used, unp | {i}, free, ordst):
+            if dfs(p + 1, used, unp | {i}, free, ordst):
                 unprep.add(i)
                 return True
         if free_ok[i]:
-            if dfs(i + 1, used, unp, free | {i}, ordst):
+            if dfs(p + 1, used, unp, free | {i}, ordst):
                 return True
         failed.add((i, used, unp, free, ordst))
         return False
@@ -1109,6 +1116,8 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
     def search_py() -> Tuple[int, bool, bool, List[Optional[int]], set]:
         # First without the order (the memo then needs no order state, so the search stays small): if
         # no matching exists at all, the order cannot help. Then with the order, from scratch.
+        failed.clear()
+        unprep.clear()
         check_order[0] = False
         budget[0] = float("inf")     # the order-free search keeps its old, unbudgeted memoized form
         found_any = dfs(0, start, frozenset(), frozenset())
@@ -1129,24 +1138,107 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
                 unprep.update(any_unprep)
         return 0, found_any, found, list(assign), set(unprep)
 
+    def search_native(G: List[int], J: List[int]) -> Tuple[int, bool, bool, List[Optional[int]], set]:
+        """The component's search in native/match_c.cpp, its gates and sites renumbered from 0."""
+        from cqcheck import native
+        gi = {i: n for n, i in enumerate(G)}
+        si = {j: n for n, j in enumerate(J)}
+        part = [None if partner[i] is None else (gi[partner[i][0]], frozenset(gi[k] for k in partner[i][1]))
+                for i in G]
+        data = _match_input([ours[i] for i in G], [sites[j] for j in J], nS, capped,
+                            [[si[j] for j in cands[i]] for i in G], [ckind[i] for i in G],
+                            [free_ok[i] for i in G], part, [{gi[k] for k in comm[i]} for i in G],
+                            [full[i] for i in G], nan_eq)
+        st, fa, fd, asg, unp = native.match_c(data, len(G))
+        out: List[Optional[int]] = [None] * len(ours)
+        for n, i in enumerate(G):
+            out[i] = None if asg[n] is None else J[asg[n]]
+        return st, fa, fd, out, {G[n] for n in unp}
+
+    # Independent parts (cq-holz): a gate is linked to every site it can take, to every gate whose
+    # target lies in its support or whose support holds its target (order_ok reads and writes order
+    # state only at those rails), and to its rule-10 un-prep's j and ks. A part's choices change only
+    # its own sites' reaches and only order state its own gates read, so the whole matching exists
+    # (order-consistent or not) exactly when each part's does, and the parts are searched one by one;
+    # a site no gate can take must have no reach left. Searched together, a part whose matching fails
+    # late made the search retry every combination of another part's choices: 117 with one sample,
+    # 101 Ry gates on theta sites and 25 dropped global phases on phi sites, ran past the budget.
+    # Each part's order-consistent search has the node budget.
+    up = list(range(len(ours) + len(sites)))
+
+    def root(x: int) -> int:
+        while up[x] != x:
+            up[x] = up[up[x]]
+            x = up[x]
+        return x
+
+    def link(a: int, b: int) -> None:
+        up[root(a)] = root(b)
+
+    by_target: Dict[int, List[int]] = {}
+    for i, e in enumerate(ours):
+        for j in cands[i]:
+            link(i, len(ours) + j)
+        if partner[i] is not None:
+            for k in {partner[i][0]} | set(partner[i][1]):
+                link(i, k)
+        if e.target is not None:
+            by_target.setdefault(e.target, []).append(i)
+    for i, e in enumerate(ours):
+        for r in e.support:
+            for k in by_target.get(r, ()):
+                link(i, k)
+    parts: Dict[int, List[List[int]]] = {}
+    for i in range(len(ours)):
+        parts.setdefault(root(i), [[], []])[0].append(i)
+    # A _diag_on_controls pair of gates in two parts shares no rail, so it relaxes no constraint:
+    # dropped. A gate left with no such pair records its order state per rail (any_, tgt) instead of
+    # per gate (exc); a reader e in its part saw the per-gate record of y exactly when _ordered(e, y),
+    # and sees the per-rail one exactly when the rails link them: the same, as y is an Ry (only Rys
+    # write per rail at a target) or a phase (phases read no per-rail entry: they have no target), and
+    # a _diag_on_controls pair within the part keeps its per-gate records.
+    for i in range(len(ours)):
+        comm[i] = {k for k in comm[i] if root(k) == root(i)}
+    unclaimed = []
+    for j in range(len(sites)):
+        if root(len(ours) + j) in parts:
+            parts[root(len(ours) + j)][1].append(j)
+        else:
+            unclaimed.append(j)
+
     # cq-8m6v: the same two searches in C++ (checker/native/match_c.cpp), node for node; the Python
     # search stays the reference: $CQ_MATCH=py runs it alone, $CQ_MATCH=check runs both and fails on
     # any difference
     mode = os.environ.get("CQ_MATCH", "native")
-    if mode == "py":
-        got = search_py()
-    else:
-        from cqcheck import native
-        data = _match_input(ours, sites, nS, capped, cands, ckind, free_ok, partner, comm, full, nan_eq)
-        got = native.match_c(data, len(ours))
-        if mode == "check":
-            want = search_py()
-            if want != got:
-                raise CompareError(f"cq: chk-compare: native matcher {got} != Python {want}")
-    status, found_any, found, assign_, unprep_ = got
-    assign[:] = assign_
+    status, found_any, found = 0, not leftover(start, unclaimed), True
+    results = []
+    for G, J in (parts.values() if found_any else ()):
+        comp[0], comp[1] = G, J
+        if mode == "py":
+            got = search_py()
+        else:
+            got = search_native(G, J)
+            if mode == "check":
+                assign[:] = [None] * len(ours)
+                want = search_py()
+                if want != got:
+                    raise CompareError(f"cq: chk-compare: native matcher {got} != Python {want}")
+        results.append((G, got))
+        if not got[1]:
+            found_any = False
+            break
+    assign[:] = [None] * len(ours)
     unprep.clear()
-    unprep.update(unprep_)
+    for G, (st, fa, fd, asg, unp) in results:
+        if st == 2:
+            status = 2
+        found = found and fd
+        for i in G:
+            assign[i] = asg[i]
+        unprep.update(unp)
+    if not found_any:
+        status = 0               # no matching at all: the order-free search decides, as for the whole
+    found = found and found_any and status == 0
     if status == 2:
         return [f"the matching of {len(ours)} lowered gates to the C sites exceeded {MATCH_BUDGET} search "
                 f"nodes without an order-consistent matching"]

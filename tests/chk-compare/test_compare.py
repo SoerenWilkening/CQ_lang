@@ -436,6 +436,52 @@ class COracle(unittest.TestCase):
             c = compare(ours, c_side, QKEY, "c")
             self.assertEqual(c.equal, equal, c.reasons)
 
+    # cq-holz: 117's shape at a small size. Ry(pi/2) on four counting rails (site q:0), A on three
+    # search rails (q:1), four blocks A^dag (a:1), a phase (a:2), A (a:3) on the search rails, then
+    # per counting rail a phase (q:3) and Ry(pi/2) (q:4). Every phase is a dropped global phase (its
+    # flag is 1 at every sample), and every Ry(pi/2) agrees with four theta sites in angle and
+    # register. Searched together, each late failure of the Ry choices retried every combination of
+    # the phases' optional reaches: past the node budget on an equal pair. The Ry gates and the
+    # phases share no site and no rail, so they are matched apart.
+    def counting(self, mutant=""):
+        h, xs, nt, nb = PI / 2, [50, 51, 52], 4, 4
+
+        def c_side(a, b, s):
+            r = [self.csite("q", 0, "theta", h, 0) for _ in range(nt)] + [self.csite("q", 1, "theta", h, 0) for _ in xs]
+            if mutant == "extra":        # a C reach no lowered gate can take
+                r.append(self.csite("q", 9, "theta", 0.7, 0))
+            for _ in range(nb):
+                r += ([self.csite("a", 1, "theta", -h, 0) for _ in xs] + [self.csite("a", 2, "phi", PI)]
+                      + [self.csite("a", 3, "theta", h, 0) for _ in xs])
+            for _ in range(nt):
+                r += [self.csite("q", 3, "phi", PI), self.csite("q", 4, "theta", h, 0)]
+            return dict(rots=r, kept=[])
+
+        def o_side(a, b, s):
+            r = [ry(1 + t, h) for t in range(nt)] + [ry(x, h) for x in xs]
+            for k in range(nb):
+                r += [ry(x, -h) for x in xs] + [ph(100 + k, 1, PI)] + [ry(x, h) for x in xs]
+            if mutant == "angle":        # the last block's A on the third search rail negated
+                r[-1] = ry(xs[2], -h)
+            if mutant == "order":        # the last block's A^dag on the first search rail after its A
+                i = len(r) - 7
+                r[i], r[i + 4] = r[i + 4], r[i]
+            for t in range(nt):
+                r += [ph(200 + t, 1, PI), ry(1 + t, h)]
+            return dict(rots=r, kept=[keep(x, 0) for x in list(range(1, nt + 1)) + xs])
+
+        return compare(side("o", o_side), side("c", c_side), QKEY, "c")
+
+    def test_independent_parts_matched_apart(self):
+        c = self.counting()
+        self.assertTrue(c.equal, c.reasons)
+
+    def test_independent_parts_mutants_rejected(self):
+        for mutant, why in (("angle", "corresponds to no C site"), ("extra", "C site q:9"), ("order", "")):
+            c = self.counting(mutant)
+            self.assertFalse(c.equal, mutant)
+            self.assertTrue(any(why in r for r in c.reasons), (mutant, c.reasons))
+
 
 class FpModes(unittest.TestCase):
     """CR §2 NaN row (ruling 2026-10-27, bead cq-8dy): against "c" any NaN equals any NaN; against
