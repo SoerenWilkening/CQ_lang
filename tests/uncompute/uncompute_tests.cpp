@@ -1392,6 +1392,65 @@ void fatal_cell_load_empty() {
   f.U.recordCellLoad(f.I("m"), {});
 }
 
+// F1 with M3 (179): a classically bounded loop stores a flag rail into a cell each trip; after the loop
+// the cell is read through a cell-load merge and measured. The exit rail has no IR use outside the
+// loop, so it keeps its kept role on every trip: no copy at the exit, the reverse loop does not undo
+// it, and the trip's other rail reading it (u) is still undone.
+const char *kDefMem = R"(
+define i32 @f(i32 %a0, double %th, i32 %n) {
+entry:
+  %p = alloca i32
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  br label %L
+L:
+  %i = phi i32 [ 0, %entry ], [ %i2, %L ]
+  %t = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  %u = call i32 @cq_template_mul_i32_hl(i32 %t, i32 3)
+  store i32 %t, ptr %p
+  %i2 = add i32 %i, 1
+  %c = icmp slt i32 %i2, %n
+  br i1 %c, label %L, label %X
+X:
+  %m = load i32, ptr %p
+  %r = call i32 @cqrt_measure_i32(i32 %m)
+  ret i32 %r
+})";
+
+void deferred_kept_through_memory() {
+  Fx f(kDefMem);
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  unsigned s = f.U.openScope();
+  RailId t = f.T("t", "hl");
+  f.T("u", "hl");
+  f.U.closeScope(s);
+  Uncompute *U = &f.U;
+  f.U.recordDeferred({s}, {t}, [U, s](IRBuilder<> &B) { U->emitMirror(s, B); }, {x});
+  RailId m = f.U.recordCellLoad(f.I("m"), {t});
+  f.U.setRole(m, Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%p = alloca i32, align 4",
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "br label %L",
+                        "%i = phi i32 [ 0, %entry ], [ %i2, %L ]",
+                        "%t = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "%u = call i32 @cq_template_mul_i32_hl(i32 %t, i32 3)",
+                        "store i32 %t, ptr %p, align 4",
+                        "%i2 = add i32 %i, 1",
+                        "%c = icmp slt i32 %i2, %n",
+                        "br i1 %c, label %L, label %0",
+                        "%m = load i32, ptr %p, align 4",
+                        "%r = call i32 @cqrt_measure_i32(i32 %m)",
+                        "call void @cq_template_mul_i32_hl_unc(i32 %u, i32 %t, i32 3)",
+                        "call void @cqrt_free(i32 %u)",
+                        "br label %X",
+                        "ret i32 %r",
+                    });
+}
+
 // The merged handle measured: the consumer copies it out into a fresh rail and keeps that rail
 // (compute-copy-uncompute, CR §0); the merge stays garbage and both arms are uncomputed after the copy.
 // Kept: x and the copy (one rail with the chosen arm's value), as in 135's classical-control spelling.
@@ -2292,6 +2351,7 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"merge_measured", merge_measured},
     {"cell_load_garbage", cell_load_garbage},
     {"cell_load_kept", cell_load_kept},
+    {"deferred_kept_through_memory", deferred_kept_through_memory},
     {"merge_all_arms_kept", merge_all_arms_kept},
     {"merge_template_then_garbage", merge_template_then_garbage},
     {"merge_noted_use", merge_noted_use},

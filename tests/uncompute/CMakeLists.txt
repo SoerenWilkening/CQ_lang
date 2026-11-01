@@ -11,7 +11,8 @@ set(CQ_UNC_CASES
   ex42_measure_one_of_two ex162_consumer ex144_rule6
   merge_measured merge_all_arms_kept merge_template_then_garbage merge_noted_use merge_phi merge_nested
   merge_kept_arm_local merge_kept_unchosen_edge merge_kept_rotated merge_kept_nested_phi_edge alias_distinct_cell
-  alias_copy_distinct_array cell_load_garbage cell_load_kept)
+  alias_copy_distinct_array cell_load_garbage cell_load_kept
+  deferred_kept_through_memory)
 foreach(c ${CQ_UNC_CASES})
   add_test(NAME uncompute.${c} COMMAND uncompute_tests ${c})
 endforeach()

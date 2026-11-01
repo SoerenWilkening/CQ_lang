@@ -132,6 +132,9 @@
 //    needs every exit rail kept (each is copied there, below); otherwise it is unimplemented. An exit rail that became kept (a measurement, a kept merge's arm, an
 //    escape) is copied in the loop's exit block before its first use after the loop, every such use reads
 //    the copy (which takes the role), and the item undoes the rail itself; a rotated one is unimplemented.
+//    An exit rail with no IR use outside the region (it reaches later code only through memory: cell-load
+//    merges, M3) that became kept is not copied and not undone: every trip's instance keeps its role
+//    (rule 5, rule 14 case 1; 179). An owned record reading it is still undone.
 //  - scopeRecords(s): the records created while s was open (nested scopes included), program order.
 //    The ArrayRef is valid until the next record* call. Scopes close last-in-first-out.
 //
@@ -1652,6 +1655,15 @@ struct Uncompute::Impl {
         unimplemented("uncompute: a kept exit rail of a deferred rule-14 reverse loop that was rotated or has no "
                           "producer: " + describe(rx.handle),
                       cast<Instruction>(rx.handle));
+      // Rule 5 (a kept rail is never uncomputed), rule 14 case 1: an exit rail that reaches later code
+      // only through memory (no IR use outside the region; its readers are cell-load merges, M3) stays
+      // with its kept role on every trip: no copy, the mirror leaves every instance alone (179).
+      bool outsideUse = any_of(rx.handle->uses(), [&](const Use &u) {
+        auto *ui = dyn_cast<Instruction>(u.getUser());
+        return ui && ui->getParent() && !beforeOrIn(d, ui->getParent());
+      });
+      if (!outsideUse)
+        continue;
       keptExits.push_back({x, rx.role});
     }
     BasicBlock *keptX = keptExits.empty() ? nullptr : exitBlock(rails[keptExits.front().first].handle);
