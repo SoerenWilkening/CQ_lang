@@ -212,6 +212,10 @@ struct ObjInfo {
   struct Field { int64_t off; Type *ty; int handle = -1; };   // handle: -1 not decided
   SmallVector<Field, 4> fields;
   StructType *recTy = nullptr;
+  // A BYTE-CELL object (90): a local scalar object that a memory intrinsic writes and that is read at a
+  // narrower width than its type: its cells are the narrowest access width (90's `unsigned char d[4]` that
+  // -O1 made an alloca i32); a wider classical store is split into one write per cell (little-endian).
+  bool split = false;
 };
 
 // What a store into a VIEW object left there (63): the value rail h of type ty covering the bytes
@@ -238,6 +242,9 @@ struct FnState {
   // M1: a clone call handed a pointer into a slot object -> (byte offset of a cell it writes -> the handle
   // the caller loaded from that cell right after the call: slotCellsAfterCall).
   DenseMap<const Instruction *, std::map<int64_t, Operand>> callOut;
+  // A clone's stores into a caller cell under quantum predicates (51): (block predicate, value) per store
+  // lowered so far, keyed by the cell's byte offset; merged into one slot result at the last of them.
+  std::map<int64_t, std::vector<std::pair<Pred, Operand>>> cloneArms;
 };
 
 // One state per (output function, original function): rule 19 inlining lowers a callee's body into
@@ -580,10 +587,34 @@ ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId 
                     root);
   }
   info.escaping = escapes(ctx, root);
-  if (info.kind == RootKind::Local)
+  if (info.kind == RootKind::Local) {
+    uint64_t narrow = info.cellBytes;
     for (const Access &a : accessesOf(ctx, *st.F, o))
-      if (DL.getTypeAllocSize(a.ty).getFixedValue() != info.cellBytes)
-        info.view = true;
+      narrow = std::min(narrow, uint64_t(DL.getTypeAllocSize(a.ty).getFixedValue()));
+    bool intrinsic = false;
+    for (const Instruction &X : instructions(*st.F))
+      if (auto *MI = dyn_cast<MemIntrinsic>(&X); MI && hasObject(ctx, MI->getDest(), o))
+        intrinsic = true;
+    if (intrinsic && narrow < info.cellBytes && info.cellTy->isIntegerTy()) {
+      // 90: byte cells. Every wider access must be a classical store (split per cell).
+      for (const Access &a : accessesOf(ctx, *st.F, o)) {
+        if (DL.getTypeAllocSize(a.ty).getFixedValue() == narrow)
+          continue;
+        auto *S = dyn_cast<StoreInst>(a.I);
+        if (!S || !S->getValueOperand()->getType()->isIntegerTy() || ctx.T.isQuantum(S->getValueOperand(), ctx.S))
+          unimplemented("mem-slots: a byte-cell slot object (a memory intrinsic writes it) accessed wider than its "
+                        "cells by other than a classical integer store",
+                        a.I);
+      }
+      info.split = true;
+      info.cellBytes = narrow;
+      info.cellTy = IntegerType::get(ctx.M.getContext(), unsigned(8 * narrow));
+    } else {
+      for (const Access &a : accessesOf(ctx, *st.F, o))
+        if (DL.getTypeAllocSize(a.ty).getFixedValue() != info.cellBytes)
+          info.view = true;
+    }
+  }
   if (info.cellBytes == 1 && !info.view) {
     bool any = false, all = true;
     for (const Access &a : accessesOf(ctx, *st.F, o)) {
@@ -744,7 +775,8 @@ bool cloneWritesCell(LoweringContext &ctx, const ObjInfo &info, ObjectId o, cons
 
 // M6: X wrote exactly this cell through writeSlotCells (a memory intrinsic lowered per cell).
 bool namedWrite(FnState &st, const Instruction &X, const Addr &cell, uint64_t size, const ObjInfo &info) {
-  if (!isa<MemIntrinsic>(X) || !cell.terms.empty() || cell.root != info.root || size != info.cellBytes)
+  if (!(isa<MemIntrinsic>(X) || (info.split && isa<StoreInst>(X))) || !cell.terms.empty() ||
+      cell.root != info.root || size != info.cellBytes)
     return false;
   auto it = st.callOut.find(&X);
   return it != st.callOut.end() && it->second.count(cell.off);
@@ -1138,6 +1170,24 @@ bool cellArms(LoweringContext &ctx, FnState &st, const Site &s, const Instructio
     auto *S = dyn_cast<StoreInst>(a.I);
     if (!S || S == &I || differentCell(a.a, s.a, storeBytes(DL, a.ty), size))
       continue;
+    if (auto c = st.callOut.find(S); c != st.callOut.end()) {
+      // A wide store split per cell (90): the cells it wrote are named.
+      if (!isPotentiallyReachable(S, &I, nullptr, st.DT.get()))
+        continue;
+      for (auto &[off, h] : c->second) {
+        Addr w = s.a;
+        w.off = off;
+        w.terms.clear();
+        if (differentCell(w, s.a, s.info->cellBytes, size) || !h.handle)
+          continue;
+        if (!st.registers.count(h.v))
+          allRegisters = false;
+        RailId r = ctx.unc().idOf(h.v);
+        if (!is_contained(arms, r))
+          arms.push_back(r);
+      }
+      continue;
+    }
     if (!isPotentiallyReachable(S, &I, nullptr, st.DT.get()))
       continue;
     bool killed = false;
@@ -1896,6 +1946,79 @@ void lowerViewStore(LoweringContext &ctx, FnState &st, StoreInst &stI, const Sit
   st.lowered[&stI] = Operand{res, true};
 }
 
+// CR rules 9, 18, 20 (51): a clone's stores into one caller cell, each in its own arm under a quantum
+// predicate, are one value at the join: the select tree over the arms (rule 9, selectChain), copied out
+// once (rule 18: alloc 0, copy, store the copy, Role::Result) at the last of them. No store emits anything
+// before. The cell's rail is the floating-point view when some access of it is floating point (51's
+// punned i64 stores of a double: a bitcast). Unimplemented: arms that do not cover every path (the select
+// would need the caller's old content), an arm store some other store may reach, and a load of the cell in
+// the clone.
+bool mergedCloneStore(LoweringContext &ctx, FnState &st, const Site &s, StoreInst &stI, Operand val) {
+  if (s.info->kind != RootKind::Param || ctx.S.isEntry() || !ctx.currentFlag() || s.info->view ||
+      s.info->boolCells || !s.a.terms.empty())
+    return false;
+  const DataLayout &DL = ctx.M.getDataLayout();
+  Type *vty = stI.getValueOperand()->getType();
+  uint64_t sz = storeBytes(DL, vty);
+  SmallVector<const StoreInst *, 4> stores;
+  Type *cellTy = vty;
+  for (const Access &a : accessesOf(ctx, *st.F, s.o)) {
+    if (differentCell(a.a, s.a, storeBytes(DL, a.ty), sz))
+      continue;
+    if (!sameCell(a.a, s.a) || storeBytes(DL, a.ty) != sz)
+      unimplemented("mem-slots: a clone's arm stores into a caller cell overlapping another access of it", &stI);
+    if (isa<LoadInst>(a.I))
+      unimplemented("mem-slots: a clone reading a caller cell it stores into under a quantum predicate", a.I);
+    auto *S = dyn_cast<StoreInst>(a.I);
+    if (!S)
+      unimplemented("mem-slots: an atomic access of a caller cell a clone stores into under a quantum predicate",
+                    a.I);
+    if (ctx.preds().block(S->getParent()).quantumPart(ctx.T, ctx.S).isTop())
+      unimplemented("mem-slots: a clone storing into a caller cell both unconditionally and under a quantum "
+                    "predicate",
+                    S);
+    stores.push_back(S);
+    if (a.ty->isFloatingPointTy())
+      cellTy = a.ty;
+  }
+  for (const StoreInst *x : stores)
+    for (const StoreInst *y : stores)
+      if (x != y && isPotentiallyReachable(x, y, nullptr, st.DT.get()))
+        unimplemented("mem-slots: a clone storing into a caller cell that an earlier store of the clone may have "
+                      "filled (two slot results for one cell)",
+                      y);
+  RailType w = railTypeOf(cellTy);
+  if (vty != cellTy) {
+    if (val.handle)
+      val = Operand{viewTemplate(ctx, "bitcast", railTypeOf(vty), w, {val}), true};
+    else
+      val = Operand{ctx.B().CreateBitCast(val.v, cellTy), false};
+  }
+  auto &arms = st.cloneArms[s.a.off];
+  arms.push_back({ctx.preds().block(stI.getParent()), val});
+  st.lowered[&stI] = val;
+  if (arms.size() < stores.size())
+    return true;
+  Pred any = arms.front().first;
+  for (auto &a : arms)
+    any = any | a.first;
+  if (!any.isTop())
+    unimplemented("mem-slots: a clone's arm stores into a caller cell that leave it unwritten on some path (the "
+                  "select would read the caller's old content)",
+                  &stI);
+  Value *sel = selectChain(ctx, arms, w);
+  CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+  RailId cid = ctx.unc().recordSeed(c);
+  abi::CoreSpec cp{abi::Core::Copy, w};
+  CallInst *cc = ctx.emitCore(cp, {sel, c});
+  ctx.unc().recordCore(cc, cp, {Operand{sel, true}, Operand{c, true}}, cid);
+  ctx.unc().setRole(cid, Role::Result);
+  st.registers.insert(c);
+  ctx.B().CreateAlignedStore(c, cellPointer(ctx, s, stI), Align(4));
+  st.lowered[&stI] = Operand{c, true};
+  return true;
+}
+
 // The role of a rail stored into a slot cell (rule 20), the handle store and the cell's new content.
 void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &I, Type *ty, Operand val,
                  StoreWhat what) {
@@ -2113,6 +2236,35 @@ void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
 void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
   FnState &st = stateOf(ctx, stI);
   const Value *v = stI.getValueOperand();
+  {
+    // 90: a classical store wider than its byte cells writes one seed per cell (little-endian bytes).
+    ArrayRef<ObjectId> objs = ctx.T.provenance(stI.getPointerOperand(), ctx.S);
+    Addr a = decompose(stI.getPointerOperand(), ctx.M.getDataLayout());
+    if (objs.size() == 1 && a.ok && !isa<Argument>(a.root)) {
+      ObjInfo &info = objInfo(ctx, st, a.root, objs.front());
+      uint64_t n = storeBytes(ctx.M.getDataLayout(), v->getType());
+      if (info.split && n != info.cellBytes) {
+        Operand val = ctx.operand(v);
+        if (val.handle || !a.terms.empty() || ctx.currentFlag() || n % info.cellBytes)
+          internalError("mem-slots: a split store that is not a classical store at a constant offset", &stI);
+        Site s = siteOf(ctx, st, stI, stI.getPointerOperand(), info.cellTy);
+        RailType w = railTypeOf(info.cellTy);
+        IRBuilder<> &B = ctx.B();
+        for (uint64_t k = 0; k < n / info.cellBytes; ++k) {
+          Site c = s;
+          c.a.off += int64_t(k * info.cellBytes);
+          Value *part = B.CreateTrunc(B.CreateLShr(val.v, ConstantInt::get(val.v->getType(), 8 * k * info.cellBytes)),
+                                      info.cellTy);
+          CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {part});
+          ctx.unc().recordSeed(seed);
+          finishStore(ctx, st, c, stI, info.cellTy, Operand{seed, true}, StoreWhat::Seed);
+          st.callOut[&stI][c.a.off] = st.lowered[&stI];
+          st.lowered.erase(&stI);
+        }
+        return;
+      }
+    }
+  }
   Site s = siteOf(ctx, st, stI, stI.getPointerOperand(), v->getType());
   if (s.info->view)
     return lowerViewStore(ctx, st, stI, s);
@@ -2141,6 +2293,8 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
         st.lowered[&stI] = val;
         return;
       }
+  if (mergedCloneStore(ctx, st, s, stI, val))
+    return;
   if (Value *flag = ctx.currentFlag()) {
     (void)flag;
     // Rules 9, 20: under a quantum predicate the cell receives select(predicate, value, old).

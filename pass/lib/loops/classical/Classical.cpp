@@ -106,6 +106,7 @@
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/Transforms/Utils/SSAUpdater.h"
 
@@ -423,6 +424,7 @@ private:
 
   void check(Loop &L, Case c);
   bool twinOf(const CallBase &CB) const;
+  void resolvePreheader();
 
   // CR rule 6 on a carried value (cq-b13w). A quantum header phi p read only by a chain of updates
   // U_1 = f_1(p, z_1), U_2 = f_2(U_1, z_2), ... in the header, each a bijection in its predecessor and
@@ -1733,6 +1735,48 @@ void Unit::run(Case c) {
   cur = E;
   BasicBlock *X = newBlock();
   lowerLoop(top, c, X, true);
+  resolvePreheader();
+}
+
+// cq-ot39 (CR rule 5, U5): -O1's LICM hoists a quantum loop invariant into the loop's guarded preheader
+// (179's x[j] view, a shift or mul of a register). When the preheader does not dominate the loop's exit
+// block (the guard's skip edge joins there), no flush can place the rail's item: it is resolved here, on
+// the loop's own exit path, once the loop (and its reverse) has read it. Only template results defined in
+// the preheader and read nowhere but there and in the loop.
+void Unit::resolvePreheader() {
+  BasicBlock *pre = top.getLoopPredecessor();
+  BasicBlock *exitB = top.getExitBlock();
+  if (!pre || !exitB)
+    return;
+  DominatorTree DT(*pre->getParent());
+  if (DT.dominates(pre, exitB))
+    return;
+  std::vector<RailId> rails;
+  for (Instruction &I : *pre) {
+    if (I.isTerminator() || !isQ(&I) || isa<CallBase>(I) || isa<PHINode>(I))
+      continue;
+    bool inside = true;
+    for (const User *u : I.users()) {
+      auto *ui = dyn_cast<Instruction>(u);
+      inside &= ui && (ui->getParent() == pre || top.contains(ui));
+    }
+    if (!inside)
+      continue;
+    Operand op = ctx.operand(&I);
+    auto *ci = op.handle ? dyn_cast<CallInst>(op.v) : nullptr;
+    if (!ci || !ci->getCalledFunction() || !ci->getCalledFunction()->getName().starts_with("cq_template_"))
+      continue;   // a view naming its operand's rail, or a value that is not a fresh template result
+    RailId r = ctx.unc().idOf(op.v);
+    if (!is_contained(rails, r))
+      rails.push_back(r);
+  }
+  if (rails.empty())
+    return;
+  IRBuilder<> &B = ctx.B();
+  BasicBlock *Cont = newBlock();
+  BranchInst *br = B.CreateBr(Cont);
+  ctx.unc().resolveAt(br, rails);
+  B.SetInsertPoint(Cont);
 }
 
 } // namespace
