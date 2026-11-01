@@ -1480,7 +1480,6 @@ Value *qramBusOf(LoweringContext &ctx, const Value *root, const Instruction &at)
   return busOf(q, root, &q.cols[0], at);
 }
 
-#ifdef CQ_M6_WRITE_SLOT_CELLS
 // Rule 22 into a slot array through mem-slots' write path (M6 writeSlotCells, cq-arch 2026-11-01): the
 // cells the intrinsic may touch, j below the length's bound (a classical constant length: exactly; a
 // quantum length: its upper bound, LLVM's known bits and range facts), take their new values, guarded by
@@ -1501,8 +1500,15 @@ void lowerSlotIntrinsicM6(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o) {
                   &MI);
   ObjInfo &info = objInfo(ctx, st, a.root, o);
   Type *cellTy = cellType(ctx, st, info, o);
-  RailType w = info.boolCells ? RailType{Kind::Int, 1} : railTypeOf(cellTy);
   uint64_t cb = info.cellBytes;
+  bool view = false;   // mem-slots' bit view (Slots.cpp objInfo): a local accessed at another width
+  if (info.kind == RootKind::Local)
+    for (const Access &x : accessesOf(ctx, *st.F, o))
+      view |= DL.getTypeAllocSize(x.ty).getFixedValue() != cb;
+  if (view || isa<StructType>(cellTy))
+    unimplemented("mem-qram: a memory intrinsic into a slot object accessed at another width than its cell or a "
+                  "record (mem-slots' cells: a bit view 63, -O1's punned alloca of 90)",
+                  &MI);
   if (a.off % int64_t(cb))
     unimplemented("mem-qram: a memory intrinsic into a slot object starting inside a cell (a bit view, 63)", &MI);
   // The length: a classical constant, or a quantum rail (its logical value beneath one zext).
@@ -1572,21 +1578,17 @@ void lowerSlotIntrinsicM6(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o) {
       guards.push_back(ctx.emitTemplate(cmp, {len, Operand{ConstantInt::get(IntegerType::get(C, lw), (j + 1) * cb - 1), false}}));
     }
   }
-  (void)w;
   writeSlotCells(ctx, MI.getDest(), cellTy, vals, guards, MI);
 }
-#endif
 
 void lowerMemIntrinsic(LoweringContext &ctx, MemIntrinsic &MI) {
   ArrayRef<ObjectId> objs = ctx.T.provenance(MI.getDest(), ctx.S);
   if (ctx.T.isFatPointer(MI.getDest(), ctx.S))
     unimplemented("mem-qram: a memory intrinsic through a quantum destination pointer (rules 21, 22)", &MI);
   if (objs.size() == 1 && ctx.T.classOf(objs.front()) == ObjClass::Slot) {
-#ifdef CQ_M6_WRITE_SLOT_CELLS
     // M6: a quantum-length memset and every memcpy/memmove go through mem-slots' write path.
     if (!isa<MemSetInst>(&MI) || ctx.operand(MI.getLength()).handle)
       return lowerSlotIntrinsicM6(ctx, MI, objs.front());
-#endif
     if (auto *MS = dyn_cast<MemSetInst>(&MI))
       return lowerSlotMemset(ctx, *MS, objs.front());
     unimplemented("mem-qram: a memcpy/memmove into a slot array (rule 22: each cell takes the source handle or a "
