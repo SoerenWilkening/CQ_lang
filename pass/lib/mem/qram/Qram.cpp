@@ -1151,7 +1151,29 @@ Value *emitLoad(LoweringContext &ctx, Value *bus, const Column &c, QIndex idx) {
 }
 
 // ONE cqrt_qram_store_<W>[_hl][_controlled]([flag,] a, idx | j, v), v a handle, recorded on the bus.
-void emitStore(LoweringContext &ctx, Value *bus, const Column &c, QIndex idx, Value *v, Value *flag) {
+// cq-8un4 (owner 2026-11-01 on cq-dxii): a QRAM store is recorded once per lowering of its instruction, so
+// a store executed on every trip of a loop of its own function is right only when a loop unit (loops::
+// lowerClassical / lowerCutoff) lowers each trip; a loop the walker copied as a real loop would run the
+// store each trip and pop it once (the store-twice hazard). A rule-19 inlined callee's loops count: the
+// LoopInfo is of the store's own function.
+void checkStoreOnce(LoweringContext &ctx, const Instruction &orig) {
+  const Function &F = *orig.getFunction();
+  DominatorTree DT(const_cast<Function &>(F));
+  LoopInfo LI(DT);
+  const Loop *L = LI.getLoopFor(orig.getParent());
+  if (!L)
+    return;
+  const Loop *U = ctx.loopUnit();
+  if (U && U->getHeader()->getParent() == &F && U->contains(L->getHeader()))
+    return;
+  internalError("mem-qram: a QRAM store executed on every trip of a loop but recorded once (store-twice hazard, "
+                "cq-dxii)",
+                &orig);
+}
+
+void emitStore(LoweringContext &ctx, Value *bus, const Column &c, QIndex idx, Value *v, Value *flag,
+               const Instruction &orig) {
+  checkStoreOnce(ctx, orig);
   abi::CoreSpec spec{abi::Core::QramStore, c.w, flag != nullptr, !idx.quantum};
   SmallVector<Value *, 4> args;
   SmallVector<Operand, 4> ops;
@@ -1351,7 +1373,7 @@ void storeClassicalBytes(LoweringContext &ctx, const QAccess &acc, Value *val, T
   Value *jb = classicalElems(ctx, q, acc.a, I);
   for (const Hit &h : cellsIn(DL, q, acc.a.off, bytes, I)) {
     Value *v = seedOf(ctx, h.col->w, bytesToCell(ctx, x, h.rel, h.col->cellTy));
-    emitStore(ctx, busOf(q, acc.a.root, h.col, I), *h.col, {elemIndex(ctx, jb, h.elem), false}, v, flag);
+    emitStore(ctx, busOf(q, acc.a.root, h.col, I), *h.col, {elemIndex(ctx, jb, h.elem), false}, v, flag, I);
   }
 }
 
@@ -1438,7 +1460,7 @@ void lowerQramIntrinsic(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o) {
   for (size_t i = 0; i < hits.size(); ++i) {
     const Hit &h = hits[i];
     emitStore(ctx, busOf(q, acc.a.root, h.col, MI), *h.col, {elemIndex(ctx, jb, h.elem), false},
-              vals[i], flag);
+              vals[i], flag, MI);
   }
 }
 
@@ -1498,7 +1520,7 @@ void qramStoreAt(LoweringContext &ctx, const Value *root, Operand idx, Type *ty,
                  const Instruction &at) {
   QramObj &q = qramObj(ctx, root, at);
   const Column &c = firstColumn(ctx, q, ty, at);
-  emitStore(ctx, busOf(q, root, &c, at), c, fatIndex(ctx, idx), v, flag);
+  emitStore(ctx, busOf(q, root, &c, at), c, fatIndex(ctx, idx), v, flag, at);
 }
 
 Value *qramBusOf(LoweringContext &ctx, const Value *root, const Instruction &at) {
@@ -1729,8 +1751,8 @@ void lowerQramStore(LoweringContext &ctx, StoreInst &st) {
     auto [tag, ix] = fatptr::storedFields(ctx, val);
     Value *tv = tag.handle ? tag.v : seedOf(ctx, col[0].w, tag.v);
     Value *iv = ix.handle ? ix.v : seedOf(ctx, col[1].w, ix.v);
-    emitStore(ctx, busOf(*acc.q, acc.a.root, col, st), col[0], idx, tv, flag);
-    emitStore(ctx, busOf(*acc.q, acc.a.root, col + 1, st), col[1], idx, iv, flag);
+    emitStore(ctx, busOf(*acc.q, acc.a.root, col, st), col[0], idx, tv, flag, st);
+    emitStore(ctx, busOf(*acc.q, acc.a.root, col + 1, st), col[1], idx, iv, flag, st);
     return;
   }
   Operand v = ctx.operand(val);
@@ -1743,7 +1765,7 @@ void lowerQramStore(LoweringContext &ctx, StoreInst &st) {
   QIndex idx = cellIndex(ctx, *acc.q, acc.a, st);
   if (!v.handle)
     v = Operand{seedOf(ctx, col->w, v.v), true};
-  emitStore(ctx, busOf(*acc.q, acc.a.root, col, st), *col, idx, v.v, flag);
+  emitStore(ctx, busOf(*acc.q, acc.a.root, col, st), *col, idx, v.v, flag, st);
 }
 
 // Rule 20: a local (alloca) or heap QRAM is ONE cqrt_qram_alloc_<W>(n) per column at its allocation

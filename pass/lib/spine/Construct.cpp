@@ -777,6 +777,7 @@ void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in) {
 
 void Walker::lowerUnit(Loop &lp) {
   loops::Case c = loops::classify(lp, ctx.T, ctx.S);
+  spine::pushLoopUnit(ctx, lp);   // cq-8un4: loopUnit() while the loop module runs
   if (c == loops::Case::QuantumExit) {
     if (!se) {
       tlii = std::make_unique<TargetLibraryInfoImpl>(Triple(F.getParent()->getTargetTriple()));
@@ -788,6 +789,7 @@ void Walker::lowerUnit(Loop &lp) {
   } else {
     loops::lowerClassical(ctx, lp, c);
   }
+  spine::popLoopUnit(ctx, lp);
   for (BasicBlock *b : lp.blocks())
     for (Instruction &I : *b)
       visited.insert(&I);

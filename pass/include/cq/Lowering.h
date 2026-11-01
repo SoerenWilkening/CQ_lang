@@ -46,6 +46,9 @@ public:
   PathPredicates &preds(); Uncompute &unc();
   const Pred &currentPredicate() const;   // quantum part of the current block's predicate
   llvm::Value *currentFlag();             // its flag rail, nullptr when classical-true
+  // cq-8un4: the innermost loop of the original function whose lowering the spine dispatched as a unit
+  // (loops::lowerClassical / loops::lowerCutoff) and that is running now; nullptr outside any.
+  const llvm::Loop *loopUnit() const;
   unsigned beginGateLog(); std::vector<llvm::CallInst *> endGateLog(unsigned);
   void bindWalkedPointer(const llvm::PHINode *, WalkedPtr);      // cq-9w75
   const WalkedPtr *walkedPointer(const llvm::Value *) const;     // nullptr unless registered

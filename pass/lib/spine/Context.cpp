@@ -26,9 +26,22 @@ std::string describe(const Value *v) {
   v->printAsOperand(os, false);
   return os.str();
 }
+
+// cq-8un4: the loop units running now, innermost last, per spine state (a child context shares its
+// parent's). Pushed and popped by the walker around its loops:: call (pushLoopUnit / popLoopUnit).
+thread_local DenseMap<const spine::Shared *, std::vector<const Loop *>> loopUnits;
 } // namespace
 
 namespace spine {
+
+void pushLoopUnit(LoweringContext &ctx, const Loop &L) { loopUnits[&shared(ctx)].push_back(&L); }
+
+void popLoopUnit(LoweringContext &ctx, const Loop &L) {
+  auto it = loopUnits.find(&shared(ctx));
+  if (it == loopUnits.end() || it->second.empty() || it->second.back() != &L)
+    internalError("spine: popLoopUnit of a loop unit that is not the innermost running one");
+  it->second.pop_back();
+}
 
 DominatorTree &Shared::dt(const Function &F) {
   auto &p = dts[&F];
@@ -277,6 +290,11 @@ Value *LoweringContext::currentFlag() {
   unc().recordCore(g, andSpec, {Operand{sh.tripFlag, true}, Operand{f, true}, Operand{c, true}}, cid);
   sh.tripConj = c;
   return c;
+}
+
+const Loop *LoweringContext::loopUnit() const {
+  auto it = loopUnits.find(impl->sh.get());
+  return it == loopUnits.end() || it->second.empty() ? nullptr : it->second.back();
 }
 
 unsigned LoweringContext::beginGateLog() {
