@@ -54,6 +54,13 @@
 /* ------------------------------------------------------------------ output */
 static int trace_fd = -1, status_fd = -1;
 static long cur_sample = -1;
+/* Trip mode (cq-g8md; the serve request's ninth field): the run is only for the trip counters and the
+ * outcome. No site event is written and no rule 2 shadow is kept (they decide only the site kinds, never
+ * a value or a branch, so the outcome and every trip count are the full run's); each (loop, n) trip
+ * event and non-capped cutoff record is written once, the trip event with "h", the header executions
+ * so far (the cost of reaching that count); the sample's end writes {"ev":"ticks","n"}, all its header
+ * executions. The sampler's runs past millions of header executions stay small (cq-g8md). */
+static int trips_only;
 
 /* A worker's output buffers (shared with the server, which writes out what a dead worker left; n
  * counts whole lines only). */
@@ -541,6 +548,7 @@ static void sh_reset(void) {
 }
 
 static uint32_t sh_new(const uint32_t *deps, unsigned k, uint8_t fl) {
+    if (trips_only) return SH_OPAQUE;
     if (sh_nn < 2) sh_reset();
     if (sh_nn >= SH_MAXN || sh_nd + k > SH_MAXD) { note("internal more than %zu shadow nodes", (size_t)SH_MAXN); _exit(95); }
     uint32_t n = (uint32_t)sh_nn++;
@@ -625,6 +633,7 @@ static struct shcell *sh_cell(uintptr_t a, int add) {
 }
 static uint32_t sh_get(uintptr_t a) { struct shcell *c = sh_ncells ? sh_cell(a, 0) : 0; return c ? c->node : 0; }
 static void sh_put(uintptr_t a, uint32_t n) {
+    if (trips_only) return;
     if (sh_nn < 2) { if (!n) return; sh_reset(); }
     struct shcell *c = sh_cell(a, n != 0);
     if (c) c->node = n, c->ep = sh_gm;
@@ -752,6 +761,11 @@ void __cqo_site(const char *fn, int32_t site, int32_t kind, uint64_t angle, void
                 break;
             }
     }
+    if (trips_only) {               /* no site event in trip mode: only the counts the cutoff records read */
+        if (kind == 2) n_measured++;
+        else if (kind != 5) n_rotations++;
+        return;
+    }
     char f[300], a[40] = "null", r[64] = "null", line[600];
     jsonstr(f, sizeof f, fn);
     if (kind == 0 || kind == 1) {
@@ -791,8 +805,21 @@ static long next_act(const char *id) {
     return 0;
 }
 
+/* trip mode: the (loop, n, kind) pairs written so far in this sample (__DATA: put back per sample) */
+#define TSEEN 4096
+static struct { const char *id; long long n; int kind; } tseen[TSEEN];
+static int ntseen;
+static int trip_seen(const char *id, long long n, int kind) {
+    for (int i = 0; i < ntseen; ++i)
+        if (tseen[i].id == id && tseen[i].n == n && tseen[i].kind == kind) return 1;
+    if (ntseen < TSEEN) tseen[ntseen].id = id, tseen[ntseen].n = n, tseen[ntseen].kind = kind, ntseen++;
+    return 0;
+}
+
+static uint64_t ticks;
 static void kloop_record(const char *id, long long n, int capped) {
     char l[300], line[600];
+    if (trips_only && !capped && trip_seen(id, n, 1)) { next_act(id); return; }
     jsonstr(l, sizeof l, id);
     long act = next_act(id);
     if (capped)
@@ -813,9 +840,15 @@ static void kcap(const char *id, long long K) {
 
 void __cqo_trip(const char *loop, int64_t n, int32_t kq) {
     char l[300], line[400];
-    jsonstr(l, sizeof l, loop);
-    snprintf(line, sizeof line, "{\"ev\":\"trip\",\"loop\":%s,\"n\":%lld}", l, (long long)n);
-    out_line(trace_fd, line);
+    if (!trips_only || !trip_seen(loop, n, 0)) {
+        jsonstr(l, sizeof l, loop);
+        if (trips_only)
+            snprintf(line, sizeof line, "{\"ev\":\"trip\",\"loop\":%s,\"n\":%lld,\"h\":%llu}", l, (long long)n,
+                     (unsigned long long)ticks);
+        else
+            snprintf(line, sizeof line, "{\"ev\":\"trip\",\"loop\":%s,\"n\":%lld}", l, (long long)n);
+        out_line(trace_fd, line);
+    }
     if (kq) kloop_record(loop, n, 0);
 }
 
@@ -856,9 +889,11 @@ void __cqo_rec_up(int32_t on) {
 }
 
 /* the step budget: loop-header executions of one sample (the setup's do not count; cq-u9al) */
-static uint64_t ticks, tripcap = 10000000;
+static uint64_t tripcap = 10000000;
+static void tick_progress(void);
 void __cqo_tick(void) {
     if (++ticks > tripcap) { note("tripcap"); _exit(98); }
+    if (!(ticks & 0xfffff)) tick_progress();
 }
 
 void __cqo_ret(const void *p, int32_t bits) {
@@ -912,7 +947,7 @@ int32_t cqrt_alloc_i32(int32_t v) { return v; }
  *
  *   prog <trace> <status> <timeout_ms> <tripcap> [<subst>]          one batch ($CQD_SAMPLES)
  *   prog --serve                                                     a batch per stdin line:
- *       <trace> <status> <err> <timeout_ms> <tripcap> <isolate 0|1> <samples> <subst|->
+ *       <trace> <status> <err> <timeout_ms> <tripcap> <isolate 0|1> <samples> <subst|-> [<trip mode 0|1>]
  *     each batch runs in a child forked from the pristine process; the reply is one line, the batch's
  *     exit status (0 when it ran). */
 #include <dlfcn.h>
@@ -1027,6 +1062,9 @@ static struct shot *R;
 static int is_worker; /* set before the snapshot: stays set */
 
 static int sample_running(void) { return is_worker && R->in_sample; }
+/* a sample that executes loop headers makes progress (the wall-clock backstop below): one past a
+ * minute of wall time is a long run, not a hang (cq-g8md: the witness runs past the budget) */
+static void tick_progress(void) { if (R && is_worker) R->progress++; }
 static void mark_dirty(void) { if (R) R->dirty = 1; }
 
 static void die(const char *what) {
@@ -1411,6 +1449,11 @@ int __cqo_sample_begin(int idx) {
 
 static void sample_finish(void) {
     timer_ms(ITIMER_PROF, 0, 0);
+    if (trips_only) {
+        char line[80];
+        snprintf(line, sizeof line, "{\"ev\":\"ticks\",\"n\":%llu}", (unsigned long long)ticks);
+        out_line(trace_fd, line);
+    }
     emit_stdout();
     R->next = R->cur + 1; /* before in_sample drops: the server never runs a finished sample again */
     R->in_sample = 0;
@@ -1452,8 +1495,10 @@ static int serve(void) {
         char tr[2048], stp[2048], err[2048], smp[2048], sub[2048];
         long to;
         unsigned long long cap;
-        int iso;
-        if (sscanf(line, "%2047s %2047s %2047s %ld %llu %d %2047s %2047s", tr, stp, err, &to, &cap, &iso, smp, sub) != 8) {
+        int iso, tmode = 0;
+        int nf = sscanf(line, "%2047s %2047s %2047s %ld %llu %d %2047s %2047s %d", tr, stp, err, &to, &cap, &iso, smp, sub,
+                        &tmode);
+        if (nf != 8 && nf != 9) {
             printf("bad\n");
             continue;
         }
@@ -1466,7 +1511,7 @@ static int serve(void) {
             if (in >= 0) dup2(in, 0);
             if (out >= 0) dup2(out, 1);
             if (e >= 0) dup2(e, 2);
-            timeout_ms = to, tripcap = cap, isolate = iso;
+            timeout_ms = to, tripcap = cap, isolate = iso, trips_only = tmode;
             setenv("CQD_SAMPLES", smp, 1);
             real__exit(run_batch(tr, stp, strcmp(sub, "-") ? sub : 0));
         }

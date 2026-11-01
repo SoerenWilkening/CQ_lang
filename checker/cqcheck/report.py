@@ -24,7 +24,12 @@ finds, a sample outside the C program's domain (sampling.domain_problems) or a t
 count the C oracle's trip counters do not give (sampling.confirm_trips) turns a §6 check that
 passed over that sample set into ERROR (FAIL stays FAIL), each with a ``sampling: ...`` reason.
 A class no input can fill (``sampling: impossible: ...``) and the totalization rows the search did
-not hit (``sampling: note: ...``) are reasons only.
+not hit (``sampling: note: ...``) are reasons only. A trip target whose only reaching inputs run past
+the checker's cost budget (``sampling: uncovered: ...``, owner ruling 2026-11-01, cq-g8md; CR §6,
+coverage) is a reason too, with its cheapest reaching input and cost: the example's gate is that no
+comparison failed and every uncovered target is listed, so the verdicts stay PASS; it is never
+counted as compared or green on its own. The table counts such examples apart (``uncovered``) and
+shows their first uncovered line, and ``cqcheck run`` prints them as ``ok*`` with every such line.
 
 The §6 run composes the sibling checker modules through the functions named in ``SIBLING_API``. A
 function that a sibling does not provide yet makes the check ERROR with
@@ -608,6 +613,11 @@ def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_erro
     return Verdict(ex.name, s6, c_oracle, verifier, diff_lines, reasons)
 
 
+def uncovered(v: Verdict) -> List[str]:
+    """The uncovered coverage targets listed in a verdict (cq-g8md): its ``sampling: uncovered:`` lines."""
+    return [r for r in v.reasons if r.startswith("sampling: uncovered:")]
+
+
 def green(v: Verdict) -> bool:
     """Version 1's per-example condition: §6, C oracle and verifier all PASS."""
     return v.s6 == PASS and v.c_oracle == PASS and v.verifier == PASS
@@ -646,15 +656,17 @@ def load_verdicts() -> Dict[str, Verdict]:
 def format_table(verdicts: Sequence[Verdict]) -> str:
     rows = [("example", "s6", "c_oracle", "verifier", "diff", "first reason")]
     for v in verdicts:
+        unc = uncovered(v) if green(v) else []
         rows.append((v.example, v.s6, v.c_oracle, v.verifier,
                      "-" if v.diff_lines is None else str(v.diff_lines),
-                     v.reasons[0] if v.reasons else ""))
+                     unc[0] if unc else v.reasons[0] if v.reasons else ""))
     widths = [max(len(r[i]) for r in rows) for i in range(5)]
     lines = ["  ".join(c.ljust(w) for c, w in zip(r[:5], widths)) + "  " + r[5] for r in rows]
     n = len(verdicts)
     counts = {k: sum(1 for v in verdicts if getattr(v, k) == PASS) for k in ("s6", "c_oracle", "verifier")}
     lines.append(f"{n} examples: s6 pass {counts['s6']}, c_oracle pass {counts['c_oracle']}, "
-                 f"verifier pass {counts['verifier']}, all three {sum(1 for v in verdicts if green(v))}, "
+                 f"verifier pass {counts['verifier']}, all three {sum(1 for v in verdicts if green(v))} "
+                 f"(of them with uncovered targets listed: {sum(1 for v in verdicts if green(v) and uncovered(v))}), "
                  f"textual match {sum(1 for v in verdicts if v.diff_lines == 0)}")
     return "\n".join(lines)
 

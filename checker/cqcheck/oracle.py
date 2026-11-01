@@ -558,7 +558,8 @@ def _subst_lines(samples: Sequence[dict]) -> List[str]:
 
 def run_samples(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]],
                 timeout_ms: int = DEFAULT_TIMEOUT_MS, tripcap: int = DEFAULT_TRIPCAP,
-                k: Optional[Dict[str, int]] = None, k_default: Optional[int] = None) -> List[SampleRun]:
+                k: Optional[Dict[str, int]] = None, k_default: Optional[int] = None,
+                trips_only: bool = False) -> List[SampleRun]:
     """Every sample in one oracle program, each from the post-setup state as a child forked for it
     alone would run it (cqo_rt.c, samples). The batch entry point: the program's runner process
     stays up across calls (one per example and part, per Python process), so a call costs a fork of
@@ -566,10 +567,15 @@ def run_samples(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]],
 
     A sample may carry an optional "subst": {"<fn>:<site>": hex | [hex, ...]} (cq-arch Z4: the value
     each reach of a cq_theta site takes; a list gives reach r its entry r mod len); the driver ignores
-    keys other than call and args."""
+    keys other than call and args.
+
+    `trips_only` (cq-g8md, cqo_rt.c trip mode): the runs keep only the outcome, the notes, each
+    distinct trip event (with "h", the header executions when it was reached), the cutoff records
+    and a final {"ev": "ticks", "n"} event with the sample's header executions; no site event. For
+    the sampler's trip searches past millions of header executions."""
     if not samples:
         return []
-    return _run_uncached(Path(o1), spec, samples, timeout_ms, tripcap, k, k_default)
+    return _run_uncached(Path(o1), spec, samples, timeout_ms, tripcap, k, k_default, trips_only)
 
 
 def _jobs_cap() -> int:
@@ -605,7 +611,7 @@ class Runner:
         return self.pid == os.getpid() and self.p.poll() is None
 
     def run(self, spec: DriverSpec, samples: Sequence[Dict[str, Any]], timeout_ms: int, tripcap: int,
-            isolate: bool) -> List[SampleRun]:
+            isolate: bool, trips_only: bool = False) -> List[SampleRun]:
         with self.lock:
             t = self.dir
             (t / "samples").write_text(_drivers().sample_file(spec, samples))
@@ -614,7 +620,7 @@ class Runner:
                 (t / "subst").write_text("".join(l + "\n" for l in sub))
             req = " ".join([str(t / "trace"), str(t / "status"), str(t / "err"), str(int(timeout_ms)),
                             str(int(tripcap)), "1" if isolate else "0", str(t / "samples"),
-                            str(t / "subst") if sub else "-"])
+                            str(t / "subst") if sub else "-", "1" if trips_only else "0"])
             try:
                 self.p.stdin.write(req + "\n")
                 self.p.stdin.flush()
@@ -679,24 +685,24 @@ atexit.register(close_runners)
 
 def _run_uncached(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]], timeout_ms: int,
                   tripcap: int, k: Optional[Dict[str, int]] = None,
-                  k_default: Optional[int] = None) -> List[SampleRun]:
+                  k_default: Optional[int] = None, trips_only: bool = False) -> List[SampleRun]:
     from concurrent.futures import ThreadPoolExecutor
     exe = executable(Path(o1), spec, _pointer_samples(spec, samples), k, k_default)
     iso = isolated(program(Path(o1), k, k_default)[0])
     # cq-8m6v: a batch's runs are a function of the executable (its path is its content key), the
     # samples and the limits (cq-sqn6: no result depends on time or load; a hang raises instead)
     from .run import load_runs, save_runs
-    key = [_RUNS_VERSION, str(exe), iso, int(timeout_ms), int(tripcap), list(samples)]
+    key = [_RUNS_VERSION, str(exe), iso, int(timeout_ms), int(tripcap), list(samples)] + (["trips"] if trips_only else [])
     got = load_runs("oracle", key)
     if got is None and touches_files(program(Path(o1), k, k_default)[0]):
-        runs = _run_batch(exe, spec, samples, timeout_ms, tripcap, iso, whole=True)
+        runs = _run_batch(exe, spec, samples, timeout_ms, tripcap, iso, whole=True, trips_only=trips_only)
         save_runs("oracle", key, [{f: getattr(r, f) for f in _RUN_FIELDS} for r in runs])
         return runs
     if got is None:
         # and per sample within this process (cq-8m6v): every sample runs from the post-setup state
         # as a process of its own would, so a sample run in an earlier batch (the sampler's searches,
         # the theta schedules) is not run again; the rest run as one batch
-        mk = (str(exe), iso, int(timeout_ms), int(tripcap))
+        mk = (str(exe), iso, int(timeout_ms), int(tripcap), trips_only)
         with _MEMO_LOCK:
             memo = _SAMPLE_MEMO.pop(mk, None)
             if memo is None:
@@ -708,7 +714,7 @@ def _run_uncached(o1: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]],
         todo = [i for i, sk in enumerate(skeys) if sk not in memo]
         fresh: Dict[str, Dict[str, Any]] = {}
         if todo:
-            ran = _run_batch(exe, spec, [samples[i] for i in todo], timeout_ms, tripcap, iso)
+            ran = _run_batch(exe, spec, [samples[i] for i in todo], timeout_ms, tripcap, iso, trips_only=trips_only)
             with _MEMO_LOCK:
                 for i, r in zip(todo, ran):
                     d = fresh[skeys[i]] = {f: getattr(r, f) for f in _RUN_FIELDS}
@@ -734,15 +740,15 @@ _RUN_FIELDS = ("events", "outcome", "failed", "reason", "notes", "loops", "stdou
 
 
 def _run_batch(exe: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]], timeout_ms: int, tripcap: int,
-               iso: bool, whole: bool = False) -> List[SampleRun]:
+               iso: bool, whole: bool = False, trips_only: bool = False) -> List[SampleRun]:
     from concurrent.futures import ThreadPoolExecutor
     n = 1 if whole else max(1, min(PARTS, _jobs_cap(), len(samples) // MIN_PART))
     if n == 1:
-        return _runner(exe, 0).run(spec, samples, timeout_ms, tripcap, iso)
+        return _runner(exe, 0).run(spec, samples, timeout_ms, tripcap, iso, trips_only)
     parts = [list(range(j, len(samples), n)) for j in range(n)]
     with ThreadPoolExecutor(max_workers=n) as ex:
         done = list(ex.map(lambda jx: _runner(exe, jx[0]).run(spec, [samples[i] for i in jx[1]], timeout_ms,
-                                                              tripcap, iso), enumerate(parts)))
+                                                              tripcap, iso, trips_only), enumerate(parts)))
     runs: List[Optional[SampleRun]] = [None] * len(samples)
     for ix, part in zip(parts, done):
         for i, r in zip(ix, part):

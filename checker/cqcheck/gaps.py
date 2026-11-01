@@ -11,6 +11,10 @@ and K+1 for every loop, and a seeded set over the classical arguments. sampling.
                   count the loop cannot run, proved below): reported, never failing;
   MISSING         the sampler did not find an input (a search that gave up, a reason this module does
                   not know): the §6 checks that used the sample set are not green (report.evaluate);
+  UNCOVERED       a trip target whose only reaching inputs found run the C program past the checker's cost
+                  budget (owner ruling 2026-11-01, cq-g8md; CR §6, coverage): reported with the cheapest
+                  reaching input found and its cost, never compared, never counted green, never removed;
+                  not failing (the gate: no comparison failed and every uncovered target listed);
   NOTE            the totalization rows (CR §2 rows an instruction can reach) the search did not hit:
                   reported, never failing. They are sampling.py's own coverage aid, not a class
                   CLAUDE.md "Inputs" lists (orchestrator decision under CLAUDE.md Inputs, cq-h4pn,
@@ -49,12 +53,12 @@ import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from cqcheck import drivers as D
 from cqcheck.contracts import DriverSpec, SampleSet
 
-MISSING, IMPOSSIBLE, NOTE = "missing", "impossible", "note"
+MISSING, IMPOSSIBLE, NOTE, UNCOVERED = "missing", "impossible", "note", "uncovered"
 REQUIRED_EXHAUSTIVE_BITS = 8      # CLAUDE.md Inputs: every input when the quantum inputs total <= 8 bits
 
 
@@ -186,6 +190,49 @@ def _zero_proof(f: "D.Function", header: str, blocks: set, top_level: bool) -> O
             f"header run that exits before a trip begins: the C oracle's trip counter never reports 0")
 
 
+def guard_skips(f: "D.Function", header: str, blocks: set) -> List[Tuple[str, str]]:
+    """The guard skips OracleInstr.cpp (trip counters) reports as 0 trips: (guard block, the exit block
+    its branch goes to instead of the loop). Walking back from an out-of-loop predecessor of the
+    header through blocks that branch unconditionally and have a single predecessor (a preheader),
+    the first conditional branch whose other successor is an exit block of the loop."""
+    preds = f.preds()
+    succ = {b: f.blocks[b][-1].successors() for b in f.order}
+    exit_blocks = {s for b in blocks for s in succ[b] if s not in blocks}
+    out: List[Tuple[str, str]] = []
+    for p0 in preds.get(header, []):
+        if p0 in blocks:
+            continue
+        to, p, seen = header, p0, set()
+        while p is not None and p not in blocks and p not in seen:
+            seen.add(p)
+            term = f.blocks[p][-1]
+            if term.op != "br":
+                break
+            ss = term.successors()
+            if len(ss) > 1:
+                other = [o for o in ss if o != to]
+                if other and other[0] in exit_blocks:
+                    out.append((p, other[0]))
+                break
+            to = p
+            ps = preds.get(p, [])
+            p = ps[0] if len(set(ps)) == 1 else None
+    return out
+
+
+def zero_meaning(f: "D.Function", header: str, blocks: set) -> str:
+    """What trip 0 of this loop is (owner ruling 2026-11-01, cq-g8md): the C oracle reports 0 trips of
+    an activation when a guard branch skips the loop (-O1 rotates a for loop into a guarded do-while:
+    trip 0 is then the guard skipping it, never a header run), or when a header run leaves through the
+    header's test region before a trip begins."""
+    parts = [f"the guard branch in {g} goes to {x}, skipping the loop" for g, x in guard_skips(f, header, blocks)]
+    if _region_may_exit(f, header, blocks):
+        parts.append(f"a run of the header {header} leaves the loop before a trip begins")
+    if not parts:
+        return "never reported: no guard branch skips the loop and no header run leaves before a trip begins"
+    return "trip 0 means " + ", or ".join(parts)
+
+
 def _region_may_exit(f: "D.Function", header: str, blocks: set) -> bool:
     """Whether a header run may only exit, leaving through the header's test region before a trip
     begins (OracleInstr.cpp, trip counters: never when the header is a latch). Over-approximated:
@@ -275,6 +322,11 @@ def sample_gaps(spec: DriverSpec, ss: SampleSet, example_dir: Path, llvm_bin: Pa
             if "sample" in e or not e.get("empty"):
                 continue          # a target with neither is check_sample_set's problem
             where = f"trips: {lp['loop']} trip {target}"
+            if "uncovered" in e:          # its reason names what trip 0 is for this loop
+                gaps.append(Gap(UNCOVERED, where, e["empty"]))
+                continue
+            if int(target) == 0 and lp.get("zero"):
+                where += f" ({lp['zero']})"        # what trip 0 is for this loop (cq-g8md)
             kind = classify_reason(e["empty"])
             if kind == MISSING:
                 if facts is None:

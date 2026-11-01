@@ -26,7 +26,13 @@ Classes (SampleSet.classes; every class is present, and a class with nothing in 
   totalization  {"rows": [...]}: one entry per CR §2 row an instruction of the example can reach
                 (site, row, the samples that hit it), or the reason it is empty.
   trips         {"K": 4, "loops": [...]}: per loop, a sample giving trip counts 0, K-1, K, K+1,
-                or the reason the search found that count unreachable.
+                or the reason the search found that count unreachable. A count is the C oracle's
+                trip counter per activation (OracleInstr.cpp); trip 0 is an activation in which a
+                guard branch skips the loop (-O1 rotates a for loop into a guarded do-while, so
+                there trip 0 is the guard skipping it) or a header run leaves before a trip begins;
+                each loop's "zero" says which (gaps.zero_meaning; owner ruling 2026-11-01). A count
+                whose only reaching inputs run past the cost budget is {"empty", "uncovered":
+                {"witness", "reach", "cost", "budget"}} (uncovered_targets, cq-g8md).
 
 Per-call classes are `{"<call>": {"samples": [...]}}` or `{"<call>": {"empty": "<reason>"}}`.
 
@@ -60,7 +66,8 @@ intrinsic's destination range) is caught by its probe before it happens and ends
 there as `oob`, with the loop-header count at that point: the store never lands, so nothing after it
 depends on what memory lies past the object (55 used to write a[i] up its stack until an unmapped
 page, and some stores overwrote the probe's own state). Nontermination is only the step budget: a
-sample ends as `timeout` after HDR_CAP loop-header executions. No wall-clock limit decides a sample:
+sample ends as `timeout` after hdr_cap() loop-header executions (the cost budget, cq-g8md). No
+wall-clock limit decides a sample:
 HANG_CPU_S of CPU time in one sample (a loop the budget does not count, inside an uninstrumented
 library function) and HANG_WALL_S of wall time with no output from the server are hang guards that
 raise ProbeError, an internal error of the checker, never a sample outcome. Beyond the mem sites
@@ -177,6 +184,40 @@ SEARCH_BATCH = 48
 # hang guards (cq-ir5z): internal errors, never a sample outcome
 HANG_CPU_S = 20               # CPU seconds of one sample (ITIMER_PROF in the worker)
 HANG_WALL_S = 120             # wall seconds with no byte from the probe server
+
+# The cost budget (owner ruling 2026-11-01, cq-g8md; CR §6, coverage): a sample runs at most this many
+# loop-header executions, counted on the C oracle (the probe counts the same headers, and stops a sample
+# there as a timeout). A trip target whose only reaching inputs run past it is reported as uncovered,
+# with the cheapest reaching input found and its cost (uncovered_targets); it is never compared, never
+# counted green, never removed. `cqcheck run --cost-budget N` sets it; the budget is the checker's.
+COST_BUDGET_ENV = "CQ_COST_BUDGET"
+DEFAULT_COST_BUDGET = 1 << 20
+
+
+def cost_budget() -> int:
+    v = os.environ.get(COST_BUDGET_ENV)
+    return int(v, 0) if v else DEFAULT_COST_BUDGET
+
+
+# The search for an uncovered target's reaching input (uncovered_targets): runs past the budget, each
+# of at most the witness cap header executions, WITNESS_WORK caps of them in all. A limit of the
+# search, never of the claim: a target it finds no input for stays MISSING (an ERROR verdict), never
+# uncovered.
+WITNESS_CAP_ENV = "CQ_WITNESS_CAP"
+DEFAULT_WITNESS_CAP = 1 << 32
+WITNESS_WORK = 2              # witness caps of header executions over all of one example's runs
+NS_PER_HEADER_GUARD = 100     # hang guards of a long run: 100 ns of CPU per header execution
+
+
+def witness_cap() -> int:
+    v = os.environ.get(WITNESS_CAP_ENV)
+    return int(v, 0) if v else DEFAULT_WITNESS_CAP
+
+
+def oracle_timeout_ms(cap: int) -> int:
+    """The C oracle's per-sample CPU hang guard for a run of at most `cap` header executions."""
+    from cqcheck import oracle
+    return max(oracle.DEFAULT_TIMEOUT_MS, cap * NS_PER_HEADER_GUARD // 1_000_000)
 
 
 class ProbeError(RuntimeError):
@@ -404,6 +445,8 @@ RUNTIME_C = r"""
 #define NOBJ 65536
 #define NLOOP 4096
 #define OUTCAP (1 << 22)
+#define NPT 4096
+#define GID0 0x40000000u
 /* the example's counts, defined by its driver (the runtime object is the same for every example) */
 extern const int cqd_nsites, cqd_nloops, cqd_isolate;
 #define NS_USED ((size_t)(cqd_nsites < NSITE ? cqd_nsites : NSITE))
@@ -412,7 +455,8 @@ typedef struct {
     size_t len; int nob; int done; long long hdrs;
     unsigned char pcount[NSITE], mcount[NSITE], ocount[NSITE];
     long long cnt[NLOOP]; unsigned char has[NLOOP], ctx[NLOOP], ent[NLOOP], tc[NLOOP];
-    uintptr_t ob[NOBJ]; uint64_t os[NOBJ]; uint32_t oi[NOBJ];
+    uintptr_t ob[NOBJ]; uint64_t os[NOBJ]; uint32_t oi[NOBJ], osite[NOBJ]; uint32_t serial;
+    uintptr_t pta[NPT], ptv[NPT]; uint32_t pti[NPT]; int ptn;
     char buf[OUTCAP];
 } cqd_state;
 typedef struct {
@@ -420,6 +464,7 @@ typedef struct {
     char **tok; int ntok;
     char **lines; long nlines, cap;     /* the batch (kept here: __DATA is restored per sample) */
     char *arena[1024]; size_t arena_n[1024]; int narena; size_t used;   /* its text, off the heap */
+    long long hdrcap; long hang_s;      /* the batch's step budget and hang guard (cq-g8md) */
 } cqd_ctl;
 static cqd_state *S, *B;     /* the sample's state, and its post-setup base */
 static cqd_ctl *C;
@@ -438,6 +483,7 @@ static void *cqd_map(size_t n, int shared) {
 __attribute__((constructor(101))) static void cqd_init(void) {
     if (S) return;
     S = cqd_map(sizeof *S, 0); B = cqd_map(sizeof *B, 0); C = cqd_map(sizeof *C, 0);
+    C->hdrcap = CQD_HDR_CAP; C->hang_s = HANG_CPU_S;
     P = cqd_map(4096, 1);
 }
 /* threads: single-thread collapse (CR rule 24), as cqo_rt.c does (cq-nfv3). __DATA is restored per
@@ -472,40 +518,80 @@ void __cqd_p(int site, uint64_t a0, uint64_t a1, uint64_t b0, uint64_t b1, uint6
             (unsigned long long)b0, (unsigned long long)b1, (unsigned long long)c0, (unsigned long long)c1,
             (unsigned long long)r0, (unsigned long long)r1);
 }
-/* The object table: base, size and allocation site (an alloca's static id; 0 for globals, heap
- * blocks and driver objects). A new object of positive size replaces every object it overlaps, and
- * a zero-size object strictly inside it: the memory was reused, the old one is dead. A zero-size
- * object takes no memory, so natively it lies at the base of the object allocated before it (117
- * with nq = 0: bool x[0] after c[t]); it replaces nothing but an earlier zero-size object of its own
- * site at the same address (a loop's alloca, 991), and coexists with the object at its address
- * (cq-s8cf, cq-x9cz). Which of two objects at one address an access means is its root's allocation
- * site when the instrumentation knows it (an alloca of the accessing function, or one a direct
- * caller passed for a pointer parameter: the last registered of that site), else the object
- * registered last there. */
-static void cqd_reg(uintptr_t b, uint64_t size, uint32_t id) {
+/* The object table: base, size, allocation site (an alloca's static id; 0 for globals, heap blocks
+ * and driver objects) and the object's serial, its provenance (cq-kr9h): every registration gets a
+ * fresh serial (from 1, per sample), a global the static id GID0 + its index. A new object of positive
+ * size replaces every object it overlaps, and a zero-size object strictly inside it: the memory was
+ * reused, the old one is dead. A zero-size object takes no memory, so natively it lies at the base of
+ * the object allocated before it (117 with nq = 0: bool x[0] after c[t]); it replaces nothing but an
+ * earlier zero-size object of its own site at the same address (a loop's alloca, 991), and coexists
+ * with the object at its address (cq-s8cf, cq-x9cz). Which object an access means: the object with
+ * the greatest base at or below its root; where several objects share that base, the one whose serial
+ * is the root's provenance, which the instrumentation carries beside every pointer at run time (an
+ * alloca's or a heap block's registration, a global's id, through GEPs and casts, phi, select, a
+ * pointer stored and loaded again, call arguments and return values; Instrumenter.site_id). A root of
+ * unknown provenance there, or one whose object is gone, is no decision: the sample ends as
+ * "ambiguous" and the checker stops with an internal error, never a preference (cq-kr9h). */
+static uint32_t cqd_reg(uintptr_t b, uint64_t size, uint32_t site, uint32_t serial) {
     cqd_init();
-    if (!b) return;
+    if (!b) return 0;
     int j = 0;
     for (int i = 0; i < S->nob; i++) {
         uintptr_t o = S->ob[i]; uint64_t t = S->os[i];
         int dead = size ? (t ? (o < b + size && b < o + t) : (b < o && o < b + size))
-                        : (!t && o == b && S->oi[i] == id);
-        if (!dead) { S->ob[j] = o; S->os[j] = t; S->oi[j] = S->oi[i]; j++; }
+                        : (!t && o == b && S->osite[i] == site);
+        if (!dead) { S->ob[j] = o; S->os[j] = t; S->oi[j] = S->oi[i]; S->osite[j] = S->osite[i]; j++; }
     }
     S->nob = j;
-    if (S->nob < NOBJ) { S->ob[S->nob] = b; S->os[S->nob] = size; S->oi[S->nob] = id; S->nob++; }
+    if (!serial) serial = S->serial < GID0 - 1 ? ++S->serial : 0;
+    if (S->nob < NOBJ) { S->ob[S->nob] = b; S->os[S->nob] = size; S->oi[S->nob] = serial; S->osite[S->nob] = site; S->nob++; }
+    else serial = 0;
+    return serial;
 }
-void __cqd_reg(void *p, uint64_t size) { cqd_reg((uintptr_t)p, size, 0); }
-void __cqd_rega(void *p, uint64_t size, uint32_t id) { cqd_reg((uintptr_t)p, size, id); }
+void __cqd_reg(void *p, uint64_t size) { cqd_reg((uintptr_t)p, size, 0, 0); }
+uint32_t __cqd_regs(void *p, uint64_t size) { return cqd_reg((uintptr_t)p, size, 0, 0); }
+void __cqd_regg(void *p, uint64_t size, uint32_t gid) { cqd_reg((uintptr_t)p, size, 0, gid); }
+uint32_t __cqd_rega(void *p, uint64_t size, uint32_t site) { return cqd_reg((uintptr_t)p, size, site, 0); }
+/* a pointer stored to memory keeps its provenance there; a load of the same address gets it back only
+ * when it reads the same pointer value (else 0, unknown: written by other means since) */
+static size_t cqd_ph(uintptr_t a) { return (size_t)(((a >> 3) * 0x9E3779B97F4A7C15ULL) >> 52) & (NPT - 1); }
+void __cqd_pst(void *a, void *v, uint32_t id) {
+    uintptr_t k = (uintptr_t)a; size_t h = cqd_ph(k);
+    for (int n = 0; n < NPT; n++, h = (h + 1) & (NPT - 1)) {
+        if (S->pta[h] == k) { S->ptv[h] = (uintptr_t)v; S->pti[h] = id; return; }
+        if (!S->pta[h]) {
+            if (S->ptn >= NPT / 4 * 3) return;
+            S->pta[h] = k; S->ptv[h] = (uintptr_t)v; S->pti[h] = id; S->ptn++;
+            return;
+        }
+    }
+}
+uint32_t __cqd_pld(void *a, void *v) {
+    uintptr_t k = (uintptr_t)a; size_t h = cqd_ph(k);
+    for (int n = 0; n < NPT && S->pta[h]; n++, h = (h + 1) & (NPT - 1))
+        if (S->pta[h] == k) return S->ptv[h] == (uintptr_t)v ? S->pti[h] : 0;
+    return 0;
+}
+static void cqd_finish(const char *how, int code);
+static void cqd_stop(const char *how, int code);
 static int cqd_find(uintptr_t r, uint32_t id) {
-    int best = -1;
-    for (int i = 0; i < S->nob; i++)
-        if (S->ob[i] <= r && (best < 0 || S->ob[i] > S->ob[best]
-                              || (S->ob[i] == S->ob[best] && !(id && S->oi[best] == id && S->oi[i] != id)))) best = i;
+    int best = -1, nbest = 0, match = -1;
+    for (int i = 0; i < S->nob; i++) {
+        if (S->ob[i] > r) continue;
+        if (best < 0 || S->ob[i] > S->ob[best]) { best = i; nbest = 1; match = id && S->oi[i] == id ? i : -1; }
+        else if (S->ob[i] == S->ob[best]) { best = i; nbest++; if (id && S->oi[i] == id) match = i; }
+    }
+    if (nbest < 2) return best;
+    if (match >= 0) return match;
+    if (id)                        /* the root's object lies below the shared base (one past its end) */
+        for (int i = 0; i < S->nob; i++)
+            if (S->oi[i] == id && S->ob[i] <= r) return i;
+    cqd_out("A %llx %u\n", (unsigned long long)r, id);
+    C->in = 0;
+    cqd_stop("ambiguous", -1);
     return best;
 }
 static void cqd_trip(int l, long long n) { if (S->tc[l] < CAP) { S->tc[l]++; cqd_out("t %d %lld\n", l, n); } }
-static void cqd_finish(const char *how, int code);
 static void cqd_stop(const char *how, int code) {
     cqd_finish(how, code);
     siglongjmp(C->jb, 1);
@@ -558,7 +644,7 @@ uint64_t __cqd_ms(void *root, const char *p, uint32_t id) {
     return (uint64_t)(e - p);
 }
 void __cqd_hdr(int l, bool be) {
-    if (++S->hdrs > CQD_HDR_CAP) cqd_stop("timeout", SIGALRM);
+    if (++S->hdrs > C->hdrcap) cqd_stop("timeout", SIGALRM);
     if (!be || !S->has[l]) { if (S->has[l]) cqd_trip(l, S->cnt[l]); S->cnt[l] = 1; S->has[l] = 1; }
     else S->cnt[l]++;
     S->ent[l] = 1;
@@ -620,6 +706,12 @@ static void cqd_restore(void) {
     memcpy(S->ctx, B->ctx, NL_USED); memcpy(S->ent, B->ent, NL_USED); memcpy(S->tc, B->tc, NL_USED);
     memcpy(S->ob, B->ob, (size_t)B->nob * sizeof *S->ob); memcpy(S->os, B->os, (size_t)B->nob * sizeof *S->os);
     memcpy(S->oi, B->oi, (size_t)B->nob * sizeof *S->oi);
+    memcpy(S->osite, B->osite, (size_t)B->nob * sizeof *S->osite);
+    S->serial = B->serial;
+    if (S->ptn || B->ptn) {
+        memcpy(S->pta, B->pta, sizeof S->pta); memcpy(S->ptv, B->ptv, sizeof S->ptv);
+        memcpy(S->pti, B->pti, sizeof S->pti); S->ptn = B->ptn;
+    }
     memcpy(S->buf, B->buf, B->len);
 }
 void cqd_load(void *dst, size_t n, const char *hex) {
@@ -684,7 +776,7 @@ static void cqd_worker(cqd_call_fn call, long from) {
         cqd_out("S %ld\n", k);
         if (k > from) cqd_stack_fresh();
         fesetenv(&C->fenv0);
-        struct itimerval it = {{0, 0}, {HANG_CPU_S, 0}};
+        struct itimerval it = {{0, 0}, {C->hang_s, 0}};
         if (sigsetjmp(C->jb, 1) == 0) {
             C->in = 1;
             setitimer(ITIMER_PROF, &it, 0);
@@ -720,8 +812,10 @@ void cqd_serve(cqd_call_fn call) {
     cqd_snapshot();
     char *line = malloc(1 << 16);
     while (fgets(line, 1 << 16, stdin)) {
-        long n = 0;
-        if (sscanf(line, "B %ld", &n) != 1) continue;
+        long n = 0, hang = HANG_CPU_S;
+        long long cap = CQD_HDR_CAP;
+        if (sscanf(line, "B %ld %lld %ld", &n, &cap, &hang) < 1) continue;
+        C->hdrcap = cap; C->hang_s = hang;
         /* the batch lives in mappings of its own, never on the heap, so a worker forked for a
          * sample finds the heap as the setup left it, whatever the batch (cq-z8gj) */
         if (n > C->cap) {
@@ -802,6 +896,7 @@ _LIB_N = {"@memcpy": (0, (1,)), "@memmove": (0, (1,)), "@memcmp": (0, (1,)), "@b
           "@memset": (0, ()), "@bzero": (0, ())}
 _LIB_N_LEN = {"@memcpy": 2, "@memmove": 2, "@memcmp": 2, "@bcmp": 2, "@memset": 2, "@bzero": 1}
 _LIB_STR = {"@strlen", "@strcpy", "@stpcpy", "@strcat"}
+_ALLOC_CALLS = ("@malloc", "@calloc", "@realloc", "@aligned_alloc")   # registered heap blocks
 
 _FLAGS = {"nuw", "nsw", "exact", "disjoint", "fast", "nnan", "ninf", "nsz", "arcp", "contract", "afn",
           "reassoc", "nneg", "samesign", "tail", "musttail", "notail"}
@@ -1033,23 +1128,142 @@ class Instrumenter:
         self.n = 0
         self.alloca_ids: Dict[Tuple[str, str], int] = {}
         self.param_ids: Dict[Tuple[str, str], str] = {}
+        self.shadow: Dict[Tuple[str, str], str] = {}     # pointer value -> its provenance (cq-kr9h)
+        self.gids: Optional[Dict[str, int]] = None
 
     # pointer arguments whose allocation site a direct call passes (@__cqd_aid)
     NAID = 64
+    GID0 = 0x40000000           # RUNTIME_C: a global's serial is GID0 + its index among the registered
+
+    def alloca_site(self, f: D.Function, v: str) -> str:
+        """An alloca's static site id (from 1): the zero-size eviction rule of the object table."""
+        return str(self.alloca_ids.setdefault((f.name, v), len(self.alloca_ids) + 1))
+
+    def registered_globals(self) -> List[Tuple[str, str]]:
+        """(global, its value type) of every global __cqd_globals registers, in order."""
+        out = []
+        for g, line in self.mod.globals.items():
+            m = re.search(r"\b(?:global|constant)\s+(.*)$", D.strip_comment(line))
+            if not m or "thread_local" in line:
+                continue
+            out.append((g, split_type(m.group(1))[0]))
+        return out
+
+    def gid(self, g: str) -> int:
+        if self.gids is None:
+            self.gids = {name: self.GID0 + k for k, (name, _) in enumerate(self.registered_globals())}
+        return self.gids.get(g, 0)
 
     def site_id(self, f: D.Function, root: Optional[str]) -> str:
-        """The allocation site of `root` for the object table (cq-s8cf), as an i32 operand: an alloca
-        of `f` has its own id (from 1); a pointer parameter has the id its direct caller passed
-        (`param_entry`); anything else is 0 (unknown). It tells apart two objects at one address
-        (a zero-size alloca at the base of the object allocated before it)."""
-        if not root or not root.startswith("%"):
+        """The provenance of the pointer `root` for the object table (cq-kr9h), as an i32 operand: the
+        serial of the object it was derived from, carried at run time beside every pointer value (an
+        alloca's or a heap block's registration, a global's id; through GEPs and casts, phi, select,
+        a pointer stored to memory and loaded again, the arguments of a direct or indirect call of a
+        function of the module and its return value), or 0 (unknown: a pointer an external function
+        or the driver hands in, an integer turned pointer without a pointer under it, an aggregate's
+        field). It tells apart two objects at one address (a zero-size object at the base of the
+        object allocated before it); RUNTIME_C stops with an internal error where it is 0 there."""
+        return self.sid(f, root)
+
+    @staticmethod
+    def _operand_value(text: str) -> str:
+        """The value of a typed operand ("ptr %5", "ptr noundef @g", "ptr getelementptr (...)")."""
+        t = text.strip()
+        m = re.match(r"^(?:\S+\s+)+?((?:%|@)(?:\"[^\"]*\"|[-A-Za-z$._0-9]+))$", t)
+        if m:
+            return m.group(1)
+        m = re.match(r"^ptr\s+(.*)$", t)
+        return m.group(1) if m else t
+
+    def sid(self, f: D.Function, v: Optional[str], depth: int = 0) -> str:
+        if not v:
             return "0"
-        if (f.name, root) in self.param_ids:
-            return self.param_ids[(f.name, root)]
-        d = f.defs.get(root)
-        if d is None or d.op != "alloca":
+        v = v.strip()
+        if v.startswith("@"):
+            return str(self.gid(v))
+        if not v.startswith("%"):
+            g = re.search(r"@(?:\"[^\"]*\"|[-A-Za-z$._0-9]+)", v)     # a constant expression over a global
+            return str(self.gid(g.group(0))) if g and v.count("@") == 1 else "0"
+        key = (f.name, v)
+        if key in self.param_ids:
+            return self.param_ids[key]
+        if key in self.shadow:
+            return self.shadow[key]
+        d = f.defs.get(v)
+        if d is None or depth > 64:
             return "0"
-        return str(self.alloca_ids.setdefault((f.name, root), len(self.alloca_ids) + 1))
+        if d.op == "getelementptr" and len(d.operands) > 1:
+            return self.sid(f, self._operand_value(d.operands[1]), depth + 1)
+        if d.op in ("bitcast", "addrspacecast", "freeze") and d.operands:
+            loc = D.locals_in(d.operands[0])
+            return self.sid(f, loc[-1] if loc else self._operand_value(d.operands[0].split(" to ")[0]), depth + 1)
+        if d.op == "inttoptr":
+            src = d.refs()
+            pv = self._int_provenance(f, src[0]) if src else None
+            return self.sid(f, pv, depth + 1) if pv else "0"
+        if d.op == "call" and d.callee == "@llvm.ptrmask.p0.i64" and d.call_args:
+            return self.sid(f, self._operand_value(d.call_args[0]), depth + 1)
+        return "0"
+
+    _RET_PTR = re.compile(r"\bcall\s+(?:[\w.]+(?:\(\d+\))?\s+)*?ptr\s+(?:[@%])")
+
+    def shadowed(self, ins: D.Inst) -> bool:
+        """Whether a pointer value `ins` defines carries a provenance of its own (cq-kr9h)."""
+        if not ins.dest:
+            return False
+        rhs = ins.text.split("=", 1)[1].strip()
+        if ins.op == "alloca":
+            return True
+        if ins.op == "phi":
+            return bool(re.match(r"phi\s+ptr\s", rhs))
+        if ins.op == "select":
+            return len(ins.operands) == 3 and ins.operands[0].startswith("i1 ") and ins.operands[1].startswith("ptr ")
+        if ins.op == "load":
+            return bool(ins.operands) and split_type(re.sub(r"^(?:(?:volatile|atomic)\s+)+", "", ins.operands[0]))[0] == "ptr"
+        if ins.op == "call":
+            if "musttail" in rhs.split("call", 1)[0] or (ins.callee or "").startswith("@llvm."):
+                return False
+            return bool(self._RET_PTR.search(ins.text))
+        return False
+
+    def provenance(self, f: D.Function, ins: D.Inst, prev: Optional[D.Inst]) -> Tuple[List[str], List[str]]:
+        """The lines that carry pointer provenance around `ins` (cq-kr9h): before, after."""
+        op = ins.op
+        sh = self.shadow.get((f.name, ins.dest)) if ins.dest else None
+        if op == "select" and sh:
+            return [], [f"{sh} = select {ins.operands[0]}, i32 {self.sid(f, self._operand_value(ins.operands[1]))}, "
+                        f"i32 {self.sid(f, self._operand_value(ins.operands[2]))}"]
+        if op == "load" and sh:
+            return [], [f"{sh} = call i32 @__cqd_pld(ptr {self._operand_value(ins.operands[1])}, ptr {ins.dest})"]
+        if op == "store" and len(ins.operands) >= 2:
+            vt = re.sub(r"^(?:(?:volatile|atomic)\s+)+", "", ins.operands[0])
+            if split_type(vt)[0] != "ptr":
+                return [], []
+            val = self._operand_value(vt)
+            return [], [f"call void @__cqd_pst(ptr {self._operand_value(ins.operands[1])}, ptr {val}, "
+                        f"i32 {self.sid(f, val)})"]
+        if op == "call" and sh and ins.callee not in _ALLOC_CALLS:
+            return ["store i32 0, ptr @__cqd_rid"], [f"{sh} = load i32, ptr @__cqd_rid"]
+        if op == "ret" and ins.operands and ins.operands[0].startswith("ptr "):
+            if prev is not None and prev.op == "call" and "musttail" in prev.text:
+                return [], []
+            return [f"store i32 {self.sid(f, self._operand_value(ins.operands[0]))}, ptr @__cqd_rid"], []
+        return [], []
+
+    def shadow_phi(self, f: D.Function, ins: D.Inst) -> Optional[str]:
+        sh = self.shadow.get((f.name, ins.dest)) if ins.dest else None
+        if not sh:
+            return None
+        rhs = ins.text.split("=", 1)[1].strip()
+        body = re.sub(r"^phi\s+ptr\s+", "", rhs)
+        inc = []
+        for item in D.split_operands(body):
+            item = item.strip()
+            if not (item.startswith("[") and item.endswith("]")):
+                D.unimplemented(f"probe provenance: phi incoming {item!r} in {ins.text}")
+            v, b = [x.strip() for x in D.split_operands(item[1:-1])]
+            inc.append(f"[ {self.sid(f, v)}, {b} ]")
+        return f"{sh} = phi i32 {', '.join(inc)}"
 
     def param_entry(self, f: D.Function) -> List[str]:
         """At `f`'s entry: the allocation site of each pointer parameter, as its caller passed it in
@@ -1072,17 +1286,27 @@ class Instrumenter:
     def pass_ids(self, f: D.Function, ins: D.Inst) -> List[str]:
         """Before a direct call of a function of the module with pointer arguments: their allocation
         sites into @__cqd_aid, and the callee into @__cqd_afn (read by its `param_entry`)."""
-        if ins.op != "call" or ins.callee not in self.mod.functions:
+        if ins.op != "call":
+            return []
+        callee = ins.callee
+        if callee is None:
+            # an indirect call (cq-kr9h): the called pointer goes to @__cqd_afn, and the entry of the
+            # module function it is compares it with itself as for a direct call
+            m = re.search(r"\bcall\b.*?(%(?:\"[^\"]*\"|[-A-Za-z$._0-9]+))\(", ins.text)
+            if not m:
+                return []
+            callee = m.group(1)
+        elif callee not in self.mod.functions:
             return []
         out = []
         for k, (ty, v) in enumerate(_operand_pairs(", ".join(ins.call_args))):
             if ty != "ptr" or k >= self.NAID:
                 continue
-            sid = self.site_id(f, self.addr_root(f, v)[0]) if v.startswith("%") else "0"
+            sid = self.site_id(f, self.addr_root(f, v)[0]) if v.startswith("%") else self.sid(f, v)
             g = self.tmp()
             out += [f"{g} = getelementptr [{self.NAID} x i32], ptr @__cqd_aid, i64 0, i64 {k}",
                     f"store i32 {sid}, ptr {g}"]
-        return out + [f"store ptr {ins.callee}, ptr @__cqd_afn"] if out else []
+        return out + [f"store ptr {callee}, ptr @__cqd_afn"] if out else []
 
     def tmp(self) -> str:
         self.n += 1
@@ -1262,18 +1486,16 @@ class Instrumenter:
     def decls(self) -> List[str]:
         d = ["declare void @__cqd_p(i32, i64, i64, i64, i64, i64, i64, i64, i64)",
              "declare void @__cqd_m(i32, ptr, ptr, i64, i32)", "declare void @__cqd_mi(ptr, ptr, i64, i32)",
-             "declare i64 @__cqd_ms(ptr, ptr, i32)", "declare void @__cqd_reg(ptr, i64)",
-             "declare void @__cqd_rega(ptr, i64, i32)",
-             "@__cqd_afn = internal global ptr null",
+             "declare i64 @__cqd_ms(ptr, ptr, i32)", "declare i32 @__cqd_regs(ptr, i64)",
+             "declare i32 @__cqd_rega(ptr, i64, i32)", "declare void @__cqd_regg(ptr, i64, i32)",
+             "declare void @__cqd_pst(ptr, ptr, i32)", "declare i32 @__cqd_pld(ptr, ptr)",
+             "@__cqd_afn = internal global ptr null", "@__cqd_rid = internal global i32 0",
              f"@__cqd_aid = internal global [{self.NAID} x i32] zeroinitializer",
              "declare void @__cqd_hdr(i32, i1)", "declare void @__cqd_ctx(i32)"]
         d.append("define void @__cqd_globals() {")
-        for g, line in self.mod.globals.items():
-            m = re.search(r"\b(?:global|constant)\s+(.*)$", D.strip_comment(line))
-            if not m or "thread_local" in line:
-                continue
-            ty, _ = split_type(m.group(1))
-            d.append(f"  call void @__cqd_reg(ptr {g}, i64 ptrtoint (ptr getelementptr ({ty}, ptr null, i32 1) to i64))")
+        for g, ty in self.registered_globals():
+            d.append(f"  call void @__cqd_regg(ptr {g}, i64 ptrtoint (ptr getelementptr ({ty}, ptr null, i32 1) to i64), "
+                     f"i32 {self.gid(g)})")
         d += ["  ret void", "}"]
         return d
 
@@ -1290,6 +1512,10 @@ class Instrumenter:
         for lp in loops:
             children.setdefault(lp.parent, []).append(lp)
         preds = f.preds()
+        for b in f.order:
+            for ins in f.blocks[b]:
+                if self.shadowed(ins):
+                    self.shadow[(f.name, ins.dest)] = self.tmp()
         body: List[str] = []
         for bi, b in enumerate(f.order):
             if bi > 0:
@@ -1307,16 +1533,20 @@ class Instrumenter:
                 inc = ", ".join(f"[ {'true' if p in lp.blocks else 'false'}, {p} ]" for p in preds[b])
                 body.append(f"  {be} = phi i1 {inc}")
             body += ["  " + x.text for x in phis]
+            body += ["  " + x for x in (self.shadow_phi(f, ph) for ph in phis) if x]
             if b in by_header:
                 lp = by_header[b]
                 body.append(f"  call void @__cqd_hdr(i32 {lp.id}, i1 {be})")
                 pre += [f"call void @__cqd_ctx(i32 {c.id})" for c in children.get(lp.id, [])]
             body += ["  " + x for x in pre]
+            prev = None
             for ins in rest:
                 before, after = self.instrument(f, ins)
-                body += ["  " + x for x in before + self.pass_ids(f, ins)]
+                pb, pa = self.provenance(f, ins, prev)
+                body += ["  " + x for x in before + self.pass_ids(f, ins) + pb]
                 body.append("  " + ins.text)
-                body += ["  " + x for x in after]
+                body += ["  " + x for x in after + pa]
+                prev = ins
         return body
 
     def instrument(self, f: D.Function, ins: D.Inst) -> Tuple[List[str], List[str]]:
@@ -1353,7 +1583,8 @@ class Instrumenter:
             ret_ty = None
             if ins.dest:
                 m = re.search(r"call\s+(?:\w+\s+)*?(\S+|<[^>]*>)\s+@", ins.text)
-                rt = re.search(r"\bcall\b(.*?)@", ins.text).group(1).split()
+                rm = re.search(r"\bcall\b(.*?)@", ins.text)
+                rt = rm.group(1).split() if rm else []
                 rt = [w for w in rt if w not in _FLAGS and w not in ("noundef", "zeroext", "signext", "fastcc",
                                                                        "nnan", "ninf", "nsz", "arcp")]
                 ret_ty = " ".join(rt) if rt else None
@@ -1406,16 +1637,15 @@ class Instrumenter:
                                             src=bool(rest)), []
             if c in _LIB_STR:
                 return self.string_ranges(f, c, pairs), []
-            if c in ("@malloc", "@calloc", "@realloc", "@aligned_alloc") and ins.dest:
+            if c in _ALLOC_CALLS and ins.dest:
                 vals = [v for _, v in pairs]
+                sh = self.shadow.get((f.name, ins.dest)) or self.tmp()
                 if c == "@malloc":
-                    return [], [f"call void @__cqd_reg(ptr {ins.dest}, i64 {vals[0]})"]
-                if c == "@aligned_alloc":
-                    return [], [f"call void @__cqd_reg(ptr {ins.dest}, i64 {vals[1]})"]
-                if c == "@realloc":
-                    return [], [f"call void @__cqd_reg(ptr {ins.dest}, i64 {vals[1]})"]
+                    return [], [f"{sh} = call i32 @__cqd_regs(ptr {ins.dest}, i64 {vals[0]})"]
+                if c in ("@aligned_alloc", "@realloc"):
+                    return [], [f"{sh} = call i32 @__cqd_regs(ptr {ins.dest}, i64 {vals[1]})"]
                 t = self.tmp()
-                return [], [f"{t} = mul i64 {vals[0]}, {vals[1]}", f"call void @__cqd_reg(ptr {ins.dest}, i64 {t})"]
+                return [], [f"{t} = mul i64 {vals[0]}, {vals[1]}", f"{sh} = call i32 @__cqd_regs(ptr {ins.dest}, i64 {t})"]
             return [], []
         if op == "alloca":
             m = re.match(r"alloca\s+(?:inalloca\s+)?(.*)$", rhs)
@@ -1436,7 +1666,8 @@ class Instrumenter:
                 t2 = self.tmp()
                 after.append(f"{t2} = mul i64 {size}, {cv}")
                 size = t2
-            after.append(f"call void @__cqd_rega(ptr {ins.dest}, i64 {size}, i32 {self.site_id(f, ins.dest)})")
+            sh = self.shadow.get((f.name, ins.dest)) or self.tmp()
+            after.append(f"{sh} = call i32 @__cqd_rega(ptr {ins.dest}, i64 {size}, i32 {self.alloca_site(f, ins.dest)})")
             return [], after
         if op in ("load", "store"):
             ptr_txt = ins.operands[1]
@@ -1638,7 +1869,12 @@ _ISOLATE_CALLS = {"@signal", "@sigaction", "@sigprocmask", "@pthread_sigmask", "
 _HEAP_CALLS = {"@malloc", "@calloc", "@realloc", "@reallocf", "@aligned_alloc", "@posix_memalign", "@valloc",
                "@free", "@strdup", "@strndup"}
 # A sample runs at most this many loop-header executions; past it, it ends as a timeout would.
-HDR_CAP = int(os.environ.get("CQD_HDR_CAP", str(1 << 20)))
+HDR_CAP = int(os.environ.get("CQD_HDR_CAP", str(1 << 20)))   # the probe runtime's default (RUNTIME_C)
+
+
+def hdr_cap() -> int:
+    """The probe's step budget per sample: $CQD_HDR_CAP, else the cost budget (cq-g8md)."""
+    return int(os.environ["CQD_HDR_CAP"]) if os.environ.get("CQD_HDR_CAP") else cost_budget()
 RSS_CAP = 512 << 20          # bytes: a worker whose peak resident size passes it is replaced
 
 
@@ -1879,11 +2115,14 @@ class ProbeBuild:
     def __exit__(self, *exc) -> None:
         self.close()
 
-    def run(self, samples: Sequence[dict]) -> List["Obs"]:
-        """One observation per sample, from one batch on the probe server."""
+    def run(self, samples: Sequence[dict], hdrcap: Optional[int] = None, hang_s: Optional[int] = None) -> List["Obs"]:
+        """One observation per sample, from one batch on the probe server: each sample ends as
+        `timeout` past `hdrcap` loop-header executions (default hdr_cap(), the cost budget) and raises
+        ProbeError past `hang_s` CPU seconds (default HANG_CPU_S)."""
         if not samples:
             return []
-        lines = [f"B {len(samples)}"]
+        hang = int(hang_s or HANG_CPU_S)
+        lines = [f"B {len(samples)} {int(hdrcap or hdr_cap())} {hang}"]
         for s in samples:
             args = [(("c:" + ",".join(D.split_ptr(v)[1]) if D.split_ptr(v)[1] else "-")
                      if D.parse_ctype(a["ctype"]).kind == "p" else v)
@@ -1906,9 +2145,9 @@ class ProbeBuild:
             except (BrokenPipeError, OSError) as e:
                 werr = f"; writing the batch: {e}"
             while True:
-                ready, _, _ = select.select([fd], [], [], HANG_WALL_S)
+                ready, _, _ = select.select([fd], [], [], max(HANG_WALL_S, hang + 60))
                 if not ready:
-                    raise ProbeError(f"{self.spec.example}: probe server: no output for {HANG_WALL_S} s "
+                    raise ProbeError(f"{self.spec.example}: probe server: no output for {max(HANG_WALL_S, hang + 60)} s "
                                      f"(hang guard, cq-ir5z) in a batch of {len(samples)}")
                 chunk = os.read(fd, 1 << 20)
                 if not chunk:
@@ -1930,8 +2169,12 @@ class ProbeBuild:
         obs = [Obs() for _ in samples]
         self._parse(buf.decode(errors="replace"), obs)
         for k, o in enumerate(obs):
+            if o.end == "ambiguous":
+                D.unimplemented(f"{self.spec.example}: sample {samples[k]}: an access at an address two objects share "
+                                f"(a zero-size object at the base of another) through a pointer whose provenance the "
+                                f"probe does not carry (cq-kr9h): no object is chosen by preference")
             if o.end == "hang":
-                raise ProbeError(f"{self.spec.example}: sample {samples[k]} ran {HANG_CPU_S} s of CPU time "
+                raise ProbeError(f"{self.spec.example}: sample {samples[k]} ran {hang} s of CPU time "
                                  f"in the probe build (hang guard, cq-ir5z)")
         return obs
 
@@ -3021,9 +3264,9 @@ def confirm_cap(pb: "ProbeBuild", keys: Sequence[Tuple[int, Tuple[str, ...]]], o
     groups: Dict[int, List[int]] = {}
     for k, o in enumerate(obs):
         cap = 1024
-        while cap < 2 * (o.hdrs + 1) and cap < HDR_CAP:
+        while cap < 2 * (o.hdrs + 1) and cap < hdr_cap():
             cap *= 2
-        groups.setdefault(min(cap, HDR_CAP), []).append(k)
+        groups.setdefault(min(cap, hdr_cap()), []).append(k)
     for cap, ks in sorted(groups.items()):
         runs = oracle.run_samples(o1, pb.spec, [{"call": keys[k][0], "args": list(keys[k][1])} for k in ks],
                                   tripcap=cap)
@@ -3207,6 +3450,8 @@ def _cache_key(spec: DriverSpec, example_dir: Path, exempt_baseline: bool = True
     # the oracle's key covers oracle.py, its runtime and instrumentation and the pass sources it
     # compiles in (taint, the loop classifier): all decide trips, caps and reached sites (narrow review)
     h.update(_oracle.SRC_KEY.encode())
+    # the cost budget and the witness search's limits (cq-g8md): they decide samples and uncovered targets
+    h.update(f"budget {cost_budget()} {hdr_cap()} {witness_cap()} {WITNESS_WORK}\n".encode())
     return h.hexdigest()[:20]
 
 
@@ -3501,8 +3746,10 @@ def trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_sit
                        + (" (it reports 0 only when a guard branch skips the loop)" if t == 0 else "")
                        + f"; {searcher.runs} probe runs searched")
             trips[str(t)] = {"empty": why + bound_note}
+        from cqcheck import gaps
         out.append({"loop": lp.key(),
-                    "parent": (loops[lp.parent].key() if lp.parent is not None else None), "trips": trips})
+                    "parent": (loops[lp.parent].key() if lp.parent is not None else None), "trips": trips,
+                    "zero": gaps.zero_meaning(pb.mod.functions[lp.fn], lp.header, lp.blocks)})
     if any("empty" in e for o in out for e in o["trips"].values()):
         construct_trip_targets(spec, example_dir, g, searcher, out)
     return out
@@ -3542,13 +3789,12 @@ def trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_sit
 # Trip counting (cq-97oj (4)): a constructed input reaches a count when its run cut at K or its run
 # with the cutoff off (every function's K flag at TRIP_UNCUT_K) reports it; its domain is its cut run's.
 #
-# Cost (cq-oou2): the constructed runs are the oracle cut at K with a step budget of
-# TRIP_CONSTRUCT_TRIPCAP header executions each. A target is at most K + 1 trips of one activation,
-# so a run past the budget (a classical loop over a large bound, 58's n near 2^31) shows only what it
-# reached before it; it is no witness of a clean reach, but an undefined access it noted before the
-# budget still is one (the oracle notes it when it happens).
-
-TRIP_CONSTRUCT_TRIPCAP = 1 << 12  # header executions per constructed run (a run past it is no clean witness)
+# Cost (cq-oou2, cq-g8md): the constructed runs are the oracle cut at K within the cost budget
+# (cost_budget(), owner ruling 2026-11-01) in its trip mode. A target is at most K + 1 trips of one
+# activation, so a run past the budget (a classical loop over a large bound, 58's n near 2^31) shows
+# only what it reached before it; it is no witness of a clean reach, but an undefined access it noted
+# before the budget still is one (the oracle notes it when it happens). A target still empty after
+# them goes to uncovered_targets, which runs the inputs the budget stopped past it.
 
 
 def trip_construct_values(ct: D.CType, base: int) -> List[int]:
@@ -3622,7 +3868,7 @@ def trip_proof(loop: str, t: int, cands: Sequence[Tuple[int, Tuple[str, ...]]], 
                          f"e.g. {{\"call\": {cands[i][0]}, \"args\": {list(cands[i][1])}}}: {why}")
     if not reach:
         return "missing", None, (f"none of {len(cands)} constructed inputs runs {t} trips in the C oracle "
-                                 f"(cut at K and uncut, {TRIP_CONSTRUCT_TRIPCAP} header executions each)")
+                                 f"(cut at K and uncut, {cost_budget()} header executions each)")
     i = undecided[0]
     kr = kruns[i]
     return "missing", None, (f"{reach} of {len(cands)} constructed inputs run {t} trips, {len(undecided)} of them neither "
@@ -3704,15 +3950,16 @@ def uncut_k(o1: Path) -> Dict[str, int]:
 
 
 def _trip_runs(o1: Path, spec, smp: List[dict], uncut: bool = False) -> list:
-    """The C oracle's runs of the constructed inputs, cut at K with the construction's budget, each
-    keeping only its distinct trip events (all trip_hit reads besides the loop records): a run's full
-    trace (117: every site reach of 4096 header executions) held for a thousand inputs passed the
-    2 GB cap (cq-oou2)."""
+    """The C oracle's runs of the constructed inputs, cut at K, each within the cost budget, in the
+    oracle's trip mode (cq-g8md: no site event, each distinct trip event once): a run's full trace
+    (117: every site reach of 4096 header executions) held for a thousand inputs passed the 2 GB cap
+    (cq-oou2). Only the distinct trip events are kept (all trip_hit reads besides the loop records)."""
     from cqcheck import oracle
     out = []
+    cap = cost_budget()
     for i in range(0, len(smp), 64):
-        for r in oracle.run_samples(o1, spec, smp[i:i + 64], tripcap=TRIP_CONSTRUCT_TRIPCAP,
-                                    k=uncut_k(o1) if uncut else None):
+        for r in oracle.run_samples(o1, spec, smp[i:i + 64], timeout_ms=oracle_timeout_ms(cap), tripcap=cap,
+                                    k=uncut_k(o1) if uncut else None, trips_only=True):
             seen = set()
             ev = []
             for e in r.events:
@@ -3755,9 +4002,11 @@ def construct_trip_targets(spec, example_dir, g: "Gen", searcher: "Searcher", ou
     kruns = _trip_runs(o1, spec, smp)
     # cq-97oj (4): the trip counters count uncut, the K cut applies only to the compared run (68: x = 5
     # runs 5 outer trips in C; cut at K the inner loop's cutoff ends the run first). A run's domain
-    # stays its compared (cut) run's; the uncut run adds only its trip events.
-    for kr, ur in zip(kruns, _trip_runs(o1, spec, smp, uncut=True)):
-        kr.events = kr.events + [e for e in ur.events if e not in kr.events]
+    # stays its compared (cut) run's; the uncut run adds only its trip events. Only a run the cutoff
+    # ended differs uncut (any other run never reached a cutoff, so it is the uncut run, cq-g8md).
+    capped = [i for i, kr in enumerate(kruns) if kr.outcome.startswith("cap:")]
+    for i, ur in zip(capped, _trip_runs(o1, spec, [smp[i] for i in capped], uncut=True)):
+        kruns[i].events = kruns[i].events + [e for e in ur.events if e not in kruns[i].events]
     exh = exhaustive_inputs(g, o1.read_text())
     eruns: list = []
     if exh is not None:
@@ -3784,6 +4033,159 @@ def construct_trip_targets(spec, example_dir, g: "Gen", searcher: "Searcher", ou
                     f"(exhaustion; cq-oou2)"), "proof": "exhaustion"}
             else:
                 e["empty"] += f"; {why} (cq-oou2)"
+    uncovered_targets(spec, example_dir, g, searcher, out, cands, smp, kruns, obs)
+
+
+def _arg_distance(g: "Gen", ci: int, args: Sequence[str]) -> int:
+    """How far a constructed input lies from its drivers.txt call: the summed distance of its integer
+    scalars (signed as their C type), any other difference counting 2^64."""
+    d = 0
+    for j, (a, b) in enumerate(zip(args, g.base[ci])):
+        if a == b:
+            continue
+        ct = g.cts[ci][j]
+        if ct.kind != "i" or not str(a).startswith("0x") or not str(b).startswith("0x"):
+            d += 1 << 64
+            continue
+        x, y = int(a, 16), int(b, 16)
+        if ct.signed:
+            x, y = _signed(x, ct.bits), _signed(y, ct.bits)
+        d += abs(x - y)
+    return d
+
+
+def _reach_cost(r, loop: str, t: int) -> Optional[int]:
+    """The header executions after which a trip-mode run first gives `t` trips of `loop` (the trip
+    event's "h"; a capped record ends the run, so its cost is the run's)."""
+    hs = [int(e["h"]) for e in r.events if e.get("ev") == "trip" and e.get("loop") == loop and int(e["n"]) == t
+          and "h" in e]
+    if hs:
+        return min(hs)
+    return _run_cost(r) if trip_hit([], r.loops, loop, t) else None
+
+
+def _run_cost(r) -> Optional[int]:
+    n = [int(e["n"]) for e in r.events if e.get("ev") == "ticks"]
+    if n:
+        return n[-1]
+    hs = [int(e["h"]) for e in r.events if "h" in e]
+    return max(hs) if hs else None
+
+
+def uncovered_targets(spec, example_dir, g: "Gen", searcher: "Searcher", out: List[dict], cands, smp, kruns, obs) -> None:
+    """The trip targets still empty after the search and the constructed inputs within the budget
+    (owner ruling 2026-11-01 on 117, cq-g8md; CR §6, coverage). A target LLVM's or TripFacts' proofs
+    already exclude (gaps.loop_facts) is left to them. For the rest, the constructed inputs the budget
+    stopped (oracle cut at K, base inputs before substituted ones, nearest to the drivers.txt call
+    first) run again up to the witness cap, WITNESS_WORK caps of header executions in all, until every
+    such target has a clean reach: an unsubstituted input in the probe build first (its trip counts
+    and its domain), and only one whose probe run may reach a target in the oracle's trip mode, which
+    decides the count and its cost. For each target:
+
+      uncovered  an input that reaches it on a clean run (it returns or stops at the K cutoff, no
+                 undefined access noted) whose probe run up to the witness cap is inside the domain
+                 (no access outside an object, no LLVM-undefined CR §2 row): the cheapest such input
+                 of those run, with the header executions at which it reaches the target and in all.
+                 Reported, never compared and never counted green (gaps.UNCOVERED);
+      dead       every input that reaches it, past the budget included, is undefined (trip_proof's
+                 "ub" over the runs past the budget): a target reachable only through poison or an
+                 access outside an object (117 at t >= 33: shl nuw i32 1, 32 is poison and the branch
+                 on it undefined), IMPOSSIBLE with that proof;
+      missing    otherwise (no reach within the cap, a reach the domain check cannot decide)."""
+    from cqcheck import gaps, oracle
+    todo = [(lpo, t) for lpo in out for t, e in lpo["trips"].items() if "empty" in e and "proof" not in e]
+    if not todo:
+        return
+    facts = gaps.loop_facts(example_dir, LLVM_BIN)
+    todo = [(lpo, t) for lpo, t in todo if not facts.get(lpo["loop"], gaps.LoopFacts()).impossible(lpo["loop"], int(t))]
+    if not todo:
+        return
+    budget, cap = cost_budget(), witness_cap()
+    over = [i for i, kr in enumerate(kruns) if kr is not None and kr.failed and "tripcap" in kr.notes]
+    over.sort(key=lambda i: ("subst" in smp[i], _arg_distance(g, cands[i][0], cands[i][1]), i))
+    o1 = sorted(Path(example_dir).glob("*.O1.ll"))[0]
+    rows = searcher.rows_by_site
+    kruns2, obs2 = list(kruns), list(obs)
+    ran: Dict[int, object] = {}
+    clean: Dict[int, bool] = {}
+
+    def run_at_cap(sm: dict):
+        (r,) = oracle.run_samples(o1, spec, [sm], timeout_ms=oracle_timeout_ms(cap), tripcap=cap, trips_only=True)
+        return r
+
+    def in_domain(i: int, r, o: Optional["Obs"] = None) -> Tuple[bool, Optional["Obs"]]:
+        """Whether candidate i, run past the budget as `r`, is inside the domain: its run is clean and
+        the probe run of its input (its base's, for a substituted one) up to the cap is valid."""
+        if r.failed or not (r.outcome == "ret" or _cap_clean(r)) or run_undefined(r, None, rows):
+            return False, None
+        base = {"call": smp[i]["call"], "args": smp[i]["args"]}
+        br = r if "subst" not in smp[i] else run_at_cap(base)
+        if o is None:
+            (o,) = searcher.pb.run([base], hdrcap=cap, hang_s=max(HANG_CPU_S, cap * NS_PER_HEADER_GUARD // 10 ** 9))
+        o.cap_ok = _cap_clean(br)
+        if "subst" in smp[i] and (br.failed or not (br.outcome == "ret" or _cap_clean(br))
+                                  or run_undefined(br, None, rows)):
+            return False, o
+        return _valid(o, rows), o
+
+    def witnessed(lpo, t) -> bool:
+        return any(clean.get(i) and _reach_cost(r, lpo["loop"], int(t)) is not None for i, r in ran.items())
+
+    lid = {lp.key(): lp.id for lp in searcher.pb.ins.loops}
+    hang = max(HANG_CPU_S, cap * NS_PER_HEADER_GUARD // 10 ** 9)
+
+    def probe_may_hit(o: "Obs") -> bool:
+        # the probe counts header executions: the oracle's t is the probe's t, or t + 1 where a header
+        # run may only exit (trip_classes; gaps.LoopFacts.region_exit); 0 is a guard skip in both
+        return any(u in o.t.get(lid.get(lpo["loop"], -1), []) for lpo, t in todo
+                   for u in ((int(t), int(t) + 1) if facts.get(lpo["loop"], gaps.LoopFacts()).region_exit else (int(t),)))
+
+    work = 0
+    for i in over:
+        if work >= WITNESS_WORK * cap or all(witnessed(lpo, t) for lpo, t in todo):
+            break
+        o = None
+        if "subst" not in smp[i]:
+            # the probe build first (several times faster than the oracle at -O0): an input whose
+            # probe run up to the cap reaches no target, or ends past it, needs no oracle run
+            (o,) = searcher.pb.run([{"call": smp[i]["call"], "args": smp[i]["args"]}], hdrcap=cap, hang_s=hang)
+            work += max(o.hdrs, 1)
+            if o.end == "timeout" or not probe_may_hit(o):
+                continue
+        r = run_at_cap(smp[i])
+        ran[i] = r
+        work += cap if "tripcap" in r.notes else (_run_cost(r) or cap)
+        kruns2[i] = r
+        if any(_reach_cost(r, lpo["loop"], int(t)) is not None for lpo, t in todo):
+            clean[i], o = in_domain(i, r, o)
+            if o is not None:
+                obs2[i] = o
+    for lpo, t in todo:
+        hits = sorted((_reach_cost(r, lpo["loop"], int(t)), i) for i, r in ran.items()
+                      if clean.get(i) and _reach_cost(r, lpo["loop"], int(t)) is not None)
+        e = lpo["trips"][t]
+        zero = f" ({lpo['zero']})" if int(t) == 0 and lpo.get("zero") else ""
+        if hits:
+            h, i = hits[0]
+            total = _run_cost(ran[i])
+            w = {k: v for k, v in smp[i].items()}
+            lpo["trips"][t] = {
+                "empty": (f"uncovered: no input within the cost budget of {budget} loop-header executions (C oracle) "
+                          f"runs {t} trips of {lpo['loop']}{zero}; the cheapest reaching input found, "
+                          f"{json.dumps(w, sort_keys=True)}, reaches it after {h} header executions and runs "
+                          f"{total if total is not None else 'more'} in all, inside the domain (of {len(ran)} inputs "
+                          f"run past the budget, nearest the drivers.txt call first, up to {cap} each; cq-g8md)"),
+                "uncovered": {"witness": w, "reach": h, "cost": total, "budget": budget}}
+            continue
+        kind, j, why = trip_proof(lpo["loop"], int(t), cands, kruns2, obs2, searcher.valid, rows)
+        if kind == "ub":
+            lpo["trips"][t] = {"empty": why + f" (past the cost budget of {budget}, up to {cap} header executions; "
+                                              f"a target reached only outside the domain is dead, cq-g8md)",
+                               "witness": smp[j], "proof": kind}
+            continue
+        if over:
+            e["empty"] += (f"; past the cost budget of {budget}: {len(ran)} of the {len(over)} inputs the budget "
+                           f"stopped ran up to {cap} header executions, none reaching it inside the domain (cq-g8md)")
 
 
 def confirm_trips(ss: SampleSet, trip_run: Callable[[dict], Tuple[List[dict], List[dict]]]) -> List[str]:

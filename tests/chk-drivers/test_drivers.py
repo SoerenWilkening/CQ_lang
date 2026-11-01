@@ -1303,5 +1303,209 @@ class ProbeDeterminism(unittest.TestCase):
         self.assertTrue(issubclass(S.ProbeError, RuntimeError))
 
 
+
+# cq-kr9h: an access through a pointer chosen at run time (select, an indirect call, a pointer stored
+# and loaded again, a direct call of a select) at the address c[t] and the zero-size x[0] share
+PROV_C = r"""
+#include <string.h>
+__attribute__((noinline)) static int rd(volatile char *p, int i) { return p[i]; }
+static int (*volatile fp)(volatile char *, int) = rd;
+static volatile char *volatile gp;
+int zs(int t, int nq, int mode, int sel) {
+    volatile char c[t], x[nq];
+    memset((char *)c, 0, t);
+    if (mode == 1) { volatile char *p = sel ? c : x; return p[0]; }
+    if (mode == 2) return fp(sel ? c : x, 0);
+    if (mode == 3) { gp = sel ? c : x; return gp[0]; }
+    if (mode == 4) return rd(sel ? c : x, 0);
+    if (mode == 5) { volatile char *p = sel ? c : x; __asm__("" : "+r"(p)); return p[0]; }
+    return c[0];
+}
+"""
+PROV_LINE = "905_probe_zs|int zs(int,int,int,int);|zs(4,0,0,0)"
+
+
+class Provenance(unittest.TestCase):
+    """cq-kr9h: where a zero-size object lies at another's base (x[0] at c's base when nq = 0), the
+    probe decides which object an access means by the pointer's run-time provenance (the object's
+    serial, carried through select, phi, memory, call arguments and results), never by preference:
+    c[0] through any of them is inside c, x[0] through any of them leaves x (a mutant of each path:
+    the preference for the object of positive size would keep it), and a pointer whose provenance the
+    probe does not carry (laundered through inline asm) at that address stops with an internal error."""
+
+    @staticmethod
+    def smp(*xs):
+        return {"call": 0, "args": [f"0x{x & 0xffffffff:08x}" for x in xs]}
+
+    def test_provenance_decides_the_shared_address(self):
+        smp = self.smp
+        cases = [smp(4, 0, m, 1) for m in (1, 2, 3, 4)] + [smp(4, 0, m, 0) for m in (1, 2, 3, 4)] + \
+                [smp(4, 1, m, 0) for m in (1, 2, 3, 4, 5)] + [smp(4, 0, 0, 0)]
+        with tempfile.TemporaryDirectory() as d:
+            t = Path(d)
+            ex = synth_example(t, "905_probe_zs", PROV_C, PROV_LINE)
+            spec = D.driver_spec("905_probe_zs", ex)
+            with S.ProbeBuild(spec, ex, t / "work") as pb:
+                obs = pb.run(cases)
+                with self.assertRaisesRegex(RuntimeError, "cq: unimplemented: .*provenance"):
+                    pb.run([smp(4, 0, 5, 1)])
+        for c, o in zip(cases[:4], obs[:4]):
+            self.assertEqual((o.end, o.oob), ("exit", set()), c)
+        for c, o in zip(cases[4:8], obs[4:8]):
+            self.assertEqual(o.end, "oob", c)
+        for c, o in zip(cases[8:], obs[8:]):
+            self.assertEqual((o.end, o.oob), ("exit", set()), c)
+
+
+# cq-g8md: a trip target reached only after more loop-header executions than the cost budget. The inner
+# loop's guard skips it at j == 12 only, after 12 * 1000 inner trips; with UB, every input reaching that
+# skip first shifts by 32 at j == 12.
+COST_C = r"""
+int f(int t) {
+    volatile int s = 0;
+    for (int j = 0; j < t; j++) {
+        int m = j == 12 ? 0 : 1000;
+        for (int k = 0; k < m; k++) s += k;
+    }
+    return s;
+}
+"""
+COST_UB_C = r"""
+int f(int t) {
+    volatile int s = 0, b = 20;
+    for (int j = 0; j < t; j++) {
+        s += 1 << (j + b);
+        int m = j == 12 ? 0 : 1000;
+        for (int k = 0; k < m; k++) s += k;
+    }
+    return s;
+}
+"""
+COST_LINE = "906_probe_cost|int f(int);|f(3)"
+
+
+class CostBudget(unittest.TestCase):
+    """cq-g8md (owner ruling 2026-11-01): within the budget the target is a sample; past it, the
+    cheapest reaching input found is reported as uncovered with its cost, never a sample; reached
+    only through an undefined shift it is dead; with no reach within the witness cap it stays
+    missing. The budget and witness cap are shrunk (4096 and 2^16 header executions) to keep it small."""
+
+    def target(self, c_text, env):
+        saved = {k: os.environ.get(k) for k in env}
+        os.environ.update(env)
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                t = Path(d)
+                ex = synth_example(t, "906_probe_cost", c_text, COST_LINE)
+                spec = D.driver_spec("906_probe_cost", ex)
+                g = S.Gen(spec, [["0x00000003"]])
+                g.add(0, ["0x00000003"])
+                with S.ProbeBuild(spec, ex, t / "work") as pb:
+                    rows = {s_.id: S.rows_for(s_) for s_ in pb.ins.sites}
+                    searcher = S.Searcher(g, pb, rows, __import__("random").Random(1))
+                    (inner,) = [lp for lp in pb.ins.loops if lp.parent is not None]
+                    from cqcheck import gaps
+                    fn = pb.mod.functions[inner.fn]
+                    zero = gaps.zero_meaning(fn, inner.header, inner.blocks)
+                    out = [{"loop": inner.key(), "parent": None, "zero": zero,
+                            "trips": {"0": {"empty": "no input found: the test's own search"}}}]
+                    S.construct_trip_targets(spec, ex, g, searcher, out)
+                    return out[0], zero, g
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
+    def test_uncovered_past_the_budget(self):
+        from cqcheck import gaps
+        e, zero, _ = self.target(COST_C, {"CQ_COST_BUDGET": "4096", "CQ_WITNESS_CAP": "65536"})
+        self.assertIn("guard branch", zero)
+        t0 = e["trips"]["0"]
+        self.assertNotIn("sample", t0)
+        u = t0["uncovered"]
+        self.assertEqual(u["witness"]["args"], ["0x0000000f"])       # t = 15, the nearest constructed input
+        self.assertGreater(u["reach"], 4096)
+        self.assertGreaterEqual(u["cost"], u["reach"])
+        self.assertEqual(u["budget"], 4096)
+        self.assertTrue(t0["empty"].startswith("uncovered: "))
+        self.assertIn(zero, t0["empty"])
+
+    def test_within_the_budget_it_is_a_sample(self):
+        # mutant of the budget: the same target with the default budget is a sample, never uncovered
+        e, _, g = self.target(COST_C, {"CQ_WITNESS_CAP": "65536"})
+        self.assertIn("sample", e["trips"]["0"])
+        self.assertNotIn("uncovered", e["trips"]["0"])
+
+    def test_reached_only_through_poison_is_dead(self):
+        from cqcheck import gaps
+        e, _, _ = self.target(COST_UB_C, {"CQ_COST_BUDGET": "4096", "CQ_WITNESS_CAP": "65536"})
+        t0 = e["trips"]["0"]
+        self.assertNotIn("uncovered", t0)
+        self.assertEqual(t0.get("proof"), "ub")
+        self.assertEqual(gaps.classify_reason(t0["empty"]), gaps.IMPOSSIBLE)
+
+    def test_no_reach_within_the_cap_stays_missing(self):
+        from cqcheck import gaps
+        e, _, _ = self.target(COST_C, {"CQ_COST_BUDGET": "4096", "CQ_WITNESS_CAP": "8192"})
+        t0 = e["trips"]["0"]
+        self.assertNotIn("uncovered", t0)
+        self.assertNotIn("proof", t0)
+        self.assertEqual(gaps.classify_reason(t0["empty"]), gaps.MISSING)
+
+    def test_gaps_and_report(self):
+        from cqcheck import gaps, report
+        from cqcheck.contracts import Verdict
+        why = "uncovered: no input within the cost budget ..."
+        ss = SampleSet("x", [{"call": 0, "args": ["0x0"]}], {
+            "trips": {"loops": [{"loop": "f:%8", "trips": {"0": {"empty": why, "uncovered": {"witness": {}}},
+                                                          "3": {"sample": 0}, "4": {"sample": 0},
+                                                          "5": {"sample": 0}}}]}})
+        found = [g_ for g_ in gaps.sample_gaps(D.driver_spec("117_qpe_counting", D.example_dir("117_qpe_counting")),
+                                               ss, Path("."), S.LLVM_BIN) if g_.where.startswith("trips")]
+        self.assertEqual([(g_.kind, g_.where) for g_ in found], [(gaps.UNCOVERED, "trips: f:%8 trip 0")])
+        v = Verdict("x", report.PASS, report.PASS, report.PASS, None, ["sampling: " + why])
+        self.assertTrue(report.green(v))
+        self.assertEqual(report.uncovered(v), ["sampling: " + why])
+        table = report.format_table([v])
+        self.assertIn("of them with uncovered targets listed: 1", table)
+        self.assertIn("sampling: uncovered:", table.splitlines()[1])
+
+
+class TripMode(unittest.TestCase):
+    """cq-g8md: the oracle's trip mode gives the full run's outcome and trip counts, each distinct trip
+    event once with the header executions at which it was reached, the sample's header executions,
+    and no site event; trip 0 of 117's inner k-loop is its guard at %46 skipping it."""
+
+    def test_trip_mode_agrees(self):
+        from cqcheck import oracle
+        n = "117_qpe_counting"
+        ex = D.example_dir(n)
+        spec = D.driver_spec(n, ex)
+        o1 = sorted(ex.glob("*.O1.ll"))[0]
+        smp = [{"call": 0, "args": ["0x00000003", "0x00000004", "mk1", "0x00000002"]}]
+        (full,) = oracle.run_samples(o1, spec, smp)
+        (trip,) = oracle.run_samples(o1, spec, smp, trips_only=True)
+        self.assertEqual((full.outcome, full.failed), (trip.outcome, trip.failed))
+        ft = {(e["loop"], e["n"]) for e in full.events if e.get("ev") == "trip"}
+        tt = [(e["loop"], e["n"]) for e in trip.events if e.get("ev") == "trip"]
+        self.assertEqual(set(tt), ft)
+        self.assertEqual(len(tt), len(set(tt)))
+        self.assertFalse(any(e.get("ev") == "site" for e in trip.events))
+        self.assertTrue(any(e.get("ev") == "site" for e in full.events))
+        ticks = [e["n"] for e in trip.events if e.get("ev") == "ticks"]
+        self.assertEqual(len(ticks), 1)
+        self.assertTrue(all(0 < e["h"] <= ticks[0] for e in trip.events if e.get("ev") == "trip" and e["n"]))
+
+    def test_zero_meaning(self):
+        from cqcheck import gaps
+        mod = D.read_module(sorted(D.example_dir("117_qpe_counting").glob("*.O1.ll"))[0])
+        f = mod.functions["@qpe_counting"]
+        (lp,) = [x for x in S.Instrumenter(mod).find_loops(f) if x.header == "%65"]
+        self.assertEqual(gaps.zero_meaning(f, lp.header, lp.blocks),
+                         "trip 0 means the guard branch in %46 goes to %62, skipping the loop")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -1,6 +1,6 @@
 """The cqcheck CLI of cq-arch (module chk-report). Run as `python3 -m cqcheck` from checker/.
 
-  run <NN_name…|--all> [--ours DIR] [--oracle ref|c|both] [--json OUT] [--full] [-j N]
+  run <NN_name…|--all> [--ours DIR] [--oracle ref|c|both] [--json OUT] [--full] [-j N] [--cost-budget N]
       One Verdict per example (report.evaluate). Without --ours, our lowering is the example's
       .O1.ll through `opt -passes=cq-lower` at K = 4. Every verdict is stored for `progress`, and
       each normalized diff is written next to it. Exit 0 iff every requested check passed.
@@ -67,7 +67,12 @@ def _one(ex: report.Example, ours_dir: Optional[Path], oracle: str) -> Verdict:
 
 def stores_progress(ours_dir: Optional[Path], oracle: str) -> bool:
     """Only our pass, both oracles, the pinned CQ_spec and the pinned toolchain feed progress
-    (cq-8dr6; cq-lum1: a non-default CQ_LLVM_BIN lowers and runs with another LLVM)."""
+    (cq-8dr6; cq-lum1: a non-default CQ_LLVM_BIN lowers and runs with another LLVM), at the default
+    cost budget."""
+    # cq-g8md: only at the default cost budget (a lower one would turn targets uncovered, CR §6)
+    budget = os.environ.get("CQ_COST_BUDGET")
+    if budget and int(budget, 0) != 1 << 20:
+        return False
     return (ours_dir is None and oracle == "both" and "CQ_PLUGIN" not in os.environ
             and report.spec_dir() == (report.ROOT.parent / "CQ_spec").resolve()
             and all(p.resolve() == report.DEFAULT_LLVM_BIN.resolve()
@@ -97,8 +102,13 @@ def _run_examples(a, examples, ours_dir) -> List[Verdict]:
                 report.save_verdict(v)
             by_name[v.example] = v
             ok = report.requested_green(v)
-            print(f"{'ok  ' if ok else 'FAIL'} {v.example}  s6={v.s6} c={v.c_oracle} verifier={v.verifier}"
+            unc = report.uncovered(v) if ok else []
+            # cq-g8md: green under the gate (no comparison failed) with its uncovered targets listed
+            print(f"{('ok* ' if unc else 'ok  ') if ok else 'FAIL'} {v.example}  s6={v.s6} c={v.c_oracle} "
+                  f"verifier={v.verifier}" + (f"  {len(unc)} uncovered target(s)" if unc else "")
                   + ("" if ok or not v.reasons else f"  {v.reasons[0][:200]}"), flush=True)
+            for u in unc:
+                print(f"     {u}", flush=True)
     return [by_name[e.name] for e in examples if e.name in by_name]
 
 
@@ -117,7 +127,12 @@ def cmd_run(a) -> int:
     if ours_dir is not None and not ours_dir.is_dir():
         print(f"cqcheck run: --ours {ours_dir} is not a directory", file=sys.stderr)
         return 2
-    saved = {k: os.environ.get(k) for k in ("CQ_QUICK", "CQCHECK_JOBS")}
+    saved = {k: os.environ.get(k) for k in ("CQ_QUICK", "CQCHECK_JOBS", "CQ_COST_BUDGET")}
+    if a.cost_budget is not None:
+        if a.cost_budget < 1:
+            print("cqcheck run: --cost-budget must be positive", file=sys.stderr)
+            return 2
+        os.environ["CQ_COST_BUDGET"] = str(a.cost_budget)
     from cqcheck import run as _run
     saved_jobs = _run.default_jobs
     from cqcheck import oracle as _oracle
@@ -183,6 +198,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     run.add_argument("--full", action="store_true",
                      help="default-mode samples and the textual diff (the gate); without it a quick run")
     run.add_argument("-j", "--jobs", type=int, default=0, help="examples at a time (default $CQCHECK_JOBS or 1)")
+    run.add_argument("--cost-budget", type=lambda x: int(x, 0), default=None,
+                     help="loop-header executions per sample on the C oracle (default 2^20, owner ruling "
+                          "2026-11-01, cq-g8md); a trip target reached only past it is reported uncovered")
     sub.add_parser("selftest")
     sub.add_parser("baseline")
     sub.add_parser("progress")

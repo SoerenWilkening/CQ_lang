@@ -1191,8 +1191,9 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
     parts: Dict[int, List[List[int]]] = {}
     for i in range(len(ours)):
         parts.setdefault(root(i), [[], []])[0].append(i)
-    # A _diag_on_controls pair of gates in two parts shares no rail, so it relaxes no constraint:
-    # dropped. A gate left with no such pair records its order state per rail (any_, tgt) instead of
+    # A _diag_on_controls pair of gates in two parts may share a control rail (p.flag, read by both),
+    # but neither targets a rail of the other's support (that would link their parts), so no order
+    # between them is constrained and the pair relaxes nothing: dropped (cq-kr9h review note). A gate left with no such pair records its order state per rail (any_, tgt) instead of
     # per gate (exc); a reader e in its part saw the per-gate record of y exactly when _ordered(e, y),
     # and sees the per-rail one exactly when the rails link them: the same, as y is an Ry (only Rys
     # write per rail at a target) or a phase (phases read no per-rail entry: they have no target), and
