@@ -53,6 +53,7 @@
 #include "cq/Abi.h"
 #include "cq/Aggregates.h"
 #include "cq/Common.h"
+#include "cq/Effects.h"
 #include "cq/Loops.h"
 #include "cq/Lowering.h"
 #include "cq/Memory.h"
@@ -615,6 +616,16 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
       r.ops.push_back(Operand{v, o.handle});
     }
   }
+  if (fenv::cloneCarriesEnv(S)) {
+    if (!slotArgs.empty() || r.res.qramFormal)
+      unimplemented("calls: a clone carrying the floating-point environment that writes a caller's slot cells or "
+                    "QRAM (E1)",
+                    &CB);
+    for (const Operand &e : fenv::envArgs(ctx, CB)) {   // mode (classical), flags (a handle the twin reads)
+      args.push_back(e.v);
+      r.ops.push_back(e);
+    }
+  }
   r.call = ctx.B().CreateCall(C, args);
   r.call->setCallingConv(C->getCallingConv());
   for (const ByVal &b : byvals) {
@@ -1003,6 +1014,17 @@ Function *materialize(Module &M, const Specialization &S) {
     for (unsigned k = 0; k < f.leaves.size(); ++k)
       ps.push_back(f.q[k] ? handleTy(C) : f.leaves[k]);
   Type *rt = cloneResultType(C, resultLayout(T, S, S.F), S.F->getReturnType());
+  if (fenv::cloneCarriesEnv(S)) {
+    // E1 (CR rule 23, 82): the caller's mode and flags trail the parameters; the new flags handle is
+    // the result's last field (i32 alone for an otherwise void clone).
+    ps.push_back(handleTy(C));
+    ps.push_back(handleTy(C));
+    if (rt->isAggregateType() || rt->isVectorTy())
+      unimplemented("calls: a clone carrying the floating-point environment with a composite result or QRAM "
+                    "stores (E1: only a void or scalar result is built)",
+                    S.F);
+    rt = rt->isVoidTy() ? static_cast<Type *>(handleTy(C)) : StructType::get(C, {rt, handleTy(C)});
+  }
   FunctionType *FT = FunctionType::get(rt, ps, false);
 
   if (Function *ex = M.getFunction(name)) {
@@ -1027,6 +1049,27 @@ Function *materialize(Module &M, const Specialization &S) {
     p += unsigned(fl[A.getArgNo()].leaves.size());
   }
   return NF;
+}
+
+// E1 (CR rule 23, 82): the result of a clone carrying the environment. Its last field is the new flags
+// handle: the call's outs are the result (when a handle) then the flags, undone together by the twin (U2),
+// and the caller's FLAGS become the returned rail (fenv::afterCloneCall).
+void bindEnvResult(LoweringContext &ctx, CallBase &CB, const CloneCall &r) {
+  SmallVector<Value *, 2> outs;
+  Value *flags = r.call;
+  if (!CB.getType()->isVoidTy()) {
+    bool q = ctx.T.isQuantum(&CB, ctx.S);
+    if (r.handle != q)
+      internalError("calls: the call's result kind and taint's disagree", &CB);
+    Value *res = ctx.B().CreateExtractValue(r.call, {0u});
+    flags = ctx.B().CreateExtractValue(r.call, {1u});
+    if (r.handle)
+      outs.push_back(res);
+    ctx.bind(&CB, res);
+  }
+  outs.push_back(flags);
+  ctx.unc().recordCall(r.call, outs, {}, {});
+  fenv::afterCloneCall(ctx, CB, flags);
 }
 
 void lowerLifted(LoweringContext &ctx, CallBase &CB) {
@@ -1062,6 +1105,8 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
     return;
   }
   CloneCall r = emitCloneCall(ctx, CB, *cs, nullptr);
+  if (fenv::cloneCarriesEnv(*cs))
+    return bindEnvResult(ctx, CB, r);
   if (r.res.qramFormal)
     return bindQramCloneResult(ctx, CB, *cs, r);
   if (r.fieldwise)
@@ -1169,6 +1214,10 @@ void lowerIndirect(LoweringContext &ctx, CallBase &CB) {
     B.SetInsertPoint(arm);
     CallInst *call = nullptr;
     if (specs[k]) {
+      if (fenv::cloneCarriesEnv(*specs[k]))
+        unimplemented("calls: an indirect call candidate carrying the floating-point environment (E1 in rule 19's "
+                      "arms)",
+                      &CB);
       CloneCall r = emitCloneCall(ctx, CB, *specs[k], specs[k]->ctl ? flag : nullptr);
       if (r.res.qramFormal)
         unimplemented("calls: an indirect-call candidate with a triple formal onto a QRAM object (U3)", &CB);
@@ -1265,6 +1314,8 @@ void lowerLiftedVia(LoweringContext &ctx, llvm::CallBase &site, llvm::ArrayRef<u
   if (argMap.size() != cs->F->arg_size())
     internalError("calls: lowerLiftedVia's argument map does not name one operand per formal", &site);
   Value *flag = cs->ctl ? ctlFlag(ctx, site) : nullptr;
+  if (fenv::cloneCarriesEnv(*cs))
+    unimplemented("calls: lowerLiftedVia of a clone carrying the floating-point environment (E1)", &site);
   CloneCall r = emitCloneCall(ctx, site, *cs, flag, argMap);
   if (r.res.qramFormal)
     unimplemented("calls: lowerLiftedVia of a clone with a triple formal onto a QRAM object (U3)", &site);

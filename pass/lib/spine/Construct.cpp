@@ -771,6 +771,44 @@ Type *leafTypeAt(Type *t, unsigned k) {
 void Walker::emitCloneReturn(ReturnInst *ret) {
   IRBuilder<> &B = ctx.B();
   Function *C = ctx.B().GetInsertBlock()->getParent();
+  if (fenv::cloneCarriesEnv(ctx.S)) {
+    // E1 (CR rule 23, 82): the final flags are copied out into a fresh rail (Role::Result, as the
+    // result's) and returned as the last field, after the result (void or scalar: calls::materialize).
+    LLVMContext &LC = ctx.M.getContext();
+    auto copyOut = [&](Operand op, RailType w) {
+      CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                                 {Constant::getNullValue(irTypeOf(LC, w))});
+      RailId fid = ctx.unc().recordSeed(f);
+      abi::CoreSpec cp{abi::Core::Copy, w};
+      CallInst *c = ctx.emitCore(cp, {op.v, f});
+      ctx.unc().recordCore(c, cp, {op, Operand{f, true}}, fid);
+      ctx.unc().setRole(fid, Role::Result);
+      return f;
+    };
+    Value *res = nullptr;
+    auto *st = dyn_cast<StructType>(C->getReturnType());
+    if (Value *rv = ret->getReturnValue()) {
+      if (!st || st->getNumElements() != 2)
+        internalError("spine: a clone carrying the environment whose result type is not {result, flags}", ret);
+      Operand op = ctx.operand(rv);
+      if (copiedOut.count(rv))
+        unimplemented("spine: a clone carrying the environment with a return phi copied out per edge (E1)", ret);
+      res = op.handle ? copyOut(op, railTypeOf(rv->getType())) : op.v;
+      if (res->getType() != st->getElementType(0))
+        internalError("spine: a clone carrying the environment whose result field is of another type", ret);
+    } else if (C->getReturnType() != handleTy(LC)) {
+      internalError("spine: a void clone carrying the environment that does not return the flags handle", ret);
+    }
+    Value *flags = copyOut(Operand{fenv::cloneExitFlags(ctx, *ret), true}, RailType{Kind::Int, 32});
+    Value *v = flags;
+    if (res) {
+      v = B.CreateInsertValue(PoisonValue::get(st), res, {0u});
+      v = B.CreateInsertValue(v, flags, {1u});
+    }
+    ReturnInst *nr = B.CreateRet(v);
+    ctx.unc().flushAtExit(nr);
+    return;
+  }
   // M2/M2b (191): the clone's stores through triple formals onto a QRAM object are emitted after the
   // body's uncompute and their copied-out rails returned after the result (calls::cloneResultType).
   unsigned stores = 0;
@@ -1534,6 +1572,13 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
         unimplemented("spine: a classical composite formal of a clone (bound field-wise only with a quantum "
                       "field)",
                       A);
+    }
+    if (fenv::cloneCarriesEnv(S)) {
+      // E1 (CR rule 23, 82): the caller's mode and flags, the two trailing parameters.
+      if (p + 2 > C->arg_size())
+        internalError("spine: a clone carrying the environment without its mode and flags parameters", C);
+      fenv::bindCloneEnv(ctx, C->getArg(p), C->getArg(p + 1));
+      p += 2;
     }
     if (p != C->arg_size())
       unimplemented("spine: a clone with more parameters than its formals' fields (a variadic clone per "

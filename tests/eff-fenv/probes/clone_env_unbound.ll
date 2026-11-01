@@ -1,7 +1,8 @@
 ; E1 (rule 23, 82): a quantum call of a clone doing constrained FP work while the quantum flags are live.
-; Until calls and spine pass the caller's mode and flags (fenv::envArgs / bindCloneEnv), the clone must
-; stop loudly instead of rounding in the host mode and dropping what it raises.
-; EXPECT-ERROR: materialized without the caller's mode and flags
+; calls and spine pass the caller's mode and flags (fenv::envArgs / bindCloneEnv, cq-ibkc): the clone takes
+; them as two trailing i32 parameters and returns {result, new flags} (both measured here: kept, no twin).
+; CHECK g: call fastcc { i32, i32 } @__cq_q_scale_10(
+; CHECK g: extractvalue { i32, i32 } %{{r}}, 1
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 define internal fastcc double @scale(double %v, double %c) #1 {

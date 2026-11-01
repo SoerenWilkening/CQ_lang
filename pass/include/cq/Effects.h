@@ -1,7 +1,10 @@
 // Frozen interface (cq-arch). Changes only under cq-arch's freeze rule.
 #pragma once
 
+#include <array>
+
 #include "cq/Lowering.h"
+#include "cq/Taint.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
@@ -18,7 +21,16 @@ namespace cq::fenv   { void lowerConstrained(LoweringContext &, llvm::CallBase &
                        void lowerFenvCall(LoweringContext &, llvm::CallBase &);
                        // cq-xu2l (freeze amendment on cq-arch): after every lowered cq_measure, the
                        // rule 2 collapse of the rule 23 fenv state; a no-op without quantum fenv state.
-                       void afterMeasure(LoweringContext &, llvm::CallInst &measure); }
+                       void afterMeasure(LoweringContext &, llvm::CallInst &measure);
+                       // E1 (cq-ibkc, freeze amendment on cq-arch; CR rule 23, 82): the clone ABI of the
+                       // environment. Contract at the end of eff/fenv/Fenv.cpp: a clone of S that carries it
+                       // takes (mode, flags) as two trailing i32 parameters and returns the new flags handle
+                       // as its result's last field.
+                       bool cloneCarriesEnv(const Specialization &S);
+                       std::array<Operand, 2> envArgs(LoweringContext &, llvm::CallBase &site);
+                       void afterCloneCall(LoweringContext &, llvm::CallBase &site, llvm::Value *flagsOut);
+                       void bindCloneEnv(LoweringContext &, llvm::Argument *mode, llvm::Argument *flags);
+                       llvm::Value *cloneExitFlags(LoweringContext &, llvm::ReturnInst &); }
 namespace cq::conc   { void lowerAtomic(LoweringContext &, llvm::Instruction &);
                        void lowerVolatile(LoweringContext &, llvm::Instruction &);
                        void lowerThreadCall(LoweringContext &, llvm::CallBase &);
