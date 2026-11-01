@@ -1241,10 +1241,34 @@ class Instrumenter:
             body += ["  " + x for x in pre]
             for ins in rest:
                 before, after = self.instrument(f, ins)
+                text = self.alloca_distinct(ins, before)
                 body += ["  " + x for x in before]
-                body.append("  " + ins.text)
+                body.append("  " + text)
                 body += ["  " + x for x in after]
         return body
+
+    def alloca_distinct(self, ins: D.Inst, before: List[str]) -> str:
+        """The instruction as the probe build runs it. An alloca whose element count is a value is
+        given one element when that count is 0 (cq-w2a-chk-trips): a zero-byte dynamic alloca takes
+        no stack, so its address is the address of the alloca before it, and the object table (one
+        object per address) let it replace that object (117 with nq = 0: bool x[0] after c[t], and
+        the memset of c then left the zero-byte x). Where an alloca lies is unspecified in LLVM, so
+        a distinct address is one LLVM may give; the object is registered with its own size (0), so
+        an access to it still leaves it (cq-faa5)."""
+        if ins.op != "alloca":
+            return ins.text
+        m = re.match(r"(.*?=\s*alloca\s+(?:inalloca\s+)?)(.*)$", D.strip_comment(ins.text).rstrip())
+        ty, rest = split_type(m.group(2))
+        parts = D.split_operands(rest.lstrip(","))
+        if not parts or parts[0].startswith(("align", "addrspace")):
+            return ins.text
+        cty, cv = split_type(parts[0])
+        cv = cv.split()[-1]
+        if not cv.startswith("%"):
+            return ins.text
+        z, one = self.tmp(), self.tmp()
+        before += [f"{z} = icmp eq {cty} {cv}, 0", f"{one} = select i1 {z}, {cty} 1, {cty} {cv}"]
+        return m.group(1) + ", ".join([ty, f"{cty} {one}"] + parts[1:])
 
     def instrument(self, f: D.Function, ins: D.Inst) -> Tuple[List[str], List[str]]:
         op = ins.op

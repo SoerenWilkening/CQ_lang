@@ -34,8 +34,12 @@ search's evidence alone:
 
   * TripFacts.cpp (the oracle plugin's cq-trip-facts pass, cq-97oj): a value-set proof (LLVM
     ScalarEvolution's exact trip count with ValueTracking's range, power-of-two and known-bits facts
-    excludes the count) or a domain proof (the count needs an argument range on every point of which
-    an access every path to the loop executes leaves its object, getObjectSize).
+    excludes the count), a domain proof (the count needs an argument range on every point of which
+    an access every path to the loop executes leaves its object, getObjectSize), or a
+    finite-structure proof (cq-97oj kind 3, cq-fhoc: the loop follows a pointer loaded from the
+    loop-carried pointer, writes no memory and leaves on null; the last stores before the loop, by
+    MemorySSA, chain the entry pointer through n distinct pointers to null, so no activation runs
+    more than n header executions).
 
 Every count not covered above stays MISSING when the search found none.
 """

@@ -935,6 +935,148 @@ def obs_key(o):
             sorted(o.p.items()))
 
 
+_LIST_LL = """target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-apple-macosx"
+
+define i32 @f(i32 %0, i32 %1) {
+  %3 = call noalias ptr @malloc(i64 16)
+  %4 = call noalias ptr @malloc(i64 16)
+  %5 = call noalias ptr @malloc(i64 16)
+  store i32 %0, ptr %5
+  %6 = getelementptr inbounds i8, ptr %5, i64 8
+  store ptr %4, ptr %6
+  store i32 3, ptr %4
+  %7 = getelementptr inbounds i8, ptr %4, i64 8
+  store ptr %3, ptr %7
+  store i32 7, ptr %3
+  %8 = getelementptr inbounds i8, ptr %3, i64 8
+  store ptr null, ptr %8
+  br label %9
+
+9:
+  %10 = phi ptr [ %5, %2 ], [ %17, %14 ]
+  %11 = phi i32 [ 0, %2 ], [ %15, %14 ]
+  %12 = load i32, ptr %10
+  %13 = icmp eq i32 %12, %1
+  br i1 %13, label %19, label %14
+
+14:
+  %15 = add i32 %11, 1
+  %16 = getelementptr inbounds i8, ptr %10, i64 8
+  %17 = load ptr, ptr %16
+  %18 = icmp eq ptr %17, null
+  br i1 %18, label %19, label %9
+
+19:
+  %20 = phi i32 [ -1, %14 ], [ %11, %9 ]
+  ret i32 %20
+}
+
+declare noalias ptr @malloc(i64)
+"""
+
+
+class StructureProof(unittest.TestCase):
+    """cq-97oj kind 3 (cq-fhoc, cq-w2a-chk-trips): TripFacts.cpp's finite-structure proof. A loop that
+    follows a next pointer loaded from its loop-carried pointer, writes no memory and leaves on null
+    runs at most n header executions when the last stores before it chain the entry pointer through n
+    distinct pointers to null. Each mutant breaks one premise and must prove nothing (a wrong proof
+    would turn a reachable trip target into IMPOSSIBLE)."""
+
+    def facts(self, text):
+        from cqcheck import gaps
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        f = Path(d.name) / "m.O1.ll"
+        f.write_text(text)
+        r = subprocess.run([str(S.LLVM_BIN / "opt"), "-passes=verify", "-disable-output", str(f)],
+                           capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return {t: why for t, why in gaps.trip_facts(f, S.LLVM_BIN, S.K + 1).get("f:%9", {}).items()
+                if "finite-structure" in why}
+
+    @staticmethod
+    def mutate(old, new):
+        assert _LIST_LL.count(old) == 1, old
+        return _LIST_LL.replace(old, new)
+
+    def test_three_nodes(self):
+        g = self.facts(_LIST_LL)
+        self.assertEqual(sorted(g), [4, 5])
+        self.assertIn("%5 -> %4", g[4])
+        self.assertIn("3 pointers, then null", g[4])
+
+    def test_189(self):
+        from cqcheck import gaps
+        o1 = sorted(D.example_dir("189_heap_linked_list").glob("*.O1.ll"))[0]
+        g = gaps.trip_facts(o1, S.LLVM_BIN, S.K + 1).get("list_search:%14", {})
+        self.assertEqual(sorted(g), [4, 5])
+        self.assertTrue(all("finite-structure" in w for w in g.values()))
+
+    def test_four_nodes_bound_four(self):
+        text = self.mutate("  store ptr null, ptr %8\n",
+                           "  store ptr %n4, ptr %8\n  store i32 9, ptr %n4\n"
+                           "  %n4n = getelementptr inbounds i8, ptr %n4, i64 8\n  store ptr null, ptr %n4n\n")
+        g = self.facts(text.replace("  store i32 %0, ptr %5\n",
+                                    "  %n4 = call noalias ptr @malloc(i64 16)\n  store i32 %0, ptr %5\n"))
+        self.assertEqual(sorted(g), [5])
+
+    def test_cycle_proves_nothing(self):
+        self.assertEqual(self.facts(self.mutate("  store ptr null, ptr %8\n", "  store ptr %5, ptr %8\n")), {})
+
+    def test_input_dependent_next_proves_nothing(self):
+        self.assertEqual(self.facts(self.mutate(
+            "  store ptr %4, ptr %6\n",
+            "  %c = icmp eq i32 %0, 0\n  %s = select i1 %c, ptr %4, ptr %5\n  store ptr %s, ptr %6\n")), {})
+
+    def test_store_in_the_loop_proves_nothing(self):
+        self.assertEqual(self.facts(self.mutate("  %15 = add i32 %11, 1\n",
+                                                "  %15 = add i32 %11, 1\n  store ptr %10, ptr %8\n")), {})
+
+    def test_conditional_next_store_proves_nothing(self):
+        # c->next = a on one path only: the last write before the loop is a MemoryPhi
+        self.assertEqual(self.facts(self.mutate(
+            "  store ptr null, ptr %8\n  br label %9\n",
+            "  store ptr null, ptr %8\n  %c = icmp eq i32 %0, 0\n  br i1 %c, label %cy, label %jn\n\n"
+            "cy:\n  store ptr %5, ptr %8\n  br label %jn\n\njn:\n  br label %9\n").replace("[ %5, %2 ]", "[ %5, %jn ]").replace("[ 0, %2 ]", "[ 0, %jn ]")), {})
+
+
+class ZeroByteAlloca(unittest.TestCase):
+    """cq-w2a-chk-trips: a zero-byte dynamic alloca took the address of the alloca before it, and the
+    probe's object table (one object per address) let it replace that object: 117 with nq = 0 (bool
+    x[0] after c[t]) ended as oob at the memset of c, outside the domain by the probe's error. The
+    probe gives such an alloca one element and registers it at its own size, 0."""
+
+    def probe(self, o1_text, samples):
+        n = "117_qpe_counting"
+        spec = D.driver_spec(n, D.example_dir(n))
+        with tempfile.TemporaryDirectory() as t:
+            ex = Path(t) / "examples" / n
+            ex.mkdir(parents=True)
+            (Path(t) / "_tools").mkdir()
+            o1 = sorted(D.example_dir(n).glob("*.O1.ll"))[0]
+            (Path(t) / "_tools" / "drivers.txt").symlink_to(o1.resolve().parents[2] / "_tools" / "drivers.txt")
+            (ex / o1.name).write_text(o1_text or o1.read_text())
+            with S.ProbeBuild(spec, ex, Path(t) / "work") as pb:
+                return pb.run(samples)
+
+    def test_zero_byte_vla_beside_another(self):
+        smp = [{"call": 0, "args": ["0x00000000", "0x00000004", "mk1", "0x00000002"]}]
+        (o,) = self.probe(None, smp)
+        self.assertEqual((o.end, o.oob), ("exit", set()))
+
+    def test_access_to_the_zero_byte_vla_still_leaves_it(self):
+        # mutant: the memset of x runs for nq = 0 too, one byte: x[0] of bool x[0], outside its object
+        o1 = sorted(D.example_dir("117_qpe_counting").glob("*.O1.ll"))[0].read_text()
+        for old, new in (("  %13 = icmp sgt i32 %0, 0\n", "  %13 = icmp sgt i32 %0, -1\n"),
+                         ("  %15 = zext nneg i32 %0 to i64\n", "  %15 = add i64 %7, 1\n")):
+            self.assertEqual(o1.count(old), 1, old)
+            o1 = o1.replace(old, new)
+        smp = [{"call": 0, "args": ["0x00000000", "0x00000004", "mk1", "0x00000002"]}]
+        (o,) = self.probe(o1, smp)
+        self.assertEqual(o.end, "oob")
+
+
 class ProbeDeterminism(unittest.TestCase):
     """cq-ir5z: every probe observation is a function of the input only. An access outside its
     object ends the sample at the access (end "oob", the header count there), before it lands;

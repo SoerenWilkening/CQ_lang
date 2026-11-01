@@ -26,6 +26,19 @@
 // access in an earlier top-level loop, its affine AddRec at the loop's last iteration, the loop
 // entered on every such a and run to completion) out of its object's range (getObjectSize). Any
 // piece left undecided leaves the target unproved: nothing is printed for it.
+//
+// Kind "finite-structure" (cq-97oj, kind 3; cq-fhoc): the loop-carried pointer's value set is closed
+// and finite with input-independent next stores. A header phi p (p0 from the preheader, `next` from the
+// one latch) whose `next` is a load from p plus a constant offset c; a block every backedge passes
+// leaves the loop when `next` is null; nothing in the loop writes memory, so every load of `next`
+// reads the memory the loop was entered with. Then v0 = p0, and v(i+1) is the value of the store that
+// MemorySSA (with LLVM's alias analysis) finds as the last write to v(i) + c before the loop, a store
+// that must-alias that location with the load's size; every v(i), every such store and its value lie
+// outside every loop (one value per activation). The chain must end at the null constant after n
+// pointers with no value repeated: the header then runs at most n times per activation (each backedge
+// needs `next` != null), so the oracle reports at most n trips, and no capped record when n <= K. Any
+// step not of this form (a clobber that is a MemoryPhi, a call, a may-alias store or the function's
+// entry; a value from an argument or a load) leaves every target unproved.
 
 #include "cq/Loops.h"
 #include "cq/Taint.h"
@@ -33,6 +46,7 @@
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
+#include "llvm/Analysis/MemorySSA.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
@@ -46,6 +60,7 @@
 #include "llvm/Support/KnownBits.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <algorithm>
 #include <optional>
 #include <tuple>
 #include <string>
@@ -131,6 +146,8 @@ struct Facts {
   AssumptionCache &AC;
   const TargetLibraryInfo &TLI;
   const DataLayout &DL;
+  MemorySSA &MSSA;
+  AAResults &AA;
 
   // ---------------------------------------------------------------- kind 1: value sets
 
@@ -519,6 +536,122 @@ struct Facts {
     }
     return "";
   }
+
+  // ---------------------------------------------------------------- kind 3: finite constant structure
+
+  // One value per activation of F: an argument, a constant, or an instruction in no loop.
+  bool once(const Value *V) {
+    if (auto *I = dyn_cast<Instruction>(V))
+      return !LI.getLoopFor(I->getParent());
+    return isa<Argument>(V) || isa<Constant>(V);
+  }
+
+  // The most header executions any activation of L runs (n, with the chain that gives it in `why`),
+  // or 0 when no bound is proved.
+  unsigned structureBound(Loop *L, std::string &why) {
+    BasicBlock *H = L->getHeader(), *Latch = L->getLoopLatch(), *Pre = L->getLoopPreheader();
+    if (!Latch || !Pre)
+      return 0;
+    for (BasicBlock *B : L->blocks())
+      for (Instruction &I : *B)
+        if (I.mayWriteToMemory())
+          return 0;
+    SmallVector<BasicBlock *, 4> exiting;
+    L->getExitingBlocks(exiting);
+    for (PHINode &Phi : H->phis()) {
+      if (!Phi.getType()->isPointerTy() || Phi.getNumIncomingValues() != 2)
+        continue;
+      int pi = Phi.getBasicBlockIndex(Pre), li = Phi.getBasicBlockIndex(Latch);
+      if (pi < 0 || li < 0)
+        continue;
+      Value *Init = Phi.getIncomingValue(pi);
+      auto *Ld = dyn_cast<LoadInst>(Phi.getIncomingValue(li));
+      if (!Ld || !L->contains(Ld) || !Ld->isSimple() || !Ld->getType()->isPointerTy())
+        continue;
+      int64_t Off = 0;
+      if (GetPointerBaseWithConstantOffset(Ld->getPointerOperand(), Off, DL) != &Phi)
+        continue;
+      // a block every backedge passes leaves the loop when `next` is null
+      bool nullExit = false;
+      for (BasicBlock *X : exiting) {
+        auto *Br = dyn_cast<BranchInst>(X->getTerminator());
+        if (!DT.dominates(X, Latch) || !Br || !Br->isConditional())
+          continue;
+        auto *C = dyn_cast<ICmpInst>(Br->getCondition());
+        if (!C || !C->isEquality())
+          continue;
+        Value *A = C->getOperand(0), *B = C->getOperand(1);
+        if (!((A == Ld && isa<ConstantPointerNull>(B)) || (B == Ld && isa<ConstantPointerNull>(A))))
+          continue;
+        if (!L->contains(Br->getSuccessor(C->getPredicate() == ICmpInst::ICMP_EQ ? 0 : 1)))
+          nullExit = true;
+      }
+      if (!nullExit)
+        continue;
+      MemoryUseOrDef *MU = MSSA.getMemoryAccess(Ld);
+      if (!MU)
+        continue;
+      uint64_t Size = DL.getTypeStoreSize(Ld->getType()).getFixedValue();
+      BatchAAResults BAA(AA);
+      std::vector<Value *> chain{Init};
+      std::string trace;
+      raw_string_ostream os(trace);
+      bool ok = once(Init);
+      while (ok && !isa<ConstantPointerNull>(chain.back())) {
+        Value *V = chain.back();
+        if (chain.size() > 64 || isa<UndefValue>(V)) {
+          ok = false;
+          break;
+        }
+        // a store at V + Off of the load's size: its pointer names the location
+        StoreInst *Named = nullptr;
+        for (BasicBlock &BB : F)
+          for (Instruction &I : BB)
+            if (auto *St = dyn_cast<StoreInst>(&I)) {
+              int64_t O2 = 0;
+              if (!Named && GetPointerBaseWithConstantOffset(St->getPointerOperand(), O2, DL) == V && O2 == Off &&
+                  DL.getTypeStoreSize(St->getValueOperand()->getType()).getFixedValue() == Size)
+                Named = St;
+            }
+        if (!Named) {
+          ok = false;
+          break;
+        }
+        // the last write to it before the loop (nothing in the loop writes): a must-alias store of the
+        // load's size, outside every loop
+        MemoryLocation Loc(Named->getPointerOperand(), LocationSize::precise(Size));
+        MemoryAccess *Cl = MSSA.getWalker()->getClobberingMemoryAccess(MU, Loc, BAA);
+        auto *Def = dyn_cast_or_null<MemoryDef>(Cl);
+        StoreInst *St = Def && !MSSA.isLiveOnEntryDef(Def) ? dyn_cast_or_null<StoreInst>(Def->getMemoryInst()) : nullptr;
+        if (!St || !St->isSimple() || LI.getLoopFor(St->getParent()) ||
+            DL.getTypeStoreSize(St->getValueOperand()->getType()).getFixedValue() != Size ||
+            BAA.alias(MemoryLocation::get(St), Loc) != AliasResult::MustAlias) {
+          ok = false;
+          break;
+        }
+        Value *N = St->getValueOperand();
+        if (!once(N) || std::find(chain.begin(), chain.end(), N) != chain.end()) {
+          ok = false;
+          break;
+        }
+        os << " -> " << operandName(N) << " ('" << text(St) << "')";
+        chain.push_back(N);
+      }
+      if (!ok)
+        continue;
+      unsigned n = unsigned(chain.size() - 1);
+      if (n == 0)
+        continue;   // p0 is null: the header's own access is undefined, not a bound
+      why = "the loop-carried pointer " + operandName(&Phi) + " of " + operandName(H) + " follows " +
+            operandName(Ld) + " = load at offset " + std::to_string(Off) + ", nothing in the loop writes memory, " +
+            "and a block every backedge passes leaves the loop when it is null; from " + operandName(Init) +
+            ", the last stores before the loop (must-alias) give " + operandName(Init) + trace + ": " +
+            std::to_string(n) + " pointers, then null, so every activation runs at most " + std::to_string(n) +
+            " header executions";
+      return n;
+    }
+    return 0;
+  }
 };
 
 struct TripFactsPass : PassInfoMixin<TripFactsPass> {
@@ -541,9 +674,13 @@ struct TripFactsPass : PassInfoMixin<TripFactsPass> {
       auto &LI = FAM.getResult<LoopAnalysis>(F);
       auto &AC = FAM.getResult<AssumptionAnalysis>(F);
       auto &TLI = FAM.getResult<TargetLibraryAnalysis>(F);
-      Facts Fx{F, SE, DT, LI, AC, TLI, M.getDataLayout()};
+      auto &MSSA = FAM.getResult<MemorySSAAnalysis>(F).getMSSA();
+      auto &AA = FAM.getResult<AAManager>(F);
+      Facts Fx{F, SE, DT, LI, AC, TLI, M.getDataLayout(), MSSA, AA};
       unsigned K = kOf(F);
       for (Loop *L : LI.getLoopsInPreorder()) {
+        std::string swhy;
+        unsigned sbound = Fx.structureBound(L, swhy);
         bool qexit = false;
         if (Taint)
           for (const cq::Specialization &S : Taint->specializations())
@@ -558,6 +695,12 @@ struct TripFactsPass : PassInfoMixin<TripFactsPass> {
             // a capped record needs more than K trips: the target is K + 1 trips at least
             why = Fx.domain(L, qexit && t > K ? K + 1 : t, Rg);
             kind = "domain";
+          }
+          if (why.empty() && sbound && t > sbound) {
+            // more than n trips, or a capped record (more than K header executions, n <= K < t)
+            why = "LLVM MemorySSA: " + swhy + "; the oracle reports at most that many trips, never " +
+                  std::to_string(t);
+            kind = "finite-structure";
           }
           if (!why.empty())
             outs() << "cq-trip-fact\t" << key << "\t" << t << "\t" << kind << "\t" << why << "\n";
