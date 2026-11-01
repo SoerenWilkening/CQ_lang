@@ -1836,6 +1836,10 @@ bool cellDeadAfter(LoweringContext &ctx, const Holder &h, const Instruction *S) 
 bool needsCopy(LoweringContext &ctx, FnState &st, const StoreInst &S, const Site &dest) {
   const DataLayout &DL = ctx.M.getDataLayout();
   const Value *v = S.getValueOperand();
+  // A constant names no rail (its store is a seed, rule 7), and its users span the module (121: the 'a'
+  // stored by two functions).
+  if (isa<Constant>(v))
+    return false;
   SmallPtrSet<const Value *, 8> names;
   SmallVector<Holder, 4> holders;
   auto slotSite = [&](const Instruction &I, const Value *ptr, Type *ty, std::optional<Holder> &out) {
@@ -1872,8 +1876,8 @@ bool needsCopy(LoweringContext &ctx, FnState &st, const StoreInst &S, const Site
     if (!U || !U->getNumOperands())
       break;
     const Value *x = U->getOperand(0);
-    if (!sameRail(U, x))
-      break;
+    if (!sameRail(U, x) || isa<Constant>(x))
+      break;   // a constant (cq_theta's classical initial value) names no rail: its users span the module
     origin = x;
   }
   SmallPtrSet<const Value *, 8> own{origin};

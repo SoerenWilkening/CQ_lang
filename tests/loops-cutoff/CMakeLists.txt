@@ -11,3 +11,8 @@ add_test(NAME loops-cutoff-rule6
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_rule6.py
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# A-loops (wave 2a round 7): CR rule 14 multi-exit loops, dead-end exits, walked pointers, a clone's _b bound.
+add_test(NAME loops-cutoff-multi-exit
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_multi_exit.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

@@ -25,6 +25,7 @@
 // condition, a classical switch case), chosen by implication on pred's predicates; the factoring
 // itself is pred's.
 #include "SpineInternal.h"
+#include "../loops/cutoff/Exits.h"
 
 #include "cq/Aggregates.h"
 #include "cq/Effects.h"
@@ -147,6 +148,7 @@ private:
   std::vector<BitVector> reach;                         // reach[i][j]: L[j] reachable from L[i], forward edges
   DenseMap<const BasicBlock *, Loop *> unitOf;          // blocks of loops dispatched as units
   DenseSet<const BasicBlock *> pureHeaders;             // headers of purely classical loops walked inline
+  DenseMap<const Loop *, loops::exits::Unit> units;     // per unit: continuation and exit arm
   DenseMap<const BasicBlock *, SmallVector<BasicBlock *, 2>> outEdges;
   DenseMap<const BasicBlock *, unsigned> outPreds;
   DenseSet<const BasicBlock *> merged;
@@ -192,6 +194,7 @@ private:
   DenseMap<const BasicBlock *, SmallVector<InEdge, 2>> inEdges;
   void noteIn(const BasicBlock *from, const BasicBlock *to, Loop *unit = nullptr);
   Value *factoredMerge(PHINode &phi);
+  void joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in);
   bool eligible(const BasicBlock *y, const BasicBlock *from) const;
   BasicBlock *out(const BasicBlock *b);
   void emitBlock(BasicBlock *b);
@@ -300,6 +303,14 @@ void Walker::plan() {
     }
     for (BasicBlock *b : lp->blocks())
       unitOf[b] = lp;
+    // A unit with several live exits also holds its exit arm (loops-cutoff Exits.h): the loop module
+    // lowers it with the loop, and the unit continues at the exits' join.
+    loops::exits::Unit U = loops::exits::unitOf(*lp);
+    for (BasicBlock *b : U.arm)
+      unitOf[b] = lp;
+    for (BasicBlock *b : U.dead)
+      unitOf[b] = lp;   // never run (UB to reach): nothing of it is lowered
+    units.insert({lp, std::move(U)});
   }
   // Forward reachability (edges to a later block of L; back edges excluded).
   reach.assign(L.size(), BitVector(L.size()));
@@ -317,11 +328,10 @@ void Walker::plan() {
       Loop *lp = unitOf.lookup(b);
       if (lp->getHeader() != b)
         continue;
-      BasicBlock *exit = lp->getUniqueExitBlock();
-      if (!exit)
-        unimplemented("spine: a non-classical loop with more than one exit block", b->getTerminator());
-      // The loop as a unit ends at its exit block; like any edge leaving b, it continues at the next
-      // block of the walk that may run (an arm still to run comes first).
+      BasicBlock *exit = units.find(lp)->second.cont;
+      // The loop as a unit ends at its continuation (its exit block, or the join of its live exits);
+      // like any edge leaving b, it continues at the next block of the walk that may run (an arm still
+      // to run comes first).
       outEdges[b].push_back(next(b, exit));
       continue;
     }
@@ -715,6 +725,56 @@ Value *Walker::factoredMerge(PHINode &phi) {
   return np;
 }
 
+// A phi of a unit's continuation that the loop module bound (its value where the unit
+// ran: loops-classical's case-3 multi-exit form, 121) and that a classical skip of the unit also
+// reaches (the zero-trip guard): a classical phi over handles on the output edges, the unit's binding
+// on the unit's edge, on each other edge the one incoming its facts admit (a classical value seeded
+// where the edge leaves), recorded as a merge (rule 9 at a58c3a4).
+void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in) {
+  const BasicBlock *b = phi.getParent();
+  BasicBlock *join = out(b);
+  Operand unitVal = ctx.operand(&phi);
+  RailType w = railTypeOf(phi.getType());
+  std::vector<std::pair<BasicBlock *, Value *>> inc;
+  for (const InEdge &e : in) {
+    if (e.unit) {
+      inc.push_back({e.out, unitVal.v});
+      continue;
+    }
+    if (!e.facts)
+      unimplemented("spine: a unit-bound phi reached by an output edge with no classical facts", &phi);
+    const Value *v = nullptr;
+    for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i) {
+      const BasicBlock *u = phi.getIncomingBlock(i);
+      if (!idx.count(u) || unitOf.count(u) || (ctx.preds().edge(u, b) & *e.facts).isBottom())
+        continue;
+      if (v && v != phi.getIncomingValue(i))
+        unimplemented("spine: a unit-bound phi whose skip edge admits several incomings", &phi);
+      v = phi.getIncomingValue(i);
+    }
+    if (!v)
+      unimplemented("spine: a unit-bound phi with no incoming on a skip edge", &phi);
+    IRBuilderBase::InsertPointGuard g(ctx.B());
+    Instruction *t = e.out->getTerminator();
+    if (!t)
+      internalError("spine: the output block of an incoming edge has no terminator yet", &phi);
+    ctx.B().SetInsertPoint(t);
+    Operand o = ctx.operand(v);
+    if (!o.handle) {
+      CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {o.v});
+      ctx.unc().recordSeed(a);
+      o = Operand{a, true};
+    }
+    inc.push_back({e.out, o.v});
+  }
+  PHINode *np = PHINode::Create(unitVal.v->getType(), unsigned(inc.size()), phi.getName());
+  np->insertInto(join, join->getFirstNonPHIIt());
+  for (auto &[from, v] : inc)
+    np->addIncoming(v, from);
+  ctx.unc().recordMerge(np);
+  ctx.rebind(&phi, {Operand{np, true}});
+}
+
 void Walker::lowerUnit(Loop &lp) {
   loops::Case c = loops::classify(lp, ctx.T, ctx.S);
   if (c == loops::Case::QuantumExit) {
@@ -724,13 +784,17 @@ void Walker::lowerUnit(Loop &lp) {
       ac = std::make_unique<AssumptionCache>(F);
       se = std::make_unique<ScalarEvolution>(F, *tli, *ac, DT, LI);
     }
-    loops::lowerCutoff(ctx, lp, ctx.K(&lp), loops::tripBound(lp, *se));
+    loops::lowerCutoff(ctx, lp, ctx.K(&lp), loops::exits::cutoffBound(lp, *se, ctx.T, ctx.S));
   } else {
     loops::lowerClassical(ctx, lp, c);
   }
   for (BasicBlock *b : lp.blocks())
     for (Instruction &I : *b)
       visited.insert(&I);
+  for (auto *list : {&units.find(&lp)->second.arm, &units.find(&lp)->second.dead})
+    for (BasicBlock *b : *list)
+      for (Instruction &I : *b)
+        visited.insert(&I);
 }
 
 // The k-th scalar leaf type of a type (depth first, as aggr flattens it).
@@ -1245,8 +1309,18 @@ void Walker::emitBlock(BasicBlock *b) {
     // The header's guard comes first: the unit runs only under it (cq-uevr).
     emitGuard(b);
     Loop &lp = *unitOf.lookup(b);
+    const loops::exits::Unit &U = units.find(&lp)->second;
+    // The unit's exit edges: the edges into its continuation from the loop or its exit arm (an exit
+    // into an effect-free dead end is none: UB to take).
     SmallVector<std::pair<BasicBlock *, BasicBlock *>, 4> exits;
-    lp.getExitEdges(exits);
+    {
+      SmallVector<BasicBlock *, 16> from(lp.blocks().begin(), lp.blocks().end());
+      from.append(U.arm.begin(), U.arm.end());
+      for (BasicBlock *f : from)
+        for (BasicBlock *s : successors(f))
+          if (s == U.cont)
+            exits.push_back({f, s});
+    }
     // The exit blocks' quantum phis not yet bound: those bound once the unit returns, the loop module
     // bound (cq-lx8f). A phi bound before the unit is not the loop module's and stays an error below.
     SmallVector<const PHINode *, 4> exitPhis;
@@ -1266,6 +1340,13 @@ void Walker::emitBlock(BasicBlock *b) {
     // need not be the block its exit edges target, and n may be merged (cq-9us4).
     for (auto &x : exits) {
       BasicBlock *to = x.second;
+      // A join whose every phi the loop module bound (several live exits, Exits.h; loops-classical's
+      // case-3 multi-exit form) needs no exit edge told apart.
+      if (all_of(to->phis(), [&](const PHINode &phi) {
+            return !any_of(phi.blocks(), [&](const BasicBlock *u) { return U.contains(lp, u); }) ||
+                   unitBoundPhis.count(&phi);
+          }))
+        continue;
       if (count_if(exits, [&](const auto &e) { return e.second == to; }) > 1 && !to->phis().empty())
         unimplemented("spine: a loop unit with more than one exit edge into an exit block with a phi (the "
                       "loop contract does not say which exit edge was taken; cq-qjm9)",
@@ -1303,6 +1384,8 @@ void Walker::emitBlock(BasicBlock *b) {
     sh.cur = &phi;
     visited.insert(&phi);
     if (unitBoundPhis.count(&phi)) {
+      if (auto ie = inEdges.find(b); ie != inEdges.end() && ie->second.size() > 1)
+        joinUnitPhi(phi, ie->second);
       blockDefs.push_back(&phi);
       continue;
     }
