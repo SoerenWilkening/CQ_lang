@@ -65,7 +65,8 @@
 //    callee; a read of a state rail must be dominated by its definition in the output;
 //  - feclearexcept with a quantum mask, and every environment call other than fesetround,
 //    fegetround, feraiseexcept and fetestexcept under a quantum predicate;
-//  - a classical constrained op that raises under a quantum predicate (its bits would be quantum);
+//  - a classical constrained op that raises under a quantum predicate (its bits would be quantum),
+//    unless its operands are literals (folded: FLAGS |= select(p, bits, 0), 169);
 //  - a call, while the quantum part is live, to a function whose body may change the environment,
 //    unless it is a quantum call of a clone carrying the environment (E1, 82: the clone takes the
 //    caller's mode and flags and returns the new flags; contract at the end of this file), and
@@ -207,14 +208,22 @@ bool bodyTouchesFenv(const Function &F, SmallPtrSetImpl<const Function *> &seen)
   return false;
 }
 
-// E1 (82): does a clone of S carry the environment? S.F's own body does constrained floating-point work,
-// calls <fenv.h> or a rounding intrinsic, or makes an indirect call (it may reach anything), or a call in
-// it lifts a clone (taint's callee specialization from S) that carries it (CR rule 23: "a clone that
-// does constrained FP work takes the caller's mode and flags rail and returns the new flags rail beside
-// its result"). A callee reached by an ordinary (classical) call is not followed: it runs on the host,
-// what it raises is the host part (173, 174: __divsc3's logbf of a classical argument reaches the
-// strictfp ilogbf; the reference clone takes no environment; cq-xhv4). Decided on the taint of the run,
-// so the caller, the clone's construction and the twin agree on the ABI.
+// Does F access the environment itself (CR rule 23)? It is compiled under FENV_ACCESS (strictfp) or
+// calls a <fenv.h> function. Where it does not, the environment is the default (C17 7.6.1): the flags
+// its callees' clones return are fenv state the program never reads, uncomputed and dropped, never an
+// output (169: __divdc3 and logb, compiled without the pragma, reaching the strictfp ilogb).
+bool accessesEnv(const Function &F) {
+  if (F.hasFnAttribute(Attribute::StrictFP))
+    return true;
+  for (const BasicBlock &BB : F)
+    for (const Instruction &I : BB)
+      if (auto *CB = dyn_cast<CallBase>(&I); CB && fenvFn(*CB) != FenvFn::None)
+        return true;
+  return false;
+}
+
+// Does F's own body touch the environment (constrained FP work, a <fenv.h> call, a rounding intrinsic,
+// or an indirect call, which may reach anything)?
 bool ownBodyTouchesFenv(const Function &F) {
   for (const BasicBlock &BB : F)
     for (const Instruction &I : BB) {
@@ -227,10 +236,23 @@ bool ownBodyTouchesFenv(const Function &F) {
         if (II->getIntrinsicID() == Intrinsic::set_rounding || II->getIntrinsicID() == Intrinsic::get_rounding)
           return true;
       if (!CB->getCalledFunction() && !CB->isInlineAsm())
-        return true;   // an indirect call may reach anything
+        return true;
     }
   return false;
 }
+
+// E1 (82): does a clone of S carry the environment (CR rule 23: "a clone that does constrained FP work
+// takes the caller's mode and flags rail and returns the new flags rail beside its result")? Its own
+// body touches it, or it is compiled under FENV_ACCESS and a call in it lifts (taint's callee
+// specialization from S) a clone that carries it. A callee reached by an ordinary classical call runs on
+// the host, what it raises is the host part (173, 174: __divsc3's logbf of a classical argument reaches
+// the strictfp ilogbf; the references' clones take no environment). A clone compiled without the
+// pragma that lifts a carrying clone does not carry it: it runs in the default environment and drops
+// the flags it gets back (169's __divdc3 and logb; accessesEnv); that is refused when a function that
+// accesses the environment calls it (the dropped flags would be readable there). Decided on the run's
+// taint, so the caller, the clone's construction and the twin agree on the ABI (cq-xhv4; orchestrator
+// decision under rule 23 and the 169/173/174 references, owner may override).
+bool liftsCarrying(const TaintInfo &T, const Specialization &S, SmallPtrSetImpl<const Specialization *> &seen);
 
 bool carriesEnvImpl(const TaintInfo &T, const Specialization &S, SmallPtrSetImpl<const Specialization *> &seen) {
   if (!S.F || S.F->isDeclaration() || S.isEntry())
@@ -239,6 +261,20 @@ bool carriesEnvImpl(const TaintInfo &T, const Specialization &S, SmallPtrSetImpl
     return false;   // a cycle of lifted calls: its bodies are judged where they are first reached
   if (ownBodyTouchesFenv(*S.F))
     return true;
+  if (!liftsCarrying(T, S, seen))
+    return false;
+  if (accessesEnv(*S.F))
+    return true;
+  for (const User *U : S.F->users())
+    if (auto *CB = dyn_cast<CallBase>(U); CB && CB->getCalledOperand() == S.F && accessesEnv(*CB->getFunction()))
+      unimplemented("eff-fenv: a clone compiled without FENV_ACCESS that lifts a clone carrying the environment, "
+                    "called from a function that accesses the environment (the flags it drops would be "
+                    "readable there; rule 23)",
+                    CB);
+  return false;
+}
+
+bool liftsCarrying(const TaintInfo &T, const Specialization &S, SmallPtrSetImpl<const Specialization *> &seen) {
   for (const BasicBlock &BB : *S.F)
     for (const Instruction &I : BB) {
       auto *CB = dyn_cast<CallBase>(&I);
@@ -641,10 +677,11 @@ bool anyLinearizedAfter(LoweringContext &ctx, State &st, const Instruction &I, P
 // path, or saving into an object on one classical path, would otherwise hold after the join on every
 // path (cq-1dlz).
 void requirePlaced(LoweringContext &ctx, State &st, const Instruction &I) {
-  if (!ctx.S.isEntry() && !st.cloneBound)
+  if (!ctx.S.isEntry() && !st.cloneBound && accessesEnv(*ctx.S.F))
     unimplemented("eff-fenv: the quantum floating-point environment changes in a clone that does not carry it "
                   "(rule 23 clone ABI, 82)",
                   &I);
+  // A clone compiled without FENV_ACCESS keeps a local default environment, dropped (accessesEnv, 169).
   if (I.getFunction() != st.orig)
     unimplemented("eff-fenv: the quantum floating-point environment changes in a rule-19 inlined callee", &I);
   if (loopInfo(st, *I.getFunction()).getLoopFor(I.getParent()))
@@ -781,6 +818,8 @@ void settle(LoweringContext &ctx, State &st, const Instruction &I) {
   writeBack(ctx, st, I);
   if (st.cloneBound)
     return;   // E1: a clone's final flags are copied out at its returns (cloneExitFlags), never an output
+  if (!accessesEnv(*ctx.S.F))
+    return;   // the environment is the default here: what its callees raised is dropped (169)
   LoopInfo &LI = loopInfo(st, *I.getFunction());
   auto final = [&](bool (*writes)(const Instruction &)) {
     auto later = [&](const Instruction &n) {
@@ -854,6 +893,8 @@ bool cacheValid(const State &st, const Instruction &I) {
 Value *classicalMode(LoweringContext &ctx, State &st, const Instruction &I) {
   if (st.cloneBound)
     return st.cloneMode;   // E1: the caller's mode; bindCloneEnv refused a clone that changes it
+  if (!ctx.S.isEntry() && !accessesEnv(*ctx.S.F))
+    return i32(ctx, 0);    // a clone without FENV_ACCESS runs in the default environment: FE_TONEAREST (169)
   if (cacheValid(st, I))
     return st.modeVal;
   st.modeVal = hostGetRound(ctx);
@@ -1017,14 +1058,79 @@ Value *excOf(LoweringContext &ctx, State &st, const Step &s, StringRef origOp) {
   return tmpl(ctx, st, e, s.ops);
 }
 
-void raiseBits(LoweringContext &ctx, State &st, const Instruction &I, Value *bits) {
+void raiseBits(LoweringContext &ctx, State &st, const Instruction &I, Value *bits, uint32_t lit = 0) {
   if (st.traps)
     unimplemented("eff-fenv: a quantum op raising after feenableexcept (a trap on quantum flags)", &I);
   if (st.flags)
     requireValid(ctx, st.flagsAt, I, "flags");
-  if (Value *flag = predicateFlag(ctx))
+  if (!bits) {
+    // Classical literal bits (foldLiteralConstrained): raised under the predicate only.
+    Value *flag = predicateFlag(ctx);
+    if (!flag || !lit)
+      internalError("eff-fenv: literal exception bits raised outside a quantum predicate", &I);
+    bits = select32(ctx, st, flag, Operand{i32(ctx, lit), false}, Operand{i32(ctx, 0), false});
+  } else if (Value *flag = predicateFlag(ctx)) {
     bits = select32(ctx, st, flag, Operand{bits, true}, Operand{i32(ctx, 0), false});
+  }
   setFlags(ctx, st, orFlags(ctx, st, st.flags, bits));
+}
+
+// A classical constrained op whose data operands are all literals (169's FORCE_EVAL(0/0.0f) in ilogb:
+// sitofp(0) then fdiv(0.0f, 0.0f); data are the lowered operands, a folded one a literal), folded: its result and its exception bits (x86 FE_* values), the
+// same in every rounding mode it may run in (a static mode, or all four for round.dynamic). nullopt
+// when an operand is not a literal, the op is not one folded here, the bits include underflow (the
+// tininess rule is the target's), or the result or bits depend on the mode.
+struct Folded { Constant *result; uint32_t bits; };
+std::optional<Folded> foldLiteralConstrained(const ConstrainedFPIntrinsic &CI, ArrayRef<Operand> data) {
+  const char *op = constrainedOp(CI.getIntrinsicID());
+  if (!op)
+    return std::nullopt;
+  StringRef o(op);
+  for (const Operand &d : data)
+    if (d.handle || (!isa<ConstantFP>(d.v) && !isa<ConstantInt>(d.v)))
+      return std::nullopt;
+  SmallVector<RoundingMode, 4> modes;
+  std::optional<RoundingMode> rm = CI.getRoundingMode();
+  if (rm && *rm != RoundingMode::Dynamic)
+    modes.push_back(*rm);
+  else
+    modes = {RoundingMode::NearestTiesToEven, RoundingMode::TowardPositive, RoundingMode::TowardNegative,
+             RoundingMode::TowardZero};
+  auto fpArg = [&](unsigned i) { return cast<ConstantFP>(data[i].v)->getValueAPF(); };
+  std::optional<Folded> out;
+  for (RoundingMode m : modes) {
+    APFloat::opStatus stt = APFloat::opOK;
+    Constant *res = nullptr;
+    Type *T = CI.getType();
+    if (o == "fadd" || o == "fsub" || o == "fmul" || o == "fdiv") {
+      APFloat a = fpArg(0), b = fpArg(1);
+      stt = o == "fadd" ? a.add(b, m) : o == "fsub" ? a.subtract(b, m) : o == "fmul" ? a.multiply(b, m)
+                                                                         : a.divide(b, m);
+      res = ConstantFP::get(T, a);
+    } else if (o == "sitofp" || o == "uitofp") {
+      auto *ci = dyn_cast<ConstantInt>(data[0].v);
+      if (!ci)
+        return std::nullopt;
+      APFloat r(T->getFltSemantics());
+      stt = r.convertFromAPInt(ci->getValue(), o == "sitofp", m);
+      res = ConstantFP::get(T, r);
+    } else if (o == "fptrunc" || o == "fpext") {
+      APFloat a = fpArg(0);
+      bool loses = false;
+      stt = a.convert(T->getFltSemantics(), m, &loses);
+      res = ConstantFP::get(T, a);
+    } else {
+      return std::nullopt;
+    }
+    if (stt & APFloat::opUnderflow)
+      return std::nullopt;
+    uint32_t bits = ((stt & APFloat::opInvalidOp) ? 1u : 0u) | ((stt & APFloat::opDivByZero) ? 4u : 0u) |
+                    ((stt & APFloat::opOverflow) ? 8u : 0u) | ((stt & APFloat::opInexact) ? 32u : 0u);
+    if (out && (out->bits != bits || out->result != res))
+      return std::nullopt;
+    out = Folded{res, bits};
+  }
+  return out;
 }
 
 } // namespace
@@ -1046,10 +1152,22 @@ void lowerConstrained(LoweringContext &ctx, CallBase &CB) {
 
   if (!quantum) {
     // The host op: rounds in the host mode, raises into the host flags.
-    if (raises(CI) && !ctx.currentPredicate().isTop())
-      unimplemented("eff-fenv: a classical constrained op that raises under a quantum predicate (its "
-                    "exception bits are quantum)",
-                    &CI);
+    if (raises(CI) && !ctx.currentPredicate().isTop()) {
+      // Its bits are quantum (raised only where the predicate holds). A literal op folds (169): the
+      // folded value, no host op, and FLAGS |= select(p, bits, 0).
+      std::optional<Folded> f = foldLiteralConstrained(CI, data);
+      if (!f)
+        unimplemented("eff-fenv: a classical constrained op that raises under a quantum predicate (its "
+                      "exception bits are quantum; folded only for literal operands)",
+                      &CI);
+      if (f->bits) {
+        requireWritable(ctx, st, CI);
+        raiseBits(ctx, st, CI, nullptr, f->bits);
+      }
+      bindResult(ctx, CB, Operand{f->result, false});
+      settle(ctx, st, CI);
+      return;
+    }
     bindResult(ctx, CB, Operand{copyHost(ctx, CI), false});
     settle(ctx, st, CI);
     return;
@@ -1467,7 +1585,8 @@ void afterMeasure(LoweringContext &ctx, CallInst &measure) {
 //    flags last), then the clone's parameters (mode and flags included).
 //  - envArgs(ctx, site): caller, at the builder before the clone call: {mode (classical), flags
 //    (handle)}. An empty FLAGS becomes a fresh |0> seed first. Unimplemented: MODE a handle (a clone
-//    rounding in a quantum mode), a quantum predicate at the site (a _ctl clone's flags).
+//    rounding in a quantum mode). Under a quantum predicate (the clone called unguarded, rule 19)
+//    afterCloneCall merges: FLAGS := select(predicate, flagsOut, FLAGS).
 //  - afterCloneCall(ctx, site, flagsOut): caller, right after the call and after recordCall recorded
 //    flagsOut (the extractvalue of the last field, or the call itself) as an out: FLAGS := flagsOut.
 //    This module may set flagsOut's role to Output (the final flags) afterwards.
@@ -1489,10 +1608,6 @@ std::array<Operand, 2> envArgs(LoweringContext &ctx, CallBase &site) {
     unimplemented("eff-fenv: a call of a clone carrying the environment while the rounding mode is quantum "
                   "(rule 23 clone ABI with a mode handle)",
                   &site);
-  if (predicateFlag(ctx))
-    unimplemented("eff-fenv: a call of a clone carrying the environment under a quantum predicate (its new "
-                  "flags rail would merge with the old under the predicate)",
-                  &site);
   requireWritable(ctx, st, site);
   Value *mode = classicalMode(ctx, st, site);
   if (st.flags) {
@@ -1509,6 +1624,14 @@ void afterCloneCall(LoweringContext &ctx, CallBase &site, Value *flagsOut) {
   State &st = stateOfCall(ctx, site);
   if (!flagsOut || !flagsOut->getType()->isIntegerTy(32))
     internalError("eff-fenv: afterCloneCall without the clone's returned flags handle", &site);
+  if (Value *flag = predicateFlag(ctx)) {
+    // Under a quantum predicate the clone ran unguarded (rule 19: no non-pure gate in its body), on the
+    // flags envArgs passed: its new flags hold only where the predicate does, the old ones elsewhere
+    // (169's logb calling ilogb in one arm; the merge as feraiseexcept's, 65).
+    if (!st.flags)
+      internalError("eff-fenv: a clone call under a quantum predicate with no flags passed", &site);
+    flagsOut = select32(ctx, st, flag, Operand{flagsOut, true}, Operand{st.flags, true});
+  }
   setFlags(ctx, st, flagsOut);
   settle(ctx, st, site);
 }
