@@ -2205,6 +2205,62 @@ void allocateSlots(LoweringContext &ctx, Instruction &site) {
   ctx.bindFields(&site, {Operand{nc, false}});
 }
 
+// cq-qd05: the type of the rail the clone S leaves in the cell at byte offset off (size bytes) of the
+// object its formal argNo points to: its stores through the formal at that cell (finishStore: the stored
+// type; mergedCloneStore, 51: the floating-point type when some store is floating point), or, through a
+// clone it hands the pointer to, that clone's. Null when no such store is found.
+Type *cloneCellType(LoweringContext &ctx, const Specialization &S, unsigned argNo, int64_t off, uint64_t size,
+                    const Instruction &at, unsigned depth = 0) {
+  if (depth > 16)
+    unimplemented("mem-slots: the rail type a clone leaves in a caller cell through a deep chain of clone calls",
+                  &at);
+  const DataLayout &DL = ctx.M.getDataLayout();
+  const Argument *A = S.F->getArg(argNo);
+  Type *fp = nullptr, *any = nullptr;
+  auto note = [&](Type *t) {
+    if (t->isFloatingPointTy())
+      fp = t;
+    if (!any)
+      any = t;
+  };
+  for (const Instruction &I : instructions(*S.F)) {
+    if (auto *CB = dyn_cast<CallBase>(&I)) {
+      if (isa<MemIntrinsic>(CB) || isa<DbgInfoIntrinsic>(CB) || isCqSurface(*CB))
+        continue;
+      const Function *f = CB->getCalledFunction();
+      const Specialization *C =
+          f && !f->isDeclaration() && !isa<IntrinsicInst>(CB) ? ctx.T.calleeSpecialization(*CB, S) : nullptr;
+      if (!C)
+        continue;
+      for (unsigned i = 0; i < CB->arg_size(); ++i) {
+        Addr pa = decompose(CB->getArgOperand(i), DL);
+        if (pa.ok && pa.root == A && pa.terms.empty() && !ctx.T.cellsWritten(*C, i).empty())
+          if (Type *t = cloneCellType(ctx, *C, i, off - pa.off, size, at, depth + 1))
+            note(t);
+      }
+      continue;
+    }
+    const Value *ptr = nullptr;
+    Type *ty = nullptr;
+    if (auto *st = dyn_cast<StoreInst>(&I)) {
+      ptr = st->getPointerOperand();
+      ty = st->getValueOperand()->getType();
+    } else if (auto *r = dyn_cast<AtomicRMWInst>(&I)) {
+      ptr = r->getPointerOperand();
+      ty = r->getValOperand()->getType();
+    } else if (auto *c = dyn_cast<AtomicCmpXchgInst>(&I)) {
+      ptr = c->getPointerOperand();
+      ty = c->getNewValOperand()->getType();
+    } else {
+      continue;
+    }
+    Addr a = decompose(ptr, DL);
+    if (a.ok && a.root == A && a.terms.empty() && a.off == off && storeBytes(DL, ty) == size)
+      note(ty);
+  }
+  return fp ? fp : any;
+}
+
 void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
   FnState &st = stateOf(ctx, ld);
   if (!ctx.T.isQuantum(&ld, ctx.S)) {
@@ -2233,6 +2289,40 @@ void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
   cellRail(*s.info, ld.getType(), ld);
   Operand h = readCell(ctx, st, s, ld, ld.getType());
   st.lowered[&ld] = h;
+  if (const Instruction *src = h.handle ? sourceOf(ctx, st, *s.info, s.o, &ld, s.a, ld.getType()) : nullptr)
+    if (auto *CB = dyn_cast<CallBase>(src); CB && !isa<MemIntrinsic>(CB)) {
+      // cq-qd05: the cell holds the rail the clone left there, of the clone's type (cloneCellType); a load
+      // at another type of the same width reads it through a bitcast (a view, rule 3: 51's punned i64 and
+      // double accesses of one cell, the caller reading the other one).
+      const DataLayout &DL = ctx.M.getDataLayout();
+      uint64_t size = storeBytes(DL, ld.getType());
+      Type *cty = nullptr;
+      if (const Specialization *S = cloneCallee(ctx, *CB))
+        for (unsigned i = 0; i < CB->arg_size() && !cty; ++i) {
+          Addr pa = decompose(CB->getArgOperand(i), DL);
+          if (pa.ok && pa.terms.empty() && hasObject(ctx, CB->getArgOperand(i), s.o) && pa.root == s.a.root &&
+              !cellsWrittenBy(ctx, *S, i).empty())
+            cty = cloneCellType(ctx, *S, i, s.a.off - pa.off, size, ld);
+        }
+      if (!cty)
+        unimplemented("mem-slots: a load of a caller cell a clone call wrote whose rail type the clone's stores do "
+                      "not show (cq-qd05)",
+                      &ld);
+      if (cty != ld.getType()) {
+        if (storeBytes(DL, cty) != size || !(cty->isIntegerTy() || cty->isFloatingPointTy()) ||
+            !(ld.getType()->isIntegerTy() || ld.getType()->isFloatingPointTy()) || s.info->boolCells)
+          unimplemented("mem-slots: a load of a caller cell a clone call wrote at a type the clone's rail is not a "
+                        "same-width scalar view of (cq-qd05)",
+                        &ld);
+        // The clone's rail stays live (kept with its call's results: the twin would zero it under a kept
+        // view of it, U2); the view is a fresh rail with its own role.
+        ctx.unc().setRole(ctx.unc().idOf(h.v), Role::KeptEntangled);
+        Value *v = viewTemplate(ctx, "bitcast", railTypeOf(cty), railTypeOf(ld.getType()), {h});
+        st.lowered[&ld] = Operand{v, true};
+        ctx.bindFields(&ld, {Operand{v, true}});
+        return;
+      }
+    }
   if (!h.handle) {
     ctx.bindFields(&ld, {h});   // a classical cell (rule 20 per cell)
     return;
