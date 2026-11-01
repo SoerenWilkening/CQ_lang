@@ -15,12 +15,15 @@ Fails on any of:
             operand is no rail position, nor xorc_controlled's literal (c, h, lit) or push's word
             (cq-oylm, src/xorc_cells.ll); cq-mopw: the sites a cq_invert region may reach (61:
             prep's two and invert_theta's second, not invert_call's), and an Ry whose angle is the
-            identity still counts as the overwriting prep of a rule-10 un-prep
+            identity still counts as the overwriting prep of a rule-10 un-prep where the C program
+            overwrites j's register by an identity reach after j's (cq-q15r, cq-ia96)
   mutant    a wrong lowered module is not rejected (exit 1): built from 01's reference with the Ry's
             angle negated, the add computed before the Ry (only cq_theta substitution sees it), the
             measured rail replaced by its classical input, and an empty body (ret 0); from 60's
             reference, five wrong phases or Ry that only varied handle cells expose (cq-rbe6); from
-            133's, an un-prep whose overwriting prep is an Ry(NaN) with no C reach (cq-q15r)
+            133's, an un-prep whose overwriting prep is an Ry(NaN) with no C reach (cq-q15r); from
+            src/ia96/p.c's (green itself), an un-prep whose Ry(NaN) only another register's earlier
+            NaN prep could back (m4, m5; cq-ia96)
   error     a missing entry or main(argc, argv) is not an error (exit 2)
 
 Every run goes through the CLI (`python3 -m cqcheck user` from checker/), as cqcc --cq-check runs it.
@@ -148,20 +151,38 @@ def unit_mopw(spec_root):
     j = C._Ev(idx=0, kind="ry", target=3, tclass=tv, theta=t1, afn=None, pred=(1, 1, 0), cpred=(1, 1, 0))
     i = C._Ev(idx=1, kind="ry", target=3, tclass=tv, theta=t1 ^ sign, afn=None, pred=(1, 0, 0), cpred=(1, 0, 0))
     k = C._Ev(idx=2, kind="ry", target=3, tclass=tv, theta=nan, afn=None, pred=(0, 0, 0), cpred=(1, 0, 1))
-    for name, idle, want in (("with the idle prep", [k], (0, frozenset())), ("without it", [], None)):
-        got = C._unprep_partners([j, i], idle)[1]
-        (ok if got == want else fail)(f"unit un-prep {name}", f"{got}" + ("" if got == want else f", want {want}"))
-    # cq-q15r: k stands only on an identity C reach of its angle and register at every sample its
-    # control fires (here 0 and 2)
     k.rawang = (nan, None, nan)
     site = ("prep_twice", 2, "theta")
-    for name, ident, want in (
-            ("backed", {site: [[(5, "NaN", 5)], [], [(5, "NaN", 5)]]}, 1),
-            ("no identity reach", {}, 0),
-            ("reach at one sample only", {site: [[(5, "NaN", 5)], [], []]}, 0),
-            ("other register", {site: [[(5, "NaN", 6)], [], [(5, "NaN", 5)]]}, 0)):
-        got = len(C._backed_idle([k], ident, True, [False] * 3))
-        (ok if got == want else fail)(f"unit idle prep {name}", f"{got}" + ("" if got == want else f", want {want}"))
+    for name, idle, back, want in (
+            ("with the idle prep, backed", [k], lambda j, k, s: (site, (s, 4)), (0, frozenset())),
+            ("with the idle prep, unbacked", [k], lambda j, k, s: None, None),
+            ("with the idle prep, no C backing given", [k], None, None),
+            ("without it", [], None, None)):
+        got = C._unprep_partners([j, i], idle, back)[1]
+        (ok if got == want else fail)(f"unit un-prep {name}", f"{got}" + ("" if got == want else f", want {want}"))
+    # cq-ia96: the C program's overwrite of j's reach is the next reach of the same register web
+    # after it, an identity reach of k's angle class and value
+    jsite = ("prep_twice", 1, "theta")
+    zsite = ("f", 1, "theta")
+    same = {"prep_twice:1": 1, "prep_twice:2": 1, "f:1": 2}
+    for name, occ, ident, regs, want in (
+            ("overwrite", [(3, t1, 5)], {site: [[(4, "NaN", 5)], [], []]}, same, (site, (0, 4))),
+            ("other register", [(3, t1, 5)], {zsite: [[(4, "NaN", 5)], [], []]}, same, None),
+            ("before j", [(3, t1, 5)], {site: [[(2, "NaN", 5)], [], []]}, same, None),
+            ("a reach of the register between", [(3, t1, 5), (4, t1, 9)], {site: [[(6, "NaN", 5)], [], []]},
+             same, None),
+            ("other value", [(3, t1, 5)], {site: [[(4, "NaN", 6)], [], []]}, same, None)):
+        sites = [C._Site(jsite, "theta", [occ, [], []])]
+        got = C._c_backing(sites, ident, regs, True)(j, k, 0)
+        (ok if got == want else fail)(f"unit C overwrite {name}", f"{got}" + ("" if got == want else f", want {want}"))
+    for path, a, b, want in ((spec_root / "examples" / "133_state_prep_overwrite" / "state_prep_overwrite.O1.ll",
+                              "prep_twice:1", "prep_twice:2", True),
+                             (spec_root / "examples" / "133_state_prep_overwrite" / "state_prep_overwrite.O1.ll",
+                              "prep_twice:0", "prep_twice:1", False),
+                             (SRC / "ia96" / "p.O1.ll", "f:1", "f:2", False)):
+        regs = D.theta_registers(D.read_module(path))
+        got = regs[a] == regs[b]
+        (ok if got == want else fail)(f"unit one register {path.name} {a} {b}", f"{got}")
 
 
 def mutants(ref_text):
@@ -263,6 +284,13 @@ def main():
         p = tmp / "mutant133_unprep_nan.ll"
         p.write_text(mutant133((d133 / "state_prep_overwrite.lowered.ll").read_text()))
         expect("mutant 133 unprep_nan", 1, user(d133 / "state_prep_overwrite.O1.ll", p, "prep_const_incoming"))
+
+        # cq-ia96 (review of cq-q15r): z's NaN prep, earlier in C and on another register, backs no
+        # Ry(NaN) on r, so the Ry(-t) before it is no un-prep
+        ia = SRC / "ia96"
+        expect("program ia96 p (f)", 0, user(ia / "p.O1.ll", ia / "p.lowered.ll", "f"))
+        for m in ("m4", "m5"):
+            expect(f"mutant ia96 {m}", 1, user(ia / "p.O1.ll", ia / f"{m}.lowered.ll", "f"))
 
         expect("error: no such entry", 2, user(o1, d / "add_classical_const.lowered.ll", "nosuch"))
         argv = tmp / "argv"

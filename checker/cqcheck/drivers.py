@@ -716,6 +716,55 @@ def theta_sites(mod: Module, closure: bool = True) -> List[ThetaSite]:
     return out
 
 
+def theta_registers(mod: Module) -> Dict[str, Tuple[str, int]]:
+    """Per cq_theta site ("fn:site", T1.1), its register web (bead cq-ia96): the sites whose results
+    are values of one C register by SSA alone, CR rule 10's "a phi of cq_theta(v, θ) against v (or
+    two thetas of one seed)". Within a function, the results of cq_theta calls, phis and selects are
+    joined through phi incomings, select arms and a cq_theta's register operand; parameters,
+    constants and every other instruction join nothing (two registers seeded from one argument stay
+    apart). A register carried through memory or across a call is not followed: its sites are
+    different webs. The web is (function, a representative's index)."""
+    out: Dict[str, Tuple[str, int]] = {}
+    for f in mod.functions.values():
+        parent: Dict[str, str] = {}
+
+        def find(v: str) -> str:
+            while parent[v] != v:
+                parent[v] = parent[parent[v]]
+                v = parent[v]
+            return v
+
+        joinable: Dict[str, Inst] = {}
+        for ins in f.insts():
+            if ins.dest and (ins.op in ("phi", "select")
+                             or (ins.op == "call" and ins.callee and ins.callee.startswith("@cq_theta_"))):
+                joinable[ins.dest] = ins
+                parent[ins.dest] = ins.dest
+        for v, ins in joinable.items():
+            if ins.op == "phi":
+                srcs = [m.group(1) for m in (re.match(r"\s*(?:\S+\s+)?\[\s*(%[-A-Za-z$._0-9]+)\s*,", o)
+                                            for o in ins.operands) if m]
+            elif ins.op == "select":
+                srcs = [o.split()[-1] for o in ins.operands[1:3] if o.split()]
+            else:
+                srcs = [ins.call_args[0].split()[-1]] if ins.call_args else []
+            for u in srcs:
+                if u in joinable:
+                    parent[find(u)] = find(v)
+        ordinal = 0
+        for ins in f.insts():
+            if not (ins.op == "call" and ins.callee and site_kind(ins.callee)):
+                continue
+            ordinal += 1
+            if ins.callee.startswith("@cq_theta_"):
+                name = f.name[1:]
+                if name.startswith('"'):
+                    name = name[1:-1]
+                root = find(ins.dest) if ins.dest in parent else None
+                out[f"{name}:{ordinal - 1}"] = (f.name, joinable[root].index if root else -ins.index - 1)
+    return out
+
+
 def reachable_functions(mod: Module, entry: str) -> Set[str]:
     """Functions ("@f") reachable from entry by direct calls (entry included)."""
     seen, work = set(), [entry]

@@ -445,12 +445,17 @@ def _trip_disagreements(ex: Example, spec, ss, c_raw: Optional[list], samples: l
     return [f"sampling: trip sample disagrees: {d}" for d in gaps.confirm_trips(ss, runs)]
 
 
-def _compare(ours_results, other_results, against: str, spec) -> Tuple[str, List[str]]:
+def _compare(ours_results, other_results, against: str, spec, o1: Optional[Path] = None) -> Tuple[str, List[str]]:
     # Z1: a consumer that holds the DriverSpec passes its classical key (CR §6 global phases are
-    # judged with the classical arguments fixed).
+    # judged with the classical arguments fixed). Against the C program, the register webs of its
+    # cq_theta sites (bead cq-ia96, rule 10's overwrite by an identity-angle prep).
     key = sibling("compare", "classical_key_from_driver")(spec)
+    extra = {}
+    if o1 is not None:
+        from cqcheck import drivers as D
+        extra["registers"] = D.theta_registers(D.read_module(Path(o1)))
     reasons = list(sibling("compare", "compare")(ours_results, other_results, against,
-                                                 classical_key=key))
+                                                 classical_key=key, **extra))
     return (PASS, []) if not reasons else (FAIL, [f"{against}: {r}" for r in reasons])
 
 
@@ -580,7 +585,7 @@ def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_erro
             if want_c:
                 try:
                     c_results = _side_results(_oracle_batch, ex.o1, spec, samples, c_raw)
-                    c_oracle, rs = _compare(ours_results, c_results, "c", spec)
+                    c_oracle, rs = _compare(ours_results, c_results, "c", spec, ex.o1)
                     reasons += rs
                 except Exception as e:  # noqa: BLE001
                     c_oracle = ERROR

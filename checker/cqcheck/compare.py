@@ -37,9 +37,11 @@ What is compared (CR §6, CLAUDE.md "The §6 checker"):
   no gate on the target fires between j and i, and a later gate on the target fires (the
   overwriting prep), each such first later gate taking a C reach. An Ry whose angle is the identity
   where its control fires (CR §1.3) is no gate and takes no reach, but still counts as a gate on its
-  target there for this reading (bead cq-mopw) when the C program backs it: one C theta site has, at
-  every sample where its control fires, an identity reach of its angle and register value (bead
-  cq-q15r); an unbacked one counts for nothing. Anything else is unmatched. A
+  target there for this reading (bead cq-mopw); as the overwriting prep k it stands only where the
+  C program overwrites j's reach by an identity reach of k's angle and register value: the next
+  reach after j's of a site of the same register (one SSA web of the .O1.ll, `registers`), at one
+  site over the samples, each such reach backing one k (beads cq-q15r, cq-ia96). Anything else is
+  unmatched. A
   `cq_invert` region (the
   sites between an invert_begin and its matching invert_end, nesting by depth) is read under CR rule
   17: its sites are taken in reverse order with their angles negated (a region inside a region is so
@@ -685,8 +687,8 @@ def _c_sites(runs: List[RunResult], nan_eq: bool, open_end: Sequence[bool] = (),
              ) -> Tuple[List[_Site], List[str]]:
     """The C sites of a group (identity reaches dropped, CR §1.3) and the reasons its markers do not
     pair up. `ident`, when given, receives the dropped theta reaches: site key -> per sample
-    [(emission position, angle class, register)] (bead cq-q15r: an idle lowered Ry stands as a
-    rule-10 overwrite only on such a reach)."""
+    [(emission position, angle class, register)] (beads cq-q15r, cq-ia96: an idle lowered Ry
+    stands as a rule-10 overwrite only on such a reach, _c_backing)."""
     sites: Dict[Tuple, _Site] = {}
     reasons: List[str] = []
     nS = len(runs)
@@ -711,60 +713,11 @@ def _c_sites(runs: List[RunResult], nan_eq: bool, open_end: Sequence[bool] = (),
     return [sites[k] for k in sorted(sites, key=repr)], reasons
 
 
-def _backed_idle(idle: Sequence[_Ev], ident: Dict[Tuple, List[List[Tuple[int, Any, Optional[int]]]]],
-                 nan_eq: bool, capped: Sequence[bool]) -> List[_Ev]:
-    """The idle Ry (identity angle wherever the control fires) that the C program backs (bead
-    cq-q15r): each is given one C theta site such that at every uncapped sample where its control
-    fires, that site has an identity-angle reach of the same angle class and register value, each
-    such reach backing at most one idle Ry per sample. The largest such set is kept (a backtracking
-    assignment); an unbacked idle Ry is an identity the C program has no counterpart for, so it
-    neither counts as a gate on its target nor as rule 10's overwriting prep."""
-    if not idle:
-        return []
-    keys = sorted(ident, key=repr)
-
-    def need(e: _Ev) -> List[Tuple[int, Any, Any]]:
-        w = e.tclass[0] if e.tclass else None
-        return [(s, _fpv(e.rawang[s], "f64", nan_eq), _fpv(e.tclass[1][s], w, nan_eq))
-                for s in range(len(e.cpred)) if e.cpred[s] and not (capped and capped[s])]
-
-    def avail(key: Tuple, s: int, ang: Any, reg: Any, w: Optional[str]) -> int:
-        return sum(1 for _, a, r in ident[key][s] if a == ang and _fpv(r, w, nan_eq) == reg)
-
-    needs = [need(e) for e in idle]
-    cands = [[k for k in keys if all(avail(k, s, a, r, e.tclass[0] if e.tclass else None) > 0 for s, a, r in nd)]
-             for e, nd in zip(idle, needs)]
-    used: Dict[Tuple, int] = {}
-    best: List[int] = []
-    cur: List[int] = []
-
-    def fits(i: int, k: Tuple) -> bool:
-        w = idle[i].tclass[0] if idle[i].tclass else None
-        return all(used.get((k, s, a, r), 0) < avail(k, s, a, r, w) for s, a, r in needs[i])
-
-    def dfs(i: int) -> None:
-        nonlocal best
-        if len(cur) + (len(idle) - i) <= len(best):
-            return
-        if i == len(idle):
-            best = list(cur)
-            return
-        for k in cands[i]:
-            if fits(i, k):
-                for s, a, r in needs[i]:
-                    used[(k, s, a, r)] = used.get((k, s, a, r), 0) + 1
-                cur.append(i)
-                dfs(i + 1)
-                cur.pop()
-                for s, a, r in needs[i]:
-                    used[(k, s, a, r)] -= 1
-        dfs(i + 1)
-
-    dfs(0)
-    return [idle[i] for i in best]
+_Back = Callable[[_Ev, _Ev, int], Optional[Tuple[Any, Tuple[int, int]]]]
 
 
-def _unprep_partners(ours: List[_Ev], idle: Sequence[_Ev] = ()) -> List[Optional[Tuple[int, FrozenSet[int]]]]:
+def _unprep_partners(ours: List[_Ev], idle: Sequence[_Ev] = (), back: Optional[_Back] = None,
+                     capped: Sequence[bool] = ()) -> List[Optional[Tuple[int, FrozenSet[int]]]]:
     """Per gate, its rule-10 un-prep reading (bead cq-9gi3), or None: (j, ks) when gate i is the
     adjoint of the earlier gate j and its predicate is exactly the overwrite predicate that rule 10
     implies. Lowered side only; _match_c additionally requires j and every k to take C reaches.
@@ -776,11 +729,15 @@ def _unprep_partners(ours: List[_Ev], idle: Sequence[_Ev] = ()) -> List[Optional
     the target after i fires (the overwriting prep k; ks collects the first such k per sample).
 
     `idle` (bead cq-mopw): the Ry gates whose angle is the identity wherever their control fires
-    (CR §1.3, dropped from `ours`, as the C side drops its identity reaches), each backed by an
-    identity reach of the C program (_backed_idle, bead cq-q15r: the caller passes only those). An
-    Ry's position among the gates on its target is its control (cpred), its angle aside: an idle
-    prep is still the overwrite of rule 10 (`r = 0; cq_theta(&r, NaN)` undoes the earlier prep), so
-    it counts for j, between and k; as k its C reach is that identity reach, not in ks."""
+    (CR §1.3, dropped from `ours`, as the C side drops its identity reaches). An Ry's position among
+    the gates on its target is its control (cpred), its angle aside, so an idle Ry counts for j's
+    choice and for between. An idle prep can be the overwrite of rule 10 (`r = 0; cq_theta(&r, NaN)`
+    undoes the earlier prep), but it takes no C reach in the matching, so the C program's own
+    overwrite is found here instead (beads cq-q15r, cq-ia96): `back(j, k, s)` gives, at an uncapped
+    sample s, the C program's overwrite of j's reach there by an identity reach of k's angle and
+    register value ((its site, (s, its position)), or None; _match_c's _c_backing). An idle k
+    stands only when back finds it at every uncapped sample where i fires, all at one C site, and
+    no C reach backs two idle ks; without `back` an idle k never stands."""
     out: List[Optional[Tuple[int, FrozenSet[int]]]] = [None] * len(ours)
     if not ours:
         return out
@@ -801,6 +758,7 @@ def _unprep_partners(ours: List[_Ev], idle: Sequence[_Ev] = ()) -> List[Optional
         x = ev(t)
         return (x.cpred if x.cpred is not None else x.pred)[s]
 
+    used_reach: set = set()          # the C identity reaches backing an idle k, each at most once
     for i, e in enumerate(ours):
         if e.kind not in ("ry", "ryq") or e.target is None:
             continue
@@ -832,6 +790,7 @@ def _unprep_partners(ours: List[_Ev], idle: Sequence[_Ev] = ()) -> List[Optional
         if not ok:
             continue
         ks = set()
+        ksites, kreach = set(), []
         for s in range(nS):
             between = any(on(g, s) for g in before[before.index(j) + 1:])
             k = next((g for g in after if on(g, s)), None)
@@ -841,9 +800,57 @@ def _unprep_partners(ours: List[_Ev], idle: Sequence[_Ev] = ()) -> List[Optional
                 break
             if implied and k[0] == "o":
                 ks.add(k[1])
-        if ok:
+            elif implied and not (capped and capped[s]):
+                got = back(p, idle[k[1]], s) if back is not None else None
+                if got is None:
+                    ok = False
+                    break
+                ksites.add(got[0])
+                kreach.append(got[1])
+        if ok and len(ksites) <= 1 and not (set(kreach) & used_reach):
+            used_reach.update(kreach)
             out[i] = (j[1], frozenset(ks))
     return out
+
+
+def _c_backing(sites: List[_Site], ident: Dict[Tuple, List[List[Tuple[int, Any, Optional[int]]]]],
+               registers: Dict[str, Any], nan_eq: bool) -> _Back:
+    """back(j, k, s) for _unprep_partners (bead cq-ia96): CR rule 10's overwrite in the C program at
+    sample s. j's reach is a reach of a theta site with j's angle and register value there; the
+    overwrite is the next reach after it, in the C program's (rule-17) order, of a site of the same
+    register (`registers`, drivers.theta_registers: one SSA web); it must be an identity reach (k is
+    idle) with k's angle class and register value. Returns (its site, (s, its position)), or None."""
+    def reg(key: Tuple) -> Any:
+        return registers.get(f"{key[0]}:{key[1]}")
+
+    by_reg: Dict[Any, List[Tuple[Tuple, bool, List[List[Tuple[int, Any, Optional[int]]]]]]] = {}
+    for st in sites:
+        if st.kind == "theta" and reg(st.key) is not None:
+            by_reg.setdefault(reg(st.key), []).append((st.key, False, st.occ))
+    for key, occ in ident.items():
+        if reg(key) is not None:
+            by_reg.setdefault(reg(key), []).append((key, True, occ))
+
+    def back(j: _Ev, k: _Ev, s: int) -> Optional[Tuple[Any, Tuple[int, int]]]:
+        w = j.tclass[0] if j.tclass else None
+        ja = _fpv(j.theta if j.kind == "ry" else j.afn[s], "f64", nan_eq)
+        jv = _fpv(j.tclass[1][s], w, nan_eq)
+        ka = _fpv(k.rawang[s], "f64", nan_eq) if k.rawang and k.rawang[s] is not None else None
+        kv = _fpv(k.tclass[1][s], k.tclass[0], nan_eq) if k.tclass else None
+        found = None
+        for chain in by_reg.values():
+            reaches = sorted((ep, a, r, key, isid) for key, isid, occ in chain for ep, a, r in occ[s])
+            for n, (ep, a, r, key, isid) in enumerate(reaches):
+                if isid or a != ja or _fpv(r, w, nan_eq) != jv or n + 1 == len(reaches):
+                    continue
+                ep2, a2, r2, key2, isid2 = reaches[n + 1]
+                if isid2 and a2 == ka and _fpv(r2, k.tclass[0] if k.tclass else None, nan_eq) == kv:
+                    if found is not None and found != (key2, (s, ep2)):
+                        return None                  # ambiguous: two C overwrites fit
+                    found = (key2, (s, ep2))
+        return found
+
+    return back
 
 
 MATCH_BUDGET = 20_000
@@ -902,7 +909,8 @@ def _match_input(ours: List[_Ev], sites: List[_Site], nS: int, capped: List[bool
 
 def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
              capped: Sequence[bool] = (), idle: Sequence[_Ev] = (),
-             ident: Optional[Dict[Tuple, List[List[Tuple[int, Any, Optional[int]]]]]] = None) -> List[str]:
+             ident: Optional[Dict[Tuple, List[List[Tuple[int, Any, Optional[int]]]]]] = None,
+             registers: Optional[Dict[str, Any]] = None) -> List[str]:
     """Match the C sites to our gates (module docstring). A site inside a loop is one gate per trip
     on our side, and a trip that skips the call leaves no C reach: so each lowered gate belongs to
     one site, and at each sample the gate, where it fires, takes the site's earliest reach not yet
@@ -999,7 +1007,8 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
 
     start: Used = tuple(0 for _ in range(len(sites) * nS))
     assign: List[Optional[int]] = [None] * len(ours)
-    partner = _unprep_partners(ours, _backed_idle(idle, ident or {}, nan_eq, capped))
+    partner = _unprep_partners(ours, idle, _c_backing(sites, ident or {}, registers, nan_eq) if registers else None,
+                               capped)
     failed: set = set()
     limit = max(1000, 4 * len(ours) + 100)
     if sys.getrecursionlimit() < limit:
@@ -1315,8 +1324,13 @@ def _call_key(sample: Any) -> Hashable:
 
 
 def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
-            classical_key: Optional[Callable[[Any], Hashable]] = None) -> List[str]:
+            classical_key: Optional[Callable[[Any], Hashable]] = None,
+            registers: Optional[Dict[str, Any]] = None) -> List[str]:
     """§6 equality of `ours` and `other` over all samples; the reasons, empty when equal.
+
+    `registers` (optional, against "c"; drivers.theta_registers of the C program's .O1.ll, bead
+    cq-ia96): the register web of each cq_theta site. Without it an identity-angle Ry never stands
+    as rule 10's overwriting prep (an un-prep before one is then unmatched).
 
     `against` is "ref" (other = the reference lowered.ll in the evaluator) or "c" (other = the C
     oracle). `classical_key` (optional, e.g. classical_key_from_driver(spec)) gives the classical
@@ -1463,7 +1477,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
                 reasons += [f"{tag}: {why}" for why in why_c]
                 continue
             for why in _match_c(o_evs, o_glob, sites, nan_eq, [capped[k] or ended[k] for k in ks], o_idle,
-                                c_ident):
+                                c_ident, registers):
                 reasons.append(f"{tag}: {why}")
             for why in _check_ak(o_runs, r_runs, [ended[k] for k in ks]):
                 reasons.append(f"{tag}: {why}")

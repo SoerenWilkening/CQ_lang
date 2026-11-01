@@ -518,7 +518,9 @@ def check(o1: Path, lowered: Path, entry: str, samples: Optional[int], work: Pat
     if len(ours) != len(chosen) or len(cres) != len(chosen):
         raise UserCheckError(f"cqcheck user: {len(ours)} lowered and {len(cres)} C results "
                              f"for {len(chosen)} samples")
-    reasons = list(compare.compare(ours, cres, "c", classical_key=compare.classical_key_from_driver(spec)))
+    from cqcheck import drivers as D
+    reasons = list(compare.compare(ours, cres, "c", classical_key=compare.classical_key_from_driver(spec),
+                                   registers=D.theta_registers(D.read_module(c_module))))
     status = verdict(reasons)
     if status == ERROR_STATUS:
         lines.append(f"cqcheck user: UNDECIDED: the gate matching against the C program ran out of its "
