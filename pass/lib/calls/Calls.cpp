@@ -54,6 +54,7 @@
 #include "cq/Common.h"
 #include "cq/Loops.h"
 #include "cq/Lowering.h"
+#include "cq/Memory.h"
 #include "cq/Predicate.h"
 #include "cq/Taint.h"
 #include "cq/Uncompute.h"
@@ -344,12 +345,39 @@ struct CloneCall {
   bool handle;      // the result is one rail (taint's per-clone record)
   bool fieldwise;   // the result is a literal struct of fields with a handle among them
   ResultLayout res;
+  // Phase 2 (CR rules 18, 20, §1.4; cq-arch T2 + M1): a caller's slot object the clone writes. extra:
+  // the old contents of the cells it may write (formal order, ascending cell), the twin's trailing
+  // operands; slotOuts: the handles loaded from those cells right after the call.
+  SmallVector<Operand, 4> extra;
+  SmallVector<Value *, 4> slotOuts;
 };
+
+// Does the caller's actual point into a slot object (rule 20)?
+bool pointsToSlot(LoweringContext &ctx, const Value *actual) {
+  for (ObjectId o : ctx.T.provenance(actual, ctx.S))
+    if (ctx.T.classOf(o) == ObjClass::Slot)
+      return true;
+  return false;
+}
+
 CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization &S, Value *flag) {
   Function *C = materialize(ctx.M, S);
   std::vector<FormalLayout> fs = formalLayout(ctx.T, S, &CB);
   SmallVector<Value *, 8> args;
-  CloneCall r{nullptr, {}, false, false, resultLayout(ctx.T, S, &CB)};
+  CloneCall r{nullptr, {}, false, false, resultLayout(ctx.T, S, &CB), {}, {}};
+  // The pointer formals into a caller's slot object that the clone writes (T2), their old cells (M1).
+  SmallVector<unsigned, 2> slotArgs;
+  for (unsigned i = 0; i < CB.arg_size() && i < fs.size(); ++i)
+    if (fs[i].pointer && pointsToSlot(ctx, CB.getArgOperand(i)) && !ctx.T.cellsWritten(S, i).empty()) {
+      if (CB.isByValArgument(i))
+        unimplemented("calls: a byval slot record a clone writes (rules 20, 26: 164)", &CB);
+      slotArgs.push_back(i);
+      // A non-constant i32 old cell is a handle (a slot cell is homogeneous, rule 20; poison where never
+      // written): a read of the twin's item. A classical i32 cell of a record would be refused by
+      // recordCall's lookup, never read as a handle silently.
+      for (Value *v : mem::slotCellsBeforeCall(ctx, CB, i))
+        r.extra.push_back(Operand{v, !isa<Constant>(v) && v->getType()->isIntegerTy(32)});
+    }
   if (S.ctl) {
     Value *f = flag ? flag : ctlFlag(ctx, CB);
     args.push_back(f);
@@ -403,13 +431,17 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
   }
   r.handle = !CB.getType()->isVoidTy() && !r.res.composite && r.res.anyQ();
   r.fieldwise = r.res.composite && r.res.anyQ();
+  for (unsigned i : slotArgs)
+    for (Value *h : mem::slotCellsAfterCall(ctx, CB, i, r.call))
+      r.slotOuts.push_back(h);
   return r;
 }
 
 // Binds a field-wise result (CR §1.4: a literal struct of handles and classical values): one
 // extractvalue per field right after the call, the field operands bound to CB (aggr reads them), and
 // the handles recorded as the call's results, undone together by the twin (U2).
-void bindFieldwiseResult(LoweringContext &ctx, CallBase &CB, CallInst *call, const ResultLayout &res) {
+void bindFieldwiseResult(LoweringContext &ctx, CallBase &CB, CallInst *call, const ResultLayout &res,
+                         ArrayRef<Value *> slotOuts = {}, ArrayRef<Operand> extra = {}) {
   SmallVector<bool, 4> tq = ctx.T.fieldMask(&CB, ctx.S);
   if (tq.size() != res.q.size() || !std::equal(tq.begin(), tq.end(), res.q.begin()))
     internalError("calls: the clone's result fields and taint's field mask of the call disagree", &CB);
@@ -421,7 +453,7 @@ void bindFieldwiseResult(LoweringContext &ctx, CallBase &CB, CallInst *call, con
     if (res.q[k])
       outs.push_back(e);
   }
-  ctx.unc().recordCall(call, outs, {}, {});
+  ctx.unc().recordCall(call, outs, slotOuts, extra);
   ctx.bindFields(&CB, ops);
 }
 
@@ -776,7 +808,24 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
   }
   CloneCall r = emitCloneCall(ctx, CB, *cs, nullptr);
   if (r.fieldwise)
-    return bindFieldwiseResult(ctx, CB, r.call, r.res);
+    return bindFieldwiseResult(ctx, CB, r.call, r.res, r.slotOuts, r.extra);
+  if (!r.slotOuts.empty() || !r.extra.empty()) {
+    // Phase 2: the result (if a handle) and the reloaded cells are one call's results, undone together
+    // by the twin <clone>_unc(out?, args..., old cells...) (U2).
+    SmallVector<Value *, 1> outs;
+    if (!CB.getType()->isVoidTy()) {
+      bool q = ctx.T.isQuantum(&CB, ctx.S);
+      if (r.handle != q)
+        internalError("calls: the call's result kind and taint's disagree", &CB);
+      if (r.handle)
+        outs.push_back(r.call);
+      ctx.bind(&CB, r.call);
+    }
+    if (r.slotOuts.empty())
+      internalError("calls: old slot cells passed to a clone that reloads none", &CB);
+    ctx.unc().recordCall(r.call, outs, r.slotOuts, r.extra);
+    return;
+  }
   bindResult(ctx, CB, r.call, r.handle, r.ops);
 }
 
@@ -864,6 +913,10 @@ void lowerIndirect(LoweringContext &ctx, CallBase &CB) {
     CallInst *call = nullptr;
     if (specs[k]) {
       CloneCall r = emitCloneCall(ctx, CB, *specs[k], specs[k]->ctl ? flag : nullptr);
+      if (!r.slotOuts.empty() || !r.extra.empty())
+        unimplemented("calls: an indirect-call candidate that writes a caller's slot object (the merge of its "
+                      "reloaded cells)",
+                      &CB);
       if (r.fieldwise)
         unimplemented("calls: an indirect call whose candidates return several fields with a handle (the merge "
                       "of literal structs of handles)",

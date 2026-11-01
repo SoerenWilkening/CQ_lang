@@ -49,6 +49,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
@@ -138,6 +139,63 @@ bool nonPureCore(abi::Core op) {
   }
 }
 
+// Phase 2 (CR rules 18, 20, §1.4; cq-arch T2 + M1): a clone's store of a computed rail into a caller's
+// slot cell is the rule 18 copy-out through a pointer formal: f = cqrt_alloc_<W>(0), cqrt_copy_<W>(r, f),
+// store f at a constant offset of a (non-byval) pointer formal; f has no other use.
+struct CellCopyOut {
+  StoreInst *st;
+  CallInst *f, *copy;
+  Argument *formal;
+  int64_t off;
+};
+std::optional<CellCopyOut> cellCopyOut(StoreInst *SI) {
+  const DataLayout &DL = SI->getModule()->getDataLayout();
+  APInt off(64, 0);
+  const Value *base = SI->getPointerOperand()->stripAndAccumulateConstantOffsets(DL, off, true);
+  auto *A = dyn_cast<Argument>(const_cast<Value *>(base));
+  if (!A || A->hasByValAttr() || !A->getType()->isPointerTy())
+    return std::nullopt;
+  auto *f = dyn_cast<CallInst>(SI->getValueOperand());
+  std::optional<abi::CoreSpec> a =
+      f && f->getCalledFunction() ? abi::parseCore(f->getCalledFunction()->getName()) : std::nullopt;
+  auto *zero = f ? dyn_cast<Constant>(f->getArgOperand(0)) : nullptr;
+  if (!a || a->op != abi::Core::Alloc || !zero || !zero->isNullValue())
+    return std::nullopt;
+  CallInst *copy = nullptr;
+  for (User *U : f->users()) {
+    if (U == SI)
+      continue;
+    auto *cp = dyn_cast<CallInst>(U);
+    std::optional<abi::CoreSpec> c =
+        cp && cp->getCalledFunction() ? abi::parseCore(cp->getCalledFunction()->getName()) : std::nullopt;
+    if (!c || c->op != abi::Core::Copy || c->ctl || cp->getArgOperand(1) != f || cp->getArgOperand(0) == f || copy)
+      return std::nullopt;
+    copy = cp;
+  }
+  if (!copy || f->getNumUses() != 2)
+    return std::nullopt;
+  return CellCopyOut{SI, f, copy, A, off.getSExtValue()};
+}
+
+// The cell copy-outs of F, in formal order then ascending offset (the twin's trailing old cells).
+SmallVector<CellCopyOut, 4> cellCopyOuts(Function &F) {
+  SmallVector<CellCopyOut, 4> out;
+  for (Instruction &I : instructions(F))
+    if (auto *SI = dyn_cast<StoreInst>(&I))
+      if (auto c = cellCopyOut(SI))
+        out.push_back(*c);
+  llvm::stable_sort(out, [](const CellCopyOut &a, const CellCopyOut &b) {
+    return a.formal->getArgNo() != b.formal->getArgNo() ? a.formal->getArgNo() < b.formal->getArgNo()
+                                                          : a.off < b.off;
+  });
+  for (size_t k = 1; k < out.size(); ++k)
+    if (out[k].formal == out[k - 1].formal && out[k].off == out[k - 1].off)
+      unimplemented("calls: calls::finalize: a clone storing into one caller cell more than once (the twin "
+                    "restores each cell once)",
+                    out[k].st);
+  return out;
+}
+
 // Does replaying F (and the forward clones it calls) recompute its value and nothing else?
 void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &seen) {
   if (!seen.insert(&F).second)
@@ -157,7 +215,9 @@ void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &s
     if (auto *SI = dyn_cast<StoreInst>(&I)) {
       // The clone's frame: its allocas and its byval formals (the callee's own copy, cq-09xh; the twin
       // gets the caller's snapshot, which nothing reads after the twin).
-      if (!inFrame(SI->getPointerOperand()))
+      // A cell copy-out (phase 2): the twin of F restores the cell; a forward clone F calls is undone
+      // by its own twin call in F's body.
+      if (!inFrame(SI->getPointerOperand()) && !cellCopyOut(SI))
         refuse("a store to memory outside the clone's frame", &I);
       continue;
     }
@@ -214,15 +274,21 @@ void defineTwin(Module &M, Function &twin, Function &src) {
   LLVMContext &C = M.getContext();
   Type *h = Type::getInt32Ty(C);
   // Outs: one for an i32 handle result, one per handle field of a field-wise result (CR §1.4).
+  // Phase 2: the trailing old cells, one per cell copy-out of src (formal order, ascending offset).
+  SmallVector<CellCopyOut, 4> cells = cellCopyOuts(src);
+  unsigned nCells = cells.size();
   auto *srt = dyn_cast<StructType>(src.getReturnType());
-  if ((src.getReturnType() != h && !srt) || twin.arg_size() <= src.arg_size())
+  bool handleRet = src.getReturnType() == h || srt;
+  if ((!handleRet && nCells == 0) || twin.arg_size() < src.arg_size() + nCells + (handleRet ? 1 : 0))
     internalError("calls: calls::finalize: twin @" + twin.getName().str() + " does not match the clone @" +
                       src.getName().str() + " (an i32 handle result or a struct of fields, its arguments after the outs)",
                   &twin);
-  unsigned nOuts = twin.arg_size() - src.arg_size();
-  if (!srt && nOuts != 1)
+  unsigned nOuts = twin.arg_size() - src.arg_size() - nCells;
+  if (!srt && nOuts != (handleRet ? 1u : 0u))
     internalError("calls: calls::finalize: twin @" + twin.getName().str() + " of a one-handle clone with several outs",
                   &twin);
+  if (!srt && !handleRet && !src.getReturnType()->isVoidTy())
+    unimplemented("calls: calls::finalize: a twin of a clone with a classical result and cell copy-outs", &twin);
   for (unsigned i = 0; i < src.arg_size(); ++i)
     if (twin.getArg(i + nOuts)->getType() != src.getArg(i)->getType())
       internalError("calls: calls::finalize: twin @" + twin.getName().str() + " argument types differ from @" +
@@ -238,11 +304,42 @@ void defineTwin(Module &M, Function &twin, Function &src) {
     VM[src.getArg(i)] = twin.getArg(i + nOuts);
     twin.getArg(i + nOuts)->setName(src.getArg(i)->getName());
   }
+  for (unsigned k = 0; k < nCells; ++k)
+    twin.getArg(nOuts + src.arg_size() + k)->setName("old" + std::to_string(k));
   SmallVector<ReturnInst *, 4> rets;
   CloneFunctionInto(&twin, &src, VM, CloneFunctionChangeType::LocalChangesOnly, rets);
   twin.setAttributes(AttributeList());
   twin.setCallingConv(CallingConv::C);
   twin.setLinkage(GlobalValue::InternalLinkage);
+
+  // Phase 2: each cell copy-out f = alloc(0); copy(r, f); store f, cell becomes c = load cell (the handle
+  // the forward left there, the caller's reloaded rail); copy(r, c) (XORs it out); store old_k, cell (the
+  // cell's content before the call). Nothing in src reads a cell it copied out to.
+  for (unsigned k = 0; k < nCells; ++k) {
+    const CellCopyOut &co = cells[k];
+    auto *st = cast<StoreInst>(VM[co.st]);
+    auto *f = cast<CallInst>(VM[co.f]);
+    Argument *old = twin.getArg(nOuts + src.arg_size() + k);
+    if (old->getType() != st->getValueOperand()->getType())
+      unimplemented("calls: calls::finalize: a twin's old cell of another type than the cell's handle", st);
+    for (Instruction &I : instructions(src))
+      if (auto *ld = dyn_cast<LoadInst>(&I)) {
+        APInt o(64, 0);
+        const DataLayout &DL = M.getDataLayout();
+        const Value *b = ld->getPointerOperand()->stripAndAccumulateConstantOffsets(DL, o, true);
+        if (b == co.formal)
+          unimplemented("calls: calls::finalize: a clone reading through a pointer formal it copies a rail out to",
+                        ld);
+      }
+    IRBuilder<> B(f);
+    Value *at = twin.getArg(nOuts + co.formal->getArgNo());
+    if (co.off)
+      at = B.CreateConstInBoundsGEP1_64(B.getInt8Ty(), at, uint64_t(co.off));
+    Value *c = B.CreateAlignedLoad(st->getValueOperand()->getType(), at, st->getAlign(), "cell");
+    f->replaceAllUsesWith(c);
+    f->eraseFromParent();
+    st->setOperand(0, old);
+  }
 
   SmallVector<Instruction *, 4> dead;
   // The copy-out of rule 18: f = cqrt_alloc_<W>(0), cqrt_copy_<W>(r, f), ..., ret f: the copy is made
@@ -313,7 +410,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
       if (j != nOuts)
         internalError("calls: calls::finalize: a field-wise clone return with fewer handle fields than its twin's outs",
                       R);
-    } else {
+    } else if (handleRet) {
       // The same f on several incoming edges (a switch's duplicate edges) is rewritten once; a return
       // phi chosen classically has one f per incoming edge (cq-mjwb, 119).
       SmallSetVector<Value *, 2> results;
