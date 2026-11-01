@@ -51,8 +51,8 @@ define `main`); `--entry main` then runs `__cqu_main`. Only `int main(void)` is 
 would need argv's object to agree with a sampled argc.
 
 `samples` (cqcc --cq-samples): at most that many samples are compared: whole classical groups (the
-samples at one argument tuple), sample 0's group first, then the smallest (`subset`); None compares
-every sample.
+samples at one argument tuple), sample 0's group first, then spread over their sizes (`subset`);
+None compares every sample.
 
 Exit status: 0 when the lowered program is §6-equal to the C program on every compared sample, 1 when
 it differs (the reasons are printed), 2 when the check could not be decided (bad arguments, an
@@ -62,6 +62,7 @@ never green.
 """
 from __future__ import annotations
 
+import collections
 import json
 import os
 import random
@@ -425,7 +426,8 @@ def build_spec(o1_text: str, entry: str, root: Path,
 
 def _magnitude(spec: Optional[DriverSpec], sample: dict) -> int:
     """The sum of the magnitudes of a sample's integer arguments (signed ones as |value|): a proxy for
-    the size of the run (loop bounds, array lengths), so a subset compares small programs first."""
+    the size of the run (loop bounds, array lengths), so a subset spreads over small and large
+    programs."""
     from cqcheck import drivers as D
     if spec is None:
         return 0
@@ -441,15 +443,33 @@ def _magnitude(spec: Optional[DriverSpec], sample: dict) -> int:
     return tot
 
 
+def _spread(m: int) -> List[int]:
+    """0 .. m-1 in van der Corput order (0, m/2, m/4, 3m/4, ...): every prefix is spread evenly over
+    the range, and the first index is 0."""
+    if m <= 0:
+        return []
+    bits = max(1, (m - 1).bit_length())
+    order, seen = [], set()
+    for j in range(1 << bits):
+        i = (int(format(j, f"0{bits}b")[::-1], 2) * m) >> bits
+        if i not in seen:
+            seen.add(i)
+            order.append(i)
+    return order
+
+
 def subset(samples: List[dict], n: Optional[int], key=None, spec: Optional[DriverSpec] = None) -> List[dict]:
     """At most n samples, in set order: whole classical groups (`key`, the comparison's classical
     key: the samples sharing the entry's arguments and differing in their cq_theta substitutions),
-    sample 0's group first, then the others smallest first (`_magnitude`, ties in a seeded order),
-    each taken when it fits. cq-sujz decision 6: the matching against the C program tells rails apart
-    by their values over a group, so a group cut down to one sample leaves equal-looking rails it
-    cannot match within its budget, and a large program (117 at nq = t = 7) has more gates than the
-    budget can order; fewer and smaller samples, never a bigger budget. A first group larger than n
-    is cut to sample 0 and a seeded choice of its others."""
+    sample 0's group first, then the others spread over their size range (`_magnitude`, ties in a
+    seeded order; `_spread`: the smallest, the median, the quartiles, ...), each taken when it fits.
+    Owner 2026-11-01: a subset spreads over the classical groups, never only the smallest (117 at
+    200 of 2205 samples took 9 of 107 groups, all near t = 0: cq-w71h). cq-sujz decision 6: the
+    matching against the C program tells rails apart by their values over a group, so a group cut
+    down to one sample leaves equal-looking rails it cannot match within its budget, and a large
+    program (117 at nq = t = 7) has more gates than the budget can order; fewer samples, never a
+    bigger budget. A first group larger than n is cut to sample 0 and a seeded choice of its others
+    (the report names the cut)."""
     if n is None or n >= len(samples):
         return list(samples)
     if n < 1:
@@ -466,7 +486,7 @@ def subset(samples: List[dict], n: Optional[int], key=None, spec: Optional[Drive
     rest = list(groups.values())
     rng.shuffle(rest)
     rest.sort(key=lambda g: _magnitude(spec, samples[g[0]]))      # stable: ties keep the seeded order
-    for g in rest:
+    for g in (rest[i] for i in _spread(len(rest))):
         if len(take) + len(g) <= n:
             take += g
     return [samples[i] for i in sorted(take)]
@@ -507,10 +527,17 @@ def check(o1: Path, lowered: Path, entry: str, samples: Optional[int], work: Pat
     ss = sampling.sample_set(spec, exdir, exempt_baseline=False)
     if not ss.samples:
         raise UserCheckError(f"cqcheck user: entry {entry}: no sample inside the C program's domain")
-    chosen = subset(ss.samples, samples, compare.classical_key_from_driver(spec), spec)
+    ckey = compare.classical_key_from_driver(spec)
+    chosen = subset(ss.samples, samples, ckey, spec)
     nsubst = sum(1 for s in chosen if "subst" in s)
+    # a subset is a sampled verdict and says so (owner 2026-11-01)
+    size = collections.Counter(ckey(s) for s in ss.samples)
+    took = collections.Counter(ckey(s) for s in chosen)
+    cut = [f"{n} of {size[k]}" for k, n in took.items() if n < size[k]]
     lines = [f"cqcheck user: entry {entry}: {len(chosen)} samples"
-             + (f" of {len(ss.samples)}" if len(chosen) != len(ss.samples) else "")
+             + (f" of {len(ss.samples)} (SAMPLED: {len(took)} of {len(size)} classical groups"
+                + (f", {len(cut)} cut to {', '.join(cut)}" if cut else "") + ")"
+                if len(chosen) != len(ss.samples) else "")
              + f", {nsubst} with cq_theta substitution"]
     jobs = int(os.environ.get("CQCHECK_JOBS", DEFAULT_JOBS))
     ours = run.run_samples(low, spec, chosen, "ours", jobs, c_module=c_module)
@@ -519,7 +546,7 @@ def check(o1: Path, lowered: Path, entry: str, samples: Optional[int], work: Pat
         raise UserCheckError(f"cqcheck user: {len(ours)} lowered and {len(cres)} C results "
                              f"for {len(chosen)} samples")
     from cqcheck import drivers as D
-    reasons = list(compare.compare(ours, cres, "c", classical_key=compare.classical_key_from_driver(spec),
+    reasons = list(compare.compare(ours, cres, "c", classical_key=ckey,
                                    registers=D.theta_registers(D.read_module(c_module))))
     status = verdict(reasons)
     if status == ERROR_STATUS:

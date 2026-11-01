@@ -11,7 +11,7 @@ Fails on any of:
             groups run out of the matching budget (cq-sujz); 61 calls prep inside a cq_invert region
             and 133's prep_twice overwrites a prep with a NaN angle (cq-mopw)
   unit      in process: the verdict of out-of-budget reasons is undecided (2), never differs; a
-            --samples subset keeps classical groups whole, smallest first; a template's literal
+            --samples subset keeps classical groups whole, spread over their sizes; a template's literal
             operand is no rail position, nor xorc_controlled's literal (c, h, lit) or push's word
             (cq-oylm, src/xorc_cells.ll); cq-mopw: the sites a cq_invert region may reach (61:
             prep's two and invert_theta's second, not invert_call's), and an Ry whose angle is the
@@ -104,6 +104,20 @@ def unit(spec_root):
     groups = [s["args"][0] for s in got]        # in set order
     want = ["0x00000000", "0x00000005", "0x00000005", "0x00000005", "0xffffffff", "0xffffffff"]
     (ok if groups == want else fail)("unit subset", f"{groups}" + ("" if groups == want else f", want {want}"))
+    # owner 2026-11-01 (cq-w71h): the groups taken spread over the size range, not the smallest only
+    smp = [{"call": 0, "args": ["0x00000000"]}]
+    for v in range(1, 9):
+        smp += [{"call": 0, "args": [f"0x{v:08x}"]}, {"call": 0, "args": [f"0x{v:08x}"], "subst": {"s": "0"}}]
+    got = sorted({int(s["args"][0], 16) for s in U.subset(smp, 7, key=lambda s: tuple(s["args"]), spec=spec)})
+    (ok if got == [0, 1, 3, 5] else fail)("unit subset spread", f"{got}" + ("" if got == [0, 1, 3, 5] else ", want [0, 1, 3, 5]"))
+    # cq-w71h narrow review: one classical group only (rest empty) must not crash
+    one = [{"call": 0, "args": [f"0x{v:08x}"]} for v in range(10)]
+    got = len(U.subset(one, 5, key=lambda s: (0,), spec=spec))
+    (ok if got == 5 else fail)("unit subset one group", f"{got}")
+    (ok if U._spread(0) == [] else fail)("unit spread 0", f"{U._spread(0)}")
+    for m in (1, 2, 3, 7, 8, 107):
+        got = U._spread(m)
+        (ok if sorted(got) == list(range(m)) and got[0] == 0 else fail)(f"unit spread {m}", f"{got[:6]}")
     for callee, nargs, k, want in (("@cq_template_icmp_eq_i32_hl", 2, 1, False),
                                    ("@cq_template_icmp_eq_i32_hl_unc", 3, 2, False),
                                    ("@cq_template_icmp_eq_i32_hl_unc", 3, 1, True),
