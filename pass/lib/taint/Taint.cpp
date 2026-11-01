@@ -4312,6 +4312,30 @@ llvm::ArrayRef<ObjectId> TaintInfo::provenance(const llvm::Value *ptr, const Spe
   return self->provCache.back();
 }
 
+// T6 (cq-hfah, CR rule 20 per cell): ptr names only globals (no other site kind), and the bytes [off, off + bytes)
+// past it hold a handle in none of them (Object::cellHandle, the answer the loads' taint uses): every access of
+// those bytes is classical program-wide and the global keeps its layout, so the cells stay host memory.
+bool TaintInfo::globalHostCell(const llvm::Value *ptr, int64_t off, uint64_t bytes, const Specialization &S) const {
+  const ImplState &I = needImpl(impl);
+  SpecState *SS = stateOf(I, S);
+  if (!ptr->getType()->isPointerTy())
+    internalError("taint: globalHostCell of a non-pointer", ptr);
+  PtrInfo tmp;
+  const PtrInfo &p = ptrOrDie(I, *SS, ptr, tmp);
+  if (p.sites.empty())
+    return false;
+  for (unsigned s : p.sites)
+    if (I.sites[s].kind != SiteKind::Global)
+      return false;
+  std::optional<int64_t> ex = p.exact();
+  if (ex)
+    *ex += off;
+  for (ObjectId o : objectsFor(I, p))
+    if (I.objects[o].cellHandle(ex, bytes))
+      return false;
+  return true;
+}
+
 bool TaintInfo::isFatPointer(const llvm::Value *ptr, const Specialization &S) const {
   const ImplState &I = needImpl(impl);
   return lanesOfValue(I, *stateOf(I, S), ptr).any();

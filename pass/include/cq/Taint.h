@@ -68,6 +68,9 @@ public:
   OffsetKind offsetKind(const llvm::Instruction *access, const Specialization &) const;
   llvm::ArrayRef<ObjectId> provenance(const llvm::Value *ptr, const Specialization &) const;
   bool isFatPointer(const llvm::Value *ptr, const Specialization &) const;
+  // T6 (cq-hfah, CR rule 20 per cell): ptr names only globals and bytes [off, off + bytes) past it hold a handle
+  // in none of them (the per-cell answer the loads' taint uses): a host cell, every access of it classical.
+  bool globalHostCell(const llvm::Value *ptr, int64_t off, uint64_t bytes, const Specialization &) const;
   void print(llvm::raw_ostream &) const;                               // -cq-dump-taint
   // K1: storage owned by module taint; computeTaint builds it.
 private:

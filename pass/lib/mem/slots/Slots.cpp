@@ -4207,6 +4207,28 @@ bool lowerPtrCell(LoweringContext &ctx, FnState &st, Instruction &I) {
 
 } // namespace
 
+// cq-hfah (CR rule 20 per cell, as classicalCell; orchestrator decision 2026-11-01, owner may override): a cell of
+// a global slot object that taint proves never holds a handle anywhere in the program (TaintInfo::
+// globalHostCell, the answer the loads' taint uses) is HOST memory: its classical stores write the C value
+// there and its loads read it, so a classical reader elsewhere (an untainted function) reads the C value.
+// A clone's pointer formal naming only such globals (the caller's raw pointer: the global's own layout) reads and
+// writes them the same way.
+bool hostGlobalCell(LoweringContext &ctx, const Site &s, const Value *ptr, Type *ty, const Instruction &I) {
+  if ((s.info->kind != RootKind::Global && s.info->kind != RootKind::Param) || s.info->record)
+    return false;
+  if (!ctx.T.globalHostCell(ptr, 0, storeBytes(ctx.M.getDataLayout(), ty), ctx.S))
+    return false;
+  if (s.info->view || s.info->boolCells || s.info->colStride)
+    unimplemented("mem-slots: a host cell of a global slot object with bit-view, _Bool or field-column cells "
+                  "(cq-hfah)",
+                  &I);
+  if (s.info->kind == RootKind::Param && s.info->cellBytes != 4)
+    unimplemented("mem-slots: a host cell of a global slot object reached through a pointer formal, cells other "
+                  "than 4 bytes (cq-hfah)",
+                  &I);
+  return true;
+}
+
 void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
   if (calls::lowerVaAreaLoad(ctx, ld))
     return;   // CR §1.4 (95): a read of a variadic clone's save area
@@ -4217,6 +4239,12 @@ void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
     Site s = siteOf(ctx, st, ld, ld.getPointerOperand(), ld.getType());
     if (s.beyond)
       unimplemented("mem-slots: a walked access beyond its slot object other than a load (rule 21)", &ld);
+    if (hostGlobalCell(ctx, s, ld.getPointerOperand(), ld.getType(), ld)) {
+      LoadInst *nl = ctx.B().CreateAlignedLoad(ld.getType(), cellPointer(ctx, s, ld), ld.getAlign());
+      st.lowered[&ld] = Operand{nl, false};
+      ctx.bindFields(&ld, {Operand{nl, false}});
+      return;
+    }
     if (!s.info->record || !classicalCell(ctx, st, s))
       unimplemented("mem-slots: a classical load from a slot cell that holds a handle", &ld);
     // Rules 20, 26: a classical field of a record is ordinary memory (the clone reads and writes it there).
@@ -4652,6 +4680,15 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
   Site s = siteOf(ctx, st, stI, stI.getPointerOperand(), v->getType());
   if (s.beyond)
     unimplemented("mem-slots: a walked access beyond its slot object other than a load (rule 21)", &stI);
+  if (hostGlobalCell(ctx, s, stI.getPointerOperand(), v->getType(), stI)) {
+    // cq-hfah: a host cell keeps the C value (no seed): its readers, tainted or not, read it as host memory.
+    Operand hv = ctx.operand(v);
+    if (hv.handle || ctx.currentFlag() || !ctx.currentPredicate().isTop())
+      internalError("mem-slots: a handle, or a store under a quantum predicate, into a cell taint calls host", &stI);
+    ctx.B().CreateAlignedStore(hv.v, cellPointer(ctx, s, stI), stI.getAlign());
+    st.lowered[&stI] = hv;
+    return;
+  }
   if (s.info->view)
     return lowerViewStore(ctx, st, stI, s);
   if (s.info->record && v->getType()->isPointerTy()) {
@@ -4937,6 +4974,11 @@ void writeSlotCells(LoweringContext &ctx, const Value *ptr, Type *cellTy, ArrayR
       val = Operand{ctx.emitTemplate(sel, {Operand{g, true}, v, old}), true};
       what = StoreWhat::Computed;
     } else if (!v.handle) {
+      if (ctx.T.globalHostCell(ptr, int64_t(i * cellStride(*s.info)), storeBytes(ctx.M.getDataLayout(), cellTy),
+                               ctx.S))
+        unimplemented("mem-slots: a memory intrinsic writing a classical value into a host cell of a global slot "
+                      "object (rule 20 per cell, cq-hfah)",
+                      &at);
       if (v.v->getType() != irTypeOf(C, w))
         internalError("mem-slots: a writeSlotCells value of another type than the cell's rail", &at);
       CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {v.v});
