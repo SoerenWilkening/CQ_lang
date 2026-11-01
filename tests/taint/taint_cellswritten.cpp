@@ -1,7 +1,10 @@
 // T2 (cq-arch 2026-11-01): TaintInfo::cellsWritten, the cells of a pointer formal's object a clone may
 // store a handle into (CR rules 18, 20). 31's split (one i32 cell: {0}), a store into the second field of
 // a {i32, i32} object ({1}), a classical store into a classical object ({}), a non-pointer formal ({}), and
-// a quantum store at a variable offset (unimplemented, in a forked child).
+// a quantum store at a variable offset (unimplemented, in a forked child). cq-ee23: stores through
+// pointers derived by ptrtoint/add/inttoptr ({2}, 31-style C '*(int*)((uintptr_t)p+8)'), freeze ({1}),
+// insertvalue/extractvalue ({3}); an integer made of the formal stored to memory is the escape
+// (unimplemented).
 #include <cstdio>
 #include <string>
 #include <sys/wait.h>
@@ -88,6 +91,65 @@ define internal void @varoff(i32 %v, ptr %p, i64 %i) {
   ret void
 }
 
+define i32 @e3(i32 %x0, double %th) {
+  %o1 = alloca [4 x i32], align 4
+  %o2 = alloca [4 x i32], align 4
+  %o3 = alloca [4 x i32], align 4
+  %o4 = alloca [4 x i32], align 4
+  %x = tail call i32 @cq_theta_si32(i32 %x0, double %th)
+  call void @viaint(i32 %x, ptr %o1)
+  %g1 = getelementptr inbounds i8, ptr %o1, i64 8
+  %l1 = load i32, ptr %g1, align 4
+  call void @viafreeze(i32 %x, ptr %o2)
+  %g2 = getelementptr inbounds i8, ptr %o2, i64 4
+  %l2 = load i32, ptr %g2, align 4
+  call void @viaagg(i32 %x, ptr %o3)
+  %g3 = getelementptr inbounds i8, ptr %o3, i64 12
+  %l3 = load i32, ptr %g3, align 4
+  call void @intescape(i32 %x, ptr %o4)
+  %l4 = load i32, ptr %o4, align 4
+  %s1 = add i32 %l1, %l2
+  %s2 = add i32 %s1, %l3
+  %s3 = add i32 %s2, %l4
+  %m = tail call i32 @cq_measure_si32(i32 %s3)
+  ret i32 %m
+}
+
+define internal void @viaint(i32 %v, ptr %p) {
+  %i = ptrtoint ptr %p to i64
+  %j = add i64 %i, 8
+  %q = inttoptr i64 %j to ptr
+  %w = add i32 %v, 1
+  store i32 %w, ptr %q, align 4
+  ret void
+}
+
+define internal void @viafreeze(i32 %v, ptr %p) {
+  %f = freeze ptr %p
+  %q = getelementptr inbounds i8, ptr %f, i64 4
+  %w = add i32 %v, 1
+  store i32 %w, ptr %q, align 4
+  ret void
+}
+
+define internal void @viaagg(i32 %v, ptr %p) {
+  %a = insertvalue { ptr, i32 } undef, ptr %p, 0
+  %b = extractvalue { ptr, i32 } %a, 0
+  %q = getelementptr inbounds i8, ptr %b, i64 12
+  %w = add i32 %v, 1
+  store i32 %w, ptr %q, align 4
+  ret void
+}
+
+@slot = internal global i64 0
+
+define internal void @intescape(i32 %v, ptr %p) {
+  %i = ptrtoint ptr %p to i64
+  store i64 %i, ptr @slot, align 8
+  store i32 %v, ptr %p, align 4
+  ret void
+}
+
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 )";
@@ -117,7 +179,8 @@ int main() {
   cq::TaintInfo T = cq::computeTaint(*M, {});
   struct Case { const char *fn; unsigned arg; SmallVector<unsigned, 4> want; };
   for (const Case &c : {Case{"split", 2, {0}}, Case{"split", 0, {}}, Case{"second", 1, {1}},
-                        Case{"classical", 1, {}}}) {
+                        Case{"classical", 1, {}}, Case{"viaint", 1, {2}}, Case{"viafreeze", 1, {1}},
+                        Case{"viaagg", 1, {3}}}) {
     const cq::Specialization *S = cloneOf(T, M->getFunction(c.fn));
     CHECK(S, "no clone of @" << c.fn);
     if (!S)
@@ -126,20 +189,20 @@ int main() {
     CHECK(got == c.want, "@" << c.fn << " formal " << c.arg << ": " << str(got) << ", want " << str(c.want));
   }
 
-  // A quantum store at a variable offset through the formal: unimplemented, in a child.
-  {
-    const cq::Specialization *S = cloneOf(T, M->getFunction("varoff"));
-    CHECK(S, "no clone of @varoff");
+  // Unimplemented shapes, each in a child.
+  auto refused = [&](const char *fn, unsigned arg, const std::string &want) {
+    const cq::Specialization *S = cloneOf(T, M->getFunction(fn));
+    CHECK(S, "no clone of @" << fn);
     int pfd[2];
     if (!S || pipe(pfd) != 0)
-      return 2;
+      return;
     fflush(nullptr);
     pid_t pid = fork();
     if (pid == 0) {
       dup2(pfd[1], 2);
       close(pfd[0]);
       close(pfd[1]);
-      (void)T.cellsWritten(*S, 1);
+      (void)T.cellsWritten(*S, arg);
       _exit(0);
     }
     close(pfd[1]);
@@ -151,11 +214,11 @@ int main() {
     close(pfd[0]);
     int status = 0;
     waitpid(pid, &status, 0);
-    CHECK(WIFEXITED(status) && WEXITSTATUS(status) != 0, "variable offset: the child exits non-zero");
-    CHECK(out.find("cq: unimplemented: taint: cellsWritten: a store through the formal at a variable offset") !=
-              std::string::npos,
-          "variable offset: got " << out);
-  }
+    CHECK(WIFEXITED(status) && WEXITSTATUS(status) != 0, "@" << fn << ": the child exits non-zero");
+    CHECK(out.find(want) != std::string::npos, "@" << fn << ": got " << out);
+  };
+  refused("varoff", 1, "cq: unimplemented: taint: cellsWritten: a store through the formal at a variable offset");
+  refused("intescape", 1, "cq: unimplemented: taint: cellsWritten: the formal escapes into memory");
 
   outs() << "taint_cellswritten: " << (checks - failures) << "/" << checks << " checks pass\n";
   return failures ? 1 : 0;

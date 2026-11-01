@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <numeric>
+#include <set>
 
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/StringExtras.h"
@@ -3545,37 +3546,102 @@ llvm::SmallVector<unsigned, 4> TaintInfo::cellsWritten(const Specialization &S, 
   };
   struct W { int64_t off; uint64_t size; const llvm::StoreInst *st; };
   SmallVector<W, 4> writes;
-  SmallVector<std::pair<const llvm::Value *, std::optional<int64_t>>, 8> work{{A, 0}};
-  SmallPtrSet<const llvm::Value *, 16> seen;
+  // cq-ee23: every value derived from the formal is followed: pointers (GEP, casts, freeze, phi,
+  // select), the integers ptrtoint makes of them (a constant add or sub keeps the offset, any other
+  // arithmetic makes it variable) and the pointers inttoptr makes back, and aggregates holding it (the
+  // index path where it sits). Only a load, a comparison or a return ends a path; a store of a derived
+  // value or a call taking one is the escape, unimplemented.
+  struct Item { const llvm::Value *v; std::optional<int64_t> off; SmallVector<unsigned, 2> path; };
+  SmallVector<Item, 8> work{{A, 0, {}}};
+  std::set<std::pair<const llvm::Value *, SmallVector<unsigned, 2>>> seen;
+  auto isPrefix = [](llvm::ArrayRef<unsigned> a, llvm::ArrayRef<unsigned> b) {
+    return a.size() <= b.size() && std::equal(a.begin(), a.end(), b.begin());
+  };
   while (!work.empty()) {
-    auto [V, off] = work.pop_back_val();
-    if (!seen.insert(V).second)
+    Item it = work.pop_back_val();
+    const llvm::Value *V = it.v;
+    std::optional<int64_t> off = it.off;
+    if (!seen.insert({V, it.path}).second)
       continue;
     for (const llvm::User *U : V->users()) {
+      if (!it.path.empty()) {
+        // V is an aggregate holding the formal (or a value derived from it) at it.path.
+        if (auto *EV = dyn_cast<llvm::ExtractValueInst>(U)) {
+          llvm::ArrayRef<unsigned> ix = EV->getIndices();
+          if (isPrefix(ix, it.path))
+            work.push_back({U, off, SmallVector<unsigned, 2>(it.path.begin() + ix.size(), it.path.end())});
+          else if (!isPrefix(it.path, ix))
+            continue; // another field
+          else
+            refuse("a field inside the formal's slot of an aggregate", U);
+        } else if (auto *IV = dyn_cast<llvm::InsertValueInst>(U); IV && IV->getAggregateOperand() == V) {
+          if (!isPrefix(IV->getIndices(), it.path))
+            work.push_back({U, off, it.path});
+          // else: the formal's slot is overwritten
+          if (IV->getInsertedValueOperand() == V)
+            refuse("an aggregate holding the formal inserted into itself", U);
+        } else if (auto *IV2 = dyn_cast<llvm::InsertValueInst>(U)) {
+          SmallVector<unsigned, 2> p(IV2->getIndices().begin(), IV2->getIndices().end());
+          p.append(it.path.begin(), it.path.end());
+          work.push_back({U, off, p});
+        } else if (isa<llvm::PHINode>(U) || isa<llvm::SelectInst>(U) || isa<llvm::FreezeInst>(U)) {
+          if (auto *Sel = dyn_cast<llvm::SelectInst>(U); Sel && Sel->getCondition() == V)
+            continue;
+          work.push_back({U, std::nullopt, it.path});
+        } else if (isa<llvm::ReturnInst>(U)) {
+          continue;
+        } else {
+          refuse("an aggregate holding the formal escapes (stored, passed or reinterpreted)", U);
+        }
+        continue;
+      }
       if (auto *GEP = dyn_cast<llvm::GEPOperator>(U)) {
         llvm::APInt o(64, 0);
-        if (off && GEP->accumulateConstantOffset(DL, o))
-          work.push_back({GEP, *off + o.getSExtValue()});
+        if (off && GEP->getPointerOperand() == V && GEP->accumulateConstantOffset(DL, o))
+          work.push_back({GEP, *off + o.getSExtValue(), {}});
         else
-          work.push_back({GEP, std::nullopt});
-      } else if (isa<llvm::BitCastOperator>(U)) {
-        work.push_back({U, off});
-      } else if (isa<llvm::LoadInst>(U) || isa<llvm::ICmpInst>(U) || isa<llvm::ReturnInst>(U) ||
-                 isa<llvm::PtrToIntInst>(U)) {
+          work.push_back({GEP, std::nullopt, {}});
+      } else if (isa<llvm::BitCastOperator>(U) || isa<llvm::AddrSpaceCastOperator>(U) ||
+                 isa<llvm::FreezeInst>(U) || isa<llvm::PtrToIntOperator>(U) ||
+                 (isa<llvm::Operator>(U) && cast<llvm::Operator>(U)->getOpcode() == llvm::Instruction::IntToPtr)) {
+        work.push_back({U, off, {}});
+      } else if (auto *BO = dyn_cast<llvm::BinaryOperator>(U)) {
+        // An integer made from the formal's address.
+        std::optional<int64_t> o2;
+        const llvm::Value *other = BO->getOperand(0) == V ? BO->getOperand(1) : BO->getOperand(0);
+        auto *C = dyn_cast<llvm::ConstantInt>(other);
+        bool disjointOr = BO->getOpcode() == llvm::Instruction::Or && cast<llvm::PossiblyDisjointInst>(BO)->isDisjoint();
+        if (off && C && C->getBitWidth() <= 64 &&
+            (BO->getOpcode() == llvm::Instruction::Add || disjointOr))
+          o2 = *off + C->getSExtValue();
+        else if (off && C && C->getBitWidth() <= 64 && BO->getOpcode() == llvm::Instruction::Sub &&
+                 BO->getOperand(0) == V)
+          o2 = *off - C->getSExtValue();
+        work.push_back({U, o2, {}});
+      } else if (auto *IV = dyn_cast<llvm::InsertValueInst>(U)) {
+        if (IV->getInsertedValueOperand() == V)
+          work.push_back({U, off, SmallVector<unsigned, 2>(IV->getIndices().begin(), IV->getIndices().end())});
+        else
+          refuse("an aggregate built over a value derived from the formal", U);
+      } else if (isa<llvm::LoadInst>(U) || isa<llvm::ICmpInst>(U) || isa<llvm::ReturnInst>(U)) {
         continue;
       } else if (auto *SI = dyn_cast<llvm::StoreInst>(U)) {
         if (SI->getPointerOperand() != V)
           refuse("the formal escapes into memory", SI);
+        if (!V->getType()->isPointerTy())
+          internalError("taint: cellsWritten: a store through a non-pointer", SI);
         if (!off)
           refuse("a store through the formal at a variable offset", SI);
         writes.push_back({*off, DL.getTypeStoreSize(SI->getValueOperand()->getType()), SI});
       } else if (auto *II = dyn_cast<llvm::IntrinsicInst>(U); II && II->isLifetimeStartOrEnd()) {
         continue;
+      } else if (auto *Sel = dyn_cast<llvm::SelectInst>(U); Sel && Sel->getCondition() == V) {
+        continue; // the formal decides, its value does not flow
       } else if (isa<llvm::SelectInst>(U) || isa<llvm::PHINode>(U)) {
-        work.push_back({U, std::nullopt});
+        work.push_back({U, std::nullopt, {}});
       } else if (auto *Ins = dyn_cast<llvm::Instruction>(U);
-                 Ins && !Ins->mayWriteToMemory() && !isa<llvm::CallBase>(Ins)) {
-        continue;
+                 Ins && !Ins->mayWriteToMemory() && !isa<llvm::CallBase>(Ins) && !Ins->getType()->isVoidTy()) {
+        work.push_back({U, std::nullopt, {}}); // any other value computed from it (casts, arithmetic)
       } else {
         refuse("a write through the formal by a memory intrinsic, an atomic or a call", U);
       }
