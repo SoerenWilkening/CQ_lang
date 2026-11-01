@@ -488,6 +488,17 @@ bool boolValueStored(const Value *v) {
   return false;
 }
 
+// A wide classical store split over one-byte cells (cq-muau) whose every byte is 0 or 1.
+bool splitBoolBytes(const Value *v) {
+  auto *c = dyn_cast<ConstantInt>(v);
+  if (!c || c->getBitWidth() % 8)
+    return false;
+  for (unsigned k = 0; k < c->getBitWidth() / 8; ++k)
+    if (c->getValue().extractBitsAsZExtValue(8, 8 * k) > 1)
+      return false;
+  return true;
+}
+
 bool boolRange(const LoadInst *ld) {
   MDNode *r = ld->getMetadata(LLVMContext::MD_range);
   if (!r || r->getNumOperands() != 2)
@@ -638,9 +649,27 @@ ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId 
       info.cellBytes = narrow;
       info.cellTy = IntegerType::get(ctx.M.getContext(), unsigned(8 * narrow));
     } else {
-      for (const Access &a : accessesOf(ctx, *st.F, o))
-        if (DL.getTypeAllocSize(a.ty).getFixedValue() != info.cellBytes)
-          info.view = true;
+      // cq-muau (120): an object of integer cells whose only accesses at another width are classical integer
+      // stores at constant offsets covering whole cells (-O1's `bool q[2][2] = {0}` as one i32 store) keeps
+      // its cells; each such store is split into one write per cell (as 90's), so the cells may still be
+      // accessed at run-time offsets. Any other access at another width makes it a view object (63).
+      bool other = false, wideStore = false;
+      for (const Access &a : accessesOf(ctx, *st.F, o)) {
+        uint64_t b = DL.getTypeAllocSize(a.ty).getFixedValue();
+        if (b == info.cellBytes)
+          continue;
+        auto *S = dyn_cast<StoreInst>(a.I);
+        if (S && info.cellTy->isIntegerTy() && S->getValueOperand()->getType()->isIntegerTy() &&
+            !ctx.T.isQuantum(S->getValueOperand(), ctx.S) && a.a.ok && a.a.terms.empty() &&
+            storeBytes(DL, a.ty) % info.cellBytes == 0 && a.a.off % int64_t(info.cellBytes) == 0)
+          wideStore = true;
+        else
+          other = true;
+      }
+      if (other)
+        info.view = true;
+      else if (wideStore)
+        info.split = true;
     }
   }
   if (info.cellBytes == 1 && !info.view) {
@@ -650,7 +679,8 @@ ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId 
       if (auto *ld = dyn_cast<LoadInst>(a.I))
         all &= boolRange(ld);
       else if (auto *sti = dyn_cast<StoreInst>(a.I))
-        all &= boolValueStored(sti->getValueOperand());
+        all &= boolValueStored(sti->getValueOperand()) ||
+               (info.split && splitBoolBytes(sti->getValueOperand()));
       else
         all = false;
     }
@@ -2559,16 +2589,20 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
       uint64_t n = storeBytes(ctx.M.getDataLayout(), v->getType());
       if (info.split && n != info.cellBytes) {
         Operand val = ctx.operand(v);
-        if (val.handle || !a.terms.empty() || ctx.currentFlag() || n % info.cellBytes)
+        if (val.handle || !a.terms.empty() || n % info.cellBytes)
           internalError("mem-slots: a split store that is not a classical store at a constant offset", &stI);
+        if (ctx.currentFlag() || !ctx.currentPredicate().isTop())
+          unimplemented("mem-slots: a classical store split per cell under a quantum predicate", &stI);
         Site s = siteOf(ctx, st, stI, stI.getPointerOperand(), info.cellTy);
-        RailType w = railTypeOf(info.cellTy);
+        RailType w = cellRail(info, info.cellTy, stI);
         IRBuilder<> &B = ctx.B();
         for (uint64_t k = 0; k < n / info.cellBytes; ++k) {
           Site c = s;
           c.a.off += int64_t(k * info.cellBytes);
           Value *part = B.CreateTrunc(B.CreateLShr(val.v, ConstantInt::get(val.v->getType(), 8 * k * info.cellBytes)),
                                       info.cellTy);
+          if (info.boolCells)
+            part = B.CreateTrunc(part, Type::getInt1Ty(ctx.M.getContext()));   // a _Bool cell holds an i1 rail
           CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {part});
           ctx.unc().recordSeed(seed);
           finishStore(ctx, st, c, stI, info.cellTy, Operand{seed, true}, StoreWhat::Seed);
