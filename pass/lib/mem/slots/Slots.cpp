@@ -336,11 +336,58 @@ SmallVector<unsigned, 4> cellsWrittenBy(LoweringContext &ctx, const Specializati
   return ctx.T.cellsWritten(S, argNo);
 }
 
+// The callee's formal A is never captured: its value reaches only addresses of loads, stores, atomics and
+// memory intrinsics (through GEPs, casts, phis and selects), compares, and formals of callees that capture
+// nothing either (-O1 leaves `nocapture` off some internal callees: 51's split).
+bool formalNotCaptured(const Argument &A, unsigned depth = 0) {
+  if (depth > 8)
+    return false;
+  SmallVector<const Value *, 8> work{&A};
+  SmallPtrSet<const Value *, 16> seen{&A};
+  while (!work.empty()) {
+    const Value *v = work.pop_back_val();
+    for (const Use &u : v->uses()) {
+      const User *usr = u.getUser();
+      if (auto *ld = dyn_cast<LoadInst>(usr); ld && ld->getPointerOperand() == v)
+        continue;
+      if (auto *st = dyn_cast<StoreInst>(usr); st && st->getPointerOperand() == v && st->getValueOperand() != v)
+        continue;
+      if (isa<ICmpInst>(usr))
+        continue;
+      if (isa<GetElementPtrInst>(usr) || isa<CastInst>(usr) || isa<PHINode>(usr) || isa<SelectInst>(usr)) {
+        if (seen.insert(usr).second)
+          work.push_back(usr);
+        continue;
+      }
+      if (auto *CB = dyn_cast<CallBase>(usr)) {
+        if (isa<DbgInfoIntrinsic>(CB) || isa<MemIntrinsic>(CB))
+          continue;
+        if (auto *II = dyn_cast<IntrinsicInst>(CB); II && II->isLifetimeStartOrEnd())
+          continue;
+        if (!CB->isArgOperand(&u))
+          return false;
+        unsigned i = CB->getArgOperandNo(&u);
+        if (CB->doesNotCapture(i))
+          continue;
+        const Function *g = CB->getCalledFunction();
+        if (g && !g->isDeclaration() && i < g->arg_size() && formalNotCaptured(*g->getArg(i), depth + 1))
+          continue;
+        return false;
+      }
+      return false;
+    }
+  }
+  return true;
+}
+
 bool cloneArgUse(LoweringContext &ctx, const CallBase &CB, const Use &u) {
   if (!CB.isArgOperand(&u))
     return false;
   unsigned i = CB.getArgOperandNo(&u);
-  return (CB.doesNotCapture(i) || CB.isByValArgument(i)) && cloneCallee(ctx, CB);
+  const Function *g = CB.getCalledFunction();
+  bool noCapture = CB.doesNotCapture(i) || CB.isByValArgument(i) ||
+                   (g && !g->isDeclaration() && i < g->arg_size() && formalNotCaptured(*g->getArg(i)));
+  return noCapture && cloneCallee(ctx, CB);
 }
 
 bool escapes(LoweringContext &ctx, const Value *root) {
@@ -912,7 +959,8 @@ Site siteOf(LoweringContext &ctx, FnState &st, const Instruction &I, const Value
     unimplemented("mem-slots: a slot access whose address is not an object plus GEP offsets (a pointer phi, "
                   "select or load: no static cell index)",
                   &I);
-  if (ctx.T.objectOf(a.root) != objs.front())
+  // A pointer formal's provenance is the caller's object (taint has no site for an argument).
+  if (!isa<Argument>(a.root) && ctx.T.objectOf(a.root) != objs.front())
     internalError("mem-slots: the address root is not the object taint names", &I);
   ObjInfo &info = objInfo(ctx, st, a.root, objs.front());
   uint64_t bytes = ctx.M.getDataLayout().getTypeAllocSize(ty).getFixedValue();
@@ -1869,8 +1917,12 @@ void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &
         // caller loads it after the call and frees it after the twin, which finalize aims at it and which
         // restores the cell's old content.
         const DataLayout &DL = ctx.M.getDataLayout();
+        if (ctx.currentFlag())
+          unimplemented("mem-slots: a clone storing into a caller's cell under a quantum predicate (the select's "
+                        "old arm is the caller's content: 51)",
+                        &I);
         for (const Access &a : accessesOf(ctx, *st.F, s.o))
-          if (a.I != &I && st.lowered.count(a.I) && (isa<StoreInst>(a.I) || isRMW(a.I)) &&
+          if (a.I != &I && (isa<StoreInst>(a.I) || isRMW(a.I)) &&
               !differentCell(a.a, s.a, storeBytes(DL, a.ty), storeBytes(DL, ty)) &&
               isPotentiallyReachable(a.I, &I, nullptr, st.DT.get()))
             unimplemented("mem-slots: a clone storing into a caller's cell that an earlier store of the clone may "
@@ -2330,6 +2382,8 @@ bool anyWriteReaches(LoweringContext &ctx, FnState &st, const Site &s, const Ins
   for (const Instruction &X : instructions(*st.F)) {
     if (&X == &I || !(isa<StoreInst>(X) || isRMW(&X) || isa<CallBase>(X)))
       continue;
+    if (auto *II = dyn_cast<IntrinsicInst>(&X); II && II->isLifetimeStartOrEnd())
+      continue;   // a lifetime marker writes no content
     if (!mayWrite(ctx, *s.info, s.o, X, s.a, size))
       continue;
     (void)DL;

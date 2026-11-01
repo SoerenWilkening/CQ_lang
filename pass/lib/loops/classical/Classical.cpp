@@ -422,6 +422,7 @@ private:
   }
 
   void check(Loop &L, Case c);
+  bool twinOf(const CallBase &CB) const;
 
   // CR rule 6 on a carried value (cq-b13w). A quantum header phi p read only by a chain of updates
   // U_1 = f_1(p, z_1), U_2 = f_2(U_1, z_2), ... in the header, each a bijection in its predecessor and
@@ -623,6 +624,19 @@ void Unit::planRuleSix(Loop &L, Case c) {
   }
 }
 
+// A clone call that has a twin (U2): a quantum result field, or a caller cell it stores a handle into.
+bool Unit::twinOf(const CallBase &CB) const {
+  const Specialization *S = ctx.T.calleeSpecialization(CB, ctx.S);
+  if (!S)
+    return true;
+  if (!CB.getType()->isVoidTy() && is_contained(ctx.T.fieldMask(&CB, ctx.S), true))
+    return true;
+  for (unsigned i = 0; i < CB.arg_size(); ++i)
+    if (CB.getArgOperand(i)->getType()->isPointerTy() && !ctx.T.cellsWritten(*S, i).empty())
+      return true;
+  return false;
+}
+
 void Unit::check(Loop &L, Case c) {
   if (!L.getLoopPredecessor())
     unimplemented("loops-classical: a rule-14 loop whose header has more than one predecessor outside the loop",
@@ -660,6 +674,14 @@ void Unit::check(Loop &L, Case c) {
         case calls::Class::Measure:
         case calls::Class::Phi:
           break;   // case 3: under the trip rail (lowerInstruction's tripFlag, cq-99f7)
+        case calls::Class::Lift:
+          // Rule 18 inside a rule-14 trip (124): a clone call with nothing to undo (no quantum result, no
+          // caller cell it writes) records no call item, so each trip's call is a gate sequence of its own.
+          // One with a twin (a result or a written cell: the reverse would have to replay the twin) is not
+          // built yet.
+          if (c != Case::ClassicalBoundQuantumExit && !twinOf(*CB))
+            break;
+          [[fallthrough]];
         default:
           unimplemented("loops-classical: a call of this class inside a rule-14 loop (calls-loops / loops-mem "
                         "integration)",
