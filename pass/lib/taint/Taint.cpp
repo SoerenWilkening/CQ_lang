@@ -3351,10 +3351,6 @@ const Specialization *TaintInfo::calleeSpecialization(const llvm::CallBase &CB,
   internalError("taint: callee specialization not published", &CB);
 }
 
-llvm::SmallVector<unsigned, 4> TaintInfo::cellsWritten(const Specialization &S, unsigned argNo) const {
-  unimplemented("taint: TaintInfo::cellsWritten (T2, a clone's writes through a pointer formal)", S.F);
-}
-
 bool TaintInfo::resultQuantum(const Specialization &S, unsigned field) const {
   const ImplState &I = needImpl(impl);
   SpecState *SS = stateOf(I, S);
@@ -3524,6 +3520,93 @@ const PtrInfo &ptrOrDie(const ImplState &I, const SpecState &SS, const llvm::Val
   internalError("taint: no provenance answer for this pointer (cq-5k5)", V);
 }
 } // namespace
+
+// T2 (cq-arch 2026-11-01; CR rules 18, 20): the cells of the object formal argNo points to that the
+// clone S may store a handle into, ascending. A store through the formal (constant offsets from it)
+// writes a handle when the cell is a slot cell of the pointee (rule 20 homogeneity: a classical value
+// becomes a seed rail), or when its value, its address or its block's control is quantum, or S is _ctl
+// (as transferStore records it). The cell index is the byte offset from the object's root over the
+// store's size. Unimplemented: a write through the formal at a variable offset, by a memory
+// intrinsic, an atomic or a call, an escape of the formal, a pointee offset that differs between the
+// callers, stores of several sizes, or an offset that is not a multiple of the size.
+llvm::SmallVector<unsigned, 4> TaintInfo::cellsWritten(const Specialization &S, unsigned argNo) const {
+  const ImplState &I = needImpl(impl);
+  SpecState *SS = stateOf(I, S);
+  llvm::Function *F = SS->F;
+  if (argNo >= F->arg_size() || !F->getArg(argNo)->getType()->isPointerTy())
+    return {};
+  const llvm::Argument *A = F->getArg(argNo);
+  const llvm::DataLayout &DL = F->getDataLayout();
+  PtrInfo tmp;
+  const PtrInfo &fp = ptrOrDie(I, *SS, A, tmp);
+  SmallVector<ObjectId, 4> objs = objectsFor(I, fp);
+  auto refuse = [&](const llvm::Twine &why, const llvm::Value *at) {
+    unimplemented(("taint: cellsWritten: " + why + " (T2, a clone's writes through a pointer formal)").str(), at);
+  };
+  struct W { int64_t off; uint64_t size; const llvm::StoreInst *st; };
+  SmallVector<W, 4> writes;
+  SmallVector<std::pair<const llvm::Value *, std::optional<int64_t>>, 8> work{{A, 0}};
+  SmallPtrSet<const llvm::Value *, 16> seen;
+  while (!work.empty()) {
+    auto [V, off] = work.pop_back_val();
+    if (!seen.insert(V).second)
+      continue;
+    for (const llvm::User *U : V->users()) {
+      if (auto *GEP = dyn_cast<llvm::GEPOperator>(U)) {
+        llvm::APInt o(64, 0);
+        if (off && GEP->accumulateConstantOffset(DL, o))
+          work.push_back({GEP, *off + o.getSExtValue()});
+        else
+          work.push_back({GEP, std::nullopt});
+      } else if (isa<llvm::BitCastOperator>(U)) {
+        work.push_back({U, off});
+      } else if (isa<llvm::LoadInst>(U) || isa<llvm::ICmpInst>(U) || isa<llvm::ReturnInst>(U) ||
+                 isa<llvm::PtrToIntInst>(U)) {
+        continue;
+      } else if (auto *SI = dyn_cast<llvm::StoreInst>(U)) {
+        if (SI->getPointerOperand() != V)
+          refuse("the formal escapes into memory", SI);
+        if (!off)
+          refuse("a store through the formal at a variable offset", SI);
+        writes.push_back({*off, DL.getTypeStoreSize(SI->getValueOperand()->getType()), SI});
+      } else if (auto *II = dyn_cast<llvm::IntrinsicInst>(U); II && II->isLifetimeStartOrEnd()) {
+        continue;
+      } else if (isa<llvm::SelectInst>(U) || isa<llvm::PHINode>(U)) {
+        work.push_back({U, std::nullopt});
+      } else if (auto *Ins = dyn_cast<llvm::Instruction>(U);
+                 Ins && !Ins->mayWriteToMemory() && !isa<llvm::CallBase>(Ins)) {
+        continue;
+      } else {
+        refuse("a write through the formal by a memory intrinsic, an atomic or a call", U);
+      }
+    }
+  }
+  SmallVector<unsigned, 4> out;
+  uint64_t size = 0;
+  for (const W &w : writes) {
+    std::optional<int64_t> base = fp.exact();
+    bool handle = S.ctl || lanesOfValue(I, *SS, w.st->getValueOperand()).any() ||
+                  lanesOfValue(I, *SS, w.st->getPointerOperand()).any() || controlTainted(w.st->getParent(), S);
+    for (ObjectId o : objs)
+      if (I.objects[o].cellHandle(base ? std::optional<int64_t>(*base + w.off) : std::nullopt, w.size))
+        handle = true;
+    if (!handle)
+      continue;
+    if (!base)
+      refuse("a pointee offset that differs between the clone's callers", w.st);
+    if (size && w.size != size)
+      refuse("stores of several sizes through the formal", w.st);
+    size = w.size;
+    int64_t at = *base + w.off;
+    if (at < 0 || !size || at % int64_t(size))
+      refuse("a store at an offset that is not a multiple of its size", w.st);
+    unsigned cell = unsigned(at / int64_t(size));
+    if (!is_contained(out, cell))
+      out.push_back(cell);
+  }
+  llvm::sort(out);
+  return out;
+}
 
 llvm::ArrayRef<ObjectId> TaintInfo::provenance(const llvm::Value *ptr, const Specialization &S) const {
   const ImplState &I = needImpl(impl);

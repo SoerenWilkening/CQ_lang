@@ -27,3 +27,5 @@ target_compile_definitions(taint_joinchoice PRIVATE CQ_SPEC_DIR="${CQ_SPEC_DIR}"
 # cq-wxch: a loop exit through select c, t, true / select c, false, f / xor x, true keeps its
 # classical disjunct (rule 14 case 3).
 cq_add_unit_test(taint_exitselect taint_exitselect.cpp)
+# T2 (cq-arch 2026-11-01): TaintInfo::cellsWritten, a clone's handle stores through a pointer formal.
+cq_add_unit_test(taint_cellswritten taint_cellswritten.cpp)
