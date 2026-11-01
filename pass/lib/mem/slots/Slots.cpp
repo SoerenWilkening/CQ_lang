@@ -72,6 +72,8 @@
 
 #include <map>
 #include <optional>
+#include <set>
+#include <tuple>
 #include <string>
 #include <utility>
 
@@ -808,6 +810,40 @@ bool cellArms(LoweringContext &ctx, FnState &st, const Site &s, const Instructio
   return !arms.empty();
 }
 
+// Some instruction `hit` accepts is reached from S (not through S again) on a path on which no instruction
+// `kill` accepts comes first; kill applies only while the path has not re-executed an instruction of defs.
+bool reachesUnkilled(const Instruction &S, const SmallPtrSetImpl<const Instruction *> &defs,
+                     function_ref<bool(const Instruction &)> kill, function_ref<bool(const Instruction &)> hit) {
+  SmallVector<std::tuple<const BasicBlock *, BasicBlock::const_iterator, bool>, 16> work;
+  std::set<std::pair<const BasicBlock *, bool>> seen;
+  work.push_back({S.getParent(), std::next(S.getIterator()), true});
+  while (!work.empty()) {
+    auto [b, it, fresh] = work.pop_back_val();
+    bool stop = false;
+    for (; it != b->end(); ++it) {
+      const Instruction &X = *it;
+      if (&X == &S) {
+        stop = true;
+        break;
+      }
+      if (defs.count(&X))
+        fresh = false;
+      if (hit(X))
+        return true;
+      if (fresh && kill(X)) {
+        stop = true;
+        break;
+      }
+    }
+    if (stop)
+      continue;
+    for (const BasicBlock *n : successors(b))
+      if (seen.insert({n, fresh}).second)
+        work.push_back({n, n->begin(), fresh});
+  }
+  return false;
+}
+
 // CR rule 2 through memory (M3, 179): a rail stored into a cell is MEASURED when some load of the object
 // that may read it measures its value (directly, or through a rule 3 view: trunc to i1 of a _Bool cell,
 // freeze). A measured rail is kept (rule 5), so its operands are cleaned as soon as its own computation
@@ -833,14 +869,46 @@ bool measuredThroughMemory(LoweringContext &ctx, FnState &st, const Instruction 
     }
     return false;
   };
-  for (const Access &a : accessesOf(ctx, *st.F, s.o)) {
-    auto *L = dyn_cast<LoadInst>(a.I);
-    if (!L || differentCell(a.a, s.a, storeBytes(DL, a.ty), sz) || !isPotentiallyReachable(&S, L, nullptr, st.DT.get()))
-      continue;
-    if (measures(L))
-      return true;
-  }
-  return false;
+  // cq-lvx8: only a load S's rail may still be in the cell at: a path from S to it on which no store of
+  // exactly S's cell (or atomic read-modify-write of it) comes first. Such an overwrite counts only while
+  // the path has not re-executed a definition of the cell's address.
+  SmallPtrSet<const Instruction *, 4> defs;
+  if (auto *R = dyn_cast<Instruction>(s.a.root))
+    defs.insert(R);
+  for (auto &t : s.a.terms)
+    if (auto *T = dyn_cast<Instruction>(t.first))
+      defs.insert(T);
+  auto mine = [&](const Instruction &X, Addr &a, uint64_t &n) {
+    const Value *p = isa<LoadInst>(X) || isa<StoreInst>(X) || isRMW(&X) ? accessPtr(&X) : nullptr;
+    if (!p || !hasObject(ctx, p, s.o))
+      return false;
+    a = decompose(p, DL);
+    if (auto *ld = dyn_cast<LoadInst>(&X))
+      n = storeBytes(DL, ld->getType());
+    else if (auto *so = dyn_cast<StoreInst>(&X))
+      n = storeBytes(DL, so->getValueOperand()->getType());
+    else
+      n = storeBytes(DL, isa<AtomicRMWInst>(X) ? cast<AtomicRMWInst>(X).getValOperand()->getType()
+                                               : cast<AtomicCmpXchgInst>(X).getNewValOperand()->getType());
+    return true;
+  };
+  auto hit = [&](const Instruction &X) {
+    Addr a;
+    uint64_t n = 0;
+    if (!(isa<LoadInst>(X) || isa<AtomicRMWInst>(X)) || !mine(X, a, n) || differentCell(a, s.a, n, sz))
+      return false;
+    return measures(&X);
+  };
+  auto kill = [&](const Instruction &X) {
+    Addr a;
+    uint64_t n = 0;
+    if (isa<LoadInst>(X) || !mine(X, a, n) || n != sz || !sameCell(a, s.a) ||
+        ctx.T.isFatPointer(accessPtr(&X), ctx.S))
+      return false;
+    auto *so = dyn_cast<StoreInst>(&X);
+    return !so || (!so->isVolatile() && !so->isAtomic());
+  };
+  return reachesUnkilled(S, defs, kill, hit);
 }
 
 // Rule 20 is per cell (orchestrator decision 2026-11-01 under rule 20, owner may override): a cell of a

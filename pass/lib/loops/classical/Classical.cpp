@@ -87,6 +87,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <tuple>
 #include <vector>
 
@@ -117,7 +118,7 @@ namespace {
 // CR rule 2 through memory (M3): some load of S's object that S may reach measures the loaded value
 // (directly or through a trunc to i1 / freeze view). mem-slots then gave S's rail Role::Measured at the
 // store (Slots.cpp, measuredThroughMemory, which also requires the load's cell to may-alias S's); this is
-// the same test coarsened to the object, so a rail it calls kept may still be garbage there (the reverse
+// the same test coarsened to the object (and to overwrites through S's own pointer), so a rail it calls kept may still be garbage there (the reverse
 // then frees it before a read names it: an internal error, never a wrong circuit).
 bool measuredThroughMemory(LoweringContext &ctx, const StoreInst &S) {
   ArrayRef<ObjectId> mine = ctx.T.provenance(S.getPointerOperand(), ctx.S);
@@ -137,15 +138,61 @@ bool measuredThroughMemory(LoweringContext &ctx, const StoreInst &S) {
     }
     return false;
   };
-  for (const Instruction &I : instructions(*S.getFunction())) {
-    auto *L = dyn_cast<LoadInst>(&I);
+  // cq-lvx8: a path from S to the load on which no store through S's own pointer value comes first (while
+  // the path has not re-executed a definition that pointer is computed from). mem-slots kills at every
+  // store of exactly S's cell, a superset of these, so this test keeps every rail mem-slots keeps.
+  SmallPtrSet<const Instruction *, 8> defs;
+  {
+    SmallVector<const Value *, 8> w{S.getPointerOperand()};
+    while (!w.empty()) {
+      const Value *v = w.pop_back_val();
+      auto *I = dyn_cast<Instruction>(v);
+      if (!I || !defs.insert(I).second)
+        continue;
+      if (isa<GetElementPtrInst>(I) || isa<CastInst>(I) || isa<BinaryOperator>(I))
+        for (const Value *o : I->operands())
+          w.push_back(o);
+    }
+  }
+  auto hit = [&](const Instruction &X) {
+    auto *L = dyn_cast<LoadInst>(&X);
     if (!L || !L->getPointerOperand()->getType()->isPointerTy())
-      continue;
+      return false;
     bool shared = false;
     for (ObjectId o : ctx.T.provenance(L->getPointerOperand(), ctx.S))
       shared |= is_contained(mine, o);
-    if (shared && isPotentiallyReachable(&S, L) && measures(L))
-      return true;
+    return shared && measures(L);
+  };
+  auto kill = [&](const Instruction &X) {
+    auto *so = dyn_cast<StoreInst>(&X);
+    return so && so != &S && so->getPointerOperand() == S.getPointerOperand() && !so->isVolatile() &&
+           !so->isAtomic() && so->getValueOperand()->getType() == S.getValueOperand()->getType();
+  };
+  SmallVector<std::tuple<const BasicBlock *, BasicBlock::const_iterator, bool>, 16> work;
+  std::set<std::pair<const BasicBlock *, bool>> seen;
+  work.push_back({S.getParent(), std::next(S.getIterator()), true});
+  while (!work.empty()) {
+    auto [bb, it, fresh] = work.pop_back_val();
+    bool stop = false;
+    for (; it != bb->end(); ++it) {
+      if (&*it == &S) {
+        stop = true;
+        break;
+      }
+      if (defs.count(&*it))
+        fresh = false;
+      if (hit(*it))
+        return true;
+      if (fresh && kill(*it)) {
+        stop = true;
+        break;
+      }
+    }
+    if (stop)
+      continue;
+    for (const BasicBlock *n : successors(bb))
+      if (seen.insert({n, fresh}).second)
+        work.push_back({n, n->begin(), fresh});
   }
   return false;
 }
