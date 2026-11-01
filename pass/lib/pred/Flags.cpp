@@ -17,7 +17,9 @@
 
 #include "cq/Common.h"
 #include "cq/Rotation.h"
+#include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/Support/raw_ostream.h"
@@ -709,6 +711,372 @@ Value *seedOf(LoweringContext &ctx, Value *classical, RailType w) {
   return call;
 }
 
+// ---- cq-2p1p: a predicate or a merge read at a classical join (rules 8, 9) ----
+// -O1 tail-merges a block reached from several classically chosen arms: its predicate, and the arms
+// of a merge in it, read rails (and classical values) minted inside those arms, none of which
+// dominates the join in the output. Rule 8 keeps the classical condition a classical branch; rule 9
+// makes a choice of incoming edge that is purely classical a classical phi over the handles. So:
+//   - the flag of predicate n at the join is a classical phi of per-edge flags: on each output edge
+//     p -> J, n restricted by the classical facts of that edge (and the caller's don't-care set),
+//     computed where the edge leaves (before p's terminator), recursively when p itself is such a
+//     join; an edge on which the restriction is constant gets a seed of that constant (rule 7);
+//   - a merge operand minted in an arm reaches the join as a classical phi of it and, on an edge on
+//     which its arm's predicate restricted by the edge's facts is false (the select never picks it
+//     there), a fresh |0> seed (a classical operand: the null value).
+// Each phi over handles is recorded as a merge (Uncompute::recordMerge, U1). Used only where some
+// rail or value a construction reads does not reach the point; elsewhere nothing changes.
+// The classical facts of an output edge are decoded from the output CFG: the conditions of its
+// classical branches and switches, over the output values of the classical atoms involved (a
+// condition the decoder does not know contributes no fact, which is sound: a weaker fact restricts
+// less, and a predicate that still reads a rail that does not reach is a loud unimplemented).
+class JoinRepair {
+  LoweringContext &ctx;
+  Bdd &m = Bdd::get();
+  std::shared_ptr<Oracle> O;
+  std::function<bool(unsigned)> ql;
+  std::unique_ptr<DominatorTree> dt;
+  std::map<std::tuple<unsigned, unsigned, BasicBlock *>, Value *> flagMemo;
+  std::map<std::tuple<Value *, unsigned, BasicBlock *>, Value *> valueMemo;
+  std::map<std::vector<Value *>, Value *> phiMemo;
+
+  DominatorTree &DT() {
+    if (!dt)
+      dt = std::make_unique<DominatorTree>(ctx.out());
+    return *dt;
+  }
+
+  // Does the output value v reach the point (U, pt): a constant or formal, an instruction before pt in
+  // U, or one whose block dominates U.
+  bool reaches(Value *v, BasicBlock *U, BasicBlock::iterator pt) {
+    auto *I = dyn_cast<Instruction>(v);
+    if (!I)
+      return true;
+    BasicBlock *D = I->getParent();
+    if (D == U)
+      return pt == U->end() || (&*pt != I && I->comesBefore(&*pt));
+    // The chain of unique predecessors needs no tree.
+    SmallPtrSet<BasicBlock *, 16> seen{U};
+    for (BasicBlock *b = U->getUniquePredecessor(); b && seen.insert(b).second; b = b->getUniquePredecessor())
+      if (b == D)
+        return true;
+    return DT().dominates(D, U);
+  }
+
+  // The output value an atom is read through (nullptr: the _ctl entry flag, a formal): as CtxSink reads
+  // it, a quantum atom through rail() (operand() would emit a rule 2 recomputation at the builder).
+  Value *atomValue(unsigned var) {
+    const Atom &a = atomOf(var);
+    if (a.kind == AtomKind::Entry)
+      return nullptr;
+    if (ql(var))
+      return ctx.rail(a.v);
+    return ctx.operand(a.v).v;
+  }
+
+  bool nodeReaches(unsigned n, BasicBlock *U, BasicBlock::iterator pt) {
+    std::set<unsigned> sup;
+    m.support(n, sup);
+    for (unsigned v : sup)
+      if (Value *x = atomValue(v); x && !reaches(x, U, pt))
+        return false;
+    return true;
+  }
+
+  void classicalVars(unsigned n, std::set<unsigned> &out) {
+    std::set<unsigned> sup;
+    m.support(n, sup);
+    for (unsigned v : sup)
+      if (!ql(v))
+        out.insert(v);
+  }
+
+  // ---- classical facts of output edges ----
+  struct Decoder {
+    JoinRepair &R;
+    DenseMap<const Value *, unsigned> condVar;
+    std::vector<std::tuple<const Value *, APInt, unsigned>> eqVar;
+    std::map<std::pair<const Value *, bool>, unsigned> memo;
+    explicit Decoder(JoinRepair &R) : R(R) {}
+
+    unsigned eqOf(const Value *x, const APInt &c) {
+      for (auto &[s, k, v] : eqVar)
+        if (s == x && k.getBitWidth() == c.getBitWidth() && k == c)
+          return R.m.ithVar(v);
+      return Bdd::T;   // marker: unknown (callers test with known())
+    }
+    bool hasEq(const Value *x, const APInt &c) {
+      for (auto &[s, k, v] : eqVar)
+        if (s == x && k.getBitWidth() == c.getBitWidth() && k == c)
+          return true;
+      return false;
+    }
+
+    // What "x == k" implies: the case atom of k, and no other known case of x (distinct constants).
+    unsigned caseIs(const Value *x, const APInt &k) {
+      Bdd &m = R.m;
+      unsigned r = hasEq(x, k) ? eqOf(x, k) : Bdd::T;
+      for (auto &[s, j, v] : eqVar)
+        if (s == x && j.getBitWidth() == k.getBitWidth() && j != k)
+          r = m.andOp(r, m.notOp(m.ithVar(v)));
+      return r;
+    }
+
+    // A function over the known atoms implied by "v == pol".
+    unsigned implied(const Value *v, bool pol) {
+      Bdd &m = R.m;
+      if (const auto *k = dyn_cast<ConstantInt>(v))
+        return k->isOne() == pol ? Bdd::T : Bdd::F;
+      auto key = std::make_pair(v, pol);
+      if (auto it = memo.find(key); it != memo.end())
+        return it->second;
+      unsigned r = Bdd::T;
+      if (auto it = condVar.find(v); it != condVar.end()) {
+        unsigned x = m.ithVar(it->second);
+        r = pol ? x : m.notOp(x);
+      } else if (const auto *bo = dyn_cast<BinaryOperator>(v); bo && bo->getType()->isIntegerTy(1)) {
+        const Value *a = bo->getOperand(0), *b = bo->getOperand(1);
+        switch (bo->getOpcode()) {
+        case Instruction::Xor:
+          if (const auto *k = dyn_cast<ConstantInt>(b); k && k->isOne())
+            r = implied(a, !pol);
+          else if (const auto *k = dyn_cast<ConstantInt>(a); k && k->isOne())
+            r = implied(b, !pol);
+          break;
+        case Instruction::And:
+          r = pol ? m.andOp(implied(a, true), implied(b, true)) : m.orOp(implied(a, false), implied(b, false));
+          break;
+        case Instruction::Or:
+          r = pol ? m.orOp(implied(a, true), implied(b, true)) : m.andOp(implied(a, false), implied(b, false));
+          break;
+        default:
+          break;
+        }
+      } else if (const auto *si = dyn_cast<SelectInst>(v); si && si->getType()->isIntegerTy(1)) {
+        r = m.orOp(m.andOp(implied(si->getCondition(), true), implied(si->getTrueValue(), pol)),
+                   m.andOp(implied(si->getCondition(), false), implied(si->getFalseValue(), pol)));
+      } else if (const auto *ic = dyn_cast<ICmpInst>(v); ic && ic->isEquality()) {
+        const Value *x = ic->getOperand(0);
+        const auto *k = dyn_cast<ConstantInt>(ic->getOperand(1));
+        if (!k) {
+          x = ic->getOperand(1);
+          k = dyn_cast<ConstantInt>(ic->getOperand(0));
+        }
+        if (k) {
+          bool isEq = ic->getPredicate() == ICmpInst::ICMP_EQ;
+          if (isEq == pol)
+            r = caseIs(x, k->getValue());
+          else if (hasEq(x, k->getValue()))
+            r = m.notOp(eqOf(x, k->getValue()));
+        }
+      }
+      memo[key] = r;
+      return r;
+    }
+
+    // What the edge from -> to establishes by itself.
+    unsigned edge(const BasicBlock *from, const BasicBlock *to) {
+      Bdd &m = R.m;
+      const Instruction *t = from->getTerminator();
+      if (const auto *br = dyn_cast_or_null<BranchInst>(t)) {
+        if (br->isUnconditional())
+          return Bdd::T;
+        unsigned r = Bdd::F;
+        if (br->getSuccessor(0) == to)
+          r = m.orOp(r, implied(br->getCondition(), true));
+        if (br->getSuccessor(1) == to)
+          r = m.orOp(r, implied(br->getCondition(), false));
+        return r;
+      }
+      if (const auto *sw = dyn_cast_or_null<SwitchInst>(t)) {
+        const Value *x = sw->getCondition();
+        unsigned r = Bdd::F, noCase = Bdd::T;
+        for (const auto &c : sw->cases()) {
+          const APInt &k = c.getCaseValue()->getValue();
+          if (c.getCaseSuccessor() == to)
+            r = m.orOp(r, caseIs(x, k));
+          if (hasEq(x, k))
+            noCase = m.andOp(noCase, m.notOp(eqOf(x, k)));
+        }
+        if (sw->getDefaultDest() == to)
+          r = m.orOp(r, noCase);
+        return r;
+      }
+      return Bdd::T;
+    }
+  };
+
+  // The classical facts over `vars` every output path establishes on the edge p -> J (forward edges of
+  // the output CFG from its entry; a back edge of a classical loop contributes nothing).
+  unsigned edgeFacts(BasicBlock *p, BasicBlock *J, const std::set<unsigned> &vars) {
+    Decoder D(*this);
+    for (unsigned v : vars) {
+      const Atom &a = atomOf(v);
+      if (a.kind == AtomKind::Cond)
+        D.condVar[ctx.operand(a.v).v] = v;
+      else if (a.kind == AtomKind::Eq)
+        D.eqVar.emplace_back(ctx.operand(a.v).v, a.c, v);
+    }
+    Function &OF = ctx.out();
+    DenseMap<const BasicBlock *, unsigned> idx, in;
+    ReversePostOrderTraversal<Function *> rpot(&OF);
+    unsigned i = 0;
+    for (BasicBlock *b : rpot)
+      idx[b] = i++;
+    for (BasicBlock *b : rpot) {
+      if (b == &OF.getEntryBlock()) {
+        in[b] = Bdd::T;
+        continue;
+      }
+      unsigned f = Bdd::F;
+      SmallPtrSet<BasicBlock *, 4> seen;
+      for (BasicBlock *q : predecessors(b)) {
+        auto qi = idx.find(q);
+        if (qi == idx.end() || qi->second >= idx[b] || !seen.insert(q).second)
+          continue;
+        f = m.orOp(f, m.andOp(in[q], D.edge(q, b)));
+      }
+      in[b] = f;
+    }
+    auto pi = in.find(p);
+    unsigned fp = pi == in.end() ? Bdd::T : pi->second;
+    return m.andOp(fp, D.edge(p, J));
+  }
+
+  // The nearest block at or above U (through unique predecessors) with several predecessors.
+  BasicBlock *joinAbove(BasicBlock *U, const Value *what) {
+    BasicBlock *J = U;
+    SmallPtrSet<BasicBlock *, 16> seen;
+    while (BasicBlock *s = J->getUniquePredecessor()) {
+      if (!seen.insert(J).second)
+        break;
+      J = s;
+    }
+    if (pred_empty(J))
+      unimplemented("pred: a predicate or merge arm reads a value minted where it does not reach the point, and no "
+                    "classical join above the point carries it on every edge on which it is read (cq-2p1p)",
+                    what);
+    return J;
+  }
+
+  SmallVector<BasicBlock *, 4> uniquePreds(BasicBlock *J) {
+    SmallVector<BasicBlock *, 4> ps;
+    for (BasicBlock *p : predecessors(J))
+      if (llvm::find(ps, p) == ps.end())
+        ps.push_back(p);
+    return ps;
+  }
+
+  Value *phiOf(BasicBlock *J, ArrayRef<std::pair<BasicBlock *, Value *>> per, bool handle) {
+    bool same = std::all_of(per.begin(), per.end(), [&](const auto &x) { return x.second == per[0].second; });
+    if (same)
+      return per[0].second;
+    std::vector<Value *> key{J};
+    for (const auto &x : per)
+      key.push_back(x.second);
+    if (auto it = phiMemo.find(key); it != phiMemo.end())
+      return it->second;   // the same per-edge values met at the same join: one phi
+    Type *ty = per[0].second->getType();
+    PHINode *phi = PHINode::Create(ty, unsigned(pred_size(J)), "");
+    phiMemo[key] = phi;
+    phi->insertInto(J, J->begin());
+    for (BasicBlock *p : predecessors(J))
+      for (const auto &x : per)
+        if (x.first == p) {
+          if (x.second->getType() != ty)
+            internalError("pred: the per-edge values of a join have different types", x.second);
+          phi->addIncoming(x.second, p);
+          break;
+        }
+    if (handle)
+      ctx.unc().recordMerge(phi);
+    return phi;
+  }
+
+public:
+  explicit JoinRepair(LoweringContext &ctx)
+      : ctx(ctx), O(taintOracle(ctx.T, ctx.S)), ql([this](unsigned v) { return quantumLike(v, *O); }) {}
+
+  bool nodeReachesHere(unsigned n) { return nodeReaches(n, ctx.B().GetInsertBlock(), ctx.B().GetInsertPoint()); }
+  bool reachesHere(Value *v) { return reaches(v, ctx.B().GetInsertBlock(), ctx.B().GetInsertPoint()); }
+
+  // A rail holding n at (U, pt) wherever `care` holds (n is a don't-care outside it).
+  Value *flagAt(unsigned n, unsigned care, BasicBlock *U, BasicBlock::iterator pt, const Value *what,
+                unsigned depth = 0) {
+    IRBuilderBase::InsertPointGuard g(ctx.B());
+    ctx.B().SetInsertPoint(U, pt);
+    if (m.terminal(n) || nodeReaches(n, U, pt)) {
+      CtxSink sink(ctx);
+      if (m.terminal(n))
+        return sink.classicalSeed(n);   // rule 7: a rail holding the constant
+      return materialize(n, sink, ql);
+    }
+    if (depth > 64)
+      unimplemented("pred: per-edge flags nested deeper than 64 classical joins (cq-2p1p)", what);
+    BasicBlock *J = joinAbove(U, what);
+    std::set<unsigned> vars;
+    classicalVars(n, vars);
+    classicalVars(care, vars);
+    std::vector<std::pair<BasicBlock *, Value *>> per;
+    for (BasicBlock *p : uniquePreds(J)) {
+      unsigned c = m.andOp(care, edgeFacts(p, J, vars));
+      unsigned np = c == Bdd::F ? Bdd::F : m.restrict(n, c);
+      auto key = std::make_tuple(np, c, p);
+      Value *v;
+      if (auto it = flagMemo.find(key); it != flagMemo.end())
+        v = it->second;
+      else
+        v = flagMemo[key] = flagAt(np, c, p, p->getTerminator()->getIterator(), what, depth + 1);
+      per.push_back({p, v});
+    }
+    return phiOf(J, per, true);
+  }
+
+  Value *flagHere(unsigned n, unsigned care, const Value *what) {
+    return flagAt(n, care, ctx.B().GetInsertBlock(), ctx.B().GetInsertPoint(), what);
+  }
+
+  // The operand op of a merge arm whose predicate is armNode, at (U, pt).
+  Value *valueAt(Value *v, bool handle, RailType w, unsigned armNode, BasicBlock *U, BasicBlock::iterator pt,
+                 const Value *what, unsigned depth = 0) {
+    if (reaches(v, U, pt))
+      return v;
+    if (depth > 64)
+      unimplemented("pred: a merge arm carried across more than 64 classical joins (cq-2p1p)", what);
+    BasicBlock *J = joinAbove(U, what);
+    std::set<unsigned> vars;
+    classicalVars(armNode, vars);
+    std::vector<std::pair<BasicBlock *, Value *>> per;
+    for (BasicBlock *p : uniquePreds(J)) {
+      unsigned c = edgeFacts(p, J, vars);
+      unsigned a = c == Bdd::F ? Bdd::F : m.restrict(armNode, c);
+      auto key = std::make_tuple(v, a, p);
+      Value *x;
+      if (auto it = valueMemo.find(key); it != valueMemo.end()) {
+        x = it->second;
+      } else if (a == Bdd::F) {
+        // The arm is never chosen on this edge: a fresh |0> rail (rule 7), or the null value.
+        if (handle) {
+          IRBuilderBase::InsertPointGuard g(ctx.B());
+          ctx.B().SetInsertPoint(p->getTerminator());
+          x = seedOf(ctx, Constant::getNullValue(irTypeOf(ctx.M.getContext(), w)), w);
+        } else {
+          x = Constant::getNullValue(v->getType());
+        }
+        valueMemo[key] = x;
+      } else {
+        x = valueMemo[key] = valueAt(v, handle, w, a, p, p->getTerminator()->getIterator(), what, depth + 1);
+      }
+      per.push_back({p, x});
+    }
+    return phiOf(J, per, handle);
+  }
+
+  Operand operandHere(const Operand &op, RailType w, unsigned armNode, const Value *what) {
+    return Operand{valueAt(op.v, op.handle, w, armNode, ctx.B().GetInsertBlock(), ctx.B().GetInsertPoint(), what),
+                   op.handle};
+  }
+};
+
 } // namespace
 } // namespace pred_detail
 
@@ -720,13 +1088,31 @@ Value *PathPredicates::flag(LoweringContext &ctx, const Pred &p) {
     return nullptr;
   if (n == Bdd::F)
     internalError("pred: a flag for the false predicate (code under it never runs)");
+  {
+    JoinRepair R(ctx);   // cq-2p1p: an atom minted in a classical arm that does not reach the point
+    if (!R.nodeReachesHere(n))
+      return R.flagHere(n, Bdd::T, nullptr);
+  }
   std::shared_ptr<Oracle> O = taintOracle(ctx.T, ctx.S);
   CtxSink sink(ctx);
   return materialize(n, sink, quantumLikeFn(ctx, O));
 }
 
+namespace {
+Value *selectChainAt(LoweringContext &ctx, ArrayRef<std::pair<Pred, Operand>> arms, RailType w, unsigned care,
+                     const Value *what);
+}
+
 // Rule 9: one select per distinct arm, the complement innermost, into fresh rails.
 Value *selectChain(LoweringContext &ctx, ArrayRef<std::pair<Pred, Operand>> arms, RailType w) {
+  return selectChainAt(ctx, arms, w, Bdd::T, nullptr);
+}
+
+namespace {
+// selectChain under a don't-care set: the merge is read only where `care` holds (the merge block's
+// predicate), which a per-edge select condition at a classical join may use (cq-2p1p).
+Value *selectChainAt(LoweringContext &ctx, ArrayRef<std::pair<Pred, Operand>> arms, RailType w, unsigned care,
+                     const Value *what) {
   if (arms.empty())
     internalError("pred: selectChain with no arms");
   std::vector<unsigned> nodes;
@@ -740,15 +1126,25 @@ Value *selectChain(LoweringContext &ctx, ArrayRef<std::pair<Pred, Operand>> arms
   }
   std::shared_ptr<Oracle> O = taintOracle(ctx.T, ctx.S);
   auto ql = quantumLikeFn(ctx, O);
+  Bdd &m = Bdd::get();
+  JoinRepair R(ctx);
   // Inner selects first (the true side's, then the false side's), each node's select after both.
-  std::function<Operand(int)> emit = [&](int k) -> Operand {
+  // ctxt: the conjunction of the tree conditions above node k (where its select is read).
+  std::function<Operand(int, unsigned)> emit = [&](int k, unsigned ctxt) -> Operand {
     const SelectNode &nd = tree[k];
-    if (nd.arm >= 0)
-      return arms[nd.arm].second;
+    if (nd.arm >= 0) {
+      const Operand &op = arms[nd.arm].second;
+      if (R.reachesHere(op.v))
+        return op;
+      return R.operandHere(op, w, nodes[nd.arm], what);   // cq-2p1p: an arm minted in a classical arm
+    }
     unsigned c = nd.cond;
-    Operand tv = emit(nd.thenIdx), fv = emit(nd.elseIdx);
+    Operand tv = emit(nd.thenIdx, m.andOp(ctxt, c)), fv = emit(nd.elseIdx, m.andOp(ctxt, m.notOp(c)));
     Value *cond;
-    if (auto g = negatedAtom(c, ql)) {
+    if (!R.nodeReachesHere(c)) {
+      // cq-2p1p: per-edge flags of the condition, a don't-care outside this select's context.
+      cond = R.flagHere(c, m.andOp(care, ctxt), what);
+    } else if (auto g = negatedAtom(c, ql)) {
       // Selecting on NOT g is selecting on g with the arms swapped.
       CtxSink sink(ctx);
       cond = sink.atomRail(*g);
@@ -765,8 +1161,9 @@ Value *selectChain(LoweringContext &ctx, ArrayRef<std::pair<Pred, Operand>> arms
     spec.shape = shape == "hh" ? "" : shape;
     return Operand{ctx.emitTemplate(spec, {Operand{cond, true}, tv, fv}), true};
   };
-  return emit(0).v;
+  return emit(0, Bdd::T).v;
 }
+} // namespace
 
 Value *lowerMerge(LoweringContext &ctx, PHINode &phi) {
   const PathStorage &I = storage(ctx.preds());
@@ -811,7 +1208,7 @@ Value *lowerMerge(LoweringContext &ctx, PHINode &phi) {
   std::vector<std::pair<Pred, Operand>> chain;
   for (const Arm &a : arms)
     chain.push_back({makePred(a.node), ctx.operand(a.v)});
-  return selectChain(ctx, chain, railTypeOf(phi.getType()));
+  return selectChainAt(ctx, chain, railTypeOf(phi.getType()), nodeOf(I.blocks.lookup(bb)), &phi);
 }
 
 Value *lowerSelect(LoweringContext &ctx, SelectInst &sel) {
@@ -865,6 +1262,15 @@ void lowerPhase(LoweringContext &ctx, CallInst &cqPhi) {
     internalError("pred: a classical cq_phi angle whose operand is a rail", &cqPhi);
   abi::CoreSpec rz{abi::Core::RzI1, i1Rail()};
   std::shared_ptr<Oracle> O = taintOracle(ctx.T, ctx.S);
+  {
+    // cq-2p1p: a phase in a block reached from several classically chosen arms whose predicate reads
+    // rails minted in them: rz_i1 on the classical phi of the per-edge flags.
+    JoinRepair R(ctx);
+    if (!R.nodeReachesHere(n)) {
+      ctx.emitCore(rz, {R.flagHere(n, Bdd::T, &cqPhi), angle.v});
+      return;
+    }
+  }
   if (auto g = negatedAtom(n, quantumLikeFn(ctx, O))) {
     // Rule 8: the false edge is an X bracket on the flag (21).
     CtxSink sink(ctx);
