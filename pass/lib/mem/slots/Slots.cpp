@@ -82,6 +82,7 @@
 #include "cq/Calls.h"
 #include "cq/Loops.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/PostDominators.h"
 #include "cq/Predicate.h"
 #include "cq/Uncompute.h"
 #include "llvm/ADT/DenseMap.h"
@@ -2217,11 +2218,16 @@ Type *cloneCellType(LoweringContext &ctx, const Specialization &S, unsigned argN
   const DataLayout &DL = ctx.M.getDataLayout();
   const Argument *A = S.F->getArg(argNo);
   Type *fp = nullptr, *any = nullptr;
-  auto note = [&](Type *t) {
+  SmallVector<const Instruction *, 4> writers;
+  bool mixed = false;
+  auto note = [&](Type *t, const Instruction &w) {
+    if (any && t != any)
+      mixed = true;
     if (t->isFloatingPointTy())
       fp = t;
     if (!any)
       any = t;
+    writers.push_back(&w);
   };
   for (const Instruction &I : instructions(*S.F)) {
     if (auto *CB = dyn_cast<CallBase>(&I)) {
@@ -2236,7 +2242,7 @@ Type *cloneCellType(LoweringContext &ctx, const Specialization &S, unsigned argN
         Addr pa = decompose(CB->getArgOperand(i), DL);
         if (pa.ok && pa.root == A && pa.terms.empty() && !ctx.T.cellsWritten(*C, i).empty())
           if (Type *t = cloneCellType(ctx, *C, i, off - pa.off, size, at, depth + 1))
-            note(t);
+            note(t, I);
       }
       continue;
     }
@@ -2256,7 +2262,32 @@ Type *cloneCellType(LoweringContext &ctx, const Specialization &S, unsigned argN
     }
     Addr a = decompose(ptr, DL);
     if (a.ok && a.root == A && a.terms.empty() && a.off == off && storeBytes(DL, ty) == size)
-      note(ty);
+      note(ty, I);
+  }
+  if (mixed) {
+    // cq-nyto (3): writes of different types leave one rail type only when they are the arms of one
+    // quantum-predicated merge (mergedCloneStore, 51: the floating-point view). A write that a classical
+    // branch decides (it is control dependent on a conditional terminator with a classical condition)
+    // leaves a rail whose type depends on the path (c1): unimplemented.
+    Function &F = const_cast<Function &>(*S.F);
+    DominatorTree DT(F);
+    PostDominatorTree PDT(F);
+    for (const Instruction *w : writers)
+      for (const BasicBlock &X : F) {
+        const Instruction *T = X.getTerminator();
+        if (!T || T->getNumSuccessors() < 2 || !DT.dominates(&X, w->getParent()) ||
+            PDT.dominates(w->getParent(), &X))
+          continue;
+        const Value *cond = nullptr;
+        if (auto *br = dyn_cast<BranchInst>(T); br && br->isConditional())
+          cond = br->getCondition();
+        else if (auto *sw = dyn_cast<SwitchInst>(T))
+          cond = sw->getCondition();
+        if (!cond || !ctx.T.isQuantum(cond, S))
+          unimplemented("mem-slots: a clone writes a caller cell at different types on paths a classical condition "
+                        "chooses (the rail type the caller reads depends on the path: cq-nyto)",
+                        w);
+      }
   }
   return fp ? fp : any;
 }
@@ -2314,9 +2345,22 @@ void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
           unimplemented("mem-slots: a load of a caller cell a clone call wrote at a type the clone's rail is not a "
                         "same-width scalar view of (cq-qd05)",
                         &ld);
-        // The clone's rail stays live (kept with its call's results: the twin would zero it under a kept
-        // view of it, U2); the view is a fresh rail with its own role.
-        ctx.unc().setRole(ctx.unc().idOf(h.v), Role::KeptEntangled);
+        // The view is a fresh rail with its own role. cq-nyto (2): when the view is kept (the load measured
+        // or returned: rule 2, 19), the clone's rail is kept with it and with the call's kept results (U2:
+        // the twin undoes all of them or none); otherwise the clone's rail stays garbage, read by the
+        // view's clean-up, and the twin uncomputes it after that (c8, c7). A mixed call (a kept result, a
+        // garbage cell rail, or the reverse) is U2's unimplemented. Orchestrator decision under CR rule 5
+        // and U2, owner may override.
+        bool kept = false;
+        for (const User *u : ld.users()) {
+          if (isa<ReturnInst>(u))
+            kept = true;
+          if (auto *m = dyn_cast<CallBase>(u); m && m->getCalledFunction() &&
+                                              m->getCalledFunction()->getName().starts_with("cq_measure_"))
+            kept = true;
+        }
+        if (kept)
+          ctx.unc().setRole(ctx.unc().idOf(h.v), Role::KeptEntangled);
         Value *v = viewTemplate(ctx, "bitcast", railTypeOf(cty), railTypeOf(ld.getType()), {h});
         st.lowered[&ld] = Operand{v, true};
         ctx.bindFields(&ld, {Operand{v, true}});
@@ -2520,6 +2564,53 @@ SmallVector<Operand, 8> readSlotCells(LoweringContext &ctx, const Value *ptr, Ty
                     &at);
     out.push_back(readCell(ctx, st, c, at, cellTy));
   }
+  // cq-nyto (1): a clone call rotating a caller cell in place (T3 cellsRotated; calls reads the cell here
+  // as of the call) is built when the cell holds a quantum rail (124). A cell whose content at the call
+  // is classical, a seed rail (a classical value's, rule 7) or a rail already measured there would be
+  // read back after the call as that classical value (rule 2's classical re-read; the seed freed before
+  // the call): unimplemented until the rotation makes the rail opaque to that re-read.
+  if (auto *CB = dyn_cast<CallBase>(&at))
+    if (const Specialization *S = cloneCallee(ctx, *CB))
+      for (unsigned i = 0; i < CB->arg_size(); ++i) {
+        if (!CB->getArgOperand(i)->getType()->isPointerTy() || !hasObject(ctx, CB->getArgOperand(i), s.o))
+          continue;
+        SmallVector<unsigned, 4> rot = ctx.T.cellsRotated(*S, i);
+        if (rot.empty())
+          continue;
+        Addr pa = decompose(CB->getArgOperand(i), ctx.M.getDataLayout());
+        if (!pa.ok || !pa.terms.empty() || pa.root != s.a.root || s.info->cellBytes == 0 ||
+            (pa.off - s.a.off) % int64_t(s.info->cellBytes))
+          unimplemented("mem-slots: a clone rotating a caller cell handed over at a pointer that is not a constant "
+                        "cell offset (cq-nyto)",
+                        &at);
+        int64_t base = (pa.off - s.a.off) / int64_t(s.info->cellBytes);
+        for (unsigned c : rot) {
+          int64_t k = base + int64_t(c);
+          if (k < 0 || uint64_t(k) >= out.size())
+            continue;
+          const Operand &o = out[size_t(k)];
+          bool classical = !o.handle;
+          if (auto *a = dyn_cast<CallInst>(o.v); o.handle && a && a->getCalledFunction() &&
+                                                    a->getCalledFunction()->getName().starts_with("cqrt_alloc_")) {
+            classical = true;   // a seed, unless a rotation or a copy (of a quantum rail) wrote it
+            for (const User *u : a->users())
+              if (auto *w = dyn_cast<CallInst>(u); w && w->getCalledFunction())
+                if (auto spec = abi::parseCore(w->getCalledFunction()->getName()))
+                  if (spec->op == abi::Core::Ry || spec->op == abi::Core::RyQAngle || spec->op == abi::Core::Copy)
+                    classical = false;
+          }
+          if (o.handle)
+            for (const User *u : o.v->users())
+              if (auto *m = dyn_cast<CallInst>(u); m && m->getCalledFunction() &&
+                                                   m->getCalledFunction()->getName().starts_with("cqrt_measure"))
+                classical = true;
+          if (classical)
+            unimplemented("mem-slots: a clone rotating a caller cell in place whose content at the call is classical "
+                          "(a classical value, its seed or a measured rail; rule 2 would re-read it classically "
+                          "after the call: cq-nyto)",
+                          &at);
+        }
+      }
   return out;
 }
 
