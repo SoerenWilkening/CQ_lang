@@ -17,11 +17,13 @@
 //      * a GEP: base + its byte offset const + sum(scale_i * v_i) (GEPOperator::collectOffset). The
 //        CELL size is the scale of the variable terms (one size per fat pointer, merged arms agree);
 //        the constant and the classical terms are added to a classical idx in cells. One quantum term
-//        is allowed, onto a base whose idx is the classical 0 with nothing else added: idx is then the
+//        per GEP is allowed. Alone, onto a base whose idx is the classical 0: idx is then the
 //        logical index rail (the GEP index stripped of one zext/sext of a quantum value: the widening
 //        and the scaling are address arithmetic, never emitted, rule 20, cq-eog3), remembered with its
-//        width and extension. Index arithmetic on a rail idx (a second term, a constant cell offset)
-//        is unimplemented.
+//        width and extension. A sum on a rail idx (a second rail term, a classical term or a constant
+//        cell offset, or a rail term onto a non-zero classical idx) is computed at sumWidth (32, or
+//        the widest rail; 64 for a classical object of 2^32 cells or more or of unknown extent): each
+//        rail widened by its own extension, then add templates; idx is then an unsigned rail.
 //      * a select: the spine calls lower(sel) once, at the select (patch spine-dispatch-ptrselect);
 //        lower computes tag and idx there and binds them as the select's two fields. A quantum
 //        condition gives tag = select_i32(cond, tag_t, tag_f) (a classical tag when both arms have
@@ -220,6 +222,32 @@ const Value *stripIndexCast(LoweringContext &ctx, const Value *v, bool &sext) {
   return v;
 }
 
+// The width of a summed rail cell index (cq-qf4c): the C index width (at least int, 32), or the
+// widest summand. LLVM sums at i64; the sum's low W bits are exact, and so is its unsigned reading at W
+// whenever every in-domain cell index is below 2^W: always for a QRAM (qram_alloc takes an i32 cell
+// count, BACKEND_ABI), and for a classical object whose static cell count is below 2^W. Otherwise 64.
+unsigned sumWidth(LoweringContext &ctx, const Fat &f, unsigned widest) {
+  unsigned W = std::max(32u, widest);
+  if (W >= 64)
+    return 64;
+  const DataLayout &DL = ctx.M.getDataLayout();
+  for (const Value *r : f.roots) {
+    if (mem::isQramRoot(ctx, r))
+      continue;
+    APInt off(64, 0);
+    const Value *obj = r->stripAndAccumulateConstantOffsets(DL, off, /*AllowNonInbounds=*/true);
+    std::optional<uint64_t> bytes;
+    if (auto *gv = dyn_cast<GlobalVariable>(obj))
+      bytes = DL.getTypeAllocSize(gv->getValueType()).getFixedValue();
+    else if (auto *ai = dyn_cast<AllocaInst>(obj))
+      if (auto sz = ai->getAllocationSize(DL); sz && !sz->isScalable())
+        bytes = sz->getFixedValue();
+    if (!bytes || f.cell == 0 || *bytes / f.cell >= (uint64_t(1) << W))
+      return 64;
+  }
+  return W;
+}
+
 Fat deriveGEP(LoweringContext &ctx, const GEPOperator &g, bool emit) {
   const DataLayout &DL = ctx.M.getDataLayout();
   Fat f = derive(ctx, g.getPointerOperand(), emit);
@@ -282,8 +310,10 @@ Fat deriveGEP(LoweringContext &ctx, const GEPOperator &g, bool emit) {
     return f;
   }
   // A rail cell index (rule 21): the base's rail idx and/or the quantum term's logical index, plus the
-  // classical part (the base's classical idx, the classical terms, the constant), added at the rail's
-  // width (an index past the object is undefined, outside the domain). The adds are templates.
+  // classical part (the base's classical idx, the classical terms, the constant). A lone rail stays at
+  // its own width (the widening is address arithmetic, never emitted, rule 20); a sum is computed at
+  // sumWidth: each rail widened by its own extension (zext, or sext for a signed index), then added (an
+  // index past the object is undefined, outside the domain). The widenings and adds are templates.
   const Value *ix = nullptr;
   bool qsext = false;
   if (qTerm) {
@@ -291,12 +321,13 @@ Fat deriveGEP(LoweringContext &ctx, const GEPOperator &g, bool emit) {
     if (!ix->getType()->isIntegerTy() || ix->getType()->getIntegerBitWidth() > 64)
       unimplemented("fatptr: a quantum GEP index wider than 64 bits", &g);
   }
-  unsigned W = f.idxRail() ? f.idxBits : ix->getType()->getIntegerBitWidth();
-  bool sext = f.idxRail() ? f.idxSext : (qsext && W < 64);
-  if (f.idxRail() && ix && ix->getType()->getIntegerBitWidth() != W)
-    unimplemented("fatptr: a quantum GEP index of another width than the pointer's rail cell index", &g);
   bool classicalPart = !cTerms.empty() || c != 0 ||
                        (!f.idxRail() && !(isa<ConstantInt>(f.idx.v) && cast<ConstantInt>(f.idx.v)->isZero()));
+  bool sum = classicalPart || (f.idxRail() && ix);
+  unsigned ixW = ix ? ix->getType()->getIntegerBitWidth() : 0;
+  bool ixSext = qsext && ixW < 64;
+  unsigned W = sum ? sumWidth(ctx, f, std::max(f.idxRail() ? f.idxBits : 0u, ixW)) : f.idxRail() ? f.idxBits : ixW;
+  bool sext = sum ? false : f.idxRail() ? f.idxSext : ixSext;
   if (!emit) {
     f.idxBits = W;
     f.idxSext = sext;
@@ -304,13 +335,19 @@ Fat deriveGEP(LoweringContext &ctx, const GEPOperator &g, bool emit) {
     return f;
   }
   IRBuilder<> &B = ctx.B();
+  auto widen = [&](Operand r, unsigned w, bool sx) -> Operand {
+    if (!sum || w >= W)
+      return r;
+    return Operand{tmpl(ctx, sx ? "sext" : "zext", intRail(w), {r}, "", "", intRail(W)), true};
+  };
   Operand rail{nullptr, true};
   if (f.idxRail())
-    rail = f.idx;
+    rail = widen(f.idx, f.idxBits, f.idxSext);
   if (ix) {
     Operand r = ctx.operand(ix);
     if (!r.handle)
       internalError("fatptr: the logical index of a quantum GEP index is not a rail", ix);
+    r = widen(r, ixW, ixSext);
     rail = rail.v ? Operand{tmpl(ctx, "add", intRail(W), {rail, r}, ""), true} : r;
   }
   if (classicalPart) {
@@ -323,8 +360,9 @@ Fat deriveGEP(LoweringContext &ctx, const GEPOperator &g, bool emit) {
     }
     if (c != 0)
       cs = B.CreateAdd(cs, ConstantInt::get(i64(ctx), c / int64_t(f.cell)));
-    Value *k = B.CreateTrunc(cs, IntegerType::get(ctx.M.getContext(), W));
-    rail = Operand{tmpl(ctx, "add", intRail(W), {rail, Operand{k, false}}, "hl"), true};
+    if (W < 64)
+      cs = B.CreateTrunc(cs, IntegerType::get(ctx.M.getContext(), W));
+    rail = Operand{tmpl(ctx, "add", intRail(W), {rail, Operand{cs, false}}, "hl"), true};
   }
   f.idxBits = W;
   f.idxSext = sext;

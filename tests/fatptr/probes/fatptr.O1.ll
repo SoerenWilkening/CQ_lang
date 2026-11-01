@@ -5,6 +5,8 @@ target triple = "x86_64-apple-macosx16.0.0"
 
 @G = global [8 x i32] zeroinitializer, align 16
 @H = global [8 x i32] zeroinitializer, align 16
+@QA = internal unnamed_addr constant [300 x i32] [i32 3, i32 0, i32 0, i32 0, i32 0, i32 0, i32 6, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 100, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 255, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 262, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 299], align 16
+@QB = internal unnamed_addr constant [300 x i32] [i32 5, i32 0, i32 0, i32 0, i32 0, i32 0, i32 60, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 1000, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 2550, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 2620, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 2990], align 16
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @f_ne_two(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
@@ -155,6 +157,61 @@ define i32 @f_eq_signed(i32 noundef %0, double noundef %1) local_unnamed_addr #0
 
 declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr #2
 
+; Function Attrs: nounwind ssp uwtable
+define i32 @f_rail_off(i32 noundef %0, double noundef %1, i8 noundef zeroext %2, double noundef %3, i32 noundef %4) local_unnamed_addr #0 {
+  %6 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #4
+  %7 = tail call zeroext i8 @cq_theta_ui8(i8 noundef zeroext %2, double noundef %3) #4
+  %8 = and i32 %6, 1
+  %9 = icmp eq i32 %8, 0
+  %10 = select i1 %9, ptr @QB, ptr @QA
+  %11 = icmp ugt i32 %4, 44
+  %12 = select i1 %11, i32 0, i32 %4
+  %13 = zext nneg i32 %12 to i64
+  %14 = getelementptr inbounds i32, ptr %10, i64 %13
+  %15 = zext i8 %7 to i64
+  %16 = getelementptr inbounds i32, ptr %14, i64 %15
+  %17 = load i32, ptr %16, align 4, !tbaa !6
+  %18 = tail call i32 @cq_measure_si32(i32 noundef %17) #5
+  ret i32 %18
+}
+
+declare zeroext i8 @cq_theta_ui8(i8 noundef zeroext, double noundef) local_unnamed_addr #2
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @f_rail_off_store(i32 noundef %0, double noundef %1, i8 noundef zeroext %2, double noundef %3, i32 noundef %4, i32 noundef %5) local_unnamed_addr #0 {
+  %7 = alloca [300 x i32], align 16
+  %8 = alloca [300 x i32], align 16
+  %9 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #4
+  %10 = tail call zeroext i8 @cq_theta_ui8(i8 noundef zeroext %2, double noundef %3) #4
+  call void @llvm.lifetime.start.p0(i64 1200, ptr nonnull %7) #5
+  call void @llvm.memset.p0.i64(ptr noundef nonnull align 16 dereferenceable(1200) %7, i8 0, i64 1200, i1 false)
+  call void @llvm.lifetime.start.p0(i64 1200, ptr nonnull %8) #5
+  call void @llvm.memset.p0.i64(ptr noundef nonnull align 16 dereferenceable(1200) %8, i8 0, i64 1200, i1 false)
+  %11 = and i32 %9, 1
+  %12 = icmp eq i32 %11, 0
+  %13 = select i1 %12, ptr %8, ptr %7
+  %14 = icmp ugt i32 %4, 44
+  %15 = select i1 %14, i32 0, i32 %4
+  %16 = icmp ugt i32 %5, 299
+  %17 = select i1 %16, i32 0, i32 %5
+  %18 = zext nneg i32 %15 to i64
+  %19 = getelementptr inbounds i32, ptr %13, i64 %18
+  %20 = zext i8 %10 to i64
+  %21 = getelementptr inbounds i32, ptr %19, i64 %20
+  store i32 7, ptr %21, align 4, !tbaa !6
+  %22 = zext nneg i32 %17 to i64
+  %23 = getelementptr inbounds [300 x i32], ptr %7, i64 0, i64 %22
+  %24 = load i32, ptr %23, align 4, !tbaa !6
+  %25 = getelementptr inbounds [300 x i32], ptr %8, i64 0, i64 %22
+  %26 = load i32, ptr %25, align 4, !tbaa !6
+  %27 = shl nsw i32 %26, 1
+  %28 = add nsw i32 %27, %24
+  %29 = tail call i32 @cq_measure_si32(i32 noundef %28) #5
+  call void @llvm.lifetime.end.p0(i64 1200, ptr nonnull %8) #5
+  call void @llvm.lifetime.end.p0(i64 1200, ptr nonnull %7) #5
+  ret i32 %29
+}
+
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #1 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
 attributes #2 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
@@ -171,3 +228,7 @@ attributes #5 = { nounwind }
 !3 = !{i32 7, !"uwtable", i32 2}
 !4 = !{i32 7, !"frame-pointer", i32 2}
 !5 = !{!"Homebrew clang version 19.1.7"}
+!6 = !{!7, !7, i64 0}
+!7 = !{!"int", !8, i64 0}
+!8 = !{!"omnipotent char", !9, i64 0}
+!9 = !{!"Simple C/C++ TBAA"}

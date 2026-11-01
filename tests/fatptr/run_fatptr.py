@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PROBES = Path(__file__).parent / "probes"
 PROBE = PROBES / "fatptr.O1.ll"
-ENTRIES = ["f_ne_two", "f_eq_three", "f_eq_arms", "f_lt_global", "f_eq_signed"]
+ENTRIES = ["f_ne_two", "f_eq_three", "f_eq_arms", "f_lt_global", "f_eq_signed", "f_rail_off", "f_rail_off_store"]
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 FAT = re.compile(r"@cq_template_(select_i32|icmp_eq_i32|icmp_ne_i32|\w+_i64)")
 
