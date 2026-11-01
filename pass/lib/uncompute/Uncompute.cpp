@@ -342,6 +342,7 @@ struct Uncompute::Impl {
     CallInst *fwd;
     SmallVector<RailId, 4> outs, slotOuts, members;
     SmallVector<Value *, 4> extra;
+    bool declared = false;   // U7: recordDeclaredWrites (a pseudo leader: the twin alone, nothing freed)
   };
   std::vector<CallGroup> groups;
   // U4: rails in caller cells a clone call reads (noteCallReads, before or after its recordCall).
@@ -1356,6 +1357,10 @@ struct Uncompute::Impl {
   // of that edge's block (its "own path"), before the join. The arm then carries the kept role: on
   // every path that reaches a return through the join exactly one arm of m is live (128; the exit
   // phi of a classically bounded loop, 25: the zero-trip seed is freed on the loop path).
+  bool isDeclaredPseudo(RailId g) const {
+    return rails[g].group != kNone && groups[rails[g].group].declared;
+  }
+
   void keepMerge(RailId m, Role role) {
     // The rails m may name (arms, nested merges, transitively) that are resolvable before the role is
     // set: the decisions below read this snapshot, so the order of m's arms changes nothing.
@@ -1397,8 +1402,8 @@ struct Uncompute::Impl {
         if (isMerge(a)) {
           keepPhi(a, role, live, chain);
           rails[a].role = role;
-        } else if (live.count(a)) {
-          rails[a].role = role;
+        } else if (live.count(a) && !isDeclaredPseudo(a)) {
+          rails[a].role = role;   // U7: a declared clone's twin runs whatever the caller keeps
         }
       }
       return;
@@ -1790,7 +1795,10 @@ struct Uncompute::Impl {
         args.push_back(e);
       }
       FunctionType *TT = FunctionType::get(Type::getVoidTy(C), ps, false);
-      track(B.CreateCall(declareFn(M, (fwd->getCalledFunction()->getName() + "_unc").str(), TT, fwd), args));
+      CallInst *twin = track(B.CreateCall(declareFn(M, (fwd->getCalledFunction()->getName() + "_unc").str(), TT, fwd),
+                                          args));
+      if (cg.declared)
+        return twin;   // U7: the cells' rails are the clone's (the twin restores them) or the caller's own
       FunctionType *FT = FunctionType::get(Type::getVoidTy(C), {Type::getInt32Ty(C)}, false);
       Instruction *last = nullptr;
       for (RailId o : cg.members)
@@ -3173,6 +3181,37 @@ SmallVector<RailId, 4> Uncompute::recordCall(CallInst *fwd, ArrayRef<Value *> ou
   cg.outs.assign(ids.begin(), ids.begin() + outs.size());
   cg.slotOuts.assign(ids.begin() + outs.size(), ids.end());
   return ids;
+}
+
+RailId Uncompute::recordDeclaredWrites(CallInst *fwd, ArrayRef<Operand> extra) {
+  Impl &I = *impl;
+  if (!fwd || !fwd->getCalledFunction() || !fwd->getParent() || !fwd->getType()->isVoidTy())
+    internalError("uncompute: recordDeclaredWrites: the forward must be a void direct call in a block", fwd);
+  if (!I.openStack.empty())
+    unimplemented("uncompute: a declared clone that may write caller cells inside an open scope (a classically "
+                  "bounded loop's trip: its mirror would have to run the twin)",
+                  fwd);
+  SmallVector<Operand, 8> ops;
+  for (Value *a : fwd->args())
+    ops.push_back(Operand{a, I.byHandle.count(a) > 0});
+  I.checkOps(fwd, ops, "recordDeclaredWrites");
+  unsigned gi = I.groups.size();
+  I.groups.push_back({fwd, {}, {}, {}, {}, true});
+  for (const Operand &e : extra) {
+    if (e.handle)
+      internalError("uncompute: recordDeclaredWrites: a twin operand after the forward's that is a handle", fwd);
+    ops.push_back(e);
+    I.groups[gi].extra.push_back(e.v);
+  }
+  // The pseudo leader: no handle of its own (the twin frees nothing), so it is not in byHandle.
+  RailId lead = I.rails.size();
+  I.rails.emplace_back();
+  I.rails.back().handle = fwd;
+  I.rails.back().group = gi;
+  unsigned rec = I.addRecord(fwd, abi::TemplateSpec{}, ops, lead, RecKind::Call, false);
+  I.takeCallReads(fwd, rec);
+  I.groups[gi].members.push_back(lead);
+  return lead;
 }
 
 void Uncompute::noteCallReads(CallInst *fwd, ArrayRef<RailId> reads) {

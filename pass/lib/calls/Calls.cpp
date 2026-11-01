@@ -1360,11 +1360,93 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
   bindResult(ctx, CB, r.call, r.handle, r.ops);
 }
 
+// cq-r8-d (CR rule 27 Pointers; 190): a void declared call with a pointer argument into a local slot object.
+// The pointer crosses as (object, tag, idx, cell count) with the digits tag 0, idx 0 and one object digit (1:
+// some cell holds a handle at the call); before the call the caller copies the object's cells into a
+// snapshot of the same size; the twin <clone>_unc(args..., K, snapshot) runs after the last read of a cell
+// the clone may have written (Uncompute U7 over mem-slots' later cell reads), before the items of the rails
+// the cells held (the call's footprint). One such pointer; a result, a _ctl call, an object digit 0 and a
+// quantum or multi-object pointer are unimplemented.
+void lowerDeclaredPointers(LoweringContext &ctx, CallBase &CB, Function &F) {
+  LLVMContext &C = ctx.M.getContext();
+  if (F.getFunctionType()->isVarArg())
+    unimplemented("calls: a variadic declared callee (rule 27 per call-site arity)", &CB);
+  if (!CB.getType()->isVoidTy())
+    unimplemented("calls: a declared clone with a pointer argument and a result (rule 27: the result's twin and the "
+                  "snapshot in one item)",
+                  &CB);
+  if (!ctx.currentPredicate().isTop() || ctx.S.ctl)
+    unimplemented("calls: a declared clone with a pointer argument under a quantum predicate (rule 27 _ctl: the "
+                  "cells merged by select)",
+                  &CB);
+  std::string mask;
+  SmallVector<Value *, 8> args;
+  int ptrArg = -1;
+  mem::DeclaredCells cells;
+  fatptr::Triple t{};
+  for (unsigned i = 0; i < CB.arg_size(); ++i) {
+    const Value *a = CB.getArgOperand(i);
+    if (a->getType()->isPointerTy()) {
+      if (ptrArg >= 0)
+        unimplemented("calls: a declared clone with two pointer arguments (rule 27: one snapshot per object)", &CB);
+      ptrArg = int(i);
+      cells = mem::declaredCellsAtCall(ctx, CB, i);
+      if (!all_of(cells.atCall, [](const Operand &o) { return o.handle; }))
+        unimplemented("calls: a declared clone's pointer into a slot object a cell of which holds no handle at the "
+                      "call (rule 27: the clone reads every cell of an object marked 1 as a handle; object digit 0)",
+                      &CB);
+      t = fatptr::passAcrossCall(ctx, a);
+      if (!t.cellCount)
+        internalError("calls: passAcrossCall gave no cell count for a slot object", &CB);
+      args.append({t.object, t.tag, t.idx, t.cellCount});
+      mask += "001";
+      continue;
+    }
+    if (!scalarRailType(a->getType()))
+      unimplemented("calls: a pointer, aggregate or vector argument of a quantum call (rules 21, 25, 26)", &CB);
+    Operand o = ctx.operand(a);
+    if (o.handle != ctx.T.isQuantum(a, ctx.S))
+      unimplemented("calls: a measured (collapsed, rule 2) value passed where the clone's mask is quantum", &CB);
+    args.push_back(o.v);
+    mask.push_back(o.handle ? '1' : '0');
+  }
+  if (ptrArg < 0)
+    internalError("calls: lowerDeclaredPointers of a call without a pointer argument", &CB);
+  args.push_back(declaredK(ctx, F, &CB));
+  // The snapshot: the object's cells as handle numbers, a classical copy.
+  uint64_t n = cast<ConstantInt>(t.cellCount)->getZExtValue();
+  IRBuilder<> EB(&*ctx.out().getEntryBlock().getFirstInsertionPt());
+  AllocaInst *snap = EB.CreateAlloca(ArrayType::get(Type::getInt32Ty(C), n), nullptr);
+  snap->setAlignment(Align(4));
+  ctx.B().CreateMemCpy(snap, Align(4), t.object, Align(4), n * 4);
+  SmallVector<Type *, 8> ps;
+  for (Value *a : args)
+    ps.push_back(a->getType());
+  abi::CloneSpec cs{calleeName(F, &CB), mask, {}, false, false, false, 0, false};
+  std::string name = checkedName(cs, &CB);
+  FunctionType *FT = FunctionType::get(Type::getVoidTy(C), ps, false);
+  Function *D = ctx.M.getFunction(name);
+  if (D && D->getFunctionType() != FT)
+    internalError("calls: declared clone @" + name + " exists with another type", &CB);
+  if (!D)
+    D = Function::Create(FT, GlobalValue::ExternalLinkage, name, ctx.M);
+  CallInst *call = ctx.B().CreateCall(D, args);   // C calling convention (rule 27)
+  SmallVector<RailId, 8> reads;
+  for (const Operand &o : cells.atCall)
+    if (o.handle && !is_contained(reads, ctx.unc().idOf(o.v)))
+      reads.push_back(ctx.unc().idOf(o.v));
+  ctx.unc().noteCallReads(call, reads);
+  RailId pseudo = ctx.unc().recordDeclaredWrites(call, {Operand{snap, false}});
+  mem::noteDeclaredWrites(ctx, CB, unsigned(ptrArg), pseudo, cells.atCall);
+}
+
 void lowerDeclared(LoweringContext &ctx, CallBase &CB) {
   capture(ctx);
   Function *F = CB.getCalledFunction();
   if (!F || !F->isDeclaration())
     internalError("calls: lowerDeclared of a call that is not a direct call of a declaration", &CB);
+  if (any_of(CB.args(), [](const Use &u) { return u->getType()->isPointerTy(); }))
+    return lowerDeclaredPointers(ctx, CB, *F);
   // Rule 27: "a call with no quantum argument stays the ordinary call"; the name's mask is the
   // call site's (CR §1.4 with no _b bounds).
   bool anyQ = false;

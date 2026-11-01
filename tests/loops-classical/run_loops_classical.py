@@ -171,6 +171,8 @@ def main() -> int:
         groups.append((TRIPLOCAL_PROBE, TRIPLOCAL))
     if "qram" in want:
         groups.append((QRAM_PROBE, QRAM))
+    if "carry" in want:
+        groups.append((CARRY_PROBE, CARRY))
     for probe, entries in groups:
         failures += check_probe(a, probe, entries, out)
     for group, probe, table in (("rule6", RULE6_PROBE, RULE6), ("deferred", DEFERRED_PROBE, DEFERRED),

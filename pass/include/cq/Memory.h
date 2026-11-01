@@ -75,6 +75,17 @@ void writeFatCell(LoweringContext &, const llvm::Value *root, llvm::Type *ty, in
                   llvm::Instruction &at);
 llvm::Value *reloadFatCell(LoweringContext &, const llvm::Value *root, llvm::Type *ty, int64_t byte,
                            const llvm::CallBase &orig, llvm::CallInst *lowered);
+// D1 (cq-r8-d, CR rule 27 Pointers; 190). mem-slots, consumer calls lowerDeclared: argNo of orig, a void
+// call of a function with no body, points into a local slot object (a scalar-cell array, no record, view or
+// _Bool cells). declaredCellsAtCall: the object's cells as of the call, in cell order (readSlotCells: a
+// handle, or a classical value for a cell no handle reaches) and their C type. noteDeclaredWrites, after
+// the lowered call: the clone may overwrite any cell; a later read of a cell the call dominates is a run-time
+// read, a cell load over the twin's pseudo rail (Uncompute U7) and the cell's handle at the call. A read the
+// call reaches on some paths only, and a store into the object the call reaches, are unimplemented.
+struct DeclaredCells { llvm::Type *cellTy; llvm::SmallVector<Operand, 8> atCall; };
+DeclaredCells declaredCellsAtCall(LoweringContext &, const llvm::CallBase &orig, unsigned argNo);
+void noteDeclaredWrites(LoweringContext &, const llvm::CallBase &orig, unsigned argNo, unsigned pseudoRail,
+                        llvm::ArrayRef<Operand> atCall);
 void allocateSlots(LoweringContext &, llvm::Instruction &site);   // mem-slots
 void endSlotLifetime(LoweringContext &, ObjectId, llvm::Instruction *at);  // mem-slots
 void lowerQromLoad(LoweringContext &, llvm::LoadInst &);          // mem-qrom

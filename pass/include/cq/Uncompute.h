@@ -56,6 +56,15 @@ public:
   // one kept: nothing emitted; some kept and some not: unimplemented. Returns outs' ids, then slotOuts'.
   llvm::SmallVector<RailId, 4> recordCall(llvm::CallInst *fwd, llvm::ArrayRef<llvm::Value *> outs,
                                           llvm::ArrayRef<llvm::Value *> slotOuts, llvm::ArrayRef<Operand> extra);
+  // U7 (cq-r8-d, CR rule 27 Pointers; 190): fwd is a void declared clone call that may overwrite cells
+  // of caller objects passed as triples with handles it minted; extra (classical) is one snapshot pointer
+  // per marked object. Returns a pseudo rail (no handle of its own): its item emits
+  // <callee>_unc(fwd args..., extra...) and frees nothing. The item follows every use of a cell load
+  // recorded over the pseudo (recordCellLoad: a read of a cell the clone may have written) and precedes
+  // the items of the rails the call reads (its footprint, noteCallReads). A kept role on such a load
+  // keeps its other arms; the pseudo stays pending (the twin always runs). Inside an open scope:
+  // unimplemented.
+  RailId recordDeclaredWrites(llvm::CallInst *fwd, llvm::ArrayRef<Operand> extra);
   // U4 (cq-arch 2026-11-01, CR rule 5): rails in caller cells a clone call reads (its twin
   // recompute-reads them): the call group's item reads them, so their own items follow it.
   void noteCallReads(llvm::CallInst *fwd, llvm::ArrayRef<RailId> rails);

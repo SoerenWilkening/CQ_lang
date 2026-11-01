@@ -409,6 +409,11 @@ struct FnState {
   };
   std::map<const GlobalVariable *, ProgSlot> progSlots;
   DenseSet<const Instruction *> progSlotCalls;   // original calls noteProgramSlotCall recorded
+  // cq-r8-d (CR rule 27 Pointers; 190): a declared clone call handed a pointer into a local slot object ->
+  // its twin's pseudo rail (Uncompute U7) and the handles the object's cells held at the call, by byte
+  // offset (a later read of a cell names the clone's new handle or the old one).
+  struct Declared { RailId pseudo; std::map<int64_t, Operand> atCall; };
+  DenseMap<const Instruction *, Declared> declared;
 };
 
 // One state per (output function, original function): rule 19 inlining lowers a callee's body into
@@ -513,6 +518,26 @@ const Specialization *cloneCallee(LoweringContext &ctx, const CallBase &CB) {
   if (!f || f->isDeclaration() || isa<IntrinsicInst>(CB))
     return nullptr;
   return ctx.T.calleeSpecialization(CB, ctx.S);
+}
+
+// cq-r8-d: X is a declared clone call (rule 27) that st's lowering registered (declaredCells) or will:
+// a call handed a pointer into object o through declaredArgUse.
+bool declaredArgUse(LoweringContext &ctx, const CallBase &CB, const Use &u);
+bool hasObjectArg(LoweringContext &ctx, const Instruction &X, ObjectId o) {
+  if (auto *CB = dyn_cast<CallBase>(&X))
+    for (const Use &u : CB->args())
+      if (hasObject(ctx, u.get(), o))
+        return true;
+  return false;
+}
+bool declaredCallOn(LoweringContext &ctx, const Instruction &X, ObjectId o) {
+  auto *CB = dyn_cast<CallBase>(&X);
+  if (!CB)
+    return false;
+  for (const Use &u : CB->args())
+    if (hasObject(ctx, u.get(), o) && declaredArgUse(ctx, *CB, u))
+      return true;
+  return false;
 }
 
 // The callee's formals of a clone call and the site operand each one takes (M1b: a lifted thread call's
@@ -631,6 +656,17 @@ bool storedLocally(LoweringContext &ctx, const StoreInst &st, SmallVectorImpl<co
   return true;
 }
 
+// cq-r8-d (CR rule 27 Pointers; 190): a pointer argument of a void call of a function with no body that
+// rule 27 lowers (calls::lowerDeclared): the caller snapshots the object's cells before the call, the
+// clone may overwrite them with handles it minted, and its twin, after the last read of a cell, restores
+// every cell. The object stays the caller's: not an escape.
+bool declaredArgUse(LoweringContext &ctx, const CallBase &CB, const Use &u) {
+  const Function *f = CB.getCalledFunction();
+  if (!CB.isArgOperand(&u) || !f || !f->isDeclaration() || isa<IntrinsicInst>(CB) || !CB.getType()->isVoidTy())
+    return false;
+  return calls::classify(CB, ctx.T, ctx.S) == calls::Class::Declared;
+}
+
 bool escapes(LoweringContext &ctx, const Value *root) {
   SmallVector<const Value *, 8> work{root};
   SmallPtrSet<const Value *, 16> seen{root};
@@ -677,6 +713,8 @@ bool escapes(LoweringContext &ctx, const Value *root) {
           continue;   // a tape entry reads the cells (99)
         if (cloneArgUse(ctx, *CB, u))
           continue;   // M1: the clone's accesses are the call's (slotCellsBeforeCall / After)
+        if (declaredArgUse(ctx, *CB, u))
+          continue;   // rule 27: a snapshot before the call, the twin restores the cells (declaredCells)
         if (auto *II = dyn_cast<IntrinsicInst>(CB))
           if (II->getIntrinsicID() == Intrinsic::lifetime_start || II->getIntrinsicID() == Intrinsic::lifetime_end)
             continue;
@@ -1356,6 +1394,7 @@ const Instruction *sourceOf(LoweringContext &ctx, FnState &st, const ObjInfo &in
     for (const Instruction &X : instructions(*st.F))
       if (&X != L &&
           (cloneWritesCell(ctx, info, o, X, cell, size) || namedWrite(ctx, X, cell, size, info) ||
+           declaredCallOn(ctx, X, o) ||
            (cell.ok && cell.terms.empty() && cell.root == info.root &&
             fatptr::writesSlotCell(ctx, X, info.root, cell.off, size))) &&
           st.DT->dominates(&X, L) && clearBetween(ctx, info, o, &X, L, cell, size) &&
@@ -1663,6 +1702,11 @@ bool cellArms(LoweringContext &ctx, FnState &st, const Site &s, const Instructio
   const DataLayout &DL = ctx.M.getDataLayout();
   uint64_t size = DL.getTypeStoreSize(ty).getFixedValue();
   bool unnamed = false;
+  for (auto &[X, d] : st.declared)
+    if (hasObjectArg(ctx, *X, s.o) && isPotentiallyReachable(X, &I, nullptr, st.DT.get()))
+      unimplemented("mem-slots: a run-time read of a slot cell a declared clone call may have written on some "
+                    "paths only (rule 27)",
+                    &I);
   for (const Instruction &X : instructions(*st.F))
     if (auto *MI = dyn_cast<MemIntrinsic>(&X); MI && hasObject(ctx, MI->getDest(), s.o) &&
                                                isPotentiallyReachable(MI, &I, nullptr, st.DT.get())) {
@@ -2306,6 +2350,21 @@ Operand readCell(LoweringContext &ctx, FnState &st, const Site &s, const Instruc
       if (ty != s.info->cellTy)
         unimplemented("mem-slots: a read at another type of a cell a fat-pointer write left a rail in (M7)", &I);
       return k->second;
+    }
+    if (auto d = st.declared.find(src); d != st.declared.end()) {
+      // cq-r8-d (rule 27): the cell holds the clone's new handle or the one it held at the call. A
+      // run-time read, a cell load over the twin's pseudo rail (its readers come before the twin) and the
+      // old handle.
+      if (s.info->record || s.info->view || s.info->boolCells || !s.a.terms.empty())
+        unimplemented("mem-slots: a read after a declared clone call of a slot record, bit view, _Bool cell or "
+                      "run-time offset (rule 27)",
+                      &I);
+      LoadInst *h = ctx.B().CreateAlignedLoad(handleTy(ctx.M.getContext()), cellPointer(ctx, s, I), Align(4));
+      SmallVector<RailId, 2> arms{d->second.pseudo};
+      if (auto k = d->second.atCall.find(s.a.off); k != d->second.atCall.end() && k->second.handle)
+        arms.push_back(ctx.unc().idOf(k->second.v));
+      ctx.unc().recordCellLoad(h, arms);
+      return Operand{h, true};
     }
     if (isa<CallBase>(src)) {
       auto c = st.callOut.find(src);
@@ -4016,7 +4075,13 @@ void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
   Operand h = readCell(ctx, st, s, ld, ld.getType());
   st.lowered[&ld] = h;
   if (const Instruction *src = h.handle ? sourceOf(ctx, st, *s.info, s.o, &ld, s.a, ld.getType()) : nullptr)
-    if (auto *CB = dyn_cast<CallBase>(src); CB && !isa<MemIntrinsic>(CB) && !st.fatOut.count(CB)) {
+    if (auto *CB = dyn_cast<CallBase>(src); CB && st.declared.count(CB)) {
+      // cq-r8-d (rule 27): the declared clone's handles are of the cell's C type.
+      if (ld.getType() != s.info->cellTy)
+        unimplemented("mem-slots: a load of a cell a declared clone call may have written at another type than "
+                      "the cell's (rule 27)",
+                      &ld);
+    } else if (CB && !isa<MemIntrinsic>(CB) && !st.fatOut.count(CB)) {
       // cq-qd05: the cell holds the rail the clone left there, of the clone's type (cloneCellType); a load
       // at another type of the same width reads it through a bitcast (a view, rule 3: 51's punned i64 and
       // double accesses of one cell, the caller reading the other one).
@@ -5050,6 +5115,63 @@ SmallVector<Value *, 8> railsInObjectAt(LoweringContext &ctx, FnState &st, const
 }
 
 } // namespace
+
+// D1 (cq-r8-d, CR rule 27 Pointers; 190): see Memory.h.
+DeclaredCells declaredCellsAtCall(LoweringContext &ctx, const CallBase &orig, unsigned argNo) {
+  FnState &st = stateOf(ctx, orig);
+  const Value *actual = orig.getArgOperand(argNo);
+  if (!declaredArgUse(ctx, orig, orig.getArgOperandUse(argNo)))
+    internalError("mem-slots: declaredCellsAtCall of an argument that is not a declared clone's pointer", &orig);
+  ArrayRef<ObjectId> objs = ctx.T.provenance(actual, ctx.S);
+  if (objs.size() != 1 || ctx.T.classOf(objs.front()) != ObjClass::Slot)
+    unimplemented("mem-slots: a declared clone's pointer argument into other than one slot object (rule 27)", &orig);
+  Addr a = decompose(actual, ctx.M.getDataLayout());
+  if (!a.ok || !isa<AllocaInst>(a.root))
+    unimplemented("mem-slots: a declared clone's pointer argument into a slot object that is not a local (rule 27: "
+                  "a heap block, parameter or global)",
+                  &orig);
+  ObjInfo &info = objInfo(ctx, st, a.root, objs.front());
+  if (info.kind != RootKind::Local || info.record || info.view || info.boolCells || info.split || !info.cellTy ||
+      info.escaping)
+    unimplemented("mem-slots: a declared clone's pointer argument into a slot record, bit view, _Bool or byte-cell "
+                  "object (rule 27)",
+                  &orig);
+  auto *ai = cast<AllocaInst>(a.root);
+  auto sz = ai->getAllocationSize(ctx.M.getDataLayout());
+  if (!sz || sz->isScalable() || sz->getFixedValue() % info.cellBytes)
+    unimplemented("mem-slots: a declared clone's pointer argument into a variable-size local (rule 27)", &orig);
+  // A store into the object the call reaches would be undone by the twin's restore from the snapshot.
+  for (const Access &x : accessesOf(ctx, *st.F, objs.front()))
+    if (!isa<LoadInst>(x.I) && x.I != &orig && isPotentiallyReachable(&orig, x.I, nullptr, st.DT.get()))
+      unimplemented("mem-slots: a write into a slot object after a declared clone call handed it (the twin "
+                    "restores the cells from its snapshot: rule 27)",
+                    x.I);
+  for (const Instruction &X : instructions(*st.F))
+    if (&X != &orig && declaredCallOn(ctx, X, objs.front()) &&
+        (isPotentiallyReachable(&orig, &X, nullptr, st.DT.get()) ||
+         isPotentiallyReachable(&X, &orig, nullptr, st.DT.get())))
+      unimplemented("mem-slots: a slot object handed to two declared clone calls that may run one after the other "
+                    "(rule 27: the second snapshot holds the first clone's handles)",
+                    &X);
+  uint64_t n = sz->getFixedValue() / info.cellBytes;
+  DeclaredCells out{info.cellTy, readSlotCells(ctx, a.root, info.cellTy, n, const_cast<CallBase &>(orig))};
+  return out;
+}
+
+void noteDeclaredWrites(LoweringContext &ctx, const CallBase &orig, unsigned argNo, unsigned pseudoRail,
+                        ArrayRef<Operand> atCall) {
+  FnState &st = stateOf(ctx, orig);
+  const Value *actual = orig.getArgOperand(argNo);
+  Addr a = decompose(actual, ctx.M.getDataLayout());
+  ObjectId o = ctx.T.provenance(actual, ctx.S).front();
+  ObjInfo &info = objInfo(ctx, st, a.root, o);
+  if (st.declared.count(&orig))
+    unimplemented("mem-slots: a declared clone call handed two pointers into slot objects (rule 27)", &orig);
+  FnState::Declared d{pseudoRail, {}};
+  for (unsigned i = 0; i < atCall.size(); ++i)
+    d.atCall[int64_t(i * info.cellBytes)] = atCall[i];
+  st.declared[&orig] = std::move(d);
+}
 
 SmallVector<Value *, 4> slotCellsBeforeCall(LoweringContext &ctx, const CallBase &orig, unsigned argNo,
                                             ArrayRef<unsigned> argMap) {

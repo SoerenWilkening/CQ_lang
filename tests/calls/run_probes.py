@@ -39,6 +39,16 @@ CASES = [
     # copy-out, no twin; once and in a classically bounded loop over a VLA.
     ("forward_cell", "fwd_once", [], "pass", [r"define internal fastcc void @__cq_q_put_01\(ptr %0, i32 %1\) \{\n  store i32 %1, ptr %0"]),
     ("forward_cell", "fwd_loop", [], "pass", [r"define internal fastcc void @__cq_q_put2_01\(ptr %0, i32 %1\) \{\n  store i32 %1, ptr %0"]),
+    # cq-r8-d (190's escape, CR rule 27 Pointers): a declared clone handed a pointer into a local slot object:
+    # (object, tag, idx, cell count), a snapshot, the twin after the last cell read (dp_reg called the original
+    # ext_sink with the handle cells before); two pointers and a classical cell are unimplemented.
+    ("declared_ptr", "dp_esc", [], "pass", [r"call void @__cq_q_ext_sink_0010\(ptr %\d+, i32 1, i32 0, i32 2, i32 2, i32 4\)",
+                                            r"call i32 @cqrt_measure_i32\(i32 %\d+\).*\n  call void @__cq_q_ext_sink_0010_unc\(ptr %\d+, i32 1, i32 0, i32 2, i32 2, i32 4, ptr %\d+\)"]),
+    ("declared_ptr", "dp_reg", [], "pass", [r"call void @__cq_q_ext_sink_0010\(ptr %\d+, i32 1, i32 0, i32 1, i32 1, i32 4\)"]),
+    ("declared_ptr", "dp_after", [], "pass", [r"call i32 @cq_template_add_i32\(i32 %\d+, i32 %\d+\)\n  call void @__cq_q_ext_sink_0010_unc"]),
+    ("declared_ptr2", "dp_two", [], "fatal: cq: unimplemented: calls: a declared clone with two pointer arguments", []),
+    ("declared_ptr3", "dp_classical_cell", [], "fatal: cq: unimplemented: calls: a declared clone's pointer into a slot "
+     "object a cell of which holds no handle at the call", []),
     # cq-prvy (95): a variadic clone per call-site arity; its save area holds the actuals' handles.
     ("varargs", "vprobe", [], "pass", [r"call i32 @__cq_q_pick_001\(i32 poison, i32 %\d+, i32 %\d+\)"]),
     # cq-5xde: a quantum-depth recursion is cut only under a proved depth bound B <= the cut level.

@@ -266,6 +266,10 @@ Class classify(const CallBase &CB, const TaintInfo &T, const Specialization &S) 
     return Class::HostEffect;   // printf(x) and friends (47, 99, 138)
   if (qArg || qRes)
     return Class::Declared;     // rule 27
+  // cq-r8-d (rule 27 Pointers, 190): a pointer argument into a slot object whose cells hold handles
+  // hands the callee rails (a callee with no body and no host effect).
+  if (qMem)
+    return Class::Declared;
   if (qPred && mayHaveHostEffect(CB))
     return Class::HostEffect;   // signal, raise, remove under a quantum arm (102)
   return Class::Classical;
