@@ -755,6 +755,7 @@ class JoinRepair {
   std::unique_ptr<DominatorTree> dt;
   std::map<std::tuple<unsigned, unsigned, BasicBlock *>, Value *> flagMemo;
   std::map<std::tuple<Value *, unsigned, unsigned, BasicBlock *>, Value *> valueMemo;
+  std::map<std::tuple<Value *, unsigned, unsigned, BasicBlock *, int, bool>, Value *> constMemo;
   std::map<std::vector<Value *>, Value *> phiMemo;
 
   DominatorTree &DT() {
@@ -1098,28 +1099,68 @@ public:
     for (BasicBlock *p : uniquePreds(J)) {
       unsigned c = m.andOp(k.care, edgeFacts(p, J, vars));
       unsigned a = c == Bdd::F ? Bdd::F : m.restrict(k.node, c);
-      bool unneeded;
+      bool unneeded, one = false;
       if (k.var < 0) {
         unneeded = a == Bdd::F;
       } else {
-        std::set<unsigned> sup;
-        m.support(a, sup);
-        unneeded = c == Bdd::F || !sup.count(unsigned(k.var));
+        // cq-1b92: the flag at the point is computed from the UNRESTRICTED predicate over the carried
+        // values, so a constant stands in for the atom on this edge only if it leaves that predicate's
+        // value unchanged wherever c holds. The restriction dropping the atom is not enough (c may fix
+        // it: carrying false for an atom c fixes true fires the gate under the wrong control):
+        //   - c fixes the atom to b: carry b (it is the atom's value on every such path);
+        //   - c does not read the atom and the predicate agrees with its cofactor at b on c: carry b
+        //     (substitutions made on nested edges compose: each c is closed under its atom's change);
+        //   - otherwise the atom is needed here: carried by its real value (or further joins).
+        unsigned var = unsigned(k.var), lit = m.ithVar(var);
+        std::set<unsigned> asup, csup;
+        m.support(a, asup);
+        m.support(c, csup);
+        auto agrees = [&](bool b) {
+          return m.andOp(c, m.xorOp(k.node, m.cofactor(k.node, var, b))) == Bdd::F;
+        };
+        if (c == Bdd::F) {
+          unneeded = true;   // no path: never read
+        } else if (asup.count(var)) {
+          unneeded = false;
+        } else if (m.andOp(c, m.notOp(lit)) == Bdd::F) {
+          unneeded = one = true;
+        } else if (m.andOp(c, lit) == Bdd::F) {
+          unneeded = true;
+        } else if (!csup.count(var) && agrees(false)) {
+          unneeded = true;
+        } else if (!csup.count(var) && agrees(true)) {
+          unneeded = one = true;
+        } else {
+          unneeded = false;
+        }
       }
       auto key = std::make_tuple(v, a, c, p);
+      auto ckey = std::make_tuple(v, a, c, p, k.var, one);   // a switch atom's constant depends on its case
       Value *x;
-      if (auto it = valueMemo.find(key); it != valueMemo.end()) {
+      if (auto it = unneeded ? constMemo.find(ckey) : constMemo.end(); it != constMemo.end()) {
+        x = it->second;
+      } else if (auto it = unneeded ? valueMemo.end() : valueMemo.find(key); it != valueMemo.end()) {
         x = it->second;
       } else if (unneeded) {
-        // Never read on this edge: a fresh |0> rail (rule 7), or the null value.
+        // Not read on this edge beyond a constant: a fresh rail seeded with it (rule 7), or the constant
+        // (|0> / null for a merge arm).
+        Type *ty = handle ? irTypeOf(ctx.M.getContext(), w) : v->getType();
+        Constant *k0 = one ? ConstantInt::get(ty, 1) : Constant::getNullValue(ty);
+        if (k.var >= 0 && atomOf(unsigned(k.var)).kind == AtomKind::Eq) {
+          // A switch atom is carried by its scrutinee: a value equal to its case constant, or not.
+          const APInt &kc = atomOf(unsigned(k.var)).c;
+          if (ty != IntegerType::get(ctx.M.getContext(), kc.getBitWidth()))
+            internalError("pred: a carried switch atom whose scrutinee type is not its case constant's", v);
+          k0 = ConstantInt::get(ty, one ? kc : kc + 1);
+        }
         if (handle) {
           IRBuilderBase::InsertPointGuard g(ctx.B());
           ctx.B().SetInsertPoint(p->getTerminator());
-          x = seedOf(ctx, Constant::getNullValue(irTypeOf(ctx.M.getContext(), w)), w);
+          x = seedOf(ctx, k0, w);
         } else {
-          x = Constant::getNullValue(v->getType());
+          x = k0;
         }
-        valueMemo[key] = x;
+        constMemo[ckey] = x;
       } else {
         x = valueMemo[key] =
             carry(v, handle, w, Carry{a, c, k.var}, p, p->getTerminator()->getIterator(), what, depth + 1);
