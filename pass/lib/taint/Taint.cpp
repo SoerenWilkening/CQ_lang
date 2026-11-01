@@ -3764,15 +3764,25 @@ const PtrInfo &ptrOrDie(const ImplState &I, const SpecState &SS, const llvm::Val
 // intrinsic, an atomic or a call, an escape of the formal, a pointee offset that differs between the
 // callers, stores of several sizes, or an offset that is not a multiple of the size.
 namespace {
-// True when SI stores back a cq_theta of a load of the cell it stores to: a rotation of the rail the
-// cell holds, in place (124's step: *r = cq_theta(*r)); the cell keeps its handle.
-bool rotatesInPlace(const llvm::StoreInst *SI) {
-  auto *C = dyn_cast<llvm::CallInst>(SI->getValueOperand());
-  const llvm::Function *G = C ? C->getCalledFunction() : nullptr;
-  if (!G || !G->getName().starts_with("cq_theta_") || C->arg_size() < 1)
-    return false;
-  auto *L = dyn_cast<llvm::LoadInst>(C->getArgOperand(0));
-  return L && L->getPointerOperand() == SI->getPointerOperand() && L->getType() == SI->getValueOperand()->getType();
+// The load L when SI stores back a chain of cq_theta of a load of the cell it stores to: a rotation
+// of the rail the cell holds, in place (124's step: *r = cq_theta(*r); 61's prep: the second
+// *x = cq_theta(*x) forwarded by -O1 as cq_theta(cq_theta(load)), cq-kwmu). The handle stored is L's.
+const llvm::LoadInst *inPlaceRoot(const llvm::StoreInst *SI) {
+  const llvm::Value *V = SI->getValueOperand();
+  bool rotated = false;
+  for (unsigned depth = 0; depth < 64; ++depth) {
+    auto *C = dyn_cast<llvm::CallInst>(V);
+    const llvm::Function *G = C ? C->getCalledFunction() : nullptr;
+    if (!G || !G->getName().starts_with("cq_theta_") || C->arg_size() < 1)
+      break;
+    rotated = true;
+    V = C->getArgOperand(0);
+  }
+  auto *L = dyn_cast<llvm::LoadInst>(V);
+  if (!rotated || !L || L->getPointerOperand() != SI->getPointerOperand() ||
+      L->getType() != SI->getValueOperand()->getType())
+    return nullptr;
+  return L;
 }
 
 // T2 cellsWritten (rotated = false) and T3 cellsRotated (rotated = true): one walk over the formal.
@@ -3950,8 +3960,19 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
     for (ObjectId o : objs)
       if (I.objects[o].cellHandle(base ? std::optional<int64_t>(*base + w.off) : std::nullopt, w.size))
         handle = true;
-    // T3: a rotation in place is no handle write (the cell keeps its rail); it is the rotated cell.
-    if (rotatesInPlace(w.st) != rotated)
+    // T3: a store of a rotation of the cell's loaded rail is the rotated cell (the gate acts on the rail
+    // the cell held at the load; a classical value loaded is minted instead, a write). T2: it is no handle write when every write of the cell stores back
+    // the handle of the same load of it (the load precedes them all: they store its value), so the cell
+    // holds that handle throughout; otherwise it writes the handle back over another (cq-kwmu).
+    // A rotation of a classical cell's value mints a rail (rule 2): a handle write, never in place.
+    const llvm::LoadInst *root = inPlaceRoot(w.st);
+    if (root && !lanesOfValue(I, *SS, root).any())
+      root = nullptr;
+    bool inPlace = root && all_of(writes, [&](const W &o) {
+      return o.off + int64_t(o.size) <= w.off || w.off + int64_t(w.size) <= o.off ||
+             (o.off == w.off && o.size == w.size && inPlaceRoot(o.st) == root);
+    });
+    if (rotated ? !root : inPlace)
       continue;
     if (!handle && !rotated)
       continue;
