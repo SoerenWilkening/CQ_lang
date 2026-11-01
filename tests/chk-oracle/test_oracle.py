@@ -214,6 +214,30 @@ double vdbl_q(double x0, double t) { double x = x0; cq_theta(&x, t);
                   setup="static const double tab[4] = {1, 2, 3, 4};")
         self.assertEqual(rets(o1, sp, [{"call": 0, "args": ["tab", f64(0.5), HALF]}]), [f64(3.5)])
 
+    def test_stackrestore_ends_vlas(self):
+        # cq-t3kb: llvm.stackrestore deallocates the allocas made since its stacksave, so their
+        # objects end there (a read through a pointer kept past the scope is outside every object:
+        # 0, oob-load), and a VLA in a loop leaves no object per trip behind: 2^20 trips, each
+        # reading an older local, run within the default hang guard at a 2^20 budget (109's
+        # vla_loop_q hit the guard: every access scanned one stale object per trip so far)
+        o1 = compile_c("vla", """
+__attribute__((noinline)) static void put(int *a, int v) { a[0] = v; }
+__attribute__((noinline)) static int get(int *a) { return a[0]; }
+int vla_q(int n, int m) { volatile int acc = 0;
+    for (int i = 0; i < m; i++) { int v[n]; put(v, 1); acc += get(v); } return acc; }
+int dangle_q(int n) { int *p; { int v[n]; put(v, 7); p = v; } return get(p); }
+""")
+        sp = spec("vla", "int vla_q(int,int);int dangle_q(int)",
+                  [("vla_q", ["int", "int"]), ("dangle_q", ["int"])])
+        self.assertIn("llvm.stackrestore", o1.read_text())
+        runs = oracle.run_samples(o1, sp, [{"call": 0, "args": [i32(3), i32((1 << 20) - 1)]},
+                                           {"call": 1, "args": [i32(3)]}],
+                                  timeout_ms=oracle.DEFAULT_TIMEOUT_MS, tripcap=1 << 20, trips_only=True)
+        self.assertEqual([r.outcome for r in runs], ["ret", "ret"], [(r.reason, r.notes) for r in runs])
+        self.assertEqual([next(e["v"] for e in r.events if e["ev"] == "ret") for r in runs],
+                         [hex((1 << 20) - 1), "0x0"])
+        self.assertIn("oob-load", runs[1].notes)
+
 
 class DefaultEnv(unittest.TestCase):
     """Owner ruling on cq-0r1i: non-constrained fp ops run round-to-nearest and raise no flags,

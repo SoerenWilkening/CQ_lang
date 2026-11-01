@@ -1724,6 +1724,17 @@ public:
         B.CreateCall(hook("__cqo_zero", Void, {Ptr, I64}), {II->getArgOperand(1), II->getArgOperand(0)});
         return;
       }
+      case Intrinsic::stacksave: {
+        // cq-t3kb: a restore ends the allocas made since its save (__cqo_stackrestore)
+        IRBuilder<> B(II->getNextNode());
+        B.CreateCall(hook("__cqo_stacksave", Void, {Ptr}), {II});
+        return;
+      }
+      case Intrinsic::stackrestore: {
+        IRBuilder<> B(II);
+        B.CreateCall(hook("__cqo_stackrestore", Void, {Ptr}), {II->getArgOperand(0)});
+        return;
+      }
       case Intrinsic::vastart: {
         if (!VaBytes)
           unimplemented("va_start outside a variadic function", II);

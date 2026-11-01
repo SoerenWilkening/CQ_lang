@@ -179,6 +179,38 @@ static void sh_move(void *d, const void *s, uint64_t n);
 void __cqo_global(void *p, uint64_t n) { ov_push(&global_objs, (uintptr_t)p, (uintptr_t)p + n); }
 uint64_t __cqo_mark(void) { return stack_objs.n; }
 void __cqo_release(uint64_t m) { if (m < stack_objs.n) stack_objs.n = m; }
+
+/* llvm.stacksave / llvm.stackrestore (cq-t3kb): a restore deallocates every alloca made since its
+ * save (LLVM LangRef), so it ends their objects as a return ends a frame's. Without it a VLA in a loop
+ * (109's vla_loop_q) left one object per trip in the table, and every access to an older object
+ * scanned them all: quadratic in the trips, past the hang guard well inside the cost budget. Each
+ * save records the stack table's count; a restore releases to the count of the latest save of that
+ * stack pointer still inside a live frame (count at most the table's), and drops the saves after it. */
+typedef struct { uintptr_t sp; size_t mark; } ssave;
+static ssave *ssv;
+static size_t ssv_n;
+#define SSV_CAP ((size_t)1 << 20) /* saves live at once (address space only) */
+void __cqo_stacksave(void *p) {
+    if (!ssv) {
+        void *m = mmap(0, SSV_CAP * sizeof(ssave), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+        if (m == MAP_FAILED) { fprintf(stderr, "cqo: mmap\n"); _exit(2); }
+        ssv = m;
+    }
+    /* saves of frames that have returned (their count is past the table's) are dead */
+    while (ssv_n && ssv[ssv_n - 1].mark > stack_objs.n) ssv_n--;
+    if (ssv_n == SSV_CAP) { note("internal more than %zu live stack saves", SSV_CAP); _exit(95); }
+    ssv[ssv_n].sp = (uintptr_t)p, ssv[ssv_n].mark = stack_objs.n, ssv_n++;
+}
+void __cqo_stackrestore(void *p) {
+    for (size_t i = ssv_n; i-- > 0;)
+        if (ssv[i].sp == (uintptr_t)p && ssv[i].mark <= stack_objs.n) {
+            stack_objs.n = ssv[i].mark;
+            ssv_n = i + 1;
+            return;
+        }
+    note("internal a stackrestore without its stacksave");
+    _exit(95);
+}
 void __cqo_alloca(void *p, uint64_t n) {
     /* cq-oou2: an alloca larger than the whole stack overflows it (a fault: outside the domain), but
      * its address lies in some other mapping (117's bool c[t] with t near 2^31 landed in the sample
