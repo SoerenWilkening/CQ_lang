@@ -60,7 +60,9 @@
 #include "../mem/qrom/QromInternal.h"
 #include "FatPtrInternal.h"
 #include "llvm/Analysis/CFG.h"
+#include "../spine/SpineInternal.h"
 #include "llvm/IR/InstIterator.h"
+#include "llvm/Analysis/CFG.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/MapVector.h"
@@ -140,10 +142,37 @@ bool classicalMemoryOnly(LoweringContext &ctx, const Value *p) {
 
 // A root is a classical pointer into classical memory, or the site itself of a QRAM object (its
 // classical base, rule 21; a classical GEP into a QRAM is derived onto that root's idx).
+// M7 (cq-g1ty, CR rules 20, 21; 129): the address of a whole local slot object (an alloca whose one object
+// is a slot array) is a root; the fat pointers over such roots this module lowers are select trees of them
+// (slotSelectRoots).
+bool isSlotRoot(LoweringContext &ctx, const Value *p) {
+  auto *ai = dyn_cast<AllocaInst>(p);
+  if (!ai || isQ(ctx, p) || ctx.T.isFatPointer(p, ctx.S))
+    return false;
+  ArrayRef<ObjectId> objs = ctx.T.provenance(p, ctx.S);
+  return objs.size() == 1 && ctx.T.classOf(objs.front()) == ObjClass::Slot;
+}
+
+// The roots of a select tree over whole local slot objects (each at cell 0), false for any other pointer.
+bool slotSelectRoots(LoweringContext &ctx, const Value *p, SmallVectorImpl<const Value *> &out, unsigned depth = 0) {
+  if (depth > 16)
+    return false;
+  if (auto *sel = dyn_cast<SelectInst>(p))
+    return slotSelectRoots(ctx, sel->getTrueValue(), out, depth + 1) &&
+           slotSelectRoots(ctx, sel->getFalseValue(), out, depth + 1);
+  if (!isSlotRoot(ctx, p))
+    return false;
+  if (!is_contained(out, p))
+    out.push_back(p);
+  return true;
+}
+
 bool isRoot(LoweringContext &ctx, const Value *p) {
   if (isQ(ctx, p) || ctx.T.isFatPointer(p, ctx.S))
     return false;
   if (classicalMemoryOnly(ctx, p))
+    return true;
+  if (isSlotRoot(ctx, p))
     return true;
   if (isa<GEPOperator>(p) || isa<BitCastOperator>(p) || isa<AddrSpaceCastOperator>(p))
     return false;
@@ -164,6 +193,10 @@ struct Bound {
   uint64_t cell = 0;            // the clone's cell size in bytes
   Type *cellTy = nullptr;
   Value *zeroSeed = nullptr;    // Slot: the |0> rail a load beyond the cell count reads (190)
+  // M7 (129): a quantum tag over an OBJECT TABLE of `table` slot objects (object k at table[k - 1] has tag k);
+  // bases: their handle-cell bases, loaded at the clone's entry on first need. 0: no table.
+  unsigned table = 0;
+  SmallVector<Value *, 4> bases;
 };
 
 std::map<const Function *, DenseMap<const Value *, Bound>> &boundFormals() {
@@ -1239,6 +1272,208 @@ Value *guardOf(LoweringContext &ctx, const Fat &f, const Value *r, Value *flag) 
 }
 } // namespace
 
+
+namespace {
+// ---- M7: fat pointers over local slot objects (cq-g1ty, CR rules 6, 18, 20, 21; 129) -------------------
+
+// A read-modify-write of one cell: the stored value is U(L, Z), L the load of the cell through the same
+// pointer, U add, sub or xor, Z not reading L (zBySub: U = Z - L).
+struct CellUpdate {
+  Instruction::BinaryOps op = Instruction::Add;
+  bool zBySub = false;
+  const Value *z = nullptr;
+  const LoadInst *load = nullptr;
+  Type *ty = nullptr;
+};
+
+// L ... S in one block, nothing between them that may write memory, S storing U(L, Z) through L's pointer.
+std::optional<CellUpdate> rmwOf(const LoadInst &L, const StoreInst &S) {
+  if (L.getParent() != S.getParent() || !L.comesBefore(&S) || !L.isSimple() || !S.isSimple() ||
+      L.getPointerOperand() != S.getPointerOperand() || !L.getType()->isIntegerTy() ||
+      S.getValueOperand()->getType() != L.getType())
+    return std::nullopt;
+  for (auto it = std::next(L.getIterator()); &*it != &S; ++it)
+    if (it->mayWriteToMemory())
+      return std::nullopt;
+  auto *bo = dyn_cast<BinaryOperator>(S.getValueOperand());
+  if (!bo || bo->getOperand(0) == bo->getOperand(1))
+    return std::nullopt;
+  CellUpdate c;
+  c.op = bo->getOpcode();
+  if (c.op != Instruction::Add && c.op != Instruction::Sub && c.op != Instruction::Xor)
+    return std::nullopt;
+  c.load = &L;
+  c.ty = L.getType();
+  if (bo->getOperand(0) == &L) {
+    c.z = bo->getOperand(1);
+  } else if (bo->getOperand(1) == &L) {
+    c.z = bo->getOperand(0);
+    c.zBySub = c.op == Instruction::Sub;
+  } else {
+    return std::nullopt;
+  }
+  return c;
+}
+
+// The clone's accesses through pointer formal argNo of G (129's bump: *p += c): one load and, after it, at
+// most one store, both through the formal itself in the entry block. With a store: the update U(L, Z), Z a
+// constant. Loads only: an update with op Add and no z. Anything else: nullopt.
+std::optional<CellUpdate> calleeCellUpdate(const Function &G, unsigned argNo) {
+  if (G.isDeclaration() || argNo >= G.arg_size())
+    return std::nullopt;
+  const Argument *A = G.getArg(argNo);
+  const BasicBlock *E = &G.getEntryBlock();
+  const LoadInst *L = nullptr;
+  const StoreInst *S = nullptr;
+  for (const Use &u : A->uses()) {
+    const User *usr = u.getUser();
+    if (auto *ld = dyn_cast<LoadInst>(usr); ld && !L && ld->getParent() == E && ld->isSimple()) {
+      L = ld;
+      continue;
+    }
+    if (auto *st = dyn_cast<StoreInst>(usr);
+        st && !S && st->getPointerOperand() == A && st->getParent() == E && st->isSimple()) {
+      S = st;
+      continue;
+    }
+    return std::nullopt;
+  }
+  if (!L || !L->getType()->isIntegerTy())
+    return std::nullopt;
+  if (!S) {
+    CellUpdate c;
+    c.load = L;
+    c.ty = L->getType();
+    return c;
+  }
+  std::optional<CellUpdate> c = rmwOf(*L, *S);
+  if (!c || !isa<ConstantInt>(c->z))
+    return std::nullopt;
+  return c;
+}
+
+// The update a store through a fat pointer over slot objects applies (a read-modify-write through the same
+// pointer, Z classical), else nullopt.
+std::optional<CellUpdate> fatStoreUpdate(LoweringContext &ctx, const StoreInst &st) {
+  auto *bo = dyn_cast<BinaryOperator>(st.getValueOperand());
+  if (!bo)
+    return std::nullopt;
+  for (const Value *op : bo->operands())
+    if (auto *L = dyn_cast<LoadInst>(op))
+      if (std::optional<CellUpdate> c = rmwOf(*L, st); c && !isQ(ctx, c->z))
+        return c;
+  return std::nullopt;
+}
+
+// U^-1(yp, z): the old cell value from the updated one.
+Value *inverseUpdate(LoweringContext &ctx, const CellUpdate &u, Operand yp, Operand z) {
+  if (!yp.handle || z.handle)
+    internalError("fatptr: a cell update's inverse over a classical image or a quantum operand");
+  RailType w = railTypeOf(u.ty);
+  switch (u.op) {
+  case Instruction::Add:
+    if (auto *k = dyn_cast<ConstantInt>(z.v))
+      return tmpl(ctx, "add", w, {yp, Operand{ConstantInt::get(k->getType(), -k->getValue()), false}}, "hl");
+    return tmpl(ctx, "sub", w, {yp, z}, "hl");
+  case Instruction::Sub:
+    if (u.zBySub)
+      return tmpl(ctx, "sub", w, {z, yp}, "lh");   // y' = z - y: y = z - y'
+    return tmpl(ctx, "add", w, {yp, z}, "hl");
+  case Instruction::Xor:
+    return tmpl(ctx, "xor", w, {yp, z}, "hl");
+  default:
+    internalError("fatptr: a cell update that is not add, sub or xor");
+  }
+}
+
+// CR rule 6 (129): the cell of `root` held h and now holds yp = select(eq, U(h, Z), h) (on tag == k the
+// update read h). When h is dead (no original value bound to it is used other than by its store into this
+// cell or by an earlier pure reader; not measured), it is cleaned from yp: h = select(eq, U^-1(yp, Z), yp),
+// the inner U^-1 a fresh garbage rail. A rail this function did not mint (a caller's, a call's result) is
+// left alone.
+void cleanOldCell(LoweringContext &ctx, Value *h, Value *eq, Value *yp, const CellUpdate &u, Operand z,
+                  const Value *root, const Instruction &at) {
+  spine::Shared &sh = spine::shared(ctx);
+  if (!sh.hist.count(h) || sh.measured.count(h) || sh.ruleSixCleaned.count(h))
+    return;
+  DominatorTree &DT = sh.dt(*at.getFunction());
+  for (auto &[Y, ops] : sh.binds) {
+    if (none_of(ops, [&](const Operand &o) { return o.handle && o.v == h; }))
+      continue;
+    for (const Use &use : Y->uses()) {
+      auto *ui = dyn_cast<Instruction>(use.getUser());
+      if (!ui || ui->getFunction() != at.getFunction())
+        return;
+      if (auto *s2 = dyn_cast<StoreInst>(ui);
+          s2 && s2->getValueOperand() == Y && s2->getPointerOperand() == root && DT.dominates(s2, &at))
+        continue;
+      if (isa<StoreInst>(ui) || isa<CallBase>(ui) || isa<ReturnInst>(ui) || isa<PHINode>(ui) ||
+          !DT.dominates(ui, &at))
+        return;
+    }
+  }
+  RailId hid = ctx.unc().idOf(h);
+  Value *inner = inverseUpdate(ctx, u, Operand{yp, true}, z);
+  ctx.unc().noteUse(hid, cast<Instruction>(inner));
+  abi::TemplateSpec sel;
+  sel.op = "select";
+  sel.w = railTypeOf(u.ty);
+  ctx.unc().cleanupBijective(hid, sel, {Operand{eq, true}, Operand{inner, true}, Operand{yp, true}});
+  sh.ruleSixCleaned.insert(h);
+}
+
+// The handle each slot root's cell held at a load through a fat pointer (rule 6 checks its store's old).
+std::map<const Function *, std::map<std::pair<const Instruction *, const Value *>, Value *>> &slotArms() {
+  static std::map<const Function *, std::map<std::pair<const Instruction *, const Value *>, Value *>> m;
+  return m;
+}
+
+// The fat pointer's roots as whole local slot objects tagged 1..n (an object table across a call indexes
+// them by tag), its idx the classical cell 0.
+SmallVector<const Value *, 4> slotRootsOf(LoweringContext &ctx, const Fat &f, const Value *ptr, const Instruction &I) {
+  SmallVector<const Value *, 4> rs;
+  if (!slotSelectRoots(ctx, ptr, rs) || !f.tag.handle)
+    unimplemented("fatptr: an access through a fat pointer over slot objects that is not a quantum select of whole "
+                  "local slot objects (M7)",
+                  &I);
+  auto *ci = dyn_cast_or_null<ConstantInt>(f.idx.v);
+  if (f.idx.handle || !ci || !ci->isZero())
+    internalError("fatptr: a select of whole slot objects with a cell index other than 0", &I);
+  return SmallVector<const Value *, 4>(f.roots.begin(), f.roots.end());
+}
+
+Value *tableBase(LoweringContext &ctx, Bound &b, unsigned k) {
+  if (b.bases.empty()) {
+    IRBuilder<> EB = atEntry(ctx);
+    for (unsigned j = 0; j < b.table; ++j) {
+      Value *slot = j ? EB.CreateConstInBoundsGEP1_64(PointerType::getUnqual(ctx.M.getContext()), b.object, j)
+                      : b.object;
+      b.bases.push_back(EB.CreateAlignedLoad(PointerType::getUnqual(ctx.M.getContext()), slot, Align(8)));
+    }
+  }
+  return b.bases[k];
+}
+
+// In a clone, the handle cell idx of table object k (a caller's rail: recorded external, never freed here).
+Value *tableCell(LoweringContext &ctx, Bound &b, const Fat &f, unsigned k, Value *&ptr) {
+  IRBuilder<> &B = ctx.B();
+  ptr = B.CreateInBoundsGEP(handleTy(ctx.M.getContext()), tableBase(ctx, b, k), idx64Of(ctx, b));
+  LoadInst *h = B.CreateAlignedLoad(handleTy(ctx.M.getContext()), ptr, Align(4));
+  ctx.unc().recordExternal(h, Role::UserRegister);
+  (void)f;
+  return h;
+}
+
+void checkTableAccess(LoweringContext &ctx, Bound &b, const Fat &f, Type *ty, const Instruction &I) {
+  if (f.idx.handle)
+    internalError("fatptr: an access through a slot object table formal at a quantum cell", &I);
+  if (ty != b.cellTy)
+    internalError("fatptr: an access through a slot object table formal at another type than its update", &I);
+  if (ctx.currentFlag())
+    unimplemented("fatptr: an access through a slot object table formal under a quantum predicate (M7)", &I);
+}
+} // namespace
+
 // P1, rule 21 (190): a load through a slot triple formal at the classical cell j = idx + offset is the
 // handle of cell j when j < cellCount, else the clone's shared |0> seed: the cell index is checked against
 // the cell count and redirected to cell 0 beyond it (no host memory past the object is read, whatever trip
@@ -1424,6 +1659,22 @@ void lowerLoad(LoweringContext &ctx, LoadInst &ld) {
   }
   if (!ptr && !ty->isIntegerTy() && !ty->isFloatingPointTy())
     unimplemented("fatptr: a load of an aggregate or vector through a fat pointer (rules 21, 25, 26)", &ld);
+  if (f.roots.size() == 1)
+    if (Bound *b = boundOf(ctx, f.roots[0]); b && b->table) {
+      // M7 (129): the handle in cell idx of each table object, merged by select on tag == k (the last innermost).
+      checkTableAccess(ctx, *b, f, ty, ld);
+      Value *ign = nullptr;
+      SmallVector<Value *, 4> hk;
+      for (unsigned k = 0; k < b->table; ++k)
+        hk.push_back(tableCell(ctx, *b, f, k, ign));
+      Operand acc{hk.back(), true};
+      for (unsigned k = b->table - 1; k-- > 0;) {
+        Operand eq = icmp(ctx, CmpInst::ICMP_EQ, 32, f.tag, Operand{ConstantInt::get(i32(ctx), k + 1), false});
+        acc = Operand{tmpl(ctx, "select", railTypeOf(ty), {eq, Operand{hk[k], true}, acc}, ""), true};
+      }
+      ctx.bind(&ld, acc.v);
+      return;
+    }
   if (hostOrRecordRoots(ctx, f)) {
     lowerHostLoad(ctx, ld, f);
     return;
@@ -1453,6 +1704,18 @@ void lowerLoad(LoweringContext &ctx, LoadInst &ld) {
     }
     if (Bound *b = boundOf(ctx, r); b && b->pointee == ObjClass::Classical)
       unimplemented("fatptr: a load through a host triple formal (its cell count, rule 21)", &ld);
+    if (isSlotRoot(ctx, r)) {
+      // M7 (129): the handle in the slot object's cell (no gate), merged below.
+      if (ptr)
+        unimplemented("fatptr: a pointer loaded through a fat pointer over slot objects (rule 21)", &ld);
+      slotRootsOf(ctx, f, ld.getPointerOperand(), ld);
+      Operand h = mem::readFatCell(ctx, r, ty, 0, ld);
+      if (!h.handle)
+        unimplemented("fatptr: a load through a fat pointer of a slot cell holding a classical value (M7)", &ld);
+      slotArms()[&ctx.out()][{&ld, r}] = h.v;
+      hs.push_back({h.v, nullptr});
+      continue;
+    }
     if (mem::isQramRoot(ctx, r)) {
       if (f.cell && f.cell != mem::qramElemBytes(ctx, r, ld))
         unimplemented("fatptr: a fat pointer whose cell size is not its QRAM object's element size", &ld);
@@ -1610,6 +1873,52 @@ void lowerStore(LoweringContext &ctx, StoreInst &st) {
   Fat f = derive(ctx, st.getPointerOperand(), /*emit=*/true);
   if (f.trips)
     unimplemented("fatptr: a store through a pointer to K-loop trip objects after the loop (R1)", &st);
+  if (f.roots.size() == 1)
+    if (Bound *b = boundOf(ctx, f.roots[0]); b && b->table) {
+      // M7 (129): each table object's cell takes w_k = (tag == k) ? v : old_k, a fresh rail left there for the
+      // caller (Role::Result: the clone does not clean the old cells, its caller does by rule 6, rule 18).
+      Type *ty = st.getValueOperand()->getType();
+      checkTableAccess(ctx, *b, f, ty, st);
+      Operand v = ctx.operand(st.getValueOperand());
+      for (unsigned k = 0; k < b->table; ++k) {
+        Value *cell = nullptr;
+        Value *old = tableCell(ctx, *b, f, k, cell);
+        Operand eq = icmp(ctx, CmpInst::ICMP_EQ, 32, f.tag, Operand{ConstantInt::get(i32(ctx), k + 1), false});
+        Value *w = tmpl(ctx, "select", railTypeOf(ty), {eq, v, Operand{old, true}}, v.handle ? "" : "lh");
+        ctx.unc().setRole(ctx.unc().idOf(w), Role::Result);
+        ctx.B().CreateAlignedStore(w, cell, Align(4));
+      }
+      return;
+    }
+  if (any_of(f.roots, [&](const Value *r) { return isSlotRoot(ctx, r); })) {
+    // M7 (129): a read-modify-write through a quantum select of whole local slot objects. Each object's cell
+    // takes w_k = (tag == k) ? v : old_k (rules 9, 20, 21); its old rail is cleaned by rule 6.
+    SmallVector<const Value *, 4> rs = slotRootsOf(ctx, f, st.getPointerOperand(), st);
+    Type *ty = st.getValueOperand()->getType();
+    if (!ty->isIntegerTy())
+      unimplemented("fatptr: a store of other than an integer through a fat pointer over slot objects (M7)", &st);
+    if (ctx.currentFlag())
+      unimplemented("fatptr: a store through a fat pointer over slot objects under a quantum predicate (M7)", &st);
+    std::optional<CellUpdate> u = fatStoreUpdate(ctx, st);
+    if (!u)
+      unimplemented("fatptr: a store through a fat pointer over slot objects that is not a read-modify-write of "
+                    "its cell through the same pointer (rule 6 on the old cells, M7)",
+                    &st);
+    Operand v = ctx.operand(st.getValueOperand());
+    for (const Value *r : rs) {
+      Operand eq = icmp(ctx, CmpInst::ICMP_EQ, 32, f.tag, Operand{ConstantInt::get(i32(ctx), rootNumber(ctx, r)), false});
+      Operand old = mem::readFatCell(ctx, r, ty, 0, st);
+      if (!old.handle)
+        unimplemented("fatptr: a store through a fat pointer into a slot cell holding a classical value (M7)", &st);
+      auto arm = slotArms()[&ctx.out()].find({u->load, r});
+      if (arm == slotArms()[&ctx.out()].end() || arm->second != old.v)
+        internalError("fatptr: a fat read-modify-write whose load read another rail than the store's old cell", &st);
+      Value *w = tmpl(ctx, "select", railTypeOf(ty), {eq, v, old}, v.handle ? "" : "lh");
+      mem::writeFatCell(ctx, r, ty, 0, Operand{w, true}, st);
+      cleanOldCell(ctx, old.v, eq.v, w, *u, ctx.operand(u->z), r, st);
+    }
+    return;
+  }
   checkQramRoots(ctx, f, st);
   Value *val = st.getValueOperand();
   Type *ty = val->getType();
@@ -1858,7 +2167,166 @@ void checkCalleeCells(LoweringContext &ctx, const Value *ptr, uint64_t cellBytes
 // cells, a host object's own address), its root number, its cell index and its cell count (mem-slots'
 // cells). Several objects (an object table), a quantum tag or idx into a slot or host object, and a
 // constant pointer into a QRAM are unimplemented.
+namespace {
+std::map<const CallInst *, std::vector<std::function<void()>>> &pendingTableCleanups() {
+  static std::map<const CallInst *, std::vector<std::function<void()>>> m;
+  return m;
+}
+} // namespace
+
+bool slotTableActual(LoweringContext &ctx, const Value *ptr) {
+  SmallVector<const Value *, 4> rs;
+  return ctx.T.isFatPointer(ptr, ctx.S) && slotSelectRoots(ctx, ptr, rs);
+}
+
+bool writesSlotCell(LoweringContext &ctx, const Instruction &X, const Value *root, int64_t byte, uint64_t size) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  SmallVector<const Value *, 4> rs;
+  if (auto *S = dyn_cast<StoreInst>(&X)) {
+    if (!ctx.T.isFatPointer(S->getPointerOperand(), ctx.S) || !slotSelectRoots(ctx, S->getPointerOperand(), rs) ||
+        !is_contained(rs, root))
+      return false;
+    return byte == 0 && size == DL.getTypeStoreSize(S->getValueOperand()->getType()).getFixedValue();
+  }
+  auto *CB = dyn_cast<CallBase>(&X);
+  const Function *G = CB ? CB->getCalledFunction() : nullptr;
+  if (!G || G->isDeclaration() || isa<IntrinsicInst>(CB))
+    return false;
+  for (unsigned i = 0; i < CB->arg_size(); ++i) {
+    const Value *a = CB->getArgOperand(i);
+    rs.clear();
+    if (!a->getType()->isPointerTy() || !ctx.T.isFatPointer(a, ctx.S) || !slotSelectRoots(ctx, a, rs) ||
+        !is_contained(rs, root))
+      continue;
+    const Specialization *cs = ctx.T.calleeSpecialization(*CB, ctx.S);
+    std::optional<CellUpdate> u = calleeCellUpdate(*G, i);
+    if (cs && !cs->isEntry() && u && u->z && byte == 0 && size == DL.getTypeStoreSize(u->ty).getFixedValue())
+      return true;
+  }
+  return false;
+}
+
+SmallVector<Value *, 4> afterSlotTableCall(LoweringContext &ctx, const CallBase &orig, unsigned argNo,
+                                           const Specialization &callee, CallInst *fwd) {
+  const Value *ptr = orig.getArgOperand(argNo);
+  Fat f = derive(ctx, ptr, /*emit=*/true);
+  SmallVector<const Value *, 4> rs = slotRootsOf(ctx, f, ptr, orig);
+  std::optional<CellUpdate> u = calleeCellUpdate(*callee.F, argNo);
+  if (!u)
+    unimplemented("fatptr: a slot object table passed to a clone that accesses it other than by one load and at "
+                  "most one read-modify-write store (M7)",
+                  &orig);
+  if (ctx.T.pointerFormal(callee, argNo).digits != 2 + rs.size())
+    internalError("fatptr: a slot object table formal whose digits do not count its objects", &orig);
+  SmallVector<Value *, 4> out;
+  if (!u->z) {
+    // Loads only: the clone reads the cells (U4), it writes none.
+    for (const Value *r : rs) {
+      Operand old = mem::readFatCell(ctx, r, u->ty, 0, const_cast<CallBase &>(orig));
+      if (!old.handle)
+        internalError("fatptr: a slot object table cell holding a classical value at the call", &orig);
+      ctx.unc().noteUse(ctx.unc().idOf(old.v), fwd);
+      ctx.unc().noteCallReads(fwd, {ctx.unc().idOf(old.v)});
+    }
+    return out;
+  }
+  // Rule 6 on the old cells consumes them, so the reloaded cells must never be undone by the call's twin: every
+  // load of each object the call reaches is measured (rule 2: kept). Otherwise the twin (unbuilt) would need them.
+  {
+    for (const Value *r : rs) {
+      bool any = false;
+      for (const User *us : r->users()) {
+        auto *L = dyn_cast<LoadInst>(us);
+        if (!L || !isPotentiallyReachable(&orig, L))
+          continue;
+        any = true;
+        bool measured = all_of(L->users(), [](const User *m) {
+          auto *CB = dyn_cast<CallBase>(m);
+          return CB && CB->getCalledFunction() && CB->getCalledFunction()->getName().starts_with("cq_measure");
+        });
+        if (!measured)
+          unimplemented("fatptr: a slot object table call whose objects' cells are read after it other than by "
+                        "cq_measure (the call's twin, M7)",
+                        L);
+      }
+      if (!any)
+        unimplemented("fatptr: a slot object table call whose objects' cells are never measured after it (the "
+                      "call's twin, M7)",
+                      &orig);
+    }
+  }
+  // The clone left n_k = (tag == k) ? U(old_k, z) : old_k in each cell (its stores, Role::Result there): the
+  // caller reloads them (the call's slot results, undone together by a twin, U2) and cleans each dead old_k by
+  // rule 6, as after its own read-modify-write (rule 18: only the caller knows the old cells are dead).
+  SmallVector<Value *, 4> olds;
+  for (const Value *r : rs) {
+    Operand old = mem::readFatCell(ctx, r, u->ty, 0, const_cast<CallBase &>(orig));
+    olds.push_back(old.v);
+    out.push_back(mem::reloadFatCell(ctx, r, u->ty, 0, orig, fwd));
+  }
+  // The clean-ups read the reloaded cells, which recordCall registers: finishSlotTableCall emits them.
+  pendingTableCleanups()[fwd].push_back([&ctx, &orig, f, rs, olds, out, u = *u]() {
+    for (unsigned k = 0; k < rs.size(); ++k) {
+      Operand eq =
+          icmp(ctx, CmpInst::ICMP_EQ, 32, f.tag, Operand{ConstantInt::get(i32(ctx), rootNumber(ctx, rs[k])), false});
+      cleanOldCell(ctx, olds[k], eq.v, out[k], u, Operand{const_cast<Value *>(u.z), false}, rs[k], orig);
+    }
+  });
+  return out;
+}
+
+void finishSlotTableCall(LoweringContext &ctx, CallInst *fwd) {
+  auto it = pendingTableCleanups().find(fwd);
+  if (it == pendingTableCleanups().end())
+    return;
+  auto fns = std::move(it->second);
+  pendingTableCleanups().erase(it);
+  for (auto &fn : fns)
+    fn();
+  (void)ctx;
+}
+
 Triple passAcrossCall(LoweringContext &ctx, const Value *ptr) {
+  if (slotTableActual(ctx, ptr)) {
+    // M7 (129): the OBJECT TABLE of the pointer's slot objects, object k (tag k) at table[k - 1], each its
+    // handle cells' base; the tag rail; idx the classical cell 0; the common cell count.
+    const Instruction *at = dyn_cast<Instruction>(ptr);
+    Fat f = derive(ctx, ptr, /*emit=*/true);
+    SmallVector<const Value *, 4> rs = slotRootsOf(ctx, f, ptr, *at);
+    const DataLayout &DL = ctx.M.getDataLayout();
+    LLVMContext &C = ctx.M.getContext();
+    uint64_t bytes = 0;
+    for (unsigned k = 0; k < rs.size(); ++k) {
+      if (rootNumber(ctx, rs[k]) != k + 1)
+        unimplemented("fatptr: an object table across a call over slot objects whose tags are not 1..n (M7)", at);
+      std::optional<TypeSize> sz = cast<AllocaInst>(rs[k])->getAllocationSize(DL);
+      if (!sz || sz->isScalable() || (bytes && bytes != sz->getFixedValue()))
+        unimplemented("fatptr: an object table across a call over slot objects of different sizes (M7)", at);
+      bytes = sz->getFixedValue();
+    }
+    IRBuilder<> EB(&ctx.out().getEntryBlock(), ctx.out().getEntryBlock().getFirstInsertionPt());
+    Type *ptrTy = PointerType::getUnqual(C);
+    AllocaInst *table = EB.CreateAlloca(ArrayType::get(ptrTy, rs.size()));
+    table->setAlignment(Align(8));
+    IRBuilder<> &B = ctx.B();
+    for (unsigned k = 0; k < rs.size(); ++k) {
+      Operand base = ctx.operand(rs[k]);
+      if (base.handle)
+        internalError("fatptr: a slot object bound to a rail", rs[k]);
+      B.CreateAlignedStore(base.v, k ? B.CreateConstInBoundsGEP1_64(ptrTy, table, k) : table, Align(8));
+    }
+    // The cell count in cells of the access type the callee uses (its one load, calleeCellUpdate).
+    uint64_t cell = 0;
+    for (const User *u : ptr->users())
+      if (auto *CB = dyn_cast<CallBase>(u); CB && CB->getCalledFunction())
+        for (unsigned i = 0; i < CB->arg_size(); ++i)
+          if (CB->getArgOperand(i) == ptr)
+            if (auto cu = calleeCellUpdate(*CB->getCalledFunction(), i))
+              cell = DL.getTypeAllocSize(cu->ty).getFixedValue();
+    if (!cell || bytes % cell)
+      unimplemented("fatptr: an object table across a call whose callee's cell is not known (M7)", at);
+    return Triple{table, f.tag.v, ConstantInt::get(i32(ctx), 0), ConstantInt::get(i32(ctx), bytes / cell)};
+  }
   ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
   bool classical = !isQ(ctx, ptr) && !ctx.T.isFatPointer(ptr, ctx.S);
   if (objs.size() == 1 && ctx.T.classOf(objs.front()) != ObjClass::Qram) {
@@ -1928,7 +2396,7 @@ void bindFormal(LoweringContext &ctx, const Argument &formal, Value *object, Ope
     internalError("fatptr: bindFormal of a raw pointer formal", &formal);
   if ((pf.abi == PtrAbi::TripleCount) != (cellCount != nullptr))
     internalError("fatptr: bindFormal's cell count does not match the formal's T4 ABI", &formal);
-  if (tag.handle)
+  if (tag.handle && pf.pointee != ObjClass::Slot)
     unimplemented("fatptr: a triple formal with a quantum tag (an object table across the call, rule 21)", &formal);
   const DataLayout &DL = ctx.M.getDataLayout();
   Bound b;
@@ -1950,6 +2418,29 @@ void bindFormal(LoweringContext &ctx, const Argument &formal, Value *object, Ope
   case ObjClass::Slot: {
     if (idx.handle)
       unimplemented("fatptr: a slot triple formal at a quantum cell index (rule 21 guarded slot select)", &formal);
+    if (tag.handle) {
+      // M7 (129): an object table of slot objects, one cell digit each (the clone reads and writes the one
+      // cell idx of each, calleeCellUpdate); they all hold handles at the call.
+      std::optional<CellUpdate> u = calleeCellUpdate(*S.F, formal.getArgNo());
+      if (!u)
+        unimplemented("fatptr: a slot object table formal the clone accesses other than by one load and at most "
+                      "one read-modify-write store through the formal in its entry block (M7)",
+                      &formal);
+      size_t d = 0;
+      for (const Argument &A : S.F->args()) {
+        if (&A == &formal)
+          break;
+        d += A.getType()->isPointerTy() ? T.pointerFormal(S, A.getArgNo()).digits : T.fieldMask(&A, S).size();
+      }
+      if (pf.digits < 4 || d + pf.digits > S.mask.size())
+        unimplemented("fatptr: a slot object table formal over fewer than two objects (M7)", &formal);
+      for (unsigned k = 2; k < pf.digits; ++k)
+        if (S.mask[d + k] != '1')
+          unimplemented("fatptr: a slot object table whose cells do not all hold handles at the call (M7)", &formal);
+      b.table = pf.digits - 2;
+      b.cellTy = u->ty;
+      break;
+    }
     size_t d = 0;
     for (const Argument &A : S.F->args()) {
       if (&A == &formal)

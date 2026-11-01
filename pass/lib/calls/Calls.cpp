@@ -61,6 +61,7 @@
 #include "cq/Taint.h"
 #include "cq/Uncompute.h"
 #include "../spine/SpineInternal.h"
+#include "../fatptr/FatPtrInternal.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/ValueTracking.h"
@@ -657,8 +658,16 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
   SmallVector<Value *, 8> args;
   CloneCall r{nullptr, {}, false, false, resultLayout(ctx.T, S, &CB), {}, {}};
   // The pointer formals into a caller's slot object that the clone writes (T2), their old cells (M1).
-  SmallVector<unsigned, 2> slotArgs;
-  for (unsigned i = 0; i < nArgs && i < fs.size(); ++i)
+  SmallVector<unsigned, 2> slotArgs, tableArgs;
+  for (unsigned i = 0; i < nArgs && i < fs.size(); ++i) {
+    if (fs[i].pointer && fs[i].abi != PtrAbi::Raw && fatptr::slotTableActual(ctx, CB.getArgOperand(op(i)))) {
+      // M7 (129): a fat pointer over local slot objects crosses as their object table; the clone's writes are
+      // reloaded after the call (fatptr::afterSlotTableCall).
+      if (!argMap.empty() || CB.isByValArgument(op(i)))
+        unimplemented("calls: a slot object table passed through an argument map or by value (M7)", &CB);
+      tableArgs.push_back(i);
+      continue;
+    }
     if (fs[i].pointer && pointsToSlot(ctx, CB.getArgOperand(op(i))) && !ctx.T.cellsWritten(S, i).empty()) {
       if (fs[i].abi != PtrAbi::Raw && !pointerKindRecord(CB.getArgOperand(op(i)), fs[i].abi))
         unimplemented("calls: a clone writing a caller's slot object through a triple pointer formal (T4, M1)",
@@ -672,6 +681,7 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
       for (Value *v : mem::slotCellsBeforeCall(ctx, CB, i, argMap))
         r.extra.push_back(Operand{v, !isa<Constant>(v) && v->getType()->isIntegerTy(32)});
     }
+  }
   if (S.ctl) {
     Value *f = flag ? flag : ctlFlag(ctx, CB);
     args.push_back(f);
@@ -741,7 +751,7 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
     }
   }
   if (fenv::cloneCarriesEnv(ctx.T, S)) {
-    if (!slotArgs.empty() || r.res.qramFormal)
+    if (!slotArgs.empty() || !tableArgs.empty() || r.res.qramFormal)
       unimplemented("calls: a clone carrying the floating-point environment that writes a caller's slot cells or "
                     "QRAM (E1)",
                     &CB);
@@ -760,6 +770,9 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
   r.fieldwise = r.res.composite && r.res.anyQ();
   for (unsigned i : slotArgs)
     for (Value *h : mem::slotCellsAfterCall(ctx, CB, i, r.call, argMap))
+      r.slotOuts.push_back(h);
+  for (unsigned i : tableArgs)
+    for (Value *h : fatptr::afterSlotTableCall(ctx, CB, i, S, r.call))
       r.slotOuts.push_back(h);
   noteRotatedCells(ctx, CB, S, fs, r.call, argMap);
   return r;
@@ -786,6 +799,7 @@ void bindFieldwiseResult(LoweringContext &ctx, CallBase &CB, CallInst *call, con
       outs.push_back(e);
   }
   ctx.unc().recordCall(call, outs, slotOuts, extra);
+  fatptr::finishSlotTableCall(ctx, call);
   if (!res.leafFields.empty())
     aggr::bindLeafFields(ctx, &CB, ops, res.leafFields);   // 166: a packed leaf's fields
   else
@@ -852,6 +866,7 @@ void bindQramCloneResult(LoweringContext &ctx, CallBase &CB, const Specializatio
     return;
   }
   ctx.unc().recordCall(r.call, outs, r.slotOuts, r.extra);
+  fatptr::finishSlotTableCall(ctx, r.call);
   mem::noteCalleeQramStores(ctx, CB, S, r.call, stored);
 }
 
@@ -1296,6 +1311,7 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
     if (r.slotOuts.empty())
       internalError("calls: old slot cells passed to a clone that reloads none", &CB);
     ctx.unc().recordCall(r.call, outs, r.slotOuts, r.extra);
+    fatptr::finishSlotTableCall(ctx, r.call);
     return;
   }
   bindResult(ctx, CB, r.call, r.handle, r.ops);
@@ -1703,5 +1719,6 @@ void lowerLiftedVia(LoweringContext &ctx, llvm::CallBase &site, llvm::ArrayRef<u
     return;
   }
   ctx.unc().recordCall(r.call, outs, r.slotOuts, r.extra);
+  fatptr::finishSlotTableCall(ctx, r.call);
 }
 } // namespace cq::calls

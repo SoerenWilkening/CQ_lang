@@ -3196,6 +3196,13 @@ void Uncompute::noteCallReads(CallInst *fwd, ArrayRef<RailId> reads) {
 
 RailId Uncompute::idOf(Value *handle) const { return impl->lookup(handle, "idOf", handle); }
 
+std::optional<Role> Uncompute::liveRole(RailId r) const {
+  const Impl::Rail &x = impl->rails[r];
+  if (x.released || !x.exitsDone.empty())
+    return std::nullopt;
+  return x.role;
+}
+
 void Uncompute::setRole(RailId r, Role role) {
   Impl &I = *impl;
   Impl::Rail &x = I.rail(r, "setRole");

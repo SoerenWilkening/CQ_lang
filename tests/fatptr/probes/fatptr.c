@@ -99,3 +99,52 @@ int f_ret_ptr(unsigned x0, double th, int a0) {
   int *p = pick2(a, b, x);
   return cq_measure(p ? *p : -1);
 }
+/* 129 (cq-g1ty, M7; rules 6, 18, 20, 21): a read-modify-write through a quantum select of three whole local slot
+ * objects, then through a clone handed the pointer (the object table, tag, idx 0); each dead old cell cleaned by
+ * rule 6 (after the store; after the call, in the caller) */
+__attribute__((noinline)) static void drop3(int *p) { *p -= 3; }
+int f_slot_rmw(int x0, double th, int k, int a0, double ta, int b0, double tb, int c0, double tc) {
+  int x = x0, a = a0, b = b0, c = c0;
+  cq_theta(&x, th);
+  cq_theta(&a, ta);
+  cq_theta(&b, tb);
+  cq_theta(&c, tc);
+  int *p = (x > k) ? &a : ((x < -k) ? &b : &c);
+  *p ^= 5;
+  drop3(p);
+  return cq_measure(a) + cq_measure(b) + cq_measure(c);
+}
+/* 129: the old register still read after the read-modify-write (t = a): its cell held a copy, the copy is
+ * cleaned, the register kept */
+__attribute__((noinline)) static void bump1(int *p) { *p += 1; }
+int f_slot_rmw_old(int x0, double th, int k, int a0, double ta, int b0, double tb) {
+  int x = x0, a = a0, b = b0;
+  cq_theta(&x, th); cq_theta(&a, ta); cq_theta(&b, tb);
+  int t = a;
+  int *p = (x > k) ? &a : &b;
+  *p += 1;
+  bump1(p);
+  return cq_measure(a) + cq_measure(b) + cq_measure(t);
+}
+/* 129: a clone that only reads through the object table */
+__attribute__((noinline)) static int peek1(int *p) { return *p; }
+int f_slot_peek(int x0, double th, int k, int a0, double ta, int b0, double tb) {
+  int x = x0, a = a0, b = b0;
+  cq_theta(&x, th); cq_theta(&a, ta); cq_theta(&b, tb);
+  int *p = (x > k) ? &a : &b;
+  *p += 2;
+  int v = peek1(p);
+  return cq_measure(a) + cq_measure(b) + cq_measure(v);
+}
+/* 129 (rule 20, 7): a guarded store at a classical index into the third field column of an array of structs
+ * (the array keeps its layout); the column's seeds never hold a user register: released at its lifetime end */
+struct tri { int f; int g; int h; };
+int f_field_store(int x0, double th, int k, int y0, double ty, int c, int i) {
+  int x = x0, y = y0;
+  cq_theta(&x, th);
+  cq_theta(&y, ty);
+  struct tri s[3] = {{1, c, c + 2}, {2, c + 1, c + 3}, {3, c, c - 1}};
+  if (x < k)
+    s[i].h = y + c;
+  return cq_measure(s[0].h + s[1].h + s[2].h + s[i].g);
+}

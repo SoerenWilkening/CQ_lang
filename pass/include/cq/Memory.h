@@ -62,6 +62,19 @@ void finishSlots(LoweringContext &);
 // M8. mem-slots, consumer loops-classical: handle is a register of a slot cell (kept, never resolved by
 // Uncompute: a seed or cq_theta register of a dynamic object, a register update's new rail, an alias load).
 bool isSlotRegister(LoweringContext &, const llvm::Value *handle);
+// M7 (cq-g1ty, CR rules 20, 21; 129). mem-slots, consumer fatptr: the cell at byte `byte` (of type ty) of the
+// local slot object `root` (an alloca), accessed through a fat pointer over several objects. readFatCell: the
+// handle (or classical value) the cell holds at `at`, which a dominating access of this function must have
+// written (else unimplemented); nothing is emitted. writeFatCell: the cell takes the fresh rail val at `at` (a
+// store through the fat pointer); later loads forward from `at`. reloadFatCell: right after `lowered`, the
+// clone call standing for `orig` that was handed the fat pointer and writes the cell: the load of the handle
+// the clone left there (later loads forward from orig); the old rail is noted as read by the call (U4).
+// fatptr::writesSlotCell is the structural predicate for both writes.
+Operand readFatCell(LoweringContext &, const llvm::Value *root, llvm::Type *ty, int64_t byte, llvm::Instruction &at);
+void writeFatCell(LoweringContext &, const llvm::Value *root, llvm::Type *ty, int64_t byte, Operand val,
+                  llvm::Instruction &at);
+llvm::Value *reloadFatCell(LoweringContext &, const llvm::Value *root, llvm::Type *ty, int64_t byte,
+                           const llvm::CallBase &orig, llvm::CallInst *lowered);
 void allocateSlots(LoweringContext &, llvm::Instruction &site);   // mem-slots
 void endSlotLifetime(LoweringContext &, ObjectId, llvm::Instruction *at);  // mem-slots
 void lowerQromLoad(LoweringContext &, llvm::LoadInst &);          // mem-qrom

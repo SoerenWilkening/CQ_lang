@@ -33,6 +33,23 @@ llvm::SmallVector<Operand, 8> loadHostCells(LoweringContext &, const llvm::Value
 // no such bound formal).
 uint64_t storedCell(LoweringContext &, const llvm::Value *ptr);
 llvm::Value *boundSlotObject(LoweringContext &, const llvm::Argument &A);
+// M7 (cq-g1ty, CR rules 6, 18, 20, 21; 129): fat pointers over whole local slot objects, a quantum select
+// tree of their allocas (each at cell 0).
+//  - writesSlotCell (consumer mem-slots sourceOf, structural): X writes the cell at byte `byte` (size bytes)
+//    of slot root `root`: a store through such a pointer naming root, or a clone call handed one whose callee
+//    applies a read-modify-write through the formal (the cell is written on every path: (tag == k) ? new : old).
+//  - slotTableActual: ptr is such a pointer (passAcrossCall then builds the object table).
+//  - afterSlotTableCall (consumer calls, right after the clone call fwd standing for orig, formal argNo): the
+//    handles the clone left in each object's cell (the call's slot results), the dead old cells cleaned by
+//    rule 6 (emitted by finishSlotTableCall). A clone that only loads: nothing written, the old cells noted as read by the call.
+bool writesSlotCell(LoweringContext &, const llvm::Instruction &X, const llvm::Value *root, int64_t byte,
+                    uint64_t size);
+bool slotTableActual(LoweringContext &, const llvm::Value *ptr);
+llvm::SmallVector<llvm::Value *, 4> afterSlotTableCall(LoweringContext &, const llvm::CallBase &orig, unsigned argNo,
+                                                       const Specialization &callee, llvm::CallInst *fwd);
+// Right after calls' recordCall of fwd: the rule 6 clean-ups afterSlotTableCall deferred (they read the call's
+// slot results). A call with none: nothing.
+void finishSlotTableCall(LoweringContext &, llvm::CallInst *fwd);
 // A pointer loaded from a QRAM of pointers (or through a fat pointer over such QRAMs) is bound by its
 // loader with ctx.bindFields(load, {tag, idx}), two i32 rails; fatptr's derivation reads them back.
 }

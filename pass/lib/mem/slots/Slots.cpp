@@ -85,6 +85,7 @@
 #include "cq/Abi.h"
 #include "cq/Calls.h"
 #include "cq/Loops.h"
+#include "../../fatptr/FatPtrInternal.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/PostDominators.h"
@@ -340,7 +341,16 @@ struct ObjInfo {
   // narrower width than its type: its cells are the narrowest access width (90's `unsigned char d[4]` that
   // -O1 made an alloca i32); a wider classical store is split into one write per cell (little-endian).
   bool split = false;
+  // A FIELD COLUMN (rule 20, 129's guarded_field_store): taint names one object per scalar field column of a
+  // local array of structs; a column holding handles keeps the array's own layout (the classical columns keep
+  // their C values in memory), the handle in the first 4 bytes of each of its fields (colBytes >= 4). Cell c
+  // is at byte colOff + c * colStride. colStride 0: not a column.
+  uint64_t colStride = 0;
+  int64_t colOff = 0;
 };
+
+// The byte distance of consecutive cells.
+uint64_t cellStride(const ObjInfo &info) { return info.colStride ? info.colStride : info.cellBytes; }
 
 // What a store into a VIEW object left there (63): the value rail h of type ty covering the bytes
 // [off, off + store size of ty); tailWritten when a narrower store also wrote bytes past that range
@@ -364,7 +374,7 @@ struct FnState {
   DenseMap<const Instruction *, ViewVal> views;     // stores into a view object -> the value they left (63)
   struct CellRead { const Instruction *I; Addr a; uint64_t size; LoadInst *h = nullptr; };
   SmallVector<CellRead, 8> cellReads;               // accesses lowered as a run-time read of a local cell (M3)
-  std::map<const Value *, ObjInfo> objs;
+  std::map<std::pair<const Value *, int>, ObjInfo> objs;   // (root, field column or -1)
   // M1: a clone call handed a pointer into a slot object -> (byte offset of a cell it writes -> the handle
   // the caller loaded from that cell right after the call: slotCellsAfterCall).
   DenseMap<const Instruction *, std::map<int64_t, Operand>> callOut;
@@ -381,6 +391,12 @@ struct FnState {
   std::map<ObjectId, int> ruShape;
   std::map<ObjectId, Value *> ruBase;
   SmallVector<CallInst *, 8> ruFrees;
+  // Rule 7 (129): seeds in a dynamic object's cells that no user register enters, per root: released at the
+  // object's lifetime end.
+  std::map<const Value *, SmallVector<Value *, 4>> releasable;
+  // M7 (129): a store through a fat pointer over local slot objects, or a clone call handed one, -> (root,
+  // byte offset of a cell it wrote -> the handle it left there).
+  DenseMap<const Instruction *, std::map<std::pair<const Value *, int64_t>, Operand>> fatOut;
 };
 
 // One state per (output function, original function): rule 19 inlining lowers a callee's body into
@@ -762,6 +778,8 @@ uint64_t cellSizeAt(const ObjInfo &info, int64_t off, const DataLayout &DL) {
 
 // The byte offset of cell c from the object's start (a record's field c).
 int64_t cellOffset(const ObjInfo &info, unsigned c) {
+  if (info.colStride)
+    return info.colOff + int64_t(c * info.colStride);
   if (!info.record)
     return int64_t(c * info.cellBytes);
   if (c >= info.fields.size())
@@ -833,19 +851,93 @@ bool heapRecord(LoweringContext &ctx, FnState &st, ObjInfo &info, ObjectId o) {
   return true;
 }
 
+// The struct element of a local array of structs that taint splits into one object per scalar field column
+// (rule 20; taint's splitSite: two or more fields, none an aggregate or vector), else null.
+StructType *columnStruct(const Value *root) {
+  auto *ai = dyn_cast<AllocaInst>(root);
+  auto *at = ai ? dyn_cast<ArrayType>(ai->getAllocatedType()) : nullptr;
+  auto *stt = at ? dyn_cast<StructType>(at->getElementType()) : nullptr;
+  if (!stt || stt->getNumElements() < 2)
+    return nullptr;
+  for (Type *e : stt->elements())
+    if (e->isAggregateType() || e->isVectorTy())
+      return nullptr;
+  return stt;
+}
+
+// The field column object o is of such an array (its accesses' offsets modulo the element size, the field
+// at or below it, as taint assigns them), or -1 when root is no such array. Every access of o agrees.
+int columnOf(LoweringContext &ctx, FnState &st, const Value *root, ObjectId o) {
+  StructType *stt = columnStruct(root);
+  if (!stt)
+    return -1;
+  const DataLayout &DL = ctx.M.getDataLayout();
+  const StructLayout *SL = DL.getStructLayout(stt);
+  int64_t E = int64_t(DL.getTypeAllocSize(stt).getFixedValue());
+  int col = -1;
+  for (const Access &a : accessesOf(ctx, *st.F, o)) {
+    if (!a.a.ok || a.a.root != root)
+      unimplemented("mem-slots: a field column accessed through a pointer that is not the array plus GEP offsets",
+                    a.I);
+    for (auto &t : a.a.terms)
+      if (t.second % E)
+        unimplemented("mem-slots: a field column accessed at a run-time offset that is not a whole number of "
+                      "elements",
+                      a.I);
+    int64_t m = ((a.a.off % E) + E) % E;
+    int c = -1;
+    for (unsigned k = 0; k < stt->getNumElements(); ++k)
+      if (int64_t(SL->getElementOffset(k)) <= m)
+        c = int(k);
+    if (c < 0 || int64_t(SL->getElementOffset(unsigned(c))) != m)
+      unimplemented("mem-slots: a field column accessed inside a field (a bit view, 63)", a.I);
+    if (col >= 0 && col != c)
+      internalError("mem-slots: an object whose accesses lie in two field columns", a.I);
+    col = c;
+  }
+  if (col < 0)
+    unimplemented("mem-slots: a field column this function never accesses", root);
+  return col;
+}
+
 ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId o) {
-  auto it = st.objs.find(root);
+  int col = columnOf(ctx, st, root, o);
+  auto it = st.objs.find({root, col});
   if (it != st.objs.end())
     return it->second;
   const DataLayout &DL = ctx.M.getDataLayout();
   ObjInfo info;
   info.root = root;
+  if (col >= 0) {
+    // Rule 20 (129): one field column of a local array of structs, at its own offset in each element.
+    auto *ai = cast<AllocaInst>(root);
+    auto *stt = cast<StructType>(cast<ArrayType>(ai->getAllocatedType())->getElementType());
+    info.kind = RootKind::Local;
+    info.cellTy = stt->getElementType(unsigned(col));
+    info.cellBytes = scalarCellBytes(info.cellTy, DL, ai);
+    if (info.cellBytes < 4)
+      unimplemented("mem-slots: a field column holding handles whose fields are narrower than a handle (an array "
+                    "of structs keeps its layout, rule 20)",
+                    ai);
+    info.colStride = DL.getTypeAllocSize(stt).getFixedValue();
+    info.colOff = int64_t(DL.getStructLayout(stt)->getElementOffset(unsigned(col)));
+    info.escaping = escapes(ctx, root);
+    for (const Access &a : accessesOf(ctx, *st.F, o))
+      if (DL.getTypeAllocSize(a.ty).getFixedValue() != info.cellBytes)
+        unimplemented("mem-slots: a field column accessed at another width than its field (a bit view, 63)", a.I);
+    for (const Instruction &X : instructions(*st.F))
+      if (auto *MI = dyn_cast<MemIntrinsic>(&X); MI && hasObject(ctx, MI->getDest(), o))
+        unimplemented("mem-slots: a memory intrinsic writing a field column holding handles (rule 22)", &X);
+    if (info.cellBytes == 1)
+      internalError("mem-slots: a one-byte field column");
+    return st.objs.emplace(std::make_pair(root, col), info).first->second;
+  }
   if (StructType *rt = recordType(root)) {
     info.kind = isa<AllocaInst>(root) ? RootKind::Local : RootKind::Param;
     info.record = true;
     flattenRecord(rt, 0, DL, info.fields, root);
     info.escaping = escapes(ctx, root);
-    return st.objs.emplace(root, info).first->second;
+    return st.objs.emplace(std::make_pair(root, col), info).first->second;
   }
   if (auto *ai = dyn_cast<AllocaInst>(root)) {
     info.kind = RootKind::Local;
@@ -859,7 +951,7 @@ ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId 
     info.kind = isa<Argument>(root) ? RootKind::Param : RootKind::Heap;
     if (info.kind == RootKind::Heap && heapRecord(ctx, st, info, o)) {
       info.escaping = escapes(ctx, root);
-      return st.objs.emplace(root, info).first->second;
+      return st.objs.emplace(std::make_pair(root, col), info).first->second;
     }
     for (const Access &a : accessesOf(ctx, *st.F, o)) {
       uint64_t b = DL.getTypeAllocSize(a.ty).getFixedValue();
@@ -934,7 +1026,7 @@ ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId 
     }
     info.boolCells = any && all;
   }
-  return st.objs.emplace(root, info).first->second;
+  return st.objs.emplace(std::make_pair(root, col), info).first->second;
 }
 
 // ---- may-write and forwarding -------------------------------------------------------------------
@@ -1250,7 +1342,10 @@ const Instruction *sourceOf(LoweringContext &ctx, FnState &st, const ObjInfo &in
   // M1: a clone call that writes the cell leaves there the handle the caller loads right after it.
   if ((info.kind == RootKind::Local || info.kind == RootKind::Heap) && !info.escaping)
     for (const Instruction &X : instructions(*st.F))
-      if (&X != L && (cloneWritesCell(ctx, info, o, X, cell, size) || namedWrite(ctx, X, cell, size, info)) &&
+      if (&X != L &&
+          (cloneWritesCell(ctx, info, o, X, cell, size) || namedWrite(ctx, X, cell, size, info) ||
+           (cell.ok && cell.terms.empty() && cell.root == info.root &&
+            fatptr::writesSlotCell(ctx, X, info.root, cell.off, size))) &&
           st.DT->dominates(&X, L) && clearBetween(ctx, info, o, &X, L, cell, size) &&
           (!best || st.DT->dominates(best, &X)))
         best = &X;
@@ -1267,6 +1362,8 @@ bool isDynamic(LoweringContext &ctx, FnState &st, ObjInfo &info, ObjectId o) {
       if (k >= 0 && info.fields[unsigned(k)].handle == 0)
         continue;   // a classical field is memory, never a handle read
     }
+    if (ctx.T.isFatPointer(accessPtr(a.I), ctx.S))
+      continue;   // M7: fatptr reads such a cell only where a dominating access wrote it (readFatCell)
     if ((isa<LoadInst>(a.I) || isRMW(a.I)) && !sourceOf(ctx, st, info, o, a.I, a.a, a.ty))
       info.dynamic = 1;
   }
@@ -1380,7 +1477,8 @@ Site siteOf(LoweringContext &ctx, FnState &st, const Instruction &I, const Value
                   &I);
   a.off += extra;   // M7: a cell past the pointer (a fat-pointer load's byte offset)
   // A pointer formal's provenance is the caller's object (taint has no site for an argument).
-  if (!isa<Argument>(a.root) && ctx.T.objectOf(a.root) != objs.front())
+  // A field column (129) is one of several objects of its site (objInfo's columnOf checks it).
+  if (!isa<Argument>(a.root) && !columnStruct(a.root) && ctx.T.objectOf(a.root) != objs.front())
     internalError("mem-slots: the address root is not the object taint names", &I);
   ObjInfo &info = objInfo(ctx, st, a.root, objs.front());
   uint64_t bytes = ctx.M.getDataLayout().getTypeAllocSize(ty).getFixedValue();
@@ -1461,9 +1559,32 @@ Value *cellPointer(LoweringContext &ctx, const Site &s, const Instruction &I) {
     return r == 0 ? base.v : B.CreateStructGEP(s.info->recTy, base.v, r);
   }
   int64_t cb = int64_t(s.info->cellBytes);
+  Type *i64 = Type::getInt64Ty(C);
+  if (s.info->colStride) {
+    // A field column (129): the array's own layout, the handle at the start of the field: a byte address.
+    int64_t cs = int64_t(s.info->colStride);
+    if ((((s.a.off - s.info->colOff) % cs) + cs) % cs)
+      internalError("mem-slots: a field-column access off its column", &I);
+    Value *bytes = nullptr;
+    for (auto &[v, stride] : s.a.terms) {
+      if (stride % cs)
+        unimplemented("mem-slots: a GEP stride into a field column that is not a whole number of elements", &I);
+      if (v->getType()->isPointerTy())
+        unimplemented("mem-slots: a walked pointer into a field column", &I);
+      Operand x = ctx.operand(v);
+      if (x.handle)
+        internalError("mem-slots: a quantum index into a slot object (QRAM, rule 20)", &I);
+      Value *t = B.CreateMul(B.CreateSExtOrTrunc(x.v, i64), ConstantInt::get(i64, stride, true));
+      bytes = bytes ? B.CreateAdd(bytes, t) : t;
+    }
+    if (s.a.off) {
+      Value *k = ConstantInt::get(i64, s.a.off, true);
+      bytes = bytes ? B.CreateAdd(bytes, k) : k;
+    }
+    return bytes ? B.CreateInBoundsGEP(Type::getInt8Ty(C), base.v, bytes) : base.v;
+  }
   if (s.a.off % cb)
     unimplemented("mem-slots: a constant byte offset that is not a whole cell", &I);
-  Type *i64 = Type::getInt64Ty(C);
   Value *idx = nullptr;
   for (auto &[v, stride] : s.a.terms) {
     if (stride % cb)
@@ -1972,6 +2093,14 @@ Operand readCell(LoweringContext &ctx, FnState &st, const Site &s, const Instruc
     return Operand{z, true};
   }
   if (const Instruction *src = sourceOf(ctx, st, *s.info, s.o, &I, s.a, ty)) {
+    if (auto f = st.fatOut.find(src); f != st.fatOut.end()) {
+      auto k = f->second.find({s.a.root, s.a.off});
+      if (k == f->second.end())
+        internalError("mem-slots: a load forwards from a fat-pointer write that did not write its cell", &I);
+      if (ty != s.info->cellTy)
+        unimplemented("mem-slots: a read at another type of a cell a fat-pointer write left a rail in (M7)", &I);
+      return k->second;
+    }
     if (isa<CallBase>(src)) {
       auto c = st.callOut.find(src);
       auto k = c == st.callOut.end() ? std::map<int64_t, Operand>::iterator() : c->second.find(s.a.off);
@@ -2703,6 +2832,45 @@ bool mergedCloneStore(LoweringContext &ctx, FnState &st, const Site &s, StoreIns
 }
 
 // The role of a rail stored into a slot cell (rule 20), the handle store and the cell's new content.
+// The cells of object o may hold user registers (rule 2): a cq_theta result is stored into it, a cq_theta
+// reads a value loaded from it (through casts), or a clone or unknown function is handed a pointer into it.
+bool cellsHoldRegisters(LoweringContext &ctx, FnState &st, ObjectId o) {
+  auto theta = [](const Value *v) {
+    while (auto *c = dyn_cast<CastInst>(v))
+      v = c->getOperand(0);
+    auto *CB = dyn_cast<CallBase>(v);
+    const Function *f = CB ? CB->getCalledFunction() : nullptr;
+    return f && f->getName().starts_with("cq_theta");
+  };
+  for (const Access &a : accessesOf(ctx, *st.F, o))
+    if (auto *S = dyn_cast<StoreInst>(a.I); S && theta(S->getValueOperand()))
+      return true;
+  for (const Instruction &X : instructions(*st.F)) {
+    auto *CB = dyn_cast<CallBase>(&X);
+    if (!CB || isa<DbgInfoIntrinsic>(CB) || isa<MemIntrinsic>(CB))
+      continue;
+    if (auto *II = dyn_cast<IntrinsicInst>(CB); II && II->isLifetimeStartOrEnd())
+      continue;
+    const Function *f = CB->getCalledFunction();
+    bool theta = f && f->getName().starts_with("cq_theta");
+    for (const Use &u : CB->args()) {
+      const Value *v = u.get();
+      if (v->getType()->isPointerTy()) {
+        if (!theta && hasObject(ctx, v, o))
+          return true;
+        continue;
+      }
+      if (!theta)
+        continue;
+      while (auto *c = dyn_cast<CastInst>(v))
+        v = c->getOperand(0);
+      if (auto *ld = dyn_cast<LoadInst>(v); ld && hasObject(ctx, ld->getPointerOperand(), o))
+        return true;
+    }
+  }
+  return false;
+}
+
 void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &I, Type *ty, Operand val,
                  StoreWhat what) {
   using What = StoreWhat;
@@ -2725,8 +2893,16 @@ void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &
           const DataLayout &DL = ctx.M.getDataLayout();
           uint64_t sz = storeBytes(DL, ty);
           for (const FnState::CellRead &R : st.cellReads) {
-            if (R.a.root == s.a.root && !differentCell(R.a, s.a, R.size, sz) &&
-                isPotentiallyReachable(&I, R.I, nullptr, st.DT.get()) && !sameClassicalLoop(ctx, st, &I, R.I))
+            // The store's own read of the old cell (a guarded store) precedes it: only a cycle through the
+            // store's block brings the store round to it.
+            bool reaches = R.I == &I ? any_of(successors(I.getParent()),
+                                              [&](const BasicBlock *b) {
+                                                return isPotentiallyReachable(b, I.getParent(), nullptr,
+                                                                              st.DT.get());
+                                              })
+                                     : isPotentiallyReachable(&I, R.I, nullptr, st.DT.get());
+            if (R.a.root == s.a.root && !differentCell(R.a, s.a, R.size, sz) && reaches &&
+                !sameClassicalLoop(ctx, st, &I, R.I))
               unimplemented("mem-slots: a computed rail stored into a slot cell that an earlier-lowered run-time "
                             "read may see on a back edge (the cell's rail is loop-carried through memory: 187)",
                             &I);
@@ -2740,6 +2916,14 @@ void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &
         }
         // The cells of a dynamic slot array are registers (58, 59: seeded |0>, kept).
         ctx.unc().setRole(id, Role::UserRegister);
+        if (what == What::Seed && !cellsHoldRegisters(ctx, st, s.o)) {
+          // Rule 7 (129's f seeds): no user register ever enters the object's cells (no cq_theta result
+          // stored there or applied to a load of it, no clone handed a pointer into it), so a seed keeps its
+          // classical value: released at the object's lifetime end (endSlotLifetime). It is no register for
+          // the run-time reads (each names it, M3), so its release follows them.
+          st.releasable[s.a.root].push_back(val.v);
+          break;
+        }
         st.registers.insert(val.v);
       }
       break;
@@ -2939,6 +3123,18 @@ void allocateSlots(LoweringContext &ctx, Instruction &site) {
   const DataLayout &DL = ctx.M.getDataLayout();
   FnState &st = stateOf(ctx, site);
   ArrayRef<ObjectId> objs = ctx.T.provenance(&site, ctx.S);
+  if (columnStruct(&site)) {
+    // Rule 20 (129): an array of structs, one object per field column. The array keeps its layout: the
+    // handle columns hold handles in their fields (objInfo checks each), the classical ones their C values.
+    auto *ai = cast<AllocaInst>(&site);
+    Operand n = ctx.operand(ai->getArraySize());
+    if (n.handle)
+      internalError("mem-slots: a slot array of quantum length (QRAM, rule 20)", &site);
+    AllocaInst *na = B.CreateAlloca(ai->getAllocatedType(), n.v);
+    na->setAlignment(std::max(ai->getAlign(), Align(4)));
+    ctx.bindFields(&site, {Operand{na, false}});
+    return;
+  }
   if (objs.size() != 1)
     unimplemented("mem-slots: an allocation site that is " + std::to_string(objs.size()) +
                       " objects (an array of structs holding handles: one slot array per field column, 168)",
@@ -3174,6 +3370,15 @@ bool isPointerKindFormal(LoweringContext &ctx, const Argument &A) {
     return false;
   PtrFormal pf = ctx.T.pointerFormal(ctx.S, A.getArgNo());
   if (pf.abi == PtrAbi::Raw || pf.pointee != ObjClass::Slot)
+    return false;
+  // A quantum tag digit: an object table of slot objects (M7, 129: one digit per object's cell), never one record.
+  size_t d = 0;
+  for (const Argument &B : A.getParent()->args()) {
+    if (&B == &A)
+      break;
+    d += B.getType()->isPointerTy() ? ctx.T.pointerFormal(ctx.S, B.getArgNo()).digits : ctx.T.fieldMask(&B, ctx.S).size();
+  }
+  if (d < ctx.S.mask.size() && ctx.S.mask[d] == '1')
     return false;
   const DataLayout &DL = ctx.M.getDataLayout();
   std::set<std::pair<int64_t, uint64_t>> cells;
@@ -3522,8 +3727,8 @@ bool lowerPtrCell(LoweringContext &ctx, FnState &st, Instruction &I) {
     lowerPtrCellCloneAccess(ctx, st, I, *A, a);
     return true;
   }
-  if (ctx.T.objectOf(a.root) != objs.front())
-    return false;
+  if (columnStruct(a.root) || ctx.T.objectOf(a.root) != objs.front())
+    return false;   // a field column (129) is one of several objects of its site: never a record
   ObjInfo &info = objInfo(ctx, st, a.root, objs.front());
   if (!info.record)
     return false;
@@ -3575,7 +3780,7 @@ void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
   Operand h = readCell(ctx, st, s, ld, ld.getType());
   st.lowered[&ld] = h;
   if (const Instruction *src = h.handle ? sourceOf(ctx, st, *s.info, s.o, &ld, s.a, ld.getType()) : nullptr)
-    if (auto *CB = dyn_cast<CallBase>(src); CB && !isa<MemIntrinsic>(CB)) {
+    if (auto *CB = dyn_cast<CallBase>(src); CB && !isa<MemIntrinsic>(CB) && !st.fatOut.count(CB)) {
       // cq-qd05: the cell holds the rail the clone left there, of the clone's type (cloneCellType); a load
       // at another type of the same width reads it through a bitcast (a view, rule 3: 51's punned i64 and
       // double accesses of one cell, the caller reading the other one).
@@ -4139,7 +4344,7 @@ SmallVector<Operand, 8> readSlotCells(LoweringContext &ctx, const Value *ptr, Ty
     Site c = s;
     if (s.info->record)
       unimplemented("mem-slots: a host effect reading a slot record", &at);
-    c.a.off += firstByte + int64_t(i * s.info->cellBytes);
+    c.a.off += firstByte + int64_t(i * cellStride(*s.info));
     if (!sourceOf(ctx, st, *c.info, c.o, &at, c.a, cellTy)) {
       if (isa<MemIntrinsic>(at)) {
         // 73: a memory intrinsic reading a cell that only run-time stores wrote (a loop fill) reads the handle
@@ -4236,7 +4441,7 @@ void writeSlotCells(LoweringContext &ctx, const Value *ptr, Type *cellTy, ArrayR
   LLVMContext &C = ctx.M.getContext();
   for (size_t i = 0; i < vals.size(); ++i) {
     Site c = s;
-    c.a.off += int64_t(i * s.info->cellBytes);
+    c.a.off += int64_t(i * cellStride(*s.info));
     Operand v = vals[i];
     Value *g = guards.empty() ? nullptr : guards[i];
     Operand val;
@@ -4347,8 +4552,32 @@ void endSlotLifetime(LoweringContext &ctx, ObjectId, Instruction *at) {
   if (!at)
     return;
   if (auto *II = dyn_cast<IntrinsicInst>(at)) {
-    if (II->getIntrinsicID() == Intrinsic::lifetime_end)
-      return;   // the rewritten alloca carries no lifetime markers (they are hints)
+    if (II->getIntrinsicID() == Intrinsic::lifetime_end) {
+      // The rewritten alloca carries no lifetime markers (they are hints). Rule 7 (129): the object's
+      // releasable seeds still registers here are released (freed after the reads naming them), when this is
+      // the object's only lifetime end and its block returns: every access of the object lies before it.
+      FnState &st = stateOf(ctx, *at);
+      const Value *root = getUnderlyingObject(II->getArgOperand(1));
+      auto rel = st.releasable.find(root);
+      if (rel == st.releasable.end())
+        return;
+      unsigned ends = 0;
+      for (const User *u : root->users())
+        if (auto *E = dyn_cast<IntrinsicInst>(u); E && E->getIntrinsicID() == Intrinsic::lifetime_end)
+          ++ends;
+      if (ends != 1 || !isa<ReturnInst>(at->getParent()->getTerminator()))
+        return;
+      for (const Instruction *X = at->getNextNode(); X; X = X->getNextNode())
+        if (const Value *p = accessPtr(X); p && getUnderlyingObject(p) == root)
+          return;
+      for (Value *h : rel->second) {
+        RailId id = ctx.unc().idOf(h);
+        if (ctx.unc().liveRole(id) == Role::UserRegister)
+          ctx.unc().setRole(id, Role::Seed);
+      }
+      st.releasable.erase(rel);
+      return;
+    }
     unimplemented("mem-slots: a lifetime end at an intrinsic other than lifetime.end (stackrestore, 192)", at);
   }
   auto *CB = dyn_cast<CallBase>(at);
@@ -4722,6 +4951,73 @@ bool isSlotRegister(LoweringContext &ctx, const Value *handle) {
     if (key.first == &ctx.out() && stp && stp->registers.count(handle))
       return true;
   return false;
+}
+
+// ---- M7: cells of local slot objects accessed through a fat pointer (cq-g1ty, CR rules 20, 21; 129) ----
+
+namespace {
+Site fatSite(LoweringContext &ctx, FnState &st, const Value *root, Type *ty, int64_t byte, const Instruction &at) {
+  ArrayRef<ObjectId> objs = ctx.T.provenance(root, ctx.S);
+  if (objs.size() != 1 || ctx.T.classOf(objs.front()) != ObjClass::Slot || !isa<AllocaInst>(root))
+    internalError("mem-slots: a fat-pointer cell access of a root that is not one local slot object", &at);
+  ObjInfo &info = objInfo(ctx, st, root, objs.front());
+  if (info.record || info.view || info.boolCells || info.split || info.colStride || info.escaping)
+    unimplemented("mem-slots: a fat-pointer access of a slot record, bit-view, _Bool, split, field-column or "
+                  "escaping object (M7)",
+                  &at);
+  // Every plain load of the object forwards (static): a run-time read would name rails rule 6 cleaned.
+  if (isDynamic(ctx, st, info, objs.front()))
+    unimplemented("mem-slots: a fat-pointer access of a slot object with a run-time read (a dynamic object, M7)",
+                  &at);
+  const DataLayout &DL = ctx.M.getDataLayout();
+  std::optional<TypeSize> total = cast<AllocaInst>(root)->getAllocationSize(DL);
+  if (!total || total->isScalable())
+    unimplemented("mem-slots: a fat-pointer access of a slot object of no static size (M7)", &at);
+  if (ty != info.cellTy || byte < 0 || byte % int64_t(info.cellBytes) ||
+      uint64_t(byte) + info.cellBytes > total->getFixedValue())
+    unimplemented("mem-slots: a fat-pointer access that is not one whole cell of its slot object (M7)", &at);
+  cellRail(info, ty, at);
+  Addr a;
+  a.root = root;
+  a.off = byte;
+  a.ok = true;
+  return Site{objs.front(), &info, a};
+}
+} // namespace
+
+Operand readFatCell(LoweringContext &ctx, const Value *root, Type *ty, int64_t byte, Instruction &at) {
+  FnState &st = stateOf(ctx, at);
+  Site s = fatSite(ctx, st, root, ty, byte, at);
+  if (!sourceOf(ctx, st, *s.info, s.o, &at, s.a, ty))
+    unimplemented("mem-slots: a fat-pointer read of a slot cell that no dominating access of this function wrote "
+                  "(M7)",
+                  &at);
+  return readCell(ctx, st, s, at, ty);
+}
+
+void writeFatCell(LoweringContext &ctx, const Value *root, Type *ty, int64_t byte, Operand val, Instruction &at) {
+  FnState &st = stateOf(ctx, at);
+  Site s = fatSite(ctx, st, root, ty, byte, at);
+  if (!val.handle)
+    internalError("mem-slots: writeFatCell of a classical value", &at);
+  finishStore(ctx, st, s, at, ty, val, StoreWhat::Computed);
+  st.fatOut[&at][{root, byte}] = st.lowered[&at];
+  st.lowered.erase(&at);
+}
+
+Value *reloadFatCell(LoweringContext &ctx, const Value *root, Type *ty, int64_t byte, const CallBase &orig,
+                     CallInst *lowered) {
+  FnState &st = stateOf(ctx, orig);
+  Site s = fatSite(ctx, st, root, ty, byte, orig);
+  Operand old = readFatCell(ctx, root, ty, byte, const_cast<CallBase &>(orig));
+  if (!old.handle)
+    internalError("mem-slots: a cell a clone writes holds a classical value before the call", &orig);
+  // The clone reads the old rail through the pointer (U4: its twin would recompute-read it).
+  ctx.unc().noteUse(ctx.unc().idOf(old.v), lowered);
+  ctx.unc().noteCallReads(lowered, {ctx.unc().idOf(old.v)});
+  LoadInst *h = ctx.B().CreateAlignedLoad(handleTy(ctx.M.getContext()), cellPointer(ctx, s, orig), Align(4));
+  st.fatOut[&orig][{root, byte}] = Operand{h, true};
+  return h;
 }
 
 } // namespace cq::mem

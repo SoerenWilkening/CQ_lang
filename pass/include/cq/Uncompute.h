@@ -5,6 +5,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <variant>
 
 #include "cq/Abi.h"
@@ -69,6 +70,8 @@ public:
   void noteCallBusRead(llvm::CallInst *fwd, RailId bus);
   RailId idOf(llvm::Value *handle) const;
   void setRole(RailId, Role);
+  // U7 (cq-g1ty, CR rule 7; 129): the role of a rail not yet uncomputed or freed anywhere, else nullopt.
+  std::optional<Role> liveRole(RailId) const;
   void noteUse(RailId, llvm::Instruction *consumer);
   void noteNonDiagonal(RailId target, llvm::Instruction *gate);
   void cleanupBijective(RailId oldRail, const abi::TemplateSpec &inverse, llvm::ArrayRef<Operand>);
