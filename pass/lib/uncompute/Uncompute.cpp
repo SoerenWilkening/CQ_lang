@@ -97,8 +97,12 @@
 //    fwd reads (its twin recompute-reads them). They are reads of fwd's group item, as fwd's handle
 //    arguments are: their own items follow it, and a barrier on one binds it. It may come before or
 //    after fwd's recordCall (or its recordTemplate, a clone with one result). Beyond the noted ones, a
-//    clone call (a callee that is not a cq_template_ or cqrt_ function) with pointer arguments reads
-//    every pending rail that may sit in a cell of the objects they point to (railCells), cq-w2a-calls.
+//    clone call (a callee that is not a cq_template_ or cqrt_ function) reads every pending rail that
+//    may sit in a cell of its twin's footprint (railCells), cq-w2a-calls: the objects its pointer
+//    arguments point to, the globals the C body accesses, and every object reachable from outside the
+//    frame when the body accesses memory through a pointer it loaded (cq-99z6). A write into the
+//    footprint between the call and its twin is a barrier of the call's item; a cell the clone writes
+//    (slotOuts) that the footprint reaches by a second route is unimplemented (cq-aqk1).
 //
 // Emission. Each resolvable rail g is resolved once, as one ITEM: its records undone in reverse
 // (or its rule 6 clean-up, or nothing for a direct seed free), then cqrt_free / cqrt_qram_free.
@@ -343,15 +347,9 @@ struct Uncompute::Impl {
   // when the call runs (railCells: stored there, or copied there by a memory intrinsic) is a read of
   // the call's record, so its item follows the twin. U4's noted reads are a subset.
   void addObjectReads(CallInst *fwd, unsigned rec) {
-    if (Function *cf = fwd->getCalledFunction();
-        !cf || cf->getName().starts_with("cq_template_") || cf->getName().starts_with("cqrt_"))
-      return;
     const DataLayout &DL = fwd->getModule()->getDataLayout();
-    SmallVector<Cell, 4> objs;
-    for (Value *a : fwd->args())
-      if (a->getType()->isPointerTy())
-        objs.push_back({a, 0});
-    if (objs.empty())
+    Footprint fp = footprint(fwd);
+    if (fp.empty())
       return;
     for (RailId g = 0; g < rails.size(); ++g) {
       if (g == info[rec].item || isMerge(g) || rails[g].released || rails[g].popBus != kNone ||
@@ -362,7 +360,8 @@ struct Uncompute::Impl {
       SmallVector<Cell, 8> cells;
       railCells(g, cells);
       for (const Cell &c : cells)
-        if (any_of(objs, [&](const Cell &o) { return mayAlias(o, c, DL); })) {
+        if (any_of(fp.objs, [&](const Cell &o) { return mayAlias(o, c, DL); }) ||
+            (fp.unbounded && reachable(c.ptr))) {
           addCallRead(rec, g);
           break;
         }
@@ -957,6 +956,196 @@ struct Uncompute::Impl {
     return {bb, before};
   }
 
+  // cq-99z6 (orchestrator decision under CR rule 5 and NORTHSTAR p2, owner may override): the memory a
+  // clone call's twin reads or writes when it runs (it recomputes the clone's body): the objects its
+  // pointer arguments point to, every non-constant global the clone (transitively) accesses, and, when
+  // the clone accesses memory through a pointer that is neither a formal, a global nor its own frame (a
+  // loaded pointer, a call's result, an unknown callee), every object reachable from outside the
+  // caller's frame (`unbounded`). Summarized on the original bodies, which survive until the end of the
+  // run.
+  struct MemSummary {
+    SmallVector<const GlobalVariable *, 4> globals;
+    bool unbounded = false;
+  };
+  struct Footprint {
+    SmallVector<Cell, 4> objs;   // pointer arguments and globals (whole objects: size 0)
+    bool unbounded = false;
+    bool empty() const { return objs.empty() && !unbounded; }
+  };
+  static bool isRuntimeName(StringRef n) { return n.starts_with("cq_template_") || n.starts_with("cqrt_"); }
+  // The C callee a clone (or a twin, or a declared clone) recomputes, or null.
+  static const Function *cloneSource(const Function &cf) {
+    std::optional<abi::CloneSpec> s = abi::parseClone(cf.getName());
+    if (!s)
+      return nullptr;
+    return cf.getParent()->getFunction(s->fn);
+  }
+  // Classifies an address used by F: a formal or F's frame is fine (a formal's object is classified at
+  // F's call site), a non-constant global is recorded, anything else makes the footprint unbounded.
+  static void classifyAddr(const Value *p, MemSummary &S) {
+    SmallVector<const Value *, 4> objs;
+    getUnderlyingObjects(p, objs);
+    for (const Value *u : objs) {
+      if (isa<Argument>(u) || isa<AllocaInst>(u) || isa<ConstantPointerNull>(u) || isa<UndefValue>(u))
+        continue;
+      if (auto *g = dyn_cast<GlobalVariable>(u)) {
+        if (!g->isConstant() && !is_contained(S.globals, g))
+          S.globals.push_back(g);
+        continue;
+      }
+      if (isa<Function>(u))
+        continue;
+      S.unbounded = true;
+    }
+  }
+  static void summarize(const Function &F, MemSummary &S, SmallPtrSetImpl<const Function *> &seen) {
+    if (!seen.insert(&F).second)
+      return;
+    if (F.isDeclaration()) {
+      if (F.isIntrinsic() || F.doesNotAccessMemory() || F.onlyWritesMemory() || F.onlyAccessesArgMemory() ||
+          isRuntimeName(F.getName()) || F.getName().starts_with("cq_"))
+        return;
+      S.unbounded = true;
+      return;
+    }
+    for (const Instruction &I : instructions(F)) {
+      if (!I.mayReadOrWriteMemory())
+        continue;
+      if (auto *L = dyn_cast<LoadInst>(&I))
+        classifyAddr(L->getPointerOperand(), S);
+      else if (auto *St = dyn_cast<StoreInst>(&I))
+        classifyAddr(St->getPointerOperand(), S);
+      else if (auto *A = dyn_cast<AtomicRMWInst>(&I))
+        classifyAddr(A->getPointerOperand(), S);
+      else if (auto *X = dyn_cast<AtomicCmpXchgInst>(&I))
+        classifyAddr(X->getPointerOperand(), S);
+      else if (auto *CB = dyn_cast<CallBase>(&I)) {
+        if (auto *ii = dyn_cast<IntrinsicInst>(CB); ii && (ii->isLifetimeStartOrEnd() || ii->isAssumeLikeIntrinsic()))
+          continue;
+        const Function *G = CB->getCalledFunction();
+        if (!G || CB->isInlineAsm()) {
+          S.unbounded = true;
+          continue;
+        }
+        if (CB->doesNotAccessMemory())
+          continue;
+        // The callee's own accesses (its formals' objects are its actuals here).
+        for (const Value *a : CB->args())
+          if (a->getType()->isPointerTy())
+            classifyAddr(a, S);
+        if (G->isIntrinsic() && !isa<MemIntrinsic>(CB) && !CB->onlyAccessesArgMemory())
+          S.unbounded = true;
+        else if (!G->isIntrinsic())
+          summarize(*G, S, seen);
+      } else {
+        S.unbounded = true;   // va_arg, fence and the like
+      }
+    }
+  }
+  mutable DenseMap<const Function *, MemSummary> summaries;
+  const MemSummary &summaryOf(const Function *F) const {
+    auto it = summaries.find(F);
+    if (it == summaries.end()) {
+      MemSummary S;
+      SmallPtrSet<const Function *, 8> seen;
+      summarize(*F, S, seen);
+      it = summaries.try_emplace(F, std::move(S)).first;
+    }
+    return it->second;
+  }
+  Footprint footprint(const CallInst *fwd) const {
+    Footprint fp;
+    const Function *cf = fwd->getCalledFunction();
+    if (!cf || isRuntimeName(cf->getName()))
+      return fp;
+    for (const Value *a : fwd->args())
+      if (a->getType()->isPointerTy())
+        fp.objs.push_back({a, 0});
+    const Function *src = cloneSource(*cf);
+    if (!src)
+      return fp;   // a declared clone of an LLVM math intrinsic (no C body): its pointer arguments only
+    const MemSummary &S = summaryOf(src);
+    for (const GlobalVariable *g : S.globals)
+      fp.objs.push_back({g, 0});
+    fp.unbounded = S.unbounded;
+    return fp;
+  }
+  // May code outside the caller's frame reach the object p points into: a global, a formal's object,
+  // an unknown pointer, or an alloca whose address escapes (stored, converted, or passed to a callee
+  // that may capture it).
+  static bool reachable(const Value *p) {
+    const Value *u = getUnderlyingObject(p);
+    auto *AI = dyn_cast<AllocaInst>(u);
+    if (!AI)
+      return true;
+    SmallVector<const Value *, 8> work{AI};
+    SmallPtrSet<const Value *, 16> seen{AI};
+    while (!work.empty()) {
+      const Value *v = work.pop_back_val();
+      for (const Use &U : v->uses()) {
+        const User *us = U.getUser();
+        if (isa<GetElementPtrInst>(us) || isa<BitCastInst>(us) || isa<AddrSpaceCastInst>(us) ||
+            isa<SelectInst>(us) || isa<PHINode>(us)) {
+          if (seen.insert(us).second)
+            work.push_back(us);
+          continue;
+        }
+        if (isa<LoadInst>(us) || isa<ICmpInst>(us) || isa<MemIntrinsic>(us))
+          continue;
+        if (auto *st = dyn_cast<StoreInst>(us)) {
+          if (st->getValueOperand() == v)
+            return true;
+          continue;
+        }
+        if (auto *cb = dyn_cast<CallBase>(us)) {
+          if (auto *ii = dyn_cast<IntrinsicInst>(cb); ii && (ii->isLifetimeStartOrEnd() || ii->isAssumeLikeIntrinsic()))
+            continue;
+          if (!cb->isArgOperand(&U))
+            return true;
+          const Function *cf = cb->getCalledFunction();
+          if (cf && isRuntimeName(cf->getName()))
+            continue;
+          if (cb->doesNotCapture(cb->getArgOperandNo(&U)))
+            continue;
+          // A clone (or its twin) captures nothing when the C function it recomputes captures no
+          // pointer formal.
+          if (const Function *src = cf ? cloneSource(*cf) : nullptr; src && !src->isDeclaration() &&
+              all_of(src->args(), [](const Argument &a) { return !a.getType()->isPointerTy() || a.hasNoCaptureAttr(); }))
+            continue;
+          return true;
+        }
+        return true;   // ptrtoint, ret, an atomic's value, ...
+      }
+    }
+    return false;
+  }
+  // Does call cb (after a clone call whose twin has footprint fp) possibly write fp's memory?
+  bool callMayWrite(const CallBase *cb, const Footprint &fp, const DataLayout &DL) const {
+    auto hits = [&](const Value *p) {
+      return any_of(fp.objs, [&](const Cell &c) { return mayAlias(c, {p, 0}, DL); }) ||
+             (fp.unbounded && reachable(p));
+    };
+    for (const Value *a : cb->args())
+      if (a->getType()->isPointerTy() && hits(a))
+        return true;
+    const Function *cf = cb->getCalledFunction();
+    bool beyondArgs = !cb->onlyAccessesArgMemory();
+    const Function *src = cf ? cloneSource(*cf) : nullptr;
+    if (!src && cf && !cf->isDeclaration() && !cf->isIntrinsic())
+      src = cf;   // a defined classical callee
+    if (src && !src->isDeclaration()) {
+      // The callee's own summary decides (its pointer arguments are checked above).
+      const MemSummary &S = summaryOf(src);
+      if (!S.unbounded)
+        return any_of(S.globals, [&](const GlobalVariable *g) { return hits(g); });
+      beyondArgs = true;
+    }
+    if (!beyondArgs)
+      return false;
+    // A callee that may write memory beyond its arguments reaches every object code outside the frame can.
+    return fp.unbounded || any_of(fp.objs, [&](const Cell &c) { return reachable(c.ptr); });
+  }
+
   enum class Bar { Hit, Write, AliasHit, PointeeWrite };
   // cq-fwto (orchestrator decision under CR rule 5, NORTHSTAR p2): a clone's twin reads the objects its
   // pointer arguments point to when it runs, so every instruction after the forward call that may write
@@ -967,14 +1156,14 @@ struct Uncompute::Impl {
   template <typename AfterFn>
   void pointeeWrites(CallInst *fwd, AfterFn &&isAfter, SmallVectorImpl<std::pair<Instruction *, Bar>> &out) const {
     const DataLayout &DL = fwd->getModule()->getDataLayout();
-    SmallVector<Cell, 4> objs;
-    for (Value *a : fwd->args())
-      if (a->getType()->isPointerTy())
-        objs.push_back({a, 0});
-    if (objs.empty())
+    Footprint fp = footprint(fwd);
+    if (fp.empty())
       return;
+    // cq-99z6: a write into the footprint: an address that may overlap one of its objects, or, for an
+    // unbounded footprint, any address reachable from outside the caller's frame.
     auto hits = [&](const Value *p, uint64_t size) {
-      return any_of(objs, [&](const Cell &c) { return mayAlias(c, {p, size}, DL); });
+      return any_of(fp.objs, [&](const Cell &c) { return mayAlias(c, {p, size}, DL); }) ||
+             (fp.unbounded && reachable(p));
     };
     for (Instruction &i : instructions(*fwd->getFunction())) {
       if (&i == fwd || emitted.count(&i) || !isAfter(&i))
@@ -994,12 +1183,11 @@ struct Uncompute::Impl {
         if (cb->onlyReadsMemory())
           continue;
         // Runtime gates and templates (a QROM table read included) write no C object.
-        if (Function *cf = cb->getCalledFunction();
-            cf && (cf->getName().starts_with("cq_template_") || cf->getName().starts_with("cqrt_")))
+        if (Function *cf = cb->getCalledFunction(); cf && isRuntimeName(cf->getName()))
           continue;
-        for (Value *a : cb->args())
-          if (a->getType()->isPointerTy() && hits(a, 0))
-            w = true;
+        w = callMayWrite(cb, fp, DL);
+      } else if (i.mayWriteToMemory()) {
+        w = true;   // a fence, va_arg, ...
       }
       if (w)
         out.push_back({&i, Bar::PointeeWrite});
@@ -2542,6 +2730,29 @@ SmallVector<RailId, 4> Uncompute::recordCall(CallInst *fwd, ArrayRef<Value *> ou
   I.rails[lead].group = gi;
   unsigned rec = I.addRecord(fwd, abi::TemplateSpec{}, ops, lead, RecKind::Call, false);
   I.takeCallReads(fwd, rec);
+  // cq-aqk1: the twin restores each caller cell the clone wrote (slotOuts) and reads the cell's handle
+  // through the formal that wrote it (finalize); a read of the same cell by another route (a second
+  // pointer argument that may alias it, a global, memory reached through a loaded pointer) would see
+  // the forward's handle instead of the old content. Unimplemented.
+  {
+    const DataLayout &DL = fwd->getModule()->getDataLayout();
+    Impl::Footprint fp = I.footprint(fwd);
+    for (Value *h : slotOuts) {
+      auto *L = dyn_cast<LoadInst>(h);
+      if (!L)
+        internalError("uncompute: recordCall: a slot out that is not a load of the caller's cell", fwd);
+      Impl::Cell cell{L->getPointerOperand(), Impl::accessSize(L->getType(), DL)};
+      unsigned routes = 0;
+      for (const Impl::Cell &o : fp.objs)
+        routes += Impl::mayAlias(o, cell, DL);
+      routes += fp.unbounded && Impl::reachable(cell.ptr);
+      if (routes > 1)
+        unimplemented("uncompute: a clone call whose twin may read a caller cell the clone writes by another "
+                      "route than the writing pointer (aliasing pointer arguments, a global, or memory reached "
+                      "through a loaded pointer: cq-aqk1)",
+                      fwd);
+    }
+  }
   SmallVector<RailId, 4> ids{lead};
   for (size_t k = 1; k < all.size(); ++k) {
     RailId m = I.newRail(all[k], Role::Garbage, "recordCall");

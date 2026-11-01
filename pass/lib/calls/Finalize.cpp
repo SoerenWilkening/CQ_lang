@@ -208,6 +208,54 @@ bool argumentsOnly(const Value *v, unsigned depth = 0) {
   return all_of(I->operands(), [&](const Use &u) { return argumentsOnly(u.get(), depth + 1); });
 }
 
+// cq-99z6 (ent_a1, ent_a2): may F read the memory SI writes before SI runs (a load, or a call reading
+// through a pointer, from which SI is reachable)? Then a replay of SI in the twin would make that read
+// see the stored value instead of the caller's. In F two formals may point into one object, and a
+// formal may point into a global; only distinct allocas of F, or an alloca against a formal or a
+// global, provably differ.
+bool readBefore(Function &F, StoreInst *SI) {
+  const Value *sb = getUnderlyingObject(SI->getPointerOperand());
+  auto mayAliasStore = [&](const Value *p) {
+    SmallVector<const Value *, 4> objs;
+    getUnderlyingObjects(p, objs);
+    for (const Value *u : objs) {
+      if (u == sb)
+        return true;
+      if (isa<AllocaInst>(u) || isa<AllocaInst>(sb))
+        continue;   // F's frame is not the caller's object, nor another alloca of F
+      if (auto *A = dyn_cast<Argument>(u); A && A->hasByValAttr())
+        continue;   // F's own copy
+      if (isa<GlobalVariable>(u) && isa<GlobalVariable>(sb))
+        continue;   // two distinct globals
+      if (isa<ConstantPointerNull>(u) || (isa<GlobalVariable>(u) && cast<GlobalVariable>(u)->isConstant()))
+        continue;
+      return true;
+    }
+    return false;
+  };
+  for (Instruction &I : instructions(F)) {
+    if (&I == SI || !I.mayReadFromMemory())
+      continue;
+    bool reads = false;
+    if (auto *L = dyn_cast<LoadInst>(&I))
+      reads = mayAliasStore(L->getPointerOperand());
+    else if (auto *CB = dyn_cast<CallBase>(&I)) {
+      if (auto *ii = dyn_cast<IntrinsicInst>(CB); ii && (ii->isLifetimeStartOrEnd() || ii->isAssumeLikeIntrinsic()))
+        continue;
+      if (Function *G = CB->getCalledFunction(); G && (G->getName().starts_with("cq_template_") ||
+                                                       G->getName().starts_with("cqrt_")))
+        continue;
+      reads = !CB->onlyAccessesArgMemory() ||
+              any_of(CB->args(), [&](const Use &a) { return a->getType()->isPointerTy() && mayAliasStore(a); });
+    } else {
+      reads = true;   // an atomic, va_arg, ...
+    }
+    if (reads && isPotentiallyReachable(&I, SI))
+      return true;
+  }
+  return false;
+}
+
 // Does replaying F (and the forward clones it calls) recompute its value and nothing else?
 void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &seen) {
   if (!seen.insert(&F).second)
@@ -234,7 +282,7 @@ void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &s
       // object is not written between the call and its twin: an uncompute barrier, cq-fwto).
       const Value *base = getUnderlyingObject(SI->getPointerOperand());
       bool idempotent = isa<Argument>(base) && cast<Argument>(base)->getParent() == &F &&
-                        argumentsOnly(SI->getValueOperand()) && SI->isSimple();
+                        argumentsOnly(SI->getValueOperand()) && SI->isSimple() && !readBefore(F, SI);
       if (!inFrame(SI->getPointerOperand()) && !cellCopyOut(SI) && !idempotent)
         refuse("a store to memory outside the clone's frame", &I);
       continue;

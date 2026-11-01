@@ -19,6 +19,11 @@ ROOT = Path(__file__).resolve().parents[2]
 PROBES = Path(__file__).parent / "probes"
 
 QRAM_LOOP = "fatal: cq: unimplemented: loops-classical: a store into QRAM memory in a classically bounded loop"
+TWIN_STORE = "_unc would replay a store to memory outside the clone's frame"
+TWIN_BARRIER = ("cq: unimplemented: uncompute: a write that may change an object a clone call's pointer argument "
+                "points to")
+TWIN_ALIAS = ("cq: unimplemented: uncompute: a clone call whose twin may read a caller cell the clone writes by "
+              "another route than the writing pointer")
 # (probe, entry, opt flags, expectation, regexes the lowered module must contain)
 CASES = [
     # cq-5xde: a quantum-depth recursion is cut only under a proved depth bound B <= the cut level.
@@ -47,6 +52,19 @@ CASES = [
     ("qram_loop_heap", "p10", [], QRAM_LOOP, []),
     ("qram_loop_heap_branch", "p6", [], QRAM_LOOP, []),
     ("slot_loop", "s1", [], "pass", [r"call void @cqrt_push"]),
+    # cq-99z6: the twin's memory footprint (everything the clone may read or write, by its body): a replayed
+    # store after a read of memory it may overwrite, a write into the footprint between the call and the twin
+    # (a call reaching an escaped local or a global, a store into an object reached through a loaded pointer).
+    ("twin_store_after_load", "ent_a1", [], "fatal: " + TWIN_STORE, []),
+    ("twin_store_after_alias_load", "ent_a2", [], "fatal: " + TWIN_STORE, []),
+    ("twin_escaped_write", "ent_b1", [], "fatal: " + TWIN_BARRIER, []),
+    ("twin_global_write", "ent_b2", [], "fatal: " + TWIN_BARRIER, []),
+    ("twin_loaded_pointer", "ent_b4", [], "fatal: " + TWIN_BARRIER, []),
+    # cq-aqk1: a caller cell the clone writes, read by the twin through another route (aliasing pointer
+    # arguments); distinct cells lower and are §6-equal.
+    ("twin_alias_cell", "ent_c1", [], "fatal: " + TWIN_ALIAS, []),
+    ("twin_alias_cell_rmw", "te3", [], "fatal: " + TWIN_ALIAS, []),
+    ("twin_distinct_cells", "ent_c2", [], "pass", []),
 ]
 
 
