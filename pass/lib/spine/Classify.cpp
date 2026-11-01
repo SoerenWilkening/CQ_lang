@@ -17,7 +17,12 @@
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
+
+#include <functional>
+#include <map>
+#include <string>
 
 using namespace llvm;
 
@@ -122,7 +127,57 @@ bool knownLibFunc(const Function &F) {
   }
   TargetLibraryInfo TLI(*impl, &F);
   LibFunc lf;
-  return TLI.getLibFunc(F, lf);
+  if (TLI.getLibFunc(F, lf))
+    return true;
+  // cq-my17 (99): an asm label "\01_n" on a Mach-O target (global prefix '_') is the symbol of C
+  // function n (the Darwin headers label fwrite, fputs, ... this way). It is that library function
+  // when n's prototype is (TLI checks it on a scratch declaration named n).
+  StringRef n = F.getName();
+  const DataLayout &DL = M->getDataLayout();
+  if (!n.starts_with("\01") || DL.getGlobalPrefix() != '_' || !n.drop_front(1).starts_with("_"))
+    return false;
+  // Keyed by content (triple, name, prototype), never by a Function pointer another module may reuse.
+  std::string key = M->getTargetTriple() + '\n' + n.str() + '\n';
+  {
+    raw_string_ostream os(key);
+    F.getFunctionType()->print(os);
+  }
+  static thread_local std::map<std::string, bool> cache;
+  if (auto it = cache.find(key); it != cache.end())
+    return it->second;
+  LLVMContext C;
+  Module scratch("cq-libfunc", C);
+  scratch.setTargetTriple(M->getTargetTriple());
+  scratch.setDataLayout(DL);
+  // Rebuild the prototype in the scratch context (opaque pointers: every type is context-free here).
+  std::function<Type *(Type *)> tr = [&](Type *t) -> Type * {
+    if (t->isVoidTy()) return Type::getVoidTy(C);
+    if (t->isIntegerTy()) return Type::getIntNTy(C, t->getIntegerBitWidth());
+    if (t->isPointerTy()) return PointerType::get(C, t->getPointerAddressSpace());
+    if (t->isFloatTy()) return Type::getFloatTy(C);
+    if (t->isDoubleTy()) return Type::getDoubleTy(C);
+    if (t->isX86_FP80Ty()) return Type::getX86_FP80Ty(C);
+    if (t->isFP128Ty()) return Type::getFP128Ty(C);
+    return nullptr;
+  };
+  FunctionType *FT = F.getFunctionType();
+  Type *ret = tr(FT->getReturnType());
+  SmallVector<Type *, 8> ps;
+  bool ok = ret != nullptr;
+  for (Type *p : FT->params()) {
+    Type *t = tr(p);
+    ok = ok && t;
+    ps.push_back(t);
+  }
+  bool known = false;
+  if (ok) {
+    Function *D = Function::Create(FunctionType::get(ret, ps, FT->isVarArg()), GlobalValue::ExternalLinkage,
+                                   n.drop_front(2), &scratch);
+    TargetLibraryInfo STLI(*impl, D);
+    known = STLI.getLibFunc(*D, lf);
+  }
+  cache[key] = known;
+  return known;
 }
 
 // The <fenv.h> functions (C17 7.6, with the glibc/BSD trap-enable extensions); taint's isFenvCall
@@ -261,7 +316,12 @@ Class classify(const CallBase &CB, const TaintInfo &T, const Specialization &S) 
     if (!qArg)
       return Class::Classical;
   }
-  if (qArg && knownLibFunc(*F) && mayHaveHostEffect(CB))
+  // cq-my17 (99): a pointer argument into a slot or QRAM object hands the callee rails to read
+  // (fwrite(buf, ...)): the tape entry reads the cells, so the call is quantum-involved too.
+  bool qMem = false;
+  for (const Use &u : CB.args())
+    qMem = qMem || nonClassicalObject(T, S, u.get());
+  if ((qArg || qMem) && knownLibFunc(*F) && mayHaveHostEffect(CB))
     return Class::HostEffect;   // printf(x) and friends (47, 99, 138)
   if (qArg || qRes)
     return Class::Declared;     // rule 27

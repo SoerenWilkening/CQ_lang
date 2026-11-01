@@ -48,3 +48,13 @@ target_compile_options(spine_k_function PRIVATE $<TARGET_PROPERTY:cq_pass_objs,I
 add_dependencies(spine_k_function cq_pass_objs)
 target_link_libraries(spine_k_function PRIVATE LLVM)
 add_test(NAME spine_k_function COMMAND spine_k_function)
+
+# cq-my17 (99): a known library call (Darwin asm label "\01_fwrite") handed a pointer to a slot object
+# is HostEffect (rule 16). Linked with every pass module.
+add_executable(spine_classify_hosteffect classify_hosteffect.cpp $<TARGET_OBJECTS:cq_pass_objs>)
+target_include_directories(spine_classify_hosteffect PRIVATE $<TARGET_PROPERTY:cq_pass_objs,INTERFACE_INCLUDE_DIRECTORIES>)
+target_compile_definitions(spine_classify_hosteffect PRIVATE $<TARGET_PROPERTY:cq_pass_objs,INTERFACE_COMPILE_DEFINITIONS>)
+target_compile_options(spine_classify_hosteffect PRIVATE $<TARGET_PROPERTY:cq_pass_objs,INTERFACE_COMPILE_OPTIONS>)
+add_dependencies(spine_classify_hosteffect cq_pass_objs)
+target_link_libraries(spine_classify_hosteffect PRIVATE LLVM)
+add_test(NAME spine_classify_hosteffect COMMAND spine_classify_hosteffect)
