@@ -561,6 +561,129 @@ bool deadAfter(LoweringContext &ctx, Value *y, Instruction *at, ArrayRef<const I
   return true;
 }
 
+// CR rule 6 Dead (CQ_spec cbda16a, owner ruling 2026-11-01 on cq-k7f8): asked at the CLEAN-UP POINT,
+// one placement rule for every opcode. Uncompute places the clean-up after the old value's last reader
+// (every IR use of a value naming the rail, every load of a cell holding it, every _unc re-reading it)
+// and before the first non-diagonal gate on the rails its inverse reads; a reader after such a gate
+// leaves no point and keeps the rail (Role::KeptEntangled). So a later reader never keeps the old
+// value here; it is kept only when it escapes or is measured: a use by a return, a call (cq_measure,
+// cq_theta, a clone or host call: rules 2, 18), a phi, or a store (its cell may be read after the
+// function returns) -- except a store into the very cell an atomic update `at` then overwrites in
+// place (94: the rmw reads the cell's x and leaves x + c there). The aliases are the values bound to
+// the rail alone and its view phis (cq-su3p). An update in a cycle keeps the strict test (every other
+// use dominates it): a reader after it comes round again before it. `also` as for deadAfter.
+bool deadAtCleanup(LoweringContext &ctx, Value *Y, Value *h, Instruction *at,
+                   ArrayRef<const Instruction *> also = {}) {
+  spine::Shared &sh = spine::shared(ctx);
+  if (sh.measured.count(h) || sh.measured.count(Y))
+    return false;
+  if (sh.ruleSixCleaned.count(h))
+    return false;   // an earlier update's clean-up already covers this rail (it is placed after this reader)
+  const BasicBlock *ab = at->getParent();
+  {
+    DenseSet<const BasicBlock *> reach;
+    SmallVector<const BasicBlock *, 16> work(succ_begin(ab), succ_end(ab));
+    while (!work.empty()) {
+      const BasicBlock *b = work.pop_back_val();
+      if (reach.insert(b).second)
+        work.append(succ_begin(b), succ_end(b));
+    }
+    if (reach.count(ab)) {
+      auto bi = sh.binds.find(Y);
+      bool own = bi != sh.binds.end() && bi->second.size() == 1 && bi->second.front().v == h;
+      return own && deadAfter(ctx, Y, at, also);
+    }
+  }
+  SmallPtrSet<const Value *, 8> A;
+  A.insert(Y);
+  for (auto &[w, ops] : sh.binds)
+    if (ops.size() == 1 && ops.front().handle && ops.front().v == h)
+      A.insert(w);
+  for (auto &[w, v] : sh.views)
+    if (v.rail == h)
+      A.insert(w);
+  const Value *cellPtr = nullptr;
+  if (auto *rmw = dyn_cast<AtomicRMWInst>(at))
+    cellPtr = rmw->getPointerOperand();
+  DominatorTree &DT = sh.dt(*at->getFunction());
+  // A user not lowered yet that may name the rail itself (a freeze, a cast the spine may skip, a
+  // classical select or an aggregate or vector carrying it) is followed as an alias.
+  auto mayAlias = [&](const Instruction *ui) {
+    if (sh.binds.count(ui))
+      return false;
+    if (auto *sel = dyn_cast<SelectInst>(ui))
+      return !spine::isQ(ctx, sel->getCondition());
+    return isa<FreezeInst>(ui) || isa<CastInst>(ui) || isa<InsertValueInst>(ui) || isa<ExtractValueInst>(ui) ||
+           isa<InsertElementInst>(ui) || isa<ExtractElementInst>(ui) || isa<ShuffleVectorInst>(ui);
+  };
+  auto laterUpdate = [&](const Instruction *ui, const Value *w) {
+    if (auto *bo = dyn_cast<BinaryOperator>(ui)) {
+      if (bo->getOperand(0) == bo->getOperand(1))
+        return false;
+      auto opc = bo->getOpcode();
+      if (opc == Instruction::Add || opc == Instruction::Sub || opc == Instruction::Xor)
+        return true;
+      if (opc == Instruction::Mul) {
+        auto *k = dyn_cast<ConstantInt>(bo->getOperand(bo->getOperand(0) == w ? 1 : 0));
+        return k && k->getValue()[0];
+      }
+      return false;
+    }
+    if (auto *un = dyn_cast<UnaryOperator>(ui))
+      return un->getOpcode() == Instruction::FNeg;
+    if (auto *II = dyn_cast<IntrinsicInst>(ui)) {
+      Intrinsic::ID id = II->getIntrinsicID();
+      if (id == Intrinsic::bswap || id == Intrinsic::bitreverse)
+        return true;
+      if (id == Intrinsic::fshl || id == Intrinsic::fshr)
+        return II->getArgOperand(0) == w && II->getArgOperand(1) == w;
+      if (const char *v = overflowValueOp(id))
+        return std::string(v) != "mul" && II->getArgOperand(0) != II->getArgOperand(1);
+    }
+    // A quantum select with the rail as an arm: a merge of updates of it (125, mergeCleanup).
+    if (auto *sel = dyn_cast<SelectInst>(ui))
+      return sel->getCondition() != w && spine::isQ(ctx, sel->getCondition());
+    return false;   // an atomic's value operand is no update of it (the rmw updates the cell's old value)
+  };
+  SmallVector<const Value *, 8> work(A.begin(), A.end());
+  while (!work.empty()) {
+    const Value *w = work.pop_back_val();
+    SmallVector<const Use *, 8> uses;
+    spine::readingUses(sh, w, uses);
+    for (const Use *U : uses) {
+      auto *ui = dyn_cast<Instruction>(U->getUser());
+      if (!ui || ui->getFunction() != at->getFunction())
+        return false;
+      if (ui == at || is_contained(also, ui) || A.count(ui))
+        continue;
+      if (mayAlias(ui)) {
+        A.insert(ui);
+        work.push_back(ui);
+        continue;
+      }
+      // A later bijective update of the rail (not lowered yet) cleans it instead: the clean-up point is
+      // after that reader, and the image live there is its result (180: b' = a ^ b, then a is rotated,
+      // then c' = b ^ m1 is the image b is cleaned from).
+      if (!sh.binds.count(ui) && laterUpdate(ui, w))
+        return false;
+      if (isa<ReturnInst>(ui) || isa<PHINode>(ui))
+        return false;
+      if (auto *st = dyn_cast<StoreInst>(ui)) {
+        if (cellPtr && st->getValueOperand() == w && st->getPointerOperand() == cellPtr && DT.dominates(st, at))
+          continue;
+        return false;
+      }
+      if (auto *cb = dyn_cast<CallBase>(ui)) {
+        if (isa<IntrinsicInst>(cb) && cb->doesNotAccessMemory())
+          continue;   // lowered to a template that reads the rail
+        return false;
+      }
+      // Any other instruction reads the rail into a fresh one (a template, a compare, an atomic's operand).
+    }
+  }
+  return true;
+}
+
 // Does `z` read `y`, through the original instructions computing it? Then y' = y + z(y) is a
 // composite update (127), not a bijection in y for fixed z: no rule 6 through z.
 // Only quantum values carry the dependency: a measured or classical value is a constant for the
@@ -868,7 +991,7 @@ void mergeCleanup(LoweringContext &ctx, Instruction &M, ArrayRef<Value *> arms, 
     for (const Instruction *U : updates)
       if (U != Y)
         also.push_back(U);
-    if (!deadAfter(ctx, Y, &M, also))
+    if (!deadAtCleanup(ctx, Y, ctx.operand(Y).v, &M, also))
       continue;
     Value *yr = ctx.operand(Y).v;
     // The chain is a bijection in y: every node a select on a condition rail that does not read y,
@@ -929,58 +1052,6 @@ void mergeCleanup(LoweringContext &ctx, Instruction &M, ArrayRef<Value *> arms, 
 
 namespace {
 
-// Is the rail h dead after `at` (CR rule 6), over every original value naming it (cq-su3p)? The
-// aliases are the values bound to h alone and the view phis of h: a register's prep, its in-place
-// rotations and its merges. Each reading use of an alias is `at`, another alias not after `at` (a
-// rotation or merge of the register on the way to it), or an earlier instruction (dominating `at`)
-// that neither stores, returns, passes, rotates, measures nor merges it.
-bool railDeadAfter(LoweringContext &ctx, Value *h, Instruction *at) {
-  spine::Shared &sh = spine::shared(ctx);
-  SmallPtrSet<const Value *, 8> A;
-  for (auto &[w, ops] : sh.binds)
-    if (ops.size() == 1 && ops.front().handle && ops.front().v == h)
-      A.insert(w);
-  for (auto &[w, v] : sh.views)
-    if (v.rail == h)
-      A.insert(w);
-  const BasicBlock *ab = at->getParent();
-  DenseSet<const BasicBlock *> reach;
-  SmallVector<const BasicBlock *, 16> work(succ_begin(ab), succ_end(ab));
-  while (!work.empty()) {
-    const BasicBlock *b = work.pop_back_val();
-    if (!reach.insert(b).second)
-      continue;
-    for (const BasicBlock *s : successors(b))
-      work.push_back(s);
-  }
-  if (reach.count(ab))
-    return false;   // `at` in a cycle: an alias may come round again
-  auto after = [&](const Instruction *u) {
-    return reach.count(u->getParent()) || (u->getParent() == ab && at->comesBefore(u));
-  };
-  DominatorTree &DT = sh.dt(*at->getFunction());
-  for (const Value *w : A) {
-    SmallVector<const Use *, 8> uses;
-    spine::readingUses(sh, w, uses);
-    for (const Use *U : uses) {
-      auto *ui = dyn_cast<Instruction>(U->getUser());
-      if (!ui || ui->getFunction() != at->getFunction())
-        return false;
-      if (ui == at)
-        continue;
-      if (A.count(ui)) {
-        if (after(ui))
-          return false;
-        continue;
-      }
-      if (isa<StoreInst>(ui) || isa<ReturnInst>(ui) || isa<CallBase>(ui) || isa<PHINode>(ui) ||
-          !DT.dominates(ui, at))
-        return false;
-    }
-  }
-  return true;
-}
-
 // CR rule 6 on a compare narrowed to xor_i1 (cq-su3p, 113's q2 ^= q1 over i1-valued bytes): the
 // first narrow operand whose rail the spine minted and is dead after it is cleaned by t = y' ^ z.
 void narrowRuleSix(LoweringContext &ctx, Instruction &I, ArrayRef<const Value *> nv, Operand yp) {
@@ -1009,7 +1080,7 @@ void narrowRuleSix(LoweringContext &ctx, Instruction &I, ArrayRef<const Value *>
         continue;
       z = sh.views.count(Z) ? Operand{zr, true} : ctx.operand(Z);
     }
-    if (!railDeadAfter(ctx, h, &I))
+    if (!deadAtCleanup(ctx, const_cast<Value *>(Y), h, &I))
       continue;
     abi::TemplateSpec spec;
     spec.op = "xor";
@@ -1023,9 +1094,68 @@ void narrowRuleSix(LoweringContext &ctx, Instruction &I, ArrayRef<const Value *>
 
 } // namespace
 
+namespace {
+
+// CR rules 6 and 24 on an atomic read-modify-write of a slot cell (94): mem-slots lowers
+// `old = atomicrmw add|sub|xor p, v` to y' = old op v stored into the cell, binding the instruction to
+// old's rail. y' is a bijection in old when v does not read it, so a dead old rail is cleaned from y':
+// old = y' - v, y' + v, y' ^ v. The old rail must be one this function minted (a register's or a
+// template's rail, not a formal or a merge of cell contents).
+void atomicRuleSix(LoweringContext &ctx, AtomicRMWInst &I) {
+  spine::Shared &sh = spine::shared(ctx);
+  const char *inverse = nullptr, *fwdOp = nullptr;
+  switch (I.getOperation()) {
+  case AtomicRMWInst::Add: fwdOp = "add"; inverse = "sub"; break;
+  case AtomicRMWInst::Sub: fwdOp = "sub"; inverse = "add"; break;
+  case AtomicRMWInst::Xor: fwdOp = "xor"; inverse = "xor"; break;
+  default: return;
+  }
+  auto bi = sh.binds.find(&I);
+  if (bi == sh.binds.end() || bi->second.size() != 1 || !bi->second.front().handle)
+    return;
+  Value *h = bi->second.front().v;
+  auto *minted = dyn_cast<CallInst>(h);
+  Function *mf = minted ? minted->getCalledFunction() : nullptr;
+  bool unc = false;
+  std::optional<abi::CoreSpec> core = mf ? abi::parseCore(mf->getName()) : std::nullopt;
+  if (!mf || !((core && core->op == abi::Core::Alloc) || abi::parseTemplate(mf->getName(), &unc)))
+    return;
+  Operand v = ctx.operand(I.getValOperand());
+  if (v.handle && railReads(sh, v.v, h))
+    return;
+  // y': the template mem-slots just emitted over (old, v) in the current block.
+  CallInst *yp = nullptr;
+  for (User *u : h->users()) {
+    auto *c = dyn_cast<CallInst>(u);
+    Function *cf = c ? c->getCalledFunction() : nullptr;
+    std::optional<abi::TemplateSpec> t = cf ? abi::parseTemplate(cf->getName(), &unc) : std::nullopt;
+    if (!t || unc || t->op != fwdOp || c->getParent() != ctx.B().GetInsertBlock() || c->getArgOperand(0) != h ||
+        c->arg_size() != 2 || c->getArgOperand(1) != v.v)
+      continue;
+    if (!yp || yp->comesBefore(c))
+      yp = c;
+  }
+  if (!yp)
+    internalError("spine: rule 6 on an atomicrmw: no template over the old cell value found", &I);
+  if (!deadAtCleanup(ctx, &I, h, &I))
+    return;
+  abi::TemplateSpec spec;
+  spec.op = inverse;
+  spec.w = rt(I.getType(), &I);
+  Inverse inv = normalized(spec, {Operand{yp, true}, v});   // y = y' -/+/^ v
+  ctx.unc().cleanupBijective(ctx.unc().idOf(h), inv.spec, inv.ops);
+  sh.ruleSixCleaned.insert(h);
+}
+
+} // namespace
+
 namespace spine {
 
 void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
+  if (auto *rmw = dyn_cast<AtomicRMWInst>(&I)) {
+    atomicRuleSix(ctx, *rmw);
+    return;
+  }
   if (auto nx = shared(ctx).narrowXor.find(&I); nx != shared(ctx).narrowXor.end()) {
     SmallVector<const Value *, 2> nv(nx->second.begin(), nx->second.end());
     Operand yp = ctx.operand(&I);
@@ -1061,7 +1191,7 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
           !q->comesBefore(sel) || A == B)
         continue;
       if (!sel->getType()->isIntegerTy() || !cleanable(ctx, A) || !cleanable(ctx, B) ||
-          !deadAfter(ctx, A, &I, {q}) || !deadAfter(ctx, B, &I, {q}))
+          !deadAtCleanup(ctx, A, ctx.operand(A).v, &I, {q}) || !deadAtCleanup(ctx, B, ctx.operand(B).v, &I, {q}))
         return;
       abi::TemplateSpec spec;
       spec.op = "select";
@@ -1095,7 +1225,7 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
   };
   SmallVector<Value *, 3> dead;
   for (Value *Y : I.operands())
-    if (!is_contained(dead, Y) && cleanable(ctx, Y) && deadAfter(ctx, Y, &I) && !neededLater(Y))
+    if (!is_contained(dead, Y) && cleanable(ctx, Y) && deadAtCleanup(ctx, Y, ctx.operand(Y).v, &I) && !neededLater(Y))
       dead.push_back(Y);
   // CR rule 6, both operands dead (cq-12cr): when exactly one is garbage rule 5 uncomputes anyway, the
   // other is cleaned (its inverse reads the garbage, whose _unc follows in its usual place); when that
