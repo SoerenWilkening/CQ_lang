@@ -412,7 +412,7 @@ typedef struct {
     size_t len; int nob; int done; long long hdrs;
     unsigned char pcount[NSITE], mcount[NSITE], ocount[NSITE];
     long long cnt[NLOOP]; unsigned char has[NLOOP], ctx[NLOOP], ent[NLOOP], tc[NLOOP];
-    uintptr_t ob[NOBJ]; uint64_t os[NOBJ];
+    uintptr_t ob[NOBJ]; uint64_t os[NOBJ]; uint32_t oi[NOBJ];
     char buf[OUTCAP];
 } cqd_state;
 typedef struct {
@@ -472,20 +472,36 @@ void __cqd_p(int site, uint64_t a0, uint64_t a1, uint64_t b0, uint64_t b1, uint6
             (unsigned long long)b0, (unsigned long long)b1, (unsigned long long)c0, (unsigned long long)c1,
             (unsigned long long)r0, (unsigned long long)r1);
 }
-void __cqd_reg(void *p, uint64_t size) {
+/* The object table: base, size and allocation site (an alloca's static id; 0 for globals, heap
+ * blocks and driver objects). A new object of positive size replaces every object it overlaps, and
+ * a zero-size object strictly inside it: the memory was reused, the old one is dead. A zero-size
+ * object takes no memory, so natively it lies at the base of the object allocated before it (117
+ * with nq = 0: bool x[0] after c[t]); it replaces nothing but an earlier zero-size object of its own
+ * site at the same address (a loop's alloca, 991), and coexists with the object at its address
+ * (cq-s8cf, cq-x9cz). Which of two objects at one address an access means is its root's allocation
+ * site when the instrumentation knows it (an alloca of the accessing function, or one a direct
+ * caller passed for a pointer parameter: the last registered of that site), else the object
+ * registered last there. */
+static void cqd_reg(uintptr_t b, uint64_t size, uint32_t id) {
     cqd_init();
-    uintptr_t b = (uintptr_t)p; if (!b) return;
+    if (!b) return;
     int j = 0;
-    for (int i = 0; i < S->nob; i++)
-        if (!(S->ob[i] < b + (size ? size : 1) && b < S->ob[i] + (S->os[i] ? S->os[i] : 1))) {
-            S->ob[j] = S->ob[i]; S->os[j] = S->os[i]; j++; }
+    for (int i = 0; i < S->nob; i++) {
+        uintptr_t o = S->ob[i]; uint64_t t = S->os[i];
+        int dead = size ? (t ? (o < b + size && b < o + t) : (b < o && o < b + size))
+                        : (!t && o == b && S->oi[i] == id);
+        if (!dead) { S->ob[j] = o; S->os[j] = t; S->oi[j] = S->oi[i]; j++; }
+    }
     S->nob = j;
-    if (S->nob < NOBJ) { S->ob[S->nob] = b; S->os[S->nob] = size; S->nob++; }
+    if (S->nob < NOBJ) { S->ob[S->nob] = b; S->os[S->nob] = size; S->oi[S->nob] = id; S->nob++; }
 }
-static int cqd_find(uintptr_t r) {
+void __cqd_reg(void *p, uint64_t size) { cqd_reg((uintptr_t)p, size, 0); }
+void __cqd_rega(void *p, uint64_t size, uint32_t id) { cqd_reg((uintptr_t)p, size, id); }
+static int cqd_find(uintptr_t r, uint32_t id) {
     int best = -1;
     for (int i = 0; i < S->nob; i++)
-        if (S->ob[i] <= r && (best < 0 || S->ob[i] > S->ob[best])) best = i;
+        if (S->ob[i] <= r && (best < 0 || S->ob[i] > S->ob[best]
+                              || (S->ob[i] == S->ob[best] && !(id && S->oi[best] == id && S->oi[i] != id)))) best = i;
     return best;
 }
 static void cqd_trip(int l, long long n) { if (S->tc[l] < CAP) { S->tc[l]++; cqd_out("t %d %lld\n", l, n); } }
@@ -498,8 +514,8 @@ static void cqd_stop(const char *how, int code) {
  * (cq-ir5z): what a store past the object would overwrite, and what a load past it would read, depend
  * on the memory layout, not on the input. Its record is written past the per-site cap. An address
  * under no known object only makes the worker dirty. */
-void __cqd_m(int site, void *root, void *addr, uint64_t nbytes) {
-    int best = cqd_find((uintptr_t)root);
+void __cqd_m(int site, void *root, void *addr, uint64_t nbytes, uint32_t id) {
+    int best = cqd_find((uintptr_t)root, id);
     long long off = best < 0 ? 0 : (long long)((intptr_t)addr - (intptr_t)S->ob[best]);
     int out = best >= 0 && (off < 0 || (unsigned long long)off + nbytes > S->os[best]);
     if (out) {
@@ -515,9 +531,9 @@ void __cqd_m(int site, void *root, void *addr, uint64_t nbytes) {
 }
 /* A memory intrinsic's destination or source range, before it is accessed: past its object, the sample ends
  * here as "oob" with code -1 (no mem site); under no known object, the worker is dirty. */
-void __cqd_mi(void *root, void *dst, uint64_t n) {
+void __cqd_mi(void *root, void *dst, uint64_t n, uint32_t id) {
     if (!n) return;
-    int best = cqd_find((uintptr_t)root);
+    int best = cqd_find((uintptr_t)root, id);
     if (best < 0) { C->dirty = 1; return; }
     long long off = (long long)((intptr_t)dst - (intptr_t)S->ob[best]);
     if (off < 0 || (unsigned long long)off + n > S->os[best]) {
@@ -528,8 +544,8 @@ void __cqd_mi(void *root, void *dst, uint64_t n) {
 }
 /* A C string's length, before a library string function reads it: no NUL inside its object ends
  * the sample here as "oob" with code -1, as a memory intrinsic past its object does (cq-z8gj). */
-uint64_t __cqd_ms(void *root, const char *p) {
-    int best = cqd_find((uintptr_t)root);
+uint64_t __cqd_ms(void *root, const char *p, uint32_t id) {
+    int best = cqd_find((uintptr_t)root, id);
     if (best < 0) { C->dirty = 1; return strlen(p); }
     long long off = (long long)((intptr_t)p - (intptr_t)S->ob[best]);
     const char *e = (off >= 0 && (unsigned long long)off < S->os[best])
@@ -603,6 +619,7 @@ static void cqd_restore(void) {
     memcpy(S->cnt, B->cnt, NL_USED * sizeof *S->cnt); memcpy(S->has, B->has, NL_USED);
     memcpy(S->ctx, B->ctx, NL_USED); memcpy(S->ent, B->ent, NL_USED); memcpy(S->tc, B->tc, NL_USED);
     memcpy(S->ob, B->ob, (size_t)B->nob * sizeof *S->ob); memcpy(S->os, B->os, (size_t)B->nob * sizeof *S->os);
+    memcpy(S->oi, B->oi, (size_t)B->nob * sizeof *S->oi);
     memcpy(S->buf, B->buf, B->len);
 }
 void cqd_load(void *dst, size_t n, const char *hex) {
@@ -1014,6 +1031,58 @@ class Instrumenter:
         self.sites: List[Site] = []
         self.loops: List[Loop] = []
         self.n = 0
+        self.alloca_ids: Dict[Tuple[str, str], int] = {}
+        self.param_ids: Dict[Tuple[str, str], str] = {}
+
+    # pointer arguments whose allocation site a direct call passes (@__cqd_aid)
+    NAID = 64
+
+    def site_id(self, f: D.Function, root: Optional[str]) -> str:
+        """The allocation site of `root` for the object table (cq-s8cf), as an i32 operand: an alloca
+        of `f` has its own id (from 1); a pointer parameter has the id its direct caller passed
+        (`param_entry`); anything else is 0 (unknown). It tells apart two objects at one address
+        (a zero-size alloca at the base of the object allocated before it)."""
+        if not root or not root.startswith("%"):
+            return "0"
+        if (f.name, root) in self.param_ids:
+            return self.param_ids[(f.name, root)]
+        d = f.defs.get(root)
+        if d is None or d.op != "alloca":
+            return "0"
+        return str(self.alloca_ids.setdefault((f.name, root), len(self.alloca_ids) + 1))
+
+    def param_entry(self, f: D.Function) -> List[str]:
+        """At `f`'s entry: the allocation site of each pointer parameter, as its caller passed it in
+        @__cqd_aid when @__cqd_afn names `f` (a direct call from the module), else 0; @__cqd_afn is
+        cleared, so a call from outside the module (a driver, a library callback) passes nothing."""
+        ptrs = [(k, v) for k, (ty, v) in enumerate(f.params)
+                if ty != "..." and v and split_type(ty)[0] == "ptr" and k < self.NAID]
+        if not ptrs:
+            return []
+        fn, ok = self.tmp(), self.tmp()
+        out = [f"{fn} = load ptr, ptr @__cqd_afn", f"{ok} = icmp eq ptr {fn}, {f.name}",
+               "store ptr null, ptr @__cqd_afn"]
+        for k, v in ptrs:
+            g, l, sel = self.tmp(), self.tmp(), self.tmp()
+            out += [f"{g} = getelementptr [{self.NAID} x i32], ptr @__cqd_aid, i64 0, i64 {k}",
+                    f"{l} = load i32, ptr {g}", f"{sel} = select i1 {ok}, i32 {l}, i32 0"]
+            self.param_ids[(f.name, v)] = sel
+        return out
+
+    def pass_ids(self, f: D.Function, ins: D.Inst) -> List[str]:
+        """Before a direct call of a function of the module with pointer arguments: their allocation
+        sites into @__cqd_aid, and the callee into @__cqd_afn (read by its `param_entry`)."""
+        if ins.op != "call" or ins.callee not in self.mod.functions:
+            return []
+        out = []
+        for k, (ty, v) in enumerate(_operand_pairs(", ".join(ins.call_args))):
+            if ty != "ptr" or k >= self.NAID:
+                continue
+            sid = self.site_id(f, self.addr_root(f, v)[0]) if v.startswith("%") else "0"
+            g = self.tmp()
+            out += [f"{g} = getelementptr [{self.NAID} x i32], ptr @__cqd_aid, i64 0, i64 {k}",
+                    f"store i32 {sid}, ptr {g}"]
+        return out + [f"store ptr {ins.callee}, ptr @__cqd_afn"] if out else []
 
     def tmp(self) -> str:
         self.n += 1
@@ -1192,8 +1261,11 @@ class Instrumenter:
 
     def decls(self) -> List[str]:
         d = ["declare void @__cqd_p(i32, i64, i64, i64, i64, i64, i64, i64, i64)",
-             "declare void @__cqd_m(i32, ptr, ptr, i64)", "declare void @__cqd_mi(ptr, ptr, i64)",
-             "declare i64 @__cqd_ms(ptr, ptr)", "declare void @__cqd_reg(ptr, i64)",
+             "declare void @__cqd_m(i32, ptr, ptr, i64, i32)", "declare void @__cqd_mi(ptr, ptr, i64, i32)",
+             "declare i64 @__cqd_ms(ptr, ptr, i32)", "declare void @__cqd_reg(ptr, i64)",
+             "declare void @__cqd_rega(ptr, i64, i32)",
+             "@__cqd_afn = internal global ptr null",
+             f"@__cqd_aid = internal global [{self.NAID} x i32] zeroinitializer",
              "declare void @__cqd_hdr(i32, i1)", "declare void @__cqd_ctx(i32)"]
         d.append("define void @__cqd_globals() {")
         for g, line in self.mod.globals.items():
@@ -1225,6 +1297,7 @@ class Instrumenter:
             insts = f.blocks[b]
             pre: List[str] = []
             if bi == 0:
+                pre += self.param_entry(f)
                 pre += [f"call void @__cqd_ctx(i32 {lp.id})" for lp in children.get(None, [])]
             phis = [x for x in insts if x.op == "phi"]
             rest = [x for x in insts if x.op != "phi"]
@@ -1241,34 +1314,10 @@ class Instrumenter:
             body += ["  " + x for x in pre]
             for ins in rest:
                 before, after = self.instrument(f, ins)
-                text = self.alloca_distinct(ins, before)
-                body += ["  " + x for x in before]
-                body.append("  " + text)
+                body += ["  " + x for x in before + self.pass_ids(f, ins)]
+                body.append("  " + ins.text)
                 body += ["  " + x for x in after]
         return body
-
-    def alloca_distinct(self, ins: D.Inst, before: List[str]) -> str:
-        """The instruction as the probe build runs it. An alloca whose element count is a value is
-        given one element when that count is 0 (cq-w2a-chk-trips): a zero-byte dynamic alloca takes
-        no stack, so its address is the address of the alloca before it, and the object table (one
-        object per address) let it replace that object (117 with nq = 0: bool x[0] after c[t], and
-        the memset of c then left the zero-byte x). Where an alloca lies is unspecified in LLVM, so
-        a distinct address is one LLVM may give; the object is registered with its own size (0), so
-        an access to it still leaves it (cq-faa5)."""
-        if ins.op != "alloca":
-            return ins.text
-        m = re.match(r"(.*?=\s*alloca\s+(?:inalloca\s+)?)(.*)$", D.strip_comment(ins.text).rstrip())
-        ty, rest = split_type(m.group(2))
-        parts = D.split_operands(rest.lstrip(","))
-        if not parts or parts[0].startswith(("align", "addrspace")):
-            return ins.text
-        cty, cv = split_type(parts[0])
-        cv = cv.split()[-1]
-        if not cv.startswith("%"):
-            return ins.text
-        z, one = self.tmp(), self.tmp()
-        before += [f"{z} = icmp eq {cty} {cv}, 0", f"{one} = select i1 {z}, {cty} 1, {cty} {cv}"]
-        return m.group(1) + ", ".join([ty, f"{cty} {one}"] + parts[1:])
 
     def instrument(self, f: D.Function, ins: D.Inst) -> Tuple[List[str], List[str]]:
         op = ins.op
@@ -1387,7 +1436,7 @@ class Instrumenter:
                 t2 = self.tmp()
                 after.append(f"{t2} = mul i64 {size}, {cv}")
                 size = t2
-            after.append(f"call void @__cqd_reg(ptr {ins.dest}, i64 {size})")
+            after.append(f"call void @__cqd_rega(ptr {ins.dest}, i64 {size}, i32 {self.site_id(f, ins.dest)})")
             return [], after
         if op in ("load", "store"):
             ptr_txt = ins.operands[1]
@@ -1403,12 +1452,12 @@ class Instrumenter:
                 # not a mem site (its §2 rows are static)
                 ty = split_type(re.sub(r"^(?:(?:volatile|atomic)\s+)+", "", ins.operands[0]))[0]
                 nb = f"ptrtoint (ptr getelementptr ({ty}, ptr null, i32 1) to i64)"
-                return [f"call void @__cqd_mi(ptr {root}, ptr {pv}, i64 {nb})"], []
+                return [f"call void @__cqd_mi(ptr {root}, ptr {pv}, i64 {nb}, i32 {self.site_id(f, root)})"], []
             # load/store volatile|atomic: the type follows the keywords
             ty = split_type(re.sub(r"^(?:(?:volatile|atomic)\s+)+", "", ins.operands[0]))[0]
             s = self.add_site(f, ins, "mem", op, [], classical=classical)
             nb = f"ptrtoint (ptr getelementptr ({ty}, ptr null, i32 1) to i64)"
-            return [f"call void @__cqd_m(i32 {s.id}, ptr {root}, ptr {pv}, i64 {nb})"], []
+            return [f"call void @__cqd_m(i32 {s.id}, ptr {root}, ptr {pv}, i64 {nb}, i32 {self.site_id(f, root)})"], []
         return [], []
 
     def intrinsic_range(self, f: D.Function, pairs: List[Tuple[str, str]], src: bool) -> List[str]:
@@ -1417,7 +1466,7 @@ class Instrumenter:
         "oob" (cq-ir5z); one the runner cannot place ends the in-process worker after the sample."""
         (lty, ln) = pairs[2]
         if not int_width(lty) or not (ln.startswith("%") or const_bits(lty, ln) is not None):
-            return ["call void @__cqd_mi(ptr null, ptr null, i64 1)"]
+            return ["call void @__cqd_mi(ptr null, ptr null, i64 1, i32 0)"]
         out = []
         if int_width(lty) != 64:
             t = self.tmp()
@@ -1425,10 +1474,10 @@ class Instrumenter:
             ln = t
         for pty, pv in pairs[:2] if src else pairs[:1]:
             if pty != "ptr" or not (pv.startswith("%") or pv.startswith("@")):
-                out.append("call void @__cqd_mi(ptr null, ptr null, i64 1)")
+                out.append("call void @__cqd_mi(ptr null, ptr null, i64 1, i32 0)")
                 continue
             root = self.addr_root(f, pv)[0] if pv.startswith("%") else pv
-            out.append(f"call void @__cqd_mi(ptr {root}, ptr {pv}, i64 {ln})")
+            out.append(f"call void @__cqd_mi(ptr {root}, ptr {pv}, i64 {ln}, i32 {self.site_id(f, root)})")
         return out
 
     def _root(self, f: D.Function, pty: str, pv: str) -> Optional[str]:
@@ -1448,10 +1497,10 @@ class Instrumenter:
             pty, pv = pairs[k]
             root = self._root(f, pty, pv)
             if root is None:
-                out.append("call void @__cqd_mi(ptr null, ptr null, i64 1)")
+                out.append("call void @__cqd_mi(ptr null, ptr null, i64 1, i32 0)")
                 continue
             t = self.tmp()
-            out.append(f"{t} = call i64 @__cqd_ms(ptr {root}, ptr {pv})")
+            out.append(f"{t} = call i64 @__cqd_ms(ptr {root}, ptr {pv}, i32 {self.site_id(f, root)})")
             lens[k] = t
         if c == "@strlen":
             return out
@@ -1465,7 +1514,7 @@ class Instrumenter:
         if c == "@strcat":
             dst = self.tmp()
             out.append(f"{dst} = getelementptr i8, ptr {dv}, i64 {lens[0]}")
-        out.append(f"call void @__cqd_mi(ptr {droot}, ptr {dst}, i64 {n})")
+        out.append(f"call void @__cqd_mi(ptr {droot}, ptr {dst}, i64 {n}, i32 {self.site_id(f, droot)})")
         return out
 
     @staticmethod

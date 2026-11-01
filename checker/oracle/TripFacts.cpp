@@ -36,9 +36,13 @@
 // that must-alias that location with the load's size; every v(i), every such store and its value lie
 // outside every loop (one value per activation). The chain must end at the null constant after n
 // pointers with no value repeated: the header then runs at most n times per activation (each backedge
-// needs `next` != null), so the oracle reports at most n trips, and no capped record when n <= K. Any
-// step not of this form (a clobber that is a MemoryPhi, a call, a may-alias store or the function's
-// entry; a value from an argument or a load) leaves every target unproved.
+// needs `next` != null), so the oracle reports at most n trips, and no capped record when n <= K. A
+// value of the chain may be a constant, an argument or any instruction outside every loop (a load or
+// a call result too): each is one value per activation, and each step is tied to the memory the loop
+// reads only by the must-alias store at v(i) + c, which LLVM's alias analysis proves for that
+// activation whatever the value is. Any step not of this form (a clobber that is a MemoryPhi, a call,
+// a may-alias store or the function's entry; a value inside a loop; a value repeated) leaves every
+// target unproved.
 
 #include "cq/Loops.h"
 #include "cq/Taint.h"

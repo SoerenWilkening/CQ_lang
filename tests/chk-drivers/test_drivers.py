@@ -1041,11 +1041,133 @@ class StructureProof(unittest.TestCase):
             "cy:\n  store ptr %5, ptr %8\n  br label %jn\n\njn:\n  br label %9\n").replace("[ %5, %2 ]", "[ %5, %jn ]").replace("[ 0, %2 ]", "[ 0, %jn ]")), {})
 
 
+# cq-s8cf, cq-x9cz: zero-size allocas, natively (count 0 or a zero-size element type)
+ZSYNTH_C = r"""
+#include <string.h>
+/* a zero-byte alloca per iteration, no stack restore (991) */
+int loopalloca(int n, int m) {
+    int s = 0;
+    for (int i = 0; i < m; i++) {
+        volatile char *p = __builtin_alloca(n);
+        if (n > 0) { p[0] = (char)i; s += p[0]; }
+    }
+    return s + m;
+}
+/* 9 MB of rows when n > 0; with n = 0 they take no stack, and fill's 1 MB frame fits (993) */
+__attribute__((noinline)) static int fill(int k) {
+    char buf[1 << 20];
+    memset(buf, k, sizeof buf);
+    return buf[k & 1023];
+}
+int big0f(int n, int k) {
+    volatile char a[n][3 << 20];
+    volatile char b[n][3 << 20];
+    volatile char c[n][3 << 20];
+    if (n > 0) { a[0][0] = k; b[0][0] = k; c[0][0] = k; return a[0][0] + b[0][0] + c[0][0]; }
+    return fill(k);
+}
+/* x[0] lies at c's base when nq = 0 (994) */
+__attribute__((noinline)) static int rd(volatile char *p, int i) { return p[i]; }
+int z(int t, int nq, int mode) {
+    volatile char c[t], x[nq];
+    memset((char *)c, 0, t);
+    if (mode == 1) x[0] = 1;
+    if (mode == 2) return rd(x, 0);
+    if (mode == 3) return rd(c, t);
+    if (mode == 4) return rd(x, -1);
+    if (mode == 5) return rd(c, 0);
+    return c[0] + t;
+}
+"""
+ZSYNTH_LINE = ("903_probe_zero|int loopalloca(int,int);int big0f(int,int);int z(int,int,int);"
+               "|loopalloca(0,4);big0f(0,1);z(4,0,0)")
+# a dynamic alloca of a zero-size element type (995, cq-x9cz; IR only: clang makes C's char e[n][0] a
+# static [0 x i8]) after a VLA
+ZE_LL = """target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-apple-macosx"
+
+define i32 @ze(i32 %0, i32 %1, i32 %2) {
+  %4 = zext i32 %0 to i64
+  %5 = alloca i8, i64 %4, align 16
+  %6 = zext i32 %1 to i64
+  %7 = alloca [0 x i8], i64 %6, align 16
+  %8 = sext i32 %0 to i64
+  call void @llvm.memset.p0.i64(ptr align 16 %5, i8 0, i64 %8, i1 false)
+  %9 = icmp eq i32 %2, 1
+  br i1 %9, label %10, label %12
+
+10:
+  %11 = getelementptr inbounds i8, ptr %7, i64 0
+  store volatile i8 1, ptr %11, align 1
+  br label %12
+
+12:
+  %13 = load volatile i8, ptr %5, align 16
+  %14 = sext i8 %13 to i32
+  ret i32 %14
+}
+
+declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg)
+"""
+ZE_LINE = "904_probe_ze|int ze(int,int,int);|ze(4,1,0)"
+
+
 class ZeroByteAlloca(unittest.TestCase):
-    """cq-w2a-chk-trips: a zero-byte dynamic alloca took the address of the alloca before it, and the
-    probe's object table (one object per address) let it replace that object: 117 with nq = 0 (bool
-    x[0] after c[t]) ended as oob at the memset of c, outside the domain by the probe's error. The
-    probe gives such an alloca one element and registers it at its own size, 0."""
+    """cq-w2a-chk-trips, cq-s8cf, cq-x9cz: a zero-size alloca takes no stack, so it lies at the base
+    of the object allocated before it (117 with nq = 0: bool x[0] after c[t]). The probe's object
+    table once let it replace that object (117 ended as oob at the memset of c); then the probe gave
+    it one element, which moved the stack (9 MB for 993's rows) and grew the table without bound in
+    a loop (991: the hang guard). Now the native allocation is unchanged and the zero-size object
+    coexists with the one at its address; an access names its object by its root's alloca, else
+    the object registered last there. An access to the zero-size object still leaves it."""
+
+    @staticmethod
+    def synth(name, line, samples, c_text=None, ll_text=None):
+        """The probe observations of `samples` on a synthetic example from C or from IR."""
+        with tempfile.TemporaryDirectory() as d:
+            t = Path(d)
+            if c_text is not None:
+                ex = synth_example(t, name, c_text, line)
+            else:
+                ex = t / "examples" / name
+                ex.mkdir(parents=True)
+                (t / "_tools").mkdir()
+                (t / "_tools" / "drivers.txt").write_text(line + "\n")
+                (ex / (name.split("_", 1)[1] + ".O1.ll")).write_text(ll_text)
+            with S.ProbeBuild(D.driver_spec(name, ex), ex, t / "work") as pb:
+                return pb.run(samples)
+
+    @staticmethod
+    def smp(call, *xs):
+        return {"call": call, "args": [f"0x{x & 0xffffffff:08x}" for x in xs]}
+
+    def test_zero_size_allocas(self):
+        """991: 100000 zero-byte allocas in one activation (the one-element probe build filled the
+        object table and hit the hang guard). 993: with n = 0 the 9 MB of rows take no stack, so
+        fill's 1 MB frame fits the 8 MB sample stack (one element per row moved the stack 9 MB).
+        994 (x[0] at c's base when nq = 0): c is c, through its own alloca and through a callee;
+        x[0] is past x, through x's alloca and through a callee; so are c[t] and x[-1]."""
+        smp = self.smp
+        cases = [(smp(0, 0, 100000), "exit"), (smp(0, 2, 16), "exit"), (smp(1, 0, 1), "exit"),
+                 (smp(2, 4, 0, 0), "exit"), (smp(2, 4, 0, 5), "exit"), (smp(2, 4, 2, 2), "exit"),
+                 (smp(2, 4, 0, 1), "oob"), (smp(2, 4, 0, 2), "oob"), (smp(2, 4, 0, 3), "oob"),
+                 (smp(2, 4, 0, 4), "oob")]
+        obs = self.synth("903_probe_zero", ZSYNTH_LINE, [c for c, _ in cases], c_text=ZSYNTH_C)
+        for (c, end), o in zip(cases, obs):
+            self.assertTrue(o.ran, c)
+            self.assertEqual(o.end, end, c)
+            if end == "exit":
+                self.assertEqual(o.oob, set(), c)
+                self.assertTrue(S._in_domain(o), c)
+
+    def test_zero_size_element_type(self):
+        """cq-x9cz (995): [0 x i8] x n after c[t] is a zero-size object at c's base: the memset of
+        c stays inside c; a store to its byte 0 (c[0]'s address) leaves the zero-size object."""
+        smp = self.smp
+        obs = self.synth("904_probe_ze", ZE_LINE, [smp(0, 4, 1, 0), smp(0, 4, 0, 0), smp(0, 4, 3, 1)],
+                         ll_text=ZE_LL)
+        self.assertEqual([(o.end, o.oob) for o in obs[:2]], [("exit", set())] * 2)
+        self.assertEqual(obs[2].end, "oob")
 
     def probe(self, o1_text, samples):
         n = "117_qpe_counting"
