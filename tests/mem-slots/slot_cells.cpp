@@ -111,6 +111,9 @@ void lowerDeclared(LoweringContext &, CallBase &) { unimplemented("calls: calls:
 void lowerVarargs(LoweringContext &, Instruction &) { unimplemented("calls: calls::lowerVarargs"); }
 void lowerAsm(LoweringContext &, CallBase &) { unimplemented("calls: calls::lowerAsm"); }
 void emitTwin(LoweringContext &, CallBase &) { unimplemented("calls: calls::emitTwin"); }
+void lowerLiftedVia(LoweringContext &, CallBase &, ArrayRef<unsigned>) {
+  unimplemented("calls: calls::lowerLiftedVia");
+}
 } // namespace cq::calls
 
 namespace {
