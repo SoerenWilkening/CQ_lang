@@ -22,6 +22,7 @@
 //  - keep_cell0: a load of a[0] after the call forwards past it to r (the clone writes only cell 1). Fails
 //    until cq-b73i, like noreload.
 //  - old_twin: as old, a[1] read by an add: the twin gets the seed as a[1]'s old content.
+//  - record: 163's sret record (see caseRecord).
 //  - garbage_read: a[0] = r + 1 (garbage) and the clone has a twin: unimplemented (the rail must outlive
 //    the twin, which recordCall does not see).
 //
@@ -69,11 +70,13 @@ Function *materialize(Module &M, const Specialization &S) {
     return F;
   LLVMContext &C = M.getContext();
   std::vector<Type *> params;
-  size_t d = 0;
+  size_t d = 0, scalars = 0;
+  for (Argument &A : S.F->args())
+    scalars += !A.getType()->isPointerTy();
   for (Argument &A : S.F->args()) {
     if (A.getType()->isPointerTy()) {
       params.push_back(A.getType());
-      d += 2;   // the test's pointer formal carries two digits (two pointee cells)
+      d += S.mask.size() - scalars;   // the test's one pointer formal: one digit per pointee cell
       continue;
     }
     params.push_back(d < S.mask.size() && S.mask[d] == '1' ? handleTy(C) : A.getType());
@@ -123,10 +126,11 @@ void fail(const std::string &c, const std::string &msg) {
   std::fprintf(stderr, "FAIL %s: %s\n", c.c_str(), msg.c_str());
 }
 
-// The clone writes cell 1 of what its pointer formal (argument 0) points to.
+// The cells the clone writes through its pointer formal (argument 0): cell 1 by default.
+SmallVector<unsigned, 4> written{1};
 void installCells() {
   cq::mem::detail::cellsWrittenOverride() = [](const cq::Specialization &, unsigned argNo) {
-    return argNo == 0 ? SmallVector<unsigned, 4>{1} : SmallVector<unsigned, 4>{};
+    return argNo == 0 ? written : SmallVector<unsigned, 4>{};
   };
 }
 
@@ -173,11 +177,9 @@ std::string lower(const std::string &c, const std::string &ir) {
   raw_string_ostream vos(vs);
   if (verifyModule(*M, &vos))
     fail(c, "llvm verifier: " + vos.str());
-  Function *F = M->getFunction("f");
-  if (F && F->isDeclaration())
-    F = nullptr;
+  Function *F = nullptr;
   for (Function &G : *M)
-    if (!G.isDeclaration() && G.getName().starts_with("f"))
+    if (!G.isDeclaration() && (G.getName() == "f.cq.entry" || G.getName() == "g.cq.entry"))
       F = &G;
   if (!F) {
     fail(c, "no lowered f");
@@ -324,12 +326,63 @@ void caseGarbageRead() {
     fail(c, "wrong error: " + out.substr(0, 300));
 }
 
+// Rules 20, 26 (163's shape): an sret record { long a, b, c } filled by a clone that stores handles into
+// a and b and the classical c. The caller's record is { i32, i32, i64 }: a and b are handle cells loaded
+// right after the call, c is a classical cell read from memory; the twin follows the last reader.
+void caseRecord() {
+  const char *c = "record";
+  written = {0, 1};
+  std::string b = lower(c, R"(
+%struct.big = type { i64, i64, i64 }
+declare i64 @cq_theta_sl(i64, double)
+declare i64 @cq_measure_sl(i64)
+
+define internal void @mk(ptr nocapture writeonly sret(%struct.big) %r, i64 %x, i64 %c) noinline {
+  %a = add nsw i64 %x, %c
+  store i64 %a, ptr %r, align 8
+  %pb = getelementptr inbounds i8, ptr %r, i64 8
+  %m = mul nsw i64 %x, %c
+  store i64 %m, ptr %pb, align 8
+  %pc = getelementptr inbounds i8, ptr %r, i64 16
+  store i64 %c, ptr %pc, align 8
+  ret void
+}
+
+define i64 @g(i64 %x0, double %th, i64 %c) {
+  %r = alloca %struct.big, align 8
+  %x = call i64 @cq_theta_sl(i64 %x0, double %th)
+  call void @mk(ptr nonnull sret(%struct.big) %r, i64 %x, i64 %c)
+  %a = load i64, ptr %r, align 8
+  %pb = getelementptr inbounds i8, ptr %r, i64 8
+  %b = load i64, ptr %pb, align 8
+  %pc = getelementptr inbounds i8, ptr %r, i64 16
+  %cc = load i64, ptr %pc, align 8
+  %s1 = add nsw i64 %b, %a
+  %s = add nsw i64 %s1, %cc
+  %m = call i64 @cq_measure_sl(i64 %s)
+  ret i64 %m
+}
+)");
+  written = {1};
+  expectInOrder(c, b, {R"((%\w+) = alloca \{ i32, i32, i64 \}, align 8)",
+                       R"(call void @__cq_q_mk_\w+\(ptr %\w+, i32 %\w+, i64 %2\))", R"(load i32, ptr %\w+, align 4)",
+                       R"(getelementptr inbounds \{ i32, i32, i64 \}, ptr %\w+, i32 0, i32 1)",
+                       R"(load i32, ptr %\w+, align 4)",
+                       R"(getelementptr inbounds \{ i32, i32, i64 \}, ptr %\w+, i32 0, i32 2)",
+                       R"(load i64, ptr %\w+, align 8)", R"(call i32 @cq_template_add_i64\()",
+                       R"(call void @__cq_q_mk_\w+_unc\(ptr %\w+, i32 %\w+, i64 %2, i32 poison, i32 poison\))",
+                       R"(call void @cqrt_free\()", R"(call void @cqrt_free\()", R"(call i64 @cqrt_measure_i64\()"});
+  expectCount(c, b, R"(call i32 @cq_template_add_i64_hl\()", 1);
+  expectCount(c, b, R"(store )", 0);   // the clone fills the record; the caller stores nothing
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
   std::map<std::string, std::function<void()>> cases{{"forward", caseForward},       {"old", caseOld},
                                                      {"old_twin", caseOldTwin},      {"noreload", caseNoReload},
-                                                     {"keep_cell0", caseKeepCell0}, {"garbage_read", caseGarbageRead}};
+                                                     {"keep_cell0", caseKeepCell0}, {"garbage_read", caseGarbageRead},
+                                                     {"record", caseRecord}};
   if (argc > 1) {
     auto it = cases.find(argv[1]);
     if (it == cases.end()) {

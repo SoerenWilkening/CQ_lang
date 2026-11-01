@@ -186,6 +186,10 @@ Addr decompose(const Value *p, const DataLayout &DL) {
 
 uint64_t storeBytes(const DataLayout &DL, Type *t) { return DL.getTypeStoreSize(t).getFixedValue(); }
 
+struct ObjInfo;
+uint64_t cellSizeAt(const ObjInfo &info, int64_t off, const DataLayout &DL);
+int64_t cellOffset(const ObjInfo &info, unsigned c);
+
 // ---- per-object facts ---------------------------------------------------------------------------
 
 enum class RootKind : uint8_t { Local, Heap, Param, Global };
@@ -201,6 +205,13 @@ struct ObjInfo {
   bool escaping = false;
   bool view = false;  // accessed at more than one width: a value object read and written through bit views (63)
   int dynamic = -1;   // -1 not computed
+  // A slot RECORD (rules 20, 26: an sret/byval struct, 163 164 70, or a local struct object): one cell per
+  // scalar field at its own offset; a handle field is an i32 cell, a classical field keeps its C type and
+  // its value in memory. recTy is the new layout (a literal struct of the cells). cellBytes is 0.
+  bool record = false;
+  struct Field { int64_t off; Type *ty; int handle = -1; };   // handle: -1 not decided
+  SmallVector<Field, 4> fields;
+  StructType *recTy = nullptr;
 };
 
 // What a store into a VIEW object left there (63): the value rail h of type ty covering the bytes
@@ -326,7 +337,10 @@ SmallVector<unsigned, 4> cellsWrittenBy(LoweringContext &ctx, const Specializati
 }
 
 bool cloneArgUse(LoweringContext &ctx, const CallBase &CB, const Use &u) {
-  return CB.isArgOperand(&u) && CB.doesNotCapture(CB.getArgOperandNo(&u)) && cloneCallee(ctx, CB);
+  if (!CB.isArgOperand(&u))
+    return false;
+  unsigned i = CB.getArgOperandNo(&u);
+  return (CB.doesNotCapture(i) || CB.isByValArgument(i)) && cloneCallee(ctx, CB);
 }
 
 bool escapes(LoweringContext &ctx, const Value *root) {
@@ -420,6 +434,68 @@ uint64_t scalarCellBytes(Type *t, const DataLayout &DL, const Value *at) {
   return DL.getTypeAllocSize(t).getFixedValue();
 }
 
+void flattenRecord(Type *t, int64_t off, const DataLayout &DL, SmallVectorImpl<ObjInfo::Field> &out,
+                   const Value *at) {
+  if (auto *st = dyn_cast<StructType>(t)) {
+    const StructLayout *SL = DL.getStructLayout(st);
+    for (unsigned k = 0; k < st->getNumElements(); ++k)
+      flattenRecord(st->getElementType(k), off + int64_t(SL->getElementOffset(k)), DL, out, at);
+    return;
+  }
+  if (auto *a = dyn_cast<ArrayType>(t)) {
+    int64_t es = int64_t(DL.getTypeAllocSize(a->getElementType()).getFixedValue());
+    for (uint64_t k = 0; k < a->getNumElements(); ++k)
+      flattenRecord(a->getElementType(), off + int64_t(k) * es, DL, out, at);
+    return;
+  }
+  if (!t->isIntegerTy() && !t->isFloatingPointTy())
+    unimplemented("mem-slots: a slot record with a field that is not an integer or floating point (a pointer or "
+                  "vector field)",
+                  at);
+  out.push_back(ObjInfo::Field{off, t});
+}
+
+// The struct type of a record root: a local struct object, or an sret/byval parameter (rule 26).
+StructType *recordType(const Value *root) {
+  if (auto *ai = dyn_cast<AllocaInst>(root)) {
+    Type *t = ai->getAllocatedType();
+    if (isa<ArrayType>(t) && scalarCellType(t)->isStructTy())
+      unimplemented("mem-slots: an array of structs holding handles (one slot array per field column, 168)", ai);
+    return dyn_cast<StructType>(t);
+  }
+  if (auto *A = dyn_cast<Argument>(root)) {
+    Type *t = A->getParamByValType();
+    if (!t)
+      t = A->getParamStructRetType();
+    return t ? dyn_cast<StructType>(t) : nullptr;
+  }
+  return nullptr;
+}
+
+int fieldAt(const ObjInfo &info, int64_t off) {
+  for (unsigned k = 0; k < info.fields.size(); ++k)
+    if (info.fields[k].off == off)
+      return int(k);
+  return -1;
+}
+
+// The store size of the cell at byte offset off (a record's field there; 0 when no field starts there).
+uint64_t cellSizeAt(const ObjInfo &info, int64_t off, const DataLayout &DL) {
+  if (!info.record)
+    return info.cellBytes;
+  int k = fieldAt(info, off);
+  return k < 0 ? 0 : storeBytes(DL, info.fields[unsigned(k)].ty);
+}
+
+// The byte offset of cell c from the object's start (a record's field c).
+int64_t cellOffset(const ObjInfo &info, unsigned c) {
+  if (!info.record)
+    return int64_t(c * info.cellBytes);
+  if (c >= info.fields.size())
+    internalError("mem-slots: a cell index past the record's fields");
+  return info.fields[c].off;
+}
+
 ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId o) {
   auto it = st.objs.find(root);
   if (it != st.objs.end())
@@ -427,6 +503,13 @@ ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId 
   const DataLayout &DL = ctx.M.getDataLayout();
   ObjInfo info;
   info.root = root;
+  if (StructType *rt = recordType(root)) {
+    info.kind = isa<AllocaInst>(root) ? RootKind::Local : RootKind::Param;
+    info.record = true;
+    flattenRecord(rt, 0, DL, info.fields, root);
+    info.escaping = escapes(ctx, root);
+    return st.objs.emplace(root, info).first->second;
+  }
   if (auto *ai = dyn_cast<AllocaInst>(root)) {
     info.kind = RootKind::Local;
     info.cellBytes = scalarCellBytes(ai->getAllocatedType(), DL, ai);
@@ -566,10 +649,16 @@ bool mayWrite(LoweringContext &ctx, const ObjInfo &info, ObjectId o, const Instr
         Addr pa = decompose(CB->getArgOperand(i), DL);
         if (!pa.ok || !pa.terms.empty())
           return true;
+        if (info.record) {
+          // The clone may write any classical field (a classical store, not a handle: T2 names handles).
+          int k = cell.terms.empty() ? fieldAt(info, cell.off) : -1;
+          if (k < 0 || info.fields[unsigned(k)].handle != 1)
+            return true;
+        }
         for (unsigned c : cellsWrittenBy(ctx, *S, i)) {
           Addr w = pa;
-          w.off += int64_t(c * info.cellBytes);
-          if (!differentCell(w, cell, info.cellBytes, size))
+          w.off += cellOffset(info, c);
+          if (!differentCell(w, cell, cellSizeAt(info, w.off, DL), size))
             return true;
         }
       }
@@ -588,7 +677,7 @@ bool cloneWritesCell(LoweringContext &ctx, const ObjInfo &info, ObjectId o, cons
                      uint64_t size) {
   auto *CB = dyn_cast<CallBase>(&X);
   const Specialization *S = CB ? cloneCallee(ctx, *CB) : nullptr;
-  if (!S || size != info.cellBytes)
+  if (!S)
     return false;
   for (unsigned i = 0; i < CB->arg_size(); ++i) {
     if (!hasObject(ctx, CB->getArgOperand(i), o))
@@ -598,8 +687,8 @@ bool cloneWritesCell(LoweringContext &ctx, const ObjInfo &info, ObjectId o, cons
       continue;
     for (unsigned c : cellsWrittenBy(ctx, *S, i)) {
       Addr w = pa;
-      w.off += int64_t(c * info.cellBytes);
-      if (sameCell(w, cell))
+      w.off += cellOffset(info, c);
+      if (sameCell(w, cell) && size == cellSizeAt(info, w.off, ctx.M.getDataLayout()))
         return true;
     }
   }
@@ -728,10 +817,82 @@ bool isDynamic(LoweringContext &ctx, FnState &st, ObjInfo &info, ObjectId o) {
   if (info.dynamic >= 0)
     return info.dynamic;
   info.dynamic = 0;
-  for (const Access &a : accessesOf(ctx, *st.F, o))
+  for (const Access &a : accessesOf(ctx, *st.F, o)) {
+    if (info.record) {
+      int k = a.a.terms.empty() ? fieldAt(info, a.a.off) : -1;
+      if (k >= 0 && info.fields[unsigned(k)].handle == 0)
+        continue;   // a classical field is memory, never a handle read
+    }
     if ((isa<LoadInst>(a.I) || isRMW(a.I)) && !sourceOf(ctx, st, info, o, a.I, a.a, a.ty))
       info.dynamic = 1;
+  }
   return info.dynamic;
+}
+
+// Rules 20, 26 (163, 164, 70): which fields of a record hold handles. In an entry's local record, a field
+// holds a handle when some write puts one there: a store of a quantum value or under a quantum predicate,
+// an atomic read-modify-write, or a clone call that stores a handle into it (cellsWritten); otherwise it is
+// a classical cell. In a clone, a record parameter's field holds a handle when its mask digit says so (CR
+// §1.4: one digit per field, 1 iff it holds a handle at the call) or the clone itself stores one into it.
+void decideFields(LoweringContext &ctx, FnState &st, ObjInfo &info, ObjectId o) {
+  if (!info.record || info.recTy)
+    return;
+  const DataLayout &DL = ctx.M.getDataLayout();
+  std::string digits;
+  if (info.kind == RootKind::Param) {
+    if (ctx.S.isEntry())
+      unimplemented("mem-slots: an sret/byval record parameter of an entry (the host's object)", info.root);
+    size_t other = 0;
+    unsigned nPtr = 0;
+    for (const Argument &A : st.F->args()) {
+      if (A.getType()->isPointerTy())
+        ++nPtr;
+      else
+        other += ctx.T.fieldMask(&A, ctx.S).size();
+    }
+    if (nPtr != 1 || ctx.S.mask.size() < other)
+      unimplemented("mem-slots: a record parameter of a clone with several pointer formals (the per-formal mask "
+                    "layout)",
+                    info.root);
+    // The pointer formal's digits: the mask's digits past the scalar formals before it.
+    size_t before = 0;
+    for (const Argument &A : st.F->args()) {
+      if (&A == info.root)
+        break;
+      before += ctx.T.fieldMask(&A, ctx.S).size();
+    }
+    digits = ctx.S.mask.substr(before, ctx.S.mask.size() - other);
+    if (digits.size() != info.fields.size())
+      unimplemented("mem-slots: a record parameter whose mask digits do not count its fields", info.root);
+  }
+  for (const Instruction &X : instructions(*st.F))
+    if (auto *MI = dyn_cast<MemIntrinsic>(&X); MI && hasObject(ctx, MI->getDest(), o))
+      unimplemented("mem-slots: a memory intrinsic writing a slot record", &X);
+  for (unsigned k = 0; k < info.fields.size(); ++k) {
+    ObjInfo::Field &f = info.fields[k];
+    uint64_t sz = storeBytes(DL, f.ty);
+    Addr cell;
+    cell.root = info.root;
+    cell.off = f.off;
+    cell.ok = true;
+    bool h = !digits.empty() && digits[k] == '1';
+    for (const Access &a : accessesOf(ctx, *st.F, o)) {
+      if (isa<LoadInst>(a.I) || differentCell(a.a, cell, storeBytes(DL, a.ty), sz))
+        continue;
+      auto *S = dyn_cast<StoreInst>(a.I);
+      if (!S || ctx.T.isQuantum(S->getValueOperand(), ctx.S) ||
+          !ctx.preds().block(S->getParent()).quantumPart(ctx.T, ctx.S).isTop())
+        h = true;
+    }
+    for (const Instruction &X : instructions(*st.F))
+      if (cloneWritesCell(ctx, info, o, X, cell, sz))
+        h = true;
+    f.handle = h;
+  }
+  SmallVector<Type *, 4> cells;
+  for (const ObjInfo::Field &f : info.fields)
+    cells.push_back(f.handle ? handleTy(ctx.M.getContext()) : f.ty);
+  info.recTy = StructType::get(ctx.M.getContext(), cells);
 }
 
 // ---- emission -----------------------------------------------------------------------------------
@@ -755,6 +916,15 @@ Site siteOf(LoweringContext &ctx, FnState &st, const Instruction &I, const Value
     internalError("mem-slots: the address root is not the object taint names", &I);
   ObjInfo &info = objInfo(ctx, st, a.root, objs.front());
   uint64_t bytes = ctx.M.getDataLayout().getTypeAllocSize(ty).getFixedValue();
+  if (info.record) {
+    decideFields(ctx, st, info, objs.front());
+    if (!a.terms.empty())
+      unimplemented("mem-slots: a slot record accessed at a run-time offset", &I);
+    int k = fieldAt(info, a.off);
+    if (k < 0 || storeBytes(ctx.M.getDataLayout(), ty) != storeBytes(ctx.M.getDataLayout(), info.fields[unsigned(k)].ty))
+      unimplemented("mem-slots: a slot record access that is not exactly one field (a bit view of a record, 122)", &I);
+    return Site{objs.front(), &info, a};
+  }
   if (info.view) {
     if (info.escaping)
       unimplemented("mem-slots: a bit view of a slot object whose pointer escapes (63's construction needs every "
@@ -788,6 +958,12 @@ Value *cellPointer(LoweringContext &ctx, const Site &s, const Instruction &I) {
   Operand base = ctx.operand(s.a.root);
   if (base.handle)
     internalError("mem-slots: the base of a slot object is a rail", &I);
+  if (s.info->record) {
+    int k = fieldAt(*s.info, s.a.off);
+    if (k < 0 || !s.a.terms.empty() || !s.info->recTy)
+      internalError("mem-slots: a record cell pointer that is not one field", &I);
+    return k == 0 ? base.v : B.CreateStructGEP(s.info->recTy, base.v, unsigned(k));
+  }
   int64_t cb = int64_t(s.info->cellBytes);
   if (s.a.off % cb)
     unimplemented("mem-slots: a constant byte offset that is not a whole cell", &I);
@@ -873,7 +1049,7 @@ bool cellArms(LoweringContext &ctx, FnState &st, const Site &s, const Instructio
       Addr w = s.a;
       w.off = off;
       w.terms.clear();
-      if (differentCell(w, s.a, s.info->cellBytes, size) && s.a.terms.empty())
+      if (differentCell(w, s.a, cellSizeAt(*s.info, off, DL), size))
         continue;
       allRegisters = false;
       RailId r = ctx.unc().idOf(h.v);
@@ -1033,10 +1209,16 @@ bool classicalCell(LoweringContext &ctx, FnState &st, const Site &s) {
   for (const Instruction &X : instructions(*st.F))
     if (auto *MI = dyn_cast<MemIntrinsic>(&X); MI && hasObject(ctx, MI->getDest(), s.o))
       return false;
+  if (s.info->record) {
+    int k = fieldAt(*s.info, s.a.off);
+    return k >= 0 && s.info->fields[unsigned(k)].handle == 0;
+  }
   uint64_t size = s.info->cellBytes;
   for (const Instruction &X : instructions(*st.F))
-    if (auto *CB = dyn_cast<CallBase>(&X); CB && cloneCallee(ctx, *CB) && mayWrite(ctx, *s.info, s.o, X, s.a, size))
-      return false;   // M1: a clone may store a handle into it
+    if (auto *CB = dyn_cast<CallBase>(&X); CB && cloneCallee(ctx, *CB))
+      for (const Use &u : CB->args())
+        if (hasObject(ctx, u.get(), s.o))
+          return false;   // M1: a clone may read the cell as a handle or store one into it
   for (const Access &a : accessesOf(ctx, *st.F, s.o)) {
     if (isa<LoadInst>(a.I) || differentCell(a.a, s.a, storeBytes(DL, a.ty), size))
       continue;
@@ -1737,6 +1919,16 @@ void allocateSlots(LoweringContext &ctx, Instruction &site) {
                       " objects (an array of structs holding handles: one slot array per field column, 168)",
                   &site);
   ObjInfo &info = objInfo(ctx, st, &site, objs.front());
+  if (info.record) {
+    auto *ai = dyn_cast<AllocaInst>(&site);
+    if (!ai || !isa<ConstantInt>(ai->getArraySize()) || !cast<ConstantInt>(ai->getArraySize())->isOne())
+      unimplemented("mem-slots: a slot record that is not one local struct object", &site);
+    decideFields(ctx, st, info, objs.front());
+    AllocaInst *na = B.CreateAlloca(info.recTy);
+    na->setAlignment(std::max(ai->getAlign(), Align(4)));
+    ctx.bindFields(&site, {Operand{na, false}});
+    return;
+  }
   if (auto *ai = dyn_cast<AllocaInst>(&site)) {
     uint64_t perElem = DL.getTypeAllocSize(ai->getAllocatedType()).getFixedValue() / info.cellBytes;
     Type *i64 = Type::getInt64Ty(C);
@@ -1782,10 +1974,22 @@ void allocateSlots(LoweringContext &ctx, Instruction &site) {
 
 void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
   FnState &st = stateOf(ctx, ld);
-  if (!ctx.T.isQuantum(&ld, ctx.S))
-    unimplemented("mem-slots: a classical load from a slot object (a classical cell in a handle object: "
-                  "records, 163, 164)",
-                  &ld);
+  if (!ctx.T.isQuantum(&ld, ctx.S)) {
+    Site s = siteOf(ctx, st, ld, ld.getPointerOperand(), ld.getType());
+    if (!s.info->record || !classicalCell(ctx, st, s))
+      unimplemented("mem-slots: a classical load from a slot cell that holds a handle", &ld);
+    // Rules 20, 26: a classical field of a record is ordinary memory (the clone reads and writes it there).
+    if (const Instruction *src = sourceOf(ctx, st, *s.info, s.o, &ld, s.a, ld.getType()))
+      if (auto it = st.lowered.find(src); it != st.lowered.end() && !it->second.handle) {
+        st.lowered[&ld] = it->second;
+        ctx.bindFields(&ld, {it->second});
+        return;
+      }
+    LoadInst *nl = ctx.B().CreateAlignedLoad(ld.getType(), cellPointer(ctx, s, ld), ld.getAlign());
+    st.lowered[&ld] = Operand{nl, false};
+    ctx.bindFields(&ld, {Operand{nl, false}});
+    return;
+  }
   Site s = siteOf(ctx, st, ld, ld.getPointerOperand(), ld.getType());
   if (s.info->view) {
     Value *h = readView(ctx, st, s, ld, ld.getType());
@@ -1888,6 +2092,12 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
         s.info->kind == RootKind::Global && cast<GlobalVariable>(s.info->root)->hasLocalLinkage();
     if (!staticCell && !localGlobal && deadClassicalStore(ctx, st, *s.info, s.o, stI, s.a))
       return;
+    if (s.info->record && classicalCell(ctx, st, s)) {
+      // Rules 20, 26: a classical field of a record keeps its C value in memory (163's c, 164's b and c).
+      B.CreateAlignedStore(val.v, cellPointer(ctx, s, stI), stI.getAlign());
+      st.lowered[&stI] = val;
+      return;
+    }
     if (staticCell && classicalCell(ctx, st, s)) {
       // Rule 20 per cell (99's 'z'): a cell of a static object that no store fills with a handle is a
       // classical cell; every read of it forwards (static), so it holds the classical value and nothing
@@ -1937,6 +2147,8 @@ SmallVector<Operand, 8> readSlotCells(LoweringContext &ctx, const Value *ptr, Ty
   SmallVector<Operand, 8> out;
   for (uint64_t i = 0; i < n; ++i) {
     Site c = s;
+    if (s.info->record)
+      unimplemented("mem-slots: a host effect reading a slot record", &at);
     c.a.off += int64_t(i * s.info->cellBytes);
     if (!sourceOf(ctx, st, *c.info, c.o, &at, c.a, cellTy))
       unimplemented("mem-slots: a host effect reading a slot cell that no dominating access of this function "
@@ -2088,6 +2300,7 @@ CloneArg cloneArg(LoweringContext &ctx, FnState &st, const CallBase &orig, unsig
   if (!a.terms.empty())
     unimplemented("mem-slots: a pointer into a slot object at a run-time offset handed to a clone", &orig);
   ObjInfo &info = objInfo(ctx, st, a.root, objs.front());
+  decideFields(ctx, st, info, objs.front());
   CloneArg r{S, Site{objs.front(), &info, a}, cellsWrittenBy(ctx, *S, argNo)};
   if (r.cells.empty())
     return r;
@@ -2097,21 +2310,23 @@ CloneArg cloneArg(LoweringContext &ctx, FnState &st, const CallBase &orig, unsig
     unimplemented("mem-slots: a parameter or global slot object handed to a clone that writes it", &orig);
   if (info.escaping)
     unimplemented("mem-slots: a slot object whose pointer escapes handed to a clone that writes it", &orig);
-  if (a.off % int64_t(info.cellBytes))
-    unimplemented("mem-slots: a pointer handed to a clone that is not at a whole cell", &orig);
+  if (info.record ? a.off != 0 : a.off % int64_t(info.cellBytes))
+    unimplemented("mem-slots: a pointer handed to a clone that is not at a whole cell (or not at a record's "
+                  "start)",
+                  &orig);
   return r;
 }
 
 Site cellSite(const CloneArg &ca, unsigned c) {
   Site s = ca.s;
-  s.a.off += int64_t(c * ca.s.info->cellBytes);
+  s.a.off += cellOffset(*ca.s.info, c);
   return s;
 }
 
 // Some write of this function into a cell that may be s's may reach I.
 bool anyWriteReaches(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &I) {
   const DataLayout &DL = ctx.M.getDataLayout();
-  uint64_t size = s.info->cellBytes;
+  uint64_t size = cellSizeAt(*s.info, s.a.off, DL);
   for (const Instruction &X : instructions(*st.F)) {
     if (&X == &I || !(isa<StoreInst>(X) || isRMW(&X) || isa<CallBase>(X)))
       continue;
@@ -2171,7 +2386,7 @@ SmallVector<Value *, 4> slotCellsBeforeCall(LoweringContext &ctx, const CallBase
   Type *i32 = handleTy(ctx.M.getContext());
   for (unsigned c : ca.cells) {
     Site cs = cellSite(ca, c);
-    Type *ty = cs.info->cellTy;
+    Type *ty = cs.info->record ? cs.info->fields[c].ty : cs.info->cellTy;
     if (!sourceOf(ctx, st, *cs.info, cs.o, &orig, cs.a, ty) && !anyWriteReaches(ctx, st, cs, orig)) {
       out.push_back(PoisonValue::get(i32));   // never written: the twin restores nothing defined (31, 52, 163)
       continue;
@@ -2201,7 +2416,8 @@ SmallVector<Value *, 4> slotCellsAfterCall(LoweringContext &ctx, const CallBase 
   SmallVector<Value *, 4> old;
   for (unsigned c : ca.cells) {
     Site cs = cellSite(ca, c);
-    if (const Instruction *src = sourceOf(ctx, st, *cs.info, cs.o, &orig, cs.a, cs.info->cellTy)) {
+    Type *cty = cs.info->record ? cs.info->fields[c].ty : cs.info->cellTy;
+    if (const Instruction *src = sourceOf(ctx, st, *cs.info, cs.o, &orig, cs.a, cty)) {
       if (auto it = st.lowered.find(src); it != st.lowered.end() && it->second.handle)
         old.push_back(it->second.v);
     } else {
