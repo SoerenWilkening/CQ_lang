@@ -1727,7 +1727,10 @@ bool needsCopy(LoweringContext &ctx, FnState &st, const StoreInst &S, const Site
 //    into, a load no dominating store reaches unchanged, bytes a store wrote on some path only, a
 //    run-time offset, and a store under a quantum predicate.
 
-// The latest store into the view object whose bytes overlap [at.off, at.off + n) and reach I unchanged.
+unsigned bitsOf(const DataLayout &DL, Type *t);
+
+// The latest store into the view object whose bytes, or the value it left, overlap [at.off, at.off + n)
+// and reach I unchanged.
 const StoreInst *viewSource(LoweringContext &ctx, FnState &st, const ObjInfo &info, ObjectId o, const Instruction *I,
                             const Addr &at, uint64_t n) {
   const DataLayout &DL = ctx.M.getDataLayout();
@@ -1740,7 +1743,14 @@ const StoreInst *viewSource(LoweringContext &ctx, FnState &st, const ObjInfo &in
       unimplemented("mem-slots: a store into a bit-view slot object at a run-time offset or through a fat pointer",
                     S);
     int64_t m = int64_t(storeBytes(DL, a.ty));
-    if (!(a.a.off < at.off + int64_t(n) && at.off < a.a.off + m))
+    // cq-0kji: a store overlaps the bytes when its own bytes do, or the value it left covers them (a narrower
+    // store merged into a value leaves the whole merged value, 63).
+    bool over = a.a.off < at.off + int64_t(n) && at.off < a.a.off + m;
+    if (auto vit = st.views.find(S); vit != st.views.end()) {
+      int64_t vo = vit->second.off, vb = int64_t((bitsOf(DL, vit->second.ty) + 7) / 8);
+      over |= vo < at.off + int64_t(n) && at.off < vo + vb;
+    }
+    if (!over)
       continue;
     if (!st.DT->dominates(S, I) || !clearBetween(ctx, info, o, S, I, at, n))
       continue;
