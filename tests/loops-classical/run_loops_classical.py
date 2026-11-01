@@ -49,6 +49,9 @@ DEFERRED = {"f_arm": [("frozen", "i32"), ("measured", "i32")],
             "f_oracle": [("measured", "i32")]}
 # cq-8lf8: y = 3x + 1 measured when n == 7 only; at n = 2, 3 the loop path keeps no garbage rail.
 MEASURED_PROBE = PROBES / "measured_some.O1.ll"
+# cq-ot39: a quantum loop invariant LICM hoisted into the guarded preheader (resolved on the loop's exit path).
+HOISTED_PROBE = PROBES / "hoisted.O1.ll"
+HOISTED = ["fk3", "fk1", "c4"]
 MEASURED = {"m_r8": [("measured", "i32"), ("kept_entangled", "i32"), ("measured", "i32")],
             "m_r8b": [("measured", "i32"), ("measured", "i32")],
             "m_r8c": [("measured", "i32"), ("kept_entangled", "i32"), ("measured", "i32")]}
@@ -129,13 +132,13 @@ def main() -> int:
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", required=True)
     ap.add_argument("--entry", action="append", help="check only these entries of loops.O1.ll")
-    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "fatal"],
+    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "fatal"],
                     help="run only these probe groups (default: all)")
     a = ap.parse_args()
     out = ROOT / "build" / "tests" / "loops-classical" / "out"
     out.mkdir(parents=True, exist_ok=True)
     failures = 0
-    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "fatal"]))
+    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "fatal"]))
     groups = []
     if "loops" in want:
         groups.append((PROBE, a.entry or ENTRIES))
@@ -147,6 +150,8 @@ def main() -> int:
         groups.append((DEFERRED_PROBE, list(DEFERRED)))
     if "measured" in want:
         groups.append((MEASURED_PROBE, list(MEASURED) + MEASURED_SEC6))
+    if "hoisted" in want:
+        groups.append((HOISTED_PROBE, HOISTED))
     for probe, entries in groups:
         failures += check_probe(a, probe, entries, out)
     for group, probe, table in (("rule6", RULE6_PROBE, RULE6), ("deferred", DEFERRED_PROBE, DEFERRED),
