@@ -628,7 +628,9 @@ void lowerSlotMemset(LoweringContext &ctx, MemSetInst &MS, ObjectId o) {
   switch (info.kind) {
   case RootKind::Local:
   case RootKind::Heap:
-    if (info.escaping)
+    // A dynamic slot array's seeds are its registers (UserRegister: kept, never cleaned), so a call its
+    // pointer escapes to (117's x passed to a _ctl clone) leaves no clean-up to a callee twin.
+    if (info.escaping && !isDynamic(ctx, st, info, o))
       unimplemented("mem-qram: a memset of a slot object whose pointer escapes to a call (its seeds' clean-up is "
                     "the callee twin's: rule 18, 31, 106)",
                     &MS);

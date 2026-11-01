@@ -3882,8 +3882,15 @@ namespace {
 // The load L when SI stores back a chain of cq_theta of a load of the cell it stores to: a rotation
 // of the rail the cell holds, in place (124's step: *r = cq_theta(*r); 61's prep: the second
 // *x = cq_theta(*x) forwarded by -O1 as cq_theta(cq_theta(load)), cq-kwmu). The handle stored is L's.
-const llvm::LoadInst *inPlaceRoot(const llvm::StoreInst *SI) {
+const llvm::LoadInst *inPlaceRoot(const llvm::StoreInst *SI, bool bools = false) {
   const llvm::Value *V = SI->getValueOperand();
+  // bools (T2 at a variable offset, 117): also a _Bool cell's round trip, zext i1 -> i8 of the rotation of
+  // the trunc i8 -> i1 of its load (the i1 rail's view).
+  bool boolView = false;
+  if (auto *Z = dyn_cast<llvm::ZExtInst>(V); bools && Z && Z->getSrcTy()->isIntegerTy(1)) {
+    V = Z->getOperand(0);
+    boolView = true;
+  }
   bool rotated = false;
   for (unsigned depth = 0; depth < 64; ++depth) {
     auto *C = dyn_cast<llvm::CallInst>(V);
@@ -3892,6 +3899,12 @@ const llvm::LoadInst *inPlaceRoot(const llvm::StoreInst *SI) {
       break;
     rotated = true;
     V = C->getArgOperand(0);
+  }
+  if (boolView) {
+    auto *Tr = dyn_cast<llvm::TruncInst>(V);
+    if (!Tr || !Tr->getDestTy()->isIntegerTy(1))
+      return nullptr;
+    V = Tr->getOperand(0);
   }
   auto *L = dyn_cast<llvm::LoadInst>(V);
   if (!rotated || !L || L->getPointerOperand() != SI->getPointerOperand() ||
@@ -3921,6 +3934,7 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
   };
   struct W { int64_t off; uint64_t size; const llvm::StoreInst *st; };
   SmallVector<W, 4> writes;
+  SmallVector<const llvm::StoreInst *, 2> varInPlace;   // T2: in-place round trips at a variable offset
   // cq-ee23: every value derived from the formal is followed: pointers (GEP, casts, freeze, phi,
   // select), the integers ptrtoint makes of them (a constant add or sub keeps the offset, any other
   // arithmetic makes it variable) and the pointers inttoptr makes back, and aggregates holding it (the
@@ -4005,8 +4019,16 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
           refuse("the formal escapes into memory", SI);
         if (!V->getType()->isPointerTy())
           internalError("taint: cellsWritten: a store through a non-pointer", SI);
-        if (!off)
-          refuse("a store through the formal at a variable offset", SI);
+        if (!off) {
+          // 117: T2 at a variable offset: a store back of a rotation of the cell's own quantum load (an
+          // in-place cq_theta on a runtime-indexed cell) leaves the handle in the cell; allowed when every
+          // write through the formal is such a round trip (checked below).
+          const llvm::LoadInst *r = rotated ? nullptr : inPlaceRoot(SI, true);
+          if (!r || !lanesOfValue(I, *SS, r).any())
+            refuse("a store through the formal at a variable offset", SI);
+          varInPlace.push_back(SI);
+          continue;
+        }
         writes.push_back({*off, DL.getTypeStoreSize(SI->getValueOperand()->getType()), SI});
       } else if (auto *II = dyn_cast<llvm::IntrinsicInst>(U); II && II->isLifetimeStartOrEnd()) {
         continue;
@@ -4066,6 +4088,14 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
       refuse("pointee objects of different layouts", A);
     leaves = std::move(lv);
   }
+  // A round trip at a variable offset may hit any cell: every other write must be a round trip too (each
+  // then stores back the handle the cell holds, so no cell's handle changes).
+  if (!varInPlace.empty())
+    for (const W &w : writes) {
+      const llvm::LoadInst *r = inPlaceRoot(w.st, true);
+      if (!r || !lanesOfValue(I, *SS, r).any())
+        refuse("a store through the formal beside an in-place rotation at a variable offset", w.st);
+    }
   SmallVector<unsigned, 4> out;
   uint64_t size = 0;
   for (const W &w : writes) {
