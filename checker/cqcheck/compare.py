@@ -221,7 +221,7 @@ import sys
 from collections import Counter
 from dataclasses import dataclass, field
 from fractions import Fraction
-from typing import Any, Callable, Dict, FrozenSet, Hashable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, FrozenSet, Hashable, List, Optional, Sequence, Set, Tuple
 
 from .contracts import DriverSpec, RunResult
 
@@ -1570,9 +1570,11 @@ def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult], ended: Sequence[
 #   rule 23   at most one fenv_flags rail (the final flags rail is an output) and one fenv_mode rail;
 #   known     a rail in a known classical basis state (owner ruling 2026-11-01 on cq-tt2j: not a
 #             leak; LIVE_KNOWN_IS_LEAK below flips it);
-#   a_K       a "garbage" i1 rail, at most one per activation of a K-cut loop the C oracle recorded
-#             on the sample (rule 14's output predicate), any number on a capped or ended sample
-#             (activations past the cut are not recorded);
+#   a_K       a "garbage" i1 rail, at most one per activation the C oracle recorded on the sample whose
+#             (loop, act) it capped after K trips on some sample of the comparison (rule 14's output
+#             predicate, kept only when the bound B exceeds K: an activation never capped has B <= K
+#             as far as the samples show, which include a K+1-trip search per loop), any number on a
+#             capped or ended sample (activations past the cut are not recorded);
 #   leak      anything else: a rail its sources could still clean, left live.
 LIVE_KNOWN_IS_LEAK = False   # owner ruling 2026-11-01 (cq-tt2j): a live rail in a known basis state is no leak
 _KEPT_ROLES = frozenset(("measured", "frozen", "abort", "tape", "qram", "qram_cell", "qram_slot", "kept_entangled",
@@ -1580,9 +1582,9 @@ _KEPT_ROLES = frozenset(("measured", "frozen", "abort", "tape", "qram", "qram_ce
 _FENV_ROLES = ("fenv_flags", "fenv_mode")
 
 
-def _leaks(k: str, o: RunResult, c: RunResult, cut: bool) -> List[str]:
+def _leaks(k: str, o: RunResult, c: RunResult, cut: bool, capkeys: Set[Tuple[str, int]] = frozenset()) -> List[str]:
     rotated = {e.get("h") for e in o.rotations or [] if isinstance(e, dict) and e.get("ev") in ("ry", "ry_qangle")}
-    acts = len({(r["loop"], r["act"]) for r in _loops(c)})
+    acts = len({(r["loop"], r["act"]) for r in _loops(c)} & set(capkeys))
     i1 = 0
     fenv: Dict[str, int] = {}
     bad = []
@@ -1683,8 +1685,10 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
     # the a_K rule: a capped C sample is read through its cut (module docstring)
     capped: Dict[str, bool] = {}
     ended: Dict[str, bool] = {}          # the abort rule: a C sample that ended in noreturn/raise
+    capkeys: Set[Tuple[str, int]] = set()   # the leak rule's a_K: (loop, act) the C oracle capped on some sample
     if oracle == "c":
         for k in keys:
+            capkeys.update((r["loop"], r["act"]) for r in _loops(r_by[k]) if r["capped"])
             ended[k] = _ended(r_by[k])
             cap = _cap(r_by[k])
             capped[k] = cap is not None
@@ -1722,7 +1726,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
                     reasons.append(f"sample {k}: {side} side frees rail {c.get('h')} = {c.get('v')} "
                                    f"not in a known basis state")
         if oracle == "c":
-            reasons += _leaks(k, o, r_by[k], capped[k] or ended[k])
+            reasons += _leaks(k, o, r_by[k], capped[k] or ended[k], capkeys)
 
     # groups: classical arguments, then the structure of each side
     shape_of: Dict[int, Tuple] = {}

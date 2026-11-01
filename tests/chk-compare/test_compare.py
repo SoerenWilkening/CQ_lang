@@ -635,15 +635,23 @@ class LeakRule(unittest.TestCase):
         self.assertFalse(c.equal)
         self.assertTrue(any("a leak; cq-tt2j" in r and "fenv_flags" in r for r in c.reasons), c.reasons)
 
-    def test_a_k_per_recorded_activation(self):
+    def test_a_k_per_capped_activation(self):
+        # one garbage i1 per recorded activation whose (loop, act) the C oracle capped on some sample
+        from cqcheck.compare import _leaks
         rec = [{"loop": "f:%7", "act": 0, "n": 2, "capped": False}]
-        c = compare(self.ours(lambda a, b: [self.leak(9, 0, "i1", "garbage")]), self.c_side(rec), QKEY, "c")
-        self.assertTrue(c.equal, c.reasons)
-        c = compare(self.ours(lambda a, b: [self.leak(9, 0, "i1", "garbage"), self.leak(10, 0, "i1", "garbage")]),
-                    self.c_side(rec), QKEY, "c")
-        self.assertFalse(c.equal)
-        c = compare(self.ours(lambda a, b: [self.leak(9, 0, "i1", "garbage")]), self.c_side(), QKEY, "c")
-        self.assertFalse(c.equal)
+        c = self.c_side(rec)[0]
+        o = self.ours(lambda a, b: [self.leak(9, 0, "i1", "garbage")])[0]
+        self.assertEqual(_leaks("s", o, c, False, {("f:%7", 0)}), [])
+        o2 = self.ours(lambda a, b: [self.leak(9, 0, "i1", "garbage"), self.leak(10, 0, "i1", "garbage")])[0]
+        self.assertTrue(_leaks("s", o2, c, False, {("f:%7", 0)}))
+        # never capped anywhere (bound B <= K, rule 14: no a_K is kept; the cutoff-h2 t3 review finding)
+        self.assertTrue(_leaks("s", o, c, False, set()))
+        self.assertTrue(_leaks("s", o, c, False, {("f:%7", 1)}))
+        # through compare: no sample caps the loop, so the kept i1 is a leak
+        r = compare(self.ours(lambda a, b: [self.leak(9, 0, "i1", "garbage")]), self.c_side(rec), QKEY, "c")
+        self.assertFalse(r.equal)
+        r = compare(self.ours(lambda a, b: [self.leak(9, 0, "i1", "garbage")]), self.c_side(), QKEY, "c")
+        self.assertFalse(r.equal)
 
 
 class FpModes(unittest.TestCase):
@@ -961,8 +969,9 @@ class AKRule(unittest.TestCase):
                                  measured=meas, rotations=rots, kept=None, clean=None, violations=[]))
         return out
 
-    def ours(self, T, ak=None, fire=None, extra=None, ret=None, measure=False):
-        """ak[s]: a_K's value (default T[s] > K); fire(j, s): trip j's phase fires (default j <= T[s])."""
+    def ours(self, T, ak=None, fire=None, extra=None, ret=None, measure=False, with_ak=True):
+        """ak[s]: a_K's value (default T[s] > K); fire(j, s): trip j's phase fires (default j <= T[s]);
+        with_ak False: no a_K rail is kept (a loop no sample caps, cq-tt2j)."""
         out = []
         for s in range(4):
             a_k = (T[s] > self.K) if ak is None else ak[s]
@@ -971,7 +980,7 @@ class AKRule(unittest.TestCase):
                 on = (j <= T[s]) if fire is None else fire(j, s)
                 rots.append(ph(20 + j, on, 0.5))
             rots.append(ry(1, 2.0))
-            kept = [keep(1, s, "i8"), keep(9, int(a_k), "i1", "garbage")]
+            kept = [keep(1, s, "i8"), keep(9, int(a_k), "i1", "garbage")][:2 if with_ak else 1]
             meas = []
             if measure:
                 kept[0] = keep(1, s, "i8", "measured")
@@ -1035,14 +1044,16 @@ class AKRule(unittest.TestCase):
         self.check(ours, self.c_side(self.CAP), False, "a_K of loop f:%7")
 
     def test_uncapped_compared_fully(self):
-        self.check(self.ours(self.LEQ), self.c_side(self.LEQ), True)
+        self.check(self.ours(self.LEQ, with_ak=False), self.c_side(self.LEQ), True)
+        # an a_K kept for a loop no sample caps: rule 14 keeps none when B <= K (cq-tt2j, the t3 finding)
+        self.check(self.ours(self.LEQ), self.c_side(self.LEQ), False, "a leak; cq-tt2j")
         # every clause still decides: the return, a trip's rotation, the post-loop rotation
-        self.check(self.ours(self.LEQ, ret=lambda s: 7), self.c_side(self.LEQ), False, "returns")
-        self.check(self.ours(self.LEQ, fire=lambda j, s: j <= min(self.LEQ[s], 2)), self.c_side(self.LEQ),
-                   False, "f:1")
+        self.check(self.ours(self.LEQ, ret=lambda s: 7, with_ak=False), self.c_side(self.LEQ), False, "returns")
+        self.check(self.ours(self.LEQ, fire=lambda j, s: j <= min(self.LEQ[s], 2), with_ak=False),
+                   self.c_side(self.LEQ), False, "f:1")
         c = self.c_side(self.LEQ)
         c[1] = dataclasses.replace(c[1], rotations=c[1].rotations[:-1])
-        self.check(self.ours(self.LEQ), c, False)
+        self.check(self.ours(self.LEQ, with_ak=False), c, False)
 
     def test_capped_ret_not_compared(self):
         # the C program stopped at the cap: its "ret" is absent (or anything); ours stands
