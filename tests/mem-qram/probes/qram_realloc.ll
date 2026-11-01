@@ -1,6 +1,5 @@
-; realloc of a heap QRAM (M5): mem-qram emits cqrt_qram_realloc_i8; its record is uncompute's, not built
-; yet (cq-vtfq). When it is, this probe becomes a positive one.
-; EXPECT-ERROR: uncompute: recordCore of qram_realloc
+; realloc of a heap QRAM (M5, CR 1.3): cqrt_qram_realloc_i8(a, 6) -> a'; its _unc(a', 4) (n_old) runs before
+; the pop of the store made through a (cq-vtfq).
 declare i32 @cq_theta_ui32(i32, double)
 declare i8 @cq_measure_ui8(i8)
 declare noalias ptr @malloc(i64) allockind("alloc,uninitialized") allocsize(0)
@@ -19,3 +18,6 @@ define i8 @rea(i32 %k0, double %tk, i8 %v) {
   %m = call i8 @cq_measure_ui8(i8 %r)
   ret i8 %m
 }
+; CHECK rea: %{{b}} = call i32 @cqrt_qram_realloc_i8(i32 %{{a}}, i32 6)
+; CHECK rea: call i32 @cqrt_qram_load_i8_hl(i32 %{{b}}, i32 1)
+; CHECK rea: call void @cqrt_qram_realloc_i8_unc(i32 %{{b}}, i32 4)
