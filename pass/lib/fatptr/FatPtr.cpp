@@ -43,10 +43,12 @@
 //    rule's other witnesses, wave-2 integration beads).
 #include "cq/FatPtr.h"
 
+#include <map>
 #include <optional>
 #include <string>
 
 #include "cq/Abi.h"
+#include "cq/Memory.h"
 #include "../mem/qram/QramInternal.h"
 #include "../mem/qrom/QromInternal.h"
 #include "FatPtrInternal.h"
@@ -128,6 +130,48 @@ bool isRoot(LoweringContext &ctx, const Value *p) {
   if (isa<GEPOperator>(p) || isa<BitCastOperator>(p) || isa<AddrSpaceCastOperator>(p))
     return false;
   return mem::isQramRoot(ctx, p);
+}
+
+// P1: a clone's triple pointer formal (rule 21, §1.4), bound at the clone's entry. Its fat pointer is
+// (tag, idx) of the caller; the formal is its single root (the clone sees one object).
+struct Bound {
+  Value *object = nullptr;      // the caller's bus (Qram) or handle cells (Slot)
+  Operand tag{nullptr, false};  // classical i32
+  Operand idx{nullptr, false};  // an i32 rail, or the classical i32 parameter
+  Value *idx64 = nullptr;       // a classical idx widened to i64 at the clone's entry (made on first need)
+  Value *cellCount = nullptr;   // i32, TripleCount only
+  ObjClass pointee = ObjClass::Classical;
+  uint64_t cell = 0;            // the clone's cell size in bytes
+  Type *cellTy = nullptr;
+  Value *zeroSeed = nullptr;    // Slot: the |0> rail a load beyond the cell count reads (190)
+};
+
+std::map<const Function *, DenseMap<const Value *, Bound>> &boundFormals() {
+  static std::map<const Function *, DenseMap<const Value *, Bound>> b;
+  return b;
+}
+
+Bound *boundOf(LoweringContext &ctx, const Value *p) {
+  if (!isa<Argument>(p))
+    return nullptr;
+  auto it = boundFormals().find(&ctx.out());
+  if (it == boundFormals().end())
+    return nullptr;
+  auto jt = it->second.find(p);
+  return jt == it->second.end() ? nullptr : &jt->second;
+}
+
+// A builder at the top of the clone's entry block (bindFormal runs before the walker makes it): a value
+// made there dominates every use in the clone.
+IRBuilder<> atEntry(LoweringContext &ctx) {
+  BasicBlock &E = ctx.out().getEntryBlock();
+  return IRBuilder<>(&E, E.getFirstInsertionPt());
+}
+
+Value *idx64Of(LoweringContext &ctx, Bound &b) {
+  if (!b.idx64)
+    b.idx64 = atEntry(ctx).CreateZExt(b.idx.v, Type::getInt64Ty(ctx.M.getContext()));
+  return b.idx64;
 }
 
 void addRoots(Fat &dst, ArrayRef<const Value *> src) {
@@ -498,6 +542,22 @@ Fat derive(LoweringContext &ctx, const Value *p, bool emit, bool eager) {
     return derive(ctx, bc->getOperand(0), emit);
   if (auto *ac = dyn_cast<AddrSpaceCastOperator>(p))
     return derive(ctx, ac->getPointerOperand(), emit);
+  if (Bound *b = boundOf(ctx, p)) {
+    // P1: the caller's (tag, idx), in cells of the clone's access type (a classical idx as an i64; a
+    // shape-only derivation keeps the i32 parameter, never emitted).
+    Fat f;
+    f.roots.push_back(p);
+    f.tag = b->tag;
+    f.idx = b->idx;
+    f.cell = b->cell;
+    if (b->idx.handle) {
+      f.idxBits = 32;
+      f.idxSext = false;
+    } else if (emit) {
+      f.idx = Operand{idx64Of(ctx, *b), false};
+    }
+    return f;
+  }
   if (isRoot(ctx, p))
     return deriveRoot(ctx, p, emit);
   if (auto *g = dyn_cast<GEPOperator>(p))
@@ -665,8 +725,8 @@ void checkQramRoots(LoweringContext &ctx, const Fat &f, const Instruction &I) {
 
 // Whether the fat pointer may name root (a classical tag names one root only).
 bool mayName(LoweringContext &ctx, const Fat &f, const Value *r) {
-  if (f.tag.handle)
-    return true;
+  if (f.tag.handle || boundOf(ctx, r))
+    return true;   // a bound formal's tag is the caller's numbering: the formal is the only root
   auto *k = dyn_cast<ConstantInt>(f.tag.v);
   if (!k)
     internalError("fatptr: a classical tag that is not a constant");
@@ -692,6 +752,38 @@ Value *guardOf(LoweringContext &ctx, const Fat &f, const Value *r, Value *flag) 
 }
 } // namespace
 
+// P1, rule 21 (190): a load through a slot triple formal at the classical cell j = idx + offset is the
+// handle of cell j when j < cellCount, else the clone's shared |0> seed: the cell index is checked against
+// the cell count and redirected to cell 0 beyond it (no host memory past the object is read, whatever trip
+// a cutoff runs), the handle merged with the seed by a classical select (U1).
+Value *boundSlotLoad(LoweringContext &ctx, Bound &b, const Fat &f, Type *ty, const LoadInst &ld) {
+  if (f.idx.handle)
+    unimplemented("fatptr: a load through a slot triple formal at a quantum cell index (rule 21 guarded slot "
+                  "select)",
+                  &ld);
+  if (f.cell != b.cell || ty != b.cellTy)
+    unimplemented("fatptr: a load through a slot triple formal at another cell size or type than its cells", &ld);
+  IRBuilder<> &B = ctx.B();
+  LLVMContext &C = ctx.M.getContext();
+  Value *j = f.idx.v;
+  Value *ok = B.CreateICmpULT(j, B.CreateZExt(b.cellCount, i64(ctx)));
+  Value *safe = B.CreateSelect(ok, j, ConstantInt::get(i64(ctx), 0));
+  Value *p = B.CreateInBoundsGEP(handleTy(C), b.object, safe);
+  LoadInst *h = B.CreateAlignedLoad(handleTy(C), p, Align(4));
+  ctx.unc().recordExternal(h, Role::UserRegister);   // the caller's rail in its cell
+  if (!b.zeroSeed) {
+    // The clone's shared |0> rail of the cell type, minted once at its entry (190).
+    IRBuilder<> EB = atEntry(ctx);
+    abi::CoreSpec spec{abi::Core::Alloc, railTypeOf(b.cellTy)};
+    CallInst *z = EB.CreateCall(abi::declare(ctx.M, spec), {Constant::getNullValue(b.cellTy)});
+    ctx.unc().recordSeed(z);
+    b.zeroSeed = z;
+  }
+  auto *v = cast<Instruction>(B.CreateSelect(ok, h, b.zeroSeed));
+  ctx.unc().recordMerge(v);
+  return v;
+}
+
 // Rule 21: a load through a fat pointer is one pure access per object of its provenance, executed
 // unguarded at idx (a QRAM load; a QROM of a classical object at a rail idx), merged by a select chain
 // on the flags tag == k (the first root innermost, the complement), like any multi-way merge (rule 9).
@@ -711,6 +803,12 @@ void lowerLoad(LoweringContext &ctx, LoadInst &ld) {
     internalError("fatptr: a fat pointer naming none of its roots", &ld);
   SmallVector<std::pair<Value *, Value *>, 4> hs;   // per root: the value (ptr: tag, idx)
   for (const Value *r : roots) {
+    if (Bound *b = boundOf(ctx, r); b && b->pointee == ObjClass::Slot) {
+      if (ptr)
+        unimplemented("fatptr: a pointer loaded through a slot triple formal (rule 21)", &ld);
+      hs.push_back({boundSlotLoad(ctx, *b, f, ty, ld), nullptr});
+      continue;
+    }
     if (mem::isQramRoot(ctx, r)) {
       if (f.cell && f.cell != mem::qramElemBytes(ctx, r, ld))
         unimplemented("fatptr: a fat pointer whose cell size is not its QRAM object's element size", &ld);
@@ -851,6 +949,16 @@ void lowerStore(LoweringContext &ctx, StoreInst &st) {
   for (const Value *r : f.roots) {
     if (!mayName(ctx, f, r))
       continue;
+    if (const Bound *b = boundOf(ctx, r)) {
+      // M2b: the store is the clone's copy-out, emitted after its body's uncompute. Its cell must still
+      // be addressable there: the formal's own idx rail, or a classical index.
+      if (f.idx.handle && f.idx.v != b->idx.v)
+        unimplemented("fatptr: a store through a QRAM triple formal at a computed quantum cell index (M2b: the "
+                      "index rail is uncomputed before the deferred store)",
+                      &st);
+      mem::deferFormalStore(ctx, r, f.idx, ty, v.v, flag, st);
+      continue;
+    }
     mem::qramStoreAt(ctx, r, f.idx, ty, v.v, guardOf(ctx, f, r, flag), st);
   }
 }
@@ -898,29 +1006,151 @@ void lowerIntToPtr(LoweringContext &, Instruction &I) {
   unimplemented("fatptr: inttoptr of a quantum integer (rule 21 provenance decoding)", &I);
 }
 
-// Rule 21 at a clone boundary (191): a pointer into ONE QRAM object crosses as (object, tag, idx): the
-// object's bus handle, its i32 tag (the root number; classical for a single object) and its i32 cell
-// index (a rail or a classical value, as storedFields). cellCount is null (a QRAM's extent is its bus).
-// Several objects (an object table) or slot/host provenance are unimplemented.
+// The cell size every lifted clone a pointer is passed to as a T4 triple accesses through its formal
+// must be the caller's cell size cellBytes (and, onto a QRAM, its cell type): the triple's idx and cell
+// count are in the caller's cells.
+void checkCalleeCells(LoweringContext &ctx, const Value *ptr, uint64_t cellBytes, Type *qramCellTy) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  for (const Use &u : ptr->uses()) {
+    auto *CB = dyn_cast<CallBase>(u.getUser());
+    if (!CB || !CB->isArgOperand(&u) || CB->getFunction() != ctx.S.F)
+      continue;
+    const Specialization *cs = ctx.T.calleeSpecialization(*CB, ctx.S);
+    const Function *G = CB->getCalledFunction();
+    if (!cs || cs->isEntry() || !G || cs->F != G || G->isDeclaration())
+      continue;
+    unsigned argNo = CB->getArgOperandNo(&u);
+    if (argNo >= G->arg_size() || ctx.T.pointerFormal(*cs, argNo).abi == PtrAbi::Raw)
+      continue;
+    Type *t = mem::formalCellType(*G->getArg(argNo));
+    if (DL.getTypeAllocSize(t).getFixedValue() != cellBytes || (qramCellTy && t != qramCellTy))
+      unimplemented("fatptr: a clone accessing a rule 21 triple formal at another cell type than the caller's "
+                    "object (a bit view, 63)",
+                    CB);
+  }
+}
+
+// Rule 21 at a clone boundary (CR §1.4; 190, 191). A pointer into ONE QRAM object crosses as (bus, tag,
+// idx): the object's bus handle, its i32 tag (the root number; classical for a single object) and its i32
+// cell index (a rail or a classical value, as storedFields); cellCount is null (a QRAM's extent is its
+// bus). A classical-tag, classical-idx pointer into ONE slot or host object (a local or global plus
+// classical GEPs) crosses as (base, tag, idx, cell count): the object's new-IR base (a slot's handle
+// cells, a host object's own address), its root number, its cell index and its cell count (mem-slots'
+// cells). Several objects (an object table), a quantum tag or idx into a slot or host object, and a
+// constant pointer into a QRAM are unimplemented.
 Triple passAcrossCall(LoweringContext &ctx, const Value *ptr) {
+  ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
+  bool classical = !isQ(ctx, ptr) && !ctx.T.isFatPointer(ptr, ctx.S);
+  if (objs.size() == 1 && ctx.T.classOf(objs.front()) != ObjClass::Qram) {
+    const Instruction *at = dyn_cast<Instruction>(ptr);
+    if (!at)
+      for (const User *u : ptr->users())
+        if (auto *I = dyn_cast<Instruction>(u); I && I->getFunction() == ctx.S.F) {
+          at = I;
+          break;
+        }
+    if (!at)
+      internalError("fatptr: passAcrossCall of a pointer this function does not use", ptr);
+    if (!classical)
+      unimplemented("fatptr: a quantum pointer into a slot or host object crossing a clone boundary (rule 21 "
+                    "object table or guarded cells)",
+                    ptr);
+    mem::HostTriple h = mem::hostTriple(ctx, ptr, *at);
+    checkCalleeCells(ctx, ptr, h.cellBytes, nullptr);
+    Operand base = ctx.operand(h.root);
+    if (base.handle)
+      internalError("fatptr: a slot or host object bound to a rail", h.root);
+    return Triple{base.v, ConstantInt::get(i32(ctx), rootNumber(ctx, h.root)), h.idx, h.cellCount};
+  }
   Fat f = derive(ctx, ptr, /*emit=*/false);
   if (f.roots.size() != 1 || !mem::isQramRoot(ctx, f.roots[0]))
-    unimplemented("fatptr: a pointer crossing a clone boundary that is not into one QRAM object (rule 21 object "
-                  "table, slot or host triple)",
+    unimplemented("fatptr: a pointer crossing a clone boundary that is not into one QRAM, slot or host object "
+                  "(rule 21 object table)",
+                  ptr);
+  if (boundOf(ctx, f.roots[0]))
+    unimplemented("fatptr: a triple formal passed on to another clone (its stores would be the outer clone's, "
+                  "rule 18)",
                   ptr);
   const Instruction *at = dyn_cast<Instruction>(ptr);
   if (!at)
     unimplemented("fatptr: a constant pointer into a QRAM crossing a clone boundary", ptr);
-  auto [tag, idx] = storedFields(ctx, ptr);
+  uint64_t E = mem::qramElemBytes(ctx, f.roots[0], *at);
+  if (f.cell && f.cell != E)
+    unimplemented("fatptr: a pointer into a QRAM crossing a clone boundary whose cell is not the object's element "
+                  "(a field or a bit view)",
+                  ptr);
   Value *bus = mem::qramBusOf(ctx, f.roots[0], *at);
+  checkCalleeCells(ctx, ptr, E, mem::qramCellType(ctx, f.roots[0], *at));
+  auto [tag, idx] = storedFields(ctx, ptr);
   return Triple{bus, tag.v, idx.v, nullptr};
 }
 
-} // namespace cq::fatptr
-
-namespace cq::fatptr {
-// P1 (cq-arch 2026-11-01): stub until fatptr builds it.
-void bindFormal(LoweringContext &, const llvm::Argument &formal, llvm::Value *, Operand, Operand, llvm::Value *) {
-  unimplemented("fatptr: bindFormal (P1: a clone's triple pointer formal, rule 21, 190, 191)", &formal);
+// P1 (cq-arch 2026-11-01, CR rule 21, §1.4; 190, 191). At a clone's entry, a T4 triple formal is bound
+// to the clone's (object, tag, idx[, cellCount]) parameters; lower() of the formal and of every pointer
+// derived from it is then the caller's fat pointer (tag, idx), in cells of the clone's access type.
+//  - Qram pointee: the object is the caller's bus. The formal is registered with mem-qram as a
+//    one-column QRAM over it (loads: QRAM loads at the derived idx; stores: M2b's deferred copy-out).
+//    The clone's uses of the formal are checked first (M2's contract, mem::calleeQramStoreCount).
+//  - Slot pointee (TripleCount): the object is the caller's handle cells, every cell the clone may
+//    reach holding a handle at the call (the formal's cell digits all 1). A load at classical cell j is
+//    checked against cellCount and reads the clone's shared |0> seed beyond it (boundSlotLoad); the seed
+//    is minted at the clone's entry on the first such load. The formal itself is left unbound: an access that does not go through fatptr (a
+//    mem-slots plain load, whose cut trips could read past the object) stops at the unbound formal.
+//  - A quantum tag (an object table across the call), a quantum idx into slot cells, a cell count onto a
+//    QRAM, and a host-object pointee are unimplemented.
+void bindFormal(LoweringContext &ctx, const Argument &formal, Value *object, Operand tag, Operand idx,
+                Value *cellCount) {
+  const TaintInfo &T = ctx.T;
+  const Specialization &S = ctx.S;
+  PtrFormal pf = T.pointerFormal(S, formal.getArgNo());
+  if (pf.abi == PtrAbi::Raw)
+    internalError("fatptr: bindFormal of a raw pointer formal", &formal);
+  if ((pf.abi == PtrAbi::TripleCount) != (cellCount != nullptr))
+    internalError("fatptr: bindFormal's cell count does not match the formal's T4 ABI", &formal);
+  if (tag.handle)
+    unimplemented("fatptr: a triple formal with a quantum tag (an object table across the call, rule 21)", &formal);
+  const DataLayout &DL = ctx.M.getDataLayout();
+  Bound b;
+  b.object = object;
+  b.tag = tag;
+  b.cellCount = cellCount;
+  b.pointee = pf.pointee;
+  if (!idx.v->getType()->isIntegerTy(32))
+    internalError("fatptr: a triple formal's idx that is not an i32", &formal);
+  b.idx = idx;
+  switch (pf.pointee) {
+  case ObjClass::Qram:
+    if (cellCount)
+      unimplemented("fatptr: a QRAM triple formal with a cell count", &formal);
+    (void)mem::calleeQramStoreCount(T, S);   // M2's contract over the clone's uses of the formal
+    b.cellTy = mem::formalCellType(formal);
+    mem::registerFormalQram(ctx, formal, object);
+    break;
+  case ObjClass::Slot: {
+    if (idx.handle)
+      unimplemented("fatptr: a slot triple formal at a quantum cell index (rule 21 guarded slot select)", &formal);
+    size_t d = 0;
+    for (const Argument &A : S.F->args()) {
+      if (&A == &formal)
+        break;
+      d += A.getType()->isPointerTy() ? T.pointerFormal(S, A.getArgNo()).digits : T.fieldMask(&A, S).size();
+    }
+    if (pf.digits < 2 || d + pf.digits > S.mask.size())
+      internalError("fatptr: a slot triple formal's digits past the clone's mask", &formal);
+    for (unsigned k = 2; k < pf.digits; ++k)
+      if (S.mask[d + k] != '1')
+        unimplemented("fatptr: a slot triple formal whose pointee cells do not all hold handles at the call (a "
+                      "classical cell read through the triple)",
+                      &formal);
+    b.cellTy = mem::formalCellType(formal);
+    break;
+  }
+  case ObjClass::Classical:
+    unimplemented("fatptr: a triple formal onto a host object (its loads beyond the cell count, rule 21)", &formal);
+  }
+  b.cell = DL.getTypeAllocSize(b.cellTy).getFixedValue();
+  if (!boundFormals()[&ctx.out()].try_emplace(&formal, b).second)
+    internalError("fatptr: a triple formal bound twice", &formal);
 }
+
 } // namespace cq::fatptr

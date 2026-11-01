@@ -67,14 +67,18 @@
 #include <utility>
 
 #include "cq/Abi.h"
+#include "cq/FatPtr.h"
 #include "cq/Predicate.h"
 #include "cq/Uncompute.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/ConstantFolding.h"
+#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
+#include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/ConstantRange.h"
@@ -740,6 +744,7 @@ struct QramObj {
 struct QramState {
   std::map<const Value *, QramObj> objs;
   DenseMap<const Value *, const Value *> siteOf;   // a realloc result -> its block's site
+  DenseSet<const Value *> formals;                  // Qram-pointee triple formals of a clone (P1)
 };
 
 std::map<const Function *, QramState> &qramStates() {
@@ -836,8 +841,27 @@ ObjectId soleQram(LoweringContext &ctx, const Value *ptr, const Instruction &I) 
   return objs.front();
 }
 
+// The call path of a QRAM pointer passed to a lifted clone (rule 21, §1.4; 191): a direct call of a
+// function with a body whose taint specialization takes argument operand u as a T4 triple onto a Qram
+// pointee. The clone reaches the bus through the triple (fatptr::bindFormal) and its stores are copied
+// out and recorded on the caller's bus (M2, M2b, U3). Anything else (a declared clone, rule 27; an
+// indirect call; a call whose site lowers through an argument map, C1) is an escape.
+bool crossesAsQramTriple(LoweringContext &ctx, const CallBase &CB, const Use &u) {
+  if (!CB.isArgOperand(&u) || CB.isByValArgument(CB.getArgOperandNo(&u)))
+    return false;
+  const Function *G = CB.getCalledFunction();
+  if (!G || G->isDeclaration() || G->isVarArg())
+    return false;
+  const Specialization *cs = ctx.T.calleeSpecialization(CB, ctx.S);
+  if (!cs || cs->isEntry() || cs->F != G)
+    return false;
+  PtrFormal pf = ctx.T.pointerFormal(*cs, CB.getArgOperandNo(&u));
+  return pf.abi != PtrAbi::Raw && pf.pointee == ObjClass::Qram;
+}
+
 // A QRAM object's pointer escapes when it reaches anything but loads, stores, address arithmetic, the
-// memory and lifetime intrinsics, a compare, free, or realloc (whose result is the same object, CR §1.3).
+// memory and lifetime intrinsics, a compare, free, realloc (whose result is the same object, CR §1.3),
+// or a lifted clone's triple formal (crossesAsQramTriple).
 bool qramEscapes(LoweringContext &ctx, const Value *root) {
   const DataLayout &DL = ctx.M.getDataLayout();
   SmallVector<const Value *, 8> work{root};
@@ -894,6 +918,8 @@ bool qramEscapes(LoweringContext &ctx, const Value *root) {
         if (auto *II = dyn_cast<IntrinsicInst>(CB))
           if (II->getIntrinsicID() == Intrinsic::lifetime_start || II->getIntrinsicID() == Intrinsic::lifetime_end)
             continue;
+        if (crossesAsQramTriple(ctx, *CB, u))
+          continue;
         return true;
       }
       return true;
@@ -1172,6 +1198,8 @@ QAccess qramAccess(LoweringContext &ctx, const Value *ptr, const Instruction &I)
   Addr a = decompose(ptr, ctx.M.getDataLayout());
   if (!a.ok)
     unimplemented("mem-qram: a QRAM access whose address is not an object plus GEP offsets (rule 21)", &I);
+  if (isFormalQram(ctx, a.root))
+    internalError("mem-qram: a QRAM access through a triple formal outside fatptr's derivation (P1)", &I);
   if (ctx.T.isFatPointer(a.root, ctx.S) || ctx.operand(a.root).handle)
     unimplemented("mem-qram: a QRAM access through a quantum base pointer (rule 21)", &I);
   return {&qramObj(ctx, a.root, I), a};
@@ -1480,6 +1508,13 @@ Value *qramBusOf(LoweringContext &ctx, const Value *root, const Instruction &at)
   return busOf(q, root, &q.cols[0], at);
 }
 
+Type *qramCellType(LoweringContext &ctx, const Value *root, const Instruction &at) {
+  QramObj &q = qramObj(ctx, root, at);
+  if (q.cols.size() != 1)
+    unimplemented("mem-qram: a QRAM of several field columns crossing a clone boundary (rules 21, 26)", &at);
+  return q.cols[0].cellTy;
+}
+
 // Rule 22, per object of a quantum source pointer (90): the length's upper bound in bytes on the paths
 // that select root r. A classical length: itself. A quantum length: with one root, its bound; else the
 // source and the length must be selects on one condition (the paths that select an arm's root are those
@@ -1651,6 +1686,8 @@ void lowerMemIntrinsic(LoweringContext &ctx, MemIntrinsic &MI) {
 // executed unguarded under a quantum predicate (rule 21's reading): its result is a value arm like any
 // template.
 void lowerQramLoad(LoweringContext &ctx, LoadInst &ld) {
+  if (Addr r = decompose(ld.getPointerOperand(), ctx.M.getDataLayout()); r.ok && isFormalQram(ctx, r.root))
+    return fatptr::lowerLoad(ctx, ld);   // through a triple formal: its idx plus the offset (P1)
   QAccess acc = qramAccess(ctx, ld.getPointerOperand(), ld);
   if (ld.getType()->isPointerTy()) {
     // A pointer cell (rule 21, 88): its tag and idx halves, the loaded fat pointer's two fields.
@@ -1677,6 +1714,8 @@ void lowerQramLoad(LoweringContext &ctx, LoadInst &ld) {
 // one. It is recorded on the bus: the bus's item pops its stores last-in-first-out (a global bus is an
 // output and is never popped). A classical value over several whole cells is one store per cell.
 void lowerQramStore(LoweringContext &ctx, StoreInst &st) {
+  if (Addr r = decompose(st.getPointerOperand(), ctx.M.getDataLayout()); r.ok && isFormalQram(ctx, r.root))
+    return fatptr::lowerStore(ctx, st);   // through a triple formal: the deferred copy-out (P1, M2b)
   Value *val = st.getValueOperand();
   QAccess acc = qramAccess(ctx, st.getPointerOperand(), st);
   Value *flag = ctx.currentFlag();
@@ -1891,15 +1930,355 @@ void reallocQram(LoweringContext &ctx, CallBase &CB) {
 } // namespace cq::mem
 
 namespace cq::mem {
-// M2, M2b, U3 (cq-arch 2026-11-01): stubs until mem-qram builds them.
-unsigned calleeQramStoreCount(const TaintInfo &, const Specialization &callee) {
-  unimplemented("mem-qram: calleeQramStoreCount (M2: a clone's stores through Qram-pointee formals, 191)", callee.F);
+// ==== triple formals (P1, M2, M2b, U3; CR rules 18, 21, §1.4; 190, 191) ==========================
+//
+// CONTRACT
+//  - A pointer formal taint passes as a rule 21 triple (T4 Triple/TripleCount) onto a QRAM object is,
+//    in its clone, a one-column QRAM over the caller's bus (registerFormalQram, from fatptr::bindFormal):
+//    loads are ordinary QRAM loads at the formal's idx plus the GEP offset (fatptr derives the cell).
+//  - M2. The clone's stores through such formals are the rule 18 copy-out (deferFormalStore): v is copied
+//    into a fresh rail (alloc 0, copy; Role::Result) where the store stands, and the store itself is
+//    emitted after the body's uncompute (emitCalleeQramStores), in program order, recording nothing; its
+//    rails are returned after the result. Each store must be straight-line in the clone (its block runs
+//    on every path: it post-dominates the entry, dominates every return, lies on no cycle), at a
+//    constant cell offset from the formal (the caller's record is the actual's idx plus that constant),
+//    with no load through any such formal after it (the store is deferred: a later load would not see
+//    it), and the clone has no control flag. Any other use of a pointer derived from the formal (a call,
+//    a memory intrinsic, free, realloc, a compare, a merge, the pointer stored as a value) is
+//    unimplemented.
+//  - U3. In the caller, after recordCall: Uncompute::noteCallBusRead(fwd, bus) once per bus of a
+//    Qram-pointee triple formal, then per stored rail in order recordCore(fwd, QramStore[_hl], {bus,
+//    idx + offset, v}, bus): the caller pops the clone's stores (LIFO with its own), then the twin
+//    recomputes from the cells as the clone's loads saw them (191). A global QRAM's bus is never popped,
+//    so a clone storing into one is unimplemented.
+
+namespace {
+
+std::map<const Function *, SmallVector<std::tuple<Value *, Column, QIndex, Value *>, 2>> &deferredStores() {
+  static std::map<const Function *, SmallVector<std::tuple<Value *, Column, QIndex, Value *>, 2>> d;
+  return d;
 }
-llvm::SmallVector<llvm::Value *, 2> emitCalleeQramStores(LoweringContext &) {
-  unimplemented("mem-qram: emitCalleeQramStores (M2b: a clone's deferred QRAM stores, 191)");
+
+// The loads and stores through pointers derived from formal A by GEPs and bitcasts (and, unless
+// strict, phis and selects). Any other use is unimplemented.
+struct FormalUses {
+  SmallVector<const LoadInst *, 4> loads;
+  SmallVector<const StoreInst *, 4> stores;
+};
+
+FormalUses formalUses(const Argument &A, bool strict) {
+  FormalUses out;
+  SmallVector<const Value *, 8> work{&A};
+  SmallPtrSet<const Value *, 16> seen{&A};
+  while (!work.empty()) {
+    const Value *v = work.pop_back_val();
+    for (const Use &u : v->uses()) {
+      const User *usr = u.getUser();
+      if (auto *ld = dyn_cast<LoadInst>(usr)) {
+        if (!ld->isSimple())
+          unimplemented("mem-qram: a volatile or atomic access through a rule 21 triple formal", ld);
+        out.loads.push_back(ld);
+        continue;
+      }
+      if (auto *st = dyn_cast<StoreInst>(usr); st && st->getPointerOperand() == v && st->getValueOperand() != v) {
+        if (!st->isSimple())
+          unimplemented("mem-qram: a volatile or atomic access through a rule 21 triple formal", st);
+        out.stores.push_back(st);
+        continue;
+      }
+      bool walk = isa<GEPOperator>(usr) || isa<BitCastOperator>(usr) ||
+                  (!strict && (isa<PHINode>(usr) || isa<SelectInst>(usr)));
+      if (walk) {
+        if (seen.insert(usr).second)
+          work.push_back(usr);
+        continue;
+      }
+      unimplemented("mem-qram: a use of a pointer derived from a rule 21 triple formal other than a load, a store "
+                    "or address arithmetic (a call, a memory intrinsic, free, realloc, a compare, a merge or an "
+                    "escape of the triple: P1, M2)",
+                    usr);
+    }
+  }
+  return out;
 }
-void noteCalleeQramStores(LoweringContext &, const llvm::CallBase &orig, const Specialization &, llvm::CallInst *,
-                          llvm::ArrayRef<llvm::Value *>) {
-  unimplemented("mem-qram: noteCalleeQramStores (U3: a clone call's QRAM stores on the caller's bus, 191)", &orig);
+
+Type *cellTypeOfUses(const Argument &A, bool strict) {
+  FormalUses u = formalUses(A, strict);
+  Type *t = nullptr;
+  auto see = [&](Type *x, const Instruction *I) {
+    if (!x->isIntegerTy() && !x->isFloatingPointTy())
+      unimplemented("mem-qram: a pointer, vector or aggregate access through a rule 21 triple formal (rules 21, 25, "
+                    "26)",
+                    I);
+    if (t && t != x)
+      unimplemented("mem-qram: a rule 21 triple formal accessed as two types (a bit view, 63)", I);
+    t = x;
+  };
+  for (const LoadInst *ld : u.loads)
+    see(ld->getType(), ld);
+  for (const StoreInst *st : u.stores)
+    see(st->getValueOperand()->getType(), st);
+  if (!t)
+    unimplemented("mem-qram: a rule 21 triple formal its clone never loads or stores through (its cell type is "
+                  "the caller's)",
+                  &A);
+  return t;
+}
+
+bool isQramTriple(const TaintInfo &T, const Specialization &S, const Argument &A) {
+  if (!A.getType()->isPointerTy())
+    return false;
+  PtrFormal pf = T.pointerFormal(S, A.getArgNo());
+  return pf.abi != PtrAbi::Raw && pf.pointee == ObjClass::Qram;
+}
+
+struct FormalStore {
+  unsigned argNo;
+  int64_t cell;   // cell offset from the formal's idx
+  Type *ty;
+  const StoreInst *st;
+};
+
+// M2's analysis: the clone's stores through Qram-pointee triple formals in program order, every shape
+// outside the contract unimplemented.
+SmallVector<FormalStore, 2> formalQramStores(const TaintInfo &T, const Specialization &S) {
+  Function &F = *S.F;
+  const DataLayout &DL = F.getParent()->getDataLayout();
+  SmallVector<FormalStore, 2> out;
+  SmallVector<const LoadInst *, 8> loads;
+  for (Argument &A : F.args()) {
+    if (!isQramTriple(T, S, A))
+      continue;
+    Type *cellTy = cellTypeOfUses(A, /*strict=*/true);
+    int64_t E = int64_t(DL.getTypeAllocSize(cellTy).getFixedValue());
+    FormalUses u = formalUses(A, /*strict=*/true);
+    loads.append(u.loads.begin(), u.loads.end());
+    for (const StoreInst *st : u.stores) {
+      Addr a = decompose(st->getPointerOperand(), DL);
+      if (!a.ok || a.root != &A || !a.terms.empty())
+        unimplemented("mem-qram: a store through a QRAM triple formal at a run-time offset (M2, U3: the caller "
+                      "records it at the actual's idx plus a constant)",
+                      st);
+      if (a.off % E)
+        unimplemented("mem-qram: a store through a QRAM triple formal inside a cell (a bit view, 63)", st);
+      out.push_back({A.getArgNo(), a.off / E, cellTy, st});
+    }
+  }
+  if (out.empty())
+    return out;
+  if (S.ctl)
+    unimplemented("mem-qram: a store through a QRAM triple formal in a clone with a control flag (a _controlled "
+                  "deferred store: M2)",
+                  out.front().st);
+  DominatorTree DT(F);
+  PostDominatorTree PDT(F);
+  LoopInfo LI(DT);
+  for (const FormalStore &fs : out) {
+    const BasicBlock *b = fs.st->getParent();
+    bool straight = PDT.dominates(b, &F.getEntryBlock()) && !LI.getLoopFor(b);
+    for (const BasicBlock &r : F)
+      if (isa<ReturnInst>(r.getTerminator()))
+        straight &= DT.dominates(b, &r);
+    if (!straight)
+      unimplemented("mem-qram: a store through a QRAM triple formal under a branch or in a loop of the clone (M2: "
+                    "the clone's stores are deferred in program order)",
+                    fs.st);
+  }
+  llvm::sort(out, [&](const FormalStore &x, const FormalStore &y) {
+    return x.st != y.st && DT.dominates(x.st, y.st);
+  });
+  for (const LoadInst *ld : loads)
+    for (const FormalStore &fs : out)
+      if (isPotentiallyReachable(fs.st, ld, nullptr, &DT, &LI))
+        unimplemented("mem-qram: a load through a QRAM triple formal after a store through one (M2b defers the "
+                      "store to the clone's end)",
+                      ld);
+  return out;
+}
+
+// The column a caller's bus belongs to (nullptr when the bus is no QRAM of this output function), and
+// whether its object is a global QRAM.
+const Column *columnOfBus(LoweringContext &ctx, Value *bus, bool &global) {
+  for (auto &[site, q] : qramStates()[&ctx.out()].objs)
+    for (auto &[root, hs] : q.buses)
+      for (unsigned k = 0; k < hs.size(); ++k)
+        if (hs[k] == bus) {
+          global = isa<GlobalVariable>(site);
+          return &q.cols[k];
+        }
+  return nullptr;
+}
+
+} // namespace
+
+Type *formalCellType(const Argument &A) { return cellTypeOfUses(A, /*strict=*/false); }
+
+HostTriple hostTriple(LoweringContext &ctx, const Value *ptr, const Instruction &at) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  Addr a = decompose(ptr, DL);
+  if (!a.ok || !(isa<AllocaInst>(a.root) || isa<GlobalVariable>(a.root)))
+    unimplemented("mem-qram: a slot or host pointer crossing a clone boundary whose object is not a local or "
+                  "global (rule 21 triple: its cell count)",
+                  &at);
+  Type *objTy;
+  uint64_t bytes;
+  if (auto *ai = dyn_cast<AllocaInst>(a.root)) {
+    auto sz = ai->getAllocationSize(DL);
+    if (!sz || sz->isScalable())
+      unimplemented("mem-qram: a variable-size local crossing a clone boundary as a rule 21 triple (its cell "
+                    "count)",
+                    &at);
+    objTy = ai->getAllocatedType();
+    bytes = sz->getFixedValue();
+  } else {
+    auto *gv = cast<GlobalVariable>(a.root);
+    objTy = gv->getValueType();
+    bytes = DL.getTypeAllocSize(objTy).getFixedValue();
+  }
+  uint64_t cb = scalarCellBytes(objTy, DL, &at);
+  // mem-slots' cells are the scalar element; an object accessed at another width has other cells
+  // (a bit view, or -O1's punned local, 90).
+  ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
+  if (objs.size() != 1)
+    internalError("mem-qram: hostTriple of a pointer with other than one object", &at);
+  for (const Access &x : accessesOf(ctx, *at.getFunction(), objs.front()))
+    if (DL.getTypeAllocSize(x.ty).getFixedValue() != cb)
+      unimplemented("mem-qram: an object crossing a clone boundary as a rule 21 triple that is accessed at another "
+                    "width than its cell (a bit view, 63)",
+                    x.I);
+  IRBuilder<> &B = ctx.B();
+  LLVMContext &C = ctx.M.getContext();
+  Type *i64 = Type::getInt64Ty(C), *i32 = Type::getInt32Ty(C);
+  if (a.off % int64_t(cb))
+    unimplemented("mem-qram: a rule 21 triple pointing inside a cell (a bit view, 63)", &at);
+  Value *j = ConstantInt::get(i64, a.off / int64_t(cb), true);
+  for (auto &[v, stride] : a.terms) {
+    if (stride % int64_t(cb))
+      unimplemented("mem-qram: a rule 21 triple whose GEP stride is not a whole number of cells", &at);
+    Operand x = ctx.operand(v);
+    if (x.handle)
+      internalError("mem-qram: a quantum term in a classical triple's address", &at);
+    Value *t = B.CreateSExtOrTrunc(x.v, i64);
+    if (stride / int64_t(cb) != 1)
+      t = B.CreateMul(t, ConstantInt::get(i64, stride / int64_t(cb), true));
+    j = B.CreateAdd(j, t);
+  }
+  if (bytes / cb > UINT32_MAX)
+    unimplemented("mem-qram: a rule 21 triple onto an object of more than 2^32 cells", &at);
+  return {a.root, B.CreateTrunc(j, i32), ConstantInt::get(i32, bytes / cb), cb};
+}
+
+void registerFormalQram(LoweringContext &ctx, const Argument &A, Value *bus) {
+  QramState &st = qramStates()[&ctx.out()];
+  QramObj q = layoutOf(cellTypeOfUses(A, /*strict=*/true), ctx.M.getDataLayout(), &A);
+  if (q.cols.size() != 1)
+    internalError("mem-qram: a triple formal's QRAM with other than one column", &A);
+  q.site = &A;
+  q.buses[&A] = {bus};
+  if (!st.objs.emplace(&A, std::move(q)).second)
+    internalError("mem-qram: a triple formal registered twice", &A);
+  st.formals.insert(&A);
+}
+
+bool isFormalQram(LoweringContext &ctx, const Value *root) {
+  return qramStates()[&ctx.out()].formals.count(root) != 0;
+}
+
+void deferFormalStore(LoweringContext &ctx, const Value *root, Operand idx, Type *ty, Value *v, Value *flag,
+                      const Instruction &at) {
+  if (flag)
+    unimplemented("mem-qram: a store through a QRAM triple formal under a quantum predicate (M2)", &at);
+  QramObj &q = qramObj(ctx, root, at);
+  const Column &c = firstColumn(ctx, q, ty, at);
+  CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, c.w}, {Constant::getNullValue(c.cellTy)});
+  RailId fid = ctx.unc().recordSeed(f);
+  abi::CoreSpec cp{abi::Core::Copy, c.w};
+  CallInst *cpy = ctx.emitCore(cp, {v, f});
+  ctx.unc().recordCore(cpy, cp, {Operand{v, true}, Operand{f, true}}, fid);
+  ctx.unc().setRole(fid, Role::Result);
+  deferredStores()[&ctx.out()].push_back({busOf(q, root, &c, at), c, fatIndex(ctx, idx), f});
+}
+
+unsigned calleeQramStoreCount(const TaintInfo &T, const Specialization &callee) {
+  return unsigned(formalQramStores(T, callee).size());
+}
+
+SmallVector<Value *, 2> emitCalleeQramStores(LoweringContext &ctx) {
+  SmallVector<Value *, 2> out;
+  auto it = deferredStores().find(&ctx.out());
+  if (it == deferredStores().end())
+    return out;
+  for (auto &[bus, col, idx, copy] : it->second) {
+    ctx.emitCore(abi::CoreSpec{abi::Core::QramStore, col.w, false, !idx.quantum}, {bus, idx.v, copy});
+    out.push_back(copy);
+  }
+  deferredStores().erase(it);
+  return out;
+}
+
+void noteCalleeQramStores(LoweringContext &ctx, const CallBase &orig, const Specialization &callee, CallInst *fwd,
+                          ArrayRef<Value *> storedRails) {
+  const TaintInfo &T = ctx.T;
+  SmallVector<FormalStore, 2> stores = formalQramStores(T, callee);
+  if (stores.size() != storedRails.size())
+    internalError("mem-qram: noteCalleeQramStores with another rail count than the clone's stores", &orig);
+  // The forward's arguments (calls::formalLayout): [ctl flag], per formal its scalar leaves, a raw
+  // pointer as one, a triple as (object, tag, idx[, cell count]).
+  std::map<unsigned, std::pair<Value *, Operand>> triple;   // argNo -> (bus, idx)
+  SmallVector<Value *, 2> buses;
+  unsigned p = callee.ctl ? 1 : 0;
+  size_t d = 0;
+  for (Argument &A : callee.F->args()) {
+    if (!A.getType()->isPointerTy()) {
+      size_t n = T.fieldMask(&A, callee).size();
+      p += unsigned(n);
+      d += n;
+      continue;
+    }
+    PtrFormal pf = T.pointerFormal(callee, A.getArgNo());
+    unsigned n = pf.abi == PtrAbi::Raw ? 1 : pf.abi == PtrAbi::Triple ? 3 : 4;
+    if (pf.abi != PtrAbi::Raw && pf.pointee == ObjClass::Qram) {
+      if (p + 3 > fwd->arg_size() || d + 2 > callee.mask.size())
+        internalError("mem-qram: a clone call with fewer arguments than its triple formals", fwd);
+      Value *bus = fwd->getArgOperand(p);
+      triple[A.getArgNo()] = {bus, Operand{fwd->getArgOperand(p + 2), callee.mask[d + 1] == '1'}};
+      if (!llvm::is_contained(buses, bus))
+        buses.push_back(bus);
+    }
+    p += n;
+    d += pf.digits;
+  }
+  if (p != fwd->arg_size())
+    internalError("mem-qram: a clone call whose arguments do not match its formals' layout", fwd);
+  for (Value *bus : buses) {
+    bool global = false;
+    if (!columnOfBus(ctx, bus, global))
+      internalError("mem-qram: a clone call's QRAM triple whose bus is no QRAM of this function", fwd);
+    if (global && !stores.empty())
+      unimplemented("mem-qram: a clone storing into a global QRAM through a triple formal (a global bus is never "
+                    "popped: the twin would read the stored cells)",
+                    &orig);
+    ctx.unc().noteCallBusRead(fwd, ctx.unc().idOf(bus));
+  }
+  IRBuilder<> &B = ctx.B();
+  for (size_t k = 0; k < stores.size(); ++k) {
+    auto [bus, idx] = triple.at(stores[k].argNo);
+    if (stores[k].cell) {
+      if (idx.handle)
+        unimplemented("mem-qram: a clone's store through a QRAM triple formal with a quantum idx at a cell offset "
+                      "(U3: the caller's index would be a template)",
+                      stores[k].st);
+      idx = Operand{B.CreateAdd(idx.v, ConstantInt::get(idx.v->getType(), stores[k].cell, true)), false};
+    }
+    bool global = false;
+    const Column *col = columnOfBus(ctx, bus, global);
+    RailType w = railTypeOf(stores[k].ty);
+    if (!sameCellType(ctx.M.getDataLayout(), stores[k].ty, *col))
+      unimplemented("mem-qram: a clone storing through a QRAM triple formal at another type than the caller's "
+                    "cells (a bit view, 63)",
+                    stores[k].st);
+    abi::CoreSpec spec{abi::Core::QramStore, w, false, !idx.handle};
+    ctx.unc().recordCore(fwd, spec, {Operand{bus, true}, idx, Operand{storedRails[k], true}}, ctx.unc().idOf(bus));
+  }
 }
 } // namespace cq::mem
