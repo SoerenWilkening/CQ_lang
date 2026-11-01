@@ -153,6 +153,9 @@ struct SpecState {
   std::vector<llvm::Type *> formalTy;
   std::vector<std::string> cells; // per formal: the pointee-cell digits at the call (pointer formals)
   std::vector<PtrInfo> formalPtr; // pointer formals: union of the callers' actuals
+  // T4: per formal, how a pointer formal crosses (buildMask); mixedPointee: objects of several classes.
+  std::vector<cq::PtrFormal> ptrFormal;
+  std::vector<bool> mixedPointee;
   std::string key;
   unsigned depthCut = 0;          // cutoff min(K, B) of a quantum-depth recursion, 0 = none
   std::optional<uint64_t> depthB; // B of the outermost call (rule 14)

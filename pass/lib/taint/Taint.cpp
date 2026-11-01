@@ -339,6 +339,8 @@ private:
   void finish();
   std::string buildMask(SpecState &S);
   bool calleeDerivesFat(SpecState &S, unsigned argNo);
+  bool calleeLoadsThrough(SpecState &S, unsigned argNo);
+  bool accessInQuantumExitLoop(SpecState &S, unsigned argNo);
 };
 
 FnInfo &Analyzer::fn(const Function *F) {
@@ -1913,6 +1915,64 @@ accessedCells(Function *G, unsigned argNo, const DataLayout &DL) {
 //   S<d...>   sret/byval: one digit per scalar field of the attribute type
 //   O<d...>;  per object in provenance (site order), one digit per accessed cell (two for a cell of
 //             pointer kind); "Q" for a QRAM object (no digits); "R<d>" for a runtime-length access.
+// T4 (190): the formal is walked at a run-time offset (a pointer phi, a GEP by a non-constant index) and
+// every access through it and its derived pointers is a load or store of one size: that size. A store of
+// the pointer itself, a call or any other use: nullopt (not a walk this record describes).
+static std::optional<uint64_t> walkAccessSize(Function *G, unsigned argNo, const DataLayout &DL) {
+  if (G->isDeclaration() || argNo >= G->arg_size())
+    return std::nullopt;
+  SmallVector<std::pair<const Value *, bool>, 8> work{{G->getArg(argNo), false}};
+  SmallPtrSet<const Value *, 16> seen;
+  std::optional<uint64_t> size;
+  bool varying = false;
+  auto access = [&](uint64_t s, bool var) {
+    varying = varying || var;
+    if (size && *size != s)
+      return false;
+    size = s;
+    return true;
+  };
+  while (!work.empty()) {
+    auto [V, var] = work.pop_back_val();
+    if (!seen.insert(V).second)
+      continue;
+    for (const User *U : V->users()) {
+      if (auto *GEP = dyn_cast<GEPOperator>(U)) {
+        work.push_back({GEP, var || !GEP->hasAllConstantIndices()});
+      } else if (isa<PHINode>(U) || isa<SelectInst>(U)) {
+        work.push_back({U, true});
+      } else if (auto *LI = dyn_cast<LoadInst>(U)) {
+        if (!access(DL.getTypeStoreSize(LI->getType()), var))
+          return std::nullopt;
+      } else if (auto *SI = dyn_cast<StoreInst>(U)) {
+        if (SI->getPointerOperand() != V || !access(DL.getTypeStoreSize(SI->getValueOperand()->getType()), var))
+          return std::nullopt;
+      } else if (isa<ICmpInst>(U) || isa<ReturnInst>(U)) {
+        continue;
+      } else if (auto *II = dyn_cast<IntrinsicInst>(U); II && II->isLifetimeStartOrEnd()) {
+        continue;
+      } else {
+        return std::nullopt;
+      }
+    }
+  }
+  if (!varying || !size)
+    return std::nullopt;
+  return size;
+}
+
+// The byte size of a site's object when it is a fixed-size local or global.
+static std::optional<uint64_t> fixedObjectBytes(const Site &site, const DataLayout &DL) {
+  if (auto *AI = dyn_cast<AllocaInst>(site.v)) {
+    if (auto s = AI->getAllocationSize(DL); s && !s->isScalable())
+      return s->getFixedValue();
+    return std::nullopt;
+  }
+  if (auto *GV = dyn_cast<GlobalVariable>(site.v))
+    return DL.getTypeAllocSize(GV->getValueType()).getFixedValue();
+  return std::nullopt;
+}
+
 std::string Analyzer::cellDigits(CallBase &CB, Function *G, unsigned argNo, const Value *actual) {
   PtrInfo p = P(actual);
   auto ex = p.exact();
@@ -1967,6 +2027,23 @@ std::string Analyzer::cellDigits(CallBase &CB, Function *G, unsigned argNo, cons
       if (O.qram) {
         out += "Q;";
         continue;
+      }
+      if (!cells && G) {
+        // T4 (190): a walk at a run-time offset into a fixed-size object: one digit per cell from the
+        // pointer handed over to the object's end, at the walk's access size (the triple with its cell
+        // count, rule 21).
+        auto ws = walkAccessSize(G, argNo, *st.DL);
+        auto bytes = fixedObjectBytes(st.sites[s], *st.DL);
+        if (ws && *ws && bytes && ex && *ex >= 0 && O.column < 0 && uint64_t(*ex) <= *bytes &&
+            (*bytes - uint64_t(*ex)) % *ws == 0) {
+          out += "W";
+          for (uint64_t at = uint64_t(*ex); at < *bytes; at += *ws) {
+            bool d = O.cellHandle(int64_t(at), *ws) && writtenBefore(O, int64_t(at), *ws, CB);
+            out += d ? '1' : '0';
+          }
+          out += ";";
+          continue;
+        }
       }
       if (!cells) {
         bool d = O.mayHoldHandle() && writtenBefore(O, std::nullopt, 0, CB);
@@ -2973,6 +3050,51 @@ void Analyzer::run() {
   finish();
 }
 
+// T4: some load or store through formal argNo (or a pointer derived from it) lies in a loop of S whose
+// exit is quantum (rule 14 cutoff).
+bool Analyzer::accessInQuantumExitLoop(SpecState &S, unsigned argNo) {
+  if (S.declared || argNo >= S.F->arg_size() || S.exitQ.empty())
+    return false;
+  FnInfo &fi = fn(S.F);
+  SmallVector<const Value *, 8> work{S.F->getArg(argNo)};
+  SmallPtrSet<const Value *, 16> seen;
+  while (!work.empty()) {
+    const Value *V = work.pop_back_val();
+    if (!seen.insert(V).second)
+      continue;
+    for (const User *U : V->users()) {
+      if (isa<LoadInst>(U) || isa<StoreInst>(U)) {
+        for (const Loop *Lp = fi.LI->getLoopFor(cast<Instruction>(U)->getParent()); Lp; Lp = Lp->getParentLoop())
+          if (S.exitQ.count(Lp))
+            return true;
+      } else if (isa<GetElementPtrInst>(U) || isa<PHINode>(U) || isa<SelectInst>(U) || isa<BitCastInst>(U)) {
+        work.push_back(U);
+      }
+    }
+  }
+  return false;
+}
+
+// T4: the callee loads through formal argNo or a pointer derived from it.
+bool Analyzer::calleeLoadsThrough(SpecState &S, unsigned argNo) {
+  if (S.declared || argNo >= S.F->arg_size())
+    return false;
+  SmallVector<const Value *, 8> work{S.F->getArg(argNo)};
+  SmallPtrSet<const Value *, 16> seen;
+  while (!work.empty()) {
+    const Value *V = work.pop_back_val();
+    if (!seen.insert(V).second)
+      continue;
+    for (const User *U : V->users()) {
+      if (auto *LI = dyn_cast<LoadInst>(U); LI && LI->getPointerOperand() == V)
+        return true;
+      if (isa<GetElementPtrInst>(U) || isa<PHINode>(U) || isa<SelectInst>(U) || isa<BitCastInst>(U))
+        work.push_back(U);
+    }
+  }
+  return false;
+}
+
 bool Analyzer::calleeDerivesFat(SpecState &S, unsigned argNo) {
   if (S.declared || argNo >= S.F->arg_size())
     return false;
@@ -3060,33 +3182,71 @@ std::string Analyzer::buildMask(SpecState &S) {
             ptrHandles = true;
         }
       }
-      bool triple = S.declared || tag || idx || qramObj || multi || ptrHandles ||
+      // A walk record (190) makes a triple only when the walk runs in a quantum-exit loop of the clone:
+      // its cut trips execute the accesses whatever the program does, so they need the cell count
+      // (rule 21: 'the body stays safe for any cutoff'). A walk the program itself bounds (52's
+      // classical loop) stays a raw pointer.
+      bool walk = false;
+      for (const std::string &o : objs)
+        walk = walk || (!o.empty() && o[0] == 'W');
+      walk = walk && accessInQuantumExitLoop(S, i);
+      bool triple = S.declared || tag || idx || qramObj || multi || ptrHandles || walk ||
                     calleeDerivesFat(S, i);
+      // T4: the pointee's class over the formal's objects.
+      bool anyQ = false, anyS = false, anyC = false;
+      if (i < S.formalPtr.size())
+        for (ObjectId o : objectsOf(S.formalPtr[i])) {
+          const Object &O = st.objects[o];
+          if (O.qram)
+            anyQ = true;
+          else if (O.mayHoldHandle())
+            anyS = true;
+          else
+            anyC = true;
+        }
+      if (S.ptrFormal.size() < S.formal.size()) {
+        S.ptrFormal.resize(S.formal.size(), cq::PtrFormal{cq::PtrAbi::Raw, cq::ObjClass::Classical, 0});
+        S.mixedPointee.resize(S.formal.size(), false);
+      }
+      S.mixedPointee[i] = anyQ && (anyS || anyC);
+      cq::ObjClass pointee = anyQ ? cq::ObjClass::Qram : anyS ? cq::ObjClass::Slot : cq::ObjClass::Classical;
+      size_t before = m.size();
+      auto noteFormal = [&](cq::PtrAbi abi) {
+        S.ptrFormal[i] = cq::PtrFormal{abi, pointee, unsigned(m.size() - before)};
+      };
       if (!triple) {
         // A slot pointer: one digit per field of an sret/byval record, else one per pointee cell
         // the callee accesses (106), else one for a runtime-length register (117).
         if (hasS)
           m += sret;
-        else if (objs.size() == 1 && !objs[0].empty() && objs[0][0] != 'R' && objs[0] != "Q")
+        else if (objs.size() == 1 && !objs[0].empty() && objs[0][0] != 'R' && objs[0][0] != 'W' && objs[0] != "Q")
           m += objs[0];
         else
           m += anyD;
+        noteFormal(cq::PtrAbi::Raw);
         continue;
       }
       m += tag ? '1' : '0';
       m += idx ? '1' : '0';
+      // Rule 21: the object's cell count follows the triple when the callee loads through it from a
+      // slot or host object (a QRAM reads 0 out of range by §2); rule 27 always passes it.
+      bool count = S.declared || (pointee != cq::ObjClass::Qram && calleeLoadsThrough(S, i));
       if (S.declared) {
         m += anyD;
+        noteFormal(cq::PtrAbi::TripleCount);
         continue;
       }
       for (const std::string &o : objs) {
         if (o == "Q")
           continue;
-        if (!o.empty() && o[0] == 'R')
+        if (!o.empty() && o[0] == 'W' && !walk)
+          m += anyD;
+        else if (!o.empty() && (o[0] == 'R' || o[0] == 'W'))
           m += o.substr(1);
         else
           m += o;
       }
+      noteFormal(count ? cq::PtrAbi::TripleCount : cq::PtrAbi::Triple);
       continue;
     }
     if (auto *IT = dyn_cast<IntegerType>(T)) {
@@ -3983,7 +4143,17 @@ TaintInfo computeTaint(llvm::Module &M, const TaintOptions &opts) {
 
 namespace cq {
 // T4 (cq-arch 2026-11-01): stub until taint builds it.
-PtrFormal TaintInfo::pointerFormal(const Specialization &callee, unsigned) const {
-  unimplemented("taint: pointerFormal (T4: how a clone's pointer formal crosses the call, 190, 191)", callee.F);
+PtrFormal TaintInfo::pointerFormal(const Specialization &callee, unsigned argNo) const {
+  const auto &I = needImpl(impl);
+  auto *SS = stateOf(I, callee);
+  if (argNo >= SS->formalTy.size() || !SS->formalTy[argNo]->isPointerTy())
+    internalError("taint: pointerFormal of a formal that is not a pointer", callee.F);
+  if (argNo >= SS->ptrFormal.size())
+    internalError("taint: pointerFormal before the clone's mask was built", callee.F);
+  if (SS->mixedPointee[argNo])
+    unimplemented("taint: a pointer formal whose objects are a QRAM and a slot or host object (T4)",
+                  argNo < callee.F->arg_size() ? static_cast<const llvm::Value *>(callee.F->getArg(argNo))
+                                               : callee.F);
+  return SS->ptrFormal[argNo];
 }
 } // namespace cq

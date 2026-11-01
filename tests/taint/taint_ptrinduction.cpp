@@ -10,6 +10,7 @@
 
 #include "llvm/AsmParser/Parser.h"
 #include "llvm/IR/InstIterator.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/SourceMgr.h"
@@ -115,6 +116,58 @@ done:
   ret i32 %m
 }
 
+; T4: a callee walking its pointer formal in a quantum-exit loop (190's memcmp) gets the triple and cell
+; count, one digit per cell of the 3-cell slot array; one walking it in a classically bounded loop (52)
+; keeps the raw pointer.
+define internal i8 @qwalk(ptr %p, i64 %n) noinline {
+entry:
+  br label %loop
+loop:
+  %q = phi ptr [ %q1, %loop ], [ %p, %entry ]
+  %k = phi i64 [ %k1, %loop ], [ %n, %entry ]
+  %v = load i8, ptr %q, align 1
+  %q1 = getelementptr inbounds i8, ptr %q, i64 1
+  %k1 = add i64 %k, -1
+  %z = icmp eq i64 %k1, 0
+  br i1 %z, label %done, label %loop
+done:
+  ret i8 %v
+}
+define internal i8 @cwalk(ptr %p, i64 %n, i8 %x) noinline {
+entry:
+  br label %loop
+loop:
+  %q = phi ptr [ %q1, %loop ], [ %p, %entry ]
+  %i = phi i64 [ %i1, %loop ], [ 0, %entry ]
+  %s = phi i8 [ %s1, %loop ], [ %x, %entry ]
+  %v = load i8, ptr %q, align 1
+  %s1 = add i8 %s, %v
+  %q1 = getelementptr inbounds i8, ptr %q, i64 1
+  %i1 = add i64 %i, 1
+  %z = icmp eq i64 %i1, %n
+  br i1 %z, label %done, label %loop
+done:
+  ret i8 %s1
+}
+define i32 @walks(i32 %x0, double %tx, i8 %u0, double %tu, i64 %m) {
+entry:
+  %a = alloca [3 x i8], align 1
+  %x = tail call i32 @cq_theta_ui32(i32 %x0, double %tx)
+  %u = tail call i8 @cq_theta_ui8(i8 %u0, double %tu)
+  store i8 %u, ptr %a, align 1
+  %a1 = getelementptr inbounds i8, ptr %a, i64 1
+  store i8 %u, ptr %a1, align 1
+  %a2 = getelementptr inbounds i8, ptr %a, i64 2
+  store i8 %u, ptr %a2, align 1
+  %n3 = and i32 %x, 3
+  %n = zext i32 %n3 to i64
+  %r1 = call i8 @qwalk(ptr %a, i64 %n)
+  %r2 = call i8 @cwalk(ptr %a, i64 %m, i8 %r1)
+  %w = zext i8 %r2 to i32
+  %mm = tail call i32 @cq_measure_si32(i32 %w)
+  ret i32 %mm
+}
+
 declare i32 @cq_theta_ui32(i32, double)
 declare i32 @cq_theta_si32(i32, double)
 declare i8 @cq_theta_ui8(i8, double)
@@ -182,6 +235,24 @@ int main() {
   Function &N = *M->getFunction("count");
   expectQ(T, N, {{"p", false}, {"n", true}, {"n1", true}});
   expectClass(T, N, "a", cq::ObjClass::Slot);
+
+  Function &W = *M->getFunction("walks");
+  if (const cq::Specialization *S = entryOf(T, &W)) {
+    const cq::Specialization *Q = T.calleeSpecialization(*cast<CallBase>(named(W, "r1")), *S);
+    const cq::Specialization *Cw = T.calleeSpecialization(*cast<CallBase>(named(W, "r2")), *S);
+    CHECK(Q && Q->mask == "001111", "@qwalk mask " << (Q ? Q->mask : "none") << ", want 001111");
+    CHECK(Cw && Cw->mask == "101", "@cwalk mask " << (Cw ? Cw->mask : "none") << ", want 101");
+    if (Q) {
+      cq::PtrFormal f = T.pointerFormal(*Q, 0);
+      CHECK(f.abi == cq::PtrAbi::TripleCount && f.pointee == cq::ObjClass::Slot && f.digits == 5,
+            "@qwalk formal 0: abi " << int(f.abi) << " pointee " << int(f.pointee) << " digits " << f.digits);
+    }
+    if (Cw) {
+      cq::PtrFormal f = T.pointerFormal(*Cw, 0);
+      CHECK(f.abi == cq::PtrAbi::Raw && f.pointee == cq::ObjClass::Slot && f.digits == 1,
+            "@cwalk formal 0: abi " << int(f.abi) << " pointee " << int(f.pointee) << " digits " << f.digits);
+    }
+  }
 
   std::printf("taint_ptrinduction: %d/%d checks pass\n", checks - failures, checks);
   return failures ? 1 : 0;
