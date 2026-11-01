@@ -58,9 +58,12 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Dominators.h"
+#include "llvm/IR/GetElementPtrTypeIterator.h"
+#include "llvm/IR/Operator.h"
 #include "llvm/IR/ValueHandle.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -160,22 +163,372 @@ void recordXorc(LoweringContext &ctx, Value *flag, Register &R, Value *lit) {
                        ctx.unc().idOf(R.rail));
 }
 
+// The flag read into a fresh i1 rail (alloc 0, xor_i1): it read the register before the rotation
+// that follows, so it stays allocated (A4); kept explicitly, since the register it read may be named
+// by another handle value (a cell load) than the one the rotation targets.
+Value *copyFlag(LoweringContext &ctx, Value *flag) {
+  abi::CoreSpec a{abi::Core::Alloc, RailType{Kind::Int, 1}};
+  CallInst *f = ctx.emitCore(a, {ConstantInt::getFalse(ctx.M.getContext())});
+  RailId fid = ctx.unc().recordSeed(f);
+  abi::CoreSpec x{abi::Core::XorI1, RailType{Kind::Int, 1}};
+  CallInst *c = ctx.emitCore(x, {flag, f});
+  ctx.unc().recordCore(c, x, {Operand{flag, true}, Operand{f, true}}, fid);
+  ctx.unc().setRole(fid, Role::KeptEntangled);
+  return f;
+}
+
+// cq-x80e. The handle values a handle may be at run time, through merges (phi, select): the leaves.
+void handleLeaves(Value *v, SmallVectorImpl<Value *> &out, SmallPtrSetImpl<Value *> &seen) {
+  if (!seen.insert(v).second)
+    return;
+  if (auto *P = dyn_cast<PHINode>(v)) {
+    for (Value *u : P->incoming_values())
+      handleLeaves(u, out, seen);
+    return;
+  }
+  if (auto *S = dyn_cast<SelectInst>(v)) {
+    handleLeaves(S->getTrueValue(), out, seen);
+    handleLeaves(S->getFalseValue(), out, seen);
+    return;
+  }
+  out.push_back(v);
+}
+
+// A rail made by a gate call of this function (alloc, a core or template result) whose handle
+// value, or a merge of it, never leaves the gate calls: no store, no clone call, no return. No
+// other handle value (a cell load, a formal) can name it at run time.
+bool confined(Value *h) {
+  if (!isa<CallInst>(h))
+    return false;
+  SmallVector<Value *, 8> work{h};
+  SmallPtrSet<Value *, 8> seen;
+  while (!work.empty()) {
+    Value *v = work.pop_back_val();
+    if (!seen.insert(v).second)
+      continue;
+    for (User *U : v->users()) {
+      if (isa<PHINode>(U) || isa<SelectInst>(U)) {
+        work.push_back(U);
+        continue;
+      }
+      auto *CI = dyn_cast<CallInst>(U);
+      const Function *G = CI ? CI->getCalledFunction() : nullptr;
+      if (G && G->getName().starts_with("cqrt_") && !G->getName().starts_with("cqrt_qram") &&
+          !G->getName().starts_with("cqrt_push") && !G->getName().starts_with("cqrt_tape"))
+        continue;
+      if (G && G->getName().starts_with("cq_template_"))
+        continue;
+      return false;
+    }
+  }
+  return true;
+}
+
+// cq-x80e. b - a as a constant, when the two integers differ by one on every run: equal values,
+// constants, an add of a constant on either side, and two phis of one block whose incomings differ
+// by that constant on every edge (two induction variables of one step, 59's i and i + 1; the pair is
+// assumed at the constant while its incomings are checked, an induction over the loop's trips).
+using PairDiff = SmallVector<std::tuple<const Value *, const Value *, int64_t>, 4>;
+std::optional<int64_t> constDiff(const Value *a, const Value *b, PairDiff &assumed, unsigned depth = 0) {
+  if (a == b)
+    return 0;
+  if (depth > 8 || a->getType() != b->getType() || !a->getType()->isIntegerTy() ||
+      a->getType()->getIntegerBitWidth() > 64)
+    return std::nullopt;
+  auto *ca = dyn_cast<ConstantInt>(a), *cb = dyn_cast<ConstantInt>(b);
+  if (ca && cb)
+    return cb->getSExtValue() - ca->getSExtValue();
+  for (auto &[x, y, d] : assumed)
+    if (x == a && y == b)
+      return d;
+  auto addC = [](const Value *v, const Value *&x, int64_t &c) {
+    auto *BO = dyn_cast<BinaryOperator>(v);
+    if (!BO || BO->getOpcode() != Instruction::Add)
+      return false;
+    auto *k = dyn_cast<ConstantInt>(BO->getOperand(1));
+    if (!k || k->getBitWidth() > 64)
+      return false;
+    x = BO->getOperand(0);
+    c = k->getSExtValue();
+    return true;
+  };
+  const Value *x;
+  int64_t c;
+  if (addC(a, x, c))
+    if (auto d = constDiff(x, b, assumed, depth + 1))
+      return *d - c;
+  if (addC(b, x, c))
+    if (auto d = constDiff(a, x, assumed, depth + 1))
+      return *d + c;
+  auto *pa = dyn_cast<PHINode>(a), *pb = dyn_cast<PHINode>(b);
+  if (pa && pb && pa->getParent() == pb->getParent()) {
+    // The constant from an edge that does not need the assumption, then every edge under it.
+    std::optional<int64_t> d;
+    for (unsigned i = 0; i < pa->getNumIncomingValues() && !d; ++i) {
+      PairDiff none;
+      d = constDiff(pa->getIncomingValue(i), pb->getIncomingValueForBlock(pa->getIncomingBlock(i)), none,
+                    depth + 1);
+    }
+    if (!d)
+      return std::nullopt;
+    assumed.push_back({a, b, *d});
+    bool ok = true;
+    for (unsigned i = 0; i < pa->getNumIncomingValues() && ok; ++i) {
+      std::optional<int64_t> e = constDiff(pa->getIncomingValue(i),
+                                           pb->getIncomingValueForBlock(pa->getIncomingBlock(i)), assumed, depth + 1);
+      ok = e && *e == *d;
+    }
+    assumed.pop_back();
+    if (ok)
+      return d;
+  }
+  return std::nullopt;
+}
+
+// cq-x80e. An address or a 64-bit index as base + c + sum(k * leaf), modulo 2^64 (the GEP and
+// add/sub/mul/shl arithmetic is exact modulo 2^64, so a nonzero constant difference of two forms is
+// two different addresses on every run). Any other value is a leaf.
+struct Lin {
+  const Value *base = nullptr;
+  uint64_t c = 0;
+  SmallVector<std::pair<const Value *, uint64_t>, 4> terms;
+  void add(const Value *v, uint64_t k) {
+    for (auto &[x, kx] : terms)
+      if (x == v) {
+        kx += k;
+        return;
+      }
+    terms.push_back({v, k});
+  }
+  void addLin(const Lin &o, uint64_t k) {
+    c += o.c * k;
+    for (auto &[x, kx] : o.terms)
+      add(x, kx * k);
+  }
+};
+
+Lin intLin(const Value *v, unsigned depth = 0) {
+  Lin r;
+  if (auto *C = dyn_cast<ConstantInt>(v); C && C->getBitWidth() == 64) {
+    r.c = C->getZExtValue();
+    return r;
+  }
+  auto *BO = dyn_cast<BinaryOperator>(v);
+  if (BO && depth < 12 && BO->getType()->isIntegerTy(64)) {
+    auto *k = dyn_cast<ConstantInt>(BO->getOperand(1));
+    switch (BO->getOpcode()) {
+    case Instruction::Add:
+      r.addLin(intLin(BO->getOperand(0), depth + 1), 1);
+      r.addLin(intLin(BO->getOperand(1), depth + 1), 1);
+      return r;
+    case Instruction::Sub:
+      r.addLin(intLin(BO->getOperand(0), depth + 1), 1);
+      r.addLin(intLin(BO->getOperand(1), depth + 1), uint64_t(0) - 1);
+      return r;
+    case Instruction::Mul:
+      if (k) {
+        r.addLin(intLin(BO->getOperand(0), depth + 1), k->getZExtValue());
+        return r;
+      }
+      break;
+    case Instruction::Shl:
+      if (k && k->getZExtValue() < 64) {
+        r.addLin(intLin(BO->getOperand(0), depth + 1), uint64_t(1) << k->getZExtValue());
+        return r;
+      }
+      break;
+    default:
+      break;
+    }
+  }
+  r.add(v, 1);
+  return r;
+}
+
+Lin ptrLin(const DataLayout &DL, const Value *p, unsigned depth = 0) {
+  auto *G = dyn_cast<GEPOperator>(p);
+  if (!G || depth > 12) {
+    Lin r;
+    r.base = p;
+    return r;
+  }
+  Lin r = ptrLin(DL, G->getPointerOperand(), depth + 1);
+  for (gep_type_iterator it = gep_type_begin(G), e = gep_type_end(G); it != e; ++it) {
+    const Value *idx = it.getOperand();
+    if (StructType *ST = it.getStructTypeOrNull()) {
+      r.c += DL.getStructLayout(ST)->getElementOffset(cast<ConstantInt>(idx)->getZExtValue());
+      continue;
+    }
+    uint64_t stride = it.getSequentialElementStride(DL).getFixedValue();
+    if (idx->getType()->isIntegerTy(64)) {
+      r.addLin(intLin(idx), stride);
+    } else if (auto *C = dyn_cast<ConstantInt>(idx)) {
+      r.c += uint64_t(C->getSExtValue()) * stride;
+    } else {
+      r.add(idx, stride);   // a narrower index (sign-extended): a leaf
+    }
+  }
+  return r;
+}
+
+// Two pointers that are different cell addresses on every run: two distinct allocas, or one base
+// whose linear forms differ by a nonzero constant (120's q[i][0] and q[i][1]; 114's q[m-1] and
+// q[m-2]). completePhis (the original IR only: a new-IR loop phi still lacks its back edge): two
+// leftover phi terms of one block that differ by a constant on every trip (59's q[i] and q[i + 1]).
+bool cellsDiffer(const DataLayout &DL, const Value *a, const Value *b, bool completePhis) {
+  Lin la = ptrLin(DL, a), lb = ptrLin(DL, b);
+  const Value *ua = getUnderlyingObject(la.base), *ub = getUnderlyingObject(lb.base);
+  if (ua != ub && isa<AllocaInst>(ua) && isa<AllocaInst>(ub))
+    return true;
+  if (la.base != lb.base)
+    return false;
+  Lin d = lb;
+  d.addLin(la, uint64_t(0) - 1);
+  SmallVector<std::pair<const Value *, uint64_t>, 2> left;
+  for (auto &[x, k] : d.terms)
+    if (k != 0)
+      left.push_back({x, k});
+  if (left.size() == 2 && completePhis && left[0].second + left[1].second == 0) {
+    // k * (x - y): x and y two phis differing by a constant on every trip.
+    const Value *x = left[0].first, *y = left[1].first;
+    PairDiff none;
+    if (std::optional<int64_t> e = constDiff(y, x, none)) {
+      d.c += left[0].second * uint64_t(*e);
+      left.clear();
+    }
+  }
+  return left.empty() && d.c != 0;
+}
+
+// Two leaves name different rails on every run: two distinct gate results; a confined rail and any
+// other value; loads of two different cells; a gate result only ever stored into cells other than
+// the one a load reads (114's q[m-1] ^= q[m-2] then the controlled Ry on q[m-2]). A slot cell holds a
+// rail no other cell holds (mem-slots stores a copy of a stored value it does not own), so different
+// cells name different rails.
+bool storedOnlyElsewhere(const DataLayout &DL, const CallInst *def, const LoadInst *L) {
+  for (const User *U : def->users()) {
+    if (auto *St = dyn_cast<StoreInst>(U)) {
+      // Same block as the definition: each run of the definition stores it once, with the address
+      // values current wherever the definition's value is.
+      if (St->getValueOperand() != def || St->getParent() != def->getParent() ||
+          !cellsDiffer(DL, St->getPointerOperand(), L->getPointerOperand(), false))
+        return false;
+      continue;
+    }
+    auto *CI = dyn_cast<CallInst>(U);
+    const Function *G = CI ? CI->getCalledFunction() : nullptr;
+    if (G && ((G->getName().starts_with("cqrt_") && !G->getName().starts_with("cqrt_qram") &&
+               !G->getName().starts_with("cqrt_push") && !G->getName().starts_with("cqrt_tape")) ||
+              G->getName().starts_with("cq_template_")))
+      continue;
+    return false;
+  }
+  return true;
+}
+
+bool leavesDistinct(LoweringContext &ctx, Value *a, Value *b) {
+  if (a == b)
+    return false;
+  if (isa<CallInst>(a) && isa<CallInst>(b))
+    return true;
+  if (confined(a) || confined(b))
+    return true;
+  const DataLayout &DL = ctx.M.getDataLayout();
+  auto *la = dyn_cast<LoadInst>(a), *lb = dyn_cast<LoadInst>(b);
+  if (la && lb)
+    return cellsDiffer(DL, la->getPointerOperand(), lb->getPointerOperand(), false);
+  auto *ca = dyn_cast<CallInst>(a), *cb = dyn_cast<CallInst>(b);
+  if (ca && lb)
+    return storedOnlyElsewhere(DL, ca, lb);
+  if (cb && la)
+    return storedOnlyElsewhere(DL, cb, la);
+  return false;
+}
+
+// The original slot-cell load (a cq_theta's in-place operand, or a quantum branch condition of a
+// block dominating T's) whose value is the new-IR handle h, or nullptr.
+const LoadInst *originalLoad(LoweringContext &ctx, const CallInst &T, const DominatorTree &dt, Value *h) {
+  SmallVector<const Value *, 8> cands{T.getArgOperand(0)};
+  if (auto *N = dt.getNode(T.getParent()))
+    for (auto *D = N->getIDom(); D; D = D->getIDom())
+      if (auto *Br = dyn_cast<BranchInst>(D->getBlock()->getTerminator()); Br && Br->isConditional())
+        cands.push_back(Br->getCondition());
+  for (const Value *c : cands) {
+    const Value *s = c;
+    if (auto *Tr = dyn_cast<TruncInst>(s))
+      s = Tr->getOperand(0);
+    auto *L = dyn_cast<LoadInst>(s);
+    if (!L || !ctx.T.isQuantum(c, ctx.S))
+      continue;
+    Operand o = ctx.operand(c);
+    if (o.handle && o.v == h)
+      return L;
+  }
+  return nullptr;
+}
+
+// cq-x80e. Whether the flag and the target (distinct handle values) may name one rail at run time.
+enum class Alias { Distinct, Cells, Unknown };
+Alias mayAlias(LoweringContext &ctx, const CallInst &T, const DominatorTree &dt, Value *flag, Value *rail) {
+  SmallVector<Value *, 4> fl, rl;
+  SmallPtrSet<Value *, 8> s1, s2;
+  handleLeaves(flag, fl, s1);
+  handleLeaves(rail, rl, s2);
+  bool all = true;
+  for (Value *a : fl)
+    for (Value *b : rl)
+      all &= leavesDistinct(ctx, a, b);
+  if (all)
+    return Alias::Distinct;
+  if (!isa<LoadInst>(flag) || !isa<LoadInst>(rail))
+    return Alias::Unknown;
+  // Two cell loads: different cells by the original IR's addresses (59), else the same cell iff the
+  // same address at run time (120 register_grid's q[0][1] and q[rows-1][1], one cell iff rows == 1).
+  const LoadInst *lf = originalLoad(ctx, T, dt, flag), *lt = originalLoad(ctx, T, dt, rail);
+  if (lf && lt && lf != lt &&
+      cellsDiffer(ctx.M.getDataLayout(), lf->getPointerOperand(), lt->getPointerOperand(), true))
+    return Alias::Distinct;
+  return Alias::Cells;
+}
+
 // ry_<W>_controlled(flag, rail, θ): a non-diagonal gate on the rail (A4), which is frozen (rule 10).
-void controlledRy(LoweringContext &ctx, Value *flag, Value *rail, RailType w, Value *angle) {
+void controlledRy(LoweringContext &ctx, Value *flag, Value *rail, RailType w, Value *angle, const CallInst &T,
+                  const DominatorTree &dt) {
+  abi::CoreSpec spec{abi::Core::Ry, w, /*ctl=*/true};
+  RailId id = ctx.unc().idOf(rail);
   if (flag == rail) {
     // CR §1.3: an in-place target is never one of its own controls. The flag is read into a fresh
     // rail first; that copy read the register before the rotation, so it stays allocated (A4).
-    abi::CoreSpec a{abi::Core::Alloc, RailType{Kind::Int, 1}};
-    CallInst *f = ctx.emitCore(a, {ConstantInt::getFalse(ctx.M.getContext())});
-    ctx.unc().recordSeed(f);
-    abi::CoreSpec x{abi::Core::XorI1, RailType{Kind::Int, 1}};
-    CallInst *c = ctx.emitCore(x, {flag, f});
-    ctx.unc().recordCore(c, x, {Operand{flag, true}, Operand{f, true}}, ctx.unc().idOf(f));
-    flag = f;
+    flag = copyFlag(ctx, flag);
+  } else if (Alias al = w.kind == Kind::Int && w.bits == 1 ? mayAlias(ctx, T, dt, flag, rail) : Alias::Distinct;
+             al != Alias::Distinct) {
+    if (al == Alias::Unknown)
+      unimplemented("rot-cry: a controlled Ry whose control " + describe(flag) + " and target " + describe(rail) +
+                        " may name one rail at run time, not as two slot-cell loads (cq-x80e)",
+                    rail);
+    // cq-x80e (CR §1.3, rules 9, 10; 120's reference): the two handles are loads of slot cells that
+    // may be one cell at run time. A classical test of the two cell addresses: distinct, the bare
+    // flag controls the Ry; the same cell, the flag is copied first and the copy stays allocated (66).
+    IRBuilder<> &B = ctx.B();
+    LLVMContext &C = ctx.M.getContext();
+    Function &out = ctx.out();
+    Value *eq = B.CreateICmpEQ(cast<LoadInst>(flag)->getPointerOperand(), cast<LoadInst>(rail)->getPointerOperand());
+    BasicBlock *join = BasicBlock::Create(C, "", &out);
+    BasicBlock *distinct = BasicBlock::Create(C, "", &out, join);
+    BasicBlock *same = BasicBlock::Create(C, "", &out, join);
+    B.CreateCondBr(eq, same, distinct);
+    B.SetInsertPoint(distinct);
+    ctx.unc().noteNonDiagonal(id, ctx.emitCore(spec, {flag, rail, angle}));
+    B.CreateBr(join);
+    B.SetInsertPoint(same);
+    Value *f = copyFlag(ctx, flag);
+    ctx.unc().noteNonDiagonal(id, ctx.emitCore(spec, {f, rail, angle}));
+    B.CreateBr(join);
+    B.SetInsertPoint(join);
+    ctx.unc().setRole(id, Role::Frozen);
+    return;
   }
-  abi::CoreSpec spec{abi::Core::Ry, w, /*ctl=*/true};
   CallInst *ry = ctx.emitCore(spec, {flag, rail, angle});
-  RailId id = ctx.unc().idOf(rail);
   ctx.unc().noteNonDiagonal(id, ry);
   ctx.unc().setRole(id, Role::Frozen);
 }
@@ -359,7 +712,7 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
       d = d | p.eff;
     R->dirty = d;
     R->active.clear();
-    controlledRy(ctx, flag, rail, w, angle.v);
+    controlledRy(ctx, flag, rail, w, angle.v, T, *st.dt);
     R->uses = rail->getNumUses();
     st.of[&T] = R;
     for (const User *U : T.users())
@@ -489,7 +842,7 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
       Value *gf = ctx.preds().flag(ctx, g);
       if (!gf)
         internalError("rot-cry: a conjunction flag that is constant true", &T);
-      controlledRy(ctx, gf, R->rail, R->w, ctx.B().CreateFNeg(it->angle));
+      controlledRy(ctx, gf, R->rail, R->w, ctx.B().CreateFNeg(it->angle), T, *st.dt);
       if (it->lit)
         recordXorc(ctx, gf, *R, it->lit);
     }
@@ -506,7 +859,7 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
   Value *lit = xorLiteral(ctx, R->seed, vv);
   if (lit)
     recordXorc(ctx, flag, *R, lit);
-  controlledRy(ctx, flag, R->rail, R->w, angle.v);
+  controlledRy(ctx, flag, R->rail, R->w, angle.v, T, *st.dt);
   R->active.push_back(Prep{q, angle.v, lit});
   R->all = R->all ? (*R->all | full) : full;
   R->uses = R->rail->getNumUses();
