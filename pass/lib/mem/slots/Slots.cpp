@@ -2094,6 +2094,21 @@ void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &
             unimplemented("mem-slots: a clone storing into a caller's cell that an earlier store of the clone may "
                           "have filled (two slot results for one cell)",
                           &I);
+        // cq-vxgm: the caller reloads the cell after the call and cleans its old content (rule 6), so the
+        // clone writes it on every path that returns. A store under a classical condition that leaves the
+        // cell unwritten on a returning path would need the old content copied out there (orchestrator
+        // decision on cq-vxgm, owner may override); not built.
+        {
+          Pred written = ctx.preds().block(I.getParent());
+          for (const Access &a : accessesOf(ctx, *st.F, s.o))
+            if ((isa<StoreInst>(a.I) || isRMW(a.I)) && !differentCell(a.a, s.a, storeBytes(DL, a.ty), storeBytes(DL, ty)))
+              written = written | ctx.preds().block(a.I->getParent());
+          for (const BasicBlock &bb : *st.F)
+            if (isa<ReturnInst>(bb.getTerminator()) && !(ctx.preds().block(&bb) & !written).isBottom())
+              unimplemented("mem-slots: a clone storing into a caller's cell on some paths only (a returning path "
+                            "leaves the cell unwritten: its old content would be copied out there, cq-vxgm)",
+                            &I);
+        }
         // Literally alloc_<W>(0), copy(v, c), store c (calls' finalize rewrites this sequence in the twin),
         // a seed included (it stays the clone's, freed directly).
         RailType w = cellRail(*s.info, ty, I);
