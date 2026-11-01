@@ -179,6 +179,8 @@ uint64_t storeBytes(const DataLayout &DL, Type *t) { return DL.getTypeStoreSize(
 
 enum class RootKind : uint8_t { Local, Heap, Param, Global };
 
+enum class StoreWhat { Register, Seed, Computed, Copy };
+
 struct ObjInfo {
   RootKind kind;
   const Value *root;
@@ -206,7 +208,8 @@ struct FnState {
   DenseSet<const Value *> registers;                // new-IR handles known never to be resolved here
   DenseSet<const Instruction *> copies;             // slot stores lowered as a basis copy (cq-dr4o)
   DenseMap<const Instruction *, ViewVal> views;     // stores into a view object -> the value they left (63)
-  SmallVector<const Instruction *, 8> cellReads;    // accesses lowered as a run-time read of a local cell (M3)
+  struct CellRead { const Instruction *I; Addr a; uint64_t size; };
+  SmallVector<CellRead, 8> cellReads;               // accesses lowered as a run-time read of a local cell (M3)
   std::map<const Value *, ObjInfo> objs;
 };
 
@@ -242,8 +245,19 @@ bool isCqSurface(const CallBase &CB) {
   return f && f->getName().starts_with("cq_");
 }
 
-// The plain loads and stores of the object in F, with their addresses.
+// The plain loads and stores of the object in F, with their addresses; also its atomicrmw and cmpxchg
+// accesses (rule 24: a read and a write of the cell, ty the value type, 94).
 struct Access { const Instruction *I; Addr a; Type *ty; };
+
+bool isRMW(const Instruction *I) { return isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I); }
+
+const Value *accessPtr(const Instruction *I) {
+  if (auto *r = dyn_cast<AtomicRMWInst>(I))
+    return r->getPointerOperand();
+  if (auto *c = dyn_cast<AtomicCmpXchgInst>(I))
+    return c->getPointerOperand();
+  return getLoadStorePointerOperand(I);
+}
 
 SmallVector<Access, 8> accessesOf(LoweringContext &ctx, const Function &F, ObjectId o) {
   const DataLayout &DL = ctx.M.getDataLayout();
@@ -255,6 +269,12 @@ SmallVector<Access, 8> accessesOf(LoweringContext &ctx, const Function &F, Objec
     } else if (auto *st = dyn_cast<StoreInst>(&I)) {
       if (hasObject(ctx, st->getPointerOperand(), o))
         out.push_back({st, decompose(st->getPointerOperand(), DL), st->getValueOperand()->getType()});
+    } else if (auto *r = dyn_cast<AtomicRMWInst>(&I)) {
+      if (hasObject(ctx, r->getPointerOperand(), o))
+        out.push_back({r, decompose(r->getPointerOperand(), DL), r->getValOperand()->getType()});
+    } else if (auto *c = dyn_cast<AtomicCmpXchgInst>(&I)) {
+      if (hasObject(ctx, c->getPointerOperand(), o))
+        out.push_back({c, decompose(c->getPointerOperand(), DL), c->getNewValOperand()->getType()});
     }
   }
   return out;
@@ -280,6 +300,16 @@ bool escapes(const Value *root) {
       }
       if (auto *st = dyn_cast<StoreInst>(usr)) {
         if (st->getPointerOperand() == v && st->getValueOperand() != v)
+          continue;
+        return true;
+      }
+      if (auto *r = dyn_cast<AtomicRMWInst>(usr)) {
+        if (r->getPointerOperand() == v && r->getValOperand() != v)
+          continue;   // rule 24: an access of the cell (94)
+        return true;
+      }
+      if (auto *c = dyn_cast<AtomicCmpXchgInst>(usr)) {
+        if (c->getPointerOperand() == v && c->getNewValOperand() != v && c->getCompareOperand() != v)
           continue;
         return true;
       }
@@ -375,8 +405,10 @@ ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId 
       any = true;
       if (auto *ld = dyn_cast<LoadInst>(a.I))
         all &= boolRange(ld);
+      else if (auto *sti = dyn_cast<StoreInst>(a.I))
+        all &= boolValueStored(sti->getValueOperand());
       else
-        all &= boolValueStored(cast<StoreInst>(a.I)->getValueOperand());
+        all = false;
     }
     info.boolCells = any && all;
   }
@@ -578,7 +610,7 @@ const Instruction *sourceOf(LoweringContext &ctx, FnState &st, const ObjInfo &in
       continue;
     // A volatile or atomic access reaching mem-slots is the plain access (rule 24, cq-r4cz): eff-conc
     // routes only an unobservable volatile access here, and an atomic one is plain single-threaded.
-    if (ctx.T.isFatPointer(getLoadStorePointerOperand(a.I), ctx.S))
+    if (ctx.T.isFatPointer(accessPtr(a.I), ctx.S))
       continue;
     if (!st.DT->dominates(a.I, L))
       continue;
@@ -595,7 +627,7 @@ bool isDynamic(LoweringContext &ctx, FnState &st, ObjInfo &info, ObjectId o) {
     return info.dynamic;
   info.dynamic = 0;
   for (const Access &a : accessesOf(ctx, *st.F, o))
-    if (isa<LoadInst>(a.I) && !sourceOf(ctx, st, info, o, a.I, a.a, a.ty))
+    if ((isa<LoadInst>(a.I) || isRMW(a.I)) && !sourceOf(ctx, st, info, o, a.I, a.a, a.ty))
       info.dynamic = 1;
   return info.dynamic;
 }
@@ -703,6 +735,9 @@ bool cellArms(LoweringContext &ctx, FnState &st, const Site &s, const Instructio
                                                isPotentiallyReachable(MI, &I, nullptr, st.DT.get()))
       unnamed = true;
   for (const Access &a : accessesOf(ctx, *st.F, s.o)) {
+    if (isRMW(a.I) && a.I != &I && !differentCell(a.a, s.a, storeBytes(DL, a.ty), size) &&
+        isPotentiallyReachable(a.I, &I, nullptr, st.DT.get()))
+      unnamed = true;   // an atomic read-modify-write's new rail (94): not named here
     auto *S = dyn_cast<StoreInst>(a.I);
     if (!S || S == &I || differentCell(a.a, s.a, storeBytes(DL, a.ty), size))
       continue;
@@ -744,9 +779,9 @@ bool cellArms(LoweringContext &ctx, FnState &st, const Site &s, const Instructio
 // has read them; deciding it at the store, before the loop that reads it is lowered, is what lets a
 // classically bounded loop clean them in their own trip (179's y[i] = icmp(...): "a user register, not
 // garbage").
-bool measuredThroughMemory(LoweringContext &ctx, FnState &st, const StoreInst &S, const Site &s) {
+bool measuredThroughMemory(LoweringContext &ctx, FnState &st, const Instruction &S, Type *ty, const Site &s) {
   const DataLayout &DL = ctx.M.getDataLayout();
-  uint64_t sz = storeBytes(DL, S.getValueOperand()->getType());
+  uint64_t sz = storeBytes(DL, ty);
   auto measures = [](const Value *v) {
     SmallVector<const Value *, 4> work{v};
     SmallPtrSet<const Value *, 8> seen{v};
@@ -800,7 +835,7 @@ Operand readCell(LoweringContext &ctx, FnState &st, const Site &s, const Instruc
     // M3 (CR rules 5, 20): the handle names one of the rails the stores of this function may have left
     // in the cell. When one of them is not a register, the load is a merge over them (recordCellLoad):
     // its readers' clean-ups come before theirs, and a kept role on it keeps them.
-    st.cellReads.push_back(&I);
+    st.cellReads.push_back({&I, s.a, storeBytes(ctx.M.getDataLayout(), ty)});
     SmallVector<RailId, 4> arms;
     bool allRegisters = true;
     if (cellArms(ctx, st, s, I, ty, arms, allRegisters) && !allRegisters) {
@@ -1293,6 +1328,66 @@ void lowerViewStore(LoweringContext &ctx, FnState &st, StoreInst &stI, const Sit
   st.lowered[&stI] = Operand{res, true};
 }
 
+// The role of a rail stored into a slot cell (rule 20), the handle store and the cell's new content.
+void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &I, Type *ty, Operand val,
+                 StoreWhat what) {
+  using What = StoreWhat;
+  IRBuilder<> &B = ctx.B();
+  if (what != What::Register) {
+    RailId id = ctx.unc().idOf(val.v);
+    switch (s.info->kind) {
+    case RootKind::Local:
+    case RootKind::Heap:
+      if (s.info->escaping)
+        unimplemented("mem-slots: a seed or computed rail stored into a slot object whose pointer escapes to a "
+                      "call (its clean-up is the callee twin's: rule 18, 31, 106)",
+                      &I);
+      if (isDynamic(ctx, st, *s.info, s.o)) {
+        // A copy into a dynamic cell is that cell's register, like its seed (58, 59; cq-dr4o).
+        if (what == What::Computed) {
+          // M3: a computed rail stays garbage; each run-time read of the cell after it names it
+          // (recordCellLoad), so its clean-up follows them. A read lowered before this store that this
+          // store may reach (a back edge) named the cell's rails without it.
+          const DataLayout &DL = ctx.M.getDataLayout();
+          uint64_t sz = storeBytes(DL, ty);
+          for (const FnState::CellRead &R : st.cellReads) {
+            if (R.a.root == s.a.root && !differentCell(R.a, s.a, R.size, sz) &&
+                isPotentiallyReachable(&I, R.I, nullptr, st.DT.get()))
+              unimplemented("mem-slots: a computed rail stored into a slot cell that an earlier-lowered run-time "
+                            "read may see on a back edge (the cell's rail is loop-carried through memory: 187)",
+                            &I);
+          }
+          if (measuredThroughMemory(ctx, st, I, ty, s)) {
+            ctx.unc().setRole(id, Role::Measured);
+            st.registers.insert(val.v);
+          }
+          break;
+        }
+        // The cells of a dynamic slot array are registers (58, 59: seeded |0>, kept).
+        ctx.unc().setRole(id, Role::UserRegister);
+        st.registers.insert(val.v);
+      }
+      break;
+    case RootKind::Param:
+      if (!ctx.S.isEntry())
+        unimplemented("mem-slots: a store into a caller's slot cell from a clone (rule 18 copy-out and twin, 31)",
+                      &I);
+      ctx.unc().setRole(id, Role::Output);
+      st.registers.insert(val.v);
+      break;
+    case RootKind::Global:
+      if (!cast<GlobalVariable>(s.info->root)->hasLocalLinkage()) {
+        ctx.unc().setRole(id, Role::Output);   // an extern global is an output (71)
+        st.registers.insert(val.v);
+      }
+      break;
+    }
+  }
+  StoreInst *ns = B.CreateAlignedStore(val.v, cellPointer(ctx, s, I), Align(4));
+  (void)ns;
+  st.lowered[&I] = val;
+}
+
 } // namespace
 
 void allocateSlots(LoweringContext &ctx, Instruction &site) {
@@ -1402,7 +1497,8 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
   RailType w = cellRail(*s.info, v->getType(), stI);
   IRBuilder<> &B = ctx.B();
 
-  enum class What { Register, Seed, Computed, Copy } what;
+  using What = StoreWhat;
+  What what;
   Operand val = ctx.operand(v);
   if (s.info->boolCells && val.handle)
     if (auto *z = dyn_cast<ZExtInst>(v); z && z->getSrcTy()->isIntegerTy(1)) {
@@ -1468,61 +1564,72 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
       st.registers.insert(val.v);   // a cq_theta result is a user register (rule 2)
   }
 
-  if (what != What::Register) {
-    RailId id = ctx.unc().idOf(val.v);
-    switch (s.info->kind) {
-    case RootKind::Local:
-    case RootKind::Heap:
-      if (s.info->escaping)
-        unimplemented("mem-slots: a seed or computed rail stored into a slot object whose pointer escapes to a "
-                      "call (its clean-up is the callee twin's: rule 18, 31, 106)",
-                      &stI);
-      if (isDynamic(ctx, st, *s.info, s.o)) {
-        // A copy into a dynamic cell is that cell's register, like its seed (58, 59; cq-dr4o).
-        if (what == What::Computed) {
-          // M3: a computed rail stays garbage; each run-time read of the cell after it names it
-          // (recordCellLoad), so its clean-up follows them. A read lowered before this store that this
-          // store may reach (a back edge) named the cell's rails without it.
-          const DataLayout &DL = ctx.M.getDataLayout();
-          uint64_t sz = storeBytes(DL, v->getType());
-          for (const Instruction *R : st.cellReads) {
-            const Value *rp = getLoadStorePointerOperand(R);
-            Type *rt = isa<LoadInst>(R) ? R->getType() : cast<StoreInst>(R)->getValueOperand()->getType();
-            if (hasObject(ctx, rp, s.o) && !differentCell(decompose(rp, DL), s.a, storeBytes(DL, rt), sz) &&
-                isPotentiallyReachable(&stI, R, nullptr, st.DT.get()))
-              unimplemented("mem-slots: a computed rail stored into a slot cell that an earlier-lowered run-time "
-                            "read may see on a back edge (the cell's rail is loop-carried through memory: 187)",
-                            &stI);
-          }
-          if (measuredThroughMemory(ctx, st, stI, s)) {
-            ctx.unc().setRole(id, Role::Measured);
-            st.registers.insert(val.v);
-          }
-          break;
-        }
-        // The cells of a dynamic slot array are registers (58, 59: seeded |0>, kept).
-        ctx.unc().setRole(id, Role::UserRegister);
-        st.registers.insert(val.v);
-      }
-      break;
-    case RootKind::Param:
-      if (!ctx.S.isEntry())
-        unimplemented("mem-slots: a store into a caller's slot cell from a clone (rule 18 copy-out and twin, 31)",
-                      &stI);
-      ctx.unc().setRole(id, Role::Output);
-      st.registers.insert(val.v);
-      break;
-    case RootKind::Global:
-      if (!cast<GlobalVariable>(s.info->root)->hasLocalLinkage()) {
-        ctx.unc().setRole(id, Role::Output);   // an extern global is an output (71)
-        st.registers.insert(val.v);
-      }
-      break;
+  finishStore(ctx, st, s, stI, v->getType(), val, what);
+}
+
+// Rule 24 (94): the single-thread meaning of an atomic read-modify-write of a slot cell.
+void lowerSlotAtomic(LoweringContext &ctx, Instruction &I) {
+  FnState &st = stateOf(ctx, I);
+  auto *rmw = dyn_cast<AtomicRMWInst>(&I);
+  auto *cx = dyn_cast<AtomicCmpXchgInst>(&I);
+  if (!rmw && !cx)
+    internalError("mem-slots: lowerSlotAtomic of an instruction that is neither atomicrmw nor cmpxchg", &I);
+  if ((rmw && rmw->isVolatile()) || (cx && cx->isVolatile()))
+    unimplemented("mem-slots: a volatile atomic read-modify-write of a slot cell", &I);
+  const Value *ptr = accessPtr(&I);
+  if (ctx.T.isFatPointer(ptr, ctx.S))
+    unimplemented("mem-slots: an atomic read-modify-write through a fat pointer (rule 21)", &I);
+  Type *ty = rmw ? rmw->getValOperand()->getType() : cx->getNewValOperand()->getType();
+  Site s = siteOf(ctx, st, I, ptr, ty);
+  if (s.info->view || s.info->boolCells)
+    unimplemented("mem-slots: an atomic read-modify-write of a bit-view or _Bool slot cell", &I);
+  if (ctx.currentFlag())
+    unimplemented("mem-slots: an atomic read-modify-write of a slot cell under a quantum predicate", &I);
+  if (!ty->isIntegerTy())
+    unimplemented("mem-slots: an atomic read-modify-write of a non-integer slot cell", &I);
+  RailType w = cellRail(*s.info, ty, I);
+  Operand old = readCell(ctx, st, s, I, ty);
+  if (!old.handle)
+    internalError("mem-slots: a slot cell read as a classical value", &I);
+  auto shape2 = [](const Operand &a, const Operand &b) {
+    return a.handle && b.handle ? "" : a.handle ? "hl" : "lh";
+  };
+  Operand nv;
+  if (rmw) {
+    Operand v = ctx.operand(rmw->getValOperand());
+    const char *op = nullptr;
+    switch (rmw->getOperation()) {
+    case AtomicRMWInst::Add: op = "add"; break;
+    case AtomicRMWInst::Sub: op = "sub"; break;
+    case AtomicRMWInst::And: op = "and"; break;
+    case AtomicRMWInst::Or: op = "or"; break;
+    case AtomicRMWInst::Xor: op = "xor"; break;
+    default:
+      unimplemented("mem-slots: an atomicrmw operation other than add, sub, and, or, xor on a slot cell", &I);
     }
+    abi::TemplateSpec sp;
+    sp.op = op;
+    sp.w = w;
+    sp.shape = shape2(old, v);
+    nv = Operand{ctx.emitTemplate(sp, {old, v}), true};
+    ctx.bindFields(&I, {old});
+  } else {
+    Operand cmp = ctx.operand(cx->getCompareOperand());
+    Operand v = ctx.operand(cx->getNewValOperand());
+    abi::TemplateSpec eq;
+    eq.op = "icmp";
+    eq.pred = "eq";
+    eq.w = w;
+    eq.shape = shape2(old, cmp);
+    Value *f = ctx.emitTemplate(eq, {old, cmp});
+    abi::TemplateSpec sel;
+    sel.op = "select";
+    sel.w = w;
+    sel.shape = v.handle ? "" : "lh";
+    nv = Operand{ctx.emitTemplate(sel, {Operand{f, true}, v, old}), true};
+    ctx.bindFields(&I, {old, Operand{f, true}});
   }
-  StoreInst *ns = B.CreateAlignedStore(val.v, cellPointer(ctx, s, stI), Align(4));
-  (void)ns;
-  st.lowered[&stI] = val;
+  finishStore(ctx, st, s, I, ty, nv, StoreWhat::Computed);
 }
 
 void endSlotLifetime(LoweringContext &ctx, ObjectId, Instruction *at) {

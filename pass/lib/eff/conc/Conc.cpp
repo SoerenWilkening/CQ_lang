@@ -25,9 +25,9 @@
 //
 // lowerAtomic: an atomic load/store is the plain access (rule 24, 94): classical ones are copied
 // unchanged (the host performs the atomic op, which is the plain op single-threaded); quantum ones are
-// routed as lowerVolatile routes an unobservable access. atomicrmw and cmpxchg on quantum data or in
-// non-classical memory (94: load + op + store, cmpxchg's two templates) and a call classified Atomic are
-// unimplemented: they need a template sequence over a cell the memory modules own (wave 2, cq-w2-effects).
+// routed as lowerVolatile routes an unobservable access. atomicrmw and cmpxchg on a slot object are
+// mem::lowerSlotAtomic (M4, 94: load + op + store, cmpxchg's icmp eq + select + store); in QRAM or
+// classical memory with quantum data, and a call classified Atomic, they are unimplemented.
 //
 // lowerThreadCall, lowerSetjmp, lowerLongjmp: unimplemented. pthread_create as a direct call of the
 // clone (106) needs a synthesized call for calls::lowerLifted; the setjmp diamond with an escaped flag
@@ -200,14 +200,23 @@ void lowerAtomic(LoweringContext &ctx, Instruction &I) {
       return copyClassical(ctx, I, /*dropVolatile=*/false);
     return routePlain(ctx, I, ptr, "an atomic access");
   }
-  if (isa<AtomicRMWInst>(I))
-    unimplemented("eff-conc: atomicrmw on quantum data or non-classical memory (rule 24, 94: load + op + "
-                  "store)",
+  if (isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I)) {
+    // Rule 24 (94): the plain read-modify-write. Classical: the host performs it.
+    const Value *ptr = isa<AtomicRMWInst>(I) ? cast<AtomicRMWInst>(I).getPointerOperand()
+                                             : cast<AtomicCmpXchgInst>(I).getPointerOperand();
+    if (!involvesQuantum(ctx, I, ptr))
+      return copyClassical(ctx, I, /*dropVolatile=*/false);
+    if (ctx.T.isFatPointer(ptr, ctx.S) || ctx.T.isQuantum(ptr, ctx.S))
+      unimplemented("eff-conc: an atomic read-modify-write through a fat pointer (rule 21)", &I);
+    bool slot = false, other = false;
+    for (ObjectId o : ctx.T.provenance(ptr, ctx.S))
+      (ctx.T.classOf(o) == ObjClass::Slot ? slot : other) = true;
+    if (slot && !other)
+      return mem::lowerSlotAtomic(ctx, I);
+    unimplemented(std::string("eff-conc: ") + (isa<AtomicRMWInst>(I) ? "atomicrmw" : "cmpxchg") +
+                      " on quantum data in memory other than one slot object (QRAM or classical memory, rule 24)",
                   &I);
-  if (isa<AtomicCmpXchgInst>(I))
-    unimplemented("eff-conc: cmpxchg on quantum data or non-classical memory (rule 24, 94: load + icmp eq + "
-                  "select + store)",
-                  &I);
+  }
   internalError("eff-conc: lowerAtomic of an instruction that is not atomic", &I);
 }
 
