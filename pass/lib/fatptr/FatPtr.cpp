@@ -749,6 +749,75 @@ void lowerLoad(LoweringContext &ctx, LoadInst &ld) {
   ctx.bind(&ld, merge(railTypeOf(ty), [](auto &p) { return p.first; }).v);
 }
 
+SmallVector<Operand, 8> loadHostCells(LoweringContext &ctx, const Value *src, Type *cellTy, uint64_t n,
+                                      function_ref<uint64_t(const Value *root)> bound, const Instruction &at) {
+  Fat f = derive(ctx, src, /*emit=*/true);
+  if (f.idxRail())
+    unimplemented("fatptr: a memory intrinsic's fat source pointer at a quantum cell index (a QROM per cell, rules "
+                  "20, 22)",
+                  &at);
+  auto *ci = dyn_cast<ConstantInt>(f.idx.v);
+  if (!ci)
+    unimplemented("fatptr: a memory intrinsic's fat source pointer at a run-time classical cell index", &at);
+  if (!cellTy->isIntegerTy() && !cellTy->isFloatingPointTy())
+    unimplemented("fatptr: a memory intrinsic copying cells that are not integers or floating point through a fat "
+                  "source pointer",
+                  &at);
+  const DataLayout &DL = ctx.M.getDataLayout();
+  uint64_t size = DL.getTypeAllocSize(cellTy).getFixedValue();
+  int64_t base = ci->getSExtValue() * int64_t(f.cell);
+  SmallVector<const Value *, 4> roots;
+  SmallVector<uint64_t, 4> bounds;
+  for (const Value *r : f.roots) {
+    if (!mayName(ctx, f, r))
+      continue;
+    if (!classicalMemoryOnly(ctx, r))
+      unimplemented("fatptr: a memory intrinsic's fat source pointer into a slot or QRAM object (rules 21, 22)", &at);
+    roots.push_back(r);
+    bounds.push_back(bound(r));
+  }
+  if (roots.empty())
+    internalError("fatptr: a fat pointer naming none of its roots", &at);
+  RailType w = railTypeOf(cellTy);
+  DenseMap<const Value *, Operand> flags;   // tag == k, once per root
+  auto flagOf = [&](const Value *r) {
+    auto it = flags.find(r);
+    if (it != flags.end())
+      return it->second;
+    Operand eq = icmp(ctx, CmpInst::ICMP_EQ, 32, f.tag, Operand{ConstantInt::get(i32(ctx), rootNumber(ctx, r)), false});
+    return flags[r] = eq;
+  };
+  IRBuilder<> &B = ctx.B();
+  LLVMContext &C = ctx.M.getContext();
+  SmallVector<Operand, 8> out;
+  for (uint64_t j = 0; j < n; ++j) {
+    std::optional<Operand> acc;
+    for (unsigned i = 0; i < roots.size(); ++i) {
+      if (j * size >= bounds[i])
+        continue;
+      Operand r = ctx.operand(roots[i]);
+      if (r.handle)
+        internalError("fatptr: a root pointer bound to a rail", roots[i]);
+      int64_t off = base + int64_t(j * size);
+      Value *p = off ? B.CreateInBoundsGEP(Type::getInt8Ty(C), r.v, ConstantInt::get(i64(ctx), off)) : r.v;
+      Operand v{B.CreateLoad(cellTy, p), false};
+      if (!acc) {
+        acc = v;
+        continue;
+      }
+      Operand c = flagOf(roots[i]);
+      if (!c.handle)
+        internalError("fatptr: a tag compare of a rail tag that is classical", &at);
+      std::string shape = std::string(v.handle ? "h" : "l") + (acc->handle ? "h" : "l");
+      acc = Operand{tmpl(ctx, "select", w, {c, v, *acc}, shape == "hh" ? "" : shape), true};
+    }
+    if (!acc)
+      internalError("fatptr: a source cell below the length's bound that no root reaches", &at);
+    out.push_back(*acc);
+  }
+  return out;
+}
+
 std::pair<Operand, Operand> storedFields(LoweringContext &ctx, const Value *ptr) {
   Fat f = derive(ctx, ptr, /*emit=*/true);
   Operand idx = f.idx;

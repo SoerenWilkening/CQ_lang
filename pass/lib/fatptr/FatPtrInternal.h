@@ -6,12 +6,24 @@
 
 #include "cq/Common.h"
 #include "cq/Lowering.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/IR/Instruction.h"
+#include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
 
 namespace cq::fatptr {
 // The fat pointer (tag, idx) of ptr as two i32 operands (each a rail or a classical i32): what a QRAM
 // of pointers stores. The tag is ptr's root number in its function's object table; the idx a cell index.
 std::pair<Operand, Operand> storedFields(LoweringContext &, const llvm::Value *ptr);
+// Rule 22 with a quantum source pointer (90): the n cells of cellTy at the fat pointer src, a classical
+// constant idx over classical host roots. Cell j of root r is a host load at byte (idx * cell + j * size)
+// only when j * size < bound(r), the length's upper bound in bytes on the paths that select r (a host
+// byte is never speculated past it); the roots reaching cell j merge by select on tag == k, the first
+// root innermost (rule 21's load). A cell no root reaches is an internal error (n is the largest bound).
+llvm::SmallVector<Operand, 8> loadHostCells(LoweringContext &, const llvm::Value *src, llvm::Type *cellTy,
+                                            uint64_t n, llvm::function_ref<uint64_t(const llvm::Value *root)> bound,
+                                            const llvm::Instruction &at);
 // A pointer loaded from a QRAM of pointers (or through a fat pointer over such QRAMs) is bound by its
 // loader with ctx.bindFields(load, {tag, idx}), two i32 rails; fatptr's derivation reads them back.
 }

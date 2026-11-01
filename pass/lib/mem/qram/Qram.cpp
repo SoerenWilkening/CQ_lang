@@ -1480,6 +1480,36 @@ Value *qramBusOf(LoweringContext &ctx, const Value *root, const Instruction &at)
   return busOf(q, root, &q.cols[0], at);
 }
 
+// Rule 22, per object of a quantum source pointer (90): the length's upper bound in bytes on the paths
+// that select root r. A classical length: itself. A quantum length: with one root, its bound; else the
+// source and the length must be selects on one condition (the paths that select an arm's root are those
+// that select its length), r an arm itself: the largest bound of the arms that are r. Anything else is
+// unimplemented (a bound valid for every root would speculate host bytes past an object, rule 22).
+uint64_t sourceBound(LoweringContext &ctx, const MemIntrinsic &MI, const Value *lenV, const Value *r) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  if (auto *c = dyn_cast<ConstantInt>(lenV))
+    return c->getZExtValue();
+  const Value *src = cast<MemTransferInst>(MI).getSource()->stripPointerCasts();
+  auto *ss = dyn_cast<SelectInst>(src);
+  const Value *len = MI.getLength();
+  if (auto *z = dyn_cast<ZExtInst>(len))
+    len = z->getOperand(0);
+  auto *ls = dyn_cast<SelectInst>(len);
+  if (!ss || !ls || ss->getCondition() != ls->getCondition())
+    unimplemented("mem-qram: a quantum-length memcpy/memmove from a quantum source pointer whose length is not "
+                  "selected with it (the length's bound per source object, rule 22)",
+                  &MI);
+  std::optional<uint64_t> b;
+  for (auto [p, l] : {std::pair{ss->getTrueValue(), ls->getTrueValue()}, std::pair{ss->getFalseValue(), ls->getFalseValue()}})
+    if (p->stripPointerCasts() == r)
+      b = std::max(b.value_or(0), upperBound(l, DL, MI));
+  if (!b)
+    unimplemented("mem-qram: a memcpy/memmove source object that is not an arm of the source pointer's select (the "
+                  "length's bound per source object, rule 22)",
+                  &MI);
+  return *b;
+}
+
 // Rule 22 into a slot array through mem-slots' write path (M6 writeSlotCells, cq-arch 2026-11-01): the
 // cells the intrinsic may touch, j below the length's bound (a classical constant length: exactly; a
 // quantum length: its upper bound, LLVM's known bits and range facts), take their new values, guarded by
@@ -1501,10 +1531,23 @@ void lowerSlotIntrinsicM6(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o) {
   ObjInfo &info = objInfo(ctx, st, a.root, o);
   Type *cellTy = cellType(ctx, st, info, o);
   uint64_t cb = info.cellBytes;
-  bool view = false;   // mem-slots' bit view (Slots.cpp objInfo): a local accessed at another width
-  if (info.kind == RootKind::Local)
+  // mem-slots' cells (Slots.cpp objInfo, restated): a local a memory intrinsic writes whose narrowest
+  // access is narrower than its integer element has byte cells of that width (-O1's punned alloca i32 of
+  // 90's unsigned char d[4]; mem-slots splits each wider classical store per cell). Any other local
+  // accessed at another width than its cell is a bit view (63).
+  bool view = false;
+  if (info.kind == RootKind::Local) {
+    uint64_t narrow = cb;
     for (const Access &x : accessesOf(ctx, *st.F, o))
-      view |= DL.getTypeAllocSize(x.ty).getFixedValue() != cb;
+      narrow = std::min(narrow, uint64_t(DL.getTypeAllocSize(x.ty).getFixedValue()));
+    if (narrow < cb && cellTy->isIntegerTy()) {
+      cb = narrow;
+      cellTy = IntegerType::get(C, unsigned(8 * narrow));
+    } else {
+      for (const Access &x : accessesOf(ctx, *st.F, o))
+        view |= DL.getTypeAllocSize(x.ty).getFixedValue() != cb;
+    }
+  }
   if (view || isa<StructType>(cellTy))
     unimplemented("mem-qram: a memory intrinsic into a slot object accessed at another width than its cell or a "
                   "record (mem-slots' cells: a bit view 63, -O1's punned alloca of 90)",
@@ -1543,9 +1586,10 @@ void lowerSlotIntrinsicM6(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o) {
     vals.assign(n, Operand{v, false});
   } else {
     const Value *src = cast<MemTransferInst>(MI).getSource();
-    if (ctx.T.isFatPointer(src, ctx.S))
-      unimplemented("mem-qram: a memcpy/memmove into a slot array from a quantum (fat) source pointer (rule 21, 90)",
-                    &MI);
+    if (ctx.T.isFatPointer(src, ctx.S)) {
+      vals = fatptr::loadHostCells(ctx, src, cellTy, n, [&](const Value *r) { return sourceBound(ctx, MI, lenV, r); },
+                                   MI);
+    } else {
     ArrayRef<ObjectId> so = ctx.T.provenance(src, ctx.S);
     bool classical = true;
     for (ObjectId x : so)
@@ -1563,6 +1607,7 @@ void lowerSlotIntrinsicM6(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o) {
       }
     } else {
       unimplemented("mem-qram: a memcpy/memmove into a slot array from a QRAM or a mixed-class source", &MI);
+    }
     }
   }
   // The guards of a quantum length.
