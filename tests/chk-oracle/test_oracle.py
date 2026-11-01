@@ -821,6 +821,56 @@ double fenv_tested(double x0, double th, double c, double k) {
             self.assertFalse(any(r.get("kind") == "read" for r in rr.rotations), smp)
 
 
+class ExitRead(unittest.TestCase):
+    """Bead cq-4asj (CR rule 14 f981c89, taint's exitRead, cq-rmaf): a value of a loop whose exit is
+    quantum read after the loop is the exit value, a rail selected by every trip's exit test, even
+    where the value is classical in the loop (an affine induction): its cq_measure is a measurement,
+    also once the last trip's x is measured (150); a second cq_measure of it is a read; returned from
+    a tail-recursive count (09) likewise. After a loop with a classical exit it stays a read."""
+
+    def test_exit_reads(self):
+        o1 = compile_c("exit_read", """
+int dowhile(int x0, double t, int a, int b, int c) {
+    int x = x0, n = 0; cq_theta(&x, t);
+    do { x = x * a + b; n++; } while (x > c);
+    int mx = cq_measure(x); return mx + cq_measure(n); }
+int twice(int x0, double t, int a, int b, int c) {
+    int x = x0, n = 0; cq_theta(&x, t);
+    do { x = x * a + b; n++; } while (x > c);
+    int m = cq_measure(n); return m + cq_measure(n); }
+static unsigned count(unsigned x, int n, unsigned k, unsigned a, unsigned b) {
+    if (x > k) return count(x * a + b, n + 1, k, a, b); return n; }
+int tail(int x0, double t, unsigned k, unsigned a, unsigned b) {
+    unsigned x = x0; cq_theta(&x, t); return cq_measure(count(x, 0, k, a, b)); }
+int bounded(int x0, double t, int m) {
+    int x = x0, n = 0; cq_theta(&x, t);
+    for (int i = 0; i < m; i++) { x += i; n += 2; }
+    int mx = cq_measure(x); return mx + cq_measure(n); }
+""")
+        sp = spec("exit_read", "int dowhile(int,double,int,int,int);int twice(int,double,int,int,int);"
+                  "int tail(int,double,unsigned,unsigned,unsigned);int bounded(int,double,int)",
+                  [("dowhile", ["int", "double", "int", "int", "int"]),
+                   ("twice", ["int", "double", "int", "int", "int"]),
+                   ("tail", ["int", "double", "unsigned", "unsigned", "unsigned"]),
+                   ("bounded", ["int", "double", "int"])])
+        S = lambda c, *a: {"call": c, "args": list(a)}
+        cases = [  # (sample, gates, classical reads)
+            (S(0, i32(1), HALF, i32(2), i32(1), i32(5)), 2, 0),   # 150's failing sample: 2 trips
+            (S(0, i32(0), HALF, i32(2), i32(1), i32(5)), 2, 0),   # 1 trip
+            (S(1, i32(1), HALF, i32(2), i32(1), i32(5)), 1, 1),
+            (S(2, i32(3), HALF, i32(0), i32(0), i32(0)), 1, 0),   # count's result: 1 trip
+            (S(2, i32(0), HALF, i32(0), i32(0), i32(0)), 1, 0),   # no trip
+            (S(3, i32(1), HALF, i32(3)), 1, 1),                   # classical exit: n is classical
+        ]
+        for smp, gates, reads in cases:
+            rr = oracle.run_sample(o1, sp, smp)
+            self.assertEqual(rr.violations, [], smp)
+            ev = oracle.trace_sample(o1, sp, smp)
+            got = [e["kind"] for e in ev if e["ev"] == "site" and e["kind"] in ("measure", "read")]
+            self.assertEqual((got.count("measure"), got.count("read")), (gates, reads), (smp, ev))
+            self.assertEqual(len(rr.measured), gates, smp)
+
+
 class SameRail(unittest.TestCase):
     """Bead cq-425g (CR rule 2, ABI 1.3, owner ruling cq-r6bc): a second cq_measure of a value already
     measured is a classical read, also through a reload of the same cells (59, 120 at n = 1, rows = 1:

@@ -932,7 +932,6 @@ public:
       }
 
       storeSlots();
-      storeExitAcc();
       for (auto &[P, s] : phis)
         for (unsigned i = 0; i < P->getNumIncomingValues(); ++i)
           s->addIncoming(get(P->getIncomingValue(i)), P->getIncomingBlock(i));
@@ -952,12 +951,11 @@ public:
     // its exit value is the carried rail the circuit builds for the read). The quantum-exit loops are
     // the pass's own rule-14 classification (loops::classify, which the trip caps use too): any
     // specialization in which the loop is not ClassicalBound. Such a read of a V that carries no
-    // shadow of its own reads a node over the quantum conditions of that loop's terminators in every
-    // trip of this run of the loop (the exit rail is selected by each trip's exit test, not by the
-    // last one alone): a frame slot per loop, zeroed on the edges entering the loop and joined with
-    // each quantum terminator's condition as it runs (SH_OPAQUE when the loop has none the shadows
-    // see: never classical). One node per V serves every read it dominates, so a measured exit value
-    // is classical to later reads.
+    // shadow of its own reads a fresh node over SH_OPAQUE: the circuit selects the exit rail by the
+    // exit test of every trip it computes, the trips the sample did not run included (whose values
+    // the sample cannot know, as an arm not run at a merge under a quantum condition), so it is
+    // classical only once measured itself. One node per V serves every read it dominates, so a
+    // measured exit value is classical to later reads.
     DenseMap<const Loop *, bool> qexitMemo;
     bool quantumExit(const Loop *Lp) {
       auto [it, fresh] = qexitMemo.try_emplace(Lp, false);
@@ -990,36 +988,9 @@ public:
       for (auto &[at, n] : known)
         if (DT.dominates(at, U))
           return n;
-      bool any = false;
-      for (BasicBlock *X : outer->blocks())
-        any |= quantumCond(X) != nullptr;
-      Value *acc;
-      if (any) {
-        AllocaInst *&a = exitAcc[outer];
-        if (!a)
-          a = In.entryAlloca(F, I32);
-        acc = B.CreateLoad(I32, a);
-      } else {
-        acc = opaque();
-      }
-      Value *n = node(B, {acc});
+      Value *n = node(B, {opaque()});
       known.push_back({U, n});
       return n;
-    }
-    MapVector<const Loop *, AllocaInst *> exitAcc;
-    // the per-trip joins of exitAcc's slots, once every condition has its shadow
-    void storeExitAcc() {
-      for (auto &[Lp, a] : exitAcc) {
-        BasicBlock *H = Lp->getHeader();
-        for (BasicBlock *P : predecessors(H))
-          if (!Lp->contains(P))
-            new StoreInst(ConstantInt::get(I32, 0), a, P->getTerminator());
-        for (BasicBlock *X : Lp->blocks())
-          if (Value *c = quantumCond(X)) {
-            IRBuilder<> B(X->getTerminator());
-            B.CreateStore(join(B, {B.CreateLoad(I32, a), get(c)}), a);
-          }
-      }
     }
 
     void visit(Instruction *I, bool retMerge, const std::vector<ReturnInst *> &rets,
