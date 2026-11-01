@@ -42,6 +42,15 @@
 //    a rule 10 register state (Shared::statePreps) and v is read after T, the rotation hits a copy
 //    the same way: rot-cry keeps h as the register (a later disjoint prep xors into it), so h must
 //    keep v's value. A read inside a cycle where v is invariant: cq::unimplemented.
+//  - Switch atoms (cq-0hhk). Rule 13's case atoms are the scrutinee's value at the switch, and pred
+//    mints them where a flag or a select reads them (no IR use: the walk above never sees them). When
+//    T rotates h in place while a value bound to h is the scrutinee of a quantum switch whose region
+//    (the blocks the switch reaches before its immediate post-dominator) holds T or the point standing
+//    for it, the region's later atoms would read the rotated rail. A copy c of h is taken before the Ry
+//    (shared with the copy above when both are needed) and the switch's atoms read it
+//    (Shared::switchSnap, LoweringContext::switchRail). cq::unimplemented: T in a callee of the
+//    switch's function, T in a cycle where the scrutinee is invariant, T under a classical guard the
+//    switch's block does not have (c would not reach every reader), a switch on a view of h.
 #include "SpineInternal.h"
 
 #include "cq/Abi.h"
@@ -328,6 +337,82 @@ bool cellReadAfter(Shared &sh, const Instruction &T, const LoadInst &L) {
   return false;
 }
 
+// cq-0hhk: is P inside the region of the switch S (reachable from S's block before its immediate
+// post-dominator, through which every path leaves the region)?
+bool inSwitchRegion(const SwitchInst &S, const Instruction *P) {
+  const BasicBlock *sb = S.getParent();
+  PostDominatorTree PDT(const_cast<Function &>(*sb->getParent()));
+  const BasicBlock *ip = PDT.getNode(sb) && PDT.getNode(sb)->getIDom() ? PDT.getNode(sb)->getIDom()->getBlock() : nullptr;
+  DenseSet<const BasicBlock *> seen;
+  SmallVector<const BasicBlock *, 16> work(succ_begin(sb), succ_end(sb));
+  while (!work.empty()) {
+    const BasicBlock *b = work.pop_back_val();
+    if (b == ip || !seen.insert(b).second)
+      continue;
+    if (b == P->getParent())
+      return true;
+    for (const BasicBlock *x : successors(b))
+      work.push_back(x);
+  }
+  return false;
+}
+
+// cq-0hhk (contract: Switch atoms): the quantum switches whose atoms read h after T get a copy of h
+// taken here. Returns the copy (nullptr: none needed).
+Value *snapshotSwitchAtoms(LoweringContext &ctx, CallInst &T, Value *h) {
+  Shared &sh = shared(ctx);
+  SmallVector<const Value *, 4> scrutinees;
+  for (auto &[w, ops] : sh.binds)
+    if (ops.size() == 1 && ops.front().handle && ops.front().v == h)
+      scrutinees.push_back(w);
+  for (auto &[w, vw] : sh.views)
+    if (vw.rail == h)
+      scrutinees.push_back(w);
+  Value *c = nullptr;
+  for (const Value *w : scrutinees)
+    for (const User *u : w->users()) {
+      auto *S = dyn_cast<SwitchInst>(u);
+      if (!S || S->getCondition() != w || !ctx.T.isQuantum(w, ctx.S))
+        continue;
+      const Instruction *P = pointIn(sh, &T, S->getFunction());
+      if (!P || !inSwitchRegion(*S, P))
+        continue;
+      if (sh.views.count(w))
+        unimplemented("spine: cq_theta rotates in place the rail of " + describe(w) + ", a view scrutinee of the "
+                          "quantum switch " + describe(S) + " whose case atoms may be read after it (cq-0hhk)",
+                      &T);
+      if (P != &T)
+        unimplemented("spine: a callee's cq_theta rotates in place the scrutinee rail of the quantum switch " +
+                          describe(S) + " whose case atoms may be read after it (cq-0hhk)",
+                      &T);
+      bool cyc = false;
+      reachFrom(&T, w, cyc);
+      if (cyc)
+        unimplemented("spine: cq_theta rotates in place the scrutinee rail of the quantum switch " + describe(S) +
+                          " inside a cycle where the scrutinee is invariant (cq-0hhk)",
+                      &T);
+      auto cf = [&](const BasicBlock *b) {
+        const Pred &p = ctx.preds().block(b);
+        return p.isBottom() ? Pred::bottom() : p.classicalFactor(ctx.T, ctx.S);
+      };
+      if (!(cf(S->getParent()) & !cf(T.getParent())).isBottom())
+        unimplemented("spine: cq_theta under a classical guard rotates in place the scrutinee rail of the quantum "
+                          "switch " + describe(S) + " whose case atoms may be read where the guard did not hold "
+                          "(cq-0hhk)",
+                      &T);
+      if (!c) {
+        RailType rw = railTypeOf(w->getType());
+        c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, rw}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), rw))});
+        RailId cid = ctx.unc().recordSeed(cast<CallInst>(c));
+        abi::CoreSpec cp{abi::Core::Copy, rw};
+        CallInst *cc = ctx.emitCore(cp, {h, c});
+        ctx.unc().recordCore(cc, cp, {Operand{h, true}, Operand{c, true}}, cid);
+      }
+      sh.switchSnap[w] = c;
+    }
+  return c;
+}
+
 } // namespace
 
 std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T, bool uncontrolled) {
@@ -408,6 +493,8 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T, b
     }
   }
 
+  Value *snap = snapshotSwitchAtoms(ctx, T, h);   // cq-0hhk
+
   // Any other value bound to h and read after the rotation would need a copy of its own.
   for (auto &[w, ops] : sh.binds) {
     if (w == v || w == &T || ops.size() != 1 || !ops.front().handle || ops.front().v != h)
@@ -454,12 +541,14 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T, b
   }
 
   RailType w = railTypeOf(v->getType());
-  CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
-                             {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
-  RailId cid = ctx.unc().recordSeed(c);
-  abi::CoreSpec cp{abi::Core::Copy, w};
-  CallInst *cc = ctx.emitCore(cp, {h, c});
-  ctx.unc().recordCore(cc, cp, {Operand{h, true}, Operand{c, true}}, cid);
+  Value *c = snap && snap->getType() == irTypeOf(ctx.M.getContext(), w) ? snap : nullptr;   // cq-0hhk: one copy
+  if (!c) {
+    c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+    RailId cid = ctx.unc().recordSeed(cast<CallInst>(c));
+    abi::CoreSpec cp{abi::Core::Copy, w};
+    CallInst *cc = ctx.emitCore(cp, {h, c});
+    ctx.unc().recordCore(cc, cp, {Operand{h, true}, Operand{c, true}}, cid);
+  }
 
   PendingCopy pc;
   pc.v = v;

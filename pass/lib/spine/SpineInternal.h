@@ -151,6 +151,11 @@ struct Shared {
     llvm::DenseSet<const llvm::BasicBlock *> reach;
   };
   llvm::DenseMap<const llvm::Value *, PreRot> preRot;
+  // cq-0hhk: a quantum switch's case atoms (rule 13) are its scrutinee's value AT THE SWITCH; pred
+  // mints them where a flag or a select reads them. When a cq_theta rotates the scrutinee's rail in
+  // place inside the switch's region (PreRotation.cpp), the atoms read a copy taken just before the
+  // Ry: scrutinee orig -> that copy. Cleared each time the walker lowers the switch.
+  llvm::DenseMap<const llvm::Value *, llvm::Value *> switchSnap;
   // cq-nvfi: every non-diagonal gate (ry, ry_qangle, controlled or not) on a rail, in emission order.
   llvm::DenseMap<const llvm::Value *, llvm::SmallVector<llvm::CallInst *, 2>> rotations;
   // cq-5ajv: for each non-diagonal gate (rotations) and each in-place write (RailHist::writes), the

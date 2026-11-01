@@ -1272,8 +1272,10 @@ void Walker::emitTerminator(BasicBlock *b) {
   if (isQuantumTerm(ctx, t)) {
     if (auto *br = dyn_cast<BranchInst>(t))
       lowerBranch(ctx, *br);
-    else
+    else {
+      sh.switchSnap.erase(cast<SwitchInst>(t)->getCondition());   // cq-0hhk: its atoms read the rail anew
       sw::lowerSwitch(ctx, *cast<SwitchInst>(t));
+    }
     BasicBlock *ip = PDT.getNode(b) && PDT.getNode(b)->getIDom() ? PDT.getNode(b)->getIDom()->getBlock() : nullptr;
     if (ip)
       openRegions.push_back(ip);

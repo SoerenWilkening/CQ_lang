@@ -640,7 +640,8 @@ public:
       spec.w = railTypeOf(a.v->getType());
       spec.shape = "hl";
       Value *lit = ConstantInt::get(a.v->getType(), a.c);
-      return ctx.emitTemplate(spec, {Operand{overridden(var) ? overridden(var) : ctx.rail(a.v), true}, Operand{lit, false}});
+      // cq-0hhk: the scrutinee's value at the switch (switchRail), never a rail rotated since.
+      return ctx.emitTemplate(spec, {Operand{overridden(var) ? overridden(var) : ctx.switchRail(a.v), true}, Operand{lit, false}});
     }
     case AtomKind::Entry:
       return const_cast<Value *>(a.v);
@@ -788,7 +789,7 @@ class JoinRepair {
     if (a.kind == AtomKind::Entry)
       return nullptr;
     if (ql(var))
-      return ctx.rail(a.v);
+      return a.kind == AtomKind::Eq ? ctx.switchRail(a.v) : ctx.rail(a.v);   // cq-0hhk
     return ctx.operand(a.v).v;
   }
 

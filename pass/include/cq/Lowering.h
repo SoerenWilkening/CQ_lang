@@ -36,6 +36,10 @@ public:
   llvm::Function &out(); llvm::IRBuilder<> &B();
   Operand operand(const llvm::Value *orig);
   llvm::Value *rail(const llvm::Value *orig);                     // internalError if classical
+  // cq-0hhk: the rail a quantum switch's case atom reads for its scrutinee: the scrutinee's value at
+  // the switch (a copy taken before an in-place rotation of its rail inside the switch's region), else
+  // rail(scrutinee).
+  llvm::Value *switchRail(const llvm::Value *scrutinee);
   llvm::SmallVector<Operand, 4> fields(const llvm::Value *orig);
   void bind(const llvm::Value *orig, llvm::Value *v);
   void bindFields(const llvm::Value *orig, llvm::ArrayRef<Operand>);

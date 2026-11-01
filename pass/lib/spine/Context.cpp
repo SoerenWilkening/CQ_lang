@@ -204,6 +204,11 @@ Value *LoweringContext::rail(const Value *orig) {
   return spine::atPhiEdge(sh, orig, it->second.front()).v;
 }
 
+Value *LoweringContext::switchRail(const Value *scrutinee) {
+  auto it = impl->sh->switchSnap.find(scrutinee);
+  return it != impl->sh->switchSnap.end() ? it->second : rail(scrutinee);
+}
+
 SmallVector<Operand, 4> LoweringContext::fields(const Value *orig) {
   spine::Shared &sh = *impl->sh;
   auto it = sh.binds.find(orig);
