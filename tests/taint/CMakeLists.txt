@@ -37,3 +37,6 @@ cq_add_unit_test(taint_threadlocal taint_threadlocal.cpp)
 # cq-prvy (95, 109): va_start's save area holds the variadic actuals' handles; va_copy copies the
 # va_list's area pointers; the va_arg reads are quantum (CR §1.4, rules 3, 20).
 cq_add_unit_test(taint_varargs taint_varargs.cpp)
+# cq-erjd, cq-n58p, cq-0y74, cq-kuuf: sound taint where provenance is lost (a store reaching a load in
+# the next activation; inttoptr of a loaded integer; a byte-wise pointer copy; an i64 cmpxchg).
+cq_add_unit_test(taint_lostprov taint_lostprov.cpp)

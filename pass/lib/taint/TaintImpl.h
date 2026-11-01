@@ -81,6 +81,10 @@ struct Object {
   std::vector<Range> handleCells;  // cells (byte ranges from the site base) written with a handle
   std::vector<Range> ptrCells;     // cells written with a pointer (pointer-kind cells)
   bool anyPtr = false;
+  // cq-n58p, cq-0y74, cq-kuuf: cells written by a non-pointer store whose value may carry an address
+  // (an integer, a byte of a pointer): a pointer read there has lost its provenance.
+  std::vector<Range> intCells;
+  bool anyInt = false;
   bool qram = false;
   bool storedTagQ = false, storedIdxQ = false;
   PtrInfo stored;                  // pointers copied in (initializer, memcpy)
@@ -218,6 +222,11 @@ struct ImplState {
   // Rule 23: the concrete environment facts saved into each fenv_t / fexcept_t object (fegetenv,
   // feholdexcept, fegetexceptflag), joined over every save; an object never saved holds none.
   std::map<ObjectId, uint8_t> fenvSaved;
+  // cq-n58p: every site whose address escaped into memory or into an integer (a pointer stored, a
+  // ptrtoint, a pointer in a global initializer). A pointer whose provenance is lost (inttoptr of an
+  // integer not derived from one ptrtoint, a pointer read from a cell written as an integer) may point
+  // into any of them (offset unknown).
+  PtrInfo escaped;
 
   // Published result.
   std::vector<Specialization> published;

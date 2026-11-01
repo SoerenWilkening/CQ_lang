@@ -234,6 +234,32 @@ private:
   SmallVector<ObjectId, 4> objectsAt(unsigned site, const PtrInfo &p);
   SmallVector<ObjectId, 4> objectsOf(const PtrInfo &p);
   void touchObject() { st.changed = true; }
+  // cq-n58p: escaped addresses (ImplState::escaped).
+  void escape(const PtrInfo &p) {
+    PtrInfo e;
+    e.init = true;
+    e.top = true;
+    for (unsigned s : p.sites)
+      if (!llvm::is_contained(st.escaped.sites, s))
+        e.sites.push_back(s);
+    if (!e.sites.empty() && st.escaped.join(e))
+      touchObject();
+  }
+  void escapeConstants(const Constant *C);
+  // The pointer a lost-provenance read in F may hold: any escaped site that may be live in F (an alloca
+  // only when its function is F or may be on the stack below F), at an unknown offset; an unknown
+  // object named by V when there is none.
+  PtrInfo escapedFor(const Value *V, const Function *F);
+  bool hasIndirectCall = false, hasReturnsTwice = false;
+  // cq-erjd: a store of F that cannot reach a load of F in the CFG cannot reach it in another
+  // activation either: F runs at most once per run, or the object is F's own alloca and F never
+  // recurses. Otherwise every store of the object reaches the load.
+  bool storeOrderHolds(const Function *F, const Site &site);
+  std::map<const Function *, int> runOnceMemo; // 0 in progress, 1 yes, 2 no
+  bool runOnce(const Function *F);
+  bool mayRecurse(const Function *F) {
+    return F->hasAddressTaken() || callsReach(F, F);
+  }
 
   // Specializations.
   SpecState *getSpec(Function *F, std::vector<Lanes> formal, std::vector<Type *> tys,
@@ -303,6 +329,8 @@ private:
   }
   void recordWrite(Instruction &I, const PtrInfo &p, uint64_t size, bool handle, Type *T,
                    const PtrInfo *storedPtr, const Lanes *storedLanes);
+  // cq-n58p, cq-0y74, cq-kuuf: a non-pointer write of a value that may carry an address.
+  void recordIntWrite(const PtrInfo &p, uint64_t size);
   std::string cellDigits(CallBase &CB, Function *G, unsigned argNo, const Value *actual);
   bool writtenBefore(const Object &O, std::optional<int64_t> off, uint64_t size, const CallBase &CB);
   std::optional<uint64_t> rangeBound(const Value *V);
@@ -549,11 +577,13 @@ unsigned Analyzer::siteFor(const Value *V, SiteKind k, const Function *owner) {
           if (auto *CC = dyn_cast<Constant>(U.get()))
             work.push_back(CC);
       }
-      if (any)
+      if (any) {
         for (ObjectId o : st.sites[id].objects) {
           st.objects[o].stored.join(stored);
           st.objects[o].anyPtr = true;
         }
+        escape(stored);
+      }
     }
   }
   return id;
@@ -613,6 +643,94 @@ SmallVector<ObjectId, 4> Analyzer::objectsOf(const PtrInfo &p) {
     for (ObjectId o : objectsAt(s, p))
       out.push_back(o);
   return out;
+}
+
+// cq-n58p: a ptrtoint constant expression (an instruction operand, a global initializer) escapes the
+// address it converts.
+void Analyzer::escapeConstants(const Constant *C) {
+  SmallVector<const Constant *, 8> work{C};
+  SmallPtrSet<const Constant *, 16> seen;
+  while (!work.empty()) {
+    const Constant *X = work.pop_back_val();
+    if (!seen.insert(X).second || isa<GlobalValue>(X))
+      continue;
+    if (auto *CE = dyn_cast<ConstantExpr>(X))
+      if (CE->getOpcode() == Instruction::PtrToInt) {
+        APInt off(64, 0);
+        const Value *base =
+            CE->getOperand(0)->stripAndAccumulateConstantOffsets(*st.DL, off, /*AllowNonInbounds=*/true);
+        if (auto *G = dyn_cast<GlobalValue>(base)) {
+          PtrInfo p;
+          p.init = true;
+          p.sites.push_back(siteFor(G, isa<Function>(G) ? SiteKind::Function : SiteKind::Global, nullptr));
+          escape(p);
+        }
+      }
+    for (const Use &U : X->operands())
+      if (auto *CC = dyn_cast<Constant>(U.get()))
+        work.push_back(CC);
+  }
+}
+
+PtrInfo Analyzer::escapedFor(const Value *V, const Function *F) {
+  PtrInfo q;
+  q.init = true;
+  q.top = true;
+  for (unsigned s : st.escaped.sites) {
+    const Site &site = st.sites[s];
+    if (site.kind == SiteKind::Alloca && site.owner != F && !hasIndirectCall &&
+        !callsReach(site.owner, F))
+      continue;
+    q.sites.push_back(s);
+  }
+  // An address no escaped object can explain has no provenance (LLVM: a dereference is UB); an
+  // unknown object names it so the pointer is never bottom.
+  if (q.sites.empty())
+    q.sites.push_back(siteFor(V, SiteKind::External, F));
+  sortUnique(q.sites);
+  return q;
+}
+
+bool Analyzer::runOnce(const Function *F) {
+  auto it = runOnceMemo.find(F);
+  if (it != runOnceMemo.end())
+    return it->second == 1;
+  runOnceMemo[F] = 0; // a cycle through the callers: not once
+  bool once = !hasReturnsTwice && !F->hasAddressTaken() && !callsReach(F, F);
+  const CallBase *site = nullptr;
+  unsigned calls = 0;
+  if (once)
+    for (const User *U : F->users()) {
+      auto *CB = dyn_cast<CallBase>(U);
+      if (!CB || CB->getCalledFunction() != F) {
+        once = false;
+        break;
+      }
+      ++calls;
+      site = CB;
+    }
+  if (once && calls > 1)
+    once = false;
+  if (once && site) {
+    // The one call site runs once: its function runs once and the call is in no CFG cycle.
+    const BasicBlock *BB = site->getParent();
+    const Function *G = BB->getParent();
+    for (const BasicBlock *S : successors(BB))
+      if (isPotentiallyReachable(S, BB))
+        once = false;
+    if (once)
+      once = runOnce(G);
+  }
+  runOnceMemo[F] = once ? 1 : 2;
+  return once;
+}
+
+bool Analyzer::storeOrderHolds(const Function *F, const Site &site) {
+  if (hasReturnsTwice)
+    return false; // a longjmp re-enters a block after the setjmp (rule 24)
+  if (runOnce(F))
+    return true;
+  return site.kind == SiteKind::Alloca && site.owner == F && !mayRecurse(F);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1401,6 +1519,7 @@ void Analyzer::transferCast(CastInst &CI) {
     return;
   }
   case Instruction::PtrToInt:
+    escape(P(Src));
     setL(&CI, s.any() ? allLanes(n) : Lanes(n));
     return;
   case Instruction::IntToPtr: {
@@ -1468,11 +1587,8 @@ void Analyzer::transferCast(CastInst &CI) {
       if (pl.test(1) || s.any())
         l.set(1);
     } else {
-      PtrInfo q;
-      q.init = true;
-      q.top = true;
-      q.sites.push_back(siteFor(&CI, SiteKind::External, cur->F));
-      setP(&CI, q);
+      // Provenance lost (cq-n58p): an unknown object, or any object whose address escaped.
+      setP(&CI, escapedFor(&CI, cur->F));
       if (s.any())
         l.set();
     }
@@ -1587,6 +1703,7 @@ void Analyzer::recordWrite(Instruction &I, const PtrInfo &p, uint64_t size, bool
           touchObject();
         }
         if (storedPtr) {
+          escape(*storedPtr);
           // A store instruction's pointers are seen only by loads it may reach (88: a pointer
           // stored after a load is not in that load's provenance); memcpy and initializers are
           // merged unconditionally.
@@ -1613,6 +1730,44 @@ void Analyzer::recordWrite(Instruction &I, const PtrInfo &p, uint64_t size, bool
   }
 }
 
+// A stored non-pointer value may carry (part of) an address unless it is a constant built from no
+// global's address (a literal integer, null, undef, a float).
+static bool mayCarryAddress(const Value *V) {
+  auto *C = dyn_cast<Constant>(V);
+  if (!C)
+    return true;
+  SmallVector<const Constant *, 8> work{C};
+  while (!work.empty()) {
+    const Constant *X = work.pop_back_val();
+    if (isa<GlobalValue>(X) || isa<BlockAddress>(X) || isa<DSOLocalEquivalent>(X) ||
+        isa<NoCFIValue>(X))
+      return true;
+    for (const Use &U : X->operands())
+      if (auto *CC = dyn_cast<Constant>(U.get()))
+        work.push_back(CC);
+  }
+  return false;
+}
+
+void Analyzer::recordIntWrite(const PtrInfo &p, uint64_t size) {
+  auto ex = p.exact();
+  for (unsigned s : p.sites) {
+    if (st.sites[s].kind == SiteKind::Function)
+      continue;
+    for (ObjectId oid : objectsAt(s, p)) {
+      Object &O = st.objects[oid];
+      if (!ex || !size) {
+        if (!O.anyInt) {
+          O.anyInt = true;
+          touchObject();
+        }
+      } else if (addRange(O.intCells, *ex, size)) {
+        touchObject();
+      }
+    }
+  }
+}
+
 void Analyzer::transferLoad(Instruction &I, Value *ptr, Type *T) {
   PtrInfo p = P(ptr);
   Lanes pl = L(ptr);
@@ -1622,7 +1777,7 @@ void Analyzer::transferLoad(Instruction &I, Value *ptr, Type *T) {
   bool q = fat;
   auto ex = p.exact();
   PtrInfo loaded;
-  bool tagQ = false, idxQ = false;
+  bool tagQ = false, idxQ = false, intPun = false;
   for (unsigned s : p.sites) {
     for (ObjectId oid : objectsAt(s, p)) {
       Object &O = st.objects[oid];
@@ -1635,7 +1790,8 @@ void Analyzer::transferLoad(Instruction &I, Value *ptr, Type *T) {
       if (T->isPointerTy()) {
         loaded.join(O.stored);
         for (auto &[SI, sp] : O.storedBy) {
-          if (SI->getFunction() != I.getFunction()) {
+          if (SI->getFunction() != I.getFunction() ||
+              !storeOrderHolds(I.getFunction(), st.sites[O.site])) {
             loaded.join(sp);
             continue;
           }
@@ -1647,10 +1803,19 @@ void Analyzer::transferLoad(Instruction &I, Value *ptr, Type *T) {
         idxQ = idxQ || O.storedIdxQ;
         if (O.cellHandle(ex, size))
           idxQ = true; // a handle cell of pointer kind holds (tag, idx) rails (107)
+        if (overlapsAny(O.intCells, ex, size, O.anyInt)) {
+          // A cell written as an integer (a pointer punned, copied byte-wise, compare-exchanged as
+          // i64): the pointer read back has lost its provenance (cq-n58p, cq-0y74, cq-kuuf).
+          intPun = true;
+          if (O.cellHandle(ex, size))
+            tagQ = idxQ = true;
+        }
       }
     }
   }
   if (T->isPointerTy()) {
+    if (intPun)
+      loaded.join(escapedFor(&I, cur->F));
     if (!loaded.init || loaded.sites.empty()) {
       // Pointer of unknown origin: an external object named by this load.
       PtrInfo e;
@@ -1705,6 +1870,8 @@ void Analyzer::transferStore(Instruction &I, Value *ptr, Value *val, Type *T) {
     }
   }
   recordWrite(I, p, st.DL->getTypeStoreSize(T), handle, T, spp, slp);
+  if (!T->isPointerTy() && mayCarryAddress(val))
+    recordIntWrite(p, st.DL->getTypeStoreSize(T));
   if (!p.sites.empty()) {
     for (unsigned s : p.sites) {
       const Site &site = st.sites[s];
@@ -1756,7 +1923,7 @@ void Analyzer::transferMemIntrinsic(MemIntrinsic &MI) {
   auto dx = d.exact();
   bool srcAny = false;
   std::vector<Range> moved;
-  bool movedPtr = false;
+  bool movedPtr = false, movedInt = false;
   PtrInfo storedPtr;
   bool sTag = false, sIdx = false;
   for (unsigned site : s.sites) {
@@ -1774,6 +1941,8 @@ void Analyzer::transferMemIntrinsic(MemIntrinsic &MI) {
         sTag = sTag || O.storedTagQ;
         sIdx = sIdx || O.storedIdxQ;
       }
+      if (O.anyInt || !O.intCells.empty())
+        movedInt = true;
       if (!O.mayHoldHandle())
         continue;
       if (O.anyHandle || O.qram || !sx || !dx || !len) {
@@ -1805,6 +1974,11 @@ void Analyzer::transferMemIntrinsic(MemIntrinsic &MI) {
     at.c = r.off;
     at.g = 0;
     recordWrite(MI, at, r.size, true, nullptr, nullptr, nullptr);
+  }
+  if (movedInt) {
+    PtrInfo uu = d;
+    uu.top = true;
+    recordIntWrite(uu, 0);
   }
   if (movedPtr) {
     Lanes pl(2);
@@ -2872,6 +3046,10 @@ void Analyzer::transfer(Instruction &I) {
       if (a.test(off + i))
         l.set(i);
     setL(EV, l);
+    // A pointer read out of an aggregate (a pointer compare-exchange's old value, an aggregate load
+    // or call result): its provenance is not tracked through aggregates (cq-kuuf).
+    if (EV->getType()->isPointerTy())
+      setP(EV, escapedFor(EV, cur->F));
     return;
   }
   if (auto *IV = dyn_cast<InsertValueInst>(&I)) {
@@ -3133,6 +3311,27 @@ void Analyzer::run() {
               if (auto *H = dyn_cast<Function>(CB->getArgOperand(1)->stripPointerCasts()))
                 if (!H->isDeclaration() && !llvm::is_contained(signalHandlers[Sig->getSExtValue()], H))
                   signalHandlers[Sig->getSExtValue()].push_back(H);
+
+  // cq-n58p, cq-erjd: module facts for lost provenance and store order.
+  for (Function &F : M) {
+    if (F.hasAddressTaken())
+      hasIndirectCall = true;
+    for (BasicBlock &BB : F)
+      for (Instruction &I : BB) {
+        if (auto *CB = dyn_cast<CallBase>(&I)) {
+          if (CB->isIndirectCall())
+            hasIndirectCall = true;
+          if (CB->hasFnAttr(Attribute::ReturnsTwice))
+            hasReturnsTwice = true;
+        }
+        for (const Use &U : I.operands())
+          if (auto *C = dyn_cast<Constant>(U.get()))
+            escapeConstants(C);
+      }
+  }
+  for (GlobalVariable &GV : M.globals())
+    if (GV.hasInitializer())
+      escapeConstants(GV.getInitializer());
 
   // Roots: in-place specializations of every externally reachable function; library-build roots.
   for (Function &F : M) {
