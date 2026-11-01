@@ -1473,6 +1473,13 @@ void qramStoreAt(LoweringContext &ctx, const Value *root, Operand idx, Type *ty,
   emitStore(ctx, busOf(q, root, &c, at), c, fatIndex(ctx, idx), v, flag);
 }
 
+Value *qramBusOf(LoweringContext &ctx, const Value *root, const Instruction &at) {
+  QramObj &q = qramObj(ctx, root, at);
+  if (q.cols.size() != 1)
+    unimplemented("mem-qram: a QRAM of several field columns crossing a clone boundary (rules 21, 26)", &at);
+  return busOf(q, root, &q.cols[0], at);
+}
+
 void lowerMemIntrinsic(LoweringContext &ctx, MemIntrinsic &MI) {
   ArrayRef<ObjectId> objs = ctx.T.provenance(MI.getDest(), ctx.S);
   if (ctx.T.isFatPointer(MI.getDest(), ctx.S))

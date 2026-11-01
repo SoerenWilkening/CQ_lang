@@ -829,8 +829,22 @@ void lowerIntToPtr(LoweringContext &, Instruction &I) {
   unimplemented("fatptr: inttoptr of a quantum integer (rule 21 provenance decoding)", &I);
 }
 
-Triple passAcrossCall(LoweringContext &, const Value *ptr) {
-  unimplemented("fatptr: a fat pointer crossing a clone boundary (rule 21 triple)", ptr);
+// Rule 21 at a clone boundary (191): a pointer into ONE QRAM object crosses as (object, tag, idx): the
+// object's bus handle, its i32 tag (the root number; classical for a single object) and its i32 cell
+// index (a rail or a classical value, as storedFields). cellCount is null (a QRAM's extent is its bus).
+// Several objects (an object table) or slot/host provenance are unimplemented.
+Triple passAcrossCall(LoweringContext &ctx, const Value *ptr) {
+  Fat f = derive(ctx, ptr, /*emit=*/false);
+  if (f.roots.size() != 1 || !mem::isQramRoot(ctx, f.roots[0]))
+    unimplemented("fatptr: a pointer crossing a clone boundary that is not into one QRAM object (rule 21 object "
+                  "table, slot or host triple)",
+                  ptr);
+  const Instruction *at = dyn_cast<Instruction>(ptr);
+  if (!at)
+    unimplemented("fatptr: a constant pointer into a QRAM crossing a clone boundary", ptr);
+  auto [tag, idx] = storedFields(ctx, ptr);
+  Value *bus = mem::qramBusOf(ctx, f.roots[0], *at);
+  return Triple{bus, tag.v, idx.v, nullptr};
 }
 
 } // namespace cq::fatptr

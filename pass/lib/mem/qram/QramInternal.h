@@ -26,4 +26,7 @@ std::pair<llvm::Value *, llvm::Value *> qramLoadPtrAt(LoweringContext &, const l
 // One store of the handle v (type ty) at cell idx of the QRAM at root, _controlled on flag when not null.
 void qramStoreAt(LoweringContext &, const llvm::Value *root, Operand idx, llvm::Type *ty, llvm::Value *v,
                  llvm::Value *flag, const llvm::Instruction &at);
+// The bus handle of the single-column QRAM at root (a pointer crossing a clone boundary as a rule 21
+// triple, 191); a multi-column (struct) QRAM is unimplemented.
+llvm::Value *qramBusOf(LoweringContext &, const llvm::Value *root, const llvm::Instruction &at);
 }
