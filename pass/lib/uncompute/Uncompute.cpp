@@ -1720,6 +1720,15 @@ struct Uncompute::Impl {
     if (r.popBus != kNone) {
       // A2: POP(k) is the store's _unc alone; the bus's own item frees it.
       CallInst *fwd = records[r.creator].forward;
+      if (fwd->getCalledFunction() && !fwd->getCalledFunction()->getName().starts_with("cqrt_")) {
+        // U6/U3: a store the clone made: its _unc from the record's spec and the caller's (bus, idx, v).
+        abi::CoreSpec spec = std::get<abi::CoreSpec>(records[r.creator].spec);
+        spec.unc = true;
+        SmallVector<Value *, 3> args;
+        for (const Operand &o : records[r.creator].ops)
+          args.push_back(o.v);
+        return track(B.CreateCall(abi::declare(*B.GetInsertBlock()->getModule(), spec), args));
+      }
       return track(B.CreateCall(uncOf(fwd, false), argsOf(fwd, nullptr)));
     }
     if (r.cleanup) {
@@ -2526,7 +2535,25 @@ RailId Uncompute::recordTemplate(CallInst *fwd, const abi::TemplateSpec &spec, A
 
 RailId Uncompute::recordCore(CallInst *fwd, const abi::CoreSpec &spec, ArrayRef<Operand> ops, RailId out) {
   using abi::Core;
-  impl->checkOps(fwd, ops, "recordCore");
+  // U6/U3: a store the clone call fwd made inside the clone, recorded on the caller's bus with the call
+  // as its forward: its operands (bus, idx, v) are the caller's, not fwd's arguments. Allowed only once
+  // noteCallBusRead(fwd, bus) placed the call group on that bus.
+  bool cloneStore = false;
+  if (spec.op == Core::QramStore && !spec.ctl && fwd && fwd->getCalledFunction() &&
+      !fwd->getCalledFunction()->getName().starts_with("cqrt_")) {
+    unsigned rec = impl->callRecord(fwd);
+    if (rec == kNone || impl->info[rec].kind != RecKind::Call)
+      internalError("uncompute: recordCore: a QRAM store whose forward is a clone call with no recordCall", fwd);
+    RailId lead = impl->records[rec].out;
+    if (ops.size() != 3 || !ops[0].handle || !ops[2].handle || out >= impl->rails.size())
+      internalError("uncompute: recordCore: a clone call's QRAM store takes (bus, idx, v)", fwd);
+    for (auto [b, k] : impl->rails[lead].versions)
+      cloneStore = cloneStore || b == out;
+    if (!cloneStore)
+      internalError("uncompute: recordCore: a clone call's QRAM store on a bus with no noteCallBusRead", fwd);
+  }
+  if (!cloneStore)
+    impl->checkOps(fwd, ops, "recordCore");
   if (spec.unc)
     internalError("uncompute: recordCore of an _unc call", fwd);
   auto target = [&](unsigned i) -> RailId {
@@ -3117,7 +3144,22 @@ void Uncompute::emitMirror(unsigned s, IRBuilder<> &B) {
 
 namespace cq {
 // U6 (cq-arch 2026-11-01): stub until stream A builds it.
-void Uncompute::noteCallBusRead(llvm::CallInst *fwd, RailId) {
-  unimplemented("uncompute: noteCallBusRead (U6: a clone call group reading a QRAM bus, 191)", fwd);
+// U6: the group's item is placed like a QRAM load reading v_k (A2 versionBefore): after POP(j) of every
+// store recorded on the bus later (j > k), before POP(k) and the bus's release.
+void Uncompute::noteCallBusRead(llvm::CallInst *fwd, RailId bus) {
+  Impl &I = *impl;
+  unsigned rec = I.callRecord(fwd);
+  if (rec == kNone || I.info[rec].kind != RecKind::Call)
+    internalError("uncompute: noteCallBusRead before recordCall of this clone call", fwd);
+  RailId lead = I.records[rec].out;
+  if (bus >= I.rails.size() || !I.rails[bus].qram || I.isMerge(bus))
+    internalError("uncompute: noteCallBusRead of a rail that is not a single QRAM bus", fwd);
+  if (!is_contained(I.info[rec].reads, bus))
+    internalError("uncompute: noteCallBusRead of a bus the clone call does not take", fwd);
+  for (auto [b, k] : I.rails[lead].versions)
+    if (b == bus)
+      internalError("uncompute: noteCallBusRead twice for one bus", fwd);
+  I.rails[lead].versions.push_back({bus, static_cast<unsigned>(I.rails[bus].pops.size())});
+  I.rails[bus].loads.push_back(lead);
 }
 } // namespace cq

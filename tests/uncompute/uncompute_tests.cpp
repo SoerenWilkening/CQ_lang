@@ -781,6 +781,77 @@ define i32 @f(i32 %a0, double %th) {
                     });
 }
 
+// U6 (191's alias_params): a clone call reads the QRAM bus a and stores v into cell 0 inside the clone
+// (recorded on the caller's bus after noteCallBusRead, forward = the call). The clone's store is popped
+// before the twin, which recompute-reads the cells as at the call; the earlier store a[0] = s0 is popped
+// after the twin.
+void qram_call_bus_read() {
+  Fx f(R"(
+declare i32 @__cq_q_addto_0001(i32, i32, i32, i32, i32, i32)
+define i32 @f(i32 %a0, double %th, i32 %b0) {
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %a = call i32 @cqrt_qram_alloc_i32(i32 2)
+  %s0 = call i32 @cqrt_alloc_i32(i32 %b0)
+  call void @cqrt_qram_store_i32_hl(i32 %a, i32 0, i32 %s0)
+  %i = call i32 @cq_template_and_i32_hl(i32 %x, i32 1)
+  %v = call i32 @__cq_q_addto_0001(i32 %a, i32 1, i32 0, i32 %a, i32 1, i32 %i)
+  %l = call i32 @cqrt_qram_load_i32_hl(i32 %a, i32 0)
+  %s = call i32 @cq_template_add_i32(i32 %l, i32 %x)
+  %m = call i32 @cqrt_measure_i32(i32 %s)
+  ret i32 %m
+})");
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  RailId a = f.core(f.call("cqrt_qram_alloc_i32"), abi::Core::QramAlloc, "l", ~0u);
+  f.S("s0");
+  f.core(f.call("cqrt_qram_store_i32_hl"), abi::Core::QramStore, "hlh", a);
+  f.T("i", "hl");
+  auto *fwd = cast<CallInst>(f.I("v"));
+  f.U.recordCall(fwd, {fwd}, {}, {});
+  f.U.noteCallBusRead(fwd, a);
+  abi::CoreSpec st{abi::Core::QramStore, {Kind::Int, 32}, false, true};
+  f.U.recordCore(fwd, st, {H(f.I("a")), Operand{ConstantInt::get(Type::getInt32Ty(f.C), 0), false}, H(fwd)}, a);
+  f.core(f.call("cqrt_qram_load_i32_hl"), abi::Core::QramLoad, "hl", ~0u);
+  f.U.setRole(f.T("s", "hh"), Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%a = call i32 @cqrt_qram_alloc_i32(i32 2)",
+                        "%s0 = call i32 @cqrt_alloc_i32(i32 %b0)",
+                        "call void @cqrt_qram_store_i32_hl(i32 %a, i32 0, i32 %s0)",
+                        "%i = call i32 @cq_template_and_i32_hl(i32 %x, i32 1)",
+                        "%v = call i32 @__cq_q_addto_0001(i32 %a, i32 1, i32 0, i32 %a, i32 1, i32 %i)",
+                        "%l = call i32 @cqrt_qram_load_i32_hl(i32 %a, i32 0)",
+                        "%s = call i32 @cq_template_add_i32(i32 %l, i32 %x)",
+                        "call void @cqrt_qram_load_i32_hl_unc(i32 %l, i32 %a, i32 0)",
+                        "call void @cqrt_free(i32 %l)",
+                        "call void @cqrt_qram_store_i32_hl_unc(i32 %a, i32 0, i32 %v)",
+                        "call void @__cq_q_addto_0001_unc(i32 %v, i32 %a, i32 1, i32 0, i32 %a, i32 1, i32 %i)",
+                        "call void @cqrt_free(i32 %v)",
+                        "call void @cq_template_and_i32_hl_unc(i32 %i, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %i)",
+                        "call void @cqrt_qram_store_i32_hl_unc(i32 %a, i32 0, i32 %s0)",
+                        "call void @cqrt_free(i32 %s0)",
+                        "call void @cqrt_qram_free(i32 %a)",
+                        "%m = call i32 @cqrt_measure_i32(i32 %s)",
+                        "ret i32 %m",
+                    });
+}
+
+void fatal_call_bus_read_unrecorded() {
+  Fx f(R"(
+declare i32 @__cq_q_addto_0001(i32, i32, i32, i32, i32, i32)
+define i32 @f(i32 %a0) {
+  %a = call i32 @cqrt_qram_alloc_i32(i32 2)
+  %v = call i32 @__cq_q_addto_0001(i32 %a, i32 1, i32 0, i32 %a, i32 1, i32 %a0)
+  ret i32 0
+})");
+  RailId a = f.core(f.call("cqrt_qram_alloc_i32"), abi::Core::QramAlloc, "l", ~0u);
+  f.U.noteCallBusRead(cast<CallInst>(f.I("v")), a);
+}
+
 // cq-vtfq (CR §1.3, 186's shape): a' = qram_realloc(a, 6) is a bus of its own. The store and load made
 // through a' are undone first, then qram_realloc_unc(a', 4) (n_old: a's qram_alloc size), then the
 // un-copy of the load made through a before the realloc, a's store's POP, and a's qram_free.
@@ -2710,6 +2781,7 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"seed_xorc_direct", seed_xorc_direct},
     {"seed_written_undone", seed_written_undone},
     {"qram_lifo", qram_lifo},
+    {"qram_call_bus_read", qram_call_bus_read},
     {"qram_rmw", qram_rmw},
     {"qram_realloc", qram_realloc},
     {"qram_kept_bus", qram_kept_bus},
@@ -2757,6 +2829,7 @@ const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_write_barrier", fatal_write_barrier},
     {"fatal_qram_kept_bus_barrier", fatal_qram_kept_bus_barrier},
     {"fatal_qram_realloc_kept", fatal_qram_realloc_kept},
+    {"fatal_call_bus_read_unrecorded", fatal_call_bus_read_unrecorded},
     {"fatal_unknown_handle", fatal_unknown_handle},
     {"fatal_merge_kept_role", fatal_merge_kept_role},
     {"fatal_merge_nondiagonal", fatal_merge_nondiagonal},

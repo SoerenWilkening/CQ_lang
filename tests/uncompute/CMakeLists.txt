@@ -21,6 +21,7 @@ endforeach()
 # Fatal cases: the scheduler refuses, with report_fatal_error, instead of emitting a wrong circuit.
 set(CQ_UNC_FATAL
   "fatal_use_after_free=cq: internal error: uncompute: use of"
+  "fatal_call_bus_read_unrecorded=cq: internal error: uncompute: noteCallBusRead before recordCall"
   "fatal_operand_mismatch=cq: internal error: uncompute: recordTemplate: operand 1 differs"
   "fatal_unflushed_arm=cq: internal error: uncompute: .* is still pending at a return"
   "fatal_scope_order=cq: internal error: uncompute: scopes close last-in-first-out"
