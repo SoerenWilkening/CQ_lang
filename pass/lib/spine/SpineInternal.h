@@ -153,12 +153,21 @@ struct Shared {
   // zexts of one iM register's states and constants: it names the register's rail (bits M) and has
   // no wide rail unless a user needs one (then `binds` holds a zext template of the rail, taken at
   // the phi). A skipped zext (narrowSkipped) has no binding: every user narrows it to its source.
+  // A _Bool slot cell load (cq-nd2i) read by a narrowed compare is a view too (cell = true): an i8
+  // naming its cell's i1 rail; its binding, when it has one, is mem-slots' zext_i1_to_i8 of the rail.
+  // A cell view never takes part in a view phi.
   struct View {
     llvm::Value *rail = nullptr;
     unsigned bits = 0;
+    bool cell = false;
   };
   llvm::DenseMap<const llvm::Value *, View> views;
   llvm::DenseSet<const llvm::Value *> narrowSkipped;
+  // cq-0umd (Views.cpp): rule 26 packed integers. A value bound field-wise as the fields of an ABI
+  // coercion (159: struct { int, int } as one i64) maps here to its field boundaries in bits, low
+  // bits first ({0, c1, ..., N}); its binding holds one Operand per field (a handle, or a classical
+  // value of the field's width, the constant 0 for a field the packing leaves zero).
+  llvm::DenseMap<const llvm::Value *, llvm::SmallVector<unsigned, 4>> packs;
   // A narrowed icmp ne of i1 views, lowered as xor_i1: its two narrow operands (rule 6 reads them).
   llvm::DenseMap<const llvm::Value *, llvm::SmallVector<const llvm::Value *, 2>> narrowXor;
   // CR rule 6: the rails a clean-up was requested for (Opcode.cpp). A template rail reading one of them
@@ -240,6 +249,25 @@ const llvm::Value *narrowValue(Shared &, const llvm::Value *v, unsigned &bits);
 bool narrowUse(LoweringContext &, const llvm::Use &, unsigned bits);
 // The uses that read v once skipped zexts are seen through (their users' uses instead).
 void readingUses(Shared &, const llvm::Value *v, llvm::SmallVectorImpl<const llvm::Use *> &out);
+
+// cq-0umd, rule 26 packed integers (Views.cpp, contract at its top). lowerPack lowers a quantum
+// zext, shl or or-disjoint that packs fields, or a trunc or lshr of a packed value, and returns true;
+// false when I is none of these. lowerNarrow calls it first. bindPacked binds orig (an iN) to the
+// fields of `cuts` (bit boundaries {0, ..., N}, one Operand per field): field-wise when a field is a
+// handle, else as one classical iN rebuilt from the fields (zext, shl, or) at the builder. packFields
+// returns the fields of a packed value at the boundaries `cuts`, splitting zero and classical fields
+// where needed (a handle field is never split: unimplemented); the value must be packed or classical.
+bool lowerPack(LoweringContext &, llvm::Instruction &);
+void bindPacked(LoweringContext &, const llvm::Value *orig, llvm::ArrayRef<unsigned> cuts,
+                llvm::ArrayRef<Operand> fields);
+llvm::SmallVector<Operand, 4> packFields(LoweringContext &, const llvm::Value *v, llvm::ArrayRef<unsigned> cuts);
+// The field boundaries of a packed integer as its readers unpack it (a trunc to C bits, an lshr by C,
+// a trunc of that lshr: 159's callee formal and caller result), {0, ..., N}; {0, N} when they cut
+// nothing. Taint's mask for an integer formal splits it the same way.
+llvm::SmallVector<unsigned, 4> unpackCuts(const llvm::Value *v);
+// The field boundaries of a packed integer as its writer packs it (taint's resultQuantum reading of a
+// returned coercion: or disjoint (shl (zext X), C), (zext Y)), {0, C, N}; {0, N} when it is no packing.
+llvm::SmallVector<unsigned, 4> packedCuts(const llvm::Value *v);
 
 // Binds orig to an operand with an explicit kind (classical collapse binds a quantum orig classically).
 void bindOperand(LoweringContext &, const llvm::Value *orig, Operand op);
