@@ -213,6 +213,16 @@ Class classify(const CallBase &CB, const TaintInfo &T, const Specialization &S) 
   if (F->isDeclaration() && isFenvFunction(F->getName()))
     return Class::Fenv;
 
+  // Rule 24 (106): the thread primitives collapse to the sequential schedule (eff-conc).
+  if (F->isDeclaration()) {
+    StringRef n = F->getName();
+    if (n.starts_with("\01_"))
+      n = n.drop_front(2);
+    if (n == "pthread_create" || n == "pthread_join" || n == "pthread_mutex_lock" || n == "pthread_mutex_unlock" ||
+        n == "pthread_mutex_trylock")
+      return Class::Thread;
+  }
+
   if (CB.hasFnAttr(Attribute::ReturnsTwice) || F->hasFnAttribute(Attribute::ReturnsTwice))
     return qPred || qArg || qRes ? Class::Setjmp : Class::Classical;
 
