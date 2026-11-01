@@ -1370,14 +1370,33 @@ int f(int t) {
     return s;
 }
 """
+# t > 20 returns at once, so the search past the budget decides every input the budget stopped
+# (t = 5..20, each under the cap): only then is a target reached only through UB dead (cq-3nla)
 COST_UB_C = r"""
 int f(int t) {
     volatile int s = 0, b = 20;
+    if (t > 20) return 0;
     for (int j = 0; j < t; j++) {
         s += 1 << (j + b);
         int m = j == 12 ? 0 : 1000;
         for (int k = 0; k < m; k++) s += k;
     }
+    return s;
+}
+"""
+# cq-3nla (../wt/rev/w2a-chk3-n1/dead_probe_mut.py): trip 0 of the inner loop needs t >= 15; t = 15
+# reads a[4] (outside a), t = 16 is clean; t = 1600 alone runs 10^6 extra header executions
+COST_WORK_C = r"""
+int f(int t) {
+    volatile int s = 0;
+    volatile int a[4] = {0, 0, 0, 0};
+    if (t == 1600) { for (volatile int w = 0; w < 1000000; w++) s += w; }
+    for (int j = 0; j < t; j++) {
+        int m = (j == t - 3 && j >= 12) ? 0 : 1000;
+        for (int k = 0; k < m; k++) s += k;
+    }
+    volatile int idx = t - 11;
+    if (t == 15) s += a[idx];
     return s;
 }
 """
@@ -1440,19 +1459,41 @@ class CostBudget(unittest.TestCase):
 
     def test_reached_only_through_poison_is_dead(self):
         from cqcheck import gaps
-        e, _, _ = self.target(COST_UB_C, {"CQ_COST_BUDGET": "4096", "CQ_WITNESS_CAP": "65536"})
+        e, _, _ = self.target(COST_UB_C, {"CQ_COST_BUDGET": "4096", "CQ_WITNESS_CAP": "262144"})
         t0 = e["trips"]["0"]
         self.assertNotIn("uncovered", t0)
         self.assertEqual(t0.get("proof"), "ub")
         self.assertEqual(gaps.classify_reason(t0["empty"]), gaps.IMPOSSIBLE)
 
-    def test_no_reach_within_the_cap_stays_missing(self):
+    def test_no_reach_within_the_cap_is_uncovered_without_witness(self):
+        # cq-3nla, CR §6 (afef520): a cap too small stops the runs past the budget before any reach;
+        # a search budget exhausted proves nothing: uncovered, with what was tried, no witness
         from cqcheck import gaps
         e, _, _ = self.target(COST_C, {"CQ_COST_BUDGET": "4096", "CQ_WITNESS_CAP": "8192"})
         t0 = e["trips"]["0"]
-        self.assertNotIn("uncovered", t0)
         self.assertNotIn("proof", t0)
-        self.assertEqual(gaps.classify_reason(t0["empty"]), gaps.MISSING)
+        u = t0["uncovered"]
+        self.assertIsNone(u["witness"])
+        self.assertGreater(u["undecided"], 0)
+        self.assertTrue(t0["empty"].startswith("uncovered: "))
+        self.assertIn("left undecided", t0["empty"])
+
+    def test_work_limit_stop_is_never_dead(self):
+        # cq-3nla (review w2a-chk3-n1 finding 1): t = 15 reaches trip 0 only through an access outside
+        # an object, t = 16 cleanly but after more work than the limit leaves; the work limit stops the
+        # search before t = 16 runs. Before the fix the target was dead (proof ub) on t = 15 alone, a
+        # MISSING turned PASS; it is uncovered without a witness. With a cap large enough for
+        # t = 16 the same target is uncovered with t = 16 as its witness.
+        from cqcheck import gaps
+        e, _, _ = self.target(COST_WORK_C, {"CQ_COST_BUDGET": "4096", "CQ_WITNESS_CAP": "20000"})
+        t0 = e["trips"]["0"]
+        self.assertNotIn("proof", t0)
+        self.assertIsNone(t0["uncovered"]["witness"])
+        self.assertIn("not run when the work limit stopped it", t0["empty"])
+        e, _, _ = self.target(COST_WORK_C, {"CQ_COST_BUDGET": "4096", "CQ_WITNESS_CAP": "131072"})
+        t0 = e["trips"]["0"]
+        self.assertNotIn("proof", t0)
+        self.assertEqual(t0["uncovered"]["witness"]["args"], ["0x00000010"])
 
     def test_gaps_and_report(self):
         from cqcheck import gaps, report

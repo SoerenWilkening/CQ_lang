@@ -4088,10 +4088,17 @@ def uncovered_targets(spec, example_dir, g: "Gen", searcher: "Searcher", out: Li
                  of those run, with the header executions at which it reaches the target and in all.
                  Reported, never compared and never counted green (gaps.UNCOVERED);
       dead       every input that reaches it, past the budget included, is undefined (trip_proof's
-                 "ub" over the runs past the budget): a target reachable only through poison or an
-                 access outside an object (117 at t >= 33: shl nuw i32 1, 32 is poison and the branch
-                 on it undefined), IMPOSSIBLE with that proof;
-      missing    otherwise (no reach within the cap, a reach the domain check cannot decide)."""
+                 "ub" over the runs past the budget) and the search decided every input the budget
+                 stopped (each run to its end within the cap, in the probe or the oracle): a target
+                 reachable only through poison or an access outside an object (117 at t >= 33: shl
+                 nuw i32 1, 32 is poison and the branch on it undefined), IMPOSSIBLE with that proof;
+      uncovered  with no witness: the search stopped before deciding every input the budget stopped
+                 (its work limit left some not run, or a run stopped at the witness cap). CR §6
+                 (CQ_spec afef520): exhausting a search or work budget proves nothing, so the target
+                 is UNCOVERED, listed with what was tried, never dead and never green (cq-3nla: a
+                 work-limit stop read the inputs it never ran as non-reachers, a target turned dead);
+      missing    otherwise (every such input decided, none reaching it inside the domain, or a reach
+                 the domain check cannot decide)."""
     from cqcheck import gaps, oracle
     todo = [(lpo, t) for lpo in out for t, e in lpo["trips"].items() if "empty" in e and "proof" not in e]
     if not todo:
@@ -4141,19 +4148,34 @@ def uncovered_targets(spec, example_dir, g: "Gen", searcher: "Searcher", out: Li
                    for u in ((int(t), int(t) + 1) if facts.get(lpo["loop"], gaps.LoopFacts()).region_exit else (int(t),)))
 
     work = 0
-    for i in over:
-        if work >= WITNESS_WORK * cap or all(witnessed(lpo, t) for lpo, t in todo):
+    # cq-3nla: the inputs of `over` the search left undecided (not run when the work limit stopped
+    # it, or stopped at the witness cap in the probe or the oracle): while any is, no target is dead
+    undecided = 0
+    capped = 0
+    for n, i in enumerate(over):
+        if all(witnessed(lpo, t) for lpo, t in todo):
+            break
+        if work >= WITNESS_WORK * cap:
+            undecided += len(over) - n
             break
         o = None
         if "subst" not in smp[i]:
             # the probe build first (several times faster than the oracle at -O0): an input whose
-            # probe run up to the cap reaches no target, or ends past it, needs no oracle run
+            # probe run up to the cap reaches no target needs no oracle run; one the cap stopped is
+            # undecided (it may reach a target past the cap)
             (o,) = searcher.pb.run([{"call": smp[i]["call"], "args": smp[i]["args"]}], hdrcap=cap, hang_s=hang)
             work += max(o.hdrs, 1)
-            if o.end == "timeout" or not probe_may_hit(o):
+            if o.end == "timeout":
+                undecided += 1
+                capped += 1
+                continue
+            if not probe_may_hit(o):
                 continue
         r = run_at_cap(smp[i])
         ran[i] = r
+        if "tripcap" in r.notes:
+            undecided += 1
+            capped += 1
         work += cap if "tripcap" in r.notes else (_run_cost(r) or cap)
         kruns2[i] = r
         if any(_reach_cost(r, lpo["loop"], int(t)) is not None for lpo, t in todo):
@@ -4178,10 +4200,27 @@ def uncovered_targets(spec, example_dir, g: "Gen", searcher: "Searcher", out: Li
                 "uncovered": {"witness": w, "reach": h, "cost": total, "budget": budget}}
             continue
         kind, j, why = trip_proof(lpo["loop"], int(t), cands, kruns2, obs2, searcher.valid, rows)
-        if kind == "ub":
+        if kind == "ub" and not undecided:
             lpo["trips"][t] = {"empty": why + f" (past the cost budget of {budget}, up to {cap} header executions; "
                                               f"a target reached only outside the domain is dead, cq-g8md)",
                                "witness": smp[j], "proof": kind}
+            continue
+        if undecided:
+            # CR §6 (afef520): a search or work budget exhausted proves nothing: UNCOVERED, with what was tried
+            tried = (f"of the {len(over)} inputs the budget stopped (nearest the drivers.txt call first), the search "
+                     f"past it ran {len(ran)} in the oracle up to {cap} header executions each and spent {work} of its "
+                     f"{WITNESS_WORK * cap} header executions of work; {undecided} were left undecided "
+                     f"({capped} stopped at that cap, {undecided - capped} not run when the work limit stopped it)")
+            ub = (f"; every reach seen is outside the domain ({why}), which proves nothing while inputs are undecided"
+                  if kind == "ub" else "")
+            lpo["trips"][t] = {
+                "empty": (f"uncovered: no input within the cost budget of {budget} loop-header executions (C oracle) "
+                          f"runs {t} trips of {lpo['loop']}{zero}, and no reaching input was witnessed past it: "
+                          f"{tried}{ub}; never dead, never compared (CR §6: exhausting a search budget proves "
+                          f"nothing; cq-3nla)"),
+                "uncovered": {"witness": None, "reach": None, "cost": None, "budget": budget,
+                              "tried": len(ran), "inputs": len(over), "undecided": undecided, "capped": capped,
+                              "work": work, "cap": cap}}
             continue
         if over:
             e["empty"] += (f"; past the cost budget of {budget}: {len(ran)} of the {len(over)} inputs the budget "
