@@ -1,5 +1,5 @@
 // Frozen interface (cq-arch, with owner amendments A2 and A4 of 2026-10-27 and freeze beads cq-k1w, cq-bq0 (U1),
-// cq-fx3s (F1), M3 (cq-arch 2026-11-01)).
+// cq-fx3s (F1), M3 and U2 (cq-arch 2026-11-01)).
 // Changes only under cq-arch's freeze rule.
 #pragma once
 
@@ -38,6 +38,15 @@ public:
   // over those arms: never resolved itself; a use of it is a use of every arm; a barrier on it binds
   // every arm; a kept role on it keeps every arm. mayName empty is an internal error.
   RailId recordCellLoad(llvm::Instruction *load, llvm::ArrayRef<RailId> mayName);
+  // U2 (cq-arch 2026-11-01, CR §1.4, rules 18, 27): the result rails of one clone call fwd, undone
+  // together by its twin. outs: one handle per quantum result field in field order (fwd itself for a
+  // single i32 result, else extractvalues of fwd); slotOuts: handles the caller loaded from cells the
+  // clone wrote (freed by the item, not passed); extra: twin operands after fwd's arguments. Each out
+  // and slotOut is a new rail, Role::Garbage. The item follows every use of every out and slotOut and
+  // emits <callee>_unc(outs..., fwd args..., extra...), then cqrt_free of each out and slotOut. Every
+  // one kept: nothing emitted; some kept and some not: unimplemented. Returns outs' ids, then slotOuts'.
+  llvm::SmallVector<RailId, 4> recordCall(llvm::CallInst *fwd, llvm::ArrayRef<llvm::Value *> outs,
+                                          llvm::ArrayRef<llvm::Value *> slotOuts, llvm::ArrayRef<Operand> extra);
   RailId idOf(llvm::Value *handle) const;
   void setRole(RailId, Role);
   void noteUse(RailId, llvm::Instruction *consumer);

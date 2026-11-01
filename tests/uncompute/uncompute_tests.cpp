@@ -1451,6 +1451,94 @@ void deferred_kept_through_memory() {
                     });
 }
 
+// U2 (cq-arch 2026-11-01): a clone call with two result rails (64). Both are read by one template; the
+// twin, taking both result handles first, runs after it, then both rails are freed in field order.
+const char *kCall2 = R"(
+declare { i32, i32 } @__cq_q_split_10(i32, double)
+declare i32 @cq_template_fadd_f64(i32, i32)
+define double @f(double %a0, double %th, double %c) {
+entry:
+  %x = call i32 @cqrt_alloc_f64(double %a0)
+  call void @cqrt_ry_f64(i32 %x, double %th)
+  %s = call { i32, i32 } @__cq_q_split_10(i32 %x, double %c)
+  %h = extractvalue { i32, i32 } %s, 0
+  %l = extractvalue { i32, i32 } %s, 1
+  %y = call i32 @cq_template_fadd_f64(i32 %h, i32 %l)
+  %r = call double @cqrt_measure_f64(i32 %y)
+  ret double %r
+})";
+
+void call_two_results() {
+  Fx f(kCall2);
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_f64"));
+  auto ids = f.U.recordCall(cast<CallInst>(f.I("s")), {f.I("h"), f.I("l")}, {}, {});
+  if (ids.size() != 2 || f.id("h") != ids[0] || f.id("l") != ids[1]) {
+    ++failures;
+    errs() << "FAIL call_two_results: recordCall ids\n";
+  }
+  f.U.setRole(f.T("y", "hh"), Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_f64(double %a0)",
+                        "call void @cqrt_ry_f64(i32 %x, double %th)",
+                        "%s = call { i32, i32 } @__cq_q_split_10(i32 %x, double %c)",
+                        "%h = extractvalue { i32, i32 } %s, 0",
+                        "%l = extractvalue { i32, i32 } %s, 1",
+                        "%y = call i32 @cq_template_fadd_f64(i32 %h, i32 %l)",
+                        "call void @__cq_q_split_10_unc(i32 %h, i32 %l, i32 %x, double %c)",
+                        "call void @cqrt_free(i32 %h)",
+                        "call void @cqrt_free(i32 %l)",
+                        "%r = call double @cqrt_measure_f64(i32 %y)",
+                        "ret double %r",
+                    });
+}
+
+// U2: every result kept (159's second entry measures both): no twin, nothing freed.
+const char *kCall2m = R"(
+declare { i32, i32 } @__cq_q_split_10(i32, double)
+define double @f(double %a0, double %th, double %c) {
+entry:
+  %x = call i32 @cqrt_alloc_f64(double %a0)
+  call void @cqrt_ry_f64(i32 %x, double %th)
+  %s = call { i32, i32 } @__cq_q_split_10(i32 %x, double %c)
+  %h = extractvalue { i32, i32 } %s, 0
+  %l = extractvalue { i32, i32 } %s, 1
+  %r = call double @cqrt_measure_f64(i32 %h)
+  %q = call double @cqrt_measure_f64(i32 %l)
+  ret double %r
+})";
+
+void call_all_kept() {
+  Fx f(kCall2m);
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_f64"));
+  auto ids = f.U.recordCall(cast<CallInst>(f.I("s")), {f.I("h"), f.I("l")}, {}, {});
+  f.U.setRole(ids[0], Role::Measured);
+  f.U.setRole(ids[1], Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_f64(double %a0)",
+                        "call void @cqrt_ry_f64(i32 %x, double %th)",
+                        "%s = call { i32, i32 } @__cq_q_split_10(i32 %x, double %c)",
+                        "%h = extractvalue { i32, i32 } %s, 0",
+                        "%l = extractvalue { i32, i32 } %s, 1",
+                        "%r = call double @cqrt_measure_f64(i32 %h)",
+                        "%q = call double @cqrt_measure_f64(i32 %l)",
+                        "ret double %r",
+                    });
+}
+
+// U2: one result kept and the other not: the twin would zero the kept one.
+void fatal_call_mixed() {
+  Fx f(kCall2m);
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_f64"));
+  auto ids = f.U.recordCall(cast<CallInst>(f.I("s")), {f.I("h"), f.I("l")}, {}, {});
+  f.U.setRole(ids[1], Role::Measured);
+  f.U.flushAtExit(f.ret());
+}
+
 // The merged handle measured: the consumer copies it out into a fresh rail and keeps that rail
 // (compute-copy-uncompute, CR §0); the merge stays garbage and both arms are uncomputed after the copy.
 // Kept: x and the copy (one rail with the chosen arm's value), as in 135's classical-control spelling.
@@ -2352,6 +2440,8 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"cell_load_garbage", cell_load_garbage},
     {"cell_load_kept", cell_load_kept},
     {"deferred_kept_through_memory", deferred_kept_through_memory},
+    {"call_two_results", call_two_results},
+    {"call_all_kept", call_all_kept},
     {"merge_all_arms_kept", merge_all_arms_kept},
     {"merge_template_then_garbage", merge_template_then_garbage},
     {"merge_noted_use", merge_noted_use},
@@ -2368,6 +2458,7 @@ const std::map<std::string, std::function<void()>> kPositive = {
 const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_use_after_free", fatal_use_after_free},
     {"fatal_cell_load_empty", fatal_cell_load_empty},
+    {"fatal_call_mixed", fatal_call_mixed},
     {"fatal_operand_mismatch", fatal_operand_mismatch},
     {"fatal_unflushed_arm", fatal_unflushed_arm},
     {"fatal_scope_order", fatal_scope_order},

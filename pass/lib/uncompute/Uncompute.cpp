@@ -81,6 +81,14 @@
 //    merge as above with mayName as its arms: never resolved itself, a use of it is a use of every arm,
 //    a barrier on it binds every arm. It has no join, so a kept role on it (or on a merge naming it)
 //    keeps every resolvable arm, with no edge logic. mayName empty is an internal error.
+//  - recordCall(fwd, outs, slotOuts, extra) (U2, cq-arch 2026-11-01; CR §1.4, rules 18, 27): the result
+//    rails of one clone call. The first member (outs, then slotOuts) is the leader: it carries a Call
+//    record over fwd's arguments and extra (their handles are its reads) and the group's one item; every
+//    other member is a merge over the leader alone (as a cell load: a use of it is a use of the leader,
+//    a kept role on it keeps the leader). The item emits <callee>_unc(outs..., fwd args..., extra...)
+//    (C calling convention) and then cqrt_free of every member in order. Every member kept: nothing.
+//    A kept leader with a member that was not given a kept role itself is unimplemented at flushAtExit
+//    (the twin would zero the kept results); KeptEntangled (a barrier) keeps all of them.
 //
 // Emission. Each resolvable rail g is resolved once, as one ITEM: its records undone in reverse
 // (or its rule 6 clean-up, or nothing for a direct seed free), then cqrt_free / cqrt_qram_free.
@@ -184,6 +192,7 @@ enum class RecKind : uint8_t {
   QramLoad,  // fresh out, undone by name_unc(out, args...)
   Involution,// in place on out, undone by the same call
   QramStore, // in place on the object, undone by name_unc(args...)
+  Call,      // U2: a clone call's results, undone together by name_unc(outs..., args..., extra...)
 };
 
 bool isCreator(RecKind k) { return k != RecKind::Involution && k != RecKind::QramStore; }
@@ -250,6 +259,8 @@ struct Uncompute::Impl {
     SmallVector<RailId, 2> arms;       // U1: non-empty iff this rail is a merge (its handle aliases one arm)
     SmallVector<RailId, 2> mergedInto; // U1: the merges that name this rail as an arm
     bool cellLoad = false;             // M3: a merge that is a load of a slot cell's handle
+    unsigned group = kNone;            // U2: the call group this rail is a member of
+    bool explicitKept = false;         // U2: setRole gave this rail a kept role itself
     // A2 (cq-w6ie): QRAM versions. A bus's stores s_1..s_m (program order) are POP items of their
     // own; a load records, per bus it may read, the number k of stores made before it (it reads v_k).
     RailId popBus = kNone;             // POP(popK) of this bus: a pseudo rail, handle = the store call
@@ -285,6 +296,15 @@ struct Uncompute::Impl {
   DenseMap<const Value *, RailId> byHandle;
   std::vector<Scope> scopes;
   std::vector<Deferred> defs;
+  // U2: one clone call's results. members[0] (the leader, an out or else a slotOut) carries the Call
+  // record and the item; every other member is a merge over the leader alone (cellLoad, no join), so a
+  // use of it is a use of the leader and a kept role on it keeps the leader.
+  struct CallGroup {
+    CallInst *fwd;
+    SmallVector<RailId, 4> outs, slotOuts, members;
+    SmallVector<Value *, 4> extra;
+  };
+  std::vector<CallGroup> groups;
   SmallVector<unsigned, 4> openStack;
   DenseSet<const Instruction *> emitted;
   DenseMap<std::pair<RailId, const BasicBlock *>, Instruction *> itemEnd;
@@ -1286,6 +1306,35 @@ struct Uncompute::Impl {
 
   Instruction *emitItem(RailId g, IRBuilder<> &B) {
     Rail &r = rails[g];
+    if (r.group != kNone && r.creator != kNone && info[r.creator].kind == RecKind::Call) {
+      // U2: twin(outs..., fwd args..., extra...), then free every out and slotOut in order.
+      const CallGroup &cg = groups[r.group];
+      CallInst *fwd = cg.fwd;
+      Module &M = *B.GetInsertBlock()->getModule();
+      LLVMContext &C = M.getContext();
+      SmallVector<Type *, 8> ps;
+      SmallVector<Value *, 8> args;
+      for (RailId o : cg.outs) {
+        ps.push_back(Type::getInt32Ty(C));
+        args.push_back(rails[o].handle);
+      }
+      for (Value *a : fwd->args()) {
+        ps.push_back(a->getType());
+        args.push_back(a);
+      }
+      for (Value *e : cg.extra) {
+        ps.push_back(e->getType());
+        args.push_back(e);
+      }
+      FunctionType *TT = FunctionType::get(Type::getVoidTy(C), ps, false);
+      track(B.CreateCall(declareFn(M, (fwd->getCalledFunction()->getName() + "_unc").str(), TT, fwd), args));
+      FunctionType *FT = FunctionType::get(Type::getVoidTy(C), {Type::getInt32Ty(C)}, false);
+      Instruction *last = nullptr;
+      for (RailId o : cg.members)
+        last = o == g ? emitRelease(g, B) : track(B.CreateCall(declareFn(M, "cqrt_free", FT, rails[o].handle),
+                                                               {rails[o].handle}));
+      return last;
+    }
     if (r.popBus != kNone) {
       // A2: POP(k) is the store's _unc alone; the bus's own item frees it.
       CallInst *fwd = records[r.creator].forward;
@@ -1327,6 +1376,8 @@ struct Uncompute::Impl {
           break;
         case RecKind::QramStore:
           internalError("uncompute: a QRAM store is undone by its own POP item", fwd);
+        case RecKind::Call:
+          internalError("uncompute: a call group's record outside its leader's item", fwd);
         case RecKind::Seed:
         case RecKind::QramAlloc:
           break;
@@ -2233,6 +2284,54 @@ RailId Uncompute::recordCellLoad(Instruction *load, ArrayRef<RailId> mayName) {
   return m;
 }
 
+SmallVector<RailId, 4> Uncompute::recordCall(CallInst *fwd, ArrayRef<Value *> outs, ArrayRef<Value *> slotOuts,
+                                             ArrayRef<Operand> extra) {
+  Impl &I = *impl;
+  if (!fwd || !fwd->getCalledFunction() || !fwd->getParent())
+    internalError("uncompute: recordCall: the forward must be a direct call in a block", fwd);
+  if (outs.empty() && slotOuts.empty())
+    internalError("uncompute: recordCall: a call with no result rail", fwd);
+  SmallVector<Operand, 8> ops;
+  for (Value *a : fwd->args()) {
+    bool h = I.byHandle.count(a) > 0;
+    ops.push_back(Operand{a, h});
+  }
+  I.checkOps(fwd, ops, "recordCall");
+  unsigned gi = I.groups.size();
+  I.groups.push_back({fwd, {}, {}, {}, {}});
+  for (const Operand &e : extra) {
+    if (e.handle) {
+      RailId r = I.lookup(e.v, "recordCall", fwd);
+      if (I.anyReleased(r))
+        internalError("uncompute: recordCall: extra operand " + describe(e.v) + " was already freed", fwd);
+    }
+    ops.push_back(e);
+    I.groups[gi].extra.push_back(e.v);
+  }
+  SmallVector<Value *, 8> all(outs.begin(), outs.end());
+  all.append(slotOuts.begin(), slotOuts.end());
+  for (Value *h : all)
+    if (auto *ins = dyn_cast<Instruction>(h); !ins || !ins->getParent())
+      internalError("uncompute: recordCall: a result handle that is not an instruction in a block", fwd);
+  RailId lead = I.newRail(all.front(), Role::Garbage, "recordCall");
+  I.rails[lead].group = gi;
+  I.addRecord(fwd, abi::TemplateSpec{}, ops, lead, RecKind::Call, false);
+  SmallVector<RailId, 4> ids{lead};
+  for (size_t k = 1; k < all.size(); ++k) {
+    RailId m = I.newRail(all[k], Role::Garbage, "recordCall");
+    I.rails[m].arms = {lead};
+    I.rails[m].cellLoad = true;
+    I.rails[m].group = gi;
+    I.rails[lead].mergedInto.push_back(m);
+    ids.push_back(m);
+  }
+  Impl::CallGroup &cg = I.groups[gi];
+  cg.members.assign(ids.begin(), ids.end());
+  cg.outs.assign(ids.begin(), ids.begin() + outs.size());
+  cg.slotOuts.assign(ids.begin() + outs.size(), ids.end());
+  return ids;
+}
+
 RailId Uncompute::idOf(Value *handle) const { return impl->lookup(handle, "idOf", handle); }
 
 void Uncompute::setRole(RailId r, Role role) {
@@ -2240,6 +2339,8 @@ void Uncompute::setRole(RailId r, Role role) {
   Impl::Rail &x = I.rail(r, "setRole");
   if (x.released || !x.exitsDone.empty())
     internalError("uncompute: setRole on a rail that was already uncomputed", x.handle);
+  if (x.group != kNone)
+    x.explicitKept = Impl::keptRole(role);
   if (I.isMerge(r)) {
     // U1: a merge is never resolved itself; a kept role on it would have to keep whichever arm the
     // classical condition chose and clean the others, which no static role can say. It is accepted
@@ -2368,6 +2469,17 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
     internalError("uncompute: flushAtExit needs a return in a block");
   Impl &I = *impl;
   I.checkEdgeUsers();
+  // U2: a twin zeroes every result of its call, so either every member is kept or none is.
+  for (const Impl::CallGroup &cg : I.groups) {
+    const Impl::Rail &lead = I.rails[cg.members.front()];
+    if (!Impl::keptRole(lead.role) || lead.role == Role::KeptEntangled)
+      continue;
+    for (RailId m : cg.members)
+      if (!I.rails[m].explicitKept)
+        unimplemented("uncompute: a call whose results are partly kept (" + describe(I.rails[m].handle) +
+                          " is not; its twin would zero the kept ones)",
+                      cg.fwd);
+  }
   Impl::Ctx c{Impl::Mode::Exit, ret, nullptr};
   BasicBlock *Rb = ret->getParent();
   SmallVector<RailId, 16> cands, defc;
