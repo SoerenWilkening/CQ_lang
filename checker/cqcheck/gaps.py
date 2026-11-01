@@ -156,6 +156,132 @@ def scev_counts(o1: Path, llvm_bin: Path) -> Dict[str, Dict[str, Optional[int]]]
     return out
 
 
+_SCEV_SYM = re.compile(r"^Loop (%\S+): backedge-taken count is (\(.*\)|%[-\w.$]+)(?:<[a-z]+>)*\s*$")
+
+
+def scev_symbolic_counts(o1: Path, llvm_bin: Path) -> Dict[str, str]:
+    """{"<fn>:<header>": expression} for each loop whose exact backedge-taken count LLVM's
+    ScalarEvolution prints as an expression (not a constant, not "Unpredictable")."""
+    r = subprocess.run([str(llvm_bin / "opt"), "-passes=print<scalar-evolution>", "-disable-output", str(o1)],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"opt print<scalar-evolution> on {o1} exited {r.returncode}: {r.stderr.strip()[:500]}")
+    out: Dict[str, str] = {}
+    fn = None
+    for line in r.stderr.splitlines() + r.stdout.splitlines():
+        m = _SCEV_FN.match(line)
+        if m:
+            fn = m.group(1)
+            continue
+        m = _SCEV_SYM.match(line)
+        if m and fn:
+            out[f"{fn}:{m.group(1)}"] = m.group(2)
+    return out
+
+
+_SCEV_TOK = re.compile(r"\s*(\(|\)|<[a-z]+>|/u|-?\d+|[+*]|i\d+|%[-\w.$]+|[a-z_]+)")
+_SCEV_NARY = {"+", "*", "smax", "umax", "smin", "umin", "/u"}
+
+
+def scev_eval(expr: str, params: Dict[str, Tuple[int, int]]) -> Optional[int]:
+    """The value (unsigned, at its width) of a ScalarEvolution expression as print<scalar-evolution>
+    writes it, its only unknowns the parameters `params` ({"%N": (width, bit pattern)}), or None for
+    any form not listed here (an AddRec, an instruction operand, a cast or operator not below):
+    constants, parameters, (a + b ...), (a * b ...), (a /u b), (a smax|umax|smin|umin b ...),
+    (zext|sext|trunc iN x to iM), each with optional <nsw>/<nuw>/<nw> flags."""
+    toks: List[str] = []
+    pos = 0
+    s = expr.strip()
+    while pos < len(s):
+        m = _SCEV_TOK.match(s, pos)
+        if not m:
+            return None
+        toks.append(m.group(1))
+        pos = m.end()
+    toks = [t for t in toks if not (t.startswith("<") and t.endswith(">"))]
+    i = 0
+
+    def sgn(v: int, w: int) -> int:
+        return v - (1 << w) if v >> (w - 1) & 1 else v
+
+    def atom():   # -> (value, width or None) ; width None: a constant not yet typed
+        nonlocal i
+        if i >= len(toks):
+            raise ValueError
+        t = toks[i]
+        i += 1
+        if re.fullmatch(r"-?\d+", t):
+            return int(t), None
+        if t.startswith("%"):
+            if t not in params:
+                raise ValueError
+            w, v = params[t]
+            return v & ((1 << w) - 1), w
+        if t != "(":
+            raise ValueError
+        if toks[i] in ("zext", "sext", "trunc"):
+            op = toks[i]
+            i += 1
+            wa = toks[i]
+            i += 1
+            if not re.fullmatch(r"i\d+", wa):
+                raise ValueError
+            v, w = atom()
+            wa_n = int(wa[1:])
+            if w is not None and w != wa_n:
+                raise ValueError
+            v &= (1 << wa_n) - 1
+            if toks[i] != "to" or not re.fullmatch(r"i\d+", toks[i + 1]) or toks[i + 2] != ")":
+                raise ValueError
+            wb = int(toks[i + 1][1:])
+            i += 3
+            if op == "sext":
+                v = sgn(v, wa_n)
+            return v & ((1 << wb) - 1), wb
+        vals = [atom()]
+        op = None
+        while toks[i] != ")":
+            o = toks[i]
+            if o not in _SCEV_NARY or (op is not None and o != op):
+                raise ValueError
+            op = o
+            i += 1
+            vals.append(atom())
+        i += 1
+        if op is None:
+            return vals[0]
+        ws = {w for _, w in vals if w is not None}
+        if len(ws) != 1:
+            raise ValueError
+        w = ws.pop()
+        m = (1 << w) - 1
+        us = [v & m for v, _ in vals]
+        if op == "+":
+            r = sum(us)
+        elif op == "*":
+            r = 1
+            for v in us:
+                r *= v
+        elif op == "/u":
+            if len(us) != 2 or us[1] == 0:
+                raise ValueError
+            r = us[0] // us[1]
+        elif op in ("umax", "umin"):
+            r = (max if op == "umax" else min)(us)
+        else:
+            ss = [sgn(v, w) for v in us]
+            r = (max if op == "smax" else min)(ss)
+        return r & m, w
+
+    try:
+        v, w = atom()
+    except (ValueError, IndexError):
+        return None
+    if i != len(toks) or w is None:
+        return None
+    return v
+
+
 def _zero_proof(f: "D.Function", header: str, blocks: set, top_level: bool) -> Optional[str]:
     """Why the C oracle never reports 0 trips of this loop, or None. OracleInstr.cpp (trip counters)
     reports 0 only (a) on a guard skip: walking back from an out-of-loop predecessor of the header

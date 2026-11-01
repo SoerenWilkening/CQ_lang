@@ -3832,6 +3832,113 @@ def run_undefined(r, o: Optional["Obs"], rows_by_site) -> Optional[str]:
     return None
 
 
+def budget_undecided(kr) -> bool:
+    """The cost budget stopped this C oracle run before the C program was decided on it: no undefined
+    operation noted before the stop (cq-hsan). A stopped run that noted one (an access outside an
+    object, a "ub" or "crash" note; the oracle notes it when it happens and keeps running) is outside
+    the domain whatever it would do after the budget, so it can be no clean witness of any target:
+    it is decided, not unknown (CLAUDE.md Domain; orchestrator decision under it, owner may override)."""
+    return (kr is not None and kr.failed and "tripcap" in kr.notes
+            and run_undefined(kr, None, {}) is None)
+
+
+class StoppedReach:
+    """Which trip targets a constructed input the cost budget stopped cannot reach after the stop
+    (cq-r7-trips; orchestrator decision under CLAUDE.md Domain and CR §6 "range facts", owner may
+    override). Nothing runs past the budget; each decision is a fact of the input or of the run's
+    prefix the budget allowed, never of the search:
+
+      not run     the loop's function F is never invoked by that call: F is not the call's function
+                  and @F has no use in the module but its definition (no call, no address), nor in
+                  the driver's setup;
+      count       LLVM's ScalarEvolution gives the loop an exact backedge-taken count B that is an
+                  expression of F's integer parameters only, F is invoked only by the driver (as
+                  above, F the call's function), so every activation of the loop runs h = B(args) + 1
+                  header executions and the C oracle reports h - 1 or h trips (gaps: the oracle's
+                  trips begun), or, for a quantum-exit loop cut at K, a capped record when h > K: a
+                  target t >= 1 with t not in {h - 1, h}, and t <= K or h <= K, is not reached;
+      past it     F is invoked only by the driver and no block reachable from the loop's exits can
+                  reach its header or a block before it (so the loop has one activation per run and
+                  no guard of it runs after it; F calls no setjmp), and the probe run of the same
+                  input (not substituted; the probe counts the oracle's header executions, within
+                  the same budget) shows that activation past t + 1 header executions: a target
+                  t <= K is not reached (an activation's count only grows)."""
+
+    def __init__(self, spec, g: "Gen", mod: "D.Module", o1: Path, loops: Sequence[Loop]):
+        from cqcheck import gaps
+        self.spec, self.g, self.mod = spec, g, mod
+        text = o1.read_text()
+        self.loops = {lp.key(): lp for lp in loops}
+        self.btc = gaps.scev_symbolic_counts(o1, LLVM_BIN)
+        self.unused: Set[str] = set()       # "@F": defined, no other use in the module or the setup
+        for name in mod.functions:
+            uses = len(re.findall(re.escape(name) + r"(?![-\w.$])", text))
+            if uses == 1 and name[1:] not in spec.setup:
+                self.unused.add(name)
+        self._single: Dict[str, bool] = {}
+
+    def _single_entry(self, lp: Loop) -> bool:
+        if lp.key() in self._single:
+            return self._single[lp.key()]
+        f = self.mod.functions[lp.fn]
+        ok = not any(i.op == "call" and "setjmp" in i.text for i in f.insts())
+        if ok:
+            preds = f.preds()
+            before, todo = set(), [lp.header]
+            while todo:
+                b = todo.pop()
+                for p in preds.get(b, []):
+                    if p not in before and p not in lp.blocks:
+                        before.add(p)
+                        todo.append(p)
+            after = set()
+            todo = [s for b in lp.blocks for s in f.blocks[b][-1].successors() if s not in lp.blocks]
+            while todo:
+                b = todo.pop()
+                if b in after or b not in f.blocks:
+                    continue
+                after.add(b)
+                todo += f.blocks[b][-1].successors()
+            ok = not (after & (before | lp.blocks))
+        self._single[lp.key()] = ok
+        return ok
+
+    def _params(self, ci: int, args: Sequence[str]) -> Dict[str, Tuple[int, int]]:
+        f = self.mod.functions.get("@" + self.spec.calls[ci]["fn"])
+        out: Dict[str, Tuple[int, int]] = {}
+        if f is None or len(f.params) != len(args):
+            return out
+        for j, ((ptext, name), a) in enumerate(zip(f.params, args)):
+            ct = self.g.cts[ci][j]
+            ty = ptext.split()[0] if ptext else ""
+            if (name == f"%{j}" and re.fullmatch(r"i\d+", ty) and ct.kind == "i" and int(ty[1:]) == ct.bits
+                    and str(a).startswith("0x")):
+                out[name] = (ct.bits, int(a, 16) & ((1 << ct.bits) - 1))
+        return out
+
+    def why_not(self, smp: dict, o: Optional["Obs"], loop: str, t: int) -> Optional[str]:
+        """Why the stopped input `smp` (probe observation `o`, None when not probed) cannot run `t`
+        trips of `loop` after the stop, or None when that is not known."""
+        lp = self.loops.get(loop)
+        if lp is None or lp.fn not in self.unused:
+            return None
+        ci = smp["call"]
+        if "@" + self.spec.calls[ci]["fn"] != lp.fn:
+            return "not run"
+        expr = self.btc.get(loop)
+        if t >= 1 and expr is not None:
+            from cqcheck import gaps
+            b = gaps.scev_eval(expr, self._params(ci, smp["args"]))
+            if b is not None:
+                h = b + 1
+                if t not in (h - 1, h) and (t <= K or h <= K):
+                    return "count"
+        if (t <= K and "subst" not in smp and o is not None and hdr_cap() <= cost_budget()
+                and self._single_entry(lp) and any(h > t + 1 for h in o.t.get(lp.id, []))):
+            return "past it"
+        return None
+
+
 def trip_proof(loop: str, t: int, cands: Sequence[Tuple[int, Tuple[str, ...]]], kruns,
                obs: Sequence[Optional["Obs"]], valid: Callable[["Obs"], bool], rows_by_site) -> Tuple[str, Optional[int], str]:
     """The decision above for target `t` of `loop` over constructed inputs `cands`, their C oracle
@@ -4006,8 +4113,16 @@ def construct_trip_targets(spec, example_dir, g: "Gen", searcher: "Searcher", ou
         eobs = searcher.observe([(c, list(a)) for c, a in exh])
         if any(r.failed or r.outcome != "ret" or run_undefined(r, o, searcher.rows_by_site) for r, o in zip(eruns, eobs)):
             exh = None
-    # cq-hsan: the constructed inputs the cost budget stopped (a run cut there may reach any target later)
-    stopped = sum(1 for kr in kruns if kr is not None and kr.failed and "tripcap" in kr.notes)
+    # cq-hsan: the constructed inputs the cost budget stopped (a run cut there may reach any target later);
+    # one that executed an undefined operation before the budget is outside the domain already, and one
+    # that cannot reach the target after the stop (StoppedReach) leaves that target decided
+    over_all = [i for i, kr in enumerate(kruns) if budget_undecided(kr)]
+    reach = StoppedReach(spec, g, mod, o1, searcher.pb.ins.loops) if over_all else None
+
+    def open_stops(loop: str, t: int) -> List[int]:
+        return [i for i in over_all if reach.why_not(smp[i], obs[i], loop, t) is None]
+
+    n_tripcap = sum(1 for kr in kruns if kr is not None and kr.failed and "tripcap" in kr.notes)
     ub_only: Set[Tuple[str, str]] = set()     # targets whose in-budget reaches are all undefined
     for lpo in out:
         for target, e in lpo["trips"].items():
@@ -4017,7 +4132,11 @@ def construct_trip_targets(spec, example_dir, g: "Gen", searcher: "Searcher", ou
                                       searcher.rows_by_site)
             if kind == "found":
                 lpo["trips"][target] = {"sample": g.add_subst(cands[i][0], list(cands[i][1]), smp[i].get("subst"))}
-            elif kind == "ub" and not stopped:
+            elif kind == "ub" and not (stopped := open_stops(lpo["loop"], int(target))):
+                if n_tripcap:
+                    why += (f"; each of the {n_tripcap} constructed inputs the cost budget of {cost_budget()} stopped "
+                            f"either executed an undefined operation before the stop or cannot run {target} trips "
+                            f"of {lpo['loop']} after it (cq-r7-trips)")
                 lpo["trips"][target] = {"empty": why, "witness": smp[i], "proof": kind}
             elif exh is not None and not any(trip_hit(r.events, r.loops, lpo["loop"], int(target)) for r in eruns):
                 lpo["trips"][target] = {"empty": (
@@ -4032,11 +4151,12 @@ def construct_trip_targets(spec, example_dir, g: "Gen", searcher: "Searcher", ou
                 # could reach it, and an exhausted budget proves nothing: no proof here; the target
                 # is uncovered (uncovered_targets) unless a static proof excludes it
                 e["empty"] += (f"; every reach within the budget is undefined as LLVM defines it (e.g. "
-                               f"{json.dumps(smp[i], sort_keys=True)}), but {stopped} constructed inputs stopped at "
+                               f"{json.dumps(smp[i], sort_keys=True)}), but {len(stopped)} constructed inputs stopped at "
                                f"the cost budget of {cost_budget()} before reaching it: no proof (cq-hsan)")
             else:
                 e["empty"] += f"; {why} (cq-oou2)"
-    uncovered_targets(spec, example_dir, g, searcher, out, cands, smp, kruns, obs, ub_only)
+    uncovered_targets(spec, example_dir, g, searcher, out, cands, smp, kruns, obs, ub_only,
+                      open_stops if over_all else None)
 
 
 def _arg_distance(g: "Gen", ci: int, args: Sequence[str]) -> int:
@@ -4061,7 +4181,8 @@ UNCOVERED_LISTED = 5          # stopped inputs named in an uncovered line (all a
 
 
 def uncovered_targets(spec, example_dir, g: "Gen", searcher: "Searcher", out: List[dict], cands, smp, kruns, obs,
-                      ub_only: Optional[Set[Tuple[str, str]]] = None) -> None:
+                      ub_only: Optional[Set[Tuple[str, str]]] = None,
+                      open_stops: Optional[Callable[[str, int], List[int]]] = None) -> None:
     """The trip targets still empty after the search and the constructed inputs within the budget
     (owner rulings 2026-11-01 on 117, cq-g8md, cq-hsan; CR §6, coverage). Nothing runs past the
     budget. A target LLVM's or TripFacts' static proofs exclude (gaps.loop_facts) is left to them
@@ -4076,21 +4197,26 @@ def uncovered_targets(spec, example_dir, g: "Gen", searcher: "Searcher", out: Li
                  found no proof since the budget stopped an input).
 
     With no stopped input the target stays as construct_trip_targets left it (MISSING: no constructed
-    input reaches it inside the domain, each run to its end)."""
+    input reaches it inside the domain, each run to its end). A stopped input counts only for the
+    targets it may reach after the stop (`open_stops(loop, t)`: the stopped inputs StoppedReach does
+    not decide for that target; cq-r7-trips)."""
     from cqcheck import gaps
     todo = [(lpo, t) for lpo in out for t, e in lpo["trips"].items() if "empty" in e and "proof" not in e]
     if not todo:
         return
-    over = [i for i, kr in enumerate(kruns) if kr is not None and kr.failed and "tripcap" in kr.notes]
-    if not over:
+    over_all = [i for i, kr in enumerate(kruns) if budget_undecided(kr)]
+    if not over_all:
         return
     facts = gaps.loop_facts(example_dir, LLVM_BIN)
     todo = [(lpo, t) for lpo, t in todo if not facts.get(lpo["loop"], gaps.LoopFacts()).impossible(lpo["loop"], int(t))]
     budget = cost_budget()
-    over.sort(key=lambda i: ("subst" in smp[i], _arg_distance(g, cands[i][0], cands[i][1]), i))
-    listed = [{k: v for k, v in smp[i].items()} for i in over[:UNCOVERED_LISTED]]
-    names = "; ".join(json.dumps(w, sort_keys=True) for w in listed)
     for lpo, t in todo:
+        over = open_stops(lpo["loop"], int(t)) if open_stops else list(over_all)
+        if not over:
+            continue
+        over.sort(key=lambda i: ("subst" in smp[i], _arg_distance(g, cands[i][0], cands[i][1]), i))
+        listed = [{k: v for k, v in smp[i].items()} for i in over[:UNCOVERED_LISTED]]
+        names = "; ".join(json.dumps(w, sort_keys=True) for w in listed)
         zero = f" ({lpo['zero']})" if int(t) == 0 and lpo.get("zero") else ""
         ub = (" Every in-budget reach of it is undefined as LLVM defines it, which proves nothing while the "
               "budget stopped inputs (cq-hsan)." if ub_only and (lpo["loop"], t) in ub_only else "")

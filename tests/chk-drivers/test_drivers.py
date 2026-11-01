@@ -1538,6 +1538,161 @@ class CostBudget(unittest.TestCase):
         self.assertIn("sampling: uncovered:", table.splitlines()[1])
 
 
+# cq-r7-trips: every reach of the target is undefined (a[4] past the object), and the inputs the
+# budget of 4096 stops cannot reach it after the stop. STOP_UB_C: t >= 4097 reads a[4] at j = 4 before
+# the stop (noted: decided). STOP_COUNT_C: n >= 4097 stops in the first loop, before the j-loop, whose
+# exact backedge-taken count t - 1 (ScalarEvolution) gives t = 3 trips, never 5. STOP_PAST_C: trip 0
+# needs n <= 0, which reads a[4]; n >= 4097 stops inside the loop's only activation, past 1 header run.
+STOP_UB_C = r"""
+int f(int t) {
+    volatile int s = 0;
+    volatile int a[4] = {0, 0, 0, 0};
+    for (int j = 0; j < t; j++) s += a[j];
+    return s;
+}
+"""
+STOP_COUNT_C = r"""
+int f(int t, int n) {
+    volatile int s = 0;
+    volatile int a[4] = {0, 0, 0, 0};
+    for (int i = 0; i < n; i++) s += i;
+    for (int j = 0; j < t; j++) s += a[j];
+    return s;
+}
+"""
+STOP_PAST_C = r"""
+int f(int n) {
+    volatile int s = 0;
+    volatile int a[4] = {0, 0, 0, 0};
+    for (int i = 0; i < n; i++) s += i;
+    volatile int k = n > 0 ? 0 : 4;
+    return s + a[k];
+}
+"""
+
+
+class StoppedInputs(unittest.TestCase):
+    """cq-r7-trips: a constructed input the cost budget stopped keeps a target uncovered only when it
+    may reach it after the stop: one that executed an undefined operation before the stop is outside
+    the domain (budget_undecided), and StoppedReach decides the loop's count from ScalarEvolution's
+    exact count over the arguments ("count") or from the probe's view of the loop's only activation
+    ("past it"). Mutants: each decision off leaves the target uncovered (cq-hsan's rule)."""
+
+    def target(self, c_text, line, base, loop_index, t, mutate=None):
+        saved = os.environ.get("CQ_COST_BUDGET")
+        os.environ["CQ_COST_BUDGET"] = "4096"
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                tdir = Path(d)
+                ex = synth_example(tdir, "907_stop", c_text, line)
+                spec = D.driver_spec("907_stop", ex)
+                g = S.Gen(spec, [base])
+                g.add(0, list(base))
+                with S.ProbeBuild(spec, ex, tdir / "work") as pb:
+                    rows = {s_.id: S.rows_for(s_) for s_ in pb.ins.sites}
+                    searcher = S.Searcher(g, pb, rows, __import__("random").Random(1))
+                    lp = pb.ins.loops[loop_index]
+                    from cqcheck import gaps
+                    out = [{"loop": lp.key(), "parent": None,
+                            "zero": gaps.zero_meaning(pb.mod.functions[lp.fn], lp.header, lp.blocks),
+                            "trips": {str(t): {"empty": "no input found: the test's own search"}}}]
+                    if mutate:
+                        with mutate():
+                            S.construct_trip_targets(spec, ex, g, searcher, out)
+                    else:
+                        S.construct_trip_targets(spec, ex, g, searcher, out)
+                    return out[0]["trips"][str(t)]
+        finally:
+            if saved is None:
+                os.environ.pop("CQ_COST_BUDGET", None)
+            else:
+                os.environ["CQ_COST_BUDGET"] = saved
+
+    @staticmethod
+    def patched(obj, name, value):
+        import contextlib
+
+        @contextlib.contextmanager
+        def cm():
+            old = getattr(obj, name)
+            setattr(obj, name, value)
+            try:
+                yield
+            finally:
+                setattr(obj, name, old)
+        return cm
+
+    def assert_dead(self, e):
+        from cqcheck import gaps
+        self.assertEqual(e.get("proof"), "ub", e)
+        self.assertNotIn("uncovered", e)
+        self.assertIn("cq-r7-trips", e["empty"])
+        self.assertEqual(gaps.classify_reason(e["empty"]), gaps.IMPOSSIBLE)
+
+    def test_scev_eval(self):
+        from cqcheck import gaps
+        p = {"%0": (32, 0x7ff), "%4": (32, 2), "%2": (32, 0)}
+        self.assertEqual(gaps.scev_eval("(-1 + (zext i32 %4 to i64))<nsw>", p), 1)
+        self.assertEqual(gaps.scev_eval("(-1 + (zext i32 %2 to i64))", p), (1 << 64) - 1)
+        self.assertEqual(gaps.scev_eval("((zext i32 %0 to i64) /u 3)", p), 682)
+        self.assertEqual(gaps.scev_eval("(-2 + (-1 smax (sext i32 %4 to i64)))", p), 0)
+        self.assertEqual(gaps.scev_eval("(-1 + (1 smax %4))<nsw>", p), 1)
+        self.assertEqual(gaps.scev_eval("(-1 + (umin %4 %0))", p), None)       # not a form it knows
+        self.assertEqual(gaps.scev_eval("{0,+,1}<nuw><%5>", p), None)          # an AddRec
+        self.assertEqual(gaps.scev_eval("(-1 + (zext i32 %9 to i64))", p), None)   # not a parameter
+        self.assertEqual(gaps.scev_eval("(%4 + (zext i32 %0 to i64))", p), None)   # widths differ
+
+    def test_undefined_before_the_stop(self):
+        e = self.target(STOP_UB_C, "907_stop|int f(int);|f(3)", ["0x00000003"], 0, 5)
+        self.assert_dead(e)
+        # mutant: every stopped input counts (cq-hsan before cq-r7-trips): uncovered
+        old = S.budget_undecided
+        e = self.target(STOP_UB_C, "907_stop|int f(int);|f(3)", ["0x00000003"], 0, 5,
+                        self.patched(S, "budget_undecided",
+                                     lambda kr: kr is not None and kr.failed and "tripcap" in kr.notes))
+        self.assertIs(S.budget_undecided, old)
+        self.assertIn("uncovered", e)
+        self.assertNotIn("proof", e)
+
+    def test_count_from_scalar_evolution(self):
+        line = "907_stop|int f(int,int);|f(3,2)"
+        e = self.target(STOP_COUNT_C, line, ["0x00000003", "0x00000002"], 1, 5)
+        self.assert_dead(e)
+        # mutant: no ScalarEvolution count: the n-stopped inputs stay open, uncovered
+        e = self.target(STOP_COUNT_C, line, ["0x00000003", "0x00000002"], 1, 5,
+                        self.patched(S.StoppedReach, "why_not", lambda self, smp, o, loop, t: None))
+        self.assertIn("uncovered", e)
+        self.assertTrue(e["uncovered"]["n_stopped"] > 0)
+
+    def test_past_the_only_activation(self):
+        line = "907_stop|int f(int);|f(3)"
+        e = self.target(STOP_PAST_C, line, ["0x00000003"], 0, 0)
+        self.assert_dead(e)
+        # mutant: the loop may be entered again after it (single entry off): uncovered
+        e = self.target(STOP_PAST_C, line, ["0x00000003"], 0, 0,
+                        self.patched(S.StoppedReach, "_single_entry", lambda self, lp: False))
+        self.assertIn("uncovered", e)
+
+    def test_single_entry(self):
+        # a nested loop is entered once per outer trip; a top-level loop once per call
+        with tempfile.TemporaryDirectory() as d:
+            tdir = Path(d)
+            ex = synth_example(tdir, "906_probe_cost", COST_C, COST_LINE)
+            spec = D.driver_spec("906_probe_cost", ex)
+            o1 = sorted(ex.glob("*.O1.ll"))[0]
+            mod = D.read_module(o1)
+            ins = S.Instrumenter(mod, None)
+            loops = [lp for f in mod.functions.values() for lp in ins.find_loops(f)]
+            r = S.StoppedReach(spec, S.Gen(spec, [["0x00000003"]]), mod, o1, loops)
+            by_parent = {lp.parent is None: r._single_entry(lp) for lp in loops}
+            self.assertEqual(by_parent, {True: True, False: False})
+            # a call of f elsewhere in the module, or in the setup: f's loops are not run by the driver only
+            spec2 = DriverSpec(spec.example, spec.protos, "int z = f(1);", spec.calls)
+            r2 = S.StoppedReach(spec2, S.Gen(spec2, [["0x00000003"]]), mod, o1, loops)
+            self.assertNotIn("@f", r2.unused)
+            self.assertIsNone(r2.why_not({"call": 0, "args": ["0x00000003"]}, None, loops[0].key(), 5))
+
+
 class TripMode(unittest.TestCase):
     """cq-g8md: the oracle's trip mode gives the full run's outcome and trip counts, each distinct trip
     event once with the header executions at which it was reached, the sample's header executions,
