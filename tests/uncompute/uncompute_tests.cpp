@@ -1640,6 +1640,52 @@ void call_slotout_unused() {
                     });
 }
 
+// U4: g sits in a caller cell the clone reads (noteCallReads, made before recordCall as mem-slots
+// does). g's own item reads x only, but it must follow the twin, which recompute-reads g: the twin,
+// the slotOut's free, then g's _unc.
+const char *kCallReads = R"(
+declare void @__cq_q_fill_11(ptr, i32)
+define i32 @f(i32 %a0, double %th) {
+entry:
+  %a = alloca [2 x i32], align 4
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %g = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  store i32 %g, ptr %a, align 4
+  call void @__cq_q_fill_11(ptr %a, i32 %x)
+  %p = getelementptr inbounds i32, ptr %a, i64 1
+  %c = load i32, ptr %p, align 4
+  %r = call i32 @cqrt_measure_i32(i32 %x)
+  ret i32 %r
+})";
+
+void call_reads() {
+  Fx f(kCallReads);
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  RailId g = f.T("g", "hl");
+  f.U.noteCallReads(f.call("__cq_q_fill_11"), {g});
+  f.U.recordCall(f.call("__cq_q_fill_11"), {}, {f.I("c")}, {Operand{PoisonValue::get(Type::getInt32Ty(f.C)), false}});
+  f.U.setRole(x, Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%a = alloca [2 x i32], align 4",
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%g = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "store i32 %g, ptr %a, align 4",
+                        "call void @__cq_q_fill_11(ptr %a, i32 %x)",
+                        "%p = getelementptr inbounds i32, ptr %a, i64 1",
+                        "%c = load i32, ptr %p, align 4",
+                        "call void @__cq_q_fill_11_unc(ptr %a, i32 %x, i32 poison)",
+                        "call void @cqrt_free(i32 %c)",
+                        "call void @cq_template_add_i32_hl_unc(i32 %g, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %g)",
+                        "%r = call i32 @cqrt_measure_i32(i32 %x)",
+                        "ret i32 %r",
+                    });
+}
+
 // U2: one result kept and the other not: the twin would zero the kept one.
 void fatal_call_mixed() {
   Fx f(kCall2m);
@@ -2555,6 +2601,7 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"call_two_results", call_two_results},
     {"call_all_kept", call_all_kept},
     {"call_slotout_unused", call_slotout_unused},
+    {"call_reads", call_reads},
     {"merge_all_arms_kept", merge_all_arms_kept},
     {"merge_template_then_garbage", merge_template_then_garbage},
     {"merge_noted_use", merge_noted_use},

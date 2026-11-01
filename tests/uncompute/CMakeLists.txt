@@ -13,7 +13,7 @@ set(CQ_UNC_CASES
   merge_kept_arm_local merge_kept_unchosen_edge merge_kept_rotated merge_kept_nested_phi_edge alias_distinct_cell
   alias_copy_distinct_array cell_load_garbage cell_load_kept
   deferred_kept_through_memory
-  call_two_results call_all_kept call_slotout_unused)
+  call_two_results call_all_kept call_slotout_unused call_reads)
 foreach(c ${CQ_UNC_CASES})
   add_test(NAME uncompute.${c} COMMAND uncompute_tests ${c})
 endforeach()

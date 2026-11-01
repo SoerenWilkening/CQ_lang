@@ -91,7 +91,12 @@
 //    a kept role on it keeps the leader). The item emits <callee>_unc(outs..., fwd args..., extra...)
 //    (C calling convention) and then cqrt_free of every member in order. Every member kept: nothing.
 //    A kept leader with a member that was not given a kept role itself is unimplemented at flushAtExit
-//    (the twin would zero the kept results); KeptEntangled (a barrier) keeps all of them.
+//    (the twin would zero the kept results); KeptEntangled (a barrier) keeps all of them. The item
+//    follows the definitions of every member and of every extra operand defined after fwd (cq-b73i).
+//  - noteCallReads(fwd, rails) (U4, cq-arch 2026-11-01; CR rule 5): rails in caller cells the clone call
+//    fwd reads (its twin recompute-reads them). They are reads of fwd's group item, as fwd's handle
+//    arguments are: their own items follow it, and a barrier on one binds it. It may come before or
+//    after fwd's recordCall.
 //
 // Emission. Each resolvable rail g is resolved once, as one ITEM: its records undone in reverse
 // (or its rule 6 clean-up, or nothing for a direct seed free), then cqrt_free / cqrt_qram_free.
@@ -310,6 +315,14 @@ struct Uncompute::Impl {
     SmallVector<Value *, 4> extra;
   };
   std::vector<CallGroup> groups;
+  // U4: rails in caller cells a clone call reads (noteCallReads, before or after its recordCall).
+  DenseMap<const CallInst *, SmallVector<RailId, 4>> callReads;
+  void addCallRead(unsigned rec, RailId r) {
+    if (is_contained(info[rec].reads, r) || r == info[rec].item)
+      return;
+    info[rec].reads.push_back(r);
+    rails[r].readerRecs.push_back(rec);
+  }
   SmallVector<unsigned, 4> openStack;
   DenseSet<const Instruction *> emitted;
   DenseMap<std::pair<RailId, const BasicBlock *>, Instruction *> itemEnd;
@@ -2405,7 +2418,9 @@ SmallVector<RailId, 4> Uncompute::recordCall(CallInst *fwd, ArrayRef<Value *> ou
       internalError("uncompute: recordCall: a result handle that is not an instruction in a block", fwd);
   RailId lead = I.newRail(all.front(), Role::Garbage, "recordCall");
   I.rails[lead].group = gi;
-  I.addRecord(fwd, abi::TemplateSpec{}, ops, lead, RecKind::Call, false);
+  unsigned rec = I.addRecord(fwd, abi::TemplateSpec{}, ops, lead, RecKind::Call, false);
+  for (RailId r : I.callReads.lookup(fwd))
+    I.addCallRead(rec, r);
   SmallVector<RailId, 4> ids{lead};
   for (size_t k = 1; k < all.size(); ++k) {
     RailId m = I.newRail(all[k], Role::Garbage, "recordCall");
@@ -2420,6 +2435,26 @@ SmallVector<RailId, 4> Uncompute::recordCall(CallInst *fwd, ArrayRef<Value *> ou
   cg.outs.assign(ids.begin(), ids.begin() + outs.size());
   cg.slotOuts.assign(ids.begin() + outs.size(), ids.end());
   return ids;
+}
+
+void Uncompute::noteCallReads(CallInst *fwd, ArrayRef<RailId> reads) {
+  Impl &I = *impl;
+  if (!fwd || !fwd->getParent())
+    internalError("uncompute: noteCallReads needs a call in a block", fwd);
+  for (RailId r : reads) {
+    I.rail(r, "noteCallReads");
+    if (I.anyReleased(r))
+      internalError("uncompute: noteCallReads: " + describe(I.rails[r].handle) + " was already uncomputed and freed",
+                    fwd);
+    I.checkEdgeRead(r, fwd, "noteCallReads");
+    SmallVector<RailId, 4> &v = I.callReads[fwd];
+    if (!is_contained(v, r))
+      v.push_back(r);
+    // Recorded already: the group's Call record reads it from now on.
+    for (const Impl::CallGroup &cg : I.groups)
+      if (cg.fwd == fwd)
+        I.addCallRead(I.rails[cg.members.front()].creator, r);
+  }
 }
 
 RailId Uncompute::idOf(Value *handle) const { return impl->lookup(handle, "idOf", handle); }

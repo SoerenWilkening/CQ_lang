@@ -47,6 +47,9 @@ public:
   // one kept: nothing emitted; some kept and some not: unimplemented. Returns outs' ids, then slotOuts'.
   llvm::SmallVector<RailId, 4> recordCall(llvm::CallInst *fwd, llvm::ArrayRef<llvm::Value *> outs,
                                           llvm::ArrayRef<llvm::Value *> slotOuts, llvm::ArrayRef<Operand> extra);
+  // U4 (cq-arch 2026-11-01, CR rule 5): rails in caller cells a clone call reads (its twin
+  // recompute-reads them): the call group's item reads them, so their own items follow it.
+  void noteCallReads(llvm::CallInst *fwd, llvm::ArrayRef<RailId> rails);
   RailId idOf(llvm::Value *handle) const;
   void setRole(RailId, Role);
   void noteUse(RailId, llvm::Instruction *consumer);
