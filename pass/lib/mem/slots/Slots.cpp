@@ -111,6 +111,8 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Transforms/Utils/ModuleUtils.h"
+#include "../../spine/SpineInternal.h"
 
 using namespace llvm;
 
@@ -397,6 +399,16 @@ struct FnState {
   // M7 (129): a store through a fat pointer over local slot objects, or a clone call handed one, -> (root,
   // byte offset of a cell it wrote -> the handle it left there).
   DenseMap<const Instruction *, std::map<std::pair<const Value *, int64_t>, Operand>> fatOut;
+  // 102 (program slots, see programSlot): the content of each program slot along an entry. SEEDED: a seed
+  // of the classical value v (the constructor's initializer at the entry's start). WRITTEN: one guarded store
+  // of a _ctl clone call left R = flag ? s : vold in the slot; old is the handle the slot held before it.
+  struct ProgSlot {
+    Value *v = nullptr;
+    bool written = false;
+    Value *flag = nullptr, *s = nullptr, *old = nullptr;
+  };
+  std::map<const GlobalVariable *, ProgSlot> progSlots;
+  DenseSet<const Instruction *> progSlotCalls;   // original calls noteProgramSlotCall recorded
 };
 
 // One state per (output function, original function): rule 19 inlining lowers a callee's body into
@@ -2082,6 +2094,200 @@ void freeOverwrittenSeed(LoweringContext &ctx, FnState &st, const Site &s, const
   ctx.emitCore(abi::CoreSpec{abi::Core::Free, {}}, {h});
 }
 
+// ---- program slots (102) ------------------------------------------------------------------------
+//
+// CR rules 16, 19, 20, 2, 7 (102's @hit). A PROGRAM SLOT is an internal integer global G (32 to 64 bits,
+// an integer initializer, not externally initialized, not constant, not thread-local) whose every use is a
+// non-atomic load or store of G's value type through G itself, and that some function loads with no store
+// of G in that function dominating the load: the cell's content comes from outside the function (102: a
+// signal handler's store, read after raise). G is program-lifetime storage holding a handle on every path
+// (rule 20), so:
+//  - a module constructor __cq_slot_init_<G> (llvm.global_ctors, priority 65535) stores a seed
+//    alloc_<W>(initializer) into G (rule 7; 160's global);
+//  - a classical store in a function that does not load G (102's classical original h) stores a seed
+//    rail, Role::Output (the slot keeps it);
+//  - the GUARDED STORE: in a _ctl clone whose callee's only access of G is one store in its entry block of
+//    a constant or a classical formal (guardedStoreOf), old = load G (the caller's rail, kept here) and
+//    select(ctl, v, old) into a fresh rail stored into G, Role::Output (the caller decides its fate);
+//  - in an entry E the slot's content is tracked along E (FnState::ProgSlot). Each shot runs one entry after
+//    the constructors, so at E's start G holds the constructor's seed of its initializer (SEEDED, a seed of
+//    a classical value v). A call of such a _ctl clone (noteProgramSlotCall, the call executing on every path
+//    of E, outside loops) loads the old handle before the call; the slot is then WRITTEN with
+//    R = flag ? s : vold. With no load of G reachable after the call the old seed is freed after it (nothing
+//    holds it) and R stays the slot's (kept). A load in the SEEDED state after a collapse is v (a classical
+//    read, rule 2). A load in the WRITTEN state needs the call's predicate classical there (rule 2: a function of measured
+//    rails, spine::collapse): R is uncomputed against a seed of the predicate's classical value c
+//    (select_<W>_lh_unc), freed, a fresh seed of v = c ? s : vold is stored into G (rule 7: the slot keeps it),
+//    the old seed is freed, and the load is v.
+// The initializer as the old seed's value at the collapse is 102's reading (its reference: "the seed's
+// value is 0"): the entry is the shot's only reader of the slot (orchestrator decision under CR rule 2 and
+// 102, owner may override). Unimplemented: a load before any guarded write in the entry (the slot's content
+// at the entry's start), a load in a function the module calls or whose address is taken, any other access
+// of a program slot (a store in an entry that loads it or in another clone, a store of a rail, a second guarded write before a collapse, a load in the WRITTEN state whose
+// predicate is not classical yet, a load or the call under a classical branch or in a loop, a load reached
+// by a call that may run code accessing G other than the recorded clone calls and signal()).
+
+bool programSlot(const GlobalVariable *gv) {
+  static std::map<const GlobalVariable *, bool> cache;
+  if (auto it = cache.find(gv); it != cache.end())
+    return it->second;
+  auto decide = [&]() {
+    auto *IT = dyn_cast<IntegerType>(gv->getValueType());
+    if (!gv->hasLocalLinkage() || gv->isExternallyInitialized() || gv->isConstant() || gv->isThreadLocal() ||
+        !gv->hasInitializer() || !IT || IT->getBitWidth() < 32 || IT->getBitWidth() > 64 ||
+        IT->getBitWidth() % 8 || !isa<ConstantInt>(gv->getInitializer()))
+      return false;
+    SmallVector<const LoadInst *, 4> loads;
+    std::map<const Function *, SmallVector<const StoreInst *, 2>> stores;
+    for (const User *u : gv->users()) {
+      if (auto *L = dyn_cast<LoadInst>(u); L && L->getPointerOperand() == gv && L->getType() == IT && !L->isAtomic()) {
+        loads.push_back(L);
+        continue;
+      }
+      if (auto *S = dyn_cast<StoreInst>(u); S && S->getPointerOperand() == gv && S->getValueOperand() != gv &&
+                                            S->getValueOperand()->getType() == IT && !S->isAtomic()) {
+        stores[S->getFunction()].push_back(S);
+        continue;
+      }
+      return false;
+    }
+    for (const LoadInst *L : loads) {
+      DominatorTree DT(const_cast<Function &>(*L->getFunction()));
+      if (none_of(stores[L->getFunction()], [&](const StoreInst *S) { return DT.dominates(S, L); }))
+        return true;
+    }
+    return false;
+  };
+  return cache[gv] = decide();
+}
+
+const GlobalVariable *programSlotOf(const Site &s) {
+  if (s.info->kind != RootKind::Global || !s.a.ok || s.a.off || !s.a.terms.empty())
+    return nullptr;
+  auto *gv = dyn_cast<GlobalVariable>(s.info->root);
+  return gv && programSlot(gv) ? gv : nullptr;
+}
+
+RailType slotRail(const GlobalVariable &gv) {
+  return RailType{Kind::Int, cast<IntegerType>(gv.getValueType())->getBitWidth()};
+}
+
+void ensureSlotCtor(Module &M, const GlobalVariable &cgv) {
+  auto &gv = const_cast<GlobalVariable &>(cgv);
+  std::string name = ("__cq_slot_init_" + gv.getName()).str();
+  if (M.getFunction(name))
+    return;
+  LLVMContext &C = M.getContext();
+  Function *F = Function::Create(FunctionType::get(Type::getVoidTy(C), false), GlobalValue::InternalLinkage, name, M);
+  IRBuilder<> B(BasicBlock::Create(C, "", F));
+  Value *h = B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Alloc, slotRail(gv)}), {gv.getInitializer()});
+  B.CreateAlignedStore(h, &gv, Align(4));
+  B.CreateRetVoid();
+  appendToGlobalCtors(M, F, 65535);
+}
+
+// The guarded store of a program slot gv in F (a handler, 102's h): F's only access of gv, a store in F's
+// entry block of a constant or a formal of F, and no call in F that may reach code accessing gv. Else null.
+const StoreInst *guardedStoreOf(const Function &F, const GlobalVariable &gv) {
+  const StoreInst *S = nullptr;
+  for (const User *u : gv.users()) {
+    auto *I = dyn_cast<Instruction>(u);
+    if (!I || I->getFunction() != &F)
+      continue;
+    auto *st = dyn_cast<StoreInst>(I);
+    if (S || !st || st->getParent() != &F.getEntryBlock() ||
+        !(isa<ConstantInt>(st->getValueOperand()) || isa<Argument>(st->getValueOperand())))
+      return nullptr;
+    S = st;
+  }
+  if (!S)
+    return nullptr;
+  for (const Instruction &X : instructions(F))
+    if (auto *CB = dyn_cast<CallBase>(&X); CB && !isa<DbgInfoIntrinsic>(CB) && !isCqSurface(*CB) &&
+                                         callMayTouchInternalGlobal(*CB, gv))
+      return nullptr;
+  return S;
+}
+
+bool loadsGlobal(const Function &F, const GlobalVariable &gv) {
+  return any_of(gv.users(), [&](const User *u) {
+    auto *L = dyn_cast<LoadInst>(u);
+    return L && L->getFunction() == &F;
+  });
+}
+
+FnState::ProgSlot &progSlotState(FnState &st, const GlobalVariable &gv) {
+  auto it = st.progSlots.find(&gv);
+  if (it == st.progSlots.end()) {
+    FnState::ProgSlot p;
+    p.v = const_cast<Constant *>(gv.getInitializer());   // the constructor's seed: this shot's only entry starts here
+    it = st.progSlots.emplace(&gv, p).first;
+  }
+  return it->second;
+}
+
+// The guarded store's old read in a _ctl clone (see above): the handle the slot holds at the call.
+bool cloneReadsProgramSlot(LoweringContext &ctx, const GlobalVariable &gv, const Instruction &I) {
+  return ctx.S.ctl && !ctx.S.pure && !ctx.S.adj && !ctx.S.isEntry() && I.getFunction() == ctx.S.F &&
+         guardedStoreOf(*ctx.S.F, gv) == &I;
+}
+
+// A load of a program slot in an entry (see above).
+Operand readProgramSlot(LoweringContext &ctx, FnState &st, const GlobalVariable &gv, const LoadInst &L) {
+  std::string pre = "mem-slots: a load of a program slot (102) ";
+  if (!ctx.S.isEntry() || L.getFunction() != ctx.S.F)
+    unimplemented(pre + "outside an entry (its content there depends on the caller)", &L);
+  if (ctx.loopUnit() || !ctx.preds().block(L.getParent()).isTop())
+    unimplemented(pre + "in a loop or under a branch", &L);
+  for (const Instruction &X : instructions(*st.F)) {
+    if (&X == &L || !isPotentiallyReachable(&X, &L, nullptr, st.DT.get()))
+      continue;
+    if (auto *S = dyn_cast<StoreInst>(&X); S && S->getPointerOperand() == &gv)
+      unimplemented(pre + "after a store of it in the same entry", &L);
+    auto *CB = dyn_cast<CallBase>(&X);
+    if (!CB || isa<DbgInfoIntrinsic>(CB) || isCqSurface(*CB) || !callMayTouchInternalGlobal(*CB, gv) ||
+        st.progSlotCalls.count(CB))
+      continue;
+    const Function *f = CB->getCalledFunction();
+    if (f && f->isDeclaration() && f->getName() == "signal")
+      continue;   // installs a handler; never runs it (the signal table, rule 16)
+    unimplemented(pre + "after a call that may run code accessing it (other than a guarded _ctl clone call)", &L);
+  }
+  if (any_of(ctx.S.F->users(), [](const User *u) { return isa<CallBase>(u); }) || ctx.S.F->hasAddressTaken())
+    unimplemented(pre + "in a function the program may call (its content there is the caller's)", &L);
+  FnState::ProgSlot &p = progSlotState(st, gv);
+  if (!p.written && p.v == gv.getInitializer())
+    unimplemented(pre + "that no guarded clone call of this entry wrote (its content at the entry's start)", &L);
+  if (!p.written)
+    return Operand{p.v, false};
+  Value *c = spine::collapse(ctx, p.flag);
+  if (!c)
+    unimplemented(pre + "a guarded clone store wrote while its predicate is not classical at the load (rule 2's "
+                        "collapse needs its quantum sources measured first)",
+                  &L);
+  if (!c->getType()->isIntegerTy(1))
+    internalError("mem-slots: a collapsed predicate that is not an i1", &L);
+  IRBuilder<> &B = ctx.B();
+  ensureSlotCtor(ctx.M, gv);
+  RailType w = slotRail(gv);
+  LoadInst *R = B.CreateAlignedLoad(handleTy(ctx.M.getContext()), const_cast<GlobalVariable *>(&gv), Align(4));
+  CallInst *pc = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 1}}, {c});
+  abi::TemplateSpec sel;
+  sel.op = "select";
+  sel.w = w;
+  sel.shape = "lh";
+  B.CreateCall(abi::declare(ctx.M, sel, true), {R, pc, p.s, p.old});
+  ctx.emitCore(abi::CoreSpec{abi::Core::Free, {}}, {pc});
+  ctx.emitCore(abi::CoreSpec{abi::Core::Free, {}}, {R});
+  Value *v = B.CreateSelect(c, p.s, p.v);
+  CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {v});
+  B.CreateAlignedStore(f, const_cast<GlobalVariable *>(&gv), Align(4));
+  ctx.emitCore(abi::CoreSpec{abi::Core::Free, {}}, {p.old});
+  p = FnState::ProgSlot{};
+  p.v = v;
+  return Operand{v, false};
+}
+
 // The handle a cell holds at I (a load, or the old value at a guarded store).
 Operand readCell(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &I, Type *ty) {
   if (s.beyond) {
@@ -2122,6 +2328,19 @@ Operand readCell(LoweringContext &ctx, FnState &st, const Site &s, const Instruc
     if (it == st.lowered.end())
       internalError("mem-slots: the access a slot load forwards from has not been lowered", &I);
     return it->second;
+  }
+  if (const GlobalVariable *gv = programSlotOf(s)) {
+    if (auto *L = dyn_cast<LoadInst>(&I))
+      return readProgramSlot(ctx, st, *gv, *L);
+    if (!cloneReadsProgramSlot(ctx, *gv, I))
+      unimplemented("mem-slots: a read of a program slot (102) other than a load in an entry or the guarded "
+                    "store of a _ctl clone",
+                    &I);
+    ensureSlotCtor(ctx.M, *gv);
+    LoadInst *h = ctx.B().CreateAlignedLoad(handleTy(ctx.M.getContext()), const_cast<GlobalVariable *>(gv), Align(4));
+    ctx.unc().recordExternal(h, Role::UserRegister);   // the caller's rail: never the clone's
+    st.registers.insert(h);
+    return Operand{h, true};
   }
   switch (s.info->kind) {
   case RootKind::Global:
@@ -2875,6 +3094,23 @@ void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &
                  StoreWhat what) {
   using What = StoreWhat;
   IRBuilder<> &B = ctx.B();
+  if (const GlobalVariable *gv = programSlotOf(s)) {
+    // 102: a program slot keeps what it is given (see programSlot): a classical store's seed in a function
+    // that does not load it, or the guarded store's select in a _ctl clone.
+    bool seed = what == What::Seed && !ctx.currentFlag() && ctx.currentPredicate().isTop() &&
+                !loadsGlobal(*st.F, *gv) && !ctx.loopUnit();
+    bool guarded = what == What::Computed && cloneReadsProgramSlot(ctx, *gv, I);
+    if (!seed && !guarded)
+      unimplemented("mem-slots: a store into a program slot (102) other than a classical store in a function "
+                    "that does not load it or a _ctl clone's guarded store",
+                    &I);
+    ensureSlotCtor(ctx.M, *gv);
+    ctx.unc().setRole(ctx.unc().idOf(val.v), Role::Output);
+    st.registers.insert(val.v);
+    B.CreateAlignedStore(val.v, const_cast<GlobalVariable *>(gv), Align(4));
+    st.lowered[&I] = val;
+    return;
+  }
   if (what != What::Register) {
     RailId id = ctx.unc().idOf(val.v);
     switch (s.info->kind) {
@@ -4546,6 +4782,74 @@ void lowerSlotAtomic(LoweringContext &ctx, Instruction &I) {
     ctx.bindFields(&I, {old, Operand{f, true}});
   }
   finishStore(ctx, st, s, I, ty, nv, StoreWhat::Computed);
+}
+
+// 102 (program slots, see programSlot): a clone call `lowered` (just emitted for orig, callee `callee`) whose
+// callee accesses a program slot.
+void noteProgramSlotCall(LoweringContext &ctx, const CallBase &orig, const Specialization &callee,
+                         CallInst *lowered) {
+  if (!callee.F || callee.F->isDeclaration())
+    return;
+  for (const GlobalVariable &gv : ctx.M.globals()) {
+    if (!programSlot(&gv))
+      continue;
+    bool touches = any_of(gv.users(), [&](const User *u) {
+      auto *I = dyn_cast<Instruction>(u);
+      return I && I->getFunction() == callee.F;
+    });
+    const StoreInst *S = touches ? guardedStoreOf(*callee.F, gv) : nullptr;
+    if (!touches) {
+      for (const Instruction &X : instructions(*callee.F))
+        if (auto *CB = dyn_cast<CallBase>(&X); CB && !isa<DbgInfoIntrinsic>(CB) && !isCqSurface(*CB) &&
+                                             callMayTouchInternalGlobal(*CB, gv))
+          unimplemented("mem-slots: a clone call whose callee calls code that may access a program slot (102)",
+                        &orig);
+      continue;
+    }
+    std::string pre = "mem-slots: a clone call writing a program slot (102) ";
+    if (!S)
+      unimplemented(pre + "other than by one store in its entry block of a constant or a formal", &orig);
+    if (!callee.ctl || callee.pure || callee.adj)
+      unimplemented(pre + "that is not a _ctl clone (the guarded store)", &orig);
+    if (!ctx.S.isEntry() || orig.getFunction() != ctx.S.F)
+      unimplemented(pre + "from a clone or an inlined callee", &orig);
+    if (ctx.loopUnit() || !ctx.preds().block(orig.getParent()).classicalFactor(ctx.T, ctx.S).isTop())
+      unimplemented(pre + "in a loop or under a classical branch", &orig);
+    FnState &st = stateOf(ctx, orig);
+    FnState::ProgSlot &p = progSlotState(st, gv);
+    if (p.written)
+      unimplemented(pre + "twice before a load collapses it", &orig);
+    if (lowered->arg_size() != 1 + callee.F->arg_size() || !lowered->getArgOperand(0)->getType()->isIntegerTy(32))
+      unimplemented(pre + "whose formals are not one argument each", &orig);
+    Value *sv = const_cast<Value *>(S->getValueOperand());
+    if (auto *A = dyn_cast<Argument>(sv)) {
+      if (A->getArgNo() >= callee.mask.size() || callee.mask[A->getArgNo()] != '0')
+        unimplemented(pre + "of a quantum formal (the stored rail would be the caller's)", &orig);
+      sv = lowered->getArgOperand(1 + A->getArgNo());
+    }
+    if (sv->getType() != gv.getValueType())
+      internalError("mem-slots: a program slot's guarded store of another type than the slot", &orig);
+    ensureSlotCtor(ctx.M, gv);
+    IRBuilderBase::InsertPointGuard guard(ctx.B());
+    ctx.B().SetInsertPoint(lowered);
+    p.old = ctx.B().CreateAlignedLoad(handleTy(ctx.M.getContext()), const_cast<GlobalVariable *>(&gv), Align(4));
+    p.flag = lowered->getArgOperand(0);
+    p.s = sv;
+    p.written = true;
+    st.progSlotCalls.insert(&orig);
+    bool readLater = any_of(gv.users(), [&](const User *u) {
+      auto *L = dyn_cast<LoadInst>(u);
+      return L && L->getFunction() == ctx.S.F && isPotentiallyReachable(&orig, L, nullptr, st.DT.get());
+    });
+    if (!readLater) {
+      // Nothing reads the slot after the call: the old seed is held by nothing (R stays the slot's, kept).
+      if (Instruction *n = lowered->getNextNode())
+        ctx.B().SetInsertPoint(n);
+      else
+        ctx.B().SetInsertPoint(lowered->getParent());
+      ctx.emitCore(abi::CoreSpec{abi::Core::Free, {}}, {p.old});
+    }
+  }
 }
 
 void endSlotLifetime(LoweringContext &ctx, ObjectId, Instruction *at) {

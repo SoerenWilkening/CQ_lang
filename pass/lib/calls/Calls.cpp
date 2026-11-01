@@ -61,6 +61,7 @@
 #include "cq/Taint.h"
 #include "cq/Uncompute.h"
 #include "../spine/SpineInternal.h"
+#include "../mem/slots/SlotsInternal.h"
 #include "../fatptr/FatPtrInternal.h"
 #include "../eff/conc/Setjmp.h"
 
@@ -775,6 +776,7 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
   for (unsigned i : tableArgs)
     for (Value *h : fatptr::afterSlotTableCall(ctx, CB, i, S, r.call))
       r.slotOuts.push_back(h);
+  mem::noteProgramSlotCall(ctx, CB, S, r.call);   // 102: a _ctl clone's guarded store into a program slot
   noteRotatedCells(ctx, CB, S, fs, r.call, argMap);
   return r;
 }

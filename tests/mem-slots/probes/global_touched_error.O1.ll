@@ -46,4 +46,6 @@ attributes #4 = { nounwind }
 !7 = !{!"int", !8, i64 0}
 !8 = !{!"omnipotent char", !9, i64 0}
 !9 = !{!"Simple C/C++ TBAA"}
-; EXPECT-ERROR: cq: unimplemented: mem-slots: a load of a global slot cell no dominating access of this function wrote
+; g is a program slot (102: bump loads it with no store of its own before): a rail stored into it by an entry is
+; not built.
+; EXPECT-ERROR: cq: unimplemented: mem-slots: a store into a program slot (102)
