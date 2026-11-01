@@ -1387,8 +1387,24 @@ void fatal_operand_mismatch() {
   f.U.recordTemplate(p, tspec("add", 32, "hl"), {H(f.I("x")), {f.I("x"), false}});
 }
 
+// An arm on a cycle (a classical loop body) left unflushed: one item at the return cannot undo every
+// trip's rail, so it stays an internal error (cq-ut4k builds only arms outside cycles).
 void fatal_unflushed_arm() {
-  Fx f(kArm);
+  Fx f(R"(
+define i32 @f(i32 %a0, double %th, i1 %c) {
+entry:
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  br i1 %c, label %A, label %M
+A:
+  %p = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  %q = call i32 @cq_template_mul_i32_hl(i32 %p, i32 3)
+  %mq = call i32 @cqrt_measure_i32(i32 %q)
+  br i1 %c, label %A, label %M
+M:
+  %r = phi i32 [ %mq, %A ], [ 0, %entry ]
+  ret i32 %r
+})");
   f.reg("x", 0);
   f.T("p", "hl");
   f.U.setRole(f.T("q", "hl"), Role::Measured);
@@ -2495,7 +2511,10 @@ void fatal_merge_nondiagonal() {
 }
 
 // A phi over arm-local garbage handles: no point after the merged handle's uses can name the arm (cq-ut4k).
-void fatal_merge_arm_local() {
+// cq-ut4k: a phi over arm-local garbage handles. Each arm's item runs at the return under its arm's
+// selector (true on the paths through the arm's block), in a block of its own, the arm carried there
+// by a phi (poison on the paths that skip it).
+void merge_arm_local() {
   Fx f(R"(
 define i32 @f(i32 %a0, double %th, i1 %c) {
 entry:
@@ -2520,6 +2539,31 @@ J:
   f.U.recordMerge(f.I("m"));
   f.U.setRole(f.T("t", "hl"), Role::Measured);
   f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "br i1 %c, label %A, label %B",
+                        "%ha = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "br label %J",
+                        "%hb = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)",
+                        "br label %J",
+                        "%hb6 = phi i32 [ %hb, %B ], [ poison, %A ]",
+                        "%ha5 = phi i32 [ poison, %B ], [ %ha, %A ]",
+                        "%cq.on = phi i1 [ true, %B ], [ false, %A ]",
+                        "%cq.on3 = phi i1 [ false, %B ], [ true, %A ]",
+                        "%m = phi i32 [ %ha, %A ], [ %hb, %B ]",
+                        "%t = call i32 @cq_template_mul_i32_hl(i32 %m, i32 3)",
+                        "br i1 %cq.on, label %J.cq.arm2, label %J.cq.after1",
+                        "call void @cq_template_shl_i32_hl_unc(i32 %hb6, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %hb6)",
+                        "br label %J.cq.after1",
+                        "br i1 %cq.on3, label %J.cq.arm, label %J.cq.after",
+                        "call void @cq_template_add_i32_hl_unc(i32 %ha5, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %ha5)",
+                        "br label %J.cq.after",
+                        "%r = call i32 @cqrt_measure_i32(i32 %t)",
+                        "ret i32 %r",
+                    });
 }
 
 // ---- cq-zh7z: a gate on a handle loaded from a slot cell that may hold an operand rail ----------
@@ -2806,6 +2850,7 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"merge_template_then_garbage", merge_template_then_garbage},
     {"merge_noted_use", merge_noted_use},
     {"merge_phi", merge_phi},
+    {"merge_arm_local", merge_arm_local},
     {"merge_nested", merge_nested},
     {"merge_kept_arm_local", merge_kept_arm_local},
     {"merge_kept_unchosen_edge", merge_kept_unchosen_edge},
@@ -2833,7 +2878,6 @@ const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_unknown_handle", fatal_unknown_handle},
     {"fatal_merge_kept_role", fatal_merge_kept_role},
     {"fatal_merge_nondiagonal", fatal_merge_nondiagonal},
-    {"fatal_merge_arm_local", fatal_merge_arm_local},
     {"fatal_merge_unchosen_reader", fatal_merge_unchosen_reader},
     {"fatal_merge_unchosen_used_after", fatal_merge_unchosen_used_after},
     {"fatal_merge_unchosen_read_later", fatal_merge_unchosen_read_later},

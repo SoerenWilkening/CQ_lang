@@ -375,6 +375,12 @@ struct Uncompute::Impl {
   SmallVector<unsigned, 4> openStack;
   DenseSet<const Instruction *> emitted;
   DenseMap<std::pair<RailId, const BasicBlock *>, Instruction *> itemEnd;
+  // cq-ut4k: rails pending at the return being flushed whose definition does not dominate it (an arm
+  // of a classical branch, often of a merge: a phi over arm-local handles), and the items placed for
+  // them there, each run under its own selector (wrapArmItems).
+  DenseSet<RailId> armLocal;
+  struct ArmItem { RailId g; Instruction *first, *last; };
+  std::vector<ArmItem> armItems;
 
   // ---- recording -------------------------------------------------------------------------------
 
@@ -1923,6 +1929,7 @@ struct Uncompute::Impl {
         keepBelow(g);
       return;
     }
+    Instruction *prev = pos.before->getPrevNode();
     IRBuilder<> B(pos.before);
     Instruction *end = emitItem(g, B);
     itemEnd[{g, pos.bb}] = end;
@@ -1930,6 +1937,135 @@ struct Uncompute::Impl {
       r.released = true;
     else
       r.exitsDone.insert(pos.bb);
+    if (!local && armLocal.count(g)) {
+      Instruction *first = prev ? prev->getNextNode() : &pos.bb->front();
+      if (first != pos.before)
+        armItems.push_back({g, first, end});
+    }
+  }
+
+  // Is b on a cycle of the output CFG?
+  static bool onCycle(const BasicBlock *b) {
+    const Instruction *t = b->getTerminator();
+    if (!t)
+      return false;
+    for (const BasicBlock *s : successors(t))
+      if (reaches(s, b))
+        return true;
+    return false;
+  }
+
+  // cq-ut4k (orchestrator decision, CR rules 5, 8, 9): the item of an arm-local rail placed at a
+  // return runs only on the paths through its arm. Each such item [first, last] is split into a block
+  // of its own, entered when the selector of its definition's block holds: an i1 that is true on every
+  // path through that block and false on every other, the SSA value (phis at the joins, this
+  // module's SSAUpdater) of `true` at the end of the definition's block and `false` at the entry. Every
+  // operand of the item that does not dominate its block (the arm's own rails, the merged handle's
+  // arm) is carried to it the same way, poison on the paths that skip the block. A classical re-branch
+  // on the arm's own condition, spelled as the path selector of the arm.
+  void wrapArmItems(Function &F) {
+    if (armItems.empty())
+      return;
+    struct Done { BranchInst *br; BasicBlock *U; const BasicBlock *D; };
+    std::vector<Done> done;
+    for (auto it = armItems.rbegin(); it != armItems.rend(); ++it) {
+      BasicBlock *X = it->first->getParent();
+      if (it->last->getParent() != X || !it->last->getNextNode())
+        internalError("uncompute: an arm item that does not lie in one block before its terminator",
+                      rails[it->g].handle);
+      BasicBlock *C = X->splitBasicBlock(it->last->getNextNode(), X->getName() + ".cq.after");
+      BasicBlock *U = X->splitBasicBlock(it->first, X->getName() + ".cq.arm");
+      Instruction *t = X->getTerminator();
+      BranchInst *br = BranchInst::Create(U, C, ConstantInt::getTrue(F.getContext()), t);
+      t->eraseFromParent();
+      done.push_back({br, U, defBlock(it->g)});
+    }
+    armItems.clear();
+    LLVMContext &Cx = F.getContext();
+    BasicBlock *entry = &F.getEntryBlock();
+    for (Done &d : done)
+      d.br->setCondition(carryTo(d.br->getParent(), true, const_cast<BasicBlock *>(d.D), ConstantInt::getTrue(Cx),
+                                 ConstantInt::getFalse(Cx), "cq.on"));
+    for (Done &d : done) {
+      DenseMap<Value *, Value *> carried;
+      for (Instruction &I : *d.U)
+        for (Use &u : I.operands()) {
+          auto *op = dyn_cast<Instruction>(u.get());
+          if (!op || op->getParent() == d.U || dominates(op->getParent(), d.U))
+            continue;
+          Value *&c = carried[op];
+          if (!c) {
+            if (op->getParent() == entry)
+              internalError("uncompute: an arm item operand in the entry that does not dominate the item", op);
+            c = carryTo(d.U, false, op->getParent(), op, PoisonValue::get(op->getType()), op->getName());
+          }
+          u.set(c);
+        }
+    }
+  }
+
+  // The SSA value, at the end of `at` (atEnd) or at its start, of a variable that is `v` at the end of
+  // block D and `dflt` at the entry: phis at the joins (over the real predecessors: a spine phi still
+  // waiting for its incomings must not hide a block's predecessors, as SSAUpdater's lookup through a
+  // leading phi would), trivial ones folded.
+  Value *carryTo(BasicBlock *at, bool atEnd, BasicBlock *D, Value *v, Value *dflt, const Twine &name) {
+    DenseMap<BasicBlock *, Value *> memo;
+    std::vector<PHINode *> made;
+    std::function<Value *(BasicBlock *)> end = [&](BasicBlock *b) -> Value * {
+      if (b == D)
+        return v;
+      if (auto it = memo.find(b); it != memo.end())
+        return it->second;
+      SmallVector<BasicBlock *, 4> ps(predecessors(b));
+      if (ps.empty())
+        return memo[b] = dflt;
+      if (ps.size() == 1)
+        return memo[b] = end(ps[0]);
+      PHINode *phi = PHINode::Create(v->getType(), ps.size(), name);
+      phi->insertInto(b, b->begin());
+      memo[b] = phi;
+      made.push_back(phi);
+      for (BasicBlock *p : ps)
+        phi->addIncoming(end(p), p);
+      return phi;
+    };
+    Value *r;
+    if (atEnd) {
+      r = end(at);
+    } else {
+      SmallVector<BasicBlock *, 4> ps(predecessors(at));
+      if (ps.size() != 1)
+        internalError("uncompute: an arm item block with other than one predecessor", at->getTerminator());
+      r = end(ps[0]);
+    }
+    bool changed = true;
+    while (changed) {
+      changed = false;
+      for (PHINode *&phi : made) {
+        if (!phi)
+          continue;
+        Value *same = nullptr;
+        bool trivial = true;
+        for (Value *in : phi->incoming_values()) {
+          if (in == phi || in == same)
+            continue;
+          if (same) {
+            trivial = false;
+            break;
+          }
+          same = in;
+        }
+        if (!trivial || !same)
+          continue;
+        phi->replaceAllUsesWith(same);
+        if (r == phi)
+          r = same;
+        phi->eraseFromParent();
+        phi = nullptr;
+        changed = true;
+      }
+    }
+    return r;
   }
 
   // ---- deferred items (F1, cq-fx3s) --------------------------------------------------------------
@@ -3038,10 +3174,16 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
     const BasicBlock *D = I.defBlock(g);
     if (!Impl::reaches(D, Rb))
       continue;
+    if (!Impl::dominates(D, Rb) && !Impl::onCycle(D)) {
+      // cq-ut4k: placed here under its arm's selector (wrapArmItems).
+      I.armLocal.insert(g);
+      cands.push_back(g);
+      continue;
+    }
     if (!Impl::dominates(D, Rb) && !I.rails[g].mergedInto.empty())
       unimplemented("uncompute: an arm of a merged handle, " + describe(I.rails[g].handle) +
                         ", is pending at a return its definition does not dominate (a phi over arm-local "
-                        "handles: cq-ut4k)",
+                        "handles in a loop: cq-ut4k)",
                     ret);
     if (!Impl::dominates(D, Rb))
       internalError("uncompute: " + describe(I.rails[g].handle) +
@@ -3051,6 +3193,8 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
   }
   I.resolve(cands, c);
   I.resolveUnmeasured(Rb); // cq-8lf8
+  I.wrapArmItems(*Rb->getParent());
+  I.armLocal.clear();
   for (RailId g : defc)
     if (!I.rails[g].released)
       unimplemented("uncompute: a deferred rule-14 reverse loop could not be placed before a return its loop reaches "
