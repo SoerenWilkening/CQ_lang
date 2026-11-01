@@ -33,10 +33,13 @@ void writeSlotCells(LoweringContext &, const llvm::Value *ptr, llvm::Type *cellT
 // (TaintInfo::cellsWritten), ascending by cell, at the cell's C type (a handle, a classical value, or poison
 // where never written); calls passes them as recordCall's `extra`. After (called right after `lowered`): emits
 // the handle loads of those cells and binds the original's later loads of them; calls passes them as
-// recordCall's `slotOuts`.
-llvm::SmallVector<llvm::Value *, 4> slotCellsBeforeCall(LoweringContext &, const llvm::CallBase &orig, unsigned argNo);
+// recordCall's `slotOuts`. M1b (cq-arch 2026-11-01): argNo is the callee's formal index; the site operand is
+// argMap.empty() ? argNo : argMap[argNo] (a call lowered as a call of another function, rule 24's
+// pthread_create(t, attr, f, p) -> f(p): argMap {3}).
+llvm::SmallVector<llvm::Value *, 4> slotCellsBeforeCall(LoweringContext &, const llvm::CallBase &orig, unsigned argNo,
+                                                        llvm::ArrayRef<unsigned> argMap = {});
 llvm::SmallVector<llvm::Value *, 4> slotCellsAfterCall(LoweringContext &, const llvm::CallBase &orig, unsigned argNo,
-                                                       llvm::CallInst *lowered);
+                                                       llvm::CallInst *lowered, llvm::ArrayRef<unsigned> argMap = {});
 void allocateSlots(LoweringContext &, llvm::Instruction &site);   // mem-slots
 void endSlotLifetime(LoweringContext &, ObjectId, llvm::Instruction *at);  // mem-slots
 void lowerQromLoad(LoweringContext &, llvm::LoadInst &);          // mem-qrom

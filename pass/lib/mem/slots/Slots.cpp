@@ -2796,6 +2796,8 @@ void endSlotLifetime(LoweringContext &ctx, ObjectId, Instruction *at) {
 //    clone may read is also read by the call's item (Uncompute::noteCallReads, U4): it outlives the twin.
 //  - A slot object whose pointer goes only to such calls (not captured: `nocapture`) and to loads and
 //    stores is not escaping; a call writes only the cells cellsWritten names.
+//  - M1b: argNo is the callee's formal index; with argMap (a call lowered as a call of another function,
+//    calls::lowerLiftedVia) the site operand of formal k is argMap[k], else k.
 // Not built: a parameter or global slot object handed to a clone that writes it, a pointer at a run-time
 // offset, a bit-view or _Bool object; rule 6 clean-up of an old rail the clone overwrote when the twin never
 // runs (every result kept): the twin restores the old content, so the old rail is read by it and cleaned
@@ -2812,11 +2814,27 @@ std::string describeValue(const Value *v) {
   return os.str();
 }
 
-CloneArg cloneArg(LoweringContext &ctx, FnState &st, const CallBase &orig, unsigned argNo) {
-  const Specialization *S = cloneCallee(ctx, orig);
+// M1b: argNo is the callee's formal index; the site operand is argMap[argNo] when the call is lowered as a
+// call of another function (rule 24: pthread_create(t, attr, f, p) -> f(p), argMap {3}), else argNo.
+unsigned siteOperand(const CallBase &orig, unsigned argNo, ArrayRef<unsigned> argMap) {
+  unsigned k = argMap.empty() ? argNo : (argNo < argMap.size() ? argMap[argNo] : ~0u);
+  if (k >= orig.arg_size())
+    internalError("mem-slots: slotCellsBeforeCall/After: a formal index with no site operand under argMap", &orig);
+  return k;
+}
+
+const Specialization *calleeOf(LoweringContext &ctx, const CallBase &orig, ArrayRef<unsigned> argMap) {
+  // A lifted call (argMap given) names a declaration (pthread_create); taint's calleeSpecialization of
+  // the site is the clone the site is lowered as a call of.
+  return argMap.empty() ? cloneCallee(ctx, orig) : ctx.T.calleeSpecialization(orig, ctx.S);
+}
+
+CloneArg cloneArg(LoweringContext &ctx, FnState &st, const CallBase &orig, unsigned argNo,
+                  ArrayRef<unsigned> argMap) {
+  const Specialization *S = calleeOf(ctx, orig, argMap);
   if (!S)
     internalError("mem-slots: slotCellsBeforeCall/After of a call that is not a quantum clone call", &orig);
-  const Value *ptr = orig.getArgOperand(argNo);
+  const Value *ptr = orig.getArgOperand(siteOperand(orig, argNo, argMap));
   ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
   if (objs.size() != 1 || ctx.T.classOf(objs.front()) != ObjClass::Slot)
     internalError("mem-slots: slotCellsBeforeCall/After of an argument that does not point into one slot object",
@@ -2908,9 +2926,10 @@ SmallVector<Value *, 8> railsInObjectAt(LoweringContext &ctx, FnState &st, const
 
 } // namespace
 
-SmallVector<Value *, 4> slotCellsBeforeCall(LoweringContext &ctx, const CallBase &orig, unsigned argNo) {
+SmallVector<Value *, 4> slotCellsBeforeCall(LoweringContext &ctx, const CallBase &orig, unsigned argNo,
+                                            ArrayRef<unsigned> argMap) {
   FnState &st = stateOf(ctx, orig);
-  CloneArg ca = cloneArg(ctx, st, orig, argNo);
+  CloneArg ca = cloneArg(ctx, st, orig, argNo, argMap);
   SmallVector<Value *, 4> out;
   Type *i32 = handleTy(ctx.M.getContext());
   for (unsigned c : ca.cells) {
@@ -2929,18 +2948,27 @@ SmallVector<Value *, 4> slotCellsBeforeCall(LoweringContext &ctx, const CallBase
 }
 
 SmallVector<Value *, 4> slotCellsAfterCall(LoweringContext &ctx, const CallBase &orig, unsigned argNo,
-                                           CallInst *lowered) {
+                                           CallInst *lowered, ArrayRef<unsigned> argMap) {
   FnState &st = stateOf(ctx, orig);
-  CloneArg ca = cloneArg(ctx, st, orig, argNo);
+  CloneArg ca = cloneArg(ctx, st, orig, argNo, argMap);
   if (!lowered)
     internalError("mem-slots: slotCellsAfterCall without the lowered call", &orig);
   // The rails the clone may read through the pointer are read by the call; one it only reads must also
   // outlive a twin (see the contract above).
   bool twin = false;
-  if (!orig.getType()->isVoidTy())
-    twin |= is_contained(ctx.T.fieldMask(&orig, ctx.S), true);
-  for (unsigned i = 0; i < orig.arg_size(); ++i)
-    if (orig.getArgOperand(i)->getType()->isPointerTy() && !cellsWrittenBy(ctx, *ca.S, i).empty())
+  if (argMap.empty()) {
+    if (!orig.getType()->isVoidTy())
+      twin |= is_contained(ctx.T.fieldMask(&orig, ctx.S), true);
+  } else if (Type *rt = ca.S->F->getReturnType(); !rt->isVoidTy()) {
+    // A lifted call's own result is not the clone's (pthread_create's 0): the clone's result record is.
+    unsigned n = isa<StructType>(rt) ? cast<StructType>(rt)->getNumElements() : 1;
+    for (unsigned f = 0; f < n; ++f)
+      twin |= ctx.T.resultQuantum(*ca.S, f);
+  }
+  unsigned formals = argMap.empty() ? orig.arg_size() : argMap.size();
+  for (unsigned i = 0; i < formals; ++i)
+    if (orig.getArgOperand(siteOperand(orig, i, argMap))->getType()->isPointerTy() &&
+        !cellsWrittenBy(ctx, *ca.S, i).empty())
       twin = true;
   SmallVector<Value *, 4> old;
   for (unsigned c : ca.cells) {
