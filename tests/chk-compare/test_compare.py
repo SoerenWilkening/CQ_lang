@@ -227,6 +227,85 @@ class Equalities(unittest.TestCase):
                                               kept=[keep(1, a), keep(2, b)]))
         self.bad(ours, side("r", ref_ab()), "rotation list differs")
 
+    # -- phases compared as a total (CR §6 item 2, ruling 2026-11-01 on cq-u2mw, 117)
+    @staticmethod
+    def edges(extra=(), angles=(PI, PI, PI), mid=()):
+        """Reference: per-edge phases on the pairwise-disjoint predicates a&b, a&!b, !a&b (117's
+        per-exit-edge kickback), each after both Ry; `mid` goes between the first edge and the rest."""
+        def build(a, b, s):
+            ps = [ph(21, a & b, angles[0]), ph(22, a & (1 - b), angles[1]), ph(23, (1 - a) & b, angles[2])]
+            return dict(rots=[ry(1, 1.0), ry(2, 2.0)] + ps[:1] + list(mid) + ps[1:] + list(extra),
+                        kept=[keep(1, a), keep(2, b)])
+        return build
+
+    @staticmethod
+    def or_phase(theta=PI, name="o"):
+        """One phase on the OR of the edges (a conforming pass's rz_i1 on the block predicate)."""
+        return side(name, lambda a, b, s: dict(rots=[ry(1, 1.0), ry(2, 2.0), ph(30, a | b, theta)],
+                                               kept=[keep(1, a), keep(2, b)]))
+
+    def test_phase_total_disjoint_or_accepted(self):
+        # one phase on the OR of disjoint predicates = the per-edge phases of the same angle, either side
+        self.ok(self.or_phase(), side("r", self.edges()))
+        self.ok(side("o", self.edges()), self.or_phase(name="r"))
+        self.ok(self.or_phase(0.5), side("r", self.edges(angles=(0.5, 0.5, 0.5))))
+
+    def test_phase_total_split_differently_accepted(self):
+        # P(a)·P(b) = P(a&b)^2 · P(a&!b) · P(!a&b) in total: 0.5·a + 0.5·b
+        ours = side("o", lambda a, b, s: dict(rots=[ry(1, 1.0), ry(2, 2.0), ph(5, a, 0.5), ph(6, b, 0.5)],
+                                              kept=[keep(1, a), keep(2, b)]))
+        self.ok(ours, side("r", self.edges(angles=(1.0, 0.5, 0.5))))
+
+    def test_phase_total_multiple_of_two_pi(self):
+        # π + π on a&b is the identity there: the total agrees mod 2π
+        ours = self.or_phase()
+        ref = side("r", lambda a, b, s: dict(rots=[ry(1, 1.0), ry(2, 2.0), ph(21, a & b, PI), ph(24, a & b, PI),
+                                                   ph(22, a & (1 - b), PI), ph(23, (1 - a) & b, PI)],
+                                             kept=[keep(1, a), keep(2, b)]))
+        self.bad(ours, ref, "phase totals differ")
+        ours2 = side("o", lambda a, b, s: dict(rots=[ry(1, 1.0), ry(2, 2.0), ph(30, a ^ b, PI)],
+                                               kept=[keep(1, a), keep(2, b)]))
+        self.ok(ours2, ref)
+
+    def test_phase_total_dropped_edge_rejected(self):
+        # mutant: one edge's phase dropped from the reference (or ours)
+        def dropped(a, b, s):
+            r = self.edges()(a, b, s)
+            r["rots"] = [g for g in r["rots"] if g.get("f") != 22]
+            return r
+        self.bad(self.or_phase(), side("r", dropped), "phase totals differ")
+        self.bad(side("o", dropped), side("r", self.edges()), "phase totals differ")
+
+    def test_phase_total_changed_angle_rejected(self):
+        # mutant: one edge's angle changed, by a lot or by one ulp (a total that is 0 is 0 exactly)
+        ulp = struct.unpack("<d", struct.pack("<Q", struct.unpack("<Q", struct.pack("<d", PI))[0] + 1))[0]
+        for bad_angle in (PI / 2, ulp):
+            self.bad(self.or_phase(), side("r", self.edges(angles=(PI, bad_angle, PI))), "phase totals differ")
+        self.bad(self.or_phase(0.5), side("r", self.edges()), "phase totals differ")
+
+    def test_phase_total_not_across_an_ry_it_reads(self):
+        # an Ry on b between the reference's first edge and the rest: the edges read b, so the total
+        # cannot be gathered on either side of it; with the Ry on a rail no edge reads, it can
+        def ours(rail):
+            return side("o", lambda a, b, s: dict(rots=[ry(1, 1.0), ry(2, 2.0), ry(rail, 0.7), ph(30, a | b, PI)],
+                                                  kept=[keep(1, a), keep(2, b), keep(3, 0)]))
+
+        def ref(rail):
+            return side("r", lambda a, b, s: dict(
+                rots=self.edges(mid=[ry(rail, 0.7)])(a, b, s)["rots"], kept=[keep(1, a), keep(2, b), keep(3, 0)]))
+        self.ok(ours(3), ref(3))
+        self.bad(ours(2), ref(2), "rotation list differs")
+
+    def test_phase_total_angle_rail(self):
+        # an angle-rail phase contributes its rail's value: rz_qangle on a|b with the rail reading π
+        # equals the per-edge classical phases; a constant total of an angle rail is never global
+        ours = side("o", lambda a, b, s: dict(rots=[ry(1, 1.0), ry(2, 2.0), phq(8, PI, [30], [a | b])],
+                                              kept=[keep(1, a), keep(2, b)]))
+        self.ok(ours, side("r", self.edges()))
+        ours2 = side("o", lambda a, b, s: dict(rots=[ry(1, 1.0), ry(2, 2.0), phq(8, PI if a | b else 0.25, [], [])],
+                                               kept=[keep(1, a), keep(2, b)]))
+        self.bad(ours2, side("r", self.edges()), "phase totals differ")
+
     # -- global phases (CR §6, last paragraph)
     def test_global_phase_dropped_either_side(self):
         ours = side("o", ref_ab([ph(9, 1, 0.75)]))           # uncontrolled Rz = P up to this

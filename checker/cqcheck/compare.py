@@ -19,6 +19,15 @@ What is compared (CR §6, CLAUDE.md "The §6 checker"):
   value function over the group's samples). A phase P(θ) on a flag is e^{iθ·f}: its predicate is the
   flag's value, whichever rail carries it. Global phases are dropped on both sides: a classical-angle
   phase whose predicate is constant over the group (never an Ry, never an angle-rail phase). Against
+  the reference phases are compared as a TOTAL, never one gate at a time (CR §6 item 2, ruling
+  2026-11-01 on cq-u2mw): the Ry gates are matched one to one, and between them the running
+  difference Δ = Σ θ_k·f_k (ours) − Σ θ_k·f_k (reference) per sample (an angle-rail phase adds its
+  rail's value where it fires), summed exactly over the f64 angles and read mod 2π (a nonzero multiple
+  of 2π within 2^-44 of the terms' magnitude; 0 exactly otherwise), must commute with every Ry paired
+  (constant, or not reading its target, aside from phases on its own controls as below) and be 0 on
+  every sample at the end, or constant there when the angle rails contribute 0 to it (a global phase
+  of classical-angle phases). So one phase on a disjunction of pairwise-disjoint predicates equals the
+  per-edge phases of the same angle (117); see _match_lists. Against
   the C oracle rotations are matched by site (bead cq-yonm): each lowered gate belongs to one
   (function, site) of `cq_theta`/`cq_phi`, and at every sample the gates of a site that fire there,
   in lowered order, are that site's reaches in that sample, each with the same angle (and register
@@ -205,9 +214,11 @@ import functools
 import json
 import os
 import re
+import struct
 import sys
 from collections import Counter
 from dataclasses import dataclass, field
+from fractions import Fraction
 from typing import Any, Callable, Dict, FrozenSet, Hashable, List, Optional, Sequence, Tuple
 
 from .contracts import DriverSpec, RunResult
@@ -458,10 +469,12 @@ def _dep(fn: Sequence[Any], regs: Dict[int, Tuple]) -> FrozenSet[int]:
     return frozenset(m for h in dep for m in same[varying[h]])
 
 
-def _lowered_events(runs: List[RunResult]) -> Tuple[List[_Ev], List[_Ev], List[_Ev]]:
+def _lowered_events(runs: List[RunResult], regs_out: Optional[Dict[Tuple[int, int], Tuple]] = None
+                    ) -> Tuple[List[_Ev], List[_Ev], List[_Ev]]:
     """Gate events of one side over one group: (kept events, dropped global phases, idle Ry: an Ry
     whose control fires somewhere but whose angle is the identity wherever it does, CR §1.3; no
-    gate, but still the prep that overwrites its target for rule 10's un-prep, bead cq-mopw)."""
+    gate, but still the prep that overwrites its target for rule 10's un-prep, bead cq-mopw).
+    `regs_out`, when given, receives the side's register versions ((rail, n) -> values per sample)."""
     n = len(runs[0].rotations or [])
     recs = [rr.rotations for rr in runs]
     S = range(len(runs))
@@ -534,6 +547,8 @@ def _lowered_events(runs: List[RunResult]) -> Tuple[List[_Ev], List[_Ev], List[_
             sup |= {r for r, _ in _dep(e.afn, regs)}
         e.support = frozenset(sup)
         live.append(e)
+    if regs_out is not None:
+        regs_out.update(regs)
     return live, glob, idle
 
 
@@ -593,42 +608,183 @@ def _ordered(x: _Ev, y: _Ev) -> bool:
             or (y.target is not None and y.target in x.support))
 
 
-def _match_lists(ours: List[_Ev], ref: List[_Ev]) -> Optional[str]:
-    """Trace equivalence under partial commutation with a rail bijection; None when equal."""
+# 2π past f64 precision: phase totals are summed exactly (each f64 angle is a rational) and reduced mod 2π
+_TWO_PI = Fraction("6.283185307179586476925286766559005768394338798750211641949889184615632812572418")
+# A total that is a nonzero multiple of 2π only up to the rounding of its f64 terms (π + π) reads as 0
+# within this relative bound; a total that is 0 itself must be 0 exactly (no tolerance at k = 0).
+_TWO_PI_TOL = 2.0 ** -44
+
+
+def _f64(bits: int) -> float:
+    return struct.unpack("<d", struct.pack("<Q", bits & ((1 << 64) - 1)))[0]
+
+
+def _zero_mod_2pi(x: Fraction, mag: float) -> bool:
+    """x ≡ 0 (mod 2π): exactly 0, or a nonzero multiple of 2π within the rounding of its terms
+    (`mag`: the sum of their magnitudes)."""
+    if x == 0:
+        return True
+    k = round(x / _TWO_PI)
+    return k != 0 and abs(float(x - k * _TWO_PI)) <= _TWO_PI_TOL * max(1.0, mag)
+
+
+def _phase_terms(e: _Ev) -> List[Fraction]:
+    """θ·f per group sample of a phase (ph: its classical angle where it fires; phq: its angle rail's
+    value where it fires). A non-finite angle never fires (_lowered_events)."""
+    if e.kind == "ph":
+        th = Fraction(_f64(e.theta))
+        return [th if on else Fraction(0) for on in e.pred]
+    return [Fraction(_f64(a)) if a is not None else Fraction(0) for a in e.afn]
+
+
+def _match_lists(ours: List[_Ev], ref: List[_Ev], regs_o: Optional[Dict[Tuple[int, int], Tuple]] = None,
+                 regs_r: Optional[Dict[Tuple[int, int], Tuple]] = None) -> Optional[str]:
+    """Trace equivalence under partial commutation with a rail bijection, phases compared as a total
+    (CR §6 item 2, ruling cq-u2mw); None when equal.
+
+    The non-diagonal gates (Ry, angle-rail Ry) are matched one to one, as before. Phases are never
+    matched one at a time: the search carries Δ, the phase total of ours so far minus that of the
+    reference gates consumed so far, per group sample (exact, mod 2π), with the invariant
+    ours[:i] = e^{iΔ}·(consumed reference gates). An our phase adds to Δ. A reference phase is consumed
+    (subtracted) only when it must be: when it precedes, and does not commute with, the reference Ry
+    paired next (it is then movable to the front: no Ry still pending before it is ordered with it),
+    or at the end. Pairing our Ry y with a reference Ry needs e^{iΔ} to commute with y: Δ constant
+    over the group (a global phase), or not reading y's target (its support over both sides'
+    registers, _dep), or a function of y's control values (diagonal on its controls; as
+    _diag_on_controls). At the end every reference gate is consumed and Δ must be constant over the
+    group: one total agreeing on every basis input mod 2π, up to a global phase (CR §6). Consuming a
+    reference phase as late as possible loses nothing: a phase that commutes with y does not change
+    whether Δ reads y's target."""
     best = [-1, ""]
     limit = max(1000, 4 * (len(ours) + len(ref)) + 100)
     if sys.getrecursionlimit() < limit:
         sys.setrecursionlimit(limit)
+    nS = len((ours or ref)[0].pred) if (ours or ref) else 0
+    regs: Dict[Tuple, Tuple] = {}
+    for side, rg in (("o", regs_o or {}), ("r", regs_r or {})):
+        for (h, n), v in rg.items():
+            regs[((side, h), n)] = v
+    terms: Dict[int, List[Fraction]] = {}
+    mags: Dict[int, List[float]] = {}
 
-    def dfs(i: int, rem: List[int], m: Dict[int, int], minv: Dict[int, int]) -> bool:
-        if i == len(ours):
-            if rem:
-                if best[0] < i:
-                    best[0], best[1] = i, f"reference gate {ref[rem[0]].label} has no counterpart in ours"
-                return False
+    def term(e: _Ev) -> Tuple[List[Fraction], List[float]]:
+        if id(e) not in terms:
+            terms[id(e)] = _phase_terms(e)
+            mags[id(e)] = [abs(float(t)) for t in terms[id(e)]]
+        return terms[id(e)], mags[id(e)]
+
+    # Δ: (total per sample, magnitudes per sample, the angle-rail part of the total per sample, the
+    # phases summed into it since it was last constant: (event, sign, side))
+    Delta = Tuple[Tuple[Fraction, ...], Tuple[float, ...], Tuple[Fraction, ...], Tuple]
+    zero: Delta = (tuple(Fraction(0) for _ in range(nS)), tuple(0.0 for _ in range(nS)),
+                   tuple(Fraction(0) for _ in range(nS)), ())
+
+    def add(d: Delta, e: _Ev, sign: int, side: str) -> Delta:
+        t, mg = term(e)
+        q = tuple(x + sign * y for x, y in zip(d[2], t)) if e.kind == "phq" else d[2]
+        return (tuple(x + sign * y for x, y in zip(d[0], t)), tuple(x + y for x, y in zip(d[1], mg)), q,
+                d[3] + ((e, sign, side),))
+
+    def classes(vals: Sequence[Fraction], mg: Sequence[float]) -> Optional[Tuple[int, ...]]:
+        """Values per sample as classes of equality mod 2π; None when constant (a global phase)."""
+        reps: List[int] = []
+        ids: List[int] = []
+        for s in range(nS):
+            for c, t in enumerate(reps):
+                if _zero_mod_2pi(vals[s] - vals[t], mg[s] + mg[t]):
+                    ids.append(c)
+                    break
+            else:
+                reps.append(s)
+                ids.append(len(reps) - 1)
+        return None if len(reps) <= 1 else tuple(ids)
+
+    def settle(d: Delta) -> Delta:
+        """A constant Δ commutes with every gate: forget the phases summed into it."""
+        if not d[3]:
+            return d
+        v0, m0 = d[0][0], d[1][0]
+        if all(_zero_mod_2pi(v - v0, mg + m0) for v, mg in zip(d[0], d[1])):
+            return (d[0], d[1], d[2], ())
+        return d
+
+    def crosses(d: Delta, e: _Ev, r: _Ev) -> bool:
+        """e^{iΔ} commutes with the pair (e, r): the phases summed into Δ that each commute with it by
+        _diag_on_controls (their flag a control of the Ry on their side, their predicate a function of
+        it) aside, the rest is constant or does not read the Ry's target."""
+        vals, mg = list(d[0]), d[1]
+        for ev, sign, side in d[3]:
+            if _diag_on_controls(ev, e if side == "o" else r):
+                for s, t in enumerate(term(ev)[0]):
+                    vals[s] -= sign * t
+        cl = classes(vals, mg)
+        if cl is None:
             return True
+        rails = {k[0] for k in _dep(cl, regs)}
+        return ("o", e.target) not in rails and ("r", r.target) not in rails
+
+    def note(i: int, why: str) -> None:
+        if best[0] < i:
+            best[0], best[1] = i, why
+
+    def dfs(i: int, rem: List[int], m: Dict[int, int], minv: Dict[int, int], d: Delta) -> bool:
+        if i == len(ours):
+            left = [j for j in rem if not _phase(ref[j])]
+            if left:
+                note(i, f"reference gate {ref[left[0]].label} has no counterpart in ours")
+                return False
+            for j in rem:
+                d = add(d, ref[j], -1, "r")
+            cl = classes(d[0], d[1])
+            if all(_zero_mod_2pi(x, mg) for x, mg in zip(d[0], d[1])):
+                return True
+            if cl is None and all(_zero_mod_2pi(x, mg) for x, mg in zip(d[2], d[1])):
+                return True          # a global phase, of classical-angle phases only (CR §6)
+            note(i, "the phase totals differ: ours minus the reference's is not 0 mod 2π on every sample "
+                    + (f"(classes {_fn(cl)})" if cl is not None else "(a constant the angle rails contribute to: "
+                       "never a global phase)"))
+            return False
         e = ours[i]
+        if _phase(e):
+            return dfs(i + 1, rem, m, minv, settle(add(d, e, +1, "o")))
         tried = set()
+        crossed = False
         for pos, j in enumerate(rem):
             r = ref[j]
+            if _phase(r):
+                continue
             pair = _same(e, r, m, minv)
             if pair is None or pair in tried:
                 continue
             tried.add(pair)
-            if any(_ordered(ref[k], r) for k in rem[:pos]):
+            block = [k for k in rem[:pos] if _ordered(ref[k], r)]
+            if any(not _phase(ref[k]) for k in block):
+                continue
+            if any(not _phase(ref[k2]) and _ordered(ref[k2], ref[k])
+                   for k in block for k2 in rem[:rem.index(k)]):
+                continue         # a forced phase is itself behind a pending Ry: r cannot reach the front
+            d2 = d
+            for k in block:
+                d2 = add(d2, ref[k], -1, "r")
+            d2 = settle(d2)
+            if not crosses(d2, e, r):
+                crossed = True
                 continue
             m2, minv2 = m, minv
             if pair != (-1, -1) and pair[0] not in m:
                 m2 = dict(m); m2[pair[0]] = pair[1]
                 minv2 = dict(minv); minv2[pair[1]] = pair[0]
-            if dfs(i + 1, rem[:pos] + rem[pos + 1:], m2, minv2):
+            drop = set(block) | {j}
+            if dfs(i + 1, [x for x in rem if x not in drop], m2, minv2, d2):
                 return True
-        if best[0] < i:
-            best[0], best[1] = i, (f"our gate #{i} {e.label} (predicate {_fn(e.pred)}) matches no reference gate "
-                                   f"movable to this position")
+        if crossed:
+            note(i, f"our gate #{i} {e.label} (predicate {_fn(e.pred)}): the phase total before it (ours minus "
+                    f"the reference's) reads its target, so the phases do not agree on its either side")
+        note(i, f"our gate #{i} {e.label} (predicate {_fn(e.pred)}) matches no reference gate "
+                f"movable to this position")
         return False
 
-    if dfs(0, list(range(len(ref))), {}, {}):
+    if dfs(0, list(range(len(ref))), {}, {}, zero):
         return None
     return best[1]
 
@@ -1562,9 +1718,11 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
         tag = f"classical arguments {gk[0]} ({len(ks)} samples)"
         o_runs = [o_by[k] for k in ks]
         r_runs = [r_by[k] for k in ks]
-        o_evs, o_glob, o_idle = _lowered_events(o_runs)
+        o_regs: Dict[Tuple[int, int], Tuple] = {}
+        o_evs, o_glob, o_idle = _lowered_events(o_runs, o_regs)
         if oracle == "ref":
-            r_evs, _, _ = _lowered_events(r_runs)
+            r_regs: Dict[Tuple[int, int], Tuple] = {}
+            r_evs, _, _ = _lowered_events(r_runs, r_regs)
             kept_o = _kept_multiset(o_runs)
             kept_r = _kept_multiset(r_runs)
             if kept_o != kept_r:
@@ -1576,7 +1734,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
                     elif d < 0:
                         reasons.append(f"{tag}: {-d} rail(s) {cls[0]} with values {_fn(cls[1])} the reference "
                                        f"keeps are not kept on our side")
-            why = _match_lists(o_evs, r_evs)
+            why = _match_lists(o_evs, r_evs, o_regs, r_regs)
             if why:
                 reasons.append(f"{tag}: rotation list differs: {why}")
         else:
