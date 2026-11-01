@@ -447,7 +447,18 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     - *Quantum-dependent exit, cutoff K*: the loop is re-rolled so the pre-header guard is trip 0
       of the latch test (equality by SCEV); it runs exactly K trips under the predicate chain
       `a_j = a_{j−1} & cond_j`, seeded `|1⟩` (or the arm flag when the loop sits in an arm); every
-      carried value advances by a `select` on `a_j`; the mirror pops K trips. **The overflow
+      carried value advances by a `select` on `a_j`; the mirror pops K trips. An AFFINE INDUCTION
+      is not carried: a value with a loop-invariant start and an unconditional classical step (SCEV
+      `{start,+,step}`: a counter, a walked pointer, a decremented length) has in trip j the value
+      `start + j·step`, which is classical when the start is classical and otherwise one template
+      from the invariant start rail and the literal `j·step` (190: `n − j`); nothing is carried for
+      it. A pointer walked this way with a classical start indexes a SLOT array at the classical
+      index `start + j·step`, bounds-checked against the object's cell count (beyond reads `|0⟩`,
+      rule 21), never a QRAM (rule 20: no quantum offset; 190's `l`, `r`, 189's `i`). Only the
+      induction's EXIT value is quantum (it depends on which trip exited): when the program reads it
+      after the loop, a carried rail advancing by `select` on `a_j` is kept for that read alone
+      (rule 6 cleans it per trip as a counter) and is never used as an index (87's `n`). 87's `p`
+      is regenerated from its QRAM form (§7). Ruling 2026-11-01 (CQ_lang2 cq-n7e9). **The overflow
       predicate is kept as an output rail**: `a_K` denotes the result of the exit test evaluated
       after the K-th body (`a_{K−1} & cond_K` for the test that would admit a (K+1)-th trip), so
       `a_K = 1` iff the loop would run another trip (non-convergence is observable, and a loop that
@@ -821,6 +832,7 @@ UNCOVERED, never dead and never a PASS (cq-3nla turned an ERROR into a PASS this
 | 14 output `a_K` | 05, 09, 26, 37, 53, 54, 55, 68, 87, 139 (57 has a classical bound and no chain) | keep the last predicate as an output |
 | 16 lifetime | 91 (`free` under a quantum predicate emits nothing; the block is uncomputed and freed at scope end where provable) | ruling 2026-10-26 |
 | 6 bijective cleanup | 125, 127 (also applied in 113, 114 to the superseded CNOT targets) | rewrite as the two witnesses |
+| 14 affine induction | 87 (p's idx carried as a rail, making s a QRAM; ruling 2026-11-01, regeneration owed) | slot array read at the classical trip index with the cell-count check, as 190's memcmp; n stays a carried rail |
 | 12 | 41 | header: deletion is scope-dependent |
 | 3 lane gate | 103 (dead `fadd_f32` on an unread lane) | remove |
 | §1.4 mask and bounds (2026-10-27) | 52 (`reduce_1000`: the `out` pointer carries two cells, so two digits), 98 (`chain_10`: the call-site bound `n & 3` must appear as `_b3`) | renamed `__cq_q_reduce_10000`, `__cq_q_chain_10_b3[_dN]` |
