@@ -136,13 +136,13 @@ bool knownLibFunc(const Function &F) {
   return libFuncOf(F, lf);
 }
 
-// The <fenv.h> functions (C17 7.6, with the glibc/BSD trap-enable extensions); taint's isFenvCall
-// and eff-fenv's fenvFn name the same set.
+// The <fenv.h> functions (C17 7.6); taint's isFenvCall and eff-fenv's fenvFn name the same set. The
+// trap-enable extensions (feenableexcept, fedisableexcept, fegetexcept) are not C17 and have no musl body:
+// rule 27 like any bodiless callee (CR rule 23, cq-hzji).
 bool isFenvFunction(StringRef n) {
   static const char *names[] = {"feclearexcept", "fegetexceptflag", "feraiseexcept", "fesetexceptflag",
                                 "fetestexcept",  "fegetround",      "fesetround",    "fegetenv",
-                                "feholdexcept",  "fesetenv",        "feupdateenv",   "fegetexcept",
-                                "feenableexcept", "fedisableexcept"};
+                                "feholdexcept",  "fesetenv",        "feupdateenv"};
   for (const char *x : names)
     if (n == x)
       return true;

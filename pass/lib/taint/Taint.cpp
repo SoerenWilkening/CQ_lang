@@ -197,8 +197,7 @@ bool isFenvCall(StringRef n) {
   static const char *names[] = {"feclearexcept", "fegetexceptflag", "feraiseexcept",
                                 "fesetexceptflag", "fetestexcept",  "fegetround",
                                 "fesetround",      "fegetenv",      "feholdexcept",
-                                "fesetenv",        "feupdateenv",   "fegetexcept",
-                                "feenableexcept",  "fedisableexcept"};
+                                "fesetenv",        "feupdateenv"};   // not the trap-enable extensions: rule 27 (CR rule 23)
   for (const char *x : names)
     if (n == x)
       return true;

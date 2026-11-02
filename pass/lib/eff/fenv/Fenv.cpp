@@ -66,7 +66,7 @@
 //    A restore of a full part, or any restore under p, FOLDs: the host flags move into FLAGS and
 //    FLAGS' / MODE' are computed on rails (select(p, restored, current) under p). Trap enables are not
 //    part of the model (see LIMITS).
-//  - feenableexcept / fedisableexcept / fegetexcept (not C17, recognised as host calls): host calls.
+//  - feenableexcept / fedisableexcept / fegetexcept (not C17, no musl body): rule 27, not this module.
 //
 // ROLES. Every FLAGS state and every rail feeding one is uncomputed (Role::Garbage) except the
 // FINAL flags rail, fenv state the caller can read, an output like 71's global (rule 23: "the final
@@ -90,7 +90,7 @@
 // uses (Uncompute.cpp contract).
 //
 // LIMITS. Awaiting owner rulings (SPEC_ISSUES, each an internal compiler error naming its entry):
-// exception traps (feenableexcept) with quantum flags or under a quantum predicate; a classical call
+// a classical call
 // of a body that reads, clears, saves or rounds in the environment while its quantum part is live;
 // a quantum MODE passed into or returned from a clone (82's ABI carries a classical mode and returns
 // only the flags; the mode clone's name is owed, CR §8); a constrained op with no rule 4 template
@@ -148,7 +148,6 @@ constexpr int64_t kAllExcept = 63;
 constexpr int64_t kModeBits = 0xC00;
 
 // The SPEC_ISSUES entries this module's remaining stops await (owner rulings).
-constexpr const char *kIssueTraps = "awaiting owner ruling: SPEC_ISSUES rule 23: exception traps on quantum flags";
 constexpr const char *kIssueHostCall =
     "awaiting owner ruling: SPEC_ISSUES rule 23: a classical call of a body that reads the live quantum environment";
 constexpr const char *kIssueModeClone =
@@ -164,7 +163,7 @@ constexpr const char *kIssueObject =
 
 enum class FenvFn : uint8_t {
   None, ClearExcept, GetExceptFlag, RaiseExcept, SetExceptFlag, TestExcept, GetRound, SetRound,
-  GetEnv, HoldExcept, SetEnv, UpdateEnv, GetExcept, EnableExcept, DisableExcept
+  GetEnv, HoldExcept, SetEnv, UpdateEnv
 };
 
 FenvFn fenvFn(const CallBase &CB) {
@@ -177,8 +176,9 @@ FenvFn fenvFn(const CallBase &CB) {
       {"fetestexcept", FenvFn::TestExcept},   {"fegetround", FenvFn::GetRound},
       {"fesetround", FenvFn::SetRound},       {"fegetenv", FenvFn::GetEnv},
       {"feholdexcept", FenvFn::HoldExcept},   {"fesetenv", FenvFn::SetEnv},
-      {"feupdateenv", FenvFn::UpdateEnv},     {"fegetexcept", FenvFn::GetExcept},
-      {"feenableexcept", FenvFn::EnableExcept}, {"fedisableexcept", FenvFn::DisableExcept}};
+      {"feupdateenv", FenvFn::UpdateEnv}};
+  // feenableexcept / fedisableexcept / fegetexcept are not C17 and have no musl body: rule 27, like any
+  // bodiless callee (CR rule 23, cq-hzji 2026-11-02); not this module's.
   for (auto &[n, k] : names)
     if (F->getName() == n)
       return k;
@@ -484,7 +484,6 @@ struct State {
   // The classical mode value known at a point of one original block.
   Value *modeVal = nullptr;
   const Instruction *modeValAt = nullptr;
-  bool traps = false;
   AllocaInst *anchor = nullptr;
   AllocaInst *probeEnv = nullptr;   // a scratch fenv_t for host probes
   DenseSet<const Value *> anchored;
@@ -1491,8 +1490,6 @@ Value *excOf(LoweringContext &ctx, State &st, const Step &s, StringRef origOp) {
 // FLAGS |= the bits I raised: a rail (bits), or classical (lit, a constant or a run-time i32 the host
 // gave, BRACKET); under the quantum control they enter as select(flag, bits, 0).
 void raiseBits(LoweringContext &ctx, State &st, const Instruction &I, Value *bits, Value *lit = nullptr) {
-  if (st.traps)
-    unimplemented(kIssueTraps, &I);
   Value *flag = predicateFlag(ctx);
   if (!bits) {
     if (!lit)
@@ -2007,8 +2004,6 @@ void lowerFenvCall(LoweringContext &ctx, CallBase &CB) {
       break;
     }
     requireWritable(ctx, st, CB, true, false);
-    if (st.traps)
-      unimplemented(kIssueTraps, &CB);
     Value *bits;
     if (m.handle) {
       KnownBits k = computeKnownBits(CB.getArgOperand(0), ctx.M.getDataLayout());
@@ -2172,8 +2167,6 @@ void lowerFenvCall(LoweringContext &ctx, CallBase &CB) {
     }
     // Under the control p: the part becomes FULL, select(p, now, before); feholdexcept also empties the
     // flags where p holds (FOLD).
-    if (st.traps)
-      unimplemented(kIssueTraps, &CB);
     Value *h = hostTest(ctx, i32(ctx, kAllExcept));
     Value *T = fold(ctx, st, c.flags, h);
     Operand nowMode = c.mode ? Operand{c.mode, true} : Operand{classicalMode(ctx, st, CB), false};
@@ -2212,8 +2205,6 @@ void lowerFenvCall(LoweringContext &ctx, CallBase &CB) {
     // FOLD: the saved whole value (a full part, or the host object PROBEd), the host flags moved into
     // T; the host mode left as it is (MODE' a rail overrides it).
     requireWritable(ctx, st, CB, true, true);
-    if (st.traps)
-      unimplemented(kIssueTraps, &CB);
     Value *h = hostTest(ctx, i32(ctx, kAllExcept));
     auto [Sm, Sf] = wholeOf(ctx, st, k, s);
     hostClear(ctx, i32(ctx, kAllExcept));
@@ -2233,20 +2224,6 @@ void lowerFenvCall(LoweringContext &ctx, CallBase &CB) {
       setFlags(ctx, st, flagsRail(ctx, st, nf));
     }
     bindResult(ctx, CB, zero);
-    break;
-  }
-
-  case FenvFn::GetExcept:
-    hostCopy();   // a read of the host trap enables
-    break;
-
-  case FenvFn::EnableExcept:
-  case FenvFn::DisableExcept: {
-    if (control() || (!CB.arg_empty() && arg(0).handle))
-      unimplemented(kIssueTraps, &CB);
-    hostCopy();
-    if (fn == FenvFn::EnableExcept)
-      st.traps = true;
     break;
   }
 
