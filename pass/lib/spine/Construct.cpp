@@ -2200,10 +2200,15 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
   LoopInfo LI(DT);
   ctx.preds().compute(F, LI, T, S, entryFlag);
   ctx.B().SetInsertPoint(BasicBlock::Create(M.getContext(), "", sh.out));
+  SmallVector<Instruction *, 4> slotTripleAddrs;   // erased again when no access used them (fatptr's, 190)
   for (auto &[A, obj, idx] : slotTripleCells) {
     IRBuilder<> &EB = ctx.B();
-    Value *at = EB.CreateInBoundsGEP(EB.getInt32Ty(), obj, EB.CreateSExt(idx, EB.getInt64Ty()));
+    Value *ix = EB.CreateSExt(idx, EB.getInt64Ty());
+    Value *at = EB.CreateInBoundsGEP(EB.getInt32Ty(), obj, ix);
     spine::bindOperand(ctx, A, Operand{at, false});
+    for (Value *v : {at, ix})
+      if (auto *I = dyn_cast<Instruction>(v))
+        slotTripleAddrs.push_back(I);
   }
   // CR §1.4: a composite formal crosses as one parameter per leaf; with no quantum leaf it is a classical
   // value of its own type, rebuilt from its leaves (struct and array fields, vector lanes, in order).
@@ -2248,6 +2253,9 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
     Walker(ctx, F, DT, LI).run();
   llvm::erase_if(sh.ruleSixPending, [&](const spine::Shared::PendingSix &p) { return p.ctx == &ctx; });
   mem::finishSlots(ctx);   // M8: register arrays' readers against their rule-6 clean-ups (114)
+  for (Instruction *I : slotTripleAddrs)
+    if (I->use_empty())
+      I->eraseFromParent();
   reachDefs(*sh.out);   // cq-pfpy: rule 9's hoisted arm values reach every point that reads them
 
   if (last) {
