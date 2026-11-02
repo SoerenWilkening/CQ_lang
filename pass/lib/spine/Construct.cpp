@@ -873,25 +873,48 @@ void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in) {
       inc.push_back({e.out, unitVal.v});
       continue;
     }
-    if (!e.facts)
-      unimplemented("spine: a unit-bound phi reached by an output edge with no classical facts", &phi);
-    const Value *v = nullptr;
+    // The original incomings this output edge stands for: those whose edge predicate meets its classical
+    // facts (every incoming when it has none). One value is taken as it is; several are rule 9's select
+    // chain where the edge leaves, each arm under the quantum part of its edge predicate (as factoredMerge),
+    // which stands for it under the facts only when its classical factor is the facts themselves.
+    Pred F = e.facts ? *e.facts : Pred::top();
+    SmallVector<unsigned, 2> cands;
     for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i) {
       const BasicBlock *u = phi.getIncomingBlock(i);
-      if (!idx.count(u) || unitOf.count(u) || (ctx.preds().edge(u, b) & *e.facts).isBottom())
+      if (!idx.count(u) || unitOf.count(u) || (ctx.preds().edge(u, b) & F).isBottom())
         continue;
-      if (v && v != phi.getIncomingValue(i))
-        unimplemented("spine: a unit-bound phi whose skip edge admits several incomings", &phi);
-      v = phi.getIncomingValue(i);
+      if (none_of(cands, [&](unsigned k) { return phi.getIncomingValue(k) == phi.getIncomingValue(i); }))
+        cands.push_back(i);
     }
-    if (!v)
-      unimplemented("spine: a unit-bound phi with no incoming on a skip edge", &phi);
     IRBuilderBase::InsertPointGuard g(ctx.B());
     Instruction *t = e.out->getTerminator();
     if (!t)
       internalError("spine: the output block of an incoming edge has no terminator yet", &phi);
     ctx.B().SetInsertPoint(t);
-    Operand o = ctx.operand(v);
+    Operand o;
+    if (cands.empty()) {
+      // No original edge into b meets the facts: the output edge is never taken (its path is one the
+      // classical branches exclude); any rail serves, a |0> seed.
+      o = Operand{ConstantInt::get(irTypeOf(ctx.M.getContext(), w), 0), false};
+    } else if (cands.size() == 1) {
+      o = ctx.operand(phi.getIncomingValue(cands.front()));
+    } else {
+      std::vector<std::pair<Pred, Operand>> arms;
+      for (unsigned k : cands) {
+        Pred p = Pred::bottom();
+        for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i)
+          if (phi.getIncomingValue(i) == phi.getIncomingValue(k) && idx.count(phi.getIncomingBlock(i)) &&
+              !unitOf.count(phi.getIncomingBlock(i)))
+            p = p | ctx.preds().edge(phi.getIncomingBlock(i), b);
+        p = p & F;
+        if (!(F & !p.classicalFactor(ctx.T, ctx.S)).isBottom())
+          unimplemented("spine: a unit-bound phi whose output edge stands for several original edges that the edge's "
+                        "classical facts do not tell apart (cq-mtt)",
+                        &phi);
+        arms.push_back({p.quantumPart(ctx.T, ctx.S), ctx.operand(phi.getIncomingValue(k))});
+      }
+      o = Operand{selectChain(ctx, arms, w), true};
+    }
     if (!o.handle) {
       CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {o.v});
       ctx.unc().recordSeed(a);
