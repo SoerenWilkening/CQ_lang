@@ -776,15 +776,33 @@ void checkCtlDistinct(Module &M) {
 
 void finalize(Module &M) {
   checkCtlDistinct(M);
-  SmallVector<Function *, 8> clones;
+  SmallVector<Function *, 8> clones, unusedInv;
   for (Function &F : M) {
     if (!isClone(F))
       continue;
-    if (!abi::parseClone(F.getName()))
+    std::optional<abi::CloneSpec> spec = abi::parseClone(F.getName());
+    if (!spec)
       unimplemented("calls: calls::finalize: a symbol in the clone namespace that is not a canonical "
                     "clone name (a uniquified clone; CR §1.4)",
                     &F);
+    // cq-necw (CR §1.4, rule 18): an _inv<c> clone is defined only when a call site uses it. A call site's
+    // clean-up registered with it is pruned when the call's twin restores the cell (the old content is then
+    // not dead), leaving it unused.
+    if (!spec->inv.empty() && F.use_empty()) {
+      unusedInv.push_back(&F);
+      continue;
+    }
     clones.push_back(&F);
+  }
+  for (Function *F : unusedInv) {
+    SmallPtrSet<Function *, 8> callees;
+    for (Instruction &I : instructions(*F))
+      if (auto *CB = dyn_cast<CallBase>(&I); CB && CB->getCalledFunction())
+        callees.insert(CB->getCalledFunction());
+    F->eraseFromParent();
+    for (Function *D : callees)
+      if (D->isDeclaration() && D->use_empty())
+        D->eraseFromParent();
   }
   if (clones.empty())
     return;

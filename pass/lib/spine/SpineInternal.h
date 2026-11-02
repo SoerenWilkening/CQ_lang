@@ -187,6 +187,13 @@ struct Shared {
   // CR rule 6: the rails a clean-up was requested for (Opcode.cpp). A template rail reading one of them
   // is no longer garbage rule 5 can uncompute (cq-tmvo).
   llvm::DenseSet<const llvm::Value *> ruleSixCleaned;
+  // cq-necw (CR rules 6, 18, §1.4 _inv<c>): the new-IR handle loads of a caller cell's new content after a
+  // clone call that overwrote it, when the call's group has that load as its only member (no quantum result,
+  // one cell written) and the cell's old rail got the _inv<c> clean-up (calls cleanDeadCells: the object's
+  // address reaches only constant-offset loads and stores, the call is in no cycle, nothing writes the
+  // object after it). Rule 6 may clean such a load at a later bijective update like any register (cleanable),
+  // instead of the call's twin, which would restore the dead old content.
+  llvm::DenseSet<const llvm::Value *> invCellImages;
   // cq-2ql9 (Opcode.cpp ruleSixRetry): an old value Y whose clean-up against I's image (yp) waits for the
   // garbage rails that still read Y (blockers) to be settled; ctx is the context that lowered I.
   struct PendingSix {

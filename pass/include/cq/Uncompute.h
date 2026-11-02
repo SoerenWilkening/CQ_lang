@@ -54,6 +54,8 @@ public:
   // and slotOut is a new rail, Role::Garbage. The item follows every use of every out and slotOut and
   // emits <callee>_unc(outs..., fwd args..., extra...), then cqrt_free of each out and slotOut. Every
   // one kept: nothing emitted; some kept and some not: unimplemented. Returns outs' ids, then slotOuts'.
+  // cq-necw (CR rules 6, 18): a group of one slotOut and no out that a rule 6 clean-up cleans (cleanupBijective,
+  // the new content of a cell an _inv<c> cleans) has no twin: its item is that clean-up.
   llvm::SmallVector<RailId, 4> recordCall(llvm::CallInst *fwd, llvm::ArrayRef<llvm::Value *> outs,
                                           llvm::ArrayRef<llvm::Value *> slotOuts, llvm::ArrayRef<Operand> extra);
   // U7 (cq-r8-d, CR rule 27 Pointers; 190): fwd is a void declared clone call that may overwrite cells

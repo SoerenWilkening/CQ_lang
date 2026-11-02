@@ -6,7 +6,8 @@ Structural checks only; the bead's acceptance is §6 (`python3 -m cqcheck run 18
 
   - probes/*.ll: synthetic modules. Each `; CHECK <fn>: <text>` must occur in <fn>'s lowered body
     (`%{{name}}` matches any local), each `; CHECK-COUNT <fn>: <text> <n>` exactly n times; the output
-    must pass plain cq-verify; each `; USERCHECK <fn>` must be §6-equal to its C program (cqcheck user). A
+    must pass plain cq-verify; each `; CHECK-ABSENT <fn>` names a function the output must not define
+    (cq-necw: an _inv<c> clone no call site uses); each `; USERCHECK <fn>` must be §6-equal to its C program (cqcheck user). A
     probe with `; EXPECT-ERROR: <text>` must instead make cq-lower exit
     non-zero with <text> on stderr (an internal error, never a lowering).
   - the owned examples: cq-lower (with its built-in verifier) exits 0, cq-verify accepts the output, no
@@ -71,6 +72,9 @@ def probes(a) -> int:
         else:
             module = dest.read_text()
             reasons += verify(a, dest)
+            for fn in re.findall(r"^; CHECK-ABSENT (\w+)$", src, re.M):
+                if function_text(module, fn):
+                    reasons.append(f"{fn}: defined, expected absent")
             for line in src.splitlines():
                 m = re.match(r"; CHECK(-COUNT)? (\w+): (.*)$", line)
                 if not m:

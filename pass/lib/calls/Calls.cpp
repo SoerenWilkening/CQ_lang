@@ -1681,6 +1681,13 @@ void cleanDeadCells(LoweringContext &ctx, CallBase &CB, const Specialization &S,
       }
       Function *G = materializeInv(ctx.M, S, r.call->getCalledFunction(), k, i, c, *ch, fs, CB);
       ctx.unc().cleanupByCall(ctx.unc().idOf(old.v), G, r.ops, reads);
+      // cq-necw (CR rules 6, 18): the cell's new content is the caller's register, as an inline update's
+      // result is. When it is the call group's only member, rule 6 may clean it at a later bijective update
+      // (spine cleanable); the twin then never runs and the _inv<c> clean-up is not pruned. Otherwise (it
+      // stays garbage) the twin restores the old content, which is then not dead (rule 18), the clean-up is
+      // pruned, and calls::finalize drops the unused _inv<c> (§1.4: defined only when a call site uses it).
+      if (outs.empty() && r.slotOuts.size() == 1)
+        spine::shared(ctx).invCellImages.insert(r.slotOuts[k]);
     }
   }
 }

@@ -105,6 +105,8 @@
 //    A kept leader with a member that was not given a kept role itself is unimplemented at flushAtExit
 //    (the twin would zero the kept results); KeptEntangled (a barrier) keeps all of them. The item
 //    follows the definitions of every member and of every extra operand defined after fwd (cq-b73i).
+//    cq-necw: a group of one slotOut and no out whose member has a rule 6 clean-up emits that clean-up
+//    instead of the twin (the cell's new content cleaned like an inline update's result, CR rules 6, 18).
 //  - noteCallReads(fwd, rails) (U4, cq-arch 2026-11-01; CR rule 5): rails in caller cells the clone call
 //    fwd reads (its twin recompute-reads them). They are reads of fwd's group item, as fwd's handle
 //    arguments are: their own items follow it, and a barrier on one binds it. It may come before or
@@ -1896,7 +1898,11 @@ struct Uncompute::Impl {
                           "never restored)",
                           rails[a2].handle);
     }
-    if (r.group != kNone && r.creator != kNone && info[r.creator].kind == RecKind::Call) {
+    // cq-necw (CR rules 6, 18): a group whose only member is a slotOut (no result) and that rule 6 cleans (the
+    // new content of a cell an _inv<c> cleans, spine invCellImages) has no twin: its item is the clean-up.
+    bool soleCellCleaned = r.cleanup && r.group != kNone && groups[r.group].outs.empty() &&
+                           groups[r.group].members.size() == 1;
+    if (r.group != kNone && r.creator != kNone && info[r.creator].kind == RecKind::Call && !soleCellCleaned) {
       // U2: twin(outs..., fwd args..., extra...), then free every out and slotOut in order.
       const CallGroup &cg = groups[r.group];
       CallInst *fwd = cg.fwd;

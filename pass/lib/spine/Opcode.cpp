@@ -508,7 +508,10 @@ bool cleanable(LoweringContext &ctx, Value *y) {
   if (bi == binds.end() || bi->second.size() != 1)
     return false;
   auto *I = dyn_cast<Instruction>(y);
-  if (!I || isa<LoadInst>(I) || isa<PHINode>(I))
+  if (!I || isa<PHINode>(I))
+    return false;
+  // cq-necw: a cell load is cleanable only as the new content of a cell whose old rail an _inv<c> cleans.
+  if (isa<LoadInst>(I) && !spine::shared(ctx).invCellImages.count(ctx.operand(y).v))
     return false;
   if (auto *sel = dyn_cast<SelectInst>(I); sel && !spine::isQ(ctx, sel->getCondition()))
     return false;
