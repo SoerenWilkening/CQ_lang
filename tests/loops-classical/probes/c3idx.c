@@ -4,7 +4,14 @@
 #include "CQ.h"
 int c3_index(int n, double t) {
   int x = 0; cq_theta(&x, t);
-  int i;
-  for (i = 0; i < n; i++) if (x == i) break;
+  int i, s = 0;
+  for (i = 0; i < n; i++) { s += i * i; if (s == x) break; }
+  return cq_measure(i);
+}
+/* the single-exit form (a mixed latch test `c && !q`): the classical i read after the loop */
+int c3_mixed(int n, double t) {
+  int x = 0; cq_theta(&x, t);
+  int i = 0, s = 0;
+  do { i++; s += i; } while (i < n && s != x);
   return cq_measure(i);
 }

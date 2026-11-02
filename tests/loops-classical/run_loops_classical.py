@@ -126,7 +126,7 @@ MXNEST_PROBE = PROBES / "mxnest.O1.ll"
 MXNEST = ["mx_nest"]
 # cq-l56v: a classical value read after a case-3 loop (capture rail); a seed rotated by every trip (was a fatal probe).
 C3IDX_PROBE = PROBES / "c3idx.O1.ll"
-C3IDX = ["c3_index"]
+C3IDX = ["c3_index", "c3_mixed"]
 SEED_PROBE = PROBES / "fatal_carried_seed.O1.ll"
 SEED = ["p38_seed"]
 ENTRIES = ["p_acc", "p_brk", "p_nest", "p_mod", "p_nb", "p_horner", "p_arm", "p_phase", "p_cjoin", "p_tphase", "p_bwb", "p_g2"]
