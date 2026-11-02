@@ -30,3 +30,6 @@ Entry format:
   heap_linked_list.lowered.ll line 36.
 - Bead: cq-n7e9
 
+- eff-invert (cq-4593, cq-asfn): "A cq_invert marker under a quantum predicate" — clang -O1 duplicates __cq_invert_begin/_end into both arms of a quantum branch (IR tests/eff-invert/probes/dup_begin_error.O1.ll, blocks %8/%9 each hold a begin); linearized, both run: two begins for one end. Where does the region start/end?
+- loops-cutoff (cq-8i5g): a computed goto whose address does not come from a constant table read, a select or a constant (a carried phi of block addresses, or stored to memory and loaded back): rule 13 says "the integer the target address was derived from" but not how to find it through memory or a carried phi.
+- mem-qram (cq-pf4n): a QRAM over an extern object of unknown extent whose initial contents are its definer's (@g = external global [0 x i32], store at a quantum offset): no form seeds cells from host memory the compiler cannot bound.
