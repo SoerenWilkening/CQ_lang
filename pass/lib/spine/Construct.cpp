@@ -2171,15 +2171,26 @@ void Walker::run() {
         v = op->getIncomingValue(i);
         vu = u;
       }
-      if (!v)
-        internalError("spine: a classical phi's output edge admits no original edge", op);
-      sh.cur = vu->getTerminator();
-      Operand o = ctx.operand(v);
-      if (o.handle)
-        internalError("spine: a classical phi with a rail incoming", op);
+      Value *nv;
+      if (!v) {
+        // An output edge whose classical facts admit no original edge into blk: under those facts the C
+        // program never reaches blk (a linearized region whose quantum arms all left it, e.g. by an
+        // early return under a _ctl clone's entry predicate), so the block's quantum predicate is false
+        // there and every effect in it is guarded off. The phi is a don't-care on that edge: the null
+        // value, as reachingOperand's don't-care (cq-366o).
+        if (!ie || !ie->facts || !(ctx.preds().block(blk) & *ie->facts).isBottom())
+          internalError("spine: a classical phi's output edge admits no original edge", op);
+        nv = Constant::getNullValue(np->getType());
+      } else {
+        sh.cur = vu->getTerminator();
+        Operand o = ctx.operand(v);
+        if (o.handle)
+          internalError("spine: a classical phi with a rail incoming", op);
+        nv = o.v;
+      }
       for (BasicBlock *s2 : successors(P))
         if (s2 == ob)
-          np->addIncoming(o.v, P);
+          np->addIncoming(nv, P);
     }
   }
   sh.cur = nullptr;
