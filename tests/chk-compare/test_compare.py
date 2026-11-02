@@ -877,6 +877,34 @@ class COracleT1(unittest.TestCase):
         self.check(self.lowered(lambda a, b: [ry(1, -4.0), ry(1, -3.0), ry(1, -2.0)]), c, False)
         self.check(self.lowered(lambda a, b: [ry(1, -2.0), ry(1, 3.0), ry(1, 4.0)]), c, False)
 
+    def test_measurement_in_region_flushes_forward(self):
+        # cq-4593 (BACKEND_ABI 1.13): begin [ Ry 2 ; measure ; Ry 3 ; Ry 4 ] end -> Ry 2 forward (flushed by the
+        # measurement), then Ry -4, Ry -3
+        def rots(a):
+            r = [self.beg(), self.site("f", 1, "theta", 2.0, a), self.site("f", 2, "theta", 3.0, a),
+                 self.site("f", 3, "theta", 4.0, a), self.end()]
+            for k, x in enumerate(r):
+                x["nmeas"] = 0 if k < 2 else 1
+            return r
+        c = self.c_side(lambda a, b, s: dict(rots=rots(a), measured=[{"h": None, "w": "i1", "v": hex(a)}]))
+
+        def ours(angles):
+            return side("o", lambda a, b, s: dict(
+                rots=[dict(ry(1, t), nmeas=0 if k == 0 else 1) for k, t in enumerate(angles)],
+                kept=[keep(1, a)], measured=[{"h": 1, "w": "i1", "v": hex(a)}]))
+        self.check(ours([2.0, -4.0, -3.0]), c, True)
+        self.check(ours([-4.0, -3.0, -2.0]), c, False)
+
+    def test_region_emission(self):
+        from cqcheck.compare import region_emission
+        e = [("invert_begin", 0), ("theta", 0), ("invert_begin", 0), ("phi", 0), ("theta", 1), ("invert_end", 1),
+             ("invert_end", 1)]
+        self.assertEqual(region_emission(e, 1)[0], [(1, False), (3, False), (4, False)])
+        self.assertEqual(region_emission([("invert_begin", 0), ("theta", 0), ("phi", 0), ("invert_end", 0)])[0],
+                         [(2, True), (1, True)])
+        self.assertEqual(region_emission([("invert_begin", 0), ("theta", 0)], 0, open_end=True)[0:3:2],
+                         ([(1, True)], 1))
+
     def test_repeated_site_inside_and_outside_region(self):
         # 61: the same call site reached forward, then inside the region (occurrence 1, negated)
         c = self.c_side(lambda a, b, s: dict(rots=[
