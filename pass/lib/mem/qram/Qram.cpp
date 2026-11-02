@@ -3434,7 +3434,7 @@ struct FormalUses {
   SmallVector<const StoreInst *, 4> stores;
 };
 
-FormalUses formalUses(const Argument &A, bool strict) {
+FormalUses formalUses(const Argument &A, bool strict, bool throughCalls = false) {
   FormalUses out;
   SmallVector<const Value *, 8> work{&A};
   SmallPtrSet<const Value *, 16> seen{&A};
@@ -3442,6 +3442,17 @@ FormalUses formalUses(const Argument &A, bool strict) {
     const Value *v = work.pop_back_val();
     for (const Use &u : v->uses()) {
       const User *usr = u.getUser();
+      // throughCalls (the cells' type, rule 18): a pointer handed on to a function with a body is accessed by
+      // that function's formal (musl frexp hands its int *e to its own recursive call, cq-sd95).
+      if (auto *cb = dyn_cast<CallBase>(usr); throughCalls && cb && cb->isArgOperand(&u) &&
+                                               cb->getCalledFunction() && !cb->getCalledFunction()->isDeclaration() &&
+                                               !isa<IntrinsicInst>(cb) &&
+                                               cb->getArgOperandNo(&u) < cb->getCalledFunction()->arg_size()) {
+        const Argument *fa = cb->getCalledFunction()->getArg(cb->getArgOperandNo(&u));
+        if (seen.insert(fa).second)
+          work.push_back(fa);
+        continue;
+      }
       if (auto *ld = dyn_cast<LoadInst>(usr)) {
         out.loads.push_back(ld);   // a volatile or atomic access is a plain one (rule 24)
         continue;
@@ -3467,7 +3478,7 @@ FormalUses formalUses(const Argument &A, bool strict) {
 }
 
 Type *cellTypeOfUses(const Argument &A, bool strict) {
-  FormalUses u = formalUses(A, strict);
+  FormalUses u = formalUses(A, strict, /*throughCalls=*/true);
   Type *t = nullptr;
   auto see = [&](Type *x, const Instruction *I) {
     if (!x->isIntegerTy() && !x->isFloatingPointTy())

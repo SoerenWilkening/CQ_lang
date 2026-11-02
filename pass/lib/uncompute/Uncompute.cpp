@@ -1392,15 +1392,22 @@ struct Uncompute::Impl {
     const Function *cf = fwd->getCalledFunction();
     if (!cf || isRuntimeName(cf->getName()))
       return fp;
+    // A constant global is in no footprint: nothing writes it (a write would be undefined), so the twin reads
+    // what the call read (cq-sd95: musl erfl's coefficient tables handed to __polevll).
+    auto immutable = [](const Value *p) {
+      auto *G = dyn_cast<GlobalVariable>(getUnderlyingObject(p));
+      return G && G->isConstant();
+    };
     for (const Value *a : fwd->args())
-      if (a->getType()->isPointerTy())
+      if (a->getType()->isPointerTy() && !immutable(a))
         fp.objs.push_back({a, 0});
     const Function *src = cloneSource(*cf);
     if (!src)
       return fp;   // a declared clone of an LLVM math intrinsic (no C body): its pointer arguments only
     const MemSummary &S = summaryOf(src);
     for (const GlobalVariable *g : S.globals)
-      fp.objs.push_back({g, 0});
+      if (!g->isConstant())
+        fp.objs.push_back({g, 0});
     fp.unbounded = S.unbounded;
     return fp;
   }
