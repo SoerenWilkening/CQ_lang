@@ -50,6 +50,7 @@
 #include "cq/FatPtr.h"
 
 #include <functional>
+#include <numeric>
 #include <map>
 #include <set>
 #include <optional>
@@ -501,126 +502,233 @@ std::pair<unsigned, bool> sumWidth(LoweringContext &ctx, const Fat &f, unsigned 
   return {W, *sx};
 }
 
+// The rail idx r (W bits, extension sx) at width to (to >= W), by its own extension.
+Operand widenRail(LoweringContext &ctx, Operand r, unsigned W, bool sx, unsigned to) {
+  if (!r.handle || W >= to)
+    return r;
+  return Operand{tmpl(ctx, sx ? "sext" : "zext", intRail(W), {r}, "", "", intRail(to)), true};
+}
+
+// r * m at width W (r a rail): shl for a power of two, mul otherwise, then a negation for m < 0 (0 - r'). The
+// product is exact in its low W bits (modular arithmetic: the final in-domain sum is read at W).
+Operand scaleRail(LoweringContext &ctx, Operand r, int64_t m, unsigned W) {
+  if (m == 1)
+    return r;
+  uint64_t a = m < 0 ? uint64_t(0) - uint64_t(m) : uint64_t(m);
+  LLVMContext &C = ctx.M.getContext();
+  IntegerType *ty = IntegerType::get(C, W);
+  if (a != 1)
+    r = isPowerOf2_64(a) ? Operand{tmpl(ctx, "shl", intRail(W), {r, Operand{ConstantInt::get(ty, Log2_64(a)), false}}, "hl"), true}
+                         : Operand{tmpl(ctx, "mul", intRail(W), {r, Operand{ConstantInt::get(ty, a), false}}, "hl"), true};
+  if (m < 0)
+    r = Operand{tmpl(ctx, "sub", intRail(W), {Operand{ConstantInt::get(ty, 0), false}, r}, "lh"), true};
+  return r;
+}
+
+// CR rules 20, 21 (a cell index of the object; strided and flattened forms, 30, 50, 191): the fat pointer's idx
+// re-expressed in cells of `cell` bytes, a divisor of f.cell (idx' = idx * f.cell / cell). A classical idx is
+// multiplied; a rail idx is widened to the sum width of the new cells and scaled.
+void rescale(LoweringContext &ctx, Fat &f, uint64_t cell, bool emit) {
+  if (f.cell == 0 || f.cell == cell) {
+    f.cell = cell;
+    return;
+  }
+  if (f.cell % cell != 0)
+    internalError("fatptr: a rescale to a cell size that does not divide the pointer's");
+  int64_t m = int64_t(f.cell / cell);
+  unsigned oldBits = f.idxBits;
+  bool oldSext = f.idxSext;
+  f.cell = cell;
+  if (!f.idxRail()) {
+    if (emit && f.idx.v)
+      if (auto *ci = dyn_cast<ConstantInt>(f.idx.v); !ci || !ci->isZero())
+        f.idx = Operand{ctx.B().CreateMul(f.idx.v, ConstantInt::get(i64(ctx), m)), false};
+    if (!emit)
+      if (auto *ci = dyn_cast_or_null<ConstantInt>(f.idx.v))
+        f.idx = Operand{ConstantInt::get(i64(ctx), ci->getSExtValue() * m), false};
+    return;
+  }
+  auto [W, sx] = sumWidth(ctx, f, oldBits);
+  f.idxBits = W;
+  f.idxSext = sx;
+  if (!emit)
+    return;
+  f.idx = scaleRail(ctx, widenRail(ctx, f.idx, oldBits, oldSext, W), m, W);
+}
+
+// Rule 21 ("byte arithmetic converts at the access by the element size"): f's idx re-expressed in cells of the
+// access size `size`. A cell that is a multiple of it: rescaled (exact). A cell that divides it: the idx divided by
+// size / cell (a cell dividing neither: first rescaled to their common divisor), exact in the domain when the access is aligned to its size (LLVM: an access below its stated
+// alignment is undefined) and every root's base is aligned to it, so an in-domain idx is a whole number of access
+// cells. Otherwise false (nothing emitted).
+bool fitCells(LoweringContext &ctx, Fat &f, uint64_t size, Align align) {
+  if (f.cell == 0 || f.cell == size) {
+    f.cell = size;
+    return true;
+  }
+  if (f.cell % size == 0) {
+    rescale(ctx, f, size, /*emit=*/true);
+    return true;
+  }
+  if (align.value() < size)
+    return false;
+  const DataLayout &DL = ctx.M.getDataLayout();
+  for (const Value *r : f.roots)
+    if (!isa<ConstantPointerNull>(r) && (boundOf(ctx, r) || r->getPointerAlignment(DL).value() < size))
+      return false;
+  if (size % f.cell != 0)
+    rescale(ctx, f, std::gcd(f.cell, size), /*emit=*/true);   // cells dividing both, then whole access cells
+  uint64_t k = size / f.cell;
+  f.cell = size;
+  if (!f.idxRail()) {
+    f.idx = Operand{ctx.B().CreateExactSDiv(f.idx.v, ConstantInt::get(i64(ctx), k)), false};
+    return true;
+  }
+  IntegerType *ty = IntegerType::get(ctx.M.getContext(), f.idxBits);
+  bool p2 = isPowerOf2_64(k);
+  StringRef op = p2 ? (f.idxSext ? "ashr" : "lshr") : (f.idxSext ? "sdiv" : "udiv");
+  f.idx = Operand{tmpl(ctx, op, intRail(f.idxBits), {f.idx, Operand{ConstantInt::get(ty, p2 ? Log2_64(k) : k), false}},
+                       "hl"),
+                  true};
+  return true;
+}
+
 Fat deriveGEP(LoweringContext &ctx, const GEPOperator &g, bool emit) {
   const DataLayout &DL = ctx.M.getDataLayout();
   Fat f = derive(ctx, g.getPointerOperand(), emit);
   MapVector<Value *, APInt> vars;
   APInt cst(64, 0);
+  // collectOffset fails only on a scalable vector type, which no x86-64 type is (rule 25: the target's widths).
   if (!g.collectOffset(DL, 64, vars, cst))
-    unimplemented("fatptr: a GEP whose offset is not linear in its indices", &g);
-  // The cell size: the scale of the variable terms, one per fat pointer.
-  auto fixCell = [&](uint64_t s) {
-    if (s == 0)
-      unimplemented("fatptr: a GEP index of scale 0", &g);
-    if (f.cell == 0)
-      f.cell = s;
-    else if (f.cell != s)
-      unimplemented("fatptr: a GEP whose index scale differs from the pointer's cell size (" +
-                        std::to_string(s) + " vs " + std::to_string(f.cell) + ")",
-                    &g);
-  };
-  if (f.trips && !vars.empty())
+    internalError("fatptr: a GEP over a scalable vector type on x86-64", &g);
+  // A term of scale 0 adds no byte (the scales of one value cancelled): it is dropped.
+  SmallVector<std::pair<Value *, int64_t>, 4> terms;
+  for (auto &[v, scale] : vars)
+    if (!scale.isZero())
+      terms.push_back({v, scale.getSExtValue()});
+  int64_t c = cst.getSExtValue();
+  if (f.trips && !terms.empty())
     unimplemented("fatptr: a GEP with a variable index onto a pointer to K-loop trip objects (R1)", &g);
-  const Value *qTerm = nullptr;
-  SmallVector<Value *, 2> cTerms;
-  if (!vars.empty() || !cst.isZero())
+  // The cell size (rule 21: idx is a cell index of the object; rule 20's strided and flattened forms). The
+  // pointer's own cell, else the first term's scale, else the GEP's result element; when a term's scale or the
+  // constant is not a multiple of it (a 2-D index a[i][j], a field offset, a byte offset), the greatest common
+  // divisor of all of them: every term is then a whole multiple of the cell, idx = sum(scale / cell * v) +
+  // const / cell, exact (the pointer's earlier idx rescaled to the smaller cell).
+  uint64_t cand = f.cell;
+  if (!cand && !terms.empty())
+    cand = uint64_t(terms.front().second < 0 ? -terms.front().second : terms.front().second);
+  if (!cand && c != 0)
+    cand = DL.getTypeAllocSize(g.getResultElementType()).getFixedValue();
+  if (terms.empty() && c == 0 && !cand)
+    return f;
+  auto absu = [](int64_t x) { return x < 0 ? uint64_t(0) - uint64_t(x) : uint64_t(x); };
+  uint64_t cell = cand ? cand : absu(c);
+  for (auto &t : terms)
+    cell = std::gcd(cell, absu(t.second));
+  if (c != 0)
+    cell = std::gcd(cell, absu(c));
+  if (cell == 0)
+    internalError("fatptr: a GEP with no cell size", &g);
+  if (!terms.empty() || c != 0)
     for (const Value *r : f.roots)
       if (isa<ConstantPointerNull>(r))
         f.nullMoved = true;
-  for (auto &[v, scale] : vars) {
-    int64_t s = scale.getSExtValue();
-    if (s < 0)
-      unimplemented("fatptr: a GEP index with a negative scale", &g);
-    fixCell(uint64_t(s));
-    if (isQ(ctx, v)) {
-      if (qTerm)
-        unimplemented("fatptr: a GEP with two quantum indices", &g);
-      qTerm = v;
-    } else {
-      cTerms.push_back(v);
-    }
+  rescale(ctx, f, cell, emit);
+  SmallVector<std::pair<const Value *, int64_t>, 2> qTerms;   // quantum terms, multiplier in cells
+  SmallVector<std::pair<Value *, int64_t>, 2> cTerms;         // classical terms, multiplier in cells
+  for (auto &[v, s] : terms) {
+    int64_t m = s / int64_t(cell);
+    if (isQ(ctx, v))
+      qTerms.push_back({v, m});
+    else
+      cTerms.push_back({v, m});
   }
-  int64_t c = cst.getSExtValue();
-  if (c != 0) {
-    if (f.cell == 0)
-      f.cell = DL.getTypeAllocSize(g.getResultElementType()).getFixedValue();
-    if (f.cell == 0 || c % int64_t(f.cell) != 0)
-      unimplemented("fatptr: a constant GEP offset that is not a whole number of cells", &g);
-  }
-  if (!qTerm && !f.idxRail()) {
-    if (cTerms.empty() && c == 0)
-      return f;
-    if (!emit) {
-      f.idx = Operand{nullptr, false};
-      return f;
-    }
-    IRBuilder<> &B = ctx.B();
-    Value *idx = f.idx.v;
-    for (Value *v : cTerms) {
+  int64_t cc = c / int64_t(cell);
+  IRBuilder<> &B = ctx.B();
+  auto classicalSum = [&](Value *acc) {
+    for (auto &[v, m] : cTerms) {
       Operand o = ctx.operand(v);
       if (o.handle)
         internalError("fatptr: a classical GEP index bound to a rail", v);
       Value *x = B.CreateSExtOrTrunc(o.v, i64(ctx));
-      idx = B.CreateAdd(idx, x);
+      if (m != 1)
+        x = B.CreateMul(x, ConstantInt::get(i64(ctx), m));
+      acc = B.CreateAdd(acc, x);
     }
-    if (c != 0)
-      idx = B.CreateAdd(idx, ConstantInt::get(i64(ctx), c / int64_t(f.cell)));
-    f.idx = Operand{idx, false};
+    if (cc != 0)
+      acc = B.CreateAdd(acc, ConstantInt::get(i64(ctx), cc));
+    return acc;
+  };
+  if (qTerms.empty() && !f.idxRail()) {
+    if (cTerms.empty() && cc == 0)
+      return f;
+    if (!emit) {
+      // shape only: a constant when the base idx is one and no classical term is variable
+      auto *b0 = dyn_cast_or_null<ConstantInt>(f.idx.v);
+      f.idx = Operand{b0 && cTerms.empty() ? ConstantInt::get(i64(ctx), b0->getSExtValue() + cc) : nullptr, false};
+      return f;
+    }
+    f.idx = Operand{classicalSum(f.idx.v), false};
     return f;
   }
-  // A rail cell index (rule 21): the base's rail idx and/or the quantum term's logical index, plus the
-  // classical part (the base's classical idx, the classical terms, the constant). A lone rail stays at
-  // its own width (the widening is address arithmetic, never emitted, rule 20); a sum is computed at
-  // sumWidth: each rail widened by its own extension (zext, or sext for a signed index), then added (an
-  // index past the object is undefined, outside the domain). The widenings and adds are templates.
-  const Value *ix = nullptr;
-  bool qsext = false;
-  if (qTerm) {
-    ix = stripIndexCast(ctx, qTerm, qsext);
-    if (!ix->getType()->isIntegerTy() || ix->getType()->getIntegerBitWidth() > 64)
-      unimplemented("fatptr: a quantum GEP index wider than 64 bits", &g);
+  // A rail cell index (rule 21): the base's rail idx and/or the quantum terms' logical indices, plus the
+  // classical part (the base's classical idx, the classical terms, the constant). A lone rail of multiplier 1
+  // stays at its own width (the widening is address arithmetic, never emitted, rule 20); a sum is computed at
+  // sumWidth: each rail widened by its own extension (zext, or sext for a signed index), scaled by its
+  // multiplier, then added (an index past the object is undefined, outside the domain). An index wider than
+  // the 64-bit address is truncated to it first, as the GEP does.
+  struct QT {
+    const Value *ix;
+    unsigned w;
+    bool sext;
+    bool wide;
+    int64_t m;
+  };
+  SmallVector<QT, 2> qs;
+  unsigned widest = f.idxRail() ? f.idxBits : 0u;
+  for (auto &[v, m] : qTerms) {
+    bool qsext = false;
+    const Value *ix = stripIndexCast(ctx, v, qsext);
+    if (!ix->getType()->isIntegerTy())
+      internalError("fatptr: a quantum GEP index that is not an integer", &g);
+    unsigned w = ix->getType()->getIntegerBitWidth();
+    bool wide = w > 64;
+    if (wide)
+      w = 64;
+    qs.push_back({ix, w, qsext && w < 64, wide, m});
+    widest = std::max(widest, w);
   }
-  bool classicalPart = !cTerms.empty() || c != 0 ||
+  bool classicalPart = !cTerms.empty() || cc != 0 ||
                        (!f.idxRail() && !(isa<ConstantInt>(f.idx.v) && cast<ConstantInt>(f.idx.v)->isZero()));
-  bool sum = classicalPart || (f.idxRail() && ix);
-  unsigned ixW = ix ? ix->getType()->getIntegerBitWidth() : 0;
-  bool ixSext = qsext && ixW < 64;
-  unsigned W = f.idxRail() ? f.idxBits : ixW;
-  bool sext = f.idxRail() ? f.idxSext : ixSext;
+  bool sum = classicalPart || qs.size() + (f.idxRail() ? 1 : 0) > 1 || any_of(qs, [](const QT &q) { return q.m != 1; });
+  unsigned W = f.idxRail() ? f.idxBits : qs.front().w;
+  bool sext = f.idxRail() ? f.idxSext : qs.front().sext;
   if (sum)
-    std::tie(W, sext) = sumWidth(ctx, f, std::max(f.idxRail() ? f.idxBits : 0u, ixW));
+    std::tie(W, sext) = sumWidth(ctx, f, widest);
   if (!emit) {
     f.idxBits = W;
     f.idxSext = sext;
     f.idx = Operand{nullptr, true};
     return f;
   }
-  IRBuilder<> &B = ctx.B();
-  auto widen = [&](Operand r, unsigned w, bool sx) -> Operand {
-    if (!sum || w >= W)
-      return r;
-    return Operand{tmpl(ctx, sx ? "sext" : "zext", intRail(w), {r}, "", "", intRail(W)), true};
-  };
+  auto widen = [&](Operand r, unsigned w, bool sx) -> Operand { return sum ? widenRail(ctx, r, w, sx, W) : r; };
   Operand rail{nullptr, true};
   if (f.idxRail())
     rail = widen(f.idx, f.idxBits, f.idxSext);
-  if (ix) {
-    Operand r = ctx.operand(ix);
+  for (const QT &q : qs) {
+    Operand r = ctx.operand(q.ix);
     if (!r.handle)
-      internalError("fatptr: the logical index of a quantum GEP index is not a rail", ix);
-    r = widen(r, ixW, ixSext);
+      internalError("fatptr: the logical index of a quantum GEP index is not a rail", q.ix);
+    if (q.wide)
+      r = Operand{tmpl(ctx, "trunc", intRail(q.ix->getType()->getIntegerBitWidth()), {r}, "", "", intRail(64)), true};
+    r = widen(r, q.w, q.sext);
+    if (W < q.w)
+      r = Operand{tmpl(ctx, "trunc", intRail(q.w), {r}, "", "", intRail(W)), true};
+    r = scaleRail(ctx, r, q.m, W);
     rail = rail.v ? Operand{tmpl(ctx, "add", intRail(W), {rail, r}, ""), true} : r;
   }
   if (classicalPart) {
-    Value *cs = f.idxRail() ? ConstantInt::get(i64(ctx), 0) : f.idx.v;
-    for (Value *v : cTerms) {
-      Operand o = ctx.operand(v);
-      if (o.handle)
-        internalError("fatptr: a classical GEP index bound to a rail", v);
-      cs = B.CreateAdd(cs, B.CreateSExtOrTrunc(o.v, i64(ctx)));
-    }
-    if (c != 0)
-      cs = B.CreateAdd(cs, ConstantInt::get(i64(ctx), c / int64_t(f.cell)));
+    Value *cs = classicalSum(f.idxRail() ? ConstantInt::get(i64(ctx), 0) : f.idx.v);
     if (W < 64)
       cs = B.CreateTrunc(cs, IntegerType::get(ctx.M.getContext(), W));
     rail = Operand{tmpl(ctx, "add", intRail(W), {rail, Operand{cs, false}}, "hl"), true};
@@ -651,11 +759,49 @@ Fat deriveSelect(LoweringContext &ctx, const SelectInst &sel, bool emit, bool ea
   addRoots(f, e.roots);
   f.nullMoved = t.nullMoved || e.nullMoved;
   llvm::sort(f.roots, [&](const Value *x, const Value *y) { return rootNumber(ctx, x) < rootNumber(ctx, y); });
-  if (t.cell && e.cell && t.cell != e.cell)
-    unimplemented("fatptr: a select of pointers with different cell sizes", &sel);
+  // Arms of two cell sizes merge in cells of their greatest common divisor (each arm's idx rescaled, exact).
+  if (t.cell && e.cell && t.cell != e.cell) {
+    uint64_t g = std::gcd(t.cell, e.cell);
+    rescale(ctx, t, g, emit);
+    rescale(ctx, e, g, emit);
+  }
   f.cell = t.cell ? t.cell : e.cell;
-  if (t.idxRail() && e.idxRail() && (t.idxBits != e.idxBits || t.idxSext != e.idxSext))
-    unimplemented("fatptr: a select of pointers whose index rails differ in width or extension", &sel);
+  // Two rail idx of different widths or extensions merge at a width that reads both exactly: the wider one's
+  // with a common extension; a zext arm read signed needs one more bit than its own.
+  if (t.idxRail() && e.idxRail() && (t.idxBits != e.idxBits || t.idxSext != e.idxSext)) {
+    unsigned W;
+    bool sx;
+    if (t.idxSext == e.idxSext) {
+      W = std::max(t.idxBits, e.idxBits);
+      sx = t.idxSext;
+    } else {
+      const Fat &z = t.idxSext ? e : t, &s2 = t.idxSext ? t : e;
+      W = std::min(64u, std::max(z.idxBits + 1, s2.idxBits));
+      sx = W < 64;
+    }
+    for (Fat *x : {&t, &e}) {
+      if (emit)
+        x->idx = widenRail(ctx, x->idx, x->idxBits, x->idxSext, W);
+      x->idxBits = W;
+      x->idxSext = sx;
+    }
+  }
+  // One rail arm and one classical arm whose value is no constant readable at the rail's width: the rail is
+  // widened to 64 bits by its extension and the classical arm taken as its i64. Decided on the arms' shapes
+  // (derive without emitting), so the emitting and the shape-only derivations agree.
+  if (t.idxRail() != e.idxRail()) {
+    bool railT = t.idxRail();
+    Fat &r = railT ? t : e;
+    Fat os = derive(ctx, railT ? sel.getFalseValue() : sel.getTrueValue(), /*emit=*/false);
+    auto *ci = dyn_cast_or_null<ConstantInt>(os.idx.v);
+    bool fits = ci && (r.idxSext ? ci->getValue().isSignedIntN(r.idxBits) : ci->getValue().isIntN(r.idxBits));
+    if (r.idxBits < 64 && !fits) {
+      if (emit)
+        r.idx = widenRail(ctx, r.idx, r.idxBits, r.idxSext, 64);
+      r.idxBits = 64;
+      r.idxSext = false;
+    }
+  }
   if (t.idxRail() || e.idxRail()) {
     const Fat &r = t.idxRail() ? t : e;
     f.idxBits = r.idxBits;
@@ -663,8 +809,23 @@ Fat deriveSelect(LoweringContext &ctx, const SelectInst &sel, bool emit, bool ea
   }
   Operand c = emit ? ctx.operand(sel.getCondition()) : Operand{nullptr, isQ(ctx, sel.getCondition())};
   auto choose = [&](unsigned w, Operand x, Operand y) -> Operand {
-    if (!c.handle && (x.handle || y.handle))
-      unimplemented("fatptr: a classical-condition select of fat pointers with rail fields (rule 9 merge)", &sel);
+    if (!c.handle && (x.handle || y.handle)) {
+      // A classical condition over rail fields chooses the rail classically (rule 9 at a classical predicate):
+      // a classical select of handles, a classical arm minted as its seed rail (rule 7) first.
+      if (!emit)
+        return Operand{nullptr, true};
+      auto rail = [&](Operand o) -> Value * {
+        if (o.handle)
+          return o.v;
+        CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, intRail(w)}, {o.v});
+        ctx.unc().recordSeed(seed);
+        return seed;
+      };
+      Value *xv = rail(x), *yv = rail(y);
+      auto *m = cast<Instruction>(ctx.B().CreateSelect(c.v, xv, yv));
+      ctx.unc().recordMerge(m);
+      return Operand{m, true};
+    }
     if (!emit)
       return Operand{nullptr, c.handle};
     return select(ctx, w, c, x, y);
@@ -677,16 +838,15 @@ Fat deriveSelect(LoweringContext &ctx, const SelectInst &sel, bool emit, bool ea
     f.idxBits = 64;
     f.idxSext = false;
   } else {
-    // One rail arm and one classical arm: the classical one as a literal at the rail's width.
+    // One rail arm and one classical arm: the classical one as a literal at the rail's width (an i64 at 64).
     auto lit = [&](Operand o) -> Operand {
-      if (o.handle)
+      if (o.handle || !emit)
         return o;
-      auto *ci = dyn_cast_or_null<ConstantInt>(o.v);
+      if (f.idxBits == 64)
+        return o;   // a classical idx is an i64
+      auto *ci = dyn_cast<ConstantInt>(o.v);
       if (!ci)
-        unimplemented("fatptr: a select of a rail cell index with a non-constant classical one", &sel);
-      bool fits = f.idxSext ? ci->getValue().isSignedIntN(f.idxBits) : ci->getValue().isIntN(f.idxBits);
-      if (!fits)
-        unimplemented("fatptr: a select of a rail cell index with a constant outside its width", &sel);
+        internalError("fatptr: a non-constant classical idx merged with a rail narrower than 64 bits", &sel);
       return Operand{ConstantInt::get(ctx.M.getContext(), ci->getValue().trunc(f.idxBits)), false};
     };
     f.idx = choose(f.idxBits, lit(t.idx), lit(e.idx));
@@ -964,21 +1124,46 @@ Fat derive(LoweringContext &ctx, const Value *p, bool emit, bool eager) {
     // phi bound to the constant j: the start's fat pointer moved by j*step / cell cells (classical).
     Fat f = derive(ctx, w->start, emit);
     f.nullMoved |= llvm::any_of(f.roots, [](const Value *r) { return isa<ConstantPointerNull>(r); });
+    // The cell: the start's, or the step's when the step is not a whole number of it (their greatest common
+    // divisor, the start's idx rescaled): a function of the step alone, so every trip agrees.
+    if (w->step != 0) {
+      uint64_t st = w->step < 0 ? uint64_t(0) - uint64_t(w->step) : uint64_t(w->step);
+      rescale(ctx, f, f.cell ? std::gcd(f.cell, st) : st, emit);
+    }
+    // A rail start idx moves by an add at the sum width (rule 21, as a GEP's sum).
+    unsigned railBits = f.idxBits;
+    bool railSext = f.idxSext;
+    if (f.idxRail())
+      std::tie(railBits, railSext) = sumWidth(ctx, f, f.idxBits);
     if (!emit) {
       if (!f.idxRail())
         f.idx = Operand{nullptr, false};
+      else {
+        f.idxBits = railBits;
+        f.idxSext = railSext;
+      }
       return f;
     }
     auto *j = dyn_cast<ConstantInt>(ctx.operand(p).v);
     if (!j)
       internalError("fatptr: a walked pointer not bound to its trip index", p);
     int64_t bytes = j->getSExtValue() * w->step;
+    if (f.idxRail()) {
+      Operand r = widenRail(ctx, f.idx, f.idxBits, f.idxSext, railBits);
+      if (bytes != 0)
+        r = Operand{tmpl(ctx, "add", intRail(railBits),
+                         {r, Operand{ConstantInt::get(IntegerType::get(ctx.M.getContext(), railBits),
+                                                      bytes / int64_t(f.cell), /*signed=*/true),
+                                     false}},
+                         "hl"),
+                    true};
+      f.idx = r;
+      f.idxBits = railBits;
+      f.idxSext = railSext;
+      return f;
+    }
     if (bytes == 0)
       return f;
-    if (f.cell == 0 || bytes % int64_t(f.cell) != 0)
-      unimplemented("fatptr: a walked pointer whose step is not a whole number of the pointer's cells", p);
-    if (f.idxRail())
-      unimplemented("fatptr: a walked pointer whose start has a quantum cell index", p);
     f.idx = Operand{ctx.B().CreateAdd(f.idx.v, ConstantInt::get(i64(ctx), bytes / int64_t(f.cell))), false};
     return f;
   }
@@ -1249,23 +1434,37 @@ namespace {
 // later derivations read its bound fields. m is a classical constant that keeps cell alignment.
 Fat derivePtrMask(LoweringContext &ctx, const IntrinsicInst &pm, bool emit, bool eager) {
   Fat a = derive(ctx, pm.getArgOperand(0), emit && eager);
+  // The result's cell (rule 21: idx = (u' - base[tag]) / size, exact): the largest power of two dividing the
+  // pointer's cell, the mask's alignment (2^ctz of a constant mask; 1 for a run-time or quantum mask) and every
+  // root's known base alignment. In those cells the masked address minus the base is a whole number of cells.
+  // A mask narrower than the address (no such type on x86-64: the index width is 64) is zero-extended by LLVM's
+  // semantics; ptrmask's mask has the index width, so it is always 64 bits here.
+  if (pm.getArgOperand(1)->getType()->getIntegerBitWidth() != 64)
+    internalError("fatptr: llvm.ptrmask with a mask that is not the 64-bit index width", &pm);
   auto *m = dyn_cast<ConstantInt>(pm.getArgOperand(1));
-  if (!m)
-    unimplemented("fatptr: llvm.ptrmask with a mask that is not a constant (rule 21)", &pm);
-  if (m->getBitWidth() != 64)
-    unimplemented("fatptr: llvm.ptrmask with a mask narrower than the 64-bit address", &pm);
-  if (a.cell == 0 || !isPowerOf2_64(a.cell) || (m->getZExtValue() & (a.cell - 1)) != 0)
-    unimplemented("fatptr: llvm.ptrmask whose result is not a whole cell of the pointer's object (rule 21)", &pm);
+  const DataLayout &DL = ctx.M.getDataLayout();
+  uint64_t cell = a.cell ? (a.cell & (~a.cell + 1)) : 1;
+  if (m && !m->isZero())
+    cell = std::min<uint64_t>(cell, uint64_t(1) << m->getValue().countr_zero());
+  else if (!m)
+    cell = 1;
+  for (const Value *r : a.roots)
+    if (!isa<ConstantPointerNull>(r))
+      cell = std::min<uint64_t>(cell, r->getPointerAlignment(DL).value());
+  if (a.cell && a.cell != cell)
+    rescale(ctx, a, cell, emit && eager);
+  else if (!a.cell)
+    a.cell = cell;
   Fat f;
   f.roots = a.roots;
   f.cell = a.cell;
   f.tag = a.tag;
+  bool railIdx = a.idxRail() || a.tagRail() || isQ(ctx, pm.getArgOperand(1));
   f.idxBits = a.idxRail() ? std::max(32u, a.idxBits) : 64;
   // A root inside its object (cq-b244): the masked address may precede it, a negative idx read signed.
-  f.idxSext = a.idxRail() || a.tagRail() ? idxSextAt(ctx, f.roots, f.cell, f.idxBits, &pm)
-                                         : mayPrecede(ctx, f.roots, f.cell);
+  f.idxSext = railIdx ? idxSextAt(ctx, f.roots, f.cell, f.idxBits, &pm) : mayPrecede(ctx, f.roots, f.cell);
   if (!emit) {
-    f.idx = Operand{nullptr, a.idxRail() || a.tagRail()};
+    f.idx = Operand{nullptr, railIdx};
     return f;
   }
   if (!eager) {
@@ -1278,7 +1477,8 @@ Fat derivePtrMask(LoweringContext &ctx, const IntrinsicInst &pm, bool emit, bool
   }
   Bases cache;
   Operand u = address(ctx, a, cache);
-  Operand masked = commutative(ctx, "and", 64, u, Operand{m, false});
+  Operand mk = ctx.operand(pm.getArgOperand(1));
+  Operand masked = commutative(ctx, "and", 64, u, mk);
   Operand base = baseOf(ctx, a, cache);
   Operand d;
   if (!masked.handle && !base.handle)
@@ -1324,20 +1524,6 @@ FatPtr lower(LoweringContext &ctx, const Value *ptr) {
 }
 
 namespace {
-// The fat pointer's roots, each a QRAM object of cell size f.cell (rule 21 over QRAM objects).
-void checkQramRoots(LoweringContext &ctx, const Fat &f, const Instruction &I) {
-  for (const Value *r : f.roots) {
-    if (isa<ConstantPointerNull>(r))
-      continue;   // a store through NULL is undefined: outside the domain
-    if (!mem::isQramRoot(ctx, r))
-      unimplemented("fatptr: a load or store through a fat pointer into a slot or host object (rule 21 guarded "
-                    "slot select / host access)",
-                    &I);
-    if (f.cell && f.cell != mem::qramElemBytes(ctx, r, I))
-      unimplemented("fatptr: a fat pointer whose cell size is not its QRAM object's element size", &I);
-  }
-}
-
 // Whether the fat pointer may name root (a classical tag names one root only).
 bool mayName(LoweringContext &ctx, const Fat &f, const Value *r) {
   if (f.tag.handle || boundOf(ctx, r))
@@ -1491,6 +1677,9 @@ void cleanOldCell(LoweringContext &ctx, Value *h, Value *eq, Value *yp, const Ce
   spine::Shared &sh = spine::shared(ctx);
   if (!sh.hist.count(h) || sh.measured.count(h) || sh.ruleSixCleaned.count(h))
     return;
+  // A seed (rule 7) is in a known basis state: the uncompute spine releases it; rule 6 is for computed rails.
+  if (ctx.unc().liveRole(ctx.unc().idOf(h)) == Role::Seed)
+    return;
   DominatorTree &DT = sh.dt(*at.getFunction());
   for (auto &[Y, ops] : sh.binds) {
     if (none_of(ops, [&](const Operand &o) { return o.handle && o.v == h; }))
@@ -1601,11 +1790,126 @@ Value *boundSlotLoad(LoweringContext &ctx, Bound &b, const Fat &f, Type *ty, con
   return v;
 }
 
-// cq-z6q1 (CR rule 21; 189): a fat pointer with a quantum tag at a classical constant idx whose roots are
-// heap slot records and classical host objects (distinct allocations of this function with a constant size)
-// and NULL.
+// The extent of a host root's object from the root on (rule 21's cell count in the object table): the object's
+// byte size (a global, an alloca, an allocation call of a constant or run-time allocsize) minus the root's
+// constant offset into it, as a classical i64 (a constant when static). nullptr: no extent is known (a pointer
+// parameter, a loaded pointer).
+Value *hostExtent(LoweringContext &ctx, const Value *root) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  APInt off(64, 0);
+  const Value *obj = root->stripAndAccumulateConstantOffsets(DL, off, /*AllowNonInbounds=*/true);
+  int64_t o = off.getSExtValue();
+  if (auto *gv = dyn_cast<GlobalVariable>(obj))
+    return ConstantInt::get(i64(ctx), int64_t(DL.getTypeAllocSize(gv->getValueType()).getFixedValue()) - o);
+  if (auto *ai = dyn_cast<AllocaInst>(obj)) {
+    if (std::optional<TypeSize> t = ai->getAllocationSize(DL); t && !t->isScalable())
+      return ConstantInt::get(i64(ctx), int64_t(t->getFixedValue()) - o);
+    return nullptr;
+  }
+  if (auto *CB = dyn_cast<CallBase>(obj)) {
+    Attribute as = CB->getFnAttr(Attribute::AllocSize);
+    if (!as.isValid())
+      return nullptr;
+    auto [a, b] = as.getAllocSizeArgs();
+    IRBuilder<> &B = ctx.B();
+    auto arg = [&](unsigned k) -> Value * {
+      Operand n = ctx.operand(CB->getArgOperand(k));
+      return n.handle ? nullptr : B.CreateZExtOrTrunc(n.v, i64(ctx));
+    };
+    Value *n = arg(a);
+    if (!n)
+      return nullptr;
+    if (b) {
+      Value *m = arg(*b);
+      if (!m)
+        return nullptr;
+      n = B.CreateMul(n, m);
+    }
+    return o ? B.CreateSub(n, ConstantInt::get(i64(ctx), o)) : n;
+  }
+  return nullptr;
+}
+
+// CR rule 21: one host object's access of a load through a fat pointer at a classical idx, executed unguarded
+// (the merge by tag == k selects it). `check`: the index may lie outside the object on a branch the circuit
+// executes (a rail tag: the access runs for every object of the provenance; or a quantum predicate the C program
+// would not have reached), so the index is checked against the object's extent and the access reads 0 beyond it,
+// never host memory past the object (190). A constant in-range access is a plain load, a constant out-of-range
+// one the constant 0; a run-time index loads at a select(ok, p, base) address and selects 0 when not ok.
+Operand hostArm(LoweringContext &ctx, const Value *r, const Fat &f, Type *ty, Instruction &at, bool check,
+                Align align) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  IRBuilder<> &B = ctx.B();
+  LLVMContext &C = ctx.M.getContext();
+  if (f.idx.handle)
+    internalError("fatptr: a host access at a rail idx", &at);
+  Value *idx = f.idx.v;
+  auto *ci = dyn_cast<ConstantInt>(idx);
+  if (!(ci && ci->isZero()) && f.cell == 0)
+    internalError("fatptr: a non-zero cell index with no cell size", &at);
+  if (mem::hostRecord(ctx, r)) {
+    if (!ci)
+      unimplemented("fatptr: a load through a fat pointer into a heap slot record at a run-time cell index "
+                    "(mem-slots: a record's fields lie at constant offsets)",
+                    &at);
+    return mem::loadSlotCellAt(ctx, r, ci->getSExtValue() * int64_t(f.cell), ty, at);
+  }
+  Operand base = ctx.operand(r);
+  if (base.handle)
+    internalError("fatptr: a root pointer bound to a rail", r);
+  int64_t size = int64_t(DL.getTypeStoreSize(ty).getFixedValue());
+  Value *byte = ci ? ConstantInt::get(i64(ctx), ci->getSExtValue() * int64_t(f.cell ? f.cell : 1))
+                   : B.CreateMul(idx, ConstantInt::get(i64(ctx), f.cell));
+  Value *ext = check ? hostExtent(ctx, r) : nullptr;
+  if (check && !ext)
+    unimplemented("awaiting owner ruling: SPEC_ISSUES rule 21 bound check of a host object with no known extent "
+                  "(a pointer parameter or a loaded pointer in a fat pointer's provenance, loaded unguarded)",
+                  &at);
+  auto *bc = dyn_cast<ConstantInt>(byte);
+  auto *ec = dyn_cast_or_null<ConstantInt>(ext);
+  if (!check || (bc && ec && bc->getSExtValue() >= 0 && bc->getSExtValue() + size <= ec->getSExtValue())) {
+    Value *p = B.CreateInBoundsGEP(Type::getInt8Ty(C), base.v, byte);
+    return Operand{B.CreateAlignedLoad(ty, p, align), false};
+  }
+  if (bc && ec)
+    return Operand{Constant::getNullValue(ty), false};
+  // ok = 0 <= byte && byte + size <= extent, as one unsigned compare: byte <=u extent - size.
+  Value *lim = B.CreateSub(ext, ConstantInt::get(i64(ctx), size));
+  Value *ok = B.CreateAnd(B.CreateICmpSGE(lim, ConstantInt::get(i64(ctx), 0)), B.CreateICmpULE(byte, lim));
+  Value *safe = B.CreateSelect(ok, byte, ConstantInt::get(i64(ctx), 0));
+  Value *p = B.CreateGEP(Type::getInt8Ty(C), base.v, safe);
+  Value *v = B.CreateAlignedLoad(ty, p, Align(1));
+  return Operand{B.CreateSelect(ok, v, Constant::getNullValue(ty)), false};
+}
+
+// Rule 21 (85, 107, 190): a load through a host triple formal at the classical cell j = idx + offset: the host
+// load of cell j of the caller's object. With `check` (a quantum predicate is in scope, so the circuit may run the
+// access where C would not) j is checked against the cell count the triple carries and cell 0 is read beyond it,
+// the value then 0; otherwise it is a plain load (107: the count is passed, the body ignores it).
+Operand boundHostLoad(LoweringContext &ctx, Bound &b, const Fat &f, Type *ty, LoadInst &ld, bool check) {
+  if (f.idx.handle)
+    internalError("fatptr: a host triple formal at a rail idx", &ld);
+  const DataLayout &DL = ctx.M.getDataLayout();
+  if (DL.getTypeAllocSize(ty).getFixedValue() != b.cell || f.cell != b.cell)
+    internalError("fatptr: a load through a host triple formal at another cell size than the formal's", &ld);
+  IRBuilder<> &B = ctx.B();
+  Value *j = f.idx.v;
+  if (!check) {
+    Value *p = B.CreateInBoundsGEP(ty, b.object, j);
+    return Operand{B.CreateAlignedLoad(ty, p, ld.getAlign()), false};
+  }
+  if (!b.cellCount)
+    internalError("fatptr: a host triple formal loaded through with no cell count (rule 21 TripleCount)", &ld);
+  Value *ok = B.CreateICmpULT(j, B.CreateZExt(b.cellCount, i64(ctx)));
+  Value *safe = B.CreateSelect(ok, j, ConstantInt::get(i64(ctx), 0));
+  Value *v = B.CreateAlignedLoad(ty, B.CreateInBoundsGEP(ty, b.object, safe), ld.getAlign());
+  return Operand{B.CreateSelect(ok, v, Constant::getNullValue(ty)), false};
+}
+
+// cq-z6q1 (CR rule 21; 189): a fat pointer with a quantum tag at a classical idx whose roots are heap slot
+// records and classical host objects, and NULL.
 bool hostOrRecordRoots(LoweringContext &ctx, const Fat &f) {
-  if (!f.tag.handle || f.idx.handle || !isa<ConstantInt>(f.idx.v) || f.trips)
+  if (!f.tag.handle || f.idx.handle || f.trips)
     return false;
   bool any = false;
   for (const Value *r : f.roots) {
@@ -1613,7 +1917,7 @@ bool hostOrRecordRoots(LoweringContext &ctx, const Fat &f) {
       continue;
     if (boundOf(ctx, r) || mem::isQramRoot(ctx, r))
       return false;
-    if (!mem::hostRecord(ctx, r) && !(classicalMemoryOnly(ctx, r) && distinctAllocation(ctx, r)))
+    if (!mem::hostRecord(ctx, r) && !classicalMemoryOnly(ctx, r))
       return false;
     any = true;
   }
@@ -1651,13 +1955,8 @@ Value *decodeTag(LoweringContext &ctx, Value *addrPtr, ArrayRef<const Value *> r
 // is dropped: a load through it is undefined). A loaded pointer is decoded per root at run time (decodeTag
 // over the roots of the loaded pointer, deriveHostLoaded) and the tags merged alike; its idx is 0.
 void lowerHostLoad(LoweringContext &ctx, LoadInst &ld, const Fat &f) {
-  const DataLayout &DL = ctx.M.getDataLayout();
   Type *ty = ld.getType();
   bool ptr = ty->isPointerTy();
-  int64_t idx = cast<ConstantInt>(f.idx.v)->getSExtValue();
-  if (idx != 0 && f.cell == 0)
-    internalError("fatptr: a non-zero cell index with no cell size", &ld);
-  int64_t byte = idx * int64_t(f.cell);
   SmallVector<const Value *, 4> loadedRoots;
   if (ptr) {
     Fat lf = derive(ctx, &ld, /*emit=*/false);
@@ -1667,20 +1966,7 @@ void lowerHostLoad(LoweringContext &ctx, LoadInst &ld, const Fat &f) {
   for (const Value *r : f.roots) {
     if (isa<ConstantPointerNull>(r))
       continue;
-    Operand v{nullptr, false};
-    if (mem::hostRecord(ctx, r)) {
-      v = mem::loadSlotCellAt(ctx, r, byte, ty, ld);
-    } else {
-      std::optional<uint64_t> n = objectBytes(ctx, r);
-      uint64_t size = DL.getTypeStoreSize(ty).getFixedValue();
-      if (!n || byte < 0 || uint64_t(byte) + size > *n)
-        unimplemented("fatptr: a load through a fat pointer past a host object it may name (rule 21 bound check)",
-                      &ld);
-      Value *base = ctx.operand(r).v;
-      Value *p = ctx.B().CreateInBoundsGEP(Type::getInt8Ty(ctx.M.getContext()), base,
-                                           ConstantInt::get(i64(ctx), byte));
-      v = Operand{ctx.B().CreateAlignedLoad(ty, p, ld.getAlign()), false};
-    }
+    Operand v = hostArm(ctx, r, f, ty, ld, /*check=*/true, ld.getAlign());
     if (ptr) {
       if (v.handle)
         internalError("fatptr: a pointer field holding a handle", &ld);
@@ -1789,66 +2075,116 @@ void lowerLoad(LoweringContext &ctx, LoadInst &ld) {
     }
   if (roots.empty())
     internalError("fatptr: a fat pointer naming none of its roots", &ld);
-  if (null && (ptr || !f.tag.handle))
-    unimplemented("fatptr: a pointer load, or a load at a classical tag, through a fat pointer that may be NULL", &ld);
-  SmallVector<std::pair<Value *, Value *>, 4> hs;   // per root: the value (ptr: tag, idx)
+  // Rule 21: the index may lie outside an object on a branch the circuit executes when a rail tag runs every
+  // object's access, or a quantum predicate is in scope.
+  bool check = f.tag.handle || ctx.currentFlag();
+  SmallVector<std::pair<Operand, Operand>, 4> hs;   // per root: the value (ptr: tag, idx)
+  Operand none{nullptr, false};
   for (const Value *r : roots) {
     if (Bound *b = boundOf(ctx, r); b && b->pointee == ObjClass::Slot) {
       if (ptr)
         unimplemented("fatptr: a pointer loaded through a slot triple formal (rule 21)", &ld);
-      hs.push_back({boundSlotLoad(ctx, *b, f, ty, ld), nullptr});
+      hs.push_back({Operand{boundSlotLoad(ctx, *b, f, ty, ld), true}, none});
       continue;
     }
-    if (Bound *b = boundOf(ctx, r); b && b->pointee == ObjClass::Classical)
-      unimplemented("fatptr: a load through a host triple formal (its cell count, rule 21)", &ld);
+    if (Bound *b = boundOf(ctx, r); b && b->pointee == ObjClass::Classical) {
+      if (ptr)
+        unimplemented("fatptr: a pointer loaded through a host triple formal (rule 21 decoded address)", &ld);
+      hs.push_back({boundHostLoad(ctx, *b, f, ty, ld, check), none});
+      continue;
+    }
     if (isSlotRoot(ctx, r)) {
-      // M7 (129): the handle in the slot object's cell (no gate), merged below.
+      // M7 (129; rules 20, 21): the handle (or the classical value) in the slot object's cell at the classical
+      // constant idx (no gate), merged below; a cell outside the object reads 0.
       if (ptr)
         unimplemented("fatptr: a pointer loaded through a fat pointer over slot objects (rule 21)", &ld);
-      slotRootsOf(ctx, f, ld.getPointerOperand(), ld);
-      Operand h = mem::readFatCell(ctx, r, ty, 0, ld);
-      if (!h.handle)
-        unimplemented("fatptr: a load through a fat pointer of a slot cell holding a classical value (M7)", &ld);
-      slotArms()[&ctx.out()][{&ld, r}] = h.v;
-      hs.push_back({h.v, nullptr});
+      auto *ci = f.idx.handle ? nullptr : dyn_cast<ConstantInt>(f.idx.v);
+      if (!ci)
+        unimplemented("fatptr: a load through a fat pointer over slot objects at a run-time or quantum cell index "
+                      "(mem-slots: a per-object dynamic slot load)",
+                      &ld);
+      int64_t byte = ci->isZero() ? 0 : ci->getSExtValue() * int64_t(f.cell);
+      uint64_t size = ctx.M.getDataLayout().getTypeStoreSize(ty).getFixedValue();
+      std::optional<uint64_t> n = objectBytes(ctx, r);
+      if (!n)
+        internalError("fatptr: a local slot object with no static size", r);
+      if (byte < 0 || uint64_t(byte) + size > *n) {
+        hs.push_back({Operand{Constant::getNullValue(ty), false}, none});
+        continue;
+      }
+      Operand h = mem::readFatCell(ctx, r, ty, byte, ld);
+      if (h.handle)
+        slotArms()[&ctx.out()][{&ld, r}] = h.v;
+      hs.push_back({h, none});
       continue;
     }
     if (mem::isQramRoot(ctx, r)) {
-      if (f.cell && f.cell != mem::qramElemBytes(ctx, r, ld))
-        unimplemented("fatptr: a fat pointer whose cell size is not its QRAM object's element size", &ld);
-      if (ptr)
-        hs.push_back(mem::qramLoadPtrAt(ctx, r, f.idx, ld));
-      else
-        hs.push_back({mem::qramLoadAt(ctx, r, f.idx, ty, ld), nullptr});
+      // In cells of the QRAM's element (the idx converted, rule 21).
+      Fat g = f;
+      if (g.cell && g.cell != mem::qramElemBytes(ctx, r, ld) && !fitCells(ctx, g, mem::qramElemBytes(ctx, r, ld), ld.getAlign()))
+        unimplemented("fatptr: a fat pointer whose cells do not convert to its QRAM object's element (rule 21)", &ld);
+      if (ptr) {
+        auto [t, i] = mem::qramLoadPtrAt(ctx, r, g.idx, ld);
+        hs.push_back({Operand{t, true}, Operand{i, true}});
+      } else {
+        hs.push_back({Operand{mem::qramLoadAt(ctx, r, g.idx, ty, ld), true}, none});
+      }
       continue;
     }
     if (!ptr && classicalMemoryOnly(ctx, r) && f.idxRail()) {
+      // A QROM over the object in cells of the loaded type (its idx converted at the access, rule 21).
       uint64_t size = ctx.M.getDataLayout().getTypeAllocSize(ty).getFixedValue();
-      if (f.cell && f.cell != size)
-        unimplemented("fatptr: a fat-pointer QROM whose cell size is not the loaded type's size", &ld);
-      hs.push_back({mem::qromLoadAt(ctx, r, f.idx, f.idxBits, f.idxSext, ty, ld), nullptr});
+      Fat g = f;
+      if (!fitCells(ctx, g, size, ld.getAlign()))
+        unimplemented("fatptr: a fat-pointer QROM read at a type that does not cover whole cells of the pointer "
+                      "(a misaligned bit view, rule 21)",
+                      &ld);
+      hs.push_back({Operand{mem::qromLoadAt(ctx, r, g.idx, g.idxBits, g.idxSext, ty, ld), true}, none});
       continue;
     }
-    unimplemented("fatptr: a load through a fat pointer from a slot object, a host object at a classical idx, or "
-                  "a pointer from classical memory (rule 21 guarded slot select / host access, 189)",
+    if (!ptr && classicalMemoryOnly(ctx, r)) {
+      // Rule 21: a classical load of classical memory at the classical idx, checked against the object's extent.
+      hs.push_back({hostArm(ctx, r, f, ty, ld, check, ld.getAlign()), none});
+      continue;
+    }
+    unimplemented("fatptr: a pointer loaded through a fat pointer from classical memory among other objects "
+                  "(rule 21, 189)",
                   &ld);
   }
-  auto merge = [&](RailType w, auto pick) {
-    Operand acc = null ? Operand{Constant::getNullValue(ty), false} : Operand{pick(hs[0]), true};
+  // The merge (rule 21, rule 9): a classical tag names its one root; a rail tag selects on tag == k, the first
+  // root innermost (the complement), or NULL's classical 0 innermost.
+  auto merge = [&](RailType w, Type *cty, auto pick) -> Operand {
+    if (!f.tag.handle) {
+      if (roots.size() != 1)
+        internalError("fatptr: a classical tag naming several roots", &ld);
+      return pick(hs[0]);
+    }
+    Operand acc = null ? Operand{Constant::getNullValue(cty), false} : pick(hs[0]);
     for (unsigned i = null ? 0 : 1; i < roots.size(); ++i) {
       Operand eq = icmp(ctx, CmpInst::ICMP_EQ, 32, f.tag,
                         Operand{ConstantInt::get(i32(ctx), rootNumber(ctx, roots[i])), false});
-      acc = Operand{tmpl(ctx, "select", w, {eq, Operand{pick(hs[i]), true}, acc}, acc.handle ? "" : "hl"), true};
+      Operand v = pick(hs[i]);
+      std::string shape = std::string(v.handle ? "h" : "l") + (acc.handle ? "h" : "l");
+      acc = Operand{tmpl(ctx, "select", w, {eq, v, acc}, shape == "hh" ? "" : shape), true};
     }
     return acc;
   };
+  // The load's value is quantum (rule 3): a classical outcome (a classical tag over a classical cell) is its
+  // seed rail (rule 7).
+  auto rail = [&](Operand o, RailType w) -> Value * {
+    if (o.handle)
+      return o.v;
+    CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {o.v});
+    ctx.unc().recordSeed(seed);
+    return seed;
+  };
   if (ptr) {
-    Operand tag = merge(intRail(32), [](auto &p) { return p.first; });
-    Operand idx = merge(intRail(32), [](auto &p) { return p.second; });
+    Operand tag = merge(intRail(32), i32(ctx), [](auto &p) { return p.first; });
+    Operand idx = merge(intRail(32), i32(ctx), [](auto &p) { return p.second; });
     ctx.bindFields(&ld, {tag, idx});
     return;
   }
-  ctx.bind(&ld, merge(railTypeOf(ty), [](auto &p) { return p.first; }).v);
+  ctx.bind(&ld, rail(merge(railTypeOf(ty), ty, [](auto &p) { return p.first; }), railTypeOf(ty)));
 }
 
 SmallVector<Operand, 8> loadHostCells(LoweringContext &ctx, const Value *src, Type *cellTy, uint64_t n,
@@ -1987,49 +2323,74 @@ void lowerStore(LoweringContext &ctx, StoreInst &st) {
       }
       return;
     }
-  if (any_of(f.roots, [&](const Value *r) { return isSlotRoot(ctx, r); })) {
-    // M7 (129): a read-modify-write through a quantum select of whole local slot objects. Each object's cell
-    // takes w_k = (tag == k) ? v : old_k (rules 9, 20, 21); its old rail is cleaned by rule 6.
-    SmallVector<const Value *, 4> rs = slotRootsOf(ctx, f, st.getPointerOperand(), st);
-    Type *ty = st.getValueOperand()->getType();
-    if (!ty->isIntegerTy())
-      unimplemented("fatptr: a store of other than an integer through a fat pointer over slot objects (M7)", &st);
-    if (ctx.currentFlag())
-      unimplemented("fatptr: a store through a fat pointer over slot objects under a quantum predicate (M7)", &st);
-    std::optional<CellUpdate> u = fatStoreUpdate(ctx, st);
-    if (!u)
-      unimplemented("fatptr: a store through a fat pointer over slot objects that is not a read-modify-write of "
-                    "its cell through the same pointer (rule 6 on the old cells, M7)",
-                    &st);
-    Operand v = ctx.operand(st.getValueOperand());
-    for (const Value *r : rs) {
-      Operand eq = icmp(ctx, CmpInst::ICMP_EQ, 32, f.tag, Operand{ConstantInt::get(i32(ctx), rootNumber(ctx, r)), false});
-      Operand old = mem::readFatCell(ctx, r, ty, 0, st);
-      if (!old.handle)
-        unimplemented("fatptr: a store through a fat pointer into a slot cell holding a classical value (M7)", &st);
-      auto arm = slotArms()[&ctx.out()].find({u->load, r});
-      if (arm == slotArms()[&ctx.out()].end() || arm->second != old.v)
-        internalError("fatptr: a fat read-modify-write whose load read another rail than the store's old cell", &st);
-      Value *w = tmpl(ctx, "select", railTypeOf(ty), {eq, v, old}, v.handle ? "" : "lh");
-      mem::writeFatCell(ctx, r, ty, 0, Operand{w, true}, st);
-      cleanOldCell(ctx, old.v, eq.v, w, *u, ctx.operand(u->z), r, st);
-    }
-    return;
-  }
-  checkQramRoots(ctx, f, st);
   Value *val = st.getValueOperand();
   Type *ty = val->getType();
   if (!ty->isIntegerTy() && !ty->isFloatingPointTy())
     unimplemented("fatptr: a store of a pointer or aggregate through a fat pointer (rule 21)", &st);
   Value *flag = ctx.currentFlag();
+  // CR rule 6 (129): a read-modify-write through the same pointer cleans each slot object's old cell.
+  std::optional<CellUpdate> u = ty->isIntegerTy() ? fatStoreUpdate(ctx, st) : std::nullopt;
   Operand v = ctx.operand(val);
-  if (!v.handle) {
+  bool anySlot = any_of(f.roots, [&](const Value *r) { return mayName(ctx, f, r) && isSlotRoot(ctx, r); });
+  if (anySlot) {
+    // Rules 9, 20, 21 (129): a store through a fat pointer into local slot objects at a classical constant cell:
+    // each object's cell takes w_k = guard_k ? v : old_k into a fresh rail (guard_k: tag == k and the current
+    // flag), the cell holding a classical value first materialised as its seed (rule 20, rule 7). A cell outside
+    // an object is never written in the domain (the guard is false there) and is skipped.
+    auto *ci = f.idx.handle ? nullptr : dyn_cast<ConstantInt>(f.idx.v);
+    if (!ci)
+      unimplemented("fatptr: a store through a fat pointer over slot objects at a run-time or quantum cell index "
+                    "(mem-slots: a per-object dynamic slot store)",
+                    &st);
+    int64_t byte = ci->isZero() ? 0 : ci->getSExtValue() * int64_t(f.cell);
+    uint64_t size = ctx.M.getDataLayout().getTypeStoreSize(ty).getFixedValue();
+    for (const Value *r : f.roots) {
+      if (!mayName(ctx, f, r) || !isSlotRoot(ctx, r))
+        continue;
+      std::optional<uint64_t> n = objectBytes(ctx, r);
+      if (!n)
+        internalError("fatptr: a local slot object with no static size", r);
+      if (byte < 0 || uint64_t(byte) + size > *n)
+        continue;
+      Value *g = guardOf(ctx, f, r, flag);
+      Operand old = mem::readFatCell(ctx, r, ty, byte, st);
+      if (!g) {
+        // A classical tag naming this object outside any quantum predicate: the cell takes v itself.
+        Value *w = v.handle ? v.v : nullptr;
+        if (!w) {
+          CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(ty)}, {v.v});
+          ctx.unc().recordSeed(seed);
+          w = seed;
+        }
+        mem::writeFatCell(ctx, r, ty, byte, Operand{w, true}, st);
+        continue;
+      }
+      if (!old.handle) {
+        CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(ty)}, {old.v});
+        ctx.unc().recordSeed(seed);
+        old = Operand{seed, true};
+      }
+      bool rmw = u && byte == 0 && !flag && f.tag.handle;
+      if (rmw) {
+        auto arm = slotArms()[&ctx.out()].find({u->load, r});
+        if (arm == slotArms()[&ctx.out()].end() || arm->second != old.v)
+          rmw = false;   // the update's load read another rail: no rule 6 clean-up of this cell
+      }
+      Value *w = tmpl(ctx, "select", railTypeOf(ty), {Operand{g, true}, v, old}, v.handle ? "" : "lh");
+      mem::writeFatCell(ctx, r, ty, byte, Operand{w, true}, st);
+      if (rmw)
+        cleanOldCell(ctx, old.v, g, w, *u, ctx.operand(u->z), r, st);
+    }
+  }
+  if (!v.handle && any_of(f.roots, [&](const Value *r) {
+        return mayName(ctx, f, r) && !isa<ConstantPointerNull>(r) && !isSlotRoot(ctx, r);
+      })) {
     CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(ty)}, {v.v});
     ctx.unc().recordSeed(seed);
     v = Operand{seed, true};
   }
   for (const Value *r : f.roots) {
-    if (!mayName(ctx, f, r) || isa<ConstantPointerNull>(r))
+    if (!mayName(ctx, f, r) || isa<ConstantPointerNull>(r) || isSlotRoot(ctx, r))
       continue;
     if (const Bound *b = boundOf(ctx, r)) {
       if (b->pointee != ObjClass::Qram)
@@ -2043,7 +2404,14 @@ void lowerStore(LoweringContext &ctx, StoreInst &st) {
       mem::deferFormalStore(ctx, r, f.idx, ty, v.v, flag, st);
       continue;
     }
-    mem::qramStoreAt(ctx, r, f.idx, ty, v.v, guardOf(ctx, f, r, flag), st);
+    if (!mem::isQramRoot(ctx, r))
+      unimplemented("fatptr: a store through a fat pointer into classical host memory (taint classifies memory a "
+                    "quantum store may reach as a slot or QRAM)",
+                    &st);
+    Fat g = f;
+    if (g.cell && g.cell != mem::qramElemBytes(ctx, r, st) && !fitCells(ctx, g, mem::qramElemBytes(ctx, r, st), st.getAlign()))
+      unimplemented("fatptr: a fat pointer whose cells do not convert to its QRAM object's element (rule 21)", &st);
+    mem::qramStoreAt(ctx, r, g.idx, ty, v.v, guardOf(ctx, f, r, flag), st);
   }
 }
 
@@ -2106,8 +2474,6 @@ void lowerPtrToInt(LoweringContext &ctx, Instruction &I) {
   if (!pi)
     internalError("fatptr: lowerPtrToInt of a non-ptrtoint", &I);
   unsigned w = I.getType()->getIntegerBitWidth();
-  if (w > 64)
-    unimplemented("fatptr: ptrtoint to an integer wider than 64 bits", &I);
   Flat fl;
   fl.f = derive(ctx, pi->getPointerOperand(), /*emit=*/true);
   for (const Value *r : fl.f.roots)
@@ -2116,9 +2482,13 @@ void lowerPtrToInt(LoweringContext &ctx, Instruction &I) {
   Bases cache;
   fl.base = baseOf(ctx, fl.f, cache);
   Operand a = address(ctx, fl.f, cache, fl.base);
+  // At the integer's width, as LLVM does: a narrower integer is the address truncated, a wider one zero-extended.
   if (w < 64)
     a = a.handle ? Operand{tmpl(ctx, "trunc", intRail(64), {a}, "", "", intRail(w)), true}
                  : Operand{ctx.B().CreateTrunc(a.v, I.getType()), false};
+  else if (w > 64)
+    a = a.handle ? Operand{tmpl(ctx, "zext", intRail(64), {a}, "", "", intRail(w)), true}
+                 : Operand{ctx.B().CreateZExt(a.v, I.getType()), false};
   if (!flats()[&ctx.out()].try_emplace(&I, fl).second)
     internalError("fatptr: a ptrtoint lowered twice", &I);
   ctx.bindFields(&I, {a});
@@ -2134,8 +2504,6 @@ void lowerIntToPtr(LoweringContext &ctx, Instruction &I) {
   auto *ip = dyn_cast<IntToPtrInst>(&I);
   if (!ip)
     internalError("fatptr: lowerIntToPtr of a non-inttoptr", &I);
-  if (!I.getOperand(0)->getType()->isIntegerTy(64))
-    unimplemented("fatptr: inttoptr of an integer that is not an i64 (rule 21)", &I);
   const PtrToIntInst *pi = derivedFrom(I.getOperand(0));
   if (!pi)
     unimplemented("fatptr: inttoptr of an integer of unknown origin (rule 21 range decoding over the candidate "
@@ -2159,6 +2527,12 @@ void lowerIntToPtr(LoweringContext &ctx, Instruction &I) {
   if (tag.handle != shape.tag.handle)
     internalError("fatptr: an inttoptr whose tag differs in kind from its ptrtoint's", &I);
   Operand u = ctx.operand(I.getOperand(0));
+  // The integer at the address width, as LLVM's inttoptr: a narrower one zero-extended, a wider one truncated.
+  if (unsigned uw = I.getOperand(0)->getType()->getIntegerBitWidth(); uw != 64) {
+    StringRef op = uw < 64 ? "zext" : "trunc";
+    u = u.handle ? Operand{tmpl(ctx, op, intRail(uw), {u}, "", "", intRail(64)), true}
+                 : Operand{ctx.B().CreateZExtOrTrunc(u.v, i64(ctx)), false};
+  }
   Operand off;
   if (!u.handle && !base.handle)
     off = Operand{ctx.B().CreateSub(u.v, base.v), false};

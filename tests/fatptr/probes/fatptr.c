@@ -182,3 +182,68 @@ int f_neg_inttoptr(unsigned x0, double th, int v) {
   int *r = (int *)(u - 16);
   return cq_measure(*r);
 }
+/* cq-5xm0 (rules 20, 21): a 2-D index into a quantum select of two 2-D tables: two quantum GEP terms of scales
+ * 20 and 4, idx = 5 i + j in 4-byte cells (the flattened form) */
+static const int T2A[4][5] = {{1, 2, 3, 4, 5}, {6, 7, 8, 9, 10}, {11, 12, 13, 14, 15}, {16, 17, 18, 19, 20}};
+static const int T2B[4][5] = {{21, 22, 23, 24, 25}, {26, 27, 28, 29, 30}, {31, 32, 33, 34, 35}, {36, 37, 38, 39, 40}};
+int f_2d_qrom(unsigned x0, double th) {
+  unsigned x = x0; cq_theta(&x, th);
+  const int(*t)[5] = (x & 1) ? T2A : T2B;
+  return cq_measure(t[(x >> 1) & 3][(x >> 3) % 5]);
+}
+/* cq-5xm0: the same flattened 2-D index on the QRAM store path */
+int f_2d_qram(unsigned x0, double th, int v) {
+  unsigned x = x0; cq_theta(&x, th);
+  int a[3][4] = {{0}}, b[3][4] = {{0}};
+  int(*t)[4] = (x & 1) ? a : b;
+  t[(x >> 1) % 3][(x >> 3) & 3] = v;
+  return cq_measure(a[1][2] + 2 * b[2][3] + 4 * a[0][0]);
+}
+/* cq-5xm0: arms of two cell sizes (int and long) merge in their common 4-byte cells */
+static const long LW[4] = {100, -200, 300, -400};
+int f_sel_cells(unsigned x0, double th) {
+  unsigned x = x0; cq_theta(&x, th);
+  const int *pa = NT1 + ((x >> 1) & 7), *pb = (const int *)(LW + ((x >> 4) & 3));
+  const int *p = __builtin_unpredictable(x & 1) ? pa : pb;
+  return cq_measure(*p);
+}
+/* cq-5xm0: a classical condition choosing between two fat pointers with rail fields (rule 9 at a classical
+ * predicate: a classical select of the rails) */
+int f_sel_classical(unsigned x0, double th, int c) {
+  unsigned x = x0; cq_theta(&x, th);
+  const int *p = (x & 1) ? NT1 + ((x >> 1) & 3) : NT2 + ((x >> 3) & 7);
+  const int *q = (x & 2) ? NT2 + ((x >> 4) & 1) : NT1;
+  const int *r = c ? p : q;
+  return cq_measure(*r + r[1]);
+}
+/* cq-5xm0 (rule 21): a load through a quantum tag at a run-time classical index from host objects: each object's
+ * access checked against its extent, 0 beyond it */
+int HG1[4] = {1, 2, 3, 4}, HG2[6] = {5, 6, 7, 8, 9, 10};
+int f_host_idx(unsigned x0, double th, int j) {
+  unsigned x = x0; cq_theta(&x, th);
+  if (j < 0 || j > 3) j = 0;
+  int *p = (x & 1) ? HG1 : HG2 + 2;
+  return cq_measure(p[j]);
+}
+/* cq-5xm0 (rules 9, 20, 21): a plain store (no read-modify-write) through a quantum select of slot objects, and
+ * one under a quantum predicate */
+int f_slot_store(int x0, double th, int a0, double ta, int b0, double tb, int v) {
+  int x = x0, a = a0, b = b0;
+  cq_theta(&x, th); cq_theta(&a, ta); cq_theta(&b, tb);
+  int *p = (x & 1) ? &a : &b;
+  *p = v;
+  if (x & 2)
+    *p = x;
+  int w = peek1(p);
+  return cq_measure(a) + 2 * cq_measure(b) + 4 * cq_measure(w);
+}
+/* cq-5xm0 (rule 20): a slot cell holding a classical value read through the fat pointer */
+int f_slot_cls(int x0, double th, int a0, double ta, int c) {
+  int x = x0, a = a0, b = c;
+  cq_theta(&x, th); cq_theta(&a, ta);
+  int *p = (x & 1) ? &a : &b;
+  int r = *p;
+  *p = r + 1;
+  int w = peek1(p);
+  return cq_measure(r) + 2 * cq_measure(a) + 4 * cq_measure(b) + 8 * cq_measure(w);
+}
