@@ -903,8 +903,6 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // classical skip edge of the loop (its zero-trip guard) itself.
   exits::Unit UX = exits::unitOf(L);
   const bool mx = c3 && (UX.multi() || exits::liveExiting(L) != latch);
-  if (mx && !outermost)
-    unimplemented("loops-classical: a nested case-3 loop with several exits", header->getTerminator());
   if (!mx && (!exits::liveExiting(L) || !exitB))
     unimplemented("loops-classical: a rule-14 loop with more than one exiting block or exit block",
                   header->getTerminator());
@@ -1301,8 +1299,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // arm, its noreturn and dead arms) always ending at its continuation C, every phi of C with an incoming
   // from the unit bound by it. kOf: the unit's blocks inside L -> the sub-loop.
   DenseMap<const BasicBlock *, Loop *> kOf;
+  // A case-3 sub-loop with several exits (its exit arm, lowered with it) is such a unit too: its classical
+  // exit is a real branch into C, its C phis bound by it.
   for (Loop *s : L.getSubLoops())
-    if (classify(*s, ctx.T, ctx.S) == Case::QuantumExit) {
+    if (classify(*s, ctx.T, ctx.S) == Case::QuantumExit || exits::unitOf(*s).multi()) {
       exits::Unit SU = exits::unitOf(*s);
       for (BasicBlock *b : s->blocks())
         kOf[b] = s;
@@ -1347,6 +1347,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // loop): then the unit ends in a real branch to C, a classical join.
   std::function<EK(const BasicBlock *, const BasicBlock *)> edgeKind;
   auto kReal = [&](Loop *k) {
+    if (classify(*k, ctx.T, ctx.S) != Case::QuantumExit)
+      return true;   // a classically bounded unit leaves by its classical exit
     BasicBlock *C = exits::unitOf(*k).cont;
     for (const BasicBlock *p : fwdPreds(C))
       if (!kunit(p) && edgeKind(p, C) == EK::Real)   // another K-unit's edge into C never makes this one real
@@ -1888,27 +1890,43 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     if (mx && u == cxb && u == header && u != latch)
       headerRes();
     if (qExit) {
-      // A quantum exit before the latch: e = a & f, a' = a & NOT f; the trip goes on in the loop.
+      // A quantum exit before the latch: e = a & f, a' = a & NOT f; the trip goes on in the loop. A quantum
+      // switch with exit cases (rule 13) is one such exit per exit block x: f_x the flag of its edge's quantum
+      // predicate, e_x = a & f_x, a' = a ^ sum_x (a & f_x) (its edges are disjoint). An edge into an
+      // effect-free dead end is UB to take: no exit.
+      SmallVector<BasicBlock *, 4> xs;
+      for (BasicBlock *s : successors(u))
+        if (!L.contains(s) && (is_contained(UX.live, s) || UX.contains(L, s)) && !is_contained(xs, s))
+          xs.push_back(s);
+      for (BasicBlock *s : successors(u))
+        if (s == header && u != latch)
+          internalError("loops-classical: a back edge from a block that is not the loop's latch", t);
       auto *br = dyn_cast<BranchInst>(t);
-      if (!br || L.contains(br->getSuccessor(0)) == L.contains(br->getSuccessor(1)))
-        unimplemented("loops-classical: a quantum exit of a case-3 loop that is not a two-way branch out of the trip",
-                      t);
-      bool exitOnTrue = !L.contains(br->getSuccessor(0));
-      BasicBlock *x = br->getSuccessor(exitOnTrue ? 0 : 1);
-      if (x == header || (br->getSuccessor(exitOnTrue ? 1 : 0) == header && u != latch))
-        unimplemented("loops-classical: a quantum exit test whose other edge is the back edge", t);
-      Pred ex = qp(u) & (exitOnTrue ? Pred::atom(br->getCondition()) : !Pred::atom(br->getCondition()));
-      Value *f = ctx.preds().flag(ctx, ex);
-      if (!f)
-        internalError("loops-classical: a quantum exit condition with no flag", t);
-      Value *e = seed(ConstantInt::getFalse(ctx.M.getContext()), RailType{Kind::Int, 1});
-      gate(abi::Core::AndI1, {aCur, f, e});
       Value *a2 = seed(ConstantInt::getFalse(ctx.M.getContext()), RailType{Kind::Int, 1});
       gate(abi::Core::XorI1, {aCur, a2});
-      gate(abi::Core::AndI1, {aCur, f, a2});
-      exitFlag[{u, x}] = e;
+      for (BasicBlock *x : xs) {
+        Pred ex;
+        if (br) {
+          bool onTrue = br->getSuccessor(0) == x;
+          ex = qp(u) & (onTrue ? Pred::atom(br->getCondition()) : !Pred::atom(br->getCondition()));
+        } else {
+          ex = ctx.preds().edge(u, x).quantumPart(ctx.T, ctx.S);
+        }
+        Value *f = ctx.preds().flag(ctx, ex);
+        if (!f)
+          internalError("loops-classical: a quantum exit condition with no flag", t);
+        Value *e = seed(ConstantInt::getFalse(ctx.M.getContext()), RailType{Kind::Int, 1});
+        gate(abi::Core::AndI1, {aCur, f, e});
+        gate(abi::Core::AndI1, {aCur, f, a2});
+        exitFlag[{u, x}] = e;
+      }
       aCur = a2;
-      lowerBranch(ctx, *br);
+      if (br)
+        lowerBranch(ctx, *br);
+      else if (auto *sw = dyn_cast<SwitchInst>(t))
+        sw::lowerSwitch(ctx, *sw);
+      else
+        internalError("loops-classical: a quantum exit terminator other than br or switch", t);
       if (u == latch) {
         // The quantum exit at the latch (cq-nqa6): the next values and captures under a', then the back edge.
         latchNexts();
@@ -1965,9 +1983,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         return;
       }
       if (termQ(t)) {
+        // A quantum edge out of the trip is a case-3 exit (the latch test, or the multi-exit form's qExit
+        // above): here only an edge into an effect-free dead end can leave, UB to take (no exit).
         for (BasicBlock *s : successors(u))
-          if (s == header || !L.contains(s))
-            unimplemented("loops-classical: a quantum branch leaving the trip that is not a case-3 latch test", t);
+          if (s == header || (!L.contains(s) && (is_contained(UX.live, s) || UX.contains(L, s))))
+            internalError("loops-classical: a quantum edge out of the trip outside the case-3 exit forms", t);
         lowerBranch(ctx, *br);
         for (BasicBlock *s : successors(u))
           edgeFrom[{u, s}] = cur;
@@ -1986,10 +2006,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     }
     if (auto *sw = dyn_cast<SwitchInst>(t)) {
       if (termQ(t)) {
-        exits::Unit U = exits::unitOf(L);
         for (BasicBlock *s : successors(u))
-          if (s == header || (!L.contains(s) && is_contained(U.live, s)))
-            unimplemented("loops-classical: a quantum switch leaving the trip", t);
+          if (s == header || (!L.contains(s) && (is_contained(UX.live, s) || UX.contains(L, s))))
+            internalError("loops-classical: a quantum switch edge out of the trip outside the case-3 exit forms", t);
         sw::lowerSwitch(ctx, *sw);
         for (BasicBlock *s : successors(u))
           edgeFrom[{u, s}] = cur;
@@ -2133,7 +2152,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         }
         return;
       }
-      BasicBlock *sx = exits::liveExit(*sl);
+      exits::Unit SU = exits::unitOf(*sl);
+      BasicBlock *sx = SU.multi() ? SU.cont : exits::liveExit(*sl);
       if (!sx || !L.contains(sx))
         unimplemented("loops-classical: a sub-loop that leaves its parent loop", sl->getHeader()->getTerminator());
       if (!c3 && sc == Case::ClassicalBound && anyReal && sl->getExitingBlock() && tripLocal(*sl, L)) {
@@ -2160,10 +2180,32 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       Value *savedTrip = outerTrip;
       if (c3)
         outerTrip = aPhi;   // the sub-loop's trips run inside this trip: under a_{j-1}
+      DenseSet<const PHINode *> was;
+      for (PHINode &P : sx->phis())
+        if (ctx.bound(&P))
+          was.insert(&P);
       auto subOut = lowerLoop(*sl, sc, ob(sx), false);
       outerTrip = savedTrip;
-      for (auto &[v, op] : subOut)
-        ctx.rebind(v, {op});
+      for (auto &[v, op] : subOut) {
+        if (ctx.bound(v))
+          ctx.rebind(v, {op});
+        else
+          ctx.bindFields(v, {op});   // a phi of the multi-exit sub-loop's continuation (its exit value)
+      }
+      if (SU.multi()) {
+        for (PHINode &P : sx->phis())
+          if (!was.count(&P) && ctx.bound(&P))
+            kBound.insert(&P);
+        for (const BasicBlock *p : predecessors(sx))
+          if (kunit(p) == sl && edgeFrom.count({p, sx}))
+            kRep[sl] = p;
+        if (!kRep.count(sl))
+          internalError("loops-classical: a multi-exit sub-loop with no real edge into its continuation",
+                        sl->getHeader()->getTerminator());
+        for (auto &[blk, k] : kOf)
+          if (k == sl && !factOf.count(blk))
+            factOf[blk] = curFact;
+      }
       return;
     }
     emitPhis(b, anyReal);

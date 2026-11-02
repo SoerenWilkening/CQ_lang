@@ -53,9 +53,7 @@ FATAL = [(PROBES / "slots_fatal_crossgate.O1.ll", "loops-classical: a non-diagon
           "operand's phi may name), is read after the rotation"),
          # cq-w3cd: a classical region nested in one quantum arm of a trip must rejoin before the other arm's code.
          (PROBES / "fatal_rejoin.O1.ll", "loops-classical: a classical branch nested in a quantum arm of a trip whose "
-          "region does not close at one join"),
-         (PROBES / "fatal_carried_seed.O1.ll", "loops-classical: a non-diagonal gate in a classically bounded loop on "
-          "a rail that a record undone by the reverse loop reads")]
+          "region does not close at one join")]
 # cq-b13w: CR rule 6 on carried values. Each entry's last parameter is the trip count; the kept rails (role, width)
 # at n = 2 and n = 3 must be exactly the straight-line rule 6 multiset below.
 RULE6_PROBE = PROBES / "rule6.O1.ll"
@@ -118,6 +116,19 @@ C3TWO = ["t_or", "t_bool", "t_do"]
 # cq-mgkr: clone calls with a quantum result and libm intrinsics in a classically bounded trip (rule 18 in rule 14).
 CALLS_PROBE = PROBES / "calls.O1.ll"
 CALLS = ["lc_call", "lc_libm", "lc_chain"]
+# cq-l56v: a quantum-exit loop nested in a classically bounded trip (rule 14 nested K-loops; musl __rem_pio2_large).
+KNEST_PROBE = PROBES / "knest.O1.ll"
+KNEST = ["k_in_c", "k_in_arm", "k_in_c3"]
+# cq-l56v: a case-3 multi-exit loop whose exit arm branches (rule 8 flags, rule 9 selects), nested in a classical trip.
+C3ARM_PROBE = PROBES / "c3arm.O1.ll"
+C3ARM = ["arm_branch"]
+MXNEST_PROBE = PROBES / "mxnest.O1.ll"
+MXNEST = ["mx_nest"]
+# cq-l56v: a classical value read after a case-3 loop (capture rail); a seed rotated by every trip (was a fatal probe).
+C3IDX_PROBE = PROBES / "c3idx.O1.ll"
+C3IDX = ["c3_index"]
+SEED_PROBE = PROBES / "fatal_carried_seed.O1.ll"
+SEED = ["p38_seed"]
 ENTRIES = ["p_acc", "p_brk", "p_nest", "p_mod", "p_nb", "p_horner", "p_arm", "p_phase", "p_cjoin", "p_tphase", "p_bwb", "p_g2"]
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 
@@ -190,13 +201,13 @@ def main() -> int:
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", required=True)
     ap.add_argument("--entry", action="append", help="check only these entries of loops.O1.ll")
-    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls"],
+    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls", "knest", "c3arm", "mxnest", "c3idx", "seed"],
                     help="run only these probe groups (default: all)")
     a = ap.parse_args()
     out = ROOT / "build" / "tests" / "loops-classical" / "out"
     out.mkdir(parents=True, exist_ok=True)
     failures = 0
-    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls"]))
+    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls", "knest", "c3arm", "mxnest", "c3idx", "seed"]))
     groups = []
     if "loops" in want:
         groups.append((PROBE, a.entry or ENTRIES))
@@ -223,7 +234,9 @@ def main() -> int:
     if "carried" in want:
         groups.append((CARRIED_PROBE, CARRIED))
     for g, probe, entries in (("carm", CARM_PROBE, CARM), ("c3nest", C3NEST_PROBE, C3NEST), ("c3two", C3TWO_PROBE, C3TWO),
-                                 ("calls", CALLS_PROBE, CALLS)):
+                                 ("calls", CALLS_PROBE, CALLS), ("knest", KNEST_PROBE, KNEST),
+                                 ("c3arm", C3ARM_PROBE, C3ARM), ("mxnest", MXNEST_PROBE, MXNEST),
+                                 ("c3idx", C3IDX_PROBE, C3IDX), ("seed", SEED_PROBE, SEED)):
         if g in want:
             groups.append((probe, entries))
     for probe, entries in groups:
