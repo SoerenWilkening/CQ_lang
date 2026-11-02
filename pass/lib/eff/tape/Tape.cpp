@@ -77,6 +77,7 @@
 #include "llvm/IR/ValueHandle.h"
 #include "llvm/TargetParser/Triple.h"
 
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -381,9 +382,13 @@ SmallVector<std::pair<Value *, const Value *>, 4> laterInPlaceTargets(LoweringCo
   BasicBlock *Ba = CB.getParent();
   DominatorTree DT(F);
   LoopInfo LI(DT);
+  // An arm inside a loop (cq-py5f): later trips run every block of the outermost loop around it again,
+  // under predicates of their own trip, so every block of that loop is later and no predicate excludes it.
+  const Loop *outer = nullptr;
   for (BasicBlock *p : predecessors(Ba))
-    if (LI.getLoopFor(p))
-      unimplemented("eff-tape: a noreturn arm inside a loop (later iterations would need the snapshot)", &CB);
+    for (const Loop *L = LI.getLoopFor(p); L; L = L->getParentLoop())
+      if (!outer || L->contains(outer->getHeader()))
+        outer = L;
 
   // Blocks that may run before the abort: those that reach it.
   SmallPtrSet<const BasicBlock *, 32> before;
@@ -397,14 +402,21 @@ SmallVector<std::pair<Value *, const Value *>, 4> laterInPlaceTargets(LoweringCo
   }
   const Pred &pa = ctx.preds().block(Ba);
 
+  // A rotation target's rails live at the abort (rule 3: representation changes keep the rail). A value
+  // available at the abort (an argument, an instruction dominating it) is one; a merge (phi, select) or
+  // an aggregate access names one of its operands; a call's result and any other template are fresh rails
+  // (rules 4, 18, 27, U2); a load's cell content is mem's: the rail the cell holds at the abort when its
+  // address is available there.
   SetVector<const Value *> roots;
-  auto target = [&](const Value *v, const Instruction &at) {
-    // Representation changes keep the rail (rule 3).
-    while (true) {
-      if (auto *fr = dyn_cast<FreezeInst>(v)) { v = fr->getOperand(0); continue; }
-      if (auto *bc = dyn_cast<BitCastInst>(v)) { v = bc->getOperand(0); continue; }
-      break;
-    }
+  SmallVector<std::pair<const LoadInst *, Type *>, 2> cellLoads;
+  SmallPtrSet<const Value *, 32> visited;
+  std::function<void(const Value *)> target = [&](const Value *v) {
+    if (!visited.insert(v).second)
+      return;
+    if (auto *fr = dyn_cast<FreezeInst>(v))
+      return target(fr->getOperand(0));
+    if (auto *bc = dyn_cast<BitCastInst>(v))
+      return target(bc->getOperand(0));
     if (isa<Constant>(v) || !ctx.T.isQuantum(v, ctx.S))
       return;
     if (isa<Argument>(v) || DT.dominates(cast<Instruction>(v), &CB)) {
@@ -412,66 +424,93 @@ SmallVector<std::pair<Value *, const Value *>, 4> laterInPlaceTargets(LoweringCo
       return;
     }
     auto *I = cast<Instruction>(v);
-    if (isa<PHINode>(I) || isa<SelectInst>(I) || isa<LoadInst>(I) || isa<ExtractValueInst>(I) ||
-        isa<ExtractElementInst>(I) || isa<CallBase>(I) || isa<IntToPtrInst>(I))
-      unimplemented("eff-tape: a rotation after a noreturn arm whose target may alias a rail live at the "
-                    "abort (the snapshot cannot be decided)", &at);
-    // Any other instruction is a template into a fresh rail (rule 4): nothing to snapshot.
+    if (auto *phi = dyn_cast<PHINode>(I)) {
+      for (const Value *in : phi->incoming_values())
+        target(in);
+      return;
+    }
+    if (auto *sel = dyn_cast<SelectInst>(I)) {
+      target(sel->getTrueValue());
+      target(sel->getFalseValue());
+      return;
+    }
+    if (auto *ev = dyn_cast<ExtractValueInst>(I))
+      return target(ev->getAggregateOperand());
+    if (auto *iv = dyn_cast<InsertValueInst>(I)) {
+      target(iv->getAggregateOperand());
+      target(iv->getInsertedValueOperand());
+      return;
+    }
+    if (auto *ee = dyn_cast<ExtractElementInst>(I))
+      return target(ee->getVectorOperand());
+    if (auto *ie = dyn_cast<InsertElementInst>(I)) {
+      target(ie->getOperand(0));
+      target(ie->getOperand(1));
+      return;
+    }
+    if (auto *ld = dyn_cast<LoadInst>(I)) {
+      const Value *p = ld->getPointerOperand();
+      bool slot = false;
+      for (ObjectId o : ctx.T.provenance(p, ctx.S))
+        slot |= ctx.T.classOf(o) == ObjClass::Slot;
+      if (!slot)
+        return;   // a QRAM or QROM load copies out into a fresh rail (§1.3)
+      auto *pi = dyn_cast<Instruction>(p);
+      if (!pi || DT.dominates(pi, &CB)) {
+        cellLoads.push_back({ld, ld->getType()});
+        return;
+      }
+      if (auto *gep = dyn_cast<GetElementPtrInst>(pi); gep && all_of(gep->operands(), [&](const Value *x) {
+            auto *xi = dyn_cast<Instruction>(x);
+            return !xi || DT.dominates(xi, &CB);
+          })) {
+        cellLoads.push_back({ld, ld->getType()});
+        return;
+      }
+      unimplemented("eff-tape: a rotation after a noreturn arm of a slot cell whose address is computed after the "
+                    "arm (rule 16: the cell's rail at the abort)",
+                    ld);
+    }
+    // Any other instruction (a template, a call's result) is a fresh rail made after the abort (rule 4).
   };
 
   for (BasicBlock &X : F) {
-    if (before.count(&X) || !DT.isReachableFromEntry(&X))
+    if (!DT.isReachableFromEntry(&X))
       continue;
-    if ((ctx.preds().block(&X) & pa).isBottom())
+    bool inLoop = outer && outer->contains(&X);
+    if (before.count(&X) && !inLoop)
+      continue;
+    if (!inLoop && (ctx.preds().block(&X) & pa).isBottom())
       continue;   // never runs on the abort branch
     for (Instruction &I : X) {
-      if (auto *st = dyn_cast<StoreInst>(&I)) {
-        if (qramPointer(ctx, st->getPointerOperand()))
-          unimplemented("eff-tape: a QRAM store after a noreturn arm (in place on the object)", &I);
-        continue;
-      }
-      if (isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I)) {
-        if (qramPointer(ctx, I.getOperand(0)) || nonClassicalPointer(ctx, I.getOperand(0)))
-          unimplemented("eff-tape: an atomic on quantum memory after a noreturn arm", &I);
-        continue;
-      }
+      // CR rule 4: in place is a rotation of an existing rail (rules 2, 10, 15) and nothing else. A QRAM
+      // store, pop or memory intrinsic swaps and copies cells (§1.3), an atomic is a plain access (rule 24).
       auto *C = dyn_cast<CallBase>(&I);
       if (!C)
         continue;
       using calls::Class;
       Class k = calls::classify(*C, ctx.T, ctx.S);
-      switch (k) {
-      case Class::Theta:
-        target(C->getArgOperand(0), I);
-        break;
-      case Class::Classical: case Class::Measure: case Class::Phi: case Class::HostEffect:
-      case Class::Noreturn: case Class::TemplateIntrinsic: case Class::Alloc: case Class::Fenv:
-      case Class::InvertBegin: case Class::InvertEnd:
-        break;
-      case Class::MemIntrinsic:
-        for (const Use &u : C->args())
-          if (qramPointer(ctx, u.get()))
-            unimplemented("eff-tape: a memory intrinsic on a QRAM object after a noreturn arm", &I);
-        break;
-      case Class::Dealloc: {
-        const Value *p = isa<IntrinsicInst>(C) ? C->getArgOperand(isa<LifetimeIntrinsic>(C) ? 1 : 0)
-                                               : C->getArgOperand(0);
-        if (qramPointer(ctx, p))
-          unimplemented("eff-tape: a QRAM lifetime end after a noreturn arm (its pops write the cells)", &I);
-        break;
+      if (k == Class::Theta) {
+        target(C->getArgOperand(0));
+        continue;
       }
-      case Class::LibmIntrinsic:
-        break;   // a math intrinsic takes and returns values (rule 18): it writes no caller rail
-      case Class::Lift: {
+      if (k == Class::Lift || k == Class::Declared || k == Class::Indirect || k == Class::Asm ||
+          k == Class::Thread || k == Class::Varargs) {
+        // A callee may rotate what it is handed (rule 18): its quantum scalar arguments, and the cells of
+        // slot objects behind its pointer arguments.
         SmallPtrSet<const Function *, 8> seen;
-        if (bodyMayModifyInPlace(calleeOf(*C), seen))
-          unimplemented("eff-tape: a call after a noreturn arm whose callee may modify a caller rail in place",
-                        &I);
-        break;
-      }
-      default:
-        unimplemented("eff-tape: a call after a noreturn arm whose in-place effect on live rails is unknown",
-                      &I);
+        if (k == Class::Lift && !bodyMayModifyInPlace(calleeOf(*C), seen))
+          continue;
+        for (const Use &u : C->args()) {
+          const Value *a = u.get();
+          if (!a->getType()->isPointerTy()) {
+            target(a);
+            continue;
+          }
+          for (const User *usr : a->users())
+            if (auto *ld = dyn_cast<LoadInst>(usr); ld && ld->getPointerOperand() == a)
+              target(ld);
+        }
       }
     }
   }
@@ -484,6 +523,15 @@ SmallVector<std::pair<Value *, const Value *>, 4> laterInPlaceTargets(LoweringCo
       continue;   // measured before the abort: a classical outcome, nothing to snapshot
     if (seenH.insert(op.v).second)
       out.push_back({op.v, v});
+  }
+  // A slot cell a later load reads: the rail it holds at the abort (mem::readSlotCells, M4).
+  for (auto &cl : cellLoads) {
+    if (!cl.second->isIntegerTy() && !cl.second->isFloatingPointTy())
+      continue;
+    SmallVector<Operand, 1> c = mem::readSlotCells(ctx, cl.first->getPointerOperand(),
+                                                   cl.second, 1, CB);
+    if (!c.empty() && c[0].handle && seenH.insert(c[0].v).second)
+      out.push_back({c[0].v, cl.first});
   }
   return out;
 }

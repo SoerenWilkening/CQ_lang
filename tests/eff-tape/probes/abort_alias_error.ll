@@ -1,6 +1,6 @@
-; Rule 16: a rotation after a noreturn arm whose target is a phi that may name a rail live at the abort:
-; the snapshot set cannot be decided, unimplemented (never a guess).
-; EXPECT-ERROR: cq: unimplemented: eff-tape: a rotation after a noreturn arm whose target may alias
+; Rule 16 (cq-py5f): a rotation after a noreturn arm whose target is a phi of rails live at the abort: eff-tape
+; snapshots every incoming rail; the spine's rule 6 then stops on the phi (another module's construction).
+; EXPECT-ERROR: cq: unimplemented: spine: rule 6 on a classical merge of a bijective update of a dead register
 target triple = "x86_64-apple-macosx16.0.0"
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
