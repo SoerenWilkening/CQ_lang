@@ -491,6 +491,13 @@ abi::TemplateSpec callRecordSpec(Type *origResult) {
   return spec;
 }
 
+// Is the call under a quantum predicate (CR rules 19, 27: its _ctl form)? The block's quantum part, a _ctl
+// clone's own entry flag, or a rule-14 trip rail (lowerInstruction's tripFlag: case 2 and case 3 trips).
+// currentPredicate() does not see the trip (cq-99f7); currentFlag() is the control (cq-ro82).
+bool underQuantumPredicate(LoweringContext &ctx) {
+  return !ctx.currentPredicate().isTop() || ctx.S.ctl || spine::shared(ctx).tripFlag;
+}
+
 // The block flag a _ctl call takes as its first argument.
 Value *ctlFlag(LoweringContext &ctx, const CallBase &CB) {
   Value *f = ctx.currentFlag();
@@ -1988,7 +1995,7 @@ void lowerEntryCall(LoweringContext &ctx, CallBase &CB, const Specialization &cs
       internalError("calls: a quantum argument to a callee with no clone", &CB);
   if (CB.getType()->isVoidTy() || !ctx.T.isQuantum(&CB, ctx.S))
     return ordinaryCall(ctx, CB);
-  if (!ctx.currentPredicate().isTop() || ctx.S.ctl || spine::shared(ctx).tripFlag)
+  if (underQuantumPredicate(ctx))
     internalError("calls: an in-place callee reached under a quantum predicate (taint makes it a _ctl clone)", &CB);
   Function &F = *cs.F;
   Type *crt = CB.getType();
@@ -2075,7 +2082,7 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
     return ordinaryCall(ctx, CB);
   }
   if (cs->F->isDeclaration()) {
-    Value *flag = !ctx.currentPredicate().isTop() || ctx.S.ctl ? ctlFlag(ctx, CB) : nullptr;
+    Value *flag = underQuantumPredicate(ctx) ? ctlFlag(ctx, CB) : nullptr;
     emitDeclaredCall(ctx, CB, cs->F, cs->mask, flag);
     return;
   }
@@ -2123,7 +2130,7 @@ void lowerDeclaredPointers(LoweringContext &ctx, CallBase &CB, Function *F, Valu
     unimplemented("calls: a declared clone with a pointer argument and a result (rule 27: the result's twin and the "
                   "snapshot in one item)",
                   &CB);
-  if (!ctx.currentPredicate().isTop() || ctx.S.ctl)
+  if (underQuantumPredicate(ctx))
     unimplemented("calls: a declared clone with a pointer argument under a quantum predicate (rule 27 _ctl: the "
                   "cells merged by select)",
                   &CB);
@@ -2222,7 +2229,7 @@ void lowerDeclared(LoweringContext &ctx, CallBase &CB) {
   if (!anyQ)
     return ordinaryCall(ctx, CB);
   std::string mask = siteMask(ctx, CB);
-  Value *flag = !ctx.currentPredicate().isTop() || ctx.S.ctl ? ctlFlag(ctx, CB) : nullptr;
+  Value *flag = underQuantumPredicate(ctx) ? ctlFlag(ctx, CB) : nullptr;
   emitDeclaredCall(ctx, CB, F, mask, flag);
 }
 
@@ -2410,7 +2417,7 @@ void lowerQromIndirect(LoweringContext &ctx, CallBase &CB, Operand tag) {
         return sp;
     internalError("calls: a QROM callee candidate taint did not lift", &CB);
   };
-  bool underQ = !ctx.currentPredicate().isTop() || ctx.S.ctl;
+  bool underQ = underQuantumPredicate(ctx);
   Value *outer = underQ ? ctlFlag(ctx, CB) : nullptr;
   LLVMContext &C = ctx.M.getContext();
   RailType i1{Kind::Int, 1};
@@ -2534,7 +2541,7 @@ void lowerIndirect(LoweringContext &ctx, CallBase &CB) {
                   "loaded at a quantum index (a select or merge of function pointers on quantum data)\"",
                   &CB);
   auto cands = ctx.T.calleeCandidates(CB, ctx.S);
-  bool underQ = !ctx.currentPredicate().isTop() || ctx.S.ctl;
+  bool underQ = underQuantumPredicate(ctx);
   if (cands.empty())
     return lowerResolved(ctx, CB, fp.v, underQ);
   // The flag dominates every arm: computed once, before the dispatch.

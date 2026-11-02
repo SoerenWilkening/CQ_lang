@@ -147,8 +147,11 @@ bool involvesQuantum(LoweringContext &ctx, Instruction &I, const Value *ptr) {
 // select into a fresh rail), so a store into classical memory under one is a broken taint invariant. A load
 // writes nothing: LLVM's mayWriteToMemory counts a volatile or ordered atomic load (cq-il07: musl exp10l's
 // FORCE_EVAL read of the constant twom10000 under a quantum predicate), which rule 24 makes the plain read.
+// A rule-14 trip rail is a quantum predicate too (cq-ro82: currentPredicate() does not see it); a host call
+// there is rule 19's, executed unguarded.
 void copyClassical(LoweringContext &ctx, Instruction &I, bool dropVolatile) {
-  if (!isa<LoadInst>(I) && I.mayWriteToMemory() && !ctx.currentPredicate().isTop())
+  if (!isa<LoadInst>(I) && I.mayWriteToMemory() &&
+      (!ctx.currentPredicate().isTop() || (spine::shared(ctx).tripFlag && !isa<CallBase>(I))))
     internalError("eff-conc: a store into memory taint classified Classical under a quantum predicate (rule 20: "
                   "the object holds a handle)",
                   &I);
