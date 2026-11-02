@@ -3725,7 +3725,25 @@ bool freshCell(LoweringContext &ctx, FnState &st, const Site &s, const StoreInst
     if (auto *MI = dyn_cast<MemIntrinsic>(&X); MI && hasObject(ctx, MI->getDest(), s.o))
       return false;
   uint64_t size = storeBytes(ctx.M.getDataLayout(), S.getValueOperand()->getType());
-  return clearBetween(ctx, *s.info, s.o, R, &S, s.a, size);
+  if (!clearBetween(ctx, *s.info, s.o, R, &S, s.a, size))
+    return false;
+  // cq-2wfi: the lowered program runs the arms of a quantum branch one after the other, so a store to the
+  // cell that the CFG orders neither before nor after S (a sibling arm's store: mutually exclusive in C)
+  // runs before S when it was lowered before S, and S's select(p, v, old) then has that store's rail as its
+  // old content: S is guarded. One lowered after S sees S's rail as its own old content (S then is the
+  // cell's first write, select(p, v, undef) = v). Another unordered write (a call, an atomic) is not built.
+  for (const Instruction &X : instructions(*st.F)) {
+    if (&X == &S || !mayWrite(ctx, *s.info, s.o, X, s.a, size) ||
+        isPotentiallyReachable(&X, &S, nullptr, st.DT.get()) || isPotentiallyReachable(&S, &X, nullptr, st.DT.get()))
+      continue;
+    if (!isa<StoreInst>(X))
+      unimplemented("mem-slots: a store under a quantum predicate into a fresh cell that a write other than a store, "
+                    "unordered with it on the CFG (a sibling arm), may also write",
+                    &X);
+    if (st.lowered.count(&X))
+      return false;
+  }
+  return true;
 }
 
 } // namespace
