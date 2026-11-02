@@ -416,6 +416,11 @@ uint32_t cqe__nrails_peek(void) { return nrails; }
  * cqe__new is that rail: init is XORed into it (dispatch.c, cqe__prealloc). */
 static int32_t prealloc_h;
 void cqe__prealloc(int32_t h) { prealloc_h = h; }
+/* The replayed compute of a reserved rail: the rail's value is made now (its known-basis reference). */
+void cqe__recreated(int32_t h) {
+  if (h >= 1 && (uint32_t)h <= nrails)
+    rails[h].t_create = rails[h].t_write = cqe__tick();
+}
 
 int32_t cqe__new(const char *w, const cqe_val *init, int known, int seed) {
   cqe__init();

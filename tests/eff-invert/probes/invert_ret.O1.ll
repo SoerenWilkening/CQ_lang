@@ -54,42 +54,6 @@ declare i32 @cq_measure_ui32(i32 noundef) local_unnamed_addr #2
 declare void @llvm.lifetime.end.p0(i64 immarg, ptr nocapture) #1
 
 ; Function Attrs: nounwind ssp uwtable
-define i32 @p_adjretq(i32 noundef %0, i32 noundef %1, double noundef %2, double noundef %3, double noundef %4, double noundef %5) local_unnamed_addr #0 {
-  %7 = alloca i32, align 4
-  call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %7) #4
-  store i32 %0, ptr %7, align 4, !tbaa !6
-  %8 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %2) #5
-  store i32 %8, ptr %7, align 4, !tbaa !6
-  %9 = tail call i32 @cq_theta_ui32(i32 noundef %1, double noundef %3) #5
-  tail call void @__cq_invert_begin() #4
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #4, !srcloc !12
-  call fastcc void @twoq(ptr noundef nonnull %7, i32 noundef %9, double noundef %4, double noundef %5)
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #4, !srcloc !13
-  tail call void @__cq_invert_end() #4
-  %10 = load i32, ptr %7, align 4, !tbaa !6
-  %11 = tail call i32 @cq_measure_ui32(i32 noundef %10) #4
-  %12 = tail call i32 @cq_measure_ui32(i32 noundef %9) #4
-  %13 = add i32 %12, %11
-  call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %7) #4
-  ret i32 %13
-}
-
-; Function Attrs: noinline nounwind ssp uwtable
-define internal fastcc void @twoq(ptr nocapture noundef %0, i32 noundef %1, double noundef %2, double noundef %3) unnamed_addr #3 {
-  %5 = icmp ugt i32 %1, 3
-  %6 = load i32, ptr %0, align 4, !tbaa !6
-  br i1 %5, label %7, label %9
-
-7:                                                ; preds = %4
-  %8 = tail call i32 @cq_theta_ui32(i32 noundef %6, double noundef %2) #5
-  store i32 %8, ptr %0, align 4, !tbaa !6
-  ret void
-
-9:                                                ; preds = %4
-  %10 = tail call i32 @cq_theta_ui32(i32 noundef %6, double noundef %3) #5
-  store i32 %10, ptr %0, align 4, !tbaa !6
-  ret void
-}
 
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #1 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }

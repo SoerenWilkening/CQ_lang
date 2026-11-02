@@ -1752,7 +1752,8 @@ static int iv_replaying;
 static int32_t *iv_pend;
 static size_t iv_npend, iv_cappend;
 
-void cqe__prealloc(int32_t h); /* core.c */
+void cqe__prealloc(int32_t h);   /* core.c */
+void cqe__recreated(int32_t h);  /* core.c */
 
 static char *iv_dup(const char *s) {
   if (!s)
@@ -2028,6 +2029,8 @@ static void iv_run(const iv_op *op) {
       cqe__val(a)->w[0] ^= 1ULL << 63;
   } else {
     int pend = iv_pend_take(op->out);
+    if (pend)
+      cqe__recreated(op->out); /* computed now: later gates on its sources come after it (zero rule) */
     const char *params = strchr(op->sig, '|');
     params = params ? params + 1 : "";
     if (op->standin || strstr(sym, "cqrt_tape_write")) {
