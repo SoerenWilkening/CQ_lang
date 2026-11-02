@@ -2508,6 +2508,9 @@ void lowerHostLoad(LoweringContext &ctx, LoadInst &ld, const Fat &f) {
 // A pointer load (a QRAM of pointers, 88) merges its tag and idx halves alike and binds them as the
 // load's two fields.
 void lowerLoad(LoweringContext &ctx, LoadInst &ld) {
+  // cq-2cl6: a constant cell of a slot triple formal that the clone writes and reads is its clone cell's value.
+  if (mem::cloneCellLoad(ctx, ld))
+    return;
   Fat f = derive(ctx, ld.getPointerOperand(), /*emit=*/true);
   Type *ty = ld.getType();
   // CR rule 13 (b137e75): a code address is the i64 integer in its cell, never a pointer's (tag, idx).

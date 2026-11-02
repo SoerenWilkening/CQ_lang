@@ -126,6 +126,96 @@ define internal fastcc i32 @rec(i32 noundef %0, i32 noundef %1, ptr nocapture no
   ret i32 %13
 }
 
+; Function Attrs: nounwind ssp uwtable
+define i32 @param_handoff_two(i32 noundef %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #0 {
+  %4 = alloca i32, align 4
+  %5 = alloca i32, align 4
+  %6 = sitofp i32 %1 to double
+  %7 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %6) #6
+  call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %4) #7
+  store i32 %2, ptr %4, align 4, !tbaa !6
+  call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %5) #7
+  %8 = add nsw i32 %2, 1
+  store i32 %8, ptr %5, align 4, !tbaa !6
+  %9 = call fastcc i32 @outer2(i32 noundef %7, ptr noundef nonnull %4)
+  %10 = add nsw i32 %7, 1
+  %11 = call fastcc i32 @outer2(i32 noundef %10, ptr noundef nonnull %5)
+  %12 = add nsw i32 %11, %9
+  %13 = tail call i32 @cq_measure_si32(i32 noundef %12) #7
+  %14 = mul nsw i32 %13, 1000000
+  %15 = load i32, ptr %4, align 4, !tbaa !6
+  %16 = tail call i32 @cq_measure_si32(i32 noundef %15) #7
+  %17 = mul nsw i32 %16, 1000
+  %18 = add nsw i32 %17, %14
+  %19 = load i32, ptr %5, align 4, !tbaa !6
+  %20 = tail call i32 @cq_measure_si32(i32 noundef %19) #7
+  %21 = add nsw i32 %18, %20
+  call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %5) #7
+  call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %4) #7
+  ret i32 %21
+}
+
+; Function Attrs: mustprogress nofree noinline norecurse nosync nounwind ssp willreturn memory(argmem: readwrite) uwtable
+define internal fastcc noundef i32 @outer2(i32 noundef %0, ptr nocapture noundef %1) unnamed_addr #3 {
+  %3 = tail call fastcc i32 @inner2(i32 noundef %0, ptr noundef %1)
+  %4 = icmp sgt i32 %0, 5
+  br i1 %4, label %5, label %8
+
+5:                                                ; preds = %2
+  %6 = load i32, ptr %1, align 4, !tbaa !6
+  %7 = mul nsw i32 %6, 3
+  store i32 %7, ptr %1, align 4, !tbaa !6
+  br label %8
+
+8:                                                ; preds = %5, %2
+  ret i32 %3
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @triple_clone_cell(i32 noundef %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #0 {
+  %4 = alloca i32, align 4
+  %5 = alloca i32, align 4
+  %6 = sitofp i32 %1 to double
+  %7 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %6) #6
+  call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %4) #7
+  store i32 %2, ptr %4, align 4, !tbaa !6
+  call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %5) #7
+  %8 = add nsw i32 %2, 1
+  store i32 %8, ptr %5, align 4, !tbaa !6
+  %9 = call fastcc i32 @scale(i32 noundef %7, ptr noundef nonnull %4)
+  %10 = add nsw i32 %7, 1
+  %11 = call fastcc i32 @scale(i32 noundef %10, ptr noundef nonnull %5)
+  %12 = add nsw i32 %11, %9
+  %13 = tail call i32 @cq_measure_si32(i32 noundef %12) #7
+  %14 = mul nsw i32 %13, 1000000
+  %15 = load i32, ptr %4, align 4, !tbaa !6
+  %16 = tail call i32 @cq_measure_si32(i32 noundef %15) #7
+  %17 = mul nsw i32 %16, 1000
+  %18 = add nsw i32 %17, %14
+  %19 = load i32, ptr %5, align 4, !tbaa !6
+  %20 = tail call i32 @cq_measure_si32(i32 noundef %19) #7
+  %21 = add nsw i32 %18, %20
+  call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %5) #7
+  call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %4) #7
+  ret i32 %21
+}
+
+; Function Attrs: mustprogress nofree noinline norecurse nosync nounwind ssp willreturn memory(argmem: readwrite) uwtable
+define internal fastcc noundef i32 @scale(i32 noundef %0, ptr nocapture noundef %1) unnamed_addr #3 {
+  %3 = icmp sgt i32 %0, 5
+  br i1 %3, label %4, label %7
+
+4:                                                ; preds = %2
+  %5 = load i32, ptr %1, align 4, !tbaa !6
+  %6 = mul nsw i32 %5, 3
+  store i32 %6, ptr %1, align 4, !tbaa !6
+  br label %7
+
+7:                                                ; preds = %4, %2
+  %8 = xor i32 %0, 5
+  ret i32 %8
+}
+
 ; Function Attrs: mustprogress nofree noinline norecurse nosync nounwind ssp willreturn memory(argmem: write) uwtable
 define internal fastcc range(i32 -2147483648, 1073741824) i32 @inner(i32 noundef %0, ptr nocapture noundef writeonly %1) unnamed_addr #5 {
   %3 = icmp sgt i32 %0, 3
@@ -146,6 +236,22 @@ define internal fastcc range(i32 -2147483648, 1073741824) i32 @inner(i32 noundef
 define internal fastcc range(i32 -2147483648, 1073741824) i32 @fwd(i32 noundef %0, ptr nocapture noundef writeonly %1) unnamed_addr #5 {
   %3 = tail call fastcc i32 @inner(i32 noundef %0, ptr noundef %1)
   ret i32 %3
+}
+
+; Function Attrs: mustprogress nofree noinline norecurse nosync nounwind ssp willreturn memory(argmem: write) uwtable
+define internal fastcc noundef i32 @inner2(i32 noundef %0, ptr nocapture noundef writeonly %1) unnamed_addr #5 {
+  %3 = and i32 %0, 1
+  %4 = icmp eq i32 %3, 0
+  br i1 %4, label %7, label %5
+
+5:                                                ; preds = %2
+  %6 = add nsw i32 %0, 3
+  store i32 %6, ptr %1, align 4, !tbaa !6
+  br label %7
+
+7:                                                ; preds = %5, %2
+  %8 = xor i32 %0, 5
+  ret i32 %8
 }
 
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
@@ -172,6 +278,9 @@ attributes #7 = { nounwind }
 !9 = !{!"Simple C/C++ TBAA"}
 ; CHECK __cq_q_outer_11: %cq.cells = alloca [1 x i32]
 ; CHECK __cq_q_rec_111_b3_ctl_d1: %cq.cells = alloca [1 x i32]
+; CHECK __cq_q_outer2_1001: %cq.cells = alloca [1 x i32]
 ; USERCHECK param_handoff_pred
 ; USERCHECK param_handoff_plain
 ; USERCHECK param_handoff_rec
+; USERCHECK param_handoff_two
+; USERCHECK triple_clone_cell

@@ -56,3 +56,32 @@ int param_handoff_rec(int x0, int th, int k) {
   int r = rec(x & 3, x, &e) + k;
   return cq_measure(r) * 1000 + cq_measure(e);
 }
+/* the formal points to either of two objects (two call sites: a rule 21 slot triple, musl frexpl's pointer over
+   powl's and powil's exponents); the frame copy crosses as a triple of its own */
+__attribute__((noinline)) static int inner2(int x, int *e) {
+  if (x & 1) *e = x + 3;
+  return x ^ 5;
+}
+__attribute__((noinline)) static int outer2(int x, int *e) {
+  int r = inner2(x, e);
+  if (x > 5) *e = *e * 3;
+  return r;
+}
+int param_handoff_two(int x0, int th, int k) {
+  int x = x0; cq_theta(&x, th);
+  int a = k, b = k + 1;
+  int r = outer2(x, &a) + outer2(x + 1, &b);
+  return cq_measure(r) * 1000000 + cq_measure(a) * 1000 + cq_measure(b);
+}
+/* a slot triple formal's cell read and written under a quantum predicate (a clone cell: its load reads the
+   cell's value, not the caller's memory, which holds the clone's slot result) */
+__attribute__((noinline)) static int scale(int x, int *e) {
+  if (x > 5) *e = *e * 3;
+  return x ^ 5;
+}
+int triple_clone_cell(int x0, int th, int k) {
+  int x = x0; cq_theta(&x, th);
+  int a = k, b = k + 1;
+  int r = scale(x, &a) + scale(x + 1, &b);
+  return cq_measure(r) * 1000000 + cq_measure(a) * 1000 + cq_measure(b);
+}

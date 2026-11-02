@@ -5100,7 +5100,11 @@ bool isPointerKindFormal(LoweringContext &ctx, const Argument &A) {
   }
   // TripleCount (CR rule 21: the callee loads through it) carries the record's cell count 1; the clone's cells
   // are at idx 0 of the object, an idx beyond it would access past the record (outside the domain).
-  if (cells.empty() || pf.digits != 2 + 2 * cells.size())
+  // cq-2cl6: the digits after (tag, idx) are each object's in turn (taint's buildMask): two per accessed cell of
+  // pointer kind. A formal over n objects whose cells are not of pointer kind has fewer (one per cell, or one per
+  // object for a run-time-length access: musl frexpl's pointer over powl's and powil's exponents).
+  size_t nObj = std::max<size_t>(1, ctx.T.provenance(&A, ctx.S).size());
+  if (cells.empty() || pf.digits != 2 + 2 * cells.size() * nObj)
     return false;
   for (auto &[off, sz] : cells)
     if (off == INT64_MIN || sz != 8)
@@ -5482,6 +5486,34 @@ bool cellBeyond(const Site &c, const DataLayout &DL) {
   if (!total || total->isScalable())
     return c.beyond;
   return c.a.off < 0 || uint64_t(c.a.off) + c.info->cellBytes > total->getFixedValue();
+}
+
+// cq-2cl6: see Memory.h.
+bool cloneCellLoad(LoweringContext &ctx, LoadInst &ld) {
+  if (ctx.S.isEntry() || ld.isVolatile() || ld.isAtomic())
+    return false;
+  Addr a = decompose(ld.getPointerOperand(), ctx.M.getDataLayout());
+  auto *A = a.ok && a.terms.empty() ? dyn_cast<Argument>(a.root) : nullptr;
+  if (!A || !A->getType()->isPointerTy())
+    return false;
+  PtrFormal pf = ctx.T.pointerFormal(ctx.S, A->getArgNo());
+  if (pf.abi == PtrAbi::Raw || pf.pointee != ObjClass::Slot || isPointerKindFormal(ctx, *A))
+    return false;
+  FnState &st = stateOf(ctx, ld);
+  Site s = siteOf(ctx, st, ld, ld.getPointerOperand(), ld.getType());
+  FnState::CloneCell *cc = cloneCellOf(ctx, st, s, ld);
+  if (!cc)
+    return false;
+  Operand cur = cloneCellValue(ctx, *cc, ld);
+  if (!cur.v || !cur.handle)
+    internalError("mem-slots: a clone cell read before its value is known (cloneCellOf loads the caller's content "
+                  "for it)",
+                  &ld);
+  Operand h = cloneCellView(ctx, cur, cc->ty, ld.getType());
+  cloneCellAccessed(ctx, *cc);
+  st.lowered[&ld] = h;
+  ctx.bindFields(&ld, {h});
+  return true;
 }
 
 void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
@@ -6892,8 +6924,8 @@ void noteObjectReadByCall(LoweringContext &ctx, FnState &st, const Site &s, cons
 
 // cq-2cl6: the bytes [lo, hi) relative to formal argNo of G that G may access through it, following direct calls
 // of defined functions the formal is handed on to at a constant offset (a recursion included); false at a
-// run-time offset, a pointer phi or select, or an escape (the pointer stored, returned or handed to a callee
-// with no body).
+// run-time offset, a pointer phi or select, an escape (the pointer stored, returned or handed to a callee with
+// no body), or a use of the address itself (a compare, ptrtoint: the frame copy has an address of its own).
 bool formalBytes(const Function *G, unsigned argNo, int64_t base, const DataLayout &DL,
                  std::set<std::tuple<const Function *, unsigned, int64_t>> &seen, int64_t &lo, int64_t &hi) {
   if (G->isDeclaration() || argNo >= G->arg_size())
@@ -6925,8 +6957,6 @@ bool formalBytes(const Function *G, unsigned argNo, int64_t base, const DataLayo
         access(off, DL.getTypeStoreSize(SI->getValueOperand()->getType()));
       } else if (isa<BitCastOperator>(Us) || isa<AddrSpaceCastOperator>(Us)) {
         work.push_back({Us, off});
-      } else if (isa<ICmpInst>(Us)) {
-        continue;
       } else if (auto *CB = dyn_cast<CallBase>(Us)) {
         if (auto *II = dyn_cast<IntrinsicInst>(CB); II && II->isLifetimeStartOrEnd())
           continue;

@@ -718,8 +718,17 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
   for (unsigned i = 0; i < nArgs; ++i) {
     const Value *a = CB.getArgOperand(op(i));
     if (fs[i].pointer && fs[i].abi != PtrAbi::Raw) {
-      // T4 (CR rule 21, §1.4): the triple (object, tag, idx) and, for TripleCount, the cell count.
-      fatptr::Triple t = fatptr::passAcrossCall(ctx, a);
+      // T4 (CR rule 21, §1.4): the triple (object, tag, idx) and, for TripleCount, the cell count. cq-2cl6: the
+      // frame copy of the caller's cells this clone hands on is one object of its own: (frame, 1, 0, its cells).
+      fatptr::Triple t;
+      if (Value *frame = is_contained(slotArgs, i) ? mem::paramCellFrame(ctx, CB, i) : nullptr) {
+        auto *fa = cast<AllocaInst>(frame);
+        Type *i32 = Type::getInt32Ty(ctx.M.getContext());
+        t = fatptr::Triple{frame, ConstantInt::get(i32, 1), ConstantInt::get(i32, 0),
+                           ConstantInt::get(i32, cast<ArrayType>(fa->getAllocatedType())->getNumElements())};
+      } else {
+        t = fatptr::passAcrossCall(ctx, a);
+      }
       // A byval formal the callee may write (cq-09xh) crossing as a triple: its object is a snapshot of the
       // caller's object as of the call, passed byval (the clone keeps byval on the object parameter), so the
       // forward and the twin see the same copy whatever the caller writes later. A read-only one is the

@@ -49,6 +49,10 @@ llvm::SmallVector<llvm::Value *, 4> slotCellsAfterCall(LoweringContext &, const 
 // pointer the call is handed instead of the actual), else null. finishParamCells(fwd), called right after
 // fwd's recordCall, makes the call's new handles the cells' values in this clone (their clone cells).
 llvm::Value *paramCellFrame(LoweringContext &, const llvm::CallBase &orig, unsigned argNo);
+// cq-2cl6 (CR rules 9, 18, 20, 21). mem-slots, consumer fatptr lowerLoad: a load at a constant cell of a clone's
+// slot triple formal whose cell the clone keeps as a clone cell (its value cur, the caller's cell holding the
+// clone's slot result): binds the load to cur and returns true; false for any other load (fatptr's checked load).
+bool cloneCellLoad(LoweringContext &, llvm::LoadInst &);
 void finishParamCells(LoweringContext &, llvm::CallInst *fwd);
 // cq-567j (CR rules 5, 18, 20). mem-slots, consumer calls: a pointer formal argNo of a quantum clone call
 // into caller slot objects whose cells the clone does not write (no slotCellsBeforeCall/After): every rail
