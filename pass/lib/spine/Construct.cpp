@@ -26,6 +26,7 @@
 // itself is pred's.
 #include "SpineInternal.h"
 #include "../loops/cutoff/Exits.h"
+#include "../taint/DeadEnd.h"
 #include "../fatptr/FatPtrInternal.h"
 
 #include "cq/Aggregates.h"
@@ -297,6 +298,7 @@ private:
   DenseSet<const Value *> copiedOut;                    // return phis copied out per edge (cq-mjwb)
   void lowerUnit(Loop &lp);
   void maybeFlush(Instruction *term);
+  BasicBlock *regionEndOf(BasicBlock *b);
   void jump(const BasicBlock *from, const BasicBlock *to);
 };
 
@@ -728,6 +730,38 @@ BasicBlock *Walker::out(const BasicBlock *b) {
   BasicBlock *nb = BasicBlock::Create(ctx.M.getContext(), "", &ctx.out());
   sh.blocks[b] = nb;
   return nb;
+}
+
+// The block where the region of b's quantum terminator ends: its immediate post-dominator, over the
+// paths that return (rules 8, 16: an edge into a dead end, a noreturn or `unreachable` arm, does not
+// restrict its siblings, so a quantum `switch` whose default is `unreachable` or a branch with a
+// noreturn arm still has its arms' predicates read up to the join of its live arms; the flag rails
+// they read stay live until then). nullptr when no path from b returns.
+BasicBlock *Walker::regionEndOf(BasicBlock *b) {
+  if (PDT.getNode(b) && PDT.getNode(b)->getIDom() && PDT.getNode(b)->getIDom()->getBlock())
+    return PDT.getNode(b)->getIDom()->getBlock();
+  taint_detail::DeadEnds DE(F);
+  if (DE.isDeadEnd(b))
+    return nullptr;
+  // Does some path from b reach a return without passing x (over blocks that return)?
+  auto avoids = [&](const BasicBlock *x) {
+    SmallPtrSet<const BasicBlock *, 32> seen{b};
+    std::vector<const BasicBlock *> work{b};
+    while (!work.empty()) {
+      const BasicBlock *u = work.back();
+      work.pop_back();
+      if (taint_detail::DeadEnds::returns(u))
+        return true;
+      for (const BasicBlock *s : successors(u))
+        if (s != x && !DE.isDeadEnd(s) && seen.insert(s).second)
+          work.push_back(s);
+    }
+    return false;
+  };
+  for (unsigned j = idx.lookup(b) + 1; j < L.size(); ++j)
+    if (reach[idx.lookup(b)].test(j) && !DE.isDeadEnd(L[j]) && !avoids(L[j]))
+      return L[j];
+  return nullptr;
 }
 
 void Walker::maybeFlush(Instruction *term) {
@@ -1596,7 +1630,7 @@ void Walker::emitTerminator(BasicBlock *b) {
       sh.switchSnap.erase(cast<SwitchInst>(t)->getCondition());   // cq-0hhk: its atoms read the rail anew
       sw::lowerSwitch(ctx, *cast<SwitchInst>(t));
     }
-    BasicBlock *ip = PDT.getNode(b) && PDT.getNode(b)->getIDom() ? PDT.getNode(b)->getIDom()->getBlock() : nullptr;
+    BasicBlock *ip = regionEndOf(b);
     if (ip)
       openRegions.push_back(ip);
     BasicBlock *n = outEdges.lookup(b).front();
