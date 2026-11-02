@@ -88,7 +88,8 @@ CASES = [
     # cq-4e6m (rules 18, 20, 21): a clone's stores past the caller's object on paths it never takes write nothing.
     ("store_past_object", "sp_one", [], "pass", []),
     # cq-4e6m (rules 23, 24; 82 with 101): an escaping clone carrying the environment: {result, flags, escaped}.
-    ("fenv_escape", "fe_escape", [], "pass", [r"call \{ i32, i32, i32 \} @__cq_q_fe_inner_10\("]),
+    # cq-lyzw: the escape clone of the external fe_inner is fe_inner.cq.esc (rule 24's explicit setjmp rewrite).
+    ("fenv_escape", "fe_escape", [], "pass", [r"call \{ i32, i32, i32 \} @__cq_q_fe_inner\.cq\.esc_10\("]),
     # cq-4e6m (rules 19, 23): indirect-call candidates carrying the environment or not: the flags merge over the arms.
     ("fenv_indirect", "fi_call", [], "pass", []),
     ("fenv_indirect", "fi_pred", [], "pass", []),
