@@ -1952,6 +1952,34 @@ public:
   }
 
   // ---------------------------------------------------------------- trips
+  // CR rule 13 (b137e75): a computed goto is a switch whose scrutinee is its address, the case of each distinct
+  // destination its blockaddress, the last destination the complement (an address outside the list is
+  // undefined). Rewritten as that switch (the same successors, so loops and dominance are unchanged) where an
+  // edge out of it must be split.
+  void gotoAsSwitch(IndirectBrInst *IB) {
+    BasicBlock *From = IB->getParent();
+    Function *F = From->getParent();
+    SmallVector<BasicBlock *, 4> ds;
+    DenseMap<BasicBlock *, unsigned> count;
+    for (BasicBlock *s : successors(IB))
+      if (count[s]++ == 0)
+        ds.push_back(s);
+    IRBuilder<> B(IB);
+    Value *x = B.CreatePtrToInt(IB->getAddress(), I64);
+    Value *pos = B.getInt32(ds.size() - 1);
+    for (unsigned k = ds.size() - 1; k-- > 0;)
+      pos = B.CreateSelect(
+          B.CreateICmpEQ(x, ConstantExpr::getPtrToInt(BlockAddress::get(F, ds[k]), I64)), B.getInt32(k), pos);
+    SwitchInst *SW = B.CreateSwitch(pos, ds.back(), ds.size() - 1);
+    for (unsigned k = 0; k + 1 < ds.size(); ++k)
+      SW->addCase(B.getInt32(k), ds[k]);
+    for (BasicBlock *d : ds)   // one edge per destination now: one phi entry each
+      for (PHINode &P : d->phis())
+        for (unsigned extra = count[d] - 1; extra-- > 0;)
+          P.removeIncomingValue(From, false);
+    IB->eraseFromParent();
+  }
+
   // Every edge From -> To (a switch may have several) through one new block.
   BasicBlock *splitEdges(BasicBlock *From, BasicBlock *To) {
     BasicBlock *NB = BasicBlock::Create(C, "", From->getParent(), To);
@@ -2082,8 +2110,10 @@ public:
       L->getExitEdges(exits);
       for (auto &e : exits) {
         BasicBlock *from = const_cast<BasicBlock *>(e.first), *to = const_cast<BasicBlock *>(e.second);
-        if (isa<IndirectBrInst>(from->getTerminator()) || isa<CallBrInst>(from->getTerminator()))
-          unimplemented("loop exit from indirectbr/callbr", from->getTerminator());
+        if (auto *IB = dyn_cast<IndirectBrInst>(from->getTerminator()))
+          gotoAsSwitch(IB);   // CR rule 13: a computed goto is a switch on its address (same edges)
+        if (isa<CallBrInst>(from->getTerminator()))
+          unimplemented("loop exit from callbr: inline asm (rule 27) waits for its CQ_spec example", from->getTerminator());
         // A trip is begun at each header execution, except a final header run that only exits:
         // an exit from the header's test region (above).
         add(from, to, Rep{cid, cnt, regionExits && region.count(from), kq});

@@ -991,6 +991,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       auto *br = dyn_cast<BranchInst>(u->getTerminator());
       if (br && br->isConditional() && isQ(br->getCondition()))
         continue;
+      if (auto *sw = dyn_cast<SwitchInst>(u->getTerminator()); sw && isQ(sw->getCondition()))
+        continue;
+      if (auto *ib = dyn_cast<IndirectBrInst>(u->getTerminator()); ib && isQ(ib->getAddress()))
+        continue;   // rule 13: a quantum computed goto is a quantum exit test
       if (cxb)
         unimplemented("loops-classical: a multi-exit case-3 loop with more than one classical exit test",
                       u->getTerminator());
@@ -1923,6 +1927,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         if (br) {
           bool onTrue = br->getSuccessor(0) == x;
           ex = qp(u) & (onTrue ? Pred::atom(br->getCondition()) : !Pred::atom(br->getCondition()));
+        } else if (auto *ib = dyn_cast<IndirectBrInst>(t)) {
+          ex = qp(u) & computedGotoEdge(*ib, x);   // rule 13: the address cases into x
         } else {
           ex = ctx.preds().edge(u, x).quantumPart(ctx.T, ctx.S);
         }

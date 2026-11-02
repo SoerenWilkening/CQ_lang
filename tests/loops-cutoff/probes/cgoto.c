@@ -2,7 +2,8 @@
  * the ADDRESS itself (an i64), its case values ptrtoint(blockaddress(@f, %bb)), the last destination the complement. A
  * code address is an integer: a table of addresses read at a quantum index is a QROM of i64 cells, a select or phi of
  * addresses a rule 9 merge, a carried address a carried i64 handle (rule 14, classical bound and K-loop), a stored
- * address an i64 slot or QRAM cell (rule 20); a clone compares the original's addresses. Each entry is checked §6
+ * address an i64 slot or QRAM cell (rule 20); a clone compares the original's addresses; a goto may leave a loop
+ * (classical bound and K-loop). Each entry is checked §6
  * against its own C program (cqcheck user).
  * Regenerate cgoto.O1.ll:
  * clang -O1 -S -emit-llvm -target x86_64-apple-macosx16.0.0 -I ../../../../CQ_spec cgoto.c -o cgoto.O1.ll */
@@ -136,4 +137,31 @@ int cg_addr_clone(int x0, int k, double th) {
   int x = x0; cq_theta(&x, th);
   int r = cg_callee(x, k) + cg_callee(k, 1);
   return cq_measure(r);
+}
+/* a computed goto that leaves a classically bounded loop */
+int cg_exit(int x0, int n, double th) {
+  static const void *tbl[] = {&&next, &&out};
+  int x = x0; cq_theta(&x, th);
+  int acc = 1;
+  for (int i = 0; i < n; i++) {
+    acc = acc * 3 + i;
+    goto *tbl[(x >> i) & 1];
+  next:;
+  }
+out:
+  return cq_measure(acc);
+}
+/* a computed goto that leaves a K-loop (quantum exit) */
+int cg_exit_k(int x0, double th) {
+  static const void *tbl[] = {&&next, &&out};
+  int x = x0; cq_theta(&x, th);
+  int acc = 1, i = 0;
+  for (;;) {
+    acc = acc * 3 + i;
+    goto *tbl[((x >> (i & 31)) & 1) | (i >= 31)];
+  next:
+    i++;
+  }
+out:
+  return cq_measure(acc);
 }

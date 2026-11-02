@@ -9,6 +9,8 @@ target triple = "x86_64-apple-macosx16.0.0"
 @cg_addr_quantum.tbl = internal unnamed_addr constant [4 x ptr] [ptr blockaddress(@cg_addr_quantum, %8), ptr blockaddress(@cg_addr_quantum, %10), ptr blockaddress(@cg_addr_quantum, %12), ptr blockaddress(@cg_addr_quantum, %8)], align 16
 @cg_addr_phi.t1 = internal unnamed_addr constant [2 x ptr] [ptr blockaddress(@cg_addr_phi, %16), ptr blockaddress(@cg_addr_phi, %18)], align 16
 @cg_addr_phi.t2 = internal unnamed_addr constant [3 x ptr] [ptr blockaddress(@cg_addr_phi, %18), ptr blockaddress(@cg_addr_phi, %20), ptr blockaddress(@cg_addr_phi, %16)], align 16
+@cg_exit.tbl = internal unnamed_addr constant [2 x ptr] [ptr blockaddress(@cg_exit, %16), ptr blockaddress(@cg_exit, %19)], align 16
+@cg_exit_k.tbl = internal unnamed_addr constant [2 x ptr] [ptr blockaddress(@cg_exit_k, %18), ptr blockaddress(@cg_exit_k, %20)], align 16
 @cg_callee.tbl = internal unnamed_addr constant [3 x ptr] [ptr blockaddress(@cg_callee, %7), ptr blockaddress(@cg_callee, %9), ptr blockaddress(@cg_callee, %11)], align 16
 
 ; Function Attrs: nounwind ssp uwtable
@@ -359,6 +361,65 @@ define internal fastcc i32 @cg_callee(i32 noundef %0, i32 noundef %1) #2 {
   ret i32 %14
 }
 
+; Function Attrs: nounwind ssp uwtable
+define i32 @cg_exit(i32 noundef %0, i32 noundef %1, double noundef %2) #0 {
+  %4 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %2) #3
+  %5 = icmp sgt i32 %1, 0
+  br i1 %5, label %6, label %19
+
+6:                                                ; preds = %3, %16
+  %7 = phi i32 [ %17, %16 ], [ 0, %3 ]
+  %8 = phi i32 [ %10, %16 ], [ 1, %3 ]
+  %9 = mul nsw i32 %8, 3
+  %10 = add nsw i32 %9, %7
+  %11 = lshr i32 %4, %7
+  %12 = and i32 %11, 1
+  %13 = zext nneg i32 %12 to i64
+  %14 = getelementptr inbounds [2 x ptr], ptr @cg_exit.tbl, i64 0, i64 %13
+  %15 = load ptr, ptr %14, align 8, !tbaa !6
+  indirectbr ptr %15, [label %16, label %19]
+
+16:                                               ; preds = %6
+  %17 = add nuw nsw i32 %7, 1
+  %18 = icmp slt i32 %17, %1
+  br i1 %18, label %6, label %19, !llvm.loop !16
+
+19:                                               ; preds = %16, %3, %6
+  %20 = phi i32 [ %10, %6 ], [ 1, %3 ], [ %10, %16 ]
+  %21 = tail call i32 @cq_measure_si32(i32 noundef %20) #4
+  ret i32 %21
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @cg_exit_k(i32 noundef %0, double noundef %1) #0 {
+  %3 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %1) #3
+  br label %4
+
+4:                                                ; preds = %18, %2
+  %5 = phi i32 [ 1, %2 ], [ %8, %18 ]
+  %6 = phi i32 [ 0, %2 ], [ %19, %18 ]
+  %7 = mul nsw i32 %5, 3
+  %8 = add nsw i32 %7, %6
+  %9 = and i32 %6, 31
+  %10 = lshr i32 %3, %9
+  %11 = and i32 %10, 1
+  %12 = icmp ugt i32 %6, 30
+  %13 = zext i1 %12 to i32
+  %14 = or i32 %11, %13
+  %15 = zext nneg i32 %14 to i64
+  %16 = getelementptr inbounds [2 x ptr], ptr @cg_exit_k.tbl, i64 0, i64 %15
+  %17 = load ptr, ptr %16, align 8, !tbaa !6
+  indirectbr ptr %17, [label %18, label %20]
+
+18:                                               ; preds = %4
+  %19 = add nuw nsw i32 %6, 1
+  br label %4, !llvm.loop !17
+
+20:                                               ; preds = %4
+  %21 = tail call i32 @cq_measure_si32(i32 noundef %8) #4
+  ret i32 %21
+}
+
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #1 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #2 = { mustprogress nofree noinline norecurse nosync nounwind ssp willreturn memory(none) uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
@@ -384,3 +445,5 @@ attributes #4 = { nounwind }
 !13 = distinct !{!13, !11, !12}
 !14 = distinct !{!14, !11, !12}
 !15 = distinct !{!15, !11, !12}
+!16 = distinct !{!16, !11, !12}
+!17 = distinct !{!17, !12}
