@@ -213,6 +213,12 @@ CASES = [
     # cq-sd95 (CR rule 21, §1.4; musl erfl's __polevll): a readonly formal over host tables of different lengths
     # (T3 names no cell for a formal that writes none) crosses as a triple with a classical tag and idx; the
     # clone reads through the caller's pointer (a constant GEP into @B roots at @B in the object table).
+    # cq-sd95 (CR rules 19, 27, §1.3): a call through a pointer with no in-module candidate is the registered
+    # all-handles clone's (clone_resolve kind 0; kind 1 under a quantum predicate; the twin kind 2). "lower": the
+    # callee is outside the program.
+    ("resolve_fp", "r_plain", [], "lower", [r"%(\d+) = call ptr @cqrt_clone_resolve\(ptr %0, i32 0\)\n  %\d+ = call i32 %\1\(i32 %\d+, i32 4\)"]),
+    ("resolve_fp", "r_ctl", [], "lower", [r"call ptr @cqrt_clone_resolve\(ptr %0, i32 1\)",
+                                          r"%(\d+) = call ptr @cqrt_clone_resolve\(ptr %0, i32 2\)\n  call void %\1\("]),
     ("host_triple", "f_tables", [], "pass", [r"call i32 @__cq_q_pol_10000\(i32 %\d+, ptr @B, i32 \d+, i32 1, i32 4, i32 2\)"]),
 ]
 

@@ -484,6 +484,8 @@ const CoreInfo kCores[] = {
     {Core::Pop, "pop", WidthUse::None, false, false, false, false},
     {Core::InvertBegin, "invert_begin", WidthUse::None, false, false, false, false},
     {Core::InvertEnd, "invert_end", WidthUse::None, false, false, false, false},
+    {Core::CloneRegister, "clone_register", WidthUse::None, false, false, false, false},
+    {Core::CloneResolve, "clone_resolve", WidthUse::None, false, false, false, false},
 };
 
 const CoreInfo &coreInfo(Core op) {
@@ -806,6 +808,8 @@ llvm::FunctionCallee declare(llvm::Module &M, const CoreSpec &s) {
   case Core::Pop: ret = i32; break;
   case Core::InvertBegin:
   case Core::InvertEnd: break;
+  case Core::CloneRegister: a.append({p, p, p, p}); break;
+  case Core::CloneResolve: ret = p; a.append({p, i32}); break;
   }
   return declareChecked(M, coreName(s), llvm::FunctionType::get(ret, a, false));
 }

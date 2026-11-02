@@ -2844,6 +2844,25 @@ void Analyzer::transferCall(CallBase &CB) {
       for (Function &F : *st.M)
         if (F.hasAddressTaken() && F.getFunctionType() == CB.getFunctionType())
           cands.push_back(&F);
+    if (cands.empty()) {
+      // Rules 19, 27 (cq-sd95): no in-module candidate: a function outside the program. With a quantum argument
+      // (a lane, or a pointee cell holding a handle) or under a quantum predicate it is the call of its
+      // registered all-handles clone (clone_resolve), opaque like a declared clone: every result a handle.
+      bool anyQ = blockCT(CB.getParent()) || cur->ctl;
+      for (Value *A : actuals) {
+        anyQ = anyQ || L(A).any();
+        if (A->getType()->isPointerTy())
+          for (ObjectId o : objectsOf(P(A)))
+            anyQ = anyQ || st.objects[o].mayHoldHandle();
+      }
+      if (anyQ) {
+        if (rn)
+          setL(&CB, allLanes(rn));
+        cur->anyQuantum = true;
+        cur->hasEffect = true;   // opaque, as a declared clone (analyze)
+      }
+      return;
+    }
     SmallVector<SpecState *, 4> all;
     bool calleeQ = L(Callee).any();
     collect = &all;

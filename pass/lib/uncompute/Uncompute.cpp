@@ -224,6 +224,19 @@ using namespace llvm;
 namespace cq {
 
 namespace {
+// cq-sd95 (CR rules 19, 27; §1.3 clone_resolve): a call through the pointer cqrt_clone_resolve(fp, kind) returned:
+// a declared clone without a symbol. Its twin is cqrt_clone_resolve(fp, 2) called with the twin's arguments.
+const CallInst *resolvedBy(const CallInst *fwd) {
+  if (!fwd || fwd->getCalledFunction())
+    return nullptr;
+  auto *rc = dyn_cast<CallInst>(fwd->getCalledOperand());
+  const Function *rf = rc ? rc->getCalledFunction() : nullptr;
+  return rf && rf->getName() == "cqrt_clone_resolve" && rc->arg_size() == 2 ? rc : nullptr;
+}
+bool directOrResolved(const CallInst *fwd) { return fwd && (fwd->getCalledFunction() || resolvedBy(fwd)); }
+} // namespace
+
+namespace {
 
 constexpr unsigned kNone = ~0u;
 
@@ -758,7 +771,7 @@ struct Uncompute::Impl {
   }
 
   void checkOps(CallInst *fwd, ArrayRef<Operand> ops, const char *who) {
-    if (!fwd || !fwd->getCalledFunction())
+    if (!directOrResolved(fwd))
       internalError(std::string("uncompute: ") + who + ": the forward must be a direct call", fwd);
     if (ops.size() != fwd->arg_size())
       internalError(std::string("uncompute: ") + who + ": operand list differs from the forward call", fwd);
@@ -1390,7 +1403,9 @@ struct Uncompute::Impl {
   Footprint footprint(const CallInst *fwd) const {
     Footprint fp;
     const Function *cf = fwd->getCalledFunction();
-    if (!cf || isRuntimeName(cf->getName()))
+    if (!cf && !resolvedBy(fwd))
+      return fp;
+    if (cf && isRuntimeName(cf->getName()))
       return fp;
     // A constant global is in no footprint: nothing writes it (a write would be undefined), so the twin reads
     // what the call read (cq-sd95: musl erfl's coefficient tables handed to __polevll).
@@ -1401,9 +1416,9 @@ struct Uncompute::Impl {
     for (const Value *a : fwd->args())
       if (a->getType()->isPointerTy() && !immutable(a))
         fp.objs.push_back({a, 0});
-    const Function *src = cloneSource(*cf);
+    const Function *src = cf ? cloneSource(*cf) : nullptr;
     if (!src)
-      return fp;   // a declared clone of an LLVM math intrinsic (no C body): its pointer arguments only
+      return fp;   // a resolved callee (rule 27), or a declared clone of an LLVM math intrinsic (no C body): its pointer arguments only
     const MemSummary &S = summaryOf(src);
     for (const GlobalVariable *g : S.globals)
       if (!g->isConstant())
@@ -2002,15 +2017,23 @@ struct Uncompute::Impl {
   }
 
   // name_unc spelled from the forward call (CR §1.2, §1.3): (out, args...) or (args...).
-  static FunctionCallee uncOf(CallInst *fwd, bool outFirst) {
-    Function *callee = fwd->getCalledFunction();
+  FunctionCallee uncOf(CallInst *fwd, bool outFirst, IRBuilder<> &B) {
     SmallVector<Type *, 6> ps;
     if (outFirst)
       ps.push_back(Type::getInt32Ty(fwd->getContext()));
-    for (Type *t : callee->getFunctionType()->params())
+    for (Type *t : fwd->getFunctionType()->params())
       ps.push_back(t);
     FunctionType *FT = FunctionType::get(Type::getVoidTy(fwd->getContext()), ps, false);
-    return declareFn(*fwd->getModule(), (callee->getName() + "_unc").str(), FT, fwd);
+    return twinOf(fwd, FT, B);
+  }
+  // The twin <callee>_unc of FT; a resolved forward's twin is the registered _unc (kind 2) of the same pointer.
+  FunctionCallee twinOf(CallInst *fwd, FunctionType *FT, IRBuilder<> &B) {
+    if (const CallInst *rc = resolvedBy(fwd)) {
+      Value *u = track(B.CreateCall(rc->getFunctionType(), rc->getCalledOperand(),
+                                    {rc->getArgOperand(0), B.getInt32(2)}));
+      return {FT, u};
+    }
+    return declareFn(*fwd->getModule(), (fwd->getCalledFunction()->getName() + "_unc").str(), FT, fwd);
   }
 
   static SmallVector<Value *, 6> argsOf(CallInst *fwd, Value *outFirst) {
@@ -2210,8 +2233,7 @@ struct Uncompute::Impl {
         args.push_back(cg.extra[k]);
       }
       FunctionType *TT = FunctionType::get(Type::getVoidTy(C), ps, false);
-      CallInst *twin = track(B.CreateCall(declareFn(M, (fwd->getCalledFunction()->getName() + "_unc").str(), TT, fwd),
-                                          args));
+      CallInst *twin = track(B.CreateCall(twinOf(fwd, TT, B), args));
       if (cg.declared)
         return twin;   // U7: the cells' rails are the clone's (the twin restores them) or the caller's own
       FunctionType *FT = FunctionType::get(Type::getVoidTy(C), {Type::getInt32Ty(C)}, false);
@@ -2233,7 +2255,7 @@ struct Uncompute::Impl {
           args.push_back(o.v);
         return track(B.CreateCall(abi::declare(*B.GetInsertBlock()->getModule(), spec), args));
       }
-      return track(B.CreateCall(uncOf(fwd, false), argsOf(fwd, nullptr)));
+      return track(B.CreateCall(uncOf(fwd, false, B), argsOf(fwd, nullptr)));
     }
     if (r.cleanup && !r.cleanup->unbuilt.empty())
       unimplemented(r.cleanup->unbuilt, r.cleanup->unbuiltAt);
@@ -2278,7 +2300,7 @@ struct Uncompute::Impl {
         switch (info[*it].kind) {
         case RecKind::Template:
         case RecKind::QramLoad:
-          track(B.CreateCall(uncOf(fwd, true), argsOf(fwd, fwd)));
+          track(B.CreateCall(uncOf(fwd, true, B), argsOf(fwd, fwd)));
           break;
         case RecKind::Involution:
           track(B.CreateCall(fwd->getFunctionType(), fwd->getCalledOperand(), argsOf(fwd, nullptr)));
@@ -2868,7 +2890,7 @@ struct Uncompute::Impl {
       return track(B.CreateCall(abi::declare(*B.GetInsertBlock()->getModule(), spec), args));
     }
     if (undo && info[w].kind == RecKind::QramStore)
-      return track(B.CreateCall(uncOf(fwd, false), argsOf(fwd, nullptr)));
+      return track(B.CreateCall(uncOf(fwd, false, B), argsOf(fwd, nullptr)));
     return track(B.CreateCall(fwd->getFunctionType(), fwd->getCalledOperand(), argsOf(fwd, nullptr)));
   }
 
@@ -3880,7 +3902,7 @@ RailId Uncompute::recordCellLoad(Instruction *load, ArrayRef<RailId> mayName) {
 SmallVector<RailId, 4> Uncompute::recordCall(CallInst *fwd, ArrayRef<Value *> outs, ArrayRef<Value *> slotOuts,
                                              ArrayRef<Operand> extra) {
   Impl &I = *impl;
-  if (!fwd || !fwd->getCalledFunction() || !fwd->getParent())
+  if (!directOrResolved(fwd) || !fwd->getParent())
     internalError("uncompute: recordCall: the forward must be a direct call in a block", fwd);
   if (outs.empty() && slotOuts.empty())
     internalError("uncompute: recordCall: a call with no result rail", fwd);
@@ -3963,7 +3985,7 @@ void Uncompute::noteCallExtraFirst(CallInst *fwd, unsigned n) {
 
 RailId Uncompute::recordDeclaredWrites(CallInst *fwd, ArrayRef<Operand> extra) {
   Impl &I = *impl;
-  if (!fwd || !fwd->getCalledFunction() || !fwd->getParent() || !fwd->getType()->isVoidTy())
+  if (!directOrResolved(fwd) || !fwd->getParent() || !fwd->getType()->isVoidTy())
     internalError("uncompute: recordDeclaredWrites: the forward must be a void direct call in a block", fwd);
   if (!I.openStack.empty())
     unimplemented("uncompute: a declared clone that may write caller cells inside an open scope (a classically "

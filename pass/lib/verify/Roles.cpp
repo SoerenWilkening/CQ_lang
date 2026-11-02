@@ -181,6 +181,14 @@ void coreRoles(Sig &S, const CallBase &CB) {
   case Core::InvertEnd:
     S.res = Res::None;   // rule 17: events of the host execution, no rail
     break;
+  case Core::CloneRegister:   // CR §1.3 (rule 27): a symbol table of host addresses, no rail
+    R.append({Role::Classical, Role::Classical, Role::Classical, Role::Classical});
+    S.res = Res::None;
+    break;
+  case Core::CloneResolve:
+    R.append({Role::Classical, Role::Classical});
+    S.res = Res::Word;
+    break;
   }
   (void)CB;
 }

@@ -976,15 +976,35 @@ Value *declaredK(LoweringContext &ctx, const Function &F, const Value *at) {
   return ConstantInt::get(Type::getInt32Ty(ctx.M.getContext()), K);
 }
 
+// Rule 27 Cutoff for a callee known only by its host address (cq-sd95): no name, so neither a per-function flag
+// nor a CQ_K line names it; the global flag, else the default (§0).
+Value *resolvedK(LoweringContext &ctx) {
+  Function *tmp = Function::Create(FunctionType::get(Type::getVoidTy(ctx.M.getContext()), false),
+                                   GlobalValue::ExternalLinkage, "", &ctx.M);
+  unsigned K = ctx.K(*tmp);
+  tmp->eraseFromParent();
+  return ConstantInt::get(Type::getInt32Ty(ctx.M.getContext()), K);
+}
+
+// CR §1.3 clone_resolve(fp, kind): the registered clone of the function at host address fp (0 forward, 1 _ctl).
+Value *resolveClone(LoweringContext &ctx, Value *fp, unsigned kind) {
+  return ctx.B().CreateCall(abi::declare(ctx.M, abi::CoreSpec{abi::Core::CloneResolve}),
+                            {fp, ctx.B().getInt32(kind)});
+}
+
 // The declared clone of F for CB (rule 27): declared here, called at the builder.
 // fields: when given, the result's fields (handles) are returned there and CB is not bound (an arm of an
 // indirect call, rule 19: the caller merges them); otherwise CB is bound.
-CallInst *emitDeclaredCall(LoweringContext &ctx, CallBase &CB, Function &F, StringRef mask, Value *flag,
-                           SmallVectorImpl<Operand> *fields = nullptr) {
+// resolved (cq-sd95, rules 19, 27): CB calls through this classical pointer with no in-module candidate; the
+// callee is the registered all-handles clone clone_resolve(fp, kind) (§1.3), F is null.
+CallInst *emitDeclaredCall(LoweringContext &ctx, CallBase &CB, Function *Fp, StringRef mask, Value *flag,
+                           SmallVectorImpl<Operand> *fields = nullptr, Value *resolved = nullptr) {
+  if (!Fp == !resolved)
+    internalError("calls: emitDeclaredCall needs exactly one of a declared callee and a resolved pointer", &CB);
   LLVMContext &C = ctx.M.getContext();
   // CR §1.4: a variadic clone is specialised per call-site arity: the declared clone's formals are the
   // call's actuals (fixed and variadic alike, one digit each), its type the actuals' (rule 27 Name).
-  if (!F.getFunctionType()->isVarArg() && F.arg_size() != CB.arg_size())
+  if (Fp && !Fp->getFunctionType()->isVarArg() && Fp->arg_size() != CB.arg_size())
     internalError("calls: a declared callee called with another argument count", &CB);
   bool ctl = flag != nullptr;
   SmallVector<Value *, 8> args;
@@ -994,7 +1014,7 @@ CallInst *emitDeclaredCall(LoweringContext &ctx, CallBase &CB, Function &F, Stri
     ops.push_back(Operand{flag, true});
   }
   appendActuals(ctx, CB, mask, args, ops);
-  Value *K = declaredK(ctx, F, &CB);
+  Value *K = Fp ? declaredK(ctx, *Fp, &CB) : resolvedK(ctx);
   args.push_back(K);
   ops.push_back(Operand{K, false});
   // Rule 27 Results: every result a handle, an i32 per scalar; an aggregate or vector result is the literal
@@ -1019,15 +1039,20 @@ CallInst *emitDeclaredCall(LoweringContext &ctx, CallBase &CB, Function &F, Stri
   SmallVector<Type *, 8> ps;
   for (Value *a : args)
     ps.push_back(a->getType());
-  abi::CloneSpec cs{calleeName(F, &CB), mask.str(), {}, ctl, false, 0, false};
-  std::string name = checkedName(cs, &CB);
   FunctionType *FT = FunctionType::get(rt, ps, false);
-  Function *D = ctx.M.getFunction(name);
-  if (D && D->getFunctionType() != FT)
-    internalError("calls: declared clone @" + name + " exists with another type", &CB);
-  if (!D)
-    D = Function::Create(FT, GlobalValue::ExternalLinkage, name, ctx.M);
-  CallInst *call = ctx.B().CreateCall(D, args);   // C calling convention (rule 27)
+  CallInst *call;
+  if (resolved) {
+    call = ctx.B().CreateCall(FT, resolveClone(ctx, resolved, ctl ? 1 : 0), args);   // C calling convention
+  } else {
+    abi::CloneSpec cs{calleeName(*Fp, &CB), mask.str(), {}, ctl, false, 0, false};
+    std::string name = checkedName(cs, &CB);
+    Function *D = ctx.M.getFunction(name);
+    if (D && D->getFunctionType() != FT)
+      internalError("calls: declared clone @" + name + " exists with another type", &CB);
+    if (!D)
+      D = Function::Create(FT, GlobalValue::ExternalLinkage, name, ctx.M);
+    call = ctx.B().CreateCall(D, args);   // C calling convention (rule 27)
+  }
   if (!leaves.empty()) {
     // The fields, undone together by the twin <clone>_unc(outs..., args..., K) (U2).
     SmallVector<Operand, 4> fops;
@@ -2051,7 +2076,7 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
   }
   if (cs->F->isDeclaration()) {
     Value *flag = !ctx.currentPredicate().isTop() || ctx.S.ctl ? ctlFlag(ctx, CB) : nullptr;
-    emitDeclaredCall(ctx, CB, *cs->F, cs->mask, flag);
+    emitDeclaredCall(ctx, CB, cs->F, cs->mask, flag);
     return;
   }
   CloneCall r = emitCloneCall(ctx, CB, *cs, nullptr);
@@ -2090,7 +2115,9 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
 // the clone may have written (Uncompute U7 over mem-slots' later cell reads), before the items of the rails
 // the cells held (the call's footprint). One such pointer; a result, a _ctl call, an object digit 0 and a
 // quantum or multi-object pointer are unimplemented.
-void lowerDeclaredPointers(LoweringContext &ctx, CallBase &CB, Function &F) {
+// resolved (cq-sd95): the callee is the registered all-handles clone at that host address (rules 19, 27): every
+// digit 1, the triple's tag and idx crossing as seed rails; F is null.
+void lowerDeclaredPointers(LoweringContext &ctx, CallBase &CB, Function *F, Value *resolved = nullptr) {
   LLVMContext &C = ctx.M.getContext();
   if (!CB.getType()->isVoidTy())
     unimplemented("calls: a declared clone with a pointer argument and a result (rule 27: the result's twin and the "
@@ -2119,8 +2146,14 @@ void lowerDeclaredPointers(LoweringContext &ctx, CallBase &CB, Function &F) {
       t = fatptr::passAcrossCall(ctx, a);
       if (!t.cellCount)
         internalError("calls: passAcrossCall gave no cell count for a slot object", &CB);
-      args.append({t.object, t.tag, t.idx, t.cellCount});
-      mask += "001";
+      if (resolved) {
+        args.append({t.object, seedActual(ctx, Operand{t.tag, false}).v, seedActual(ctx, Operand{t.idx, false}).v,
+                     t.cellCount});
+        mask += "111";
+      } else {
+        args.append({t.object, t.tag, t.idx, t.cellCount});
+        mask += "001";
+      }
       continue;
     }
     // A scalar is one field, an aggregate or vector one per scalar leaf (CR §1.4, rules 25, 26).
@@ -2131,7 +2164,7 @@ void lowerDeclaredPointers(LoweringContext &ctx, CallBase &CB, Function &F) {
       internalError("calls: taint's field mask of an actual has another field count than the actual", &CB);
     for (unsigned k = 0; k < fields.size(); ++k) {
       Operand o = fields[k];
-      if (q[k])
+      if (q[k] || resolved)
         o = seedActual(ctx, o);
       else if (o.handle)
         internalError("calls: a rail where taint says the actual is classical", &CB);
@@ -2141,7 +2174,7 @@ void lowerDeclaredPointers(LoweringContext &ctx, CallBase &CB, Function &F) {
   }
   if (ptrArg < 0)
     internalError("calls: lowerDeclaredPointers of a call without a pointer argument", &CB);
-  args.push_back(declaredK(ctx, F, &CB));
+  args.push_back(F ? declaredK(ctx, *F, &CB) : resolvedK(ctx));
   // The snapshot: the object's cells as handle numbers, a classical copy.
   uint64_t n = cast<ConstantInt>(t.cellCount)->getZExtValue();
   IRBuilder<> EB(&*ctx.out().getEntryBlock().getFirstInsertionPt());
@@ -2151,15 +2184,20 @@ void lowerDeclaredPointers(LoweringContext &ctx, CallBase &CB, Function &F) {
   SmallVector<Type *, 8> ps;
   for (Value *a : args)
     ps.push_back(a->getType());
-  abi::CloneSpec cs{calleeName(F, &CB), mask, {}, false, false, 0, false};
-  std::string name = checkedName(cs, &CB);
   FunctionType *FT = FunctionType::get(Type::getVoidTy(C), ps, false);
-  Function *D = ctx.M.getFunction(name);
-  if (D && D->getFunctionType() != FT)
-    internalError("calls: declared clone @" + name + " exists with another type", &CB);
-  if (!D)
-    D = Function::Create(FT, GlobalValue::ExternalLinkage, name, ctx.M);
-  CallInst *call = ctx.B().CreateCall(D, args);   // C calling convention (rule 27)
+  CallInst *call;
+  if (resolved) {
+    call = ctx.B().CreateCall(FT, resolveClone(ctx, resolved, 0), args);   // C calling convention (rule 27)
+  } else {
+    abi::CloneSpec cs{calleeName(*F, &CB), mask, {}, false, false, 0, false};
+    std::string name = checkedName(cs, &CB);
+    Function *D = ctx.M.getFunction(name);
+    if (D && D->getFunctionType() != FT)
+      internalError("calls: declared clone @" + name + " exists with another type", &CB);
+    if (!D)
+      D = Function::Create(FT, GlobalValue::ExternalLinkage, name, ctx.M);
+    call = ctx.B().CreateCall(D, args);   // C calling convention (rule 27)
+  }
   SmallVector<RailId, 8> reads;
   for (const Operand &o : cells.atCall)
     if (o.handle && !is_contained(reads, ctx.unc().idOf(o.v)))
@@ -2175,7 +2213,7 @@ void lowerDeclared(LoweringContext &ctx, CallBase &CB) {
   if (!F || !F->isDeclaration())
     internalError("calls: lowerDeclared of a call that is not a direct call of a declaration", &CB);
   if (any_of(CB.args(), [](const Use &u) { return u->getType()->isPointerTy(); }))
-    return lowerDeclaredPointers(ctx, CB, *F);
+    return lowerDeclaredPointers(ctx, CB, F);
   // Rule 27: "a call with no quantum argument stays the ordinary call"; the name's mask is the
   // call site's (CR §1.4 with no _b bounds).
   bool anyQ = false;
@@ -2185,7 +2223,7 @@ void lowerDeclared(LoweringContext &ctx, CallBase &CB) {
     return ordinaryCall(ctx, CB);
   std::string mask = siteMask(ctx, CB);
   Value *flag = !ctx.currentPredicate().isTop() || ctx.S.ctl ? ctlFlag(ctx, CB) : nullptr;
-  emitDeclaredCall(ctx, CB, *F, mask, flag);
+  emitDeclaredCall(ctx, CB, F, mask, flag);
 }
 
 // Does F (or a defined callee of it) have a non-pure gate (CR rule 19: a rotation, a phase, a store,
@@ -2269,7 +2307,7 @@ SmallVector<Operand, 4> emitCandidate(LoweringContext &ctx, CallBase &CB, Functi
       unimplemented("calls: a body-less candidate of an indirect call with a pointer argument (rule 27 Pointers in "
                     "rule 19's arms: the snapshot per arm)",
                     &CB);
-    emitDeclaredCall(ctx, CB, G, siteMask(ctx, CB), flag, &fields);
+    emitDeclaredCall(ctx, CB, &G, siteMask(ctx, CB), flag, &fields);
     return fields;
   }
   if (s->ctl && !flag)
@@ -2459,6 +2497,25 @@ void lowerQromIndirect(LoweringContext &ctx, CallBase &CB, Operand tag) {
   bindMerged(ctx, CB, merged);
 }
 
+// CR rules 19, 27 (cq-sd95): a call through a classical pointer with NO in-module candidate denotes a function outside
+// the program; with a quantum argument (or under a quantum predicate) it is rule 27's declared-clone call of the
+// function's registered ALL-HANDLES clone, clone_resolve(fp, 0), or its _ctl, clone_resolve(fp, 1), under a
+// quantum predicate: every field a handle (a classical actual a seed rail, rule 7), K trailing (the global K: the
+// callee has no name here); its twin is clone_resolve(fp, 2) (Uncompute). With no quantum argument outside a
+// quantum predicate it stays the ordinary call.
+void lowerResolved(LoweringContext &ctx, CallBase &CB, Value *fp, bool underQ) {
+  bool anyQ = false;
+  for (const Use &u : CB.args())
+    anyQ |= ctx.T.isQuantum(u.get(), ctx.S);
+  if (!anyQ && !underQ)
+    return ordinaryCall(ctx, CB);
+  if (any_of(CB.args(), [](const Use &u) { return u->getType()->isPointerTy(); }))
+    return lowerDeclaredPointers(ctx, CB, nullptr, fp);
+  std::string mask(siteMask(ctx, CB).size(), '1');
+  Value *flag = underQ ? ctlFlag(ctx, CB) : nullptr;
+  emitDeclaredCall(ctx, CB, nullptr, mask, flag, nullptr, fp);
+}
+
 // CR rule 19: a call through a classical function pointer dispatches over the static callee set (taint's
 // candidates: the pointer's provenance, else every address-taken function of the call's type): a classical
 // chain of pointer-equality tests, each arm calling its candidate as a direct call would (its clone, its _ctl
@@ -2477,11 +2534,9 @@ void lowerIndirect(LoweringContext &ctx, CallBase &CB) {
                   "loaded at a quantum index (a select or merge of function pointers on quantum data)\"",
                   &CB);
   auto cands = ctx.T.calleeCandidates(CB, ctx.S);
-  if (cands.empty())
-    unimplemented("calls: awaiting owner ruling: SPEC_ISSUES \"rule 19: a quantum call through a function pointer "
-                  "whose static callee set is empty (only functions outside the module)\"",
-                  &CB);
   bool underQ = !ctx.currentPredicate().isTop() || ctx.S.ctl;
+  if (cands.empty())
+    return lowerResolved(ctx, CB, fp.v, underQ);
   // The flag dominates every arm: computed once, before the dispatch.
   Value *flag = underQ ? ctlFlag(ctx, CB) : nullptr;
   // E1 (82) in rule 19's arms: when a candidate carries the environment, the caller's flags rail (made here,
