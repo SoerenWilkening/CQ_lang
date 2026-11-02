@@ -71,6 +71,13 @@ public:
   // clone returned after its results; its twin takes them first: <callee>_unc(those n..., outs..., fwd
   // args..., the other extra...).
   void noteCallExtraFirst(llvm::CallInst *fwd, unsigned n);
+  // cq-05pa (CR rules 18, 20; cq-e5lj): slotOut (a handle the caller loads from a cell right after a clone call,
+  // before recordCall registers it) names a cell whose content is the program's visible result at exit (a
+  // global slot cell): recordCall gives it Role::Output. When its call group also has a dead member (the twin
+  // runs), flushAtExit copies it out (rule 18 twin point: cqrt_alloc_<w>(0), cqrt_copy_<w>) and stores the
+  // copy back into the cell right after the copy, a write into the call's footprint before its twin (swapped
+  // around the twin), so the copy is what the cell holds after it.
+  void noteKeptCell(llvm::LoadInst *slotOut, RailType w);
   // U4 (cq-arch 2026-11-01, CR rule 5): rails in caller cells a clone call reads (its twin
   // recompute-reads them): the call group's item reads them, so their own items follow it.
   void noteCallReads(llvm::CallInst *fwd, llvm::ArrayRef<RailId> rails);

@@ -2829,7 +2829,9 @@ void ensureGlobalSlotSeeds(LoweringContext &ctx, const ObjInfo &info, const Glob
                   &at);
   const DataLayout &DL = M.getDataLayout();
   if (!gv.hasInitializer() || gv.isExternallyInitialized())
-    internalError("mem-slots: a global slot object read from outside with no initializer of its own", &at);
+    unimplemented("mem-slots: a global slot object with no definition in the module (the host's cells) read "
+                  "before any store of the program (rule 20: its handles at program start)",
+                  &at);
   uint64_t total = DL.getTypeAllocSize(gv.getValueType()).getFixedValue();
   uint64_t cb = info.cellBytes;
   if (cb < 4)
@@ -6540,8 +6542,10 @@ CloneArg cloneArg(LoweringContext &ctx, FnState &st, const CallBase &orig, unsig
     return r;
   if (info.view || info.boolCells)
     unimplemented("mem-slots: a bit-view or _Bool slot object handed to a clone that writes it", &orig);
-  if (info.kind != RootKind::Local && info.kind != RootKind::Heap)
-    unimplemented("mem-slots: a parameter or global slot object handed to a clone that writes it", &orig);
+  if (info.kind == RootKind::Param)
+    unimplemented("mem-slots: a parameter slot object handed to a clone that writes it (cq-ysj1: the clone's own "
+                  "slot result for the caller's cell, before the inner call's twin)",
+                  &orig);
   if (info.escaping)
     unimplemented("mem-slots: a slot object whose pointer escapes handed to a clone that writes it", &orig);
   if (info.record ? a.off != 0 : a.off % int64_t(info.cellBytes))
@@ -6570,6 +6574,22 @@ bool anyWriteReaches(LoweringContext &ctx, FnState &st, const Site &s, const Ins
       continue;
     (void)DL;
     if (isPotentiallyReachable(&X, &I, nullptr, st.DT.get()))
+      return true;
+  }
+  return false;
+}
+
+// Some write of this function into a cell that may be s's may run after I (I itself on a cycle included).
+bool writeAfter(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &I) {
+  uint64_t size = cellSizeAt(*s.info, s.a.off, ctx.M.getDataLayout());
+  for (const Instruction &X : instructions(*st.F)) {
+    if (!(isa<StoreInst>(X) || isRMW(&X) || isa<CallBase>(X)))
+      continue;
+    if (auto *II = dyn_cast<IntrinsicInst>(&X); II && II->isLifetimeStartOrEnd())
+      continue;
+    if (!mayWrite(ctx, *s.info, s.o, X, s.a, size))
+      continue;
+    if (&X == &I ? reachesItself(I, st.DT.get()) : isPotentiallyReachable(&I, &X, nullptr, st.DT.get()))
       return true;
   }
   return false;
@@ -6729,10 +6749,13 @@ SmallVector<Value *, 4> slotCellsBeforeCall(LoweringContext &ctx, const CallBase
       continue;
     }
     Type *ty = cs.info->record ? cs.info->fields[c].ty : cs.info->cellTy;
-    if (!sourceOf(ctx, st, *cs.info, cs.o, &orig, cs.a, ty) && !anyWriteReaches(ctx, st, cs, orig)) {
+    if (cs.info->kind != RootKind::Global && !sourceOf(ctx, st, *cs.info, cs.o, &orig, cs.a, ty) &&
+        !anyWriteReaches(ctx, st, cs, orig)) {
       out.push_back(PoisonValue::get(i32));   // never written: the twin restores nothing defined (31, 52, 163)
       continue;
     }
+    // A global slot cell holds a handle from program start (rule 20, cq-e5lj): with no write of this function
+    // reaching the call, readCell reads its current handle.
     Operand v = readCell(ctx, st, cs, orig, ty);
     if (!v.handle)
       internalError("mem-slots: a cell a clone writes holds a classical value before the call", &orig);
@@ -6797,6 +6820,11 @@ SmallVector<Value *, 4> slotCellsAfterCall(LoweringContext &ctx, const CallBase 
     LoadInst *h = B.CreateAlignedLoad(handleTy(ctx.M.getContext()), cellPointer(ctx, cs, orig), Align(4));
     st.callOut[&orig][cs.a.off] = Operand{h, true};
     out.push_back(h);
+    // CR rule 20 (cq-e5lj): a global slot cell's content at exit is the program's visible result. When no later
+    // write of this function may replace the clone's handle, it is kept (rule 18 twin point: copied out and
+    // stored back before the twin when the call has one, Uncompute::noteKeptCell).
+    if (cs.info->kind == RootKind::Global && !writeAfter(ctx, st, cs, orig))
+      ctx.unc().noteKeptCell(h, cellRail(*cs.info, cs.info->record ? cs.info->fields[c].ty : cs.info->cellTy, orig));
   }
   return out;
 }

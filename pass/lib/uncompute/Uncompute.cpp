@@ -2715,6 +2715,9 @@ struct Uncompute::Impl {
       internalError("uncompute: a kept clone result that is not an instruction in a block", fwd);
     Module &M = *fwd->getModule();
     std::optional<RailType> wo = handleWidth(h);
+    auto kc = keptCells.find(h);
+    if (!wo && kc != keptCells.end())
+      wo = kc->second;
     if (!wo)
       internalError("uncompute: a kept clone result whose width no gate, template or copy reading it names", fwd);
     RailType w = *wo;
@@ -2723,6 +2726,10 @@ struct Uncompute::Impl {
                                      {Constant::getNullValue(irTypeOf(M.getContext(), w))}));
     CallInst *cp = track(B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Copy, w}), {h, c}));
     h->replaceUsesWithIf(c, [&](Use &u) { return u.getUser() != cp; });
+    if (kc != keptCells.end())
+      // noteKeptCell: the copy continues as the cell's content. Not tracked: it is a write into the call's
+      // footprint before the twin, which the twin's placement swaps around (pointeeWrites, swapsOf).
+      B.CreateAlignedStore(c, cast<LoadInst>(h)->getPointerOperand(), cast<LoadInst>(h)->getAlign());
     Role role = rails[m].role;
     RailId cid = newRail(c, role, "copyOutResult"); // may move rails: indices only from here
     Rail &rm = rails[m], &rc = rails[cid];
@@ -2945,6 +2952,8 @@ struct Uncompute::Impl {
     return a;
   }
   DenseMap<std::pair<CallInst *, Value *>, Value *> snaps;
+  // cq-05pa (noteKeptCell): slot outs whose cell is visible at exit, with the cell's rail type.
+  DenseMap<const Value *, RailType> keptCells;
   Value *swapIn(CallInst *fwd, Value *obj, IRBuilder<> &B) {
     Function &F = *fwd->getFunction();
     uint64_t n = objectSize(obj);
@@ -3968,7 +3977,16 @@ SmallVector<RailId, 4> Uncompute::recordCall(CallInst *fwd, ArrayRef<Value *> ou
   cg.members.assign(ids.begin(), ids.end());
   cg.outs.assign(ids.begin(), ids.begin() + outs.size());
   cg.slotOuts.assign(ids.begin() + outs.size(), ids.end());
+  for (size_t k = outs.size(); k < all.size(); ++k)
+    if (I.keptCells.count(all[k]))
+      setRole(ids[k], Role::Output);   // noteKeptCell
   return ids;
+}
+
+void Uncompute::noteKeptCell(LoadInst *slotOut, RailType w) {
+  if (!slotOut || !slotOut->getParent())
+    internalError("uncompute: noteKeptCell of a slot out that is not a load in a block", slotOut);
+  impl->keptCells[slotOut] = w;
 }
 
 void Uncompute::noteCallExtraFirst(CallInst *fwd, unsigned n) {
@@ -4383,7 +4401,6 @@ void Uncompute::resolveAt(Instruction *P, ArrayRef<RailId> list) {
 }
 
 void Uncompute::flushAtExit(ReturnInst *ret) {
-  impl->pruneCleanups();
   if (!ret || !ret->getParent())
     internalError("uncompute: flushAtExit needs a return in a block");
   Impl &I = *impl;
@@ -4439,6 +4456,9 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
       if (Impl::keptRole(I.rails[m].role))
         I.rails[m].role = Role::Garbage;
   }
+  // After the twin-point copies: a member they made garbage again prunes the clean-ups whose old content its
+  // twin reads (cq-05pa).
+  impl->pruneCleanups();
   Impl::Ctx c{Impl::Mode::Exit, ret, nullptr};
   BasicBlock *Rb = ret->getParent();
   SmallVector<RailId, 16> cands, defc;
