@@ -48,6 +48,8 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/FixIrreducible.h"
+#include "llvm/Transforms/Utils/Cloning.h"
+#include "llvm/IR/DataLayout.h"
 
 using namespace llvm;
 
@@ -115,6 +117,117 @@ cq::TaintOptions readTaintOptions() {
     TO.roots.push_back(std::move(*spec));
   }
   return TO;
+}
+
+// CR rule 18 (twin point; cq-aqk1, cq-366o): a call handing one pointer to several pointer formals of a callee
+// that writes through one of them (musl's sincos(x, buf, buf), f(x, &s, &s)). In C the formals are then one
+// pointer: every store through one is seen by every load through another, in program order. The call becomes a
+// call of the callee's alias variant, `<callee>.cq.alias.<i>to<j>…`, whose body names formal j by formal i (j
+// dropped from its formal list): the same C function on the same arguments, so the same semantics, and its one
+// route per caller cell is what rule 18's clone construction and its twin (which restores each cell through the
+// formal that wrote it) assume. A semantics-preserving rewrite before the final taint, like fix-irreducible; on
+// calls in tainted functions to tainted callees with a body only. Returns the variants made.
+SmallVector<Function *, 4> mergeAliasedPointerArgs(Module &M, const cq::TaintInfo &T,
+                                                   ArrayRef<Function *> tainted) {
+  SmallVector<Function *, 4> made;
+  const DataLayout &DL = M.getDataLayout();
+  auto same = [&](Value *a, Value *b) {
+    if (a == b)
+      return true;
+    APInt oa(DL.getIndexTypeSizeInBits(a->getType()), 0), ob(DL.getIndexTypeSizeInBits(b->getType()), 0);
+    const Value *ba = a->stripAndAccumulateConstantOffsets(DL, oa, /*AllowNonInbounds=*/true);
+    const Value *bb = b->stripAndAccumulateConstantOffsets(DL, ob, /*AllowNonInbounds=*/true);
+    return ba == bb && oa == ob;
+  };
+  for (Function *F : tainted) {
+    SmallVector<CallInst *, 4> calls;
+    for (BasicBlock &BB : *F)
+      for (Instruction &I : BB)
+        if (auto *CI = dyn_cast<CallInst>(&I))
+          calls.push_back(CI);
+    for (CallInst *CI : calls) {
+      Function *G = CI->getCalledFunction();
+      if (!G || G->isDeclaration() || G->isVarArg() || G->isIntrinsic() || !T.isTainted(*G) ||
+          CI->arg_size() != G->arg_size() || CI->hasOperandBundles())
+        continue;
+      // to[j] = i < j: formal j is formal i (both actuals the same pointer), the first such i.
+      SmallVector<int, 8> to(G->arg_size(), -1);
+      bool any = false;
+      for (unsigned j = 0; j < G->arg_size(); ++j) {
+        Argument *Aj = G->getArg(j);
+        if (!Aj->getType()->isPointerTy() || Aj->hasByValAttr() || Aj->hasStructRetAttr() || Aj->hasInAllocaAttr())
+          continue;
+        for (unsigned i = 0; i < j; ++i) {
+          Argument *Ai = G->getArg(i);
+          if (to[i] >= 0 || !Ai->getType()->isPointerTy() || Ai->hasByValAttr() || Ai->hasStructRetAttr() ||
+              Ai->hasInAllocaAttr() || !same(CI->getArgOperand(i), CI->getArgOperand(j)))
+            continue;
+          // Only a pair the callee may write through: two read-only routes leave every twin read unchanged.
+          if (Ai->onlyReadsMemory() && Aj->onlyReadsMemory())
+            continue;
+          to[j] = int(i);
+          any = true;
+          break;
+        }
+      }
+      if (!any)
+        continue;
+      std::string name = (G->getName() + ".cq.alias").str();
+      for (unsigned j = 0; j < to.size(); ++j)
+        if (to[j] >= 0)
+          name += "." + std::to_string(to[j]) + "to" + std::to_string(j);
+      Function *V = M.getFunction(name);
+      if (!V) {
+        SmallVector<Type *, 8> ps;
+        for (unsigned k = 0; k < G->arg_size(); ++k)
+          if (to[k] < 0)
+            ps.push_back(G->getArg(k)->getType());
+        FunctionType *FT = FunctionType::get(G->getReturnType(), ps, false);
+        V = Function::Create(FT, GlobalValue::InternalLinkage, name, &M);
+        V->copyAttributesFrom(G);
+        V->setLinkage(GlobalValue::InternalLinkage);
+        V->setVisibility(GlobalValue::DefaultVisibility);
+        ValueToValueMapTy VM;
+        SmallVector<AttributeSet, 8> pa;
+        unsigned n = 0;
+        for (unsigned k = 0; k < G->arg_size(); ++k)
+          if (to[k] < 0) {
+            VM[G->getArg(k)] = V->getArg(n);
+            V->getArg(n)->setName(G->getArg(k)->getName());
+            pa.push_back(G->getAttributes().getParamAttrs(k));
+            ++n;
+          }
+        for (unsigned k = 0; k < G->arg_size(); ++k)
+          if (to[k] >= 0)
+            VM[G->getArg(k)] = VM[G->getArg(unsigned(to[k]))];
+        SmallVector<ReturnInst *, 4> rets;
+        CloneFunctionInto(V, G, VM, CloneFunctionChangeType::LocalChangesOnly, rets);
+        AttributeList GA = G->getAttributes();
+        // noalias on a formal that now stands for two would be a lie; the merged formals keep the rest.
+        for (AttributeSet &as : pa)
+          as = as.removeAttribute(M.getContext(), Attribute::NoAlias);
+        V->setAttributes(AttributeList::get(M.getContext(), GA.getFnAttrs(), GA.getRetAttrs(), pa));
+        made.push_back(V);
+      }
+      SmallVector<Value *, 8> args;
+      SmallVector<AttributeSet, 8> pa;
+      for (unsigned k = 0; k < CI->arg_size(); ++k)
+        if (to[k] < 0) {
+          args.push_back(CI->getArgOperand(k));
+          pa.push_back(CI->getAttributes().getParamAttrs(k).removeAttribute(M.getContext(), Attribute::NoAlias));
+        }
+      CallInst *NC = CallInst::Create(V->getFunctionType(), V, args, "", CI->getIterator());
+      NC->takeName(CI);
+      NC->setTailCallKind(CI->getTailCallKind());
+      NC->setCallingConv(CI->getCallingConv());
+      NC->setDebugLoc(CI->getDebugLoc());
+      AttributeList CA = CI->getAttributes();
+      NC->setAttributes(AttributeList::get(M.getContext(), CA.getFnAttrs(), CA.getRetAttrs(), pa));
+      CI->replaceAllUsesWith(NC);
+      CI->eraseFromParent();
+    }
+  }
+  return made;
 }
 
 // The CQ.h surface: cq_theta_*, cq_measure_*, cq_phi, __cq_invert_begin, __cq_invert_end.
@@ -305,6 +418,15 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
       trace("rule 17 marker paths: changed @" + F->getName());
       CFGChanged = true;
       FAM.invalidate(*F, PreservedAnalyses::none());
+    }
+
+    // 1e. CR rule 18 (cq-aqk1, cq-366o): one pointer handed to two pointer formals of a callee writing through
+    // them is a call of the callee's alias variant. New functions: final-taint input.
+    if (SmallVector<Function *, 4> AV = mergeAliasedPointerArgs(M, T, Tainted); !AV.empty()) {
+      trace("aliased pointer arguments: merged");
+      CFGChanged = true;
+      for (Function *F : AV)
+        Tainted.push_back(F);
     }
 
     // 2. Reducible control flow, on tainted functions only (NORTHSTAR principle 1). The pass

@@ -22,8 +22,6 @@ QRAM_LOOP = "fatal: cq: unimplemented: loops-classical: a store into QRAM memory
 TWIN_STORE = "_unc would replay a store to memory outside the clone's frame"
 TWIN_BARRIER = ("cq: unimplemented: uncompute: a write that may change an object a clone call's pointer argument "
                 "points to")
-TWIN_ALIAS = ("cq: unimplemented: uncompute: a clone call whose twin may read a caller cell the clone writes by "
-              "another route than the writing pointer")
 # §6 samples per probe where the full set takes minutes (cqcheck user --samples): the musl bodies.
 SAMPLES = {"trip_ctl": 64, "clone_cell_seq": 64, "fenv_cells": 64, "fenv_ignore_loop": 64, "store_past_object": 64, "fenv_escape": 64, "fenv_indirect": 64, "libm_musl_acosh": 16, "libm_musl_coshf": 16, "libm_musl_lrint": 16, "libm_musl_llrintl": 16, "twin_strict": 64, "libm_musl_floorfn": 32, "libm_musl_atan": 16, "libm_musl_exp": 16, "libm_musl_log": 16}
 # (probe, entry, opt flags, expectation, regexes the lowered module must contain)
@@ -187,10 +185,13 @@ CASES = [
     ("twin_escaped_write", "ent_b1", [], "fatal: " + TWIN_BARRIER, []),
     ("twin_global_write", "ent_b2", [], "fatal: " + TWIN_BARRIER, []),
     ("twin_loaded_pointer", "ent_b4", [], "fatal: " + TWIN_BARRIER, []),
-    # cq-aqk1: a caller cell the clone writes, read by the twin through another route (aliasing pointer
-    # arguments); distinct cells lower and are §6-equal.
-    ("twin_alias_cell", "ent_c1", [], "fatal: " + TWIN_ALIAS, []),
-    ("twin_alias_cell_rmw", "te3", [], "fatal: " + TWIN_ALIAS, []),
+    # cq-aqk1, cq-366o (rule 18 twin point): one pointer handed to two pointer formals the clone writes through is a
+    # call of the callee's alias variant (one route per caller cell); distinct cells lower and are §6-equal.
+    ("twin_alias_cell", "ent_c1", [], "pass", [r"call fastcc i32 @__cq_q_f\.cq\.alias\.0to1_11\(ptr %\d+, i32 %\d+\)"]),
+    ("twin_alias_cell_rmw", "te3", [], "pass", [r"call fastcc void @__cq_q_f\.cq\.alias\.1to2_11\(i32 %\d+, ptr %\d+\)"]),
+    ("alias_writes", "aw_same", [], "pass", [r"define internal fastcc void @__cq_q_sc\.cq\.alias\.1to2_\d+\("]),
+    ("alias_writes", "aw_rmw", [], "pass", []),
+    ("alias_writes", "aw_buf", [], "pass", []),
     ("twin_distinct_cells", "ent_c2", [], "pass", []),
     # cq-88vg: a measured classical switch phi over a clone's slot outs (52's shape): edge copies; the twin of a
     # clone with a classical result and cell copy-outs.
