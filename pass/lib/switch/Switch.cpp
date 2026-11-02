@@ -56,8 +56,8 @@ EdgePreds switchEdges(const SwitchInst &si, const TaintInfo &T, const Specializa
       cases.push_back({c.getCaseValue()->getValue(), c.getCaseSuccessor()});
   const BasicBlock *def = si.getDefaultDest();
   bool defaultReachable = !isUnreachableBlock(def);
-  if (cases.empty() && !defaultReachable)
-    unimplemented("switch: a quantum switch none of whose destinations is reachable", &si);
+  // With no reachable destination, executing the switch is undefined (LLVM): every edge predicate is
+  // false below, as for any unreachable destination, and nothing is minted.
 
   // Each reachable case's edge condition. With an unreachable default the last reachable case is the
   // complement of the others (no flag of its own).
