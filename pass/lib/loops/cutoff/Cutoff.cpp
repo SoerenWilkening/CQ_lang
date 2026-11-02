@@ -79,18 +79,24 @@ namespace {
 
 // The oracle's header test region (checker/oracle/OracleInstr.cpp, cq-arch T1.2): returns whether a
 // header run can leave through it, and the region's blocks.
+// Only a live exit counts (Exits.h): an edge into an effect-free dead end is never taken (UB to reach,
+// 131's switch default), so a header whose only exit goes there tests nothing.
 bool testRegion(const Loop &L, SmallPtrSetImpl<const BasicBlock *> &region) {
   BasicBlock *H = L.getHeader();
+  exits::Unit U = exits::unitOf(L);
+  auto exiting = [&](const BasicBlock *B) {
+    return any_of(successors(B), [&](const BasicBlock *s) { return !L.contains(s) && is_contained(U.live, s); });
+  };
   bool exits = false;
   SmallVector<BasicBlock *, 4> work{H};
   region.insert(H);
   while (!work.empty()) {
     BasicBlock *B = work.pop_back_val();
-    if (L.isLoopExiting(B))
+    if (exiting(B))
       exits = true;
     for (BasicBlock *S : successors(B)) {
       if (!L.contains(S) || S == H || region.count(S) || S->getSinglePredecessor() != B || L.isLoopLatch(S) ||
-          !L.isLoopExiting(S))
+          !exiting(S))
         continue;
       bool pure = true;
       for (Instruction &I : *S)
@@ -179,20 +185,118 @@ private:
   Value *conj(Value *q, const Pred &p, const Instruction *at) {
     if (p.isBottom())
       internalError("loops-cutoff: a trip predicate conjoined with false", at);
-    Value *f = ctx.preds().flag(ctx, p.quantumPart(ctx.T, ctx.S));
-    if (!p.classicalFactor(ctx.T, ctx.S).isTop())
-      unimplemented("loops-cutoff: a classical condition inside a K-loop trip", at);
+    // The trip is unrolled into straight-line code, so a classical term of p (a classical branch or
+    // switch inside the trip, rules 8 and 13) is no classical branch here: pred's flag synthesis
+    // seeds it from its classical value in this trip (rule 7) and joins it by and_i1/or_i1, as rule 8
+    // does for a classical term it cannot factor out. The conjunction with the trip predicate is
+    // quantum, so the effects under it are the quantum-predicate forms of rules 16 and 19.
+    (void)at;
+    Value *f = ctx.preds().flag(ctx, p);
     if (!f)
       return q;
     return andRail(q, f);
+  }
+
+  // A terminator inside a trip or an exit arm: a br or a switch, on any condition (rules 8, 13).
+  static void checkTerminator(const Instruction *t) {
+    if (isa<BranchInst>(t) || isa<SwitchInst>(t))
+      return;
+    if (isa<CallBrInst>(t))
+      unimplemented("loops-cutoff: asm goto (callbr) inside a rule-14 loop: inline asm with a quantum operand "
+                    "(rule 27) waits for its CQ_spec example (build step 3)",
+                    t);
+    unimplemented("loops-cutoff: awaiting owner ruling: SPEC_ISSUES \"A computed goto or invoke inside a rule-14 "
+                  "loop\"",
+                  t);
+  }
+  // The condition under which a trip goes from p to its successor b (rule 8 atoms for a br, rule 13
+  // case atoms for a switch: a case edge is its value's equality, the default edge the complement of
+  // every case).
+  static Pred tripEdge(const BasicBlock *p, const BasicBlock *b) {
+    const Instruction *t = p->getTerminator();
+    if (auto *br = dyn_cast<BranchInst>(t)) {
+      if (!br->isConditional() || br->getSuccessor(0) == br->getSuccessor(1))
+        return Pred::top();
+      Pred a = Pred::atom(br->getCondition());
+      return br->getSuccessor(0) == b ? a : !a;
+    }
+    if (auto *sw = dyn_cast<SwitchInst>(t)) {
+      Pred e = Pred::bottom(), none = Pred::top();
+      for (auto &c : sw->cases()) {
+        Pred a = Pred::eqAtom(sw->getCondition(), c.getCaseValue()->getValue());
+        none = none & !a;
+        if (c.getCaseSuccessor() == b)
+          e = e | a;
+      }
+      if (sw->getDefaultDest() == b)
+        e = e | none;
+      return e;
+    }
+    checkTerminator(t);
+    internalError("loops-cutoff: a trip edge from a terminator checkTerminator accepted", t);
+  }
+  // The classical part of tripEdge as a classical i1 of the current trip: a quantum condition counts
+  // as true. A classical phi's incoming edge is chosen by classical conditions alone (taint: a phi
+  // whose choice depends on a quantum condition is quantum), so among edges whose classical part
+  // holds, every one carries the merged value.
+  Value *classicalEdge(const BasicBlock *p, const BasicBlock *b) {
+    IRBuilder<> &Bd = ctx.B();
+    LLVMContext &C = ctx.M.getContext();
+    const Instruction *t = p->getTerminator();
+    if (auto *br = dyn_cast<BranchInst>(t)) {
+      if (!br->isConditional() || br->getSuccessor(0) == br->getSuccessor(1) || isQ(br->getCondition()))
+        return ConstantInt::getTrue(C);
+      Value *c = ctx.operand(br->getCondition()).v;
+      return br->getSuccessor(0) == b ? c : Bd.CreateNot(c);
+    }
+    auto *sw = cast<SwitchInst>(t);
+    if (isQ(sw->getCondition()))
+      return ConstantInt::getTrue(C);
+    Value *x = ctx.operand(sw->getCondition()).v;
+    Value *e = ConstantInt::getFalse(C), *none = ConstantInt::getTrue(C);
+    for (auto &c : sw->cases()) {
+      Value *a = Bd.CreateICmpEQ(x, const_cast<ConstantInt *>(c.getCaseValue()));
+      none = Bd.CreateAnd(none, Bd.CreateNot(a));
+      if (c.getCaseSuccessor() == b)
+        e = Bd.CreateOr(e, a);
+    }
+    if (sw->getDefaultDest() == b)
+      e = Bd.CreateOr(e, none);
+    return e;
+  }
+  // A classical select chain over (condition, value): the first arm whose condition holds, the last
+  // arm where none does (rule 9's classical select, ruling 2026-10-27).
+  Value *classicalChain(ArrayRef<std::pair<Value *, Value *>> arms) {
+    if (arms.empty())
+      internalError("loops-cutoff: a classical select chain with no arms");
+    Value *r = arms.back().second;
+    for (size_t i = arms.size() - 1; i-- > 0;)
+      r = ctx.B().CreateSelect(arms[i].first, arms[i].second, r);
+    return r;
   }
 };
 
 void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   BasicBlock *H = L.getHeader();
-  BasicBlock *latch = L.getLoopLatch();
-  if (!latch)
-    unimplemented("loops-cutoff: a K-loop with more than one latch", H->getTerminator());
+  // The latches (rule 14: a `continue` is one more back edge of the same chain). A trip ends on one
+  // back edge or one exit edge; `latch` is the latch the body form's exits leave from (the one live
+  // exiting latch, else the first latch: then the body form does not apply and `multi` is set below).
+  SmallVector<BasicBlock *, 4> latches;
+  L.getLoopLatches(latches);
+  BasicBlock *latch = latches.front();
+  if (latches.size() > 1) {
+    exits::Unit U0 = exits::unitOf(L);
+    BasicBlock *one = nullptr;
+    bool several = false;
+    for (BasicBlock *b : L.blocks())
+      for (BasicBlock *s : successors(b))
+        if (!L.contains(s) && is_contained(U0.live, s)) {
+          several |= one && one != b;
+          one = b;
+        }
+    if (one && !several && is_contained(latches, one))
+      latch = one;
+  }
   BasicBlock *pre = L.getLoopPredecessor();
   if (!pre)
     unimplemented("loops-cutoff: a K-loop header with more than one predecessor outside the loop", H->getTerminator());
@@ -211,19 +315,16 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       unimplemented("loops-cutoff: a sub-loop of a K-loop that is not itself a quantum-exit loop",
                     S->getHeader()->getTerminator());
 
-  // The body: pure instructions, quantum or unconditional branches only.
+  // The body's terminators: every branch and switch of a trip, quantum or classical, is a predicate of
+  // the trip (edgeCond); the trip is straight-line code under those predicates.
+  bool classicalTerms = false;   // a classical branch or switch in a trip
   for (BasicBlock *b : L.blocks()) {
-    for (Instruction &I : *b) {
-      if (isa<PHINode>(I) || isa<DbgInfoIntrinsic>(I))
-        continue;
-      if (auto *br = dyn_cast<BranchInst>(&I)) {
-        if (br->isConditional() && !isQ(br->getCondition()))
-          unimplemented("loops-cutoff: a classical branch inside a K-loop body", br);
-        continue;
-      }
-      if (I.isTerminator())
-        unimplemented("loops-cutoff: a terminator other than br inside a K-loop body", &I);
-    }
+    Instruction *t = b->getTerminator();
+    checkTerminator(t);
+    if (auto *br = dyn_cast<BranchInst>(t); br && br->isConditional() && !isQ(br->getCondition()))
+      classicalTerms = true;
+    if (auto *sw = dyn_cast<SwitchInst>(t); sw && !isQ(sw->getCondition()))
+      classicalTerms = true;
   }
 
   SmallPtrSet<const BasicBlock *, 8> region;
@@ -286,15 +387,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
 
   // Predicates local to one trip (relative to the header), over the body's own branch conditions.
   DenseMap<const BasicBlock *, Pred> local;
-  auto edgeCond = [&](BasicBlock *p, BasicBlock *b) -> Pred {
-    auto *br = dyn_cast<BranchInst>(p->getTerminator());
-    if (!br)
-      unimplemented("loops-cutoff: a K-loop edge from a terminator other than br", p->getTerminator());
-    if (!br->isConditional() || br->getSuccessor(0) == br->getSuccessor(1))
-      return Pred::top();
-    Pred a = Pred::atom(br->getCondition());
-    return br->getSuccessor(0) == b ? a : !a;
-  };
+  auto edgeCond = [&](BasicBlock *p, BasicBlock *b) -> Pred { return tripEdge(p, b); };
   auto contribution = [&](BasicBlock *p, BasicBlock *b) -> Pred {
     if (Loop *S = subLoopOf(p); S && !S->contains(b)) {
       if (S->getUniqueExitBlock() != b)
@@ -321,7 +414,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     }
     local.insert({b, acc});
   }
-  Pred cont = local.find(latch)->second & edgeCond(latch, H);   // body form
+  Pred cont = Pred::bottom();   // body form: some back edge is taken
+  for (BasicBlock *l : latches)
+    cont = cont | (local.find(l)->second & edgeCond(l, H));
   Pred regionCont = Pred::bottom();                               // region form
   if (regionForm)
     for (const BasicBlock *r : region)
@@ -339,6 +434,63 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         return h;
     return nullptr;
   };
+  // CR rule 14 (f981c89): an affine induction with a quantum loop-invariant start (a quantum header
+  // phi whose latch incoming is the phi plus or minus classical invariants, each step in a block that
+  // dominates the latch) is not carried either: in trip j it is ONE template from the start rail and
+  // the classical offset j*step (190: n - j). Only a read after the loop keeps a carried rail, the
+  // exit value, advancing by select on the trip predicate.
+  struct QInduction {
+    Operand start;                                   // the invariant start rail
+    std::vector<std::pair<bool, const Value *>> steps;  // (add?, classical invariant) from the phi out
+    Value *off = nullptr;                            // the classical offset of the current trip
+    std::optional<Operand> exitRail;                 // set when the value is read after the loop
+  };
+  DenseMap<PHINode *, QInduction> qind;
+  DominatorTree &DT = A.DT;
+  for (PHINode *h : hphis) {
+    if (!isQ(h) || !h->getType()->isIntegerTy())
+      continue;
+    Value *st = h->getIncomingValueForBlock(pre);
+    if (auto *SI = dyn_cast<Instruction>(st); SI && L.contains(SI))
+      continue;
+    auto invariant = [&](const Value *X) {
+      if (isa<Constant>(X))
+        return true;
+      auto *XI = dyn_cast<Instruction>(X);
+      return !(XI && L.contains(XI)) && !isQ(X);
+    };
+    std::vector<std::pair<bool, const Value *>> steps;
+    const Value *V = h->getIncomingValueForBlock(latch);
+    // An unconditional step: one next value on every back edge, computed where every latch passes.
+    bool ok = all_of(latches, [&](BasicBlock *l) { return h->getIncomingValueForBlock(l) == V; });
+    auto domAll = [&](const BasicBlock *b) {
+      return all_of(latches, [&](BasicBlock *l) { return DT.dominates(b, l); });
+    };
+    while (ok && V != h) {
+      auto *BO = dyn_cast<BinaryOperator>(V);
+      if (!BO || !L.contains(BO) || !domAll(BO->getParent()) ||
+          (BO->getOpcode() != Instruction::Add && BO->getOpcode() != Instruction::Sub)) {
+        ok = false;
+        break;
+      }
+      if (BO->getOpcode() == Instruction::Add && invariant(BO->getOperand(0)) && !invariant(BO->getOperand(1))) {
+        steps.push_back({true, BO->getOperand(0)});
+        V = BO->getOperand(1);
+      } else if (invariant(BO->getOperand(1))) {
+        steps.push_back({BO->getOpcode() == Instruction::Add, BO->getOperand(1)});
+        V = BO->getOperand(0);
+      } else {
+        ok = false;
+      }
+    }
+    if (!ok || steps.empty())
+      continue;
+    std::reverse(steps.begin(), steps.end());
+    QInduction qi;
+    qi.steps = std::move(steps);
+    qi.off = ConstantInt::get(h->getType(), 0);
+    qind.insert({h, std::move(qi)});
+  }
   std::vector<std::pair<const Value *, PHINode *>> exitRebinds;   // body form: value -> its header phi
   // CR rule 14 (f981c89): an affine induction (a classical header phi, taint) is not carried; when the
   // program reads its exit value after the loop, a rail seeded with the start advances by
@@ -371,10 +523,43 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       return false;
     return true;
   };
+  // GENERAL EXIT CAPTURE. The single-exit forms read an exit value from the final state (body form:
+  // a header phi's latch incoming; region form: the last region evaluation, the state being frozen
+  // once the loop exited). A read they cannot express that way (a body value of a header-tested loop,
+  // a value computed from an induction, whose trip value is not frozen, a classical value other than
+  // an affine induction, several exit edges into one phi) takes the multi-exit form's capture: each
+  // such value is a rail that takes this trip's value where the trip exits (rule 14: the exit value
+  // is quantum, it depends on which trip exited).
+  bool general = false;
+  auto needGeneral = [&](const char *what, const Instruction *at) {
+    if (!top)
+      unimplemented(what, at);
+    general = true;
+  };
+  // A value whose slice inside the loop reaches an induction: its trip value advances after the exit.
+  auto fromInduction = [&](const Instruction *I) {
+    SmallVector<const Value *, 8> work{I};
+    SmallPtrSet<const Value *, 16> seen;
+    while (!work.empty()) {
+      const Value *V = work.pop_back_val();
+      auto *VI = dyn_cast<Instruction>(V);
+      if (!VI || !L.contains(VI) || !seen.insert(V).second)
+        continue;
+      if (auto *h = dyn_cast<PHINode>(VI)) {
+        if (h->getParent() == H && VI != I && (!isQ(h) || qind.count(const_cast<PHINode *>(h))))
+          return true;
+        if (h->getParent() == H)
+          continue;
+      }
+      for (const Use &U : VI->operands())
+        work.push_back(U.get());
+    }
+    return false;
+  };
   for (BasicBlock *b : L.blocks())
     for (Instruction &I : *b) {
-      if (multi)
-        break;   // multi-exit form: read below, through C's phis only
+      if (multi || general)
+        break;   // multi-exit form: read below
       if (tripSite(I) && any_of(I.users(), [&](const User *u) {
             return !L.contains(cast<Instruction>(u)->getParent());
           })) {
@@ -426,18 +611,26 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (!outside)
         continue;
       if (regionForm) {
-        if (!region.count(b))
-          unimplemented("loops-cutoff: a value of a header-tested K-loop's body read after the loop", &I);
+        if (!region.count(b)) {
+          needGeneral("loops-cutoff: a value of a nested header-tested K-loop's body read after the loop", &I);
+          continue;
+        }
         if (!isQ(&I)) {
-          // A classical value is the last region evaluation's, not the exit trip's: only an affine
-          // induction's exit value is built (its exit rail, CR rule 14).
+          // A classical value is the last region evaluation's, not the exit trip's: an affine
+          // induction's exit value is its exit rail (CR rule 14), any other the general capture.
           auto *h = dyn_cast<PHINode>(&I);
-          if (!h || h->getParent() != H || !h->getType()->isIntegerTy())
-            unimplemented("loops-cutoff: a classical value of a K-loop's test region read after the loop that is "
-                          "not an affine induction's exit value",
-                          &I);
+          if (!h || h->getParent() != H || !h->getType()->isIntegerTy()) {
+            needGeneral("loops-cutoff: a classical value of a nested K-loop's test region read after the loop that "
+                        "is not an affine induction's exit value",
+                        &I);
+            continue;
+          }
           exitRail.insert({h, Operand{nullptr, false}});
           exitRebinds.push_back({&I, h});
+        } else if (fromInduction(&I)) {
+          needGeneral("loops-cutoff: a value of a nested K-loop's test region computed from an induction, read "
+                      "after the loop",
+                      &I);
         } else {
           regionQReads.push_back(&I);
         }
@@ -446,12 +639,26 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       PHINode *h = headerPhiWithNext(&I);
       if (h && !isQ(h) && h->getType()->isIntegerTy())
         exitRail.insert({h, Operand{nullptr, false}});   // CR rule 14: an affine induction's exit value
-      if (!h || (!isQ(h) && !exitRail.count(h)))
-        unimplemented("loops-cutoff: a value read after a K-loop that is not the latch incoming of a quantum "
-                      "header phi",
-                      &I);
+      if (!h || (!isQ(h) && !exitRail.count(h))) {
+        needGeneral("loops-cutoff: a value read after a nested K-loop that is not the latch incoming of a "
+                    "header phi",
+                    &I);
+        continue;
+      }
       exitRebinds.push_back({&I, h});
     }
+  // Region form: a quantum phi of the exit block over several exit edges of the region.
+  if (regionForm && X && !multi)
+    for (PHINode &P : X->phis())
+      if (isQ(&P) && count_if(P.blocks(), [&](const BasicBlock *u) { return L.contains(u); }) > 1)
+        needGeneral("loops-cutoff: a phi of a nested header-tested K-loop's exit block over several exit edges", &P);
+  if (general) {
+    multi = true;
+    exitRebinds.clear();
+    exitRail.clear();
+    regionQReads.clear();
+    tripPhis.clear();
+  }
   for (TripPhi &tp : tripPhis) {
     PHINode *P = tp.P;
     const Pred &pH = ctx.preds().block(H);
@@ -564,6 +771,15 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     Operand acc;
   };
   std::vector<CPhi> cphis;
+  // A value of the unit read after it other than by a phi of C: its exit value, a rail that takes this
+  // trip's value where the trip leaves the loop (acc' = select(q_j & X_j, v_j, acc), X_j the trip's
+  // exit edges). SSA dominance makes v defined on every path to the reader, so where the reader runs
+  // the exit that was taken passed v's definition in that trip. Rebound to the reader after the loop.
+  struct XAcc {
+    Instruction *V;
+    Operand acc;
+  };
+  std::vector<XAcc> xaccs;
   if (multi) {
     BasicBlock *C = U.cont;
     auto inUnit = [&](const BasicBlock *b) { return U.contains(L, b); };
@@ -576,21 +792,19 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           if (inUnit(ui->getParent()))
             continue;
           auto *phi = dyn_cast<PHINode>(ui);
-          if (!phi || phi->getParent() != C || !inUnit(phi->getIncomingBlock(Us)))
-            unimplemented("loops-cutoff: a value of a multi-exit K-loop read after the loop other than by a phi of "
-                          "its continuation",
+          if (phi && phi->getParent() == C && inUnit(phi->getIncomingBlock(Us)))
+            continue;
+          if (any_of(xaccs, [&](const XAcc &x) { return x.V == &I; }))
+            continue;
+          Type *ty = I.getType();
+          if (!(ty->isIntegerTy() || ty->isFloatingPointTy()))
+            unimplemented("loops-cutoff: awaiting owner ruling: SPEC_ISSUES \"The exit value of a pointer or "
+                          "aggregate computed in a K-loop\"",
                           &I);
+          xaccs.push_back({&I, Operand{seedRail(Constant::getNullValue(ty), ty), true}});
         }
     for (BasicBlock *a : U.arm)
-      for (Instruction &I : *a) {
-        if (auto *br = dyn_cast<BranchInst>(&I)) {
-          if (br->isConditional() && !isQ(br->getCondition()))
-            unimplemented("loops-cutoff: a classical branch between a K-loop's exits and their join", br);
-          continue;
-        }
-        if (I.isTerminator())
-          unimplemented("loops-cutoff: a terminator other than br between a K-loop's exits and their join", &I);
-      }
+      checkTerminator(a->getTerminator());
     const Pred &pH = ctx.preds().block(H);
     for (PHINode &P : C->phis()) {
       bool fromUnit = false;
@@ -629,83 +843,12 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     }
   }
 
-  // CR rule 14 (f981c89): an affine induction with a quantum loop-invariant start (a quantum header
-  // phi whose latch incoming is the phi plus or minus classical invariants, each step in a block that
-  // dominates the latch) is not carried either: in trip j it is ONE template from the start rail and
-  // the classical offset j*step (190: n - j). Only a read after the loop keeps a carried rail, the
-  // exit value, advancing by select on the trip predicate.
-  struct QInduction {
-    Operand start;                                   // the invariant start rail
-    std::vector<std::pair<bool, const Value *>> steps;  // (add?, classical invariant) from the phi out
-    Value *off = nullptr;                            // the classical offset of the current trip
-    std::optional<Operand> exitRail;                 // set when the value is read after the loop
-  };
-  DenseMap<PHINode *, QInduction> qind;
-  DominatorTree &DT = A.DT;
-  for (PHINode *h : hphis) {
-    if (!isQ(h) || !h->getType()->isIntegerTy())
-      continue;
-    Value *st = h->getIncomingValueForBlock(pre);
-    if (auto *SI = dyn_cast<Instruction>(st); SI && L.contains(SI))
-      continue;
-    auto invariant = [&](const Value *X) {
-      if (isa<Constant>(X))
-        return true;
-      auto *XI = dyn_cast<Instruction>(X);
-      return !(XI && L.contains(XI)) && !isQ(X);
-    };
-    std::vector<std::pair<bool, const Value *>> steps;
-    const Value *V = h->getIncomingValueForBlock(latch);
-    bool ok = true;
-    while (ok && V != h) {
-      auto *BO = dyn_cast<BinaryOperator>(V);
-      if (!BO || !L.contains(BO) || !DT.dominates(BO->getParent(), latch) ||
-          (BO->getOpcode() != Instruction::Add && BO->getOpcode() != Instruction::Sub)) {
-        ok = false;
-        break;
-      }
-      if (BO->getOpcode() == Instruction::Add && invariant(BO->getOperand(0)) && !invariant(BO->getOperand(1))) {
-        steps.push_back({true, BO->getOperand(0)});
-        V = BO->getOperand(1);
-      } else if (invariant(BO->getOperand(1))) {
-        steps.push_back({BO->getOpcode() == Instruction::Add, BO->getOperand(1)});
-        V = BO->getOperand(0);
-      } else {
-        ok = false;
-      }
-    }
-    if (!ok || steps.empty())
-      continue;
-    std::reverse(steps.begin(), steps.end());
-    QInduction qi;
-    qi.steps = std::move(steps);
-    qi.off = ConstantInt::get(h->getType(), 0);
-    qind.insert({h, std::move(qi)});
-  }
   // Region form: the state is frozen once the loop exited, but an induction's trip value is not, so a
-  // read of one after the loop is its exit rail, and a region value computed from one is not built.
-  for (Instruction *I : regionQReads) {
-    if (auto *h = dyn_cast<PHINode>(I); h && qind.count(h)) {
+  // read of a quantum-start induction after the loop is its exit rail (a region value computed from an
+  // induction is read through the general exit capture: `general` above).
+  for (Instruction *I : regionQReads)
+    if (auto *h = dyn_cast<PHINode>(I); h && qind.count(h))
       exitRebinds.push_back({I, h});
-      continue;
-    }
-    SmallVector<const Value *, 8> work{I};
-    SmallPtrSet<const Value *, 16> seen;
-    while (!work.empty()) {
-      const Value *V = work.pop_back_val();
-      auto *VI = dyn_cast<Instruction>(V);
-      if (!VI || !L.contains(VI) || !seen.insert(V).second)
-        continue;
-      if (auto *h = dyn_cast<PHINode>(VI); h && qind.count(const_cast<PHINode *>(h)))
-        unimplemented("loops-cutoff: a value of a K-loop's test region computed from an affine induction with a "
-                      "quantum start, read after the loop",
-                      I);
-      if (isa<PHINode>(VI))
-        continue;
-      for (const Use &U : VI->operands())
-        work.push_back(U.get());
-    }
-  }
   for (auto &[v, h] : exitRebinds)
     if (auto it = qind.find(h); it != qind.end())
       it->second.exitRail = Operand{};
@@ -720,12 +863,21 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     // a constant step is no operand: memory reads it as start + j*step (LoweringContext::walkedPointer),
     // the phi bound to the trip index j, a constant of the unrolled trip.
     if (!isQ(h) && h->getType()->isPointerTy() && nonClassicalMemory(h)) {
-      auto *g = dyn_cast<GEPOperator>(h->getIncomingValueForBlock(latch));
+      const Value *nx = h->getIncomingValueForBlock(latch);
+      auto *g = dyn_cast<GEPOperator>(nx);
       APInt off(64, 0);
       const Value *start = h->getIncomingValueForBlock(pre);
       auto *si = dyn_cast<Instruction>(start);
-      if (!g || g->getPointerOperand() != h || !g->accumulateConstantOffset(ctx.M.getDataLayout(), off) ||
-          (si && L.contains(si)))
+      bool sameNext = all_of(latches, [&](BasicBlock *l) { return h->getIncomingValueForBlock(l) == nx; });
+      // A loop-invariant pointer (every back edge carries the phi itself or its start) is walked by 0.
+      bool invariant = all_of(latches, [&](BasicBlock *l) {
+        const Value *v = h->getIncomingValueForBlock(l);
+        return v == h || v == start;
+      });
+      if (invariant && !(si && L.contains(si)))
+        g = nullptr;
+      else if (!sameNext || !g || g->getPointerOperand() != h ||
+               !g->accumulateConstantOffset(ctx.M.getDataLayout(), off) || (si && L.contains(si)))
         unimplemented("loops-cutoff: a pointer into slot or QRAM memory carried by a K-loop that is not walked by a "
                       "constant step from a loop-invariant start",
                       h);
@@ -807,12 +959,73 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   };
 
   DenseSet<const PHINode *> boundThisTrip;
+  // Classical reachability inside the current trip (classicalEdge: quantum conditions count as true),
+  // for the classical phis of the trip and of the exit arm; made on first need, forgotten when the
+  // header runs again. `evaluated` holds the blocks lowered since: a block not among them is not
+  // reached by this evaluation.
+  DenseMap<const BasicBlock *, Value *> creach;
+  SmallPtrSet<const BasicBlock *, 16> evaluated;
+  const std::function<bool(const BasicBlock *)> *armPick = nullptr;   // capture's evaluation, while it runs
+  std::function<Value *(const BasicBlock *)> creachOf = [&](const BasicBlock *b) -> Value * {
+    LLVMContext &Cx = ctx.M.getContext();
+    if (b == H)
+      return ConstantInt::getTrue(Cx);
+    if (!evaluated.count(b))
+      return ConstantInt::getFalse(Cx);
+    if (auto it = creach.find(b); it != creach.end())
+      return it->second;
+    Value *acc = ConstantInt::getFalse(Cx);
+    for (const BasicBlock *p : predecessors(b)) {
+      if (!U.contains(L, p) || !evaluated.count(p))
+        continue;
+      if (L.contains(b)) {
+        Loop *bl = A.LI.getLoopFor(b);
+        if (bl && bl->getHeader() == b && bl->contains(p))
+          continue;   // back edge of a sub-loop
+      }
+      Value *e;
+      if (Loop *S = subLoopOf(p); S && !S->contains(b))
+        e = creachOf(S->getHeader());   // the sub-loop as a unit always ends at its exit
+      else
+        e = ctx.B().CreateAnd(creachOf(p), classicalEdge(p, b));
+      acc = ctx.B().CreateOr(acc, e);
+    }
+    return creach[b] = acc;
+  };
+  // A classical phi of the trip or the exit arm: the classical select chain over its incoming edges
+  // reached in this evaluation (rule 9, a classical choice is a classical select).
+  auto classicalPhi = [&](PHINode &P) {
+    std::vector<std::pair<Value *, Value *>> arms;
+    for (unsigned i = 0; i < P.getNumIncomingValues(); ++i) {
+      BasicBlock *u = P.getIncomingBlock(i);
+      if (!U.contains(L, u) || !evaluated.count(u) || (armPick && L.contains(u) && !(*armPick)(u)))
+        continue;
+      Value *e;
+      if (Loop *S = subLoopOf(u); S && !S->contains(P.getParent()))
+        e = creachOf(S->getHeader());
+      else
+        e = ctx.B().CreateAnd(creachOf(u), classicalEdge(u, P.getParent()));
+      Operand v = ctx.operand(P.getIncomingValue(i));
+      if (v.handle)
+        internalError("loops-cutoff: a classical phi with a rail incoming", &P);
+      arms.push_back({e, v.v});
+    }
+    if (arms.empty())
+      internalError("loops-cutoff: a classical phi with no incoming in this evaluation", &P);
+    set(&P, Operand{classicalChain(arms), false});
+    perTrip.insert(&P);
+  };
   std::function<void(BasicBlock *, Value *, const Pred &)> lowerInsts;   // one block's non-phi instructions
   auto lowerBlocks = [&](Value *q, const std::function<bool(const BasicBlock *)> &pick) {
     boundThisTrip.clear();
     for (BasicBlock *b : order) {
       if (!pick(b))
         continue;
+      if (b == H) {
+        creach.clear();
+        evaluated.clear();
+      }
+      evaluated.insert(b);
       if (Loop *S = subLoopOf(b)) {
         if (S->getHeader() != b)
           continue;
@@ -833,15 +1046,32 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         for (PHINode &P : b->phis()) {
           if (boundThisTrip.count(&P))
             continue;
-          if (!isQ(&P))
-            unimplemented("loops-cutoff: a classical phi inside a K-loop body", &P);
-          set(&P, Operand{lowerMerge(ctx, P), true});
+          if (!isQ(&P)) {
+            classicalPhi(P);
+            continue;
+          }
+          if (!classicalTerms) {
+            set(&P, Operand{lowerMerge(ctx, P), true});
+            continue;
+          }
+          // A trip with a classical branch or switch has no output blocks to join classically (it is
+          // straight-line code): the merge is rule 9's select chain over the trip-local edge
+          // predicates, a classical term of them a seed rail (rule 8).
+          std::vector<std::pair<Pred, Operand>> arms;
+          for (unsigned i = 0; i < P.getNumIncomingValues(); ++i) {
+            BasicBlock *u = P.getIncomingBlock(i);
+            Pred e = contribution(u, b);
+            if (!e.isBottom())
+              arms.push_back({e, ctx.operand(P.getIncomingValue(i))});
+          }
+          set(&P, Operand{selectChain(ctx, arms, railTypeOf(P.getType())), true});
         }
       lowerInsts(b, q, local.find(b)->second);
     }
   };
   // The exit arm and C's phis after one evaluation of the blocks `pick` chose (multi-exit form).
   auto capture = [&](Value *q, const std::function<bool(const BasicBlock *)> &pick) {
+    armPick = &pick;
     DenseMap<const BasicBlock *, Pred> armLocal;
     auto srcPred = [&](const BasicBlock *u) -> std::optional<Pred> {
       if (L.contains(u)) {
@@ -862,9 +1092,13 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (acc.isBottom())
         continue;   // not reached from the blocks of this evaluation
       armLocal.insert({b, acc});
+      evaluated.insert(b);
+      creach.erase(b);
       for (PHINode &P : b->phis()) {
-        if (!isQ(&P))
-          unimplemented("loops-cutoff: a classical phi between a K-loop's exits and their join", &P);
+        if (!isQ(&P)) {
+          classicalPhi(P);
+          continue;
+        }
         std::vector<std::pair<Pred, Operand>> arms;
         for (unsigned i = 0; i < P.getNumIncomingValues(); ++i)
           if (auto sp = srcPred(P.getIncomingBlock(i)))
@@ -897,6 +1131,34 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       sel.w = w;
       cp.acc = Operand{ctx.emitTemplate(sel, {Operand{f, true}, Operand{v, true}, cp.acc}), true};
     }
+    for (XAcc &xa : xaccs) {
+      // X_v: this evaluation's exits that pass v's definition. A loop value: the exit edges out of the
+      // loop from blocks its block dominates. An arm value: its block reached in this evaluation.
+      const BasicBlock *vb = xa.V->getParent();
+      Pred X = Pred::bottom();
+      if (L.contains(vb)) {
+        for (BasicBlock *u : L.blocks()) {
+          auto sp = srcPred(u);
+          if (!sp || !A.DT.dominates(vb, u))
+            continue;
+          for (BasicBlock *sx : successors(u))
+            if (liveEdge(sx))
+              X = X | (*sp & edgeCond(u, sx));
+        }
+      } else if (auto it = armLocal.find(vb); it != armLocal.end()) {
+        X = it->second;
+      }
+      if (X.isBottom())
+        continue;
+      Value *f = conj(q, X, U.cont->getFirstNonPHI());
+      Operand v = ctx.operand(xa.V);
+      abi::TemplateSpec sel;
+      sel.op = "select";
+      sel.w = railTypeOf(xa.V->getType());
+      sel.shape = v.handle ? "" : "lh";
+      xa.acc = Operand{ctx.emitTemplate(sel, {Operand{f, true}, v, xa.acc}), true};
+    }
+    armPick = nullptr;
   };
   lowerInsts = [&](BasicBlock *b, Value *q, const Pred &lp) {
     {
@@ -942,12 +1204,47 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       }
     }
   };
+  // The next value of a header phi after one trip. With several latches it is the incoming of the
+  // latch the trip ended at: on its back edge, or, for the latch the exits leave from, on an exit
+  // edge (the trip that exits there ends there, so the final state is the exit value). A quantum phi
+  // merges them by rule 9's select chain; a classical one (an invariant or a value the classical
+  // exit test drives: taint) by the classical select over the classical parts of those ends.
+  auto nextOf = [&](PHINode *h) -> Operand {
+    auto opOf = [&](Value *v) {
+      return carriedPtr.count(h) ? fatptr::carriedTag(ctx, v) : ctx.operand(v);
+    };
+    Value *v0 = h->getIncomingValueForBlock(latches.front());
+    if (all_of(latches, [&](BasicBlock *l) { return h->getIncomingValueForBlock(l) == v0; }))
+      return opOf(v0);
+    if (!isQ(h)) {
+      std::vector<std::pair<Value *, Value *>> arms;
+      for (BasicBlock *l : latches) {
+        Value *e = classicalEdge(l, H);
+        for (BasicBlock *s : successors(l))
+          if (liveEdge(s))
+            e = ctx.B().CreateOr(e, classicalEdge(l, s));
+        Operand v = opOf(h->getIncomingValueForBlock(l));
+        if (v.handle)
+          internalError("loops-cutoff: a classical carried value with a rail next value", h);
+        arms.push_back({ctx.B().CreateAnd(creachOf(l), e), v.v});
+      }
+      return Operand{classicalChain(arms), false};
+    }
+    std::vector<std::pair<Pred, Operand>> arms;
+    for (BasicBlock *l : latches) {
+      Pred e = edgeCond(l, H);
+      for (BasicBlock *s : successors(l))
+        if (liveEdge(s))
+          e = e | edgeCond(l, s);
+      arms.push_back({local.find(l)->second & e, opOf(h->getIncomingValueForBlock(l))});
+    }
+    RailType w = carriedPtr.count(h) ? RailType{Kind::Int, 32} : railTypeOf(h->getType());
+    return Operand{selectChain(ctx, arms, w), true};
+  };
   auto advance = [&](Value *q) {
     std::vector<Operand> next;
     for (PHINode *h : hphis)
-      next.push_back(walkedTrip.count(h)    ? Operand{nullptr, false}
-                     : carriedPtr.count(h) ? fatptr::carriedTag(ctx, h->getIncomingValueForBlock(latch))
-                                           : ctx.operand(h->getIncomingValueForBlock(latch)));
+      next.push_back(walkedTrip.count(h) ? Operand{nullptr, false} : nextOf(h));
     for (size_t i = 0; i < hphis.size(); ++i) {
       PHINode *h = hphis[i];
       Operand nx = next[i];
@@ -1074,6 +1371,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   }
   for (CPhi &cp : cphis)
     ctx.bindFields(cp.P, {cp.acc});
+  for (XAcc &xa : xaccs)
+    ctx.rebind(xa.V, {xa.acc});
   for (TripPhi &tp : tripPhis) {
     fatptr::bindTripPointer(ctx, *tp.P, tp.tag, tp.objs);
     ctx.bindFields(tp.P, {tp.tag});
