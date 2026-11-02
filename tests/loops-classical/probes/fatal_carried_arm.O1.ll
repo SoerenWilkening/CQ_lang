@@ -6,32 +6,41 @@ target triple = "x86_64-apple-macosx16.0.0"
 ; Function Attrs: nounwind ssp uwtable
 define i32 @p38_arm(i32 noundef %0, i32 noundef %1, double noundef %2) local_unnamed_addr #0 {
   %4 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %2) #2
-  %5 = mul nsw i32 %4, 3
-  %6 = add nsw i32 %5, 1
-  %7 = icmp sgt i32 %1, 0
-  br i1 %7, label %11, label %8
+  %5 = add nsw i32 %4, 1
+  %6 = icmp sgt i32 %1, 0
+  br i1 %6, label %7, label %9
 
-8:                                                ; preds = %18, %3
-  %9 = phi i32 [ %6, %3 ], [ %19, %18 ]
-  %10 = tail call i32 @cq_measure_si32(i32 noundef %9) #3
-  ret i32 %10
+7:                                                ; preds = %3
+  %8 = mul nsw i32 %4, 5
+  br label %14
 
-11:                                               ; preds = %3, %18
-  %12 = phi i32 [ %20, %18 ], [ 0, %3 ]
-  %13 = phi i32 [ %19, %18 ], [ %6, %3 ]
-  %14 = and i32 %12, 1
-  %15 = icmp eq i32 %14, 0
-  br i1 %15, label %18, label %16
+9:                                                ; preds = %25, %3
+  %10 = phi i32 [ %5, %3 ], [ %26, %25 ]
+  %11 = phi i32 [ 0, %3 ], [ %20, %25 ]
+  %12 = tail call i32 @cq_measure_si32(i32 noundef %10) #3
+  %13 = xor i32 %12, %11
+  ret i32 %13
 
-16:                                               ; preds = %11
-  %17 = tail call i32 @cq_theta_si32(i32 noundef %13, double noundef %2) #2
-  br label %18
+14:                                               ; preds = %7, %25
+  %15 = phi i32 [ 0, %7 ], [ %27, %25 ]
+  %16 = phi i32 [ 0, %7 ], [ %20, %25 ]
+  %17 = phi i32 [ %5, %7 ], [ %26, %25 ]
+  %18 = add nsw i32 %15, %8
+  %19 = tail call i32 @cq_measure_si32(i32 noundef %18) #3
+  %20 = xor i32 %19, %16
+  %21 = and i32 %15, 1
+  %22 = icmp eq i32 %21, 0
+  br i1 %22, label %25, label %23
 
-18:                                               ; preds = %11, %16
-  %19 = phi i32 [ %17, %16 ], [ %13, %11 ]
-  %20 = add nuw nsw i32 %12, 1
-  %21 = icmp eq i32 %20, %1
-  br i1 %21, label %8, label %11, !llvm.loop !6
+23:                                               ; preds = %14
+  %24 = tail call i32 @cq_theta_si32(i32 noundef %17, double noundef %2) #2
+  br label %25
+
+25:                                               ; preds = %14, %23
+  %26 = phi i32 [ %24, %23 ], [ %17, %14 ]
+  %27 = add nuw nsw i32 %15, 1
+  %28 = icmp eq i32 %27, %1
+  br i1 %28, label %9, label %14, !llvm.loop !6
 }
 
 declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr #1
