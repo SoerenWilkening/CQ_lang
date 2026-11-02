@@ -4725,10 +4725,13 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
     }
   }
   // cq-lv9a: a cell is a scalar leaf of the pointee object's C type (an int[4] has four 4-byte cells,
-  // a struct one cell per scalar field at its offset); a store names every cell it overlaps. Every object
-  // the formal may point to must have the same leaves. An object with no C type (a heap block) falls back
+  // a struct one cell per scalar field at its offset); a store names every cell it overlaps. In every object
+  // the formal may point to it names the same cell indices. An object with no C type (a heap block) falls back
   // to cells of the store size (all stores of one size, at multiples of it).
-  std::optional<std::vector<Range>> leaves;
+  // Each object's leaves; objects of different layouts name a written byte range by their own indices,
+  // which must agree for every write (a readonly formal over tables of different lengths names none: musl
+  // __polevll's coefficient arrays).
+  std::vector<std::vector<Range>> objLeaves;
   bool typed = !objs.empty();
   for (ObjectId o : objs) {
     const Site &site = I.sites[I.objects[o].site];
@@ -4762,12 +4765,26 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
       }
     };
     walk(ty, 0);
-    if (leaves && (leaves->size() != lv.size() ||
-                   !std::equal(lv.begin(), lv.end(), leaves->begin(),
-                               [](const Range &a, const Range &b) { return a.off == b.off && a.size == b.size; })))
-      refuse("pointee objects of different layouts", A);
-    leaves = std::move(lv);
+    objLeaves.push_back(std::move(lv));
   }
+  if (!typed)
+    objLeaves.clear();
+  // The cells of every object a write of [at, at + size) overlaps, as indices; the same in every object.
+  auto overlapped = [&](int64_t at, uint64_t sz, const llvm::Value *where) {
+    std::optional<SmallVector<unsigned, 4>> agreed;
+    for (const std::vector<Range> &lv : objLeaves) {
+      SmallVector<unsigned, 4> ks;
+      for (unsigned k = 0; k < lv.size(); ++k)
+        if (at < lv[k].off + int64_t(lv[k].size) && lv[k].off < at + int64_t(sz))
+          ks.push_back(k);
+      if (ks.empty())
+        continue;   // past this object's cells: undefined where it runs, no cell of it
+      if (agreed && *agreed != ks)
+        refuse("a write naming different cells of pointee objects of different layouts", where);
+      agreed = std::move(ks);
+    }
+    return agreed.value_or(SmallVector<unsigned, 4>{});
+  };
   // A round trip at a variable offset may hit any cell: every other write must be a round trip too (each
   // then stores back the handle the cell holds, so no cell's handle changes).
   if (!varInPlace.empty())
@@ -4786,11 +4803,7 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
     // past an object, outside the domain): it writes no cell (rule 21; mem-slots lowers it as nothing). musl
     // __rem_pio2_large's y[1], y[2] for prec 0 into __rem_pio2f's double ty[1] (cq-4e6m). A write of a callee
     // the formal is handed to is that callee's own (its formalCells records it).
-    if (typed && base && leaves &&
-        none_of(*leaves, [&](const Range &c) {
-          int64_t at = *base + w.off;
-          return at < c.off + int64_t(c.size) && c.off < at + int64_t(w.size);
-        })) {
+    if (typed && base && overlapped(*base + w.off, w.size, w.st ? (const llvm::Value *)w.st : w.at).empty()) {
       if (w.st && w.ss == SS)
         I.pastPointee.insert({pastKey(S), w.st});
       continue;
@@ -4820,17 +4833,11 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
     if (!base)
       refuse("a pointee offset that differs between the clone's callers", w.st ? w.st : w.at);
     if (typed) {
-      int64_t at = *base + w.off;
-      bool any = false;
-      for (unsigned k = 0; k < leaves->size(); ++k) {
-        const Range &c = (*leaves)[k];
-        if (at < c.off + int64_t(c.size) && c.off < at + int64_t(w.size)) {
-          any = true;
-          if (!is_contained(out, k))
-            out.push_back(k);
-        }
-      }
-      if (!any)
+      SmallVector<unsigned, 4> ks = overlapped(*base + w.off, w.size, w.st ? (const llvm::Value *)w.st : w.at);
+      for (unsigned k : ks)
+        if (!is_contained(out, k))
+          out.push_back(k);
+      if (ks.empty())
         internalError("taint: formalCells: a store past the pointee's cells reached the cell count", w.st ? w.st : w.at);
       continue;
     }

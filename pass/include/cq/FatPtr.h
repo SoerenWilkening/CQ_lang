@@ -28,6 +28,10 @@ Triple passAcrossCall(LoweringContext &, const llvm::Value *ptr);
 // Construct clone entry.
 void bindFormal(LoweringContext &, const llvm::Argument &formal, llvm::Value *object, Operand tag, Operand idx,
                 llvm::Value *cellCount);
+// cq-sd95 (CR rule 21, §1.4): a bound triple formal onto host objects whose tag and idx are both classical is
+// the classical pointer object + size * idx (one host object at a classical cell: a raw address, the caller's
+// pointer). Emitted at the builder; nullptr for any other bound formal. Consumer: spine Construct clone entry.
+llvm::Value *boundHostAddress(LoweringContext &, const llvm::Argument &formal);
 // R1 (cq-r7-91, CR rules 14, 20, 21; 91): TRIP OBJECTS. A K-loop's exit phi P whose loop incoming is an
 // allocation site of the loop (one object per (site, trip), rule 14) and whose other incomings are the null
 // pointer on edges that skip the loop is the fat pointer (tag, idx 0) over null and the trip objects. The loop

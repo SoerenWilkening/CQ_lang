@@ -108,6 +108,11 @@ struct Fat {
 
 // ---- object table ----------------------------------------------------------------------------
 
+// A constant pointer's object (a constant-expression GEP into a global roots at the global, cq-sd95).
+const Value *constantBase(const Value *c) {
+  return c->getType()->isPointerTy() ? getUnderlyingObject(c) : c;
+}
+
 unsigned rootNumber(LoweringContext &ctx, const Value *root) {
   // NULL is tag 0 in every function's table (85): a clone's result crosses into its caller's table, where
   // the clone's NULL must still be NULL; its base is the address 0.
@@ -128,7 +133,7 @@ unsigned rootNumber(LoweringContext &ctx, const Value *root) {
   for (const BasicBlock &bb : *F)
     for (const Instruction &I : bb) {
       for (const Use &u : I.operands())
-        if (isa<Constant>(u.get()) && !isa<BasicBlock>(u.get()) && visit(u.get()))
+        if (isa<Constant>(u.get()) && !isa<BasicBlock>(u.get()) && (visit(u.get()) || visit(constantBase(u.get()))))
           return n;
       if (visit(&I))
         return n;
@@ -3626,6 +3631,17 @@ void bindFormal(LoweringContext &ctx, const Argument &formal, Value *object, Ope
     internalError("fatptr: a triple formal bound twice", &formal);
 }
 
+Value *boundHostAddress(LoweringContext &ctx, const Argument &formal) {
+  Bound *b = boundOf(ctx, &formal);
+  if (!b || b->pointee != ObjClass::Classical || b->tag.handle || b->idx.handle)
+    return nullptr;
+  if (!b->cell)
+    internalError("fatptr: a host triple formal bound with no cell size", &formal);
+  IRBuilder<> &B = ctx.B();
+  Value *ix = B.CreateSExt(b->idx.v, B.getInt64Ty());
+  return B.CreateGEP(B.getInt8Ty(), b->object, B.CreateMul(ix, B.getInt64(b->cell)));
+}
+
 // R1 (cq-r7-91, CR rules 14, 20, 21; 91). Trip tags lie past the object table's root numbers.
 unsigned reserveTripTags(LoweringContext &ctx, unsigned n) {
   TripState &t = tripStates()[&ctx.out()];
@@ -3641,8 +3657,10 @@ unsigned reserveTripTags(LoweringContext &ctx, unsigned n) {
     for (const BasicBlock &bb : *ctx.S.F)
       for (const Instruction &I : bb) {
         for (const Use &u : I.operands())
-          if (isa<Constant>(u.get()) && !isa<BasicBlock>(u.get()))
+          if (isa<Constant>(u.get()) && !isa<BasicBlock>(u.get())) {
             visit(u.get());
+            visit(constantBase(u.get()));
+          }
         visit(&I);
       }
     t.next = roots + 1;

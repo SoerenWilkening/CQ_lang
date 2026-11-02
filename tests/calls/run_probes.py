@@ -210,6 +210,10 @@ CASES = [
     ("qrom_fn_ctl", "qc_cls", [], "pass", []),
     ("indirect_mixed", "im_struct", [], "pass", [r"phi i32 \[", r"phi i64 \["]),
     ("declared_aggr", "da_arg", [], "lower", [r"call i32 @__cq_q_ext_sum_10\(i32 %\d+, i64 %\d+, i32 4\)"]),
+    # cq-sd95 (CR rule 21, §1.4; musl erfl's __polevll): a readonly formal over host tables of different lengths
+    # (T3 names no cell for a formal that writes none) crosses as a triple with a classical tag and idx; the
+    # clone reads through the caller's pointer (a constant GEP into @B roots at @B in the object table).
+    ("host_triple", "f_tables", [], "pass", [r"call i32 @__cq_q_pol_10000\(i32 %\d+, ptr @B, i32 \d+, i32 1, i32 4, i32 2\)"]),
 ]
 
 

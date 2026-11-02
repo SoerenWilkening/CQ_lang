@@ -2151,6 +2151,7 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
   Value *entryFlag = nullptr;
   SmallVector<std::pair<Argument *, SmallVector<Operand, 4>>, 2> classicalComposites;
   SmallVector<std::tuple<Argument *, Value *, Value *>, 2> slotTripleCells;   // cq-1c5j
+  SmallVector<Argument *, 2> hostTripleFormals;                                 // cq-sd95
   if (S.isEntry()) {
     // Rule 19 (193): an entry returning an unmeasured quantum value returns its handle. The return
     // type stays the C one when it is an integer of 32 bits or more (the handle as is or
@@ -2240,6 +2241,8 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
             // TripleCount formal, 190).
             slotTripleCells.push_back({A, obj, idx});
           }
+          if (pf.pointee == ObjClass::Classical && !tagH && !idxH)
+            hostTripleFormals.push_back(A);   // cq-sd95: the caller's classical host pointer
           continue;
         }
       }
@@ -2334,6 +2337,19 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
     for (Value *v : {at, ix})
       if (auto *I = dyn_cast<Instruction>(v))
         slotTripleAddrs.push_back(I);
+  }
+  // CR rule 21 (cq-sd95): a triple onto host objects with a classical tag and idx is the caller's classical
+  // pointer (object + size * idx); the clone's classical uses of the formal (a load of a constant table,
+  // musl's __polevll over erfl's P and Q) read through it as through any classical pointer.
+  for (Argument *A : hostTripleFormals) {
+    Value *at = fatptr::boundHostAddress(ctx, *A);
+    if (!at)
+      internalError("spine: a classical host triple formal fatptr did not bind", A);
+    spine::bindOperand(ctx, A, Operand{at, false});
+    // The address, its byte offset and the widened idx, users first.
+    for (Value *v = at; auto *I = dyn_cast<Instruction>(v);
+         v = isa<GetElementPtrInst>(I) ? I->getOperand(1) : I->getOperand(0))
+      slotTripleAddrs.push_back(I);
   }
   // CR §1.4: a composite formal crosses as one parameter per leaf; with no quantum leaf it is a classical
   // value of its own type, rebuilt from its leaves (struct and array fields, vector lanes, in order).
