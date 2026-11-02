@@ -838,15 +838,18 @@ void Unit::check(Loop &L, Case c) {
           break;
         case calls::Class::Lift:
         case calls::Class::LibmIntrinsic:
+        case calls::Class::Declared:
+          // Rule 27 inside a rule-14 trip: a declared clone is a call group like a lifted one (its twin always
+          // exists), its _ctl form under the trip rail in case 3 (cq-ro82).
           // Rule 18 inside a rule-14 trip (124): a clone call with nothing to undo (no quantum result, no
           // caller cell it writes) records no call item, so each trip's call is a gate sequence of its own.
           // One with a twin (a quantum result) is a call group recorded in the trip's scope: the reverse
           // emits its twin with the trip's pushed operands, as it emits a template's _unc (Uncompute's item
-          // of a call group). A clone writing caller cells in the trip (slot results across trips) and a
-          // case-3 trip (the call under the trip rail: its _ctl clone) are the default below.
-          // Case 3 stays the default below until calls takes the trip rail as the call's control (cq-l56v: the
-          // declared-clone path tests currentPredicate(), which a trip does not set; see the bead filed).
-          if (c != Case::ClassicalBoundQuantumExit && (!twinOf(*CB) || !writesCallerCells(*CB)))
+          // of a call group). A clone writing caller cells in the trip (slot results across trips) is the
+          // default below.
+          // Case 3: the call runs under the trip rail (currentFlag(): its _ctl clone, rules 19, 27; calls tests
+          // the trip rail, cq-ro82), recorded in the trip's scope like case 1's.
+          if (!twinOf(*CB) || !writesCallerCells(*CB))
             break;
           [[fallthrough]];
         default:
@@ -1009,14 +1012,6 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         // under its flag (latchExits).
         if (I.isTerminator() && !isa<BranchInst>(I) && !isa<SwitchInst>(I))
           internalError("loops-classical: an exit arm block ending in other than a branch or switch", &I);
-        if (auto *CB = dyn_cast<CallBase>(&I); CB && !isa<DbgInfoIntrinsic>(CB)) {
-          calls::Class k = calls::classify(*CB, ctx.T, ctx.S);
-          if (k != calls::Class::Classical && k != calls::Class::TemplateIntrinsic && k != calls::Class::Theta &&
-              k != calls::Class::Phi && k != calls::Class::Measure)
-            unimplemented("loops-classical: a lifted call in a case-3 loop's exit arm (its control is the arm flag, "
-                          "which calls does not take yet: cq-ro82)",
-                          &I);
-        }
         // A value of the arm read after the loop other than by C's phi: its block dominates the reader and so C
         // (SSA), every unit edge into C passes it in the exiting trip: a capture of its own (xreads), as a
         // loop value's.

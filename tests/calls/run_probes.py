@@ -25,7 +25,7 @@ TWIN_BARRIER = ("cq: unimplemented: uncompute: a write that may change an object
 TWIN_ALIAS = ("cq: unimplemented: uncompute: a clone call whose twin may read a caller cell the clone writes by "
               "another route than the writing pointer")
 # §6 samples per probe where the full set takes minutes (cqcheck user --samples): the musl bodies.
-SAMPLES = {"clone_cell_seq": 64, "fenv_cells": 64, "fenv_ignore_loop": 64, "store_past_object": 64, "fenv_escape": 64, "fenv_indirect": 64, "libm_musl_acosh": 16, "libm_musl_coshf": 16, "libm_musl_lrint": 16, "libm_musl_llrintl": 16, "twin_strict": 64, "libm_musl_floorfn": 32, "libm_musl_atan": 16, "libm_musl_exp": 16, "libm_musl_log": 16}
+SAMPLES = {"trip_ctl": 64, "clone_cell_seq": 64, "fenv_cells": 64, "fenv_ignore_loop": 64, "store_past_object": 64, "fenv_escape": 64, "fenv_indirect": 64, "libm_musl_acosh": 16, "libm_musl_coshf": 16, "libm_musl_lrint": 16, "libm_musl_llrintl": 16, "twin_strict": 64, "libm_musl_floorfn": 32, "libm_musl_atan": 16, "libm_musl_exp": 16, "libm_musl_log": 16}
 # (probe, entry, opt flags, expectation, regexes the lowered module must contain)
 CASES = [
     # cq-57ju (rulings 2026-11-02): plain clang -O1 callers of musl b1efda5 bodies (no -fno-builtin, no -frounding-math).
@@ -225,6 +225,21 @@ CASES = [
     ("resolve_fp", "r_ctl", [], "lower", [r"call ptr @cqrt_clone_resolve\(ptr %0, i32 1\)",
                                           r"%(\d+) = call ptr @cqrt_clone_resolve\(ptr %0, i32 2\)\n  call void %\1\("]),
     ("host_triple", "f_tables", [], "pass", [r"call i32 @__cq_q_pol_10000\(i32 %\d+, ptr @B, i32 \d+, i32 1, i32 4, i32 2\)"]),
+    # cq-ro82 (CR rules 14, 19, 27): a call in a rule-14 trip is under the trip rail (lowerInstruction's tripFlag), which
+    # currentPredicate() does not see: a declared clone there is its _ctl form (main emitted __cq_q_erf_1 unguarded in
+    # tk_decl's K trips), a lifted callee with a gate its _ctl clone, a host effect a controlled tape entry.
+    ("trip_ctl", "tk_decl", [], "pass", [r"call i32 @__cq_q_erf_1_ctl\(i32 %\d+, i32 %\d+, i32 4\)",
+                                         r"\A(?![\s\S]*@__cq_q_erf_1\()"]),
+    ("trip_ctl", "tk_decl_arm", [], "pass", [r"\A(?![\s\S]*@__cq_q_cbrt_1\()"]),
+    ("trip_ctl", "tk_lift", [], "pass", [r"call void @__cq_q_tc_phase_1_ctl\(i32 %\d+, i32 %\d+\)"]),
+    ("trip_ctl", "tk_print", [], "pass", [r"call i32 @cqrt_tape_write_i32_controlled\("]),
+    # cq-ro82: loops-classical's stops on lifted and declared calls in a case-3 trip and its exit arm are gone (the call
+    # under the trip rail / the arm flag); a declared clone in a case-1 trip is a call group undone by the reverse loop.
+    ("trip_ctl", "t3_decl", [], "pass", [r"call i32 @__cq_q_erf_1_ctl\(i32 %\d+, i32 %\d+, i32 4\)"]),
+    ("trip_ctl", "t3_lift", [], "pass", [r"call void @__cq_q_tc_phase_1_ctl\(i32 %\d+, i32 %\d+\)"]),
+    ("trip_ctl", "t3_arm", [], "pass", [r"call void @__cq_q_tc_phase_1_b\d+_ctl\(i32 %\d+, i32 %\d+\)",
+                                        r"call i32 @__cq_q_erf_1_ctl\(i32 %\d+, i32 %\d+, i32 4\)"]),
+    ("trip_ctl", "t1_decl", [], "pass", [r"call void @__cq_q_erf_1_unc\(i32 %\d+, i32 %\d+, i32 4\)"]),
 ]
 
 
