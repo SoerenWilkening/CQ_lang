@@ -841,9 +841,16 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         unimplemented("loops-cutoff: a classical phi joining a multi-exit K-loop's exits (cq-uytx)", &P);
       if (!(P.getType()->isIntegerTy() || P.getType()->isFloatingPointTy()))
         unimplemented("loops-cutoff: a non-scalar phi joining a multi-exit K-loop's exits (cq-p45s)", &P);
-      const Value *init = nullptr;
+      // The value where the unit does not run. Its incomings from outside the unit are taken only where the
+      // header is not reached (mutually exclusive with every trip's exit). Several differing ones are rule 9's
+      // select chain over their edge predicates, built before the loop. A phi a unit lowered earlier already
+      // bound (two loops exiting into one join, each skipping the other: jnf) holds that unit's value where it
+      // ran and the outside values it could see: it is this unit's initial value, and an incoming of a later
+      // unit (a loop not lowered yet) is that unit's to select in when it is lowered.
       Pred cH = pH.classicalFactor(ctx.T, ctx.S);
-      for (unsigned i = 0; i < P.getNumIncomingValues(); ++i) {
+      std::vector<std::pair<Pred, Operand>> outside;
+      bool earlier = ctx.bound(&P);
+      for (unsigned i = 0; i < P.getNumIncomingValues() && !earlier; ++i) {
         BasicBlock *u = P.getIncomingBlock(i);
         if (inUnit(u))
           continue;
@@ -855,14 +862,32 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           unimplemented("loops-cutoff: a phi joining a multi-exit K-loop's exits with an incoming from outside the "
                         "loop on an edge that does not exclude the loop (cq-uytx)",
                         &P);
-        if (init && init != P.getIncomingValue(i))
-          unimplemented("loops-cutoff: a phi joining a multi-exit K-loop's exits with several incomings from outside "
-                        "the loop (cq-uytx)",
-                        &P);
-        init = P.getIncomingValue(i);
+        Value *v = P.getIncomingValue(i);
+        if (!ctx.bound(v)) {
+          const Loop *vl = A.LI.getLoopFor(u);
+          if (!vl || vl->contains(H))
+            internalError("loops-cutoff: an incoming of a multi-exit K-loop's join from outside the loop, not in "
+                          "another loop, whose value is not lowered at the loop's header",
+                          &P);
+          continue;   // another loop unit's exit: it selects its value in over this binding when lowered
+        }
+        Pred e = ctx.preds().edge(u, C);
+        auto same = find_if(outside, [&](const std::pair<Pred, Operand> &a) { return a.second.v == ctx.operand(v).v; });
+        if (same != outside.end())
+          same->first = same->first | e;
+        else
+          outside.push_back({e, ctx.operand(v)});
       }
       // With no incoming from outside, the value where no trip exits (the cutoff reached first) is 0.
-      Operand acc = init ? ctx.operand(init) : Operand{Constant::getNullValue(P.getType()), false};
+      Operand acc;
+      if (earlier)
+        acc = ctx.operand(&P);
+      else if (outside.empty())
+        acc = Operand{Constant::getNullValue(P.getType()), false};
+      else if (outside.size() == 1)
+        acc = outside.front().second;
+      else
+        acc = Operand{selectChain(ctx, outside, railTypeOf(P.getType())), true};
       if (!acc.handle)
         acc = Operand{seedRail(acc.v, P.getType()), true};
       cphis.push_back({&P, acc});
@@ -1418,8 +1443,12 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     else
       set(P, f);
   }
-  for (CPhi &cp : cphis)
-    ctx.bindFields(cp.P, {cp.acc});
+  for (CPhi &cp : cphis) {
+    if (ctx.bound(cp.P))
+      ctx.rebind(cp.P, {cp.acc});   // an earlier unit's binding, its value the initial of this one's
+    else
+      ctx.bindFields(cp.P, {cp.acc});
+  }
   for (XAcc &xa : xaccs)
     ctx.rebind(xa.V, {xa.acc});
   for (TripPhi &tp : tripPhis) {

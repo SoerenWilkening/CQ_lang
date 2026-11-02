@@ -59,3 +59,19 @@ int me_c3(unsigned x0, double t, int c) {
     n++;
   return cq_measure(n);
 }
+
+/* cq-mgkr (cq-uytx): two K-loops in exclusive quantum arms exit into one join whose phi reads each loop's header
+ * value (the multi-exit form) and two differing skip values: each unit's join value starts from the skip values'
+ * select chain, the later unit from the earlier unit's binding. */
+int me_join4(unsigned x0, double th) {
+    unsigned x = x0;
+    cq_theta(&x, th);
+    unsigned n = x & 7, a = 1, b = (x >> 3) & 3;
+    unsigned r;
+    if ((x >> 5) & 1) {
+        if (n > 1) { unsigned i = n; do { r = a; a = a * 3 + b; } while (--i > 1); } else r = 5;
+    } else {
+        if (n > 1) { unsigned i = n; do { r = b; b = b * 5 + a; if (b > 40) b -= 7; } while (--i > 1); } else r = 9;
+    }
+    return cq_measure(r);
+}

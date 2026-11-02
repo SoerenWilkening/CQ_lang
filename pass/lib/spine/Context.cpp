@@ -210,6 +210,13 @@ void LoweringContext::bindFields(const Value *orig, ArrayRef<Operand> ops) {
   slot.append(ops.begin(), ops.end());
 }
 
+bool LoweringContext::bound(const Value *orig) const {
+  if (isa<Constant>(orig))
+    return true;
+  auto it = impl->sh->binds.find(orig);
+  return it != impl->sh->binds.end() && !it->second.empty();
+}
+
 void LoweringContext::rebind(const Value *orig, ArrayRef<Operand> ops) {
   if (!orig)
     internalError("spine: rebind(nullptr)");

@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PROBE = Path(__file__).parent / "probes" / "multi_exit.O1.ll"
-ENTRIES = ["me_cmp", "me_clone", "me_walk", "me_dead", "me_c3"]
+ENTRIES = ["me_cmp", "me_clone", "me_walk", "me_dead", "me_c3", "me_join4"]
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 
 

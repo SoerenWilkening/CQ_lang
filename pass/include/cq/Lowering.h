@@ -44,6 +44,8 @@ public:
   void bind(const llvm::Value *orig, llvm::Value *v);
   void bindFields(const llvm::Value *orig, llvm::ArrayRef<Operand>);
   void rebind(const llvm::Value *orig, llvm::ArrayRef<Operand>);   // replaces a binding; internalError if unbound
+  // cq-mgkr: has orig a value in the new IR yet (a constant always)?
+  bool bound(const llvm::Value *orig) const;
   llvm::BasicBlock *block(const llvm::BasicBlock *orig);
   llvm::Value *emitTemplate(const abi::TemplateSpec &, llvm::ArrayRef<Operand>, const llvm::Value *orig = nullptr);
   llvm::CallInst *emitCore(const abi::CoreSpec &, llvm::ArrayRef<llvm::Value *>);

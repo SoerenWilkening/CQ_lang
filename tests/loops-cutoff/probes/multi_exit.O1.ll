@@ -239,6 +239,52 @@ define i32 @me_c3(i32 noundef %0, double noundef %1, i32 noundef %2) local_unnam
   ret i32 %17
 }
 
+; Function Attrs: nounwind ssp uwtable
+define i32 @me_join4(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
+  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #4
+  %4 = and i32 %3, 7
+  %5 = lshr i32 %3, 3
+  %6 = and i32 %5, 3
+  %7 = and i32 %3, 32
+  %8 = icmp eq i32 %7, 0
+  %9 = icmp ugt i32 %4, 1
+  br i1 %8, label %18, label %10
+
+10:                                               ; preds = %2
+  br i1 %9, label %11, label %29
+
+11:                                               ; preds = %10, %11
+  %12 = phi i32 [ %15, %11 ], [ 1, %10 ]
+  %13 = phi i32 [ %16, %11 ], [ %4, %10 ]
+  %14 = mul i32 %12, 3
+  %15 = add i32 %14, %6
+  %16 = add i32 %13, -1
+  %17 = icmp ugt i32 %16, 1
+  br i1 %17, label %11, label %29, !llvm.loop !16
+
+18:                                               ; preds = %2
+  br i1 %9, label %19, label %29
+
+19:                                               ; preds = %18, %19
+  %20 = phi i32 [ %26, %19 ], [ %6, %18 ]
+  %21 = phi i32 [ %27, %19 ], [ %4, %18 ]
+  %22 = mul i32 %20, 5
+  %23 = add i32 %22, 1
+  %24 = icmp ugt i32 %23, 40
+  %25 = add i32 %22, -6
+  %26 = select i1 %24, i32 %25, i32 %23
+  %27 = add nsw i32 %21, -1
+  %28 = icmp ugt i32 %27, 1
+  br i1 %28, label %19, label %29, !llvm.loop !17
+
+29:                                               ; preds = %11, %19, %18, %10
+  %30 = phi i32 [ 5, %10 ], [ 9, %18 ], [ %20, %19 ], [ %12, %11 ]
+  %31 = tail call i32 @cq_measure_ui32(i32 noundef %30) #5
+  ret i32 %31
+}
+
+declare i32 @cq_measure_ui32(i32 noundef) local_unnamed_addr #2
+
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #1 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
 attributes #2 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
@@ -265,3 +311,5 @@ attributes #5 = { nounwind }
 !13 = distinct !{!13, !10, !11}
 !14 = distinct !{!14, !10, !11}
 !15 = distinct !{!15, !10, !11}
+!16 = distinct !{!16, !10, !11}
+!17 = distinct !{!17, !10, !11}
