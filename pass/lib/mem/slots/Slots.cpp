@@ -390,6 +390,12 @@ struct FnState {
   // (formal, byte offset): the caller's handle loaded at the clone's entry and the fresh slot result f the
   // clone stores into the cell there (f = old; each arm store makes it the stored value).
   std::map<std::pair<const Value *, int64_t>, std::pair<Value *, Value *>> guardedCells;
+  // cq-4e6m (CR rules 9, 18, 20): a caller cell a clone writes and reads in sequence under quantum predicates
+  // (cloneCellOf), keyed by (formal, byte offset): its rail type and C type, the caller's handle loaded at the
+  // clone's entry, the one slot result f stored into the cell there, and the cell's current body value (cur),
+  // which f always equals; nullopt: the cell is not such a cell.
+  struct CloneCell { RailType w; Type *ty = nullptr; Value *old = nullptr, *f = nullptr; Operand cur; };
+  std::map<std::pair<const Value *, int64_t>, std::optional<CloneCell>> cloneCells;
   // Register updates (CR rules 6, 20; 114): per object, whether its every store has a register-update
   // shape (1) or not (0); the new-IR base of each object that has one; the cqrt_free of each old rail they
   // cleaned (finishSlots checks the items of the rails' other readers against them).
@@ -3848,6 +3854,152 @@ bool mergedCloneStore(LoweringContext &ctx, FnState &st, const Site &s, StoreIns
 // The role of a rail stored into a slot cell (rule 20), the handle store and the cell's new content.
 // The cells of object o may hold user registers (rule 2): a cq_theta result is stored into it, a cq_theta
 // reads a value loaded from it (through casts), or a clone or unknown function is handed a pointer into it.
+// CR rules 9, 18, 20 (cq-4e6m; musl's __rem_pio2 and __rem_pio2f writing *y and reading it back): a clone's
+// caller cell is a value of the clone that its stores define and its loads read, and the caller sees its value
+// at the return, one slot result (rule 18: one copy-out per result). In the predicated code of a quantum branch
+// (every access of the cell under no classical branch and on no cycle) the walker lowers the accesses in one
+// order on one path: the cell's value at each point is cur, a store under predicate p makes it select(p, v,
+// cur) (rule 9; v alone outside any predicate), a load reads cur. At the clone's entry old = load cell (the
+// caller's handle), f = alloc_<W>(0), copy(old, f), store f into the cell (cq-vxgm's guarded cell); each store
+// keeps f = cur: copy(cur, f), copy(new, f) (copy is an XOR). cur's selects are body values, uncomputed at the
+// exit; f is the slot result the caller loads after the call and frees after the twin, which replays the copies
+// into the cell's handle, zeroing it, and stores old_k back (calls' finalize). The other clone-cell
+// constructions (the single copy-out, 51's arm merge, cq-vxgm) are this one where each path writes the cell at
+// most once and the clone never reads it; they stay as they are.
+FnState::CloneCell *cloneCellOf(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &at) {
+  if (s.info->kind != RootKind::Param || ctx.S.isEntry() || !isa<Argument>(s.a.root) || !s.a.ok ||
+      !s.a.terms.empty() || s.beyond || s.info->view || s.info->boolCells || s.info->record || s.info->split)
+    return nullptr;
+  auto key = std::make_pair(s.a.root, s.a.off);
+  auto it = st.cloneCells.find(key);
+  if (it != st.cloneCells.end())
+    return it->second ? &*it->second : nullptr;
+  std::optional<FnState::CloneCell> cell;
+  const DataLayout &DL = ctx.M.getDataLayout();
+  uint64_t sz = storeBytes(DL, at.getType()->isVoidTy() ? cast<StoreInst>(at).getValueOperand()->getType()
+                                                         : at.getType());
+  SmallVector<const Instruction *, 4> stores, plainStores, readers;
+  bool load = false, pred = false, plain = false, ok = true;
+  Type *ty = nullptr;
+  for (const Access &a : accessesOf(ctx, *st.F, s.o)) {
+    if (differentCell(a.a, s.a, storeBytes(DL, a.ty), sz))
+      continue;
+    auto *L = dyn_cast<LoadInst>(a.I);
+    auto *S = dyn_cast<StoreInst>(a.I);
+    if ((!L && !S) || !sameCell(a.a, s.a) || storeBytes(DL, a.ty) != sz || (L && (L->isVolatile() || L->isAtomic())) ||
+        (S && (S->isVolatile() || S->isAtomic())) || !(a.ty->isIntegerTy() || a.ty->isFloatingPointTy())) {
+      ok = false;
+      break;
+    }
+    // A cq_theta in place on the cell (rule 10: the rail the cell holds rotated, stored back) keeps the cell's
+    // rail: the clone's other constructions (124's select(p, h, h) = h).
+    if (auto *TC = S ? dyn_cast<CallBase>(S->getValueOperand()) : nullptr;
+        TC && TC->getCalledFunction() && TC->getCalledFunction()->getName().starts_with("cq_theta_")) {
+      ok = false;
+      break;
+    }
+    Pred bp = ctx.preds().block(a.I->getParent());
+    if (!bp.classicalFactor(ctx.T, ctx.S).isTop() || reachesItself(*a.I, st.DT.get())) {
+      ok = false;
+      break;
+    }
+    if (!ty || a.ty->isFloatingPointTy())
+      ty = a.ty;
+    if (L) {
+      load = true;
+      readers.push_back(L);
+      continue;
+    }
+    if (bp.quantumPart(ctx.T, ctx.S).isTop()) {
+      plain = true;
+      plainStores.push_back(S);
+    } else {
+      pred = true;
+      readers.push_back(S);   // select(p, v, cur) reads the cell's value
+    }
+    stores.push_back(S);
+  }
+  // The caller's content is read only by an access no store outside every quantum predicate dominates (such a
+  // store runs on every path: no classical branch is around any access).
+  bool needOld = any_of(readers, [&](const Instruction *R) {
+    return none_of(plainStores, [&](const Instruction *P) { return st.DT->dominates(P, R); });
+  });
+  bool reach = false;
+  for (const Instruction *x : stores)
+    for (const Instruction *y : stores)
+      if (x != y && isPotentiallyReachable(x, y, nullptr, st.DT.get()))
+        reach = true;
+  if (ok && !stores.empty() && (reach || (pred && (load || plain))))
+    cell = FnState::CloneCell{railTypeOf(ty), ty, nullptr, nullptr, Operand{}};
+  auto &slot = st.cloneCells[key];
+  slot = cell;
+  if (!slot)
+    return nullptr;
+  // The entry: old (when read), f = old (else |0>, the first store makes it the value), f into the cell.
+  IRBuilder<> &B = ctx.B();
+  IRBuilderBase::InsertPointGuard guard(B);
+  BasicBlock &E = ctx.out().getEntryBlock();
+  B.SetInsertPoint(&E, E.getFirstInsertionPt());
+  RailType w = slot->w;
+  LoadInst *old = nullptr;
+  if (needOld) {
+    old = B.CreateAlignedLoad(handleTy(ctx.M.getContext()), cellPointer(ctx, s, at), Align(4));
+    ctx.unc().recordExternal(old, Role::UserRegister);   // the caller's rail: never the clone's
+    st.registers.insert(old);
+  }
+  CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+  RailId fid = ctx.unc().recordSeed(f);
+  if (old) {
+    abi::CoreSpec cp{abi::Core::Copy, w};
+    CallInst *cc = ctx.emitCore(cp, {old, f});
+    ctx.unc().recordCore(cc, cp, {Operand{old, true}, Operand{f, true}}, fid);
+  }
+  ctx.unc().setRole(fid, Role::Result);
+  st.registers.insert(f);
+  B.CreateAlignedStore(f, cellPointer(ctx, s, at), Align(4));
+  slot->old = old;
+  slot->f = f;
+  slot->cur = Operand{old, old != nullptr};   // no value before the first store when old is never read
+  return &*slot;
+}
+
+// A view of a rail of the clone cell's type at another C type of its width (rule 3: a bitcast).
+Operand cloneCellView(LoweringContext &ctx, Operand v, Type *from, Type *to) {
+  if (from == to)
+    return v;
+  if (!v.handle)
+    return Operand{ctx.B().CreateBitCast(v.v, to), false};
+  return Operand{viewTemplate(ctx, "bitcast", railTypeOf(from), railTypeOf(to), {v}), true};
+}
+
+void writeCloneCell(LoweringContext &ctx, FnState &st, FnState::CloneCell &c, StoreInst &stI, Operand val) {
+  val = cloneCellView(ctx, val, stI.getValueOperand()->getType(), c.ty);
+  if (!val.handle) {
+    CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, c.w}, {val.v});
+    ctx.unc().recordSeed(seed);
+    val = Operand{seed, true};
+  }
+  Operand nv = val;
+  if (ctx.currentFlag()) {
+    if (!c.cur.v)
+      internalError("mem-slots: a clone cell's store under a quantum predicate before its value is known (cloneCellOf "
+                    "loads the caller's content for it)",
+                    &stI);
+    const Pred &p = ctx.currentPredicate();
+    nv = Operand{selectChain(ctx, {{p, val}, {!p, c.cur}}, c.w), true};
+  }
+  RailId fid = ctx.unc().idOf(c.f);
+  abi::CoreSpec cp{abi::Core::Copy, c.w};
+  if (c.cur.v) {
+    CallInst *c1 = ctx.emitCore(cp, {c.cur.v, c.f});
+    ctx.unc().recordCore(c1, cp, {c.cur, Operand{c.f, true}}, fid);
+  }
+  CallInst *c2 = ctx.emitCore(cp, {nv.v, c.f});
+  ctx.unc().recordCore(c2, cp, {nv, Operand{c.f, true}}, fid);
+  c.cur = nv;
+  st.lowered[&stI] = Operand{c.f, true};
+}
+
 bool cellsHoldRegisters(LoweringContext &ctx, FnState &st, ObjectId o) {
   auto theta = [](const Value *v) {
     while (auto *c = dyn_cast<CastInst>(v))
@@ -4983,6 +5135,16 @@ void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
     ctx.bindFields(&ld, {Operand{h, true}});
     return;
   }
+  if (FnState::CloneCell *cc = cloneCellOf(ctx, st, s, ld)) {
+    if (!cc->cur.v)
+      internalError("mem-slots: a clone cell read before its value is known (cloneCellOf loads the caller's content "
+                    "for it)",
+                    &ld);
+    Operand h = cloneCellView(ctx, cc->cur, cc->ty, ld.getType());
+    st.lowered[&ld] = h;
+    ctx.bindFields(&ld, {h});
+    return;
+  }
   cellRail(*s.info, ld.getType(), ld);
   Operand h = readCell(ctx, st, s, ld, ld.getType());
   st.lowered[&ld] = h;
@@ -5521,6 +5683,8 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
                       "zext is a representation change (spine, cq-sj2j)",
                       &stI);
     }
+  if (FnState::CloneCell *cc = cloneCellOf(ctx, st, s, stI))
+    return writeCloneCell(ctx, st, *cc, stI, val);
   if (val.handle && ctx.currentPredicate().isTop() && !ctx.currentFlag())
     if (const Instruction *src = sourceOf(ctx, st, *s.info, s.o, &stI, s.a, v->getType()))
       if (auto it = st.lowered.find(src);
