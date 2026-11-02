@@ -361,7 +361,10 @@ bool frozenRail(Shared &, llvm::Value *h);
 // clone (rule 19).
 struct EntryReturn {
   bool frozen = true;
-  unsigned registers = 0;
+  unsigned registers = 0;                 // mints.size()
+  // CR rule 19 (f684858): the union over the return paths of the registers still allocated there, by
+  // mint site (the original value the register's rail is bound to), in the original function's order.
+  llvm::SmallVector<const llvm::Value *, 4> mints;
   llvm::Type *ret = nullptr;              // the lowered entry's return type (rule 19, 193; rule 26 leaves)
   llvm::SmallVector<bool, 4> leafQ;       // an aggregate return: which leaves are handles
 };
@@ -370,6 +373,9 @@ const EntryReturn *entryReturn(const llvm::Function &F);
 // its rule-19 calls) still allocated at a return being lowered (kept, and no rule-6 clean-up registered),
 // in the output function's instruction order.
 llvm::SmallVector<llvm::Value *, 4> liveRegisters(LoweringContext &);
+// CR rule 19: a live register's mint site, the first original value (in the original function's order)
+// bound to its rail; the identity of an extra result across the in-place lowering and its kept clone.
+const llvm::Value *registerMintSite(LoweringContext &, llvm::Value *rail);
 // cq-i9wk (Construct.cpp): the kept clone (Specialization::kept) of in-place specialization inPlace, one per
 // (module, function), made on first request; takeKeptClones: those not constructed yet, which construct()
 // builds before the module's epilogue.

@@ -7,18 +7,21 @@
 //  value wherever v is used after the cq_theta. Orchestrator decision on cq-s32y (owner may
 //  override): such a use reads a copy taken just before the rotation.
 //
+//  CR rule 2 (f684858): the pre-rotation value is kept per path and per trip. Wherever one copy taken
+//  at T cannot serve every reader, the Ry hits a copy of h instead (rotateCopy) and h keeps v's value
+//  on every path and trip: no stop.
+//
 //  - Need. Before the cq_theta T is lowered (uncontrolled, rule 10 controlled, or rule 15 quantum
 //    angle), every value w bound to h is checked for a use after T: a non-phi user lowered after T
 //    in the original CFG (reachable from T's end without passing w's definition, which would make it
 //    another instance of w), a phi incoming whose edge is so reachable, or a non-phi user not lowered
 //    yet that precedes T (a lazy reader such as fatptr's deriveGEP or a value -O1 sank, which reads w
 //    when it is finally emitted; cq-drcl: a user in a block T cannot reach, a sibling arm, is no
-//    reader after T). The operand v needing it gets the copy; any other value bound to h needing it
-//    is cq::unimplemented, as is one bound to a rail h may name at run time when h is a phi or select
-//    over handles (cq-igqp: a classically bounded loop's header phi names its initial rail on trip 0). No use after T: nothing is emitted (the common case is unchanged).
-//  - Classical guards (cq-drcl). The copy is emitted at T. A reader after T whose block's classical
-//    factor does not imply T's block's is reached by a path on which T did not run (a classical arm
-//    joined): it would need a merge of c and h at the classical join, cq::unimplemented.
+//    reader after T). The operand v needing it gets the copy, as does any other value bound to h; one
+//    bound to a rail h may name at run time (h a phi or select over handles, cq-igqp) rotates a copy.
+//    No use after T: nothing is emitted (the common case is unchanged).
+//  - Classical guards (cq-drcl). A reader after T whose block's classical factor does not imply T's
+//    block's is reached by a path on which T did not run: the Ry hits a copy (h is v on every path).
 //  - Not after T (cq-drcl). An instruction lowered after the rebinding that T does not reach (a
 //    sibling arm, quantum or classical) reads h for v: there the rotation did not happen.
 //  - Copy. c = cqrt_alloc_<W>(0), copy_<W>(h, c), recorded (recordSeed, recordCore): a Garbage rail
@@ -27,10 +30,9 @@
 //    operand(v), fatptr's lazy derivations included, reads the pre-rotation value. Classical
 //    collapse never reads through the copy to a later outcome of h (Collapse.cpp, cq-nvfi).
 //  - Phi edges. A phi lowered after T whose incoming v arrives only on edges not after T reads h
-//    (atPhiEdge): there h is unrotated (the merge of a rule 10 controlled rotation names the
-//    register h, never a select of h and its copy). Edges of both kinds for v: cq::unimplemented.
-//  - Loops. A copy needed while T can reach itself without passing v's definition (v invariant
-//    over a cycle around T) is cq::unimplemented: a body lowered once would rotate h on every trip.
+//    (atPhiEdge). A phi with edges of both kinds for v: the Ry hits a copy.
+//  - Loops. v read on a later trip of a cycle around T (v invariant over the cycle): the Ry hits a
+//    copy, one per trip.
 //  - Memory (cq-xu07). When v is a load, the cell it read holds h too, and so may any value stored
 //    into the cell's object: in C the cell keeps its value. When a read of the object may observe
 //    the cell after T (a load, memory intrinsic or call reaching it on a path from T before a store
@@ -40,19 +42,17 @@
 //    T is lowered (T names c) and back to h after it. Otherwise (the corpus's load, cq_theta, store
 //    back: 61, 124) h is rotated in place as before.
 //  - Register states (cq-6qum). When the cq_theta is uncontrolled (rule 2's classical angle, or rule
-//    15's quantum angle: cq-r9j0), v is
-//    a rule 10 register state (Shared::statePreps) and v is read after T, the rotation hits a copy
-//    the same way: rot-cry keeps h as the register (a later disjoint prep xors into it), so h must
-//    keep v's value. A read inside a cycle where v is invariant: cq::unimplemented.
+//    15's quantum angle: cq-r9j0), v is a rule 10 register state (Shared::statePreps) and v is read
+//    after T (or on a later trip), the rotation hits a copy the same way: rot-cry keeps h as the
+//    register (a later disjoint prep xors into it), so h must keep v's value.
 //  - Switch atoms (cq-0hhk). Rule 13's case atoms are the scrutinee's value at the switch, and pred
 //    mints them where a flag or a select reads them (no IR use: the walk above never sees them). When
 //    T rotates h in place while a value bound to h is the scrutinee of a quantum switch whose region
-//    (the blocks the switch reaches before its immediate post-dominator) holds T or the point standing
-//    for it, the region's later atoms would read the rotated rail. A copy c of h is taken before the Ry
-//    (shared with the copy above when both are needed) and the switch's atoms read it
-//    (Shared::switchSnap, LoweringContext::switchRail). cq::unimplemented: T in a callee of the
-//    switch's function, T in a cycle where the scrutinee is invariant, T under a classical guard the
-//    switch's block does not have (c would not reach every reader), a switch on a view of h.
+//    (the blocks the switch reaches before its immediate post-dominator) holds T, the region's later
+//    atoms would read the rotated rail. A copy c of h is taken before the Ry (shared with the copy
+//    above when both are needed) and the switch's atoms read it (Shared::switchSnap,
+//    LoweringContext::switchRail). T in a cycle where the scrutinee is invariant, or under a classical
+//    guard the switch's block does not have: the Ry hits a copy.
 #include "SpineInternal.h"
 
 #include "cq/Abi.h"
@@ -161,6 +161,25 @@ const Instruction *useAfter(Shared &sh, const Value *w, const Instruction *P, co
     all->push_back(I);
   }
   return first;
+}
+
+// Does a phi read w both on an edge after P and on one not after it (atPhiEdge could not tell which rail
+// the incoming names)?
+bool mixedPhiEdges(Shared &sh, const Value *w, const Instruction *P, const DenseSet<const BasicBlock *> &reach) {
+  SmallVector<const Use *, 8> uses;
+  readingUses(sh, w, uses);
+  for (const Use *U : uses) {
+    auto *phi = dyn_cast<PHINode>(U->getUser());
+    if (!phi)
+      continue;
+    bool before = false, after = false;
+    for (unsigned i = 0; i < phi->getNumIncomingValues(); ++i)
+      if (phi->getIncomingValue(i) == w)
+        (isAfter(P, reach, phi->getIncomingBlock(i)->getTerminator()) ? after : before) = true;
+    if (before && after)
+      return true;
+  }
+  return false;
 }
 
 // The point standing for T in function F: T itself when it is in F (the compiler never inlines, rule 19).
@@ -355,8 +374,11 @@ bool inSwitchRegion(const SwitchInst &S, const Instruction *P) {
 }
 
 // cq-0hhk (contract: Switch atoms): the quantum switches whose atoms read h after T get a copy of h
-// taken here. Returns the copy (nullptr: none needed).
-Value *snapshotSwitchAtoms(LoweringContext &ctx, CallInst &T, Value *h) {
+// taken here. Returns the copy (nullptr: none needed). rotateCopy: set, with nothing emitted, when one copy
+// at T cannot serve every atom (T inside a cycle where the scrutinee is invariant, or under a classical
+// guard the switch's block does not have): the Ry then hits a copy and h keeps the scrutinee's value on
+// every path and trip (CR rule 2, f684858: pre-rotation copies per path and trip).
+Value *snapshotSwitchAtoms(LoweringContext &ctx, CallInst &T, Value *h, bool &rotateCopy) {
   Shared &sh = shared(ctx);
   SmallVector<const Value *, 4> scrutinees;
   for (auto &[w, ops] : sh.binds)
@@ -365,7 +387,13 @@ Value *snapshotSwitchAtoms(LoweringContext &ctx, CallInst &T, Value *h) {
   for (auto &[w, vw] : sh.views)
     if (vw.rail == h)
       scrutinees.push_back(w);
-  Value *c = nullptr;
+  auto cf = [&](const BasicBlock *b) {
+    const Pred &p = ctx.preds().block(b);
+    return p.isBottom() ? Pred::bottom() : p.classicalFactor(ctx.T, ctx.S);
+  };
+  // The switches whose atoms read h after T (the compiler never inlines, rule 19: T is in the switch's
+  // function or no point of it).
+  SmallVector<std::pair<const Value *, const SwitchInst *>, 2> hits;
   for (const Value *w : scrutinees)
     for (const User *u : w->users()) {
       auto *S = dyn_cast<SwitchInst>(u);
@@ -374,25 +402,17 @@ Value *snapshotSwitchAtoms(LoweringContext &ctx, CallInst &T, Value *h) {
       const Instruction *P = pointIn(sh, &T, S->getFunction());
       if (!P || !inSwitchRegion(*S, P))
         continue;
-      if (P != &T)
-        unimplemented("spine: a callee's cq_theta rotates in place the scrutinee rail of the quantum switch " +
-                          describe(S) + " whose case atoms may be read after it (cq-0hhk)",
-                      &T);
       bool cyc = false;
       reachFrom(&T, w, cyc);
-      if (cyc)
-        unimplemented("spine: cq_theta rotates in place the scrutinee rail of the quantum switch " + describe(S) +
-                          " inside a cycle where the scrutinee is invariant (cq-0hhk)",
-                      &T);
-      auto cf = [&](const BasicBlock *b) {
-        const Pred &p = ctx.preds().block(b);
-        return p.isBottom() ? Pred::bottom() : p.classicalFactor(ctx.T, ctx.S);
-      };
-      if (!(cf(S->getParent()) & !cf(T.getParent())).isBottom())
-        unimplemented("spine: cq_theta under a classical guard rotates in place the scrutinee rail of the quantum "
-                          "switch " + describe(S) + " whose case atoms may be read where the guard did not hold "
-                          "(cq-0hhk)",
-                      &T);
+      if (cyc || !(cf(S->getParent()) & !cf(T.getParent())).isBottom()) {
+        rotateCopy = true;
+        return nullptr;
+      }
+      hits.push_back({w, S});
+    }
+  Value *c = nullptr;
+  for (auto &[w, S] : hits) {
+    {
       if (!c) {
         // A view scrutinee (cq-su3p) names the register's narrow rail h: the copy is of h's width.
         auto vw = sh.views.find(w);
@@ -405,6 +425,7 @@ Value *snapshotSwitchAtoms(LoweringContext &ctx, CallInst &T, Value *h) {
       }
       sh.switchSnap[w] = c;
     }
+  }
   return c;
 }
 
@@ -485,13 +506,9 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T, b
   if (uncontrolled && sh.statePreps.count(v)) {
     bool cyc = false;
     DenseSet<const BasicBlock *> r = reachFrom(&T, v, cyc);
-    if (const Instruction *u = useAfter(sh, v, &T, r)) {
-      if (cyc)
-        unimplemented("spine: a register state rotated by rule 2 is read after the rotation (by " + describe(u) +
-                          ") inside a cycle where the value is invariant (cq-6qum)",
-                      &T);
+    (void)cyc;   // read after T, or on a later trip of a cycle: either way the copy is rotated
+    if (useAfter(sh, v, &T, r))
       return rotateCopy();
-    }
   }
   hoistReaders(ctx, T, v, h);
 
@@ -517,16 +534,17 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T, b
       if (U->getUser() != w && sh.binds.count(w) && !narrowUse(ctx, *U, vw.bits) && U->get() == w)
         continue;   // reads the wide copy
       if (cyc)
-        unimplemented("spine: " + describe(w) + ", a view of the rail cq_theta rotates in place, is read after the "
-                          "rotation (by " + describe(I) + ") inside a cycle where the view is invariant (cq-su3p)",
-                      &T);
+        return rotateCopy();   // the view is read on a later trip: h keeps its value, the copy is rotated
       if (!is_contained(viewNeeds, w))
         viewNeeds.push_back(w);
       readers.push_back(I);
     }
   }
 
-  Value *snap = snapshotSwitchAtoms(ctx, T, h);   // cq-0hhk
+  bool switchNeedsCopy = false;
+  Value *snap = snapshotSwitchAtoms(ctx, T, h, switchNeedsCopy);   // cq-0hhk
+  if (switchNeedsCopy)
+    return rotateCopy();
 
   // Any other value bound to h and read after the rotation reads the pre-rotation copy too (bound to
   // it after the Ry, like the operand). cq-igqp: a value bound to a rail h may name at run time (h a phi
@@ -566,10 +584,8 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T, b
       continue;
     if (ops.front().v != h || P != &T)
       return rotateCopy();
-    if (cyc)
-      unimplemented("spine: " + describe(w) + ", bound to the rail cq_theta rotates in place, is read after the "
-                        "rotation (by " + describe(rs.front()) + ") inside a cycle where it is invariant (cq-s32y)",
-                    &T);
+    if (cyc || mixedPhiEdges(sh, w, &T, r))
+      return rotateCopy();   // read on a later trip, or merged with its unrotated self: copies per trip and path
     readers.append(rs.begin(), rs.end());
     aliasNeeds.push_back({w, std::move(r)});
   }
@@ -580,10 +596,10 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T, b
   const Instruction *u = useAfter(sh, v, &T, reach, &vReaders);
   if (!u && viewNeeds.empty() && aliasNeeds.empty())
     return std::nullopt;
-  if (u && cyclic)
-    unimplemented("spine: the pre-rotation value of an in-place cq_theta is read after it (by " + describe(u) +
-                      ") inside a cycle where the value is invariant (cq-s32y)",
-                  &T);
+  // CR rule 2 (f684858, pre-rotation copies per path and trip): v read on a later trip of a cycle around T,
+  // or merged by a phi with its unrotated self, keeps h; the Ry hits a copy.
+  if (u && (cyclic || mixedPhiEdges(sh, v, &T, reach)))
+    return rotateCopy();
   readers.append(vReaders.begin(), vReaders.end());
   // cq-drcl: the copy is emitted at T, so it is available to a reader after T only when every output
   // path to the reader passes T's output block: quantum arms are linearized, a classical branch is
@@ -596,12 +612,11 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T, b
       return p.isBottom() ? Pred::bottom() : p.classicalFactor(ctx.T, ctx.S);
     };
     Pred tf = cf(T.getParent());
+    // A reader reached by a path on which T's classical guard failed reads h unrotated there: h keeps v's
+    // value on every path and the Ry hits a copy (no merge of c and h at the classical join).
     for (const Instruction *r : readers)
       if (!(cf(r->getParent()) & !tf).isBottom())
-        unimplemented("spine: the pre-rotation value of an in-place cq_theta under a classical guard is read (by " +
-                          describe(r) + ") where the guard may not have held: the copy and the rotated rail "
-                          "would merge at the classical join (cq-drcl)",
-                      &T);
+        return rotateCopy();
   }
 
   RailType w = railTypeOf(v->getType());
@@ -688,8 +703,8 @@ Operand atPhiEdge(Shared &sh, const Value *orig, Operand bound) {
   if (!before)
     return bound;
   if (after)
-    unimplemented("spine: a phi takes " + describe(orig) + " both on edges after an in-place rotation of its "
-                      "rail and on edges before it (cq-s32y)",
+    internalError("spine: a phi takes " + describe(orig) + " both on edges after an in-place rotation of its rail "
+                      "and on edges before it (beginPreRotation rotates a copy then, cq-s32y)",
                   phi);
   return Operand{r.h, true};
 }

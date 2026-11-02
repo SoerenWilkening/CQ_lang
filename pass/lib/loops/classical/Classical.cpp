@@ -266,7 +266,7 @@ bool samePred(const Pred &a, const Pred &b) { return (a & !b).isBottom() && (b &
 
 // CR rule 6's bijections in y (the list of rule 6, but a select of updates and a controlled swap,
 // which a carried value's single reader cannot be): add, sub, xor with an operand other than y, mul
-// by an odd literal, fneg, bswap, fshl/fshr with y in both value slots. bitreverse has no template.
+// by an odd literal, fneg, bswap, bitreverse, fshl/fshr with y in both value slots.
 bool bijectiveIn(const Instruction &U, const Value *Y) {
   if (auto *bo = dyn_cast<BinaryOperator>(&U); bo && bo->getType()->isIntegerTy()) {
     Value *a0 = bo->getOperand(0), *a1 = bo->getOperand(1);
@@ -285,7 +285,7 @@ bool bijectiveIn(const Instruction &U, const Value *Y) {
     return un->getOpcode() == Instruction::FNeg && un->getOperand(0) == Y;
   if (auto *II = dyn_cast<IntrinsicInst>(&U)) {
     Intrinsic::ID id = II->getIntrinsicID();
-    if (id == Intrinsic::bswap)
+    if (id == Intrinsic::bswap || id == Intrinsic::bitreverse)
       return II->getArgOperand(0) == Y;
     if (id == Intrinsic::fshl || id == Intrinsic::fshr)
       return II->getArgOperand(0) == Y && II->getArgOperand(1) == Y && II->getArgOperand(2) != Y;
@@ -366,8 +366,8 @@ Inv inverseOf(LoweringContext &ctx, Instruction &U, const Value *Y, Operand yp) 
     return normalized(spec, {yp});
   }
   auto *II = cast<IntrinsicInst>(&U);
-  if (II->getIntrinsicID() == Intrinsic::bswap) {
-    spec.op = "bswap";   // an involution
+  if (II->getIntrinsicID() == Intrinsic::bswap || II->getIntrinsicID() == Intrinsic::bitreverse) {
+    spec.op = II->getIntrinsicID() == Intrinsic::bswap ? "bswap" : "bitreverse";   // an involution
     return normalized(spec, {yp});
   }
   spec.op = II->getIntrinsicID() == Intrinsic::fshl ? "fshr" : "fshl";   // a rotation's inverse

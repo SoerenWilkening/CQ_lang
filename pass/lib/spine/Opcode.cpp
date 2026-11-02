@@ -17,6 +17,7 @@
 #include "cq/Abi.h"
 #include "cq/Calls.h"
 #include "cq/Memory.h"
+#include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/CFG.h"
@@ -144,6 +145,7 @@ std::string intrinsicOp(Intrinsic::ID id) {
   case Intrinsic::cttz: return "cttz";
   case Intrinsic::ctpop: return "ctpop";
   case Intrinsic::bswap: return "bswap";
+  case Intrinsic::bitreverse: return "bitreverse";
   case Intrinsic::smax: return "smax";
   case Intrinsic::smin: return "smin";
   case Intrinsic::umax: return "umax";
@@ -1139,11 +1141,7 @@ std::optional<Inverse> inverseStepWith(Instruction &U, Value *Y, Operand yp,
     if (id == Intrinsic::bswap || id == Intrinsic::bitreverse) {
       if (II->getArgOperand(0) != Y)
         return std::nullopt;
-      if (id == Intrinsic::bitreverse)
-        unimplemented("spine: rule 6 clean-up through bitreverse: awaiting owner ruling: SPEC_ISSUES bitreverse has "
-                      "no template op (§1.2) although rule 6 lists it as a bijection",
-                      &U);
-      spec.op = "bswap";
+      spec.op = id == Intrinsic::bswap ? "bswap" : "bitreverse";   // §1.2, f684858
       spec.w = rt(U.getType(), &U);
       return normalized(spec, {yp});                 // an involution
     }
@@ -1251,6 +1249,44 @@ std::optional<Affine> affineIn(LoweringContext &ctx, Value *V, Value *X, unsigne
   return std::nullopt;
 }
 
+// V evaluated at X = x by constant folding of the original instructions between them; nullopt when V
+// reads a value other than X and constants, or an instruction that does not fold.
+std::optional<APInt> evalAt(Value *V, Value *X, Constant *x, const DataLayout &DL, DenseMap<Value *, Constant *> &memo,
+                            unsigned depth = 0) {
+  std::function<Constant *(Value *, unsigned)> ev = [&](Value *v, unsigned d) -> Constant * {
+    if (v == X)
+      return x;
+    if (auto *c = dyn_cast<Constant>(v))
+      return c;
+    auto *I = dyn_cast<Instruction>(v);
+    if (!I || d > 64 || I->mayHaveSideEffects() || I->mayReadFromMemory() || isa<PHINode>(I))
+      return nullptr;
+    if (auto it = memo.find(v); it != memo.end())
+      return it->second;
+    SmallVector<Constant *, 4> ops;
+    for (Value *o : I->operands()) {
+      if (isa<Function>(o)) {
+        ops.push_back(cast<Constant>(o));
+        continue;
+      }
+      Constant *c = ev(o, d + 1);
+      if (!c)
+        return nullptr;
+      ops.push_back(c);
+    }
+    Constant *r = ConstantFoldInstOperands(I, ops, DL);
+    memo[v] = r;
+    return r;
+  };
+  Constant *r = ev(V, depth);
+  if (auto *ci = dyn_cast_or_null<ConstantInt>(r))
+    return ci->getValue();
+  if (auto *cs = dyn_cast_or_null<ConstantStruct>(r))   // *.with.overflow: the value field
+    if (auto *ci = dyn_cast<ConstantInt>(cs->getOperand(0)))
+      return ci->getValue();
+  return std::nullopt;
+}
+
 // CR rule 6 on x against the composite update y' = f(g(x), x) (cq-12cr owner ruling, 127): the
 // garbage g, computed from x, is uncomputed by rule 5 first (its _unc reads x, so Uncompute orders it
 // before x's clean-up). y' = a*x + c + sum(+-rest) is a bijection in x iff a is odd; then
@@ -1265,10 +1301,43 @@ void compositeCleanup(LoweringContext &ctx, Instruction &I, Value *X, Operand yp
     internalError("spine: rule 6 composite update of a value that is no integer", &I);
   unsigned W = VT->getIntegerBitWidth();
   std::optional<Affine> f = affineIn(ctx, &I, X, W);
-  if (!f)
-    unimplemented("spine: rule 6 composite update (127) that is not an affine function of the register: awaiting "
-                  "owner ruling: SPEC_ISSUES rule 6 composite updates beyond the affine ones (which must be inverted)",
-                  &I);
+  if (!f) {
+    // CR rule 6: the composite update y' = F(x) cleans x iff F is a bijection; its inverse is then computed
+    // fresh from y'. Beyond the affine class, F (a function of x and literals) is decided exhaustively at
+    // the widths where that is a table: a collision means no inverse (x is kept, rule 6), a bijection is
+    // inverted by a QROM of its inverse table at y' (rule 20's constant-table read). A wider F, or one that
+    // reads another value, has no inverse this rule can compute: x is kept (rule 6: "kept only when f has
+    // no inverse in y"; SPEC_ISSUES rule 6 composite updates beyond the affine ones).
+    Type *XT = X->getType();
+    if (!XT->isIntegerTy() || XT->getIntegerBitWidth() != W || W > 16)
+      return;
+    const DataLayout &DL = ctx.M.getDataLayout();
+    uint64_t n = uint64_t(1) << W;
+    std::vector<uint64_t> inv(n, ~uint64_t(0));
+    for (uint64_t xv = 0; xv < n; ++xv) {
+      DenseMap<Value *, Constant *> memo;
+      std::optional<APInt> y = evalAt(&I, X, ConstantInt::get(XT, xv), DL, memo);
+      if (!y || y->getBitWidth() != W)
+        return;   // F reads another value or does not fold: no inverse here
+      uint64_t yv = y->getZExtValue();
+      if (inv[yv] != ~uint64_t(0))
+        return;   // a collision: F is no bijection, x is kept (rule 6)
+      inv[yv] = xv;
+    }
+    LLVMContext &C = ctx.M.getContext();
+    SmallVector<Constant *, 256> elems;
+    for (uint64_t yv = 0; yv < n; ++yv)
+      elems.push_back(ConstantInt::get(VT, inv[yv]));
+    ArrayType *AT = ArrayType::get(VT, n);
+    auto *G = new GlobalVariable(ctx.M, AT, true, GlobalValue::PrivateLinkage, ConstantArray::get(AT, elems),
+                                 "cq.r6.inv");
+    G->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
+    abi::TemplateSpec qs;
+    qs.op = "qrom_load";
+    qs.w = rt(VT, &I);
+    clean(ctx, X, Inverse{qs, {Operand{G, false}, Operand{ConstantInt::get(Type::getInt64Ty(C), n), false}, yp}});
+    return;
+  }
   if (!f->a[0])
     return;   // an even multiplier: no inverse, x is kept
   abi::TemplateSpec spec;

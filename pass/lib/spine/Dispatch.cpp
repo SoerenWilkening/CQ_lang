@@ -678,6 +678,10 @@ Instruction *copyClassical(LoweringContext &ctx, Instruction &I) {
 void dispatch(LoweringContext &ctx, Instruction &I) {
   if (isa<DbgInfoIntrinsic>(I))
     return;   // debug records carry no semantics; the original values they name are gone
+  // CR rule 13: a computed goto's address is no value of the lowering (its destination is the integer it
+  // was derived from); its blockaddress constants name the original blocks.
+  if (gotoDestinationOnly(&I))
+    return;
   if (auto *CB = dyn_cast<CallBase>(&I)) {
     if (isa<InvokeInst>(CB) || isa<CallBrInst>(CB))   // terminators: the walker's (emitTerminator)
       internalError("spine: dispatch of an invoke or callbr", &I);
@@ -795,8 +799,8 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
   case Instruction::LandingPad:
   case Instruction::CleanupPad:
   case Instruction::CatchPad:
-    unimplemented("spine: an exception handling pad (C compiled with -fexceptions): awaiting owner ruling: "
-                  "SPEC_ISSUES unwinding (invoke, landingpad, resume) in a lowered C function",
+    internalError("spine: an exception handling pad (landingpad, cleanuppad, catchpad): IR the pinned "
+                  "pipeline cannot emit (CR §0, rule 25)",
                   &I);
   default:
     break;

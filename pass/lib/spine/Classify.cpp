@@ -88,7 +88,7 @@ bool isTemplateIntrinsic(Intrinsic::ID id) {
   case Intrinsic::ceil: case Intrinsic::trunc: case Intrinsic::rint: case Intrinsic::round:
   case Intrinsic::maxnum: case Intrinsic::minnum: case Intrinsic::fma: case Intrinsic::fmuladd:
   case Intrinsic::fshl: case Intrinsic::fshr: case Intrinsic::abs: case Intrinsic::ctlz:
-  case Intrinsic::cttz: case Intrinsic::ctpop: case Intrinsic::bswap: case Intrinsic::smax:
+  case Intrinsic::cttz: case Intrinsic::ctpop: case Intrinsic::bswap: case Intrinsic::bitreverse: case Intrinsic::smax:
   case Intrinsic::smin: case Intrinsic::umax: case Intrinsic::umin: case Intrinsic::uadd_sat:
   case Intrinsic::usub_sat: case Intrinsic::sadd_sat: case Intrinsic::ssub_sat: case Intrinsic::uadd_with_overflow: case Intrinsic::sadd_with_overflow:
   case Intrinsic::umul_with_overflow: case Intrinsic::smul_with_overflow:
@@ -304,10 +304,6 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
       return Class::LibmIntrinsic;
     if (isHintIntrinsic(id))
       return Class::TemplateIntrinsic;   // spine's lowerOpcode: a representation change, nothing or a composition
-    if (id == Intrinsic::bitreverse)
-      unimplemented("spine: llvm.bitreverse of a quantum value: awaiting owner ruling: SPEC_ISSUES bitreverse has "
-                    "no template op (§1.2) although rule 6 lists it as a bijection",
-                    &CB);
     if (CB.getType()->isVectorTy() || any_of(CB.args(), [](const Use &u) { return u->getType()->isVectorTy(); }))
       return Class::TemplateIntrinsic;   // lanes (rule 25): dispatch hands it to aggr::lowerVectorOp
     // Every intrinsic clang 19 -O1 emits for C is routed above (templates, libm, hints, memory, fenv,

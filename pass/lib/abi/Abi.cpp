@@ -224,6 +224,7 @@ const OpInfo kOps[] = {
     {"cttz", Arity::Unary, Dom::Int, Comm::No, false},
     {"ctpop", Arity::Unary, Dom::Int, Comm::No, false},
     {"bswap", Arity::Unary, Dom::Int, Comm::No, false},
+    {"bitreverse", Arity::Unary, Dom::Int, Comm::No, false},
     {"smax", Arity::Binary, Dom::Int, Comm::Int, false},
     {"smin", Arity::Binary, Dom::Int, Comm::Int, false},
     {"umax", Arity::Binary, Dom::Int, Comm::Int, false},

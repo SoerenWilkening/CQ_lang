@@ -308,69 +308,90 @@ bool viewMerge(LoweringContext &ctx, PHINode &P) {
   if (!M || !willView(sh, P, M, nullptr))
     return false;
 
-  Value *R = nullptr;
-  SmallVector<std::pair<unsigned, const ConstantInt *>, 2> consts;
+  // Each incoming's narrow value: a view's rail, the zext's source read as a phi edge (sh.cur is P), or
+  // a literal.
+  SmallVector<Operand, 4> ins;
   for (unsigned i = 0; i < P.getNumIncomingValues(); ++i) {
     const Value *u = P.getIncomingValue(i);
-    if (auto *c = dyn_cast<ConstantInt>(u)) {
-      consts.push_back({i, c});
-      continue;
-    }
-    Operand o;
-    if (auto it = sh.views.find(u); it != sh.views.end())
-      o = Operand{it->second.rail, true};
+    if (auto *c = dyn_cast<ConstantInt>(u))
+      ins.push_back(Operand{ConstantInt::get(IntegerType::get(ctx.M.getContext(), M), c->getValue().trunc(M)), false});
+    else if (auto it = sh.views.find(u); it != sh.views.end())
+      ins.push_back(Operand{it->second.rail, true});
     else
-      o = ctx.operand(intZext(u)->getOperand(0));   // read as a phi edge (sh.cur is P)
-    if (!o.handle)
-      unimplemented("spine: a rule 10 merge through a representation change with a classical non-constant "
-                    "incoming (" + describe(u) + ")",
-                    &P);
-    if (R && o.v != R)
-      unimplemented("spine: a rule 10 merge through a representation change whose incomings name different "
-                    "rails (" + describe(u) + ")",
-                    &P);
-    R = o.v;
+      ins.push_back(ctx.operand(intZext(u)->getOperand(0)));
   }
-  if (!R)
-    internalError("spine: a view phi with no rail incoming", &P);
 
-  // A constant incoming is R's value on its edge only where nothing changed R since its mint: R was
-  // minted with that literal, and every gate emitted on R so far (a non-diagonal gate, Shared::rotations,
-  // or an in-place write, RailHist::writes) stands for an original instruction off the edge. The gates
-  // themselves are read, not the cq_theta bindings: an in-place cq_theta's operand is rebound to its
-  // pre-rotation copy (finishPreRotation), so the cq_theta that minted and rotated R names R nowhere
-  // (cq-5ajv).
-  if (!consts.empty()) {
-    auto h = sh.hist.find(R);
-    const ConstantInt *seed = h == sh.hist.end() ? nullptr : dyn_cast_or_null<ConstantInt>(h->second.seed);
-    SmallVector<CallInst *, 4> gates;
-    if (auto rt = sh.rotations.find(R); rt != sh.rotations.end())
-      gates.append(rt->second.begin(), rt->second.end());
-    if (h != sh.hist.end())
-      for (const RailHist::Write &w : h->second.writes)
-        gates.push_back(w.call);
-    for (auto &[i, c] : consts) {
-      if (!seed || seed->getBitWidth() != M || seed->getValue() != c->getValue().trunc(M))
-        unimplemented("spine: a rule 10 merge through a representation change whose constant incoming " +
-                          describe(c) + " is not its register's initial value",
-                      &P);
-      const Pred &e = ctx.preds().edge(P.getIncomingBlock(i), P.getParent());
-      for (CallInst *g : gates) {
-        const Instruction *at = nullptr;
-        if (auto ga = sh.gateAt.find(g); ga != sh.gateAt.end())
-          for (const Instruction *a : ga->second)
-            if (a->getFunction() == P.getFunction()) {
-              at = a;
-              break;
-            }
-        if (!at || !(ctx.preds().block(at->getParent()) & e).isBottom())
-          unimplemented("spine: a rule 10 merge through a representation change whose constant incoming " +
-                            describe(c) + " arrives on an edge where its register may have been changed by " +
-                            (at ? describe(at) : std::string("a gate emitted outside this function")) +
-                            " (cq-5ajv)",
-                        &P);
+  // The register view: every non-constant incoming names one rail R, and every constant incoming is R's
+  // value on its edge (R was minted with that literal and nothing changed R on the edge).
+  auto registerView = [&]() -> Value * {
+    Value *R = nullptr;
+    SmallVector<std::pair<unsigned, const ConstantInt *>, 2> consts;
+    for (unsigned i = 0; i < P.getNumIncomingValues(); ++i) {
+      if (auto *c = dyn_cast<ConstantInt>(P.getIncomingValue(i))) {
+        consts.push_back({i, c});
+        continue;
+      }
+      if (!ins[i].handle || (R && ins[i].v != R))
+        return nullptr;
+      R = ins[i].v;
+    }
+    if (!R)
+      internalError("spine: a view phi with no rail incoming", &P);
+    // A constant incoming is R's value on its edge only where nothing changed R since its mint: R was
+    // minted with that literal, and every gate emitted on R so far (a non-diagonal gate, Shared::rotations,
+    // or an in-place write, RailHist::writes) stands for an original instruction off the edge. The gates
+    // themselves are read, not the cq_theta bindings: an in-place cq_theta's operand is rebound to its
+    // pre-rotation copy (finishPreRotation), so the cq_theta that minted and rotated R names R nowhere
+    // (cq-5ajv).
+    if (!consts.empty()) {
+      auto h = sh.hist.find(R);
+      const ConstantInt *seed = h == sh.hist.end() ? nullptr : dyn_cast_or_null<ConstantInt>(h->second.seed);
+      SmallVector<CallInst *, 4> gates;
+      if (auto rt = sh.rotations.find(R); rt != sh.rotations.end())
+        gates.append(rt->second.begin(), rt->second.end());
+      if (h != sh.hist.end())
+        for (const RailHist::Write &w : h->second.writes)
+          gates.push_back(w.call);
+      for (auto &[i, c] : consts) {
+        if (!seed || seed->getBitWidth() != M || seed->getValue() != c->getValue().trunc(M))
+          return nullptr;
+        const Pred &e = ctx.preds().edge(P.getIncomingBlock(i), P.getParent());
+        for (CallInst *g : gates) {
+          const Instruction *at = nullptr;
+          if (auto ga = sh.gateAt.find(g); ga != sh.gateAt.end())
+            for (const Instruction *a : ga->second)
+              if (a->getFunction() == P.getFunction()) {
+                at = a;
+                break;
+              }
+          if (!at || !(ctx.preds().block(at->getParent()) & e).isBottom())
+            return nullptr;
+        }
       }
     }
+    return R;
+  };
+  Value *R = registerView();
+  if (!R) {
+    // CR rule 9 (rule 10, f684858: two registers, or a register and a value that is not its state on an
+    // edge, merge by rule 9 over their handles): the merge at the view's width M, one arm per distinct
+    // narrow incoming under its edges' predicate, into a fresh rail the view names.
+    std::vector<std::pair<Pred, Operand>> arms;
+    for (unsigned i = 0; i < P.getNumIncomingValues(); ++i) {
+      Pred e = ctx.preds().edge(P.getIncomingBlock(i), P.getParent());
+      if (e.isBottom())
+        continue;
+      auto it = find_if(arms, [&](const auto &a) { return a.second.v == ins[i].v; });
+      if (it == arms.end())
+        arms.push_back({e, ins[i]});
+      else
+        it->first = it->first | e;
+    }
+    if (arms.empty())
+      internalError("spine: a view phi with no reachable incoming", &P);
+    R = arms.size() == 1 && arms.front().second.handle
+            ? arms.front().second.v
+            : selectChain(ctx, arms, RailType{Kind::Int, M}, ctx.preds().block(P.getParent()));
   }
 
   sh.views[&P] = Shared::View{R, M};

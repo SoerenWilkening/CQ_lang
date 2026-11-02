@@ -465,6 +465,7 @@ Value *fromRecordIn(LoweringContext &ctx, const RailHist &r, size_t n) {
     Value *x = a[0];
     if (op == "ctpop") return B.CreateUnaryIntrinsic(Intrinsic::ctpop, x);
     if (op == "bswap") return B.CreateUnaryIntrinsic(Intrinsic::bswap, x);
+    if (op == "bitreverse") return B.CreateUnaryIntrinsic(Intrinsic::bitreverse, x);
     if (op == "ctlz" || op == "cttz")   // §2: ctlz(0) = cttz(0) = W, LLVM's value without the poison flag
       return B.CreateBinaryIntrinsic(op == "ctlz" ? Intrinsic::ctlz : Intrinsic::cttz, x, B.getFalse());
     if (op == "abs")   // §2: abs(INT_MIN) = INT_MIN, LLVM's value without the poison flag
@@ -724,7 +725,11 @@ void noteCalleeMeasures(LoweringContext &ctx, const CallBase &orig, BasicBlock *
       continue;
     SmallPtrSet<const Function *, 8> onStack;
     Meas m = formalMeasured(sh, *F, i, onStack);
-    if (m == Meas::None)
+    // CR rule 2, collapse is static (f684858): a rail the callee measures on some of its classical
+    // paths only is lowered as unmeasured after the call. Templates, twins and gates act on the basis
+    // state it then holds, and a later cq_measure of it (or of a value read from it) is an ordinary
+    // measurement: nothing is re-read.
+    if (m != Meas::Always)
       continue;
     Shared::CalleeMeasure cm;
     cm.call = &orig;
@@ -751,10 +756,9 @@ Value *calleeCollapse(LoweringContext &ctx, Value *handle, const Instruction &at
     return nullptr;
   for (Value *src : assumed) {
     Shared::CalleeMeasure cm = sh.calleeMeasured.lookup(src);
-    std::string pre = "spine: cq_measure of a value whose quantum source a callee measured (rule 2 re-read, cq-ihlt): ";
     if (!cm.always)
-      unimplemented(pre + "the callee measures it on some paths only: awaiting owner ruling: SPEC_ISSUES rule 2 "
-                          "re-read of a rail a callee measures on some paths only",
+      internalError("spine: a callee-measured record of a rail the callee measures on some paths only (rule 2: "
+                    "collapse is static, noteCalleeMeasures records none)",
                     &at);
     IRBuilder<> &B = ctx.B();
     IRBuilderBase::InsertPointGuard guard(B);

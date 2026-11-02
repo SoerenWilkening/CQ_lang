@@ -62,6 +62,10 @@ std::optional<llvm::SmallVector<std::pair<Pred, const llvm::BasicBlock *>, 4>>
 computedGotoCases(const llvm::IndirectBrInst &);
 struct GotoTableRead { const llvm::Value *index; std::vector<const llvm::BasicBlock *> entries; };
 std::optional<GotoTableRead> gotoTableRead(const llvm::Value *address);
+// A value read only as a computed goto's address (directly, or through selects, casts and the constant
+// table's entry address read so): no value of the lowering, its destination is chosen by the integer it was
+// derived from (CR rule 13).
+bool gotoDestinationOnly(const llvm::Value *);
 void lowerBranch(LoweringContext &, llvm::BranchInst &);
 llvm::Value *lowerMerge(LoweringContext &, llvm::PHINode &);
 // cq-oa67 (rules 9, 25, 26): a quantum phi of a vector, struct or array, merged field by field; binds its

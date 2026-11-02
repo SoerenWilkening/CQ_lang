@@ -46,6 +46,7 @@
 #include "llvm/IR/AttributeMask.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/Transforms/Utils/SSAUpdater.h"
 #include "llvm/TargetParser/Triple.h"
@@ -174,6 +175,26 @@ bool isQuantumTerm(LoweringContext &ctx, const Instruction *t) {
     return br->isConditional() && spine::isQ(ctx, br->getCondition());
   if (auto *sw = dyn_cast<SwitchInst>(t))
     return spine::isQ(ctx, sw->getCondition());
+  // CR rule 13 (f684858): a computed goto is a switch over its destination list, quantum when the integer
+  // its address was derived from is (its edges are pred's computedGotoCases).
+  if (auto *ib = dyn_cast<IndirectBrInst>(t))
+    return spine::isQ(ctx, ib->getAddress());
+  return false;
+}
+
+// A blockaddress destination d (of the function it was taken in) is b of a specialization of it: the block
+// at the same position (pred's computedGotoCases mapping).
+bool sameGotoDest(const BasicBlock *d, const BasicBlock *b) {
+  if (!d || d->getParent() == b->getParent())
+    return d == b;
+  auto it = b->getParent()->begin();
+  for (const BasicBlock &x : *d->getParent()) {
+    if (it == b->getParent()->end())
+      return false;
+    if (&x == d)
+      return &*it == b;
+    ++it;
+  }
   return false;
 }
 
@@ -286,6 +307,7 @@ private:
   void joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in);
   bool eligible(const BasicBlock *y, const BasicBlock *from) const;
   BasicBlock *out(const BasicBlock *b);
+  Value *gotoEdge(const Value *address, const BasicBlock *dest);
   void emitBlock(BasicBlock *b);
   void emitGuard(BasicBlock *b);
   void emitBody(BasicBlock *b);
@@ -484,13 +506,13 @@ void Walker::plan() {
       outEdges[b].push_back(n);
       continue;
     }
-    if (isa<IndirectBrInst>(t) || isa<CallBrInst>(t))
-      unimplemented("spine: a computed goto or asm goto in a lowered function: awaiting owner ruling: SPEC_ISSUES "
-                    "label addresses (blockaddress) in a lowered or cloned function",
+    if (isa<CallBrInst>(t))
+      unimplemented("spine: asm goto (callbr) in a lowered function: inline asm (CR rule 13, rule 27) waits for its "
+                    "CQ_spec example (build step 3)",
                     t);
-    if (!isa<BranchInst>(t) && !isa<SwitchInst>(t))
-      unimplemented("spine: an exception handling terminator (C compiled with -fexceptions): awaiting owner "
-                    "ruling: SPEC_ISSUES unwinding (invoke, landingpad, resume) in a lowered C function",
+    if (!isa<BranchInst>(t) && !isa<SwitchInst>(t) && !isa<IndirectBrInst>(t))
+      internalError("spine: an exception handling terminator (invoke, resume, catchswitch, cleanupret, "
+                    "catchret): IR the pinned pipeline cannot emit (CR §0, rule 25)",
                     t);
     for (BasicBlock *s : successors(b)) {
       bool back = idx.lookup(s) <= idx.lookup(b);
@@ -569,6 +591,24 @@ void Walker::planGuards() {
       for (auto &cs : sw->cases())
         cands.push_back(Lit{sw->getCondition(), false, true, cs.getCaseValue()->getValue(),
                             Pred::eqAtom(sw->getCondition(), cs.getCaseValue()->getValue())});
+    // A classical computed goto (rule 13): the switch over its destinations, its literals the selects'
+    // conditions and the table index's cases.
+    if (auto *ib = dyn_cast<IndirectBrInst>(t); ib && !spine::isQ(ctx, ib->getAddress())) {
+      std::function<void(const Value *)> addr = [&](const Value *a) {
+        a = a->stripPointerCasts();
+        if (auto *sel = dyn_cast<SelectInst>(a)) {
+          terms(sel->getCondition());
+          addr(sel->getTrueValue());
+          addr(sel->getFalseValue());
+        } else if (std::optional<GotoTableRead> tr = gotoTableRead(a)) {
+          unsigned w = tr->index->getType()->getIntegerBitWidth();
+          for (unsigned k = 0; k < tr->entries.size(); ++k)
+            if (tr->entries[k])
+              cands.push_back(Lit{tr->index, false, true, APInt(w, k), Pred::eqAtom(tr->index, APInt(w, k))});
+        }
+      };
+      addr(ib->getAddress());
+    }
   }
   {
     size_t n = cands.size();
@@ -719,6 +759,35 @@ void Walker::planGuards() {
       fact(b, tg, f);
     }
   }
+}
+
+// The classical i1 "the computed goto's address derives to dest" (CR rule 13), built at the builder's point
+// from the derivation pred's computedGotoCases accepted: blockaddress constants, selects, a constant table
+// read at an index.
+Value *Walker::gotoEdge(const Value *a, const BasicBlock *dest) {
+  IRBuilder<> &B = ctx.B();
+  LLVMContext &C = ctx.M.getContext();
+  a = a->stripPointerCasts();
+  if (auto *ba = dyn_cast<BlockAddress>(a))
+    return ConstantInt::getBool(C, sameGotoDest(ba->getBasicBlock(), dest));
+  if (auto *sel = dyn_cast<SelectInst>(a)) {
+    Operand c = ctx.operand(sel->getCondition());
+    if (c.handle)
+      internalError("spine: a classical computed goto address selected by a rail", sel);
+    return B.CreateSelect(c.v, gotoEdge(sel->getTrueValue(), dest), gotoEdge(sel->getFalseValue(), dest));
+  }
+  std::optional<GotoTableRead> tr = gotoTableRead(a);
+  if (!tr)
+    internalError("spine: a computed goto address pred's computedGotoCases accepted that is not derived",
+                  dyn_cast<Instruction>(a));
+  Operand x = ctx.operand(tr->index);
+  if (x.handle)
+    internalError("spine: a classical computed goto address read at a rail index", dyn_cast<Instruction>(a));
+  Value *e = ConstantInt::getFalse(C);
+  for (unsigned k = 0; k < tr->entries.size(); ++k)
+    if (sameGotoDest(tr->entries[k], dest))
+      e = B.CreateOr(e, B.CreateICmpEQ(x.v, ConstantInt::get(x.v->getType(), k)));
+  return e;
 }
 
 BasicBlock *Walker::out(const BasicBlock *b) {
@@ -1478,13 +1547,25 @@ Value *Walker::returnCopyOut(PHINode &phi) {
 // how many registers stay allocated, the lowered return type (spine::entryReturn).
 void Walker::noteEntryReturn(bool frozen, Instruction *t) {
   auto [er, fresh] = entryReturns.try_emplace(sh.orig);
-  unsigned regs = unsigned(spine::liveRegisters(ctx).size());
-  if (!fresh && er->second.registers != regs)
-    unimplemented("spine: awaiting owner ruling: SPEC_ISSUES rule 19 extra results of a callee whose returns "
-                  "keep different numbers of registers",
-                  t);
+  // CR rule 19 (f684858): the extra results are the union over the return paths, by mint site in a fixed
+  // order; a path that did not mint one returns handle 0 for it (the kept clone's returns).
+  DenseMap<const Value *, unsigned> pos;
+  {
+    unsigned n = 0;
+    for (Argument &A : sh.orig->args())
+      pos[&A] = n++;
+    for (Instruction &I : instructions(*sh.orig))
+      pos[&I] = n++;
+  }
+  SmallVector<const Value *, 4> &mints = er->second.mints;
+  for (Value *r : spine::liveRegisters(ctx)) {
+    const Value *m = spine::registerMintSite(ctx, r);
+    if (!is_contained(mints, m))
+      mints.push_back(m);
+  }
+  llvm::sort(mints, [&](const Value *a, const Value *b) { return pos.lookup(a) < pos.lookup(b); });
   er->second.frozen = (fresh || er->second.frozen) && frozen;
-  er->second.registers = regs;
+  er->second.registers = unsigned(mints.size());
   er->second.ret = sh.out->getReturnType();
 }
 
@@ -1502,12 +1583,24 @@ void Walker::emitTerminator(BasicBlock *b) {
     if (ctx.S.kept) {
       // Rule 19 (cq-i9wk): a kept clone returns its results (rule 18's copy-out) and then the handle of
       // each register it minted that is still allocated, for its twin to clean against.
-      SmallVector<Value *, 4> regs = spine::liveRegisters(ctx);
       const spine::EntryReturn *er = spine::entryReturn(*ctx.S.F);
-      if (!er || er->registers != regs.size())
-        internalError("spine: a kept clone keeps another number of registers than its in-place lowering", t);
-      if (regs.empty())
+      if (!er)
+        internalError("spine: a kept clone lowered before its in-place lowering", t);
+      if (er->mints.empty())
         return emitCloneReturn(ret);   // nothing appended (calls::materialize)
+      // The union of the in-place lowering's return paths, by mint site; a register this path did not
+      // mint is handle 0 (§1.1, rule 19: the twin, replaying the same classical path, never reads it).
+      SmallVector<Value *, 4> regs(er->mints.size(), nullptr);
+      for (Value *r : spine::liveRegisters(ctx)) {
+        const Value *m = spine::registerMintSite(ctx, r);
+        auto it = find(er->mints, m);
+        if (it == er->mints.end() || regs[it - er->mints.begin()])
+          internalError("spine: a kept clone keeps a register its in-place lowering does not return", t);
+        regs[it - er->mints.begin()] = r;
+      }
+      for (Value *&r : regs)
+        if (!r)
+          r = ConstantInt::get(handleTy(ctx.M.getContext()), 0);
       SmallPtrSet<ReturnInst *, 4> before;
       for (BasicBlock &OB : *sh.out)
         if (auto *r = dyn_cast_or_null<ReturnInst>(OB.getTerminator()))
@@ -1626,7 +1719,12 @@ void Walker::emitTerminator(BasicBlock *b) {
   if (isQuantumTerm(ctx, t)) {
     if (auto *br = dyn_cast<BranchInst>(t))
       lowerBranch(ctx, *br);
-    else {
+    else if (auto *ib = dyn_cast<IndirectBrInst>(t)) {
+      // Rule 13: a quantum computed goto emits nothing, like a quantum switch; its edges are the
+      // destinations' case atoms, absorbed into the path predicates.
+      for (const BasicBlock *to : successors(ib))
+        (void)ctx.preds().edge(ib->getParent(), to);
+    } else {
       sh.switchSnap.erase(cast<SwitchInst>(t)->getCondition());   // cq-0hhk: its atoms read the rail anew
       sw::lowerSwitch(ctx, *cast<SwitchInst>(t));
     }
@@ -1656,6 +1754,37 @@ void Walker::emitTerminator(BasicBlock *b) {
       if (targets[k] == br->getSuccessor(k))
         edgeOut[{b, br->getSuccessor(k)}] = nb->getParent();
     maybeFlush(nb);
+    return;
+  }
+  if (auto *ib = dyn_cast<IndirectBrInst>(t)) {
+    // CR rule 13 (f684858): a classical computed goto is a classical switch over its destination list: the
+    // index of the destination its address derives to (pred's computedGotoCases), the last distinct
+    // destination the default. Its blockaddress constants are never read: they name the original blocks.
+    SmallVector<unsigned, 4> firsts;   // the first successor index of each distinct destination
+    for (unsigned s = 0; s < ib->getNumSuccessors(); ++s)
+      if (none_of(firsts, [&](unsigned f) { return ib->getSuccessor(f) == ib->getSuccessor(s); }))
+        firsts.push_back(s);
+    if (firsts.empty())
+      internalError("spine: a computed goto with no destination", t);
+    Type *i32 = Type::getInt32Ty(ctx.M.getContext());
+    Value *sel = ConstantInt::get(i32, firsts.size() - 1);
+    for (unsigned k = firsts.size() - 1; k-- > 0;)
+      sel = B.CreateSelect(gotoEdge(ib->getAddress(), ib->getSuccessor(firsts[k])), ConstantInt::get(i32, k), sel);
+    SwitchInst *ns = B.CreateSwitch(sel, out(targets[firsts.back()]), unsigned(firsts.size() - 1));
+    for (unsigned k = 0; k + 1 < firsts.size(); ++k)
+      ns->addCase(ConstantInt::get(cast<IntegerType>(i32), k), out(targets[firsts[k]]));
+    {
+      SmallVector<const BasicBlock *, 4> done;
+      for (BasicBlock *x : targets)
+        if (!is_contained(done, x)) {
+          done.push_back(x);
+          noteIn(b, x);
+        }
+    }
+    for (unsigned s = 0; s < ib->getNumSuccessors(); ++s)
+      if (targets[s] == ib->getSuccessor(s))
+        edgeOut[{b, ib->getSuccessor(s)}] = ns->getParent();
+    maybeFlush(ns);
     return;
   }
   auto *sw = cast<SwitchInst>(t);
@@ -2335,6 +2464,30 @@ SmallVector<Value *, 4> liveRegisters(LoweringContext &ctx) {
         regs.push_back(&I);
     }
   return regs;
+}
+
+const Value *registerMintSite(LoweringContext &ctx, Value *rail) {
+  Shared &sh = shared(ctx);
+  const Value *best = nullptr;
+  unsigned bestPos = ~0u, n = 0;
+  DenseMap<const Value *, unsigned> pos;
+  for (Argument &A : sh.orig->args())
+    pos[&A] = n++;
+  for (Instruction &I : instructions(*sh.orig))
+    pos[&I] = n++;
+  for (auto &[orig, ops] : sh.binds) {
+    if (none_of(ops, [&](const Operand &o) { return o.handle && o.v == rail; }))
+      continue;
+    auto p = pos.find(orig);
+    if (p != pos.end() && p->second < bestPos) {
+      best = orig;
+      bestPos = p->second;
+    }
+  }
+  if (!best)
+    internalError("spine: a live register bound to no original value of its function (rule 19 mint site)",
+                  dyn_cast<Instruction>(rail));
+  return best;
 }
 
 namespace {

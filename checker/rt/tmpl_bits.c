@@ -7,7 +7,8 @@
  *   - shl/lshr/ashr and fshl/fshr take the amount mod W, the amount read unsigned at width W
  *     (CR §2, literal or quantum amount);
  *   - ctlz(0) = cttz(0) = W; the counts have width W;
- *   - bswap is byte reversal, defined for W a multiple of 16 (BACKEND_ABI §2.8, LLVM's domain).
+ *   - bswap is byte reversal, defined for W a multiple of 16 (BACKEND_ABI §2.8, LLVM's domain);
+ *   - bitreverse is bit reversal, any W (CR §1.2 since f684858).
  *
  * Handler convention: M1 in cqe.h (freeze bead cq-mgi). In short:
  *   - return 0: out computed; CQE_OP_NOT_MINE: not this family's template (no cqe_fail, out
@@ -100,7 +101,7 @@ static void tb_shr(uint64_t *r, const uint64_t *x, uint32_t s, uint32_t W, int f
     tb_setbit(r, i, i + s < W ? tb_bit(x, i + s) : fill);
 }
 
-enum tb_op { TB_AND, TB_OR, TB_XOR, TB_SHL, TB_LSHR, TB_ASHR, TB_FSHL, TB_FSHR, TB_BSWAP, TB_CTLZ, TB_CTTZ, TB_CTPOP };
+enum tb_op { TB_AND, TB_OR, TB_XOR, TB_SHL, TB_LSHR, TB_ASHR, TB_FSHL, TB_FSHR, TB_BSWAP, TB_BITREVERSE, TB_CTLZ, TB_CTTZ, TB_CTPOP };
 
 static const struct {
   const char *name;
@@ -109,7 +110,7 @@ static const struct {
 } tb_ops[] = {
     {"and", TB_AND, 2},   {"or", TB_OR, 2},     {"xor", TB_XOR, 2},     {"shl", TB_SHL, 2},
     {"lshr", TB_LSHR, 2}, {"ashr", TB_ASHR, 2}, {"fshl", TB_FSHL, 3},   {"fshr", TB_FSHR, 3},
-    {"bswap", TB_BSWAP, 1}, {"ctlz", TB_CTLZ, 1}, {"cttz", TB_CTTZ, 1}, {"ctpop", TB_CTPOP, 1},
+    {"bswap", TB_BSWAP, 1}, {"bitreverse", TB_BITREVERSE, 1}, {"ctlz", TB_CTLZ, 1}, {"cttz", TB_CTTZ, 1}, {"ctpop", TB_CTPOP, 1},
 };
 
 static int tb_eval(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *out) {
@@ -200,6 +201,10 @@ static int tb_eval(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *
   case TB_BSWAP:
     for (uint32_t i = 0; i < W; ++i)
       tb_setbit(r, (W / 8 - 1 - i / 8) * 8 + i % 8, tb_bit(a, i));
+    break;
+  case TB_BITREVERSE:
+    for (uint32_t i = 0; i < W; ++i)
+      tb_setbit(r, W - 1 - i, tb_bit(a, i));
     break;
   case TB_CTLZ:
   case TB_CTTZ:

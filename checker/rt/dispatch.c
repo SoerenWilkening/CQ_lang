@@ -223,7 +223,7 @@ static int run_handlers(const char *sym, const cqe_tname *t, const cqe_val *args
 static const char *const tmpl_ops[] = {
     "add", "sub", "mul", "udiv", "sdiv", "urem", "srem", "and", "or", "xor", "shl", "lshr", "ashr", "fadd", "fsub",
     "fmul", "fdiv", "frem", "fneg", "icmp", "fcmp", "fcmps", "select", "zext", "sext", "trunc", "fpext", "fptrunc",
-    "sitofp", "uitofp", "fptosi", "fptoui", "bitcast", "fma", "fshl", "fshr", "abs", "ctlz", "cttz", "ctpop", "bswap",
+    "sitofp", "uitofp", "fptosi", "fptoui", "bitcast", "fma", "fshl", "fshr", "abs", "ctlz", "cttz", "ctpop", "bswap", "bitreverse",
     "smax", "smin", "umax", "umin", "uadd_sat", "usub_sat", "sadd_sat", "ssub_sat", "uadd_overflow", "sadd_overflow", "usub_overflow",
     "ssub_overflow", "umul_overflow", "smul_overflow", "fabs", "copysign", "fmax", "fmin", "floor", "ceil", "rint",
     "round", "sqrt", "is_fpclass", "qrom_load", NULL};

@@ -447,6 +447,8 @@ KeptRegisters keptRegisters(Function &src) {
     Value *d = work.pop_back_val();
     if (!seen.insert(d).second)
       continue;
+    if (auto *z = dyn_cast<ConstantInt>(d); z && z->isZero())
+      continue;   // handle 0: a return path that did not mint this register (§1.1, rule 19)
     auto *di = dyn_cast<Instruction>(d);
     if (!di)
       internalError("calls: calls::finalize: a kept clone register that is not an instruction", &src);
@@ -551,8 +553,8 @@ void defineTwin(Module &M, Function &twin, Function &src) {
       SmallPtrSet<Value *, 8> done;
       while (!work.empty()) {
         Value *d = work.pop_back_val();
-        if (!done.insert(d).second)
-          continue;
+        if (!done.insert(d).second || isa<ConstantInt>(d))
+          continue;   // handle 0 (rule 19): nothing to replace
         if (auto *pn = dyn_cast<PHINode>(d))
           work.append(pn->incoming_values().begin(), pn->incoming_values().end());
         else if (auto *sel = dyn_cast<SelectInst>(d)) {
