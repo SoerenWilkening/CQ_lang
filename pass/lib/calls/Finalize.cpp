@@ -592,8 +592,17 @@ void defineTwin(Module &M, Function &twin, Function &src) {
       if (auto *ld = dyn_cast<LoadInst>(&I)) {
         APInt o(64, 0);
         const Value *b = ld->getPointerOperand()->stripAndAccumulateConstantOffsets(DL, o, true);
-        if (b != co.base)
+        if (b != co.base) {
+          // cq-u9oy: a load through the same formal at a run-time cell (fatptr's cell-count checked load of a
+          // TripleCount formal, 190) may read this cell before its copy-out: the twin would read the forward's
+          // copy instead of the old content.
+          const Value *ub = getUnderlyingObject(b), *uc = getUnderlyingObject(co.base);
+          if (ub == uc && isa<Argument>(ub) && !isPotentiallyReachable(co.st, ld))
+            unimplemented("calls: calls::finalize: a clone reading a caller cell through a pointer formal at a run-time "
+                          "cell before its copy-out to that object (the twin reads the old cell)",
+                          ld);
           continue;
+        }
         int64_t lo = o.getSExtValue();
         uint64_t ls = DL.getTypeStoreSize(ld->getType());
         if (lo + int64_t(ls) <= co.off || co.off + int64_t(cellSize) <= lo)

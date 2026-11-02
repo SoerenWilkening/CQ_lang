@@ -364,7 +364,7 @@ double f_triple_store(double v0, double th, int c) {
   double y[2] = {0.5, 1.5}, w[2] = {2.0, -1.0};
   if (c & 1) { tc_upd(v, y); return cq_measure(y[0] - y[1]); }
   tc_upd(v * 3.0, w);
-  return cq_measure(w[1]);
+  return cq_measure(w[0] + w[1]);
 }
 /* cq-u9oy (rule 20, n = 0): a fat pointer over a loaded pointer (no extent in the module) and a global, read
  * unguarded at classical cells: the loaded pointer's extent is the indices that reach it, no check */
@@ -374,4 +374,13 @@ int f_unknown_extent(unsigned x0, double th) {
   unsigned x = x0; cq_theta(&x, th);
   const int *q = (x & 1) ? UP : UG;
   return cq_measure(q[2] + q[1]);
+}
+/* cq-u9oy (rules 20, 21): a clone reading a host triple formal at a quantum cell index: a QROM over the caller's
+ * object, n the triple's cell count */
+static __attribute__((noinline)) int hq_pick(const int *t, unsigned x) { return t[x & 7]; }
+int f_triple_qrom(unsigned x0, double th, int v, int c) {
+  unsigned x = x0; cq_theta(&x, th);
+  int a[8] = {v, 1, 2, 3, 4, 5, 6, 7}, b[8] = {9, 8, 7, 6, 5, v, 3, 2};
+  int r = (c & 1) ? hq_pick(a, x) : hq_pick(b, x + 1);
+  return cq_measure(r);
 }

@@ -2126,7 +2126,7 @@ void checkTableAccess(LoweringContext &ctx, Bound &b, const Fat &f, Type *ty, co
 // handle of cell j when j < cellCount, else the clone's shared |0> seed: the cell index is checked against
 // the cell count and redirected to cell 0 beyond it (no host memory past the object is read, whatever trip
 // a cutoff runs), the handle merged with the seed by a classical select (U1).
-Value *boundSlotLoad(LoweringContext &ctx, Bound &b, const Fat &f, Type *ty, const LoadInst &ld) {
+Value *boundSlotLoad(LoweringContext &ctx, Bound &b, const Fat &f, Type *ty, const LoadInst &ld, const Value *formal) {
   if (f.idx.handle)
     internalError("fatptr: a load through a slot triple formal at a quantum cell index (rule 20: such an object is "
                   "a QRAM)",
@@ -2134,6 +2134,25 @@ Value *boundSlotLoad(LoweringContext &ctx, Bound &b, const Fat &f, Type *ty, con
   IRBuilder<> &B = ctx.B();
   LLVMContext &C = ctx.M.getContext();
   const DataLayout &DL = ctx.M.getDataLayout();
+  // Rule 21 (cq-47n3): the CHECK is emitted iff the index can lie outside the object on a branch the circuit
+  // executes. A classical cell executed exactly when C executes it (no quantum predicate in scope) is the plain
+  // handle load of the cell the spine bound the formal to (cq-1c5j) at its constant offset, the form the twin's
+  // cell copy-out recognises (calls::finalize: a load before the copy-out reads the old cell).
+  if (!f.tag.handle && !ctx.currentFlag() && ctx.bound(formal)) {
+    APInt off(64, 0);
+    const Value *base = ld.getPointerOperand()->stripAndAccumulateConstantOffsets(DL, off, /*AllowNonInbounds=*/true);
+    Operand at = ctx.operand(formal);
+    if (base == formal && !at.handle && b.cell && off.getSExtValue() % int64_t(b.cell) == 0 &&
+        DL.getTypeStoreSize(ty) == DL.getTypeStoreSize(b.cellTy)) {
+      int64_t k = off.getSExtValue() / int64_t(b.cell);
+      Value *p = k ? B.CreateConstInBoundsGEP1_64(Type::getInt8Ty(C), at.v, uint64_t(4 * k)) : at.v;
+      LoadInst *h = B.CreateAlignedLoad(handleTy(C), p, Align(4));
+      ctx.unc().recordExternal(h, Role::UserRegister);   // the caller's rail in its cell
+      if (ty != b.cellTy)
+        return tmpl(ctx, "bitcast", railTypeOf(b.cellTy), {Operand{h, true}}, "", "", railTypeOf(ty));
+      return h;
+    }
+  }
   // The cell index in the formal's cells (rule 21: idx converts at the access by the element size): a constant
   // byte or sub-cell index that lands on a whole cell divides exactly; a rail never reaches here (rule 20: QRAM).
   Value *j = f.idx.v;
@@ -2569,7 +2588,7 @@ void lowerLoad(LoweringContext &ctx, LoadInst &ld) {
     if (Bound *b = boundOf(ctx, r); b && b->pointee == ObjClass::Slot) {
       if (ptr)
         unimplemented("fatptr: a pointer loaded through a slot triple formal (rule 21)", &ld);
-      hs.push_back({Operand{boundSlotLoad(ctx, *b, f, ty, ld), true}, none});
+      hs.push_back({Operand{boundSlotLoad(ctx, *b, f, ty, ld, r), true}, none});
       continue;
     }
     if (Bound *b = boundOf(ctx, r); b && b->pointee == ObjClass::Classical) {
