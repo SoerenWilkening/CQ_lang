@@ -251,3 +251,8 @@ attributes #6 = { nounwind }
 !9 = !{!"Simple C/C++ TBAA"}
 !10 = !{!11, !11, i64 0}
 !11 = !{!"double", !8, i64 0}
+
+; USERCHECK clone_cell_seq_a
+; USERCHECK clone_cell_seq_b
+; USERCHECK clone_cell_seq_c
+; USERCHECK clone_cell_seq_d
