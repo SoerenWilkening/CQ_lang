@@ -1599,8 +1599,9 @@ static void testDeadEnds() {
   }
 }
 
-// cq-fbqi (CR rule 13): clang's one `indirectgoto` block, the address a phi over the `goto *p` sites (a
-// blockaddress constant, a constant-table read); an asm goto with classical operands.
+// CR rule 13 (b137e75, cq-zaes): a computed goto is a switch on its ADDRESS (clang's one `indirectgoto` block, the
+// address a phi over the `goto *p` sites): destination d is the atom address == blockaddress(d), the last
+// destination the complement; no index is traced. An asm goto with classical operands.
 static const char *GotoIR = R"(
 @t = internal constant [2 x ptr] [ptr blockaddress(@cg, %a), ptr blockaddress(@cg, %b)]
 declare i32 @cq_theta_i32(i32, double)
@@ -1650,13 +1651,15 @@ static void testComputedGoto() {
   }
   {
     Function &F = *own->getFunction("cg");
-    unsigned q = C(val(F, "%q"));
-    unsigned i0 = m.ithVar(atomVar(AtomKind::Eq, val(F, "%i"), APInt(32, 0)));
+    unsigned pa = m.ithVar(addrVar(val(F, "%p"), blk(F, "%a")));
     Computed c = compute(F);
-    // a: the table's entry 0 on the edge tbl -> ig; b: the constant on entry -> ig, or entry 1.
-    expectBlock(c, F, "%a", A(N(q), i0));
-    expectBlock(c, F, "%b", Or(q, A(N(q), N(i0))));   // the table's last entry: the complement
+    // a: the address equals blockaddress(a); b, the last destination: the complement.
+    expectBlock(c, F, "%a", pa);
+    expectBlock(c, F, "%b", N(pa));
     expectBlock(c, F, "%j", Bdd::T);
+    CHECK(predsMeet(makePred(pa), makePred(N(pa))) == false, "cg: a destination and the complement are disjoint");
+    unsigned pb = m.ithVar(addrVar(val(F, "%p"), blk(F, "%b")));
+    CHECK(!predsMeet(makePred(pa), makePred(pb)), "cg: two destinations of one address are exclusive");
   }
   {
     Function &F = *own->getFunction("ag");
