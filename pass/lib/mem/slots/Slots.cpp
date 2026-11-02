@@ -4260,8 +4260,33 @@ FnState::CloneCell *cloneCellOf(LoweringContext &ctx, FnState &st, const Site &s
   if (Instruction *T = E.getTerminator())
     B.SetInsertPoint(T);
   RailType w = slot->w;
-  LoadInst *old = nullptr;
+  Value *old = nullptr;
+  // cq-2cl6 (CR §6: an indeterminate value is the |0> a fresh cell holds): when the formal's mask digits say no
+  // cell of the caller's object holds a handle at the call (the caller never wrote it), the old content is a fresh
+  // |0> seed, not the caller's memory (no handle there: musl logl's `int e;` handed to frexpl).
+  bool fresh = false;
   if (needOld) {
+    const Argument *A = cast<Argument>(s.a.root);
+    size_t d = 0;
+    for (const Argument &X : st.F->args()) {
+      if (&X == A)
+        break;
+      d += X.getType()->isPointerTy() ? ctx.T.pointerFormal(ctx.S, X.getArgNo()).digits
+                                      : ctx.T.fieldMask(&X, ctx.S).size();
+    }
+    PtrFormal pf = ctx.T.pointerFormal(ctx.S, A->getArgNo());
+    size_t from = pf.abi == PtrAbi::Raw ? 0 : 2;   // a triple's tag and idx digits come first
+    if (pf.digits > from && d + pf.digits <= ctx.S.mask.size()) {
+      fresh = true;
+      for (size_t k = from; k < pf.digits; ++k)
+        fresh = fresh && ctx.S.mask[d + k] == '0';
+    }
+  }
+  if (needOld && fresh) {
+    CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+    ctx.unc().recordSeed(z);
+    old = z;
+  } else if (needOld) {
     old = B.CreateAlignedLoad(handleTy(ctx.M.getContext()), cellPointer(ctx, s, at), Align(4));
     ctx.unc().recordExternal(old, Role::UserRegister);   // the caller's rail: never the clone's
     st.registers.insert(old);
@@ -6155,6 +6180,35 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
                     &stI);
     // Rules 9, 20: under a quantum predicate the cell receives select(predicate, value, old).
     Operand old = readCell(ctx, st, s, stI, v->getType());
+    // cq-2cl6 (rule 9): a quantum branch emits every arm. A store of this cell in a sibling arm (no C path joins
+    // it to this one) lowered earlier into the same output block left its select in the cell; that select is the
+    // cell's content here, not the write the C path reaches (musl log10l's e -= 1 in two exclusive arms).
+    if (old.handle) {
+      const Instruction *last = nullptr;
+      Value *lastV = nullptr;
+      const DataLayout &DL = ctx.M.getDataLayout();
+      uint64_t sz = storeBytes(DL, v->getType());
+      for (const Access &a : accessesOf(ctx, *st.F, s.o)) {
+        auto *S2 = dyn_cast<StoreInst>(a.I);
+        if (!S2 || S2 == &stI || !sameCell(a.a, s.a) || storeBytes(DL, a.ty) != sz)
+          continue;
+        auto it = st.lowered.find(S2);
+        auto *h = it == st.lowered.end() || !it->second.handle ? nullptr : dyn_cast<Instruction>(it->second.v);
+        if (!h || h->getParent() != B.GetInsertBlock() || h == old.v)
+          continue;
+        if (isPotentiallyReachable(S2, &stI, nullptr, st.DT.get()) || isPotentiallyReachable(&stI, S2, nullptr, st.DT.get()))
+          continue;
+        if (ctx.preds().block(S2->getParent()).quantumPart(ctx.T, ctx.S).isTop())
+          continue;
+        if (!lastV || cast<Instruction>(lastV)->comesBefore(h)) {
+          last = S2;
+          lastV = h;
+        }
+      }
+      if (lastV)
+        old = Operand{lastV, true};
+      (void)last;
+    }
     if (val.handle && old.handle && val.v == old.v) {
       // The cell already holds the stored rail (a cq_theta in place under the predicate, rule 10, of the
       // rail the cell holds: 59's `if (q[i]) cq_theta(&q[i + 1], c)`): select(p, h, h) is h, the cell

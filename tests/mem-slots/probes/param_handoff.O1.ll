@@ -216,6 +216,114 @@ define internal fastcc noundef i32 @scale(i32 noundef %0, ptr nocapture noundef 
   ret i32 %8
 }
 
+; Function Attrs: nounwind ssp uwtable
+define i32 @param_uninit(i32 noundef %0, i32 noundef %1) local_unnamed_addr #0 {
+  %3 = alloca i32, align 4
+  %4 = sitofp i32 %1 to double
+  %5 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %4) #6
+  call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %3) #7
+  %6 = call fastcc i32 @nib(i32 noundef %5, ptr noundef nonnull %3)
+  %7 = tail call i32 @cq_measure_si32(i32 noundef %6) #7
+  %8 = mul nsw i32 %7, 1000
+  %9 = load i32, ptr %3, align 4, !tbaa !6
+  %10 = tail call i32 @cq_measure_si32(i32 noundef %9) #7
+  %11 = add nsw i32 %10, %8
+  call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %3) #7
+  ret i32 %11
+}
+
+; Function Attrs: mustprogress nofree noinline norecurse nosync nounwind ssp willreturn memory(argmem: readwrite) uwtable
+define internal fastcc noundef i32 @nib(i32 noundef %0, ptr nocapture noundef %1) unnamed_addr #3 {
+  %3 = lshr i32 %0, 4
+  %4 = and i32 %3, 7
+  switch i32 %4, label %15 [
+    i32 0, label %5
+    i32 7, label %18
+  ]
+
+5:                                                ; preds = %2
+  %6 = icmp eq i32 %0, 0
+  br i1 %6, label %12, label %7
+
+7:                                                ; preds = %5
+  %8 = shl nsw i32 %0, 4
+  %9 = tail call fastcc i32 @odd(i32 noundef %8, ptr noundef %1)
+  %10 = load i32, ptr %1, align 4, !tbaa !6
+  %11 = add nsw i32 %10, -4
+  br label %12
+
+12:                                               ; preds = %5, %7
+  %13 = phi i32 [ %11, %7 ], [ 0, %5 ]
+  %14 = phi i32 [ %9, %7 ], [ 0, %5 ]
+  store i32 %13, ptr %1, align 4, !tbaa !6
+  br label %18
+
+15:                                               ; preds = %2
+  %16 = add nsw i32 %4, -3
+  store i32 %16, ptr %1, align 4, !tbaa !6
+  %17 = and i32 %0, 15
+  br label %18
+
+18:                                               ; preds = %2, %15, %12
+  %19 = phi i32 [ %17, %15 ], [ %14, %12 ], [ %0, %2 ]
+  ret i32 %19
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @sibling_arm_store(i32 noundef %0, i32 noundef %1) local_unnamed_addr #0 {
+  %3 = alloca i32, align 4
+  %4 = sitofp i32 %1 to double
+  %5 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %4) #6
+  call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %3) #7
+  %6 = call fastcc i32 @nib2(i32 noundef %5, ptr noundef nonnull %3)
+  %7 = load i32, ptr %3, align 4, !tbaa !6
+  %8 = add i32 %7, -9
+  %9 = icmp ult i32 %8, -6
+  br i1 %9, label %10, label %17
+
+10:                                               ; preds = %2
+  %11 = icmp ult i32 %6, 7
+  br i1 %11, label %12, label %15
+
+12:                                               ; preds = %10
+  %13 = add nsw i32 %7, -1
+  store i32 %13, ptr %3, align 4, !tbaa !6
+  %14 = shl nuw nsw i32 %6, 1
+  br label %22
+
+15:                                               ; preds = %10
+  %16 = add nsw i32 %6, -1
+  br label %22
+
+17:                                               ; preds = %2
+  %18 = icmp ult i32 %6, 4
+  br i1 %18, label %19, label %22
+
+19:                                               ; preds = %17
+  %20 = add nsw i32 %7, -1
+  store i32 %20, ptr %3, align 4, !tbaa !6
+  %21 = add nuw nsw i32 %6, 3
+  br label %22
+
+22:                                               ; preds = %17, %19, %12, %15
+  %23 = phi i32 [ %14, %12 ], [ %16, %15 ], [ %21, %19 ], [ %6, %17 ]
+  %24 = mul nuw nsw i32 %23, 100
+  %25 = load i32, ptr %3, align 4, !tbaa !6
+  %26 = add nsw i32 %24, %25
+  %27 = tail call i32 @cq_measure_si32(i32 noundef %26) #7
+  call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %3) #7
+  ret i32 %27
+}
+
+; Function Attrs: mustprogress nofree noinline norecurse nosync nounwind ssp willreturn memory(argmem: write) uwtable
+define internal fastcc noundef range(i32 0, 16) i32 @nib2(i32 noundef %0, ptr nocapture noundef writeonly %1) unnamed_addr #5 {
+  %3 = lshr i32 %0, 4
+  %4 = and i32 %3, 7
+  store i32 %4, ptr %1, align 4, !tbaa !6
+  %5 = and i32 %0, 15
+  ret i32 %5
+}
+
 ; Function Attrs: mustprogress nofree noinline norecurse nosync nounwind ssp willreturn memory(argmem: write) uwtable
 define internal fastcc range(i32 -2147483648, 1073741824) i32 @inner(i32 noundef %0, ptr nocapture noundef writeonly %1) unnamed_addr #5 {
   %3 = icmp sgt i32 %0, 3
@@ -254,6 +362,21 @@ define internal fastcc noundef i32 @inner2(i32 noundef %0, ptr nocapture noundef
   ret i32 %8
 }
 
+; Function Attrs: mustprogress nofree noinline norecurse nosync nounwind ssp willreturn memory(argmem: write) uwtable
+define internal fastcc noundef range(i32 -1073741824, 1073741824) i32 @odd(i32 noundef %0, ptr nocapture noundef writeonly %1) unnamed_addr #5 {
+  %3 = and i32 %0, 1
+  %4 = icmp eq i32 %3, 0
+  br i1 %4, label %6, label %5
+
+5:                                                ; preds = %2
+  store i32 %0, ptr %1, align 4, !tbaa !6
+  br label %6
+
+6:                                                ; preds = %5, %2
+  %7 = ashr i32 %0, 1
+  ret i32 %7
+}
+
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #1 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
 attributes #2 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
@@ -279,8 +402,11 @@ attributes #7 = { nounwind }
 ; CHECK __cq_q_outer_11: %cq.cells = alloca [1 x i32]
 ; CHECK __cq_q_rec_111_b3_ctl_d1: %cq.cells = alloca [1 x i32]
 ; CHECK __cq_q_outer2_1001: %cq.cells = alloca [1 x i32]
+; CHECK __cq_q_nib_10: call void @cqrt_copy_i32(i32 %3, i32 %4)
 ; USERCHECK param_handoff_pred
 ; USERCHECK param_handoff_plain
 ; USERCHECK param_handoff_rec
 ; USERCHECK param_handoff_two
 ; USERCHECK triple_clone_cell
+; USERCHECK param_uninit
+; USERCHECK sibling_arm_store

@@ -85,3 +85,49 @@ int triple_clone_cell(int x0, int th, int k) {
   int r = scale(x, &a) + scale(x + 1, &b);
   return cq_measure(r) * 1000000 + cq_measure(a) * 1000 + cq_measure(b);
 }
+/* the caller's cell is never written before the call (`int e;`, musl logl's exponent handed to frexpl): the
+   clone cell's old content is a fresh |0> (CR §6 indeterminate value), not the caller's memory */
+__attribute__((noinline)) static int odd(int x, int *e) {
+  if (x & 1) *e = x;
+  return x >> 1;
+}
+__attribute__((noinline)) static int nib(int x, int *e) {
+  int ee = (x >> 4) & 7;
+  if (!ee) {
+    if (x) {
+      x = odd(x * 16, e);
+      *e -= 4;
+    } else {
+      *e = 0;
+    }
+    return x;
+  } else if (ee == 7) {
+    return x;
+  }
+  *e = ee - 3;
+  return x & 15;
+}
+int param_uninit(int x0, int th) {
+  int x = x0; cq_theta(&x, th);
+  int e;
+  int r = nib(x, &e);
+  return cq_measure(r) * 1000 + cq_measure(e);
+}
+/* rule 9: a local cell a clone call wrote, then stored under predicates in two exclusive quantum arms (musl
+   log10l's e -= 1): every arm is emitted, so the second store's old content is the first's select */
+__attribute__((noinline)) static int nib2(int x, int *e) {
+  *e = (x >> 4) & 7;
+  return x & 15;
+}
+int sibling_arm_store(int x0, int th) {
+  int x = x0; cq_theta(&x, th);
+  int e;
+  int m = nib2(x, &e);
+  int y;
+  if (e - 3 > 5u) {
+    if (m < 7) { e = e - 1; y = m * 2; } else y = m - 1;
+  } else {
+    if (m < 4) { e = e - 1; y = m + 3; } else y = m;
+  }
+  return cq_measure(y * 100 + e);
+}
