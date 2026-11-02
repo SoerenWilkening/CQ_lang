@@ -1,6 +1,6 @@
 ; cq-xb7r: a pointer phi at a quantum join over two objects is a fat-pointer merge (rule 21), not
-; built in fatptr; the spine names it rather than handing it to pred's scalar merge.
-; FATAL: cq: unimplemented: spine: a quantum pointer phi (rule 21 fat-pointer merge
+; built in fatptr yet (cq-8zqm); the spine hands it to fatptr::lower like a select (cq-29ej).
+; FATAL: cq: unimplemented: fatptr: a phi of fat pointers (rule 21 merge over edge predicates)
 declare i8 @cq_theta_ui8(i8, double)
 declare i1 @cq_measure_ui1(i1)
 
