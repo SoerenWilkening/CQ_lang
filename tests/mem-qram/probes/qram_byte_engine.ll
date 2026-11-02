@@ -19,7 +19,8 @@
 ; |     __builtin_memcpy(&a[2 * (x & 3)], &w, 8);
 ; |     return cq_measure(a[5] ^ a[2]);
 ; | }
-; | /* a run-time classical length into a QRAM: each cell under its classical guard */
+; | /* a run-time classical length into a QRAM: rule 22's classical loop over the cells (f684858), each cell
+; |    under its classical guard, the reverse loop popping them */
 ; | int qram_rt_memset(int x, int c, unsigned n, double th) {
 ; |     unsigned char buf[16];
 ; |     __builtin_memset(buf, 1, 16);
@@ -205,6 +206,7 @@ define i32 @qram_q_fill(i32 noundef %0, i32 noundef %1, double noundef %2) local
 ; CHECK qram_byte_view: call i32 @cq_template_trunc_i32_to_i8(
 ; CHECK qram_wide_store: call i32 @cq_template_add_i32_hl(i32 %{{i}}, i32 1)
 ; CHECK-COUNT qram_wide_store: call void @cqrt_qram_store_i32(i32 2
-; CHECK-COUNT qram_rt_memset: call void @cqrt_qram_store_i8_hl_controlled( 15
+; CHECK-COUNT qram_rt_memset: call void @cqrt_qram_store_i8_hl_controlled( 1
+; CHECK-COUNT qram_rt_memset: call void @cqrt_qram_store_i8_hl_controlled_unc( 1
 ; CHECK-COUNT qram_q_memcpy: call i32 @cq_template_icmp_ugt_i32_hl( 7
 ; CHECK qram_q_fill: call i32 @cq_template_mul_i32_hl(i32 %{{z}}, i32 16843009)

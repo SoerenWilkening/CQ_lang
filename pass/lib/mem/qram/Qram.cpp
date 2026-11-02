@@ -64,6 +64,7 @@
 
 #include <functional>
 #include <map>
+#include <numeric>
 #include <optional>
 #include <string>
 #include <utility>
@@ -1534,11 +1535,19 @@ Value *indexRailAt(LoweringContext &ctx, const Value *v, unsigned W, bool top, c
 // flattening r * cols + c, 191), the scaled terms added in GEP order, then the classical element offset
 // (the classical terms and the constant) added (add_hl, 192). A modular sum at that width is the exact
 // cell index: every in-domain cell index of a QRAM is below 2^32 (qram_alloc takes an i32 cell count).
-QIndex cellIndex(LoweringContext &ctx, const QramObj &q, const Addr &a, const Instruction &I) {
+// extra: a classical i64 element offset added to the address (rule 22's loop over a run's elements), or null.
+Value *withExtra(LoweringContext &ctx, Value *j, Value *extra) {
+  if (!extra)
+    return j;
+  return j ? ctx.B().CreateAdd(j, extra) : extra;
+}
+
+QIndex cellIndex(LoweringContext &ctx, const QramObj &q, const Addr &a, const Instruction &I,
+                 Value *extra = nullptr) {
   int64_t E = int64_t(q.elemBytes);
   int64_t ec = floorDiv(a.off, E);
   if (!quantumTerm(ctx, a, I))
-    return classicalIndex(ctx, q, classicalElems(ctx, q, a, I), ec);
+    return classicalIndex(ctx, q, withExtra(ctx, classicalElems(ctx, q, a, I), extra), ec);
   SmallVector<std::tuple<LogicalIndex, int64_t, const Value *>, 2> qs;   // logical index, stride in elements, GEP index
   Addr others = a;
   others.terms.clear();
@@ -1553,7 +1562,7 @@ QIndex cellIndex(LoweringContext &ctx, const QramObj &q, const Addr &a, const In
                     &I);
     qs.push_back({logicalIndex(ctx, t.first, I), t.second / E, t.first});
   }
-  if (qs.size() == 1 && std::get<1>(qs[0]) == 1 && others.terms.empty() && ec == 0)
+  if (qs.size() == 1 && std::get<1>(qs[0]) == 1 && others.terms.empty() && ec == 0 && !extra)
     return {std::get<0>(qs[0]).rail, true};
   unsigned Ws = q.wide ? 64 : 32;
   for (auto &[li, k, g] : qs)
@@ -1583,7 +1592,7 @@ QIndex cellIndex(LoweringContext &ctx, const QramObj &q, const Addr &a, const In
       r = tmpl("mul", {Operand{r, true}, Operand{ConstantInt::get(IntegerType::get(C, Ws), k, true), false}}, "hl");
     rail = rail ? tmpl("add", {Operand{rail, true}, Operand{r, true}}, "") : r;
   }
-  Value *j = classicalElems(ctx, q, others, I);
+  Value *j = withExtra(ctx, classicalElems(ctx, q, others, I), extra);
   if (j || ec) {
     Type *i64 = Type::getInt64Ty(C);
     Value *k = j ? j : ConstantInt::get(i64, 0);
@@ -1669,10 +1678,11 @@ SmallVector<Piece, 8> piecesIn(const DataLayout &DL, const QramObj &q, int64_t o
   return out;
 }
 
-QIndex indexAt(LoweringContext &ctx, const QramObj &q, const Addr &a, int64_t e, const Instruction &I) {
+QIndex indexAt(LoweringContext &ctx, const QramObj &q, const Addr &a, int64_t e, const Instruction &I,
+               Value *extra = nullptr) {
   Addr a2 = a;
   a2.off = e * int64_t(q.elemBytes);
-  return cellIndex(ctx, q, a2, I);
+  return cellIndex(ctx, q, a2, I, extra);
 }
 
 // Integer arithmetic on an Operand: a rail by its template (rule 4), a classical value by plain IR.
@@ -1771,7 +1781,8 @@ unsigned pieceBits(const DataLayout &DL, const Piece &p) {
 }
 
 // The integer (len * 8 bits) the bytes [off, off + len) of the access hold.
-Operand readBytes(LoweringContext &ctx, const QAccess &acc, int64_t off, uint64_t len, const Instruction &I) {
+Operand readBytes(LoweringContext &ctx, const QAccess &acc, int64_t off, uint64_t len, const Instruction &I,
+                  Value *extra = nullptr) {
   const DataLayout &DL = ctx.M.getDataLayout();
   unsigned L = unsigned(len * 8);
   Operand out{ConstantInt::get(IntegerType::get(ctx.M.getContext(), L), 0), false};
@@ -1781,7 +1792,7 @@ Operand readBytes(LoweringContext &ctx, const QAccess &acc, int64_t off, uint64_
     if (!nb)
       continue;
     unsigned cw = valueBits(p.col->cellTy);
-    QIndex idx = indexAt(ctx, *acc.q, acc.a, p.elem, I);
+    QIndex idx = indexAt(ctx, *acc.q, acc.a, p.elem, I, extra);
     Value *cell = emitLoad(ctx, busOf(*acc.q, acc.a.root, p.col, I), *p.col, idx);
     Operand x = bitsOf(ctx, asInt(ctx, Operand{cell, true}, p.col->cellTy), cw, unsigned(8 * p.cellLo), nb);
     x = intCast(ctx, "zext", nb, L, x);
@@ -1796,10 +1807,10 @@ Operand readBytes(LoweringContext &ctx, const QAccess &acc, int64_t off, uint64_
 // Stores the value's bits (val, an integer of len * 8 bits: a rail or classical) into the bytes [off,
 // off + len) of the access, under flag (nullptr: unconditional).
 void writePiece(LoweringContext &ctx, const QAccess &acc, const Piece &p, Operand bits, unsigned nb, Value *flag,
-                const Instruction &I) {
+                const Instruction &I, Value *extra = nullptr) {
   const Column &c = *p.col;
   unsigned cw = valueBits(c.cellTy);
-  QIndex idx = indexAt(ctx, *acc.q, acc.a, p.elem, I);
+  QIndex idx = indexAt(ctx, *acc.q, acc.a, p.elem, I, extra);
   Value *bus = busOf(*acc.q, acc.a.root, &c, I);
   Operand cellInt;
   if (p.cellLo == 0 && nb == cw) {
@@ -2087,6 +2098,436 @@ bool lowerQramIntrinsicCells(LoweringContext &ctx, MemIntrinsic &MI, const QAcce
   return true;
 }
 
+// ---- rule 22's classical loop over a run's cells (cq-k65d, f684858: no unroll bound) ----------------
+//
+// A memory intrinsic into a QRAM whose length is a run-time value is one ordinary update per cell emitted
+// as a classical loop over the cells (rule 22), and its reverse loop pops the stores (CR §1.3). The trip
+// unit is a CHUNK of U = lcm(E, Es) bytes of the destination (E its element size, Es a QRAM source's,
+// else E), chunk c covering the destination bytes [cU, cU + U) from the run's first element; its cell
+// pieces (piecesIn, static) are each stored their bytes of the new value when the run covers them:
+//  - a classical length L: the piece of chunk-relative bytes [lo, hi) is guarded by the classical
+//    cU + lo >= r0 && cU + hi <= r0 + L (r0: the run's start inside its first element), a seed flag
+//    (rules 7, 8); C = ceil((r0 + L) / U) trips;
+//  - a quantum length n (its upper bound leaving more cells than the compiler unrolls): the classical part
+//    as a seed, and n >u cU + hi - r0 - 1 as an icmp template (and_i1), over the trips the bound reaches;
+//  - a piece the run's end (or start) may cut (the length's known bits do not rule it out) is written byte
+//    by byte, each byte under its own guard (rule 22's byte-masked merge);
+//  - under a quantum predicate each guard is and_i1 with its flag;
+//  - the values, all of a trip's source bytes read before its stores: a memset's fill repeated; a host
+//    source's bytes from a zeroed U-byte buffer the host's own memcpy fills with exactly the run's bytes
+//    of the chunk (no host byte outside the run is read); a QRAM source's bytes through the byte engine at
+//    its element offset c * U / Es. A memmove within one QRAM object copies through a temporary byte QRAM
+//    first (every source byte read before any store, whatever the offsets).
+// The trip's records are one Uncompute scope. The reverse loop runs the scope's mirror per trip, last
+// trip first; every per-trip value the mirror reads (the trip's handles, indices, guards) is saved by the
+// forward trip into a host buffer of C slots (malloc'd before the loop, freed after the reverse) and
+// reloaded by the reverse trip. The reverse is deferred after the destination's later accesses (F1b) and
+// otherwise runs where the loop exits; the trip count and the buffer are kept in entry slots (0 and null
+// where the loop did not run, so the reverse is then empty).
+struct LoopSrc {
+  enum Kind { Fill, Host, Qram } kind = Fill;
+  Operand fill;          // Fill: the fill byte
+  Value *host = nullptr; // Host: the classical source pointer
+  QAccess sacc{};        // Qram: the source
+};
+
+struct RunLoop {
+  unsigned scope = 0;
+  BasicBlock *body = nullptr;      // the forward trip's block
+  Instruction *preTerm = nullptr;  // the terminator before the loop
+  PHINode *trip = nullptr;
+  AllocaInst *cntSlot = nullptr, *bufSlot = nullptr;
+};
+
+// Every value of the forward trip the mirror's instructions in [from, to) read: saved by the forward trip into
+// its slot of the buffer, reloaded by the reverse trip k.
+void remapMirror(LoweringContext &ctx, RunLoop &L, BasicBlock *R, Instruction *firstMirror, PHINode *k,
+                 Value *buf) {
+  LLVMContext &C = ctx.M.getContext();
+  const DataLayout &DL = ctx.M.getDataLayout();
+  Type *i64 = Type::getInt64Ty(C), *i8 = Type::getInt8Ty(C);
+  SmallVector<Instruction *, 8> saved;
+  DenseMap<Instruction *, unsigned> slot;
+  for (auto it = firstMirror->getIterator(); it != R->end(); ++it)
+    for (Use &u : it->operands())
+      if (auto *x = dyn_cast<Instruction>(u.get()); x && x->getParent() == L.body && !slot.count(x)) {
+        if (!x->getType()->isIntegerTy() || x->getType()->getIntegerBitWidth() > 64)
+          internalError("mem-qram: a rule-22 loop's per-trip value read by its reverse that is no integer", x);
+        slot[x] = saved.size();
+        saved.push_back(x);
+      }
+  if (saved.empty())
+    return;
+  uint64_t K = saved.size();
+  // The buffer: C * K i64 slots, allocated before the forward loop.
+  {
+    IRBuilder<> P(L.preTerm);
+    Value *cnt = P.CreateLoad(i64, L.cntSlot);
+    FunctionCallee mf = ctx.M.getOrInsertFunction("malloc", PointerType::get(C, 0), i64);
+    Value *b = P.CreateCall(mf, {P.CreateMul(cnt, ConstantInt::get(i64, K * 8))});
+    P.CreateStore(b, L.bufSlot);
+  }
+  // The forward trip saves each value.
+  {
+    IRBuilder<> F(L.body->getTerminator());
+    Value *b = F.CreateLoad(PointerType::get(C, 0), L.bufSlot);
+    for (unsigned s = 0; s < K; ++s) {
+      Value *at = F.CreateAdd(F.CreateMul(L.trip, ConstantInt::get(i64, K)), ConstantInt::get(i64, s));
+      // A handle is stored as it is (a slot cell's form), never through a classical instruction.
+      F.CreateStore(saved[s], F.CreateInBoundsGEP(i64, b, at));
+    }
+  }
+  // The reverse trip reloads them.
+  IRBuilder<> Rb(firstMirror);
+  DenseMap<Instruction *, Value *> back;
+  for (unsigned s = 0; s < K; ++s) {
+    Value *at = Rb.CreateAdd(Rb.CreateMul(k, ConstantInt::get(i64, K)), ConstantInt::get(i64, s));
+    back[saved[s]] = Rb.CreateLoad(saved[s]->getType(), Rb.CreateInBoundsGEP(i64, buf, at));
+  }
+  for (auto it = firstMirror->getIterator(); it != R->end(); ++it)
+    for (Use &u : it->operands())
+      if (auto *x = dyn_cast<Instruction>(u.get()); x && back.count(x))
+        u.set(back[x]);
+  (void)DL;
+  (void)i8;
+}
+
+// The reverse loop at B (see above); B is left at the end of an unterminated block.
+void emitRunReverse(LoweringContext &ctx, RunLoop L, IRBuilder<> &B) {
+  LLVMContext &C = ctx.M.getContext();
+  Type *i64 = Type::getInt64Ty(C), *ptr = PointerType::get(C, 0);
+  Function *F = B.GetInsertBlock()->getParent();
+  Value *cnt = B.CreateLoad(i64, L.cntSlot);
+  Value *buf = B.CreateLoad(ptr, L.bufSlot);
+  BasicBlock *X = B.GetInsertBlock();
+  BasicBlock *R = BasicBlock::Create(C, "", F), *D = BasicBlock::Create(C, "", F);
+  Value *last = B.CreateSub(cnt, ConstantInt::get(i64, 1));
+  B.CreateCondBr(B.CreateICmpEQ(cnt, ConstantInt::get(i64, 0)), D, R);
+  IRBuilder<> RB(R);
+  PHINode *k = RB.CreatePHI(i64, 2);
+  k->addIncoming(last, X);
+  // A marker the mirror is emitted after (removed below).
+  Instruction *mark = cast<Instruction>(RB.CreateAdd(k, ConstantInt::get(i64, 0)));
+  ctx.unc().emitMirror(L.scope, RB);
+  if (RB.GetInsertBlock() != R)
+    internalError("mem-qram: a rule-22 loop's mirror left its block", mark);
+  Instruction *first = mark->getNextNode();
+  if (first) {
+    remapMirror(ctx, L, R, first, k, buf);
+  }
+  mark->eraseFromParent();
+  RB.SetInsertPoint(R);
+  Value *k1 = RB.CreateSub(k, ConstantInt::get(i64, 1));
+  k->addIncoming(k1, R);
+  RB.CreateCondBr(RB.CreateICmpEQ(k, ConstantInt::get(i64, 0)), D, R);
+  B.SetInsertPoint(D);
+  // The buffer (a host block, or null) and the trip count are released: a second pass reaches nothing.
+  FunctionCallee ff = ctx.M.getOrInsertFunction("free", Type::getVoidTy(C), ptr);
+  B.CreateCall(ff, {buf});
+  B.CreateStore(ConstantInt::get(i64, 0), L.cntSlot);
+  B.CreateStore(ConstantPointerNull::get(cast<PointerType>(ptr)), L.bufSlot);
+}
+
+// True when some instruction of the original function other than MI that MI may reach accesses one of objs.
+bool accessedAfter(LoweringContext &ctx, const Instruction &MI, ArrayRef<ObjectId> objs) {
+  const Function &F = *MI.getFunction();
+  DominatorTree DT(const_cast<Function &>(F));
+  LoopInfo LI(DT);
+  for (const Instruction &I : instructions(F)) {
+    if (&I == &MI || !(isa<LoadInst>(I) || isa<StoreInst>(I) || isa<CallBase>(I)))
+      continue;
+    if (auto *II = dyn_cast<IntrinsicInst>(&I); II && II->isLifetimeStartOrEnd())
+      continue;
+    bool touches = false;
+    for (const Use &u : I.operands())
+      if (u->getType()->isPointerTy() && !isa<Function>(u.get()))
+        for (ObjectId o : ctx.T.provenance(u.get(), ctx.S))
+          touches |= is_contained(objs, o);
+    if (touches && isPotentiallyReachable(&MI, &I, nullptr, &DT, &LI))
+      return true;
+  }
+  return false;
+}
+
+// The forward loop of a run of `trips` chunks (a classical i64) into dst (see above). lenV/len: the length (a
+// classical run-time value or a quantum rail); flag: the quantum predicate's or null. Returns the loop.
+RunLoop emitRunLoop(LoweringContext &ctx, MemIntrinsic &MI, const QAccess &dst, LoopSrc &src, const Value *lenV,
+                    Operand len, uint64_t cover) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  LLVMContext &C = ctx.M.getContext();
+  IRBuilder<> &B = ctx.B();
+  Type *i64 = Type::getInt64Ty(C), *i8 = Type::getInt8Ty(C);
+  const QramObj &q = *dst.q;
+  uint64_t E = q.elemBytes;
+  uint64_t Es = src.kind == LoopSrc::Qram ? src.sacc.q->elemBytes : E;
+  uint64_t U = std::lcm(E, Es);
+  int64_t e0 = floorDiv(dst.a.off, int64_t(E));
+  int64_t r0 = dst.a.off - e0 * int64_t(E);
+  // The run's end may cut a piece only at a multiple of 2^g chunk-relative.
+  unsigned tzL = computeKnownBits(lenV, DL).countMinTrailingZeros();
+  unsigned g = std::min<unsigned>({tzL, unsigned(llvm::countr_zero(U)), r0 ? unsigned(llvm::countr_zero(uint64_t(r0))) : 64u});
+  auto mayCut = [&](uint64_t lo, uint64_t hi) {
+    if (lo < uint64_t(r0) && uint64_t(r0) < hi)
+      return true;
+    if (g >= 63)
+      return false;
+    uint64_t m = ((lo >> g) + 1) << g;
+    return m < hi;
+  };
+  // The (sub-)pieces of one chunk, chunk-relative.
+  struct CP { Piece p; uint64_t lo, hi; unsigned nb; };
+  SmallVector<CP, 8> cps;
+  for (const Piece &p : piecesIn(DL, q, e0 * int64_t(E), U, MI)) {
+    unsigned nb = pieceBits(DL, p);
+    if (!nb)
+      continue;
+    uint64_t lo = p.valLo, hi = p.valLo + (p.cellHi - p.cellLo);
+    if (!mayCut(lo, hi)) {
+      cps.push_back({p, lo, hi, nb});
+      continue;
+    }
+    for (uint64_t kk = 0; kk < p.cellHi - p.cellLo; ++kk) {
+      Piece sub = p;
+      sub.cellLo = p.cellLo + kk;
+      sub.cellHi = sub.cellLo + 1;
+      sub.valLo = p.valLo + kk;
+      unsigned sb = pieceBits(DL, sub);
+      if (sb)
+        cps.push_back({sub, sub.valLo, sub.valLo + 1, sb});
+    }
+  }
+  Function &F = ctx.out();
+  IRBuilder<> EB(&F.getEntryBlock(), F.getEntryBlock().getFirstInsertionPt());
+  RunLoop L;
+  L.cntSlot = EB.CreateAlloca(i64);
+  L.bufSlot = EB.CreateAlloca(PointerType::get(C, 0));
+  EB.CreateStore(ConstantInt::get(i64, 0), L.cntSlot);
+  EB.CreateStore(ConstantPointerNull::get(PointerType::get(C, 0)), L.bufSlot);
+  AllocaInst *chunkBuf = src.kind == LoopSrc::Host ? EB.CreateAlloca(ArrayType::get(i8, U)) : nullptr;
+
+  // Pre-loop: the trip count and a memset's shared fill per piece width.
+  Value *L64 = len.handle ? nullptr : B.CreateZExtOrTrunc(len.v, i64);
+  Value *cnt;
+  if (L64)
+    cnt = B.CreateUDiv(B.CreateAdd(L64, ConstantInt::get(i64, uint64_t(r0) + U - 1)), ConstantInt::get(i64, U));
+  else
+    cnt = ConstantInt::get(i64, (uint64_t(r0) + cover + U - 1) / U);
+  B.CreateStore(cnt, L.cntSlot);
+  std::map<unsigned, Operand> fills;
+  if (src.kind == LoopSrc::Fill)
+    for (const CP &cp : cps) {
+      if (fills.count(cp.nb))
+        continue;
+      unsigned W = unsigned(8 * (cp.hi - cp.lo));
+      Operand x = intCast(ctx, "zext", 8, W, src.fill);
+      if (W > 8)
+        x = intOp(ctx, "mul", W, x, APInt::getSplat(W, APInt(8, 1)));
+      x = intCast(ctx, "trunc", W, cp.nb, x);
+      if (!x.handle)
+        x = Operand{seedOf(ctx, RailType{Kind::Int, cp.nb}, x.v), true};   // one shared basis-state seed (rule 22)
+      fills[cp.nb] = x;
+    }
+  BasicBlock *pre = B.GetInsertBlock();
+  BasicBlock *body = BasicBlock::Create(C, "", &F), *done = BasicBlock::Create(C, "", &F);
+  L.preTerm = B.CreateCondBr(B.CreateICmpEQ(cnt, ConstantInt::get(i64, 0)), done, body);
+  B.SetInsertPoint(body);
+  PHINode *c = B.CreatePHI(i64, 2);
+  c->addIncoming(ConstantInt::get(i64, 0), pre);
+  L.trip = c;
+  L.body = body;
+  L.scope = ctx.unc().openScope();
+  Value *cU = B.CreateMul(c, ConstantInt::get(i64, U));
+  Value *extraDst = U == E ? static_cast<Value *>(c) : B.CreateMul(c, ConstantInt::get(i64, U / E));
+  // Values, every source byte of the trip read first.
+  SmallVector<Operand, 8> vals;
+  if (src.kind == LoopSrc::Host) {
+    // The run's bytes of this chunk, [max(0, cU - r0), min(Lb, cU + U - r0)) of the source, into the zeroed
+    // chunk buffer at their chunk-relative place (Lb: L, or a quantum length's bound).
+    Value *Lb = L64 ? L64 : ConstantInt::get(i64, cover);
+    Value *start = B.CreateSub(cU, ConstantInt::get(i64, r0));   // run byte of chunk byte 0 (may be < 0)
+    Value *k0 = B.CreateSelect(B.CreateICmpSLT(start, ConstantInt::get(i64, 0)), ConstantInt::get(i64, 0), start);
+    Value *endc = B.CreateAdd(start, ConstantInt::get(i64, U));
+    Value *k1 = B.CreateSelect(B.CreateICmpULT(Lb, endc), Lb, endc);
+    B.CreateMemSet(chunkBuf, ConstantInt::get(i8, 0), U, MaybeAlign(1));
+    Value *n = B.CreateSelect(B.CreateICmpUGT(k1, k0), B.CreateSub(k1, k0), ConstantInt::get(i64, 0));
+    B.CreateMemCpy(B.CreateInBoundsGEP(i8, chunkBuf, B.CreateSub(k0, start)), MaybeAlign(1),
+                   B.CreateInBoundsGEP(i8, src.host, k0), MaybeAlign(1), n);
+  }
+  for (const CP &cp : cps) {
+    unsigned W = unsigned(8 * (cp.hi - cp.lo));
+    switch (src.kind) {
+    case LoopSrc::Fill:
+      vals.push_back(fills[cp.nb]);
+      break;
+    case LoopSrc::Host: {
+      Value *at = cp.lo ? B.CreateConstInBoundsGEP1_64(i8, chunkBuf, cp.lo) : static_cast<Value *>(chunkBuf);
+      Value *v = B.CreateAlignedLoad(IntegerType::get(C, W), at, Align(1));
+      vals.push_back(intCast(ctx, "trunc", W, cp.nb, Operand{v, false}));
+      break;
+    }
+    case LoopSrc::Qram: {
+      Value *extraSrc = U == Es ? static_cast<Value *>(c) : B.CreateMul(c, ConstantInt::get(i64, U / Es));
+      Operand x = readBytes(ctx, src.sacc, src.sacc.a.off - r0 + int64_t(cp.lo), cp.hi - cp.lo, MI, extraSrc);
+      vals.push_back(intCast(ctx, "trunc", W, cp.nb, x));
+      break;
+    }
+    }
+  }
+  // Guards and stores.
+  Value *flag = ctx.currentFlag();
+  unsigned lw = lenV->getType()->getIntegerBitWidth();
+  for (size_t i = 0; i < cps.size(); ++i) {
+    const CP &cp = cps[i];
+    Value *lo = B.CreateAdd(cU, ConstantInt::get(i64, cp.lo)), *hi = B.CreateAdd(cU, ConstantInt::get(i64, cp.hi));
+    Value *cond = B.CreateICmpUGE(lo, ConstantInt::get(i64, r0));
+    if (L64)
+      cond = B.CreateAnd(cond, B.CreateICmpULE(hi, B.CreateAdd(L64, ConstantInt::get(i64, r0))));
+    CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 1}}, {cond});
+    ctx.unc().recordSeed(seed);
+    Value *gd = seed;
+    auto andI1 = [&](Value *x, Value *y) {
+      abi::TemplateSpec a;
+      a.op = "and";
+      a.w = RailType{Kind::Int, 1};
+      return ctx.emitTemplate(a, {Operand{x, true}, Operand{y, true}});
+    };
+    if (len.handle) {
+      // n >u (cU + hi - r0 - 1), the right side clamped to the length's width (above it: never).
+      Value *rhs = B.CreateSub(hi, ConstantInt::get(i64, r0 + 1));
+      if (lw < 64) {
+        Value *mx = ConstantInt::get(i64, (uint64_t(1) << lw) - 1);
+        rhs = B.CreateTrunc(B.CreateSelect(B.CreateICmpUGT(rhs, mx), mx, rhs), IntegerType::get(C, lw));
+      }
+      abi::TemplateSpec cmp;
+      cmp.op = "icmp";
+      cmp.pred = "ugt";
+      cmp.w = RailType{Kind::Int, lw};
+      cmp.shape = "hl";
+      gd = andI1(gd, ctx.emitTemplate(cmp, {len, Operand{rhs, false}}));
+    }
+    if (flag)
+      gd = andI1(flag, gd);
+    writePiece(ctx, dst, cp.p, vals[i], cp.nb, gd, MI, extraDst);
+  }
+  if (B.GetInsertBlock() != body)
+    internalError("mem-qram: a rule-22 loop trip that is not one block", &MI);
+  ctx.unc().closeScope(L.scope);
+  Value *c1 = B.CreateAdd(c, ConstantInt::get(i64, 1), "", /*HasNUW=*/true, /*HasNSW=*/true);
+  c->addIncoming(c1, body);
+  B.CreateCondBr(B.CreateICmpEQ(c1, cnt), done, body);
+  // The loop's exit block continues in one fresh block (Uncompute's immediate placement of a deferred item
+  // splits there).
+  BasicBlock *cont = BasicBlock::Create(C, "", &F);
+  BranchInst::Create(cont, done);
+  B.SetInsertPoint(cont);
+  (void)i8;
+  return L;
+}
+
+// The reverse of the loops Ls (last first), then the mirror of `extra` (a scope of records made before them,
+// or none): deferred after the destination's later accesses when there are any, else right here. One item for
+// all of them: a memmove's second pass writes the cells its first pass read.
+void finishRunLoops(LoweringContext &ctx, SmallVector<RunLoop, 2> Ls, std::optional<unsigned> extra, bool later) {
+  IRBuilder<> &B = ctx.B();
+  LoweringContext *cx = &ctx;
+  auto emit = [cx, Ls, extra](IRBuilder<> &RB) {
+    for (size_t i = Ls.size(); i-- > 0;)
+      emitRunReverse(*cx, Ls[i], RB);
+    if (extra)
+      cx->unc().emitMirror(*extra, RB);
+  };
+  if (!later) {
+    emit(B);
+    return;
+  }
+  SmallVector<unsigned, 3> scopes;
+  if (extra)
+    scopes.push_back(*extra);
+  for (const RunLoop &L : Ls)
+    scopes.push_back(L.scope);
+  DenseSet<const Value *> owned;
+  for (unsigned sc : scopes)
+    for (const Record &r : ctx.unc().scopeRecords(sc))
+      if (!r.forward->getType()->isVoidTy())
+        owned.insert(r.forward);
+  std::vector<RailId> reads;
+  for (unsigned sc : scopes)
+    for (const Record &r : ctx.unc().scopeRecords(sc))
+      for (const Operand &o : r.ops)
+        if (o.handle && !owned.count(o.v))
+          if (RailId x = ctx.unc().idOf(o.v); !is_contained(reads, x))
+            reads.push_back(x);
+  ctx.unc().recordDeferred(scopes, {}, emit, reads, {}, /*busUseFollows=*/true);
+}
+
+void lowerQramIntrinsicLoop(LoweringContext &ctx, MemIntrinsic &MI, const QAccess &acc, const Value *lenV,
+                            Operand len, uint64_t cover) {
+  LoopSrc src;
+  // A global QRAM's stores are never popped (rule 20, 160): the trip's other records are undone where the loop
+  // exits. Any other destination's stores are popped after its later accesses.
+  bool later = !isa<GlobalVariable>(acc.q->site) && accessedAfter(ctx, MI, ctx.T.provenance(MI.getDest(), ctx.S));
+  if (auto *MS = dyn_cast<MemSetInst>(&MI)) {
+    src.kind = LoopSrc::Fill;
+    src.fill = ctx.operand(MS->getValue());
+  } else {
+    const Value *s = cast<MemTransferInst>(MI).getSource();
+    if (ctx.T.isFatPointer(s, ctx.S))
+      unimplemented("mem-qram: a memcpy/memmove into a QRAM from a quantum pointer (rule 21)", &MI);
+    ArrayRef<ObjectId> so = ctx.T.provenance(s, ctx.S);
+    if (llvm::all_of(so, [&](ObjectId x) { return ctx.T.classOf(x) == ObjClass::Classical; })) {
+      src.kind = LoopSrc::Host;
+      Operand sp = ctx.operand(s);
+      if (sp.handle)
+        internalError("mem-qram: a classical memcpy source bound to a rail", &MI);
+      src.host = sp.v;
+    } else if (so.size() == 1 && ctx.T.classOf(so.front()) == ObjClass::Qram) {
+      src.kind = LoopSrc::Qram;
+      src.sacc = qramAccess(ctx, s, MI);
+      if (isa<MemMoveInst>(&MI) && src.sacc.q == acc.q) {
+        // A memmove within one object: through a temporary byte QRAM, every source byte read first.
+        LLVMContext &C = ctx.M.getContext();
+        QramState &st = qramStates()[&ctx.out()];
+        QramObj tq = layoutOf(Type::getInt8Ty(C), ctx.M.getDataLayout(), &MI);
+        tq.site = &MI;
+        // One byte cell per byte of the run: the length (a quantum one: its bound).
+        uint64_t maxRun = len.handle ? cover : upperBound(lenV, ctx.M.getDataLayout(), MI);
+        Value *n0 = len.handle ? cellCountArg(ctx, tq, cover)
+                               : cellCountArg(ctx, tq, ctx.B().CreateZExtOrTrunc(len.v, Type::getInt64Ty(C)), maxRun);
+        abi::CoreSpec spec{abi::Core::QramAlloc, tq.cols[0].w};
+        unsigned tscope = ctx.unc().openScope();   // the temporary is the item's own
+        CallInst *bus = ctx.emitCore(spec, {n0});
+        ctx.unc().recordCore(bus, spec, {Operand{n0, false}}, 0);
+        ctx.unc().closeScope(tscope);
+        tq.buses[&MI] = {bus};
+        QramObj &tmp = st.objs[&MI] = std::move(tq);
+        Addr ta;
+        ta.root = &MI;
+        ta.ok = true;
+        QAccess tacc{&tmp, ta};
+        // Pass 1: source -> temporary; pass 2: temporary -> destination. One deferred item reverses pass 2, then
+        // pass 1, then releases the temporary.
+        RunLoop L1 = emitRunLoop(ctx, MI, tacc, src, lenV, len, cover);
+        LoopSrc s2;
+        s2.kind = LoopSrc::Qram;
+        s2.sacc = tacc;   // run byte k is the temporary's byte k
+        RunLoop L2 = emitRunLoop(ctx, MI, acc, s2, lenV, len, cover);
+        finishRunLoops(ctx, {L1, L2}, tscope, later);
+        return;
+      }
+    } else if (so.size() == 1 && ctx.T.classOf(so.front()) == ObjClass::Slot) {
+      unimplemented("mem-qram: a memcpy/memmove from a slot array into a QRAM at another length or layout than "
+                    "whole cells of one type (rule 22 per cell of a slot source)",
+                    &MI);
+    } else {
+      unimplemented("mem-qram: a memcpy/memmove into a QRAM from several objects (rule 21's per-object source "
+                    "cells)",
+                    &MI);
+    }
+  }
+  RunLoop L = emitRunLoop(ctx, MI, acc, src, lenV, len, cover);
+  finishRunLoops(ctx, {L}, std::nullopt, later);
+}
+
 // Rule 22 over a QRAM destination, every other form, through the byte engine: the cells the intrinsic
 // may touch (a classical constant length: exactly; otherwise up to the length's upper bound, LLVM's range
 // facts, and never past the object), each touched cell piece stored its bytes of the new value:
@@ -2121,10 +2562,10 @@ void lowerQramIntrinsicBytes(LoweringContext &ctx, MemIntrinsic &MI, const QAcce
         cap = cap > uint64_t(acc.a.off) ? cap - uint64_t(acc.a.off) : 0;
       cover = std::min(cover, cap);
     }
-    if (cover > (uint64_t(1) << 20))
-      unimplemented("awaiting owner ruling: SPEC_ISSUES rule 22 unrolled over a length whose upper bound leaves "
-                    "more than 2^20 bytes (no range fact bounds it and the destination's extent is not static)",
-                    &MI);
+    // A run-time classical length is rule 22's classical loop over the cells; a quantum one whose bound leaves
+    // more cells than the compiler unrolls is the same loop over the cells the bound reaches.
+    if (!len.handle || cover > (uint64_t(1) << 20))
+      return lowerQramIntrinsicLoop(ctx, MI, acc, lenV, len, cover);
   }
   if (cover == 0)
     return;
