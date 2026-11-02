@@ -3482,10 +3482,10 @@ Type *cellTypeOfUses(const Argument &A, bool strict) {
     see(ld->getType(), ld);
   for (const StoreInst *st : u.stores)
     see(st->getValueOperand()->getType(), st);
+  // A formal its clone never loads or stores through touches no cell: its one column is never accessed, and a
+  // heap block only handed to such clones holds bytes (heapLayout's default, rule 22: untyped memory's cell).
   if (!t)
-    unimplemented("mem-qram: a rule 21 triple formal its clone never loads or stores through (its cell type is "
-                  "the caller's)",
-                  &A);
+    t = Type::getInt8Ty(A.getContext());
   return t;
 }
 
