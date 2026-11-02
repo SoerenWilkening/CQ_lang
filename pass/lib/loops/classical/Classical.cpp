@@ -2490,9 +2490,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
               if (o.handle && !ownedH.count(o.v))
                 if (RailId x = self->U.idOf(o.v); !is_contained(reads, x))
                   reads.push_back(x);
-        // cq-odo1: the initial rails the header phis name are read by the reverse (its anchor notes them).
+        // cq-odo1: the initial rails from before the loop the header phis name are read by the reverse (its anchor
+    // notes them); one the loop's own seed scope minted is the item's.
         for (Value *h : self->externalInits)
-          if (RailId x = self->U.idOf(h); !is_contained(reads, x))
+          if (RailId x = self->U.idOf(h); !ownedH.count(h) && !is_contained(reads, x))
             reads.push_back(x);
         self->U.recordDeferred(scs, exits,
                                [self, T, seedScope](IRBuilder<> &B) { self->reverse(B, T, seedScope, true); },
@@ -2546,9 +2547,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           if (o.handle && !ownedH.count(o.v))
             if (RailId x = U.idOf(o.v); !is_contained(reads, x))
               reads.push_back(x);
-    // cq-odo1: the initial rails the header phis name are read by the reverse (its anchor notes them).
+    // cq-odo1: the initial rails from before the loop the header phis name are read by the reverse (its anchor
+    // notes them); one the loop's own seed scope minted is the item's.
     for (Value *h : externalInits)
-      if (RailId x = U.idOf(h); !is_contained(reads, x))
+      if (RailId x = U.idOf(h); !ownedH.count(h) && !is_contained(reads, x))
         reads.push_back(x);
     BasicBlock *Cont = newBlock();
     BranchInst::Create(Cont, T);
