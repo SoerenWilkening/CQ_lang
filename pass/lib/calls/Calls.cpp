@@ -914,8 +914,8 @@ std::string calleeName(const Function &F, const Value *at) {
     return base + "f";
   if (t && t->isX86_FP80Ty())
     return base + "l";
-  unimplemented("calls: an LLVM math intrinsic whose first operand is not float, double or x86_fp80 (rule 18: no "
-                "libm name)",
+  unimplemented("calls: awaiting owner ruling: SPEC_ISSUES \"rule 18: an LLVM math intrinsic on a quantum operand "
+                "whose first operand is not float, double or x86_fp80 (half, bfloat, a vector: no libm name)\"",
                 at);
 }
 
@@ -1911,15 +1911,21 @@ void lowerDeclaredPointers(LoweringContext &ctx, CallBase &CB, Function &F) {
       mask += "001";
       continue;
     }
-    if (!scalarRailType(a->getType()))
-      unimplemented("calls: a pointer, aggregate or vector argument of a quantum call (rules 21, 25, 26)", &CB);
-    Operand o = ctx.operand(a);
-    if (ctx.T.isQuantum(a, ctx.S))
-      o = seedActual(ctx, o);
-    else if (o.handle)
-      internalError("calls: a rail where taint says the actual is classical", &CB);
-    args.push_back(o.v);
-    mask.push_back(o.handle ? '1' : '0');
+    // A scalar is one field, an aggregate or vector one per scalar leaf (CR §1.4, rules 25, 26).
+    SmallVector<bool, 4> q = isComposite(a->getType()) ? ctx.T.fieldMask(a, ctx.S)
+                                                       : SmallVector<bool, 4>{ctx.T.isQuantum(a, ctx.S)};
+    SmallVector<Operand, 4> fields = actualFields(ctx, a);
+    if (q.size() != fields.size())
+      internalError("calls: taint's field mask of an actual has another field count than the actual", &CB);
+    for (unsigned k = 0; k < fields.size(); ++k) {
+      Operand o = fields[k];
+      if (q[k])
+        o = seedActual(ctx, o);
+      else if (o.handle)
+        internalError("calls: a rail where taint says the actual is classical", &CB);
+      args.push_back(o.v);
+      mask.push_back(o.handle ? '1' : '0');
+    }
   }
   if (ptrArg < 0)
     internalError("calls: lowerDeclaredPointers of a call without a pointer argument", &CB);
