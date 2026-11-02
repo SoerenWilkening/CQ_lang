@@ -185,6 +185,16 @@ struct Shared {
   // CR rule 6: the rails a clean-up was requested for (Opcode.cpp). A template rail reading one of them
   // is no longer garbage rule 5 can uncompute (cq-tmvo).
   llvm::DenseSet<const llvm::Value *> ruleSixCleaned;
+  // cq-2ql9 (Opcode.cpp ruleSixRetry): an old value Y whose clean-up against I's image (yp) waits for the
+  // garbage rails that still read Y (blockers) to be settled; ctx is the context that lowered I.
+  struct PendingSix {
+    LoweringContext *ctx;
+    llvm::Value *Y;
+    llvm::Instruction *I;
+    Operand yp;
+    llvm::SmallVector<llvm::Value *, 2> blockers;
+  };
+  std::vector<PendingSix> ruleSixPending;
   // cq-su3p (PreRotation.cpp): readers of a register's pre-rotation value that -O1 sank after the
   // cq_theta, lowered just before the rotation. The walker skips them when it reaches them and takes
   // hoistedDefs into the current block's definitions after the dispatch that hoisted them.
@@ -210,6 +220,9 @@ void pushLoopUnit(LoweringContext &, const llvm::Loop &);
 void popLoopUnit(LoweringContext &, const llvm::Loop &);
 // CR rule 6 after an original instruction is lowered, or a quantum-join phi merged (Opcode.cpp).
 void ruleSixAfter(LoweringContext &, llvm::Instruction &);
+// cq-2ql9: rule 6 clean-ups ruleSixAfter deferred until the garbage rails reading the old value settle;
+// called after every ruleSixAfter (Opcode.cpp).
+void ruleSixRetry(LoweringContext &);
 // cq-xivx (CR §1.4 _inv<c>, rule 18; Opcode.cpp): rule 6's inverse of one bijective update U of Y,
 // the template and its forward operands computing Y from yp (U's value). operandOf resolves U's other
 // operands, readsY tells whether one reads Y (then U is no bijection in Y). nullopt: no rule 6 bijection.

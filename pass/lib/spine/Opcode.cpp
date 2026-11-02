@@ -930,6 +930,13 @@ void clean(LoweringContext &ctx, Value *y, const Inverse &inv) {
 // spine minted that no non-diagonal gate or measurement turned into a register, and whose _unc can
 // still run: no operand of it was cleaned by rule 6 (cq-tmvo: r = z + x + w with z cleaned at z + x
 // leaves z + x a rail rule 5 cannot uncompute; rule 6 then cleans it at its own update).
+bool ruleFiveGarbageRail(spine::Shared &sh, Value *h) {
+  auto it = sh.hist.find(h);
+  if (it == sh.hist.end() || !it->second.tmpl || it->second.opaque || sh.rotations.count(h) || sh.measured.count(h))
+    return false;
+  return none_of(it->second.ops, [&](const Operand &o) { return o.handle && sh.ruleSixCleaned.count(o.v); });
+}
+
 bool ruleFiveGarbage(LoweringContext &ctx, Value *y) {
   spine::Shared &sh = spine::shared(ctx);
   Value *h = ctx.operand(y).v;
@@ -1302,17 +1309,20 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
   // another live garbage rail still needs for its uncompute (a sibling arm 3y of y ^ 7 that a later
   // select reads, 920_pu) is not cleaned here: CR rule 6 applies after that rail is uncomputed, to the
   // composite update, which is the later consumer's (the select's merge clean-up, cq-hge5).
-  auto neededLater = [&](Value *Y) {
+  auto blockersOf = [&](Value *Y) {
+    SmallVector<Value *, 2> out;
     for (User *u : Y->users()) {
       auto *U = dyn_cast<Instruction>(u);
-      if (!U || U == &I || U->getType()->isVoidTy() || !spine::shared(ctx).binds.count(U) ||
-          !ctx.operand(U).handle || !ruleFiveGarbage(ctx, U))
+      auto bi = U ? spine::shared(ctx).binds.find(U) : spine::shared(ctx).binds.end();
+      if (!U || U == &I || U->getType()->isVoidTy() || bi == spine::shared(ctx).binds.end() ||
+          bi->second.size() != 1 || !ctx.operand(U).handle || !ruleFiveGarbage(ctx, U))
         continue;
       if (!deadAfter(ctx, U, &I))
-        return true;
+        out.push_back(U);
     }
-    return false;
+    return out;
   };
+  auto neededLater = [&](Value *Y) { return !blockersOf(Y).empty(); };
   // CR rule 6, a cell chosen by a classical index (cq-bfz4, 190): the old value is a run-time slot load
   // whose cells mem-slots knows statically (registers cleaned, seeds skipped, on a classical branch).
   for (Value *Y : I.operands())
@@ -1349,6 +1359,96 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
       clean(ctx, Y, *inv);
       return;
     }
+  // cq-2ql9: an old y held back only by such a garbage rail U (an earlier update of y read after I)
+  // waits: once every U is kept (a measurement or a non-diagonal gate made it a register) or has no
+  // reader left to lower, rule 6 applies to y against I's image (ruleSixRetry). A U still garbage then
+  // is uncomputed by rule 5 before the clean-up, which reads y after it (Uncompute's order).
+  spine::Shared &sh = spine::shared(ctx);
+  for (Value *Y : I.operands()) {
+    if (!cleanable(ctx, Y) || !deadAtCleanup(ctx, Y, ctx.operand(Y).v, &I))
+      continue;
+    SmallVector<Value *, 2> bl = blockersOf(Y);
+    if (bl.empty() || !inverseOf(ctx, I, Y, yp))
+      continue;
+    sh.ruleSixPending.push_back(spine::Shared::PendingSix{&ctx, Y, &I, yp, std::move(bl)});
+    return;
+  }
+}
+
+// cq-2ql9 (CR rule 6: the old value is dead at the CLEAN-UP POINT, and a rail still needed to uncompute
+// others is uncomputed first): retry each pending old value whose blockers are settled, after every
+// original instruction the walker lowers. A blocker is settled when it is no longer rule-5 garbage
+// (measured, rotated) or when every reading use of it is lowered. The old value is then cleaned from
+// the image recorded at its update when it is still dead there, uncleaned, unreleased, and every rail
+// the inverse reads is still live; otherwise the entry is dropped (the old value stays as it was).
+void ruleSixRetry(LoweringContext &ctx) {
+  Shared &sh = shared(ctx);
+  if (sh.ruleSixPending.empty())
+    return;
+  // Nothing here asks operand(): after a measurement it answers the classical outcome, recomputed at the
+  // builder (rule 2's collapse), which would emit code. The bindings are read instead.
+  // The rail an original value was bound to (its template's call), whatever a later measurement made
+  // operand() answer.
+  auto boundRail = [&](const Value *v) -> Value * {
+    auto bi = sh.binds.find(v);
+    if (bi == sh.binds.end() || bi->second.size() != 1 || !bi->second.front().handle)
+      return nullptr;
+    return bi->second.front().v;
+  };
+  auto settled = [&](Value *U) {
+    if (!sh.binds.count(U))
+      return false;   // a merge not lowered yet
+    Value *r = boundRail(U);
+    if (!r || !ruleFiveGarbageRail(sh, r))
+      return true;
+    SmallVector<const Use *, 8> uses;
+    readingUses(sh, U, uses);
+    return all_of(uses, [&](const Use *u) {
+      auto *ui = dyn_cast<Instruction>(u->getUser());
+      return ui && !ui->getType()->isVoidTy() && sh.binds.count(ui);
+    });
+  };
+  auto live = [&](Value *h) { return ctx.unc().liveRole(ctx.unc().idOf(h)).has_value(); };
+  for (size_t k = 0; k < sh.ruleSixPending.size();) {
+    Shared::PendingSix &p = sh.ruleSixPending[k];
+    if (p.ctx != &ctx) {
+      ++k;
+      continue;
+    }
+    if (!all_of(p.blockers, settled)) {
+      ++k;
+      continue;
+    }
+    Shared::PendingSix e = std::move(p);
+    sh.ruleSixPending.erase(sh.ruleSixPending.begin() + k);
+    Value *h = boundRail(e.Y);
+    // A rail computed from a measured one may be rule 2's collapse (its value classical, its rail
+    // uncomputed at the collapse point): not a rule 6 old value here.
+    if (!h || any_of(sh.measured, [&](const auto &m) { return railReads(sh, h, const_cast<Value *>(m.first)); }) ||
+        sh.ruleSixCleaned.count(h) || !live(h) || !deadAtCleanup(ctx, e.Y, h, e.I))
+      continue;
+    // The inverse over the other operands' bindings (their rails as I read them; a measured one still holds
+    // its outcome).
+    bool unbound = false;
+    std::optional<Inverse> inv = inverseStepWith(
+        *e.I, e.Y, e.yp,
+        [&](Value *Z) -> Operand {
+          if (isa<Constant>(Z))
+            return Operand{Z, false};
+          if (!isQ(ctx, Z))
+            return ctx.operand(Z);   // a classical value: no collapse to recompute
+          auto bi = sh.binds.find(Z);
+          if (bi == sh.binds.end() || bi->second.size() != 1) {
+            unbound = true;
+            return Operand{Z, false};
+          }
+          return bi->second.front();
+        },
+        [&](Value *Z) { return reads(ctx, Z, e.Y); });
+    if (!inv || unbound || any_of(inv->ops, [&](const Operand &o) { return o.handle && !live(o.v); }))
+      continue;
+    clean(ctx, e.Y, *inv);
+  }
 }
 
 

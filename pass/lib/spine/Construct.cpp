@@ -1485,6 +1485,7 @@ void Walker::emitBlock(BasicBlock *b) {
       spine::bindOperand(ctx, &phi, Operand{m ? m : lowerMerge(ctx, phi), true});
       // CR rule 6: a merge of bijective updates of a dead y and y itself cleans the old y (125).
       spine::ruleSixAfter(ctx, phi);
+      spine::ruleSixRetry(ctx);
       blockDefs.push_back(&phi);
       continue;
     }
@@ -1589,6 +1590,7 @@ void Walker::emitBody(BasicBlock *b, const Instruction *resume) {
       continue;   // lowered before an in-place rotation that -O1 placed it after (cq-su3p)
     spine::dispatch(ctx, I);
     spine::ruleSixAfter(ctx, I);
+    spine::ruleSixRetry(ctx);
     for (const Instruction *h : sh.hoistedDefs)
       blockDefs.push_back(h);
     sh.hoistedDefs.clear();
@@ -1844,6 +1846,7 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
     invert::lowerAdjointBody(ctx, F);   // rule 17: the _adj clone's body is the adjoint of the clone's (cq-xjw2)
   else
     Walker(ctx, F, DT, LI).run();
+  llvm::erase_if(sh.ruleSixPending, [&](const spine::Shared::PendingSix &p) { return p.ctx == &ctx; });
   mem::finishSlots(ctx);   // M8: register arrays' readers against their rule-6 clean-ups (114)
 
   if (last) {
