@@ -1,5 +1,5 @@
-; A byte table at an unbounded 64-bit quantum index into memory of unknown extent: 2^64 cells, no i64
-; length and no stride to reduce by. Awaiting the owner's ruling (SPEC_ISSUES, cq-k65d).
+; A byte table at an unbounded 64-bit quantum index into memory of unknown extent: 2^64 cells, spelled
+; n = 0 (CR 1.3, rule 20, cq-k65d 2026-11-02); the index is the logical rail itself.
 declare i64 @cq_theta_ull(i64, double)
 declare i8 @cq_measure_ui8(i8)
 
@@ -10,4 +10,4 @@ define i8 @wide_bytes(i64 %x0, double %t, ptr %p) {
   %m = call i8 @cq_measure_ui8(i8 %v)
   ret i8 %m
 }
-; EXPECT-ERROR: cq: unimplemented: awaiting owner ruling: SPEC_ISSUES QROM of 2^64 cells
+; CHECK wide_bytes: call i32 @cq_template_qrom_load_i8(ptr %p, i64 0, i32 %{{x}})

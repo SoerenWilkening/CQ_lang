@@ -615,9 +615,12 @@ Table generalTable(LoweringContext &ctx, const QromShape &q, const LoadInst &ld)
       lo = ConstantInt::get(i64, 0);
       n = ConstantInt::get(i64, uint64_t(1) << W);
     } else {
-      unimplemented("awaiting owner ruling: SPEC_ISSUES QROM of 2^64 cells (a byte or odd stride at an unbounded "
-                    "64-bit index into memory of unknown extent has no i64 length)",
-                    &ld);
+      // CR §1.3, rule 20 (cq-k65d, 2026-11-02): memory of unknown extent read at an unbounded 64-bit index
+      // is a table of 2^64 cells, spelled n = 0. The index is L modulo 2^64, exactly the address
+      // arithmetic's own wrap (base + L * u mod 2^64).
+      W = 64;
+      lo = ConstantInt::get(i64, 0);
+      n = ConstantInt::get(i64, 0);
     }
   }
   // The index (L - lo) modulo 2^W.
@@ -1025,9 +1028,10 @@ Value *qromLoadAt(LoweringContext &ctx, const Value *root, Operand idx, unsigned
     lo = 0;
     n = uint64_t(1) << W;
   } else {
-    unimplemented("awaiting owner ruling: SPEC_ISSUES QROM of 2^64 cells (a byte or odd stride at an unbounded "
-                  "64-bit index into memory of unknown extent has no i64 length)",
-                  &at);
+    // CR §1.3, rule 20 (cq-k65d, 2026-11-02): 2^64 cells of unknown extent, spelled n = 0; the 64-bit
+    // index wraps as the address arithmetic does.
+    lo = 0;
+    n = 0;
   }
   if (lo != 0 && W > idxBits)   // lo == 0: idx at its own width reads every in-domain cell
     idx = tmpl(idxSext ? "sext" : "zext", idxBits, {idx}, "", W);

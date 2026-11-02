@@ -580,7 +580,9 @@ Value *cellAt(LoweringContext &ctx, const ObjInfo &info, Value *idx, const Instr
   Type *i64 = Type::getInt64Ty(C);
   if (info.kind == RootKind::Global && info.cellBytes != 4) {
     if (info.cellBytes < 4)
-      unimplemented("mem-qram: a memset of a global slot object with cells narrower than a handle", &I);
+      internalError("mem-qram: the seed form of a memset of a global slot object with cells narrower than a handle "
+                    "(lowerSlotMemset routes it to M6)",
+                    &I);
     return B.CreateInBoundsGEP(Type::getInt8Ty(C), base.v, B.CreateMul(idx, ConstantInt::get(i64, info.cellBytes)));
   }
   return B.CreateInBoundsGEP(Type::getInt32Ty(C), base.v, idx);
@@ -626,9 +628,13 @@ void lowerSlotMemset(LoweringContext &ctx, MemSetInst &MS, ObjectId o) {
   // mem-slots gives them), before anything is emitted here.
   if (ctx.currentFlag())
     return lowerSlotIntrinsicM6(ctx, MS, o);
+  // The seed form below is the whole-cell update of an object plus classical GEP offsets in mem-slots' handle
+  // layout; every other memset (a destination of another form, a run that starts or ends inside a cell, a
+  // stride that is not whole cells, a global's cells narrower than a handle) is rule 22's per-cell update on
+  // mem-slots' write path (M6), which owns those cells.
   Addr a = decompose(MS.getDest(), DL);
   if (!a.ok)
-    unimplemented("mem-qram: a memset of a slot object whose destination is not an object plus GEP offsets", &MS);
+    return lowerSlotIntrinsicM6(ctx, MS, o);
   if (ctx.T.objectOf(a.root, ctx.S) != o)
     internalError("mem-qram: the memset destination's root is not the object taint names", &MS);
   ObjInfo &info = objInfo(ctx, st, a.root, o);
@@ -643,12 +649,10 @@ void lowerSlotMemset(LoweringContext &ctx, MemSetInst &MS, ObjectId o) {
   if (len.handle)
     internalError("mem-qram: a quantum-length memset routed to the seed form (lowerMemIntrinsic sends it to M6)",
                   &MS);
-  if (a.off % cb)
-    unimplemented("mem-qram: a memset of a slot object starting inside a cell (a bit view, 63)", &MS);
-  if (!wholeCells(MS.getLength(), uint64_t(cb), DL))
-    unimplemented("mem-qram: a memset of a slot object over a length that is not a whole number of cells (a bit "
-                  "view, 63)",
-                  &MS);
+  if (a.off % cb || !wholeCells(MS.getLength(), uint64_t(cb), DL) ||
+      (info.kind == RootKind::Global && info.cellBytes < 4) ||
+      llvm::any_of(a.terms, [&](const auto &t) { return t.second % cb != 0; }))
+    return lowerSlotIntrinsicM6(ctx, MS, o);
 
   // The role every seed takes (mem-slots' lowerSlotStore of a seed).
   std::optional<Role> role;
@@ -680,8 +684,6 @@ void lowerSlotMemset(LoweringContext &ctx, MemSetInst &MS, ObjectId o) {
   // The first cell: the destination's offset in cells.
   Value *first = nullptr;
   for (auto &[v, stride] : a.terms) {
-    if (stride % cb)
-      unimplemented("mem-qram: a memset destination GEP stride that is not a whole number of cells", &MS);
     Operand x = ctx.operand(v);
     if (x.handle)
       internalError("mem-qram: a memset at a quantum offset of an object taint classified a slot array (rule 20: a "
@@ -763,6 +765,10 @@ struct QramObj {
   uint64_t elemBytes = 0;          // E: cell index j addresses bytes [j*E, (j+1)*E) of the object
   std::map<const Value *, uint64_t> bytes;   // per root: the object's size when it is a compile-time constant
   SmallVector<Column, 2> cols;     // ascending off
+  // The object may have 2^32 cells or more (CR §1.3, rule 20, cq-k65d): its count is spelled n = 0 (2^64
+  // cells) when it does not fit qram_alloc's i32, and a classical cell index that may not fit the _hl form's
+  // i32 j is a seed index rail at i64 (the idx form; the index keeps its width, rule 21).
+  bool wide = false;
   // The buses (new IR, one per column) each root pointer of the object names: the allocation site (or
   // the global), and each realloc result (CR §1.3: a' replaces a for every access through it).
   std::map<const Value *, SmallVector<Value *, 2>> buses;
@@ -914,9 +920,9 @@ QramObj heapLayout(LoweringContext &ctx, const Function &F, ObjectId o, const Va
       if (best)
         break;
     }
-    if (!best)
-      unimplemented("mem-qram: a heap QRAM of pointers accessed as several types (rule 21: its fat cells)", site);
-    t = best;
+    // Every leaf a pointer (a block of pointers read as a pointer and as an aggregate of pointers): its cells
+    // are pointer cells, each a fat (tag, idx) pair (rule 21, 88).
+    t = best ? best : PointerType::get(ctx.M.getContext(), 0);
   }
   if (!t) {
     for (const Use &u : site->uses())
@@ -1064,10 +1070,29 @@ uint64_t satMul(uint64_t a, uint64_t b) {
   return __builtin_mul_overflow(a, b, &r) || r > kSatBound ? kSatBound : r;
 }
 
-[[noreturn]] void tooManyCells(const Value *at) {
-  unimplemented("awaiting owner ruling: SPEC_ISSUES a QRAM of 2^32 or more cells (qram_alloc's i32 count; a "
-                "quantum size with no smaller upper bound allocates there)",
-                at);
+// CR §1.3 (cq-k65d, 2026-11-02): qram_alloc / qram_realloc take an i32 cell count, and n = 0 denotes 2^64
+// cells. A count of 2^32 or more is spelled 0: the object is then a superset of the C object (an index past
+// the C object's end is undefined behaviour, outside the domain), and q.wide.
+Value *cellCountArg(LoweringContext &ctx, QramObj &q, uint64_t cells) {
+  Type *i32 = Type::getInt32Ty(ctx.M.getContext());
+  if (cells > UINT32_MAX) {
+    q.wide = true;
+    return ConstantInt::get(i32, 0);
+  }
+  return ConstantInt::get(i32, cells);
+}
+
+// A run-time i64 cell count: itself when below 2^32, else 0 (2^64 cells). wideMax: an upper bound of it.
+Value *cellCountArg(LoweringContext &ctx, QramObj &q, Value *cells64, uint64_t wideMax) {
+  IRBuilder<> &B = ctx.B();
+  Type *i32 = Type::getInt32Ty(ctx.M.getContext()), *i64 = Type::getInt64Ty(ctx.M.getContext());
+  if (auto *c = dyn_cast<ConstantInt>(cells64))
+    return cellCountArg(ctx, q, c->getZExtValue());
+  if (wideMax <= UINT32_MAX)
+    return B.CreateTrunc(cells64, i32);
+  q.wide = true;
+  Value *big = B.CreateICmpUGT(cells64, ConstantInt::get(i64, UINT32_MAX));
+  return B.CreateSelect(big, ConstantInt::get(i32, 0), B.CreateTrunc(cells64, i32));
 }
 
 // Where a global QRAM keeps its bus handles: the global's own bytes [4k, 4k + 4) (160), or, when the
@@ -1093,48 +1118,73 @@ Value *busStorage(Module &M, GlobalVariable &gv, const QramObj &q) {
 // constructor; an undefined one is 0. A global defined outside this module (extern, rule 20: an output)
 // starts from its definer's contents: the constructor reads each cell from the host object and stores its
 // seed.
-void ensureGlobalCtor(LoweringContext &ctx, GlobalVariable &gv, const QramObj &q) {
+void ensureGlobalCtor(LoweringContext &ctx, GlobalVariable &gv, QramObj &q) {
   Module &M = ctx.M;
   LLVMContext &C = M.getContext();
   std::string name = ("__cq_qram_init_" + gv.getName()).str();
-  if (M.getFunction(name))
-    return;
   const DataLayout &DL = M.getDataLayout();
   if (gv.isConstant())
     internalError("mem-qram: a constant global is a QRAM", &gv);
   if (!gv.getValueType()->isSized() ||
       (!gv.hasInitializer() && DL.getTypeAllocSize(gv.getValueType()).getFixedValue() == 0))
-    unimplemented("awaiting owner ruling: SPEC_ISSUES a global QRAM of no stated extent (an extern T g[] the "
-                  "program indexes at a quantum offset: rule 20 allocates its cells)",
+    unimplemented("SPEC_ISSUES: a QRAM over an extern object of unknown extent whose initial contents are its "
+                  "definer's (rule 20 gives the extent, n = 0; no qram_alloc form seeds cells from host memory "
+                  "it cannot bound)",
                   &gv);
   uint64_t size = DL.getTypeAllocSize(gv.getValueType()).getFixedValue();
   uint64_t n = size / q.elemBytes;
-  if (n > UINT32_MAX)
-    unimplemented("awaiting owner ruling: SPEC_ISSUES a QRAM of 2^32 or more cells (qram_alloc's i32 count)", &gv);
+  // CR §1.3 (cq-k65d): a count of 2^32 or more cells is spelled 0 (2^64 cells); its cells are then addressed
+  // by an i64 index rail (q.wide).
+  bool wide = n > UINT32_MAX;
+  q.wide |= wide;
+  if (M.getFunction(name))
+    return;
   Function *F = Function::Create(FunctionType::get(Type::getVoidTy(C), false), GlobalValue::InternalLinkage, name, M);
   IRBuilder<> B(BasicBlock::Create(C, "", F));
-  Type *i32 = Type::getInt32Ty(C);
+  Type *i32 = Type::getInt32Ty(C), *i64 = Type::getInt64Ty(C);
   SmallVector<Value *, 2> a;
   for (const Column &c : q.cols)
-    a.push_back(B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::QramAlloc, c.w}), {ConstantInt::get(i32, n)}));
+    a.push_back(B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::QramAlloc, c.w}),
+                             {ConstantInt::get(i32, wide ? 0 : n)}));
   FunctionType *freeTy = FunctionType::get(Type::getVoidTy(C), {i32}, false);
-  auto storeSeed = [&](unsigned k, uint64_t j, Value *v) {
+  // One cell's seed stored (a global QRAM's stores are never popped, so the seed and an index rail are freed
+  // at once). j: the cell index, i64.
+  auto storeSeedAt = [&](unsigned k, Value *j, Value *v) {
     const Column &c = q.cols[k];
     Value *h = B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Alloc, c.w}), {v});
-    B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::QramStore, c.w, false, true}),
-                 {a[k], ConstantInt::get(i32, j), h});
+    if (!wide) {
+      B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::QramStore, c.w, false, true}),
+                   {a[k], B.CreateTrunc(j, i32), h});
+    } else {
+      Value *ix = B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 64}}), {j});
+      B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::QramStore, c.w, false, false}), {a[k], ix, h});
+      B.CreateCall(M.getOrInsertFunction("cqrt_free", freeTy), {ix});
+    }
     B.CreateCall(M.getOrInsertFunction("cqrt_free", freeTy), {h});
   };
+  auto storeSeed = [&](unsigned k, uint64_t j, Value *v) { storeSeedAt(k, ConstantInt::get(i64, j), v); };
   for (const Column &c : q.cols)
     if (c.ptrPart && (!gv.hasInitializer() || !gv.getInitializer()->isNullValue()))
       unimplemented("mem-qram: a global QRAM of pointers with an initializer", &gv);
-  if (!gv.hasInitializer()) {
-    for (uint64_t j = 0; j < n; ++j)
-      for (unsigned k = 0; k < q.cols.size(); ++k) {
-        const Column &c = q.cols[k];
-        Value *p = B.CreateConstInBoundsGEP1_64(Type::getInt8Ty(C), &gv, j * q.elemBytes + c.off);
-        storeSeed(k, j, B.CreateLoad(c.cellTy, p));
-      }
+  if (!gv.hasInitializer() && n > 0) {
+    // The definer's contents, cell by cell: a classical loop over the n cells (rule 22's form for a copy).
+    BasicBlock *pre = B.GetInsertBlock();
+    BasicBlock *body = BasicBlock::Create(C, "", F), *done = BasicBlock::Create(C, "", F);
+    B.CreateBr(body);
+    B.SetInsertPoint(body);
+    PHINode *j = B.CreatePHI(i64, 2);
+    j->addIncoming(ConstantInt::get(i64, 0), pre);
+    Value *elem = B.CreateInBoundsGEP(Type::getInt8Ty(C), &gv, B.CreateMul(j, ConstantInt::get(i64, q.elemBytes)));
+    for (unsigned k = 0; k < q.cols.size(); ++k) {
+      const Column &c = q.cols[k];
+      Value *p = c.off ? B.CreateConstInBoundsGEP1_64(Type::getInt8Ty(C), elem, c.off) : elem;
+      storeSeedAt(k, j, B.CreateLoad(c.cellTy, p));
+    }
+    Value *j1 = B.CreateAdd(j, ConstantInt::get(i64, 1), "", /*HasNUW=*/true, /*HasNSW=*/true);
+    j->addIncoming(j1, B.GetInsertBlock());
+    B.CreateCondBr(B.CreateICmpEQ(j1, ConstantInt::get(i64, n)), done, body);
+    B.SetInsertPoint(done);
+  } else if (!gv.hasInitializer()) {
   } else if (Constant *init = gv.getInitializer(); !init->isNullValue()) {
     for (uint64_t j = 0; j < n; ++j)
       for (unsigned k = 0; k < q.cols.size(); ++k) {
@@ -1249,6 +1299,20 @@ Value *elemIndex(LoweringContext &ctx, Value *jb, int64_t e) {
     return ConstantInt::get(Type::getInt32Ty(C), e, true);
   Value *x = e ? ctx.B().CreateAdd(jb, ConstantInt::get(Type::getInt64Ty(C), e, true)) : jb;
   return ctx.B().CreateTrunc(x, Type::getInt32Ty(C));
+}
+
+Value *seedOf(LoweringContext &ctx, RailType w, Value *v);
+
+// The classical cell index jb + e of an access to q: the _hl form's i32 j, or, for an object that may have
+// 2^32 cells or more (q.wide) and an index not provably below 2^32, an i64 seed index rail (rule 7) for the
+// idx form (CR §1.3: the idx form addresses any cell; rule 21's i64 idx, cq-k65d).
+QIndex classicalIndex(LoweringContext &ctx, const QramObj &q, Value *jb, int64_t e) {
+  LLVMContext &C = ctx.M.getContext();
+  Type *i64 = Type::getInt64Ty(C);
+  if (!q.wide || (!jb && e >= 0 && uint64_t(e) <= UINT32_MAX))
+    return {elemIndex(ctx, jb, e), false};
+  Value *x = jb ? (e ? ctx.B().CreateAdd(jb, ConstantInt::get(i64, e, true)) : jb) : ConstantInt::get(i64, e, true);
+  return {seedOf(ctx, RailType{Kind::Int, 64}, x), true};
 }
 
 bool sameCellType(const DataLayout &DL, Type *access, const Column &c) {
@@ -1473,7 +1537,7 @@ QIndex cellIndex(LoweringContext &ctx, const QramObj &q, const Addr &a, const In
   int64_t E = int64_t(q.elemBytes);
   int64_t ec = floorDiv(a.off, E);
   if (!quantumTerm(ctx, a, I))
-    return {elemIndex(ctx, classicalElems(ctx, q, a, I), ec), false};
+    return classicalIndex(ctx, q, classicalElems(ctx, q, a, I), ec);
   SmallVector<std::tuple<LogicalIndex, int64_t, const Value *>, 2> qs;   // logical index, stride in elements, GEP index
   Addr others = a;
   others.terms.clear();
@@ -1490,7 +1554,7 @@ QIndex cellIndex(LoweringContext &ctx, const QramObj &q, const Addr &a, const In
   }
   if (qs.size() == 1 && std::get<1>(qs[0]) == 1 && others.terms.empty() && ec == 0)
     return {std::get<0>(qs[0]).rail, true};
-  unsigned Ws = 32;
+  unsigned Ws = q.wide ? 64 : 32;
   for (auto &[li, k, g] : qs)
     Ws = std::max(Ws, std::min(64u, li.bits));
   LLVMContext &C = ctx.M.getContext();
@@ -1559,7 +1623,7 @@ bool storeClassicalBytes(LoweringContext &ctx, const QAccess &acc, Value *val, T
   Value *jb = classicalElems(ctx, q, acc.a, I);
   for (const Hit &h : *hits) {
     Value *v = seedOf(ctx, h.col->w, bytesToCell(ctx, x, h.rel, h.col->cellTy));
-    emitStore(ctx, busOf(q, acc.a.root, h.col, I), *h.col, {elemIndex(ctx, jb, h.elem), false}, v, flag, I);
+    emitStore(ctx, busOf(q, acc.a.root, h.col, I), *h.col, classicalIndex(ctx, q, jb, h.elem), v, flag, I);
   }
   return true;
 }
@@ -2002,7 +2066,7 @@ bool lowerQramIntrinsicCells(LoweringContext &ctx, MemIntrinsic &MI, const QAcce
       int64_t p = sacc.a.off + int64_t(h.rel);
       int64_t se = floorDiv(p, SE);
       const Column *sc = sq.at(uint64_t(p - se * SE));
-      vals.push_back(emitLoad(ctx, busOf(sq, sacc.a.root, sc, MI), *sc, {elemIndex(ctx, sjb, se), false}));
+      vals.push_back(emitLoad(ctx, busOf(sq, sacc.a.root, sc, MI), *sc, classicalIndex(ctx, sq, sjb, se)));
     }
   } else {
     // 73: a slot array source. The covered QRAM cells are consecutive cells of one type; their source
@@ -2016,7 +2080,7 @@ bool lowerQramIntrinsicCells(LoweringContext &ctx, MemIntrinsic &MI, const QAcce
   }
   for (size_t i = 0; i < hits.size(); ++i) {
     const Hit &h = hits[i];
-    emitStore(ctx, busOf(q, acc.a.root, h.col, MI), *h.col, {elemIndex(ctx, jb, h.elem), false},
+    emitStore(ctx, busOf(q, acc.a.root, h.col, MI), *h.col, classicalIndex(ctx, q, jb, h.elem),
               vals[i], flag, MI);
   }
   return true;
@@ -2226,9 +2290,11 @@ const Column &firstColumn(LoweringContext &ctx, const QramObj &q, llvm::Type *ty
   return *c;
 }
 
-QIndex fatIndex(LoweringContext &ctx, Operand idx) {
+QIndex fatIndex(LoweringContext &ctx, const QramObj &q, Operand idx) {
   if (idx.handle)
     return {idx.v, true};
+  if (q.wide)
+    return classicalIndex(ctx, q, ctx.B().CreateSExtOrTrunc(idx.v, Type::getInt64Ty(ctx.M.getContext())), 0);
   return {ctx.B().CreateTrunc(idx.v, Type::getInt32Ty(ctx.M.getContext())), false};
 }
 
@@ -2253,7 +2319,7 @@ uint64_t qramElemBytes(LoweringContext &ctx, const Value *root, const Instructio
 Value *qramLoadAt(LoweringContext &ctx, const Value *root, Operand idx, Type *ty, const Instruction &at) {
   QramObj &q = qramObj(ctx, root, at);
   const Column &c = firstColumn(ctx, q, ty, at);
-  return emitLoad(ctx, busOf(q, root, &c, at), c, fatIndex(ctx, idx));
+  return emitLoad(ctx, busOf(q, root, &c, at), c, fatIndex(ctx, q, idx));
 }
 
 std::pair<Value *, Value *> qramLoadPtrAt(LoweringContext &ctx, const Value *root, Operand idx,
@@ -2262,7 +2328,7 @@ std::pair<Value *, Value *> qramLoadPtrAt(LoweringContext &ctx, const Value *roo
   const Column *c = q.at(0);
   if (!c || c->ptrPart != 1)
     unimplemented("mem-qram: a pointer load through a fat pointer of a QRAM whose first cell is not a pointer", &at);
-  QIndex ix = fatIndex(ctx, idx);
+  QIndex ix = fatIndex(ctx, q, idx);
   Value *tag = emitLoad(ctx, busOf(q, root, c, at), c[0], ix);
   Value *i = emitLoad(ctx, busOf(q, root, c + 1, at), c[1], ix);
   return {tag, i};
@@ -2272,7 +2338,7 @@ void qramStoreAt(LoweringContext &ctx, const Value *root, Operand idx, Type *ty,
                  const Instruction &at) {
   QramObj &q = qramObj(ctx, root, at);
   const Column &c = firstColumn(ctx, q, ty, at);
-  emitStore(ctx, busOf(q, root, &c, at), c, fatIndex(ctx, idx), v, flag, at);
+  emitStore(ctx, busOf(q, root, &c, at), c, fatIndex(ctx, q, idx), v, flag, at);
 }
 
 Value *qramBusOf(LoweringContext &ctx, const Value *root, const Instruction &at) {
@@ -2632,11 +2698,7 @@ void allocateQram(LoweringContext &ctx, Instruction &site) {
                   &site);
   QramObj q;
   Value *n = nullptr;
-  auto constCells = [&](uint64_t cells) {
-    if (cells > UINT32_MAX)
-      tooManyCells(&site);
-    return ConstantInt::get(i32, cells);
-  };
+  auto constCells = [&](uint64_t cells) { return cellCountArg(ctx, q, cells); };
   if (auto *ai = dyn_cast<AllocaInst>(&site)) {
     q = layoutOf(ai->getAllocatedType(), DL, ai);
     uint64_t per = DL.getTypeAllocSize(ai->getAllocatedType()).getFixedValue() / q.elemBytes;
@@ -2650,19 +2712,24 @@ void allocateQram(LoweringContext &ctx, Instruction &site) {
         n = constCells(cells);
         q.bytes[&site] = cells * q.elemBytes;
       } else {
-        Value *x = B.CreateZExtOrTrunc(cnt.v, i32);
-        n = per == 1 ? x : B.CreateMul(x, ConstantInt::get(i32, per));
+        Value *x = B.CreateZExtOrTrunc(cnt.v, i64);
+        if (per != 1)
+          x = B.CreateMul(x, ConstantInt::get(i64, per));
+        n = cellCountArg(ctx, q, x, satMul(per, upperBound(ai->getArraySize(), DL, site)));
       }
     }
   } else if (auto *CB = dyn_cast<CallBase>(&site)) {
     q = heapLayout(ctx, *site.getFunction(), soleQram(ctx, &site, site), &site);
     Attribute A = CB->getFnAttr(Attribute::AllocSize);
-    if (!A.isValid())
-      unimplemented("mem-qram: a heap QRAM from an allocator without an allocsize attribute", &site);
-    auto [ai0, ai1] = A.getAllocSizeArgs();
-    SmallVector<unsigned, 2> args{ai0};
-    if (ai1)
-      args.push_back(*ai1);
+    // An allocator whose size the IR does not state: an object of unknown extent (rule 20, cq-k65d), spelled
+    // n = 0 (2^64 cells, CR §1.3); every in-domain access is inside the real block.
+    SmallVector<unsigned, 2> args;
+    if (A.isValid()) {
+      auto [ai0, ai1] = A.getAllocSizeArgs();
+      args.push_back(ai0);
+      if (ai1)
+        args.push_back(*ai1);
+    }
     bool allConst = true;
     uint64_t cbytes = 1;
     Value *bytes = nullptr;
@@ -2681,12 +2748,18 @@ void allocateQram(LoweringContext &ctx, Instruction &site) {
         allConst = false;
       bytes = bytes ? B.CreateMul(bytes, x) : x;
     }
-    if (allConst) {
+    if (args.empty()) {
+      q.wide = true;
+      n = ConstantInt::get(i32, 0);
+    } else if (allConst) {
       n = constCells(cbytes / q.elemBytes);
       q.bytes[&site] = cbytes;   // a quantum size: its upper bound, the cells allocated
     } else {
       Value *cells = B.CreateUDiv(bytes, ConstantInt::get(i64, q.elemBytes));
-      n = B.CreateTrunc(cells, i32);
+      uint64_t wideMax = 1;
+      for (unsigned k : args)
+        wideMax = satMul(wideMax, upperBound(CB->getArgOperand(k), DL, site));
+      n = cellCountArg(ctx, q, cells, wideMax / q.elemBytes);
     }
   } else {
     internalError("mem-qram: a QRAM allocation site that is neither an alloca nor a call", &site);
@@ -2764,8 +2837,6 @@ void reallocQram(LoweringContext &ctx, CallBase &CB) {
     internalError("mem-qram: reallocQram of a call that is not a realloc", &CB);
   if (soleQram(ctx, old, CB) != o)
     internalError("mem-qram: a realloc whose result is another object than its operand", &CB);
-  if (ctx.currentFlag())
-    unimplemented("mem-qram: a realloc of a QRAM under a quantum predicate (the logical size would be a merge)", &CB);
   // realloc of any other pointer than the block's own is undefined (C17 7.22.3.5): in the domain the
   // operand is the root, whatever offset its address arithmetic names.
   Addr a = decompose(old, DL);
@@ -2775,15 +2846,19 @@ void reallocQram(LoweringContext &ctx, CallBase &CB) {
   QramObj &q = qramObj(ctx, a.root, CB);
   auto it = q.buses.find(a.root);
   if (it == q.buses.end())
-    unimplemented("mem-qram: a realloc of a QRAM pointer root lowered after it", &CB);
+    internalError("mem-qram: a realloc of a QRAM root with no bus in this function (its operand's root dominates "
+                  "the realloc, so its allocation or realloc was lowered first)",
+                  &CB);
   SmallVector<Value *, 2> olds = it->second;
   Attribute A = CB.getFnAttr(Attribute::AllocSize);
-  if (!A.isValid())
-    unimplemented("mem-qram: a realloc without an allocsize attribute (its new size)", &CB);
-  // The new size in bytes: the allocsize argument, or the product of the two (a quantum one at its bound).
-  SmallVector<unsigned, 2> sargs{A.getAllocSizeArgs().first};
-  if (A.getAllocSizeArgs().second)
-    sargs.push_back(*A.getAllocSizeArgs().second);
+  // The new size in bytes: the allocsize argument, or the product of the two (a quantum one at its bound). A
+  // reallocator whose size the IR does not state gives an object of unknown extent (rule 20): n = 0.
+  SmallVector<unsigned, 2> sargs;
+  if (A.isValid()) {
+    sargs.push_back(A.getAllocSizeArgs().first);
+    if (A.getAllocSizeArgs().second)
+      sargs.push_back(*A.getAllocSizeArgs().second);
+  }
   uint64_t cbytes = 1;
   bool allConst = true;
   Value *bytes = nullptr;
@@ -2798,14 +2873,47 @@ void reallocQram(LoweringContext &ctx, CallBase &CB) {
     bytes = bytes ? B.CreateMul(bytes, x) : x;
   }
   Value *n;
-  if (allConst) {
-    uint64_t cells = cbytes / q.elemBytes;
-    if (cells > UINT32_MAX)
-      tooManyCells(&CB);
-    n = ConstantInt::get(i32, cells);
+  if (sargs.empty()) {
+    q.wide = true;
+    n = ConstantInt::get(i32, 0);
+  } else if (allConst) {
+    n = cellCountArg(ctx, q, cbytes / q.elemBytes);
     q.bytes[&CB] = cbytes;
   } else {
-    n = B.CreateTrunc(B.CreateUDiv(bytes, ConstantInt::get(i64, q.elemBytes)), i32);
+    uint64_t wideMax = 1;
+    for (unsigned k : sargs)
+      wideMax = satMul(wideMax, upperBound(CB.getArgOperand(k), DL, CB));
+    n = cellCountArg(ctx, q, B.CreateUDiv(bytes, ConstantInt::get(i64, q.elemBytes)), wideMax / q.elemBytes);
+  }
+  // Under a quantum predicate (rules 8, 20) the new logical size is the merge select(p, n, n_old), a quantum
+  // size: CR §1.3 sizes it at its upper bound, max(n, n_old) (0, 2^64 cells, is the largest). A path where C
+  // shrinks reaches no cell past n (undefined, outside the domain); one where it does not realloc keeps
+  // n_old's cells. The old size is the old bus's own count (its qram_alloc or qram_realloc operand).
+  if (ctx.currentFlag()) {
+    auto *ob = dyn_cast<CallInst>(olds.front());
+    Function *of = ob ? ob->getCalledFunction() : nullptr;
+    Value *nOld = nullptr;
+    if (of && of->getName().starts_with("cqrt_qram_alloc_"))
+      nOld = ob->getArgOperand(0);
+    else if (of && of->getName().starts_with("cqrt_qram_realloc_"))
+      nOld = ob->getArgOperand(1);
+    if (!nOld)
+      internalError("mem-qram: a QRAM bus this function lowered that is no qram_alloc or qram_realloc result", &CB);
+    if (auto *a1 = dyn_cast<ConstantInt>(n), *a2 = dyn_cast<ConstantInt>(nOld); a1 && a2) {
+      uint64_t x = a1->getZExtValue(), y = a2->getZExtValue();
+      n = ConstantInt::get(i32, x == 0 || y == 0 ? 0 : std::max(x, y));
+    } else {
+      Value *zero = ConstantInt::get(i32, 0);
+      Value *anyAll = B.CreateOr(B.CreateICmpEQ(n, zero), B.CreateICmpEQ(nOld, zero));
+      n = B.CreateSelect(anyAll, zero, B.CreateSelect(B.CreateICmpUGT(n, nOld), n, nOld));
+    }
+    if (auto it2 = q.bytes.find(a.root); it2 != q.bytes.end()) {
+      auto it3 = q.bytes.find(&CB);
+      if (it3 != q.bytes.end())
+        it3->second = std::max(it3->second, it2->second);
+    } else {
+      q.bytes.erase(&CB);
+    }
   }
   SmallVector<Value *, 2> hs;
   for (unsigned k = 0; k < q.cols.size(); ++k) {
@@ -3112,7 +3220,7 @@ void deferFormalStore(LoweringContext &ctx, const Value *root, Operand idx, Type
   CallInst *cpy = ctx.emitCore(cp, {v, f});
   ctx.unc().recordCore(cpy, cp, {Operand{v, true}, Operand{f, true}}, fid);
   ctx.unc().setRole(fid, Role::Result);
-  deferredStores()[&ctx.out()].push_back({busOf(q, root, &c, at), c, fatIndex(ctx, idx), f});
+  deferredStores()[&ctx.out()].push_back({busOf(q, root, &c, at), c, fatIndex(ctx, q, idx), f});
 }
 
 unsigned calleeQramStoreCount(const TaintInfo &T, const Specialization &callee) {

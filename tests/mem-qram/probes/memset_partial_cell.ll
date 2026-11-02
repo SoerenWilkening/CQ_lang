@@ -1,5 +1,6 @@
-; Rule 22: a memset of 6 bytes over i32 cells covers a cell only partly: a bit view (63), not built.
-; EXPECT-ERROR: mem-qram: a memset of a slot object over a length that is not a whole number of cells
+; Rule 22: a memset of 6 bytes over i32 cells covers a cell only partly. The seed form routes it to rule 22's
+; per-cell write path (M6), whose byte-masked merge of a partly covered slot cell is not built yet.
+; EXPECT-ERROR: mem-qram: a memory intrinsic into a slot array over a part of a cell
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)
