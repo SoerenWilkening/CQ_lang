@@ -517,7 +517,7 @@ unsigned Analyzer::lanesOf(Type *T) {
   else if (T->isVoidTy() || T->isLabelTy() || T->isMetadataTy() || T->isTokenTy())
     n = 0;
   else
-    unimplemented("taint: awaiting owner ruling: SPEC_ISSUES IR outside the C x86-64 -O1 input language: lanes of a value of an unhandled type");
+    internalError("taint: IR the pinned pipeline cannot emit (CR §0, rule 25): lanes of a value of a type C on x86-64 has no counterpart for");
   st.laneCount[T] = n;
   return n;
 }
@@ -1658,7 +1658,7 @@ void Analyzer::transferGEP(GetElementPtrInst &G) {
   Lanes bl = L(Base);
   Lanes l(lanesOf(G.getType()));
   if (!G.getType()->isPointerTy())
-    unimplemented("taint: awaiting owner ruling: SPEC_ISSUES IR outside the C x86-64 -O1 input language: a vector getelementptr", &G);
+    internalError("taint: IR the pinned pipeline cannot emit (CR §0, rule 25): a vector getelementptr (a pointer vector)", &G);
   if (bl.size() >= 2) {
     if (bl.test(0))
       l.set(0);
@@ -2043,7 +2043,7 @@ static constexpr int64_t kVaOverflowOff = 8, kVaRegSaveOff = 16, kVaListSize = 2
 void Analyzer::transferVaStart(CallBase &CB) {
   const Triple TT(st.M->getTargetTriple());
   if (TT.getArch() != Triple::x86_64)
-    unimplemented("taint: awaiting owner ruling: SPEC_ISSUES IR outside the C x86-64 -O1 input language: llvm.va_start on a target other than x86-64 SysV", &CB);
+    internalError("taint: IR the pinned pipeline cannot emit (CR §0, rule 25): llvm.va_start on a target other than x86-64 SysV", &CB);
   unsigned area = siteFor(&CB, SiteKind::Alloca, cur->F);
   bool anyQ = false, anyPtr = false;
   PtrInfo held;
@@ -2105,8 +2105,10 @@ void Analyzer::transferVaCopy(CallBase &CB) {
     bool any = false, tagQ = false, idxQ = false;
     for (ObjectId oid : objectsOf(s)) {
       Object &O = st.objects[oid];
-      if (O.mayHoldHandle())
-        unimplemented("taint: va_copy of a va_list that holds a handle", &CB);
+      // The va_list's cells hold what va_start wrote (two classical offsets, two pointers into the save
+      // and overflow areas): a handle in one of them is a store into the opaque va_list's bytes, which
+      // makes the later va_arg undefined (C17 7.16.1), outside the domain. Handles elsewhere in the
+      // object (a va_list inside a struct with quantum fields) are not moved by va_copy.
       if (!(O.anyPtr || !O.ptrCells.empty()))
         continue;
       any = true;
@@ -2832,9 +2834,8 @@ void Analyzer::transferCall(CallBase &CB) {
     cur->anyQuantum = true;
     return;
   }
-  if (G->getName().starts_with("cqrt_") || G->getName().starts_with("cq_template_"))
-    unimplemented("taint: awaiting owner ruling: SPEC_ISSUES a C program that calls the cqrt_/cq_template_ namespace "
-                  "itself", &CB);
+  // A program that spells a cqrt_/cq_template_ name itself gets what the link gives (CR §1.1, cq-oa67):
+  // the call is analysed like any other call to that symbol.
   if (auto *MI = dyn_cast<MemIntrinsic>(&CB)) {
     transferMemIntrinsic(*MI);
     return;
@@ -3239,7 +3240,7 @@ void Analyzer::transfer(Instruction &I) {
   }
   if (isa<PHINode>(&I))
     return;
-  unimplemented("taint: awaiting owner ruling: SPEC_ISSUES IR outside the C x86-64 -O1 input language: an exception-handling instruction", &I);
+  internalError("taint: IR the pinned pipeline cannot emit (CR §0, rule 25): an instruction C on x86-64 at -O1 never produces (invoke/landingpad/resume, va_arg, ...)", &I);
 }
 
 void Analyzer::analyze(SpecState &S) {

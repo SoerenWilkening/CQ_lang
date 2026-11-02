@@ -55,7 +55,7 @@ unsigned leafCount(Type *t, const Value *at) {
   if (auto *vt = dyn_cast<FixedVectorType>(t))
     return vt->getNumElements();
   if (isa<ScalableVectorType>(t))
-    unimplemented("aggr: awaiting owner ruling: SPEC_ISSUES IR outside the C x86-64 -O1 input language: a scalable vector", at);
+    internalError("aggr: IR the pinned pipeline cannot emit (CR §0, rule 25): a scalable vector", at);
   return 1;
 }
 
@@ -346,7 +346,7 @@ private:
 RailType laneRail(Type *t, const Value *at) {
   if (!t->isIntegerTy() && !t->isHalfTy() && !t->isBFloatTy() && !t->isFloatTy() && !t->isDoubleTy() &&
       !t->isX86_FP80Ty())
-    unimplemented("aggr: awaiting owner ruling: SPEC_ISSUES IR outside the C x86-64 -O1 input language: a vector lane of IR type that is not iN/half/bfloat/float/double/x86_fp80", at);
+    internalError("aggr: IR the pinned pipeline cannot emit (CR §0, rule 25): a vector lane of IR type that is not iN/half/bfloat/float/double/x86_fp80 (a pointer vector)", at);
   return railTypeOf(t);
 }
 
@@ -506,7 +506,7 @@ Operand quantumLane(LoweringContext &ctx, Instruction &I, SmallVector<Operand, 3
   if (auto *ci = dyn_cast<CastInst>(&I)) {
     const char *op = castName(ci->getOpcode());
     if (!op)
-      unimplemented("aggr: awaiting owner ruling: SPEC_ISSUES IR outside the C x86-64 -O1 input language: a cast of a vector of pointers with a quantum lane", &I);
+      internalError("aggr: IR the pinned pipeline cannot emit (CR §0, rule 25): a cast of a pointer vector", &I);
     Type *from = ci->getSrcTy()->getScalarType(), *to = ci->getDestTy()->getScalarType();
     if (from == to)
       return ops[0];   // a no-op bitcast lane: no gate (rule 3)

@@ -51,7 +51,7 @@ RailType railTypeOf(llvm::Type *t) {
   // fp128 is unreachable from C on this target (CR §1.1, rule 25); ppc_fp128 is not x86-64.
   // Anything else (pointer, vector, aggregate, void) is no rail.
   if (t->isFloatingPointTy())
-    unimplemented("abi: railTypeOf: awaiting owner ruling: SPEC_ISSUES IR outside the C x86-64 -O1 input language: an fp type with no CR §1.1 rail width: " + os.str());
+    internalError("abi: railTypeOf: IR the pinned pipeline cannot emit (CR §0, rule 25): an fp type with no CR §1.1 rail width: " + os.str());
   internalError("abi: railTypeOf: not a scalar rail type: " + os.str());
 }
 
@@ -473,6 +473,8 @@ const CoreInfo kCores[] = {
     {Core::TapeFmt, "tape_fmt", WidthUse::None, true, false, false, false},
     {Core::TapeEffect, "tape_effect", WidthUse::None, true, true, false, false},
     {Core::TapeWriteStrLit, "tape_write_str_lit", WidthUse::None, false, false, false, false},
+    {Core::TapeStrBegin, "tape_str_begin", WidthUse::None, false, false, false, false},
+    {Core::TapeStrEnd, "tape_str_end", WidthUse::None, false, false, false, false},
     {Core::TapeWrite, "tape_write", WidthUse::Any, true, false, false, false},
     {Core::TapeWriteLit, "tape_write", WidthUse::Any, false, false, false, false}, // tape_write_<W>_lit
     {Core::AbortI1, "abort_i1", WidthUse::FixedI1, false, false, false, false},
@@ -796,6 +798,7 @@ llvm::FunctionCallee declare(llvm::Module &M, const CoreSpec &s) {
   case Core::TapeWrite: ret = h; a.append({h, h}); break;
   case Core::TapeWriteLit: a.append({h, T()}); break;
   case Core::TapeWriteStrLit: a.append({h, p}); break;
+  case Core::TapeStrBegin: case Core::TapeStrEnd: a.push_back(h); break;
   case Core::AbortI1: a.push_back(h); break;
   case Core::Push: a.push_back(i32); break;
   case Core::Pop: ret = i32; break;
