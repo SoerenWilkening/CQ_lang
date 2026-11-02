@@ -2085,6 +2085,10 @@ int cqe__classify(const char *sym, char *cls, size_t ncls) {
     return 0;
   }
   if (!strncmp(sym, "cqrt_", 5)) {
+    if (!strcmp(sym, "cqrt_invert_begin") || !strcmp(sym, "cqrt_invert_end")) {
+      snprintf(cls, ncls, "core:%s", sym + 5); /* rule 17 (BACKEND_ABI 1.13): the cq_invert region markers */
+      return 0;
+    }
     if (core_gate(NULL, sym + 5, cls, ncls))
       return 0;
     if (parse_family(sym + 5, &t) == 0) {
