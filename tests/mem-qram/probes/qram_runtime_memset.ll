@@ -1,6 +1,9 @@
-; A run-time-length memset into a QRAM: its per-cell stores would need a loop popped by a reverse loop:
-; not built.
-; EXPECT-ERROR: mem-qram: a run-time-length memory intrinsic into a QRAM
+; A run-time-length memset into a QRAM (cq-k65d, rule 22): the cells up to the length's bound (12 bytes:
+; three cells), each store under its classical guard n >= 4(j + 1) as a seed flag (rules 7, 8).
+; CHECK rtm: %{{g}} = icmp uge i64 %{{n}}, 12
+; CHECK rtm: %{{f}} = call i32 @cqrt_alloc_i1(i1 %{{g}})
+; CHECK rtm: call void @cqrt_qram_store_i32_hl_controlled(i32 %{{f}}, i32 %{{a}}, i32 2, i32 %{{s}})
+; CHECK-COUNT rtm: call void @cqrt_qram_store_i32_hl_controlled( 3
 declare i32 @cq_theta_ui32(i32, double)
 declare i32 @cq_measure_ui32(i32)
 declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)

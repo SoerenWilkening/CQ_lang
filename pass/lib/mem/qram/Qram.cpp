@@ -165,6 +165,10 @@ Addr decompose(const Value *p, const DataLayout &DL) {
       p = bc->getOperand(0);
       continue;
     }
+    if (auto *II = dyn_cast<IntrinsicInst>(p); II && II->getIntrinsicID() == Intrinsic::threadlocal_address) {
+      p = II->getArgOperand(0);   // the address of the one thread's instance (rule 24)
+      continue;
+    }
     if (isa<AllocaInst>(p) || isa<Argument>(p) || isa<GlobalVariable>(p) || isa<CallBase>(p)) {
       a.root = p;
       a.ok = true;
@@ -580,6 +584,24 @@ Value *cellAt(LoweringContext &ctx, const ObjInfo &info, Value *idx, const Instr
   return B.CreateInBoundsGEP(Type::getInt32Ty(C), base.v, idx);
 }
 
+// The size in bytes of a slot object of static extent (a local or global).
+std::optional<uint64_t> staticObjectBytes(const ObjInfo &info, const DataLayout &DL) {
+  uint64_t bytes = 0;
+  if (auto *ai = dyn_cast<AllocaInst>(info.root)) {
+    auto sz = ai->getAllocationSize(DL);
+    if (!sz || sz->isScalable())
+      return std::nullopt;
+    bytes = sz->getFixedValue();
+  } else if (auto *gv = dyn_cast<GlobalVariable>(info.root)) {
+    if (!gv->getValueType()->isSized())
+      return std::nullopt;
+    bytes = DL.getTypeAllocSize(gv->getValueType()).getFixedValue();
+  } else {
+    return std::nullopt;
+  }
+  return bytes;
+}
+
 // A byte count that is provably a whole number of cells.
 bool wholeCells(const Value *len, uint64_t cb, const DataLayout &DL) {
   if (cb == 1)
@@ -737,6 +759,7 @@ struct Column {
 struct QramObj {
   const Value *site = nullptr;     // the alloca, global or heap call
   uint64_t elemBytes = 0;          // E: cell index j addresses bytes [j*E, (j+1)*E) of the object
+  std::map<const Value *, uint64_t> bytes;   // per root: the object's size when it is a compile-time constant
   SmallVector<Column, 2> cols;     // ascending off
   // The buses (new IR, one per column) each root pointer of the object names: the allocation site (or
   // the global), and each realloc result (CR §1.3: a' replaces a for every access through it).
@@ -785,8 +808,24 @@ void leaves(Type *t, uint64_t off, const DataLayout &DL, SmallVectorImpl<Column>
       leaves(a->getElementType(), off + i * es, DL, out, at);
     return;
   }
+  if (auto *vt = dyn_cast<FixedVectorType>(t)) {
+    // Rule 25: a vector is its lanes, one column each; lanes that are not whole bytes are packed in
+    // memory and are one integer column of their bits (the byte engine splits them).
+    uint64_t eb = DL.getTypeSizeInBits(vt->getElementType()).getFixedValue();
+    if (eb % 8 == 0) {
+      for (unsigned i = 0; i < vt->getNumElements(); ++i)
+        leaves(vt->getElementType(), off + i * (eb / 8), DL, out, at);
+      return;
+    }
+    Column c;
+    c.off = off;
+    c.cellTy = IntegerType::get(t->getContext(), unsigned(eb * vt->getNumElements()));
+    c.w = railTypeOf(c.cellTy);
+    out.push_back(c);
+    return;
+  }
   if (t->isVectorTy())
-    unimplemented("mem-qram: a QRAM object of vector type (aggr, rule 25)", at);
+    internalError("mem-qram: a scalable vector on x86-64 (rule 25)", at);
   if (t->isPointerTy()) {
     // A QRAM of pointers holds fat pointers (rule 21, 88): one i32 column for the tag, one for the idx
     // (a cell index), both at the cell's offset and indexed alike.
@@ -801,7 +840,9 @@ void leaves(Type *t, uint64_t off, const DataLayout &DL, SmallVectorImpl<Column>
     return;
   }
   if (!t->isIntegerTy() && !t->isFloatingPointTy())
-    unimplemented("mem-qram: a QRAM object whose cells are not integers or floating point", at);
+    internalError("mem-qram: a memory object leaf that is no integer, floating point, pointer or vector lane (C has "
+                  "none)",
+                  at);
   Column c;
   c.off = off;
   c.cellTy = t;
@@ -816,28 +857,75 @@ QramObj layoutOf(Type *t, const DataLayout &DL, const Value *at) {
     t = a->getElementType();
   QramObj q;
   q.elemBytes = DL.getTypeAllocSize(t).getFixedValue();
+  // An element of no bytes or no scalar field holds nothing: the object has no cells, every access to it
+  // is outside it (§2: a load reads 0, a store does nothing; the byte engine touches no cell).
   if (!q.elemBytes)
-    unimplemented("mem-qram: a QRAM object of zero-sized elements", at);
+    q.elemBytes = 1;
   leaves(t, 0, DL, q.cols, at);
-  if (q.cols.empty())
-    unimplemented("mem-qram: a QRAM object with no scalar field", at);
   return q;
 }
 
-// A heap block's element: the one type every load and store of the object in F uses.
+bool crossesAsQramTriple(LoweringContext &ctx, const CallBase &CB, const Use &u);
+
+// The scalar leaf types of a type (its cells' candidates).
+void scalarLeafTypes(Type *t, SmallVectorImpl<Type *> &out) {
+  if (auto *st = dyn_cast<StructType>(t)) {
+    for (Type *e : st->elements())
+      scalarLeafTypes(e, out);
+  } else if (auto *at = dyn_cast<ArrayType>(t)) {
+    scalarLeafTypes(at->getElementType(), out);
+  } else if (auto *vt = dyn_cast<VectorType>(t)) {
+    scalarLeafTypes(vt->getElementType(), out);
+  } else {
+    out.push_back(t);
+  }
+}
+
+// A heap block's element: the one type every load and store of the object in F uses. A block accessed as
+// several types has the cells of the narrowest scalar its quantum-offset accesses use (else its accesses
+// use): every access is whole such cells or the byte engine's bytes of them. A block this function only
+// hands to clones (rule 21 triples) has the cells their formals access; one nothing accesses holds none.
 QramObj heapLayout(LoweringContext &ctx, const Function &F, ObjectId o, const Value *site) {
+  const DataLayout &DL = ctx.M.getDataLayout();
   Type *t = nullptr;
-  for (const Access &a : accessesOf(ctx, F, o)) {
+  bool several = false;
+  SmallVector<Access, 8> as = accessesOf(ctx, F, o);
+  for (const Access &a : as) {
     if (!t)
       t = a.ty;
     else if (t != a.ty)
-      unimplemented("mem-qram: a heap QRAM accessed as two types (a bit view, 63)", a.I);
+      several = true;
   }
-  if (!t)
-    unimplemented("mem-qram: a heap QRAM this function never loads or stores (its cell type is known only to "
-                  "another function)",
-                  site);
-  return layoutOf(t, ctx.M.getDataLayout(), site);
+  if (several) {
+    Type *best = nullptr;
+    for (bool quantumOnly : {true, false}) {
+      for (const Access &a : as) {
+        if (quantumOnly && ctx.T.offsetKind(a.I, ctx.S) != OffsetKind::Quantum)
+          continue;
+        SmallVector<Type *, 4> ls;
+        scalarLeafTypes(a.ty, ls);
+        for (Type *x : ls)
+          if (!x->isPointerTy() &&
+              (!best || DL.getTypeAllocSize(x).getFixedValue() < DL.getTypeAllocSize(best).getFixedValue()))
+            best = x;
+      }
+      if (best)
+        break;
+    }
+    if (!best)
+      unimplemented("mem-qram: a heap QRAM of pointers accessed as several types (rule 21: its fat cells)", site);
+    t = best;
+  }
+  if (!t) {
+    for (const Use &u : site->uses())
+      if (auto *CB = dyn_cast<CallBase>(u.getUser()); CB && crossesAsQramTriple(ctx, *CB, u)) {
+        t = formalCellType(*CB->getCalledFunction()->getArg(CB->getArgOperandNo(&u)));
+        break;
+      }
+    if (!t)
+      t = Type::getInt8Ty(ctx.M.getContext());   // no access anywhere reads or writes a cell
+  }
+  return layoutOf(t, DL, site);
 }
 
 // The object a QRAM access or allocation site names: exactly one object of class Qram.
@@ -955,22 +1043,54 @@ Constant *qramBase(LoweringContext &ctx, ObjectId o) {
 }
 
 // The largest value a quantum size can take (LLVM's known bits and range facts on the original IR):
-// rule 20 / §1.3, a quantum size allocates at its upper bound.
+// rule 20 / §1.3, a quantum size allocates at its upper bound. Saturated at 2^62 (every caller's count
+// of cells then exceeds what it can allocate or unroll, and says so).
+constexpr uint64_t kSatBound = uint64_t(1) << 62;
 uint64_t upperBound(const Value *v, const DataLayout &DL, const Instruction &I) {
   if (!v->getType()->isIntegerTy())
     internalError("mem-qram: a size that is not an integer", &I);
   APInt m = computeKnownBits(v, DL).getMaxValue();
   APInt r = computeConstantRange(v, /*ForSigned=*/false).getUnsignedMax();
   APInt b = APIntOps::umin(m, r);
-  if (b.getActiveBits() > 40)
-    unimplemented("mem-qram: a quantum size with no usable upper bound (rule 20: allocated at its bound)", &I);
+  if (b.getActiveBits() > 62)
+    return kSatBound;
   return b.getZExtValue();
 }
 
+uint64_t satMul(uint64_t a, uint64_t b) {
+  uint64_t r;
+  return __builtin_mul_overflow(a, b, &r) || r > kSatBound ? kSatBound : r;
+}
+
+[[noreturn]] void tooManyCells(const Value *at) {
+  unimplemented("awaiting owner ruling: SPEC_ISSUES a QRAM of 2^32 or more cells (qram_alloc's i32 count; a "
+                "quantum size with no smaller upper bound allocates there)",
+                at);
+}
+
+// Where a global QRAM keeps its bus handles: the global's own bytes [4k, 4k + 4) (160), or, when the
+// global is smaller than its handles or is defined outside this module (its bytes are its definer's), the
+// derived internal global <global>.cqbus of one i32 per column.
+Value *busStorage(Module &M, GlobalVariable &gv, const QramObj &q) {
+  const DataLayout &DL = M.getDataLayout();
+  uint64_t size = gv.getValueType()->isSized() ? DL.getTypeAllocSize(gv.getValueType()).getFixedValue() : 0;
+  if (gv.hasInitializer() && size >= 4 * q.cols.size())
+    return &gv;
+  std::string name = (gv.getName() + ".cqbus").str();
+  if (GlobalVariable *g = M.getNamedGlobal(name))
+    return g;
+  auto *aty = ArrayType::get(Type::getInt32Ty(M.getContext()), q.cols.size());
+  return new GlobalVariable(M, aty, /*isConstant=*/false, GlobalValue::InternalLinkage, Constant::getNullValue(aty),
+                            name);
+}
+
 // Rule 20: a global QRAM is allocated ONCE by a module constructor (160): cqrt_qram_alloc_<W>(n) per
-// column, the handle of column k kept in the global's bytes [4k, 4k + 4) (classical words), and each
-// non-zero initializer cell stored by its own _hl store of a seed that is freed at once (the store
-// copies it; a global QRAM's stores are never popped).
+// column, the handle of column k kept in its bus storage (busStorage), and each non-zero initializer cell
+// stored by its own _hl store of a seed that is freed at once (the store copies it; a global QRAM's stores
+// are never popped). A cell whose initializer is a constant expression is that value computed in the
+// constructor; an undefined one is 0. A global defined outside this module (extern, rule 20: an output)
+// starts from its definer's contents: the constructor reads each cell from the host object and stores its
+// seed.
 void ensureGlobalCtor(LoweringContext &ctx, GlobalVariable &gv, const QramObj &q) {
   Module &M = ctx.M;
   LLVMContext &C = M.getContext();
@@ -978,47 +1098,59 @@ void ensureGlobalCtor(LoweringContext &ctx, GlobalVariable &gv, const QramObj &q
   if (M.getFunction(name))
     return;
   const DataLayout &DL = M.getDataLayout();
-  uint64_t size = DL.getTypeAllocSize(gv.getValueType()).getFixedValue();
-  if (size < 4 * q.cols.size())
-    unimplemented("mem-qram: a global QRAM smaller than its bus handles (the global keeps one handle per column)",
-                  &gv);
   if (gv.isConstant())
     internalError("mem-qram: a constant global is a QRAM", &gv);
-  if (!gv.hasInitializer())
-    unimplemented("mem-qram: a global QRAM defined in another translation unit (the constructor is its "
-                  "definer's)",
+  if (!gv.getValueType()->isSized() ||
+      (!gv.hasInitializer() && DL.getTypeAllocSize(gv.getValueType()).getFixedValue() == 0))
+    unimplemented("awaiting owner ruling: SPEC_ISSUES a global QRAM of no stated extent (an extern T g[] the "
+                  "program indexes at a quantum offset: rule 20 allocates its cells)",
                   &gv);
+  uint64_t size = DL.getTypeAllocSize(gv.getValueType()).getFixedValue();
   uint64_t n = size / q.elemBytes;
   if (n > UINT32_MAX)
-    unimplemented("mem-qram: a global QRAM of more than 2^32 cells", &gv);
+    unimplemented("awaiting owner ruling: SPEC_ISSUES a QRAM of 2^32 or more cells (qram_alloc's i32 count)", &gv);
   Function *F = Function::Create(FunctionType::get(Type::getVoidTy(C), false), GlobalValue::InternalLinkage, name, M);
   IRBuilder<> B(BasicBlock::Create(C, "", F));
   Type *i32 = Type::getInt32Ty(C);
   SmallVector<Value *, 2> a;
   for (const Column &c : q.cols)
     a.push_back(B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::QramAlloc, c.w}), {ConstantInt::get(i32, n)}));
-  Constant *init = gv.getInitializer();
-  if (!init->isNullValue()) {
-    FunctionType *freeTy = FunctionType::get(Type::getVoidTy(C), {i32}, false);
+  FunctionType *freeTy = FunctionType::get(Type::getVoidTy(C), {i32}, false);
+  auto storeSeed = [&](unsigned k, uint64_t j, Value *v) {
+    const Column &c = q.cols[k];
+    Value *h = B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Alloc, c.w}), {v});
+    B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::QramStore, c.w, false, true}),
+                 {a[k], ConstantInt::get(i32, j), h});
+    B.CreateCall(M.getOrInsertFunction("cqrt_free", freeTy), {h});
+  };
+  for (const Column &c : q.cols)
+    if (c.ptrPart && (!gv.hasInitializer() || !gv.getInitializer()->isNullValue()))
+      unimplemented("mem-qram: a global QRAM of pointers with an initializer", &gv);
+  if (!gv.hasInitializer()) {
     for (uint64_t j = 0; j < n; ++j)
       for (unsigned k = 0; k < q.cols.size(); ++k) {
         const Column &c = q.cols[k];
-        if (c.ptrPart)
-          unimplemented("mem-qram: a global QRAM of pointers with an initializer", &gv);
+        Value *p = B.CreateConstInBoundsGEP1_64(Type::getInt8Ty(C), &gv, j * q.elemBytes + c.off);
+        storeSeed(k, j, B.CreateLoad(c.cellTy, p));
+      }
+  } else if (Constant *init = gv.getInitializer(); !init->isNullValue()) {
+    for (uint64_t j = 0; j < n; ++j)
+      for (unsigned k = 0; k < q.cols.size(); ++k) {
+        const Column &c = q.cols[k];
         Constant *v = ConstantFoldLoadFromConst(init, c.cellTy, APInt(64, j * q.elemBytes + c.off), DL);
-        if (!v || (!isa<ConstantInt>(v) && !isa<ConstantFP>(v)))
-          unimplemented("mem-qram: a global QRAM initializer cell that is not a number", &gv);
-        if (v->isNullValue())
+        if (!v) {   // a cell the folder cannot isolate: the host bytes of the initialized global
+          Value *p = B.CreateConstInBoundsGEP1_64(Type::getInt8Ty(C), &gv, j * q.elemBytes + c.off);
+          storeSeed(k, j, B.CreateLoad(c.cellTy, p));
           continue;
-        Value *h = B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Alloc, c.w}), {v});
-        B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::QramStore, c.w, false, true}),
-                     {a[k], ConstantInt::get(i32, j), h});
-        B.CreateCall(M.getOrInsertFunction("cqrt_free", freeTy), {h});
+        }
+        if (v->isNullValue() || isa<UndefValue>(v))
+          continue;
+        storeSeed(k, j, v);
       }
   }
+  Value *store = busStorage(M, gv, q);
   for (unsigned k = 0; k < a.size(); ++k)
-    B.CreateAlignedStore(a[k], k ? B.CreateConstInBoundsGEP1_64(Type::getInt8Ty(C), &gv, 4 * k) : (Value *)&gv,
-                         Align(4));
+    B.CreateAlignedStore(a[k], k ? B.CreateConstInBoundsGEP1_64(Type::getInt8Ty(C), store, 4 * k) : store, Align(4));
   B.CreateRetVoid();
   appendToGlobalCtors(M, F, 65535);
 }
@@ -1042,8 +1174,8 @@ QramObj &qramObj(LoweringContext &ctx, const Value *root, const Instruction &I) 
                   "different classes, rule 20, or an allocation not lowered before the access)",
                   &I);
   }
-  if (gv->isThreadLocal())
-    unimplemented("mem-qram: a thread-local QRAM (rule 24)", &I);
+  // A thread-local QRAM is one object (rule 24's single-thread collapse): the module constructor runs on the
+  // one thread.
   QramObj q = layoutOf(gv->getValueType(), ctx.M.getDataLayout(), gv);
   q.site = gv;
   ensureGlobalCtor(ctx, *gv, q);
@@ -1054,12 +1186,14 @@ QramObj &qramObj(LoweringContext &ctx, const Value *root, const Instruction &I) 
   IRBuilder<> EB(&out.getEntryBlock(), out.getEntryBlock().getFirstInsertionPt());
   SmallVector<Value *, 2> hs;
   for (unsigned k = 0; k < q.cols.size(); ++k) {
-    Value *p = k ? EB.CreateConstInBoundsGEP1_64(Type::getInt8Ty(C), gv, 4 * k) : (Value *)gv;
+    Value *store = busStorage(ctx.M, *gv, q);
+    Value *p = k ? EB.CreateConstInBoundsGEP1_64(Type::getInt8Ty(C), store, 4 * k) : store;
     LoadInst *h = EB.CreateAlignedLoad(Type::getInt32Ty(C), p, Align(4));
     ctx.unc().recordExternal(h, Role::Output);
     hs.push_back(h);
   }
   q.buses[gv] = hs;
+  q.bytes[gv] = ctx.M.getDataLayout().getTypeAllocSize(gv->getValueType()).getFixedValue();
   return st.objs.emplace(gv, std::move(q)).first->second;
 }
 
@@ -1131,11 +1265,12 @@ struct Hit {
   uint64_t rel;   // the cell's first byte relative to off
 };
 
-SmallVector<Hit, 8> cellsIn(const DataLayout &DL, const QramObj &q, int64_t off, uint64_t len, const Instruction &I) {
+// nullopt when the run covers part of a cell or a pointer cell (the byte engine's: readBytes, writeBytes).
+std::optional<SmallVector<Hit, 8>> cellsIn(const DataLayout &DL, const QramObj &q, int64_t off, uint64_t len,
+                                           const Instruction &I) {
+  (void)I;
   SmallVector<Hit, 8> out;
   int64_t E = int64_t(q.elemBytes);
-  if (len / q.elemBytes > (1u << 16))
-    unimplemented("mem-qram: a QRAM write over more than 65536 elements unrolled per cell", &I);
   int64_t end = off + int64_t(len);
   for (int64_t e = floorDiv(off, E); e * E < end; ++e)
     for (const Column &c : q.cols) {
@@ -1143,10 +1278,8 @@ SmallVector<Hit, 8> cellsIn(const DataLayout &DL, const QramObj &q, int64_t off,
       int64_t lo = std::max(s, off), hi = std::min(s + sz, end);
       if (lo >= hi)
         continue;
-      if (lo != s || hi != s + sz)
-        unimplemented("mem-qram: a QRAM access or memory intrinsic covering part of a cell (a bit view, 63)", &I);
-      if (c.ptrPart)
-        unimplemented("mem-qram: a memory intrinsic or wide store over a QRAM of pointers (rule 21)", &I);
+      if (lo != s || hi != s + sz || c.ptrPart)
+        return std::nullopt;
       out.push_back({&c, e, uint64_t(s - off)});
     }
   return out;
@@ -1294,6 +1427,40 @@ LogicalIndex logicalIndex(LoweringContext &ctx, const Value *idx, const Instruct
   return {ix.v, bits, sext, zextOverSext};
 }
 
+// v's value modulo 2^W as a rail (W <= 64), exactly as the GEP's address arithmetic reads the index: a
+// quantum extension above W is stripped (it leaves the low W bits), one below W applied by its template
+// (a zext of a sext is two extensions); an uncast top-level index narrower than 64 bits is sign-extended by
+// the GEP itself, a wider one truncated.
+Value *indexRailAt(LoweringContext &ctx, const Value *v, unsigned W, bool top, const Instruction &I) {
+  auto tmpl = [&](StringRef op, unsigned from, Value *x) {
+    abi::TemplateSpec s;
+    s.op = op.str();
+    s.w = RailType{Kind::Int, from};
+    s.to = RailType{Kind::Int, W};
+    return ctx.emitTemplate(s, {Operand{x, true}});
+  };
+  if (isa<ZExtInst>(v) || isa<SExtInst>(v)) {
+    const Value *x = cast<CastInst>(v)->getOperand(0);
+    if (ctx.T.isQuantum(x, ctx.S)) {
+      unsigned w = x->getType()->getIntegerBitWidth();
+      if (W <= w)
+        return indexRailAt(ctx, x, W, false, I);
+      return tmpl(isa<SExtInst>(v) ? "sext" : "zext", w, indexRailAt(ctx, x, w, false, I));
+    }
+  }
+  Operand r = ctx.operand(v);
+  if (!r.handle || !v->getType()->isIntegerTy())
+    internalError("mem-qram: a quantum QRAM index term that is not an integer rail", &I);
+  unsigned w = v->getType()->getIntegerBitWidth();
+  if (w == W)
+    return r.v;
+  if (w > W)
+    return tmpl("trunc", w, r.v);
+  if (!top)
+    internalError("mem-qram: an index term narrower than its width below its extension", &I);
+  return tmpl("sext", w, r.v);
+}
+
 // The cell index of a QRAM access. A quantum address is its logical index rail alone when it is the
 // address's only term at one element's stride with no element offset; otherwise rule 20's index
 // arithmetic as templates: each quantum term's logical index widened by its own extension to the C index
@@ -1306,7 +1473,7 @@ QIndex cellIndex(LoweringContext &ctx, const QramObj &q, const Addr &a, const In
   int64_t ec = floorDiv(a.off, E);
   if (!quantumTerm(ctx, a, I))
     return {elemIndex(ctx, classicalElems(ctx, q, a, I), ec), false};
-  SmallVector<std::pair<LogicalIndex, int64_t>, 2> qs;   // logical index, stride in elements
+  SmallVector<std::tuple<LogicalIndex, int64_t, const Value *>, 2> qs;   // logical index, stride in elements, GEP index
   Addr others = a;
   others.terms.clear();
   for (auto &t : a.terms) {
@@ -1318,16 +1485,13 @@ QIndex cellIndex(LoweringContext &ctx, const QramObj &q, const Addr &a, const In
       unimplemented("mem-qram: a quantum QRAM index whose GEP stride is not a whole number of elements (a bit "
                     "view)",
                     &I);
-    qs.push_back({logicalIndex(ctx, t.first, I), t.second / E});
+    qs.push_back({logicalIndex(ctx, t.first, I), t.second / E, t.first});
   }
-  if (qs.size() == 1 && qs[0].second == 1 && others.terms.empty() && ec == 0)
-    return {qs[0].first.rail, true};
+  if (qs.size() == 1 && std::get<1>(qs[0]) == 1 && others.terms.empty() && ec == 0)
+    return {std::get<0>(qs[0]).rail, true};
   unsigned Ws = 32;
-  for (auto &[li, k] : qs) {
-    if (li.zextOverSext)
-      unimplemented("mem-qram: a quantum QRAM index widened by a zext of a sext, in index arithmetic", &I);
-    Ws = std::max(Ws, li.bits);
-  }
+  for (auto &[li, k, g] : qs)
+    Ws = std::max(Ws, std::min(64u, li.bits));
   LLVMContext &C = ctx.M.getContext();
   RailType rw{Kind::Int, Ws};
   auto tmpl = [&](StringRef op, ArrayRef<Operand> ops, StringRef shape) {
@@ -1338,9 +1502,11 @@ QIndex cellIndex(LoweringContext &ctx, const QramObj &q, const Addr &a, const In
     return ctx.emitTemplate(spec, ops);
   };
   Value *rail = nullptr;
-  for (auto &[li, k] : qs) {
+  for (auto &[li, k, g] : qs) {
     Value *r = li.rail;
-    if (li.bits < Ws) {
+    if (li.zextOverSext || li.bits > Ws) {
+      r = indexRailAt(ctx, g, Ws, /*top=*/true, I);   // the extensions as the GEP reads them
+    } else if (li.bits < Ws) {
       abi::TemplateSpec ext;
       ext.op = li.sext ? "sext" : "zext";
       ext.w = RailType{Kind::Int, li.bits};
@@ -1366,21 +1532,23 @@ QIndex cellIndex(LoweringContext &ctx, const QramObj &q, const Addr &a, const In
 // A classical value of type ty stored over the whole cells it covers at a classical address: one _hl
 // store per cell of the value's bytes (rule 20: each access is per cell; 84's `store i64` of two i32
 // cells), each value a fresh seed (rule 7).
-void storeClassicalBytes(LoweringContext &ctx, const QAccess &acc, Value *val, Type *ty, Value *flag,
+// false (nothing emitted) for any other store: the byte engine's (storeThroughBytes).
+bool storeClassicalBytes(LoweringContext &ctx, const QAccess &acc, Value *val, Type *ty, Value *flag,
                          const Instruction &I) {
   const DataLayout &DL = ctx.M.getDataLayout();
   LLVMContext &C = ctx.M.getContext();
   IRBuilder<> &B = ctx.B();
   if (quantumTerm(ctx, acc.a, I))
-    unimplemented("mem-qram: a QRAM store at a quantum index of a value wider or other than its cell (a bit "
-                  "view, 63)",
-                  &I);
-  if (ty->isPointerTy() || ty->isStructTy() || ty->isArrayTy())
-    unimplemented("mem-qram: a QRAM store of a pointer or aggregate value (rules 21, 26)", &I);
+    return false;
+  if (ty->isPointerTy() || ty->isStructTy() || ty->isArrayTy() || ty->isVectorTy())
+    return false;
   uint64_t bytes = storeBytes(DL, ty);
   unsigned prim = unsigned(ty->getPrimitiveSizeInBits().getFixedValue());
   if (prim != bytes * 8 && !ty->isIntegerTy())
-    unimplemented("mem-qram: a QRAM store of a padded non-integer value over several cells", &I);
+    return false;
+  std::optional<SmallVector<Hit, 8>> hits = cellsIn(DL, *acc.q, acc.a.off, bytes, I);
+  if (!hits)
+    return false;
   Value *x = val;
   if (!ty->isIntegerTy())
     x = B.CreateBitCast(x, IntegerType::get(C, prim));
@@ -1388,49 +1556,418 @@ void storeClassicalBytes(LoweringContext &ctx, const QAccess &acc, Value *val, T
     x = B.CreateZExt(x, IntegerType::get(C, unsigned(bytes * 8)));
   const QramObj &q = *acc.q;
   Value *jb = classicalElems(ctx, q, acc.a, I);
-  for (const Hit &h : cellsIn(DL, q, acc.a.off, bytes, I)) {
+  for (const Hit &h : *hits) {
     Value *v = seedOf(ctx, h.col->w, bytesToCell(ctx, x, h.rel, h.col->cellTy));
     emitStore(ctx, busOf(q, acc.a.root, h.col, I), *h.col, {elemIndex(ctx, jb, h.elem), false}, v, flag, I);
+  }
+  return true;
+}
+
+
+// ---- the byte engine: runs of bytes over QRAM cells (bit views on a QRAM, rules 20, 22) --------------
+//
+// An access whose bytes are not exactly whole cells of their own type (63's bit view, a wide store over
+// several cells, a memory intrinsic over part of a cell) is ONE QRAM access per touched cell (rule 20):
+//  - read: each touched cell's _hl or quantum-index load (the cell unchanged), its touched bytes taken by
+//    lshr/trunc and placed by zext/shl/or into an integer rail of the access's bytes (templates, rule 4;
+//    bytes no cell holds, padding, read 0);
+//  - write: a cell the run covers whole is stored its bytes of the value; a cell it covers in part is
+//    read, merged with the new bytes ((old & ~mask) | (new << shift)) and the merge stored. The store
+//    swaps the old cell out to its tape slot (§1.3); the pop restores it before the read's _unc.
+// The cell of element e (relative to the address's classical base) is at index cellIndex of the address
+// with that element offset: the quantum index plus e for a quantum address.
+struct Piece {
+  const Column *col;
+  int64_t elem;               // element index relative to the base
+  uint64_t cellLo, cellHi;    // the touched bytes of the cell
+  uint64_t valLo;             // the first of them relative to the run's start
+};
+
+SmallVector<Piece, 8> piecesIn(const DataLayout &DL, const QramObj &q, int64_t off, uint64_t len,
+                               const Instruction &I) {
+  SmallVector<Piece, 8> out;
+  int64_t E = int64_t(q.elemBytes);
+  int64_t end = off + int64_t(len);
+  for (int64_t e = floorDiv(off, E); e * E < end; ++e)
+    for (const Column &c : q.cols) {
+      int64_t s = e * E + int64_t(c.off), sz = int64_t(storeBytes(DL, c.cellTy));
+      int64_t lo = std::max(s, off), hi = std::min(s + sz, end);
+      if (lo >= hi)
+        continue;
+      if (c.ptrPart)
+        unimplemented("mem-qram: the bytes of a QRAM pointer cell (rule 21: a fat pointer cell holds (tag, idx), not "
+                      "an address's bytes)",
+                      &I);
+      out.push_back({&c, e, uint64_t(lo - s), uint64_t(hi - s), uint64_t(lo - off)});
+    }
+  return out;
+}
+
+QIndex indexAt(LoweringContext &ctx, const QramObj &q, const Addr &a, int64_t e, const Instruction &I) {
+  Addr a2 = a;
+  a2.off = e * int64_t(q.elemBytes);
+  return cellIndex(ctx, q, a2, I);
+}
+
+// Integer arithmetic on an Operand: a rail by its template (rule 4), a classical value by plain IR.
+Operand intOp(LoweringContext &ctx, StringRef op, unsigned w, Operand x, const APInt &k) {
+  IRBuilder<> &B = ctx.B();
+  Constant *kc = ConstantInt::get(ctx.M.getContext(), k.zextOrTrunc(w));
+  if (!x.handle) {
+    if (op == "lshr")
+      return {B.CreateLShr(x.v, kc), false};
+    if (op == "shl")
+      return {B.CreateShl(x.v, kc), false};
+    if (op == "and")
+      return {B.CreateAnd(x.v, kc), false};
+    if (op == "mul")
+      return {B.CreateMul(x.v, kc), false};
+    internalError("mem-qram: intOp of an unknown operation");
+  }
+  abi::TemplateSpec s;
+  s.op = op.str();
+  s.w = RailType{Kind::Int, w};
+  s.shape = "hl";
+  return {ctx.emitTemplate(s, {x, Operand{kc, false}}), true};
+}
+
+Operand intCast(LoweringContext &ctx, StringRef op, unsigned from, unsigned to, Operand x) {
+  if (from == to)
+    return x;
+  Type *ty = IntegerType::get(ctx.M.getContext(), to);
+  if (!x.handle)
+    return {op == "trunc" ? ctx.B().CreateTrunc(x.v, ty) : ctx.B().CreateZExt(x.v, ty), false};
+  abi::TemplateSpec s;
+  s.op = op.str();
+  s.w = RailType{Kind::Int, from};
+  s.to = RailType{Kind::Int, to};
+  return {ctx.emitTemplate(s, {x}), true};
+}
+
+Operand intOr(LoweringContext &ctx, unsigned w, Operand a, Operand b) {
+  if (!a.handle && !b.handle)
+    return {ctx.B().CreateOr(a.v, b.v), false};
+  if (!a.handle)
+    std::swap(a, b);
+  abi::TemplateSpec s;
+  s.op = "or";
+  s.w = RailType{Kind::Int, w};
+  if (!b.handle)
+    s.shape = "hl";
+  return {ctx.emitTemplate(s, {a, b}), true};
+}
+
+unsigned valueBits(Type *t) { return unsigned(t->getPrimitiveSizeInBits().getFixedValue()); }
+
+// A scalar's bits as an integer of its width (a floating-point value by bitcast), and back.
+Operand asInt(LoweringContext &ctx, Operand v, Type *t) {
+  if (t->isIntegerTy())
+    return v;
+  Type *it = IntegerType::get(ctx.M.getContext(), valueBits(t));
+  if (!v.handle)
+    return {ctx.B().CreateBitCast(v.v, it), false};
+  abi::TemplateSpec s;
+  s.op = "bitcast";
+  s.w = railTypeOf(t);
+  s.to = RailType{Kind::Int, valueBits(t)};
+  return {ctx.emitTemplate(s, {v}), true};
+}
+
+Operand fromInt(LoweringContext &ctx, Operand x, Type *t) {
+  if (t->isIntegerTy())
+    return x;
+  if (!x.handle)
+    return {ctx.B().CreateBitCast(x.v, t), false};
+  abi::TemplateSpec s;
+  s.op = "bitcast";
+  s.w = RailType{Kind::Int, valueBits(t)};
+  s.to = railTypeOf(t);
+  return {ctx.emitTemplate(s, {x}), true};
+}
+
+// Bits [lo, lo + n) of the w-bit integer x as an n-bit integer.
+Operand intOp(LoweringContext &ctx, StringRef op, unsigned w, Operand x, uint64_t k) {
+  return intOp(ctx, op, w, x, APInt(std::max(w, 64u), k));
+}
+
+Operand bitsOf(LoweringContext &ctx, Operand x, unsigned w, unsigned lo, unsigned n) {
+  if (lo)
+    x = intOp(ctx, "lshr", w, x, lo);
+  return intCast(ctx, "trunc", w, n, x);
+}
+
+// The bits of a touched cell piece that the cell's value holds (bytes past them are padding).
+unsigned pieceBits(const DataLayout &DL, const Piece &p) {
+  unsigned cw = valueBits(p.col->cellTy);
+  unsigned lo = unsigned(8 * p.cellLo), hi = std::min(cw, unsigned(8 * p.cellHi));
+  (void)DL;
+  return hi > lo ? hi - lo : 0;
+}
+
+// The integer (len * 8 bits) the bytes [off, off + len) of the access hold.
+Operand readBytes(LoweringContext &ctx, const QAccess &acc, int64_t off, uint64_t len, const Instruction &I) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  unsigned L = unsigned(len * 8);
+  Operand out{ConstantInt::get(IntegerType::get(ctx.M.getContext(), L), 0), false};
+  bool any = false;
+  for (const Piece &p : piecesIn(DL, *acc.q, off, len, I)) {
+    unsigned nb = pieceBits(DL, p);
+    if (!nb)
+      continue;
+    unsigned cw = valueBits(p.col->cellTy);
+    QIndex idx = indexAt(ctx, *acc.q, acc.a, p.elem, I);
+    Value *cell = emitLoad(ctx, busOf(*acc.q, acc.a.root, p.col, I), *p.col, idx);
+    Operand x = bitsOf(ctx, asInt(ctx, Operand{cell, true}, p.col->cellTy), cw, unsigned(8 * p.cellLo), nb);
+    x = intCast(ctx, "zext", nb, L, x);
+    if (p.valLo)
+      x = intOp(ctx, "shl", L, x, 8 * p.valLo);
+    out = any ? intOr(ctx, L, out, x) : x;
+    any = true;
+  }
+  return out;
+}
+
+// Stores the value's bits (val, an integer of len * 8 bits: a rail or classical) into the bytes [off,
+// off + len) of the access, under flag (nullptr: unconditional).
+void writePiece(LoweringContext &ctx, const QAccess &acc, const Piece &p, Operand bits, unsigned nb, Value *flag,
+                const Instruction &I) {
+  const Column &c = *p.col;
+  unsigned cw = valueBits(c.cellTy);
+  QIndex idx = indexAt(ctx, *acc.q, acc.a, p.elem, I);
+  Value *bus = busOf(*acc.q, acc.a.root, &c, I);
+  Operand cellInt;
+  if (p.cellLo == 0 && nb == cw) {
+    cellInt = bits;
+  } else {
+    Value *old = emitLoad(ctx, bus, c, idx);
+    Operand oi = asInt(ctx, Operand{old, true}, c.cellTy);
+    APInt mask = ~(APInt::getLowBitsSet(cw, nb).shl(unsigned(8 * p.cellLo)));
+    Operand kept = intOp(ctx, "and", cw, oi, mask);
+    Operand nw = intCast(ctx, "zext", nb, cw, bits);
+    if (p.cellLo)
+      nw = intOp(ctx, "shl", cw, nw, 8 * p.cellLo);
+    cellInt = intOr(ctx, cw, kept, nw);
+  }
+  Operand v = fromInt(ctx, cellInt, c.cellTy);
+  Value *h = v.handle ? v.v : seedOf(ctx, c.w, v.v);
+  emitStore(ctx, bus, c, idx, h, flag, I);
+}
+
+void writeBytes(LoweringContext &ctx, const QAccess &acc, int64_t off, uint64_t len, Operand val, Value *flag,
+                const Instruction &I) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  unsigned L = unsigned(len * 8);
+  for (const Piece &p : piecesIn(DL, *acc.q, off, len, I)) {
+    unsigned nb = pieceBits(DL, p);
+    if (!nb)
+      continue;
+    writePiece(ctx, acc, p, bitsOf(ctx, val, L, unsigned(8 * p.valLo), nb), nb, flag, I);
+  }
+}
+
+// The scalar leaves of a value type with their byte offsets (rules 25, 26: struct and array elements and
+// vector lanes, depth first; aggr's field order). A vector of sub-byte lanes is one integer leaf, split
+// into lanes by its users here.
+struct VLeaf {
+  Type *ty;
+  uint64_t off;
+  unsigned lanes;   // > 0: a packed vector of that many sub-byte lanes of ty's width / lanes bits
+};
+
+void vleaves(Type *t, uint64_t off, const DataLayout &DL, SmallVectorImpl<VLeaf> &out) {
+  if (auto *st = dyn_cast<StructType>(t)) {
+    const StructLayout *SL = DL.getStructLayout(st);
+    for (unsigned i = 0; i < st->getNumElements(); ++i)
+      vleaves(st->getElementType(i), off + SL->getElementOffset(i).getFixedValue(), DL, out);
+    return;
+  }
+  if (auto *at = dyn_cast<ArrayType>(t)) {
+    uint64_t es = DL.getTypeAllocSize(at->getElementType()).getFixedValue();
+    for (uint64_t i = 0; i < at->getNumElements(); ++i)
+      vleaves(at->getElementType(), off + i * es, DL, out);
+    return;
+  }
+  if (auto *vt = dyn_cast<FixedVectorType>(t)) {
+    uint64_t eb = DL.getTypeSizeInBits(vt->getElementType()).getFixedValue();
+    if (eb % 8) {
+      out.push_back({IntegerType::get(t->getContext(), unsigned(eb * vt->getNumElements())), off,
+                     vt->getNumElements()});
+      return;
+    }
+    for (unsigned i = 0; i < vt->getNumElements(); ++i)
+      vleaves(vt->getElementType(), off + i * (eb / 8), DL, out);
+    return;
+  }
+  out.push_back({t, off, 0});
+}
+
+bool hasPointerLeaf(Type *t) {
+  if (auto *st = dyn_cast<StructType>(t))
+    return llvm::any_of(st->elements(), hasPointerLeaf);
+  if (auto *at = dyn_cast<ArrayType>(t))
+    return hasPointerLeaf(at->getElementType());
+  if (auto *vt = dyn_cast<VectorType>(t))
+    return hasPointerLeaf(vt->getElementType());
+  return t->isPointerTy();
+}
+
+bool isAggregate(Type *t) { return t->isStructTy() || t->isArrayTy() || t->isVectorTy(); }
+
+// A load of any non-pointer type through the byte engine: per leaf its bytes, as a rail of its type.
+void loadThroughBytes(LoweringContext &ctx, const QAccess &acc, LoadInst &ld) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  Type *ty = ld.getType();
+  if (isa<ScalableVectorType>(ty))
+    internalError("mem-qram: a scalable vector on x86-64 (rule 25)", &ld);
+  SmallVector<VLeaf, 4> ls;
+  vleaves(ty, 0, DL, ls);
+  SmallVector<Operand, 4> fields;
+  for (const VLeaf &l : ls) {
+    uint64_t sb = storeBytes(DL, l.ty);
+    unsigned vb = valueBits(l.ty);
+    Operand x = readBytes(ctx, acc, acc.a.off + int64_t(l.off), sb, ld);
+    x = intCast(ctx, "trunc", unsigned(sb * 8), vb, x);
+    x = fromInt(ctx, x, l.ty);
+    if (!x.handle)
+      x = Operand{seedOf(ctx, railTypeOf(l.ty), x.v), true};
+    if (l.lanes) {
+      unsigned w = vb / l.lanes;
+      for (unsigned i = 0; i < l.lanes; ++i) {
+        Operand lane = bitsOf(ctx, x, vb, i * w, w);
+        fields.push_back(lane);
+      }
+    } else {
+      fields.push_back(x);
+    }
+  }
+  if (isAggregate(ty))
+    ctx.bindFields(&ld, fields);
+  else
+    ctx.bind(&ld, fields.front().v);
+}
+
+// A store of any non-pointer value through the byte engine: per leaf its bits into its bytes.
+void storeThroughBytes(LoweringContext &ctx, const QAccess &acc, const Value *val, Value *flag, const Instruction &I) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  Type *ty = val->getType();
+  SmallVector<VLeaf, 4> ls;
+  vleaves(ty, 0, DL, ls);
+  SmallVector<Operand, 4> fs;
+  if (isAggregate(ty)) {
+    fs = ctx.fields(val);
+    if (fs.size() == 1 && !fs.front().handle && ls.size() + 0 != 1) {
+      // A classical composite bound as one value: its leaves by extraction.
+      Value *agg = fs.front().v;
+      fs.clear();
+      std::function<void(Value *, Type *)> walk = [&](Value *v, Type *t) {
+        if (auto *st = dyn_cast<StructType>(t)) {
+          for (unsigned i = 0; i < st->getNumElements(); ++i)
+            walk(ctx.B().CreateExtractValue(v, {i}), st->getElementType(i));
+        } else if (auto *at = dyn_cast<ArrayType>(t)) {
+          for (unsigned i = 0; i < at->getNumElements(); ++i)
+            walk(ctx.B().CreateExtractValue(v, {i}), at->getElementType());
+        } else if (auto *vt = dyn_cast<FixedVectorType>(t)) {
+          for (unsigned i = 0; i < vt->getNumElements(); ++i)
+            walk(ctx.B().CreateExtractElement(v, uint64_t(i)), vt->getElementType());
+        } else {
+          fs.push_back(Operand{v, false});
+        }
+      };
+      walk(agg, ty);
+    }
+  } else {
+    fs.push_back(ctx.operand(val));
+  }
+  size_t k = 0;
+  for (const VLeaf &l : ls) {
+    uint64_t sb = storeBytes(DL, l.ty);
+    unsigned vb = valueBits(l.ty);
+    Operand x;
+    if (l.lanes) {
+      unsigned w = vb / l.lanes;
+      for (unsigned i = 0; i < l.lanes; ++i, ++k) {
+        if (k >= fs.size())
+          internalError("mem-qram: a stored composite with fewer fields than leaves", &I);
+        Operand lane = intCast(ctx, "zext", w, vb, fs[k]);
+        if (i)
+          lane = intOp(ctx, "shl", vb, lane, uint64_t(i) * w);
+        x = i ? intOr(ctx, vb, x, lane) : lane;
+      }
+    } else {
+      if (k >= fs.size())
+        internalError("mem-qram: a stored composite with fewer fields than leaves", &I);
+      x = asInt(ctx, fs[k++], l.ty);
+    }
+    x = intCast(ctx, "zext", vb, unsigned(sb * 8), x);
+    writeBytes(ctx, acc, acc.a.off + int64_t(l.off), sb, x, flag, I);
   }
 }
 
 // Rule 22 over a QRAM destination: a classical length is one _hl store per covered cell (memset: one
 // shared basis-state seed per cell type, 30, 55; memcpy/memmove: each cell the source cell's value, a
 // seed of a classical source byte run (73, 168) or a _hl load of a QRAM source cell). All source cells
-// are read before any store (memmove). Under a quantum predicate the stores are _controlled.
-void lowerQramIntrinsic(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o) {
+// are read before any store (memmove). Under a quantum predicate the stores are _controlled. This is the
+// whole-cell form at a classical constant length; false (nothing emitted) when the intrinsic is not of
+// that form (lowerQramIntrinsicBytes takes it).
+bool lowerQramIntrinsicCells(LoweringContext &ctx, MemIntrinsic &MI, const QAccess &acc, uint64_t length) {
   const DataLayout &DL = ctx.M.getDataLayout();
   IRBuilder<> &B = ctx.B();
   LLVMContext &C = ctx.M.getContext();
-  (void)o;
-  QAccess acc = qramAccess(ctx, MI.getDest(), MI);
-  if (quantumTerm(ctx, acc.a, MI))
-    unimplemented("mem-qram: a memory intrinsic at a quantum offset into a QRAM (rule 20, last row)", &MI);
-  Operand len = ctx.operand(MI.getLength());
-  if (len.handle)
-    unimplemented("mem-qram: a memory intrinsic into a QRAM with a quantum length (rule 22's guarded cells, 90)",
-                  &MI);
-  auto *cl = dyn_cast<ConstantInt>(len.v);
-  if (!cl)
-    unimplemented("mem-qram: a run-time-length memory intrinsic into a QRAM (its per-cell stores need a loop "
-                  "whose pops a reverse loop makes)",
-                  &MI);
   const QramObj &q = *acc.q;
+  std::optional<SmallVector<Hit, 8>> hitsOpt = cellsIn(DL, q, acc.a.off, length, MI);
+  if (!hitsOpt)
+    return false;
+  SmallVector<Hit, 8> &hits = *hitsOpt;
+  // The source's form, decided before anything is emitted.
+  const Value *src = nullptr;
+  enum { Fill, Host, Qram, Slot } kind = Fill;
+  QAccess sacc{};
+  if (auto *MS = dyn_cast<MemSetInst>(&MI)) {
+    if (ctx.operand(MS->getValue()).handle)
+      for (const Hit &h : hits)
+        if (!h.col->cellTy->isIntegerTy(8))
+          return false;   // a quantum fill into wider cells: the splat (byte engine)
+  } else {
+    src = cast<MemTransferInst>(MI).getSource();
+    if (ctx.T.isFatPointer(src, ctx.S))
+      return false;
+    ArrayRef<ObjectId> so = ctx.T.provenance(src, ctx.S);
+    if (llvm::all_of(so, [&](ObjectId x) { return ctx.T.classOf(x) == ObjClass::Classical; })) {
+      kind = Host;
+    } else if (so.size() == 1 && ctx.T.classOf(so.front()) == ObjClass::Qram) {
+      kind = Qram;
+      sacc = qramAccess(ctx, src, MI);
+      if (quantumTerm(ctx, sacc.a, MI))
+        return false;
+      int64_t SE = int64_t(sacc.q->elemBytes);
+      for (const Hit &h : hits) {
+        int64_t p = sacc.a.off + int64_t(h.rel);
+        int64_t se = floorDiv(p, SE);
+        const Column *sc = sacc.q->at(uint64_t(p - se * SE));
+        if (!sc || sc->cellTy != h.col->cellTy)
+          return false;   // the cells do not line up (a bit view)
+      }
+    } else if (so.size() == 1 && ctx.T.classOf(so.front()) == ObjClass::Slot) {
+      kind = Slot;
+      Type *cellTy = hits.empty() ? nullptr : hits.front().col->cellTy;
+      uint64_t size = cellTy ? DL.getTypeAllocSize(cellTy).getFixedValue() : 0;
+      for (size_t i = 0; i < hits.size(); ++i)
+        if (hits[i].col->cellTy != cellTy || hits[i].rel != i * size)
+          unimplemented("mem-qram: a memcpy/memmove from a slot array into QRAM cells of several types or not "
+                        "consecutive (a struct column layout, 168)",
+                        &MI);
+    } else {
+      return false;
+    }
+  }
   Value *flag = ctx.currentFlag();
   Value *jb = classicalElems(ctx, q, acc.a, MI);
-  SmallVector<Hit, 8> hits = cellsIn(DL, q, acc.a.off, cl->getZExtValue(), MI);
   SmallVector<Value *, 8> vals;
-
   if (auto *MS = dyn_cast<MemSetInst>(&MI)) {
     Operand fill = ctx.operand(MS->getValue());
     if (fill.handle) {
       // Rule 22 (72's memset_quantum_byte): a quantum fill byte into byte cells is the fill rail itself,
-      // stored into each cell (it stays live until the last of those stores is popped). Wider cells (a
-      // splat of the byte rail) are not built.
-      for (const Hit &h : hits)
-        if (!h.col->cellTy->isIntegerTy(8))
-          unimplemented("mem-qram: a memset of a QRAM with a quantum fill byte into cells wider than a byte (rule 22)",
-                        &MI);
+      // stored into each cell (it stays live until the last of those stores is popped).
       for (size_t i = 0; i < hits.size(); ++i)
         vals.push_back(fill.v);
     }
@@ -1440,6 +1977,118 @@ void lowerQramIntrinsic(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o) {
       if (!s)
         s = seedOf(ctx, h.col->w, splatCell(ctx, fill.v, h.col->cellTy));
       vals.push_back(s);
+    }
+  } else if (kind == Host) {
+    auto *MT = cast<MemTransferInst>(&MI);
+    Operand sp = ctx.operand(src);
+    if (sp.handle)
+      internalError("mem-qram: a classical memcpy source bound to a rail", &MI);
+    for (const Hit &h : hits) {
+      Value *v = nullptr;
+      if (auto *k = dyn_cast<Constant>(src))
+        v = ConstantFoldLoadFromConstPtr(const_cast<Constant *>(k), h.col->cellTy, APInt(64, h.rel), DL);
+      if (!v) {
+        Value *p = h.rel ? B.CreateConstInBoundsGEP1_64(Type::getInt8Ty(C), sp.v, h.rel) : sp.v;
+        v = B.CreateAlignedLoad(h.col->cellTy, p, commonAlignment(MT->getSourceAlign().valueOrOne(), h.rel));
+      }
+      vals.push_back(seedOf(ctx, h.col->w, v));
+    }
+  } else if (kind == Qram) {
+    const QramObj &sq = *sacc.q;
+    Value *sjb = classicalElems(ctx, sq, sacc.a, MI);
+    int64_t SE = int64_t(sq.elemBytes);
+    for (const Hit &h : hits) {
+      int64_t p = sacc.a.off + int64_t(h.rel);
+      int64_t se = floorDiv(p, SE);
+      const Column *sc = sq.at(uint64_t(p - se * SE));
+      vals.push_back(emitLoad(ctx, busOf(sq, sacc.a.root, sc, MI), *sc, {elemIndex(ctx, sjb, se), false}));
+    }
+  } else {
+    // 73: a slot array source. The covered QRAM cells are consecutive cells of one type; their source
+    // cells are mem-slots' reads of the slot's cells at the copy (M4 readSlotCells): the handle a cell
+    // holds is stored as it is (the slot keeps it), a classical cell is a seed (rule 7).
+    if (!hits.empty()) {
+      SmallVector<Operand, 8> cells = readSlotCells(ctx, src, hits.front().col->cellTy, hits.size(), MI);
+      for (size_t i = 0; i < cells.size(); ++i)
+        vals.push_back(cells[i].handle ? cells[i].v : seedOf(ctx, hits[i].col->w, cells[i].v));
+    }
+  }
+  for (size_t i = 0; i < hits.size(); ++i) {
+    const Hit &h = hits[i];
+    emitStore(ctx, busOf(q, acc.a.root, h.col, MI), *h.col, {elemIndex(ctx, jb, h.elem), false},
+              vals[i], flag, MI);
+  }
+  return true;
+}
+
+// Rule 22 over a QRAM destination, every other form, through the byte engine: the cells the intrinsic
+// may touch (a classical constant length: exactly; otherwise up to the length's upper bound, LLVM's range
+// facts, and never past the object), each touched cell piece stored its bytes of the new value:
+//  - a quantum length n guards the piece of bytes [s, e) of the run by n >= e (icmp ugt n, e - 1); a
+//    run-time classical length by the same test as a seed flag (rule 7; a classical term inside a
+//    quantum store's control, rule 8). Where the length may end inside a cell piece (its known bits do
+//    not rule it out), the piece is written byte by byte, each byte under its own guard: rule 22's
+//    byte-masked merge of old and new under n > sj;
+//  - under a quantum predicate each guard is and_i1 with the predicate's flag (rule 8, as data);
+//  - the new bytes: a memset's fill byte repeated (a quantum fill: zext and mul_hl of the byte rail by
+//    0x0101..); a memcpy/memmove's source bytes, every one read before any store: a QRAM source through
+//    the engine's reads (at its quantum index too), a host source by host loads (a run-time length: the
+//    host's own memcpy into a zeroed buffer of the bound's size first, so no host byte past the length is
+//    read);
+//  - a quantum destination offset is the engine's index (the quantum cell index plus the element).
+void lowerQramIntrinsicBytes(LoweringContext &ctx, MemIntrinsic &MI, const QAccess &acc, const Value *lenV,
+                             Operand len) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  IRBuilder<> &B = ctx.B();
+  LLVMContext &C = ctx.M.getContext();
+  Type *i64 = Type::getInt64Ty(C), *i8 = Type::getInt8Ty(C);
+  auto *cl = len.handle ? nullptr : dyn_cast<ConstantInt>(len.v);
+  uint64_t cover;
+  if (cl) {
+    cover = cl->getZExtValue();
+  } else {
+    cover = upperBound(lenV, DL, MI);
+    auto it = acc.q->bytes.find(acc.a.root);
+    if (it != acc.q->bytes.end()) {
+      uint64_t cap = it->second;
+      if (acc.a.terms.empty() && acc.a.off >= 0)
+        cap = cap > uint64_t(acc.a.off) ? cap - uint64_t(acc.a.off) : 0;
+      cover = std::min(cover, cap);
+    }
+    if (cover > (uint64_t(1) << 20))
+      unimplemented("awaiting owner ruling: SPEC_ISSUES rule 22 unrolled over a length whose upper bound leaves "
+                    "more than 2^20 bytes (no range fact bounds it and the destination's extent is not static)",
+                    &MI);
+  }
+  if (cover == 0)
+    return;
+  SmallVector<Piece, 8> pieces = piecesIn(DL, *acc.q, acc.a.off, cover, MI);
+  // The new bits of each piece (pieceBits wide), every source byte read first.
+  SmallVector<Operand, 8> vals;
+  auto pieceBytes = [](const Piece &p) { return p.cellHi - p.cellLo; };
+  if (auto *MS = dyn_cast<MemSetInst>(&MI)) {
+    Operand fill = ctx.operand(MS->getValue());
+    std::map<unsigned, Operand> shared;   // per piece width: one splat (rule 22's shared seed / the fill rail)
+    for (const Piece &p : pieces) {
+      unsigned nb = pieceBits(DL, p);
+      if (!nb) {
+        vals.push_back(Operand{});
+        continue;
+      }
+      auto f = shared.find(nb);
+      if (f != shared.end()) {
+        vals.push_back(f->second);
+        continue;
+      }
+      unsigned W = unsigned(8 * pieceBytes(p));
+      Operand x = intCast(ctx, "zext", 8, W, fill);
+      if (W > 8)
+        x = intOp(ctx, "mul", W, x, APInt::getSplat(W, APInt(8, 1)));
+      x = intCast(ctx, "trunc", W, nb, x);
+      if (!x.handle)
+        x = Operand{x.v, false};
+      shared[nb] = x;
+      vals.push_back(x);
     }
   } else {
     auto *MT = cast<MemTransferInst>(&MI);
@@ -1452,58 +2101,118 @@ void lowerQramIntrinsic(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o) {
       Operand sp = ctx.operand(src);
       if (sp.handle)
         internalError("mem-qram: a classical memcpy source bound to a rail", &MI);
-      for (const Hit &h : hits) {
-        Value *v = nullptr;
-        if (auto *k = dyn_cast<Constant>(src))
-          v = ConstantFoldLoadFromConstPtr(const_cast<Constant *>(k), h.col->cellTy, APInt(64, h.rel), DL);
-        if (!v) {
-          Value *p = h.rel ? B.CreateConstInBoundsGEP1_64(Type::getInt8Ty(C), sp.v, h.rel) : sp.v;
-          v = B.CreateAlignedLoad(h.col->cellTy, p, commonAlignment(MT->getSourceAlign().valueOrOne(), h.rel));
+      Value *from = sp.v;
+      if (!cl && !len.handle) {
+        // The host's own copy of exactly the length's bytes into a zeroed buffer of the bound's size.
+        Function &F = ctx.out();
+        IRBuilder<> EB(&F.getEntryBlock(), F.getEntryBlock().getFirstInsertionPt());
+        AllocaInst *buf = EB.CreateAlloca(ArrayType::get(i8, cover));
+        B.CreateMemSet(buf, ConstantInt::get(i8, 0), cover, MaybeAlign(1));
+        B.CreateMemCpy(buf, MaybeAlign(1), sp.v, MaybeAlign(1), B.CreateZExtOrTrunc(len.v, i64));
+        from = buf;
+      }
+      for (const Piece &p : pieces) {
+        unsigned nb = pieceBits(DL, p);
+        if (!nb) {
+          vals.push_back(Operand{});
+          continue;
         }
-        vals.push_back(seedOf(ctx, h.col->w, v));
+        Type *ty = IntegerType::get(C, unsigned(8 * pieceBytes(p)));
+        Value *at = p.valLo ? B.CreateConstGEP1_64(i8, from, p.valLo) : from;
+        Value *v = B.CreateAlignedLoad(ty, at, Align(1));
+        vals.push_back(intCast(ctx, "trunc", unsigned(8 * pieceBytes(p)), nb, Operand{v, false}));
       }
     } else if (so.size() == 1 && ctx.T.classOf(so.front()) == ObjClass::Qram) {
       QAccess sacc = qramAccess(ctx, src, MI);
-      if (quantumTerm(ctx, sacc.a, MI))
-        unimplemented("mem-qram: a memcpy/memmove from a quantum offset of a QRAM (rule 20, last row)", &MI);
-      const QramObj &sq = *sacc.q;
-      Value *sjb = classicalElems(ctx, sq, sacc.a, MI);
-      int64_t SE = int64_t(sq.elemBytes);
-      for (const Hit &h : hits) {
-        int64_t p = sacc.a.off + int64_t(h.rel);
-        int64_t se = floorDiv(p, SE);
-        const Column *sc = sq.at(uint64_t(p - se * SE));
-        if (!sc || sc->cellTy != h.col->cellTy)
-          unimplemented("mem-qram: a memcpy/memmove between QRAMs whose cells do not line up (a bit view, 63)", &MI);
-        vals.push_back(emitLoad(ctx, busOf(sq, sacc.a.root, sc, MI), *sc, {elemIndex(ctx, sjb, se), false}));
+      for (const Piece &p : pieces) {
+        unsigned nb = pieceBits(DL, p);
+        if (!nb) {
+          vals.push_back(Operand{});
+          continue;
+        }
+        Operand x = readBytes(ctx, sacc, sacc.a.off + int64_t(p.valLo), pieceBytes(p), MI);
+        vals.push_back(intCast(ctx, "trunc", unsigned(8 * pieceBytes(p)), nb, x));
       }
     } else if (so.size() == 1 && ctx.T.classOf(so.front()) == ObjClass::Slot) {
-      // 73: a slot array source. The covered QRAM cells are consecutive cells of one type; their source
-      // cells are mem-slots' reads of the slot's cells at the copy (M4 readSlotCells): the handle a cell
-      // holds is stored as it is (the slot keeps it), a classical cell is a seed (rule 7).
-      Type *cellTy = hits.empty() ? nullptr : hits.front().col->cellTy;
-      uint64_t size = cellTy ? DL.getTypeAllocSize(cellTy).getFixedValue() : 0;
-      for (size_t i = 0; i < hits.size(); ++i)
-        if (hits[i].col->cellTy != cellTy || hits[i].rel != i * size)
-          unimplemented("mem-qram: a memcpy/memmove from a slot array into QRAM cells of several types or not "
-                        "consecutive (a struct column layout, 168)",
-                        &MI);
-      if (!hits.empty()) {
-        SmallVector<Operand, 8> cells = readSlotCells(ctx, src, cellTy, hits.size(), MI);
-        for (size_t i = 0; i < cells.size(); ++i)
-          vals.push_back(cells[i].handle ? cells[i].v : seedOf(ctx, hits[i].col->w, cells[i].v));
-      }
+      unimplemented("mem-qram: a memcpy/memmove from a slot array into a QRAM at another length or layout than "
+                    "whole cells of one type (rule 22 per cell of a slot source)",
+                    &MI);
     } else {
       unimplemented("mem-qram: a memcpy/memmove into a QRAM from several objects (rule 21's per-object source "
                     "cells)",
                     &MI);
     }
   }
-  for (size_t i = 0; i < hits.size(); ++i) {
-    const Hit &h = hits[i];
-    emitStore(ctx, busOf(q, acc.a.root, h.col, MI), *h.col, {elemIndex(ctx, jb, h.elem), false},
-              vals[i], flag, MI);
+  // Guards and stores.
+  Value *flag = ctx.currentFlag();
+  unsigned lw = lenV->getType()->getIntegerBitWidth();
+  unsigned tz = cl ? 64 : computeKnownBits(lenV, DL).countMinTrailingZeros();
+  auto guardFor = [&](uint64_t end) -> std::optional<Value *> {   // n >= end; nullopt: never
+    if (cl)
+      return end <= cover ? std::optional<Value *>(flag) : std::nullopt;
+    Value *g;
+    if (len.handle) {
+      if (lw < 64 && (end - 1) >> lw)
+        return std::nullopt;
+      abi::TemplateSpec cmp;
+      cmp.op = "icmp";
+      cmp.pred = "ugt";
+      cmp.w = RailType{Kind::Int, lw};
+      cmp.shape = "hl";
+      g = ctx.emitTemplate(cmp, {len, Operand{ConstantInt::get(IntegerType::get(C, lw), end - 1), false}});
+    } else {
+      Value *c = B.CreateICmpUGE(B.CreateZExtOrTrunc(len.v, i64), ConstantInt::get(i64, end));
+      CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 1}}, {c});
+      ctx.unc().recordSeed(seed);
+      g = seed;
+    }
+    if (flag) {
+      abi::TemplateSpec a;
+      a.op = "and";
+      a.w = RailType{Kind::Int, 1};
+      g = ctx.emitTemplate(a, {Operand{flag, true}, Operand{g, true}});
+    }
+    return g;
+  };
+  for (size_t i = 0; i < pieces.size(); ++i) {
+    const Piece &p = pieces[i];
+    unsigned nb = pieceBits(DL, p);
+    if (!nb)
+      continue;
+    uint64_t lo = p.valLo, hi = p.valLo + pieceBytes(p);
+    // May the length end strictly inside (lo, hi)? Only at a multiple of 2^tz.
+    bool cut = !cl && tz < 64 && ((lo >> tz) + 1) << tz < hi;
+    if (!cut) {
+      if (std::optional<Value *> g = guardFor(hi))
+        writePiece(ctx, acc, p, vals[i], nb, *g, MI);
+      continue;
+    }
+    for (uint64_t k = 0; k < pieceBytes(p); ++k) {
+      unsigned b0 = unsigned(8 * k);
+      if (b0 >= nb)
+        break;
+      unsigned bn = std::min(8u, nb - b0);
+      Piece sub = p;
+      sub.cellLo = p.cellLo + k;
+      sub.cellHi = sub.cellLo + 1;
+      sub.valLo = p.valLo + k;
+      if (std::optional<Value *> g = guardFor(sub.valLo + 1))
+        writePiece(ctx, acc, sub, bitsOf(ctx, vals[i], nb, b0, bn), bn, *g, MI);
+    }
   }
+}
+
+void lowerQramIntrinsic(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o) {
+  (void)o;
+  QAccess acc = qramAccess(ctx, MI.getDest(), MI);
+  const Value *lenV = MI.getLength();
+  if (auto *z = dyn_cast<ZExtInst>(lenV); z && ctx.T.isQuantum(z->getOperand(0), ctx.S))
+    lenV = z->getOperand(0);
+  Operand len = ctx.operand(lenV);
+  if (auto *cl = len.handle ? nullptr : dyn_cast<ConstantInt>(len.v);
+      cl && !quantumTerm(ctx, acc.a, MI) && lowerQramIntrinsicCells(ctx, MI, acc, cl->getZExtValue()))
+    return;
+  lowerQramIntrinsicBytes(ctx, MI, acc, lenV, len);
 }
 
 // The column at offset 0 of the object at root whose cell is accessed as ty.
@@ -1672,6 +2381,14 @@ void lowerSlotIntrinsicM6(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o) {
                     "view, 63)",
                     &MI);
     n = (upperBound(lenV, DL, MI) + cb - 1) / cb;
+    // Rule 22: only cells some execution can touch, none past the destination object.
+    if (std::optional<uint64_t> ob = staticObjectBytes(info, DL); ob && a.terms.empty() && a.off >= 0)
+      n = std::min<uint64_t>(n, *ob > uint64_t(a.off) ? (*ob - uint64_t(a.off)) / cb : 0);
+    if (n > (uint64_t(1) << 20))
+      unimplemented("awaiting owner ruling: SPEC_ISSUES rule 22 unrolled over a quantum length whose upper bound "
+                    "leaves more than 2^20 cells (no range fact bounds it and the destination's extent is not "
+                    "static)",
+                    &MI);
   }
   if (n == 0)
     return;
@@ -1733,11 +2450,7 @@ void lowerMemIntrinsic(LoweringContext &ctx, MemIntrinsic &MI) {
     // M6: a quantum-length memset and every memcpy/memmove go through mem-slots' write path.
     if (!isa<MemSetInst>(&MI) || ctx.operand(MI.getLength()).handle)
       return lowerSlotIntrinsicM6(ctx, MI, objs.front());
-    if (auto *MS = dyn_cast<MemSetInst>(&MI))
-      return lowerSlotMemset(ctx, *MS, objs.front());
-    unimplemented("mem-qram: a memcpy/memmove into a slot array (rule 22: each cell takes the source handle or a "
-                  "seed)",
-                  &MI);
+    return lowerSlotMemset(ctx, cast<MemSetInst>(MI), objs.front());
   }
   if (objs.size() == 1 && ctx.T.classOf(objs.front()) == ObjClass::Qram)
     return lowerQramIntrinsic(ctx, MI, objs.front());
@@ -1764,11 +2477,11 @@ void lowerQramLoad(LoweringContext &ctx, LoadInst &ld) {
     ctx.bindFields(&ld, {Operand{tag, true}, Operand{ix, true}});
     return;
   }
-  if (!ld.getType()->isIntegerTy() && !ld.getType()->isFloatingPointTy())
-    unimplemented("mem-qram: a QRAM access of a non-scalar or pointer value (rules 21, 25)", &ld);
-  const Column *col = exactCell(ctx, *acc.q, acc.a, ld.getType());
+  if (hasPointerLeaf(ld.getType()))
+    unimplemented("mem-qram: a QRAM load of an aggregate holding a pointer (rules 21, 26: its fat fields)", &ld);
+  const Column *col = isAggregate(ld.getType()) ? nullptr : exactCell(ctx, *acc.q, acc.a, ld.getType());
   if (!col)
-    unimplemented("mem-qram: a QRAM access at another type than its cell (a bit view, 63)", &ld);
+    return loadThroughBytes(ctx, acc, ld);   // a bit view or a composite: one access per touched cell
   QIndex idx = cellIndex(ctx, *acc.q, acc.a, ld);
   ctx.bind(&ld, emitLoad(ctx, busOf(*acc.q, acc.a.root, col, ld), *col, idx));
 }
@@ -1797,12 +2510,16 @@ void lowerQramStore(LoweringContext &ctx, StoreInst &st) {
     emitStore(ctx, busOf(*acc.q, acc.a.root, col + 1, st), col[1], idx, iv, flag, st);
     return;
   }
+  if (hasPointerLeaf(val->getType()))
+    unimplemented("mem-qram: a QRAM store of an aggregate holding a pointer (rules 21, 26: its fat fields)", &st);
+  if (isAggregate(val->getType()))
+    return storeThroughBytes(ctx, acc, val, flag, st);
   Operand v = ctx.operand(val);
   const Column *col = exactCell(ctx, *acc.q, acc.a, val->getType());
   if (!col) {
-    if (v.handle)
-      unimplemented("mem-qram: a QRAM access at another type than its cell (a bit view, 63)", &st);
-    return storeClassicalBytes(ctx, acc, v.v, val->getType(), flag, st);
+    if (v.handle || !storeClassicalBytes(ctx, acc, v.v, val->getType(), flag, st))
+      storeThroughBytes(ctx, acc, val, flag, st);   // a bit view: one access per touched cell
+    return;
   }
   QIndex idx = cellIndex(ctx, *acc.q, acc.a, st);
   if (!v.handle)
@@ -1849,7 +2566,7 @@ void allocateQram(LoweringContext &ctx, Instruction &site) {
   Value *n = nullptr;
   auto constCells = [&](uint64_t cells) {
     if (cells > UINT32_MAX)
-      unimplemented("mem-qram: a QRAM of more than 2^32 cells", &site);
+      tooManyCells(&site);
     return ConstantInt::get(i32, cells);
   };
   if (auto *ai = dyn_cast<AllocaInst>(&site)) {
@@ -1857,10 +2574,13 @@ void allocateQram(LoweringContext &ctx, Instruction &site) {
     uint64_t per = DL.getTypeAllocSize(ai->getAllocatedType()).getFixedValue() / q.elemBytes;
     if (auto *c = dyn_cast<ConstantInt>(ai->getArraySize())) {
       n = constCells(per * c->getZExtValue());
+      q.bytes[&site] = per * c->getZExtValue() * q.elemBytes;
     } else {
       Operand cnt = ctx.operand(ai->getArraySize());
       if (cnt.handle) {
-        n = constCells(per * upperBound(ai->getArraySize(), DL, site));
+        uint64_t cells = satMul(per, upperBound(ai->getArraySize(), DL, site));
+        n = constCells(cells);
+        q.bytes[&site] = cells * q.elemBytes;
       } else {
         Value *x = B.CreateZExtOrTrunc(cnt.v, i32);
         n = per == 1 ? x : B.CreateMul(x, ConstantInt::get(i32, per));
@@ -1888,13 +2608,14 @@ void allocateQram(LoweringContext &ctx, Instruction &site) {
         x = B.CreateZExtOrTrunc(op.v, i64);
       }
       if (auto *c = dyn_cast<ConstantInt>(x))
-        cbytes *= c->getZExtValue();
+        cbytes = satMul(cbytes, c->getZExtValue());
       else
         allConst = false;
       bytes = bytes ? B.CreateMul(bytes, x) : x;
     }
     if (allConst) {
       n = constCells(cbytes / q.elemBytes);
+      q.bytes[&site] = cbytes;   // a quantum size: its upper bound, the cells allocated
     } else {
       Value *cells = B.CreateUDiv(bytes, ConstantInt::get(i64, q.elemBytes));
       n = B.CreateTrunc(cells, i32);
@@ -1950,7 +2671,7 @@ void endQramLifetime(LoweringContext &ctx, ObjectId o, Instruction *at) {
   bool lifetimeEnd = CB && isa<IntrinsicInst>(CB) &&
                      cast<IntrinsicInst>(CB)->getIntrinsicID() == Intrinsic::lifetime_end;
   if (!lifetimeEnd && !(CB && isFree(*CB)))
-    unimplemented("mem-qram: a QRAM lifetime end at other than lifetime.end or free (stackrestore, 192)", at);
+    return;   // a VLA's scope end (llvm.stackrestore, 192) or the return: the same, nothing here
   (void)o;
   Addr a = decompose(CB->getArgOperand(lifetimeEnd ? 1 : 0), ctx.M.getDataLayout());
   QramState &st = qramStates()[&ctx.out()];
@@ -1977,29 +2698,46 @@ void reallocQram(LoweringContext &ctx, CallBase &CB) {
     internalError("mem-qram: a realloc whose result is another object than its operand", &CB);
   if (ctx.currentFlag())
     unimplemented("mem-qram: a realloc of a QRAM under a quantum predicate (the logical size would be a merge)", &CB);
+  // realloc of any other pointer than the block's own is undefined (C17 7.22.3.5): in the domain the
+  // operand is the root, whatever offset its address arithmetic names.
   Addr a = decompose(old, DL);
-  if (!a.ok || a.off || !a.terms.empty())
-    unimplemented("mem-qram: a realloc of a pointer that is not the block's root", &CB);
+  if (!a.ok)
+    unimplemented("mem-qram: a realloc of a pointer whose root is not an object site (a merge of blocks, rule 21)",
+                  &CB);
   QramObj &q = qramObj(ctx, a.root, CB);
   auto it = q.buses.find(a.root);
   if (it == q.buses.end())
     unimplemented("mem-qram: a realloc of a QRAM pointer root lowered after it", &CB);
   SmallVector<Value *, 2> olds = it->second;
   Attribute A = CB.getFnAttr(Attribute::AllocSize);
-  if (!A.isValid() || A.getAllocSizeArgs().second)
-    unimplemented("mem-qram: a realloc without a one-argument allocsize attribute", &CB);
-  const Value *size = CB.getArgOperand(A.getAllocSizeArgs().first);
-  Operand sz = ctx.operand(size);
+  if (!A.isValid())
+    unimplemented("mem-qram: a realloc without an allocsize attribute (its new size)", &CB);
+  // The new size in bytes: the allocsize argument, or the product of the two (a quantum one at its bound).
+  SmallVector<unsigned, 2> sargs{A.getAllocSizeArgs().first};
+  if (A.getAllocSizeArgs().second)
+    sargs.push_back(*A.getAllocSizeArgs().second);
+  uint64_t cbytes = 1;
+  bool allConst = true;
+  Value *bytes = nullptr;
+  for (unsigned k : sargs) {
+    const Value *size = CB.getArgOperand(k);
+    Operand sz = ctx.operand(size);
+    Value *x = sz.handle ? ConstantInt::get(i64, upperBound(size, DL, CB)) : B.CreateZExtOrTrunc(sz.v, i64);
+    if (auto *c = dyn_cast<ConstantInt>(x))
+      cbytes = satMul(cbytes, c->getZExtValue());
+    else
+      allConst = false;
+    bytes = bytes ? B.CreateMul(bytes, x) : x;
+  }
   Value *n;
-  if (sz.handle) {
-    uint64_t cells = upperBound(size, DL, CB) / q.elemBytes;
+  if (allConst) {
+    uint64_t cells = cbytes / q.elemBytes;
     if (cells > UINT32_MAX)
-      unimplemented("mem-qram: a QRAM of more than 2^32 cells", &CB);
+      tooManyCells(&CB);
     n = ConstantInt::get(i32, cells);
-  } else if (auto *c = dyn_cast<ConstantInt>(sz.v)) {
-    n = ConstantInt::get(i32, c->getZExtValue() / q.elemBytes);
+    q.bytes[&CB] = cbytes;
   } else {
-    n = B.CreateTrunc(B.CreateUDiv(B.CreateZExtOrTrunc(sz.v, i64), ConstantInt::get(i64, q.elemBytes)), i32);
+    n = B.CreateTrunc(B.CreateUDiv(bytes, ConstantInt::get(i64, q.elemBytes)), i32);
   }
   SmallVector<Value *, 2> hs;
   for (unsigned k = 0; k < q.cols.size(); ++k) {
@@ -2060,15 +2798,11 @@ FormalUses formalUses(const Argument &A, bool strict) {
     for (const Use &u : v->uses()) {
       const User *usr = u.getUser();
       if (auto *ld = dyn_cast<LoadInst>(usr)) {
-        if (!ld->isSimple())
-          unimplemented("mem-qram: a volatile or atomic access through a rule 21 triple formal", ld);
-        out.loads.push_back(ld);
+        out.loads.push_back(ld);   // a volatile or atomic access is a plain one (rule 24)
         continue;
       }
       if (auto *st = dyn_cast<StoreInst>(usr); st && st->getPointerOperand() == v && st->getValueOperand() != v) {
-        if (!st->isSimple())
-          unimplemented("mem-qram: a volatile or atomic access through a rule 21 triple formal", st);
-        out.stores.push_back(st);
+        out.stores.push_back(st);   // rule 24: plain
         continue;
       }
       bool walk = isa<GEPOperator>(usr) || isa<BitCastOperator>(usr) ||
@@ -2268,7 +3002,9 @@ HostTriple hostTriple(LoweringContext &ctx, const Value *ptr, const Instruction 
     j = B.CreateAdd(j, t);
   }
   if (bytes / cb > UINT32_MAX)
-    unimplemented("mem-qram: a rule 21 triple onto an object of more than 2^32 cells", &at);
+    unimplemented("awaiting owner ruling: SPEC_ISSUES a rule 21 triple onto an object of 2^32 or more cells (the "
+                  "compiler-added i32 cell count)",
+                  &at);
   return {a.root, B.CreateTrunc(j, i32), ConstantInt::get(i32, bytes / cb), cb};
 }
 
