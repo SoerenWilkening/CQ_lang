@@ -606,14 +606,6 @@ struct CloneCall {
 bool byvalCopied(const Argument &A) { return A.hasByValAttr() && !A.onlyReadsMemory(); }
 
 // Does the caller's actual point into a slot object (rule 20)?
-// cq-oocu (CR rules 20, 21, §1.4; 107): a local record with a pointer-kind field handed over at its start as a
-// rule-21 Triple (one cell: the record). mem-slots' M1 then names the cells the clone writes (the idx halves).
-bool pointerKindRecord(const Value *actual, PtrAbi abi) {
-  auto *ai = dyn_cast<AllocaInst>(actual);
-  auto *st = ai ? dyn_cast<StructType>(ai->getAllocatedType()) : nullptr;
-  return abi != PtrAbi::Raw && st && llvm::any_of(st->elements(), [](Type *t) { return t->isPointerTy(); });
-}
-
 bool pointsToSlot(LoweringContext &ctx, const Value *actual) {
   for (ObjectId o : ctx.T.provenance(actual, ctx.S))
     if (ctx.T.classOf(o) == ObjClass::Slot)
@@ -695,9 +687,8 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
       continue;
     }
     if (fs[i].pointer && pointsToSlot(ctx, CB.getArgOperand(op(i))) && !ctx.T.cellsWritten(S, i).empty()) {
-      if (fs[i].abi != PtrAbi::Raw && !pointerKindRecord(CB.getArgOperand(op(i)), fs[i].abi))
-        unimplemented("calls: a clone writing a caller's slot object through a triple pointer formal (T4, M1)",
-                      &CB);
+      // A triple formal (rule 21) names the same caller cells as a raw one: the clone writes them through the
+      // object, the caller reads their new handles after the call (M1) whatever the ABI.
       if (CB.isByValArgument(op(i)))
         unimplemented("calls: a byval slot record a clone writes (rules 20, 26: 164)", &CB);
       slotArgs.push_back(i);

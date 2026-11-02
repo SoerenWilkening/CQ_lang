@@ -143,12 +143,34 @@ struct CellCopyOut {
   CallInst *f, *copy;
   Argument *formal;
   int64_t off;
+  // cq-1c5j (CR rule 21): a slot triple formal's cell: formal is the object parameter and idx the classical
+  // i32 cell index parameter; the cell is at handle idx of the object, then off bytes (spine binds the formal
+  // to that address at the clone's entry). base: the address the clone's accesses of the cell strip to.
+  Argument *idx = nullptr;
+  const Value *base = nullptr;
 };
+// The object and index parameters of `gep inbounds i32, obj, sext(idx)` (a slot triple formal's address).
+std::optional<std::pair<Argument *, Argument *>> tripleCellBase(const Value *v) {
+  auto *g = dyn_cast<GetElementPtrInst>(v);
+  if (!g || g->getNumIndices() != 1 || !g->getSourceElementType()->isIntegerTy(32))
+    return std::nullopt;
+  auto *obj = dyn_cast<Argument>(g->getPointerOperand());
+  const Value *i = g->getOperand(1);
+  if (auto *se = dyn_cast<SExtInst>(i))
+    i = se->getOperand(0);
+  auto *idx = dyn_cast<Argument>(const_cast<Value *>(i));
+  if (!obj || !idx || !obj->getType()->isPointerTy() || !idx->getType()->isIntegerTy(32))
+    return std::nullopt;
+  return std::make_pair(const_cast<Argument *>(obj), idx);
+}
 std::optional<CellCopyOut> cellCopyOut(StoreInst *SI) {
   const DataLayout &DL = SI->getModule()->getDataLayout();
   APInt off(64, 0);
   const Value *base = SI->getPointerOperand()->stripAndAccumulateConstantOffsets(DL, off, true);
   auto *A = dyn_cast<Argument>(const_cast<Value *>(base));
+  Argument *idxArg = nullptr;
+  if (auto t = tripleCellBase(base))
+    std::tie(A, idxArg) = *t;
   if (!A || A->hasByValAttr() || !A->getType()->isPointerTy())
     return std::nullopt;
   auto *f = dyn_cast<CallInst>(SI->getValueOperand());
@@ -172,7 +194,7 @@ std::optional<CellCopyOut> cellCopyOut(StoreInst *SI) {
   }
   if (copies.empty() || f->getNumUses() != copies.size() + 1)
     return std::nullopt;
-  return CellCopyOut{SI, f, copies.front(), A, off.getSExtValue()};
+  return CellCopyOut{SI, f, copies.front(), A, off.getSExtValue(), idxArg, base};
 }
 
 // The cell copy-outs of F, in formal order then ascending offset (the twin's trailing old cells).
@@ -570,7 +592,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
       if (auto *ld = dyn_cast<LoadInst>(&I)) {
         APInt o(64, 0);
         const Value *b = ld->getPointerOperand()->stripAndAccumulateConstantOffsets(DL, o, true);
-        if (b != co.formal)
+        if (b != co.base)
           continue;
         int64_t lo = o.getSExtValue();
         uint64_t ls = DL.getTypeStoreSize(ld->getType());
@@ -590,6 +612,9 @@ void defineTwin(Module &M, Function &twin, Function &src) {
       }
     IRBuilder<> B(f);
     Value *at = twin.getArg(nRegs + nOuts + co.formal->getArgNo());
+    if (co.idx)
+      at = B.CreateInBoundsGEP(B.getInt32Ty(), at,
+                               B.CreateSExt(twin.getArg(nRegs + nOuts + co.idx->getArgNo()), B.getInt64Ty()));
     if (co.off)
       at = B.CreateConstInBoundsGEP1_64(B.getInt8Ty(), at, uint64_t(co.off));
     Value *c = B.CreateAlignedLoad(st->getValueOperand()->getType(), at, st->getAlign(), "cell");

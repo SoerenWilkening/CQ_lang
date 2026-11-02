@@ -32,6 +32,7 @@
 #include "cq/Effects.h"
 #include "cq/FatPtr.h"
 #include "cq/Memory.h"
+#include "../mem/slots/SlotsInternal.h"
 #include "cq/Rotation.h"
 #include "cq/Switch.h"
 
@@ -2024,6 +2025,7 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
 
   Value *entryFlag = nullptr;
   SmallVector<std::pair<Argument *, SmallVector<Operand, 4>>, 2> classicalComposites;
+  SmallVector<std::tuple<Argument *, Value *, Value *>, 2> slotTripleCells;   // cq-1c5j
   if (S.isEntry()) {
     // Rule 19 (193): an entry returning an unmeasured quantum value returns its handle. The return
     // type stays the C one when it is an integer of 32 bits or more (the handle as is or
@@ -2106,6 +2108,13 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
           if (idxH)
             ctx.unc().recordExternal(idx, Role::UserRegister);
           fatptr::bindFormal(ctx, *A, obj, Operand{tag, tagH}, Operand{idx, idxH}, cnt);
+          if (pf.pointee == ObjClass::Slot && !tagH && !idxH && !mem::isPointerKindFormal(ctx, *A)) {
+            // cq-1c5j (CR rules 18, 20, 21): a classical (tag, idx) into the caller's slot object names one cell
+            // of its handle cells: the formal is that cell's address, as a raw slot pointer formal is (31), and
+            // mem-slots lowers the clone's accesses through it (fatptr keeps the cell-count checked loads of a
+            // TripleCount formal, 190).
+            slotTripleCells.push_back({A, obj, idx});
+          }
           continue;
         }
       }
@@ -2191,6 +2200,11 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
   LoopInfo LI(DT);
   ctx.preds().compute(F, LI, T, S, entryFlag);
   ctx.B().SetInsertPoint(BasicBlock::Create(M.getContext(), "", sh.out));
+  for (auto &[A, obj, idx] : slotTripleCells) {
+    IRBuilder<> &EB = ctx.B();
+    Value *at = EB.CreateInBoundsGEP(EB.getInt32Ty(), obj, EB.CreateSExt(idx, EB.getInt64Ty()));
+    spine::bindOperand(ctx, A, Operand{at, false});
+  }
   // CR §1.4: a composite formal crosses as one parameter per leaf; with no quantum leaf it is a classical
   // value of its own type, rebuilt from its leaves (struct and array fields, vector lanes, in order).
   for (auto &[A, ops] : classicalComposites) {

@@ -85,6 +85,10 @@ public:
   ObjectId objectOf(const llvm::Value *siteOrGlobal, const Specialization &S) const;
   ObjClass classOf(ObjectId) const;
   bool mayHoldHandle(ObjectId) const;
+  // cq-1c5j (CR rule 20): every cell of the object has one C scalar type (a scalar or an array of scalars, or
+  // an object with no C type whose cells are its accesses'), so a slot object's cells are all handle cells
+  // (homogeneous) whatever was written before a call; false for a struct (a record: per-field kinds, 163).
+  bool uniformCells(ObjectId) const;
   OffsetKind offsetKind(const llvm::Instruction *access, const Specialization &) const;
   llvm::ArrayRef<ObjectId> provenance(const llvm::Value *ptr, const Specialization &) const;
   bool isFatPointer(const llvm::Value *ptr, const Specialization &) const;

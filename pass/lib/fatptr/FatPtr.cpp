@@ -3332,10 +3332,17 @@ void bindFormal(LoweringContext &ctx, const Argument &formal, Value *object, Ope
     }
     if (pf.digits < 2 || d + pf.digits > S.mask.size())
       internalError("fatptr: a slot triple formal's digits past the clone's mask", &formal);
+    // Rule 20: a slot cell is homogeneous: a cell of an object of one scalar type holds a handle on every path,
+    // so a digit 0 (no handle written before the call: the clone writes it, 31's y[2] for __rem_pio2) is a
+    // handle cell too. A record's cell digit 0 is a classical field (163's per-field kinds) at the record's own
+    // layout, which the triple's handle cells do not carry.
+    bool uniform = true;
+    for (ObjectId o : T.provenance(&formal, S))
+      uniform = uniform && T.uniformCells(o);
     for (unsigned k = 2; k < pf.digits; ++k)
-      if (S.mask[d + k] != '1')
-        unimplemented("fatptr: a slot triple formal whose pointee cells do not all hold handles at the call (a "
-                      "classical cell read through the triple)",
+      if (S.mask[d + k] != '1' && !uniform)
+        unimplemented("fatptr: a slot triple formal into a record whose fields are not all handle cells at the "
+                      "call (rule 20 per-field kinds, 163, across a rule 21 triple)",
                       &formal);
     b.cellTy = mem::formalCellType(formal);
     break;

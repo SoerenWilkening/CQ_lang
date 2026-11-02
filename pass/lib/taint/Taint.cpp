@@ -4356,6 +4356,26 @@ ObjectId TaintInfo::objectOf(const llvm::Value *site, const Specialization &S) c
   return soleObjectOfSite(I, it->second, site);
 }
 
+bool TaintInfo::uniformCells(ObjectId id) const {
+  const ImplState &I = needImpl(impl);
+  if (id >= I.objects.size())
+    internalError("taint: unknown object id");
+  const Object &O = I.objects[id];
+  const Site &site = I.sites[O.site];
+  if (O.column >= 0 || site.stride)
+    return true;   // one field column of an array of structs: one scalar per element (rule 20)
+  llvm::Type *ty = nullptr;
+  if (auto *AI = dyn_cast<llvm::AllocaInst>(site.v))
+    ty = AI->getAllocatedType();
+  else if (auto *GV = dyn_cast<llvm::GlobalVariable>(site.v))
+    ty = GV->getValueType();
+  else if (auto *AR = dyn_cast<llvm::Argument>(site.v); AR && (AR->hasByValAttr() || AR->hasStructRetAttr()))
+    ty = AR->hasByValAttr() ? AR->getParamByValType() : AR->getParamStructRetType();
+  while (ty && (ty->isArrayTy() || ty->isVectorTy()))
+    ty = ty->isArrayTy() ? ty->getArrayElementType() : cast<llvm::VectorType>(ty)->getElementType();
+  return !ty || !ty->isStructTy();
+}
+
 ObjClass TaintInfo::classOf(ObjectId id) const {
   const ImplState &I = needImpl(impl);
   if (id >= I.objects.size())

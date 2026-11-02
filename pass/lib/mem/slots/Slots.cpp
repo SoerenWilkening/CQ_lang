@@ -1703,6 +1703,15 @@ struct Site { ObjectId o; ObjInfo *info; Addr a; bool beyond = false; Type *runT
 Site siteOf(LoweringContext &ctx, FnState &st, const Instruction &I, const Value *ptr, Type *ty,
             int64_t extra = 0) {
   ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
+  // cq-1c5j (CR rules 18, 20, 21): a pointer derived from a clone's formal names the caller's object, whichever
+  // call site's it is (musl's __rem_pio2 handed sin's y and cos's y): the clone's access is the same cell of the
+  // object the formal points into, the objects' cells all handle cells of one scalar type (rule 20).
+  if (objs.size() > 1) {
+    Addr fa = decompose(ptr, ctx.M.getDataLayout());
+    if (fa.ok && isa<Argument>(fa.root) && !ctx.S.isEntry() &&
+        all_of(objs, [&](ObjectId o) { return ctx.T.classOf(o) == ObjClass::Slot && ctx.T.uniformCells(o); }))
+      objs = objs.take_front(1);
+  }
   if (objs.size() != 1)
     unimplemented("mem-slots: a classical pointer into " + std::to_string(objs.size()) +
                       " objects (a pointer phi/select over slot objects)",
