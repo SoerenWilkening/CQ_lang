@@ -150,7 +150,8 @@ bool isInvertMarker(const Function *F) {
   return F && (F->getName() == "__cq_invert_begin" || F->getName() == "__cq_invert_end");
 }
 
-// LLVM math intrinsics that rule 18 routes to the libm function of the same name (175, 184). The
+// LLVM math intrinsics that rule 18 routes to the libm function of the same name (175, 184); the same
+// set as spine's isLibmIntrinsic (Classify.cpp), which sends each to calls::lowerLifted. The
 // templates (CR §1.2) cover the rest (fabs, sqrt, floor, fma, ...), which stay ordinary opcodes.
 std::optional<std::string> libmNameOf(const Function *F) {
   if (!F || !F->isIntrinsic())
@@ -162,11 +163,25 @@ std::optional<std::string> libmNameOf(const Function *F) {
       {Intrinsic::tan, "tan"},     {Intrinsic::asin, "asin"},   {Intrinsic::acos, "acos"},
       {Intrinsic::atan, "atan"},   {Intrinsic::sinh, "sinh"},   {Intrinsic::cosh, "cosh"},
       {Intrinsic::tanh, "tanh"},   {Intrinsic::ldexp, "ldexp"}, {Intrinsic::frexp, "frexp"},
+      {Intrinsic::nearbyint, "nearbyint"}, {Intrinsic::roundeven, "roundeven"},
+      {Intrinsic::lround, "lround"},       {Intrinsic::llround, "llround"},
+      {Intrinsic::lrint, "lrint"},         {Intrinsic::llrint, "llrint"},
+      {Intrinsic::minimum, "fminimum"},    {Intrinsic::maximum, "fmaximum"},
   };
+  Type *T = F->getFunctionType()->getParamType(0);
+  if (F->getIntrinsicID() == Intrinsic::powi) {
+    // No C name: LLVM's own libcall for it is compiler-rt's __powi<m>f2 (the bundle's library).
+    if (T->isFloatTy())
+      return std::string("__powisf2");
+    if (T->isDoubleTy())
+      return std::string("__powidf2");
+    if (T->isX86_FP80Ty())
+      return std::string("__powixf2");
+    return std::nullopt;
+  }
   auto it = names.find(F->getIntrinsicID());
   if (it == names.end())
     return std::nullopt;
-  Type *T = F->getFunctionType()->getParamType(0);
   std::string n = it->second;
   if (T->isFloatTy())
     n += "f";

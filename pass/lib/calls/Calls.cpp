@@ -939,6 +939,16 @@ std::string calleeName(const Function &F, const Value *at) {
     internalError("calls: an intrinsic whose name is not llvm.<name>.<types>", at);
   std::string base = n.take_until([](char c) { return c == '.'; }).str();
   Type *t = F.arg_size() ? F.getFunctionType()->getParamType(0) : nullptr;
+  // The intrinsics whose C function has another name (taint's libmNameOf names the same): IEEE 754-2019
+  // minimum/maximum are C23 fminimum/fmaximum; powi has no C name and is LLVM's own libcall,
+  // compiler-rt's __powi<m>f2.
+  if (F.getIntrinsicID() == Intrinsic::minimum)
+    base = "fminimum";
+  else if (F.getIntrinsicID() == Intrinsic::maximum)
+    base = "fmaximum";
+  else if (F.getIntrinsicID() == Intrinsic::powi && t &&
+           (t->isFloatTy() || t->isDoubleTy() || t->isX86_FP80Ty()))
+    return t->isFloatTy() ? "__powisf2" : t->isDoubleTy() ? "__powidf2" : "__powixf2";
   if (t && t->isDoubleTy())
     return base;
   if (t && t->isFloatTy())
