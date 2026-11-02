@@ -1565,6 +1565,45 @@ std::optional<InvChain> invChainOf(const Specialization &S, unsigned argNo, unsi
       cellTy = st->getValueOperand()->getType();
     }
   }
+  if (stores.size() > 1) {
+    // cq-gujb (rules 6, 9, 20): the new content is a function of the old one only if some load of the cell may
+    // read the caller's content: a load some path from the entry reaches without passing a store of the cell.
+    // Otherwise there is no bijection of the old content (the cell is a value of the clone, the twin restores the
+    // caller's).
+    int64_t lo = int64_t(cell * DL.getTypeStoreSize(stores.front()->getValueOperand()->getType()));
+    int64_t hi = lo + int64_t(DL.getTypeStoreSize(stores.front()->getValueOperand()->getType()));
+    auto storeIn = [&](const BasicBlock *bb, const Instruction *upto) {
+      for (const Instruction &I : *bb) {
+        if (&I == upto)
+          return false;
+        if (is_contained(stores, &I))
+          return true;
+      }
+      return false;
+    };
+    bool readsOld = false;
+    for (Instruction &I : instructions(F)) {
+      auto *ld = dyn_cast<LoadInst>(&I);
+      if (!ld || readsOld)
+        continue;
+      auto [b, off] = baseOffset(ld->getPointerOperand(), DL);
+      if (b != A || off >= hi || off + int64_t(DL.getTypeStoreSize(ld->getType())) <= lo)
+        continue;
+      SmallVector<const BasicBlock *, 16> work{&F.getEntryBlock()};
+      SmallPtrSet<const BasicBlock *, 16> seen{&F.getEntryBlock()};
+      while (!work.empty() && !readsOld) {
+        const BasicBlock *bb = work.pop_back_val();
+        if (bb == ld->getParent() && !storeIn(bb, ld))
+          readsOld = true;
+        else if (!storeIn(bb, nullptr))
+          for (const BasicBlock *sc : successors(bb))
+            if (seen.insert(sc).second)
+              work.push_back(sc);
+      }
+    }
+    if (!readsOld)
+      return std::nullopt;
+  }
   if (stores.size() != 1)
     unimplemented("calls: _inv<c> (CR §1.4): a clone cell written by " + std::to_string(stores.size()) +
                       " stores at a constant offset (one store of a bijective update is built)",
