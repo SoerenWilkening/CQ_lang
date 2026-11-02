@@ -774,7 +774,9 @@ Value *calleeCollapse(LoweringContext &ctx, Value *handle, const Instruction &at
     m->setMetadata("cq.measure", MDNode::get(ctx.M.getContext(), {}));
     if (m->getType() != t)
       internalError("spine: re-read cqrt_measure result type differs from the actual's", &at);
-    ctx.unc().setRole(ctx.unc().idOf(src), Role::Measured);
+    // CR rule 2 (cq-29ej): a source the call measures on some classical paths only is lowered as unmeasured.
+    if (measuredOnEveryPath(ctx, cm.arg, cm.call))
+      ctx.unc().setRole(ctx.unc().idOf(src), Role::Measured);
     sh.measured[src] = {cm.call, m};
     sh.calleeMeasured.erase(src);
   }

@@ -231,6 +231,26 @@ private:
   }
 
   // ---- classical-control-on-taint ----
+  // A handle as the program moves it: a handle, a literal, or a phi / select over such values.
+  bool handleLike(const Value *V) const {
+    SmallPtrSet<const Value *, 8> seen;
+    SmallVector<const Value *, 8> w{V};
+    while (!w.empty()) {
+      const Value *X = w.pop_back_val();
+      if (!seen.insert(X).second || isa<ConstantInt>(X) || H.count(X))
+        continue;
+      if (auto *P = dyn_cast<PHINode>(X)) {
+        for (const Value *In : P->incoming_values())
+          w.push_back(In);
+      } else if (auto *S = dyn_cast<SelectInst>(X)) {
+        w.push_back(S->getTrueValue());
+        w.push_back(S->getFalseValue());
+      } else {
+        return false;
+      }
+    }
+    return V->getType()->isIntegerTy(32);
+  }
   void controlOnTaint() {
     SmallPtrSet<const Value *, 32> T(H.begin(), H.end());
     bool changed = true;
@@ -238,6 +258,11 @@ private:
       changed = false;
       for (const Instruction &I : instructions(F)) {
         if (T.count(&I))
+          continue;
+        // CR §1.1 (ruling 2026-11-02): the lowered program may compare handles (icmp eq/ne of two handles, or
+        // a handle and a literal such as 0, "no rail"): a classical decision, not a value computed from one.
+        if (auto *Cmp = dyn_cast<ICmpInst>(&I); Cmp && Cmp->isEquality() && handleLike(Cmp->getOperand(0)) &&
+                                                handleLike(Cmp->getOperand(1)))
           continue;
         if (!(isa<BinaryOperator>(I) || isa<UnaryOperator>(I) || isa<CmpInst>(I) || isa<CastInst>(I) ||
               isa<PHINode>(I) || isa<SelectInst>(I) || isa<FreezeInst>(I) || isa<GetElementPtrInst>(I) ||
@@ -298,6 +323,10 @@ private:
         if (isa<InsertValueInst>(I) && n == 1)
           continue;
         if (isReturnedHandleZExt(I))
+          continue;
+        // CR §1.1 (ruling 2026-11-02): handles may be compared (icmp eq/ne against a handle or a literal).
+        if (auto *Cmp = dyn_cast<ICmpInst>(&I); Cmp && Cmp->isEquality() && handleLike(Cmp->getOperand(0)) &&
+                                                handleLike(Cmp->getOperand(1)))
           continue;
         if (auto *CB = dyn_cast<CallBase>(&I)) {
           if (CB->isArgOperand(&U)) {

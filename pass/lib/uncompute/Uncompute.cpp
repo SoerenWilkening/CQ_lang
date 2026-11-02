@@ -1709,6 +1709,7 @@ struct Uncompute::Impl {
     Instruction *at;               // a phi: the top of its block
     bool set;                      // set: true; else clear by cond
     RailId merge = kNone, arm = kNone; // the clear's cond: chooses(merge, arm); merge kNone: true
+    Value *cond = nullptr;             // cq-4lqy: a clear by this run-time i1 instead (merge unused)
   };
   Value *flagAt(Instruction *at, ArrayRef<FlagEv> evs, bool dflt) {
     LLVMContext &C = at->getContext();
@@ -1717,7 +1718,7 @@ struct Uncompute::Impl {
     // The conditions first: they may add phis and selects beside merges.
     SmallVector<Value *, 8> conds;
     for (const FlagEv &e : evs)
-      conds.push_back(e.set ? T : e.merge == kNone ? static_cast<Value *>(T) : chooses(e.merge, e.arm));
+      conds.push_back(e.set ? T : e.cond ? e.cond : e.merge == kNone ? static_cast<Value *>(T) : chooses(e.merge, e.arm));
     DenseMap<const BasicBlock *, SmallVector<unsigned, 2>> byBlock;
     for (unsigned i = 0; i < evs.size(); ++i)
       if (evs[i].at && evs[i].at->getParent())
@@ -1959,6 +1960,14 @@ struct Uncompute::Impl {
     return a;
   }
 
+  // CR §1.3 (cq-lshe, 2026-11-02): a realloc of a bus with a leaf the function did not allocate (a formal's,
+  // a loaded one) reads the old logical size by cqrt_qram_size(a) right before the realloc; keyed by the
+  // realloc's record, used by its release qram_realloc_<W>_unc(a', n_old).
+  DenseMap<unsigned, Value *> reallocOldSize;
+  bool foreignBus(RailId a) {
+    return any_of(leaves(a), [&](RailId x) { return rails[x].creator == kNone; });
+  }
+
   // cq-vtfq: the logical size a bus was made with (qram_alloc's n, a realloc's n).
   // cq-lshe (CR rule 9): a merged bus's size is its chosen arm's, a select over the arms' sizes on the
   // classical choice (chooses); at must lie where the merge's choice values are available (null: check only).
@@ -1983,8 +1992,8 @@ struct Uncompute::Impl {
     }
     const Rail &r = rails[b];
     if (r.creator == kNone)
-      unimplemented("awaiting owner ruling: SPEC_ISSUES qram_realloc of a QRAM bus the function did not allocate "
-                    "(qram_realloc_<W>_unc needs the old logical size, which no ABI call reports)",
+      internalError("uncompute: the size of a QRAM bus the function did not allocate (its realloc reads it by "
+                    "cqrt_qram_size, foreignBus)",
                     r.handle);
     CallInst *f = records[r.creator].forward;
     switch (info[r.creator].kind) {
@@ -2008,7 +2017,9 @@ struct Uncompute::Impl {
       CallInst *fwd = records[r.creator].forward;
       RailId a = info[r.creator].reads.front();
       FunctionType *UT = FunctionType::get(Type::getVoidTy(C), {Type::getInt32Ty(C), Type::getInt32Ty(C)}, false);
-      Value *n = busSize(a, &*B.GetInsertPoint());
+      Value *n = reallocOldSize.lookup(r.creator);
+      if (!n)
+        n = busSize(a, &*B.GetInsertPoint());
       return track(B.CreateCall(declareFn(M, (fwd->getCalledFunction()->getName() + "_unc").str(), UT, fwd),
                                 {r.handle, n}));
     }
@@ -2324,15 +2335,13 @@ struct Uncompute::Impl {
         written = true;
         continue;
       }
-      // cq-zh7z: the gate's handle may name an operand rail through memory (a store or load of a
-      // cell that may hold it). Rule 5 needs the _unc before the gate when it is that rail, and CR §0 needs
-      // it cleaned when it is not; which one holds is only known at run time.
-      unimplemented("awaiting owner ruling: SPEC_ISSUES a gate through a slot cell that may name an operand rail "
-                    "of pending garbage: a non-diagonal gate on a handle that may name an operand rail of " +
-                        describe(r.handle) +
-                        " through a slot cell precedes its earliest uncompute (whether it hits that rail is "
-                        "decided at run time, by which rail the cell holds)",
-                    e);
+      // cq-zh7z, cq-4lqy (CR §0, rule 5; §1.1: handles are classical values the lowered program may
+      // compare): the gate's handle may name an operand rail x of g's item through memory (a cell that may
+      // hold it). Where it does, x is entangled and g stays allocated on that path (as for a direct hit);
+      // where it does not, g is cleaned as usual. Which one holds is decided at run time by comparing the
+      // gate's handle with x's (handle 0, no rail, where x does not exist at the gate).
+      evs.push_back({e, false, kNone, kNone, aliasHitCond(g, e)});
+      gated = true;
     }
     // The record that defines g's value (the gates and choices before it concern an older instance).
     Instruction *def = r.creator != kNone ? records[r.creator].forward : dyn_cast<Instruction>(r.handle);
@@ -2424,6 +2433,203 @@ struct Uncompute::Impl {
       r.exitsDone.insert(pos.bb);
     if (guard && first != pos.before)
       wraps.push_back({g, first, end, cond});
+  }
+
+  // The logical width of the rail behind handle h, read off a runtime call that takes it (CR §1.2, §1.3:
+  // the operand's width is spelled in the callee's name), through phis, selects and freezes of handles.
+  static std::optional<RailType> handleWidth(Value *h) {
+    SmallVector<Value *, 8> work{h};
+    SmallPtrSet<Value *, 8> seen{h};
+    while (!work.empty()) {
+      Value *v = work.pop_back_val();
+      for (Use &u : v->uses()) {
+        User *U = u.getUser();
+        if (isa<PHINode>(U) || isa<FreezeInst>(U) || (isa<SelectInst>(U) && u.getOperandNo() != 0)) {
+          if (seen.insert(U).second)
+            work.push_back(U);
+          continue;
+        }
+        auto *c = dyn_cast<CallInst>(U);
+        if (!c || !c->getCalledFunction() || !c->isArgOperand(&u))
+          continue;
+        StringRef n = c->getCalledFunction()->getName();
+        unsigned i = c->getArgOperandNo(&u);
+        bool unc = false;
+        if (std::optional<abi::TemplateSpec> t = abi::parseTemplate(n, &unc)) {
+          if (unc) {
+            if (i == 0)
+              return templateResultType(*t);
+            --i;
+          }
+          if (StringRef(t->op).starts_with("qrom_load") || (t->rm == abi::TemplateSpec::RmRail && i + 1 == c->arg_size()))
+            continue;
+          if (t->op == "select" && i == 0)
+            return RailType{Kind::Int, 1};
+          return t->w;
+        }
+        if (std::optional<abi::CoreSpec> k = abi::parseCore(n)) {
+          unsigned j = i - (k->ctl ? 1 : 0);
+          if (k->ctl && i == 0)
+            return RailType{Kind::Int, 1};
+          switch (k->op) {
+          case abi::Core::Measure: case abi::Core::Copy: case abi::Core::Xorc: case abi::Core::Ry:
+          case abi::Core::TapeWrite:
+            if (k->op != abi::Core::TapeWrite || j == 1)
+              return k->w;
+            break;
+          case abi::Core::RyQAngle:
+            return j == 0 ? k->w : RailType{Kind::Fp, 64};
+          case abi::Core::RzQAngle:
+            return RailType{Kind::Fp, 64};
+          case abi::Core::NotI1: case abi::Core::AndI1: case abi::Core::OrI1: case abi::Core::XorI1:
+          case abi::Core::RzI1: case abi::Core::AbortI1:
+            return RailType{Kind::Int, 1};
+          case abi::Core::QramStore:
+            if (j == 2)
+              return k->w;
+            break;
+          default:
+            break;
+          }
+        }
+      }
+    }
+    return std::nullopt;
+  }
+
+  // cq-4lqy (CR rule 18 twin point): the kept member m of fwd's call group is copied right after its
+  // definition into a fresh rail c, and c continues as the value: every IR use of m's handle other than the
+  // copy, every record operand, read, in-place write, noted use and gate on m move to c, which takes m's
+  // role; m is garbage again (its twin zeroes it, then it is freed).
+  void copyOutResult(RailId m, CallInst *fwd) {
+    Value *h = rails[m].handle;
+    auto *hI = dyn_cast<Instruction>(h);
+    if (!hI || !hI->getNextNode())
+      internalError("uncompute: a kept clone result that is not an instruction in a block", fwd);
+    Module &M = *fwd->getModule();
+    std::optional<RailType> wo = handleWidth(h);
+    if (!wo)
+      internalError("uncompute: a kept clone result whose width no gate, template or copy reading it names", fwd);
+    RailType w = *wo;
+    IRBuilder<> B(hI->getNextNode());
+    CallInst *c = track(B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Alloc, w}),
+                                     {Constant::getNullValue(irTypeOf(M.getContext(), w))}));
+    CallInst *cp = track(B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Copy, w}), {h, c}));
+    h->replaceUsesWithIf(c, [&](Use &u) { return u.getUser() != cp; });
+    Role role = rails[m].role;
+    RailId cid = newRail(c, role, "copyOutResult"); // may move rails: indices only from here
+    Rail &rm = rails[m], &rc = rails[cid];
+    for (unsigned k = 0; k < records.size(); ++k) {
+      for (Operand &o : records[k].ops)
+        if (o.v == h)
+          o.v = c;
+      for (RailId &x : info[k].reads)
+        if (x == m) {
+          x = cid;
+          rc.readerRecs.push_back(k);
+        }
+      if (records[k].out == m && k != rm.creator) {
+        records[k].out = cid;
+        if (info[k].item == m)
+          info[k].item = cid;
+      }
+    }
+    llvm::erase_if(rm.readerRecs, [&](unsigned k) { return is_contained(info[k].reads, cid); });
+    rc.writes = std::move(rm.writes);
+    rm.writes.clear();
+    rc.uses = std::move(rm.uses);
+    rm.uses.clear();
+    rc.hits = std::move(rm.hits);
+    rm.hits.clear();
+    rc.aliasHits = std::move(rm.aliasHits);
+    rm.aliasHits.clear();
+    rc.condHits = std::move(rm.condHits);
+    rm.condHits.clear();
+    rc.cleanupReaders = std::move(rm.cleanupReaders);
+    rm.cleanupReaders.clear();
+    for (RailId o = 0; o < rails.size(); ++o)
+      if (rails[o].cleanup)
+        for (RailId &x : rails[o].cleanup->reads)
+          if (x == m)
+            x = cid;
+    for (RailId mg : SmallVector<RailId, 2>(rm.mergedInto)) {
+      if (rails[mg].group == rm.group && rails[mg].group != kNone)
+        continue;   // a sibling member's alias of the leader stays on the call's rail
+      for (RailId &a : rails[mg].arms)
+        if (a == m)
+          a = cid;
+      rc.mergedInto.push_back(mg);
+      llvm::erase(rm.mergedInto, mg);
+    }
+    for (auto &kv : gateTargets)
+      for (const Value *&t : kv.second)
+        if (t == h)
+          t = c;
+    for (Deferred &d : defs) {
+      for (RailId &x : d.reads)
+        if (x == m)
+          x = cid;
+      for (RailId &x : d.exits)
+        if (x == m)
+          x = cid;
+    }
+    rm.role = Role::Garbage;
+    rm.explicitKept = false;
+    rc.explicitKept = true;
+  }
+
+  // cq-4lqy (CR §0, §1.1): the run-time condition "the alias gate e hits a rail g's item reads (or g)": an
+  // icmp eq of each handle e was noted on against each such rail's handle as it is at e (0 where the rail
+  // does not exist there), or'ed. Exact: a rail M3b rules out compares unequal at run time anyway.
+  Value *aliasHitCond(RailId g, Instruction *e) {
+    SmallVector<RailId, 8> xs{g};
+    for (RailId x0 : itemReads(g))
+      for (RailId x : leaves(x0))
+        if (!is_contained(xs, x))
+          xs.push_back(x);
+    if (rails[g].cleanup)
+      for (RailId x0 : rails[g].cleanup->reads)
+        for (RailId x : leaves(x0))
+          if (!is_contained(xs, x))
+            xs.push_back(x);
+    auto tg = gateTargets.find(e);
+    if (tg == gateTargets.end() || tg->second.empty())
+      internalError("uncompute: an alias hit by a gate with no noted target", e);
+    LLVMContext &C = e->getContext();
+    Type *I32 = Type::getInt32Ty(C);
+    Value *any = nullptr;
+    for (RailId x : xs) {
+      if (!is_contained(rails[x].aliasHits, e))
+        continue;
+      Value *xh = rails[x].handle;
+      Value *at = xh;
+      if (auto *xi = dyn_cast<Instruction>(xh)) {
+        BasicBlock *D = xi->getParent(), *Eb = e->getParent();
+        if (!(D == Eb ? xi->comesBefore(e) : dominates(D, Eb))) {
+          // x's handle as it is at e: 0 on the paths where it was not defined (CR §1.1).
+          SmallVector<BasicBlock *, 4> ps(predecessors(Eb));
+          if (D == Eb || ps.empty()) {
+            at = ConstantInt::get(I32, 0);
+          } else if (ps.size() == 1) {
+            at = carryTo(ps[0], true, D, xh, ConstantInt::get(I32, 0), "cq.h");
+          } else {
+            PHINode *phi = PHINode::Create(I32, ps.size(), "cq.h");
+            phi->insertInto(Eb, Eb->begin());
+            emitted.insert(phi);
+            for (BasicBlock *p : ps)
+              phi->addIncoming(carryTo(p, true, D, xh, ConstantInt::get(I32, 0), "cq.h"), p);
+            at = phi;
+          }
+        }
+      }
+      for (const Value *t : tg->second) {
+        Value *eq = track(new ICmpInst(e, ICmpInst::ICMP_EQ, const_cast<Value *>(t), at, "cq.hit"));
+        any = any ? track(BinaryOperator::CreateOr(any, eq, "cq.hit", e)) : eq;
+      }
+    }
+    if (!any)
+      internalError("uncompute: an alias-hit barrier with no rail of the item it may hit", e);
+    return any;
   }
 
   // The sandwich of g's item: every in-place write record on a rail the item reads, or on a rail such a
@@ -3152,330 +3358,53 @@ struct Uncompute::Impl {
     }
   }
 
-  // ---- a computed rail measured on some paths only (cq-8lf8) ---------------------------------------
+  // ---- a computed rail measured on some paths only (cq-8lf8, cq-4lqy) -------------------------------
   //
-  // CR rule 2 keeps a measured rail allocated; a role is per rail, so Role::Measured also kept the rail
-  // on the paths that never reach its measurement, where it is garbage (r8: y = 3x + 1 measured on an
-  // early return, the loop path left y live). On those paths the rail is resolved like any garbage, at
-  // the end of the unmeasured region: in each block P that no measurement of it reaches but from which
-  // the program leaves that region (a return, or the single edge into a block a measurement reaches),
-  // right after the last use in P. An edge into a block from which a measurement is still reachable is
-  // no such exit: the rail stays kept on that path (cq-zpe8: freed there, a later measurement after the
-  // join read a freed rail). Its sources may be gone by then (they were freed as soon as the
-  // rail looked kept), so the item recomputes the rail into a fresh t from kept rails (replaying the
-  // records of every resolvable source too), copies t into the rail (|0>, rule 6's clean-up shape),
-  // undoes the recomputation in reverse and frees (Bennett's compute-copy-uncompute, local to P).
-  // Unimplemented: a measured rail defined in a loop (one that reaches its measurement, or one whose
-  // unmeasured paths reach a P: only the loop's construction knows its old instances), a P that also branches
-  // elsewhere, a use or a pending reader after P, a barrier on a kept rail the item reads between its
-  // record and the item, a source that is a merge, a QRAM rail, a loop's deferred rail or written in
-  // place after the record that read it.
-  DenseSet<std::pair<RailId, const BasicBlock *>> unmeasuredDone;
-
+  // CR rule 2 (ruling 2026-11-02, cq-29ej): collapse is static. A rail measured on some classical paths
+  // only is lowered as unmeasured: the consumer gives Role::Measured only to a rail measured on every path
+  // from its definition to a return (spine::measuredOnEveryPath, on the source CFG), and otherwise measures
+  // a kept basis copy and leaves the rail's role alone. Checked here once every block the definition
+  // reaches is built: a Measured rail with a direct measurement from whose definition a return is reached
+  // without passing one breaks that contract.
   static bool isMeasureOf(const User *u, const Value *h) {
     auto *c = dyn_cast<CallInst>(u);
     return c && c->getCalledFunction() && c->getCalledFunction()->getName().starts_with("cqrt_measure_") &&
            c->arg_size() && c->getArgOperand(0) == h;
   }
 
-  void resolveUnmeasured(BasicBlock *Rb) {
+  void resolveUnmeasured(BasicBlock *) {
     for (RailId g = 0; g < rails.size(); ++g) {
       Rail &r = rails[g];
-      if (r.role != Role::Measured || r.released || isMerge(g) || r.creator == kNone || r.cleanup || r.qram ||
-          r.popBus != kNone || info[r.creator].kind != RecKind::Template || !r.hits.empty() || !r.aliasHits.empty())
+      if (r.role != Role::Measured || isMerge(g) || r.creator == kNone || info[r.creator].kind != RecKind::Template)
         continue;
       SmallPtrSet<const BasicBlock *, 4> mb;
       for (User *u : r.handle->users())
         if (isMeasureOf(u, r.handle) && cast<Instruction>(u)->getParent())
           mb.insert(cast<Instruction>(u)->getParent());
       const BasicBlock *D = defBlock(g);
-      if (mb.empty() || mb.count(D) || !reaches(D, Rb))
+      if (mb.empty() || mb.count(D))
         continue;
-      Instruction *at = records[r.creator].forward;
-      // Decided once every block reachable from the definition is emitted: a later return's flush
-      // sees them (a function's last return is lowered after the blocks that reach it).
-      {
-        bool open = false;
-        SmallPtrSet<const BasicBlock *, 16> seen{D};
-        SmallVector<const BasicBlock *, 16> w{D};
-        while (!w.empty() && !open) {
-          const Instruction *t = w.pop_back_val()->getTerminator();
-          if (!t) {
-            open = true;
-            break;
-          }
-          for (const BasicBlock *s : successors(t))
-            if (seen.insert(s).second)
-              w.push_back(s);
+      SmallPtrSet<const BasicBlock *, 16> seen;
+      SmallVector<const BasicBlock *, 16> w{D};
+      bool open = false, unmeasuredRet = false;
+      while (!w.empty() && !open) {
+        const Instruction *t = w.pop_back_val()->getTerminator();
+        if (!t) {
+          open = true;
+          break;
         }
-        if (open)
-          continue;
+        if (isa<ReturnInst>(t))
+          unmeasuredRet = true;
+        for (const BasicBlock *s : successors(t))
+          if (s != D && !mb.count(s) && seen.insert(s).second)
+            w.push_back(s);
       }
-      // Blocks a measurement reaches, and the blocks reached from D without passing one.
-      SmallPtrSet<const BasicBlock *, 16> mreach(mb.begin(), mb.end());
-      SmallVector<const BasicBlock *, 16> work(mb.begin(), mb.end());
-      auto succs = [&](const BasicBlock *b) {
-        const Instruction *t = b->getTerminator();
-        if (!t)
-          internalError("uncompute: a rail measured on some paths only, " + describe(r.handle) +
-                            ", reaches a block not yet emitted (every block its definition reaches was checked built)",
-                        at);
-        return successors(b);
-      };
-      while (!work.empty())
-        for (const BasicBlock *s : succs(work.pop_back_val()))
-          if (mreach.insert(s).second)
-            work.push_back(s);
-      if (mreach.count(D))
-        unimplemented("uncompute: a rail measured on some paths only, " + describe(r.handle) +
-                          ", is defined in a loop that reaches its measurement",
-                      at);
-      SmallPtrSet<const BasicBlock *, 16> un{D};
-      work.assign({D});
-      SmallVector<BasicBlock *, 4> ps;
-      bool cyclic = false;
-      while (!work.empty()) {
-        const BasicBlock *b = work.pop_back_val();
-        if (mreach.count(b))
-          continue;
-        const Instruction *t = b->getTerminator();
-        bool exits = isa<ReturnInst>(t);
-        for (const BasicBlock *s : succs(b)) {
-          if (s == D) {
-            cyclic = true;   // a new instance: the loop's construction owns the old one
-            continue;
-          }
-          if (mb.count(s))
-            continue;   // the edge into a measurement: measured on that path
-          if (mreach.count(s)) {
-            // cq-zpe8: a measurement still reachable after the join reads the rail on this path too, so
-            // it stays kept here (a clean-up would free it before that measurement).
-            if (llvm::none_of(mb, [&](const BasicBlock *m) { return reaches(s, m); }))
-              exits = true;
-          } else if (un.insert(s).second)
-            work.push_back(s);
-        }
-        if (exits)
-          ps.push_back(const_cast<BasicBlock *>(b));
-      }
-      if (cyclic && !ps.empty())
-        unimplemented("uncompute: a rail measured on some paths only, " + describe(r.handle) +
-                          ", is defined in a loop and leaves its unmeasured paths in " + describe(ps.front()),
-                      at);
-      // cq-50qq: a return reached both from a measurement and from D on a path that never measures
-      // the rail (it crossed a join from which a later measurement was still reachable, then left
-      // without it). On those paths the rail is garbage there; the branches that decide it are
-      // classical (a measurement in a quantum arm runs on every path, rule 2), so the item runs under
-      // a classical flag "measured on this path" (false after D, true after each measurement block),
-      // branched around on the measured paths, where the rail stays kept.
-      SmallPtrSet<const BasicBlock *, 16> psSet(ps.begin(), ps.end());
-      SmallVector<BasicBlock *, 4> mixed;
-      {
-        SmallPtrSet<const BasicBlock *, 16> seen{D};
-        SmallVector<const BasicBlock *, 16> w{D};
-        while (!w.empty()) {
-          const BasicBlock *b = w.pop_back_val();
-          if (psSet.count(b))
-            continue;   // resolved on its own exit edge
-          if (mreach.count(b) && isa<ReturnInst>(b->getTerminator()))
-            mixed.push_back(const_cast<BasicBlock *>(b));
-          for (const BasicBlock *s : succs(b))
-            if (s != D && !mb.count(s) && seen.insert(s).second)
-              w.push_back(s);
-        }
-      }
-      if (cyclic && !mixed.empty())
-        unimplemented("uncompute: a rail measured on some paths only, " + describe(r.handle) +
-                          ", is defined in a loop and reaches a return unmeasured in " + describe(mixed.front()),
-                      at);
-      for (BasicBlock *P : ps)
-        if (unmeasuredDone.insert({g, P}).second)
-          resolveUnmeasuredAt(g, P);
-      for (BasicBlock *R : mixed)
-        if (unmeasuredDone.insert({g, R}).second) {
-          // Built by hand: the construction fills its phis' incoming values later, and SSAUpdater
-          // would read an empty phi as a block without predecessors.
-          LLVMContext &C = R->getContext();
-          DenseMap<const BasicBlock *, Value *> atEnd;
-          std::function<Value *(const BasicBlock *)> flagAt = [&](const BasicBlock *b) -> Value * {
-            if (auto it = atEnd.find(b); it != atEnd.end())
-              return it->second;
-            if (mb.count(b) || psSet.count(b))   // measured here, or cleaned on its exit edge already
-              return atEnd[b] = ConstantInt::getTrue(C);
-            if (b == D)
-              return atEnd[b] = ConstantInt::getFalse(C);
-            if (!dominates(D, b))
-              return atEnd[b] = PoisonValue::get(Type::getInt1Ty(C));   // never on a path from D
-            SmallVector<BasicBlock *, 4> pr(predecessors(const_cast<BasicBlock *>(b)));
-            if (pr.size() == 1) {
-              atEnd[b] = PoisonValue::get(Type::getInt1Ty(C));   // a single-predecessor cycle is unreachable
-              Value *v = flagAt(pr.front());
-              return atEnd[b] = v;
-            }
-            BasicBlock *bb = const_cast<BasicBlock *>(b);
-            PHINode *phi = PHINode::Create(Type::getInt1Ty(C), pr.size(), "", bb->begin());
-            emitted.insert(phi);
-            atEnd[b] = phi;
-            for (BasicBlock *p : pr)
-              phi->addIncoming(flagAt(p), p);
-            return phi;
-          };
-          resolveUnmeasuredAt(g, R, flagAt(R));
-        }
+      if (!open && unmeasuredRet)
+        internalError("uncompute: " + describe(r.handle) + " has Role::Measured but a return is reached from its "
+                      "definition without passing its measurement (CR rule 2: a rail measured on some classical "
+                      "paths only is lowered as unmeasured; the consumer measures a copy)",
+                      records[r.creator].forward);
     }
-  }
-
-  // measured: null, or a classical i1 that holds on the paths reaching P where the rail was measured;
-  // the item then runs in a block of its own that those paths branch around.
-  void resolveUnmeasuredAt(RailId g, BasicBlock *P, Value *measured = nullptr) {
-    Rail &r = rails[g];
-    Instruction *T = P->getTerminator();
-    auto refuse = [&](const std::string &why, const Value *v) {
-      unimplemented("uncompute: a rail measured on some paths only, " + describe(r.handle) + ", " + why, v);
-    };
-    if (!isa<ReturnInst>(T) && T->getNumSuccessors() != 1)
-      refuse("leaves its unmeasured paths by a block that also branches elsewhere", T);
-    if (!dominates(defBlock(g), P))
-      refuse("may or may not exist where its unmeasured path leaves", T);
-    // Its uses (through merges too) and the items of its readers must precede the item, in P.
-    SmallVector<Instruction *, 8> as = anchors(g);
-    for (RailId o : readersOf(g)) {
-      if (resolvable(o) || !rails[o].exitsDone.empty())
-        refuse("is read by a pending rail " + describe(rails[o].handle) + " on a path where it is not measured", T);
-      for (auto &kv : itemEnd)
-        if (kv.first.first == o)
-          as.push_back(kv.second);
-    }
-    SmallVector<Instruction *, 8> inP;
-    for (Instruction *a : as) {
-      if (!a->getParent() || isMeasureOf(a, r.handle))
-        continue;
-      if (a->getParent() == P) {
-        if (a->isTerminator())
-          refuse("is read by the terminator of the block where its unmeasured path leaves", a);
-        inP.push_back(a);
-      } else if (reaches(P, a->getParent())) {
-        refuse("is still used after the block where its unmeasured path leaves", a);
-      }
-    }
-    Pos pos = afterLatest(P, inP, g);
-    Instruction *prevAt = pos.before->getPrevNode();
-    // Values at the item: kept rails as they are (no barrier since the record that read them), every
-    // other source recomputed by replaying its records.
-    DenseMap<Value *, Value *> vmap;
-    SmallVector<RailId, 4> replayed;
-    std::function<Value *(RailId, Instruction *)> valueOf;
-    IRBuilder<> B(pos.before);
-    auto inBetween = [&](Instruction *e, Instruction *rec) {
-      if (e == rec || !after(e, rec))
-        return false;
-      if (e->getParent() == P)
-        return e->comesBefore(pos.before);
-      return reaches(e->getParent(), P);
-    };
-    auto remapped = [&](CallInst *fwd, Value *outFirst) {
-      SmallVector<Value *, 6> a = argsOf(fwd, outFirst);
-      for (unsigned i = outFirst ? 1 : 0; i < a.size(); ++i)
-        if (auto it = vmap.find(a[i]); it != vmap.end())
-          a[i] = it->second;
-      return a;
-    };
-    valueOf = [&](RailId x, Instruction *rec) -> Value * {
-      Rail &rx = rails[x];
-      if (auto it = vmap.find(rx.handle); it != vmap.end())
-        return it->second;
-      // A source's records define the value g's record read however the source itself is cleaned (its
-      // own item or a rule 6 clean-up), so a replay recomputes it either way.
-      if (isMerge(x) || rx.qram || rx.popBus != kNone || rx.deferred != kNone || rx.ownedBy != kNone)
-        refuse("reads " + describe(rx.handle) + ", which cannot be recomputed where it is resolved", T);
-      if (x != g && keptRole(rx.role) && !rx.released && rx.exitsDone.empty()) {
-        for (Instruction *e : rx.hits)
-          if (inBetween(e, rec))
-            refuse("reads " + describe(rx.handle) + ", which a non-diagonal gate hits before it is resolved", e);
-        for (Instruction *e : rx.aliasHits)
-          if (inBetween(e, rec))
-            refuse("reads " + describe(rx.handle) + ", which a gate may hit through memory before it is resolved", e);
-        for (unsigned w : rx.writes)
-          if (inBetween(records[w].forward, rec))
-            refuse("reads " + describe(rx.handle) + ", which is written in place before it is resolved",
-                   records[w].forward);
-        if (auto *hi = dyn_cast<Instruction>(rx.handle); hi && !dominates(hi->getParent(), P))
-          refuse("reads " + describe(rx.handle) + ", which may not exist where it is resolved", T);
-        return rx.handle;
-      }
-      // A resolvable source: replay its records (none after rec: the value rec read).
-      if (rx.creator == kNone || !rx.hits.empty() || !rx.aliasHits.empty())
-        refuse("reads " + describe(rx.handle) + ", which cannot be recomputed where it is resolved", T);
-      SmallVector<unsigned, 4> recs{rx.creator};
-      for (unsigned w : rx.writes) {
-        if (info[w].kind != RecKind::Involution || (rec && after(records[w].forward, rec)))
-          refuse("reads " + describe(rx.handle) + ", which is written in place", records[w].forward);
-        recs.push_back(w);
-      }
-      Value *nh = nullptr;
-      for (unsigned k : recs) {
-        CallInst *fwd = records[k].forward;
-        if (!dominates(fwd->getParent(), P))
-          refuse("reads " + describe(rx.handle) + ", whose record may not run on its unmeasured path", fwd);
-        for (RailId y : info[k].reads)
-          valueOf(y, fwd);
-        if (k == rx.creator) {
-          if (info[k].kind != RecKind::Template && info[k].kind != RecKind::Seed)
-            refuse("reads " + describe(rx.handle) + ", which cannot be recomputed where it is resolved", fwd);
-          nh = track(B.CreateCall(fwd->getFunctionType(), fwd->getCalledOperand(), remapped(fwd, nullptr)));
-          vmap[rx.handle] = nh;
-        } else {
-          track(B.CreateCall(fwd->getFunctionType(), fwd->getCalledOperand(), remapped(fwd, nullptr)));
-        }
-      }
-      replayed.push_back(x);
-      return nh;
-    };
-    // The rail itself: recompute its value into a fresh t, copy t into it (it becomes |0>, rule 6's
-    // clean-up shape), then undo every recomputation in reverse and free.
-    Value *t = valueOf(g, nullptr);
-    abi::CoreSpec cp{abi::Core::Copy, createdType(records[r.creator])};
-    track(B.CreateCall(abi::declare(*P->getModule(), cp), {t, r.handle}));
-    auto undo = [&](unsigned k, Value *out) {
-      CallInst *fwd = records[k].forward;
-      switch (info[k].kind) {
-      case RecKind::Template:
-        track(B.CreateCall(uncOf(fwd, true), remapped(fwd, out)));
-        break;
-      case RecKind::Involution:
-        track(B.CreateCall(fwd->getFunctionType(), fwd->getCalledOperand(), remapped(fwd, nullptr)));
-        break;
-      case RecKind::Seed:
-        break;
-      default:
-        refuse("has a record that cannot be undone where it is resolved", fwd);
-      }
-    };
-    LLVMContext &C = P->getContext();
-    FunctionType *FT = FunctionType::get(Type::getVoidTy(C), {Type::getInt32Ty(C)}, false);
-    for (auto it = replayed.rbegin(); it != replayed.rend(); ++it) {
-      Rail &rx = rails[*it];
-      Value *nh = vmap[rx.handle];
-      for (auto w = rx.writes.rbegin(); w != rx.writes.rend(); ++w)
-        undo(*w, nullptr);
-      undo(rx.creator, nh);
-      track(B.CreateCall(declareFn(*P->getModule(), "cqrt_free", FT, nh), {nh}));
-    }
-    emitRelease(g, B);
-    if (!measured)
-      return;
-    // P's head (phis included) and its predecessors move to a fresh block H, the item to a block I of
-    // its own; H branches to P on the measured paths and through I otherwise.
-    Instruction *first = prevAt ? prevAt->getNextNode() : &P->front();
-    Function *F = P->getParent();
-    BasicBlock *H = BasicBlock::Create(C, "", F, P);
-    BasicBlock *It = BasicBlock::Create(C, "", F, P);
-    H->splice(H->end(), P, P->begin(), first->getIterator());
-    It->splice(It->end(), P, first->getIterator(), pos.before->getIterator());
-    for (BasicBlock *pr : SmallVector<BasicBlock *, 4>(predecessors(P)))
-      pr->getTerminator()->replaceSuccessorWith(P, H);
-    emitted.insert(BranchInst::Create(P, It, measured, H));
-    emitted.insert(BranchInst::Create(P, It));
   }
 
   void resolve(SmallVectorImpl<RailId> &cands, const Ctx &c) {
@@ -3596,10 +3525,21 @@ RailId Uncompute::recordCore(CallInst *fwd, const abi::CoreSpec &spec, ArrayRef<
     for (RailId b : impl->leaves(a))
       if (!impl->rails[b].qram)
         internalError("uncompute: recordCore: qram_realloc of a rail that is not a QRAM bus", fwd);
-    impl->busSize(a); // known here, or a stop now rather than at the release
+    // CR §1.3: a bus the function did not allocate (on some arm) has its old size read by cqrt_qram_size
+    // right before the realloc (a classical host read, no gate); every other size is known statically.
+    Value *oldSize = nullptr;
+    if (impl->foreignBus(a)) {
+      IRBuilder<> SB(fwd);
+      oldSize = impl->track(SB.CreateCall(abi::declare(*fwd->getModule(), abi::CoreSpec{abi::Core::QramSize}),
+                                          {ops[0].v}, "cq.n.old"));
+    } else {
+      impl->busSize(a);
+    }
     RailId r = impl->newRail(fwd, Role::Seed, "recordCore");
     impl->rails[r].qram = true;
-    impl->addRecord(fwd, spec, ops, r, RecKind::QramRealloc, false);
+    unsigned rrec = impl->addRecord(fwd, spec, ops, r, RecKind::QramRealloc, false);
+    if (oldSize)
+      impl->reallocOldSize[rrec] = oldSize;
     for (RailId b : impl->leaves(a))
       impl->rails[b].reallocs.push_back(r);
     return r;
@@ -4119,11 +4059,13 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
     for (RailId m : members) {
       if (!I.rails[m].explicitKept)
         continue;
-      if (I.rails[m].role != Role::Measured)
-        unimplemented("uncompute: a call whose results are partly kept (" + describe(I.rails[m].handle) +
-                          " is kept but not measured, a dead sibling is not; its twin would zero the kept ones; "
-                          "rule 18 copies out measured results only)",
-                      fwd);
+      if (I.rails[m].role != Role::Measured) {
+        // CR rule 18 twin point (cq-4lqy): a result still live where the twin runs is first copied out
+        // (cqrt_copy_<W> into a fresh rail) and the copy continues as the value: it takes every later use,
+        // record, gate and the kept role; the call's own result rail is garbage the twin zeroes.
+        I.copyOutResult(m, fwd);
+        continue;
+      }
       Value *h = I.rails[m].handle;
       auto *hI = dyn_cast<Instruction>(h);
       SmallVector<CallInst *, 2> meas;

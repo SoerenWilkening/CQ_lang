@@ -514,6 +514,7 @@ std::optional<Gate> gateOf(Instruction *I) {
       return Gate{C, GK::Involution, *cs};
     case Core::Push:
     case Core::Pop:
+    case Core::QramSize:   // a classical host read (CR §1.3), no gate
       return std::nullopt;   // the compiler-internal classical word stack (CR §1.3): skeleton code
     case Core::Measure:
     case Core::TapeAlloc:

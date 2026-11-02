@@ -173,6 +173,10 @@ void coreRoles(Sig &S, const CallBase &CB) {
   case Core::Pop:
     S.res = Res::Word;
     break;
+  case Core::QramSize:   // CR §1.3: a classical read of the bus's logical size
+    R.push_back(Role::Read);
+    S.res = Res::Word;
+    break;
   }
   (void)CB;
 }

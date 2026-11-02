@@ -469,6 +469,7 @@ const CoreInfo kCores[] = {
     {Core::QramStore, "qram_store", WidthUse::Any, true, false, true, true},
     {Core::QramLoad, "qram_load", WidthUse::Any, true, false, true, true},
     {Core::QramFree, "qram_free", WidthUse::None, false, false, false, false},
+    {Core::QramSize, "qram_size", WidthUse::None, false, false, false, false},
     {Core::TapeAlloc, "tape_alloc", WidthUse::None, false, false, false, false},
     {Core::TapeFmt, "tape_fmt", WidthUse::None, true, false, false, false},
     {Core::TapeEffect, "tape_effect", WidthUse::None, true, true, false, false},
@@ -792,6 +793,7 @@ llvm::FunctionCallee declare(llvm::Module &M, const CoreSpec &s) {
     a.append({h, s.hl ? i32 : h});
     break;
   case Core::QramFree: a.push_back(h); break;
+  case Core::QramSize: ret = i32; a.push_back(h); break;
   case Core::TapeAlloc: ret = h; break;
   case Core::TapeFmt: a.append({h, p}); break;
   case Core::TapeEffect: a.append({h, p}); break;

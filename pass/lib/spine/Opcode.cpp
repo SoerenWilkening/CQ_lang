@@ -17,6 +17,7 @@
 #include "cq/Abi.h"
 #include "cq/Calls.h"
 #include "cq/Memory.h"
+#include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
@@ -569,12 +570,25 @@ void lowerMeasure(LoweringContext &ctx, CallInst &call) {
     return;
   }
   RailType w = rt(call.getArgOperand(0)->getType(), &call);
-  CallInst *m = ctx.emitCore(abi::CoreSpec{abi::Core::Measure, w}, {x.v});
+  // CR rule 2 (ruling 2026-11-02, cq-29ej: collapse is static) with §1.3 (a measured rail is never freed):
+  // a value measured on some classical paths only is lowered as unmeasured. Its rail keeps its role and is
+  // uncomputed as usual (on a measured path it holds the outcome, where its _unc is exact); the measurement
+  // reads a basis copy of it (alloc + copy_<W>, rule 18's partial-measurement copy), which is kept.
+  Value *target = x.v;
+  bool every = spine::measuredOnEveryPath(ctx, call.getArgOperand(0));
+  if (!every) {
+    CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+    ctx.unc().recordExternal(c, Role::Measured);
+    ctx.emitCore(abi::CoreSpec{abi::Core::Copy, w}, {x.v, c});
+    target = c;
+  }
+  CallInst *m = ctx.emitCore(abi::CoreSpec{abi::Core::Measure, w}, {target});
   // V1 (cq-7p6): a measurement the user wrote carries !cq.measure, the uniqued empty tuple.
   m->setMetadata("cq.measure", MDNode::get(ctx.M.getContext(), {}));
   if (m->getType() != call.getType())
     internalError("spine: cqrt_measure result type differs from cq_measure's", &call);
-  ctx.unc().setRole(ctx.unc().idOf(x.v), Role::Measured);
+  if (every)
+    ctx.unc().setRole(ctx.unc().idOf(x.v), Role::Measured);
   spine::shared(ctx).measured[x.v] = {&call, m};
   spine::bindOperand(ctx, &call, Operand{m, false});
 }
@@ -1819,4 +1833,106 @@ std::optional<InverseStep> inverseStep(Instruction &U, Value *Y, Operand yp, fun
 }
 
 } // namespace spine
+// CR rule 2 (ruling 2026-11-02, cq-29ej): collapse is static. A value whose rail is measured on some
+// classical paths only is lowered as unmeasured: its rail keeps its role (garbage, uncomputed as usual; on a
+// measured path it then holds a basis state, where its _unc is exact). True iff every path of the source
+// function from the measured value's definition to a return passes a cq_measure of that value (through
+// freeze views). A quantum branch is no choice (its arms all run, rule 2: a measurement in a quantum arm
+// is executed unconditionally), so a measurement anywhere in its region up to its post-dominator counts on
+// the path through it.
+bool spine::measuredOnEveryPath(LoweringContext &ctx, const Value *v, const Instruction *also) {
+  auto strip = [](const Value *v) {
+    while (auto *f = dyn_cast<FreezeInst>(v))
+      v = f->getOperand(0);
+    return v;
+  };
+  const Value *root = strip(v);
+  if (!isa<Argument>(root) && !isa<Instruction>(root))
+    return true;
+  const Function &F = *(also ? also->getFunction()
+                             : isa<Argument>(root) ? cast<Argument>(root)->getParent()
+                                                   : cast<Instruction>(root)->getFunction());
+  SmallPtrSet<const BasicBlock *, 8> mblocks;
+  for (const Instruction &I : instructions(F))
+    if (auto *c = dyn_cast<CallInst>(&I); c && c->getCalledFunction() &&
+                                          c->getCalledFunction()->getName().starts_with("cq_measure") &&
+                                          c->arg_size() == 1 && strip(c->getArgOperand(0)) == root)
+      mblocks.insert(I.getParent());
+  if (also)
+    mblocks.insert(also->getParent());
+  // A value read from memory names a rail stored before it (rules 20, 21): its paths begin at the entry.
+  const auto *defI = isa<LoadInst>(root) || isa<AtomicRMWInst>(root) || isa<AtomicCmpXchgInst>(root) ||
+                             (isa<ExtractValueInst>(root) && isa<AtomicCmpXchgInst>(cast<ExtractValueInst>(root)->getAggregateOperand()))
+                         ? nullptr
+                         : dyn_cast<Instruction>(root);
+  const BasicBlock *D = defI ? defI->getParent() : &F.getEntryBlock();
+  // A measurement after the definition in its own block covers every path.
+  if (mblocks.count(D))
+    for (const Instruction *I = defI ? defI->getNextNode() : &D->front(); I; I = I->getNextNode())
+      if (auto *c = dyn_cast<CallInst>(I); c && c->getCalledFunction() &&
+                                           c->getCalledFunction()->getName().starts_with("cq_measure") &&
+                                           c->arg_size() == 1 && strip(c->getArgOperand(0)) == root)
+        return true;
+  if (also && also->getParent() == D && (!defI || defI->comesBefore(also)))
+    return true;
+  PostDominatorTree PDT(const_cast<Function &>(F));
+  auto quantumBranch = [&](const BasicBlock *b) {
+    const Instruction *t = b->getTerminator();
+    if (auto *br = dyn_cast<BranchInst>(t); br && br->isConditional())
+      return ctx.T.isQuantum(br->getCondition(), ctx.S);
+    if (auto *sw = dyn_cast<SwitchInst>(t))
+      return ctx.T.isQuantum(sw->getCondition(), ctx.S);
+    return false;
+  };
+  // Walk the classical choices from the end of D; a block holding a measurement ends the path (measured);
+  // reaching D again starts a new instance (its paths are this walk's); a return reached ends it unmeasured.
+  SmallPtrSet<const BasicBlock *, 16> seen;
+  SmallVector<const BasicBlock *, 16> work;
+  auto push = [&](const BasicBlock *b) {
+    if (b != D && seen.insert(b).second)
+      work.push_back(b);
+  };
+  auto next = [&](const BasicBlock *b) -> bool {   // false: an unmeasured return
+    if (isa<ReturnInst>(b->getTerminator()))
+      return false;
+    if (!quantumBranch(b)) {
+      for (const BasicBlock *s : successors(b))
+        push(s);
+      return true;
+    }
+    // The region of a quantum branch, up to its post-dominator: every block of it runs on this path.
+    const BasicBlock *J = PDT.getNode(b) && PDT.getNode(b)->getIDom() ? PDT.getNode(b)->getIDom()->getBlock() : nullptr;
+    SmallPtrSet<const BasicBlock *, 16> reg;
+    SmallVector<const BasicBlock *, 16> w(succ_begin(b), succ_end(b));
+    bool measured = false, ret = false;
+    while (!w.empty()) {
+      const BasicBlock *x = w.pop_back_val();
+      if (x == J || x == b || !reg.insert(x).second)
+        continue;
+      measured = measured || mblocks.count(x);
+      ret = ret || isa<ReturnInst>(x->getTerminator());
+      for (const BasicBlock *s : successors(x))
+        w.push_back(s);
+    }
+    if (measured)
+      return true;
+    if (ret)
+      return false;
+    if (J)
+      push(J);
+    return true;
+  };
+  if (!next(D))
+    return false;
+  while (!work.empty()) {
+    const BasicBlock *b = work.pop_back_val();
+    if (mblocks.count(b))
+      continue;
+    if (!next(b))
+      return false;
+  }
+  return true;
+}
+
+
 } // namespace cq

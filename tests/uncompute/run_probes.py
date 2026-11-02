@@ -22,6 +22,20 @@ CASES = [
     # CR rule 9: a kept classical select over two garbage arms keeps the chosen arm and cleans the other under
     # the select's condition (was: 'a kept role on a classical select over handles').
     ("kept_merge", "ks", [], "pass", [r"br i1 %cq\.not"]),
+    # CR rule 2 (2026-11-02, cq-29ej: collapse is static; §1.3 a measured rail is never freed): a rail measured on
+    # some classical paths only is lowered as unmeasured and the measurement reads a kept basis copy (cq-4lqy;
+    # was: 'a rail measured on some paths only, ...'). pm_join and pm_loop lower and verify; their §6 run waits
+    # on the checker's C oracle treating a value measured after a partial measurement as classical (bead below).
+    ("partial_measure", "pm_ret", [], "pass", [r"call void @cqrt_copy_i32"]),
+    ("partial_measure", "pm_join", [], "lower", [r"call void @cqrt_copy_i32"]),
+    ("partial_measure", "pm_loop", [], "lower", [r"call void @cqrt_copy_i32"]),
+    # CR §0, rule 5, §1.1 (cq-4lqy): a gate through a slot cell that may name an operand rail of pending garbage is
+    # decided at run time by comparing handles (was: 'awaiting owner ruling: ... a gate through a slot cell').
+    ("alias_hit", "ah_loop", [], "pass", [r"icmp eq i32 .*cq\.hit|%cq\.hit = icmp eq"]),
+    ("alias_hit", "ah_line", [], "pass", [r"%cq\.hit = icmp eq"]),
+    # CR rule 18 twin point (cq-4lqy): a live result of a clone call is copied out before the twin (was: 'a call
+    # whose results are partly kept').
+    ("copy_out", "co", [], "pass", [r"call void @__cq_q_two_1_unc"]),
     # kp, kq (a measured merge whose arm t is measured again as t * 7): bead cq-g72r (rule 2 collapse of t * 7 where
     # the merge measured t); listed once it is fixed.
 ]

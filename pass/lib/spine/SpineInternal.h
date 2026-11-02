@@ -268,6 +268,10 @@ llvm::Value *classicalRead(LoweringContext &, llvm::Value *handle);
 void noteCalleeMeasures(LoweringContext &, const llvm::CallBase &orig, llvm::BasicBlock *start,
                         llvm::Instruction *before);
 llvm::Value *calleeCollapse(LoweringContext &, llvm::Value *handle, const llvm::Instruction &at);
+// CR rule 2 (2026-11-02, cq-29ej: collapse is static): every path of the source function from the
+// definition of v to a return passes a cq_measure of v (or `also`, a measuring call); quantum branches
+// are no choice (their arms all run).
+bool measuredOnEveryPath(LoweringContext &, const llvm::Value *v, const llvm::Instruction *also = nullptr);
 
 // cq-s32y (PreRotation.cpp). Before a cq_theta on an existing rail h is lowered: when a use of its
 // operand v (or of another value bound to h) is not before the rotation, h is copied into a fresh
