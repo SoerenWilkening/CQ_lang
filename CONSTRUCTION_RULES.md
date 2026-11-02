@@ -584,15 +584,21 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     as is, 162, or zero-extended to the wider type, 193 `long`) and `i32` otherwise (`_Bool`,
     `char`, `short`, every floating or pointer type: a handle cannot be narrowed, and no value the
     program does not measure is measured to fit a signature; 193). An aggregate return is the
-    struct of handles and classical values of §1.1 (rule 26). An in-module caller of such a
-    function inlines it (162): IR inlining of the callee's body into the caller before taint, after
-    which the inlined body is lowered as the caller's own code by the same constructions. There is
-    no separate procedure for an inlined body, and nothing about the callee's shape (block count,
-    loops, calls, stores through its parameters) is a condition. The reason is 162's: a clone with
-    no quantum argument that mints a register inside has no twin. A callee reached with a quantum
-    argument is never inlined by this rule; it is a rule-18 clone, whatever it returns and however
-    it returns it (musl's `__rem_pio2(x, &y)` inside `sin` is a clone with a slot parameter, 31 and
-    163; ruling 2026-11-02, cq-ab9c). A call through a classical function pointer dispatches over
+    struct of handles and classical values of §1.1 (rule 26). **The compiler never inlines.** An
+    in-module call of such a function is a call, lowered like every other call (ruling 2026-11-02,
+    cq-ab9c; until then 162's consumer inlined the entry): a callee reached with a quantum argument
+    is a rule-18 clone, whatever it returns and however it returns it (musl's `__rem_pio2(x, &y)`
+    inside `sin` is a clone with a slot parameter, 31 and 163); a callee reached with no quantum
+    argument whose body reaches a rotation is called as it is. Its results are recorded per callee
+    (rule 18): a result that is a register the callee minted, or that register's rule-6 image, is
+    FROZEN, and the caller keeps it like its own registers (never uncomputed, never freed, rotated
+    or read as an operand like any register; 162's consumer keeps the returned x + c rail and
+    cleans nothing). Every other result is zeroed by the twin as usual, and so that the twin can,
+    the clone returns the handle of each register it minted that is still allocated at its return
+    as an extra `i32` result after the results (191's stored rails likewise), the twin taking
+    those handles first. A clone that would coincide with the lowered entry in signature and body
+    is the entry: the call targets it (162 `quantum_return_consumer` calls
+    `quantum_return_entry`). A call through a classical function pointer dispatches over
     the static callee set; a function pointer loaded at a quantum index is a QROM of callee tags
     with every candidate clone called unguarded and merged by `select`; a callee under a quantum
     predicate becomes a `_ctl` clone iff its body has a non-pure gate (rotation, phase, slot or
@@ -909,7 +915,7 @@ UNCOVERED, never dead and never a PASS (cq-3nla turned an ERROR into a PASS this
 | 19 return type (2026-10-31, cq-juf6) | none (161, 162 return `i32`); CQ_lang2 probe 976_u06 (`_Bool` entry truncated the handle) | done: rule 19 text; 193 `narrow_quantum_return` witnesses `_Bool`, `short` (return type `i32`) and `long` (handle zero-extended) |
 | §1.2 `sadd_sat` `ssub_sat` (2026-10-31, CQ_lang2 verifier on 194) | 194 (`llvm.sadd.sat.i32` from compiler-rt's inline `scalbn`, lowered to `cq_template_sadd_sat_i32` while §1.2 listed only the unsigned pair) | done: §1.2 lists `sadd_sat ssub_sat`; semantics in ABI §2.7 (saturate to `[−2^(W−1), 2^(W−1) − 1]`, total, no §2 row needed); the saturating intrinsics are templates, never expanded into add + compare + select in the lowered IR |
 | 18 pinned body (2026-10-29, cq-ezan) | 169 (`__cq_q_logb_1` followed a musl `ilogb` without its `#pragma STDC FENV_ACCESS ON`, inlined into `logb`) | done 2026-10-31: regenerated from the pinned bundle as built: `__cq_q_logb_1(x, mode, flags)` calls a strictfp `__cq_q_ilogb_1(x, mode, flags)` on 82's ABI (unguarded, merged by select, result and flags phis alike), the INVALID of both `FORCE_EVAL(0/0.0f)` arms as `flags \| select(pred, 1, 0)`, the K-loop and its `a_K` in the ilogb clone (one per activation: the twin re-runs the forward clone), `__cq_q___divdc3_0011` minting an empty flags rail and the mode literal 0 and dropping the returned flags; 173 unchanged (its `.c` defines `__mulsc3`/`__divsc3`) |
-| 19 inlining, 23 exception behaviours, 18 partial measurement and intrinsic binding (2026-11-02, CQ_lang2 cq-ab9c, cq-fl4n, cq-75n4, cq-odjk) | none (162, 169, 175 conform); the CQ_lang2 pass stopped on musl `sin`, `exp`, `log` and on a plain caller of a musl clone, each inside a construction the text left implicit | done: rule 19 (inlining is IR inlining before taint, same lowering after; a quantum argument makes a rule-18 clone; a classical host call under a quantum predicate is unguarded and merged), rule 23 (`fpexcept.ignore`/`maytrap` ops are plain templates with no fenv parameters; a strict op or fenv call brings 82's ABI; a default caller passes mode 0 and an empty flags rail and drops the returned flags), rule 18 (measured results of a clone with dead siblings are copied out before the twin; an intrinsic binds to the injected body whenever one exists); three examples owed (§8) |
+| 19 no inlining, 23 exception behaviours, 18 partial measurement and intrinsic binding (2026-11-02, CQ_lang2 cq-ab9c, cq-fl4n, cq-75n4, cq-odjk) | 162 (the consumer inlined the entry's body); 169, 175 conform; the CQ_lang2 pass stopped on musl `sin`, `exp`, `log` and on a plain caller of a musl clone, each inside a construction the text left implicit | done: rule 19 (the compiler never inlines: a callee with a quantum argument is a rule-18 clone, a callee with none is called as it is, its minted register or rule-6 image a FROZEN result, other minted registers returned as extra results for the twin; 162's consumer regenerated: calls the entry, keeps the returned rail; a classical host call under a quantum predicate is unguarded and merged), rule 23 (`fpexcept.ignore`/`maytrap` ops are plain templates with no fenv parameters; a strict op or fenv call brings 82's ABI; a default caller passes mode 0 and an empty flags rail and drops the returned flags), rule 18 (measured results of a clone with dead siblings are copied out before the twin; an intrinsic binds to the injected body whenever one exists); three examples owed (§8) |
 
 ## 8. Examples written 2026-10-26 (144–180)
 
@@ -925,7 +931,7 @@ Each states its outcome per §5. The sketches that produced them:
 8. 156 `qq_width_matrix`, 157 — sub/shl/ashr/sdiv/srem/udiv/fadd/fdiv/and with both operands quantum at i8, i16, i32, i64, f32; `uitofp_q`; quantum shift amount at i64 (rule 4).
 9. 158 `value_arm_depth3`, 159 `struct_byvalue_quantum`, 160 `global_qram` (rules 9, 26, 20).
 10. 161 `opaque_callee` — an external declaration called with a quantum argument (rule 27 since 2026-10-27).
-11. 162 `quantum_return_entry` — an entry function returning an unmeasured quantum value (§1.1).
+11. 162 `quantum_return_entry` — an entry function returning an unmeasured quantum value (§1.1); its in-module consumer calls it and keeps the frozen result (rule 19, regenerated 2026-11-02).
 12. 163–168 aggregates: `sret` return > 16 B, `byval` > 16 B, `{int,int}` coerced to `i64`, `{i64,i32}`, nested struct return, struct with a quantum pointer field, struct in a quantum-indexed array written and read (rule 26).
 13. 169–174 complex: `__divdc3`, `__muldc3` both-quantum, imaginary-only-quantum variants of every existing complex example, `cabs`, `conj`, `__mulsc3`/`__divsc3`, `long double` mul/div (rule 26).
 14. 175 `libm_quantum` — `exp`, `sin`, `log`, `pow`, `atan2` on a quantum `double` (rule 18 with injected libm source). The call sites and clone signatures are the witness; 184 shows one lifted body in full.
