@@ -172,6 +172,7 @@ class Eval:
     push/pop stack, logged events (RY/PH angles, M values, ABORT) and violations."""
     def __init__(s, mem):
         s.mem, s.r, s.nh, s.arr, s.stk, s.ev, s.err = mem, {}, 1, {}, [], [], []
+        s.inv = []   # open cq_invert regions (CR rule 17): each a list of ('g', apply, inverse) gates and ('f', free, None)
     def new(s, w, v, touched=True):
         h = s.nh; s.nh += 1; s.r[h] = [w, v & M(w), touched, 0.0]; return h
     def g(s, h):
@@ -182,6 +183,45 @@ class Eval:
         if on and h is not None and h in s.r: s.r[h][3] += float(fdec(ang, 64))   # net fired Ry angle on the rail
         if on and math.isfinite(fdec(ang, 64)): s.ev.append((kind, ang))
     def call(s, name, ty, a):
+        """A gate inside an open cq_invert region is RECORDED, not applied (rule 17, §1.3): cqrt_invert_end applies the
+        region's gates reversed with each replaced by its inverse (a rotation by the negated angle; a template, _unc or
+        core XOR gate by itself), then the frees it recorded. Allocations and bookkeeping happen at once; a measurement
+        flushes the gates recorded before it forward (it needs them) and only the rest is reversed at the end."""
+        if name == 'cqrt_invert_begin': s.inv.append([]); return 0
+        if name == 'cqrt_invert_end':
+            if not s.inv: s.err.append('cqrt_invert_end with no open region'); return 0
+            ops = s.inv.pop()
+            out = [('g', o[2], o[1]) for o in reversed(ops) if o[0] == 'g'] + [o for o in ops if o[0] == 'f']
+            if s.inv: s.inv[-1].extend(out)
+            else:
+                for o in out: o[1]()
+            return 0
+        if not s.inv: return s.call0(name, ty, a)
+        if name.startswith('cq_template_'):
+            body = name[12:]; unc = body.endswith('_unc'); b = body[:-4] if unc else body
+            if unc:
+                out, f = a[0], a[1:]; g = lambda: s.put(out, s.g(out) ^ s.tvalue(b, f)[0]); s.inv[-1].append(('g', g, g)); return 0
+            h = s.new(s.tvalue(b, a)[1], 0); g = lambda: s.put(h, s.g(h) ^ s.tvalue(b, a)[0]); s.inv[-1].append(('g', g, g)); return h
+        n = name[5:]
+        if n == 'free': s.inv[-1].append(('f', lambda: s.call0(name, ty, a), None)); return 0
+        if n.startswith('measure'):
+            for o in s.inv[-1]: o[1]()
+            s.inv[-1].clear(); return s.call0(name, ty, a)
+        if n.startswith('ry_') or n.startswith('rz'):
+            ai = len(a) - 1   # the angle (literal bits or an angle rail) is the last argument
+            g = lambda: s.call0(name, ty, a)
+            if 'qangle' in n:
+                def inv(): v = s.g(a[ai]); s.put(a[ai], v ^ (1 << 63)); s.call0(name, ty, a); s.put(a[ai], v)
+            else: inv = lambda: s.call0(name, ty, [*a[:ai], a[ai] ^ (1 << 63)])
+            s.inv[-1].append(('g', g, inv)); return 0
+        if re.match(r'(not|and|or|xor|copy|xorc)_', n): g = lambda: s.call0(name, ty, a); s.inv[-1].append(('g', g, g)); return 0
+        if n.startswith('tape_write') and '_lit' not in n and not n.startswith('tape_write_str'):
+            tok = n.split('_'); W = next(t for t in tok if re.fullmatch(r'[if]\d+', t)); c = '_controlled' in n
+            h = s.new(wid(W)[1], 0); src = a[2] if c else a[1]; cf = a[0] if c else None
+            g = lambda: s.put(h, s.g(h) ^ (s.g(src) if (cf is None or s.g(cf) & 1) else 0)); s.inv[-1].append(('g', g, g)); return h
+        if n.startswith('qram_') and n not in ('qram_alloc',) and not n.startswith('qram_alloc_'): raise Unsupported(name + ' inside cq_invert')
+        return s.call0(name, ty, a)   # alloc, push/pop, tape bookkeeping, abort: not gates
+    def call0(s, name, ty, a):
         if name.startswith('cq_template_'): return s.template(name[12:], ty, a)
         n = name[5:]; unc = n.endswith('_unc'); n = n[:-4] if unc else n
         tok = n.split('_'); wi = next((i for i, t in enumerate(tok) if re.fullmatch(r'[if]\d+', t)), None)
@@ -259,11 +299,19 @@ class Eval:
         s.err.append(f'qram_store_unc with no matching store {key}'); return 0
     def template(s, body, ty, a):
         unc = body.endswith('_unc'); body = body[:-4] if unc else body
+        out, f = (a[0], a[1:]) if unc else (None, a)
+        v, rw = s.tvalue(body, f)
+        if not unc: return s.new(rw, v)
+        s.put(out, s.g(out) ^ v)
+        if s.g(out): s.err.append(f'cq_template_{body}_unc: h{out} left {s.g(out):#x} (recomputed {v:#x})')
+        return 0
+    def tvalue(s, body, f):
+        """(value, result width) of the forward template `body` over the operands f, read from the current state."""
         m = TRE.match(body)
         if not m: raise Unsupported('cq_template_' + body)
         op, pred, W, W2, shape, rest = m.group('op', 'pred', 'w', 'w2', 'shape', 'rest')
         if rest: raise Unsupported('rounding-mode / exception template ' + body)
-        w = wid(W); out, f = (a[0], a[1:]) if unc else (None, a)
+        w = wid(W)
         if op in ('qrom_load',):
             base, n, idx = f[0], f[1], s.g(f[-1]); st = f[2] if shape == 's' else (16 if W == 'f80' else w[1] // 8)
             v = int.from_bytes(s.mem(base + idx * st, w[1] // 8), 'little') if idx < n else 0; rw = w[1]   # unsigned index, alloc-size stride
@@ -272,10 +320,7 @@ class Eval:
             v, rw = arms[0] if s.g(f[0]) & 1 else arms[1], w[1]
         else:
             sh = shape or 'h' * len(f); v, rw = tmpl(op, pred, w, W2, [s.g(x) if l in 'hq' else x for l, x in zip(sh, f)])
-        if not unc: return s.new(rw, v)
-        s.put(out, s.g(out) ^ v)
-        if s.g(out): s.err.append(f'cq_template_{body}_unc: h{out} left {s.g(out):#x} (recomputed {v:#x})')
-        return 0
+        return v, rw
 
 # ---------------------------------------------------------------- build
 TYPES = r'(i\d+|half|float|double|x86_fp80|ptr|void)'

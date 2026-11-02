@@ -16,7 +16,7 @@ for l in L:
     m = re.match(r'cqrt_(?:qram_)?(?:free|realloc_\w+_unc)\(([ha]\d+)[,)]', l)
     if m: live.discard(m.group(1))
 print("  still allocated:", sorted(live, key=lambda h: (h[0], int(h[1:]))), " measured:", [l for l in L if 'measure' in l and not l.startswith('#')])
-SKIP = re.compile(r'(cqrt_(alloc|free|measure|ry|rz|push|pop|tape|abort|not_i1|qram_alloc|qram_free)|#)')
+SKIP = re.compile(r'(cqrt_(alloc|free|measure|ry|rz|push|pop|tape|abort|not_i1|qram_alloc|qram_free|invert)|#)')
 errors, fwd, unc_ok, recomputed, produced, cleaned = [], {}, 0, [], set(), set()
 section = ''
 for n, l in enumerate(L, 1):

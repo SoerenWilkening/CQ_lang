@@ -50,6 +50,9 @@ before its gates are appended in program order.
 | QRAM bus | `cqrt_qram_alloc_<W>`, `cqrt_qram_realloc_<W>` | n cells × W qubits plus tape slots | `cqrt_qram_free` (or never) |
 | tape | `cqrt_tape_alloc` | append-only list of entries | never |
 
+- **Handle 0 is reserved.** No allocation ever returns it; it denotes "no rail" in a handle
+  position that has none on the path taken (CR §1.1, rule 19's extra results). A handle is a
+  classical value of the host program, which may compare, branch on, select and store handles.
 - The backend records the width and kind of every handle. A template name gives the width of its
   result. An operand's width is the width implied by the name, except the **index operand** of
   `qrom_load`/`qram_*`, which is any rail at the C index expression's width (CR rule 20). The
@@ -150,7 +153,9 @@ h. "Unchanged" means the rail is not touched. "Ex" lists 2–3 witness examples.
 - **Sem.** Projective measurement of all W qubits in the computational basis. Returns the outcome
   as a value of type `<T>`.
 - **Rails.** h stays allocated and is never freed. Afterwards it holds the outcome, a known basis
-  state. It may still be read as an operand or a control, but is never rotated again. The call is
+  state. It may still be read as an operand or a control, and a later gate on it acts on the basis
+  state it holds (a rotation of a measured rail is `alloc` of the outcome followed by the gate; CR
+  rule 2: a rail measured on some classical paths only is lowered as unmeasured). The call is
   never conditioned (no `_controlled` form). Measuring the same rail again re-reads the outcome
   classically; the compiler emits a second call only to bring an outcome a callee measured into
   the caller (CR rule 2, 136), and the backend treats a `measure` of an already-measured rail as a
@@ -254,7 +259,11 @@ first materialized by `cqrt_alloc_<W>` *(corpus, README)*.
 | `i32 @cqrt_qram_load_<W>[_hl]([c,] a, idx\|j)` → h | Fresh h ^= cell[idx]. The cell is unchanged. `_controlled` (CR §1.3, no corpus use): h ^= c ? cell[idx] : 0 *(README)*. |
 | `void @cqrt_qram_load_<W>[_hl]_unc(i32 h, [c,] a, idx\|j)` | h ^= cell[idx], so h = `\|0⟩`. Requires the cell to hold the value it had at the load. The caller then frees h. |
 | `void @cqrt_qram_free(i32 a)` | Releases the object after every store was popped (all cells and slots `\|0⟩`). |
+| `i32 @cqrt_qram_size(i32 a)` → n | The bus's current logical size, a classical read of the backend's bookkeeping; no gate. The `n_old` a realloc's `_unc` needs when the function neither allocated the bus nor holds its size (CR §1.3, 2026-11-02). |
 
+- **Unknown extent.** A cell count `n = 0` in `qram_alloc`, `qram_realloc` and `qrom_load` denotes
+  2^64 cells (CR rule 20: an object with no extent in the module). What the shot needs of such an
+  object is the backend's resource question, like N and K.
 - **Ordering.** Pops are LIFO only among stores that may touch the same cell. Stores to provably
   different cells commute, and `_hl` accesses to different cells commute. An unpopped store keeps
   its tape slot allocated (a kept item). A store whose v was later rotated or measured is never
@@ -294,6 +303,7 @@ call time.
 | `i32 @cqrt_tape_write_<W>(i32 t, i32 h)` → h′ and `i32 @cqrt_tape_write_<W>_controlled(i32 c, i32 t, i32 h)` → h′ | Appends a field. h′ is a fresh write-only tape rail with h′ ^= h (`_controlled`: h′ ^= c ? h : 0). h is unchanged. h′ stays entangled with h and is never freed or uncomputed *(corpus, 47; sample_check)*. |
 | `void @cqrt_tape_write_<W>_lit(i32 t, <T> lit)` | Appends a classical field. |
 | `void @cqrt_tape_write_str_lit(i32 t, ptr s)` | Appends a classical string field. |
+| `void @cqrt_tape_str_begin(i32 t)`, `void @cqrt_tape_str_end(i32 t)` | The `i8` fields written between them form ONE `%s` field: at replay it is printed up to the first byte that measures 0 (a `_controlled` field under c = 0 is such a byte). A string whose bytes are handles or whose address is quantum (CR rule 16, 2026-11-02). |
 | `void @cqrt_abort_i1(i32 f)` | Marks f as an abort flag: kept, and measured at the end of the shot. f = 1 means this branch aborted at this program point. The host program keeps running; rails later modified in place were snapshotted by the compiler (rule 16). |
 
 - **§2.** None. **Ref.** No reference implementation for tapes. For abort, BVM
@@ -309,6 +319,34 @@ call time.
 - **§2.** None. **Ref.** BVM `src/history/delta.jl:DeltaEntry` and `src/history/Replay.jl:unrun!` (a
   history tape replayed LIFO). **Ex.** 05, 25, 62 (39 examples). The words are `i32`; the compiler
   pushes a wider classical value as `i32` words, low word first (CR §1.3).
+
+### 1.13 `cqrt_invert_begin`, `cqrt_invert_end`
+- **Sig.** `void @cqrt_invert_begin()`, `void @cqrt_invert_end()`.
+- **Sem.** CR rule 17 (`cq_invert`). `begin` opens a region; `end` closes the innermost open region
+  and the backend then emits the gates recorded between the two calls REVERSED, each replaced by its
+  inverse (an Ry or P by the same gate with the negated angle; a self-inverse gate, i.e. every
+  template, every `_unc`, every core XOR gate, by itself). Allocations are not gates and keep their
+  place (the rail exists from its `alloc`); a `free` recorded inside the region is performed after
+  the reversed list. A measurement inside the region flushes the gates recorded before it forward
+  (it needs them; it has no inverse) and only the gates recorded after the last measurement are
+  reversed at `end`; a tape write is an XOR gate and an abort flag is bookkeeping, treated like any
+  other gate or record. Regions
+  nest; `begin`/`end` are events of the host execution, so a region may be opened or closed under
+  classical control, in a loop, or across a function return.
+- **Rails.** None of its own. **§2.** None. **Ref.** BJ `src/circuit.jl:adjoint` (reverse the gate
+  list, invert each gate). **Ex.** 44, 61, 126.
+
+### 1.14 `cqrt_clone_register`, `cqrt_clone_resolve`
+- **Sig.** `void @cqrt_clone_register(ptr fn, ptr clone, ptr ctl, ptr unc)`,
+  `ptr @cqrt_clone_resolve(ptr fn, i32 kind)`.
+- **Sem.** CR rule 27 (callbacks and host-held pointers). A module constructor registers, under the
+  host address of a function whose address escapes the module, that function's all-handles clone
+  with its `_ctl` and `_unc` kinds. `resolve` returns the registered clone of the function at `fn`
+  (`kind` 0 forward, 1 `_ctl`, 2 `_unc`), or null when none is registered (the pointer then names
+  a function no lowered module exported, and the call is the C program's own undefined behaviour).
+  A call through a function pointer with no in-module candidate, and a lowered library's call back
+  through a pointer it was handed, go through it with rule 27's ABI.
+- **Rails.** None. **§2.** None. **Ref.** None (a symbol table). **Ex.** none yet (CR §8).
 
 ---
 

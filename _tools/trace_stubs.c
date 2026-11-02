@@ -5,6 +5,9 @@ int cqrt_sp(void) { return sp; }
 void cqrt_push(int h) { st[sp++] = h; }
 int cqrt_pop(void) { if (!sp) { puts("POP EMPTY"); exit(9); } return st[--sp]; }
 void cqrt_not_i1(int h) { printf("cqrt_not_i1(h%d)\n", h); }
+/* CR rule 17 (2026-11-02): cq_invert is a run-time region; the backend reverses and inverts the gates recorded between the two calls. */
+void cqrt_invert_begin(void) { puts("cqrt_invert_begin()"); }
+void cqrt_invert_end(void) { puts("cqrt_invert_end()"); }
 void cqrt_and_i1(int a, int b, int t) { printf("cqrt_and_i1(h%d, h%d, h%d)\n", a, b, t); }
 void cqrt_or_i1(int a, int b, int t) { printf("cqrt_or_i1(h%d, h%d, h%d)\n", a, b, t); }
 #define SEL(N, TA, TB, FA, FB) int cq_template_select_i32##N(int c, TA a, TB b) { int h = nh++; printf("cq_template_select_i32" #N "(h%d, " FA ", " FB ") -> h%d\n", c, a, b, h); return h; } \
