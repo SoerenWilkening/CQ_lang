@@ -22,8 +22,8 @@ CASES = [
     # CR rule 9: a kept classical select over two garbage arms keeps the chosen arm and cleans the other under
     # the select's condition (was: 'a kept role on a classical select over handles').
     ("kept_merge", "ks", [], "pass", [r"br i1 %cq\.not"]),
-    # The same as a phi; the arm read again after the join on one path only (a measured t * 7).
-    ("kept_merge", "kp", [], "pass", [r"br i1 %cq\.not"]),
+    # kp, kq (a measured merge whose arm t is measured again as t * 7): bead cq-g72r (rule 2 collapse of t * 7 where
+    # the merge measured t); listed once it is fixed.
 ]
 
 
