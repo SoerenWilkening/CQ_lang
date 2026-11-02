@@ -1,6 +1,8 @@
-; FATAL: cq: unimplemented: spine: classical collapse (rule 2) of cq_template_fadd_f64_hl with no original instruction to recompute it from
-; A fp template with no original instruction (an aggr vector lane) whose source is measured: its value
-; depends on the fp environment, so the collapse names it instead of recomputing it (cq-e373).
+; cq-e373, cq-29ej: an fp template with no original instruction (an aggr vector lane) whose source is
+; measured collapses (rule 2): recomputed classically in the default mode with §2's NaN rule (the first
+; NaN operand, quieted).
+; CHECK lane_fadd: %{{a}} = fadd double %{{b}}, 1.000000e+00
+; CHECK lane_fadd: or i64 %{{c}}, 2251799813685248
 declare double @cq_theta_f64(double, double)
 declare double @cq_measure_f64(double)
 

@@ -130,6 +130,45 @@ bool isQuantumTerm(LoweringContext &ctx, const Instruction *t) {
   return false;
 }
 
+// Rule 19 (193): does the entry being lowered return a handle (some return of it is quantum)?
+bool returnsHandle(LoweringContext &ctx) {
+  for (BasicBlock &BB : *ctx.S.F)
+    if (auto *r = dyn_cast<ReturnInst>(BB.getTerminator()))
+      if (Value *v = r->getReturnValue(); v && spine::isQ(ctx, v))
+        return true;
+  return false;
+}
+
+// Rule 19 with rule 26 (CR §1.1): the leaves of an entry's aggregate or vector C return type (struct and
+// array fields, vector lanes, in order) and whether any return makes each one quantum. The entry returns
+// the literal struct of those leaves, the i32 handle where quantum.
+void entryLeaves(LoweringContext &ctx, SmallVectorImpl<Type *> &types, SmallVectorImpl<bool> &q) {
+  std::function<void(Type *)> walk = [&](Type *Ty) {
+    if (auto *ST = dyn_cast<StructType>(Ty))
+      for (Type *E : ST->elements())
+        walk(E);
+    else if (auto *AT = dyn_cast<ArrayType>(Ty))
+      for (uint64_t k = 0; k < AT->getNumElements(); ++k)
+        walk(AT->getElementType());
+    else if (auto *VT = dyn_cast<FixedVectorType>(Ty))
+      for (unsigned k = 0; k < VT->getNumElements(); ++k)
+        walk(VT->getElementType());
+    else
+      types.push_back(Ty);
+  };
+  walk(ctx.S.F->getReturnType());
+  q.assign(types.size(), false);
+  for (BasicBlock &BB : *ctx.S.F)
+    if (auto *r = dyn_cast<ReturnInst>(BB.getTerminator()))
+      if (Value *v = r->getReturnValue()) {
+        SmallVector<bool, 4> fm = ctx.T.fieldMask(v, ctx.S);
+        if (fm.size() != types.size())
+          internalError("spine: an entry's return value whose field mask does not match its leaves", r);
+        for (unsigned k = 0; k < fm.size(); ++k)
+          q[k] = q[k] || fm[k];
+      }
+}
+
 class Walker {
 public:
   Walker(LoweringContext &ctx, Function &F, DominatorTree &DT, LoopInfo &LI)
@@ -210,6 +249,7 @@ private:
   void emitTerminator(BasicBlock *b);
   void emitCloneReturn(ReturnInst *ret);
   bool emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigned extra, SmallVectorImpl<Value *> &vals);
+  void resultFields(ReturnInst *ret, Value *rv, StructType *st, unsigned extra, SmallVectorImpl<Value *> &vals);
   Value *returnCopyOut(PHINode &phi);
   DenseSet<const Value *> copiedOut;                    // return phis copied out per edge (cq-mjwb)
   void lowerUnit(Loop &lp);
@@ -909,6 +949,34 @@ bool Walker::emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigne
   return true;
 }
 
+// The result's fields as a clone returns them before its trailing extras (the flags of E1, the escaped
+// flag of rule 24, the stored rails of M2): a field-wise or fat-pointer result's leaves (emitCloneFields,
+// `extra` trailing fields in st), else the one value: a return phi copied out per edge as it is, a
+// handle copied out into a fresh Result rail (rule 18), a classical value as it is.
+void Walker::resultFields(ReturnInst *ret, Value *rv, StructType *st, unsigned extra, SmallVectorImpl<Value *> &vals) {
+  if (emitCloneFields(ret, rv, st, extra, vals))
+    return;
+  Operand op = ctx.operand(rv);
+  if (copiedOut.count(rv)) {
+    if (!op.handle)
+      internalError("spine: a return phi copied out per edge that is not a handle", ret);
+    vals.push_back(op.v);
+    return;
+  }
+  if (!op.handle) {
+    vals.push_back(op.v);
+    return;
+  }
+  RailType w = railTypeOf(rv->getType());
+  CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+  RailId fid = ctx.unc().recordSeed(f);
+  abi::CoreSpec cp{abi::Core::Copy, w};
+  CallInst *c = ctx.emitCore(cp, {op.v, f});
+  ctx.unc().recordCore(c, cp, {op, Operand{f, true}}, fid);
+  ctx.unc().setRole(fid, Role::Result);
+  vals.push_back(f);
+}
+
 // Rule 18 copy-out at a clone's return (cq-b0w, orchestrator decision: the spine owns it). A
 // quantum result r is copied into a fresh rail f = cqrt_alloc_<W>(0); cqrt_copy_<W>(r, f), f is kept
 // (Role::Result: the caller frees it after the twin) and returned; flushAtExit then uncomputes the
@@ -936,19 +1004,11 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
     SmallVector<Value *, 4> vals;
     auto *st = dyn_cast<StructType>(C->getReturnType());
     Value *rv = ret->getReturnValue();
-    if (rv && emitCloneFields(ret, rv, st, 1, vals)) {
-      // cq-xhv4: a field-wise result, its fields then the flags (calls::materialize).
-    } else if (rv) {
-      Value *res = nullptr;
-      if (!st || st->getNumElements() != 2)
-        internalError("spine: a clone carrying the environment whose result type is not {result, flags}", ret);
-      Operand op = ctx.operand(rv);
-      if (copiedOut.count(rv))
-        unimplemented("spine: a clone carrying the environment with a return phi copied out per edge (E1)", ret);
-      res = op.handle ? copyOut(op, railTypeOf(rv->getType())) : op.v;
-      if (res->getType() != st->getElementType(0))
-        internalError("spine: a clone carrying the environment whose result field is of another type", ret);
-      vals.push_back(res);
+    if (rv) {
+      // cq-xhv4: the result's fields (a field-wise result's leaves, or the one value) then the flags.
+      resultFields(ret, rv, st, 1, vals);
+      if (!st || st->getNumElements() != vals.size() + 1 || st->getElementType(0) != vals[0]->getType())
+        internalError("spine: a clone carrying the environment whose result type is not {fields..., flags}", ret);
     } else if (C->getReturnType() != handleTy(LC)) {
       internalError("spine: a void clone carrying the environment that does not return the flags handle", ret);
     }
@@ -971,29 +1031,22 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
     // (calls::materialize: {result, escaped}, or escaped alone for a void clone).
     Value *esc = conc::cloneEscapedFlag(ctx);
     if (!esc)
-      unimplemented("spine: an escaping clone's return reached before its longjmp in the walk (rule 24)", ret);
+      internalError("spine: an escaping clone's return reached before its longjmp in the walk (rule 24)", ret);
     Value *v = esc;
     if (Value *rv = ret->getReturnValue()) {
-      Type *rty = rv->getType();
-      if (rty->isAggregateType() || rty->isVectorTy() || rty->isPointerTy() || copiedOut.count(rv))
-        unimplemented("spine: an escaping clone (rule 24) with a composite or pointer result or a return phi", ret);
-      Operand op = ctx.operand(rv);
-      Value *res = op.v;
-      if (op.handle) {
-        RailType w = railTypeOf(rty);
-        CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
-                                   {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
-        RailId fid = ctx.unc().recordSeed(f);
-        abi::CoreSpec cp{abi::Core::Copy, w};
-        CallInst *c = ctx.emitCore(cp, {op.v, f});
-        ctx.unc().recordCore(c, cp, {op, Operand{f, true}}, fid);
-        ctx.unc().setRole(fid, Role::Result);
-        res = f;
-      }
+      // The result's fields (a field-wise or fat-pointer result's leaves, or the one value) then the flag.
       auto *st = dyn_cast<StructType>(C->getReturnType());
-      if (!st || st->getNumElements() != 2 || st->getElementType(0) != res->getType())
-        internalError("spine: an escaping clone whose return type is not {result, escaped}", ret);
-      v = B.CreateInsertValue(B.CreateInsertValue(PoisonValue::get(st), res, {0u}), esc, {1u});
+      SmallVector<Value *, 4> vals;
+      resultFields(ret, rv, st, 1, vals);
+      if (!st || st->getNumElements() != vals.size() + 1)
+        internalError("spine: an escaping clone whose return type is not {fields..., escaped}", ret);
+      vals.push_back(esc);
+      v = PoisonValue::get(st);
+      for (unsigned k = 0; k < vals.size(); ++k) {
+        if (vals[k]->getType() != st->getElementType(k))
+          internalError("spine: an escaping clone's return field of another type than its result's", ret);
+        v = B.CreateInsertValue(v, vals[k], {k});
+      }
     }
     if (v->getType() != C->getReturnType())
       internalError("spine: an escaping clone's return value is not of its return type", ret);
@@ -1013,25 +1066,10 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
       }
     }
   if (stores) {
-    Value *res = nullptr;
-    if (Value *rv = ret->getReturnValue()) {
-      Type *rty = rv->getType();
-      if (rty->isAggregateType() || rty->isVectorTy())
-        unimplemented("spine: a clone with QRAM stores through a triple formal and a composite result (M2)", ret);
-      Operand op = ctx.operand(rv);
-      res = op.v;
-      if (op.handle) {
-        RailType w = railTypeOf(rty);
-        CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
-                                   {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
-        RailId fid = ctx.unc().recordSeed(f);
-        abi::CoreSpec cp{abi::Core::Copy, w};
-        CallInst *c = ctx.emitCore(cp, {op.v, f});
-        ctx.unc().recordCore(c, cp, {op, Operand{f, true}}, fid);
-        ctx.unc().setRole(fid, Role::Result);
-        res = f;
-      }
-    }
+    // M2 (calls::cloneResultType): the result's leaves (handles where quantum), then one handle per store.
+    SmallVector<Value *, 4> res;
+    if (Value *rv = ret->getReturnValue())
+      resultFields(ret, rv, dyn_cast<StructType>(C->getReturnType()), stores, res);
     ReturnInst *nr = B.CreateRet(PoisonValue::get(C->getReturnType()));
     ctx.unc().flushAtExit(nr);
     B.SetInsertPoint(nr);
@@ -1039,16 +1077,16 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
     if (rails.size() != stores)
       internalError("spine: emitCalleeQramStores returned another count than calleeQramStoreCount", ret);
     Value *v;
-    if (!res && stores == 1) {
+    if (res.empty() && stores == 1) {
       v = rails[0];
     } else {
       auto *st = dyn_cast<StructType>(C->getReturnType());
-      if (!st || st->getNumElements() != (res ? 1u : 0u) + stores)
+      if (!st || st->getNumElements() != res.size() + stores)
         internalError("spine: a clone's result type does not match its result and QRAM stores", ret);
       v = PoisonValue::get(st);
       unsigned k = 0;
-      if (res)
-        v = B.CreateInsertValue(v, res, {k++});
+      for (Value *r : res)
+        v = B.CreateInsertValue(v, r, {k++});
       for (Value *h : rails)
         v = B.CreateInsertValue(v, h, {k++});
     }
@@ -1235,7 +1273,35 @@ void Walker::emitTerminator(BasicBlock *b) {
       return emitCloneReturn(ret);
     fenv::atEntryReturn(ctx, *ret);   // cq-hzji: the final rule 23 state is kept (Effects.h)
     ReturnInst *nr;
-    if (Value *rv = ret->getReturnValue()) {
+    if (Value *rv = ret->getReturnValue(); rv && (rv->getType()->isAggregateType() || rv->getType()->isVectorTy()) &&
+                                           returnsHandle(ctx)) {
+      // Rule 19 with rule 26: the literal struct of the leaves, each quantum leaf's rail escaped (a
+      // classical value of a leaf another return makes quantum: a seed rail of it, rule 7).
+      SmallVector<Type *, 4> types;
+      SmallVector<bool, 4> q;
+      entryLeaves(ctx, types, q);
+      SmallVector<Operand, 4> leaves = aggr::flattenResult(ctx, rv);
+      auto *st = dyn_cast<StructType>(sh.out->getReturnType());
+      if (!st || leaves.size() != types.size() || st->getNumElements() != types.size())
+        internalError("spine: an entry's aggregate return does not match its leaves", t);
+      Value *agg = PoisonValue::get(st);
+      for (unsigned k = 0; k < leaves.size(); ++k) {
+        Value *v = leaves[k].v;
+        if (leaves[k].handle) {
+          if (!q[k])
+            internalError("spine: an entry's return leaf that is a rail where taint records it classical", t);
+          ctx.unc().setRole(ctx.unc().idOf(v), Role::Escaped);
+        } else if (q[k]) {
+          CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(types[k])}, {v});
+          ctx.unc().setRole(ctx.unc().recordSeed(a), Role::Escaped);
+          v = a;
+        }
+        if (v->getType() != st->getElementType(k))
+          internalError("spine: an entry's return leaf of another type than its field", t);
+        agg = B.CreateInsertValue(agg, v, {k});
+      }
+      nr = B.CreateRet(agg);
+    } else if (Value *rv = ret->getReturnValue()) {
       Operand op = ctx.operand(rv);
       Value *v = op.v;
       if (op.handle) {
@@ -1243,16 +1309,25 @@ void Walker::emitTerminator(BasicBlock *b) {
         ctx.unc().setRole(ctx.unc().idOf(op.v), Role::Escaped);
         Type *rt = sh.out->getReturnType();
         if (!rt->isIntegerTy())
-          unimplemented("spine: an entry returning a quantum value of aggregate or vector C type (rule 26)", t);
+          internalError("spine: an entry returning a handle in a non-integer return type", t);
         // Rule 19: the entry's return type is the C one of 32 bits or more, or the i32 handle (set
         // where the entry is created); a narrower one here is a return the taint did not see.
         if (rt->getIntegerBitWidth() < 32)
           internalError("spine: an entry returns a handle in a return type narrower than i32 (rule 19)", t);
         v = B.CreateZExt(op.v, rt);
+      } else if (returnsHandle(ctx)) {
+        // Rule 19: the entry returns a handle on every path. A classical value returned on this one is
+        // a seed rail of its value (rule 7: alloc_<W>(v), a known basis state), escaped like any
+        // returned rail; the caller reads it as the handle it reads on the other paths.
+        Type *ct = rv->getType();
+        if (!ct->isIntegerTy() && !ct->isFloatingPointTy())
+          internalError("spine: a classical return of a handle-returning entry that is no scalar", t);
+        CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(ct)}, {v});
+        ctx.unc().setRole(ctx.unc().recordSeed(a), Role::Escaped);
+        v = sh.out->getReturnType() == a->getType() ? static_cast<Value *>(a)
+                                                     : B.CreateZExt(a, sh.out->getReturnType());
       } else if (v->getType() != sh.out->getReturnType()) {
-        unimplemented("spine: an entry whose return type rule 19 made the i32 handle returns a classical "
-                      "value of its C type on some path",
-                      t);
+        internalError("spine: an entry returns a classical value of another type than its return type", t);
       }
       nr = B.CreateRet(v);
     } else {
@@ -1472,11 +1547,13 @@ void Walker::emitBlock(BasicBlock *b) {
         blockDefs.push_back(&phi);
         continue;
       }
-      // Rule 21 (cq-xb7r): a quantum pointer phi is a fat-pointer merge (tag, idx), the phi
-      // counterpart of the select fatptr::lower takes; fatptr has no phi entry yet, and pred's merge
-      // is scalar only.
-      if (phi.getType()->isPointerTy())
-        unimplemented("spine: a quantum pointer phi (rule 21 fat-pointer merge; fatptr has no phi entry)", &phi);
+      if (phi.getType()->isPointerTy()) {
+        // Rule 21: a quantum pointer merge is a fat pointer (tag, idx) merged over the edge predicates,
+        // fatptr's like the select's (cq-xb7r): it binds the phi's fields here.
+        fatptr::lower(ctx, &phi);
+        blockDefs.push_back(&phi);
+        continue;
+      }
       // Rules 9, 25, 26 (cq-oa67): a vector, struct or array phi merges field by field.
       if (phi.getType()->isVectorTy() || phi.getType()->isAggregateType()) {
         lowerMergeFields(ctx, phi);
@@ -1684,6 +1761,7 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
   sh.orig = &F;
 
   Value *entryFlag = nullptr;
+  SmallVector<std::pair<Argument *, SmallVector<Operand, 4>>, 2> classicalComposites;
   if (S.isEntry()) {
     // Rule 19 (193): an entry returning an unmeasured quantum value returns its handle. The return
     // type stays the C one when it is an integer of 32 bits or more (the handle as is or
@@ -1701,12 +1779,23 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
         !(crt->isIntegerTy() && crt->getIntegerBitWidth() >= 32)) {
       retType = Type::getInt32Ty(M.getContext());
       FT = FunctionType::get(retType, FT->params(), FT->isVarArg());
+    } else if (qRet && (crt->isAggregateType() || crt->isVectorTy())) {
+      // Rule 19 with rule 26: an aggregate or vector return is the literal struct of its leaves, the i32
+      // handle where quantum, the C type where classical (CR §1.1).
+      SmallVector<Type *, 4> types;
+      SmallVector<bool, 4> q;
+      entryLeaves(ctx, types, q);
+      for (unsigned k = 0; k < types.size(); ++k)
+        if (q[k])
+          types[k] = Type::getInt32Ty(M.getContext());
+      retType = StructType::get(M.getContext(), types);
+      FT = FunctionType::get(retType, FT->params(), FT->isVarArg());
     }
     Function *NF = Function::Create(FT, GlobalValue::InternalLinkage, F.getName() + ".cq.entry", &M);
     sh.out = NF;
     for (unsigned i = 0; i < F.arg_size(); ++i) {
-      if (spine::isQ(ctx, F.getArg(i)))
-        unimplemented("spine: an entry function with a quantum formal (rule 1)", F.getArg(i));
+      if (spine::isQ(ctx, F.getArg(i)))   // an entry's mask is all classical; a formal's taint is its digit
+        internalError("spine: an entry function with a quantum formal", F.getArg(i));
       spine::bindOperand(ctx, F.getArg(i), Operand{NF->getArg(i), false});
     }
     pendingEntries[&M].push_back({&F, NF, retType});
@@ -1809,9 +1898,7 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
       if (any_of(ops, [](const Operand &o) { return o.handle; }))
         ctx.bindFields(A, ops);
       else
-        unimplemented("spine: a classical composite formal of a clone (bound field-wise only with a quantum "
-                      "field)",
-                      A);
+        classicalComposites.push_back({A, ops});   // rebuilt as one value in the entry block (below)
     }
     if (F.isVarArg()) {
       // CR §1.4 (95, 109): the variadic actuals, one parameter each after the fixed formals' fields,
@@ -1834,16 +1921,46 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
       fenv::bindCloneEnv(ctx, C->getArg(p), C->getArg(p + 1));
       p += 2;
     }
-    if (p != C->arg_size())
-      unimplemented("spine: a clone with more parameters than its formals' fields (a variadic clone per "
-                    "call-site arity, calls::lowerVarargs)",
-                    C);
+    if (p != C->arg_size())   // calls::materialize gives one parameter per formal field, varargs and env
+      internalError("spine: a clone with more parameters than its formals' fields", C);
   }
 
   DominatorTree &DT = sh.dt(F);
   LoopInfo LI(DT);
   ctx.preds().compute(F, LI, T, S, entryFlag);
   ctx.B().SetInsertPoint(BasicBlock::Create(M.getContext(), "", sh.out));
+  // CR §1.4: a composite formal crosses as one parameter per leaf; with no quantum leaf it is a classical
+  // value of its own type, rebuilt from its leaves (struct and array fields, vector lanes, in order).
+  for (auto &[A, ops] : classicalComposites) {
+    unsigned k = 0;
+    std::function<Value *(Type *)> build = [&](Type *Ty) -> Value * {
+      if (auto *ST = dyn_cast<StructType>(Ty)) {
+        Value *agg = PoisonValue::get(ST);
+        for (unsigned e = 0; e < ST->getNumElements(); ++e)
+          agg = ctx.B().CreateInsertValue(agg, build(ST->getElementType(e)), {e});
+        return agg;
+      }
+      if (auto *AT = dyn_cast<ArrayType>(Ty)) {
+        Value *agg = PoisonValue::get(AT);
+        for (unsigned e = 0; e < AT->getNumElements(); ++e)
+          agg = ctx.B().CreateInsertValue(agg, build(AT->getElementType()), {e});
+        return agg;
+      }
+      if (auto *VT = dyn_cast<FixedVectorType>(Ty)) {
+        Value *vec = PoisonValue::get(VT);
+        for (unsigned e = 0; e < VT->getNumElements(); ++e)
+          vec = ctx.B().CreateInsertElement(vec, build(VT->getElementType()), ctx.B().getInt32(e));
+        return vec;
+      }
+      if (k >= ops.size() || ops[k].v->getType() != Ty)
+        internalError("spine: a classical composite formal whose leaves do not match its parameters", A);
+      return ops[k++].v;
+    };
+    Value *v = build(A->getType());
+    if (k != ops.size())
+      internalError("spine: a classical composite formal with parameters left over", A);
+    spine::bindOperand(ctx, A, Operand{v, false});
+  }
   // The walker creates blocks on demand; the entry block made here is L[0]'s.
   {
     BasicBlock *entry = &sh.out->getEntryBlock();

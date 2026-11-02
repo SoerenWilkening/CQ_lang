@@ -113,15 +113,15 @@ struct Shared {
   // Rule 2: rail handle -> (the original cq_measure call, the classical outcome).
   llvm::DenseMap<const llvm::Value *, std::pair<const llvm::Instruction *, llvm::Value *>> measured;
   // cq-ihlt (Collapse.cpp): a rail passed to a rule 18 clone whose callee measures that formal. `call`
-  // is the original call, `out` the emitted clone call (nullptr when it could not be identified),
-  // `arg` the original actual, `always` whether the callee measures it on every path to a return,
-  // `why` a non-empty reason when the re-read is not built for this call.
+  // is the original call; `out` the last instruction the call's lowering emitted (the re-read goes right
+  // after it), nullptr when the lowering ended at the start of `endBlock`; `arg` the original actual,
+  // `always` whether the callee measures it on every path to a return.
   struct CalleeMeasure {
     const llvm::Instruction *call = nullptr;
-    llvm::CallInst *out = nullptr;
+    llvm::Instruction *out = nullptr;
+    llvm::BasicBlock *endBlock = nullptr;
     const llvm::Value *arg = nullptr;
     bool always = false;
-    std::string why;
   };
   llvm::DenseMap<const llvm::Value *, CalleeMeasure> calleeMeasured;
   // Rule 2 classical collapse (Collapse.cpp): how each rail the spine's emitters minted got its

@@ -25,7 +25,7 @@
 //    one original non-phi instruction (its only field) is that instruction copied classically with
 //    its operands remapped (which collapses them in turn). A template rail with no such instruction
 //    is recomputed from its record (fromRecord: select, icmp and the integer templates, §2's totalization
-//    explicit); an fp, _rm/_rmq, _exc, qrom or overflow record is cq::unimplemented. A seed is its
+//    explicit, the fp ones per §2, _rm/_rmq and _exc in a host fenv bracket). A seed is its
 //    alloc literal. Then its writes are replayed classically in order. Recomputations are cached per
 //    rail while they dominate the builder's point.
 //  - Uncompute. Nothing is emitted for the rail itself: once every later reader takes the classical
@@ -207,24 +207,72 @@ Value *classicalOf(LoweringContext &ctx, const Operand &o) { return o.handle ? r
 // LLVM's own result is poison or UB (division by 0, INT_MIN / -1, a shift amount at or above W). A
 // record whose value depends on the floating-point environment or on vendor semantics (fp
 // arithmetic, fp conversions, fp compares, _rm/_rmq, _exc), or that reads memory or returns a pair
-// (qrom_load, *_overflow), is cq::unimplemented, named by its template.
+// (qrom_load, *_overflow), is recomputed too (fromRecord below).
+Value *fromRecordIn(LoweringContext &ctx, const RailHist &r, size_t n);
+
+// The host fenv calls the recomputation of a _rm or _exc record brackets its operation with (fenv_t of
+// the pinned triple is 16 bytes; 32 leave room).
+Value *fenvSave(LoweringContext &ctx) {
+  IRBuilder<> &B = ctx.B();
+  Function &F = *B.GetInsertBlock()->getParent();
+  IRBuilder<> EB(&F.getEntryBlock(), F.getEntryBlock().getFirstInsertionPt());
+  AllocaInst *env = EB.CreateAlloca(ArrayType::get(B.getInt8Ty(), 32), nullptr, "cq.fenv.save");
+  env->setAlignment(Align(16));
+  Type *i32 = B.getInt32Ty(), *ptr = PointerType::getUnqual(B.getContext());
+  B.CreateCall(ctx.M.getOrInsertFunction("fegetenv", FunctionType::get(i32, {ptr}, false)), {env});
+  return env;
+}
+Value *fenvCall(LoweringContext &ctx, StringRef fn, Value *arg) {
+  Type *i32 = ctx.B().getInt32Ty();
+  return ctx.B().CreateCall(ctx.M.getOrInsertFunction(fn, FunctionType::get(i32, {arg->getType()}, false)), {arg});
+}
+
+// A template record recomputed by classical instructions whose value equals the template's total
+// function (CR §1.2, §2) on every input. A _rm/_rmq record runs its operation in its mode and an _exc
+// record reads the x86 exception bits the operation raises (the §1.2 bits are the host's FE_* values,
+// DENORMAL excluded), both between fegetenv and fesetenv of a host fenv_t (the program's environment
+// untouched), the operation a constrained intrinsic so that nothing moves it across the calls.
 Value *fromRecord(LoweringContext &ctx, const RailHist &r) {
   IRBuilder<> &B = ctx.B();
   const abi::TemplateSpec &s = r.spec;
+  if (s.rm == abi::TemplateSpec::NoRm && !s.exc)
+    return fromRecordIn(ctx, r, r.ops.size());
+  size_t n = r.ops.size() - (s.rm != abi::TemplateSpec::NoRm ? 1 : 0);
+  Value *mode = s.rm != abi::TemplateSpec::NoRm ? classicalOf(ctx, r.ops.back()) : nullptr;
+  for (size_t k = 0; k < n; ++k)   // operands first, each recomputed in its own bracket
+    (void)classicalOf(ctx, r.ops[k]);
+  Value *env = fenvSave(ctx);
+  if (mode)
+    fenvCall(ctx, "fesetround", B.CreateAnd(mode, B.getInt32(0xC00)));
+  if (s.exc)
+    fenvCall(ctx, "feclearexcept", B.getInt32(0x3F));
+  bool wasConstrained = B.getIsFPConstrained();
+  B.setIsFPConstrained(true);
+  B.setDefaultConstrainedRounding(mode ? RoundingMode::Dynamic : RoundingMode::NearestTiesToEven);
+  B.setDefaultConstrainedExcept(fp::ebStrict);
+  Value *v = fromRecordIn(ctx, r, n);
+  B.setIsFPConstrained(wasConstrained);
+  if (s.exc)
+    v = B.CreateAnd(fenvCall(ctx, "fetestexcept", B.getInt32(0x3F)), B.getInt32(0x3D));
+  Type *ptr = PointerType::getUnqual(B.getContext());
+  B.CreateCall(ctx.M.getOrInsertFunction("fesetenv", FunctionType::get(B.getInt32Ty(), {ptr}, false)), {env});
+  return v;
+}
+
+// fromRecord's operation over the first n operands of the record (the data operands).
+Value *fromRecordIn(LoweringContext &ctx, const RailHist &r, size_t n) {
+  IRBuilder<> &B = ctx.B();
+  const abi::TemplateSpec &s = r.spec;
+  // Every template op of CR §1.2 is recomputed below; a record of another op is not a template.
   auto fail = [&]() -> Value * {
-    unimplemented("spine: classical collapse (rule 2) of " + abi::name(s, false) +
-                      " with no original instruction to recompute it from",
-                  r.def);
+    internalError("spine: classical collapse (rule 2) of " + abi::name(s, false) + ": no such template", r.def);
   };
-  if (s.rm != abi::TemplateSpec::NoRm || s.exc || s.strided)
-    return fail();
-  size_t n = r.ops.size();
   SmallVector<Value *, 3> a;
   auto args = [&](size_t k) {
     if (n != k)
       return false;
-    for (const Operand &o : r.ops)
-      a.push_back(classicalOf(ctx, o));
+    for (size_t i = 0; i < k; ++i)
+      a.push_back(classicalOf(ctx, r.ops[i]));
     return true;
   };
   const std::string &op = s.op;
@@ -241,8 +289,122 @@ Value *fromRecord(LoweringContext &ctx, const RailHist &r) {
         return B.CreateICmp(p, a[0], a[1]);
     return fail();
   }
-  if (s.w.kind != Kind::Int)
-    return fail();   // fp templates: the value depends on the fp environment or §2's NaN rows
+  if (s.op == "qrom_load" && (n == 3 || n == 4) && args(n)) {
+    // §1.2: element idx of n little-endian elements of the type's alloc size (or the stride), 0 at
+    // idx >= n (unsigned, §2). The table is read here, so this is the template's value when the object
+    // still holds what it held at the load: a QROM object is classical memory, and a record whose
+    // table may have changed since is never reached here (the value collapses where it was loaded,
+    // through its original load instruction, when it has one).
+    Type *et = irTypeOf(B.getContext(), s.w);
+    Value *base = a[0], *cnt = a[1], *idx = a[n - 1];
+    Value *i64 = B.CreateZExt(idx, B.getInt64Ty());
+    Value *in = B.CreateICmpULT(i64, cnt);
+    Value *safe = B.CreateSelect(in, i64, B.getInt64(0));
+    Value *off = n == 4 ? B.CreateMul(safe, a[2])
+                        : B.CreateMul(safe, B.getInt64(ctx.M.getDataLayout().getTypeAllocSize(et)));
+    Value *ld = B.CreateLoad(et, B.CreateGEP(B.getInt8Ty(), base, off));
+    return B.CreateSelect(in, ld, Constant::getNullValue(et));
+  }
+  if (s.w.kind != Kind::Int || (s.to && s.to->kind != Kind::Int)) {
+    // Floating point (CR §2): IEEE at the operation's width in the record's mode (the default mode
+    // outside a strict region: a non-default mode there has undefined behaviour, C17 §7.6.1); a NaN
+    // result of arithmetic is the first NaN operand in IR operand order, quieted, else the default NaN
+    // the x86 operation itself produces (the SSE rule); fmax/fmin by §2's formula.
+    Type *ft = s.w.kind != Kind::Int ? irTypeOf(B.getContext(), s.w) : nullptr;
+    auto quiet = [&](Value *x) {
+      Type *t = x->getType();
+      unsigned bits = t->getPrimitiveSizeInBits();
+      Type *it = IntegerType::get(B.getContext(), bits);
+      unsigned qb = t->isX86_FP80Ty() ? 62 : APFloat::semanticsPrecision(t->getFltSemantics()) - 2;
+      return B.CreateBitCast(B.CreateOr(B.CreateBitCast(x, it), ConstantInt::get(it, APInt::getOneBitSet(bits, qb))), t);
+    };
+    // An fp intrinsic at the record's type, its constrained form when the builder is constrained (a _rm
+    // or _exc record: the mode it runs in, nothing moved across the fenv calls).
+    auto fpCall = [&](Intrinsic::ID id, ArrayRef<Value *> xs) -> Value * {
+      if (!B.getIsFPConstrained())
+        return B.CreateIntrinsic(id, {ft}, xs);
+      Intrinsic::ID cid = Intrinsic::not_intrinsic;
+      switch (id) {
+      case Intrinsic::sqrt: cid = Intrinsic::experimental_constrained_sqrt; break;
+      case Intrinsic::floor: cid = Intrinsic::experimental_constrained_floor; break;
+      case Intrinsic::ceil: cid = Intrinsic::experimental_constrained_ceil; break;
+      case Intrinsic::trunc: cid = Intrinsic::experimental_constrained_trunc; break;
+      case Intrinsic::rint: cid = Intrinsic::experimental_constrained_rint; break;
+      case Intrinsic::round: cid = Intrinsic::experimental_constrained_round; break;
+      case Intrinsic::fma: cid = Intrinsic::experimental_constrained_fma; break;
+      default: internalError("spine: classical collapse: an fp intrinsic with no constrained form", r.def);
+      }
+      return B.CreateConstrainedFPCall(Intrinsic::getDeclaration(&ctx.M, cid, {ft}), xs);
+    };
+    auto nanRule = [&](ArrayRef<Value *> xs, Value *res) {
+      for (size_t k = xs.size(); k-- > 0;)
+        res = B.CreateSelect(B.CreateFCmpUNO(xs[k], xs[k]), quiet(xs[k]), res);
+      return res;
+    };
+    const std::string &op = s.op;
+    if (s.to) {
+      if (n != 1 || !args(1))
+        return fail();
+      Type *to = irTypeOf(B.getContext(), *s.to);
+      if (op == "fpext") return B.CreateFPExt(a[0], to);
+      if (op == "fptrunc") return B.CreateFPTrunc(a[0], to);
+      if (op == "fptosi") return B.CreateFPToSI(a[0], to);
+      if (op == "fptoui") return B.CreateFPToUI(a[0], to);
+      if (op == "sitofp") return B.CreateSIToFP(a[0], to);
+      if (op == "uitofp") return B.CreateUIToFP(a[0], to);
+      if (op == "bitcast" && s.to->bits == s.w.bits) return B.CreateBitCast(a[0], to);
+      return fail();
+    }
+    if ((op == "fcmp" || op == "fcmps") && args(2)) {
+      for (unsigned p = CmpInst::FIRST_FCMP_PREDICATE; p <= CmpInst::LAST_FCMP_PREDICATE; ++p)
+        if (s.pred == CmpInst::getPredicateName(CmpInst::Predicate(p)))
+          return op == "fcmps" ? B.CreateFCmpS(CmpInst::Predicate(p), a[0], a[1])
+                               : B.CreateFCmp(CmpInst::Predicate(p), a[0], a[1]);
+      return fail();
+    }
+    if (op == "is_fpclass" && args(2))
+      return B.createIsFPClass(a[0], cast<ConstantInt>(a[1])->getZExtValue());
+    if (n == 1 && args(1)) {
+      Value *x = a[0];
+      if (op == "fneg") return B.CreateFNeg(x);
+      if (op == "fabs") return B.CreateUnaryIntrinsic(Intrinsic::fabs, x);
+      static const std::pair<const char *, Intrinsic::ID> un[] = {
+          {"sqrt", Intrinsic::sqrt},   {"floor", Intrinsic::floor}, {"ceil", Intrinsic::ceil},
+          {"trunc", Intrinsic::trunc}, {"rint", Intrinsic::rint},   {"round", Intrinsic::round}};
+      for (auto &[un_, id] : un)
+        if (op == un_)
+          return nanRule({x}, fpCall(id, {x}));
+      return fail();
+    }
+    if (n == 2 && args(2)) {
+      Value *x = a[0], *y = a[1];
+      if (op == "fadd") return nanRule({x, y}, B.CreateFAdd(x, y));
+      if (op == "fsub") return nanRule({x, y}, B.CreateFSub(x, y));
+      if (op == "fmul") return nanRule({x, y}, B.CreateFMul(x, y));
+      if (op == "fdiv") return nanRule({x, y}, B.CreateFDiv(x, y));
+      if (op == "frem") return nanRule({x, y}, B.CreateFRem(x, y));
+      if (op == "copysign") return B.CreateBinaryIntrinsic(Intrinsic::copysign, x, y);
+      if (op == "fmax" || op == "fmin") {   // §2: isnan(a) ? b : isnan(b) ? a : (b > a ? b : a), min with <
+        Value *pick = op == "fmax" ? B.CreateFCmpOGT(y, x) : B.CreateFCmpOLT(y, x);
+        return B.CreateSelect(B.CreateFCmpUNO(x, x), y,
+                              B.CreateSelect(B.CreateFCmpUNO(y, y), x, B.CreateSelect(pick, y, x)));
+      }
+      return fail();
+    }
+    if (n == 3 && op == "fma" && args(3))
+      return nanRule({a[0], a[1], a[2]}, fpCall(Intrinsic::fma, {a[0], a[1], a[2]}));
+    return fail();
+  }
+  if (n == 2 && op.size() > 9 && StringRef(op).ends_with("_overflow") && args(2)) {
+    static const std::pair<const char *, Intrinsic::ID> ov[] = {
+        {"uadd_overflow", Intrinsic::uadd_with_overflow}, {"sadd_overflow", Intrinsic::sadd_with_overflow},
+        {"usub_overflow", Intrinsic::usub_with_overflow}, {"ssub_overflow", Intrinsic::ssub_with_overflow},
+        {"umul_overflow", Intrinsic::umul_with_overflow}, {"smul_overflow", Intrinsic::smul_with_overflow}};
+    for (auto &[on, id] : ov)
+      if (op == on)
+        return B.CreateExtractValue(B.CreateBinaryIntrinsic(id, a[0], a[1]), {1u});
+    return fail();
+  }
   if (s.to) {
     if (n != 1 || !args(1))
       return fail();
@@ -319,11 +481,9 @@ Value *fromRecord(LoweringContext &ctx, const RailHist &r) {
 // lowered with (the record's last operand: the _rm literal, or the _rmq MODE rail, itself collapsed)
 // and must not raise into the host flags (its bits were the quantum FLAGS' at its own point). The
 // copy runs between fegetenv and fesetenv of a host fenv_t (both the mode and the flags restored),
-// under fesetround(mode). fmuladd (lowered unfused, CR §2) is cq::unimplemented.
+// under fesetround(mode). fmuladd is recomputed unfused (CR §2), as it was lowered.
 Value *fromConstrained(LoweringContext &ctx, const RailHist &r, ConstrainedFPIntrinsic &ci) {
   IRBuilder<> &B = ctx.B();
-  if (ci.getIntrinsicID() == Intrinsic::experimental_constrained_fmuladd)
-    unimplemented("spine: classical collapse (rule 2) of a constrained fmuladd (lowered unfused)", &ci);
   unsigned n = ci.getNonMetadataArgCount();
   bool rm = r.spec.rm != abi::TemplateSpec::NoRm;
   if (r.ops.size() != n + (rm ? 1 : 0))
@@ -332,9 +492,14 @@ Value *fromConstrained(LoweringContext &ctx, const RailHist &r, ConstrainedFPInt
   if (rm) {
     mode = classicalOf(ctx, r.ops.back());
   } else if (std::optional<RoundingMode> m = ci.getRoundingMode()) {
-    if (*m != RoundingMode::NearestTiesToEven)
-      unimplemented("spine: classical collapse (rule 2) of a constrained op whose record carries no mode", &ci);
-    mode = B.getInt32(0);   // FE_TONEAREST
+    // A static mode: its x86 FE_* value (bits 10-11, CR §1.2).
+    switch (*m) {
+    case RoundingMode::NearestTiesToEven: mode = B.getInt32(0); break;
+    case RoundingMode::TowardNegative: mode = B.getInt32(0x400); break;
+    case RoundingMode::TowardPositive: mode = B.getInt32(0x800); break;
+    case RoundingMode::TowardZero: mode = B.getInt32(0xC00); break;
+    default: internalError("spine: classical collapse: a constrained op with a static mode x86 has no FE_ value for", &ci);
+    }
   }
   if (mode && !mode->getType()->isIntegerTy(32))
     internalError("spine: classical collapse: a rounding mode that is not an i32", &ci);
@@ -350,7 +515,20 @@ Value *fromConstrained(LoweringContext &ctx, const RailHist &r, ConstrainedFPInt
   B.CreateCall(ctx.M.getOrInsertFunction("fegetenv", FunctionType::get(i32, {ptr}, false)), {env});
   if (mode)
     B.CreateCall(ctx.M.getOrInsertFunction("fesetround", FunctionType::get(i32, {i32}, false)), {mode});
-  Value *v = copyClassical(ctx, ci);
+  Value *v;
+  if (ci.getIntrinsicID() == Intrinsic::experimental_constrained_fmuladd) {
+    // CR §2: fmuladd is unfused, fmul then fadd, each rounded in the mode.
+    bool was = B.getIsFPConstrained();
+    B.setIsFPConstrained(true);
+    B.setDefaultConstrainedRounding(RoundingMode::Dynamic);
+    B.setDefaultConstrainedExcept(fp::ebStrict);
+    Value *x = ctx.operand(ci.getArgOperand(0)).v, *y = ctx.operand(ci.getArgOperand(1)).v,
+          *z = ctx.operand(ci.getArgOperand(2)).v;
+    v = B.CreateFAdd(B.CreateFMul(x, y), z);
+    B.setIsFPConstrained(was);
+  } else {
+    v = copyClassical(ctx, ci);
+  }
   B.CreateCall(ctx.M.getOrInsertFunction("fesetenv", FunctionType::get(i32, {ptr}, false)), {env});
   return v;
 }
@@ -533,7 +711,7 @@ Meas formalMeasured(Shared &sh, const Function &F, unsigned idx, SmallPtrSet<con
 
 } // namespace
 
-void noteCalleeMeasures(LoweringContext &ctx, const CallBase &orig, BasicBlock *start, Instruction *before) {
+void noteCalleeMeasures(LoweringContext &ctx, const CallBase &orig, BasicBlock *, Instruction *) {
   Shared &sh = shared(ctx);
   const Function *F = orig.getCalledFunction();
   if (!F || F->isDeclaration())
@@ -554,21 +732,13 @@ void noteCalleeMeasures(LoweringContext &ctx, const CallBase &orig, BasicBlock *
     cm.call = &orig;
     cm.arg = a;
     cm.always = m == Meas::Always;
-    // The emitted clone call: a call of a "__cq_q_" function with h among its arguments, emitted by
-    // this call's lowering in the block it began in.
-    for (auto it = before ? std::next(before->getIterator()) : start->begin(); it != start->end(); ++it) {
-      auto *c = dyn_cast<CallInst>(&*it);
-      if (!c || !c->getCalledFunction() || !c->getCalledFunction()->getName().starts_with("__cq_q_") ||
-          !is_contained(c->args(), h))
-        continue;
-      if (cm.out)
-        cm.why = "two clone calls take the rail";
-      cm.out = c;
-    }
-    if (!cm.out && cm.why.empty())
-      cm.why = "the clone call taking the rail is not in the block the call's lowering began in";
-    if (ctx.currentFlag() && cm.why.empty())
-      cm.why = "the clone call is under a quantum predicate (a _ctl clone)";
+    // The end of the call's lowering (the builder's point now): after the clone call (or calls, a
+    // dispatch over callees) wherever its lowering left the walk, so a re-read placed there follows the
+    // callee's measurement and dominates every later reader (a _ctl clone measures unconditionally too,
+    // rule 2).
+    IRBuilder<> &B = ctx.B();
+    cm.endBlock = B.GetInsertBlock();
+    cm.out = B.GetInsertPoint() == cm.endBlock->begin() ? nullptr : &*std::prev(B.GetInsertPoint());
     sh.calleeMeasured[h] = cm;
   }
 }
@@ -585,20 +755,23 @@ Value *calleeCollapse(LoweringContext &ctx, Value *handle, const Instruction &at
     Shared::CalleeMeasure cm = sh.calleeMeasured.lookup(src);
     std::string pre = "spine: cq_measure of a value whose quantum source a callee measured (rule 2 re-read, cq-ihlt): ";
     if (!cm.always)
-      unimplemented(pre + "the callee measures it on some paths only", &at);
-    if (!cm.why.empty())
-      unimplemented(pre + cm.why, &at);
-    for (bool open : sh.gateLogOpen)
-      if (open)
-        unimplemented(pre + "a gate log is open", &at);
+      unimplemented(pre + "the callee measures it on some paths only: awaiting owner ruling: SPEC_ISSUES rule 2 "
+                          "re-read of a rail a callee measures on some paths only",
+                    &at);
     IRBuilder<> &B = ctx.B();
     IRBuilderBase::InsertPointGuard guard(B);
-    B.SetInsertPoint(cm.out->getParent(), std::next(cm.out->getIterator()));
+    if (cm.out)
+      B.SetInsertPoint(cm.out->getParent(), std::next(cm.out->getIterator()));
+    else
+      B.SetInsertPoint(cm.endBlock, cm.endBlock->getFirstInsertionPt());
     Type *t = cm.arg->getType();
-    if (!t->isIntegerTy() && !t->isHalfTy() && !t->isBFloatTy() && !t->isFloatTy() && !t->isDoubleTy() &&
-        !t->isX86_FP80Ty())
-      unimplemented(pre + "a rail of IR type that is not iN/half/bfloat/float/double/x86_fp80", &at);
+    if (!t->isIntegerTy() && !t->isFloatingPointTy())   // one handle: a scalar actual (rule 1)
+      internalError("spine: a callee-measured actual bound to one handle that is no scalar", &at);
+    // A classical re-read (CR §1.3, rule 2): no gate, so no open cq_invert gate log records it.
+    std::vector<bool> logs = sh.gateLogOpen;
+    sh.gateLogOpen.assign(logs.size(), false);
     CallInst *m = ctx.emitCore(abi::CoreSpec{abi::Core::Measure, railTypeOf(t)}, {src});
+    sh.gateLogOpen = logs;
     // The lowering of the user's cq_measure: it carries the V1 provenance marker.
     m->setMetadata("cq.measure", MDNode::get(ctx.M.getContext(), {}));
     if (m->getType() != t)
