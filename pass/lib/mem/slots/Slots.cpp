@@ -58,8 +58,10 @@
 //      * a parameter's cells are the caller's rails (60); in an entry a stored rail that is not a
 //        register is an OUTPUT (71's reasoning: the caller reads it); a store in a clone is
 //        unimplemented (rule 18 copy-out, 31);
-//      * a global: an external one is an output (71); an alias load of a global is unimplemented
-//        (another function or invocation may have left a rail there: 67);
+//      * a global: an external one is an output (71); an internal one read from outside (globalConfined:
+//        a load no store of its block forwards, or an address handed on) is seeded by a module constructor,
+//        keeps every rail stored into it and its alias loads read the cell's current handle (rule 20,
+//        cq-e5lj); a confined one (67) has no alias load;
 //      * an object whose pointer escapes to a call (or anywhere but loads, stores and the memory and
 //        lifetime intrinsics) may have its cells written by the callee: an alias load of it, and any
 //        store into it other than of a register, are unimplemented (rule 18 twins: 31, 52, 106).
@@ -105,6 +107,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/CFG.h"
+#include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
@@ -2745,6 +2748,117 @@ void ensureSlotCtor(Module &M, const GlobalVariable &cgv) {
   appendToGlobalCtors(M, F, 65535);
 }
 
+// ---- global slot cells read from outside (CR rule 20, cq-e5lj) ----------------------------------
+//
+// "A global or static slot cell that holds a handle on any path holds one from program start: its initializer
+// is materialised as a seed rail by the module constructor, a load with no dominating store in the function
+// reads the cell's current handle (no gate) in any function, and at process exit the rails its cells hold are
+// the program's visible result: kept, never freed." A global slot object is CONFINED when every read of its
+// cells is one 67 forwards: a load in the block of a store through the same pointer, after it, with no write of
+// the object and no call that may reach code accessing it in between, and the global's address goes nowhere
+// else (no call, no memory intrinsic, no other use). A confined global's rails follow their own roles (67's
+// product is uncomputed after its read, nothing else can read it). Every other global slot object is READ FROM
+// OUTSIDE: its handle cells are seeded by the constructor __cq_slot_init_<G> (rule 7: alloc_<W> of the
+// initializer's value of the cell), every rail stored into it is kept (Role::Output), and a load that no
+// dominating access of its function names reads the cell's current handle (Role::UserRegister: never resolved
+// here, as a caller's formal cell).
+bool globalConfined(const GlobalVariable &gv) {
+  static std::map<const GlobalVariable *, bool> cache;
+  if (auto it = cache.find(&gv); it != cache.end())
+    return it->second;
+  auto decide = [&]() {
+    SmallVector<const Value *, 8> work{&gv};
+    SmallPtrSet<const Value *, 16> seen{&gv};
+    SmallVector<const LoadInst *, 8> loads;
+    SmallVector<const StoreInst *, 8> stores;
+    while (!work.empty()) {
+      const Value *v = work.pop_back_val();
+      for (const Use &u : v->uses()) {
+        const User *usr = u.getUser();
+        if (auto *L = dyn_cast<LoadInst>(usr); L && L->getPointerOperand() == v) {
+          loads.push_back(L);
+          continue;
+        }
+        if (auto *S = dyn_cast<StoreInst>(usr); S && S->getPointerOperand() == v && S->getValueOperand() != v) {
+          stores.push_back(S);
+          continue;
+        }
+        if (isa<GEPOperator>(usr) || isa<BitCastOperator>(usr) || isa<AddrSpaceCastOperator>(usr)) {
+          if (seen.insert(usr).second)
+            work.push_back(usr);
+          continue;
+        }
+        return false;   // a call, an intrinsic, an atomic, a stored address, ...
+      }
+    }
+    for (const LoadInst *L : loads) {
+      bool forwarded = false;
+      for (auto it = L->getIterator(); it != L->getParent()->begin() && !forwarded;) {
+        --it;
+        const Instruction &X = *it;
+        if (auto *S = dyn_cast<StoreInst>(&X); S && is_contained(stores, S)) {
+          if (S->getPointerOperand() != L->getPointerOperand() ||
+              S->getValueOperand()->getType() != L->getType() || S->isVolatile() || S->isAtomic())
+            break;
+          forwarded = true;
+          break;
+        }
+        if (auto *CB = dyn_cast<CallBase>(&X); CB && !isa<DbgInfoIntrinsic>(CB) && !isCqSurface(*CB) &&
+                                               callMayTouchInternalGlobal(*CB, gv))
+          break;
+      }
+      if (!forwarded)
+        return false;
+    }
+    return true;
+  };
+  return cache[&gv] = decide();
+}
+
+// The constructor seeds of a global slot object read from outside (see globalConfined): every handle cell.
+void ensureGlobalSlotSeeds(LoweringContext &ctx, const ObjInfo &info, const GlobalVariable &cgv,
+                           const Instruction &at) {
+  auto &gv = const_cast<GlobalVariable &>(cgv);
+  Module &M = ctx.M;
+  std::string name = ("__cq_slot_init_" + gv.getName()).str();
+  if (M.getFunction(name))
+    return;
+  if (info.record || info.view || info.colStride || info.split)
+    unimplemented("mem-slots: the rule 20 constructor seeds of a global slot record, bit view, byte-cell or "
+                  "field-column object read from outside (cq-e5lj)",
+                  &at);
+  const DataLayout &DL = M.getDataLayout();
+  if (!gv.hasInitializer() || gv.isExternallyInitialized())
+    internalError("mem-slots: a global slot object read from outside with no initializer of its own", &at);
+  uint64_t total = DL.getTypeAllocSize(gv.getValueType()).getFixedValue();
+  uint64_t cb = info.cellBytes;
+  if (cb < 4)
+    unimplemented("mem-slots: a global slot object with cells narrower than a handle", &at);
+  if (total % cb)
+    internalError("mem-slots: a global slot object whose cells do not tile it", &at);
+  LLVMContext &C = M.getContext();
+  Function *F = Function::Create(FunctionType::get(Type::getVoidTy(C), false), GlobalValue::InternalLinkage, name, M);
+  IRBuilder<> B(BasicBlock::Create(C, "", F));
+  Type *i64 = Type::getInt64Ty(C);
+  for (uint64_t off = 0; off < total; off += cb) {
+    Constant *p = off ? ConstantExpr::getInBoundsGetElementPtr(Type::getInt8Ty(C), &gv, ConstantInt::get(i64, off))
+                      : static_cast<Constant *>(&gv);
+    if (ctx.T.globalHostCell(p, 0, cb, ctx.S))
+      continue;   // cq-hfah: a host cell keeps its C value
+    Constant *v = ConstantFoldLoadFromConst(gv.getInitializer(), info.cellTy, APInt(64, off), DL);
+    if (!v)
+      internalError("mem-slots: the initializer value of a global slot cell does not fold", &at);
+    RailType w = railTypeOf(info.cellTy);
+    Value *h = B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Alloc, w}), {v});
+    Value *cell = &gv;
+    if (off)   // an instruction, not a constant expression: the cell's address as cellPointer spells it
+      cell = B.Insert(GetElementPtrInst::CreateInBounds(Type::getInt8Ty(C), &gv, {ConstantInt::get(i64, off)}));
+    B.CreateAlignedStore(h, cell, Align(4));
+  }
+  B.CreateRetVoid();
+  appendToGlobalCtors(M, F, 65535);
+}
+
 // The guarded store of a program slot gv in F (a handler, 102's h): F's only access of gv, a store in F's
 // entry block of a constant or a formal of F, and no call in F that may reach code accessing gv. Else null.
 const StoreInst *guardedStoreOf(const Function &F, const GlobalVariable &gv) {
@@ -2928,9 +3042,15 @@ Operand readCell(LoweringContext &ctx, FnState &st, const Site &s, const Instruc
   }
   switch (s.info->kind) {
   case RootKind::Global:
-    unimplemented("mem-slots: a load of a global slot cell no dominating access of this function wrote (its "
-                  "rail's owner is unknown: 67)",
-                  &I);
+    // CR rule 20 (cq-e5lj): the cell's current handle, seeded by the constructor (see globalConfined).
+    if (globalConfined(*cast<GlobalVariable>(s.info->root)))
+      internalError("mem-slots: a load of a confined global slot cell that no store of its block forwards", &I);
+    ensureGlobalSlotSeeds(ctx, *s.info, *cast<GlobalVariable>(s.info->root), I);
+    if (s.info->escaping)
+      unimplemented("mem-slots: a load of a slot cell a callee may have written (the object's pointer escapes "
+                    "to a call: rule 18 twins, 31, 52, 106)",
+                    &I);
+    break;
   case RootKind::Local:
   case RootKind::Heap:
   case RootKind::Param:
@@ -4324,8 +4444,12 @@ void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &
       st.registers.insert(val.v);
       break;
     case RootKind::Global:
-      if (!cast<GlobalVariable>(s.info->root)->hasLocalLinkage()) {
-        ctx.unc().setRole(id, Role::Output);   // an extern global is an output (71)
+      // An extern global is an output (71); so is a global read from outside (CR rule 20, cq-e5lj: its rails at
+      // exit are the program's visible result, and a load elsewhere may read this one).
+      if (auto *gv = cast<GlobalVariable>(s.info->root); !gv->hasLocalLinkage() || !globalConfined(*gv)) {
+        if (gv->hasLocalLinkage())
+          ensureGlobalSlotSeeds(ctx, *s.info, *gv, I);
+        ctx.unc().setRole(id, Role::Output);
         st.registers.insert(val.v);
       }
       break;
