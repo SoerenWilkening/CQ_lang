@@ -9,6 +9,12 @@
 //      FLAGS  empty or a handle (an i32 rail: the exception bits quantum code raised, host encoding
 //             INVALID 1, DIVBYZERO 4, OVERFLOW 8, UNDERFLOW 16, INEXACT 32).
 //    The value C reads is host | quantum: fetestexcept(m) = host call | (FLAGS & m).
+//  The quantum part is an SSA variable of the OUTPUT function (cq-hzji): its value at the end of each
+//  output block where it changed, and at a join of output blocks whose values differ a phi over handles
+//  (Uncompute::recordMerge, rule 9 at a58c3a4), an empty / classical incoming made a rail where its edge
+//  leaves (FLAGS: alloc_i32(0); MODE: alloc_i32 of the classical mode there). So a change on one
+//  classical path holds after the join on that path only (cq-1dlz). Saved parts of fenv_t / fexcept_t
+//  objects are SSA variables the same way, one per object.
 //
 // CONSTRUCTIONS
 //  - A constrained op (llvm.experimental.constrained.*) is QUANTUM when an operand is a rail or it
@@ -16,37 +22,61 @@
 //    classical operands is cq_template_fadd_f64_ll_rmq). Its value template takes the mode last:
 //    _rm with a classical i32 (a static rounding metadata as its FE_* literal; the dynamic mode as
 //    the last classical fesetround constant of the same block, else a fegetround() host call), _rmq
-//    with the MODE handle; round.tonearest takes none. With exceptions other than fpexcept.ignore a
-//    second template, the same with _exc, computes the op's exception bits; under a quantum
-//    predicate they enter as select(flag, exc, 0) (100's fenv_op_in_arm). FLAGS advances out of
-//    place: FLAGS' = or(FLAGS, bits); while FLAGS is empty the bits rail becomes FLAGS. A compare's
-//    value is the plain fcmp template, its bits fcmps_exc (signaling) or fcmp_exc (quiet).
-//    fmuladd is unfused (CR §2): fmul then fadd, each rounded in the mode, bits or'ed. A classical
-//    constrained op is the host op (it rounds in the host mode and raises into the host flags).
+//    with the MODE handle; round.tonearest takes none. round.tonearestaway has no x86-64 FE_* mode:
+//    the x86 backend rounds such an op in the current mode (the metadata is an assumption LLVM's
+//    codegen does not act on, LangRef), so it is the dynamic mode here (whatever LLVM does, we do).
+//    With fpexcept.strict (ruling 2026-11-02, cq-75n4: ignore and maytrap raise nothing) a second template, the same with _exc, computes the
+//    op's exception bits; under a quantum predicate they enter as select(flag, exc, 0) (100's
+//    fenv_op_in_arm). FLAGS advances out of place: FLAGS' = or(FLAGS, bits); while FLAGS is empty the
+//    bits rail becomes FLAGS. A compare's value is the plain fcmp template, its bits fcmps_exc
+//    (signaling) or fcmp_exc (quiet). fmuladd is unfused (CR §2): fmul then fadd, each rounded in the
+//    mode, bits or'ed. A vector op works per lane (rule 3): a lane with a rail (or rounding in the
+//    MODE rail) is a template, every other lane the scalar host op. A classical constrained op is the
+//    host op (it rounds in the host mode and raises into the host flags). Under a quantum predicate a
+//    raising host op is bracketed (BRACKET): h = fetestexcept(ALL); feclearexcept(ALL); op;
+//    bits = fetestexcept(ALL); feclearexcept(ALL); feraiseexcept(h) leaves the host flags as they
+//    were and gives the op's bits classically, FLAGS |= select(p, bits, 0); a literal op folds (169).
 //  - fesetround(r): r a classical constant and no quantum predicate: the host call, MODE classical
-//    (an invalid constant changes nothing). r quantum: MODE' = valid ? r : MODE with valid =
+//    (an invalid constant changes nothing, also under a predicate: the host call alone). r classical
+//    at run time while MODE is a handle: the host call, MODE' = valid(r) ? alloc(r) : MODE as a
+//    classical select over handles (a merge). r quantum: MODE' = valid ? r : MODE with valid =
 //    ((r & ~0xC00) == 0), the result valid ? 0 : 1; when known bits prove r valid, MODE' = r itself
 //    (80). Under a quantum predicate p: MODE' = select(p, new, MODE). No host call when MODE' is a
 //    handle (80, 100's fenv_quantum_mode).
 //  - fegetround(): MODE's handle itself (no gate), or the host call.
 //  - feraiseexcept(m): under a quantum predicate or with a quantum m, FLAGS' = FLAGS |
 //    select(p, m & 63, 0) and no host call (65, 81); otherwise the host call.
-//  - feclearexcept(m): the host call, and FLAGS' = FLAGS & ~m (81).
+//  - feclearexcept(m): the host call, and FLAGS' = FLAGS & ~m (81). Under a quantum predicate p with
+//    a classical m: hb = fetestexcept(m), the host call, FLAGS' = select(p, FLAGS & ~m, FLAGS | hb).
+//    A quantum m (FOLD: the host flags move into the rail): h = fetestexcept(ALL), feclearexcept(ALL),
+//    T = FLAGS | h, FLAGS' = select(p, T & ~m, T) (T & ~m without a predicate).
 //  - fetestexcept(m): the host call | (FLAGS & m), a fresh i32 (65, 81, 100).
 //  - fegetexceptflag(o, m) / fesetexceptflag(o, m): the host calls; the object's quantum part is
-//    FLAGS & m, reinstated as (FLAGS & ~m) | (saved & m) (100's fenv_narrow_mask).
+//    FLAGS & m, reinstated as (FLAGS & ~m) | (saved & m) (100's fenv_narrow_mask). A quantum m: the
+//    host save of every bit (C17 7.6.2.4: a later restore names a subset of m), the part FLAGS & m.
 //  - fegetenv(e) / feholdexcept(e): the host call; e's quantum part is (MODE, FLAGS); feholdexcept
 //    empties FLAGS. fesetenv(e): MODE, FLAGS := e's part; feupdateenv(e): MODE := e's mode, FLAGS :=
 //    e's flags | FLAGS (100's fenv_dfl_env: FE_DFL_ENV has an empty quantum part). An object whose
 //    quantum part this function never saved has an empty one.
-//  - feenableexcept / fedisableexcept / fegetexcept: host calls; trapping is not modelled on rails.
+//  - A save under a quantum predicate p makes the object's part FULL: rails holding its whole value
+//    (select(p, now, before)), the host bytes left untouched and no longer read. "Before" of a part
+//    that is not full is PROBED from the host object (fexcept_t: fesetexceptflag(o), fetestexcept,
+//    then the host flags restored; fenv_t: fegetenv(tmp), fesetenv(o), fegetround, fetestexcept,
+//    fesetenv(tmp)), of an object never saved on the path it is 0 (a restore of it is undefined).
+//    A restore of a full part, or any restore under p, FOLDs: the host flags move into FLAGS and
+//    FLAGS' / MODE' are computed on rails (select(p, restored, current) under p). Trap enables are not
+//    part of the model (see LIMITS).
+//  - feenableexcept / fedisableexcept / fegetexcept (not C17, recognised as host calls): host calls.
 //
 // ROLES. Every FLAGS state and every rail feeding one is uncomputed (Role::Garbage) except the
 // FINAL flags rail, fenv state the caller can read, an output like 71's global (rule 23: "the final
 // flags rail is an output"). The final quantum MODE is kept for the same reason (orchestrator
-// decision under rule 23 and NORTHSTAR goal 2, recorded on cq-w1-eff-fenv). A state is final when no
-// instruction that may change it is reachable after the current one in the original function: the
-// module re-decides after every instruction it lowers and sets Role::Output then. A state rail
+// decision under rule 23 and NORTHSTAR goal 2, recorded on cq-w1-eff-fenv). The state at each return
+// of an entry is final (atEntryReturn, called by the spine before flushAtExit): kept itself when it is
+// a rail no later state superseded on any path, else copied out (alloc_i32(0), copy_i32, the copy
+// kept). Earlier, when the instruction is reached on every classical path, outside every loop, and
+// no instruction that may change the state or measure is reachable after it (in the original CFG or
+// in a later linearized quantum arm), its state is already final and kept then (settle). A state rail
 // rule 2 makes classical (its sources measured, before or after it was computed: owner ruling
 // cq-r6bc) is no output: it is uncomputed and its classical value written back to the host at the
 // collapse point, feraiseexcept(v) / fesetround(m) (65; writeBack, after every measurement and
@@ -59,20 +89,14 @@
 // non-call use keeps flushBefore off the rail, and flushAtExit places its uncompute after its real
 // uses (Uncompute.cpp contract).
 //
-// LIMITS (each an internal compiler error, never an output):
-//  - the quantum part changes only in an entry function or a clone carrying it (E1), outside every loop (a loop-carried state), in a block every classical path of its
-//    function reaches (a classical join would merge two states), and not in a rule-19 inlined
-//    callee; a read of a state rail must be dominated by its definition in the output;
-//  - feclearexcept with a quantum mask, and every environment call other than fesetround,
-//    fegetround, feraiseexcept and fetestexcept under a quantum predicate;
-//  - a classical constrained op that raises under a quantum predicate (its bits would be quantum),
-//    unless its operands are literals (folded: FLAGS |= select(p, bits, 0), 169);
-//  - a call, while the quantum part is live, to a function whose body may change the environment,
-//    unless it is a quantum call of a clone carrying the environment (E1, 82: the clone takes the
-//    caller's mode and flags and returns the new flags; contract at the end of this file), and
-//    llvm.set.rounding while MODE is a handle; in such a clone: a quantum MODE (in the caller at the
-//    call, or made in the clone), a _ctl clone, a call under a quantum predicate;
-//  - round.tonearestaway and the constrained libm intrinsics (pow, sin, nearbyint, lrint, ...).
+// LIMITS. Awaiting owner rulings (SPEC_ISSUES, each an internal compiler error naming its entry):
+// exception traps (feenableexcept) with quantum flags or under a quantum predicate; a classical call
+// of a body that reads, clears, saves or rounds in the environment while its quantum part is live;
+// a quantum MODE passed into or returned from a clone (82's ABI carries a classical mode and returns
+// only the flags; the mode clone's name is owed, CR §8); a constrained op with no rule 4 template
+// (a libm intrinsic: its clone's mode parameter is the same owed name); a fenv_t / fexcept_t object
+// holding a quantum part that other code reads or writes. Not built yet (rule 14, build step 5): a
+// quantum change inside a classically bounded loop (its loop-carried state).
 #include "cq/Effects.h"
 
 #include <array>
@@ -83,6 +107,7 @@
 
 #include "cq/Abi.h"
 #include "cq/Calls.h"
+#include "cq/Loops.h"
 #include "cq/Predicate.h"
 #include "cq/Taint.h"
 #include "cq/Uncompute.h"
@@ -109,7 +134,7 @@ using namespace llvm;
 
 namespace cq::fenv {
 
-// E1 (proposed Effects.h freeze amendment; contract at the end of this file).
+// E1 (Effects.h; contract at the end of this file).
 bool cloneCarriesEnv(const TaintInfo &T, const Specialization &S);
 std::array<Operand, 2> envArgs(LoweringContext &, CallBase &site);
 void afterCloneCall(LoweringContext &, CallBase &site, Value *flagsOut);
@@ -121,6 +146,18 @@ namespace {
 // x86-64 <fenv.h>: FE_ALL_EXCEPT and the rounding-control bits of an FE_* mode value.
 constexpr int64_t kAllExcept = 63;
 constexpr int64_t kModeBits = 0xC00;
+
+// The SPEC_ISSUES entries this module's remaining stops await (owner rulings).
+constexpr const char *kIssueTraps = "awaiting owner ruling: SPEC_ISSUES rule 23: exception traps on quantum flags";
+constexpr const char *kIssueHostCall =
+    "awaiting owner ruling: SPEC_ISSUES rule 23: a classical call of a body that reads the live quantum environment";
+constexpr const char *kIssueModeClone =
+    "awaiting owner ruling: SPEC_ISSUES rule 23: a quantum rounding mode across a clone boundary";
+constexpr const char *kIssueLibm =
+    "awaiting owner ruling: SPEC_ISSUES rule 23: a constrained libm intrinsic with a quantum operand";
+constexpr const char *kIssueObject =
+    "awaiting owner ruling: SPEC_ISSUES rule 23: a fenv_t / fexcept_t object holding a quantum part that other "
+    "code reads or writes";
 
 // --------------------------------------------------------------------------------------------
 // The <fenv.h> calls (C17 7.6), by name: a body-less callee with one of these names.
@@ -211,24 +248,60 @@ bool writesMode(const Instruction &I) {
   }
 }
 
-// Does a function body (transitively through direct calls of bodies) touch the environment?
-bool bodyTouchesFenv(const Function &F, SmallPtrSetImpl<const Function *> &seen) {
+// What a body does to the environment, through direct calls of bodies too. A raise alone is no
+// conflict with a live quantum part (the host flags are its host part); a read, clear, save or
+// restore of the flags, or a use or change of the dynamic mode, is (requireWritable).
+struct BodyEnv {
+  bool flags = false;   // reads, clears, saves or restores the flags
+  bool mode = false;    // rounds in, reads, saves or changes the dynamic mode
+  bool any = false;     // touches the environment at all
+};
+
+void bodyEnv(const Function &F, BodyEnv &e, SmallPtrSetImpl<const Function *> &seen) {
   if (!seen.insert(&F).second)
-    return false;
+    return;
   for (const BasicBlock &BB : F)
     for (const Instruction &I : BB) {
       auto *CB = dyn_cast<CallBase>(&I);
       if (!CB)
         continue;
-      if (envOp(I))
-        return true;   // an indirect call may reach anything
-      const Function *G = CB->getCalledFunction();
-      if (!G)
+      if (auto *CI = dyn_cast<ConstrainedFPIntrinsic>(CB)) {
+        e.any = true;
+        std::optional<RoundingMode> rm = CI->getRoundingMode();
+        if (rm && *rm == RoundingMode::Dynamic)
+          e.mode = true;
         continue;
-      if (!G->isDeclaration() && bodyTouchesFenv(*G, seen))
-        return true;
+      }
+      switch (fenvFn(*CB)) {
+      case FenvFn::None:
+        break;
+      case FenvFn::RaiseExcept:
+        e.any = true;
+        continue;
+      case FenvFn::GetRound: case FenvFn::SetRound:
+        e.any = e.mode = true;
+        continue;
+      case FenvFn::ClearExcept: case FenvFn::GetExceptFlag: case FenvFn::SetExceptFlag: case FenvFn::TestExcept:
+        e.any = e.flags = true;
+        continue;
+      default:
+        e.any = e.flags = e.mode = true;
+        continue;
+      }
+      if (auto *II = dyn_cast<IntrinsicInst>(CB)) {
+        if (II->getIntrinsicID() == Intrinsic::set_rounding || II->getIntrinsicID() == Intrinsic::get_rounding)
+          e.any = e.mode = true;
+        continue;
+      }
+      const Function *G = CB->getCalledFunction();
+      if (!G) {
+        if (!CB->isInlineAsm())
+          e.any = e.flags = e.mode = true;   // an indirect call may reach anything
+        continue;
+      }
+      if (!G->isDeclaration())
+        bodyEnv(*G, e, seen);
     }
-  return false;
 }
 
 // Does F access the environment itself (CR rule 23)? It is compiled under FENV_ACCESS (strictfp) or
@@ -252,6 +325,24 @@ bool ownBodyTouchesFenv(const Function &F) {
     for (const Instruction &I : BB)
       if (envOp(I))
         return true;
+  return false;
+}
+
+// Does a function body (transitively through direct calls of bodies) hold or change the environment?
+bool bodyTouchesFenv(const Function &F, SmallPtrSetImpl<const Function *> &seen) {
+  if (!seen.insert(&F).second)
+    return false;
+  for (const BasicBlock &BB : F)
+    for (const Instruction &I : BB) {
+      auto *CB = dyn_cast<CallBase>(&I);
+      if (!CB)
+        continue;
+      if (envOp(I))
+        return true;   // an indirect call may reach anything
+      const Function *G = CB->getCalledFunction();
+      if (G && !G->isDeclaration() && bodyTouchesFenv(*G, seen))
+        return true;
+    }
   return false;
 }
 
@@ -334,31 +425,50 @@ bool carriesEnvImpl(const TaintInfo &T, const Specialization &S) {
 // --------------------------------------------------------------------------------------------
 // Per-output-function state.
 
-struct Saved {
-  Value *mode = nullptr;    // handle or null (classical: the host part restores it)
+// A value of one SSA variable: the quantum part of the environment (KState) or the saved quantum part
+// of one fenv_t (KEnv) / fexcept_t (KXflags) object.
+struct Part {
   Value *flags = nullptr;   // handle or null (empty)
-  std::optional<uint64_t> mask;   // fegetexceptflag's mask when a constant
+  Value *mode = nullptr;    // handle or null (classical: the host mode; of an object, its host bytes)
+  std::optional<uint64_t> mask;   // fexcept_t: fegetexceptflag's mask when a constant
+  bool full = false;        // object: the rails hold the whole saved value, the host bytes are stale
+  bool saved = false;       // object: a save reached it on this path
+  bool pending = false;     // a read around an output cycle (readStart), never stored
+  bool same(const Part &o) const {
+    return flags == o.flags && mode == o.mode && mask == o.mask && full == o.full && saved == o.saved;
+  }
+};
+
+enum PartKind : unsigned { KState = 0, KEnv = 1, KXflags = 2 };
+using Key = std::pair<const Value *, unsigned>;
+const Key kState{nullptr, KState};
+
+struct Var {
+  DenseMap<BasicBlock *, Part> end;     // the value at the end of an output block where it changed
+  DenseMap<BasicBlock *, Part> start;   // a merge made at the start of an output block
 };
 
 struct State {
   const Function *orig = nullptr;   // the walked original function (an entry's)
-  Value *mode = nullptr;            // MODE handle, null = classical
-  BasicBlock *modeAt = nullptr;     // output block of the last change that involved a rail
-  Value *flags = nullptr;           // FLAGS handle, null = empty
-  BasicBlock *flagsAt = nullptr;
+  std::map<Key, Var> vars;
+  Part initial;                     // the state at the output's entry (a clone's bound flags)
+  bool any = false;                 // some quantum part was made
   // The classical mode value known at a point of one original block.
   Value *modeVal = nullptr;
   const Instruction *modeValAt = nullptr;
-  DenseMap<const Value *, Saved> envs;     // fenv_t objects, by underlying object
-  DenseMap<const Value *, Saved> xflags;   // fexcept_t objects, by underlying object
-  bool anyQuantumSave = false;
   bool traps = false;
   AllocaInst *anchor = nullptr;
+  AllocaInst *probeEnv = nullptr;   // a scratch fenv_t for host probes
+  DenseSet<const Value *> anchored;
   // E1 (82): in a clone carrying the environment, the caller's classical mode (its trailing mode
-  // parameter) and whether bindCloneEnv bound the trailing parameters.
+  // parameter), whether bindCloneEnv bound the trailing parameters, and whether the clone may change
+  // the mode (then the classical mode is the host's).
   Value *cloneMode = nullptr;
   bool cloneBound = false;
-  DenseSet<const Value *> output;          // rails this module set Role::Output
+  bool cloneWritesMode = false;
+  DenseSet<const Value *> output;     // rails this module set Role::Output
+  DenseSet<const Value *> copied;     // final state rails kept through a copy (keepFinal)
+  DenseSet<const Value *> merges;     // phis and selects over handles this module recorded as merges
   // Rule 2 collapse probes (writeBack): private binding keys, one per state piece (0 FLAGS, 1 MODE).
   Instruction *probeKey[2] = {nullptr, nullptr};
   // Analyses of original functions (the walked one and any rule-19 inlined callee).
@@ -378,9 +488,7 @@ std::map<const Function *, std::unique_ptr<State>> &states() {
 State &state(LoweringContext &ctx, const Module *M) {
   auto &p = states()[&ctx.out()];
   // The walked original is taken from the first context that reaches this output function; a
-  // rule-19 inlined callee is a different original lowered into the same output (requireWritable
-  // refuses a quantum change there). An inlined callee's fenv call before any of the walked
-  // function's would mis-record it, and then every quantum change is refused: loud, never wrong.
+  // rule-19 inlined callee is a different original lowered into the same output.
   if (!p || (p->orig && p->orig->getParent() != M))
     p = std::make_unique<State>();
   if (!p->orig)
@@ -388,15 +496,14 @@ State &state(LoweringContext &ctx, const Module *M) {
   return *p;
 }
 
-// The state of the function being lowered. In a clone carrying the environment (E1), nothing that
-// reads or changes it may be lowered before bindCloneEnv bound the caller's mode and flags: a clone
-// lowered without them would round in the host mode and drop what it raises (silent wrong output).
+// The state of the function being lowered. In a clone carrying the environment (E1), the spine binds
+// the caller's mode and flags (bindCloneEnv) before it lowers any instruction (Construct.cpp's formal
+// binding): a clone reaching this module unbound is a broken invariant of the pass.
 State &state(LoweringContext &ctx, const Instruction &I) {
   State &st = state(ctx, I.getModule());
   if (!ctx.S.isEntry() && ctx.S.F && I.getFunction() == ctx.S.F && !st.cloneBound && carriesEnvImpl(ctx.T, ctx.S))
-    unimplemented("eff-fenv: a clone that does floating-point environment work was materialized without the "
-                  "caller's mode and flags (rule 23 clone ABI, 82: the calls and spine consumers of "
-                  "fenv::cloneCarriesEnv / envArgs / bindCloneEnv / cloneExitFlags / afterCloneCall)",
+    internalError("eff-fenv: a clone carrying the floating-point environment reached before bindCloneEnv bound "
+                  "the caller's mode and flags (E1, 82)",
                   &I);
   return st;
 }
@@ -433,19 +540,9 @@ ConstantInt *i32(LoweringContext &ctx, int64_t v) {
   return ConstantInt::get(Type::getInt32Ty(C(ctx)), v, /*IsSigned=*/true);
 }
 
-RailType railOf(Type *t, const Value *at) {
-  if (!t->isIntegerTy() && !t->isHalfTy() && !t->isBFloatTy() && !t->isFloatTy() && !t->isDoubleTy() &&
-      !t->isX86_FP80Ty())
-    unimplemented("eff-fenv: a rail of IR type that is not iN/half/bfloat/float/double/x86_fp80", at);
-  return railTypeOf(t);
-}
-
-// The quantum predicate in scope (rule 8): its flag rail, nullptr when there is none.
-Value *predicateFlag(LoweringContext &ctx) {
-  if (ctx.currentPredicate().isTop())
-    return nullptr;
-  return ctx.currentFlag();
-}
+// The quantum control in scope: the block's quantum predicate (rule 8) and, under a rule-14 trip, the
+// trip rail (cq-99f7: currentFlag() is the control, currentPredicate() does not see the trip).
+Value *predicateFlag(LoweringContext &ctx) { return ctx.currentFlag(); }
 
 // The original instruction copied to the host, operands remapped.
 Instruction *copyHost(LoweringContext &ctx, Instruction &I) {
@@ -470,10 +567,19 @@ CallInst *hostCall(LoweringContext &ctx, const CallBase &like, ArrayRef<Value *>
   return ctx.B().CreateCall(like.getFunctionType(), like.getCalledOperand(), args);
 }
 
-CallInst *hostGetRound(LoweringContext &ctx) {
-  FunctionCallee f = ctx.M.getOrInsertFunction("fegetround", FunctionType::get(Type::getInt32Ty(C(ctx)), false));
-  return ctx.B().CreateCall(f);
+// A host call of a <fenv.h> function by name: i32 name(params).
+CallInst *hostFn(LoweringContext &ctx, const char *name, ArrayRef<Value *> args) {
+  SmallVector<Type *, 2> ps;
+  for (Value *a : args)
+    ps.push_back(a->getType());
+  FunctionCallee f = ctx.M.getOrInsertFunction(name, FunctionType::get(Type::getInt32Ty(C(ctx)), ps, false));
+  return ctx.B().CreateCall(f, args);
 }
+
+CallInst *hostGetRound(LoweringContext &ctx) { return hostFn(ctx, "fegetround", {}); }
+CallInst *hostTest(LoweringContext &ctx, Value *m) { return hostFn(ctx, "fetestexcept", {m}); }
+CallInst *hostClear(LoweringContext &ctx, Value *m) { return hostFn(ctx, "feclearexcept", {m}); }
+CallInst *hostRaise(LoweringContext &ctx, Value *m) { return hostFn(ctx, "feraiseexcept", {m}); }
 
 void anchor(LoweringContext &ctx, State &st, Value *h) {
   if (!st.anchor) {
@@ -481,7 +587,8 @@ void anchor(LoweringContext &ctx, State &st, Value *h) {
     IRBuilder<> B(&E, E.getFirstInsertionPt());
     st.anchor = B.CreateAlloca(Type::getInt32Ty(C(ctx)), nullptr, "cq.fenv");
   }
-  ctx.unc().noteUse(ctx.unc().idOf(h), st.anchor);
+  if (st.anchored.insert(h).second)
+    ctx.unc().noteUse(ctx.unc().idOf(h), st.anchor);
 }
 
 // A template of this module: emitted, recorded (Role::Garbage) and anchored.
@@ -500,6 +607,14 @@ abi::TemplateSpec intOp(const char *op, const char *shape) {
   return s;
 }
 
+// A fresh rail holding the classical i32 c (rule 7 seed), anchored.
+Value *seed(LoweringContext &ctx, State &st, Value *c) {
+  CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i32Rail()}, {c});
+  ctx.unc().recordSeed(a);
+  anchor(ctx, st, a);
+  return a;
+}
+
 // a | b over FLAGS parts (null = empty).
 Value *orFlags(LoweringContext &ctx, State &st, Value *a, Value *b) {
   if (!a)
@@ -512,6 +627,47 @@ Value *orFlags(LoweringContext &ctx, State &st, Value *a, Value *b) {
 // h & m with m classical.
 Value *andLit(LoweringContext &ctx, State &st, Value *h, Value *m) {
   return tmpl(ctx, st, intOp("and", "hl"), {Operand{h, true}, Operand{m, false}});
+}
+
+// ~m as a classical i32 (folded for a constant).
+Value *notClassical(LoweringContext &ctx, Value *m) {
+  if (auto *c = dyn_cast<ConstantInt>(m))
+    return ConstantInt::get(c->getType(), ~c->getValue());
+  return ctx.B().CreateNot(m);
+}
+
+// Bitwise ops over i32 operands, each a rail or a classical value; a classical result when both are.
+Operand opOr(LoweringContext &ctx, State &st, Operand a, Operand b) {
+  if (!a.handle && !b.handle)
+    return Operand{ctx.B().CreateOr(a.v, b.v), false};
+  if (!a.handle)
+    std::swap(a, b);
+  if (!b.handle)
+    return Operand{tmpl(ctx, st, intOp("or", "hl"), {a, b}), true};
+  return Operand{tmpl(ctx, st, intOp("or", ""), {a, b}), true};
+}
+
+Operand opAnd(LoweringContext &ctx, State &st, Operand a, Operand b) {
+  if (!a.handle && !b.handle)
+    return Operand{ctx.B().CreateAnd(a.v, b.v), false};
+  if (!a.handle)
+    std::swap(a, b);
+  if (!b.handle)
+    return Operand{tmpl(ctx, st, intOp("and", "hl"), {a, b}), true};
+  return Operand{tmpl(ctx, st, intOp("and", ""), {a, b}), true};
+}
+
+Operand opNot(LoweringContext &ctx, State &st, Operand a) {
+  if (!a.handle)
+    return Operand{notClassical(ctx, a.v), false};
+  return Operand{tmpl(ctx, st, intOp("xor", "hl"), {a, Operand{i32(ctx, -1), false}}), true};
+}
+
+// FOLD: r | c as a rail (r a rail or null, c classical).
+Value *fold(LoweringContext &ctx, State &st, Value *r, Value *c) {
+  if (!r)
+    return seed(ctx, st, c);
+  return tmpl(ctx, st, intOp("or", "hl"), {Operand{r, true}, Operand{c, false}});
 }
 
 // select(flag, a, b) on i32 arms (handles or classical values).
@@ -539,7 +695,7 @@ void bindResult(LoweringContext &ctx, const CallBase &CB, Operand r) {
   if (!r.handle && q) {
     if (CB.use_empty())
       return;
-    RailType w = railOf(CB.getType(), &CB);
+    RailType w = railTypeOf(CB.getType());
     CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {r.v});
     ctx.unc().recordSeed(a);
     r = Operand{a, true};
@@ -547,41 +703,248 @@ void bindResult(LoweringContext &ctx, const CallBase &CB, Operand r) {
   ctx.bindFields(&CB, {r});
 }
 
-// --------------------------------------------------------------------------------------------
-// Where the quantum part may change and be read.
+// The classical mode at the builder's point, read afresh (no cache).
+Value *classicalModeNow(LoweringContext &ctx, State &st) {
+  if (st.cloneBound && !st.cloneWritesMode)
+    return st.cloneMode;   // E1: the caller's mode, which the clone does not change
+  if (!st.cloneBound && !accessesEnv(*ctx.S.F))
+    return i32(ctx, 0);    // a function without the fenv state runs in the default environment (169)
+  return hostGetRound(ctx);
+}
 
-// Is the output block D a dominator of the output block Cur (every path from the entry to Cur passes
-// D)? Read on the output built so far: every predecessor of a block being filled already exists.
-bool outDominates(BasicBlock *D, BasicBlock *Cur) {
-  if (!D || D == Cur)
-    return true;
-  BasicBlock *entry = &Cur->getParent()->getEntryBlock();
-  SmallPtrSet<BasicBlock *, 16> seen;
-  SmallVector<BasicBlock *, 16> work{Cur};
-  seen.insert(Cur);
-  while (!work.empty()) {
-    BasicBlock *b = work.pop_back_val();
-    if (b == entry)
-      return false;
-    bool any = false;
-    for (BasicBlock *p : predecessors(b)) {
-      any = true;
-      if (p != D && seen.insert(p).second)
-        work.push_back(p);
-    }
-    if (!any)
-      return false;   // not connected yet: no dominance shown
+// The scratch fenv_t of the host probes, in the output's entry block.
+AllocaInst *probeEnvObject(LoweringContext &ctx, State &st) {
+  if (!st.probeEnv) {
+    BasicBlock &E = ctx.out().getEntryBlock();
+    IRBuilder<> B(&E, E.getFirstInsertionPt());
+    st.probeEnv = B.CreateAlloca(ArrayType::get(Type::getInt8Ty(C(ctx)), 64), nullptr, "cq.fenv.probe");
+    st.probeEnv->setAlignment(Align(16));
   }
-  return true;
+  return st.probeEnv;
 }
 
-void requireValid(LoweringContext &ctx, BasicBlock *changedIn, const Instruction &I, const char *what) {
-  if (!outDominates(changedIn, ctx.B().GetInsertBlock()))
-    unimplemented(std::string("eff-fenv: the quantum ") + what +
-                      " changed on a path that does not reach this point on every classical path (rule 23 "
-                      "state across a classical branch)",
-                  &I);
+// PROBE of an object's host bytes, the host environment left as it was. fexcept_t: the bits it holds
+// under its saving mask (63 when not a constant: the bytes hold no other bits, C17 7.6.2.4).
+Value *probeXflags(LoweringContext &ctx, Value *obj, std::optional<uint64_t> mask) {
+  Value *mm = i32(ctx, mask ? int64_t(*mask & kAllExcept) : kAllExcept);
+  Value *h = hostTest(ctx, i32(ctx, kAllExcept));
+  hostClear(ctx, mm);   // a host fesetexceptflag may only raise (macOS libm): start from no bits
+  hostFn(ctx, "fesetexceptflag", {obj, mm});
+  Value *hb = hostTest(ctx, mm);
+  hostClear(ctx, i32(ctx, kAllExcept));
+  hostRaise(ctx, h);
+  return hb;
 }
+
+// fenv_t: its mode and flags.
+std::pair<Value *, Value *> probeEnv(LoweringContext &ctx, State &st, Value *obj) {
+  AllocaInst *tmp = probeEnvObject(ctx, st);
+  hostFn(ctx, "fegetenv", {tmp});
+  hostFn(ctx, "fesetenv", {obj});
+  Value *hm = hostGetRound(ctx);
+  Value *hf = hostTest(ctx, i32(ctx, kAllExcept));
+  hostFn(ctx, "fesetenv", {tmp});
+  return {hm, hf};
+}
+
+// The output pointer of a save object (a local or a global: requireSaveTarget, mergeAt).
+Value *objectPtr(LoweringContext &ctx, const Value *obj) {
+  Operand o = ctx.operand(obj);
+  if (o.handle)
+    internalError("eff-fenv: a fenv object pointer that is a rail", obj);
+  return o.v;
+}
+
+// --------------------------------------------------------------------------------------------
+// The SSA variables over the output CFG.
+
+Part readStart(LoweringContext &ctx, State &st, const Key &k, BasicBlock *B, SmallPtrSetImpl<BasicBlock *> &visiting);
+
+Part readEnd(LoweringContext &ctx, State &st, const Key &k, BasicBlock *B, SmallPtrSetImpl<BasicBlock *> &visiting) {
+  Var &v = st.vars[k];
+  auto it = v.end.find(B);
+  if (it != v.end.end())
+    return it->second;
+  return readStart(ctx, st, k, B, visiting);
+}
+
+// The part of an object made FULL at the builder's point (its rails hold the whole value).
+Part toFull(LoweringContext &ctx, State &st, const Key &k, Part p) {
+  if (p.full)
+    return p;
+  Part r = p;
+  r.full = true;
+  if (!p.saved) {
+    // Never saved on this path: a restore reads an indeterminate object (undefined); 0.
+    r.flags = seed(ctx, st, i32(ctx, 0));
+    if (k.second == KEnv)
+      r.mode = p.mode ? p.mode : seed(ctx, st, i32(ctx, 0));
+    return r;
+  }
+  Value *obj = objectPtr(ctx, k.first);
+  if (k.second == KXflags) {
+    r.flags = fold(ctx, st, p.flags, probeXflags(ctx, obj, p.mask));
+    return r;
+  }
+  auto [hm, hf] = probeEnv(ctx, st, obj);
+  r.mode = p.mode ? p.mode : seed(ctx, st, hm);
+  r.flags = fold(ctx, st, p.flags, hf);
+  return r;
+}
+
+// One field of a merge at the start of B: the common value, or a phi over handles (a merge), a missing
+// incoming made by `make` where its edge leaves.
+Value *mergeField(LoweringContext &ctx, State &st, BasicBlock *B, ArrayRef<BasicBlock *> ups, ArrayRef<Part> ps,
+                  Value *Part::*f, function_ref<Value *(unsigned)> make) {
+  bool same = true;
+  for (const Part &p : ps)
+    same &= p.*f == ps.front().*f;
+  if (same)
+    return ps.front().*f;
+  DenseMap<BasicBlock *, Value *> in;
+  for (unsigned i = 0; i < ups.size(); ++i) {
+    Value *v = ps[i].*f;
+    if (!v) {
+      IRBuilderBase::InsertPointGuard g(ctx.B());
+      ctx.B().SetInsertPoint(ups[i]->getTerminator());
+      v = make(i);
+    }
+    in[ups[i]] = v;
+  }
+  SmallVector<BasicBlock *, 4> preds(predecessors(B));
+  PHINode *phi = PHINode::Create(Type::getInt32Ty(C(ctx)), unsigned(preds.size()), "cq.fenv.merge");
+  phi->insertInto(B, B->begin());
+  for (BasicBlock *P : preds)
+    phi->addIncoming(in.lookup(P), P);
+  ctx.unc().recordMerge(phi);
+  st.merges.insert(phi);
+  anchor(ctx, st, phi);
+  return phi;
+}
+
+Part mergeAt(LoweringContext &ctx, State &st, const Key &k, BasicBlock *B, ArrayRef<BasicBlock *> preds,
+             ArrayRef<Part> in) {
+  SmallVector<BasicBlock *, 4> ups;
+  SmallVector<Part, 4> ps;
+  for (unsigned i = 0; i < preds.size(); ++i)
+    if (!is_contained(ups, preds[i])) {
+      ups.push_back(preds[i]);
+      ps.push_back(in[i]);
+    }
+  bool obj = k.second != KState;
+  bool anyFull = obj && any_of(ps, [](const Part &p) { return p.full; });
+  if (anyFull)
+    for (unsigned i = 0; i < ups.size(); ++i)
+      if (!ps[i].full) {
+        IRBuilderBase::InsertPointGuard g(ctx.B());
+        ctx.B().SetInsertPoint(ups[i]->getTerminator());
+        ps[i] = toFull(ctx, st, k, ps[i]);
+      }
+  Part r;
+  r.full = anyFull;
+  r.saved = any_of(ps, [](const Part &p) { return p.saved; });
+  r.mask = ps.front().mask;
+  for (const Part &p : ps)
+    if (p.mask != r.mask)
+      r.mask = std::nullopt;
+  r.flags = mergeField(ctx, st, B, ups, ps, &Part::flags, [&](unsigned) { return seed(ctx, st, i32(ctx, 0)); });
+  if (k.second != KXflags)
+    r.mode = mergeField(ctx, st, B, ups, ps, &Part::mode, [&](unsigned i) -> Value * {
+      if (!obj)
+        return seed(ctx, st, classicalModeNow(ctx, st));
+      if (!ps[i].saved)
+        return seed(ctx, st, i32(ctx, 0));
+      return seed(ctx, st, probeEnv(ctx, st, objectPtr(ctx, k.first)).first);
+    });
+  return r;
+}
+
+Part readStart(LoweringContext &ctx, State &st, const Key &k, BasicBlock *B, SmallPtrSetImpl<BasicBlock *> &visiting) {
+  {
+    Var &v = st.vars[k];
+    auto it = v.start.find(B);
+    if (it != v.start.end())
+      return it->second;
+  }
+  SmallVector<BasicBlock *, 4> preds(predecessors(B));
+  if (preds.empty())
+    return k == kState ? st.initial : Part{};
+  if (!visiting.insert(B).second) {
+    Part p;
+    p.pending = true;
+    return p;
+  }
+  SmallVector<Part, 4> in;
+  for (BasicBlock *P : preds)
+    in.push_back(readEnd(ctx, st, k, P, visiting));
+  visiting.erase(B);
+  const Part *first = nullptr;
+  bool anyPending = false, differ = false;
+  for (const Part &p : in) {
+    if (p.pending) {
+      anyPending = true;
+      continue;
+    }
+    if (!first)
+      first = &p;
+    else if (!first->same(p))
+      differ = true;
+  }
+  if (!first) {
+    Part p;
+    p.pending = true;
+    return p;
+  }
+  if (!differ)
+    return *first;
+  if (anyPending)
+    internalError("eff-fenv: the floating-point environment state differs around an output cycle (requirePlaced "
+                  "admits no change in a classically bounded loop)",
+                  B->getTerminator() ? (const Value *)B->getTerminator() : (const Value *)B);
+  Part m = mergeAt(ctx, st, k, B, preds, in);
+  st.vars[k].start[B] = m;
+  return m;
+}
+
+Part readAt(LoweringContext &ctx, State &st, const Key &k) {
+  SmallPtrSet<BasicBlock *, 16> visiting;
+  Part p = readEnd(ctx, st, k, ctx.B().GetInsertBlock(), visiting);
+  if (p.pending)
+    internalError("eff-fenv: the floating-point environment state read on an output cycle with no entry");
+  return p;
+}
+
+Part cur(LoweringContext &ctx, State &st) { return readAt(ctx, st, kState); }
+
+void define(LoweringContext &ctx, State &st, const Key &k, Part p) {
+  if (p.flags)
+    anchor(ctx, st, p.flags);
+  if (p.mode)
+    anchor(ctx, st, p.mode);
+  if (p.flags || p.mode)
+    st.any = true;
+  st.vars[k].end[ctx.B().GetInsertBlock()] = p;
+}
+
+void setFlags(LoweringContext &ctx, State &st, Value *f) {
+  Part p = cur(ctx, st);
+  if (p.flags == f)
+    return;
+  p.flags = f;
+  define(ctx, st, kState, p);
+}
+
+void setMode(LoweringContext &ctx, State &st, Value *m) {
+  Part p = cur(ctx, st);
+  st.modeVal = nullptr;
+  if (p.mode == m)
+    return;
+  p.mode = m;
+  define(ctx, st, kState, p);
+}
+
+// --------------------------------------------------------------------------------------------
+// Where the quantum part may change.
 
 // Is B reached on every classical path of its function: every block it is control dependent on,
 // transitively, ends in a quantum terminator (whose arms the spine linearizes)?
@@ -709,48 +1072,52 @@ bool anyLinearizedAfter(LoweringContext &ctx, State &st, const Instruction &I, P
   return false;
 }
 
-// The quantum part (state or a saved part) may change here: the placement limits (header, LIMITS).
-// CR rule 23 gives no construction merging two states at a classical join, so a change in a block a
-// classical branch chooses is refused: dropping a quantum MODE by fesetround(const) on one classical
-// path, or saving into an object on one classical path, would otherwise hold after the join on every
-// path (cq-1dlz).
+// The quantum part (state or a saved part) may change here. A classically bounded loop (rule 14 cases
+// 1 and 3, loops::lowerClassical) keeps a real loop in the output: a state it changes is loop-carried,
+// a header phi over handles with its back edge and the reverse loop's mirror (not built yet: build step
+// 5). A quantum-exit loop (case 2) is unrolled trip by trip under the trip rail (cq-99f7): its changes
+// are straight-line state changes under predicateFlag, nothing more.
 void requirePlaced(LoweringContext &ctx, State &st, const Instruction &I) {
-  if (!ctx.S.isEntry() && !st.cloneBound && accessesEnv(*ctx.S.F))
-    unimplemented("eff-fenv: the quantum floating-point environment changes in a clone that does not carry it "
-                  "(rule 23 clone ABI, 82)",
-                  &I);
-  // A clone compiled without FENV_ACCESS keeps a local default environment, dropped (accessesEnv, 169).
-  if (I.getFunction() != st.orig)
-    unimplemented("eff-fenv: the quantum floating-point environment changes in a rule-19 inlined callee", &I);
-  if (loopInfo(st, *I.getFunction()).getLoopFor(I.getParent()))
-    unimplemented("eff-fenv: the quantum floating-point environment changes inside a loop (a loop-carried "
-                  "rule 23 state)",
-                  &I);
-  if (!classicallyTop(ctx, st, I.getParent()))
-    unimplemented("eff-fenv: the quantum floating-point environment changes in a block a classical branch "
-                  "chooses (rule 23 state merged at a classical join)",
-                  &I);
+  if (I.getFunction() != ctx.S.F)
+    return;   // a rule-19 inlined callee: its loops are no unit of this walk
+  LoopInfo &LI = loopInfo(st, *I.getFunction());
+  for (const Loop *L = LI.getLoopFor(I.getParent()); L; L = L->getParentLoop())
+    if (loops::classify(*L, ctx.T, ctx.S) != loops::Case::QuantumExit)
+      unimplemented("eff-fenv: the quantum floating-point environment changes inside a classically bounded loop "
+                    "(rule 14 cases 1 and 3: a loop-carried rule 23 state, its header phi and reverse; build step 5)",
+                    &I);
 }
 
-// The quantum part may change here: refuse the shapes the module does not lower (header, LIMITS).
-void requireWritable(LoweringContext &ctx, State &st, const Instruction &I) {
+// The quantum part may change here (flags: the FLAGS part, mode: the MODE part). A later call that
+// runs on the host and reads, clears, saves or rounds in that part would see the host part alone: a
+// classical call of a body touching it (the call is not lifted, so no clone takes the quantum part),
+// an indirect call, or llvm.set.rounding. A body that only raises is no conflict: its flags are host
+// flags. A lifted call of a clone carrying the environment (E1, 82) takes the state.
+void requireWritable(LoweringContext &ctx, State &st, const Instruction &I, bool flags, bool mode) {
   requirePlaced(ctx, st, I);
-  // Lifted calls and llvm.set.rounding do not carry the quantum part: none may follow while it lives.
   const Instruction *bad = nullptr;
   anyAfter(I, [&](const Instruction &n) {
     auto *CB = dyn_cast<CallBase>(&n);
     if (!CB || isa<ConstrainedFPIntrinsic>(CB) || fenvFn(*CB) != FenvFn::None)
       return false;
     if (auto *II = dyn_cast<IntrinsicInst>(CB)) {
-      if (II->getIntrinsicID() == Intrinsic::set_rounding)
-        bad = &n;
+      if (II->getIntrinsicID() == Intrinsic::set_rounding || II->getIntrinsicID() == Intrinsic::get_rounding)
+        bad = mode ? &n : nullptr;
       return bad != nullptr;
     }
     const Function *G = CB->getCalledFunction();
     if (G && G->isDeclaration())
       return false;   // a library function leaves the mode alone; what it raises is host flags
-    SmallPtrSet<const Function *, 8> seen;
-    if (CB->isInlineAsm() || (G && !bodyTouchesFenv(*G, seen)))
+    if (CB->isInlineAsm())
+      return false;
+    BodyEnv e;
+    if (G) {
+      SmallPtrSet<const Function *, 8> seen;
+      bodyEnv(*G, e, seen);
+    } else {
+      e.any = e.flags = e.mode = true;
+    }
+    if (!e.any || !((flags && e.flags) || (mode && e.mode)))
       return false;
     // E1 (82): a call of a clone carrying the environment takes the state and returns the new flags.
     if (G && n.getFunction() == ctx.S.F && calls::classify(*CB, ctx.T, ctx.S) == calls::Class::Lift)
@@ -761,13 +1128,8 @@ void requireWritable(LoweringContext &ctx, State &st, const Instruction &I) {
     return true;
   });
   if (bad)
-    unimplemented("eff-fenv: a call that may change the floating-point environment while its quantum part is "
-                  "live (rule 23 state does not cross calls)",
-                  bad);
+    unimplemented(kIssueHostCall, bad);
 }
-
-void setFlags(LoweringContext &ctx, State &st, Value *f);
-void setMode(LoweringContext &ctx, State &st, Value *m);
 
 // The classical value rail h holds at the builder's point when rule 2 collapses it (every source a
 // measured rail or classical, at least one measured), else nullptr. The spine's collapse is reached
@@ -795,39 +1157,27 @@ Value *collapsedValue(LoweringContext &ctx, State &st, unsigned which, Value *h)
 // part is then empty / classical, so rule 23's final-rail output covers only what stays quantum.
 // Called after every measurement (afterMeasure) and after every instruction this module lowers (a
 // state set from a saved part may already be classical). Saved parts in fenv_t / fexcept_t objects
-// stay rails until a restore makes them the state. The write-back is a single unconditional host
-// write, so the point must be one every path of the entry function passes with no quantum predicate.
+// stay rails until a restore makes them the state. The write-back moves the state from the rail to
+// the host where the builder is: the state rail is the state on every path through this point (its
+// SSA value here; a quantum predicate's arms are linearized, so it already holds both arms' state), so
+// one host write is exact under a quantum predicate, in a classical arm (the other path keeps its own
+// state, merged at the join), in a trip and in a clone (a carrying clone returns an empty flags rail
+// then: cloneExitFlags).
 void writeBack(LoweringContext &ctx, State &st, const Instruction &I) {
+  if (!st.any)
+    return;
+  Part p = cur(ctx, st);
   for (unsigned which = 0; which < 2; ++which) {
-    Value *h = which == 0 ? st.flags : st.mode;
+    Value *h = which == 0 ? p.flags : p.mode;
     if (!h)
       continue;
-    if (which == 0 ? !outDominates(st.flagsAt, ctx.B().GetInsertBlock())
-                   : !outDominates(st.modeAt, ctx.B().GetInsertBlock()))
-      continue;   // not the state on every path here: no collapse is read (requireValid refuses a use)
     Value *v = collapsedValue(ctx, st, which, h);
     if (!v)
       continue;
-    const char *what = which == 0 ? "flags" : "rounding mode";
-    auto refuse = [&](const char *why) {
-      unimplemented(std::string("eff-fenv: rule 2 collapses the quantum ") + what + " (its sources are measured) " +
-                        why + "; its host write-back has no single point (rule 23)",
-                    &I);
-    };
-    if (!ctx.S.isEntry() || I.getFunction() != st.orig)
-      refuse("in a clone or a rule-19 inlined callee");
-    if (loopInfo(st, *I.getFunction()).getLoopFor(I.getParent()))
-      refuse("inside a loop");
-    if (predicateFlag(ctx))
-      refuse("under a quantum predicate");
-    if (!classicallyTop(ctx, st, I.getParent()))
-      refuse("in a block a classical branch chooses");
     Type *i32Ty = Type::getInt32Ty(C(ctx));
-    FunctionCallee f = ctx.M.getOrInsertFunction(which == 0 ? "feraiseexcept" : "fesetround",
-                                                 FunctionType::get(i32Ty, {i32Ty}, false));
     if (v->getType() != i32Ty)
       internalError("eff-fenv: a collapsed fenv state of a type other than i32", &I);
-    ctx.B().CreateCall(f, {v});
+    hostFn(ctx, which == 0 ? "feraiseexcept" : "fesetround", {v});
     if (st.output.erase(h))
       ctx.unc().setRole(ctx.unc().idOf(h), Role::Garbage);
     if (which == 0) {
@@ -847,56 +1197,60 @@ bool isMeasure(const Instruction &I) {
   return G && G->getName().starts_with("cq_measure");
 }
 
-// After every lowered instruction (and every measurement): a state rail with no possible writer and
-// no measurement ahead (in the original CFG or in a later linearized quantum arm) is final, an output. A measurement ahead may make it classical (rule 2,
-// writeBack), and an output's sources are freed after their last use, which its later uncompute
-// would need. A writer or measurement inside a loop is ignored here: if it ever wrote the quantum
-// part, requireWritable stops it; a collapse there is refused by writeBack.
+// Does the walked function have exactly one return? Then the state at it is the state on every path
+// that ends.
+bool oneReturn(const Function &F) {
+  unsigned n = 0;
+  for (const BasicBlock &BB : F)
+    n += isa<ReturnInst>(BB.getTerminator());
+  return n == 1;
+}
+
+// A final state rail kept (Role::Output): itself when it is the final state on every path (the function's
+// only return, or settle's early final) and no merge, else a copy (alloc_i32(0), copy_i32, the copy
+// kept, the rail uncomputed after it).
+void keepFinal(LoweringContext &ctx, State &st, Value *h, bool everyPath) {
+  if (!h || st.output.count(h) || st.copied.count(h))
+    return;
+  if (everyPath && !st.merges.count(h)) {
+    ctx.unc().setRole(ctx.unc().idOf(h), Role::Output);
+    st.output.insert(h);
+    return;
+  }
+  CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i32Rail()}, {i32(ctx, 0)});
+  RailId fid = ctx.unc().recordSeed(f);
+  abi::CoreSpec cp{abi::Core::Copy, i32Rail()};
+  CallInst *c = ctx.emitCore(cp, {h, f});
+  ctx.unc().recordCore(c, cp, {Operand{h, true}, Operand{f, true}}, fid);
+  ctx.unc().setRole(fid, Role::Output);
+  st.output.insert(f);
+  st.copied.insert(h);
+}
+
+// After every lowered instruction (and every measurement): rule 2's write-back, then the early final
+// state (ROLES): I is reached on every classical path, outside every loop, in the walked function, and
+// no writer or measurement is reachable after it (in the original CFG or in a later linearized quantum
+// arm). A measurement ahead may make the state classical (rule 2, writeBack), and an output's sources
+// are freed after their last use, which its later uncompute would need. Every other final state is
+// kept at the entry's returns (atEntryReturn).
 void settle(LoweringContext &ctx, State &st, const Instruction &I) {
   writeBack(ctx, st, I);
   if (st.cloneBound)
     return;   // E1: a clone's final flags are copied out at its returns (cloneExitFlags), never an output
-  if (!accessesEnv(*ctx.S.F))
+  if (!accessesEnv(*ctx.S.F) || !ctx.S.isEntry())
     return;   // the environment is the default here: what its callees raised is dropped (169)
-  LoopInfo &LI = loopInfo(st, *I.getFunction());
+  if (I.getFunction() != st.orig || loopInfo(st, *I.getFunction()).getLoopFor(I.getParent()) ||
+      !classicallyTop(ctx, st, I.getParent()))
+    return;
+  Part p = cur(ctx, st);
   auto final = [&](bool (*writes)(const Instruction &)) {
-    auto later = [&](const Instruction &n) {
-      return (writes(n) || isMeasure(n)) && !LI.getLoopFor(n.getParent());
-    };
+    auto later = [&](const Instruction &n) { return writes(n) || isMeasure(n); };
     return !anyAfter(I, later) && !anyLinearizedAfter(ctx, st, I, later);
   };
-  if (st.flags && !st.output.count(st.flags) && final(writesFlags)) {
-    ctx.unc().setRole(ctx.unc().idOf(st.flags), Role::Output);
-    st.output.insert(st.flags);
-  }
-  if (st.mode && !st.output.count(st.mode) && final(writesMode)) {
-    ctx.unc().setRole(ctx.unc().idOf(st.mode), Role::Output);
-    st.output.insert(st.mode);
-  }
-}
-
-void setFlags(LoweringContext &ctx, State &st, Value *f) {
-  if (f == st.flags)
-    return;
-  st.flags = f;
-  st.flagsAt = ctx.B().GetInsertBlock();
-  if (f)
-    anchor(ctx, st, f);
-}
-
-void setMode(LoweringContext &ctx, State &st, Value *m) {
-  if (m && st.cloneBound)
-    unimplemented("eff-fenv: a clone makes the rounding mode quantum (rule 23: a clone returns only the new "
-                  "flags rail, 82)",
-                  ctx.S.F);
-  if (m == st.mode && !m)
-    return;
-  if (m || st.mode)
-    st.modeAt = ctx.B().GetInsertBlock();
-  st.mode = m;
-  st.modeVal = nullptr;
-  if (m)
-    anchor(ctx, st, m);
+  if (p.flags && !st.output.count(p.flags) && final(writesFlags))
+    keepFinal(ctx, st, p.flags, true);
+  if (p.mode && !st.output.count(p.mode) && final(writesMode))
+    keepFinal(ctx, st, p.mode, true);
 }
 
 // --------------------------------------------------------------------------------------------
@@ -929,9 +1283,9 @@ bool cacheValid(const State &st, const Instruction &I) {
 
 // The classical dynamic mode at I.
 Value *classicalMode(LoweringContext &ctx, State &st, const Instruction &I) {
-  if (st.cloneBound)
-    return st.cloneMode;   // E1: the caller's mode; bindCloneEnv refused a clone that changes it
-  if (!accessesEnv(*ctx.S.F))
+  if (st.cloneBound && !st.cloneWritesMode)
+    return st.cloneMode;   // E1: the caller's mode
+  if (!st.cloneBound && !accessesEnv(*ctx.S.F))
     return i32(ctx, 0);    // a function without the fenv state runs in the default environment: FE_TONEAREST
                            // (169's __divdc3; rule 23 ruling 2026-11-02: a default caller passes mode 0)
   if (cacheValid(st, I))
@@ -947,12 +1301,12 @@ struct ModeOp {
   bool dynamic = false;
 };
 
-// The mode operand of a constrained op; the classical dynamic value is only fetched on `need`.
 // CI lies in the clone being lowered (not a callee lowered into it) and that clone carries no environment.
 bool defaultModeClone(LoweringContext &ctx, const ConstrainedFPIntrinsic &CI) {
   return ctx.S.F && CI.getFunction() == ctx.S.F && !carriesEnvImpl(ctx.T, ctx.S);
 }
 
+// The mode operand of a constrained op; the classical dynamic value is only fetched on `need`.
 ModeOp modeOperand(LoweringContext &ctx, State &st, const ConstrainedFPIntrinsic &CI, bool need) {
   ModeOp m;
   std::optional<RoundingMode> rm = CI.getRoundingMode();
@@ -973,25 +1327,26 @@ ModeOp modeOperand(LoweringContext &ctx, State &st, const ConstrainedFPIntrinsic
     m.rm = abi::TemplateSpec::RmLit;
     m.v = Operand{i32(ctx, 3072), false};
     return m;
-  case RoundingMode::Dynamic:
-    m.dynamic = true;
-    if (!ctx.S.isEntry() && !st.cloneBound && !st.mode && defaultModeClone(ctx, CI))
-      return m;   // rule 23 (ruling 2026-11-02): a clone that does not carry the environment rounds in the
-                  // default mode of its chain's root: the plain template (169's scalbn, 175's exp)
-    if (st.mode) {
-      requireValid(ctx, st.modeAt, CI, "rounding mode");
-      m.rm = abi::TemplateSpec::RmRail;
-      m.v = Operand{st.mode, true};
-    } else if (need) {
-      m.rm = abi::TemplateSpec::RmLit;
-      m.v = Operand{classicalMode(ctx, st, CI), false};
-    } else {
-      m.rm = abi::TemplateSpec::RmLit;
-    }
-    return m;
   default:
-    unimplemented("eff-fenv: a constrained op rounding to nearest, ties away (no x86-64 FE_* mode)", &CI);
+    // round.dynamic, and round.tonearestaway, which x86-64 cannot hold: its backend rounds the op in
+    // the current mode (header).
+    break;
   }
+  m.dynamic = true;
+  Value *q = cur(ctx, st).mode;
+  if (!ctx.S.isEntry() && !st.cloneBound && !q && defaultModeClone(ctx, CI))
+    return m;   // rule 23 (ruling 2026-11-02): a clone that does not carry the environment rounds in the
+                // default mode of its chain's root: the plain template (169's scalbn, 175's exp)
+  if (q) {
+    m.rm = abi::TemplateSpec::RmRail;
+    m.v = Operand{q, true};
+  } else if (need) {
+    m.rm = abi::TemplateSpec::RmLit;
+    m.v = Operand{classicalMode(ctx, st, CI), false};
+  } else {
+    m.rm = abi::TemplateSpec::RmLit;
+  }
+  return m;
 }
 
 // --------------------------------------------------------------------------------------------
@@ -1044,12 +1399,12 @@ struct Step {
 
 // Builds the value template of op over data operands (handles or classical values) and the mode.
 Step makeStep(StringRef op, CmpInst::Predicate pred, Type *wTy, Type *toTy, SmallVector<Operand, 3> data,
-              const ModeOp &mode, const Value *at) {
+              const ModeOp &mode) {
   Step s;
   s.spec.op = op.str();
-  s.spec.w = railOf(wTy, at);
+  s.spec.w = railTypeOf(wTy);
   if (toTy)
-    s.spec.to = railOf(toTy, at);
+    s.spec.to = railTypeOf(toTy);
   bool fcmp = op == "fcmp" || op == "fcmps";
   if (fcmp) {
     // The value of a compare is the plain fcmp (81); compares never take _lh: flip the predicate.
@@ -1105,32 +1460,36 @@ Value *excOf(LoweringContext &ctx, State &st, const Step &s, StringRef origOp) {
   return tmpl(ctx, st, e, s.ops);
 }
 
-void raiseBits(LoweringContext &ctx, State &st, const Instruction &I, Value *bits, uint32_t lit = 0) {
+// FLAGS |= the bits I raised: a rail (bits), or classical (lit, a constant or a run-time i32 the host
+// gave, BRACKET); under the quantum control they enter as select(flag, bits, 0).
+void raiseBits(LoweringContext &ctx, State &st, const Instruction &I, Value *bits, Value *lit = nullptr) {
   if (st.traps)
-    unimplemented("eff-fenv: a quantum op raising after feenableexcept (a trap on quantum flags)", &I);
-  if (st.flags)
-    requireValid(ctx, st.flagsAt, I, "flags");
+    unimplemented(kIssueTraps, &I);
+  Value *flag = predicateFlag(ctx);
   if (!bits) {
-    // Classical literal bits (foldLiteralConstrained): raised under the predicate only.
-    Value *flag = predicateFlag(ctx);
-    if (!flag || !lit)
-      internalError("eff-fenv: literal exception bits raised outside a quantum predicate", &I);
-    bits = select32(ctx, st, flag, Operand{i32(ctx, lit), false}, Operand{i32(ctx, 0), false});
-  } else if (Value *flag = predicateFlag(ctx)) {
+    if (!lit)
+      internalError("eff-fenv: raiseBits without bits", &I);
+    if (!flag) {
+      hostRaise(ctx, lit);
+      return;
+    }
+    bits = select32(ctx, st, flag, Operand{lit, false}, Operand{i32(ctx, 0), false});
+  } else if (flag) {
     bits = select32(ctx, st, flag, Operand{bits, true}, Operand{i32(ctx, 0), false});
   }
-  setFlags(ctx, st, orFlags(ctx, st, st.flags, bits));
+  setFlags(ctx, st, orFlags(ctx, st, cur(ctx, st).flags, bits));
 }
 
 // A classical constrained op whose data operands are all literals (169's FORCE_EVAL(0/0.0f) in ilogb:
-// sitofp(0) then fdiv(0.0f, 0.0f); data are the lowered operands, a folded one a literal), folded: its result and its exception bits (x86 FE_* values), the
-// same in every rounding mode it may run in (a static mode, or all four for round.dynamic). nullopt
-// when an operand is not a literal, the op is not one folded here, the bits include underflow (the
-// tininess rule is the target's), or the result or bits depend on the mode.
+// sitofp(0) then fdiv(0.0f, 0.0f); data are the lowered operands, a folded one a literal), folded: its
+// result and its exception bits (x86 FE_* values), the same in every rounding mode it may run in (a
+// static mode, or all four for round.dynamic). nullopt when an operand is not a literal, the op is not
+// one folded here, the bits include underflow (the tininess rule is the target's), or the result or
+// bits depend on the mode.
 struct Folded { Constant *result; uint32_t bits; };
 std::optional<Folded> foldLiteralConstrained(const ConstrainedFPIntrinsic &CI, ArrayRef<Operand> data) {
   const char *op = constrainedOp(CI.getIntrinsicID());
-  if (!op)
+  if (!op || CI.getType()->isVectorTy())
     return std::nullopt;
   StringRef o(op);
   for (const Operand &d : data)
@@ -1138,7 +1497,7 @@ std::optional<Folded> foldLiteralConstrained(const ConstrainedFPIntrinsic &CI, A
       return std::nullopt;
   SmallVector<RoundingMode, 4> modes;
   std::optional<RoundingMode> rm = CI.getRoundingMode();
-  if (rm && *rm != RoundingMode::Dynamic)
+  if (rm && *rm != RoundingMode::Dynamic && *rm != RoundingMode::NearestTiesToAway)
     modes.push_back(*rm);
   else
     modes = {RoundingMode::NearestTiesToEven, RoundingMode::TowardPositive, RoundingMode::TowardNegative,
@@ -1180,6 +1539,58 @@ std::optional<Folded> foldLiteralConstrained(const ConstrainedFPIntrinsic &CI, A
   return out;
 }
 
+// BRACKET (header): runs `body` on the host with the host flags saved and restored around it; returns
+// the bits body raised (classical).
+Value *bracket(LoweringContext &ctx, function_ref<void()> body) {
+  Value *h = hostTest(ctx, i32(ctx, kAllExcept));
+  hostClear(ctx, i32(ctx, kAllExcept));
+  body();
+  Value *bits = hostTest(ctx, i32(ctx, kAllExcept));
+  hostClear(ctx, i32(ctx, kAllExcept));
+  hostRaise(ctx, h);
+  return bits;
+}
+
+// The lanes of an operand: its fields, or the elements of one classical vector value.
+SmallVector<Operand, 4> lanesOf(LoweringContext &ctx, const Value *v, unsigned n) {
+  if (n == 1)
+    return {ctx.operand(v)};
+  SmallVector<Operand, 4> f = ctx.fields(v);
+  if (f.size() == n)
+    return f;
+  if (f.size() != 1 || f[0].handle || !f[0].v->getType()->isVectorTy())
+    internalError("eff-fenv: a vector operand bound to neither its lanes nor one classical vector", v);
+  SmallVector<Operand, 4> out;
+  for (unsigned l = 0; l < n; ++l) {
+    if (auto *c = dyn_cast<Constant>(f[0].v))
+      out.push_back(Operand{c->getAggregateElement(l), false});
+    else
+      out.push_back(Operand{ctx.B().CreateExtractElement(f[0].v, uint64_t(l)), false});
+  }
+  return out;
+}
+
+// The scalar constrained intrinsic of a lane of CI, on the host with classical lane operands.
+Value *hostLane(LoweringContext &ctx, const ConstrainedFPIntrinsic &CI, ArrayRef<Value *> lane) {
+  Intrinsic::ID id = CI.getIntrinsicID();
+  Type *ret = CI.getType()->getScalarType();
+  SmallVector<Type *, 2> tys;
+  StringRef o = constrainedOp(id) ? constrainedOp(id) : "";
+  if (o == "fcmp" || o == "fcmps")
+    tys = {CI.getArgOperand(0)->getType()->getScalarType()};
+  else if (isCast(o))
+    tys = {ret, CI.getArgOperand(0)->getType()->getScalarType()};
+  else
+    tys = {ret};
+  Function *decl = Intrinsic::getDeclaration(&ctx.M, id, tys);
+  SmallVector<Value *, 5> args(lane.begin(), lane.end());
+  for (unsigned i = CI.getNonMetadataArgCount(); i < CI.arg_size(); ++i)
+    args.push_back(CI.getArgOperand(i));
+  CallInst *c = ctx.B().CreateCall(decl, args);
+  c->setAttributes(CI.getAttributes());
+  return c;
+}
+
 } // namespace
 
 void lowerConstrained(LoweringContext &ctx, CallBase &CB) {
@@ -1188,30 +1599,50 @@ void lowerConstrained(LoweringContext &ctx, CallBase &CB) {
   const char *op = constrainedOp(CI.getIntrinsicID());
   bool fmuladd = CI.getIntrinsicID() == Intrinsic::experimental_constrained_fmuladd;
   unsigned n = CI.getNonMetadataArgCount();
-  SmallVector<Operand, 3> data;
+  // Rule 3: a vector op works per lane.
+  Type *laneTy = n ? CI.getArgOperand(0)->getType() : CI.getType();
+  auto *vty = dyn_cast<FixedVectorType>(CI.getType()->isVectorTy() ? CI.getType() : laneTy);
+  if (CI.getType()->isVectorTy() != laneTy->isVectorTy())
+    internalError("eff-fenv: a constrained op mixing vector and scalar operands", &CI);
+  if (!vty && (CI.getType()->isVectorTy()))
+    internalError("eff-fenv: a scalable vector in a C program", &CI);
+  unsigned L = vty ? unsigned(vty->getNumElements()) : 1;
+  SmallVector<SmallVector<Operand, 4>, 3> lanes;
   bool anyHandle = false;
   for (unsigned i = 0; i < n; ++i) {
-    data.push_back(ctx.operand(CI.getArgOperand(i)));
-    anyHandle |= data.back().handle;
+    lanes.push_back(lanesOf(ctx, CI.getArgOperand(i), L));
+    for (const Operand &o : lanes.back())
+      anyHandle |= o.handle;
   }
+  auto laneData = [&](unsigned l) {
+    SmallVector<Operand, 3> d;
+    for (unsigned i = 0; i < n; ++i)
+      d.push_back(lanes[i][l]);
+    return d;
+  };
   ModeOp mode0 = modeOperand(ctx, st, CI, /*need=*/false);
   bool quantum = anyHandle || mode0.rm == abi::TemplateSpec::RmRail;
 
   if (!quantum) {
     // The host op: rounds in the host mode, raises into the host flags.
-    if (raises(CI) && !ctx.currentPredicate().isTop()) {
-      // Its bits are quantum (raised only where the predicate holds). A literal op folds (169): the
-      // folded value, no host op, and FLAGS |= select(p, bits, 0).
-      std::optional<Folded> f = foldLiteralConstrained(CI, data);
-      if (!f)
-        unimplemented("eff-fenv: a classical constrained op that raises under a quantum predicate (its "
-                      "exception bits are quantum; folded only for literal operands)",
-                      &CI);
-      if (f->bits) {
-        requireWritable(ctx, st, CI);
-        raiseBits(ctx, st, CI, nullptr, f->bits);
+    if (raises(CI) && predicateFlag(ctx)) {
+      // Its bits are quantum (raised only where the control holds). A literal op folds (169): the
+      // folded value, no host op; any other is BRACKETed.
+      SmallVector<Operand, 3> data = laneData(0);
+      if (std::optional<Folded> f = L == 1 ? foldLiteralConstrained(CI, data) : std::nullopt) {
+        if (f->bits) {
+          requireWritable(ctx, st, CI, true, false);
+          raiseBits(ctx, st, CI, nullptr, i32(ctx, f->bits));
+        }
+        bindResult(ctx, CB, Operand{f->result, false});
+        settle(ctx, st, CI);
+        return;
       }
-      bindResult(ctx, CB, Operand{f->result, false});
+      Instruction *h = nullptr;
+      Value *bits = bracket(ctx, [&] { h = copyHost(ctx, CI); });
+      requireWritable(ctx, st, CI, true, false);
+      raiseBits(ctx, st, CI, nullptr, bits);
+      bindResult(ctx, CB, Operand{h, false});
       settle(ctx, st, CI);
       return;
     }
@@ -1220,55 +1651,129 @@ void lowerConstrained(LoweringContext &ctx, CallBase &CB) {
     return;
   }
   if (!op && !fmuladd)
-    unimplemented("eff-fenv: a quantum constrained op with no rule 4 template (a libm intrinsic)", &CI);
+    unimplemented(kIssueLibm, &CI);
   if (!isQ(ctx, &CI))
     internalError("eff-fenv: a quantum constrained op that taint calls classical (rule 23 taint)", &CI);
   if (raises(CI))
-    requireWritable(ctx, st, CI);
+    requireWritable(ctx, st, CI, true, false);
   ModeOp mode = modeOperand(ctx, st, CI, /*need=*/true);
-
-  if (fmuladd) {
-    // CR §2: unfused, fmul then fadd, each rounded in the mode.
-    Type *T = CI.getType();
-    Step mul = makeStep("fmul", CmpInst::BAD_FCMP_PREDICATE, T, nullptr, {data[0], data[1]}, mode, &CI);
-    Operand prod;
-    Value *e1 = nullptr;
-    if (!data[0].handle && !data[1].handle && mode.rm != abi::TemplateSpec::RmRail) {
-      // A classical product: the host op.
-      if (raises(CI) && !ctx.currentPredicate().isTop())
-        unimplemented("eff-fenv: a classical constrained product that raises under a quantum predicate", &CI);
-      prod = Operand{ctx.B().CreateConstrainedFPBinOp(Intrinsic::experimental_constrained_fmul, data[0].v,
-                                                      data[1].v, nullptr, "", nullptr, CI.getRoundingMode(),
-                                                      CI.getExceptionBehavior()),
-                     false};
-    } else {
-      prod = Operand{tmpl(ctx, st, mul.spec, mul.ops), true};
-      if (raises(CI))
-        e1 = excOf(ctx, st, mul, "fmul");
-    }
-    Step add = makeStep("fadd", CmpInst::BAD_FCMP_PREDICATE, T, nullptr, {prod, data[2]}, mode, &CI);
-    ctx.emitTemplate(add.spec, add.ops, &CI);
-    if (raises(CI)) {
-      Value *e2 = excOf(ctx, st, add, "fadd");
-      Value *bits = e1 ? tmpl(ctx, st, intOp("or", ""), {Operand{e1, true}, Operand{e2, true}}) : e2;
-      raiseBits(ctx, st, CI, bits);
-    }
-    settle(ctx, st, CI);
-    return;
-  }
-
-  StringRef o = op;
-  Type *wTy = isCast(o) || o == "fcmp" || o == "fcmps" ? CI.getArgOperand(0)->getType() : CI.getType();
-  Type *toTy = isCast(o) ? CI.getType() : nullptr;
+  bool railMode = mode.rm == abi::TemplateSpec::RmRail;
+  Value *flag = raises(CI) ? predicateFlag(ctx) : nullptr;
+  StringRef o = op ? op : "fmuladd";
+  bool fcmp = o == "fcmp" || o == "fcmps";
+  Type *wTy = (isCast(o) || fcmp ? CI.getArgOperand(0)->getType() : CI.getType())->getScalarType();
+  Type *toTy = isCast(o) ? CI.getType()->getScalarType() : nullptr;
   CmpInst::Predicate pred = CmpInst::BAD_FCMP_PREDICATE;
   if (auto *cmp = dyn_cast<ConstrainedFPCmpIntrinsic>(&CI))
     pred = cmp->getPredicate();
-  Step s = makeStep(o, pred, wTy, toTy, data, mode, &CI);
-  if (!anyHandle && (o == "fcmp" || o == "fcmps" || mode.rm == abi::TemplateSpec::NoRm))
-    internalError("eff-fenv: a quantum constrained op with no quantum operand", &CI);
-  ctx.emitTemplate(s.spec, s.ops, &CI);
-  if (raises(CI))
-    raiseBits(ctx, st, CI, excOf(ctx, st, s, o));
+
+  // A lane is a template when it reads a rail (a rounding lane also when the mode is the MODE rail);
+  // every other lane of a quantum vector op is the scalar host op. Host lanes and host products are
+  // BRACKETed together under the control (their bits classical).
+  auto isTemplateLane = [&](unsigned l, unsigned upto) {
+    for (unsigned i = 0; i < upto; ++i)
+      if (lanes[i][l].handle)
+        return true;
+    return railMode && !fcmp;
+  };
+  SmallVector<Operand, 4> result(L, Operand{nullptr, false});
+  SmallVector<Value *, 4> prods(L, nullptr);   // fmuladd: a host product per lane
+  auto hostWork = [&] {
+    for (unsigned l = 0; l < L; ++l) {
+      if (fmuladd) {
+        if (!isTemplateLane(l, 2))
+          prods[l] = ctx.B().CreateConstrainedFPBinOp(Intrinsic::experimental_constrained_fmul, lanes[0][l].v,
+                                                      lanes[1][l].v, nullptr, "", nullptr, CI.getRoundingMode(),
+                                                      CI.getExceptionBehavior());
+        continue;
+      }
+      if (isTemplateLane(l, n))
+        continue;
+      SmallVector<Value *, 3> args;
+      for (unsigned i = 0; i < n; ++i)
+        args.push_back(lanes[i][l].v);
+      result[l] = Operand{hostLane(ctx, CI, args), false};
+    }
+  };
+  bool anyHost = false;
+  for (unsigned l = 0; l < L; ++l)
+    anyHost |= fmuladd ? !isTemplateLane(l, 2) : !isTemplateLane(l, n);
+  Value *hostBits = nullptr;
+  if (anyHost) {
+    if (flag)
+      hostBits = bracket(ctx, hostWork);
+    else
+      hostWork();
+  }
+
+  // A result is an ordinary value (never anchored); a scalar's is bound to CI where it is emitted.
+  auto emitValue = [&](const Step &s) {
+    return L == 1 ? ctx.emitTemplate(s.spec, s.ops, &CI) : ctx.emitTemplate(s.spec, s.ops);
+  };
+  Value *bits = nullptr;
+  auto addBits = [&](Value *b) {
+    bits = bits ? tmpl(ctx, st, intOp("or", ""), {Operand{bits, true}, Operand{b, true}}) : b;
+  };
+  for (unsigned l = 0; l < L; ++l) {
+    SmallVector<Operand, 3> data = laneData(l);
+    if (fmuladd) {
+      // CR §2: unfused, fmul then fadd, each rounded in the mode.
+      Operand prod{prods[l], false};
+      if (!prods[l]) {
+        Step mul = makeStep("fmul", pred, wTy, nullptr, {data[0], data[1]}, mode);
+        prod = Operand{tmpl(ctx, st, mul.spec, mul.ops), true};
+        if (raises(CI))
+          addBits(excOf(ctx, st, mul, "fmul"));
+      }
+      if (!prod.handle && !data[2].handle && !railMode) {
+        // A host product and a classical addend in a quantum vector op: the host fadd.
+        Value *s = nullptr;
+        auto addHost = [&] {
+          s = ctx.B().CreateConstrainedFPBinOp(Intrinsic::experimental_constrained_fadd, prod.v, data[2].v,
+                                               nullptr, "", nullptr, CI.getRoundingMode(), CI.getExceptionBehavior());
+        };
+        if (flag) {
+          Value *b2 = bracket(ctx, addHost);
+          hostBits = hostBits ? ctx.B().CreateOr(hostBits, b2) : b2;
+        } else {
+          addHost();
+        }
+        result[l] = Operand{s, false};
+        continue;
+      }
+      Step add = makeStep("fadd", pred, wTy, nullptr, {prod, data[2]}, mode);
+      result[l] = Operand{emitValue(add), true};
+      if (raises(CI))
+        addBits(excOf(ctx, st, add, "fadd"));
+      continue;
+    }
+    if (result[l].v)
+      continue;   // a host lane
+    Step s = makeStep(o, pred, wTy, toTy, data, mode);
+    result[l] = Operand{emitValue(s), true};
+    if (raises(CI))
+      addBits(excOf(ctx, st, s, o));
+  }
+  if (raises(CI)) {
+    if (bits && hostBits)
+      bits = tmpl(ctx, st, intOp("or", "hl"), {Operand{bits, true}, Operand{hostBits, false}});
+    if (bits)
+      raiseBits(ctx, st, CI, bits);
+    else if (hostBits)
+      raiseBits(ctx, st, CI, nullptr, hostBits);
+  }
+  if (L == 1) {
+    if (!result[0].handle)
+      internalError("eff-fenv: a quantum scalar constrained op lowered to a classical value", &CI);
+  } else {
+    for (Operand &r : result)
+      if (!r.handle) {
+        CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(r.v->getType())}, {r.v});
+        ctx.unc().recordSeed(a);
+        r = Operand{a, true};
+      }
+    ctx.bindFields(&CI, result);
+  }
   settle(ctx, st, CI);
 }
 
@@ -1276,48 +1781,38 @@ namespace {
 
 const Value *objectOf(const Value *p) { return getUnderlyingObject(p); }
 
-// A saved quantum part goes into a local object only, accessed by nothing but the fenv calls.
-void requireSaveTarget(const Value *obj, const Instruction &I) {
-  auto *AI = dyn_cast<AllocaInst>(obj);
-  if (!AI)
-    unimplemented("eff-fenv: a quantum environment part saved into an object that is not a local variable", &I);
-  for (const User *u : AI->users()) {
+// A saved quantum part goes into an object only fenv calls of this function read or write: a local, or a
+// global no other code touches. Anything else (an escaping object, a copy of its bytes, a pointer to it
+// passed on) would carry the host bytes without the quantum part (kIssueObject).
+void requireSaveTarget(State &st, const Value *obj, const Instruction &I) {
+  if (!isa<AllocaInst>(obj) && !(isa<GlobalVariable>(obj) && !cast<GlobalVariable>(obj)->isConstant()))
+    unimplemented(kIssueObject, &I);
+  for (const User *u : obj->users()) {
     if (auto *CB = dyn_cast<CallBase>(u)) {
-      if (fenvFn(*CB) != FenvFn::None)
+      if (fenvFn(*CB) != FenvFn::None && CB->getFunction() == st.orig)
         continue;
       if (auto *II = dyn_cast<IntrinsicInst>(CB))
         if (II->isLifetimeStartOrEnd())
           continue;
     }
-    unimplemented("eff-fenv: a saved quantum environment part in an object that other code reads or writes", u);
+    unimplemented(kIssueObject, u);
   }
 }
 
-// The saved quantum part of the object p points to (an object never saved here has an empty one).
-Saved savedOf(LoweringContext &ctx, State &st, DenseMap<const Value *, Saved> &table, const Value *p,
-              const Instruction &I) {
-  const Value *obj = objectOf(p);
-  auto it = table.find(obj);
-  if (it != table.end())
-    return it->second;
-  if (st.anyQuantumSave && !(isa<GlobalVariable>(obj) && cast<GlobalVariable>(obj)->isConstant()))
-    unimplemented("eff-fenv: an environment restored from an object that is not the one this function saved "
-                  "a quantum part into",
-                  &I);
-  return Saved{};
-}
+// The saved part of the object p points to (an object never saved here has an empty one). A save target
+// holding a quantum part is accessed by fenv calls only (requireSaveTarget), so a pointer whose
+// underlying object is another one never reaches it.
+Key keyOf(const Value *p, unsigned kind) { return Key{objectOf(p), kind}; }
 
-void save(LoweringContext &ctx, State &st, DenseMap<const Value *, Saved> &table, const Value *p, Saved s,
-          const Instruction &I) {
-  const Value *obj = objectOf(p);
-  auto prev = table.find(obj);
-  if (s.mode || s.flags || (prev != table.end() && (prev->second.mode || prev->second.flags)))
-    requirePlaced(ctx, st, I);   // the object's saved part changes on every path or is refused (cq-1dlz)
-  if (s.mode || s.flags) {
-    requireSaveTarget(obj, I);
-    st.anyQuantumSave = true;
-  }
-  table[obj] = s;
+void save(LoweringContext &ctx, State &st, const Key &k, Part s, const Instruction &I) {
+  Part prev = readAt(ctx, st, k);
+  bool q = s.mode || s.flags;
+  if (q || prev.mode || prev.flags)
+    requirePlaced(ctx, st, I);
+  if (q)
+    requireSaveTarget(st, k.first, I);
+  s.saved = true;
+  define(ctx, st, k, s);
 }
 
 std::optional<uint64_t> constMask(Value *v) {
@@ -1326,17 +1821,34 @@ std::optional<uint64_t> constMask(Value *v) {
   return std::nullopt;
 }
 
-// ~m as a classical i32 (folded for a constant).
-Value *notClassical(LoweringContext &ctx, Value *m) {
-  if (auto *c = dyn_cast<ConstantInt>(m))
-    return ConstantInt::get(c->getType(), ~c->getValue());
-  return ctx.B().CreateNot(m);
-}
-
 bool knownValidMode(LoweringContext &ctx, const Value *orig) {
   KnownBits k = computeKnownBits(orig, ctx.M.getDataLayout());
   APInt outside = ~APInt(k.getBitWidth(), kModeBits);
   return (k.Zero & outside) == outside;
+}
+
+// The whole value an object's part holds at the builder's point (FULL), as operands: a full part's
+// rails, else the host bytes PROBEd under its quantum part, else (never saved) 0.
+std::pair<Operand, Operand> wholeOf(LoweringContext &ctx, State &st, const Key &k, const Part &p) {
+  Operand zero{i32(ctx, 0), false};
+  if (p.full)
+    return {p.mode ? Operand{p.mode, true} : zero, p.flags ? Operand{p.flags, true} : zero};
+  if (!p.saved)
+    return {p.mode ? Operand{p.mode, true} : zero, p.flags ? Operand{p.flags, true} : zero};
+  Value *obj = objectPtr(ctx, k.first);
+  if (k.second == KXflags)
+    return {zero, Operand{fold(ctx, st, p.flags, probeXflags(ctx, obj, p.mask)), true}};
+  auto [hm, hf] = probeEnv(ctx, st, obj);
+  return {p.mode ? Operand{p.mode, true} : Operand{hm, false}, Operand{fold(ctx, st, p.flags, hf), true}};
+}
+
+// A state value from an operand: a rail, null for the empty flags literal 0, else a seed.
+Value *flagsRail(LoweringContext &ctx, State &st, Operand o) {
+  if (o.handle)
+    return o.v;
+  if (auto *c = dyn_cast<ConstantInt>(o.v); c && c->isZero())
+    return nullptr;
+  return seed(ctx, st, o.v);
 }
 
 } // namespace
@@ -1346,23 +1858,35 @@ void lowerFenvCall(LoweringContext &ctx, CallBase &CB) {
   if (fn == FenvFn::None)
     internalError("eff-fenv: lowerFenvCall on a call that is no <fenv.h> function", &CB);
   State &st = state(ctx, CB);
-  Value *flag = predicateFlag(ctx);
   auto arg = [&](unsigned i) { return ctx.operand(CB.getArgOperand(i)); };
-  auto noPredicate = [&](const char *name) {
-    if (flag)
-      unimplemented(std::string("eff-fenv: ") + name + " under a quantum predicate", &CB);
-  };
   auto hostCopy = [&]() {
     Instruction *h = copyHost(ctx, CB);
     bindResult(ctx, CB, Operand{h, false});
     return h;
   };
+  Operand zero{i32(ctx, 0), false};
+  Value *flag = predicateFlag(ctx);   // the quantum control (predicate or trip), nullptr when none
+  auto control = [&]() { return flag; };
+  // valid(r) of a classical run-time mode as a fresh i1 rail (rule 7 seed).
+  auto validSeed = [&](Value *rv) {
+    IRBuilder<> &B = ctx.B();
+    Value *valid = B.CreateICmpEQ(B.CreateAnd(rv, i32(ctx, ~kModeBits)), i32(ctx, 0));
+    CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 1}}, {valid});
+    ctx.unc().recordSeed(a);
+    anchor(ctx, st, a);
+    return a;
+  };
+  // FOLD's host half: the host flags read and cleared; T = FLAGS | them (a rail).
+  auto foldHost = [&](Value *flags) {
+    Value *h = hostTest(ctx, i32(ctx, kAllExcept));
+    hostClear(ctx, i32(ctx, kAllExcept));
+    return fold(ctx, st, flags, h);
+  };
 
   switch (fn) {
   case FenvFn::GetRound: {
-    if (st.mode) {
-      requireValid(ctx, st.modeAt, CB, "rounding mode");
-      bindResult(ctx, CB, Operand{st.mode, true});   // the mode handle itself, no gate (80)
+    if (Value *m = cur(ctx, st).mode) {
+      bindResult(ctx, CB, Operand{m, true});   // the mode handle itself, no gate (80)
       break;
     }
     Instruction *h = hostCopy();
@@ -1373,52 +1897,57 @@ void lowerFenvCall(LoweringContext &ctx, CallBase &CB) {
 
   case FenvFn::SetRound: {
     Operand r = arg(0);
-    if (!r.handle && !flag) {
-      if (auto *c = dyn_cast<ConstantInt>(r.v)) {
-        bool valid = (c->getZExtValue() & ~uint64_t(kModeBits) & 0xffffffffu) == 0;
-        if (valid && st.mode)
-          requirePlaced(ctx, st, CB);   // drops the quantum MODE: on every path or refused (cq-1dlz)
-        hostCopy();
-        if (valid) {
-          setMode(ctx, st, nullptr);
-          st.modeVal = c;
-          st.modeValAt = &CB;
-        }
+    Part c = cur(ctx, st);
+    if (!r.handle) {
+      if (auto *k = dyn_cast<ConstantInt>(r.v);
+          k && (k->getZExtValue() & ~uint64_t(kModeBits) & 0xffffffffu) != 0) {
+        hostCopy();   // an invalid mode changes nothing; the host call says so (also under a control)
         break;
       }
-      if (st.mode)
-        unimplemented("eff-fenv: fesetround of a classical run-time value while the mode is quantum", &CB);
+    }
+    if (!r.handle && !control()) {
+      if (auto *k = dyn_cast<ConstantInt>(r.v)) {
+        if (c.mode)
+          requirePlaced(ctx, st, CB);
+        hostCopy();
+        setMode(ctx, st, nullptr);
+        st.modeVal = k;
+        st.modeValAt = &CB;
+        break;
+      }
       hostCopy();
+      if (c.mode) {
+        // MODE' = valid(r) ? r : MODE, valid seeded as an i1 rail (rule 7).
+        requirePlaced(ctx, st, CB);
+        setMode(ctx, st, select32(ctx, st, validSeed(r.v), r, Operand{c.mode, true}));
+      }
       st.modeVal = nullptr;
       break;
     }
-    requireWritable(ctx, st, CB);
-    if (st.mode)
-      requireValid(ctx, st.modeAt, CB, "rounding mode");
-    Operand old = st.mode ? Operand{st.mode, true} : Operand{classicalMode(ctx, st, CB), false};
+    requireWritable(ctx, st, CB, false, true);
+    Operand old = c.mode ? Operand{c.mode, true} : Operand{classicalMode(ctx, st, CB), false};
     if (!r.handle) {
-      // A classical argument under a quantum predicate: no host call; MODE' = select(p, r', MODE).
+      // A valid or run-time classical argument under a quantum control: no host call;
+      // MODE' = select(p, r', MODE).
       Value *nv = r.v, *ret = i32(ctx, 0);
-      if (auto *c = dyn_cast<ConstantInt>(r.v)) {
-        if ((c->getZExtValue() & ~uint64_t(kModeBits) & 0xffffffffu) != 0)
-          unimplemented("eff-fenv: fesetround of an invalid constant under a quantum predicate", &CB);
-      } else {
-        if (old.handle)
-          unimplemented("eff-fenv: fesetround of a classical run-time value under a quantum predicate while the "
-                        "mode is quantum",
-                        &CB);
+      Operand nvo{nv, false};
+      if (!isa<ConstantInt>(r.v)) {
         IRBuilder<> &B = ctx.B();
         Value *valid = B.CreateICmpEQ(B.CreateAnd(r.v, notClassical(ctx, i32(ctx, kModeBits))), i32(ctx, 0));
-        nv = B.CreateSelect(valid, r.v, old.v);
         ret = B.CreateSelect(valid, i32(ctx, 0), i32(ctx, 1));
+        if (old.handle) {
+          nvo = Operand{select32(ctx, st, validSeed(r.v), r, old), true};
+        } else {
+          nvo = Operand{B.CreateSelect(valid, r.v, old.v), false};
+        }
       }
-      setMode(ctx, st, select32(ctx, st, flag, Operand{nv, false}, old));
+      setMode(ctx, st, select32(ctx, st, flag, nvo, old));
       bindResult(ctx, CB, Operand{ret, false});
       break;
     }
     // A quantum argument (100's fenv_quantum_mode; 80 when known bits prove it valid).
     if (knownValidMode(ctx, CB.getArgOperand(0))) {
-      Value *nm = flag ? select32(ctx, st, flag, r, old) : r.v;
+      Value *nm = control() ? select32(ctx, st, flag, r, old) : r.v;
       setMode(ctx, st, nm);
       if (!CB.use_empty())
         bindResult(ctx, CB, Operand{i32(ctx, 0), false});
@@ -1429,7 +1958,7 @@ void lowerFenvCall(LoweringContext &ctx, CallBase &CB) {
     eq.pred = "eq";
     Value *valid = tmpl(ctx, st, eq, {Operand{stray, true}, Operand{i32(ctx, 0), false}});
     Value *take = valid;
-    if (flag) {
+    if (control()) {
       abi::TemplateSpec a;
       a.op = "and";
       a.w = RailType{Kind::Int, 1};
@@ -1445,17 +1974,19 @@ void lowerFenvCall(LoweringContext &ctx, CallBase &CB) {
 
   case FenvFn::RaiseExcept: {
     Operand m = arg(0);
-    if (!m.handle && !flag) {
+    if (!m.handle && !control()) {
       hostCopy();
       break;
     }
-    requireWritable(ctx, st, CB);
+    requireWritable(ctx, st, CB, true, false);
+    if (st.traps)
+      unimplemented(kIssueTraps, &CB);
     Value *bits;
     if (m.handle) {
       KnownBits k = computeKnownBits(CB.getArgOperand(0), ctx.M.getDataLayout());
       APInt outside = ~APInt(k.getBitWidth(), kAllExcept);
       bits = (k.Zero & outside) == outside ? m.v : andLit(ctx, st, m.v, i32(ctx, kAllExcept));
-      if (flag)
+      if (control())
         bits = select32(ctx, st, flag, Operand{bits, true}, Operand{i32(ctx, 0), false});
     } else {
       Value *lit = isa<ConstantInt>(m.v) ? (Value *)ConstantInt::get(m.v->getType(),
@@ -1463,48 +1994,60 @@ void lowerFenvCall(LoweringContext &ctx, CallBase &CB) {
                                          : ctx.B().CreateAnd(m.v, i32(ctx, kAllExcept));
       bits = select32(ctx, st, flag, Operand{lit, false}, Operand{i32(ctx, 0), false});
     }
-    if (st.flags)
-      requireValid(ctx, st.flagsAt, CB, "flags");
-    setFlags(ctx, st, orFlags(ctx, st, st.flags, bits));
+    setFlags(ctx, st, orFlags(ctx, st, cur(ctx, st).flags, bits));
     bindResult(ctx, CB, Operand{i32(ctx, 0), false});   // feraiseexcept succeeds
     break;
   }
 
   case FenvFn::ClearExcept: {
-    noPredicate("feclearexcept");
     Operand m = arg(0);
-    if (m.handle)
-      unimplemented("eff-fenv: feclearexcept with a quantum mask", &CB);
-    hostCopy();
-    if (!st.flags)
+    Part c = cur(ctx, st);
+    if (!m.handle && !control()) {
+      hostCopy();
+      if (!c.flags)
+        break;
+      if (auto k = constMask(m.v); k && (*k & kAllExcept) == 0)
+        break;
+      requireWritable(ctx, st, CB, true, false);
+      setFlags(ctx, st, andLit(ctx, st, c.flags, notClassical(ctx, m.v)));
       break;
-    if (auto c = constMask(m.v); c && (*c & kAllExcept) == 0)
+    }
+    requireWritable(ctx, st, CB, true, false);
+    if (!m.handle) {
+      // A classical mask under the control p: FLAGS' = select(p, FLAGS & ~m, FLAGS | (host & m)).
+      Value *hb = hostTest(ctx, m.v);
+      hostCopy();
+      Operand a = c.flags ? Operand{andLit(ctx, st, c.flags, notClassical(ctx, m.v)), true} : zero;
+      Operand b{fold(ctx, st, c.flags, hb), true};
+      setFlags(ctx, st, select32(ctx, st, flag, a, b));
       break;
-    requireWritable(ctx, st, CB);
-    requireValid(ctx, st.flagsAt, CB, "flags");
-    setFlags(ctx, st, andLit(ctx, st, st.flags, notClassical(ctx, m.v)));
+    }
+    // A quantum mask: FOLD.
+    Value *T = foldHost(c.flags);
+    Operand nw = opAnd(ctx, st, Operand{T, true}, opNot(ctx, st, m));
+    setFlags(ctx, st, control() ? select32(ctx, st, flag, nw, Operand{T, true}) : nw.v);
+    bindResult(ctx, CB, zero);
     break;
   }
 
   case FenvFn::TestExcept: {
     Operand m = arg(0);
-    if (st.flags)
-      requireValid(ctx, st.flagsAt, CB, "flags");
+    Part c = cur(ctx, st);
     if (!m.handle) {
       Instruction *h = copyHost(ctx, CB);
-      if (!st.flags) {
+      if (!c.flags) {
         bindResult(ctx, CB, Operand{h, false});
         break;
       }
-      Value *q = tmpl(ctx, st, intOp("and", "hl"), {Operand{st.flags, true}, m});
+      Value *q = tmpl(ctx, st, intOp("and", "hl"), {Operand{c.flags, true}, m});
       bindResult(ctx, CB, Operand{tmpl(ctx, st, intOp("or", "hl"), {Operand{q, true}, Operand{h, false}}), true});
       break;
     }
     // A quantum mask: (host(ALL) | FLAGS) & m.
     CallInst *h = hostCall(ctx, CB, {i32(ctx, kAllExcept)});
     Value *r;
-    if (st.flags) {
-      Value *u = tmpl(ctx, st, intOp("or", "hl"), {Operand{st.flags, true}, Operand{h, false}});
+    if (c.flags) {
+      Value *u = tmpl(ctx, st, intOp("or", "hl"), {Operand{c.flags, true}, Operand{h, false}});
       r = tmpl(ctx, st, intOp("and", ""), {Operand{u, true}, m});
     } else {
       r = tmpl(ctx, st, intOp("and", "hl"), {m, Operand{h, false}});
@@ -1514,89 +2057,165 @@ void lowerFenvCall(LoweringContext &ctx, CallBase &CB) {
   }
 
   case FenvFn::GetExceptFlag: {
-    noPredicate("fegetexceptflag");
     Operand m = arg(1);
-    if (m.handle)
-      unimplemented("eff-fenv: fegetexceptflag with a quantum mask", &CB);
-    hostCopy();
-    Saved s;
-    s.mask = constMask(m.v);
-    if (st.flags) {
-      requireValid(ctx, st.flagsAt, CB, "flags");
-      requireWritable(ctx, st, CB);
-      s.flags = andLit(ctx, st, st.flags, m.v);
+    Key k = keyOf(CB.getArgOperand(0), KXflags);
+    Part c = cur(ctx, st);
+    if (!control()) {
+      Part s;
+      if (!m.handle) {
+        hostCopy();
+        s.mask = constMask(m.v);
+      } else {
+        // C17 7.6.2.4: a later restore names a subset of m; the host bytes hold every host bit.
+        bindResult(ctx, CB, Operand{hostCall(ctx, CB, {arg(0).v, i32(ctx, kAllExcept)}), false});
+      }
+      if (c.flags)
+        s.flags = opAnd(ctx, st, Operand{c.flags, true}, m).v;
+      save(ctx, st, k, s, CB);
+      break;
     }
-    save(ctx, st, st.xflags, CB.getArgOperand(0), s, CB);
+    // Under the control p: the part becomes FULL, select(p, (FLAGS | host) & m, before).
+    Value *h = hostTest(ctx, i32(ctx, kAllExcept));
+    Operand nw = opAnd(ctx, st, Operand{fold(ctx, st, c.flags, h), true}, m);
+    Part prev = readAt(ctx, st, k);
+    Operand before = wholeOf(ctx, st, k, prev).second;
+    Part s;
+    s.full = true;
+    s.flags = select32(ctx, st, flag, nw, before);
+    save(ctx, st, k, s, CB);
+    bindResult(ctx, CB, zero);
     break;
   }
 
   case FenvFn::SetExceptFlag: {
-    noPredicate("fesetexceptflag");
     Operand m = arg(1);
-    if (m.handle)
-      unimplemented("eff-fenv: fesetexceptflag with a quantum mask", &CB);
-    hostCopy();
-    Saved s = savedOf(ctx, st, st.xflags, CB.getArgOperand(0), CB);
-    if (!st.flags && !s.flags)
+    Key k = keyOf(CB.getArgOperand(0), KXflags);
+    Part s = readAt(ctx, st, k);
+    Part c = cur(ctx, st);
+    if (!m.handle && !s.full && !control()) {
+      hostCopy();
+      if (!c.flags && !s.flags)
+        break;
+      std::optional<uint64_t> cm = constMask(m.v);
+      if (cm && (*cm & kAllExcept) == 0)
+        break;
+      requireWritable(ctx, st, CB, true, false);
+      Value *cr = nullptr, *sv = nullptr;
+      if (c.flags) {
+        // FE_ALL_EXCEPT (82): every bit is reinstated from the saved part, the current rail is dropped.
+        if (!(cm && (*cm & kAllExcept) == kAllExcept))
+          cr = andLit(ctx, st, c.flags, notClassical(ctx, m.v));
+      }
+      if (s.flags) {
+        bool covered = cm && s.mask && (*s.mask & ~*cm & kAllExcept) == 0;
+        sv = covered ? s.flags : andLit(ctx, st, s.flags, m.v);
+      }
+      setFlags(ctx, st, orFlags(ctx, st, cr, sv));
       break;
-    requireWritable(ctx, st, CB);
-    std::optional<uint64_t> cm = constMask(m.v);
-    if (cm && (*cm & kAllExcept) == 0)
-      break;
-    Value *cur = nullptr, *sv = nullptr;
-    if (st.flags) {
-      requireValid(ctx, st.flagsAt, CB, "flags");
-      // FE_ALL_EXCEPT (82): every bit is reinstated from the saved part, the current rail is dropped.
-      if (!(cm && (*cm & kAllExcept) == kAllExcept))
-        cur = andLit(ctx, st, st.flags, notClassical(ctx, m.v));
     }
-    if (s.flags) {
-      bool covered = cm && s.mask && (*s.mask & ~*cm & kAllExcept) == 0;
-      sv = covered ? s.flags : andLit(ctx, st, s.flags, m.v);
-    }
-    setFlags(ctx, st, orFlags(ctx, st, cur, sv));
+    // FOLD: the saved whole value S (a full part, or the host bytes PROBEd), the host flags moved into
+    // T; FLAGS' = (T & ~m) | (S & m), select(p, that, T) under the control.
+    requireWritable(ctx, st, CB, true, false);
+    Value *h = hostTest(ctx, i32(ctx, kAllExcept));
+    Operand S = wholeOf(ctx, st, k, s).second;
+    hostClear(ctx, i32(ctx, kAllExcept));
+    Value *T = fold(ctx, st, c.flags, h);
+    Operand nw = opOr(ctx, st, opAnd(ctx, st, Operand{T, true}, opNot(ctx, st, m)), opAnd(ctx, st, S, m));
+    setFlags(ctx, st, control() ? select32(ctx, st, flag, nw, Operand{T, true}) : flagsRail(ctx, st, nw));
+    bindResult(ctx, CB, zero);
     break;
   }
 
   case FenvFn::GetEnv:
   case FenvFn::HoldExcept: {
-    noPredicate(fn == FenvFn::GetEnv ? "fegetenv" : "feholdexcept");
-    hostCopy();
-    if (st.mode)
-      requireValid(ctx, st.modeAt, CB, "rounding mode");
-    if (st.flags)
-      requireValid(ctx, st.flagsAt, CB, "flags");
-    save(ctx, st, st.envs, CB.getArgOperand(0), Saved{st.mode, st.flags, std::nullopt}, CB);
-    if (fn == FenvFn::HoldExcept && st.flags) {
-      requireWritable(ctx, st, CB);
-      setFlags(ctx, st, nullptr);
+    Key k = keyOf(CB.getArgOperand(0), KEnv);
+    Part c = cur(ctx, st);
+    if (!control()) {
+      hostCopy();
+      Part s;
+      s.mode = c.mode;
+      s.flags = c.flags;
+      save(ctx, st, k, s, CB);
+      if (fn == FenvFn::HoldExcept && c.flags) {
+        requireWritable(ctx, st, CB, true, false);
+        setFlags(ctx, st, nullptr);
+      }
+      break;
     }
+    // Under the control p: the part becomes FULL, select(p, now, before); feholdexcept also empties the
+    // flags where p holds (FOLD).
+    if (st.traps)
+      unimplemented(kIssueTraps, &CB);
+    Value *h = hostTest(ctx, i32(ctx, kAllExcept));
+    Value *T = fold(ctx, st, c.flags, h);
+    Operand nowMode = c.mode ? Operand{c.mode, true} : Operand{classicalMode(ctx, st, CB), false};
+    Part prev = readAt(ctx, st, k);
+    auto [pm, pf] = wholeOf(ctx, st, k, prev);
+    Part s;
+    s.full = true;
+    s.mode = select32(ctx, st, flag, nowMode, pm);
+    s.flags = select32(ctx, st, flag, Operand{T, true}, pf);
+    save(ctx, st, k, s, CB);
+    if (fn == FenvFn::HoldExcept) {
+      requireWritable(ctx, st, CB, true, false);
+      hostClear(ctx, i32(ctx, kAllExcept));
+      setFlags(ctx, st, select32(ctx, st, flag, zero, Operand{T, true}));
+    }
+    bindResult(ctx, CB, zero);
     break;
   }
 
   case FenvFn::SetEnv:
   case FenvFn::UpdateEnv: {
-    noPredicate(fn == FenvFn::SetEnv ? "fesetenv" : "feupdateenv");
-    hostCopy();
-    Saved s = savedOf(ctx, st, st.envs, CB.getArgOperand(0), CB);
-    if (st.mode || st.flags || s.mode || s.flags)
-      requireWritable(ctx, st, CB);
-    if (st.flags)
-      requireValid(ctx, st.flagsAt, CB, "flags");
-    setMode(ctx, st, s.mode);
-    if (fn == FenvFn::SetEnv)
-      setFlags(ctx, st, s.flags);
-    else
-      setFlags(ctx, st, orFlags(ctx, st, s.flags, st.flags));
+    Key k = keyOf(CB.getArgOperand(0), KEnv);
+    Part s = readAt(ctx, st, k);
+    Part c = cur(ctx, st);
+    if (!s.full && !control()) {
+      hostCopy();
+      if (c.mode || c.flags || s.mode || s.flags)
+        requireWritable(ctx, st, CB, true, true);
+      setMode(ctx, st, s.mode);
+      if (fn == FenvFn::SetEnv)
+        setFlags(ctx, st, s.flags);
+      else
+        setFlags(ctx, st, orFlags(ctx, st, s.flags, cur(ctx, st).flags));
+      break;
+    }
+    // FOLD: the saved whole value (a full part, or the host object PROBEd), the host flags moved into
+    // T; the host mode left as it is (MODE' a rail overrides it).
+    requireWritable(ctx, st, CB, true, true);
+    if (st.traps)
+      unimplemented(kIssueTraps, &CB);
+    Value *h = hostTest(ctx, i32(ctx, kAllExcept));
+    auto [Sm, Sf] = wholeOf(ctx, st, k, s);
+    hostClear(ctx, i32(ctx, kAllExcept));
+    Value *T = fold(ctx, st, c.flags, h);
+    Operand nowMode = c.mode ? Operand{c.mode, true} : Operand{classicalMode(ctx, st, CB), false};
+    Operand nf = fn == FenvFn::SetEnv ? Sf : opOr(ctx, st, Sf, Operand{T, true});
+    if (control()) {
+      setMode(ctx, st, select32(ctx, st, flag, Sm, nowMode));
+      setFlags(ctx, st, select32(ctx, st, flag, nf, Operand{T, true}));
+    } else {
+      if (Sm.handle) {
+        setMode(ctx, st, Sm.v);
+      } else {
+        hostFn(ctx, "fesetround", {Sm.v});
+        setMode(ctx, st, nullptr);
+      }
+      setFlags(ctx, st, flagsRail(ctx, st, nf));
+    }
+    bindResult(ctx, CB, zero);
     break;
   }
 
   case FenvFn::GetExcept:
+    hostCopy();   // a read of the host trap enables
+    break;
+
   case FenvFn::EnableExcept:
   case FenvFn::DisableExcept: {
-    noPredicate("the exception trap calls");
-    if (!CB.arg_empty() && arg(0).handle)
-      unimplemented("eff-fenv: an exception trap call with a quantum mask", &CB);
+    if (control() || (!CB.arg_empty() && arg(0).handle))
+      unimplemented(kIssueTraps, &CB);
     hostCopy();
     if (fn == FenvFn::EnableExcept)
       st.traps = true;
@@ -1616,68 +2235,76 @@ void afterMeasure(LoweringContext &ctx, CallInst &measure) {
   if (it == m.end() || !it->second || !it->second->orig || it->second->orig->getParent() != measure.getModule())
     return;
   State &st = *it->second;
-  if (st.flags || st.mode)
+  if (st.any)
     settle(ctx, st, measure);
 }
 
+// ROLES: at a return of an entry, before the spine's flushAtExit: the state there is final.
+void atEntryReturn(LoweringContext &ctx, ReturnInst &ret) {
+  auto &m = states();
+  auto it = m.find(&ctx.out());
+  if (it == m.end() || !it->second || !it->second->orig || it->second->orig->getParent() != ret.getModule())
+    return;
+  State &st = *it->second;
+  if (!st.any || !ctx.S.isEntry() || !accessesEnv(*ctx.S.F))
+    return;
+  Part p = cur(ctx, st);
+  bool every = ret.getFunction() == st.orig && oneReturn(*st.orig);
+  keepFinal(ctx, st, p.flags, every);
+  keepFinal(ctx, st, p.mode, every);
+}
+
 // --------------------------------------------------------------------------------------------
-// E1 (CR rule 23, 82): the clone ABI of the environment. Proposed as a freeze amendment of Effects.h
-// (declarations below, consumers calls and spine); until it lands they are declared here.
+// E1 (CR rule 23, 82): the clone ABI of the environment (Effects.h).
 //
-//  - cloneCarriesEnv(T, S): a clone of S (by the run's taint T: carriesEnvImpl) takes two trailing i32 parameters after every other one (the
-//    caller's MODE, a classical FE_* value, then its FLAGS, a handle) and returns the new FLAGS handle
-//    as the LAST field of its result: `i32` alone for a clone whose result is otherwise void, else a
-//    literal struct of its result fields (C types where classical, handles where quantum; the M2 store
-//    handles included) followed by i32. The twin's outs are every handle field in that order (the new
-//    flags last), then the clone's parameters (mode and flags included).
+//  - cloneCarriesEnv(T, S): a clone of S (by the run's taint T: carriesEnvImpl) takes two trailing i32
+//    parameters after every other one (the caller's MODE, a classical FE_* value, then its FLAGS, a
+//    handle) and returns the new FLAGS handle as the LAST field of its result: `i32` alone for a clone
+//    whose result is otherwise void, else a literal struct of its result fields (C types where
+//    classical, handles where quantum; the M2 store handles included) followed by i32. The twin's outs
+//    are every handle field in that order (the new flags last), then the clone's parameters (mode and
+//    flags included).
 //  - envArgs(ctx, site): caller, at the builder before the clone call: {mode (classical), flags
-//    (handle)}. An empty FLAGS becomes a fresh |0> seed first. Unimplemented: MODE a handle (a clone
-//    rounding in a quantum mode). Under a quantum predicate (the clone called unguarded, rule 19)
-//    afterCloneCall merges: FLAGS := select(predicate, flagsOut, FLAGS).
+//    (handle)}. An empty FLAGS becomes a fresh |0> seed first. MODE a handle (a clone rounding in a
+//    quantum mode) awaits a ruling (kIssueModeClone). Under a quantum predicate (the clone called
+//    unguarded, rule 19, or a _ctl clone) afterCloneCall merges: FLAGS := select(predicate, flagsOut,
+//    FLAGS).
 //  - afterCloneCall(ctx, site, flagsOut): caller, right after the call and after recordCall recorded
 //    flagsOut (the extractvalue of the last field, or the call itself) as an out: FLAGS := flagsOut.
-//    This module may set flagsOut's role to Output (the final flags) afterwards.
 //  - bindCloneEnv(ctx, mode, flags): clone, at its entry after the formals are bound (before any
 //    instruction is lowered): MODE := mode (classical), FLAGS := flags (recorded here as the caller's
-//    rail, Role::UserRegister, never freed in the clone).
+//    rail, Role::UserRegister, never freed in the clone). A _ctl clone's raised bits enter under its
+//    entry flag (the predicate atom every block carries). A clone that changes the mode classically
+//    reads the host mode afterwards; a quantum mode it makes must be classical again at its returns.
 //  - cloneExitFlags(ctx, ret): clone, at each return before the copy-outs: the FLAGS handle to copy
-//    out into the returned flags rail (alloc_i32(0), copy_i32, Role::Result, as the result's).
-
-namespace {
-State &stateOfCall(LoweringContext &ctx, const Instruction &I) { return state(ctx, I); }
-} // namespace
+//    out into the returned flags rail (alloc_i32(0), copy_i32, Role::Result, as the result's); an
+//    empty FLAGS (cleared or written back) a fresh |0> seed.
 
 bool cloneCarriesEnv(const TaintInfo &T, const Specialization &S) { return carriesEnvImpl(T, S); }
 
 std::array<Operand, 2> envArgs(LoweringContext &ctx, CallBase &site) {
-  State &st = stateOfCall(ctx, site);
-  if (st.mode)
-    unimplemented("eff-fenv: a call of a clone carrying the environment while the rounding mode is quantum "
-                  "(rule 23 clone ABI with a mode handle)",
-                  &site);
-  requireWritable(ctx, st, site);
+  State &st = state(ctx, site);
+  Part c = cur(ctx, st);
+  if (c.mode)
+    unimplemented(kIssueModeClone, &site);
   Value *mode = classicalMode(ctx, st, site);
-  if (st.flags) {
-    requireValid(ctx, st.flagsAt, site, "flags");
-  } else {
-    CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i32Rail()}, {i32(ctx, 0)});
-    ctx.unc().recordSeed(z);
-    setFlags(ctx, st, z);
-  }
-  return {Operand{mode, false}, Operand{st.flags, true}};
+  if (!c.flags)
+    setFlags(ctx, st, seed(ctx, st, i32(ctx, 0)));
+  return {Operand{mode, false}, Operand{cur(ctx, st).flags, true}};
 }
 
 void afterCloneCall(LoweringContext &ctx, CallBase &site, Value *flagsOut) {
-  State &st = stateOfCall(ctx, site);
+  State &st = state(ctx, site);
   if (!flagsOut || !flagsOut->getType()->isIntegerTy(32))
     internalError("eff-fenv: afterCloneCall without the clone's returned flags handle", &site);
   if (Value *flag = predicateFlag(ctx)) {
     // Under a quantum predicate the clone ran unguarded (rule 19: no non-pure gate in its body), on the
     // flags envArgs passed: its new flags hold only where the predicate does, the old ones elsewhere
     // (169's logb calling ilogb in one arm; the merge as feraiseexcept's, 65).
-    if (!st.flags)
+    Value *old = cur(ctx, st).flags;
+    if (!old)
       internalError("eff-fenv: a clone call under a quantum predicate with no flags passed", &site);
-    flagsOut = select32(ctx, st, flag, Operand{flagsOut, true}, Operand{st.flags, true});
+    flagsOut = select32(ctx, st, flag, Operand{flagsOut, true}, Operand{old, true});
   }
   setFlags(ctx, st, flagsOut);
   settle(ctx, st, site);
@@ -1688,30 +2315,30 @@ void bindCloneEnv(LoweringContext &ctx, Argument *mode, Argument *flags) {
     internalError("eff-fenv: bindCloneEnv in a function that does not carry the environment", mode);
   if (!mode->getType()->isIntegerTy(32) || !flags->getType()->isIntegerTy(32))
     internalError("eff-fenv: a clone's trailing mode and flags parameters are not i32", mode);
-  if (ctx.S.ctl)
-    unimplemented("eff-fenv: a _ctl clone carrying the environment (its raised bits under the entry flag)", ctx.S.F);
-  for (const BasicBlock &BB : *ctx.S.F)
-    for (const Instruction &I : BB)
-      if (writesMode(I))
-        unimplemented("eff-fenv: a clone that changes the rounding mode (rule 23: a clone returns only the new "
-                      "flags rail, 82)",
-                      &I);
   State &st = state(ctx, ctx.S.F->getParent());
   if (st.cloneBound)
     internalError("eff-fenv: bindCloneEnv called twice for one clone", mode);
   ctx.unc().recordExternal(flags, Role::UserRegister);
   st.cloneBound = true;
   st.cloneMode = mode;
-  st.flags = flags;
-  st.flagsAt = nullptr;   // defined at the clone's entry: on every path
+  for (const BasicBlock &BB : *ctx.S.F)
+    for (const Instruction &I : BB)
+      st.cloneWritesMode |= writesMode(I);
+  st.initial = Part{};
+  st.initial.flags = flags;   // defined at the clone's entry: on every path
+  st.any = true;
 }
 
 Value *cloneExitFlags(LoweringContext &ctx, ReturnInst &ret) {
-  State &st = stateOfCall(ctx, ret);
-  if (!st.cloneBound || !st.flags)
+  State &st = state(ctx, ret);
+  if (!st.cloneBound)
     internalError("eff-fenv: cloneExitFlags in a clone whose environment was not bound", &ret);
-  requireValid(ctx, st.flagsAt, ret, "flags");
-  return st.flags;
+  Part c = cur(ctx, st);
+  if (c.mode)
+    unimplemented(kIssueModeClone, &ret);
+  if (!c.flags)
+    return seed(ctx, st, i32(ctx, 0));
+  return c.flags;
 }
 
 } // namespace cq::fenv

@@ -1233,6 +1233,7 @@ void Walker::emitTerminator(BasicBlock *b) {
       unimplemented("spine: a return under a quantum predicate", t);
     if (!ctx.S.isEntry())
       return emitCloneReturn(ret);
+    fenv::atEntryReturn(ctx, *ret);   // cq-hzji: the final rule 23 state is kept (Effects.h)
     ReturnInst *nr;
     if (Value *rv = ret->getReturnValue()) {
       Operand op = ctx.operand(rv);

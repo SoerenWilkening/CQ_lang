@@ -1,6 +1,8 @@
-; EXPECT-ERROR: eff-fenv: the quantum floating-point environment changes in a block a classical branch chooses
-; cq-1dlz: fesetround(const) on one classical path drops a quantum MODE; after the join the other
-; path still rounds in the quantum mode. CR rule 23 has no classical-join construction: refused.
+; cq-1dlz / cq-hzji: fesetround(const) on one classical path drops a quantum MODE; after the join the other
+; path still rounds in the quantum mode: MODE is a merge of the quantum rail and a seed of the classical
+; mode (fegetround() where that edge leaves), and the division rounds in it (_rmq).
+; CHECK k: %cq.fenv.merge = phi i32
+; CHECK k: call i32 @cq_template_fdiv_f64_ll_rmq(double %a, double %b, i32 %cq.fenv.merge)
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 define i32 @k(double %x0, double %th, double %k, double %a, double %b, i1 %c) #0 {

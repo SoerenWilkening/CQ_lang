@@ -1,4 +1,8 @@
-; EXPECT-ERROR: eff-fenv: the quantum floating-point environment changes in a block a classical branch chooses
+; cq-hzji (was a stop, cq-1dlz): the flags change on one classical path only. The state is an SSA variable
+; of the output: at the join a phi over handles (a merge) of the arm's flags rail and an empty-flags seed
+; made where the other edge leaves; the final state (a merge) is copied out and kept.
+; CHECK k: %cq.fenv.merge = phi i32
+; CHECK k: call void @cqrt_copy_i32(i32 %cq.fenv.merge,
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 define i32 @k(double %x0, double %th, double %c, i1 %b) #0 {

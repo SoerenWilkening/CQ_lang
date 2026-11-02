@@ -22,6 +22,10 @@ namespace cq::fenv   { void lowerConstrained(LoweringContext &, llvm::CallBase &
                        // cq-xu2l (freeze amendment on cq-arch): after every lowered cq_measure, the
                        // rule 2 collapse of the rule 23 fenv state; a no-op without quantum fenv state.
                        void afterMeasure(LoweringContext &, llvm::CallInst &measure);
+                       // cq-hzji (amendment on cq-arch; CR rule 23): at each return of an entry, with the
+                       // builder where the return is emitted and before flushAtExit: the fenv state there is
+                       // final (kept, or copied out when a merge or superseded on another path).
+                       void atEntryReturn(LoweringContext &, llvm::ReturnInst &orig);
                        // E1 (cq-ibkc, freeze amendment on cq-arch; CR rule 23, 82): the clone ABI of the
                        // environment. Contract at the end of eff/fenv/Fenv.cpp: a clone of S that carries it
                        // takes (mode, flags) as two trailing i32 parameters and returns the new flags handle

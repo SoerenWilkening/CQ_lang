@@ -1,6 +1,8 @@
-; EXPECT-ERROR: eff-fenv: the quantum floating-point environment changes in a block a classical branch chooses
-; cq-1dlz: fegetenv on one classical path saves the quantum FLAGS into e; on the other path e keeps
-; its earlier (empty) quantum part. CR rule 23 has no classical-join construction: refused.
+; cq-1dlz / cq-hzji: fegetenv on one classical path saves the quantum FLAGS into e; on the other path e keeps
+; its earlier (empty) quantum part. e's saved part is an SSA variable too: merged at the join, and fesetenv
+; makes the merge the flags.
+; CHECK k: %cq.fenv.merge = phi i32
+; CHECK k: call i32 @cq_template_and_i32_hl(i32 %cq.fenv.merge, i32 63)
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 %struct.fenv_t = type { i16, i16, i32, i32 }
