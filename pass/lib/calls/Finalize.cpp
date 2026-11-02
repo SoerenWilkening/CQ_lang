@@ -79,25 +79,17 @@ bool isAbiSymbol(StringRef name) {
          abi::parseClone(name).has_value();
 }
 
-// The defined, non-clone function C was made from, or nullptr when its fn has no body here.
+// The defined, non-clone function C was made from, or nullptr when its fn has no body here. The normative
+// right-to-left reading of CR §1.4 names it: every clone symbol of the module reads back to exactly the fields
+// it was made from (calls' checkedName refuses any other), so that reading is the clone's fn.
 Function *originalOf(Module &M, Function &C) {
-  StringRef rest = C.getName().drop_front(kClonePrefix.size());
-  SmallVector<Function *, 2> cands;
-  for (size_t i = rest.find('_'); i != StringRef::npos; i = rest.find('_', i + 1)) {
-    Function *G = M.getFunction(rest.take_front(i));
-    if (!G || G->isDeclaration() || isClone(*G))
-      continue;
-    // fn = G iff the rest of the symbol reads as the suffix of a clone of some one-token fn.
-    std::optional<abi::CloneSpec> s = abi::parseClone((Twine(kClonePrefix) + "x_" + rest.drop_front(i + 1)).str());
-    if (s && s->fn == "x")
-      cands.push_back(G);
-  }
-  if (cands.size() > 1)
-    unimplemented("calls: calls::finalize: a clone name that reads as a clone of more than one in-module "
-                  "function (@" + cands[0]->getName().str() + ", @" + cands[1]->getName().str() +
-                      ") (CR §1.4)",
-                  &C);
-  return cands.empty() ? nullptr : cands[0];
+  std::optional<abi::CloneSpec> s = abi::parseClone(C.getName());
+  if (!s)
+    internalError("calls: calls::finalize: originalOf of a symbol that is not a canonical clone name", &C);
+  Function *G = M.getFunction(s->fn);
+  if (!G || G->isDeclaration() || isClone(*G))
+    return nullptr;
+  return G;
 }
 
 // Every global reachable from the constants in `work`, through constant expressions and aggregates.
@@ -193,11 +185,16 @@ SmallVector<CellCopyOut, 4> cellCopyOuts(Function &F) {
     return a.formal->getArgNo() != b.formal->getArgNo() ? a.formal->getArgNo() < b.formal->getArgNo()
                                                           : a.off < b.off;
   });
+  // Copy-outs into one cell on exclusive paths (a classical branch whose arms each store their own result):
+  // one old cell for the twin, restored by whichever copy-out its replay reaches. Two that one path runs in
+  // sequence would leave the cell holding the later one's rail when the earlier one's replay reads it.
   for (size_t k = 1; k < out.size(); ++k)
     if (out[k].formal == out[k - 1].formal && out[k].off == out[k - 1].off)
-      unimplemented("calls: calls::finalize: a clone storing into one caller cell more than once (the twin "
-                    "restores each cell once)",
-                    out[k].st);
+      for (size_t j = k; j-- > 0 && out[j].formal == out[k].formal && out[j].off == out[k].off;)
+        if (isPotentiallyReachable(out[j].st, out[k].st) || isPotentiallyReachable(out[k].st, out[j].st))
+          unimplemented("calls: calls::finalize: a clone storing into one caller cell twice on one path (the twin "
+                        "restores the cell once, from the first store's replay)",
+                        out[k].st);
   return out;
 }
 
@@ -370,7 +367,14 @@ void defineTwin(Module &M, Function &twin, Function &src) {
   // Outs: one for an i32 handle result, one per handle field of a field-wise result (CR §1.4).
   // Phase 2: the trailing old cells, one per cell copy-out of src (formal order, ascending offset).
   SmallVector<CellCopyOut, 4> cells = cellCopyOuts(src);
-  unsigned nCells = cells.size();
+  // One old cell per distinct cell (copy-outs into one cell lie on exclusive paths: cellCopyOuts).
+  SmallVector<unsigned, 4> cellOf;
+  unsigned nCells = 0;
+  for (size_t k = 0; k < cells.size(); ++k) {
+    if (k == 0 || cells[k].formal != cells[k - 1].formal || cells[k].off != cells[k - 1].off)
+      ++nCells;
+    cellOf.push_back(nCells - 1);
+  }
   auto *srt = dyn_cast<StructType>(src.getReturnType());
   // An i32 result is a handle when the twin has an out for it; with none (52's reduce: int n + 1 and
   // two cell copy-outs) it is a classical result, which the twin drops.
@@ -410,13 +414,16 @@ void defineTwin(Module &M, Function &twin, Function &src) {
   // Phase 2: each cell copy-out f = alloc(0); copy(r, f); store f, cell becomes c = load cell (the handle
   // the forward left there, the caller's reloaded rail); copy(r, c) (XORs it out); store old_k, cell (the
   // cell's content before the call). Nothing in src reads a cell it copied out to.
-  for (unsigned k = 0; k < nCells; ++k) {
+  SmallPtrSet<LoadInst *, 4> replaced;
+  for (unsigned k = 0; k < cells.size(); ++k) {
     const CellCopyOut &co = cells[k];
     auto *st = cast<StoreInst>(VM[co.st]);
     auto *f = cast<CallInst>(VM[co.f]);
-    Argument *old = twin.getArg(nOuts + src.arg_size() + k);
+    Argument *old = twin.getArg(nOuts + src.arg_size() + cellOf[k]);
+    // A slot cell is physically an i32 handle cell (rule 20): the caller passes its content before the call
+    // (mem-slots slotCellsBeforeCall), the clone stores a handle there.
     if (old->getType() != st->getValueOperand()->getType())
-      unimplemented("calls: calls::finalize: a twin's old cell of another type than the cell's handle", st);
+      internalError("calls: calls::finalize: a twin's old cell of another type than the cell's handle", st);
     // A load of the cell before the copy-out (122's read-modify-write, p->c += d) read the cell's content
     // before the call; in the twin the cell holds the forward's copy instead, so it reads old_k. Any
     // other load through the formal that may overlap the cell is unimplemented.
@@ -433,6 +440,8 @@ void defineTwin(Module &M, Function &twin, Function &src) {
         if (lo + int64_t(ls) <= co.off || co.off + int64_t(cellSize) <= lo)
           continue; // another cell
         if (lo == co.off && ld->getType() == old->getType() && !isPotentiallyReachable(co.st, ld)) {
+          if (!replaced.insert(ld).second)
+            continue;   // another copy-out into this cell (an exclusive path) replaced it already
           auto *tl = cast<LoadInst>(VM[ld]);
           tl->replaceAllUsesWith(old);
           tl->eraseFromParent();
@@ -477,16 +486,16 @@ void defineTwin(Module &M, Function &twin, Function &src) {
     std::optional<abi::CoreSpec> a =
         f && f->getCalledFunction() ? abi::parseCore(f->getCalledFunction()->getName()) : std::nullopt;
     auto *zero = f ? dyn_cast<Constant>(f->getArgOperand(0)) : nullptr;
-    // A classical arm seeds its result rail with its value (cq-mjwb); its twin would XOR that
-    // constant into out, which is not built yet.
-    if (a && a->op == abi::Core::Alloc && zero && !zero->isNullValue())
-      unimplemented("calls: calls::finalize: a clone return seeded with a classical value (its twin would "
-                    "XOR the constant into out)",
-                    R);
-    if (!a || a->op != abi::Core::Alloc || !zero || !zero->isNullValue())
+    if (!a || a->op != abi::Core::Alloc)
       unimplemented("calls: calls::finalize: a clone return that is not the rule 18 copy-out (a fresh |0> "
                     "rail returned)",
                     R);
+    if (!zero || !zero->isNullValue()) {
+      // A classical arm seeds its result rail with its value v (cq-mjwb): the forward's out holds v there,
+      // so the twin XORs v out of it (cqrt_xorc_<W>(out, v)) where the forward minted the seed.
+      IRBuilder<> XB(f);
+      XB.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Xorc, a->w}), {out, f->getArgOperand(0)});
+    }
     SmallVector<CallInst *, 2> copies;
     for (User *U : f->users()) {
       if (isa<ReturnInst>(U) || isa<PHINode>(U) || isa<InsertValueInst>(U))
@@ -498,9 +507,11 @@ void defineTwin(Module &M, Function &twin, Function &src) {
         unimplemented("calls: calls::finalize: a clone's result rail used other than by its copy-out", U);
       copies.push_back(cp);
     }
-    if (copies.size() != 1)
+    bool seeded = !zero || !zero->isNullValue();
+    if (copies.size() != 1 && !(seeded && copies.empty()))
       unimplemented("calls: calls::finalize: a clone's result rail written by other than one copy", f);
-    copies.front()->setArgOperand(1, out);
+    for (CallInst *cp : copies)
+      cp->setArgOperand(1, out);
     if (!is_contained(dead, f))
       dead.push_back(f);
   };
@@ -514,15 +525,16 @@ void defineTwin(Module &M, Function &twin, Function &src) {
       SmallVector<Value *, 4> fields(srt->getNumElements(), nullptr);
       Value *v = ret;
       while (auto *iv = dyn_cast<InsertValueInst>(v)) {
+        // The spine builds every field-wise return as one insertvalue chain from poison (emitCloneReturn).
         if (iv->getNumIndices() != 1 || !iv->hasOneUse())
-          unimplemented("calls: calls::finalize: a field-wise clone return that is not one insertvalue chain", R);
+          internalError("calls: calls::finalize: a field-wise clone return that is not one insertvalue chain", R);
         if (!fields[iv->getIndices()[0]])
           fields[iv->getIndices()[0]] = iv->getInsertedValueOperand();
         chain.push_back(iv);
         v = iv->getAggregateOperand();
       }
       if (!isa<PoisonValue>(v) && !isa<UndefValue>(v))
-        unimplemented("calls: calls::finalize: a field-wise clone return that is not built from poison", R);
+        internalError("calls: calls::finalize: a field-wise clone return that is not built from poison", R);
       unsigned j = 0;
       for (unsigned k = 0; k < fields.size(); ++k) {
         auto *f = dyn_cast_or_null<CallInst>(fields[k]);
@@ -813,9 +825,23 @@ void finalize(Module &M) {
     if (Function *G = originalOf(M, *C))
       originals.insert(G);
 
-  // Liveness. Seeds: a use outside every original's body.
+  // Liveness. Seeds: a use outside every original's body, and an externally visible original whose body was
+  // rewritten in place (it calls an ABI symbol): that body is an entry the program exports, not an unlifted
+  // original (CR §1.4 drops only the latter).
   SmallPtrSet<Function *, 16> live;
   SmallVector<Function *, 16> work;
+  auto rewrittenInPlace = [](Function &F) {
+    for (Instruction &I : instructions(F))
+      if (auto *CB = dyn_cast<CallBase>(&I))
+        if (Function *callee = CB->getCalledFunction(); callee && isAbiSymbol(callee->getName()))
+          return true;
+    return false;
+  };
+  // A local one rewritten in place that no live code reaches is dead code whatever its body became (cq-57ju:
+  // musl exp's static specialcase, reached only from exp's dropped original): it follows the liveness below.
+  for (Function *O : originals)
+    if ((!O->hasLocalLinkage() || O->hasAddressTaken()) && rewrittenInPlace(*O) && live.insert(O).second)
+      work.push_back(O);
   for (Function *O : originals)
     for (User *U : O->users()) {
       auto *I = dyn_cast<Instruction>(U);
@@ -841,23 +867,8 @@ void finalize(Module &M) {
     return;
 
   SetVector<GlobalValue *> refs;
-  for (Function *D : dead) {
-    // A local function no live code reaches is dead code whatever its body became (cq-57ju: musl exp's
-    // static specialcase, rewritten in place because its volatile local is a slot object, rule 20, and
-    // reached only from exp's dropped original). An externally visible one rewritten in place is an
-    // entry the program exports: never dropped silently.
-    if (D->hasLocalLinkage() && !D->hasAddressTaken()) {
-      collectReferences(*D, refs);
-      continue;
-    }
-    for (Instruction &I : instructions(*D))
-      if (auto *CB = dyn_cast<CallBase>(&I))
-        if (Function *callee = CB->getCalledFunction(); callee && isAbiSymbol(callee->getName()))
-          unimplemented("calls: calls::finalize: an original with no classical caller whose body was "
-                        "rewritten in place (a tainted entry function that also has clones)",
-                        D);
+  for (Function *D : dead)
     collectReferences(*D, refs);
-  }
 
   SmallPtrSet<GlobalValue *, 16> erased;
   for (Function *D : dead)

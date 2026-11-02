@@ -42,6 +42,11 @@ public:
   bool controlTainted(const llvm::BasicBlock *, const Specialization &) const;
   llvm::ArrayRef<Specialization> specializations() const;
   const Specialization *calleeSpecialization(const llvm::CallBase &, const Specialization &caller) const;
+  // cq-s2zz (CR rule 19): every candidate taint lifted for an indirect call (or raise's handlers), in its
+  // candidate order: the candidate function and its specialization (nullptr: the candidate's untainted,
+  // in-place one, an ordinary call; a declaration's is its rule 27 declared clone).
+  llvm::SmallVector<std::pair<llvm::Function *, const Specialization *>, 4>
+  calleeCandidates(const llvm::CallBase &, const Specialization &caller) const;
   bool resultQuantum(const Specialization &, unsigned field) const;   // per-clone record (rule 18)
   // T2 (cq-arch 2026-11-01): the pointee cells (ascending cell indices of the object argNo points to) that
   // the clone `callee` may store a handle into (rules 18, 20); empty for a non-pointer formal.

@@ -315,6 +315,9 @@ private:
   void lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool viaIntrinsic);
   void declaredClone(CallBase &CB, Function *G, ArrayRef<Value *> actuals);
   SmallVector<SpecState *, 4> *collect = nullptr; // indirect call: gather every candidate
+  // cq-s2zz (CR rule 19): a call through a quantum function pointer (a QROM of callee tags): every candidate
+  // runs under its quantum predicate tag == k, so a candidate with a non-pure gate is its _ctl clone.
+  bool candidateUnderQ = false;
   void recordCallee(CallBase &CB, SpecState *C) {
     if (collect) {
       if (!llvm::is_contained(*collect, C))
@@ -2418,7 +2421,7 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
       cells.push_back("");
     }
   }
-  bool underQ = blockCT(CB.getParent()) || cur->ctl;
+  bool underQ = blockCT(CB.getParent()) || cur->ctl || candidateUnderQ;
   // Invert region (rule 17): the call lies between __cq_invert_begin and __cq_invert_end: a begin
   // dominates it with no end between them, and an end after it post-dominates it. Inside an _adj body
   // every call is an _adj call (the adjoint of the body includes its callees', cq-eive).
@@ -2769,8 +2772,10 @@ void Analyzer::transferCall(CallBase &CB) {
     SmallVector<SpecState *, 4> all;
     bool calleeQ = L(Callee).any();
     collect = &all;
+    candidateUnderQ = calleeQ;
     for (Function *C : cands)
       lift(CB, C, actuals, false);
+    candidateUnderQ = false;
     collect = nullptr;
     // Keep every candidate's specialization.
     SmallVector<SpecState *, 4> uniq;
@@ -3751,6 +3756,11 @@ void Analyzer::finish() {
           continue;
         other = true;
       }
+      // cq-s2zz (rule 19): through a quantum function pointer every candidate's result is an arm of a select
+      // merge, garbage whatever consumes the merge.
+      if (!CB->getCalledFunction())
+        if (auto c = S->lanes.find(CB->getCalledOperand()); c != S->lanes.end() && c->second.any())
+          other = true;
       if (other)
         for (SpecState *C : v)
           C->needsTwin = true;
@@ -3761,12 +3771,16 @@ void Analyzer::finish() {
   {
     SmallPtrSet<SpecState *, 16> seen;
     SmallVector<SpecState *, 16> w;
-    for (auto &S : st.specs)
+    for (auto &S : st.specs) {
+      // cq-s2zz (rule 18): an effectful clone whose own result needs its twin recomputes through its _pure.
+      if (S->reachable && S->needsTwin && S->effectful && !S->declared && !S->inPlace)
+        w.push_back(S.get());
       if (S->reachable && S->needsTwin && !S->declared)
         for (auto &[CB, v] : S->callees)
           for (SpecState *C : v)
             if (C->effectful && !C->declared)
               w.push_back(C);
+    }
     while (!w.empty()) {
       SpecState *C = w.pop_back_val();
       if (!seen.insert(C).second)
@@ -3958,6 +3972,27 @@ const Specialization *TaintInfo::calleeSpecialization(const llvm::CallBase &CB,
   if (C->inPlace)
     return nullptr; // an untainted callee: an ordinary call of the original
   internalError("taint: callee specialization not published", &CB);
+}
+
+llvm::SmallVector<std::pair<llvm::Function *, const Specialization *>, 4>
+TaintInfo::calleeCandidates(const llvm::CallBase &CB, const Specialization &caller) const {
+  const ImplState &I = needImpl(impl);
+  SpecState *SS = stateOf(I, caller);
+  llvm::SmallVector<std::pair<llvm::Function *, const Specialization *>, 4> out;
+  auto it = SS->callees.find(&CB);
+  if (it == SS->callees.end())
+    return out;
+  for (SpecState *C : it->second) {
+    bool wantPure = caller.pure && C->effectful;
+    const Specialization *found = nullptr;
+    for (size_t k = 0; k < I.published.size() && !found; ++k)
+      if (I.publishedState[k] == C && I.published[k].pure == wantPure)
+        found = &I.published[k];
+    if (!found && !C->inPlace)
+      internalError("taint: candidate specialization not published", &CB);
+    out.push_back({C->F, found});
+  }
+  return out;
 }
 
 bool TaintInfo::resultQuantum(const Specialization &S, unsigned field) const {

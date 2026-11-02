@@ -151,6 +151,12 @@ CASES = [
     # one twin) and an aggregate argument (one digit per field). "lower": the callees have no body anywhere,
     # so neither oracle can run them.
     ("declared_aggr", "da_res", [], "lower", [r"call \{ i32, i32 \} @__cq_q_ext_rot_10\(i32 %\d+, double %\d+, i32 4\)"]),
+    # cq-s2zz (CR rule 19): taint's candidate set (calleeCandidates); a QROM of callee tags whose candidate has a
+    # phase (its _ctl clone under tag == k, the twin through its _pure), a candidate with a classical result
+    # seeded into the select merge; a classical dispatch merging a struct result field by field.
+    ("qrom_fn_ctl", "qc_res", [], "pass", [r"call i32 @__cq_q_rot_1_ctl\(i32 %\d+, i32 %\d+\)"]),
+    ("qrom_fn_ctl", "qc_cls", [], "pass", []),
+    ("indirect_mixed", "im_struct", [], "pass", [r"phi i32 \[", r"phi i64 \["]),
     ("declared_aggr", "da_arg", [], "lower", [r"call i32 @__cq_q_ext_sum_10\(i32 %\d+, i64 %\d+, i32 4\)"]),
 ]
 

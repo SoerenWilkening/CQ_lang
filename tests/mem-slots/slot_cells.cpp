@@ -114,7 +114,6 @@ void lowerVarargs(LoweringContext &, Instruction &) { unimplemented("calls: call
 bool lowerVaAreaLoad(LoweringContext &, LoadInst &) { return false; }
 bool isVaArea(LoweringContext &, ObjectId) { return false; }
 void lowerAsm(LoweringContext &, CallBase &) { unimplemented("calls: calls::lowerAsm"); }
-void emitTwin(LoweringContext &, CallBase &) { unimplemented("calls: calls::emitTwin"); }
 void lowerLiftedVia(LoweringContext &, CallBase &, ArrayRef<unsigned>) {
   unimplemented("calls: calls::lowerLiftedVia");
 }

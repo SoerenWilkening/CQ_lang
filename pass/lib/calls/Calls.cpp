@@ -43,10 +43,8 @@
 //    last test's false edge is unreachable (a pointer outside the set is the program's UB). A
 //    result is merged by a classical phi of handles (Uncompute::recordMerge). The builder is left
 //    in the join block.
-//  - emitTwin(ctx, lowered): emits, at the builder, the twin call of a lowered clone call whose
-//    result rail the caller did NOT record (`<clone>_unc(out, args…)`). The twins of recorded
-//    results are Uncompute's to emit. Twin bodies are defined by finalize.
-//  - lowerVarargs and lowerAsm are unimplemented (variadic clones; inline asm is cq-w3-asm).
+//  - lowerVarargs: the va intrinsics of a variadic clone (the x86-64 SysV save area); lowerAsm waits on
+//    CQ_spec's inline-asm example (build step 3, rule 27).
 #include "cq/Calls.h"
 #include "cq/FatPtr.h"
 
@@ -953,7 +951,10 @@ Value *declaredK(LoweringContext &ctx, const Function &F, const Value *at) {
 }
 
 // The declared clone of F for CB (rule 27): declared here, called at the builder.
-CallInst *emitDeclaredCall(LoweringContext &ctx, CallBase &CB, Function &F, StringRef mask, Value *flag) {
+// fields: when given, the result's fields (handles) are returned there and CB is not bound (an arm of an
+// indirect call, rule 19: the caller merges them); otherwise CB is bound.
+CallInst *emitDeclaredCall(LoweringContext &ctx, CallBase &CB, Function &F, StringRef mask, Value *flag,
+                           SmallVectorImpl<Operand> *fields = nullptr) {
   LLVMContext &C = ctx.M.getContext();
   // CR §1.4: a variadic clone is specialised per call-site arity: the declared clone's formals are the
   // call's actuals (fixed and variadic alike, one digit each), its type the actuals' (rule 27 Name).
@@ -1014,13 +1015,19 @@ CallInst *emitDeclaredCall(LoweringContext &ctx, CallBase &CB, Function &F, Stri
     if (tq.size() != leaves.size() || !all_of(tq, [](bool q) { return q; }))
       internalError("calls: a declared clone's composite result whose fields taint does not all make quantum", &CB);
     ctx.unc().recordCall(call, outs, {}, {});
-    ctx.bindFields(&CB, fops);
+    if (fields)
+      fields->assign(fops.begin(), fops.end());
+    else
+      ctx.bindFields(&CB, fops);
   } else if (!CB.getType()->isVoidTy()) {
     // Every result a handle (rule 27); taint agrees for a declared callee.
     if (!ctx.T.isQuantum(&CB, ctx.S))
       internalError("calls: a declared clone's result that taint says is classical", &CB);
     ctx.unc().recordTemplate(call, callRecordSpec(CB.getType()), ops);
-    ctx.bind(&CB, call);
+    if (fields)
+      fields->assign({Operand{call, true}});
+    else
+      ctx.bind(&CB, call);
   }
   return call;
 }
@@ -1041,43 +1048,47 @@ std::string siteMask(LoweringContext &ctx, const CallBase &CB) {
   return m;
 }
 
-// The specialization taint made for candidate G of an indirect call (rule 19).
-const Specialization *candidateSpec(LoweringContext &ctx, const CallBase &CB, const Function &G, StringRef mask,
-                                    bool underQ) {
-  SmallVector<const Specialization *, 4> hits;
-  for (const Specialization &s : ctx.T.specializations())
-    if (s.F == &G && s.mask == mask && !s.adj && s.depth == 0)
-      hits.push_back(&s);
-  // ctl: under a quantum predicate iff the callee has a non-pure gate, i.e. iff taint made a _ctl clone.
-  bool wantCtl = false;
-  if (underQ)
-    for (const Specialization *s : hits)
-      wantCtl |= s->ctl;
-  bool anyPure = false;
-  for (const Specialization *s : hits)
-    anyPure |= s->ctl == wantCtl && s->pure;
-  bool wantPure = ctx.S.pure && anyPure;
-  const Specialization *r = nullptr;
-  for (const Specialization *s : hits) {
-    if (s->ctl != wantCtl || s->pure != wantPure)
-      continue;
-    if (r)
-      unimplemented("calls: an indirect-call candidate with several specializations for one mask (bounds)", &CB);
-    r = s;
+// The scalar leaves a use of CB's value reads (CR §1.4 field order): every leaf for CB itself, the leaves under
+// an extractvalue's index path.
+std::pair<unsigned, unsigned> leafRange(Type *t, ArrayRef<unsigned> idx) {
+  unsigned first = 0;
+  for (unsigned i : idx) {
+    if (auto *st = dyn_cast<StructType>(t)) {
+      for (unsigned k = 0; k < i; ++k) {
+        SmallVector<Type *, 4> l;
+        leafTypes(st->getElementType(k), l, nullptr);
+        first += l.size();
+      }
+      t = st->getElementType(i);
+    } else if (auto *a = dyn_cast<ArrayType>(t)) {
+      SmallVector<Type *, 4> l;
+      leafTypes(a->getElementType(), l, nullptr);
+      first += i * unsigned(l.size());
+      t = a->getElementType();
+    } else {
+      internalError("calls: an extractvalue path through a type that is not an aggregate");
+    }
   }
-  return r;
+  SmallVector<Type *, 4> l;
+  leafTypes(t, l, nullptr);
+  return {first, unsigned(l.size())};
 }
 
-// Does the call's value need to stay allocated (measured, or escaping an entry as its handle)? The
-// arms of an indirect call's merge are then kept (Uncompute U1: a merge is kept only when every arm
-// is), otherwise they are garbage.
-bool resultKept(LoweringContext &ctx, const CallBase &CB) {
-  for (const User *u : CB.users()) {
+// Does field `leaf` of the call's value need to stay allocated (measured, or escaping an entry as its handle)?
+// The arms of an indirect call's merge are then kept (Uncompute U1: a merge is kept only when every arm is),
+// otherwise they are garbage.
+bool resultKept(LoweringContext &ctx, const Value *v, unsigned leaf, unsigned first = 0) {
+  for (const User *u : v->users()) {
     if (auto *uc = dyn_cast<CallBase>(u))
       if (classify(*uc, ctx.T, ctx.S) == Class::Measure)
         return true;
     if (isa<ReturnInst>(u) && ctx.S.isEntry())
       return true;
+    if (auto *ev = dyn_cast<ExtractValueInst>(u)) {
+      auto [f, n] = leafRange(ev->getAggregateOperand()->getType(), ev->getIndices());
+      if (leaf >= first + f && leaf < first + f + n && resultKept(ctx, ev, leaf, first + f))
+        return true;
+    }
   }
   return false;
 }
@@ -1242,15 +1253,13 @@ Function *materialize(Module &M, const Specialization &S) {
       unimplemented("calls: a clone carrying the floating-point environment with QRAM stores (E1)", S.F);
     if (rt->isVoidTy()) {
       rt = handleTy(C);
-    } else if (rl.composite) {
-      if (!rl.anyQ())
-        unimplemented("calls: a clone carrying the floating-point environment with a classical composite result "
-                      "(E1: its leaves then the flags)",
-                      S.F);
+    } else if (rl.composite && rl.anyQ()) {
       SmallVector<Type *, 4> es(cast<StructType>(rt)->elements());
       es.push_back(handleTy(C));
       rt = StructType::get(C, es);
     } else {
+      // A scalar result, or a composite with no quantum leaf (its C type, the spine returns it as it is):
+      // {result, flags}.
       rt = StructType::get(C, {rt, handleTy(C)});
     }
   }
@@ -1990,67 +1999,206 @@ bool bodyHasNonPureGate(const Function &F, SmallPtrSetImpl<const Function *> &se
   return false;
 }
 
-// CR rule 19 (97): a function pointer loaded at a quantum index is a QROM of callee tags (mem-qrom binds
-// the load to the tag rail, Q1). One equality flag on the tag per candidate except the last (the
-// complement), every candidate clone called unguarded, the results merged by a select chain with the
-// complement innermost; the spine uncomputes twins and flags.
+namespace {
+// The scalar leaves of a lowered classical value (rules 25, 26: depth first, vector lanes).
+void classicalLeaves(IRBuilder<> &B, Value *v, SmallVectorImpl<Operand> &out) {
+  Type *t = v->getType();
+  if (auto *st = dyn_cast<StructType>(t)) {
+    for (unsigned k = 0; k < st->getNumElements(); ++k)
+      classicalLeaves(B, B.CreateExtractValue(v, {k}), out);
+  } else if (auto *at = dyn_cast<ArrayType>(t)) {
+    for (unsigned k = 0; k < at->getNumElements(); ++k)
+      classicalLeaves(B, B.CreateExtractValue(v, {k}), out);
+  } else if (auto *vt = dyn_cast<FixedVectorType>(t)) {
+    for (unsigned k = 0; k < vt->getNumElements(); ++k)
+      out.push_back(Operand{B.CreateExtractElement(v, uint64_t(k)), false});
+  } else {
+    out.push_back(Operand{v, false});
+  }
+}
+
+// One candidate's call in an indirect call (rule 19), at the builder: its result fields (empty for void; the
+// whole classical value in `whole` when the result is classical), recorded for their twins and bound to
+// nothing (the caller merges). flag: the candidate's quantum predicate, nullptr when none.
+SmallVector<Operand, 4> emitCandidate(LoweringContext &ctx, CallBase &CB, Function &G, const Specialization *s,
+                                      Value *flag, Value *&whole) {
+  whole = nullptr;
+  SmallVector<Operand, 4> fields;
+  bool anyQArg = any_of(CB.args(), [&](const Use &u) { return ctx.T.isQuantum(u.get(), ctx.S); });
+  if (!s || (G.isDeclaration() && !anyQArg)) {
+    // The candidate's untainted body, or a body-less candidate with no quantum argument (rule 27: the
+    // ordinary call): the host call with the call's classical operands, executed unguarded (rule 19).
+    SmallVector<Value *, 8> args;
+    for (const Use &u : CB.args()) {
+      Operand o = ctx.operand(u.get());
+      if (o.handle)
+        internalError("calls: a rail reaching an untainted candidate of an indirect call", &CB);
+      args.push_back(o.v);
+    }
+    CallInst *c = ctx.B().CreateCall(CB.getFunctionType(), &G, args);
+    c->setCallingConv(CB.getCallingConv());
+    c->setAttributes(CB.getAttributes());
+    if (!CB.getType()->isVoidTy()) {
+      whole = c;
+      classicalLeaves(ctx.B(), c, fields);
+    }
+    return fields;
+  }
+  if (G.isDeclaration()) {
+    // Rule 27: the declared clone, its _ctl form under a quantum predicate.
+    if (any_of(CB.args(), [](const Use &u) { return u->getType()->isPointerTy(); }))
+      unimplemented("calls: a body-less candidate of an indirect call with a pointer argument (rule 27 Pointers in "
+                    "rule 19's arms: the snapshot per arm)",
+                    &CB);
+    emitDeclaredCall(ctx, CB, G, siteMask(ctx, CB), flag, &fields);
+    return fields;
+  }
+  if (s->ctl && !flag)
+    internalError("calls: a _ctl candidate of an indirect call with no predicate", &CB);
+  CloneCall r = emitCloneCall(ctx, CB, *s, s->ctl ? flag : nullptr);
+  if (fenv::cloneCarriesEnv(ctx.T, *s))
+    unimplemented("calls: an indirect call candidate carrying the floating-point environment (E1 in rule 19's "
+                  "arms: the flags rail merged over the arms)",
+                  &CB);
+  if (r.res.qramFormal)
+    unimplemented("calls: an indirect-call candidate with a triple formal onto a QRAM object (U3 in rule 19's "
+                  "arms)",
+                  &CB);
+  if (!r.slotOuts.empty() || !r.extra.empty())
+    unimplemented("calls: an indirect-call candidate that writes a caller's slot object (the merge of its "
+                  "reloaded cells over rule 19's arms)",
+                  &CB);
+  if (r.fieldwise) {
+    SmallVector<Value *, 4> outs;
+    for (unsigned k = 0; k < r.res.leaves.size(); ++k) {
+      Value *e = ctx.B().CreateExtractValue(r.call, {k});
+      fields.push_back(Operand{e, bool(r.res.q[k])});
+      if (r.res.q[k])
+        outs.push_back(e);
+    }
+    ctx.unc().recordCall(r.call, outs, {}, {});
+    return fields;
+  }
+  if (r.handle) {
+    ctx.unc().recordTemplate(r.call, callRecordSpec(CB.getType()), r.ops);
+    fields.push_back(Operand{r.call, true});
+    return fields;
+  }
+  if (!CB.getType()->isVoidTy()) {
+    whole = r.call;
+    classicalLeaves(ctx.B(), r.call, fields);
+  }
+  return fields;
+}
+
+// Which leaves of CB's value are quantum (taint's record; CR §1.4 field order).
+SmallVector<bool, 4> resultFieldKinds(LoweringContext &ctx, const CallBase &CB) {
+  if (CB.getType()->isVoidTy())
+    return {};
+  if (isComposite(CB.getType()))
+    return ctx.T.fieldMask(&CB, ctx.S);
+  return {ctx.T.isQuantum(&CB, ctx.S)};
+}
+
+// Binds CB to its merged leaves.
+void bindMerged(LoweringContext &ctx, CallBase &CB, ArrayRef<Operand> leaves) {
+  if (isComposite(CB.getType()))
+    ctx.bindFields(&CB, leaves);
+  else
+    ctx.bind(&CB, leaves.front().v);
+}
+} // namespace
+
+// CR rule 19 (97): a function pointer loaded at a quantum index is a QROM of callee tags (mem-qrom binds the
+// load to the tag rail, Q1). Per candidate k an equality flag tag == k (the last candidate's is the complement,
+// needed only as a _ctl predicate); every candidate is called: a pure one unguarded, one with a non-pure gate
+// as its _ctl clone under tag == k (and the enclosing quantum predicate), a body-less one as its rule 27 _ctl
+// declared clone. Each result field is merged by a select chain on the flags, complement innermost (rule 9);
+// a candidate's classical field enters the merge as a seed rail (rule 7). The spine uncomputes twins and flags.
 void lowerQromIndirect(LoweringContext &ctx, CallBase &CB, Operand tag) {
   SmallVector<std::pair<Function *, unsigned>, 4> cands = mem::qromCallees(ctx, CB.getCalledOperand());
   if (cands.empty())
-    unimplemented("calls: a quantum function pointer that is not a load from a QROM of callee tags (rule 19)", &CB);
-  if (!ctx.currentPredicate().isTop() || ctx.S.ctl)
-    unimplemented("calls: a function pointer loaded at a quantum index under a quantum predicate (rule 19's _ctl "
-                  "candidates)",
+    unimplemented("calls: awaiting owner ruling: SPEC_ISSUES \"rule 19: a quantum function pointer that is not "
+                  "loaded at a quantum index (a select or merge of function pointers on quantum data)\"",
                   &CB);
-  if (CB.getType()->isVoidTy() || !ctx.T.isQuantum(&CB, ctx.S))
-    unimplemented("calls: a function pointer loaded at a quantum index whose call has no quantum result (rule 19: "
-                  "the merge is of results)",
-                  &CB);
-  std::string mask = siteMask(ctx, CB);
-  SmallVector<Value *, 4> flags, results;
+  auto taintCands = ctx.T.calleeCandidates(CB, ctx.S);
+  auto specOf = [&](Function *G) -> const Specialization * {
+    for (auto &[F, sp] : taintCands)
+      if (F == G)
+        return sp;
+    internalError("calls: a QROM callee candidate taint did not lift", &CB);
+  };
+  bool underQ = !ctx.currentPredicate().isTop() || ctx.S.ctl;
+  Value *outer = underQ ? ctlFlag(ctx, CB) : nullptr;
+  LLVMContext &C = ctx.M.getContext();
+  RailType i1{Kind::Int, 1};
+  SmallVector<bool, 4> kinds = resultFieldKinds(ctx, CB);
+  SmallVector<Value *, 4> flags;
+  SmallVector<SmallVector<Operand, 4>, 4> results;
   for (unsigned k = 0; k < cands.size(); ++k) {
     Function *G = cands[k].first;
-    if (G->getFunctionType() != CB.getFunctionType())
-      unimplemented("calls: a QROM callee candidate whose type differs from the call's", &CB);
-    if (G->isDeclaration())
-      unimplemented("calls: a declared (rule 27) candidate of a QROM of callee tags", &CB);
-    SmallPtrSet<const Function *, 8> seen;
-    if (bodyHasNonPureGate(*G, seen))
-      unimplemented("calls: a QROM callee candidate with a non-pure gate (rule 19: called unguarded only when "
-                    "pure; its _ctl clone under the candidate's flag is not built)",
-                    &CB);
-    const Specialization *s = candidateSpec(ctx, CB, *G, mask, false);
-    if (!s || s->isEntry())
-      unimplemented("calls: a QROM callee candidate with no lifted specialization for the call's mask", &CB);
-    if (fenv::cloneCarriesEnv(ctx.T, *s))
-      unimplemented("calls: a QROM callee candidate carrying the floating-point environment (E1)", &CB);
-    if (k + 1 < cands.size()) {
+    const Specialization *s = specOf(G);
+    bool last = k + 1 == cands.size();
+    bool needsPred = G->isDeclaration() || (s && s->ctl);
+    Value *eqf = nullptr;
+    if (!last || needsPred) {
       abi::TemplateSpec eq;
       eq.op = "icmp";
       eq.pred = "eq";
       eq.w = RailType{Kind::Int, 32};
       eq.shape = "hl";
-      flags.push_back(ctx.emitTemplate(eq, {tag, Operand{ConstantInt::get(Type::getInt32Ty(ctx.M.getContext()),
-                                                                           cands[k].second),
-                                                          false}}));
+      eqf = ctx.emitTemplate(eq, {tag, Operand{ConstantInt::get(Type::getInt32Ty(C), cands[k].second), false}});
     }
-    CloneCall r = emitCloneCall(ctx, CB, *s, nullptr);
-    if (r.res.qramFormal || !r.slotOuts.empty() || !r.extra.empty() || r.fieldwise || !r.handle)
-      unimplemented("calls: a QROM callee candidate whose result is not one rail (slot or QRAM writes, fields, a "
-                    "classical result)",
-                    &CB);
-    ctx.unc().recordTemplate(r.call, callRecordSpec(CB.getType()), r.ops);
-    results.push_back(r.call);
+    if (!last)
+      flags.push_back(eqf);
+    Value *pred = nullptr;
+    if (needsPred) {
+      pred = eqf;
+      if (outer) {
+        abi::TemplateSpec andT;
+        andT.op = "and";
+        andT.w = i1;
+        pred = ctx.emitTemplate(andT, {Operand{eqf, true}, Operand{outer, true}});
+      }
+    }
+    Value *whole;
+    SmallVector<Operand, 4> f = emitCandidate(ctx, CB, *G, s, pred, whole);
+    if (f.size() != kinds.size())
+      internalError("calls: a QROM callee candidate whose result has another field count than the call's", &CB);
+    for (unsigned j = 0; j < f.size(); ++j) {
+      if (!kinds[j])
+        internalError("calls: a classical result field of a call through a quantum function pointer", &CB);
+      f[j] = seedActual(ctx, f[j]);
+    }
+    results.push_back(std::move(f));
   }
-  abi::TemplateSpec sel;
-  sel.op = "select";
-  sel.w = railTypeOf(CB.getType());
-  Value *v = results.back();
-  for (unsigned k = unsigned(flags.size()); k-- > 0;)
-    v = ctx.emitTemplate(sel, {Operand{flags[k], true}, Operand{results[k], true}, Operand{v, true}});
-  ctx.bind(&CB, v);
+  if (kinds.empty())
+    return;
+  SmallVector<Operand, 4> merged;
+  SmallVector<Type *, 4> leafTys;
+  if (isComposite(CB.getType()))
+    leafTypes(CB.getType(), leafTys, &CB);
+  else
+    leafTys.push_back(CB.getType());
+  for (unsigned j = 0; j < kinds.size(); ++j) {
+    abi::TemplateSpec sel;
+    sel.op = "select";
+    sel.w = railTypeOf(leafTys[j]);
+    Value *v = results.back()[j].v;
+    for (unsigned k = unsigned(flags.size()); k-- > 0;)
+      v = ctx.emitTemplate(sel, {Operand{flags[k], true}, results[k][j], Operand{v, true}});
+    merged.push_back(Operand{v, true});
+  }
+  bindMerged(ctx, CB, merged);
 }
 
+// CR rule 19: a call through a classical function pointer dispatches over the static callee set (taint's
+// candidates: the pointer's provenance, else every address-taken function of the call's type): a classical
+// chain of pointer-equality tests, each arm calling its candidate as a direct call would (its clone, its _ctl
+// clone under the block's quantum predicate, its rule 27 declared clone, or the untainted original); the last
+// test's false edge is unreachable (a pointer outside the set is the program's UB). A result field is merged
+// by a classical phi (Uncompute::recordMerge for a handle); an arm's classical field of a quantum merged field
+// enters as a seed rail (rule 7). The builder is left in the join block.
 void lowerIndirect(LoweringContext &ctx, CallBase &CB) {
   capture(ctx);
   const Value *callee = CB.getCalledOperand();
@@ -2058,111 +2206,81 @@ void lowerIndirect(LoweringContext &ctx, CallBase &CB) {
   if (fp.handle)
     return lowerQromIndirect(ctx, CB, fp);
   if (ctx.T.isQuantum(callee, ctx.S))
-    unimplemented("calls: a quantum function pointer with no tag rail (rule 19: a QROM of callee tags)", &CB);
-  // The static callee set: clang's !callees, else every address-taken function of the call's type.
-  SmallVector<Function *, 4> cands;
-  if (MDNode *md = CB.getMetadata(LLVMContext::MD_callees)) {
-    for (const MDOperand &op : md->operands())
-      if (auto *cm = dyn_cast_or_null<ConstantAsMetadata>(op.get()))
-        if (auto *G = dyn_cast<Function>(cm->getValue()->stripPointerCasts()))
-          cands.push_back(G);
-  } else {
-    for (Function &G : ctx.M)
-      if (G.hasAddressTaken() && G.getFunctionType() == CB.getFunctionType() && !G.getName().starts_with("__cq_q_"))
-        cands.push_back(&G);
-  }
+    unimplemented("calls: awaiting owner ruling: SPEC_ISSUES \"rule 19: a quantum function pointer that is not "
+                  "loaded at a quantum index (a select or merge of function pointers on quantum data)\"",
+                  &CB);
+  auto cands = ctx.T.calleeCandidates(CB, ctx.S);
   if (cands.empty())
-    unimplemented("calls: an indirect call with an empty static callee set", &CB);
-  for (Function *G : cands)
-    if (G->getFunctionType() != CB.getFunctionType())
-      unimplemented("calls: an indirect-call candidate whose type differs from the call's", &CB);
-
-  std::string mask = siteMask(ctx, CB);
+    unimplemented("calls: awaiting owner ruling: SPEC_ISSUES \"rule 19: a quantum call through a function pointer "
+                  "whose static callee set is empty (only functions outside the module)\"",
+                  &CB);
   bool underQ = !ctx.currentPredicate().isTop() || ctx.S.ctl;
   // The flag dominates every arm: computed once, before the dispatch.
-  Value *flag = nullptr;
-  SmallVector<const Specialization *, 4> specs;
-  bool anyCtl = false;
-  for (Function *G : cands) {
-    const Specialization *s = nullptr;
-    if (!G->isDeclaration()) {
-      s = candidateSpec(ctx, CB, *G, mask, underQ);
-      if (!s)
-        unimplemented("calls: an indirect-call candidate with no specialization for the call's mask", &CB);
-      if (s->isEntry())
-        unimplemented("calls: an indirect-call candidate whose specialization is its in-place one", &CB);
-      anyCtl |= s->ctl;
-    }
-    specs.push_back(s);
-  }
-  bool declaredAny = false;
-  for (const Specialization *s : specs)
-    declaredAny |= s == nullptr;
-  if (anyCtl || (declaredAny && underQ))
-    flag = ctlFlag(ctx, CB);
+  Value *flag = underQ ? ctlFlag(ctx, CB) : nullptr;
 
   IRBuilder<> &B = ctx.B();
   Function &out = ctx.out();
   LLVMContext &C = ctx.M.getContext();
   BasicBlock *join = BasicBlock::Create(C, "", &out);
-  bool hasResult = !CB.getType()->isVoidTy();
-  bool handle = hasResult && ctx.T.isQuantum(&CB, ctx.S);
-  SmallVector<std::pair<Value *, BasicBlock *>, 4> incoming;
-  for (unsigned k = 0; k < cands.size(); ++k) {
-    Function *G = cands[k];
+  SmallVector<bool, 4> kinds = resultFieldKinds(ctx, CB);
+  bool anyQ = is_contained(kinds, true);
+  struct Arm { BasicBlock *bb; SmallVector<Operand, 4> f; Value *whole; };
+  SmallVector<Arm, 4> arms;
+  for (auto &[G, s] : cands) {
     Value *eq = B.CreateICmpEQ(fp.v, G);
     BasicBlock *arm = BasicBlock::Create(C, "", &out, join);
     BasicBlock *next = BasicBlock::Create(C, "", &out, join);
     B.CreateCondBr(eq, arm, next);
     B.SetInsertPoint(arm);
-    CallInst *call = nullptr;
-    if (specs[k]) {
-      if (fenv::cloneCarriesEnv(ctx.T, *specs[k]))
-        unimplemented("calls: an indirect call candidate carrying the floating-point environment (E1 in rule 19's "
-                      "arms)",
-                      &CB);
-      CloneCall r = emitCloneCall(ctx, CB, *specs[k], specs[k]->ctl ? flag : nullptr);
-      if (r.res.qramFormal)
-        unimplemented("calls: an indirect-call candidate with a triple formal onto a QRAM object (U3)", &CB);
-      if (!r.slotOuts.empty() || !r.extra.empty())
-        unimplemented("calls: an indirect-call candidate that writes a caller's slot object (the merge of its "
-                      "reloaded cells)",
-                      &CB);
-      if (r.fieldwise)
-        unimplemented("calls: an indirect call whose candidates return several fields with a handle (the merge "
-                      "of literal structs of handles)",
-                      &CB);
-      call = r.call;
-      if (hasResult && r.handle != handle)
-        unimplemented("calls: an indirect-call candidate whose result kind (handle / classical) differs from "
-                      "taint's for the call",
-                      &CB);
-      if (r.handle)
-        ctx.unc().recordTemplate(call, callRecordSpec(CB.getType()), r.ops);
-    } else {
-      // A candidate with no body (rule 27). emitDeclaredCall binds and records; unbind is not
-      // possible, so a declared candidate in a set is unimplemented until the merge needs it.
-      unimplemented("calls: a declared (rule 27) candidate of an indirect call", &CB);
-    }
-    if (hasResult)
-      incoming.push_back({call, arm});
+    Value *whole;
+    SmallVector<Operand, 4> f = emitCandidate(ctx, CB, *G, s, flag, whole);
+    if (f.size() != kinds.size())
+      internalError("calls: an indirect-call candidate whose result has another field count than the call's", &CB);
+    if (anyQ)
+      for (unsigned j = 0; j < f.size(); ++j) {
+        // A candidate that measures returns the outcome (rule 2: classical) where another returns a rail. On
+        // its path a measurement of the merged value is a classical re-read (rule 2), on the others a
+        // measurement: a per-path kind the merge of one rail cannot carry (a seed rail would be measured).
+        if (kinds[j] && !f[j].handle)
+          unimplemented("calls: an indirect call whose candidates' results differ in kind (a measured outcome in "
+                        "one arm, a rail in another: rule 2's per-path re-read of the merged value)",
+                        &CB);
+        if (!kinds[j] && f[j].handle)
+          internalError("calls: a candidate's handle where taint says the call's field is classical", &CB);
+      }
+    arms.push_back({B.GetInsertBlock(), std::move(f), whole});
     B.CreateBr(join);
     B.SetInsertPoint(next);
   }
   B.CreateUnreachable();
   B.SetInsertPoint(join);
-  if (!hasResult)
+  if (kinds.empty())
     return;
-  PHINode *phi = B.CreatePHI(incoming.front().first->getType(), incoming.size());
-  for (auto &[v, bb] : incoming)
-    phi->addIncoming(v, bb);
-  if (handle) {
-    if (resultKept(ctx, CB))
-      for (auto &[v, bb] : incoming)
-        ctx.unc().setRole(ctx.unc().idOf(v), Role::Result);
-    ctx.unc().recordMerge(phi);
+  if (!anyQ) {
+    // A classical result: the phi of the arms' values.
+    PHINode *phi = B.CreatePHI(CB.getType(), arms.size());
+    for (Arm &a : arms) {
+      if (!a.whole)
+        internalError("calls: a classical indirect-call result with no classical value in an arm", &CB);
+      phi->addIncoming(a.whole, a.bb);
+    }
+    ctx.bind(&CB, phi);
+    return;
   }
-  ctx.bind(&CB, phi);
+  SmallVector<Operand, 4> merged;
+  for (unsigned j = 0; j < kinds.size(); ++j) {
+    PHINode *phi = B.CreatePHI(arms.front().f[j].v->getType(), arms.size());
+    for (Arm &a : arms)
+      phi->addIncoming(a.f[j].v, a.bb);
+    if (kinds[j]) {
+      if (resultKept(ctx, &CB, j))
+        for (Arm &a : arms)
+          ctx.unc().setRole(ctx.unc().idOf(a.f[j].v), Role::Result);
+      ctx.unc().recordMerge(phi);
+    }
+    merged.push_back(Operand{phi, bool(kinds[j])});
+  }
+  bindMerged(ctx, CB, merged);
 }
 
 // CR §1.4, rules 20, 7 (95, 109): the va intrinsics of a variadic clone (per call-site arity, its
@@ -2378,32 +2496,6 @@ void lowerAsm(LoweringContext &, CallBase &CB) {
   unimplemented("calls: calls::lowerAsm (inline asm with a quantum operand, rule 27: cq-w3-asm)", &CB);
 }
 
-void emitTwin(LoweringContext &ctx, CallBase &lowered) {
-  capture(ctx);
-  auto *call = dyn_cast<CallInst>(&lowered);
-  Function *C = call ? call->getCalledFunction() : nullptr;
-  std::optional<abi::CloneSpec> cs = C ? abi::parseClone(C->getName()) : std::nullopt;
-  if (!cs || cs->unc)
-    internalError("calls: emitTwin of a call that is not a forward clone call", &lowered);
-  if (call->getType() != handleTy(ctx.M.getContext()))
-    unimplemented("calls: emitTwin of a clone with no single handle result", &lowered);
-  LLVMContext &Cx = ctx.M.getContext();
-  SmallVector<Type *, 8> ps{handleTy(Cx)};
-  SmallVector<Value *, 8> args{call};
-  for (Value *a : call->args()) {
-    ps.push_back(a->getType());
-    args.push_back(a);
-  }
-  std::string tn = (C->getName() + "_unc").str();
-  FunctionType *FT = FunctionType::get(Type::getVoidTy(Cx), ps, false);
-  Function *Tw = ctx.M.getFunction(tn);
-  if (Tw && Tw->getFunctionType() != FT)
-    internalError("calls: twin @" + tn + " exists with another type", &lowered);
-  if (!Tw)
-    Tw = Function::Create(FT, GlobalValue::ExternalLinkage, tn, ctx.M);   // finalize defines an in-module twin
-  ctx.B().CreateCall(Tw, args);
-}
-
 } // namespace cq::calls
 
 namespace cq::calls {
@@ -2422,18 +2514,42 @@ void lowerLiftedVia(LoweringContext &ctx, llvm::CallBase &site, llvm::ArrayRef<u
   if (argMap.size() != cs->F->arg_size())
     internalError("calls: lowerLiftedVia's argument map does not name one operand per formal", &site);
   Value *flag = cs->ctl ? ctlFlag(ctx, site) : nullptr;
-  if (fenv::cloneCarriesEnv(ctx.T, *cs))
-    unimplemented("calls: lowerLiftedVia of a clone carrying the floating-point environment (E1)", &site);
+  bool env = fenv::cloneCarriesEnv(ctx.T, *cs);
   CloneCall r = emitCloneCall(ctx, site, *cs, flag, argMap);
   if (r.res.qramFormal)
-    unimplemented("calls: lowerLiftedVia of a clone with a triple formal onto a QRAM object (U3)", &site);
+    unimplemented("calls: lowerLiftedVia of a clone with a triple formal onto a QRAM object (U3: mem-qram's "
+                  "store record through an argument map)",
+                  &site);
   SmallVector<Value *, 4> outs;
-  if (r.fieldwise) {
+  // E1 (CR rule 23, 82): the start routine takes the creating thread's mode and flags (C17 §7.6: a thread's
+  // environment starts as its creator's) and returns its own new flags rail as the result's last field. Its
+  // environment is its own: the creator's FLAGS stay as they were (no fenv::afterCloneCall); the returned
+  // rail is fenv state the program never reads, undone by the twin with the result (rule 23: twin, free,
+  // never kept).
+  Value *res = r.call;
+  if (env) {
+    auto *st = dyn_cast<StructType>(r.call->getType());
+    if (st) {
+      unsigned last = st->getNumElements() - 1;
+      outs.push_back(ctx.B().CreateExtractValue(r.call, {last}));
+      if (r.fieldwise) {
+        for (unsigned k = 0; k < r.res.leaves.size(); ++k)
+          if (r.res.q[k])
+            outs.insert(outs.end() - 1, ctx.B().CreateExtractValue(r.call, {k}));
+      } else if (r.handle) {
+        outs.insert(outs.begin(), ctx.B().CreateExtractValue(r.call, {0u}));
+      }
+    } else {
+      outs.push_back(r.call);   // a void start routine: the flags handle alone
+    }
+    res = nullptr;
+  }
+  if (!env && r.fieldwise) {
     for (unsigned k = 0; k < r.res.leaves.size(); ++k)
       if (r.res.q[k])
         outs.push_back(ctx.B().CreateExtractValue(r.call, {k}));
-  } else if (r.handle) {
-    outs.push_back(r.call);
+  } else if (!env && r.handle) {
+    outs.push_back(res);
   }
   if (outs.empty() && r.slotOuts.empty()) {
     if (!r.extra.empty())
