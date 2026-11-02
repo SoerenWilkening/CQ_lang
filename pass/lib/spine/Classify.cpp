@@ -98,12 +98,14 @@ bool isTemplateIntrinsic(Intrinsic::ID id) {
   }
 }
 
-// LLVM math intrinsics that stand for a libm call (rule 18: lifted as that libm function).
+// LLVM math intrinsics that stand for a libm call (rule 18: lifted as that libm function, from its body
+// whenever the module defines it, cq-57ju/cq-odjk; taint's libmNameOf names the same set).
 bool isLibmIntrinsic(Intrinsic::ID id) {
   switch (id) {
   case Intrinsic::exp: case Intrinsic::exp2: case Intrinsic::exp10: case Intrinsic::log:
   case Intrinsic::log2: case Intrinsic::log10: case Intrinsic::sin: case Intrinsic::cos:
-  case Intrinsic::tan: case Intrinsic::pow: case Intrinsic::powi: case Intrinsic::ldexp:
+  case Intrinsic::tan: case Intrinsic::asin: case Intrinsic::acos: case Intrinsic::atan: case Intrinsic::sinh:
+  case Intrinsic::cosh: case Intrinsic::tanh: case Intrinsic::pow: case Intrinsic::powi: case Intrinsic::ldexp:
   case Intrinsic::frexp: case Intrinsic::nearbyint: case Intrinsic::roundeven: case Intrinsic::lround:
   case Intrinsic::llround: case Intrinsic::lrint: case Intrinsic::llrint: case Intrinsic::minimum:
   case Intrinsic::maximum:
