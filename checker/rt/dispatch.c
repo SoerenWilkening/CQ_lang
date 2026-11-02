@@ -1152,7 +1152,7 @@ static int core_gate(call_t *c, const char *s, char *cls, size_t ncls) {
 
 /* ---- family path ------------------------------------------------------------------------- */
 
-static const char *const fam_stems[] = {"qram_alloc",  "qram_realloc",   "qram_store",   "qram_load",
+static const char *const fam_stems[] = {"qram_alloc",  "qram_alloc_host", "qram_realloc",   "qram_store",   "qram_load",
                                         "qram_free",   "qram_size",      "tape_alloc",   "tape_fmt",
                                         "tape_effect", "tape_write_str", "tape_write",   "tape_str_begin",
                                         "tape_str_end", "abort",         NULL};
@@ -1211,7 +1211,7 @@ static void family_call(call_t *c, const cqe_tname *t) {
   int32_t before = (int32_t)cqe__nrails_peek();
   int r = run_handlers(c->sym, t, c->raw, c->nargs, &out);
   int32_t after = (int32_t)cqe__nrails_peek() + 1;
-  int role = !strncmp(t->op, "tape_write", 10) ? 2 : (!strcmp(t->op, "qram_alloc") || !strcmp(t->op, "qram_realloc") ||
+  int role = !strncmp(t->op, "tape_write", 10) ? 2 : (!strncmp(t->op, "qram_alloc", 10) || !strcmp(t->op, "qram_realloc") ||
                                                       !strcmp(t->op, "qram_store"))
                                                          ? 3
                                                          : 0;

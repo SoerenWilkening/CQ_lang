@@ -1065,7 +1065,7 @@ def cells_module(text: str) -> str:
                 continue
             if len(ops) < 2 or not ops[1].startswith("ptr "):
                 raise _Unimpl(f"cells_module: store pointer operand of '{line.strip()}'")
-            ptr = ops[1].split()[1]
+            ptr = ops[1][len("ptr "):].strip()   # a register, a global, or a constant expression (cq-z7hz)
             out.append(f"{m.group('ind')}call void @__cqe_cell_note(ptr {ptr}, "
                        f"i64 ptrtoint (ptr getelementptr ({t}, ptr null, i32 1) to i64))")
             used = True

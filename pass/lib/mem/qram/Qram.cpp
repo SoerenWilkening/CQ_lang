@@ -12,10 +12,11 @@
 //    this module. lifetime.end emits nothing. A heap QRAM, a QRAM reached through a parameter, an
 //    object whose pointer escapes to a call, and a site allocated twice in one output function are
 //    unimplemented.
-//  - A global QRAM (any linkage, 160) is allocated once by a module constructor
-//    __cq_qram_init_<global> (llvm.global_ctors, priority 65535): cqrt_qram_alloc_<W>(n), each non-zero
-//    initializer cell stored by cqrt_qram_store_<W>_hl of a seed freed at once, the handle stored in
-//    the global's first 4 bytes (the global keeps its type). Each output function that accesses it
+//  - A global QRAM (any linkage, 160, 192) is allocated once by a module constructor
+//    __cq_qram_init_<global> (llvm.global_ctors, priority 65535): cqrt_qram_alloc_host_<W>(ptr @g, i64 n),
+//    the cells seeded from the global's own storage at program start (n = 0: unknown extent), the handle
+//    stored in the compiler-made @<global>.qram (the global keeps its definition; the compiler never reads
+//    an initializer; CR rule 20, cq-pf4n). Each output function that accesses it
 //    loads the handle once at its entry, recorded as Role::Output: its stores are never popped and it
 //    is never freed.
 //  - Access. ONE call per load or store. The index is the logical quantum index rail (one quantum GEP
@@ -1097,29 +1098,34 @@ Value *cellCountArg(LoweringContext &ctx, QramObj &q, Value *cells64, uint64_t w
   return B.CreateSelect(big, ConstantInt::get(i32, 0), B.CreateTrunc(cells64, i32));
 }
 
-// Where a global QRAM keeps its bus handles: the global's own bytes [4k, 4k + 4) (160), or, when the
-// global is smaller than its handles or is defined outside this module (its bytes are its definer's), the
-// derived internal global <global>.cqbus of one i32 per column.
+// Where a global QRAM keeps its bus handles: the compiler-made @<global>.qram (CR rule 20, 160, 192;
+// cq-pf4n, 2026-11-02), `internal global i32 0` for one column, [k x i32] for k columns. The global itself
+// keeps its definition or declaration as it is: its storage is the host object the bus is seeded from.
 Value *busStorage(Module &M, GlobalVariable &gv, const QramObj &q) {
-  const DataLayout &DL = M.getDataLayout();
-  uint64_t size = gv.getValueType()->isSized() ? DL.getTypeAllocSize(gv.getValueType()).getFixedValue() : 0;
-  if (gv.hasInitializer() && size >= 4 * q.cols.size())
-    return &gv;
-  std::string name = (gv.getName() + ".cqbus").str();
+  std::string name = (gv.getName() + ".qram").str();
   if (GlobalVariable *g = M.getNamedGlobal(name))
     return g;
-  auto *aty = ArrayType::get(Type::getInt32Ty(M.getContext()), q.cols.size());
-  return new GlobalVariable(M, aty, /*isConstant=*/false, GlobalValue::InternalLinkage, Constant::getNullValue(aty),
-                            name);
+  Type *i32 = Type::getInt32Ty(M.getContext());
+  Type *ty = q.cols.size() == 1 ? i32 : static_cast<Type *>(ArrayType::get(i32, q.cols.size()));
+  auto *g = new GlobalVariable(M, ty, /*isConstant=*/false, GlobalValue::InternalLinkage, Constant::getNullValue(ty),
+                               name);
+  g->setAlignment(Align(4));
+  return g;
 }
 
-// Rule 20: a global QRAM is allocated ONCE by a module constructor (160): cqrt_qram_alloc_<W>(n) per
-// column, the handle of column k kept in its bus storage (busStorage), and each non-zero initializer cell
-// stored by its own _hl store of a seed that is freed at once (the store copies it; a global QRAM's stores
-// are never popped). A cell whose initializer is a constant expression is that value computed in the
-// constructor; an undefined one is 0. A global defined outside this module (extern, rule 20: an output)
-// starts from its definer's contents: the constructor reads each cell from the host object and stores its
-// seed.
+// Rule 20 (CR §1.3, BACKEND_ABI §1.10; cq-pf4n, 2026-11-02): a global QRAM is allocated ONCE by a module
+// constructor __cq_qram_init_<global> (llvm.global_ctors, priority 65535) as cqrt_qram_alloc_host_<W>(ptr p,
+// i64 n): the bus whose cell j starts as the W-bit element at p + j * allocsize(W), read at the call (program
+// start), i.e. the global's own storage: its initializer, or for a declaration the definer's contents. The
+// compiler never reads an initializer. n is the global's cell count, 0 for an object of unknown extent (a
+// declaration of no size, `extern T g[]`: 2^64 cells). The handle of column k is kept in @<global>.qram.
+//
+// A column whose cells are exactly the object's elements (one scalar column: element stride = the cell
+// type's alloc size) is seeded from the global itself. A column of a struct element (stride and offset differ
+// from the cell type's) has no single host array of its cells; the constructor first copies the column into a
+// contiguous buffer of its own frame and seeds the bus from that (the host object is still read only at
+// program start). A column of pointers holds fat (tag, idx) pairs (rule 21), whose start value for a null
+// cell is (0, 0): its buffer is zero.
 void ensureGlobalCtor(LoweringContext &ctx, GlobalVariable &gv, QramObj &q) {
   Module &M = ctx.M;
   LLVMContext &C = M.getContext();
@@ -1127,84 +1133,59 @@ void ensureGlobalCtor(LoweringContext &ctx, GlobalVariable &gv, QramObj &q) {
   const DataLayout &DL = M.getDataLayout();
   if (gv.isConstant())
     internalError("mem-qram: a constant global is a QRAM", &gv);
-  if (!gv.getValueType()->isSized() ||
-      (!gv.hasInitializer() && DL.getTypeAllocSize(gv.getValueType()).getFixedValue() == 0))
-    unimplemented("SPEC_ISSUES: a QRAM over an extern object of unknown extent whose initial contents are its "
-                  "definer's (rule 20 gives the extent, n = 0; no qram_alloc form seeds cells from host memory "
-                  "it cannot bound)",
-                  &gv);
   uint64_t size = DL.getTypeAllocSize(gv.getValueType()).getFixedValue();
   uint64_t n = size / q.elemBytes;
-  // CR §1.3 (cq-k65d): a count of 2^32 or more cells is spelled 0 (2^64 cells); its cells are then addressed
-  // by an i64 index rail (q.wide).
-  bool wide = n > UINT32_MAX;
-  q.wide |= wide;
+  // An object of unknown extent (a declaration of no size): n = 0, 2^64 cells. Its cells, like those of an
+  // object of 2^32 cells or more, are addressed by an i64 index rail (q.wide, cq-k65d).
+  bool unknown = !gv.hasInitializer() && size == 0;
+  q.wide |= unknown || n > UINT32_MAX;
   if (M.getFunction(name))
     return;
-  Function *F = Function::Create(FunctionType::get(Type::getVoidTy(C), false), GlobalValue::InternalLinkage, name, M);
-  IRBuilder<> B(BasicBlock::Create(C, "", F));
-  Type *i32 = Type::getInt32Ty(C), *i64 = Type::getInt64Ty(C);
-  SmallVector<Value *, 2> a;
-  for (const Column &c : q.cols)
-    a.push_back(B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::QramAlloc, c.w}),
-                             {ConstantInt::get(i32, wide ? 0 : n)}));
-  FunctionType *freeTy = FunctionType::get(Type::getVoidTy(C), {i32}, false);
-  // One cell's seed stored (a global QRAM's stores are never popped, so the seed and an index rail are freed
-  // at once). j: the cell index, i64.
-  auto storeSeedAt = [&](unsigned k, Value *j, Value *v) {
-    const Column &c = q.cols[k];
-    Value *h = B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Alloc, c.w}), {v});
-    if (!wide) {
-      B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::QramStore, c.w, false, true}),
-                   {a[k], B.CreateTrunc(j, i32), h});
-    } else {
-      Value *ix = B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 64}}), {j});
-      B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::QramStore, c.w, false, false}), {a[k], ix, h});
-      B.CreateCall(M.getOrInsertFunction("cqrt_free", freeTy), {ix});
-    }
-    B.CreateCall(M.getOrInsertFunction("cqrt_free", freeTy), {h});
-  };
-  auto storeSeed = [&](unsigned k, uint64_t j, Value *v) { storeSeedAt(k, ConstantInt::get(i64, j), v); };
   for (const Column &c : q.cols)
     if (c.ptrPart && (!gv.hasInitializer() || !gv.getInitializer()->isNullValue()))
       unimplemented("mem-qram: a global QRAM of pointers with an initializer", &gv);
-  if (!gv.hasInitializer() && n > 0) {
-    // The definer's contents, cell by cell: a classical loop over the n cells (rule 22's form for a copy).
-    BasicBlock *pre = B.GetInsertBlock();
-    BasicBlock *body = BasicBlock::Create(C, "", F), *done = BasicBlock::Create(C, "", F);
-    B.CreateBr(body);
-    B.SetInsertPoint(body);
-    PHINode *j = B.CreatePHI(i64, 2);
-    j->addIncoming(ConstantInt::get(i64, 0), pre);
-    Value *elem = B.CreateInBoundsGEP(Type::getInt8Ty(C), &gv, B.CreateMul(j, ConstantInt::get(i64, q.elemBytes)));
-    for (unsigned k = 0; k < q.cols.size(); ++k) {
-      const Column &c = q.cols[k];
-      Value *p = c.off ? B.CreateConstInBoundsGEP1_64(Type::getInt8Ty(C), elem, c.off) : elem;
-      storeSeedAt(k, j, B.CreateLoad(c.cellTy, p));
-    }
-    Value *j1 = B.CreateAdd(j, ConstantInt::get(i64, 1), "", /*HasNUW=*/true, /*HasNSW=*/true);
-    j->addIncoming(j1, B.GetInsertBlock());
-    B.CreateCondBr(B.CreateICmpEQ(j1, ConstantInt::get(i64, n)), done, body);
-    B.SetInsertPoint(done);
-  } else if (!gv.hasInitializer()) {
-  } else if (Constant *init = gv.getInitializer(); !init->isNullValue()) {
-    for (uint64_t j = 0; j < n; ++j)
-      for (unsigned k = 0; k < q.cols.size(); ++k) {
-        const Column &c = q.cols[k];
-        Constant *v = ConstantFoldLoadFromConst(init, c.cellTy, APInt(64, j * q.elemBytes + c.off), DL);
-        if (!v) {   // a cell the folder cannot isolate: the host bytes of the initialized global
-          Value *p = B.CreateConstInBoundsGEP1_64(Type::getInt8Ty(C), &gv, j * q.elemBytes + c.off);
-          storeSeed(k, j, B.CreateLoad(c.cellTy, p));
-          continue;
-        }
-        if (v->isNullValue() || isa<UndefValue>(v))
-          continue;
-        storeSeed(k, j, v);
+  Function *F = Function::Create(FunctionType::get(Type::getVoidTy(C), false), GlobalValue::InternalLinkage, name, M);
+  IRBuilder<> B(BasicBlock::Create(C, "", F));
+  Type *i8 = Type::getInt8Ty(C), *i64 = Type::getInt64Ty(C);
+  Value *nArg = ConstantInt::get(i64, unknown ? 0 : n);
+  SmallVector<Value *, 2> a;
+  for (const Column &c : q.cols) {
+    uint64_t cb = DL.getTypeAllocSize(c.ptrPart ? Type::getInt32Ty(C) : c.cellTy).getFixedValue();
+    Value *src = &gv;
+    if (c.ptrPart || c.off != 0 || cb != q.elemBytes) {
+      if (unknown)
+        unimplemented("SPEC_ISSUES: a global QRAM of unknown extent whose element has several columns "
+                      "(qram_alloc_host_<W> reads cells at the cell type's stride; no strided form exists)",
+                      &gv);
+      // The column's cells, contiguous: a buffer of n cells in the constructor's frame.
+      IRBuilder<> EB(&F->getEntryBlock(), F->getEntryBlock().begin());
+      AllocaInst *buf = EB.CreateAlloca(i8, ConstantInt::get(i64, n * cb));
+      buf->setAlignment(Align(16));
+      if (c.ptrPart) {
+        B.CreateMemSet(buf, ConstantInt::get(i8, 0), ConstantInt::get(i64, n * cb), Align(16));
+      } else if (n > 0) {
+        BasicBlock *pre = B.GetInsertBlock();
+        BasicBlock *body = BasicBlock::Create(C, "", F), *done = BasicBlock::Create(C, "", F);
+        B.CreateBr(body);
+        B.SetInsertPoint(body);
+        PHINode *j = B.CreatePHI(i64, 2);
+        j->addIncoming(ConstantInt::get(i64, 0), pre);
+        Value *from = B.CreateInBoundsGEP(
+            i8, &gv, B.CreateAdd(B.CreateMul(j, ConstantInt::get(i64, q.elemBytes)), ConstantInt::get(i64, c.off)));
+        Value *to = B.CreateInBoundsGEP(i8, buf, B.CreateMul(j, ConstantInt::get(i64, cb)));
+        B.CreateStore(B.CreateLoad(c.cellTy, from), to);
+        Value *j1 = B.CreateAdd(j, ConstantInt::get(i64, 1), "", /*HasNUW=*/true, /*HasNSW=*/true);
+        j->addIncoming(j1, B.GetInsertBlock());
+        B.CreateCondBr(B.CreateICmpEQ(j1, ConstantInt::get(i64, n)), done, body);
+        B.SetInsertPoint(done);
       }
+      src = buf;
+    }
+    a.push_back(B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::QramAllocHost, c.w}), {src, nArg}));
   }
   Value *store = busStorage(M, gv, q);
   for (unsigned k = 0; k < a.size(); ++k)
-    B.CreateAlignedStore(a[k], k ? B.CreateConstInBoundsGEP1_64(Type::getInt8Ty(C), store, 4 * k) : store, Align(4));
+    B.CreateAlignedStore(a[k], k ? B.CreateConstInBoundsGEP1_64(i8, store, 4 * k) : store, Align(4));
   B.CreateRetVoid();
   appendToGlobalCtors(M, F, 65535);
 }

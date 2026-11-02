@@ -19,7 +19,7 @@
  * index rail's width): 0 and no host read (CR §2).
  *
  * QRAM (cqrt_qram_*): the family path, named and passed per C1 in cqe.h (freeze bead cq-4cy).
- * Bare ops only: qram_alloc, qram_realloc, qram_store, qram_load, qram_free, qram_size. tname.w is the width
+ * Bare ops only: qram_alloc, qram_alloc_host, qram_realloc, qram_store, qram_load, qram_free, qram_size. tname.w is the width
  * token, shape "hl" marks the _hl forms (literal j instead of an index rail: same arity), pred
  * "ctl" and one extra argument 0 mark _controlled (the two must agree), unc marks _unc. args[] are
  * the declared ABI arguments raw, an _unc's leading out handle included. The op does all rail work
@@ -375,6 +375,8 @@ typedef struct {
   uint32_t ngen;
   qview *views;
   uint32_t nviews, capviews;
+  int lazy_host;  /* qram_alloc_host with n = 0: a generation-0 cell is read from host_p + i * d.alloc on first touch */
+  uintptr_t host_p;
 } qobj;
 
 typedef struct {
@@ -470,7 +472,8 @@ static uint64_t *cell_at(qobj *o, qkey k, int create) {
       if (key_eq(o->tab[p].k, k)) return o->tab[p].v;
     }
   }
-  if (!create) return NULL;
+  int seed = o->lazy_host && k.gen == 0;
+  if (!create && !seed) return NULL;
   if (2 * (o->used + 1) > o->cap) {
     size_t cap = o->cap ? 2 * o->cap : 16;
     qcell *t = xcalloc(cap, sizeof *t);
@@ -489,6 +492,7 @@ static uint64_t *cell_at(qobj *o, qkey k, int create) {
   o->tab[p].k = k;
   o->tab[p].v = xcalloc(nwords(o->d.bits), sizeof *o->tab[p].v);
   o->used++;
+  if (seed) read_element_unknown(o->tab[p].v, &o->d, o->host_p + (uintptr_t)(k.i * o->d.alloc), "qram: qram_alloc_host");
   return o->tab[p].v;
 }
 
@@ -572,6 +576,52 @@ static int op_qram_alloc(const cqe_tname *t, const cqe_val *args, int nargs, cqe
   v->bus = new_bus(oi, 0);
   if (set_out_handle(out, v->bus)) return -1;
   emit("{\"ev\":\"qram\",\"op\":\"alloc\",\"a\":%d,\"w\":\"%s\",\"n\":%u}", v->bus, d.tok, qsz_abi(n));
+  return 0;
+}
+
+/* qram_alloc_host_<W>(ptr p, i64 n) -> a (CR §1.3, rule 20, BACKEND_ABI §1.10; CQ_spec b137e75): n cells (n = 0:
+ * 2^64) whose cell j starts in the basis state of the W-bit little-endian element at host address p + j * size (size
+ * = the width's alloc size, as qrom_load), read AT THE CALL; the host object is not read again. A finite object is
+ * snapshot at the call (its non-zero cells enter the table); one of 2^64 cells reads a cell on its first touch (the
+ * host object is the global's own storage, which nothing else writes once it is a QRAM), an unmapped address as 0,
+ * logged like a QROM of unknown extent. */
+static int op_qram_alloc_host(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *out) {
+  wdesc d;
+  if (t->unc || nargs != 2 || !parse_width(t->w, &d)) {
+    cqe_fail("qram: qram_alloc_host: malformed call (w '%s', %d arguments, unc %d)", t->w, nargs, t->unc);
+    return -1;
+  }
+  uintptr_t p = (uintptr_t)raw_u64(&args[0]);
+  uint64_t n64 = raw_u64(&args[1]);
+  qsz n = n64 ? (qsz){n64, 0} : (qsz){0, 1};
+  if (g_nobjs == g_capobjs) {
+    g_capobjs = g_capobjs ? 2 * g_capobjs : 8;
+    g_objs = xrealloc(g_objs, g_capobjs * sizeof *g_objs);
+  }
+  int oi = (int)g_nobjs++;
+  qobj *o = &g_objs[oi];
+  memset(o, 0, sizeof *o);
+  o->live = 1;
+  o->d = d;
+  o->host_p = p;
+  qview *v = push_view(o);
+  v->n = n;
+  v->keep = (qsz){0, 0};
+  v->bus = new_bus(oi, 0);
+  if (n.inf) {
+    o->lazy_host = 1;
+  } else {
+    uint32_t nw = nwords(d.bits);
+    uint64_t *w = xcalloc(nw, sizeof *w);
+    for (uint64_t i = 0; i < n.n; ++i) {
+      read_element_unknown(w, &d, p + (uintptr_t)(i * d.alloc), "qram: qram_alloc_host");
+      if (!is_zero(w, nw)) memcpy(cell_at(o, (qkey){v->gen, i}, 1), w, nw * sizeof *w);
+    }
+    free(w);
+  }
+  if (set_out_handle(out, v->bus)) return -1;
+  emit("{\"ev\":\"qram\",\"op\":\"alloc_host\",\"a\":%d,\"w\":\"%s\",\"n\":%llu}", v->bus, d.tok,
+       (unsigned long long)n64);
   return 0;
 }
 
@@ -1018,6 +1068,7 @@ __attribute__((constructor(101))) static void rt_mem_register(void) {
   cqe_register_op("qrom_load", op_qrom);
   cqe_register_op("qrom_load_s", op_qrom);
   cqe_register_op("qram_alloc", op_qram_alloc);
+  cqe_register_op("qram_alloc_host", op_qram_alloc_host);
   cqe_register_op("qram_realloc", op_qram_realloc);
   cqe_register_op("qram_store", op_qram_store);
   cqe_register_op("qram_load", op_qram_load);

@@ -1,6 +1,7 @@
-; A global QRAM with a non-zero initializer (rule 20, 160): the module constructor allocates the bus,
-; stores each non-zero element by an _hl store of a seed freed at once, and keeps the handle in the
-; global. The entry loads the handle; its store is never popped and the bus never freed.
+; A global QRAM with a non-zero initializer (rule 20, 160; cq-pf4n 2026-11-02): the module constructor
+; allocates the bus with qram_alloc_host_i32(@tab, 4), seeded from the global's own storage (the compiler
+; never reads the initializer), and keeps the handle in @tab.qram; @tab keeps its definition. The entry
+; loads the handle; its store is never popped and the bus never freed.
 declare i32 @cq_theta_ui32(i32, double)
 declare i32 @cq_measure_ui32(i32)
 
@@ -16,13 +17,11 @@ define i32 @qram_global(i32 %x0, double %t) {
   %m = call i32 @cq_measure_ui32(i32 %r)
   ret i32 %m
 }
-; CHECK __cq_qram_init_tab: %{{a}} = call i32 @cqrt_qram_alloc_i32(i32 4)
-; CHECK __cq_qram_init_tab: %{{h}} = call i32 @cqrt_alloc_i32(i32 5)
-; CHECK __cq_qram_init_tab: call void @cqrt_qram_store_i32_hl(i32 %{{a}}, i32 1, i32 %{{h}})
-; CHECK __cq_qram_init_tab: call void @cqrt_qram_store_i32_hl(i32 %{{a}}, i32 3, i32 %{{h}})
-; CHECK-COUNT __cq_qram_init_tab: call void @cqrt_free( 2
-; CHECK __cq_qram_init_tab: store i32 %{{a}}, ptr @tab, align 4
-; CHECK qram_global: %{{a}} = load i32, ptr @tab, align 4
+; CHECK __cq_qram_init_tab: %{{a}} = call i32 @cqrt_qram_alloc_host_i32(ptr @tab, i64 4)
+; CHECK __cq_qram_init_tab: store i32 %{{a}}, ptr @tab.qram, align 4
+; CHECK-COUNT __cq_qram_init_tab: cqrt_qram_store 0
+; CHECK-COUNT __cq_qram_init_tab: cqrt_alloc 0
+; CHECK qram_global: %{{a}} = load i32, ptr @tab.qram, align 4
 ; CHECK qram_global: call void @cqrt_qram_store_i32(i32 %{{a}}, i32 %{{i}}, i32 %{{x}})
 ; CHECK qram_global: call i32 @cqrt_qram_load_i32_hl(i32 %{{a}}, i32 0)
 ; CHECK-COUNT qram_global: cqrt_qram_store_i32_unc 0

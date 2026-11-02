@@ -29,7 +29,8 @@ enum class Core : uint8_t { Alloc, Free, Measure, Ry, RyQAngle, RzI1, RzQAngle, 
   TapeStrBegin, TapeStrEnd,   // cq-a63l (CR §1.3, rule 16): tape_str_begin(t), tape_str_end(t)
   QramSize, /* cq-4lqy (CR §1.3, 2026-11-02): i32 qram_size(a), a classical read, no gate */
   InvertBegin, InvertEnd,     // cq-4593 (cq-arch 2026-11-02): CR §1.3, rule 17
-  CloneRegister, CloneResolve };   // cq-sd95: CR §1.3 clone_register(fn, clone, ctl, unc), clone_resolve(fn, kind) -> ptr
+  CloneRegister, CloneResolve,   // cq-sd95: CR §1.3 clone_register(fn, clone, ctl, unc), clone_resolve(fn, kind) -> ptr
+  QramAllocHost };   // cq-z7hz (CR §1.3, rule 20, b137e75): i32 qram_alloc_host_<W>(ptr p, i64 n)
 struct CoreSpec { Core op; RailType w{}; bool ctl = false, hl = false, unc = false; };
 std::string name(const CoreSpec &);
 llvm::FunctionCallee declare(llvm::Module &, const CoreSpec &);

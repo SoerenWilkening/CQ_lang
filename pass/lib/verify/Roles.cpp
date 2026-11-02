@@ -116,6 +116,10 @@ void coreRoles(Sig &S, const CallBase &CB) {
     R.push_back(Role::Classical);
     S.res = Res::Known;
     break;
+  case Core::QramAllocHost:   // (ptr p, i64 n): cells seeded from host memory, a known basis state
+    R.append({Role::Classical, Role::Classical});
+    S.res = Res::Known;
+    break;
   case Core::QramRealloc:
     // forward (a, n) -> a'; _unc (a', n_old)
     R.append({Role::Read, Role::Classical});

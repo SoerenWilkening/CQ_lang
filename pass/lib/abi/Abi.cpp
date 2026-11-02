@@ -465,6 +465,7 @@ const CoreInfo kCores[] = {
     {Core::XorI1, "xor_i1", WidthUse::FixedI1, false, false, false, false},
     {Core::Copy, "copy", WidthUse::Any, true, false, false, false},
     {Core::Xorc, "xorc", WidthUse::Any, true, false, false, false},
+    {Core::QramAllocHost, "qram_alloc_host", WidthUse::Any, false, false, false, false},
     {Core::QramAlloc, "qram_alloc", WidthUse::Any, false, false, false, false},
     {Core::QramRealloc, "qram_realloc", WidthUse::Any, false, false, false, true},
     {Core::QramStore, "qram_store", WidthUse::Any, true, false, true, true},
@@ -780,6 +781,7 @@ llvm::FunctionCallee declare(llvm::Module &M, const CoreSpec &s) {
   case Core::Copy: a.append({h, h}); break;
   case Core::Xorc: a.append({h, T()}); break;
   case Core::QramAlloc: ret = h; a.push_back(i32); break;
+  case Core::QramAllocHost: ret = h; a.append({p, llvm::Type::getInt64Ty(C)}); break;   // (ptr p, i64 n) -> a
   case Core::QramRealloc:
     // forward (a, n) -> a'; _unc (a', n_old)
     ret = s.unc ? v : h;
