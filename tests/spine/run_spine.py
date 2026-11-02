@@ -52,9 +52,17 @@ def probes(a) -> int:
     out = ROOT / "build" / "tests" / "spine" / "out"
     for p in sorted((Path(__file__).parent / "probes").glob("*.ll")):
         dest = out / ("probe_" + p.name)
-        r = subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-lower", "-S", str(p),
-                            "-o", str(dest)], capture_output=True, text=True)
+        # `; TIMEOUT <s>` (cq-hfj9): cq-lower must finish within s seconds (a walk once exponential)
+        tm = re.search(r"^; TIMEOUT (\d+)$", p.read_text(), re.M)
         reasons = []
+        try:
+            r = subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-lower", "-S", str(p),
+                                "-o", str(dest)], capture_output=True, text=True,
+                               timeout=int(tm.group(1)) if tm else None)
+        except subprocess.TimeoutExpired:
+            failures += 1
+            print(f"FAIL probe {p.name}\n     cq-lower: past its TIMEOUT of {tm.group(1)} s")
+            continue
         if r.returncode != 0:
             reasons.append("cq-lower: " + (r.stderr.strip().splitlines() or ["?"])[0])
         else:
