@@ -910,7 +910,7 @@ define i32 @f(i32 %a0, double %th) {
 }
 
 // cq-vtfq: a kept realloc result (Output) never restores a: a's resolvable items are refused.
-void fatal_qram_realloc_kept() {
+void qram_realloc_kept() {
   Fx f(R"(
 define i32 @f(i32 %a0, double %th) {
   %x = call i32 @cqrt_alloc_i32(i32 %a0)
@@ -927,6 +927,54 @@ define i32 @f(i32 %a0, double %th) {
   f.core(f.call("cqrt_qram_store_i32_hl"), abi::Core::QramStore, "hlh", a2);
   f.U.setRole(a2, Role::Output);
   f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%a = call i32 @cqrt_qram_alloc_i32(i32 4)",
+                        "%a2 = call i32 @cqrt_qram_realloc_i32(i32 %a, i32 6)",
+                        "call void @cqrt_qram_store_i32_hl(i32 %a2, i32 5, i32 %x)",
+                        "ret i32 %a0",
+                    });
+}
+
+// cq-lshe (CR rule 9, §1.3): qram_realloc of a classical select over two buses: released with the size of the
+// bus the select chose; both buses are freed after that release.
+void qram_realloc_merged() {
+  Fx f(R"(
+define i32 @f(i32 %a0, double %th, i1 %c) {
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %a = call i32 @cqrt_qram_alloc_i32(i32 4)
+  %b = call i32 @cqrt_qram_alloc_i32(i32 8)
+  %m = select i1 %c, i32 %a, i32 %b
+  %a2 = call i32 @cqrt_qram_realloc_i32(i32 %m, i32 6)
+  call void @cqrt_qram_store_i32_hl(i32 %a2, i32 5, i32 %x)
+  ret i32 %a0
+})");
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  f.core(f.call("cqrt_qram_alloc_i32"), abi::Core::QramAlloc, "l", ~0u);
+  f.core(f.call("cqrt_qram_alloc_i32", 1), abi::Core::QramAlloc, "l", ~0u);
+  f.U.recordMerge(f.I("m"));
+  RailId a2 = f.core(f.call("cqrt_qram_realloc_i32"), abi::Core::QramRealloc, "hl", ~0u);
+  f.core(f.call("cqrt_qram_store_i32_hl"), abi::Core::QramStore, "hlh", a2);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%a = call i32 @cqrt_qram_alloc_i32(i32 4)",
+                        "%b = call i32 @cqrt_qram_alloc_i32(i32 8)",
+                        "%m = select i1 %c, i32 %a, i32 %b",
+                        "%cq.ch = select i1 %c, i1 false, i1 true",
+                        "%a2 = call i32 @cqrt_qram_realloc_i32(i32 %m, i32 6)",
+                        "call void @cqrt_qram_store_i32_hl(i32 %a2, i32 5, i32 %x)",
+                        "call void @cqrt_qram_store_i32_hl_unc(i32 %a2, i32 5, i32 %x)",
+                        "%cq.n = select i1 %cq.ch, i32 8, i32 4",
+                        "call void @cqrt_qram_realloc_i32_unc(i32 %a2, i32 %cq.n)",
+                        "call void @cqrt_qram_free(i32 %b)",
+                        "call void @cqrt_qram_free(i32 %a)",
+                        "ret i32 %a0",
+                    });
 }
 
 // cq-w6ie (A2): a read-modify-write on one bus (77's shape). Each store is its own POP item, popped
@@ -3642,6 +3690,8 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"deferred_qram_store", deferred_qram_store},
     {"deferred_join_placement", deferred_join_placement},
     {"alias_formal_local", alias_formal_local},
+    {"qram_realloc_merged", qram_realloc_merged},
+    {"qram_realloc_kept", qram_realloc_kept},
     {"merge_unchosen_loop", merge_unchosen_loop},
     {"merge_cycle_arm", merge_cycle_arm},
     {"qram_kept_bus_sandwich", qram_kept_bus_sandwich},
@@ -3667,7 +3717,6 @@ const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_unflushed_arm", fatal_unflushed_arm},
     {"fatal_scope_order", fatal_scope_order},
     {"fatal_mirror_outside_reader", fatal_mirror_outside_reader},
-    {"fatal_qram_realloc_kept", fatal_qram_realloc_kept},
     {"fatal_call_bus_read_unrecorded", fatal_call_bus_read_unrecorded},
     {"fatal_unknown_handle", fatal_unknown_handle},
     {"fatal_alias_slot_reload", fatal_alias_slot_reload},

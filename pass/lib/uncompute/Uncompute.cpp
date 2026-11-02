@@ -687,9 +687,10 @@ struct Uncompute::Impl {
             if (is_contained(rails[x].hits, gate))
               continue;
             if (rails[x].released)
-              unimplemented("uncompute: a non-diagonal gate on " + describe(rails[g].handle) +
+              internalError("uncompute: a non-diagonal gate on " + describe(rails[g].handle) +
                                 " may rotate " + describe(rails[x].handle) +
-                                ", which it names at run time and which was already uncomputed and freed",
+                                ", which it names at run time and which was already uncomputed and freed (its "
+                                "item preceded a read of it: the phi's incoming value)",
                             gate);
             rails[x].hits.push_back(gate);
             again = true;
@@ -855,7 +856,24 @@ struct Uncompute::Impl {
   // keeps every store; a KeptEntangled bus keeps the stores below a kept POP).
   bool busPoppable(RailId b) const {
     const Rail &r = rails[b];
-    return !r.cleanup && r.arms.empty() && (r.role == Role::Seed || r.role == Role::Garbage);
+    return !r.cleanup && r.arms.empty() && (r.role == Role::Seed || r.role == Role::Garbage) && !replacedForGood(b);
+  }
+  // cq-lshe (CR §0, §1.3, rule 16): a bus whose qram_realloc result a' is kept (escaped, an output) is
+  // replaced by a' for good: the object lives on, so the stores made through the old bus stay, the old bus
+  // is never released, and a load of it cannot be un-copied once a store through a' may have changed a cell.
+  bool replacedForGood(RailId b) const {
+    for (RailId a2 : rails[b].reallocs)
+      if (rails[a2].cleanup || keptRole(rails[a2].role) || replacedForGood(a2))
+        return true;
+    return false;
+  }
+  bool loadOfReplaced(RailId g) const {
+    for (auto [b, k] : rails[g].versions)
+      for (RailId a2 : rails[b].reallocs)
+        if ((rails[a2].cleanup || keptRole(rails[a2].role) || replacedForGood(a2)) &&
+            (!rails[a2].pops.empty() || replacedForGood(a2)))
+          return true;
+    return false;
   }
 
   // The store record w is (or will be) popped before the bus is released.
@@ -869,6 +887,10 @@ struct Uncompute::Impl {
     const Rail &r = rails[g];
     if (r.popBus != kNone)
       return !r.released && r.role == Role::Garbage && busPoppable(r.popBus);
+    if (r.qram && replacedForGood(g))
+      return false;
+    if (!r.versions.empty() && loadOfReplaced(g))
+      return false;
     return !r.released && r.arms.empty() && (r.cleanup || r.role == Role::Garbage || r.role == Role::Seed);
   }
 
@@ -1937,11 +1959,31 @@ struct Uncompute::Impl {
   }
 
   // cq-vtfq: the logical size a bus was made with (qram_alloc's n, a realloc's n).
-  Value *busSize(RailId b) const {
+  // cq-lshe (CR rule 9): a merged bus's size is its chosen arm's, a select over the arms' sizes on the
+  // classical choice (chooses); at must lie where the merge's choice values are available (null: check only).
+  Value *busSize(RailId b, Instruction *at = nullptr) {
+    if (isMerge(b)) {
+      SmallVector<RailId, 4> ls = leaves(b);
+      for (RailId x : ls)
+        busSize(x);
+      if (!at)
+        return nullptr;
+      Value *v = busSize(ls.back(), at);
+      for (unsigned i = ls.size() - 1; i-- > 0;) {
+        Value *c = chooses(b, ls[i]);
+        if (auto *k = dyn_cast<ConstantInt>(c)) {
+          if (k->isOne())
+            v = busSize(ls[i], at);
+          continue;
+        }
+        v = track(SelectInst::Create(c, busSize(ls[i], at), v, "cq.n", at));
+      }
+      return v;
+    }
     const Rail &r = rails[b];
     if (r.creator == kNone)
-      unimplemented("uncompute: a qram_realloc of a bus this function did not allocate (its logical size is not "
-                    "known here)",
+      unimplemented("awaiting owner ruling: SPEC_ISSUES qram_realloc of a QRAM bus the function did not allocate "
+                    "(qram_realloc_<W>_unc needs the old logical size, which no ABI call reports)",
                     r.handle);
     CallInst *f = records[r.creator].forward;
     switch (info[r.creator].kind) {
@@ -1965,8 +2007,9 @@ struct Uncompute::Impl {
       CallInst *fwd = records[r.creator].forward;
       RailId a = info[r.creator].reads.front();
       FunctionType *UT = FunctionType::get(Type::getVoidTy(C), {Type::getInt32Ty(C), Type::getInt32Ty(C)}, false);
+      Value *n = busSize(a, &*B.GetInsertPoint());
       return track(B.CreateCall(declareFn(M, (fwd->getCalledFunction()->getName() + "_unc").str(), UT, fwd),
-                                {r.handle, busSize(a)}));
+                                {r.handle, n}));
     }
     return track(B.CreateCall(declareFn(M, r.qram ? "cqrt_qram_free" : "cqrt_free", FT, r.handle), {r.handle}));
   }
@@ -1981,13 +2024,13 @@ struct Uncompute::Impl {
         buses.push_back(g);
       if (r.popBus != kNone)
         buses.push_back(r.popBus);
-      for (auto [b, k] : r.versions)
-        buses.push_back(b);
+      if (loadOfReplaced(g))
+        internalError("uncompute: a load un-copied after a store through a kept qram_realloc result", r.handle);
       for (RailId b : buses)
         for (RailId a2 : rails[b].reallocs)
           if (rails[a2].cleanup || (rails[a2].role != Role::Seed && rails[a2].role != Role::Garbage))
-            unimplemented("uncompute: an item on a QRAM bus whose qram_realloc result is kept (the old bus is "
-                          "never restored)",
+            internalError("uncompute: an item on a QRAM bus whose qram_realloc result is kept (replacedForGood "
+                          "keeps every such item)",
                           rails[a2].handle);
     }
     // cq-necw (CR rules 6, 18): a group whose only member is a slotOut (no result) and that rule 6 cleans (the
@@ -2176,6 +2219,14 @@ struct Uncompute::Impl {
     if (r.deferred != kNone)
       return placeDeferred(g, c);
     if (c.mode == Mode::Mirror) {
+      // cq-lshe (CR §0, rule 10; A4): a rail a non-diagonal gate hit after its record (directly, or through a
+      // carried phi that names it, syncPhiHits) is entangled: the reverse loop never undoes it.
+      const Instruction *f = r.creator != kNone ? records[r.creator].forward : nullptr;
+      if (any_of(r.hits, [&](Instruction *h) { return !f || (h != f && after(h, f)); })) {
+        r.role = Role::KeptEntangled;
+        r.cleanup.reset();
+        return;
+      }
       Instruction *end = emitItem(g, *c.mirror);
       r.released = true;
       itemEnd[{g, end->getParent()}] = end;
@@ -2259,10 +2310,11 @@ struct Uncompute::Impl {
       // cq-zh7z: the gate's handle may name an operand rail through memory (a store or load of a
       // cell that may hold it). Rule 5 needs the _unc before the gate when it is that rail, and CR §0 needs
       // it cleaned when it is not; which one holds is only known at run time.
-      unimplemented("uncompute: a non-diagonal gate on a handle that may name an operand rail of " +
+      unimplemented("awaiting owner ruling: SPEC_ISSUES a gate through a slot cell that may name an operand rail "
+                    "of pending garbage: a non-diagonal gate on a handle that may name an operand rail of " +
                         describe(r.handle) +
                         " through a slot cell precedes its earliest uncompute (whether it hits that rail is "
-                        "decided at run time)",
+                        "decided at run time, by which rail the cell holds)",
                     e);
     }
     // The record that defines g's value (the gates and choices before it concern an older instance).
@@ -2424,7 +2476,8 @@ struct Uncompute::Impl {
       if (fp.empty())
         continue;
       if (fp.unbounded)
-        unimplemented("uncompute: a write into memory a clone call's twin reads lies between the call and the twin "
+        unimplemented("awaiting owner ruling: SPEC_ISSUES a write into a clone's footprint of unknown extent before "
+                      "its twin: a write into memory a clone call's twin reads lies between the call and the twin "
                       "(" + describe(rails[g].handle) + "), and the clone reads memory reached through a pointer it "
                       "loaded or an unknown callee (its extent is not known: cq-99z6)",
                       fwd);
@@ -2436,7 +2489,8 @@ struct Uncompute::Impl {
         else if (auto *GV = dyn_cast<GlobalVariable>(obj))
           sized = GV->getValueType()->isSized();
         if (!sized)
-          unimplemented("uncompute: a write into memory a clone call's twin reads lies between the call and the twin "
+          unimplemented("awaiting owner ruling: SPEC_ISSUES a write into a clone's footprint of unknown extent before "
+                        "its twin: a write into memory a clone call's twin reads lies between the call and the twin "
                         "(" + describe(rails[g].handle) + "), in an object whose extent is not known here (a "
                         "formal's object, the heap, a dynamic alloca)",
                         fwd);
@@ -3146,8 +3200,8 @@ struct Uncompute::Impl {
       auto succs = [&](const BasicBlock *b) {
         const Instruction *t = b->getTerminator();
         if (!t)
-          unimplemented("uncompute: a rail measured on some paths only, " + describe(r.handle) +
-                            ", reaches a block not yet emitted",
+          internalError("uncompute: a rail measured on some paths only, " + describe(r.handle) +
+                            ", reaches a block not yet emitted (every block its definition reaches was checked built)",
                         at);
         return successors(b);
       };
@@ -3520,15 +3574,17 @@ RailId Uncompute::recordCore(CallInst *fwd, const abi::CoreSpec &spec, ArrayRef<
     if (ops.size() != 2 || !ops[0].handle || ops[1].handle)
       internalError("uncompute: recordCore: qram_realloc takes (bus, classical n)", fwd);
     RailId a = impl->lookup(ops[0].v, "recordCore", fwd);
-    if (impl->isMerge(a))
-      unimplemented("uncompute: a qram_realloc of a merged bus handle", fwd);
-    if (!impl->rails[a].qram)
-      internalError("uncompute: recordCore: qram_realloc of a rail that is not a QRAM bus", fwd);
-    impl->busSize(a); // known here, or unimplemented now rather than at the release
+    // cq-lshe: a merged bus (a classical choice of buses) is reallocated as the arm it names: a' is a
+    // realloc of every arm (each arm's items follow its release), released with the chosen arm's size.
+    for (RailId b : impl->leaves(a))
+      if (!impl->rails[b].qram)
+        internalError("uncompute: recordCore: qram_realloc of a rail that is not a QRAM bus", fwd);
+    impl->busSize(a); // known here, or a stop now rather than at the release
     RailId r = impl->newRail(fwd, Role::Seed, "recordCore");
     impl->rails[r].qram = true;
     impl->addRecord(fwd, spec, ops, r, RecKind::QramRealloc, false);
-    impl->rails[a].reallocs.push_back(r);
+    for (RailId b : impl->leaves(a))
+      impl->rails[b].reallocs.push_back(r);
     return r;
   }
   default:
