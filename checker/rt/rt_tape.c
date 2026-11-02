@@ -1,7 +1,8 @@
 /* rt_tape.c: the evaluator semantics of the tape and abort family (cq-w0-rt-tape).
  *
  * Symbols: cqrt_tape_alloc, cqrt_tape_fmt[_controlled], cqrt_tape_effect_controlled,
- * cqrt_tape_write_<W>[_controlled], cqrt_tape_write_<W>_lit, cqrt_tape_write_str_lit, cqrt_abort_i1.
+ * cqrt_tape_write_<W>[_controlled], cqrt_tape_write_<W>_lit, cqrt_tape_write_str_lit,
+ * cqrt_tape_str_begin, cqrt_tape_str_end (CQ_spec f684858), cqrt_abort_i1.
  * Semantics: CONSTRUCTION_RULES §1.3 (the deferred-measurement paragraph, rule 16; it wins) and
  * BACKEND_ABI §1.11. §2 has no row for this family.
  *
@@ -11,6 +12,9 @@
  *  - Fields append to the most recent entry of their own tape. A rail field is a fresh write-only tape
  *    rail h' with h' ^= h (controlled: h' ^= c ? h : 0); h is unchanged; h' is never freed. Literal
  *    and string fields, the format string and the effect name are copied at call time.
+ *  - The i8 fields written between tape_str_begin(t) and tape_str_end(t) form ONE %s field of t's
+ *    open entry: at replay it holds the measured bytes up to the first that reads 0 (a _controlled byte
+ *    under c = 0 is such a byte). In the end-of-shot event the group is one {"k":"str","s"} field.
  *  - An abort flag is kept and measured at the end of the shot.
  *  - End of shot (process exit via return from main or exit(); _Exit loses the tape): every entry
  *    whose predicate read 1 and that no earlier abort flag reading 1 precedes is performed. A format
@@ -149,7 +153,7 @@ static char *dupstr(const char *s) {
 
 /* ---------- the event sequence ---------- */
 
-enum { F_RAIL, F_LIT, F_STR };
+enum { F_RAIL, F_LIT, F_STR, F_MARK };   /* F_MARK: a group's begin, no byte */
 typedef struct {
   int k;
   int32_t h, src, c;     /* rail fields: tape rail, source, predicate (-1: none) */
@@ -157,6 +161,7 @@ typedef struct {
   char w[8];
   tval v;                /* rail: value at the call; lit: the literal */
   char *s;               /* str */
+  int grp;               /* the tape_str_begin/end group the field belongs to, -1: none */
 } field;
 
 enum { E_FMT, E_EFFECT, E_ABORT };
@@ -172,6 +177,8 @@ typedef struct {
 static event *g_ev;
 static int g_nev, g_capev;
 static int *g_tape_open;          /* per tape: index of its open entry in g_ev, or -1 */
+static int *g_tape_grp;           /* per tape: its open tape_str_begin group, or -1 */
+static int g_ngrp;
 static int g_ntapes, g_captapes;
 static int g_registered_exit;
 
@@ -229,8 +236,10 @@ static int32_t op_tape_alloc(void) {
   if (g_ntapes == g_captapes) {
     g_captapes = g_captapes ? 2 * g_captapes : 8;
     g_tape_open = realloc(g_tape_open, (size_t)g_captapes * sizeof(int));
+    g_tape_grp = realloc(g_tape_grp, (size_t)g_captapes * sizeof(int));
   }
   g_tape_open[g_ntapes] = -1;
+  g_tape_grp[g_ntapes] = -1;
   int32_t t = TAPE_BASE + g_ntapes++;
   sbuf b = {0};
   sb_printf(&b, "{\"ev\":\"tape\",\"op\":\"alloc\",\"t\":%d}", (int)t);
@@ -253,6 +262,10 @@ static void op_entry(int kind, int ctl, int32_t c, int32_t t, const char *s, con
   e->c = c;
   e->pred = pred;
   e->str = dupstr(s);
+  if (ti >= 0 && g_tape_grp[ti] >= 0) {
+    cqe_fail("tape: %s: a new entry on tape %d inside an open tape_str_begin group", sym, (int)t);
+    g_tape_grp[ti] = -1;
+  }
   if (ti >= 0) g_tape_open[ti] = g_nev - 1;
   sbuf b = {0};
   sb_printf(&b, "{\"ev\":\"tape\",\"op\":\"%s\",\"seq\":%d,\"t\":%d,\"c\":%d,\"cv\":%d,\"%s\":",
@@ -278,6 +291,7 @@ static field *new_field(int32_t t, const char *sym, int *seq, int *fi) {
   field *f = &e->fields[e->nfields];
   memset(f, 0, sizeof *f);
   f->h = f->src = f->c = -1;
+  f->grp = g_tape_grp[ti];
   *seq = g_tape_open[ti];
   *fi = e->nfields++;
   return f;
@@ -310,6 +324,8 @@ static int32_t op_tape_write(int ctl, int32_t c, int32_t t, int32_t h, const cha
   sb_hex(&b, &v);
   sb_puts(&b, "}");
   log_line(&b);
+  if (f && f->grp >= 0 && strcmp(w, "i8") != 0)
+    cqe_fail("tape: %s: a %s field inside a tape_str_begin group (its fields are i8 bytes)", sym, w);
   if (f) {
     f->k = F_RAIL; f->h = hp; f->src = h; f->c = c; f->cv = cv; f->v = v;
     memcpy(f->w, w, 8);
@@ -334,6 +350,8 @@ static void op_tape_write_lit(int32_t t, const cqe_val *lit, const char *wtok, c
   sb_hex(&b, &v);
   sb_puts(&b, "}");
   log_line(&b);
+  if (f && f->grp >= 0 && strcmp(w, "i8") != 0)
+    cqe_fail("tape: %s: a %s field inside a tape_str_begin group (its fields are i8 bytes)", sym, w);
   if (f) { f->k = F_LIT; f->v = v; memcpy(f->w, w, 8); }
   else free(v.w);
 }
@@ -348,7 +366,39 @@ static void op_tape_write_str(int32_t t, const char *s, const char *sym) {
   sb_json_str(&b, s, strlen(s));
   sb_puts(&b, "}");
   log_line(&b);
+  if (f && f->grp >= 0) cqe_fail("tape: %s: a string field inside a tape_str_begin group", sym);
   if (f) { f->k = F_STR; f->s = dupstr(s); }
+}
+
+/* tape_str_begin(t) / tape_str_end(t) (CR §1.3, BACKEND_ABI §1.11, CQ_spec f684858): the i8 fields
+ * written to t between the two form ONE %s field of t's open entry, printed up to the first byte that
+ * measures 0 (a _controlled byte under c = 0 is such a byte). */
+static void op_tape_str(int begin, int32_t t, const char *sym) {
+  ensure_exit();
+  int ti = tape_index(t, sym);
+  if (ti < 0) return;
+  if (g_tape_open[ti] < 0) {
+    cqe_fail("tape: %s: tape %d has no open entry", sym, (int)t);
+    return;
+  }
+  if (begin && g_tape_grp[ti] >= 0) {
+    cqe_fail("tape: %s: tape %d already has an open tape_str_begin group", sym, (int)t);
+    return;
+  }
+  if (!begin && g_tape_grp[ti] < 0) {
+    cqe_fail("tape: %s: tape %d has no open tape_str_begin group", sym, (int)t);
+    return;
+  }
+  g_tape_grp[ti] = begin ? g_ngrp++ : -1;
+  if (begin) { /* the group's marker: an empty group is still one (empty) string field */
+    int sq = -1, fi = -1;
+    field *f = new_field(t, sym, &sq, &fi);
+    if (f) f->k = F_MARK;
+  }
+  sbuf b = {0};
+  sb_printf(&b, "{\"ev\":\"tape\",\"op\":\"%s\",\"seq\":%d,\"t\":%d}", begin ? "str_begin" : "str_end",
+            g_tape_open[ti], (int)t);
+  log_line(&b);
 }
 
 static void op_abort(int32_t fh, const char *sym) {
@@ -526,10 +576,47 @@ static int format_entry(const event *e, const tval *vals, sbuf *out) {
 
 /* ---------- end of shot ---------- */
 
+/* The entry's fields as replay reads them: each tape_str_begin/end group of i8 fields becomes ONE string
+ * field, its bytes (measured values) up to the first 0. *nm receives the count; mv the values. */
+static field *merge_groups(const event *e, const tval *vals, tval **mv, int *nm) {
+  field *mf = calloc((size_t)(e->nfields ? e->nfields : 1), sizeof(field));
+  *mv = calloc((size_t)(e->nfields ? e->nfields : 1), sizeof(tval));
+  int k = 0;
+  for (int j = 0; j < e->nfields;) {
+    if (e->fields[j].grp < 0) {
+      mf[k] = e->fields[j];
+      (*mv)[k++] = vals[j++];
+      continue;
+    }
+    int g = e->fields[j].grp, stop = 0;
+    sbuf sb = {0};
+    sb_reserve(&sb, 0);
+    for (; j < e->nfields && e->fields[j].grp == g; j++) {
+      if (e->fields[j].k == F_MARK) continue;
+      unsigned char c = (unsigned char)(vals[j].w ? vals[j].w[0] : 0);
+      if (!c) stop = 1;
+      if (!stop) sb_put(&sb, (const char *)&c, 1);
+    }
+    memset(&mf[k], 0, sizeof mf[k]);
+    mf[k].k = F_STR;
+    mf[k].h = mf[k].src = mf[k].c = -1;
+    mf[k].grp = g;
+    mf[k].s = sb.p;
+    (*mv)[k++] = (tval){0, 'i', 1, NULL};
+  }
+  *nm = k;
+  return mf;
+}
+
 static void shot(void) {
   sbuf b = {0}, text = {0};
   sb_reserve(&text, 0);
   int aborted = 0, abort_seq = -1;
+  for (int ti = 0; ti < g_ntapes; ti++)
+    if (g_tape_grp[ti] >= 0) {
+      cqe_fail("tape: tape %d: a tape_str_begin group is still open at the end of the shot", (int)(TAPE_BASE + ti));
+      g_tape_grp[ti] = -1;
+    }
   sb_puts(&b, "{\"ev\":\"tape\",\"op\":\"shot\",\"events\":[");
   for (int i = 0; i < g_nev; i++) {
     event *e = &g_ev[i];
@@ -567,6 +654,16 @@ static void shot(void) {
         vals[j] = f->v;
       }
     }
+    /* replay's view: tape_str groups merged into one string field each (restored below) */
+    field *raw_fields = e->fields;
+    int raw_n = e->nfields;
+    tval *raw_vals = vals;
+    int nm = 0;
+    tval *mv = NULL;
+    field *mf = merge_groups(e, vals, &mv, &nm);
+    e->fields = mf;
+    e->nfields = nm;
+    vals = mv;
     int performed = e->pred && !aborted;
     sb_printf(&b, "{\"seq\":%d,\"kind\":\"%s\",\"t\":%d,\"pred\":%d,\"performed\":%s,\"%s\":", i,
               e->k == E_FMT ? "fmt" : "effect", (int)e->t, e->pred, performed ? "true" : "false",
@@ -595,6 +692,13 @@ static void shot(void) {
       free(t.p);
     }
     sb_puts(&b, "}");
+    for (int j = 0; j < nm; j++)
+      if (mf[j].grp >= 0 && mf[j].k == F_STR) free(mf[j].s);
+    free(mf);
+    free(mv);
+    e->fields = raw_fields;
+    e->nfields = raw_n;
+    vals = raw_vals;
     for (int j = 0; j < e->nfields; j++)
       if (e->fields[j].k == F_RAIL && vals[j].w != e->fields[j].v.w) free(vals[j].w);
     free(vals);
@@ -620,8 +724,8 @@ static int set_handle(cqe_val *out, int32_t h, const char *sym) {
 }
 
 static int tape_dispatch_(const cqe_tname *tn, const cqe_val *a, int n, cqe_val *out) {
-  static const char *const mine[] = {"tape_alloc", "tape_fmt", "tape_effect", "tape_write", "tape_write_str",
-                                     "abort"};
+  static const char *const mine[] = {"tape_alloc", "tape_fmt",       "tape_effect", "tape_write",
+                                     "tape_write_str", "tape_str_begin", "tape_str_end", "abort"};
   int found = 0;
   for (size_t i = 0; i < sizeof mine / sizeof mine[0]; i++) found |= !strcmp(tn->op, mine[i]);
   if (!found) return CQE_OP_NOT_MINE;
@@ -675,6 +779,12 @@ static int tape_dispatch_(const cqe_tname *tn, const cqe_val *a, int n, cqe_val 
     op_tape_write_str(arg_i32(&a[0]), arg_ptr(&a[1]), sym);
     return 0;
   }
+  if (!strcmp(op, "tape_str_begin") || !strcmp(op, "tape_str_end")) {
+    FORM(!ctl && !lit && !wtok[0]);
+    ARITY(1);
+    op_tape_str(!strcmp(op, "tape_str_begin"), arg_i32(&a[0]), sym);
+    return 0;
+  }
   /* abort */
   FORM(!ctl && !lit && !strcmp(wtok, "i1"));
   ARITY(1);
@@ -692,6 +802,7 @@ static int tape_dispatch(const cqe_tname *tn, const cqe_val *a, int n, cqe_val *
 
 __attribute__((constructor)) static void rt_tape_register(void) {
   /* C1: a family registers the bare op only. */
-  static const char *const keys[] = {"tape_alloc", "tape_fmt", "tape_effect", "tape_write", "tape_write_str", "abort"};
+  static const char *const keys[] = {"tape_alloc",     "tape_fmt",       "tape_effect",  "tape_write",
+                                     "tape_write_str", "tape_str_begin", "tape_str_end", "abort"};
   for (size_t i = 0; i < sizeof keys / sizeof keys[0]; i++) cqe_register_op(keys[i], tape_dispatch);
 }

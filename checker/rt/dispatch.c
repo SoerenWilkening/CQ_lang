@@ -11,12 +11,14 @@
  * Routing.
  *   cqrt_<core gate>  handled here: alloc, free, measure, ry[_qangle][_controlled], rz_i1,
  *                     rz_qangle[_controlled], not/and/or/xor_i1, copy[_controlled], xorc[_controlled]
- *                     (an in-place gate's _unc is the same call), push, pop.
+ *                     (an in-place gate's _unc is the same call), push, pop, and the rule 27 clone
+ *                     registry clone_register / clone_resolve (BACKEND_ABI §1.14; no rail).
  *   cq_template_*     parsed by cqe_parse_template; the handlers registered for tname.op are tried in
  *                     registration order. The core allocates the fresh result rail (forward) or XORs
  *                     the value into the out rail and checks the residue (_unc).
  *   cqrt_<other>      the family path: qram_alloc, qram_realloc, qram_store, qram_load, qram_free,
- *                     tape_alloc, tape_fmt, tape_effect, tape_write, tape_write_str, abort. tname.op is
+ *                     qram_size, tape_alloc, tape_fmt, tape_effect, tape_write, tape_write_str,
+ *                     tape_str_begin, tape_str_end, abort. tname.op is
  *                     that stem; tname.w the width token ("" if none); tname.shape "hl" for _hl and "l"
  *                     for _lit; tname.pred "ctl" for _controlled; tname.unc for _unc.
  *
@@ -991,6 +993,75 @@ static void gate_pop(call_t *c) {
 }
 
 /* Route a cqrt_* core gate. 1 handled, 0 not a core gate. With c == NULL only classifies. */
+/* ---- rule 27 clone registry (BACKEND_ABI §1.14, CR §1.3) ---------------------------------- */
+/* cqrt_clone_register(ptr fn, ptr clone, ptr ctl, ptr unc): a module constructor records, under the
+ * host address of a function whose address escapes its module, that function's all-handles clone and
+ * its _ctl and _unc kinds. cqrt_clone_resolve(ptr fn, i32 kind) -> ptr: the registered clone of kind
+ * (0 forward, 1 _ctl, 2 _unc), or null when fn has none (the C program's own undefined behaviour to
+ * call). A symbol table of the host program: no rail, no gate, no trace event. The table is a static of
+ * this file, filled by the constructors before the first shot and put back with __DATA between shots.
+ * Violations (malformed_call): a wrong signature, a null fn, a kind outside 0..2, and fn registered
+ * twice with different clones. */
+typedef struct {
+  uint64_t fn, k[3];
+} clone_ent;
+static clone_ent *clones_;
+static size_t nclones_, capclones_;
+
+static clone_ent *clone_find(uint64_t fn) {
+  for (size_t i = 0; i < nclones_; ++i)
+    if (clones_[i].fn == fn)
+      return &clones_[i];
+  return NULL;
+}
+
+static uint64_t as_u64(const cqe_val *v) { return v->nw ? v->w[0] : 0; }
+
+static void gate_clone_register(call_t *c) {
+  if (c->nargs != 4 || c->rty->kind != 'v' || c->ty[0].kind != 'p' || c->ty[1].kind != 'p' || c->ty[2].kind != 'p' ||
+      c->ty[3].kind != 'p') {
+    cqe__violation("malformed_call", -1, "%s: expected (ptr fn, ptr clone, ptr ctl, ptr unc) -> void", c->sym);
+    return;
+  }
+  uint64_t fn = as_u64(&c->raw[0]), k[3] = {as_u64(&c->raw[1]), as_u64(&c->raw[2]), as_u64(&c->raw[3])};
+  if (!fn) {
+    cqe__violation("malformed_call", -1, "%s: a null function address", c->sym);
+    return;
+  }
+  clone_ent *e = clone_find(fn);
+  if (e) {
+    if (memcmp(e->k, k, sizeof k) != 0)
+      cqe__violation("malformed_call", -1, "%s: function 0x%llx registered twice with different clones", c->sym,
+                     (unsigned long long)fn);
+    return;
+  }
+  if (nclones_ == capclones_) {
+    capclones_ = capclones_ ? 2 * capclones_ : 16;
+    clones_ = realloc(clones_, capclones_ * sizeof *clones_);
+    if (!clones_)
+      abort();
+  }
+  clones_[nclones_++] = (clone_ent){fn, {k[0], k[1], k[2]}};
+}
+
+static void gate_clone_resolve(call_t *c) {
+  if (c->nargs != 2 || c->rty->kind != 'p' || c->ty[0].kind != 'p' || strcmp(c->ty[1].ty, "i32") != 0) {
+    cqe__violation("malformed_call", -1, "%s: expected (ptr fn, i32 kind) -> ptr", c->sym);
+    return;
+  }
+  int32_t kind = as_i32(&c->raw[1]);
+  if (kind < 0 || kind > 2) {
+    cqe__violation("malformed_call", -1, "%s: kind %d is none of 0 (forward), 1 (_ctl), 2 (_unc)", c->sym, (int)kind);
+    return;
+  }
+  const clone_ent *e = clone_find(as_u64(&c->raw[0]));
+  cqe_val r;
+  cqe__val_init(&r, 64, 'i');
+  r.w[0] = e ? e->k[kind] : 0;
+  store_val(c->ret, c->rty, &r);
+  cqe__val_free(&r);
+}
+
 static int core_gate(call_t *c, const char *s, char *cls, size_t ncls) {
   char w[8];
   const char *r;
@@ -1004,6 +1075,12 @@ static int core_gate(call_t *c, const char *s, char *cls, size_t ncls) {
     CLS("free");
     if (c)
       gate_free(c);
+    return 1;
+  }
+  if (!strcmp(s, "clone_register") || !strcmp(s, "clone_resolve")) {
+    CLS(s);
+    if (c)
+      (!strcmp(s, "clone_register") ? gate_clone_register : gate_clone_resolve)(c);
     return 1;
   }
   if (!strcmp(s, "push")) {
@@ -1071,9 +1148,10 @@ static int core_gate(call_t *c, const char *s, char *cls, size_t ncls) {
 
 /* ---- family path ------------------------------------------------------------------------- */
 
-static const char *const fam_stems[] = {"qram_alloc", "qram_realloc", "qram_store", "qram_load", "qram_free",
-                                        "tape_alloc", "tape_fmt",     "tape_effect", "tape_write_str",
-                                        "tape_write", "abort",        NULL};
+static const char *const fam_stems[] = {"qram_alloc",  "qram_realloc",   "qram_store",   "qram_load",
+                                        "qram_free",   "qram_size",      "tape_alloc",   "tape_fmt",
+                                        "tape_effect", "tape_write_str", "tape_write",   "tape_str_begin",
+                                        "tape_str_end", "abort",         NULL};
 
 /* Parse a non-core cqrt_ name (without the prefix) into t. 0 ok. */
 static int parse_family(const char *s, cqe_tname *t) {

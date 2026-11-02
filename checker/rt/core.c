@@ -2,7 +2,10 @@
  * JSONL trace, violations, and the cqe.h API that families use. Symbol handling (the stub entry
  * cqe_dispatch, core-gate semantics, the template registry and parser) is in dispatch.c.
  *
- * Rails. A handle names one rail for the whole run; handles are never reused (1, 2, 3, ...). A rail
+ * Rails. A handle names one rail for the whole run; handles are never reused (1, 2, 3, ...). Handle 0
+ * is reserved (CR §1.1, BACKEND_ABI §1): no allocation returns it, it means "no rail", and a gate
+ * handed it is a bad_handle. Handles are classical values of the host program (compared, selected,
+ * stored); the evaluator sees only the ones passed to it. A rail
  * has a width token ("i32", "f80", ...), a basis value (cqe_val, little-endian 64-bit words, bits
  * above the width zero), a liveness state and its known-basis flag (CR §0, CLAUDE.md "The §6
  * checker"): a rail is known when it is in a known classical basis state, so cqrt_free may reset it.
@@ -447,6 +450,10 @@ int32_t cqe__new(const char *w, const cqe_val *init, int known, int seed) {
 /* 0: h names a live rail. 1: freed (use_after_free logged). -1: no such rail (bad_handle logged). */
 int cqe__check(int32_t h, const char *ctx) {
   cqe__init();
+  if (h == 0) { /* CR §1.1 (f684858): handle 0 is reserved, never allocated: "no rail" */
+    cqe__violation("bad_handle", -1, "%s: handle 0 is reserved (no rail on this path, CR §1.1) and names no rail", ctx);
+    return -1;
+  }
   if (h < 1 || (uint32_t)h > nrails) {
     cqe__violation("bad_handle", h > 0 ? h : -1, "%s: handle %d names no rail", ctx, (int)h);
     return -1;

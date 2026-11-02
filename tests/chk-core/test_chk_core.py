@@ -160,6 +160,15 @@ class Violations(unittest.TestCase):
     def test_bad_handle(self):
         self.assertEqual(self.what("v_bad_handle.ll"), ["bad_handle"])
 
+    def test_handle_zero_is_reserved(self):
+        # cq-06bi: CR §1.1 (CQ_spec f684858): handle 0 names no rail
+        r = go("v_handle_zero.ll", *self.ARGS, [5, 0.5])
+        self.assertEqual([v["what"] for v in r.violations], ["bad_handle"])
+        self.assertIn("handle 0 is reserved", r.violations[0]["msg"])
+
+    def test_clone_resolve_bad_kind(self):
+        self.assertEqual(self.what("v_clone_kind.ll"), ["malformed_call"])
+
     def test_unc_after_nondiagonal(self):
         self.assertEqual(self.what("v_unc_after_nondiagonal.ll"), ["unc_after_nondiagonal", "dirty_free"])
 
@@ -691,7 +700,10 @@ class Parser(unittest.TestCase):
                 # cq-9ge: W = bf16, LLVM type bfloat
                 "cq_template_fadd_bf16_hl|i32|i32,bfloat", "cq_template_bitcast_bf16_to_i16_l|i32|bfloat",
                 "cq_template_bitcast_i16_to_bf16_unc|void|i32,i32", "cqrt_alloc_bf16|i32|bfloat",
-                "cqrt_measure_bf16|bfloat|i32"]
+                "cqrt_measure_bf16|bfloat|i32",
+                # cq-06bi: CQ_spec f684858
+                "cqrt_qram_size|i32|i32", "cqrt_tape_str_begin|void|i32", "cqrt_tape_str_end|void|i32",
+                "cqrt_clone_register|void|ptr,ptr,ptr,ptr", "cqrt_clone_resolve|ptr|ptr,i32"]
         rc, out = self.classify(good)
         self.assertEqual(rc, 0, out)
         bad = ["cq_template_icmp_foo_i32|i32|i32,i32", "cq_template_add_i0|i32|i32,i32", "cq_template_add_f128|i32|i32,i32",
@@ -1116,6 +1128,27 @@ class DefaultEnv(unittest.TestCase):
         out = run.default_env_module(run.totalize_module(text + "declare i32 @fesetround(i32)\n"))
         self.assertIn("call void @__cqe_fpdfl_enter()\n  %r = fadd double %a, 1.0\n  call void @__cqe_fpdfl_leave()",
                       out)
+
+
+class HandleValues(unittest.TestCase):
+    """cq-06bi (CQ_spec f684858, CR §1.1, BACKEND_ABI §1, §1.14): handles are classical values the
+    program compares, selects and stores; handle 0 is never allocated and means "no rail"; the rule 27
+    clone registry."""
+    ARGS = ("int v(int,double)", "v", ["int", "double"])
+
+    def test_handles_compare_select_store(self):
+        for x0 in (4, 5):
+            ev = trace_of("handle_values.ll", *self.ARGS, [x0, 0.5])
+            self.assertEqual([e for e in ev if e["ev"] == "violation"], [])
+            self.assertNotIn(0, [e["h"] for e in ev if e["ev"] == "alloc"])
+            self.assertEqual(len([e for e in ev if e["ev"] == "free"]), 2 if x0 % 2 else 1)
+            self.assertEqual([e for e in ev if e["ev"] == "ret"][0]["v"], hex(8 + x0))
+
+    def test_clone_registry(self):
+        r = go("clone_registry.ll", *self.ARGS, [6, 0.5])
+        self.assertEqual(r.violations, [])
+        self.assertEqual(r.outputs["ret"][0]["v"], {"w": "i32", "v": hex(1006)})
+        self.assertEqual(freed(r), 1)
 
 
 class HandleReturn(unittest.TestCase):

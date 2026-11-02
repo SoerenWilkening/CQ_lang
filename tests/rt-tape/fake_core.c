@@ -124,7 +124,7 @@ int32_t fake_rail(const char *w, cqe_val v) { return cqe_new_rail(w, &v, 1); }
 int32_t fake_call(const char *sym, int nargs, ...) {
   static const char *const opnames[] = {"qram_alloc", "qram_realloc", "qram_store", "qram_load", "qram_free",
                                         "tape_alloc", "tape_fmt", "tape_effect", "tape_write",
-                                        "tape_write_str", "abort"};
+                                        "tape_write_str", "tape_str_begin", "tape_str_end", "abort"};
   cqe_val args[8];
   va_list ap;
   va_start(ap, nargs);

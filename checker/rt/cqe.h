@@ -47,9 +47,11 @@ void    cqe_register_op(const char *op, cqe_op_fn);   /* a family registers from
  *   in out. */
 /* C1 (freeze bead cq-4cy): the family path's names, arguments, roles and end of shot.
  * Names. A cqrt_ symbol that is not a core gate (alloc, free, measure, ry*, rz_*, not/and/or/xor_i1,
- *   copy*, xorc*, push, pop) is cqrt_<op>[_<W>][_hl|_lit][_controlled][_unc], op the longest of
- *   qram_alloc, qram_realloc, qram_store, qram_load, qram_free, tape_alloc, tape_fmt, tape_effect,
- *   tape_write, tape_write_str, abort that matches, W a width token i<N> or f<N>. Any other cqrt_
+ *   copy*, xorc*, push, pop, clone_register, clone_resolve) is
+ *   cqrt_<op>[_<W>][_hl|_lit][_controlled][_unc], op the longest of qram_alloc, qram_realloc,
+ *   qram_store, qram_load, qram_free, qram_size, tape_alloc, tape_fmt, tape_effect, tape_write,
+ *   tape_write_str, tape_str_begin, tape_str_end, abort that matches (qram_size, tape_str_begin/end
+ *   and the clone pair: CQ_spec f684858), W a width token i<N> or f<N>. Any other cqrt_
  *   name is a violation (unknown_symbol). The dispatcher passes a zeroed cqe_tname with op = <op>,
  *   w = W ("" if absent), shape = "hl" for _hl and "l" for _lit, pred = "ctl" for _controlled,
  *   unc = 1 for _unc; to, rm, exc and strided stay 0. A family registers the bare op only; telling

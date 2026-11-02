@@ -19,7 +19,7 @@
  * index rail's width): 0 and no host read (CR §2).
  *
  * QRAM (cqrt_qram_*): the family path, named and passed per C1 in cqe.h (freeze bead cq-4cy).
- * Bare ops only: qram_alloc, qram_realloc, qram_store, qram_load, qram_free. tname.w is the width
+ * Bare ops only: qram_alloc, qram_realloc, qram_store, qram_load, qram_free, qram_size. tname.w is the width
  * token, shape "hl" marks the _hl forms (literal j instead of an index rail: same arity), pred
  * "ctl" and one extra argument 0 mark _controlled (the two must agree), unc marks _unc. args[] are
  * the declared ABI arguments raw, an _unc's leading out handle included. The op does all rail work
@@ -28,9 +28,13 @@
  * handler is registered in the constructor after cqe_register_op, i.e. after the first cqe_* call
  * (C1 end of shot).
  *
- * QRAM: an object is a list of physical cells plus a stack of views (bus handle, logical size n,
- * logical->physical map). realloc pushes a view (shrinking hides, growing maps to fresh cells),
- * realloc_unc pops it and drops the cells it appended. Every store owns a tape slot; a _unc pops the
+ * QRAM: an object is a stack of views (bus handle, logical size n, the prefix `keep` it shares with the
+ * view below) and its cells, keyed (the view that created the cell, logical index) and created |0> on
+ * first touch. realloc pushes a view (shrinking hides, growing maps to fresh cells), realloc_unc pops it
+ * and drops the cells it created. A cell count n = 0 (alloc, realloc, and qrom's n) denotes 2^64 cells
+ * (CR §1.3, BACKEND_ABI §1.10 "Unknown extent", CQ_spec f684858); qram_size(a) reads the current
+ * logical size back (0 for 2^64). A QROM of unknown extent reads the host's memory at any index below
+ * 2^64 (an unmapped address reads 0, logged). Every store owns a tape slot; a _unc pops the
  * most recent unpopped slot with identical (a, idx|j, v[, c]) and is evaluated at the view its forward
  * store saw. Live cells of unfreed objects and unpopped slots are reported at process exit as one
  * {"ev":"qram","op":"exit","live":[{"h","w","v","role"}]} event (roles qram_cell, qram_slot): they are
@@ -47,6 +51,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <mach/mach.h>
 
 #include "cqe.h"
 
@@ -183,6 +189,26 @@ static void read_element(uint64_t *w, const wdesc *d, uintptr_t p) {
   mask_top(w, d->bits);
 }
 
+static void emit(const char *fmt, ...);
+
+/* The element at host address p of an object of unknown extent (n = 0: 2^64 elements, CR §1.3, rule
+ * 20). Its value is the host's memory there; an address the host has not mapped holds no value the C
+ * program could read (reading it is the program's undefined behaviour), and the evaluator reads it as
+ * 0 rather than fault: logged as {"ev":"qrom","op":"unmapped","addr"}. */
+static void read_element_unknown(uint64_t *w, const wdesc *d, uintptr_t p, const char *what) {
+  uint32_t nw = nwords(d->bits);
+  size_t nb = (d->bits + 7u) / 8u;
+  memset(w, 0, nw * sizeof *w);
+  vm_size_t got = 0;
+  if (vm_read_overwrite(mach_task_self(), (vm_address_t)p, (vm_size_t)nb, (vm_address_t)w, &got) != KERN_SUCCESS ||
+      got != nb) {
+    memset(w, 0, nw * sizeof *w);
+    emit("{\"ev\":\"qrom\",\"op\":\"unmapped\",\"what\":\"%s\",\"addr\":\"0x%llx\"}", what, (unsigned long long)p);
+    return;
+  }
+  mask_top(w, d->bits);
+}
+
 static void make_val(cqe_val *v, const wdesc *d, uint64_t *w) {
   v->bits = d->bits;
   v->kind = d->kind;
@@ -273,6 +299,7 @@ static int op_qrom(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *
   if (!unc) {
     uint64_t *val = xcalloc(nw, sizeof *val);
     if (!big && idx < n) read_element(val, &d, table + (uintptr_t)(idx * stride));
+    else if (!big && n == 0) read_element_unknown(val, &d, table + (uintptr_t)(idx * stride), what);
     if (g_nsnaps == g_capsnaps) {
       g_capsnaps = g_capsnaps ? 2 * g_capsnaps : 64;
       g_snaps = xrealloc(g_snaps, g_capsnaps * sizeof *g_snaps);
@@ -302,18 +329,50 @@ static int op_qrom(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *
 #define BUS_BASE 0x51000000
 #define KEPT_ID_BASE 0x5A000000
 
+/* A logical size. The ABI's i32 cell count n = 0 denotes 2^64 cells (CR §1.3, BACKEND_ABI §1.10
+ * "Unknown extent", CQ_spec f684858): inf. */
 typedef struct {
-  int32_t bus;    /* the handle naming this view */
-  uint32_t n;     /* logical size */
-  uint32_t *map;  /* logical index -> physical cell */
-  uint32_t phys0; /* physical cell count before this view (cells >= phys0 were appended by it) */
+  uint64_t n;
+  int inf;
+} qsz;
+
+static qsz qsz_of(uint32_t abi_n) { return abi_n ? (qsz){abi_n, 0} : (qsz){0, 1}; }
+static uint32_t qsz_abi(qsz s) { return s.inf ? 0u : (uint32_t)s.n; }
+static int qsz_has(qsz s, uint64_t i, int big) { return !big && (s.inf || i < s.n); }
+static int qsz_eq(qsz a, qsz b) { return a.inf == b.inf && (a.inf || a.n == b.n); }
+static qsz qsz_min(qsz a, qsz b) {
+  if (a.inf) return b;
+  if (b.inf) return a;
+  return a.n < b.n ? a : b;
+}
+
+/* A view: what one bus handle names. Logical indices below keep map to the previous view's cells;
+ * the others (up to n) are this view's own cells, generation gen, created |0> when first touched. A
+ * cell is keyed (gen, logical index): one cell per index per view that created it, so a shrink hides
+ * cells and a later grow maps the same indices to FRESH cells, never to the hidden ones. */
+typedef struct {
+  int32_t bus;
+  qsz n;
+  qsz keep;
+  uint32_t gen;
 } qview;
+
+typedef struct {
+  uint32_t gen;
+  uint64_t i;
+} qkey;
+
+typedef struct {
+  qkey k;
+  uint64_t *v; /* NULL: an empty table slot */
+} qcell;
 
 typedef struct {
   int live;
   wdesc d;
-  uint32_t nphys, capphys;
-  uint64_t *cells; /* nphys * nw words */
+  qcell *tab; /* open addressing over the cells touched so far; an absent cell is |0> */
+  size_t cap, used;
+  uint32_t ngen;
   qview *views;
   uint32_t nviews, capviews;
 } qobj;
@@ -338,7 +397,7 @@ typedef struct {
   int32_t c_h;
   int c_fwd;
   int active; /* the forward swapped a cell (c = 1 and in range) */
-  uint32_t p; /* physical cell, when active */
+  qkey p;     /* the cell, when active */
   uint64_t *t;     /* slot contents */
   uint64_t *v_fwd; /* v at the forward call */
   uint64_t seq;
@@ -395,19 +454,48 @@ static qobj *bus_get(int32_t a, const char *what, qbus **bout) {
   return o;
 }
 
-static uint64_t *cell(qobj *o, uint32_t p) { return o->cells + (size_t)p * nwords(o->d.bits); }
+static size_t key_hash(qkey k, size_t cap) {
+  uint64_t h = k.i * UINT64_C(0x9E3779B97F4A7C15) ^ ((uint64_t)k.gen + 1u) * UINT64_C(0xC2B2AE3D27D4EB4F);
+  h ^= h >> 29;
+  return (size_t)(h & (cap - 1u));
+}
 
-static uint32_t append_cells(qobj *o, uint32_t k) {
-  uint32_t nw = nwords(o->d.bits), first = o->nphys;
-  if (o->nphys + k > o->capphys) {
-    uint32_t cap = o->capphys ? o->capphys : 8;
-    while (cap < o->nphys + k) cap *= 2;
-    o->cells = xrealloc(o->cells, (size_t)cap * nw * sizeof *o->cells);
-    o->capphys = cap;
+static int key_eq(qkey a, qkey b) { return a.gen == b.gen && a.i == b.i; }
+
+/* The words of cell k; an absent cell is |0>: NULL, or a fresh zero cell when create. */
+static uint64_t *cell_at(qobj *o, qkey k, int create) {
+  if (o->cap) {
+    for (size_t p = key_hash(k, o->cap);; p = (p + 1u) & (o->cap - 1u)) {
+      if (!o->tab[p].v) break;
+      if (key_eq(o->tab[p].k, k)) return o->tab[p].v;
+    }
   }
-  memset(o->cells + (size_t)first * nw, 0, (size_t)k * nw * sizeof *o->cells);
-  o->nphys += k;
-  return first;
+  if (!create) return NULL;
+  if (2 * (o->used + 1) > o->cap) {
+    size_t cap = o->cap ? 2 * o->cap : 16;
+    qcell *t = xcalloc(cap, sizeof *t);
+    for (size_t i = 0; i < o->cap; ++i)
+      if (o->tab[i].v) {
+        size_t p = key_hash(o->tab[i].k, cap);
+        while (t[p].v) p = (p + 1u) & (cap - 1u);
+        t[p] = o->tab[i];
+      }
+    free(o->tab);
+    o->tab = t;
+    o->cap = cap;
+  }
+  size_t p = key_hash(k, o->cap);
+  while (o->tab[p].v) p = (p + 1u) & (o->cap - 1u);
+  o->tab[p].k = k;
+  o->tab[p].v = xcalloc(nwords(o->d.bits), sizeof *o->tab[p].v);
+  o->used++;
+  return o->tab[p].v;
+}
+
+/* The cell logical index i names in view depth d (i in range). */
+static qkey cell_key(const qobj *o, uint32_t d, uint64_t i) {
+  while (d > 0 && qsz_has(o->views[d].keep, i, 0)) d--;
+  return (qkey){o->views[d].gen, i};
 }
 
 static qview *push_view(qobj *o) {
@@ -415,7 +503,10 @@ static qview *push_view(qobj *o) {
     o->capviews = o->capviews ? 2 * o->capviews : 4;
     o->views = xrealloc(o->views, o->capviews * sizeof *o->views);
   }
-  return &o->views[o->nviews++];
+  qview *v = &o->views[o->nviews++];
+  memset(v, 0, sizeof *v);
+  v->gen = o->ngen++;
+  return v;
 }
 
 /* Index operand of a QRAM access: a rail (idx) or, for _hl, an i32 literal j read unsigned. */
@@ -465,7 +556,7 @@ static int op_qram_alloc(const cqe_tname *t, const cqe_val *args, int nargs, cqe
     cqe_fail("qram: qram_alloc: malformed call (w '%s', %d arguments, unc %d)", t->w, nargs, t->unc);
     return -1;
   }
-  uint32_t n = (uint32_t)raw_u64(&args[0]);
+  qsz n = qsz_of((uint32_t)raw_u64(&args[0]));
   if (g_nobjs == g_capobjs) {
     g_capobjs = g_capobjs ? 2 * g_capobjs : 8;
     g_objs = xrealloc(g_objs, g_capobjs * sizeof *g_objs);
@@ -475,16 +566,24 @@ static int op_qram_alloc(const cqe_tname *t, const cqe_val *args, int nargs, cqe
   memset(o, 0, sizeof *o);
   o->live = 1;
   o->d = d;
-  append_cells(o, n);
   qview *v = push_view(o);
   v->n = n;
-  v->phys0 = 0;
-  v->map = xcalloc(n, sizeof *v->map);
-  for (uint32_t i = 0; i < n; ++i) v->map[i] = i;
+  v->keep = (qsz){0, 0};
   v->bus = new_bus(oi, 0);
   if (set_out_handle(out, v->bus)) return -1;
-  emit("{\"ev\":\"qram\",\"op\":\"alloc\",\"a\":%d,\"w\":\"%s\",\"n\":%u}", v->bus, d.tok, n);
+  emit("{\"ev\":\"qram\",\"op\":\"alloc\",\"a\":%d,\"w\":\"%s\",\"n\":%u}", v->bus, d.tok, qsz_abi(n));
   return 0;
+}
+
+/* Every touched cell of view depth d (its own generation) is |0>. */
+static int view_cells_zero(qobj *o, uint32_t gen, uint64_t *bad_i) {
+  uint32_t nw = nwords(o->d.bits);
+  for (size_t i = 0; i < o->cap; ++i)
+    if (o->tab[i].v && o->tab[i].k.gen == gen && !is_zero(o->tab[i].v, nw)) {
+      *bad_i = o->tab[i].k.i;
+      return 0;
+    }
+  return 1;
 }
 
 static int op_qram_realloc(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *out) {
@@ -494,7 +593,7 @@ static int op_qram_realloc(const cqe_tname *t, const cqe_val *args, int nargs, c
     return -1;
   }
   int32_t a = raw_handle(&args[0]);
-  uint32_t n = (uint32_t)raw_u64(&args[1]);
+  qsz n = qsz_of((uint32_t)raw_u64(&args[1]));
   qbus *b;
   qobj *o = bus_get(a, t->unc ? "qram_realloc_unc" : "qram_realloc", &b);
   if (!o) return -1;
@@ -504,23 +603,16 @@ static int op_qram_realloc(const cqe_tname *t, const cqe_val *args, int nargs, c
   }
   int oi = b->obj;
   if (!t->unc) {
-    qview *old = &o->views[o->nviews - 1];
-    uint32_t oldn = old->n;
-    uint32_t *oldmap = old->map;
-    uint32_t keep = n < oldn ? n : oldn;
-    uint32_t phys0 = o->nphys;
-    uint32_t first = n > oldn ? append_cells(o, n - oldn) : o->nphys;
+    qsz oldn = o->views[o->nviews - 1].n;
     qview *v = push_view(o); /* may move o->views */
     v->n = n;
-    v->phys0 = phys0;
-    v->map = xcalloc(n, sizeof *v->map);
-    memcpy(v->map, oldmap, (size_t)keep * sizeof *v->map);
-    for (uint32_t i = keep; i < n; ++i) v->map[i] = first + (i - keep);
+    v->keep = qsz_min(n, oldn);
     v->bus = new_bus(oi, (int)o->nviews - 1);
     b = &g_bus[a - BUS_BASE]; /* g_bus may have moved */
     b->dead = 1;              /* a' replaces a for every later access */
     if (set_out_handle(out, v->bus)) return -1;
-    emit("{\"ev\":\"qram\",\"op\":\"realloc\",\"a\":%d,\"a2\":%d,\"n_old\":%u,\"n\":%u}", a, v->bus, oldn, n);
+    emit("{\"ev\":\"qram\",\"op\":\"realloc\",\"a\":%d,\"a2\":%d,\"n_old\":%u,\"n\":%u}", a, v->bus, qsz_abi(oldn),
+         qsz_abi(n));
     return 0;
   }
   /* _unc(a', n_old) */
@@ -530,30 +622,48 @@ static int op_qram_realloc(const cqe_tname *t, const cqe_val *args, int nargs, c
   }
   qview *v = &o->views[o->nviews - 1];
   qview *prev = &o->views[o->nviews - 2];
-  int bad = 0;
-  if (prev->n != n) {
-    cqe_fail("qram: qram_realloc_unc(%d, %u): the size before the realloc was %u", a, n, prev->n);
-    bad = 1;
-  }
+  if (!qsz_eq(prev->n, n))
+    cqe_fail("qram: qram_realloc_unc(%d, %u): the size before the realloc was %u", a, qsz_abi(n), qsz_abi(prev->n));
   for (size_t i = 0; i < g_nslots; ++i)
     if (g_slots[i].live && g_slots[i].bus == a) {
       cqe_fail("qram: qram_realloc_unc(%d): a store made through it is not popped", a);
-      bad = 1;
       break;
     }
-  for (uint32_t p = v->phys0; p < o->nphys; ++p)
-    if (!is_zero(cell(o, p), nwords(o->d.bits))) {
-      cqe_fail("qram: qram_realloc_unc(%d): cell %u it added is not |0>", a, p);
-      bad = 1;
-      break;
-    }
-  if (!bad) o->nphys = v->phys0; /* the grown cells are |0> and dropped */
-  free(v->map);
+  uint64_t bi = 0;
+  if (!view_cells_zero(o, v->gen, &bi))
+    cqe_fail("qram: qram_realloc_unc(%d): cell %llu it added is not |0>", a, (unsigned long long)bi);
+  /* the grown cells are |0> and dropped: their generation is never named again */
   o->nviews--;
   b->dead = 1;
   g_bus[prev->bus - BUS_BASE].dead = 0; /* a is the bus again */
-  emit("{\"ev\":\"qram\",\"op\":\"realloc_unc\",\"a2\":%d,\"a\":%d,\"n\":%u}", a, prev->bus, prev->n);
+  emit("{\"ev\":\"qram\",\"op\":\"realloc_unc\",\"a2\":%d,\"a\":%d,\"n\":%u}", a, prev->bus, qsz_abi(prev->n));
   return 0;
+}
+
+/* qram_size(a) -> n: the bus's current logical size, a classical read of the bookkeeping, no gate
+ * (CR §1.3, BACKEND_ABI §1.10, CQ_spec f684858). 2^64 cells reads as 0, the ABI's spelling. */
+static int op_qram_size(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *out) {
+  if (t->unc || t->w[0] || t->shape[0] || t->pred[0] || nargs != 1) {
+    cqe_fail("qram: qram_size: malformed call (w '%s', %d arguments)", t->w, nargs);
+    return -1;
+  }
+  int32_t a = raw_handle(&args[0]);
+  qobj *o = bus_get(a, "qram_size", NULL);
+  if (!o) return -1;
+  uint32_t n = qsz_abi(o->views[o->nviews - 1].n);
+  static const wdesc i32 = {32, 'i', 4, "i32"};
+  uint64_t *w = out_words(out, &i32, "qram: qram_size");
+  if (!w) return -1;
+  w[0] = n;
+  emit("{\"ev\":\"qram\",\"op\":\"size\",\"a\":%d,\"n\":%u}", a, n);
+  return 0;
+}
+
+static void free_obj(qobj *o) {
+  for (size_t i = 0; i < o->cap; ++i) free(o->tab[i].v);
+  free(o->tab);
+  free(o->views);
+  memset(o, 0, sizeof *o);
 }
 
 static int op_qram_free(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *out) {
@@ -572,22 +682,17 @@ static int op_qram_free(const cqe_tname *t, const cqe_val *args, int nargs, cqe_
       cqe_fail("qram: qram_free(%d): a store (through bus %d) is not popped", a, g_slots[i].bus);
       break;
     }
-  for (uint32_t p = 0; p < o->nphys; ++p)
-    if (!is_zero(cell(o, p), nwords(o->d.bits))) {
-      cqe_fail("qram: qram_free(%d): cell %u is not |0>", a, p);
+  for (size_t i = 0; i < o->cap; ++i)
+    if (o->tab[i].v && !is_zero(o->tab[i].v, nwords(o->d.bits))) {
+      cqe_fail("qram: qram_free(%d): cell %llu is not |0>", a, (unsigned long long)o->tab[i].k.i);
       break;
     }
   emit("{\"ev\":\"qram\",\"op\":\"free\",\"a\":%d}", a);
   /* Released: its cells and any slots are gone (a violation above already failed the run). */
   for (size_t i = 0; i < g_nslots; ++i)
     if (g_slots[i].obj == oi) g_slots[i].live = 0;
-  for (uint32_t k = 0; k < o->nviews; ++k) {
-    g_bus[o->views[k].bus - BUS_BASE].dead = 1;
-    free(o->views[k].map);
-  }
-  free(o->cells);
-  free(o->views);
-  memset(o, 0, sizeof *o);
+  for (uint32_t k = 0; k < o->nviews; ++k) g_bus[o->views[k].bus - BUS_BASE].dead = 1;
+  free_obj(o);
   return 0;
 }
 
@@ -628,7 +733,7 @@ static int op_qram_store(const cqe_tname *t, const cqe_val *args, int nargs, cqe
     int c = has_c ? read_ctl(c_h, what) : 1;
     if (c < 0) return -1;
     qview *view = &o->views[o->nviews - 1];
-    int in_range = !ix.big && ix.lo < view->n;
+    int in_range = qsz_has(view->n, ix.lo, ix.big);
     if (g_nslots == g_capslots) {
       g_capslots = g_capslots ? 2 * g_capslots : 64;
       g_slots = xrealloc(g_slots, g_capslots * sizeof *g_slots);
@@ -654,8 +759,8 @@ static int op_qram_store(const cqe_tname *t, const cqe_val *args, int nargs, cqe
     memcpy(s->v_fwd, vr->w, nw * sizeof *s->v_fwd);
     s->seq = ++g_seq;
     if (s->active) {
-      s->p = view->map[ix.lo];
-      uint64_t *cp = cell(o, s->p);
+      s->p = cell_key(o, o->nviews - 1, ix.lo);
+      uint64_t *cp = cell_at(o, s->p, 1);
       memcpy(s->t, cp, nw * sizeof *cp); /* t <-> cell (t was |0>) */
       memset(cp, 0, nw * sizeof *cp);
       for (uint32_t i = 0; i < nw; ++i) cp[i] ^= vr->w[i]; /* cell ^= v */
@@ -713,12 +818,12 @@ static int op_qram_store(const cqe_tname *t, const cqe_val *args, int nargs, cqe
     /* LIFO among stores that touch the same cell: no newer unpopped store may sit on this cell. */
     for (size_t i = 0; i < g_nslots; ++i) {
       qslot *q = &g_slots[i];
-      if (q != s && q->live && q->obj == s->obj && q->active && q->p == s->p && q->seq > s->seq) {
+      if (q != s && q->live && q->obj == s->obj && q->active && key_eq(q->p, s->p) && q->seq > s->seq) {
         cqe_fail("qram: %s: pop out of last-in-first-out order on a cell (a newer store to it is unpopped)", what);
         break;
       }
     }
-    uint64_t *cp = cell(o, s->p);
+    uint64_t *cp = cell_at(o, s->p, 1);
     for (uint32_t i = 0; i < nw; ++i) cp[i] ^= vr->w[i]; /* cell ^= v */
     mask_top(cp, d.bits);
     for (uint32_t i = 0; i < nw; ++i) { /* t <-> cell */
@@ -738,12 +843,15 @@ static int op_qram_store(const cqe_tname *t, const cqe_val *args, int nargs, cqe
   return 0;
 }
 
-/* The value a load reads now: c ? cell[map[idx]] : 0, 0 out of range. */
+/* The value a load reads now: c ? cell[idx] : 0, 0 out of range. */
 static void load_value(qobj *o, const qindex *ix, int c, uint64_t *val) {
   qview *view = &o->views[o->nviews - 1];
   uint32_t nw = nwords(o->d.bits);
   memset(val, 0, nw * sizeof *val);
-  if (c && !ix->big && ix->lo < view->n) memcpy(val, cell(o, view->map[ix->lo]), nw * sizeof *val);
+  if (c && qsz_has(view->n, ix->lo, ix->big)) {
+    const uint64_t *cp = cell_at(o, cell_key(o, o->nviews - 1, ix->lo), 0);
+    if (cp) memcpy(val, cp, nw * sizeof *val);
+  }
 }
 
 static int op_qram_load(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *out) {
@@ -851,6 +959,20 @@ static void sb_add(sbuf *b, const char *fmt, ...) {
   b->len += (size_t)k;
 }
 
+static int cmp_u64(const void *a, const void *b) {
+  uint64_t x = *(const uint64_t *)a, y = *(const uint64_t *)b;
+  return x < y ? -1 : x > y;
+}
+
+static void exit_cell(sbuf *b, const char **sep, int32_t *id, const qobj *o, const uint64_t *v) {
+  sb_add(b, "%s{\"h\":%d,\"w\":\"%s\",\"v\":\"%s\",\"role\":\"qram_cell\"}", *sep, (*id)++, o->d.tok,
+         v ? hexs(v, o->d.bits) : "0x0");
+  *sep = ",";
+}
+
+/* Live cells, view by view in creation order, each view's own cells by index: a view of finite size
+ * lists every one of its cells (an untouched one is |0>); a view of 2^64 cells (n = 0) lists the ones
+ * the shot touched (the rest are |0> and never existed for this shot: the backend's resource question). */
 static void rt_mem_exit(void) {
   if (g_nobjs == 0 && g_nslots == 0) return;
   sbuf b = {0};
@@ -860,10 +982,21 @@ static void rt_mem_exit(void) {
   for (size_t oi = 0; oi < g_nobjs; ++oi) {
     qobj *o = &g_objs[oi];
     if (!o->live) continue;
-    for (uint32_t p = 0; p < o->nphys; ++p) {
-      sb_add(&b, "%s{\"h\":%d,\"w\":\"%s\",\"v\":\"%s\",\"role\":\"qram_cell\"}", sep, id++, o->d.tok,
-             hexs(cell(o, p), o->d.bits));
-      sep = ",";
+    for (uint32_t d = 0; d < o->nviews; ++d) {
+      const qview *v = &o->views[d];
+      if (v->keep.inf) continue;
+      if (!v->n.inf) {
+        for (uint64_t i = v->keep.n; i < v->n.n; ++i)
+          exit_cell(&b, &sep, &id, o, cell_at(o, (qkey){v->gen, i}, 0));
+        continue;
+      }
+      uint64_t *is = xcalloc(o->used, sizeof *is);
+      size_t k = 0;
+      for (size_t i = 0; i < o->cap; ++i)
+        if (o->tab[i].v && o->tab[i].k.gen == v->gen && o->tab[i].k.i >= v->keep.n) is[k++] = o->tab[i].k.i;
+      qsort(is, k, sizeof *is, cmp_u64);
+      for (size_t i = 0; i < k; ++i) exit_cell(&b, &sep, &id, o, cell_at(o, (qkey){v->gen, is[i]}, 0));
+      free(is);
     }
   }
   for (size_t i = 0; i < g_nslots; ++i) {
@@ -889,5 +1022,6 @@ __attribute__((constructor(101))) static void rt_mem_register(void) {
   cqe_register_op("qram_store", op_qram_store);
   cqe_register_op("qram_load", op_qram_load);
   cqe_register_op("qram_free", op_qram_free);
+  cqe_register_op("qram_size", op_qram_size);
   atexit(rt_mem_exit);
 }

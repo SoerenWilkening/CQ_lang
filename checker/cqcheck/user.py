@@ -214,8 +214,9 @@ def _core_widths(name: str, nargs: int) -> List[Optional[int]]:
     """Per argument of `@cqrt_<name>`, its rail width (0: a rail no cell is seeded with, an f64
     angle or an index of unstated width; ANY_WIDTH: any) or None (no rail: a classical literal,
     angle, size, pointer or word, a QRAM bus or a tape), by the signatures of BACKEND_ABI.md §1."""
-    m = re.fullmatch(r"(alloc_.*|qram_alloc_.*|qram_realloc_.*|qram_free|tape_alloc|tape_fmt|push|pop"
-                     r"|tape_write_.*_lit|tape_write_str_lit)", name)
+    m = re.fullmatch(r"(alloc_.*|qram_alloc_.*|qram_realloc_.*|qram_free|qram_size|tape_alloc|tape_fmt|push|pop"
+                     r"|tape_write_.*_lit|tape_write_str_lit|tape_str_begin|tape_str_end"
+                     r"|clone_register|clone_resolve)", name)
     if m:
         return [None] * nargs                                   # alloc(lit), push(w): "Rails. None"
     if name == "free":

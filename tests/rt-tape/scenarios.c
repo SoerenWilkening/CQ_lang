@@ -20,6 +20,9 @@ static int32_t wrc(const char *w, int32_t c, int32_t t, int32_t h) {
 }
 static void lit(const char *w, int32_t t, cqe_val v) { fake_call(sy("cqrt_tape_write_", w, "_lit"), 2, H(t), v); }
 static void str(int32_t t, const char *s) { fake_call("cqrt_tape_write_str_lit", 2, H(t), P(s)); }
+static void sb(int32_t t) { fake_call("cqrt_tape_str_begin", 1, H(t)); }
+static void se(int32_t t) { fake_call("cqrt_tape_str_end", 1, H(t)); }
+static int32_t i8(unsigned char x) { return fake_rail("i8", fake_i(8, x, 0)); }
 static void ab(int32_t f) { fake_call("cqrt_abort_i1", 1, H(f)); }
 static int32_t i1(int b) { return fake_rail("i1", fake_i(1, (uint64_t)b, 0)); }
 static int32_t i32(uint32_t x) { return fake_rail("i32", fake_i(32, x, 0)); }
@@ -77,6 +80,28 @@ int main(int argc, char **argv) {
     str(t, "/tmp/cq_rt_tape_must_not_exist");
     fake_call("cqrt_tape_effect_controlled", 3, H(i1(0)), H(t), P("raise"));
     lit("i32", t, fake_i(32, 30, 0));
+  } else if (!strcmp(s, "str_group")) {   /* tape_str_begin/end: one %s up to the first byte reading 0 */
+    int32_t t = alloc();
+    fmt(t, "[%s] %d <%s>\n");
+    sb(t);
+    wr("i8", t, i8('h'));
+    wrc("i8", i1(1), t, i8('i'));
+    lit("i8", t, fake_i(8, '!', 0));
+    wrc("i8", i1(0), t, i8('x'));          /* c = 0: reads 0, the string ends here */
+    wr("i8", t, i8('z'));
+    se(t);
+    wr("i32", t, i32(7));
+    sb(t);
+    se(t);                                  /* an empty group: the empty string */
+  } else if (!strcmp(s, "str_group_effect")) {  /* an effect's string argument from a group */
+    int32_t t = alloc();
+    fake_call("cqrt_tape_effect_controlled", 3, H(i1(1)), H(t), P("remove"));
+    sb(t);
+    const char *path = "/tmp/cq_rt_tape_str_group";
+    for (const char *c = path; *c; c++) wr("i8", t, i8((unsigned char)*c));
+    wr("i8", t, i8(0));
+    wr("i8", t, i8('Q'));
+    se(t);
   } else if (!strcmp(s, "spellings")) {     /* op keys that keep cqrt_, the width or _controlled */
     /* C1 names: an i32 literal equal to a live handle's number must be read as the literal */
     int32_t t = fake_call("cqrt_tape_alloc", 0);
@@ -172,6 +197,34 @@ int main(int argc, char **argv) {
     int32_t t = alloc();
     fmt(t, "%s");
     wr("i64", t, fake_rail("i64", fake_i(64, 0, 0)));
+  } else if (!strcmp(s, "v_str_nested")) {
+    int32_t t = alloc();
+    fmt(t, "%s");
+    sb(t);
+    sb(t);
+  } else if (!strcmp(s, "v_str_end_alone")) {
+    int32_t t = alloc();
+    fmt(t, "%s");
+    se(t);
+  } else if (!strcmp(s, "v_str_open_at_end")) {
+    int32_t t = alloc();
+    fmt(t, "%s");
+    sb(t);
+    wr("i8", t, i8('a'));
+  } else if (!strcmp(s, "v_str_wide_field")) {
+    int32_t t = alloc();
+    fmt(t, "%s");
+    sb(t);
+    wr("i32", t, i32('a'));
+    se(t);
+  } else if (!strcmp(s, "v_str_no_entry")) {
+    int32_t t = alloc();
+    sb(t);
+  } else if (!strcmp(s, "v_str_entry_inside")) {
+    int32_t t = alloc();
+    fmt(t, "%s");
+    sb(t);
+    fmt(t, "x");
   } else {
     fprintf(stderr, "unknown scenario %s\n", s);
     return 2;

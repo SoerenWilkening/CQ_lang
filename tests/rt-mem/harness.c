@@ -337,7 +337,7 @@ static void test_qram_width(const nat_width *nw, int trials) {
       op->c = -1;
       if (r == 9) {
         if (depth >= 3) continue;
-        uint32_t nn = (uint32_t)(rnd() % 11);
+        uint32_t nn = 1 + (uint32_t)(rnd() % 10); /* n = 0 is 2^64 cells: test_unknown_extent */
         op->kind = OP_REALLOC;
         op->n_old = n;
         op->h = q_realloc(nw->tok, a, nn, 0);
@@ -573,6 +573,94 @@ static void test_violations(const char *w) {
   }
 }
 
+/* ------------------------------- unknown extent (n = 0: 2^64 cells) and qram_size (CQ_spec f684858) */
+
+static int32_t q_size(int32_t bus) {
+  cqe_tname t = tn("qram_size", "", "", 0, 0);
+  uint64_t a[] = {(uint32_t)bus};
+  uint32_t b[] = {H32};
+  return call("qram_size", &t, 1, a, b);
+}
+
+static void test_unknown_extent(const char *w) {
+  uint32_t bits = (uint32_t)strtoul(w + 1, NULL, 10);
+  val4 five = v_of(5, 0, bits), seven = v_of(7, 0, bits);
+  int32_t v5 = rail(w, five), v7 = rail(w, seven);
+  int32_t far = rail("i64", v_of(UINT64_C(1) << 40, 0, 64));          /* far past any i32 count */
+  int32_t top = rail("i64", v_of(~UINT64_C(0), 0, 64));               /* 2^64 - 1: the last cell */
+  int32_t over = rail("i100", v_of(0, 1, 100));                       /* 2^64: out of range */
+
+  /* alloc(0): every index below 2^64 is a cell; qram_size reads 0 back */
+  int32_t a = q_alloc(w, 0);
+  CHECK(a >= 0 && q_size(a) == 0, "qram_size of an unknown-extent bus is 0");
+  EXPECT_OK(q_store(w, 0, -1, a, 0, (uint32_t)far, v5), "store at 2^40");
+  EXPECT_OK(q_store(w, 0, -1, a, 0, (uint32_t)top, v7), "store at 2^64 - 1");
+  EXPECT_OK(q_store(w, 0, -1, a, 0, (uint32_t)over, v7), "store at 2^64 (out of range: a no-op)");
+  int32_t l1 = q_load(w, -1, -1, a, 0, (uint32_t)far), l2 = q_load(w, -1, -1, a, 0, (uint32_t)top);
+  int32_t l3 = q_load(w, -1, -1, a, 0, (uint32_t)over), l4 = q_load(w, -1, -1, a, 1, 0xFFFFFFFFu);
+  CHECK(eqw(mock_words(l1), five.w, bits) && eqw(mock_words(l2), seven.w, bits), "cells 2^40 and 2^64 - 1 hold their stores");
+  CHECK(zerow(mock_words(l3), bits) && zerow(mock_words(l4), bits), "2^64 is out of range; cell 2^32 - 1 is an untouched |0>");
+
+  /* shrink to 4 hides 2^40; size reads 4; undo with n_old = 0 exposes it again */
+  int32_t a2 = q_realloc(w, a, 4, 0);
+  CHECK(a2 >= 0 && q_size(a2) == 4, "qram_size after the shrink");
+  int32_t l5 = q_load(w, -1, -1, a2, 0, (uint32_t)far);
+  CHECK(zerow(mock_words(l5), bits), "2^40 is out of range after the shrink to 4");
+  EXPECT_OK(q_load(w, l5, -1, a2, 0, (uint32_t)far), "un-copy");
+  EXPECT_FAIL(q_realloc(w, a2, 4, 1), "realloc_unc with n_old 4 (it was 2^64)");
+  a2 = q_realloc(w, a, 4, 0);
+  EXPECT_OK(q_realloc(w, a2, 0, 1), "realloc_unc back to 2^64 cells");
+  CHECK(q_size(a) == 0, "qram_size after the undo");
+  EXPECT_OK(q_load(w, l4, -1, a, 1, 0xFFFFFFFFu), "un-copy");
+  EXPECT_OK(q_load(w, l3, -1, a, 0, (uint32_t)over), "un-copy");
+  EXPECT_OK(q_load(w, l2, -1, a, 0, (uint32_t)top), "un-copy");
+  EXPECT_OK(q_load(w, l1, -1, a, 0, (uint32_t)far), "un-copy");
+  EXPECT_OK(q_store(w, 1, -1, a, 0, (uint32_t)over, v7), "pop");
+  EXPECT_OK(q_store(w, 1, -1, a, 0, (uint32_t)top, v7), "pop");
+  EXPECT_OK(q_store(w, 1, -1, a, 0, (uint32_t)far, v5), "pop");
+  EXPECT_OK(q_free(a), "free of an unknown-extent object at 0");
+
+  /* grow a finite object to 2^64: the kept prefix is the old cells, the rest fresh */
+  a = q_alloc(w, 3);
+  EXPECT_OK(q_store(w, 0, -1, a, 1, 2, v5), "store cell 2");
+  a2 = q_realloc(w, a, 0, 0);
+  CHECK(q_size(a2) == 0 && q_size(a) < 0, "the grown bus reads 0; the old one is stale");
+  l1 = q_load(w, -1, -1, a2, 1, 2);
+  CHECK(eqw(mock_words(l1), five.w, bits), "cell 2 survives the grow to 2^64");
+  EXPECT_OK(q_store(w, 0, -1, a2, 0, (uint32_t)far, v7), "store at 2^40 through the grown bus");
+  EXPECT_OK(q_store(w, 1, -1, a2, 0, (uint32_t)far, v7), "pop");
+  EXPECT_OK(q_load(w, l1, -1, a2, 1, 2), "un-copy");
+  EXPECT_OK(q_realloc(w, a2, 3, 1), "undo the grow");
+  CHECK(q_size(a) == 3, "qram_size after the undo of the grow");
+  EXPECT_OK(q_store(w, 1, -1, a, 1, 2, v5), "pop");
+  EXPECT_OK(q_free(a), "free");
+
+  /* realloc_unc with a store through a' (of 2^64 cells) unpopped */
+  a = q_alloc(w, 3);
+  a2 = q_realloc(w, a, 0, 0);
+  EXPECT_OK(q_store(w, 0, -1, a2, 0, (uint32_t)far, v7), "store at 2^40");
+  EXPECT_FAIL(q_realloc(w, a2, 3, 1), "realloc_unc with a store through a' unpopped");
+
+  /* a grown cell left dirty is reported by realloc_unc */
+  a = q_alloc(w, 1);
+  a2 = q_realloc(w, a, 0, 0);
+  EXPECT_OK(q_store(w, 0, -1, a2, 0, (uint32_t)far, v7), "store");
+  EXPECT_FAIL(q_realloc(w, a2, 1, 1), "realloc_unc over a dirty grown cell");
+
+  /* QROM of unknown extent (n = 0): host memory at any index; an unmapped address reads 0 */
+  if (bits == 32) {
+    uint32_t tab[8] = {10, 11, 12, 13, 14, 15, 16, 17};
+    int32_t i5 = rail("i32", v_of(5, 0, 32));
+    int32_t o = qrom("i32", -1, tab, 0, 0, 0, i5);
+    CHECK(o >= 0 && mock_words(o)[0] == 15, "qrom n = 0 reads tab[5]");
+    EXPECT_OK(qrom("i32", o, tab, 0, 0, 0, i5), "qrom n = 0 _unc");
+    CHECK(zerow(mock_words(o), 32), "qrom n = 0 _unc returns the rail to 0");
+    int32_t ifar = rail("i64", v_of(UINT64_C(1) << 60, 0, 64));
+    o = qrom("i32", -1, (void *)(uintptr_t)16, 0, 0, 0, ifar);
+    CHECK(o >= 0 && zerow(mock_words(o), 32), "qrom n = 0 at an unmapped address reads 0");
+  }
+}
+
 /* ------------------------------------------- reference call sequences of the corpus */
 
 static void test_corpus_sequences(void) {
@@ -653,6 +741,9 @@ int main(int argc, char **argv) {
   test_violations("i32");
   test_violations("i100");
   test_violations("f80");
+  test_unknown_extent("i8");
+  test_unknown_extent("i32");
+  test_unknown_extent("i100");
   test_corpus_sequences();
   printf("rt-mem: %d checks, %d failed (%d widths, %d violations logged)\n", g_checks, g_bad, NAT_NWIDTHS, mock_fails());
   return g_bad ? 1 : 0;

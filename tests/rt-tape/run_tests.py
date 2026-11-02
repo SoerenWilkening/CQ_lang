@@ -393,6 +393,27 @@ def scenarios(clang, work):
             return "fields %s" % f
         return None
     check("effect", effect)
+    def str_group(trace, shot, viol):
+        if viol:
+            return "violations %s" % viol
+        if text_bytes(shot["stdout"]) != b"[hi!] 7 <>\n":
+            return "stdout %r" % shot["stdout"]
+        f = shot["events"][0]["fields"]
+        if [x.get("k") for x in f] != ["str", "rail", "str"] or f[0]["s"] != "hi!" or f[2]["s"] != "":
+            return "fields %s" % f
+        return None
+    check("str_group", str_group)
+
+    def str_group_effect(trace, shot, viol):
+        if viol:
+            return "violations %s" % viol
+        if os.path.exists("/tmp/cq_rt_tape_str_group"):
+            return "effect executed"
+        f = [e["fields"] for e in shot["events"]]
+        if performed(shot) != [("remove", True)] or f != [[{"k": "str", "s": "/tmp/cq_rt_tape_str_group"}]]:
+            return "performed %s fields %s" % (performed(shot), f)
+        return None
+    check("str_group_effect", str_group_effect)
     # the literal is the number of h7, the first rail fake_core hands out (100): read as a literal, not a rail
     check("spellings", ok_shot([("%d %d %d %s\n", True)], b"7 8 100 s\n", False))
     check("not_mine", ok_shot([], b""))
@@ -422,6 +443,12 @@ def scenarios(clang, work):
     check("v_ctl_arity", violation("2 arguments, expected 3"))
     check("v_lit_ctl", violation("no such form"))
     check("v_quantum_string", violation("%s on a quantum field"))
+    check("v_str_nested", violation("already has an open tape_str_begin group"))
+    check("v_str_end_alone", violation("has no open tape_str_begin group"))
+    check("v_str_open_at_end", violation("still open at the end of the shot"))
+    check("v_str_wide_field", violation("a i32 field inside a tape_str_begin group"))
+    check("v_str_no_entry", violation("has no open entry"))
+    check("v_str_entry_inside", violation("new entry on tape .* inside an open tape_str_begin group"))
     return checks
 
 

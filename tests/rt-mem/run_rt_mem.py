@@ -24,15 +24,21 @@ MUTANTS = [
     ("index_high_words_ignored", "if (!big && idx < n) read_element", "if (idx < n) read_element"),
     ("qrom_unc_rereads_host", "memcpy(ow, s->val, nw * sizeof *ow);",
      "read_element(ow, &d, table + (uintptr_t)(idx * stride));"),
-    ("grow_reexposes_hidden", "v->map[i] = first + (i - keep);", "v->map[i] = i < phys0 ? i : first + (i - keep);"),
+    ("grow_reexposes_hidden", "while (d > 0 && qsz_has(o->views[d].keep, i, 0)) d--;",
+     "while (d > 0 && qsz_has(o->views[0].n, i, 0)) d--;"),
     ("store_no_swap", "memset(cp, 0, nw * sizeof *cp);", ";"),
-    ("load_ignores_control", "if (c && !ix->big && ix->lo < view->n)", "if (!ix->big && ix->lo < view->n)"),
+    ("load_ignores_control", "if (c && qsz_has(view->n, ix->lo, ix->big)) {", "if (qsz_has(view->n, ix->lo, ix->big)) {"),
     ("hl_literal_signed", "ix->j = raw_u64(arg) & 0xFFFFFFFFu;", "ix->j = (uint64_t)(int64_t)(int32_t)raw_u64(arg);"),
     ("f80_alloc_10", "case 80: d->bits = 80; d->alloc = 16;", "case 80: d->bits = 80; d->alloc = 10;"),
     ("store_ignores_control", "s->active = c && in_range;", "s->active = in_range;"),
-    ("pop_uses_current_view", "s->p = view->map[ix.lo];", "s->p = ix.lo;"),
+    ("pop_uses_current_view", "s->p = cell_key(o, o->nviews - 1, ix.lo);", "s->p = (qkey){o->views[o->nviews - 1].gen, ix.lo};"),
     ("realloc_unc_keeps_size", "o->nviews--;", ";"),
     ("free_skips_slot_check", "if (g_slots[i].live && g_slots[i].obj == oi) {", "if (0) {"),
+    # CQ_spec f684858: n = 0 is 2^64 cells, qram_size, unknown-extent QROM
+    ("n0_is_empty", "return abi_n ? (qsz){abi_n, 0} : (qsz){0, 1};", "return (qsz){abi_n, 0};"),
+    ("size_reads_old_view", "uint32_t n = qsz_abi(o->views[o->nviews - 1].n);", "uint32_t n = qsz_abi(o->views[0].n);"),
+    ("qrom_n0_reads_nothing", "else if (!big && n == 0) read_element_unknown", "else if (0) read_element_unknown"),
+    ("realloc_unc_n0_unchecked", "if (!qsz_eq(prev->n, n))", "if (!prev->n.inf && prev->n.n != n.n)"),
 ]
 
 
