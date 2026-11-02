@@ -20,7 +20,8 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
 
-namespace llvm { class Loop; class ScalarEvolution; }
+namespace llvm { class Loop; class ScalarEvolution; class Value; }
+namespace cq { class LoweringContext; }
 
 namespace cq::loops::exits {
 
@@ -55,5 +56,14 @@ Unit unitOf(const llvm::Loop &L);
 // when every exit leaves from the header's test region).
 std::optional<uint64_t> cutoffBound(const llvm::Loop &L, llvm::ScalarEvolution &SE, const TaintInfo &T,
                                     const Specialization &S);
+
+// CR rule 14 (`nested K-loops ... inner chain seeded by the outer trip predicate`): a quantum-exit loop L
+// nested in a classically bounded loop's trip (loops-classical), lowered as loops-cutoff lowers a nested
+// K-loop: its K trips unrolled into the current output block under `seed` (an i1 rail: the enclosing trip's
+// predicate & L's header predicate within the trip), its a_K kept per enclosing trip when B > K or no bound
+// is known, every other rail a record of the current Uncompute scope. Binds every phi of its continuation
+// that has an incoming from the unit (cq::LoweringContext::addJoinArm for an incoming not lowered yet) and
+// rebinds its values read after it; the builder stays in the block it was in.
+void lowerNestedCutoff(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Value *seed);
 
 } // namespace cq::loops::exits

@@ -214,6 +214,15 @@ void LoweringContext::addJoinArm(const PHINode *P, const Pred &edge, const Value
   impl->sh->joinArms[P].push_back({edge, v});
 }
 
+std::vector<std::pair<Pred, const Value *>> LoweringContext::takeJoinArms(const PHINode *P) {
+  std::vector<std::pair<Pred, const Value *>> r;
+  if (auto it = impl->sh->joinArms.find(P); it != impl->sh->joinArms.end()) {
+    r = std::move(it->second);
+    impl->sh->joinArms.erase(it);
+  }
+  return r;
+}
+
 bool LoweringContext::bound(const Value *orig) const {
   if (isa<Constant>(orig))
     return true;

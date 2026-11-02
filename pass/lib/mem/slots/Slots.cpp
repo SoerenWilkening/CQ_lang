@@ -87,6 +87,7 @@
 #include "cq/Calls.h"
 #include "cq/Loops.h"
 #include "../../fatptr/FatPtrInternal.h"
+#include "../../spine/SpineInternal.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/PostDominators.h"
@@ -119,6 +120,26 @@
 using namespace llvm;
 
 namespace cq::mem {
+
+// Rules 9, 20 (cq-k471): a store under a quantum control writes select(control, new, old) into a fresh rail.
+// Outside a rule-14 trip the control is the block's quantum predicate p (rule 9's select chain on p); inside a
+// trip (lowerInstruction's tripFlag: case 2 and case 3 trips) it is currentFlag(), the trip rail conjoined
+// with p, which p alone does not see (p is top in a trip's straight-line code).
+Value *storeUnder(LoweringContext &ctx, Operand nv, Operand old, RailType w) {
+  if (!spine::shared(ctx).tripFlag) {
+    const Pred &p = ctx.currentPredicate();
+    return selectChain(ctx, {{p, nv}, {!p, old}}, w);
+  }
+  Value *f = ctx.currentFlag();
+  if (!f)
+    internalError("mem-slots: a store under a trip with no control rail");
+  abi::TemplateSpec spec;
+  spec.op = "select";
+  spec.w = w;
+  std::string shape = std::string(nv.handle ? "h" : "l") + (old.handle ? "h" : "l");
+  spec.shape = shape == "hh" ? "" : shape;
+  return ctx.emitTemplate(spec, {Operand{f, true}, nv, old});
+}
 
 detail::CellsWrittenFn &detail::cellsWrittenOverride() {
   static CellsWrittenFn f;
@@ -3724,8 +3745,7 @@ void lowerViewStore(LoweringContext &ctx, FnState &st, StoreInst &stI, const Sit
   bool fresh = false;
   if (ctx.currentFlag() && src) {
     Value *old = readView(ctx, st, s, stI, ty);
-    const Pred &p = ctx.currentPredicate();
-    val = Operand{selectChain(ctx, {{p, val}, {!p, Operand{old, true}}}, railTypeOf(ty)), true};
+    val = Operand{storeUnder(ctx, val, Operand{old, true}, railTypeOf(ty)), true};
     fresh = true;   // a fresh rail: no other holder
   }
   ViewVal V;
@@ -4015,8 +4035,7 @@ void writeCloneCell(LoweringContext &ctx, FnState &st, FnState::CloneCell &c, St
       internalError("mem-slots: a clone cell's store under a quantum predicate before its value is known (cloneCellOf "
                     "loads the caller's content for it)",
                     &stI);
-    const Pred &p = ctx.currentPredicate();
-    nv = Operand{selectChain(ctx, {{p, val}, {!p, c.cur}}, c.w), true};
+    nv = Operand{storeUnder(ctx, val, c.cur, c.w), true};
   }
   RailId fid = ctx.unc().idOf(c.f);
   abi::CoreSpec cp{abi::Core::Copy, c.w};
@@ -5680,8 +5699,7 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
             part = B.CreateTrunc(part, Type::getInt1Ty(ctx.M.getContext()));   // a _Bool cell holds an i1 rail
           if (flag) {
             Operand old = readCell(ctx, st, c, stI, info.cellTy);
-            const Pred &p = ctx.currentPredicate();
-            Value *sel = selectChain(ctx, {{p, Operand{part, false}}, {!p, old}}, w);
+            Value *sel = storeUnder(ctx, Operand{part, false}, old, w);
             finishStore(ctx, st, c, stI, info.cellTy, Operand{sel, true}, StoreWhat::Computed);
           } else {
             CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {part});
@@ -5798,8 +5816,7 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
                         "is not built (a select merge would copy the rotated rail, cq-m3mu)",
                     &stI);
     }
-    const Pred &p = ctx.currentPredicate();
-    Value *sel = selectChain(ctx, {{p, val}, {!p, old}}, w);
+    Value *sel = storeUnder(ctx, val, old, w);
     val = Operand{sel, true};
     what = What::Computed;
   } else if (!val.handle) {
@@ -6175,8 +6192,7 @@ void lowerSlotAtomic(LoweringContext &ctx, Instruction &I) {
   }
   StoreWhat what = StoreWhat::Computed;
   if (ctx.currentFlag()) {
-    const Pred &p = ctx.currentPredicate();
-    nv = Operand{selectChain(ctx, {{p, nv}, {!p, old}}, w), true};
+    nv = Operand{storeUnder(ctx, nv, old, w), true};
   } else if (exchange && !nv.handle) {
     CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {nv.v});
     ctx.unc().recordSeed(a);

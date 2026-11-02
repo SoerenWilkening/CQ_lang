@@ -1728,6 +1728,20 @@ void lowerCutoff(LoweringContext &ctx, Loop &L, unsigned K, std::optional<uint64
 
 namespace exits {
 
+void lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed) {
+  Function &F = *L.getHeader()->getParent();
+  Analyses A(F);
+  Loop *mL = A.LI.getLoopFor(L.getHeader());
+  if (!mL || mL->getHeader() != L.getHeader())
+    internalError("loops-cutoff: the loop is not a natural loop of the function's LoopInfo", L.getHeader());
+  if (!seed)
+    internalError("loops-cutoff: a nested K-loop with no seed", L.getHeader());
+  unsigned K = ctx.K(mL);
+  std::optional<uint64_t> B = cutoffBound(*mL, A.SE, ctx.T, ctx.S);
+  unsigned c = B ? unsigned(std::min<uint64_t>(K, *B)) : K;
+  Cutoff(ctx, A).lowerLoop(*mL, seed, c, !B || *B > K, false);
+}
+
 bool Unit::contains(const Loop &L, const BasicBlock *b) const {
   return L.contains(b) || is_contained(arm, b) || is_contained(abort, b);
 }

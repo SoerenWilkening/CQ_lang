@@ -50,6 +50,8 @@ public:
   // which a loop unit binding P could not read (lowered after the loop): the walker selects v in for P
   // where `edge` holds when it lowers P's block, over the unit's binding elsewhere.
   void addJoinArm(const llvm::PHINode *P, const Pred &edge, const llvm::Value *v);
+  // cq-l56v: removes and returns P's join arms (a loop module walking a trip joins a nested unit's phis).
+  std::vector<std::pair<Pred, const llvm::Value *>> takeJoinArms(const llvm::PHINode *P);
   llvm::BasicBlock *block(const llvm::BasicBlock *orig);
   llvm::Value *emitTemplate(const abi::TemplateSpec &, llvm::ArrayRef<Operand>, const llvm::Value *orig = nullptr);
   llvm::CallInst *emitCore(const abi::CoreSpec &, llvm::ArrayRef<llvm::Value *>);
