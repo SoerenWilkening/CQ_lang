@@ -1778,5 +1778,61 @@ class TripMode(unittest.TestCase):
                          "trip 0 means the guard branch in %46 goes to %62, skipping the loop")
 
 
+class SearchMemory(unittest.TestCase):
+    """cq-hfj9: the probe's records stay packed per observation (SiteRecs) and read back as the
+    tuples they stand for; the search's grouped elite finds a target and keeps every observation's
+    validity and per-site support once."""
+
+    def test_parse_reads_back_records(self):
+        w = lambda *v: " ".join("%016x" % x for x in v)    # noqa: E731 - the probe's %016llx words
+        text = "\n".join([
+            "S 0", "p 7 " + w(1, 0, 2, 0, 3, 0, 4, 0), "p 7 " + w((1 << 64) - 1, 1, 0, 0, 0, 0, 0, 0),
+            "p 9 " + w(0, 0, 0, 0, 0, 0, 0, 0),
+            "m 3 -8 16 4", "m 3 0 16 4", "t 2 5", "E exit 0 6",
+            "S 1", "E exit 0 0", ""])
+        obs = [S.Obs(), S.Obs()]
+        S.ProbeBuild._parse(text, obs)
+        o = obs[0]
+        self.assertEqual(o.p.get(7), [(1, 2, 3, 4), ((1 << 64) | ((1 << 64) - 1), 0, 0, 0)])
+        self.assertEqual(sorted(o.p.items()), [(7, o.p.get(7)), (9, [(0, 0, 0, 0)])])
+        self.assertEqual(sorted(o.p), [7, 9])
+        self.assertIn(9, o.p)
+        self.assertNotIn(8, o.p)
+        self.assertEqual(o.p.get(8, []), [])
+        self.assertEqual(o.m.get(3), [(-8, 16), (0, 16)])
+        self.assertEqual(o.oob, {3})
+        self.assertEqual((o.t, o.end, o.hdrs), ({2: [5]}, "exit", 6))
+        self.assertFalse(obs[1].p)
+        self.assertEqual(len(obs[1].m), 0)
+
+    def test_grouped_search_finds_the_target(self):
+        from types import SimpleNamespace as NS
+        import random
+
+        class FakePB:
+            runs = 0
+
+            def run(self, samples):
+                out = []
+                for smp in samples:
+                    v = int(smp["args"][0], 16)
+                    o = S.Obs(ran=True, end="exit")
+                    o.p = {1: [(v, 0, 0, 0)]}
+                    out.append(o)
+                return out
+
+        ct = D.parse_ctype("int")
+        g = NS(cts=[[ct]], quantum_slots=lambda c: [0], classical_slots=lambda c: [], cell_slots=lambda c: [],
+               spec=NS(calls=[{"args": [{"quantum": True}]}]),
+               random_quantum=lambda rng, ct: rng.randrange(1 << 32))
+        se = S.Searcher(g, FakePB(), {}, random.Random(1))
+        pool = [(0, [S.hexw(ct, 1000)]), (0, [S.hexw(ct, 5000)])]
+        dist = lambda o: min((abs(r[0] - 990) for r in S._records(o, NS(kind="int", id=1))), default=1e308)  # noqa: E731
+        found = se.search(pool, dist, budget=20000, support=("p", 1, 1e308))
+        self.assertIsNotNone(found)
+        self.assertEqual(int(found[1][0], 16), 990)
+        self.assertEqual(len(se.valid_keys), len(se.cache))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

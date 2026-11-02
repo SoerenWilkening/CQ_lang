@@ -503,7 +503,7 @@ static void cqd_out(const char *fmt, ...) {
 void __cqd_p(int site, uint64_t a0, uint64_t a1, uint64_t b0, uint64_t b1, uint64_t c0, uint64_t c1,
              uint64_t r0, uint64_t r1) {
     if (S->pcount[site & 0xffff] >= CAP) return; S->pcount[site & 0xffff]++;
-    cqd_out("p %d %llx %llx %llx %llx %llx %llx %llx %llx\n", site, (unsigned long long)a0, (unsigned long long)a1,
+    cqd_out("p %d %016llx %016llx %016llx %016llx %016llx %016llx %016llx %016llx\n", site, (unsigned long long)a0, (unsigned long long)a1,
             (unsigned long long)b0, (unsigned long long)b1, (unsigned long long)c0, (unsigned long long)c1,
             (unsigned long long)r0, (unsigned long long)r1);
 }
@@ -2175,38 +2175,123 @@ class ProbeBuild:
 
     @staticmethod
     def _parse(text: str, obs: List["Obs"]) -> None:
+        # cq-hfj9: a "p" record stays the text of its eight hex words until a reader asks for its site
+        # (SiteRecs): a search caches every observation, and as tuples of ints musl tgamma's held 2 GB
         cur = None
+        ps: Dict[int, List[str]] = {}
+        ms: Dict[int, List[str]] = {}
+
+        def close():
+            if cur is not None:
+                cur.p = SiteRecs(ps, False)
+                cur.m = SiteRecs(ms, True)
         for ln in text.splitlines():
-            w = ln.split()
+            w = ln.split(None, 2)
             if not w:
                 continue
-            if w[0] == "S":
+            k = w[0]
+            if k == "S":
+                close()
+                ps, ms = {}, {}
                 cur = obs[int(w[1])]
                 cur.ran = True
             elif cur is None:
                 continue
-            elif w[0] == "p":
-                a0, a1, b0, b1, c0, c1, r0, r1 = [int(x, 16) for x in w[2:]]
-                rec = (a0 | a1 << 64, b0 | b1 << 64, c0 | c1 << 64, r0 | r1 << 64)
-                lst = cur.p.get(int(w[1]))
+            elif k == "p":
+                b = bytes.fromhex(w[2])         # eight 64-bit words, 16 hex digits each
+                if len(b) != 64:
+                    raise ProbeError(f"probe record with {len(b)} bytes, not 64: {ln!r}")
+                lst = ps.get(int(w[1]))
                 if lst is None:
-                    cur.p[int(w[1])] = [rec]
+                    ps[int(w[1])] = [b]
                 else:
-                    lst.append(rec)
-            elif w[0] == "m":
+                    lst.append(b)
+            elif k == "m":
+                w = ln.split()
                 if w[2] != "?":
                     off, size, nb = int(w[2]), int(w[3]), int(w[4])
                     if off < 0 or off + nb > size:
                         cur.oob.add(int(w[1]))
-                    cur.m.setdefault(int(w[1]), []).append((off, size))
-            elif w[0] == "mi":
+                    ms.setdefault(int(w[1]), []).append(f"{off} {size}")
+            elif k == "mi":
                 cur.oob.add(-1)
-            elif w[0] == "t":
+            elif k == "t":
+                w = ln.split()
                 cur.t.setdefault(int(w[1]), []).append(int(w[2]))
-            elif w[0] == "E":
+            elif k == "E":
+                w = ln.split()
                 cur.end = w[1]
                 cur.code = int(w[2])
                 cur.hdrs = int(w[3])
+        close()
+
+
+class SiteRecs:
+    """An observation's records per site (Obs.p, Obs.m), read like the dict of lists of tuples it
+    stands for (get, [], items, values, keys, in, iteration over the site ids, len): a site's records
+    come back as a fresh list of tuples, a "p" record (a, b, c, r) of 128-bit values, an "m" record
+    (offset, size). Kept packed, one buffer per observation (cq-hfj9): a search caches every
+    observation it makes, and as tuples of ints musl tgamma's held 2 GB (five objects per record)."""
+    __slots__ = ("_ids", "_start", "_buf", "_mem")
+    _P = struct.Struct(">8Q")     # a "p" record: a0 a1 b0 b1 c0 c1 r0 r1, the low word first per value
+
+    def __init__(self, d: Dict[int, list], mem: bool):
+        import array
+        ids, start, n = array.array("q"), array.array("q"), 0
+        for sid, recs in d.items():
+            ids.append(sid)
+            start.append(n)
+            n += len(recs)
+        start.append(n)
+        self._ids, self._start, self._mem = ids, start, mem
+        # p: the 64-byte records back to back; m: "offset size" lines
+        self._buf = "\n".join(r for recs in d.values() for r in recs) if mem else \
+            b"".join(r for recs in d.values() for r in recs)
+
+    def _at(self, k: int) -> list:
+        i, j = self._start[k], self._start[k + 1]
+        if self._mem:
+            lines = self._buf.split("\n")[i:j]
+            return [(int(a), int(b)) for a, b in (ln.split() for ln in lines)]
+        return [(r[0] | r[1] << 64, r[2] | r[3] << 64, r[4] | r[5] << 64, r[6] | r[7] << 64)
+                for r in self._P.iter_unpack(self._buf[64 * i:64 * j])]
+
+    def _index(self, sid) -> int:
+        try:
+            return self._ids.index(sid)
+        except (ValueError, TypeError, OverflowError):
+            return -1
+
+    def get(self, sid, default=None):
+        k = self._index(sid)
+        return default if k < 0 else self._at(k)
+
+    def __getitem__(self, sid):
+        k = self._index(sid)
+        if k < 0:
+            raise KeyError(sid)
+        return self._at(k)
+
+    def __contains__(self, sid) -> bool:
+        return self._index(sid) >= 0
+
+    def __iter__(self):
+        return iter(self._ids.tolist())
+
+    def keys(self):
+        return self._ids.tolist()
+
+    def items(self):
+        return [(sid, self._at(k)) for k, sid in enumerate(self._ids)]
+
+    def values(self):
+        return [self._at(k) for k in range(len(self._ids))]
+
+    def __len__(self) -> int:
+        return len(self._ids)
+
+    def __bool__(self) -> bool:
+        return len(self._ids) > 0
 
 
 def _stub_module_header(mod: D.Module) -> str:
@@ -2452,10 +2537,12 @@ def _ub(o: "Obs", rows_by_site: Dict[int, List[Row]]) -> bool:
     ub = _ub_rows(rows_by_site)
     if not ub:
         return False
-    for sid, recs in o.p.items():
-        for row in ub.get(sid, ()):
-            if any(row.hit(r) for r in recs):
-                return True
+    for sid, rows in ub.items():
+        recs = o.p.get(sid)
+        if recs:
+            for row in rows:
+                if any(row.hit(r) for r in recs):
+                    return True
     return False
 
 
