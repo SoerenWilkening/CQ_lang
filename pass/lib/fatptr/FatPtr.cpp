@@ -2429,6 +2429,8 @@ std::pair<Value *, Value *> decodeRange(LoweringContext &ctx, Value *addrPtr, Ar
 // over the roots of the loaded pointer, deriveHostLoaded) and the tags merged alike; its idx is 0.
 void lowerHostLoad(LoweringContext &ctx, LoadInst &ld, const Fat &f) {
   Type *ty = ld.getType();
+  if (ty->isPointerTy() && isCodeAddress(&ld))
+    ty = Type::getInt64Ty(ctx.M.getContext());   // rule 13: a code address is an i64 integer
   bool ptr = ty->isPointerTy();
   SmallVector<const Value *, 4> loadedRoots;
   if (ptr) {
@@ -2508,6 +2510,9 @@ void lowerHostLoad(LoweringContext &ctx, LoadInst &ld, const Fat &f) {
 void lowerLoad(LoweringContext &ctx, LoadInst &ld) {
   Fat f = derive(ctx, ld.getPointerOperand(), /*emit=*/true);
   Type *ty = ld.getType();
+  // CR rule 13 (b137e75): a code address is the i64 integer in its cell, never a pointer's (tag, idx).
+  if (ty->isPointerTy() && isCodeAddress(&ld))
+    ty = Type::getInt64Ty(ctx.M.getContext());
   bool ptr = ty->isPointerTy();
   if (f.trips) {
     // R1 (91, rules 20, 21): one slot load per trip object (its captured handle, no gate), merged by select

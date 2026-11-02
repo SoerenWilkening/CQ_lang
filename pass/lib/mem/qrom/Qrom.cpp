@@ -794,10 +794,10 @@ SmallVector<Operand, 4> loadLeaves(LoweringContext &ctx, Type *ty, const Table &
 bool isComposite(Type *t) { return t->isStructTy() || t->isArrayTy() || t->isVectorTy(); }
 
 // Rule 20 over the general window (see generalTable).
-void lowerGeneral(LoweringContext &ctx, LoadInst &ld, const QromShape &q) {
+void lowerGeneral(LoweringContext &ctx, LoadInst &ld, const QromShape &q, Type *ty) {
   Table t = generalTable(ctx, q, ld);
-  SmallVector<Operand, 4> leaves = loadLeaves(ctx, ld.getType(), t, q.u);
-  if (isComposite(ld.getType()))
+  SmallVector<Operand, 4> leaves = loadLeaves(ctx, ty, t, q.u);
+  if (isComposite(ty))
     ctx.bindFields(&ld, leaves);
   else
     ctx.bind(&ld, leaves.front().v);
@@ -810,6 +810,10 @@ void lowerQromLoad(LoweringContext &ctx, LoadInst &ld) {
   LLVMContext &C = ctx.M.getContext();
   Type *i64 = Type::getInt64Ty(C);
   Type *ty = ld.getType();
+  // CR rule 13 (b137e75): a code address read at a quantum index is a QROM load of the table's i64 cells
+  // (ptrtoint(blockaddress ...) each), its result the computed goto's scrutinee.
+  if (ty->isPointerTy() && isCodeAddress(&ld))
+    ty = i64;
   bool fnTable = ty->isPointerTy();
   if (isa<ScalableVectorType>(ty))
     internalError("mem-qrom: a scalable vector on x86-64 (rule 25)", &ld);
@@ -852,7 +856,7 @@ void lowerQromLoad(LoweringContext &ctx, LoadInst &ld) {
   }
 
   if (!fnTable && (q.general || isComposite(ty)))
-    return lowerGeneral(ctx, ld, q);
+    return lowerGeneral(ctx, ld, q, ty);
 
   int64_t stride = q.u, size = q.size, off = a.off;
 
@@ -892,7 +896,7 @@ void lowerQromLoad(LoweringContext &ctx, LoadInst &ld) {
   } else if (auto *ai = dyn_cast<AllocaInst>(a.root)) {
     int64_t E = int64_t(DL.getTypeAllocSize(ai->getAllocatedType()).getFixedValue());
     if (E % stride != 0 || off + size > stride)
-      return lowerGeneral(ctx, ld, q);   // an element that is not a whole number of indexed cells
+      return lowerGeneral(ctx, ld, q, ty);   // an element that is not a whole number of indexed cells
     Operand c = ctx.operand(ai->getArraySize());
     if (c.handle)
       internalError("mem-qrom: a VLA element count bound to a rail", ai);
@@ -902,14 +906,14 @@ void lowerQromLoad(LoweringContext &ctx, LoadInst &ld) {
   } else if (q.terms.size() == 1) {
     n = lengthFromRange(ctx, q.terms[0].idx, ld);
     if (!n)
-      return lowerGeneral(ctx, ld, q);   // 2^64 or more cells
+      return lowerGeneral(ctx, ld, q, ty);   // 2^64 or more cells
   } else {
     // Several non-negative terms: sum_k coef_k * umax_k + 1 cells.
     APInt cnt(256, 1);
     for (const QTerm &t : q.terms)
       cnt += indexUMax(t.idx, DL).zext(256) * APInt(256, uint64_t(t.coef));
     if (cnt.getActiveBits() > 64)
-      return lowerGeneral(ctx, ld, q);   // 2^64 or more cells
+      return lowerGeneral(ctx, ld, q, ty);   // 2^64 or more cells
     n = ConstantInt::get(i64, cnt.getZExtValue());
   }
 

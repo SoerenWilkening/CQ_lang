@@ -428,11 +428,14 @@ Value *liveNegationAt(Value *atom, BasicBlock *bb, BasicBlock::iterator pt) {
 
 // ---- Rule 9 at a58c3a4: merges chosen classically (owner ruling on cq-mtt) ----
 
+// CR rule 13 (b137e75): a code address merges as the i64 integer it is.
+static RailType mergeRail(Type *t) { return t->isPointerTy() ? RailType{Kind::Int, 64} : railTypeOf(t); }
+
 Value *classicalSelect(SelectInst &sel, IRBuilder<> &B, MergeSink &sink) {
   Operand c = sink.operand(sel.getCondition());
   if (c.handle)
     internalError("pred: a classically chosen select whose condition is a rail", &sel);
-  RailType w = railTypeOf(sel.getType());
+  RailType w = mergeRail(sel.getType());
   if (auto *k = dyn_cast<ConstantInt>(c.v)) {
     Operand a = sink.operand(k->isOne() ? sel.getTrueValue() : sel.getFalseValue());
     return a.handle ? a.v : sink.seed(a.v, w);
@@ -451,7 +454,8 @@ Value *classicalSelect(SelectInst &sel, IRBuilder<> &B, MergeSink &sink) {
 
 Value *classicalPhi(PHINode &phi, BasicBlock *join, IRBuilder<> &B,
                     const std::function<BasicBlock *(const BasicBlock *)> &outOf, MergeSink &sink) {
-  return classicalPhiOf(phi, join, B, outOf, sink, railTypeOf(phi.getType()), phi.getType(),
+  RailType w = mergeRail(phi.getType());
+  return classicalPhiOf(phi, join, B, outOf, sink, w, irTypeOf(phi.getContext(), w),
                         [&](const Value *v) { return sink.operand(v); }, /*seedClassical=*/true)
       .v;
 }
@@ -749,12 +753,25 @@ public:
   }
 };
 
+// Rule 13 (b137e75): a code address is an integer; a classical one is read as its i64 value.
+Operand addressAsInt(LoweringContext &ctx, Operand op) {
+  if (op.handle || !op.v->getType()->isPointerTy())
+    return op;
+  Type *i64 = Type::getInt64Ty(ctx.M.getContext());
+  if (auto *c = dyn_cast<Constant>(op.v))
+    return Operand{ConstantExpr::getPtrToInt(c, i64), false};
+  return Operand{ctx.B().CreatePtrToInt(op.v, i64), false};
+}
+
 class CtxMergeSink final : public MergeSink {
   LoweringContext &ctx;
 
 public:
   explicit CtxMergeSink(LoweringContext &ctx) : ctx(ctx) {}
-  Operand operand(const Value *orig) override { return ctx.operand(orig); }
+  Operand operand(const Value *orig) override {
+    Operand op = ctx.operand(orig);
+    return orig->getType()->isPointerTy() && isCodeAddress(orig) ? addressAsInt(ctx, op) : op;
+  }
   Value *seed(Value *classical, RailType w) override {
     CallInst *call = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {classical});
     ctx.unc().recordSeed(call);
@@ -1530,9 +1547,10 @@ Value *lowerMerge(LoweringContext &ctx, PHINode &phi) {
     internalError("pred: lowerMerge before PathPredicates::compute of its function", &phi);
   if (I.loopHeaders.count(bb))
     internalError("pred: lowerMerge on a loop-header phi (a carried value: the loop modules)", &phi);
-  if (!scalarRailType(phi.getType()))
+  bool code = phi.getType()->isPointerTy() && isCodeAddress(&phi);   // rule 13: an i64 integer
+  if (!scalarRailType(phi.getType()) && !code)
     internalError("pred: lowerMerge of a vector, aggregate or pointer phi (every caller routes a composite to "
-                  "lowerMergeFields and a pointer to fatptr, rules 21, 26)",
+                  "lowerMergeFields and a data pointer to fatptr, rules 21, 26)",
                   &phi);
 
   // Rule 9 at a58c3a4: every incoming edge chosen classically makes a classical phi over the handles.
@@ -1572,8 +1590,8 @@ Value *lowerMerge(LoweringContext &ctx, PHINode &phi) {
   std::stable_sort(arms.begin(), arms.end(), [](const Arm &a, const Arm &b) { return a.order < b.order; });
   std::vector<std::pair<Pred, Operand>> chain;
   for (const Arm &a : arms)
-    chain.push_back({makePred(a.node), ctx.operand(a.v)});
-  return selectChainAt(ctx, chain, railTypeOf(phi.getType()), nodeOf(I.blocks.lookup(bb)), &phi);
+    chain.push_back({makePred(a.node), code ? addressAsInt(ctx, ctx.operand(a.v)) : ctx.operand(a.v)});
+  return selectChainAt(ctx, chain, mergeRail(phi.getType()), nodeOf(I.blocks.lookup(bb)), &phi);
 }
 
 namespace {
@@ -1697,18 +1715,19 @@ void lowerMergeFields(LoweringContext &ctx, PHINode &phi, bool rebind) {
 
 Value *lowerSelect(LoweringContext &ctx, SelectInst &sel) {
   Value *c = sel.getCondition();
-  if (c->getType()->isVectorTy() || !scalarRailType(sel.getType()))
-    internalError("pred: lowerSelect of a vector, aggregate or pointer select (the spine routes them to aggr and "
-                  "fatptr)",
+  bool code = sel.getType()->isPointerTy() && isCodeAddress(&sel);   // rule 13: an i64 integer
+  if (c->getType()->isVectorTy() || (!scalarRailType(sel.getType()) && !code))
+    internalError("pred: lowerSelect of a vector, aggregate or data pointer select (the spine routes them to aggr "
+                  "and fatptr)",
                   &sel);
   if (!ctx.T.isQuantum(c, ctx.S)) {
     CtxMergeSink sink(ctx);   // rule 9 at a58c3a4: a classical select over the handles, no gate
     return classicalSelect(sel, ctx.B(), sink);
   }
   Pred p = Pred::atom(c);
-  std::pair<Pred, Operand> arms[] = {{p, ctx.operand(sel.getTrueValue())},
-                                     {!p, ctx.operand(sel.getFalseValue())}};
-  return selectChain(ctx, arms, railTypeOf(sel.getType()));
+  auto read = [&](const Value *v) { return code ? addressAsInt(ctx, ctx.operand(v)) : ctx.operand(v); };
+  std::pair<Pred, Operand> arms[] = {{p, read(sel.getTrueValue())}, {!p, read(sel.getFalseValue())}};
+  return selectChain(ctx, arms, mergeRail(sel.getType()));
 }
 
 // A br on a quantum condition is absorbed: the arms are linearized by the spine's walk and run under

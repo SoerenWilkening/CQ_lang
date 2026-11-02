@@ -103,6 +103,22 @@ public:
 private:
   struct Impl; std::shared_ptr<Impl> impl;
   friend TaintInfo computeTaint(llvm::Module &, const TaintOptions &);
+// CR rule 13 (b137e75): a code address. A pointer every source of which is a blockaddress constant (through
+// select, phi, casts, and loads of cells only code addresses are stored into: a constant table, or an object
+// whose every pointer store stores one) is an integer of pointer width, never a data pointer: rule 21 decodes
+// no provenance for it, a quantum one is an i64 rail, and a cell holding one an i64 cell.
+bool isCodeAddress(const llvm::Value *);
+// The cells of the object `root` (an alloca or a global) hold code addresses only: every pointer stored into
+// it (or its initializer's) is a code address, and at least one is.
+bool codeAddressCells(const llvm::Value *root);
 };
 TaintInfo computeTaint(llvm::Module &, const TaintOptions &);
+// CR rule 13 (b137e75): a code address. A pointer every source of which is a blockaddress constant (through
+// select, phi, casts, and loads of cells only code addresses are stored into: a constant table, or an object
+// whose every pointer store stores one) is an integer of pointer width, never a data pointer: rule 21 decodes
+// no provenance for it, a quantum one is an i64 rail, and a cell holding one an i64 cell.
+bool isCodeAddress(const llvm::Value *);
+// The cells of the object `root` (an alloca or a global) hold code addresses only: every pointer stored into
+// it (or its initializer's) is a code address, and at least one is.
+bool codeAddressCells(const llvm::Value *root);
 }

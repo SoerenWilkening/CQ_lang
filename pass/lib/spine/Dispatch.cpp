@@ -864,7 +864,7 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
       // Rule 21 (cq-xb7r): a quantum pointer select is a fat pointer (tag, idx), whether its tag is
       // quantum (two objects) or classical (one object at a quantum offset); fatptr computes and binds
       // its two fields here, at the select, so their rails are live wherever the pointer is used.
-      if (sel.getType()->isPointerTy()) {
+      if (sel.getType()->isPointerTy() && !isCodeAddress(&sel)) {
         fatptr::lower(ctx, &sel);
         return;
       }

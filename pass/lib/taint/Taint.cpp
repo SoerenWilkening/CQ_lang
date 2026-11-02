@@ -930,7 +930,8 @@ PtrInfo Analyzer::P(const Value *V) {
   if (auto *C = dyn_cast<Constant>(V)) {
     APInt off(64, 0);
     base = V->stripAndAccumulateConstantOffsets(*st.DL, off, /*AllowNonInbounds=*/true);
-    if (isa<ConstantPointerNull>(base) || isa<UndefValue>(base)) {
+    // CR rule 13 (b137e75): a code address is an integer, never a data pointer: no object, no provenance.
+    if (isa<ConstantPointerNull>(base) || isa<UndefValue>(base) || isa<BlockAddress>(base)) {
       p.init = true;
       return p;
     }
@@ -5122,6 +5123,131 @@ void TaintInfo::print(llvm::raw_ostream &os) const {
           os << "cq-taint: qram-alloc object #" << id << half << " in " << specName(k) << "\n";
     }
   }
+}
+
+// ---- CR rule 13: code addresses ----
+namespace {
+// 1: a code address; 0: neutral (null, undef, poison, a cycle back); -1: something else.
+int codeSource(const Value *v, SmallPtrSetImpl<const Value *> &seen);
+
+int combine(int a, int b) { return a < 0 || b < 0 ? -1 : std::max(a, b); }
+
+int constantCells(const Constant *c) {
+  if (isa<BlockAddress>(c->stripPointerCasts()))
+    return 1;
+  if (c->getType()->isPointerTy())
+    return c->isNullValue() || isa<UndefValue>(c) ? 0 : -1;
+  if (isa<ConstantData>(c) && !c->getType()->isAggregateType() && !c->getType()->isVectorTy())
+    return 0;   // a non-pointer leaf (an integer or fp cell) stores no address
+  if (isa<ConstantAggregateZero>(c) || isa<UndefValue>(c))
+    return 0;
+  int r = 0;
+  if (isa<ConstantAggregate>(c) || isa<ConstantDataSequential>(c)) {
+    for (unsigned i = 0, n = c->getNumOperands(); i < n; ++i)
+      r = combine(r, constantCells(cast<Constant>(c->getOperand(i))));
+    return r;
+  }
+  return -1;
+}
+
+int objectCells(const Value *root, SmallPtrSetImpl<const Value *> &seen) {
+  int r = 0;
+  if (auto *gv = dyn_cast<GlobalVariable>(root)) {
+    if (!gv->hasDefinitiveInitializer())
+      return -1;
+    r = constantCells(gv->getInitializer());
+    if (r < 0)
+      return -1;
+    if (gv->isConstant())
+      return r;
+    if (!gv->hasLocalLinkage())
+      return -1;   // another unit may store any pointer
+  } else if (!isa<AllocaInst>(root)) {
+    return -1;
+  }
+  SmallVector<const Value *, 8> work{root};
+  SmallPtrSet<const Value *, 16> vis;
+  while (!work.empty()) {
+    const Value *p = work.pop_back_val();
+    if (!vis.insert(p).second)
+      continue;
+    for (const Use &U : p->uses()) {
+      const User *u = U.getUser();
+      if (isa<GetElementPtrInst>(u) || isa<BitCastInst>(u) || isa<AddrSpaceCastInst>(u) ||
+          (isa<ConstantExpr>(u) && cast<ConstantExpr>(u)->getOpcode() == Instruction::GetElementPtr)) {
+        work.push_back(u);
+        continue;
+      }
+      if (isa<LoadInst>(u))
+        continue;
+      if (auto *st = dyn_cast<StoreInst>(u)) {
+        if (U.getOperandNo() != st->getPointerOperandIndex())
+          return -1;   // the object's address escapes into memory
+        const Value *v = st->getValueOperand();
+        if (v->getType()->isPointerTy())
+          r = combine(r, codeSource(v, seen));
+        else if (auto *c = dyn_cast<Constant>(v))
+          r = combine(r, c->isNullValue() ? 0 : -1);
+        else
+          return -1;   // an integer stored over an address cell
+        if (r < 0)
+          return -1;
+        continue;
+      }
+      if (auto *ms = dyn_cast<MemSetInst>(u); ms && U.getOperandNo() == 0)
+        if (auto *k = dyn_cast<ConstantInt>(ms->getValue()); k && k->isZero())
+          continue;   // zero-initialized cells hold null
+      if (auto *ii = dyn_cast<IntrinsicInst>(u))
+        if (ii->isLifetimeStartOrEnd() || isa<DbgInfoIntrinsic>(ii))
+          continue;
+      return -1;
+    }
+  }
+  return r;
+}
+
+int codeSource(const Value *v, SmallPtrSetImpl<const Value *> &seen) {
+  v = v->stripPointerCasts();
+  if (isa<BlockAddress>(v))
+    return 1;
+  if (!v->getType()->isPointerTy())
+    return -1;
+  if (isa<ConstantPointerNull>(v) || isa<UndefValue>(v))
+    return 0;
+  if (!seen.insert(v).second)
+    return 0;   // a cycle: what the other sources say
+  if (auto *sel = dyn_cast<SelectInst>(v))
+    return combine(codeSource(sel->getTrueValue(), seen), codeSource(sel->getFalseValue(), seen));
+  if (auto *phi = dyn_cast<PHINode>(v)) {
+    int r = 0;
+    for (const Value *in : phi->incoming_values())
+      if ((r = combine(r, codeSource(in, seen))) < 0)
+        return -1;
+    return r;
+  }
+  if (auto *ld = dyn_cast<LoadInst>(v)) {
+    SmallVector<const Value *, 4> roots;
+    getUnderlyingObjects(ld->getPointerOperand(), roots, nullptr, 0);
+    int r = roots.empty() ? -1 : 0;
+    for (const Value *root : roots)
+      if ((r = combine(r, objectCells(root, seen))) < 0)
+        return -1;
+    return r;
+  }
+  return -1;
+}
+} // namespace
+
+bool isCodeAddress(const Value *v) {
+  if (!v || !v->getType()->isPointerTy())
+    return false;
+  SmallPtrSet<const Value *, 16> seen;
+  return codeSource(v, seen) > 0;
+}
+
+bool codeAddressCells(const Value *root) {
+  SmallPtrSet<const Value *, 16> seen;
+  return objectCells(root, seen) > 0;
 }
 
 TaintInfo computeTaint(llvm::Module &M, const TaintOptions &opts) {

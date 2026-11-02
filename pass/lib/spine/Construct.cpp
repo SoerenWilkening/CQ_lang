@@ -556,13 +556,15 @@ void Walker::plan() {
       bool classicalPhi = false;
       for (PHINode &phi : b->phis())
         classicalPhi |= !spine::isQ(ctx, &phi);
-      if (uncond && outPreds.lookup(b) == 1 && !classicalPhi && !pureHeaders.count(b) && !unitOf.count(b))
+      // Rule 13 (b137e75): an address-taken block keeps its identity, an output block of its own.
+      if (uncond && outPreds.lookup(b) == 1 && !classicalPhi && !pureHeaders.count(b) && !unitOf.count(b) &&
+          !b->hasAddressTaken())
         merged.insert(b);
       // A unit's exit continues where the loop module leaves the builder when the unit is its only
       // way in and it comes next; otherwise (a zero-trip guard's skip edge also reaches it, 41, 177)
       // the unit ends in a jump to it (emitBlock).
       if (unitOf.count(prev) && pe != outEdges.end() && !pe->second.empty() && pe->second.front() == b &&
-          outPreds.lookup(b) == 1)
+          outPreds.lookup(b) == 1 && !b->hasAddressTaken())
         merged.insert(b);
     }
     prev = b;
@@ -2003,7 +2005,7 @@ void Walker::emitBlock(BasicBlock *b) {
         blockDefs.push_back(&phi);
         continue;
       }
-      if (phi.getType()->isPointerTy()) {
+      if (phi.getType()->isPointerTy() && !isCodeAddress(&phi)) {
         // Rule 21: a quantum pointer merge is a fat pointer (tag, idx) merged over the edge predicates,
         // fatptr's like the select's (cq-xb7r): it binds the phi's fields here.
         fatptr::lower(ctx, &phi);
@@ -2474,7 +2476,8 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
   // Rule 13 (b137e75): the lowered entry keeps every address-taken block under its identity: the block
   // its walk lowered it into when that block is its own (not the entry, not shared with another
   // address-taken block), else a distinct block of its own that nothing branches to (no indirectbr is
-  // kept: a computed goto compares addresses, so the constant only has to name a distinct block).
+  // kept: a computed goto compares addresses, so the constant only has to name a distinct block; a trap
+  // gives it code of its own, so no two such blocks share an address).
   if (auto pit = pendingEntries.find(&M); pit != pendingEntries.end() && !pit->second.empty() &&
                                           pit->second.back().F == &F) {
     PendingEntry &pe = pit->second.back();
@@ -2489,7 +2492,9 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
       BasicBlock *o = sh.blocks.lookup(&BB);
       if (!o || o->getParent() != sh.out || o->isEntryBlock() || uses.lookup(o) != 1) {
         o = BasicBlock::Create(M.getContext(), "", sh.out);
-        new UnreachableInst(M.getContext(), o);
+        IRBuilder<> TB(o);
+        TB.CreateIntrinsic(Intrinsic::trap, {}, {});
+        TB.CreateUnreachable();
       }
       pe.addressed.push_back({&BB, o});
     }
