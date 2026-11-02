@@ -672,6 +672,9 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
         fatptr::lower(ctx, &sel);
         return;
       }
+      // Rules 25, 26 (cq-oa67): a vector, struct or array select merges lane by lane / field by field.
+      if (sel.getType()->isVectorTy() || sel.getType()->isAggregateType())
+        return aggr::lowerVectorOp(ctx, I);
       if (onlyFactoredConditions(ctx, I))
         return;
       // A classical condition with a quantum arm: pred's lowerSelect emits a classical select over

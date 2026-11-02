@@ -526,6 +526,10 @@ bool cleanable(LoweringContext &ctx, Value *y) {
   // result rails are undone together by its twin (rule 18, 166), never one of them by rule 6.
   if (isa<ExtractValueInst>(ctx.operand(y).v))
     return false;
+  // A handle that is a classical merge of rails in the new IR (a lane or field of a classical select or
+  // phi over handles, cq-oa67) aliases its arms, as the select itself does.
+  if (isa<SelectInst>(ctx.operand(y).v) || isa<PHINode>(ctx.operand(y).v))
+    return false;
   return ctx.operand(y).handle;
 }
 

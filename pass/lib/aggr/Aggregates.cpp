@@ -55,7 +55,7 @@ unsigned leafCount(Type *t, const Value *at) {
   if (auto *vt = dyn_cast<FixedVectorType>(t))
     return vt->getNumElements();
   if (isa<ScalableVectorType>(t))
-    unimplemented("aggr: a scalable vector", at);
+    unimplemented("aggr: awaiting owner ruling: SPEC_ISSUES IR outside the C x86-64 -O1 input language: a scalable vector", at);
   return 1;
 }
 
@@ -196,21 +196,80 @@ Value *materialize(IRBuilder<> &B, Type *t, ArrayRef<Operand> ops, unsigned &k) 
   return agg;
 }
 
+// The scalar leaf types of t, depth first, left to right.
+void leafTypes(Type *t, SmallVectorImpl<Type *> &out) {
+  if (!isComposite(t)) {
+    out.push_back(t);
+    return;
+  }
+  for (unsigned i = 0, n = elementCount(t); i < n; ++i)
+    leafTypes(elementType(t, i), out);
+}
+
+// cq-0umd: the classical fields of a composite whose leaf k has per[k] fields, with each packed leaf
+// rebuilt as one integer of its type: field j at the bit offset of the fields before it (zext, shl, or).
+SmallVector<Operand, 4> repackClassical(IRBuilder<> &B, const DataLayout &DL, Type *t, ArrayRef<Operand> ops,
+                                        ArrayRef<unsigned> per, const Value *at) {
+  SmallVector<Type *, 8> tys;
+  leafTypes(t, tys);
+  if (tys.size() != per.size())
+    internalError("aggr: a packed composite's field counts are not its leaves", at);
+  SmallVector<Operand, 4> out;
+  unsigned k = 0;
+  for (unsigned l = 0; l < tys.size(); ++l) {
+    if (per[l] == 1) {
+      out.push_back(ops[k++]);
+      continue;
+    }
+    auto *lt = dyn_cast<IntegerType>(tys[l]);
+    if (!lt)
+      internalError("aggr: a packed leaf that is not an integer", at);
+    Value *acc = ConstantInt::get(lt, 0);
+    unsigned shift = 0;
+    for (unsigned j = 0; j < per[l]; ++j) {
+      Value *f = ops[k++].v;
+      unsigned bits = unsigned(DL.getTypeSizeInBits(f->getType()).getFixedValue());
+      if (!f->getType()->isIntegerTy())
+        f = B.CreateBitCast(f, B.getIntNTy(bits));
+      if (shift + bits > lt->getBitWidth())
+        internalError("aggr: a packed leaf's fields overflow it", at);
+      Value *z = B.CreateZExt(f, lt);
+      if (shift)
+        z = B.CreateShl(z, shift);
+      acc = B.CreateOr(acc, z);
+      shift += bits;
+    }
+    if (shift != lt->getBitWidth())
+      internalError("aggr: a packed leaf's fields do not tile it", at);
+    out.push_back(Operand{acc, false});
+  }
+  return out;
+}
+
 // A composite with a rail among its leaves is bound field-wise. One with only classical leaves is
 // bound as one classical value of its type: taint is lane-precise, so such a value may be classical
 // and its users copied classically, which read it with operand() (one field).
 void bindResult(LoweringContext &ctx, const Value *orig, ArrayRef<Operand> ops) {
-  if (ops.empty())
-    unimplemented("aggr: a value with no scalar leaves (an empty struct or array)", orig);
   Type *t = orig->getType();
+  if (ops.empty()) {
+    // An empty struct or array has one value and no field: it is classical (rule 26, nothing to carry).
+    ctx.bindFields(orig, {Operand{Constant::getNullValue(t), false}});
+    return;
+  }
   bool anyRail = false;
   for (const Operand &o : ops)
     anyRail |= o.handle;
-  if (!anyRail && isComposite(t) && leafFieldMap().count({&ctx.out(), orig}))
-    unimplemented("aggr: a classical composite with a packed integer leaf bound field-wise (166, cq-0umd)", orig);
   if (!anyRail && isComposite(t)) {
+    // cq-0umd (166): a packed integer leaf bound as several classical fields is rebuilt as one classical
+    // integer from them (low bits first, the fields tile the leaf), so the value is one classical value.
+    SmallVector<Operand, 4> flat(ops.begin(), ops.end());
+    auto it = leafFieldMap().find({&ctx.out(), orig});
+    if (it != leafFieldMap().end()) {
+      flat = repackClassical(ctx.B(), ctx.M.getDataLayout(), t, ops, it->second, orig);
+      leafFieldMap().erase(it);
+    }
     unsigned k = 0;
-    Value *v = materialize(ctx.B(), t, ops, k);
+    Value *v = materialize(ctx.B(), t, flat, k);
     ctx.bindFields(orig, {Operand{v, false}});
     return;
   }
@@ -287,7 +346,7 @@ private:
 RailType laneRail(Type *t, const Value *at) {
   if (!t->isIntegerTy() && !t->isHalfTy() && !t->isBFloatTy() && !t->isFloatTy() && !t->isDoubleTy() &&
       !t->isX86_FP80Ty())
-    unimplemented("aggr: a vector lane of IR type that is not iN/half/bfloat/float/double/x86_fp80", at);
+    unimplemented("aggr: awaiting owner ruling: SPEC_ISSUES IR outside the C x86-64 -O1 input language: a vector lane of IR type that is not iN/half/bfloat/float/double/x86_fp80", at);
   return railTypeOf(t);
 }
 
@@ -360,13 +419,48 @@ Value *classicalLane(LoweringContext &ctx, Instruction &I, ArrayRef<Value *> ops
   return ctx.B().Insert(n);
 }
 
+// Rule 9 on one leaf of a select (a vector lane under its condition lane, or a field of a composite
+// select under the scalar condition). A quantum condition: one select template over the arms
+// (cq_template_select_<W>[_shape], the condition a handle). A classical condition: a classical select
+// over the handles, a classical arm seeded (rule 7) when the other is a rail; no gate.
+Operand selectLeaf(LoweringContext &ctx, Operand c, Operand t, Operand f, RailType w, const Value *at) {
+  if (c.handle) {
+    abi::TemplateSpec spec;
+    spec.op = "select";
+    spec.w = w;
+    std::string shape = std::string(t.handle ? "h" : "l") + (f.handle ? "h" : "l");
+    spec.shape = shape == "hh" ? "" : shape;
+    return Operand{ctx.emitTemplate(spec, {c, t, f}), true};
+  }
+  IRBuilder<> &B = ctx.B();
+  if (auto *k = dyn_cast<ConstantInt>(c.v))
+    return k->isOne() ? t : f;
+  if (!t.handle && !f.handle)
+    return Operand{B.CreateSelect(c.v, t.v, f.v), false};
+  if (t.v == f.v)
+    return t;
+  auto seed = [&](Operand o) -> Value * {
+    if (o.handle)
+      return o.v;
+    if (o.v->getType() != irTypeOf(ctx.M.getContext(), w))
+      internalError("aggr: a select arm whose type is not its leaf's rail type", at);
+    CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {o.v});
+    ctx.unc().recordSeed(a);
+    return a;
+  };
+  Value *ht = seed(t), *hf = seed(f);
+  auto *m = cast<Instruction>(B.CreateSelect(c.v, ht, hf));
+  ctx.unc().recordMerge(m);
+  return Operand{m, true};
+}
+
 // A lane with at least one quantum operand: the rule 4 template of the scalar opcode.
 Operand quantumLane(LoweringContext &ctx, Instruction &I, SmallVector<Operand, 3> ops) {
   abi::TemplateSpec spec;
   if (auto *bo = dyn_cast<BinaryOperator>(&I)) {
     const char *op = binName(bo->getOpcode());
     if (!op)
-      unimplemented("aggr: a vector binary opcode with no template", &I);
+      internalError("aggr: a binary opcode outside LLVM's set", &I);
     spec.op = op;
     spec.w = laneRail(I.getType()->getScalarType(), &I);
     Operand x = ops[0], y = ops[1];
@@ -389,7 +483,7 @@ Operand quantumLane(LoweringContext &ctx, Instruction &I, SmallVector<Operand, 3
   }
   if (auto *un = dyn_cast<UnaryOperator>(&I)) {
     if (un->getOpcode() != Instruction::FNeg)
-      unimplemented("aggr: a vector unary opcode with no template", &I);
+      internalError("aggr: a unary opcode outside LLVM's set (fneg is the only one)", &I);
     spec.op = "fneg";
     spec.w = laneRail(I.getType()->getScalarType(), &I);
     return Operand{ctx.emitTemplate(spec, {ops[0]}), true};
@@ -412,7 +506,7 @@ Operand quantumLane(LoweringContext &ctx, Instruction &I, SmallVector<Operand, 3
   if (auto *ci = dyn_cast<CastInst>(&I)) {
     const char *op = castName(ci->getOpcode());
     if (!op)
-      unimplemented("aggr: a vector pointer cast with a quantum lane", &I);
+      unimplemented("aggr: awaiting owner ruling: SPEC_ISSUES IR outside the C x86-64 -O1 input language: a cast of a vector of pointers with a quantum lane", &I);
     Type *from = ci->getSrcTy()->getScalarType(), *to = ci->getDestTy()->getScalarType();
     if (from == to)
       return ops[0];   // a no-op bitcast lane: no gate (rule 3)
@@ -423,7 +517,9 @@ Operand quantumLane(LoweringContext &ctx, Instruction &I, SmallVector<Operand, 3
   }
   if (isa<FreezeInst>(I))
     return ops[0];   // rule 3: a rail's basis value is never poison
-  unimplemented("aggr: a vector select with a quantum lane", &I);
+  if (isa<SelectInst>(I))
+    return selectLeaf(ctx, ops[0], ops[1], ops[2], laneRail(I.getType()->getScalarType(), &I), &I);
+  internalError("aggr: quantumLane of a non-element-wise instruction", &I);
 }
 
 // ---- rule 6 on a lane: the bijective update of a dead old lane value ----
@@ -470,6 +566,18 @@ std::optional<LaneRef> originOf(LaneRef r) {
       r = m < n ? LaneRef{sv->getOperand(0), m} : LaneRef{sv->getOperand(1), m - n};
     } else if (auto *fr = dyn_cast<FreezeInst>(v)) {
       r = {fr->getOperand(0), r.lane};
+    } else if (auto *ev = dyn_cast<ExtractValueInst>(v)) {
+      // A field of an aggregate (rule 26: re-indexing, no gate): leaf first + lane of the aggregate.
+      auto [first, count] = leafRange(ev->getAggregateOperand()->getType(), ev->getIndices(), ev);
+      (void)count;
+      r = {ev->getAggregateOperand(), int(first) + (r.lane < 0 ? 0 : r.lane)};
+    } else if (auto *iv = dyn_cast<InsertValueInst>(v)) {
+      auto [first, count] = leafRange(iv->getType(), iv->getIndices(), iv);
+      const Value *ins = iv->getInsertedValueOperand();
+      if (r.lane >= int(first) && r.lane < int(first + count))
+        r = {ins, isComposite(ins->getType()) ? r.lane - int(first) : -1};
+      else
+        r = {iv->getAggregateOperand(), r.lane};
     } else {
       return r;
     }
@@ -529,6 +637,20 @@ void aliasesOf(LaneRef origin, SmallVectorImpl<LaneRef> &aliases, SmallVectorImp
         add({u, a.lane});
         continue;
       }
+      if (auto *ev = dyn_cast<ExtractValueInst>(u)) {
+        auto [first, count] = leafRange(ev->getAggregateOperand()->getType(), ev->getIndices(), ev);
+        if (a.lane >= int(first) && a.lane < int(first + count))
+          add({u, isComposite(u->getType()) ? a.lane - int(first) : -1});
+        continue;
+      }
+      if (auto *iv = dyn_cast<InsertValueInst>(u)) {
+        auto [first, count] = leafRange(iv->getType(), iv->getIndices(), iv);
+        if (k == 1)
+          add({u, int(first) + (a.lane < 0 ? 0 : a.lane)});
+        else if (!(a.lane >= int(first) && a.lane < int(first + count)))
+          add({u, a.lane});
+        continue;
+      }
       readers.push_back({u, k, a.lane});
     }
   }
@@ -565,6 +687,16 @@ bool laneReads(LoweringContext &ctx, LaneRef r, ArrayRef<LaneRef> aliases, unsig
       return false;
     return laneReads(ctx, m < n ? LaneRef{sv->getOperand(0), m} : LaneRef{sv->getOperand(1), m - n}, aliases,
                      depth + 1);
+  } else if (auto *ev = dyn_cast<ExtractValueInst>(I)) {
+    auto [first, count] = leafRange(ev->getAggregateOperand()->getType(), ev->getIndices(), ev);
+    (void)count;
+    return laneReads(ctx, {ev->getAggregateOperand(), int(first) + (r.lane < 0 ? 0 : r.lane)}, aliases, depth + 1);
+  } else if (auto *iv = dyn_cast<InsertValueInst>(I); iv && r.lane >= 0) {
+    auto [first, count] = leafRange(iv->getType(), iv->getIndices(), iv);
+    const Value *ins = iv->getInsertedValueOperand();
+    if (r.lane >= int(first) && r.lane < int(first + count))
+      return laneReads(ctx, {ins, isComposite(ins->getType()) ? r.lane - int(first) : -1}, aliases, depth + 1);
+    return laneReads(ctx, {iv->getAggregateOperand(), r.lane}, aliases, depth + 1);
   } else if (elementWise(I) && I->getType()->isVectorTy() && r.lane >= 0) {
     for (const Use &u : I->operands())
       if (laneReads(ctx, {u.get(), u->getType()->isVectorTy() ? r.lane : -1}, aliases, depth + 1))
@@ -575,8 +707,8 @@ bool laneReads(LoweringContext &ctx, LaneRef r, ArrayRef<LaneRef> aliases, unsig
     Value *op = u.get();
     if (isa<BasicBlock>(op) || isa<Constant>(op) || isa<MetadataAsValue>(op) || op->getType()->isPointerTy())
       continue;   // an address is no data dependency of a lane here (memory is not followed)
-    if (auto *ft = dyn_cast<FixedVectorType>(op->getType())) {
-      for (unsigned m = 0; m < ft->getNumElements(); ++m)
+    if (isComposite(op->getType())) {
+      for (unsigned m = 0, nl = leafCount(op->getType(), op); m < nl; ++m)
         if (laneReads(ctx, {op, int(m)}, aliases, depth + 1))
           return true;
     } else if (laneReads(ctx, {op, -1}, aliases, depth + 1)) {
@@ -653,14 +785,12 @@ void laneRuleSix(LoweringContext &ctx, Instruction &I, unsigned l, ArrayRef<Oper
       if (!qc)
         continue;
     }
-    if (isa<ExtractValueInst>(P) || isa<InsertValueInst>(P))
-      unimplemented("aggr: rule 6 on a vector lane whose rail is an aggregate field (alias through a struct)", &I);
     {
       SmallVector<Operand, 4> pf = ctx.fields(P);
       Operand at = org->lane < 0 ? (pf.size() == 1 ? pf[0] : Operand{nullptr, false})
                                  : (unsigned(org->lane) < pf.size() ? pf[unsigned(org->lane)] : Operand{nullptr, false});
-      if (!at.handle || at.v != h)
-        continue;
+      if (!at.handle || at.v != h || isa<SelectInst>(h) || isa<PHINode>(h))
+        continue;   // a classical merge over handles aliases its arms (cq-oa67)
     }
     // Dead after the update.
     SmallVector<LaneRef, 8> aliases;
@@ -713,15 +843,118 @@ void laneRuleSix(LoweringContext &ctx, Instruction &I, unsigned l, ArrayRef<Oper
   }
 }
 
+// A bitcast that regroups bits across lanes (<2 x i32> to i64, i64 to <2 x i32>, <4 x i8> to <2 x i16>):
+// rule 3 makes it a representation change of the bits, and x86-64 is little-endian (lane 0 holds the
+// low bits). Each result lane is assembled from the bit pieces of the source lanes it covers: a
+// classical piece by classical instructions, a quantum one by rule 4 templates into fresh rails (lshr,
+// trunc to the piece, zext and shl to its place, or of the pieces; an fp lane passes through the
+// bitcast template to and from the integer of its width). The intermediate rails are rule 5 garbage.
+void lowerRegroupingBitcast(LoweringContext &ctx, CastInst &I) {
+  LLVMContext &C = ctx.M.getContext();
+  IRBuilder<> &B = ctx.B();
+  const DataLayout &DL = ctx.M.getDataLayout();
+  Type *srcT = I.getSrcTy(), *dstT = I.getDestTy();
+  Type *se = srcT->getScalarType(), *de = dstT->getScalarType();
+  unsigned a = unsigned(DL.getTypeSizeInBits(se).getFixedValue());
+  unsigned b = unsigned(DL.getTypeSizeInBits(de).getFixedValue());
+  if (se->isVectorTy() || de->isVectorTy() || DL.getTypeSizeInBits(srcT) != DL.getTypeSizeInBits(dstT))
+    internalError("aggr: a bitcast between types of different sizes", &I);
+  SmallVector<Operand, 4> src;
+  if (srcT->isVectorTy())
+    src = leaves(ctx, I.getOperand(0));
+  else
+    src.push_back(ctx.operand(I.getOperand(0)));
+  unsigned m = dstT->isVectorTy() ? cast<FixedVectorType>(dstT)->getNumElements() : 1;
+  IntegerType *ia = IntegerType::get(C, a), *ib = IntegerType::get(C, b);
+  auto tmpl = [&](StringRef op, RailType w, std::optional<RailType> to, StringRef shape,
+                  ArrayRef<Operand> ops) -> Value * {
+    abi::TemplateSpec spec;
+    spec.op = op.str();
+    spec.w = w;
+    spec.to = to;
+    spec.shape = shape.str();
+    return ctx.emitTemplate(spec, ops);
+  };
+  RailType ra{Kind::Int, a}, rb{Kind::Int, b};
+  // The source lanes as integers of a bits.
+  SmallVector<Operand, 4> ints;
+  for (const Operand &o : src) {
+    if (se->isIntegerTy()) {
+      ints.push_back(o);
+    } else if (o.handle) {
+      ints.push_back(Operand{tmpl("bitcast", laneRail(se, &I), ra, "", {o}), true});
+    } else {
+      ints.push_back(Operand{B.CreateBitCast(o.v, ia), false});
+    }
+  }
+  SmallVector<Operand, 4> out;
+  for (unsigned j = 0; j < m; ++j) {
+    unsigned lo = j * b, hi = lo + b;
+    Value *qacc = nullptr;        // the quantum pieces, or'ed
+    Value *cacc = ConstantInt::get(ib, 0);   // the classical pieces
+    for (unsigned i = lo / a; i * a < hi; ++i) {
+      unsigned plo = std::max(lo, i * a), phi = std::min(hi, (i + 1) * a);
+      unsigned off = plo - i * a, wdt = phi - plo, shift = plo - lo;
+      const Operand &x = ints[i];
+      if (!x.handle) {
+        Value *v = x.v;
+        if (off)
+          v = B.CreateLShr(v, off);
+        v = B.CreateZExtOrTrunc(B.CreateZExtOrTrunc(v, IntegerType::get(C, wdt)), ib);
+        if (shift)
+          v = B.CreateShl(v, shift);
+        cacc = B.CreateOr(cacc, v);
+        continue;
+      }
+      RailType rw{Kind::Int, wdt};
+      Operand v = x;
+      if (off)
+        v = Operand{tmpl("lshr", ra, std::nullopt, "hl", {v, Operand{ConstantInt::get(ia, off), false}}), true};
+      if (wdt < a)
+        v = Operand{tmpl("trunc", ra, rw, "", {v}), true};
+      if (wdt < b)
+        v = Operand{tmpl("zext", rw, rb, "", {v}), true};   // else wdt == b: v already has b bits
+      if (shift)
+        v = Operand{tmpl("shl", rb, std::nullopt, "hl", {v, Operand{ConstantInt::get(ib, shift), false}}), true};
+      qacc = qacc ? tmpl("or", rb, std::nullopt, "", {Operand{qacc, true}, v}) : v.v;
+    }
+    Operand lane;
+    if (!qacc) {
+      lane = Operand{cacc, false};
+      if (!de->isIntegerTy())
+        lane.v = B.CreateBitCast(lane.v, de);
+    } else {
+      auto *k = dyn_cast<ConstantInt>(cacc);
+      if (!k || !k->isZero())
+        qacc = tmpl("or", rb, std::nullopt, "hl", {Operand{qacc, true}, Operand{cacc, false}});
+      lane = Operand{qacc, true};
+      if (!de->isIntegerTy())
+        lane = Operand{tmpl("bitcast", rb, laneRail(de, &I), "", {lane}), true};
+    }
+    out.push_back(lane);
+  }
+  if (dstT->isVectorTy()) {
+    bindResult(ctx, &I, out);
+  } else {
+    ctx.bindFields(&I, {out[0]});
+  }
+}
+
 void lowerElementWise(LoweringContext &ctx, Instruction &I) {
-  auto *vt = dyn_cast<FixedVectorType>(I.getType());
-  if (!vt)
-    unimplemented("aggr: an element-wise instruction with a vector operand and a non-vector result", &I);
   if (auto *ci = dyn_cast<CastInst>(&I)) {
     auto *st = dyn_cast<FixedVectorType>(ci->getSrcTy());
-    if (!st || st->getNumElements() != vt->getNumElements())
-      unimplemented("aggr: a vector cast that changes the lane count", &I);
+    auto *dt = dyn_cast<FixedVectorType>(ci->getDestTy());
+    if (!st || !dt || st->getNumElements() != dt->getNumElements()) {
+      if (ci->getOpcode() != Instruction::BitCast)
+        internalError("aggr: a cast other than bitcast that changes the lane count", &I);
+      return lowerRegroupingBitcast(ctx, *ci);
+    }
   }
+  auto *vt = dyn_cast<FixedVectorType>(I.getType());
+  if (!vt)
+    internalError("aggr: an element-wise instruction with a vector operand and a scalar result that is not a "
+                  "bitcast",
+                  &I);
   unsigned n = vt->getNumElements();
   SmallVector<SmallVector<Operand, 4>, 3> opLanes;
   for (const Use &u : I.operands()) {
@@ -762,11 +995,61 @@ void lowerElementWise(LoweringContext &ctx, Instruction &I) {
   bindResult(ctx, &I, out);
 }
 
-unsigned constIndex(const Value *idx, const Instruction &I) {
-  auto *ci = dyn_cast<ConstantInt>(idx);
-  if (!ci)
-    unimplemented("aggr: a vector lane index that is not a constant", &I);
-  return unsigned(ci->getZExtValue());
+// A lane index that is not a constant: lane k is chosen under idx == k, a classical compare for a
+// classical index, the equality template cq_template_icmp_eq_<W>_hl into a fresh rail for a quantum one
+// (rule 13's case flag on a scrutinee). An index at or beyond the lane count gives poison (LLVM): any
+// value is right there.
+Operand laneIsIndex(LoweringContext &ctx, Operand idx, unsigned k) {
+  Constant *kc = ConstantInt::get(idx.v->getType(), k);
+  if (!idx.handle)
+    return Operand{ctx.B().CreateICmpEQ(idx.v, kc), false};
+  abi::TemplateSpec spec;
+  spec.op = "icmp";
+  spec.pred = "eq";
+  spec.w = railTypeOf(idx.v->getType());
+  spec.shape = "hl";
+  return Operand{ctx.emitTemplate(spec, {idx, Operand{kc, false}}), true};
+}
+
+// Rule 26 with rule 9: a select of a struct or array is one select per field under the scalar condition
+// (selectLeaf). A classical field the two arms share stays that classical value.
+void lowerCompositeSelect(LoweringContext &ctx, SelectInst &sel) {
+  if (sel.getCondition()->getType()->isVectorTy())
+    internalError("aggr: a select of an aggregate with a vector condition", &sel);
+  Operand c = ctx.operand(sel.getCondition());
+  SmallVector<Operand, 4> t = leaves(ctx, sel.getTrueValue()), f = leaves(ctx, sel.getFalseValue());
+  SmallVector<unsigned, 4> pt = fieldsPerLeaf(ctx, sel.getTrueValue()), pf = fieldsPerLeaf(ctx, sel.getFalseValue());
+  if (t.size() != f.size() || pt != pf)
+    internalError("aggr: the arms of an aggregate select have different fields", &sel);
+  SmallVector<Type *, 8> tys;
+  leafTypes(sel.getType(), tys);
+  SmallVector<Operand, 4> out;
+  unsigned k = 0;
+  for (unsigned l = 0; l < tys.size(); ++l)
+    for (unsigned j = 0; j < pt[l]; ++j, ++k) {
+      Operand a = t[k], b = f[k];
+      if (!a.handle && !b.handle && (a.v == b.v || !c.handle)) {
+        out.push_back(a.v == b.v ? a : Operand{ctx.B().CreateSelect(c.v, a.v, b.v), false});
+        continue;
+      }
+      // The field's IR type: the leaf's, or for a field of a packed integer leaf (cq-0umd) the type of a
+      // classical arm's field (a handle is an i32 whatever its rail's width).
+      Type *ft = tys[l];
+      if (pt[l] != 1) {
+        if (a.handle && b.handle)
+          unimplemented("aggr: a select whose two arms hold a packed integer leaf (cq-0umd) as rails: the "
+                        "field widths are not recorded with the field counts",
+                        &sel);
+        ft = (a.handle ? b : a).v->getType();
+      }
+      if (ft->isPointerTy())
+        unimplemented("aggr: a pointer field of a select that chooses between two pointers on a rail (rule 21's "
+                      "fat-pointer merge of a field)",
+                      &sel);
+      out.push_back(selectLeaf(ctx, c, a, b, railTypeOf(ft), &sel));
+    }
+  setFieldsPerLeaf(ctx, &sel, pt);
+  bindResult(ctx, &sel, out);
 }
 
 } // namespace
@@ -823,8 +1106,30 @@ void bindLeafFields(LoweringContext &ctx, const Value *orig, ArrayRef<Operand> f
 }
 
 void lowerVectorOp(LoweringContext &ctx, Instruction &I) {
+  if (auto *ee = dyn_cast<ExtractElementInst>(&I); ee && !isa<ConstantInt>(ee->getIndexOperand())) {
+    // Rule 9 over the lanes: a select chain under idx == k, the last lane innermost.
+    SmallVector<Operand, 4> lanes = leaves(ctx, ee->getVectorOperand());
+    Operand idx = ctx.operand(ee->getIndexOperand());
+    RailType w = laneRail(I.getType(), &I);
+    Operand r = lanes.back();
+    for (unsigned k = unsigned(lanes.size()) - 1; k-- > 0;)
+      r = selectLeaf(ctx, laneIsIndex(ctx, idx, k), lanes[k], r, w, &I);
+    bindResult(ctx, &I, {r});
+    return;
+  }
+  if (auto *ie = dyn_cast<InsertElementInst>(&I); ie && !isa<ConstantInt>(ie->getOperand(2))) {
+    // Each lane k becomes the inserted value under idx == k, its old value otherwise (rule 9).
+    SmallVector<Operand, 4> lanes = leaves(ctx, ie->getOperand(0));
+    Operand idx = ctx.operand(ie->getOperand(2));
+    Operand v = ctx.operand(ie->getOperand(1));
+    RailType w = laneRail(ie->getOperand(1)->getType(), &I);
+    for (unsigned k = 0; k < lanes.size(); ++k)
+      lanes[k] = selectLeaf(ctx, laneIsIndex(ctx, idx, k), v, lanes[k], w, &I);
+    bindResult(ctx, &I, lanes);
+    return;
+  }
   if (auto *ee = dyn_cast<ExtractElementInst>(&I)) {
-    unsigned l = constIndex(ee->getIndexOperand(), I);
+    unsigned l = unsigned(cast<ConstantInt>(ee->getIndexOperand())->getZExtValue());
     SmallVector<Operand, 4> lanes = leaves(ctx, ee->getVectorOperand());
     if (l >= lanes.size()) {   // LLVM: poison
       bindResult(ctx, &I, {Operand{PoisonValue::get(I.getType()), false}});
@@ -834,7 +1139,7 @@ void lowerVectorOp(LoweringContext &ctx, Instruction &I) {
     return;
   }
   if (auto *ie = dyn_cast<InsertElementInst>(&I)) {
-    unsigned l = constIndex(ie->getOperand(2), I);
+    unsigned l = unsigned(cast<ConstantInt>(ie->getOperand(2))->getZExtValue());
     SmallVector<Operand, 4> lanes = leaves(ctx, ie->getOperand(0));
     if (l >= lanes.size()) {   // LLVM: poison
       SmallVector<Operand, 4> p;
@@ -865,9 +1170,11 @@ void lowerVectorOp(LoweringContext &ctx, Instruction &I) {
     return lowerExtractValue(ctx, cast<ExtractValueInst>(I));
   if (isa<InsertValueInst>(I))
     return lowerInsertValue(ctx, cast<InsertValueInst>(I));
+  if (auto *sel = dyn_cast<SelectInst>(&I); sel && !I.getType()->isVectorTy())
+    return lowerCompositeSelect(ctx, *sel);
   if (elementWise(&I))
     return lowerElementWise(ctx, I);
-  unimplemented("aggr: a vector instruction with no lane construction", &I);
+  internalError("aggr: lowerVectorOp of an instruction with no vector or aggregate construction", &I);
 }
 
 SmallVector<Operand, 4> flattenResult(LoweringContext &ctx, const Value *v) { return leaves(ctx, v); }

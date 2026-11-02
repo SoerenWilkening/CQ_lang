@@ -50,6 +50,9 @@ private:
 };
 void lowerBranch(LoweringContext &, llvm::BranchInst &);
 llvm::Value *lowerMerge(LoweringContext &, llvm::PHINode &);
+// cq-oa67 (rules 9, 25, 26): a quantum phi of a vector, struct or array, merged field by field; binds its
+// fields (aggr). The spine routes such phis here.
+void lowerMergeFields(LoweringContext &, llvm::PHINode &);
 llvm::Value *lowerSelect(LoweringContext &, llvm::SelectInst &);
 llvm::Value *selectChain(LoweringContext &, llvm::ArrayRef<std::pair<Pred, Operand>> arms, RailType);
 void lowerPhase(LoweringContext &, llvm::CallInst &cqPhi);

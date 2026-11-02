@@ -15,6 +15,7 @@
 //     the scratch free, after the last bracket closes, is a noted use of each (cq-nogu).
 #include "PredInternal.h"
 
+#include "cq/Aggregates.h"
 #include "cq/Common.h"
 #include "cq/Rotation.h"
 #include "llvm/ADT/PostOrderIterator.h"
@@ -450,7 +451,16 @@ Value *classicalSelect(SelectInst &sel, IRBuilder<> &B, MergeSink &sink) {
 
 Value *classicalPhi(PHINode &phi, BasicBlock *join, IRBuilder<> &B,
                     const std::function<BasicBlock *(const BasicBlock *)> &outOf, MergeSink &sink) {
-  RailType w = railTypeOf(phi.getType());
+  return classicalPhiOf(phi, join, B, outOf, sink, railTypeOf(phi.getType()), phi.getType(),
+                        [&](const Value *v) { return sink.operand(v); }, /*seedClassical=*/true)
+      .v;
+}
+
+// classicalPhi over one field of phi (cq-oa67, rule 26): `read` gives the field of an incoming value at
+// the builder, w its rail type and ty its classical type.
+Operand classicalPhiOf(PHINode &phi, BasicBlock *join, IRBuilder<> &B,
+                       const std::function<BasicBlock *(const BasicBlock *)> &outOf, MergeSink &sink, RailType w,
+                       Type *fieldTy, const std::function<Operand(const Value *)> &read, bool seedClassical) {
   struct In { const BasicBlock *u; BasicBlock *out; const Value *v; Operand op; };
   std::vector<In> ins;
   for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i) {
@@ -472,11 +482,14 @@ Value *classicalPhi(PHINode &phi, BasicBlock *join, IRBuilder<> &B,
       if (!t)
         internalError("pred: the output block of an incoming edge has no terminator yet", &phi);
       B.SetInsertPoint(t);
-      in.op = sink.operand(in.v);
+      in.op = read(in.v);
     }
   }
-  if (std::all_of(ins.begin(), ins.end(), [&](const In &x) { return x.op.v == ins[0].op.v; }))
-    return ins[0].op.handle ? ins[0].op.v : sink.seed(ins[0].op.v, w);   // one value on every edge
+  if (std::all_of(ins.begin(), ins.end(), [&](const In &x) { return x.op.v == ins[0].op.v; })) {
+    if (ins[0].op.handle || !seedClassical)
+      return ins[0].op;
+    return Operand{sink.seed(ins[0].op.v, w), true};   // one value on every edge
+  }
 
   // The output CFG must reach the join through exactly the incoming edges' blocks.
   SmallPtrSet<BasicBlock *, 8> outs, preds;
@@ -540,7 +553,7 @@ Value *classicalPhi(PHINode &phi, BasicBlock *join, IRBuilder<> &B,
         ins[k].op = Operand{sink.copy(ins[k].op.v, w), true};
       }
   }
-  Type *ty = anyHandle ? ins[0].op.v->getType() : phi.getType();
+  Type *ty = anyHandle ? ins[0].op.v->getType() : fieldTy;
   for (const In &in : ins)
     if (in.op.v->getType() != ty)
       internalError("pred: the arms of a classically chosen phi have different types", &phi);
@@ -551,9 +564,10 @@ Value *classicalPhi(PHINode &phi, BasicBlock *join, IRBuilder<> &B,
       if (in.out == p)
         np->addIncoming(in.op.v, p);
   if (!anyHandle)
-    return sink.seed(np, w);   // every arm read classically: one value, one rail
+    return seedClassical ? Operand{sink.seed(np, w), true}   // every arm read classically: one value, one rail
+                         : Operand{np, false};
   sink.merged(np);
-  return np;
+  return Operand{np, true};
 }
 
 namespace {
@@ -1274,7 +1288,9 @@ Value *lowerMerge(LoweringContext &ctx, PHINode &phi) {
   if (I.loopHeaders.count(bb))
     internalError("pred: lowerMerge on a loop-header phi (a carried value: the loop modules)", &phi);
   if (!scalarRailType(phi.getType()))
-    unimplemented("pred: lowerMerge of a non-scalar phi (aggregates: aggr, pointers: fatptr)", &phi);
+    unimplemented("pred: lowerMerge of a vector or aggregate phi from a loop or invert module (the spine merges "
+                  "them field-wise with lowerMergeFields; this caller does not yet)",
+                  &phi);
 
   // Rule 9 at a58c3a4: every incoming edge chosen classically makes a classical phi over the handles.
   std::shared_ptr<Oracle> CO = taintOracle(ctx.T, ctx.S);
@@ -1312,10 +1328,105 @@ Value *lowerMerge(LoweringContext &ctx, PHINode &phi) {
   return selectChainAt(ctx, chain, railTypeOf(phi.getType()), nodeOf(I.blocks.lookup(bb)), &phi);
 }
 
+namespace {
+void scalarLeafTypes(Type *t, SmallVectorImpl<Type *> &out) {
+  if (auto *st = dyn_cast<StructType>(t)) {
+    for (Type *e : st->elements())
+      scalarLeafTypes(e, out);
+  } else if (auto *at = dyn_cast<ArrayType>(t)) {
+    for (uint64_t i = 0; i < at->getNumElements(); ++i)
+      scalarLeafTypes(at->getElementType(), out);
+  } else if (auto *vt = dyn_cast<FixedVectorType>(t)) {
+    for (unsigned i = 0; i < vt->getNumElements(); ++i)
+      out.push_back(vt->getElementType());
+  } else {
+    out.push_back(t);
+  }
+}
+} // namespace
+
+// Rules 9, 25, 26 (cq-oa67): a phi of a vector, struct or array is one merge per field, each exactly as
+// lowerMerge merges a scalar: a classical phi over the field's handles where every incoming edge is
+// chosen classically, else the rule 9 select chain of the field's distinct incoming values. A field
+// that is the same classical value on every arm stays classical. Binds the phi's fields (aggr).
+void lowerMergeFields(LoweringContext &ctx, PHINode &phi) {
+  const PathStorage &I = storage(ctx.preds());
+  const BasicBlock *bb = phi.getParent();
+  if (I.F != bb->getParent())
+    internalError("pred: lowerMergeFields before PathPredicates::compute of its function", &phi);
+  if (I.loopHeaders.count(bb))
+    internalError("pred: lowerMergeFields on a loop-header phi (a carried value: the loop modules)", &phi);
+  SmallVector<Type *, 8> tys;
+  scalarLeafTypes(phi.getType(), tys);
+  auto fieldsOf = [&](const Value *v) {
+    SmallVector<Operand, 4> f = aggr::flattenResult(ctx, v);
+    if (f.size() != tys.size())
+      unimplemented("pred: a merge of a composite with a packed integer leaf (cq-0umd: its field widths are not "
+                    "recorded)",
+                    &phi);
+    return f;
+  };
+  auto railOf = [&](Type *t) { return t->isPointerTy() ? RailType{Kind::Int, 64} : railTypeOf(t); };
+  SmallVector<Operand, 4> out;
+
+  std::shared_ptr<Oracle> CO = taintOracle(ctx.T, ctx.S);
+  bool classicalChoice = true;
+  for (unsigned i = 0; i < phi.getNumIncomingValues() && classicalChoice; ++i)
+    if (I.rpo.count(phi.getIncomingBlock(i)))
+      classicalChoice = isClassicalNode(nodeOf(ctx.preds().edge(phi.getIncomingBlock(i), bb)), *CO);
+  if (classicalChoice) {
+    CtxMergeSink sink(ctx);
+    auto outOf = [&](const BasicBlock *u) -> BasicBlock * { return I.rpo.count(u) ? ctx.block(u) : nullptr; };
+    for (unsigned k = 0; k < tys.size(); ++k)
+      out.push_back(classicalPhiOf(phi, ctx.B().GetInsertBlock(), ctx.B(), outOf, sink, railOf(tys[k]), tys[k],
+                                   [&](const Value *v) { return fieldsOf(v)[k]; }, /*seedClassical=*/false));
+    aggr::bindLeafFields(ctx, &phi, out, SmallVector<unsigned, 8>(tys.size(), 1));
+    return;
+  }
+
+  struct Arm { const Value *v; unsigned node; unsigned order; };
+  std::vector<Arm> arms;
+  Bdd &m = Bdd::get();
+  for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i) {
+    const BasicBlock *from = phi.getIncomingBlock(i);
+    if (!I.rpo.count(from))
+      continue;   // an unreachable predecessor never selects
+    unsigned e = nodeOf(ctx.preds().edge(from, bb));
+    const Value *v = phi.getIncomingValue(i);
+    auto it = std::find_if(arms.begin(), arms.end(), [&](const Arm &a) { return a.v == v; });
+    if (it == arms.end())
+      arms.push_back({v, e, i});
+    else
+      it->node = m.orOp(it->node, e);
+  }
+  std::stable_sort(arms.begin(), arms.end(), [](const Arm &a, const Arm &b) { return a.order < b.order; });
+  std::vector<SmallVector<Operand, 4>> armFields;
+  for (const Arm &a : arms)
+    armFields.push_back(fieldsOf(a.v));
+  for (unsigned k = 0; k < tys.size(); ++k) {
+    bool same = all_of(armFields, [&](const SmallVector<Operand, 4> &f) { return f[k].v == armFields[0][k].v; });
+    if (same) {
+      out.push_back(armFields[0][k]);   // one value on every arm (a classical field stays classical)
+      continue;
+    }
+    if (tys[k]->isPointerTy())
+      unimplemented("pred: a pointer field of a composite merged under a quantum predicate (rule 21's fat-pointer "
+                    "merge of a field)",
+                    &phi);
+    std::vector<std::pair<Pred, Operand>> chain;
+    for (unsigned a = 0; a < arms.size(); ++a)
+      chain.push_back({makePred(arms[a].node), armFields[a][k]});
+    out.push_back(Operand{selectChainAt(ctx, chain, railTypeOf(tys[k]), nodeOf(I.blocks.lookup(bb)), &phi), true});
+  }
+  aggr::bindLeafFields(ctx, &phi, out, SmallVector<unsigned, 8>(tys.size(), 1));
+}
+
 Value *lowerSelect(LoweringContext &ctx, SelectInst &sel) {
   Value *c = sel.getCondition();
   if (c->getType()->isVectorTy() || !scalarRailType(sel.getType()))
-    unimplemented("pred: lowerSelect of a vector or non-scalar select (aggr, fatptr)", &sel);
+    internalError("pred: lowerSelect of a vector, aggregate or pointer select (the spine routes them to aggr and "
+                  "fatptr)",
+                  &sel);
   if (!ctx.T.isQuantum(c, ctx.S)) {
     CtxMergeSink sink(ctx);   // rule 9 at a58c3a4: a classical select over the handles, no gate
     return classicalSelect(sel, ctx.B(), sink);

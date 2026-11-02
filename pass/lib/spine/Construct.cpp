@@ -1476,6 +1476,12 @@ void Walker::emitBlock(BasicBlock *b) {
       // is scalar only.
       if (phi.getType()->isPointerTy())
         unimplemented("spine: a quantum pointer phi (rule 21 fat-pointer merge; fatptr has no phi entry)", &phi);
+      // Rules 9, 25, 26 (cq-oa67): a vector, struct or array phi merges field by field.
+      if (phi.getType()->isVectorTy() || phi.getType()->isAggregateType()) {
+        lowerMergeFields(ctx, phi);
+        blockDefs.push_back(&phi);
+        continue;
+      }
       if (Value *r = returnCopyOut(phi)) {
         spine::bindOperand(ctx, &phi, Operand{r, true});
         blockDefs.push_back(&phi);

@@ -39,6 +39,7 @@ ENTRIES = {
         "p_fields": 6,
         "p_constagg": 7,    # mul, add, sub, xor, and rule 6's inverses of add, sub and xor
     },
+    "widen.ll": None,      # cq-oa67: cq-lower, cq-verify and §6 only (no template count asserted)
 }
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 FWD = re.compile(r"call [^@]*@cq_template_\w+?(?<!_unc)\(")
@@ -60,6 +61,8 @@ def main() -> int:
     failures = 0
     for probe, entries in ENTRIES.items():
         src = PROBES / probe
+        if entries is None:
+            entries = {m: None for m in re.findall(r"^define [^@]*@(\w+)\(", src.read_text(), re.M)}
         lowered = out / (probe.split(".")[0] + ".lowered.ll")
         r = subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-lower", "-S", str(src), "-o",
                             str(lowered)], capture_output=True, text=True)
@@ -84,7 +87,7 @@ def main() -> int:
             if SURFACE.search(b):
                 why.append("a CQ.h surface call is left")
             got = len(FWD.findall(b))
-            if got != want:
+            if want is not None and got != want:
                 why.append(f"{got} forward templates, expected {want}")
             c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(src), "--lowered", str(lowered),
                                 "--entry", e], capture_output=True, text=True, cwd=ROOT / "checker")

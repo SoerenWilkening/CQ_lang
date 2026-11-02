@@ -179,6 +179,13 @@ llvm::Value *classicalSelect(llvm::SelectInst &, llvm::IRBuilder<> &, MergeSink 
 // unreachable). The output CFG must already route every such edge into `join` and nothing else.
 llvm::Value *classicalPhi(llvm::PHINode &, llvm::BasicBlock *join, llvm::IRBuilder<> &,
                           const std::function<llvm::BasicBlock *(const llvm::BasicBlock *)> &outOf, MergeSink &);
+// classicalPhi over one field of a composite phi (rule 26): `read` gives an incoming value's field at the
+// builder, w its rail type (used only to seed a classical field beside a rail) and fieldTy its type.
+// seedClassical false: a field classical on every edge stays classical (the result's handle bit says).
+Operand classicalPhiOf(llvm::PHINode &, llvm::BasicBlock *join, llvm::IRBuilder<> &,
+                       const std::function<llvm::BasicBlock *(const llvm::BasicBlock *)> &outOf, MergeSink &,
+                       RailType w, llvm::Type *fieldTy, const std::function<Operand(const llvm::Value *)> &read,
+                       bool seedClassical);
 
 // The output-IR half of GateSink::liveNegation. An existing rail of the output function that holds
 // NOT a (a the value of the i1 rail `atom`) at the insertion point (bb, pt): the result of a forward
