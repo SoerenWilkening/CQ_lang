@@ -362,6 +362,13 @@ void lowerTripPhase(LoweringContext &ctx, CallInst &cqPhi) {
 void lowerCall(LoweringContext &ctx, CallBase &CB) {
   using calls::Class;
   Class c = calls::classify(CB, ctx.T, ctx.S);
+  // CR rule 14 "No live exit" (ruling 2026-11-02): a noreturn arm of a K-loop runs per trip under that
+  // trip's exit flag (loops-cutoff), a quantum predicate taint's control dependence does not see (the arm
+  // may post-dominate the loop). A bodiless noreturn callee there is rule 16's abort_i1 on the flag.
+  if (c == Class::Classical && shared(ctx).tripFlag && CB.doesNotReturn() && !CB.hasFnAttr(Attribute::ReturnsTwice))
+    if (auto *G = dyn_cast<Function>(CB.getCalledOperand()->stripPointerCasts());
+        G && G->isDeclaration() && !G->getName().ends_with("longjmp"))
+      c = Class::Noreturn;
   auto *CI = dyn_cast<CallInst>(&CB);
   switch (c) {
   case Class::Classical: {

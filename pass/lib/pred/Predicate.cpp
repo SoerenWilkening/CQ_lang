@@ -30,6 +30,10 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/IR/GetElementPtrTypeIterator.h"
+#include "llvm/IR/GlobalVariable.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/Operator.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/Support/raw_ostream.h"
@@ -242,6 +246,109 @@ bool isClassicalNode(unsigned f, Oracle &O) {
   return true;
 }
 
+} // namespace pred_detail
+
+// CR rule 13 (ruling 2026-11-02): a computed goto is a switch over its destination list whose scrutinee is the
+// integer the target address was derived from. The address is followed back to that integer: a `blockaddress`
+// constant is its destination; a select chooses by its condition (rule 9); a load of a constant `blockaddress`
+// table at an index (a QROM of the table, rule 20) is the case `index == k` for each entry k naming the
+// destination.
+std::optional<GotoTableRead> gotoTableRead(const Value *a) {
+  auto *ld = dyn_cast<LoadInst>(a->stripPointerCasts());
+  if (!ld || !ld->isSimple())
+    return std::nullopt;
+  auto *g = dyn_cast<GEPOperator>(ld->getPointerOperand());
+  if (!g)
+    return std::nullopt;
+  auto *gv = dyn_cast<GlobalVariable>(g->getPointerOperand()->stripPointerCasts());
+  if (!gv || !gv->isConstant() || !gv->hasDefinitiveInitializer())
+    return std::nullopt;
+  auto *arr = dyn_cast<ConstantArray>(gv->getInitializer());
+  if (!arr || !arr->getType()->getElementType()->isPointerTy())
+    return std::nullopt;
+  // The one variable index, scaled by the entry size, with every other offset 0.
+  const DataLayout &DL = ld->getModule()->getDataLayout();
+  const Value *idx = nullptr;
+  uint64_t esz = DL.getTypeAllocSize(arr->getType()->getElementType());
+  for (gep_type_iterator it = gep_type_begin(g), e = gep_type_end(g); it != e; ++it) {
+    const Value *o = it.getOperand();
+    if (auto *ci = dyn_cast<ConstantInt>(o)) {
+      if (!ci->isZero())
+        return std::nullopt;
+      continue;
+    }
+    if (idx || it.isStruct() || DL.getTypeAllocSize(it.getIndexedType()) != esz)
+      return std::nullopt;
+    idx = o;
+  }
+  if (!idx || !idx->getType()->isIntegerTy())
+    return std::nullopt;
+  // The integer beneath a widening of the index (rule 20: the widening is address arithmetic, never
+  // emitted): entry k is read where that integer is k, for the k it can hold.
+  uint64_t n = arr->getNumOperands();
+  while (auto *ext = dyn_cast<CastInst>(idx)) {
+    if (!isa<ZExtInst>(ext) && !isa<SExtInst>(ext))
+      break;
+    unsigned w = ext->getSrcTy()->getIntegerBitWidth() - (isa<SExtInst>(ext) ? 1 : 0);
+    if (w < 64)
+      n = std::min<uint64_t>(n, uint64_t(1) << w);
+    idx = ext->getOperand(0);
+  }
+  GotoTableRead t{idx, {}};
+  for (unsigned k = 0; k < n; ++k) {
+    auto *ba = dyn_cast<BlockAddress>(arr->getOperand(k)->stripPointerCasts());
+    t.entries.push_back(ba ? ba->getBasicBlock() : nullptr);
+  }
+  return t;
+}
+
+// A `blockaddress` names a block of the function it was taken in; a specialization of that function (a
+// clone, §1.4) has the same blocks in the same order, so the destination is the block at the same position.
+static const BasicBlock *destIn(const BasicBlock *d, const Function &F) {
+  if (!d || d->getParent() == &F)
+    return d;
+  auto it = F.begin();
+  for (const BasicBlock &b : *d->getParent()) {
+    if (it == F.end())
+      internalError("pred: a computed goto destination with no block of the specialization", &*F.begin()->begin());
+    if (&b == d)
+      return &*it;
+    ++it;
+  }
+  internalError("pred: a computed goto destination outside its own function", &*F.begin()->begin());
+}
+
+static bool addressCases(const Value *a, const Pred &under, const Function &F,
+                         SmallVectorImpl<std::pair<Pred, const BasicBlock *>> &cases) {
+  a = a->stripPointerCasts();
+  if (auto *ba = dyn_cast<BlockAddress>(a)) {
+    cases.push_back({under, destIn(ba->getBasicBlock(), F)});
+    return true;
+  }
+  if (auto *sel = dyn_cast<SelectInst>(a)) {
+    Pred c = Pred::atom(sel->getCondition());
+    return addressCases(sel->getTrueValue(), under & c, F, cases) &&
+           addressCases(sel->getFalseValue(), under & !c, F, cases);
+  }
+  if (std::optional<GotoTableRead> t = gotoTableRead(a)) {
+    for (unsigned k = 0; k < t->entries.size(); ++k)
+      if (t->entries[k])
+        cases.push_back({under & Pred::eqAtom(t->index, APInt(t->index->getType()->getIntegerBitWidth(), k)),
+                         destIn(t->entries[k], F)});
+    return true;
+  }
+  return false;
+}
+
+std::optional<SmallVector<std::pair<Pred, const BasicBlock *>, 4>> computedGotoCases(const IndirectBrInst &ib) {
+  SmallVector<std::pair<Pred, const BasicBlock *>, 4> cases;
+  if (!addressCases(ib.getAddress(), Pred::top(), *ib.getFunction(), cases))
+    return std::nullopt;
+  return cases;
+}
+
+namespace pred_detail {
+
 // The condition under which the terminator of `from` transfers control to `to`.
 static unsigned edgeCond(const BasicBlock *from, const BasicBlock *to, Oracle &O) {
   Bdd &m = Bdd::get();
@@ -282,6 +389,19 @@ static unsigned edgeCond(const BasicBlock *from, const BasicBlock *to, Oracle &O
     }
     if (si->getDefaultDest() == to)
       r = m.orOp(r, noCase);
+    return r;
+  }
+  if (const auto *ib = dyn_cast<IndirectBrInst>(term)) {
+    std::optional<SmallVector<std::pair<Pred, const BasicBlock *>, 4>> cases = computedGotoCases(*ib);
+    if (!cases)
+      unimplemented("pred: a computed goto whose address is not derived from an integer through blockaddress "
+                    "constants, selects and constant blockaddress tables (SPEC_ISSUES: the integer a computed "
+                    "goto's address is derived from)",
+                    term);
+    unsigned r = Bdd::F;
+    for (auto &[p, d] : *cases)
+      if (d == to)
+        r = m.orOp(r, nodeOf(p));
     return r;
   }
   unimplemented("pred: path predicate across this terminator", term);

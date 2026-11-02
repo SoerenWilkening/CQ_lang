@@ -421,6 +421,8 @@ void Walker::plan() {
       unitOf[b] = lp;
     for (BasicBlock *b : U.dead)
       unitOf[b] = lp;   // never run (UB to reach): nothing of it is lowered
+    for (BasicBlock *b : U.abort)
+      unitOf[b] = lp;   // the loop's noreturn arms: the loop module lowers them per trip
     units.insert({lp, std::move(U)});
   }
   // Forward reachability (edges to a later block of L; back edges excluded).
@@ -442,7 +444,14 @@ void Walker::plan() {
       BasicBlock *exit = units.find(lp)->second.cont;
       // The loop as a unit ends at its continuation (its exit block, or the join of its live exits);
       // like any edge leaving b, it continues at the next block of the walk that may run (an arm still
-      // to run comes first).
+      // to run comes first). With no live exit (CR rule 14 "No live exit") the continuation is
+      // unreachable: like an `unreachable` under a quantum predicate, the walk goes on at an arm still
+      // to run, if any (next(b, b) matches no later block itself: it returns b when none may run).
+      if (!exit) {
+        if (BasicBlock *n = next(b, b); n != b)
+          outEdges[b].push_back(n);
+        continue;
+      }
       outEdges[b].push_back(next(b, exit));
       continue;
     }
@@ -499,7 +508,8 @@ void Walker::plan() {
       // A unit's exit continues where the loop module leaves the builder when the unit is its only
       // way in and it comes next; otherwise (a zero-trip guard's skip edge also reaches it, 41, 177)
       // the unit ends in a jump to it (emitBlock).
-      if (unitOf.count(prev) && pe != outEdges.end() && pe->second.front() == b && outPreds.lookup(b) == 1)
+      if (unitOf.count(prev) && pe != outEdges.end() && !pe->second.empty() && pe->second.front() == b &&
+          outPreds.lookup(b) == 1)
         merged.insert(b);
     }
     prev = b;
@@ -670,6 +680,8 @@ void Walker::planGuards() {
     Pred outB = inB & cf;
 
     if (unitOf.count(b)) {
+      if (outEdges.lookup(b).empty())
+        continue;   // a unit with no live exit and nothing after it (CR rule 14 "No live exit")
       add(outEdges[b].front(), outB);
       fact(b, outEdges[b].front(), outB);
       continue;
@@ -1685,6 +1697,16 @@ void Walker::emitBlock(BasicBlock *b) {
     for (const PHINode *phi : exitPhis)
       if (sh.binds.count(phi))
         unitBoundPhis.insert(phi);
+    if (!U.cont && outEdges.lookup(b).empty()) {
+      // No live exit and nothing after it may run (CR rule 14 "No live exit"): the program's continuation
+      // is unreachable, the shot aborts on the loop's abort flags. The lowered function still ends: its
+      // rails are torn down and it returns no value (poison: no caller reads a result the C program never
+      // returns).
+      Type *rt = ctx.B().GetInsertBlock()->getParent()->getReturnType();
+      ReturnInst *nr = rt->isVoidTy() ? ctx.B().CreateRetVoid() : ctx.B().CreateRet(PoisonValue::get(rt));
+      ctx.unc().flushAtExit(nr);
+      return;
+    }
     BasicBlock *n = outEdges.lookup(b).front();
     // All of the unit's exit edges leave from one output block, so a phi of an exit block cannot
     // tell them apart: it would get one incoming per exit edge from the same block (cq-qjm9). It

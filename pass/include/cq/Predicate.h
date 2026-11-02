@@ -3,6 +3,8 @@
 #pragma once
 
 #include <memory>
+#include <optional>
+#include <vector>
 #include <utility>
 
 #include "cq/Common.h"
@@ -51,6 +53,14 @@ public:
 private:
   struct Impl; std::shared_ptr<Impl> impl;
 };
+// CR rule 13 (ruling 2026-11-02): a computed goto is a switch over its destination list, its scrutinee the
+// integer the target address was derived from (a constant blockaddress table read at an index, rule 20's
+// QROM; a select; a blockaddress constant). (condition, destination) per derived case; std::nullopt when
+// the address is derived otherwise.
+std::optional<llvm::SmallVector<std::pair<Pred, const llvm::BasicBlock *>, 4>>
+computedGotoCases(const llvm::IndirectBrInst &);
+struct GotoTableRead { const llvm::Value *index; std::vector<const llvm::BasicBlock *> entries; };
+std::optional<GotoTableRead> gotoTableRead(const llvm::Value *address);
 void lowerBranch(LoweringContext &, llvm::BranchInst &);
 llvm::Value *lowerMerge(LoweringContext &, llvm::PHINode &);
 // cq-oa67 (rules 9, 25, 26): a quantum phi of a vector, struct or array, merged field by field; binds its

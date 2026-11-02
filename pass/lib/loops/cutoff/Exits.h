@@ -29,6 +29,10 @@ struct Unit {
   llvm::SmallVector<llvm::BasicBlock *, 4> arm;    // the exit arm, in a topological order
   llvm::SmallVector<llvm::BasicBlock *, 4> live;   // the live exit blocks
   llvm::SmallVector<llvm::BasicBlock *, 4> dead;   // the effect-free dead ends the loop exits into (never run)
+  // The NORETURN ARMS (CR rule 14 "No live exit", rule 16): the blocks of the dead ends with an effect the
+  // loop exits into (a noreturn call: abort, exit), in a topological order. The loop module lowers them
+  // per trip under that trip's exit flag (rule 16's abort arm); the walker never runs them.
+  llvm::SmallVector<llvm::BasicBlock *, 4> abort;
   bool multi() const { return live.size() > 1; }
   bool contains(const llvm::Loop &L, const llvm::BasicBlock *b) const;
 };
@@ -39,8 +43,9 @@ struct Unit {
 llvm::BasicBlock *liveExiting(const llvm::Loop &L);
 llvm::BasicBlock *liveExit(const llvm::Loop &L);
 
-// cq::unimplemented when the live exits have no common post-dominator that every path out of the
-// loop reaches through blocks entered only from the loop, or when a dead-end exit has an effect.
+// With no live exit, cont is nullptr: the program's continuation after the loop is unreachable (CR rule
+// 14 "No live exit"). cq::unimplemented when the live exits have no common post-dominator that every path
+// out of the loop reaches through blocks entered only from the loop.
 Unit unitOf(const llvm::Loop &L);
 
 // The cutoff bound B of a quantum-exit loop (CR rule 14): the least of loops::tripBound and, in

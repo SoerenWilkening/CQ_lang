@@ -69,6 +69,7 @@
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Dominators.h"
+#include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
@@ -201,21 +202,31 @@ private:
     return andRail(q, f);
   }
 
-  // A terminator inside a trip or an exit arm: a br or a switch, on any condition (rules 8, 13).
+  // A terminator inside a trip or an exit arm: a br, a switch, or a computed goto (rules 8, 13). An
+  // asm goto is inline asm (rule 27, waiting for its example); an invoke is IR the pinned pipeline
+  // cannot emit (rule 25, §0).
   static void checkTerminator(const Instruction *t) {
     if (isa<BranchInst>(t) || isa<SwitchInst>(t))
       return;
+    if (auto *ib = dyn_cast<IndirectBrInst>(t)) {
+      if (!computedGotoCases(*ib))
+        unimplemented("loops-cutoff: a computed goto whose address is not derived from an integer through "
+                      "blockaddress constants, selects and constant blockaddress tables (SPEC_ISSUES: the "
+                      "integer a computed goto's address is derived from)",
+                      t);
+      return;
+    }
     if (isa<CallBrInst>(t))
       unimplemented("loops-cutoff: asm goto (callbr) inside a rule-14 loop: inline asm with a quantum operand "
                     "(rule 27) waits for its CQ_spec example (build step 3)",
                     t);
-    unimplemented("loops-cutoff: awaiting owner ruling: SPEC_ISSUES \"A computed goto or invoke inside a rule-14 "
-                  "loop\"",
+    internalError("loops-cutoff: a terminator the pinned pipeline cannot emit (CR rule 25, §0: C, x86-64, "
+                  "clang -O1; invoke, landingpad and resume come from no C translation unit)",
                   t);
   }
   // The condition under which a trip goes from p to its successor b (rule 8 atoms for a br, rule 13
   // case atoms for a switch: a case edge is its value's equality, the default edge the complement of
-  // every case).
+  // every case; a computed goto is the switch over its destinations).
   static Pred tripEdge(const BasicBlock *p, const BasicBlock *b) {
     const Instruction *t = p->getTerminator();
     if (auto *br = dyn_cast<BranchInst>(t)) {
@@ -236,6 +247,15 @@ private:
         e = e | none;
       return e;
     }
+    if (auto *ib = dyn_cast<IndirectBrInst>(t)) {
+      checkTerminator(t);
+      Pred e = Pred::bottom();
+      auto cases = computedGotoCases(*ib);
+      for (auto &[c, d] : *cases)
+        if (d == b)
+          e = e | c;
+      return e;
+    }
     checkTerminator(t);
     internalError("loops-cutoff: a trip edge from a terminator checkTerminator accepted", t);
   }
@@ -253,6 +273,8 @@ private:
       Value *c = ctx.operand(br->getCondition()).v;
       return br->getSuccessor(0) == b ? c : Bd.CreateNot(c);
     }
+    if (auto *ib = dyn_cast<IndirectBrInst>(t))
+      return classicalAddressEdge(ib->getAddress(), b);
     auto *sw = cast<SwitchInst>(t);
     if (isQ(sw->getCondition()))
       return ConstantInt::getTrue(C);
@@ -267,6 +289,68 @@ private:
     if (sw->getDefaultDest() == b)
       e = Bd.CreateOr(e, none);
     return e;
+  }
+  // A blockaddress destination d (of the function it was taken in) is b of a specialization of it: the
+  // block at the same position (computedGotoCases' mapping).
+  static bool sameDest(const BasicBlock *d, const BasicBlock *b) {
+    if (!d || d->getParent() == b->getParent())
+      return d == b;
+    auto it = b->getParent()->begin();
+    for (const BasicBlock &x : *d->getParent()) {
+      if (it == b->getParent()->end())
+        return false;
+      if (&x == d)
+        return &*it == b;
+      ++it;
+    }
+    return false;
+  }
+  // classicalEdge for a computed goto: whether the address derives to destination b, a quantum
+  // condition or index counting as true (addressCases' derivation, built in this trip).
+  Value *classicalAddressEdge(const Value *a, const BasicBlock *b) {
+    IRBuilder<> &Bd = ctx.B();
+    LLVMContext &C = ctx.M.getContext();
+    a = a->stripPointerCasts();
+    if (auto *ba = dyn_cast<BlockAddress>(a))
+      return ConstantInt::getBool(C, sameDest(ba->getBasicBlock(), b));
+    if (auto *sel = dyn_cast<SelectInst>(a)) {
+      Value *t = classicalAddressEdge(sel->getTrueValue(), b), *f = classicalAddressEdge(sel->getFalseValue(), b);
+      if (isQ(sel->getCondition()))
+        return Bd.CreateOr(t, f);
+      return Bd.CreateSelect(ctx.operand(sel->getCondition()).v, t, f);
+    }
+    std::optional<GotoTableRead> tr = gotoTableRead(a);
+    if (!tr)
+      internalError("loops-cutoff: a computed goto address checkTerminator accepted that is not derived", b);
+    Value *e = ConstantInt::getFalse(C);
+    if (isQ(tr->index)) {
+      for (const BasicBlock *d : tr->entries)
+        if (sameDest(d, b))
+          return ConstantInt::getTrue(C);
+      return e;
+    }
+    Value *x = ctx.operand(tr->index).v;
+    for (unsigned k = 0; k < tr->entries.size(); ++k)
+      if (sameDest(tr->entries[k], b))
+        e = Bd.CreateOr(e, Bd.CreateICmpEQ(x, ConstantInt::get(x->getType(), k)));
+    return e;
+  }
+  // A value read only as a computed goto's address (directly, or through selects and casts read so).
+  static bool destinationOnly(const Value *v) {
+    if (!v->getType()->isPointerTy() || v->use_empty())
+      return false;
+    return all_of(v->users(), [&](const User *u) {
+      // The table entry's address: read only by the destination load.
+      if (auto *ld = dyn_cast<LoadInst>(u))
+        return ld->getPointerOperand() == v && gotoTableRead(ld) && destinationOnly(ld);
+      if (auto *ib = dyn_cast<IndirectBrInst>(u))
+        return ib->getAddress() == v;
+      if (auto *sel = dyn_cast<SelectInst>(u))
+        return sel->getCondition() != v && destinationOnly(u);
+      if (isa<BitCastInst>(u) || isa<AddrSpaceCastInst>(u))
+        return destinationOnly(u);
+      return false;
+    });
   }
   // A classical select chain over (condition, value): the first arm whose condition holds, the last
   // arm where none does (rule 9's classical select, ruling 2026-10-27).
@@ -341,6 +425,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       classicalTerms = true;
     if (auto *sw = dyn_cast<SwitchInst>(t); sw && !isQ(sw->getCondition()))
       classicalTerms = true;
+    if (auto *ib = dyn_cast<IndirectBrInst>(t); ib && !isQ(ib->getAddress()))
+      classicalTerms = true;
   }
 
   SmallPtrSet<const BasicBlock *, 8> region;
@@ -406,7 +492,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   auto edgeCond = [&](BasicBlock *p, BasicBlock *b) -> Pred { return tripEdge(p, b); };
   auto contribution = [&](BasicBlock *p, BasicBlock *b) -> Pred {
     if (Loop *S = subLoopOf(p); S && !S->contains(b)) {
-      if (S->getUniqueExitBlock() != b)
+      exits::Unit SU = exits::unitOf(*S);
+      if (is_contained(SU.abort, b) || is_contained(SU.dead, b))
+        return Pred::bottom();   // the sub-loop's noreturn arm (its own trips lower it) or a dead end
+      if (SU.cont != b)
         unimplemented("loops-cutoff: a nested K-loop with more than one exit block (cq-lgkx)", p->getTerminator());
       return local.find(S->getHeader())->second;   // the sub-loop as a unit always ends at its exit
     }
@@ -727,7 +816,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     }
   }
   std::vector<std::pair<PHINode *, PHINode *>> exitPhis;   // exit phi -> header phi it denotes
-  if (!regionForm && !multi) {
+  if (!regionForm && !multi && X) {
     const Pred &pH = ctx.preds().block(H);
     for (PHINode &P : X->phis()) {
       if (!isQ(&P) || any_of(tripPhis, [&](const TripPhi &t) { return t.P == &P; }))
@@ -1106,7 +1195,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         Value *s = conj(q, local.find(b)->second, b->getTerminator());
         // The sub-loop binds the phis of its exit block it identifies; they are not merged again.
         lowerLoop(*mS, s, cs, !B || *B > K, false);
-        if (BasicBlock *SX = mS->getUniqueExitBlock())
+        if (BasicBlock *SX = exits::unitOf(*mS).cont)
           for (PHINode &P : SX->phis())
             if (mine.count(&P))
               boundThisTrip.insert(&P);
@@ -1238,11 +1327,60 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     }
     armPick = nullptr;
   };
+  // The noreturn arms (CR rule 14 "No live exit", rule 16): each exit edge into one is taken in this
+  // evaluation under q & its block's trip-local predicate & its condition; the arm's blocks run under
+  // that flag (rule 9 inside the arm), its noreturn call is rule 16's abort_i1 on it. An exit from a
+  // sub-loop's block is the sub-loop's own (its trips lower its arm).
+  auto abortArms = [&](Value *q, const std::function<bool(const BasicBlock *)> &pick) {
+    DenseMap<const BasicBlock *, Pred> abortLocal;
+    auto srcPred = [&](const BasicBlock *u) -> std::optional<Pred> {
+      if (L.contains(u)) {
+        if (!pick(u) || subLoopOf(u))
+          return std::nullopt;
+        return local.find(u)->second;
+      }
+      auto it = abortLocal.find(u);
+      if (it == abortLocal.end())
+        return std::nullopt;
+      return it->second;
+    };
+    for (BasicBlock *b : U.abort) {
+      Pred acc = Pred::bottom();
+      for (BasicBlock *p : predecessors(b))
+        if (auto sp = srcPred(p))
+          acc = acc | (*sp & edgeCond(p, b));
+      if (acc.isBottom())
+        continue;
+      abortLocal.insert({b, acc});
+      evaluated.insert(b);
+      creach.erase(b);
+      for (PHINode &P : b->phis()) {
+        if (!isQ(&P)) {
+          classicalPhi(P);
+          continue;
+        }
+        std::vector<std::pair<Pred, Operand>> arms;
+        for (unsigned i = 0; i < P.getNumIncomingValues(); ++i)
+          if (auto sp = srcPred(P.getIncomingBlock(i)))
+            arms.push_back({*sp & edgeCond(P.getIncomingBlock(i), b), ctx.operand(P.getIncomingValue(i))});
+        set(&P, Operand{selectChain(ctx, arms, railTypeOf(P.getType())), true});
+      }
+      // Every instruction of the arm runs only where the arm is taken: under the flag.
+      Value *f = conj(q, acc, b->getTerminator());
+      for (Instruction &I : *b)
+        if (!isa<PHINode>(I) && !I.isTerminator())
+          lowerInstruction(ctx, I, f);
+    }
+  };
   lowerInsts = [&](BasicBlock *b, Value *q, const Pred &lp) {
     {
       Value *tripFlag = nullptr;   // q & the block's trip-local predicate, made on first need
       for (Instruction &I : *b) {
         if (isa<PHINode>(I) || I.isTerminator())
+          continue;
+        // A computed goto's address (CR rule 13): its destination is chosen by the integer it was derived
+        // from (tripEdge's case atoms); the address itself is no value of the trip.
+        if (destinationOnly(&I))
           continue;
         // Rule 14 case 2: an instruction with effects (a call, a store, an allocation, a phase) runs in
         // trip j only where the trip runs, so it is lowered under the trip predicate (cq-99f7's
@@ -1395,16 +1533,19 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
                        return !region.count(e) && any_of(successors(e), liveEdge);
                      });
     lowerBlocks(q, inRegion);
+    abortArms(q, inRegion);
     if (multi)
       capture(q, inRegion);
     q = conj(q, regionCont, at);
     for (unsigned j = 0; j < c; ++j) {
       lowerBlocks(q, inBody);
+      abortArms(q, inBody);
       if (multi)
         capture(q, inBody);
       Value *qb = bodyExits ? conj(q, cont, latch->getTerminator()) : q;
       advance(q);
       lowerBlocks(qb, inRegion);
+      abortArms(qb, inRegion);
       if (multi)
         capture(qb, inRegion);
       q = conj(qb, regionCont, at);
@@ -1413,22 +1554,33 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     auto all = [](const BasicBlock *) { return true; };
     for (unsigned j = 0; j < c; ++j) {
       lowerBlocks(q, all);
+      abortArms(q, all);
       if (multi)
         capture(q, all);
       captureTrips(q, j);
+      // With no exit edge at all (CR rule 14 "No live exit": every path of a trip takes a back edge) the
+      // predicate stays q: every trip runs where the loop runs.
       Value *qn = conj(q, cont, latch->getTerminator());
-      if (qn == q)
-        unimplemented("loops-cutoff: awaiting owner ruling: SPEC_ISSUES \"A rule-14 loop with no live exit\" (its back "
-                      "edge is taken on every path of a trip)",
-                      latch->getTerminator());
       advance(q);
       q = qn;
     }
   }
-  if (q == seed)
-    internalError("loops-cutoff: the chain's last predicate is its seed", at);
-  if (keep)
+  if (q == seed) {
+    // CR rule 14 "No live exit": a loop with no exit edge runs K trips and then abort_i1 on its seed (the
+    // program's continuation is unreachable). The flag is a copy of the seed, kept (rule 16, 45).
+    if (!U.live.empty() || !U.abort.empty())
+      internalError("loops-cutoff: the chain's last predicate is its seed in a loop with an exit", at);
+    RailType i1{Kind::Int, 1};
+    CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(ctx.M.getContext())});
+    RailId fid = ctx.unc().recordSeed(f);
+    abi::CoreSpec cp{abi::Core::Copy, i1};
+    CallInst *cpy = ctx.emitCore(cp, {seed, f});
+    ctx.unc().recordCore(cpy, cp, {Operand{seed, true}, Operand{f, true}}, fid);
+    ctx.emitCore(abi::CoreSpec{abi::Core::AbortI1, i1}, {f});
+    ctx.unc().setRole(fid, Role::Abort);
+  } else if (keep) {
     ctx.unc().setRole(ctx.unc().idOf(q), Role::KeptOverflow);
+  }
 
   // Exit values (body form): the final state of the header phi.
   auto exitOf = [&](PHINode *h) {
@@ -1485,21 +1637,18 @@ void lowerCutoff(LoweringContext &ctx, Loop &L, unsigned K, std::optional<uint64
 namespace exits {
 
 bool Unit::contains(const Loop &L, const BasicBlock *b) const {
-  return L.contains(b) || is_contained(arm, b);
+  return L.contains(b) || is_contained(arm, b) || is_contained(abort, b);
 }
 
 Unit unitOf(const Loop &L) {
   Unit U;
   SmallVector<BasicBlock *, 4> exitBlocks;
   L.getUniqueExitBlocks(exitBlocks);
-  if (exitBlocks.size() == 1) {
-    // One exit block: the unit as before (live or not, a noreturn exit included).
-    U.live.push_back(exitBlocks.front());
-    U.cont = exitBlocks.front();
-    return U;
-  }
+  // The noreturn arm blocks, collected from each effectful dead end.
+  SmallPtrSet<BasicBlock *, 8> abortSet;
   for (BasicBlock *x : exitBlocks) {
-    // A dead end: no path from x reaches a return or the loop again. One with no effect is UB to reach.
+    // A dead end: no path from x reaches a return or the loop again. One with no effect is UB to reach;
+    // one with an effect is a noreturn arm (rule 16), run per trip under its exit flag.
     bool live = false, effect = false;
     SmallVector<BasicBlock *, 8> work{x};
     SmallPtrSet<BasicBlock *, 8> seen{x};
@@ -1525,17 +1674,39 @@ Unit unitOf(const Loop &L) {
       U.live.push_back(x);
       continue;
     }
-    if (effect)
-      unimplemented("loops-cutoff: a rule-14 loop exit into a dead end with an effect (a noreturn call: the exit "
-                    "is live and the unit has no continuation) (cq-0dvv)",
-                    x->getTerminator());
+    if (effect) {
+      abortSet.insert(seen.begin(), seen.end());
+      continue;
+    }
     for (BasicBlock *b : seen)
       if (!is_contained(U.dead, b))
         U.dead.push_back(b);
   }
+  if (!abortSet.empty()) {
+    // A dead block reached from a noreturn arm too is part of that arm (it runs only after its effect).
+    for (BasicBlock *b : abortSet)
+      if (auto it = find(U.dead, b); it != U.dead.end())
+        U.dead.erase(it);
+    // Topological order over the arm's blocks (an arm runs once per exit: a cycle in it is a loop of the
+    // arm, a natural loop the walker would dispatch; the arm's own blocks come in DFS reverse post-order,
+    // back edges dropped, and the loop module lowers a block once per trip).
+    SmallPtrSet<BasicBlock *, 8> done;
+    std::vector<BasicBlock *> post;
+    std::function<void(BasicBlock *)> dfs = [&](BasicBlock *b) {
+      done.insert(b);
+      for (BasicBlock *s : successors(b))
+        if (abortSet.count(s) && !done.count(s))
+          dfs(s);
+      post.push_back(b);
+    };
+    for (BasicBlock *x : exitBlocks)
+      if (abortSet.count(x) && !done.count(x))
+        dfs(x);
+    for (auto it = post.rbegin(); it != post.rend(); ++it)
+      U.abort.push_back(*it);
+  }
   if (U.live.empty())
-    unimplemented("loops-cutoff: awaiting owner ruling: SPEC_ISSUES \"A rule-14 loop with no live exit\"",
-                  L.getHeader()->getTerminator());
+    return U;   // no live exit: no continuation (CR rule 14 "No live exit")
   if (U.live.size() == 1) {
     U.cont = U.live.front();
     return U;
