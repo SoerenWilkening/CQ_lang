@@ -518,6 +518,7 @@ private:
 
   void check(Loop &L, Case c);
   bool twinOf(const CallBase &CB) const;
+  bool writesCallerCells(const CallBase &CB) const;
   void resolvePreheader();
 
   // CR rule 6 on a carried value (cq-b13w). A quantum header phi p read only by a chain of updates
@@ -772,6 +773,17 @@ bool Unit::tripLocal(Loop &sl, Loop &L) {
   return any;
 }
 
+// Does the clone call write a caller cell (a minted or forwarded slot result through a pointer argument)?
+bool Unit::writesCallerCells(const CallBase &CB) const {
+  const Specialization *S = ctx.T.calleeSpecialization(CB, ctx.S);
+  if (!S)
+    return false;
+  for (unsigned i = 0; i < CB.arg_size(); ++i)
+    if (CB.getArgOperand(i)->getType()->isPointerTy() && !ctx.T.cellsWritten(*S, i).empty())
+      return true;
+  return false;
+}
+
 bool Unit::twinOf(const CallBase &CB) const {
   const Specialization *S = ctx.T.calleeSpecialization(CB, ctx.S);
   if (!S)
@@ -828,11 +840,14 @@ void Unit::check(Loop &L, Case c) {
           // loop-carried state) is eff-fenv's own construction (requirePlaced).
           break;
         case calls::Class::Lift:
+        case calls::Class::LibmIntrinsic:
           // Rule 18 inside a rule-14 trip (124): a clone call with nothing to undo (no quantum result, no
           // caller cell it writes) records no call item, so each trip's call is a gate sequence of its own.
-          // One with a twin (a result or a written cell: the reverse would have to replay the twin) is not
-          // built yet.
-          if (c != Case::ClassicalBoundQuantumExit && !twinOf(*CB))
+          // One with a twin (a quantum result) is a call group recorded in the trip's scope: the reverse
+          // emits its twin with the trip's pushed operands, as it emits a template's _unc (Uncompute's item
+          // of a call group). A clone writing caller cells in the trip (slot results across trips) and a
+          // case-3 trip (the call under the trip rail: its _ctl clone) are the default below.
+          if (c != Case::ClassicalBoundQuantumExit && (!twinOf(*CB) || !writesCallerCells(*CB)))
             break;
           [[fallthrough]];
         default:

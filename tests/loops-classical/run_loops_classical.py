@@ -115,6 +115,9 @@ C3NEST = ["n_inner1", "n_inner3", "n_phase"]
 # cq-w3cd: a case-3 exit test with several quantum disjuncts (one flag, rule 8).
 C3TWO_PROBE = PROBES / "c3two.O1.ll"
 C3TWO = ["t_or", "t_bool", "t_do"]
+# cq-mgkr: clone calls with a quantum result and libm intrinsics in a classically bounded trip (rule 18 in rule 14).
+CALLS_PROBE = PROBES / "calls.O1.ll"
+CALLS = ["lc_call", "lc_libm", "lc_chain"]
 ENTRIES = ["p_acc", "p_brk", "p_nest", "p_mod", "p_nb", "p_horner", "p_arm", "p_phase", "p_cjoin", "p_tphase", "p_bwb", "p_g2"]
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 
@@ -187,13 +190,13 @@ def main() -> int:
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", required=True)
     ap.add_argument("--entry", action="append", help="check only these entries of loops.O1.ll")
-    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two"],
+    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls"],
                     help="run only these probe groups (default: all)")
     a = ap.parse_args()
     out = ROOT / "build" / "tests" / "loops-classical" / "out"
     out.mkdir(parents=True, exist_ok=True)
     failures = 0
-    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two"]))
+    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two", "calls"]))
     groups = []
     if "loops" in want:
         groups.append((PROBE, a.entry or ENTRIES))
@@ -219,7 +222,8 @@ def main() -> int:
         groups.append((MEMKEEP_PROBE, list(MEMKEEP)))
     if "carried" in want:
         groups.append((CARRIED_PROBE, CARRIED))
-    for g, probe, entries in (("carm", CARM_PROBE, CARM), ("c3nest", C3NEST_PROBE, C3NEST), ("c3two", C3TWO_PROBE, C3TWO)):
+    for g, probe, entries in (("carm", CARM_PROBE, CARM), ("c3nest", C3NEST_PROBE, C3NEST), ("c3two", C3TWO_PROBE, C3TWO),
+                                 ("calls", CALLS_PROBE, CALLS)):
         if g in want:
             groups.append((probe, entries))
     for probe, entries in groups:
