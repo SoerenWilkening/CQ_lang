@@ -379,10 +379,6 @@ Value *snapshotSwitchAtoms(LoweringContext &ctx, CallInst &T, Value *h) {
       const Instruction *P = pointIn(sh, &T, S->getFunction());
       if (!P || !inSwitchRegion(*S, P))
         continue;
-      if (sh.views.count(w))
-        unimplemented("spine: cq_theta rotates in place the rail of " + describe(w) + ", a view scrutinee of the "
-                          "quantum switch " + describe(S) + " whose case atoms may be read after it (cq-0hhk)",
-                      &T);
       if (P != &T)
         unimplemented("spine: a callee's cq_theta rotates in place the scrutinee rail of the quantum switch " +
                           describe(S) + " whose case atoms may be read after it (cq-0hhk)",
@@ -403,7 +399,9 @@ Value *snapshotSwitchAtoms(LoweringContext &ctx, CallInst &T, Value *h) {
                           "(cq-0hhk)",
                       &T);
       if (!c) {
-        RailType rw = railTypeOf(w->getType());
+        // A view scrutinee (cq-su3p) names the register's narrow rail h: the copy is of h's width.
+        auto vw = sh.views.find(w);
+        RailType rw = vw != sh.views.end() ? RailType{Kind::Int, vw->second.bits} : railTypeOf(w->getType());
         c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, rw}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), rw))});
         RailId cid = ctx.unc().recordSeed(cast<CallInst>(c));
         abi::CoreSpec cp{abi::Core::Copy, rw};
@@ -473,11 +471,8 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T, b
         else if (auto *sl = dyn_cast<SelectInst>(a))
           ins.append({sl->getTrueValue(), sl->getFalseValue()});
         for (const Value *in : ins) {
-          if (in == r)
-            unimplemented("spine: cq_theta rotates " + describe(h) + ", a merge that may name the rail of the "
-                              "by-value formal " + describe(&A) + ": the copy would be needed on some paths only "
-                              "(cq-c09h)",
-                          &T);
+          if (in == r)   // the caller's rail on some paths: a copy on every path (C: v keeps its value)
+            return rotateCopy();
           if (seen.insert(in).second)
             work.push_back(in);
         }
@@ -505,8 +500,10 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T, b
   }
   hoistReaders(ctx, T, v, h);
 
-  // A view of h (cq-su3p) read narrow after the rotation would read the rotated rail; a materialized
-  // view's wide readers read its copy taken at the merge.
+  // A view of h (cq-su3p) read narrow after the rotation reads the pre-rotation copy as its rail (a
+  // materialized view's wide readers read its copy taken at the merge).
+  SmallVector<const Value *, 2> viewNeeds;
+  SmallVector<const Instruction *, 4> readers;   // every reader after T that gets the copy
   for (auto &[w, vw] : sh.views) {
     if (vw.rail != h || functionOf(w) != T.getFunction())
       continue;
@@ -524,17 +521,23 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T, b
         continue;
       if (U->getUser() != w && sh.binds.count(w) && !narrowUse(ctx, *U, vw.bits) && U->get() == w)
         continue;   // reads the wide copy
-      unimplemented("spine: " + describe(w) + ", a view of the rail cq_theta rotates in place, is read after the "
-                        "rotation (by " + describe(I) + ") (cq-su3p)",
-                    &T);
+      if (cyc)
+        unimplemented("spine: " + describe(w) + ", a view of the rail cq_theta rotates in place, is read after the "
+                          "rotation (by " + describe(I) + ") inside a cycle where the view is invariant (cq-su3p)",
+                      &T);
+      if (!is_contained(viewNeeds, w))
+        viewNeeds.push_back(w);
+      readers.push_back(I);
     }
   }
 
   Value *snap = snapshotSwitchAtoms(ctx, T, h);   // cq-0hhk
 
-  // Any other value bound to h and read after the rotation would need a copy of its own. cq-igqp: so
-  // would a value bound to a rail h may name at run time (h a phi or select over handles: a classically
-  // bounded loop's header phi names its initial rail on trip 0), since the rotation hits that rail.
+  // Any other value bound to h and read after the rotation reads the pre-rotation copy too (bound to
+  // it after the Ry, like the operand). cq-igqp: a value bound to a rail h may name at run time (h a phi
+  // or select over handles: a classically bounded loop's header phi names its initial rail on trip 0)
+  // would need the copy on the paths where h names it only: the Ry hits a copy of h instead (the C
+  // program's own reading: v and every alias keep their value).
   SmallPtrSet<const Value *, 8> aliases;
   {
     SmallVector<const Value *, 8> work{h};
@@ -552,6 +555,7 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T, b
     }
     aliases.erase(h);
   }
+  SmallVector<std::pair<const Value *, DenseSet<const BasicBlock *>>, 2> aliasNeeds;
   for (auto &[w, ops] : sh.binds) {
     if (w == v || w == &T || ops.size() != 1 || !ops.front().handle ||
         (ops.front().v != h && !aliases.count(ops.front().v)))
@@ -562,24 +566,30 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T, b
       continue;
     bool cyc = false;
     DenseSet<const BasicBlock *> r = reachFrom(P, w, cyc);
-    if (const Instruction *u = useAfter(sh, w, P, r))
-      unimplemented("spine: " + describe(w) + ", bound to the rail cq_theta rotates in place" +
-                        (ops.front().v != h ? std::string(" (a rail its operand's phi may name)") : std::string()) +
-                        ", is read after the rotation (by " + describe(u) + ") and is not the cq_theta's operand "
-                        "(cq-s32y, cq-igqp)",
+    SmallVector<const Instruction *, 4> rs;
+    if (!useAfter(sh, w, P, r, &rs))
+      continue;
+    if (ops.front().v != h || P != &T)
+      return rotateCopy();
+    if (cyc)
+      unimplemented("spine: " + describe(w) + ", bound to the rail cq_theta rotates in place, is read after the "
+                        "rotation (by " + describe(rs.front()) + ") inside a cycle where it is invariant (cq-s32y)",
                     &T);
+    readers.append(rs.begin(), rs.end());
+    aliasNeeds.push_back({w, std::move(r)});
   }
 
   bool cyclic = false;
   DenseSet<const BasicBlock *> reach = reachFrom(&T, v, cyclic);
-  SmallVector<const Instruction *, 4> readers;
-  const Instruction *u = useAfter(sh, v, &T, reach, &readers);
-  if (!u)
+  SmallVector<const Instruction *, 4> vReaders;
+  const Instruction *u = useAfter(sh, v, &T, reach, &vReaders);
+  if (!u && viewNeeds.empty() && aliasNeeds.empty())
     return std::nullopt;
-  if (cyclic)
+  if (u && cyclic)
     unimplemented("spine: the pre-rotation value of an in-place cq_theta is read after it (by " + describe(u) +
                       ") inside a cycle where the value is invariant (cq-s32y)",
                   &T);
+  readers.append(vReaders.begin(), vReaders.end());
   // cq-drcl: the copy is emitted at T, so it is available to a reader after T only when every output
   // path to the reader passes T's output block: quantum arms are linearized, a classical branch is
   // not. A reader whose block's classical factor does not imply T's is reached by a path on which T's
@@ -610,11 +620,17 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T, b
   }
 
   PendingCopy pc;
-  pc.v = v;
+  pc.v = u ? v : nullptr;
   pc.rec.T = &T;
   pc.rec.h = h;
   pc.rec.c = c;
   pc.rec.reach = std::move(reach);
+  pc.views.assign(viewNeeds.begin(), viewNeeds.end());
+  for (auto &[a, r] : aliasNeeds) {
+    Shared::PreRot ar = pc.rec;
+    ar.reach = std::move(r);
+    pc.aliases.push_back({a, std::move(ar)});
+  }
   return pc;
 }
 
@@ -622,7 +638,7 @@ void finishPreRotation(LoweringContext &ctx, std::optional<PendingCopy> &pc) {
   if (!pc)
     return;
   Shared &sh = shared(ctx);
-  auto it = sh.binds.find(pc->v);
+  auto it = pc->v ? sh.binds.find(pc->v) : sh.binds.end();
   if (pc->rotCopy) {
     if (it == sh.binds.end() || it->second.size() != 1 || it->second.front().v != pc->rec.c)
       internalError("spine: the operand of a cq_theta on a copy changed its binding during the rotation",
@@ -631,10 +647,24 @@ void finishPreRotation(LoweringContext &ctx, std::optional<PendingCopy> &pc) {
     pc.reset();
     return;
   }
-  if (it == sh.binds.end() || it->second.size() != 1 || it->second.front().v != pc->rec.h)
-    internalError("spine: the operand of an in-place cq_theta changed its binding during the rotation", pc->rec.T);
-  it->second.assign({Operand{pc->rec.c, true}});
-  sh.preRot[pc->v] = std::move(pc->rec);
+  // The views and the other values bound to h read the copy after the rotation (each with its own
+  // reach for atPhiEdge: a reader the rotation does not reach still reads h).
+  for (const Value *w : pc->views)
+    sh.views[w].rail = pc->rec.c;
+  for (auto &[a, r] : pc->aliases) {
+    auto ai = sh.binds.find(a);
+    if (ai == sh.binds.end() || ai->second.size() != 1 || ai->second.front().v != pc->rec.h)
+      internalError("spine: a value bound to an in-place cq_theta's rail changed its binding during the rotation",
+                    pc->rec.T);
+    ai->second.assign({Operand{pc->rec.c, true}});
+    sh.preRot[a] = std::move(r);
+  }
+  if (pc->v) {
+    if (it == sh.binds.end() || it->second.size() != 1 || it->second.front().v != pc->rec.h)
+      internalError("spine: the operand of an in-place cq_theta changed its binding during the rotation", pc->rec.T);
+    it->second.assign({Operand{pc->rec.c, true}});
+    sh.preRot[pc->v] = std::move(pc->rec);
+  }
   pc.reset();
 }
 

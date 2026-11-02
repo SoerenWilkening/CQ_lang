@@ -280,9 +280,12 @@ llvm::Value *calleeCollapse(LoweringContext &, llvm::Value *handle, const llvm::
 // cq-6qum: likewise (rotCopy) when the cq_theta is uncontrolled (rule 2, or rule 15: cq-r9j0), v is a
 // rule 10 register state (Shared::statePreps) and v is read after the rotation: the register keeps h.
 struct PendingCopy {
-  const llvm::Value *v = nullptr;
+  const llvm::Value *v = nullptr;   // the operand, when it is read after the rotation (else nullptr)
   Shared::PreRot rec;
   bool rotCopy = false;
+  // Views of h (cq-su3p) and other values bound to h read after the rotation: they read rec.c after it.
+  llvm::SmallVector<const llvm::Value *, 2> views;
+  llvm::SmallVector<std::pair<const llvm::Value *, Shared::PreRot>, 2> aliases;
 };
 std::optional<PendingCopy> beginPreRotation(LoweringContext &, llvm::CallInst &theta, bool uncontrolled);
 void finishPreRotation(LoweringContext &, std::optional<PendingCopy> &);
