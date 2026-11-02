@@ -1,4 +1,6 @@
-; FATAL: cq: unimplemented: spine: a rule 10 merge through a representation change whose constant incoming 0 arrives on an edge where its register may have been changed by
+; cq-5ajv, cq-jkq8 (CR rules 9, 10; was a stop): rule 9's narrow merge where the register changed on the
+; constant's edge.
+; USERCHECK w4
 ; cq-5ajv (review spine-h1 #1): clang -O1 of
 ;   int w4(void){
 ;     bool x=0,a=0,y=0,z=0;

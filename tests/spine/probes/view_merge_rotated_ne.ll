@@ -1,5 +1,5 @@
-; FATAL: cq: unimplemented: spine: a rule 10 merge through a representation change whose constant incoming 0 arrives on an edge where its register may have been changed by
-; cq-5ajv: as view_merge_rotated_eq.ll with icmp ne (the cq-b26g shape on a rotated register).
+; cq-5ajv, cq-jkq8 (CR rules 9, 10; was a stop): as view_merge_rotated_eq.ll with icmp ne.
+; USERCHECK w3
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 declare zeroext i1 @cq_theta_i1(i1 noundef zeroext, double noundef) #1

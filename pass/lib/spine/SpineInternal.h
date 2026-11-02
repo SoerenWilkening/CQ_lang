@@ -338,8 +338,17 @@ llvm::SmallVector<unsigned, 4> packedCuts(const llvm::Value *v);
 // cq-0umd (166, rule 26): per scalar leaf of F's aggregate result type (depth first, as aggr flattens
 // it), the field boundaries of that leaf as F's returns pack it (packedCuts of the integer each return's
 // insertvalue chain puts there; {0, W} for an integer leaf no return packs, {} for a non-integer leaf).
-// Empty when F's result is not an aggregate. Returns that pack a leaf differently: unimplemented.
+// Empty when F's result is not an aggregate. Returns that pack a leaf differently: the union of their
+// boundaries (CR rule 26, one rail per field of every packing; cq-jkq8).
 llvm::SmallVector<llvm::SmallVector<unsigned, 4>, 4> resultLeafCuts(const llvm::Function &F);
+// The union of the returns' packedCuts of F's integer result (cq-jkq8); the union of two boundary lists.
+llvm::SmallVector<unsigned, 4> resultIntCuts(const llvm::Function &F);
+llvm::SmallVector<unsigned, 4> unionCuts(llvm::ArrayRef<unsigned> a, llvm::ArrayRef<unsigned> b);
+// The first flattened scalar leaf of the index path idx into t.
+unsigned resultLeafIndex(llvm::Type *t, llvm::ArrayRef<unsigned> idx);
+// rv's integer leaf value v (or one whole operand of width W) at the boundaries cuts (Views.cpp reshape).
+llvm::SmallVector<Operand, 4> packFieldsOf(LoweringContext &, Operand whole, unsigned W,
+                                           llvm::ArrayRef<unsigned> cuts, const llvm::Value *at);
 // The result's fields in that order: each leaf's type, a packed integer leaf split into its fields.
 llvm::SmallVector<llvm::Type *, 4> resultFieldTypes(const llvm::Function &F);
 

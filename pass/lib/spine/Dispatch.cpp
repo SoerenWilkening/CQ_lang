@@ -513,8 +513,8 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
     if (isa<ConstrainedFPIntrinsic>(CB))
       return fenv::lowerConstrained(ctx, CB);
     if (isa<IntrinsicInst>(CB))
-      unimplemented("spine: llvm.get.rounding / llvm.set.rounding have no entry in Effects.h (rule 23, "
-                    "eff-fenv)",
+      internalError("spine: llvm.get.rounding / llvm.set.rounding in a lowered function (the plugin rewrites them "
+                    "as fegetround / fesetround before the final taint, rule 23)",
                     &CB);
     return fenv::lowerFenvCall(ctx, CB);
   case Class::Thread: return conc::lowerThreadCall(ctx, CB);

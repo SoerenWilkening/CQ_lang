@@ -4222,10 +4222,16 @@ bool TaintInfo::resultQuantum(const Specialization &S, unsigned field) const {
                 if ((match(X, m_DisjointOr(m_Shl(m_ZExt(m_Value(A)), m_APInt(C)), m_ZExt(m_Value(B)))) ||
                      match(X, m_DisjointOr(m_ZExt(m_Value(B)), m_Shl(m_ZExt(m_Value(A)), m_APInt(C))))) &&
                     C->getZExtValue() % 8 == 0 && C->getZExtValue() > 0 &&
-                    C->getZExtValue() < X->getType()->getIntegerBitWidth())
-                  leafCut[k] = {unsigned(C->getZExtValue())};
+                    C->getZExtValue() < X->getType()->getIntegerBitWidth()) {
+                  // cq-jkq8 (rule 26): the fields are the union of the returns' packings (one rail per
+                  // field of every packing a return makes; a return packing coarser splits its value).
+                  unsigned c = unsigned(C->getZExtValue());
+                  if (std::find(leafCut[k].begin(), leafCut[k].end(), c) == leafCut[k].end()) {
+                    leafCut[k].push_back(c);
+                    std::sort(leafCut[k].begin(), leafCut[k].end());
+                  }
+                }
               }
-              break;   // the first return decides, as for a packed integer result (spine checks the rest)
             }
     }
     std::function<void(llvm::Type *, unsigned &)> walk = [&](llvm::Type *T, unsigned &lane) {
@@ -4268,9 +4274,11 @@ bool TaintInfo::resultQuantum(const Specialization &S, unsigned field) const {
           const llvm::APInt *C;
           if (match(V, m_DisjointOr(m_Shl(m_ZExt(m_Value(X)), m_APInt(C)), m_ZExt(m_Value(Y)))) ||
               match(V, m_DisjointOr(m_ZExt(m_Value(Y)), m_Shl(m_ZExt(m_Value(X)), m_APInt(C)))))
-            if (C->getZExtValue() % 8 == 0)
-              cuts.push_back(unsigned(C->getZExtValue()));
-          break;
+            if (C->getZExtValue() % 8 == 0 && C->getZExtValue() > 0 && C->getZExtValue() < W &&
+                std::find(cuts.begin(), cuts.end(), unsigned(C->getZExtValue())) == cuts.end()) {
+              cuts.push_back(unsigned(C->getZExtValue()));   // cq-jkq8: the union over the returns
+              std::sort(cuts.begin(), cuts.end());
+            }
         }
     unsigned lo = 0;
     for (unsigned c : cuts) {

@@ -34,7 +34,9 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstrTypes.h"
+#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
@@ -115,6 +117,82 @@ cq::TaintOptions readTaintOptions() {
 }
 
 // The CQ.h surface: cq_theta_*, cq_measure_*, cq_phi, __cq_invert_begin, __cq_invert_end.
+// cq-jkq8: one return block per tainted function, the same kind of rewrite as fix-irreducible (CR rule 14:
+// a semantics-preserving CFG rewrite before the final taint; §6 compares semantics, never CFG shape). Each
+// return becomes a branch to one block returning the phi of their values, so a return under a quantum
+// predicate is the function's only return (the paths outside its predicate never return: they abort or never
+// end, rules 14 and 16) and returns on several quantum paths merge by rule 9 at that phi. A musttail call
+// (clang's [[clang::musttail]]) becomes an ordinary tail call: the lowering calls clones of other signatures
+// anyway, and C semantics do not depend on the frame being reused.
+bool unifyReturns(Function &F) {
+  SmallVector<ReturnInst *, 4> rets;
+  for (BasicBlock &BB : F)
+    if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
+      rets.push_back(R);
+  if (rets.size() < 2)
+    return false;
+  for (BasicBlock &BB : F)
+    for (Instruction &I : BB)
+      if (auto *CI = dyn_cast<CallInst>(&I); CI && CI->isMustTailCall())
+        CI->setTailCallKind(CallInst::TCK_Tail);
+  LLVMContext &C = F.getContext();
+  BasicBlock *U = BasicBlock::Create(C, "cq.ret", &F);
+  PHINode *PN = nullptr;
+  if (!F.getReturnType()->isVoidTy()) {
+    PN = PHINode::Create(F.getReturnType(), unsigned(rets.size()), "cq.retval");
+    PN->insertInto(U, U->end());
+  }
+  ReturnInst::Create(C, PN, U);
+  for (ReturnInst *R : rets) {
+    BasicBlock *BB = R->getParent();
+    if (PN)
+      PN->addIncoming(R->getReturnValue(), BB);
+    R->eraseFromParent();
+    BranchInst::Create(U, BB);
+  }
+  return true;
+}
+
+// cq-jkq8 (CR rule 23): llvm.get.rounding (C's FLT_ROUNDS) and llvm.set.rounding read and write the rounding
+// mode, the environment's mode part, which C17 §7.6 reads and writes by fegetround / fesetround. In a tainted
+// function each becomes that call with x86-64's encoding change around it (FLT_ROUNDS 0 toward zero, 1 nearest,
+// 2 upward, 3 downward; FE_* the rounding-control bits << 10), so rule 23's fenv construction lowers it, a
+// quantum mode included (the encoding change is ordinary arithmetic on the mode). An argument of set.rounding
+// outside 0..3 has no defined effect (LangRef), outside the domain.
+bool rewriteRoundingIntrinsics(Function &F) {
+  SmallVector<IntrinsicInst *, 4> work;
+  for (BasicBlock &BB : F)
+    for (Instruction &I : BB)
+      if (auto *II = dyn_cast<IntrinsicInst>(&I);
+          II && (II->getIntrinsicID() == Intrinsic::get_rounding || II->getIntrinsicID() == Intrinsic::set_rounding))
+        work.push_back(II);
+  if (work.empty())
+    return false;
+  Module &M = *F.getParent();
+  Type *i32 = Type::getInt32Ty(M.getContext());
+  for (IntrinsicInst *II : work) {
+    IRBuilder<> B(II);
+    if (II->getIntrinsicID() == Intrinsic::get_rounding) {
+      FunctionCallee get = M.getOrInsertFunction("fegetround", FunctionType::get(i32, false));
+      Value *m = B.CreateCall(get);
+      // FLT_ROUNDS = (0x2d >> ((m >> 9) & 6)) & 3 for m one of 0, 0x400, 0x800, 0xc00.
+      Value *s = B.CreateAnd(B.CreateLShr(m, 9), 6);
+      Value *r = B.CreateAnd(B.CreateLShr(ConstantInt::get(i32, 0x2d), s), 3);
+      if (r->getType() != II->getType())
+        r = B.CreateZExtOrTrunc(r, II->getType());
+      II->replaceAllUsesWith(r);
+    } else {
+      FunctionCallee set = M.getOrInsertFunction("fesetround", FunctionType::get(i32, {i32}, false));
+      // FE_* = ((0x63 >> 2r) & 3) << 10: r = 0, 1, 2, 3 to 0xc00, 0, 0x800, 0x400.
+      Value *r = B.CreateZExtOrTrunc(II->getArgOperand(0), i32);
+      Value *rc = B.CreateAnd(B.CreateLShr(ConstantInt::get(i32, 0x63), B.CreateShl(r, 1)), 3);
+      B.CreateCall(set, {B.CreateShl(rc, 10)});
+    }
+    II->eraseFromParent();
+  }
+  return true;
+}
+
 bool isCqSurface(StringRef name) {
   return name.starts_with("cq_theta_") || name.starts_with("cq_measure_") || name == "cq_phi" ||
          name == "__cq_invert_begin" || name == "__cq_invert_end";
@@ -229,6 +307,22 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
       trace("fix-irreducible: changed @" + F->getName());
       CFGChanged = true;
       FAM.invalidate(*F, PA);
+    }
+    // 2b. One return block per tainted function (unifyReturns), and the rounding intrinsics as the C17 calls
+    // (rewriteRoundingIntrinsics), cq-jkq8.
+    for (Function *F : Tainted) {
+      if (!rewriteRoundingIntrinsics(*F))
+        continue;
+      trace("rounding intrinsics: changed @" + F->getName());
+      CFGChanged = true;
+      FAM.invalidate(*F, PreservedAnalyses::none());
+    }
+    for (Function *F : Tainted) {
+      if (!unifyReturns(*F))
+        continue;
+      trace("unify-returns: changed @" + F->getName());
+      CFGChanged = true;
+      FAM.invalidate(*F, PreservedAnalyses::none());
     }
 
     // 3. Taint over the final CFG. Step 2 added blocks, phis and branches the preliminary result

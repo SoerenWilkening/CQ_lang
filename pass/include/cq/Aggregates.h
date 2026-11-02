@@ -11,6 +11,9 @@ void lowerExtractValue(LoweringContext &, llvm::ExtractValueInst &);
 void lowerInsertValue(LoweringContext &, llvm::InsertValueInst &);
 void lowerVectorOp(LoweringContext &, llvm::Instruction &);
 llvm::SmallVector<Operand, 4> flattenResult(LoweringContext &, const llvm::Value *);
+// cq-jkq8: how many of flattenResult's fields each scalar leaf of v contributes (a packed integer leaf
+// several, rule 26), in leaf order.
+llvm::SmallVector<unsigned, 4> leafFieldCounts(LoweringContext &, const llvm::Value *);
 // cq-0umd (166, rule 26): binds a composite orig field-wise where scalar leaf k has perLeaf[k] fields (a
 // packed integer leaf, the coerced inner struct of { i64, double }: its fields, low bits first). The
 // extractvalue of such a leaf is bound to its fields (spine unpacks them); insertvalue keeps the counts.

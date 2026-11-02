@@ -308,6 +308,7 @@ private:
   bool eligible(const BasicBlock *y, const BasicBlock *from) const;
   BasicBlock *out(const BasicBlock *b);
   Value *gotoEdge(const Value *address, const BasicBlock *dest);
+  SmallVector<Operand, 4> aggregateFields(ReturnInst *ret, Value *rv);
   void emitBlock(BasicBlock *b);
   void emitGuard(BasicBlock *b);
   void emitBody(BasicBlock *b);
@@ -1151,7 +1152,8 @@ bool Walker::emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigne
   bool fieldwise = false;
   unsigned nLeaves = 0;
   bool fat = rty->isPointerTy() && ctx.T.resultQuantum(ctx.S, 0);   // rule 21 (85): {tag, idx}
-  SmallVector<unsigned, 4> pcuts = rty->isIntegerTy() ? spine::packedCuts(rv) : SmallVector<unsigned, 4>{};
+  // Rule 26 (cq-jkq8): the fields are the union of the returns' packings, this return's value split there.
+  SmallVector<unsigned, 4> pcuts = rty->isIntegerTy() ? spine::resultIntCuts(*ctx.S.F) : SmallVector<unsigned, 4>{};
   if (fat) {
     pcuts.clear();
     nLeaves = 2;
@@ -1178,7 +1180,7 @@ bool Walker::emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigne
       auto [tag, idx] = fatptr::resultFields(ctx, *ret);
       leaves = {tag, idx};
     } else {
-      leaves = pcuts.size() > 2 ? spine::packFields(ctx, rv, pcuts) : aggr::flattenResult(ctx, rv);
+      leaves = pcuts.size() > 2 ? spine::packFields(ctx, rv, pcuts) : aggregateFields(ret, rv);
     }
     auto leafTy = [&](unsigned k) -> Type * {
       if (fat)
@@ -1218,6 +1220,49 @@ bool Walker::emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigne
     }
   }
   return true;
+}
+
+// An aggregate result's fields as the clone returns them (rule 26, cq-jkq8): each packed integer leaf at the
+// union of the returns' packings (resultLeafCuts); a leaf this return packs coarser is split here, from the
+// value inserted there or from its one bound field.
+SmallVector<Operand, 4> Walker::aggregateFields(ReturnInst *ret, Value *rv) {
+  SmallVector<Operand, 4> bound = aggr::flattenResult(ctx, rv);
+  SmallVector<SmallVector<unsigned, 4>, 4> cuts = spine::resultLeafCuts(*ctx.S.F);
+  SmallVector<unsigned, 4> per = aggr::leafFieldCounts(ctx, rv);
+  if (per.size() != cuts.size())
+    return bound;   // not a field-wise aggregate (resultLeafCuts is empty): as bound
+  SmallVector<Operand, 4> out;
+  unsigned at = 0;
+  for (unsigned k = 0; k < per.size(); ++k) {
+    ArrayRef<Operand> mine = ArrayRef<Operand>(bound).slice(at, per[k]);
+    at += per[k];
+    unsigned want = cuts[k].size() > 2 ? unsigned(cuts[k].size() - 1) : 1u;
+    if (per[k] == want) {
+      out.append(mine.begin(), mine.end());
+      continue;
+    }
+    // The value inserted at leaf k last (a later insert of the same leaf wins).
+    const Value *X = nullptr;
+    for (const Value *v = rv; auto *iv = dyn_cast<InsertValueInst>(v); v = iv->getAggregateOperand())
+      if (spine::resultLeafIndex(rv->getType(), iv->getIndices()) == k) {
+        X = iv->getInsertedValueOperand();
+        break;
+      }
+    unsigned W = cuts[k].back();
+    SmallVector<Operand, 4> f;
+    if (X && X->getType()->isIntegerTy(W))
+      f = spine::packFields(ctx, X, cuts[k]);
+    else if (mine.size() == 1)
+      f = spine::packFieldsOf(ctx, mine.front(), W, cuts[k], ret);
+    else
+      internalError("spine: a returned aggregate's leaf bound at other fields than its returns' packings, with no "
+                    "inserted value to split",
+                    ret);
+    out.append(f.begin(), f.end());
+  }
+  if (at != bound.size())
+    internalError("spine: a returned aggregate's fields do not match its leaves", ret);
+  return out;
 }
 
 // The result's fields as a clone returns them before its trailing extras (the flags of E1, the escaped
@@ -1576,8 +1621,14 @@ void Walker::emitTerminator(BasicBlock *b) {
   IRBuilder<> &B = ctx.B();
 
   if (auto *ret = dyn_cast<ReturnInst>(t)) {
-    if (ctx.T.controlTainted(b, ctx.S))
-      unimplemented("spine: a return under a quantum predicate", t);
+    // A return under a quantum predicate: the plugin gave every tainted function one return block
+    // (unifyReturns), so this is the function's only return and the paths outside its predicate never
+    // return (they abort, rule 16, or never end, rule 14 "No live exit"): it is lowered as the return.
+    if (ctx.T.controlTainted(b, ctx.S) &&
+        count_if(*ctx.S.F, [](const BasicBlock &x) { return isa<ReturnInst>(x.getTerminator()); }) > 1)
+      internalError("spine: a return under a quantum predicate beside another return (the plugin unifies the "
+                    "returns of every tainted function)",
+                    t);
     if (!ctx.S.isEntry() && !ctx.S.kept)
       return emitCloneReturn(ret);
     if (ctx.S.kept) {
@@ -1621,8 +1672,21 @@ void Walker::emitTerminator(BasicBlock *b) {
         } else {
           agg = RB.CreateInsertValue(agg, base, {k++});
         }
-        for (Value *r : regs)
+        DominatorTree ODT(*sh.out);
+        for (Value *r : regs) {
+          // A register minted on some classical paths only reaches this return as itself where it was
+          // minted and as handle 0 elsewhere (§1.1, rule 19: the twin, replaying the same path, never
+          // reads it).
+          auto *ri = dyn_cast<Instruction>(r);
+          if (ri && !ODT.dominates(ri, nr)) {
+            SSAUpdater up;
+            up.Initialize(r->getType(), r->getName());
+            up.AddAvailableValue(&sh.out->getEntryBlock(), ConstantInt::get(r->getType(), 0));
+            up.AddAvailableValue(ri->getParent(), ri);
+            r = up.GetValueAtEndOfBlock(nr->getParent());
+          }
           agg = RB.CreateInsertValue(agg, r, {k++});
+        }
         if (k != wt->getNumElements())
           internalError("spine: a kept clone's return type does not match its result and registers", t);
         nr->setOperand(0, agg);

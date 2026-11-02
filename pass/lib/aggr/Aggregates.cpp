@@ -1178,5 +1178,6 @@ void lowerVectorOp(LoweringContext &ctx, Instruction &I) {
 }
 
 SmallVector<Operand, 4> flattenResult(LoweringContext &ctx, const Value *v) { return leaves(ctx, v); }
+SmallVector<unsigned, 4> leafFieldCounts(LoweringContext &ctx, const Value *v) { return fieldsPerLeaf(ctx, v); }
 
 } // namespace cq::aggr

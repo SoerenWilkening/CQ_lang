@@ -547,17 +547,8 @@ SmallVector<unsigned, 4> binderCuts(const Value *v) {
   const Function *F = CB ? CB->getCalledFunction() : nullptr;
   if (!F || F->isDeclaration())
     return {};
-  if (idx.empty()) {
-    SmallVector<unsigned, 4> c;
-    for (const BasicBlock &BB : *F)
-      if (auto *RI = dyn_cast<ReturnInst>(BB.getTerminator()); RI && RI->getReturnValue()) {
-        SmallVector<unsigned, 4> here = packedCuts(RI->getReturnValue());
-        if (!c.empty() && here != c)
-          return {};
-        c = here;
-      }
-    return c;
-  }
+  if (idx.empty())
+    return resultIntCuts(*F);   // the union of the returns' packings (cq-jkq8)
   SmallVector<SmallVector<unsigned, 4>, 4> leaves = resultLeafCuts(*F);
   unsigned k = leafIndexOf(F->getReturnType(), idx);
   return k < leaves.size() ? leaves[k] : SmallVector<unsigned, 4>{};
@@ -983,6 +974,17 @@ void bindPacked(LoweringContext &ctx, const Value *orig, ArrayRef<unsigned> cuts
   sh.packs[orig] = SmallVector<unsigned, 4>(cuts.begin(), cuts.end());
 }
 
+SmallVector<Operand, 4> packFieldsOf(LoweringContext &ctx, Operand whole, unsigned W, ArrayRef<unsigned> cuts,
+                                     const Value *at) {
+  if (cuts.size() < 2 || cuts.front() != 0 || cuts.back() != W)
+    internalError("spine: packFieldsOf at boundaries that are not the value's", at);
+  Segs s = reshape(ctx, Segs{Seg{0, W, whole}}, cuts, at);
+  SmallVector<Operand, 4> ops;
+  for (const Seg &t : s)
+    ops.push_back(t.op);
+  return ops;
+}
+
 SmallVector<Operand, 4> packFields(LoweringContext &ctx, const Value *v, ArrayRef<unsigned> cuts) {
   if (!v->getType()->isIntegerTy() || cuts.size() < 2 || cuts.front() != 0 || cuts.back() != widthOf(v))
     internalError("spine: packFields at boundaries that are not the value's", v);
@@ -1109,16 +1111,12 @@ SmallVector<SmallVector<unsigned, 4>, 4> resultLeafCuts(const Function &F) {
   scalarLeaves(rt, leaves);
   for (Type *t : leaves)
     out.push_back(t->isIntegerTy() ? SmallVector<unsigned, 4>{0, t->getIntegerBitWidth()} : SmallVector<unsigned, 4>{});
-  bool first = true;
+  // CR rule 26 (cq-jkq8): one rail per field of every packing a return makes, the union of the returns'
+  // boundaries; a return that packs a leaf coarser (or not at all) is split there (emitCloneFields).
   for (const BasicBlock &BB : F) {
     auto *RI = dyn_cast<ReturnInst>(BB.getTerminator());
     if (!RI || !RI->getReturnValue())
       continue;
-    SmallVector<SmallVector<unsigned, 4>, 4> here = out;
-    if (!first)
-      for (unsigned k = 0; k < leaves.size(); ++k)
-        if (leaves[k]->isIntegerTy())
-          here[k] = {0, leaves[k]->getIntegerBitWidth()};
     SmallVector<bool, 8> seen(leaves.size(), false);
     for (const Value *v = RI->getReturnValue(); auto *iv = dyn_cast<InsertValueInst>(v); v = iv->getAggregateOperand()) {
       const Value *ins = iv->getInsertedValueOperand();
@@ -1128,18 +1126,31 @@ SmallVector<SmallVector<unsigned, 4>, 4> resultLeafCuts(const Function &F) {
       if (k >= leaves.size() || seen[k])
         continue;   // a later insert of the same leaf wins
       seen[k] = true;
-      SmallVector<unsigned, 4> c = packedCuts(ins);
-      if (c.size() > 2)
-        here[k] = c;
+      out[k] = unionCuts(out[k], packedCuts(ins));
     }
-    if (!first && here != out)
-      unimplemented("spine: a clone whose returns pack an aggregate result's integer leaf at different fields "
-                    "(rule 26, cq-0umd)",
-                    RI);
-    out = here;
-    first = false;
   }
   return out;
+}
+
+unsigned resultLeafIndex(Type *t, ArrayRef<unsigned> idx) { return leafIndexOf(t, idx); }
+
+SmallVector<unsigned, 4> unionCuts(ArrayRef<unsigned> a, ArrayRef<unsigned> b) {
+  if (a.empty())
+    return SmallVector<unsigned, 4>(b.begin(), b.end());
+  SmallVector<unsigned, 4> c(a.begin(), a.end());
+  for (unsigned x : b)
+    if (!is_contained(c, x))
+      c.push_back(x);
+  llvm::sort(c);
+  return c;
+}
+
+SmallVector<unsigned, 4> resultIntCuts(const Function &F) {
+  SmallVector<unsigned, 4> c;
+  for (const BasicBlock &BB : F)
+    if (auto *RI = dyn_cast<ReturnInst>(BB.getTerminator()); RI && RI->getReturnValue())
+      c = unionCuts(c, packedCuts(RI->getReturnValue()));
+  return c;
 }
 
 SmallVector<Type *, 4> resultFieldTypes(const Function &F) {

@@ -1,4 +1,7 @@
-; FATAL: cq: unimplemented: spine: a rule 10 merge through a representation change whose constant incoming 0 arrives on an edge where its register may have been changed by
+; cq-5ajv, cq-jkq8 (CR rules 9, 10, f684858; was a stop): the view phi's constant incoming arrives from the
+; entry, where the cq_theta that minted the register already rotated it: the merge is rule 9's select at the
+; view's width over the incomings' rails, the constant a literal arm.
+; USERCHECK w3e
 ; cq-5ajv: the view phi's constant incoming arrives from the entry, where the cq_theta that minted the
 ; register already rotated it (its operand was rebound to the pre-rotation copy, so no binding names
 ; the rail). Was silent wrong output (the constant read as the rotated rail); the i1 form (rot-cry) stops too.

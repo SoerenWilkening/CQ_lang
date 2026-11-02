@@ -143,15 +143,18 @@ bool packedInteger(const Value *V) {
 }
 
 bool packedIntegerResult(const Function &F) {
+  // Any return's packing makes the result field-wise (rule 26: the union of the returns' packings, cq-jkq8).
   for (const BasicBlock &BB : F)
     if (auto *RI = dyn_cast<ReturnInst>(BB.getTerminator()))
       if (const Value *V = RI->getReturnValue()) {
-        if (V->getType()->isIntegerTy())
-          return packedInteger(V);
+        if (V->getType()->isIntegerTy()) {
+          if (packedInteger(V))
+            return true;
+          continue;
+        }
         for (const Value *v = V; auto *iv = dyn_cast<InsertValueInst>(v); v = iv->getAggregateOperand())
           if (iv->getInsertedValueOperand()->getType()->isIntegerTy() && packedInteger(iv->getInsertedValueOperand()))
             return true;
-        return false;
       }
   return false;
 }
@@ -436,13 +439,7 @@ ResultLayout resultLayout(const TaintInfo &T, const Specialization &S, const Val
     for (const SmallVector<unsigned, 4> &c : spine::resultLeafCuts(*S.F))
       r.leafFields.push_back(c.size() > 2 ? unsigned(c.size() - 1) : 1u);
   } else if (packedIntegerResult(*S.F)) {
-    for (const BasicBlock &BB : *S.F)
-      if (auto *RI = dyn_cast<ReturnInst>(BB.getTerminator())) {
-        SmallVector<unsigned, 4> c = spine::packedCuts(RI->getReturnValue());
-        if (!r.cuts.empty() && c != r.cuts)
-          unimplemented("calls: a clone whose returns pack its integer result at different fields", at);
-        r.cuts = c;
-      }
+    r.cuts = spine::resultIntCuts(*S.F);   // the union of the returns' packings (rule 26, cq-jkq8)
   }
   r.composite = isComposite(rt) || r.cuts.size() > 2;
   if (r.cuts.size() > 2) {
