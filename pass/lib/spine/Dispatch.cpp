@@ -12,7 +12,9 @@
 #include "cq/Memory.h"
 #include "cq/Rotation.h"
 #include "cq/Switch.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/Constants.h"
+#include "cq/Loops.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IntrinsicInst.h"
@@ -491,6 +493,69 @@ bool boolCellAccess(LoweringContext &ctx, const Instruction &access) {
   return true;
 }
 
+namespace {
+
+// cq-nzlq (owner ruling 2026-11-02, CR rule 9 / rule 14): whether the copy being emitted now may run on
+// an input where the C program does not execute the original: the current block runs under a quantum
+// predicate (its arm is linearized, rule 9), the copy is in a loop trip masked by a quantum exit (rule 14
+// case 3's trip rail, a K-loop trip of the cutoff, or a classical loop inside either), or the function is
+// a clone (rule 18: a _ctl clone runs whenever it is called, the flag 0 included, and a clone with no
+// effects is called unconditionally from a quantum arm, its value selected; s5 in tests/spine/probes).
+bool speculated(LoweringContext &ctx) {
+  Shared &sh = shared(ctx);
+  if (!ctx.S.isEntry() || sh.tripFlag || (sh.curPred && !sh.curPred->isTop()))
+    return true;
+  const Loop *U = ctx.loopUnit();
+  if (!U || !sh.cur)
+    return false;
+  const Instruction *at = sh.cur;   // walk out through inlined call sites into the unit's function
+  for (size_t i = sh.inlineStack.size(); at->getFunction() != U->getHeader()->getParent();) {
+    if (i == 0)
+      internalError("spine: the current instruction is outside its loop unit's function", sh.cur);
+    at = sh.inlineStack[--i];
+  }
+  // Each loop from U down to the innermost one holding `at`: only rule 14 case 1 runs its trips exactly
+  // where C does.
+  for (const Loop *L = U; L && L->contains(at->getParent());) {
+    if (loops::classify(*L, ctx.T, ctx.S) != loops::Case::ClassicalBound)
+      return true;
+    const Loop *inner = nullptr;
+    for (const Loop *sub : L->getSubLoops())
+      if (sub->contains(at->getParent()))
+        inner = sub;
+    L = inner;
+  }
+  return false;
+}
+
+// cq-nzlq (owner ruling 2026-11-02): an integer division or remainder is the classical arithmetic that
+// traps (llvm::isSafeToSpeculativelyExecute is false for it unless the divisor is a constant other than
+// 0 and, signed, -1). Copied where C may not run it, it gets a safe divisor: 1 wherever the divisor is 0
+// or, signed, the pair is MIN / -1. On every input where C executes it the operands are outside that set
+// (else the input has undefined behaviour and is outside the domain), so the value is C's; elsewhere the
+// value is never selected into state. Vectors are guarded lane-wise the same way.
+void guardSpeculated(LoweringContext &ctx, Instruction *n) {
+  unsigned op = n->getOpcode();
+  if (op != Instruction::UDiv && op != Instruction::URem && op != Instruction::SDiv && op != Instruction::SRem)
+    return;
+  if (isSafeToSpeculativelyExecute(n) || !speculated(ctx))
+    return;
+  IRBuilder<> &B = ctx.B();
+  Value *a = n->getOperand(0), *d = n->getOperand(1);
+  Type *T = d->getType();
+  Value *bad = B.CreateICmpEQ(d, Constant::getNullValue(T), "cq.div0");
+  auto *ca = dyn_cast<ConstantInt>(a);
+  if ((op == Instruction::SDiv || op == Instruction::SRem) && !(ca && !ca->getValue().isMinSignedValue())) {
+    unsigned w = T->getScalarSizeInBits();
+    Value *ovf = B.CreateAnd(B.CreateICmpEQ(a, ConstantInt::get(T, APInt::getSignedMinValue(w))),
+                             B.CreateICmpEQ(d, Constant::getAllOnesValue(T)), "cq.divovf");
+    bad = B.CreateOr(bad, ovf);
+  }
+  n->setOperand(1, B.CreateSelect(bad, ConstantInt::get(T, 1), d, "cq.safediv"));
+}
+
+} // namespace
+
 Instruction *copyClassical(LoweringContext &ctx, Instruction &I) {
   if (isa<PHINode>(I) || I.isTerminator())
     internalError("spine: copyClassical of a phi or terminator (the walker's)", &I);
@@ -504,6 +569,7 @@ Instruction *copyClassical(LoweringContext &ctx, Instruction &I) {
       internalError("spine: a rail handle reaching a classical instruction", &I);
     n->setOperand(i, op.v);
   }
+  guardSpeculated(ctx, n);
   if (!I.getName().empty())
     n->setName(I.getName());
   ctx.B().Insert(n);

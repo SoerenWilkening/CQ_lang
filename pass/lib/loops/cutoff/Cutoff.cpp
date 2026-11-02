@@ -913,11 +913,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           effects = false;
         if (!effects) {
           bool varies = !isQ(&I) && any_of(I.operands(), [&](const Use &U) { return perTrip.count(U.get()); });
-          if (varies && (I.getOpcode() == Instruction::UDiv || I.getOpcode() == Instruction::SDiv ||
-                         I.getOpcode() == Instruction::URem || I.getOpcode() == Instruction::SRem))
-            unimplemented("loops-cutoff: a classical division by a per-trip value of an affine induction in a K-loop "
-                          "(computed in trips the C program may not run)",
-                          &I);
+          // cq-nzlq: a classical division computed in a trip the C program may not run gets a safe
+          // divisor (the spine's copyClassical guards every non-speculatable copy in a K-loop trip).
           // cq-s7c4: a quantum i1 the trip's branches read is one atom of the trip predicates here
           // (edgeCond), so it is computed whole even where pred factored its condition (`stop || q`).
           bool tripAtom = I.getType()->isIntegerTy(1) && isQ(&I) && any_of(I.users(), [&](const User *u) {
