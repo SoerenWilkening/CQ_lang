@@ -3236,14 +3236,12 @@ struct Uncompute::Impl {
     // when every exit rail is kept (measured, escaped, a kept merge's arm): its uses after the loop
     // read the copy taken in X, which stays, and the item undoes the rail itself. Any other exit rail
     // is still read after the loop by an item that has not run: cq::unimplemented, as before.
+    // cq-4lqy (CR rule 14 case 1: "after the result is copied out (alloc + copy) a reverse loop pops"): an
+    // exit rail that is not kept is then copied out in X like a kept one; the copy is the loop's output
+    // (Role::Output, as before cq-fx3s), read by every use after the loop.
+    bool copyAll = false;
     if (barrier) {
-      for (RailId x : d.exits)
-        if (!keptRole(rails[x].role))
-          unimplemented("uncompute: a non-diagonal gate or an in-place write on a rail the deferred rule-14 reverse "
-                            "loop reads (" + describe(rails[barrierRail].handle) +
-                            ") precedes its earliest placement, and an exit rail it frees (" +
-                            describe(rails[x].handle) + ") is not kept, so it cannot run where the loop exits",
-                        barrier);
+      copyAll = true;
       BasicBlock *X = exitBlock(rails[g].handle);
       BasicBlock *S = X->getSingleSuccessor();
       if (!S || beforeOrIn(d, S))
@@ -3271,12 +3269,10 @@ struct Uncompute::Impl {
     SmallVector<std::pair<RailId, Role>, 2> keptExits;
     for (RailId x : d.exits) {
       Rail &rx = rails[x];
-      if (!keptRole(rx.role))
+      if (!keptRole(rx.role) && !copyAll)
         continue;
-      if (!rx.hits.empty() || !rx.aliasHits.empty() || rx.creator == kNone || rx.cleanup)
-        unimplemented("uncompute: a kept exit rail of a deferred rule-14 reverse loop that was rotated or has no "
-                          "producer: " + describe(rx.handle),
-                      cast<Instruction>(rx.handle));
+      // cq-4lqy: a rotated exit rail, or one with no producer, is copied out the same way: the gates after the
+      // loop act on the copy (retargetOutside moves them), the reverse loop undoes the rail itself.
       // Rule 5 (a kept rail is never uncomputed), rule 14 case 1: an exit rail that reaches later code
       // only through memory (no IR use outside the region; its readers are cell-load merges, M3) stays
       // with its kept role on every trip: no copy, the mirror leaves every instance alone (179).
@@ -3286,7 +3282,7 @@ struct Uncompute::Impl {
       });
       if (!outsideUse)
         continue;
-      keptExits.push_back({x, rx.role});
+      keptExits.push_back({x, keptRole(rx.role) ? rx.role : Role::Output});
     }
     BasicBlock *keptX = keptExits.empty() ? nullptr : exitBlock(rails[keptExits.front().first].handle);
     // Split.
@@ -3305,8 +3301,15 @@ struct Uncompute::Impl {
       // (a measured rail is never freed), and the reverse loop undoes the rail itself.
       BasicBlock *X = keptX;
       Module &M = *F->getParent();
-      RailType w = createdType(records[rails[x].creator]);
       Value *xh = rails[x].handle;
+      std::optional<RailType> wo;
+      if (rails[x].creator != kNone)
+        wo = createdType(records[rails[x].creator]);
+      else
+        wo = handleWidth(xh);
+      if (!wo)
+        internalError("uncompute: an exit rail with no producer whose width no runtime call names", xh);
+      RailType w = *wo;
       SmallVector<Use *, 8> outside;
       for (Use &u : xh->uses())
         if (auto *ui = dyn_cast<Instruction>(u.getUser()); ui && ui->getParent() && !beforeOrIn(d, ui->getParent()))
@@ -3318,6 +3321,7 @@ struct Uncompute::Impl {
       for (Use *u : outside)
         u->set(f);
       RailId fid = newRail(f, role, "recordDeferred"); // may move rails: indices only from here
+      retargetOutside(d, x, xh, f, fid);
       for (RailId m : SmallVector<RailId, 2>(rails[x].mergedInto)) {
         for (RailId &a : rails[m].arms)
           if (a == x)
@@ -3343,6 +3347,49 @@ struct Uncompute::Impl {
     emitted.insert(br);
     itemEnd[{g, br->getParent()}] = br;
     d.placedAt = P;
+  }
+
+  // cq-4lqy: the copy f (rail fid) of a deferred item's exit rail x continues as the value after the loop:
+  // records, in-place writes, noted uses and gates outside the item's region move from x to fid.
+  void retargetOutside(const Deferred &d, RailId x, Value *xh, Value *f, RailId fid) {
+    auto outside = [&](const Instruction *i) { return i && i->getParent() && !beforeOrIn(d, i->getParent()); };
+    for (unsigned k = 0; k < records.size(); ++k) {
+      if (!outside(records[k].forward))
+        continue;
+      for (Operand &o : records[k].ops)
+        if (o.v == xh)
+          o.v = f;
+      for (RailId &y : info[k].reads)
+        if (y == x) {
+          y = fid;
+          rails[fid].readerRecs.push_back(k);
+          llvm::erase(rails[x].readerRecs, k);
+        }
+      if (records[k].out == x && k != rails[x].creator) {
+        records[k].out = fid;
+        if (info[k].item == x)
+          info[k].item = fid;
+        llvm::erase(rails[x].writes, k);
+        rails[fid].writes.push_back(k);
+      }
+    }
+    auto move = [&](auto &from, auto &to) {
+      for (auto it = from.begin(); it != from.end();)
+        if (outside(*it)) {
+          to.push_back(*it);
+          it = from.erase(it);
+        } else {
+          ++it;
+        }
+    };
+    move(rails[x].hits, rails[fid].hits);
+    move(rails[x].aliasHits, rails[fid].aliasHits);
+    move(rails[x].uses, rails[fid].uses);
+    for (auto &kv : gateTargets)
+      if (outside(kv.first))
+        for (const Value *&t : kv.second)
+          if (t == xh)
+            t = f;
   }
 
   // At a return R: a deferred item already placed must lie on every path from its loop to R.
