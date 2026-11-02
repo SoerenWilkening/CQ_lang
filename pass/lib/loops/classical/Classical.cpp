@@ -804,8 +804,13 @@ void Unit::check(Loop &L, Case c) {
     for (Instruction &I : *b) {
       if (isa<DbgInfoIntrinsic>(I))
         continue;
+      // CR rule 20: a store in a case-3 trip runs under the trip rail, a quantum predicate (a select into a
+      // fresh rail, rule 9). mem decides "under a quantum predicate" by currentPredicate(), which does not
+      // see the trip (cq-hmv1): it would store unconditionally in every trip, after the quantum exit too.
       if (c == Case::ClassicalBoundQuantumExit && I.mayWriteToMemory() && !isa<CallBase>(I))
-        unimplemented("loops-classical: a memory write in a case-3 loop (under the trip rail: loops-mem)", &I);
+        unimplemented("loops-classical: a memory write in a case-3 trip (blocked on cq-k471: mem lowers a store "
+                      "under the trip rail as unconditional)",
+                      &I);
       if (auto *CB = dyn_cast<CallBase>(&I)) {
         calls::Class k = calls::classify(*CB, ctx.T, ctx.S);
         switch (k) {
@@ -1056,8 +1061,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     }
     for (const Instruction *v : liveOut)
       if (!isQ(v))
-        unimplemented("loops-classical: a classical value read after a case-3 loop (its exit value depends on the "
-                      "quantum exit)",
+        unimplemented("awaiting owner ruling: SPEC_ISSUES rule 14 case 3: a classical value read after a "
+                      "classically bounded loop with a quantum exit (its exit value depends on the quantum exit)",
                       v);
   }
 

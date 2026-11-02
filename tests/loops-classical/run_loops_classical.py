@@ -24,7 +24,16 @@ PROBES = Path(__file__).parent / "probes"
 PROBE = PROBES / "loops.O1.ll"
 # cq-sujx: rule 20 slot cells loaded and stored per trip (58, 60 shapes).
 SLOT_PROBE = PROBES / "slots.O1.ll"
-SLOT_ENTRIES = ["s_reg", "s_qft", "s_int"]
+SLOT_# cq-w3cd: a classical branch or switch nested in a quantum arm of a trip (rule 8), its mixed join (rule 9).
+CARM_PROBE = PROBES / "carm.O1.ll"
+CARM = ["a_diamond", "a_inner", "a_phase"]
+# cq-w3cd: loops nested in a case-3 trip (rule 14: the inner chain seeded by the outer trip rail).
+C3NEST_PROBE = PROBES / "c3nest.O1.ll"
+C3NEST = ["n_inner1", "n_inner3", "n_phase"]
+# cq-w3cd: a case-3 exit test with several quantum disjuncts (one flag, rule 8).
+C3TWO_PROBE = PROBES / "c3two.O1.ll"
+C3TWO = ["t_or", "t_bool", "t_do"]
+ENTRIES = ["s_reg", "s_qft", "s_int"]
 # Probes cq-lower must stop on with cq::unimplemented carrying this text (nothing emitted).
 FATAL = [(PROBES / "slots_fatal_crossgate.O1.ll", "loops-classical: a non-diagonal gate in a classically bounded loop on a rail"),
          # cq-vqid: a record deferred to the reverse loop reads a rail rotated later in the same trip.
@@ -51,6 +60,9 @@ FATAL = [(PROBES / "slots_fatal_crossgate.O1.ll", "loops-classical: a non-diagon
           "uncompute"),
          (PROBES / "fatal_carried_sunk.O1.ll", "spine: %4, bound to the rail cq_theta rotates in place (a rail its "
           "operand's phi may name), is read after the rotation"),
+         # cq-w3cd: a classical region nested in one quantum arm of a trip must rejoin before the other arm's code.
+         (PROBES / "fatal_rejoin.O1.ll", "loops-classical: a classical branch nested in a quantum arm of a trip whose "
+          "region does not close at one join"),
          (PROBES / "fatal_carried_seed.O1.ll", "loops-classical: a non-diagonal gate in a classically bounded loop on "
           "a rail that a record undone by the reverse loop reads")]
 # cq-b13w: CR rule 6 on carried values. Each entry's last parameter is the trip count; the kept rails (role, width)
@@ -175,13 +187,13 @@ def main() -> int:
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", required=True)
     ap.add_argument("--entry", action="append", help="check only these entries of loops.O1.ll")
-    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried"],
+    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two"],
                     help="run only these probe groups (default: all)")
     a = ap.parse_args()
     out = ROOT / "build" / "tests" / "loops-classical" / "out"
     out.mkdir(parents=True, exist_ok=True)
     failures = 0
-    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried"]))
+    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep", "carried", "carm", "c3nest", "c3two"]))
     groups = []
     if "loops" in want:
         groups.append((PROBE, a.entry or ENTRIES))
@@ -207,6 +219,9 @@ def main() -> int:
         groups.append((MEMKEEP_PROBE, list(MEMKEEP)))
     if "carried" in want:
         groups.append((CARRIED_PROBE, CARRIED))
+    for g, probe, entries in (("carm", CARM_PROBE, CARM), ("c3nest", C3NEST_PROBE, C3NEST), ("c3two", C3TWO_PROBE, C3TWO)):
+        if g in want:
+            groups.append((probe, entries))
     for probe, entries in groups:
         failures += check_probe(a, probe, entries, out)
     for group, probe, table in (("rule6", RULE6_PROBE, RULE6), ("deferred", DEFERRED_PROBE, DEFERRED),
