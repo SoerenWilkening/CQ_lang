@@ -25,7 +25,7 @@ TWIN_BARRIER = ("cq: unimplemented: uncompute: a write that may change an object
 TWIN_ALIAS = ("cq: unimplemented: uncompute: a clone call whose twin may read a caller cell the clone writes by "
               "another route than the writing pointer")
 # §6 samples per probe where the full set takes minutes (cqcheck user --samples): the musl bodies.
-SAMPLES = {"clone_cell_seq": 64, "fenv_cells": 64, "libm_musl_acosh": 16, "libm_musl_coshf": 16, "libm_musl_lrint": 16, "libm_musl_floorfn": 32, "libm_musl_atan": 16, "libm_musl_exp": 16, "libm_musl_log": 16}
+SAMPLES = {"clone_cell_seq": 64, "fenv_cells": 64, "fenv_ignore_loop": 64, "store_past_object": 64, "fenv_escape": 64, "fenv_indirect": 64, "libm_musl_acosh": 16, "libm_musl_coshf": 16, "libm_musl_lrint": 16, "libm_musl_floorfn": 32, "libm_musl_atan": 16, "libm_musl_exp": 16, "libm_musl_log": 16}
 # (probe, entry, opt flags, expectation, regexes the lowered module must contain)
 CASES = [
     # cq-57ju (rulings 2026-11-02): plain clang -O1 callers of musl b1efda5 bodies (no -fno-builtin, no -frounding-math).
@@ -82,6 +82,16 @@ CASES = [
     ("fenv_cells", "fe_cells", [], "pass", [r"call i32 @__cq_q_sc_100\(i32 %\d+, ptr %\d+, i32 0, i32 %\d+\)"]),
     ("fenv_cells", "fe_reread", [], "pass", [r"call \{ i32, i32 \} @__cq_q_sc2_10\(i32 %\d+, ptr %\d+, i32 0, i32 %\d+\)"]),
     ("fenv_cells", "fe_qram", [], "pass", [r"call \{ i32, i32 \} @__cq_q_addto_00011\("]),
+    # cq-4e6m (rules 14, 23): fpexcept.ignore constrained ops in rule-14 loops are plain templates (not a call class).
+    ("fenv_ignore_loop", "il_loop", [], "pass", []),
+    ("fenv_ignore_loop", "il_array", [], "pass", []),
+    # cq-4e6m (rules 18, 20, 21): a clone's stores past the caller's object on paths it never takes write nothing.
+    ("store_past_object", "sp_one", [], "pass", []),
+    # cq-4e6m (rules 23, 24; 82 with 101): an escaping clone carrying the environment: {result, flags, escaped}.
+    ("fenv_escape", "fe_escape", [], "pass", [r"call \{ i32, i32, i32 \} @__cq_q_fe_inner_10\("]),
+    # cq-4e6m (rules 19, 23): indirect-call candidates carrying the environment or not: the flags merge over the arms.
+    ("fenv_indirect", "fi_call", [], "pass", []),
+    ("fenv_indirect", "fi_pred", [], "pass", []),
     # cq-567j (gate 2a unc-h1 p16-p19): a clone that only reads a caller's slot cell through a pointer formal:
     # the cell's rails are used by the forward call (and read by its item when it has a twin), never freed before.
     ("read_only_ptr", "ro_bump", [], "pass", []),

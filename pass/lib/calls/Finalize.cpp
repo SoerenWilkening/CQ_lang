@@ -671,7 +671,9 @@ void defineTwin(Module &M, Function &twin, Function &src) {
         chain.push_back(iv);
         v = iv->getAggregateOperand();
       }
-      if (!isa<PoisonValue>(v) && !isa<UndefValue>(v))
+      // IRBuilder folds the chain's leading insertions of constants (a classical constant result) into the
+      // base: a constant aggregate, whose fields are classical.
+      if (!isa<PoisonValue>(v) && !isa<UndefValue>(v) && !isa<ConstantAggregate>(v))
         internalError("calls: calls::finalize: a field-wise clone return that is not built from poison", R);
       unsigned j = 0;
       for (unsigned k = 0; k < nFields; ++k) {

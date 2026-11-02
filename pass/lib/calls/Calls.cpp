@@ -1312,11 +1312,20 @@ Function *materialize(Module &M, const Specialization &S) {
   if (conc::cloneEscapes(T, S)) {
     // CR rule 24 (101): a clone that escapes by longjmp under a quantum predicate returns its escaped
     // flag (an i32 handle) as the last field: {result, escaped}, or the handle alone for a void clone.
-    if (fenv::cloneCarriesEnv(T, S) || rl.qramFormal || rl.stores || rl.composite)
-      unimplemented("calls: an escaping clone (rule 24) carrying the floating-point environment, QRAM stores or a "
-                    "composite result",
-                    S.F);
-    rt = rt->isVoidTy() ? static_cast<Type *>(handleTy(C)) : StructType::get(C, {rt, handleTy(C)});
+    if (rl.qramFormal || rl.stores || rl.composite)
+      unimplemented("calls: an escaping clone (rule 24) with QRAM stores or a composite result", S.F);
+    if (fenv::cloneCarriesEnv(T, S)) {
+      // With 82's ABI (E1): {result, flags, escaped}, or {flags, escaped} for a void clone (the spine's return).
+      SmallVector<Type *, 4> es;
+      if (auto *st = dyn_cast<StructType>(rt))
+        es.append(st->element_begin(), st->element_end());
+      else
+        es.push_back(rt);
+      es.push_back(handleTy(C));
+      rt = StructType::get(C, es);
+    } else {
+      rt = rt->isVoidTy() ? static_cast<Type *>(handleTy(C)) : StructType::get(C, {rt, handleTy(C)});
+    }
   }
   // Rule 19 (cq-i9wk): a kept clone returns, after all of the above, the handle of each register it minted
   // that is still allocated at its return (spine::liveRegisters, counted by its in-place lowering).
@@ -1483,21 +1492,30 @@ static void lowerEscapingCall(LoweringContext &ctx, CallBase &CB, const Speciali
   CloneCall r = emitCloneCall(ctx, CB, S, nullptr);
   if (r.fieldwise || r.res.qramFormal || !r.slotOuts.empty() || !r.extra.empty())
     unimplemented("calls: an escaping clone call (rule 24) with a field-wise result, QRAM stores or slot cells", &CB);
-  SmallVector<Value *, 2> outs;
-  Value *esc = r.call;
+  SmallVector<Value *, 3> outs;
+  Value *esc = r.call, *flags = nullptr;
+  bool env = fenv::cloneCarriesEnv(ctx.T, S);   // E1 (82): {result, flags, escaped} / {flags, escaped}
+  unsigned k = 0;
   if (!CB.getType()->isVoidTy()) {
     if (r.handle != ctx.T.isQuantum(&CB, ctx.S))
       internalError("calls: the call's result kind and taint's disagree", &CB);
-    Value *res = ctx.B().CreateExtractValue(r.call, {0u});
-    esc = ctx.B().CreateExtractValue(r.call, {1u});
+    Value *res = ctx.B().CreateExtractValue(r.call, {k++});
     if (r.handle)
       outs.push_back(res);
     ctx.bind(&CB, res);
   }
+  if (env) {
+    flags = ctx.B().CreateExtractValue(r.call, {k++});
+    outs.push_back(flags);
+  }
+  if (k)
+    esc = ctx.B().CreateExtractValue(r.call, {k});
   outs.push_back(esc);
   ctx.unc().recordCall(r.call, outs, {}, {});
   fatptr::finishSlotTableCall(ctx, r.call);
   conc::noteEscapedOut(ctx, CB, esc);
+  if (flags)
+    fenv::afterCloneCall(ctx, CB, flags);
 }
 
 // ---- INVERSE-UPDATE clones (cq-xivx; CR §1.4 `_inv<c>`, rule 18, rule 6) ------------------------------
@@ -2292,8 +2310,9 @@ void classicalLeaves(IRBuilder<> &B, Value *v, SmallVectorImpl<Operand> &out) {
 // whole classical value in `whole` when the result is classical), recorded for their twins and bound to
 // nothing (the caller merges). flag: the candidate's quantum predicate, nullptr when none.
 SmallVector<Operand, 4> emitCandidate(LoweringContext &ctx, CallBase &CB, Function &G, const Specialization *s,
-                                      Value *flag, Value *&whole) {
+                                      Value *flag, Value *&whole, Value *&envOut) {
   whole = nullptr;
+  envOut = nullptr;
   SmallVector<Operand, 4> fields;
   bool anyQArg = any_of(CB.args(), [&](const Use &u) { return ctx.T.isQuantum(u.get(), ctx.S); });
   if (!s || (G.isDeclaration() && !anyQArg)) {
@@ -2327,10 +2346,6 @@ SmallVector<Operand, 4> emitCandidate(LoweringContext &ctx, CallBase &CB, Functi
   if (s->ctl && !flag)
     internalError("calls: a _ctl candidate of an indirect call with no predicate", &CB);
   CloneCall r = emitCloneCall(ctx, CB, *s, s->ctl ? flag : nullptr);
-  if (fenv::cloneCarriesEnv(ctx.T, *s))
-    unimplemented("calls: an indirect call candidate carrying the floating-point environment (E1 in rule 19's "
-                  "arms: the flags rail merged over the arms)",
-                  &CB);
   if (r.res.qramFormal)
     unimplemented("calls: an indirect-call candidate with a triple formal onto a QRAM object (U3 in rule 19's "
                   "arms)",
@@ -2339,6 +2354,35 @@ SmallVector<Operand, 4> emitCandidate(LoweringContext &ctx, CallBase &CB, Functi
     unimplemented("calls: an indirect-call candidate that writes a caller's slot object (the merge of its "
                   "reloaded cells over rule 19's arms)",
                   &CB);
+  if (fenv::cloneCarriesEnv(ctx.T, *s)) {
+    // E1 (82) in rule 19's arms: the clone's result fields then its new flags (bindEnvResult's layout); the
+    // flags are this arm's, merged over the arms by lowerIndirect (fenv::afterCloneCall at the join).
+    SmallVector<Value *, 4> outs;
+    if (r.fieldwise) {
+      for (unsigned k = 0; k < r.res.leaves.size(); ++k) {
+        Value *e = ctx.B().CreateExtractValue(r.call, {k});
+        fields.push_back(Operand{e, bool(r.res.q[k])});
+        if (r.res.q[k])
+          outs.push_back(e);
+      }
+      envOut = ctx.B().CreateExtractValue(r.call, {unsigned(r.res.leaves.size())});
+    } else if (!CB.getType()->isVoidTy()) {
+      Value *res = ctx.B().CreateExtractValue(r.call, {0u});
+      envOut = ctx.B().CreateExtractValue(r.call, {1u});
+      if (r.handle) {
+        outs.push_back(res);
+        fields.push_back(Operand{res, true});
+      } else {
+        whole = res;
+        classicalLeaves(ctx.B(), res, fields);
+      }
+    } else {
+      envOut = r.call;
+    }
+    outs.push_back(envOut);
+    ctx.unc().recordCall(r.call, outs, {}, {});
+    return fields;
+  }
   if (r.fieldwise) {
     SmallVector<Value *, 4> outs;
     for (unsigned k = 0; k < r.res.leaves.size(); ++k) {
@@ -2406,6 +2450,14 @@ void lowerQromIndirect(LoweringContext &ctx, CallBase &CB, Operand tag) {
   SmallVector<bool, 4> kinds = resultFieldKinds(ctx, CB);
   SmallVector<Value *, 4> flags;
   SmallVector<SmallVector<Operand, 4>, 4> results;
+  // E1 (82): a candidate carrying the environment takes the caller's flags and returns its own; the call's
+  // flags are the select over the tag, as a result field (a candidate that does not carry them: the caller's).
+  bool envAny = any_of(cands, [&](const auto &c) {
+    const Specialization *s = specOf(c.first);
+    return s && !c.first->isDeclaration() && fenv::cloneCarriesEnv(ctx.T, *s);
+  });
+  Value *flags0 = envAny ? fenv::envArgs(ctx, CB)[1].v : nullptr;
+  SmallVector<Value *, 4> envs;
   for (unsigned k = 0; k < cands.size(); ++k) {
     Function *G = cands[k].first;
     const Specialization *s = specOf(G);
@@ -2432,8 +2484,10 @@ void lowerQromIndirect(LoweringContext &ctx, CallBase &CB, Operand tag) {
         pred = ctx.emitTemplate(andT, {Operand{eqf, true}, Operand{outer, true}});
       }
     }
-    Value *whole;
-    SmallVector<Operand, 4> f = emitCandidate(ctx, CB, *G, s, pred, whole);
+    Value *whole, *env;
+    SmallVector<Operand, 4> f = emitCandidate(ctx, CB, *G, s, pred, whole, env);
+    if (envAny)
+      envs.push_back(env ? env : flags0);
     if (f.size() != kinds.size())
       internalError("calls: a QROM callee candidate whose result has another field count than the call's", &CB);
     for (unsigned j = 0; j < f.size(); ++j) {
@@ -2442,6 +2496,19 @@ void lowerQromIndirect(LoweringContext &ctx, CallBase &CB, Operand tag) {
       f[j] = seedActual(ctx, f[j]);
     }
     results.push_back(std::move(f));
+  }
+  if (envAny) {
+    abi::TemplateSpec sel;
+    sel.op = "select";
+    sel.w = RailType{Kind::Int, 32};
+    Value *v = envs.back();
+    for (unsigned k = unsigned(flags.size()); k-- > 0;)
+      v = ctx.emitTemplate(sel, {Operand{flags[k], true}, Operand{envs[k], true}, Operand{v, true}});
+    if (v == flags0) {
+      // No candidate changed them: the caller's flags stay.
+    } else {
+      fenv::afterCloneCall(ctx, CB, v);
+    }
   }
   if (kinds.empty())
     return;
@@ -2488,6 +2555,13 @@ void lowerIndirect(LoweringContext &ctx, CallBase &CB) {
   bool underQ = !ctx.currentPredicate().isTop() || ctx.S.ctl;
   // The flag dominates every arm: computed once, before the dispatch.
   Value *flag = underQ ? ctlFlag(ctx, CB) : nullptr;
+  // E1 (82) in rule 19's arms: when a candidate carries the environment, the caller's flags rail (made here,
+  // before the dispatch, when there is none yet) goes to the carrying arms, and each arm's flags (the clone's
+  // new ones, or a copy of the caller's where the candidate does not carry it) merge at the join.
+  bool envAny = any_of(cands, [&](const auto &c) {
+    return c.second && !c.first->isDeclaration() && fenv::cloneCarriesEnv(ctx.T, *c.second);
+  });
+  Value *flags0 = envAny ? fenv::envArgs(ctx, CB)[1].v : nullptr;
 
   IRBuilder<> &B = ctx.B();
   Function &out = ctx.out();
@@ -2495,7 +2569,7 @@ void lowerIndirect(LoweringContext &ctx, CallBase &CB) {
   BasicBlock *join = BasicBlock::Create(C, "", &out);
   SmallVector<bool, 4> kinds = resultFieldKinds(ctx, CB);
   bool anyQ = is_contained(kinds, true);
-  struct Arm { BasicBlock *bb; SmallVector<Operand, 4> f; Value *whole; };
+  struct Arm { BasicBlock *bb; SmallVector<Operand, 4> f; Value *whole; Value *env; };
   SmallVector<Arm, 4> arms;
   for (auto &[G, s] : cands) {
     Value *eq = B.CreateICmpEQ(fp.v, G);
@@ -2503,8 +2577,37 @@ void lowerIndirect(LoweringContext &ctx, CallBase &CB) {
     BasicBlock *next = BasicBlock::Create(C, "", &out, join);
     B.CreateCondBr(eq, arm, next);
     B.SetInsertPoint(arm);
-    Value *whole;
-    SmallVector<Operand, 4> f = emitCandidate(ctx, CB, *G, s, flag, whole);
+    Value *whole, *env;
+    SmallVector<Operand, 4> f = emitCandidate(ctx, CB, *G, s, flag, whole, env);
+    if (env && anyQ)
+      for (unsigned j = 0; j < f.size(); ++j)
+        if (kinds[j] && f[j].handle && resultKept(ctx, &CB, j)) {
+          // Rule 18 partial measurement (ruling 2026-11-02): the arm's kept result is copied into a fresh rail
+          // and the copy continues; the clone's own outs (the result and the flags) stay its twin's.
+          SmallVector<Type *, 4> leafTys;
+          if (isComposite(CB.getType()))
+            leafTypes(CB.getType(), leafTys, &CB);
+          else
+            leafTys.push_back(CB.getType());
+          RailType w = railTypeOf(leafTys[j]);
+          CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                                     {Constant::getNullValue(irTypeOf(C, w))});
+          RailId cid = ctx.unc().recordSeed(c);
+          abi::CoreSpec cp{abi::Core::Copy, w};
+          CallInst *cc = ctx.emitCore(cp, {f[j].v, c});
+          ctx.unc().recordCore(cc, cp, {f[j], Operand{c, true}}, cid);
+          f[j] = Operand{c, true};
+        }
+    if (envAny && !env) {
+      // This arm leaves the flags as they are: a fresh copy of them, so every arm's flags are a rail of its own.
+      RailType w{Kind::Int, 32};
+      CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {B.getInt32(0)});
+      RailId cid = ctx.unc().recordSeed(c);
+      abi::CoreSpec cp{abi::Core::Copy, w};
+      CallInst *cc = ctx.emitCore(cp, {flags0, c});
+      ctx.unc().recordCore(cc, cp, {Operand{flags0, true}, Operand{c, true}}, cid);
+      env = c;
+    }
     if (f.size() != kinds.size())
       internalError("calls: an indirect-call candidate whose result has another field count than the call's", &CB);
     if (anyQ)
@@ -2519,14 +2622,28 @@ void lowerIndirect(LoweringContext &ctx, CallBase &CB) {
         if (!kinds[j] && f[j].handle)
           internalError("calls: a candidate's handle where taint says the call's field is classical", &CB);
       }
-    arms.push_back({B.GetInsertBlock(), std::move(f), whole});
+    arms.push_back({B.GetInsertBlock(), std::move(f), whole, env});
     B.CreateBr(join);
     B.SetInsertPoint(next);
   }
   B.CreateUnreachable();
   B.SetInsertPoint(join);
+  // The flags' merge: its phi with the others at the join's top, the fenv state set after them (the items
+  // afterCloneCall may emit split the block).
+  PHINode *envPhi = nullptr;
+  if (envAny) {
+    envPhi = B.CreatePHI(B.getInt32Ty(), arms.size());
+    for (Arm &a : arms)
+      envPhi->addIncoming(a.env, a.bb);
+  }
+  auto finishEnv = [&]() {
+    if (!envPhi)
+      return;
+    ctx.unc().recordMerge(envPhi);
+    fenv::afterCloneCall(ctx, CB, envPhi);
+  };
   if (kinds.empty())
-    return;
+    return finishEnv();
   if (!anyQ) {
     // A classical result: the phi of the arms' values.
     PHINode *phi = B.CreatePHI(CB.getType(), arms.size());
@@ -2536,7 +2653,7 @@ void lowerIndirect(LoweringContext &ctx, CallBase &CB) {
       phi->addIncoming(a.whole, a.bb);
     }
     ctx.bind(&CB, phi);
-    return;
+    return finishEnv();
   }
   SmallVector<Operand, 4> merged;
   for (unsigned j = 0; j < kinds.size(); ++j) {
@@ -2552,6 +2669,7 @@ void lowerIndirect(LoweringContext &ctx, CallBase &CB) {
     merged.push_back(Operand{phi, bool(kinds[j])});
   }
   bindMerged(ctx, CB, merged);
+  finishEnv();
 }
 
 // CR §1.4, rules 20, 7 (95, 109): the va intrinsics of a variadic clone (per call-site arity, its

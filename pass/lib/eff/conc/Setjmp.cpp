@@ -38,6 +38,7 @@
 #include "cq/Uncompute.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IntrinsicInst.h"
@@ -220,6 +221,10 @@ void lowerLongjmp(LoweringContext &ctx, CallBase &CB) {
   const GlobalVariable *jb = jmpBufObject(CB.getArgOperand(0), &CB);
   const Function &F = *ctx.S.F;
   unsigned rets = 0;
+  // An effect or call that dominates the longjmp runs before the escape on every path, as in C: on the
+  // escaping paths before the longjmp, on the others as it is (82 with 101: a strict op's flags, a lifted
+  // clone, before the escape decision).
+  DominatorTree DT(const_cast<Function &>(F));
   for (const Instruction &I : instructions(F)) {
     if (isa<ReturnInst>(I))
       ++rets;
@@ -227,7 +232,7 @@ void lowerLongjmp(LoweringContext &ctx, CallBase &CB) {
       continue;
     if (auto *C = dyn_cast<CallBase>(&I); C && callsLongjmp(*C))
       unimplemented("eff-conc: a clone with several longjmps (rule 24: the escaped flag is their OR)", C);
-    if (!sideEffectFree(I))
+    if (!sideEffectFree(I) && !DT.dominates(&I, &CB))
       unimplemented("eff-conc: an effect or a call in a clone that escapes by longjmp (rule 24; cq-jwdf: the code "
                     "after the longjmp's branch would run under the predicate before it, not under !escaped)",
                     &I);

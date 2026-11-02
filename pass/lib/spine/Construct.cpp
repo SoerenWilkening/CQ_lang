@@ -1137,18 +1137,29 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
       nr->setOperand(0, v);
       return;
     }
+    // CR rule 24 (101) with 82: an escaping clone returns its escaped flag after the flags (calls::materialize:
+    // {fields..., flags, escaped}, {flags, escaped} for a void clone).
+    Value *esc = nullptr;
+    if (conc::cloneEscapes(ctx.T, ctx.S)) {
+      esc = conc::cloneEscapedFlag(ctx);
+      if (!esc)
+        internalError("spine: an escaping clone's return reached before its longjmp (plan orders returns last)", ret);
+    }
+    unsigned tail = esc ? 2 : 1;
     if (rv) {
       // cq-xhv4: the result's fields (a field-wise result's leaves, or the one value) then the flags.
-      resultFields(ret, rv, st, 1, vals);
-      if (!st || st->getNumElements() != vals.size() + 1 || st->getElementType(0) != vals[0]->getType())
+      resultFields(ret, rv, st, tail, vals);
+      if (!st || st->getNumElements() != vals.size() + tail || st->getElementType(0) != vals[0]->getType())
         internalError("spine: a clone carrying the environment whose result type is not {fields..., flags}", ret);
-    } else if (CRT != handleTy(LC)) {
+    } else if (esc ? !(st && st->getNumElements() == 2) : CRT != handleTy(LC)) {
       internalError("spine: a void clone carrying the environment that does not return the flags handle", ret);
     }
     Value *flags = copyOut(Operand{fenv::cloneExitFlags(ctx, *ret), true}, RailType{Kind::Int, 32});
     Value *v = flags;
-    if (rv) {
+    if (rv || esc) {
       vals.push_back(flags);
+      if (esc)
+        vals.push_back(esc);
       if (vals.size() != st->getNumElements())
         internalError("spine: a clone carrying the environment whose result type is not {fields..., flags}", ret);
       v = PoisonValue::get(st);
