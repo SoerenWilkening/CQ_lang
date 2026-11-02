@@ -5,7 +5,9 @@
 //   opt -load-pass-plugin=build/pass/libCQLower.so -passes=cq-verify            (our output)
 //   opt -load-pass-plugin=build/pass/libCQLower.so -passes='cq-verify<reference>' (a reference)
 //
-// cq-lower: a preliminary taint, used only for isTainted(F); FixIrreduciblePass on those
+// cq-lower: a preliminary taint, used only for isTainted(F) and by eff-conc's pre-taint rewrites (rule 24:
+// atomic read-modify-writes through fat pointers collapsed, setjmp/longjmp made explicit control flow,
+// Setjmp.h); FixIrreduciblePass on those
 // functions; if any function changed, a fresh taint over the module with the preliminary result
 // discarded; construct per specialization; calls::finalize; verifyLowered. Taint is computed once
 // over the final CFG and nothing mutates the CFG after it (owner ruling on cq-5k5, option (a)).
@@ -27,6 +29,7 @@
 #include "eff/conc/Setjmp.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
@@ -190,9 +193,19 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
 
     // 1c. CR rule 24: setjmp/longjmp as explicit control flow (eff-conc, Setjmp.cpp), in the tainted
     // functions holding a setjmp and the escape clones it makes. Its CFG changes are final-taint input.
-    SmallVector<Function *, 8> SJ = cq::conc::explicitSetjmp(M, T);
+    // Rule 24 with rule 21 first (T is read before any function is erased): an atomic read-modify-write
+    // through a fat pointer is the plain load + op + store.
+    SmallPtrSet<Function *, 8> changed;
+    for (Function *F : cq::conc::collapseFatAtomics(M, T))
+      changed.insert(F);
+    for (Function *F : cq::conc::explicitSetjmp(M, T))   // may erase originals: compared, never read
+      changed.insert(F);
+    SmallVector<Function *, 8> SJ;
+    for (Function &F : M)
+      if (changed.count(&F))
+        SJ.push_back(&F);
     if (!SJ.empty()) {
-      trace("explicit-setjmp: changed");
+      trace("explicit-setjmp / fat atomics: changed");
       if (DumpSetjmp)
         M.print(errs(), nullptr);
       CFGChanged = true;

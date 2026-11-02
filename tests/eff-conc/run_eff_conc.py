@@ -40,7 +40,9 @@ MODULES = {"conc.O1.ll": ENTRIES, "setjmp.O1.ll": ["p_sj_scalar", "p_sj_void", "
            "setjmp_wrapper.O1.ll": ["setjmp_wrapper_error"], "setjmp_wrapper_p20.O1.ll": ["p20"],
            "setjmp_wrapper_p21.O1.ll": ["p21"],
            # cq-lyzw (rule 24 at f684858): an observable volatile access with quantum data is a host effect.
-           "vol_observable.O1.ll": ["vol_quantum_observable", "p_vol_obs_pred"]}
+           "vol_observable.O1.ll": ["vol_quantum_observable", "p_vol_obs_pred"],
+           # cq-lyzw (rule 24 with rule 21): an atomic read-modify-write through a fat pointer.
+           "conc_rmw_fat.O1.ll": ["p_rmw_fat", "p_cas_fat"]}
 _SJ = (r"cq_template_select_i32", r"call [^\n]*@(setjmp|longjmp)\(")
 _NOSJ = (None, r"call [^\n]*@(setjmp|longjmp)\(")
 # entry -> (regex that must match its body, regex that must not)
@@ -59,7 +61,8 @@ SHAPES = {"p_vol_internal": (None, r"volatile"),
           "vol_quantum_observable": (r"cqrt_tape_effect_controlled\([^\n]*@\.cq\.effect\.volatile_store\)[\s\S]*"
                                      r"cqrt_tape_write_i64_lit\(i32 %\d+, i64 ptrtoint \(ptr @sink to i64\)\)"
                                      r"[\s\S]*cqrt_tape_write_i32\(", r"store volatile"),
-          "p_vol_obs_pred": (r"@\.cq\.effect\.volatile_store", r"store volatile")}
+          "p_vol_obs_pred": (r"@\.cq\.effect\.volatile_store", r"store volatile"),
+          "p_rmw_fat": (None, r"atomicrmw|cmpxchg"), "p_cas_fat": (None, r"atomicrmw|cmpxchg")}
 for _e in MODULES["setjmp_class.O1.ll"] + ["setjmp_effect_error", "setjmp_nested_error", "setjmp_wrapper_error",
                                             "p20", "p21"]:
     SHAPES[_e] = _NOSJ

@@ -35,6 +35,7 @@
 // calls::lowerLiftedVia with argMap {3}; a classical one: the original), status 0; pthread_join with a null
 // result pointer and the mutex locks are no-ops, status 0.
 // lowerSetjmp, lowerLongjmp: Setjmp.cpp (101's escaped-flag construction, contract at its top).
+#include "Setjmp.h"
 #include "../../spine/SpineInternal.h"
 #include "cq/Calls.h"
 #include "cq/Effects.h"
@@ -48,6 +49,8 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/TargetParser/Triple.h"
+#include "llvm/IR/InstIterator.h"
+#include "llvm/Transforms/Utils/LowerAtomic.h"
 
 using namespace llvm;
 
@@ -385,8 +388,8 @@ void lowerAtomic(LoweringContext &ctx, Instruction &I) {
     if (!involvesQuantum(ctx, I, ptr))
       return copyClassical(ctx, I, /*dropVolatile=*/false);
     if (spine::accessHasQuantumTag(ctx, ptr))
-      unimplemented("eff-conc: an atomic read-modify-write through a fat pointer (rule 24's load + op + store "
-                    "over rule 21's per-object accesses; fatptr exposes no read-modify-write, cq-z28j)",
+      internalError("eff-conc: an atomic read-modify-write through a fat pointer (collapseFatAtomics makes it the "
+                    "plain load + op + store before the final taint)",
                     &I);
     bool slot = false, qram = false, classical = false;
     for (ObjectId o : ctx.T.provenance(ptr, ctx.S)) {
@@ -406,6 +409,36 @@ void lowerAtomic(LoweringContext &ctx, Instruction &I) {
     return lowerQramRmw(ctx, I, ptr);
   }
   internalError("eff-conc: lowerAtomic of an instruction that is not atomic", &I);
+}
+
+SmallVector<Function *, 8> collapseFatAtomics(Module &M, const TaintInfo &T) {
+  SmallVector<Function *, 8> out;
+  for (Function &F : M) {
+    if (F.isDeclaration() || !T.isTainted(F))
+      continue;
+    SmallVector<Instruction *, 4> todo;
+    for (Instruction &I : instructions(F)) {
+      const Value *p = isa<AtomicRMWInst>(I)       ? cast<AtomicRMWInst>(I).getPointerOperand()
+                       : isa<AtomicCmpXchgInst>(I) ? cast<AtomicCmpXchgInst>(I).getPointerOperand()
+                                                   : nullptr;
+      if (!p)
+        continue;
+      for (const Specialization &S : T.specializations())
+        if (S.F == &F && T.isFatPointer(p, S)) {
+          todo.push_back(&I);
+          break;
+        }
+    }
+    for (Instruction *I : todo) {
+      if (auto *rmw = dyn_cast<AtomicRMWInst>(I))
+        lowerAtomicRMWInst(rmw);
+      else
+        lowerAtomicCmpXchgInst(cast<AtomicCmpXchgInst>(I));
+    }
+    if (!todo.empty())
+      out.push_back(&F);
+  }
+  return out;
 }
 
 void lowerThreadCall(LoweringContext &ctx, CallBase &CB) {
