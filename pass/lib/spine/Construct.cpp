@@ -406,7 +406,19 @@ void Walker::plan() {
       L.push_back(*it);
     }
   }
+  // A loop inside another unit's exit arm or noreturn arm (cq-0dvv: __rem_pio2_large's `while (iq[jz] == 0)`
+  // between its recompute loop's exits and their join) is that unit's: the loop module lowers it with the arm.
+  DenseSet<const BasicBlock *> inOtherUnit;
+  for (Loop *lp : LI.getTopLevelLoops())
+    if (!pureClassical(*lp)) {
+      loops::exits::Unit U = loops::exits::unitOf(*lp);
+      for (auto *list : {&U.arm, &U.dead, &U.abort})
+        for (BasicBlock *b : *list)
+          inOtherUnit.insert(b);
+    }
   for (Loop *lp : LI.getTopLevelLoops()) {
+    if (inOtherUnit.count(lp->getHeader()))
+      continue;
     if (pureClassical(*lp)) {
       for (Loop *sub : lp->getLoopsInPreorder())
         pureHeaders.insert(sub->getHeader());

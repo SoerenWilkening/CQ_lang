@@ -148,6 +148,7 @@ private:
   DenseSet<const Value *> perTrip;
   DenseMap<const PHINode *, uint64_t> walkedTrip;   // walked pointer phi -> its trip index (cq-9w75)
   DenseSet<const PHINode *> carriedPtr;             // quantum pointer phi carried as its tag (cq-z6q1, fatptr R2)
+  Value *chainEnd = nullptr;                        // the last lowerLoop's last chain predicate (its a_K)
 
   bool nonClassicalMemory(const Value *p) {
     if (ctx.T.isFatPointer(p, ctx.S))
@@ -404,8 +405,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   exits::Unit U = exits::unitOf(L);
   auto liveEdge = [&](const BasicBlock *s) { return !L.contains(s) && is_contained(U.live, s); };
   BasicBlock *X = U.multi() ? nullptr : U.cont;
-  if (U.multi() && !top)
-    unimplemented("loops-cutoff: a nested K-loop with more than one live exit block (cq-lgkx)", H->getTerminator());
   if (c == 0)
     internalError("loops-cutoff: a cutoff of 0 trips", H->getTerminator());
 
@@ -448,10 +447,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     if (regionForm ? !region.count(e) : e != latch)
       multi = true;
   }
-  if (multi && !top)
-    unimplemented(regionForm ? "loops-cutoff: a nested header-tested K-loop with an exit outside its test region"
-                             : "loops-cutoff: a nested K-loop exiting from a block other than its latch (cq-lgkx)",
-                  H->getTerminator());
   if (multi)
     for (BasicBlock *e : exiting)
       if (A.LI.getLoopFor(e) != &L && any_of(successors(e), liveEdge))
@@ -477,9 +472,26 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     dfs(H);
     order.assign(post.rbegin(), post.rend());
   }
-  // The outermost sub-loop of L holding b, or nullptr.
+  // The outermost sub-loop of L holding b, or nullptr. For a block of the unit outside L (the exit arm,
+  // a noreturn arm): the outermost loop of the arm holding it (a loop not containing L's header).
+  // A sub-loop with several live exits (cq-lgkx) is a unit with an exit arm of its own (Exits.h): the arm
+  // blocks inside L belong to that unit, one node of the trip that ends at its continuation.
+  DenseMap<const BasicBlock *, Loop *> subArm;
+  for (Loop *S : L.getSubLoops())
+    for (BasicBlock *b : exits::unitOf(*S).arm)
+      if (L.contains(b))
+        subArm[b] = S;
   auto subLoopOf = [&](const BasicBlock *b) -> Loop * {
+    if (Loop *S = subArm.lookup(b))
+      return S;
     Loop *l = A.LI.getLoopFor(b), *last = nullptr;
+    if (!L.contains(b)) {
+      while (l && !l->contains(H)) {
+        last = l;
+        l = l->getParentLoop();
+      }
+      return last;
+    }
     while (l && l != &L) {
       last = l;
       l = l->getParentLoop();
@@ -493,8 +505,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   auto contribution = [&](BasicBlock *p, BasicBlock *b) -> Pred {
     if (Loop *S = subLoopOf(p); S && !S->contains(b)) {
       exits::Unit SU = exits::unitOf(*S);
-      if (is_contained(SU.abort, b) || is_contained(SU.dead, b))
-        return Pred::bottom();   // the sub-loop's noreturn arm (its own trips lower it) or a dead end
+      if (SU.contains(*S, b) || is_contained(SU.dead, b))
+        return Pred::bottom();   // inside the sub-unit (its exit arm, its noreturn arm: its own trips) or dead
       if (SU.cont != b)
         unimplemented("loops-cutoff: a nested K-loop with more than one exit block (cq-lgkx)", p->getTerminator());
       return local.find(S->getHeader())->second;   // the sub-loop as a unit always ends at its exit
@@ -638,9 +650,11 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // such value is a rail that takes this trip's value where the trip exits (rule 14: the exit value
   // is quantum, it depends on which trip exited).
   bool general = false;
-  auto needGeneral = [&](const char *what, const Instruction *at) {
-    if (!top)
-      unimplemented(what, at);
+  // A nested loop takes it too (cq-lgkx): its capture binds through set(), once per outer trip, and the
+  // outer trip reads the unit as one node ending at its continuation.
+  auto takeGeneral = [&](const char *what, const Instruction *at) {
+    (void)what;
+    (void)at;
     general = true;
   };
   // A value whose slice inside the loop reaches an induction: its trip value advances after the exit.
@@ -719,7 +733,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         continue;
       if (regionForm) {
         if (!region.count(b)) {
-          needGeneral("loops-cutoff: a value of a nested header-tested K-loop's body read after the loop (cq-lgkx)", &I);
+          takeGeneral("loops-cutoff: a value of a nested header-tested K-loop's body read after the loop (cq-lgkx)", &I);
           continue;
         }
         if (!isQ(&I)) {
@@ -727,7 +741,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           // induction's exit value is its exit rail (CR rule 14), any other the general capture.
           auto *h = dyn_cast<PHINode>(&I);
           if (!h || h->getParent() != H || !h->getType()->isIntegerTy()) {
-            needGeneral("loops-cutoff: a classical value of a nested K-loop's test region read after the loop that "
+            takeGeneral("loops-cutoff: a classical value of a nested K-loop's test region read after the loop that "
                         "is not an affine induction's exit value (cq-lgkx)",
                         &I);
             continue;
@@ -735,7 +749,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           exitRail.insert({h, Operand{nullptr, false}});
           exitRebinds.push_back({&I, h});
         } else if (fromInduction(&I)) {
-          needGeneral("loops-cutoff: a value of a nested K-loop's test region computed from an induction, read "
+          takeGeneral("loops-cutoff: a value of a nested K-loop's test region computed from an induction, read "
                       "after the loop (cq-lgkx)",
                       &I);
         } else {
@@ -747,7 +761,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (h && !isQ(h) && h->getType()->isIntegerTy())
         exitRail.insert({h, Operand{nullptr, false}});   // CR rule 14: an affine induction's exit value
       if (!h || (!isQ(h) && !exitRail.count(h))) {
-        needGeneral("loops-cutoff: a value read after a nested K-loop that is not the latch incoming of a "
+        takeGeneral("loops-cutoff: a value read after a nested K-loop that is not the latch incoming of a "
                     "header phi (cq-lgkx)",
                     &I);
         continue;
@@ -758,7 +772,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   if (regionForm && X && !multi)
     for (PHINode &P : X->phis())
       if (isQ(&P) && count_if(P.blocks(), [&](const BasicBlock *u) { return L.contains(u); }) > 1)
-        needGeneral("loops-cutoff: a phi of a nested header-tested K-loop's exit block over several exit edges (cq-lgkx)", &P);
+        takeGeneral("loops-cutoff: a phi of a nested header-tested K-loop's exit block over several exit edges (cq-lgkx)", &P);
   if (general) {
     multi = true;
     exitRebinds.clear();
@@ -863,7 +877,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         continue;
       }
       if (foreign)
-        needGeneral("loops-cutoff: an exit phi of a nested K-loop reading a value from outside the loop on an exit "
+        takeGeneral("loops-cutoff: an exit phi of a nested K-loop reading a value from outside the loop on an exit "
                     "edge that is not the exit value of a carried value (cq-lgkx)",
                     &P);
     }
@@ -1142,11 +1156,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     for (const BasicBlock *p : predecessors(b)) {
       if (!U.contains(L, p) || !evaluated.count(p))
         continue;
-      if (L.contains(b)) {
-        Loop *bl = A.LI.getLoopFor(b);
-        if (bl && bl->getHeader() == b && bl->contains(p))
-          continue;   // back edge of a sub-loop
-      }
+      if (Loop *bl = A.LI.getLoopFor(b); bl && bl->getHeader() == b && bl->contains(p) && bl != &L)
+        continue;   // back edge of a sub-loop or of a loop of the arm
       Value *e;
       if (Loop *S = subLoopOf(p); S && !S->contains(b))
         e = creachOf(S->getHeader());   // the sub-loop as a unit always ends at its exit
@@ -1241,6 +1252,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       lowerInsts(b, q, local.find(b)->second);
     }
   };
+  // A loop of the exit arm runs once in the C program (after the trip that exits into the arm), but once per
+  // trip here, under that trip's arm flag: its a_K is the one of the trip whose arm ran, the XOR of the
+  // per-trip chain ends (at most one arm flag is 1). Kept as one rail (CR rule 14: a_K is kept when B > K).
+  Value *armKept = nullptr;
   // The exit arm and C's phis after one evaluation of the blocks `pick` chose (multi-exit form).
   auto capture = [&](Value *q, const std::function<bool(const BasicBlock *)> &pick) {
     armPick = &pick;
@@ -1256,25 +1271,86 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         return std::nullopt;
       return it->second;
     };
+    // The condition of the edge u -> b in this evaluation. A loop of the arm (cq-0dvv) is a unit inside
+    // the arm, like a sub-loop of a trip: it always ends at its continuation, so the edge out of it is
+    // taken where its header ran; an edge into its noreturn arm or a dead end is its own (its trips).
+    auto edgeIn = [&](const BasicBlock *u, const BasicBlock *b) -> std::optional<Pred> {
+      if (!L.contains(u))
+        if (Loop *S = subLoopOf(u)) {
+          if (S->contains(b))
+            return std::nullopt;
+          auto it = armLocal.find(S->getHeader());
+          if (it == armLocal.end())
+            return std::nullopt;
+          exits::Unit SU = exits::unitOf(*S);
+          if (is_contained(SU.abort, b) || is_contained(SU.dead, b))
+            return std::nullopt;
+          if (SU.cont != b)
+            unimplemented("loops-cutoff: a loop of a K-loop's exit arm with more than one live exit block "
+                          "(nested general forms, cq-lgkx)",
+                          u->getTerminator());
+          return it->second;
+        }
+      auto sp = srcPred(u);
+      if (!sp)
+        return std::nullopt;
+      return *sp & edgeCond(const_cast<BasicBlock *>(u), const_cast<BasicBlock *>(b));
+    };
+    DenseSet<const PHINode *> armBound;   // exit phis a loop of the arm bound
     for (BasicBlock *b : U.arm) {
+      Loop *S = subLoopOf(b);
+      if (S && S->getHeader() != b)
+        continue;   // inside a loop of the arm: lowered with it
       Pred acc = Pred::bottom();
-      for (BasicBlock *p : predecessors(b))
-        if (auto sp = srcPred(p))
-          acc = acc | (*sp & edgeCond(p, b));
+      for (BasicBlock *p : predecessors(b)) {
+        if (S && S->contains(p))
+          continue;   // the back edge of the arm loop
+        if (auto e = edgeIn(p, b))
+          acc = acc | *e;
+      }
       if (acc.isBottom())
         continue;   // not reached from the blocks of this evaluation
       armLocal.insert({b, acc});
       evaluated.insert(b);
       creach.erase(b);
+      if (S) {
+        // A loop of the arm: rule 14 inside this trip's arm, seeded by the arm's flag (nested K-loops).
+        if (classify(*S, ctx.T, ctx.S) != Case::QuantumExit)
+          unimplemented("loops-cutoff: a loop of a K-loop's exit arm that is not itself a quantum-exit loop "
+                        "(cq-h5uj)",
+                        b->getTerminator());
+        unsigned K = ctx.K(S);
+        std::optional<uint64_t> Bs = exits::cutoffBound(*S, A.SE, ctx.T, ctx.S);
+        unsigned cs = Bs ? unsigned(std::min<uint64_t>(K, *Bs)) : K;
+        lowerLoop(*S, conj(q, acc, b->getTerminator()), cs, false, false);
+        if (!Bs || *Bs > K) {
+          RailType i1{Kind::Int, 1};
+          if (!armKept) {
+            CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(ctx.M.getContext())});
+            ctx.unc().recordSeed(z);
+            armKept = z;
+          }
+          abi::CoreSpec x{abi::Core::XorI1, i1};
+          CallInst *g = ctx.emitCore(x, {chainEnd, armKept});
+          ctx.unc().recordCore(g, x, {Operand{chainEnd, true}, Operand{armKept, true}}, ctx.unc().idOf(armKept));
+        }
+        if (BasicBlock *SX = exits::unitOf(*S).cont)
+          for (PHINode &P : SX->phis())
+            if (mine.count(&P))
+              armBound.insert(&P);
+        continue;
+      }
       for (PHINode &P : b->phis()) {
+        if (armBound.count(&P))
+          continue;
         if (!isQ(&P)) {
           classicalPhi(P);
           continue;
         }
         std::vector<std::pair<Pred, Operand>> arms;
         for (unsigned i = 0; i < P.getNumIncomingValues(); ++i)
-          if (auto sp = srcPred(P.getIncomingBlock(i)))
-            arms.push_back({*sp & edgeCond(P.getIncomingBlock(i), b), ctx.operand(P.getIncomingValue(i))});
+          if (auto e = edgeIn(P.getIncomingBlock(i), b))
+            arms.push_back({*e, ctx.operand(P.getIncomingValue(i))});
         set(&P, Operand{selectChain(ctx, arms, railTypeOf(P.getType())), true});
       }
       lowerInsts(b, q, acc);
@@ -1284,10 +1360,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       Pred E = Pred::bottom();
       for (unsigned i = 0; i < cp.P->getNumIncomingValues(); ++i) {
         BasicBlock *u = cp.P->getIncomingBlock(i);
-        auto sp = srcPred(u);
-        if (!sp)
+        auto ei = edgeIn(u, U.cont);
+        if (!ei)
           continue;
-        Pred e = *sp & edgeCond(u, U.cont);
+        Pred e = *ei;
         if (e.isBottom())
           continue;
         E = E | e;
@@ -1317,8 +1393,14 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
             if (liveEdge(sx))
               X = X | (*sp & edgeCond(u, sx));
         }
-      } else if (auto it = armLocal.find(vb); it != armLocal.end()) {
-        X = it->second;
+      } else {
+        // A value of a loop of the arm is read after it as that loop's exit value (the nested unit
+        // rebinds it): it is defined where the loop's header ran.
+        const BasicBlock *at = vb;
+        if (Loop *S = subLoopOf(vb))
+          at = S->getHeader();
+        if (auto it = armLocal.find(at); it != armLocal.end())
+          X = it->second;
       }
       if (X.isBottom())
         continue;
@@ -1586,7 +1668,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   } else if (keep) {
     ctx.unc().setRole(ctx.unc().idOf(q), Role::KeptOverflow);
   }
+  if (armKept)
+    ctx.unc().setRole(ctx.unc().idOf(armKept), Role::KeptOverflow);
 
+  chainEnd = q;
   // Exit values (body form): the final state of the header phi.
   auto exitOf = [&](PHINode *h) {
     if (auto qt = qind.find(h); qt != qind.end()) {
@@ -1607,7 +1692,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       set(P, f);
   }
   for (CPhi &cp : cphis) {
-    if (ctx.bound(cp.P))
+    if (!top)
+      set(cp.P, cp.acc);   // a nested unit: bound once per outer trip
+    else if (ctx.bound(cp.P))
       ctx.rebind(cp.P, {cp.acc});   // an earlier unit's binding, its value the initial of this one's
     else
       ctx.bindFields(cp.P, {cp.acc});
@@ -1745,7 +1832,9 @@ Unit unitOf(const Loop &L) {
         unimplemented("loops-cutoff: a block between a rule-14 loop's exits and their join that is also entered from "
                       "outside the loop (cq-0dvv)",
                       b->getTerminator());
-  // Topological order (DFS post-order reversed); a cycle in the arm is not built.
+  // Topological order (DFS post-order reversed), back edges dropped: every cycle is a natural loop
+  // (fix-irreducible runs first, CR rule 14 "Irreducible control flow"), a loop OF THE ARM that the loop
+  // module lowers inside each trip's evaluation of the arm, like a sub-loop of a trip.
   SmallPtrSet<BasicBlock *, 8> done, onStack;
   std::vector<BasicBlock *> post;
   std::function<void(BasicBlock *)> dfs = [&](BasicBlock *b) {
@@ -1754,7 +1843,7 @@ Unit unitOf(const Loop &L) {
       if (!arm.count(s))
         continue;
       if (onStack.count(s))
-        unimplemented("loops-cutoff: a cycle between a rule-14 loop's exits and their join (cq-0dvv)", s->getTerminator());
+        continue;   // the back edge of a loop of the arm
       if (!done.count(s))
         dfs(s);
     }

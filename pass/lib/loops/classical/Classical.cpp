@@ -2770,6 +2770,14 @@ void Unit::resolvePreheader() {
 void lowerClassical(LoweringContext &ctx, Loop &L, Case c) {
   if (c == Case::QuantumExit)
     internalError("loops-classical: lowerClassical of a quantum-exit loop (loops-cutoff)", L.getHeader()->getTerminator());
+  // An exit into a noreturn arm (exits::Unit::abort, CR rule 16) is rule 16's abort arm under the exit's
+  // predicate; this module does not lower one yet (loops-cutoff does, per trip), and the walker never runs
+  // its blocks, so it is no exit to drop.
+  for (Loop *l : L.getLoopsInPreorder())
+    if (exits::Unit U = exits::unitOf(*l); !U.abort.empty())
+      unimplemented("loops-classical: an exit of a classical-bound rule-14 loop into a noreturn arm (rule 16 "
+                    "abort arm per trip; cq-8i5g)",
+                    U.abort.front()->getTerminator());
   std::make_shared<Unit>(ctx, L)->run(c);
 }
 
