@@ -7,7 +7,9 @@
 ;   if (x > 1) cq_theta(&r, 0.1 * (double)x);
 ;   if (x != 1) { r = 5; cq_theta(&r, b); }
 ;   return r; }
-; FATAL: rot-cry: a second prep of a register rotated in place since its first prep
+; cq-a63l (CR rule 10, cq-oa67): a prep of a register rotated in place since: a fresh rail seeded with v,
+; the old one frozen, rule 9 merges over the handles.
+; CHECK f: call i32 @cq_template_select_
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 

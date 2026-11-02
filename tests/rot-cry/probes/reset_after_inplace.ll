@@ -7,7 +7,9 @@
 ;   if (x > k1) { r = a; cq_theta(&r, t1);
 ;     if (x < k2) cq_theta(&r, t2); else if (x == k3) { r = s; cq_phi(t2); } }
 ;   return cq_measure(r) * 2 + 100 * cq_measure(x); }
-; FATAL: cq: unimplemented: rot-cry: a state-prep merge whose straight-through edge (incoming %5) may follow a prep or an in-place rotation
+; cq-a63l (CR rule 10, cq-oa67): a straight-through edge an in-place rotation of the register may precede:
+; the arms merge by rule 9 over the handles (a select chain), the register itself is not the merge.
+; CHECK p19: call i32 @cq_template_select_
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 

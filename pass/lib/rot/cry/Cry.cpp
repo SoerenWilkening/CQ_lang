@@ -50,10 +50,12 @@
 // undoes, or a cleared seed and copy_<W>_controlled of the rail (the register is then locked). A quantum
 // angle (rule 15) preps the register like a classical one, with ry_<W>_qangle_controlled.
 //
-// Still cq::unimplemented with the instruction: a prep whose register would be allocated under a
-// classical guard (P1 factor) and merged or shared outside it; a second prep after a reader or after an
-// in-place rotation of the register (rule 10 undoes only a prep nothing read: SPEC_ISSUES proposed); a
-// merge of two registers; a straight-through edge a prep may precede.
+// Rule 10's second prep (ruling 2026-11-02, cq-oa67): when the first prep cannot be undone by its adjoint
+// (something read the register since, an old value is read after the prep, the register was rotated in
+// place or holds a quantum value) or the prep runs under a classical guard, it is a prep of a FRESH rail
+// seeded with v; the old rail stays allocated (frozen), and every merge that cannot be the register itself
+// (two registers, a straight-through edge a prep or rotation may precede, a register of a classical
+// guard) is rule 9's over the handles (pred::lowerMerge).
 #include "cq/Rotation.h"
 
 #include <memory>
@@ -97,6 +99,7 @@ struct Register {
   Value *seed = nullptr;                 // new-IR classical straight-through value; nullptr: in place
   bool deadShare = false;                // made by a prep nothing reads (two thetas of one seed)
   bool locked = false;                   // rotated in place: no adjoint undo across it
+  bool guarded = false;                  // allocated under a classical guard: merged by rule 9 outside it
   std::vector<Prep> active;
   std::optional<Pred> dirty;             // cq-2xi3: where an in-place rotation left it off seed-or-active
   std::optional<Pred> all;               // union of the full block predicates of its preps
@@ -626,7 +629,7 @@ bool isAlias(const Instruction *I) {
 // rail that read the register, KeptEntangled from the copy on: the prep's xorc writes the register
 // before the Ry that keeps it under A4). A phi reading the old value after
 // T, an alias cast of it read after T, or a reader inside a cycle around T: cq::unimplemented.
-void preserveOldValue(LoweringContext &ctx, FnState &st, Register &R, CallInst &T, bool overlap) {
+bool preserveOldValue(LoweringContext &ctx, FnState &st, Register &R, CallInst &T, bool overlap, bool dryRun) {
   SmallVector<const Value *, 4> olds;
   for (auto &[w, r] : st.of)
     if (r == &R && w != &T && functionOf(w) == T.getFunction())
@@ -665,21 +668,16 @@ void preserveOldValue(LoweringContext &ctx, FnState &st, Register &R, CallInst &
     }
     if (!reader)
       continue;
-    if (overlap)
-      unimplemented("rot-cry: a second prep of a register whose earlier value " + describe(w) +
-                        " is read after it (by " + describe(reader) +
-                        "); rule 10 undoes the first prep by its adjoint only when nothing read the "
-                        "register in between (cq-sx24)",
-                    &T);
-    if (!copyOk)
-      unimplemented("rot-cry: a second prep of a register whose earlier value " + describe(w) +
-                        " is read after it (by " + describe(reader) +
-                        ") through a phi, an alias cast or a cycle around the prep (cq-sx24)",
-                    &T);
+    // Rule 10 (ruling 2026-11-02, cq-oa67): a reader of the earlier value after the prep means the first
+    // prep cannot be undone, and an old value read through a phi, an alias or a cycle cannot be copied out
+    // in front of the prep: the second prep is then a prep of a FRESH rail (the caller's), and the old
+    // register stays as it is.
+    if (overlap || !copyOk)
+      return false;
     needCopy.push_back(w);
   }
-  if (needCopy.empty())
-    return;
+  if (needCopy.empty() || dryRun)
+    return true;
   abi::CoreSpec a{abi::Core::Alloc, R.w};
   CallInst *c = ctx.emitCore(a, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), R.w))});
   RailId cid = ctx.unc().recordSeed(c);
@@ -696,6 +694,7 @@ void preserveOldValue(LoweringContext &ctx, FnState &st, Register &R, CallInst &
       internalError("rot-cry: an earlier value of a register is not bound to its rail", w);
     ctx.rebind(w, {Operand{c, true}});
   }
+  return true;
 }
 
 } // namespace
@@ -759,9 +758,12 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
 
   // A prep of the classical value v. Find the register the merges name.
   Register *R = nullptr;
-  auto pick = [&](Register *r, const Value *why) {
+  bool twoRegisters = false;
+  auto pick = [&](Register *r, const Value *) {
+    // Merges naming two registers (rule 10, cq-oa67): this prep is a prep of a fresh rail and each merge
+    // is rule 9's over the registers' handles (lowerStatePrepMerge).
     if (R && R != r)
-      unimplemented("rot-cry: a cq_theta whose merges name two different registers (" + describe(why) + ")", &T);
+      twoRegisters = true;
     R = r;
   };
   SmallVector<const PHINode *, 2> phis;
@@ -800,9 +802,11 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
         straight.push_back(u);
     }
 
+  if (twoRegisters)
+    R = nullptr;
   Value *vv = x.v;
   bool dead = T.use_empty();
-  if (!R && dead) {
+  if (!R && dead && cf.isTop()) {
     // Two thetas of one seed: share the rail of an earlier dead prep of the same value whose
     // predicates are disjoint from this one.
     for (auto &r : st.regs)
@@ -816,11 +820,10 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
   if (fresh) {
     // The seed: the straight-through value when it is available here (the first one, cq-oa67: the merge
     // writes the others on their edges), else v (every incoming is a prep, 39 _ifelse).
-    Value *seed = straight.empty() ? vv : ctx.operand(straight.front()).v;
-    if (!(phis.empty() && !dead) && !cf.isTop())
-      unimplemented("rot-cry: a state prep under a classical guard whose register is merged or shared "
-                    "outside it",
-                    &T);
+    // Under a classical guard (P1 factor) the register exists on the guard's path only: it is seeded with
+    // v, and a merge outside the guard is rule 9's over the handles (a classical phi, lowerStatePrepMerge).
+    bool guarded = !cf.isTop();
+    Value *seed = straight.empty() || guarded ? vv : ctx.operand(straight.front()).v;
     if (seed->getType() != irTypeOf(ctx.M.getContext(), w))
       internalError("rot-cry: the straight-through value's type differs from the register's", &T);
     abi::CoreSpec a{abi::Core::Alloc, w};
@@ -831,19 +834,48 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
     R->rail = alloc;
     R->w = w;
     R->seed = seed;
-    R->deadShare = dead;
+    R->deadShare = dead && !guarded;
+    R->guarded = guarded;
+    R->locked = guarded;
     R->uses = alloc->getNumUses();
   } else {
-    if (!R->seed)
-      unimplemented("rot-cry: a prep of a classical value into a register that holds a quantum value "
-                    "(rotated in place)",
-                    &T);
-    if (R->locked)
-      unimplemented("rot-cry: a second prep of a register rotated in place since its first prep", &T);
-    if (!cf.isTop())
-      unimplemented("rot-cry: a second prep of a register under a classical guard", &T);
     if (R->w.kind != w.kind || R->w.bits != w.bits)
       internalError("rot-cry: a prep of another width into a register", &T);
+    // Rule 10 (ruling 2026-11-02, cq-oa67): when the first prep cannot be undone (the register holds a
+    // quantum value or was rotated in place, something read it since, an old value is read after this
+    // prep, a quantum angle's rail is gone) or this prep runs under a classical guard, the second prep is a
+    // prep of a FRESH rail seeded with v: the register's handle moves to it, the old rail stays allocated
+    // as a frozen which-path record, and the arms merge by rule 9 over the two handles.
+    bool overlapNow = false;
+    for (const Prep &p : R->active)
+      overlapNow |= !(p.eff & q).isBottom();
+    bool undoable = R->seed && !R->locked && cf.isTop() &&
+                    (!overlapNow || R->rail->getNumUses() == R->uses) &&
+                    preserveOldValue(ctx, st, *R, T, overlapNow, /*dryRun=*/true);
+    if (undoable && overlapNow)
+      for (const Prep &p : R->active)
+        if (p.angle && p.qangle && !(p.eff & q).isBottom() && !ctx.unc().liveRole(ctx.unc().idOf(p.angle)))
+          undoable = false;
+    if (!undoable) {
+      R->locked = true;   // retired: no later prep undoes across this one
+      abi::CoreSpec a{abi::Core::Alloc, w};
+      CallInst *alloc = ctx.emitCore(a, {vv});
+      ctx.unc().recordSeed(alloc);
+      st.regs.push_back(std::make_unique<Register>());
+      Register *N = st.regs.back().get();
+      N->rail = alloc;
+      N->w = w;
+      N->seed = vv;
+      N->guarded = true;   // the register's handle moved: every merge of it is rule 9's
+      N->locked = true;
+      controlledRy(ctx, flag, N->rail, N->w, angle.v, T, *st.dt, angle.handle);
+      N->active.push_back(Prep{q, angle.v, nullptr, angle.handle});
+      N->all = full;
+      N->uses = N->rail->getNumUses();
+      st.of[&T] = N;
+      ctx.bind(&T, N->rail);
+      return;
+    }
   }
 
   // Rule 10: undo every active prep that may have fired where this one runs.
@@ -851,12 +883,10 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
   for (const Prep &p : R->active)
     overlap |= !(p.eff & q).isBottom();
   if (!fresh)
-    preserveOldValue(ctx, st, *R, T, overlap);
+    preserveOldValue(ctx, st, *R, T, overlap, /*dryRun=*/false);
   if (overlap) {
     if (R->rail->getNumUses() != R->uses)
-      unimplemented("rot-cry: a second prep of a register read since its first prep (rule 10 undoes "
-                    "the first by its adjoint only when nothing read it in between)",
-                    &T);
+      internalError("rot-cry: an undo of a register read since its first prep", &T);
     for (auto it = R->active.rbegin(); it != R->active.rend(); ++it) {
       Pred g = it->eff & q;
       if (g.isBottom())
@@ -868,9 +898,7 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
         // Rule 15's angle rail, negated by the fneg template into a fresh rail (garbage of this undo).
         RailId aid = ctx.unc().idOf(it->angle);
         if (!ctx.unc().liveRole(aid))
-          unimplemented("rot-cry: a second prep undoing a quantum-angle prep whose angle rail is already "
-                        "uncomputed (the adjoint needs -A)",
-                        &T);
+          internalError("rot-cry: an undo of a quantum-angle prep whose angle rail is already uncomputed", &T);
         abi::TemplateSpec neg;
         neg.op = "fneg";
         neg.w = RailType{Kind::Fp, 64};
@@ -916,15 +944,42 @@ void lowerStatePrepMerge(LoweringContext &ctx, PHINode &phi) {
         R = it->second;
         break;
       }
-  if (!R)
-    internalError("rot-cry: lowerStatePrepMerge on a phi with no state-prep incoming", &phi);
+  if (!R) {
+    // Every state-prep incoming is itself a rule 9 merge (a fresh rail's): this one is too.
+    ctx.bind(&phi, lowerMerge(ctx, phi));
+    return;
+  }
 
   const BasicBlock *bb = phi.getParent();
+  // Rule 10 (ruling 2026-11-02, cq-oa67): the merge is the register itself when every edge carries it or a
+  // value the register can be made to hold on that edge (its seed where no prep fired, written there).
+  // Otherwise (two registers, a fresh rail of a second prep beside the old one, a straight-through edge a
+  // prep or an in-place rotation of the register may precede) the arms merge by rule 9 over the handles.
+  bool byRule9 = R->guarded;
+  for (unsigned i = 0; i < phi.getNumIncomingValues() && !byRule9; ++i) {
+    const Value *u = phi.getIncomingValue(i);
+    if (auto it = st.of.find(u); it != st.of.end()) {
+      byRule9 = it->second != R;
+      continue;
+    }
+    Operand o = ctx.operand(u);
+    if (o.handle && o.v == R->rail)
+      continue;
+    const Pred &e = ctx.preds().edge(phi.getIncomingBlock(i), bb);
+    for (const Prep &p : R->active)
+      byRule9 |= !(p.eff & e).isBottom();
+    byRule9 |= R->dirty && !(*R->dirty & e).isBottom();
+    byRule9 |= !R->seed && !(!o.handle && o.v == R->seed);
+  }
+  if (byRule9) {
+    ctx.bind(&phi, lowerMerge(ctx, phi));
+    return;
+  }
   for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i) {
     const Value *u = phi.getIncomingValue(i);
     if (auto it = st.of.find(u); it != st.of.end()) {
       if (it->second != R)
-        unimplemented("rot-cry: a merge of two different registers", &phi);
+        internalError("rot-cry: a register merge of two registers", &phi);
       continue;
     }
     if (isPrep(ctx, u))
@@ -934,15 +989,6 @@ void lowerStatePrepMerge(LoweringContext &ctx, PHINode &phi) {
       continue;
     // The straight-through value is the register's value on this edge only where no prep fired.
     const Pred &e = ctx.preds().edge(phi.getIncomingBlock(i), bb);
-    for (const Prep &p : R->active)
-      if (!(p.eff & e).isBottom())
-        unimplemented("rot-cry: a state-prep merge whose straight-through edge (incoming " + describe(u) +
-                          ") may follow a prep",
-                      &phi);
-    if (R->dirty && !(*R->dirty & e).isBottom())
-      unimplemented("rot-cry: a state-prep merge whose straight-through edge (incoming " + describe(u) +
-                        ") may follow a prep or an in-place rotation of the register (cq-2xi3)",
-                    &phi);
     if (!o.handle && R->seed && o.v == R->seed)
       continue;
     // cq-oa67 (rules 9, 10): any other straight-through value is written into the register on its own
@@ -951,9 +997,7 @@ void lowerStatePrepMerge(LoweringContext &ctx, PHINode &phi) {
     // cleared and a controlled basis copy of a rail u (the register then holds a copy of u there and is
     // locked: no later prep undoes across it).
     if (!R->seed)
-      unimplemented("rot-cry: a state-prep merge whose register holds a quantum value (rotated in place) and "
-                    "whose straight-through incoming " + describe(u) + " is not the register",
-                    &phi);
+      internalError("rot-cry: a register merge over a register with no seed", &phi);
     if (!o.handle && o.v->getType() != R->seed->getType())
       internalError("rot-cry: a straight-through value of another type than the register's seed", &phi);
     Value *g = ctx.preds().flag(ctx, e);

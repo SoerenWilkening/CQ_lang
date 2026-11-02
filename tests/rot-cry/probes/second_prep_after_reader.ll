@@ -8,7 +8,10 @@
 ;   int z = (r != 0);
 ;   if (x < k2) { r = 0; cq_theta(&r, t2); }
 ;   return cq_measure(r) + cq_measure(x) + 4 * cq_measure(z); }
-; FATAL: cq: unimplemented: rot-cry: a second prep of a register whose earlier value %13 is read after it (by %19)
+; cq-a63l (CR rule 10, ruling 2026-11-02 cq-oa67): the first prep's value is read after the second prep, so the
+; first cannot be undone: the second prep is a prep of a fresh rail seeded with v, the old rail stays
+; (frozen), and the merges are rule 9 selects over the two handles.
+; CHECK overl: call i32 @cq_template_select_
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 
