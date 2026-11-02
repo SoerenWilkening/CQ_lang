@@ -4243,13 +4243,14 @@ Operand cloneCellValue(LoweringContext &ctx, FnState::CloneCell &c, const Instru
   Pred care = ctx.preds().block(at.getParent()).classicalProjection(ctx.T, ctx.S);
   Pred covered = Pred::bottom();
   std::vector<std::pair<Pred, Operand>> arms;
-  for (auto it = c.writes.rbegin(); it != c.writes.rend() && !(care & !covered).isBottom(); ++it) {
+  // predsMeet: the case atoms of one switch scrutinee exclude each other (a store in another case never ran).
+  for (auto it = c.writes.rbegin(); it != c.writes.rend() && predsMeet(care, !covered); ++it) {
     Pred e = it->first & !covered;
-    if (!(e & care).isBottom())
+    if (predsMeet(e, care))
       arms.push_back({e, it->second});
     covered = covered | it->first;
   }
-  if (!(care & !covered).isBottom()) {
+  if (predsMeet(care, !covered)) {
     if (arms.empty() && !c.old)
       return Operand{};
     arms.push_back({!covered, c.old ? Operand{c.old, true}
