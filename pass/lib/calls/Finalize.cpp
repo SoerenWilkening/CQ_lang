@@ -303,8 +303,18 @@ bool trailingQramStore(const Instruction &I) {
 
 // Does replaying F (and the forward clones it calls) recompute its value and nothing else? top: F is
 // the twin's own source, whose trailing QRAM stores the twin drops (M2b).
-void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &seen, bool top = false,
-                     const SmallPtrSetImpl<const Instruction *> *exempt = nullptr) {
+// The host <fenv.h> flag calls of eff-fenv's BRACKET and PROBE (hostFn: i32 name(i32), no body in the module):
+// they read or write the host flags only. A program body of that name is replayed as any body.
+bool hostFlagCall(const CallBase &CB) {
+  const Function *G = CB.getCalledFunction();
+  return G && G->isDeclaration() && (G->getName() == "fetestexcept" || G->getName() == "feclearexcept" || G->getName() == "feraiseexcept") &&
+         CB.arg_size() == 1 && CB.getType()->isIntegerTy(32) && CB.getArgOperand(0)->getType()->isIntegerTy(32);
+}
+
+// hostFlags: set when the replay touches the host flags (a strict constrained host op, a host flag call); the
+// twin then restores them around its body (defineTwin).
+void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &seen, bool &hostFlags,
+                     bool top = false, const SmallPtrSetImpl<const Instruction *> *exempt = nullptr) {
   if (!seen.insert(&F).second)
     return;
   auto refuse = [&](const Twine &why, const Value *at) {
@@ -366,11 +376,15 @@ void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &s
       continue;
     // Rule 23: a constrained op under fpexcept.ignore or fpexcept.maytrap raises nothing observable and
     // rounds in the environment's mode, which the call and its twin share: a plain op, replayed like any
-    // classical computation. Only fpexcept.strict writes the flags.
-    if (auto *CFP = dyn_cast<ConstrainedFPIntrinsic>(CB)) {
-      std::optional<fp::ExceptionBehavior> eb = CFP->getExceptionBehavior();
-      if (!eb || *eb != fp::ebStrict)
-        continue;
+    // classical computation. A constrained op left in a lowered body is a host op on classical operands
+    // (eff-fenv; its quantum form is a template); under fpexcept.strict it also raises into the host flags,
+    // as do the host flag calls of eff-fenv's BRACKET around it (cq-il07: musl llrintl's strict
+    // (long double)LONG_MAX). The replay recomputes the same value and the same bracketed bits (same
+    // operands, the shared mode); what it raises into the host flags the twin undoes: it restores the host
+    // flags it found on entry (hostFlags, defineTwin), so the replay leaves the environment as it was.
+    if (isa<ConstrainedFPIntrinsic>(CB) || hostFlagCall(*CB)) {
+      hostFlags = true;
+      continue;
     }
     if (std::optional<abi::CoreSpec> c = abi::parseCore(G->getName())) {
       if (top && trailingQramStore(I))
@@ -381,7 +395,7 @@ void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &s
     }
     if (std::optional<abi::CloneSpec> c = abi::parseClone(G->getName())) {
       if (!c->unc && !G->isDeclaration())
-        checkReplayable(*G, twin, seen);
+        checkReplayable(*G, twin, seen, hostFlags);
       continue;   // a twin is checked when it is defined; a declared clone is rule 27's
     }
     if (CB->onlyReadsMemory() && CB->willReturn())
@@ -390,7 +404,7 @@ void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &s
     // not lift, musl's __math_oflowf(0)) replays what that body does: it is replayable when the body is,
     // its volatile accesses to its own dead locals being nothing (rule 24).
     if (!G->isDeclaration()) {
-      checkReplayable(*G, twin, seen);
+      checkReplayable(*G, twin, seen, hostFlags);
       continue;
     }
     refuse("the host call @" + G->getName(), &I);
@@ -520,7 +534,8 @@ void defineTwin(Module &M, Function &twin, Function &src) {
                         src.getName().str(),
                     &twin);
   SmallPtrSet<Function *, 8> seen;
-  checkReplayable(src, twin, seen, true, &kr.made);
+  bool hostFlags = false;
+  checkReplayable(src, twin, seen, hostFlags, true, &kr.made);
 
   ValueToValueMapTy VM;
   for (unsigned k = 0; k < nRegs; ++k)
@@ -772,6 +787,28 @@ void defineTwin(Module &M, Function &twin, Function &src) {
   for (CallInst *a : keptK) {
     cast<Instruction>(a->user_back())->eraseFromParent();
     a->eraseFromParent();
+  }
+
+  // cq-il07 (rules 19, 23): a replay that raises into the host flags (see checkReplayable) runs between
+  // h = fetestexcept(FE_ALL_EXCEPT) on entry and feclearexcept(FE_ALL_EXCEPT); feraiseexcept(h) before
+  // each return, eff-fenv's BRACKET around the whole twin: the twin changes no host flag.
+  if (hostFlags) {
+    Type *i32 = Type::getInt32Ty(C);
+    FunctionType *fty = FunctionType::get(i32, {i32}, false);
+    FunctionCallee test = M.getOrInsertFunction("fetestexcept", fty), clear = M.getOrInsertFunction("feclearexcept", fty),
+                   raise = M.getOrInsertFunction("feraiseexcept", fty);
+    Constant *all = ConstantInt::get(i32, 63);   // FE_ALL_EXCEPT on x86-64 (eff-fenv kAllExcept)
+    BasicBlock::iterator at = twin.getEntryBlock().getFirstInsertionPt();
+    while (isa<AllocaInst>(*at))
+      ++at;
+    IRBuilder<> EB(&*at);
+    Value *h = EB.CreateCall(test, {all}, "cq.hostflags");
+    for (BasicBlock &BB : twin)
+      if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator())) {
+        IRBuilder<> RB(R);
+        RB.CreateCall(clear, {all});
+        RB.CreateCall(raise, {h});
+      }
   }
 }
 

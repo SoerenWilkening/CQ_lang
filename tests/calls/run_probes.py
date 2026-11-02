@@ -25,7 +25,7 @@ TWIN_BARRIER = ("cq: unimplemented: uncompute: a write that may change an object
 TWIN_ALIAS = ("cq: unimplemented: uncompute: a clone call whose twin may read a caller cell the clone writes by "
               "another route than the writing pointer")
 # §6 samples per probe where the full set takes minutes (cqcheck user --samples): the musl bodies.
-SAMPLES = {"clone_cell_seq": 64, "fenv_cells": 64, "fenv_ignore_loop": 64, "store_past_object": 64, "fenv_escape": 64, "fenv_indirect": 64, "libm_musl_acosh": 16, "libm_musl_coshf": 16, "libm_musl_lrint": 16, "libm_musl_floorfn": 32, "libm_musl_atan": 16, "libm_musl_exp": 16, "libm_musl_log": 16}
+SAMPLES = {"clone_cell_seq": 64, "fenv_cells": 64, "fenv_ignore_loop": 64, "store_past_object": 64, "fenv_escape": 64, "fenv_indirect": 64, "libm_musl_acosh": 16, "libm_musl_coshf": 16, "libm_musl_lrint": 16, "libm_musl_llrintl": 16, "twin_strict": 64, "libm_musl_floorfn": 32, "libm_musl_atan": 16, "libm_musl_exp": 16, "libm_musl_log": 16}
 # (probe, entry, opt flags, expectation, regexes the lowered module must contain)
 CASES = [
     # cq-57ju (rulings 2026-11-02): plain clang -O1 callers of musl b1efda5 bodies (no -fno-builtin, no -frounding-math).
@@ -51,6 +51,11 @@ CASES = [
     ("libm_musl_lrint", "f_lround", [], "pass", [r"call i32 @__cq_q_lround_1\(i32 %\d+\)\n"]),
     ("libm_musl_lrint", "f_nearbyint", [], "pass", [r"call i32 @__cq_q_nearbyint_1\(i32 %\d+\)\n"]),
     ("libm_musl_lrint", "f_nearbyintf", [], "pass", [r"call i32 @__cq_q_nearbyintf_1\(i32 %\d+\)\n"]),
+    # cq-il07 (rules 19, 23): a twin replaying fpexcept.strict host ops (unbracketed, and BRACKETed under the quantum
+    # predicate) restores the host flags it found.
+    ("libm_musl_llrintl", "sweep_llrintl", [], "pass", [r"%cq.hostflags = call i32 @fetestexcept\(i32 63\)"]),
+    ("twin_strict", "e_twin", [], "pass", [r"%cq.hostflags = call i32 @fetestexcept\(i32 63\)",
+                                           r"call i32 @feraiseexcept\(i32 %cq.hostflags\)\n  ret void"]),
     # cq-57ju (rule 18 partial measurement, rule 23 default caller): a FENV_ACCESS callee measured from a plain
     # caller (mode 0, an empty flags rail, the flags dead): the measured result is copied out before the twin.
     ("partial_flags", "sc_measure", [], "pass",
