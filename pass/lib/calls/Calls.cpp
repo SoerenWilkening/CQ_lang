@@ -718,9 +718,33 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
     const Value *a = CB.getArgOperand(op(i));
     if (fs[i].pointer && fs[i].abi != PtrAbi::Raw) {
       // T4 (CR rule 21, §1.4): the triple (object, tag, idx) and, for TripleCount, the cell count.
-      if (CB.isByValArgument(op(i)))
-        unimplemented("calls: a byval formal passed as a rule 21 triple", &CB);
       fatptr::Triple t = fatptr::passAcrossCall(ctx, a);
+      // A byval formal the callee may write (cq-09xh) crossing as a triple: its object is a snapshot of the
+      // caller's object as of the call, passed byval (the clone keeps byval on the object parameter), so the
+      // forward and the twin see the same copy whatever the caller writes later. A read-only one is the
+      // caller's object itself.
+      bool snapByval = op(i) < S.F->arg_size() && CB.isByValArgument(op(i)) && byvalCopied(*S.F->getArg(i));
+      if (snapByval) {
+        if (fs[i].pointee == ObjClass::Qram)
+          internalError("calls: a byval formal onto a QRAM object (a byval copy is host memory)", &CB);
+        if (fs[i].pointee != ObjClass::Classical)
+          unimplemented("calls: a slot record passed by value to a clone that may write its copy (the copy "
+                        "would need the record's lowered layout on both sides: rules 20, 26)",
+                        &CB);
+        auto *idx0 = dyn_cast<ConstantInt>(t.idx);
+        if (!idx0 || !idx0->isZero())
+          internalError("calls: a byval actual that is not the start of its object (clang passes a byval "
+                        "aggregate's own temporary or the aggregate itself)",
+                        &CB);
+        Type *BT = CB.getParamByValType(op(i));
+        const DataLayout &DL = ctx.M.getDataLayout();
+        Align al = CB.getParamAlign(op(i)).value_or(DL.getABITypeAlign(BT));
+        AllocaInst *snap = ctx.B().CreateAlloca(BT, DL.getAllocaAddrSpace(), nullptr, "byval.snap");
+        snap->setAlignment(al);
+        ctx.B().CreateMemCpy(snap, al, t.object, al, DL.getTypeAllocSize(BT));
+        t.object = snap;
+        byvals.push_back({unsigned(args.size()), BT, al});
+      }
       Value *vs[4] = {t.object, t.tag, t.idx, t.cellCount};
       unsigned n = fs[i].abi == PtrAbi::TripleCount ? 4 : 3;
       if (n == 4 && !t.cellCount)
