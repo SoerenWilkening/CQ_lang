@@ -1711,6 +1711,7 @@ struct Uncompute::Impl {
     RailId merge = kNone, arm = kNone; // the clear's cond: chooses(merge, arm); merge kNone: true
     Value *cond = nullptr;             // cq-4lqy: a clear by this run-time i1 instead (merge unused)
   };
+  DenseMap<RailId, SmallVector<FlagEv, 2>> inheritedEvs;   // cq-4lqy: see placeAt (a POP kept on some paths)
   Value *flagAt(Instruction *at, ArrayRef<FlagEv> evs, bool dflt) {
     LLVMContext &C = at->getContext();
     Type *I1 = Type::getInt1Ty(C);
@@ -2369,6 +2370,13 @@ struct Uncompute::Impl {
           evs.push_back({gate, false, n, x});
           gated = true;
         }
+    // cq-4lqy: the hit events a later POP of the same bus left here (where it stayed, this item stays too).
+    if (auto it = inheritedEvs.find(g); it != inheritedEvs.end())
+      for (const FlagEv &e : it->second)
+        if (e.at->getParent() && beforePos(e.at)) {
+          evs.push_back(e);
+          gated = true;
+        }
     bool guard = exists || !evs.empty();
     Value *cond = nullptr;
     if (guard) {
@@ -2391,10 +2399,28 @@ struct Uncompute::Impl {
         guard = false;
       }
     }
-    if (guard && r.popBus != kNone)
-      unimplemented("uncompute: a QRAM store whose POP reads a rail a non-diagonal gate hits on some paths only "
-                    "(the earlier stores, the loads of earlier versions and the bus would stay on those paths only)",
-                    records[r.creator].forward);
+    if (guard && r.popBus != kNone) {
+      // cq-4lqy (CR §1.3: pops are LIFO among stores that may touch the same cell; an unpopped store keeps its
+      // slot and the object stays allocated, §0): POP(k) runs under its run flag; on the paths where a gate
+      // kept it, every earlier POP, every load of an earlier version and the bus stay too (keepBelow, per
+      // path): they inherit the clear events, so their own items run under the same condition.
+      SmallVector<FlagEv, 4> clears;
+      for (const FlagEv &e : evs)
+        if (!e.set && e.at != def && e.at != pos.before)
+          clears.push_back(e);
+      RailId b = r.popBus;
+      SmallVector<RailId, 8> below;
+      for (unsigned j = 1; j < r.popK; ++j)
+        below.push_back(rails[b].pops[j - 1]);
+      for (RailId l : rails[b].loads)
+        for (auto [bus, k] : rails[l].versions)
+          if (bus == b && k < r.popK && !is_contained(below, l))
+            below.push_back(l);
+      below.push_back(b);
+      for (RailId y : below)
+        for (const FlagEv &e : clears)
+          inheritedEvs[y].push_back(e);
+    }
     auto &wraps = local ? localWraps : armItems;
     // Each sandwich write that does not run on every path from g's definition to pos is undone and redone
     // under its own flag "it ran since the definition".
