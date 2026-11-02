@@ -66,4 +66,15 @@ std::optional<uint64_t> cutoffBound(const llvm::Loop &L, llvm::ScalarEvolution &
 // rebinds its values read after it; the builder stays in the block it was in.
 void lowerNestedCutoff(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Value *seed);
 
+// CR rule 14 (case 1 or 3 inside a quantum-exit loop's trip, cq-h5uj): a classically bounded loop L of one
+// unrolled trip of a K-loop (a sub-loop of its body or a loop of its exit arm), lowered by loops-classical
+// as a rolled classical loop at the builder's position, its effects under `trip` (an i1 rail: the K-loop's
+// trip predicate & L's header predicate within the trip; a case-3 chain seeded by it). The caller branches
+// around it on the trip's classical path to L's header. Its reverse is an Uncompute deferred item guarded
+// by "L's exit was passed", placed after the readers of its exit values, which are read in place (a value
+// that is no rail of its own is copied by a record the reverse undoes first). Rebinds the values of L read
+// after it (and, for a multi-exit case-3 loop, binds its continuation's phis); the builder is left where
+// L's exit continues.
+void lowerClassicalInTrip(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Value *trip);
+
 } // namespace cq::loops::exits

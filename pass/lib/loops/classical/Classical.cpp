@@ -100,6 +100,7 @@
 #include "cq/Memory.h"
 #include "cq/Predicate.h"
 #include "cq/Switch.h"
+#include "../../spine/SpineInternal.h"
 
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
@@ -395,6 +396,15 @@ public:
   }
 
   void run(Case c);
+  // cq-h5uj (CR rule 14, case 1 or 3 inside a K-loop trip): the loop runs inside one unrolled trip of an
+  // enclosing quantum-exit loop, under that trip's rail `trip` (its effects controlled by it, a case-3 chain
+  // seeded by it), on the classical path loops-cutoff branched on. Its reverse is deferred after the readers
+  // of its exit values, guarded by "the loop's exit was passed" (the trip may skip the loop classically).
+  void runInTrip(Case c, Value *trip) {
+    outerTrip = trip;
+    inTrip = true;
+    run(c);
+  }
 
 private:
   LoweringContext &ctx;   // only while lowerClassical runs: a deferred reverse (cq-fx3s) uses Mod, Out, U
@@ -428,6 +438,8 @@ private:
   bool nested = false;
   BasicBlock *resetAt = nullptr;
   Value *outerTrip = nullptr;
+  bool inTrip = false;     // cq-h5uj: lowered inside a K-loop trip (runInTrip)
+  unsigned copyScope = ~0u;   // cq-h5uj: the copies of exit values a per-trip loop reads in place
   bool deferred = false;   // the outermost loop's reverse is an Uncompute deferred item   // while a sub-loop of a case-3 trip is walked: that trip's rail a_{j-1}
   bool reversed = false;
   BasicBlock *revAt = nullptr;   // where this unit's reverse begins (a trip-local sub-loop: inside the parent's trip)
@@ -1103,7 +1115,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   }
 
   plan6.clear();
-  if (outermost)
+  // cq-h5uj: inside a K-loop trip the loop's final value is a value of that trip (the K-loop selects it into
+  // its state and its mirror undoes the trip), never a register of the program: no rule 6 chain keeps it.
+  if (outermost && !inTrip)
     planRuleSix(L, c);
 
   // Entry: the trip predicate, the seeds.
@@ -2314,7 +2328,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       unbound.insert(cp.P);
   }
   auto put = [&](const Value *v, Operand op) {
-    if (unbound.erase(v))
+    // A unit lowered once per trip of an enclosing K-loop (cq-h5uj) binds its continuation's phis again.
+    if (unbound.erase(v) && !ctx.bound(v))
       ctx.bindFields(v, {op});
     else
       ctx.rebind(v, {op});
@@ -2384,10 +2399,25 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           exits.push_back(x);
         continue;
       }
-      if (nested)
-        unimplemented("loops-classical: a trip-local sub-loop whose value read after it is not its own rail (a "
-                      "copy-out per trip)",
-                      cast<Instruction>(v));
+      if (nested || inTrip) {
+        // cq-h5uj (CR rule 14 case 1: "after the result is copied out (alloc + copy) a reverse loop pops"): a
+        // loop that runs once per trip of an enclosing loop (a trip-local sub-loop, a loop in a K-loop trip)
+        // keeps no output of its own: its copy is a record of the loop's own copy scope, an exit rail read in
+        // place after the loop, and the deferred reverse un-copies it first (reverse(): the copy scope's
+        // mirror before the last trip's).
+        if (copyScope == ~0u)
+          copyScope = U.openScope();   // closed after the last copy (below)
+        CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                                   {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+        RailId fid = ctx.unc().recordSeed(f);
+        abi::CoreSpec cp{abi::Core::Copy, w};
+        CallInst *cc = ctx.emitCore(cp, {op.v, f});
+        ctx.unc().recordCore(cc, cp, {op, Operand{f, true}}, fid);
+        put(v, Operand{f, true});
+        if (!is_contained(exits, fid))
+          exits.push_back(fid);
+        continue;
+      }
       CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
                                  {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
       RailId fid = ctx.unc().recordSeed(f);
@@ -2396,6 +2426,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       ctx.unc().recordCore(cc, cp, {op, Operand{f, true}}, fid);
       ctx.unc().setRole(fid, Role::Output);
       put(v, Operand{f, true});
+    }
+    if (copyScope != ~0u) {
+      U.closeScope(copyScope);
+      scs.push_back(copyScope);
     }
     // M3 (CR rules 5, 20): a rail a trip made and stored into a slot cell may be read after the loop
     // through the cell (a run-time read names it, Uncompute::recordCellLoad): it is an exit rail, so the
@@ -3019,6 +3053,7 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
   // loop ran: the value "the loop's exit block was passed" (false at the function's entry, true at
   // X), read at the start of the item.
   BasicBlock *join = nullptr;
+  BasicBlock *copyBlock = nullptr;
   BasicBlock *guardBlock = BX.GetInsertBlock();
   {
     BasicBlock *exitSeg = nullptr;
@@ -3028,6 +3063,14 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
       exitSeg = p;
     }
     BasicBlock *start = R[segOf.lookup(exitSeg)];
+    if (copyScope != ~0u) {
+      // cq-h5uj: the copies of the exit values are undone first (they read the last trip's rails).
+      copyBlock = newBlock();
+      IRBuilder<> Bc(copyBlock);
+      U.emitMirror(copyScope, Bc);
+      Bc.CreateBr(start);
+      start = copyBlock;
+    }
     Value *ran = ConstantInt::getTrue(C);
     if (guarded) {
       // a trip-local sub-loop's guard is reset per parent trip (false at the end of resetAt)
@@ -3054,8 +3097,13 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
     // the paths where the loop ran (poison where it did not: the reverse does not run there).
     DenseSet<const BasicBlock *> rev(R.begin(), R.end());
     rev.insert(Z);
+    SmallVector<BasicBlock *, 8> revBlocks(R.begin(), R.end());
+    if (copyBlock) {
+      rev.insert(copyBlock);
+      revBlocks.push_back(copyBlock);
+    }
     std::vector<Use *> outside;
-    for (BasicBlock *b : R)
+    for (BasicBlock *b : revBlocks)
       for (Instruction &I : *b)
         for (Use &u : I.operands())
           if (auto *d = dyn_cast<Instruction>(u.get()); d && !rev.count(d->getParent()))
@@ -3090,7 +3138,10 @@ void Unit::run(Case c) {
   cur = E;
   BasicBlock *X = newBlock();
   lowerLoop(top, c, X, true);
-  resolvePreheader();
+  // cq-h5uj: inside a K-loop trip the preheader's rails are the trip's (lowered before the classical branch
+  // around the loop): the spine places them after every reader, the deferred reverse included.
+  if (!inTrip)
+    resolvePreheader();
 }
 
 // cq-ot39 (CR rule 5, U5): -O1's LICM hoists a quantum loop invariant into the loop's guarded preheader
@@ -3151,5 +3202,39 @@ void lowerClassical(LoweringContext &ctx, Loop &L, Case c) {
                     U.abort.front()->getTerminator());
   std::make_shared<Unit>(ctx, L)->run(c);
 }
+
+namespace exits {
+
+void lowerClassicalInTrip(LoweringContext &ctx, Loop &L, Value *trip) {
+  Case c = classify(L, ctx.T, ctx.S);
+  if (c == Case::QuantumExit)
+    internalError("loops-classical: lowerClassicalInTrip of a quantum-exit loop (loops-cutoff)", L.getHeader()->getTerminator());
+  if (!trip)
+    internalError("loops-classical: a loop in a K-loop trip with no trip rail", L.getHeader()->getTerminator());
+  for (Loop *l : L.getLoopsInPreorder())
+    if (Unit U = unitOf(*l); !U.abort.empty())
+      unimplemented("loops-classical: an exit of a classical-bound rule-14 loop into a noreturn arm (rule 16 "
+                    "abort arm per trip; cq-8i5g)",
+                    U.abort.front()->getTerminator());
+  // The unit is lowered once per unrolled trip: its phis (and the continuation phis a multi-exit case-3 unit
+  // binds) still name the previous trip's lowering, which this one replaces (as lowerInstruction does, cq-lx8f).
+  spine::Shared &sh = spine::shared(ctx);
+  Unit SU = unitOf(L);
+  auto forget = [&](BasicBlock *b) {
+    for (PHINode &p : b->phis())
+      sh.binds.erase(&p);
+  };
+  for (BasicBlock *b : L.blocks())
+    forget(b);
+  for (BasicBlock *b : SU.arm)
+    forget(b);
+  if (c == Case::ClassicalBoundQuantumExit && SU.cont && (SU.multi() || liveExiting(L) != L.getLoopLatch()))
+    for (PHINode &p : SU.cont->phis())
+      if (any_of(p.blocks(), [&](const BasicBlock *u) { return SU.contains(L, u); }))
+        sh.binds.erase(&p);
+  std::make_shared<cq::loops::Unit>(ctx, L)->runInTrip(c, trip);
+}
+
+} // namespace exits
 
 } // namespace cq::loops

@@ -171,7 +171,9 @@ private:
     return ctx.T.isQuantum(v, ctx.S);
   }
   void set(const Value *orig, Operand op) {
-    if (mine.insert(orig).second)
+    // A value loops-classical lowers in a trip (cq-h5uj) is bound there first, or forgotten again per trip.
+    mine.insert(orig);
+    if (!ctx.bound(orig))
       ctx.bindFields(orig, {op});
     else
       ctx.rebind(orig, {op});
@@ -359,11 +361,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   if (c == 0)
     internalError("loops-cutoff: a cutoff of 0 trips", H->getTerminator());
 
-  // Sub-loops: each is a quantum-exit loop of its own (nested K-loops).
-  for (Loop *S : L.getSubLoops())
-    if (classify(*S, ctx.T, ctx.S) != Case::QuantumExit)
-      unimplemented("loops-cutoff: a sub-loop of a K-loop that is not itself a quantum-exit loop (cq-h5uj)",
-                    S->getHeader()->getTerminator());
+  // Sub-loops: a quantum-exit loop is a nested K-loop (its chain seeded by the trip predicate), a classically
+  // bounded one (rule 14 case 1 or 3) a rolled classical loop inside each trip (cq-h5uj, classicalSub below).
 
   // The body's terminators: every branch and switch of a trip, quantum or classical, is a predicate of
   // the trip (edgeCond); the trip is straight-line code under those predicates.
@@ -1142,6 +1141,138 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     set(&P, Operand{classicalChain(arms), false});
     perTrip.insert(&P);
   };
+  // cq-h5uj (CR rule 14 case 1 or 3 inside a case-2 trip): a classically bounded loop S of a trip (a sub-loop,
+  // or a loop of the exit arm) stays a classical loop over its classical bound, lowered once per trip by
+  // loops-classical under the trip's predicate `trip` (q & S's header predicate within the trip): its effects
+  // are controlled by it, a case-3 chain is seeded by it. The trip's code is straight-line, but S runs only
+  // where the trip's classical path reaches its header (creachOf: a classical guard, -O1's `m > 0` before a
+  // rotated loop, false there would run S over an unbounded count): a real classical branch around S, its
+  // values read after it joined with |0> seeds (a classical value: 0) minted before the branch on the skip
+  // path, where the trip reads them under a false classical edge only. Its reverse is deferred after their
+  // readers, guarded by "S's exit was passed". unitPhi: the phis of S's continuation S binds itself (a
+  // multi-exit case-3 loop), their value where S ran, joined the same way; the trip's merge reads that value
+  // on S's edges into the continuation.
+  DenseMap<const PHINode *, Operand> unitPhi;
+  auto classicalSub = [&](Loop &S, Value *q, const Pred &lp, const Instruction *at) {
+    exits::Unit SU = exits::unitOf(S);
+    Case sc = classify(S, ctx.T, ctx.S);
+    auto inSub = [&](const BasicBlock *b) { return SU.contains(S, b); };
+    SmallVector<PHINode *, 4> cBound;
+    if (sc == Case::ClassicalBoundQuantumExit && SU.cont &&
+        (SU.multi() || exits::liveExiting(S) != S.getLoopLatch()))
+      for (PHINode &P : SU.cont->phis())
+        if (any_of(P.blocks(), inSub))
+          cBound.push_back(&P);
+    // The values of S's unit read after it (a phi of the continuation on an edge from the unit included,
+    // unless S binds that phi itself).
+    SmallVector<Instruction *, 8> outs;
+    SmallVector<BasicBlock *, 16> blocks(S.blocks().begin(), S.blocks().end());
+    blocks.append(SU.arm.begin(), SU.arm.end());
+    for (BasicBlock *bb : blocks)
+      for (Instruction &I : *bb)
+        for (const Use &Us : I.uses()) {
+          auto *ui = cast<Instruction>(Us.getUser());
+          if (inSub(ui->getParent()) || is_contained(cBound, ui))
+            continue;
+          if (!is_contained(outs, &I))
+            outs.push_back(&I);
+        }
+    Value *trip = conj(q, lp, at);
+    Value *g = creachOf(S.getHeader());
+    auto *gc = dyn_cast<ConstantInt>(g);
+    if (gc && gc->isZero())
+      internalError("loops-cutoff: a sub-loop lowered where the trip's classical path never reaches it", at);
+    if (gc) {
+      // No classical guard: S runs wherever the trip runs.
+      exits::lowerClassicalInTrip(ctx, S, trip);
+      for (PHINode *P : cBound) {
+        unitPhi.erase(P);
+        boundThisTrip.insert(P);
+        mine.insert(P);
+      }
+      for (Instruction *I : outs)
+        if (!isQ(I))
+          perTrip.insert(I);
+      return;
+    }
+    // The values on the skip path: a |0> seed per rail field (minted before the branch), 0 per classical one.
+    LLVMContext &Cx = ctx.M.getContext();
+    auto skipFields = [&](const Value *v, Type *ty) {
+      SmallVector<Type *, 4> leaves;
+      std::function<void(Type *)> walk = [&](Type *t) {
+        if (auto *st = dyn_cast<StructType>(t)) {
+          for (Type *e : st->elements())
+            walk(e);
+        } else if (auto *a = dyn_cast<ArrayType>(t)) {
+          for (uint64_t k = 0; k < a->getNumElements(); ++k)
+            walk(a->getElementType());
+        } else if (auto *vt = dyn_cast<FixedVectorType>(t)) {
+          for (unsigned k = 0; k < vt->getNumElements(); ++k)
+            leaves.push_back(vt->getElementType());
+        } else {
+          leaves.push_back(t);
+        }
+      };
+      walk(ty);
+      SmallVector<Operand, 4> f;
+      if (!isQ(v)) {
+        f.push_back(Operand{Constant::getNullValue(ty), false});
+        return f;
+      }
+      for (Type *t : leaves) {
+        if (t->isPointerTy() && !isCodeAddress(v))
+          unimplemented("loops-cutoff: a quantum data pointer read after a classically bounded loop of a K-loop trip "
+                        "(rule 21: the null fat pointer on the loop's classical skip path; cq-p45s)",
+                        at);
+        RailType w = railOf(t);
+        CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(Cx, w))});
+        ctx.unc().recordSeed(z);
+        f.push_back(Operand{z, true});
+      }
+      return f;
+    };
+    std::vector<SmallVector<Operand, 4>> skipOut, skipPhi;
+    for (Instruction *I : outs)
+      skipOut.push_back(skipFields(I, I->getType()));
+    for (PHINode *P : cBound)
+      skipPhi.push_back(skipFields(P, P->getType()));
+    BasicBlock *Run = BasicBlock::Create(Cx, "", &ctx.out()), *Skip = BasicBlock::Create(Cx, "", &ctx.out()),
+               *Join = BasicBlock::Create(Cx, "", &ctx.out());
+    ctx.B().CreateCondBr(g, Run, Skip);
+    ctx.B().SetInsertPoint(Run);
+    exits::lowerClassicalInTrip(ctx, S, trip);
+    BasicBlock *ran = ctx.B().GetInsertBlock();
+    ctx.B().CreateBr(Join);
+    BranchInst::Create(Join, Skip);
+    ctx.B().SetInsertPoint(Join);
+    auto join = [&](const Value *v, ArrayRef<Operand> skip) {
+      SmallVector<Operand, 4> run = ctx.fields(v), out;
+      if (run.size() != skip.size())
+        internalError("loops-cutoff: a value read after a loop of a trip with fields that do not match its type", at);
+      for (size_t k = 0; k < run.size(); ++k) {
+        if (run[k].handle != skip[k].handle)
+          internalError("loops-cutoff: a value read after a loop of a trip that is a rail on one path only", at);
+        PHINode *ph = ctx.B().CreatePHI(run[k].v->getType(), 2);
+        ph->addIncoming(run[k].v, ran);
+        ph->addIncoming(skip[k].v, Skip);
+        if (run[k].handle)
+          ctx.unc().recordMerge(ph);
+        out.push_back(Operand{ph, run[k].handle});
+      }
+      return out;
+    };
+    for (size_t k = 0; k < outs.size(); ++k) {
+      ctx.rebind(outs[k], join(outs[k], skipOut[k]));
+      if (!isQ(outs[k]))
+        perTrip.insert(outs[k]);
+    }
+    for (size_t k = 0; k < cBound.size(); ++k) {
+      SmallVector<Operand, 4> j = join(cBound[k], skipPhi[k]);
+      if (j.size() != 1)
+        internalError("loops-cutoff: a phi of a multi-exit loop's continuation with several fields", cBound[k]);
+      unitPhi[cBound[k]] = j.front();
+    }
+  };
   std::function<void(BasicBlock *, Value *, const Pred &)> lowerInsts;   // one block's non-phi instructions
   auto lowerBlocks = [&](Value *q, const std::function<bool(const BasicBlock *)> &pick) {
     boundThisTrip.clear();
@@ -1156,8 +1287,12 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (Loop *S = subLoopOf(b)) {
         if (S->getHeader() != b)
           continue;
-        unsigned K = ctx.K(S);
         Loop *mS = A.LI.getLoopFor(b);
+        if (classify(*mS, ctx.T, ctx.S) != Case::QuantumExit) {
+          classicalSub(*mS, q, local.find(b)->second, b->getTerminator());
+          continue;
+        }
+        unsigned K = ctx.K(S);
         std::optional<uint64_t> B = exits::cutoffBound(*mS, A.SE, ctx.T, ctx.S);
         unsigned cs = B ? unsigned(std::min<uint64_t>(K, *B)) : K;
         Value *s = conj(q, local.find(b)->second, b->getTerminator());
@@ -1193,11 +1328,21 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           // straight-line code): the merge is rule 9's select chain over the trip-local edge
           // predicates, a classical term of them a seed rail (rule 8).
           std::vector<std::pair<Pred, Operand>> arms;
+          auto up = unitPhi.find(&P);
+          bool unitArm = false;
           for (unsigned i = 0; i < P.getNumIncomingValues(); ++i) {
             BasicBlock *u = P.getIncomingBlock(i);
             Pred e = contribution(u, b);
-            if (!e.isBottom())
-              arms.push_back({e, ctx.operand(P.getIncomingValue(i))});
+            if (e.isBottom())
+              continue;
+            if (up != unitPhi.end() && subLoopOf(u) && !subLoopOf(u)->contains(b)) {
+              // the classically bounded sub-loop's own value of P where it ran (cq-h5uj)
+              if (!unitArm)
+                arms.push_back({e, up->second});
+              unitArm = true;
+              continue;
+            }
+            arms.push_back({e, ctx.operand(P.getIncomingValue(i))});
           }
           set(&P, Operand{selectChain(ctx, arms, railOf(P.getType())), true});
         }
@@ -1266,11 +1411,16 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       evaluated.insert(b);
       creach.erase(b);
       if (S) {
-        // A loop of the arm: rule 14 inside this trip's arm, seeded by the arm's flag (nested K-loops).
-        if (classify(*S, ctx.T, ctx.S) != Case::QuantumExit)
-          unimplemented("loops-cutoff: a loop of a K-loop's exit arm that is not itself a quantum-exit loop "
-                        "(cq-h5uj)",
-                        b->getTerminator());
+        // A loop of the arm: rule 14 inside this trip's arm, seeded by the arm's flag (nested K-loops), or a
+        // classically bounded loop of the arm under that flag (cq-h5uj).
+        if (classify(*S, ctx.T, ctx.S) != Case::QuantumExit) {
+          classicalSub(*S, q, acc, b->getTerminator());
+          if (BasicBlock *SX = exits::unitOf(*S).cont)
+            for (PHINode &P : SX->phis())
+              if (mine.count(&P))
+                armBound.insert(&P);
+          continue;
+        }
         unsigned K = ctx.K(S);
         std::optional<uint64_t> Bs = exits::cutoffBound(*S, A.SE, ctx.T, ctx.S);
         unsigned cs = Bs ? unsigned(std::min<uint64_t>(K, *Bs)) : K;
@@ -1300,9 +1450,21 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           continue;
         }
         std::vector<std::pair<Pred, Operand>> arms;
-        for (unsigned i = 0; i < P.getNumIncomingValues(); ++i)
-          if (auto e = edgeIn(P.getIncomingBlock(i), b))
-            arms.push_back({*e, ctx.operand(P.getIncomingValue(i))});
+        auto up = unitPhi.find(&P);
+        bool unitArm = false;
+        for (unsigned i = 0; i < P.getNumIncomingValues(); ++i) {
+          BasicBlock *u = P.getIncomingBlock(i);
+          auto e = edgeIn(u, b);
+          if (!e)
+            continue;
+          if (up != unitPhi.end() && !L.contains(u) && subLoopOf(u) && !subLoopOf(u)->contains(b)) {
+            if (!unitArm)
+              arms.push_back({*e, up->second});   // a classically bounded loop of the arm (cq-h5uj)
+            unitArm = true;
+            continue;
+          }
+          arms.push_back({*e, ctx.operand(P.getIncomingValue(i))});
+        }
         set(&P, Operand{selectChain(ctx, arms, railOf(P.getType())), true});
       }
       lowerInsts(b, q, acc);
