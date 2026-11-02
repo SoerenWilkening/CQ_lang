@@ -243,7 +243,14 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
     Intrinsic::ID id = F->getIntrinsicID();
     // Rule 23: the constrained ops and LLVM's rounding-mode intrinsics read or write the
     // floating-point environment, classical ones included.
-    if (isa<ConstrainedFPIntrinsic>(CB) || id == Intrinsic::get_rounding || id == Intrinsic::set_rounding)
+    // Ruling 2026-11-02 (cq-75n4): an fpexcept.ignore / maytrap op raises nothing; it is the plain template
+    // (in the mode its chain gives it), an op like any other, not an effect (rule 14 loops take it as one;
+    // dispatch still hands it to eff-fenv, which picks the mode). Only a strict op is the environment's.
+    if (auto *CI = dyn_cast<ConstrainedFPIntrinsic>(&CB)) {
+      std::optional<fp::ExceptionBehavior> eb = CI->getExceptionBehavior();
+      return eb && *eb == fp::ebStrict ? Class::Fenv : Class::TemplateIntrinsic;
+    }
+    if (id == Intrinsic::get_rounding || id == Intrinsic::set_rounding)
       return Class::Fenv;
     switch (id) {
     case Intrinsic::memcpy: case Intrinsic::memmove: case Intrinsic::memset:

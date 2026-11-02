@@ -470,6 +470,8 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
     return mem::allocateSlots(ctx, CB);
   case Class::MemIntrinsic: return mem::lowerMemIntrinsic(ctx, cast<MemIntrinsic>(CB));
   case Class::TemplateIntrinsic:
+    if (isa<ConstrainedFPIntrinsic>(CB))
+      return fenv::lowerConstrained(ctx, CB);   // a non-raising constrained op: the template in its chain's mode
     if (auto *II = dyn_cast<IntrinsicInst>(&CB); II && II->getIntrinsicID() == Intrinsic::ptrmask) {
       fatptr::lower(ctx, &CB);   // rule 21 (105): binds the masked pointer's (tag, idx) here
       return;
