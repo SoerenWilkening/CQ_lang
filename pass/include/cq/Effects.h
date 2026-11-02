@@ -11,7 +11,14 @@
 
 // Effects.h  (rules 16, 17, 23, 24)
 namespace cq::tape   { void lowerHostEffect(LoweringContext &, llvm::CallBase &);
-                       void lowerNoreturn(LoweringContext &, llvm::CallBase &); }
+                       void lowerNoreturn(LoweringContext &, llvm::CallBase &);
+                       // cq-a63l (CR rule 16, "a result the program reads"; amendment on cq-arch): before
+                       // the final taint, a deferred printf/fprintf (a host effect of some specialization)
+                       // whose count the program reads or whose format may hold %n gets the library's
+                       // formatting body on a null buffer, snprintf(0, 0, fmt, args...), in front of it;
+                       // the count's uses read that call (lifted by rule 18, or a rule 27 declared clone).
+                       // True when the module changed (taint is then recomputed).
+                       bool rewriteDeferredResults(llvm::Module &, const TaintInfo &); }
 namespace cq::invert { void lowerRegion(LoweringContext &, llvm::CallInst &begin, llvm::CallInst &end);
                        // I1 (cq-arch, cq-xjw2): the body of an _adj clone (S.adj): F's whole body (one void
                        // return) as one region; formals bound, preds computed, builder at the end of the

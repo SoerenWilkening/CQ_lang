@@ -522,6 +522,8 @@ std::optional<Gate> gateOf(Instruction *I) {
     case Core::TapeWrite:
     case Core::TapeWriteLit:
     case Core::TapeWriteStrLit:
+    case Core::TapeStrBegin:
+    case Core::TapeStrEnd:
     case Core::AbortI1:
       unimplemented("eff-invert: awaiting owner ruling: SPEC_ISSUES \"A measurement, tape entry or abort flag "
                     "inside a cq_invert region\" (" + n.str() + ": no inverse gate)",

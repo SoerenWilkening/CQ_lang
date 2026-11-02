@@ -606,6 +606,16 @@ struct TapeOrder {
 } // namespace
 
 Class classify(const CallBase &CB, const TaintInfo &T, const Specialization &S) {
+  // cq-a63l (rule 16, a result the program reads): the formatting body on a null buffer that
+  // tape::rewriteDeferredResults put in front of a deferred printf writes nothing on the host (size 0) but
+  // through %n; it is lifted by rule 18 when it has a body, else a rule 27 declared clone when handed a
+  // quantum argument, else the ordinary call. Never a tape entry.
+  if (CB.getMetadata("cq.deferred.result")) {
+    const Function *G = directCallee(CB);
+    if (G && !G->isDeclaration())
+      return classifyBase(CB, T, S);
+    return anyQuantumArg(CB, T, S) ? Class::Declared : Class::Classical;
+  }
   Class k = classifyBase(CB, T, S);
   if (k != Class::Classical && k != Class::Lift)
     return k;

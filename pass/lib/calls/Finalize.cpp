@@ -128,7 +128,7 @@ bool nonPureCore(abi::Core op) {
   case Core::Measure: case Core::Ry: case Core::RyQAngle: case Core::RzI1: case Core::RzQAngle:
   case Core::QramStore: case Core::QramRealloc: case Core::TapeAlloc: case Core::TapeFmt:
   case Core::TapeEffect: case Core::TapeWrite: case Core::TapeWriteLit: case Core::TapeWriteStrLit:
-  case Core::AbortI1:
+  case Core::TapeStrBegin: case Core::TapeStrEnd: case Core::AbortI1:
     return true;
   default:
     return false;

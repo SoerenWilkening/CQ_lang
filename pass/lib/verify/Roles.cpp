@@ -157,6 +157,11 @@ void coreRoles(Sig &S, const CallBase &CB) {
     R.append({Role::Read, Role::Classical});
     S.res = Res::None;
     break;
+  case Core::TapeStrBegin:
+  case Core::TapeStrEnd:
+    R.push_back(Role::Read);
+    S.res = Res::None;
+    break;
   case Core::AbortI1:
     R.push_back(Role::Read);
     S.res = Res::None;

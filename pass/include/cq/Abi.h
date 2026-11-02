@@ -25,7 +25,8 @@ llvm::FunctionCallee declare(llvm::Module &, const TemplateSpec &, bool unc);
 std::optional<TemplateSpec> parseTemplate(llvm::StringRef symbol, bool *unc);
 enum class Core : uint8_t { Alloc, Free, Measure, Ry, RyQAngle, RzI1, RzQAngle, NotI1, AndI1, OrI1, XorI1,
   Copy, Xorc, QramAlloc, QramRealloc, QramStore, QramLoad, QramFree, TapeAlloc, TapeFmt, TapeEffect,
-  TapeWrite, TapeWriteLit, TapeWriteStrLit, AbortI1, Push, Pop };
+  TapeWrite, TapeWriteLit, TapeWriteStrLit, AbortI1, Push, Pop,
+  TapeStrBegin, TapeStrEnd };   // cq-a63l (CR §1.3, rule 16): tape_str_begin(t), tape_str_end(t)
 struct CoreSpec { Core op; RailType w{}; bool ctl = false, hl = false, unc = false; };
 std::string name(const CoreSpec &);
 llvm::FunctionCallee declare(llvm::Module &, const CoreSpec &);

@@ -19,6 +19,7 @@
 #include "cq/Abi.h"
 #include "cq/Calls.h"
 #include "cq/Common.h"
+#include "cq/Effects.h"
 #include "cq/Lowering.h"
 #include "cq/Loops.h"
 #include "cq/Taint.h"
@@ -170,9 +171,20 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
       if (!F.isDeclaration() && T.isTainted(F))
         Tainted.push_back(&F);
 
+    // 1b. Rule 16: a deferred host call's result the program reads is the library's formatting body on a
+    // null buffer (cq-a63l). No CFG change; the taint below is recomputed when it rewrote anything.
+    bool CFGChanged = cq::tape::rewriteDeferredResults(M, T);
+    if (CFGChanged) {
+      T = cq::TaintInfo();
+      T = cq::computeTaint(M, TO);
+      Tainted.clear();
+      for (Function &F : M)
+        if (!F.isDeclaration() && T.isTainted(F))
+          Tainted.push_back(&F);
+    }
+
     // 2. Reducible control flow, on tainted functions only (NORTHSTAR principle 1). The pass
     // returns PreservedAnalyses::all() exactly when it left the function unchanged.
-    bool CFGChanged = false;
     for (Function *F : Tainted) {
       PreservedAnalyses PA = FixIrreduciblePass().run(*F, FAM);
       if (PA.areAllPreserved())
