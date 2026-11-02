@@ -2827,6 +2827,96 @@ void railNames(FnState &st, const Value *h, SmallPtrSetImpl<const Value *> &out)
   }
 }
 
+// cq-zzpg: the handles (new IR) that may be the same rail as one of H's, closed over the lowered loads of
+// slot cells: under cq-bfz4 sharing a cell may hold a rail other cells (of any object) hold too, and a
+// load of a cell whose index is a run-time value names whichever rail the cell it reads holds, so the
+// load's handle and the handles of the cells it may read are one class. A load whose object is not one
+// slot object joins every handle (sound: it only adds holders).
+void railClass(LoweringContext &ctx, FnState &st, SmallPtrSetImpl<const Value *> &H) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  struct Cell { const Value *h; ObjectId o; Addr a; uint64_t size; };
+  SmallVector<Cell, 16> stored;
+  SmallVector<std::pair<const LoadInst *, const Value *>, 16> loads;
+  for (auto &[I, op] : st.lowered) {
+    if (!op.handle)
+      continue;
+    if (auto *X = dyn_cast<StoreInst>(I)) {
+      for (ObjectId o : ctx.T.provenance(X->getPointerOperand(), ctx.S))
+        stored.push_back({op.v, o, decompose(X->getPointerOperand(), DL),
+                          DL.getTypeStoreSize(X->getValueOperand()->getType()).getFixedValue()});
+    } else if (auto *L = dyn_cast<LoadInst>(I))
+      loads.push_back({L, op.v});
+  }
+  for (auto &[I, cells] : st.callOut)
+    for (auto &[off, op] : cells)
+      if (op.handle)
+        for (const Use &u : I->operands())
+          if (u->getType()->isPointerTy())
+            for (ObjectId o : ctx.T.provenance(u.get(), ctx.S))
+              stored.push_back({op.v, o, Addr{}, 0});   // no address: may be any cell of o
+  for (bool changed = true; changed;) {
+    changed = false;
+    for (auto &[L, h] : loads) {
+      ArrayRef<ObjectId> po = ctx.T.provenance(L->getPointerOperand(), ctx.S);
+      Addr la = decompose(L->getPointerOperand(), DL);
+      uint64_t lsz = DL.getTypeStoreSize(L->getType()).getFixedValue();
+      SmallVector<const Value *, 8> cls{h};
+      for (const Cell &c : stored)
+        if (po.size() != 1 || (c.o == po.front() && !(c.size && differentCell(c.a, la, c.size, lsz))))
+          cls.push_back(c.h);
+      if (!any_of(cls, [&](const Value *x) { return H.count(x); }))
+        continue;
+      for (const Value *x : cls)
+        changed |= H.insert(x).second;
+    }
+  }
+}
+
+// cq-zzpg: the accesses (lowered slot stores; calls that left a handle in a cell, callOut) that left a handle
+// of H in a cell where that handle sits in at least two cells: a rail of H shared between cells. A handle
+// of H that one cell alone holds is that cell's own rail (a run-time indexed load of an array of distinct
+// rails names one of them, whose only holder is the cell it read).
+void sharedHolders(LoweringContext &ctx, FnState &st, const SmallPtrSetImpl<const Value *> &H,
+                   SmallVectorImpl<const Instruction *> &out, SmallPtrSetImpl<const Value *> &sharedRails) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  struct At { const Instruction *I; std::optional<std::pair<const Value *, Addr>> cell; };
+  DenseMap<const Value *, SmallVector<At, 4>> by;
+  if (!st.LI)
+    st.LI = std::make_unique<LoopInfo>(*st.DT);
+  for (auto &[I, op] : st.lowered)
+    if (auto *X = dyn_cast<StoreInst>(I); X && op.handle && H.count(op.v)) {
+      Addr a = decompose(X->getPointerOperand(), DL);
+      At at{I, std::nullopt};
+      // A store in a loop at a run-time address of a value defined outside the loop leaves the one rail in
+      // a cell per iteration: no cell of its own (counted apart from every other access).
+      const Loop *L = st.LI->getLoopFor(X->getParent());
+      auto *vi = dyn_cast<Instruction>(X->getValueOperand());
+      if (a.ok && !(L && !a.terms.empty() && !(vi && L->contains(vi))))
+        at.cell = std::make_pair(a.root, a);
+      else
+        by[op.v].push_back(At{I, std::nullopt});
+      by[op.v].push_back(at);
+    }
+  for (auto &[I, cells] : st.callOut)
+    for (auto &[off, op] : cells)
+      if (op.handle && H.count(op.v))
+        by[op.v].push_back(At{I, std::nullopt});
+  for (auto &[h, ats] : by) {
+    unsigned distinct = 0;
+    for (size_t i = 0; i < ats.size(); ++i) {
+      bool dup = false;
+      for (size_t k = 0; k < i && ats[i].cell; ++k)
+        dup |= ats[k].cell && sameCell(ats[k].cell->second, ats[i].cell->second);
+      distinct += !dup;
+    }
+    if (distinct < 2)
+      continue;
+    sharedRails.insert(h);
+    for (const At &at : ats)
+      out.push_back(at.I);
+  }
+}
+
 // cq-bfz4 (orchestrator decision 2026-11-01, revising cq-dr4o; CR rules 2, 20, 190 memmove_overlap and
 // escape): one rail may sit in several cells (and SSA names) as long as nothing writes it in place: C's
 // copies then hold equal values, and a read never writes a rail (rule 4). True when a non-diagonal in-place
@@ -2990,6 +3080,40 @@ bool holderMayBeRead(LoweringContext &ctx, FnState &st, const StoreInst &S, cons
       if (h && !(h->o == dest.o && sameCell(h->a, dest.a)))
         holders.push_back(*h);
     }
+  // cq-zzpg: every other cell, of any object, that may hold the same rail as one other cell at least
+  // (railClass, sharedHolders), and the values naming it there; a cell a call left such a handle in
+  // (callOut), or an access not of one slot cell, is taken as read after S.
+  bool callHolder = false;
+  if (Operand val = ctx.operand(v); val.handle) {
+    SmallPtrSet<const Value *, 8> H{val.v};
+    railClass(ctx, st, H);
+    SmallVector<const Instruction *, 8> shared;
+    SmallPtrSet<const Value *, 8> sharedRails;
+    sharedHolders(ctx, st, H, shared, sharedRails);
+    for (const Value *h : sharedRails)
+      railNames(st, h, names);
+    close(names);
+    for (const Instruction *I : shared) {
+      auto *X = dyn_cast<StoreInst>(I);
+      std::optional<Holder> h;
+      if (X && X != &S)
+        slotSite(*X, X->getPointerOperand(), X->getValueOperand()->getType(), h);
+      if (X == &S)
+        continue;
+      if (!h) {
+        callHolder = true;
+        for (const Use &u : I->operands())
+          if (u->getType()->isPointerTy())
+            for (ObjectId o : ctx.T.provenance(u.get(), ctx.S))
+              if (!is_contained(objsOut, o))
+                objsOut.push_back(o);
+        continue;
+      }
+      if (!(h->o == dest.o && sameCell(h->a, dest.a)) &&
+          none_of(holders, [&](const Holder &k) { return k.at == h->at && k.o == h->o; }))
+        holders.push_back(*h);
+    }
+  }
   namesOut.insert(names.begin(), names.end());
   for (const Holder &h : holders)
     if (!is_contained(objsOut, h.o))
@@ -3054,6 +3178,8 @@ bool holderMayBeRead(LoweringContext &ctx, FnState &st, const StoreInst &S, cons
       if (reach.count(ub) || (ub == SB && S.comesBefore(U)))
         return true;
     }
+  if (callHolder)
+    return true;
   if (holders.empty())
     return false;
   // An overwrite of a holder with a value that may be the rail puts it back, unless that value is a
@@ -5236,10 +5362,26 @@ void writeSlotCells(LoweringContext &ctx, const Value *ptr, Type *cellTy, ArrayR
     for (ObjectId x : ctx.T.provenance(MT->getSource(), ctx.S))
       if (!is_contained(objs, x))
         objs.push_back(x);
-  SmallPtrSet<const Value *, 8> names;
+  SmallPtrSet<const Value *, 8> names, H;
   for (const Operand &v : vals)
     if (v.handle)
-      railNames(st, v.v, names);
+      H.insert(v.v);
+  // cq-zzpg: every object a cell of which shares one of the rails with another cell (railClass,
+  // sharedHolders).
+  for (const Value *h : H)
+    railNames(st, h, names);
+  railClass(ctx, st, H);
+  SmallVector<const Instruction *, 8> shared;
+  SmallPtrSet<const Value *, 8> sharedRails;
+  sharedHolders(ctx, st, H, shared, sharedRails);
+  for (const Value *h : sharedRails)
+    railNames(st, h, names);
+  for (const Instruction *I : shared)
+    for (const Use &u : I->operands())
+      if (u->getType()->isPointerTy())
+        for (ObjectId x : ctx.T.provenance(u.get(), ctx.S))
+          if (!is_contained(objs, x))
+            objs.push_back(x);
   for (size_t i = 0; i < vals.size(); ++i) {
     Site c = s;
     c.a.off += int64_t(i * cellStride(*s.info));
