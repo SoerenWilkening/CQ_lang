@@ -33,8 +33,9 @@
 //    width 1: an icmp eq/ne reading it narrows (114's q[m-1] ^= q[m-2] is xor_i1 of the two cells'
 //    rails). At the compare the load is registered as a view of its cell's i1 rail (View::cell): the
 //    rail mem-slots bound it to, or the operand of the zext_i1_to_i8 mem-slots took at the load for an
-//    i8 reader (then the compare must be in the load's output block with no rotation of the rail
-//    since the load: else unimplemented). A cell view never takes part in a view phi. A classical
+//    i8 reader when the compare is in the load's output block with no rotation of the rail since the
+//    load, else a trunc_i8_to_i1 of that zext's rail taken at the compare (it holds the loaded value).
+//    A cell view never takes part in a view phi. A classical
 //    _Bool cell load is read narrow as its trunc to i1.
 //
 //  Packed integers (cq-0umd; CR rules 26 and 3: -O1's ABI coercion of struct { int, int } to one i64
@@ -103,8 +104,8 @@ bool boolLoad(LoweringContext &ctx, const Value *v) {
 
 // Registers the quantum _Bool cell load L, read by a narrowed compare, as a cell view of its i1 rail
 // (cq-nd2i). mem-slots binds L to the rail itself, or (an i8 reader) to a zext_i1_to_i8 of it taken at
-// the load: the view names the zext's operand. That rail must not have been rotated since the load
-// (the compare would read the rotated register, not the loaded value).
+// the load: the view names the zext's operand when that rail was not rotated since the load, else a
+// trunc of the zext's rail (the compare reads the loaded value, not the rotated register).
 void cellView(LoweringContext &ctx, const LoadInst &L) {
   Shared &sh = shared(ctx);
   if (sh.views.count(&L))
@@ -121,17 +122,21 @@ void cellView(LoweringContext &ctx, const LoadInst &L) {
       internalError("spine: a _Bool cell load bound to a rail that is not the cell's or its zext_i1_to_i8", &L);
     h = r.ops.front().v;
     CallInst *def = r.def;
-    if (!def || def->getParent() != sh.B.GetInsertBlock())
-      unimplemented("spine: a _Bool cell load read by a narrowed compare in another output block than the load "
-                    "(cq-nd2i)",
-                    &L);
-    auto rt = sh.rotations.find(h);
-    if (rt != sh.rotations.end())
+    // The cell's rail h holds the loaded value at the compare when nothing rotated it since the load,
+    // which is read on the output IR: the load's zext and the compare in one block, no rotation of h
+    // between them. Otherwise the zext's rail z (zext_i1_to_i8 of h at the load) still holds it: the
+    // view names trunc_i8_to_i1(z), a fresh rail (rule 4; rule 3: the bit the zext moved).
+    bool rotatedSince = !def || def->getParent() != sh.B.GetInsertBlock();
+    if (auto rt = sh.rotations.find(h); rt != sh.rotations.end() && !rotatedSince)
       for (CallInst *g : rt->second)
-        if (g->getParent() == def->getParent() && def->comesBefore(g))
-          unimplemented("spine: a _Bool cell load read by a narrowed compare after its cell's rail was rotated "
-                        "(cq-nd2i)",
-                        &L);
+        rotatedSince |= g->getParent() == def->getParent() && def->comesBefore(g);
+    if (rotatedSince) {
+      abi::TemplateSpec spec;
+      spec.op = "trunc";
+      spec.w = RailType{Kind::Int, 8};
+      spec.to = RailType{Kind::Int, 1};
+      h = ctx.emitTemplate(spec, {o}, nullptr);
+    }
   }
   sh.views[&L] = Shared::View{h, 1, true};
 }
@@ -503,6 +508,40 @@ Seg zeroSeg(LoweringContext &ctx, unsigned lo, unsigned hi) {
 
 bool packed(Shared &sh, const Value *v) { return sh.packs.count(v) > 0; }
 
+unsigned leafIndexOf(Type *t, ArrayRef<unsigned> idx);
+
+// The field boundaries another module bound v at: a clone call's packed integer result (its callee's
+// packing, packedCuts of its returns), a leaf of a clone call's aggregate result (resultLeafCuts), a
+// formal (its unpacking, the clone's ABI). {} when none applies.
+SmallVector<unsigned, 4> binderCuts(const Value *v) {
+  if (auto *A = dyn_cast<Argument>(v))
+    return unpackCuts(A);
+  const Value *call = v;
+  SmallVector<unsigned, 4> idx;
+  if (auto *ev = dyn_cast<ExtractValueInst>(v)) {
+    call = ev->getAggregateOperand();
+    idx.assign(ev->idx_begin(), ev->idx_end());
+  }
+  auto *CB = dyn_cast<CallBase>(call);
+  const Function *F = CB ? CB->getCalledFunction() : nullptr;
+  if (!F || F->isDeclaration())
+    return {};
+  if (idx.empty()) {
+    SmallVector<unsigned, 4> c;
+    for (const BasicBlock &BB : *F)
+      if (auto *RI = dyn_cast<ReturnInst>(BB.getTerminator()); RI && RI->getReturnValue()) {
+        SmallVector<unsigned, 4> here = packedCuts(RI->getReturnValue());
+        if (!c.empty() && here != c)
+          return {};
+        c = here;
+      }
+    return c;
+  }
+  SmallVector<SmallVector<unsigned, 4>, 4> leaves = resultLeafCuts(*F);
+  unsigned k = leafIndexOf(F->getReturnType(), idx);
+  return k < leaves.size() ? leaves[k] : SmallVector<unsigned, 4>{};
+}
+
 // A value bound field-wise by another module (a formal, a call result, an extractvalue) whose readers
 // unpack it is registered with unpackCuts at its first read; the field count must agree.
 bool fieldwise(LoweringContext &ctx, const Value *v) {
@@ -513,11 +552,13 @@ bool fieldwise(LoweringContext &ctx, const Value *v) {
   if (it == sh.binds.end() || it->second.size() < 2 || !v->getType()->isIntegerTy())
     return false;
   SmallVector<unsigned, 4> cuts = unpackCuts(v);
-  if (cuts.size() != it->second.size() + 1)
-    unimplemented("spine: a packed integer bound with " + std::to_string(it->second.size()) +
-                      " fields whose readers unpack it into " + std::to_string(cuts.size() - 1) +
-                      " (rule 26, cq-0umd)",
-                  v);
+  if (cuts.size() != it->second.size() + 1) {
+    // The readers unpack it at other fields than its binder packed: the binder's layout is the clone's
+    // packing of the result (a call's result, or a leaf of its aggregate result); the readers reshape it.
+    cuts = binderCuts(v);
+    if (cuts.size() != it->second.size() + 1)
+      internalError("spine: a value bound field-wise at a layout neither its readers nor its binder give", v);
+  }
   sh.packs[v] = cuts;
   return true;
 }
@@ -574,11 +615,27 @@ Operand piece(LoweringContext &ctx, const Seg &s, unsigned lo, unsigned hi, cons
     internalError("spine: a piece outside its packed field", at);
   if (s.zero())
     return Operand{ConstantInt::get(iTy(ctx, hi - lo), 0), false};
-  if (s.op.handle)
-    unimplemented("spine: a packed integer whose quantum field [" + std::to_string(s.lo) + ", " +
-                      std::to_string(s.hi) + ") is read as the bits [" + std::to_string(lo) + ", " +
-                      std::to_string(hi) + ") (a field split or joined across the coercion: rule 26, cq-0umd)",
-                  at);
+  if (s.op.handle) {
+    // A quantum field read in part (the program's lshr / trunc of the coercion, rule 4): lshr_hl by the
+    // offset, then trunc to the piece's width, each a fresh rail.
+    Operand v = s.op;
+    unsigned W = s.hi - s.lo;
+    if (lo > s.lo) {
+      abi::TemplateSpec sh;
+      sh.op = "lshr";
+      sh.w = RailType{Kind::Int, W};
+      sh.shape = "hl";
+      v = Operand{ctx.emitTemplate(sh, {v, Operand{ConstantInt::get(iTy(ctx, W), lo - s.lo), false}}), true};
+    }
+    if (hi - lo < W) {
+      abi::TemplateSpec tr;
+      tr.op = "trunc";
+      tr.w = RailType{Kind::Int, W};
+      tr.to = RailType{Kind::Int, hi - lo};
+      v = Operand{ctx.emitTemplate(tr, {v}), true};
+    }
+    return v;
+  }
   IRBuilder<> &B = shared(ctx).B;
   Value *v = s.op.v;
   if (lo > s.lo)
@@ -608,36 +665,82 @@ Value *join(LoweringContext &ctx, ArrayRef<Seg> parts, unsigned lo, unsigned hi)
   return acc ? acc : ConstantInt::get(T, 0);
 }
 
-// The fields at the boundaries `cuts` (each piece of one field of `in`).
-Segs reshape(LoweringContext &ctx, const Segs &in, ArrayRef<unsigned> cuts, const Value *at) {
-  Segs out;
-  for (unsigned k = 0; k + 1 < cuts.size(); ++k) {
-    unsigned lo = cuts[k], hi = cuts[k + 1];
-    const Seg *s = nullptr;
-    for (const Seg &t : in)
-      if (t.lo <= lo && lo < t.hi)
-        s = &t;
-    if (!s)
-      internalError("spine: packed fields that do not cover the value", at);
-    if (hi > s->hi) {
-      // [lo, hi) spans several fields: classical (or zero) ones are joined classically.
-      SmallVector<Seg, 4> parts;
-      for (const Seg &t : in) {
-        if (t.hi <= lo || t.lo >= hi)
-          continue;
-        if (t.op.handle)
-          unimplemented("spine: a packed integer whose quantum field [" + std::to_string(t.lo) + ", " +
-                            std::to_string(t.hi) + ") is read joined with other bits as [" + std::to_string(lo) +
-                            ", " + std::to_string(hi) + ") (rule 26, cq-0umd)",
-                        at);
-        unsigned a = std::max(t.lo, lo), b = std::min(t.hi, hi);
-        parts.push_back(Seg{a, b, piece(ctx, t, a, b, at)});
-      }
-      out.push_back(Seg{lo, hi, Operand{join(ctx, parts, lo, hi), false}});
+// The i(hi-lo) of fields within [lo, hi) of which some are quantum (rule 4 on the coercion's bit moves):
+// the classical ones joined classically, each quantum one zext'ed to the width and shl'ed to its place,
+// all or'ed (disjoint bits) into fresh rails.
+Operand joinQuantum(LoweringContext &ctx, ArrayRef<Seg> parts, unsigned lo, unsigned hi) {
+  unsigned W = hi - lo;
+  SmallVector<Seg, 4> cls;
+  Operand acc{nullptr, false};
+  auto orIn = [&](Operand x) {
+    if (!acc.v) {
+      acc = x;
+      return;
+    }
+    abi::TemplateSpec o;
+    o.op = "or";
+    o.w = RailType{Kind::Int, W};
+    if (!acc.handle)
+      std::swap(acc, x);
+    o.shape = x.handle ? "" : "hl";
+    acc = Operand{ctx.emitTemplate(o, {acc, x}), true};
+  };
+  for (const Seg &t : parts) {
+    if (!t.op.handle) {
+      cls.push_back(t);
       continue;
     }
-    out.push_back(Seg{lo, hi, piece(ctx, *s, lo, hi, at)});
+    Operand v = t.op;
+    if (t.hi - t.lo < W) {
+      abi::TemplateSpec z;
+      z.op = "zext";
+      z.w = RailType{Kind::Int, t.hi - t.lo};
+      z.to = RailType{Kind::Int, W};
+      v = Operand{ctx.emitTemplate(z, {v}), true};
+    }
+    if (t.lo > lo) {
+      abi::TemplateSpec sh;
+      sh.op = "shl";
+      sh.w = RailType{Kind::Int, W};
+      sh.shape = "hl";
+      v = Operand{ctx.emitTemplate(sh, {v, Operand{ConstantInt::get(iTy(ctx, W), t.lo - lo), false}}), true};
+    }
+    orIn(v);
   }
+  if (any_of(cls, [](const Seg &t) { return !t.zero(); }))
+    orIn(Operand{join(ctx, cls, lo, hi), false});
+  if (!acc.v)
+    internalError("spine: joinQuantum of no quantum field");
+  return acc;
+}
+
+// The bits [lo, hi) of the fields `in`: a piece of one field, or the join of the pieces it spans.
+Operand rangeOf(LoweringContext &ctx, const Segs &in, unsigned lo, unsigned hi, const Value *at) {
+  const Seg *s = nullptr;
+  for (const Seg &t : in)
+    if (t.lo <= lo && lo < t.hi)
+      s = &t;
+  if (!s)
+    internalError("spine: packed fields that do not cover the value", at);
+  if (hi <= s->hi)
+    return piece(ctx, *s, lo, hi, at);
+  SmallVector<Seg, 4> parts;
+  for (const Seg &t : in) {
+    if (t.hi <= lo || t.lo >= hi)
+      continue;
+    unsigned a = std::max(t.lo, lo), b = std::min(t.hi, hi);
+    parts.push_back(Seg{a, b, piece(ctx, t, a, b, at)});
+  }
+  if (any_of(parts, [](const Seg &t) { return t.op.handle; }))
+    return joinQuantum(ctx, parts, lo, hi);
+  return Operand{join(ctx, parts, lo, hi), false};
+}
+
+// The fields at the boundaries `cuts` (each piece of one field of `in`, or the join of the pieces).
+Segs reshape(LoweringContext &ctx, const Segs &in, ArrayRef<unsigned> cuts, const Value *at) {
+  Segs out;
+  for (unsigned k = 0; k + 1 < cuts.size(); ++k)
+    out.push_back(Seg{cuts[k], cuts[k + 1], rangeOf(ctx, in, cuts[k], cuts[k + 1], at)});
   return out;
 }
 
@@ -715,24 +818,23 @@ Segs orSegs(LoweringContext &ctx, const Segs &a, const Segs &b, const Value *at)
     const Seg *q = x.op.handle ? &x : y.op.handle ? &y : nullptr;
     if (q && q->lo == lo) {
       const Segs &other = q == &x ? b : a;
-      for (const Seg &t : other)
-        if (t.hi > q->lo && t.lo < q->hi && !t.zero())
-          unimplemented("spine: an or disjoint of packed fields whose quantum field overlaps a non-zero field "
-                        "(rule 26, cq-0umd)",
-                        at);
-      out.push_back(*q);
-      lo = q->hi;
-      continue;
+      bool clear = none_of(other, [&](const Seg &t) { return t.hi > q->lo && t.lo < q->hi && !t.zero(); });
+      if (clear) {
+        out.push_back(*q);
+        lo = q->hi;
+        continue;
+      }
     }
-    if (q)
-      unimplemented("spine: an or disjoint of packed fields that cuts a quantum field (rule 26, cq-0umd)", at);
+    // Piece by piece: a zero side takes the other; two classical pieces or classically; a quantum piece
+    // with a non-zero other side is the or template (rule 4; disjoint bits, so the or is their union).
     unsigned hi = std::min(x.hi, y.hi);
     Operand px = piece(ctx, x, lo, hi, at), py = piece(ctx, y, lo, hi, at);
     Seg s{lo, hi, px};
     if (Seg{lo, hi, px}.zero())
       s.op = py;
     else if (!Seg{lo, hi, py}.zero())
-      s.op = Operand{shared(ctx).B.CreateOr(px.v, py.v), false};
+      s.op = px.handle || py.handle ? joinQuantum(ctx, {Seg{lo, hi, px}, Seg{lo, hi, py}}, lo, hi)
+                                    : Operand{shared(ctx).B.CreateOr(px.v, py.v), false};
     out.push_back(s);
     lo = hi;
   }
@@ -881,8 +983,7 @@ bool lowerPack(LoweringContext &ctx, Instruction &I) {
     const Value *w = t->getOperand(0);
     if (!fieldwise(ctx, w))
       return false;
-    Segs s = reshape(ctx, segsOfPacked(ctx, w), {0, N, widthOf(w)}, &I);
-    bindOperand(ctx, &I, s.front().op);
+    bindOperand(ctx, &I, rangeOf(ctx, segsOfPacked(ctx, w), 0, N, &I));
     return true;
   }
   if (match(&I, m_LShr(m_Value(), m_APInt(C)))) {
@@ -914,11 +1015,10 @@ bool lowerPack(LoweringContext &ctx, Instruction &I) {
     if (!CB || !fieldConsumer(U, true))
       continue;
     SmallVector<unsigned, 4> want = unpackCuts(CB->getCalledFunction()->getArg(CB->getArgOperandNo(&U)));
-    if (cutsOf(s) != want) {
-      if (I.getNumUses() != 1)
-        unimplemented("spine: a packed integer read at several field layouts (rule 26, cq-0umd)", &I);
+    // One reader: bound at its layout. Several readers at several layouts: bound at the packing's own,
+    // and each reader takes its fields at its layout (packFields reshapes at the read).
+    if (cutsOf(s) != want && I.getNumUses() == 1)
       s = reshape(ctx, s, want, &I);
-    }
   }
   bindSegs(ctx, &I, s);
   return true;
