@@ -1161,27 +1161,34 @@ def _check_subst(subst: Any) -> None:
 
 
 def theta_schedule(events: Sequence[dict], o1: Path) -> str:
-    """The $CQE_THETA file of one sample (dispatch.c): its C program's cq_theta reaches in execution
-    order, `<angle> <W> <value>` per line; the angle negated inside an odd number of cq_invert regions
-    (CR rule 17: the circuit runs that region's adjoint)."""
-    from cqcheck import drivers
+    """The $CQE_THETA file of one sample (dispatch.c): its C program's cq_theta reaches in the circuit's
+    emission order, `<angle> <W> <value>` per line; a reach the circuit runs inverted (a cq_invert region
+    reversed at its end, CR rule 17) has its angle negated, one a measurement inside the region flushed
+    forward first does not (BACKEND_ABI 1.13; compare.region_emission)."""
+    from cqcheck import compare, drivers
     widths = drivers.theta_site_widths(o1)
-    depth, lines = 0, []
+    sites, entries, nmeas = [], [], 0
     for e in events:
         if e.get("ev") != "site":
             continue
         kind = e.get("kind")
-        if kind == "invert_begin":
-            depth += 1
-        elif kind == "invert_end":
-            depth = max(0, depth - 1)
-        elif kind == "theta":
-            w = widths.get(f"{e['fn']}:{e['site']}")
-            if w is None:
-                raise SampleError(f"cq: unimplemented: chk-core: the C oracle's theta site {e['fn']}:{e['site']} "
-                                  f"is no cq_theta_* call of {o1}")
-            a = int(e["angle"], 16) ^ ((1 << 63) if depth % 2 else 0)
-            lines.append(f"0x{a:x} {w} {e['reg']}\n")
+        if kind == "measure":
+            nmeas += 1
+        elif kind in ("theta", "phi", "invert_begin", "invert_end"):
+            sites.append(e)
+            entries.append((kind, nmeas))
+    order, _, _ = compare.region_emission(entries, nmeas, open_end=True)
+    lines = []
+    for i, neg in order:
+        e = sites[i]
+        if e.get("kind") != "theta":
+            continue
+        w = widths.get(f"{e['fn']}:{e['site']}")
+        if w is None:
+            raise SampleError(f"cq: unimplemented: chk-core: the C oracle's theta site {e['fn']}:{e['site']} "
+                              f"is no cq_theta_* call of {o1}")
+        a = int(e["angle"], 16) ^ ((1 << 63) if neg else 0)
+        lines.append(f"0x{a:x} {w} {e['reg']}\n")
     return "".join(lines)
 
 

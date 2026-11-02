@@ -469,8 +469,8 @@ static int zero_rule(int32_t d, const int32_t *src, int ns) {
 
 /* ---- core gates -------------------------------------------------------------------------- */
 
-/* cq-4593 (BACKEND_ABI 1.13): set while a cq_invert region's replay runs an _unc as the rail's compute (the
- * reversed list takes a compute/uncompute pair the other way round): the XOR has no residue to check. */
+/* cq-4593 (BACKEND_ABI 1.13): set while a cq_invert region's replay runs a declared clone's twin as the rail's
+ * compute (the reversed list takes a compute/uncompute pair the other way round): no residue to check. */
 static int iv_quiet_unc;
 
 static int32_t *stack_;
@@ -1338,11 +1338,7 @@ static void template_call(call_t *c, const char *sym) {
       sb_add(&b, "\"}");
       cqe_log(b.p);
       free(b.p);
-      if (iv_quiet_unc) {
-        zero_rule(o, hs, nh);
-        if (r != 0)
-          cqe__setknown(o, 0);
-      } else if (!cqe__val_iszero(cqe__val(o))) {
+      if (!cqe__val_iszero(cqe__val(o))) {
         char *hx = cqe__hexa(cqe__val(o));
         cqe__violation("unc_residue", o, "%s: out rail %d holds %s after its _unc", sym, (int)o, hx);
         free(hx);
@@ -1923,7 +1919,11 @@ static int iv_intercept(const char *sym, const char *sig, const char *csig, int3
     if (!strcmp(s, "free")) {
       op.kind = IV_FREE;
     } else if (!strncmp(s, "measure_", 8)) {
-      iv_flush_forward();
+      int32_t h = 0;
+      if (nargs == 1 && !strcmp(ty[0].ty, "i32"))
+        memcpy(&h, argv[0], 4);
+      if (!(cqe__exists(h) && cqe__measured(h)))
+        iv_flush_forward(); /* a re-read of a measured rail is no measurement event (ABI 1.3) */
       return 0;
     } else if (core_gate(NULL, s, cls, sizeof cls)) {
       if (!strcmp(cls, "core:alloc") || !strcmp(cls, "core:push") || !strcmp(cls, "core:pop"))
@@ -2059,11 +2059,8 @@ static void iv_run(const iv_op *op) {
       }
     } else if (!pend) {
       iv_call(op, sym, sig, argv, nargs, rbuf);
-    } else if (!strncmp(sym, "cq_template_", 12)) {
-      iv_quiet_unc = 1; /* the compute: an XOR into the |0> rail, no residue */
-      iv_call(op, sym, sig, argv, nargs, rbuf);
-      iv_quiet_unc = 0;
-    } else { /* qram_load_unc as the compute: the forward load into the rail */
+    } else { /* a template's or qram_load's _unc as the compute: the forward form into the |0> rail (a
+              * forward QROM load takes the snapshot its _unc later matches) */
       sym[strlen(sym) - 4] = 0;
       const char *rest = strchr(params, ',');
       snprintf(sig, sizeof sig, "i32|%s", rest ? rest + 1 : "");

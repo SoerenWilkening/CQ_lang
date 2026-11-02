@@ -68,7 +68,8 @@ What is compared (CR §6, CLAUDE.md "The §6 checker"):
   `cq_invert` region (the
   sites between an invert_begin and its matching invert_end, nesting by depth) is read under CR rule
   17: its sites are taken in reverse order with their angles negated (a region inside a region is so
-  inverted twice), both for matching and for the per-sample order. A marker without its partner in
+  inverted twice), both for matching and for the per-sample order; a C measurement while a region is
+  open emits the sites reached so far forward first (BACKEND_ABI 1.13 flush, region_emission). A marker without its partner in
   a sample is a difference, never skipped, except an invert_begin still open where an open-ended
   sample stops (it ended in noreturn/raise, or its cut lies inside the region; bead cq-088c): rule
   17 emits the whole region reversed, so the sites the sample reached in it are the region's last
@@ -851,35 +852,71 @@ class _Site:
 _MARKERS = ("invert_begin", "invert_end")
 
 
-def _c_order(rr: RunResult, s: int, open_end: bool = False
-             ) -> Tuple[List[Tuple[int, Dict[str, Any], bool]], List[str]]:
-    """One C sample's theta/phi sites in emission order under CR rule 17: [(original position,
-    record, negated)], and the reasons its markers do not pair up. `open_end`: the sample stops
-    early (ended or cut), so a region still open there is closed at its end (module docstring)."""
-    reasons: List[str] = []
-    stack: List[List[Tuple[int, Dict[str, Any], bool]]] = [[]]
-    for pos, rec in enumerate(rr.rotations or []):
-        kind = rec.get("kind")
-        if rec.get("ev") != "site" or kind not in ("theta", "phi") + _MARKERS:
-            raise CompareError(f"cq: unimplemented: chk-compare: C-oracle rotation {rec!r}")
+def region_emission(entries: Sequence[Tuple[str, int]], final_nmeas: Optional[int] = None,
+                    open_end: bool = False) -> Tuple[List[Tuple[int, bool]], List[int], int]:
+    """CR rule 17 / BACKEND_ABI 1.13 on the C program's events: `entries` is [(kind, nmeas)] in execution
+    order (kind theta, phi, invert_begin or invert_end; nmeas the measurements before it). Returns the
+    gate entries in the circuit's emission order as [(index, negated)], the indices of invert_ends with
+    no open region, and the number of regions left open (closed at the end only with `open_end`, else
+    left out of the order). A region's gates are emitted reversed and negated at its end, a nested
+    region's into the enclosing one; a measurement while a region is open first emits every open
+    region's gates so far forward, outermost first (the backend's flush; cq-4593), and only the later
+    ones are reversed."""
+    stack: List[List[Tuple[int, bool]]] = [[]]
+    unmatched: List[int] = []
+    last: Optional[int] = None
+
+    def flush(m: Optional[int]) -> None:
+        nonlocal last
+        if m is not None and last is not None and m > last and len(stack) > 1:
+            for lvl in stack[1:]:
+                stack[0].extend(lvl)
+                lvl.clear()
+        if m is not None:
+            last = m if last is None else max(last, m)
+
+    for i, (kind, nmeas) in enumerate(entries):
+        flush(nmeas)
         if kind == "invert_begin":
             stack.append([])
         elif kind == "invert_end":
             if len(stack) == 1:
-                reasons.append(f"sample {s}: C invert_end {rec.get('fn')}:{rec.get('site')} has no matching "
-                               f"invert_begin")
+                unmatched.append(i)
                 continue
             region = stack.pop()
-            stack[-1].extend((p, r, not neg) for p, r, neg in reversed(region))
+            stack[-1].extend((p, not neg) for p, neg in reversed(region))
         else:
-            stack[-1].append((pos, rec, False))
-    if len(stack) > 1 and not open_end:
-        reasons.append(f"sample {s}: {len(stack) - 1} C invert_begin(s) without a matching invert_end")
+            stack[-1].append((i, False))
+    flush(final_nmeas)
+    left = len(stack) - 1
+    if open_end:
+        while len(stack) > 1:
+            region = stack.pop()
+            stack[-1].extend((p, not neg) for p, neg in reversed(region))
+    return stack[0], unmatched, left
+
+
+def _c_order(rr: RunResult, s: int, open_end: bool = False
+             ) -> Tuple[List[Tuple[int, Dict[str, Any], bool]], List[str]]:
+    """One C sample's theta/phi sites in emission order under CR rule 17: [(original position,
+    record, negated)], and the reasons its markers do not pair up. `open_end`: the sample stops
+    early (ended or cut), so a region still open there is closed at its end (module docstring).
+    A measurement inside a region flushes the gates before it forward (region_emission)."""
+    reasons: List[str] = []
+    recs = list(rr.rotations or [])
+    for rec in recs:
+        if rec.get("ev") != "site" or rec.get("kind") not in ("theta", "phi") + _MARKERS:
+            raise CompareError(f"cq: unimplemented: chk-compare: C-oracle rotation {rec!r}")
+    order, unmatched, left = region_emission([(r["kind"], _int(r.get("nmeas")) or 0) for r in recs],
+                                             len(rr.measured or []), open_end)
+    for i in unmatched:
+        rec = recs[i]
+        reasons.append(f"sample {s}: C invert_end {rec.get('fn')}:{rec.get('site')} has no matching "
+                       f"invert_begin")
+    if left and not open_end:
+        reasons.append(f"sample {s}: {left} C invert_begin(s) without a matching invert_end")
         return [], reasons
-    while len(stack) > 1:
-        region = stack.pop()
-        stack[-1].extend((p, r, not neg) for p, r, neg in reversed(region))
-    return stack[0], reasons
+    return [(i, recs[i], neg) for i, neg in order], reasons
 
 
 def _c_sites(runs: List[RunResult], nan_eq: bool, open_end: Sequence[bool] = (),
