@@ -35,6 +35,10 @@ struct Pred {   // canonical Boolean function over condition atoms
   // taken on the Boolean function, never on the syntax; it stays a classical branch. quantumPart is
   // exactly the unfactorable rest: one flag, a classical term left inside it a seed rail (c || q).
   Pred classicalFactor(const TaintInfo &, const Specialization &) const;
+  // cq-gujb (rules 8, 9): p with every quantum atom quantified away (exists): the classical condition under
+  // which some quantum path satisfies p, i.e. under which the walker runs a block of predicate p (its
+  // quantum part is a flag, its classical part classical control flow).
+  Pred classicalProjection(const TaintInfo &, const Specialization &) const;
   // K1: storage owned by module pred; immutable and shared, so Pred copies as a value.
 private:
   struct Impl; std::shared_ptr<const Impl> impl;

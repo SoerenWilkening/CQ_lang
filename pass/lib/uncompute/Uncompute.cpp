@@ -369,6 +369,8 @@ struct Uncompute::Impl {
   std::vector<Record> records;
   std::vector<RecInfo> info;
   std::vector<Rail> rails;
+  // cq-gujb: rails a later lowering still reads that no use records yet (pin/unpin): never resolved meanwhile.
+  DenseSet<RailId> pinned;
   DenseMap<const Value *, RailId> byHandle;
   std::vector<Scope> scopes;
   std::vector<Deferred> defs;
@@ -926,6 +928,8 @@ struct Uncompute::Impl {
     if (r.qram && replacedForGood(g))
       return false;
     if (!r.versions.empty() && loadOfReplaced(g))
+      return false;
+    if (pinned.count(g))
       return false;
     return !r.released && r.arms.empty() && (r.cleanup || r.role == Role::Garbage || r.role == Role::Seed);
   }
@@ -4111,6 +4115,15 @@ std::optional<Role> Uncompute::liveRole(RailId r) const {
   return x.role;
 }
 
+void Uncompute::pin(RailId r) {
+  Impl &I = *impl;
+  if (I.rail(r, "pin").released)
+    internalError("uncompute: pin of a rail that was already uncomputed", I.rails[r].handle);
+  I.pinned.insert(r);
+}
+
+void Uncompute::unpin(RailId r) { impl->pinned.erase(r); }
+
 void Uncompute::setRole(RailId r, Role role) {
   impl->syncPhiHits();   // cq-igqp
   Impl &I = *impl;
@@ -4499,6 +4512,7 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
   if (!ret || !ret->getParent())
     internalError("uncompute: flushAtExit needs a return in a block");
   Impl &I = *impl;
+  I.pinned.clear();   // cq-gujb: nothing is lowered after the exit
   // U2: a twin zeroes every result of its call, so either every member is kept or none is. CR rule 18
   // (ruling 2026-11-02, cq-75n4): when some results of one call are measured and others are dead, each
   // measured one is copied into a fresh rail right after the call (cqrt_alloc_<W>(0), cqrt_copy_<W>), the

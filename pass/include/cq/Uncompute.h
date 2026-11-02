@@ -92,6 +92,10 @@ public:
   void noteCallBusRead(llvm::CallInst *fwd, RailId bus);
   RailId idOf(llvm::Value *handle) const;
   void setRole(RailId, Role);
+  // cq-gujb (CR rules 5, 9, 20): a rail a construction will read again after flushes the walker places before
+  // that read (a clone cell's value, read by the cell's later accesses): no flush resolves it until unpin.
+  void pin(RailId);
+  void unpin(RailId);
   // U7 (cq-g1ty, CR rule 7; 129): the role of a rail not yet uncomputed or freed anywhere, else nullopt.
   std::optional<Role> liveRole(RailId) const;
   void noteUse(RailId, llvm::Instruction *consumer);

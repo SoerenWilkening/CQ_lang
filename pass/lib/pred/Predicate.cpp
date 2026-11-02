@@ -776,6 +776,11 @@ Pred Pred::quantumPart(const TaintInfo &T, const Specialization &S) const {
   return makePred(quantumPartNode(nodeOf(*this), *O));
 }
 
+Pred Pred::classicalProjection(const TaintInfo &T, const Specialization &S) const {
+  auto O = taintOracle(T, S);
+  return makePred(Bdd::get().exists(nodeOf(*this), [&](unsigned v) { return quantumLike(v, *O); }));
+}
+
 bool Pred::isClassical(const TaintInfo &T, const Specialization &S) const {
   auto O = taintOracle(T, S);
   return isClassicalNode(nodeOf(*this), *O);
