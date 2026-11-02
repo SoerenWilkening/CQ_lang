@@ -6,7 +6,8 @@
 //   opt -load-pass-plugin=build/pass/libCQLower.so -passes='cq-verify<reference>' (a reference)
 //
 // cq-lower: a preliminary taint, used only for isTainted(F) and by eff-conc's pre-taint rewrites (rule 24:
-// atomic read-modify-writes through fat pointers collapsed, setjmp/longjmp made explicit control flow,
+// atomic read-modify-writes through fat pointers and the thread calls collapsed, setjmp/longjmp made
+// explicit control flow,
 // Setjmp.h); FixIrreduciblePass on those
 // functions; if any function changed, a fresh taint over the module with the preliminary result
 // discarded; construct per specialization; calls::finalize; verifyLowered. Taint is computed once
@@ -197,6 +198,8 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
     // through a fat pointer is the plain load + op + store.
     SmallPtrSet<Function *, 8> changed;
     for (Function *F : cq::conc::collapseFatAtomics(M, T))
+      changed.insert(F);
+    for (Function *F : cq::conc::collapseThreads(M, T))
       changed.insert(F);
     for (Function *F : cq::conc::explicitSetjmp(M, T))   // may erase originals: compared, never read
       changed.insert(F);

@@ -23,4 +23,8 @@ llvm::SmallVector<llvm::Function *, 8> explicitSetjmp(llvm::Module &M, const Tai
 // Returns the functions it changed. Defined in Conc.cpp.
 llvm::SmallVector<llvm::Function *, 8> collapseFatAtomics(llvm::Module &M, const TaintInfo &T);
 
+// Rule 24 (106): pthread_create / pthread_join / the mutex calls of tainted functions collapsed to the
+// sequential schedule in the IR (Conc.cpp). Returns the functions it changed.
+llvm::SmallVector<llvm::Function *, 8> collapseThreads(llvm::Module &M, const TaintInfo &T);
+
 } // namespace cq::conc

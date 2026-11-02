@@ -236,6 +236,11 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
   if (!F) {
     if (qArg || qRes || qPred || quantumValue(T, S, CB.getCalledOperand()))
       return Class::Indirect;
+    // cq-lyzw (rule 19 with rule 20, as cq-vnh9 for a direct call): a pointer argument into a slot or QRAM
+    // object hands the candidates rails; the originals would read handles as data.
+    for (const Use &u : CB.args())
+      if (nonClassicalObject(T, S, u.get()))
+        return Class::Indirect;
     return Class::Classical;
   }
 

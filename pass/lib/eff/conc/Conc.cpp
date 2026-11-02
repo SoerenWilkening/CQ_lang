@@ -31,9 +31,9 @@
 // mem::lowerSlotAtomic (M4, 94: load + op + store, cmpxchg's icmp eq + select + store); in QRAM or
 // classical memory with quantum data, and a call classified Atomic, they are unimplemented.
 //
-// lowerThreadCall (rule 24, 106): pthread_create(t, attr, f, p) is the direct call f(p) (a quantum job:
-// calls::lowerLiftedVia with argMap {3}; a classical one: the original), status 0; pthread_join with a null
-// result pointer and the mutex locks are no-ops, status 0.
+// collapseThreads (rule 24, 106): before the final taint, pthread_create(t, attr, f, p) is the call f(p)
+// in the IR, pthread_join stores its result, the mutex calls are status 0 (contract at the definition);
+// lowerThreadCall then never runs (an internal error).
 // lowerSetjmp, lowerLongjmp: Setjmp.cpp (101's escaped-flag construction, contract at its top).
 #include "Setjmp.h"
 #include "../../spine/SpineInternal.h"
@@ -51,6 +51,10 @@
 #include "llvm/TargetParser/Triple.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/Transforms/Utils/LowerAtomic.h"
+#include "llvm/Transforms/Utils/Local.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/MDBuilder.h"
+#include "llvm/ADT/SetVector.h"
 
 using namespace llvm;
 
@@ -441,83 +445,94 @@ SmallVector<Function *, 8> collapseFatAtomics(Module &M, const TaintInfo &T) {
   return out;
 }
 
-void lowerThreadCall(LoweringContext &ctx, CallBase &CB) {
-  const Function *g = CB.getCalledFunction();
-  StringRef n = g ? g->getName() : StringRef();
-  if (n.starts_with("\01_"))
-    n = n.drop_front(2);   // Darwin's spelling of some libc symbols (106: "\01_pthread_join")
-  auto bindZero = [&] {
-    if (!CB.getType()->isIntegerTy())
-      internalError("eff-conc: a thread call whose result is not an int status", &CB);
-    ctx.bind(&CB, ConstantInt::get(CB.getType(), 0));
+// Rule 24 (106): the thread primitives of a tainted function, collapsed to the sequential schedule in the
+// IR before the final taint. pthread_create(t, attr, f, p) is the call f(p) at its place (a direct call when
+// f is a function of the type void *(void *), else an indirect one: rules 18, 19 and 27 lower it as any
+// call), its result left in the thread id *t when some pthread_join of the module asks for it (the
+// pthread_t a pointer on Darwin, an integer on Linux), the status 0; pthread_join(t, r) stores that result
+// through r when r is not null, status 0; the mutex calls are no-ops, status 0. A call through another
+// type than void *(void *) is undefined behaviour (C17 7.26.5.1 thrd_start_t, POSIX), outside the domain.
+SmallVector<Function *, 8> collapseThreads(Module &M, const TaintInfo &T) {
+  SmallVector<Function *, 8> out;
+  auto nameOf = [](const CallBase &CB) -> StringRef {
+    const Function *g = CB.getCalledFunction();
+    if (!g || !g->isDeclaration())
+      return "";
+    StringRef n = g->getName();
+    return n.starts_with("\01_") ? n.drop_front(2) : n;
   };
-  LLVMContext &C = ctx.M.getContext();
-  if (n == "pthread_create" && CB.arg_size() == 4) {
-    // Rule 24 (106): the sequential schedule runs the start routine here: a direct call f(p), no host
-    // thread. A quantum job is the call of its clone (C1), a classical one the original's call. The status
-    // is 0. The thread id *t carries the start routine's result to pthread_join (a classical job; the
-    // pthread_t is a pointer on Darwin, an integer on Linux).
-    const Specialization *cs = ctx.T.calleeSpecialization(CB, ctx.S);
-    if (cs && !cs->isEntry()) {
-      // Its result is the clone's (C1 binds none): a join asking for it is not built.
-      if (const CallBase *J = joinAskingResult(ctx.M))
-        unimplemented("eff-conc: pthread_join asking for the result of a quantum job (rule 24; C1 binds no result "
-                      "of the clone call)",
-                      J);
-      unsigned argMap[1] = {3};
-      calls::lowerLiftedVia(ctx, CB, argMap);
-      return bindZero();
+  const CallBase *asks = joinAskingResult(M);
+  Type *tidTy = asks ? asks->getArgOperand(0)->getType() : nullptr;   // read now: the join is erased below
+  LLVMContext &C = M.getContext();
+  Type *ptrTy = PointerType::getUnqual(C);
+  for (Function &F : M) {
+    if (F.isDeclaration() || !T.isTainted(F))
+      continue;
+    SmallVector<CallBase *, 4> todo;
+    for (Instruction &I : instructions(F))
+      if (auto *CB = dyn_cast<CallBase>(&I)) {
+        StringRef n = nameOf(*CB);
+        if ((n == "pthread_create" && CB->arg_size() == 4) || (n == "pthread_join" && CB->arg_size() == 2) ||
+            n == "pthread_mutex_lock" || n == "pthread_mutex_unlock" || n == "pthread_mutex_trylock")
+          todo.push_back(CB);
+      }
+    for (CallBase *CB : todo) {
+      StringRef n = nameOf(*CB);
+      IRBuilder<> B(CB);
+      if (n == "pthread_create") {
+        FunctionType *ft = FunctionType::get(ptrTy, {ptrTy}, false);
+        Value *fn = CB->getArgOperand(2);
+        CallInst *r = B.CreateCall(ft, fn, {CB->getArgOperand(3)});
+        // A start routine chosen at run time among known functions (selects and phis of them): its
+        // candidates as clang records them for an indirect call (!callees), for rule 19's dispatch.
+        if (!r->getCalledFunction()) {
+          SmallSetVector<Function *, 4> cands;
+          SmallVector<Value *, 4> work{fn};
+          SmallPtrSet<Value *, 8> seen;
+          bool known = true;
+          while (!work.empty() && known) {
+            Value *v = work.pop_back_val()->stripPointerCasts();
+            if (!seen.insert(v).second)
+              continue;
+            if (auto *g = dyn_cast<Function>(v))
+              cands.insert(g);
+            else if (auto *sel = dyn_cast<SelectInst>(v))
+              work.append({sel->getTrueValue(), sel->getFalseValue()});
+            else if (auto *phi = dyn_cast<PHINode>(v))
+              work.append(phi->incoming_values().begin(), phi->incoming_values().end());
+            else
+              known = false;
+          }
+          if (known && !cands.empty())
+            r->setMetadata(LLVMContext::MD_callees, MDBuilder(C).createCallees(cands.getArrayRef()));
+        }
+        if (tidTy)
+          B.CreateStore(tidTy->isPointerTy() ? static_cast<Value *>(r) : B.CreatePtrToInt(r, tidTy),
+                        CB->getArgOperand(0));
+      } else if (n == "pthread_join") {
+        Value *res = CB->getArgOperand(1);
+        if (!(isa<Constant>(res) && cast<Constant>(res)->isNullValue())) {
+          Value *tid = CB->getArgOperand(0);
+          B.CreateStore(tid->getType()->isPointerTy() ? tid : B.CreateIntToPtr(tid, ptrTy), res);
+        }
+      }
+      if (!CB->getType()->isVoidTy())
+        CB->replaceAllUsesWith(ConstantInt::get(CB->getType(), 0));
+      Value *tidLoad = n == "pthread_join" ? CB->getArgOperand(0) : nullptr;
+      CB->eraseFromParent();
+      if (auto *ld = dyn_cast_or_null<Instruction>(tidLoad))
+        RecursivelyDeleteTriviallyDeadInstructions(ld);
     }
-    Value *fn = CB.getArgOperand(2)->stripPointerCasts();
-    auto *fnF = dyn_cast<Function>(fn);
-    Operand fnOp = ctx.operand(CB.getArgOperand(2));
-    Operand p = ctx.operand(CB.getArgOperand(3));
-    bool quantumJob = fnOp.handle || p.handle || ctx.T.isFatPointer(CB.getArgOperand(3), ctx.S);
-    for (ObjectId o : ctx.T.provenance(CB.getArgOperand(3), ctx.S))
-      quantumJob |= ctx.T.classOf(o) != ObjClass::Classical;
-    if (quantumJob && fnF && !fnF->isDeclaration())
-      internalError("eff-conc: a defined start routine handed quantum data with no clone from taint", &CB);
-    if (quantumJob && !fnF)
-      unimplemented("eff-conc: pthread_create of a start routine chosen at run time handed quantum data (rule 24 "
-                    "with rule 19's indirect call; calls exposes no indirect call through a site, cq-20fz)",
-                    &CB);
-    if (quantumJob)
-      unimplemented("eff-conc: pthread_create of a start routine with no body handed quantum memory (rule 24 "
-                    "with rule 27's declared clone; calls exposes no declared call through a site, cq-20fz)",
-                    &CB);
-    // The start routine's type is void *(void *) (C17 7.26.5.1 thrd_start_t, POSIX); a call through
-    // another type is undefined behaviour, outside the domain.
-    Type *ptrTy = PointerType::getUnqual(C);
-    FunctionType *ft = FunctionType::get(ptrTy, {ptrTy}, false);
-    Value *rv = ctx.B().CreateCall(ft, fnF ? static_cast<Value *>(fnF) : fnOp.v, {p.v});
-    Operand t = ctx.operand(CB.getArgOperand(0));
-    if (joinAskingResult(ctx.M) && !t.handle && !isa<ConstantPointerNull>(t.v)) {
-      Type *tidTy = ctx.M.getDataLayout().getIntPtrType(C);
-      if (Triple(ctx.M.getTargetTriple()).isOSDarwin())
-        ctx.B().CreateStore(rv, t.v);
-      else
-        ctx.B().CreateStore(ctx.B().CreatePtrToInt(rv, tidTy), t.v);
-    }
-    return bindZero();
+    if (!todo.empty())
+      out.push_back(&F);
   }
-  if (n == "pthread_join" && CB.arg_size() == 2) {
-    // Rule 24: the job ran at its create site; nothing joins. A requested exit value is the start
-    // routine's result, which pthread_create left in the thread id.
-    auto *rv = dyn_cast<Constant>(CB.getArgOperand(1));
-    if (!rv || !rv->isNullValue()) {
-      Operand tid = ctx.operand(CB.getArgOperand(0));
-      Operand out = ctx.operand(CB.getArgOperand(1));
-      if (tid.handle || out.handle)
-        unimplemented("eff-conc: pthread_join of a thread id or result pointer that is quantum (rule 24)", &CB);
-      Value *res = tid.v->getType()->isPointerTy() ? tid.v
-                                                   : ctx.B().CreateIntToPtr(tid.v, PointerType::getUnqual(C));
-      ctx.B().CreateStore(res, out.v);
-    }
-    return bindZero();
-  }
-  if (n == "pthread_mutex_lock" || n == "pthread_mutex_unlock" || n == "pthread_mutex_trylock")
-    return bindZero();   // rule 24: one thread, no contention: no-ops
-  internalError("eff-conc: lowerThreadCall of a call calls::classify does not class as Thread", &CB);
+  return out;
+}
+
+void lowerThreadCall(LoweringContext &, CallBase &CB) {
+  internalError("eff-conc: a thread call in a lowered function (rule 24: collapseThreads makes the sequential "
+                "schedule before the final taint)",
+                &CB);
 }
 
 } // namespace cq::conc
