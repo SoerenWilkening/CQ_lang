@@ -28,8 +28,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PROBES = Path(__file__).parent / "probes"
 ENTRIES = ["p_vol_internal", "p_vol_observable", "p_atomic_classical", "p_vol_local", "p_atomic_rmw"]
-ERRORS = {"vol_quantum_observable_error.O1.ll": "eff-conc: a volatile access to observable memory involving "
-                                                "quantum data",
+ERRORS = {"vol_quantum_observable_error.O1.ll": "eff-conc: awaiting owner ruling: SPEC_ISSUES An observable "
+                                                "volatile access involving quantum data",
           "setjmp_effect_error.O1.ll": "eff-conc: an escaping clone called as a _ctl clone",
           "setjmp_nested_error.O1.ll": "eff-conc: a setjmp diamond in a lowered function whose first-return arm "
                                        "calls no clone that escapes",
@@ -38,7 +38,9 @@ ERRORS = {"vol_quantum_observable_error.O1.ll": "eff-conc: a volatile access to 
                                         "calls no clone that escapes",
           "setjmp_wrapper_p20_error.O1.ll": "eff-conc: a setjmp diamond whose first-return arm is not one block",
           "setjmp_wrapper_p21_error.O1.ll": "eff-conc: a setjmp diamond whose first-return arm is not one block"}
-MODULES = {"conc.O1.ll": ENTRIES, "setjmp.O1.ll": ["p_sj_scalar", "p_sj_void", "p_sj_classical", "p_sj_qarm"]}
+MODULES = {"conc.O1.ll": ENTRIES, "setjmp.O1.ll": ["p_sj_scalar", "p_sj_void", "p_sj_classical", "p_sj_qarm"],
+           # cq-py5f: rule 24 over its class (a join asking for the result, a volatile atomic access).
+           "conc_widen.O1.ll": ["p_join_result", "p_vol_atomic"]}
 _SJ = (r"cq_template_select_i32", r"call [^\n]*@(setjmp|longjmp)\(")
 # entry -> (regex that must match its body, regex that must not)
 SHAPES = {"p_vol_internal": (None, r"volatile"),
@@ -48,6 +50,8 @@ SHAPES = {"p_vol_internal": (None, r"volatile"),
                                  None),
           "p_vol_local": (None, r"volatile"),
           "p_atomic_rmw": (r"cq_template_add_i32_hl", r"atomicrmw"),
+          "p_join_result": (r"call ptr @job\(", r"@pthread_(create|join)\("),
+          "p_vol_atomic": (r"store atomic volatile i32 %\d+, ptr @vcell seq_cst", None),
           "p_sj_scalar": _SJ, "p_sj_void": _SJ, "p_sj_classical": _SJ, "p_sj_qarm": _SJ}
 
 

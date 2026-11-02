@@ -36,6 +36,7 @@
 // lowerSetjmp, lowerLongjmp: Setjmp.cpp (101's escaped-flag construction, contract at its top).
 #include "cq/Calls.h"
 #include "cq/Effects.h"
+#include "cq/FatPtr.h"
 #include "cq/Memory.h"
 #include "cq/Predicate.h"
 #include "cq/Taint.h"
@@ -44,6 +45,7 @@
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Operator.h"
+#include "llvm/TargetParser/Triple.h"
 
 using namespace llvm;
 
@@ -132,11 +134,13 @@ bool involvesQuantum(LoweringContext &ctx, Instruction &I, const Value *ptr) {
 }
 
 // The classical instruction in the new IR, its operands remapped; `volatile` dropped when asked. A store
-// runs unconditionally, so one under a quantum predicate is unimplemented (taint makes memory written
-// under a quantum arm non-classical; reaching here with one is a shape this module does not lower).
+// runs unconditionally: rule 20 makes an object stored under a quantum predicate hold a handle (the
+// select into a fresh rail), so a store into classical memory under one is a broken taint invariant.
 void copyClassical(LoweringContext &ctx, Instruction &I, bool dropVolatile) {
-  if (isa<StoreInst>(I) && !ctx.currentPredicate().isTop())
-    unimplemented("eff-conc: a classical volatile or atomic store under a quantum predicate", &I);
+  if (I.mayWriteToMemory() && !ctx.currentPredicate().isTop())
+    internalError("eff-conc: a store into memory taint classified Classical under a quantum predicate (rule 20: "
+                  "the object holds a handle)",
+                  &I);
   Instruction *n = I.clone();
   for (unsigned i = 0; i < n->getNumOperands(); ++i) {
     Value *v = I.getOperand(i);
@@ -162,9 +166,13 @@ void copyClassical(LoweringContext &ctx, Instruction &I, bool dropVolatile) {
 
 // The plain access (rule 20/21 routing) of an access with something quantum in it.
 void routePlain(LoweringContext &ctx, Instruction &I, const Value *ptr, StringRef what) {
-  if (ctx.T.isFatPointer(ptr, ctx.S) || ctx.T.isQuantum(ptr, ctx.S))
-    unimplemented(("eff-conc: " + what + " through a fat pointer (rule 21; the routing is the spine's)").str(),
-                  &I);
+  // Rule 21: a quantum tag is a fat pointer, whose accesses are rule 20's per object (fatptr).
+  if (ctx.T.isFatPointer(ptr, ctx.S) || ctx.T.isQuantum(ptr, ctx.S)) {
+    if (auto *ld = dyn_cast<LoadInst>(&I))
+      return fatptr::lowerLoad(ctx, *ld);
+    return fatptr::lowerStore(ctx, cast<StoreInst>(I));
+  }
+  (void)what;
   bool qram = false, slot = false;
   for (ObjectId o : ctx.T.provenance(ptr, ctx.S)) {
     qram |= ctx.T.classOf(o) == ObjClass::Qram;
@@ -187,14 +195,26 @@ void routePlain(LoweringContext &ctx, Instruction &I, const Value *ptr, StringRe
   internalError("eff-conc: a quantum value stored into memory taint classified Classical", &I);
 }
 
+// A pthread_join of the module that asks for the start routine's result (a non-null second argument).
+const CallBase *joinAskingResult(const Module &M) {
+  for (const Function &G : M)
+    if (G.isDeclaration() && (G.getName() == "pthread_join" || G.getName() == "\01_pthread_join"))
+      for (const User *u : G.users())
+        if (auto *J = dyn_cast<CallBase>(u); J && J->arg_size() == 2 &&
+                                             !(isa<Constant>(J->getArgOperand(1)) &&
+                                               cast<Constant>(J->getArgOperand(1))->isNullValue()))
+          return J;
+  return nullptr;
+}
+
 } // namespace
 
 void lowerVolatile(LoweringContext &ctx, Instruction &I) {
   const Value *ptr = getLoadStorePointerOperand(&I);
   if (!ptr || !(isa<LoadInst>(I) ? cast<LoadInst>(I).isVolatile() : cast<StoreInst>(I).isVolatile()))
     internalError("eff-conc: lowerVolatile of an instruction that is not a volatile load or store", &I);
-  if (cast<Instruction>(I).isAtomic())
-    unimplemented("eff-conc: a volatile atomic access", &I);
+  // A volatile atomic access is both (rule 24): atomic is the plain op single-threaded, so it is read as
+  // the volatile access it is; a copied access keeps its atomic ordering.
   bool q = involvesQuantum(ctx, I, ptr);
   if (unobservable(ptr)) {
     // The plain access (rule 24). A store into an object nothing reads and nothing outside sees is dead:
@@ -207,21 +227,23 @@ void lowerVolatile(LoweringContext &ctx, Instruction &I) {
     return routePlain(ctx, I, ptr, "an unobservable volatile access");
   }
   if (q)
-    unimplemented("eff-conc: a volatile access to observable memory involving quantum data (rule 24 makes "
-                  "only an unobservable volatile access plain)",
+    unimplemented("eff-conc: awaiting owner ruling: SPEC_ISSUES An observable volatile access involving quantum "
+                  "data",
                   &I);
   copyClassical(ctx, I, /*dropVolatile=*/false);
 }
 
 void lowerAtomic(LoweringContext &ctx, Instruction &I) {
   if (isa<CallBase>(I))
-    unimplemented("eff-conc: an atomic library call (rule 24)", &I);
+    internalError("eff-conc: lowerAtomic of a call (calls::classify has no atomic call class: a bodiless "
+                  "__atomic_* callee is rule 27's or rule 16's)",
+                  &I);
   if (isa<LoadInst>(I) || isa<StoreInst>(I)) {
     if (!I.isAtomic())
       internalError("eff-conc: lowerAtomic of a non-atomic load or store", &I);
     const Value *ptr = getLoadStorePointerOperand(&I);
     if (isa<LoadInst>(I) ? cast<LoadInst>(I).isVolatile() : cast<StoreInst>(I).isVolatile())
-      unimplemented("eff-conc: a volatile atomic access", &I);
+      return lowerVolatile(ctx, I);
     if (!involvesQuantum(ctx, I, ptr))
       return copyClassical(ctx, I, /*dropVolatile=*/false);
     return routePlain(ctx, I, ptr, "an atomic access");
@@ -233,14 +255,23 @@ void lowerAtomic(LoweringContext &ctx, Instruction &I) {
     if (!involvesQuantum(ctx, I, ptr))
       return copyClassical(ctx, I, /*dropVolatile=*/false);
     if (ctx.T.isFatPointer(ptr, ctx.S) || ctx.T.isQuantum(ptr, ctx.S))
-      unimplemented("eff-conc: an atomic read-modify-write through a fat pointer (rule 21)", &I);
-    bool slot = false, other = false;
-    for (ObjectId o : ctx.T.provenance(ptr, ctx.S))
-      (ctx.T.classOf(o) == ObjClass::Slot ? slot : other) = true;
-    if (slot && !other)
+      unimplemented("eff-conc: an atomic read-modify-write through a fat pointer (rule 24's load + op + store "
+                    "over rule 21's per-object accesses; fatptr exposes no read-modify-write, cq-py5f follow-up)",
+                    &I);
+    bool slot = false, qram = false, classical = false;
+    for (ObjectId o : ctx.T.provenance(ptr, ctx.S)) {
+      ObjClass k = ctx.T.classOf(o);
+      (k == ObjClass::Slot ? slot : k == ObjClass::Qram ? qram : classical) = true;
+    }
+    if (slot && !qram && !classical)
       return mem::lowerSlotAtomic(ctx, I);
+    if (!slot && !qram)
+      internalError("eff-conc: a read-modify-write with quantum data on memory taint classified Classical (rule "
+                    "20: a quantum value or offset stored makes it a slot or a QRAM)",
+                    &I);
     unimplemented(std::string("eff-conc: ") + (isa<AtomicRMWInst>(I) ? "atomicrmw" : "cmpxchg") +
-                      " on quantum data in memory other than one slot object (QRAM or classical memory, rule 24)",
+                      " on a QRAM object or on several objects (rule 24's load + op + store over rule 20's "
+                      "QRAM accesses; mem-qram exposes no read-modify-write, cq-py5f follow-up)",
                   &I);
   }
   internalError("eff-conc: lowerAtomic of an instruction that is not atomic", &I);
@@ -256,37 +287,71 @@ void lowerThreadCall(LoweringContext &ctx, CallBase &CB) {
       internalError("eff-conc: a thread call whose result is not an int status", &CB);
     ctx.bind(&CB, ConstantInt::get(CB.getType(), 0));
   };
+  LLVMContext &C = ctx.M.getContext();
   if (n == "pthread_create" && CB.arg_size() == 4) {
     // Rule 24 (106): the sequential schedule runs the start routine here: a direct call f(p), no host
-    // thread; the pthread_t is never written. A quantum job is the call of its clone (C1), a classical
-    // one the original's call. The status is 0.
-    auto *f = dyn_cast<Function>(CB.getArgOperand(2)->stripPointerCasts());
-    if (!f || f->isDeclaration() || f->arg_size() != 1)
-      unimplemented("eff-conc: pthread_create of a start routine that is not a defined function of one formal "
-                    "(rule 24)",
-                    &CB);
+    // thread. A quantum job is the call of its clone (C1), a classical one the original's call. The status
+    // is 0. The thread id *t carries the start routine's result to pthread_join (a classical job; the
+    // pthread_t is a pointer on Darwin, an integer on Linux).
     const Specialization *cs = ctx.T.calleeSpecialization(CB, ctx.S);
     if (cs && !cs->isEntry()) {
+      // Its result is the clone's (C1 binds none): a join asking for it is not built.
+      if (const CallBase *J = joinAskingResult(ctx.M))
+        unimplemented("eff-conc: pthread_join asking for the result of a quantum job (rule 24; C1 binds no result "
+                      "of the clone call)",
+                      J);
       unsigned argMap[1] = {3};
       calls::lowerLiftedVia(ctx, CB, argMap);
-    } else {
-      Operand p = ctx.operand(CB.getArgOperand(3));
-      if (p.handle)
-        internalError("eff-conc: a classical thread job handed a rail", &CB);
-      ctx.B().CreateCall(const_cast<Function *>(f), {p.v});
+      return bindZero();
+    }
+    Value *fn = CB.getArgOperand(2)->stripPointerCasts();
+    if (!isa<Function>(fn))
+      unimplemented("eff-conc: pthread_create of a start routine chosen at run time (rule 24 with rule 19's "
+                    "indirect call; not built in eff-conc)",
+                    &CB);
+    Operand p = ctx.operand(CB.getArgOperand(3));
+    if (p.handle || ctx.T.isFatPointer(CB.getArgOperand(3), ctx.S))
+      internalError("eff-conc: a classical thread job handed a rail", &CB);
+    for (ObjectId o : ctx.T.provenance(CB.getArgOperand(3), ctx.S))
+      if (ctx.T.classOf(o) != ObjClass::Classical && !cast<Function>(fn)->isDeclaration())
+        internalError("eff-conc: a defined start routine handed quantum memory with no clone from taint", &CB);
+      else if (ctx.T.classOf(o) != ObjClass::Classical)
+        unimplemented("eff-conc: pthread_create of a start routine with no body handed quantum memory (rule 24 "
+                      "with rule 27's declared clone; calls exposes no declared call through a site)",
+                      &CB);
+    // The start routine's type is void *(void *) (C17 7.26.5.1 thrd_start_t, POSIX); a call through
+    // another type is undefined behaviour, outside the domain.
+    Type *ptrTy = PointerType::getUnqual(C);
+    FunctionType *ft = FunctionType::get(ptrTy, {ptrTy}, false);
+    Value *rv = ctx.B().CreateCall(ft, fn, {p.v});
+    Operand t = ctx.operand(CB.getArgOperand(0));
+    if (joinAskingResult(ctx.M) && !t.handle && !isa<ConstantPointerNull>(t.v)) {
+      Type *tidTy = ctx.M.getDataLayout().getIntPtrType(C);
+      if (Triple(ctx.M.getTargetTriple()).isOSDarwin())
+        ctx.B().CreateStore(rv, t.v);
+      else
+        ctx.B().CreateStore(ctx.B().CreatePtrToInt(rv, tidTy), t.v);
     }
     return bindZero();
   }
   if (n == "pthread_join" && CB.arg_size() == 2) {
-    // Rule 24: the job ran at its create site; nothing joins. A requested exit value is not built.
+    // Rule 24: the job ran at its create site; nothing joins. A requested exit value is the start
+    // routine's result, which pthread_create left in the thread id.
     auto *rv = dyn_cast<Constant>(CB.getArgOperand(1));
-    if (!rv || !rv->isNullValue())
-      unimplemented("eff-conc: pthread_join asking for the start routine's result (rule 24)", &CB);
+    if (!rv || !rv->isNullValue()) {
+      Operand tid = ctx.operand(CB.getArgOperand(0));
+      Operand out = ctx.operand(CB.getArgOperand(1));
+      if (tid.handle || out.handle)
+        unimplemented("eff-conc: pthread_join of a thread id or result pointer that is quantum (rule 24)", &CB);
+      Value *res = tid.v->getType()->isPointerTy() ? tid.v
+                                                   : ctx.B().CreateIntToPtr(tid.v, PointerType::getUnqual(C));
+      ctx.B().CreateStore(res, out.v);
+    }
     return bindZero();
   }
   if (n == "pthread_mutex_lock" || n == "pthread_mutex_unlock" || n == "pthread_mutex_trylock")
     return bindZero();   // rule 24: one thread, no contention: no-ops
-  unimplemented("eff-conc: a thread call other than pthread_create, pthread_join or a mutex lock (rule 24)", &CB);
+  internalError("eff-conc: lowerThreadCall of a call calls::classify does not class as Thread", &CB);
 }
 
 } // namespace cq::conc
