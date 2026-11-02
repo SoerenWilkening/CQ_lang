@@ -2014,6 +2014,22 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         put(v, op);
         continue;
       }
+      // A carried register every trip leaves on its rail (rotated in place, rule 10; 126): the header phi
+      // names the entry's seed on every edge, so the seed is the register, kept, read in place.
+      if (auto *ph = dyn_cast<PHINode>(op.v)) {
+        Value *one = nullptr;
+        bool single = true;
+        for (Value *in : ph->incoming_values())
+          if (in != ph && in != one)
+            single = single && !one, one = in;
+        auto *seed = dyn_cast_or_null<CallInst>(one);
+        if (single && seed && ownedH.count(seed) && seed->getCalledFunction() &&
+            seed->getCalledFunction()->getName().starts_with("cqrt_alloc_")) {
+          U.setRole(U.idOf(seed), Role::UserRegister);
+          put(v, Operand{seed, true});
+          continue;
+        }
+      }
       if (ownedH.count(op.v)) {
         put(v, op);
         RailId x = U.idOf(op.v);
