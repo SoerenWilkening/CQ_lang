@@ -3699,16 +3699,55 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
     internalError("uncompute: flushAtExit needs a return in a block");
   Impl &I = *impl;
   I.checkEdgeUsers();
-  // U2: a twin zeroes every result of its call, so either every member is kept or none is.
-  for (const Impl::CallGroup &cg : I.groups) {
-    const Impl::Rail &lead = I.rails[cg.members.front()];
-    if (!Impl::keptRole(lead.role) || lead.role == Role::KeptEntangled)
+  // U2: a twin zeroes every result of its call, so either every member is kept or none is. CR rule 18
+  // (ruling 2026-11-02, cq-75n4): when some results of one call are measured and others are dead, each
+  // measured one is copied into a fresh rail right after the call (cqrt_alloc_<W>(0), cqrt_copy_<W>), the
+  // measurements read the copies (Role::Measured), and the call's own result rails are garbage the twin
+  // zeroes: the twin always zeroes every result it returned, and no measured rail is ever gated.
+  for (size_t gi = 0; gi < I.groups.size(); ++gi) {
+    if (I.groups[gi].declared)
       continue;
-    for (RailId m : cg.members)
+    SmallVector<RailId, 4> members = I.groups[gi].members;
+    bool anyKept = false, anyDead = false;
+    for (RailId m : members)
+      (I.rails[m].explicitKept ? anyKept : anyDead) = true;
+    if (!anyKept || !anyDead)
+      continue;
+    CallInst *fwd = I.groups[gi].fwd;
+    for (RailId m : members) {
       if (!I.rails[m].explicitKept)
+        continue;
+      if (I.rails[m].role != Role::Measured)
         unimplemented("uncompute: a call whose results are partly kept (" + describe(I.rails[m].handle) +
-                          " is not; its twin would zero the kept ones)",
-                      cg.fwd);
+                          " is kept but not measured, a dead sibling is not; its twin would zero the kept ones; "
+                          "rule 18 copies out measured results only)",
+                      fwd);
+      Value *h = I.rails[m].handle;
+      auto *hI = dyn_cast<Instruction>(h);
+      SmallVector<CallInst *, 2> meas;
+      for (User *u : h->users())
+        if (auto *mc = dyn_cast<CallInst>(u);
+            mc && mc->getCalledFunction() && mc->getCalledFunction()->getName().starts_with("cqrt_measure_"))
+          meas.push_back(mc);
+      if (!hI || !hI->getNextNode() || meas.empty())
+        internalError("uncompute: a measured result of a clone call with no cqrt_measure reading it", fwd);
+      Module &M = *fwd->getModule();
+      RailType w = railTypeOf(meas.front()->getType());
+      IRBuilder<> B(hI->getNextNode());
+      CallInst *c = I.track(B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Alloc, w}),
+                                         {Constant::getNullValue(irTypeOf(M.getContext(), w))}));
+      I.track(B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Copy, w}), {h, c}));
+      for (CallInst *mc : meas)
+        mc->replaceUsesOfWith(h, c);
+      I.rails[m].role = Role::Garbage;
+      I.rails[m].explicitKept = false;
+      I.newRail(c, Role::Measured, "flushAtExit"); // may move rails: indices only from here
+    }
+    // A measured member other than the group's lead kept the lead through the U2 alias (keepPhi of a
+    // cell-load merge): no member names a kept rail any more, so none is kept.
+    for (RailId m : members)
+      if (Impl::keptRole(I.rails[m].role))
+        I.rails[m].role = Role::Garbage;
   }
   Impl::Ctx c{Impl::Mode::Exit, ret, nullptr};
   BasicBlock *Rb = ret->getParent();
