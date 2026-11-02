@@ -956,12 +956,19 @@ bool deadAtCleanup(LoweringContext &ctx, Value *Y, Value *h, Instruction *at,
 // composite update (127), not a bijection in y for fixed z: no rule 6 through z.
 // Only quantum values carry the dependency: a measured or classical value is a constant for the
 // inverse (rule 2; 180: c' = c ^ m1 with m1 a measurement of a value computed from c).
-bool reads(LoweringContext &ctx, Value *z, Value *y, unsigned depth = 0) {
+// A value met again at no smaller depth was already walked (cq-fbqi: the walk is over a DAG, unmemoized
+// it was exponential on remainderl's chained updates; the depth bound keeps its meaning).
+bool reads(LoweringContext &ctx, Value *z, Value *y, unsigned depth, DenseMap<Value *, unsigned> &seen) {
   if (z == y)
     return true;
   auto *I = dyn_cast<Instruction>(z);
   if (!I || depth > 64)
     return false;
+  if (auto [it, fresh] = seen.try_emplace(z, depth); !fresh) {
+    if (it->second <= depth)
+      return false;
+    it->second = depth;
+  }
   spine::Shared &sh = spine::shared(ctx);
   auto bi = sh.binds.find(z);
   // A skipped zext or an unmaterialized view phi (cq-su3p) reads its operands without a binding.
@@ -979,32 +986,44 @@ bool reads(LoweringContext &ctx, Value *z, Value *y, unsigned depth = 0) {
             return true;
   }
   for (Value *op : I->operands())
-    if (reads(ctx, op, y, depth + 1))
+    if (reads(ctx, op, y, depth + 1, seen))
       return true;
   return false;
+}
+bool reads(LoweringContext &ctx, Value *z, Value *y) {
+  DenseMap<Value *, unsigned> seen;
+  return reads(ctx, z, y, 0, seen);
 }
 
 // Does the rail `h` of the new IR hold a function of the rail `y`? Through the histories of the
 // spine's emitters (Shared::hist): a template's operands and the in-place writes on a minted rail.
 // Too deep to tell counts as reading.
-bool railReads(spine::Shared &sh, Value *h, Value *y, unsigned depth = 0) {
+// A rail met again was already found not to read y (a history is a DAG: its shared operands are walked
+// once, cq-fbqi: remainderl's chained bijective updates made the unmemoized walk exponential).
+bool railReads(spine::Shared &sh, Value *h, Value *y, unsigned depth, SmallPtrSetImpl<Value *> &seen) {
   if (h == y)
     return true;
   if (depth > 64)
     return true;
+  if (!seen.insert(h).second)
+    return false;
   auto it = sh.hist.find(h);
   if (it == sh.hist.end())
     return false;
   const spine::RailHist &r = it->second;
   if (r.tmpl)
     for (const Operand &o : r.ops)
-      if (o.handle && railReads(sh, o.v, y, depth + 1))
+      if (o.handle && railReads(sh, o.v, y, depth + 1, seen))
         return true;
   for (const spine::RailHist::Write &w : r.writes)
     for (Value *a : w.args)
-      if (a != h && (a == y || sh.hist.count(a)) && railReads(sh, a, y, depth + 1))
+      if (a != h && (a == y || sh.hist.count(a)) && railReads(sh, a, y, depth + 1, seen))
         return true;
   return false;
+}
+bool railReads(spine::Shared &sh, Value *h, Value *y) {
+  SmallPtrSet<Value *, 32> seen;
+  return railReads(sh, h, y, 0, seen);
 }
 
 std::string shapeOf(ArrayRef<Operand> ops) {
