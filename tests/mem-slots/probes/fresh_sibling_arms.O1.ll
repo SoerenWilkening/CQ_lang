@@ -48,52 +48,40 @@ declare void @free(ptr allocptr nocapture noundef) local_unnamed_addr #3
 define i32 @fresh_sibling_arms3(i32 noundef %0) local_unnamed_addr #0 {
   %2 = tail call i32 @cq_theta_si32(i32 noundef 0, double noundef 5.000000e-01) #4
   %3 = tail call dereferenceable_or_null(8) ptr @malloc(i64 noundef 8) #5
-  %4 = and i32 %2, 1
-  %5 = icmp eq i32 %4, 0
-  br i1 %5, label %8, label %6
+  %4 = getelementptr inbounds i8, ptr %3, i64 4
+  store i32 %0, ptr %4, align 4, !tbaa !6
+  %5 = and i32 %2, 1
+  %6 = icmp eq i32 %5, 0
+  br i1 %6, label %9, label %7
 
-6:                                                ; preds = %1
-  %7 = mul nsw i32 %2, 3
-  store i32 %7, ptr %3, align 4, !tbaa !6
+7:                                                ; preds = %1
+  %8 = mul nsw i32 %2, 3
   br label %16
 
-8:                                                ; preds = %1
-  %9 = and i32 %2, 2
-  %10 = icmp eq i32 %9, 0
-  br i1 %10, label %13, label %11
+9:                                                ; preds = %1
+  %10 = and i32 %2, 2
+  %11 = icmp eq i32 %10, 0
+  br i1 %11, label %14, label %12
 
-11:                                               ; preds = %8
-  %12 = add nsw i32 %2, 5
-  store i32 %12, ptr %3, align 4, !tbaa !6
+12:                                               ; preds = %9
+  %13 = add nsw i32 %2, 5
   br label %16
 
-13:                                               ; preds = %8
-  %14 = xor i32 %2, 6
-  store i32 %14, ptr %3, align 4, !tbaa !6
-  %15 = getelementptr inbounds i8, ptr %3, i64 4
-  store i32 %2, ptr %15, align 4, !tbaa !6
+14:                                               ; preds = %9
+  %15 = xor i32 %2, 6
   br label %16
 
-16:                                               ; preds = %11, %13, %6
-  %17 = and i32 %2, 4
-  %18 = icmp eq i32 %17, 0
-  br i1 %18, label %22, label %19
-
-19:                                               ; preds = %16
-  %20 = add nsw i32 %2, -1
-  %21 = getelementptr inbounds i8, ptr %3, i64 4
-  store i32 %20, ptr %21, align 4, !tbaa !6
-  br label %22
-
-22:                                               ; preds = %19, %16
-  %23 = and i32 %0, 1
-  %24 = zext nneg i32 %23 to i64
-  %25 = getelementptr inbounds i32, ptr %3, i64 %24
-  %26 = load i32, ptr %25, align 4, !tbaa !6
+16:                                               ; preds = %12, %14, %7
+  %17 = phi i32 [ %13, %12 ], [ %15, %14 ], [ %8, %7 ]
+  store i32 %17, ptr %3, align 4, !tbaa !6
+  %18 = and i32 %0, 1
+  %19 = zext nneg i32 %18 to i64
+  %20 = getelementptr inbounds i32, ptr %3, i64 %19
+  %21 = load i32, ptr %20, align 4, !tbaa !6
   tail call void @free(ptr noundef %3)
-  %27 = ashr i32 %0, 1
-  %28 = xor i32 %26, %27
-  ret i32 %28
+  %22 = ashr i32 %0, 1
+  %23 = xor i32 %21, %22
+  ret i32 %23
 }
 
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }

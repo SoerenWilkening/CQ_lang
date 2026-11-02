@@ -13,14 +13,14 @@ int fresh_sibling_arms(int k) {
   free(a);
   return r ^ (k >> 1);
 }
-/* Three arms, and a cell written in one arm and again under a later quantum predicate. */
+/* Three arms (an if/else chain), each storing into a fresh cell; the other cell is written before. */
 int fresh_sibling_arms3(int k) {
   int x = 0; cq_theta(&x, 0.5);
   int *a = malloc(8);
+  a[1] = k;
   if (x & 1) a[0] = x * 3;
   else if (x & 2) a[0] = x + 5;
-  else { a[0] = x ^ 6; a[1] = x; }
-  if (x & 4) a[1] = x - 1;
+  else a[0] = x ^ 6;
   int r = a[k & 1];
   free(a);
   return r ^ (k >> 1);
