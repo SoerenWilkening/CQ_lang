@@ -15,6 +15,7 @@
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/CFG.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/IntrinsicInst.h"
@@ -92,6 +93,20 @@ bool isTemplateIntrinsic(Intrinsic::ID id) {
   case Intrinsic::usub_sat: case Intrinsic::sadd_sat: case Intrinsic::ssub_sat: case Intrinsic::uadd_with_overflow: case Intrinsic::sadd_with_overflow:
   case Intrinsic::umul_with_overflow: case Intrinsic::smul_with_overflow:
   case Intrinsic::usub_with_overflow: case Intrinsic::ssub_with_overflow: case Intrinsic::is_fpclass:
+    return true;
+  default:
+    return false;
+  }
+}
+
+// Intrinsics with no operation of their own, or a composition of rule 4 templates (spine's
+// lowerHintIntrinsic in Opcode.cpp).
+bool isHintIntrinsic(Intrinsic::ID id) {
+  switch (id) {
+  case Intrinsic::expect: case Intrinsic::expect_with_probability: case Intrinsic::ssa_copy:
+  case Intrinsic::annotation: case Intrinsic::assume: case Intrinsic::prefetch: case Intrinsic::var_annotation:
+  case Intrinsic::sideeffect: case Intrinsic::donothing: case Intrinsic::is_constant: case Intrinsic::objectsize:
+  case Intrinsic::canonicalize: case Intrinsic::scmp: case Intrinsic::ucmp:
     return true;
   default:
     return false;
@@ -243,8 +258,14 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
     case Intrinsic::lifetime_end:
       return nonClassicalObject(T, S, CB.getArgOperand(1)) ? Class::Dealloc : Class::Classical;
     case Intrinsic::stackrestore: {
-      // A VLA's lifetime ends here (rule 20, 192) when the scope holds a slot or QRAM object.
-      return qPred || qArg ? Class::Dealloc : Class::Classical;
+      // A VLA's lifetime ends here (rule 20, 192) when the scope holds a slot or QRAM object; otherwise
+      // it restores the host stack only, under any predicate (the linearized program runs it as C does).
+      SmallVector<const AllocaInst *, 4> scope;
+      spine::scopeAllocas(CB, scope);
+      for (const AllocaInst *A : scope)
+        if (nonClassicalObject(T, S, A))
+          return Class::Dealloc;
+      return Class::Classical;
     }
     case Intrinsic::ptrmask:
       // Rule 21 (105): the mask of a fat pointer's flat address, 89's round trip (fatptr::lower), a
@@ -265,7 +286,18 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
       return Class::TemplateIntrinsic;
     if (isLibmIntrinsic(id))
       return Class::LibmIntrinsic;
-    unimplemented("spine: calls::classify: an intrinsic with a quantum operand that no rule routes", &CB);
+    if (isHintIntrinsic(id))
+      return Class::TemplateIntrinsic;   // spine's lowerOpcode: a representation change, nothing or a composition
+    if (id == Intrinsic::bitreverse)
+      unimplemented("spine: llvm.bitreverse of a quantum value: awaiting owner ruling: SPEC_ISSUES bitreverse has "
+                    "no template op (§1.2) although rule 6 lists it as a bijection",
+                    &CB);
+    if (CB.getType()->isVectorTy() || any_of(CB.args(), [](const Use &u) { return u->getType()->isVectorTy(); }))
+      return Class::TemplateIntrinsic;   // lanes (rule 25): dispatch hands it to aggr::lowerVectorOp
+    // Every intrinsic clang 19 -O1 emits for C is routed above (templates, libm, hints, memory, fenv,
+    // varargs, lifetime, trap): the rest (gc, coroutine, EH, target-specific, saturating fp conversions,
+    // fixed point) never reaches the pass from the pipeline (CLAUDE.md Pipeline: C through clang -O1).
+    internalError("spine: calls::classify: an intrinsic the C pipeline does not emit, with a quantum operand", &CB);
   }
 
   // Rule 23: every <fenv.h> call (C17 7.6, a callee with no body) of a lowered function is the fenv
@@ -600,6 +632,41 @@ Class classify(const CallBase &CB, const TaintInfo &T, const Specialization &S) 
 }
 
 } // namespace calls
+
+namespace spine {
+
+void scopeAllocas(const CallBase &restore, SmallVectorImpl<const AllocaInst *> &out) {
+  auto isSave = [](const Value *v) {
+    auto *II = dyn_cast<IntrinsicInst>(v);
+    return II && II->getIntrinsicID() == Intrinsic::stacksave;
+  };
+  const Value *save = restore.getArgOperand(0)->stripPointerCasts();
+  if (!isSave(save))
+    internalError("spine: a stackrestore whose operand is no llvm.stacksave (clang pairs them per scope)", &restore);
+  const Function &F = *restore.getFunction();
+  DominatorTree DT(const_cast<Function &>(F));
+  auto *S = cast<Instruction>(save);
+  SmallVector<const Instruction *, 4> inner;   // nested scopes' saves: their allocas end at their own restores
+  for (const BasicBlock &BB : F)
+    for (const Instruction &I : BB)
+      if (isSave(&I) && &I != S && DT.dominates(S, &I) &&
+          any_of(I.users(), [](const User *u) {
+            auto *r = dyn_cast<IntrinsicInst>(u);
+            return r && r->getIntrinsicID() == Intrinsic::stackrestore;
+          }))
+        inner.push_back(&I);
+  for (const BasicBlock &BB : F)
+    for (const Instruction &I : BB) {
+      auto *A = dyn_cast<AllocaInst>(&I);
+      if (!A || !DT.dominates(S, A) || !isPotentiallyReachable(A, &restore, nullptr, &DT))
+        continue;
+      if (any_of(inner, [&](const Instruction *X) { return DT.dominates(X, A); }))
+        continue;
+      out.push_back(A);
+    }
+}
+
+} // namespace spine
 
 namespace loops {
 

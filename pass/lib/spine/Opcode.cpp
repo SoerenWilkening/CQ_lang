@@ -30,9 +30,12 @@ namespace cq {
 
 namespace {
 
+// The rail type of a scalar. Every caller passes a scalar: a vector is lanes (rule 25, dispatch routes it
+// to aggr), a pointer a fat pointer (rule 21, fatptr), and fp128 is unreachable from C on this target
+// (rule 25, CR §1.1); the CQ.h surface takes scalars only (calls::classify's surface()).
 RailType rt(Type *t, const Value *at) {
   if (!t->isIntegerTy() && !t->isHalfTy() && !t->isBFloatTy() && !t->isFloatTy() && !t->isDoubleTy() && !t->isX86_FP80Ty())
-    unimplemented("spine: a rail of IR type that is not iN/half/bfloat/float/double/x86_fp80", at);
+    internalError("spine: a scalar rail type asked of a vector, pointer or fp128 (rules 21, 25: routed elsewhere)", at);
   return railTypeOf(t);
 }
 
@@ -173,8 +176,90 @@ const char *overflowValueOp(Intrinsic::ID id) {
   }
 }
 
+// Intrinsics with a quantum operand that carry no operation of their own (calls::classify routes them
+// here with the templates): a value hint is its operand (rule 3, a representation change: expect,
+// ssa.copy, annotation), an optimisation hint is nothing (assume: an input on which it is false has
+// undefined behaviour and is outside the domain; prefetch, var.annotation, sideeffect), and a
+// compile-time query is the constant LLVM's own lowering gives when it cannot fold it
+// (LowerConstantIntrinsics: is.constant false, objectsize -1 or, with min, 0). The three-way compares
+// and canonicalize are rule 4 templates composed: scmp(a, b) = zext(a > b) - zext(a < b) at the
+// result width; canonicalize(x) = x * 1.0 (IEEE: the same value, a signalling NaN quieted, a
+// non-canonical f80 the invalid result, as x86 computes it). True when II was one of them.
+bool lowerHintIntrinsic(LoweringContext &ctx, IntrinsicInst &II) {
+  Intrinsic::ID id = II.getIntrinsicID();
+  switch (id) {
+  case Intrinsic::expect:
+  case Intrinsic::expect_with_probability:
+  case Intrinsic::ssa_copy:
+  case Intrinsic::annotation:
+    spine::bindOperand(ctx, &II, ctx.operand(II.getArgOperand(0)));
+    return true;
+  case Intrinsic::assume:
+  case Intrinsic::prefetch:
+  case Intrinsic::var_annotation:
+  case Intrinsic::sideeffect:
+  case Intrinsic::donothing:
+    return true;
+  case Intrinsic::is_constant:
+    spine::bindOperand(ctx, &II, Operand{ConstantInt::getFalse(ctx.M.getContext()), false});
+    return true;
+  case Intrinsic::objectsize: {
+    bool min = cast<ConstantInt>(II.getArgOperand(1))->isOne();
+    spine::bindOperand(ctx, &II, Operand{ConstantInt::get(II.getType(), min ? 0 : -1, true), false});
+    return true;
+  }
+  case Intrinsic::canonicalize: {
+    abi::TemplateSpec spec;
+    spec.op = "fmul";
+    spec.w = rt(II.getType(), &II);
+    if (!binary(ctx, spec, II.getArgOperand(0), ConstantFP::get(II.getType(), 1.0), &II))
+      spine::bindOperand(ctx, &II, Operand{spine::copyClassical(ctx, II), false});   // rule 2 collapse
+    return true;
+  }
+  case Intrinsic::scmp:
+  case Intrinsic::ucmp: {
+    Value *a = II.getArgOperand(0), *b = II.getArgOperand(1);
+    if (!ctx.operand(a).handle && !ctx.operand(b).handle) {
+      spine::bindOperand(ctx, &II, Operand{spine::copyClassical(ctx, II), false});   // rule 2 collapse
+      return true;
+    }
+    bool s = id == Intrinsic::scmp;
+    RailType w = rt(II.getType(), &II);
+    auto side = [&](CmpInst::Predicate p) {
+      Operand x = ctx.operand(a), y = ctx.operand(b);
+      abi::TemplateSpec c;
+      c.op = "icmp";
+      c.w = rt(a->getType(), &II);
+      if (!x.handle) {   // compares never take _lh: flip the predicate (CR §1.2)
+        std::swap(x, y);
+        p = CmpInst::getSwappedPredicate(p);
+      }
+      c.pred = CmpInst::getPredicateName(p).str();
+      c.shape = y.handle ? "" : "hl";
+      Value *f = ctx.emitTemplate(c, {x, y});
+      abi::TemplateSpec z;
+      z.op = "zext";
+      z.w = RailType{Kind::Int, 1};
+      z.to = w;
+      return Operand{ctx.emitTemplate(z, {Operand{f, true}}), true};
+    };
+    Operand gt = side(s ? CmpInst::ICMP_SGT : CmpInst::ICMP_UGT);
+    Operand lt = side(s ? CmpInst::ICMP_SLT : CmpInst::ICMP_ULT);
+    abi::TemplateSpec d;
+    d.op = "sub";
+    d.w = w;
+    ctx.emitTemplate(d, {gt, lt}, &II);
+    return true;
+  }
+  default:
+    return false;
+  }
+}
+
 void lowerIntrinsic(LoweringContext &ctx, IntrinsicInst &II) {
   Intrinsic::ID id = II.getIntrinsicID();
+  if (lowerHintIntrinsic(ctx, II))
+    return;
   std::string op = intrinsicOp(id);
   if (op.empty())
     internalError("spine: lowerOpcode on an intrinsic with no template", &II);
@@ -340,8 +425,8 @@ void lowerOpcode(LoweringContext &ctx, Instruction &I) {
 
   if (auto *bo = dyn_cast<BinaryOperator>(&I)) {
     const char *op = binName(bo->getOpcode());
-    if (!op)
-      unimplemented("spine: binary opcode with no template", &I);
+    if (!op)   // binName names every LLVM 19 binary opcode
+      internalError("spine: a binary opcode binName does not name", &I);
     abi::TemplateSpec spec;
     spec.op = op;
     spec.w = rt(I.getType(), &I);
@@ -351,8 +436,8 @@ void lowerOpcode(LoweringContext &ctx, Instruction &I) {
   }
 
   if (auto *un = dyn_cast<UnaryOperator>(&I)) {
-    if (un->getOpcode() != Instruction::FNeg)
-      unimplemented("spine: unary opcode with no template", &I);
+    if (un->getOpcode() != Instruction::FNeg)   // fneg is LLVM 19's only unary operator
+      internalError("spine: a unary opcode other than fneg", &I);
     Operand x = ctx.operand(un->getOperand(0));
     if (!x.handle) {
       spine::bindOperand(ctx, &I, Operand{spine::copyClassical(ctx, I), false});
@@ -428,7 +513,9 @@ void lowerOpcode(LoweringContext &ctx, Instruction &I) {
     return;
   }
 
-  unimplemented("spine: lowerOpcode: no rule 4 template for this instruction", &I);
+  // dispatch hands lowerOpcode only binary, unary, compare, cast, freeze and intrinsic instructions (every
+  // other opcode has its own module there).
+  internalError("spine: lowerOpcode of an instruction dispatch routes elsewhere", &I);
 }
 
 // Rule 6 (cq-fufh): a rotation in place on y' = f(y, z), with f a bijection in y (add, sub, xor) and

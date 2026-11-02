@@ -13,6 +13,7 @@
 #include "cq/Rotation.h"
 #include "cq/Switch.h"
 #include "llvm/Analysis/ValueTracking.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
 #include "cq/Loops.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -55,12 +56,86 @@ ObjClass objectsClass(LoweringContext &ctx, const Value *site) {
   return c;
 }
 
-// One object of a non-classical class reached by a pointer, for a lifetime end.
-ObjectId soleObject(LoweringContext &ctx, const Value *ptr, const Instruction &at) {
+// Rule 16 / rule 20: the lifetime end at `at` (lifetime.end, free, or a stackrestore for the scope's
+// allocas) of the non-classical objects `ptr` may name. One allocation site (an alloca, or a heap block:
+// an array of structs is one object per field column, all ended by the site's one end) goes to its
+// memory module once per class: a QRAM site to mem-qram (a heap QRAM has no host block, so no host free
+// follows), else to mem-slots (which emits the host free of a heap slot block). A free of a pointer that
+// may name several sites (a merged pointer) is a classical choice at run time (rule 9): each QRAM site
+// is ended under `p == its QRAM base` (rule 21: a unique non-canonical address), a host block by the host
+// free under `p` outside the QRAM address range.
+void endObjects(LoweringContext &ctx, const Value *ptr, CallBase &at) {
   ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
-  if (objs.size() != 1)
-    unimplemented("spine: a lifetime end through a pointer with " + std::to_string(objs.size()) + " objects", &at);
-  return objs.front();
+  auto firstOf = [&](ArrayRef<ObjectId> os, ObjClass k) -> std::optional<ObjectId> {
+    for (ObjectId o : os)
+      if (ctx.T.classOf(o) == k)
+        return o;
+    return std::nullopt;
+  };
+  SmallVector<const Value *, 4> roots;
+  getUnderlyingObjects(ptr, roots);
+  std::optional<ObjectId> q = firstOf(objs, ObjClass::Qram), sl = firstOf(objs, ObjClass::Slot);
+  if (roots.size() == 1 || !q) {
+    if (q)
+      return mem::endQramLifetime(ctx, *q, &at);
+    if (sl)
+      return mem::endSlotLifetime(ctx, *sl, &at);
+    internalError("spine: a lifetime end classified Dealloc with no slot or QRAM object", &at);
+  }
+  // A free of a merged pointer that may name a QRAM site.
+  IRBuilder<> &B = ctx.B();
+  LLVMContext &C = ctx.M.getContext();
+  Value *p = ctx.operand(ptr).v;
+  if (ctx.operand(ptr).handle || !p->getType()->isPointerTy())
+    internalError("spine: a free of a merged pointer that is no classical pointer", &at);
+  Type *i64 = Type::getInt64Ty(C);
+  auto branch = [&](Value *cond, function_ref<void()> body) {
+    BasicBlock *P = B.GetInsertBlock();
+    Function *F = P->getParent();
+    BasicBlock::iterator ip = B.GetInsertPoint();
+    BasicBlock *H = BasicBlock::Create(C, "", F, P);
+    H->splice(H->end(), P, P->begin(), ip);
+    for (BasicBlock *pr : SmallVector<BasicBlock *, 4>(predecessors(P)))
+      if (pr != H)
+        pr->getTerminator()->replaceSuccessorWith(P, H);
+    if (auto *ci = dyn_cast<Instruction>(cond); ci && ci->getParent() == P)
+      internalError("spine: a lifetime-end guard emitted at the split point", &at);
+    BasicBlock *T = BasicBlock::Create(C, "", F, P);
+    B.SetInsertPoint(H);
+    B.CreateCondBr(cond, T, P);
+    B.SetInsertPoint(T);
+    body();
+    B.CreateBr(P);
+    B.SetInsertPoint(P, P->begin());
+  };
+  bool host = false;
+  for (const Value *r : roots) {
+    ArrayRef<ObjectId> ro = ctx.T.provenance(r, ctx.S);
+    std::optional<ObjectId> rq = firstOf(ro, ObjClass::Qram);
+    if (!rq) {
+      host = true;
+      continue;
+    }
+    Operand base = ctx.operand(r);
+    if (base.handle || !isa<Constant>(base.v))
+      internalError("spine: a QRAM site not bound to its QRAM base address", &at);
+    CallBase *one = cast<CallBase>(at.clone());   // the end of this site alone (never inserted)
+    one->setArgOperand(isa<IntrinsicInst>(at) ? 1 : 0, const_cast<Value *>(r));
+    Value *eq = B.CreateICmpEQ(B.CreatePtrToInt(p, i64), B.CreatePtrToInt(base.v, i64));
+    branch(eq, [&] { mem::endQramLifetime(ctx, *rq, one); });
+    one->dropAllReferences();
+    one->deleteValue();
+  }
+  if (!host)
+    return;
+  // Rule 21: QRAM addresses are 0x4000'0000'0000'0000 + 0x1000 n, above every host address.
+  Value *isHost = B.CreateICmpULT(B.CreatePtrToInt(p, i64), ConstantInt::get(i64, 0x4000000000000000ull));
+  branch(isHost, [&] {
+    if (sl)
+      mem::endSlotLifetime(ctx, *sl, &at);
+    else
+      copyClassical(ctx, at);   // a classical host block among the candidates: its free
+  });
 }
 
 // A quantum i1 whose only users are branch conditions that pred expanded into their terms (rule 8:
@@ -385,19 +460,22 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
       return mem::allocateQram(ctx, CB);
     return mem::allocateSlots(ctx, CB);
   case Class::Dealloc: {
-    const Value *p = nullptr;
     if (auto *II = dyn_cast<IntrinsicInst>(&CB)) {
       if (II->getIntrinsicID() == Intrinsic::lifetime_end)
-        p = II->getArgOperand(1);
-      else
-        unimplemented("spine: stackrestore of a scope holding slot or QRAM objects (rule 20, 192)", &CB);
-    } else {
-      p = CB.getArgOperand(0);
+        return endObjects(ctx, II->getArgOperand(1), CB);
+      if (II->getIntrinsicID() != Intrinsic::stackrestore)
+        internalError("spine: a Dealloc intrinsic other than lifetime.end or stackrestore", &CB);
+      // Rule 20 (192): a VLA's lifetime ends at its scope's end: each slot or QRAM alloca of the scope
+      // is ended here, then the host stack is restored.
+      SmallVector<const AllocaInst *, 4> scope;
+      scopeAllocas(CB, scope);
+      for (const AllocaInst *A : scope)
+        if (objectsClass(ctx, A) != ObjClass::Classical)
+          endObjects(ctx, A, CB);
+      copyClassical(ctx, CB);
+      return;
     }
-    ObjectId o = soleObject(ctx, p, CB);
-    if (ctx.T.classOf(o) == ObjClass::Qram)
-      return mem::endQramLifetime(ctx, o, &CB);
-    return mem::endSlotLifetime(ctx, o, &CB);
+    return endObjects(ctx, CB.getArgOperand(0), CB);
   }
   case Class::Realloc:
     if (objectsClass(ctx, &CB) == ObjClass::Qram)
@@ -409,6 +487,8 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
       fatptr::lower(ctx, &CB);   // rule 21 (105): binds the masked pointer's (tag, idx) here
       return;
     }
+    if (CB.getType()->isVectorTy() || any_of(CB.args(), [](const Use &u) { return u->getType()->isVectorTy(); }))
+      return aggr::lowerVectorOp(ctx, CB);   // rule 25: a vector is its lanes
     return lowerOpcode(ctx, CB);
   case Class::LibmIntrinsic: return calls::lowerLifted(ctx, CB);
   case Class::Fenv:
