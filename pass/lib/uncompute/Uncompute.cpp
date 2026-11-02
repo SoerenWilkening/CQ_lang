@@ -2497,6 +2497,21 @@ struct Uncompute::Impl {
         internalError("uncompute: the loop's exit block of a deferred item does not continue in one block",
                       X->getTerminator());
       pos = {S, &*S->getFirstInsertionPt()};
+      // cq-9o04 (CR rules 5, 14; §0): a QRAM bus the item writes is restored by it (its stores are
+      // popped), so a read of the bus after the loop must precede the item. Placed where the loop
+      // exits, every such read would follow it and see the popped cells.
+      for (auto [b, top] : d.buses)
+        for (RailId nb : names(b))
+          for (User *u : rails[nb].handle->users())
+            if (auto *i = dyn_cast<Instruction>(u); i && i->getParent() && afterRegion(d, i->getParent()) &&
+                                                    !emitted.count(i))
+              unimplemented("uncompute: a non-diagonal gate or an in-place write on a rail the deferred rule-14 "
+                                "reverse loop reads (" + describe(rails[barrierRail].handle) +
+                                ") precedes a read after the loop of a QRAM the loop writes (" +
+                                describe(rails[b].handle) +
+                                "), which the reverse loop pops: it can run neither before that read nor after "
+                                "the gate",
+                            i);
     }
     // An exit rail that became kept (measured, escaped, a kept merge's arm) is kept by a copy taken
     // here, and the reverse loop undoes the rail itself (every trip's instance is undone alike).
