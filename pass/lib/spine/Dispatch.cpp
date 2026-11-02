@@ -678,10 +678,6 @@ Instruction *copyClassical(LoweringContext &ctx, Instruction &I) {
 void dispatch(LoweringContext &ctx, Instruction &I) {
   if (isa<DbgInfoIntrinsic>(I))
     return;   // debug records carry no semantics; the original values they name are gone
-  // CR rule 13: a computed goto's address is no value of the lowering (its destination is the integer it
-  // was derived from); its blockaddress constants name the original blocks.
-  if (gotoDestinationOnly(&I))
-    return;
   if (auto *CB = dyn_cast<CallBase>(&I)) {
     if (isa<InvokeInst>(CB) || isa<CallBrInst>(CB))   // terminators: the walker's (emitTerminator)
       internalError("spine: dispatch of an invoke or callbr", &I);

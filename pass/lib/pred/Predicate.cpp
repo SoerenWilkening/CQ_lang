@@ -356,58 +356,24 @@ static bool addressCases(const Value *a, const Pred &under, const Function &F,
     return true;
   }
   if (std::optional<GotoTableRead> t = gotoTableRead(a)) {
-    // An index outside the table (or at an entry that is no label) is undefined behaviour, outside the
-    // domain: as a switch's last case with an unreachable default (rule 13), the destination of the last
-    // entry is the complement of the other destinations' cases, so the destinations' predicates cover the
-    // goto's block; every other destination is the disjunction of its entries' equalities.
+    // An index past the table, or an entry that names no block, is undefined behaviour (a load past
+    // the object, a jump to no label): outside the domain. The last entry naming a block is the
+    // complement of the others, as the last case of a switch whose default is unreachable (rule 13).
     unsigned w = t->index->getType()->getIntegerBitWidth();
-    const BasicBlock *lastDest = nullptr;
-    for (const BasicBlock *e : t->entries)
-      if (e)
-        lastDest = e;
-    SmallVector<std::pair<const BasicBlock *, Pred>, 4> dests;
+    int last = -1;
+    for (unsigned k = 0; k < t->entries.size(); ++k)
+      if (t->entries[k])
+        last = int(k);
     Pred others = Pred::bottom();
-    for (unsigned k = 0; k < t->entries.size(); ++k) {
-      const BasicBlock *e = t->entries[k];
-      if (!e || e == lastDest)
-        continue;
-      Pred eq = Pred::eqAtom(t->index, APInt(w, k));
-      others = others | eq;
-      auto it = find_if(dests, [&](const auto &d) { return d.first == e; });
-      if (it == dests.end())
-        dests.push_back({e, eq});
-      else
-        it->second = it->second | eq;
-    }
-    for (auto &[e, p] : dests)
-      cases.push_back({under & p, destIn(e, F)});
-    if (lastDest)
-      cases.push_back({under & !others, destIn(lastDest, F)});
+    for (unsigned k = 0; k < t->entries.size(); ++k)
+      if (t->entries[k]) {
+        Pred eq = Pred::eqAtom(t->index, APInt(w, k));
+        cases.push_back({under & (int(k) == last ? !others : eq), destIn(t->entries[k], F)});
+        others = others | eq;
+      }
     return true;
   }
   return false;
-}
-
-bool gotoDestinationOnly(const Value *v) {
-  if (v->use_empty())
-    return false;
-  // The widening of the table index (address arithmetic, rule 20): read only by destination addresses.
-  if (isa<ZExtInst>(v) || isa<SExtInst>(v))
-    return all_of(v->users(), [](const User *u) { return isa<GEPOperator>(u) && gotoDestinationOnly(u); });
-  if (!v->getType()->isPointerTy())
-    return false;
-  return all_of(v->users(), [&](const User *u) {
-    // The table entry's address: read only by the destination load.
-    if (auto *ld = dyn_cast<LoadInst>(u))
-      return ld->getPointerOperand() == v && gotoTableRead(ld) && gotoDestinationOnly(ld);
-    if (auto *ib = dyn_cast<IndirectBrInst>(u))
-      return ib->getAddress() == v;
-    if (auto *sel = dyn_cast<SelectInst>(u))
-      return sel->getCondition() != v && gotoDestinationOnly(u);
-    if (isa<BitCastInst>(u) || isa<AddrSpaceCastInst>(u))
-      return gotoDestinationOnly(u);
-    return false;
-  });
 }
 
 std::optional<SmallVector<std::pair<Pred, const BasicBlock *>, 4>> computedGotoCases(const IndirectBrInst &ib) {

@@ -336,6 +336,23 @@ private:
         e = Bd.CreateOr(e, Bd.CreateICmpEQ(x, ConstantInt::get(x->getType(), k)));
     return e;
   }
+  // A value read only as a computed goto's address (directly, or through selects and casts read so).
+  static bool destinationOnly(const Value *v) {
+    if (!v->getType()->isPointerTy() || v->use_empty())
+      return false;
+    return all_of(v->users(), [&](const User *u) {
+      // The table entry's address: read only by the destination load.
+      if (auto *ld = dyn_cast<LoadInst>(u))
+        return ld->getPointerOperand() == v && gotoTableRead(ld) && destinationOnly(ld);
+      if (auto *ib = dyn_cast<IndirectBrInst>(u))
+        return ib->getAddress() == v;
+      if (auto *sel = dyn_cast<SelectInst>(u))
+        return sel->getCondition() != v && destinationOnly(u);
+      if (isa<BitCastInst>(u) || isa<AddrSpaceCastInst>(u))
+        return destinationOnly(u);
+      return false;
+    });
+  }
   // A classical select chain over (condition, value): the first arm whose condition holds, the last
   // arm where none does (rule 9's classical select, ruling 2026-10-27).
   Value *classicalChain(ArrayRef<std::pair<Value *, Value *>> arms) {
@@ -1450,7 +1467,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           continue;
         // A computed goto's address (CR rule 13): its destination is chosen by the integer it was derived
         // from (tripEdge's case atoms); the address itself is no value of the trip.
-        if (gotoDestinationOnly(&I))
+        if (destinationOnly(&I))
           continue;
         // Rule 14 case 2: an instruction with effects (a call, a store, an allocation, a phase) runs in
         // trip j only where the trip runs, so it is lowered under the trip predicate (cq-99f7's
