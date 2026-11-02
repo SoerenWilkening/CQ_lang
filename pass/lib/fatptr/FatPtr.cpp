@@ -59,6 +59,7 @@
 
 #include "cq/Abi.h"
 #include "cq/Memory.h"
+#include "cq/Predicate.h"
 #include "../mem/qram/QramInternal.h"
 #include "../mem/qrom/QromInternal.h"
 #include "FatPtrInternal.h"
@@ -861,6 +862,149 @@ Fat deriveSelect(LoweringContext &ctx, const SelectInst &sel, bool emit, bool ea
   return f;
 }
 
+// The incoming values of a pointer phi that carry a value: each distinct one once, poison and undef dropped
+// (any value refines them) unless every incoming is one.
+SmallVector<const Value *, 4> phiArms(const PHINode &P) {
+  bool allUndef = all_of(P.incoming_values(), [](const Value *v) { return isa<UndefValue>(v); });
+  SmallVector<const Value *, 4> arms;
+  for (const Value *v : P.incoming_values())
+    if ((allUndef || !isa<UndefValue>(v)) && !is_contained(arms, v))
+      arms.push_back(v);
+  return arms;
+}
+
+// Rule 21 (merge over edge predicates; rule 9): a quantum pointer phi is the fat pointer whose tag and idx are
+// the merges of its incomings' tags and idx, in the cells of their greatest common divisor, the idx rails at a
+// width that reads every arm exactly (deriveSelect's widths, over n arms). The spine calls lower() at the phi,
+// which merges the fields there (cq::mergeFieldsOf: a select chain on the edge predicates, or a classical
+// phi when the choice is classical) and binds them; later derivations read the bound fields. A field equal on
+// every arm stays as it is; a tag that is not one constant is a rail (a classically chosen one is seeded).
+Fat derivePhi(LoweringContext &ctx, const PHINode &P, bool emit, bool eager) {
+  if (emit && !eager) {
+    Fat f = derivePhi(ctx, P, /*emit=*/false, false);
+    SmallVector<Operand, 4> fl = ctx.fields(&P);
+    if (fl.size() != 2 || fl[0].handle != f.tag.handle || fl[1].handle != f.idx.handle)
+      internalError("fatptr: a pointer phi bound to other than its (tag, idx)", &P);
+    f.tag = fl[0];
+    f.idx = fl[1];
+    return f;
+  }
+  SmallVector<const Value *, 4> arms = phiArms(P);
+  SmallVector<Fat, 4> sh;
+  for (const Value *v : arms) {
+    sh.push_back(derive(ctx, v, /*emit=*/false));
+    if (sh.back().trips)
+      unimplemented("fatptr: a phi of a pointer to K-loop trip objects (R1)", &P);
+  }
+  Fat f;
+  for (const Fat &a : sh) {
+    addRoots(f, a.roots);
+    f.nullMoved = f.nullMoved || a.nullMoved;
+  }
+  llvm::sort(f.roots, [&](const Value *x, const Value *y) { return rootNumber(ctx, x) < rootNumber(ctx, y); });
+  uint64_t g = 0;
+  for (const Fat &a : sh)
+    if (a.cell)
+      g = g ? std::gcd(g, a.cell) : a.cell;
+  for (Fat &a : sh)
+    if (g)
+      rescale(ctx, a, g, /*emit=*/false);
+  f.cell = g;
+  // The rail width: deriveSelect's rule over every rail arm; a classical arm that is no constant readable there
+  // takes the merge to 64 bits.
+  bool anyRail = false, allSx = true, anySx = false;
+  unsigned maxZ = 0, maxS = 0;
+  for (const Fat &a : sh)
+    if (a.idxRail()) {
+      anyRail = true;
+      allSx = allSx && a.idxSext;
+      anySx = anySx || a.idxSext;
+      (a.idxSext ? maxS : maxZ) = std::max(a.idxSext ? maxS : maxZ, a.idxBits);
+    }
+  unsigned W = 64;
+  bool sx = false;
+  if (anyRail) {
+    if (allSx || !anySx) {
+      W = std::max(maxZ, maxS);
+      sx = allSx;
+    } else {
+      W = std::min(64u, std::max(maxZ + 1, maxS));
+      sx = W < 64;
+    }
+    for (const Fat &a : sh)
+      if (!a.idxRail()) {
+        auto *ci = dyn_cast_or_null<ConstantInt>(a.idx.v);
+        bool fits = ci && (sx ? ci->getValue().isSignedIntN(W) : ci->getValue().isIntN(W));
+        if (W < 64 && !fits) {
+          W = 64;
+          sx = false;
+        }
+      }
+  }
+  bool classical = cq::classicalChoice(ctx, P);
+  auto *t0 = dyn_cast_or_null<ConstantInt>(sh.front().tag.v);
+  bool tagConst = all_of(sh, [&](const Fat &a) { return !a.tag.handle && a.tag.v == t0 && t0; });
+  auto *i0 = dyn_cast_or_null<ConstantInt>(sh.front().idx.v);
+  bool idxSame = all_of(sh, [&](const Fat &a) { return !a.idx.handle && i0 && a.idx.v == i0; });
+  bool idxClassical = !anyRail && (classical || idxSame);
+  f.tag = tagConst ? Operand{t0, false} : Operand{nullptr, true};
+  if (idxClassical) {
+    f.idx = Operand{idxSame ? i0 : nullptr, false};
+    f.idxBits = 64;
+    f.idxSext = false;
+  } else {
+    f.idx = Operand{nullptr, true};
+    f.idxBits = W;
+    f.idxSext = sx;
+  }
+  if (!emit)
+    return f;
+  // The merge, at the phi (eager: lower()).
+  LLVMContext &C = ctx.M.getContext();
+  std::map<std::pair<const Value *, BasicBlock *>, SmallVector<Operand, 4>> cache;
+  auto read = [&](const Value *v) -> SmallVector<Operand, 4> {
+    auto key = std::make_pair(v, ctx.B().GetInsertBlock());
+    if (auto it = cache.find(key); it != cache.end())
+      return it->second;
+    Fat a = derive(ctx, v, /*emit=*/true);
+    if (g)
+      rescale(ctx, a, g, /*emit=*/true);
+    Operand idx = a.idx;
+    if (!idxClassical) {
+      if (a.idxRail()) {
+        idx = widenRail(ctx, a.idx, a.idxBits, a.idxSext, W);
+      } else if (W < 64) {
+        auto *ci = dyn_cast<ConstantInt>(a.idx.v);
+        if (!ci)
+          internalError("fatptr: a non-constant classical idx merged with a rail narrower than 64 bits", &P);
+        idx = Operand{ConstantInt::get(C, ci->getValue().trunc(W)), false};
+      }
+    }
+    return cache[key] = SmallVector<Operand, 4>{a.tag, idx};
+  };
+  RailType rails[2] = {intRail(32), intRail(idxClassical ? 64 : W)};
+  Type *tys[2] = {i32(ctx), idxClassical ? (Type *)i64(ctx) : (Type *)IntegerType::get(C, W)};
+  SmallVector<Operand, 4> m = cq::mergeFieldsOf(ctx, const_cast<PHINode &>(P), rails, tys, read);
+  auto railed = [&](Operand o, unsigned w) -> Operand {
+    if (o.handle)
+      return o;
+    CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, intRail(w)}, {o.v});
+    ctx.unc().recordSeed(seed);
+    return Operand{seed, true};
+  };
+  f.tag = tagConst ? m[0] : railed(m[0], 32);
+  if (idxClassical) {
+    if (m[1].handle)
+      internalError("fatptr: a classically merged idx of classical arms that is a rail", &P);
+    f.idx = m[1];
+  } else {
+    f.idx = railed(m[1], W);
+  }
+  if (tagConst && f.tag.v != t0)
+    internalError("fatptr: a pointer phi's constant tag merged to another value", &P);
+  return f;
+}
+
 // cq-z6q1 (CR rule 21; 189): a pointer loaded from host memory (a slot record's classical pointer field or a
 // classical object) through a fat pointer. Its value is a host address decoded at run time by lowerLoad
 // (exact start tests over its roots, decodeTag); its roots are the pointers this function stores into the
@@ -1240,8 +1384,8 @@ Fat derive(LoweringContext &ctx, const Value *p, bool emit, bool eager) {
     f.idx = Operand{ConstantInt::get(i64(ctx), 0), false};
     return f;
   }
-  if (isa<PHINode>(p))
-    unimplemented("fatptr: a phi of fat pointers (rule 21 merge over edge predicates)", p);
+  if (auto *phi = dyn_cast<PHINode>(p))
+    return derivePhi(ctx, *phi, emit, eager);
   if (auto *ld = dyn_cast<LoadInst>(p))
     return deriveLoaded(ctx, *ld, emit);
   if (isa<Argument>(p))
@@ -1260,6 +1404,39 @@ Fat derive(LoweringContext &ctx, const Value *p, bool emit, bool eager) {
 // The root's classical base address (rule 21: a host object's base is its real host address).
 using Bases = DenseMap<const Value *, Value *>;   // root -> its ptrtoint, one per compare
 
+// The C address of a classical pointer into a slot object (rule 21, f684858): the object's lowered allocation's
+// address plus the pointer's C byte offset into it (its GEPs' terms over classical indices, never the handle-cell
+// offsets the lowered GEPs carry). A pointer that does not decompose further (the object itself, a parameter,
+// a loaded pointer) is its lowered address.
+Value *slotRootAddress(LoweringContext &ctx, const Value *p) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  IRBuilder<> &B = ctx.B();
+  if (auto *bc = dyn_cast<BitCastOperator>(p))
+    return slotRootAddress(ctx, bc->getOperand(0));
+  if (auto *g = dyn_cast<GEPOperator>(p)) {
+    unsigned bw = DL.getIndexTypeSizeInBits(g->getType());
+    MapVector<Value *, APInt> vars;
+    APInt off(bw, 0);
+    if (!g->collectOffset(DL, bw, vars, off))
+      internalError("fatptr: a GEP into a slot object whose offset does not decompose", p);
+    Value *a = slotRootAddress(ctx, g->getPointerOperand());
+    if (!off.isZero())
+      a = B.CreateAdd(a, ConstantInt::get(i64(ctx), off.sextOrTrunc(64)));
+    for (auto &[v, scale] : vars) {
+      Operand o = ctx.operand(v);
+      if (o.handle)
+        internalError("fatptr: a classical root's GEP over a quantum index", p);
+      Value *t = B.CreateSExtOrTrunc(o.v, i64(ctx));
+      a = B.CreateAdd(a, B.CreateMul(t, ConstantInt::get(i64(ctx), scale.sextOrTrunc(64))));
+    }
+    return a;
+  }
+  Operand r = ctx.operand(p);
+  if (r.handle)
+    internalError("fatptr: a root pointer bound to a rail", p);
+  return B.CreatePtrToInt(r.v, i64(ctx));
+}
+
 Value *rootBase(LoweringContext &ctx, const Value *root, Bases &bases) {
   if (Value *b = bases.lookup(root))
     return b;
@@ -1271,11 +1448,14 @@ Value *rootBase(LoweringContext &ctx, const Value *root, Bases &bases) {
       internalError("fatptr: a QRAM root of other than one object", root);
     return bases[root] = ConstantInt::get(i64(ctx), (uint64_t(1) << 62) + uint64_t(0x1000) * uint64_t(objs.front()));
   }
+  // A slot object's base is its lowered alloca's address, its size the C element size (rule 21, f684858): a root
+  // inside a slot object (a classical GEP into it) lies at the object's lowered address plus its C byte offset,
+  // so address arithmetic inside the object agrees with C whatever the handle-cell layout.
+  bool slot = false;
   for (ObjectId o : ctx.T.provenance(root, ctx.S))
-    if (ctx.T.classOf(o) == ObjClass::Slot)
-      unimplemented("awaiting owner ruling: SPEC_ISSUES rule 21 base address of a slot object (its handle cells "
-                    "are not the C object's bytes; rule 21 gives host and QRAM bases only)",
-                    root);
+    slot = slot || ctx.T.classOf(o) == ObjClass::Slot;
+  if (slot && !boundOf(ctx, root) && !isa<ConstantPointerNull>(root))
+    return bases[root] = slotRootAddress(ctx, root);
   Operand r = ctx.operand(root);
   if (r.handle)
     internalError("fatptr: a root pointer bound to a rail", root);
@@ -1687,6 +1867,11 @@ FatPtr lower(LoweringContext &ctx, const Value *ptr) {
     // The spine's call at the select (patch spine-dispatch-ptrselect): compute and bind its fields.
     f = derive(ctx, ptr, /*emit=*/true, /*eager=*/true);
     ctx.bindFields(sel, {f.tag, f.idx});
+  } else if (auto *phi = dyn_cast<PHINode>(ptr); phi && !isCarried(ctx, phi) && !tripOf(ctx, phi) &&
+                                                  !ctx.bound(phi)) {
+    // The spine's call at a quantum pointer phi (rule 21, merge over edge predicates): merge and bind its fields.
+    f = derive(ctx, ptr, /*emit=*/true, /*eager=*/true);
+    ctx.bindFields(phi, {f.tag, f.idx});
   } else {
     f = derive(ctx, ptr, /*emit=*/true);
   }
@@ -2052,10 +2237,10 @@ Operand hostArm(LoweringContext &ctx, const Value *r, const Fat &f, Type *ty, In
   Value *byte = ci ? ConstantInt::get(i64(ctx), ci->getSExtValue() * int64_t(f.cell ? f.cell : 1))
                    : B.CreateMul(idx, ConstantInt::get(i64(ctx), f.cell));
   Value *ext = check ? hostExtent(ctx, r) : nullptr;
+  // An object with no extent in the module (a pointer parameter, a loaded pointer) has as extent the range of
+  // the indices that reach it (rule 20, n = 0, f684858): every index reaching it is in range, so no check.
   if (check && !ext)
-    unimplemented("awaiting owner ruling: SPEC_ISSUES rule 21 bound check of a host object with no known extent "
-                  "(a pointer parameter or a loaded pointer in a fat pointer's provenance, loaded unguarded)",
-                  &at);
+    check = false;
   auto *bc = dyn_cast<ConstantInt>(byte);
   auto *ec = dyn_cast_or_null<ConstantInt>(ext);
   if (!check || (bc && ec && bc->getSExtValue() >= 0 && bc->getSExtValue() + size <= ec->getSExtValue())) {
@@ -2162,22 +2347,26 @@ std::pair<Value *, Value *> decodeRange(LoweringContext &ctx, Value *addrPtr, Ar
     if (b.handle)
       internalError("fatptr: a root pointer bound to a rail", r);
     Value *ext = hostExtent(ctx, r);
-    if (!ext)
-      unimplemented("awaiting owner ruling: SPEC_ISSUES rule 21 range decoding over a candidate object with no "
-                    "known extent",
-                    &at);
     Value *base = B.CreatePtrToInt(b.v, i64(ctx));
-    cs.push_back({r, base, B.CreateAdd(base, ext)});
+    cs.push_back({r, base, ext ? B.CreateAdd(base, ext) : nullptr});
   }
   Value *tag = ConstantInt::get(i32(ctx), 0), *base = ConstantInt::get(i64(ctx), 0);
   auto pick = [&](Value *c, const Cand &k) {
     tag = B.CreateSelect(c, ConstantInt::get(i32(ctx), rootNumber(ctx, k.r)), tag);
     base = B.CreateSelect(c, k.base, base);
   };
+  // A candidate with no extent in the module (rule 20, n = 0: its extent is every index that reaches it) holds
+  // every address from its base on; among several such, the nearest base at or below the address. The known
+  // extents' tests come after (they are exact and win).
   for (const Cand &k : cs)
-    pick(B.CreateICmpEQ(addr, k.end), k);
+    if (!k.end)
+      pick(B.CreateAnd(B.CreateICmpUGE(addr, k.base), B.CreateICmpUGE(k.base, base)), k);
   for (const Cand &k : cs)
-    pick(B.CreateAnd(B.CreateICmpUGE(addr, k.base), B.CreateICmpULT(addr, k.end)), k);
+    if (k.end)
+      pick(B.CreateICmpEQ(addr, k.end), k);
+  for (const Cand &k : cs)
+    if (k.end)
+      pick(B.CreateAnd(B.CreateICmpUGE(addr, k.base), B.CreateICmpULT(addr, k.end)), k);
   Value *off = B.CreateSub(addr, base);
   if (cell != 1)
     off = isPowerOf2_64(cell) ? B.CreateLShr(off, Log2_64(cell)) : B.CreateUDiv(off, ConstantInt::get(i64(ctx), cell));
@@ -2671,6 +2860,15 @@ void lowerStore(LoweringContext &ctx, StoreInst &st) {
       }
       return;
     }
+  if (f.roots.size() == 1)
+    if (Bound *b = boundOf(ctx, f.roots[0]); b && b->pointee == ObjClass::Slot && !b->tag.handle && !f.idx.handle) {
+      // Rules 18, 20, 21 (cq-1c5j): a classical (tag, idx) into the caller's slot object names one handle cell; the
+      // spine bound the formal to that cell's address, and a store through it is the slot store of a raw slot
+      // formal (31): the rail replaces the cell, under a quantum predicate a select into a fresh rail, the
+      // caller cleaning the old cell after the call (rule 18).
+      mem::lowerSlotStore(ctx, st);
+      return;
+    }
   Value *val = st.getValueOperand();
   Type *ty = val->getType();
   if (!ty->isIntegerTy() && !ty->isFloatingPointTy())
@@ -2866,20 +3064,37 @@ void lowerRangeDecode(LoweringContext &ctx, const IntToPtrInst &I) {
     if (isa<ConstantPointerNull>(r))
       continue;
     Value *ext = hostExtent(ctx, r);
-    if (!ext)
-      unimplemented("awaiting owner ruling: SPEC_ISSUES rule 21 range decoding over a candidate object with no "
-                    "known extent",
-                    &I);
     Value *base = rootBase(ctx, r, cache);
-    cs.push_back({r, base, B.CreateAdd(base, ext)});
+    cs.push_back({r, base, ext ? B.CreateAdd(base, ext) : nullptr});
   }
   Operand tag{ConstantInt::get(i32(ctx), 0), false};
   auto pick = [&](Operand cond, const Value *r) {
     tag = select(ctx, 32, cond, Operand{ConstantInt::get(i32(ctx), rootNumber(ctx, r)), false}, tag);
   };
+  // A candidate with no extent in the module (rule 20, n = 0) holds every address from its base on; among
+  // several such, the nearest base at or below the address: candidate i is picked when addr >= base_i and addr
+  // lies below every other unbounded base above base_i (a classical bound per pair: base_j when base_j > base_i,
+  // else no bound). Known extents are tested after them and win.
+  SmallVector<const Cand *, 4> open;
   for (const Cand &c : cs)
-    pick(icmp(ctx, CmpInst::ICMP_EQ, 64, u, Operand{c.end, false}), c.r);
+    if (!c.end)
+      open.push_back(&c);
+  for (size_t i = 0; i < open.size(); ++i) {
+    Operand cond = icmp(ctx, CmpInst::ICMP_UGE, 64, u, Operand{open[i]->base, false});
+    for (size_t j = 0; j < open.size(); ++j)
+      if (j != i) {
+        Value *bound = B.CreateSelect(B.CreateICmpUGT(open[j]->base, open[i]->base), open[j]->base,
+                                      ConstantInt::getAllOnesValue(i64(ctx)));
+        cond = commutative(ctx, "and", 1, cond, icmp(ctx, CmpInst::ICMP_ULT, 64, u, Operand{bound, false}));
+      }
+    pick(cond, open[i]->r);
+  }
+  for (const Cand &c : cs)
+    if (c.end)
+      pick(icmp(ctx, CmpInst::ICMP_EQ, 64, u, Operand{c.end, false}), c.r);
   for (const Cand &c : cs) {
+    if (!c.end)
+      continue;
     Operand ge = icmp(ctx, CmpInst::ICMP_UGE, 64, u, Operand{c.base, false});
     Operand lt = icmp(ctx, CmpInst::ICMP_ULT, 64, u, Operand{c.end, false});
     pick(commutative(ctx, "and", 1, ge, lt), c.r);

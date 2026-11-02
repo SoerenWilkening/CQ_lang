@@ -1527,42 +1527,25 @@ void scalarLeafTypes(Type *t, SmallVectorImpl<Type *> &out) {
 // lowerMerge merges a scalar: a classical phi over the field's handles where every incoming edge is
 // chosen classically, else the rule 9 select chain of the field's distinct incoming values. A field
 // that is the same classical value on every arm stays classical. Binds the phi's fields (aggr).
-void lowerMergeFields(LoweringContext &ctx, PHINode &phi, bool rebind) {
+SmallVector<Operand, 4> mergeFieldsOf(LoweringContext &ctx, PHINode &phi, ArrayRef<RailType> rails,
+                                      ArrayRef<Type *> tys,
+                                      const std::function<SmallVector<Operand, 4>(const Value *)> &read) {
   const PathStorage &I = storage(ctx.preds());
   const BasicBlock *bb = phi.getParent();
   if (I.F != bb->getParent())
-    internalError("pred: lowerMergeFields before PathPredicates::compute of its function", &phi);
+    internalError("pred: mergeFieldsOf before PathPredicates::compute of its function", &phi);
   if (I.loopHeaders.count(bb))
-    internalError("pred: lowerMergeFields on a loop-header phi (a carried value: the loop modules)", &phi);
-  SmallVector<Type *, 8> tys;
-  scalarLeafTypes(phi.getType(), tys);
-  auto fieldsOf = [&](const Value *v) {
-    SmallVector<Operand, 4> f = aggr::flattenResult(ctx, v);
-    if (f.size() != tys.size())
-      unimplemented("pred: a merge of a composite with a packed integer leaf (cq-0umd: its field widths are not "
-                    "recorded)",
-                    &phi);
-    return f;
-  };
-  auto railOf = [&](Type *t) { return t->isPointerTy() ? RailType{Kind::Int, 64} : railTypeOf(t); };
+    internalError("pred: mergeFieldsOf on a loop-header phi (a carried value: the loop modules)", &phi);
+  if (rails.size() != tys.size())
+    internalError("pred: mergeFieldsOf with a rail type per field that does not match its types", &phi);
   SmallVector<Operand, 4> out;
-
-  std::shared_ptr<Oracle> CO = taintOracle(ctx.T, ctx.S);
-  bool classicalChoice = true;
-  for (unsigned i = 0; i < phi.getNumIncomingValues() && classicalChoice; ++i)
-    if (I.rpo.count(phi.getIncomingBlock(i)))
-      classicalChoice = isClassicalNode(nodeOf(ctx.preds().edge(phi.getIncomingBlock(i), bb)), *CO);
-  if (classicalChoice) {
+  if (classicalChoice(ctx, phi)) {
     CtxMergeSink sink(ctx);
     auto outOf = [&](const BasicBlock *u) -> BasicBlock * { return I.rpo.count(u) ? ctx.block(u) : nullptr; };
     for (unsigned k = 0; k < tys.size(); ++k)
-      out.push_back(classicalPhiOf(phi, ctx.B().GetInsertBlock(), ctx.B(), outOf, sink, railOf(tys[k]), tys[k],
-                                   [&](const Value *v) { return fieldsOf(v)[k]; }, /*seedClassical=*/false));
-    if (rebind)
-      ctx.rebind(&phi, out);
-    else
-      aggr::bindLeafFields(ctx, &phi, out, SmallVector<unsigned, 8>(tys.size(), 1));
-    return;
+      out.push_back(classicalPhiOf(phi, ctx.B().GetInsertBlock(), ctx.B(), outOf, sink, rails[k], tys[k],
+                                   [&](const Value *v) { return read(v)[k]; }, /*seedClassical=*/false));
+    return out;
   }
 
   struct Arm { const Value *v; unsigned node; unsigned order; };
@@ -1587,8 +1570,11 @@ void lowerMergeFields(LoweringContext &ctx, PHINode &phi, bool rebind) {
   }
   std::stable_sort(arms.begin(), arms.end(), [](const Arm &a, const Arm &b) { return a.order < b.order; });
   std::vector<SmallVector<Operand, 4>> armFields;
-  for (const Arm &a : arms)
-    armFields.push_back(fieldsOf(a.v));
+  for (const Arm &a : arms) {
+    armFields.push_back(read(a.v));
+    if (armFields.back().size() != tys.size())
+      internalError("pred: mergeFieldsOf read an incoming with another field count", &phi);
+  }
   for (unsigned k = 0; k < tys.size(); ++k) {
     bool same = all_of(armFields, [&](const SmallVector<Operand, 4> &f) { return f[k].v == armFields[0][k].v; });
     if (same) {
@@ -1602,8 +1588,37 @@ void lowerMergeFields(LoweringContext &ctx, PHINode &phi, bool rebind) {
     std::vector<std::pair<Pred, Operand>> chain;
     for (unsigned a = 0; a < arms.size(); ++a)
       chain.push_back({makePred(arms[a].node), armFields[a][k]});
-    out.push_back(Operand{selectChainAt(ctx, chain, railTypeOf(tys[k]), nodeOf(I.blocks.lookup(bb)), &phi), true});
+    out.push_back(Operand{selectChainAt(ctx, chain, rails[k], nodeOf(I.blocks.lookup(bb)), &phi), true});
   }
+  return out;
+}
+
+bool classicalChoice(LoweringContext &ctx, const PHINode &phi) {
+  const PathStorage &I = storage(ctx.preds());
+  const BasicBlock *bb = phi.getParent();
+  std::shared_ptr<Oracle> CO = taintOracle(ctx.T, ctx.S);
+  for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i)
+    if (I.rpo.count(phi.getIncomingBlock(i)) &&
+        !isClassicalNode(nodeOf(ctx.preds().edge(phi.getIncomingBlock(i), bb)), *CO))
+      return false;
+  return true;
+}
+
+void lowerMergeFields(LoweringContext &ctx, PHINode &phi, bool rebind) {
+  SmallVector<Type *, 8> tys;
+  scalarLeafTypes(phi.getType(), tys);
+  auto fieldsOf = [&](const Value *v) {
+    SmallVector<Operand, 4> f = aggr::flattenResult(ctx, v);
+    if (f.size() != tys.size())
+      unimplemented("pred: a merge of a composite with a packed integer leaf (cq-0umd: its field widths are not "
+                    "recorded)",
+                    &phi);
+    return f;
+  };
+  SmallVector<RailType, 8> rails;
+  for (Type *t : tys)
+    rails.push_back(t->isPointerTy() ? RailType{Kind::Int, 64} : railTypeOf(t));
+  SmallVector<Operand, 4> out = mergeFieldsOf(ctx, phi, rails, tys, fieldsOf);
   if (rebind)
     ctx.rebind(&phi, out);
   else

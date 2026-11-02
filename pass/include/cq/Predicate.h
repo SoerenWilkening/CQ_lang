@@ -2,6 +2,7 @@
 // Changes only under cq-arch's freeze rule.
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -67,6 +68,15 @@ llvm::Value *lowerMerge(LoweringContext &, llvm::PHINode &);
 // fields (aggr). The spine routes such phis here.
 // rebind (cq-pfpy): the phi is bound already (a trip of a cutoff loop rebinds it), its fields replace it.
 void lowerMergeFields(LoweringContext &, llvm::PHINode &, bool rebind = false);
+// cq-u9oy (rules 9, 21): a quantum phi's fields merged over its edge predicates, each field k of rail type
+// rails[k] and classical type tys[k]; read(v) gives an incoming value's fields at the builder (at the edge's
+// end when the choice is classical, at the merge otherwise). A field equal on every arm stays as it is; a
+// classical choice of classical fields is a classical phi. Binds nothing.
+llvm::SmallVector<Operand, 4> mergeFieldsOf(LoweringContext &, llvm::PHINode &, llvm::ArrayRef<RailType> rails,
+                                            llvm::ArrayRef<llvm::Type *> tys,
+                                            const std::function<llvm::SmallVector<Operand, 4>(const llvm::Value *)> &read);
+// Whether every reachable incoming edge of phi is chosen by a classical predicate (rule 9 at a58c3a4).
+bool classicalChoice(LoweringContext &, const llvm::PHINode &);
 llvm::Value *lowerSelect(LoweringContext &, llvm::SelectInst &);
 llvm::Value *selectChain(LoweringContext &, llvm::ArrayRef<std::pair<Pred, Operand>> arms, RailType);
 // cq-pfpy: the same select chain read only where `care` holds (the classical facts of the output edge it

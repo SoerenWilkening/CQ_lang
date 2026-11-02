@@ -26,6 +26,17 @@ target triple = "x86_64-apple-macosx16.0.0"
 @ITAB = local_unnamed_addr global [2 x ptr] zeroinitializer, align 16
 @QG1 = internal global [8 x i32] zeroinitializer, align 16
 @QG2 = internal global [8 x i32] zeroinitializer, align 16
+@PT1 = internal unnamed_addr constant [3 x double] [double 1.500000e+00, double 2.500000e+00, double 3.500000e+00], align 16
+@PT2 = internal unnamed_addr constant [3 x double] [double -1.000000e+00, double 2.500000e-01, double 8.000000e+00], align 16
+@PT3 = internal unnamed_addr constant [3 x double] [double 4.000000e+00, double 5.000000e+00, double 6.000000e+00], align 16
+@PT4 = internal unnamed_addr constant [3 x double] [double 7.000000e+00, double -7.000000e+00, double 5.000000e-01], align 16
+@PI1 = internal unnamed_addr constant [8 x i32] [i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7, i32 8], align 16
+@PI2 = internal unnamed_addr constant [8 x i32] [i32 10, i32 20, i32 30, i32 40, i32 50, i32 60, i32 70, i32 80], align 16
+@__const.f_triple_store.y = private unnamed_addr constant [2 x double] [double 5.000000e-01, double 1.500000e+00], align 16
+@__const.f_triple_store.w = private unnamed_addr constant [2 x double] [double 2.000000e+00, double -1.000000e+00], align 16
+@UG = local_unnamed_addr global [4 x i32] [i32 5, i32 6, i32 7, i32 8], align 16
+@UH = global [6 x i32] [i32 1, i32 2, i32 3, i32 4, i32 5, i32 6], align 16
+@UP = local_unnamed_addr global ptr @UH, align 8
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @f_ne_two(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
@@ -1059,6 +1070,188 @@ define i32 @f_qram_addr(i32 noundef %0, double noundef %1, i32 noundef %2) local
   ret i32 %27
 }
 
+; Function Attrs: nounwind ssp uwtable
+define double @f_phi_tables(i32 noundef %0, double noundef %1, double noundef %2) local_unnamed_addr #0 {
+  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #9
+  %5 = icmp ugt i32 %4, 200
+  br i1 %5, label %11, label %6
+
+6:                                                ; preds = %3
+  %7 = icmp ugt i32 %4, 100
+  br i1 %7, label %11, label %8
+
+8:                                                ; preds = %6
+  %9 = icmp ugt i32 %4, 50
+  %10 = select i1 %9, ptr @PT3, ptr @PT4
+  br label %11
+
+11:                                               ; preds = %6, %3, %8
+  %12 = phi ptr [ %10, %8 ], [ @PT1, %3 ], [ @PT2, %6 ]
+  %13 = load double, ptr %12, align 8, !tbaa !19
+  %14 = getelementptr inbounds i8, ptr %12, i64 8
+  %15 = load double, ptr %14, align 8, !tbaa !19
+  %16 = getelementptr inbounds i8, ptr %12, i64 16
+  %17 = load double, ptr %16, align 8, !tbaa !19
+  %18 = tail call double @llvm.fmuladd.f64(double %2, double %17, double %15)
+  %19 = tail call double @llvm.fmuladd.f64(double %2, double %18, double %13)
+  %20 = tail call double @cq_measure_f64(double noundef %19) #10
+  ret double %20
+}
+
+declare double @cq_measure_f64(double noundef) local_unnamed_addr #2
+
+; Function Attrs: mustprogress nocallback nofree nosync nounwind speculatable willreturn memory(none)
+declare double @llvm.fmuladd.f64(double, double, double) #5
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @f_phi_idx(i32 noundef %0, double noundef %1, i32 noundef %2) local_unnamed_addr #0 {
+  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #9
+  %5 = icmp ugt i32 %2, 7
+  %6 = select i1 %5, i32 0, i32 %2
+  %7 = and i32 %4, 1
+  %8 = icmp eq i32 %7, 0
+  br i1 %8, label %14, label %9
+
+9:                                                ; preds = %3
+  %10 = lshr i32 %4, 1
+  %11 = and i32 %10, 7
+  %12 = zext nneg i32 %11 to i64
+  %13 = getelementptr inbounds i32, ptr @PI1, i64 %12
+  br label %20
+
+14:                                               ; preds = %3
+  %15 = and i32 %4, 2
+  %16 = icmp eq i32 %15, 0
+  br i1 %16, label %20, label %17
+
+17:                                               ; preds = %14
+  %18 = zext nneg i32 %6 to i64
+  %19 = getelementptr inbounds i32, ptr @PI2, i64 %18
+  br label %20
+
+20:                                               ; preds = %14, %17, %9
+  %21 = phi ptr [ %13, %9 ], [ %19, %17 ], [ @PI2, %14 ]
+  %22 = load i32, ptr %21, align 4, !tbaa !6
+  %23 = tail call i32 @cq_measure_si32(i32 noundef %22) #10
+  ret i32 %23
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i64 @f_slot_base(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
+  %3 = alloca [4 x i32], align 16
+  %4 = alloca [4 x i32], align 16
+  %5 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #9
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %3) #10
+  store i32 %5, ptr %3, align 16, !tbaa !6
+  %6 = getelementptr inbounds i8, ptr %3, i64 4
+  %7 = add i32 %5, 1
+  store i32 %7, ptr %6, align 4, !tbaa !6
+  %8 = getelementptr inbounds i8, ptr %3, i64 8
+  %9 = add i32 %5, 2
+  store i32 %9, ptr %8, align 8, !tbaa !6
+  %10 = getelementptr inbounds i8, ptr %3, i64 12
+  %11 = add i32 %5, 3
+  store i32 %11, ptr %10, align 4, !tbaa !6
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %4) #10
+  store i32 0, ptr %4, align 16, !tbaa !6
+  %12 = getelementptr inbounds i8, ptr %4, i64 4
+  store i32 %5, ptr %12, align 4, !tbaa !6
+  %13 = getelementptr inbounds i8, ptr %4, i64 8
+  store i32 0, ptr %13, align 8, !tbaa !6
+  %14 = getelementptr inbounds i8, ptr %4, i64 12
+  store i32 %5, ptr %14, align 4, !tbaa !6
+  %15 = and i32 %5, 1
+  %16 = icmp eq i32 %15, 0
+  %17 = select i1 %16, ptr %14, ptr %6
+  %18 = and i32 %5, 2
+  %19 = icmp eq i32 %18, 0
+  %20 = select i1 %19, ptr %4, ptr %8
+  %21 = icmp ult ptr %17, %20
+  %22 = select i1 %21, i64 4, i64 0
+  %23 = call i64 @cq_measure_sl(i64 noundef %22) #10
+  %24 = and i32 %0, 1
+  %25 = zext nneg i32 %24 to i64
+  %26 = getelementptr inbounds [4 x i32], ptr %3, i64 0, i64 %25
+  %27 = load i32, ptr %26, align 4, !tbaa !6
+  %28 = load i32, ptr %12, align 4, !tbaa !6
+  %29 = add i32 %28, %27
+  %30 = call i32 @cq_measure_ui32(i32 noundef %29) #10
+  %31 = zext i32 %30 to i64
+  %32 = add nsw i64 %23, %31
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #10
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %3) #10
+  ret i64 %32
+}
+
+declare i64 @cq_measure_sl(i64 noundef) local_unnamed_addr #2
+
+declare i32 @cq_measure_ui32(i32 noundef) local_unnamed_addr #2
+
+; Function Attrs: nounwind ssp uwtable
+define double @f_triple_store(double noundef %0, double noundef %1, i32 noundef %2) local_unnamed_addr #0 {
+  %4 = alloca [2 x double], align 16
+  %5 = alloca [2 x double], align 16
+  %6 = tail call double @cq_theta_f64(double noundef %0, double noundef %1) #9
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %4) #10
+  call void @llvm.memcpy.p0.p0.i64(ptr noundef nonnull align 16 dereferenceable(16) %4, ptr noundef nonnull align 16 dereferenceable(16) @__const.f_triple_store.y, i64 16, i1 false)
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %5) #10
+  call void @llvm.memcpy.p0.p0.i64(ptr noundef nonnull align 16 dereferenceable(16) %5, ptr noundef nonnull align 16 dereferenceable(16) @__const.f_triple_store.w, i64 16, i1 false)
+  %7 = and i32 %2, 1
+  %8 = icmp eq i32 %7, 0
+  br i1 %8, label %14, label %9
+
+9:                                                ; preds = %3
+  call fastcc void @tc_upd(double noundef %6, ptr noundef nonnull %4)
+  %10 = load double, ptr %4, align 16, !tbaa !19
+  %11 = getelementptr inbounds i8, ptr %4, i64 8
+  %12 = load double, ptr %11, align 8, !tbaa !19
+  %13 = fsub double %10, %12
+  br label %18
+
+14:                                               ; preds = %3
+  %15 = fmul double %6, 3.000000e+00
+  call fastcc void @tc_upd(double noundef %15, ptr noundef nonnull %5)
+  %16 = getelementptr inbounds i8, ptr %5, i64 8
+  %17 = load double, ptr %16, align 8, !tbaa !19
+  br label %18
+
+18:                                               ; preds = %14, %9
+  %19 = phi double [ %17, %14 ], [ %13, %9 ]
+  %20 = tail call double @cq_measure_f64(double noundef %19) #10
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %5) #10
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #10
+  ret double %20
+}
+
+declare double @cq_theta_f64(double noundef, double noundef) local_unnamed_addr #2
+
+; Function Attrs: mustprogress nofree noinline norecurse nosync nounwind ssp willreturn memory(argmem: readwrite) uwtable
+define internal fastcc void @tc_upd(double noundef %0, ptr nocapture noundef %1) unnamed_addr #7 {
+  %3 = getelementptr inbounds i8, ptr %1, i64 8
+  %4 = load double, ptr %3, align 8, !tbaa !19
+  %5 = fadd double %4, %0
+  store double %5, ptr %1, align 8, !tbaa !19
+  %6 = fmul double %4, %5
+  store double %6, ptr %3, align 8, !tbaa !19
+  ret void
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @f_unknown_extent(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
+  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #9
+  %4 = and i32 %3, 1
+  %5 = icmp eq i32 %4, 0
+  %6 = load ptr, ptr @UP, align 8
+  %7 = select i1 %5, ptr @UG, ptr %6
+  %8 = getelementptr inbounds i8, ptr %7, i64 8
+  %9 = load i32, ptr %8, align 4, !tbaa !6
+  %10 = getelementptr inbounds i8, ptr %7, i64 4
+  %11 = load i32, ptr %10, align 4, !tbaa !6
+  %12 = add nsw i32 %11, %9
+  %13 = tail call i32 @cq_measure_si32(i32 noundef %12) #10
+  ret i32 %13
+}
+
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #1 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
 attributes #2 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
@@ -1093,3 +1286,5 @@ attributes #10 = { nounwind }
 !16 = !{}
 !17 = !{!18, !18, i64 0}
 !18 = !{!"any pointer", !8, i64 0}
+!19 = !{!20, !20, i64 0}
+!20 = !{!"double", !8, i64 0}

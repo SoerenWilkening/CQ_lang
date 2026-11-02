@@ -321,3 +321,57 @@ int f_qram_addr(unsigned x0, double th, int v) {
   int *q = ((x & 16) ? QG1 : QG2) + ((x >> 5) & 7);
   return cq_measure(p == q) + 2 * cq_measure(QG1[3] + QG2[5]);
 }
+/* cq-u9oy (rule 21, merge over edge predicates): a quantum pointer phi over constant tables chosen by a quantum
+ * if-chain (musl's j0 pzero/qzero), read at constant cells */
+static const double PT1[3] = {1.5, 2.5, 3.5}, PT2[3] = {-1.0, 0.25, 8.0}, PT3[3] = {4.0, 5.0, 6.0},
+                    PT4[3] = {7.0, -7.0, 0.5};
+double f_phi_tables(unsigned x0, double th, double z) {
+  unsigned x = x0; cq_theta(&x, th);
+  const double *p;
+  if (x > 200) p = PT1;
+  else if (x > 100) p = PT2;
+  else p = (x > 50) ? PT3 : PT4;
+  return cq_measure(p[0] + z * (p[1] + z * p[2]));
+}
+/* a pointer phi whose arms carry a quantum cell index on one edge and a classical one on another */
+static const int PI1[8] = {1, 2, 3, 4, 5, 6, 7, 8}, PI2[8] = {10, 20, 30, 40, 50, 60, 70, 80};
+int f_phi_idx(unsigned x0, double th, int k) {
+  unsigned x = x0; cq_theta(&x, th);
+  if (k < 0 || k > 7) k = 0;
+  const int *p;
+  if (x & 1) p = PI1 + ((x >> 1) & 7);
+  else if (x & 2) p = PI2 + k;
+  else p = PI2;
+  return cq_measure(*p);
+}
+/* cq-u9oy (rule 21, f684858): a slot object's base is its lowered alloca, its size the C element size: the
+ * difference of two pointers into a slot object (its cells hold handles) agrees with C */
+long f_slot_base(unsigned x0, double th) {
+  unsigned x = x0; cq_theta(&x, th);
+  unsigned a[4] = {x, x + 1, x + 2, x + 3}, b[4] = {0, x, 0, x};
+  unsigned *p = (x & 1) ? &a[1] : &b[3];
+  unsigned *q = (x & 2) ? &a[2] : &b[0];
+  return cq_measure((long)(p == q) + 4 * (long)(p < q)) + (long)cq_measure(a[(x0 & 1)] + b[1]);
+}
+/* cq-u9oy (rules 18, 20, 21): a clone writing through a slot triple formal it also loads through (TripleCount),
+ * handed two callers' slot objects */
+static __attribute__((noinline)) void tc_upd(double v, double *y) {
+  y[0] = v + y[1];
+  y[1] = y[0] * y[1];
+}
+double f_triple_store(double v0, double th, int c) {
+  double v = v0; cq_theta(&v, th);
+  double y[2] = {0.5, 1.5}, w[2] = {2.0, -1.0};
+  if (c & 1) { tc_upd(v, y); return cq_measure(y[0] - y[1]); }
+  tc_upd(v * 3.0, w);
+  return cq_measure(w[1]);
+}
+/* cq-u9oy (rule 20, n = 0): a fat pointer over a loaded pointer (no extent in the module) and a global, read
+ * unguarded at classical cells: the loaded pointer's extent is the indices that reach it, no check */
+int UG[4] = {5, 6, 7, 8}, UH[6] = {1, 2, 3, 4, 5, 6};
+int *UP = UH;
+int f_unknown_extent(unsigned x0, double th) {
+  unsigned x = x0; cq_theta(&x, th);
+  const int *q = (x & 1) ? UP : UG;
+  return cq_measure(q[2] + q[1]);
+}
