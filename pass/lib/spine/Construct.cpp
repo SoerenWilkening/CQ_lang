@@ -45,6 +45,7 @@
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/Transforms/Utils/SSAUpdater.h"
 #include "llvm/TargetParser/Triple.h"
 
 #include <deque>
@@ -129,6 +130,41 @@ void dropDeadSurface(Module &M) {
   }
   for (Function *F : dead)
     F->eraseFromParent();
+}
+
+// cq-pfpy (rule 9: arm code is computed unguarded, its value reaches every reader). The walk runs a block
+// on every output path whose classical facts its predicate meets (Walker::next), so a value minted in a
+// classical arm is computed on every path that reaches a reader of it; the output CFG may still route a
+// path the classical facts exclude (an edge into a join whose branch condition a later classical branch
+// repeats) around its definition. Each such use reads the value through phis at the joins above it,
+// the never-taken path's incoming poison (SSAUpdater): the value where the path is feasible.
+void reachDefs(Function &OF) {
+  DominatorTree DT(OF);
+  std::vector<std::pair<Instruction *, SmallVector<Use *, 4>>> bad;
+  for (BasicBlock &BB : OF)
+    for (Instruction &I : BB) {
+      if (I.getType()->isVoidTy() || !DT.isReachableFromEntry(&BB))
+        continue;
+      SmallVector<Use *, 4> us;
+      for (Use &U : I.uses()) {
+        auto *UI = dyn_cast<Instruction>(U.getUser());
+        if (!UI || !DT.isReachableFromEntry(UI->getParent()))
+          continue;
+        if (UI->getParent() == &BB && !isa<PHINode>(UI))
+          continue;   // an order within one block is no reach of the walk's
+        if (!DT.dominates(&I, U))
+          us.push_back(&U);
+      }
+      if (!us.empty())
+        bad.push_back({&I, us});
+    }
+  for (auto &[I, us] : bad) {
+    SSAUpdater up;
+    up.Initialize(I->getType(), I->getName());
+    up.AddAvailableValue(I->getParent(), I);
+    for (Use *U : us)
+      up.RewriteUse(*U);
+  }
 }
 
 bool isQuantumTerm(LoweringContext &ctx, const Instruction *t) {
@@ -2198,6 +2234,7 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
     Walker(ctx, F, DT, LI).run();
   llvm::erase_if(sh.ruleSixPending, [&](const spine::Shared::PendingSix &p) { return p.ctx == &ctx; });
   mem::finishSlots(ctx);   // M8: register arrays' readers against their rule-6 clean-ups (114)
+  reachDefs(*sh.out);   // cq-pfpy: rule 9's hoisted arm values reach every point that reads them
 
   if (last) {
     buildKept();
