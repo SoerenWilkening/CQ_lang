@@ -195,6 +195,7 @@ struct SpecState {
 
   // Post-fixpoint.
   bool reachable = false;
+  bool isRoot = false;    // a root of the analysis (an externally reachable in-place spec, a -cq-roots clone)
   bool needsTwin = false;
   bool effectful = false; // transitively: phase, tape, abort (what a twin must not replay)
   bool nonPure = false;   // transitively: rotation, phase, outer store, tape (rule 19 _ctl test)
@@ -221,7 +222,11 @@ struct ImplState {
   // in-place specialization runs: the classical activation of the function (an entry, or a callee
   // reached with no quantum argument) is a different frame from every clone's, so what a clone stores
   // into its alloca says nothing about the in-place activation's (sin's y[2] for __rem_pio2).
-  llvm::DenseMap<const llvm::Value *, unsigned> siteOfInPlace;
+  // cq-1c5j (CR rules 18, 20): every clone is a function of its own, so each specialization's activation is a
+  // frame of its own, not only the in-place one: a clone that stores handles into its alloca says nothing about
+  // another clone's frame of the same function (cos's y[2] in its flags-only clone, handed classically to the
+  // in-place __rem_pio2, and in its quantum clone, written by __rem_pio2's clone).
+  std::map<const SpecState *, llvm::DenseMap<const llvm::Value *, unsigned>> siteOfFrame;
   std::vector<Object> objects;
 
   std::vector<std::unique_ptr<SpecState>> specs;

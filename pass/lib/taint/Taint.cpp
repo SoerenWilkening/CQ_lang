@@ -332,6 +332,16 @@ private:
   // cq-s2zz (CR rule 19): a call through a quantum function pointer (a QROM of callee tags): every candidate
   // runs under its quantum predicate tag == k, so a candidate with a non-pure gate is its _ctl clone.
   bool candidateUnderQ = false;
+  // cq-1c5j (CR rules 18, 20): a call's callee key rises with its actuals' lanes during the fixed point, and a
+  // specialization reached on the way (or a non-ctl probe) keeps contributing facts (stores into the caller's
+  // objects, its own formals' provenance) although no final call reaches it. The analysis therefore runs a
+  // second time from nothing, each call taking at once the key the first run ended with (CalleeMemo): only
+  // the specializations the program reaches contribute.
+  struct CalleeMemo { std::vector<Lanes> formal; std::vector<std::string> cells; bool ctl; std::vector<uint64_t> bounds; };
+  std::map<std::tuple<std::string, const CallBase *, const Function *>, CalleeMemo> calleeMemo;
+  void solve();
+  void computeReachable();
+  void resetAnalysis();
   void recordCallee(CallBase &CB, SpecState *C) {
     if (collect) {
       if (!llvm::is_contained(*collect, C))
@@ -547,10 +557,10 @@ unsigned Analyzer::laneOffset(Type *Agg, ArrayRef<unsigned> idx) {
 // Sites and objects.
 
 unsigned Analyzer::siteFor(const Value *V, SiteKind k, const Function *owner) {
-  // cq-i9wk: a site of the running function's own activation is per context (ImplState::siteOfInPlace).
-  bool inPlaceCtx = owner && cur && cur->F == owner && cur->inPlace && k != SiteKind::Function &&
-                    k != SiteKind::Global;
-  auto &map = inPlaceCtx ? st.siteOfInPlace : st.siteOf;
+  // cq-i9wk, cq-1c5j: a site of the running function's own activation is per specialization
+  // (ImplState::siteOfFrame).
+  bool frameCtx = owner && cur && cur->F == owner && k != SiteKind::Function && k != SiteKind::Global;
+  auto &map = frameCtx ? st.siteOfFrame[cur] : st.siteOf;
   auto it = map.find(V);
   if (it != map.end())
     return it->second;
@@ -2496,6 +2506,67 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
       return;
     }
   }
+  // cq-1c5j: the second run takes the first run's final key of this call at once, when it covers what the
+  // actuals give now (lanes and cell digits only rise during the fixed point).
+  const CalleeMemo *memo = nullptr;
+  if (!calleeMemo.empty() && !collect) {
+    auto it = calleeMemo.find({cur->key, &CB, G});
+    if (it != calleeMemo.end() && it->second.formal.size() == formal.size() && it->second.cells.size() >= cells.size()) {
+      const CalleeMemo &m = it->second;
+      bool covers = true;
+      for (unsigned i = 0; i < formal.size() && covers; ++i) {
+        covers = m.formal[i].size() == formal[i].size() && !formal[i].test(m.formal[i]);
+        const std::string &a = cells[i], &b = m.cells[i];
+        if (covers && !a.empty() && !b.empty()) {
+          covers = a.size() == b.size();
+          for (size_t k = 0; covers && k < a.size(); ++k)
+            covers = a[k] == b[k] || (a[k] == '0' && b[k] == '1');
+        } else if (covers) {
+          covers = a.empty() == b.empty() || b.find('1') == std::string::npos;
+        }
+      }
+      if (covers)
+        memo = &m;
+    }
+  }
+  if (memo) {
+    formal = memo->formal;
+    for (unsigned i = 0; i < cells.size(); ++i)
+      if (!memo->cells[i].empty() || !cells[i].empty())
+        cells[i] = memo->cells[i];
+    bool inPlace = !memo->ctl && !adj && depth == 0 && memo->bounds.empty() &&
+                   llvm::none_of(formal, [](const Lanes &l) { return l.any(); }) &&
+                   llvm::none_of(cells, [](const std::string &c) { return c.find('1') != std::string::npos; });
+    if (!inPlace) {
+      SpecState *C = getSpec(G, formal, tys, cells, memo->ctl, false, adj, depth, memo->bounds);
+      if (depth > 0) {
+        unsigned want = cur->depthCut ? cur->depthCut : resolveK(*G);
+        if (C->depthCut == 0 || want < C->depthCut) {
+          C->depthCut = want;
+          st.changed = true;
+        }
+      }
+      if (depth == 0 && !G->isDeclaration() && callsReach(G, G) && C->depthCut == 0) {
+        memo = nullptr;   // the depth cutoff below derives from the actuals: take the ordinary path
+      } else {
+        recordCallee(CB, C);
+        for (unsigned i = 0; i < actuals.size(); ++i)
+          if (actuals[i]->getType()->isPointerTy() && i < C->formalPtr.size())
+            if (C->formalPtr[i].join(P(actuals[i])))
+              st.changed = true;
+        if (!CB.getType()->isVoidTy()) {
+          Lanes r = C->ret;
+          if (C->declared)
+            r = allLanes(lanesOf(CB.getType()));
+          setL(&CB, r);
+          if (CB.getType()->isPointerTy())
+            setP(&CB, C->retPtr);
+        }
+        cur->anyQuantum = true;
+        return;
+      }
+    }
+  }
   if (!anyQ && !underQ && !adj && depth == 0) {
     // Classical call: the in-place specialization of the callee.
     std::vector<Lanes> z;
@@ -3387,6 +3458,66 @@ void Analyzer::run() {
   st.DL = &M.getDataLayout();
   st.TLII = std::make_unique<TargetLibraryInfoImpl>(Triple(M.getTargetTriple()));
   st.TLI = std::make_unique<TargetLibraryInfo>(*st.TLII);
+  solve();
+  computeReachable();
+  bool stale = false;
+  for (auto &S : st.specs)
+    stale = stale || !S->reachable;
+  if (stale) {
+    // cq-1c5j: the second run (CalleeMemo). Each reachable specialization's final direct callees.
+    for (auto &S : st.specs) {
+      if (!S->reachable)
+        continue;
+      for (auto &[CB, v] : S->callees)
+        for (SpecState *C : v)
+          calleeMemo[{S->key, CB, C->F}] = CalleeMemo{C->formal, C->cells, C->ctl, C->bounds};
+    }
+    resetAnalysis();
+    solve();
+  }
+  finish();
+}
+
+void Analyzer::resetAnalysis() {
+  st.sites.clear();
+  st.siteOf.clear();
+  st.siteOfFrame.clear();
+  st.objects.clear();
+  st.specs.clear();
+  st.byKey.clear();
+  st.changed = false;
+  st.longjmpUnderQuantum = false;
+  st.fenvSaved.clear();
+  st.escaped = PtrInfo();
+  cur = nullptr;
+  localChanged = false;
+  fenvCur = 0;
+  collect = nullptr;
+  candidateUnderQ = false;
+}
+
+void Analyzer::computeReachable() {
+  SmallVector<SpecState *, 32> work;
+  for (auto &S : st.specs) {
+    S->reachable = false;
+    if (S->inPlace && (!S->F->hasLocalLinkage() || S->F->hasAddressTaken()))
+      work.push_back(S.get());
+    else if (S->isRoot)
+      work.push_back(S.get());
+  }
+  while (!work.empty()) {
+    SpecState *S = work.pop_back_val();
+    if (S->reachable)
+      continue;
+    S->reachable = true;
+    for (auto &[CB, v] : S->callees)
+      for (SpecState *C : v)
+        work.push_back(C);
+  }
+}
+
+void Analyzer::solve() {
+  Module &M = *st.M;
 
   // The module's signal table (rule 16): signal/bsd_signal/sigset(sig, h) with h a defined function, keyed by
   // the constant sig (kAnySignal for a run-time one); a module that calls sigaction may install any defined
@@ -3453,7 +3584,8 @@ void Analyzer::run() {
         z.push_back(Lanes(lanesOf(A.getType())));
         tys.push_back(A.getType());
       }
-      getSpec(&F, z, tys, {}, false, false, false, 0, {})->reachable = true;
+      SpecState *R = getSpec(&F, z, tys, {}, false, false, false, 0, {});
+      R->reachable = R->isRoot = true;
     }
   }
   for (const abi::CloneSpec &R : st.opts.roots) {
@@ -3473,7 +3605,8 @@ void Analyzer::run() {
       z.push_back(l);
       tys.push_back(A.getType());
     }
-    getSpec(F, z, tys, {}, R.ctl, R.pure, R.adj, R.depth, R.bounds)->reachable = true;
+    SpecState *RS = getSpec(F, z, tys, {}, R.ctl, R.pure, R.adj, R.depth, R.bounds);
+    RS->reachable = RS->isRoot = true;
   }
 
   unsigned iter = 0;
@@ -3505,7 +3638,6 @@ void Analyzer::run() {
     if (++iter > 200)
       internalError("taint: module fixed point does not converge");
   } while (st.changed);
-  finish();
 }
 
 // T4: some load or store through formal argNo (or a pointer derived from it) lies in a loop of S whose
@@ -4195,26 +4327,29 @@ ObjectId soleObjectOfSite(const ImplState &I, unsigned id, const llvm::Value *si
 ObjectId TaintInfo::objectOf(const llvm::Value *site) const {
   const ImplState &I = needImpl(impl);
   site = objectSiteValue(site);
-  auto it = I.siteOf.find(site);
-  auto ip = I.siteOfInPlace.find(site);
-  if (it != I.siteOf.end() && ip != I.siteOfInPlace.end())
-    internalError("taint: a site of both the in-place and a clone activation; use objectOf(site, S)", site);
-  if (it != I.siteOf.end())
-    return soleObjectOfSite(I, it->second, site);
-  if (ip != I.siteOfInPlace.end())
-    return soleObjectOfSite(I, ip->second, site);
-  internalError("taint: not a memory site of this module", site);
+  std::optional<unsigned> found;
+  auto note = [&](unsigned id) {
+    if (found && *found != id)
+      internalError("taint: a site of several activations (clones of its function); use objectOf(site, S)", site);
+    found = id;
+  };
+  if (auto it = I.siteOf.find(site); it != I.siteOf.end())
+    note(it->second);
+  for (const auto &[SS, m] : I.siteOfFrame)
+    if (auto it = m.find(site); it != m.end())
+      note(it->second);
+  if (!found)
+    internalError("taint: not a memory site of this module", site);
+  return soleObjectOfSite(I, *found, site);
 }
 
 ObjectId TaintInfo::objectOf(const llvm::Value *site, const Specialization &S) const {
   const ImplState &I = needImpl(impl);
   site = objectSiteValue(site);
-  // cq-i9wk: a site of S's own activation is the in-place one when S is in place.
-  if (stateOf(I, S)->inPlace) {
-    auto ip = I.siteOfInPlace.find(site);
-    if (ip != I.siteOfInPlace.end())
+  // cq-i9wk, cq-1c5j: a site of S's own activation is S's frame.
+  if (auto fr = I.siteOfFrame.find(stateOf(I, S)); fr != I.siteOfFrame.end())
+    if (auto ip = fr->second.find(site); ip != fr->second.end())
       return soleObjectOfSite(I, ip->second, site);
-  }
   auto it = I.siteOf.find(site);
   if (it == I.siteOf.end())
     internalError("taint: not a memory site of this module", site);
