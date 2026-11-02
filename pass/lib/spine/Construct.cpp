@@ -28,6 +28,7 @@
 #include "../loops/cutoff/Exits.h"
 #include "../taint/DeadEnd.h"
 #include "../fatptr/FatPtrInternal.h"
+#include "../eff/invert/Split.h"
 
 #include "cq/Aggregates.h"
 #include "cq/Effects.h"
@@ -386,23 +387,33 @@ BasicBlock *Walker::next(const BasicBlock *x, const BasicBlock *s) {
 
 void Walker::plan() {
   // Reverse post-order with successors visited last to first, so a branch's first successor (the
-  // then arm) comes first in L and its arm is linearized before the else arm (cq-746v).
+  // then arm) comes first in L and its arm is linearized before the else arm (cq-746v). Rule 17
+  // (2026-11-02, cq-asfn): of a quantum terminator's successors, those from which no __cq_invert_end is
+  // reachable come first, so the other arm's gates run inside the region an end in one arm closes
+  // (eff-invert's splitMarkerPaths has split the tail per region depth).
   {
+    SmallPtrSet<const BasicBlock *, 16> toEnd = invert::blocksReachingInvertEnd(F);
+    auto order = [&](BasicBlock *b) {
+      SmallVector<BasicBlock *, 4> o(successors(b));
+      if (!toEnd.empty() && o.size() > 1 && isQuantumTerm(ctx, b->getTerminator()))
+        std::stable_partition(o.begin(), o.end(), [&](BasicBlock *x) { return !toEnd.count(x); });
+      return o;
+    };
     std::vector<BasicBlock *> post;
     DenseSet<BasicBlock *> seen;
-    std::vector<std::pair<BasicBlock *, unsigned>> stack;   // block, successors still to visit
+    std::vector<std::pair<BasicBlock *, SmallVector<BasicBlock *, 4>>> stack;   // block, successors still to visit
     seen.insert(&F.getEntryBlock());
-    stack.push_back({&F.getEntryBlock(), F.getEntryBlock().getTerminator()->getNumSuccessors()});
+    stack.push_back({&F.getEntryBlock(), order(&F.getEntryBlock())});
     while (!stack.empty()) {
       auto &[b, k] = stack.back();
-      if (k == 0) {
+      if (k.empty()) {
         post.push_back(b);
         stack.pop_back();
         continue;
       }
-      BasicBlock *s = b->getTerminator()->getSuccessor(--k);
+      BasicBlock *s = k.pop_back_val();
       if (seen.insert(s).second)
-        stack.push_back({s, s->getTerminator()->getNumSuccessors()});
+        stack.push_back({s, order(s)});
     }
     for (auto it = post.rbegin(); it != post.rend(); ++it) {
       idx[*it] = L.size();

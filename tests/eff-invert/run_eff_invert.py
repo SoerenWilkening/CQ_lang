@@ -17,8 +17,11 @@ reads: clone_rot), seeds a region prepares,
 a quantum arm under a classical guard (guard), clone calls and region code sharing memory (mem_clone_*),
 and a region whose value is read after it (region_output: the rail outlives the region, rule 17), and a
 measurement inside a region (invert_measure: the backend flushes the gates before it forward).
-probes/*_error.O1.ll must make cq-lower exit non-zero with the message given: markers -O1 duplicated into
-the arms of a quantum branch (dup_begin, dup_end; cq-asfn) await an owner ruling.
+Markers in quantum arms (CR rule 17, 2026-11-02, cq-asfn; CQ.h makes them noduplicate): dup_begin and dup_end
+(the shapes -O1 made by duplicating a marker before the attribute, now one marker in the join), invert_arm (a
+pair in one arm; a begin in an arm with its end after the join; an end in an arm with its begin before the
+branch; a begin in a nested arm). probes/*_error.O1.ll must make cq-lower exit non-zero with the message given:
+an end in each arm of a quantum branch closing one region (excl_ends_error: a proposed SPEC_ISSUES entry).
 The examples' acceptance is `python3 -m cqcheck run 44 61 126 --oracle both` (cq-4593).
 Outputs go to build/tests/eff-invert/out/.
 """
@@ -45,12 +48,14 @@ CHECKED = {"invert.O1.ll": ["p_flat", "p_arms", "p_nest", "p_around", "p_two"],
            "mem_clone_global.O1.ll": ["i12"],
            "mem_clone_pair.O1.ll": ["i11"],
            "mem_clone_qrom.O1.ll": ["i10"],
-           "region_output.O1.ll": ["p_out"]}
+           "region_output.O1.ll": ["p_out"],
+           "dup_begin.O1.ll": ["p_dup"],
+           "dup_end.O1.ll": ["p_dupend"],
+           "invert_arm.O1.ll": ["p_armpair", "p_armbegin", "p_armend", "p_armnest"]}
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(|call void asm")
-# A marker -O1 duplicated into the arms of a quantum branch runs there under a quantum predicate: rule 17's
-# markers are host events and CR does not say where such a region begins or ends (SPEC_ISSUES, cq-asfn).
-QMARK = ('eff-invert: awaiting owner ruling: SPEC_ISSUES "A cq_invert marker under a quantum predicate"')
-ERRORS = {"dup_begin_error.O1.ll": QMARK, "dup_end_error.O1.ll": QMARK}
+# Two markers of one kind in exclusive quantum arms, neither paired in its arm: rule 17 does not say how they merge.
+EXCL = "SPEC_ISSUES: two cq_invert end markers in arms of a quantum branch that exclude each other"
+ERRORS = {"excl_ends_error.O1.ll": EXCL}
 MARKER = re.compile(r"call void @(?:__cq|cqrt)_invert_(begin|end)\(")
 
 

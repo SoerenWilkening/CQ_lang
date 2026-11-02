@@ -1,0 +1,13 @@
+/* clang -O1 threaded the region's condition into the branch after it and duplicated __cq_invert_end into
+ * both arms (the CQ.h before CQ_spec b137e75). Since b137e75
+ * __cq_invert_begin/end are noduplicate (CR rule 17, cq-asfn): the marker stays one call in the block every
+ * path reaches, and the region is lowered in place. */
+#include "CQ.h"
+int p_dupend(int x0, double th, int k, double a, double b) {
+  int x = x0; cq_theta(&x, th);
+  cq_invert_begin();
+  if (x == k) cq_phi(b);
+  cq_invert_end();
+  if (x == k) cq_phi(a);
+  return cq_measure(x);
+}

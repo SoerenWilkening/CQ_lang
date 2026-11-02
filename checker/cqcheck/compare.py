@@ -70,11 +70,12 @@ What is compared (CR §6, CLAUDE.md "The §6 checker"):
   17: its sites are taken in reverse order with their angles negated (a region inside a region is so
   inverted twice), both for matching and for the per-sample order; a C measurement while a region is
   open emits the sites reached so far forward first (BACKEND_ABI 1.13 flush, region_emission). A marker without its partner in
-  a sample is a difference, never skipped, except an invert_begin still open where an open-ended
-  sample stops (it ended in noreturn/raise, or its cut lies inside the region; bead cq-088c): rule
-  17 emits the whole region reversed, so the sites the sample reached in it are the region's last
-  gates, reversed and negated, and the gates of the sites it did not reach come before them, unknown
-  as past the end. Each open region is closed where the sample stops, innermost first.
+  a sample is read by CR rule 17 (2026-11-02, cq-asfn: a marker inside a quantum arm whose match is outside
+  the arm): an invert_end with no open region closes nothing, and an invert_begin still open where the
+  sample stops (its end in the other arm; or the sample ended in noreturn/raise, or its cut lies inside the
+  region, bead cq-088c) holds the rest of the sample: rule 17 emits the whole region reversed, so the sites
+  the sample reached in it are the region's last gates, reversed and negated. Each open region is closed
+  where the sample stops, innermost first.
 
 Groups. The samples are partitioned by `classical_key(sample)` (the classical arguments; see
 `classical_key_from_driver`; without it, by the sample's call). Each group is further split by the
@@ -907,15 +908,13 @@ def _c_order(rr: RunResult, s: int, open_end: bool = False
     for rec in recs:
         if rec.get("ev") != "site" or rec.get("kind") not in ("theta", "phi") + _MARKERS:
             raise CompareError(f"cq: unimplemented: chk-compare: C-oracle rotation {rec!r}")
-    order, unmatched, left = region_emission([(r["kind"], _int(r.get("nmeas")) or 0) for r in recs],
-                                             len(rr.measured or []), open_end)
-    for i in unmatched:
-        rec = recs[i]
-        reasons.append(f"sample {s}: C invert_end {rec.get('fn')}:{rec.get('site')} has no matching "
-                       f"invert_begin")
-    if left and not open_end:
-        reasons.append(f"sample {s}: {left} C invert_begin(s) without a matching invert_end")
-        return [], reasons
+    # CR rule 17 (2026-11-02, cq-asfn): a marker inside a quantum arm whose match is outside it. On a path
+    # that reaches an end with no open region (a begin in the other arm, its end after the join) that end
+    # closes nothing: the tail on this path lies outside the bracket. On a path that leaves a region open
+    # (an end in the other arm, its begin before the branch) the region holds everything after its begin on
+    # this path: it is closed where the sample stops.
+    order, _unmatched, _left = region_emission([(r["kind"], _int(r.get("nmeas")) or 0) for r in recs],
+                                               len(rr.measured or []), True)
     return [(i, recs[i], neg) for i, neg in order], reasons
 
 

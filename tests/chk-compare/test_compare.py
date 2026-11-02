@@ -912,13 +912,18 @@ class COracleT1(unittest.TestCase):
         self.check(self.lowered(lambda a, b: [ry(1, 1.0), ry(1, -1.0)]), c, True)
         self.check(self.lowered(lambda a, b: [ry(1, 1.0), ry(1, 1.0)]), c, False)
 
-    def test_unbalanced_markers_are_a_difference(self):
-        ours = self.lowered(lambda a, b: [ry(1, -2.0)])
-        for rots in ([self.beg(), self.site("f", 1, "theta", 2.0, 0)],
-                     [self.site("f", 1, "theta", 2.0, 0), self.end()]):
-            c = self.c_side(lambda a, b, s, rots=rots: dict(
+    def test_unbalanced_markers_read_by_rule_17(self):
+        # CR rule 17 (2026-11-02, cq-asfn): an end with no open region closes nothing (its begin was in the other
+        # arm); a begin left open holds the rest of the sample (its end was in the other arm).
+        def c_of(rots):
+            return self.c_side(lambda a, b, s, rots=rots: dict(
                 rots=[dict(r, reg=hex(a)) if r["kind"] == "theta" else r for r in rots]))
-            self.check(ours, c, False, "matching")
+        open_begin = c_of([self.beg(), self.site("f", 1, "theta", 2.0, 0)])
+        self.check(self.lowered(lambda a, b: [ry(1, -2.0)]), open_begin, True)
+        self.check(self.lowered(lambda a, b: [ry(1, 2.0)]), open_begin, False, "C site")
+        lone_end = c_of([self.site("f", 1, "theta", 2.0, 0), self.end()])
+        self.check(self.lowered(lambda a, b: [ry(1, 2.0)]), lone_end, True)
+        self.check(self.lowered(lambda a, b: [ry(1, -2.0)]), lone_end, False, "C site")
 
     # -- (ii) outputs["ret"] and the host output only (T1 as amended by cq-e4jk)
     @staticmethod
@@ -1236,8 +1241,8 @@ class AbortRule(unittest.TestCase):
     def test_unclosed_region_on_a_returning_sample_still_a_difference(self):
         c = self.region_c()
         c[0] = dataclasses.replace(c[0], rotations=c[0].rotations[:3])
-        self.check(self.region_ours(lambda s: [ry(1, 1.0), ry(1, -3.0), ry(1, -2.0)]), c, False,
-                   "without a matching invert_end")
+        # CR rule 17 (2026-11-02): the open region holds the rest of the sample, read reversed; ours is not that.
+        self.check(self.region_ours(lambda s: [ry(1, 1.0), ry(1, -3.0), ry(1, -2.0)]), c, False, "C site")
 
 
 class Rule2Measure(unittest.TestCase):

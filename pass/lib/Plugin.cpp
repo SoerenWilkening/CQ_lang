@@ -28,6 +28,7 @@
 #include "cq/Taint.h"
 #include "cq/Verify.h"
 #include "eff/conc/Setjmp.h"
+#include "eff/invert/Split.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -296,6 +297,14 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
           Tainted.push_back(&F);
       for (Function *F : SJ)
         FAM.invalidate(*F, PreservedAnalyses::none());
+    }
+
+    // 1d. CR rule 17 (2026-11-02, cq-asfn): a cq_invert marker in a quantum arm whose match is outside the
+    // arm: the tail is split per region depth (eff-invert Split.h). Its CFG changes are final-taint input.
+    for (Function *F : cq::invert::splitMarkerPaths(M, T)) {
+      trace("rule 17 marker paths: changed @" + F->getName());
+      CFGChanged = true;
+      FAM.invalidate(*F, PreservedAnalyses::none());
     }
 
     // 2. Reducible control flow, on tainted functions only (NORTHSTAR principle 1). The pass
