@@ -276,6 +276,13 @@ Access classifyAccess(LoweringContext &ctx, Instruction &I, const Value *p) {
   if (ctx.T.offsetKind(&I, ctx.S) == OffsetKind::Quantum) {
     if (isa<StoreInst>(I))
       internalError("spine: a quantum-offset store into memory taint classified Classical (rule 20: QRAM)", &I);
+    // Rules 20, 21 (cq-u9oy): a clone's host triple formal read at a quantum offset is the QROM over the caller's
+    // object of the triple's cell count, fatptr's (the formal is bound to the triple, not to one pointer).
+    if (auto *A = dyn_cast<Argument>(getUnderlyingObject(p)); A && !ctx.S.isEntry() && A->getType()->isPointerTy()) {
+      PtrFormal pf = ctx.T.pointerFormal(ctx.S, A->getArgNo());
+      if (pf.abi != PtrAbi::Raw && pf.pointee == ObjClass::Classical)
+        return Access::Fat;
+    }
     return Access::Qrom;
   }
   return Access::Classical;

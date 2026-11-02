@@ -2131,11 +2131,27 @@ Value *boundSlotLoad(LoweringContext &ctx, Bound &b, const Fat &f, Type *ty, con
     internalError("fatptr: a load through a slot triple formal at a quantum cell index (rule 20: such an object is "
                   "a QRAM)",
                   &ld);
-  if (f.cell != b.cell || ty != b.cellTy)
-    unimplemented("fatptr: a load through a slot triple formal at another cell size or type than its cells", &ld);
   IRBuilder<> &B = ctx.B();
   LLVMContext &C = ctx.M.getContext();
+  const DataLayout &DL = ctx.M.getDataLayout();
+  // The cell index in the formal's cells (rule 21: idx converts at the access by the element size): a constant
+  // byte or sub-cell index that lands on a whole cell divides exactly; a rail never reaches here (rule 20: QRAM).
   Value *j = f.idx.v;
+  if (f.cell != b.cell && f.cell != 0) {
+    auto *ci = dyn_cast<ConstantInt>(j);
+    int64_t bytes = ci ? ci->getSExtValue() * int64_t(f.cell) : 0;
+    if (ci && bytes % int64_t(b.cell) == 0)
+      j = ConstantInt::get(i64(ctx), bytes / int64_t(b.cell));
+    else if (f.cell % b.cell == 0)
+      j = B.CreateMul(j, ConstantInt::get(i64(ctx), f.cell / b.cell));
+    else
+      unimplemented("fatptr: a load through a slot triple formal at a run-time index in cells smaller than its cells "
+                    "(a sub-cell view, rules 20, 21)",
+                    &ld);
+  }
+  // A cell is one scalar (rule 20); a load of another type of the same size is its bit view (rule 4 bitcast).
+  if (ty != b.cellTy && DL.getTypeStoreSize(ty) != DL.getTypeStoreSize(b.cellTy))
+    unimplemented("fatptr: a load through a slot triple formal of part of a cell (a sub-cell view, rules 20, 21)", &ld);
   Value *ok = B.CreateICmpULT(j, B.CreateZExt(b.cellCount, i64(ctx)));
   Value *safe = B.CreateSelect(ok, j, ConstantInt::get(i64(ctx), 0));
   Value *p = B.CreateInBoundsGEP(handleTy(C), b.object, safe);
@@ -2151,6 +2167,8 @@ Value *boundSlotLoad(LoweringContext &ctx, Bound &b, const Fat &f, Type *ty, con
   }
   auto *v = cast<Instruction>(B.CreateSelect(ok, h, b.zeroSeed));
   ctx.unc().recordMerge(v);
+  if (ty != b.cellTy)
+    return tmpl(ctx, "bitcast", railTypeOf(b.cellTy), {Operand{v, true}}, "", "", railTypeOf(ty));
   return v;
 }
 
@@ -2263,14 +2281,21 @@ Operand hostArm(LoweringContext &ctx, const Value *r, const Fat &f, Type *ty, In
 // access where C would not) j is checked against the cell count the triple carries and cell 0 is read beyond it,
 // the value then 0; otherwise it is a plain load (107: the count is passed, the body ignores it).
 Operand boundHostLoad(LoweringContext &ctx, Bound &b, const Fat &f, Type *ty, LoadInst &ld, bool check) {
-  if (f.idx.handle)
-    unimplemented("fatptr: a load through a host triple formal at a quantum cell index (a QROM over the caller's "
-                  "object of the triple's cell count: mem-qrom has no triple-formal QROM)",
-                  &ld);
   const DataLayout &DL = ctx.M.getDataLayout();
   if (DL.getTypeAllocSize(ty).getFixedValue() != b.cell || f.cell != b.cell)
     internalError("fatptr: a load through a host triple formal at another cell size than the formal's", &ld);
   IRBuilder<> &B = ctx.B();
+  if (f.idx.handle) {
+    // Rules 20, 21: classical memory read at a quantum offset is a QROM over the caller's object: its host
+    // pointer, the triple's cell count as n (a run-time i64; an index at or past it reads 0, §2), the idx rail.
+    if (!b.cellCount)
+      internalError("fatptr: a host triple formal loaded through with no cell count (rule 21 TripleCount)", &ld);
+    abi::TemplateSpec spec;
+    spec.op = "qrom_load";
+    spec.w = railTypeOf(ty);
+    Value *n = B.CreateZExt(b.cellCount, i64(ctx));
+    return Operand{ctx.emitTemplate(spec, {Operand{b.object, false}, Operand{n, false}, f.idx}), true};
+  }
   Value *j = f.idx.v;
   if (!check) {
     Value *p = B.CreateInBoundsGEP(ty, b.object, j);
