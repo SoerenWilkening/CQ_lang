@@ -421,6 +421,8 @@ private:
   // after flushing the segment the sub-loop is entered from.
   bool nested = false;
   BasicBlock *resetAt = nullptr;
+  Value *outerTrip = nullptr;
+  bool deferred = false;   // the outermost loop's reverse is an Uncompute deferred item   // while a sub-loop of a case-3 trip is walked: that trip's rail a_{j-1}
   bool reversed = false;
   BasicBlock *revAt = nullptr;   // where this unit's reverse begins (a trip-local sub-loop: inside the parent's trip)
   std::function<void()> finish;
@@ -798,12 +800,6 @@ void Unit::check(Loop &L, Case c) {
   for (PHINode &p : L.getHeader()->phis())
     if (isQ(&p) && !(p.getType()->isIntegerTy() || p.getType()->isFloatingPointTy()))
       unimplemented("loops-classical: a quantum carried value of non-scalar type (aggr, fatptr)", &p);
-  if (c == Case::ClassicalBoundQuantumExit) {
-    if (!L.getSubLoops().empty())
-      unimplemented("loops-classical: a loop nested in a case-3 loop (the inner chain seeded by the outer trip "
-                    "predicate)",
-                    L.getHeader()->getTerminator());
-  }
   for (BasicBlock *b : L.blocks())
     for (Instruction &I : *b) {
       if (isa<DbgInfoIntrinsic>(I))
@@ -1021,8 +1017,12 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // Case 3: the exit test.
   SmallVector<Disj, 4> ds;
   SmallPtrSet<const Value *, 8> skip;
+  // The quantum disjuncts: one leaf q (exit when q == qPos), or several, whose disjunction qExitP is one
+  // flag (rule 8: a disjunction of flags is or_i1).
   const Value *qLeaf = nullptr;
   bool qPos = false;
+  Pred qExitP = Pred::bottom();
+  unsigned nQ = 0;
   if (c3 && !mx) {
     auto *br = dyn_cast<BranchInst>(latch->getTerminator());
     if (!br || !br->isConditional() || !isQ(br->getCondition()))
@@ -1036,8 +1036,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         anyClassical = true;
         continue;
       }
-      if (qLeaf)
-        unimplemented("loops-classical: a case-3 exit test with more than one quantum disjunct", br);
+      qExitP = qExitP | (d.pos ? Pred::atom(d.v) : !Pred::atom(d.v));
+      ++nQ;
       qLeaf = d.v;
       qPos = d.pos;
     }
@@ -1077,6 +1077,18 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     Pred hp = qp(header);
     if (!hp.isTop())
       aInit = ctx.preds().flag(ctx, hp);
+  }
+  // CR rule 14 (`continue`, `return` inside a K-loop, nested loops: "same chain, inner chain seeded by the
+  // outer trip predicate"): a case-3 loop nested in a case-3 trip seeds its chain with the outer trip rail
+  // (and its header's arm flag): a_{-1} = a_outer & F, a fresh rail (gates on fresh rails only).
+  if (c3 && outerTrip) {
+    if (!aInit) {
+      aInit = outerTrip;
+    } else {
+      Value *both = seed(ConstantInt::getFalse(ctx.M.getContext()), RailType{Kind::Int, 1});
+      gate(abi::Core::AndI1, {outerTrip, aInit, both});
+      aInit = both;
+    }
   }
   if (c3 && !aInit)
     aInit = seed(ConstantInt::getTrue(ctx.M.getContext()), RailType{Kind::Int, 1});
@@ -1627,11 +1639,14 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         Value *x = d.pos ? o.v : B.CreateNot(o.v);
         cExit = cExit ? B.CreateOr(cExit, x) : x;
       }
-      Value *q = ctx.rail(qLeaf);
+      Value *q = nQ == 1 ? ctx.rail(qLeaf) : ctx.preds().flag(ctx, qExitP);
+      if (!q)
+        internalError("loops-classical: a case-3 exit test's quantum disjunction with no flag", latch->getTerminator());
+      const bool qExit = nQ == 1 ? qPos : true;
       Value *a = seed(ConstantInt::getFalse(ctx.M.getContext()), RailType{Kind::Int, 1});
       // a = a_prev & q, or a_prev & NOT q = a_prev ^ (a_prev & q): gates on a alone, so the mirror's
       // undo of a reads q in the state the forward read it (no bracket on q).
-      if (qPos)
+      if (qExit)
         gate(abi::Core::XorI1, {aPhi, a});
       gate(abi::Core::AndI1, {aPhi, q, a});
       aPhi->addIncoming(a, cur);
@@ -1711,7 +1726,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     for (Instruction &I : *b) {
       if (isa<PHINode>(I) || I.isTerminator() || skip.count(&I))
         continue;
-      lowerInstruction(ctx, I, aPhi);   // case 3: the body runs under a_{j-1}; case 1: no trip rail
+      // case 3: the body runs under a_{j-1}; case 1: under the enclosing case-3 trip's rail, if any
+      lowerInstruction(ctx, I, aPhi ? aPhi : outerTrip);
     }
   };
 
@@ -1800,7 +1816,12 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         cur = nullptr;
         return;
       }
-      for (auto &[v, op] : lowerLoop(*sl, sc, ob(sx), false))
+      Value *savedTrip = outerTrip;
+      if (c3)
+        outerTrip = aPhi;   // the sub-loop's trips run inside this trip: under a_{j-1}
+      auto subOut = lowerLoop(*sl, sc, ob(sx), false);
+      outerTrip = savedTrip;
+      for (auto &[v, op] : subOut)
         ctx.rebind(v, {op});
       return;
     }
@@ -2037,6 +2058,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     BasicBlock *Cont = newBlock();
     BranchInst::Create(Cont, T);
     auto self = shared_from_this();
+    deferred = true;
     U.recordDeferred(scs, exits,
                      [self, T, seedScope](IRBuilder<> &B) { self->reverse(B, T, seedScope, true); }, reads, {},
                      busAfter);
@@ -2650,7 +2672,9 @@ void Unit::resolvePreheader() {
     if (!is_contained(rails, r))
       rails.push_back(r);
   }
-  if (rails.empty())
+  // A deferred reverse (cq-fx3s) reads the hoisted rails after the loop's exit: their items wait for it
+  // (Uncompute::recordDeferred's reads) and follow it wherever it is placed.
+  if (rails.empty() || deferred)
     return;
   IRBuilder<> &B = ctx.B();
   BasicBlock *Cont = newBlock();
