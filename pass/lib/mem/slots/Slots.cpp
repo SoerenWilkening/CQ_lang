@@ -1508,11 +1508,19 @@ SmallPtrSet<const BasicBlock *, 16> between(const BasicBlock *BS, const BasicBlo
 }
 
 // cq-un6w: I's block lies on a cycle of the CFG (I may execute again after itself).
+// An exact search of the CFG (isPotentiallyReachable answers "maybe" past 32 blocks: musl's __lgamma_r).
 bool reachesItself(const Instruction &I, const DominatorTree *DT) {
+  (void)DT;
   const BasicBlock *b = I.getParent();
-  for (const BasicBlock *s : successors(b))
-    if (s == b || isPotentiallyReachable(s, b, nullptr, DT))
+  SmallPtrSet<const BasicBlock *, 32> seen;
+  SmallVector<const BasicBlock *, 32> work(succ_begin(b), succ_end(b));
+  while (!work.empty()) {
+    const BasicBlock *x = work.pop_back_val();
+    if (x == b)
       return true;
+    if (seen.insert(x).second)
+      work.append(succ_begin(x), succ_end(x));
+  }
   return false;
 }
 
