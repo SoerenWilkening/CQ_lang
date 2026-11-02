@@ -482,7 +482,7 @@ Operand classicalPhiOf(PHINode &phi, BasicBlock *join, IRBuilder<> &B,
       if (!t)
         internalError("pred: the output block of an incoming edge has no terminator yet", &phi);
       B.SetInsertPoint(t);
-      in.op = read(in.v);
+      in.op = sink.reaching(read(in.v), w, phi, in.u);
     }
   }
   if (std::all_of(ins.begin(), ins.end(), [&](const In &x) { return x.op.v == ins[0].op.v; })) {
@@ -491,20 +491,38 @@ Operand classicalPhiOf(PHINode &phi, BasicBlock *join, IRBuilder<> &B,
     return Operand{sink.seed(ins[0].op.v, w), true};   // one value on every edge
   }
 
-  // The output CFG must reach the join through exactly the incoming edges' blocks.
+  // When the output CFG reaches the join through exactly the incoming edges' blocks, each output edge
+  // carries its own incoming. Otherwise (the walk ran two incoming blocks on one output path, or reached
+  // the join by a guard's skip edge or a redirected edge; cq-pfpy) each output edge into the join takes
+  // the incoming its classical facts choose (rule 9: the choice is classical): one admitted value as it
+  // is, several a classical select on their (classical) edge predicates, read where the edge leaves.
   SmallPtrSet<BasicBlock *, 8> outs, preds;
+  bool routed = true;
   for (const In &in : ins)
-    if (!outs.insert(in.out).second)
-      unimplemented("pred: two incoming edges of a classically chosen phi leave one output block", &phi);
+    routed &= outs.insert(in.out).second;
   for (BasicBlock *p : predecessors(join))
     preds.insert(p);
-  bool routed = outs.size() == preds.size();
+  routed &= outs.size() == preds.size();
   for (BasicBlock *p : preds)
     routed &= outs.count(p) > 0;
-  if (!routed)
-    unimplemented("pred: a classically chosen phi whose output join is not reached exactly through the output "
-                  "blocks of its incoming edges",
-                  &phi);
+  if (!routed) {
+    std::vector<In> per;
+    IRBuilderBase::InsertPointGuard g(B);
+    for (BasicBlock *p : predecessors(join)) {
+      if (std::any_of(per.begin(), per.end(), [&](const In &x) { return x.out == p; }))
+        continue;
+      if (!p->getTerminator())
+        internalError("pred: a predecessor of a classically chosen join has no terminator yet", &phi);
+      B.SetInsertPoint(p->getTerminator());
+      per.push_back({nullptr, p, nullptr, sink.edgeChoice(phi, p, join, w, fieldTy, read)});
+    }
+    ins = std::move(per);
+    if (std::all_of(ins.begin(), ins.end(), [&](const In &x) { return x.op.v == ins[0].op.v; })) {
+      if (ins[0].op.handle || !seedClassical)
+        return ins[0].op;
+      return Operand{sink.seed(ins[0].op.v, w), true};
+    }
+  }
 
   bool anyHandle = std::any_of(ins.begin(), ins.end(), [](const In &x) { return x.op.handle; });
   if (anyHandle) {
@@ -637,6 +655,9 @@ class CtxSink final : public GateSink {
 public:
   explicit CtxSink(LoweringContext &ctx, const std::map<unsigned, Value *> *over = nullptr) : ctx(ctx), over(over) {}
 
+  // A classical node's i1 value at the builder (its atoms read through `over` where given).
+  Value *classical(unsigned n) { return classicalValue(n); }
+
   Value *atomRail(unsigned var) override {
     const Atom &a = atomOf(var);
     switch (a.kind) {
@@ -721,6 +742,9 @@ public:
     return call;
   }
   void merged(Instruction *m) override { ctx.unc().recordMerge(m); }
+  Operand reaching(const Operand &op, RailType w, const PHINode &phi, const BasicBlock *u) override;
+  Operand edgeChoice(PHINode &phi, BasicBlock *P, BasicBlock *join, RailType w, Type *fieldTy,
+                     const std::function<Operand(const Value *)> &read) override;
   Value *copy(Value *h, RailType w) override {
     CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
                                {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
@@ -985,9 +1009,14 @@ class JoinRepair {
         break;
       J = s;
     }
+    // Rule 9 (cq-pfpy): the walk runs a block on every output path whose classical facts its predicate
+    // meets (Walker::next), so a value is read on a path that never minted it only where its arm's
+    // predicate, restricted by that path's facts, is false, and the join where that path meets the one
+    // that minted it carries it with a don't-care. A point with no join above it and a value that does
+    // not reach it is a walk that skipped a block it had to run.
     if (pred_empty(J))
-      unimplemented("pred: a predicate or merge arm reads a value minted where it does not reach the point, and no "
-                    "classical join above the point carries it on every edge on which it is read (cq-2p1p): " + read,
+      internalError("pred: a predicate or merge arm reads a value minted where it does not reach the point, on a "
+                    "path the walk took without running its block (Walker::next, cq-pfpy): " + read,
                     what);
     return J;
   }
@@ -1026,16 +1055,128 @@ class JoinRepair {
     return phi;
   }
 
+  // cq-pfpy: a join whose per-edge values are being built. Reached again through a back edge, it is a
+  // placeholder phi standing for the value the join will carry, replaced by it once built.
+  using JoinKey = std::tuple<Value *, unsigned, unsigned, int, BasicBlock *>;
+  std::map<JoinKey, PHINode *> building;
+  Value *reentered(const JoinKey &key, Type *ty) {
+    auto it = building.find(key);
+    if (it == building.end()) {
+      building[key] = nullptr;
+      return nullptr;
+    }
+    if (!it->second) {
+      BasicBlock *J = std::get<4>(key);
+      it->second = PHINode::Create(ty, 0, "");
+      it->second->insertInto(J, J->begin());
+    }
+    return it->second;
+  }
+  Value *settle(const JoinKey &key, Value *v) {
+    auto it = building.find(key);
+    PHINode *ph = it == building.end() ? nullptr : it->second;
+    building.erase(key);
+    if (ph) {
+      if (v == ph)
+        internalError("pred: a value carried around a classical loop that no edge mints");
+      ph->replaceAllUsesWith(v);
+      for (auto &e : flagMemo)
+        if (e.second == ph)
+          e.second = v;
+      for (auto &e : valueMemo)
+        if (e.second == ph)
+          e.second = v;
+      for (auto &e : constMemo)
+        if (e.second == ph)
+          e.second = v;
+      for (auto it2 = phiMemo.begin(); it2 != phiMemo.end();)
+        it2 = is_contained(it2->first, ph) ? phiMemo.erase(it2) : std::next(it2);
+      ph->eraseFromParent();
+    }
+    return v;
+  }
+
 public:
   explicit JoinRepair(LoweringContext &ctx)
       : ctx(ctx), O(taintOracle(ctx.T, ctx.S)), ql([this](unsigned v) { return quantumLike(v, *O); }) {}
 
   bool nodeReachesHere(unsigned n) { return nodeReaches(n, ctx.B().GetInsertBlock(), ctx.B().GetInsertPoint()); }
+
+  // cq-pfpy: the incoming of a classically chosen phi the output edge P -> join stands for, read at the
+  // builder (P's end): the incomings whose edge predicates meet the edge's classical facts; one value as
+  // it is (carried when it does not reach), several a classical select chain on their edge predicates
+  // restricted by the facts (their atoms carried likewise). No incoming meets the facts: the edge is
+  // never taken, a null value.
+  Operand edgeChoice(PHINode &phi, BasicBlock *P, BasicBlock *join, RailType w, Type *fieldTy,
+                     const std::function<Operand(const Value *)> &read) {
+    const PathStorage &I = storage(ctx.preds());
+    const BasicBlock *bb = phi.getParent();
+    struct Arm { const Value *v; unsigned node; };
+    std::vector<Arm> arms;
+    for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i) {
+      const BasicBlock *u = phi.getIncomingBlock(i);
+      if (!I.rpo.count(u))
+        continue;
+      unsigned e = nodeOf(ctx.preds().edge(u, bb));
+      const Value *v = phi.getIncomingValue(i);
+      auto it = std::find_if(arms.begin(), arms.end(), [&](const Arm &a) { return a.v == v; });
+      if (it == arms.end())
+        arms.push_back({v, e});
+      else
+        it->node = m.orOp(it->node, e);
+    }
+    std::set<unsigned> vars;
+    for (const Arm &a : arms)
+      classicalVars(a.node, vars);
+    unsigned c = edgeFacts(P, join, vars);
+    std::vector<std::pair<Arm, unsigned>> live;   // arm, its predicate restricted by the facts
+    for (const Arm &a : arms) {
+      unsigned r = c == Bdd::F ? Bdd::F : m.andOp(a.node, c);
+      if (r != Bdd::F && predsMeet(makePred(a.node), makePred(c)))
+        live.push_back({a, m.restrict(a.node, c)});
+    }
+    BasicBlock *U = ctx.B().GetInsertBlock();
+    BasicBlock::iterator pt = ctx.B().GetInsertPoint();
+    auto value = [&](const Arm &a) {
+      Operand op = read(a.v);
+      return Operand{carry(op.v, op.handle, w, Carry{a.node, c, -1}, U, pt, &phi), op.handle};
+    };
+    if (live.empty())
+      return Operand{Constant::getNullValue(fieldTy), false};
+    Operand acc = value(live.back().first);
+    for (size_t k = live.size() - 1; k-- > 0;) {
+      Operand x = value(live[k].first);
+      if (x.v == acc.v)
+        continue;
+      // The arm's restricted predicate as a classical i1 at the point, its atoms carried there.
+      std::set<unsigned> sup;
+      m.support(live[k].second, sup);
+      std::map<unsigned, Value *> over;
+      for (unsigned v : sup)
+        if (Value *a = atomValue(v); a && !reaches(a, U, pt))
+          over[v] = carry(a, false, RailType{Kind::Int, 1}, Carry{live[k].second, c, int(v)}, U, pt, &phi);
+      IRBuilderBase::InsertPointGuard g(ctx.B());
+      ctx.B().SetInsertPoint(U, pt);
+      CtxSink sink(ctx, &over);
+      Value *cond = sink.classical(live[k].second);
+      if (x.handle != acc.handle) {
+        if (!x.handle)
+          x = Operand{seedOf(ctx, x.v, w), true};
+        else
+          acc = Operand{seedOf(ctx, acc.v, w), true};
+      }
+      Value *sel = ctx.B().CreateSelect(cond, x.v, acc.v);
+      if (x.handle)
+        if (auto *si = dyn_cast<Instruction>(sel))
+          ctx.unc().recordMerge(si);
+      acc = Operand{sel, x.handle};
+    }
+    return acc;
+  }
   bool reachesHere(Value *v) { return reaches(v, ctx.B().GetInsertBlock(), ctx.B().GetInsertPoint()); }
 
   // A rail holding n at (U, pt) wherever `care` holds (n is a don't-care outside it).
-  Value *flagAt(unsigned n, unsigned care, BasicBlock *U, BasicBlock::iterator pt, const Value *what,
-                unsigned depth = 0) {
+  Value *flagAt(unsigned n, unsigned care, BasicBlock *U, BasicBlock::iterator pt, const Value *what) {
     IRBuilderBase::InsertPointGuard g(ctx.B());
     ctx.B().SetInsertPoint(U, pt);
     if (m.terminal(n) || nodeReaches(n, U, pt)) {
@@ -1044,8 +1185,6 @@ public:
         return sink.classicalSeed(n);   // rule 7: a rail holding the constant
       return materialize(n, sink, ql);
     }
-    if (depth > 64)
-      unimplemented("pred: per-edge flags nested deeper than 64 classical joins (cq-2p1p)", what);
     BasicBlock *J = joinAbove(U, what, "the predicate " + describe(n));
     {
       // Per-edge flags need every atom the point reads to exist where J's edges leave. When one is
@@ -1073,6 +1212,11 @@ public:
     std::set<unsigned> vars;
     classicalVars(n, vars);
     classicalVars(care, vars);
+    // A join reached again while its flag is being built (a classical loop's back edge): the flag it
+    // will be (cq-pfpy; no depth bound).
+    JoinKey jkey{nullptr, n, care, -2, J};
+    if (Value *x = reentered(jkey, Type::getInt32Ty(ctx.M.getContext())))
+      return x;
     std::vector<std::pair<BasicBlock *, Value *>> per;
     for (BasicBlock *p : uniquePreds(J)) {
       unsigned c = m.andOp(care, edgeFacts(p, J, vars));
@@ -1082,10 +1226,10 @@ public:
       if (auto it = flagMemo.find(key); it != flagMemo.end())
         v = it->second;
       else
-        v = flagMemo[key] = flagAt(np, c, p, p->getTerminator()->getIterator(), what, depth + 1);
+        v = flagMemo[key] = flagAt(np, c, p, p->getTerminator()->getIterator(), what);
       per.push_back({p, v});
     }
-    return phiOf(J, per, true);
+    return settle(jkey, phiOf(J, per, true));
   }
 
   Value *flagHere(unsigned n, unsigned care, const Value *what) {
@@ -1099,14 +1243,15 @@ public:
 
   // The value v at (U, pt), carried by phis over the classical joins above the point.
   Value *carry(Value *v, bool handle, RailType w, Carry k, BasicBlock *U, BasicBlock::iterator pt,
-               const Value *what, unsigned depth = 0) {
+               const Value *what) {
     if (reaches(v, U, pt))
       return v;
-    if (depth > 64)
-      unimplemented("pred: a value carried across more than 64 classical joins (cq-2p1p)", what);
     std::string vs;
     raw_string_ostream(vs) << *v;
     BasicBlock *J = joinAbove(U, what, (k.var < 0 ? "the merge arm " : "the atom ") + vs + " under " + describe(k.node));
+    auto jkey = std::make_tuple(v, k.node, k.care, k.var, J);
+    if (Value *x = reentered(jkey, handle ? irTypeOf(ctx.M.getContext(), w) : v->getType()))
+      return x;
     std::set<unsigned> vars;
     classicalVars(k.node, vars);
     classicalVars(k.care, vars);
@@ -1178,24 +1323,48 @@ public:
         constMemo[ckey] = x;
       } else {
         x = valueMemo[key] =
-            carry(v, handle, w, Carry{a, c, k.var}, p, p->getTerminator()->getIterator(), what, depth + 1);
+            carry(v, handle, w, Carry{a, c, k.var}, p, p->getTerminator()->getIterator(), what);
       }
       per.push_back({p, x});
     }
-    return phiOf(J, per, handle);
+    return settle(jkey, phiOf(J, per, handle));
   }
 
-  Operand operandHere(const Operand &op, RailType w, unsigned armNode, const Value *what) {
-    return Operand{carry(op.v, op.handle, w, Carry{armNode, Bdd::T, -1}, ctx.B().GetInsertBlock(),
+  // The arm is read only where `care` holds: outside it, it is a don't-care.
+  Operand operandHere(const Operand &op, RailType w, unsigned armNode, unsigned care, const Value *what) {
+    return Operand{carry(op.v, op.handle, w, Carry{armNode, care, -1}, ctx.B().GetInsertBlock(),
                          ctx.B().GetInsertPoint(), what),
                    op.handle};
   }
 };
 
+Operand CtxMergeSink::edgeChoice(PHINode &phi, BasicBlock *P, BasicBlock *join, RailType w, Type *fieldTy,
+                                 const std::function<Operand(const Value *)> &read) {
+  JoinRepair R(ctx);
+  return R.edgeChoice(phi, P, join, w, fieldTy, read);
+}
+
+// cq-pfpy: an incoming value of a classically chosen phi read where its output edge leaves; one minted
+// in a block that does not dominate that point is carried there by the classical joins above it, a
+// don't-care (|0>, or the null value) on a join edge whose facts exclude the phi's incoming edge.
+Operand CtxMergeSink::reaching(const Operand &op, RailType w, const PHINode &phi, const BasicBlock *u) {
+  JoinRepair R(ctx);
+  if (R.reachesHere(op.v))
+    return op;
+  return R.operandHere(op, w, nodeOf(ctx.preds().edge(u, phi.getParent())), Bdd::T, &phi);
+}
+
 } // namespace
 } // namespace pred_detail
 
 using namespace pred_detail;
+
+Operand reachingOperand(LoweringContext &ctx, const Operand &op, RailType w, const Pred &arm, const Pred &care) {
+  JoinRepair R(ctx);
+  if (R.reachesHere(op.v))
+    return op;
+  return R.operandHere(op, w, nodeOf(arm), nodeOf(care), nullptr);
+}
 
 Value *PathPredicates::flag(LoweringContext &ctx, const Pred &p) {
   unsigned n = nodeOf(p);
@@ -1221,6 +1390,10 @@ Value *selectChainAt(LoweringContext &ctx, ArrayRef<std::pair<Pred, Operand>> ar
 // Rule 9: one select per distinct arm, the complement innermost, into fresh rails.
 Value *selectChain(LoweringContext &ctx, ArrayRef<std::pair<Pred, Operand>> arms, RailType w) {
   return selectChainAt(ctx, arms, w, Bdd::T, nullptr);
+}
+
+Value *selectChain(LoweringContext &ctx, ArrayRef<std::pair<Pred, Operand>> arms, RailType w, const Pred &care) {
+  return selectChainAt(ctx, arms, w, nodeOf(care), nullptr);
 }
 
 namespace {
@@ -1251,7 +1424,7 @@ Value *selectChainAt(LoweringContext &ctx, ArrayRef<std::pair<Pred, Operand>> ar
       const Operand &op = arms[nd.arm].second;
       if (R.reachesHere(op.v))
         return op;
-      return R.operandHere(op, w, nodes[nd.arm], what);   // cq-2p1p: an arm minted in a classical arm
+      return R.operandHere(op, w, nodes[nd.arm], care, what);   // cq-2p1p: an arm minted in a classical arm
     }
     unsigned c = nd.cond;
     Operand tv = emit(nd.thenIdx, m.andOp(ctxt, c)), fv = emit(nd.elseIdx, m.andOp(ctxt, m.notOp(c)));

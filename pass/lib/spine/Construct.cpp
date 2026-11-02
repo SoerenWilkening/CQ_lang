@@ -218,6 +218,7 @@ private:
 
   bool pureClassical(const Loop &lp);
   BasicBlock *next(const BasicBlock *x, const BasicBlock *s);
+  bool classicalEdgeMeets(const BasicBlock *x, const BasicBlock *s, const BasicBlock *y);
   void plan();
   void planGuards();
 
@@ -293,6 +294,17 @@ bool Walker::pureClassical(const Loop &lp) {
   return true;
 }
 
+// Can y run on an output path that takes the classical edge x -> s? The edge fixes the classical factor
+// of its predicate; y may run there when its own predicate meets it.
+bool Walker::classicalEdgeMeets(const BasicBlock *x, const BasicBlock *s, const BasicBlock *y) {
+  if (isQuantumTerm(ctx, x->getTerminator()) || !is_contained(successors(x), s))
+    return false;
+  const Pred &e = ctx.preds().edge(x, s), &py = ctx.preds().block(y);
+  if (e.isBottom() || py.isBottom())
+    return false;
+  return predsMeet(py, e.classicalFactor(ctx.T, ctx.S));
+}
+
 BasicBlock *Walker::next(const BasicBlock *x, const BasicBlock *s) {
   unsigned i = idx.lookup(x);
   const Loop *xl = LI.getLoopFor(x);
@@ -306,8 +318,17 @@ BasicBlock *Walker::next(const BasicBlock *x, const BasicBlock *s) {
       continue;
     if (unitOf.count(y) && unitOf.lookup(y)->getHeader() != y)
       continue;
-    if (reach[i].test(j))
+    if (reach[i].test(j)) {
+      // cq-pfpy (rules 8, 9): y lies downstream of x's other edge, but the classical edge x -> s fixes
+      // only its classical facts; the quantum branches above stay linearized. y still runs on this path
+      // when its predicate meets those facts (a block also reached through a quantum edge: musl's
+      // `isnan(x) || isnan(y)` arm, reached from the quantum test of x and the classical test of y), so
+      // the walk visits it here too: its code runs under its own predicate, its pure value arms reach
+      // the merge on every path that reads them (rule 9: arm code is computed unguarded).
+      if (s && classicalEdgeMeets(x, s, y))
+        return y;
       continue;
+    }
     BasicBlock *d = DT.findNearestCommonDominator(const_cast<BasicBlock *>(x), y);
     if (d && isQuantumTerm(ctx, d->getTerminator()))
       return y;
@@ -734,6 +755,7 @@ Value *Walker::factoredMerge(PHINode &phi) {
   // part of its edge predicate restricted to the edge's facts.
   struct Choice {
     BasicBlock *out;
+    Pred facts;
     SmallVector<std::pair<Pred, const Value *>, 2> arms;
   };
   std::vector<Choice> chosen;
@@ -783,7 +805,7 @@ Value *Walker::factoredMerge(PHINode &phi) {
     }
     if (cands.empty())
       return nullptr;
-    Choice ch{e.out, {}};
+    Choice ch{e.out, F, {}};
     for (unsigned k : cands) {
       // The arm's predicate under F: every incoming edge carrying the same value.
       Pred p = Pred::bottom();
@@ -810,14 +832,21 @@ Value *Walker::factoredMerge(PHINode &phi) {
         internalError("spine: the output block of an incoming edge has no terminator yet", &phi);
       B.SetInsertPoint(t);
       if (ch.arms.size() == 1) {
-        ops.push_back(ctx.operand(ch.arms.front().second));
+        // cq-pfpy: the one arm may be minted in a block the walk ran on a classical path that joins
+        // this edge's path above it.
+        const Value *v = ch.arms.front().second;
+        Pred p = Pred::bottom();
+        for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i)
+          if (phi.getIncomingValue(i) == v && idx.count(phi.getIncomingBlock(i)))
+            p = p | ctx.preds().edge(phi.getIncomingBlock(i), b);
+        ops.push_back(reachingOperand(ctx, ctx.operand(v), w, p, ch.facts));
         continue;
       }
       // Rule 9 on this edge alone: the merge's quantum rest, a select chain where the edge leaves.
       std::vector<std::pair<Pred, Operand>> arms;
       for (auto &[p, v] : ch.arms)
         arms.push_back({p, ctx.operand(v)});
-      ops.push_back(Operand{selectChain(ctx, arms, w), true});
+      ops.push_back(Operand{selectChain(ctx, arms, w, ch.facts), true});
     }
     bool anyHandle = any_of(ops, [](const Operand &o) { return o.handle; });
     bool same = all_of(ops, [&](const Operand &o) { return o.v == ops.front().v; });
@@ -888,7 +917,12 @@ void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in) {
       // classical branches exclude); any rail serves, a |0> seed.
       o = Operand{ConstantInt::get(irTypeOf(ctx.M.getContext(), w), 0), false};
     } else if (cands.size() == 1) {
-      o = ctx.operand(phi.getIncomingValue(cands.front()));
+      const Value *v = phi.getIncomingValue(cands.front());
+      Pred p = Pred::bottom();
+      for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i)
+        if (phi.getIncomingValue(i) == v && idx.count(phi.getIncomingBlock(i)) && !unitOf.count(phi.getIncomingBlock(i)))
+          p = p | ctx.preds().edge(phi.getIncomingBlock(i), b);
+      o = reachingOperand(ctx, ctx.operand(v), w, p, F);   // cq-pfpy
     } else {
       std::vector<std::pair<Pred, Operand>> arms;
       for (unsigned k : cands) {
@@ -904,7 +938,7 @@ void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in) {
                         &phi);
         arms.push_back({p.quantumPart(ctx.T, ctx.S), ctx.operand(phi.getIncomingValue(k))});
       }
-      o = Operand{selectChain(ctx, arms, w), true};
+      o = Operand{selectChain(ctx, arms, w, F), true};
     }
     if (!o.handle) {
       CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {o.v});

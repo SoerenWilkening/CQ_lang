@@ -171,6 +171,17 @@ public:
   // cq-88vg: a fresh rail holding a basis copy of the rail h (cqrt_alloc_<W>(0), copy_<W>(h, f)),
   // recorded as a seed with its copy, at the builder's insertion point.
   virtual llvm::Value *copy(llvm::Value *h, RailType) = 0;
+  // cq-pfpy: op, the value of phi's incoming edge from u read at the builder (where that edge's output
+  // block ends), carried there when it is minted where it does not reach (an arm the walk ran on a
+  // classical path that joins the edge's path above it). Identity by default.
+  virtual Operand reaching(const Operand &op, RailType, const llvm::PHINode &, const llvm::BasicBlock *u) { return op; }
+  // cq-pfpy: the value of phi on the output edge P -> join when the output CFG does not reach the join
+  // through exactly its incoming edges' blocks: the incoming the edge's classical facts choose (several:
+  // a classical select on their edge predicates), read at the builder (P's end).
+  virtual Operand edgeChoice(llvm::PHINode &phi, llvm::BasicBlock *P, llvm::BasicBlock *join, RailType,
+                             llvm::Type *fieldTy, const std::function<Operand(const llvm::Value *)> &read) {
+    internalError("pred: a merge sink with no output CFG to choose an edge's incoming in", &phi);
+  }
 };
 // The select's condition must be classical in the new IR (internal error otherwise).
 llvm::Value *classicalSelect(llvm::SelectInst &, llvm::IRBuilder<> &, MergeSink &);

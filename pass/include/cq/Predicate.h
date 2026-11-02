@@ -35,6 +35,9 @@ struct Pred {   // canonical Boolean function over condition atoms
 private:
   struct Impl; std::shared_ptr<const Impl> impl;
 };
+// cq-pfpy: can a and b hold together on some execution? a & b is satisfiable once the switch case atoms of
+// one scrutinee with distinct values are taken as mutually exclusive (a value equals one case at most).
+bool predsMeet(const Pred &a, const Pred &b);
 struct EdgePreds { llvm::SmallVector<std::pair<const llvm::BasicBlock *, Pred>, 4> succ; };
 class PathPredicates {
 public:
@@ -55,5 +58,14 @@ llvm::Value *lowerMerge(LoweringContext &, llvm::PHINode &);
 void lowerMergeFields(LoweringContext &, llvm::PHINode &);
 llvm::Value *lowerSelect(LoweringContext &, llvm::SelectInst &);
 llvm::Value *selectChain(LoweringContext &, llvm::ArrayRef<std::pair<Pred, Operand>> arms, RailType);
+// cq-pfpy: the same select chain read only where `care` holds (the classical facts of the output edge it
+// is emitted on): an arm or condition minted in a classical arm is carried to the point under those facts.
+llvm::Value *selectChain(LoweringContext &, llvm::ArrayRef<std::pair<Pred, Operand>> arms, RailType, const Pred &care);
+// cq-pfpy (rule 9): op read at the builder, where a merge reads it as the arm of predicate `arm` under the
+// classical facts `care`. A value minted in a block that does not dominate the point (an arm the walk ran
+// on a classical path that joins the point's path above it) is carried to the point by the classical
+// joins above it: a don't-care (a |0> seed, or the null value) on a join edge whose facts exclude the
+// arm. Otherwise op itself.
+Operand reachingOperand(LoweringContext &, const Operand &op, RailType, const Pred &arm, const Pred &care);
 void lowerPhase(LoweringContext &, llvm::CallInst &cqPhi);
 }

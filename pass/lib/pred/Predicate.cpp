@@ -636,6 +636,23 @@ Pred Pred::eqAtom(const Value *scrutinee, const APInt &v) {
   return makePred(Bdd::get().ithVar(atomVar(AtomKind::Eq, scrutinee, v)));
 }
 
+bool predsMeet(const Pred &a, const Pred &b) {
+  Bdd &m = Bdd::get();
+  unsigned f = m.andOp(nodeOf(a), nodeOf(b));
+  if (f == Bdd::F)
+    return false;
+  std::set<unsigned> sup;
+  m.support(f, sup);
+  std::vector<unsigned> eqs(sup.begin(), sup.end());
+  for (size_t i = 0; i < eqs.size() && f != Bdd::F; ++i)
+    for (size_t j = i + 1; j < eqs.size() && f != Bdd::F; ++j) {
+      const Atom &x = atomOf(eqs[i]), &y = atomOf(eqs[j]);
+      if (x.kind == AtomKind::Eq && y.kind == AtomKind::Eq && x.v == y.v && x.c != y.c)
+        f = m.andOp(f, m.notOp(m.andOp(m.ithVar(eqs[i]), m.ithVar(eqs[j]))));
+    }
+  return f != Bdd::F;
+}
+
 Pred Pred::operator&(const Pred &o) const { return makePred(Bdd::get().andOp(nodeOf(*this), nodeOf(o))); }
 Pred Pred::operator|(const Pred &o) const { return makePred(Bdd::get().orOp(nodeOf(*this), nodeOf(o))); }
 Pred Pred::operator!() const { return makePred(Bdd::get().notOp(nodeOf(*this))); }
