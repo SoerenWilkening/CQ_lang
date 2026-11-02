@@ -75,6 +75,7 @@
 #include "../../fatptr/FatPtrInternal.h"
 
 #include <functional>
+#include <numeric>
 #include <map>
 #include <optional>
 #include <set>
@@ -378,7 +379,7 @@ struct FnState {
   DenseMap<const Instruction *, ViewVal> views;     // stores into a view object -> the value they left (63)
   struct CellRead { const Instruction *I; Addr a; uint64_t size; LoadInst *h = nullptr; };
   SmallVector<CellRead, 8> cellReads;               // accesses lowered as a run-time read of a local cell (M3)
-  std::map<std::pair<const Value *, int>, ObjInfo> objs;   // (root, field column or -1)
+  std::map<std::pair<const Value *, int>, ObjInfo> objs;   // (root, field column or -1; -2 the cells beyond it)
   // M1: a clone call handed a pointer into a slot object -> (byte offset of a cell it writes -> the handle
   // the caller loaded from that cell right after the call: slotCellsAfterCall).
   DenseMap<const Instruction *, std::map<int64_t, Operand>> callOut;
@@ -776,6 +777,8 @@ uint64_t scalarCellBytes(Type *t, const DataLayout &DL, const Value *at) {
   return DL.getTypeAllocSize(t).getFixedValue();
 }
 
+StructType *columnStruct(const Value *root);
+
 void flattenRecord(Type *t, int64_t off, const DataLayout &DL, SmallVectorImpl<ObjInfo::Field> &out,
                    const Value *at) {
   if (auto *st = dyn_cast<StructType>(t)) {
@@ -797,12 +800,15 @@ void flattenRecord(Type *t, int64_t off, const DataLayout &DL, SmallVectorImpl<O
   out.push_back(ObjInfo::Field{off, t});
 }
 
-// The struct type of a record root: a local struct object, or an sret/byval parameter (rule 26).
-StructType *recordType(const Value *root) {
+// The type of a record root: a local struct object, or an sret/byval parameter (rule 26). A local array of
+// structs that taint does not split into field columns (columnStruct: a struct of one field, or one with an
+// aggregate field) is one record of its flattened scalar fields, every element's in turn (rule 20 per cell,
+// rule 26 field-wise: 168's columns are the split case of the same layout).
+Type *recordType(const Value *root) {
   if (auto *ai = dyn_cast<AllocaInst>(root)) {
     Type *t = ai->getAllocatedType();
     if (isa<ArrayType>(t) && scalarCellType(t)->isStructTy())
-      unimplemented("mem-slots: an array of structs holding handles (one slot array per field column, 168)", ai);
+      return columnStruct(root) ? nullptr : t;
     return dyn_cast<StructType>(t);
   }
   if (auto *A = dyn_cast<Argument>(root)) {
@@ -840,6 +846,65 @@ int64_t cellOffset(const ObjInfo &info, unsigned c) {
   return info.fields[c].off;
 }
 
+// Rules 20, 26 (a record at a run-time offset: `s.v[i]` of a struct with an array field, an element of a
+// local array of structs taint keeps whole): the fields a record access at address a (n bytes of type ty) may
+// touch. Its byte offset is a.off plus multiples of g, the gcd of its index strides, inside the bounds scalar
+// evolution gives the address (the whole record when it gives none). The access is a cell of the record at
+// run time exactly when every such position inside the record is the start of a field of type ty: the run
+// first..last, consecutive positions g apart; the index then names field first + j at the original byte
+// offset first.off + j * g. False when a reachable position lies inside or across another field (a bit view
+// of the record, 122) or on padding.
+struct RecRun { SmallVector<unsigned, 8> fields; int64_t g = 0; };
+bool recordRun(const ObjInfo &info, const Addr &a, Type *ty, const DataLayout &DL, RecRun &run) {
+  run = RecRun{};
+  if (!info.record || !a.ok || a.terms.empty())
+    return false;
+  int64_t g = 0;
+  for (auto &t : a.terms) {
+    if (t.first->getType()->isPointerTy())
+      return false;   // a walked pointer outside a K-loop trip: no classical index here
+    g = int64_t(std::gcd(uint64_t(g), uint64_t(t.second < 0 ? -t.second : t.second)));
+  }
+  if (g <= 0)
+    return false;
+  int64_t n = int64_t(storeBytes(DL, ty)), end = 0;
+  for (const ObjInfo::Field &f : info.fields)
+    end = std::max(end, f.off + int64_t(storeBytes(DL, f.ty)));
+  int64_t lo = 0, hi = end - n;
+  // The bounds of the access's start offset from the root, when scalar evolution has them.
+  if (a.ptr && a.ptr->getType()->isPointerTy())
+    if (ScalarEvolution *SE = seOf(isa<Instruction>(a.ptr) || isa<Argument>(a.ptr) ? a.ptr : a.root))
+      if (SE == seOf(isa<Instruction>(a.root) || isa<Argument>(a.root) ? a.root : a.ptr)) {
+        const SCEV *d = SE->getMinusSCEV(SE->getSCEV(const_cast<Value *>(a.ptr)),
+                                         SE->getSCEV(const_cast<Value *>(a.root)));
+        if (!isa<SCEVCouldNotCompute>(d) && d->getType()->isIntegerTy()) {
+          ConstantRange r = SE->getSignedRange(d);
+          if (!r.isFullSet() && r.getBitWidth() <= 64) {
+            int64_t adj = a.off - a.off0;   // a's bytes start at d + adj from the root
+            int64_t rl = r.getSignedMin().getSExtValue(), rh = r.getSignedMax().getSExtValue();
+            if (rl > INT64_MIN / 4 && rh < INT64_MAX / 4) {
+              lo = std::max(lo, rl + adj);
+              hi = std::min(hi, rh + adj);
+            }
+          }
+        }
+      }
+  int64_t first = a.off - ((a.off - lo) / g) * g;   // the least position >= lo of a.off's class
+  if (first < lo)
+    first += g;
+  for (int64_t p = first; p <= hi; p += g) {
+    int k = fieldAt(info, p);
+    if (k < 0 || info.fields[unsigned(k)].ty != ty)
+      return false;
+    for (unsigned m = 0; m < info.fields.size(); ++m)
+      if (int(m) != k && info.fields[m].off < p + n && p < info.fields[m].off + int64_t(storeBytes(DL, info.fields[m].ty)))
+        return false;
+    run.fields.push_back(unsigned(k));
+  }
+  run.g = g;
+  return !run.fields.empty();
+}
+
 // cq-z6q1 (CR rules 20, 21; 189): a HEAP RECORD. A heap block of constant size whose accesses are at
 // classical constant byte offsets of more than one type (189's `struct node { int v; struct node *next; }`)
 // is a record: one cell per accessed field, at its own offset and of its own type (rule 20 per cell: a handle
@@ -863,17 +928,7 @@ bool heapRecord(LoweringContext &ctx, FnState &st, ObjInfo &info, ObjectId o) {
   }
   if (!widths)
     return false;   // one cell width: a slot array (a pointer cell type stays unimplemented there)
-  std::optional<uint64_t> size;
-  if (auto *CB = dyn_cast<CallBase>(info.root)) {
-    Attribute as = CB->getFnAttr(Attribute::AllocSize);
-    if (as.isValid() && !as.getAllocSizeArgs().second)
-      if (auto *n = dyn_cast<ConstantInt>(CB->getArgOperand(as.getAllocSizeArgs().first)))
-        size = n->getZExtValue();
-  }
-  if (!size)
-    unimplemented("mem-slots: a heap block accessed at several types that is not of one constant allocsize (a "
-                  "heap record's extent)",
-                  info.root);
+  // The block's size does not bound the record: its fields are the accesses' offsets (below).
   for (const Instruction &X : instructions(*st.F))
     if (auto *MI = dyn_cast<MemIntrinsic>(&X); MI && hasObject(ctx, MI->getDest(), o))
       unimplemented("mem-slots: a memory intrinsic on a heap record", &X);
@@ -898,8 +953,9 @@ bool heapRecord(LoweringContext &ctx, FnState &st, ObjInfo &info, ObjectId o) {
     end = off + int64_t(storeBytes(DL, ty));
     info.fields.push_back(ObjInfo::Field{off, ty});
   }
-  if (end > int64_t(*size))
-    unimplemented("mem-slots: a heap record field past its block", info.root);
+  // A field past the block is accessed only on paths where the C program accesses memory past its object
+  // (undefined behaviour as LLVM defines it, outside the domain): its cell stays at its own offset, as every
+  // field's, and the lowered program touches it exactly when the C program does.
   info.record = true;
   return true;
 }
@@ -953,6 +1009,45 @@ int columnOf(LoweringContext &ctx, FnState &st, const Value *root, ObjectId o) {
   return col;
 }
 
+// The value types the functions p is handed to (as a call argument, through GEPs, casts, phis and selects)
+// load, store or atomically access through it, transitively through their own calls (a bounded depth).
+void calleeAccessTypes(const Value *p, std::set<Type *> &out, unsigned depth) {
+  if (depth > 8)
+    return;
+  SmallVector<const Value *, 8> work{p};
+  SmallPtrSet<const Value *, 16> seen{p};
+  while (!work.empty()) {
+    const Value *v = work.pop_back_val();
+    for (const Use &u : v->uses()) {
+      const User *usr = u.getUser();
+      if (isa<GetElementPtrInst>(usr) || isa<CastInst>(usr) || isa<PHINode>(usr) || isa<SelectInst>(usr)) {
+        if (seen.insert(usr).second)
+          work.push_back(usr);
+        continue;
+      }
+      if (depth > 0) {
+        if (auto *ld = dyn_cast<LoadInst>(usr); ld && ld->getPointerOperand() == v)
+          out.insert(ld->getType());
+        if (auto *so = dyn_cast<StoreInst>(usr); so && so->getPointerOperand() == v)
+          out.insert(so->getValueOperand()->getType());
+        if (auto *r = dyn_cast<AtomicRMWInst>(usr); r && r->getPointerOperand() == v)
+          out.insert(r->getValOperand()->getType());
+        if (auto *c = dyn_cast<AtomicCmpXchgInst>(usr); c && c->getPointerOperand() == v)
+          out.insert(c->getNewValOperand()->getType());
+      }
+      auto *CB = dyn_cast<CallBase>(usr);
+      if (!CB || !CB->isArgOperand(&u) || isa<IntrinsicInst>(CB))
+        continue;
+      unsigned i = CB->getArgOperandNo(&u);
+      const Function *g = threadStart(*CB) ? threadStart(*CB) : CB->getCalledFunction();
+      if (threadStart(*CB))
+        i = i == 3 ? 0 : ~0u;
+      if (g && !g->isDeclaration() && i < g->arg_size())
+        calleeAccessTypes(g->getArg(i), out, depth + 1);
+    }
+  }
+}
+
 ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId o) {
   int col = columnOf(ctx, st, root, o);
   auto it = st.objs.find({root, col});
@@ -985,17 +1080,41 @@ ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId 
       internalError("mem-slots: a one-byte field column");
     return st.objs.emplace(std::make_pair(root, col), info).first->second;
   }
-  if (StructType *rt = recordType(root)) {
-    info.kind = isa<AllocaInst>(root) ? RootKind::Local : RootKind::Param;
-    info.record = true;
-    flattenRecord(rt, 0, DL, info.fields, root);
-    info.escaping = escapes(ctx, root);
-    return st.objs.emplace(std::make_pair(root, col), info).first->second;
+  bool byteView = false;
+  if (Type *rt = recordType(root)) {
+    ObjInfo rec = info;
+    rec.kind = isa<AllocaInst>(root) ? RootKind::Local : RootKind::Param;
+    rec.record = true;
+    flattenRecord(rt, 0, DL, rec.fields, root);
+    // CR rules 20, 26 with 63 and 122: a local struct or union some access reads or writes across its fields
+    // (a byte of an int member, a word spanning two members) is not a record of its fields: it is a value
+    // object of byte cells, a bit view (63) over all of its bytes. Every access that is exactly one field, or
+    // a run of fields at a run-time offset (recordRun), keeps it a record.
+    if (isa<AllocaInst>(root))
+      for (const Access &a : accessesOf(ctx, *st.F, o)) {
+        if (!a.a.ok || a.a.root != root)
+          continue;   // a fat pointer's access (rule 21) or no static address: decided at the access
+        RecRun run;
+        int k = a.a.terms.empty() ? fieldAt(rec, a.a.off) : -1;
+        if (a.a.terms.empty() ? (k < 0 || storeBytes(DL, a.ty) != storeBytes(DL, rec.fields[unsigned(k)].ty) ||
+                                 a.ty->isAggregateType() || a.ty->isVectorTy())
+                              : !recordRun(rec, a.a, a.ty, DL, run))
+          byteView = true;
+      }
+    if (!byteView) {
+      rec.escaping = escapes(ctx, root);
+      return st.objs.emplace(std::make_pair(root, col), rec).first->second;
+    }
   }
   if (auto *ai = dyn_cast<AllocaInst>(root)) {
     info.kind = RootKind::Local;
-    info.cellBytes = scalarCellBytes(ai->getAllocatedType(), DL, ai);
-    info.cellTy = scalarCellType(ai->getAllocatedType());
+    if (byteView) {
+      info.cellBytes = 1;
+      info.cellTy = Type::getInt8Ty(ctx.M.getContext());
+    } else {
+      info.cellBytes = scalarCellBytes(ai->getAllocatedType(), DL, ai);
+      info.cellTy = scalarCellType(ai->getAllocatedType());
+    }
   } else if (auto *gv = dyn_cast<GlobalVariable>(root)) {
     info.kind = RootKind::Global;
     info.cellBytes = scalarCellBytes(gv->getValueType(), DL, gv);
@@ -1013,10 +1132,27 @@ ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId 
       info.cellBytes = b;
       info.cellTy = a.ty;
     }
-    if (!info.cellBytes)
-      unimplemented("mem-slots: a parameter or heap slot object this function never loads or stores (its cell "
-                    "size is known only to another function)",
-                    root);
+    if (!info.cellBytes) {
+      // Rule 20: an object is classified over its accesses in the whole program. This function hands the
+      // object on without loading or storing it: its cells are the type the functions it is handed to access it
+      // as. Never accessed as a type anywhere (a memory intrinsic or a declared function at most), its cells are
+      // bytes (rule 22: a cell of untyped memory is a byte).
+      std::set<Type *> tys;
+      calleeAccessTypes(root, tys, 0);
+      for (Type *t : tys) {
+        uint64_t b = DL.getTypeAllocSize(t).getFixedValue();
+        if (info.cellBytes && info.cellBytes != b)
+          unimplemented("mem-slots: a parameter or heap slot object the functions it is handed to access at two "
+                        "widths (a bit view, 63)",
+                        root);
+        info.cellBytes = b;
+        info.cellTy = t;
+      }
+      if (!info.cellBytes) {
+        info.cellBytes = 1;
+        info.cellTy = Type::getInt8Ty(ctx.M.getContext());
+      }
+    }
   }
   info.escaping = escapes(ctx, root);
   if (info.kind == RootKind::Local) {
@@ -1049,8 +1185,17 @@ ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId 
       bool other = false, wideStore = false;
       for (const Access &a : accessesOf(ctx, *st.F, o)) {
         uint64_t b = DL.getTypeAllocSize(a.ty).getFixedValue();
-        if (b == info.cellBytes)
+        if (b == info.cellBytes) {
+          // An access of the cell's width that straddles two cells (a constant byte offset or an index stride
+          // that is not a whole number of cells) reads or writes bytes of both: a bit view (63) as well.
+          int64_t cb = int64_t(info.cellBytes);
+          if (a.a.ok && a.a.root == root &&
+              (a.a.off % cb || any_of(a.a.terms, [&](const auto &t) {
+                 return !t.first->getType()->isPointerTy() && t.second % cb;
+               })))
+            other = true;
           continue;
+        }
         auto *S = dyn_cast<StoreInst>(a.I);
         if (S && info.cellTy->isIntegerTy() && S->getValueOperand()->getType()->isIntegerTy() &&
             !ctx.T.isQuantum(S->getValueOperand(), ctx.S) && a.a.ok && a.a.terms.empty() &&
@@ -1497,6 +1642,22 @@ void decideFields(LoweringContext &ctx, FnState &st, ObjInfo &info, ObjectId o) 
                     info.root);
     f.handle = h;
   }
+  // A run-time offset access names any field of its run (recordRun): the run's fields hold a handle on every
+  // path when one of them does (rule 20: a cell is homogeneous, and the index is not known here).
+  for (bool changed = true; changed;) {
+    changed = false;
+    for (const Access &a : accessesOf(ctx, *st.F, o)) {
+      RecRun run;
+      if (a.a.root != info.root || !recordRun(info, a.a, a.ty, DL, run))
+        continue;
+      bool any = any_of(run.fields, [&](unsigned k) { return info.fields[k].handle == 1; });
+      for (unsigned k : run.fields)
+        if (any && info.fields[k].handle != 1) {
+          info.fields[k].handle = 1;
+          changed = true;
+        }
+    }
+  }
   SmallVector<Type *, 4> cells;
   for (ObjInfo::Field &f : info.fields) {
     f.rec = cells.size();
@@ -1522,7 +1683,8 @@ void decideFields(LoweringContext &ctx, FnState &st, ObjInfo &info, ObjectId o) 
 
 // ---- emission -----------------------------------------------------------------------------------
 
-struct Site { ObjectId o; ObjInfo *info; Addr a; bool beyond = false; };
+// runTy: the access type of a record access at a run-time offset (recordRun), else null.
+struct Site { ObjectId o; ObjInfo *info; Addr a; bool beyond = false; Type *runTy = nullptr; };
 
 Site siteOf(LoweringContext &ctx, FnState &st, const Instruction &I, const Value *ptr, Type *ty,
             int64_t extra = 0) {
@@ -1570,21 +1732,51 @@ Site siteOf(LoweringContext &ctx, FnState &st, const Instruction &I, const Value
       unimplemented("mem-slots: a walked slot access into an object of no static size (its rule 21 bound check)", &I);
     beyond = a.off < 0 || uint64_t(a.off) + bytes > total->getFixedValue();
   }
-  if (beyond && (info.record || info.view))
-    unimplemented("mem-slots: a walked access beyond a slot record or view object", &I);
+  if (beyond && (info.record || info.view)) {
+    // Rule 21 (cq-9w75): an access beyond the object in a trip the C program does not run touches none of its
+    // cells, whatever their layout (fields, a bit view): it is the access of a plain cell of its own type
+    // outside the object (a load reads |0>).
+    auto [it, fresh] = st.objs.emplace(std::make_pair(a.root, -2), info);
+    if (fresh) {
+      it->second.record = it->second.view = it->second.split = it->second.boolCells = false;
+      it->second.fields.clear();
+      it->second.recTy = nullptr;
+      it->second.cellBytes = bytes;
+      it->second.cellTy = ty;
+    }
+    if (it->second.cellBytes != bytes || it->second.cellTy != ty) {
+      it->second.cellBytes = bytes;
+      it->second.cellTy = ty;
+    }
+    return Site{objs.front(), &it->second, a, true};
+  }
   if (info.record) {
     decideFields(ctx, st, info, objs.front());
-    if (!a.terms.empty())
-      unimplemented("mem-slots: a slot record accessed at a run-time offset", &I);
+    if (!a.terms.empty()) {
+      RecRun run;
+      if (!recordRun(info, a, ty, ctx.M.getDataLayout(), run))
+        unimplemented("mem-slots: a slot record accessed at a run-time offset that may reach a position other than "
+                      "the start of a field of its type (a bit view of a record, 122)",
+                      &I);
+      return Site{objs.front(), &info, a, false, ty};
+    }
     int k = fieldAt(info, a.off);
     if (k < 0 || storeBytes(ctx.M.getDataLayout(), ty) != storeBytes(ctx.M.getDataLayout(), info.fields[unsigned(k)].ty))
       unimplemented("mem-slots: a slot record access that is not exactly one field (a bit view of a record, 122)", &I);
     return Site{objs.front(), &info, a};
   }
   if (info.view) {
-    if (info.escaping)
-      unimplemented("mem-slots: a bit view of a slot object whose pointer escapes (63's construction needs every "
-                    "access in this function)",
+    // 63's construction tracks the values a view object holds in this function; its cells hold no handles. A
+    // call handed the object (a clone, a declared clone, a host effect, a memory intrinsic) would read or write
+    // those cells: that is an escape of the view as well (it was lowered silently wrong: cq-e5lj).
+    bool handed = false;
+    for (const Instruction &X : instructions(*st.F))
+      if (auto *CB = dyn_cast<CallBase>(&X); CB && !isa<DbgInfoIntrinsic>(CB) && !isCqSurface(*CB))
+        if (auto *II = dyn_cast<IntrinsicInst>(CB); !II || !II->isLifetimeStartOrEnd())
+          handed |= hasObjectArg(ctx, X, objs.front());
+    if (info.escaping || handed)
+      unimplemented("mem-slots: a bit view of a slot object whose pointer escapes or is handed to a call (63's "
+                    "construction needs every access in this function)",
                     &I);
     if (!a.terms.empty())
       unimplemented("mem-slots: a bit view access of a slot object at a run-time offset", &I);
@@ -1641,6 +1833,32 @@ Value *cellPointer(LoweringContext &ctx, const Site &s, const Instruction &I) {
   Operand base = ctx.operand(s.a.root);
   if (base.handle)
     internalError("mem-slots: the base of a slot object is a rail", &I);
+  if (s.info->record && !s.a.terms.empty()) {
+    // A run-time offset into a run of fields (recordRun): field first + j, j = (offset - first.off) / g, sits at
+    // byte N(first) + j * G of the new layout, G the new layout's step between consecutive fields of the run.
+    RecRun run;
+    if (!s.info->recTy || !s.runTy || !recordRun(*s.info, s.a, s.runTy, ctx.M.getDataLayout(), run))
+      internalError("mem-slots: a record cell pointer at a run-time offset that is no run of fields", &I);
+    const StructLayout *SL = ctx.M.getDataLayout().getStructLayout(s.info->recTy);
+    auto N = [&](unsigned k) { return int64_t(SL->getElementOffset(s.info->fields[k].rec)); };
+    const ObjInfo::Field &f0 = s.info->fields[run.fields.front()];
+    int64_t G = run.fields.size() > 1 ? N(run.fields[1]) - N(run.fields[0]) : 0;
+    for (size_t j = 1; j < run.fields.size(); ++j)
+      if (N(run.fields[j]) - N(run.fields[j - 1]) != G)
+        internalError("mem-slots: a run of record fields whose new layout is not periodic", &I);
+    if (run.fields.size() == 1)
+      G = 0;   // one reachable field: every index value names it
+    Type *i64 = Type::getInt64Ty(C);
+    Value *bytes = ConstantInt::get(i64, N(run.fields.front()) + (s.a.off - f0.off) / run.g * G, true);
+    for (auto &[v, stride] : s.a.terms) {
+      Operand x = ctx.operand(v);
+      if (x.handle)
+        internalError("mem-slots: a quantum index into a slot object (QRAM, rule 20)", &I);
+      if (G)
+        bytes = B.CreateAdd(bytes, B.CreateMul(B.CreateSExtOrTrunc(x.v, i64), ConstantInt::get(i64, stride / run.g * G, true)));
+    }
+    return B.CreateInBoundsGEP(Type::getInt8Ty(C), base.v, bytes);
+  }
   if (s.info->record) {
     int k = fieldAt(*s.info, s.a.off);
     if (k < 0 || !s.a.terms.empty() || !s.info->recTy)
@@ -1741,11 +1959,26 @@ bool cellArms(LoweringContext &ctx, FnState &st, const Site &s, const Instructio
   const DataLayout &DL = ctx.M.getDataLayout();
   uint64_t size = DL.getTypeStoreSize(ty).getFixedValue();
   bool unnamed = false;
-  for (auto &[X, d] : st.declared)
-    if (hasObjectArg(ctx, *X, s.o) && isPotentiallyReachable(X, &I, nullptr, st.DT.get()))
-      unimplemented("mem-slots: a run-time read of a slot cell a declared clone call may have written on some "
-                    "paths only (rule 27)",
-                    &I);
+  // cq-r8-d (rule 27): a declared clone call that may run before I leaves in the cell either its new handle
+  // (the twin's pseudo rail) or the handle the cell held at the call: both are arms of the read.
+  for (auto &[X, d] : st.declared) {
+    if (!hasObjectArg(ctx, *X, s.o) || !isPotentiallyReachable(X, &I, nullptr, st.DT.get()))
+      continue;
+    allRegisters = false;
+    if (!is_contained(arms, d.pseudo))
+      arms.push_back(d.pseudo);
+    for (auto &[off, h] : d.atCall) {
+      Addr w = s.a;
+      w.off = off;
+      w.terms.clear();
+      w.ptr = nullptr;
+      if (!h.handle || differentCell(w, s.a, s.info->cellBytes, size))
+        continue;
+      RailId r = ctx.unc().idOf(h.v);
+      if (!is_contained(arms, r))
+        arms.push_back(r);
+    }
+  }
   for (const Instruction &X : instructions(*st.F))
     if (auto *MI = dyn_cast<MemIntrinsic>(&X); MI && hasObject(ctx, MI->getDest(), s.o) &&
                                                isPotentiallyReachable(MI, &I, nullptr, st.DT.get())) {
@@ -2141,6 +2374,11 @@ bool classicalCell(LoweringContext &ctx, FnState &st, const Site &s) {
     if (auto *MI = dyn_cast<MemIntrinsic>(&X); MI && hasObject(ctx, MI->getDest(), s.o))
       return false;
   if (s.info->record) {
+    if (!s.a.terms.empty()) {
+      RecRun run;
+      return s.runTy && recordRun(*s.info, s.a, s.runTy, DL, run) &&
+             all_of(run.fields, [&](unsigned k) { return s.info->fields[k].handle == 0; });
+    }
     int k = fieldAt(*s.info, s.a.off);
     return k >= 0 && s.info->fields[unsigned(k)].handle == 0;
   }
@@ -2567,14 +2805,24 @@ Operand readCell(LoweringContext &ctx, FnState &st, const Site &s, const Instruc
       // cq-r8-d (rule 27): the cell holds the clone's new handle or the one it held at the call. A
       // run-time read, a cell load over the twin's pseudo rail (its readers come before the twin) and the
       // old handle.
-      if (s.info->record || s.info->view || s.info->boolCells || !s.a.terms.empty())
-        unimplemented("mem-slots: a read after a declared clone call of a slot record, bit view, _Bool cell or "
-                      "run-time offset (rule 27)",
-                      &I);
+      // declaredCellsAtCall hands a declared clone only a plain local slot array (no record, view or _Bool
+      // cells). At a run-time offset the read is any cell the index may name: each one's handle at the call.
+      if (s.info->record || s.info->view || s.info->boolCells)
+        internalError("mem-slots: a declared clone call recorded on a slot record, bit view or _Bool object", &I);
       LoadInst *h = ctx.B().CreateAlignedLoad(handleTy(ctx.M.getContext()), cellPointer(ctx, s, I), Align(4));
       SmallVector<RailId, 2> arms{d->second.pseudo};
-      if (auto k = d->second.atCall.find(s.a.off); k != d->second.atCall.end() && k->second.handle)
-        arms.push_back(ctx.unc().idOf(k->second.v));
+      uint64_t size = storeBytes(ctx.M.getDataLayout(), ty);
+      for (auto &[off, op] : d->second.atCall) {
+        Addr w = s.a;
+        w.off = off;
+        w.terms.clear();
+        w.ptr = nullptr;
+        if (!op.handle || (s.a.terms.empty() ? off != s.a.off : differentCell(w, s.a, s.info->cellBytes, size)))
+          continue;
+        RailId r = ctx.unc().idOf(op.v);
+        if (!is_contained(arms, r))
+          arms.push_back(r);
+      }
       ctx.unc().recordCellLoad(h, arms);
       return Operand{h, true};
     }
