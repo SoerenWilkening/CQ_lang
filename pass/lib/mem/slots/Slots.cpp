@@ -758,10 +758,18 @@ bool boolRange(const LoadInst *ld) {
   return lo && hi && lo->isZero() && hi->getZExtValue() == 2;
 }
 
+// The scalar element of an object's type: arrays and fixed vectors stripped (rule 25: `<2 x T>` is a pair of
+// lanes, each a cell like an array element).
 Type *scalarCellType(Type *t) {
-  while (auto *at2 = dyn_cast<ArrayType>(t))
-    t = at2->getElementType();
-  return t;
+  for (;;) {
+    if (auto *at2 = dyn_cast<ArrayType>(t))
+      t = at2->getElementType();
+    else if (auto *vt = dyn_cast<FixedVectorType>(t); vt && vt->getElementType()->getPrimitiveSizeInBits() % 8 == 0 &&
+                                                          vt->getElementType()->getPrimitiveSizeInBits() > 0)
+      t = vt->getElementType();
+    else
+      return t;
+  }
 }
 
 uint64_t scalarCellBytes(Type *t, const DataLayout &DL, const Value *at) {
@@ -791,6 +799,13 @@ void flattenRecord(Type *t, int64_t off, const DataLayout &DL, SmallVectorImpl<O
     int64_t es = int64_t(DL.getTypeAllocSize(a->getElementType()).getFixedValue());
     for (uint64_t k = 0; k < a->getNumElements(); ++k)
       flattenRecord(a->getElementType(), off + int64_t(k) * es, DL, out, at);
+    return;
+  }
+  // Rule 25: a vector field is its lanes, one field each (a lane of a byte-multiple width at its own offset).
+  if (auto *v = dyn_cast<FixedVectorType>(t); v && DL.getTypeSizeInBits(v->getElementType()) % 8 == 0) {
+    int64_t es = int64_t(DL.getTypeStoreSize(v->getElementType()).getFixedValue());
+    for (unsigned k = 0; k < v->getNumElements(); ++k)
+      flattenRecord(v->getElementType(), off + int64_t(k) * es, DL, out, at);
     return;
   }
   if (!t->isIntegerTy() && !t->isFloatingPointTy() && !t->isPointerTy())
