@@ -2283,6 +2283,17 @@ struct Uncompute::Impl {
   // A4); constant true emits the item plainly; otherwise the item is wrapped in a block of its own.
   void placeAt(RailId g, Pos pos, bool local, bool exists = false, bool selfClear = false) {
     Rail &r = rails[g];
+    // cq-lshe (CR rule 6): a clean-up reads its inverse's operands, which must exist wherever the item runs; one
+    // whose operand is defined on some paths to pos only (an arm) gives way to g's own uncompute.
+    if (r.cleanup && !r.cleanup->via && r.cleanup->unbuilt.empty() && r.creator != kNone &&
+        any_of(r.cleanup->reads, [&](RailId x) {
+          auto *h = dyn_cast<Instruction>(rails[x].handle);
+          return h && (!dominates(h->getParent(), pos.bb) || (h->getParent() == pos.bb && !h->comesBefore(pos.before)));
+        })) {
+      for (RailId x : r.cleanup->reads)
+        llvm::erase(rails[x].cleanupReaders, g);
+      r.cleanup.reset();
+    }
     SmallVector<FlagEv, 8> evs;
     if (selfClear)
       evs.push_back({pos.before, false});

@@ -52,3 +52,9 @@ foreach(entry ${CQ_UNC_FATAL})
   add_test(NAME uncompute.${c} COMMAND uncompute_tests ${c})
   set_tests_properties(uncompute.${c} PROPERTIES PASS_REGULAR_EXPRESSION "${re}")
 endforeach()
+
+# Probes through the real cq-lower plugin (cq-lshe): run_probes.py's CASES.
+add_test(NAME uncompute.probes
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
