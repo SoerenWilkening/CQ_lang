@@ -560,7 +560,7 @@ static void testCores() {
 // ---------------------------------------------------------------------------------------------
 static void testClones() {
   struct Row { const char *sym; CloneSpec spec; };
-  CloneSpec all{"ext_fn", "1011", {255, 18446744073709551615ull}, true, true, true, 4, true};
+  CloneSpec all{"ext_fn", "1011", {255, 18446744073709551615ull}, true, true, 4, true, {2, 0}};
   const Row rows[] = {
       {"__cq_q_f_10", {"f", "10", {}}},
       {"__cq_q___divdc3_0011", {"__divdc3", "0011", {}}},
@@ -568,16 +568,16 @@ static void testClones() {
       {"__cq_q_pick8_10", {"pick8", "10", {}}},
       {"__cq_q_f.1_1", {"f.1", "1", {}}},
       {"__cq_q_memcmp_00111001111_b3", {"memcmp", "00111001111", {3}}},
-      {"__cq_q_memcmp_00111001111_b3_unc", {"memcmp", "00111001111", {3}, false, false, false, 0, true}},
+      {"__cq_q_memcmp_00111001111_b3_unc", {"memcmp", "00111001111", {3}, false, false, 0, true}},
       {"__cq_q_f_110_b3_7_0", {"f", "110", {3, 7, 0}}},
       {"__cq_q_g_0_ctl", {"g", "0", {}, true}},
       {"__cq_q_even_step_100_pure", {"even_step", "100", {}, false, true}},
-      {"__cq_q_prep_11000_adj", {"prep", "11000", {}, false, false, true}},
-      {"__cq_q_chain_10_d3", {"chain", "10", {}, false, false, false, 3}},
-      {"__cq_q_chain_10_d12_unc", {"chain", "10", {}, false, false, false, 12, true}},
-      {"__cq_q_sin_1_unc", {"sin", "1", {}, false, false, false, 0, true}},
-      {"__cq_q_step_1100_ctl_unc", {"step", "1100", {}, true, false, false, 0, true}},
-      {"__cq_q_ext_fn_1011_b255_18446744073709551615_ctl_pure_adj_d4_unc", all},
+      {"__cq_q_prep_11000_inv3", {"prep", "11000", {}, false, false, 0, false, {3}}},   // cq-xivx (_adj retired, §1.4)
+      {"__cq_q_chain_10_d3", {"chain", "10", {}, false, false, 3}},
+      {"__cq_q_chain_10_d12_unc", {"chain", "10", {}, false, false, 12, true}},
+      {"__cq_q_sin_1_unc", {"sin", "1", {}, false, false, 0, true}},
+      {"__cq_q_step_1100_ctl_unc", {"step", "1100", {}, true, false, 0, true}},
+      {"__cq_q_ext_fn_1011_b255_18446744073709551615_ctl_pure_d4_inv2_0_unc", all},
       {"__cq_q_tick_", {"tick", "", {}}},
       {"__cq_q_asm_2b8fbda969a8aaa9_10_ctl", {"asm_2b8fbda969a8aaa9", "10", {}, true}},
   };
@@ -589,7 +589,7 @@ static void testClones() {
       continue;
     const CloneSpec &a = *p, &b = r.spec;
     CHECK(a.fn == b.fn && a.mask == b.mask && a.bounds == b.bounds && a.ctl == b.ctl && a.pure == b.pure &&
-              a.adj == b.adj && a.depth == b.depth && a.unc == b.unc,
+              a.inv == b.inv && a.depth == b.depth && a.unc == b.unc,
           "parseClone(%s) fields (fn=%s mask=%s)", r.sym, a.fn.c_str(), a.mask.c_str());
   }
   const char *bad[] = {
@@ -603,7 +603,8 @@ static void testClones() {
       "__cq_q_f_1_d01",
       "__cq_q_f_1_unc_ctl",     // suffix order
       "__cq_q_f_1_pure_ctl",    // suffix order
-      "__cq_q_f_1_d2_adj",      // suffix order
+      "__cq_q_f_1_unc_d2",      // suffix order
+      "__cq_q_f_1_adj",         // _adj is retired (CR §1.4)
       "__cq_q_f_1_ctl_b3",      // suffix order
       "__cq_q_f_1_b99999999999999999999", // bound overflows u64
       "cq_q_f_1",               // prefix
@@ -627,9 +628,9 @@ static void testClones() {
   }
   // Rule 27 symbols (no bounds) read right to left: suffix words, then the mask, fn the rest.
   {
-    auto p = parseClone("__cq_q_my_lib_10_fn_0110_ctl_adj_unc");
+    auto p = parseClone("__cq_q_my_lib_10_fn_0110_ctl_unc");
     CHECK(p && p->fn == "my_lib_10_fn" && p->mask == "0110" && p->bounds.empty() && p->ctl && !p->pure &&
-              p->adj && p->depth == 0 && p->unc,
+              p->inv.empty() && p->depth == 0 && p->unc,
           "rule-27 symbol fields (fn=%s mask=%s)", p ? p->fn.c_str() : "-", p ? p->mask.c_str() : "-");
     auto q = parseClone("__cq_q_strtod_r_10_ctl");
     CHECK(q && q->fn == "strtod_r" && q->mask == "10" && q->ctl && !q->unc, "rule-27 strtod_r_10_ctl");
@@ -656,7 +657,7 @@ static void testClones() {
   llvm::InlineAsm *mov = llvm::InlineAsm::get(llvm::FunctionType::get(i32, {i32}, false), "movl $1, $0", "=r,r",
                                               false);
   CHECK(asmCloneFn(*mov) == "asm_74108121eae7511a", "asm mov -> %s", asmCloneFn(*mov).c_str());
-  CHECK(name(CloneSpec{asmCloneFn(*mov), "1", {}, false, false, false, 0, true}) ==
+  CHECK(name(CloneSpec{asmCloneFn(*mov), "1", {}, false, false, 0, true}) ==
             "__cq_q_asm_74108121eae7511a_1_unc",
         "asm clone twin name");
 }
