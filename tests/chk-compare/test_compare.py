@@ -1473,6 +1473,65 @@ class MeasuredGlobalPhase(unittest.TestCase):
         self.check(self.ours(), self.ours(lambda a, b: [dict(ph(5, a & b, 0.9), nmeas=1)], "r"), "ref", False)
 
 
+class COraclePhaseTotal(unittest.TestCase):
+    """Bead cq-3q60 (CR §6 item 2): against the C oracle the phases are a total, as against the
+    reference: ours may split or merge the C program's cq_phi reaches. Ry(1.0) on a (h=1, C site f:0),
+    Ry(2.0) on b (h=2, C site f:1), then phases."""
+
+    @staticmethod
+    def site(site, kind, angle, reg=None):
+        return {"ev": "site", "fn": "f", "site": site, "kind": kind, "angle": ang(angle),
+                "reg": None if reg is None else hex(reg)}
+
+    def c(self, phis, between=lambda a, b: []):
+        """phis(a, b) -> [(site, angle)] after both Ry; between(a, b) the same between them."""
+        return side("c", lambda a, b, s: dict(
+            rots=[self.site(0, "theta", 1.0, a)] + [self.site(k, "phi", t) for k, t in between(a, b)]
+            + [self.site(1, "theta", 2.0, b)] + [self.site(k, "phi", t) for k, t in phis(a, b)], kept=[]))
+
+    @staticmethod
+    def ours(phs, between=lambda a, b: []):
+        return side("o", lambda a, b, s: dict(rots=[ry(1, 1.0)] + between(a, b) + [ry(2, 2.0)] + phs(a, b),
+                                              kept=[keep(1, a), keep(2, b)]))
+
+    def check(self, ours, c, equal, needle=None):
+        r = compare(ours, c, QKEY, "c")
+        self.assertEqual(r.equal, equal, r.reasons)
+        if needle:
+            self.assertTrue(any(needle in x for x in r.reasons), r.reasons)
+
+    def test_merged_disjoint_reaches_accepted(self):
+        # the bead's repro: C P(0.5) at site A on a&b and at site B on a&!b; ours one P(0.5) on a
+        c = self.c(lambda a, b: ([(5, 0.5)] if a & b else []) + ([(6, 0.5)] if a & (1 - b) else []))
+        self.check(self.ours(lambda a, b: [ph(7, a, 0.5)]), c, True)
+
+    def test_split_reach_accepted(self):
+        c = self.c(lambda a, b: [(5, 0.5)] if a & b else [])
+        self.check(self.ours(lambda a, b: [ph(7, a & b, 0.25), ph(8, a & b, 0.25)]), c, True)
+
+    def test_total_differs_rejected(self):
+        c = self.c(lambda a, b: ([(5, 0.5)] if a & b else []) + ([(6, 0.5)] if a & (1 - b) else []))
+        self.check(self.ours(lambda a, b: [ph(7, a & b, 0.5)]), c, False, "the phase totals differ")
+        self.check(self.ours(lambda a, b: [ph(7, a | b, 0.5)]), c, False, "the phase totals differ")
+        self.check(self.ours(lambda a, b: [ph(7, a, 0.25)]), c, False, "the phase totals differ")
+
+    def test_phase_moved_across_a_reading_ry_rejected(self):
+        # C: P(0.5) on a&b after the Ry on b; ours puts it before that Ry: it reads b
+        c = self.c(lambda a, b: [(5, 0.5)] if a & b else [])
+        self.check(self.ours(lambda a, b: [], lambda a, b: [ph(7, a & b, 0.5)]), c, False, "the phase totals differ")
+
+    def test_phase_moved_across_an_independent_ry_accepted(self):
+        c = self.c(lambda a, b: [(5, 0.5)] if a else [])
+        self.check(self.ours(lambda a, b: [], lambda a, b: [ph(7, a, 0.5)]), c, True)
+        c = self.c(lambda a, b: [], lambda a, b: [(5, 0.5)] if a else [])
+        self.check(self.ours(lambda a, b: [ph(7, a, 0.5)]), c, True)
+
+    def test_global_total_accepted(self):
+        c = self.c(lambda a, b: [(5, 0.3)])
+        self.check(self.ours(lambda a, b: [ph(7, a, 0.3), ph(8, 1 - a, 0.3)]), c, True)
+        self.check(self.ours(lambda a, b: []), c, True)
+
+
 class HostOutput(unittest.TestCase):
     """Host output (cq-e4jk): outputs["stdout"] and outputs["effects"] are compared against both
     oracles; against "c" the C side's are a prefix of ours on a capped sample (exact on an ended one,

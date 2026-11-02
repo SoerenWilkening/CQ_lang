@@ -37,7 +37,11 @@ What is compared (CR §6, CLAUDE.md "The §6 checker"):
   every sample at the end, or constant there when the angle rails contribute 0 to it (a global phase
   of classical-angle phases). So one phase on a disjunction of pairwise-disjoint predicates equals the
   per-edge phases of the same angle (117); see _match_lists. Against
-  the C oracle rotations are matched by site (bead cq-yonm): each lowered gate belongs to one
+  the C oracle the phases are compared as a total too (bead cq-3q60, _phase_total_c: the running
+  difference of our phases and the C program's cq_phi reaches must commute with each matched Ry and
+  be 0, or a global constant, at the end; a capped sample through its cut), and the Ry gates are
+  matched by site (bead cq-yonm; the site rules below were written for phases too, which no longer
+  take sites): each lowered gate belongs to one
   (function, site) of `cq_theta`/`cq_phi`, and at every sample the gates of a site that fire there,
   in lowered order, are that site's reaches in that sample, each with the same angle (and register
   value, for theta). A site inside a loop is one gate per trip on the lowered side, and a trip that
@@ -1122,10 +1126,12 @@ def _match_input(ours: List[_Ev], sites: List[_Site], nS: int, capped: List[bool
     return data
 
 
-def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
-             capped: Sequence[bool] = (), idle: Sequence[_Ev] = (),
-             ident: Optional[Dict[Tuple, List[List[Tuple[int, Any, Optional[int]]]]]] = None,
-             registers: Optional[Dict[str, Any]] = None, cmeas: Optional[Sequence[Tuple]] = None) -> List[str]:
+def _match_c_ry(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
+                capped: Sequence[bool] = (), idle: Sequence[_Ev] = (),
+                ident: Optional[Dict[Tuple, List[List[Tuple[int, Any, Optional[int]]]]]] = None,
+                registers: Optional[Dict[str, Any]] = None, cmeas: Optional[Sequence[Tuple]] = None,
+                hits_out: Optional[List[List[Tuple[int, _Ev]]]] = None, unprep_out: Optional[set] = None
+                ) -> List[str]:
     """Match the C sites to our gates (module docstring). A site inside a loop is one gate per trip
     on our side, and a trip that skips the call leaves no C reach: so each lowered gate belongs to
     one site, and at each sample the gate, where it fires, takes the site's earliest reach not yet
@@ -1495,6 +1501,10 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
     for i in range(len(ours)):
         if assign[i] is not None:
             used = take(i, assign[i], used, hits)
+    if hits_out is not None:
+        hits_out[:] = hits
+    if unprep_out is not None:
+        unprep_out.update(ours[i].idx for i in unprep)
     # an unmatched gate on a capped sample must not precede a dependent gate that sample reached
     for i, x in enumerate(ours):
         if assign[i] is not None or i in unprep or opt[i]:
@@ -1518,6 +1528,187 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
                                    f"reverses them and they do not commute")
                     return reasons
     return reasons
+
+
+def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
+             capped: Sequence[bool] = (), idle: Sequence[_Ev] = (),
+             ident: Optional[Dict[Tuple, List[List[Tuple[int, Any, Optional[int]]]]]] = None,
+             registers: Optional[Dict[str, Any]] = None, cmeas: Optional[Sequence[Tuple]] = None,
+             regs: Optional[Dict[Tuple[int, int], Tuple]] = None) -> List[str]:
+    """Our gates against the C sites (module docstring; bead cq-3q60). Equal when the gates, phases
+    included, match the sites one by one (_match_c_ry over everything, the matching before cq-3q60),
+    or else when the Ry gates match the cq_theta sites and the phases agree with the cq_phi reaches as
+    a total (_phase_total_c; CR §6 item 2, as against the reference): one phase may stand for several
+    reaches or several for one. Either matching is a §6 equality; the reasons are both's."""
+    nS = len(capped) if capped else len(ours[0].pred) if ours else len(sites[0].occ) if sites else 0
+    capped = list(capped) or [False] * nS
+    # gate by gate first (phases taking cq_phi sites, as before cq-3q60): a matching there is a
+    # matching of the circuits; then, phases as a total
+    why_sites = _match_c_ry(ours, glob, sites, nan_eq, capped, idle, ident, registers, cmeas)
+    if not why_sites:
+        return []
+    hits: List[List[Tuple[int, _Ev]]] = []
+    unp: set = set()
+    why = _match_c_ry([e for e in ours if not _phase(e)], [], [st for st in sites if st.kind == "theta"],
+                      nan_eq, capped, idle, ident, registers, hits_out=hits, unprep_out=unp)
+    if not why:
+        why = _phase_total_c(ours, [st for st in sites if st.kind == "phi"], hits, capped, cmeas, regs or {},
+                             frozenset(unp))
+        if not why:
+            return []
+    return why_sites + [f"(phases as a total, cq-3q60) {w}" for w in why if w not in why_sites]
+
+
+def _phase_total_c(ours: List[_Ev], phi: List[_Site], hits: List[List[Tuple[int, _Ev]]], capped: List[bool],
+                   cmeas: Optional[Sequence[Tuple]], regs: Dict[Tuple[int, int], Tuple],
+                   unprep: FrozenSet[int] = frozenset()) -> List[str]:
+    """CR §6 item 2 against the C oracle (bead cq-3q60, as _match_lists against the reference): the
+    phases are a total. Δ(s) = Σ θ·f of our phases − Σ angles of the C program's cq_phi reaches, per
+    sample, exact over the f64 angles and read mod 2π (_zero_mod_2pi).
+
+    Global C reaches after a measurement are left out first (cq-459d): the reaches of one site with
+    one angle after one nonempty sequence of measured outcomes M, reached equally often at every
+    uncapped sample whose outcomes begin with M (at most as often at a capped one): a phase global
+    within each outcome branch. Every other reach is in the total (a global one adds a constant). Our global phases are not in
+    `ours` (_lowered_events).
+
+    At each Ry y of ours that took a C reach (hits: per sample the C positions of the matched gates),
+    Δ_y = our phases before y in lowered order − the C reaches before y's C position must commute with
+    y over the samples where y fires (where its control reads 0 it is the identity): constant there,
+    or not reading y's target (_dep over our registers on those samples), with or without our phases
+    on y's controls (_diag_on_controls). At the end Δ must be 0 mod 2π at every uncapped
+    sample, or constant over them with our angle-rail phases contributing 0 (a global phase of
+    classical-angle phases), as _match_lists decides against the reference.
+
+    A capped or ended sample s is read through its cut: its C reaches all lie before the cut, and the
+    cut lies somewhere in our gate order. Our phases firing at s that follow, without commuting
+    (_ordered), an Ry of ours firing at s that takes no C reach there (past the cut; a rule-10
+    un-prep aside) lie past the cut too; some prefix, in lowered order, of the others must total the
+    C reaches (Δ 0 mod 2π, or the uncapped samples' global constant)."""
+    nS = len(capped)
+    cm = list(cmeas) if cmeas is not None else [() for _ in range(nS)]
+    P = [s for s in range(nS) if not capped[s]]
+    Pset = set(P)
+    reach: List[List[Tuple[int, Fraction, Tuple, Tuple]]] = [[] for _ in range(nS)]
+    for st in phi:
+        mk = st.mkey or [[() for _ in o] for o in st.occ]
+        for s in range(nS):
+            for t, (epos, a, _r) in enumerate(st.occ[s]):
+                reach[s].append((epos, Fraction(_f64(a)), mk[s][t], st.key))
+    cnt = [Counter((a, M, k) for _, a, M, k in reach[s]) for s in range(nS)]
+    glob_keys = set()
+    for key in {k for c in cnt for k in c}:
+        M = key[1]
+        if not M:
+            continue                 # nothing measured before: in the total (a constant one is global there)
+        ext = [s for s in range(nS) if cm[s][:len(M)] == M]
+        up = [s for s in ext if s in Pset]
+        if not up:
+            continue
+        c0 = cnt[up[0]][key]
+        if all((cnt[s][key] == c0) if s in Pset else (cnt[s][key] <= c0) for s in ext):
+            glob_keys.add(key)
+    creach = [[(epos, a) for epos, a, M, k in reach[s] if (a, M, k) not in glob_keys] for s in range(nS)]
+    phs = sorted((e for e in ours if _phase(e)), key=lambda e: e.idx)
+    terms = {id(e): _phase_terms(e) for e in phs}
+    pos = [{e.idx: p for p, e in hits[s]} for s in range(nS)] if hits else [{} for _ in range(nS)]
+    ys = sorted({e.idx: e for s in range(nS) for _, e in (hits[s] if hits else [])}.values(), key=lambda e: e.idx)
+    for y in ys:
+        # only where y fires: there e^{iΔ} must commute with it; where its control reads 0 it is the
+        # identity, and a constant Δ on the control-on samples commutes with it
+        known = [s for s in range(nS) if y.idx in pos[s]]
+        bad = None
+        for skip_diag in (False, True):
+            vals: List[Fraction] = []
+            mags: List[float] = []
+            for s in known:
+                c = pos[s][y.idx]
+                d, mg = Fraction(0), 0.0
+                for p in phs:
+                    if p.idx < y.idx and not (skip_diag and _diag_on_controls(p, y)):
+                        d += terms[id(p)][s]
+                        mg += abs(float(terms[id(p)][s]))
+                for epos, a in creach[s]:
+                    if epos < c:
+                        d -= a
+                        mg += abs(float(a))
+                vals.append(d)
+                mags.append(mg)
+            cl = _classes_mod_2pi(vals, mags)
+            if cl is None:
+                bad = None
+                break
+            sub = {k: tuple(v[s] for s in known) for k, v in regs.items()}
+            if y.target not in {r for r, _ in _dep(cl, sub)}:
+                bad = None
+                break
+            bad = bad or cl
+        if bad is not None:
+            return [f"the phase totals differ before lowered gate #{y.idx} {y.label}: ours minus the C program's "
+                    f"(classes {_fn(bad)} over the samples where it fires) reads its target, so the phases do "
+                    f"not agree on its either side"]
+    vals, mags, rail = [], [], []
+    for s in P:
+        d, mg, q = Fraction(0), 0.0, Fraction(0)
+        for p in phs:
+            t = terms[id(p)][s]
+            d += t
+            mg += abs(float(t))
+            if p.kind == "phq":
+                q += t
+        for _, a in creach[s]:
+            d -= a
+            mg += abs(float(a))
+        vals.append(d)
+        mags.append(mg)
+        rail.append(q)
+    cl = _classes_mod_2pi(vals, mags)
+    const: Optional[Tuple[Fraction, float]] = None
+    if all(_zero_mod_2pi(v, m) for v, m in zip(vals, mags)):
+        pass
+    elif cl is None and all(_zero_mod_2pi(q, m) for q, m in zip(rail, mags)):
+        const = (vals[0], mags[0])   # a global phase of classical-angle phases (CR §6)
+    else:
+        return [f"the phase totals differ: ours minus the C program's is not 0 mod 2π on every sample "
+                + (f"(classes {_fn(cl)} over the uncapped samples)" if cl is not None else
+                   "(a constant the angle rails contribute to: never a global phase)")]
+    rys = [e for e in ours if not _phase(e) and e.idx not in unprep]
+    for s in range(nS):
+        if not capped[s]:
+            continue
+        took = set(pos[s])
+        past = [x for x in rys if x.pred[s] and x.idx not in took]
+        ctot = sum((a for _, a in creach[s]), Fraction(0))
+        cmag = sum(abs(float(a)) for _, a in creach[s])
+        d, mg = -ctot, cmag
+        ok = False
+        for p in [None] + [p for p in phs if p.pred[s] if not any(x.idx < p.idx and _ordered(x, p) for x in past)]:
+            if p is not None:
+                t = terms[id(p)][s]
+                d += t
+                mg += abs(float(t))
+            if _zero_mod_2pi(d, mg) or (const is not None and _zero_mod_2pi(d - const[0], mg + const[1])):
+                ok = True
+                break
+        if not ok:
+            return [f"the phase totals differ before the cut on capped or ended sample {s}: no prefix of our "
+                    f"phases that can lie before the cut totals the C program's cq_phi reaches"]
+    return []
+
+
+def _classes_mod_2pi(vals: Sequence[Fraction], mg: Sequence[float]) -> Optional[Tuple[int, ...]]:
+    """Values as classes of equality mod 2π; None when constant (or empty)."""
+    reps: List[int] = []
+    ids: List[int] = []
+    for s in range(len(vals)):
+        for c, t in enumerate(reps):
+            if _zero_mod_2pi(vals[s] - vals[t], mg[s] + mg[t]):
+                ids.append(c)
+                break
+        else:
+            reps.append(s)
+            ids.append(len(reps) - 1)
+    return None if len(reps) <= 1 else tuple(ids)
 
 
 # ---------------------------------------------------------------- the a_K rule (against "c")
@@ -1865,7 +2056,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
                 reasons += [f"{tag}: {why}" for why in why_c]
                 continue
             for why in _match_c(o_evs, o_glob, sites, nan_eq, [capped[k] or ended[k] for k in ks], o_idle,
-                                c_ident, registers, [_mprefix(r, None, nan_eq) for r in r_runs]):
+                                c_ident, registers, [_mprefix(r, None, nan_eq) for r in r_runs], o_regs):
                 reasons.append(f"{tag}: {why}")
             for why in _check_ak(o_runs, r_runs, [ended[k] for k in ks]):
                 reasons.append(f"{tag}: {why}")

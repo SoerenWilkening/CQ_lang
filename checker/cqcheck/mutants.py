@@ -63,7 +63,8 @@ from cqcheck.contracts import Verdict, to_json
 MUTANTS_FILE = report.ROOT / "tests" / "mutants" / "mutants.json"
 
 _ROT_REF = r"rotation list differs"
-_ROT_C = r"C site .* (has no lowered gate|reached .*)|lowered gate #\d+ .* corresponds to no C site|C order puts"
+_ROT_C = (r"C site .* (has no lowered gate|reached .*)|lowered gate #\d+ .* corresponds to no C site|C order puts"
+          r"|the phase totals differ")
 _MEAS = r"measurement \d+ reads .* != "
 _OUT_REF = r"outputs .* != "
 _RET_C = r"returns .* != "
