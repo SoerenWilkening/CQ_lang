@@ -1621,25 +1621,60 @@ unsigned resolveK(const Function &F, const KOptions &KO) {
 }
 
 // Rule 14, recursion with quantum depth (98): one clone per level _d1.._dC (taint publishes them), C =
-// min(K, B); the recursive call at level C is CUT: its value is a fresh |0> rail (a seed, rule 7: freed
-// directly once its readers are uncomputed), a void cut call is nothing. The overflow predicate "the cut
-// level would recurse once more" is kept iff B > K or no bound is known; that kept rail is not built yet
-// (unimplemented): with B <= K it is |0> on every branch and nothing is kept (98).
+// min(K, B); the recursive call at level C is CUT: its value is a fresh |0> rail per quantum scalar field
+// (a seed, rule 7: freed directly once its readers are uncomputed; a classical field is the constant 0), a
+// void cut call is nothing. The overflow predicate "the cut level would recurse once more" is kept iff
+// B > K or no bound is known; with B <= K the call never runs and nothing is kept (98).
 void lowerQuantumDepthRecursion(LoweringContext &ctx, llvm::CallBase &CB, unsigned K, std::optional<uint64_t> B) {
+  LLVMContext &C = ctx.M.getContext();
   if (!B || *B > K)
-    unimplemented("loops-cutoff: a quantum-depth recursion cut at K with B > K or no bound (the kept overflow "
-                  "predicate \"the cut level would recurse once more\", rule 14)",
+    unimplemented("loops-cutoff: a quantum-depth recursion cut at K with B > K or no bound: the kept overflow "
+                  "predicate (rule 14) is a rail kept inside a level clone, which calls does not return to the "
+                  "caller nor the checker count as kept (cq-ew5z)",
                   &CB);
   if (CB.getType()->isVoidTy())
     return;
-  Type *t = CB.getType();
-  if (!(t->isIntegerTy() || t->isFloatingPointTy()))
-    unimplemented("loops-cutoff: a cut recursive call with an aggregate, vector or pointer result (rule 14)", &CB);
-  RailType w = railTypeOf(t);
-  CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
-                             {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
-  ctx.unc().recordSeed(z);
-  ctx.bind(&CB, z);
+  // The scalar leaves of the result (rules 25, 26: struct and array elements, vector lanes).
+  SmallVector<Type *, 4> leaves;
+  std::function<void(Type *)> walk = [&](Type *t) {
+    if (auto *st = dyn_cast<StructType>(t)) {
+      for (Type *e : st->elements())
+        walk(e);
+    } else if (auto *a = dyn_cast<ArrayType>(t)) {
+      for (uint64_t k = 0; k < a->getNumElements(); ++k)
+        walk(a->getElementType());
+    } else if (auto *v = dyn_cast<FixedVectorType>(t)) {
+      for (unsigned k = 0; k < v->getNumElements(); ++k)
+        leaves.push_back(v->getElementType());
+    } else {
+      leaves.push_back(t);
+    }
+  };
+  walk(CB.getType());
+  SmallVector<bool, 4> mask = ctx.T.fieldMask(&CB, ctx.S);
+  if (mask.size() != leaves.size())
+    internalError("loops-cutoff: a cut recursive call whose field mask does not match its leaves", &CB);
+  SmallVector<Operand, 4> fields;
+  for (size_t k = 0; k < leaves.size(); ++k) {
+    Type *t = leaves[k];
+    if (!mask[k]) {
+      fields.push_back(Operand{Constant::getNullValue(t), false});
+      continue;
+    }
+    if (!(t->isIntegerTy() || t->isFloatingPointTy()))
+      unimplemented("loops-cutoff: awaiting owner ruling: SPEC_ISSUES \"The |0> value of a cut recursive call "
+                    "with a quantum pointer result\"",
+                    &CB);
+    RailType w = railTypeOf(t);
+    CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(C, w))});
+    ctx.unc().recordSeed(z);
+    fields.push_back(Operand{z, true});
+  }
+  if (leaves.size() == 1 && !isa<StructType>(CB.getType()) && !isa<ArrayType>(CB.getType()) &&
+      !isa<VectorType>(CB.getType()) && fields[0].handle)
+    ctx.bind(&CB, fields[0].v);
+  else
+    ctx.bindFields(&CB, fields);
 }
 
 } // namespace cq::loops
