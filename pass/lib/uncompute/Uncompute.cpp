@@ -1027,12 +1027,24 @@ struct Uncompute::Impl {
   // first"): a clean-up whose inverse reads a garbage rail whose own uncompute reads the cleaned
   // rail cannot run. That garbage is uncomputed first, which leaves no y' to recompute the old
   // value from, so the old rail keeps its role (42: s = y + x is garbage, y stays a register).
-  bool garbageReads(RailId x, RailId g, unsigned depth = 0) const {
+  // cq-hfj9: `failed` keeps, per rail, the least depth at which the walk from it found no path to g (the
+  // item graph shares its rails, so without it the walk is exponential: asinhl). The answer only weakens
+  // as the depth grows, so a rail that failed at depth d fails at every depth >= d.
+  bool garbageReads(RailId x, RailId g) const {
+    DenseMap<RailId, unsigned> failed;
+    return garbageReadsAt(x, g, 0, failed);
+  }
+  bool garbageReadsAt(RailId x, RailId g, unsigned depth, DenseMap<RailId, unsigned> &failed) const {
     if (depth > 64 || rails[x].cleanup || rails[x].role != Role::Garbage || rails[x].released)
       return false;
+    if (auto f = failed.find(x); f != failed.end() && f->second <= depth)
+      return false;
     for (RailId y : itemReads(x))
-      if (y == g || garbageReads(y, g, depth + 1))
+      if (y == g || garbageReadsAt(y, g, depth + 1, failed))
         return true;
+    auto [f, ins] = failed.try_emplace(x, depth);
+    if (!ins && depth < f->second)
+      f->second = depth;
     return false;
   }
   // `only`: prune the clean-ups of these rails alone (a local flush, cq-1jxg). A pending clean-up whose
