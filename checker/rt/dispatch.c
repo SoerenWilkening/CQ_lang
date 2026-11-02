@@ -469,6 +469,10 @@ static int zero_rule(int32_t d, const int32_t *src, int ns) {
 
 /* ---- core gates -------------------------------------------------------------------------- */
 
+/* cq-4593 (BACKEND_ABI 1.13): set while a cq_invert region's replay runs an _unc as the rail's compute (the
+ * reversed list takes a compute/uncompute pair the other way round): the XOR has no residue to check. */
+static int iv_quiet_unc;
+
 static int32_t *stack_;
 static size_t nstack, capstack;
 
@@ -1334,7 +1338,11 @@ static void template_call(call_t *c, const char *sym) {
       sb_add(&b, "\"}");
       cqe_log(b.p);
       free(b.p);
-      if (!cqe__val_iszero(cqe__val(o))) {
+      if (iv_quiet_unc) {
+        zero_rule(o, hs, nh);
+        if (r != 0)
+          cqe__setknown(o, 0);
+      } else if (!cqe__val_iszero(cqe__val(o))) {
         char *hx = cqe__hexa(cqe__val(o));
         cqe__violation("unc_residue", o, "%s: out rail %d holds %s after its _unc", sym, (int)o, hx);
         free(hx);
@@ -1382,8 +1390,13 @@ static int parse_sig(const char *sig, lty *rty, lty *ty, int *n) {
   return 0;
 }
 
+static int iv_intercept(const char *sym, const char *sig, const char *csig, int32_t nargs, void **argv, void *ret,
+                        void *thunk);
+
 void cqe_dispatch(const char *sym, const char *sig, int32_t nargs, void **argv, void *ret) {
   cqe__init();
+  if (iv_intercept(sym, sig, NULL, nargs, argv, ret, NULL))
+    return; /* cq_invert (BACKEND_ABI 1.13): a marker, or a gate recorded in an open region */
   lty rty, ty[64];
   int n = nargs;
   if (nargs < 0 || nargs > 64 || parse_sig(sig, &rty, ty, &n)) {
@@ -1438,7 +1451,7 @@ static const char *lty_wtok(const lty *t, char *buf, size_t n) {
   return buf;
 }
 
-/* Entry of every stub stubgen.py generates for a declared clone __cq_q_<fn>_<mask>[_ctl][_pure][_adj]
+/* Entry of every stub stubgen.py generates for a declared clone __cq_q_<fn>_<mask>[_ctl][_pure]
  * [_dN][_unc] that nothing links (rule 27). csig is "<fn>|<ret>|<t0>,..." of the C function fn.
  * The clone's ABI arguments (rule 27): [out handle, twin with a non-void result] [pred, _ctl] then per
  * C parameter a scalar (an i32 handle when its mask digit is 1, else the C-typed value) or a pointer
@@ -1469,6 +1482,8 @@ void cqe_standin_host(const char *sym, const char *sig, const char *csig, int32_
 static void standin(const char *sym, const char *sig, const char *csig, int32_t nargs, void **argv, void *ret,
                     standin_thunk thunk) {
   cqe__init();
+  if (iv_intercept(sym, sig, csig, nargs, argv, ret, (void *)thunk))
+    return; /* a declared clone's XOR into its result rail, recorded in an open cq_invert region */
   _Alignas(16) uint8_t cbuf[64][16]; /* the C arguments of fn, for thunk */
   _Alignas(16) uint8_t rbuf[16];
   void *cargs[64];
@@ -1679,7 +1694,9 @@ static void standin(const char *sym, const char *sig, const char *csig, int32_t 
         sb_add(&b, "\"}");
         cqe_log(b.p);
         free(b.p);
-        if (!cqe__val_iszero(cqe__val(out_h))) {
+        if (iv_quiet_unc) {
+          zero_rule(out_h, hs, nh);
+        } else if (!cqe__val_iszero(cqe__val(out_h))) {
           char *hx = cqe__hexa(cqe__val(out_h));
           cqe__violation("unc_residue", out_h, "%s: out rail %d holds %s after its twin", sym, (int)out_h, hx);
           free(hx);
@@ -1697,6 +1714,365 @@ static void standin(const char *sym, const char *sig, const char *csig, int32_t 
 done:
   for (int i = 0; i < nargs; ++i)
     cqe__val_free(&raw[i]);
+}
+
+/* ---- cq_invert regions (CR rule 17, BACKEND_ABI 1.13; cq-4593) ------------------------------
+ * cqrt_invert_begin opens a region; while one is open, a gate is RECORDED, not applied, and
+ * cqrt_invert_end replays the region's gates reversed, each by its inverse, then the frees it recorded.
+ *  - Gates: every template and _unc, every core XOR gate (not/and/or/xor_i1, copy, xorc), Ry and P
+ *    (literal angle or angle rail), qram_store/_unc, qram_load/_unc, tape_write, and a declared clone
+ *    (rule 27 stand-in) and its twin. An Ry or P is inverted by negating its angle (an angle rail's value
+ *    is negated for the call), qram_store and its _unc are each other's inverse, every XOR gate is its
+ *    own.
+ *  - A gate whose forward form makes a fresh rail (a template, qram_load, tape_write, a clone with a
+ *    result) gets that rail at once, at |0> (allocations keep their place); the program holds its handle.
+ *    The rail is PENDING until a replay first XORs into it: that replay is its compute, whichever of the
+ *    pair it is (the reversed list runs a compute/uncompute pair the other way round), and the other one
+ *    is its uncompute, with the residue check of an _unc.
+ *  - Not gates, done at once: alloc, push/pop, qram_alloc/realloc, tape bookkeeping, abort flags.
+ *    cqrt_free, cqrt_qram_free and qram_realloc's _unc (releases) are performed after the reversed list.
+ *  - A measurement inside a region first replays the gates recorded so far forward, as recorded (it needs
+ *    them; every open region, outermost first); only the gates recorded after it are reversed at the end.
+ *  - Nested regions: an inner end appends its reversed list and its frees to the enclosing region's
+ *    record. A region still open at the end of the shot is closed there (innermost first).
+ * Reference: CQ_spec _tools/sample_check.py Eval.call models the same region. */
+
+enum { IV_GATE, IV_XOR, IV_FREE };
+typedef struct {
+  int kind, inv, unc, standin;
+  char *sym, *sig, *csig;
+  void *thunk;
+  int nargs;
+  uint8_t (*buf)[16];
+  int32_t out; /* IV_XOR: the rail the gate XORs into */
+} iv_op;
+typedef struct {
+  iv_op *v;
+  size_t n, cap;
+} iv_list;
+static iv_list *iv_open;
+static size_t iv_nopen, iv_capopen;
+static int iv_replaying;
+static int32_t *iv_pend;
+static size_t iv_npend, iv_cappend;
+
+void cqe__prealloc(int32_t h); /* core.c */
+
+static char *iv_dup(const char *s) {
+  if (!s)
+    return NULL;
+  char *d = strdup(s);
+  if (!d)
+    abort();
+  return d;
+}
+
+static void iv_append(iv_list *l, const iv_op *op) {
+  if (l->n == l->cap) {
+    l->cap = l->cap ? 2 * l->cap : 32;
+    l->v = realloc(l->v, l->cap * sizeof *l->v);
+    if (!l->v)
+      abort();
+  }
+  l->v[l->n++] = *op;
+}
+
+static void iv_pend_add(int32_t h) {
+  if (iv_npend == iv_cappend) {
+    iv_cappend = iv_cappend ? 2 * iv_cappend : 32;
+    iv_pend = realloc(iv_pend, iv_cappend * sizeof *iv_pend);
+    if (!iv_pend)
+      abort();
+  }
+  iv_pend[iv_npend++] = h;
+}
+
+static int iv_pend_take(int32_t h) {
+  for (size_t i = 0; i < iv_npend; ++i)
+    if (iv_pend[i] == h) {
+      iv_pend[i] = iv_pend[--iv_npend];
+      return 1;
+    }
+  return 0;
+}
+
+static int ends_with(const char *s, const char *suf) {
+  size_t n = strlen(s), m = strlen(suf);
+  return n >= m && !strcmp(s + n - m, suf);
+}
+
+/* A fresh |0> rail of width w for a recorded gate's result; its handle goes to the program. */
+static int32_t iv_reserve(const char *w, const lty *rty, void *ret) {
+  int32_t h = cqe__new(w, NULL, 1, 0);
+  iv_pend_add(h);
+  cqe_val r;
+  cqe__val_init(&r, 32, 'i');
+  r.w[0] = (uint32_t)h;
+  store_val(ret, rty, &r);
+  cqe__val_free(&r);
+  return h;
+}
+
+static void iv_run(const iv_op *op);
+
+/* Replay every open region's record forward (a measurement needs the gates before it). */
+static void iv_flush_forward(void) {
+  for (size_t d = 0; d < iv_nopen; ++d) {
+    iv_list *l = &iv_open[d];
+    for (size_t i = 0; i < l->n; ++i)
+      iv_run(&l->v[i]);
+    l->n = 0;
+  }
+}
+
+static void iv_close(void) {
+  iv_list l = iv_open[--iv_nopen];
+  iv_list out = {0};
+  for (size_t i = l.n; i-- > 0;)
+    if (l.v[i].kind != IV_FREE) {
+      iv_op o = l.v[i];
+      o.inv = !o.inv;
+      iv_append(&out, &o);
+    }
+  for (size_t i = 0; i < l.n; ++i)
+    if (l.v[i].kind == IV_FREE)
+      iv_append(&out, &l.v[i]);
+  free(l.v);
+  if (iv_nopen) {
+    for (size_t i = 0; i < out.n; ++i)
+      iv_append(&iv_open[iv_nopen - 1], &out.v[i]);
+  } else {
+    for (size_t i = 0; i < out.n; ++i)
+      iv_run(&out.v[i]);
+  }
+  free(out.v);
+}
+
+void cqe__invert_close_all(void) {
+  while (iv_nopen)
+    iv_close();
+}
+
+static int iv_intercept(const char *sym, const char *sig, const char *csig, int32_t nargs, void **argv, void *ret,
+                        void *thunk) {
+  if (!csig && !strcmp(sym, "cqrt_invert_begin")) {
+    if (nargs != 0)
+      cqe__violation("malformed_call", -1, "%s: expected ()", sym);
+    if (iv_nopen == iv_capopen) {
+      iv_capopen = iv_capopen ? 2 * iv_capopen : 8;
+      iv_open = realloc(iv_open, iv_capopen * sizeof *iv_open);
+      if (!iv_open)
+        abort();
+    }
+    memset(&iv_open[iv_nopen++], 0, sizeof *iv_open);
+    return 1;
+  }
+  if (!csig && !strcmp(sym, "cqrt_invert_end")) {
+    if (nargs != 0)
+      cqe__violation("malformed_call", -1, "%s: expected ()", sym);
+    if (!iv_nopen)
+      cqe__violation("invert_unbalanced", -1, "%s: no cq_invert region is open", sym);
+    else
+      iv_close();
+    return 1;
+  }
+  if (!iv_nopen || iv_replaying)
+    return 0;
+  lty rty, ty[64];
+  int n = nargs;
+  if (nargs < 0 || nargs > 64 || parse_sig(sig, &rty, ty, &n))
+    return 0; /* the ordinary path reports it */
+  iv_op op = {0};
+  op.kind = IV_GATE;
+  if (csig) {
+    op.standin = 1;
+    op.kind = IV_XOR;
+    op.unc = ends_with(sym, "_unc");
+    if (op.unc) {
+      if (nargs < 1 || strcmp(ty[0].ty, "i32"))
+        return 0;
+      memcpy(&op.out, argv[0], 4);
+    } else {
+      const char *b1 = strchr(csig, '|'), *b2 = b1 ? strchr(b1 + 1, '|') : NULL;
+      lty crty;
+      char wt[16];
+      if (!b2 || parse_lty(b1 + 1, (size_t)(b2 - b1 - 1), &crty) || crty.kind == 'v' ||
+          !lty_wtok(&crty, wt, sizeof wt) || strcmp(rty.ty, "i32"))
+        return 0; /* a void clone has no effect (rule 27); anything else the ordinary path reports */
+      op.out = iv_reserve(wt, &rty, ret);
+    }
+  } else if (!strncmp(sym, "cq_template_", 12)) {
+    cqe_tname t;
+    if (cqe_parse_template(sym, &t))
+      return 0;
+    op.kind = IV_XOR;
+    op.unc = t.unc;
+    if (t.unc) {
+      if (nargs < 1 || strcmp(ty[0].ty, "i32"))
+        return 0;
+      memcpy(&op.out, argv[0], 4);
+    } else {
+      if (strcmp(rty.ty, "i32"))
+        return 0;
+      op.out = iv_reserve(result_w(&t), &rty, ret);
+    }
+  } else if (!strncmp(sym, "cqrt_", 5)) {
+    const char *s = sym + 5;
+    char cls[64];
+    cqe_tname t;
+    if (!strcmp(s, "free")) {
+      op.kind = IV_FREE;
+    } else if (!strncmp(s, "measure_", 8)) {
+      iv_flush_forward();
+      return 0;
+    } else if (core_gate(NULL, s, cls, sizeof cls)) {
+      if (!strcmp(cls, "core:alloc") || !strcmp(cls, "core:push") || !strcmp(cls, "core:pop"))
+        return 0;
+    } else if (parse_family(s, &t) == 0) {
+      if (!strcmp(t.op, "qram_free") || (!strcmp(t.op, "qram_realloc") && t.unc)) {
+        op.kind = IV_FREE;
+      } else if (!strcmp(t.op, "qram_store")) {
+        op.kind = IV_GATE;
+      } else if (!strcmp(t.op, "qram_load")) {
+        op.kind = IV_XOR;
+        op.unc = t.unc;
+        if (t.unc) {
+          if (nargs < 1 || strcmp(ty[0].ty, "i32"))
+            return 0;
+          memcpy(&op.out, argv[0], 4);
+        } else {
+          if (strcmp(rty.ty, "i32") || !cqe__wtok_bits(t.w, NULL))
+            return 0;
+          op.out = iv_reserve(t.w, &rty, ret);
+        }
+      } else if (!strcmp(t.op, "tape_write") && strcmp(t.shape, "l")) {
+        int32_t src;
+        if (nargs < 2 || strcmp(rty.ty, "i32") || strcmp(ty[nargs - 1].ty, "i32"))
+          return 0;
+        memcpy(&src, argv[nargs - 1], 4);
+        if (!cqe__exists(src))
+          return 0;
+        char w[8];
+        snprintf(w, sizeof w, "%s", cqe__w(src));
+        op.kind = IV_XOR;
+        op.out = iv_reserve(w, &rty, ret);
+        cqe__setrole(op.out, 2); /* a tape rail (C1 roles) */
+      } else {
+        return 0; /* bookkeeping: qram_alloc/realloc, tape_alloc/fmt/effect, literal writes, abort */
+      }
+    } else {
+      return 0;
+    }
+  } else {
+    return 0;
+  }
+  op.sym = iv_dup(sym);
+  op.sig = iv_dup(sig);
+  op.csig = iv_dup(csig);
+  op.thunk = thunk;
+  op.nargs = nargs;
+  op.buf = calloc((size_t)(nargs ? nargs : 1), sizeof *op.buf);
+  if (!op.buf)
+    abort();
+  for (int i = 0; i < nargs; ++i)
+    memcpy(op.buf[i], argv[i], ty[i].bytes);
+  iv_append(&iv_open[iv_nopen - 1], &op);
+  return 1;
+}
+
+static void iv_call(const iv_op *op, const char *sym, const char *sig, void **argv, int nargs, void *ret) {
+  if (op->standin)
+    standin(sym, sig, op->csig, nargs, argv, ret, (standin_thunk)op->thunk);
+  else
+    cqe_dispatch(sym, sig, nargs, argv, ret);
+  cqe__prealloc(0);
+}
+
+static void iv_run(const iv_op *op) {
+  ++iv_replaying;
+  _Alignas(16) uint8_t buf[65][16];
+  _Alignas(16) uint8_t rbuf[16];
+  void *argv[65];
+  int nargs = op->nargs;
+  memcpy(buf, op->buf, (size_t)nargs * sizeof *buf);
+  for (int i = 0; i < 65; ++i)
+    argv[i] = buf[i];
+  memset(rbuf, 0, sizeof rbuf);
+  char sym[256], sig[1100];
+  snprintf(sym, sizeof sym, "%s", op->sym);
+  snprintf(sig, sizeof sig, "%s", op->sig);
+  if (op->kind == IV_FREE) {
+    iv_call(op, sym, sig, argv, nargs, rbuf);
+  } else if (op->kind == IV_GATE) {
+    int qang = strstr(sym, "qangle") != NULL;
+    int rot = !strncmp(sym, "cqrt_ry_", 8) || !strncmp(sym, "cqrt_rz_", 8);
+    int32_t a = 0;
+    if (op->inv && rot && nargs > 0) {
+      if (qang) {
+        memcpy(&a, buf[nargs - 1], 4);
+        if (cqe__exists(a))
+          cqe__val(a)->w[0] ^= 1ULL << 63; /* the angle rail (f64) negated for the call */
+        else
+          a = 0;
+      } else {
+        buf[nargs - 1][7] ^= 0x80; /* the double literal negated */
+      }
+    } else if (op->inv && strstr(sym, "qram_store")) {
+      if (ends_with(sym, "_unc"))
+        sym[strlen(sym) - 4] = 0;
+      else
+        strncat(sym, "_unc", sizeof sym - strlen(sym) - 1);
+    }
+    iv_call(op, sym, sig, argv, nargs, rbuf);
+    if (a)
+      cqe__val(a)->w[0] ^= 1ULL << 63;
+  } else {
+    int pend = iv_pend_take(op->out);
+    const char *params = strchr(op->sig, '|');
+    params = params ? params + 1 : "";
+    if (op->standin || strstr(sym, "cqrt_tape_write")) {
+      if (op->unc) {
+        iv_quiet_unc = pend;
+        iv_call(op, sym, sig, argv, nargs, rbuf);
+        iv_quiet_unc = 0;
+      } else {
+        cqe__prealloc(op->out);
+        iv_call(op, sym, sig, argv, nargs, rbuf);
+        if (!pend && cqe__exists(op->out) && !cqe__val_iszero(cqe__val(op->out))) {
+          char *hx = cqe__hexa(cqe__val(op->out));
+          cqe__violation("unc_residue", op->out, "%s: out rail %d holds %s after its replayed uncompute (cq_invert)",
+                         sym, (int)op->out, hx);
+          free(hx);
+          cqe__setknown(op->out, 0);
+        }
+      }
+    } else if (!op->unc) {
+      if (pend) {
+        cqe__prealloc(op->out);
+        iv_call(op, sym, sig, argv, nargs, rbuf);
+      } else { /* the uncompute: the _unc form, (out, args...) */
+        strncat(sym, "_unc", sizeof sym - strlen(sym) - 1);
+        snprintf(sig, sizeof sig, "void|i32%s%s", *params ? "," : "", params);
+        memmove(buf[1], buf[0], (size_t)nargs * sizeof *buf);
+        memcpy(buf[0], &op->out, 4);
+        iv_call(op, sym, sig, argv, nargs + 1, rbuf);
+      }
+    } else if (!pend) {
+      iv_call(op, sym, sig, argv, nargs, rbuf);
+    } else if (!strncmp(sym, "cq_template_", 12)) {
+      iv_quiet_unc = 1; /* the compute: an XOR into the |0> rail, no residue */
+      iv_call(op, sym, sig, argv, nargs, rbuf);
+      iv_quiet_unc = 0;
+    } else { /* qram_load_unc as the compute: the forward load into the rail */
+      sym[strlen(sym) - 4] = 0;
+      const char *rest = strchr(params, ',');
+      snprintf(sig, sizeof sig, "i32|%s", rest ? rest + 1 : "");
+      memmove(buf[0], buf[1], (size_t)(nargs - 1) * sizeof *buf);
+      cqe__prealloc(op->out);
+      iv_call(op, sym, sig, argv, nargs - 1, rbuf);
+    }
+  }
+  --iv_replaying;
 }
 
 /* Classification for tests and tools: "core:<gate>", "template:<op>", "family:<op>"; -1 unknown. */

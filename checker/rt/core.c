@@ -411,8 +411,29 @@ static uint64_t clock_;
 uint64_t cqe__tick(void) { return ++clock_; }
 uint32_t cqe__nrails_peek(void) { return nrails; }
 
+/* cq-4593 (BACKEND_ABI 1.13): a gate recorded inside a cq_invert region whose forward form makes a fresh
+ * rail got that rail at once (allocations keep their place, at |0>); when the gate is replayed, the next
+ * cqe__new is that rail: init is XORed into it (dispatch.c, cqe__prealloc). */
+static int32_t prealloc_h;
+void cqe__prealloc(int32_t h) { prealloc_h = h; }
+
 int32_t cqe__new(const char *w, const cqe_val *init, int known, int seed) {
   cqe__init();
+  if (prealloc_h > 0) {
+    int32_t h = prealloc_h;
+    prealloc_h = 0;
+    if ((uint32_t)h > nrails || !rails[h].live) {
+      cqe__violation("bad_handle", h, "cq_invert replay: rail %d is not live", (int)h);
+    } else {
+      if (w && strcmp(rails[h].w, w) != 0)
+        cqe__violation("width_mismatch", h, "cq_invert replay: rail %d is %s, the gate makes %s", (int)h, rails[h].w, w);
+      if (init)
+        cqe__val_xor(&rails[h].v, init);
+      rails[h].known = rails[h].known && known;
+      rails[h].t_write = cqe__tick();
+      return h;
+    }
+  }
   char kind = 0;
   uint32_t bits = cqe__wtok_bits(w, &kind);
   if (!bits) {
@@ -922,7 +943,11 @@ int atexit(void (*fn)(void)) {
   return 0;
 }
 
+void cqe__invert_close_all(void) __attribute__((weak)); /* dispatch.c (cq-4593) */
+
 static void run_exit_fns(void) {
+  if (cqe__invert_close_all)
+    cqe__invert_close_all(); /* BACKEND_ABI 1.13: a region still open at the end of the shot is closed */
   while (nexit_fns > 0)
     exit_fns[--nexit_fns]();
 }

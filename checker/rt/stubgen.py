@@ -18,7 +18,7 @@ function the C oracle gives the same body-less callee): it calls
 
 where csig = "<fn>|<ret>|<t0>,<t1>,..." is the C function's own signature, read from the --c-module
 files (the example's .O1.ll: the declaration of fn, rule 27's callee). fn is the clone name read right
-to left (CR §1.4): the suffix words (_unc, _dN, _adj, _pure, _ctl), then the mask. A clone whose fn
+to left (CR §1.4): the suffix words (_unc, _dN, _pure, _ctl), then the mask. A clone whose fn
 the C modules do not declare is left undefined (no stub: an ordinary link error, as rule 27 says for
 a missing definition); one whose C signature has a non-scalar type is an error.
 
@@ -45,7 +45,7 @@ import sys
 
 RUNTIME_PREFIXES = ("cqrt_", "cq_template_")
 CLONE_PREFIX = "__cq_q_"
-SUFFIX = re.compile(r"_(unc|ctl|pure|adj|d[0-9]+)$")
+SUFFIX = re.compile(r"_(unc|ctl|pure|d[0-9]+)$")
 MASK = re.compile(r"_([01]+)$")
 SCALAR = re.compile(r"^(void|i[1-9][0-9]*|half|bfloat|float|double|x86_fp80|ptr)$")
 KEEP_ATTRS = ("signext", "zeroext")
