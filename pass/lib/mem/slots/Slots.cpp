@@ -417,8 +417,15 @@ struct FnState {
   // cq-4e6m (CR rules 9, 18, 20): a caller cell a clone writes and reads in sequence under quantum predicates
   // (cloneCellOf), keyed by (formal, byte offset): its rail type and C type, the caller's handle loaded at the
   // clone's entry, the one slot result f stored into the cell there, and the cell's current body value (cur),
-  // which f always equals; nullopt: the cell is not such a cell.
-  struct CloneCell { RailType w; Type *ty = nullptr; Value *old = nullptr, *f = nullptr; Operand cur; };
+  // which f always equals; nullopt: the cell is not such a cell. perPath (cq-zndn): stores on paths classical
+  // branches choose, each path writing the cell at most once and never reading it: cur stays old at every store.
+  struct CloneCell {
+    RailType w;
+    Type *ty = nullptr;
+    Value *old = nullptr, *f = nullptr;
+    Operand cur;
+    bool perPath = false;
+  };
   std::map<std::pair<const Value *, int64_t>, std::optional<CloneCell>> cloneCells;
   // Register updates (CR rules 6, 20; 114): per object, whether its every store has a register-update
   // shape (1) or not (0); the new-IR base of each object that has one; the cqrt_free of each old rail they
@@ -4061,6 +4068,12 @@ bool mergedCloneStore(LoweringContext &ctx, FnState &st, const Site &s, StoreIns
 // into the cell's handle, zeroing it, and stores old_k back (calls' finalize). The other clone-cell
 // constructions (the single copy-out, 51's arm merge, cq-vxgm) are this one where each path writes the cell at
 // most once and the clone never reads it; they stay as they are.
+// cq-zndn (rules 9, 18, 20; musl's __rem_pio2_large writing y[] in the cases of a classical switch, under quantum
+// predicates inside them): stores under quantum predicates on paths classical branches choose, no store reaching
+// another and no read of the cell in the clone. Every path writes the cell at most once, so the cell's value
+// before each store is the caller's old: the store makes f = select(p, v, old) on its path (copy(old, f),
+// copy(select, f)), and a path that writes nothing leaves f = old. The copies run where the store does, so each
+// classical path merges old and new on its own; the twin replays them on the same path.
 FnState::CloneCell *cloneCellOf(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &at) {
   if (s.info->kind != RootKind::Param || ctx.S.isEntry() || !isa<Argument>(s.a.root) || !s.a.ok ||
       !s.a.terms.empty() || s.beyond || s.info->view || s.info->boolCells || s.info->record || s.info->split)
@@ -4074,7 +4087,7 @@ FnState::CloneCell *cloneCellOf(LoweringContext &ctx, FnState &st, const Site &s
   uint64_t sz = storeBytes(DL, at.getType()->isVoidTy() ? cast<StoreInst>(at).getValueOperand()->getType()
                                                          : at.getType());
   SmallVector<const Instruction *, 4> stores, plainStores, readers;
-  bool load = false, pred = false, plain = false, ok = true;
+  bool load = false, pred = false, plain = false, ok = true, classical = false;
   Type *ty = nullptr;
   for (const Access &a : accessesOf(ctx, *st.F, s.o)) {
     if (differentCell(a.a, s.a, storeBytes(DL, a.ty), sz))
@@ -4094,10 +4107,12 @@ FnState::CloneCell *cloneCellOf(LoweringContext &ctx, FnState &st, const Site &s
       break;
     }
     Pred bp = ctx.preds().block(a.I->getParent());
-    if (!bp.classicalFactor(ctx.T, ctx.S).isTop() || reachesItself(*a.I, st.DT.get())) {
+    if (reachesItself(*a.I, st.DT.get())) {
       ok = false;
       break;
     }
+    if (!bp.classicalFactor(ctx.T, ctx.S).isTop())
+      classical = true;
     if (!ty || a.ty->isFloatingPointTy())
       ty = a.ty;
     if (L) {
@@ -4124,8 +4139,16 @@ FnState::CloneCell *cloneCellOf(LoweringContext &ctx, FnState &st, const Site &s
     for (const Instruction *y : stores)
       if (x != y && isPotentiallyReachable(x, y, nullptr, st.DT.get()))
         reach = true;
-  if (ok && !stores.empty() && (reach || (pred && (load || plain))))
+  if (ok && classical) {
+    // Classical branches around an access: only the per-path form (no read, no store after another).
+    if (!load && !reach && pred) {
+      cell = FnState::CloneCell{railTypeOf(ty), ty, nullptr, nullptr, Operand{}};
+      cell->perPath = true;
+      needOld = true;
+    }
+  } else if (ok && !stores.empty() && (reach || (pred && (load || plain)))) {
     cell = FnState::CloneCell{railTypeOf(ty), ty, nullptr, nullptr, Operand{}};
+  }
   auto &slot = st.cloneCells[key];
   slot = cell;
   if (!slot)
@@ -4134,7 +4157,14 @@ FnState::CloneCell *cloneCellOf(LoweringContext &ctx, FnState &st, const Site &s
   IRBuilder<> &B = ctx.B();
   IRBuilderBase::InsertPointGuard guard(B);
   BasicBlock &E = ctx.out().getEntryBlock();
-  B.SetInsertPoint(&E, E.getFirstInsertionPt());
+  if (slot->perPath) {
+    // After the entry's code (the slot base of a pointer argument, a fat pointer's object and index, is computed
+    // there), or here when the entry is the block being lowered (no access of the cell precedes the first one).
+    if (Instruction *T = E.getTerminator())
+      B.SetInsertPoint(T);
+  } else {
+    B.SetInsertPoint(&E, E.getFirstInsertionPt());
+  }
   RailType w = slot->w;
   LoadInst *old = nullptr;
   if (needOld) {
@@ -4190,7 +4220,8 @@ void writeCloneCell(LoweringContext &ctx, FnState &st, FnState::CloneCell &c, St
   }
   CallInst *c2 = ctx.emitCore(cp, {nv.v, c.f});
   ctx.unc().recordCore(c2, cp, {nv, Operand{c.f, true}}, fid);
-  c.cur = nv;
+  if (!c.perPath)
+    c.cur = nv;
   st.lowered[&stI] = Operand{c.f, true};
 }
 
