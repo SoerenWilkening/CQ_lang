@@ -25,7 +25,7 @@ TWIN_BARRIER = ("cq: unimplemented: uncompute: a write that may change an object
 TWIN_ALIAS = ("cq: unimplemented: uncompute: a clone call whose twin may read a caller cell the clone writes by "
               "another route than the writing pointer")
 # §6 samples per probe where the full set takes minutes (cqcheck user --samples): the musl bodies.
-SAMPLES = {"libm_musl_floorfn": 32, "libm_musl_atan": 16, "libm_musl_exp": 16, "libm_musl_log": 16}
+SAMPLES = {"libm_musl_acosh": 16, "libm_musl_coshf": 16, "libm_musl_lrint": 16, "libm_musl_floorfn": 32, "libm_musl_atan": 16, "libm_musl_exp": 16, "libm_musl_log": 16}
 # (probe, entry, opt flags, expectation, regexes the lowered module must contain)
 CASES = [
     # cq-57ju (rulings 2026-11-02): plain clang -O1 callers of musl b1efda5 bodies (no -fno-builtin, no -frounding-math).
@@ -40,6 +40,17 @@ CASES = [
                                             r"call double @__math_oflow\(i32 noundef 0\)"]),
     ("libm_musl_log", "f_log", [], "pass", [r"call i32 @__cq_q_log_1\(i32 %\d+\)\n",
                                             r"call double @__math_divzero\(i32 noundef 1\)"]),
+    # cq-babj (musl sweep): a twin replays a classical fpexcept.ignore constrained op as the plain op it is (rule 23)
+    # and an ordinary call of a host body whose only accesses are volatile ones to its own dead local (rule 19,
+    # cq-fl4n; rule 24); llvm.lrint/lround/nearbyint bind to the injected body of the same name (rule 18).
+    ("libm_musl_acosh", "f_acosh", [], "pass", [r"define internal void @__cq_q_log_1_unc\(",
+                                                r"call double @llvm.experimental.constrained.sitofp.f64.i32"]),
+    ("libm_musl_coshf", "f_coshf", [], "pass", [r"define internal void @__cq_q___expo2f_\d+_unc\(",
+                                                r"call float @__math_oflowf\(i32 noundef 0\)"]),
+    ("libm_musl_lrint", "f_lrint", [], "pass", [r"call i32 @__cq_q_lrint_1\(i32 %\d+\)\n"]),
+    ("libm_musl_lrint", "f_lround", [], "pass", [r"call i32 @__cq_q_lround_1\(i32 %\d+\)\n"]),
+    ("libm_musl_lrint", "f_nearbyint", [], "pass", [r"call i32 @__cq_q_nearbyint_1\(i32 %\d+\)\n"]),
+    ("libm_musl_lrint", "f_nearbyintf", [], "pass", [r"call i32 @__cq_q_nearbyintf_1\(i32 %\d+\)\n"]),
     # cq-57ju (rule 18 partial measurement, rule 23 default caller): a FENV_ACCESS callee measured from a plain
     # caller (mode 0, an empty flags rail, the flags dead): the measured result is copied out before the twin.
     ("partial_flags", "sc_measure", [], "pass",
