@@ -75,3 +75,18 @@ int me_join4(unsigned x0, double th) {
     }
     return cq_measure(r);
 }
+
+/* cq-mgkr: the join's other incoming is computed in the sibling quantum arm, lowered after the loop: the walker
+ * selects it in at the join (LoweringContext::addJoinArm). */
+int me_join5(unsigned x0, double th) {
+    unsigned x = x0;
+    cq_theta(&x, th);
+    unsigned n = x & 7, a = 1, b = (x >> 3) & 3;
+    unsigned r;
+    if ((x >> 5) & 1) {
+        if (n > 1) { unsigned i = n; do { r = a; a = a * 3 + b; } while (--i > 1); } else r = b * 7 + 1;
+    } else {
+        r = b * 11 + a;
+    }
+    return cq_measure(r);
+}

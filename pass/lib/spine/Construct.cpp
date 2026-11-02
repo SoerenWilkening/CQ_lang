@@ -1668,6 +1668,20 @@ void Walker::emitBlock(BasicBlock *b) {
     if (unitBoundPhis.count(&phi)) {
       if (auto ie = inEdges.find(b); ie != inEdges.end() && ie->second.size() > 1)
         joinUnitPhi(phi, ie->second);
+      // cq-mgkr: incomings the unit could not read (lowered after the loop), selected in where their edges
+      // hold (rule 9); they exclude the loop, so the unit's binding stands elsewhere.
+      if (auto ja = sh.joinArms.find(&phi); ja != sh.joinArms.end()) {
+        std::vector<std::pair<Pred, Operand>> arms;
+        Pred E = Pred::bottom();
+        for (auto &[e, v] : ja->second) {
+          E = E | e;
+          arms.push_back({e, ctx.operand(v)});
+        }
+        arms.push_back({!E, ctx.operand(&phi)});
+        Value *m = selectChain(ctx, arms, railTypeOf(phi.getType()));
+        sh.joinArms.erase(ja);
+        ctx.rebind(&phi, {Operand{m, true}});
+      }
       blockDefs.push_back(&phi);
       continue;
     }

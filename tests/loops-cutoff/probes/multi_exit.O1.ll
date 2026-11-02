@@ -285,6 +285,45 @@ define i32 @me_join4(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
 
 declare i32 @cq_measure_ui32(i32 noundef) local_unnamed_addr #2
 
+; Function Attrs: nounwind ssp uwtable
+define i32 @me_join5(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
+  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #4
+  %4 = lshr i32 %3, 3
+  %5 = and i32 %4, 3
+  %6 = and i32 %3, 32
+  %7 = icmp eq i32 %6, 0
+  br i1 %7, label %21, label %8
+
+8:                                                ; preds = %2
+  %9 = and i32 %3, 7
+  %10 = icmp ugt i32 %9, 1
+  br i1 %10, label %11, label %18
+
+11:                                               ; preds = %8, %11
+  %12 = phi i32 [ %15, %11 ], [ 1, %8 ]
+  %13 = phi i32 [ %16, %11 ], [ %9, %8 ]
+  %14 = mul i32 %12, 3
+  %15 = add i32 %14, %5
+  %16 = add i32 %13, -1
+  %17 = icmp ugt i32 %16, 1
+  br i1 %17, label %11, label %24, !llvm.loop !18
+
+18:                                               ; preds = %8
+  %19 = mul nuw nsw i32 %5, 7
+  %20 = add nuw nsw i32 %19, 1
+  br label %24
+
+21:                                               ; preds = %2
+  %22 = mul nuw nsw i32 %5, 11
+  %23 = add nuw nsw i32 %22, 1
+  br label %24
+
+24:                                               ; preds = %11, %18, %21
+  %25 = phi i32 [ %20, %18 ], [ %23, %21 ], [ %12, %11 ]
+  %26 = tail call i32 @cq_measure_ui32(i32 noundef %25) #5
+  ret i32 %26
+}
+
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #1 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
 attributes #2 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
@@ -313,3 +352,4 @@ attributes #5 = { nounwind }
 !15 = distinct !{!15, !10, !11}
 !16 = distinct !{!16, !10, !11}
 !17 = distinct !{!17, !10, !11}
+!18 = distinct !{!18, !10, !11}

@@ -196,6 +196,9 @@ struct Shared {
     bool every;
   };
   llvm::DenseMap<const llvm::Value *, MergeSix> mergeSix;
+  // cq-mgkr (LoweringContext::addJoinArm): incomings of a unit-bound join phi that the unit could not read
+  // (defined in a block lowered after the loop), selected in by the walker at the phi's block.
+  std::map<const llvm::PHINode *, std::vector<std::pair<Pred, const llvm::Value *>>> joinArms;
   // cq-i9wk (CR rule 19): results of calls of in-place callees reached with no quantum argument that are
   // FROZEN (a register the callee minted or its rule-6 image): kept here like a register of this function.
   llvm::DenseSet<const llvm::Value *> frozenResults;

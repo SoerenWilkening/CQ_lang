@@ -46,6 +46,10 @@ public:
   void rebind(const llvm::Value *orig, llvm::ArrayRef<Operand>);   // replaces a binding; internalError if unbound
   // cq-mgkr: has orig a value in the new IR yet (a constant always)?
   bool bound(const llvm::Value *orig) const;
+  // cq-mgkr (rule 9 at a unit's join, CR rule 14): v is P's incoming on an edge whose predicate is `edge`,
+  // which a loop unit binding P could not read (lowered after the loop): the walker selects v in for P
+  // where `edge` holds when it lowers P's block, over the unit's binding elsewhere.
+  void addJoinArm(const llvm::PHINode *P, const Pred &edge, const llvm::Value *v);
   llvm::BasicBlock *block(const llvm::BasicBlock *orig);
   llvm::Value *emitTemplate(const abi::TemplateSpec &, llvm::ArrayRef<Operand>, const llvm::Value *orig = nullptr);
   llvm::CallInst *emitCore(const abi::CoreSpec &, llvm::ArrayRef<llvm::Value *>);

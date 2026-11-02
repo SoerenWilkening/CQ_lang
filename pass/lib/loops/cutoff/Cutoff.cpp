@@ -866,10 +866,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         if (!ctx.bound(v)) {
           const Loop *vl = A.LI.getLoopFor(u);
           if (!vl || vl->contains(H))
-            internalError("loops-cutoff: an incoming of a multi-exit K-loop's join from outside the loop, not in "
-                          "another loop, whose value is not lowered at the loop's header",
-                          &P);
-          continue;   // another loop unit's exit: it selects its value in over this binding when lowered
+            ctx.addJoinArm(&P, ctx.preds().edge(u, C), v);   // lowered after the loop: the walker selects it in
+          continue;   // or another loop unit's exit: it selects its value in over this binding when lowered
         }
         Pred e = ctx.preds().edge(u, C);
         auto same = find_if(outside, [&](const std::pair<Pred, Operand> &a) { return a.second.v == ctx.operand(v).v; });

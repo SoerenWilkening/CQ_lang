@@ -210,6 +210,10 @@ void LoweringContext::bindFields(const Value *orig, ArrayRef<Operand> ops) {
   slot.append(ops.begin(), ops.end());
 }
 
+void LoweringContext::addJoinArm(const PHINode *P, const Pred &edge, const Value *v) {
+  impl->sh->joinArms[P].push_back({edge, v});
+}
+
 bool LoweringContext::bound(const Value *orig) const {
   if (isa<Constant>(orig))
     return true;
