@@ -1,7 +1,7 @@
 /* tests/fatptr heap-list probes (cq-z6q1; CR rules 14, 20, 21; 189's list_search): heap records {v, next} whose
  * v fields hold handles and whose next fields hold classical host pointers; a K-loop whose classical exit
  * (a NULL read from memory) has no count LLVM computes carries p as a fat pointer's tag (fatptr R2); a load
- * through p is one access per record merged by select, a next field is decoded at run time by range tests.
+ * through p is one access per record merged by select, a next field is decoded at run time by exact start tests.
  * Each entry is checked §6 against its own C program (cqcheck user). Regenerate heap_list.O1.ll:
  * clang -O1 -S -emit-llvm -target x86_64-apple-macosx16.0.0 -I ../../../../CQ_spec heap_list.c -o heap_list.O1.ll */
 #include <stdlib.h>

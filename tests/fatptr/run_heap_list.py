@@ -6,6 +6,9 @@ For probes/heap_list.O1.ll it checks, and fails on:
   - no CQ.h surface call is left;
   - each entry keeps its three or four host mallocs (heap records stay host blocks) and decodes next pointers
     at run time (a ptrtoint of a loaded host pointer);
+  - the decode is exact (cq-0w0g, owner ruling 2026-11-02): every select of a decoded tag is on
+    `icmp eq i64 <loaded addr>, <root base>`, never the one-past range test `icmp ule i64 (addr - base), size`,
+    which decodes a pointer to the start of a block placed right after another (real malloc) as the other;
   - every entry is §6-equal to its own C program (`python3 -m cqcheck user`, the C oracle).
 Outputs go to build/tests/fatptr/out/.
 """
@@ -24,6 +27,17 @@ SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_inver
 def body(module: str, fn: str) -> str:
     m = re.search(r"^define [^\n]*@" + re.escape(fn) + r"\(.*?^}", module, re.S | re.M)
     return m.group(0) if m else ""
+
+
+def decode_form(b: str) -> list:
+    """FileCheck-style: each run-time decode compare is `icmp eq i64 %addr, %base` of two ptrtoints."""
+    p2i = set(re.findall(r"(%\d+) = ptrtoint ptr %\d+ to i64", b))
+    eqs = re.findall(r"= icmp eq i64 (%\d+), (%\d+)", b)
+    if not any(x in p2i and y in p2i for x, y in eqs):
+        return ["no exact decode compare (icmp eq i64 of two ptrtoints)"]
+    if re.search(r"= sub i64 (%\d+), (%\d+)\n\s*%\d+ = icmp ule i64", b):
+        return ["a one-past range decode (sub; icmp ule) is left"]
+    return []
 
 
 def main() -> int:
@@ -57,6 +71,7 @@ def main() -> int:
             why.append(f"not its {ENTRIES[e]} host mallocs")
         if not re.search(r"= ptrtoint ptr %\d+ to i64", b) or "load ptr" not in b:
             why.append("no run-time decode of a loaded next pointer")
+        why += decode_form(b)
         c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(PROBE), "--lowered", str(lowered),
                             "--entry", e], capture_output=True, text=True, cwd=ROOT / "checker")
         if c.returncode != 0 or "PASS" not in c.stdout + c.stderr:

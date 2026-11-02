@@ -696,8 +696,8 @@ Fat deriveSelect(LoweringContext &ctx, const SelectInst &sel, bool emit, bool ea
 
 // cq-z6q1 (CR rule 21; 189): a pointer loaded from host memory (a slot record's classical pointer field or a
 // classical object) through a fat pointer. Its value is a host address decoded at run time by lowerLoad
-// (range tests over its roots); its roots are the pointers this function stores into the objects the load
-// reads, each a root at its start (idx 0: a node pointer), and NULL. Every object of the load's provenance
+// (exact start tests over its roots, decodeTag); its roots are the pointers this function stores into the
+// objects the load reads, each a root at its start (idx 0: a node pointer), and NULL. Every object of the load's provenance
 // must be one of them (a pointer of unknown origin, or one stored by another function or a memory
 // intrinsic, is unimplemented). Its idx is the classical 0; its tag the rail lowerLoad bound.
 Fat deriveHostLoaded(LoweringContext &ctx, const LoadInst &ld, ArrayRef<ObjectId> src, bool emit) {
@@ -1620,10 +1620,15 @@ bool hostOrRecordRoots(LoweringContext &ctx, const Fat &f) {
   return any;
 }
 
-// A host address decoded at run time to its tag over the roots (rule 21, unknown origin): base[o] <= addr <=
-// base[o] + size (one-past included), the first matching root's tag; an address in no root's object (NULL)
-// is tag 0. A classical select chain, the last root innermost.
-Value *decodeTag(LoweringContext &ctx, Value *addrPtr, ArrayRef<const Value *> roots, const Instruction &at) {
+// A host address decoded at run time to its tag over the roots (rule 21, unknown origin). Its only producer is
+// deriveHostLoaded, which requires every stored pointer to be an object start (idx 0), so the test is exact:
+// addr == base[o] (owner ruling 2026-11-02, cq-0w0g). The one-past-included range test would let a pointer to
+// the start of an object adjacent to the end of another decode as the other (real malloc places blocks
+// adjacently); it belongs only to a decode of a possibly interior pointer, which then must let an object
+// starting at the address win over the one it is one past, and is not built. A matching root's tag (roots are
+// distinct allocations, so at most one matches); an address that is no root's start (NULL) is tag 0. A
+// classical select chain, the last root innermost.
+Value *decodeTag(LoweringContext &ctx, Value *addrPtr, ArrayRef<const Value *> roots) {
   IRBuilder<> &B = ctx.B();
   Value *addr = B.CreatePtrToInt(addrPtr, i64(ctx));
   Value *acc = ConstantInt::get(i32(ctx), 0);
@@ -1631,13 +1636,10 @@ Value *decodeTag(LoweringContext &ctx, Value *addrPtr, ArrayRef<const Value *> r
     const Value *r = roots[i];
     if (isa<ConstantPointerNull>(r))
       continue;
-    std::optional<uint64_t> n = objectBytes(ctx, r);
-    if (!n)
-      unimplemented("fatptr: a run-time decoded pointer over an object of no constant size (rule 21)", &at);
     Operand base = ctx.operand(r);
     if (base.handle)
       internalError("fatptr: a root pointer bound to a rail", r);
-    Value *in = B.CreateICmpULE(B.CreateSub(addr, B.CreatePtrToInt(base.v, i64(ctx))), ConstantInt::get(i64(ctx), *n));
+    Value *in = B.CreateICmpEQ(addr, B.CreatePtrToInt(base.v, i64(ctx)));
     acc = B.CreateSelect(in, ConstantInt::get(i32(ctx), rootNumber(ctx, r)), acc);
   }
   return acc;
@@ -1682,7 +1684,7 @@ void lowerHostLoad(LoweringContext &ctx, LoadInst &ld, const Fat &f) {
     if (ptr) {
       if (v.handle)
         internalError("fatptr: a pointer field holding a handle", &ld);
-      v = Operand{decodeTag(ctx, v.v, loadedRoots, ld), false};
+      v = Operand{decodeTag(ctx, v.v, loadedRoots), false};
     }
     arms.push_back({r, v});
   }
