@@ -3499,9 +3499,17 @@ Triple passAcrossCall(LoweringContext &ctx, const Value *ptr) {
     unimplemented("fatptr: a triple formal passed on to another clone (its stores would be the outer clone's, "
                   "rule 18)",
                   ptr);
+  // A constant pointer (the QRAM global itself, a constant GEP into it) crosses at its call: its uses in this
+  // function name the object as any instruction's would.
   const Instruction *at = dyn_cast<Instruction>(ptr);
   if (!at)
-    unimplemented("fatptr: a constant pointer into a QRAM crossing a clone boundary", ptr);
+    for (const User *u : ptr->users())
+      if (auto *I = dyn_cast<Instruction>(u); I && I->getFunction() == ctx.S.F) {
+        at = I;
+        break;
+      }
+  if (!at)
+    internalError("fatptr: passAcrossCall of a pointer this function does not use", ptr);
   uint64_t E = mem::qramElemBytes(ctx, f.roots[0], *at);
   if (f.cell && f.cell != E)
     unimplemented("fatptr: a pointer into a QRAM crossing a clone boundary whose cell is not the object's element "
