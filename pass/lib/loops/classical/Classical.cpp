@@ -821,6 +821,12 @@ void Unit::check(Loop &L, Case c) {
         case calls::Class::Measure:
         case calls::Class::Phi:
           break;   // case 3: under the trip rail (lowerInstruction's tripFlag, cq-99f7)
+        case calls::Class::Fenv:
+          // Rule 23 inside a rule-14 trip: a constrained op is a template (or the host op) of the trip like
+          // any opcode, recorded in the trip's scope and mirrored by the reverse; a <fenv.h> call that leaves
+          // the quantum part alone is the host call. A change of the quantum part inside the loop (its
+          // loop-carried state) is eff-fenv's own construction (requirePlaced).
+          break;
         case calls::Class::Lift:
           // Rule 18 inside a rule-14 trip (124): a clone call with nothing to undo (no quantum result, no
           // caller cell it writes) records no call item, so each trip's call is a gate sequence of its own.
