@@ -1,5 +1,9 @@
-; Rule 16: raise of a signal whose installed disposition is SIG_IGN (not a function of the module): unimplemented.
-; EXPECT-ERROR: cq: unimplemented: eff-tape: raise of a signal whose installed handler is not a function the module defines
+; Rule 16 (102): raise of a signal whose installed disposition is SIG_IGN: the delivery is an effect entry and
+; nothing more (no handler call, no abort arm).
+; CHECK raise_i: call void @cqrt_tape_effect_controlled(i32 %{{f}}, i32 %{{t}}, ptr @.cq.effect.raise)
+; CHECK raise_i: call void @cqrt_tape_write_i32_lit(i32 %{{t}}, i32 30)
+; CHECK-COUNT raise_i: @cqrt_abort_i1( 0
+; CHECK-COUNT raise_i: @raise( 0
 target triple = "x86_64-apple-macosx16.0.0"
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

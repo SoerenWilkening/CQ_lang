@@ -145,46 +145,75 @@ Value *tapeOf(LoweringContext &ctx) {
 
 // ------------------------------------------------------------------ fields
 
-// printf's conversion characters, one per consumed argument ('*' width/precision consume an int).
-// Returns false when the format is not a constant string.
-bool printfConversions(const Value *fmt, SmallVectorImpl<char> &conv) {
+// One argument printf consumes: its index among the variadic arguments (0 = the first after the
+// format) and its conversion character ('*' for a width or precision).
+struct Consume {
+  unsigned arg;
+  char conv;
+};
+
+// printf's consumption plan of a constant format, in the order printf reads its arguments, and the
+// format the tape entry carries. A positional format (C17 7.21.6.1 has none; POSIX `%n$`, `*m$`)
+// names its arguments by number: the entry carries the same format with the positions removed and its
+// fields in the order the conversions read them (an argument read twice is two fields), which prints
+// the same characters. Returns false when the format is not a constant string.
+bool printfPlan(const Value *fmt, SmallVectorImpl<Consume> &plan, std::string &plain, bool &positional) {
   StringRef s;
   if (!getConstantStringInfo(fmt, s))
     return false;
-  for (size_t i = 0; i < s.size(); ++i) {
-    if (s[i] != '%')
-      continue;
-    ++i;
-    if (i < s.size() && s[i] == '%')
-      continue;
-    // A positional argument (%n$) reorders the fields: not modelled here.
+  positional = false;
+  plain.clear();
+  unsigned next = 0;
+  // A run of digits followed by '$' at i: its value - 1, i moved past the '$'.
+  auto position = [&](size_t &i) -> std::optional<unsigned> {
     size_t j = i;
     while (j < s.size() && isdigit((unsigned char)s[j]))
       ++j;
-    if (j < s.size() && j > i && s[j] == '$')
-      unimplemented("eff-tape: a printf format with positional arguments (%n$)", fmt);
-    while (i < s.size() && StringRef("-+ #0'").contains(s[i]))
-      ++i;
-    if (i < s.size() && s[i] == '*') {
-      conv.push_back('*');
-      ++i;
+    if (j == i || j >= s.size() || s[j] != '$')
+      return std::nullopt;
+    unsigned n = 0;
+    s.substr(i, j - i).getAsInteger(10, n);
+    i = j + 1;
+    positional = true;
+    return n ? n - 1 : 0;
+  };
+  for (size_t i = 0; i < s.size();) {
+    if (s[i] != '%') {
+      plain += s[i++];
+      continue;
     }
-    while (i < s.size() && isdigit((unsigned char)s[i]))
-      ++i;
-    if (i < s.size() && s[i] == '.') {
-      ++i;
-      if (i < s.size() && s[i] == '*') {
-        conv.push_back('*');
-        ++i;
+    plain += s[i++];
+    if (i < s.size() && s[i] == '%') {
+      plain += s[i++];
+      continue;
+    }
+    std::optional<unsigned> pos = position(i);
+    while (i < s.size() && StringRef("-+ #0'").contains(s[i]))
+      plain += s[i++];
+    SmallVector<Consume, 2> stars;
+    for (int part = 0; part < 2; ++part) {   // width, then precision
+      if (part == 1) {
+        if (i >= s.size() || s[i] != '.')
+          break;
+        plain += s[i++];
       }
-      while (i < s.size() && isdigit((unsigned char)s[i]))
-        ++i;
+      if (i < s.size() && s[i] == '*') {
+        plain += s[i++];
+        std::optional<unsigned> m = position(i);
+        stars.push_back({m ? *m : next++, '*'});
+      } else {
+        while (i < s.size() && isdigit((unsigned char)s[i]))
+          plain += s[i++];
+      }
     }
     while (i < s.size() && StringRef("hlLqjzt").contains(s[i]))
-      ++i;
+      plain += s[i++];
     if (i >= s.size())
       break;
-    conv.push_back(s[i]);
+    char c = s[i];
+    plain += s[i++];
+    plan.append(stars.begin(), stars.end());
+    plan.push_back({pos ? *pos : next++, c});
   }
   return true;
 }
@@ -197,27 +226,46 @@ bool constantCString(const Value *p) {
   return s.contains('\0');
 }
 
-// One field of an entry, argument a of CB. conv is printf's conversion character for it (0 for an
-// effect entry, whose string arguments must be constant C strings of readonly parameters).
+// The SPEC_ISSUES entry a tape argument §1.11 cannot record waits on (cq-py5f): a field is a scalar
+// (a rail or a literal) or a string copied at call time, nothing else.
+[[noreturn]] void awaitingFieldRuling(const std::string &what, const Instruction *at) {
+  unimplemented("eff-tape: awaiting owner ruling: SPEC_ISSUES Tape fields BACKEND_ABI 1.11 has no form for (" +
+                    what + ")",
+                at);
+}
+
+// A classical pointer value as an i64 literal field (printf's %p, rule 25: a pointer is a 64-bit word).
+void emitPointerValue(LoweringContext &ctx, Value *p, Value *tape) {
+  Value *w = ctx.B().CreatePtrToInt(p, Type::getInt64Ty(ctx.M.getContext()));
+  ctx.emitCore(abi::CoreSpec{abi::Core::TapeWriteLit, RailType{Kind::Int, 64}}, {tape, w});
+}
+
+// One field of an entry, argument a of CB. conv is printf's conversion character for it ('*' a width or
+// precision; 0 for an effect entry, whose string arguments must be constant C strings of readonly
+// parameters). A conversion that does not match its argument's type is undefined behaviour (C17
+// 7.21.6.1p9), outside the domain: the field is the argument as it is, and the backend's printf reads it
+// as the host's would.
 void emitField(LoweringContext &ctx, CallBase &CB, unsigned a, char conv, Value *tape, Value *flag) {
   Value *v = CB.getArgOperand(a);
   Type *ty = v->getType();
   if (ty->isPointerTy()) {
     if (nonClassicalPointer(ctx, v))
-      unimplemented("eff-tape: a quantum or non-classical pointer argument of a host effect", &CB);
-    bool str = conv ? conv == 's'
-                    : constantCString(v) && (CB.paramHasAttr(a, Attribute::ReadOnly) ||
-                                             CB.paramHasAttr(a, Attribute::ReadNone));
-    if (!str)
-      unimplemented("eff-tape: a classical pointer argument of a host effect that is not a string", &CB);
+      awaitingFieldRuling("a quantum pointer or a pointer into quantum memory", &CB);
+    if (conv == 'n')
+      awaitingFieldRuling("printf's %n, a store the deferred entry cannot make at call time", &CB);
     Operand s = ctx.operand(v);
-    ctx.emitCore(abi::CoreSpec{abi::Core::TapeWriteStrLit}, {tape, s.v});
+    if (conv == 's' || (!conv && constantCString(v) &&
+                        (CB.paramHasAttr(a, Attribute::ReadOnly) || CB.paramHasAttr(a, Attribute::ReadNone)))) {
+      ctx.emitCore(abi::CoreSpec{abi::Core::TapeWriteStrLit}, {tape, s.v});
+      return;
+    }
+    if (!conv)
+      awaitingFieldRuling("a pointer argument of an effect entry that is not a constant C string", &CB);
+    emitPointerValue(ctx, s.v, tape);
     return;
   }
   if (!ty->isIntegerTy() && !ty->isFloatingPointTy())
-    unimplemented("eff-tape: a host effect argument that is not a scalar or a string", &CB);
-  if (conv == 's' || conv == 'n' || conv == 'p')
-    unimplemented("eff-tape: a printf conversion that does not match its scalar argument", &CB);
+    awaitingFieldRuling("an argument of a vector or aggregate type", &CB);
   RailType w = railTypeOf(ty);
   Operand op = ctx.operand(v);
   if (!op.handle) {
@@ -442,7 +490,8 @@ SmallVector<std::pair<Value *, const Value *>, 4> laterInPlaceTargets(LoweringCo
 
 void requireEntry(LoweringContext &ctx, CallBase &CB, const char *what) {
   if (CB.getFunction() != ctx.S.F)
-    unimplemented(std::string("eff-tape: ") + what + " inside an inlined callee (rule 19)", &CB);
+    internalError(std::string("eff-tape: ") + what + " inside an inlined callee (rule 19 inlines one-block "
+                  "callees under a top predicate only, where no call is under a quantum predicate)", &CB);
   if (!ctx.S.isEntry())
     unimplemented(std::string("eff-tape: ") + what + " inside a clone (its _unc twin would replay it)", &CB);
 }
@@ -453,8 +502,13 @@ void abortArm(LoweringContext &ctx, CallBase &CB, Value *flag) {
 
   // A merged handle (a select/phi of rails, rule 9) cannot be kept itself: copy it out (Uncompute's
   // contract). A rail minted by a call (template, seed, gate) is kept as it is (45).
+  // The flag itself rotated later (a register used as the arm's condition) is copied out as well: the copy
+  // is the kept abort flag, and the register is snapshotted under it like any other target.
+  bool flagModified = false;
+  for (auto &t : targets)
+    flagModified |= t.first == flag;
   RailType i1{Kind::Int, 1};
-  if (!isa<CallInst>(flag)) {
+  if (!isa<CallInst>(flag) || flagModified) {
     CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(ctx.M.getContext())});
     RailId fid = ctx.unc().recordSeed(f);
     abi::CoreSpec cp{abi::Core::Copy, i1};
@@ -465,8 +519,6 @@ void abortArm(LoweringContext &ctx, CallBase &CB, Value *flag) {
 
   for (auto &t : targets) {
     Value *h = t.first;
-    if (h == flag)
-      unimplemented("eff-tape: the abort flag itself is modified in place after the noreturn arm", &CB);
     RailType w = railTypeOf(t.second->getType());
     CallInst *s = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
                                {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
@@ -481,35 +533,52 @@ void abortArm(LoweringContext &ctx, CallBase &CB, Value *flag) {
   ctx.unc().setRole(ctx.unc().idOf(flag), Role::Abort);
 }
 
-// The default action of a signal on the target (Darwin's <sys/signal.h> numbering).
+// The default action of a signal on the target (x86-64: Darwin's <sys/signal.h>, Linux's <asm/signal.h>).
 enum class SigDefault { Terminate, Ignore, Stop, Unknown };
 SigDefault signalDefault(const Module &M, int64_t sig) {
-  if (!Triple(M.getTargetTriple()).isOSDarwin() || sig < 1 || sig > 31)
-    return SigDefault::Unknown;
-  switch (sig) {
-  case 16: case 19: case 20: case 23: case 28: case 29:   // URG, CONT, CHLD, IO, WINCH, INFO
+  // A number that names no signal makes raise fail with EINVAL and deliver nothing (POSIX raise).
+  Triple t(M.getTargetTriple());
+  if (t.isOSLinux() && sig >= 32 && sig <= 64)
+    return SigDefault::Terminate;   // the real-time signals (SIGRTMIN..SIGRTMAX)
+  if ((t.isOSDarwin() || t.isOSLinux()) && (sig < 1 || sig > 31))
     return SigDefault::Ignore;
-  case 17: case 18: case 21: case 22:                     // STOP, TSTP, TTIN, TTOU
-    return SigDefault::Stop;
-  default:
-    return SigDefault::Terminate;
+  if (t.isOSDarwin()) {
+    switch (sig) {
+    case 16: case 19: case 20: case 23: case 28: case 29:   // URG, CONT, CHLD, IO, WINCH, INFO
+      return SigDefault::Ignore;
+    case 17: case 18: case 21: case 22:                     // STOP, TSTP, TTIN, TTOU
+      return SigDefault::Stop;
+    default:
+      return SigDefault::Terminate;
+    }
   }
+  if (t.isOSLinux()) {
+    switch (sig) {
+    case 17: case 18: case 23: case 28:                     // CHLD, CONT, URG, WINCH
+      return SigDefault::Ignore;
+    case 19: case 20: case 21: case 22:                     // STOP, TSTP, TTIN, TTOU
+      return SigDefault::Stop;
+    default:
+      return SigDefault::Terminate;
+    }
+  }
+  return SigDefault::Unknown;
 }
 
 // CR rule 16 (102): raise(sig) under a quantum predicate, read against the module's signal table (the
 // signal(sig, h) calls of the module: closed world, as taint reads it). The delivery is an effect entry
 // (cqrt_tape_effect_controlled(flag, tape, "raise"), the signal number its field). Then: a handler h the
 // module installs for sig runs as h(sig) under the predicate (taint's _ctl clone of h, calls::lowerLiftedVia);
-// with no handler, a signal whose default action terminates is the abort arm (abort_i1(flag), 45); one whose
-// default action is to ignore it has nothing more. Unimplemented: a run-time signal number, a sigaction in
-// the module, a signal() of sig whose handler is not a function the module defines (SIG_IGN, SIG_DFL, a
-// declaration, a run-time value), several handlers, a stop signal, a non-Darwin target.
+// SIG_IGN installed (or no handler and a default action of ignore) has nothing more; SIG_DFL installed or no
+// handler, with a default action of terminate, is the abort arm (abort_i1(flag), 45).
 void lowerRaise(LoweringContext &ctx, CallBase &CB, Value *flag) {
   auto *sigC = dyn_cast<ConstantInt>(CB.getArgOperand(0));
   if (!sigC)
     unimplemented("eff-tape: raise of a signal number that is not a constant", &CB);
   int64_t sig = sigC->getSExtValue();
+  // What the module installs for sig: handler functions, SIG_IGN (1), SIG_DFL (0).
   SmallPtrSet<const Function *, 2> handlers;
+  bool ign = false, dfl = false;
   for (const Function &G : ctx.M)
     for (const User *u : G.users()) {
       auto *C = dyn_cast<CallBase>(u);
@@ -525,20 +594,43 @@ void lowerRaise(LoweringContext &ctx, CallBase &CB, Value *flag) {
         unimplemented("eff-tape: raise in a module with a signal() call of a run-time signal number", &CB);
       if (s->getSExtValue() != sig)
         continue;
-      auto *H = dyn_cast<Function>(C->getArgOperand(1)->stripPointerCasts());
-      if (!H || H->isDeclaration())
-        unimplemented("eff-tape: raise of a signal whose installed handler is not a function the module defines "
-                      "(SIG_IGN, SIG_DFL or a run-time handler)",
-                      &CB);
-      handlers.insert(H);
+      const Value *h = C->getArgOperand(1)->stripPointerCasts();
+      if (auto *H = dyn_cast<Function>(h); H && !H->isDeclaration()) {
+        handlers.insert(H);
+        continue;
+      }
+      if (isa<ConstantPointerNull>(h)) {
+        dfl = true;
+        continue;
+      }
+      if (auto *ce = dyn_cast<ConstantExpr>(h); ce && ce->getOpcode() == Instruction::IntToPtr)
+        if (auto *ci = dyn_cast<ConstantInt>(ce->getOperand(0))) {
+          if (ci->isZero())
+            dfl = true;
+          else if (ci->isOne())
+            ign = true;
+          else
+            unimplemented("eff-tape: raise of a signal installed with a constant handler other than SIG_DFL or "
+                          "SIG_IGN",
+                          &CB);
+          continue;
+        }
+      unimplemented("eff-tape: raise of a signal whose installed handler is a run-time value or a function the "
+                    "module does not define",
+                    &CB);
     }
-  if (handlers.size() > 1)
+  if (handlers.size() + ign + dfl > 1)
     unimplemented("eff-tape: raise of a signal the module installs several handlers for", &CB);
   SigDefault dflt = signalDefault(ctx.M, sig);
-  if (handlers.empty() && (dflt == SigDefault::Stop || dflt == SigDefault::Unknown))
-    unimplemented("eff-tape: raise of a signal with no handler whose default action is not terminate or ignore",
+  bool byDefault = handlers.empty() && !ign;
+  if (byDefault && dflt == SigDefault::Stop)
+    unimplemented("eff-tape: awaiting owner ruling: SPEC_ISSUES raise of a signal whose default action stops the "
+                  "process",
                   &CB);
-  if (handlers.empty() && dflt == SigDefault::Terminate)
+  if (byDefault && dflt == SigDefault::Unknown)
+    unimplemented("eff-tape: raise of a signal number the target defines no default action for", &CB);
+  bool terminate = byDefault && dflt == SigDefault::Terminate;
+  if (terminate)
     requireEntry(ctx, CB, "a terminating raise");
   const Specialization *cs = handlers.empty() ? nullptr : ctx.T.calleeSpecialization(CB, ctx.S);
   if (!handlers.empty() && (!cs || cs->F != *handlers.begin() || !cs->ctl))
@@ -554,110 +646,120 @@ void lowerRaise(LoweringContext &ctx, CallBase &CB, Value *flag) {
     calls::lowerLiftedVia(ctx, CB, argMap);
     return;
   }
-  if (dflt == SigDefault::Terminate)
+  if (terminate)
     abortArm(ctx, CB, flag);
 }
 
 } // namespace
 
 void lowerHostEffect(LoweringContext &ctx, CallBase &CB) {
-  if (CB.getFunction() != ctx.S.F)
-    unimplemented("eff-tape: a tape entry inside an inlined callee (rule 19)", &CB);
   if (!CB.getType()->isVoidTy() && !CB.use_empty())
-    unimplemented("eff-tape: the result of a host effect is used (the call is never executed)", &CB);
+    unimplemented("eff-tape: awaiting owner ruling: SPEC_ISSUES A deferred host call whose result is used", &CB);
   // A clone appends its entries to its own tape each time it runs (67: "one tape per function"). Its
   // _unc twin recomputes through the _pure clone (CR §1.4, 119), which is the clone without its effects:
-  // tape entries are write-once and never replayed, so the _pure clone emits none.
+  // tape entries are write-once and never replayed, so the _pure clone emits none. In a _ctl clone every
+  // block's predicate holds the clone's control (the _ctl entry flag), so the entry's flag is the caller's
+  // predicate and the clone's own; an _adj clone's body is eff-invert's region (rule 17), which reads the
+  // entry as one of its gates. A host effect of a callee rule 19 inlines is an entry of the caller's tape
+  // under the caller's predicate in scope.
   if (ctx.S.pure)
     return;
-  if (!ctx.S.isEntry() && (ctx.S.ctl || ctx.S.adj))
-    unimplemented("eff-tape: a tape entry inside a _ctl or _adj clone (its predicate includes the caller's "
-                  "control)",
-                  &CB);
   const Function *F = calleeOf(CB);
   if (!F)
     internalError("eff-tape: a host effect with no direct callee", &CB);
   Value *flag = ctx.currentFlag();
-
-  // fwrite(buf, size, n, stdout) of a slot buffer (99): one entry of size * n raw %c bytes, one i8 field
-  // per byte cell (a handle: a fresh tape rail; a classical cell: a literal).
-  if (libFunc(*F, LibFunc_fwrite)) {
-    auto *sz = dyn_cast<ConstantInt>(CB.getArgOperand(1));
-    auto *cnt = dyn_cast<ConstantInt>(CB.getArgOperand(2));
-    if (!sz || !cnt)
-      unimplemented("eff-tape: fwrite with a size or count that is not a constant", &CB);
-    if (!isStdout(CB.getArgOperand(3)))
-      unimplemented("eff-tape: fwrite to a stream other than stdout", &CB);
-    Value *buf = CB.getArgOperand(0);
-    if (ctx.T.isFatPointer(buf, ctx.S) || ctx.T.isQuantum(buf, ctx.S))
-      unimplemented("eff-tape: fwrite through a fat pointer (rule 21)", &CB);
-    bool slot = false, other = false;
-    for (ObjectId o : ctx.T.provenance(buf, ctx.S))
-      (ctx.T.classOf(o) == ObjClass::Slot ? slot : other) = true;
-    if (!slot || other)
-      unimplemented("eff-tape: fwrite of a buffer that is not one slot object", &CB);
-    uint64_t n = sz->getZExtValue() * cnt->getZExtValue();
-    LLVMContext &C = ctx.M.getContext();
-    SmallVector<Operand, 8> cells = mem::readSlotCells(ctx, buf, Type::getInt8Ty(C), n, CB);
-    Value *tape = tapeOf(ctx);
-    Constant *fmt = fwriteFormat(ctx.M, n);
+  LLVMContext &C = ctx.M.getContext();
+  auto openFmt = [&](Value *tape, Value *fmt) {
     if (flag)
       ctx.emitCore(abi::CoreSpec{abi::Core::TapeFmt, {}, /*ctl=*/true}, {flag, tape, fmt});
     else
       ctx.emitCore(abi::CoreSpec{abi::Core::TapeFmt}, {tape, fmt});
+  };
+  auto byteField = [&](Value *tape, const Operand &c) {
     RailType w{Kind::Int, 8};
-    for (const Operand &c : cells) {
-      if (!c.handle) {
-        ctx.emitCore(abi::CoreSpec{abi::Core::TapeWriteLit, w}, {tape, c.v});
-        continue;
-      }
-      CallInst *h2 = flag ? ctx.emitCore(abi::CoreSpec{abi::Core::TapeWrite, w, /*ctl=*/true}, {flag, tape, c.v})
-                          : ctx.emitCore(abi::CoreSpec{abi::Core::TapeWrite, w}, {tape, c.v});
-      ctx.unc().recordExternal(h2, Role::Tape);
+    if (!c.handle) {
+      ctx.emitCore(abi::CoreSpec{abi::Core::TapeWriteLit, w}, {tape, c.v});
+      return;
     }
+    CallInst *h2 = flag ? ctx.emitCore(abi::CoreSpec{abi::Core::TapeWrite, w, /*ctl=*/true}, {flag, tape, c.v})
+                        : ctx.emitCore(abi::CoreSpec{abi::Core::TapeWrite, w}, {tape, c.v});
+    ctx.unc().recordExternal(h2, Role::Tape);
+  };
+
+  // fwrite(buf, size, n, stdout) (99): one entry of size * n raw %c bytes, one i8 field per byte (C17
+  // 7.21.8.2: fputc of each byte). A slot buffer's cells (mem::readSlotCells, M4) are rails or literals;
+  // a classical buffer's bytes are read at the call (literal fields: copied at call time, as a string).
+  if (libFunc(*F, LibFunc_fwrite) && isStdout(CB.getArgOperand(3))) {
+    auto *sz = dyn_cast<ConstantInt>(CB.getArgOperand(1));
+    auto *cnt = dyn_cast<ConstantInt>(CB.getArgOperand(2));
+    if (!sz || !cnt)
+      awaitingFieldRuling("an fwrite of a run-time number of bytes (raw bytes, not a string)", &CB);
+    Value *buf = CB.getArgOperand(0);
+    if (ctx.T.isFatPointer(buf, ctx.S) || ctx.T.isQuantum(buf, ctx.S))
+      awaitingFieldRuling("a quantum pointer or a pointer into quantum memory", &CB);
+    bool slot = false, classical = false, other = false;
+    for (ObjectId o : ctx.T.provenance(buf, ctx.S)) {
+      ObjClass k = ctx.T.classOf(o);
+      (k == ObjClass::Slot ? slot : k == ObjClass::Classical ? classical : other) = true;
+    }
+    uint64_t n = sz->getZExtValue() * cnt->getZExtValue();
+    SmallVector<Operand, 8> cells;
+    if (slot && !classical && !other) {
+      cells = mem::readSlotCells(ctx, buf, Type::getInt8Ty(C), n, CB);
+    } else if (!slot && !other) {
+      Value *p = ctx.operand(buf).v;
+      for (uint64_t i = 0; i < n; ++i) {
+        Value *q = ctx.B().CreateConstInBoundsGEP1_64(Type::getInt8Ty(C), p, i);
+        cells.push_back(Operand{ctx.B().CreateLoad(Type::getInt8Ty(C), q), false});
+      }
+    } else {
+      awaitingFieldRuling("a quantum pointer or a pointer into quantum memory", &CB);
+    }
+    Value *tape = tapeOf(ctx);
+    openFmt(tape, fwriteFormat(ctx.M, n));
+    for (const Operand &c : cells)
+      byteField(tape, c);
     return;
   }
-  // fputs(s, stdout) of a constant string: an entry with format s and no fields (99). A '%' in s would
-  // be read as a conversion by the printf entry: unimplemented.
-  if (libFunc(*F, LibFunc_fputs)) {
+  // fputs(s, stdout): printf("%s", s) (C17 7.21.7.4); a constant s without '%' is its own format with no
+  // fields (99).
+  if (libFunc(*F, LibFunc_fputs) && isStdout(CB.getArgOperand(1))) {
     Value *str = CB.getArgOperand(0);
     StringRef text;
-    if (nonClassicalPointer(ctx, str) || !constantCString(str) || !getConstantStringInfo(str, text) ||
-        text.contains('%'))
-      unimplemented("eff-tape: fputs of a string that is not a constant without '%'", &CB);
-    if (!isStdout(CB.getArgOperand(1)))
-      unimplemented("eff-tape: fputs to a stream other than stdout", &CB);
     Value *tape = tapeOf(ctx);
-    Value *sv = ctx.operand(str).v;
-    if (flag)
-      ctx.emitCore(abi::CoreSpec{abi::Core::TapeFmt, {}, /*ctl=*/true}, {flag, tape, sv});
-    else
-      ctx.emitCore(abi::CoreSpec{abi::Core::TapeFmt}, {tape, sv});
+    if (!nonClassicalPointer(ctx, str) && constantCString(str) && getConstantStringInfo(str, text) &&
+        !text.contains('%')) {
+      openFmt(tape, ctx.operand(str).v);
+      return;
+    }
+    openFmt(tape, formatGlobal(ctx.M, ".cqfmt.fputs", "%s"));
+    emitField(ctx, CB, 0, 's', tape, flag);
     return;
   }
 
   if (libFunc(*F, LibFunc_printf)) {
     Value *fmt = CB.getArgOperand(0);
     if (nonClassicalPointer(ctx, fmt))
-      unimplemented("eff-tape: a printf format that is not a classical string", &CB);
-    SmallVector<char, 8> conv;
-    bool known = printfConversions(fmt, conv);
+      awaitingFieldRuling("a quantum pointer or a pointer into quantum memory", &CB);
+    SmallVector<Consume, 8> plan;
+    std::string plain;
+    bool positional = false;
+    bool known = printfPlan(fmt, plan, plain, positional);
     Value *tape = tapeOf(ctx);
-    Value *f = ctx.operand(fmt).v;
-    if (flag)
-      ctx.emitCore(abi::CoreSpec{abi::Core::TapeFmt, {}, /*ctl=*/true}, {flag, tape, f});
-    else
-      ctx.emitCore(abi::CoreSpec{abi::Core::TapeFmt}, {tape, f});
+    Value *f = positional ? formatGlobal(ctx.M, ".cqfmt.p." + plain, plain) : ctx.operand(fmt).v;
+    openFmt(tape, f);
+    if (known) {
+      // The fields in the order printf reads them; an argument the format never reads is not printed,
+      // one it reads but the call lacks is undefined behaviour (C17 7.21.6.1p2), outside the domain.
+      for (const Consume &k : plan)
+        if (k.arg + 1 < CB.arg_size())
+          emitField(ctx, CB, k.arg + 1, k.conv, tape, flag);
+      return;
+    }
     for (unsigned a = 1; a < CB.arg_size(); ++a) {
-      char c = 0;
-      if (known) {
-        if (a - 1 >= conv.size())
-          break;   // an argument the format never reads is not printed
-        c = conv[a - 1];
-      } else if (CB.getArgOperand(a)->getType()->isPointerTy()) {
-        unimplemented("eff-tape: a pointer argument of printf with a format that is not a constant", &CB);
-      }
-      emitField(ctx, CB, a, c, tape, flag);
+      if (CB.getArgOperand(a)->getType()->isPointerTy())
+        awaitingFieldRuling("a pointer argument of printf with a run-time format (string or address)", &CB);
+      emitField(ctx, CB, a, 'd', tape, flag);
     }
     return;
   }
@@ -673,47 +775,47 @@ void lowerHostEffect(LoweringContext &ctx, CallBase &CB) {
     return;
   }
 
-  if (!flag)
-    unimplemented("eff-tape: a host effect with a quantum argument under no quantum predicate is neither a "
-                  "printf entry nor a controlled effect entry (§1.11 has no uncontrolled effect)", &CB);
-  if (F->getName() == "raise" && CB.arg_size() == 1) {
+  if (flag && F->getName() == "raise" && CB.arg_size() == 1) {
     lowerRaise(ctx, CB, flag);
     return;
   }
   if (signalFamily(F->getName()))
-    unimplemented("eff-tape: a signal-family host call (its meaning depends on the module's signal table, 102)",
-                  &CB);
-  for (unsigned a = 0; a < CB.arg_size(); ++a) {
-    Type *t = CB.getArgOperand(a)->getType();
-    if (t->isPointerTy() && isa<Function>(CB.getArgOperand(a)->stripPointerCasts()))
-      unimplemented("eff-tape: a host effect with a function pointer argument (a callback)", &CB);
-  }
-  // Every pointer argument must be a string the entry can copy; checked per field below, but before
-  // anything is emitted.
-  for (unsigned a = 0; a < CB.arg_size(); ++a) {
-    Value *v = CB.getArgOperand(a);
-    if (!v->getType()->isPointerTy())
-      continue;
-    if (nonClassicalPointer(ctx, v) || !constantCString(v) ||
-        !(CB.paramHasAttr(a, Attribute::ReadOnly) || CB.paramHasAttr(a, Attribute::ReadNone)))
-      unimplemented("eff-tape: a pointer argument of a host effect that is not a constant string", &CB);
+    unimplemented("eff-tape: awaiting owner ruling: SPEC_ISSUES A signal-table host call on the tape", &CB);
+  for (unsigned a = 0; a < CB.arg_size(); ++a)
+    if (isa<Function>(CB.getArgOperand(a)->stripPointerCasts()))
+      awaitingFieldRuling("a function pointer argument (a callback the deferred call would run at the end of the "
+                          "shot)",
+                          &CB);
+  // Any other host effect is an effect entry (102): the host call `name` recorded with its arguments. An
+  // effect with no quantum predicate in scope (a classical host effect after a tape point, the tape-order
+  // rule, or one with a quantum argument) is recorded under a constant-true predicate, a seed rail |1>
+  // (§1.11 has only the controlled form; the entry's predicate is read at call time, the seed then freed).
+  Value *ctl = flag;
+  if (!ctl) {
+    RailType i1{Kind::Int, 1};
+    CallInst *one = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getTrue(C)});
+    ctx.unc().recordSeed(one);
+    ctl = one;
   }
   Value *tape = tapeOf(ctx);
-  ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffect, {}, /*ctl=*/true},
-               {flag, tape, effectName(ctx.M, F->getName())});
+  ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffect, {}, /*ctl=*/true}, {ctl, tape, effectName(ctx.M, F->getName())});
   for (unsigned a = 0; a < CB.arg_size(); ++a)
     emitField(ctx, CB, a, 0, tape, flag);
 }
 
 void lowerNoreturn(LoweringContext &ctx, CallBase &CB) {
   requireEntry(ctx, CB, "a noreturn arm");
-  for (const Use &u : CB.args())
-    if (!isa<Constant>(u.get()) && ctx.T.isQuantum(u.get(), ctx.S))
-      unimplemented("eff-tape: a noreturn call with a quantum argument", &CB);
+  // Rule 16 lowers the call to abort_i1(pred) alone: its arguments (exit's status, __assert_fail's
+  // strings), classical or quantum, are dropped, as the program they would end continues uncontrolled.
   Value *flag = ctx.currentFlag();
-  if (!flag)
-    unimplemented("eff-tape: a noreturn call whose quantum predicate is top (an unconditional abort)", &CB);
-
+  if (!flag) {
+    // The quantum predicate in scope is top (the arm is reached on every branch): the abort flag is a
+    // seed rail |1>, kept like any abort flag.
+    RailType i1{Kind::Int, 1};
+    CallInst *one = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getTrue(ctx.M.getContext())});
+    ctx.unc().recordSeed(one);
+    flag = one;
+  }
   abortArm(ctx, CB, flag);
 }
 

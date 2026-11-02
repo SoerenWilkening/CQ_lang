@@ -1,5 +1,5 @@
 ; Rule 16: raise of a stop signal (SIGSTOP) with no handler: its default action is neither terminate nor ignore.
-; EXPECT-ERROR: cq: unimplemented: eff-tape: raise of a signal with no handler whose default action
+; EXPECT-ERROR: cq: unimplemented: eff-tape: awaiting owner ruling: SPEC_ISSUES raise of a signal whose default action stops the process
 target triple = "x86_64-apple-macosx16.0.0"
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

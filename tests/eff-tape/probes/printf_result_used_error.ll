@@ -1,5 +1,5 @@
 ; Rule 16: a host effect's result read by the program has no value (the call never runs): unimplemented.
-; EXPECT-ERROR: cq: unimplemented: eff-tape: the result of a host effect is used
+; EXPECT-ERROR: cq: unimplemented: eff-tape: awaiting owner ruling: SPEC_ISSUES A deferred host call whose result is used
 target triple = "x86_64-apple-macosx16.0.0"
 @.fmt = private unnamed_addr constant [4 x i8] c"%d\0A\00", align 1
 declare i32 @cq_theta_si32(i32, double)
