@@ -43,6 +43,13 @@ llvm::SmallVector<llvm::Value *, 4> slotCellsBeforeCall(LoweringContext &, const
                                                         llvm::ArrayRef<unsigned> argMap = {});
 llvm::SmallVector<llvm::Value *, 4> slotCellsAfterCall(LoweringContext &, const llvm::CallBase &orig, unsigned argNo,
                                                        llvm::CallInst *lowered, llvm::ArrayRef<unsigned> argMap = {});
+// cq-2cl6 (CR rules 18, 20). mem-slots, consumer calls: when argNo of the clone call orig points into the object
+// a pointer formal of the clone being lowered points to (its caller's) and the callee writes cells of it,
+// slotCellsBeforeCall makes a frame copy of the cells the callee may reach: paramCellFrame is that copy (the
+// pointer the call is handed instead of the actual), else null. finishParamCells(fwd), called right after
+// fwd's recordCall, makes the call's new handles the cells' values in this clone (their clone cells).
+llvm::Value *paramCellFrame(LoweringContext &, const llvm::CallBase &orig, unsigned argNo);
+void finishParamCells(LoweringContext &, llvm::CallInst *fwd);
 // cq-567j (CR rules 5, 18, 20). mem-slots, consumer calls: a pointer formal argNo of a quantum clone call
 // into caller slot objects whose cells the clone does not write (no slotCellsBeforeCall/After): every rail
 // those objects' cells may hold at the call is used by `lowered` (the forward call), and read by its item

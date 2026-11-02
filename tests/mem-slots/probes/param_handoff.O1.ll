@@ -1,0 +1,177 @@
+; ModuleID = 'param_handoff.c'
+source_filename = "param_handoff.c"
+target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-apple-macosx16.0.0"
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @param_handoff_pred(i32 noundef %0, i32 noundef %1) local_unnamed_addr #0 {
+  %3 = alloca i32, align 4
+  %4 = sitofp i32 %1 to double
+  %5 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %4) #6
+  call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %3) #7
+  store i32 7, ptr %3, align 4, !tbaa !6
+  %6 = call fastcc i32 @outer(i32 noundef %5, ptr noundef nonnull %3)
+  %7 = tail call i32 @cq_measure_si32(i32 noundef %6) #7
+  %8 = mul nsw i32 %7, 1000
+  %9 = load i32, ptr %3, align 4, !tbaa !6
+  %10 = tail call i32 @cq_measure_si32(i32 noundef %9) #7
+  %11 = add nsw i32 %10, %8
+  call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %3) #7
+  ret i32 %11
+}
+
+; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
+declare void @llvm.lifetime.start.p0(i64 immarg, ptr nocapture) #1
+
+declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr #2
+
+; Function Attrs: mustprogress nofree noinline norecurse nosync nounwind ssp willreturn memory(argmem: readwrite) uwtable
+define internal fastcc i32 @outer(i32 noundef %0, ptr nocapture noundef %1) unnamed_addr #3 {
+  %3 = icmp slt i32 %0, 100
+  br i1 %3, label %4, label %12
+
+4:                                                ; preds = %2
+  %5 = icmp eq i32 %0, 0
+  br i1 %5, label %11, label %6
+
+6:                                                ; preds = %4
+  %7 = shl nsw i32 %0, 1
+  %8 = tail call fastcc i32 @inner(i32 noundef %7, ptr noundef %1)
+  %9 = load i32, ptr %1, align 4, !tbaa !6
+  %10 = add nsw i32 %9, -1
+  store i32 %10, ptr %1, align 4, !tbaa !6
+  br label %14
+
+11:                                               ; preds = %4
+  store i32 0, ptr %1, align 4, !tbaa !6
+  br label %14
+
+12:                                               ; preds = %2
+  %13 = add nuw nsw i32 %0, 1
+  br label %14
+
+14:                                               ; preds = %12, %11, %6
+  %15 = phi i32 [ %8, %6 ], [ 0, %11 ], [ %13, %12 ]
+  ret i32 %15
+}
+
+declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr #2
+
+; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
+declare void @llvm.lifetime.end.p0(i64 immarg, ptr nocapture) #1
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @param_handoff_plain(i32 noundef %0, i32 noundef %1) local_unnamed_addr #0 {
+  %3 = alloca i32, align 4
+  %4 = sitofp i32 %1 to double
+  %5 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %4) #6
+  call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %3) #7
+  store i32 2, ptr %3, align 4, !tbaa !6
+  %6 = call fastcc i32 @upd(i32 noundef %5, ptr noundef nonnull %3)
+  %7 = tail call i32 @cq_measure_si32(i32 noundef %6) #7
+  %8 = mul nsw i32 %7, 1000
+  %9 = load i32, ptr %3, align 4, !tbaa !6
+  %10 = tail call i32 @cq_measure_si32(i32 noundef %9) #7
+  %11 = add nsw i32 %10, %8
+  call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %3) #7
+  ret i32 %11
+}
+
+; Function Attrs: mustprogress nofree noinline norecurse nosync nounwind ssp willreturn memory(argmem: readwrite) uwtable
+define internal fastcc range(i32 -2147483648, 1073741824) i32 @upd(i32 noundef %0, ptr nocapture noundef %1) unnamed_addr #3 {
+  %3 = add nsw i32 %0, 1
+  %4 = tail call fastcc i32 @fwd(i32 noundef %3, ptr noundef %1)
+  %5 = load i32, ptr %1, align 4, !tbaa !6
+  %6 = add nsw i32 %5, 5
+  store i32 %6, ptr %1, align 4, !tbaa !6
+  ret i32 %4
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @param_handoff_rec(i32 noundef %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #0 {
+  %4 = alloca i32, align 4
+  %5 = sitofp i32 %1 to double
+  %6 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %5) #6
+  call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %4) #7
+  store i32 9, ptr %4, align 4, !tbaa !6
+  %7 = and i32 %6, 3
+  %8 = call fastcc i32 @rec(i32 noundef %7, i32 noundef %6, ptr noundef nonnull %4)
+  %9 = add nsw i32 %8, %2
+  %10 = tail call i32 @cq_measure_si32(i32 noundef %9) #7
+  %11 = mul nsw i32 %10, 1000
+  %12 = load i32, ptr %4, align 4, !tbaa !6
+  %13 = tail call i32 @cq_measure_si32(i32 noundef %12) #7
+  %14 = add nsw i32 %13, %11
+  call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %4) #7
+  ret i32 %14
+}
+
+; Function Attrs: nofree noinline nosync nounwind ssp memory(argmem: readwrite) uwtable
+define internal fastcc i32 @rec(i32 noundef %0, i32 noundef %1, ptr nocapture noundef %2) unnamed_addr #4 {
+  %4 = icmp eq i32 %0, 0
+  br i1 %4, label %11, label %5
+
+5:                                                ; preds = %3
+  %6 = add nsw i32 %0, -1
+  %7 = shl nsw i32 %1, 1
+  %8 = tail call fastcc i32 @rec(i32 noundef %6, i32 noundef %7, ptr noundef %2)
+  %9 = load i32, ptr %2, align 4, !tbaa !6
+  %10 = add nsw i32 %9, -1
+  br label %11
+
+11:                                               ; preds = %3, %5
+  %12 = phi i32 [ %10, %5 ], [ 0, %3 ]
+  %13 = phi i32 [ %8, %5 ], [ %1, %3 ]
+  store i32 %12, ptr %2, align 4, !tbaa !6
+  ret i32 %13
+}
+
+; Function Attrs: mustprogress nofree noinline norecurse nosync nounwind ssp willreturn memory(argmem: write) uwtable
+define internal fastcc range(i32 -2147483648, 1073741824) i32 @inner(i32 noundef %0, ptr nocapture noundef writeonly %1) unnamed_addr #5 {
+  %3 = icmp sgt i32 %0, 3
+  br i1 %3, label %4, label %7
+
+4:                                                ; preds = %2
+  %5 = add nsw i32 %0, -3
+  store i32 %5, ptr %1, align 4, !tbaa !6
+  %6 = lshr i32 %0, 1
+  br label %7
+
+7:                                                ; preds = %2, %4
+  %8 = phi i32 [ %6, %4 ], [ %0, %2 ]
+  ret i32 %8
+}
+
+; Function Attrs: mustprogress nofree noinline norecurse nosync nounwind ssp willreturn memory(argmem: write) uwtable
+define internal fastcc range(i32 -2147483648, 1073741824) i32 @fwd(i32 noundef %0, ptr nocapture noundef writeonly %1) unnamed_addr #5 {
+  %3 = tail call fastcc i32 @inner(i32 noundef %0, ptr noundef %1)
+  ret i32 %3
+}
+
+attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
+attributes #1 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
+attributes #2 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
+attributes #3 = { mustprogress nofree noinline norecurse nosync nounwind ssp willreturn memory(argmem: readwrite) uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
+attributes #4 = { nofree noinline nosync nounwind ssp memory(argmem: readwrite) uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
+attributes #5 = { mustprogress nofree noinline norecurse nosync nounwind ssp willreturn memory(argmem: write) uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
+attributes #6 = { nomerge nounwind }
+attributes #7 = { nounwind }
+
+!llvm.module.flags = !{!0, !1, !2, !3, !4}
+!llvm.ident = !{!5}
+
+!0 = !{i32 2, !"SDK Version", [2 x i32] [i32 26, i32 4]}
+!1 = !{i32 1, !"wchar_size", i32 4}
+!2 = !{i32 8, !"PIC Level", i32 2}
+!3 = !{i32 7, !"uwtable", i32 2}
+!4 = !{i32 7, !"frame-pointer", i32 2}
+!5 = !{!"Homebrew clang version 19.1.7"}
+!6 = !{!7, !7, i64 0}
+!7 = !{!"int", !8, i64 0}
+!8 = !{!"omnipotent char", !9, i64 0}
+!9 = !{!"Simple C/C++ TBAA"}
+; CHECK __cq_q_outer_11: %cq.cells = alloca [1 x i32]
+; CHECK __cq_q_rec_111_b3_ctl_d1: %cq.cells = alloca [1 x i32]
+; USERCHECK param_handoff_pred
+; USERCHECK param_handoff_plain
+; USERCHECK param_handoff_rec

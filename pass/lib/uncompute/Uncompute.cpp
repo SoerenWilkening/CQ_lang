@@ -511,9 +511,32 @@ struct Uncompute::Impl {
     if (!F)
       return;
     const DataLayout &DL = F->getDataLayout();
-    auto addCell = [&](Cell c) {
-      if (!is_contained(out, c))
+    // cq-2cl6: the stores that put a value of the closure into each cell (null: the cell was read or copied, so
+    // the value may be in it at any time). A load in the entry block before every such store of an entry-block
+    // cell cannot read the value (no path from the store reaches it): mem-slots' clone cell loads the caller's
+    // handle there before it stores its slot result into the cell.
+    SmallVector<SmallVector<const StoreInst *, 2>, 8> origin(out.size(), SmallVector<const StoreInst *, 2>{nullptr});
+    auto addCellFrom = [&](Cell c, const StoreInst *st) {
+      auto it = llvm::find(out, c);
+      if (it == out.end()) {
         out.push_back(c);
+        origin.emplace_back();
+        origin.back().push_back(st);
+        return;
+      }
+      auto &o = origin[it - out.begin()];
+      if (!is_contained(o, st))
+        o.push_back(st);
+    };
+    auto addCell = [&](Cell c) { addCellFrom(c, nullptr); };
+    auto before = [&](size_t ci, const LoadInst *ld) {
+      const BasicBlock *E = &F->getEntryBlock();
+      if (ld->getParent() != E)
+        return false;
+      for (const StoreInst *st : origin[ci])
+        if (!st || st->getParent() != E || !ld->comesBefore(st))
+          return false;
+      return true;
     };
     auto addVal = [&](const Value *v) {
       if (!is_contained(vals, v))
@@ -528,7 +551,7 @@ struct Uncompute::Impl {
           addCell({ld->getPointerOperand(), accessSize(ld->getType(), DL)});
         for (const User *u : h->users()) {
           if (auto *st = dyn_cast<StoreInst>(u); st && st->getValueOperand() == h)
-            addCell({st->getPointerOperand(), accessSize(h->getType(), DL)});
+            addCellFrom({st->getPointerOperand(), accessSize(h->getType(), DL)}, st);
           else if (isa<PHINode>(u) || (isa<SelectInst>(u) && cast<SelectInst>(u)->getCondition() != h))
             addVal(u);
         }
@@ -538,7 +561,7 @@ struct Uncompute::Impl {
         Cell c = out[ci];
         for (const Instruction &I : instructions(*F)) {
           if (auto *ld = dyn_cast<LoadInst>(&I)) {
-            if (mayAlias(c, {ld->getPointerOperand(), accessSize(ld->getType(), DL)}, DL))
+            if (mayAlias(c, {ld->getPointerOperand(), accessSize(ld->getType(), DL)}, DL) && !before(ci, ld))
               addVal(ld);
           } else if (auto *mt = dyn_cast<MemTransferInst>(&I)) {
             if (mayAlias(c, {mt->getRawSource(), 0}, DL))
@@ -2380,8 +2403,9 @@ struct Uncompute::Impl {
       int &s = state[g];
       if (s == 2)
         return;
-      if (s == 1)
+      if (s == 1) {
         internalError("uncompute: cyclic uncompute dependency through rule 6", rails[g].handle);
+      }
       s = 1;
       SmallVector<RailId, 4> rd = readersOf(g);
       llvm::sort(rd, [](RailId a, RailId b) { return a > b; });

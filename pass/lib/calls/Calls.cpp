@@ -759,7 +759,9 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
       continue;
     }
     SmallVector<Operand, 4> leaves;
-    if (fs[i].cuts.size() > 2)
+    if (Value *frame = fs[i].pointer && is_contained(slotArgs, i) ? mem::paramCellFrame(ctx, CB, i) : nullptr)
+      leaves.push_back(Operand{frame, false});   // cq-2cl6: the frame copy of the caller's cells this clone hands on
+    else if (fs[i].cuts.size() > 2)
       leaves = spine::packFields(ctx, a, fs[i].cuts);   // cq-0umd: the coerced struct's fields
     else if (isComposite(a->getType()))
       leaves = aggr::flattenResult(ctx, a);
@@ -850,6 +852,7 @@ void bindFieldwiseResult(LoweringContext &ctx, CallBase &CB, CallInst *call, con
   }
   ctx.unc().recordCall(call, outs, slotOuts, extra);
   fatptr::finishSlotTableCall(ctx, call);
+  mem::finishParamCells(ctx, call);
   if (!res.leafFields.empty())
     aggr::bindLeafFields(ctx, &CB, ops, res.leafFields);   // 166: a packed leaf's fields
   else
@@ -917,6 +920,7 @@ void bindQramCloneResult(LoweringContext &ctx, CallBase &CB, const Specializatio
   }
   ctx.unc().recordCall(r.call, outs, r.slotOuts, r.extra);
   fatptr::finishSlotTableCall(ctx, r.call);
+  mem::finishParamCells(ctx, r.call);
   mem::noteCalleeQramStores(ctx, CB, S, r.call, stored);
 }
 
@@ -1395,6 +1399,7 @@ void bindEnvResult(LoweringContext &ctx, CallBase &CB, const Specialization &S, 
   auto finish = [&]() {
     ctx.unc().recordCall(r.call, outs, r.slotOuts, r.extra);
     fatptr::finishSlotTableCall(ctx, r.call);
+    mem::finishParamCells(ctx, r.call);
     if (!r.slotOuts.empty())
       cleanDeadCells(ctx, CB, S, r, outs);
   };
@@ -2016,6 +2021,7 @@ void lowerKeptClone(LoweringContext &ctx, CallBase &CB, const Specialization &cs
   ctx.unc().recordCall(r.call, outs, r.slotOuts, extra);
   ctx.unc().noteCallExtraFirst(r.call, nRegs);
   fatptr::finishSlotTableCall(ctx, r.call);
+  mem::finishParamCells(ctx, r.call);
   if (!r.slotOuts.empty())
     cleanDeadCells(ctx, CB, K, r, outs);
   if (flags)
@@ -2148,6 +2154,7 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
       internalError("calls: old slot cells passed to a clone that reloads none", &CB);
     ctx.unc().recordCall(r.call, outs, r.slotOuts, r.extra);
     fatptr::finishSlotTableCall(ctx, r.call);
+    mem::finishParamCells(ctx, r.call);
     cleanDeadCells(ctx, CB, *cs, r, outs);
     return;
   }
@@ -2985,6 +2992,7 @@ void lowerLiftedVia(LoweringContext &ctx, llvm::CallBase &site, llvm::ArrayRef<u
   }
   ctx.unc().recordCall(r.call, outs, r.slotOuts, r.extra);
   fatptr::finishSlotTableCall(ctx, r.call);
+  mem::finishParamCells(ctx, r.call);
 }
 } // namespace cq::calls
 

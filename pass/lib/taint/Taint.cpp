@@ -2522,6 +2522,13 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
                    llvm::none_of(cells, [](const std::string &c) { return c.find('1') != std::string::npos; });
     if (!inPlace) {
       SpecState *C = getSpec(G, formal, tys, cells, memo->ctl, false, depth, memo->bounds);
+      // Its pointer formals point where the actuals do, also when the ordinary path below takes over (a
+      // recursion's level-0 call): a specialization never analyzed with an unknown object in place of the
+      // caller's, which its own calls would hand on to the level clones the program reaches (cq-2cl6).
+      for (unsigned i = 0; i < actuals.size(); ++i)
+        if (actuals[i]->getType()->isPointerTy() && i < C->formalPtr.size())
+          if (C->formalPtr[i].join(P(actuals[i])))
+            st.changed = true;
       if (depth > 0) {
         unsigned want = cur->depthCut ? cur->depthCut : resolveK(*G);
         if (C->depthCut == 0 || want < C->depthCut) {
@@ -2533,10 +2540,6 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
         memo = nullptr;   // the depth cutoff below derives from the actuals: take the ordinary path
       } else {
         recordCallee(CB, C);
-        for (unsigned i = 0; i < actuals.size(); ++i)
-          if (actuals[i]->getType()->isPointerTy() && i < C->formalPtr.size())
-            if (C->formalPtr[i].join(P(actuals[i])))
-              st.changed = true;
         if (!CB.getType()->isVoidTy()) {
           Lanes r = C->ret;
           if (C->declared)
@@ -2578,6 +2581,13 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
   bool ctl = false;
   if (underQ) {
     SpecState *probe = getSpec(G, formal, tys, cells, false, false, depth, {});
+    // The probe is analyzed as this call would run it: its pointer formals point where the actuals do. Left
+    // unseeded it would take an unknown object for them (a root's), and its own calls would hand that object on
+    // to specializations the program does reach (a recursion's level clones: cq-2cl6).
+    for (unsigned i = 0; i < actuals.size(); ++i)
+      if (actuals[i]->getType()->isPointerTy() && i < probe->formalPtr.size())
+        if (probe->formalPtr[i].join(P(actuals[i])))
+          st.changed = true;
     if (probe->nonPure || probe->hasTheta || probe->hasPhi || probe->hasEffect || probe->writesOuter)
       ctl = true;
   }
