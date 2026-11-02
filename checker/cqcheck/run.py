@@ -69,7 +69,8 @@ RunResult fields (JSON-serializable):
               args [{"s": str} | {"w": "i<N>", "v": hex}] (a tape field's string, or its literal or
               rail value at the end of the shot with its width token)
   measured    [{"h", "w", "v"}] per cqrt_measure call, in order
-  rotations   the rotation and phase trace events in order, as written (the shape compare.py
+  rotations   the rotation and phase trace events in order, as written, each with "nmeas", the number
+              of measurements before it (cq-459d) (the shape compare.py
               reads): ry {ev, h, theta, ctl, ctlv, w, v}, ry_qangle {ev, h, a, aval, ctl, ctlv, w, v},
               phase {ev, f, fv, theta}, phase_qangle {ev, a, aval, ctl, ctlv}; theta is the hex bit
               pattern of the double; w and v are the Ry target's type and value at the gate
@@ -976,7 +977,7 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
     for e in events:
         ev = e.get("ev")
         if ev in _ROT_EVENTS:
-            rots.append(dict(e))
+            rots.append(dict(e, nmeas=len(measured)))   # the measurements before it (cq-459d)
         elif ev == "free":
             c = {"h": e.get("h"), "v": e.get("v"), "known": e.get("known"), "w": e.get("w")}
             if e.get("shot"):
@@ -1492,7 +1493,7 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
     return out  # type: ignore[return-value]
 
 
-_RUNS_VERSION = "eval-runs-2"
+_RUNS_VERSION = "eval-runs-3"
 _CAP_VARS = ("CQE_SHOT_TRACE_MAX", "CQE_SHOT_OUTPUT_MAX", "CQE_FILE_MAX", "CQE_SHOT_VIOL_MAX")   # core.c's caps
 _RESULT_FIELDS = ("outputs", "measured", "rotations", "kept", "clean", "violations")
 

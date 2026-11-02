@@ -25,7 +25,9 @@ What is compared (CR §6, CLAUDE.md "The §6 checker"):
   side substituted it (the site event's "pre"). The value after the gate is the substituted reach's
   on both sides, so without this a wrong value under an Ry would be invisible. A phase P(θ) on a flag is e^{iθ·f}: its predicate is the
   flag's value, whichever rail carries it. Global phases are dropped on both sides: a classical-angle
-  phase whose predicate is constant over the group (never an Ry, never an angle-rail phase). Against
+  phase whose predicate is constant over the group, or a function of the outcomes measured before it
+  (owner ruling 2026-11-02 on cq-459d: after the collapse it is global within each outcome branch;
+  the classical arguments are the group's) (never an Ry, never an angle-rail phase). Against
   the reference phases are compared as a TOTAL, never one gate at a time (CR §6 item 2, ruling
   2026-11-01 on cq-u2mw): the Ry gates are matched one to one, and between them the running
   difference Δ = Σ θ_k·f_k (ours) − Σ θ_k·f_k (reference) per sample (an angle-rail phase adds its
@@ -42,7 +44,8 @@ What is compared (CR §6, CLAUDE.md "The §6 checker"):
   skips the call leaves no reach, so a site's k-th reach is not one gate across samples: a gate
   firing at a sample takes the site's earliest reach there not yet taken that agrees with it. Every
   reach must be taken, except phi reaches forming the same multiset of angles at every sample (a
-  global phase). A dropped global phase may take its site's earliest reach not yet taken, or none
+  global phase), the multiset keyed by the outcomes measured before each reach and compared over the
+  samples whose outcomes begin so (cq-459d). A dropped global phase may take its site's earliest reach not yet taken, or none
   (it keeps its place among the gates of its site). The pairs must be in an order consistent with
   every sample's hit order. One gate
   takes no C reach (bead cq-9gi3): CR rule 10's un-prep, by which a second prep of a rail nothing
@@ -482,6 +485,18 @@ def _dep(fn: Sequence[Any], regs: Dict[int, Tuple]) -> FrozenSet[int]:
     return frozenset(m for h in dep for m in same[varying[h]])
 
 
+def _mprefix(rr: RunResult, n: Optional[int], nan_eq: bool = False) -> Tuple:
+    """The run's first n measured outcomes (all of them when n is None), as (type, value) (cq-459d)."""
+    ms = rr.measured or []
+    return tuple((m.get("w"), _fpv(_int(m.get("v")), m.get("w"), nan_eq)) for m in (ms if n is None else ms[:n]))
+
+
+def _of_outcomes(pred: Sequence[Any], keys: Sequence[Tuple]) -> bool:
+    """pred is a function of the per-sample measurement prefixes `keys` (cq-459d)."""
+    table: Dict[Tuple, Any] = {}
+    return all(table.setdefault(k, p) == p for k, p in zip(keys, pred))
+
+
 def _lowered_events(runs: List[RunResult], regs_out: Optional[Dict[Tuple[int, int], Tuple]] = None
                     ) -> Tuple[List[_Ev], List[_Ev], List[_Ev]]:
     """Gate events of one side over one group: (kept events, dropped global phases, idle Ry: an Ry
@@ -553,7 +568,11 @@ def _lowered_events(runs: List[RunResult], regs_out: Optional[Dict[Tuple[int, in
             if e.cpred is not None and any(e.cpred):
                 idle.append(e)
             continue
-        if e.kind == "ph" and all(e.pred):
+        # a global phase: a classical-angle phase whose predicate is constant over the group, or a
+        # function of the outcomes measured before it (owner ruling 2026-11-02 on cq-459d: after the
+        # collapse it is global within each outcome branch); the classical arguments are the group's
+        if e.kind == "ph" and (all(e.pred) or _of_outcomes(
+                e.pred, [_mprefix(runs[s], _int(recs[s][e.idx].get("nmeas")) or 0) for s in S])):
             glob.append(e)
             continue
         sup = {r for r, _ in _dep(e.pred, regs)}
@@ -821,6 +840,8 @@ class _Site:
     # per sample, parallel to occ: a theta reach's register before the C side substituted it (the
     # site event's "pre", cq-3o3v; None when the event has none)
     pre: List[List[Optional[int]]] = field(default_factory=list)
+    # per sample, parallel to occ: the C program's measured outcomes before the reach (cq-459d)
+    mkey: List[List[Tuple]] = field(default_factory=list)
 
 
 _MARKERS = ("invert_begin", "invert_end")
@@ -882,10 +903,12 @@ def _c_sites(runs: List[RunResult], nan_eq: bool, open_end: Sequence[bool] = (),
                 continue
             st = sites.get(key)
             if st is None:
-                st = sites[key] = _Site(key, rec["kind"], [[] for _ in range(nS)], [[] for _ in range(nS)])
+                st = sites[key] = _Site(key, rec["kind"], [[] for _ in range(nS)], [[] for _ in range(nS)],
+                                        [[] for _ in range(nS)])
             st.occ[s].append((epos, _fpv(ang, "f64", nan_eq),
                               _int(rec.get("reg")) if rec["kind"] == "theta" else None))
             st.pre[s].append(_int(rec.get("pre")) if rec["kind"] == "theta" else None)
+            st.mkey[s].append(_mprefix(rr, _int(rec.get("nmeas")) or 0, nan_eq))
     return [sites[k] for k in sorted(sites, key=repr)], reasons
 
 
@@ -1102,7 +1125,7 @@ def _match_input(ours: List[_Ev], sites: List[_Site], nS: int, capped: List[bool
 def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
              capped: Sequence[bool] = (), idle: Sequence[_Ev] = (),
              ident: Optional[Dict[Tuple, List[List[Tuple[int, Any, Optional[int]]]]]] = None,
-             registers: Optional[Dict[str, Any]] = None) -> List[str]:
+             registers: Optional[Dict[str, Any]] = None, cmeas: Optional[Sequence[Tuple]] = None) -> List[str]:
     """Match the C sites to our gates (module docstring). A site inside a loop is one gate per trip
     on our side, and a trip that skips the call leaves no C reach: so each lowered gate belongs to
     one site, and at each sample the gate, where it fires, takes the site's earliest reach not yet
@@ -1122,6 +1145,8 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
     capped = capped or [False] * nS
     P = [s for s in range(nS) if not capped[s]]
     C = [s for s in range(nS) if capped[s]]
+    Pset = set(P)
+    cm = list(cmeas) if cmeas is not None else [() for _ in range(nS)]   # each sample's C outcomes
 
     def lfull(e: _Ev) -> Tuple:
         if e.afn is not None:
@@ -1181,18 +1206,26 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
             if st.kind == "theta":
                 bad = [(s, l[0][0]) for s, l in enumerate(left) if l]
             elif P:
-                # a global phase: the same multiset at every uncapped sample, a part of it on a capped one
-                cnt = [Counter(o[1] for _, o in l) for l in left]
-                L = cnt[P[0]]
-                for s in range(nS):
-                    if (cnt[s] != L) if s in P else bool(cnt[s] - L):
-                        diff = (cnt[s] - L) or (L - cnt[s])
-                        t = next((t for t, o in left[s] if o[1] in diff), None)
-                        if t is None:          # a reach this sample lacks: name it where it is left
-                            s = P[0]
-                            t = next(t for t, o in left[s] if o[1] in diff)
-                        bad.append((s, t))
-                        break
+                # a global phase (cq-459d): each (angle, outcomes measured before the reach) reached
+                # equally often at every uncapped sample whose outcomes begin so, at most as often at a
+                # capped one; with nothing measured, the same multiset at every uncapped sample
+                mk = st.mkey or [[() for _ in o] for o in st.occ]
+                cnt = [Counter((o[1], mk[s][t]) for t, o in l) for s, l in enumerate(left)]
+                for key in sorted({k for c in cnt for k in c}, key=repr):
+                    M = key[1]
+                    ext = [s for s in range(nS) if cm[s][:len(M)] == M]
+                    up = [s for s in ext if s in Pset]
+                    if not up:
+                        continue
+                    c0 = cnt[up[0]][key]
+                    s = next((s for s in ext if (cnt[s][key] != c0 if s in Pset else cnt[s][key] > c0)), None)
+                    if s is None:
+                        continue
+                    if not cnt[s][key]:        # a reach this sample lacks: name it where it is left
+                        s = next(x for x in up if cnt[x][key])
+                    t = next(t for t, o in left[s] if (o[1], mk[s][t]) == key)
+                    bad.append((s, t))
+                    break
             else:
                 if len({o[1] for l in left for _, o in l}) > 1:
                     bad = [(s, l[0][0]) for s, l in enumerate(left) if l]
@@ -1832,7 +1865,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
                 reasons += [f"{tag}: {why}" for why in why_c]
                 continue
             for why in _match_c(o_evs, o_glob, sites, nan_eq, [capped[k] or ended[k] for k in ks], o_idle,
-                                c_ident, registers):
+                                c_ident, registers, [_mprefix(r, None, nan_eq) for r in r_runs]):
                 reasons.append(f"{tag}: {why}")
             for why in _check_ak(o_runs, r_runs, [ended[k] for k in ks]):
                 reasons.append(f"{tag}: {why}")

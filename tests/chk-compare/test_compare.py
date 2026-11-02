@@ -1430,6 +1430,49 @@ class PreValue(unittest.TestCase):
         self.check(ours(0), c, "c", False)
 
 
+class MeasuredGlobalPhase(unittest.TestCase):
+    """Owner ruling 2026-11-02 on cq-459d: the global-phase exclusion covers a classical-angle phase
+    whose predicate is a function of the outcomes measured before it (and the classical arguments).
+    Q6/S4's shape: x (h=1) = a is measured (outcome m = a), then `if (m) cq_phi(0.9)`; b is another
+    quantum input (h=2), never measured. "nmeas": the measurements before the event."""
+
+    @staticmethod
+    def phi(angle, nmeas):
+        return {"ev": "site", "fn": "f", "site": 3, "kind": "phi", "angle": ang(angle), "reg": None, "nmeas": nmeas}
+
+    def c(self, pred=lambda a, b: a, nmeas=1):
+        return [RunResult(side="c", sample={"call": 0, "args": [s & 1, s >> 1]}, outputs={"ret": [], "end": "ret"},
+                          measured=[{"h": None, "w": "i1", "v": hex(s & 1)}],
+                          rotations=[self.phi(0.9, nmeas)] if pred(s & 1, s >> 1) else [],
+                          kept=None, clean=None, violations=[]) for s in range(4)]
+
+    @staticmethod
+    def ours(rots=lambda a, b: [], name="o"):
+        return side(name, lambda a, b, s: dict(rots=rots(a, b), kept=[keep(1, a, "i1", "measured"), keep(2, b)],
+                                               measured=[{"h": 1, "w": "i1", "v": hex(a)}]))
+
+    def check(self, ours, other, against, equal):
+        r = compare(ours, other, QKEY, against)
+        self.assertEqual(r.equal, equal, r.reasons)
+
+    def test_phase_on_outcome_dropped_against_c(self):
+        # fails before cq-459d: "C site f:3 (phi, …) has no lowered gate"
+        self.check(self.ours(), self.c(), "c", True)
+        # ours keeps it on the measured flag, the C program has none: whether a side emits it is not compared
+        self.check(self.ours(lambda a, b: [dict(ph(1, a, 0.9), nmeas=1)]), self.c(lambda a, b: 0), "c", True)
+
+    def test_phase_on_outcome_dropped_against_ref(self):
+        self.check(self.ours(), self.ours(lambda a, b: [dict(ph(1, a, 0.9), nmeas=1)], "r"), "ref", True)
+
+    def test_phase_before_the_measurement_compared(self):
+        self.check(self.ours(), self.c(nmeas=0), "c", False)
+        self.check(self.ours(), self.ours(lambda a, b: [dict(ph(1, a, 0.9), nmeas=0)], "r"), "ref", False)
+
+    def test_phase_on_unmeasured_value_compared(self):
+        self.check(self.ours(), self.c(lambda a, b: a & b), "c", False)
+        self.check(self.ours(), self.ours(lambda a, b: [dict(ph(5, a & b, 0.9), nmeas=1)], "r"), "ref", False)
+
+
 class HostOutput(unittest.TestCase):
     """Host output (cq-e4jk): outputs["stdout"] and outputs["effects"] are compared against both
     oracles; against "c" the C side's are a prefix of ours on a capped sample (exact on an ended one,

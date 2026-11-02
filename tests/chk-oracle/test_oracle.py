@@ -353,7 +353,8 @@ void inv_q(int x0, double t) { int x = x0; cq_invert_begin(); cq_theta(&x, t); c
         self.assertEqual(rr.sample, {"call": 0, "args": [i32(4), HALF, pa]})
         self.assertEqual([(r["ev"], r["kind"]) for r in rr.rotations], [("site", "theta"), ("site", "phi")])
         self.assertEqual(rr.rotations[0], {"ev": "site", "fn": "loop_q", "site": 0, "kind": "theta",
-                                           "angle": HALF, "reg": hex(4), "pre": hex(4)})
+                                           "angle": HALF, "reg": hex(4), "pre": hex(4),
+                                           "nmeas": 0})   # nmeas: cq-459d
         self.assertEqual(rr.measured, [{"h": None, "w": "i32", "v": "0x2"}])
         self.assertEqual(rr.outputs, {"ret": [{"call": 0, "fn": "loop_q", "v": {"w": "i32", "v": "0x2"}}],
                                       "end": "ret",

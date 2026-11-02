@@ -936,7 +936,8 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
     did not return give no record), "end": outcome, "loops": the T2 cutoff records, "stdout": the
     program's stdout, "effects": its host-effect calls (cq-e4jk)}; measured: [{"h": None, "w": the register's rail
     type, "v": hex}] per reached measure site that is a gate (not a rule 2 classical read), in order; rotations: the site events of kind theta,
-    phi, invert_begin and invert_end verbatim, in order; kept/clean: None (the C program has no
+    phi, invert_begin and invert_end verbatim, in order, each with "nmeas", the number of entries of
+    measured before it (cq-459d); kept/clean: None (the C program has no
     rails); violations: [] or [{"what": "c_oracle", "h": None, "msg": reason}]."""
     measured, rotations = [], []
     for e in sr.events:
@@ -947,7 +948,7 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
         elif e["kind"] == "read":
             continue   # CR rule 2: a classical read of a collapsed value, no gate (cq-y1ll)
         else:
-            rotations.append(dict(e))
+            rotations.append(dict(e, nmeas=len(measured)))   # the measurements before it (cq-459d)
     return RunResult(side="c", sample=sr.sample,
                      outputs={"ret": _typed_ret(spec, sr), "end": sr.outcome, "loops": list(sr.loops),
                               "stdout": sr.stdout, "effects": list(sr.effects)},
