@@ -29,7 +29,7 @@
 //    value is unknown); a quantum or non-classical pointer argument; a classical pointer that is not a
 //    %s conversion of printf or a constant C string of a readonly parameter of an effect; a function
 //    pointer argument (a callback); kill/signal-family callees other than raise (raise(sig): the delivery
-//    entry, then the module's handler as a _ctl clone call, or the abort arm, lowerRaise, 102); an entry inside a _ctl or _adj clone. An entry inside a plain clone is
+//    entry, then the module's handler as a _ctl clone call, or the abort arm, lowerRaise, 102); an entry inside a _ctl clone. An entry inside a plain clone is
 //    the clone's own tape entry (67); inside a _pure clone (what a twin recomputes through) it is dropped.
 //
 // lowerNoreturn: a noreturn call under a quantum predicate (45, 102, 108) is cqrt_abort_i1(f), f the
@@ -1316,8 +1316,8 @@ void lowerHostEffect(LoweringContext &ctx, CallBase &CB) {
   // _unc twin recomputes through the _pure clone (CR §1.4, 119), which is the clone without its effects:
   // tape entries are write-once and never replayed, so the _pure clone emits none. In a _ctl clone every
   // block's predicate holds the clone's control (the _ctl entry flag), so the entry's flag is the caller's
-  // predicate and the clone's own; an _adj clone's body is eff-invert's region (rule 17), which reads the
-  // entry as one of its gates. A host effect of a callee rule 19 inlines is an entry of the caller's tape
+  // predicate and the clone's own; inside a cq_invert region the entry is lowered as anywhere else and the
+  // backend treats its writes as gates (rule 17, BACKEND_ABI 1.13). A host effect of a callee rule 19 inlines is an entry of the caller's tape
   // under the caller's predicate in scope.
   if (ctx.S.pure)
     return;

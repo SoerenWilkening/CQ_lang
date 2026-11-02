@@ -408,7 +408,7 @@ private:
       return false;
     const abi::CloneSpec &C = *S.clone;
     return C.fn == Twin.fn && C.mask == Twin.mask && C.bounds == Twin.bounds && C.ctl == Twin.ctl &&
-           C.adj == Twin.adj && C.depth == Twin.depth;
+           C.depth == Twin.depth;
   }
 
   bool isForwardCloneResult(const Value *V, const abi::CloneSpec &Twin) {

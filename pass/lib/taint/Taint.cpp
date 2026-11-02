@@ -277,7 +277,7 @@ private:
 
   // Specializations.
   SpecState *getSpec(Function *F, std::vector<Lanes> formal, std::vector<Type *> tys,
-                     std::vector<std::string> cells, bool ctl, bool pure, bool adj, unsigned depth,
+                     std::vector<std::string> cells, bool ctl, bool pure, unsigned depth,
                      std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals = {});
   void analyze(SpecState &S);
 
@@ -776,7 +776,7 @@ std::string lanesStr(const Lanes &l) {
 }
 
 SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector<Type *> tys,
-                             std::vector<std::string> cells, bool ctl, bool pure, bool adj,
+                             std::vector<std::string> cells, bool ctl, bool pure,
                              unsigned depth, std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals) {
   // A bound with no formal named (a library-build root read from its name): the quantum integer formals
   // in order, the reading §1.4's name gives.
@@ -796,7 +796,7 @@ SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector
       key += "[" + cells[i] + "]";
     key += ",";
   }
-  key += "|" + std::to_string(ctl) + std::to_string(pure) + std::to_string(adj) + ":" +
+  key += "|" + std::to_string(ctl) + std::to_string(pure) + ":" +
          std::to_string(depth);
   for (size_t i = 0; i < bounds.size(); ++i)
     key += ":b" + std::to_string(boundFormals[i]) + "=" + std::to_string(bounds[i]);
@@ -812,12 +812,11 @@ SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector
   S->formalPtr.resize(S->formal.size());
   S->ctl = ctl;
   S->pure = pure;
-  S->adj = adj;
   S->depth = depth;
   S->bounds = std::move(bounds);
   S->boundFormals = std::move(boundFormals);
   S->declared = F->isDeclaration();
-  bool zero = !ctl && !pure && !adj && depth == 0 && S->bounds.empty();
+  bool zero = !ctl && !pure && depth == 0 && S->bounds.empty();
   for (const Lanes &l : S->formal)
     zero = zero && l.none();
   for (const std::string &c : S->cells)
@@ -2464,40 +2463,6 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
     }
   }
   bool underQ = blockCT(CB.getParent()) || cur->ctl || candidateUnderQ;
-  // Invert region (rule 17): the call lies between __cq_invert_begin and __cq_invert_end: a begin
-  // dominates it with no end between them, and an end after it post-dominates it. Inside an _adj body
-  // every call is an _adj call (the adjoint of the body includes its callees', cq-eive).
-  bool adj = cur->adj;
-  if (!adj) {
-    FnInfo &fi = fn(cur->F);
-    auto named = [](const Instruction &I, StringRef n) {
-      auto *C = dyn_cast<CallBase>(&I);
-      return C && C->getCalledFunction() && C->getCalledFunction()->getName() == n;
-    };
-    // a dominates b at instruction granularity; a post-dominates b likewise.
-    auto dom = [&](const Instruction *a, const Instruction *b) { return fi.DT->dominates(a, b); };
-    auto pdom = [&](const Instruction *a, const Instruction *b) {
-      if (a->getParent() == b->getParent())
-        return b->comesBefore(a);
-      return fi.PDT->dominates(a->getParent(), b->getParent());
-    };
-    std::vector<const Instruction *> begins, ends;
-    for (const BasicBlock *BB : fi.rpo)
-      for (const Instruction &I : *BB) {
-        if (named(I, "__cq_invert_begin"))
-          begins.push_back(&I);
-        else if (named(I, "__cq_invert_end"))
-          ends.push_back(&I);
-      }
-    for (const Instruction *b : begins) {
-      if (!dom(b, &CB))
-        continue;
-      bool closed = llvm::any_of(ends, [&](const Instruction *e) { return dom(b, e) && dom(e, &CB); });
-      bool open = llvm::any_of(ends, [&](const Instruction *e) { return dom(b, e) && pdom(e, &CB); });
-      if (!closed && open)
-        adj = true;
-    }
-  }
   // Depth recursion (rule 14): a recursive call under a quantum predicate.
   unsigned depth = 0;
   bool recursive = false;
@@ -2545,11 +2510,11 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
     for (unsigned i = 0; i < cells.size(); ++i)
       if (!memo->cells[i].empty() || !cells[i].empty())
         cells[i] = memo->cells[i];
-    bool inPlace = !memo->ctl && !adj && depth == 0 && memo->bounds.empty() &&
+    bool inPlace = !memo->ctl && depth == 0 && memo->bounds.empty() &&
                    llvm::none_of(formal, [](const Lanes &l) { return l.any(); }) &&
                    llvm::none_of(cells, [](const std::string &c) { return c.find('1') != std::string::npos; });
     if (!inPlace) {
-      SpecState *C = getSpec(G, formal, tys, cells, memo->ctl, false, adj, depth, memo->bounds);
+      SpecState *C = getSpec(G, formal, tys, cells, memo->ctl, false, depth, memo->bounds);
       if (depth > 0) {
         unsigned want = cur->depthCut ? cur->depthCut : resolveK(*G);
         if (C->depthCut == 0 || want < C->depthCut) {
@@ -2578,7 +2543,7 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
       }
     }
   }
-  if (!anyQ && !underQ && !adj && depth == 0) {
+  if (!anyQ && !underQ && depth == 0) {
     // Classical call: the in-place specialization of the callee.
     std::vector<Lanes> z;
     for (Type *T : tys)
@@ -2586,7 +2551,7 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
     // The in-place specialization is the function as it is: no cell digits (its key is the root's, so a
     // function has one in-place specialization whether a root or a classical call reaches it; cq-i9wk).
     std::vector<std::string> zc(cells.size());
-    SpecState *C = getSpec(G, z, tys, zc, false, false, false, 0, {});
+    SpecState *C = getSpec(G, z, tys, zc, false, false, 0, {});
     recordCallee(CB, C);
     for (unsigned i = 0; i < actuals.size(); ++i)
       if (actuals[i]->getType()->isPointerTy() && i < C->formalPtr.size())
@@ -2605,7 +2570,7 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
   // test reads the callee's specialization without the flag.
   bool ctl = false;
   if (underQ) {
-    SpecState *probe = getSpec(G, formal, tys, cells, false, false, adj, depth, {});
+    SpecState *probe = getSpec(G, formal, tys, cells, false, false, depth, {});
     if (probe->nonPure || probe->hasTheta || probe->hasPhi || probe->hasEffect || probe->writesOuter)
       ctl = true;
   }
@@ -2628,7 +2593,7 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
     bounds.clear();
     boundFormals.clear();
   }
-  SpecState *C = getSpec(G, formal, tys, cells, ctl, false, adj, depth, bounds, boundFormals);
+  SpecState *C = getSpec(G, formal, tys, cells, ctl, false, depth, bounds, boundFormals);
   if (depth > 0) {
     // Several level-(d-1) clones may reach one level-d clone (a stale key from an earlier round
     // too): the cutoff is the smallest any of them carries.
@@ -3602,7 +3567,7 @@ void Analyzer::solve() {
         z.push_back(Lanes(lanesOf(A.getType())));
         tys.push_back(A.getType());
       }
-      SpecState *R = getSpec(&F, z, tys, {}, false, false, false, 0, {});
+      SpecState *R = getSpec(&F, z, tys, {}, false, false, 0, {});
       R->reachable = R->isRoot = true;
     }
   }
@@ -3623,7 +3588,7 @@ void Analyzer::solve() {
       z.push_back(l);
       tys.push_back(A.getType());
     }
-    SpecState *RS = getSpec(F, z, tys, {}, R.ctl, R.pure, R.adj, R.depth, R.bounds);
+    SpecState *RS = getSpec(F, z, tys, {}, R.ctl, R.pure, R.depth, R.bounds);
     RS->reachable = RS->isRoot = true;
   }
 
@@ -4004,7 +3969,6 @@ void Analyzer::finish() {
     P.mask = S->mask;
     P.ctl = S->ctl;
     P.pure = pure;
-    P.adj = S->adj;
     P.depth = S->depth;
     P.bounds = S->bounds;
     P.boundFormals = S->boundFormals;
@@ -4042,7 +4006,7 @@ namespace cq {
 using namespace taintimpl;
 
 bool Specialization::isEntry() const {
-  if (!F || F->isDeclaration() || ctl || pure || adj || depth || !bounds.empty() || kept)
+  if (!F || F->isDeclaration() || ctl || pure || depth || !bounds.empty() || kept)
     return false;
   return mask.find('1') == std::string::npos;
 }
@@ -4061,7 +4025,7 @@ SpecState *stateOf(const ImplState &I, const Specialization &S) {
   // A kept clone (cq-i9wk) is answered by the in-place specialization of its F: kept is not compared.
   for (size_t k = 0; k < I.published.size(); ++k) {
     const Specialization &P = I.published[k];
-    if (P.F == S.F && P.mask == S.mask && P.ctl == S.ctl && P.pure == S.pure && P.adj == S.adj &&
+    if (P.F == S.F && P.mask == S.mask && P.ctl == S.ctl && P.pure == S.pure &&
         P.depth == S.depth && P.bounds == S.bounds && P.boundFormals == S.boundFormals)
       return I.publishedState[k];
   }
@@ -4893,7 +4857,7 @@ int TaintInfo::cellForward(const Specialization &S, unsigned argNo, unsigned cel
   const ImplState &I = needImpl(impl);
   SpecState *SS = stateOf(I, S);
   llvm::Function *F = SS->F;
-  if (S.ctl || S.adj || F->isDeclaration() || argNo >= F->arg_size() ||
+  if (S.ctl || F->isDeclaration() || argNo >= F->arg_size() ||
       !F->getArg(argNo)->getType()->isPointerTy())
     return -1;
   const llvm::Argument *A = F->getArg(argNo);
@@ -5005,7 +4969,6 @@ void TaintInfo::print(llvm::raw_ostream &os) const {
     C.bounds = P.bounds;
     C.ctl = P.ctl;
     C.pure = P.pure;
-    C.adj = P.adj;
     C.depth = P.depth;
     std::string n = abi::name(C);
     (void)SS;

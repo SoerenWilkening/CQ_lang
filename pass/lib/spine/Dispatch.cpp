@@ -415,7 +415,20 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
     return lowerPhase(ctx, *CI);                                         // rule 12
   case Class::InvertBegin:
   case Class::InvertEnd:
-    internalError("spine: a cq_invert marker outside the walker's region handling", &CB);
+  {
+    if (!CI)
+      internalError("spine: a cq_invert marker through invoke", &CB);
+    // Rule 17: a marker is a host event. Under linearization (rule 8) a marker in a quantum arm (or a
+    // quantum-exit loop trip) would run on every path, while the C program reaches it on that arm only:
+    // the region it brackets in the circuit is not the program's (-O1 tail duplication puts one into
+    // each arm, cq-asfn). CR does not say where such a region begins or ends (SPEC_ISSUES, cq-4593).
+    const Pred &entry = ctx.preds().block(&CB.getFunction()->getEntryBlock()).quantumPart(ctx.T, ctx.S);
+    const Pred &here = ctx.currentPredicate();
+    if (shared(ctx).tripFlag || !(here & !entry).isBottom() || !(entry & !here).isBottom())
+      unimplemented("eff-invert: awaiting owner ruling: SPEC_ISSUES \"A cq_invert marker under a quantum "
+                    "predicate\" (rule 17 markers are host events; this one runs on a quantum arm only)", &CB);
+    return invert::lowerMarker(ctx, *CI);   // rule 17: the run-time pair (§1.3)
+  }
   case Class::Lift: {
     // Rules 18 and 19: the compiler never inlines (cq-i9wk). A callee reached with a quantum argument is
     // a clone; one reached with none is called as it is (calls::lowerLifted).
@@ -430,6 +443,8 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
   case Class::Indirect: return calls::lowerIndirect(ctx, CB);
   case Class::Declared: return calls::lowerDeclared(ctx, CB);
   case Class::Asm: {
+    if (invert::isMarkerFence(CB))
+      return;   // rule 17: CQ.h's fence beside a cq_invert marker is consumed
     bool q = false;
     for (const Use &u : CB.args())
       q |= isQ(ctx, u.get());

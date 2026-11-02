@@ -31,7 +31,7 @@
 //    is set from I (the current instruction, for rule 2 dominance, and currentPredicate() = the quantum
 //    part of preds().block(I.getParent())); both are restored on return, so after it the loop module
 //    sees its unit's state again. No rule 6 (ruleSixAfter): inside a rule-14 trip the mirror reads
-//    every old value. A cq_invert marker is an internal error (dispatch: the walker brackets regions).
+//    every old value. A cq_invert marker is lowered where it stands (rule 17, eff-invert lowerMarker).
 //  - lowerInstruction(ctx, I, tripFlag) (cq-99f7) is the same dispatch under a rule-14 trip: tripFlag
 //    is an i1 rail the loop module owns and recorded (its trip predicate a_j; nullptr = none, which is
 //    the two-argument form). For the call, currentFlag() is tripFlag when the block predicate's quantum
@@ -50,10 +50,8 @@
 //  - rebind(orig, ops) (cq-ofn6) replaces orig's binding, which must exist (internal error
 //    otherwise): a loop module rebinds each loop value read after the loop to its exit value (rule 14
 //    case 1 copy-out, case 3 captured value). The kinds are the caller's; the old rails stay recorded.
-//  - cq_invert: at __cq_invert_begin the spine calls invert::lowerRegion(begin, end), end being the
-//    matching end in the same block or else the first __cq_invert_end of a later block of the linear
-//    order; it skips every original instruction from begin to end (the region's blocks emit nothing of
-//    their own and continue in the current output block).
+//  - cq_invert (rule 17, §1.3): each marker is dispatched like any call (invert::lowerMarker emits
+//    cqrt_invert_begin/_end); the region's code is walked and lowered as anywhere else.
 #pragma once
 
 #include <map>

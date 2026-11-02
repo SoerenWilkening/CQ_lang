@@ -1365,6 +1365,14 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       if (!real) {
         if (!q)
           internalError("loops-classical: a classical phi at a linearized join", &p);
+        // Every arm names one rail (a register rotated in place on one arm, rule 10; 126): the merge is
+        // that rail, no choice to make (the spine's state-prep merge).
+        Value *one = ctx.operand(p.getIncomingValue(0)).v;
+        if (!p.getType()->isVectorTy() && !p.getType()->isAggregateType() && !p.getType()->isPointerTy() &&
+            all_of(p.incoming_values(), [&](Value *v) { return ctx.operand(v).v == one; })) {
+          ctx.bind(&p, asHandle(ctx.operand(p.getIncomingValue(0)), p.getType()));
+          continue;
+        }
         // cq-pfpy: a composite merges field by field (rule 26), a pointer is a fat-pointer merge (rule 21).
         if (p.getType()->isPointerTy())
           fatptr::lower(ctx, &p);
@@ -2107,7 +2115,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         for (Instruction &I : bb)
           if (!L.contains(&I) && (isa<LoadInst>(I) || isa<StoreInst>(I) || isa<CallBase>(I)))
             for (const Use &u : I.operands())
-              if (u->getType()->isPointerTy() && !isa<Function>(u.get()))
+              if (u->getType()->isPointerTy() && !isa<Function>(u.get()) && !isa<InlineAsm>(u.get()))
                 for (ObjectId o : ctx.T.provenance(u.get(), ctx.S))
                   if (stored.count(o) && !(isa<IntrinsicInst>(I) && cast<IntrinsicInst>(I).isLifetimeStartOrEnd()))
                     busAfter = true;

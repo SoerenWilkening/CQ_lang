@@ -27,13 +27,14 @@ enum class Core : uint8_t { Alloc, Free, Measure, Ry, RyQAngle, RzI1, RzQAngle, 
   Copy, Xorc, QramAlloc, QramRealloc, QramStore, QramLoad, QramFree, TapeAlloc, TapeFmt, TapeEffect,
   TapeWrite, TapeWriteLit, TapeWriteStrLit, AbortI1, Push, Pop,
   TapeStrBegin, TapeStrEnd,   // cq-a63l (CR §1.3, rule 16): tape_str_begin(t), tape_str_end(t)
-  QramSize /* cq-4lqy (CR §1.3, 2026-11-02): i32 qram_size(a), a classical read, no gate */ };
+  QramSize, /* cq-4lqy (CR §1.3, 2026-11-02): i32 qram_size(a), a classical read, no gate */
+  InvertBegin, InvertEnd };   // cq-4593 (cq-arch 2026-11-02): CR §1.3, rule 17
 struct CoreSpec { Core op; RailType w{}; bool ctl = false, hl = false, unc = false; };
 std::string name(const CoreSpec &);
 llvm::FunctionCallee declare(llvm::Module &, const CoreSpec &);
 std::optional<CoreSpec> parseCore(llvm::StringRef symbol);
 struct CloneSpec { std::string fn; Mask mask; std::vector<uint64_t> bounds;
-                   bool ctl = false, pure = false, adj = false; unsigned depth = 0; bool unc = false;
+                   bool ctl = false, pure = false; unsigned depth = 0; bool unc = false;
                    // cq-xivx (CR §1.4 INVERSE-UPDATE kind): the cells of `_inv<c>{_<c'>}`, empty for none.
                    std::vector<unsigned> inv = {}; };
 std::string name(const CloneSpec &);

@@ -481,6 +481,8 @@ const CoreInfo kCores[] = {
     {Core::AbortI1, "abort_i1", WidthUse::FixedI1, false, false, false, false},
     {Core::Push, "push", WidthUse::None, false, false, false, false},
     {Core::Pop, "pop", WidthUse::None, false, false, false, false},
+    {Core::InvertBegin, "invert_begin", WidthUse::None, false, false, false, false},
+    {Core::InvertEnd, "invert_end", WidthUse::None, false, false, false, false},
 };
 
 const CoreInfo &coreInfo(Core op) {
@@ -556,8 +558,6 @@ std::string cloneName(const CloneSpec &s) {
     n += "_ctl";
   if (s.pure)
     n += "_pure";
-  if (s.adj)
-    n += "_adj";
   if (s.depth)
     n += "_d" + std::to_string(s.depth);
   for (size_t i = 0; i < s.inv.size(); ++i)
@@ -605,7 +605,6 @@ std::optional<CloneSpec> parseCloneImpl(StringRef sym) {
       return std::nullopt;
     --n;
   }
-  if (n && t[n - 1] == "adj") { s.adj = true; --n; }
   if (n && t[n - 1] == "pure") { s.pure = true; --n; }
   if (n && t[n - 1] == "ctl") { s.ctl = true; --n; }
   if (n == 0)
@@ -804,6 +803,8 @@ llvm::FunctionCallee declare(llvm::Module &M, const CoreSpec &s) {
   case Core::AbortI1: a.push_back(h); break;
   case Core::Push: a.push_back(i32); break;
   case Core::Pop: ret = i32; break;
+  case Core::InvertBegin:
+  case Core::InvertEnd: break;
   }
   return declareChecked(M, coreName(s), llvm::FunctionType::get(ret, a, false));
 }

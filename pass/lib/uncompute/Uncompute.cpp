@@ -890,6 +890,13 @@ struct Uncompute::Impl {
            busPoppable(rails[p].popBus);
   }
 
+  // cq-4593 (CR rule 17): the rails pending at each open cq_invert region's begin (openInvert), innermost
+  // last. No flush places their items while the region is open.
+  SmallVector<DenseSet<RailId>, 2> invertFrozen;
+  bool frozen(RailId g) const {
+    return any_of(invertFrozen, [&](const DenseSet<RailId> &s) { return s.count(g) != 0; });
+  }
+
   bool resolvable(RailId g) const {
     const Rail &r = rails[g];
     if (r.popBus != kNone)
@@ -4188,6 +4195,8 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
   for (RailId g = 0; g < I.rails.size(); ++g) {
     if (I.rails[g].ownedBy != kNone)
       continue; // F1: mirrored by its deferred item
+    if (I.frozen(g))
+      continue; // cq-4593: pending at an open cq_invert region's begin, placed after its end
     if (I.rails[g].deferred != kNone) {
       if (I.resolvable(g))
         deferred.push_back(g);
@@ -4232,7 +4241,7 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
     progress = false;
     SmallVector<RailId, 16> span;
     for (RailId g = 0; g < I.rails.size(); ++g)
-      if (I.spanReady(g, point, live))
+      if (!I.frozen(g) && I.spanReady(g, point, live))
         span.push_back(g);
     I.dropBlocked(span, c, false);
     for (RailId g : I.order(span))
@@ -4241,7 +4250,7 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
         progress = true;
       }
     for (RailId g = 0; g < I.rails.size(); ++g) {
-      if (I.rails[g].deferred == kNone || !I.resolvable(g) || !I.deferredLocalReady(g, point, true))
+      if (I.rails[g].deferred == kNone || I.frozen(g) || !I.resolvable(g) || !I.deferredLocalReady(g, point, true))
         continue;
       if (any_of(I.readersOf(g), [&](RailId o) { return I.resolvable(o) && !I.done(o, c); }))
         continue;
@@ -4249,6 +4258,35 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
       progress = true;
     }
   }
+}
+
+// cq-4593 (CR rule 17: "the compiler places no uncompute of a rail allocated before the region inside it";
+// placement is free, rule 5). The rails pending at begin stay pending while the region is open; at its end
+// the end marker becomes a use of each, so their items follow it. Regions nest.
+void Uncompute::openInvert(Instruction *begin) {
+  Impl &I = *impl;
+  if (!begin || !begin->getParent())
+    internalError("uncompute: openInvert needs an instruction in a block");
+  DenseSet<RailId> s;
+  for (RailId g = 0; g < I.rails.size(); ++g)
+    if (I.resolvable(g))
+      s.insert(g);
+  I.invertFrozen.push_back(std::move(s));
+}
+
+void Uncompute::closeInvert(Instruction *end) {
+  Impl &I = *impl;
+  if (!end || !end->getParent())
+    internalError("uncompute: closeInvert needs an instruction in a block");
+  if (I.invertFrozen.empty())
+    return;   // the region was opened by another function's lowering (begin and end are run-time events)
+  DenseSet<RailId> s = I.invertFrozen.pop_back_val();
+  for (RailId g : s)
+    if (I.resolvable(g)) {
+      RailId t = I.rails[g].popBus != kNone ? I.rails[g].popBus : g;   // a POP follows its bus's uses
+      if (!is_contained(I.rails[t].uses, end))
+        I.rails[t].uses.push_back(end);
+    }
 }
 
 void Uncompute::resolveAt(Instruction *P, ArrayRef<RailId> list) {

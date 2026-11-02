@@ -118,6 +118,12 @@ public:
   // liveLater: the handles an instruction lowered after P may still read (the caller's contract).
   void flushBefore(llvm::Instruction *point, llvm::ArrayRef<llvm::Value *> *liveLater);
   void flushAtExit(llvm::ReturnInst *);
+  // cq-4593 (cq-arch 2026-11-02, CR rule 17): begin/end are the new-IR cqrt_invert_begin/_end calls of one
+  // cq_invert region. No flush places the item of a rail pending at openInvert until closeInvert, which
+  // notes end as a use of each (their items follow the end marker). Nested pairs nest; a closeInvert with
+  // no open region (the begin was another function's) does nothing.
+  void openInvert(llvm::Instruction *begin);
+  void closeInvert(llvm::Instruction *end);
   unsigned openScope(); void closeScope(unsigned);
   llvm::ArrayRef<Record> scopeRecords(unsigned) const;
   void emitMirror(unsigned scope, llvm::IRBuilder<> &);

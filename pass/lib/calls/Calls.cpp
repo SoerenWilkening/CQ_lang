@@ -108,12 +108,12 @@ const TaintInfo &taintOf(const Specialization &S) {
 }
 
 abi::CloneSpec cloneSpecOf(const Specialization &S) {
-  return abi::CloneSpec{S.F->getName().str(), S.mask, S.bounds, S.ctl, S.pure, S.adj, S.depth, false};
+  return abi::CloneSpec{S.F->getName().str(), S.mask, S.bounds, S.ctl, S.pure, S.depth, false};
 }
 
 bool sameFields(const abi::CloneSpec &a, const abi::CloneSpec &b) {
   return a.fn == b.fn && a.mask == b.mask && a.bounds == b.bounds && a.ctl == b.ctl && a.pure == b.pure &&
-         a.adj == b.adj && a.depth == b.depth && a.unc == b.unc && a.inv == b.inv;
+         a.depth == b.depth && a.unc == b.unc && a.inv == b.inv;
 }
 
 // The CR §1.4 name of cs; unimplemented when the right-to-left reading does not give cs back.
@@ -1022,7 +1022,7 @@ CallInst *emitDeclaredCall(LoweringContext &ctx, CallBase &CB, Function &F, Stri
   SmallVector<Type *, 8> ps;
   for (Value *a : args)
     ps.push_back(a->getType());
-  abi::CloneSpec cs{calleeName(F, &CB), mask.str(), {}, ctl, false, false, 0, false};
+  abi::CloneSpec cs{calleeName(F, &CB), mask.str(), {}, ctl, false, 0, false};
   std::string name = checkedName(cs, &CB);
   FunctionType *FT = FunctionType::get(rt, ps, false);
   Function *D = ctx.M.getFunction(name);
@@ -2154,7 +2154,7 @@ void lowerDeclaredPointers(LoweringContext &ctx, CallBase &CB, Function &F) {
   SmallVector<Type *, 8> ps;
   for (Value *a : args)
     ps.push_back(a->getType());
-  abi::CloneSpec cs{calleeName(F, &CB), mask, {}, false, false, false, 0, false};
+  abi::CloneSpec cs{calleeName(F, &CB), mask, {}, false, false, 0, false};
   std::string name = checkedName(cs, &CB);
   FunctionType *FT = FunctionType::get(Type::getVoidTy(C), ps, false);
   Function *D = ctx.M.getFunction(name);

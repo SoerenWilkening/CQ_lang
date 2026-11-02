@@ -177,6 +177,10 @@ void coreRoles(Sig &S, const CallBase &CB) {
     R.push_back(Role::Read);
     S.res = Res::Word;
     break;
+  case Core::InvertBegin:
+  case Core::InvertEnd:
+    S.res = Res::None;   // rule 17: events of the host execution, no rail
+    break;
   }
   (void)CB;
 }

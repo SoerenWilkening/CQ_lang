@@ -19,7 +19,7 @@
 
 // Taint.h  (rule 3; rule 20 classification; rule 21 provenance)
 namespace cq {
-struct Specialization { llvm::Function *F; Mask mask; bool ctl = false, pure = false, adj = false;
+struct Specialization { llvm::Function *F; Mask mask; bool ctl = false, pure = false;
                         unsigned depth = 0; std::vector<uint64_t> bounds; bool isEntry() const;
                         // cq-qc70 (CR §1.4): boundFormals[i] is the formal index bounds[i] bounds (a clone's
                         // name spells only the values; the clone table is keyed by the fields).
@@ -74,7 +74,7 @@ public:
   // T5 (A-taint 2026-11-01, CR rules 18, 20; 109's put): the formal j whose handle the clone `callee` stores
   // UNCHANGED into cell `cell` (as cellsWritten counts it) of the object argNo points to, or -1. Exactly:
   // the clone's only write through argNo is one store, in its entry block, of formal j (a quantum scalar
-  // whose only use is that store) at a constant offset from argNo; not a _ctl or _adj clone. The cell then
+  // whose only use is that store) at a constant offset from argNo; not a _ctl clone. The cell then
   // holds the caller's own rail after the call: no copy-out in the clone, no twin for it in the caller.
   int cellForward(const Specialization &callee, unsigned argNo, unsigned cell) const;
   // T4: pointer formal argNo of clone `callee` (non-pointer formal: internal error; pointee objects of

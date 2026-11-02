@@ -23,11 +23,11 @@ namespace cq::tape   { void lowerHostEffect(LoweringContext &, llvm::CallBase &)
                        // the rule-16 effect entry `volatile_store` under the predicate: its address field
                        // (an i64, literal when classical), then the stored value's fields (its lanes).
                        void lowerVolatileStore(LoweringContext &, llvm::StoreInst &, Operand address); }
-namespace cq::invert { void lowerRegion(LoweringContext &, llvm::CallInst &begin, llvm::CallInst &end);
-                       // I1 (cq-arch, cq-xjw2): the body of an _adj clone (S.adj): F's whole body (one void
-                       // return) as one region; formals bound, preds computed, builder at the end of the
-                       // clone's empty entry block; emits ret void and flushAtExit.
-                       void lowerAdjointBody(LoweringContext &, llvm::Function &F); }
+namespace cq::invert { // cq-4593 (cq-arch 2026-11-02, CR rule 17, §1.3): a __cq_invert_begin/_end call becomes
+                       // cqrt_invert_begin/_end where the walker reaches it (the region's code is lowered as
+                       // anywhere else); CQ.h's asm fence beside a marker (isMarkerFence) emits nothing.
+                       void lowerMarker(LoweringContext &, llvm::CallInst &marker);
+                       bool isMarkerFence(const llvm::Instruction &); }
 namespace cq::fenv   { void lowerConstrained(LoweringContext &, llvm::CallBase &);
                        void lowerFenvCall(LoweringContext &, llvm::CallBase &);
                        // cq-xu2l (freeze amendment on cq-arch): after every lowered cq_measure, the

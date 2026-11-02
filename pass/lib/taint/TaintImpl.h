@@ -152,7 +152,7 @@ inline uint8_t compose(uint8_t X, uint8_t Y) {
 
 struct SpecState {
   llvm::Function *F = nullptr;
-  bool ctl = false, pure = false, adj = false;
+  bool ctl = false, pure = false;
   unsigned depth = 0;
   std::vector<uint64_t> bounds;
   std::vector<unsigned> boundFormals; // cq-qc70: the formal each bound bounds

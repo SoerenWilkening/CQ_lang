@@ -2766,7 +2766,7 @@ FnState::ProgSlot &progSlotState(FnState &st, const GlobalVariable &gv) {
 
 // The guarded store's old read in a _ctl clone (see above): the handle the slot holds at the call.
 bool cloneReadsProgramSlot(LoweringContext &ctx, const GlobalVariable &gv, const Instruction &I) {
-  return ctx.S.ctl && !ctx.S.pure && !ctx.S.adj && !ctx.S.isEntry() && I.getFunction() == ctx.S.F &&
+  return ctx.S.ctl && !ctx.S.pure && !ctx.S.isEntry() && I.getFunction() == ctx.S.F &&
          guardedStoreOf(*ctx.S.F, gv) == &I;
 }
 
@@ -4752,7 +4752,7 @@ bool isPointerKindFormal(LoweringContext &ctx, const Argument &A) {
 namespace {
 
 bool sameSpec(const Specialization &a, const Specialization &b) {
-  return a.F == b.F && a.mask == b.mask && a.ctl == b.ctl && a.pure == b.pure && a.adj == b.adj && a.depth == b.depth;
+  return a.F == b.F && a.mask == b.mask && a.ctl == b.ctl && a.pure == b.pure && a.depth == b.depth;
 }
 
 // In a clone: the unit of the pointer-kind cell at byte off of pointer-kind formal A, over every call site
@@ -6197,7 +6197,7 @@ void noteProgramSlotCall(LoweringContext &ctx, const CallBase &orig, const Speci
     std::string pre = "mem-slots: a clone call writing a program slot (102) ";
     if (!S)
       unimplemented(pre + "other than by one store in its entry block of a constant or a formal", &orig);
-    if (!callee.ctl || callee.pure || callee.adj)
+    if (!callee.ctl || callee.pure)
       unimplemented(pre + "that is not a _ctl clone (the guarded store)", &orig);
     if (!ctx.S.isEntry() || orig.getFunction() != ctx.S.F)
       unimplemented(pre + "from a clone", &orig);

@@ -242,7 +242,6 @@ private:
   DenseMap<std::pair<const BasicBlock *, const BasicBlock *>, BasicBlock *> edgeOut;
   std::vector<std::pair<PHINode *, PHINode *>> classicalPhis;
   DenseSet<const Instruction *> visited;
-  const Instruction *regionEnd = nullptr;               // a cq_invert region spanning blocks in progress
   // cq-lx8f: quantum phis of a unit's exit blocks that the loop module bound (rule 14 case 2: an exit
   // phi identified with a carried value's final state). The walker does not merge them again.
   DenseSet<const PHINode *> unitBoundPhis;
@@ -288,7 +287,7 @@ private:
   BasicBlock *out(const BasicBlock *b);
   void emitBlock(BasicBlock *b);
   void emitGuard(BasicBlock *b);
-  void emitBody(BasicBlock *b, const Instruction *resume);
+  void emitBody(BasicBlock *b);
   void emitTerminator(BasicBlock *b);
   void noteEntryReturn(bool frozen, Instruction *t);   // rule 19 (cq-i9wk)
   void emitCloneReturn(ReturnInst *ret);
@@ -1649,28 +1648,6 @@ void Walker::emitTerminator(BasicBlock *b) {
 }
 
 void Walker::emitBlock(BasicBlock *b) {
-  if (regionEnd) {
-    // Inside a cq_invert region spanning blocks (eff-invert lowered it): b emits nothing of its own and
-    // continues in the current output block; the end's block resumes after the end marker.
-    if (sh.blocks.count(b))
-      internalError("spine: a block of a cq_invert region with an output block of its own", b->getTerminator());
-    // A loop or a classical guard of the region is eff-invert's too (rule 17; cq-xjw2).
-    sh.blocks[b] = ctx.B().GetInsertBlock();
-    for (Instruction &I : *b) {
-      visited.insert(&I);
-      if (&I == regionEnd)
-        break;
-    }
-    if (regionEnd->getParent() != b)
-      return;
-    const Instruction *resume = regionEnd;
-    regionEnd = nullptr;
-    while (!openRegions.empty() && openRegions.back() == b)
-      openRegions.pop_back();
-    sh.curPred = ctx.preds().block(b).quantumPart(ctx.T, ctx.S);
-    emitBody(b, resume);
-    return;
-  }
   if (merged.count(b)) {
     sh.blocks[b] = ctx.B().GetInsertBlock();
   } else {
@@ -1862,7 +1839,7 @@ void Walker::emitBlock(BasicBlock *b) {
   }
 
   emitGuard(b);
-  emitBody(b, nullptr);
+  emitBody(b);
 }
 
 // Rule 8 / P1: the classical factor of b's predicate not yet established on every path here is a
@@ -1915,50 +1892,13 @@ void Walker::emitGuard(BasicBlock *b) {
   blockDefs.clear();
 }
 
-// The instructions of b after its phis (after resume when set: the end marker of a cq_invert region
-// begun in an earlier block), then its terminator.
-void Walker::emitBody(BasicBlock *b, const Instruction *resume) {
-  for (BasicBlock::iterator it = resume ? std::next(const_cast<Instruction *>(resume)->getIterator())
-                                        : b->getFirstNonPHIIt(),
-                            end = b->getTerminator()->getIterator();
+// The instructions of b after its phis, then its terminator.
+void Walker::emitBody(BasicBlock *b) {
+  for (BasicBlock::iterator it = b->getFirstNonPHIIt(), end = b->getTerminator()->getIterator();
        it != end; ++it) {
     Instruction &I = *it;
     sh.cur = &I;
     visited.insert(&I);
-    if (auto *CB = dyn_cast<CallInst>(&I);
-        CB && calls::classify(*CB, ctx.T, ctx.S) == calls::Class::InvertBegin) {
-      // Rule 17: eff-invert owns the bracketed region, up to and including its end marker.
-      auto e = std::next(it);
-      for (; e != end; ++e)
-        if (auto *E = dyn_cast<CallInst>(&*e);
-            E && calls::classify(*E, ctx.T, ctx.S) == calls::Class::InvertEnd)
-          break;
-      if (e == end) {
-        // The region spans blocks: its end is the first __cq_invert_end of a later block of L. The
-        // blocks between are the region's interior; they emit nothing of their own (eff-invert lowers
-        // them) and continue in the current output block; the end's block resumes after the end.
-        CallInst *E = nullptr;
-        for (unsigned j = idx.lookup(b) + 1; j < L.size() && !E; ++j)
-          for (Instruction &J : *L[j])
-            if (auto *C = dyn_cast<CallInst>(&J);
-                C && calls::classify(*C, ctx.T, ctx.S) == calls::Class::InvertEnd) {
-              E = C;
-              break;
-            }
-        if (!E)
-          internalError("spine: a __cq_invert_begin with no __cq_invert_end after it", CB);
-        invert::lowerRegion(ctx, *CB, *E);
-        for (auto r = it; r != b->end(); ++r)
-          visited.insert(&*r);
-        regionEnd = E;
-        return;
-      }
-      invert::lowerRegion(ctx, *CB, *cast<CallInst>(&*e));
-      for (auto r = it; r != std::next(e); ++r)
-        visited.insert(&*r);
-      it = e;
-      continue;
-    }
     if (sh.hoisted.count(&I))
       continue;   // lowered before an in-place rotation that -O1 placed it after (cq-su3p)
     spine::dispatch(ctx, I);
@@ -2309,10 +2249,7 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
     BasicBlock *entry = &sh.out->getEntryBlock();
     sh.blocks[&F.getEntryBlock()] = entry;
   }
-  if (S.adj)
-    invert::lowerAdjointBody(ctx, F);   // rule 17: the _adj clone's body is the adjoint of the clone's (cq-xjw2)
-  else
-    Walker(ctx, F, DT, LI).run();
+  Walker(ctx, F, DT, LI).run();
   llvm::erase_if(sh.ruleSixPending, [&](const spine::Shared::PendingSix &p) { return p.ctx == &ctx; });
   mem::finishSlots(ctx);   // M8: register arrays' readers against their rule-6 clean-ups (114)
   for (Instruction *I : slotTripleAddrs)
