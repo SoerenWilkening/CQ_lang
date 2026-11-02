@@ -938,7 +938,10 @@ void lowerRaise(LoweringContext &ctx, CallBase &CB, Value *flag, bool classicalR
   auto dispatch = [&](Value *h, Value *g) {
     for (auto &[G, s] : cands) {
       BasicBlock *next = armIf(ctx, B.CreateICmpEQ(h, G));
-      calls::emitDispatchArm(ctx, CB, *G, s, g);
+      if (calls::emitDispatchArm(ctx, CB, *G, s, g))
+        unimplemented("eff-tape: a signal handler carrying the floating-point environment (rule 23) dispatched on "
+                      "the host table (its flags rail merged over the arms)",
+                      &CB);
       B.CreateBr(next);
       B.SetInsertPoint(next);
     }
@@ -1001,7 +1004,8 @@ void lowerRaise(LoweringContext &ctx, CallBase &CB, Value *flag, bool classicalR
       return ctx.emitTemplate(andT, {Operand{c, true}, Operand{flag, true}});
     };
     for (auto &[G, s] : cands)
-      calls::emitDispatchArm(ctx, CB, *G, s, handlerIs(G));
+      if (Value *env = calls::emitDispatchArm(ctx, CB, *G, s, handlerIs(G)))
+        fenv::afterCloneCall(ctx, CB, env);   // unconditional arms: each takes and returns the environment
     Value *term = terminatesByDefault(ctx, sig.v);
     if (auto *k = dyn_cast<ConstantInt>(term); k && k->isZero())
       return;
