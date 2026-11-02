@@ -95,6 +95,8 @@
 
 #include "cq/Abi.h"
 #include "cq/Calls.h"
+#include "cq/Aggregates.h"
+#include "cq/FatPtr.h"
 #include "cq/Memory.h"
 #include "cq/Predicate.h"
 #include "cq/Switch.h"
@@ -434,6 +436,10 @@ private:
   DenseSet<const BasicBlock *> subBlocks;                  // the blocks of the sub-units' regions
   std::vector<std::pair<Instruction *, unsigned>> entering;   // per segment, an entering edge (flushTrips)
   bool tripLocal(Loop &sl, Loop &L);
+  // The seeds minted for classical incomings of phis of handles, per (phi, edge source), and a mixed
+  // join's value per real edge: shared by the walks of a loop and its sub-loops (a sub-loop's exit edge
+  // enters a block of its parent).
+  DenseMap<std::pair<const PHINode *, const BasicBlock *>, Value *> edgeSeedM, edgeValM;
 
   bool isQ(const Value *v) {
     if (isa<Constant>(v) || isa<BasicBlock>(v) || isa<MetadataAsValue>(v))
@@ -854,9 +860,6 @@ void Unit::check(Loop &L, Case c) {
       }
       if (I.mayWriteToMemory() && (isQ(&I) || any_of(I.operands(), [&](const Use &u) { return isQ(u.get()); })))
         unimplemented("loops-classical: a quantum memory effect in a classically bounded loop", &I);
-      if (isa<ReturnInst>(I) || isa<UnreachableInst>(I) || isa<IndirectBrInst>(I) || isa<CallBrInst>(I) ||
-          isa<InvokeInst>(I))
-        unimplemented("loops-classical: a loop body terminator of this kind", &I);
     }
 }
 
@@ -1222,8 +1225,21 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     if (termQ(t))
       return EK::Linear;
     if (auto *br = dyn_cast<BranchInst>(t); br && !br->isConditional()) {
-      if (armed(u))
+      // A classical join inside a quantum arm (rule 8: the classical branch nested in the arm stays a
+      // classical branch, and its arms meet again under the same quantum predicate) is a real join.
+      if (armed(u)) {
+        SmallVector<const BasicBlock *, 4> ps = fwdPreds(s);
+        if (ps.size() > 1 && all_of(ps, [&](const BasicBlock *p) {
+              return !termQ(p->getTerminator()) && samePred(qp(p), qp(s));
+            }))
+          return EK::Real;
+        // An exit of a classical branch nested in the arm (u's classical factor is stronger than s's):
+        // the classical arms' flows are distinct output blocks and meet at s by a real edge (a mixed
+        // join when s is also a quantum join).
+        if (!(cfOf(ctx.preds().block(s)) & !cfOf(ctx.preds().block(u))).isBottom())
+          return EK::Real;
         return EK::Linear;
+      }
       return fwdPreds(s).size() == 1 ? EK::Merge : EK::Real;
     }
     return EK::Real;
@@ -1293,7 +1309,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   };
 
   // The seeds minted for classical incomings of phis of handles (mintEdgeSeeds below), per (phi, edge source).
-  DenseMap<std::pair<const PHINode *, const BasicBlock *>, Value *> edgeSeed;
+  DenseMap<std::pair<const PHINode *, const BasicBlock *>, Value *> &edgeSeed = edgeSeedM;
+  // Mixed joins: the value of each phi of b on the real edge u -> b (mintEdgeSeeds).
+  DenseMap<std::pair<const PHINode *, const BasicBlock *>, Value *> &edgeVal = edgeValM;
   auto emitPhis = [&](BasicBlock *b, bool real) {
     for (PHINode &p : b->phis()) {
       bool q = isQ(&p);
@@ -1310,32 +1328,147 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         ctx.bind(&p, lowerMerge(ctx, p));
         continue;
       }
-      if (q && !(p.getType()->isIntegerTy() || p.getType()->isFloatingPointTy()))
-        unimplemented("loops-classical: a non-scalar phi of handles", &p);
-      PHINode *np = PHINode::Create(q ? handleTy(ctx.M.getContext()) : p.getType(), p.getNumIncomingValues(),
-                                    p.getName());
-      np->insertInto(ob(b), ob(b)->getFirstNonPHIIt());
-      SmallPtrSet<BasicBlock *, 4> from;
+      if (q && p.getType()->isPointerTy()) {
+        // Rule 21: a quantum pointer phi is a fat-pointer merge, fatptr's construction (its uses lower it).
+        fatptr::lower(ctx, &p);
+        internalError("loops-classical: fatptr::lower of a quantum pointer phi returned", &p);
+      }
+      // A classical join over handles (rule 9: a classical phi over the handles, no gate), field-wise for
+      // a composite (rule 26: one phi per scalar leaf; a quantum leaf a phi of handles, a classical leaf a
+      // classical phi). One incoming per output edge: a terminator with several edges to b (a switch's
+      // cases) has one entry per edge in the original phi and in the output terminator alike, with the
+      // same value (LLVM's rule). A real edge ends its output block, so an output block names one
+      // original block. At a mixed join (a quantum join that classical branches nested in an arm also
+      // reach) the edges absorbed by the linearization carry nothing: each real edge carries its value
+      // (edgeVal, mintEdgeSeeds).
+      const bool composite = p.getType()->isAggregateType() || p.getType()->isVectorTy();
+      struct In {
+        BasicBlock *from;
+        SmallVector<Operand, 4> f;
+      };
+      SmallVector<In, 4> ins;
+      DenseMap<BasicBlock *, BasicBlock *> from;
       for (unsigned i = 0; i < p.getNumIncomingValues(); ++i) {
         BasicBlock *u = p.getIncomingBlock(i);
+        if (edgeKind(u, b) != EK::Real)
+          continue;   // absorbed by the linearization: its flow reaches b through a real edge
         auto it = edgeFrom.find({u, b});
         if (it == edgeFrom.end())
           internalError("loops-classical: a join edge with no output block", &p);
-        if (!from.insert(it->second).second)
-          unimplemented("loops-classical: two edges of a classical join leave one output block", &p);
-        Operand o = ctx.operand(p.getIncomingValue(i));
-        if (q && !o.handle)
+        if (auto [f, fresh] = from.insert({it->second, u}); !fresh && f->second != u)
+          internalError("loops-classical: two original blocks leave through one output block on real edges", &p);
+        In in{it->second, {}};
+        if (auto e = edgeVal.find({&p, u}); e != edgeVal.end())
+          in.f.push_back(Operand{e->second, true});
+        else if (composite)
+          in.f = aggr::flattenResult(ctx, p.getIncomingValue(i));
+        else
+          in.f.push_back(ctx.operand(p.getIncomingValue(i)));
+        if (q && !composite && !in.f[0].handle)
           if (auto e = edgeSeed.find({&p, u}); e != edgeSeed.end())
-            o = Operand{e->second, true};
-        if (q && !o.handle)
-          unimplemented("loops-classical: a classical incoming of a phi of handles inside the loop body", &p);
-        if (!q && o.handle)
-          internalError("loops-classical: a classical phi with a rail incoming", &p);
-        np->addIncoming(o.v, it->second);
+            in.f[0] = Operand{e->second, true};
+        ins.push_back(std::move(in));
       }
-      if (q)
-        ctx.unc().recordMerge(np);
-      ctx.bind(&p, np);
+      if (ins.empty())
+        internalError("loops-classical: a real join with no real edge", &p);
+      const unsigned nf = ins[0].f.size();
+      SmallVector<Operand, 4> outF;
+      for (unsigned k = 0; k < nf; ++k) {
+        bool fq = false;
+        for (In &in : ins) {
+          if (in.f.size() != nf)
+            internalError("loops-classical: incomings of one phi with different field counts", &p);
+          fq |= in.f[k].handle;
+        }
+        if (fq && !q)
+          internalError("loops-classical: a classical phi with a rail incoming", &p);
+        if (fq) {
+          // A classical leaf on some edge of a quantum leaf: a seed minted at the end of that edge's
+          // output block (rule 7). Only composite leaves get here: a scalar's seed is mintEdgeSeeds'.
+          for (In &in : ins)
+            if (!in.f[k].handle) {
+              if (!composite)
+                internalError("loops-classical: a classical incoming of a phi of handles with no edge seed", &p);
+              IRBuilderBase::InsertPointGuard g(ctx.B());
+              ctx.B().SetInsertPoint(in.from->getTerminator());
+              in.f[k] = Operand{seed(in.f[k].v, railTypeOf(in.f[k].v->getType())), true};
+            }
+        }
+        Type *ty = fq ? handleTy(ctx.M.getContext()) : ins[0].f[k].v->getType();
+        PHINode *np = PHINode::Create(ty, ins.size(), p.getName());
+        np->insertInto(ob(b), ob(b)->getFirstNonPHIIt());
+        for (In &in : ins)
+          np->addIncoming(in.f[k].v, in.from);
+        if (fq)
+          ctx.unc().recordMerge(np);
+        outF.push_back(Operand{np, fq});
+      }
+      if (composite)
+        ctx.bindFields(&p, outF);
+      else
+        ctx.bind(&p, outF[0].v);
+    }
+  };
+
+  // A MIXED JOIN (rules 8, 9): s is a quantum join of arms one of which holds a classical branch whose arms
+  // reach s directly (`if (q) { if (c) a; else b; }`): the linearized edges into s (from the quantum
+  // branch, from arm blocks) carry no flow of their own, it went on through the classical branch; the
+  // classical arms meet at s as a real join. On the real edge u -> s each phi of s is the rule-9 merge of
+  // the incomings that edge's path can carry: u's own, and each linearized incoming whose classical fact
+  // holds wherever u's edge is taken (an incoming whose fact excludes u's is not on that path), each under
+  // its edge's quantum part (u's classical fact holds on that path). One select chain per edge, made at
+  // the end of u's output block (rule 9: one select per distinct incoming, a fresh rail).
+  auto mixedEdge = [&](BasicBlock *u, BasicBlock *s) {
+    auto factAt = [&](const BasicBlock *p) {
+      auto it = factOf.find(p);
+      return (it == factOf.end() ? Pred::top() : it->second) & cfOf(ctx.preds().edge(p, s));
+    };
+    const Pred uf = factAt(u);
+    for (PHINode &p : s->phis()) {
+      if (edgeVal.count({&p, u}))
+        continue;
+      std::vector<std::pair<Pred, Operand>> arms;
+      SmallVector<const Value *, 4> vals;
+      for (unsigned i = 0; i < p.getNumIncomingValues(); ++i) {
+        BasicBlock *pi = p.getIncomingBlock(i);
+        if (pi != u) {
+          if (edgeKind(pi, s) == EK::Real)
+            continue;   // another classical arm: not on u's path
+          if (!factOf.count(pi))
+            unimplemented("loops-classical: a classical branch nested in a quantum arm of a trip whose region does not close at one join before other linearized code of the trip runs (its arms leave toward several blocks, or the other quantum arm holds code still to walk): the rejoin of a classical region inside an arm is not built", &p);
+          Pred pf = factAt(pi);
+          if ((uf & pf).isBottom())
+            continue;
+          if (!(uf & !pf).isBottom())
+            internalError("loops-classical: a linearized incoming of a mixed join whose classical fact holds on part "
+                          "of a real edge's path",
+                          &p);
+        }
+        Pred e = ctx.preds().edge(pi, s).quantumPart(ctx.T, ctx.S);
+        const Value *v = p.getIncomingValue(i);
+        if (auto k = find(vals, v); k != vals.end()) {
+          arms[k - vals.begin()].first = arms[k - vals.begin()].first | e;
+          continue;
+        }
+        vals.push_back(v);
+        arms.push_back({e, ctx.operand(v)});
+      }
+      if (arms.empty())
+        internalError("loops-classical: a real edge into a mixed join carries no incoming", &p);
+      if (!isQ(&p)) {
+        if (arms.size() > 1)
+          internalError("loops-classical: a classical phi at a mixed join chosen by a quantum edge", &p);
+        continue;   // the classical incoming of u's own edge (emitPhis)
+      }
+      if (p.getType()->isAggregateType() || p.getType()->isVectorTy() || p.getType()->isPointerTy()) {
+        if (arms.size() == 1)
+          continue;   // u's own incoming, field-wise (emitPhis)
+        lowerMerge(ctx, p);   // a quantum choice of a composite: pred's merge
+        internalError("loops-classical: pred's merge of a composite phi returned", &p);
+      }
+      Value *h = arms.size() == 1 ? asHandle(arms[0].second, p.getType())
+                                  : selectChain(ctx, arms, railTypeOf(p.getType()));
+      edgeVal[{&p, u}] = h;
     }
   };
 
@@ -1343,11 +1476,23 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // the edge u -> s, e.g. -O1's zero-trip skip of an inner accumulator loop) is a seed rail minted at the
   // end of u's output block, in u's segment, before u's branch: its item (a direct release) follows the
   // merge's readers, and u's segment runs on every path through s's edge from u.
+  // A sub-loop's exit edge enters a block of its parent (an exit phi with a classical incoming): the seed is
+  // minted here, in the sub-loop's segment, and read by the parent's join.
   auto mintEdgeSeeds = [&](BasicBlock *u, BasicBlock *s) {
-    if (s == header || !L.contains(s) || subOf(s))
+    if (s == header || !top.contains(s) || subOf(s))
       return;
+    for (Loop *x : top.getLoopsInPreorder())
+      if (x->getHeader() == s)
+        return;   // a loop header's phis are its carried values (lowerLoop)
+    if (L.contains(s) && edgeKind(u, s) == EK::Real) {
+      bool lin = false;
+      for (const BasicBlock *p : fwdPreds(s))
+        lin |= edgeKind(p, s) != EK::Real;
+      if (lin)
+        mixedEdge(u, s);
+    }
     for (PHINode &p : s->phis()) {
-      if (!isQ(&p) || edgeSeed.count({&p, u}))
+      if (!isQ(&p) || edgeSeed.count({&p, u}) || edgeVal.count({&p, u}))
         continue;
       Value *v = p.getIncomingValueForBlock(u);
       Operand o = ctx.operand(v);
@@ -1517,8 +1662,6 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           edgeFrom[{u, s}] = cur;
         return;
       }
-      if (armed(u))
-        unimplemented("loops-classical: a classical branch inside a quantum arm of a loop body", t);
       Operand cnd = ctx.operand(br->getCondition());
       if (cnd.handle)
         internalError("loops-classical: a classical branch on a rail", t);
@@ -1541,8 +1684,6 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           edgeFrom[{u, s}] = cur;
         return;
       }
-      if (armed(u))
-        unimplemented("loops-classical: a classical switch inside a quantum arm of a loop body", t);
       Operand cnd = ctx.operand(sw->getCondition());
       if (cnd.handle)
         internalError("loops-classical: a classical switch on a rail", t);
@@ -1556,7 +1697,14 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       cur = nullptr;
       return;
     }
-    unimplemented("loops-classical: a loop body terminator of this kind", t);
+    // An invoke is a call first: the spine's dispatch lowers it (its own construction, CR rule 18).
+    if (isa<InvokeInst>(t)) {
+      lowerInstruction(ctx, *t, aPhi);
+      internalError("loops-classical: the spine's dispatch returned from an invoke", t);
+    }
+    // ret and unreachable end no block of a loop (no successor), classify stops on indirectbr and callbr
+    // in a loop; the EH pads come from no C translation unit.
+    internalError("loops-classical: a loop body terminator other than br or switch", t);
   };
 
   auto emitInstructions = [&](BasicBlock *b) {
@@ -1574,33 +1722,52 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   requireFact(header);
   emitInstructions(header);
   emitTerminator(header);
-  for (BasicBlock *b : rpo) {
-    if (b == header || !L.contains(b))
-      continue;
-    Loop *sl = subOf(b);
-    if (sl && sl->getHeader() != b)
-      continue;
-    SmallVector<const BasicBlock *, 4> ps = fwdPreds(b);
+  // The walk order (rule 8 inside a trip). A block entered by classical edges only starts a segment of
+  // its own and needs no open block; a block entered by linearized edges only continues the open block,
+  // which must run exactly where the block's classical factor holds (a quantum arm's code runs on every
+  // path its classical guard admits, no fewer: an arm block reached in RPO while a classical branch
+  // nested in another arm is open waits for that branch's join). A block whose turn comes before its
+  // place exists waits (pending) and is walked as soon as it can be, in RPO among the waiting ones.
+  auto entryKinds = [&](BasicBlock *b) {
     bool anyReal = false, anyLin = false;
-    for (const BasicBlock *p : ps)
+    for (const BasicBlock *p : fwdPreds(b))
       (edgeKind(p, b) == EK::Real ? anyReal : anyLin) = true;
-    if (anyReal && anyLin)
-      unimplemented("loops-classical: a block reached both by a classical branch and by a linearized arm",
-                    &*b->begin());
+    return std::make_pair(anyReal, anyLin);
+  };
+  std::vector<BasicBlock *> pending;
+  DenseSet<const BasicBlock *> pendSet;
+  auto mustWait = [&](BasicBlock *b) {
+    for (const BasicBlock *p : fwdPreds(b))
+      if (pendSet.count(p) && p != b)
+        return true;
+    auto [anyReal, anyLin] = entryKinds(b);
+    if (anyReal)
+      return cur != nullptr;
+    if (!cur)
+      return true;
+    // Where b runs: where one of its walked predecessors ran and the edge's classical factor held.
+    Pred need = Pred::bottom();
+    for (const BasicBlock *p : fwdPreds(b)) {
+      auto it = factOf.find(p);
+      need = need | ((it == factOf.end() ? Pred::top() : it->second) & cfOf(ctx.preds().edge(p, b)));
+    }
+    return !(need & !curFact).isBottom();
+  };
+  auto visit = [&](BasicBlock *b) {
+    Loop *sl = subOf(b);
+    auto [anyReal, anyLin] = entryKinds(b);
     if (anyReal) {
       if (cur)
-        unimplemented("loops-classical: a classical join reached while a quantum arm of the body is open",
-                      &*b->begin());
+        internalError("loops-classical: a classical join walked while a block is open", &*b->begin());
       startSeg(ob(b));
       Pred f = Pred::bottom();
-      for (const BasicBlock *p : ps) {
+      for (const BasicBlock *p : fwdPreds(b)) {
         auto it = factOf.find(p);
         f = f | ((it == factOf.end() ? Pred::top() : it->second) & cfOf(ctx.preds().edge(p, b)));
       }
       curFact = f;
     } else if (!cur) {
-      unimplemented("loops-classical: a linearized block after the walk left its arm (body block order)",
-                    &*b->begin());
+      internalError("loops-classical: a linearized block walked with no open block", &*b->begin());
     }
     if (!sl)
       requireFact(b);
@@ -1631,16 +1798,40 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         throughSub[bk] = entry;
         subs.push_back({sub, unsigned(segs.size() - 1), bk});
         cur = nullptr;
-        continue;
+        return;
       }
       for (auto &[v, op] : lowerLoop(*sl, sc, ob(sx), false))
         ctx.rebind(v, {op});
-      continue;
+      return;
     }
     emitPhis(b, anyReal);
     emitInstructions(b);
     emitTerminator(b);
+  };
+  for (BasicBlock *b : rpo) {
+    if (b == header || !L.contains(b))
+      continue;
+    if (Loop *sl = subOf(b); sl && sl->getHeader() != b)
+      continue;
+    if (mustWait(b)) {
+      pending.push_back(b);
+      pendSet.insert(b);
+    } else {
+      visit(b);
+    }
+    for (unsigned k = 0; k < pending.size();) {
+      BasicBlock *w = pending[k];
+      if (!pendSet.count(w) || mustWait(w)) {
+        ++k;
+        continue;
+      }
+      pendSet.erase(w);
+      visit(w);
+      k = 0;
+    }
   }
+  if (!pendSet.empty())
+    unimplemented("loops-classical: a classical branch nested in a quantum arm of a trip whose region does not close at one join before other linearized code of the trip runs (its arms leave toward several blocks, or the other quantum arm holds code still to walk): the rejoin of a classical region inside an arm is not built", &*(*pendSet.begin())->begin());
   if (cur)
     internalError("loops-classical: the trip walk ended with an open block", latch->getTerminator());
 
@@ -1857,35 +2048,82 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
 
 // ---- the reverse --------------------------------------------------------------------------------
 
-unsigned wordsOf(Type *t, const Value *at) {
-  if (auto *it = dyn_cast<IntegerType>(t))
-    return (it->getBitWidth() + 31) / 32;
-  if (t->isHalfTy() || t->isBFloatTy() || t->isFloatTy())
-    return 1;
-  if (t->isDoubleTy() || t->isPointerTy())
-    return 2;
-  if (t->isX86_FP80Ty())
-    return 3;
-  if (t->isFP128Ty())
-    return 4;
-  unimplemented("loops-classical: a per-trip value of this type on the push/pop stack", at);
-}
-
-Value *toInt(IRBuilder<> &B, Value *v) {
-  Type *t = v->getType();
+// The push/pop stack (CR §1.3: i32 words, a wider value low word first). Every first-class type a per-trip
+// value can have: a scalar (integer of any width, floating point, pointer) is its bits in words; a vector,
+// struct or array is its elements in order (popped in reverse).
+unsigned scalarBits(Type *t, const DataLayout &DL) {
   if (t->isIntegerTy())
-    return v;
+    return t->getIntegerBitWidth();
   if (t->isPointerTy())
-    return B.CreatePtrToInt(v, B.getInt64Ty());
-  return B.CreateBitCast(v, B.getIntNTy(t->getPrimitiveSizeInBits()));
+    return DL.getPointerSizeInBits(t->getPointerAddressSpace());
+  if (t->isFloatingPointTy())
+    return unsigned(t->getPrimitiveSizeInBits());
+  internalError("loops-classical: a per-trip SSA value of a type that is no first-class data type");
 }
 
-Value *fromInt(IRBuilder<> &B, Value *x, Type *t) {
-  if (t->isIntegerTy())
-    return x;
+void pushValue(IRBuilder<> &B, FunctionCallee push, Value *v, const DataLayout &DL) {
+  LLVMContext &C = v->getContext();
+  IntegerType *i32 = Type::getInt32Ty(C);
+  Type *t = v->getType();
+  if (auto *st = dyn_cast<StructType>(t)) {
+    for (unsigned k = 0; k < st->getNumElements(); ++k)
+      pushValue(B, push, B.CreateExtractValue(v, k), DL);
+    return;
+  }
+  if (auto *at = dyn_cast<ArrayType>(t)) {
+    for (unsigned k = 0; k < at->getNumElements(); ++k)
+      pushValue(B, push, B.CreateExtractValue(v, k), DL);
+    return;
+  }
+  if (auto *vt = dyn_cast<FixedVectorType>(t)) {
+    for (unsigned k = 0; k < vt->getNumElements(); ++k)
+      pushValue(B, push, B.CreateExtractElement(v, B.getInt64(k)), DL);
+    return;
+  }
+  if (t == i32) {
+    B.CreateCall(push, {v});
+    return;
+  }
+  unsigned bits = scalarBits(t, DL), w = (bits + 31) / 32;
+  Value *x = t->isPointerTy() ? B.CreatePtrToInt(v, B.getIntNTy(bits))
+             : t->isIntegerTy() ? v
+                                : B.CreateBitCast(v, B.getIntNTy(bits));
+  x = B.CreateZExt(x, B.getIntNTy(32 * w));
+  for (unsigned j = 0; j < w; ++j)
+    B.CreateCall(push, {B.CreateTrunc(j ? B.CreateLShr(x, 32 * j) : x, i32)});
+}
+
+Value *popValue(IRBuilder<> &B, FunctionCallee pop, Type *t, const DataLayout &DL) {
+  LLVMContext &C = t->getContext();
+  IntegerType *i32 = Type::getInt32Ty(C);
+  if (isa<StructType>(t) || isa<ArrayType>(t)) {
+    unsigned n = isa<StructType>(t) ? cast<StructType>(t)->getNumElements() : cast<ArrayType>(t)->getNumElements();
+    Value *agg = PoisonValue::get(t);
+    for (unsigned k = n; k-- > 0;) {
+      Type *et = isa<StructType>(t) ? cast<StructType>(t)->getElementType(k) : cast<ArrayType>(t)->getElementType();
+      agg = B.CreateInsertValue(agg, popValue(B, pop, et, DL), k);
+    }
+    return agg;
+  }
+  if (auto *vt = dyn_cast<FixedVectorType>(t)) {
+    Value *vec = PoisonValue::get(t);
+    for (unsigned k = vt->getNumElements(); k-- > 0;)
+      vec = B.CreateInsertElement(vec, popValue(B, pop, vt->getElementType(), DL), B.getInt64(k));
+    return vec;
+  }
+  if (t == i32)
+    return B.CreateCall(pop);
+  unsigned bits = scalarBits(t, DL), w = (bits + 31) / 32;
+  IntegerType *wide = Type::getIntNTy(C, 32 * w);
+  Value *x = ConstantInt::get(wide, 0);
+  for (unsigned j = w; j-- > 0;) {
+    Value *word = B.CreateZExt(B.CreateCall(pop), wide);
+    x = B.CreateOr(x, j ? B.CreateShl(word, 32 * j) : word);
+  }
+  x = B.CreateTrunc(x, Type::getIntNTy(C, bits));
   if (t->isPointerTy())
     return B.CreateIntToPtr(x, t);
-  return B.CreateBitCast(x, t);
+  return t->isIntegerTy() ? x : B.CreateBitCast(x, t);
 }
 
 // Per trip (rule 5, as early as allowed): a rail made and last read within one segment is uncomputed
@@ -2264,25 +2502,8 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
     DenseMap<Value *, Value *> popped;
     {
       IRBuilder<> P(R[i], R[i]->begin());
-      for (unsigned k = needs.size(); k-- > 0;) {
-        Value *v = needs[k];
-        unsigned w = wordsOf(v->getType(), v);
-        if (v->getType() == i32) {
-          popped[v] = P.CreateCall(pop);
-          continue;
-        }
-        IntegerType *wide = Type::getIntNTy(C, 32 * w);
-        Value *x = ConstantInt::get(wide, 0);
-        for (unsigned j = w; j-- > 0;) {
-          Value *word = P.CreateZExt(P.CreateCall(pop), wide);
-          x = P.CreateOr(x, j ? P.CreateShl(word, 32 * j) : word);
-        }
-        Type *t = v->getType();
-        unsigned bits = t->isIntegerTy() ? t->getIntegerBitWidth()
-                        : t->isPointerTy() ? 64
-                                           : unsigned(t->getPrimitiveSizeInBits());
-        popped[v] = fromInt(P, P.CreateTrunc(x, Type::getIntNTy(C, bits)), t);
-      }
+      for (unsigned k = needs.size(); k-- > 0;)
+        popped[needs[k]] = popValue(P, pop, needs[k]->getType(), M.getDataLayout());
     }
     for (Instruction *I : mirror)
       for (Use &u : I->operands())
@@ -2290,16 +2511,8 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
           u.set(it->second);
     {
       IRBuilder<> Pu(segs[i].bb->getTerminator());
-      for (Value *v : needs) {
-        if (v->getType() == i32) {
-          Pu.CreateCall(push, {v});
-          continue;
-        }
-        unsigned w = wordsOf(v->getType(), v);
-        Value *x = Pu.CreateZExt(toInt(Pu, v), Type::getIntNTy(C, 32 * w));
-        for (unsigned j = 0; j < w; ++j)
-          Pu.CreateCall(push, {Pu.CreateTrunc(j ? Pu.CreateLShr(x, 32 * j) : x, i32)});
-      }
+      for (Value *v : needs)
+        pushValue(Pu, push, v, M.getDataLayout());
     }
     // Where the reverse goes next: the reverse of the forward predecessor.
     SmallVector<BasicBlock *, 4> uniq;
