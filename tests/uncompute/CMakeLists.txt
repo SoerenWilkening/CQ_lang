@@ -17,7 +17,7 @@ set(CQ_UNC_CASES
   deferred_join_placement alias_formal_local
   merge_kept_select merge_nondiagonal_garbage merge_unchosen_reader merge_unchosen_used_after
   merge_unchosen_read_later merge_nested_select_edge merge_nested_select_edge_rev carried_phi_some_paths
-  write_barrier_sandwich pointee_write_swap qram_kept_bus_sandwich merge_unchosen_loop merge_cycle_arm qram_realloc_kept qram_realloc_merged)
+  write_barrier_sandwich pointee_write_swap qram_kept_bus_sandwich merge_unchosen_loop merge_cycle_arm qram_realloc_kept qram_realloc_merged call_mixed_measured)
 foreach(c ${CQ_UNC_CASES})
   add_test(NAME uncompute.${c} COMMAND uncompute_tests ${c})
 endforeach()
@@ -34,7 +34,6 @@ set(CQ_UNC_FATAL
   "fatal_cell_load_empty=cq: internal error: uncompute: recordCellLoad: a cell load that may name no rail"
   "fatal_resolve_at_used=cq: internal error: uncompute: resolveAt: %t is still used after the point"
   "fatal_resolve_at_bypass=cq: internal error: uncompute: resolveAt: a path from the definition of %s reaches a return without passing the point"
-  "fatal_call_mixed=cq: unimplemented: uncompute: a call whose results are partly kept"
   "fatal_alias_slot_reload=cq: unimplemented: awaiting owner ruling: SPEC_ISSUES a gate through a slot cell .*: a non-diagonal gate on a handle that may name an operand rail of %g through a slot cell"
   "fatal_alias_slot_direct=cq: unimplemented: awaiting owner ruling: SPEC_ISSUES a gate through a slot cell .*: a non-diagonal gate on a handle that may name an operand rail of %g through a slot cell"
   "fatal_alias_second_array=cq: unimplemented: awaiting owner ruling: SPEC_ISSUES a gate through a slot cell .*: a non-diagonal gate on a handle that may name an operand rail of %g through a slot cell"

@@ -2000,14 +2000,32 @@ void pointee_write_swap() {
                     });
 }
 
-// U2: one result kept and the other not: the twin would zero the kept one.
-void fatal_call_mixed() {
-  Fx f(kCall2m);
+// U2, CR rule 18 (ruling 2026-11-02, cq-75n4): one result measured and the other dead: the measured one is
+// copied out right after the call, the twin zeroes both results.
+void call_mixed_measured() {
+  std::string ir = kCall2m;
+  ir.replace(ir.find("  %r = call double @cqrt_measure_f64(i32 %h)\n"), std::string("  %r = call double @cqrt_measure_f64(i32 %h)\n").size(), "");
+  ir.replace(ir.find("ret double %r"), 13, "ret double %q");
+  Fx f(ir);
   RailId x = f.reg("x", 0);
   f.U.noteNonDiagonal(x, f.call("cqrt_ry_f64"));
   auto ids = f.U.recordCall(cast<CallInst>(f.I("s")), {f.I("h"), f.I("l")}, {}, {});
   f.U.setRole(ids[1], Role::Measured);
   f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_f64(double %a0)",
+                        "call void @cqrt_ry_f64(i32 %x, double %th)",
+                        "%s = call { i32, i32 } @__cq_q_split_10(i32 %x, double %c)",
+                        "%h = extractvalue { i32, i32 } %s, 0",
+                        "%l = extractvalue { i32, i32 } %s, 1",
+                        "%0 = call i32 @cqrt_alloc_f64(double 0.000000e+00)",
+                        "call void @cqrt_copy_f64(i32 %l, i32 %0)",
+                        "call void @__cq_q_split_10_unc(i32 %h, i32 %l, i32 %x, double %c)",
+                        "call void @cqrt_free(i32 %h)",
+                        "call void @cqrt_free(i32 %l)",
+                        "%q = call double @cqrt_measure_f64(i32 %0)",
+                        "ret double %q",
+                    });
 }
 
 // The merged handle measured: the consumer copies it out into a fresh rail and keeps that rail
@@ -3690,6 +3708,7 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"deferred_qram_store", deferred_qram_store},
     {"deferred_join_placement", deferred_join_placement},
     {"alias_formal_local", alias_formal_local},
+    {"call_mixed_measured", call_mixed_measured},
     {"qram_realloc_merged", qram_realloc_merged},
     {"qram_realloc_kept", qram_realloc_kept},
     {"merge_unchosen_loop", merge_unchosen_loop},
@@ -3710,7 +3729,6 @@ const std::map<std::string, std::function<void()>> kPositive = {
 const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_use_after_free", fatal_use_after_free},
     {"fatal_cell_load_empty", fatal_cell_load_empty},
-    {"fatal_call_mixed", fatal_call_mixed},
     {"fatal_resolve_at_used", fatal_resolve_at_used},
     {"fatal_resolve_at_bypass", fatal_resolve_at_bypass},
     {"fatal_operand_mismatch", fatal_operand_mismatch},
