@@ -1273,7 +1273,9 @@ Value *rootBase(LoweringContext &ctx, const Value *root, Bases &bases) {
   }
   for (ObjectId o : ctx.T.provenance(root, ctx.S))
     if (ctx.T.classOf(o) == ObjClass::Slot)
-      unimplemented("fatptr: the address of a slot object (rule 21)", root);
+      unimplemented("awaiting owner ruling: SPEC_ISSUES rule 21 base address of a slot object (its handle cells "
+                    "are not the C object's bytes; rule 21 gives host and QRAM bases only)",
+                    root);
   Operand r = ctx.operand(root);
   if (r.handle)
     internalError("fatptr: a root pointer bound to a rail", root);
@@ -2583,8 +2585,6 @@ std::pair<Operand, Operand> resultFields(LoweringContext &ctx, const ReturnInst 
       unimplemented("fatptr: a clone's fat-pointer result into an object of its own (a local, a global: rule 21 "
                     "object table across the call)",
                     &ret);
-    if (b->pointee == ObjClass::Qram)
-      unimplemented("fatptr: a clone's fat-pointer result into a QRAM triple formal (rule 21, M2)", &ret);
     if (f.cell && f.cell != b->cell)
       unimplemented("fatptr: a clone's fat-pointer result at another cell size than its triple formal's", &ret);
   }
@@ -3220,6 +3220,8 @@ Triple passAcrossCall(LoweringContext &ctx, const Value *ptr) {
                   ptr);
   Value *bus = mem::qramBusOf(ctx, f.roots[0], *at);
   checkCalleeCells(ctx, ptr, E, mem::qramCellType(ctx, f.roots[0], *at));
+  // A clone's fat-pointer result derived from this triple names the QRAM root in this table (85, rule 21).
+  crossings()[&ctx.out()][ptr] = Crossed{f.roots[0], E};
   auto [tag, idx] = storedFields(ctx, ptr);
   return Triple{bus, tag.v, idx.v, nullptr};
 }
