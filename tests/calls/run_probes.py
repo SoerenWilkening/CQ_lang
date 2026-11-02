@@ -228,8 +228,8 @@ CASES = [
     # cq-ro82 (CR rules 14, 19, 27): a call in a rule-14 trip is under the trip rail (lowerInstruction's tripFlag), which
     # currentPredicate() does not see: a declared clone there is its _ctl form (main emitted __cq_q_erf_1 unguarded in
     # tk_decl's K trips), a lifted callee with a gate its _ctl clone, a host effect a controlled tape entry.
-    ("trip_ctl", "tk_decl", [], "pass", [r"call i32 @__cq_q_erf_1_ctl\(i32 %\d+, i32 %\d+, i32 4\)",
-                                         r"\A(?![\s\S]*@__cq_q_erf_1\()"]),
+    ("trip_ctl", "tk_decl", [], "pass", [r"define i64 @tk_decl\((?:(?!\n}\n)[\s\S])*call i32 @__cq_q_erf_1_ctl\(i32 %\d+, i32 %\d+, i32 4\)",
+                                         r"define i64 @tk_decl\((?:(?!\n}\n|@__cq_q_erf_1\()[\s\S])*\n}\n"]),
     ("trip_ctl", "tk_decl_arm", [], "pass", [r"\A(?![\s\S]*@__cq_q_cbrt_1\()"]),
     ("trip_ctl", "tk_lift", [], "pass", [r"call void @__cq_q_tc_phase_1_ctl\(i32 %\d+, i32 %\d+\)"]),
     ("trip_ctl", "tk_print", [], "pass", [r"call i32 @cqrt_tape_write_i32_controlled\("]),
