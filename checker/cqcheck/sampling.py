@@ -3857,6 +3857,18 @@ class StoppedReach:
                   header executions and the C oracle reports h - 1 or h trips (gaps: the oracle's
                   trips begun), or, for a quantum-exit loop cut at K, a capped record when h > K: a
                   target t >= 1 with t not in {h - 1, h}, and t <= K or h <= K, is not reached;
+      bound       (cq-824x) ScalarEvolution's symbolic maximum backedge-taken count B of the loop,
+                  an expression of F's integer parameters only, bounds every activation by
+                  h = B(args) + 1 header executions, so the C oracle reports at most h trips and no
+                  capped record when h <= K: a target t > h, with t <= K or h <= K, is not reached
+                  (117's is_marked loop in grover: at most nmark header executions);
+
+    "count" and "bound" also hold for a loop of a function F that is not the call's function D, when
+    D is invoked only by the driver (as above) and F only by direct calls in D (no other use in the
+    module or the setup): each parameter of F that B names must be passed, at every such call, the
+    same parameter of D or the same integer constant, and takes that value (SSA parameters never
+    change). F is then run by that call or not at all, each activation within the bound.
+
       past it     F is invoked only by the driver and no block reachable from the loop's exits can
                   reach its header or a block before it (so the loop has one activation per run and
                   no guard of it runs after it; F calls no setjmp), and the probe run of the same
@@ -3870,11 +3882,45 @@ class StoppedReach:
         text = o1.read_text()
         self.loops = {lp.key(): lp for lp in loops}
         self.btc = gaps.scev_symbolic_counts(o1, LLVM_BIN)
+        self.btc_max = gaps.scev_symbolic_counts(o1, LLVM_BIN, symbolic_max=True)
         self.unused: Set[str] = set()       # "@F": defined, no other use in the module or the setup
-        for name in mod.functions:
+        # "@F" -> (its only caller "@D", {F's parameter: ("param", D's parameter) | ("const", value)})
+        # for an F used only by direct calls in one other function D (cq-824x)
+        self.fed: Dict[str, Tuple[str, Dict[str, Tuple[str, str]]]] = {}
+        calls: Dict[str, List[Tuple[str, "D.Inst"]]] = {}
+        for fn in mod.functions.values():
+            for i in fn.insts():
+                if i.op == "call" and i.callee in mod.functions:
+                    calls.setdefault(i.callee, []).append((fn.name, i))
+        for name, fdef in mod.functions.items():
             uses = len(re.findall(re.escape(name) + r"(?![-\w.$])", text))
-            if uses == 1 and name[1:] not in spec.setup:
+            if name[1:] in spec.setup:
+                continue
+            if uses == 1:
                 self.unused.add(name)
+                continue
+            sites = calls.get(name, [])
+            callers = {c for c, _ in sites}
+            if uses != 1 + len(sites) or len(callers) != 1 or name in callers:
+                continue
+            caller = mod.functions[next(iter(callers))]
+            pmap: Dict[str, Tuple[str, str]] = {}
+            for j, (_, pname) in enumerate(fdef.params):
+                vals = set()
+                for _, i in sites:
+                    if len(i.call_args) != len(fdef.params):
+                        vals.add(None)
+                        continue
+                    tok = i.call_args[j].split()[-1] if i.call_args[j].split() else ""
+                    if caller.param_index(tok) is not None:
+                        vals.add(("param", tok))
+                    elif re.fullmatch(r"-?\d+", tok):
+                        vals.add(("const", tok))
+                    else:
+                        vals.add(None)
+                if len(vals) == 1 and None not in vals:
+                    pmap[pname] = vals.pop()
+            self.fed[name] = (caller.name, pmap)
         self._single: Dict[str, bool] = {}
 
     def _single_entry(self, lp: Loop) -> bool:
@@ -3919,21 +3965,47 @@ class StoppedReach:
     def why_not(self, smp: dict, o: Optional["Obs"], loop: str, t: int) -> Optional[str]:
         """Why the stopped input `smp` (probe observation `o`, None when not probed) cannot run `t`
         trips of `loop` after the stop, or None when that is not known."""
+        from cqcheck import gaps
         lp = self.loops.get(loop)
-        if lp is None or lp.fn not in self.unused:
+        if lp is None:
             return None
         ci = smp["call"]
-        if "@" + self.spec.calls[ci]["fn"] != lp.fn:
-            return "not run"
+        d = "@" + self.spec.calls[ci]["fn"]
+        if lp.fn in self.unused:
+            if d != lp.fn:
+                return "not run"
+            params = self._params(ci, smp["args"])
+        elif lp.fn in self.fed and self.fed[lp.fn][0] == d and d in self.unused:
+            dparams = self._params(ci, smp["args"])
+            fdef = self.mod.functions[lp.fn]
+            params = {}
+            for ptext, pname in fdef.params:
+                src = self.fed[lp.fn][1].get(pname)
+                ty = ptext.split()[0] if ptext else ""
+                if src is None or not re.fullmatch(r"i\d+", ty):
+                    continue
+                w = int(ty[1:])
+                if src[0] == "param" and src[1] in dparams and dparams[src[1]][0] == w:
+                    params[pname] = dparams[src[1]]
+                elif src[0] == "const":
+                    params[pname] = (w, int(src[1]) & ((1 << w) - 1))
+        else:
+            return None
         expr = self.btc.get(loop)
         if t >= 1 and expr is not None:
-            from cqcheck import gaps
-            b = gaps.scev_eval(expr, self._params(ci, smp["args"]))
+            b = gaps.scev_eval(expr, params)
             if b is not None:
                 h = b + 1
                 if t not in (h - 1, h) and (t <= K or h <= K):
                     return "count"
-        if (t <= K and "subst" not in smp and o is not None and hdr_cap() <= cost_budget()
+        expr = self.btc_max.get(loop)
+        if t >= 1 and expr is not None:
+            b = gaps.scev_eval(expr, params)
+            if b is not None:
+                h = b + 1
+                if t > h and (t <= K or h <= K):
+                    return "bound"
+        if (d == lp.fn and t <= K and "subst" not in smp and o is not None and hdr_cap() <= cost_budget()
                 and self._single_entry(lp) and any(h > t + 1 for h in o.t.get(lp.id, []))):
             return "past it"
         return None

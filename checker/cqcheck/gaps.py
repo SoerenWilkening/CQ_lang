@@ -157,11 +157,14 @@ def scev_counts(o1: Path, llvm_bin: Path) -> Dict[str, Dict[str, Optional[int]]]
 
 
 _SCEV_SYM = re.compile(r"^Loop (%\S+): backedge-taken count is (\(.*\)|%[-\w.$]+)(?:<[a-z]+>)*\s*$")
+_SCEV_SYM_MAX = re.compile(r"^Loop (%\S+): symbolic max backedge-taken count is (\(.*\)|%[-\w.$]+)(?:<[a-z]+>)*\s*$")
 
 
-def scev_symbolic_counts(o1: Path, llvm_bin: Path) -> Dict[str, str]:
+def scev_symbolic_counts(o1: Path, llvm_bin: Path, symbolic_max: bool = False) -> Dict[str, str]:
     """{"<fn>:<header>": expression} for each loop whose exact backedge-taken count LLVM's
-    ScalarEvolution prints as an expression (not a constant, not "Unpredictable")."""
+    ScalarEvolution prints as an expression (not a constant, not "Unpredictable"); with
+    `symbolic_max`, its symbolic maximum backedge-taken count instead (an upper bound of every
+    activation's count, also for a loop with several exits; cq-824x)."""
     r = subprocess.run([str(llvm_bin / "opt"), "-passes=print<scalar-evolution>", "-disable-output", str(o1)],
                        capture_output=True, text=True)
     if r.returncode != 0:
@@ -173,7 +176,7 @@ def scev_symbolic_counts(o1: Path, llvm_bin: Path) -> Dict[str, str]:
         if m:
             fn = m.group(1)
             continue
-        m = _SCEV_SYM.match(line)
+        m = (_SCEV_SYM_MAX if symbolic_max else _SCEV_SYM).match(line)
         if m and fn:
             out[f"{fn}:{m.group(1)}"] = m.group(2)
     return out

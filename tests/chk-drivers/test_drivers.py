@@ -1560,6 +1560,19 @@ int f(int t, int n) {
     return s;
 }
 """
+STOP_BOUND_C = r"""
+static volatile int a[2] = {0, 0};
+__attribute__((noinline)) static int find(int n, int v) {
+    for (int k = 0; k < n; k++)
+        if (a[k] == v) return k;
+    return -1;
+}
+int f(int t, int n) {
+    volatile int s = 0;
+    for (int i = 0; i < t; i++) s += i;
+    return s + find(n, 7);
+}
+"""
 STOP_PAST_C = r"""
 int f(int n) {
     volatile int s = 0;
@@ -1591,7 +1604,8 @@ class StoppedInputs(unittest.TestCase):
                 with S.ProbeBuild(spec, ex, tdir / "work") as pb:
                     rows = {s_.id: S.rows_for(s_) for s_ in pb.ins.sites}
                     searcher = S.Searcher(g, pb, rows, __import__("random").Random(1))
-                    lp = pb.ins.loops[loop_index]
+                    lp = (pb.ins.loops[loop_index] if isinstance(loop_index, int) else
+                          next(l for l in pb.ins.loops if l.key().startswith(loop_index + ":")))
                     from cqcheck import gaps
                     out = [{"loop": lp.key(), "parent": None,
                             "zero": gaps.zero_meaning(pb.mod.functions[lp.fn], lp.header, lp.blocks),
@@ -1663,6 +1677,28 @@ class StoppedInputs(unittest.TestCase):
                         self.patched(S.StoppedReach, "why_not", lambda self, smp, o, loop, t: None))
         self.assertIn("uncovered", e)
         self.assertTrue(e["uncovered"]["n_stopped"] > 0)
+
+    def test_bound_from_symbolic_max_in_a_callee(self):
+        # cq-824x (117's is_marked loop in grover): find's loop has two exits, so no exact count; its
+        # symbolic maximum n - 1 bounds every activation by n header executions, and find is called
+        # only by f with f's own n. A t-stopped input keeps n = 2: no 3 trips of find's loop after
+        # the stop; every in-budget reach of 3 trips (n >= 3) reads a[2], outside a: dead
+        line = "907_stop|int f(int,int);|f(3,2)"
+        e = self.target(STOP_BOUND_C, line, ["0x00000003", "0x00000002"], "find", 3)
+        self.assert_dead(e)
+        # mutant: no symbolic maximum: the t-stopped inputs stay open, uncovered
+        from cqcheck import gaps
+        real = gaps.scev_symbolic_counts
+        e = self.target(STOP_BOUND_C, line, ["0x00000003", "0x00000002"], "find", 3,
+                        self.patched(gaps, "scev_symbolic_counts",
+                                     lambda o1, b, symbolic_max=False: {} if symbolic_max else real(o1, b)))
+        self.assertIn("uncovered", e)
+        self.assertTrue(e["uncovered"]["n_stopped"] > 0)
+        # mutant: find also called through a pointer (not fed by f's direct calls only): uncovered
+        e = self.target(STOP_BOUND_C.replace("return s + find(n, 7);",
+                                             "int (*volatile p)(int, int) = find; return s + find(n, 7) + p(1, 7);"),
+                        line, ["0x00000003", "0x00000002"], "find", 3)
+        self.assertIn("uncovered", e)
 
     def test_past_the_only_activation(self):
         line = "907_stop|int f(int);|f(3)"
