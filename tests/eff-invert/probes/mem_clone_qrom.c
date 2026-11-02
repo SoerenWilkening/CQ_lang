@@ -1,5 +1,5 @@
-/* cq-r6cv (gate 2a review eff-h1 i10): an _adj clone's classical store into a table a later QROM template
- * of the region reads. The adjoint runs the template before the clone: unimplemented, never a stale read. */
+/* cq-r6cv (gate 2a review eff-h1 i10), rule 17 at f684858 (cq-4593): a clone's classical store into a table a later
+ * QROM template of the region reads; the classical code runs forward, the backend reverses only the gates. */
 #include "CQ.h"
 unsigned char tbl[4];
 __attribute__((noinline)) static void setup(unsigned *y, double t, unsigned char v) {

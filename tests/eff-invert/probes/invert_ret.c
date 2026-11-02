@@ -1,5 +1,4 @@
-/* tests/eff-invert probes (cq-eive): _adj clones of void functions with several returns (rule 17: clones
- * as _adj; the region of an _adj body ends at whichever return the forward path takes).
+/* tests/eff-invert probes (cq-eive): clones of void functions with several returns (a region inside a clone body).
  * invert_ret.O1.ll is this file at -O1 with each callee's common return block split back into one
  * `ret void` per arm (clang -O1 merges them; the IR is the shape a callee with several returns has).
  * p_adjret: the returns sit behind a classical branch (the reverse starts from the return taken).

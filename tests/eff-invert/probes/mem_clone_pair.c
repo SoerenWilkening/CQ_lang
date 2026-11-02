@@ -1,5 +1,5 @@
-/* cq-r6cv (gate 2a review eff-h1 i11): two _adj clones communicating through a global; reversed, fb_adj
- * would read the angle before fa_adj writes it: unimplemented, never a stale angle. */
+/* cq-r6cv (gate 2a review eff-h1 i11), rule 17 at f684858 (cq-4593): two clones communicating through a global;
+ * the classical code runs forward, the backend reverses only the gates. */
 #include "CQ.h"
 double gang;
 __attribute__((noinline)) static void fa(unsigned *y, double t) {

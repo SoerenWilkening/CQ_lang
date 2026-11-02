@@ -1,5 +1,5 @@
-/* rule 8 inside a region (cq-ja5h p8): a quantum arm whose condition has a classical conjunct needs a
- * classical guard inside the linearized segment: unimplemented, never the phase without its guard. */
+/* rule 8 inside a region (cq-ja5h p8), rule 17 at f684858 (cq-4593): a quantum arm whose condition has a classical
+ * conjunct; lowered as anywhere else, the backend reverses the region. */
 #include "CQ.h"
 int p_guard(int x0, double th, int c, int k, double phi) {
   int x = x0; cq_theta(&x, th);

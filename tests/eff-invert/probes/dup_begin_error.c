@@ -1,5 +1,5 @@
 /* clang -O1 threads the shared condition and duplicates __cq_invert_begin into both arms of the branch
- * before it: begin's block no longer dominates end's. Not built yet: an internal error (bead cq-asfn). */
+ * before it: the marker runs under a quantum predicate. Awaiting an owner ruling (SPEC_ISSUES, cq-asfn). */
 #include "CQ.h"
 int p_dup(int x0, double th, int k, double a, double b) {
   int x = x0; cq_theta(&x, th);

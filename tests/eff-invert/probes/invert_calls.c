@@ -1,7 +1,7 @@
-/* tests/eff-invert probes (cq-eive): which calls are _adj (rule 17: clones as _adj).
+/* tests/eff-invert probes (cq-eive): calls around and inside regions (rule 17 at f684858, cq-4593: no _adj).
  * p_between: a call between two regions of one block is a forward call (taint once took the first begin and
  *   the second end as one region and made it _adj: a silent inverse).
- * p_nested: a call inside an _adj body is _adj too (the adjoint of the body includes its callees'). */
+ * p_nested: a call inside an _adj body is lowered as anywhere else; the backend reverses its gates. */
 #include "CQ.h"
 __attribute__((noinline)) static void rot(unsigned *x, double t) { cq_theta(x, t); }
 __attribute__((noinline)) static void ph(unsigned y, unsigned k, double t) {

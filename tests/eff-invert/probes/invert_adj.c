@@ -1,5 +1,5 @@
-/* tests/eff-invert probes (cq-w2b-invert): a clone call inside a cq_invert region is its _adj clone
- * (rule 17: clones as _adj), whose body is the clone's adjoint (lowerAdjointBody). */
+/* tests/eff-invert probes (cq-w2b-invert, cq-4593): a clone call inside a cq_invert region is the same clone as
+ * outside it; the backend reverses and inverts the gates it records (rule 17 at f684858, no _adj, §1.4). */
 #include "CQ.h"
 __attribute__((noinline)) static void ph(int y, int k, double t, double u, double v) {
   if (y > k) cq_phi(t);

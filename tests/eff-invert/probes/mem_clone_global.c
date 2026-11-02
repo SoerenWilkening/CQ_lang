@@ -1,5 +1,5 @@
-/* cq-r6cv (gate 2a review eff-h1 i12): an _adj clone with no pointer argument reading a global a later
- * classical store of the region overwrites (the skeleton runs it first): unimplemented. */
+/* cq-r6cv (gate 2a review eff-h1 i12), rule 17 at f684858 (cq-4593): a clone reading a global a later classical
+ * store of the region overwrites; the classical code runs forward, the backend reverses only the gates. */
 #include "CQ.h"
 double gang;
 __attribute__((noinline)) static void fd(unsigned y) {
