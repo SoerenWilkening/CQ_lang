@@ -284,16 +284,17 @@ bool readsReachedMode(const Function &F) {
 }
 
 // E1 (82): does a clone of S carry the environment (CR rule 23: "a clone that does constrained FP work
-// takes the caller's mode and flags rail and returns the new flags rail beside its result")? Its own
-// body touches it, or it is compiled under FENV_ACCESS and a call in it lifts (taint's callee
-// specialization from S) a clone that carries it. A callee reached by an ordinary classical call runs on
+// takes the caller's mode and flags rail and returns the new flags rail beside its result")? Ruling
+// 2026-11-02 (cq-75n4): its own body holds a strict op, a fenv call or a rounding intrinsic (envOp), or a
+// call in it lifts (taint's callee specialization from S) a clone that carries it, or it reads the dynamic
+// mode while an ancestor may hold the fenv state (readsReachedMode). fpexcept.ignore/maytrap work alone
+// carries nothing: those ops are plain templates. A callee reached by an ordinary classical call runs on
 // the host, what it raises is the host part (173, 174: __divsc3's logbf of a classical argument reaches
-// the strictfp ilogbf; the references' clones take no environment). A clone compiled without the
-// pragma that lifts a carrying clone does not carry it: it runs in the default environment and drops
-// the flags it gets back (169's __divdc3 and logb; accessesEnv); that is refused when a function that
-// accesses the environment calls it (the dropped flags would be readable there). Decided on the run's
-// taint, so the caller, the clone's construction and the twin agree on the ABI (cq-xhv4; orchestrator
-// decision under rule 23 and the 169/173/174 references, owner may override).
+// the strictfp ilogbf; the references' clones take no environment). A body without the fenv state
+// (accessesEnv) never carries it: it passes mode 0 and an empty flags rail to the carrying clones it
+// lifts and drops the flags it gets back (169's __divdc3).
+// Decided on the run's taint, so the caller, the clone's construction and the twin agree on the ABI
+// (cq-xhv4).
 bool liftsCarrying(const TaintInfo &T, const Specialization &S, SmallPtrSetImpl<const Specialization *> &seen);
 
 bool carriesEnvImpl(const TaintInfo &T, const Specialization &S, SmallPtrSetImpl<const Specialization *> &seen) {
@@ -303,17 +304,12 @@ bool carriesEnvImpl(const TaintInfo &T, const Specialization &S, SmallPtrSetImpl
     return false;   // a cycle of lifted calls: its bodies are judged where they are first reached
   if (ownBodyTouchesFenv(*S.F) || readsReachedMode(*S.F))
     return true;
-  if (!liftsCarrying(T, S, seen))
-    return false;
-  if (accessesEnv(*S.F))
-    return true;
-  for (const User *U : S.F->users())
-    if (auto *CB = dyn_cast<CallBase>(U); CB && CB->getCalledOperand() == S.F && accessesEnv(*CB->getFunction()))
-      unimplemented("eff-fenv: a clone compiled without FENV_ACCESS that lifts a clone carrying the environment, "
-                    "called from a function that accesses the environment (the flags it drops would be "
-                    "readable there; rule 23)",
-                    CB);
-  return false;
+  // Rule 23 (ruling 2026-11-02): a body with the fenv state (FENV_ACCESS or -frounding-math: strictfp, or
+  // a fenv call) that holds a strict op through a callee takes 82's ABI (169's __cq_q_logb_1(x, mode,
+  // flags) lifting the strict ilogb). A body without it is a caller without the fenv state: it passes mode
+  // 0 and an empty flags rail and drops the returned flags (169's __divdc3), even when a caller of its own
+  // holds the state (C17 7.6.1: flags tested across code translated with FENV_ACCESS off are undefined).
+  return liftsCarrying(T, S, seen) && accessesEnv(*S.F);
 }
 
 bool liftsCarrying(const TaintInfo &T, const Specialization &S, SmallPtrSetImpl<const Specialization *> &seen) {
