@@ -402,7 +402,7 @@ attributes #7 = { nounwind }
 ; CHECK __cq_q_outer_11: %cq.cells = alloca [1 x i32]
 ; CHECK __cq_q_rec_111_b3_ctl_d1: %cq.cells = alloca [1 x i32]
 ; CHECK __cq_q_outer2_1001: %cq.cells = alloca [1 x i32]
-; CHECK __cq_q_nib_10: call void @cqrt_copy_i32(i32 %3, i32 %4)
+; CHECK-COUNT __cq_q_nib_10: load i32, ptr %1, 0
 ; USERCHECK param_handoff_pred
 ; USERCHECK param_handoff_plain
 ; USERCHECK param_handoff_rec
