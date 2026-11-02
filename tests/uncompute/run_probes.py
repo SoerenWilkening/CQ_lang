@@ -31,6 +31,7 @@ CASES = [
     ("partial_measure", "pm_loop", [], "lower", [r"call void @cqrt_copy_i32"]),
     # CR §0, rule 5, §1.1 (cq-4lqy): a gate through a slot cell that may name an operand rail of pending garbage is
     # decided at run time by comparing handles (was: 'awaiting owner ruling: ... a gate through a slot cell').
+    # ah_loop fails §6 with a leaked i1 rail: bead cq-asp1 (suspected mem-slots, a register cell copy overwritten).
     ("alias_hit", "ah_loop", [], "pass", [r"icmp eq i32 .*cq\.hit|%cq\.hit = icmp eq"]),
     ("alias_hit", "ah_line", [], "pass", [r"%cq\.hit = icmp eq"]),
     # CR rule 18 twin point (cq-4lqy): a live result of a clone call is copied out before the twin (was: 'a call

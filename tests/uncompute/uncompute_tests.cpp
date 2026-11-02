@@ -3063,9 +3063,33 @@ J:
 
 // ---- cq-zh7z: a gate on a handle loaded from a slot cell that may hold an operand rail ----------
 
+// cq-4lqy: every substring occurs in some emitted instruction of f (a shape decided at run time).
+void checkHas(Fx &f, const char *tc, const std::vector<std::string> &subs) {
+  std::vector<std::string> got;
+  for (Instruction &i : instructions(f.F)) {
+    std::string s;
+    raw_string_ostream os(s);
+    i.print(os);
+    os.flush();
+    got.push_back(s.substr(s.find_first_not_of(' ')));
+  }
+  for (const std::string &w : subs)
+    if (std::none_of(got.begin(), got.end(), [&](const std::string &g) { return g.find(w) != std::string::npos; })) {
+      ++failures;
+      errs() << "FAIL " << tc << ": no instruction contains '" << w << "'\n  got:\n";
+      for (auto &g : got)
+        errs() << "    " << g << "\n";
+      return;
+    }
+}
+// CR §0, rule 5, §1.1 (cq-4lqy): the alias gate's hit is decided at run time by a handle compare; the
+// pending garbage's item runs under the run flag that compare clears.
+const std::vector<std::string> kHitGuard = {"%cq.hit = icmp eq i32", "%cq.not = xor i1 %cq.hit, true", "br i1 %cq.not"};
+
 // b1's shape: x sits in cell i, a fresh seed is stored to cell m, cell i is reloaded (%l: x when
 // m != i, the seed when m == i) and rotated, and g, which read x, is read after the Ry. Rule 5 needs
-// g's _unc before the Ry when %l is x, and CR §0 needs it cleaned when it is not: unimplemented.
+// g's _unc before the Ry when %l is x, and CR §0 needs it cleaned when it is not: decided at run time by
+// comparing %l with %x (§1.1, cq-4lqy).
 const char *kAliasIr = R"(
 define i32 @f(i32 %a0, i64 %i, i64 %m, double %th) {
   %cells = alloca i32, i64 4
@@ -3097,9 +3121,11 @@ void aliasCase(const char *idx) {
   f.U.noteNonDiagonal(f.id("l"), f.call("cqrt_ry_i32", 1));
   f.U.setRole(f.T("q", "hl"), Role::Measured);
   f.U.flushAtExit(f.ret());
+  if (std::string(idx) == "%i")
+    checkHas(f, "alias_slot_reload", kHitGuard);
 }
 
-void fatal_alias_slot_reload() { aliasCase("%i"); }
+void alias_slot_reload() { aliasCase("%i"); }
 
 void alias_distinct_cell() {
   // x in cell 0, the seed in cell 1, the Ry on a reload of cell 1: never x, so g is cleaned after
@@ -3139,7 +3165,7 @@ void alias_distinct_cell() {
 }
 
 // The reverse direction: g read a reload %l of cell i, and the Ry is on x, which sits in cell i.
-void fatal_alias_slot_direct() {
+void alias_slot_direct() {
   Fx f(R"(
 define i32 @f(i32 %a0, i64 %i, double %th) {
   %cells = alloca i32, i64 4
@@ -3162,6 +3188,7 @@ define i32 @f(i32 %a0, i64 %i, double %th) {
   f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 1));
   f.U.setRole(f.T("q", "hl"), Role::Measured);
   f.U.flushAtExit(f.ret());
+  checkHas(f, "alias_slot_direct", kHitGuard);
 }
 
 // ---- cq-vdaa: the rail reaches a second slot array through a copy of a reload -----------------
@@ -3205,10 +3232,11 @@ void copyCase(const char *arr, Fx *&out, std::string &keep) {
   f.U.flushAtExit(f.ret());
 }
 
-void fatal_alias_second_array() {
+void alias_second_array() {
   Fx *f;
   std::string ir;
   copyCase("%sa", f, ir);
+  checkHas(*f, "alias_second_array", kHitGuard);
 }
 
 // The rotated reload comes from a third array the rail never reaches: g is cleaned after its
@@ -3243,7 +3271,7 @@ void alias_copy_distinct_array() {
 
 // c2's shape, the reverse: g read a reload %l2 of s[m], which may be x copied there through a
 // reload of q[j]; the Ry is on x itself.
-void fatal_alias_second_array_rev() {
+void alias_second_array_rev() {
   Fx f(R"(
 define i32 @f(i32 %a0, i64 %i, i64 %j, i64 %k, i64 %m, double %th) {
   %qa = alloca i32, i64 4
@@ -3272,10 +3300,11 @@ define i32 @f(i32 %a0, i64 %i, i64 %j, i64 %k, i64 %m, double %th) {
   f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 1));
   f.U.setRole(f.T("q", "hl"), Role::Measured);
   f.U.flushAtExit(f.ret());
+  checkHas(f, "alias_second_array_rev", kHitGuard);
 }
 
 // A memcpy of the whole first array into the second: the rotated reload of s[m] may be x.
-void fatal_alias_memcpy() {
+void alias_memcpy() {
   Fx f(R"(
 define i32 @f(i32 %a0, i64 %i, i64 %m, double %th) {
   %qa = alloca i32, i64 4
@@ -3301,6 +3330,7 @@ declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1))");
   f.U.noteNonDiagonal(f.id("l2"), f.call("cqrt_ry_i32", 1));
   f.U.setRole(f.T("q", "hl"), Role::Measured);
   f.U.flushAtExit(f.ret());
+  checkHas(f, "alias_memcpy", kHitGuard);
 }
 
 
@@ -3378,17 +3408,19 @@ void cells_distinct() {
 }
 
 // The same pair without the note: the AliasHit stands.
-void fatal_cells_distinct_unnoted() {
+void cells_distinct_unnoted() {
   Fx *fp;
   std::string ir;
   distinctCase("%lb", false, fp, ir);
+  checkHas(*fp, "cells_distinct_unnoted", kHitGuard);
 }
 
 // g reads y itself, not through %lb: the note says nothing about that route.
-void fatal_cells_distinct_direct_read() {
+void cells_distinct_direct_read() {
   Fx *fp;
   std::string ir;
   distinctCase("%y", true, fp, ir);
+  checkHas(*fp, "cells_distinct_direct_read", kHitGuard);
 }
 
 
@@ -3506,8 +3538,8 @@ X:
 // phi) and read in P (the phase), and a later Ry on x (H^n) follows in Q, before the return block R. The
 // reverse reads x, so it must run before the Ry: flushBefore(P's terminator) places it in P although the
 // merge %m lies in X. The bypass variant adds an edge X -> Q that avoids P: the reverse is not placed in
-// P (a path from the loop would skip it), and at the return the Ry precedes it (unimplemented, t is not
-// kept).
+// P (a path from the loop would skip it), and at the return the Ry precedes it: it runs where the loop
+// exits and t is copied out there (cq-4lqy, CR rule 14 case 1).
 const char *kDefJoin = R"(
 define i32 @f(i32 %a0, double %th, i32 %n, i1 %k) {
 entry:
@@ -3555,6 +3587,13 @@ void deferredJoin(bool bypass) {
   f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 1));
   f.U.setRole(x, Role::Measured);
   f.U.flushAtExit(f.ret());
+  if (bypass) {
+    // cq-4lqy (CR rule 14 case 1): the Ry precedes every placement after t's reader on the bypass path, so
+    // the reverse runs where the loop exits and t is copied out there (Role::Output); the copy is read after.
+    checkHas(f, "deferred_join_bypass",
+             {"call void @cqrt_copy_i32(i32 %t,", "call void @cq_template_add_i32_hl_unc(i32 %t, i32 %x, i32 1)"});
+    return;
+  }
   f.check("deferred_join_placement",
           {
               "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
@@ -3583,7 +3622,7 @@ void deferredJoin(bool bypass) {
 }
 
 void deferred_join_placement() { deferredJoin(false); }
-void fatal_deferred_join_bypass() { deferredJoin(true); }
+void deferred_join_bypass() { deferredJoin(true); }
 
 // ---- cq-lqz3: a pointer from outside the frame never names a cell of a non-escaping alloca ---------
 
@@ -3724,6 +3763,14 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"merge_unchosen_reader", merge_unchosen_reader},
     {"merge_nondiagonal_garbage", merge_nondiagonal_garbage},
     {"merge_kept_select", merge_kept_select},
+    {"alias_slot_reload", alias_slot_reload},
+    {"alias_slot_direct", alias_slot_direct},
+    {"alias_second_array", alias_second_array},
+    {"alias_second_array_rev", alias_second_array_rev},
+    {"alias_memcpy", alias_memcpy},
+    {"cells_distinct_unnoted", cells_distinct_unnoted},
+    {"cells_distinct_direct_read", cells_distinct_direct_read},
+    {"deferred_join_bypass", deferred_join_bypass},
 };
 
 const std::map<std::string, std::function<void()>> kFatal = {
@@ -3737,15 +3784,7 @@ const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_mirror_outside_reader", fatal_mirror_outside_reader},
     {"fatal_call_bus_read_unrecorded", fatal_call_bus_read_unrecorded},
     {"fatal_unknown_handle", fatal_unknown_handle},
-    {"fatal_alias_slot_reload", fatal_alias_slot_reload},
-    {"fatal_alias_slot_direct", fatal_alias_slot_direct},
-    {"fatal_alias_second_array", fatal_alias_second_array},
-    {"fatal_alias_second_array_rev", fatal_alias_second_array_rev},
-    {"fatal_alias_memcpy", fatal_alias_memcpy},
-    {"fatal_cells_distinct_unnoted", fatal_cells_distinct_unnoted},
-    {"fatal_cells_distinct_direct_read", fatal_cells_distinct_direct_read},
     {"fatal_deferred_no_anchor", fatal_deferred_no_anchor},
-    {"fatal_deferred_join_bypass", fatal_deferred_join_bypass},
 };
 
 } // namespace

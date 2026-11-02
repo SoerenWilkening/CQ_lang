@@ -3244,7 +3244,17 @@ struct Uncompute::Impl {
       copyAll = true;
       BasicBlock *X = exitBlock(rails[g].handle);
       BasicBlock *S = X->getSingleSuccessor();
-      if (!S || beforeOrIn(d, S))
+      if (!S) {
+        // cq-4lqy: X branches on: the reverse runs on every path leaving it, in a fresh block N that takes
+        // X's terminator (X -> N -> X's successors).
+        BasicBlock *N = BasicBlock::Create(X->getContext(), "", X->getParent(), X->getNextNode());
+        N->splice(N->end(), X, X->getTerminator()->getIterator());
+        emitted.insert(BranchInst::Create(N, X));
+        for (BasicBlock *sb : successors(N))
+          sb->replacePhiUsesWith(X, N);
+        S = N;
+      }
+      if (beforeOrIn(d, S))
         internalError("uncompute: the loop's exit block of a deferred item does not continue in one block",
                       X->getTerminator());
       pos = {S, &*S->getFirstInsertionPt()};
@@ -3303,9 +3313,20 @@ struct Uncompute::Impl {
       Module &M = *F->getParent();
       Value *xh = rails[x].handle;
       std::optional<RailType> wo;
-      if (rails[x].creator != kNone)
-        wo = createdType(records[rails[x].creator]);
-      else
+      if (rails[x].creator != kNone) {
+        // The producer's spelling names the width (CR §1.2, §1.3).
+        CallInst *pf = records[rails[x].creator].forward;
+        bool unc = false;
+        if (Function *cf = pf->getCalledFunction()) {
+          if (auto t = abi::parseTemplate(cf->getName(), &unc))
+            wo = templateResultType(*t);
+          else if (auto k = abi::parseCore(cf->getName()); k && k->w.bits)
+            wo = k->w;
+        }
+        if (!wo)
+          wo = createdType(records[rails[x].creator]);
+      }
+      if (!wo || !wo->bits)
         wo = handleWidth(xh);
       if (!wo)
         internalError("uncompute: an exit rail with no producer whose width no runtime call names", xh);
