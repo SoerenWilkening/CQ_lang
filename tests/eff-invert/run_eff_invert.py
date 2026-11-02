@@ -6,14 +6,17 @@ For each probe file in CHECKED it checks, and fails on:
   - no CQ.h surface call and no asm fence is left in any entry;
   - every entry is §6-equal to its own C program (`python3 -m cqcheck user`, the C oracle, which negates
     the angles of the sites inside a cq_invert region).
-probes/*_error.O1.ll must make cq-lower exit non-zero with an eff-invert internal error: a region whose
-quantum value is read after it (no adjoint under rule 17), markers -O1 duplicated into quantum arms
-(cq-asfn, not built yet; update this test when it is), a rotation between a region template and its
-uncompute (rule 5), a classical conjunct of a quantum arm condition (rule 8 guard), an _adj clone call
-whose classical memory accesses the reverse would reorder (cq-r6cv: mem_clone_*) and an _adj clone rotating
-a rail a region template reads (cq-c969, rule 5: clone_rot_error).
-probes/invert_loop.O1.ll (a classical loop in a region) and probes/invert_adj.O1.ll (an _adj clone) are
-checked like invert.O1.ll.
+probes/*_error.O1.ll must make cq-lower exit non-zero with the message given: a region whose rails outlive
+it (a quantum value read after it; an _adj clone rotating a rail a region template reads, cq-c969: the
+template stays entangled) awaits an owner ruling (SPEC_ISSUES); markers -O1 duplicated into quantum arms
+(cq-asfn), a classical conjunct of a quantum arm condition (rule 8 guard) and an _adj clone call whose
+classical memory accesses the reverse would reorder (cq-r6cv: mem_clone_*) are constructions eff-invert
+does not build yet.
+probes/invert_loop.O1.ll (a classical loop in a region), invert_adj.O1.ll (an _adj clone),
+invert_barrier.O1.ll (rule 5: a region template uncomputed before an Ry on its source, cq-eive),
+invert_seed.O1.ll (registers a region prepares: seeds minted inside it, per trip, on one arm; cq-eive) and
+invert_ret.O1.ll (_adj clones of void functions with several returns; cq-eive) are checked like
+invert.O1.ll.
 The owned example's acceptance is `python3 -m cqcheck run 44_invert_bracket --oracle both` (the bead).
 Outputs go to build/tests/eff-invert/out/.
 """
@@ -28,14 +31,16 @@ PROBES = Path(__file__).parent / "probes"
 CHECKED = {"invert.O1.ll": ["p_flat", "p_arms", "p_nest", "p_around", "p_two"],
            "invert2.O1.ll": ["p_inplace", "p_cbr", "p_reg", "p_cswitch"],
            "invert_loop.O1.ll": ["p_cloop"],
-           "invert_adj.O1.ll": ["p_adj"]}
+           "invert_adj.O1.ll": ["p_adj"],
+           "invert_barrier.O1.ll": ["p_barrier"],
+           "invert_seed.O1.ll": ["p_seedin", "p_seedtrip", "p_seedarm"],
+           "invert_ret.O1.ll": ["p_adjret", "p_adjretq"]}
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(|call void asm")
 SESE = "eff-invert: a cq_invert region that is not single-entry single-exit"
-ERRORS = {"region_output_error.O1.ll": "eff-invert: a quantum value of a cq_invert region read after it",
+OUTLIVE = 'eff-invert: awaiting owner ruling: SPEC_ISSUES "A cq_invert region whose rails outlive it"'
+ERRORS = {"region_output_error.O1.ll": OUTLIVE + " (a quantum value of the region read after it)",
           # cq-asfn: -O1 duplicates a marker into the arms of a quantum branch; not built yet.
           "dup_begin_error.O1.ll": SESE, "dup_end_error.O1.ll": SESE,
-          "barrier_error.O1.ll": "eff-invert: a non-diagonal gate inside a cq_invert region on a rail a template "
-                                 "of the region reads (rule 5)",
           "guard_error.O1.ll": "eff-invert: a quantum arm inside a cq_invert region whose block predicate has a "
                                "classical conjunct",
           # cq-r6cv: an _adj clone's classical memory accesses move with the call to the reverse.
@@ -46,8 +51,7 @@ ERRORS = {"region_output_error.O1.ll": "eff-invert: a quantum value of a cq_inve
           "mem_clone_global_error.O1.ll": "eff-invert: a gate reading memory in a cq_invert region whose classical "
                                           "code writes memory it may read",
           # cq-c969: an _adj clone rotating a rail a region template reads (rule 5).
-          "clone_rot_error.O1.ll": "eff-invert: a clone call rotating a cell inside a cq_invert region on a rail a "
-                                   "template of the region reads (rule 5)"}
+          "clone_rot_error.O1.ll": OUTLIVE + " (a rail made inside the region is not freed inside it"}
 
 
 def body(module: str, fn: str) -> str:

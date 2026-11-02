@@ -1,5 +1,5 @@
-/* rule 5 inside a region (cq-ja5h): an Ry on the register after a template of the region read it, before
- * that template's uncompute: unimplemented, never a dirty free. */
+/* rule 5 inside a region (cq-ja5h, cq-eive): an Ry on the register after a template of the region read it, before
+ * that template's uncompute: the template is uncomputed in its segment before the Ry (as early as rule 5 allows). */
 #include "CQ.h"
 int p_barrier(int x0, double th, int c, int k, double phi, double t2) {
   int x = x0; cq_theta(&x, th);

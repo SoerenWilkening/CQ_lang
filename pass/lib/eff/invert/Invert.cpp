@@ -137,20 +137,26 @@ struct Edge {
 };
 
 struct Region {
-  BasicBlock *bb = nullptr, *eb = nullptr;
+  BasicBlock *bb = nullptr, *eb = nullptr;   // eb: the end marker's block; nullptr for a function body
   Instruction *begin = nullptr;   // the begin marker; nullptr for a whole function body
-  Instruction *stop = nullptr;    // the end marker, or the return of a whole function body
+  Instruction *stop = nullptr;    // the end marker, or a return of a whole function body (for messages)
   std::vector<BasicBlock *> rpo;
   DenseSet<const BasicBlock *> blocks;
   DenseMap<const BasicBlock *, unsigned> segOf;
   std::vector<Seg> segs;
   std::vector<Edge> edges;
   std::map<std::pair<unsigned, unsigned>, unsigned> edgeId;
-  unsigned SE = 0;
+  std::vector<unsigned> exits;    // the segments the region ends in (one; or one per return of a body)
   std::vector<BitVector> dom;     // dom[a].test(b): a dominates b
   std::vector<BitVector> reach;   // reach[a].test(b): b is reached from a by one edge or more
   bool once(unsigned s) const { return !reach[s].test(s); }
   bool sameCycle(unsigned a, unsigned b) const { return reach[a].test(b) && reach[b].test(a); }
+  bool isExit(const BasicBlock *b) const { return eb ? b == eb : isa<ReturnInst>(b->getTerminator()); }
+  bool isExitSeg(unsigned s) const { return is_contained(exits, s); }
+  // s dominates every exit: it ran on every path through the region by the time the region ends.
+  bool domExits(unsigned s) const {
+    return llvm::all_of(exits, [&](unsigned x) { return dom[s].test(x); });
+  }
 
   // The original instructions of b that belong to the region, fences at its two ends excluded.
   std::pair<BasicBlock::iterator, BasicBlock::iterator> body(BasicBlock *b) const {
@@ -199,7 +205,7 @@ Region analyze(LoweringContext &ctx, BasicBlock *bb, Instruction *begin, BasicBl
   R.begin = begin;
   R.stop = stop;
   Function &F = *bb->getParent();
-  if (bb == eb) {
+  if (R.isExit(bb)) {
     if (begin && !begin->comesBefore(stop))
       internalError("eff-invert: __cq_invert_end before its __cq_invert_begin (the spine pairs a begin with an "
                     "end after it)",
@@ -211,11 +217,12 @@ Region analyze(LoweringContext &ctx, BasicBlock *bb, Instruction *begin, BasicBl
     R.segOf[bb] = 0;
     R.dom.assign(1, BitVector(1, true));
     R.reach.assign(1, BitVector(1, false));
+    R.exits = {0};
     return R;
   }
   DominatorTree DT(F);
   PostDominatorTree PDT(F);
-  if (!DT.dominates(bb, eb) || !PDT.dominates(eb, bb))
+  if (eb && (!DT.dominates(bb, eb) || !PDT.dominates(eb, bb)))
     unimplemented("eff-invert: a cq_invert region that is not single-entry single-exit (begin's block must "
                   "dominate end's, end's must post-dominate begin's)",
                   begin ? begin : stop);
@@ -227,7 +234,7 @@ Region analyze(LoweringContext &ctx, BasicBlock *bb, Instruction *begin, BasicBl
     while (!stack.empty()) {
       auto &[b, k] = stack.back();
       Instruction *t = b->getTerminator();
-      if (b == eb || k == t->getNumSuccessors()) {
+      if (R.isExit(b) || k == t->getNumSuccessors()) {
         post.push_back(b);
         stack.pop_back();
         continue;
@@ -241,7 +248,7 @@ Region analyze(LoweringContext &ctx, BasicBlock *bb, Instruction *begin, BasicBl
     R.rpo.assign(post.rbegin(), post.rend());
     R.blocks.insert(R.rpo.begin(), R.rpo.end());
   }
-  if (!R.blocks.count(eb))
+  if (eb && !R.blocks.count(eb))
     internalError("eff-invert: the end block is not reached from the begin block", stop);
   DenseMap<const BasicBlock *, unsigned> pos;
   for (unsigned i = 0; i < R.rpo.size(); ++i)
@@ -249,9 +256,9 @@ Region analyze(LoweringContext &ctx, BasicBlock *bb, Instruction *begin, BasicBl
   for (BasicBlock *b : R.rpo) {
     if (b != bb)
       for (BasicBlock *p : predecessors(b))
-        if (!R.blocks.count(p) || p == eb)
+        if (!R.blocks.count(p) || R.isExit(p))
           unimplemented("eff-invert: a block of a cq_invert region entered from outside it", &*b->begin());
-    if (b == eb)
+    if (R.isExit(b))
       continue;
     Instruction *t = b->getTerminator();
     if (!isa<BranchInst>(t) && !isa<SwitchInst>(t))
@@ -273,15 +280,17 @@ Region analyze(LoweringContext &ctx, BasicBlock *bb, Instruction *begin, BasicBl
     BasicBlock *x = heads[s];
     claim(x);
     while (true) {
-      if (x == eb) {
-        R.SE = s;
+      if (R.isExit(x)) {
+        R.exits.push_back(s);
         break;
       }
       Instruction *t = x->getTerminator();
       if (quantumTerm(ctx, x)) {
         auto *nd = PDT.getNode(x);
         BasicBlock *j = nd && nd->getIDom() ? nd->getIDom()->getBlock() : nullptr;
-        if (!j || !R.blocks.count(j))
+        // In a function body whose arms end in different returns the join is the function's exit: the
+        // arms run to their returns and the segment ends the region.
+        if (j ? !R.blocks.count(j) : (bool)eb)
           internalError("eff-invert: a quantum branch of a cq_invert region with no join inside it", t);
         std::vector<BasicBlock *> arms, work;
         DenseSet<BasicBlock *> in;
@@ -312,12 +321,16 @@ Region analyze(LoweringContext &ctx, BasicBlock *bb, Instruction *begin, BasicBl
             if (a2 != j && pos.lookup(a2) <= pos.lookup(a))
               unimplemented("eff-invert: a loop inside a quantum arm of a cq_invert region", a->getTerminator());
         }
+        for (BasicBlock *a : arms)
+          claim(a);
+        if (!j) {
+          R.exits.push_back(s);
+          break;
+        }
         bool closed = true;
         for (BasicBlock *p : predecessors(j))
           if (p != x && !in.count(p))
             closed = false;
-        for (BasicBlock *a : arms)
-          claim(a);
         if (closed) {
           claim(j);
           x = j;
@@ -380,7 +393,9 @@ Region analyze(LoweringContext &ctx, BasicBlock *bb, Instruction *begin, BasicBl
                       &*b->begin());
     }
   }
-  if (R.segOf.lookup(eb) != R.SE || R.segs[R.SE].blocks.back() != eb || R.segs[R.SE].exitTo)
+  if (R.exits.empty() || (eb && (R.exits.size() != 1 || R.segOf.lookup(eb) != R.exits[0] ||
+                                  R.segs[R.exits[0]].blocks.back() != eb)) ||
+      llvm::any_of(R.exits, [&](unsigned x) { return (bool)R.segs[x].exitTo; }))
     internalError("eff-invert: the end block does not end its segment", stop);
   for (unsigned e = 0; e < R.edges.size(); ++e)
     R.segs[R.edges[e].to].pred.push_back(e);
@@ -484,20 +499,42 @@ std::optional<Gate> gateOf(Instruction *I) {
     case Core::XorI1:
     case Core::Copy:
       return Gate{C, GK::Involution, *cs};
+    case Core::Push:
+    case Core::Pop:
+      return std::nullopt;   // the compiler-internal classical word stack (CR §1.3): skeleton code
+    case Core::Measure:
+    case Core::TapeAlloc:
+    case Core::TapeFmt:
+    case Core::TapeEffect:
+    case Core::TapeWrite:
+    case Core::TapeWriteLit:
+    case Core::TapeWriteStrLit:
+    case Core::AbortI1:
+      unimplemented("eff-invert: awaiting owner ruling: SPEC_ISSUES \"A measurement, tape entry or abort flag "
+                    "inside a cq_invert region\" (" + n.str() + ": no inverse gate)",
+                    C);
+    case Core::QramAlloc:
+    case Core::QramRealloc:
+    case Core::QramStore:
+    case Core::QramLoad:
+    case Core::QramFree:
+      unimplemented("eff-invert: " + n.str() + " inside a cq_invert region (rule 17 with rule 21's QRAM: the "
+                    "load/_unc and store/pop pairs reversed into themselves; not built in eff-invert)",
+                    C);
     default:
-      unimplemented("eff-invert: the adjoint of " + n.str() + " inside a cq_invert region (rule 17)", C);
+      internalError("eff-invert: an unknown core gate " + n.str(), C);
     }
   }
   if (std::optional<abi::CloneSpec> cl = abi::parseClone(n)) {
     if (cl->unc)
-      unimplemented("eff-invert: a clone twin inside a cq_invert region (a clone call with results)", C);
+      unimplemented("eff-invert: awaiting owner ruling: SPEC_ISSUES \"A clone with results inside a cq_invert region\" (a clone twin)", C);
     if (!cl->adj)
       internalError("eff-invert: a clone call inside a cq_invert region that is not its _adj specialization "
                     "(taint specializes every call of a region and of an _adj body as _adj)",
                     C);
     if (!C->getType()->isVoidTy())
-      unimplemented("eff-invert: an _adj clone call with results inside a cq_invert region (rule 17 defines no "
-                    "adjoint of a region with an output)",
+      unimplemented("eff-invert: awaiting owner ruling: SPEC_ISSUES \"A clone with results inside a cq_invert region\" (an _adj clone call with results; CR §1.4 defines _adj for a "
+                    "void in-place clone only)",
                     C);
     return Gate{C, GK::Clone};
   }
@@ -771,27 +808,37 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
       }
   }
 
-  // Step 2: seeds of the classical incomings of quantum phis.
+  // Step 2: seeds of the classical incomings of quantum phis at segment heads (a classical join or a
+  // loop header; a quantum join inside a segment is a merge, pred::lowerMerge, which seeds its own
+  // classical arms). A classical incoming (or a measured value, rule 2: a classical outcome) from before
+  // the region is minted once right before the region; one made inside it is minted at the end of the
+  // output block of the segment its edge leaves, after that segment's code.
+  auto headPhi = [&](const BasicBlock *b) {
+    unsigned s = R.segOf.lookup(b);
+    return b != R.bb && b == R.segs[s].blocks.front();
+  };
+  auto seedType = [&](PHINode &phi) {
+    Type *t = phi.getType();
+    if (!t->isIntegerTy() && !t->isFloatingPointTy())
+      unimplemented("eff-invert: a quantum phi of a non-scalar type (an aggregate or fat pointer) joining a "
+                    "classical value at a classical join inside a cq_invert region",
+                    &phi);
+    return railTypeOf(t);
+  };
   DenseMap<const Value *, Value *> seedOf;
   for (BasicBlock *b : R.rpo) {
-    if (b == R.bb)
+    if (!headPhi(b))
       continue;
     for (PHINode &phi : b->phis()) {
       if (!isQ(&phi))
         continue;
       for (Value *v : phi.incoming_values()) {
-        if (isQ(v) || seedOf.count(v))
+        if (seedOf.count(v) || !R.before(v))
           continue;
-        if (!R.before(v))
-          unimplemented("eff-invert: a classical value made inside a cq_invert region joining a quantum value",
-                        &phi);
-        Type *t = phi.getType();
-        if (!t->isIntegerTy() && !t->isFloatingPointTy())
-          unimplemented("eff-invert: a quantum phi of this type inside a cq_invert region", &phi);
         Operand o = ctx.operand(v);
         if (o.handle)
-          internalError("eff-invert: a classical incoming bound to a rail", &phi);
-        CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(t)}, {o.v});
+          continue;
+        CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, seedType(phi)}, {o.v});
         U.recordSeed(a);
         seedOf[v] = a;
       }
@@ -817,15 +864,25 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
   DenseMap<const CallInst *, CallBase *> cloneOrig;   // output clone call -> the original call it lowers
   std::vector<std::pair<PHINode *, PHINode *>> classicalPhis;
   std::vector<std::pair<PHINode *, Value *>> carried;   // quantum phis with a back-edge incoming
-  auto railOfIncoming = [&](Value *v, const PHINode &phi) -> Value * {
-    if (!isQ(v))
-      return seedOf.lookup(v);
+  std::map<std::pair<const Value *, unsigned>, Value *> inSeed;   // (value, segment) -> its seed
+  auto railOfIncoming = [&](Value *v, PHINode &phi, BasicBlock *from) -> Value * {
     Operand o = ctx.operand(v);
-    if (!o.handle)
-      unimplemented("eff-invert: a quantum incoming that is not a rail (a measured value) inside a cq_invert "
-                    "region",
-                    &phi);
-    return o.v;
+    if (o.handle)
+      return o.v;
+    if (Value *sd = seedOf.lookup(v))
+      return sd;
+    if (R.before(v))
+      internalError("eff-invert: a classical incoming from before the region with no seed", &phi);
+    unsigned fs = R.segOf.lookup(from);
+    Value *&sd = inSeed[{v, fs}];
+    if (!sd) {
+      IRBuilderBase::InsertPointGuard g(B);
+      B.SetInsertPoint(S[fs]);
+      CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, seedType(phi)}, {o.v});
+      U.recordSeed(a);
+      sd = a;
+    }
+    return sd;
   };
   for (BasicBlock *b : R.rpo) {
     unsigned s = R.segOf.lookup(b);
@@ -844,7 +901,7 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
               later = true;
               continue;
             }
-            Value *hv = railOfIncoming(phi.getIncomingValue(i), phi);
+            Value *hv = railOfIncoming(phi.getIncomingValue(i), phi, from);
             if (!h)
               h = hv;
             else if (h != hv)
@@ -872,7 +929,9 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
         Value *v = phi.getIncomingValue(0);
         for (Value *w : phi.incoming_values())
           if (w != v)
-            unimplemented("eff-invert: a classical phi at a quantum join inside a cq_invert region", &phi);
+            internalError("eff-invert: a classical phi with different incomings at a quantum join (taint makes "
+                          "it quantum)",
+                          &phi);
         ctx.bind(&phi, ctx.operand(v).v);
       }
     auto [it, end] = R.body(b);
@@ -891,8 +950,8 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
     done.insert(b);
   }
   for (auto &[phi, h] : carried)
-    for (Value *v : phi->incoming_values())
-      if (railOfIncoming(v, *phi) != h)
+    for (unsigned i = 0; i < phi->getNumIncomingValues(); ++i)
+      if (railOfIncoming(phi->getIncomingValue(i), *phi, phi->getIncomingBlock(i)) != h)
         unimplemented("eff-invert: a loop-carried quantum value of a cq_invert region that is not one rail "
                       "across trips",
                       phi);
@@ -1006,12 +1065,15 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
     for (unsigned i = 0; i < G[s].size(); ++i)
       if (G[s][i].kind == GK::TmplFwd || G[s][i].kind == GK::Alloc) {
         makerOf[G[s][i].call] = makers.size();
-        makers.push_back({G[s][i].call, s, i, G[s][i].kind == GK::TmplFwd});
+        makers.push_back({G[s][i].call, s, i, G[s][i].kind == GK::TmplFwd, -1, -1, {}});
       }
   auto makerNamed = [&](Value *r, CallInst *at, const char *what) -> Maker & {
     auto m = makerOf.find(r);
     if (m == makerOf.end())
-      unimplemented(std::string("eff-invert: a rail made before a cq_invert region is ") + what + " inside it", at);
+      unimplemented(std::string("eff-invert: awaiting owner ruling: SPEC_ISSUES \"A cq_invert region that "
+                                "uncomputes or frees a rail from before it\" (a rail made before the region is ") +
+                        what + " inside it)",
+                    at);
     return makers[m->second];
   };
   for (unsigned s = 0; s < nS; ++s)
@@ -1085,8 +1147,8 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
         if (m.localUnc >= 0 || m.z.size() != 2 || Z[m.z[0]].kind != GK::TmplUnc || Z[m.z[1]].kind != GK::Free)
           unimplemented("eff-invert: a template rail of a cq_invert region not uncomputed as _unc then free", m.call);
       } else {
-        unimplemented("eff-invert: a rail made inside a cq_invert region is not freed inside it (it stays live: "
-                      "rule 17 defines no adjoint of a region with an output)",
+        unimplemented("eff-invert: awaiting owner ruling: SPEC_ISSUES \"A cq_invert region whose rails outlive it\" (a rail made inside the region is not freed inside it: "
+                      "kept, entangled or read later)",
                       m.call);
       }
       continue;
@@ -1145,15 +1207,16 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
     auto k = skel.find(I);
     if (k == skel.end())
       return false;
-    return !(R.once(k->second) && R.dom[k->second].test(R.SE));
+    return !(R.once(k->second) && R.domExits(k->second));
   };
 
-  // Kept seeds: allocated before the reverse; their literal must be readable there.
+  // Kept seeds (a register the region prepares and never frees): the allocation stays in the skeleton
+  // where it ran, on every path and trip it ran on, so it precedes every reversed gate on the rail (each
+  // use is dominated by it). Its handle is a classical value of the skeleton to the reverse (pushed per
+  // trip when the segment runs more than once).
   for (Maker &m : makers)
-    if (m.kept) {
-      if (!R.once(m.seg) || !R.dom[m.seg].test(R.SE) || needPop(m.call->getArgOperand(0)))
-        unimplemented("eff-invert: a register a cq_invert region prepares on some paths or trips only", m.call);
-    }
+    if (m.kept)
+      skel[m.call] = m.seg;
 
   // Rule 5's invariant (step 6): no non-diagonal gate or in-place write on a rail a template of the region
   // reads, between that template and its uncompute.
@@ -1203,9 +1266,7 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
         return;
       for (const Operand &o : ctx.fields(&I))
         if (o.handle && regionRail.count(o.v))
-          unimplemented("eff-invert: a quantum value of a cq_invert region read after it (rule 17 defines no "
-                        "adjoint of a region with an output)",
-                        &I);
+          unimplemented("eff-invert: awaiting owner ruling: SPEC_ISSUES \"A cq_invert region whose rails outlive it\" (a quantum value of the region read after it)", &I);
     };
     for (BasicBlock *b : R.rpo) {
       if (b != R.bb)
@@ -1217,16 +1278,18 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
     }
   }
 
-  // Step 4: frontiers. fr[s]: the edges leaving D(s); exitFr[s]: s dominates the end.
+  // Step 4: frontiers. fr[s]: the edges leaving D(s); exitFr[s]: the exits s dominates.
   std::vector<std::vector<unsigned>> fr(nS);
-  std::vector<bool> exitFr(nS);
+  std::vector<std::vector<unsigned>> exitFr(nS);
   for (unsigned s = 0; s < nS; ++s) {
     for (unsigned e = 0; e < R.edges.size(); ++e) {
       const Edge &E = R.edges[e];
       if (R.dom[s].test(E.from) && (!R.dom[s].test(E.to) || E.to == s))
         fr[s].push_back(e);
     }
-    exitFr[s] = R.dom[s].test(R.SE);
+    for (unsigned x : R.exits)
+      if (R.dom[s].test(x))
+        exitFr[s].push_back(x);
   }
 
   // Step 5: the reverse.
@@ -1234,7 +1297,13 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
   std::vector<BasicBlock *> Eb(nE), REb(nE), Rb(nS);
   for (unsigned e = 0; e < nE; ++e)
     Eb[e] = newBlock();
-  BasicBlock *REexit = newBlock();
+  // RE(exit x): the re-makings of the rails cleaned at the region's end when it ends in x.
+  DenseMap<unsigned, BasicBlock *> REexit;
+  for (unsigned x : R.exits)
+    REexit[x] = newBlock();
+  auto isREexit = [&](BasicBlock *X) {
+    return llvm::any_of(REexit, [&](auto &p) { return p.second == X; });
+  };
   for (unsigned s = nS; s-- > 0;) {
     Rb[s] = newBlock();
     for (unsigned e : R.segs[s].pred)
@@ -1345,10 +1414,10 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
         } else {
           any = true;
         }
-      if (exitFr[m.seg]) {
+      for (unsigned x : exitFr[m.seg]) {
         any = true;
         if (CallInst *c = instanceFor(k))
-          placed[REexit].push_back(c);
+          placed[REexit[x]].push_back(c);
       }
       if (!any)
         internalError("eff-invert: a rail of a cq_invert region with no place to be re-made", Z[k].call);
@@ -1377,19 +1446,14 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
   for (unsigned e = 0; e < nE; ++e)
     PE[e] = popList(REb[e]);
 
-  // Kept seeds go before the reverse (the end of S(SE)).
-  for (Maker &m : makers)
-    if (m.kept)
-      m.call->moveBefore(*S[R.SE], S[R.SE]->end());
-
   IRBuilder<> XB(C);
   // Pushes and the skeleton's classical terminators.
   for (unsigned s = 0; s < nS; ++s) {
     XB.SetInsertPoint(S[s]);
     for (Value *v : PS[s])
       pushValue(XB, push(), v, cast<Instruction>(v));
-    if (s == R.SE) {
-      XB.CreateBr(REexit);
+    if (R.isExitSeg(s)) {
+      XB.CreateBr(REexit[s]);
       continue;
     }
     Instruction *t = R.segs[s].blocks.back()->getTerminator();
@@ -1465,14 +1529,16 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
         }
         if (Value *p = popped.lookup(v))
           c->setArgOperand(a, p);
-        else if (X != REexit && needPop(v))
+        else if (!isREexit(X) && needPop(v))
           internalError("eff-invert: a reversed gate reading a classical value that was not pushed", c);
       }
     }
     XB.SetInsertPoint(X);
   };
-  fill(REexit, {});
-  XB.CreateBr(Rb[R.SE]);
+  for (unsigned x : R.exits) {
+    fill(REexit[x], {});
+    XB.CreateBr(Rb[x]);
+  }
   for (unsigned s = 0; s < nS; ++s) {
     fill(Rb[s], PS[s]);
     const auto &preds = R.segs[s].pred;
@@ -1533,7 +1599,8 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
   for (BasicBlock *b : std::vector<BasicBlock *>(Eb.begin(), Eb.end()))
     MergeBlockIntoPredecessor(b);
   std::vector<BasicBlock *> rest(S.begin(), S.end());
-  rest.push_back(REexit);
+  for (unsigned x : R.exits)
+    rest.push_back(REexit[x]);
   rest.insert(rest.end(), Rb.begin(), Rb.end());
   rest.insert(rest.end(), REb.begin(), REb.end());
   for (BasicBlock *b : rest)
@@ -1561,17 +1628,20 @@ void lowerAdjointBody(LoweringContext &ctx, Function &F) {
   ReturnInst *ret = nullptr;
   for (BasicBlock &BB : F)
     if (auto *r = dyn_cast<ReturnInst>(BB.getTerminator())) {
-      if (ret)
-        unimplemented("eff-invert: an _adj clone of a function with more than one return", r);
-      ret = r;
+      if (r->getReturnValue())
+        unimplemented("eff-invert: awaiting owner ruling: SPEC_ISSUES \"A clone with results inside a cq_invert "
+                      "region\" (an _adj clone of a function with a result; CR §1.4 defines _adj for a void "
+                      "in-place clone only)",
+                      r);
+      if (!ret)
+        ret = r;
     }
   if (!ret)
-    unimplemented("eff-invert: an _adj clone of a function that never returns", &F);
-  if (ret->getReturnValue())
-    unimplemented("eff-invert: an _adj clone of a function with a result (rule 17 defines no adjoint of a region "
-                  "with an output)",
-                  ret);
-  Region R = analyze(ctx, &F.getEntryBlock(), nullptr, ret->getParent(), ret);
+    unimplemented("eff-invert: awaiting owner ruling: SPEC_ISSUES \"The adjoint of a cq_invert region that "
+                  "never ends\" (an _adj clone of a function that never returns)",
+                  &F);
+  // Every return ends the region: the reverse starts from the one taken (Region::exits).
+  Region R = analyze(ctx, &F.getEntryBlock(), nullptr, nullptr, ret);
   lowerRegion(ctx, R);
   ReturnInst *nr = ctx.B().CreateRetVoid();
   ctx.unc().flushAtExit(nr);
