@@ -1141,8 +1141,55 @@ void compositeCleanup(LoweringContext &ctx, Instruction &I, Value *X, Operand yp
 // for y' = c ? f(y) : y, where no condition of the chain reads y (else M is no bijection in y). The
 // arms' inverses and the inner selects are fresh garbage rails (rule 5 undoes them after the clean-up
 // that reads them); the outermost select is the clean-up's inverse (Uncompute::cleanupBijective).
+// cq-5nj9: a CLASSICAL merge M (a select on a classical condition, or a phi whose incoming edges are all
+// classical: a classical choice over handles, rule 9) of arms one of which is a bijective update of a
+// dead y. M's value is that update's rail on one path only, so y is dead after the update on that path
+// and rule 6 cleans it there, under a classical branch at the clean-up point (after the readers of y
+// that follow the update on that path). Not built: an internal error rather than a dead old value kept.
+// Outside cycles only: a loop's carried and exit values are rule 14's (its own clean-ups, 05, 09, 150).
+void classicalMergeStop(LoweringContext &ctx, Instruction &M, ArrayRef<Value *> arms) {
+  auto onCycle = [](const BasicBlock *b) {
+    SmallPtrSet<const BasicBlock *, 16> seen;
+    SmallVector<const BasicBlock *, 16> work(succ_begin(b), succ_end(b));
+    while (!work.empty()) {
+      const BasicBlock *x = work.pop_back_val();
+      if (x == b)
+        return true;
+      if (seen.insert(x).second)
+        work.append(succ_begin(x), succ_end(x));
+    }
+    return false;
+  };
+  if (onCycle(M.getParent()))
+    return;
+  SmallVector<const Instruction *, 4> updates;
+  for (Value *a : arms)
+    if (auto *U = dyn_cast<Instruction>(a); U && !is_contained(updates, U)) {
+      if (onCycle(U->getParent()))
+        return;
+      updates.push_back(U);
+    }
+  for (const Instruction *U : updates)
+    for (Value *Y : U->operands()) {
+      if (!cleanable(ctx, Y) || !inverseOf(ctx, *const_cast<Instruction *>(U), Y, ctx.operand(U)))
+        continue;
+      SmallVector<const Instruction *, 4> also;
+      for (const Instruction *V : updates)
+        if (V != Y)
+          also.push_back(V);
+      if (deadAtCleanup(ctx, Y, ctx.operand(Y).v, &M, also))
+        unimplemented("spine: rule 6 on a classical merge of a bijective update of a dead register (the old value "
+                      "is dead on one path only: a clean-up under a classical branch, cq-5nj9, cq-mzqo)",
+                      &M);
+    }
+}
+
 void mergeCleanup(LoweringContext &ctx, Instruction &M, ArrayRef<Value *> arms, Operand yp) {
   spine::Shared &sh = spine::shared(ctx);
+  if (isa<PHINode>(yp.v)) {
+    classicalMergeStop(ctx, M, arms);   // a phi over handles: a classical choice
+    return;
+  }
   DenseMap<Value *, Value *> leafOf;   // an arm's rail -> the arm
   for (Value *a : arms) {
     Operand o = ctx.operand(a);
@@ -1371,8 +1418,10 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
   }
 
   if (auto *sel = dyn_cast<SelectInst>(&I)) {
-    if (!spine::isQ(ctx, sel->getCondition()))
+    if (!spine::isQ(ctx, sel->getCondition())) {
+      classicalMergeStop(ctx, I, {sel->getTrueValue(), sel->getFalseValue()});
       return;
+    }
     Value *c = sel->getCondition(), *A = sel->getTrueValue(), *B = sel->getFalseValue();
     // A controlled swap (145): this select and an earlier q = select(c, B, A).
     for (User *u : c->users()) {
@@ -1432,6 +1481,34 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
   // other is cleaned (its inverse reads the garbage, whose _unc follows in its usual place); when that
   // garbage was computed from the other, it is uncomputed first and rule 6 asks the composite update.
   // Otherwise operand 0 of the IR instruction is cleaned and the other kept.
+  // cq-5nj9: when I's value is only an arm of later quantum merges (a select on a quantum condition or a
+  // quantum phi, 125), its rail is garbage those merges' rule 5 uncomputes after them, and a clean-up
+  // read from it would be dropped (its item reads y). The merge's own rule 6 (mergeCleanup, the
+  // composite update) cleans y; the clean-up from I waits for the merges (ruleSixRetry) and is
+  // requested only when they cleaned nothing.
+  SmallVector<Value *, 2> merges;
+  for (User *u : I.users()) {
+    auto *sel = dyn_cast<SelectInst>(u);
+    bool arm = (sel && sel->getCondition() != &I && spine::isQ(ctx, sel->getCondition())) ||
+               (isa<PHINode>(u) && spine::isQ(ctx, u));
+    if (!arm) {
+      merges.clear();
+      break;
+    }
+    if (!is_contained(merges, u))
+      merges.push_back(u);
+  }
+  auto cleanOrDefer = [&](Value *Y, const Inverse &inv) {
+    if (merges.empty()) {
+      clean(ctx, Y, inv);
+      return;
+    }
+    SmallVector<Value *, 2> bl = blockersOf(Y);
+    for (Value *m : merges)
+      if (!is_contained(bl, m))
+        bl.push_back(m);
+    spine::shared(ctx).ruleSixPending.push_back(spine::Shared::PendingSix{&ctx, Y, &I, yp, std::move(bl)});
+  };
   if (dead.size() == 2) {
     bool g0 = ruleFiveGarbage(ctx, dead[0]), g1 = ruleFiveGarbage(ctx, dead[1]);
     if (g0 != g1) {
@@ -1442,14 +1519,14 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
           return;
         }
       } else if (auto inv = inverseOf(ctx, I, R, yp)) {
-        clean(ctx, R, *inv);
+        cleanOrDefer(R, *inv);
         return;
       }
     }
   }
   for (Value *Y : dead)
     if (auto inv = inverseOf(ctx, I, Y, yp)) {
-      clean(ctx, Y, *inv);
+      cleanOrDefer(Y, *inv);
       return;
     }
   // cq-2ql9: an old y held back only by such a garbage rail U (an earlier update of y read after I)
