@@ -17,6 +17,10 @@
 //    M4): a handle cell is cqrt_tape_write_i8[_controlled] -> a fresh tape rail, a classical cell a
 //    literal. fputs(s, stdout) of a constant string without '%': an entry with format s, no fields.
 //    stdout is the function's tape; another stream is unimplemented.
+//  - A classical host effect that a tape point precedes (owner ruling 2026-11-02, cq-t8oo / cq-64lv; the
+//    tape-order rule of calls::classify) arrives here with no predicate: printf, fputs and fwrite as above,
+//    puts(s) as the format entry "%s\n" with s a string field, putchar(c) as "%c" with c a field; any
+//    other is unimplemented below (an effect entry has only the controlled form).
 //  - Any other host effect under a quantum predicate is an effect entry (102):
 //    cqrt_tape_effect_controlled(c, t, name), name the callee as a string constant @.cq.effect.<name>,
 //    then the same fields for its arguments. Only the controlled form exists (an unconditional effect is
@@ -247,6 +251,21 @@ bool isStdout(const Value *v) {
   auto *ld = dyn_cast<LoadInst>(v);
   auto *gv = ld ? dyn_cast<GlobalVariable>(ld->getPointerOperand()) : nullptr;
   return gv && gv->isDeclaration() && (gv->getName() == "__stdoutp" || gv->getName() == "stdout");
+}
+
+// A private constant C string g holding f (a format the pass makes).
+Constant *formatGlobal(Module &M, StringRef g, StringRef f) {
+  if (GlobalVariable *gv = M.getNamedGlobal(g))
+    return gv;
+  Constant *init = ConstantDataArray::getString(M.getContext(), f, /*AddNull=*/true);
+  auto *gv = new GlobalVariable(M, init->getType(), /*isConstant=*/true, GlobalValue::PrivateLinkage, init, g);
+  gv->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
+  gv->setAlignment(Align(1));
+  return gv;
+}
+
+Constant *formatConstant(Module &M, StringRef f) {
+  return formatGlobal(M, f == "%c" ? ".cqfmt.putchar" : ".cqfmt.puts", f);
 }
 
 Constant *fwriteFormat(Module &M, uint64_t n) {
@@ -640,6 +659,17 @@ void lowerHostEffect(LoweringContext &ctx, CallBase &CB) {
       }
       emitField(ctx, CB, a, c, tape, flag);
     }
+    return;
+  }
+
+  // puts(s) and putchar(c) with no quantum predicate (a classical call after a tape point, the tape-order
+  // rule of calls::classify): the format entries "%s\n" and "%c" with s / c as their field (C17 7.21.7.9,
+  // 7.21.7.8: the same characters on stdout). Under a quantum predicate they stay effect entries (102).
+  if (!flag && (libFunc(*F, LibFunc_puts) || libFunc(*F, LibFunc_putchar))) {
+    bool puts = libFunc(*F, LibFunc_puts);
+    Value *tape = tapeOf(ctx);
+    ctx.emitCore(abi::CoreSpec{abi::Core::TapeFmt}, {tape, formatConstant(ctx.M, puts ? "%s\n" : "%c")});
+    emitField(ctx, CB, 0, puts ? 's' : 'c', tape, nullptr);
     return;
   }
 

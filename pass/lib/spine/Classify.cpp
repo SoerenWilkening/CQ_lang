@@ -201,7 +201,8 @@ bool abortsOnEveryPath(const Function &G, SmallPtrSetImpl<const Function *> &onS
 
 namespace calls {
 
-Class classify(const CallBase &CB, const TaintInfo &T, const Specialization &S) {
+// The classification before the tape-order rule below (classify).
+static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Specialization &S) {
   if (CB.isInlineAsm())
     return Class::Asm;   // the cq_invert fences included (cq-arch note); rule 27 decides on operands
 
@@ -362,6 +363,238 @@ Class classify(const CallBase &CB, const TaintInfo &T, const Specialization &S) 
   if (qPred && mayHaveHostEffect(CB))
     return Class::HostEffect;   // signal, raise, remove under a quantum arm (102)
   return Class::Classical;
+}
+
+
+// ------------------------------------------------------------------ tape order (CR rule 16, §1.3)
+//
+// Owner ruling 2026-11-02 (cq-t8oo, cq-64lv): once a shot has a tape entry or an abort under a quantum
+// predicate, every later host effect goes on the tape too, so the output keeps C's order (the tape is
+// performed at the end of the shot) and an aborted shot drops it (§1.3: no entry after an abort flag
+// reading 1 is performed). Orchestrator decision under rule 16 (owner may override), the narrow rule:
+//  - A tape point of a function (one specialization) is a call of class HostEffect or Noreturn (a tape
+//    entry, an abort arm, a raise), or a call of a callee specialization that has a tape point itself,
+//    transitively (its entries precede what follows the call).
+//  - A classical host effect (a bodiless callee with effects beyond its pointer arguments, as taint's
+//    hostEffectBeyondArgs reads it: printf, puts, putchar, write, ...; not an allocation, fenv, thread,
+//    setjmp or noreturn call, which keep their own classes) that a tape point of the same function may
+//    precede on the original CFG (llvm::isPotentiallyReachable: the same block after it, a successor, a
+//    later trip of a loop; for an abort arm, whose block ends in `unreachable` while the lowered program
+//    goes on, every call that cannot reach it) is HostEffect: eff-tape records it as a tape entry with no predicate, and what
+//    the tape cannot carry is unimplemented there. Reaching it from a tape point is an over-approximation
+//    of "after one in the shot": an entry the tape records although no tape point preceded it on that
+//    path is still performed in call order, so the output is unchanged.
+//  - Across calls: what a callee does after a caller's tape point is checked at the caller. A call that a
+//    tape point may precede, of a callee that may perform a host effect directly (one its own lowering
+//    leaves a host call: not after a tape point of its own, or in a function that is never rewritten), or
+//    an indirect classical call (callee unknown), is unimplemented. A host effect after the RETURN of a
+//    callee with a tape point is covered by the first bullet (the call is a tape point of the caller).
+//  - Unimplemented as well: an indirect call with a quantum part that may precede a classical host
+//    effect (whether its target records a tape entry is not analysed).
+namespace {
+
+bool hostEffectBeyondArgs(const CallBase &CB) {
+  MemoryEffects ME = CB.getMemoryEffects().getWithoutLoc(IRMemLocation::ArgMem);
+  return !ME.onlyReadsMemory() || CB.mayThrow() || !CB.willReturn();
+}
+
+const Function *directCallee(const CallBase &CB) {
+  return CB.isInlineAsm() ? nullptr : dyn_cast<Function>(CB.getCalledOperand()->stripPointerCasts());
+}
+
+// A host call this function's lowering may leave as a host call (classify's Classical) that the tape
+// rule moves onto the tape when a tape point precedes it.
+bool tapeCandidate(const CallBase &CB, Class base) {
+  if (base != Class::Classical)
+    return false;
+  const Function *F = directCallee(CB);
+  if (!F || !F->isDeclaration() || F->isIntrinsic())
+    return false;
+  if (CB.doesNotReturn() || F->doesNotReturn() || CB.hasFnAttr(Attribute::ReturnsTwice) ||
+      F->hasFnAttribute(Attribute::ReturnsTwice))
+    return false;
+  if (F->getAttributes().getFnAttrs().getAllocKind() != AllocFnKind::Unknown)
+    return false;
+  StringRef n = F->getName();
+  if (n.starts_with("\01_"))
+    n = n.drop_front(2);
+  if (isFenvFunction(n) || n.starts_with("pthread_"))
+    return false;
+  return hostEffectBeyondArgs(CB);
+}
+
+struct TapeOrder {
+  const TaintInfo &T;
+  DenseMap<const Specialization *, bool> specTapes, specHost;   // memo per root
+  explicit TapeOrder(const TaintInfo &T) : T(T) {}
+
+  // The callee specializations a call of C may run (C included), and the never-rewritten functions they
+  // call (an ordinary call of the original), transitively.
+  void reach(const Specialization &C, SmallVectorImpl<const Specialization *> &specs,
+             SmallVectorImpl<const Function *> &fns) {
+    SmallPtrSet<const Specialization *, 8> seenS;
+    SmallPtrSet<const Function *, 8> seenF;
+    specs.push_back(&C);
+    seenS.insert(&C);
+    for (size_t i = 0; i < specs.size(); ++i)
+      for (const BasicBlock &BB : *specs[i]->F)
+        for (const Instruction &I : BB) {
+          auto *X = dyn_cast<CallBase>(&I);
+          const Function *G = X ? directCallee(*X) : nullptr;
+          if (!G || G->isDeclaration() || isa<DbgInfoIntrinsic>(X))
+            continue;
+          if (const Specialization *D = T.calleeSpecialization(*X, *specs[i])) {
+            if (seenS.insert(D).second)
+              specs.push_back(D);
+          } else if (seenF.insert(G).second) {
+            fns.push_back(G);
+          }
+        }
+    for (size_t i = 0; i < fns.size(); ++i)
+      for (const BasicBlock &BB : *fns[i])
+        for (const Instruction &I : BB)
+          if (auto *X = dyn_cast<CallBase>(&I))
+            if (const Function *G = directCallee(*X); G && !G->isDeclaration() && seenF.insert(G).second)
+              fns.push_back(G);
+  }
+
+  // Does a call of the callee specialization C record a tape entry or an abort flag?
+  bool tapes(const Specialization &C) {
+    if (auto it = specTapes.find(&C); it != specTapes.end())
+      return it->second;
+    SmallVector<const Specialization *, 8> specs;
+    SmallVector<const Function *, 8> fns;
+    reach(C, specs, fns);
+    bool r = false;
+    for (const Specialization *D : specs)
+      for (const BasicBlock &BB : *D->F)
+        for (const Instruction &I : BB)
+          if (auto *X = dyn_cast<CallBase>(&I); X && !r && !isa<DbgInfoIntrinsic>(X)) {
+            Class k = classifyBase(*X, T, *D);
+            r = k == Class::HostEffect || k == Class::Noreturn;
+          }
+    return specTapes[&C] = r;
+  }
+
+  bool tapePoint(const CallBase &X, const Specialization &S) {
+    if (isa<DbgInfoIntrinsic>(X))
+      return false;
+    Class k = classifyBase(X, T, S);
+    if (k == Class::HostEffect || k == Class::Noreturn)
+      return true;
+    const Function *G = directCallee(X);
+    if (!G || G->isDeclaration())
+      return false;   // an indirect call is decided at the host effect it may precede (after)
+    if (const Specialization *D = T.calleeSpecialization(X, S))
+      return tapes(*D);
+    return false;
+  }
+
+  // May a tape point of S.F precede CB (on the original CFG)?
+  bool after(const CallBase &CB, const Specialization &S, bool hostEffect) {
+    for (const BasicBlock &BB : *S.F)
+      for (const Instruction &I : BB) {
+        auto *X = dyn_cast<CallBase>(&I);
+        if (!X || X == &CB || isa<DbgInfoIntrinsic>(X))
+          continue;
+        // An abort arm ends its block in `unreachable` on the original CFG, but the lowered program goes on
+        // (rule 16): what cannot reach the noreturn call is after it.
+        if (!isPotentiallyReachable(X, &CB) &&
+            !(classifyBase(*X, T, S) == Class::Noreturn && !isPotentiallyReachable(&CB, X)))
+          continue;
+        if (hostEffect && !X->isInlineAsm() && !directCallee(*X) && classifyBase(*X, T, S) == Class::Indirect)
+          unimplemented("spine: calls::classify: a classical host effect that an indirect call with a quantum "
+                        "part may precede (whether its target records a tape entry is not analysed; CR rule 16, "
+                        "owner ruling 2026-11-02)",
+                        &CB);
+        if (tapePoint(*X, S))
+          return true;
+      }
+    return false;
+  }
+
+  // May a call of the callee specialization C (or of the never-rewritten function G, C null) perform a
+  // host effect directly, not on the tape?
+  bool hostDirect(const Specialization *C, const Function *G) {
+    if (C)
+      if (auto it = specHost.find(C); it != specHost.end())
+        return it->second;
+    SmallVector<const Specialization *, 8> specs;
+    SmallVector<const Function *, 8> fns;
+    if (C)
+      reach(*C, specs, fns);
+    else {
+      fns.push_back(G);
+      SmallPtrSet<const Function *, 8> seenF{G};
+      for (size_t i = 0; i < fns.size(); ++i)
+        for (const BasicBlock &BB : *fns[i])
+          for (const Instruction &I : BB)
+            if (auto *X = dyn_cast<CallBase>(&I))
+              if (const Function *H = directCallee(*X); H && !H->isDeclaration() && seenF.insert(H).second)
+                fns.push_back(H);
+    }
+    bool r = false;
+    for (const Specialization *D : specs)
+      for (const BasicBlock &BB : *D->F)
+        for (const Instruction &I : BB) {
+          auto *X = dyn_cast<CallBase>(&I);
+          if (!X || r || isa<DbgInfoIntrinsic>(X))
+            continue;
+          Class k = classifyBase(*X, T, *D);
+          if (tapeCandidate(*X, k))
+            r = !after(*X, *D, true);   // promoted there when a tape point of its own precedes it
+          else if (k == Class::Classical && !X->isInlineAsm() && !directCallee(*X))
+            r = true;                   // an indirect classical call: unknown callee
+        }
+    for (const Function *H : fns)
+      for (const BasicBlock &BB : *H)
+        for (const Instruction &I : BB) {
+          auto *X = dyn_cast<CallBase>(&I);
+          if (!X || r || isa<DbgInfoIntrinsic>(X))
+            continue;
+          if (X->isInlineAsm())
+            r = X->mayHaveSideEffects();
+          else if (!directCallee(*X))
+            r = true;
+          else
+            r = tapeCandidate(*X, Class::Classical);
+        }
+    if (C)
+      specHost[C] = r;
+    return r;
+  }
+};
+
+} // namespace
+
+Class classify(const CallBase &CB, const TaintInfo &T, const Specialization &S) {
+  Class k = classifyBase(CB, T, S);
+  if (k != Class::Classical && k != Class::Lift)
+    return k;
+  if (isa<DbgInfoIntrinsic>(CB) || CB.getFunction() != S.F)
+    return k;
+  if (tapeCandidate(CB, k)) {
+    TapeOrder o(T);
+    return o.after(CB, S, true) ? Class::HostEffect : k;
+  }
+  const Function *G = directCallee(CB);
+  bool indirect = !G && !CB.isInlineAsm() && k == Class::Classical;
+  if (!indirect && (!G || G->isDeclaration()))
+    return k;
+  TapeOrder o(T);
+  bool host;
+  if (indirect)
+    host = true;
+  else if (const Specialization *D = T.calleeSpecialization(CB, S))
+    host = o.hostDirect(D, nullptr);
+  else
+    host = k == Class::Classical && o.hostDirect(nullptr, G);
+  if (host && o.after(CB, S, false))
+    unimplemented("spine: calls::classify: a call that a tape entry or a quantum-predicated abort may precede, "
+                  "of a callee that may perform a host effect directly (CR rule 16, owner ruling 2026-11-02: "
+                  "every host effect after a tape point goes on the tape)",
+                  &CB);
+  return k;
 }
 
 } // namespace calls
