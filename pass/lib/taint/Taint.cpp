@@ -2419,24 +2419,39 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
     }
   }
   bool underQ = blockCT(CB.getParent()) || cur->ctl;
-  // Invert region (rule 17): the call lies between __cq_invert_begin and __cq_invert_end.
-  bool adj = false;
-  {
+  // Invert region (rule 17): the call lies between __cq_invert_begin and __cq_invert_end: a begin
+  // dominates it with no end between them, and an end after it post-dominates it. Inside an _adj body
+  // every call is an _adj call (the adjoint of the body includes its callees', cq-eive).
+  bool adj = cur->adj;
+  if (!adj) {
     FnInfo &fi = fn(cur->F);
-    const Instruction *beginI = nullptr;
+    auto named = [](const Instruction &I, StringRef n) {
+      auto *C = dyn_cast<CallBase>(&I);
+      return C && C->getCalledFunction() && C->getCalledFunction()->getName() == n;
+    };
+    // a dominates b at instruction granularity; a post-dominates b likewise.
+    auto dom = [&](const Instruction *a, const Instruction *b) { return fi.DT->dominates(a, b); };
+    auto pdom = [&](const Instruction *a, const Instruction *b) {
+      if (a->getParent() == b->getParent())
+        return b->comesBefore(a);
+      return fi.PDT->dominates(a->getParent(), b->getParent());
+    };
+    std::vector<const Instruction *> begins, ends;
     for (const BasicBlock *BB : fi.rpo)
-      for (const Instruction &I : *BB)
-        if (auto *C = dyn_cast<CallBase>(&I))
-          if (C->getCalledFunction() && C->getCalledFunction()->getName() == "__cq_invert_begin" &&
-              fi.DT->dominates(&I, &CB))
-            beginI = &I;
-    if (beginI)
-      for (const BasicBlock *BB : fi.rpo)
-        for (const Instruction &I : *BB)
-          if (auto *C = dyn_cast<CallBase>(&I))
-            if (C->getCalledFunction() && C->getCalledFunction()->getName() == "__cq_invert_end" &&
-                fi.PDT->dominates(I.getParent(), CB.getParent()) && fi.DT->dominates(beginI, &I))
-              adj = true;
+      for (const Instruction &I : *BB) {
+        if (named(I, "__cq_invert_begin"))
+          begins.push_back(&I);
+        else if (named(I, "__cq_invert_end"))
+          ends.push_back(&I);
+      }
+    for (const Instruction *b : begins) {
+      if (!dom(b, &CB))
+        continue;
+      bool closed = llvm::any_of(ends, [&](const Instruction *e) { return dom(b, e) && dom(e, &CB); });
+      bool open = llvm::any_of(ends, [&](const Instruction *e) { return dom(b, e) && pdom(e, &CB); });
+      if (!closed && open)
+        adj = true;
+    }
   }
   // Depth recursion (rule 14): a recursive call under a quantum predicate.
   unsigned depth = 0;

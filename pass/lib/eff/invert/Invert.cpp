@@ -201,7 +201,9 @@ Region analyze(LoweringContext &ctx, BasicBlock *bb, Instruction *begin, BasicBl
   Function &F = *bb->getParent();
   if (bb == eb) {
     if (begin && !begin->comesBefore(stop))
-      unimplemented("eff-invert: __cq_invert_end before its __cq_invert_begin", stop);
+      internalError("eff-invert: __cq_invert_end before its __cq_invert_begin (the spine pairs a begin with an "
+                    "end after it)",
+                    stop);
     R.rpo = {bb};
     R.blocks.insert(bb);
     R.segs.emplace_back();
@@ -490,8 +492,8 @@ std::optional<Gate> gateOf(Instruction *I) {
     if (cl->unc)
       unimplemented("eff-invert: a clone twin inside a cq_invert region (a clone call with results)", C);
     if (!cl->adj)
-      unimplemented("eff-invert: a clone call inside a cq_invert region that is not its _adj specialization "
-                    "(rule 17: clones as _adj)",
+      internalError("eff-invert: a clone call inside a cq_invert region that is not its _adj specialization "
+                    "(taint specializes every call of a region and of an _adj body as _adj)",
                     C);
     if (!C->getType()->isVoidTy())
       unimplemented("eff-invert: an _adj clone call with results inside a cq_invert region (rule 17 defines no "
@@ -524,19 +526,53 @@ bool nonDiagonal(const Gate &g) {
          (g.core.op == abi::Core::Ry || g.core.op == abi::Core::RyQAngle);
 }
 
-// Push/pop of classical values as i32 words, low word first (CR §1.3).
-Value *asInt(IRBuilder<> &B, Value *v, const Instruction *at) {
-  Type *t = v->getType();
+// Push/pop of classical values as i32 words, low word first (CR §1.3). A value of any first-class type
+// with a fixed size is pushed leaf by leaf: a scalar (integer, pointer as i64, floating point by its
+// bits) as its words; a vector, array or struct as its elements in index order. Pops run in the reverse
+// order (the stack is last-in-first-out) and rebuild the value.
+bool scalarLeaf(Type *t) { return t->isIntegerTy() || t->isPointerTy() || t->isFloatingPointTy(); }
+Type *leafInt(IRBuilder<> &B, Type *t) {
   if (t->isIntegerTy())
-    return v;
+    return t;
   if (t->isPointerTy())
-    return B.CreatePtrToInt(v, B.getInt64Ty());
-  if (t->isHalfTy() || t->isBFloatTy() || t->isFloatTy() || t->isDoubleTy() || t->isX86_FP80Ty())
-    return B.CreateBitCast(v, B.getIntNTy(t->getPrimitiveSizeInBits()));
-  unimplemented("eff-invert: a classical value of this type on the push/pop stack", at);
+    return B.getInt64Ty();
+  return B.getIntNTy(t->getPrimitiveSizeInBits());
+}
+unsigned elementCount(Type *t) {
+  if (auto *v = dyn_cast<FixedVectorType>(t))
+    return v->getNumElements();
+  if (auto *a = dyn_cast<ArrayType>(t))
+    return a->getNumElements();
+  return cast<StructType>(t)->getNumElements();
+}
+Type *elementType(Type *t, unsigned i) {
+  if (auto *v = dyn_cast<FixedVectorType>(t))
+    return v->getElementType();
+  if (auto *a = dyn_cast<ArrayType>(t))
+    return a->getElementType();
+  return cast<StructType>(t)->getElementType(i);
+}
+void checkPushable(Type *t, const Instruction *at) {
+  if (scalarLeaf(t))
+    return;
+  if (isa<FixedVectorType>(t) || isa<ArrayType>(t) || isa<StructType>(t)) {
+    for (unsigned i = 0, n = elementCount(t); i < n; ++i)
+      checkPushable(elementType(t, i), at);
+    return;
+  }
+  // A token, label, metadata, void or scalable vector value is never an operand a gate reads.
+  internalError("eff-invert: a classical value with no fixed bit size read by a gate", at);
 }
 void pushValue(IRBuilder<> &B, FunctionCallee push, Value *v, const Instruction *at) {
-  Value *x = asInt(B, v, at);
+  Type *t = v->getType();
+  checkPushable(t, at);
+  if (!scalarLeaf(t)) {
+    for (unsigned i = 0, n = elementCount(t); i < n; ++i)
+      pushValue(B, push, isa<FixedVectorType>(t) ? B.CreateExtractElement(v, B.getInt64(i)) : B.CreateExtractValue(v, i),
+                at);
+    return;
+  }
+  Value *x = t->isIntegerTy() ? v : t->isPointerTy() ? B.CreatePtrToInt(v, B.getInt64Ty()) : B.CreateBitCast(v, leafInt(B, t));
   unsigned bits = x->getType()->getIntegerBitWidth();
   for (unsigned w = 0; w * 32 < bits; ++w) {
     Value *s = w ? B.CreateLShr(x, w * 32) : x;
@@ -544,13 +580,18 @@ void pushValue(IRBuilder<> &B, FunctionCallee push, Value *v, const Instruction 
   }
 }
 Value *popValue(IRBuilder<> &B, FunctionCallee pop, Type *t, const Instruction *at) {
-  Type *it = t;
-  if (t->isPointerTy())
-    it = B.getInt64Ty();
-  else if (!t->isIntegerTy())
-    it = B.getIntNTy(t->getPrimitiveSizeInBits());
-  if (!it->isIntegerTy() || it->getIntegerBitWidth() == 0)
-    unimplemented("eff-invert: a classical value of this type on the push/pop stack", at);
+  checkPushable(t, at);
+  if (!scalarLeaf(t)) {
+    unsigned n = elementCount(t);
+    std::vector<Value *> el(n);
+    for (unsigned i = n; i-- > 0;)
+      el[i] = popValue(B, pop, elementType(t, i), at);
+    Value *agg = PoisonValue::get(t);
+    for (unsigned i = 0; i < n; ++i)
+      agg = isa<FixedVectorType>(t) ? B.CreateInsertElement(agg, el[i], B.getInt64(i)) : B.CreateInsertValue(agg, el[i], i);
+    return agg;
+  }
+  Type *it = leafInt(B, t);
   unsigned bits = it->getIntegerBitWidth();
   unsigned words = (bits + 31) / 32;
   Value *x = nullptr;
@@ -758,18 +799,19 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
   }
 
   // Step 3: forward lowering into the skeleton.
-  Instruction *lastBefore = cb->empty() ? nullptr : &cb->back();
+  // The region's first segment gets an output block of its own (merged back at the end), so a flush in
+  // it sees only the region's rails.
   unsigned scope = U.openScope();
   std::vector<BasicBlock *> S(nS, nullptr);
-  S[0] = cb;
   BasicBlock *anchor = cb;
   auto newBlock = [&]() {
     BasicBlock *b = BasicBlock::Create(C, "", &OF, anchor->getNextNode());
     anchor = b;
     return b;
   };
-  for (unsigned s = 1; s < nS; ++s)
+  for (unsigned s = 0; s < nS; ++s)
     S[s] = newBlock();
+  BranchInst::Create(S[0], cb);
 
   DenseSet<const BasicBlock *> done;
   DenseMap<const CallInst *, CallBase *> cloneOrig;   // output clone call -> the original call it lowers
@@ -855,6 +897,15 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
                       "across trips",
                       phi);
 
+  // Rule 5 in the forward gate list: a rail made and last read in one segment is uncomputed there, as
+  // early as the scheduling invariant allows (before a non-diagonal gate on one of its sources), the
+  // spine's flush at a block's end (Uncompute::flushBefore). Its _unc and free pair in the segment.
+  for (unsigned s = 0; s < nS; ++s) {
+    auto *t = new UnreachableInst(C, S[s]);
+    U.flushBefore(t);
+    t->eraseFromParent();
+  }
+
   // The uncompute of every rail the region made (step 3's Z).
   BasicBlock *Zb = BasicBlock::Create(C, "", &OF);
   B.SetInsertPoint(Zb);
@@ -869,7 +920,7 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
   DenseMap<const Value *, std::pair<unsigned, unsigned>> gatePos;   // gate call -> (segment, index)
   DenseMap<const Instruction *, unsigned> skel;                      // classical instruction -> segment
   for (unsigned s = 0; s < nS; ++s) {
-    auto it = s == 0 ? (lastBefore ? std::next(lastBefore->getIterator()) : cb->begin()) : S[s]->begin();
+    auto it = S[s]->begin();
     for (; it != S[s]->end(); ++it) {
       Instruction &I = *it;
       if (I.isTerminator())
@@ -987,22 +1038,36 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
   for (unsigned k = 0; k < Z.size(); ++k)
     makerNamed(targetOfZ(Z[k]), Z[k].call, "uncomputed").z.push_back(k);
 
-  // The basis value of a seed at its free: lit XOR the uncontrolled xorc literals on it.
-  auto foldXorc = [&](Value *v, CallInst *c) -> Value * {
-    Value *lit = c->getArgOperand(1);
-    Value *r = isa<Constant>(v) && isa<Constant>(lit)
-                   ? ConstantFoldBinaryInstruction(Instruction::Xor, cast<Constant>(v), cast<Constant>(lit))
-                   : nullptr;
-    if (!r)
-      unimplemented("eff-invert: a seed whose freed value is not a constant", c);
-    return r;
+  // The basis value of a seed at its free: lit XOR the uncontrolled xorc literals on it, folded when
+  // both are constants, else a classical xor of the skeleton at the end of the seed's segment (the
+  // literals are classical values available there: a seed is written in its own segment only).
+  auto foldXorc = [&](Value *v, CallInst *c, unsigned seg) -> Value * {
+    Value *lit = c->getArgOperand(c->arg_size() - 1);
+    if (lit->getType() != v->getType())
+      internalError("eff-invert: an xorc literal whose type is not its seed's", c);
+    if (isa<Constant>(v) && isa<Constant>(lit))
+      if (Value *r = ConstantFoldBinaryInstruction(Instruction::Xor, cast<Constant>(v), cast<Constant>(lit)))
+        return r;
+    for (Value *x : {v, lit})
+      if (auto *I = dyn_cast<Instruction>(x)) {
+        auto k = skel.find(I);
+        if (k != skel.end() && k->second != seg && !R.dom[k->second].test(seg))
+          internalError("eff-invert: a seed's xorc literal not available in the seed's segment", c);
+      }
+    auto *x = BinaryOperator::CreateXor(v, lit, "", S[seg]);
+    skel[x] = seg;
+    return x;
   };
   for (Maker &m : makers) {
     std::vector<Gate> &Gs = G[m.seg];
     if (m.localFree >= 0 && !m.z.empty())
       internalError("eff-invert: a rail freed in its segment and uncomputed again after the region", m.call);
-    // Writes on the rail in other segments (their undo would run where they did not).
-    for (unsigned s = 0; s < nS; ++s)
+    // Writes on the rail in other segments (their undo would run where they did not). A seed the region
+    // keeps is allocated before the whole reverse and never freed in it: its writes run reversed
+    // wherever they ran forward.
+    bool keptSeed = !m.tmpl && m.localFree < 0 &&
+                    llvm::none_of(m.z, [&](unsigned k) { return Z[k].kind == GK::Free; });
+    for (unsigned s = 0; s < nS && !keptSeed; ++s)
       for (const Gate &g : G[s])
         if (writeTarget(g) == m.call && s != m.seg)
           unimplemented("eff-invert: a write on a rail of a cq_invert region outside the segment making it", g.call);
@@ -1029,25 +1094,45 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
     // A seed.
     if (m.localUnc >= 0)
       internalError("eff-invert: an _unc of a seed", m.call);
-    for (const Gate &g : Gs)
-      if (g.kind == GK::Xorc && g.core.ctl && writeTarget(g) == m.call)
-        unimplemented("eff-invert: a controlled xorc on a seed made inside a cq_invert region", g.call);
-    Value *v = m.call->getArgOperand(0);
+    bool zFree = llvm::any_of(m.z, [&](unsigned k) { return Z[k].kind == GK::Free; });
+    if (m.localFree < 0 && !zFree) {
+      m.kept = true;   // a register the region prepares, never freed in it: no freed value is needed
+      continue;
+    }
+    if (m.localFree < 0 && Z[m.z.back()].kind != GK::Free)
+      internalError("eff-invert: a seed of a cq_invert region written after its free", m.call);
+    // The xorcs on the seed up to its free. An uncontrolled one adds its literal; a controlled one is
+    // not a classical write, and the free (CR §0: a rail in a known basis state) asserts that the
+    // controlled ones cancel: they pair up as identical gates (same control, same literal).
+    std::vector<CallInst *> writes;
     unsigned endIdx = m.localFree >= 0 ? m.localFree : Gs.size();
     for (unsigned j = m.idx + 1; j < endIdx; ++j)
       if (Gs[j].kind == GK::Xorc && writeTarget(Gs[j]) == m.call)
-        v = foldXorc(v, Gs[j].call);
-    if (m.localFree < 0) {
-      if (m.z.empty()) {
-        m.kept = true;
-        continue;
-      }
-      if (Z[m.z.back()].kind != GK::Free)
-        unimplemented("eff-invert: a seed of a cq_invert region not freed last", m.call);
+        writes.push_back(Gs[j].call);
+    if (m.localFree < 0)
       for (unsigned k : m.z)
         if (Z[k].kind == GK::Xorc)
-          v = foldXorc(v, Z[k].call);
+          writes.push_back(Z[k].call);
+    Value *v = m.call->getArgOperand(0);
+    std::vector<CallInst *> open;   // controlled xorcs not yet paired
+    for (CallInst *w : writes) {
+      std::optional<Gate> g = gateOf(w);
+      if (!g->core.ctl) {
+        v = foldXorc(v, w, m.seg);
+        continue;
+      }
+      auto same = llvm::find_if(open, [&](CallInst *o) {
+        return o->getArgOperand(0) == w->getArgOperand(0) && o->getArgOperand(2) == w->getArgOperand(2);
+      });
+      if (same != open.end())
+        open.erase(same);
+      else
+        open.push_back(w);
     }
+    if (!open.empty())
+      internalError("eff-invert: a seed freed after a controlled xorc that no identical one undoes (CR §0: a "
+                    "free sees a known basis state)",
+                    open.front());
     m.freed = v;
   }
 
@@ -1447,7 +1532,7 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
   // Tidy: fold the blocks a straight chain leaves.
   for (BasicBlock *b : std::vector<BasicBlock *>(Eb.begin(), Eb.end()))
     MergeBlockIntoPredecessor(b);
-  std::vector<BasicBlock *> rest(S.begin() + 1, S.end());
+  std::vector<BasicBlock *> rest(S.begin(), S.end());
   rest.push_back(REexit);
   rest.insert(rest.end(), Rb.begin(), Rb.end());
   rest.insert(rest.end(), REb.begin(), REb.end());
