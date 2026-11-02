@@ -15,6 +15,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 
 namespace llvm { class LoopInfo; }
@@ -62,6 +63,11 @@ Pred computedGotoEdge(const llvm::IndirectBrInst &ib, const llvm::BasicBlock *to
 // ptrtoint(blockaddress(@f, %d)) as i64: a run-time constant naming d (the lowered function keeps d under
 // its identity, CR rule 13).
 llvm::Constant *caseAddress(const llvm::BasicBlock *d);
+// The distinct destinations of ib in its destination list's order, and, at the builder, the i32 position of a
+// classical address among them (the last where it equals none of the others): a classical computed goto is a
+// switch on that position.
+llvm::SmallVector<llvm::BasicBlock *, 4> computedGotoDestinations(const llvm::IndirectBrInst &ib);
+llvm::Value *computedGotoPosition(llvm::IRBuilder<> &B, llvm::Value *address, const llvm::IndirectBrInst &ib);
 void lowerBranch(LoweringContext &, llvm::BranchInst &);
 llvm::Value *lowerMerge(LoweringContext &, llvm::PHINode &);
 // cq-oa67 (rules 9, 25, 26): a quantum phi of a vector, struct or array, merged field by field; binds its

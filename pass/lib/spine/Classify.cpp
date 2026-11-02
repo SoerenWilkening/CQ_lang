@@ -822,7 +822,7 @@ Case classify(const Loop &L, const TaintInfo &T, const Specialization &S) {
       for (auto &d : ds)
         if (!quantumValue(T, S, d.first) && exitCondCountKnown(*L.getHeader(), *d.first, d.second))
           classicalBound = true;
-    } else if (isa<SwitchInst>(t)) {
+    } else if (isa<SwitchInst>(t) || isa<IndirectBrInst>(t)) {   // rule 13: a computed goto is a switch
       if (quantumTerm(X) || internal)
         anyQuantum = true;
       else

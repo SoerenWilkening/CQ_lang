@@ -97,6 +97,16 @@ Shared &shared(LoweringContext &ctx) {
   return *sh;
 }
 
+// CR rule 13 (b137e75): a code address is an integer of pointer width: where the ABI takes an i64 (a seed, a
+// literal operand), a classical code address of the new IR is read as ptrtoint.
+Value *codeAddressAsInt(IRBuilder<> &B, Value *v, Type *want) {
+  if (!v->getType()->isPointerTy() || !want->isIntegerTy(64) || !isCodeAddress(v))
+    return v;
+  if (auto *c = dyn_cast<Constant>(v))
+    return ConstantExpr::getPtrToInt(c, want);
+  return B.CreatePtrToInt(v, want);
+}
+
 bool isQ(LoweringContext &ctx, const Value *v) {
   if (isa<Constant>(v) || isa<BasicBlock>(v) || isa<MetadataAsValue>(v) || isa<InlineAsm>(v))
     return false;
@@ -261,6 +271,8 @@ Value *LoweringContext::emitTemplate(const abi::TemplateSpec &spec, ArrayRef<Ope
                   orig);
   SmallVector<Value *, 4> args;
   for (unsigned i = 0; i < ops.size(); ++i) {
+    if (!ops[i].handle)
+      ops[i].v = spine::codeAddressAsInt(B(), ops[i].v, ft->getParamType(i));
     if (ops[i].v->getType() != ft->getParamType(i))
       internalError("spine: " + abi::name(spec, false) + " argument " + std::to_string(i) + " has the wrong type",
                     ops[i].v);
@@ -286,9 +298,11 @@ CallInst *LoweringContext::emitCore(const abi::CoreSpec &spec, ArrayRef<Value *>
   if (ft->getNumParams() != args.size())
     internalError("spine: " + abi::name(spec) + " takes " + std::to_string(ft->getNumParams()) +
                   " arguments, got " + std::to_string(args.size()));
-  for (unsigned i = 0; i < args.size(); ++i)
+  for (unsigned i = 0; i < args.size(); ++i) {
+    args[i] = spine::codeAddressAsInt(B(), args[i], ft->getParamType(i));
     if (args[i]->getType() != ft->getParamType(i))
       internalError("spine: " + abi::name(spec) + " argument " + std::to_string(i) + " has the wrong type", args[i]);
+  }
   CallInst *call = B().CreateCall(fc, args);
   for (size_t t = 0; t < impl->sh->gateLogs.size(); ++t)
     if (impl->sh->gateLogOpen[t])

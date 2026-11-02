@@ -2077,6 +2077,8 @@ bool spine::measuredOnEveryPath(LoweringContext &ctx, const Value *v, const Inst
       return ctx.T.isQuantum(br->getCondition(), ctx.S);
     if (auto *sw = dyn_cast<SwitchInst>(t))
       return ctx.T.isQuantum(sw->getCondition(), ctx.S);
+    if (auto *ib = dyn_cast<IndirectBrInst>(t))
+      return ctx.T.isQuantum(ib->getAddress(), ctx.S);   // rule 13: a switch on the address
     return false;
   };
   // Walk the classical choices from the end of D; a block holding a measurement ends the path (measured);

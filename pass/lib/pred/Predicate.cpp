@@ -283,6 +283,25 @@ Constant *caseAddress(const BasicBlock *d) {
   return ConstantExpr::getPtrToInt(BlockAddress::get(b->getParent(), b), Type::getInt64Ty(d->getContext()));
 }
 
+SmallVector<BasicBlock *, 4> computedGotoDestinations(const IndirectBrInst &ib) {
+  SmallVector<BasicBlock *, 4> d;
+  for (BasicBlock *s : successors(const_cast<IndirectBrInst *>(&ib)))
+    if (!is_contained(d, s))
+      d.push_back(s);
+  return d;
+}
+
+Value *computedGotoPosition(IRBuilder<> &B, Value *a, const IndirectBrInst &ib) {
+  SmallVector<BasicBlock *, 4> ds = computedGotoDestinations(ib);
+  Value *x = a->getType()->isPointerTy() ? B.CreatePtrToInt(a, B.getInt64Ty()) : a;
+  if (!x->getType()->isIntegerTy(64))
+    internalError("pred: a computed goto address that is no pointer or i64", &ib);
+  Value *pos = B.getInt32(ds.size() - 1);
+  for (unsigned k = ds.size() - 1; k-- > 0;)
+    pos = B.CreateSelect(B.CreateICmpEQ(x, caseAddress(ds[k])), B.getInt32(k), pos);
+  return pos;
+}
+
 Pred computedGotoEdge(const IndirectBrInst &ib, const BasicBlock *to) {
   using pred_detail::Bdd;
   Bdd &m = Bdd::get();

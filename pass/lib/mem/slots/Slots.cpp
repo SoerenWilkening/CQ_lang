@@ -822,6 +822,11 @@ uint64_t scalarCellBytes(Type *t, const DataLayout &DL, const Value *at) {
 
 StructType *columnStruct(const Value *root);
 
+// CR rule 13 (b137e75): an object of pointer cells only code addresses are stored into: its cells are i64.
+bool codeCells(Type *t, const Value *root) {
+  return scalarCellType(t)->isPointerTy() && codeAddressCells(root);
+}
+
 void flattenRecord(Type *t, int64_t off, const DataLayout &DL, SmallVectorImpl<ObjInfo::Field> &out,
                    const Value *at) {
   if (auto *st = dyn_cast<StructType>(t)) {
@@ -1161,14 +1166,22 @@ ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId 
     if (byteView) {
       info.cellBytes = 1;
       info.cellTy = Type::getInt8Ty(ctx.M.getContext());
+    } else if (codeCells(ai->getAllocatedType(), ai)) {
+      info.cellBytes = 8;   // CR rule 13 (b137e75): a cell only code addresses are stored into holds an i64
+      info.cellTy = Type::getInt64Ty(ctx.M.getContext());
     } else {
       info.cellBytes = scalarCellBytes(ai->getAllocatedType(), DL, ai);
       info.cellTy = scalarCellType(ai->getAllocatedType());
     }
   } else if (auto *gv = dyn_cast<GlobalVariable>(root)) {
     info.kind = RootKind::Global;
-    info.cellBytes = scalarCellBytes(gv->getValueType(), DL, gv);
-    info.cellTy = scalarCellType(gv->getValueType());
+    if (codeCells(gv->getValueType(), gv)) {
+      info.cellBytes = 8;   // rule 13: code-address cells are i64 handles
+      info.cellTy = Type::getInt64Ty(ctx.M.getContext());
+    } else {
+      info.cellBytes = scalarCellBytes(gv->getValueType(), DL, gv);
+      info.cellTy = scalarCellType(gv->getValueType());
+    }
   } else {
     info.kind = isa<Argument>(root) ? RootKind::Param : RootKind::Heap;
     if (info.kind == RootKind::Heap && heapRecord(ctx, st, info, o)) {
@@ -1854,6 +1867,8 @@ Site siteOf(LoweringContext &ctx, FnState &st, const Instruction &I, const Value
 RailType cellRail(const ObjInfo &info, Type *ty, const Instruction &I) {
   if (info.boolCells)
     return RailType{Kind::Int, 1};
+  if (ty->isPointerTy() && info.cellTy && info.cellTy->isIntegerTy(64))
+    return RailType{Kind::Int, 64};   // rule 13: a code address in its i64 cell
   if (!ty->isIntegerTy() && !ty->isFloatingPointTy())
     unimplemented("mem-slots: a slot cell accessed as a non-scalar type", &I);
   return railTypeOf(ty);
@@ -5886,6 +5901,14 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
   using What = StoreWhat;
   What what;
   Operand val = ctx.operand(v);
+  bool code = v->getType()->isPointerTy() && w.kind == Kind::Int && w.bits == 64;
+  if (code && !val.handle) {
+    // CR rule 13 (b137e75): a classical code address stored into its i64 cell is the integer it is.
+    if (auto *c = dyn_cast<Constant>(val.v))
+      val.v = ConstantExpr::getPtrToInt(c, B.getInt64Ty());
+    else
+      val.v = B.CreatePtrToInt(val.v, B.getInt64Ty());
+  }
   if (s.info->boolCells && val.handle)
     if (auto *z = dyn_cast<ZExtInst>(v); z && z->getSrcTy()->isIntegerTy(1)) {
       Operand src = ctx.operand(z->getOperand(0));
@@ -5955,7 +5978,7 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
     what = What::Computed;
   } else if (!val.handle) {
     // Rule 20: a slot cell is homogeneous; a classical store materialises a seed rail (rule 7).
-    if (v->getType()->isPointerTy())
+    if (v->getType()->isPointerTy() && !code)
       unimplemented("mem-slots: a pointer stored into a slot object", &stI);
     // A seed that a cell keeps (a dynamic, escaping, parameter or extern global object) but that is
     // overwritten before anything can read it is never materialised (rules 7, 20; cq-c9il).

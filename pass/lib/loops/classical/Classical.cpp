@@ -117,6 +117,12 @@
 
 using namespace llvm;
 
+namespace {
+// CR rule 13 (b137e75): a carried or merged code address is an i64 handle (a data pointer never reaches a rail
+// here: it is a fat pointer, rule 21).
+cq::RailType railOf(Type *t) { return t->isPointerTy() ? cq::RailType{cq::Kind::Int, 64} : cq::railTypeOf(t); }
+} // namespace
+
 namespace cq::loops {
 
 namespace {
@@ -336,7 +342,7 @@ Inv inverseOf(LoweringContext &ctx, Instruction &U, const Value *Y, Operand yp) 
   if (!bijectiveIn(U, Y))
     internalError("loops-classical: rule 6 inverse of an update that is no bijection in the carried value", &U);
   abi::TemplateSpec spec;
-  spec.w = railTypeOf(U.getType());
+  spec.w = railOf(U.getType());
   if (auto *bo = dyn_cast<BinaryOperator>(&U)) {
     unsigned i = bo->getOperand(0) == Y ? 0 : 1;
     Value *Z = bo->getOperand(1 - i);
@@ -499,7 +505,7 @@ private:
   Value *asHandle(Operand o, Type *ty) {
     if (o.handle)
       return o.v;
-    return seed(o.v, railTypeOf(ty));
+    return seed(o.v, railOf(ty));
   }
   Value *select(Value *cond, Operand t, Operand f, RailType w) {
     abi::TemplateSpec spec;
@@ -811,7 +817,8 @@ void Unit::check(Loop &L, Case c) {
     unimplemented("loops-classical: a rule-14 loop with more than one exiting block or exit block",
                   L.getHeader()->getTerminator());
   for (PHINode &p : L.getHeader()->phis())
-    if (isQ(&p) && !(p.getType()->isIntegerTy() || p.getType()->isFloatingPointTy()))
+    if (isQ(&p) && !(p.getType()->isIntegerTy() || p.getType()->isFloatingPointTy()) &&
+        !(p.getType()->isPointerTy() && isCodeAddress(&p)))   // rule 13: a carried code address is an i64 handle
       unimplemented("loops-classical: a quantum carried value of non-scalar type (aggr, fatptr)", &p);
   for (BasicBlock *b : L.blocks())
     for (Instruction &I : *b) {
@@ -1010,8 +1017,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       for (Instruction &I : *a) {
         // The arm's branches are flags of its blocks and edges, its phis rule 9 selects, its effects run
         // under its flag (latchExits).
-        if (I.isTerminator() && !isa<BranchInst>(I) && !isa<SwitchInst>(I))
-          internalError("loops-classical: an exit arm block ending in other than a branch or switch", &I);
+        if (I.isTerminator() && !isa<BranchInst>(I) && !isa<SwitchInst>(I) && !isa<IndirectBrInst>(I))
+          internalError("loops-classical: an exit arm block ending in other than a branch, switch or computed goto", &I);
         // A value of the arm read after the loop other than by C's phi: its block dominates the reader and so C
         // (SSA), every unit edge into C passes it in the exiting trip: a capture of its own (xreads), as a
         // loop value's.
@@ -1159,7 +1166,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       std::vector<std::pair<Pred, Operand>> arms;
       for (BasicBlock *u : outsideP)
         arms.push_back({ctx.preds().edge(u, header), ctx.operand(p.getIncomingValueForBlock(u))});
-      return Operand{selectChain(ctx, arms, railTypeOf(p.getType())), true};
+      return Operand{selectChain(ctx, arms, railOf(p.getType())), true};
     }
     PHINode *np = PHINode::Create(q ? handleTy(ctx.M.getContext()) : p.getType(), outsideP.size(), p.getName());
     np->insertInto(cur, cur->getFirstNonPHIIt());
@@ -1173,7 +1180,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       if (q && !o.handle) {
         IRBuilderBase::InsertPointGuard g(ctx.B());
         ctx.B().SetInsertPoint(it->second->getTerminator());
-        o = Operand{seed(o.v, railTypeOf(p.getType())), true};
+        o = Operand{seed(o.v, railOf(p.getType())), true};
       }
       np->addIncoming(o.v, it->second);
     }
@@ -1194,7 +1201,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       } else if (r->initDirect) {
         h = o.v;
       } else {
-        RailType w = railTypeOf(p.getType());
+        RailType w = railOf(p.getType());
         CallInst *c0 = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
                                     {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
         CallInst *cc = ctx.emitCore(abi::CoreSpec{abi::Core::Copy, w}, {o.v, c0});
@@ -1227,11 +1234,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       if (!nextOf.count(v)) {
         if (!(v->getType()->isIntegerTy() || v->getType()->isFloatingPointTy()))
           unimplemented("loops-classical: a non-scalar value read after a case-3 loop", v);
-        RailType w = railTypeOf(v->getType());
+        RailType w = railOf(v->getType());
         capInits.push_back(seed(Constant::getNullValue(irTypeOf(ctx.M.getContext(), w)), w));
       }
     for (CPhi &cp : cphis) {
-      RailType w = railTypeOf(cp.type());
+      RailType w = railOf(cp.type());
       capInits.push_back(seed(Constant::getNullValue(irTypeOf(ctx.M.getContext(), w)), w));
     }
   }
@@ -1343,6 +1350,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       return br->isConditional() && isQ(br->getCondition());
     if (auto *sw = dyn_cast<SwitchInst>(t))
       return isQ(sw->getCondition());
+    if (auto *ib = dyn_cast<IndirectBrInst>(t))
+      return isQ(ib->getAddress());   // rule 13: a switch on the address
     return false;
   };
   // A K-unit's edges into its continuation C: one linearized edge (the unit's code runs in the open block,
@@ -1410,7 +1419,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           internalError("loops-classical: rule 6 on a carried value whose update is not its next rail in the "
                         "header's segment",
                         cv.orig);
-        RailType w = railTypeOf(cv.orig->getType());
+        RailType w = railOf(cv.orig->getType());
         RailId old = ctx.unc().idOf(cv.np);
         if (!c3) {
           if (!r->rotated)
@@ -1441,13 +1450,13 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           nexts.push_back(sel);
         }
       } else if (c3) {
-        nexts.push_back(select(aCur, o, Operand{cv.np, true}, railTypeOf(cv.orig->getType())));
+        nexts.push_back(select(aCur, o, Operand{cv.np, true}, railOf(cv.orig->getType())));
       } else {
         nexts.push_back(asHandle(o, cv.orig->getType()));
       }
     }
     for (auto &[v, cp] : caps)
-      cp->addIncoming(select(aPhi, ctx.operand(v), Operand{cp, true}, railTypeOf(v->getType())), cur);
+      cp->addIncoming(select(aPhi, ctx.operand(v), Operand{cp, true}, railOf(v->getType())), cur);
   };
 
   // The seeds minted for classical incomings of phis of handles (mintEdgeSeeds below), per (phi, edge source).
@@ -1464,7 +1473,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         // edge from outside the unit carries its own incoming (a seed where classical, rule 7).
         std::vector<std::pair<Pred, const Value *>> ja = ctx.takeJoinArms(&p);
         Operand uo = ctx.operand(&p);
-        RailType w = railTypeOf(p.getType());
+        RailType w = railOf(p.getType());
         if (!ja.empty()) {
           if (real)
             internalError("loops-classical: a join arm of a K-unit's phi at a classical join (the unit's real "
@@ -1534,13 +1543,14 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         // Every arm names one rail (a register rotated in place on one arm, rule 10; 126): the merge is
         // that rail, no choice to make (the spine's state-prep merge).
         Value *one = ctx.operand(p.getIncomingValue(0)).v;
-        if (!p.getType()->isVectorTy() && !p.getType()->isAggregateType() && !p.getType()->isPointerTy() &&
+        bool code = p.getType()->isPointerTy() && isCodeAddress(&p);   // rule 13: an i64 integer
+        if (!p.getType()->isVectorTy() && !p.getType()->isAggregateType() && (!p.getType()->isPointerTy() || code) &&
             all_of(p.incoming_values(), [&](Value *v) { return ctx.operand(v).v == one; })) {
           ctx.bind(&p, asHandle(ctx.operand(p.getIncomingValue(0)), p.getType()));
           continue;
         }
         // cq-pfpy: a composite merges field by field (rule 26), a pointer is a fat-pointer merge (rule 21).
-        if (p.getType()->isPointerTy())
+        if (p.getType()->isPointerTy() && !code)
           fatptr::lower(ctx, &p);
         else if (p.getType()->isAggregateType() || p.getType()->isVectorTy())
           lowerMergeFields(ctx, p);
@@ -1548,7 +1558,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           ctx.bind(&p, lowerMerge(ctx, p));
         continue;
       }
-      if (q && p.getType()->isPointerTy()) {
+      if (q && p.getType()->isPointerTy() && !isCodeAddress(&p)) {
         // Rule 21: a quantum pointer phi is a fat-pointer merge, fatptr's construction (its uses lower it).
         fatptr::lower(ctx, &p);
         internalError("loops-classical: fatptr::lower of a quantum pointer phi returned", &p);
@@ -1613,7 +1623,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
                 internalError("loops-classical: a classical incoming of a phi of handles with no edge seed", &p);
               IRBuilderBase::InsertPointGuard g(ctx.B());
               ctx.B().SetInsertPoint(in.from->getTerminator());
-              in.f[k] = Operand{seed(in.f[k].v, railTypeOf(in.f[k].v->getType())), true};
+              in.f[k] = Operand{seed(in.f[k].v, railOf(in.f[k].v->getType())), true};
             }
         }
         Type *ty = fq ? handleTy(ctx.M.getContext()) : ins[0].f[k].v->getType();
@@ -1671,7 +1681,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           continue;
         }
         vals.push_back(v);
-        arms.push_back({e, composite || p.getType()->isPointerTy() ? Operand{nullptr, false} : ctx.operand(v)});
+        arms.push_back({e, composite || (p.getType()->isPointerTy() && !isCodeAddress(&p)) ? Operand{nullptr, false} : ctx.operand(v)});
       }
       if (arms.empty())
         internalError("loops-classical: a real edge into a mixed join carries no incoming", &p);
@@ -1680,7 +1690,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           internalError("loops-classical: a classical phi at a mixed join chosen by a quantum edge", &p);
         continue;   // the classical incoming of u's own edge (emitPhis)
       }
-      if (p.getType()->isAggregateType() || p.getType()->isVectorTy() || p.getType()->isPointerTy()) {
+      if (p.getType()->isAggregateType() || p.getType()->isVectorTy() ||
+          (p.getType()->isPointerTy() && !isCodeAddress(&p))) {
         if (arms.size() == 1)
           continue;   // u's own incoming, field-wise (emitPhis)
         if (p.getType()->isPointerTy()) {
@@ -1726,13 +1737,13 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           for (size_t a = 0; a < arms.size(); ++a)
             fa.push_back({arms[a].first, fields[a][k]});
           Type *lt = leafTys[k];
-          out.push_back(Operand{selectChain(ctx, fa, lt->isPointerTy() ? RailType{Kind::Int, 64} : railTypeOf(lt)), true});
+          out.push_back(Operand{selectChain(ctx, fa, lt->isPointerTy() ? RailType{Kind::Int, 64} : railOf(lt)), true});
         }
         edgeFieldsM[{&p, u}] = out;
         continue;
       }
       Value *h = arms.size() == 1 ? asHandle(arms[0].second, p.getType())
-                                  : selectChain(ctx, arms, railTypeOf(p.getType()));
+                                  : selectChain(ctx, arms, railOf(p.getType()));
       edgeVal[{&p, u}] = h;
     }
   };
@@ -1765,7 +1776,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         continue;
       if (!(p.getType()->isIntegerTy() || p.getType()->isFloatingPointTy()))
         continue;   // emitPhis refuses the phi itself
-      edgeSeed[{&p, u}] = seed(o.v, railTypeOf(p.getType()));
+      edgeSeed[{&p, u}] = seed(o.v, railOf(p.getType()));
     }
   };
 
@@ -1827,7 +1838,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           unimplemented("loops-classical: a classical or non-scalar phi of a case-3 loop's exit arm chosen by its "
                         "edges (rule 9 per field / a classical choice inside the arm)",
                         &P);
-        RailType w = railTypeOf(P.getType());
+        RailType w = railOf(P.getType());
         Value *acc = nullptr;
         for (unsigned i = P.getNumIncomingValues(); i-- > 0;) {
           Operand o = ctx.operand(P.getIncomingValue(i));
@@ -1847,7 +1858,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           lowerInstruction(ctx, I, f);
     }
     for (CPhi &cp : cphis) {
-      RailType w = railTypeOf(cp.type());
+      RailType w = railOf(cp.type());
       Value *c = cp.cap;
       Operand vl{nullptr, false};
       for (auto &[u, val] : cp.incomings(inUnit, UX.cont)) {
@@ -1879,7 +1890,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       if (!val)
         internalError("loops-classical: a case-3 loop's classical exit edge with no value for its continuation",
                       cp.orig());
-      cp.res = select(aCur, ctx.operand(val), Operand{cp.cap, true}, railTypeOf(cp.type()));
+      cp.res = select(aCur, ctx.operand(val), Operand{cp.cap, true}, railOf(cp.type()));
     }
   };
 
@@ -1928,8 +1939,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         lowerBranch(ctx, *br);
       else if (auto *sw = dyn_cast<SwitchInst>(t))
         sw::lowerSwitch(ctx, *sw);
-      else
-        internalError("loops-classical: a quantum exit terminator other than br or switch", t);
+      else if (!isa<IndirectBrInst>(t))   // rule 13: a quantum computed goto's edges are pred's; nothing to emit
+        internalError("loops-classical: a quantum exit terminator other than br, switch or computed goto", t);
       if (u == latch) {
         // The quantum exit at the latch (cq-nqa6): the next values and captures under a', then the back edge.
         latchNexts();
@@ -2030,14 +2041,46 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       cur = nullptr;
       return;
     }
+    if (auto *ib = dyn_cast<IndirectBrInst>(t)) {
+      // CR rule 13 (b137e75): a computed goto is a switch on its address. A quantum one emits nothing (its
+      // edges are pred's address cases); a classical one is the switch on the address's position among its
+      // destinations.
+      if (termQ(t)) {
+        for (BasicBlock *s : successors(u))
+          if (s == header || (!L.contains(s) && (is_contained(UX.live, s) || UX.contains(L, s))))
+            internalError("loops-classical: a quantum computed goto edge out of the trip outside the case-3 exit forms",
+                          t);
+        for (BasicBlock *s : successors(u))
+          edgeFrom[{u, s}] = cur;
+        return;
+      }
+      Operand a = ctx.operand(ib->getAddress());
+      if (a.handle)
+        internalError("loops-classical: a classical computed goto on a rail", t);
+      for (BasicBlock *s : successors(u))
+        mintEdgeSeeds(u, s);
+      SmallVector<BasicBlock *, 4> ds = computedGotoDestinations(*ib);
+      Value *pos = computedGotoPosition(ctx.B(), a.v, *ib);
+      SwitchInst *ns = ctx.B().CreateSwitch(pos, target(ds.back()), ds.size() - 1);
+      for (unsigned k = 0; k + 1 < ds.size(); ++k)
+        ns->addCase(ctx.B().getInt32(k), target(ds[k]));
+      for (BasicBlock *s : successors(u))
+        edgeFrom[{u, s}] = cur;
+      cur = nullptr;
+      return;
+    }
     // An invoke is a call first: the spine's dispatch lowers it (its own construction, CR rule 18).
     if (isa<InvokeInst>(t)) {
       lowerInstruction(ctx, *t, aPhi);
       internalError("loops-classical: the spine's dispatch returned from an invoke", t);
     }
-    // ret and unreachable end no block of a loop (no successor), classify stops on indirectbr and callbr
-    // in a loop; the EH pads come from no C translation unit.
-    internalError("loops-classical: a loop body terminator other than br or switch", t);
+    // ret and unreachable end no block of a loop (no successor); callbr is inline asm (rule 27); the EH pads
+    // come from no C translation unit.
+    if (isa<CallBrInst>(t))
+      unimplemented("loops-classical: asm goto (callbr) in a loop: inline asm (rule 27) waits for its CQ_spec example "
+                    "(build step 3)",
+                    t);
+    internalError("loops-classical: a loop body terminator other than br, switch or computed goto", t);
   };
 
   auto emitInstructions = [&](BasicBlock *b) {
@@ -2304,7 +2347,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           ownedH.insert(r.forward);
     std::vector<RailId> exits;
     for (auto &[v, op] : out) {
-      RailType w = railTypeOf(v->getType());
+      RailType w = railOf(v->getType());
       if (!op.handle)
         internalError("loops-classical: a quantum value read after the loop whose exit value is classical", v);
       if (keptFinal.count(op.v)) {

@@ -188,7 +188,7 @@ bool isQuantumTerm(LoweringContext &ctx, const Instruction *t) {
 }
 
 // Rule 13 (b137e75): the distinct destinations of a computed goto, in its destination list's order.
-SmallVector<BasicBlock *, 4> gotoDestinations(const IndirectBrInst &ib) {
+SmallVector<BasicBlock *, 4> computedGotoDestinations(const IndirectBrInst &ib) {
   SmallVector<BasicBlock *, 4> d;
   for (BasicBlock *s : successors(const_cast<IndirectBrInst *>(&ib)))
     if (!is_contained(d, s))
@@ -522,7 +522,7 @@ void Walker::plan() {
     if (auto *ib = dyn_cast<IndirectBrInst>(t)) {
       // Rule 13: a classical computed goto is a classical switch on its address, one out edge per distinct
       // destination (emitTerminator's compare chain).
-      for (BasicBlock *s : gotoDestinations(*ib)) {
+      for (BasicBlock *s : computedGotoDestinations(*ib)) {
         bool back = idx.lookup(s) <= idx.lookup(b);
         outEdges[b].push_back(back ? s : next(b, s));
       }
@@ -612,7 +612,7 @@ void Walker::planGuards() {
         cands.push_back(Lit{sw->getCondition(), false, true, cs.getCaseValue()->getValue(),
                             Pred::eqAtom(sw->getCondition(), cs.getCaseValue()->getValue())});
     if (auto *ib = dyn_cast<IndirectBrInst>(t); ib && !spine::isQ(ctx, ib->getAddress())) {
-      SmallVector<BasicBlock *, 4> ds = gotoDestinations(*ib);
+      SmallVector<BasicBlock *, 4> ds = computedGotoDestinations(*ib);
       for (unsigned k = 0; k + 1 < ds.size(); ++k)
         cands.push_back(Lit{ib->getAddress(), false, false, APInt(), computedGotoEdge(*ib, ds[k]), ds[k]});
     }
@@ -1802,11 +1802,8 @@ void Walker::emitTerminator(BasicBlock *b) {
     Operand a = ctx.operand(ib->getAddress());
     if (a.handle)
       internalError("spine: a classical computed goto on a rail", t);
-    SmallVector<BasicBlock *, 4> ds = gotoDestinations(*ib);
-    Value *x = a.v->getType()->isPointerTy() ? B.CreatePtrToInt(a.v, B.getInt64Ty()) : a.v;
-    Value *pos = B.getInt32(ds.size() - 1);
-    for (unsigned k = ds.size() - 1; k-- > 0;)
-      pos = B.CreateSelect(B.CreateICmpEQ(x, caseAddress(ds[k])), B.getInt32(k), pos);
+    SmallVector<BasicBlock *, 4> ds = computedGotoDestinations(*ib);
+    Value *pos = computedGotoPosition(B, a.v, *ib);
     SwitchInst *ns = B.CreateSwitch(pos, out(targets[ds.size() - 1]), ds.size() - 1);
     for (unsigned k = 0; k + 1 < ds.size(); ++k)
       ns->addCase(B.getInt32(k), out(targets[k]));
@@ -2473,11 +2470,12 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
       I->eraseFromParent();
   reachDefs(*sh.out);   // cq-pfpy: rule 9's hoisted arm values reach every point that reads them
 
-  // Rule 13 (b137e75): the lowered entry keeps every address-taken block under its identity: the block
-  // its walk lowered it into when that block is its own (not the entry, not shared with another
-  // address-taken block), else a distinct block of its own that nothing branches to (no indirectbr is
-  // kept: a computed goto compares addresses, so the constant only has to name a distinct block; a trap
-  // gives it code of its own, so no two such blocks share an address).
+  // Rule 13 (b137e75): the lowered entry keeps every address-taken block under its identity: the block its
+  // walk lowered it into when that block is its own (not the entry, not shared with another address-taken
+  // block, holding code of its own), else a distinct block that stands for it. No indirectbr is kept (a
+  // computed goto compares addresses), so such a block only has to be a distinct block that the function
+  // reaches and that has code of its own: they are chained on the entry's way out, each a jump to the next,
+  // placed at the end of the function in reverse order so that no jump falls through.
   if (auto pit = pendingEntries.find(&M); pit != pendingEntries.end() && !pit->second.empty() &&
                                           pit->second.back().F == &F) {
     PendingEntry &pe = pit->second.back();
@@ -2486,17 +2484,27 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
       if (BB.hasAddressTaken())
         if (BasicBlock *o = sh.blocks.lookup(&BB))
           ++uses[o];
+    SmallVector<BasicBlock *, 4> stand;
     for (BasicBlock &BB : F) {
       if (!BB.hasAddressTaken())
         continue;
       BasicBlock *o = sh.blocks.lookup(&BB);
-      if (!o || o->getParent() != sh.out || o->isEntryBlock() || uses.lookup(o) != 1) {
+      if (!o || o->getParent() != sh.out || o->isEntryBlock() || uses.lookup(o) != 1 ||
+          &o->front() == o->getTerminator()) {
         o = BasicBlock::Create(M.getContext(), "", sh.out);
-        IRBuilder<> TB(o);
-        TB.CreateIntrinsic(Intrinsic::trap, {}, {});
-        TB.CreateUnreachable();
+        stand.push_back(o);
       }
       pe.addressed.push_back({&BB, o});
+    }
+    if (!stand.empty()) {
+      BasicBlock *entry = &sh.out->getEntryBlock();
+      BasicBlock *tail = entry->splitBasicBlock(entry->getTerminator());
+      entry->getTerminator()->eraseFromParent();
+      BranchInst::Create(stand.front(), entry);
+      for (size_t k = 0; k < stand.size(); ++k)
+        BranchInst::Create(k + 1 < stand.size() ? stand[k + 1] : tail, stand[k]);
+      for (size_t k = stand.size(); k-- > 0;)   // reverse order at the end: every jump is taken
+        stand[k]->moveAfter(&sh.out->back());
     }
   }
 

@@ -930,9 +930,15 @@ PtrInfo Analyzer::P(const Value *V) {
   if (auto *C = dyn_cast<Constant>(V)) {
     APInt off(64, 0);
     base = V->stripAndAccumulateConstantOffsets(*st.DL, off, /*AllowNonInbounds=*/true);
-    // CR rule 13 (b137e75): a code address is an integer, never a data pointer: no object, no provenance.
-    if (isa<ConstantPointerNull>(base) || isa<UndefValue>(base) || isa<BlockAddress>(base)) {
+    if (isa<ConstantPointerNull>(base) || isa<UndefValue>(base)) {
       p.init = true;
+      return p;
+    }
+    // CR rule 13 (b137e75): a code address is an integer, never a data pointer: no object, no provenance; its
+    // value is no known offset (two code addresses chosen under a quantum condition are a quantum value).
+    if (isa<BlockAddress>(base)) {
+      p.init = true;
+      p.top = true;
       return p;
     }
     if (auto *G = dyn_cast<GlobalValue>(base)) {

@@ -411,6 +411,8 @@ bool boolCellAccess(LoweringContext &, const llvm::Instruction &access);
 
 // Is v (an original value) quantum in this context's specialization?
 bool isQ(LoweringContext &, const llvm::Value *v);
+// CR rule 13: v read as the i64 `want` when v is a classical code address of the new IR, else v.
+llvm::Value *codeAddressAsInt(llvm::IRBuilder<> &B, llvm::Value *v, llvm::Type *want);
 // Rule 20 (192): the allocas whose lifetime the stackrestore `restore` ends: those its llvm.stacksave
 // dominates and that reach it, outside every nested scope (a dominated stacksave with a restore of its own).
 void scopeAllocas(const llvm::CallBase &restore, llvm::SmallVectorImpl<const llvm::AllocaInst *> &out);
