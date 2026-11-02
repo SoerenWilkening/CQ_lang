@@ -821,10 +821,18 @@ Inverse normalized(abi::TemplateSpec spec, SmallVector<Operand, 3> ops) {
   return Inverse{std::move(spec), std::move(ops)};
 }
 
+// The inverse of an odd k modulo 2^W. Newton x <- x (2 - k x) from x = 1 (correct to 1 bit) doubles the
+// correct low bits per step, so it iterates until they cover W (cq-hxvx: a fixed 7 steps covered only
+// 128 bits).
 APInt oddInverse(const APInt &k) {
-  APInt x(k.getBitWidth(), 1);
-  for (int i = 0; i < 7; ++i)            // Newton: x <- x (2 - k x), doubling the correct bits
-    x = x * (APInt(k.getBitWidth(), 2) - k * x);
+  unsigned W = k.getBitWidth();
+  if (!k[0])
+    internalError("spine: oddInverse of an even multiplier");
+  APInt x(W, 1);
+  for (unsigned bits = 1; bits < W; bits *= 2)
+    x = x * (APInt(W, 2) - k * x);
+  if (!(k * x).isOne())
+    internalError("spine: oddInverse did not converge");
   return x;
 }
 
