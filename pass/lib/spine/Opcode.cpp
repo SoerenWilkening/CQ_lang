@@ -1107,7 +1107,9 @@ std::optional<Inverse> inverseStepWith(Instruction &U, Value *Y, Operand yp,
       if (II->getArgOperand(0) != Y)
         return std::nullopt;
       if (id == Intrinsic::bitreverse)
-        unimplemented("spine: rule 6 clean-up through bitreverse (no template)", &U);
+        unimplemented("spine: rule 6 clean-up through bitreverse: awaiting owner ruling: SPEC_ISSUES bitreverse has "
+                      "no template op (§1.2) although rule 6 lists it as a bijection",
+                      &U);
       spec.op = "bswap";
       spec.w = rt(U.getType(), &U);
       return normalized(spec, {yp});                 // an involution
@@ -1168,13 +1170,27 @@ std::optional<Affine> affineIn(LoweringContext &ctx, Value *V, Value *X, unsigne
     return Affine{APInt(W, 0), k->getValue(), {}};
   if (!reads(ctx, V, X))
     return Affine{APInt(W, 0), APInt(W, 0), {{false, V}}};
-  auto *bo = dyn_cast<BinaryOperator>(V);
-  if (!bo || depth > 16 || !bo->getType()->isIntegerTy(W))
+  // A *.with.overflow intrinsic is its value op here (its value field is the update, rule 4).
+  Instruction::BinaryOps opc;
+  Value *op0, *op1;
+  if (auto *bo = dyn_cast<BinaryOperator>(V); bo && bo->getType()->isIntegerTy(W)) {
+    opc = bo->getOpcode();
+    op0 = bo->getOperand(0);
+    op1 = bo->getOperand(1);
+  } else if (auto *ii = dyn_cast<IntrinsicInst>(V); ii && overflowValueOp(ii->getIntrinsicID()) &&
+                                                     ii->getArgOperand(0)->getType()->isIntegerTy(W)) {
+    StringRef vo = overflowValueOp(ii->getIntrinsicID());
+    opc = vo == "add" ? Instruction::Add : vo == "sub" ? Instruction::Sub : Instruction::Mul;
+    op0 = ii->getArgOperand(0);
+    op1 = ii->getArgOperand(1);
+  } else {
     return std::nullopt;
-  auto opc = bo->getOpcode();
+  }
+  if (depth > 16)
+    return std::nullopt;
   if (opc == Instruction::Add || opc == Instruction::Sub) {
-    auto l = affineIn(ctx, bo->getOperand(0), X, W, depth + 1);
-    auto r = affineIn(ctx, bo->getOperand(1), X, W, depth + 1);
+    auto l = affineIn(ctx, op0, X, W, depth + 1);
+    auto r = affineIn(ctx, op1, X, W, depth + 1);
     if (!l || !r)
       return std::nullopt;
     bool neg = opc == Instruction::Sub;
@@ -1185,11 +1201,11 @@ std::optional<Affine> affineIn(LoweringContext &ctx, Value *V, Value *X, unsigne
     return l;
   }
   if (opc == Instruction::Mul || opc == Instruction::Shl) {
-    auto *k = dyn_cast<ConstantInt>(bo->getOperand(1));
-    Value *T = bo->getOperand(0);
+    auto *k = dyn_cast<ConstantInt>(op1);
+    Value *T = op0;
     if (!k && opc == Instruction::Mul) {
-      k = dyn_cast<ConstantInt>(bo->getOperand(0));
-      T = bo->getOperand(1);
+      k = dyn_cast<ConstantInt>(op0);
+      T = op1;
     }
     if (!k || (opc == Instruction::Shl && k->getValue().uge(W)))
       return std::nullopt;
@@ -1207,19 +1223,26 @@ std::optional<Affine> affineIn(LoweringContext &ctx, Value *V, Value *X, unsigne
 // before x's clean-up). y' = a*x + c + sum(+-rest) is a bijection in x iff a is odd; then
 // x = (y' - c - sum(+-rest)) * a^-1, its inner steps fresh garbage rails. An even a: x is kept.
 void compositeCleanup(LoweringContext &ctx, Instruction &I, Value *X, Operand yp) {
-  if (!I.getType()->isIntegerTy())
-    unimplemented("spine: rule 6 composite update (127) of a non-integer value", &I);
-  unsigned W = I.getType()->getIntegerBitWidth();
+  // inverseStepWith's bijections with two cleanable operands are integer binary ops and the
+  // *.with.overflow intrinsics, whose y' is the value field (ruleSixAfter): the update's integer type.
+  Type *VT = I.getType();
+  if (auto *st = dyn_cast<StructType>(VT))
+    VT = st->getElementType(0);
+  if (!VT->isIntegerTy())
+    internalError("spine: rule 6 composite update of a value that is no integer", &I);
+  unsigned W = VT->getIntegerBitWidth();
   std::optional<Affine> f = affineIn(ctx, &I, X, W);
   if (!f)
-    unimplemented("spine: rule 6 composite update (127) that is not an affine function of the register", &I);
+    unimplemented("spine: rule 6 composite update (127) that is not an affine function of the register: awaiting "
+                  "owner ruling: SPEC_ISSUES rule 6 composite updates beyond the affine ones (which must be inverted)",
+                  &I);
   if (!f->a[0])
     return;   // an even multiplier: no inverse, x is kept
   abi::TemplateSpec spec;
-  spec.w = rt(I.getType(), &I);
+  spec.w = rt(VT, &I);
   SmallVector<Inverse, 4> steps;   // each reads the previous step's rail (yp first)
   if (!f->c.isZero())
-    steps.push_back(Inverse{spec, {Operand{}, Operand{ConstantInt::get(I.getType(), f->c), false}}});
+    steps.push_back(Inverse{spec, {Operand{}, Operand{ConstantInt::get(VT, f->c), false}}});
   for (auto &[neg, v] : f->rest) {
     steps.push_back(Inverse{spec, {Operand{}, ctx.operand(v)}});
     steps.back().spec.op = neg ? "add" : "sub";
@@ -1227,11 +1250,11 @@ void compositeCleanup(LoweringContext &ctx, Instruction &I, Value *X, Operand yp
   if (!f->c.isZero())
     steps.front().spec.op = "sub";
   if (!f->a.isOne()) {
-    steps.push_back(Inverse{spec, {Operand{}, Operand{ConstantInt::get(I.getType(), oddInverse(f->a)), false}}});
+    steps.push_back(Inverse{spec, {Operand{}, Operand{ConstantInt::get(VT, oddInverse(f->a)), false}}});
     steps.back().spec.op = "mul";
   }
   if (steps.empty()) {   // y' = x (2x - x): t = y' + 0
-    steps.push_back(Inverse{spec, {Operand{}, Operand{ConstantInt::get(I.getType(), 0), false}}});
+    steps.push_back(Inverse{spec, {Operand{}, Operand{ConstantInt::get(VT, 0), false}}});
     steps.back().spec.op = "add";
   }
   RailId xid = ctx.unc().idOf(ctx.operand(X).v);

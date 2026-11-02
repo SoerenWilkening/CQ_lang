@@ -337,6 +337,11 @@ void Walker::plan() {
       if (seen.insert(s).second)
         stack.push_back({s, s->getTerminator()->getNumSuccessors()});
     }
+    // CR rule 24 (101): an escaping clone returns the escaped flag its longjmp arms copy out, so its
+    // return blocks come after every other block (a return has no successor: still a topological order).
+    if (conc::cloneEscapes(ctx.T, ctx.S))
+      std::stable_partition(post.begin(), post.end(),
+                            [](BasicBlock *b) { return isa<ReturnInst>(b->getTerminator()); });
     for (auto it = post.rbegin(); it != post.rend(); ++it) {
       idx[*it] = L.size();
       L.push_back(*it);
@@ -407,8 +412,14 @@ void Walker::plan() {
       outEdges[b].push_back(n);
       continue;
     }
+    if (isa<IndirectBrInst>(t) || isa<CallBrInst>(t))
+      unimplemented("spine: a computed goto or asm goto in a lowered function: awaiting owner ruling: SPEC_ISSUES "
+                    "label addresses (blockaddress) in a lowered or cloned function",
+                    t);
     if (!isa<BranchInst>(t) && !isa<SwitchInst>(t))
-      unimplemented("spine: terminator kind", t);
+      unimplemented("spine: an exception handling terminator (C compiled with -fexceptions): awaiting owner "
+                    "ruling: SPEC_ISSUES unwinding (invoke, landingpad, resume) in a lowered C function",
+                    t);
     for (BasicBlock *s : successors(b)) {
       bool back = idx.lookup(s) <= idx.lookup(b);
       outEdges[b].push_back(back ? s : next(b, s));
@@ -1031,7 +1042,7 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
     // (calls::materialize: {result, escaped}, or escaped alone for a void clone).
     Value *esc = conc::cloneEscapedFlag(ctx);
     if (!esc)
-      internalError("spine: an escaping clone's return reached before its longjmp in the walk (rule 24)", ret);
+      internalError("spine: an escaping clone's return reached before its longjmp (plan orders returns last)", ret);
     Value *v = esc;
     if (Value *rv = ret->getReturnValue()) {
       // The result's fields (a field-wise or fat-pointer result's leaves, or the one value) then the flag.
@@ -1315,19 +1326,19 @@ void Walker::emitTerminator(BasicBlock *b) {
         if (rt->getIntegerBitWidth() < 32)
           internalError("spine: an entry returns a handle in a return type narrower than i32 (rule 19)", t);
         v = B.CreateZExt(op.v, rt);
-      } else if (returnsHandle(ctx)) {
-        // Rule 19: the entry returns a handle on every path. A classical value returned on this one is
-        // a seed rail of its value (rule 7: alloc_<W>(v), a known basis state), escaped like any
-        // returned rail; the caller reads it as the handle it reads on the other paths.
+      } else if (v->getType() != sh.out->getReturnType()) {
+        // Rule 19: the entry's C return type cannot hold a handle, so it returns the i32 handle on every
+        // path. A classical value returned on this one is a seed rail of its value (rule 7: alloc_<W>(v),
+        // a known basis state), escaped like any returned rail; the caller reads it as the handle it
+        // reads on the other paths.
         Type *ct = rv->getType();
         if (!ct->isIntegerTy() && !ct->isFloatingPointTy())
           internalError("spine: a classical return of a handle-returning entry that is no scalar", t);
         CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(ct)}, {v});
         ctx.unc().setRole(ctx.unc().recordSeed(a), Role::Escaped);
-        v = sh.out->getReturnType() == a->getType() ? static_cast<Value *>(a)
-                                                     : B.CreateZExt(a, sh.out->getReturnType());
-      } else if (v->getType() != sh.out->getReturnType()) {
-        internalError("spine: an entry returns a classical value of another type than its return type", t);
+        if (sh.out->getReturnType() != a->getType())
+          internalError("spine: an entry returns a classical value of another type than its return type", t);
+        v = a;
       }
       nr = B.CreateRet(v);
     } else {

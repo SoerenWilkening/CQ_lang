@@ -480,7 +480,9 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
   case Class::Realloc:
     if (objectsClass(ctx, &CB) == ObjClass::Qram)
       return mem::reallocQram(ctx, CB);   // M5 (cq-arch 2026-11-01)
-    unimplemented("spine: realloc of a slot block has no entry in Memory.h (rule 16)", &CB);
+    // Rule 16: realloc of a slot block is a host realloc (its handle cells move with it): mem-slots' heap
+    // allocation, the realloc call with its old block and its size in handle cells (allocsize).
+    return mem::allocateSlots(ctx, CB);
   case Class::MemIntrinsic: return mem::lowerMemIntrinsic(ctx, cast<MemIntrinsic>(CB));
   case Class::TemplateIntrinsic:
     if (auto *II = dyn_cast<IntrinsicInst>(&CB); II && II->getIntrinsicID() == Intrinsic::ptrmask) {
@@ -664,8 +666,8 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
   if (isa<DbgInfoIntrinsic>(I))
     return;   // debug records carry no semantics; the original values they name are gone
   if (auto *CB = dyn_cast<CallBase>(&I)) {
-    if (isa<InvokeInst>(CB) || isa<CallBrInst>(CB))
-      unimplemented("spine: invoke/callbr", &I);
+    if (isa<InvokeInst>(CB) || isa<CallBrInst>(CB))   // terminators: the walker's (emitTerminator)
+      internalError("spine: dispatch of an invoke or callbr", &I);
     return lowerCall(ctx, *CB);
   }
   if (isa<PHINode>(I) || I.isTerminator())
@@ -780,7 +782,9 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
   case Instruction::LandingPad:
   case Instruction::CleanupPad:
   case Instruction::CatchPad:
-    unimplemented("spine: exception handling pads", &I);
+    unimplemented("spine: an exception handling pad (C compiled with -fexceptions): awaiting owner ruling: "
+                  "SPEC_ISSUES unwinding (invoke, landingpad, resume) in a lowered C function",
+                  &I);
   default:
     break;
   }

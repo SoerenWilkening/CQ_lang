@@ -258,8 +258,12 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
     case Intrinsic::lifetime_end:
       return nonClassicalObject(T, S, CB.getArgOperand(1)) ? Class::Dealloc : Class::Classical;
     case Intrinsic::stackrestore: {
-      // A VLA's lifetime ends here (rule 20, 192) when the scope holds a slot or QRAM object; otherwise
-      // it restores the host stack only, under any predicate (the linearized program runs it as C does).
+      // A VLA's lifetime ends here (rule 20, 192) when the scope holds a slot or QRAM object and the
+      // restore runs under a quantum predicate (otherwise mem-slots keeps the scope's cells per run, 109).
+      // A scope of classical objects only restores the host stack, under any predicate (the linearized
+      // program runs it as C does).
+      if (!qPred && !qArg)
+        return Class::Classical;
       SmallVector<const AllocaInst *, 4> scope;
       spine::scopeAllocas(CB, scope);
       for (const AllocaInst *A : scope)
@@ -684,8 +688,12 @@ Case classify(const Loop &L, const TaintInfo &T, const Specialization &S) {
       return br->isConditional() && quantumValue(T, S, br->getCondition());
     if (auto *sw = dyn_cast<SwitchInst>(t))
       return quantumValue(T, S, sw->getCondition());
-    if (isa<IndirectBrInst>(t) || isa<CallBrInst>(t))
-      unimplemented("spine: loops::classify: indirectbr/callbr in a loop", t);
+    // A computed goto or an asm goto chooses its successor by its address or its asm: quantum when
+    // that operand is (rule 8's quantum branch, the address a fat pointer's tag), else classical.
+    if (auto *ib = dyn_cast<IndirectBrInst>(t))
+      return quantumValue(T, S, ib->getAddress());
+    if (auto *cb = dyn_cast<CallBrInst>(t))
+      return any_of(cb->args(), [&](const Use &u) { return quantumValue(T, S, u.get()); });
     return false;
   };
 
