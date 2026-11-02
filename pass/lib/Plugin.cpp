@@ -192,10 +192,10 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
           Tainted.push_back(&F);
     }
 
-    // 1c. CR rule 24: setjmp/longjmp as explicit control flow (eff-conc, Setjmp.cpp), in the tainted
-    // functions holding a setjmp and the escape clones it makes. Its CFG changes are final-taint input.
-    // Rule 24 with rule 21 first (T is read before any function is erased): an atomic read-modify-write
-    // through a fat pointer is the plain load + op + store.
+    // 1c. CR rule 24 (eff-conc, Setjmp.h), in tainted functions: atomic read-modify-writes through fat
+    // pointers as the plain load + op + store, the thread calls as the sequential schedule, then (it may
+    // erase originals, so T is read before) setjmp/longjmp as explicit control flow with its escape clones.
+    // Their CFG changes are final-taint input.
     SmallPtrSet<Function *, 8> changed;
     for (Function *F : cq::conc::collapseFatAtomics(M, T))
       changed.insert(F);
@@ -208,7 +208,7 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
       if (changed.count(&F))
         SJ.push_back(&F);
     if (!SJ.empty()) {
-      trace("explicit-setjmp / fat atomics: changed");
+      trace("rule 24 rewrites: changed");
       if (DumpSetjmp)
         M.print(errs(), nullptr);
       CFGChanged = true;
