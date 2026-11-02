@@ -65,4 +65,5 @@ attributes #5 = { nounwind }
 !7 = !{!"double", !8, i64 0}
 !8 = !{!"omnipotent char", !9, i64 0}
 !9 = !{!"Simple C/C++ TBAA"}
-; USERCHECK clone_cell_path_type
+; CHECK __cq_q_g_100: call i32 @cq_template_bitcast_i64_to_f64(i32 %{{h}})
+; CHECK clone_cell_path_type: call i32 @cq_template_bitcast_f64_to_i64(i32 %{{h}})
