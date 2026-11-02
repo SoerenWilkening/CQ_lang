@@ -14,7 +14,10 @@ set(CQ_UNC_CASES
   alias_copy_distinct_array cell_load_garbage cell_load_kept
   deferred_kept_through_memory
   call_two_results call_all_kept call_slotout_unused call_reads resolve_at pointee_before_store cells_distinct deferred_qram_store
-  deferred_join_placement alias_formal_local)
+  deferred_join_placement alias_formal_local
+  merge_kept_select merge_nondiagonal_garbage merge_unchosen_reader merge_unchosen_used_after
+  merge_unchosen_read_later merge_nested_select_edge merge_nested_select_edge_rev carried_phi_some_paths
+  write_barrier_sandwich pointee_write_swap qram_kept_bus_sandwich merge_unchosen_loop merge_cycle_arm)
 foreach(c ${CQ_UNC_CASES})
   add_test(NAME uncompute.${c} COMMAND uncompute_tests ${c})
 endforeach()
@@ -27,22 +30,12 @@ set(CQ_UNC_FATAL
   "fatal_unflushed_arm=cq: internal error: uncompute: .* is still pending at a return"
   "fatal_scope_order=cq: internal error: uncompute: scopes close last-in-first-out"
   "fatal_mirror_outside_reader=cq: internal error: uncompute: mirror would free"
-  "fatal_write_barrier=cq: unimplemented: uncompute: an in-place write on an operand rail"
-  "fatal_qram_kept_bus_barrier=cq: unimplemented: uncompute: an in-place write on an operand rail"
   "fatal_qram_realloc_kept=cq: unimplemented: uncompute: an item on a QRAM bus whose qram_realloc result is kept"
   "fatal_unknown_handle=cq: internal error: uncompute: recordTemplate: .* is not a recorded rail"
-  "fatal_merge_kept_role=cq: unimplemented: uncompute: a kept role on a classical select over handles"
   "fatal_cell_load_empty=cq: internal error: uncompute: recordCellLoad: a cell load that may name no rail"
   "fatal_resolve_at_used=cq: internal error: uncompute: resolveAt: %t is still used after the point"
   "fatal_resolve_at_bypass=cq: internal error: uncompute: resolveAt: a path from the definition of %s reaches a return without passing the point"
-  "fatal_pointee_write=cq: unimplemented: uncompute: a write that may change an object a clone call's pointer argument points to"
   "fatal_call_mixed=cq: unimplemented: uncompute: a call whose results are partly kept"
-  "fatal_merge_nondiagonal=cq: unimplemented: uncompute: a non-diagonal gate on a merged handle"
-  "fatal_merge_unchosen_reader=cq: unimplemented: uncompute: an arm of a kept merged handle, .* is read by a pending rail"
-  "fatal_merge_unchosen_used_after=cq: unimplemented: uncompute: an arm of a kept merged handle, .* is still used after"
-  "fatal_merge_unchosen_read_later=cq: unimplemented: uncompute: recordTemplate: an arm of a kept merged handle, .* is read after the edge"
-  "fatal_merge_nested_select_edge=cq: unimplemented: uncompute: a kept role on a classical select over handles whose arm %t"
-  "fatal_merge_nested_select_edge_rev=cq: unimplemented: uncompute: a kept role on a classical select over handles whose arm %t"
   "fatal_alias_slot_reload=cq: unimplemented: uncompute: a non-diagonal gate on a handle that may name an operand rail of %g through a slot cell"
   "fatal_alias_slot_direct=cq: unimplemented: uncompute: a non-diagonal gate on a handle that may name an operand rail of %g through a slot cell"
   "fatal_alias_second_array=cq: unimplemented: uncompute: a non-diagonal gate on a handle that may name an operand rail of %g through a slot cell"
@@ -51,9 +44,7 @@ set(CQ_UNC_FATAL
   "fatal_cells_distinct_direct_read=cq: unimplemented: uncompute: a non-diagonal gate on a handle that may name an operand rail of %g through a slot cell"
   "fatal_deferred_no_anchor=cq: internal error: uncompute: recordDeferred without exit rails and without a QRAM bus"
   "fatal_deferred_join_bypass=cq: unimplemented: uncompute: a non-diagonal gate or an in-place write on a rail the deferred rule-14 reverse loop reads"
-  "fatal_alias_memcpy=cq: unimplemented: uncompute: a non-diagonal gate on a handle that may name an operand rail of %g through a slot cell"
-  "fatal_merge_unchosen_loop=cq: unimplemented: uncompute: an arm of a kept merged handle, %a, freed at the end of an edge where the merge does not choose it, is reached again"
-  "fatal_carried_phi_some_paths=cq: unimplemented: uncompute: a non-diagonal gate on some paths only precedes the resolution of an unchosen arm")
+  "fatal_alias_memcpy=cq: unimplemented: uncompute: a non-diagonal gate on a handle that may name an operand rail of %g through a slot cell")
 foreach(entry ${CQ_UNC_FATAL})
   string(FIND "${entry}" "=" eq)
   string(SUBSTRING "${entry}" 0 ${eq} c)

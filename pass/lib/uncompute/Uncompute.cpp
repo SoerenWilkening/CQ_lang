@@ -315,9 +315,13 @@ struct Uncompute::Impl {
     SmallVector<RailId, 4> loads;      // on a bus: the loads that recorded a version on it
     SmallVector<std::pair<RailId, unsigned>, 1> versions; // on a load: (bus, k)
     SmallVector<RailId, 1> reallocs;   // cq-vtfq: on a bus, the buses qram_realloc made from it (a')
-    // cq-sodl: the edges this arm was freed on (the block P ending the edge, the kept merge m that
-    // does not choose it there). A later read of the arm not through m on a path leaving P is caught.
-    SmallVector<std::pair<BasicBlock *, RailId>, 1> edgeFrees;
+    // cq-lshe (CR rule 9, §0): the kept merges that keep this rail where they choose it. It stays
+    // resolvable: its item runs under the classical predicate "no keeper chose it" (a re-branch on the
+    // conditions that chose the arm), placed after its own uses (not those through a keeper).
+    SmallVector<RailId, 1> keepers;
+    // cq-lshe (CR §0, rules 5, 10): non-diagonal gates on a merge that names this rail where the merge
+    // chooses it (gate, merge): a barrier on the paths where it chose it, nothing elsewhere.
+    SmallVector<std::pair<Instruction *, RailId>, 1> condHits;
     // F1 (cq-fx3s): on the pseudo rail of a deferred item, its index in defs; on a rail created by a
     // record of a deferred item's scopes, that item (no flush resolves it; the item's emit mirrors it).
     unsigned deferred = kNone;
@@ -422,8 +426,11 @@ struct Uncompute::Impl {
   // of a classical branch, often of a merge: a phi over arm-local handles), and the items placed for
   // them there, each run under its own selector (wrapArmItems).
   DenseSet<RailId> armLocal;
-  struct ArmItem { RailId g; Instruction *first, *last; };
-  std::vector<ArmItem> armItems;
+  DenseSet<RailId> cycleArm;   // cq-lshe: arms on a cycle pending at a return (cyclePoint)
+  // cq-lshe: an item emitted under a classical condition (its run flag, flagAt), wrapped into a block of
+  // its own: at a return after the batch (armItems), elsewhere at the end of the flush (localWraps).
+  struct ArmItem { RailId g; Instruction *first, *last; Value *cond; };
+  std::vector<ArmItem> armItems, localWraps;
 
   // ---- recording -------------------------------------------------------------------------------
 
@@ -691,11 +698,42 @@ struct Uncompute::Impl {
     }
   }
 
+  // A read of g reads a freed rail: a leaf already resolved for good, unless the read reaches it only
+  // through a merge that keeps it where it chooses it (cq-lshe: freed only where no keeper chose it).
   bool anyReleased(RailId g) const {
     for (RailId x : leaves(g))
-      if (rails[x].released)
+      if (rails[x].released && (rails[x].keepers.empty() || readsAvoiding(g, x)))
         return true;
     return false;
+  }
+  // Does reading r read x other than through one of x's keepers (r == x, or a merge naming x by an arm
+  // path that passes no keeper)?
+  bool readsAvoiding(RailId r, RailId x) const {
+    SmallVector<RailId, 8> seen;
+    std::function<bool(RailId)> go = [&](RailId n) {
+      if (is_contained(rails[x].keepers, n) || is_contained(seen, n))
+        return false;
+      if (n == x)
+        return true;
+      seen.push_back(n);
+      for (RailId a : rails[n].arms)
+        if (go(a))
+          return true;
+      return false;
+    };
+    return go(r);
+  }
+  // names(g) without the merges that name g only through one of its keepers: their uses read g only
+  // where a keeper chose it, where g is kept (cq-lshe).
+  SmallVector<RailId, 4> ownNames(RailId g) const {
+    SmallVector<RailId, 4> ns = names(g);
+    if (rails[g].keepers.empty())
+      return ns;
+    SmallVector<RailId, 4> out;
+    for (RailId n : ns)
+      if (readsAvoiding(n, g))
+        out.push_back(n);
+    return out;
   }
 
   RailId newRail(Value *h, Role role, const char *who) {
@@ -727,7 +765,6 @@ struct Uncompute::Impl {
           internalError(std::string("uncompute: ") + who + ": operand " + describe(ops[i].v) +
                             " was already uncomputed and freed",
                         fwd);
-        checkEdgeRead(r, fwd, who);
       }
     }
   }
@@ -862,6 +899,17 @@ struct Uncompute::Impl {
   }
 
   SmallVector<RailId, 4> itemReads(RailId g) const {
+    SmallVector<RailId, 4> out = ownReads(g);
+    // cq-lshe: the rails the sandwich of the item reads (the operands of in-place writes it may undo and
+    // redo around itself) outlive it too.
+    if (rails[g].deferred == kNone)
+      for (unsigned w : sandwichCands(g))
+        for (RailId x : info[w].reads)
+          if (x != g && !is_contained(out, x))
+            out.push_back(x);
+    return out;
+  }
+  SmallVector<RailId, 4> ownReads(RailId g) const {
     const Rail &r = rails[g];
     if (r.deferred != kNone)
       return SmallVector<RailId, 4>(defs[r.deferred].reads.begin(), defs[r.deferred].reads.end());
@@ -872,6 +920,46 @@ struct Uncompute::Impl {
       for (RailId x : info[rec].reads)
         if (x != g && !is_contained(out, x))
           out.push_back(x);
+    return out;
+  }
+  // cq-lshe (CR rule 5): the in-place write records that may lie between g's item's records and the item,
+  // on a rail the item reads or on a rail such a write reads (transitively): a write after the record
+  // that read the rail, except a QRAM store that a load's un-copy follows anyway (A2, popped first).
+  SmallVector<unsigned, 4> sandwichCands(RailId g) const {
+    SmallVector<unsigned, 4> out;
+    const Rail &r = rails[g];
+    if (r.deferred != kNone)
+      return out;
+    // (rail, the record that read it, a later store on it is popped first: a QRAM load's bus, A2)
+    struct Rd { RailId x; const Instruction *at; bool popsFirst; };
+    SmallVector<Rd, 8> R;
+    auto addReads = [&](ArrayRef<RailId> xs, const Instruction *at, bool popsFirst) {
+      for (RailId x0 : xs)
+        for (RailId x : leaves(x0))
+          if (x != g)
+            R.push_back({x, at, popsFirst});
+    };
+    if (r.cleanup) {
+      addReads(r.cleanup->reads, r.creator != kNone ? records[r.creator].forward : nullptr, false);
+    } else {
+      for (unsigned rec : undone(g))
+        addReads(info[rec].reads, records[rec].forward, info[rec].kind == RecKind::QramLoad);
+    }
+    for (unsigned i = 0; i < R.size(); ++i) {
+      Rd rd = R[i];
+      for (unsigned w : rails[rd.x].writes) {
+        const Instruction *f = records[w].forward;
+        if (is_contained(out, w) || !f->getParent() || (rd.at && (f == rd.at || !after(f, rd.at))))
+          continue;
+        if (rd.popsFirst && storePopped(w))
+          continue;   // A2: a later store on a load's bus is popped before the load is un-copied
+        out.push_back(w);
+        for (RailId y0 : info[w].reads)
+          for (RailId y : leaves(y0))
+            if (y != g)
+              R.push_back({y, f, false});
+      }
+    }
     return out;
   }
 
@@ -949,16 +1037,28 @@ struct Uncompute::Impl {
       }
       return out;
     }
-    SmallVector<RailId, 4> ns = names(g);
+    SmallVector<RailId, 4> ns = ownNames(g); // cq-lshe: not the readers through a keeper
     SmallVector<RailId, 4> cand;
-    for (RailId n : ns) {
-      for (unsigned rec : rails[n].readerRecs)
+    // cq-lshe: an in-place write reading g is in the sandwich of the items that read its target (or, in
+    // turn, a rail another such write reads): those items read g too (itemReads), so they are candidates.
+    SmallVector<RailId, 4> targets;
+    auto addCands = [&](RailId n) {
+      for (unsigned rec : rails[n].readerRecs) {
         if (!is_contained(cand, info[rec].item))
           cand.push_back(info[rec].item);
+        if (!isCreator(info[rec].kind))
+          if (RailId t = records[rec].out; t < rails.size() && !is_contained(targets, t))
+            targets.push_back(t);
+      }
       for (RailId o : rails[n].cleanupReaders)
         if (!is_contained(cand, o))
           cand.push_back(o);
-    }
+    };
+    for (RailId n : ns)
+      addCands(n);
+    for (unsigned i = 0; i < targets.size(); ++i)
+      for (RailId n : names(targets[i]))
+        addCands(n);
     SmallVector<RailId, 4> out;
     for (RailId o : cand) {
       if (o == g)
@@ -1073,8 +1173,8 @@ struct Uncompute::Impl {
     }
     for (unsigned w : r.writes)
       out.push_back(records[w].forward);
-    // U1: a use of a merge that may name g is a use of g.
-    for (RailId n : names(g)) {
+    // U1: a use of a merge that may name g is a use of g (cq-lshe: not through a keeper of g, where g is kept).
+    for (RailId n : ownNames(g)) {
       const Rail &rn = rails[n];
       for (User *u : rn.handle->users())
         if (auto *i = dyn_cast<Instruction>(u))
@@ -1425,35 +1525,20 @@ struct Uncompute::Impl {
     return uniq;
   }
 
-  // ---- kept merges (cq-bv91) --------------------------------------------------------------------
-
-  // A kept role on the phi merge m: each arm is kept itself on the paths where m chooses it, and an
-  // arm that also reaches m's join along an edge where m does not choose it is resolved at the end
-  // of that edge's block (its "own path"), before the join. The arm then carries the kept role: on
-  // every path that reaches a return through the join exactly one arm of m is live (128; the exit
-  // phi of a classically bounded loop, 25: the zero-trip seed is freed on the loop path).
+  // ---- kept merges (cq-bv91, cq-lshe) -----------------------------------------------------------
+  //
+  // CR rule 9 (ruling 2026-10-27): a classical select or phi over handles names the chosen arm; a kept
+  // role on it keeps the chosen arm, and every other arm is garbage on that path (CR §0: cleaned). The
+  // choice is classical, so the lowering re-branches on it: each resolvable arm a the merge may name
+  // gets the merge as a KEEPER and stays resolvable. Its item is placed like any garbage item, after a's
+  // own uses (a use of the keeper is a use of a only where the keeper chose a, where a is kept), and
+  // runs under the classical flag "a exists and no keeper chose it since" (flagAt; chooses(m, a) is the
+  // choice spelled over the merge's own classical conditions: an i1 phi over its incoming edges, an i1
+  // select on its condition). An arm a cell load may name (M3, the cell's content is not a classical
+  // choice) is kept outright, as is a rail a deferred rule-14 item owns (its reverse loop undoes every
+  // trip's instance; the copy taken where the loop exits keeps the role, placeDeferred).
   bool isDeclaredPseudo(RailId g) const {
     return rails[g].group != kNone && groups[rails[g].group].declared;
-  }
-
-  void keepMerge(RailId m, Role role) {
-    // The rails m may name (arms, nested merges, transitively) that are resolvable before the role is
-    // set: the decisions below read this snapshot, so the order of m's arms changes nothing.
-    DenseSet<RailId> live;
-    for (RailId x : closure(m))
-      if (resolvable(x))
-        live.insert(x);
-    // A kept role on a classical select (m itself or nested) with a resolvable arm: keeping only the
-    // chosen arm needs a branch on the condition (cq-aqeq). Checked before anything is changed.
-    for (RailId n : closure(m))
-      if (isMerge(n) && !rails[n].cellLoad && !isa<PHINode>(rails[n].handle))
-        for (RailId a : leaves(n))
-          if (live.count(a))
-            unimplemented("uncompute: a kept role on a classical select over handles whose arm " +
-                              describe(rails[a].handle) +
-                              " is still resolvable (keeping only the chosen arm needs a branch on the condition)",
-                          cast<Instruction>(rails[n].handle));
-    keepPhi(m, role, live);
   }
 
   // m and every rail it may name, merges included (m first).
@@ -1466,106 +1551,330 @@ struct Uncompute::Impl {
     return out;
   }
 
-  // chain: the kept phi merges from the outermost down to m. An arm is followed from its definition
-  // to the first join of the chain it enters: an edge into that join whose incoming value may name
-  // the arm (through nested merges too, cq-sodl) chooses it; any other edge leaves it unchosen there,
-  // and it is resolved at the end of that edge's block.
-  void keepPhi(RailId m, Role role, const DenseSet<RailId> &live, SmallVector<RailId, 4> chain = {}) {
-    if (rails[m].cellLoad) {
-      // M3: a cell load has no join; every arm it may name is kept (nested merges keep theirs).
-      for (RailId a : SmallVector<RailId, 2>(rails[m].arms)) {
-        if (isMerge(a)) {
-          keepPhi(a, role, live, chain);
-          rails[a].role = role;
-        } else if (live.count(a) && !isDeclaredPseudo(a)) {
-          rails[a].role = role;   // U7: a declared clone's twin runs whatever the caller keeps
-        }
-      }
-      return;
+  // Does n name a on every path (statically): n is a, a cell load naming a directly or through a merge
+  // that always names it, or a phi or select every incoming of which always names a.
+  bool alwaysChosen(RailId n, RailId a, unsigned depth = 0) const {
+    if (n == a)
+      return true;
+    if (!isMerge(n) || depth > 32)
+      return false;
+    if (rails[n].cellLoad) {
+      for (RailId x : rails[n].arms)
+        if (alwaysChosen(x, a, depth + 1))
+          return true;
+      return false;
     }
-    Value *mh = rails[m].handle;
-    auto *phi = dyn_cast<PHINode>(mh);
-    if (!phi)
-      return; // a select whose resolvable arms were refused above: every arm is kept already
-    chain.push_back(m);
-    for (RailId a : SmallVector<RailId, 2>(rails[m].arms)) {
-      Rail &ra = rails[a];
-      if (ra.released || !ra.exitsDone.empty())
-        internalError("uncompute: setRole: an arm of a merged handle was already uncomputed", ra.handle);
-      auto joinOf = [&](const BasicBlock *s) -> RailId {
-        for (RailId k : chain)
-          if (cast<PHINode>(rails[k].handle)->getParent() == s)
-            return k;
-        return kNone;
-      };
-      auto chooses = [&](RailId k, const BasicBlock *from) {
-        auto *pk = cast<PHINode>(rails[k].handle);
-        Value *in = pk->getIncomingValueForBlock(from);
-        return in && is_contained(closure(lookup(in, "setRole", pk)), a);
-      };
-      const BasicBlock *D = defBlock(a);
-      SmallVector<std::pair<BasicBlock *, RailId>, 2> unchosen;
-      SmallPtrSet<const BasicBlock *, 16> seen;
-      SmallVector<const BasicBlock *, 16> work{D};
-      seen.insert(D);
-      while (!work.empty()) {
-        const BasicBlock *b = work.pop_back_val();
-        const Instruction *t = b->getTerminator();
-        if (!t || isa<ReturnInst>(t) || isa<UnreachableInst>(t))
-          unimplemented("uncompute: an arm of a kept merged handle, " + describe(ra.handle) +
-                            ", may reach a return or a block not yet emitted without passing the merge's join",
-                        phi);
-        for (const BasicBlock *s : successors(t)) {
-          if (RailId k = joinOf(s); k != kNone) {
-            std::pair<BasicBlock *, RailId> e{const_cast<BasicBlock *>(b), k};
-            if (!chooses(k, b) && !is_contained(unchosen, e))
-              unchosen.push_back(e);
-            continue;
-          }
-          if (s != D && seen.insert(s).second)
-            work.push_back(s);
-        }
-      }
-      if (isMerge(a)) {
-        if (!unchosen.empty())
-          unimplemented("uncompute: a nested merged arm, " + describe(ra.handle) +
-                            ", reaches a kept merge's join along an edge that does not choose it",
-                        phi);
-        keepPhi(a, role, live, chain);
-        ra.role = role;
+    SmallVector<Value *, 4> ins;
+    if (auto *phi = dyn_cast<PHINode>(rails[n].handle))
+      ins.append(phi->incoming_values().begin(), phi->incoming_values().end());
+    else if (auto *sel = dyn_cast<SelectInst>(rails[n].handle))
+      ins = {sel->getTrueValue(), sel->getFalseValue()};
+    for (Value *v : ins) {
+      auto it = byHandle.find(v);
+      if (it == byHandle.end() || !alwaysChosen(it->second, a, depth + 1))
+        return false;
+    }
+    return !ins.empty();
+  }
+
+  void keepMerge(RailId m, Role role) {
+    // The rails m may name that are resolvable before the role is set: the decisions below read this
+    // snapshot, so the order of m's arms changes nothing; rails kept already stay as they are.
+    DenseSet<RailId> live;
+    for (RailId x : closure(m))
+      if (resolvable(x))
+        live.insert(x);
+    for (RailId x : closure(m)) {
+      if (x == m)
+        continue;
+      if (isMerge(x)) {
+        rails[x].role = role;
         continue;
       }
-      if (!live.count(a))
-        continue;   // already kept before this role: it stays as it is on its paths
-      for (auto [P, k] : unchosen)
-        if (!itemEnd.count({a, P}))
-          resolveOnEdge(a, P, names(k), cast<PHINode>(rails[k].handle), k);
-      ra.role = role;
+      if (!live.count(x) || isDeclaredPseudo(x))
+        continue;   // U7: a declared clone's twin runs whatever the caller keeps
+      if (rails[x].ownedBy != kNone || alwaysChosen(m, x))
+        rails[x].role = role;
+      else if (!is_contained(rails[x].keepers, m))
+        rails[x].keepers.push_back(m);
     }
   }
 
-  // cq-sodl: is there a path leaving P (P's own tail included) to B that does not pass D again? A
-  // pass through D defines a new instance of a rail defined there.
-  static bool reachesAfterEdge(const BasicBlock *P, const BasicBlock *B, const BasicBlock *D) {
-    if (B == P)
-      return true;
-    SmallPtrSet<const BasicBlock *, 16> seen;
-    SmallVector<const BasicBlock *, 16> work{P};
-    while (!work.empty()) {
-      const BasicBlock *b = work.pop_back_val();
-      const Instruction *t = b->getTerminator();
-      if (!t)
-        continue;
-      for (const BasicBlock *s : successors(t)) {
-        if (s == D)
+  // cq-lshe (CR rule 9): the classical i1 "n names a" at n's definition. A rail names itself; a phi
+  // merge chooses by its incoming edge (an i1 phi beside it), a select merge by its classical condition
+  // (an i1 select beside it); a cell load may name each of its arms (true for a direct arm, else the
+  // disjunction over its merge arms). Nested merges compose.
+  DenseMap<std::pair<RailId, RailId>, Value *> chooseMemo;
+  Value *chooses(RailId n, RailId a) {
+    LLVMContext &C = rails[a].handle->getContext();
+    Type *I1 = Type::getInt1Ty(C);
+    if (n == a)
+      return ConstantInt::getTrue(C);
+    if (!isMerge(n) || !is_contained(closure(n), a))
+      return ConstantInt::getFalse(C);
+    if (auto it = chooseMemo.find({n, a}); it != chooseMemo.end())
+      return it->second;
+    auto *nh = cast<Instruction>(rails[n].handle);
+    if (rails[n].cellLoad) {
+      if (is_contained(rails[n].arms, a))
+        return chooseMemo[{n, a}] = ConstantInt::getTrue(C);
+      Value *v = ConstantInt::getFalse(C);
+      Instruction *ip = nh->getNextNode();
+      for (RailId x : rails[n].arms) {
+        Value *c = chooses(x, a);
+        if (auto *k = dyn_cast<ConstantInt>(c)) {
+          if (k->isOne())
+            return chooseMemo[{n, a}] = c;
           continue;
-        if (s == B)
-          return true;
-        if (seen.insert(s).second)
-          work.push_back(s);
+        }
+        if (auto *k = dyn_cast<ConstantInt>(v); k && k->isZero())
+          v = c;
+        else
+          v = track(BinaryOperator::CreateOr(v, c, "cq.ch", ip));
+      }
+      return chooseMemo[{n, a}] = v;
+    }
+    if (auto *phi = dyn_cast<PHINode>(nh)) {
+      PHINode *p = PHINode::Create(I1, phi->getNumIncomingValues(), "cq.ch");
+      p->insertAfter(phi);
+      emitted.insert(p);
+      chooseMemo[{n, a}] = p;
+      for (unsigned i = 0; i < phi->getNumIncomingValues(); ++i)
+        p->addIncoming(chooses(lookup(phi->getIncomingValue(i), "chooses", phi), a), phi->getIncomingBlock(i));
+      Value *same = nullptr;
+      bool uniform = true;
+      for (Value *v : p->incoming_values())
+        if (v != p) {
+          uniform = uniform && (!same || same == v);
+          same = same ? same : v;
+        }
+      if (uniform && same && isa<Constant>(same)) {
+        p->replaceAllUsesWith(same);
+        p->eraseFromParent();
+        emitted.erase(p);
+        return chooseMemo[{n, a}] = same;
+      }
+      return p;
+    }
+    auto *sel = cast<SelectInst>(nh);
+    Value *t = chooses(lookup(sel->getTrueValue(), "chooses", sel), a);
+    Value *f = chooses(lookup(sel->getFalseValue(), "chooses", sel), a);
+    if (t == f)
+      return chooseMemo[{n, a}] = t;
+    auto *kt = dyn_cast<ConstantInt>(t), *kf = dyn_cast<ConstantInt>(f);
+    if (kt && kf && kt->isOne())   // (c ? true : false) is c itself
+      return chooseMemo[{n, a}] = sel->getCondition();
+    auto *s = SelectInst::Create(sel->getCondition(), t, f, "cq.ch");
+    s->insertAfter(sel);
+    emitted.insert(s);
+    return chooseMemo[{n, a}] = s;
+  }
+  Instruction *track(Instruction *i) {
+    emitted.insert(i);
+    return i;
+  }
+
+  // ---- run flags (cq-lshe, CR §0, rules 5, 9) ---------------------------------------------------
+  //
+  // A classical i1 path variable: dflt at the entry; at each event, in program order, set (true) or
+  // cleared where its condition holds (flag &= !cond). Its value at an instruction is built as SSA:
+  // phis at the joins (over the output CFG's real predecessors, as carryTo), and/xor before the
+  // terminators of the blocks with events; a block with a set event starts from it. Trivial phis are
+  // folded, a clear by an i1 phi beside a merge is applied per incoming edge (so a choice made on every
+  // path folds to a constant).
+  struct FlagEv {
+    Instruction *at;               // a phi: the top of its block
+    bool set;                      // set: true; else clear by cond
+    RailId merge = kNone, arm = kNone; // the clear's cond: chooses(merge, arm); merge kNone: true
+  };
+  Value *flagAt(Instruction *at, ArrayRef<FlagEv> evs, bool dflt) {
+    LLVMContext &C = at->getContext();
+    Type *I1 = Type::getInt1Ty(C);
+    Constant *T = ConstantInt::getTrue(C), *F = ConstantInt::getFalse(C);
+    // The conditions first: they may add phis and selects beside merges.
+    SmallVector<Value *, 8> conds;
+    for (const FlagEv &e : evs)
+      conds.push_back(e.set ? T : e.merge == kNone ? static_cast<Value *>(T) : chooses(e.merge, e.arm));
+    DenseMap<const BasicBlock *, SmallVector<unsigned, 2>> byBlock;
+    for (unsigned i = 0; i < evs.size(); ++i)
+      if (evs[i].at && evs[i].at->getParent())
+        byBlock[evs[i].at->getParent()].push_back(i);
+    for (auto &kv : byBlock)
+      llvm::stable_sort(kv.second, [&](unsigned x, unsigned y) {
+        return evs[x].at != evs[y].at && evs[x].at->comesBefore(evs[y].at);
+      });
+    std::vector<PHINode *> made;
+    std::vector<Instruction *> ops;   // and/xor made here
+    DenseMap<BasicBlock *, Value *> startOf, endOf;
+    SmallPtrSet<BasicBlock *, 8> busy;
+    std::function<Value *(Value *, Value *, Instruction *, BasicBlock *)> clearWith =
+        [&](Value *v, Value *c, Instruction *ip, BasicBlock *b) -> Value * {
+      if (auto *k = dyn_cast<ConstantInt>(c))
+        return k->isZero() ? v : F;
+      if (auto *k = dyn_cast<ConstantInt>(v); k && k->isZero())
+        return F;
+      // A choice phi of this block: apply it per incoming edge (v is a start phi of the block or a constant).
+      auto *cp = dyn_cast<PHINode>(c);
+      auto *vp = dyn_cast<PHINode>(v);
+      // (Only over a complete start phi: one still being filled lies on a cycle being built.)
+      auto complete = [&](PHINode *q) {
+        return all_of(cp->blocks(), [&](BasicBlock *p) { return q->getBasicBlockIndex(p) >= 0; });
+      };
+      if (cp && cp->getParent() == b &&
+          (isa<Constant>(v) || (vp && vp->getParent() == b && is_contained(made, vp) && complete(vp)))) {
+        PHINode *np = PHINode::Create(I1, cp->getNumIncomingValues(), "cq.run");
+        np->insertInto(b, b->begin());
+        emitted.insert(np);
+        made.push_back(np);
+        for (unsigned i = 0; i < cp->getNumIncomingValues(); ++i) {
+          BasicBlock *p = cp->getIncomingBlock(i);
+          Value *vi = vp ? vp->getIncomingValueForBlock(p) : v;
+          np->addIncoming(clearWith(vi, cp->getIncomingValue(i), p->getTerminator(), p), p);
+        }
+        return np;
+      }
+      Instruction *n = track(BinaryOperator::CreateXor(c, T, "cq.not", ip));
+      ops.push_back(n);
+      if (isa<ConstantInt>(v))   // true here
+        return n;
+      Instruction *a = track(BinaryOperator::CreateAnd(v, n, "cq.run", ip));
+      ops.push_back(a);
+      return a;
+    };
+    std::function<Value *(BasicBlock *)> startV, endV;
+    auto applyIn = [&](BasicBlock *b, Instruction *limit, Instruction *ip) -> Value * {
+      SmallVector<unsigned, 4> es;
+      if (auto it = byBlock.find(b); it != byBlock.end())
+        for (unsigned i : it->second)
+          if (!limit || (evs[i].at != limit && evs[i].at->comesBefore(limit)))
+            es.push_back(i);
+      int lastSet = -1;
+      for (unsigned k = 0; k < es.size(); ++k)
+        if (evs[es[k]].set)
+          lastSet = static_cast<int>(k);
+      Value *v = lastSet >= 0 ? static_cast<Value *>(T) : startV(b);
+      for (unsigned k = lastSet + 1; k < es.size(); ++k)
+        v = clearWith(v, conds[es[k]], ip, b);
+      return v;
+    };
+    endV = [&](BasicBlock *b) -> Value * {
+      if (auto it = endOf.find(b); it != endOf.end())
+        return it->second;
+      if (!b->getTerminator())
+        internalError("uncompute: a run flag through a block that is not terminated yet", at);
+      Value *v = applyIn(b, nullptr, b->getTerminator());
+      return endOf[b] = v;
+    };
+    startV = [&](BasicBlock *b) -> Value * {
+      if (auto it = startOf.find(b); it != startOf.end())
+        return it->second;
+      SmallVector<BasicBlock *, 4> ps(predecessors(b));
+      if (b->isEntryBlock() || ps.empty())
+        return startOf[b] = dflt ? T : F;
+      if (ps.size() == 1) {
+        if (!busy.insert(b).second)
+          return F;   // a cycle of single-predecessor blocks is unreachable
+        Value *v = endV(ps[0]);
+        busy.erase(b);
+        return startOf[b] = v;
+      }
+      PHINode *phi = PHINode::Create(I1, ps.size(), "cq.run");
+      phi->insertInto(b, b->begin());
+      emitted.insert(phi);
+      made.push_back(phi);
+      startOf[b] = phi;
+      for (BasicBlock *p : ps)
+        phi->addIncoming(endV(p), p);
+      return phi;
+    };
+    Value *r = applyIn(at->getParent(), at, at);
+    // Fold trivial phis and drop unused ones, to a fixed point.
+    for (bool changed = true; changed;) {
+      changed = false;
+      for (PHINode *&phi : made) {
+        if (!phi)
+          continue;
+        bool dead = phi != r && all_of(phi->users(), [&](User *u) { return u == phi; });
+        if (dead) {
+          phi->replaceAllUsesWith(PoisonValue::get(I1));
+          emitted.erase(phi);
+          phi->eraseFromParent();
+          phi = nullptr;
+          changed = true;
+          continue;
+        }
+        // Trivial through cycles of made phis: every value reached through them is one value.
+        Value *same = nullptr;
+        bool trivial = true;
+        SmallPtrSet<PHINode *, 8> seen;
+        SmallVector<PHINode *, 8> work{phi};
+        while (!work.empty() && trivial) {
+          PHINode *q = work.pop_back_val();
+          if (!seen.insert(q).second)
+            continue;
+          for (Value *in : q->incoming_values()) {
+            if (auto *qp = dyn_cast<PHINode>(in); qp && is_contained(made, qp)) {
+              work.push_back(qp);
+              continue;
+            }
+            if (in == same)
+              continue;
+            if (same) {
+              trivial = false;
+              break;
+            }
+            same = in;
+          }
+        }
+        if (!trivial || !same)
+          continue;
+        phi->replaceAllUsesWith(same);
+        if (r == phi)
+          r = same;
+        emitted.erase(phi);
+        phi->eraseFromParent();
+        phi = nullptr;
+        changed = true;
       }
     }
-    return false;
+    // Instructions made here that nothing reads (a block's end value computed twice on a cycle).
+    for (bool changed = true; changed;) {
+      changed = false;
+      for (Instruction *&i : ops)
+        if (i && i != r && i->use_empty()) {
+          emitted.erase(i);
+          i->eraseFromParent();
+          i = nullptr;
+          changed = true;
+        }
+      for (PHINode *&phi : made)
+        if (phi && phi != r && all_of(phi->users(), [&](User *u) { return u == phi; })) {
+          phi->replaceAllUsesWith(PoisonValue::get(I1));
+          emitted.erase(phi);
+          phi->eraseFromParent();
+          phi = nullptr;
+          changed = true;
+        }
+    }
+    sweepChooses(r);
+    return r;
+  }
+  // Choice values nothing reads (a flag that folded to a constant): erased, to a fixed point.
+  void sweepChooses(Value *keep) {
+    for (bool changed = true; changed;) {
+      changed = false;
+      for (auto it = chooseMemo.begin(); it != chooseMemo.end(); ++it) {
+        auto *i = dyn_cast<Instruction>(it->second);
+        if (!i || i == keep || !emitted.count(i) || !all_of(i->users(), [&](User *u) { return u == i; }))
+          continue;
+        i->replaceAllUsesWith(PoisonValue::get(i->getType()));
+        emitted.erase(i);
+        i->eraseFromParent();
+        chooseMemo.erase(it);
+        changed = true;
+        break;
+      }
+    }
   }
 
   // cq-1dgy: is there a path of at least one edge from P to B (B == P: a cycle through P) that
@@ -1588,223 +1897,6 @@ struct Uncompute::Impl {
       }
     }
     return false;
-  }
-
-  // Does reading r read x other than through the merge m (r == x, or a merge naming x by an arm
-  // path that avoids m)?
-  bool readsPast(RailId r, RailId x, RailId m) const {
-    if (r == m)
-      return false;
-    if (r == x)
-      return true;
-    for (RailId a : rails[r].arms)
-      if (readsPast(a, x, m))
-        return true;
-    return false;
-  }
-
-  // cq-sodl: a read of r at `at` (null: no position known) after an edge where a rail r may name was
-  // freed because the merge did not choose it there. On a path leaving that edge the rail is gone.
-  void checkEdgeRead(RailId r, const Instruction *at, const char *who) const {
-    for (RailId x : closure(r))
-      for (auto [P, m] : rails[x].edgeFrees) {
-        if (!readsPast(r, x, m))
-          continue;
-        if (at && at->getParent() && !reachesAfterEdge(P, at->getParent(), defBlock(x)))
-          continue;
-        unimplemented(std::string("uncompute: ") + who + ": an arm of a kept merged handle, " +
-                          describe(rails[x].handle) +
-                          ", is read after the edge where the merge does not choose it and it was freed" +
-                          (at ? "" : " (no position: assumed after)"),
-                      at ? static_cast<const Value *>(at) : rails[x].handle);
-      }
-  }
-
-  // At a return: every IR user of an edge-freed arm's handle (beyond the merges, checked at
-  // recordMerge, and our own items) lies where the arm still exists on its path.
-  //
-  // cq-1dgy: nor may a path leaving P come back, without passing x's definition, to P itself (the
-  // free runs again on the same instance: double free) or to the incoming block of a merge phi whose
-  // incoming value there may name x (a later iteration chooses the freed instance: use after free).
-  // The output CFG is complete only once the loops around P are emitted (their back edges are not
-  // there yet when the role is set), so this is checked at each return, with checkEdgeUsers.
-  void checkEdgeLoops() const {
-    for (RailId x = 0; x < rails.size(); ++x)
-      for (auto [P, m] : rails[x].edgeFrees) {
-        const BasicBlock *D = defBlock(x);
-        auto refuse = [&](const BasicBlock *b) {
-          unimplemented("uncompute: an arm of a kept merged handle, " + describe(rails[x].handle) +
-                            ", freed at the end of an edge where the merge does not choose it, is reached again "
-                            "from that edge without being redefined (a loop around the join)",
-                        b->getTerminator());
-        };
-        if (reachesAgain(P, P, {D}))
-          refuse(P);
-        // A merge n reads x where an operand may name it: a phi at the end of that incoming block, a
-        // select at its own block. An operand naming x only through a nested merge r is re-chosen
-        // whenever the path passes r's definition, so such a path does not read the freed instance.
-        auto check = [&](Value *v, const BasicBlock *at) {
-          auto it = byHandle.find(v);
-          if (it == byHandle.end() || !is_contained(closure(it->second), x))
-            return;
-          SmallVector<const BasicBlock *, 2> avoid{D};
-          if (it->second != x)
-            avoid.push_back(defBlock(it->second));
-          if (reachesAgain(P, at, avoid))
-            refuse(at);
-        };
-        for (RailId n : names(x)) {
-          if (n == x)
-            continue;
-          if (auto *phi = dyn_cast<PHINode>(rails[n].handle)) {
-            for (unsigned j = 0; j < phi->getNumIncomingValues(); ++j)
-              check(phi->getIncomingValue(j), phi->getIncomingBlock(j));
-          } else if (auto *sel = dyn_cast<SelectInst>(rails[n].handle)) {
-            check(sel->getTrueValue(), sel->getParent());
-            check(sel->getFalseValue(), sel->getParent());
-          }
-        }
-      }
-  }
-
-  void checkEdgeUsers() const {
-    checkEdgeLoops();
-    for (RailId x = 0; x < rails.size(); ++x)
-      for (auto [P, m] : rails[x].edgeFrees)
-        for (User *u : rails[x].handle->users()) {
-          auto *i = dyn_cast<Instruction>(u);
-          if (!i || !i->getParent() || emitted.count(i) || isMergeHandle(i))
-            continue;
-          if (i->getParent() == P) {
-            auto it = itemEnd.find({x, P});
-            if (it == itemEnd.end() || i->comesBefore(it->second))
-              continue;
-          } else if (!reachesAfterEdge(P, i->getParent(), defBlock(x))) {
-            continue;
-          }
-          unimplemented("uncompute: an arm of a kept merged handle, " + describe(rails[x].handle) +
-                            ", is used after the edge where the merge does not choose it and it was freed",
-                        i);
-        }
-  }
-
-  // cq-igqp: does every path from g's definition to the end of P pass a block of hitBlocks (the blocks
-  // of non-diagonal gates on g or on a rail its item reads, each after g's record)? A gate in the
-  // definition's block covers every path when it follows the definition there.
-  bool hitOnEveryPath(RailId g, const SmallPtrSetImpl<const BasicBlock *> &hitBlocks, const BasicBlock *P) const {
-    const Rail &r = rails[g];
-    const BasicBlock *D = defBlock(g);
-    const Instruction *def = r.creator != kNone ? records[r.creator].forward : dyn_cast<Instruction>(r.handle);
-    for (auto [e, kind] : barriers(g))
-      if (e->getParent() == D && hitBlocks.count(D) && (!def || def->getParent() != D || def->comesBefore(e)))
-        return true;
-    if (D == P)
-      return false;
-    SmallPtrSet<const BasicBlock *, 16> seen;
-    SmallVector<const BasicBlock *, 16> work{D};
-    while (!work.empty()) {
-      const BasicBlock *b = work.pop_back_val();
-      if (const Instruction *t = b->getTerminator())
-        for (const BasicBlock *s : successors(t)) {
-          if (s == D || hitBlocks.count(s) || !seen.insert(s).second)
-            continue;   // a cycle back into D may meet a gate before the definition: D is not a cover
-          if (s == P)
-            return false;
-          work.push_back(s);
-        }
-    }
-    return true;
-  }
-
-  // Resolve the arm a at the end of P, a block whose only successor is the join of the merge phi,
-  // which does not choose a from P. After P, a is not read on that path: the merge (and every merge
-  // that names a only through it) names another arm there.
-  void resolveOnEdge(RailId a, BasicBlock *P, ArrayRef<RailId> mNames, PHINode *phi, RailId m) {
-    Rail &ra = rails[a];
-    Instruction *T = P->getTerminator();
-    if (T->getNumSuccessors() != 1)
-      unimplemented("uncompute: an arm of a kept merged handle is unchosen on an edge whose block also branches "
-                        "elsewhere: " + describe(ra.handle),
-                    T);
-    if (!dominates(defBlock(a), P))
-      unimplemented("uncompute: an arm of a kept merged handle may or may not exist where its edge leaves: " +
-                        describe(ra.handle),
-                    T);
-    // No direct use of a (nor through another merge) may follow P.
-    SmallVector<Instruction *, 8> uses;
-    if (ra.creator != kNone)
-      uses.push_back(records[ra.creator].forward);
-    for (unsigned w : ra.writes)
-      uses.push_back(records[w].forward);
-    SmallVector<RailId, 4> others;
-    for (RailId n : names(a))
-      if (!is_contained(mNames, n))
-        others.push_back(n);
-    for (RailId n : others) {
-      for (User *u : rails[n].handle->users()) {
-        auto *i = dyn_cast<Instruction>(u);
-        if (!i || i == phi)
-          continue;
-        // A phi reads its incoming value at the end of the incoming block (cq-sodl: an outer merge
-        // choosing the arm from another edge).
-        if (auto *up = dyn_cast<PHINode>(i)) {
-          for (unsigned j = 0; j < up->getNumIncomingValues(); ++j)
-            if (up->getIncomingValue(j) == rails[n].handle)
-              uses.push_back(up->getIncomingBlock(j)->getTerminator());
-          continue;
-        }
-        uses.push_back(i);
-      }
-      uses.append(rails[n].uses.begin(), rails[n].uses.end());
-    }
-    for (Instruction *u : uses)
-      if (u->getParent() != P && reaches(P, u->getParent()))
-        unimplemented("uncompute: an arm of a kept merged handle, " + describe(ra.handle) +
-                          ", is still used after an edge where the merge does not choose it",
-                      u);
-    // Its readers must already be resolved (or kept): their items would need it on this path.
-    for (RailId n : others) {
-      SmallVector<RailId, 4> rd;
-      for (unsigned rec : rails[n].readerRecs)
-        rd.push_back(info[rec].item);
-      rd.append(rails[n].cleanupReaders.begin(), rails[n].cleanupReaders.end());
-      for (RailId o : rd)
-        if (o != a && !rails[o].released && (resolvable(o) || !rails[o].exitsDone.empty() || rails[o].cleanup))
-          unimplemented("uncompute: an arm of a kept merged handle, " + describe(ra.handle) +
-                            ", is read by a pending rail " + describe(rails[o].handle) +
-                            " where the merge does not choose it",
-                        T);
-    }
-    // cq-igqp (CR §0, rule 10): a non-diagonal gate on the arm (or on a rail its item reads) that runs on
-    // every path from the arm's definition to P leaves it entangled: it stays allocated on this path
-    // (kept, live at exit), as A4's KeptEntangled. A gate on some of those paths only (the arm could be
-    // cleaned on the others, CR §0), a gate through a slot cell (decided at run time) or an in-place
-    // write there is unimplemented.
-    SmallPtrSet<const BasicBlock *, 8> hitBlocks;
-    Instruction *firstBar = nullptr;
-    for (auto [e, kind] : barriers(a))
-      if (e->getParent() == P || reaches(e->getParent(), P)) {
-        if (kind != Bar::Hit)
-          unimplemented("uncompute: a barrier precedes the resolution of an unchosen arm of a kept merged handle, " +
-                            describe(ra.handle),
-                        e);
-        hitBlocks.insert(e->getParent());
-        if (!firstBar)
-          firstBar = e;
-      }
-    if (firstBar) {
-      bool avoided = !hitOnEveryPath(a, hitBlocks, P);
-      if (avoided)
-        unimplemented("uncompute: a non-diagonal gate on some paths only precedes the resolution of an unchosen "
-                          "arm of a kept merged handle, " + describe(ra.handle) +
-                          " (it is entangled on those paths and must be cleaned on the others)",
-                      firstBar);
-      return;
-    }
-    IRBuilder<> B(T);
-    Instruction *end = emitItem(a, B);
-    itemEnd[{a, P}] = end;
-    ra.edgeFrees.push_back({P, m}); // cq-sodl: any later read past m on a path leaving P is caught
   }
 
   // ---- emission --------------------------------------------------------------------------------
@@ -2096,6 +2188,21 @@ struct Uncompute::Impl {
         if (kv.first.first == o)
           as.push_back(kv.second);
     bool local = all_of(as, [&](Instruction *a) { return a->getParent() == D; });
+    if (!local && cycleArm.count(g)) {
+      // cq-lshe: an arm defined on a cycle, pending at a return its definition does not dominate. Each
+      // instance is resolved in the pass that defined it, at a block every path from the definition
+      // passes before it runs again or returns, after every use of the instance, under its run flag
+      // (cleared by the item itself, so a later pass through the block before a redefinition is no
+      // second free).
+      BasicBlock *Bp = cyclePoint(g, as);
+      if (!Bp)
+        unimplemented("uncompute: an arm of a merged handle, " + describe(r.handle) +
+                          ", is defined on a cycle and no block after its uses lies on every path from its definition "
+                          "back to it or to a return (its instances cannot be resolved one by one)",
+                      c.point);
+      placeAt(g, {Bp, Bp->getTerminator()}, true, /*exists=*/true, /*selfClear=*/true);
+      return;
+    }
     Pos pos;
     if (local) {
       pos = afterLatest(D, as, g);
@@ -2111,81 +2218,318 @@ struct Uncompute::Impl {
     }
     if (!pos.before)
       internalError("uncompute: no insertion point for " + describe(r.handle));
-    placeAt(g, pos, local);
+    placeAt(g, pos, local, !local && armLocal.count(g));
   }
 
-  // Emits g's item at pos after rule 5's barrier check (local: resolved for good).
-  void placeAt(RailId g, Pos pos, bool local) {
+  // Emits g's item at pos after rule 5's barrier check (local: resolved for good). exists: the item runs
+  // only where g's definition ran (an arm-local rail at a span point or a return).
+  //
+  // cq-lshe (CR §0, rules 5, 9, 10): the item runs under its run flag, a classical i1 (flagAt) that holds
+  // where g exists and none of these happened since its definition: a non-diagonal gate on g or on a
+  // rail its item reads (after the record that read it; on the paths through the gate the rail stays
+  // allocated, entangled), a keeper of g choosing g (it is kept there), a gate on a merge choosing g or
+  // a rail the item reads. A flag that is constant false keeps g (KeptEntangled when a gate decides it,
+  // A4); constant true emits the item plainly; otherwise the item is wrapped in a block of its own.
+  void placeAt(RailId g, Pos pos, bool local, bool exists = false, bool selfClear = false) {
     Rail &r = rails[g];
-    // Rule 5's invariant.
-    bool kept = false;
-    // cq-igqp: non-diagonal gates in other blocks that reach the placement keep g (A4) when g's
-    // definition dominates the placement and every path from it to the placement passes one of them
-    // (a carried register rotated in every trip, its initial rail named by the loop's header phi);
-    // otherwise unimplemented.
-    SmallPtrSet<const BasicBlock *, 8> crossHits;
-    Instruction *crossBar = nullptr;
-    bool crossOther = false;
-    for (auto [e, kind] : barriers(g))
-      if (e->getParent() != pos.bb && reaches(e->getParent(), pos.bb)) {
-        if (!crossBar || (kind != Bar::Hit && !crossOther))
-          crossBar = e;
-        crossOther = crossOther || kind != Bar::Hit;
-        crossHits.insert(e->getParent());
-      }
-    if (crossBar) {
-      if (crossOther || !dominates(defBlock(g), pos.bb) || !hitOnEveryPath(g, crossHits, pos.bb))
-        unimplemented("uncompute: a barrier in another block lies between a rail and its uncompute", crossBar);
-      kept = true;
-    }
+    SmallVector<FlagEv, 8> evs;
+    if (selfClear)
+      evs.push_back({pos.before, false});
+    bool gated = false;
+    auto beforePos = [&](const Instruction *e) {
+      return e->getParent() == pos.bb ? (e != pos.before && e->comesBefore(pos.before)) : reaches(e->getParent(), pos.bb);
+    };
+    bool written = false, pointee = false;
     for (auto [e, kind] : barriers(g)) {
-      bool violated;
-      if (e->getParent() == pos.bb)
-        violated = !(pos.before == e || pos.before->comesBefore(e));
-      else
-        violated = false;   // cross-block: decided above
-      if (!violated)
+      if (!beforePos(e))
         continue;
-      if (kind == Bar::PointeeWrite)
-        unimplemented("uncompute: a write that may change an object a clone call's pointer argument points to lies "
-                      "between the call and its twin's earliest placement, " + describe(r.handle) +
-                          " (cq-fwto: the twin reads the object when it runs)",
-                      e);
-      if (kind == Bar::Write)
-        unimplemented("uncompute: an in-place write on an operand rail precedes the earliest uncompute of " +
-                          describe(r.handle),
-                      e);
+      if (kind == Bar::Hit) {
+        evs.push_back({e, false});
+        gated = true;
+        continue;
+      }
+      if (kind == Bar::PointeeWrite) {
+        pointee = true;
+        continue;
+      }
+      if (kind == Bar::Write) {
+        written = true;
+        continue;
+      }
       // cq-zh7z: the gate's handle may name an operand rail through memory (a store or load of a
       // cell that may hold it). Rule 5 needs the _unc before the gate when it is that rail, and CR §0 needs
       // it cleaned when it is not; which one holds is only known at run time.
-      if (kind == Bar::AliasHit)
-        unimplemented("uncompute: a non-diagonal gate on a handle that may name an operand rail of " +
-                          describe(r.handle) +
-                          " through a slot cell precedes its earliest uncompute (whether it hits that rail is "
-                          "decided at run time)",
-                      e);
-      kept = true;
+      unimplemented("uncompute: a non-diagonal gate on a handle that may name an operand rail of " +
+                        describe(r.handle) +
+                        " through a slot cell precedes its earliest uncompute (whether it hits that rail is "
+                        "decided at run time)",
+                    e);
     }
-    if (kept) {
-      r.role = Role::KeptEntangled;
-      r.cleanup.reset();
-      if (r.popBus != kNone)
-        keepBelow(g);
-      return;
+    // The record that defines g's value (the gates and choices before it concern an older instance).
+    Instruction *def = r.creator != kNone ? records[r.creator].forward : dyn_cast<Instruction>(r.handle);
+    // cq-lshe (CR rule 5; Bennett.jl value_eager lines 31-39): the in-place writes on rails the item reads
+    // that run between g's record and pos are undone before the item and redone after it (sandwich).
+    SmallVector<unsigned, 4> sandwich;
+    if (written)
+      sandwichOf(g, def, beforePos, sandwich, evs, gated);
+    // cq-lshe (CR rule 18, cq-fwto): a write into the memory a clone call's twin reads, between the call and
+    // the twin: the object is snapshotted after the call and swapped in around the twin.
+    SmallVector<std::pair<CallInst *, Value *>, 2> swaps;
+    if (pointee)
+      swapsOf(g, swaps);
+    for (RailId m : r.keepers)
+      if (auto *mi = dyn_cast<Instruction>(rails[m].handle); mi && mi->getParent())
+        evs.push_back({mi, false, m, g});
+    SmallVector<RailId, 8> xs{g};
+    for (RailId x0 : itemReads(g))
+      for (RailId x : leaves(x0))
+        if (!is_contained(xs, x))
+          xs.push_back(x);
+    for (RailId x : xs)
+      for (auto [gate, n] : rails[x].condHits)
+        if (gate->getParent() && (!def || after(gate, def)) && beforePos(gate)) {
+          evs.push_back({gate, false, n, x});
+          gated = true;
+        }
+    bool guard = exists || !evs.empty();
+    Value *cond = nullptr;
+    if (guard) {
+      if (def)
+        evs.push_back({def, true});
+      cond = flagAt(pos.before, evs, !def);
+      if (auto *k = dyn_cast<ConstantInt>(cond)) {
+        if (k->isZero()) {
+          // Kept on every path to pos: entangled (A4), or chosen by a keeper on each of them.
+          if (gated || r.keepers.empty()) {
+            r.role = Role::KeptEntangled;
+            r.cleanup.reset();
+            if (r.popBus != kNone)
+              keepBelow(g);
+          } else {
+            r.role = rails[r.keepers.front()].role;
+          }
+          return;
+        }
+        guard = false;
+      }
     }
-    Instruction *prev = pos.before->getPrevNode();
+    if (guard && r.popBus != kNone)
+      unimplemented("uncompute: a QRAM store whose POP reads a rail a non-diagonal gate hits on some paths only "
+                    "(the earlier stores, the loads of earlier versions and the bus would stay on those paths only)",
+                    records[r.creator].forward);
+    auto &wraps = local ? localWraps : armItems;
+    // Each sandwich write that does not run on every path from g's definition to pos is undone and redone
+    // under its own flag "it ran since the definition".
+    SmallVector<Value *, 4> wcond;
+    for (unsigned w : sandwich) {
+      SmallVector<FlagEv, 2> we;
+      if (def)
+        we.push_back({def, false});
+      we.push_back({records[w].forward, true});
+      wcond.push_back(flagAt(pos.before, we, false));
+    }
     IRBuilder<> B(pos.before);
+    auto guarded = [&](Value *c, function_ref<Instruction *()> emit) {
+      Instruction *i = emit();
+      if (auto *k = dyn_cast<ConstantInt>(c); !(k && k->isOne()))
+        wraps.push_back({g, i, i, c});
+      return i;
+    };
+    for (unsigned k = sandwich.size(); k-- > 0;)
+      guarded(wcond[k], [&] { return emitWrite(sandwich[k], B, /*undo=*/true); });
+    SmallVector<Value *, 2> tmps;
+    for (auto [fwd, obj] : swaps)
+      tmps.push_back(swapIn(fwd, obj, B));
+    Instruction *prev = pos.before->getPrevNode();
     Instruction *end = emitItem(g, B);
-    itemEnd[{g, pos.bb}] = end;
+    Instruction *first = prev ? prev->getNextNode() : &pos.bb->front();
+    Instruction *last = end;
+    for (unsigned k = 0; k < swaps.size(); ++k)
+      last = swapOut(swaps[k].second, tmps[k], B);
+    for (unsigned k = 0; k < sandwich.size(); ++k)
+      last = guarded(wcond[k], [&] { return emitWrite(sandwich[k], B, /*undo=*/false); });
+    itemEnd[{g, pos.bb}] = last;
     if (local)
       r.released = true;
     else
       r.exitsDone.insert(pos.bb);
-    if (!local && armLocal.count(g)) {
-      Instruction *first = prev ? prev->getNextNode() : &pos.bb->front();
-      if (first != pos.before)
-        armItems.push_back({g, first, end});
+    if (guard && first != pos.before)
+      wraps.push_back({g, first, end, cond});
+  }
+
+  // The sandwich of g's item: every in-place write record on a rail the item reads, or on a rail such a
+  // write reads, that runs after g's definition and before the placement (beforePos), in program order.
+  // A non-diagonal gate on a rail a write reads, after the write, makes its undo impossible there: a run
+  // flag event of g (it stays allocated on those paths, CR §0). A write that may run more than once per
+  // instance of g (a cycle through it that avoids g's definition) is unimplemented.
+  template <typename BeforeFn>
+  void sandwichOf(RailId g, Instruction *def, BeforeFn &&beforePos, SmallVectorImpl<unsigned> &out,
+                  SmallVectorImpl<FlagEv> &evs, bool &gated) {
+    for (unsigned w : sandwichCands(g)) {
+      Instruction *f = records[w].forward;
+      if ((def && !after(f, def)) || !beforePos(f))
+        continue;
+      if (info[w].kind != RecKind::Involution && info[w].kind != RecKind::QramStore)
+        internalError("uncompute: an in-place write record that is neither an involution nor a QRAM store", f);
+      if (reachesAgain(f->getParent(), f->getParent(), {def ? def->getParent() : &f->getFunction()->getEntryBlock()}))
+        unimplemented("uncompute: an in-place write on an operand rail of " + describe(rails[g].handle) +
+                          " may run more than once between its record and its earliest uncompute (a loop "
+                          "around the write that does not redefine the rail)",
+                      f);
+      out.push_back(w);
+      // A non-diagonal gate on a rail the write reads, after it: its undo cannot run there.
+      for (RailId y0 : info[w].reads)
+        for (RailId y : leaves(y0))
+          for (Instruction *h : rails[y].hits)
+            if (h->getParent() && h != f && after(h, f) && beforePos(h)) {
+              evs.push_back({h, false});
+              gated = true;
+            }
     }
+    // Program order (the writes lie on paths from def to pos, an acyclic reading).
+    llvm::stable_sort(out, [&](unsigned a, unsigned b) {
+      const Instruction *x = records[a].forward, *y = records[b].forward;
+      if (x->getParent() == y->getParent())
+        return x->comesBefore(y);
+      return reaches(x->getParent(), y->getParent()) && !reaches(y->getParent(), x->getParent());
+    });
+  }
+
+  // An in-place write record undone (an involution: the same call; a QRAM store: its _unc) or redone.
+  CallInst *emitWrite(unsigned w, IRBuilder<> &B, bool undo) {
+    CallInst *fwd = records[w].forward;
+    if (fwd->getCalledFunction() && !fwd->getCalledFunction()->getName().starts_with("cqrt_")) {
+      // U6/U3: a store a clone made, spelled from its record over the caller's operands.
+      abi::CoreSpec spec = std::get<abi::CoreSpec>(records[w].spec);
+      spec.unc = undo;
+      SmallVector<Value *, 3> args;
+      for (const Operand &o : records[w].ops)
+        args.push_back(o.v);
+      return track(B.CreateCall(abi::declare(*B.GetInsertBlock()->getModule(), spec), args));
+    }
+    if (undo && info[w].kind == RecKind::QramStore)
+      return track(B.CreateCall(uncOf(fwd, false), argsOf(fwd, nullptr)));
+    return track(B.CreateCall(fwd->getFunctionType(), fwd->getCalledOperand(), argsOf(fwd, nullptr)));
+  }
+
+  // The objects the twin of a clone call g's item undoes reads (its footprint), each to be swapped back to
+  // its content right after the call. An object of unknown extent (a formal's or the heap's, a dynamic
+  // alloca, every object reachable from outside the frame) is unimplemented.
+  void swapsOf(RailId g, SmallVectorImpl<std::pair<CallInst *, Value *>> &out) {
+    for (unsigned rec : undone(g)) {
+      if (info[rec].kind != RecKind::Call && info[rec].kind != RecKind::Template)
+        continue;
+      auto *fwd = cast<CallInst>(records[rec].forward);
+      Footprint fp = footprint(fwd);
+      if (fp.empty())
+        continue;
+      if (fp.unbounded)
+        unimplemented("uncompute: a write into memory a clone call's twin reads lies between the call and the twin "
+                      "(" + describe(rails[g].handle) + "), and the clone reads memory reached through a pointer it "
+                      "loaded or an unknown callee (its extent is not known: cq-99z6)",
+                      fwd);
+      for (const Cell &c : fp.objs) {
+        Value *obj = const_cast<Value *>(getUnderlyingObject(c.ptr));
+        bool sized = false;
+        if (auto *AI = dyn_cast<AllocaInst>(obj))
+          sized = AI->isStaticAlloca() && AI->getAllocationSize(fwd->getModule()->getDataLayout()).has_value();
+        else if (auto *GV = dyn_cast<GlobalVariable>(obj))
+          sized = GV->getValueType()->isSized();
+        if (!sized)
+          unimplemented("uncompute: a write into memory a clone call's twin reads lies between the call and the twin "
+                        "(" + describe(rails[g].handle) + "), in an object whose extent is not known here (a "
+                        "formal's object, the heap, a dynamic alloca)",
+                        fwd);
+        if (!is_contained(out, std::make_pair(fwd, obj)))
+          out.push_back({fwd, obj});
+      }
+    }
+  }
+  uint64_t objectSize(Value *obj) const {
+    const DataLayout &DL = cast<Instruction>(obj) ? cast<Instruction>(obj)->getModule()->getDataLayout()
+                                                  : cast<GlobalVariable>(obj)->getParent()->getDataLayout();
+    if (auto *AI = dyn_cast<AllocaInst>(obj))
+      return AI->getAllocationSize(DL)->getFixedValue();
+    return DL.getTypeAllocSize(cast<GlobalVariable>(obj)->getValueType()).getFixedValue();
+  }
+  // A frame buffer of obj's size in the entry block.
+  Value *frameCopy(Function &F, Value *obj, const Twine &name) {
+    LLVMContext &C = F.getContext();
+    IRBuilder<> E(&*F.getEntryBlock().getFirstInsertionPt());
+    auto *a = E.CreateAlloca(ArrayType::get(Type::getInt8Ty(C), objectSize(obj)), nullptr, name);
+    emitted.insert(a);
+    return a;
+  }
+  DenseMap<std::pair<CallInst *, Value *>, Value *> snaps;
+  Value *swapIn(CallInst *fwd, Value *obj, IRBuilder<> &B) {
+    Function &F = *fwd->getFunction();
+    uint64_t n = objectSize(obj);
+    Value *&snap = snaps[{fwd, obj}];
+    if (!snap) {
+      snap = frameCopy(F, obj, "cq.snap");
+      IRBuilder<> A(fwd->getNextNode());
+      emitted.insert(A.CreateMemCpy(snap, MaybeAlign(1), obj, MaybeAlign(1), n));
+    }
+    Value *tmp = frameCopy(F, obj, "cq.cur");
+    emitted.insert(B.CreateMemCpy(tmp, MaybeAlign(1), obj, MaybeAlign(1), n));
+    emitted.insert(B.CreateMemCpy(obj, MaybeAlign(1), snap, MaybeAlign(1), n));
+    return tmp;
+  }
+  Instruction *swapOut(Value *obj, Value *tmp, IRBuilder<> &B) {
+    CallInst *c = B.CreateMemCpy(obj, MaybeAlign(1), tmp, MaybeAlign(1), objectSize(obj));
+    emitted.insert(c);
+    return c;
+  }
+
+  // cq-lshe: the block where each instance of g (defined on a cycle) is resolved: one that every path from
+  // g's definition passes before reaching the definition again or a return, after which no anchor of
+  // the instance can run (an anchor in it precedes its terminator). Null: none.
+  BasicBlock *cyclePoint(RailId g, ArrayRef<Instruction *> as) const {
+    const BasicBlock *D = defBlock(g);
+    auto escapes = [&](const BasicBlock *B) {
+      SmallPtrSet<const BasicBlock *, 16> seen;
+      SmallVector<const BasicBlock *, 16> work{D};
+      while (!work.empty()) {
+        const BasicBlock *b = work.pop_back_val();
+        const Instruction *t = b->getTerminator();
+        if (!t || isa<ReturnInst>(t) || isa<UnreachableInst>(t))
+          return true;
+        for (const BasicBlock *s : successors(t)) {
+          if (s == B)
+            continue;
+          if (s == D)
+            return true;
+          if (seen.insert(s).second)
+            work.push_back(s);
+        }
+      }
+      return false;
+    };
+    // Can B reach A again without passing D (A after B in the same pass)?
+    auto reachesWithin = [&](const BasicBlock *B, const BasicBlock *A) { return reachesAgain(B, A, {D}); };
+    SmallVector<const BasicBlock *, 16> order{D};
+    SmallPtrSet<const BasicBlock *, 16> seen{D};
+    for (unsigned i = 0; i < order.size(); ++i)
+      if (const Instruction *t = order[i]->getTerminator())
+        for (const BasicBlock *s : successors(t))
+          if (seen.insert(s).second)
+            order.push_back(s);
+    for (const BasicBlock *B : order) {
+      const Instruction *t = B->getTerminator();
+      if (!t || B == D || escapes(B))
+        continue;
+      bool ok = true;
+      for (Instruction *a : as) {
+        const BasicBlock *A = a->getParent();
+        if (A == B ? a->isTerminator() : reachesWithin(B, A)) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok)
+        return const_cast<BasicBlock *>(B);
+    }
+    return nullptr;
   }
 
   // Is b on a cycle of the output CFG?
@@ -2199,19 +2543,15 @@ struct Uncompute::Impl {
     return false;
   }
 
-  // cq-ut4k (orchestrator decision, CR rules 5, 8, 9): the item of an arm-local rail placed at a
-  // return runs only on the paths through its arm. Each such item [first, last] is split into a block
-  // of its own, entered when the selector of its definition's block holds: an i1 that is true on every
-  // path through that block and false on every other, the SSA value (phis at the joins, this
-  // module's SSAUpdater) of `true` at the end of the definition's block and `false` at the entry. Every
-  // operand of the item that does not dominate its block (the arm's own rails, the merged handle's
-  // arm) is carried to it the same way, poison on the paths that skip the block. A classical re-branch
-  // on the arm's own condition, spelled as the path selector of the arm.
+  // cq-ut4k, cq-lshe (CR rules 5, 8, 9, §0): an item placed at a return under a run flag (placeAt) runs
+  // only where the flag holds. Each such item [first, last] is split into a block of its own, entered
+  // when its flag holds; every operand of the item that does not dominate that block (an arm's own
+  // rails, a merged handle's arm) is carried to it as SSA (carryTo), poison on the paths that skip its
+  // definition (the flag is false there). A classical re-branch on the conditions that decide it.
   void wrapArmItems(Function &F) {
     if (armItems.empty())
       return;
-    struct Done { BranchInst *br; BasicBlock *U; const BasicBlock *D; };
-    std::vector<Done> done;
+    std::vector<BasicBlock *> made;
     for (auto it = armItems.rbegin(); it != armItems.rend(); ++it) {
       BasicBlock *X = it->first->getParent();
       if (it->last->getParent() != X || !it->last->getNextNode())
@@ -2220,31 +2560,60 @@ struct Uncompute::Impl {
       BasicBlock *C = X->splitBasicBlock(it->last->getNextNode(), X->getName() + ".cq.after");
       BasicBlock *U = X->splitBasicBlock(it->first, X->getName() + ".cq.arm");
       Instruction *t = X->getTerminator();
-      BranchInst *br = BranchInst::Create(U, C, ConstantInt::getTrue(F.getContext()), t);
+      emitted.insert(BranchInst::Create(U, C, it->cond, t));
       t->eraseFromParent();
-      done.push_back({br, U, defBlock(it->g)});
+      made.push_back(U);
     }
     armItems.clear();
-    LLVMContext &Cx = F.getContext();
+    for (BasicBlock *U : made)
+      carryOperands(U);
+  }
+
+  // Every operand of an item block U that does not dominate it, carried to it (poison where it is not
+  // defined; the run flag is false there).
+  void carryOperands(BasicBlock *U) {
+    Function &F = *U->getParent();
     BasicBlock *entry = &F.getEntryBlock();
-    for (Done &d : done)
-      d.br->setCondition(carryTo(d.br->getParent(), true, const_cast<BasicBlock *>(d.D), ConstantInt::getTrue(Cx),
-                                 ConstantInt::getFalse(Cx), "cq.on"));
-    for (Done &d : done) {
-      DenseMap<Value *, Value *> carried;
-      for (Instruction &I : *d.U)
-        for (Use &u : I.operands()) {
-          auto *op = dyn_cast<Instruction>(u.get());
-          if (!op || op->getParent() == d.U || dominates(op->getParent(), d.U))
-            continue;
-          Value *&c = carried[op];
-          if (!c) {
-            if (op->getParent() == entry)
-              internalError("uncompute: an arm item operand in the entry that does not dominate the item", op);
-            c = carryTo(d.U, false, op->getParent(), op, PoisonValue::get(op->getType()), op->getName());
-          }
-          u.set(c);
+    DenseMap<Value *, Value *> carried;
+    for (Instruction &I : *U)
+      for (Use &u : I.operands()) {
+        auto *op = dyn_cast<Instruction>(u.get());
+        if (!op || op->getParent() == U || dominates(op->getParent(), U))
+          continue;
+        Value *&c = carried[op];
+        if (!c) {
+          if (op->getParent() == entry)
+            internalError("uncompute: an arm item operand in the entry that does not dominate the item", op);
+          c = carryTo(U, false, op->getParent(), op, PoisonValue::get(op->getType()), op->getName());
         }
+        u.set(c);
+      }
+  }
+
+  // cq-lshe: the run-flag items placed by a flush (localWraps), each moved into a block of its own entered
+  // when its flag holds. The block P an item lies in keeps its tail and terminator (a caller's references
+  // to P as an edge source stay valid); P's head moves to a fresh block H before it. In program order, so
+  // a later item of the same block is found in P's tail.
+  void wrapLocal() {
+    std::vector<ArmItem> ws;
+    ws.swap(localWraps);
+    for (ArmItem &w : ws) {
+      BasicBlock *P = w.first->getParent();
+      if (w.last->getParent() != P || w.last->isTerminator() || !w.last->getNextNode())
+        internalError("uncompute: a run-flag item that does not lie in one block before its terminator",
+                      rails[w.g].handle);
+      Function *F = P->getParent();
+      LLVMContext &Cx = F->getContext();
+      BasicBlock *H = BasicBlock::Create(Cx, "", F, P);
+      H->splice(H->end(), P, P->begin(), w.first->getIterator());
+      for (BasicBlock *pr : SmallVector<BasicBlock *, 4>(predecessors(P)))
+        if (pr != H)
+          pr->getTerminator()->replaceSuccessorWith(P, H);
+      BasicBlock *U = BasicBlock::Create(Cx, P->getName() + ".cq.arm", F, P);
+      U->splice(U->end(), P, w.first->getIterator(), std::next(w.last->getIterator()));
+      emitted.insert(BranchInst::Create(U, P, w.cond, H));
+      emitted.insert(BranchInst::Create(P, U));
+      carryOperands(U);
     }
   }
 
@@ -2368,7 +2737,7 @@ struct Uncompute::Impl {
     const BasicBlock *D = defBlock(g);
     if (D == P || dominates(D, P) || onCycle(D) || onCycle(P) || !reaches(D, P))
       return false;
-    for (RailId n : names(g)) {
+    for (RailId n : ownNames(g)) {   // cq-lshe: a keeper's later reads read g only where it is kept
       if (live.count(n))
         return false;
       for (User *u : rails[n].handle->users()) {
@@ -2414,47 +2783,12 @@ struct Uncompute::Impl {
     return true;
   }
 
-  // Places an arm-local rail's item before P's terminator `point`, in a block of its own entered under
-  // D's selector (true on every path through D, false elsewhere; cq-ut4k's carryTo), its operands that
-  // do not dominate that block carried to it (poison on the paths that skip D). P keeps its tail and
-  // terminator (a caller's references to P as an edge source stay valid); P's head moves to a fresh
-  // block H before it.
+  // Places an arm-local rail's item before P's terminator `point`, under its run flag (placeAt: true on
+  // the paths through its definition and not past a keeper's choice or a gate), in a block of its own
+  // (wrapLocal: P keeps its tail and terminator, its head moves to a fresh block H before it).
   void placeSpan(RailId g, Instruction *point) {
-    BasicBlock *P = point->getParent();
-    BasicBlock *D = const_cast<BasicBlock *>(defBlock(g));
-    Instruction *prev = point->getPrevNode();
-    placeAt(g, {P, point}, true);
-    Instruction *first = prev ? prev->getNextNode() : &P->front();
-    if (first == point)
-      return;   // kept (a barrier): nothing emitted
-    Instruction *last = point->getPrevNode();
-    Function *F = P->getParent();
-    LLVMContext &Cx = F->getContext();
-    BasicBlock *H = BasicBlock::Create(Cx, "", F, P);
-    H->splice(H->end(), P, P->begin(), first->getIterator());
-    for (BasicBlock *pr : SmallVector<BasicBlock *, 4>(predecessors(P)))
-      if (pr != H)
-        pr->getTerminator()->replaceSuccessorWith(P, H);
-    BasicBlock *U = BasicBlock::Create(Cx, P->getName() + ".cq.arm", F, P);
-    U->splice(U->end(), P, first->getIterator(), std::next(last->getIterator()));
-    BranchInst *br = BranchInst::Create(U, P, ConstantInt::getTrue(Cx), H);
-    emitted.insert(br);
-    emitted.insert(BranchInst::Create(P, U));
-    br->setCondition(carryTo(H, true, D, ConstantInt::getTrue(Cx), ConstantInt::getFalse(Cx), "cq.on"));
-    DenseMap<Value *, Value *> carried;
-    for (Instruction &I : *U)
-      for (Use &u : I.operands()) {
-        auto *op = dyn_cast<Instruction>(u.get());
-        if (!op || op->getParent() == U || dominates(op->getParent(), U))
-          continue;
-        Value *&c = carried[op];
-        if (!c) {
-          if (op->getParent() == &F->getEntryBlock())
-            internalError("uncompute: an arm item operand in the entry that does not dominate the item", op);
-          c = carryTo(U, false, op->getParent(), op, PoisonValue::get(op->getType()), op->getName());
-        }
-        u.set(c);
-      }
+    placeAt(g, {point->getParent(), point}, true, /*exists=*/true);
+    wrapLocal();
   }
 
   // flushBefore(P) may place the item only where every use of its exit rails after the loop lies in
@@ -3240,14 +3574,6 @@ RailId Uncompute::recordMerge(Instruction *merged) {
     RailId a = I.lookup(v, "recordMerge", merged);
     if (I.anyReleased(a))
       internalError("uncompute: recordMerge: arm " + describe(v) + " was already uncomputed and freed", merged);
-    // cq-sodl: a phi arm is read at the end of its incoming block, a select arm at the select.
-    const Instruction *at = merged;
-    if (auto *phi = dyn_cast<PHINode>(merged))
-      for (unsigned i = 0; i < phi->getNumIncomingValues(); ++i)
-        if (phi->getIncomingValue(i) == v)
-          I.checkEdgeRead(a, phi->getIncomingBlock(i)->getTerminator(), "recordMerge");
-    if (!isa<PHINode>(merged))
-      I.checkEdgeRead(a, at, "recordMerge");
     if (!is_contained(arms, a))
       arms.push_back(a);
   }
@@ -3271,7 +3597,6 @@ RailId Uncompute::recordCellLoad(Instruction *load, ArrayRef<RailId> mayName) {
       internalError("uncompute: recordCellLoad: arm " + describe(I.rails[a].handle) +
                         " was already uncomputed and freed",
                     load);
-    I.checkEdgeRead(a, load, "recordCellLoad");
     if (!is_contained(arms, a))
       arms.push_back(a);
   }
@@ -3395,7 +3720,6 @@ void Uncompute::noteCallReads(CallInst *fwd, ArrayRef<RailId> reads) {
     if (I.anyReleased(r))
       internalError("uncompute: noteCallReads: " + describe(I.rails[r].handle) + " was already uncomputed and freed",
                     fwd);
-    I.checkEdgeRead(r, fwd, "noteCallReads");
     SmallVector<RailId, 4> &v = I.callReads[fwd];
     if (!is_contained(v, r))
       v.push_back(r);
@@ -3418,6 +3742,9 @@ bool Uncompute::mayHit(const Value *handle, const Instruction *gate) const {
     const Impl::Rail &r = impl->rails[x];
     if (is_contained(r.hits, gate))
       return true;
+    for (auto [h, n] : r.condHits)
+      if (h == gate)
+        return true;
     if (is_contained(r.aliasHits, gate) && !impl->aliasRuledOut(gate, handle))
       return true;
   }
@@ -3432,7 +3759,7 @@ std::optional<Role> Uncompute::liveRole(RailId r) const {
 }
 
 void Uncompute::setRole(RailId r, Role role) {
-  impl->syncPhiHits();   // cq-igqp: a kept merge resolves unchosen arms now (keepMerge)
+  impl->syncPhiHits();   // cq-igqp
   Impl &I = *impl;
   Impl::Rail &x = I.rail(r, "setRole");
   if (x.released || !x.exitsDone.empty())
@@ -3440,22 +3767,15 @@ void Uncompute::setRole(RailId r, Role role) {
   if (x.group != kNone)
     x.explicitKept = Impl::keptRole(role);
   if (I.isMerge(r)) {
-    // U1: a merge is never resolved itself; a kept role on it would have to keep whichever arm the
-    // classical condition chose and clean the others, which no static role can say. It is accepted
-    // only where it changes nothing: every arm it may name is already kept.
+    // U1: a merge is never resolved itself; a kept role on it keeps whichever arm the classical
+    // condition chose, and the others are cleaned under that condition (cq-lshe, keepMerge).
     if (role == Role::Seed)
       internalError("uncompute: setRole: Role::Seed on a merged handle", x.handle);
-    I.checkEdgeRead(r, nullptr, "setRole");
     if (Impl::keptRole(role))
-      I.keepMerge(r, role);   // cq-bv91: the chosen arm is kept on each path
+      I.keepMerge(r, role);
     x.role = role;
     return;
   }
-  if (!Impl::keptRole(role) && !x.cleanup)
-    for (RailId m : I.names(r))
-      if (m != r && Impl::keptRole(I.rails[m].role))
-        internalError("uncompute: setRole: a resolvable role on an arm of a kept merged handle", x.handle);
-  I.checkEdgeRead(r, nullptr, "setRole");
   x.role = role;
 }
 
@@ -3465,7 +3785,6 @@ void Uncompute::noteUse(RailId r, Instruction *consumer) {
     internalError("uncompute: noteUse without a consumer", x.handle);
   if (impl->anyReleased(r))
     internalError("uncompute: use of " + describe(x.handle) + " after it was uncomputed and freed", consumer);
-  impl->checkEdgeRead(r, consumer, "noteUse");
   x.uses.push_back(consumer);
 }
 
@@ -3475,16 +3794,15 @@ void Uncompute::noteNonDiagonal(RailId target, Instruction *gate) {
     internalError("uncompute: noteNonDiagonal without a gate", x.handle);
   if (!is_contained(impl->gateTargets[gate], x.handle))
     impl->gateTargets[gate].push_back(x.handle);
-  impl->checkEdgeRead(target, gate, "noteNonDiagonal");
   if (impl->isMerge(target)) {
-    // cq-bv91: the gate hits the arm the merge chose; every arm must already be kept (setRole first),
-    // so the hit binds only the items that read the merge or an arm.
+    // cq-bv91, cq-lshe (CR §0, rules 5, 9, 10): the gate hits the arm the merge chose. A kept arm takes
+    // the hit; a resolvable one is hit only where the merge chose it (a classical choice), so its item and
+    // the items that read it are kept there and run elsewhere (placeAt's run flag).
     for (RailId a : impl->leaves(target)) {
       if (impl->resolvable(a))
-        unimplemented("uncompute: a non-diagonal gate on a merged handle whose arm " +
-                          describe(impl->rails[a].handle) + " is not kept (set the kept role first)",
-                      gate);
-      impl->rails[a].hits.push_back(gate);
+        impl->rails[a].condHits.push_back({gate, target});
+      else
+        impl->rails[a].hits.push_back(gate);
     }
     impl->rails[target].hits.push_back(gate);
     impl->noteAliasHits(target, gate);
@@ -3516,7 +3834,6 @@ void Uncompute::cleanupBijective(RailId oldRail, const abi::TemplateSpec &invers
     internalError("uncompute: cleanupBijective requested twice", x.handle);
   if (impl->isMerge(oldRail))
     internalError("uncompute: cleanupBijective of a merged handle", x.handle);
-  impl->checkEdgeRead(oldRail, nullptr, "cleanupBijective");
   Impl::Cleanup cl{inverse, SmallVector<Operand, 3>(ops.begin(), ops.end()), {}};
   for (const Operand &o : ops) {
     if (!o.handle)
@@ -3526,7 +3843,6 @@ void Uncompute::cleanupBijective(RailId oldRail, const abi::TemplateSpec &invers
       internalError("uncompute: rule 6 inverse reads the rail it cleans", x.handle);
     if (impl->rails[r].released)
       internalError("uncompute: rule 6 operand already uncomputed", o.v);
-    impl->checkEdgeRead(r, nullptr, "cleanupBijective");
     if (!is_contained(cl.reads, r)) {
       cl.reads.push_back(r);
       impl->rails[r].cleanupReaders.push_back(oldRail);
@@ -3593,6 +3909,7 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
   }
   I.pruneCleanups(&cands);
   I.resolve(cands, c);
+  I.wrapLocal();
   // F1: a deferred item goes last, once every use of its exit rails after the loop lies before P in
   // P's block and every reader of them is resolved.
   if (!liveLater) {
@@ -3691,6 +4008,7 @@ void Uncompute::resolveAt(Instruction *P, ArrayRef<RailId> list) {
   for (RailId g : I.order(cands))
     if (I.resolvable(g))
       I.placeAt(g, {Pb, P}, true);
+  I.wrapLocal();
 }
 
 void Uncompute::flushAtExit(ReturnInst *ret) {
@@ -3698,7 +4016,6 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
   if (!ret || !ret->getParent())
     internalError("uncompute: flushAtExit needs a return in a block");
   Impl &I = *impl;
-  I.checkEdgeUsers();
   // U2: a twin zeroes every result of its call, so either every member is kept or none is. CR rule 18
   // (ruling 2026-11-02, cq-75n4): when some results of one call are measured and others are dead, each
   // measured one is copied into a fresh rail right after the call (cqrt_alloc_<W>(0), cqrt_copy_<W>), the
@@ -3767,17 +4084,19 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
     const BasicBlock *D = I.defBlock(g);
     if (!Impl::reaches(D, Rb))
       continue;
+    if (Impl::onCycle(D) && (!I.rails[g].keepers.empty() || (!Impl::dominates(D, Rb) && !I.rails[g].mergedInto.empty()))) {
+      // cq-lshe: an arm on a cycle (a phi over arm-local handles in a loop, or an arm a kept merge in the
+      // loop chooses on some passes only): resolved per instance (cyclePoint).
+      I.cycleArm.insert(g);
+      cands.push_back(g);
+      continue;
+    }
     if (!Impl::dominates(D, Rb) && !Impl::onCycle(D)) {
       // cq-ut4k: placed here under its arm's selector (wrapArmItems).
       I.armLocal.insert(g);
       cands.push_back(g);
       continue;
     }
-    if (!Impl::dominates(D, Rb) && !I.rails[g].mergedInto.empty())
-      unimplemented("uncompute: an arm of a merged handle, " + describe(I.rails[g].handle) +
-                        ", is pending at a return its definition does not dominate (a phi over arm-local "
-                        "handles in a loop: cq-ut4k)",
-                    ret);
     if (!Impl::dominates(D, Rb))
       internalError("uncompute: " + describe(I.rails[g].handle) +
                         " is still pending at a return its definition does not dominate (an arm was not flushed)",
@@ -3786,8 +4105,10 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
   }
   I.resolve(cands, c);
   I.resolveUnmeasured(Rb); // cq-8lf8
+  I.wrapLocal();
   I.wrapArmItems(*Rb->getParent());
   I.armLocal.clear();
+  I.cycleArm.clear();
   for (RailId g : defc)
     if (!I.rails[g].released)
       unimplemented("uncompute: a deferred rule-14 reverse loop could not be placed before a return its loop reaches "

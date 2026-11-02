@@ -24,6 +24,7 @@
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/Signals.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -1080,7 +1081,7 @@ define i32 @f(i32 %a0, i32 %a1, double %th) {
 
 // cq-w6ie (A2): on a kept bus a load read after a later store cannot be un-copied (the store is
 // never popped): the in-place-write barrier stands.
-void fatal_qram_kept_bus_barrier() {
+void qram_kept_bus_sandwich() {
   Fx f(R"(
 define i32 @f(i32 %b, i32 %a0, double %th) {
   %x = call i32 @cqrt_alloc_i32(i32 %a0)
@@ -1100,6 +1101,22 @@ define i32 @f(i32 %b, i32 %a0, double %th) {
   f.core(f.call("cqrt_qram_store_i32_hl"), abi::Core::QramStore, "hlh", b);
   f.U.setRole(f.T("s", "hl"), Role::Measured);
   f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%l = call i32 @cqrt_qram_load_i32_hl(i32 %b, i32 0)",
+                        "%v = call i32 @cq_template_add_i32_hl(i32 %x, i32 5)",
+                        "call void @cqrt_qram_store_i32_hl(i32 %b, i32 0, i32 %v)",
+                        "%s = call i32 @cq_template_add_i32_hl(i32 %l, i32 1)",
+                        "call void @cqrt_qram_store_i32_hl_unc(i32 %b, i32 0, i32 %v)",
+                        "call void @cqrt_qram_load_i32_hl_unc(i32 %l, i32 %b, i32 0)",
+                        "call void @cqrt_free(i32 %l)",
+                        "call void @cqrt_qram_store_i32_hl(i32 %b, i32 0, i32 %v)",
+                        "call void @cq_template_add_i32_hl_unc(i32 %v, i32 %x, i32 5)",
+                        "call void @cqrt_free(i32 %v)",
+                        "%m = call i32 @cqrt_measure_i32(i32 %s)",
+                        "ret i32 %m",
+                    });
 }
 
 // ---- classical control flow ----------------------------------------------------------------------
@@ -1429,7 +1446,7 @@ void fatal_mirror_outside_reader() {
   f.U.emitMirror(s, B);
 }
 
-void fatal_write_barrier() {
+void write_barrier_sandwich() {
   // g read the seed d; d is then written in place and g is read after the write: g's _unc would
   // see the written d. Not a non-diagonal gate, so not KeptEntangled: an internal error.
   Fx f(R"(
@@ -1450,6 +1467,20 @@ define i32 @f(i32 %a0, double %th) {
   f.U.setRole(d, Role::Result);
   f.U.setRole(f.T("q", "hl"), Role::Measured);
   f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%d = call i32 @cqrt_alloc_i32(i32 0)",
+                        "%g = call i32 @cq_template_add_i32_hl(i32 %d, i32 1)",
+                        "call void @cqrt_copy_i32(i32 %x, i32 %d)",
+                        "%q = call i32 @cq_template_mul_i32_hl(i32 %g, i32 3)",
+                        "call void @cqrt_copy_i32(i32 %x, i32 %d)",
+                        "call void @cq_template_add_i32_hl_unc(i32 %g, i32 %d, i32 1)",
+                        "call void @cqrt_free(i32 %g)",
+                        "call void @cqrt_copy_i32(i32 %x, i32 %d)",
+                        "%m = call i32 @cqrt_measure_i32(i32 %q)",
+                        "ret i32 %m",
+                    });
 }
 
 void fatal_unknown_handle() {
@@ -1888,7 +1919,7 @@ void pointee_before_store() {
                     });
 }
 
-void fatal_pointee_write() {
+void pointee_write_swap() {
   Fx f(kPointee);
   RailId x = f.reg("x", 0);
   f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
@@ -1897,6 +1928,28 @@ void fatal_pointee_write() {
   f.T("u", "hl");
   f.U.setRole(t, Role::Measured);
   f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%cq.cur = alloca [8 x i8], align 1",
+                        "%cq.snap = alloca [8 x i8], align 1",
+                        "%s = alloca i64, align 8",
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "store i64 %q, ptr %s, align 8",
+                        "%r = call i32 @__cq_q_g_01(ptr %s, i32 %x)",
+                        "call void @llvm.memcpy.p0.p0.i64(ptr align 1 %cq.snap, ptr align 1 %s, i64 8, i1 false)",
+                        "%t = call i32 @cq_template_add_i32_hl(i32 %r, i32 1)",
+                        "store i64 7, ptr %s, align 8",
+                        "%m = call i32 @cqrt_measure_i32(i32 %t)",
+                        "%u = call i32 @cq_template_add_i32_hl(i32 %r, i32 2)",
+                        "call void @cq_template_add_i32_hl_unc(i32 %u, i32 %r, i32 2)",
+                        "call void @cqrt_free(i32 %u)",
+                        "call void @llvm.memcpy.p0.p0.i64(ptr align 1 %cq.cur, ptr align 1 %s, i64 8, i1 false)",
+                        "call void @llvm.memcpy.p0.p0.i64(ptr align 1 %s, ptr align 1 %cq.snap, i64 8, i1 false)",
+                        "call void @__cq_q_g_01_unc(i32 %r, ptr %s, i32 %x)",
+                        "call void @cqrt_free(i32 %r)",
+                        "call void @llvm.memcpy.p0.p0.i64(ptr align 1 %s, ptr align 1 %cq.cur, i64 8, i1 false)",
+                        "ret i64 0",
+                    });
 }
 
 // U2: one result kept and the other not: the twin would zero the kept one.
@@ -2253,9 +2306,12 @@ J:
                         "call void @cqrt_copy_i32(i32 %t, i32 %o)",
                         "call void @cq_template_add_i32_hl_unc(i32 %t, i32 %x, i32 1)",
                         "call void @cqrt_free(i32 %t)",
-                        "call void @cqrt_free(i32 %s)",
                         "br label %J",
+                        "%cq.run1 = phi i1 [ false, %entry ], [ true, %L ]",
                         "%m = phi i32 [ %s, %entry ], [ %o, %L ]",
+                        "br i1 %cq.run1, label %J.cq.arm, label %J.cq.after",
+                        "call void @cqrt_free(i32 %s)",
+                        "br label %J.cq.after",
                         "%r = call i32 @cqrt_measure_i32(i32 %m)",
                         "ret i32 %r",
                     });
@@ -2414,14 +2470,39 @@ void carried_phi_unchosen_arm() {
                     });
 }
 // The gate under a branch of the trip: %g is rotated on some paths to the edge only.
-void fatal_carried_phi_some_paths() {
+void carried_phi_some_paths() {
   Fx f(kCarriedArm);
   carriedArm(f);
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%g = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "br i1 %c, label %P, label %J",
+                        "br label %L",
+                        "%cq.run2 = phi i1 [ %cq.run1, %R ], [ true, %P ]",
+                        "%p = phi i32 [ %g, %P ], [ %p, %R ]",
+                        "br i1 %e, label %Rot, label %R",
+                        "call void @cqrt_ry_i32(i32 %p, double %th)",
+                        "br label %R",
+                        "%cq.run1 = phi i1 [ false, %Rot ], [ %cq.run2, %L ]",
+                        "br i1 %d, label %L, label %X",
+                        "%o = call i32 @cqrt_alloc_i32(i32 0)",
+                        "call void @cqrt_copy_i32(i32 %p, i32 %o)",
+                        "br label %J",
+                        "%cq.run3 = phi i1 [ false, %entry ], [ %cq.run1, %X ]",
+                        "%m = phi i32 [ %g, %entry ], [ %o, %X ]",
+                        "br i1 %cq.run3, label %J.cq.arm, label %J.cq.after",
+                        "call void @cq_template_add_i32_hl_unc(i32 %g, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %g)",
+                        "br label %J.cq.after",
+                        "%r = call i32 @cqrt_measure_i32(i32 %m)",
+                        "ret i32 %r",
+                    });
 }
 
 // The unchosen arm s is still read by a pending garbage rail u on the loop edge: freeing s there would
 // leave u's uncompute without its operand. Unimplemented.
-void fatal_merge_unchosen_reader() {
+void merge_unchosen_reader() {
   Fx f(R"(
 define i32 @f(i32 %a0, double %th, i1 %c) {
 entry:
@@ -2441,10 +2522,28 @@ J:
   f.T("u", "hl");
   f.S("o");
   f.U.setRole(f.U.recordMerge(f.I("m")), Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%s = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "%u = call i32 @cq_template_add_i32_hl(i32 %s, i32 1)",
+                        "br i1 %c, label %L, label %J",
+                        "%o = call i32 @cqrt_alloc_i32(i32 0)",
+                        "br label %J",
+                        "%cq.run2 = phi i1 [ false, %entry ], [ true, %L ]",
+                        "%m = phi i32 [ %s, %entry ], [ %o, %L ]",
+                        "%r = call i32 @cqrt_measure_i32(i32 %m)",
+                        "%q = call i32 @cqrt_measure_i32(i32 %u)",
+                        "call void @cq_template_add_i32_hl_unc(i32 %u, i32 %s, i32 1)",
+                        "call void @cqrt_free(i32 %u)",
+                        "br i1 %cq.run2, label %J.cq.arm, label %J.cq.after",
+                        "call void @cqrt_free(i32 %s)",
+                        "br label %J.cq.after",
+                        "ret i32 %r",
+                    });
 }
 
 // The unchosen arm s is read directly after the join: it cannot be freed on the loop edge.
-void fatal_merge_unchosen_used_after() {
+void merge_unchosen_used_after() {
   Fx f(R"(
 define i32 @f(i32 %a0, double %th, i1 %c) {
 entry:
@@ -2462,12 +2561,27 @@ J:
   f.S("s");
   f.S("o");
   f.U.setRole(f.U.recordMerge(f.I("m")), Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%s = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "br i1 %c, label %L, label %J",
+                        "%o = call i32 @cqrt_alloc_i32(i32 0)",
+                        "br label %J",
+                        "%cq.run2 = phi i1 [ false, %entry ], [ true, %L ]",
+                        "%m = phi i32 [ %s, %entry ], [ %o, %L ]",
+                        "%r = call i32 @cqrt_measure_i32(i32 %m)",
+                        "%q = call i32 @cqrt_measure_i32(i32 %s)",
+                        "br i1 %cq.run2, label %J.cq.arm, label %J.cq.after",
+                        "call void @cqrt_free(i32 %s)",
+                        "br label %J.cq.after",
+                        "ret i32 %r",
+                    });
 }
 
 // cq-sodl (rev/bv91-n1/p1.c): the zero-trip arm s is freed on the loop edge; the spine lowers a
 // direct read of s after the join only after the kept consumer (cq_measure(a * 5) after the loop).
 // That read is caught when it is recorded: unimplemented, not a use after free.
-void fatal_merge_unchosen_read_later() {
+void merge_unchosen_read_later() {
   Fx f(R"(
 define i32 @f(i32 %a0, double %th, i1 %c) {
 entry:
@@ -2488,6 +2602,23 @@ J:
   CallInst *u = B.CreateCall(f.M->getFunction("cq_template_mul_i32_hl"), {f.I("s"), B.getInt32(5)});
   (void)s;
   f.U.recordTemplate(u, {}, {H(u->getArgOperand(0)), Operand{u->getArgOperand(1), false}});
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%s = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "br i1 %c, label %L, label %J",
+                        "%o = call i32 @cqrt_alloc_i32(i32 0)",
+                        "br label %J",
+                        "%cq.run2 = phi i1 [ false, %entry ], [ true, %L ]",
+                        "%m = phi i32 [ %s, %entry ], [ %o, %L ]",
+                        "%r = call i32 @cqrt_measure_i32(i32 %m)",
+                        "%0 = call i32 @cq_template_mul_i32_hl(i32 %s, i32 5)",
+                        "call void @cq_template_mul_i32_hl_unc(i32 %0, i32 %s, i32 5)",
+                        "call void @cqrt_free(i32 %0)",
+                        "br i1 %cq.run2, label %J.cq.arm, label %J.cq.after",
+                        "call void @cqrt_free(i32 %s)",
+                        "br label %J.cq.after",
+                        "ret i32 %r",
+                    });
 }
 
 // cq-sodl (rev/bv91-n1/q8.ll): the edge from A carries a nested merge n = select(k, t, x) that may
@@ -2510,20 +2641,65 @@ J:
   %r = call i32 @cqrt_measure_i32(i32 %m)
   ret i32 %r
 })";
-void nestedSel(bool selFirst) {
+Fx *nestedSel(bool selFirst) {
   std::string ir = kNestedSel;
   std::string a1 = selFirst ? "%n, %A" : "%t, %B", a2 = selFirst ? "%t, %B" : "%n, %A";
   ir.replace(ir.find("%ARM1"), 5, a1);
   ir.replace(ir.find("%ARM2"), 5, a2);
-  Fx f(ir);
+  Fx *pf = new Fx(ir);
+  Fx &f = *pf;
   RailId x = f.reg("x", 0);
   f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
   f.T("t", "hl");
   f.U.recordMerge(f.I("n"));
   f.U.setRole(f.U.recordMerge(f.I("m")), Role::Measured);
+  f.U.flushAtExit(f.ret());
+  return pf;
 }
-void fatal_merge_nested_select_edge() { nestedSel(true); }
-void fatal_merge_nested_select_edge_rev() { nestedSel(false); }
+void merge_nested_select_edge() {
+  Fx *f = nestedSel(true);
+  f->check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%t = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "br i1 %c, label %A, label %B",
+                        "%n = select i1 %k, i32 %t, i32 %x",
+                        "%cq.not = xor i1 %k, true",
+                        "br label %J",
+                        "br label %J",
+                        "%cq.run1 = phi i1 [ %cq.not, %A ], [ false, %B ]",
+                        "%m = phi i32 [ %n, %A ], [ %t, %B ]",
+                        "br i1 %cq.run1, label %J.cq.arm, label %J.cq.after",
+                        "call void @cq_template_add_i32_hl_unc(i32 %t, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %t)",
+                        "br label %J.cq.after",
+                        "%r = call i32 @cqrt_measure_i32(i32 %m)",
+                        "ret i32 %r",
+                    });
+  delete f;
+}
+void merge_nested_select_edge_rev() {
+  Fx *f = nestedSel(false);
+  f->check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%t = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "br i1 %c, label %A, label %B",
+                        "%n = select i1 %k, i32 %t, i32 %x",
+                        "%cq.not = xor i1 %k, true",
+                        "br label %J",
+                        "br label %J",
+                        "%cq.run1 = phi i1 [ false, %B ], [ %cq.not, %A ]",
+                        "%m = phi i32 [ %t, %B ], [ %n, %A ]",
+                        "br i1 %cq.run1, label %J.cq.arm, label %J.cq.after",
+                        "call void @cq_template_add_i32_hl_unc(i32 %t, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %t)",
+                        "br label %J.cq.after",
+                        "%r = call i32 @cqrt_measure_i32(i32 %m)",
+                        "ret i32 %r",
+                    });
+  delete f;
+}
 
 // cq-sodl: m = phi [n, Y], [s, X] with n = phi [s, Z], [b, W]. The edge from Y chooses n, which may
 // still be s (from Z): s is freed only on W's edge (where n chooses b), never on Y's.
@@ -2561,12 +2737,16 @@ J:
                         "br i1 %d, label %Z, label %W",
                         "br label %N",
                         "%b = call i32 @cqrt_alloc_i32(i32 7)",
-                        "call void @cqrt_free(i32 %s)",
                         "br label %N",
+                        "%cq.run8 = phi i1 [ false, %Z ], [ true, %W ]",
                         "%n = phi i32 [ %s, %Z ], [ %b, %W ]",
                         "br label %J",
                         "br label %J",
+                        "%cq.run7 = phi i1 [ %cq.run8, %N ], [ false, %X ]",
                         "%m = phi i32 [ %n, %N ], [ %s, %X ]",
+                        "br i1 %cq.run7, label %J.cq.arm, label %J.cq.after",
+                        "call void @cqrt_free(i32 %s)",
+                        "br label %J.cq.after",
                         "%r = call i32 @cqrt_measure_i32(i32 %m)",
                         "ret i32 %r",
                     });
@@ -2595,31 +2775,168 @@ X:
   ret i32 %r
 })";
 
-void fatal_merge_unchosen_loop() {
+void merge_unchosen_loop() {
   Fx f(kLoopArm);
   f.S("a");
   f.S("b");
   f.U.setRole(f.U.recordMerge(f.I("m")), Role::Measured);
   f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%a = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "br label %H",
+                        "%cq.run4 = phi i1 [ %cq.run5, %J ], [ true, %entry ]",
+                        "br i1 %c, label %P, label %Q",
+                        "%b = call i32 @cqrt_alloc_i32(i32 7)",
+                        "br label %J",
+                        "br label %J",
+                        "%cq.run6 = phi i1 [ %cq.run4, %P ], [ false, %Q ]",
+                        "%cq.run = phi i1 [ %cq.run4, %Q ], [ %cq.run4, %P ]",
+                        "%m = phi i32 [ %b, %P ], [ %a, %Q ]",
+                        "%cq.ch = phi i1 [ false, %P ], [ true, %Q ]",
+                        "%r = call i32 @cqrt_measure_i32(i32 %m)",
+                        "%cq.not = xor i1 %cq.ch, true",
+                        "%cq.run5 = and i1 %cq.run, %cq.not",
+                        "br i1 %d, label %H, label %X",
+                        "br i1 %cq.run6, label %X.cq.arm, label %X.cq.after",
+                        "call void @cqrt_free(i32 %a)",
+                        "br label %X.cq.after",
+                        "ret i32 %r",
+                    });
+}
+
+// cq-lshe: an arm on a cycle that the merge does not always choose: the garbage t, defined in the loop's
+// header on every pass, is chosen only from P; each instance is resolved in the pass that defined it,
+// after the join, where the merge did not choose it.
+void merge_cycle_arm() {
+  Fx f(R"(
+define i32 @f(i32 %a0, double %th, i1 %c, i1 %d) {
+entry:
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  br label %H
+H:
+  %t = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  br i1 %c, label %P, label %Q
+P:
+  br label %J
+Q:
+  %u = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)
+  br label %J
+J:
+  %m = phi i32 [ %t, %P ], [ %u, %Q ]
+  %r = call i32 @cqrt_measure_i32(i32 %m)
+  br i1 %d, label %H, label %X
+X:
+  ret i32 %r
+})");
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
+  f.T("t", "hl");
+  f.T("u", "hl");
+  f.U.setRole(f.U.recordMerge(f.I("m")), Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "br label %H",
+                        "%t = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "br i1 %c, label %P, label %Q",
+                        "br label %0",
+                        "%u = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)",
+                        "br label %0",
+                        "%cq.run4 = phi i1 [ false, %P ], [ true, %Q ]",
+                        "%m = phi i32 [ %t, %P ], [ %u, %Q ]",
+                        "%r = call i32 @cqrt_measure_i32(i32 %m)",
+                        "br i1 %cq.run4, label %J.cq.arm, label %J",
+                        "call void @cq_template_add_i32_hl_unc(i32 %t, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %t)",
+                        "br label %J",
+                        "br i1 %d, label %H, label %X",
+                        "ret i32 %r",
+                    });
 }
 
 // A kept role on a classical select whose arms are resolvable: keeping only the chosen arm would need
 // a branch on the condition (not built). Keeping every arm would keep the unchosen arm's garbage (an
 // extra kept rail, §6-different from rule 9's "arm rails uncomputed").
-void fatal_merge_kept_role() {
+void merge_kept_select() {
   Fx f(kSel);
   f.reg("x", 0);
   f.T("ha", "hl");
   f.T("hb", "hl");
   f.U.setRole(f.U.recordMerge(f.I("m")), Role::Measured);
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%ha = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "%hb = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)",
+                        "%m = select i1 %c, i32 %ha, i32 %hb",
+                        "%cq.ch = select i1 %c, i1 false, i1 true",
+                        "%cq.not = xor i1 %cq.ch, true",
+                        "br i1 %cq.not, label %entry.cq.arm, label %1",
+                        "call void @cq_template_shl_i32_hl_unc(i32 %hb, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %hb)",
+                        "br label %1",
+                        "%cq.not1 = xor i1 %c, true",
+                        "br i1 %cq.not1, label %entry.cq.arm2, label %entry",
+                        "call void @cq_template_add_i32_hl_unc(i32 %ha, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %ha)",
+                        "br label %entry",
+                        "%fr = call i32 @cqrt_alloc_i32(i32 0)",
+                        "call void @cqrt_copy_i32(i32 %m, i32 %fr)",
+                        "%r = call i32 @cqrt_measure_i32(i32 %fr)",
+                        "ret i32 %r",
+                    });
 }
 
-void fatal_merge_nondiagonal() {
-  Fx f(kSel);
-  f.reg("x", 0);
+// cq-lshe (CR §0, rules 5, 9, 10): an Ry on a garbage classical select over handles rotates the chosen arm,
+// which stays allocated (entangled); the other arm is cleaned under the select's condition. The garbage
+// t that read the merge before the gate stays (its operand was rotated on every path).
+void merge_nondiagonal_garbage() {
+  Fx f(R"(
+define i32 @f(i32 %a0, double %th, i1 %c) {
+entry:
+  %x = call i32 @cqrt_alloc_i32(i32 %a0)
+  call void @cqrt_ry_i32(i32 %x, double %th)
+  %ha = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
+  %hb = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)
+  %m = select i1 %c, i32 %ha, i32 %hb
+  %t = call i32 @cq_template_mul_i32_hl(i32 %m, i32 3)
+  call void @cqrt_ry_i32(i32 %m, double %th)
+  ret i32 0
+})");
+  RailId x = f.reg("x", 0);
+  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
   f.T("ha", "hl");
   f.T("hb", "hl");
-  f.U.noteNonDiagonal(f.U.recordMerge(f.I("m")), f.call("cqrt_ry_i32"));
+  RailId m = f.U.recordMerge(f.I("m"));
+  f.T("t", "hl");
+  f.U.noteNonDiagonal(m, f.call("cqrt_ry_i32", 1));
+  f.U.flushAtExit(f.ret());
+  f.check(__func__, {
+                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
+                        "call void @cqrt_ry_i32(i32 %x, double %th)",
+                        "%ha = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
+                        "%hb = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)",
+                        "%m = select i1 %c, i32 %ha, i32 %hb",
+                        "%cq.ch = select i1 %c, i1 false, i1 true",
+                        "%t = call i32 @cq_template_mul_i32_hl(i32 %m, i32 3)",
+                        "call void @cq_template_mul_i32_hl_unc(i32 %t, i32 %m, i32 3)",
+                        "call void @cqrt_free(i32 %t)",
+                        "call void @cqrt_ry_i32(i32 %m, double %th)",
+                        "%cq.not = xor i1 %cq.ch, true",
+                        "br i1 %cq.not, label %entry.cq.arm, label %1",
+                        "call void @cq_template_shl_i32_hl_unc(i32 %hb, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %hb)",
+                        "br label %1",
+                        "%cq.not1 = xor i1 %c, true",
+                        "br i1 %cq.not1, label %entry.cq.arm2, label %entry",
+                        "call void @cq_template_add_i32_hl_unc(i32 %ha, i32 %x, i32 1)",
+                        "call void @cqrt_free(i32 %ha)",
+                        "br label %entry",
+                        "ret i32 0",
+                    });
 }
 
 // A phi over arm-local garbage handles: no point after the merged handle's uses can name the arm (cq-ut4k).
@@ -2661,15 +2978,15 @@ J:
                         "br label %J",
                         "%hb6 = phi i32 [ %hb, %B ], [ poison, %A ]",
                         "%ha5 = phi i32 [ poison, %B ], [ %ha, %A ]",
-                        "%cq.on = phi i1 [ true, %B ], [ false, %A ]",
-                        "%cq.on3 = phi i1 [ false, %B ], [ true, %A ]",
+                        "%cq.run1 = phi i1 [ false, %B ], [ true, %A ]",
+                        "%cq.run = phi i1 [ true, %B ], [ false, %A ]",
                         "%m = phi i32 [ %ha, %A ], [ %hb, %B ]",
                         "%t = call i32 @cq_template_mul_i32_hl(i32 %m, i32 3)",
-                        "br i1 %cq.on, label %J.cq.arm2, label %J.cq.after1",
+                        "br i1 %cq.run, label %J.cq.arm3, label %J.cq.after2",
                         "call void @cq_template_shl_i32_hl_unc(i32 %hb6, i32 %x, i32 1)",
                         "call void @cqrt_free(i32 %hb6)",
-                        "br label %J.cq.after1",
-                        "br i1 %cq.on3, label %J.cq.arm, label %J.cq.after",
+                        "br label %J.cq.after2",
+                        "br i1 %cq.run1, label %J.cq.arm, label %J.cq.after",
                         "call void @cq_template_add_i32_hl_unc(i32 %ha5, i32 %x, i32 1)",
                         "call void @cqrt_free(i32 %ha5)",
                         "br label %J.cq.after",
@@ -3325,33 +3642,34 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"deferred_qram_store", deferred_qram_store},
     {"deferred_join_placement", deferred_join_placement},
     {"alias_formal_local", alias_formal_local},
+    {"merge_unchosen_loop", merge_unchosen_loop},
+    {"merge_cycle_arm", merge_cycle_arm},
+    {"qram_kept_bus_sandwich", qram_kept_bus_sandwich},
+    {"pointee_write_swap", pointee_write_swap},
+    {"write_barrier_sandwich", write_barrier_sandwich},
+    {"carried_phi_some_paths", carried_phi_some_paths},
+    {"merge_nested_select_edge_rev", merge_nested_select_edge_rev},
+    {"merge_nested_select_edge", merge_nested_select_edge},
+    {"merge_unchosen_read_later", merge_unchosen_read_later},
+    {"merge_unchosen_used_after", merge_unchosen_used_after},
+    {"merge_unchosen_reader", merge_unchosen_reader},
+    {"merge_nondiagonal_garbage", merge_nondiagonal_garbage},
+    {"merge_kept_select", merge_kept_select},
 };
 
 const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_use_after_free", fatal_use_after_free},
     {"fatal_cell_load_empty", fatal_cell_load_empty},
     {"fatal_call_mixed", fatal_call_mixed},
-    {"fatal_pointee_write", fatal_pointee_write},
     {"fatal_resolve_at_used", fatal_resolve_at_used},
     {"fatal_resolve_at_bypass", fatal_resolve_at_bypass},
     {"fatal_operand_mismatch", fatal_operand_mismatch},
     {"fatal_unflushed_arm", fatal_unflushed_arm},
     {"fatal_scope_order", fatal_scope_order},
     {"fatal_mirror_outside_reader", fatal_mirror_outside_reader},
-    {"fatal_write_barrier", fatal_write_barrier},
-    {"fatal_qram_kept_bus_barrier", fatal_qram_kept_bus_barrier},
     {"fatal_qram_realloc_kept", fatal_qram_realloc_kept},
     {"fatal_call_bus_read_unrecorded", fatal_call_bus_read_unrecorded},
     {"fatal_unknown_handle", fatal_unknown_handle},
-    {"fatal_merge_kept_role", fatal_merge_kept_role},
-    {"fatal_merge_nondiagonal", fatal_merge_nondiagonal},
-    {"fatal_merge_unchosen_reader", fatal_merge_unchosen_reader},
-    {"fatal_merge_unchosen_used_after", fatal_merge_unchosen_used_after},
-    {"fatal_merge_unchosen_read_later", fatal_merge_unchosen_read_later},
-    {"fatal_merge_nested_select_edge", fatal_merge_nested_select_edge},
-    {"fatal_merge_nested_select_edge_rev", fatal_merge_nested_select_edge_rev},
-    {"fatal_merge_unchosen_loop", fatal_merge_unchosen_loop},
-    {"fatal_carried_phi_some_paths", fatal_carried_phi_some_paths},
     {"fatal_alias_slot_reload", fatal_alias_slot_reload},
     {"fatal_alias_slot_direct", fatal_alias_slot_direct},
     {"fatal_alias_second_array", fatal_alias_second_array},
@@ -3366,6 +3684,7 @@ const std::map<std::string, std::function<void()>> kFatal = {
 } // namespace
 
 int main(int argc, char **argv) {
+  llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
   if (argc == 1) {
     for (auto &[name, fn] : kPositive) {
       fn();
