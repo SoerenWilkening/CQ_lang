@@ -1311,6 +1311,15 @@ SmallPtrSet<const BasicBlock *, 16> between(const BasicBlock *BS, const BasicBlo
   return mid;
 }
 
+// cq-un6w: I's block lies on a cycle of the CFG (I may execute again after itself).
+bool reachesItself(const Instruction &I, const DominatorTree *DT) {
+  const BasicBlock *b = I.getParent();
+  for (const BasicBlock *s : successors(b))
+    if (s == b || isPotentiallyReachable(s, b, nullptr, DT))
+      return true;
+  return false;
+}
+
 bool onCycleWithin(const BasicBlock *b, const SmallPtrSet<const BasicBlock *, 16> &mid) {
   SmallPtrSet<const BasicBlock *, 16> seen;
   SmallVector<const BasicBlock *, 16> work;
@@ -3373,9 +3382,9 @@ bool mergedCloneStore(LoweringContext &ctx, FnState &st, const Site &s, StoreIns
   }
   for (const StoreInst *x : stores)
     for (const StoreInst *y : stores)
-      if (x != y && isPotentiallyReachable(x, y, nullptr, st.DT.get()))
+      if ((x != y || reachesItself(*x, st.DT.get())) && isPotentiallyReachable(x, y, nullptr, st.DT.get()))
         unimplemented("mem-slots: a clone storing into a caller cell that an earlier store of the clone may have "
-                      "filled (two slot results for one cell)",
+                      "filled, or itself on a cycle (two slot results for one cell)",
                       y);
   RailType w = railTypeOf(cellTy);
   if (vty != cellTy) {
@@ -3593,11 +3602,11 @@ void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &
                         "old arm is the caller's content: 51)",
                         &I);
         for (const Access &a : accessesOf(ctx, *st.F, s.o))
-          if (a.I != &I && (isa<StoreInst>(a.I) || isRMW(a.I)) &&
+          if ((a.I != &I || reachesItself(I, st.DT.get())) && (isa<StoreInst>(a.I) || isRMW(a.I)) &&
               !differentCell(a.a, s.a, storeBytes(DL, a.ty), storeBytes(DL, ty)) &&
               isPotentiallyReachable(a.I, &I, nullptr, st.DT.get()))
             unimplemented("mem-slots: a clone storing into a caller's cell that an earlier store of the clone may "
-                          "have filled (two slot results for one cell)",
+                          "have filled, or itself on a cycle (two slot results for one cell)",
                           &I);
         RailType w = cellRail(*s.info, ty, I);
         // cq-vxgm (owner 2026-11-01, rule 20 guarded store): the caller reloads the cell after the call and
