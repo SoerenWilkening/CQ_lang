@@ -2490,6 +2490,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
               if (o.handle && !ownedH.count(o.v))
                 if (RailId x = self->U.idOf(o.v); !is_contained(reads, x))
                   reads.push_back(x);
+        // cq-odo1: the initial rails the header phis name are read by the reverse (its anchor notes them).
+        for (Value *h : self->externalInits)
+          if (RailId x = self->U.idOf(h); !is_contained(reads, x))
+            reads.push_back(x);
         self->U.recordDeferred(scs, exits,
                                [self, T, seedScope](IRBuilder<> &B) { self->reverse(B, T, seedScope, true); },
                                reads, self->hostScopes);
@@ -2542,6 +2546,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           if (o.handle && !ownedH.count(o.v))
             if (RailId x = U.idOf(o.v); !is_contained(reads, x))
               reads.push_back(x);
+    // cq-odo1: the initial rails the header phis name are read by the reverse (its anchor notes them).
+    for (Value *h : externalInits)
+      if (RailId x = U.idOf(h); !is_contained(reads, x))
+        reads.push_back(x);
     BasicBlock *Cont = newBlock();
     BranchInst::Create(Cont, T);
     auto self = shared_from_this();
