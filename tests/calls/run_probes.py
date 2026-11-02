@@ -24,8 +24,39 @@ TWIN_BARRIER = ("cq: unimplemented: uncompute: a write that may change an object
                 "points to")
 TWIN_ALIAS = ("cq: unimplemented: uncompute: a clone call whose twin may read a caller cell the clone writes by "
               "another route than the writing pointer")
+# §6 samples per probe where the full set takes minutes (cqcheck user --samples): the musl bodies.
+SAMPLES = {"libm_musl_floorfn": 32, "libm_musl_atan": 16, "libm_musl_exp": 16, "libm_musl_log": 16}
 # (probe, entry, opt flags, expectation, regexes the lowered module must contain)
 CASES = [
+    # cq-57ju (rulings 2026-11-02): plain clang -O1 callers of musl b1efda5 bodies (no -fno-builtin, no -frounding-math).
+    # llvm.<f> binds to the injected body (cq-odjk); fpexcept.ignore ops are plain templates and the clone takes no
+    # mode and no flags (rule 23, cq-75n4); __math_oflow / __math_divzero under a quantum predicate stay host calls,
+    # unguarded (rule 19, cq-fl4n). llvm.floor stays the floor template; floorfn calls musl's body (-fno-builtin).
+    ("libm_musl_floor", "f_floor", [], "pass", [r"call i32 @cq_template_floor_f64\(i32 %\d+\)"]),
+    ("libm_musl_floorfn", "f_floorfn", [], "pass", [r"call i32 @__cq_q_floor_1\(i32 %\d+\)\n",
+                                                    r"define internal i32 @__cq_q_floor_1\(i32 %0\) \{"]),
+    ("libm_musl_atan", "f_atan", [], "pass", [r"call i32 @__cq_q_atan_1\(i32 %\d+\)\n"]),
+    ("libm_musl_exp", "f_exp", [], "pass", [r"call i32 @__cq_q_exp_1\(i32 %\d+\)\n",
+                                            r"call double @__math_oflow\(i32 noundef 0\)"]),
+    ("libm_musl_log", "f_log", [], "pass", [r"call i32 @__cq_q_log_1\(i32 %\d+\)\n",
+                                            r"call double @__math_divzero\(i32 noundef 1\)"]),
+    # cq-57ju (rule 18 partial measurement, rule 23 default caller): a FENV_ACCESS callee measured from a plain
+    # caller (mode 0, an empty flags rail, the flags dead): the measured result is copied out before the twin.
+    ("partial_flags", "sc_measure", [], "pass",
+     [r"call fastcc \{ i32, i32 \} @__cq_q_scaled_10\(i32 %\d+, double %\d+, i32 0, i32 %\d+\)",
+      r"call void @cqrt_copy_f64\(i32 %(\d+), i32 %(\d+)\)(.|\n)*call void @__cq_q_scaled_10_unc\((.|\n)*"
+      r"call double @cqrt_measure_f64\(i32 %\2\)"]),
+    ("partial_flags", "sc_twice", [], "pass", [r"call void @cqrt_copy_f64"]),
+    ("partial_fields", "pr_first", [], "pass", [r"call void @cqrt_copy_i64(.|\n)*call void @__cq_q_mk_1_unc"]),
+    ("partial_fields", "pr_second", [], "pass", [r"call void @cqrt_copy_i64(.|\n)*call void @__cq_q_mk_1_unc"]),
+    # cq-57ju (rule 19, cq-fl4n): a host call with classical arguments and no gate under a quantum predicate.
+    ("host_unguarded", "hc_arm", [], "pass", [r"tail call fastcc i32 @helper\(i32 noundef 3\)\n  %\d+ = call i32 "
+                                              r"@cq_template_select_i32_lh"]),
+    ("host_unguarded", "hc_both", [], "pass", [r"call i32 @cq_template_select_i32_ll"]),
+    # cq-57ju (rule 23): round.dynamic ops reached from a caller with the fenv state carry its mode.
+    ("fenv_reached_mode", "md_up", [], "pass", [r"call \{ i32, i32 \} @__cq_q_third_1\(i32 %\d+, i32 2048, i32 %\d+\)",
+                                                r"cq_template_fdiv_f64_hl_rm\("]),
+    ("fenv_reached_mode", "md_plain", [], "pass", []),
     # cq-567j (gate 2a unc-h1 p16-p19): a clone that only reads a caller's slot cell through a pointer formal:
     # the cell's rails are used by the forward call (and read by its item when it has a twin), never freed before.
     ("read_only_ptr", "ro_bump", [], "pass", []),
@@ -145,7 +176,8 @@ def main() -> int:
                     why.append("no match for " + m)
             c = subprocess.CompletedProcess([], 0, "PASS", "") if expect == "lower" else subprocess.run(
                 [sys.executable, "-m", "cqcheck", "user", "--o1", str(src), "--lowered", str(lowered),
-                 "--entry", entry], capture_output=True, text=True, cwd=ROOT / "checker")
+                 "--entry", entry, *(["--samples", str(SAMPLES[probe])] if probe in SAMPLES else [])],
+                capture_output=True, text=True, cwd=ROOT / "checker")
             if c.returncode != 0 or "PASS" not in c.stdout + c.stderr:
                 why.append("§6 against the C program: " + ((c.stdout + c.stderr).strip().splitlines() or ["?"])[-1])
         print(("FAIL " if why else "ok   ") + probe + ":" + entry + ("" if not why else ": " + "; ".join(why)))
