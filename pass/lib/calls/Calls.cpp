@@ -1713,16 +1713,13 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
                     &CB);
     return loops::lowerQuantumDepthRecursion(ctx, CB, K, B);
   }
-  if (!cs && (ctx.S.ctl || ctx.T.controlTainted(CB.getParent(), ctx.S)))
-    // cq-wskg: taint publishes a specialization for every lifted call under a quantum predicate
-    // (rule 19: _ctl or unguarded and merged). None is a call taint did not lift; the original call
-    // would run unconditionally.
-    unimplemented("calls: a call under a quantum predicate whose callee taint published no specialization "
-                  "for (rules 18, 19)",
-                  &CB);
   if (!cs || cs->isEntry()) {
     // An untainted callee or the in-place specialization: the ordinary call (rule 19's inline of an
-    // entry returning a quantum value is the spine's).
+    // entry returning a quantum value is the spine's). Under a quantum predicate (or in a _ctl clone)
+    // taint lifted the call to the callee's untainted in-place specialization: classical arguments and
+    // no gate in the body (a gate makes a _ctl clone, which taint publishes). Rule 19 (ruling
+    // 2026-11-02, cq-fl4n): such a host call stays the host call, executed unguarded, its classical result
+    // merged like any classical arm value (rule 9): musl's __math_oflow(0) in exp, __math_divzero(1) in log.
     for (const Use &u : CB.args())
       if (ctx.operand(u.get()).handle)
         internalError("calls: a quantum argument to a callee with no clone", &CB);

@@ -842,6 +842,14 @@ void finalize(Module &M) {
 
   SetVector<GlobalValue *> refs;
   for (Function *D : dead) {
+    // A local function no live code reaches is dead code whatever its body became (cq-57ju: musl exp's
+    // static specialcase, rewritten in place because its volatile local is a slot object, rule 20, and
+    // reached only from exp's dropped original). An externally visible one rewritten in place is an
+    // entry the program exports: never dropped silently.
+    if (D->hasLocalLinkage() && !D->hasAddressTaken()) {
+      collectReferences(*D, refs);
+      continue;
+    }
     for (Instruction &I : instructions(*D))
       if (auto *CB = dyn_cast<CallBase>(&I))
         if (Function *callee = CB->getCalledFunction(); callee && isAbiSymbol(callee->getName()))
