@@ -20,7 +20,8 @@
  * flushed at the end of each sample instead of per line.
  *
  * Exit roles (event "exit", field "role" of each live rail): measured, abort, tape, qram, frozen
- * (rotated, not measured), kept_entangled (cq-arch A4: a rail one of whose direct sources received
+ * (rotated, not measured, or a rule-6 image carrying a rotated register's content: cqe__carry,
+ * cq-qhow), kept_entangled (cq-arch A4: a rail one of whose direct sources received
  * a non-diagonal gate or a measurement after the rail was written), output (its handle sits in
  * output memory at exit, mark_outputs; cq-tt2j), fenv_mode (a rail an _rmq template took as its
  * rounding mode; rule 23), fenv_flags (an _exc template's result or a rail written from one: the
@@ -391,6 +392,7 @@ typedef struct {
   uint8_t live, known, measured, frozen, written, seed, role;   /* role: 0 none, 1 abort, 2 tape, 3 qram */
   uint8_t fenv;  /* cq-tt2j, rule 23: 1 flags lineage (an _exc result or written from one), 2 a mode operand */
   uint8_t out;   /* cq-tt2j: at exit, its handle sits in a cell of output memory (mark_outputs) */
+  uint8_t image; /* cq-qhow: carries a frozen register's content (cqe__carry): a rule-6 image, FROZEN */
   uint64_t t_create, t_write, t_nd, t_meas;                       /* event clock; 0 = never */
   uint64_t ry_t, ry_ang;  /* cq-3o3v: the last firing Ry on the rail (clock after it, angle bits) */
   uint64_t *ry_pre, *ry_post; /* its target's value before and after it (v.nw words each) */
@@ -514,6 +516,23 @@ void cqe__mark_measured(int32_t h) {
   rails[h].known = 1;
   rails[h].t_meas = cqe__tick();
 }
+/* CR rule 19 / §6 item 1 (cq-qhow): a frozen register (rotated) is never written in place again
+ * except to clean it, and rule 6 cleans a dead register x against its image r: t = g(r); x ^= t
+ * (copy); t _unc against r. A write into a frozen rail, or into a rail already carrying one's content,
+ * therefore moves that content into the rails it is written from: copy's source, an _unc's or gate's
+ * operand rails. Those carry it (image); a live one at exit is FROZEN like the register itself (rule
+ * 19: "its minted register or that register's rule-6 image is a FROZEN result the caller keeps"),
+ * across calls, since the facts are the run's, not the function's. A measured rail is classical and
+ * carries nothing. Over-approximation: an _unc with several quantum operands marks them all. */
+void cqe__carry(int32_t into, const int32_t *srcs, int n) {
+  rail_t *d = &rails[into];
+  if (d->measured || !(d->frozen || d->image))
+    return;
+  for (int i = 0; i < n; ++i)
+    if (srcs[i] != into && !rails[srcs[i]].measured)
+      rails[srcs[i]].image = 1;
+}
+
 void cqe__add_dep(int32_t h, int32_t src) {
   rail_t *r = &rails[h];
   r->fenv |= rails[src].fenv & 1; /* cq-tt2j: a rail written from the flags is flags (rule 23 lineage) */
@@ -574,7 +593,7 @@ static const char *exit_role(int32_t h) {
     return "tape";
   if (r->role == 3)
     return "qram";
-  if (r->frozen)
+  if (r->frozen || r->image)
     return "frozen";
   for (uint32_t i = 0; i < r->ndeps; ++i) {
     rail_t *s = &rails[r->deps[i]];

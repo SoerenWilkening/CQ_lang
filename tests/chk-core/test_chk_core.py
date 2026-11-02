@@ -1177,6 +1177,18 @@ class ExitRoles(unittest.TestCase):
         self.assertEqual(live[9], ("garbage", False))
         self.assertEqual(live[10][0], "fenv_mode")
 
+    def test_frozen_image(self):
+        # cq-qhow: CR rule 19, a rule-6 image of a rotated register is FROZEN at exit, across the call
+        spec = DriverSpec(example="chk-core", protos=["int use(int,double,int)"], setup="",
+                          calls=[{"fn": "use", "args": [{"ctype": "int", "quantum": True},
+                                                        {"ctype": "double", "quantum": False},
+                                                        {"ctype": "int", "quantum": False}]}])
+        r = run.run_samples(HERE / "frozen_image.ll", spec, [{"call": 0, "args": [3, 0.5, 4]}], "ours")[0]
+        self.assertEqual(r.violations, [])
+        live = {k["h"]: k["role"] for k in r.kept}
+        # handles in creation order: x g r t s (x, t freed)
+        self.assertEqual(live, {2: "garbage", 3: "frozen", 5: "garbage"})
+
     def test_cells_module(self):
         text = ("define void @f(ptr %p, i32 %h, i64 %n) {\n  store i32 %h, ptr %p, align 4\n"
                 "  store i64 %n, ptr %p, align 8\n  store { i32, double } zeroinitializer, ptr %p, align 8\n"

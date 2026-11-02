@@ -108,6 +108,7 @@ int cqe__ry_unprep(int32_t h, uint64_t angle);
 void cqe__ry_forget(int32_t h);
 void cqe__mark_measured(int32_t h);
 void cqe__add_dep(int32_t h, int32_t src);
+void cqe__carry(int32_t into, const int32_t *srcs, int n); /* core.c (cq-qhow) */
 int cqe__free_note(int32_t h, int known); /* core.c (cq-8m6v) */
 void cqe__free(int32_t h);
 
@@ -898,6 +899,7 @@ static void gate_logic(call_t *c, const char *op) {
   else
     d = !strcmp(op, "and") ? (a & b) : (a | b);
   cqe__val(t)->w[0] ^= d;
+  cqe__carry(t, hs, n - 1);
   cqe__mark_written(t);
   for (int i = 0; i < n - 1; ++i)
     cqe__add_dep(t, hs[i]);
@@ -947,6 +949,8 @@ static void gate_copy_xorc(call_t *c, const char *w, int is_copy, int ctl) {
   }
   if (fire)
     cqe__val_xor(cqe__val(target), delta);
+  if (is_copy)
+    cqe__carry(target, srcs, 1); /* the data source, not the control */
   cqe__mark_written(target);
   for (int i = 0; i < ns; ++i)
     cqe__add_dep(target, srcs[i]);
@@ -1244,6 +1248,7 @@ static void template_call(call_t *c, const char *sym) {
       if (strcmp(cqe__w(o), rw) != 0)
         cqe__violation("width_mismatch", o, "%s: out rail %d is %s, the name implies %s", sym, (int)o, cqe__w(o), rw);
       cqe__val_xor(cqe__val(o), &out);
+      cqe__carry(o, hs, nh);
       cqe__mark_written(o);
       sbuf b = {0};
       sb_addf(&b, "{\"ev\":\"unc\",\"sym\":\"%s\",\"out\":%d,\"args\":%s,\"residue\":\"", sym, (int)o, ab.p);
@@ -1588,6 +1593,7 @@ static void standin(const char *sym, const char *sig, const char *csig, int32_t 
           cqe__violation("width_mismatch", out_h, "%s: out rail %d is %s, %s returns %s", sym, (int)out_h,
                          cqe__w(out_h), fn, wt);
         cqe__val_xor(cqe__val(out_h), &v);
+        cqe__carry(out_h, hs, nh);
         cqe__mark_written(out_h);
         sbuf b = {0};
         sb_addf(&b, "{\"ev\":\"unc\",\"sym\":\"%s\",\"out\":%d,\"args\":%s,\"residue\":\"", sym, (int)out_h, ab.p);

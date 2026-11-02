@@ -1809,7 +1809,8 @@ def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult], ended: Sequence[
 # already decides it; against the C oracle (the C-oracle verdict; cqcheck user, which has no
 # clean-list) each live rail of ours is read by the role the evaluator gives it at exit (rt/core.c
 # exit_role) and what the run says of it:
-#   kept      measured, frozen (rotated), abort and tape rails (rules 5, 16), QRAM blocks (qram,
+#   kept      measured, frozen (rotated, or a rule-6 image carrying a rotated register's content: rule 19's
+#             FROZEN result a caller keeps, rt/core.c cqe__carry; cq-qhow), abort and tape rails (rules 5, 16), QRAM blocks (qram,
 #             qram_cell, qram_slot), kept_entangled (a source received a non-diagonal gate or a
 #             measurement after the rail was written: no _unc can clean it; rules 5 and 6), output (its
 #             handle sits in output memory at exit: an out-parameter's or output object's cell, a
