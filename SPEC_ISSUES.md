@@ -30,3 +30,4 @@ Entry format:
   heap_linked_list.lowered.ll line 36.
 - Bead: cq-n7e9
 
+- mem-slots (cq-05pa): 67_static_global_slot's reference frees the rail still held in @saved at exit, but rule 20 (b137e75) says rails a global's cells hold at exit are kept. Which wins? (We keep 67's lowering for that confined shape meanwhile.)
