@@ -37,8 +37,12 @@
 // An instruction with effects in the body (a call, a store, an allocation, a phase or a rotation) is
 // lowered under the trip predicate q_j & its block's trip-local predicate (rule 14 case 2, cq-99f7's
 // tripFlag); a pure instruction or a load is computed in every trip.
-// Not built yet (internal errors, never a fallback): a classical branch or a switch in the body, a classical-
-// bound sub-loop, several latches or pre-header incomings, an exit value that is not as described.
+// A trip is any acyclic code (cq-b58q): classical and quantum branches and switches are its predicates (a
+// classical term seeded, rule 8), a classical phi a classical select (rule 9), several latches end a trip on
+// one back edge, several header entries merge a quantum start (rule 9). A read after a top-level loop that
+// the single-exit forms cannot express takes the multi-exit form's GENERAL EXIT CAPTURE.
+// Not built yet (each stop names its bead): nested loops in the general forms, a classical-bound sub-loop,
+// pointer and aggregate values across the loop, the unit shapes exits::unitOf rejects.
 #include "cq/Loops.h"
 
 #include <functional>
@@ -317,14 +321,14 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   auto liveEdge = [&](const BasicBlock *s) { return !L.contains(s) && is_contained(U.live, s); };
   BasicBlock *X = U.multi() ? nullptr : U.cont;
   if (U.multi() && !top)
-    unimplemented("loops-cutoff: a nested K-loop with more than one live exit block", H->getTerminator());
+    unimplemented("loops-cutoff: a nested K-loop with more than one live exit block (cq-lgkx)", H->getTerminator());
   if (c == 0)
     internalError("loops-cutoff: a cutoff of 0 trips", H->getTerminator());
 
   // Sub-loops: each is a quantum-exit loop of its own (nested K-loops).
   for (Loop *S : L.getSubLoops())
     if (classify(*S, ctx.T, ctx.S) != Case::QuantumExit)
-      unimplemented("loops-cutoff: a sub-loop of a K-loop that is not itself a quantum-exit loop",
+      unimplemented("loops-cutoff: a sub-loop of a K-loop that is not itself a quantum-exit loop (cq-h5uj)",
                     S->getHeader()->getTerminator());
 
   // The body's terminators: every branch and switch of a trip, quantum or classical, is a predicate of
@@ -360,12 +364,12 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   }
   if (multi && !top)
     unimplemented(regionForm ? "loops-cutoff: a nested header-tested K-loop with an exit outside its test region"
-                             : "loops-cutoff: a nested K-loop exiting from a block other than its latch",
+                             : "loops-cutoff: a nested K-loop exiting from a block other than its latch (cq-lgkx)",
                   H->getTerminator());
   if (multi)
     for (BasicBlock *e : exiting)
       if (A.LI.getLoopFor(e) != &L && any_of(successors(e), liveEdge))
-        unimplemented("loops-cutoff: a multi-exit K-loop with an exit from inside a sub-loop", e->getTerminator());
+        unimplemented("loops-cutoff: a multi-exit K-loop with an exit from inside a sub-loop (cq-lgkx)", e->getTerminator());
 
   // The trip order: reverse post-order of the loop's blocks, back edges dropped.
   std::vector<BasicBlock *> order;
@@ -403,7 +407,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   auto contribution = [&](BasicBlock *p, BasicBlock *b) -> Pred {
     if (Loop *S = subLoopOf(p); S && !S->contains(b)) {
       if (S->getUniqueExitBlock() != b)
-        unimplemented("loops-cutoff: a nested K-loop with more than one exit block", p->getTerminator());
+        unimplemented("loops-cutoff: a nested K-loop with more than one exit block (cq-lgkx)", p->getTerminator());
       return local.find(S->getHeader())->second;   // the sub-loop as a unit always ends at its exit
     }
     return local.find(p)->second & edgeCond(p, b);
@@ -579,22 +583,22 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           })) {
         if (regionForm || !top || !X)
           unimplemented("loops-cutoff: an allocation of a K-loop read after the loop, outside a top-level single-exit "
-                        "body-form K-loop (rule 14 trip objects)",
+                        "body-form K-loop (rule 14 trip objects) (cq-p45s)",
                         &I);
         ArrayRef<ObjectId> objs = ctx.T.provenance(&I, ctx.S);
         if (objs.size() != 1 || ctx.T.classOf(objs.front()) != ObjClass::Slot)
           unimplemented("loops-cutoff: a K-loop trip object read after the loop that is not one slot object (a QRAM or "
-                        "host object per trip)",
+                        "host object per trip) (cq-p45s)",
                         &I);
         if (!A.DT.dominates(I.getParent(), latch))
-          unimplemented("loops-cutoff: a K-loop trip object whose allocation does not dominate the latch", &I);
+          unimplemented("loops-cutoff: a K-loop trip object whose allocation does not dominate the latch (cq-p45s)", &I);
         bool deref = false;
         for (auto it = std::next(I.getIterator()); it != I.getParent()->end(); ++it)
           if (const Value *ap = getLoadStorePointerOperand(&*it); ap && ap->stripInBoundsConstantOffsets() == &I)
             deref = true;
         if (!deref)
           unimplemented("loops-cutoff: a K-loop trip object not dereferenced in its allocation's block (it may be "
-                        "null: rule 21's tag compare needs distinct non-null objects)",
+                        "null: rule 21's tag compare needs distinct non-null objects) (cq-p45s)",
                         &I);
         for (const Use &U : I.uses()) {
           auto *P = dyn_cast<PHINode>(U.getUser());
@@ -602,7 +606,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
             continue;
           if (!P || P->getParent() != X || P->getIncomingBlock(U) != latch)
             unimplemented("loops-cutoff: a K-loop trip object read after the loop other than by a phi of the exit "
-                          "block on the latch's exit edge",
+                          "block on the latch's exit edge (cq-p45s)",
                           &I);
           if (any_of(tripPhis, [&](const TripPhi &t) { return t.P == P; }))
             continue;
@@ -626,7 +630,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         continue;
       if (regionForm) {
         if (!region.count(b)) {
-          needGeneral("loops-cutoff: a value of a nested header-tested K-loop's body read after the loop", &I);
+          needGeneral("loops-cutoff: a value of a nested header-tested K-loop's body read after the loop (cq-lgkx)", &I);
           continue;
         }
         if (!isQ(&I)) {
@@ -635,7 +639,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           auto *h = dyn_cast<PHINode>(&I);
           if (!h || h->getParent() != H || !h->getType()->isIntegerTy()) {
             needGeneral("loops-cutoff: a classical value of a nested K-loop's test region read after the loop that "
-                        "is not an affine induction's exit value",
+                        "is not an affine induction's exit value (cq-lgkx)",
                         &I);
             continue;
           }
@@ -643,7 +647,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           exitRebinds.push_back({&I, h});
         } else if (fromInduction(&I)) {
           needGeneral("loops-cutoff: a value of a nested K-loop's test region computed from an induction, read "
-                      "after the loop",
+                      "after the loop (cq-lgkx)",
                       &I);
         } else {
           regionQReads.push_back(&I);
@@ -655,7 +659,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         exitRail.insert({h, Operand{nullptr, false}});   // CR rule 14: an affine induction's exit value
       if (!h || (!isQ(h) && !exitRail.count(h))) {
         needGeneral("loops-cutoff: a value read after a nested K-loop that is not the latch incoming of a "
-                    "header phi",
+                    "header phi (cq-lgkx)",
                     &I);
         continue;
       }
@@ -665,7 +669,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   if (regionForm && X && !multi)
     for (PHINode &P : X->phis())
       if (isQ(&P) && count_if(P.blocks(), [&](const BasicBlock *u) { return L.contains(u); }) > 1)
-        needGeneral("loops-cutoff: a phi of a nested header-tested K-loop's exit block over several exit edges", &P);
+        needGeneral("loops-cutoff: a phi of a nested header-tested K-loop's exit block over several exit edges (cq-lgkx)", &P);
   if (general) {
     multi = true;
     exitRebinds.clear();
@@ -677,20 +681,20 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     PHINode *P = tp.P;
     const Pred &pH = ctx.preds().block(H);
     if (!isQ(P))
-      unimplemented("loops-cutoff: a phi of K-loop trip objects that taint calls classical", P);
+      unimplemented("loops-cutoff: a phi of K-loop trip objects that taint calls classical (cq-p45s)", P);
     if (!pH.classicalFactor(ctx.T, ctx.S).isTop())
-      unimplemented("loops-cutoff: a phi of K-loop trip objects of a loop under a classical condition", P);
+      unimplemented("loops-cutoff: a phi of K-loop trip objects of a loop under a classical condition (cq-p45s)", P);
     for (unsigned i = 0; i < P->getNumIncomingValues(); ++i) {
       BasicBlock *u = P->getIncomingBlock(i);
       Value *v = P->getIncomingValue(i);
       if (L.contains(u)) {
         if (u != latch || v != tp.site)
-          unimplemented("loops-cutoff: a phi of K-loop trip objects with another incoming from the loop", P);
+          unimplemented("loops-cutoff: a phi of K-loop trip objects with another incoming from the loop (cq-p45s)", P);
         continue;
       }
       if (!isa<ConstantPointerNull>(v) || !(ctx.preds().edge(u, X) & pH).isBottom())
         unimplemented("loops-cutoff: a phi of K-loop trip objects whose incoming from outside the loop is not null on "
-                      "an edge that skips the loop",
+                      "an edge that skips the loop (cq-p45s)",
                       P);
     }
     // Its uses after the loop: eq/ne with null, loads at constant offsets (through constant GEPs).
@@ -717,7 +721,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           }
         }
         unimplemented("loops-cutoff: a phi of K-loop trip objects used after the loop other than by an eq/ne compare "
-                      "with null or a load at a constant offset",
+                      "with null or a load at a constant offset (cq-p45s)",
                       cast<Instruction>(u));
       }
     }
@@ -771,7 +775,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       }
       if (foreign)
         needGeneral("loops-cutoff: an exit phi of a nested K-loop reading a value from outside the loop on an exit "
-                    "edge that is not the exit value of a carried value",
+                    "edge that is not the exit value of a carried value (cq-lgkx)",
                     &P);
     }
     if (general) {   // the multi-exit form's capture binds every phi of the exit block
@@ -819,8 +823,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
             continue;
           Type *ty = I.getType();
           if (!(ty->isIntegerTy() || ty->isFloatingPointTy()))
-            unimplemented("loops-cutoff: awaiting owner ruling: SPEC_ISSUES \"The exit value of a pointer or "
-                          "aggregate computed in a K-loop\"",
+            unimplemented("loops-cutoff: the exit value of a pointer or aggregate computed in a K-loop (rules 21, 26: "
+                          "a fat pointer or per-field rails; cq-p45s)",
                           &I);
           xaccs.push_back({&I, Operand{seedRail(Constant::getNullValue(ty), ty), true}});
         }
@@ -834,9 +838,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (!fromUnit)
         continue;
       if (!isQ(&P))
-        unimplemented("loops-cutoff: a classical phi joining a multi-exit K-loop's exits", &P);
+        unimplemented("loops-cutoff: a classical phi joining a multi-exit K-loop's exits (cq-uytx)", &P);
       if (!(P.getType()->isIntegerTy() || P.getType()->isFloatingPointTy()))
-        unimplemented("loops-cutoff: a non-scalar phi joining a multi-exit K-loop's exits", &P);
+        unimplemented("loops-cutoff: a non-scalar phi joining a multi-exit K-loop's exits (cq-p45s)", &P);
       const Value *init = nullptr;
       Pred cH = pH.classicalFactor(ctx.T, ctx.S);
       for (unsigned i = 0; i < P.getNumIncomingValues(); ++i) {
@@ -849,11 +853,11 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           continue;
         if (!(ctx.preds().edge(u, C) & pH).isBottom())
           unimplemented("loops-cutoff: a phi joining a multi-exit K-loop's exits with an incoming from outside the "
-                        "loop on an edge that does not exclude the loop",
+                        "loop on an edge that does not exclude the loop (cq-uytx)",
                         &P);
         if (init && init != P.getIncomingValue(i))
           unimplemented("loops-cutoff: a phi joining a multi-exit K-loop's exits with several incomings from outside "
-                        "the loop",
+                        "the loop (cq-uytx)",
                         &P);
         init = P.getIncomingValue(i);
       }
@@ -922,13 +926,13 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       else if (!sameNext || !g || g->getPointerOperand() != h ||
                !g->accumulateConstantOffset(ctx.M.getDataLayout(), off) || (si && L.contains(si)))
         unimplemented("loops-cutoff: a pointer into slot or QRAM memory carried by a K-loop that is not walked by a "
-                      "constant step from a loop-invariant start",
+                      "constant step from a loop-invariant start (cq-p45s)",
                       h);
       for (const User *u : h->users()) {
         bool ok = u == g || isa<GetElementPtrInst>(u) || (isa<LoadInst>(u) && cast<LoadInst>(u)->getPointerOperand() == h) ||
                   (isa<StoreInst>(u) && cast<StoreInst>(u)->getPointerOperand() == h);
         if (!ok)
-          unimplemented("loops-cutoff: a walked pointer of a K-loop used other than as an address", cast<Instruction>(u));
+          unimplemented("loops-cutoff: a walked pointer of a K-loop used other than as an address (cq-p45s)", cast<Instruction>(u));
       }
       ctx.bindWalkedPointer(h, WalkedPtr{start, off.getSExtValue()});
       walkedTrip[h] = 0;
@@ -939,7 +943,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     // (fatptr R2: every incoming at the start of its objects, so idx is the classical 0 and not carried).
     if (isQ(h) && h->getType()->isPointerTy()) {
       if (exitRail.count(h) || qind.count(h))
-        unimplemented("loops-cutoff: a K-loop's carried pointer read after the loop", h);
+        unimplemented("loops-cutoff: a K-loop's carried pointer read after the loop (cq-p45s)", h);
       fatptr::registerCarried(ctx, *h);
       Operand init = initOf(h, true);
       if (!init.handle)
@@ -951,7 +955,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     // A classical pointer header phi is an affine induction (taint, CR rule 14: a walked pointer with a
     // classical start): a classical value in each trip, nothing carried.
     if (!h->getType()->isIntegerTy() && !h->getType()->isFloatingPointTy() && (isQ(h) || !h->getType()->isPointerTy()))
-      unimplemented("loops-cutoff: a carried value that is not a scalar (aggregates, pointers)", h);
+      unimplemented("loops-cutoff: a carried value that is not a scalar (aggregates, pointers) (cq-p45s)", h);
     Operand init = initOf(h, false);
     if (isQ(h) && !init.handle)
       init = Operand{seedRail(init.v, h->getType()), true};
@@ -1383,7 +1387,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       captureTrips(q, j);
       Value *qn = conj(q, cont, latch->getTerminator());
       if (qn == q)
-        unimplemented("loops-cutoff: a K-loop whose back edge is taken on every path of a trip", latch->getTerminator());
+        unimplemented("loops-cutoff: awaiting owner ruling: SPEC_ISSUES \"A rule-14 loop with no live exit\" (its back "
+                      "edge is taken on every path of a trip)",
+                      latch->getTerminator());
       advance(q);
       q = qn;
     }
@@ -1486,14 +1492,15 @@ Unit unitOf(const Loop &L) {
     }
     if (effect)
       unimplemented("loops-cutoff: a rule-14 loop exit into a dead end with an effect (a noreturn call: the exit "
-                    "is live and the unit has no continuation)",
+                    "is live and the unit has no continuation) (cq-0dvv)",
                     x->getTerminator());
     for (BasicBlock *b : seen)
       if (!is_contained(U.dead, b))
         U.dead.push_back(b);
   }
   if (U.live.empty())
-    unimplemented("loops-cutoff: a rule-14 loop with no live exit", L.getHeader()->getTerminator());
+    unimplemented("loops-cutoff: awaiting owner ruling: SPEC_ISSUES \"A rule-14 loop with no live exit\"",
+                  L.getHeader()->getTerminator());
   if (U.live.size() == 1) {
     U.cont = U.live.front();
     return U;
@@ -1504,7 +1511,7 @@ Unit unitOf(const Loop &L) {
   for (BasicBlock *x : U.live) {
     c = PDT.findNearestCommonDominator(c, x);
     if (!c)
-      unimplemented("loops-cutoff: a rule-14 loop whose live exits have no common post-dominator", x->getTerminator());
+      unimplemented("loops-cutoff: a rule-14 loop whose live exits have no common post-dominator (cq-0dvv)", x->getTerminator());
   }
   if (L.contains(c))
     internalError("loops-cutoff: a loop's exits post-dominated by a block of the loop", c);
@@ -1525,7 +1532,7 @@ Unit unitOf(const Loop &L) {
     for (BasicBlock *p : predecessors(b))
       if (!L.contains(p) && !arm.count(p))
         unimplemented("loops-cutoff: a block between a rule-14 loop's exits and their join that is also entered from "
-                      "outside the loop",
+                      "outside the loop (cq-0dvv)",
                       b->getTerminator());
   // Topological order (DFS post-order reversed); a cycle in the arm is not built.
   SmallPtrSet<BasicBlock *, 8> done, onStack;
@@ -1536,7 +1543,7 @@ Unit unitOf(const Loop &L) {
       if (!arm.count(s))
         continue;
       if (onStack.count(s))
-        unimplemented("loops-cutoff: a cycle between a rule-14 loop's exits and their join", s->getTerminator());
+        unimplemented("loops-cutoff: a cycle between a rule-14 loop's exits and their join (cq-0dvv)", s->getTerminator());
       if (!done.count(s))
         dfs(s);
     }
@@ -1602,7 +1609,7 @@ std::optional<uint64_t> cutoffBound(const Loop &L, ScalarEvolution &SE, const Ta
       if (uses) {
         if (qints.size() != S.bounds.size())
           unimplemented("loops-cutoff: a K-loop in a clone with _b bounds whose bounds cannot be matched to its "
-                        "quantum integer formals (some formal had no call-site bound)",
+                        "quantum integer formals (some formal had no call-site bound) (cq-qc70)",
                         L.getHeader()->getTerminator());
         ValueToSCEVMapTy map;
         for (size_t i = 0; i < qints.size(); ++i)
@@ -1705,8 +1712,8 @@ void lowerQuantumDepthRecursion(LoweringContext &ctx, llvm::CallBase &CB, unsign
       continue;
     }
     if (!(t->isIntegerTy() || t->isFloatingPointTy()))
-      unimplemented("loops-cutoff: awaiting owner ruling: SPEC_ISSUES \"The |0> value of a cut recursive call "
-                    "with a quantum pointer result\"",
+      unimplemented("loops-cutoff: a cut recursive call with a quantum pointer field (rule 21: the null fat pointer; "
+                    "fatptr has no entry binding a call result; cq-p45s)",
                     &CB);
     RailType w = railTypeOf(t);
     CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(C, w))});
