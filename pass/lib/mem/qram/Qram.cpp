@@ -98,6 +98,8 @@ using namespace llvm;
 
 namespace cq::mem {
 
+void lowerSlotIntrinsicM6(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o);
+
 namespace {
 
 // ==== restated from pass/lib/mem/slots/Slots.cpp (mem-slots), keep in step ========================
@@ -619,10 +621,11 @@ void lowerSlotMemset(LoweringContext &ctx, MemSetInst &MS, ObjectId o) {
   LLVMContext &C = ctx.M.getContext();
   IRBuilder<> &B = ctx.B();
   FnState &st = stateOf(ctx, MS);
+  // Every memset this seed form does not take is mem-slots' write path (M6, lowerSlotIntrinsicM6): one
+  // update per cell with lowerSlotStore's semantics (a select under a quantum predicate, rule 9; roles as
+  // mem-slots gives them), before anything is emitted here.
   if (ctx.currentFlag())
-    unimplemented("mem-qram: a memset of a slot object under a quantum predicate (rules 9, 20, 22: each cell "
-                  "becomes select(predicate, value, old))",
-                  &MS);
+    return lowerSlotIntrinsicM6(ctx, MS, o);
   Addr a = decompose(MS.getDest(), DL);
   if (!a.ok)
     unimplemented("mem-qram: a memset of a slot object whose destination is not an object plus GEP offsets", &MS);
@@ -635,10 +638,11 @@ void lowerSlotMemset(LoweringContext &ctx, MemSetInst &MS, ObjectId o) {
 
   Operand fill = ctx.operand(MS.getValue());
   if (fill.handle)
-    unimplemented("mem-qram: a memset of a slot object with a quantum fill byte (rule 22)", &MS);
+    return lowerSlotIntrinsicM6(ctx, MS, o);
   Operand len = ctx.operand(MS.getLength());
   if (len.handle)
-    unimplemented("mem-qram: a memset of a slot object with a quantum length (rule 22's guarded cells)", &MS);
+    internalError("mem-qram: a quantum-length memset routed to the seed form (lowerMemIntrinsic sends it to M6)",
+                  &MS);
   if (a.off % cb)
     unimplemented("mem-qram: a memset of a slot object starting inside a cell (a bit view, 63)", &MS);
   if (!wholeCells(MS.getLength(), uint64_t(cb), DL))
@@ -653,19 +657,15 @@ void lowerSlotMemset(LoweringContext &ctx, MemSetInst &MS, ObjectId o) {
   case RootKind::Heap:
     // A dynamic slot array's seeds are its registers (UserRegister: kept, never cleaned), so a call its
     // pointer escapes to (117's x passed to a _ctl clone) leaves no clean-up to a callee twin.
-    if (info.escaping && !isDynamic(ctx, st, info, o))
-      unimplemented("mem-qram: a memset of a slot object whose pointer escapes to a call (its seeds' clean-up is "
-                    "the callee twin's: rule 18, 31, 106)",
-                    &MS);
+    // An escaping or static object's cells are mem-slots' (their seeds' clean-up is the callee twin's or
+    // the store's, rule 18, 31, 106).
     if (!isDynamic(ctx, st, info, o))
-      unimplemented("mem-qram: a memset of a slot object no load reads back at a run-time cell (its seeds are "
-                    "freed at their store while a guarded store may still read them from the cell)",
-                    &MS);
+      return lowerSlotIntrinsicM6(ctx, MS, o);
     role = Role::UserRegister;
     break;
   case RootKind::Param:
     if (!ctx.S.isEntry())
-      unimplemented("mem-qram: a memset of a caller's slot cells from a clone (rule 18 copy-out and twin, 31)", &MS);
+      return lowerSlotIntrinsicM6(ctx, MS, o);   // a caller's cells: rule 18's copy-out and twin (31)
     role = Role::Output;
     break;
   case RootKind::Global:
@@ -673,6 +673,8 @@ void lowerSlotMemset(LoweringContext &ctx, MemSetInst &MS, ObjectId o) {
       role = Role::Output;   // an extern global is an output (71)
     break;
   }
+  if (!role && !isa<ConstantInt>(len.v))
+    return lowerSlotIntrinsicM6(ctx, MS, o);   // a run-time length whose seeds are freed: M6's guarded cells
 
   Type *i64 = Type::getInt64Ty(C);
   // The first cell: the destination's offset in cells.
@@ -682,7 +684,9 @@ void lowerSlotMemset(LoweringContext &ctx, MemSetInst &MS, ObjectId o) {
       unimplemented("mem-qram: a memset destination GEP stride that is not a whole number of cells", &MS);
     Operand x = ctx.operand(v);
     if (x.handle)
-      unimplemented("mem-qram: a memset of a slot object at a quantum offset (QRAM, rule 20)", &MS);
+      internalError("mem-qram: a memset at a quantum offset of an object taint classified a slot array (rule 20: a "
+                    "quantum-offset write makes it a QRAM)",
+                    &MS);
     Value *t = B.CreateSExtOrTrunc(x.v, i64);
     if (stride / cb != 1)
       t = B.CreateMul(t, ConstantInt::get(i64, stride / cb, true));
@@ -723,9 +727,7 @@ void lowerSlotMemset(LoweringContext &ctx, MemSetInst &MS, ObjectId o) {
   }
 
   if (!role)
-    unimplemented("mem-qram: a run-time-length memset of a slot object whose seeds are freed (an internal-linkage "
-                  "global): the loop's seeds would need a reverse loop",
-                  &MS);
+    internalError("mem-qram: a run-time-length memset with role-less seeds reached the seed loop", &MS);
   Value *n = B.CreateZExtOrTrunc(len.v, i64);
   if (cb != 1)
     n = B.CreateLShr(n, ConstantInt::get(i64, Log2_64(uint64_t(cb))), "", /*isExact=*/true);
@@ -2368,10 +2370,22 @@ void lowerSlotIntrinsicM6(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o) {
     lenV = z->getOperand(0);
   Operand len = ctx.operand(lenV);
   uint64_t n = 0;
-  if (!len.handle) {
-    auto *cl = dyn_cast<ConstantInt>(len.v);
-    if (!cl)
-      unimplemented("mem-qram: a memcpy/memmove into a slot array with a run-time classical length (a loop)", &MI);
+  bool rtLen = false;   // a run-time classical length: rule 22's cells up to its bound, each under a seed guard
+  if (!len.handle && !isa<ConstantInt>(len.v)) {
+    rtLen = true;
+    if (!wholeCells(lenV, cb, DL))
+      unimplemented("mem-qram: a run-time-length memory intrinsic into a slot array over a part of a cell (a bit "
+                    "view, 63)",
+                    &MI);
+    n = (upperBound(lenV, DL, MI) + cb - 1) / cb;
+    if (std::optional<uint64_t> ob = staticObjectBytes(info, DL); ob && a.terms.empty() && a.off >= 0)
+      n = std::min<uint64_t>(n, *ob > uint64_t(a.off) ? (*ob - uint64_t(a.off)) / cb : 0);
+    if (n > (uint64_t(1) << 20))
+      unimplemented("awaiting owner ruling: SPEC_ISSUES rule 22 unrolled over a length whose upper bound leaves "
+                    "more than 2^20 bytes (no range fact bounds it and the destination's extent is not static)",
+                    &MI);
+  } else if (!len.handle) {
+    auto *cl = cast<ConstantInt>(len.v);
     if (cl->getZExtValue() % cb)
       unimplemented("mem-qram: a memory intrinsic into a slot array over a part of a cell (a bit view, 63)", &MI);
     n = cl->getZExtValue() / cb;
@@ -2396,10 +2410,20 @@ void lowerSlotIntrinsicM6(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o) {
   SmallVector<Operand, 8> vals;
   if (auto *MS = dyn_cast<MemSetInst>(&MI)) {
     Operand fill = ctx.operand(MS->getValue());
-    if (fill.handle)
-      unimplemented("mem-qram: a memset of a slot object with a quantum fill byte (rule 22)", &MI);
-    Value *v = splatCell(ctx, fill.v, cellTy);
-    vals.assign(n, Operand{v, false});
+    if (fill.handle) {
+      // Rule 22: the quantum fill byte repeated over the cell (zext and mul_hl by 0x0101..), one rail every
+      // cell takes as a basis copy; a _Bool cell is the byte's low bit.
+      unsigned W = unsigned(DL.getTypeStoreSize(cellTy).getFixedValue() * 8);
+      Operand x = intCast(ctx, "zext", 8, W, fill);
+      if (W > 8)
+        x = intOp(ctx, "mul", W, x, APInt::getSplat(W, APInt(8, 1)));
+      x = fromInt(ctx, intCast(ctx, "trunc", W, info.boolCells ? 1 : valueBits(cellTy), x),
+                  info.boolCells ? Type::getInt1Ty(C) : cellTy);
+      vals.assign(n, x);
+    } else {
+      Value *v = splatCell(ctx, fill.v, cellTy);
+      vals.assign(n, Operand{v, false});
+    }
   } else {
     const Value *src = cast<MemTransferInst>(MI).getSource();
     if (ctx.T.isFatPointer(src, ctx.S)) {
@@ -2416,18 +2440,48 @@ void lowerSlotIntrinsicM6(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o) {
       Operand sp = ctx.operand(src);
       if (sp.handle)
         internalError("mem-qram: a classical memcpy source bound to a rail", &MI);
+      Value *from = sp.v;
+      if (rtLen) {
+        // The host's own copy of exactly the length's bytes into a zeroed buffer of the bound's size: no
+        // host byte past the length is read (rule 22).
+        Function &F = ctx.out();
+        IRBuilder<> EB(&F.getEntryBlock(), F.getEntryBlock().getFirstInsertionPt());
+        AllocaInst *buf = EB.CreateAlloca(ArrayType::get(Type::getInt8Ty(C), n * cb));
+        B.CreateMemSet(buf, ConstantInt::get(Type::getInt8Ty(C), 0), n * cb, MaybeAlign(1));
+        B.CreateMemCpy(buf, MaybeAlign(1), sp.v, MaybeAlign(1), B.CreateZExtOrTrunc(len.v, Type::getInt64Ty(C)));
+        from = buf;
+      }
       for (uint64_t j = 0; j < n; ++j) {
-        Value *p = j ? B.CreateInBoundsGEP(Type::getInt8Ty(C), sp.v, ConstantInt::get(Type::getInt64Ty(C), j * cb))
-                     : sp.v;
-        vals.push_back(Operand{B.CreateLoad(cellTy, p), false});
+        Value *p = j ? B.CreateInBoundsGEP(Type::getInt8Ty(C), from, ConstantInt::get(Type::getInt64Ty(C), j * cb))
+                     : from;
+        vals.push_back(Operand{rtLen ? B.CreateAlignedLoad(cellTy, p, Align(1)) : B.CreateLoad(cellTy, p), false});
+      }
+    } else if (so.size() == 1 && ctx.T.classOf(so.front()) == ObjClass::Qram) {
+      // A QRAM source: each cell's bytes by the byte engine's reads (rule 20, one access per touched cell).
+      QAccess sacc = qramAccess(ctx, src, MI);
+      for (uint64_t j = 0; j < n; ++j) {
+        Operand x = readBytes(ctx, sacc, sacc.a.off + int64_t(j * cb), cb, MI);
+        x = intCast(ctx, "trunc", unsigned(cb * 8), valueBits(cellTy), x);
+        vals.push_back(fromInt(ctx, x, cellTy));
       }
     } else {
-      unimplemented("mem-qram: a memcpy/memmove into a slot array from a QRAM or a mixed-class source", &MI);
+      unimplemented("mem-qram: a memcpy/memmove into a slot array from several objects (rule 21's per-object "
+                    "source cells)",
+                    &MI);
     }
     }
   }
-  // The guards of a quantum length.
+  // The guards of a quantum length, or of a run-time classical one (a seed flag, rules 7, 8).
   SmallVector<Value *, 8> guards;
+  if (rtLen) {
+    Type *i64 = Type::getInt64Ty(C);
+    for (uint64_t j = 0; j < n; ++j) {
+      Value *c = B.CreateICmpUGE(B.CreateZExtOrTrunc(len.v, i64), ConstantInt::get(i64, (j + 1) * cb));
+      CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 1}}, {c});
+      ctx.unc().recordSeed(seed);
+      guards.push_back(seed);
+    }
+  }
   if (len.handle) {
     unsigned lw = lenV->getType()->getIntegerBitWidth();
     for (uint64_t j = 0; j < n; ++j) {
@@ -2437,6 +2491,21 @@ void lowerSlotIntrinsicM6(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o) {
       cmp.w = RailType{Kind::Int, lw};
       cmp.shape = "hl";
       guards.push_back(ctx.emitTemplate(cmp, {len, Operand{ConstantInt::get(IntegerType::get(C, lw), (j + 1) * cb - 1), false}}));
+    }
+  }
+  // Under a quantum predicate every cell's guard includes the predicate's flag (M6: the guards are the
+  // caller's; rules 8, 9: a conjunction used as data is and_i1).
+  if (Value *flag = ctx.currentFlag()) {
+    guards.resize(n, nullptr);
+    for (Value *&g : guards) {
+      if (!g) {
+        g = flag;
+        continue;
+      }
+      abi::TemplateSpec a;
+      a.op = "and";
+      a.w = RailType{Kind::Int, 1};
+      g = ctx.emitTemplate(a, {Operand{flag, true}, Operand{g, true}});
     }
   }
   writeSlotCells(ctx, MI.getDest(), cellTy, vals, guards, MI);
@@ -2653,11 +2722,11 @@ void allocateQram(LoweringContext &ctx, Instruction &site) {
     hs.push_back(a);
   }
   q.buses[&site] = hs;
+  // A site lowered again in one output function (a loop unit lowering each trip, rule 14) allocates a new
+  // object each time: every later access of the site is to the newest one; the earlier one's stores stay
+  // recorded on its own bus, popped and freed by Uncompute like any bus.
   QramState &st = qramStates()[&ctx.out()];
-  if (!st.objs.emplace(&site, std::move(q)).second)
-    unimplemented("mem-qram: a QRAM allocation site executed twice in one output function (a loop or an "
-                  "inlined call re-allocating the object)",
-                  &site);
+  st.objs[&site] = std::move(q);
   ctx.bind(&site, qramBase(ctx, soleQram(ctx, &site, site)));
 }
 
@@ -2940,21 +3009,27 @@ HostTriple hostTriple(LoweringContext &ctx, const Value *ptr, const Instruction 
                   "global (rule 21 triple: its cell count)",
                   &at);
   Type *objTy;
-  uint64_t bytes;
+  uint64_t bytes = 0;
+  Value *rtBytes = nullptr;   // a VLA's size, computed at the call (rule 21: the count follows the triple)
   if (auto *ai = dyn_cast<AllocaInst>(a.root)) {
     auto sz = ai->getAllocationSize(DL);
-    if (!sz || sz->isScalable())
-      unimplemented("mem-qram: a variable-size local crossing a clone boundary as a rule 21 triple (its cell "
-                    "count)",
-                    &at);
     objTy = ai->getAllocatedType();
-    bytes = sz->getFixedValue();
+    if (sz && !sz->isScalable()) {
+      bytes = sz->getFixedValue();
+    } else {
+      Operand c = ctx.operand(ai->getArraySize());
+      if (c.handle)
+        internalError("mem-qram: a VLA element count bound to a rail", ai);
+      Type *i64 = Type::getInt64Ty(ctx.M.getContext());
+      rtBytes = ctx.B().CreateMul(ctx.B().CreateZExtOrTrunc(c.v, i64),
+                                  ConstantInt::get(i64, DL.getTypeAllocSize(objTy).getFixedValue()));
+    }
   } else {
     auto *gv = cast<GlobalVariable>(a.root);
     objTy = gv->getValueType();
     bytes = DL.getTypeAllocSize(objTy).getFixedValue();
   }
-  if (auto *st = dyn_cast<StructType>(objTy); st && isa<AllocaInst>(a.root)) {
+  if (auto *st = dyn_cast<StructType>(objTy); st && isa<AllocaInst>(a.root) && !rtBytes) {
     // cq-oocu (CR rules 20, 21; 107): a local slot record with a pointer-kind field crosses as ONE cell (the
     // record), at its start: (object, tag, idx 0, count 1).
     std::function<bool(Type *)> hasPtr = [&](Type *t) {
@@ -3001,6 +3076,8 @@ HostTriple hostTriple(LoweringContext &ctx, const Value *ptr, const Instruction 
       t = B.CreateMul(t, ConstantInt::get(i64, stride / int64_t(cb), true));
     j = B.CreateAdd(j, t);
   }
+  if (rtBytes)
+    return {a.root, B.CreateTrunc(j, i32), B.CreateTrunc(B.CreateUDiv(rtBytes, ConstantInt::get(i64, cb)), i32), cb};
   if (bytes / cb > UINT32_MAX)
     unimplemented("awaiting owner ruling: SPEC_ISSUES a rule 21 triple onto an object of 2^32 or more cells (the "
                   "compiler-added i32 cell count)",

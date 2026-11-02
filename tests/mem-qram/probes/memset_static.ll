@@ -1,6 +1,6 @@
-; A memset of a slot object whose loads all forward (static): its seeds would be freed at their store
-; while the cell still holds them. Not built: an internal error.
-; EXPECT-ERROR: mem-qram: a memset of a slot object no load reads back at a run-time cell
+; A memset of a slot object whose loads all forward (static): mem-slots' write path (M6) takes it, one
+; seed per cell with lowerSlotStore's roles (cq-k65d; green under cqcheck user).
+; CHECK-COUNT memset_static: @cqrt_alloc_i32(i32 0) 2
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)
