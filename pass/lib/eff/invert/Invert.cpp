@@ -6,8 +6,8 @@
 //
 // CONSTRUCTION. A region is a single-entry single-exit piece of the original CFG: from right after
 // __cq_invert_begin in block bb to right before __cq_invert_end in block eb (bb dominates eb, eb
-// post-dominates bb), or, for an _adj clone (lowerAdjointBody), a whole function body up to its
-// return. Its forward gate list U = g_1 ... g_n runs under the region's classical control flow; the
+// post-dominates bb), or, for an _adj clone (lowerAdjointBody), a whole function body up to whichever
+// return the forward path takes (Region::exits: one reverse start per exit segment). Its forward gate list U = g_1 ... g_n runs under the region's classical control flow; the
 // adjoint is U^-1 = g_n^-1 ... g_1^-1 along the same classical path, played backwards.
 //
 //  1. Segments (original IR). A quantum branch is linearized: its arms, up to its immediate
@@ -16,14 +16,15 @@
 //     predecessor continues the segment. Every other edge is a classical edge between segments (a
 //     classical br or switch, a classical join, a loop back edge). Inside a quantum arm a classical
 //     branch, a loop or a side entry is unimplemented. The segment graph has the region's first
-//     segment as root and the segment of eb as its end SE; dominance and cycles are computed on it.
-//  2. Seeds. A quantum phi of the region whose incoming is a classical value from before the region
-//     takes the seed rail alloc(v), minted once per value right before the region: a register the
-//     region prepares from a classical value (rule 20's classical start, 126's r). Every incoming of
-//     a quantum phi at a classical join must name one rail (a register rotated in place); else
-//     unimplemented.
-//  3. Forward lowering into the skeleton. Each segment F gets one output block S(F) (the first is the
-//     current output block). Its original instructions are lowered in order with the spine's
+//     segment as root and the segments of the exits (eb, or each return) as its ends; dominance and
+//     cycles are computed on it.
+//  2. Seeds. A quantum phi at a segment head (a classical join, a loop header) whose incoming is a
+//     classical value (or a measured outcome) takes the seed rail alloc(v): minted once right before the
+//     region for a value from before it (126's r), at the end of the incoming edge's segment for a value
+//     made inside it. A quantum join inside a segment is pred::lowerMerge's. Every incoming of a quantum
+//     phi at a classical join must name one rail (a register rotated in place); else unimplemented.
+//  3. Forward lowering into the skeleton. Each segment F gets one output block S(F) (the first one
+//     follows the current output block and is merged into it at the end). Its original instructions are lowered in order with the spine's
 //     lowerInstruction under their block predicates, inside one Uncompute scope; a classical phi of a
 //     segment head is a phi of S(F). After the region, emitMirror(scope) yields the uncompute Z of
 //     every rail the region made (reverse dependency order). The gate calls of S(F) are F's forward
@@ -32,28 +33,33 @@
 //  4. Where the forward gate list cleans a rail. A rail made in segment F lives on the part of the
 //     segment graph F dominates, D(F). It is cleaned (its Z calls) on every edge u -> v leaving it:
 //     u in D(F) and v not in D(F) or v = F (a back edge re-making it), and at the region's end when F
-//     dominates SE. Every use is dominated by the maker, so it lies in D(F) before such an edge.
-//     A rail made and freed inside one segment is paired there (T with its _unc and free).
-//  5. The adjoint. After S(SE) the reverse runs: RE(exit), then for each segment R(F), whose gates are
+//     dominates an exit. Every use is dominated by the maker, so it lies in D(F) before such an edge.
+//     A rail made and freed inside one segment is paired there (T with its _unc and free). Before Z,
+//     each S(F) is flushed (Uncompute::flushBefore at its end): a rail made and last read in F is
+//     uncomputed in F as early as rule 5 allows (before a non-diagonal gate on one of its sources).
+//  5. The adjoint. After the exit segment S(X) the reverse runs: RE(X), then for each segment R(F), whose gates are
 //     F's forward gates reversed and inverted, then the reverse of the classical edge F was entered
 //     by, RE(u -> F), which re-makes the rails cleaned on u -> F (Z's calls reversed and inverted),
 //     then R(u); R of the first segment continues where the region ends. Inverses:
 //       - r = T(args) [and its T_unc(r, args), cqrt_free(r)]: T^-1 is T_unc(r, args); free(r) and
 //         (T_unc; free)^-1 is r = T(args): each compute/uncompute pair reverses into itself.
 //       - r = alloc_<W>(lit) ... free(r) (a seed): alloc^-1 is free(r), free^-1 is r = alloc_<W>(v),
-//         v the basis value r held when freed: lit XOR every uncontrolled xorc literal on r (the
-//         recorded writes are undone pairwise before the free; CR §0: free sees a known basis state).
-//         A seed with no free (a register the region prepares, kept) is allocated before the reverse.
+//         v the basis value r held when freed: lit XOR every uncontrolled xorc literal on r (folded, or
+//         a classical xor of the skeleton); controlled xorcs on it cancel in identical pairs (CR §0: free
+//         sees a known basis state). A seed with no free (a register the region prepares, kept) stays
+//         in the skeleton where it ran (any path or trip); its handle reaches the reverse as a classical
+//         value.
 //       - an involution (not_i1, and_i1, or_i1, xor_i1, copy, xorc, controlled forms): itself.
 //       - ry_<W>[_controlled](.., h, θ) and rz_i1(f, θ): the same gate at -θ (a classical fneg).
 //       - ry_<W>_qangle[_controlled](.., h, A), rz_qangle[_controlled]([c,] A) (rule 15): the same gate
 //         on t = cq_template_fneg_f64(A), then fneg_f64_unc(t, A) and free(t), balanced in place.
 //       - a clone call: the call of the clone's _adj specialization (taint gives every call of the
 //         region one), already the inverse; it stays as is. Its body is lowerAdjointBody's.
-//       - anything else (a measurement, QRAM, tape, abort, a clone with results or a twin, a rail made
-//         before the region uncomputed or freed inside it): unimplemented.
+//       - cqrt_push/pop are classical (skeleton code). A measurement, tape entry or abort flag, a clone
+//         with results or a twin, a rail made before the region uncomputed or freed inside it: awaiting
+//         an owner ruling (SPEC_ISSUES). QRAM: not built here.
 //     Classical values. A gate of R(F) or RE(u -> v) reads the classical value its forward instance
-//     read. A value from before the region, or one of a segment that runs once and dominates SE, is
+//     read. A value from before the region, or one of a segment that runs once and dominates every exit, is
 //     read directly; any other is pushed (cqrt_push, i32 words low word first, CR §1.3) at the end of
 //     S(F), resp. on the forward edge block E(u -> v), and popped at the head of R(F), resp. RE. An edge
 //     into a segment with several region predecessors pushes the predecessor's index last; R(v) pops
@@ -63,7 +69,8 @@
 //     rewritten to the definition that reaches it (SSAUpdater). The uses lie in reverse blocks of
 //     D(F)'s segments, which every reverse path enters through such an edge (step 4).
 //  6. Shapes left unimplemented: a quantum value of the region read after it whose rail the region
-//     made (rule 17 defines no adjoint of a region with an output); a classical instruction reading a
+//     made, or a rail it leaves live (awaiting an owner ruling, SPEC_ISSUES "A cq_invert region whose
+//     rails outlive it"); a classical instruction reading a
 //     rail the region made; a non-diagonal gate or an in-place write in the region on a rail that a
 //     template of the region reads, at a point between that template and its uncompute (rule 5's
 //     invariant; cq-ja5h), an _adj clone call rotating such a rail included (cq-c969); a gate whose
@@ -241,7 +248,9 @@ Region analyze(LoweringContext &ctx, BasicBlock *bb, Instruction *begin, BasicBl
       }
       BasicBlock *s = t->getSuccessor(k++);
       if (s == bb)
-        unimplemented("eff-invert: a loop through the first block of a cq_invert region", t);
+        unimplemented("eff-invert: awaiting owner ruling: SPEC_ISSUES \"cq_invert markers that do not bracket the code between them\" (a loop back to the begin marker's block before the end: "
+                      "__cq_invert_begin runs again inside its own region)",
+                      t);
       if (seen.insert(s).second)
         stack.push_back({s, 0});
     }
@@ -257,12 +266,16 @@ Region analyze(LoweringContext &ctx, BasicBlock *bb, Instruction *begin, BasicBl
     if (b != bb)
       for (BasicBlock *p : predecessors(b))
         if (!R.blocks.count(p) || R.isExit(p))
-          unimplemented("eff-invert: a block of a cq_invert region entered from outside it", &*b->begin());
+          unimplemented("eff-invert: awaiting owner ruling: SPEC_ISSUES \"cq_invert markers that do not bracket the code between them\" (a block of the region entered from outside it without "
+                        "passing __cq_invert_begin)",
+                        &*b->begin());
     if (R.isExit(b))
       continue;
     Instruction *t = b->getTerminator();
     if (!isa<BranchInst>(t) && !isa<SwitchInst>(t))
-      unimplemented("eff-invert: a terminator inside a cq_invert region", t);
+      unimplemented("eff-invert: awaiting owner ruling: SPEC_ISSUES \"cq_invert markers that do not bracket the code between them\" (control leaves the region without passing "
+                    "__cq_invert_end: a return, an unreachable after a noreturn call, or a computed goto)",
+                    t);
   }
 
   // Segments, from bb.

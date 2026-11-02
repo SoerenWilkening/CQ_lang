@@ -15,7 +15,8 @@ does not build yet.
 probes/invert_loop.O1.ll (a classical loop in a region), invert_adj.O1.ll (an _adj clone),
 invert_barrier.O1.ll (rule 5: a region template uncomputed before an Ry on its source, cq-eive),
 invert_seed.O1.ll (registers a region prepares: seeds minted inside it, per trip, on one arm; cq-eive) and
-invert_ret.O1.ll (_adj clones of void functions with several returns; cq-eive) are checked like
+invert_ret.O1.ll (_adj clones of void functions with several returns; cq-eive) and invert_calls.O1.ll
+(a call between two regions is forward, a call inside an _adj body is _adj; cq-eive) are checked like
 invert.O1.ll.
 The owned example's acceptance is `python3 -m cqcheck run 44_invert_bracket --oracle both` (the bead).
 Outputs go to build/tests/eff-invert/out/.
@@ -34,7 +35,8 @@ CHECKED = {"invert.O1.ll": ["p_flat", "p_arms", "p_nest", "p_around", "p_two"],
            "invert_adj.O1.ll": ["p_adj"],
            "invert_barrier.O1.ll": ["p_barrier"],
            "invert_seed.O1.ll": ["p_seedin", "p_seedtrip", "p_seedarm"],
-           "invert_ret.O1.ll": ["p_adjret", "p_adjretq"]}
+           "invert_ret.O1.ll": ["p_adjret", "p_adjretq"],
+           "invert_calls.O1.ll": ["p_between", "p_nested"]}
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(|call void asm")
 SESE = "eff-invert: a cq_invert region that is not single-entry single-exit"
 OUTLIVE = 'eff-invert: awaiting owner ruling: SPEC_ISSUES "A cq_invert region whose rails outlive it"'
