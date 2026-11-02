@@ -44,7 +44,7 @@ def lower(a, src: Path, dest: Path):
 def expect_errors(a, out: Path) -> int:
     failures = 0
     for p in sorted(PROBES.glob("*.ll")):
-        if p == PROBE:
+        if p == PROBE or p.name.endswith(".O1.ll"):   # the other runners' C-derived probes
             continue
         m = re.search(r"^; EXPECT-ERROR: (.*)$", p.read_text(), re.M)
         r = lower(a, p, out / ("probe_" + p.name))
