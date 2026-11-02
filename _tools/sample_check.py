@@ -167,6 +167,13 @@ def fp_to_int(op, a, n, rw):
     r1, r2 = cv(a, 64), cv(a - 2.0 ** 63, 64)
     return (r1 | (r2 & (M(64) if r1 >> 63 else 0))) & M(64)
 
+class HostCells:
+    """Cells of a host-seeded QRAM (cqrt_qram_alloc_host, CR rule 20): cell j is read from the host object on first touch."""
+    def __init__(s, ev, base, size, n): s.ev, s.base, s.size, s.n, s.d = ev, base, size, n, {}
+    def __getitem__(s, j):
+        if j not in s.d: s.d[j] = [int.from_bytes(s.ev.mem(s.base + j * s.size, s.size), 'little')]
+        return s.d[j]
+    def __iter__(s): return iter(s.d.values())
 class Eval:
     """The lowered program's basis state: rails (handle -> [width, value, touched, rotated]), QRAM arrays, the classical
     push/pop stack, logged events (RY/PH angles, M values, ABORT) and violations."""
@@ -263,12 +270,16 @@ class Eval:
         raise Unsupported(name)
     def qram(s, base, w, sfx, unc, a):
         if base == 'qram_alloc': h = s.nh; s.nh += 1; s.arr[h] = {'n': a[0], 'cells': [[0] for _ in range(a[0])], 'tape': []}; return h
+        if base == 'qram_alloc_host':   # CR rule 20 (2026-11-02): cells start as the host object's contents, read lazily (n = 0: 2^64)
+            h = s.nh; s.nh += 1; n = a[1] if a[1] else 1 << 64; sz = 16 if w == 80 else w // 8
+            s.arr[h] = {'n': n, 'cells': HostCells(s, a[0], sz, n), 'tape': []}; return h
         if base == 'qram_free':
             A = s.arr.pop(a[0])
             if any(c[0] for c in A['cells']) or A['tape']: s.err.append(f'cqrt_qram_free(a{a[0]}): cells or tape not |0>')
             return 0
         if base == 'qram_realloc':
             A = s.arr[a[0]]
+            if isinstance(A['cells'], HostCells): raise Unsupported('qram_realloc of a host-seeded QRAM')
             if unc: return 0
             h = s.nh; s.nh += 1; n = a[1]
             s.arr[h] = {'n': n, 'cells': A['cells'][:min(n, A['n'])] + [[0] for _ in range(max(0, n - A['n']))], 'tape': A['tape']}

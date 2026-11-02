@@ -252,6 +252,7 @@ first materialized by `cqrt_alloc_<W>` *(corpus, README)*.
 | sig (corpus types) | semantics |
 |---|---|
 | `i32 @cqrt_qram_alloc_<W>(i32 n)` | n cells of W qubits, all `\|0⟩`; returns bus `a`. n is classical (a quantum size is allocated at its upper bound). |
+| `i32 @cqrt_qram_alloc_host_<W>(ptr p, i64 n)` | n cells of W qubits (n = 0: 2^64); cell j starts in the basis state of the W-bit little-endian element at host address `p + j·size` (size = the type's alloc size, as `qrom_load`), read AT THE CALL; the host object is never read again. Returns bus `a`. The form of every global QRAM: called once by a module constructor on the global's own storage, the handle kept in `@g.qram` (CR rule 20; 160, 192; 2026-11-02). |
 | `i32 @cqrt_qram_realloc_<W>(i32 a, i32 n)` → `a'` | Same object, **logical** size n. No gate, and no cell moves. Shrinking hides cells ≥ n: they stay physically allocated and are out of range by §2. Growing maps the new indices to **fresh** `\|0⟩` cells, never to hidden ones. `a'` replaces `a` for every later access. |
 | `void @cqrt_qram_realloc_<W>_unc(i32 a', i32 n_old)` | Restores the old size. Precondition: every store made through `a'` was popped. Afterwards `a` is the bus again (91, 186). |
 | `void @cqrt_qram_store_<W>[_hl][_controlled]([c,] a, idx\|j, v)` | Takes a fresh W-qubit tape slot t, swaps t ↔ cell[idx] (the displaced cell goes out), then cell[idx] ^= v. v is unchanged. `_controlled`: under c = 0 nothing happens and t stays `\|0⟩`. |
@@ -261,14 +262,14 @@ first materialized by `cqrt_alloc_<W>` *(corpus, README)*.
 | `void @cqrt_qram_free(i32 a)` | Releases the object after every store was popped (all cells and slots `\|0⟩`). |
 | `i32 @cqrt_qram_size(i32 a)` → n | The bus's current logical size, a classical read of the backend's bookkeeping; no gate. The `n_old` a realloc's `_unc` needs when the function neither allocated the bus nor holds its size (CR §1.3, 2026-11-02). |
 
-- **Unknown extent.** A cell count `n = 0` in `qram_alloc`, `qram_realloc` and `qrom_load` denotes
+- **Unknown extent.** A cell count `n = 0` in `qram_alloc`, `qram_alloc_host`, `qram_realloc` and `qrom_load` denotes
   2^64 cells (CR rule 20: an object with no extent in the module). What the shot needs of such an
   object is the backend's resource question, like N and K.
 - **Ordering.** Pops are LIFO only among stores that may touch the same cell. Stores to provably
   different cells commute, and `_hl` accesses to different cells commute. An unpopped store keeps
   its tape slot allocated (a kept item). A store whose v was later rotated or measured is never
   popped, and its object stays allocated (CR §0). A global QRAM is allocated once in a module
-  constructor and is never popped or freed (160). A `_unc` pops the most recent unpopped slot with
+  constructor (`qram_alloc_host` over the global's storage) and is never popped or freed (160, 192). A `_unc` pops the most recent unpopped slot with
   identical `(a, idx|j, v[, c])` (CR §1.3).
 - **§2.** For an index ≥ n, read UNSIGNED at the index rail's width (a `_hl` literal likewise), a
   load returns 0 and reads no cell, and a store is a no-op whose slot stays `|0⟩`. A pop is
@@ -283,7 +284,7 @@ first materialized by `cqrt_alloc_<W>` *(corpus, README)*.
   `src/ir/intrinsics.jl:IntrinsicRealloc` implements a *different* model (malloc + copy, old region
   leaked). CQ's logical resize has no reference implementation.
 - **Ex.** 30, 84, 91 (alloc/store/load 16 examples; free 15; realloc 91, 186, 192; widths i8, i32;
-  `_controlled` stores 55, 84, 88, 192).
+  `_controlled` stores 55, 84, 88, 192; `alloc_host` 160, 192).
 
 ### 1.11 Tape and abort: `cqrt_tape_*`, `cqrt_abort_i1`
 This is the deferred-measurement model (CR §1.3, rule 16). Tape rails and abort flags are never
@@ -332,7 +333,11 @@ call time.
   reversed at `end`; a tape write is an XOR gate and an abort flag is bookkeeping, treated like any
   other gate or record. Regions
   nest; `begin`/`end` are events of the host execution, so a region may be opened or closed under
-  classical control, in a loop, or across a function return.
+  classical control, in a loop, or across a function return. `__cq_invert_begin/end` are
+  `noduplicate` in `CQ.h`, so -O1 never copies a marker into the arms of a branch; a marker the
+  program writes inside a quantum arm is a host call executed on every path, and the region then
+  holds the arm's controlled gates, whose inverses are the controlled inverses (CR rule 17,
+  2026-11-02).
 - **Rails.** None of its own. **§2.** None. **Ref.** BJ `src/circuit.jl:adjoint` (reverse the gate
   list, invert each gate). **Ex.** 44, 61, 126.
 

@@ -54,8 +54,10 @@ long double        cq_measure_f80 (long double        x);
 
 void cq_phi(double angle);
 
-void __cq_invert_begin(void);
-void __cq_invert_end(void);
+/* noduplicate: -O1 (jump threading) must never copy a marker into the arms of a branch; a marker stays ONE host event
+ * in the block every path reaches (CONSTRUCTION_RULES rule 17, 2026-11-02). */
+__attribute__((noduplicate)) void __cq_invert_begin(void);
+__attribute__((noduplicate)) void __cq_invert_end(void);
 
 #define cq_theta(px, angle) ((void)(*(px) = _Generic((px), \
     CQ_LDBL_THETA_                                         \

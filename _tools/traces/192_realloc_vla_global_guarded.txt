@@ -1,5 +1,5 @@
 # driver: realloc_shrink(6,.5,7);realloc_qsize(6,.5,7);vla_qram(5,.5,9,3);guarded_global(5,.5,2,3,.3,9)
-cqrt_qram_alloc_i32(8) -> a0
+cqrt_qram_alloc_host_i32(table, 8) -> a0
 # call: realloc_shrink(6,.5,7)
 cqrt_alloc_i32(6) -> h1
 cqrt_ry_i32(h1, 0x1p-1)

@@ -8,6 +8,9 @@ void cqrt_not_i1(int h) { printf("cqrt_not_i1(h%d)\n", h); }
 /* CR rule 17 (2026-11-02): cq_invert is a run-time region; the backend reverses and inverts the gates recorded between the two calls. */
 void cqrt_invert_begin(void) { puts("cqrt_invert_begin()"); }
 void cqrt_invert_end(void) { puts("cqrt_invert_end()"); }
+/* CR rule 20 (2026-11-02): a global QRAM is seeded from its host storage at program start (n = 0: 2^64 cells). */
+int cqrt_alloc_handle(void);
+int cqrt_qram_alloc_host_i32(const void *p, long long n) { int a = cqrt_alloc_handle(); (void)p; printf("cqrt_qram_alloc_host_i32(table, %lld) -> a%d\n", n, a); return a; }
 void cqrt_and_i1(int a, int b, int t) { printf("cqrt_and_i1(h%d, h%d, h%d)\n", a, b, t); }
 void cqrt_or_i1(int a, int b, int t) { printf("cqrt_or_i1(h%d, h%d, h%d)\n", a, b, t); }
 #define SEL(N, TA, TB, FA, FB) int cq_template_select_i32##N(int c, TA a, TB b) { int h = nh++; printf("cq_template_select_i32" #N "(h%d, " FA ", " FB ") -> h%d\n", c, a, b, h); return h; } \

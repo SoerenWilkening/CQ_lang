@@ -40,23 +40,26 @@
 ; scope's end (rule 20: llvm.stackrestore or the function return; -O1 emits no stackrestore here), so its clean-up (pop
 ; the store, free the seed y, uncompute x % n, qram_free) runs at the return, after the measurement, not after the
 ; last access.
-; guarded_global: static int table[8] is a global QRAM (rule 20, 160): a module constructor allocates its 8 cells once.
+; guarded_global: static int table[8] is a global QRAM (rule 20, 160): a module constructor allocates its 8 cells once with
+; cqrt_qram_alloc_host_i32(@table, 8), seeded from the global's own storage (the zeroinitializer); the handle lives in @table.qram.
 ; The store sits in an arm under the quantum flag x > k (rule 8): its index chain i & 7 is pure and hoisted unguarded
 ; (rule 9), and the store is ONE cqrt_qram_store_i32_controlled(flag, table, idx, y): under flag = 0 nothing happens and
 ; its tape slot stays |0> (§1.3). The global persists, so the store is never popped (160); its value seed y, its index
 ; rail and the flag are functions of parameters and of the untouched registers x, i, and are uncomputed and freed (the
 ; precondition of a pop no longer matters: there is none). The read table[i & 7] after the merge is -O1's separate
 ; %15 = and i32 %8, 7 and a QRAM load whose copy-out is the measured result.
+; Regenerated 2026-11-02 (the first version called cqrt_qram_alloc_i32(8) and kept the handle in @table itself).
 source_filename = "realloc_vla_global_guarded.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 
-@table = internal global i32 0, align 4    ; IR: @table = internal global [8 x i32] zeroinitializer  (now holds the QRAM handle of its 8 cells)
+@table = internal unnamed_addr global [8 x i32] zeroinitializer, align 16    ; IR: @table = internal global [8 x i32] zeroinitializer  (kept as it is: the host object the constructor seeds the bus from)
+@table.qram = internal global i32 0, align 4    ; IR: (compiler-made: holds the QRAM handle of @table's 8 cells)
 @llvm.global_ctors = appending global [1 x { i32, ptr, ptr }] [{ i32, ptr, ptr } { i32 65535, ptr @__cq_qram_init_table, ptr null }]    ; IR: program start: the global's storage exists before any entry runs
 
 define internal void @__cq_qram_init_table() {
-  %1 = call i32 @cqrt_qram_alloc_i32(i32 8)    ; IR: @table's zeroinitializer: an 8-cell i32 QRAM, all cells |0>
-  store i32 %1, ptr @table, align 4    ; IR: the global keeps the array handle (classical)
+  %1 = call i32 @cqrt_qram_alloc_host_i32(ptr @table, i64 8)    ; IR: @table's storage: an 8-cell i32 QRAM whose cells start as the host object's contents (the zeroinitializer: all |0>)
+  store i32 %1, ptr @table.qram, align 4    ; IR: the handle cell keeps the array handle (classical)
   ret void
 }
 
@@ -147,7 +150,7 @@ define i32 @guarded_global(i32 noundef %0, double noundef %1, i32 noundef %2, i3
   call void @cqrt_ry_i32(i32 %7, double %1)    ; IR: %7 = cq_theta_ui32(%0, %1)  [Ry]
   %8 = call i32 @cqrt_alloc_i32(i32 %3)    ; IR: %8 = cq_theta_ui32(%3, %4)  [register i]
   call void @cqrt_ry_i32(i32 %8, double %4)    ; IR: %8 = cq_theta_ui32(%3, %4)  [Ry]
-  %9 = load i32, ptr @table, align 4    ; IR: @table  (the QRAM handle of the global, classical)
+  %9 = load i32, ptr @table.qram, align 4    ; IR: @table  (the QRAM handle of the global, classical)
   %10 = call i32 @cq_template_icmp_ugt_i32_hl(i32 %7, i32 %2)    ; IR: %9 = icmp ugt i32 %7, %2  [flag]
   %11 = call i32 @cq_template_and_i32_hl(i32 %8, i32 7)    ; IR: %11 = and i32 %8, 7  [block %10, pure: hoisted unguarded; zext %12 and gep %13 not emitted]
   %12 = call i32 @cqrt_alloc_i32(i32 %5)    ; IR: store i32 %5, ptr %13: y as a basis-state handle
@@ -182,6 +185,7 @@ declare void @cqrt_qram_load_i8_unc(i32, i32, i32)
 declare i32 @cqrt_qram_load_i8_hl(i32, i32)
 declare void @cqrt_qram_load_i8_hl_unc(i32, i32, i32)
 declare i32 @cqrt_qram_alloc_i32(i32)
+declare i32 @cqrt_qram_alloc_host_i32(ptr, i64)
 declare void @cqrt_qram_store_i32(i32, i32, i32)
 declare void @cqrt_qram_store_i32_unc(i32, i32, i32)
 declare void @cqrt_qram_store_i32_controlled(i32, i32, i32, i32)

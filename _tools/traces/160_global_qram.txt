@@ -1,5 +1,5 @@
 # driver: global_qram(0,.5,9,4)
-cqrt_qram_alloc_i32(8) -> a0
+cqrt_qram_alloc_host_i32(table, 8) -> a0
 # call: global_qram(0,.5,9,4)
 cqrt_alloc_i32(0) -> h1
 cqrt_ry_i32(h1, 0x1p-1)

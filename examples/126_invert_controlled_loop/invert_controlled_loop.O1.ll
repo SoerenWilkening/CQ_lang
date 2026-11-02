@@ -5,9 +5,9 @@ target triple = "x86_64-apple-macosx16.0.0"
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @invert_controlled_loop(i32 noundef %0, double noundef %1, i32 noundef %2, ptr nocapture noundef readonly %3, i32 noundef %4, i32 noundef %5, double noundef %6) local_unnamed_addr #0 {
-  %8 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %1) #2
-  tail call void @__cq_invert_begin() #3
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #3, !srcloc !6
+  %8 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %1) #3
+  tail call void @__cq_invert_begin() #4
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #5, !srcloc !6
   %9 = icmp sgt i32 %4, 0
   br i1 %9, label %10, label %15
 
@@ -20,10 +20,10 @@ define i32 @invert_controlled_loop(i32 noundef %0, double noundef %1, i32 nounde
 
 15:                                               ; preds = %28, %7
   %16 = phi i32 [ %2, %7 ], [ %29, %28 ]
-  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #3, !srcloc !7
-  tail call void @__cq_invert_end() #3
-  %17 = tail call i32 @cq_measure_si32(i32 noundef %16) #3
-  %18 = tail call i32 @cq_measure_si32(i32 noundef %8) #3
+  tail call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"() #5, !srcloc !7
+  tail call void @__cq_invert_end() #4
+  %17 = tail call i32 @cq_measure_si32(i32 noundef %16) #5
+  %18 = tail call i32 @cq_measure_si32(i32 noundef %8) #5
   %19 = add nsw i32 %18, %17
   ret i32 %19
 
@@ -36,8 +36,8 @@ define i32 @invert_controlled_loop(i32 noundef %0, double noundef %1, i32 nounde
 24:                                               ; preds = %20
   %25 = getelementptr inbounds double, ptr %3, i64 %21
   %26 = load double, ptr %25, align 8, !tbaa !8
-  %27 = tail call i32 @cq_theta_si32(i32 noundef %22, double noundef %26) #2
-  tail call void @cq_phi(double noundef %6) #3
+  %27 = tail call i32 @cq_theta_si32(i32 noundef %22, double noundef %26) #3
+  tail call void @cq_phi(double noundef %6) #5
   br label %28
 
 28:                                               ; preds = %20, %24
@@ -49,18 +49,22 @@ define i32 @invert_controlled_loop(i32 noundef %0, double noundef %1, i32 nounde
 
 declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr #1
 
-declare void @__cq_invert_begin() local_unnamed_addr #1
+; Function Attrs: noduplicate
+declare void @__cq_invert_begin() local_unnamed_addr #2
 
 declare void @cq_phi(double noundef) local_unnamed_addr #1
 
-declare void @__cq_invert_end() local_unnamed_addr #1
+; Function Attrs: noduplicate
+declare void @__cq_invert_end() local_unnamed_addr #2
 
 declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr #1
 
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #1 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
-attributes #2 = { nomerge nounwind }
-attributes #3 = { nounwind }
+attributes #2 = { noduplicate "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
+attributes #3 = { nomerge nounwind }
+attributes #4 = { noduplicate nounwind }
+attributes #5 = { nounwind }
 
 !llvm.module.flags = !{!0, !1, !2, !3, !4}
 !llvm.ident = !{!5}
@@ -71,8 +75,8 @@ attributes #3 = { nounwind }
 !3 = !{i32 7, !"uwtable", i32 2}
 !4 = !{i32 7, !"frame-pointer", i32 2}
 !5 = !{!"Homebrew clang version 19.1.7"}
-!6 = !{i64 2147510408}
-!7 = !{i64 2147511482}
+!6 = !{i64 2147510665}
+!7 = !{i64 2147511739}
 !8 = !{!9, !9, i64 0}
 !9 = !{!"double", !10, i64 0}
 !10 = !{!"omnipotent char", !11, i64 0}
