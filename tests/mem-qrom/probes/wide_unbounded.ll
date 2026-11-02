@@ -1,5 +1,6 @@
 ; A 64-bit quantum index into memory of unknown extent with no range fact: 2^64 entries do not fit the
-; i64 length operand. Not built: an internal error.
+; i64 length, but the address p + 4 * x depends only on x modulo 2^62: n = 2^62 at x truncated to 62 bits
+; (cq-k65d).
 declare i64 @cq_theta_ull(i64, double)
 declare i32 @cq_measure_si32(i32)
 
@@ -10,4 +11,5 @@ define i32 @wide_unbounded(i64 %x0, double %t, ptr %p) {
   %m = call i32 @cq_measure_si32(i32 %v)
   ret i32 %m
 }
-; EXPECT-ERROR: cq: unimplemented: mem-qrom: a QROM of 2^64 or more entries
+; CHECK wide_unbounded: %{{i}} = call i32 @cq_template_trunc_i64_to_i62(i32 %{{x}})
+; CHECK wide_unbounded: call i32 @cq_template_qrom_load_i32(ptr %p, i64 4611686018427387904, i32 %{{i}})
