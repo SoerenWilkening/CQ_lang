@@ -1110,6 +1110,54 @@ void calleeAccessTypes(const Value *p, std::set<Type *> &out, unsigned depth) {
   }
 }
 
+} // namespace
+
+// CR rules 20, 22 (cq-366o): a local's cells are the type it is ACCESSED as over the whole program (its own
+// loads and stores and those of the functions it is handed to, rule 18), not its declared type: an alloca's
+// type gives its size only. When every access, direct or through a callee's formal, is one scalar type of
+// another size than the declared element (musl's frexp writing `int *e` into a caller's `long double
+// buf[4]`), the object's cells are that type; otherwise the declared scalar element.
+Type *localCellType(const AllocaInst &ai) {
+  Type *decl = scalarCellType(ai.getAllocatedType());
+  if (!decl->isIntegerTy() && !decl->isFloatingPointTy())
+    return decl;
+  const DataLayout &DL = ai.getModule()->getDataLayout();
+  std::set<Type *> tys;
+  SmallVector<const Value *, 8> work{&ai};
+  SmallPtrSet<const Value *, 16> seen{&ai};
+  while (!work.empty()) {
+    const Value *v = work.pop_back_val();
+    for (const Use &u : v->uses()) {
+      const User *usr = u.getUser();
+      if (isa<GetElementPtrInst>(usr) || isa<CastInst>(usr) || isa<PHINode>(usr) || isa<SelectInst>(usr)) {
+        if (seen.insert(usr).second)
+          work.push_back(usr);
+        continue;
+      }
+      if (auto *ld = dyn_cast<LoadInst>(usr); ld && ld->getPointerOperand() == v)
+        tys.insert(ld->getType());
+      if (auto *so = dyn_cast<StoreInst>(usr); so && so->getPointerOperand() == v)
+        tys.insert(so->getValueOperand()->getType());
+      if (auto *r = dyn_cast<AtomicRMWInst>(usr); r && r->getPointerOperand() == v)
+        tys.insert(r->getValOperand()->getType());
+      if (auto *c = dyn_cast<AtomicCmpXchgInst>(usr); c && c->getPointerOperand() == v)
+        tys.insert(c->getNewValOperand()->getType());
+    }
+  }
+  calleeAccessTypes(&ai, tys, 0);
+  if (tys.size() != 1)
+    return decl;
+  Type *t = *tys.begin();
+  std::optional<TypeSize> all = ai.getAllocationSize(DL);
+  uint64_t tb = DL.getTypeAllocSize(t).getFixedValue();
+  if (!(t->isIntegerTy() || t->isFloatingPointTy()) || !all || all->isScalable() || tb == 0 ||
+      all->getFixedValue() % tb || tb == DL.getTypeAllocSize(decl).getFixedValue())
+    return decl;
+  return t;
+}
+
+namespace {
+
 ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId o) {
   int col = columnOf(ctx, st, root, o);
   auto it = st.objs.find({root, col});
@@ -1177,8 +1225,8 @@ ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId 
       info.cellBytes = 8;   // CR rule 13 (b137e75): a cell only code addresses are stored into holds an i64
       info.cellTy = Type::getInt64Ty(ctx.M.getContext());
     } else {
-      info.cellBytes = scalarCellBytes(ai->getAllocatedType(), DL, ai);
-      info.cellTy = scalarCellType(ai->getAllocatedType());
+      info.cellTy = localCellType(*ai);
+      info.cellBytes = scalarCellBytes(info.cellTy, DL, ai);
     }
   } else if (auto *gv = dyn_cast<GlobalVariable>(root)) {
     info.kind = RootKind::Global;
@@ -6589,9 +6637,10 @@ CloneArg cloneArg(LoweringContext &ctx, FnState &st, const CallBase &orig, unsig
     internalError("mem-slots: slotCellsBeforeCall/After of a call that is not a quantum clone call", &orig);
   const Value *ptr = orig.getArgOperand(siteOperand(orig, argNo, argMap));
   ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
-  if (objs.size() != 1 || ctx.T.classOf(objs.front()) != ObjClass::Slot)
+  if (objs.size() != 1 || ctx.T.classOf(objs.front()) != ObjClass::Slot) {
     internalError("mem-slots: slotCellsBeforeCall/After of an argument that does not point into one slot object",
                   &orig);
+  }
   Addr a = decompose(ptr, ctx.M.getDataLayout());
   if (!a.ok)
     unimplemented("mem-slots: a pointer handed to a clone whose address is not an object plus GEP offsets", &orig);

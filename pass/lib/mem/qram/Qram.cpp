@@ -343,7 +343,7 @@ ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId 
   info.root = root;
   if (auto *ai = dyn_cast<AllocaInst>(root)) {
     info.kind = RootKind::Local;
-    info.cellBytes = scalarCellBytes(ai->getAllocatedType(), DL, ai);
+    info.cellBytes = scalarCellBytes(localCellType(*ai), DL, ai);
   } else if (auto *gv = dyn_cast<GlobalVariable>(root)) {
     info.kind = RootKind::Global;
     info.cellBytes = scalarCellBytes(gv->getValueType(), DL, gv);
@@ -539,7 +539,7 @@ bool isDynamic(LoweringContext &ctx, FnState &st, ObjInfo &info, ObjectId o) {
 Type *cellType(LoweringContext &ctx, FnState &st, const ObjInfo &info, ObjectId o) {
   Type *t = nullptr;
   if (auto *ai = dyn_cast<AllocaInst>(info.root))
-    t = ai->getAllocatedType();
+    t = localCellType(*ai);   // rules 20, 22 (cq-366o)
   else if (auto *gv = dyn_cast<GlobalVariable>(info.root))
     t = gv->getValueType();
   else
@@ -3706,7 +3706,8 @@ HostTriple hostTriple(LoweringContext &ctx, const Value *ptr, const Instruction 
       return {a.root, ConstantInt::get(Type::getInt32Ty(C), 0), ConstantInt::get(Type::getInt32Ty(C), 1), bytes};
     }
   }
-  uint64_t cb = scalarCellBytes(objTy, DL, &at);
+  // Rules 20, 22 (cq-366o): a local's cells are the type the program accesses it as.
+  uint64_t cb = scalarCellBytes(isa<AllocaInst>(a.root) ? localCellType(*cast<AllocaInst>(a.root)) : objTy, DL, &at);
   // mem-slots' cells are the scalar element; an object accessed at another width has other cells
   // (a bit view, or -O1's punned local, 90).
   ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);

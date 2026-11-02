@@ -4,6 +4,7 @@
 #include "cq/Lowering.h"
 #include "llvm/IR/Argument.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Instructions.h"
 
 #include <utility>
 
@@ -22,6 +23,10 @@ bool isPointerKindFormal(LoweringContext &, const llvm::Argument &A);
 // named as the memset's cells (M6) for the run-time reads; nothing otherwise.
 void noteMemsetSeeds(LoweringContext &, const llvm::MemSetInst &MS, ObjectId o,
                      llvm::ArrayRef<std::pair<int64_t, llvm::Value *>> seeds);
+// CR rules 20, 22 (cq-366o): a local's cell type: the one scalar type the whole program accesses it as (directly
+// or through the formals of the functions it is handed to) when that differs in size from its declared element,
+// otherwise the declared scalar element. mem-slots, mem-qram and rule 21's triples agree on it.
+llvm::Type *localCellType(const llvm::AllocaInst &ai);
 void noteProgramSlotCall(LoweringContext &, const llvm::CallBase &orig, const Specialization &callee,
                          llvm::CallInst *lowered);
 }
