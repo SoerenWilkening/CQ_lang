@@ -3600,7 +3600,7 @@ void viewPieces(LoweringContext &ctx, FnState &st, const Site &s, const Instruct
     // classical branch, leaves bytes this load cannot name).
     for (const Access &x : accessesOf(ctx, *st.F, s.o))
       if (isa<StoreInst>(x.I) && x.a.off < b && a < x.a.off + int64_t(storeBytes(DL, x.ty)) &&
-          isPotentiallyReachable(x.I, &I, nullptr, st.DT.get()))
+          (x.I != &I || reachesItself(I, st.DT.get())) && isPotentiallyReachable(x.I, &I, nullptr, st.DT.get()))
         unimplemented("mem-slots: a bit view load of bytes a store of this function wrote on some path only", &I);
     return;   // padding
   }
@@ -3675,8 +3675,6 @@ void lowerViewStore(LoweringContext &ctx, FnState &st, StoreInst &stI, const Sit
   const DataLayout &DL = ctx.M.getDataLayout();
   IRBuilder<> &B = ctx.B();
   LLVMContext &C = ctx.M.getContext();
-  if (ctx.currentFlag())
-    unimplemented("mem-slots: a store into a bit-view slot object under a quantum predicate", &stI);
   Value *v = stI.getValueOperand();
   Type *ty = v->getType();
   if (!ty->isIntegerTy() && !ty->isFloatingPointTy())
@@ -3684,6 +3682,16 @@ void lowerViewStore(LoweringContext &ctx, FnState &st, StoreInst &stI, const Sit
   uint64_t n = storeBytes(DL, ty);
   Operand val = ctx.operand(v);
   const StoreInst *src = viewSource(ctx, st, *s.info, s.o, &stI, s.a, n);
+  // Rules 9, 20 under a quantum predicate: the store writes select(predicate, value, old) over its own bytes, the
+  // old bytes read as the view load of its type at its offset (readView). Bytes no store wrote yet are undef
+  // (select(p, v, undef) is v, as LLVM folds it): the store is then unguarded.
+  bool fresh = false;
+  if (ctx.currentFlag() && src) {
+    Value *old = readView(ctx, st, s, stI, ty);
+    const Pred &p = ctx.currentPredicate();
+    val = Operand{selectChain(ctx, {{p, val}, {!p, Operand{old, true}}}, railTypeOf(ty)), true};
+    fresh = true;   // a fresh rail: no other holder
+  }
   ViewVal V;
   if (src) {
     auto it = st.views.find(src);
@@ -3699,7 +3707,7 @@ void lowerViewStore(LoweringContext &ctx, FnState &st, StoreInst &stI, const Sit
       CallInst *alloc = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {val.v});
       ctx.unc().recordSeed(alloc);
       h = alloc;
-    } else if (needsCopy(ctx, st, stI, s)) {
+    } else if (!fresh && needsCopy(ctx, st, stI, s)) {
       CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(C, w))});
       RailId cid = ctx.unc().recordSeed(c);
       abi::CoreSpec cp{abi::Core::Copy, w};
