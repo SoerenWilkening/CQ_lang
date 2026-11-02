@@ -4543,7 +4543,11 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
                       .str(),
                   at);
   };
-  struct W { int64_t off; uint64_t size; const llvm::StoreInst *st; };
+  // A write through the formal: a store (st) in SS or, through the formal handed on to a call (cq-1c5j: musl's
+  // frexp hands its int *e to its own recursive call; 31/163's slot parameter), in a callee's specialization ss;
+  // or a memory intrinsic or an atomic writing the cells (rules 22, 24), `handle` deciding it.
+  struct W { int64_t off; uint64_t size; const llvm::StoreInst *st; const SpecState *ss = nullptr; bool handle = false;
+             const llvm::Instruction *at = nullptr; };
   SmallVector<W, 4> writes;
   SmallVector<const llvm::StoreInst *, 2> varInPlace;   // T2: in-place round trips at a variable offset
   // cq-ee23: every value derived from the formal is followed: pointers (GEP, casts, freeze, phi,
@@ -4551,9 +4555,16 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
   // arithmetic makes it variable) and the pointers inttoptr makes back, and aggregates holding it (the
   // index path where it sits). Only a load, a comparison or a return ends a path; a store of a derived
   // value or a call taking one is the escape, unimplemented.
-  struct Item { const llvm::Value *v; std::optional<int64_t> off; SmallVector<unsigned, 2> path; };
-  SmallVector<Item, 8> work{{A, 0, {}}};
-  std::set<std::pair<const llvm::Value *, SmallVector<unsigned, 2>>> seen;
+  struct Item { const llvm::Value *v; std::optional<int64_t> off; SmallVector<unsigned, 2> path;
+                const SpecState *ss = nullptr; };
+  SmallVector<Item, 8> work{{A, 0, {}, SS}};
+  std::set<std::tuple<const llvm::Value *, SmallVector<unsigned, 2>, const SpecState *>> seen;
+  // A callee's formal reached at two offsets (a recursion advancing the pointer) is walked at an unknown one.
+  std::map<std::pair<const llvm::Value *, const SpecState *>, std::optional<int64_t>> formalOff;
+  auto blockCT = [](const SpecState *ss, const llvm::BasicBlock *BB) {
+    auto it = ss->cdt.find(BB);
+    return it != ss->cdt.end() && !it->second.empty();
+  };
   auto isPrefix = [](llvm::ArrayRef<unsigned> a, llvm::ArrayRef<unsigned> b) {
     return a.size() <= b.size() && std::equal(a.begin(), a.end(), b.begin());
   };
@@ -4561,7 +4572,8 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
     Item it = work.pop_back_val();
     const llvm::Value *V = it.v;
     std::optional<int64_t> off = it.off;
-    if (!seen.insert({V, it.path}).second)
+    const SpecState *ss = it.ss;
+    if (!seen.insert({V, it.path, ss}).second)
       continue;
     for (const llvm::User *U : V->users()) {
       if (!it.path.empty()) {
@@ -4569,25 +4581,25 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
         if (auto *EV = dyn_cast<llvm::ExtractValueInst>(U)) {
           llvm::ArrayRef<unsigned> ix = EV->getIndices();
           if (isPrefix(ix, it.path))
-            work.push_back({U, off, SmallVector<unsigned, 2>(it.path.begin() + ix.size(), it.path.end())});
+            work.push_back({U, off, SmallVector<unsigned, 2>(it.path.begin() + ix.size(), it.path.end()), ss});
           else if (!isPrefix(it.path, ix))
             continue; // another field
           else
             refuse("a field inside the formal's slot of an aggregate", U);
         } else if (auto *IV = dyn_cast<llvm::InsertValueInst>(U); IV && IV->getAggregateOperand() == V) {
           if (!isPrefix(IV->getIndices(), it.path))
-            work.push_back({U, off, it.path});
+            work.push_back({U, off, it.path, ss});
           // else: the formal's slot is overwritten
           if (IV->getInsertedValueOperand() == V)
             refuse("an aggregate holding the formal inserted into itself", U);
         } else if (auto *IV2 = dyn_cast<llvm::InsertValueInst>(U)) {
           SmallVector<unsigned, 2> p(IV2->getIndices().begin(), IV2->getIndices().end());
           p.append(it.path.begin(), it.path.end());
-          work.push_back({U, off, p});
+          work.push_back({U, off, p, ss});
         } else if (isa<llvm::PHINode>(U) || isa<llvm::SelectInst>(U) || isa<llvm::FreezeInst>(U)) {
           if (auto *Sel = dyn_cast<llvm::SelectInst>(U); Sel && Sel->getCondition() == V)
             continue;
-          work.push_back({U, std::nullopt, it.path});
+          work.push_back({U, std::nullopt, it.path, ss});
         } else if (isa<llvm::ReturnInst>(U)) {
           continue;
         } else {
@@ -4598,13 +4610,13 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
       if (auto *GEP = dyn_cast<llvm::GEPOperator>(U)) {
         llvm::APInt o(64, 0);
         if (off && GEP->getPointerOperand() == V && GEP->accumulateConstantOffset(DL, o))
-          work.push_back({GEP, *off + o.getSExtValue(), {}});
+          work.push_back({GEP, *off + o.getSExtValue(), {}, ss});
         else
-          work.push_back({GEP, std::nullopt, {}});
+          work.push_back({GEP, std::nullopt, {}, ss});
       } else if (isa<llvm::BitCastOperator>(U) || isa<llvm::AddrSpaceCastOperator>(U) ||
                  isa<llvm::FreezeInst>(U) || isa<llvm::PtrToIntOperator>(U) ||
                  (isa<llvm::Operator>(U) && cast<llvm::Operator>(U)->getOpcode() == llvm::Instruction::IntToPtr)) {
-        work.push_back({U, off, {}});
+        work.push_back({U, off, {}, ss});
       } else if (auto *BO = dyn_cast<llvm::BinaryOperator>(U)) {
         // An integer made from the formal's address.
         std::optional<int64_t> o2;
@@ -4617,10 +4629,10 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
         else if (off && C && C->getBitWidth() <= 64 && BO->getOpcode() == llvm::Instruction::Sub &&
                  BO->getOperand(0) == V)
           o2 = *off - C->getSExtValue();
-        work.push_back({U, o2, {}});
+        work.push_back({U, o2, {}, ss});
       } else if (auto *IV = dyn_cast<llvm::InsertValueInst>(U)) {
         if (IV->getInsertedValueOperand() == V)
-          work.push_back({U, off, SmallVector<unsigned, 2>(IV->getIndices().begin(), IV->getIndices().end())});
+          work.push_back({U, off, SmallVector<unsigned, 2>(IV->getIndices().begin(), IV->getIndices().end()), ss});
         else
           refuse("an aggregate built over a value derived from the formal", U);
       } else if (isa<llvm::LoadInst>(U) || isa<llvm::ICmpInst>(U) || isa<llvm::ReturnInst>(U)) {
@@ -4637,23 +4649,88 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
           // T3 (cq-budv, 117): such a round trip rotates the rail of whichever cell the offset names at
           // run time: any cell (kAnyCell).
           const llvm::LoadInst *r = inPlaceRoot(SI, true);
-          if (!r || !lanesOfValue(I, *SS, r).any())
+          if (!r || !lanesOfValue(I, *ss, r).any())
             refuse("a store through the formal at a variable offset", SI);
           varInPlace.push_back(SI);
           continue;
         }
-        writes.push_back({*off, DL.getTypeStoreSize(SI->getValueOperand()->getType()), SI});
+        writes.push_back({*off, DL.getTypeStoreSize(SI->getValueOperand()->getType()), SI, ss});
       } else if (auto *II = dyn_cast<llvm::IntrinsicInst>(U); II && II->isLifetimeStartOrEnd()) {
         continue;
       } else if (auto *Sel = dyn_cast<llvm::SelectInst>(U); Sel && Sel->getCondition() == V) {
         continue; // the formal decides, its value does not flow
       } else if (isa<llvm::SelectInst>(U) || isa<llvm::PHINode>(U)) {
-        work.push_back({U, std::nullopt, {}});
+        work.push_back({U, std::nullopt, {}, ss});
       } else if (auto *Ins = dyn_cast<llvm::Instruction>(U);
                  Ins && !Ins->mayWriteToMemory() && !isa<llvm::CallBase>(Ins) && !Ins->getType()->isVoidTy()) {
-        work.push_back({U, std::nullopt, {}}); // any other value computed from it (casts, arithmetic)
+        work.push_back({U, std::nullopt, {}, ss}); // any other value computed from it (casts, arithmetic)
+      } else if (auto *MI = dyn_cast<llvm::MemIntrinsic>(U)) {
+        // Rule 22: a memory intrinsic writes the destination's cells; reading through the formal writes none.
+        if (MI->getRawDest() != V)
+          continue;
+        auto *len = dyn_cast<llvm::ConstantInt>(MI->getLength());
+        if (!off || !len)
+          refuse("a memory intrinsic through the formal at a variable offset or of a run-time length", U);
+        bool h = ss->ctl || blockCT(ss, MI->getParent()) || lanesOfValue(I, *ss, MI->getLength()).any() ||
+                 lanesOfValue(I, *ss, MI->getRawDest()).any();
+        if (auto *MS = dyn_cast<llvm::MemSetInst>(MI))
+          h = h || lanesOfValue(I, *ss, MS->getValue()).any();
+        if (auto *MT = dyn_cast<llvm::MemTransferInst>(MI)) {
+          PtrInfo t2;
+          const PtrInfo &sp = ptrOrDie(I, *ss, MT->getRawSource(), t2);
+          h = h || lanesOfValue(I, *ss, MT->getRawSource()).any();
+          for (ObjectId o : objectsFor(I, sp))
+            h = h || I.objects[o].mayHoldHandle();
+        }
+        if (len->getZExtValue())
+          writes.push_back({*off, len->getZExtValue(), nullptr, ss, h, MI});
+      } else if (isa<llvm::AtomicRMWInst>(U) || isa<llvm::AtomicCmpXchgInst>(U)) {
+        // Rule 24: an atomic is a read and a write of its cell.
+        auto *RMW = dyn_cast<llvm::AtomicRMWInst>(U);
+        auto *CX = dyn_cast<llvm::AtomicCmpXchgInst>(U);
+        const llvm::Value *ptr = RMW ? RMW->getPointerOperand() : CX->getPointerOperand();
+        if (ptr != V)
+          refuse("the formal escapes into memory through an atomic", U);
+        if (!off)
+          refuse("an atomic through the formal at a variable offset", U);
+        const llvm::Value *val = RMW ? RMW->getValOperand() : CX->getNewValOperand();
+        bool h = ss->ctl || blockCT(ss, cast<llvm::Instruction>(U)->getParent()) ||
+                 lanesOfValue(I, *ss, val).any() || lanesOfValue(I, *ss, ptr).any() ||
+                 (CX && lanesOfValue(I, *ss, CX->getCompareOperand()).any());
+        writes.push_back({*off, DL.getTypeStoreSize(val->getType()), nullptr, ss, h, cast<llvm::Instruction>(U)});
+      } else if (auto *CB = dyn_cast<llvm::CallBase>(U); CB && CB->getCalledFunction() &&
+                                                       !CB->getCalledFunction()->isDeclaration() &&
+                                                       !isa<llvm::IntrinsicInst>(CB)) {
+        // Rule 18: the formal handed on to a call of a function with a body: the callee's writes through its
+        // own formal are this clone's, at the same cells (the specialization the call takes in ss).
+        if (CB->getCalledOperand() == V)
+          refuse("a call through the formal", U);
+        if (ss->cutCalls.count(CB))
+          continue;   // rule 14: a depth-recursion call past the cutoff runs nothing (its result is |0>)
+        auto cit = ss->callees.find(CB);
+        if (cit == ss->callees.end() || cit->second.empty())
+          refuse("a call handed the formal that taint did not lift", U);
+        for (unsigned j = 0; j < CB->arg_size(); ++j) {
+          if (CB->getArgOperand(j) != V)
+            continue;
+          for (const SpecState *C : cit->second) {
+            if (C->declared || j >= C->F->arg_size())
+              refuse("the formal handed to a function with no body", U);
+            const llvm::Argument *CA = C->F->getArg(j);
+            auto [fo, fresh] = formalOff.try_emplace({CA, C}, off);
+            std::optional<int64_t> at = off;
+            if (!fresh && fo->second != off) {
+              if (fo->second) {
+                fo->second = std::nullopt;
+                seen.erase({CA, SmallVector<unsigned, 2>{}, C});
+              }
+              at = std::nullopt;
+            }
+            work.push_back({CA, at, {}, C});
+          }
+        }
       } else {
-        refuse("a write through the formal by a memory intrinsic, an atomic or a call", U);
+        refuse("a write through the formal by a call of a function with no body or through a pointer", U);
       }
     }
   }
@@ -4705,9 +4782,9 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
   // then stores back the handle the cell holds, so no cell's handle changes).
   if (!varInPlace.empty())
     for (const W &w : writes) {
-      const llvm::LoadInst *r = inPlaceRoot(w.st, true);
-      if (!r || !lanesOfValue(I, *SS, r).any())
-        refuse("a store through the formal beside an in-place rotation at a variable offset", w.st);
+      const llvm::LoadInst *r = w.st ? inPlaceRoot(w.st, true) : nullptr;
+      if (!r || !lanesOfValue(I, *w.ss, r).any())
+        refuse("a store through the formal beside an in-place rotation at a variable offset", w.st ? w.st : w.at);
     }
   if (rotated && !varInPlace.empty())
     return {TaintInfo::kAnyCell};
@@ -4717,17 +4794,20 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
     std::optional<int64_t> base = fp.exact();
     // A store past every cell of every object the formal may point to is undefined where it runs (an access
     // past an object, outside the domain): it writes no cell (rule 21; mem-slots lowers it as nothing). musl
-    // __rem_pio2_large's y[1], y[2] for prec 0 into __rem_pio2f's double ty[1] (cq-4e6m).
+    // __rem_pio2_large's y[1], y[2] for prec 0 into __rem_pio2f's double ty[1] (cq-4e6m). A write of a callee
+    // the formal is handed to is that callee's own (its formalCells records it).
     if (typed && base && leaves &&
         none_of(*leaves, [&](const Range &c) {
           int64_t at = *base + w.off;
           return at < c.off + int64_t(c.size) && c.off < at + int64_t(w.size);
         })) {
-      I.pastPointee.insert({pastKey(S), w.st});
+      if (w.st && w.ss == SS)
+        I.pastPointee.insert({pastKey(S), w.st});
       continue;
     }
-    bool handle = S.ctl || lanesOfValue(I, *SS, w.st->getValueOperand()).any() ||
-                  lanesOfValue(I, *SS, w.st->getPointerOperand()).any() || T.controlTainted(w.st->getParent(), S);
+    bool handle = w.st ? w.ss->ctl || lanesOfValue(I, *w.ss, w.st->getValueOperand()).any() ||
+                             lanesOfValue(I, *w.ss, w.st->getPointerOperand()).any() || blockCT(w.ss, w.st->getParent())
+                       : w.handle;
     for (ObjectId o : objs)
       if (I.objects[o].cellHandle(base ? std::optional<int64_t>(*base + w.off) : std::nullopt, w.size))
         handle = true;
@@ -4736,19 +4816,19 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
     // the handle of the same load of it (the load precedes them all: they store its value), so the cell
     // holds that handle throughout; otherwise it writes the handle back over another (cq-kwmu).
     // A rotation of a classical cell's value mints a rail (rule 2): a handle write, never in place.
-    const llvm::LoadInst *root = inPlaceRoot(w.st);
-    if (root && !lanesOfValue(I, *SS, root).any())
+    const llvm::LoadInst *root = w.st ? inPlaceRoot(w.st) : nullptr;
+    if (root && !lanesOfValue(I, *w.ss, root).any())
       root = nullptr;
     bool inPlace = root && all_of(writes, [&](const W &o) {
       return o.off + int64_t(o.size) <= w.off || w.off + int64_t(w.size) <= o.off ||
-             (o.off == w.off && o.size == w.size && inPlaceRoot(o.st) == root);
+             (o.off == w.off && o.size == w.size && o.st && inPlaceRoot(o.st) == root);
     });
     if (rotated ? !root : inPlace)
       continue;
     if (!handle && !rotated)
       continue;
     if (!base)
-      refuse("a pointee offset that differs between the clone's callers", w.st);
+      refuse("a pointee offset that differs between the clone's callers", w.st ? w.st : w.at);
     if (typed) {
       int64_t at = *base + w.off;
       bool any = false;
@@ -4761,15 +4841,15 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
         }
       }
       if (!any)
-        internalError("taint: formalCells: a store past the pointee's cells reached the cell count", w.st);
+        internalError("taint: formalCells: a store past the pointee's cells reached the cell count", w.st ? w.st : w.at);
       continue;
     }
     if (size && w.size != size)
-      refuse("stores of several sizes through the formal", w.st);
+      refuse("stores of several sizes through the formal", w.st ? w.st : w.at);
     size = w.size;
     int64_t at = *base + w.off;
     if (at < 0 || !size || at % int64_t(size))
-      refuse("a store at an offset that is not a multiple of its size", w.st);
+      refuse("a store at an offset that is not a multiple of its size", w.st ? w.st : w.at);
     unsigned cell = unsigned(at / int64_t(size));
     if (!is_contained(out, cell))
       out.push_back(cell);

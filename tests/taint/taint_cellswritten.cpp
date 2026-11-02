@@ -5,7 +5,7 @@
 // pointers derived by ptrtoint/add/inttoptr ({2}, 31-style C '*(int*)((uintptr_t)p+8)'), freeze ({1}),
 // insertvalue/extractvalue ({3}); an integer made of the formal stored to memory is the escape
 // (unimplemented). cq-lv9a: a cell is a scalar leaf of the pointee's C type (an i64 store at byte 8 of
-// int[4] is {2,3}, an i8 at byte 1 is {0}). T3: cellsRotated of a rotation in place through the formal ({1}; cellsWritten {}).
+// int[4] is {2,3}, an i8 at byte 1 is {0}). cq-1c5j: through the formal handed on to a call ({3}). T3: cellsRotated of a rotation in place through the formal ({1}; cellsWritten {}).
 #include <cstdio>
 #include <string>
 #include <sys/wait.h>
@@ -84,6 +84,31 @@ define i32 @e2(i32 %x0, double %th, i64 %i) {
   %l = load i32, ptr %g, align 4
   %m = tail call i32 @cq_measure_si32(i32 %l)
   ret i32 %m
+}
+
+define i32 @e9(i32 %x0, double %th) {
+  %o = alloca [4 x i32], align 4
+  %x = tail call i32 @cq_theta_si32(i32 %x0, double %th)
+  call void @handon(i32 %x, ptr %o)
+  %g = getelementptr inbounds i8, ptr %o, i64 12
+  %l = load i32, ptr %g, align 4
+  %m = tail call i32 @cq_measure_si32(i32 %l)
+  ret i32 %m
+}
+
+; cq-1c5j: the formal handed on to a call (musl frexp's int *e to its recursive call): put4's write at
+; byte 4 of its formal is byte 12 of this one's object, cell 3.
+define internal void @handon(i32 %v, ptr %p) {
+  %q = getelementptr inbounds i8, ptr %p, i64 8
+  call void @put4(i32 %v, ptr %q)
+  ret void
+}
+
+define internal void @put4(i32 %v, ptr %p) {
+  %q = getelementptr inbounds i8, ptr %p, i64 4
+  %w = add i32 %v, 1
+  store i32 %w, ptr %q, align 4
+  ret void
 }
 
 define internal void @varoff(i32 %v, ptr %p, i64 %i) {
@@ -247,7 +272,7 @@ int main() {
   for (const Case &c : {Case{"split", 2, {0}}, Case{"split", 0, {}}, Case{"second", 1, {1}},
                         Case{"classical", 1, {}}, Case{"viaint", 1, {2}}, Case{"viafreeze", 1, {1}},
                         Case{"viaagg", 1, {3}}, Case{"rot", 0, {}}, Case{"wide", 1, {2, 3}},
-                        Case{"byte", 1, {0}}, Case{"viaint2", 1, {2}}}) {
+                        Case{"byte", 1, {0}}, Case{"viaint2", 1, {2}}, Case{"handon", 1, {3}}}) {
     const cq::Specialization *S = cloneOf(T, M->getFunction(c.fn));
     CHECK(S, "no clone of @" << c.fn);
     if (!S)
