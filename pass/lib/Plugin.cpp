@@ -356,6 +356,25 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
     // 5. Drop originals with no classical caller (rule 18).
     cq::calls::finalize(M);
 
+    // CR rule 13 (b137e75): a lowered computed goto compares its address with blockaddress constants, which a
+    // clone (or another lowered function) may take of another function's block. The textual IR names such a
+    // block only by name (an unnamed block cannot be referenced from a function printed after its own), so a
+    // block whose address is taken outside its own function gets one.
+    for (Function &F : M)
+      for (BasicBlock &BB : F)
+        if (BB.hasAddressTaken() && !BB.hasName())
+          if (BlockAddress *BA = BlockAddress::lookup(&BB))
+            for (const User *U : BA->users())
+              if (auto *CE = dyn_cast<ConstantExpr>(U); CE ? any_of(CE->users(), [&](const User *V) {
+                    auto *I = dyn_cast<Instruction>(V);
+                    return I && I->getFunction() != &F;
+                  })
+                                                            : isa<Instruction>(U) &&
+                                                                  cast<Instruction>(U)->getFunction() != &F) {
+                BB.setName("cq.addr");
+                break;
+              }
+
     // 6. The structural verifier, on every run.
     cq::verifyLowered(M);
     return PreservedAnalyses::none();
