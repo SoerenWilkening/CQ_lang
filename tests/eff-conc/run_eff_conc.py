@@ -40,7 +40,7 @@ ERRORS = {"vol_quantum_observable_error.O1.ll": "eff-conc: awaiting owner ruling
           "setjmp_wrapper_p21_error.O1.ll": "eff-conc: a setjmp diamond whose first-return arm is not one block"}
 MODULES = {"conc.O1.ll": ENTRIES, "setjmp.O1.ll": ["p_sj_scalar", "p_sj_void", "p_sj_classical", "p_sj_qarm"],
            # cq-py5f: rule 24 over its class (a join asking for the result, a volatile atomic access).
-           "conc_widen.O1.ll": ["p_join_result", "p_vol_atomic"],
+           "conc_widen.O1.ll": ["p_join_result", "p_vol_atomic", "p_runtime_routine"],
            "conc_rmw.O1.ll": ["p_rmw_qram"]}
 _SJ = (r"cq_template_select_i32", r"call [^\n]*@(setjmp|longjmp)\(")
 # entry -> (regex that must match its body, regex that must not)
@@ -53,6 +53,7 @@ SHAPES = {"p_vol_internal": (None, r"volatile"),
           "p_atomic_rmw": (r"cq_template_add_i32_hl", r"atomicrmw"),
           "p_join_result": (r"call ptr @job\(", r"@pthread_(create|join)\("),
           "p_rmw_qram": (r"cqrt_qram_load_i32\(i32 %\d+, i32 %\d+\)[\s\S]*cqrt_qram_store_i32\(", r"atomicrmw|cmpxchg"),
+          "p_runtime_routine": (r"call ptr %\d+\(ptr", r"@pthread_(create|join)\("),
           "p_vol_atomic": (r"store atomic volatile i32 %\d+, ptr @vcell seq_cst", None),
           "p_sj_scalar": _SJ, "p_sj_void": _SJ, "p_sj_classical": _SJ, "p_sj_qarm": _SJ}
 

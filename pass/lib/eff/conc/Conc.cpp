@@ -401,25 +401,27 @@ void lowerThreadCall(LoweringContext &ctx, CallBase &CB) {
       return bindZero();
     }
     Value *fn = CB.getArgOperand(2)->stripPointerCasts();
-    if (!isa<Function>(fn))
-      unimplemented("eff-conc: pthread_create of a start routine chosen at run time (rule 24 with rule 19's "
-                    "indirect call; not built in eff-conc, cq-20fz)",
-                    &CB);
+    auto *fnF = dyn_cast<Function>(fn);
+    Operand fnOp = ctx.operand(CB.getArgOperand(2));
     Operand p = ctx.operand(CB.getArgOperand(3));
-    if (p.handle || ctx.T.isFatPointer(CB.getArgOperand(3), ctx.S))
-      internalError("eff-conc: a classical thread job handed a rail", &CB);
+    bool quantumJob = fnOp.handle || p.handle || ctx.T.isFatPointer(CB.getArgOperand(3), ctx.S);
     for (ObjectId o : ctx.T.provenance(CB.getArgOperand(3), ctx.S))
-      if (ctx.T.classOf(o) != ObjClass::Classical && !cast<Function>(fn)->isDeclaration())
-        internalError("eff-conc: a defined start routine handed quantum memory with no clone from taint", &CB);
-      else if (ctx.T.classOf(o) != ObjClass::Classical)
-        unimplemented("eff-conc: pthread_create of a start routine with no body handed quantum memory (rule 24 "
-                      "with rule 27's declared clone; calls exposes no declared call through a site)",
-                      &CB);
+      quantumJob |= ctx.T.classOf(o) != ObjClass::Classical;
+    if (quantumJob && fnF && !fnF->isDeclaration())
+      internalError("eff-conc: a defined start routine handed quantum data with no clone from taint", &CB);
+    if (quantumJob && !fnF)
+      unimplemented("eff-conc: pthread_create of a start routine chosen at run time handed quantum data (rule 24 "
+                    "with rule 19's indirect call; calls exposes no indirect call through a site, cq-20fz)",
+                    &CB);
+    if (quantumJob)
+      unimplemented("eff-conc: pthread_create of a start routine with no body handed quantum memory (rule 24 "
+                    "with rule 27's declared clone; calls exposes no declared call through a site, cq-20fz)",
+                    &CB);
     // The start routine's type is void *(void *) (C17 7.26.5.1 thrd_start_t, POSIX); a call through
     // another type is undefined behaviour, outside the domain.
     Type *ptrTy = PointerType::getUnqual(C);
     FunctionType *ft = FunctionType::get(ptrTy, {ptrTy}, false);
-    Value *rv = ctx.B().CreateCall(ft, fn, {p.v});
+    Value *rv = ctx.B().CreateCall(ft, fnF ? static_cast<Value *>(fnF) : fnOp.v, {p.v});
     Operand t = ctx.operand(CB.getArgOperand(0));
     if (joinAskingResult(ctx.M) && !t.handle && !isa<ConstantPointerNull>(t.v)) {
       Type *tidTy = ctx.M.getDataLayout().getIntPtrType(C);

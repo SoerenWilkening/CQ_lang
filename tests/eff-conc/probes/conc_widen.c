@@ -24,3 +24,16 @@ int p_vol_atomic(int x0, double th, int c) {
     int v = __atomic_load_n(&vcell, __ATOMIC_SEQ_CST);
     return cq_measure(x) + v;
 }
+
+static void *job2(void *p) { return (void *)(intptr_t)(*(int *)p + 7); }
+
+int p_runtime_routine(int x0, double th, int c) {   /* a classical job whose routine is chosen at run time */
+    int x = x0;
+    cq_theta(&x, th);
+    void *(*f)(void *) = (c & 1) ? job : job2;
+    pthread_t t;
+    pthread_create(&t, 0, f, &c);
+    void *r;
+    pthread_join(t, &r);
+    return cq_measure(x) + (int)(intptr_t)r;
+}
