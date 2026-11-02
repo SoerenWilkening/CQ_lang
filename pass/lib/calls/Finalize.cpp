@@ -319,6 +319,13 @@ void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &s
         refuse("a memory intrinsic writing outside the clone's frame", &I);
       continue;   // a byval snapshot (cq-09xh) or another write of the frame
     }
+    if (auto *LI = dyn_cast<LoadInst>(&I)) {
+      // Rule 24: a volatile (or atomic, single-thread collapse) read of the frame is a plain read; the
+      // replay reads the same cell. One of memory outside the frame is the host's.
+      if (LI->isUnordered() || inFrame(LI->getPointerOperand()))
+        continue;
+      refuse("a volatile read of memory outside the clone's frame", &I);
+    }
     if (I.mayWriteToMemory() && !isa<CallBase>(I))
       refuse("a memory write", &I);
     auto *CB = dyn_cast<CallBase>(&I);
@@ -335,6 +342,14 @@ void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &s
     bool unc = false;
     if (abi::parseTemplate(G->getName(), &unc))
       continue;
+    // Rule 23: a constrained op under fpexcept.ignore or fpexcept.maytrap raises nothing observable and
+    // rounds in the environment's mode, which the call and its twin share: a plain op, replayed like any
+    // classical computation. Only fpexcept.strict writes the flags.
+    if (auto *CFP = dyn_cast<ConstrainedFPIntrinsic>(CB)) {
+      std::optional<fp::ExceptionBehavior> eb = CFP->getExceptionBehavior();
+      if (!eb || *eb != fp::ebStrict)
+        continue;
+    }
     if (std::optional<abi::CoreSpec> c = abi::parseCore(G->getName())) {
       if (top && trailingQramStore(I))
         continue;   // dropped from the twin below (M2b)
@@ -349,6 +364,13 @@ void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &s
     }
     if (CB->onlyReadsMemory() && CB->willReturn())
       continue;
+    // Rule 19 (cq-fl4n): an ordinary call of a body (a host call with classical arguments that taint did
+    // not lift, musl's __math_oflowf(0)) replays what that body does: it is replayable when the body is,
+    // its volatile accesses to its own dead locals being nothing (rule 24).
+    if (!G->isDeclaration()) {
+      checkReplayable(*G, twin, seen);
+      continue;
+    }
     refuse("the host call @" + G->getName(), &I);
   }
 }
