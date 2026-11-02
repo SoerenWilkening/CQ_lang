@@ -29,8 +29,9 @@
 //    slot-cell loads that may be one cell are tested, cq-x80e). A prep of a CLASSICAL value under a
 //    quantum predicate is rule
 //    10's register (the merge phi names one rail with the straight-through value; a second prep undoes
-//    the first): with a quantum angle that is not built yet and is an internal error here.
-//  - The target being the angle rail itself (cq_theta_f64(x, x)) is not built yet.
+//    the first), rot-cry's lowerControlledTheta with ry_<W>_qangle_controlled (cq-oa67).
+//  - The target being the angle rail itself (cq_theta_f64(x, x)): the angle is a basis copy of the rail
+//    taken before the rotation, kept (A4), as the target is never one of its own controls (cq-oa67).
 //
 // cq_phi(A)
 //  - e^{i val(A)} depends on the registers A was computed from: a RELATIVE phase, never deletable as a
@@ -71,17 +72,25 @@ void lowerQuantumAngleTheta(LoweringContext &ctx, CallInst &call, Value *flag) {
   Value *A = angleRail(ctx, call, call.getArgOperand(1));
   RailType w = railTypeOf(v->getType());
   Operand x = ctx.operand(v);
-  if (flag && x.handle)
-    return lowerControlledTheta(ctx, call, flag);   // rule 10 in place, quantum angle (cq-t3rd)
+  if (flag)
+    return lowerControlledTheta(ctx, call, flag);   // rule 10 with rule 15's primitive (cq-t3rd, cq-oa67)
   Value *h;
   if (x.handle) {
     h = x.v;   // rule 2: a rotation of an existing rail is in place
-    if (h == A)
-      unimplemented("rot-qangle: cq_theta of a rail by its own value as the angle (target among the controls)", &call);
+    if (h == A) {
+      // CR §1.3: an in-place target is never one of its own controls. The angle is read into a fresh
+      // f64 rail (alloc 0, copy_f64) first; that copy read the register before the rotation, so it
+      // stays allocated (A4), as rule 10's flag that read the rotated register (cq-oa67).
+      RailType f64{Kind::Fp, 64};
+      CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, f64}, {ConstantFP::get(call.getContext(), APFloat(0.0))});
+      RailId cid = ctx.unc().recordSeed(c);
+      abi::CoreSpec cp{abi::Core::Copy, f64};
+      CallInst *cc = ctx.emitCore(cp, {h, c});
+      ctx.unc().recordCore(cc, cp, {Operand{h, true}, Operand{c, true}}, cid);
+      ctx.unc().setRole(cid, Role::KeptEntangled);
+      A = c;
+    }
   } else {
-    if (flag)
-      unimplemented("rot-qangle: a prep of a classical value under a quantum predicate with a quantum angle "
-                    "(rule 10's register with rule 15's primitive)", &call);
     if (x.v->getType() != irTypeOf(ctx.M.getContext(), w))
       internalError("rot-qangle: cq_theta operand type differs from its rail type", &call);
     CallInst *alloc = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {x.v});

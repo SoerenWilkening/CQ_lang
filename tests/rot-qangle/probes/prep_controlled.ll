@@ -1,6 +1,9 @@
-; A prep of a classical value under a quantum predicate with a quantum angle needs rule 10's register
-; (the merge names one rail seeded with the straight-through value) with rule 15's primitive: not built
-; yet, an internal error, never a lowering.
+; A prep of a classical value under a quantum predicate with a quantum angle (cq-oa67): rule 10's
+; register (seeded with the straight-through value r0, xorc to r0 ^ x0 under the flag) rotated by rule
+; 15's primitive under the flag; the merge names the register, no select.
+; CHECK prep_controlled: %{{r}} = call i32 @cqrt_alloc_i32(i32 %r0)
+; CHECK-COUNT prep_controlled: call void @cqrt_ry_i32_qangle_controlled( 1
+; CHECK-COUNT prep_controlled: @cq_template_select 0
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
@@ -19,4 +22,3 @@ done:
   %m = call i32 @cq_measure_si32(i32 %rr)
   ret i32 %m
 }
-; EXPECT-ERROR: cq: unimplemented: rot-qangle: a prep of a classical value under a quantum predicate with a quantum angle

@@ -44,10 +44,16 @@
 // a prep or phi of the register, the register's own handle, or its straight-through value on an
 // edge where no active prep fired. No gate is emitted at the merge (39: "no merge copy").
 //
-// Shapes not built yet are cq::unimplemented with the instruction: a prep whose register would be
-// allocated under a classical guard (P1 factor) and merged or shared outside it; a phi merging a
-// prep with a quantum value that is not its register; several distinct straight-through values; a
-// second prep after a reader or after an in-place rotation of the register.
+// cq-oa67: a merge's other straight-through values (a second classical value, one defined after the
+// prep, a rail that is not the register) are written into the register on their own edges at the merge
+// (lowerStatePrepMerge): xorc of seed ^ u under the edge's flag, recorded as an active entry a later prep
+// undoes, or a cleared seed and copy_<W>_controlled of the rail (the register is then locked). A quantum
+// angle (rule 15) preps the register like a classical one, with ry_<W>_qangle_controlled.
+//
+// Still cq::unimplemented with the instruction: a prep whose register would be allocated under a
+// classical guard (P1 factor) and merged or shared outside it; a second prep after a reader or after an
+// in-place rotation of the register (rule 10 undoes only a prep nothing read: SPEC_ISSUES proposed); a
+// merge of two registers; a straight-through edge a prep may precede.
 #include "cq/Rotation.h"
 
 #include <memory>
@@ -79,8 +85,10 @@ namespace {
 
 struct Prep {
   Pred eff;          // where this prep is the register's current state (quantum part)
-  Value *angle;      // the classical angle, new IR
+  Value *angle;      // the angle, new IR (a classical double, or an f64 rail: qangle); nullptr: no Ry (a
+                     // merge's straight-through fix-up, cq-oa67)
   Value *lit;        // the xorc literal it applied first, or nullptr
+  bool qangle = false;
 };
 
 struct Register {
@@ -127,13 +135,12 @@ std::string describe(const Value *v) {
   return os.str();
 }
 
-// A cq_theta with a classical angle under a quantum predicate: a prep this module lowers (or will).
+// A cq_theta under a quantum predicate: a prep this module lowers, with a classical angle or with rule
+// 15's angle rail (cq-oa67).
 bool isPrep(LoweringContext &ctx, const Value *v) {
   auto *CI = dyn_cast<CallInst>(v);
   const Function *F = CI ? CI->getCalledFunction() : nullptr;
   if (!F || !F->getName().starts_with("cq_theta_") || CI->arg_size() != 2)
-    return false;
-  if (ctx.T.isQuantum(CI->getArgOperand(1), ctx.S))
     return false;
   return !ctx.preds().block(CI->getParent()).quantumPart(ctx.T, ctx.S).isTop();
 }
@@ -177,6 +184,20 @@ Value *copyFlag(LoweringContext &ctx, Value *flag) {
   abi::CoreSpec x{abi::Core::XorI1, RailType{Kind::Int, 1}};
   CallInst *c = ctx.emitCore(x, {flag, f});
   ctx.unc().recordCore(c, x, {Operand{flag, true}, Operand{f, true}}, fid);
+  ctx.unc().setRole(fid, Role::KeptEntangled);
+  return f;
+}
+
+// cq-oa67 (CR §1.3, rule 15): a rail read into a fresh rail of its width (alloc 0, copy_<W>) before a
+// rotation of the rail it copies (cq_theta(x, x): the target is never one of its own controls, so the
+// angle is the copy). The copy read the register before the rotation, so it stays allocated (A4).
+Value *copyRail(LoweringContext &ctx, Value *h, RailType w) {
+  abi::CoreSpec a{abi::Core::Alloc, w};
+  CallInst *f = ctx.emitCore(a, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+  RailId fid = ctx.unc().recordSeed(f);
+  abi::CoreSpec cp{abi::Core::Copy, w};
+  CallInst *c = ctx.emitCore(cp, {h, f});
+  ctx.unc().recordCore(c, cp, {Operand{h, true}, Operand{f, true}}, fid);
   ctx.unc().setRole(fid, Role::KeptEntangled);
   return f;
 }
@@ -515,17 +536,16 @@ void controlledRy(LoweringContext &ctx, Value *flag, Value *rail, RailType w, Va
     flag = copyFlag(ctx, flag);
   } else if (Alias al = w.kind == Kind::Int && w.bits == 1 ? mayAlias(ctx, T, dt, flag, rail) : Alias::Distinct;
              al != Alias::Distinct) {
-    if (al == Alias::Unknown)
-      unimplemented("rot-cry: a controlled Ry whose control " + describe(flag) + " and target " + describe(rail) +
-                        " may name one rail at run time, not as two slot-cell loads (cq-x80e)",
-                    rail);
-    // cq-x80e (CR §1.3, rules 9, 10; 120's reference): the two handles are loads of slot cells that
-    // may be one cell at run time. A classical test of the two cell addresses: distinct, the bare
-    // flag controls the Ry; the same cell, the flag is copied first and the copy stays allocated (66).
+    // cq-x80e (CR §1.3, rules 9, 10; 120's reference): the two handles may name one rail at run time. A
+    // classical test: distinct, the bare flag controls the Ry; the same rail, the flag is copied first
+    // and the copy stays allocated (66). Two slot-cell loads compare their cell addresses (120); any
+    // other pair compares the handle values themselves, which name one rail iff they are equal (cq-oa67).
     IRBuilder<> &B = ctx.B();
     LLVMContext &C = ctx.M.getContext();
     Function &out = ctx.out();
-    Value *eq = B.CreateICmpEQ(cast<LoadInst>(flag)->getPointerOperand(), cast<LoadInst>(rail)->getPointerOperand());
+    Value *eq = al == Alias::Cells ? B.CreateICmpEQ(cast<LoadInst>(flag)->getPointerOperand(),
+                                                    cast<LoadInst>(rail)->getPointerOperand())
+                                   : B.CreateICmpEQ(flag, rail);
     BasicBlock *join = BasicBlock::Create(C, "", &out);
     BasicBlock *distinct = BasicBlock::Create(C, "", &out, join);
     BasicBlock *same = BasicBlock::Create(C, "", &out, join);
@@ -700,14 +720,11 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
   Operand x = ctx.operand(v);
   // cq-t3rd: a quantum angle (rule 15, from rot::lowerQuantumAngleTheta) is built on the in-place
   // case only, with the classical angle's register bookkeeping and ry_<W>_qangle_controlled.
-  if (angle.handle && !x.handle)
-    internalError("rot-cry: a prep of a classical value with a quantum angle reached rot-cry (rot-qangle refuses it)",
-                  &T);
   if (x.handle) {
     // In place (rule 2 under the flag): the register is the operand's rail.
     Value *rail = ctx.rail(v);
     if (angle.handle && angle.v == rail)
-      unimplemented("rot-qangle: cq_theta of a rail by its own value as the angle (target among the controls)", &T);
+      angle.v = copyRail(ctx, rail, RailType{Kind::Fp, 64});   // cq-oa67: the angle is a copy of the target
     Register *R = nullptr;
     if (auto it = st.of.find(v); it != st.of.end() && it->second->rail == rail)
       R = it->second;
@@ -767,22 +784,18 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
   // Every value a merge of this prep takes on the edges where no prep runs: the straight-through
   // value. A cq_theta incoming is another prep; a phi incoming already bound to a register was
   // handled above.
+  // cq-oa67: only a classical value defined before the prep can seed the register here. Any other
+  // straight-through value (a second classical one, one defined after the prep, a quantum value that is
+  // not the register) is written into the register on its own edge at the merge (lowerStatePrepMerge).
   SmallVector<const Value *, 2> straight;
   for (const PHINode *P : phis)
     for (const Value *u : P->incoming_values()) {
       if (u == &T || isPrep(ctx, u) || st.of.count(u))
         continue;
-      if (!isa<Constant>(u) && ctx.T.isQuantum(u, ctx.S)) {
-        if (R && ctx.operand(u).handle && ctx.operand(u).v == R->rail)
-          continue;
-        unimplemented("rot-cry: a state prep merged with a quantum value that is not its register (" +
-                          describe(u) + ")",
-                      &T);
-      }
+      if (!isa<Constant>(u) && ctx.T.isQuantum(u, ctx.S))
+        continue;
       if (auto *I = dyn_cast<Instruction>(u); I && !st.dt->dominates(I, &T))
-        unimplemented("rot-cry: a state prep whose straight-through value " + describe(u) +
-                          " is defined after the prep",
-                      &T);
+        continue;
       if (!is_contained(straight, u))
         straight.push_back(u);
     }
@@ -801,13 +814,9 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
 
   bool fresh = !R;
   if (fresh) {
-    Value *seed;
-    if (straight.empty())
-      seed = vv;
-    else if (straight.size() == 1)
-      seed = ctx.operand(straight.front()).v;
-    else
-      unimplemented("rot-cry: a state prep whose merges take several straight-through values", &T);
+    // The seed: the straight-through value when it is available here (the first one, cq-oa67: the merge
+    // writes the others on their edges), else v (every incoming is a prep, 39 _ifelse).
+    Value *seed = straight.empty() ? vv : ctx.operand(straight.front()).v;
     if (!(phis.empty() && !dead) && !cf.isTop())
       unimplemented("rot-cry: a state prep under a classical guard whose register is merged or shared "
                     "outside it",
@@ -835,11 +844,6 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
       unimplemented("rot-cry: a second prep of a register under a classical guard", &T);
     if (R->w.kind != w.kind || R->w.bits != w.bits)
       internalError("rot-cry: a prep of another width into a register", &T);
-    for (const Value *s : straight)
-      if (ctx.operand(s).v != R->seed)
-        unimplemented("rot-cry: a second prep whose merge takes a straight-through value other than the "
-                      "register's seed (" + describe(s) + ")",
-                      &T);
   }
 
   // Rule 10: undo every active prep that may have fired where this one runs.
@@ -860,7 +864,20 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
       Value *gf = ctx.preds().flag(ctx, g);
       if (!gf)
         internalError("rot-cry: a conjunction flag that is constant true", &T);
-      controlledRy(ctx, gf, R->rail, R->w, ctx.B().CreateFNeg(it->angle), T, *st.dt);
+      if (it->angle && it->qangle) {
+        // Rule 15's angle rail, negated by the fneg template into a fresh rail (garbage of this undo).
+        RailId aid = ctx.unc().idOf(it->angle);
+        if (!ctx.unc().liveRole(aid))
+          unimplemented("rot-cry: a second prep undoing a quantum-angle prep whose angle rail is already "
+                        "uncomputed (the adjoint needs -A)",
+                        &T);
+        abi::TemplateSpec neg;
+        neg.op = "fneg";
+        neg.w = RailType{Kind::Fp, 64};
+        controlledRy(ctx, gf, R->rail, R->w, ctx.emitTemplate(neg, {Operand{it->angle, true}}), T, *st.dt, true);
+      } else if (it->angle) {
+        controlledRy(ctx, gf, R->rail, R->w, ctx.B().CreateFNeg(it->angle), T, *st.dt);
+      }
       if (it->lit)
         recordXorc(ctx, gf, *R, it->lit);
     }
@@ -869,7 +886,7 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
   for (Prep &p : R->active) {
     Pred e = p.eff & !q;
     if (!e.isBottom())
-      still.push_back(Prep{e, p.angle, p.lit});
+      still.push_back(Prep{e, p.angle, p.lit, p.qangle});
   }
   R->active = std::move(still);
 
@@ -877,8 +894,8 @@ void lowerControlledTheta(LoweringContext &ctx, CallInst &T, Value *flag) {
   Value *lit = xorLiteral(ctx, R->seed, vv);
   if (lit)
     recordXorc(ctx, flag, *R, lit);
-  controlledRy(ctx, flag, R->rail, R->w, angle.v, T, *st.dt);
-  R->active.push_back(Prep{q, angle.v, lit});
+  controlledRy(ctx, flag, R->rail, R->w, angle.v, T, *st.dt, angle.handle);
+  R->active.push_back(Prep{q, angle.v, lit, angle.handle});
   R->all = R->all ? (*R->all | full) : full;
   R->uses = R->rail->getNumUses();
 
@@ -913,17 +930,8 @@ void lowerStatePrepMerge(LoweringContext &ctx, PHINode &phi) {
     if (isPrep(ctx, u))
       internalError("rot-cry: a merge incoming prep that was not lowered as a prep of a register", &phi);
     Operand o = ctx.operand(u);
-    if (o.handle) {
-      if (o.v != R->rail)
-        unimplemented("rot-cry: a state-prep merge with a quantum incoming that is not its register (" +
-                          describe(u) + ")",
-                      &phi);
+    if (o.handle && o.v == R->rail)
       continue;
-    }
-    if (!R->seed || o.v != R->seed)
-      unimplemented("rot-cry: a state-prep merge whose classical incoming " + describe(u) +
-                        " is not the register's straight-through value",
-                    &phi);
     // The straight-through value is the register's value on this edge only where no prep fired.
     const Pred &e = ctx.preds().edge(phi.getIncomingBlock(i), bb);
     for (const Prep &p : R->active)
@@ -935,6 +943,43 @@ void lowerStatePrepMerge(LoweringContext &ctx, PHINode &phi) {
       unimplemented("rot-cry: a state-prep merge whose straight-through edge (incoming " + describe(u) +
                         ") may follow a prep or an in-place rotation of the register (cq-2xi3)",
                     &phi);
+    if (!o.handle && R->seed && o.v == R->seed)
+      continue;
+    // cq-oa67 (rules 9, 10): any other straight-through value is written into the register on its own
+    // edge, where the register holds its seed (no prep fired there, checked above): under the edge's
+    // flag, xorc of seed ^ u for a classical u (undone like a prep's reset by a later prep), or the seed
+    // cleared and a controlled basis copy of a rail u (the register then holds a copy of u there and is
+    // locked: no later prep undoes across it).
+    if (!R->seed)
+      unimplemented("rot-cry: a state-prep merge whose register holds a quantum value (rotated in place) and "
+                    "whose straight-through incoming " + describe(u) + " is not the register",
+                    &phi);
+    if (!o.handle && o.v->getType() != R->seed->getType())
+      internalError("rot-cry: a straight-through value of another type than the register's seed", &phi);
+    Value *g = ctx.preds().flag(ctx, e);
+    if (!o.handle) {
+      Value *lit = xorLiteral(ctx, R->seed, o.v);
+      if (!lit)
+        continue;
+      if (!g) {
+        abi::CoreSpec spec{abi::Core::Xorc, R->w};
+        CallInst *x = ctx.emitCore(spec, {R->rail, lit});
+        ctx.unc().recordCore(x, spec, {Operand{R->rail, true}, Operand{lit, false}}, ctx.unc().idOf(R->rail));
+      } else {
+        recordXorc(ctx, g, *R, lit);
+      }
+      R->active.push_back(Prep{e, nullptr, lit, false});
+      continue;
+    }
+    if (!g)
+      internalError("rot-cry: a state-prep merge whose straight-through edge is taken on every path", &phi);
+    if (Value *lit = xorLiteral(ctx, R->seed, Constant::getNullValue(R->seed->getType())))
+      recordXorc(ctx, g, *R, lit);
+    abi::CoreSpec cp{abi::Core::Copy, R->w, /*ctl=*/true};
+    CallInst *c = ctx.emitCore(cp, {g, o.v, R->rail});
+    ctx.unc().recordCore(c, cp, {Operand{g, true}, o, Operand{R->rail, true}}, ctx.unc().idOf(R->rail));
+    R->dirty = R->dirty ? (*R->dirty | e) : e;
+    R->locked = true;
   }
   st.of[&phi] = R;
   ctx.bind(&phi, R->rail);
