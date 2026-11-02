@@ -56,6 +56,7 @@
 // The object predicates (_Bool cells, escaping, dynamic) are mem-slots' and private to Slots.cpp; they
 // are restated below verbatim (the "addresses" to "isDynamic" sections) so that both modules classify
 // an object the same way.
+#include "cq/Effects.h"
 #include "cq/Memory.h"
 #include "QramInternal.h"
 #include "../slots/SlotsInternal.h"
@@ -3272,6 +3273,8 @@ void noteCalleeQramStores(LoweringContext &ctx, const CallBase &orig, const Spec
     p += n;
     d += pf.digits;
   }
+  if (fenv::cloneCarriesEnv(T, callee))
+    p += 2;   // E1 (82): the caller's mode and flags trail the formals (calls::materialize)
   if (p != fwd->arg_size())
     internalError("mem-qram: a clone call whose arguments do not match its formals' layout", fwd);
   for (Value *bus : buses) {

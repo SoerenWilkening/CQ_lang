@@ -25,7 +25,7 @@ TWIN_BARRIER = ("cq: unimplemented: uncompute: a write that may change an object
 TWIN_ALIAS = ("cq: unimplemented: uncompute: a clone call whose twin may read a caller cell the clone writes by "
               "another route than the writing pointer")
 # §6 samples per probe where the full set takes minutes (cqcheck user --samples): the musl bodies.
-SAMPLES = {"libm_musl_acosh": 16, "libm_musl_coshf": 16, "libm_musl_lrint": 16, "libm_musl_floorfn": 32, "libm_musl_atan": 16, "libm_musl_exp": 16, "libm_musl_log": 16}
+SAMPLES = {"clone_cell_seq": 64, "fenv_cells": 64, "libm_musl_acosh": 16, "libm_musl_coshf": 16, "libm_musl_lrint": 16, "libm_musl_floorfn": 32, "libm_musl_atan": 16, "libm_musl_exp": 16, "libm_musl_log": 16}
 # (probe, entry, opt flags, expectation, regexes the lowered module must contain)
 CASES = [
     # cq-57ju (rulings 2026-11-02): plain clang -O1 callers of musl b1efda5 bodies (no -fno-builtin, no -frounding-math).
@@ -72,6 +72,16 @@ CASES = [
     # is not on ch_split's chain, so split and third are plain clones (no mode, no flags) writing the caller's cells.
     ("fenv_chain_default", "ch_split", [], "pass", [r"call void @__cq_q_split_100\(i32 %\d+, ptr %\d+\)\n",
                                                     r"call i32 @__cq_q_third_1\(i32 %0\)\n"]),
+    # cq-4e6m (rules 9, 18, 20): a clone writing a caller cell, reading it back and writing it again, in sequence and
+    # under quantum predicates (musl __rem_pio2/__rem_pio2f's *y): one slot result, select per predicated store.
+    ("clone_cell_seq", "u_two", [], "pass", []),
+    ("clone_cell_seq", "u_cond", [], "pass", [r"call i32 @cq_template_select_f64\("]),
+    ("clone_cell_seq", "u_pair", [], "pass", []),
+    # cq-4e6m (rules 18, 20, 23; 82 with 163 and 191): a clone carrying the environment writes caller cells and
+    # stores through a QRAM triple: the mode and flags trail the formals, the flags are the result's last field.
+    ("fenv_cells", "fe_cells", [], "pass", [r"call i32 @__cq_q_sc_100\(i32 %\d+, ptr %\d+, i32 0, i32 %\d+\)"]),
+    ("fenv_cells", "fe_reread", [], "pass", [r"call \{ i32, i32 \} @__cq_q_sc2_10\(i32 %\d+, ptr %\d+, i32 0, i32 %\d+\)"]),
+    ("fenv_cells", "fe_qram", [], "pass", [r"call \{ i32, i32 \} @__cq_q_addto_00011\("]),
     # cq-567j (gate 2a unc-h1 p16-p19): a clone that only reads a caller's slot cell through a pointer formal:
     # the cell's rails are used by the forward call (and read by its item when it has a twin), never freed before.
     ("read_only_ptr", "ro_bump", [], "pass", []),

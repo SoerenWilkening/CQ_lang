@@ -803,10 +803,8 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
     }
   }
   if (fenv::cloneCarriesEnv(ctx.T, S)) {
-    if (!slotArgs.empty() || !tableArgs.empty() || r.res.qramFormal)
-      unimplemented("calls: a clone carrying the floating-point environment that writes a caller's slot cells or "
-                    "QRAM (E1)",
-                    &CB);
+    // E1 (82) beside the caller's cells (163's slot results, rules 18, 20) and QRAM stores (191): the mode and
+    // flags trail the formals' fields, whatever the formals are.
     for (const Operand &e : fenv::envArgs(ctx, CB)) {   // mode (classical), flags (a handle the twin reads)
       args.push_back(e.v);
       r.ops.push_back(e);
@@ -1290,9 +1288,16 @@ Function *materialize(Module &M, const Specialization &S) {
     // struct's fields followed by i32 (cq-xhv4).
     ps.push_back(handleTy(C));
     ps.push_back(handleTy(C));
-    if (rl.qramFormal || rl.stores)
-      unimplemented("calls: a clone carrying the floating-point environment with QRAM stores (E1)", S.F);
-    if (rt->isVoidTy()) {
+    if (rl.stores) {
+      // With QRAM stores (191): the result's leaves, one handle per store, then the flags: always the struct.
+      SmallVector<Type *, 4> es;
+      for (unsigned k = 0; k < rl.leaves.size(); ++k)
+        es.push_back(rl.q[k] ? handleTy(C) : rl.leaves[k]);
+      for (unsigned k = 0; k < rl.stores; ++k)
+        es.push_back(handleTy(C));
+      es.push_back(handleTy(C));
+      rt = StructType::get(C, es);
+    } else if (rt->isVoidTy()) {
       rt = handleTy(C);
     } else if (rl.composite && rl.anyQ()) {
       SmallVector<Type *, 4> es(cast<StructType>(rt)->elements());
@@ -1367,9 +1372,64 @@ Function *materialize(Module &M, const Specialization &S) {
 // E1 (CR rule 23, 82): the result of a clone carrying the environment. Its last field is the new flags
 // handle: the call's outs are the result (when a handle) then the flags, undone together by the twin (U2),
 // and the caller's FLAGS become the returned rail (fenv::afterCloneCall).
-void bindEnvResult(LoweringContext &ctx, CallBase &CB, const CloneCall &r) {
+namespace {
+void cleanDeadCells(LoweringContext &ctx, CallBase &CB, const Specialization &S, const CloneCall &r,
+                    ArrayRef<Value *> outs);
+} // namespace
+
+void bindEnvResult(LoweringContext &ctx, CallBase &CB, const Specialization &S, const CloneCall &r) {
   SmallVector<Value *, 4> outs;
   Value *flags = r.call;
+  // The call's caller cells (rules 18, 20: the reloaded slot results and the old cells the twin restores) are
+  // recorded with its outs, as for a clone without the environment.
+  auto finish = [&]() {
+    ctx.unc().recordCall(r.call, outs, r.slotOuts, r.extra);
+    fatptr::finishSlotTableCall(ctx, r.call);
+    if (!r.slotOuts.empty())
+      cleanDeadCells(ctx, CB, S, r, outs);
+  };
+  if (r.res.stores) {
+    // 191 with 82: {leaves..., stores..., flags} (materialize); the stored rails are outs, popped before the
+    // twin (U3), as bindQramCloneResult's.
+    const ResultLayout &res = r.res;
+    auto *st = dyn_cast<StructType>(r.call->getType());
+    if (!st || st->getNumElements() != res.leaves.size() + res.stores + 1)
+      internalError("calls: a clone carrying the environment with QRAM stores whose result is not "
+                    "{leaves..., stores..., flags}",
+                    &CB);
+    if (!res.leafFields.empty())
+      internalError("calls: a QRAM-triple clone whose aggregate result has a packed integer leaf reached the "
+                    "environment's binding (bindQramCloneResult's case)",
+                    &CB);
+    SmallVector<Operand, 4> ops;
+    SmallVector<Value *, 2> stored;
+    for (unsigned k = 0; k < res.leaves.size(); ++k) {
+      Value *e = ctx.B().CreateExtractValue(r.call, {k});
+      ops.push_back(Operand{e, res.q[k]});
+      if (res.q[k])
+        outs.push_back(e);
+    }
+    for (unsigned k = 0; k < res.stores; ++k) {
+      Value *e = ctx.B().CreateExtractValue(r.call, {unsigned(res.leaves.size() + k)});
+      outs.push_back(e);
+      stored.push_back(e);
+    }
+    flags = ctx.B().CreateExtractValue(r.call, {unsigned(res.leaves.size() + res.stores)});
+    outs.push_back(flags);
+    if (!CB.getType()->isVoidTy()) {
+      if (res.composite) {
+        ctx.bindFields(&CB, ops);
+      } else {
+        if (ops.size() != 1 || ops[0].handle != ctx.T.isQuantum(&CB, ctx.S))
+          internalError("calls: the call's result kind and taint's disagree", &CB);
+        ctx.bind(&CB, ops[0].v);
+      }
+    }
+    finish();
+    mem::noteCalleeQramStores(ctx, CB, S, r.call, stored);
+    fenv::afterCloneCall(ctx, CB, flags);
+    return;
+  }
   if (r.fieldwise) {
     // cq-xhv4: a field-wise result (bindFieldwiseResult's binding) whose last field is the new flags.
     const ResultLayout &res = r.res;
@@ -1391,8 +1451,8 @@ void bindEnvResult(LoweringContext &ctx, CallBase &CB, const CloneCall &r) {
     }
     flags = ctx.B().CreateExtractValue(r.call, {unsigned(res.leaves.size())});
     outs.push_back(flags);
-    ctx.unc().recordCall(r.call, outs, {}, {});
     ctx.bindFields(&CB, ops);
+    finish();
     fenv::afterCloneCall(ctx, CB, flags);
     return;
   }
@@ -1407,7 +1467,7 @@ void bindEnvResult(LoweringContext &ctx, CallBase &CB, const CloneCall &r) {
     ctx.bind(&CB, res);
   }
   outs.push_back(flags);
-  ctx.unc().recordCall(r.call, outs, {}, {});
+  finish();
   fenv::afterCloneCall(ctx, CB, flags);
 }
 
@@ -2049,7 +2109,7 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
     return lowerEscapingCall(ctx, CB, *cs);
   CloneCall r = emitCloneCall(ctx, CB, *cs, nullptr);
   if (fenv::cloneCarriesEnv(ctx.T, *cs))
-    return bindEnvResult(ctx, CB, r);
+    return bindEnvResult(ctx, CB, *cs, r);
   if (r.res.qramFormal)
     return bindQramCloneResult(ctx, CB, *cs, r);
   if (r.fieldwise)

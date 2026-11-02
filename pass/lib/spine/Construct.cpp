@@ -1078,6 +1078,17 @@ void Walker::resultFields(ReturnInst *ret, Value *rv, StructType *st, unsigned e
 // body (CR allows returning that rail directly; the corpus always copies). A classical result (a
 // callee that measures, or a mask under which the result does not depend on a quantum value) is
 // returned as is.
+// Does a formal of the clone being built cross as a triple onto a QRAM object (calls::hasQramTriple)?
+static bool hasQramTripleFormal(LoweringContext &ctx) {
+  for (Argument &A : ctx.S.F->args())
+    if (A.getType()->isPointerTy()) {
+      PtrFormal pf = ctx.T.pointerFormal(ctx.S, A.getArgNo());
+      if (pf.abi != PtrAbi::Raw && pf.pointee == ObjClass::Qram)
+        return true;
+    }
+  return false;
+}
+
 void Walker::emitCloneReturn(ReturnInst *ret) {
   IRBuilder<> &B = ctx.B();
   Function *C = ctx.B().GetInsertBlock()->getParent();
@@ -1100,6 +1111,32 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
     SmallVector<Value *, 4> vals;
     auto *st = dyn_cast<StructType>(CRT);
     Value *rv = ret->getReturnValue();
+    if (unsigned stores = mem::calleeQramStoreCount(ctx.T, ctx.S); stores && hasQramTripleFormal(ctx)) {
+      // 191 with 82 (calls::materialize): {leaves..., stores..., flags}. The flags are copied out before the
+      // body's uncompute; the QRAM stores come after it, right before the return (M2b: the twin drops them).
+      if (rv)
+        resultFields(ret, rv, st, stores + 1, vals);
+      Value *flags = copyOut(Operand{fenv::cloneExitFlags(ctx, *ret), true}, RailType{Kind::Int, 32});
+      if (!st || st->getNumElements() != vals.size() + stores + 1)
+        internalError("spine: a clone carrying the environment with QRAM stores whose result type is not "
+                      "{leaves..., stores..., flags}",
+                      ret);
+      ReturnInst *nr = B.CreateRet(PoisonValue::get(CRT));
+      ctx.unc().flushAtExit(nr);
+      B.SetInsertPoint(nr);
+      SmallVector<Value *, 2> rails = mem::emitCalleeQramStores(ctx);
+      if (rails.size() != stores)
+        internalError("spine: emitCalleeQramStores returned another count than calleeQramStoreCount", ret);
+      Value *v = PoisonValue::get(st);
+      unsigned k = 0;
+      for (Value *r : vals)
+        v = B.CreateInsertValue(v, r, {k++});
+      for (Value *h : rails)
+        v = B.CreateInsertValue(v, h, {k++});
+      v = B.CreateInsertValue(v, flags, {k++});
+      nr->setOperand(0, v);
+      return;
+    }
     if (rv) {
       // cq-xhv4: the result's fields (a field-wise result's leaves, or the one value) then the flags.
       resultFields(ret, rv, st, 1, vals);
