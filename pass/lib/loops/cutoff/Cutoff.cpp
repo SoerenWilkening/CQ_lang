@@ -78,6 +78,12 @@
 
 using namespace llvm;
 
+namespace {
+// CR rule 13 (b137e75): a carried or merged code address is an i64 handle (a data pointer never reaches a rail
+// here: it is a fat pointer, rule 21).
+cq::RailType railOf(Type *t) { return t->isPointerTy() ? cq::RailType{cq::Kind::Int, 64} : cq::railTypeOf(t); }
+} // namespace
+
 namespace cq::loops {
 
 namespace {
@@ -182,7 +188,7 @@ private:
     return t;
   }
   Value *seedRail(Value *classical, Type *ty) {
-    RailType w = railTypeOf(ty);
+    RailType w = railOf(ty);
     CallInst *s = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {classical});
     ctx.unc().recordSeed(s);
     return s;
@@ -933,7 +939,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       else if (outside.size() == 1)
         acc = outside.front().second;
       else
-        acc = Operand{selectChain(ctx, outside, railTypeOf(P.getType())), true};
+        acc = Operand{selectChain(ctx, outside, railOf(P.getType())), true};
       if (!acc.handle)
         acc = Operand{seedRail(acc.v, P.getType()), true};
       cphis.push_back({&P, acc});
@@ -973,7 +979,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     std::vector<std::pair<Pred, Operand>> arms;
     for (BasicBlock *u : outside)
       arms.push_back({ctx.preds().edge(u, H), opOf(h->getIncomingValueForBlock(u))});
-    return Operand{selectChain(ctx, arms, tag ? RailType{Kind::Int, 32} : railTypeOf(h->getType())), true};
+    return Operand{selectChain(ctx, arms, tag ? RailType{Kind::Int, 32} : railOf(h->getType())), true};
   };
   // The state: header phis bound to their initial values (a classical initial value of a quantum phi
   // becomes a seed rail).
@@ -1017,7 +1023,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     }
     // cq-z6q1 (CR rules 14, 21; 189): a quantum pointer header phi is carried as its fat pointer's tag rail
     // (fatptr R2: every incoming at the start of its objects, so idx is the classical 0 and not carried).
-    if (isQ(h) && h->getType()->isPointerTy()) {
+    if (isQ(h) && h->getType()->isPointerTy() && !isCodeAddress(h)) {
       if (exitRail.count(h) || qind.count(h))
         unimplemented("loops-cutoff: a K-loop's carried pointer read after the loop (cq-p45s)", h);
       fatptr::registerCarried(ctx, *h);
@@ -1030,7 +1036,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     }
     // A classical pointer header phi is an affine induction (taint, CR rule 14: a walked pointer with a
     // classical start): a classical value in each trip, nothing carried.
-    if (!h->getType()->isIntegerTy() && !h->getType()->isFloatingPointTy() && (isQ(h) || !h->getType()->isPointerTy()))
+    if (!h->getType()->isIntegerTy() && !h->getType()->isFloatingPointTy() && (isQ(h) || !h->getType()->isPointerTy()) &&
+        !(h->getType()->isPointerTy() && isCodeAddress(h)))   // rule 13: a code address is carried as an i64 handle
       unimplemented("loops-cutoff: a carried value that is not a scalar (aggregates, pointers) (cq-p45s)", h);
     Operand init = initOf(h, false);
     if (isQ(h) && !init.handle)
@@ -1171,7 +1178,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
             continue;
           }
           if (!classicalTerms) {
-            if (P.getType()->isPointerTy()) {
+            if (P.getType()->isPointerTy() && !isCodeAddress(&P)) {
               fatptr::lower(ctx, &P);   // rule 21: a quantum pointer merge is a fat pointer
             } else if (P.getType()->isAggregateType() || P.getType()->isVectorTy()) {
               // cq-pfpy: a composite merges field by field (rule 26), bound or rebound per trip.
@@ -1192,7 +1199,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
             if (!e.isBottom())
               arms.push_back({e, ctx.operand(P.getIncomingValue(i))});
           }
-          set(&P, Operand{selectChain(ctx, arms, railTypeOf(P.getType())), true});
+          set(&P, Operand{selectChain(ctx, arms, railOf(P.getType())), true});
         }
       lowerInsts(b, q, local.find(b)->second);
     }
@@ -1296,7 +1303,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         for (unsigned i = 0; i < P.getNumIncomingValues(); ++i)
           if (auto e = edgeIn(P.getIncomingBlock(i), b))
             arms.push_back({*e, ctx.operand(P.getIncomingValue(i))});
-        set(&P, Operand{selectChain(ctx, arms, railTypeOf(P.getType())), true});
+        set(&P, Operand{selectChain(ctx, arms, railOf(P.getType())), true});
       }
       lowerInsts(b, q, acc);
     }
@@ -1316,7 +1323,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       }
       if (arms.empty())
         continue;
-      RailType w = railTypeOf(cp.P->getType());
+      RailType w = railOf(cp.P->getType());
       Value *v = selectChain(ctx, arms, w);
       Value *f = conj(q, E, U.cont->getFirstNonPHI());
       abi::TemplateSpec sel;
@@ -1353,7 +1360,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       Operand v = ctx.operand(xa.V);
       abi::TemplateSpec sel;
       sel.op = "select";
-      sel.w = railTypeOf(xa.V->getType());
+      sel.w = railOf(xa.V->getType());
       sel.shape = v.handle ? "" : "lh";
       xa.acc = Operand{ctx.emitTemplate(sel, {Operand{f, true}, v, xa.acc}), true};
     }
@@ -1395,7 +1402,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         for (unsigned i = 0; i < P.getNumIncomingValues(); ++i)
           if (auto sp = srcPred(P.getIncomingBlock(i)))
             arms.push_back({*sp & edgeCond(P.getIncomingBlock(i), b), ctx.operand(P.getIncomingValue(i))});
-        set(&P, Operand{selectChain(ctx, arms, railTypeOf(P.getType())), true});
+        set(&P, Operand{selectChain(ctx, arms, railOf(P.getType())), true});
       }
       // Every instruction of the arm runs only where the arm is taken: under the flag.
       Value *f = conj(q, acc, b->getTerminator());
@@ -1482,7 +1489,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           e = e | edgeCond(l, s);
       arms.push_back({local.find(l)->second & e, opOf(h->getIncomingValueForBlock(l))});
     }
-    RailType w = carriedPtr.count(h) ? RailType{Kind::Int, 32} : railTypeOf(h->getType());
+    RailType w = carriedPtr.count(h) ? RailType{Kind::Int, 32} : railOf(h->getType());
     return Operand{selectChain(ctx, arms, w), true};
   };
   auto advance = [&](Value *q) {
@@ -1505,12 +1512,12 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           Value *step = ctx.B().CreateSub(nx.v, cur.v);
           abi::TemplateSpec add;
           add.op = "add";
-          add.w = railTypeOf(h->getType());
+          add.w = railOf(h->getType());
           add.shape = "hl";
           Value *inc = ctx.emitTemplate(add, {it->second, Operand{step, false}});
           abi::TemplateSpec sel;
           sel.op = "select";
-          sel.w = railTypeOf(h->getType());
+          sel.w = railOf(h->getType());
           it->second = Operand{ctx.emitTemplate(sel, {Operand{q, true}, Operand{inc, true}, it->second}), true};
         }
         set(h, nx);
@@ -1521,7 +1528,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         if (qi.exitRail) {
           abi::TemplateSpec sel;
           sel.op = "select";
-          sel.w = railTypeOf(h->getType());
+          sel.w = railOf(h->getType());
           sel.shape = nx.handle ? "" : "lh";
           qi.exitRail = Operand{ctx.emitTemplate(sel, {Operand{q, true}, nx, *qi.exitRail}), true};
         }
@@ -1531,7 +1538,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         }
         abi::TemplateSpec add;
         add.op = "add";
-        add.w = railTypeOf(h->getType());
+        add.w = railOf(h->getType());
         add.shape = "hl";
         set(h, Operand{ctx.emitTemplate(add, {qi.start, Operand{qi.off, false}}), true});
         continue;
@@ -1543,7 +1550,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         continue;
       abi::TemplateSpec spec;
       spec.op = "select";
-      spec.w = carriedPtr.count(h) ? RailType{Kind::Int, 32} : railTypeOf(h->getType());   // R2: the tag rail
+      spec.w = carriedPtr.count(h) ? RailType{Kind::Int, 32} : railOf(h->getType());   // R2: the tag rail
       std::string shape = std::string(nx.handle ? "h" : "l") + "h";
       spec.shape = shape == "hh" ? "" : shape;
       set(h, Operand{ctx.emitTemplate(spec, {Operand{q, true}, nx, cur}), true});
@@ -1971,7 +1978,7 @@ void lowerQuantumDepthRecursion(LoweringContext &ctx, llvm::CallBase &CB, unsign
       unimplemented("loops-cutoff: a cut recursive call with a quantum pointer field (rule 21: the null fat pointer; "
                     "fatptr has no entry binding a call result; cq-p45s)",
                     &CB);
-    RailType w = railTypeOf(t);
+    RailType w = railOf(t);
     CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(C, w))});
     ctx.unc().recordSeed(z);
     fields.push_back(Operand{z, true});

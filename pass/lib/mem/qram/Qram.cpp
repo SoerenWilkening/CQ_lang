@@ -837,6 +837,15 @@ void leaves(Type *t, uint64_t off, const DataLayout &DL, SmallVectorImpl<Column>
   }
   if (t->isVectorTy())
     internalError("mem-qram: a scalable vector on x86-64 (rule 25)", at);
+  if (t->isPointerTy() && at && codeAddressCells(at)) {
+    // CR rule 13 (b137e75): a cell only code addresses are stored into holds the i64 integer.
+    Column c;
+    c.off = off;
+    c.cellTy = Type::getInt64Ty(t->getContext());
+    c.w = RailType{Kind::Int, 64};
+    out.push_back(c);
+    return;
+  }
   if (t->isPointerTy()) {
     // A QRAM of pointers holds fat pointers (rule 21, 88): one i32 column for the tag, one for the idx
     // (a cell index), both at the cell's offset and indexed alike.
@@ -1299,6 +1308,8 @@ QIndex classicalIndex(LoweringContext &ctx, const QramObj &q, Value *jb, int64_t
 }
 
 bool sameCellType(const DataLayout &DL, Type *access, const Column &c) {
+  if (access->isPointerTy() && !c.ptrPart && c.cellTy->isIntegerTy(64))
+    return true;   // rule 13: a code address in its i64 cell
   if (c.ptrPart || access->isPointerTy())
     return c.ptrPart == 1 && access->isPointerTy() && DL.getTypeAllocSize(access) == DL.getTypeAllocSize(c.cellTy);
   if (!access->isIntegerTy() && !access->isFloatingPointTy())
@@ -3020,7 +3031,7 @@ void lowerQramLoad(LoweringContext &ctx, LoadInst &ld) {
   if (Addr r = decompose(ld.getPointerOperand(), ctx.M.getDataLayout()); r.ok && isFormalQram(ctx, r.root))
     return fatptr::lowerLoad(ctx, ld);   // through a triple formal: its idx plus the offset (P1)
   QAccess acc = qramAccess(ctx, ld.getPointerOperand(), ld);
-  if (ld.getType()->isPointerTy()) {
+  if (ld.getType()->isPointerTy() && !isCodeAddress(&ld)) {
     // A pointer cell (rule 21, 88): its tag and idx halves, the loaded fat pointer's two fields.
     const Column *col = exactCell(ctx, *acc.q, acc.a, ld.getType());
     if (!col)
@@ -3031,7 +3042,7 @@ void lowerQramLoad(LoweringContext &ctx, LoadInst &ld) {
     ctx.bindFields(&ld, {Operand{tag, true}, Operand{ix, true}});
     return;
   }
-  if (hasPointerLeaf(ld.getType()))
+  if (hasPointerLeaf(ld.getType()) && !isCodeAddress(&ld))
     unimplemented("mem-qram: a QRAM load of an aggregate holding a pointer (rules 21, 26: its fat fields)", &ld);
   const Column *col = isAggregate(ld.getType()) ? nullptr : exactCell(ctx, *acc.q, acc.a, ld.getType());
   if (!col)
@@ -3050,7 +3061,7 @@ void lowerQramStore(LoweringContext &ctx, StoreInst &st) {
   Value *val = st.getValueOperand();
   QAccess acc = qramAccess(ctx, st.getPointerOperand(), st);
   Value *flag = ctx.currentFlag();
-  if (val->getType()->isPointerTy()) {
+  if (val->getType()->isPointerTy() && !isCodeAddress(val)) {
     // A pointer stored into a QRAM of pointers (rule 21, 88): its fat (tag, idx) into the two halves,
     // classical fields as seeds (rule 7).
     const Column *col = exactCell(ctx, *acc.q, acc.a, val->getType());
@@ -3064,7 +3075,7 @@ void lowerQramStore(LoweringContext &ctx, StoreInst &st) {
     emitStore(ctx, busOf(*acc.q, acc.a.root, col + 1, st), col[1], idx, iv, flag, st);
     return;
   }
-  if (hasPointerLeaf(val->getType()))
+  if (hasPointerLeaf(val->getType()) && !isCodeAddress(val))
     unimplemented("mem-qram: a QRAM store of an aggregate holding a pointer (rules 21, 26: its fat fields)", &st);
   if (isAggregate(val->getType()))
     return storeThroughBytes(ctx, acc, val, flag, st);
