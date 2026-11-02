@@ -24,16 +24,7 @@ PROBES = Path(__file__).parent / "probes"
 PROBE = PROBES / "loops.O1.ll"
 # cq-sujx: rule 20 slot cells loaded and stored per trip (58, 60 shapes).
 SLOT_PROBE = PROBES / "slots.O1.ll"
-SLOT_# cq-w3cd: a classical branch or switch nested in a quantum arm of a trip (rule 8), its mixed join (rule 9).
-CARM_PROBE = PROBES / "carm.O1.ll"
-CARM = ["a_diamond", "a_inner", "a_phase"]
-# cq-w3cd: loops nested in a case-3 trip (rule 14: the inner chain seeded by the outer trip rail).
-C3NEST_PROBE = PROBES / "c3nest.O1.ll"
-C3NEST = ["n_inner1", "n_inner3", "n_phase"]
-# cq-w3cd: a case-3 exit test with several quantum disjuncts (one flag, rule 8).
-C3TWO_PROBE = PROBES / "c3two.O1.ll"
-C3TWO = ["t_or", "t_bool", "t_do"]
-ENTRIES = ["s_reg", "s_qft", "s_int"]
+SLOT_ENTRIES = ["s_reg", "s_qft", "s_int"]
 # Probes cq-lower must stop on with cq::unimplemented carrying this text (nothing emitted).
 FATAL = [(PROBES / "slots_fatal_crossgate.O1.ll", "loops-classical: a non-diagonal gate in a classically bounded loop on a rail"),
          # cq-vqid: a record deferred to the reverse loop reads a rail rotated later in the same trip.
@@ -115,6 +106,15 @@ QRAM = ["q_fill", "q_hist"]
 MEMKEEP_PROBE = PROBES / "memkeep.O1.ll"
 MEMKEEP = {"k_hist": [("measured", "i32"), ("measured", "i32")],
            "k_whole": [("frozen", "i32")] + [("measured", "i32")] * 4}
+# cq-w3cd: a classical branch or switch nested in a quantum arm of a trip (rule 8), its mixed join (rule 9).
+CARM_PROBE = PROBES / "carm.O1.ll"
+CARM = ["a_diamond", "a_inner", "a_phase"]
+# cq-w3cd: loops nested in a case-3 trip (rule 14: the inner chain seeded by the outer trip rail).
+C3NEST_PROBE = PROBES / "c3nest.O1.ll"
+C3NEST = ["n_inner1", "n_inner3", "n_phase"]
+# cq-w3cd: a case-3 exit test with several quantum disjuncts (one flag, rule 8).
+C3TWO_PROBE = PROBES / "c3two.O1.ll"
+C3TWO = ["t_or", "t_bool", "t_do"]
 ENTRIES = ["p_acc", "p_brk", "p_nest", "p_mod", "p_nb", "p_horner", "p_arm", "p_phase", "p_cjoin", "p_tphase", "p_bwb", "p_g2"]
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 
