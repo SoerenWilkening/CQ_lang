@@ -1606,28 +1606,23 @@ void decideFields(LoweringContext &ctx, FnState &st, ObjInfo &info, ObjectId o) 
   if (info.kind == RootKind::Param) {
     if (ctx.S.isEntry())
       unimplemented("mem-slots: an sret/byval record parameter of an entry (the host's object)", info.root);
-    size_t other = 0;
-    unsigned nPtr = 0;
-    for (const Argument &A : st.F->args()) {
-      if (A.getType()->isPointerTy())
-        ++nPtr;
-      else
-        other += ctx.T.fieldMask(&A, ctx.S).size();
-    }
-    if (nPtr != 1 || ctx.S.mask.size() < other)
-      unimplemented("mem-slots: a record parameter of a clone with several pointer formals (the per-formal mask "
-                    "layout)",
-                    info.root);
-    // The pointer formal's digits: the mask's digits past the scalar formals before it.
+    // CR §1.4: the mask is one digit per field of the formal list, left to right: a scalar formal its leaves
+    // (fieldMask), a pointer formal its digits (T4 pointerFormal: one per field of a record, tag and idx and
+    // the accessed cells of a triple, ...). The record's digits are its formal's run.
     size_t before = 0;
+    const Argument *R = cast<Argument>(info.root);
     for (const Argument &A : st.F->args()) {
-      if (&A == info.root)
+      if (&A == R)
         break;
-      before += ctx.T.fieldMask(&A, ctx.S).size();
+      before += A.getType()->isPointerTy() ? ctx.T.pointerFormal(ctx.S, A.getArgNo()).digits
+                                           : ctx.T.fieldMask(&A, ctx.S).size();
     }
-    digits = ctx.S.mask.substr(before, ctx.S.mask.size() - other);
+    size_t n = ctx.T.pointerFormal(ctx.S, R->getArgNo()).digits;
+    if (before + n > ctx.S.mask.size())
+      internalError("mem-slots: a record parameter's mask digits past the clone's mask", R);
+    digits = ctx.S.mask.substr(before, n);
     if (digits.size() != info.fields.size())
-      unimplemented("mem-slots: a record parameter whose mask digits do not count its fields", info.root);
+      internalError("mem-slots: a record parameter whose mask digits (CR §1.4) do not count its fields", R);
   }
   for (const Instruction &X : instructions(*st.F))
     if (auto *MI = dyn_cast<MemIntrinsic>(&X); MI && hasObject(ctx, MI->getDest(), o))
@@ -1651,10 +1646,8 @@ void decideFields(LoweringContext &ctx, FnState &st, ObjInfo &info, ObjectId o) 
     for (const Instruction &X : instructions(*st.F))
       if (cloneWritesCell(ctx, info, o, X, cell, sz))
         h = true;
-    if (f.ty->isPointerTy() && !h && info.kind != RootKind::Heap)
-      unimplemented("mem-slots: a pointer field of a slot record that no write fills with a fat pointer (a "
-                    "classical pointer beside handle fields: rules 20, 21)",
-                    info.root);
+    // A pointer field no write fills with a fat pointer is a classical cell (rules 20, 26: classical fields stay
+    // classical): it keeps the host pointer as written, in a local or parameter record as in a heap one.
     f.handle = h;
   }
   // A run-time offset access names any field of its run (recordRun): the run's fields hold a handle on every
