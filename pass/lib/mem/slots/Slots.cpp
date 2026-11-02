@@ -4321,14 +4321,22 @@ void allocateSlots(LoweringContext &ctx, Instruction &site) {
     Attribute as = CB->getFnAttr(Attribute::AllocSize);
     if (!as.isValid())
       as = CB->getCalledFunction() ? CB->getCalledFunction()->getFnAttribute(Attribute::AllocSize) : Attribute();
-    if (!as.isValid() || as.getAllocSizeArgs().second)
-      unimplemented("mem-slots: a heap slot block with cells of other than 4 bytes from an allocator without a "
-                    "single allocsize argument",
+    if (!as.isValid())
+      unimplemented("mem-slots: a heap slot block with cells of other than 4 bytes from an allocator without an "
+                    "allocsize attribute (its byte size is unknown)",
                     &site);
     unsigned k = as.getAllocSizeArgs().first;
     Value *n = nc->getArgOperand(k);
-    Value *cells = B.CreateUDiv(n, ConstantInt::get(n->getType(), info.cellBytes));
-    nc->setArgOperand(k, B.CreateMul(cells, ConstantInt::get(n->getType(), 4)));
+    if (std::optional<unsigned> k2 = as.getAllocSizeArgs().second) {
+      // allocsize(k, k2): the block is n * m bytes (calloc): n * m / cellBytes handle cells of 4 bytes.
+      Value *m = nc->getArgOperand(*k2);
+      Value *bytes = B.CreateMul(n, B.CreateZExtOrTrunc(m, n->getType()));
+      nc->setArgOperand(k, B.CreateUDiv(bytes, ConstantInt::get(n->getType(), info.cellBytes)));
+      nc->setArgOperand(*k2, ConstantInt::get(m->getType(), 4));
+    } else {
+      Value *cells = B.CreateUDiv(n, ConstantInt::get(n->getType(), info.cellBytes));
+      nc->setArgOperand(k, B.CreateMul(cells, ConstantInt::get(n->getType(), 4)));
+    }
   }
   if (!site.getName().empty())
     nc->setName(site.getName());
@@ -4914,6 +4922,17 @@ bool hostGlobalCell(LoweringContext &ctx, const Site &s, const Value *ptr, Type 
   return true;
 }
 
+// Rule 21 (cq-9w75), with siteOf's `beyond`: the cell at byte c.a.off of a walked access's object lies outside
+// the object (a K-loop trip the C program does not run; in C such an access is undefined, outside the domain).
+// It holds nothing: a read gives 0 (readCell's |0> seed), a write writes nothing (§2's out-of-range store).
+bool cellBeyond(const Site &c, const DataLayout &DL) {
+  auto *al = dyn_cast<AllocaInst>(c.a.root);
+  std::optional<TypeSize> total = al ? al->getAllocationSize(DL) : std::nullopt;
+  if (!total || total->isScalable())
+    return c.beyond;
+  return c.a.off < 0 || uint64_t(c.a.off) + c.info->cellBytes > total->getFixedValue();
+}
+
 void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
   if (calls::lowerVaAreaLoad(ctx, ld))
     return;   // CR §1.4 (95): a read of a variadic clone's save area
@@ -4922,8 +4941,13 @@ void lowerSlotLoad(LoweringContext &ctx, LoadInst &ld) {
     return;   // cq-oocu (107): a pointer-kind cell
   if (!ctx.T.isQuantum(&ld, ctx.S)) {
     Site s = siteOf(ctx, st, ld, ld.getPointerOperand(), ld.getType());
-    if (s.beyond)
-      unimplemented("mem-slots: a walked access beyond its slot object other than a load (rule 21)", &ld);
+    if (s.beyond) {
+      // Rule 21: a classical read beyond the object reads 0.
+      Operand z{Constant::getNullValue(ld.getType()), false};
+      st.lowered[&ld] = z;
+      ctx.bindFields(&ld, {z});
+      return;
+    }
     if (hostGlobalCell(ctx, s, ld.getPointerOperand(), ld.getType(), ld)) {
       LoadInst *nl = ctx.B().CreateAlignedLoad(ld.getType(), cellPointer(ctx, s, ld), ld.getAlign());
       st.lowered[&ld] = Operand{nl, false};
@@ -5417,23 +5441,31 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
         Operand val = ctx.operand(v);
         if (val.handle || !a.terms.empty() || n % info.cellBytes)
           internalError("mem-slots: a split store that is not a classical store at a constant offset", &stI);
-        if (ctx.currentFlag() || !ctx.currentPredicate().isTop())
-          unimplemented("mem-slots: a classical store split per cell under a quantum predicate", &stI);
+        // Under a quantum predicate each cell receives select(predicate, its byte seed, old) (rules 9, 20).
+        Value *flag = ctx.currentFlag();
         Site s = siteOf(ctx, st, stI, stI.getPointerOperand(), info.cellTy);
-        if (s.beyond)
-          unimplemented("mem-slots: a walked access beyond its slot object other than a load (rule 21)", &stI);
         RailType w = cellRail(info, info.cellTy, stI);
         IRBuilder<> &B = ctx.B();
         for (uint64_t k = 0; k < n / info.cellBytes; ++k) {
           Site c = s;
           c.a.off += int64_t(k * info.cellBytes);
+          if (s.beyond && cellBeyond(c, ctx.M.getDataLayout()))
+            continue;   // rule 21: a cell beyond the object is not written
+          c.beyond = false;
           Value *part = B.CreateTrunc(B.CreateLShr(val.v, ConstantInt::get(val.v->getType(), 8 * k * info.cellBytes)),
                                       info.cellTy);
           if (info.boolCells)
             part = B.CreateTrunc(part, Type::getInt1Ty(ctx.M.getContext()));   // a _Bool cell holds an i1 rail
-          CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {part});
-          ctx.unc().recordSeed(seed);
-          finishStore(ctx, st, c, stI, info.cellTy, Operand{seed, true}, StoreWhat::Seed);
+          if (flag) {
+            Operand old = readCell(ctx, st, c, stI, info.cellTy);
+            const Pred &p = ctx.currentPredicate();
+            Value *sel = selectChain(ctx, {{p, Operand{part, false}}, {!p, old}}, w);
+            finishStore(ctx, st, c, stI, info.cellTy, Operand{sel, true}, StoreWhat::Computed);
+          } else {
+            CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {part});
+            ctx.unc().recordSeed(seed);
+            finishStore(ctx, st, c, stI, info.cellTy, Operand{seed, true}, StoreWhat::Seed);
+          }
           st.callOut[&stI][c.a.off] = st.lowered[&stI];
           st.lowered.erase(&stI);
         }
@@ -5442,8 +5474,10 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
     }
   }
   Site s = siteOf(ctx, st, stI, stI.getPointerOperand(), v->getType());
-  if (s.beyond)
-    unimplemented("mem-slots: a walked access beyond its slot object other than a load (rule 21)", &stI);
+  if (s.beyond) {
+    // Rule 21: a store beyond the object writes nothing (a later read of the cell reads 0, readCell).
+    return;
+  }
   if (hostGlobalCell(ctx, s, stI.getPointerOperand(), v->getType(), stI)) {
     // cq-hfah: a host cell keeps the C value (no seed): its readers, tainted or not, read it as host memory.
     Operand hv = ctx.operand(v);
@@ -5618,8 +5652,6 @@ SmallVector<Operand, 8> readSlotCells(LoweringContext &ctx, const Value *ptr, Ty
                                       Instruction &at, int64_t firstByte) {
   FnState &st = stateOf(ctx, at);
   Site s = siteOf(ctx, st, at, ptr, cellTy);
-  if (s.beyond)
-    unimplemented("mem-slots: a walked access beyond its slot object other than a load (rule 21)", &at);
   if (s.info->view || s.info->boolCells)
     unimplemented("mem-slots: a host effect reading a bit-view or _Bool slot object", &at);
   if (s.info->escaping)
@@ -5630,6 +5662,11 @@ SmallVector<Operand, 8> readSlotCells(LoweringContext &ctx, const Value *ptr, Ty
     if (s.info->record)
       unimplemented("mem-slots: a host effect reading a slot record", &at);
     c.a.off += firstByte + int64_t(i * cellStride(*s.info));
+    if (s.beyond && (c.beyond = cellBeyond(c, ctx.M.getDataLayout()))) {
+      out.push_back(readCell(ctx, st, c, at, cellTy));   // rule 21: 0 beyond the object
+      continue;
+    }
+    c.beyond = false;
     if (!sourceOf(ctx, st, *c.info, c.o, &at, c.a, cellTy)) {
       if (isa<MemIntrinsic>(at)) {
         // 73: a memory intrinsic reading a cell that only run-time stores wrote (a loop fill) reads the handle
@@ -5712,8 +5749,6 @@ void writeSlotCells(LoweringContext &ctx, const Value *ptr, Type *cellTy, ArrayR
   if (ctx.T.isFatPointer(ptr, ctx.S))
     unimplemented("mem-slots: writeSlotCells through a fat pointer (rule 21)", &at);
   Site s = siteOf(ctx, st, at, ptr, cellTy);
-  if (s.beyond)
-    unimplemented("mem-slots: a walked access beyond its slot object other than a load (rule 21)", &at);
   if (s.info->view || s.info->boolCells || s.info->record)
     unimplemented("mem-slots: a memory intrinsic writing a bit-view, _Bool or record slot object", &at);
   if (!s.a.terms.empty())
@@ -5753,6 +5788,9 @@ void writeSlotCells(LoweringContext &ctx, const Value *ptr, Type *cellTy, ArrayR
   for (size_t i = 0; i < vals.size(); ++i) {
     Site c = s;
     c.a.off += int64_t(i * cellStride(*s.info));
+    if (s.beyond && cellBeyond(c, ctx.M.getDataLayout()))
+      continue;   // rule 21: a cell beyond the object is not written
+    c.beyond = false;
     Operand v = vals[i];
     Value *g = guards.empty() ? nullptr : guards[i];
     Operand val;
@@ -5821,8 +5859,6 @@ void lowerSlotAtomic(LoweringContext &ctx, Instruction &I) {
     unimplemented("mem-slots: an atomic read-modify-write through a fat pointer (rule 21)", &I);
   Type *ty = rmw ? rmw->getValOperand()->getType() : cx->getNewValOperand()->getType();
   Site s = siteOf(ctx, st, I, ptr, ty);
-  if (s.beyond)
-    unimplemented("mem-slots: a walked access beyond its slot object other than a load (rule 21)", &I);
   if (s.info->view || s.info->boolCells)
     unimplemented("mem-slots: an atomic read-modify-write of a bit-view or _Bool slot cell", &I);
   if (ty->isPointerTy())
@@ -5901,6 +5937,10 @@ void lowerSlotAtomic(LoweringContext &ctx, Instruction &I) {
     // The icmp's rail is an i1 whatever the cell's width: tmpl names the compare by the cell's type.
     nv = select(f, v, old);
     ctx.bindFields(&I, {old, f});
+  }
+  if (s.beyond) {
+    st.lowered[&I] = nv;   // rule 21: beyond the object the old value is 0 (readCell) and nothing is written
+    return;
   }
   StoreWhat what = StoreWhat::Computed;
   if (ctx.currentFlag()) {
@@ -6021,7 +6061,21 @@ void endSlotLifetime(LoweringContext &ctx, ObjectId, Instruction *at) {
       st.releasable.erase(rel);
       return;
     }
-    unimplemented("mem-slots: a lifetime end at an intrinsic other than lifetime.end (stackrestore, 192)", at);
+    if (II->getIntrinsicID() != Intrinsic::stackrestore)
+      internalError("mem-slots: a slot object's lifetime end at an intrinsic other than lifetime.end or stackrestore",
+                    at);
+    // Rule 20 (192): a VLA's scope ends at llvm.stackrestore. Its slot array is the rewritten alloca of handle
+    // cells; the restore stays the classical call clang wrote (its stacksave operand is classical). The
+    // object's rails keep their roles (no release here: a later scope may reuse its seeds' cells).
+    CallBase *nc = cast<CallBase>(II->clone());
+    for (unsigned i = 0; i < II->arg_size(); ++i) {
+      Operand a = ctx.operand(II->getArgOperand(i));
+      if (a.handle)
+        internalError("mem-slots: a stackrestore with a quantum operand", at);
+      nc->setArgOperand(i, a.v);
+    }
+    ctx.B().Insert(nc);
+    return;
   }
   auto *CB = dyn_cast<CallBase>(at);
   if (!CB)
