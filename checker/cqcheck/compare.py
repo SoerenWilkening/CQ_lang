@@ -141,8 +141,10 @@ reference (run.py) stdout is the process's output followed by the tape's end-of-
 effects the module's direct host-effect calls followed by the effect entries the tape performed; on
 the C side (oracle.py) they are the C program's stdout and its calls of the host-effect functions
 (HOST_EFFECTS), in order. Both are compared exactly, args as typed scalars, against either oracle;
-against the C oracle on a capped or ended sample (below) the C side's stdout and effects must be a
-prefix of ours (the circuit runs on past the cut or the end). Against the C oracle an effect name of
+against the C oracle on a capped sample (below) the C side's stdout and effects must be a prefix of
+ours (the circuit runs on past the cut). On an ended sample they are compared exactly (owner ruling
+2026-11-02, cq-64lv): every host effect after an abort under a quantum predicate is a tape entry, and
+the backend performs no entry after an abort flag reading 1 (CR §1.3). Against the C oracle an effect name of
 ours outside HOST_EFFECTS is a CompareError (the C oracle logs no such call, so the comparison
 could not be decided). A program that interleaves direct and taped output is compared in the
 circuit's order (direct first, the tape at the end of the shot, CR §1.3).
@@ -1710,8 +1712,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
                 reasons.append(f"sample {k}: returns {oo} != {ro} (ours {o.outputs}, C {r.outputs})")
         elif _norm(_rest(o.outputs, "our"), nan_eq) != _norm(_rest(r.outputs, "reference"), nan_eq):
             reasons.append(f"sample {k}: outputs {o.outputs} != {r.outputs}")
-        reasons += _host_output(k, o.outputs, r.outputs, oracle,
-                                oracle == "c" and (capped[k] or ended[k]))
+        reasons += _host_output(k, o.outputs, r.outputs, oracle, oracle == "c" and capped[k])
         if oracle == "ref":
             reasons += _measured_positional(k, o, r, False, nan_eq)
         else:
@@ -1923,11 +1924,11 @@ def _host_output(k: str, o_out: Any, r_out: Any, oracle: str, open_end: bool) ->
     why = []
     if os_ != rs and not (open_end and os_.startswith(rs)):
         why.append(f"sample {k}: host stdout differs: ours {os_!r} != {other} {rs!r}"
-                   + (" (the C output must be a prefix of ours on a capped or ended sample)" if open_end else ""))
+                   + (" (the C output must be a prefix of ours on a capped sample)" if open_end else ""))
     nf, nr = _norm(ofx), _norm(rfx)
     if nf != nr and not (open_end and nf[:len(nr)] == nr):
         why.append(f"sample {k}: host effects differ: ours {ofx} != {other} {rfx}"
-                   + (" (the C effects must be a prefix of ours on a capped or ended sample)" if open_end else ""))
+                   + (" (the C effects must be a prefix of ours on a capped sample)" if open_end else ""))
     return why
 
 

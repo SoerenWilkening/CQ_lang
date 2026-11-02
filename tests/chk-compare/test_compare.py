@@ -1371,7 +1371,8 @@ class UnPrep(unittest.TestCase):
 
 class HostOutput(unittest.TestCase):
     """Host output (cq-e4jk): outputs["stdout"] and outputs["effects"] are compared against both
-    oracles; against "c" the C side's are a prefix of ours on an ended sample; an effect name of
+    oracles; against "c" the C side's are a prefix of ours on a capped sample (exact on an ended one,
+    cq-64lv); an effect name of
     ours outside HOST_EFFECTS is a CompareError against "c". Shaped like AbortRule's 45: x = s,
     abort on x == 3."""
 
@@ -1415,15 +1416,32 @@ class HostOutput(unittest.TestCase):
         r6 = lambda w: (lambda s: [{"name": "raise", "args": [{"w": w, "v": "0x6"}]}])
         self.check(self.ours(fx=r6("i32")), self.c(fx=r6("i32")), "c", True)
 
-    def test_prefix_on_ended_sample_only(self):
-        # sample 3 ends (abort): the circuit may print and act on past the end
+    def test_exact_on_ended_sample(self):
+        # owner ruling 2026-11-02 (cq-64lv): sample 3 ends (abort); every host effect after the abort is a
+        # tape entry the backend drops, so ours must print and act exactly as C did (before: a prefix)
         more = lambda s: f"x={s}\n" + ("after\n" if s == 3 else "")
-        self.check(self.ours(out=more), self.c(), "c", True)
+        self.check(self.ours(out=more), self.c(), "c", False, "host stdout differs")
         self.check(self.ours(out=more), self.ours(side="r"), "ref", False, "host stdout differs")
+        extra = lambda s: [self.RM] if s == 3 else []
+        self.check(self.ours(fx=extra), self.c(), "c", False, "host effects differ")
         less = lambda s: "" if s == 3 else f"x={s}\n"
         self.check(self.ours(out=less), self.c(), "c", False, "host stdout differs")
         early = lambda s: f"x={s}\nmore\n" if s == 1 else f"x={s}\n"
         self.check(self.ours(out=early), self.c(), "c", False, "host stdout differs")
+
+    def test_prefix_on_capped_sample(self):
+        # a capped sample (the a_K rule): the circuit runs on past the cut, so C's output is a prefix
+        A = AKRule()
+        T = A.CAP
+
+        def ours(more):
+            return [dataclasses.replace(r, outputs=dict(r.outputs, stdout="x\n" + (more if T[s] > A.K else "")))
+                    for s, r in enumerate(A.ours(T))]
+        c = [dataclasses.replace(r, outputs=dict(r.outputs, stdout="x\n")) for r in A.c_side(T)]
+        self.check(ours("after\n"), c, "c", True)
+        self.check(ours(""), c, "c", True)
+        bad = [dataclasses.replace(r, outputs=dict(r.outputs, stdout="y\n")) for r in ours("")]
+        self.check(bad, c, "c", False, "host stdout differs")
 
     def test_unknown_effect_against_c_is_an_error(self):
         from cqcheck.compare import CompareError
