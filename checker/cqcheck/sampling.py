@@ -1797,6 +1797,12 @@ class Instrumenter:
                 if "%" in idx:
                     variable = True
             base = parts[1].split()[-1]
+            if "getelementptr" in parts[1]:
+                # a constant-expression GEP as the base (`ptr getelementptr inbounds (i8, ptr @g,
+                # i64 112)`, musl's __exp_data tables): a constant offset from the global it names
+                m = re.search(r"\(.*?\bptr\s+([@%][-\w.$]+)", parts[1])
+                if m:
+                    base = m.group(1)
             if not base.startswith("%"):
                 return base, variable
             v = base

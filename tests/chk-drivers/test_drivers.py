@@ -1709,6 +1709,21 @@ class StoppedInputs(unittest.TestCase):
                         self.patched(S.StoppedReach, "_single_entry", lambda self, lp: False))
         self.assertIn("uncovered", e)
 
+    def test_addr_root_constexpr_gep_base(self):
+        # cq-06bi (musl sweep, __exp_data): a GEP whose base is a constant-expression GEP roots at
+        # the global it names, never at the text "112)"
+        ll = ("@t = global [300 x i64] zeroinitializer\n"
+              "define i64 @f(i64 %i) {\n"
+              "  %p = getelementptr inbounds [256 x i64], ptr getelementptr inbounds (i8, ptr @t, i64 112), "
+              "i64 0, i64 %i\n  %v = load i64, ptr %p, align 8\n  ret i64 %v\n}\n")
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "m.ll"
+            p.write_text(ll)
+            mod = D.read_module(p)
+            ins = S.Instrumenter(mod, None)
+            self.assertEqual(ins.addr_root(mod.functions["@f"] if "@f" in mod.functions else mod.functions["f"], "%p"),
+                             ("@t", True))
+
     def test_single_entry(self):
         # a nested loop is entered once per outer trip; a top-level loop once per call
         with tempfile.TemporaryDirectory() as d:
