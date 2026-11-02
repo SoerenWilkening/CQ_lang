@@ -394,6 +394,19 @@ bool splitFunction(Function &F, const TaintInfo &T) {
     }
   }
 
+  // Phis left with one incoming value (a copy reached from one predecessor, SSAUpdater's own) are that
+  // value: the walker then sees the original merges (a register view stays a view, rule 10).
+  for (bool changed = true; changed;) {
+    changed = false;
+    for (BasicBlock &bb : F)
+      for (PHINode &P : make_early_inc_range(bb.phis()))
+        if (Value *v = P.hasConstantValue(); v && v != &P) {
+          P.replaceAllUsesWith(v);
+          P.eraseFromParent();
+          changed = true;
+        }
+  }
+
   // A return block with copies: the copies meet in one return (no marker follows a return; the spine
   // lowers one return under the merged value, rule 9).
   for (BasicBlock *b : orig) {

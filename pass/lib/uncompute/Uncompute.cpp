@@ -908,6 +908,10 @@ struct Uncompute::Impl {
   // Per rail, its anchors at the begin: a rail with no anchor added inside the region is placed after its
   // last earlier anchor, before the begin.
   SmallVector<DenseMap<RailId, SmallPtrSet<Instruction *, 8>>, 2> invertFrozen;
+  // cq-5n3n: the number of rails at each open region's begin (parallel to invertFrozen), and that of the
+  // region closeInvert closed last (resolveRegionMade reads it).
+  SmallVector<RailId, 2> invertStart;
+  RailId lastRegionStart = kNone;
   bool frozen(RailId g) const {
     return any_of(invertFrozen, [&](const DenseMap<RailId, SmallPtrSet<Instruction *, 8>> &s) { return s.count(g) != 0; });
   }
@@ -4337,6 +4341,7 @@ void Uncompute::openInvert(Instruction *begin) {
         a.insert(x);
     }
   I.invertFrozen.push_back(std::move(s));
+  I.invertStart.push_back(RailId(I.rails.size()));
 }
 
 void Uncompute::closeInvert(Instruction *end) {
@@ -4346,12 +4351,74 @@ void Uncompute::closeInvert(Instruction *end) {
   if (I.invertFrozen.empty())
     return;   // the region was opened by another function's lowering (begin and end are run-time events)
   DenseMap<RailId, SmallPtrSet<Instruction *, 8>> s = I.invertFrozen.pop_back_val();
+  I.lastRegionStart = I.invertStart.pop_back_val();
   for (auto &[g, before] : s)
     if (I.resolvable(g) && any_of(I.anchors(g), [&](Instruction *x) { return !before.count(x); })) {
       RailId t = I.rails[g].popBus != kNone ? I.rails[g].popBus : g;   // a POP follows its bus's uses
       if (!is_contained(I.rails[t].uses, end))
         I.rails[t].uses.push_back(end);
     }
+}
+
+// cq-5n3n (CR rule 17 with rule 5): the region closeInvert just closed inverts its own gates, so a rail the
+// region computed is uncomputed inside it, before `end` (the compute/uncompute pair reverses into itself);
+// a reader after the region recomputes it (the caller). Candidates: the rails made since the region's
+// begin that are still pending (garbage or seeds, no merge, no deferred or owned item, no clean-up), less
+// those `keep` names and every candidate a kept or pending non-candidate rail reads. Their items are placed
+// before `end`; returns their handles.
+SmallVector<Value *, 8> Uncompute::resolveRegionMade(Instruction *end, function_ref<bool(Value *)> keep) {
+  Impl &I = *impl;
+  SmallVector<Value *, 8> out;
+  if (I.lastRegionStart == kNone || !end || !end->getParent())
+    return out;
+  RailId start = I.lastRegionStart;
+  I.lastRegionStart = kNone;
+  I.pruneCleanups();
+  SmallVector<RailId, 16> cands;
+  for (RailId g = start; g < I.rails.size(); ++g) {
+    const Impl::Rail &r = I.rails[g];
+    if (!I.resolvable(g) || I.frozen(g) || r.ownedBy != kNone || r.deferred != kNone || I.isMerge(g) || r.cleanup ||
+        r.popBus != kNone || r.qram || !r.exitsDone.empty() || !r.handle || keep(r.handle))
+      continue;
+    if (any_of(I.anchors(g), [&](Instruction *a) { return a == end || Impl::after(a, end); }))
+      continue;
+    const BasicBlock *D = I.defBlock(g);
+    if (!D || !Impl::dominates(D, end->getParent()))
+      continue;   // made in an arm inside the region: its arm's own flush places it
+    if (any_of(r.handle->users(), [](const User *u) { return isa<PHINode>(u) || isa<SelectInst>(u); }))
+      continue;   // an arm of a merge: the merge's own item frees it where the path took it
+    cands.push_back(g);
+  }
+  // A candidate whose pending reader is no candidate stays (its reader still needs it).
+  for (bool changed = true; changed;) {
+    changed = false;
+    for (unsigned i = 0; i < cands.size(); ++i)
+      if (any_of(I.readersOf(cands[i]), [&](RailId o) {
+            return I.resolvable(o) && !I.rails[o].released && I.rails[o].exitsDone.empty() && !is_contained(cands, o);
+          })) {
+        cands.erase(cands.begin() + i);
+        changed = true;
+        break;
+      }
+  }
+  if (cands.empty())
+    return out;
+  for (RailId g : cands)
+    out.push_back(I.rails[g].handle);
+  // Rule 5 as anywhere: each item as early as its uses and barriers allow, by the end at the latest. Those
+  // made in end's block take the local placement (a non-diagonal gate on what an item reads comes after it);
+  // the others are placed at end.
+  SmallVector<RailId, 16> local, far;
+  for (RailId g : cands)
+    (I.defBlock(g) == end->getParent() ? local : far).push_back(g);
+  if (!local.empty()) {
+    Impl::Ctx c{Impl::Mode::Local, end, nullptr};
+    I.resolve(local, c);
+    I.wrapLocal();
+  }
+  if (!far.empty())
+    resolveAt(end, far);
+  return out;
 }
 
 void Uncompute::resolveAt(Instruction *P, ArrayRef<RailId> list) {

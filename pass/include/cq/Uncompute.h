@@ -132,6 +132,11 @@ public:
   // no open region (the begin was another function's) does nothing.
   void openInvert(llvm::Instruction *begin);
   void closeInvert(llvm::Instruction *end);
+  // cq-5n3n (CR rule 17, rule 5): right after closeInvert(end), the items of the rails the closed region made
+  // and nothing pending reads any more, unless keep(handle), are placed before end; returns their handles
+  // (a later reader recomputes them after end).
+  llvm::SmallVector<llvm::Value *, 8> resolveRegionMade(llvm::Instruction *end,
+                                                        llvm::function_ref<bool(llvm::Value *)> keep);
   unsigned openScope(); void closeScope(unsigned);
   llvm::ArrayRef<Record> scopeRecords(unsigned) const;
   void emitMirror(unsigned scope, llvm::IRBuilder<> &);

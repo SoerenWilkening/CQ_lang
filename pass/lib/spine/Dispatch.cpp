@@ -12,6 +12,9 @@
 #include "cq/Memory.h"
 #include "cq/Rotation.h"
 #include "cq/Switch.h"
+#include "llvm/ADT/SetVector.h"
+#include "llvm/Analysis/CFG.h"
+#include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
@@ -366,6 +369,105 @@ void lowerTripPhase(LoweringContext &ctx, CallInst &cqPhi) {
   ctx.emitCore(abi::CoreSpec{abi::Core::RzI1, RailType{Kind::Int, 1}}, {f, angle.v});
 }
 
+// cq-5n3n (CR rule 17 with rule 5): a region inverts only its own gates. A rail the region computed is
+// uncomputed inside it, before the end marker (its compute/uncompute pair reverses into itself), and an
+// original value read after the end (a later instruction, or a quantum branch whose arms run on past the
+// end: its condition is an atom of later predicates) is recomputed right after the end from its operands
+// (pure instructions only: arithmetic, comparisons, casts, selects, freeze). A value that cannot be
+// recomputed keeps its rail past the end, as before.
+bool recomputable(const Instruction *I) {
+  return isa<BinaryOperator>(I) || isa<CmpInst>(I) || isa<CastInst>(I) || isa<SelectInst>(I) || isa<FreezeInst>(I) ||
+         isa<UnaryOperator>(I);
+}
+
+void closeRegionRails(LoweringContext &ctx, CallInst &origEnd) {
+  IRBuilder<> &B = ctx.B();
+  if (B.GetInsertPoint() == B.GetInsertBlock()->begin())
+    internalError("spine: no cqrt_invert_end before the builder", &origEnd);
+  Instruction *endCall = &*std::prev(B.GetInsertPoint());
+  Shared &sh = shared(ctx);
+  // handle -> the original values bound to it
+  DenseMap<const Value *, SmallVector<const Value *, 2>> origOf;
+  for (auto &[orig, ops] : sh.binds)
+    for (const Operand &o : ops)
+      if (o.handle)
+        origOf[o.v].push_back(orig);
+  const Function &F = *origEnd.getFunction();
+  PostDominatorTree PDT(const_cast<Function &>(F));
+  auto liveAfter = [&](const Value *V) {
+    for (const User *u : V->users()) {
+      auto *U = dyn_cast<Instruction>(u);
+      if (!U || U->getFunction() != &F)
+        continue;
+      if (U->isTerminator()) {
+        // A branch whose arms run on past the end (the end lies in one of them): its condition is an atom
+        // of the predicates after the end. One whose arms join before the end is read no more.
+        if (isPotentiallyReachable(&origEnd, U))
+          return true;   // a branch after the end
+        if (isPotentiallyReachable(U, &origEnd) && !PDT.dominates(origEnd.getParent(), U->getParent()))
+          return true;
+        continue;
+      }
+      if (auto *P = dyn_cast<PHINode>(U)) {
+        for (unsigned i = 0; i < P->getNumIncomingValues(); ++i)
+          if (P->getIncomingValue(i) == V && isPotentiallyReachable(&origEnd, P->getIncomingBlock(i)->getTerminator()))
+            return true;
+        continue;
+      }
+      if (U != &origEnd && isPotentiallyReachable(&origEnd, U))
+        return true;
+    }
+    return false;
+  };
+  // Kept past the end: a value read after it that is no pure instruction, and every such value a pure one
+  // read after it is computed from (the recomputation reads it).
+  SmallPtrSet<const Value *, 16> keepSet, seen;
+  std::function<void(const Value *)> operandsOf = [&](const Value *V) {
+    auto *I = dyn_cast<Instruction>(V);
+    if (!I || I->getFunction() != &F || !seen.insert(I).second)
+      return;
+    if (!recomputable(I)) {
+      keepSet.insert(I);
+      return;
+    }
+    for (const Use &u : I->operands())
+      operandsOf(u.get());
+  };
+  for (auto &[orig, ops] : sh.binds)
+    if (liveAfter(orig))
+      operandsOf(orig);
+  auto keep = [&](Value *h) {
+    auto it = origOf.find(h);
+    if (it == origOf.end())
+      return false;   // a rail of the lowering's own (a flag, a scratch): pred makes flags afresh where read
+    return any_of(it->second, [&](const Value *V) { return keepSet.count(V) != 0; });
+  };
+  SmallVector<Value *, 8> resolved = ctx.unc().resolveRegionMade(endCall, keep);
+  if (resolved.empty())
+    return;
+  SmallPtrSet<const Value *, 8> gone;
+  for (Value *h : resolved)
+    if (auto it = origOf.find(h); it != origOf.end())
+      for (const Value *V : it->second)
+        gone.insert(V);
+  SetVector<Instruction *> redo;
+  std::function<void(const Value *)> need = [&](const Value *V) {
+    auto *I = const_cast<Instruction *>(dyn_cast<Instruction>(V));
+    if (!I || !gone.count(I) || redo.count(I))
+      return;
+    if (!recomputable(I))
+      internalError("spine: a region-made rail a later reader needs that is no pure instruction", I);
+    for (const Use &u : I->operands())
+      need(u.get());
+    redo.insert(I);
+  };
+  for (const Value *V : gone)
+    if (liveAfter(V))
+      need(V);
+  for (Instruction *I : redo)   // operands first (need inserts them first)
+    lowerInstruction(ctx, *I);
+}
+
 void lowerCall(LoweringContext &ctx, CallBase &CB) {
   using calls::Class;
   Class c = calls::classify(CB, ctx.T, ctx.S);
@@ -429,7 +531,10 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
     // the lowered code; in a quantum arm (or a K-loop trip) the region then holds the arm's controlled
     // gates. A match outside the arm was made a per-depth split of the tail before the final taint
     // (eff-invert splitMarkerPaths).
-    return invert::lowerMarker(ctx, *CI);   // rule 17: the run-time pair (§1.3)
+    invert::lowerMarker(ctx, *CI);   // rule 17: the run-time pair (§1.3)
+    if (c == Class::InvertEnd)
+      closeRegionRails(ctx, *CI);
+    return;
   }
   case Class::Lift: {
     // Rules 18 and 19: the compiler never inlines (cq-i9wk). A callee reached with a quantum argument is
@@ -669,6 +774,7 @@ Instruction *copyClassical(LoweringContext &ctx, Instruction &I) {
   ctx.B().Insert(n);
   return n;
 }
+
 
 void dispatch(LoweringContext &ctx, Instruction &I) {
   if (isa<DbgInfoIntrinsic>(I))
