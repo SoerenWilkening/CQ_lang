@@ -45,7 +45,9 @@ MODULES = {"conc.O1.ll": ENTRIES, "setjmp.O1.ll": ["p_sj_scalar", "p_sj_void", "
            "conc_rmw_fat.O1.ll": ["p_rmw_fat", "p_cas_fat"],
            # cq-lyzw (rule 24, 106): thread calls collapsed in the IR; conc_threads_indirect.c is blocked on
            # the mem-slots bead cq-o42w.
-           "conc_threads.O1.ll": ["p_join_qresult"]}
+           "conc_threads.O1.ll": ["p_join_qresult"],
+           # cq-il07 (rule 24): a volatile read of an internal constant under a quantum predicate (musl exp10l).
+           "vol_const_pred.O1.ll": ["e_vol_const_pred"]}
 _SJ = (r"cq_template_select_i32", r"call [^\n]*@(setjmp|longjmp)\(")
 _NOSJ = (None, r"call [^\n]*@(setjmp|longjmp)\(")
 # entry -> (regex that must match its body, regex that must not)
@@ -66,6 +68,7 @@ SHAPES = {"p_vol_internal": (None, r"volatile"),
                                      r"[\s\S]*cqrt_tape_write_i32\(", r"store volatile"),
           "p_vol_obs_pred": (r"@\.cq\.effect\.volatile_store", r"store volatile"),
           "p_rmw_fat": (None, r"atomicrmw|cmpxchg"), "p_cas_fat": (None, r"atomicrmw|cmpxchg"),
+          "e_vol_const_pred": (r"call i32 @__cq_q_p_vol_const_pred_\d+\(", None),
           "p_join_qresult": (r"call ptr @__cq_q_qjob_1\(", r"@\\01_pthread_join\(|@pthread_create\(")}
 for _e in MODULES["setjmp_class.O1.ll"] + ["setjmp_effect_error", "setjmp_nested_error", "setjmp_wrapper_error",
                                             "p20", "p21"]:
