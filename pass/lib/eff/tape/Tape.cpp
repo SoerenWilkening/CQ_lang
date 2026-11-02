@@ -54,6 +54,8 @@
 // Orchestrator decisions under CR rule 16 / §1.3 (owner may override) are recorded on the bead.
 #include "cq/Effects.h"
 
+#include "../../fatptr/FatPtrInternal.h"
+
 #include "cq/Abi.h"
 #include "cq/Aggregates.h"
 #include "cq/Calls.h"
@@ -283,6 +285,58 @@ std::optional<uint64_t> bytesToObjectEnd(LoweringContext &ctx, const Value *p) {
   return *size - off.getZExtValue();
 }
 
+// The byte size of a rule-21 root object (an alloca, a global, an allocation of constant size).
+std::optional<uint64_t> rootBytes(LoweringContext &ctx, const Value *r) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  if (auto *ai = dyn_cast<AllocaInst>(r)) {
+    if (auto sz = ai->getAllocationSize(DL); sz && !sz->isScalable())
+      return sz->getFixedValue();
+    return std::nullopt;
+  }
+  if (auto *gv = dyn_cast<GlobalVariable>(r))
+    return DL.getTypeAllocSize(gv->getValueType()).getFixedValue();
+  if (auto *CB = dyn_cast<CallBase>(r)) {
+    Attribute as = CB->getFnAttr(Attribute::AllocSize);
+    if (!as.isValid())
+      if (const Function *F = CB->getCalledFunction())
+        as = F->getFnAttribute(Attribute::AllocSize);
+    if (as.isValid()) {
+      auto [a, b] = as.getAllocSizeArgs();
+      auto *n = dyn_cast<ConstantInt>(CB->getArgOperand(a));
+      auto *m = b ? dyn_cast<ConstantInt>(CB->getArgOperand(*b)) : nullptr;
+      if (n && (!b || m))
+        return n->getZExtValue() * (m ? m->getZExtValue() : 1);
+    }
+  }
+  return std::nullopt;
+}
+
+// The cells of a quantum pointer's bytes (rule 21: a load per candidate object, merged on the tag), up to
+// `limit` bytes past it and each object's extent past it (fatptr::loadHostCells).
+SmallVector<Operand, 8> fatBytes(LoweringContext &ctx, CallBase &CB, const Value *p, std::optional<uint64_t> limit) {
+  std::optional<int64_t> off = fatptr::constantByteOffset(ctx, p);
+  uint64_t n = 0;
+  bool unknown = false;
+  auto boundOf = [&](const Value *r) -> uint64_t {
+    std::optional<uint64_t> sz = rootBytes(ctx, r);
+    if (!sz) {
+      unknown = true;
+      return limit.value_or(0);
+    }
+    int64_t b = int64_t(*sz) - off.value_or(0);
+    uint64_t u = b < 0 ? 0 : uint64_t(b);
+    return limit ? std::min(u, *limit) : u;
+  };
+  // The largest bound over the candidate roots is the field count.
+  for (const Value *r : fatptr::rootsOf(ctx, p))
+    n = std::max(n, boundOf(r));
+  if (unknown && !limit)
+    unimplemented("eff-tape: the bytes of a quantum pointer one of whose objects has no static extent, with no "
+                  "length bounding them",
+                  &CB);
+  return fatptr::loadHostCells(ctx, p, Type::getInt8Ty(ctx.M.getContext()), n, boundOf, CB);
+}
+
 // A %s whose bytes are handles (a classical pointer into a slot object, CR rule 16 fields):
 // tape_str_begin(t), one i8 field per byte of the object from the pointer to its end (a slot cell's handle,
 // or its classical value), tape_str_end(t). The backend prints up to the first byte that measures 0.
@@ -300,9 +354,12 @@ void emitField(LoweringContext &ctx, CallBase &CB, unsigned a, char conv, Value 
       slotStringField(ctx, CB, v, tape, flag);
       return;
     }
-    if (nonClassicalPointer(ctx, v) && (ctx.T.isFatPointer(v, ctx.S) || ctx.T.isQuantum(v, ctx.S)))
-      unimplemented("eff-tape: a quantum pointer (rule 21) as a tape field other than %s: its address value",
-                    &CB);
+    if (nonClassicalPointer(ctx, v) && (ctx.T.isFatPointer(v, ctx.S) || ctx.T.isQuantum(v, ctx.S))) {
+      // A quantum pointer (rule 21) as a value field (%p, an effect's argument): its address, the i64 its
+      // ptrtoint is (a rail when the tag or idx is one).
+      scalarField(ctx, tape, flag, fatptr::addressOf(ctx, v), Type::getInt64Ty(ctx.M.getContext()));
+      return;
+    }
     Operand s = ctx.operand(v);
     if (conv == 's' || (!conv && constantCString(v) &&
                         (CB.paramHasAttr(a, Attribute::ReadOnly) || CB.paramHasAttr(a, Attribute::ReadNone)))) {
@@ -841,15 +898,15 @@ void bufferFields(LoweringContext &ctx, CallBase &CB, const Value *buf, const Va
   const DataLayout &DL = ctx.M.getDataLayout();
   IRBuilder<> &B = ctx.B();
   Type *i8 = Type::getInt8Ty(C), *i64 = Type::getInt64Ty(C);
-  if (ctx.T.isFatPointer(buf, ctx.S) || ctx.T.isQuantum(buf, ctx.S))
-    unimplemented("eff-tape: a buffer field through a quantum pointer (rule 21): a rule-21 load per byte", &CB);
+  bool fat = ctx.T.isFatPointer(buf, ctx.S) || ctx.T.isQuantum(buf, ctx.S);
   bool slot = false, classical = false, qram = false;
   for (ObjectId o : ctx.T.provenance(buf, ctx.S)) {
     ObjClass k = ctx.T.classOf(o);
     (k == ObjClass::Slot ? slot : k == ObjClass::Classical ? classical : qram) = true;
   }
-  if (qram || (slot && classical))
-    unimplemented("eff-tape: a buffer field whose pointer may name a QRAM, or a slot and a host object", &CB);
+  // A quantum pointer, or one into a QRAM or into several classes of object, reads its bytes by rule 21
+  // (a load per candidate object, merged on the tag).
+  fat = fat || qram || (slot && classical);
   // The byte count: sizeV * countV (sizeV null: countV alone).
   Operand cnt = ctx.operand(countV);
   Operand sz = sizeV ? ctx.operand(sizeV) : Operand{ConstantInt::get(countV->getType(), 1), false};
@@ -884,7 +941,7 @@ void bufferFields(LoweringContext &ctx, CallBase &CB, const Value *buf, const Va
     if (std::optional<uint64_t> e = bytesToObjectEnd(ctx, buf); e && (!bound || *e < *bound))
       bound = *e;
   }
-  if (!slot && !len.handle && !lenC) {
+  if (!slot && !fat && !len.handle && !lenC) {
     // A classical host buffer of a run-time classical length: a classical loop of literal fields.
     Function &out = ctx.out();
     Value *p = ctx.operand(buf).v;
@@ -906,10 +963,18 @@ void bufferFields(LoweringContext &ctx, CallBase &CB, const Value *buf, const Va
     B.SetInsertPoint(done);
     return;
   }
+  if (!bound && fat) {
+    // The length's range is unknown: the bytes up to each candidate object's extent (fatBytes).
+    std::optional<uint64_t> none;
+    SmallVector<Operand, 8> c = fatBytes(ctx, CB, buf, none);
+    bound = c.size();
+  }
   if (!bound)
     unimplemented("eff-tape: a buffer field of a length with no upper bound over an object of unknown extent", &CB);
   SmallVector<Operand, 8> cells;
-  if (slot) {
+  if (fat) {
+    cells = fatBytes(ctx, CB, buf, bound);
+  } else if (slot) {
     cells = mem::readSlotCells(ctx, buf, i8, *bound, CB);
   } else {
     // A classical buffer: its bytes read at the call (copied at call time). Under a quantum length a byte
@@ -940,17 +1005,14 @@ void bufferFields(LoweringContext &ctx, CallBase &CB, const Value *buf, const Va
 }
 
 void slotStringField(LoweringContext &ctx, CallBase &CB, const Value *str, Value *tape, Value *flag) {
-  if (ctx.T.isFatPointer(str, ctx.S) || ctx.T.isQuantum(str, ctx.S))
-    unimplemented("eff-tape: a %s through a quantum pointer (rule 21: tape_str_begin/end over a rule-21 load "
-                  "per candidate and byte)",
-                  &CB);
+  bool fat = ctx.T.isFatPointer(str, ctx.S) || ctx.T.isQuantum(str, ctx.S);
   for (ObjectId o : ctx.T.provenance(str, ctx.S))
-    if (ctx.T.classOf(o) != ObjClass::Slot)
-      unimplemented("eff-tape: a %s whose pointer may name a QRAM or a host object beside a slot object", &CB);
-  std::optional<uint64_t> n = bytesToObjectEnd(ctx, str);
-  if (!n)
-    unimplemented("eff-tape: a %s into a slot object of unknown extent or at a run-time offset", &CB);
-  SmallVector<Operand, 8> cells = mem::readSlotCells(ctx, str, Type::getInt8Ty(ctx.M.getContext()), *n, CB);
+    fat |= ctx.T.classOf(o) != ObjClass::Slot;
+  std::optional<uint64_t> n = fat ? std::nullopt : bytesToObjectEnd(ctx, str);
+  // A quantum pointer, a pointer into a QRAM or several classes of object, or one at a run-time offset:
+  // the bytes by rule 21 (a load per candidate object and byte, merged on the tag).
+  SmallVector<Operand, 8> cells = n ? mem::readSlotCells(ctx, str, Type::getInt8Ty(ctx.M.getContext()), *n, CB)
+                                    : fatBytes(ctx, CB, str, std::nullopt);
   ctx.emitCore(abi::CoreSpec{abi::Core::TapeStrBegin}, {tape});
   for (const Operand &c : cells)
     scalarField(ctx, tape, flag, c, Type::getInt8Ty(ctx.M.getContext()));

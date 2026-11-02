@@ -2593,6 +2593,32 @@ std::pair<Operand, Operand> resultFields(LoweringContext &ctx, const ReturnInst 
 
 uint64_t storedCell(LoweringContext &ctx, const Value *ptr) { return derive(ctx, ptr, /*emit=*/false).cell; }
 
+Operand addressOf(LoweringContext &ctx, const Value *ptr) {
+  Fat f = derive(ctx, ptr, /*emit=*/true);
+  if (f.trips)
+    unimplemented("fatptr: the address of a pointer to K-loop trip objects (R1)", ptr);
+  Bases cache;
+  Operand base = baseOf(ctx, f, cache);
+  return address(ctx, f, cache, base);
+}
+
+SmallVector<const Value *, 4> rootsOf(LoweringContext &ctx, const Value *ptr) {
+  Fat f = derive(ctx, ptr, /*emit=*/false);
+  SmallVector<const Value *, 4> out;
+  for (const Value *r : f.roots)
+    if (mayName(ctx, f, r) && !isa<ConstantPointerNull>(r))
+      out.push_back(r);
+  return out;
+}
+
+std::optional<int64_t> constantByteOffset(LoweringContext &ctx, const Value *ptr) {
+  Fat f = derive(ctx, ptr, /*emit=*/false);
+  auto *ci = f.idx.handle ? nullptr : dyn_cast<ConstantInt>(f.idx.v);
+  if (!ci)
+    return std::nullopt;
+  return ci->isZero() ? 0 : ci->getSExtValue() * int64_t(f.cell);
+}
+
 Value *boundSlotObject(LoweringContext &ctx, const Argument &A) {
   Bound *b = boundOf(ctx, &A);
   return b && b->pointee == ObjClass::Slot ? b->object : nullptr;

@@ -32,6 +32,12 @@ llvm::SmallVector<Operand, 8> loadHostCells(LoweringContext &, const llvm::Value
 // it); and, in a clone, the caller's handle cells a Slot-pointee triple formal A is bound to (nullptr when A is
 // no such bound formal).
 uint64_t storedCell(LoweringContext &, const llvm::Value *ptr);
+// cq-a63l (rule 16 fields over rule 21): the fat pointer ptr's address as an i64 (ptrtoint's value: the root's
+// base plus idx * cell, a rail when the tag or idx is one), at the builder; and its constant byte offset into
+// its roots (idx * cell), when idx is a classical constant.
+Operand addressOf(LoweringContext &, const llvm::Value *ptr);
+std::optional<int64_t> constantByteOffset(LoweringContext &, const llvm::Value *ptr);
+llvm::SmallVector<const llvm::Value *, 4> rootsOf(LoweringContext &, const llvm::Value *ptr);
 llvm::Value *boundSlotObject(LoweringContext &, const llvm::Argument &A);
 // M7 (cq-g1ty, CR rules 6, 18, 20, 21; 129): fat pointers over whole local slot objects, a quantum select
 // tree of their allocas (each at cell 0).
