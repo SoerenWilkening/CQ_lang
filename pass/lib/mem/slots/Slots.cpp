@@ -684,6 +684,11 @@ bool escapes(LoweringContext &ctx, const Value *root) {
     const Value *v = work.pop_back_val();
     for (const Use &u : v->uses()) {
       const User *usr = u.getUser();
+      // A global's uses in other functions are those functions' accesses (rule 20: a global slot cell's
+      // handle is read where it is loaded), not this activation's escape; their calls are classified in their
+      // own lowering (cq-1c5j: musl's lgammal hands @__signgam to __lgammal_r beside lgamma's call).
+      if (auto *ui = dyn_cast<Instruction>(usr); ui && ui->getFunction() != ctx.S.F)
+        continue;
       if (auto *ld = dyn_cast<LoadInst>(usr)) {
         if (ld->getPointerOperand() == v)
           continue;
