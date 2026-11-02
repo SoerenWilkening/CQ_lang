@@ -357,7 +357,7 @@ bool bodyTouchesFenv(const Function &F, SmallPtrSetImpl<const Function *> &seen)
 // chain carries the environment for both (its default callers pass mode 0 and an empty flags rail, which
 // is exact).
 bool sameSpec(const Specialization &a, const Specialization &b) {
-  return a.F == b.F && a.mask == b.mask && a.ctl == b.ctl && a.pure == b.pure && a.adj == b.adj &&
+  return a.F == b.F && a.mask == b.mask && a.ctl == b.ctl && a.pure == b.pure &&
          a.depth == b.depth && a.bounds == b.bounds;
 }
 

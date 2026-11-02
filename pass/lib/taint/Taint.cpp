@@ -4503,8 +4503,7 @@ const llvm::LoadInst *inPlaceRoot(const llvm::StoreInst *SI, bool bools = false)
 
 // The key of a clone in ImplState::pastPointee: its function and taint mask (the formal's objects follow them).
 std::string pastKey(const Specialization &S) {
-  return S.F->getName().str() + "|" + std::string(S.mask) + (S.ctl ? "c" : "") + (S.pure ? "p" : "") +
-         (S.adj ? "a" : "") + "|" + std::to_string(S.depth);
+  return S.F->getName().str() + "|" + std::string(S.mask) + (S.ctl ? "c" : "") + (S.pure ? "p" : "") + "|" + std::to_string(S.depth);
 }
 
 // T2 cellsWritten (rotated = false) and T3 cellsRotated (rotated = true): one walk over the formal.
