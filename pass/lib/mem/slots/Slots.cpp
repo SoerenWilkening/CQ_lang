@@ -395,6 +395,7 @@ struct FnState {
   std::map<ObjectId, int> ruShape;
   std::map<ObjectId, Value *> ruBase;
   SmallVector<CallInst *, 8> ruFrees;
+  DenseSet<const Instruction *> ruCleaned;   // cq-zgw3: register-update stores whose rule 6 clean was emitted
   // Rule 7 (129): seeds in a dynamic object's cells that no user register enters, per root: released at the
   // object's lifetime end.
   std::map<const Value *, SmallVector<Value *, 4>> releasable;
@@ -3214,11 +3215,31 @@ bool holderMayBeRead(LoweringContext &ctx, FnState &st, const StoreInst &S, cons
   return false;
 }
 
+// cq-zgw3 (CR rules 6, 20): a register update already lowered with its rule 6 clean (it saw no other holder
+// of the rail it supersedes, oldHeldElsewhere) that may run again after `at` (a cycle) and write a cell of
+// objs: it would free a rail `at` leaves in a second cell (or leave a basis copy of it an orphan register).
+// A register update lowered after `at` sees `at`'s cell and keeps the rail instead. Not built: stop.
+void cleanedUpdateMayFollow(LoweringContext &ctx, FnState &st, const Instruction &at, ArrayRef<ObjectId> objs) {
+  if (st.ruCleaned.empty())
+    return;
+  for (const Instruction *X : st.ruCleaned) {
+    bool into = false;
+    for (ObjectId o : ctx.T.provenance(cast<StoreInst>(X)->getPointerOperand(), ctx.S))
+      into |= is_contained(objs, o);
+    if (into && isPotentiallyReachable(&at, X, nullptr, st.DT.get()))
+      unimplemented("mem-slots: a rail stored into a slot cell while another cell may hold it, and a register "
+                    "update lowered earlier (with its rule 6 clean of the rail it supersedes) may run again "
+                    "after the store and free that rail (cq-zgw3)",
+                    &at);
+  }
+}
+
 bool needsCopy(LoweringContext &ctx, FnState &st, const StoreInst &S, const Site &dest) {
   SmallPtrSet<const Value *, 8> names;
   SmallVector<ObjectId, 4> objs{dest.o};
   if (!holderMayBeRead(ctx, st, S, dest, names, objs))
     return false;
+  cleanedUpdateMayFollow(ctx, st, S, objs);
   return inPlaceMayFollow(ctx, st, S, objs, &names);
 }
 
@@ -4968,7 +4989,64 @@ bool oldReadAfter(LoweringContext &ctx, FnState &st, const Site &s, const StoreI
   return false;
 }
 
-struct RegUpdate { Value *old, *z; abi::TemplateSpec spec; };
+struct RegUpdate { Value *old, *z; abi::TemplateSpec spec; bool keepOld = false; };
+
+// cq-zgw3 (CR rule 6 Dead; cq-bfz4 sharing): the rail S supersedes (the one L read from S's cell) is not dead
+// when another cell (of any object, S's own cell aside) may still hold it and be read after S (railClass,
+// sharedHolders: the rail sits in two cells at least), or a value naming it other than a load of S's object
+// (oldReadAfter's) is used after S: rule 6 does not clean it, it stays the register the other holders hold.
+bool oldHeldElsewhere(LoweringContext &ctx, FnState &st, const Site &s, const StoreInst &S, const LoadInst &L) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  Operand y = ctx.operand(&L);
+  if (!y.handle)
+    return false;
+  SmallPtrSet<const Value *, 8> H{y.v};
+  railClass(ctx, st, H);
+  SmallVector<const Instruction *, 8> shared;
+  SmallPtrSet<const Value *, 8> sharedRails;
+  sharedHolders(ctx, st, H, shared, sharedRails);
+  for (const Instruction *I : shared) {
+    auto *X = dyn_cast<StoreInst>(I);
+    if (!X || X->isVolatile() || X->isAtomic() || ctx.T.isFatPointer(X->getPointerOperand(), ctx.S))
+      return true;   // a call left it in a cell, or no one slot cell: taken as read
+    ArrayRef<ObjectId> po = ctx.T.provenance(X->getPointerOperand(), ctx.S);
+    Addr a = decompose(X->getPointerOperand(), DL);
+    if (po.size() != 1 || ctx.T.classOf(po.front()) != ObjClass::Slot || !a.ok)
+      return true;
+    if (po.front() == s.o && sameCell(a, s.a))
+      continue;
+    Holder h{po.front(), &objInfo(ctx, st, a.root, po.front()), a,
+             DL.getTypeStoreSize(X->getValueOperand()->getType()).getFixedValue(), X};
+    if (!cellDeadAfter(ctx, h, &S))
+      return true;
+  }
+  SmallPtrSet<const Value *, 8> names;
+  for (const Value *h : H)
+    railNames(st, h, names);
+  const BasicBlock *SB = S.getParent();
+  SmallPtrSet<const BasicBlock *, 16> reach;
+  SmallVector<const BasicBlock *, 16> work(succ_begin(SB), succ_end(SB));
+  while (!work.empty()) {
+    const BasicBlock *b = work.pop_back_val();
+    if (reach.insert(b).second)
+      work.append(succ_begin(b), succ_end(b));
+  }
+  for (const Value *n : names) {
+    if (auto *ld = dyn_cast<LoadInst>(n); ld && hasObject(ctx, ld->getPointerOperand(), s.o))
+      continue;
+    for (const User *u : n->users()) {
+      auto *U = dyn_cast<Instruction>(u);
+      if (!U)
+        return true;
+      // A store lowered before S that left the name in a cell is a holder (sharedHolders above).
+      if (auto *X = dyn_cast<StoreInst>(U); X && X->getValueOperand() == n && st.lowered.count(X))
+        continue;
+      if (U != &S && (reach.count(U->getParent()) || (U->getParent() == SB && S.comesBefore(U))))
+        return true;
+    }
+  }
+  return false;
+}
 
 // S as a register update of a register array (nullopt: not one, lowered as before).
 std::optional<RegUpdate> registerUpdate(LoweringContext &ctx, FnState &st, const Site &s, const StoreInst &S,
@@ -4999,11 +5077,14 @@ std::optional<RegUpdate> registerUpdate(LoweringContext &ctx, FnState &st, const
     unimplemented("mem-slots: a register update of a register array whose old rail may still be read after the "
                   "store (rule 6 Dead)",
                   &S);
-  return RegUpdate{y.v, z.v, *spec};
+  return RegUpdate{y.v, z.v, *spec, oldHeldElsewhere(ctx, st, s, S, *L)};
 }
 
 // Rule 6 on the superseded rail, right after the store: t = y' ^ z; copy(t, y); t's _unc; free t; free y.
+// cq-zgw3: nothing when the rail is not dead (keepOld: another holder keeps it).
 void cleanSuperseded(LoweringContext &ctx, FnState &st, const Site &s, const RegUpdate &ru, Value *newRail) {
+  if (ru.keepOld)
+    return;
   IRBuilder<> &B = ctx.B();
   CallInst *t = B.CreateCall(abi::declare(ctx.M, ru.spec, false), {newRail, ru.z});
   ctx.emitCore(abi::CoreSpec{abi::Core::Copy, ru.spec.w}, {t, ru.old});
@@ -5230,6 +5311,8 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
     noteDistinctStore(ctx, st, s, stI, storeBytes(ctx.M.getDataLayout(), v->getType()), val.v);   // M3c
     finishStore(ctx, st, s, stI, v->getType(), val, What::Register);
     cleanSuperseded(ctx, st, s, *ru, val.v);
+    if (!ru->keepOld)
+      st.ruCleaned.insert(&stI);
     return;
   } else {
     what = st.registers.count(val.v) || isThetaResult(ctx, v, val) ? What::Register : What::Computed;
@@ -5413,7 +5496,7 @@ void writeSlotCells(LoweringContext &ctx, const Value *ptr, Type *cellTy, ArrayR
       ctx.unc().recordSeed(a);
       val = Operand{a, true};
       what = StoreWhat::Seed;
-    } else if (!inPlaceMayFollow(ctx, st, at, objs, &names)) {
+    } else if (cleanedUpdateMayFollow(ctx, st, at, objs); !inPlaceMayFollow(ctx, st, at, objs, &names)) {
       // cq-bfz4: no in-place write on a holder may follow: the cell takes the handle itself, as a slot
       // store does (190's memmove: cells 0 and 1 both x).
       val = v;
