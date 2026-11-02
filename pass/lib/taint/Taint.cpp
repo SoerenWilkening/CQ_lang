@@ -4333,6 +4333,12 @@ const llvm::LoadInst *inPlaceRoot(const llvm::StoreInst *SI, bool bools = false)
   return L;
 }
 
+// The key of a clone in ImplState::pastPointee: its function and taint mask (the formal's objects follow them).
+std::string pastKey(const Specialization &S) {
+  return S.F->getName().str() + "|" + std::string(S.mask) + (S.ctl ? "c" : "") + (S.pure ? "p" : "") +
+         (S.adj ? "a" : "") + "|" + std::to_string(S.depth);
+}
+
 // T2 cellsWritten (rotated = false) and T3 cellsRotated (rotated = true): one walk over the formal.
 llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &T, const Specialization &S,
                                            unsigned argNo, bool rotated) {
@@ -4524,6 +4530,17 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
   uint64_t size = 0;
   for (const W &w : writes) {
     std::optional<int64_t> base = fp.exact();
+    // A store past every cell of every object the formal may point to is undefined where it runs (an access
+    // past an object, outside the domain): it writes no cell (rule 21; mem-slots lowers it as nothing). musl
+    // __rem_pio2_large's y[1], y[2] for prec 0 into __rem_pio2f's double ty[1] (cq-4e6m).
+    if (typed && base && leaves &&
+        none_of(*leaves, [&](const Range &c) {
+          int64_t at = *base + w.off;
+          return at < c.off + int64_t(c.size) && c.off < at + int64_t(w.size);
+        })) {
+      I.pastPointee.insert({pastKey(S), w.st});
+      continue;
+    }
     bool handle = S.ctl || lanesOfValue(I, *SS, w.st->getValueOperand()).any() ||
                   lanesOfValue(I, *SS, w.st->getPointerOperand()).any() || T.controlTainted(w.st->getParent(), S);
     for (ObjectId o : objs)
@@ -4559,7 +4576,7 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
         }
       }
       if (!any)
-        refuse("a store outside the pointee object's cells", w.st);
+        internalError("taint: formalCells: a store past the pointee's cells reached the cell count", w.st);
       continue;
     }
     if (size && w.size != size)
@@ -4579,6 +4596,12 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
 
 llvm::SmallVector<unsigned, 4> TaintInfo::cellsWritten(const Specialization &S, unsigned argNo) const {
   return formalCells(needImpl(impl), *this, S, argNo, false);
+}
+
+bool TaintInfo::writesPastPointee(const Specialization &S, unsigned argNo, const llvm::StoreInst &st) const {
+  const ImplState &I = needImpl(impl);
+  formalCells(I, *this, S, argNo, false);
+  return I.pastPointee.count({pastKey(S), &st}) != 0;
 }
 
 // T5 (109): see Taint.h. Structural over the clone's body; the narrow shape only.

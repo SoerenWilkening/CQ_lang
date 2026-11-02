@@ -13,6 +13,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instruction.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -62,6 +63,10 @@ public:
   // Unimplemented: accesses of several sizes, an escape of the formal. cq-budv (117): an in-place
   // rotation at a variable offset may hit any cell: the answer is then {kAnyCell} alone.
   static constexpr unsigned kAnyCell = ~0u;
+  // cq-4e6m (CR rules 18, 20, 21): does the store st through formal argNo of the clone `callee` lie past every
+  // cell of every object that formal may point to (a typed pointee: an access past an object, undefined where it
+  // runs, outside the domain)? Such a store writes no cell; cellsWritten counts none for it.
+  bool writesPastPointee(const Specialization &callee, unsigned argNo, const llvm::StoreInst &st) const;
   llvm::SmallVector<unsigned, 4> cellsRotated(const Specialization &callee, unsigned argNo) const;
   // T5 (A-taint 2026-11-01, CR rules 18, 20; 109's put): the formal j whose handle the clone `callee` stores
   // UNCHANGED into cell `cell` (as cellsWritten counts it) of the object argNo points to, or -1. Exactly:

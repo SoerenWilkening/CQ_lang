@@ -5648,6 +5648,13 @@ void lowerSlotStore(LoweringContext &ctx, StoreInst &stI) {
     // Rule 21: a store beyond the object writes nothing (a later read of the cell reads 0, readCell).
     return;
   }
+  if (auto *PA = dyn_cast<Argument>(s.a.root);
+      PA && !ctx.S.isEntry() && ctx.T.writesPastPointee(ctx.S, PA->getArgNo(), stI)) {
+    // Rules 18, 20, 21 (cq-4e6m): a clone's store past every object its formal may point to (taint) runs only
+    // where the C program is undefined: it writes nothing (musl __rem_pio2_large's y[2] for prec 0).
+    st.lowered[&stI] = ctx.operand(v);
+    return;
+  }
   if (hostGlobalCell(ctx, s, stI.getPointerOperand(), v->getType(), stI)) {
     // cq-hfah: a host cell keeps the C value (no seed): its readers, tainted or not, read it as host memory.
     Operand hv = ctx.operand(v);

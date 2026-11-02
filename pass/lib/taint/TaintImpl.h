@@ -205,6 +205,10 @@ struct SpecState {
 struct LookupKey; // fwd
 
 struct ImplState {
+  // cq-4e6m (rules 18, 20, 21): stores through a clone's pointer formal past every cell of every object the
+  // formal may point to (undefined where they run: they write no cell), per (clone key, store); filled by
+  // formalCells.
+  mutable std::set<std::pair<std::string, const llvm::StoreInst *>> pastPointee;
   llvm::Module *M = nullptr;
   const llvm::DataLayout *DL = nullptr;
   TaintOptions opts;
