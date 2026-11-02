@@ -2893,6 +2893,13 @@ namespace cq::calls {
 // start routine's clone at a pthread_create), formal k taking site's operand argMap[k]. M1 (with the map),
 // recordCall and the twin as for a plain clone call. site's own result is the consumer's to bind; the
 // clone's result is a result of the call group (undone by the twin) and bound to nothing.
+void emitDispatchArm(LoweringContext &ctx, llvm::CallBase &site, llvm::Function &G, const Specialization *s,
+                     llvm::Value *flag) {
+  capture(ctx);
+  Value *whole = nullptr;
+  (void)emitCandidate(ctx, site, G, s, flag, whole);
+}
+
 void lowerLiftedVia(LoweringContext &ctx, llvm::CallBase &site, llvm::ArrayRef<unsigned> argMap) {
   capture(ctx);
   const Specialization *cs = ctx.T.calleeSpecialization(site, ctx.S);

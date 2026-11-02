@@ -763,31 +763,88 @@ SigDefault signalDefault(const Module &M, int64_t sig) {
 // module installs for sig runs as h(sig) under the predicate (taint's _ctl clone of h, calls::lowerLiftedVia);
 // SIG_IGN installed (or no handler and a default action of ignore) has nothing more; SIG_DFL installed or no
 // handler, with a default action of terminate, is the abort arm (abort_i1(flag), 45).
-void lowerRaise(LoweringContext &ctx, CallBase &CB, Value *flag) {
-  auto *sigC = dyn_cast<ConstantInt>(CB.getArgOperand(0));
-  if (!sigC)
-    unimplemented("eff-tape: raise of a signal number that is not a constant", &CB);
-  int64_t sig = sigC->getSExtValue();
-  // What the module installs for sig: handler functions, SIG_IGN (1), SIG_DFL (0).
+// The handler the host's signal table holds for sig at run time (classical): sigaction(sig, NULL, &old), the
+// handler being the first word of struct sigaction on every x86-64 target (Darwin's __sigaction_u, Linux's
+// sa_handler).
+Value *installedHandler(LoweringContext &ctx, Value *sig) {
+  LLVMContext &C = ctx.M.getContext();
+  Type *ptr = PointerType::get(C, 0), *i32 = Type::getInt32Ty(C);
+  FunctionCallee sa = ctx.M.getOrInsertFunction("sigaction", FunctionType::get(i32, {i32, ptr, ptr}, false));
+  IRBuilder<> &B = ctx.B();
+  AllocaInst *buf;
+  {
+    BasicBlock &entry = ctx.out().getEntryBlock();
+    IRBuilder<> E(&entry, entry.getFirstInsertionPt());
+    buf = E.CreateAlloca(ArrayType::get(Type::getInt8Ty(C), 256), nullptr, "cq.sigaction");
+    buf->setAlignment(Align(8));
+  }
+  B.CreateCall(sa, {sig, ConstantPointerNull::get(cast<PointerType>(ptr)), buf});
+  return B.CreateLoad(ptr, buf);
+}
+
+// Whether the default action of the classical signal number sig terminates the process (run time).
+Value *terminatesByDefault(LoweringContext &ctx, Value *sig) {
+  IRBuilder<> &B = ctx.B();
+  Value *acc = B.getFalse();
+  for (int64_t s = 1; s <= 64; ++s)
+    if (signalDefault(ctx.M, s) == SigDefault::Terminate)
+      acc = B.CreateOr(acc, B.CreateICmpEQ(sig, ConstantInt::get(sig->getType(), s)));
+  return acc;
+}
+
+// One classical test of the builder's block: true goes to a fresh arm block (the builder moves there), false
+// to the returned continuation.
+BasicBlock *armIf(LoweringContext &ctx, Value *cond) {
+  LLVMContext &C = ctx.M.getContext();
+  Function &out = ctx.out();
+  BasicBlock *arm = BasicBlock::Create(C, "", &out), *next = BasicBlock::Create(C, "", &out);
+  ctx.B().CreateCondBr(cond, arm, next);
+  ctx.B().SetInsertPoint(arm);
+  return next;
+}
+
+// CR rule 16 (102): raise(sig) under a quantum predicate. The delivery is an effect entry
+// (cqrt_tape_effect_controlled(flag, tape, "raise"), the signal number its field). Then the handler runs:
+//  - The classical-table case (102): a constant sig whose only installation in the module is one signal()
+//    call of a defined handler, SIG_IGN or SIG_DFL: the handler's _ctl clone under the predicate, nothing, or
+//    (a terminating default) the abort arm.
+//  - Otherwise (several installations, a run-time signal number, sigaction, a handler the module does not
+//    define) the handler is read from the host's table at run time and dispatched as rule 19 dispatches a
+//    function pointer over taint's candidates (TaintInfo::calleeCandidates): each candidate's _ctl clone in
+//    its own classical arm; SIG_DFL with a terminating default is the abort arm; SIG_IGN, a stop default and a
+//    host handler the module does not define have the delivery entry alone (the host handler runs when the
+//    backend performs it). A quantum signal number (taint: every handler is a candidate) enumerates the
+//    signal numbers: each one's handler is read at run time and dispatched under flag & (sig == s), the
+//    abort arm under flag & OR of the (sig == s) whose default terminates and whose table holds SIG_DFL.
+// Handlers installed under a quantum predicate are tape entries (signalTableEntry): the host table holds
+// the classical installations.
+void lowerRaise(LoweringContext &ctx, CallBase &CB, Value *flag, bool classicalRaise = false) {
+  const Value *sigV = CB.getArgOperand(0);
+  auto *sigC = dyn_cast<ConstantInt>(sigV);
+  // The classical-table case: what the module installs for sig. A classical raise on the tape (tape order,
+  // flag the |1> seed) always reads the table: its handlers are the untainted bodies, called in order.
   SmallPtrSet<const Function *, 2> handlers;
-  bool ign = false, dfl = false;
+  bool ign = false, dfl = false, dynamic = !sigC || classicalRaise;
   for (const Function &G : ctx.M)
     for (const User *u : G.users()) {
+      if (dynamic)
+        break;
       auto *C = dyn_cast<CallBase>(u);
       if (!C || C->getCalledOperand() != &G || !G.isDeclaration())
         continue;
       StringRef n = G.getName();
-      if (n == "sigaction")
-        unimplemented("eff-tape: raise in a module that installs handlers through sigaction (102: the handler "
-                      "read from a struct sigaction)",
-                      &CB);
-      // bsd_signal and sigset have signal's interface (POSIX): the same table entry.
+      if (n == "sigaction") {
+        dynamic = true;
+        break;
+      }
       if ((n != "signal" && n != "bsd_signal" && n != "sigset") || C->arg_size() != 2)
         continue;
       auto *s = dyn_cast<ConstantInt>(C->getArgOperand(0));
-      if (!s)
-        unimplemented("eff-tape: raise in a module with a signal() call of a run-time signal number", &CB);
-      if (s->getSExtValue() != sig)
+      if (!s) {
+        dynamic = true;
+        break;
+      }
+      if (s->getSExtValue() != sigC->getSExtValue())
         continue;
       const Value *h = C->getArgOperand(1)->stripPointerCasts();
       if (auto *H = dyn_cast<Function>(h); H && !H->isDeclaration()) {
@@ -799,46 +856,109 @@ void lowerRaise(LoweringContext &ctx, CallBase &CB, Value *flag) {
         continue;
       }
       if (auto *ce = dyn_cast<ConstantExpr>(h); ce && ce->getOpcode() == Instruction::IntToPtr)
-        if (auto *ci = dyn_cast<ConstantInt>(ce->getOperand(0))) {
-          if (ci->isZero())
-            dfl = true;
-          else if (ci->isOne() || ci->getZExtValue() == 5)
-            ign = true;   // SIG_IGN; SIG_HOLD (5, sigset): the signal is held, nothing runs at the raise
-          else
-            unimplemented("eff-tape: raise of a signal installed with a constant handler other than SIG_DFL or "
-                          "SIG_IGN",
-                          &CB);
+        if (auto *ci = dyn_cast<ConstantInt>(ce->getOperand(0)); ci && (ci->isZero() || ci->isOne())) {
+          (ci->isZero() ? dfl : ign) = true;
           continue;
         }
-      unimplemented("eff-tape: raise of a signal whose installed handler is a run-time value or a function the "
-                    "module does not define",
-                    &CB);
+      dynamic = true;
     }
   if (handlers.size() + ign + dfl > 1)
-    unimplemented("eff-tape: raise of a signal the module installs several handlers for", &CB);
-  SigDefault dflt = signalDefault(ctx.M, sig);
-  bool byDefault = handlers.empty() && !ign;
-  // A default action of stop suspends the process until SIGCONT, after which it continues: the delivery
-  // entry alone, as for ignore (orchestrator decision under rule 16, owner may override).
-  bool terminate = byDefault && dflt == SigDefault::Terminate;
-  if (terminate)
-    requireEntry(ctx, CB, "a terminating raise");
-  const Specialization *cs = handlers.empty() ? nullptr : ctx.T.calleeSpecialization(CB, ctx.S);
-  if (!handlers.empty() && (!cs || cs->F != *handlers.begin() || !cs->ctl))
-    internalError("eff-tape: raise of a handled signal under a quantum predicate whose callee taint does not "
-                  "name as the handler's _ctl clone",
-                  &CB);
+    dynamic = true;
 
   Value *tape = tapeOf(ctx);
   ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffect, {}, /*ctl=*/true}, {flag, tape, effectName(ctx.M, "raise")});
   emitField(ctx, CB, 0, 0, tape, flag);
-  if (cs) {
-    unsigned argMap[1] = {0};
-    calls::lowerLiftedVia(ctx, CB, argMap);
+
+  if (!dynamic) {
+    int64_t sig = sigC->getSExtValue();
+    bool byDefault = handlers.empty() && !ign;
+    // A default action of stop suspends the process until SIGCONT, after which it continues: the delivery
+    // entry alone, as for ignore (orchestrator decision under rule 16, owner may override).
+    bool terminate = byDefault && signalDefault(ctx.M, sig) == SigDefault::Terminate;
+    if (terminate)
+      requireEntry(ctx, CB, "a terminating raise");
+    const Specialization *cs = handlers.empty() ? nullptr : ctx.T.calleeSpecialization(CB, ctx.S);
+    if (!handlers.empty() && (!cs || cs->F != *handlers.begin() || !cs->ctl))
+      internalError("eff-tape: raise of a handled signal under a quantum predicate whose callee taint does not "
+                    "name as the handler's _ctl clone",
+                    &CB);
+    if (cs) {
+      unsigned argMap[1] = {0};
+      calls::lowerLiftedVia(ctx, CB, argMap);
+      return;
+    }
+    if (terminate)
+      abortArm(ctx, CB, flag);
     return;
   }
-  if (terminate)
+
+  // The dynamic table: dispatch over taint's candidates on the handler the host table holds.
+  auto cands = ctx.T.calleeCandidates(CB, ctx.S);
+  LLVMContext &C = ctx.M.getContext();
+  IRBuilder<> &B = ctx.B();
+  Type *ptrTy = PointerType::get(C, 0);
+  Operand sig = ctx.operand(sigV);
+  auto dispatch = [&](Value *h, Value *g) {
+    for (auto &[G, s] : cands) {
+      BasicBlock *next = armIf(ctx, B.CreateICmpEQ(h, G));
+      calls::emitDispatchArm(ctx, CB, *G, s, g);
+      B.CreateBr(next);
+      B.SetInsertPoint(next);
+    }
+  };
+  if (!sig.handle) {
+    Value *h = installedHandler(ctx, sig.v);
+    dispatch(h, flag);
+    Value *abort = B.CreateAnd(B.CreateICmpEQ(h, ConstantPointerNull::get(cast<PointerType>(ptrTy))),
+                               terminatesByDefault(ctx, sig.v));
+    if (auto *k = dyn_cast<ConstantInt>(abort); k && k->isZero())
+      return;
+    requireEntry(ctx, CB, "a terminating raise");
+    BasicBlock *next = armIf(ctx, abort);
     abortArm(ctx, CB, flag);
+    B.CreateBr(next);
+    B.SetInsertPoint(next);
+    return;
+  }
+  // A quantum signal number: every signal number s, under g_s = flag & (sig == s).
+  unsigned bits = sigV->getType()->getIntegerBitWidth();
+  RailType i1{Kind::Int, 1};
+  Value *term = nullptr;   // the rail OR of the (sig == s) whose table holds a terminating SIG_DFL
+  for (int64_t s = 1; s <= 64; ++s) {
+    abi::TemplateSpec eq;
+    eq.op = "icmp";
+    eq.pred = "eq";
+    eq.w = RailType{Kind::Int, bits};
+    eq.shape = "hl";
+    Value *e = ctx.emitTemplate(eq, {sig, Operand{ConstantInt::get(sigV->getType(), s), false}});
+    abi::TemplateSpec andT;
+    andT.op = "and";
+    andT.w = i1;
+    Value *g = ctx.emitTemplate(andT, {Operand{e, true}, Operand{flag, true}});
+    Value *h = installedHandler(ctx, ConstantInt::get(Type::getInt32Ty(C), s));
+    dispatch(h, g);
+    if (signalDefault(ctx.M, s) != SigDefault::Terminate)
+      continue;
+    // The table's choice is classical: a classical select over the two handles (rule 9).
+    Value *isDfl = B.CreateICmpEQ(h, ConstantPointerNull::get(cast<PointerType>(ptrTy)));
+    if (!term) {
+      CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {B.getFalse()});
+      ctx.unc().recordSeed(z);
+      term = z;
+    }
+    abi::TemplateSpec orT;
+    orT.op = "or";
+    orT.w = i1;
+    Value *o = ctx.emitTemplate(orT, {Operand{term, true}, Operand{e, true}});
+    Instruction *sel = cast<Instruction>(B.CreateSelect(isDfl, o, term));
+    ctx.unc().recordMerge(sel);
+    term = sel;
+  }
+  requireEntry(ctx, CB, "a terminating raise");
+  abi::TemplateSpec andT;
+  andT.op = "and";
+  andT.w = i1;
+  abortArm(ctx, CB, ctx.emitTemplate(andT, {Operand{term, true}, Operand{flag, true}}));
 }
 
 // The quantum length of a buffer field (CR rule 16 fields): len > j as an i1 rail, `and`ed with the entry's
@@ -1044,16 +1164,15 @@ void signalTableEntry(LoweringContext &ctx, CallBase &CB, const Function &F) {
       }
   }
   Value *flag = ctx.currentFlag();
-  if (n == "raise")
-    // A classical raise on the tape (tape order): with no handler the module installs, its delivery entry
-    // replays the default action in order; a handler of the program would run at replay, out of order.
-    for (const Function &G : ctx.M)
-      if (G.isDeclaration() && !G.use_empty() &&
-          (G.getName() == "signal" || G.getName() == "sigaction" || G.getName() == "bsd_signal" ||
-           G.getName() == "sigset"))
-        unimplemented("eff-tape: a classical raise after a tape point in a module that installs signal handlers "
-                      "(rule 16 tape order: the handler runs in program order)",
-                      &CB);
+  if (n == "raise" && !flag && CB.arg_size() == 1) {
+    // A classical raise on the tape (tape order): its delivery entry under the |1> seed, the handler the host
+    // table holds dispatched in program order (lowerRaise's run-time table).
+    CallInst *one = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 1}},
+                                 {ConstantInt::getTrue(ctx.M.getContext())});
+    ctx.unc().recordSeed(one);
+    lowerRaise(ctx, CB, one, /*classicalRaise=*/true);
+    return;
+  }
   Value *ctl = flag;
   if (!ctl) {
     CallInst *one = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 1}},

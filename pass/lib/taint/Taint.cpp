@@ -353,6 +353,7 @@ private:
   std::optional<uint64_t> rangeBound(const Value *V);
   unsigned resolveK(const Function &F);
   std::map<int64_t, SmallVector<Function *, 2>> signalHandlers; // signal(sig, h) calls of the module
+  static constexpr int64_t kAnySignal = INT64_MIN;                // installed under a run-time signal number
   // G reaches F through direct calls of defined functions (recursion, rule 14).
   std::map<std::pair<const Function *, const Function *>, bool> reachCache;
   bool callsReach(const Function *G, const Function *F) {
@@ -2984,15 +2985,22 @@ void Analyzer::transferCall(CallBase &CB) {
     }
     return;
   }
-  if (G->getName() == "raise" && actuals.size() == 1)
-    if (auto *Sig = dyn_cast<ConstantInt>(actuals[0])) {
-      // <signal.h>: raise(sig) runs the handler signal(sig, h) installed in this module (102): a
-      // call of h(sig); under a quantum predicate its _ctl clone (rule 19).
-      auto it = signalHandlers.find(Sig->getSExtValue());
-      if (it != signalHandlers.end() && !it->second.empty()) {
+  if (G->getName() == "raise" && actuals.size() == 1) {
+    // <signal.h>: raise(sig) runs the handler the module installed for sig (102): a call of h(sig); under a
+    // quantum predicate its _ctl clone (rule 19). The candidates: the handlers of the constant sig and those
+    // installed under a run-time signal number; every handler for a run-time sig.
+    SmallVector<Function *, 4> cands;
+    auto *Sig = dyn_cast<ConstantInt>(actuals[0]);
+    for (auto &[k, hs] : signalHandlers)
+      if (!Sig || k == kAnySignal || k == Sig->getSExtValue())
+        for (Function *H : hs)
+          if (!llvm::is_contained(cands, H))
+            cands.push_back(H);
+    {
+      if (!cands.empty()) {
         SmallVector<SpecState *, 4> all;
         collect = &all;
-        for (Function *H : it->second)
+        for (Function *H : cands)
           lift(CB, H, actuals, false);
         collect = nullptr;
         auto &v = cur->callees[&CB];
@@ -3003,6 +3011,7 @@ void Analyzer::transferCall(CallBase &CB) {
         return;
       }
     }
+  }
   if (G->getName() == "pthread_create" && actuals.size() == 4) {
     // Single-thread collapse (rule 24): a direct call of the start routine with its argument.
     if (auto *Start = dyn_cast<Function>(actuals[2]->stripPointerCasts()))
@@ -3379,16 +3388,38 @@ void Analyzer::run() {
   st.TLII = std::make_unique<TargetLibraryInfoImpl>(Triple(M.getTargetTriple()));
   st.TLI = std::make_unique<TargetLibraryInfo>(*st.TLII);
 
+  // The module's signal table (rule 16): signal/bsd_signal/sigset(sig, h) with h a defined function, keyed by
+  // the constant sig (kAnySignal for a run-time one); a module that calls sigaction may install any defined
+  // void(int) function whose address it takes (its sa_handler), under any signal.
+  bool viaSigaction = false;
+  auto addHandler = [&](int64_t sig, Function *H) {
+    if (!H->isDeclaration() && !llvm::is_contained(signalHandlers[sig], H))
+      signalHandlers[sig].push_back(H);
+  };
   for (Function &F : M)
     for (BasicBlock &BB : F)
       for (Instruction &I : BB)
         if (auto *CB = dyn_cast<CallBase>(&I))
-          if (CB->getCalledFunction() && CB->getCalledFunction()->getName() == "signal" &&
-              CB->arg_size() == 2)
-            if (auto *Sig = dyn_cast<ConstantInt>(CB->getArgOperand(0)))
-              if (auto *H = dyn_cast<Function>(CB->getArgOperand(1)->stripPointerCasts()))
-                if (!H->isDeclaration() && !llvm::is_contained(signalHandlers[Sig->getSExtValue()], H))
-                  signalHandlers[Sig->getSExtValue()].push_back(H);
+          if (const Function *G = CB->getCalledFunction()) {
+            StringRef n = G->getName();
+            if (n == "sigaction")
+              viaSigaction = true;
+            if ((n == "signal" || n == "bsd_signal" || n == "sigset") && CB->arg_size() == 2)
+            {
+              // The handler operand's candidate functions (a select or phi of handlers: each arm).
+              SmallVector<const Value *, 4> objs;
+              getUnderlyingObjects(CB->getArgOperand(1), objs);
+              auto *Sig = dyn_cast<ConstantInt>(CB->getArgOperand(0));
+              for (const Value *o : objs)
+                if (auto *H = dyn_cast<Function>(const_cast<Value *>(o)->stripPointerCasts()))
+                  addHandler(Sig ? Sig->getSExtValue() : kAnySignal, H);
+            }
+          }
+  if (viaSigaction)
+    for (Function &H : M)
+      if (!H.isDeclaration() && H.hasAddressTaken() && H.getReturnType()->isVoidTy() && H.arg_size() == 1 &&
+          H.getArg(0)->getType()->isIntegerTy(32))
+        addHandler(kAnySignal, &H);
 
   // cq-n58p, cq-erjd: module facts for lost provenance and store order.
   for (Function &F : M) {

@@ -32,6 +32,11 @@ void lowerAsm(LoweringContext &, llvm::CallBase &);
 // twin as for a plain clone call. site's own result is not bound (the consumer binds it). Consumer: eff-conc.
 void lowerLiftedVia(LoweringContext &, llvm::CallBase &site, llvm::ArrayRef<unsigned> argMap);
 void finalize(llvm::Module &);
+// cq-a63l (CR rule 16 signal table, rule 19): one arm of a dispatch at site over taint's candidates
+// (TaintInfo::calleeCandidates): candidate G with specialization s (nullptr: its untainted body), called with
+// site's operands under flag (its _ctl clone when s is one). The builder is in the arm; a result is not bound.
+void emitDispatchArm(LoweringContext &, llvm::CallBase &site, llvm::Function &G, const Specialization *s,
+                     llvm::Value *flag);
 // cq-nqa6 (CR §1.4 _ctl, rule 10; 117): a string function attribute a _ctl clone carries when its lowering
 // relied on its entry flag (formal 0) naming no rail the clone reaches otherwise (rot-cry: a controlled Ry
 // on a cell or formal under it). finalize checks that at every call site (the flag a rail minted and kept
