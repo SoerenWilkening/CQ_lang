@@ -58,6 +58,7 @@
 // an object the same way.
 #include "cq/Memory.h"
 #include "QramInternal.h"
+#include "../slots/SlotsInternal.h"
 #include "../../fatptr/FatPtrInternal.h"
 
 #include <functional>
@@ -676,18 +677,26 @@ void lowerSlotMemset(LoweringContext &ctx, MemSetInst &MS, ObjectId o) {
       return j;
     return B.CreateAdd(first, j);
   };
+  SmallVector<std::pair<int64_t, Value *>, 8> seeds;   // cq-8101: (byte offset, seed), constant offsets only
+  bool constFirst = a.terms.empty();
   auto writeCell = [&](Value *idx) {
     CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {value});
     RailId id = ctx.unc().recordSeed(seed);
     if (role)
       ctx.unc().setRole(id, *role);
     B.CreateAlignedStore(seed, cellAt(ctx, info, idx, MS), Align(4));
+    if (auto *ci = dyn_cast<ConstantInt>(idx); ci && constFirst)
+      seeds.push_back({ci->getSExtValue() * cb, seed});
+    else
+      constFirst = false;
   };
 
   if (auto *cl = dyn_cast<ConstantInt>(len.v)) {
     uint64_t n = cl->getZExtValue() / uint64_t(cb);
     for (uint64_t j = 0; j < n; ++j)
       writeCell(cellIndex(ConstantInt::get(i64, j)));
+    if (info.kind == RootKind::Local && constFirst)
+      noteMemsetSeeds(ctx, MS, o, seeds);   // cq-8101: never-written seeds are released (rule 7)
     return;
   }
 

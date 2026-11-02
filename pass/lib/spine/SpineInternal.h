@@ -193,6 +193,8 @@ struct Shared {
     llvm::Instruction *I;
     Operand yp;
     llvm::SmallVector<llvm::Value *, 2> blockers;
+    // cq-8101: run-time cell loads that may name Y's rail; their reads are noted as Y's uses first.
+    llvm::SmallVector<const llvm::Instruction *, 2> loads;
   };
   std::vector<PendingSix> ruleSixPending;
   // cq-su3p (PreRotation.cpp): readers of a register's pre-rotation value that -O1 sank after the

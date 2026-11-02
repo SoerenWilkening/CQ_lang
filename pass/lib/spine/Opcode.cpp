@@ -648,7 +648,8 @@ bool pureCloneReader(LoweringContext &ctx, const CallBase &cb, unsigned argNo) {
 // the rail alone and its view phis (cq-su3p). An update in a cycle keeps the strict test (every other
 // use dominates it): a reader after it comes round again before it. `also` as for deadAfter.
 bool deadAtCleanup(LoweringContext &ctx, Value *Y, Value *h, Instruction *at,
-                   ArrayRef<const Instruction *> also = {}) {
+                   ArrayRef<const Instruction *> also = {},
+                   SmallVectorImpl<const Instruction *> *dynLoads = nullptr) {
   spine::Shared &sh = spine::shared(ctx);
   if (sh.measured.count(h) || sh.measured.count(Y))
     return false;
@@ -739,28 +740,40 @@ bool deadAtCleanup(LoweringContext &ctx, Value *Y, Value *h, Instruction *at,
     ArrayRef<ObjectId> prov = ctx.T.provenance(st->getPointerOperand(), ctx.S);
     return !prov.empty() && all_of(prov, [&](ObjectId o) { return ctx.T.classOf(o) == ObjClass::Qram; });
   };
-  // Every load of the object (through constant GEPs); false when the address has any other use (a
+  // Every load of the object (through GEPs); false when the address has any other use (a
   // call argument, a stored or returned pointer, a memory intrinsic: the cell may be read elsewhere).
+  // cq-8101: a load through a GEP with a run-time (classical) index may name the rail too. Its handle is
+  // an alias mem-slots may record as a register of its own (Uncompute then sees no use of the rail), so
+  // such a load is reported in dynLoads (the caller defers the clean-up until it can note the reads,
+  // ruleSixRetry); a caller that passes no dynLoads keeps the rail.
   auto cellLoads = [&](const AllocaInst *AI, const std::function<void(const Instruction *)> &each) {
-    SmallVector<const Value *, 8> ptrs{AI};
+    SmallVector<std::pair<const Value *, bool>, 8> ptrs{{AI, false}};
     SmallPtrSet<const Value *, 8> seenP;
     while (!ptrs.empty()) {
-      const Value *p = ptrs.pop_back_val();
+      auto [p, dyn] = ptrs.pop_back_val();
       if (!seenP.insert(p).second)
         continue;
       for (const User *u : p->users()) {
         if (auto *ld = dyn_cast<LoadInst>(u)) {
+          if (dyn) {
+            if (ctx.T.offsetKind(ld, ctx.S) != OffsetKind::Classical || !dynLoads)
+              return false;
+            if (!is_contained(*dynLoads, ld))
+              dynLoads->push_back(ld);
+          }
           each(ld);
           continue;
         }
         if (auto *s2 = dyn_cast<StoreInst>(u); s2 && s2->getPointerOperand() == p && s2->getValueOperand() != p)
           continue;
-        if (auto *g = dyn_cast<GetElementPtrInst>(u); g && g->hasAllConstantIndices()) {
-          ptrs.push_back(g);
+        if (auto *g = dyn_cast<GetElementPtrInst>(u); g && g->getPointerOperand() == p) {
+          ptrs.push_back({g, dyn || !g->hasAllConstantIndices()});
           continue;
         }
         if (auto *II = dyn_cast<IntrinsicInst>(u); II && II->isLifetimeStartOrEnd())
           continue;
+        if (auto *ms = dyn_cast<MemSetInst>(u); ms && ms->getDest() == p)
+          continue;   // cq-8101: a write of constant bytes (mem-slots' seeds), no reader
         return false;
       }
     }
@@ -785,7 +798,7 @@ bool deadAtCleanup(LoweringContext &ctx, Value *Y, Value *h, Instruction *at,
       // A later bijective update of the rail (not lowered yet) cleans it instead: the clean-up point is
       // after that reader, and the image live there is its result (180: b' = a ^ b, then a is rotated,
       // then c' = b ^ m1 is the image b is cleaned from).
-      if (!sh.binds.count(ui) && laterUpdate(ui, w))
+      if (!sh.binds.count(ui) && !isa<LoadInst>(w) && laterUpdate(ui, w))
         return false;
       if (isa<ReturnInst>(ui) || isa<PHINode>(ui))
         return false;
@@ -1474,9 +1487,16 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
         return;
       }
   SmallVector<Value *, 3> dead;
-  for (Value *Y : I.operands())
-    if (!is_contained(dead, Y) && cleanable(ctx, Y) && deadAtCleanup(ctx, Y, ctx.operand(Y).v, &I) && !neededLater(Y))
+  DenseMap<Value *, SmallVector<const Instruction *, 2>> dynOf;   // cq-8101
+  for (Value *Y : I.operands()) {
+    SmallVector<const Instruction *, 2> dl;
+    if (!is_contained(dead, Y) && cleanable(ctx, Y) && deadAtCleanup(ctx, Y, ctx.operand(Y).v, &I, {}, &dl) &&
+        !neededLater(Y)) {
       dead.push_back(Y);
+      if (!dl.empty())
+        dynOf[Y] = dl;
+    }
+  }
   // CR rule 6, both operands dead (cq-12cr): when exactly one is garbage rule 5 uncomputes anyway, the
   // other is cleaned (its inverse reads the garbage, whose _unc follows in its usual place); when that
   // garbage was computed from the other, it is uncomputed first and rule 6 asks the composite update.
@@ -1499,7 +1519,8 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
       merges.push_back(u);
   }
   auto cleanOrDefer = [&](Value *Y, const Inverse &inv) {
-    if (merges.empty()) {
+    auto dl = dynOf.find(Y);
+    if (merges.empty() && dl == dynOf.end()) {
       clean(ctx, Y, inv);
       return;
     }
@@ -1507,7 +1528,10 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
     for (Value *m : merges)
       if (!is_contained(bl, m))
         bl.push_back(m);
-    spine::shared(ctx).ruleSixPending.push_back(spine::Shared::PendingSix{&ctx, Y, &I, yp, std::move(bl)});
+    spine::Shared::PendingSix e{&ctx, Y, &I, yp, std::move(bl), {}};
+    if (dl != dynOf.end())
+      e.loads.assign(dl->second.begin(), dl->second.end());
+    spine::shared(ctx).ruleSixPending.push_back(std::move(e));
   };
   if (dead.size() == 2) {
     bool g0 = ruleFiveGarbage(ctx, dead[0]), g1 = ruleFiveGarbage(ctx, dead[1]);
@@ -1540,7 +1564,7 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
     SmallVector<Value *, 2> bl = blockersOf(Y);
     if (bl.empty() || !inverseOf(ctx, I, Y, yp))
       continue;
-    sh.ruleSixPending.push_back(spine::Shared::PendingSix{&ctx, Y, &I, yp, std::move(bl)});
+    sh.ruleSixPending.push_back(spine::Shared::PendingSix{&ctx, Y, &I, yp, std::move(bl), {}});
     return;
   }
 }
@@ -1579,24 +1603,39 @@ void ruleSixRetry(LoweringContext &ctx) {
     });
   };
   auto live = [&](Value *h) { return ctx.unc().liveRole(ctx.unc().idOf(h)).has_value(); };
+  // cq-8101: a run-time cell load is settled once it and every reader of its value are lowered and each
+  // reader is kept or has no reader left to lower.
+  auto readsSettled = [&](const Instruction *ld) {
+    if (!sh.binds.count(ld))
+      return false;
+    SmallVector<const Use *, 8> uses;
+    readingUses(sh, ld, uses);
+    return all_of(uses, [&](const Use *u) {
+      auto *ui = dyn_cast<Instruction>(u->getUser());
+      return ui && !ui->getType()->isVoidTy() && boundRail(ui) && settled(ui);
+    });
+  };
   for (size_t k = 0; k < sh.ruleSixPending.size();) {
     Shared::PendingSix &p = sh.ruleSixPending[k];
     if (p.ctx != &ctx) {
       ++k;
       continue;
     }
-    if (!all_of(p.blockers, settled)) {
+    if (!all_of(p.blockers, settled) || !all_of(p.loads, readsSettled)) {
       ++k;
       continue;
     }
     Shared::PendingSix e = std::move(p);
     sh.ruleSixPending.erase(sh.ruleSixPending.begin() + k);
     Value *h = boundRail(e.Y);
+    SmallVector<const Instruction *, 2> dl;
     // A rail computed from a measured one may be rule 2's collapse (its value classical, its rail
     // uncomputed at the collapse point): not a rule 6 old value here.
     if (!h || any_of(sh.measured, [&](const auto &m) { return railReads(sh, h, const_cast<Value *>(m.first)); }) ||
-        sh.ruleSixCleaned.count(h) || !live(h) || !deadAtCleanup(ctx, e.Y, h, e.I))
+        sh.ruleSixCleaned.count(h) || !live(h) || !deadAtCleanup(ctx, e.Y, h, e.I, {}, &dl))
       continue;
+    if (any_of(dl, [&](const Instruction *ld) { return !is_contained(e.loads, ld); }))
+      internalError("spine: rule 6 retry found a run-time cell load of the old value not seen at its update", e.I);
     // The inverse over the other operands' bindings (their rails as I read them; a measured one still holds
     // its outcome).
     bool unbound = false;
@@ -1617,6 +1656,30 @@ void ruleSixRetry(LoweringContext &ctx) {
         [&](Value *Z) { return reads(ctx, Z, e.Y); });
     if (!inv || unbound || any_of(inv->ops, [&](const Operand &o) { return o.handle && !live(o.v); }))
       continue;
+    // cq-8101: a run-time cell load that may name the old rail is not a use Uncompute sees (mem-slots
+    // records its handle as a register of its own): its new-IR load and every reader of it are noted as
+    // uses of the old rail, so the clean-up follows them. A reader whose rail rule 5 would uncompute
+    // re-reads the cell's value in its _unc, after any point a noted use gives: no clean-up point is
+    // known, stop.
+    RailId yid = ctx.unc().idOf(h);
+    for (const Instruction *ld : e.loads) {
+      Value *lo = boundRail(ld);
+      if (lo == h)
+        continue;   // forwarded: the load is the rail's own handle
+      if (auto *li = dyn_cast_or_null<Instruction>(lo))
+        ctx.unc().noteUse(yid, li);
+      SmallVector<const Use *, 8> uses;
+      readingUses(sh, ld, uses);
+      for (const Use *u : uses) {
+        auto *ui = cast<Instruction>(u->getUser());
+        if (Value *ur = boundRail(ui); ur && ruleFiveGarbageRail(sh, ur))
+          unimplemented("spine: rule 6 on a register read back through a slot cell at a run-time index by a "
+                        "computation rule 5 uncomputes (its _unc re-reads the cell after the clean-up; cq-8101)",
+                        ui);
+        if (auto *uh = dyn_cast_or_null<Instruction>(boundRail(ui)))
+          ctx.unc().noteUse(yid, uh);
+      }
+    }
     clean(ctx, e.Y, *inv);
   }
 }

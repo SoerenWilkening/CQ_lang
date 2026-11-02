@@ -1748,6 +1748,7 @@ bool cellArms(LoweringContext &ctx, FnState &st, const Site &s, const Instructio
         Addr w = s.a;
         w.off = off;
         w.terms.clear();
+        w.ptr = nullptr;   // cq-8101: w is a cell at a constant offset, not the load's address
         if (differentCell(w, s.a, s.info->cellBytes, size) || !h.handle)
           continue;
         if (!st.registers.count(h.v))
@@ -1772,6 +1773,7 @@ bool cellArms(LoweringContext &ctx, FnState &st, const Site &s, const Instructio
       Addr w = s.a;
       w.off = off;
       w.terms.clear();
+      w.ptr = nullptr;   // cq-8101: w is a cell at a constant offset, not the load's address
       if (differentCell(w, s.a, cellSizeAt(*s.info, off, DL), size))
         continue;
       allRegisters = false;
@@ -1795,6 +1797,7 @@ bool cellArms(LoweringContext &ctx, FnState &st, const Site &s, const Instructio
         Addr w = s.a;
         w.off = off;
         w.terms.clear();
+        w.ptr = nullptr;   // cq-8101: w is a cell at a constant offset, not the load's address
         if (differentCell(w, s.a, s.info->cellBytes, size) || !h.handle)
           continue;
         if (!st.registers.count(h.v))
@@ -3726,6 +3729,49 @@ bool freshCell(LoweringContext &ctx, FnState &st, const Site &s, const StoreInst
 }
 
 } // namespace
+
+// cq-8101 (CR rule 7; mem-qram lowerSlotMemset, SlotsInternal.h): the seeds a constant-length memset wrote
+// into the cells of a DYNAMIC local object are never written when no in-place write may follow the memset
+// on a rail of the object (inPlaceMayFollow: no cq_theta of a cell's load, no clone handed the object) and
+// nothing else frees one (no store of a classical value into the object: freeOverwrittenSeed; no other
+// memory intrinsic into it). They are then released at the object's lifetime end, after the run-time
+// reads naming them (endSlotLifetime), like a classical store's seed (129, 190); otherwise they stay
+// registers (58, 59: the cells are rotated).
+void noteMemsetSeeds(LoweringContext &ctx, const MemSetInst &MS, ObjectId o, ArrayRef<std::pair<int64_t, Value *>> seeds) {
+  FnState &st = stateOf(ctx, MS);
+  const Value *root = getUnderlyingObject(MS.getDest());
+  if (!isa<AllocaInst>(root) || seeds.empty())
+    return;
+  ObjInfo &info = objInfo(ctx, st, root, o);
+  if (info.kind != RootKind::Local || info.escaping || info.record || info.view || info.boolCells ||
+      info.colStride || !isDynamic(ctx, st, info, o))
+    return;
+  for (const Access &a : accessesOf(ctx, *st.F, o))
+    if (auto *S = dyn_cast<StoreInst>(a.I); (S && !ctx.T.isQuantum(S->getValueOperand(), ctx.S)) || isRMW(a.I))
+      return;
+  for (const Instruction &X : instructions(*st.F))
+    if (auto *MI = dyn_cast<MemIntrinsic>(&X); MI && MI != &MS && hasObject(ctx, MI->getDest(), o))
+      return;
+  if (inPlaceMayFollow(ctx, st, MS, {o}, nullptr))
+    return;
+  // A run-time read naming a seed is a merge over the cells' rails (M3); a kept role on it (a measurement, a
+  // return, a store, a call or a merge of the value) keeps every arm: each read value is only read into
+  // fresh rails (a template), else the seeds stay registers.
+  for (const Access &a : accessesOf(ctx, *st.F, o))
+    if (isa<LoadInst>(a.I))
+      for (const User *u : a.I->users())
+        if (isa<CallBase>(u) || isa<StoreInst>(u) || isa<ReturnInst>(u) || isa<PHINode>(u) || isa<SelectInst>(u) ||
+            isa<CastInst>(u) || isa<FreezeInst>(u) || isa<InsertValueInst>(u) || isa<InsertElementInst>(u))
+          return;
+  // The cells it wrote are named (M6, as writeSlotCells names them): a run-time read of a cell is a merge
+  // over the rails that may be there (M3, recordCellLoad), so the seeds' release follows it.
+  auto &named = st.callOut[&MS];
+  for (auto &[off, h] : seeds) {
+    st.releasable[root].push_back(h);
+    st.seeds.insert(h);
+    named[off] = Operand{h, true};
+  }
+}
 
 // M7 (cq-z6q1, CR rules 20, 21; 189).
 bool hostRecord(LoweringContext &ctx, const Value *root) {
