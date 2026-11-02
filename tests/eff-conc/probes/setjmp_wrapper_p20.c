@@ -1,5 +1,5 @@
 /* cq-wskg (gate 2a taint-h2 p20_sj): a longjmp through a defined noreturn wrapper called under a quantum
-   predicate in the entry itself; setjmp's result is quantum (taint), and the shape is a loud stop. */
+   predicate in the entry itself (rule 24, cq-lyzw). Formerly an error probe. */
 #include "CQ.h"
 #include <setjmp.h>
 static jmp_buf b;

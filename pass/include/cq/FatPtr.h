@@ -16,6 +16,8 @@ void lowerLoad(LoweringContext &, llvm::LoadInst &);
 void lowerStore(LoweringContext &, llvm::StoreInst &);
 llvm::Value *lowerCompare(LoweringContext &, llvm::ICmpInst &);
 void lowerPtrToInt(LoweringContext &, llvm::Instruction &);
+// cq-lyzw (rule 24 with rule 21): the i64 address a pointer names (base[tag] + size * idx), bound to nothing.
+Operand addressOf(LoweringContext &, const llvm::Value *ptr);
 void lowerIntToPtr(LoweringContext &, llvm::Instruction &);
 Triple passAcrossCall(LoweringContext &, const llvm::Value *ptr);
 // P1 (cq-arch 2026-11-01, CR rule 21, §1.4; 190, 191): at a clone's entry, pointer formal `formal` (T4 abi

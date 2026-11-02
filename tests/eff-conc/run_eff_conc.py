@@ -7,12 +7,12 @@ For probes/conc.O1.ll and probes/setjmp.O1.ll it checks, and fails on:
     p_vol_observable keeps both volatile accesses to @obs_counter and p_atomic_classical keeps its
     atomic store and load (the host performs them);
   - every entry is §6-equal to its own C program (`python3 -m cqcheck user`, the C oracle).
-probes/*_error.O1.ll must make cq-lower exit non-zero with the named eff-conc internal error: a quantum
-value stored to an observable volatile global; an effect in a clone that escapes by longjmp (a _ctl clone,
-cq-jwdf); an escaping clone called in a nested frame (the caller's own escaped flag is not built).
+ERRORS (probes that must make cq-lower exit non-zero with a named message) is empty since cq-lyzw.
 p_sj_* (setjmp.O1.ll) are 101's construction (rule 24): a longjmp under a quantum predicate is an escaped
 flag the clone returns beside its result, the setjmp join a select on it; no host setjmp/longjmp call is
-left. Variants: scalar quantum result, void clone with a pure continuation, classical result, quantum
+left. setjmp_class.O1.ll and the former error probes (setjmp_effect, _nested, _wrapper, _wrapper_p20/p21)
+are the class (cq-lyzw: explicit control flow before the final taint, Setjmp.cpp). vol_observable.O1.ll:
+an observable volatile store with quantum data is the tape entry volatile_store (rule 24 at f684858). Variants: scalar quantum result, void clone with a pure continuation, classical result, quantum
 value on the escaped arm (the != 0 test).
 p_vol_local is 32's shape (cq-r4cz): the unobservable volatile slot pair forwards as the plain access;
 p_atomic_rmw is 94's (M4): atomicrmw on a slot cell is load + add + store.
@@ -28,21 +28,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PROBES = Path(__file__).parent / "probes"
 ENTRIES = ["p_vol_internal", "p_vol_observable", "p_atomic_classical", "p_vol_local", "p_atomic_rmw"]
-ERRORS = {"vol_quantum_observable_error.O1.ll": "eff-conc: awaiting owner ruling: SPEC_ISSUES An observable "
-                                                "volatile access involving quantum data",
-          "setjmp_effect_error.O1.ll": "eff-conc: an escaping clone called as a _ctl clone",
-          "setjmp_nested_error.O1.ll": "eff-conc: a setjmp diamond in a lowered function whose first-return arm "
-                                       "calls no clone that escapes",
-          # cq-wskg: a longjmp through a defined noreturn wrapper under a quantum predicate.
-          "setjmp_wrapper_error.O1.ll": "eff-conc: a setjmp diamond in a lowered function whose first-return arm "
-                                        "calls no clone that escapes",
-          "setjmp_wrapper_p20_error.O1.ll": "eff-conc: a setjmp diamond whose first-return arm is not one block",
-          "setjmp_wrapper_p21_error.O1.ll": "eff-conc: a setjmp diamond whose first-return arm is not one block"}
+ERRORS = {}
 MODULES = {"conc.O1.ll": ENTRIES, "setjmp.O1.ll": ["p_sj_scalar", "p_sj_void", "p_sj_classical", "p_sj_qarm"],
            # cq-py5f: rule 24 over its class (a join asking for the result, a volatile atomic access).
            "conc_widen.O1.ll": ["p_join_result", "p_vol_atomic", "p_runtime_routine"],
-           "conc_rmw.O1.ll": ["p_rmw_qram"]}
+           "conc_rmw.O1.ll": ["p_rmw_qram"],
+           # cq-lyzw (rule 24 over its class): setjmp/longjmp as explicit control flow; formerly error probes.
+           "setjmp_class.O1.ll": ["p_sjc_samefn", "p_sjc_depth3", "p_sjc_value", "p_sjc_retry", "p_sjc_two",
+                                  "p_sjc_ptr", "p_sjc_loop"],
+           "setjmp_effect.O1.ll": ["setjmp_effect_error"], "setjmp_nested.O1.ll": ["setjmp_nested_error"],
+           "setjmp_wrapper.O1.ll": ["setjmp_wrapper_error"], "setjmp_wrapper_p20.O1.ll": ["p20"],
+           "setjmp_wrapper_p21.O1.ll": ["p21"],
+           # cq-lyzw (rule 24 at f684858): an observable volatile access with quantum data is a host effect.
+           "vol_observable.O1.ll": ["vol_quantum_observable", "p_vol_obs_pred"]}
 _SJ = (r"cq_template_select_i32", r"call [^\n]*@(setjmp|longjmp)\(")
+_NOSJ = (None, r"call [^\n]*@(setjmp|longjmp)\(")
 # entry -> (regex that must match its body, regex that must not)
 SHAPES = {"p_vol_internal": (None, r"volatile"),
           "p_vol_observable": (r"load volatile i32, ptr @obs_counter[\s\S]*store volatile i32 %\d+, ptr @obs_counter",
@@ -55,7 +55,14 @@ SHAPES = {"p_vol_internal": (None, r"volatile"),
           "p_rmw_qram": (r"cqrt_qram_load_i32\(i32 %\d+, i32 %\d+\)[\s\S]*cqrt_qram_store_i32\(", r"atomicrmw|cmpxchg"),
           "p_runtime_routine": (r"call ptr %\d+\(ptr", r"@pthread_(create|join)\("),
           "p_vol_atomic": (r"store atomic volatile i32 %\d+, ptr @vcell seq_cst", None),
-          "p_sj_scalar": _SJ, "p_sj_void": _SJ, "p_sj_classical": _SJ, "p_sj_qarm": _SJ}
+          "p_sj_scalar": _SJ, "p_sj_void": _SJ, "p_sj_classical": _SJ, "p_sj_qarm": _SJ,
+          "vol_quantum_observable": (r"cqrt_tape_effect_controlled\([^\n]*@\.cq\.effect\.volatile_store\)[\s\S]*"
+                                     r"cqrt_tape_write_i64_lit\(i32 %\d+, i64 ptrtoint \(ptr @sink to i64\)\)"
+                                     r"[\s\S]*cqrt_tape_write_i32\(", r"store volatile"),
+          "p_vol_obs_pred": (r"@\.cq\.effect\.volatile_store", r"store volatile")}
+for _e in MODULES["setjmp_class.O1.ll"] + ["setjmp_effect_error", "setjmp_nested_error", "setjmp_wrapper_error",
+                                            "p20", "p21"]:
+    SHAPES[_e] = _NOSJ
 
 
 def body(module: str, fn: str) -> str:

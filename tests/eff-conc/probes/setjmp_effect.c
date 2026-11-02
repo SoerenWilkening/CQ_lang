@@ -1,7 +1,7 @@
 #include "CQ.h"
 #include <setjmp.h>
-/* An effect after the longjmp's branch in the escaping clone (cq-jwdf): it would run under the
-   predicate before the branch, not under !escaped. */
+/* cq-jwdf (rule 24, cq-lyzw): an effect after the longjmp's branch in the escaping callee runs under
+   not-escaped (the escape is an early return of the callee). Formerly an error probe. */
 static jmp_buf jb;
 __attribute__((noinline)) static int inner(int q, int k) {
     if (q > k) longjmp(jb, 1);

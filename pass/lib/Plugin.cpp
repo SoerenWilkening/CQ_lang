@@ -58,6 +58,10 @@ cl::opt<bool> DumpTaint("cq-dump-taint", cl::desc("cq: print the taint result to
 cl::opt<bool> TracePipeline("cq-trace-pipeline", cl::Hidden,
                             cl::desc("cq: print each cq-lower pipeline step to stderr"));
 
+// Private to eff-conc's tests: the module after the rule-24 setjmp rewrite, on stderr.
+cl::opt<bool> DumpSetjmp("cq-dump-setjmp", cl::Hidden,
+                         cl::desc("cq: print the module after the rule 24 setjmp rewrite to stderr"));
+
 void trace(const Twine &step) {
   if (TracePipeline)
     errs() << "cq-lower: " << step << "\n";
@@ -189,6 +193,8 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
     SmallVector<Function *, 8> SJ = cq::conc::explicitSetjmp(M, T);
     if (!SJ.empty()) {
       trace("explicit-setjmp: changed");
+      if (DumpSetjmp)
+        M.print(errs(), nullptr);
       CFGChanged = true;
       Tainted.clear();
       for (Function &F : M)

@@ -19,10 +19,11 @@
 //    mem::lowerSlotLoad/Store, a QRAM object to mem::lowerQramLoad/Store, a quantum offset into
 //    classical memory to mem::lowerQromLoad.
 //  - An observable access with nothing quantum is copied unchanged, `volatile` kept: the host performs
-//    it. An observable access with anything quantum has no single-thread meaning the rules give (the
-//    outside observer would see a quantum value): unimplemented.
-//  - A volatile access through a fat pointer (a quantum tag, rule 21) is unimplemented: the routing of
-//    fat pointers is the spine's (its quantumTag), not reproduced here.
+//    it. An observable access with quantum data (rule 24 at f684858, cq-py5f) is a host effect: a store
+//    is the rule-16 effect entry `volatile_store` (tape::lowerVolatileStore: the address an i64, the value
+//    its fields, under the predicate); a load is the host read at its program point, unguarded, merged as
+//    any value (a seed rail where taint reads a quantum value; at a quantum address the plain read of
+//    every candidate, rule 21).
 //
 // lowerAtomic: an atomic load/store is the plain access (rule 24, 94): classical ones are copied
 // unchanged (the host performs the atomic op, which is the plain op single-threaded); quantum ones are
@@ -321,11 +322,45 @@ void lowerVolatile(LoweringContext &ctx, Instruction &I) {
       return copyClassical(ctx, I, /*dropVolatile=*/true);
     return routePlain(ctx, I, ptr, "an unobservable volatile access");
   }
-  if (q)
-    unimplemented("eff-conc: awaiting owner ruling: SPEC_ISSUES An observable volatile access involving quantum "
-                  "data",
-                  &I);
-  copyClassical(ctx, I, /*dropVolatile=*/false);
+  if (!q)
+    return copyClassical(ctx, I, /*dropVolatile=*/false);
+  // Rule 24 at f684858 (cq-py5f): an observable access with quantum data is a host effect; the object is
+  // the host's, not the program's (its content is what the outside makes it).
+  bool qAddr = spine::accessHasQuantumTag(ctx, ptr);
+  if (auto *st = dyn_cast<StoreInst>(&I)) {
+    // A store: the rule-16 effect entry `volatile_store` under the predicate, the address an i64 (rule 21's
+    // address of a quantum pointer, a rail).
+    Operand addr;
+    if (qAddr) {
+      addr = fatptr::addressOf(ctx, ptr);
+    } else {
+      Operand p = ctx.operand(ptr);
+      if (p.handle)
+        internalError("eff-conc: a pointer with a handle that carries no quantum tag", &I);
+      addr = Operand{ctx.B().CreatePtrToInt(p.v, Type::getInt64Ty(ctx.M.getContext())), false};
+    }
+    return tape::lowerVolatileStore(ctx, *st, addr);
+  }
+  // A load: the host read at its program point, unguarded (rule 19's classical call under a predicate),
+  // merged as any value: the volatile load itself, a seed rail (rule 7) where taint reads a quantum value.
+  // At a quantum address (rule 21) the read of every candidate cell, merged on the tag: the plain read.
+  if (qAddr)
+    return routePlain(ctx, I, ptr, "an observable volatile load");
+  Instruction *n = I.clone();
+  for (unsigned i = 0; i < n->getNumOperands(); ++i) {
+    Operand op = ctx.operand(I.getOperand(i));
+    if (op.handle)
+      internalError("eff-conc: a rail handle as the address of a host read", &I);
+    n->setOperand(i, op.v);
+  }
+  n->setName(I.getName());
+  ctx.B().Insert(n);
+  if (ctx.T.isQuantum(&I, ctx.S) && (I.getType()->isIntegerTy() || I.getType()->isFloatingPointTy())) {
+    CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(I.getType())}, {n});
+    ctx.unc().recordSeed(seed);
+    return ctx.bind(&I, seed);
+  }
+  ctx.bind(&I, n);
 }
 
 void lowerAtomic(LoweringContext &ctx, Instruction &I) {

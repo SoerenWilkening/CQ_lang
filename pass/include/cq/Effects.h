@@ -18,7 +18,11 @@ namespace cq::tape   { void lowerHostEffect(LoweringContext &, llvm::CallBase &)
                        // formatting body on a null buffer, snprintf(0, 0, fmt, args...), in front of it;
                        // the count's uses read that call (lifted by rule 18, or a rule 27 declared clone).
                        // True when the module changed (taint is then recomputed).
-                       bool rewriteDeferredResults(llvm::Module &, const TaintInfo &); }
+                       bool rewriteDeferredResults(llvm::Module &, const TaintInfo &);
+                       // cq-lyzw (CR rule 24 at f684858): an observable volatile store with quantum data,
+                       // the rule-16 effect entry `volatile_store` under the predicate: its address field
+                       // (an i64, literal when classical), then the stored value's fields (its lanes).
+                       void lowerVolatileStore(LoweringContext &, llvm::StoreInst &, Operand address); }
 namespace cq::invert { void lowerRegion(LoweringContext &, llvm::CallInst &begin, llvm::CallInst &end);
                        // I1 (cq-arch, cq-xjw2): the body of an _adj clone (S.adj): F's whole body (one void
                        // return) as one region; formals bound, preds computed, builder at the end of the

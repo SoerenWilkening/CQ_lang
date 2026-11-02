@@ -1,6 +1,7 @@
 #include "CQ.h"
 #include <setjmp.h>
-/* Nested frames: the escaping clone is called from a clone, not from the setjmp's arm. */
+/* Nested frames (rule 24, cq-lyzw): the escaping callee is called from a callee, whose own escaped flag
+   carries it to the setjmp. Formerly an error probe. */
 static jmp_buf jb;
 __attribute__((noinline)) static int inner(int q, int k) {
     if (q > k) longjmp(jb, 1);

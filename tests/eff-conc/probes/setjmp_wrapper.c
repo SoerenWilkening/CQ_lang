@@ -1,7 +1,7 @@
 #include "CQ.h"
 #include <setjmp.h>
 /* cq-wskg (rule 24): a longjmp reached through a defined noreturn wrapper under a quantum predicate in
-   the escaping clone: a loud stop, never the wrapper called unconditionally. */
+   the escaping callee: the wrapper's escape clone (cq-lyzw). Formerly an error probe. */
 static jmp_buf jb;
 __attribute__((noinline)) static void jump(void) { longjmp(jb, 1); }
 __attribute__((noinline)) static int inner(int q, int k) {

@@ -1493,6 +1493,79 @@ bool rewriteDeferredResults(Module &M, const TaintInfo &T) {
   return true;
 }
 
+// CR rule 24 at f684858 (cq-py5f): an observable volatile store with quantum data is a host effect, the
+// rule-16 effect entry `volatile_store` under the predicate (a seed |1> when it is top, as any effect
+// entry): the address as an i64 field (a literal when classical; a quantum address, rule 21, a written rail
+// under the predicate), then the stored value, one field per scalar leaf (a vector's lanes, rule 25; a
+// pointer value its address as an i64 literal). As every entry, none in a _pure clone.
+void lowerVolatileStore(LoweringContext &ctx, StoreInst &SI, Operand address) {
+  if (ctx.S.pure)
+    return;
+  LLVMContext &C = ctx.M.getContext();
+  Value *flag = ctx.currentFlag();
+  Value *ctl = flag;
+  if (!ctl) {
+    RailType i1{Kind::Int, 1};
+    CallInst *one = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getTrue(C)});
+    ctx.unc().recordSeed(one);
+    ctl = one;
+  }
+  Value *tape = tapeOf(ctx);
+  ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffect, {}, /*ctl=*/true}, {ctl, tape, effectName(ctx.M, "volatile_store")});
+  auto write = [&](Operand op, RailType w) {
+    if (!op.handle) {
+      ctx.emitCore(abi::CoreSpec{abi::Core::TapeWriteLit, w}, {tape, op.v});
+      return;
+    }
+    CallInst *h2 = flag ? ctx.emitCore(abi::CoreSpec{abi::Core::TapeWrite, w, /*ctl=*/true}, {flag, tape, op.v})
+                        : ctx.emitCore(abi::CoreSpec{abi::Core::TapeWrite, w}, {tape, op.v});
+    ctx.unc().recordExternal(h2, Role::Tape);
+  };
+  RailType i64{Kind::Int, 64};
+  write(address, i64);
+  Value *v = SI.getValueOperand();
+  Type *ty = v->getType();
+  if (ty->isPointerTy()) {
+    Operand p = ctx.operand(v);
+    if (p.handle)
+      internalError("eff-tape: a pointer value with a handle of its own (rule 21 binds a quantum pointer's fields)", &SI);
+    write(Operand{ctx.B().CreatePtrToInt(p.v, Type::getInt64Ty(C)), false}, i64);
+    return;
+  }
+  if (ty->isIntegerTy() || ty->isFloatingPointTy()) {
+    write(ctx.operand(v), railTypeOf(ty));
+    return;
+  }
+  // A vector or aggregate: its scalar leaves in order (rule 25 lanes, rule 26 fields).
+  SmallVector<Type *, 8> leaves;
+  std::function<void(Type *)> flat = [&](Type *t) {
+    if (auto *st = dyn_cast<StructType>(t))
+      for (Type *e : st->elements())
+        flat(e);
+    else if (auto *at = dyn_cast<ArrayType>(t))
+      for (uint64_t i = 0; i < at->getNumElements(); ++i)
+        flat(at->getElementType());
+    else if (auto *vt = dyn_cast<FixedVectorType>(t))
+      for (unsigned i = 0; i < vt->getNumElements(); ++i)
+        flat(vt->getElementType());
+    else
+      leaves.push_back(t);
+  };
+  flat(ty);
+  SmallVector<Operand, 4> fs = ctx.fields(v);
+  if (fs.size() != leaves.size())
+    internalError("eff-tape: a stored composite whose fields are not its scalar leaves", &SI);
+  for (unsigned i = 0; i < fs.size(); ++i) {
+    if (leaves[i]->isPointerTy()) {
+      if (fs[i].handle)
+        internalError("eff-tape: a pointer leaf with a handle of its own", &SI);
+      write(Operand{ctx.B().CreatePtrToInt(fs[i].v, Type::getInt64Ty(C)), false}, i64);
+    } else {
+      write(fs[i], railTypeOf(leaves[i]));
+    }
+  }
+}
+
 void lowerNoreturn(LoweringContext &ctx, CallBase &CB) {
   requireEntry(ctx, CB, "a noreturn arm");
   // Rule 16 lowers the call to abort_i1(pred) alone: its arguments (exit's status, __assert_fail's

@@ -2810,6 +2810,16 @@ Value *lowerCompare(LoweringContext &ctx, ICmpInst &cmp) {
 // Rule 21 (89, 107): ptrtoint of a fat pointer is its flat address base[tag] + size * idx (base[tag] the
 // select chain over the roots' host addresses, as a compare builds it), at the integer's width (a narrower
 // integer is the address truncated, as LLVM does).
+// cq-lyzw (CR rule 24, rule 21): the address ptr names, base[tag] + size * idx as an i64 (a rail when the tag
+// or idx is quantum), as lowerPtrToInt computes it, bound to nothing. eff-conc's observable volatile store
+// writes it as its tape entry's address field.
+Operand addressOf(LoweringContext &ctx, const Value *ptr) {
+  Fat f = derive(ctx, ptr, /*emit=*/true);
+  Bases cache;
+  Operand base = baseOf(ctx, f, cache);
+  return address(ctx, f, cache, base);
+}
+
 void lowerPtrToInt(LoweringContext &ctx, Instruction &I) {
   auto *pi = dyn_cast<PtrToIntInst>(&I);
   if (!pi)
