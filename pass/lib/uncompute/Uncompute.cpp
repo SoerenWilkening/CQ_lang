@@ -287,6 +287,12 @@ struct Uncompute::Impl {
     Function *via = nullptr;   // U8: the clean-up is the call via(ops..., old) (inverse unused)
     std::string unbuilt;                    // cq-p8r6: placed only to stop (cleanupUnbuilt)
     const Instruction *unbuiltAt = nullptr;
+    // cq-mgkr (cleanupBijectiveUnder): the guarded form. Each alternative cleans the rail where its classical
+    // guard holds; elsewhere the item is the rail's plain one. inverse/ops above are unused; reads is the
+    // union of the alternatives' reads.
+    struct Alt { Value *guard; abi::TemplateSpec inverse; SmallVector<Operand, 3> ops; SmallVector<RailId, 3> reads; };
+    SmallVector<Alt, 2> alts;
+    bool everyPath = false;   // the alternatives' guards cover every path: no plain part
   };
   struct Rail {
     Value *handle = nullptr;
@@ -936,9 +942,18 @@ struct Uncompute::Impl {
     const Rail &r = rails[g];
     if (r.deferred != kNone)
       return SmallVector<RailId, 4>(defs[r.deferred].reads.begin(), defs[r.deferred].reads.end());
-    if (r.cleanup)
-      return SmallVector<RailId, 4>(r.cleanup->reads.begin(), r.cleanup->reads.end());
     SmallVector<RailId, 4> out;
+    if (r.cleanup) {
+      if (r.cleanup->alts.empty())
+        return SmallVector<RailId, 4>(r.cleanup->reads.begin(), r.cleanup->reads.end());
+      // cq-mgkr: an image a keeper keeps (the classical merge that chose it, kept) is alive on its alternative's
+      // path whatever its own item does elsewhere: no order between the two items.
+      for (RailId x : r.cleanup->reads)
+        if (rails[x].keepers.empty())
+          out.push_back(x);
+      if (r.role != Role::Garbage || r.cleanup->everyPath)
+        return out;   // a guarded clean-up's plain part undoes the rail's records (below)
+    }
     for (unsigned rec : undone(g))
       for (RailId x : info[rec].reads)
         if (x != g && !is_contained(out, x))
@@ -1017,6 +1032,36 @@ struct Uncompute::Impl {
     Rail &r = rails[g];
     if (!r.cleanup || r.released)
       return false;
+    if (!r.cleanup->alts.empty()) {
+      // cq-mgkr: an alternative whose image is garbage reading g (rule 5 undoes the image through g) is
+      // dropped; g's plain item runs on its path instead.
+      auto &alts = r.cleanup->alts;
+      size_t before = alts.size();
+      alts.erase(std::remove_if(alts.begin(), alts.end(),
+                                [&](const Cleanup::Alt &a) {
+                                  return any_of(a.reads, [&](RailId x) {
+                                    return rails[x].keepers.empty() && garbageReads(x, g);
+                                  });
+                                }),
+                 alts.end());
+      if (alts.size() == before)
+        return false;
+      r.cleanup->everyPath = false;   // the dropped alternative's path takes the plain item
+      for (RailId x : r.cleanup->reads)
+        llvm::erase(rails[x].cleanupReaders, g);
+      if (alts.empty()) {
+        r.cleanup.reset();
+        return true;
+      }
+      r.cleanup->reads.clear();
+      for (const Cleanup::Alt &a : alts)
+        for (RailId x : a.reads)
+          if (!is_contained(r.cleanup->reads, x)) {
+            r.cleanup->reads.push_back(x);
+            rails[x].cleanupReaders.push_back(g);
+          }
+      return true;
+    }
     bool drop = false;
     for (RailId x : r.cleanup->reads)
       if (garbageReads(x, g)) {
@@ -2027,6 +2072,79 @@ struct Uncompute::Impl {
     return track(B.CreateCall(declareFn(M, r.qram ? "cqrt_qram_free" : "cqrt_free", FT, r.handle), {r.handle}));
   }
 
+  // cq-mgkr (CR rule 6, dead on one classical path only): each alternative's clean-up under its guard, then
+  // the plain item under none of them, each a segment segOut wraps (placeAt) into a block of its own.
+  struct Seg { Instruction *first, *last; Value *cond; };
+  SmallVector<Seg, 4> *segOut = nullptr;
+  Instruction *emitGuardedCleanup(RailId g, IRBuilder<> &B) {
+    Rail &r = rails[g];
+    if (!segOut)
+      internalError("uncompute: a rule 6 clean-up under a classical guard in a mirror (a merge on a cycle)", r.handle);
+    Module &M = *B.GetInsertBlock()->getModule();
+    LLVMContext &C = M.getContext();
+    FunctionType *FT = FunctionType::get(Type::getVoidTy(C), {Type::getInt32Ty(C)}, false);
+    // An image a keeper keeps (an arm of a kept merge) is alive at the clean-up point only where a keeper
+    // chose it; elsewhere its own item undid it already: the alternative runs where its guard holds and its
+    // image is so kept.
+    Instruction *at = &*B.GetInsertPoint();
+    SmallVector<Value *, 2> eff;
+    for (const Cleanup::Alt &a : r.cleanup->alts) {
+      Value *gd = a.guard;
+      for (RailId x : a.reads) {
+        if (rails[x].keepers.empty())
+          continue;
+        SmallVector<FlagEv, 4> evs;
+        Instruction *def = rails[x].creator != kNone ? records[rails[x].creator].forward
+                                                     : dyn_cast<Instruction>(rails[x].handle);
+        if (def)
+          evs.push_back({def, true});
+        for (RailId m : rails[x].keepers)
+          if (auto *mi = dyn_cast<Instruction>(rails[m].handle); mi && mi->getParent())
+            evs.push_back({mi, false, m, x});
+        Value *runs = flagAt(at, evs, !def);   // x's own item would run here: not chosen by a keeper
+        B.SetInsertPoint(at);
+        gd = B.CreateAnd(gd, B.CreateNot(runs));
+      }
+      eff.push_back(gd);
+    }
+    Value *none = nullptr;
+    for (Value *gd : eff)
+      none = none ? B.CreateOr(none, gd) : gd;
+    none = B.CreateNot(none, "cq.r6.plain");
+    Instruction *last = dyn_cast<Instruction>(none);
+    if (!last)
+      last = track(BinaryOperator::CreateOr(none, none, "cq.r6.mark", at));
+    for (size_t ai = 0; ai < r.cleanup->alts.size(); ++ai) {
+      const Cleanup::Alt &a = r.cleanup->alts[ai];
+      SmallVector<Value *, 4> args;
+      for (const Operand &o : a.ops)
+        args.push_back(o.v);
+      CallInst *t = track(B.CreateCall(abi::declare(M, a.inverse, false), args));
+      abi::CoreSpec cp{abi::Core::Copy, templateResultType(a.inverse)};
+      track(B.CreateCall(abi::declare(M, cp), {t, r.handle}));
+      SmallVector<Value *, 5> uargs{t};
+      uargs.append(args.begin(), args.end());
+      track(B.CreateCall(abi::declare(M, a.inverse, true), uargs));
+      track(B.CreateCall(declareFn(M, "cqrt_free", FT, t), {t}));
+      last = emitRelease(g, B);
+      segOut->push_back({t, last, eff[ai]});
+    }
+    if ((r.role != Role::Garbage && r.role != Role::Seed) || r.cleanup->everyPath)
+      return last;   // kept where no alternative holds (the rail is the live value there), or no such path
+    std::optional<Cleanup> saved = std::move(r.cleanup);
+    r.cleanup.reset();
+    Instruction *first = nullptr;
+    {
+      Instruction *mark = last;
+      last = emitItem(g, B);
+      first = mark->getNextNode();
+    }
+    r.cleanup = std::move(saved);
+    if (first)
+      segOut->push_back({first, last, none});
+    return last;
+  }
+
   Instruction *emitItem(RailId g, IRBuilder<> &B) {
     Rail &r = rails[g];
     {
@@ -2103,6 +2221,8 @@ struct Uncompute::Impl {
     }
     if (r.cleanup && !r.cleanup->unbuilt.empty())
       unimplemented(r.cleanup->unbuilt, r.cleanup->unbuiltAt);
+    if (r.cleanup && !r.cleanup->alts.empty())
+      return emitGuardedCleanup(g, B);
     if (r.cleanup && r.cleanup->via) {
       // U8 (cq-xivx): via(ops..., old) zeroes old; free old.
       SmallVector<Value *, 6> args;
@@ -2445,8 +2565,31 @@ struct Uncompute::Impl {
     for (auto [fwd, obj] : swaps)
       tmps.push_back(swapIn(fwd, obj, B));
     Instruction *prev = pos.before->getPrevNode();
+    SmallVector<Seg, 4> segs;
+    segOut = &segs;
     Instruction *end = emitItem(g, B);
+    segOut = nullptr;
     Instruction *first = prev ? prev->getNextNode() : &pos.bb->front();
+    if (!segs.empty()) {
+      // cq-mgkr: a guarded rule 6 clean-up: each segment under its own condition (and the run flag).
+      if (!sandwich.empty() || !swaps.empty())
+        internalError("uncompute: a rule 6 clean-up under a classical guard with in-place writes or swaps around it",
+                      r.handle);
+      for (Seg &sg : segs) {
+        Value *c = sg.cond;
+        if (guard) {
+          IRBuilder<> GB(sg.first);
+          c = GB.CreateAnd(cond, c);
+        }
+        wraps.push_back({g, sg.first, sg.last, c});
+      }
+      itemEnd[{g, pos.bb}] = end;
+      if (local)
+        r.released = true;
+      else
+        r.exitsDone.insert(pos.bb);
+      return;
+    }
     Instruction *last = end;
     for (unsigned k = 0; k < swaps.size(); ++k)
       last = swapOut(swaps[k].second, tmps[k], B);
@@ -3968,6 +4111,39 @@ void Uncompute::cleanupBijective(RailId oldRail, const abi::TemplateSpec &invers
     }
   }
   impl->rails[oldRail].cleanup = std::move(cl);
+}
+
+void Uncompute::cleanupBijectiveUnder(RailId oldRail, Value *guard, const abi::TemplateSpec &inverse,
+                                      ArrayRef<Operand> ops, bool everyPath) {
+  Impl::Rail &x = impl->rail(oldRail, "cleanupBijectiveUnder");
+  if (!guard || !guard->getType()->isIntegerTy(1))
+    internalError("uncompute: cleanupBijectiveUnder without a classical i1 guard", x.handle);
+  if (x.released || !x.exitsDone.empty())
+    internalError("uncompute: cleanupBijectiveUnder of a rail already uncomputed", x.handle);
+  if (impl->isMerge(oldRail))
+    internalError("uncompute: cleanupBijectiveUnder of a merged handle", x.handle);
+  if (x.cleanup && x.cleanup->alts.empty())
+    internalError("uncompute: cleanupBijectiveUnder of a rail with an unguarded clean-up", x.handle);
+  if (!x.cleanup)
+    x.cleanup = Impl::Cleanup{};
+  Impl::Cleanup::Alt a{guard, inverse, SmallVector<Operand, 3>(ops.begin(), ops.end()), {}};
+  for (const Operand &o : ops) {
+    if (!o.handle)
+      continue;
+    RailId r = impl->lookup(o.v, "cleanupBijectiveUnder", x.handle);
+    if (r == oldRail)
+      internalError("uncompute: rule 6 inverse reads the rail it cleans", x.handle);
+    if (impl->rails[r].released)
+      internalError("uncompute: rule 6 operand already uncomputed", o.v);
+    if (!is_contained(a.reads, r))
+      a.reads.push_back(r);
+    if (!is_contained(x.cleanup->reads, r)) {
+      x.cleanup->reads.push_back(r);
+      impl->rails[r].cleanupReaders.push_back(oldRail);
+    }
+  }
+  x.cleanup->alts.push_back(std::move(a));
+  x.cleanup->everyPath = everyPath;
 }
 
 void Uncompute::cleanupByCall(RailId oldRail, Function *inv, ArrayRef<Operand> args, ArrayRef<Value *> alsoReads) {

@@ -186,6 +186,16 @@ struct Shared {
   // CR rule 6: the rails a clean-up was requested for (Opcode.cpp). A template rail reading one of them
   // is no longer garbage rule 5 can uncompute (cq-tmvo).
   llvm::DenseSet<const llvm::Value *> ruleSixCleaned;
+  // cq-mgkr (CR rule 6, dead on one classical path only, through a composite update): a classical merge M
+  // whose arms are bijective updates of a dead y that are garbage read only by M; y is cleaned from the
+  // first bijective update of M's value instead (per path, its inverse composed with the arm's).
+  struct MergeSix {
+    llvm::Value *Y;
+    struct Arm { llvm::Value *guard; llvm::Instruction *U; };
+    llvm::SmallVector<Arm, 2> arms;
+    bool every;
+  };
+  llvm::DenseMap<const llvm::Value *, MergeSix> mergeSix;
   // cq-i9wk (CR rule 19): results of calls of in-place callees reached with no quantum argument that are
   // FROZEN (a register the callee minted or its rule-6 image): kept here like a register of this function.
   llvm::DenseSet<const llvm::Value *> frozenResults;

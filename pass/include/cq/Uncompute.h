@@ -93,6 +93,13 @@ public:
   // ruled out by M3b) hit a rail `handle` may name at run time? false for a value that is no recorded rail.
   bool mayHit(const llvm::Value *handle, const llvm::Instruction *gate) const;
   void cleanupBijective(RailId oldRail, const abi::TemplateSpec &inverse, llvm::ArrayRef<Operand>);
+  // cq-mgkr (CR rule 6, dead on one classical path only; ruling cq-mzqo): oldRail is dead where the classical
+  // i1 `guard` holds (the path on which a classical merge chose its bijective image) and cleaned there as
+  // cleanupBijective cleans it; on the paths where no such guard holds its item is its plain one (its records
+  // undone, a seed freed, nothing for a kept role). Called once per such path; never with cleanupBijective.
+  // everyPath: the guards of all the calls for oldRail cover every path (no plain part).
+  void cleanupBijectiveUnder(RailId oldRail, llvm::Value *guard, const abi::TemplateSpec &inverse,
+                             llvm::ArrayRef<Operand>, bool everyPath = false);
   // U8 (cq-xivx, CR rule 18, §1.4 _inv<c>): rule 6 clean-up of oldRail through a call: its item emits
   // inv(args..., old handle) (inv's calling convention) and then frees oldRail. The handles of args and
   // alsoReads are the clean-up's reads (as cleanupBijective's operands: placement, barriers, pruning).

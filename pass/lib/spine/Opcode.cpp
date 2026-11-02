@@ -1292,12 +1292,48 @@ void compositeCleanup(LoweringContext &ctx, Instruction &I, Value *X, Operand yp
 // for y' = c ? f(y) : y, where no condition of the chain reads y (else M is no bijection in y). The
 // arms' inverses and the inner selects are fresh garbage rails (rule 5 undoes them after the clean-up
 // that reads them); the outermost select is the clean-up's inverse (Uncompute::cleanupBijective).
-// cq-5nj9: a CLASSICAL merge M (a select on a classical condition, or a phi whose incoming edges are all
-// classical: a classical choice over handles, rule 9) of arms one of which is a bijective update of a
-// dead y. M's value is that update's rail on one path only, so y is dead after the update on that path
-// and rule 6 cleans it there, under a classical branch at the clean-up point (after the readers of y
-// that follow the update on that path). Not built: an internal error rather than a dead old value kept.
-// Outside cycles only: a loop's carried and exit values are rule 14's (its own clean-ups, 05, 09, 150).
+// cq-5nj9, cq-mgkr (CR rule 6, dead on one classical path only; ruling cq-mzqo): a CLASSICAL merge M (a
+// select on a classical condition, or a phi whose incoming edges are all classical: a classical choice over
+// handles, rule 9) of arms one of which is a bijective update U of a dead y. M's value is U's rail on the
+// paths that chose U, so y is dead there after M's readers, and rule 6 cleans it there from U's image under
+// a classical branch on "M chose U" at the clean-up point; on the other paths y is the live value (or
+// garbage undone as usual). Uncompute places it (cleanupBijectiveUnder) and drops it where U's image is
+// itself garbage undone through y. Outside cycles only: a loop's carried and exit values are rule 14's.
+// The guard: the new select's condition (or its negation), or an i1 phi beside the new phi, true on the
+// edges whose incoming handle is U's rail.
+Value *choseArm(LoweringContext &ctx, Instruction &M, Value *armRail) {
+  Value *m = ctx.operand(&M).v;
+  if (auto *sel = dyn_cast<SelectInst>(m)) {
+    if (sel->getTrueValue() == armRail && sel->getFalseValue() != armRail)
+      return sel->getCondition();
+    if (sel->getFalseValue() == armRail && sel->getTrueValue() != armRail) {
+      return ctx.B().CreateNot(sel->getCondition(), "cq.r6.chose");   // where the walker is, after M
+    }
+    return nullptr;
+  }
+  auto *np = dyn_cast<PHINode>(m);
+  if (!np)
+    return nullptr;
+  BasicBlock *J = np->getParent();
+  if (np->getNumIncomingValues() != unsigned(pred_size(J)))
+    internalError("spine: a classical merge phi over handles whose incomings are not all filled at its rule 6", &M);
+  LLVMContext &C = ctx.M.getContext();
+  PHINode *g = PHINode::Create(Type::getInt1Ty(C), np->getNumIncomingValues(), "cq.r6.chose");
+  g->insertInto(J, J->begin());
+  bool any = false, all = true;
+  for (unsigned k = 0; k < np->getNumIncomingValues(); ++k) {
+    bool chose = np->getIncomingValue(k) == armRail;
+    any |= chose;
+    all &= chose;
+    g->addIncoming(ConstantInt::getBool(C, chose), np->getIncomingBlock(k));
+  }
+  if (!any || all) {
+    g->eraseFromParent();
+    return nullptr;
+  }
+  return g;
+}
+
 void classicalMergeStop(LoweringContext &ctx, Instruction &M, ArrayRef<Value *> arms) {
   auto onCycle = [](const BasicBlock *b) {
     SmallPtrSet<const BasicBlock *, 16> seen;
@@ -1313,26 +1349,64 @@ void classicalMergeStop(LoweringContext &ctx, Instruction &M, ArrayRef<Value *> 
   };
   if (onCycle(M.getParent()))
     return;
-  SmallVector<const Instruction *, 4> updates;
+  SmallVector<Instruction *, 4> updates;
   for (Value *a : arms)
     if (auto *U = dyn_cast<Instruction>(a); U && !is_contained(updates, U)) {
       if (onCycle(U->getParent()))
         return;
       updates.push_back(U);
     }
-  for (const Instruction *U : updates)
+  // Per old value y: the arms that are bijective updates of a dead y, each with its guard.
+  struct Alt { Value *guard; Inverse inv; Value *arm; };
+  MapVector<Value *, SmallVector<Alt, 2>> perY;
+  for (Instruction *U : updates)
     for (Value *Y : U->operands()) {
-      if (!cleanable(ctx, Y) || !inverseOf(ctx, *const_cast<Instruction *>(U), Y, ctx.operand(U)))
+      if (!cleanable(ctx, Y))
+        continue;
+      if (onCycle(cast<Instruction>(Y)->getParent()))
+        continue;   // a value made in a loop is the loop's (its reverse undoes it, rule 14)
+      Operand img = ctx.operand(U);
+      if (!img.handle)
+        continue;
+      std::optional<Inverse> inv = inverseOf(ctx, *U, Y, img);
+      if (!inv)
         continue;
       SmallVector<const Instruction *, 4> also;
       for (const Instruction *V : updates)
         if (V != Y)
           also.push_back(V);
-      if (deadAtCleanup(ctx, Y, ctx.operand(Y).v, &M, also))
-        unimplemented("spine: rule 6 on a classical merge of a bijective update of a dead register (the old value "
-                      "is dead on one path only: a clean-up under a classical branch, cq-5nj9, cq-mzqo)",
-                      &M);
+      if (!deadAtCleanup(ctx, Y, ctx.operand(Y).v, &M, also))
+        continue;
+      Value *guard = choseArm(ctx, M, img.v);
+      if (!guard)
+        continue;   // U's rail is M on every path (an ordinary update, its own rule 6) or on none
+      auto &v = perY[Y];
+      if (none_of(v, [&](const Alt &a) { return a.arm == U; }))
+        v.push_back({guard, *inv, U});
     }
+  for (auto &[Y, alts] : perY) {
+    // Every arm an update of y: y is dead on every path, and no plain part remains.
+    bool every = all_of(arms, [&, &alts = alts](Value *a) {
+      return any_of(alts, [&](const Alt &x) { return x.arm == a; });
+    });
+    Value *h = ctx.operand(Y).v;
+    RailId yid = ctx.unc().idOf(h);
+    for (const Alt &a : alts) {
+      ctx.unc().cleanupBijectiveUnder(yid, a.guard, a.inv.spec, a.inv.ops, every);
+      // The clean-up point follows M and the guard (the clean-up reads both).
+      if (auto *gi = dyn_cast<Instruction>(a.guard))
+        ctx.unc().noteUse(yid, gi);
+    }
+    if (auto *mi = dyn_cast<Instruction>(ctx.operand(&M).v))
+      ctx.unc().noteUse(yid, mi);
+    // Where an arm's image is garbage undone through y (Uncompute drops that alternative), y's bijective
+    // image may continue through a later update of M's value: rule 6's composite update (127) per path.
+    spine::Shared::MergeSix ms{Y, {}, every};
+    for (const Alt &a : alts)
+      ms.arms.push_back({a.guard, cast<Instruction>(a.arm)});
+    spine::shared(ctx).mergeSix[&M] = std::move(ms);
+    spine::shared(ctx).ruleSixCleaned.insert(h);   // no second clean-up of y (a deferred retry, cq-2ql9)
+  }
 }
 
 void mergeCleanup(LoweringContext &ctx, Instruction &M, ArrayRef<Value *> arms, Operand yp) {
@@ -1624,6 +1698,39 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
         mem::cleanIndexedCellLoad(ctx, *ld, I, inv->spec, inv->ops);
         return;
       }
+  // cq-mgkr (CR rule 6, composite through a classical merge): I = f(M, ...) a bijection in M, M a classical
+  // merge of bijective updates of a dead y with nothing else reading M: y is cleaned from I's image, on the
+  // path that chose arm U by t = U^-1(f^-1(I)), f^-1(I) a fresh garbage rail (compositeCleanup's inner step).
+  for (Value *Z : I.operands()) {
+    auto ms = spine::shared(ctx).mergeSix.find(Z);
+    if (ms == spine::shared(ctx).mergeSix.end() || !deadAfter(ctx, Z, &I))
+      continue;
+    std::optional<Inverse> inv = inverseOf(ctx, I, Z, yp);
+    if (!inv)
+      continue;
+    spine::Shared::MergeSix m = ms->second;
+    spine::shared(ctx).mergeSix.erase(ms);
+    SmallVector<std::pair<Value *, Inverse>, 2> steps;
+    Value *t1 = nullptr;
+    for (auto &a : m.arms) {
+      if (!t1)
+        t1 = ctx.emitTemplate(inv->spec, inv->ops);
+      std::optional<Inverse> iu = inverseOf(ctx, *a.U, m.Y, Operand{t1, true});
+      if (!iu) {
+        steps.clear();
+        break;
+      }
+      steps.push_back({a.guard, *iu});
+    }
+    if (steps.empty())
+      continue;
+    RailId yid = ctx.unc().idOf(ctx.operand(m.Y).v);
+    for (auto &[g, iu] : steps)
+      ctx.unc().cleanupBijectiveUnder(yid, g, iu.spec, iu.ops, m.every);
+    ctx.unc().noteUse(yid, cast<Instruction>(t1));
+    // A merge of the same arms may name y's rail where it chose y itself: that path keeps y (plain part).
+    (void)Z;
+  }
   SmallVector<Value *, 3> dead;
   DenseMap<Value *, SmallVector<const Instruction *, 2>> dynOf;   // cq-8101
   for (Value *Y : I.operands()) {

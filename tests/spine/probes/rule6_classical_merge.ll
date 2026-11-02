@@ -1,7 +1,7 @@
 ; cq-5nj9 (unc-h1 p20): a classical merge (a phi over handles) of x itself and its bijective update x + 7:
-; x is dead on the updated path only, after the reader x * k's uncompute; that clean-up needs a classical
-; branch at its point, not built: an internal error, never a kept dead old value.
-; FATAL: rule 6 on a classical merge of a bijective update of a dead register
+; x is dead on the updated path only, after the reader x * k's uncompute: cq-mgkr (ruling cq-mzqo) cleans it
+; there from x + 7 under a classical branch on the merge's choice; on the other path x is the measured value.
+; USERCHECK f
 ;
 ; C: __attribute__((noinline)) static void h(int c) { if (c) __builtin_trap(); }
 ; C: int f(int x0, double th, int k, int c, double p) {
