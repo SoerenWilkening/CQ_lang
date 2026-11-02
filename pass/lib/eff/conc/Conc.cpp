@@ -256,7 +256,7 @@ void lowerAtomic(LoweringContext &ctx, Instruction &I) {
       return copyClassical(ctx, I, /*dropVolatile=*/false);
     if (ctx.T.isFatPointer(ptr, ctx.S) || ctx.T.isQuantum(ptr, ctx.S))
       unimplemented("eff-conc: an atomic read-modify-write through a fat pointer (rule 24's load + op + store "
-                    "over rule 21's per-object accesses; fatptr exposes no read-modify-write, cq-py5f follow-up)",
+                    "over rule 21's per-object accesses; fatptr exposes no read-modify-write, cq-z28j)",
                     &I);
     bool slot = false, qram = false, classical = false;
     for (ObjectId o : ctx.T.provenance(ptr, ctx.S)) {
@@ -271,7 +271,7 @@ void lowerAtomic(LoweringContext &ctx, Instruction &I) {
                     &I);
     unimplemented(std::string("eff-conc: ") + (isa<AtomicRMWInst>(I) ? "atomicrmw" : "cmpxchg") +
                       " on a QRAM object or on several objects (rule 24's load + op + store over rule 20's "
-                      "QRAM accesses; mem-qram exposes no read-modify-write, cq-py5f follow-up)",
+                      "QRAM accesses; mem-qram exposes no read-modify-write, cq-z28j)",
                   &I);
   }
   internalError("eff-conc: lowerAtomic of an instruction that is not atomic", &I);
@@ -307,7 +307,7 @@ void lowerThreadCall(LoweringContext &ctx, CallBase &CB) {
     Value *fn = CB.getArgOperand(2)->stripPointerCasts();
     if (!isa<Function>(fn))
       unimplemented("eff-conc: pthread_create of a start routine chosen at run time (rule 24 with rule 19's "
-                    "indirect call; not built in eff-conc)",
+                    "indirect call; not built in eff-conc, cq-20fz)",
                     &CB);
     Operand p = ctx.operand(CB.getArgOperand(3));
     if (p.handle || ctx.T.isFatPointer(CB.getArgOperand(3), ctx.S))
