@@ -69,6 +69,7 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/ValueTracking.h"
@@ -81,6 +82,8 @@
 #include "llvm/TargetParser/Triple.h"
 
 #include <functional>
+#include <map>
+#include <vector>
 #include <memory>
 #include <string>
 
@@ -114,15 +117,6 @@ bool nonClassicalPointer(LoweringContext &ctx, const Value *p) {
     return true;
   for (ObjectId o : ctx.T.provenance(p, ctx.S))
     if (ctx.T.classOf(o) != ObjClass::Classical)
-      return true;
-  return false;
-}
-
-bool qramPointer(LoweringContext &ctx, const Value *p) {
-  if (ctx.T.isFatPointer(p, ctx.S))
-    return true;
-  for (ObjectId o : ctx.T.provenance(p, ctx.S))
-    if (ctx.T.classOf(o) == ObjClass::Qram)
       return true;
   return false;
 }
@@ -763,6 +757,32 @@ SigDefault signalDefault(const Module &M, int64_t sig) {
 // module installs for sig runs as h(sig) under the predicate (taint's _ctl clone of h, calls::lowerLiftedVia);
 // SIG_IGN installed (or no handler and a default action of ignore) has nothing more; SIG_DFL installed or no
 // handler, with a default action of terminate, is the abort arm (abort_i1(flag), 45).
+// Installations on the tape (rule 16 signal table): a signal/bsd_signal/sigset/sigaction call under a quantum
+// predicate (or after a tape point) is never performed on the host, so a later raise reads the handler as a
+// merged value: the installed one where the installation's predicate held, the earlier one elsewhere.
+struct TapedInstall {
+  const CallBase *call;   // the original call
+  std::optional<Pred> q;  // its quantum predicate (none: after a tape point, it always installs)
+  Value *sig;             // its signal number (new IR, classical)
+  Value *handler;         // the handler it installs (new IR, classical pointer)
+  Value *applies;         // classical i1: the call installs at all (sigaction with a non-null act), or nullptr
+};
+std::map<const Function *, std::pair<WeakVH, std::vector<TapedInstall>>> &tapedInstalls() {
+  static std::map<const Function *, std::pair<WeakVH, std::vector<TapedInstall>>> m;
+  return m;
+}
+std::vector<TapedInstall> &installsOf(LoweringContext &ctx) {
+  auto &e = tapedInstalls()[ctx.S.F];
+  Value *entry = &ctx.out().getEntryBlock().front();
+  if (e.first != entry) {
+    e.first = entry;
+    e.second.clear();
+  }
+  return e.second;
+}
+
+bool isInstall(StringRef n) { return n == "signal" || n == "sigaction" || n == "bsd_signal" || n == "sigset"; }
+
 // The handler the host's signal table holds for sig at run time (classical): sigaction(sig, NULL, &old), the
 // handler being the first word of struct sigaction on every x86-64 target (Darwin's __sigaction_u, Linux's
 // sa_handler).
@@ -780,6 +800,14 @@ Value *installedHandler(LoweringContext &ctx, Value *sig) {
   }
   B.CreateCall(sa, {sig, ConstantPointerNull::get(cast<PointerType>(ptr)), buf});
   return B.CreateLoad(ptr, buf);
+}
+
+// A readable word for a null act (the select above never reads it then).
+Value *installedHandlerSlot(LoweringContext &ctx) {
+  BasicBlock &entry = ctx.out().getEntryBlock();
+  IRBuilder<> E(&entry, entry.getFirstInsertionPt());
+  AllocaInst *a = E.CreateAlloca(PointerType::get(ctx.M.getContext(), 0), nullptr, "cq.sigaction.none");
+  return a;
 }
 
 // Whether the default action of the classical signal number sig terminates the process (run time).
@@ -864,6 +892,15 @@ void lowerRaise(LoweringContext &ctx, CallBase &CB, Value *flag, bool classicalR
     }
   if (handlers.size() + ign + dfl > 1)
     dynamic = true;
+  // An installation on the tape (under a quantum predicate, or after a tape point) is not in the host table:
+  // the handler is a merged value (below).
+  for (const Function &G : ctx.M)
+    if (!dynamic && G.isDeclaration() && isInstall(G.getName()))
+      for (const User *u : G.users())
+        if (auto *C = dyn_cast<CallBase>(u); C && C->getCalledOperand() == &G)
+          for (const Specialization &S2 : ctx.T.specializations())
+            if (S2.F == C->getFunction() && !S2.pure && calls::classify(*C, ctx.T, S2) == calls::Class::HostEffect)
+              dynamic = true;
 
   Value *tape = tapeOf(ctx);
   ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffect, {}, /*ctl=*/true}, {flag, tape, effectName(ctx.M, "raise")});
@@ -906,6 +943,76 @@ void lowerRaise(LoweringContext &ctx, CallBase &CB, Value *flag, bool classicalR
       B.SetInsertPoint(next);
     }
   };
+  // Taped installations (rule 16 signal table): the handler is a merged value. Every one the module makes must
+  // be visible here: in this function, before this raise on every path (its predicate rail then exists here).
+  std::vector<TapedInstall> taped;
+  {
+    // An installation lowered before this raise in this function with no classical guard of its own (its
+    // classical factor top) lies on the linearized path to it: its values and predicate are available here.
+    for (const TapedInstall &t : installsOf(ctx))
+      if (isPotentiallyReachable(t.call, &CB))
+        taped.push_back(t);
+    for (const Function &G : ctx.M)
+      if (G.isDeclaration() && isInstall(G.getName()))
+        for (const User *u : G.users())
+          if (auto *C = dyn_cast<CallBase>(u); C && C->getCalledOperand() == &G)
+            for (const Specialization &S2 : ctx.T.specializations())
+              if (S2.F == C->getFunction() && !S2.pure && calls::classify(*C, ctx.T, S2) == calls::Class::HostEffect &&
+                  none_of(taped, [&](const TapedInstall &t) { return t.call == C; }))
+                unimplemented("eff-tape: a raise after a handler installation on the tape that is not in its function "
+                              "before it on every path (rule 16 signal table across a call or a join)",
+                              &CB);
+  }
+  if (!taped.empty()) {
+    if (sig.handle)
+      unimplemented("eff-tape: a raise of a quantum signal number after a handler installation on the tape", &CB);
+    Value *h = installedHandler(ctx, sig.v);
+    RailType i1{Kind::Int, 1};
+    // The rail "the merged handler is X": the host table's, overridden by each taped installation in order.
+    auto handlerIs = [&](Value *X) -> Value * {
+      CallInst *c0 = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {B.CreateICmpEQ(h, X)});
+      ctx.unc().recordSeed(c0);
+      Value *c = c0;
+      for (const TapedInstall &t : taped) {
+        Value *same = B.CreateICmpEQ(B.CreateSExtOrTrunc(t.sig, sig.v->getType()), sig.v);
+        if (t.applies)
+          same = B.CreateAnd(same, t.applies);
+        abi::TemplateSpec sel;
+        sel.op = "select";
+        sel.w = i1;
+        sel.shape = "lh";
+        Value *pf = t.q ? ctx.preds().flag(ctx, *t.q) : nullptr;
+        Value *eqX = B.CreateICmpEQ(t.handler, X);
+        Value *n;
+        if (!pf) {
+          CallInst *sd = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {eqX});
+          ctx.unc().recordSeed(sd);
+          n = sd;
+        } else {
+          n = ctx.emitTemplate(sel, {Operand{pf, true}, Operand{eqX, false}, Operand{c, true}});
+        }
+        auto *m = cast<Instruction>(B.CreateSelect(same, n, c));
+        ctx.unc().recordMerge(m);
+        c = m;
+      }
+      abi::TemplateSpec andT;
+      andT.op = "and";
+      andT.w = i1;
+      return ctx.emitTemplate(andT, {Operand{c, true}, Operand{flag, true}});
+    };
+    for (auto &[G, s] : cands)
+      calls::emitDispatchArm(ctx, CB, *G, s, handlerIs(G));
+    Value *term = terminatesByDefault(ctx, sig.v);
+    if (auto *k = dyn_cast<ConstantInt>(term); k && k->isZero())
+      return;
+    requireEntry(ctx, CB, "a terminating raise");
+    Value *g = handlerIs(ConstantPointerNull::get(cast<PointerType>(ptrTy)));
+    BasicBlock *next = armIf(ctx, term);
+    abortArm(ctx, CB, g);
+    B.CreateBr(next);
+    B.SetInsertPoint(next);
+    return;
+  }
   if (!sig.handle) {
     Value *h = installedHandler(ctx, sig.v);
     dispatch(h, flag);
@@ -1147,22 +1254,7 @@ void slotStringField(LoweringContext &ctx, CallBase &CB, const Value *str, Value
 // entry is the whole construction.
 void signalTableEntry(LoweringContext &ctx, CallBase &CB, const Function &F) {
   StringRef n = F.getName();
-  bool installs = n == "signal" || n == "sigaction" || n == "bsd_signal" || n == "sigset";
-  if (installs) {
-    const Value *sigV = CB.arg_size() ? CB.getArgOperand(0) : nullptr;
-    auto *sigC = sigV ? dyn_cast<ConstantInt>(sigV) : nullptr;
-    for (const Function &G : ctx.M)
-      for (const User *u : G.users()) {
-        auto *C = dyn_cast<CallBase>(u);
-        if (!C || C->getCalledOperand() != &G || G.getName() != "raise" || C->arg_size() != 1)
-          continue;
-        auto *r = dyn_cast<ConstantInt>(C->getArgOperand(0));
-        if (!sigC || !r || r->getSExtValue() == sigC->getSExtValue())
-          unimplemented("eff-tape: a signal handler installed under a quantum predicate for a signal the module "
-                        "raises (rule 16 signal table: the merged handler tag the raise dispatches over)",
-                        &CB);
-      }
-  }
+  bool installs = isInstall(n);
   Value *flag = ctx.currentFlag();
   if (n == "raise" && !flag && CB.arg_size() == 1) {
     // A classical raise on the tape (tape order): its delivery entry under the |1> seed, the handler the host
@@ -1184,6 +1276,31 @@ void signalTableEntry(LoweringContext &ctx, CallBase &CB, const Function &F) {
   ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffect, {}, /*ctl=*/true}, {ctl, tape, effectName(ctx.M, n)});
   for (unsigned a = 0; a < CB.arg_size(); ++a)
     emitField(ctx, CB, a, 0, tape, flag);
+  if (installs && CB.arg_size() >= 2) {
+    // The installation for a later raise's merged handler (lowerRaise).
+    Operand sg = ctx.operand(CB.getArgOperand(0)), hv = ctx.operand(CB.getArgOperand(1));
+    if (sg.handle || hv.handle || ctx.T.isFatPointer(CB.getArgOperand(1), ctx.S))
+      unimplemented("eff-tape: a handler installation on the tape with a quantum signal number or handler", &CB);
+    Value *handler = hv.v, *applies = nullptr;
+    if (n == "sigaction") {
+      // The handler is the first word of *act; a null act installs nothing.
+      LLVMContext &C = ctx.M.getContext();
+      Type *ptr = PointerType::get(C, 0);
+      IRBuilder<> &B = ctx.B();
+      applies = B.CreateICmpNE(hv.v, ConstantPointerNull::get(cast<PointerType>(ptr)));
+      Value *safe = B.CreateSelect(applies, hv.v, installedHandlerSlot(ctx));
+      handler = B.CreateLoad(ptr, safe);
+    }
+    Pred full = ctx.preds().block(CB.getParent());
+    if (!full.classicalFactor(ctx.T, ctx.S).isTop())
+      unimplemented("eff-tape: a handler installation on the tape under a classical guard (rule 16 signal table: "
+                    "the merged handler across the guard's join)",
+                    &CB);
+    std::optional<Pred> qp;
+    if (flag)
+      qp = full.quantumPart(ctx.T, ctx.S);
+    installsOf(ctx).push_back({&CB, qp, sg.v, handler, applies});
+  }
 }
 
 } // namespace
@@ -1210,16 +1327,6 @@ void lowerHostEffect(LoweringContext &ctx, CallBase &CB) {
       ctx.emitCore(abi::CoreSpec{abi::Core::TapeFmt, {}, /*ctl=*/true}, {flag, tape, fmt});
     else
       ctx.emitCore(abi::CoreSpec{abi::Core::TapeFmt}, {tape, fmt});
-  };
-  auto byteField = [&](Value *tape, const Operand &c) {
-    RailType w{Kind::Int, 8};
-    if (!c.handle) {
-      ctx.emitCore(abi::CoreSpec{abi::Core::TapeWriteLit, w}, {tape, c.v});
-      return;
-    }
-    CallInst *h2 = flag ? ctx.emitCore(abi::CoreSpec{abi::Core::TapeWrite, w, /*ctl=*/true}, {flag, tape, c.v})
-                        : ctx.emitCore(abi::CoreSpec{abi::Core::TapeWrite, w}, {tape, c.v});
-    ctx.unc().recordExternal(h2, Role::Tape);
   };
 
   // fwrite(buf, size, n, stdout) with a constant size * n (99): one entry of size * n raw %c bytes, one i8

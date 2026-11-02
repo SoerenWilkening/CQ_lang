@@ -1806,21 +1806,42 @@ namespace {
 
 const Value *objectOf(const Value *p) { return getUnderlyingObject(p); }
 
-// A saved quantum part goes into an object only fenv calls of this function read or write: a local, or a
-// global no other code touches. Anything else (an escaping object, a copy of its bytes, a pointer to it
-// passed on) would carry the host bytes without the quantum part (kIssueObject).
+// A saved quantum part goes into an object whose host bytes the rest of the program may read or write (rule 23:
+// "any other access to its bytes reads the host part": its representation is unspecified in C, so a load or
+// store of its bytes is the host part's alone). What carries the quantum part beyond this function's fenv
+// calls is a copy of the object (memcpy: both parts) or the object crossing a call (the host part plus the
+// quantum part as two extra arguments): those need the part to travel with the bytes (kIssueObject).
 void requireSaveTarget(State &st, const Value *obj, const Instruction &I) {
-  if (!isa<AllocaInst>(obj) && !(isa<GlobalVariable>(obj) && !cast<GlobalVariable>(obj)->isConstant()))
-    unimplemented(kIssueObject, &I);
-  for (const User *u : obj->users()) {
-    if (auto *CB = dyn_cast<CallBase>(u)) {
-      if (fenvFn(*CB) != FenvFn::None && CB->getFunction() == st.orig)
+  if (!isa<AllocaInst>(obj) && !isa<GlobalVariable>(obj))
+    unimplemented(kIssueObject, &I);   // an object of the caller's (a pointer formal) or of unknown origin
+  SmallVector<const Value *, 8> work{obj};
+  SmallPtrSet<const Value *, 8> seen;
+  while (!work.empty()) {
+    const Value *v = work.pop_back_val();
+    if (!seen.insert(v).second)
+      continue;
+    for (const User *u : v->users()) {
+      if (isa<LoadInst>(u))
         continue;
-      if (auto *II = dyn_cast<IntrinsicInst>(CB))
-        if (II->isLifetimeStartOrEnd())
+      if (auto *si = dyn_cast<StoreInst>(u); si && si->getPointerOperand() == v)
+        continue;
+      if (isa<GetElementPtrInst>(u) || isa<BitCastInst>(u) || isa<AddrSpaceCastInst>(u)) {
+        work.push_back(u);
+        continue;
+      }
+      if (auto *CB = dyn_cast<CallBase>(u)) {
+        if (fenvFn(*CB) != FenvFn::None && CB->getFunction() == st.orig)
           continue;
+        if (auto *II = dyn_cast<IntrinsicInst>(CB))
+          if (II->isLifetimeStartOrEnd())
+            continue;
+      }
+      if (isa<ConstantExpr>(u)) {
+        work.push_back(u);   // a constant expression over the global: its users
+        continue;
+      }
+      unimplemented(kIssueObject, u);
     }
-    unimplemented(kIssueObject, u);
   }
 }
 
