@@ -99,6 +99,7 @@
 #include "cq/Uncompute.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/CFG.h"
@@ -1945,6 +1946,176 @@ bool measuredThroughMemory(LoweringContext &ctx, FnState &st, const Instruction 
   return reachesUnkilled(S, defs, kill, hit);
 }
 
+// cq-djnk (CR rules 2, 5, 6, 14 case 1): a rail a store S of the loop L puts into a slot cell is kept
+// (mem-slots makes it Measured at the store, M3) when a measured load after the loop may read it. Keeping
+// it is correct only when every instance S stores (one per trip) stays in its cell until a measured load
+// reads it: S writes a different cell in every trip of a top-level loop, nothing else ever puts a value
+// into the object once the loop may run (no overwrite, no rail of another store kept with it), and every
+// cell S writes is one a measured load reads. That load reads a cell fixed at compile time, or one chosen
+// at run time (then which cells it reads is not decidable here and every cell counts as read: 179's
+// measurement loop). Anything else would keep dead instances (an overwritten rail, a cell no measurement
+// reads: their entangled rails would leak, review loopscl-h2 p30, p31) and is not built: the per-trip keep
+// of exactly the measured cells' final rails, every other instance undone by the reverse loop. Classical
+// writes before the loop (an initialiser) change nothing kept. Asked where mem-slots makes the rail Measured
+// at an -O1 store of the running classical loop unit.
+void checkMeasuredKeep(LoweringContext &ctx, const Loop &L, const StoreInst &S) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  auto stop = [&](const std::string &why) {
+    unimplemented("mem-slots: a rail a classically bounded loop stores into a slot cell is kept because a "
+                  "measured load after the loop may read it, but " + why +
+                      " (the per-trip keep of exactly the measured cells' final rails is not built)",
+                  &S);
+  };
+  ArrayRef<ObjectId> objs = ctx.T.provenance(S.getPointerOperand(), ctx.S);
+  if (objs.size() != 1)
+    stop("the store's object is not one known object");
+  const ObjectId O = objs.front();
+  auto inO = [&](const Value *p) {
+    return p->getType()->isPointerTy() && is_contained(ctx.T.provenance(p, ctx.S), O);
+  };
+  // No other write may put anything into the object once the loop may run (no overwrite of an instance,
+  // no rail of another store); before the loop only classical values (an initialiser).
+  for (const Instruction &X : instructions(*S.getFunction())) {
+    if (&X == &S)
+      continue;
+    const Value *p = nullptr;
+    bool classical = false;
+    if (auto *so = dyn_cast<StoreInst>(&X)) {
+      p = so->getPointerOperand();
+      classical = !ctx.T.isQuantum(so->getValueOperand(), ctx.S);
+    } else if (auto *ms = dyn_cast<MemSetInst>(&X)) {
+      p = ms->getDest();
+      classical = !ctx.T.isQuantum(ms->getValue(), ctx.S);
+    } else if (auto *mi = dyn_cast<MemIntrinsic>(&X)) {
+      p = mi->getDest();
+    } else if (auto *rm = dyn_cast<AtomicRMWInst>(&X)) {
+      p = rm->getPointerOperand();
+    } else if (auto *cx = dyn_cast<AtomicCmpXchgInst>(&X)) {
+      p = cx->getPointerOperand();
+    }
+    if (!p || !inO(p))
+      continue;
+    if (!classical || isPotentiallyReachable(L.getHeader(), X.getParent()))
+      stop("another write may put a value into the object's cells (an overwrite of an instance, or a rail of "
+           "another store kept with it)");
+  }
+  if (L.getParentLoop())
+    stop("the loop is nested in another loop (a later outer trip writes the same cells again)");
+  for (const Loop *sl : L.getSubLoops())
+    if (sl->contains(S.getParent()))
+      stop("the store is in a sub-loop (several instances per trip)");
+  // S's address: base + K + scale * (iv + d), iv the header's induction phi {s, +, c}.
+  auto *G = dyn_cast<GEPOperator>(S.getPointerOperand());
+  unsigned bw = DL.getIndexTypeSizeInBits(S.getPointerOperand()->getType());
+  MapVector<Value *, APInt> vars;
+  APInt K(bw, 0);
+  if (!G || !G->collectOffset(DL, bw, vars, K) || vars.size() != 1)
+    stop("its cell index is not one run-time term");
+  const Value *base = G->getPointerOperand()->stripPointerCasts();
+  int64_t scale = vars.front().second.getSExtValue();
+  const Value *ix = vars.front().first;
+  int64_t d = 0;
+  while (true) {
+    if (isa<ZExtInst>(ix) || isa<SExtInst>(ix)) {
+      ix = cast<CastInst>(ix)->getOperand(0);
+      continue;
+    }
+    if (auto *b = dyn_cast<BinaryOperator>(ix); b && b->getOpcode() == Instruction::Add)
+      if (auto *ci = dyn_cast<ConstantInt>(b->getOperand(1))) {
+        d += ci->getSExtValue();
+        ix = b->getOperand(0);
+        continue;
+      }
+    break;
+  }
+  auto *iv = dyn_cast<PHINode>(ix);
+  if (!iv || iv->getParent() != L.getHeader() || iv->getNumIncomingValues() != 2)
+    stop("its cell index is not the loop's induction variable");
+  const ConstantInt *start = nullptr;
+  const BinaryOperator *next = nullptr;
+  for (unsigned k = 0; k < 2; ++k) {
+    if (L.contains(iv->getIncomingBlock(k)))
+      next = dyn_cast<BinaryOperator>(iv->getIncomingValue(k));
+    else
+      start = dyn_cast<ConstantInt>(iv->getIncomingValue(k));
+  }
+  const ConstantInt *step = next && next->getOpcode() == Instruction::Add && next->getOperand(0) == iv
+                                ? dyn_cast<ConstantInt>(next->getOperand(1))
+                                : nullptr;
+  if (!step || step->isZero() || !(next->hasNoSignedWrap() || next->hasNoUnsignedWrap()) || scale == 0)
+    stop("its cell index is not an induction with a non-zero step that does not wrap");
+  // The measured loads that may read an instance: after the loop.
+  auto measures = [](const Value *v) {
+    SmallVector<const Value *, 4> work{v};
+    SmallPtrSet<const Value *, 8> seen{v};
+    while (!work.empty()) {
+      const Value *x = work.pop_back_val();
+      for (const User *u : x->users()) {
+        if (auto *c = dyn_cast<CallInst>(u); c && c->getCalledFunction() &&
+                                             c->getCalledFunction()->getName().starts_with("cq_measure_"))
+          return true;
+        bool view = isa<FreezeInst>(u) || (isa<TruncInst>(u) && cast<TruncInst>(u)->getDestTy()->isIntegerTy(1));
+        if (view && seen.insert(u).second)
+          work.push_back(u);
+      }
+    }
+    return false;
+  };
+  uint64_t sz = DL.getTypeStoreSize(S.getValueOperand()->getType());
+  std::set<int64_t> cells;   // byte offsets from base of the cells a measured load reads, fixed at compile time
+  bool runTime = false;
+  for (const Instruction &X : instructions(*S.getFunction())) {
+    auto *ld = dyn_cast<LoadInst>(&X);
+    if (!ld || !inO(ld->getPointerOperand()) || !measures(ld))
+      continue;
+    if (L.contains(ld->getParent()))
+      stop("a measured load of the object lies in the loop");
+    APInt off(bw, 0);
+    const Value *lb = ld->getPointerOperand()->stripAndAccumulateInBoundsConstantOffsets(DL, off);
+    if (lb == base) {
+      if (DL.getTypeStoreSize(ld->getType()) != sz)
+        stop("a measured load reads a cell of another size");
+      cells.insert(off.getSExtValue());
+      continue;
+    }
+    auto *lg = dyn_cast<GEPOperator>(ld->getPointerOperand());
+    if (!lg || lg->getPointerOperand()->stripPointerCasts() != base)
+      stop("a measured load's address is not the store's object base");
+    runTime = true;
+  }
+  if (runTime)
+    return;
+  // Every cell S writes must be measured: enumerate its trips (a constant start, a latch test of the
+  // induction's next value against a constant).
+  const ICmpInst *test = nullptr;
+  bool exitOnTrue = false;
+  for (const User *u : next->users())
+    if (auto *ic = dyn_cast<ICmpInst>(u); ic && L.contains(ic->getParent()) && ic->getOperand(0) == next &&
+                                          isa<ConstantInt>(ic->getOperand(1)))
+      for (const User *bu : ic->users())
+        if (auto *br = dyn_cast<BranchInst>(bu); br && br->isConditional() && L.contains(br->getParent()) &&
+                                                  L.contains(br->getSuccessor(0)) != L.contains(br->getSuccessor(1))) {
+          if (test && test != ic)
+            stop("the loop's trips are not one induction test");
+          test = ic;
+          exitOnTrue = !L.contains(br->getSuccessor(0));
+        }
+  if (!test || !start)
+    stop("its trips are not known at compile time and a measured load reads a fixed cell");
+  APInt bound = cast<ConstantInt>(test->getOperand(1))->getValue();
+  APInt i = start->getValue();
+  for (unsigned trip = 0;; ++trip) {
+    if (trip > 4096)
+      stop("its trip count is not small");
+    int64_t at = K.getSExtValue() + scale * (i.getSExtValue() + d);
+    if (!cells.count(at))
+      stop("it writes a cell no measured load reads (that instance would leak)");
+    i += step->getValue();
+    if (ICmpInst::compare(i, bound, test->getPredicate()) == exitOnTrue)
+      break;
+  }
+}
+
 // Rule 20 is per cell (orchestrator decision 2026-11-01 under rule 20, owner may override): a cell of a
 // static object (local or heap, not escaping, every read forwarded) is CLASSICAL when no write that may
 // reach it puts a handle there: every store that may write it stores a classical value outside any
@@ -3366,6 +3537,15 @@ void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &
           }
           noteDistinctStore(ctx, st, s, I, sz, val.v);
           if (measuredThroughMemory(ctx, st, I, ty, s)) {
+            // cq-djnk: in a classically bounded loop, only where keeping every instance is correct.
+            if (const Loop *LU = ctx.loopUnit(); LU && LU->contains(I.getParent())) {
+              auto *SI = dyn_cast<StoreInst>(&I);
+              if (!SI)
+                unimplemented("mem-slots: a computed rail a classically bounded loop writes into a slot cell by an "
+                              "atomic, kept because a measured load after the loop may read it",
+                              &I);
+              checkMeasuredKeep(ctx, *LU, *SI);
+            }
             ctx.unc().setRole(id, Role::Measured);
             st.registers.insert(val.v);
           }

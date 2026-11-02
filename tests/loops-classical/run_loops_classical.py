@@ -8,7 +8,8 @@ For probes/loops.O1.ll (and slots.O1.ll, rule6.O1.ll) it checks, and fails on:
 For rule6.O1.ll it also checks the kept rails at trip counts 2 and 3 (cq-b13w, CR rule 6 on carried values), and
 for deferred.O1.ll likewise (cq-fx3s, cq-aqbw: the reverse loop deferred after the exit values' readers keeps no
 which-path or garbage rail), and for measured_some.O1.ll likewise (cq-8lf8: a computed rail measured on an early
-return only is not left as garbage on the loop path).
+return only is not left as garbage on the loop path), and for memkeep.O1.ll on every sample (cq-djnk, cq-9o04: no
+entangled rail of a loop that writes memory is left unmeasured at exit).
 The owned examples' acceptance is `python3 -m cqcheck run <examples> --oracle both` (the bead).
 Outputs go to build/tests/loops-classical/out/.
 """
@@ -25,13 +26,22 @@ PROBE = PROBES / "loops.O1.ll"
 SLOT_PROBE = PROBES / "slots.O1.ll"
 SLOT_ENTRIES = ["s_reg", "s_qft", "s_int"]
 # Probes cq-lower must stop on with cq::unimplemented carrying this text (nothing emitted).
-FATAL = [(PROBES / "slots_fatal_crossgate.O1.ll", "a non-diagonal gate in a classically bounded loop on a rail"),
+FATAL = [(PROBES / "slots_fatal_crossgate.O1.ll", "loops-classical: a non-diagonal gate in a classically bounded loop on a rail"),
          # cq-vqid: a record deferred to the reverse loop reads a rail rotated later in the same trip.
-         (PROBES / "fatal_undoneread.O1.ll", "a non-diagonal gate in a classically bounded loop on a rail that a "
+         (PROBES / "fatal_undoneread.O1.ll", "loops-classical: a non-diagonal gate in a classically bounded loop on a rail that a "
           "record undone by the reverse loop reads"),
          # cq-pkjc: a quantum arm's classical conjunct (select(i != 0, q[i], false)) the trip does not establish.
-         (PROBES / "fatal_armguard.O1.ll", "a block of a classically bounded loop body whose classical guard "
-          "(rule 8: the classical factor of its predicate")]
+         (PROBES / "fatal_armguard.O1.ll", "loops-classical: a block of a classically bounded loop body whose classical guard "
+          "(rule 8: the classical factor of its predicate"),
+         # cq-djnk (review loopscl-h2 p31, p30): a measured load reads one cell after the loop; the other instances the
+         # loop stores are garbage (keeping the whole object leaked them).
+         (PROBES / "fatal_keep_partial.O1.ll", "mem-slots: a rail a classically bounded loop stores into a slot "
+          "cell is kept because a measured load after the loop may read it, but another write"),
+         (PROBES / "fatal_keep_partial_ry.O1.ll", "mem-slots: a rail a classically bounded loop stores into a "
+          "slot cell is kept because a measured load after the loop may read it, but another write"),
+         # cq-9o04 (review loopscl-h2 p29): an Ry the reverse loop must precede, then a read of the QRAM it pops.
+         (PROBES / "fatal_qram_barrier.O1.ll", "uncompute: a non-diagonal gate or an in-place write on a rail the "
+          "deferred rule-14 reverse loop reads")]
 # cq-b13w: CR rule 6 on carried values. Each entry's last parameter is the trip count; the kept rails (role, width)
 # at n = 2 and n = 3 must be exactly the straight-line rule 6 multiset below.
 RULE6_PROBE = PROBES / "rule6.O1.ll"
@@ -73,6 +83,10 @@ TRIPLOCAL = ["t_grover"]
 # 72, 188: QRAM stores in a classically bounded trip (F1b: the reverse loop deferred after the array's later uses).
 QRAM_PROBE = PROBES / "qram_trip.O1.ll"
 QRAM = ["q_fill", "q_hist"]
+# cq-djnk, cq-9o04: kept rails after a loop that writes memory (every sample): only the measured values and x.
+MEMKEEP_PROBE = PROBES / "memkeep.O1.ll"
+MEMKEEP = {"k_hist": [("measured", "i32"), ("measured", "i32")],
+           "k_whole": [("frozen", "i32")] + [("measured", "i32")] * 4}
 ENTRIES = ["p_acc", "p_brk", "p_nest", "p_mod", "p_nb", "p_horner", "p_arm", "p_phase", "p_cjoin", "p_tphase", "p_bwb", "p_g2"]
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 
@@ -145,13 +159,13 @@ def main() -> int:
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", required=True)
     ap.add_argument("--entry", action="append", help="check only these entries of loops.O1.ll")
-    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread"],
+    ap.add_argument("--group", action="append", choices=["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep"],
                     help="run only these probe groups (default: all)")
     a = ap.parse_args()
     out = ROOT / "build" / "tests" / "loops-classical" / "out"
     out.mkdir(parents=True, exist_ok=True)
     failures = 0
-    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread"]))
+    want = set(a.group or (["loops"] if a.entry else ["loops", "slots", "rule6", "deferred", "measured", "hoisted", "carry", "fatal", "triplocal", "qram", "mxread", "memkeep"]))
     groups = []
     if "loops" in want:
         groups.append((PROBE, a.entry or ENTRIES))
@@ -173,6 +187,8 @@ def main() -> int:
         groups.append((QRAM_PROBE, QRAM))
     if "carry" in want:
         groups.append((CARRY_PROBE, CARRY))
+    if "memkeep" in want:
+        groups.append((MEMKEEP_PROBE, list(MEMKEEP)))
     for probe, entries in groups:
         failures += check_probe(a, probe, entries, out)
     for group, probe, table in (("rule6", RULE6_PROBE, RULE6), ("deferred", DEFERRED_PROBE, DEFERRED),
@@ -181,6 +197,11 @@ def main() -> int:
             continue
         for e, kept in table.items():
             why = check_kept(probe, out / (probe.stem + ".lowered.ll"), e, kept)
+            print(("FAIL " if why else "ok   ") + e + " kept" + ("" if not why else ": " + why))
+            failures += bool(why)
+    if "memkeep" in want:
+        for e, kept in MEMKEEP.items():
+            why = check_kept(MEMKEEP_PROBE, out / (MEMKEEP_PROBE.stem + ".lowered.ll"), e, kept, lambda args: True)
             print(("FAIL " if why else "ok   ") + e + " kept" + ("" if not why else ": " + why))
             failures += bool(why)
     if "measured" in want:
@@ -193,7 +214,7 @@ def main() -> int:
         for probe, msg in FATAL:
             r = subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-lower", "-S", str(probe), "-o",
                                 str(out / (probe.stem + ".lowered.ll"))], capture_output=True, text=True)
-            ok = r.returncode != 0 and "cq: unimplemented: loops-classical: " + msg in r.stderr
+            ok = r.returncode != 0 and "cq: unimplemented: " + msg in r.stderr
             print(("ok   " if ok else "FAIL ") + probe.name + ("" if ok else ": expected cq::unimplemented '" + msg +
                                                              "', got exit " + str(r.returncode) + " " +
                                                              r.stderr.strip()[-300:]))
