@@ -669,6 +669,9 @@ public:
         return BI->isConditional() ? BI->getCondition() : nullptr;
       if (auto *SI = dyn_cast<SwitchInst>(Term))
         return SI->getCondition();
+      // CR rule 13 (b137e75): a computed goto is a switch on its address.
+      if (auto *IB = dyn_cast<IndirectBrInst>(Term))
+        return IB->getAddress();
       return nullptr;
     }
     Value *quantumCond(BasicBlock *X) {
@@ -677,8 +680,8 @@ public:
         return nullptr;
       Value *c = condOf(Term);
       if (!c) {
-        if (isa<IndirectBrInst>(Term) || isa<CallBrInst>(Term))
-          unimplemented("rule 2 shadows: a multi-way terminator other than br/switch", Term);
+        if (isa<CallBrInst>(Term))
+          unimplemented("rule 2 shadows: asm goto (callbr): inline asm (rule 27) waits for its CQ_spec example", Term);
         return nullptr;
       }
       if (!q(c) && exitLoop(c, Term))

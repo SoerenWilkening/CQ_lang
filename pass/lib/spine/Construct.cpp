@@ -64,6 +64,9 @@ namespace {
 struct PendingEntry {
   Function *F, *NF;
   Type *retType;   // rule 19: the i32 handle replacing a C return type that cannot hold it, or null
+  // Rule 13 (b137e75): each address-taken block of F and the distinct block of NF its blockaddress
+  // constants denote after the lowering.
+  std::vector<std::pair<BasicBlock *, BasicBlock *>> addressed;
 };
 thread_local std::map<const Module *, std::vector<PendingEntry>> pendingEntries;
 // cq-i9wk: per module, the specializations constructed so far (the epilogue runs after the last one), and
@@ -81,6 +84,9 @@ void finishEntries(Module &M) {
     return;
   for (PendingEntry &p : it->second) {
     Function &F = *p.F, &NF = *p.NF;
+    // Rule 13: every blockaddress constant in the module, initializers included, denotes the lowered block.
+    for (auto &[orig, low] : p.addressed)
+      orig->replaceAllUsesWith(low);
     for (BasicBlock &BB : F)
       BB.dropAllReferences();
     while (!F.empty())
@@ -176,7 +182,18 @@ bool isQuantumTerm(LoweringContext &ctx, const Instruction *t) {
     return br->isConditional() && spine::isQ(ctx, br->getCondition());
   if (auto *sw = dyn_cast<SwitchInst>(t))
     return spine::isQ(ctx, sw->getCondition());
+  if (auto *ib = dyn_cast<IndirectBrInst>(t))
+    return spine::isQ(ctx, ib->getAddress());   // rule 13: a switch on the address
   return false;
+}
+
+// Rule 13 (b137e75): the distinct destinations of a computed goto, in its destination list's order.
+SmallVector<BasicBlock *, 4> gotoDestinations(const IndirectBrInst &ib) {
+  SmallVector<BasicBlock *, 4> d;
+  for (BasicBlock *s : successors(const_cast<IndirectBrInst *>(&ib)))
+    if (!is_contained(d, s))
+      d.push_back(s);
+  return d;
 }
 
 // Rule 19 (193): does the entry being lowered return a handle (some return of it is quantum)?
@@ -267,6 +284,7 @@ private:
     bool eq;
     APInt val;
     Pred p;
+    const BasicBlock *dest = nullptr;   // rule 13: the computed goto case v == blockaddress(dest)
   };
   std::vector<Lit> cands;
   // A guard's condition is a disjunction of cubes, each a conjunction of literals (indices into cands).
@@ -497,10 +515,19 @@ void Walker::plan() {
       outEdges[b].push_back(n);
       continue;
     }
-    if (isa<IndirectBrInst>(t) || isa<CallBrInst>(t))
-      unimplemented("spine: a computed goto or asm goto in a lowered function: awaiting owner ruling: SPEC_ISSUES "
-                    "label addresses (blockaddress) in a lowered or cloned function",
+    if (isa<CallBrInst>(t))
+      unimplemented("spine: asm goto (callbr) in a lowered function: inline asm (rule 27) waits for its CQ_spec "
+                    "example (build step 3)",
                     t);
+    if (auto *ib = dyn_cast<IndirectBrInst>(t)) {
+      // Rule 13: a classical computed goto is a classical switch on its address, one out edge per distinct
+      // destination (emitTerminator's compare chain).
+      for (BasicBlock *s : gotoDestinations(*ib)) {
+        bool back = idx.lookup(s) <= idx.lookup(b);
+        outEdges[b].push_back(back ? s : next(b, s));
+      }
+      continue;
+    }
     if (!isa<BranchInst>(t) && !isa<SwitchInst>(t))
       internalError("spine: an exception handling terminator (invoke, resume, catchswitch, cleanupret, "
                     "catchret): IR the pinned pipeline cannot emit (CR §0, rule 25)",
@@ -582,6 +609,11 @@ void Walker::planGuards() {
       for (auto &cs : sw->cases())
         cands.push_back(Lit{sw->getCondition(), false, true, cs.getCaseValue()->getValue(),
                             Pred::eqAtom(sw->getCondition(), cs.getCaseValue()->getValue())});
+    if (auto *ib = dyn_cast<IndirectBrInst>(t); ib && !spine::isQ(ctx, ib->getAddress())) {
+      SmallVector<BasicBlock *, 4> ds = gotoDestinations(*ib);
+      for (unsigned k = 0; k + 1 < ds.size(); ++k)
+        cands.push_back(Lit{ib->getAddress(), false, false, APInt(), computedGotoEdge(*ib, ds[k]), ds[k]});
+    }
   }
   {
     size_t n = cands.size();
@@ -1726,6 +1758,8 @@ void Walker::emitTerminator(BasicBlock *b) {
   if (isQuantumTerm(ctx, t)) {
     if (auto *br = dyn_cast<BranchInst>(t))
       lowerBranch(ctx, *br);
+    else if (auto *ib = dyn_cast<IndirectBrInst>(t))
+      sh.switchSnap.erase(ib->getAddress());   // rule 13: its edges are pred's address cases; nothing to emit
     else {
       sh.switchSnap.erase(cast<SwitchInst>(t)->getCondition());   // cq-0hhk: its atoms read the rail anew
       sw::lowerSwitch(ctx, *cast<SwitchInst>(t));
@@ -1756,6 +1790,34 @@ void Walker::emitTerminator(BasicBlock *b) {
       if (targets[k] == br->getSuccessor(k))
         edgeOut[{b, br->getSuccessor(k)}] = nb->getParent();
     maybeFlush(nb);
+    return;
+  }
+  if (auto *ib = dyn_cast<IndirectBrInst>(t)) {
+    // Rule 13 (b137e75): a classical computed goto is a classical switch on its address: the compares
+    // against the distinct destinations' blockaddress constants give the destination's position (the
+    // last destination the complement: the default is unreachable), and a switch on it goes to their
+    // lowered blocks. No indirectbr is kept.
+    Operand a = ctx.operand(ib->getAddress());
+    if (a.handle)
+      internalError("spine: a classical computed goto on a rail", t);
+    SmallVector<BasicBlock *, 4> ds = gotoDestinations(*ib);
+    Value *x = a.v->getType()->isPointerTy() ? B.CreatePtrToInt(a.v, B.getInt64Ty()) : a.v;
+    Value *pos = B.getInt32(ds.size() - 1);
+    for (unsigned k = ds.size() - 1; k-- > 0;)
+      pos = B.CreateSelect(B.CreateICmpEQ(x, caseAddress(ds[k])), B.getInt32(k), pos);
+    SwitchInst *ns = B.CreateSwitch(pos, out(targets[ds.size() - 1]), ds.size() - 1);
+    for (unsigned k = 0; k + 1 < ds.size(); ++k)
+      ns->addCase(B.getInt32(k), out(targets[k]));
+    SmallVector<const BasicBlock *, 4> done;
+    for (BasicBlock *tg : targets)
+      if (!is_contained(done, tg)) {
+        done.push_back(tg);
+        noteIn(b, tg);
+      }
+    for (unsigned k = 0; k < ds.size(); ++k)
+      if (targets[k] == ds[k])
+        edgeOut[{b, ds[k]}] = ns->getParent();
+    maybeFlush(ns);
     return;
   }
   auto *sw = cast<SwitchInst>(t);
@@ -1993,7 +2055,9 @@ void Walker::emitGuard(BasicBlock *b) {
       Operand op = ctx.operand(l.v);
       if (op.handle)
         internalError("spine: a classical guard literal that is a rail", l.v);
-      Value *v = l.eq ? B.CreateICmpEQ(op.v, ConstantInt::get(op.v->getType(), l.val)) : op.v;
+      Value *v = l.dest ? B.CreateICmpEQ(B.CreatePtrToInt(op.v, B.getInt64Ty()), caseAddress(l.dest))
+                 : l.eq ? B.CreateICmpEQ(op.v, ConstantInt::get(op.v->getType(), l.val))
+                        : op.v;
       if (l.neg)
         v = B.CreateNot(v);
       cc = cc ? B.CreateAnd(cc, v) : v;
@@ -2406,6 +2470,30 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
     if (I->use_empty())
       I->eraseFromParent();
   reachDefs(*sh.out);   // cq-pfpy: rule 9's hoisted arm values reach every point that reads them
+
+  // Rule 13 (b137e75): the lowered entry keeps every address-taken block under its identity: the block
+  // its walk lowered it into when that block is its own (not the entry, not shared with another
+  // address-taken block), else a distinct block of its own that nothing branches to (no indirectbr is
+  // kept: a computed goto compares addresses, so the constant only has to name a distinct block).
+  if (auto pit = pendingEntries.find(&M); pit != pendingEntries.end() && !pit->second.empty() &&
+                                          pit->second.back().F == &F) {
+    PendingEntry &pe = pit->second.back();
+    DenseMap<BasicBlock *, unsigned> uses;
+    for (BasicBlock &BB : F)
+      if (BB.hasAddressTaken())
+        if (BasicBlock *o = sh.blocks.lookup(&BB))
+          ++uses[o];
+    for (BasicBlock &BB : F) {
+      if (!BB.hasAddressTaken())
+        continue;
+      BasicBlock *o = sh.blocks.lookup(&BB);
+      if (!o || o->getParent() != sh.out || o->isEntryBlock() || uses.lookup(o) != 1) {
+        o = BasicBlock::Create(M.getContext(), "", sh.out);
+        new UnreachableInst(M.getContext(), o);
+      }
+      pe.addressed.push_back({&BB, o});
+    }
+  }
 
   if (last) {
     buildKept();

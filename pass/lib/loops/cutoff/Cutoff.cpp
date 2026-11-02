@@ -209,14 +209,8 @@ private:
   static void checkTerminator(const Instruction *t) {
     if (isa<BranchInst>(t) || isa<SwitchInst>(t))
       return;
-    if (auto *ib = dyn_cast<IndirectBrInst>(t)) {
-      if (!computedGotoCases(*ib))
-        unimplemented("loops-cutoff: a computed goto whose address is not derived from an integer through "
-                      "blockaddress constants, selects and constant blockaddress tables (SPEC_ISSUES: the "
-                      "integer a computed goto's address is derived from)",
-                      t);
-      return;
-    }
+    if (isa<IndirectBrInst>(t))
+      return;   // rule 13 (b137e75): a switch on the address
     if (isa<CallBrInst>(t))
       unimplemented("loops-cutoff: asm goto (callbr) inside a rule-14 loop: inline asm with a quantum operand "
                     "(rule 27) waits for its CQ_spec example (build step 3)",
@@ -248,15 +242,8 @@ private:
         e = e | none;
       return e;
     }
-    if (auto *ib = dyn_cast<IndirectBrInst>(t)) {
-      checkTerminator(t);
-      Pred e = Pred::bottom();
-      auto cases = computedGotoCases(*ib);
-      for (auto &[c, d] : *cases)
-        if (d == b)
-          e = e | c;
-      return e;
-    }
+    if (auto *ib = dyn_cast<IndirectBrInst>(t))
+      return computedGotoEdge(*ib, b);
     checkTerminator(t);
     internalError("loops-cutoff: a trip edge from a terminator checkTerminator accepted", t);
   }
@@ -274,8 +261,28 @@ private:
       Value *c = ctx.operand(br->getCondition()).v;
       return br->getSuccessor(0) == b ? c : Bd.CreateNot(c);
     }
-    if (auto *ib = dyn_cast<IndirectBrInst>(t))
-      return classicalAddressEdge(ib->getAddress(), b);
+    if (auto *ib = dyn_cast<IndirectBrInst>(t)) {
+      // Rule 13: the address against each destination's blockaddress; the last distinct destination is
+      // the complement of the others.
+      if (isQ(ib->getAddress()))
+        return ConstantInt::getTrue(C);
+      Value *a = ctx.operand(ib->getAddress()).v;
+      Value *x = a->getType()->isPointerTy() ? Bd.CreatePtrToInt(a, Bd.getInt64Ty()) : a;
+      SmallVector<const BasicBlock *, 4> ds;
+      for (const BasicBlock *d : successors(ib))
+        if (!is_contained(ds, d))
+          ds.push_back(d);
+      Value *others = ConstantInt::getFalse(C);
+      for (const BasicBlock *d : ds) {
+        if (d == ds.back())
+          return d == b ? Bd.CreateNot(others) : ConstantInt::getFalse(C);
+        Value *e = Bd.CreateICmpEQ(x, caseAddress(d));
+        if (d == b)
+          return e;
+        others = Bd.CreateOr(others, e);
+      }
+      return ConstantInt::getFalse(C);
+    }
     auto *sw = cast<SwitchInst>(t);
     if (isQ(sw->getCondition()))
       return ConstantInt::getTrue(C);
@@ -290,68 +297,6 @@ private:
     if (sw->getDefaultDest() == b)
       e = Bd.CreateOr(e, none);
     return e;
-  }
-  // A blockaddress destination d (of the function it was taken in) is b of a specialization of it: the
-  // block at the same position (computedGotoCases' mapping).
-  static bool sameDest(const BasicBlock *d, const BasicBlock *b) {
-    if (!d || d->getParent() == b->getParent())
-      return d == b;
-    auto it = b->getParent()->begin();
-    for (const BasicBlock &x : *d->getParent()) {
-      if (it == b->getParent()->end())
-        return false;
-      if (&x == d)
-        return &*it == b;
-      ++it;
-    }
-    return false;
-  }
-  // classicalEdge for a computed goto: whether the address derives to destination b, a quantum
-  // condition or index counting as true (addressCases' derivation, built in this trip).
-  Value *classicalAddressEdge(const Value *a, const BasicBlock *b) {
-    IRBuilder<> &Bd = ctx.B();
-    LLVMContext &C = ctx.M.getContext();
-    a = a->stripPointerCasts();
-    if (auto *ba = dyn_cast<BlockAddress>(a))
-      return ConstantInt::getBool(C, sameDest(ba->getBasicBlock(), b));
-    if (auto *sel = dyn_cast<SelectInst>(a)) {
-      Value *t = classicalAddressEdge(sel->getTrueValue(), b), *f = classicalAddressEdge(sel->getFalseValue(), b);
-      if (isQ(sel->getCondition()))
-        return Bd.CreateOr(t, f);
-      return Bd.CreateSelect(ctx.operand(sel->getCondition()).v, t, f);
-    }
-    std::optional<GotoTableRead> tr = gotoTableRead(a);
-    if (!tr)
-      internalError("loops-cutoff: a computed goto address checkTerminator accepted that is not derived", b);
-    Value *e = ConstantInt::getFalse(C);
-    if (isQ(tr->index)) {
-      for (const BasicBlock *d : tr->entries)
-        if (sameDest(d, b))
-          return ConstantInt::getTrue(C);
-      return e;
-    }
-    Value *x = ctx.operand(tr->index).v;
-    for (unsigned k = 0; k < tr->entries.size(); ++k)
-      if (sameDest(tr->entries[k], b))
-        e = Bd.CreateOr(e, Bd.CreateICmpEQ(x, ConstantInt::get(x->getType(), k)));
-    return e;
-  }
-  // A value read only as a computed goto's address (directly, or through selects and casts read so).
-  static bool destinationOnly(const Value *v) {
-    if (!v->getType()->isPointerTy() || v->use_empty())
-      return false;
-    return all_of(v->users(), [&](const User *u) {
-      // The table entry's address: read only by the destination load.
-      if (auto *ld = dyn_cast<LoadInst>(u))
-        return ld->getPointerOperand() == v && gotoTableRead(ld) && destinationOnly(ld);
-      if (auto *ib = dyn_cast<IndirectBrInst>(u))
-        return ib->getAddress() == v;
-      if (auto *sel = dyn_cast<SelectInst>(u))
-        return sel->getCondition() != v && destinationOnly(u);
-      if (isa<BitCastInst>(u) || isa<AddrSpaceCastInst>(u))
-        return destinationOnly(u);
-      return false;
-    });
   }
   // A classical select chain over (condition, value): the first arm whose condition holds, the last
   // arm where none does (rule 9's classical select, ruling 2026-10-27).
@@ -1464,10 +1409,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       Value *tripFlag = nullptr;   // q & the block's trip-local predicate, made on first need
       for (Instruction &I : *b) {
         if (isa<PHINode>(I) || I.isTerminator())
-          continue;
-        // A computed goto's address (CR rule 13): its destination is chosen by the integer it was derived
-        // from (tripEdge's case atoms); the address itself is no value of the trip.
-        if (destinationOnly(&I))
           continue;
         // Rule 14 case 2: an instruction with effects (a call, a store, an allocation, a phase) runs in
         // trip j only where the trip runs, so it is lowered under the trip predicate (cq-99f7's

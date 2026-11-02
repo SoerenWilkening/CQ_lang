@@ -5,7 +5,8 @@
 //   Cond   Pred::atom(v): an i1 value of the input IR, quantum iff taint says v is quantum.
 //   Eq     Pred::eqAtom(s, v) (A3): s == v, a switch case. Quantum iff s is.
 //   Entry  the block predicate a _ctl clone receives as its first parameter (a value of the new IR).
-// "Quantum-like" = needs a rail: quantum Cond and Eq atoms, every Entry atom. Rule 8 (a46894a, freeze
+//   Addr   a computed goto's case (rule 13, b137e75): address v == blockaddress(bb). Quantum iff v is.
+// "Quantum-like" = needs a rail: quantum Cond, Eq and Addr atoms, every Entry atom. Rule 8 (a46894a, freeze
 // cq-6yb): a predicate factors on its Boolean function as C & Q; C (classicalFactor) is a classical
 // branch, a classical atom left in Q is a seed rail of the one flag.
 #pragma once
@@ -66,10 +67,12 @@ PathStorage &storage(PathPredicates &pp);
 
 namespace pred_detail {
 
-enum class AtomKind : uint8_t { Cond, Eq, Entry };
-struct Atom { AtomKind kind; const llvm::Value *v; llvm::APInt c; };
+enum class AtomKind : uint8_t { Cond, Eq, Entry, Addr };
+struct Atom { AtomKind kind; const llvm::Value *v; llvm::APInt c; const llvm::BasicBlock *bb = nullptr; };
 
 unsigned atomVar(AtomKind, const llvm::Value *, const llvm::APInt &c = llvm::APInt());
+// Rule 13: the Addr atom `address == blockaddress(dest)`.
+unsigned addrVar(const llvm::Value *address, const llvm::BasicBlock *dest);
 const Atom &atomOf(unsigned var);
 std::string describe(unsigned node);   // the formula with atoms named by their IR values
 

@@ -624,6 +624,14 @@ class CtxSink final : public GateSink {
         internalError("pred: a classical switch atom whose scrutinee is a rail", a.v);
       return ctx.B().CreateICmpEQ(op.v, ConstantInt::get(op.v->getType(), a.c));
     }
+    case AtomKind::Addr: {
+      // Rule 13: a classical computed goto's case, the address against the destination's blockaddress.
+      Operand op = orig(var);
+      if (op.handle)
+        internalError("pred: a classical computed goto atom whose address is a rail", a.v);
+      Value *x = op.v->getType()->isPointerTy() ? ctx.B().CreatePtrToInt(op.v, ctx.B().getInt64Ty()) : op.v;
+      return ctx.B().CreateICmpEQ(x, caseAddress(a.bb));
+    }
     case AtomKind::Entry:
       internalError("pred: the _ctl entry flag as a classical value", a.v);
     }
@@ -677,6 +685,17 @@ public:
       Value *lit = ConstantInt::get(a.v->getType(), a.c);
       // cq-0hhk: the scrutinee's value at the switch (switchRail), never a rail rotated since.
       return ctx.emitTemplate(spec, {Operand{overridden(var) ? overridden(var) : ctx.switchRail(a.v), true}, Operand{lit, false}});
+    }
+    case AtomKind::Addr: {
+      // Rule 13 (b137e75): a quantum computed goto's case flag is icmp_eq_i64_hl(address rail,
+      // ptrtoint(blockaddress(destination))).
+      abi::TemplateSpec spec;
+      spec.op = "icmp";
+      spec.pred = "eq";
+      spec.w = RailType{Kind::Int, 64};
+      spec.shape = "hl";
+      return ctx.emitTemplate(spec, {Operand{overridden(var) ? overridden(var) : ctx.switchRail(a.v), true},
+                                     Operand{caseAddress(a.bb), false}});
     }
     case AtomKind::Entry:
       return const_cast<Value *>(a.v);
@@ -827,7 +846,7 @@ class JoinRepair {
     if (a.kind == AtomKind::Entry)
       return nullptr;
     if (ql(var))
-      return a.kind == AtomKind::Eq ? ctx.switchRail(a.v) : ctx.rail(a.v);   // cq-0hhk
+      return a.kind == AtomKind::Eq || a.kind == AtomKind::Addr ? ctx.switchRail(a.v) : ctx.rail(a.v);   // cq-0hhk
     return ctx.operand(a.v).v;
   }
 
@@ -1351,6 +1370,17 @@ public:
           if (ty != IntegerType::get(ctx.M.getContext(), kc.getBitWidth()))
             internalError("pred: a carried switch atom whose scrutinee type is not its case constant's", v);
           k0 = ConstantInt::get(ty, one ? kc : kc + 1);
+        } else if (k.var >= 0 && atomOf(unsigned(k.var)).kind == AtomKind::Addr) {
+          // A computed goto atom is carried by its address: the destination's address, or another value.
+          Constant *ka = caseAddress(atomOf(unsigned(k.var)).bb);
+          if (!one)
+            ka = ConstantExpr::getAdd(ka, ConstantInt::get(ka->getType(), 1));
+          if (ty->isPointerTy())
+            k0 = ConstantExpr::getIntToPtr(ka, ty);
+          else if (ty == ka->getType())
+            k0 = ka;
+          else
+            internalError("pred: a carried computed goto atom whose address is no pointer or i64", v);
         }
         if (handle) {
           IRBuilderBase::InsertPointGuard g(ctx.B());

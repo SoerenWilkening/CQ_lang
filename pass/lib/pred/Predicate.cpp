@@ -68,6 +68,24 @@ unsigned atomVar(AtomKind k, const Value *v, const APInt &c) {
   return var;
 }
 
+unsigned addrVar(const Value *a, const BasicBlock *d) {
+  if (!a || !d)
+    internalError("pred: an address atom of a null value or block");
+  if (!a->getType()->isPointerTy())
+    internalError("pred: an address atom whose scrutinee is not a pointer", a);
+  AtomRegistry &R = AtomRegistry::get();
+  std::string tag;
+  raw_string_ostream(tag) << "bb:" << static_cast<const void *>(d);
+  auto key = std::make_tuple(int(AtomKind::Addr), a, 0u, tag);
+  auto it = R.index.find(key);
+  if (it != R.index.end())
+    return it->second;
+  unsigned var = unsigned(R.atoms.size());
+  R.atoms.push_back({AtomKind::Addr, a, APInt(), d});
+  R.index.emplace(key, var);
+  return var;
+}
+
 const Atom &atomOf(unsigned var) {
   AtomRegistry &R = AtomRegistry::get();
   if (var >= R.atoms.size())
@@ -83,10 +101,15 @@ static std::string atomName(unsigned var) {
   case AtomKind::Cond: break;
   case AtomKind::Eq: os << "eq:"; break;
   case AtomKind::Entry: os << "entry:"; break;
+  case AtomKind::Addr: os << "addr:"; break;
   }
   a.v->printAsOperand(os, false);
   if (a.kind == AtomKind::Eq)
     os << "==" << llvm::toString(a.c, 10, true);
+  if (a.kind == AtomKind::Addr) {
+    os << "==&&";
+    a.bb->printAsOperand(os, false);
+  }
   return os.str();
 }
 
@@ -147,6 +170,7 @@ bool quantumLike(unsigned var, Oracle &O) {
   switch (a.kind) {
   case AtomKind::Cond:
   case AtomKind::Eq:
+  case AtomKind::Addr:
     return O.isQuantum(a.v);
   case AtomKind::Entry:
     return true;
@@ -248,148 +272,37 @@ bool isClassicalNode(unsigned f, Oracle &O) {
 
 } // namespace pred_detail
 
-// CR rule 13 (ruling 2026-11-02): a computed goto is a switch over its destination list whose scrutinee is the
-// integer the target address was derived from. The address is followed back to that integer: a `blockaddress`
-// constant is its destination; a select chooses by its condition (rule 9); a load of a constant `blockaddress`
-// table at an index (a QROM of the table, rule 20) is the case `index == k` for each entry k naming the
-// destination.
-std::optional<GotoTableRead> gotoTableRead(const Value *a) {
-  auto *ld = dyn_cast<LoadInst>(a->stripPointerCasts());
-  if (!ld || !ld->isSimple())
-    return std::nullopt;
-  auto *g = dyn_cast<GEPOperator>(ld->getPointerOperand());
-  if (!g)
-    return std::nullopt;
-  auto *gv = dyn_cast<GlobalVariable>(g->getPointerOperand()->stripPointerCasts());
-  if (!gv || !gv->isConstant() || !gv->hasDefinitiveInitializer())
-    return std::nullopt;
-  auto *arr = dyn_cast<ConstantArray>(gv->getInitializer());
-  if (!arr || !arr->getType()->getElementType()->isPointerTy())
-    return std::nullopt;
-  // The one variable index, scaled by the entry size, with every other offset 0.
-  const DataLayout &DL = ld->getModule()->getDataLayout();
-  const Value *idx = nullptr;
-  uint64_t esz = DL.getTypeAllocSize(arr->getType()->getElementType());
-  for (gep_type_iterator it = gep_type_begin(g), e = gep_type_end(g); it != e; ++it) {
-    const Value *o = it.getOperand();
-    if (auto *ci = dyn_cast<ConstantInt>(o)) {
-      if (!ci->isZero())
-        return std::nullopt;
-      continue;
-    }
-    if (idx || it.isStruct() || DL.getTypeAllocSize(it.getIndexedType()) != esz)
-      return std::nullopt;
-    idx = o;
-  }
-  if (!idx || !idx->getType()->isIntegerTy())
-    return std::nullopt;
-  // The integer beneath a widening of the index (rule 20: the widening is address arithmetic, never
-  // emitted): entry k is read where that integer is k, for the k it can hold.
-  uint64_t n = arr->getNumOperands();
-  while (auto *ext = dyn_cast<CastInst>(idx)) {
-    if (!isa<ZExtInst>(ext) && !isa<SExtInst>(ext))
+// CR rule 13 (b137e75): a computed goto is a switch on its address. No index is recovered: where the address
+// came from is irrelevant. Destination d (each distinct one, in the destination list's order) is the case
+// `address == blockaddress(d)`; the default is unreachable (LangRef: an address outside the list), so the
+// last distinct destination is the complement of the others.
+Constant *caseAddress(const BasicBlock *d) {
+  if (!d || !d->getParent())
+    internalError("pred: the case address of a block outside a function");
+  BasicBlock *b = const_cast<BasicBlock *>(d);
+  return ConstantExpr::getPtrToInt(BlockAddress::get(b->getParent(), b), Type::getInt64Ty(d->getContext()));
+}
+
+Pred computedGotoEdge(const IndirectBrInst &ib, const BasicBlock *to) {
+  using pred_detail::Bdd;
+  Bdd &m = Bdd::get();
+  SmallVector<const BasicBlock *, 4> dests;
+  for (const BasicBlock *d : successors(&ib))
+    if (!is_contained(dests, d))
+      dests.push_back(d);
+  if (!is_contained(dests, to))
+    return Pred::bottom();
+  const Value *a = ib.getAddress();
+  unsigned others = Bdd::F;
+  for (const BasicBlock *d : dests) {
+    if (d == dests.back())
       break;
-    unsigned w = ext->getSrcTy()->getIntegerBitWidth() - (isa<SExtInst>(ext) ? 1 : 0);
-    if (w < 64)
-      n = std::min<uint64_t>(n, uint64_t(1) << w);
-    idx = ext->getOperand(0);
+    unsigned x = m.ithVar(pred_detail::addrVar(a, d));
+    if (d == to)
+      return pred_detail::makePred(x);
+    others = m.orOp(others, x);
   }
-  GotoTableRead t{idx, {}};
-  for (unsigned k = 0; k < n; ++k) {
-    auto *ba = dyn_cast<BlockAddress>(arr->getOperand(k)->stripPointerCasts());
-    t.entries.push_back(ba ? ba->getBasicBlock() : nullptr);
-  }
-  return t;
-}
-
-// A `blockaddress` names a block of the function it was taken in; a specialization of that function (a
-// clone, §1.4) has the same blocks in the same order, so the destination is the block at the same position.
-static const BasicBlock *destIn(const BasicBlock *d, const Function &F) {
-  if (!d || d->getParent() == &F)
-    return d;
-  auto it = F.begin();
-  for (const BasicBlock &b : *d->getParent()) {
-    if (it == F.end())
-      internalError("pred: a computed goto destination with no block of the specialization", &*F.begin()->begin());
-    if (&b == d)
-      return &*it;
-    ++it;
-  }
-  internalError("pred: a computed goto destination outside its own function", &*F.begin()->begin());
-}
-
-// The path predicate of the edge u -> b, when the caller has it (null: none, or not for this edge).
-using EdgePredFn = std::function<std::optional<Pred>(const BasicBlock *u, const BasicBlock *b)>;
-
-static bool addressCases(const Value *a, const Pred &under, const Function &F,
-                         SmallVectorImpl<std::pair<Pred, const BasicBlock *>> &cases, const EdgePredFn *edgeOf) {
-  a = a->stripPointerCasts();
-  if (auto *ba = dyn_cast<BlockAddress>(a)) {
-    cases.push_back({under, destIn(ba->getBasicBlock(), F)});
-    return true;
-  }
-  if (auto *sel = dyn_cast<SelectInst>(a)) {
-    Pred c = Pred::atom(sel->getCondition());
-    return addressCases(sel->getTrueValue(), under & c, F, cases, edgeOf) &&
-           addressCases(sel->getFalseValue(), under & !c, F, cases, edgeOf);
-  }
-  // A phi of addresses (clang's one `indirectgoto` block, every `goto *p` of the function feeding its
-  // phi): the integer is the one each incoming edge's address is derived from, chosen by the edge
-  // (rule 9: the choice of incoming edge), so its cases are each incoming's cases under that edge's
-  // path predicate. The edge predicates are absolute (block predicates of the forward CFG); a carried
-  // phi (an edge of a loop's back edge) has none: SPEC_ISSUES "the integer a computed goto's address
-  // is derived from" (cq-8i5g).
-  if (auto *phi = dyn_cast<PHINode>(a)) {
-    if (!edgeOf)
-      return false;
-    SmallPtrSet<const BasicBlock *, 8> seen;
-    for (unsigned i = 0; i < phi->getNumIncomingValues(); ++i) {
-      const BasicBlock *u = phi->getIncomingBlock(i);
-      if (!seen.insert(u).second)
-        continue;
-      std::optional<Pred> e = (*edgeOf)(u, phi->getParent());
-      if (!e)
-        return false;
-      if (!addressCases(phi->getIncomingValue(i), under & *e, F, cases, edgeOf))
-        return false;
-    }
-    return true;
-  }
-  if (std::optional<GotoTableRead> t = gotoTableRead(a)) {
-    // An index past the table, or an entry that names no block, is undefined behaviour (a load past
-    // the object, a jump to no label): outside the domain. The last entry naming a block is the
-    // complement of the others, as the last case of a switch whose default is unreachable (rule 13).
-    unsigned w = t->index->getType()->getIntegerBitWidth();
-    int last = -1;
-    for (unsigned k = 0; k < t->entries.size(); ++k)
-      if (t->entries[k])
-        last = int(k);
-    Pred others = Pred::bottom();
-    for (unsigned k = 0; k < t->entries.size(); ++k)
-      if (t->entries[k]) {
-        Pred eq = Pred::eqAtom(t->index, APInt(w, k));
-        cases.push_back({under & (int(k) == last ? !others : eq), destIn(t->entries[k], F)});
-        others = others | eq;
-      }
-    return true;
-  }
-  return false;
-}
-
-std::optional<SmallVector<std::pair<Pred, const BasicBlock *>, 4>> computedGotoCases(const IndirectBrInst &ib) {
-  SmallVector<std::pair<Pred, const BasicBlock *>, 4> cases;
-  if (!addressCases(ib.getAddress(), Pred::top(), *ib.getFunction(), cases, nullptr))
-    return std::nullopt;
-  return cases;
-}
-
-// computedGotoCases with the path predicates of the forward edges computed so far (a phi of addresses).
-static std::optional<SmallVector<std::pair<Pred, const BasicBlock *>, 4>>
-computedGotoCases(const IndirectBrInst &ib, const EdgePredFn &edgeOf) {
-  SmallVector<std::pair<Pred, const BasicBlock *>, 4> cases;
-  if (!addressCases(ib.getAddress(), Pred::top(), *ib.getFunction(), cases, &edgeOf))
-    return std::nullopt;
-  return cases;
+  return pred_detail::makePred(m.notOp(others));
 }
 
 namespace pred_detail {
@@ -436,33 +349,8 @@ static unsigned edgeCond(const BasicBlock *from, const BasicBlock *to, Oracle &O
       r = m.orOp(r, noCase);
     return r;
   }
-  if (const auto *ib = dyn_cast<IndirectBrInst>(term)) {
-    // A forward edge into a phi's block has its path predicate once that block was evaluated; it implies
-    // the predicate of `from` (the phi's block dominates the computed goto), so the case is exact
-    // relative to it.
-    EdgePredFn edgeOf = [&](const BasicBlock *u, const BasicBlock *b) -> std::optional<Pred> {
-      auto ui = I.rpo.find(u), bi = I.rpo.find(b);
-      if (ui == I.rpo.end())
-        return Pred::bottom();   // an unreachable incoming is never taken
-      if (bi == I.rpo.end() || ui->second >= bi->second)
-        return std::nullopt;     // a back edge: a carried address
-      auto e = I.edges.find({u, b});
-      if (e == I.edges.end())
-        internalError("pred: a computed goto's address phi read before its block's edges were evaluated", term);
-      return e->second;
-    };
-    std::optional<SmallVector<std::pair<Pred, const BasicBlock *>, 4>> cases = computedGotoCases(*ib, edgeOf);
-    if (!cases)
-      unimplemented("pred: a computed goto whose address is carried around a loop or stored to memory and loaded "
-                    "back (SPEC_ISSUES: loops-cutoff (cq-8i5g), the integer a computed goto's address is derived "
-                    "from through memory or a carried phi)",
-                    term);
-    unsigned r = Bdd::F;
-    for (auto &[p, d] : *cases)
-      if (d == to)
-        r = m.orOp(r, nodeOf(p));
-    return r;
-  }
+  if (const auto *ib = dyn_cast<IndirectBrInst>(term))
+    return nodeOf(computedGotoEdge(*ib, to));   // rule 13: a switch on the address
   if (const auto *cb = dyn_cast<CallBrInst>(term)) {
     // Rule 13: `callbr` (asm goto) is inline asm (rule 27). With a quantum operand it is rule 27's
     // inline asm, built once CQ_spec has its example (CLAUDE.md build step 3). Without one the asm
@@ -845,7 +733,9 @@ bool predsMeet(const Pred &a, const Pred &b) {
   for (size_t i = 0; i < eqs.size() && f != Bdd::F; ++i)
     for (size_t j = i + 1; j < eqs.size() && f != Bdd::F; ++j) {
       const Atom &x = atomOf(eqs[i]), &y = atomOf(eqs[j]);
-      if (x.kind == AtomKind::Eq && y.kind == AtomKind::Eq && x.v == y.v && x.c != y.c)
+      bool exclusive = (x.kind == AtomKind::Eq && y.kind == AtomKind::Eq && x.v == y.v && x.c != y.c) ||
+                       (x.kind == AtomKind::Addr && y.kind == AtomKind::Addr && x.v == y.v && x.bb != y.bb);
+      if (exclusive)
         f = m.andOp(f, m.notOp(m.andOp(m.ithVar(eqs[i]), m.ithVar(eqs[j]))));
     }
   return f != Bdd::F;

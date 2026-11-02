@@ -54,14 +54,14 @@ public:
 private:
   struct Impl; std::shared_ptr<Impl> impl;
 };
-// CR rule 13 (ruling 2026-11-02): a computed goto is a switch over its destination list, its scrutinee the
-// integer the target address was derived from (a constant blockaddress table read at an index, rule 20's
-// QROM; a select; a blockaddress constant). (condition, destination) per derived case; std::nullopt when
-// the address is derived otherwise.
-std::optional<llvm::SmallVector<std::pair<Pred, const llvm::BasicBlock *>, 4>>
-computedGotoCases(const llvm::IndirectBrInst &);
-struct GotoTableRead { const llvm::Value *index; std::vector<const llvm::BasicBlock *> entries; };
-std::optional<GotoTableRead> gotoTableRead(const llvm::Value *address);
+// CR rule 13 (b137e75): a computed goto (indirectbr) is a switch whose scrutinee is the ADDRESS itself, an
+// integer of pointer width, whatever produced it; the case value of destination d is caseAddress(d). The
+// default is unreachable, so the last distinct destination is the complement of the others. The predicate
+// under which ib transfers control to `to` (bottom when `to` is no destination).
+Pred computedGotoEdge(const llvm::IndirectBrInst &ib, const llvm::BasicBlock *to);
+// ptrtoint(blockaddress(@f, %d)) as i64: a run-time constant naming d (the lowered function keeps d under
+// its identity, CR rule 13).
+llvm::Constant *caseAddress(const llvm::BasicBlock *d);
 void lowerBranch(LoweringContext &, llvm::BranchInst &);
 llvm::Value *lowerMerge(LoweringContext &, llvm::PHINode &);
 // cq-oa67 (rules 9, 25, 26): a quantum phi of a vector, struct or array, merged field by field; binds its
