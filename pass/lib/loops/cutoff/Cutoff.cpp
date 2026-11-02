@@ -297,9 +297,21 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     if (one && !several && is_contained(latches, one))
       latch = one;
   }
-  BasicBlock *pre = L.getLoopPredecessor();
-  if (!pre)
-    unimplemented("loops-cutoff: a K-loop header with more than one predecessor outside the loop", H->getTerminator());
+  // The header's predecessors outside the loop (-O1 may fold the preheader into a join before the
+  // loop). A carried value's start is its one incoming from them, or, where they differ, their merge.
+  SmallVector<BasicBlock *, 2> outside;
+  for (BasicBlock *p : predecessors(H))
+    if (!L.contains(p) && !is_contained(outside, p))
+      outside.push_back(p);
+  if (outside.empty())
+    internalError("loops-cutoff: a loop header with no predecessor outside the loop", H->getTerminator());
+  auto startOf = [&](const PHINode *h) -> Value * {
+    Value *v = h->getIncomingValueForBlock(outside.front());
+    for (BasicBlock *u : outside)
+      if (h->getIncomingValueForBlock(u) != v)
+        return nullptr;
+    return v;
+  };
   // The unit (Exits.h): its continuation and exit arm; an exit into an effect-free dead end is no exit.
   exits::Unit U = exits::unitOf(L);
   auto liveEdge = [&](const BasicBlock *s) { return !L.contains(s) && is_contained(U.live, s); };
@@ -450,7 +462,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   for (PHINode *h : hphis) {
     if (!isQ(h) || !h->getType()->isIntegerTy())
       continue;
-    Value *st = h->getIncomingValueForBlock(pre);
+    Value *st = startOf(h);
+    if (!st)
+      continue;   // several starts: carried
     if (auto *SI = dyn_cast<Instruction>(st); SI && L.contains(SI))
       continue;
     auto invariant = [&](const Value *X) {
@@ -738,7 +752,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           }
         } else {
           for (PHINode *c : hphis)
-            if (c->getIncomingValueForBlock(pre) == v &&
+            if (startOf(c) == v &&
                 (ctx.preds().edge(u, X) & pH).isBottom()) {
               h = c;
               break;
@@ -756,9 +770,16 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         continue;
       }
       if (foreign)
-        unimplemented("loops-cutoff: an exit phi reading a value from outside the K-loop on an exit edge that is "
-                      "not the exit value of a carried value",
-                      &P);
+        needGeneral("loops-cutoff: an exit phi of a nested K-loop reading a value from outside the loop on an exit "
+                    "edge that is not the exit value of a carried value",
+                    &P);
+    }
+    if (general) {   // the multi-exit form's capture binds every phi of the exit block
+      multi = true;
+      exitPhis.clear();
+      exitRebinds.clear();
+      exitRail.clear();
+      tripPhis.clear();
     }
   }
 
@@ -817,12 +838,15 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (!(P.getType()->isIntegerTy() || P.getType()->isFloatingPointTy()))
         unimplemented("loops-cutoff: a non-scalar phi joining a multi-exit K-loop's exits", &P);
       const Value *init = nullptr;
-      bool outside = false;
+      Pred cH = pH.classicalFactor(ctx.T, ctx.S);
       for (unsigned i = 0; i < P.getNumIncomingValues(); ++i) {
         BasicBlock *u = P.getIncomingBlock(i);
         if (inUnit(u))
           continue;
-        outside = true;
+        // A classical skip of the loop (its edge excludes the classical condition the unit runs under):
+        // the walker joins it with the unit's value classically (joinUnitPhi, rule 9 at a58c3a4).
+        if ((ctx.preds().edge(u, C) & cH).isBottom())
+          continue;
         if (!(ctx.preds().edge(u, C) & pH).isBottom())
           unimplemented("loops-cutoff: a phi joining a multi-exit K-loop's exits with an incoming from outside the "
                         "loop on an edge that does not exclude the loop",
@@ -833,8 +857,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
                         &P);
         init = P.getIncomingValue(i);
       }
-      if (outside && !pH.classicalFactor(ctx.T, ctx.S).isTop())
-        unimplemented("loops-cutoff: a phi joining a multi-exit K-loop's exits and a classical skip of the loop", &P);
       // With no incoming from outside, the value where no trip exits (the cutoff reached first) is 0.
       Operand acc = init ? ctx.operand(init) : Operand{Constant::getNullValue(P.getType()), false};
       if (!acc.handle)
@@ -856,6 +878,23 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     if (auto it = qind.find(h); it != qind.end())
       it->second.exitRail = Operand{};
 
+  // A header phi's initial value: its start, or, entered from several blocks outside the loop with
+  // different values, the merge of those (rule 9's select chain over the entry edges' predicates,
+  // evaluated here where the walker has reached the header). A classical phi with several starts is
+  // a classical choice at a classical join the walker owns.
+  auto initOf = [&](PHINode *h, bool tag) -> Operand {
+    auto opOf = [&](Value *v) { return tag ? fatptr::carriedTag(ctx, v) : ctx.operand(v); };
+    if (Value *v = startOf(h))
+      return opOf(v);
+    if (!isQ(h))
+      unimplemented("loops-cutoff: a classical carried value entering a K-loop with several starts (a classical "
+                    "phi at the walker's join before the loop; cq-kldr)",
+                    h);
+    std::vector<std::pair<Pred, Operand>> arms;
+    for (BasicBlock *u : outside)
+      arms.push_back({ctx.preds().edge(u, H), opOf(h->getIncomingValueForBlock(u))});
+    return Operand{selectChain(ctx, arms, tag ? RailType{Kind::Int, 32} : railTypeOf(h->getType())), true};
+  };
   // The state: header phis bound to their initial values (a classical initial value of a quantum phi
   // becomes a seed rail).
   for (PHINode *h : hphis) {
@@ -866,7 +905,11 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       const Value *nx = h->getIncomingValueForBlock(latch);
       auto *g = dyn_cast<GEPOperator>(nx);
       APInt off(64, 0);
-      const Value *start = h->getIncomingValueForBlock(pre);
+      const Value *start = startOf(h);
+      if (!start)
+        unimplemented("loops-cutoff: a classical pointer into slot or QRAM memory entering a K-loop with several "
+                      "starts (a classical phi at the walker's join before the loop; cq-kldr)",
+                      h);
       auto *si = dyn_cast<Instruction>(start);
       bool sameNext = all_of(latches, [&](BasicBlock *l) { return h->getIncomingValueForBlock(l) == nx; });
       // A loop-invariant pointer (every back edge carries the phi itself or its start) is walked by 0.
@@ -898,7 +941,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (exitRail.count(h) || qind.count(h))
         unimplemented("loops-cutoff: a K-loop's carried pointer read after the loop", h);
       fatptr::registerCarried(ctx, *h);
-      Operand init = fatptr::carriedTag(ctx, h->getIncomingValueForBlock(pre));
+      Operand init = initOf(h, true);
       if (!init.handle)
         init = Operand{seedRail(init.v, Type::getInt32Ty(ctx.M.getContext())), true};
       carriedPtr.insert(h);
@@ -909,7 +952,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     // classical start): a classical value in each trip, nothing carried.
     if (!h->getType()->isIntegerTy() && !h->getType()->isFloatingPointTy() && (isQ(h) || !h->getType()->isPointerTy()))
       unimplemented("loops-cutoff: a carried value that is not a scalar (aggregates, pointers)", h);
-    Operand init = ctx.operand(h->getIncomingValueForBlock(pre));
+    Operand init = initOf(h, false);
     if (isQ(h) && !init.handle)
       init = Operand{seedRail(init.v, h->getType()), true};
     if (!isQ(h) && init.handle)
