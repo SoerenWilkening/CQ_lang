@@ -3897,6 +3897,14 @@ bool storesOnce(LoweringContext &ctx, FnState &st, ObjectId o) {
   return true;
 }
 
+} // namespace
+
+Type *cloneCellType(LoweringContext &ctx, const Specialization &S, unsigned argNo, int64_t off, uint64_t size,
+                    const Instruction &at,
+                    std::set<std::tuple<const Specialization *, unsigned, int64_t>> *onChain = nullptr);
+
+namespace {
+
 void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &I, Type *ty, Operand val,
                  StoreWhat what) {
   using What = StoreWhat;
@@ -4074,6 +4082,20 @@ void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &
             ctx.unc().recordCore(c2, cp, {val, Operand{f, true}}, fid);
             st.lowered[&I] = Operand{f, true};
             return;
+          }
+        }
+        // cq-nyto (CR rules 3, 18): the clone's writes of this cell at several types of one width (a classical
+        // branch choosing between them) leave one rail type, the one the caller reads (cloneCellType: the
+        // floating-point type when some write is floating point, as mergedCloneStore's 51): a write at another
+        // type stores its rule 3 view (bitcast) of that type.
+        if (auto *PA = dyn_cast<Argument>(s.a.root); PA && s.a.terms.empty() && val.handle && !s.info->boolCells &&
+                                                     !s.info->view) {
+          uint64_t sz = storeBytes(DL, ty);
+          Type *canon = cloneCellType(ctx, ctx.S, PA->getArgNo(), s.a.off, sz, I);
+          if (canon && canon != ty && storeBytes(DL, canon) == sz && (canon->isIntegerTy() || canon->isFloatingPointTy()) &&
+              (ty->isIntegerTy() || ty->isFloatingPointTy())) {
+            val = Operand{viewTemplate(ctx, "bitcast", railTypeOf(ty), railTypeOf(canon), {val}), true};
+            w = railTypeOf(canon);
           }
         }
         // Literally alloc_<W>(0), copy(v, c), store c (calls' finalize rewrites this sequence in the twin),
@@ -4317,12 +4339,16 @@ void allocateSlots(LoweringContext &ctx, Instruction &site) {
 // cq-qd05: the type of the rail the clone S leaves in the cell at byte offset off (size bytes) of the
 // object its formal argNo points to: its stores through the formal at that cell (finishStore: the stored
 // type; mergedCloneStore, 51: the floating-point type when some store is floating point), or, through a
-// clone it hands the pointer to, that clone's. Null when no such store is found.
+// clone it hands the pointer to, that clone's. Null when no such store is found. A chain of clone calls is
+// followed to any depth; a (clone, formal, cell) already on the chain (recursion) adds no type of its own: the
+// types it leaves are those of the writes found elsewhere on the cycle.
 Type *cloneCellType(LoweringContext &ctx, const Specialization &S, unsigned argNo, int64_t off, uint64_t size,
-                    const Instruction &at, unsigned depth = 0) {
-  if (depth > 16)
-    unimplemented("mem-slots: the rail type a clone leaves in a caller cell through a deep chain of clone calls",
-                  &at);
+                    const Instruction &at, std::set<std::tuple<const Specialization *, unsigned, int64_t>> *onChain) {
+  std::set<std::tuple<const Specialization *, unsigned, int64_t>> chain;
+  if (!onChain)
+    onChain = &chain;
+  if (!onChain->insert({&S, argNo, off}).second)
+    return nullptr;
   const DataLayout &DL = ctx.M.getDataLayout();
   const Argument *A = S.F->getArg(argNo);
   Type *fp = nullptr, *any = nullptr;
@@ -4349,7 +4375,7 @@ Type *cloneCellType(LoweringContext &ctx, const Specialization &S, unsigned argN
       for (unsigned i = 0; i < CB->arg_size(); ++i) {
         Addr pa = decompose(CB->getArgOperand(i), DL);
         if (pa.ok && pa.root == A && pa.terms.empty() && !ctx.T.cellsWritten(*C, i).empty())
-          if (Type *t = cloneCellType(ctx, *C, i, off - pa.off, size, at, depth + 1))
+          if (Type *t = cloneCellType(ctx, *C, i, off - pa.off, size, at, onChain))
             note(t, I);
       }
       continue;
@@ -4373,15 +4399,17 @@ Type *cloneCellType(LoweringContext &ctx, const Specialization &S, unsigned argN
       note(ty, I);
   }
   if (mixed) {
-    // cq-nyto (3): writes of different types leave one rail type only when they are the arms of one
-    // quantum-predicated merge (mergedCloneStore, 51: the floating-point view). A write that a classical
-    // branch decides (it is control dependent on a conditional terminator with a classical condition)
-    // leaves a rail whose type depends on the path (c1): unimplemented.
+    // cq-nyto (3): writes of different types leave one rail type: the arms of one quantum-predicated merge
+    // (mergedCloneStore, 51: the floating-point view), and the clone's own stores on paths a classical branch
+    // chooses (finishStore stores each one's bitcast view of the type returned here). A further clone call
+    // that writes the cell leaves the rail type of its own writes, which a classical branch decides.
     Function &F = const_cast<Function &>(*S.F);
     DominatorTree DT(F);
     PostDominatorTree PDT(F);
     for (const Instruction *w : writers)
       for (const BasicBlock &X : F) {
+        if (!isa<CallBase>(w))
+          break;
         const Instruction *T = X.getTerminator();
         if (!T || T->getNumSuccessors() < 2 || !DT.dominates(&X, w->getParent()) ||
             PDT.dominates(w->getParent(), &X))
@@ -4393,10 +4421,11 @@ Type *cloneCellType(LoweringContext &ctx, const Specialization &S, unsigned argN
           cond = sw->getCondition();
         if (!cond || !ctx.T.isQuantum(cond, S))
           unimplemented("mem-slots: a clone writes a caller cell at different types on paths a classical condition "
-                        "chooses (the rail type the caller reads depends on the path: cq-nyto)",
+                        "chooses, one of them through a further clone call (the rail type it leaves is its own: cq-nyto)",
                         w);
       }
   }
+  onChain->erase({&S, argNo, off});
   return fp ? fp : any;
 }
 
@@ -5773,15 +5802,20 @@ void writeSlotCells(LoweringContext &ctx, const Value *ptr, Type *cellTy, ArrayR
   }
 }
 
-// Rule 24 (94): the single-thread meaning of an atomic read-modify-write of a slot cell.
+// Rule 24 (94): the single-thread meaning of an atomic read-modify-write of a slot cell: read the cell, write
+// op(old, v) into it, return old (cmpxchg: old and old == cmp). Single-thread collapse makes a volatile atomic
+// the same plain read-modify-write. Every atomicrmw operation of LLVM 19 is its rule 4 composition of
+// templates: xchg v; add sub and or xor; nand as xor(and, -1); max min umax umin as smax smin umax umin;
+// fadd fsub; fmax fmin as maxnum / minnum (§2 fmax row); uinc_wrap as select(old u>= v, 0, old + 1);
+// udec_wrap as select(old == 0 | old u> v, v, old - 1). An exchanged handle is a basis copy into the cell (C
+// copies the value, cq-dr4o), a classical one a seed (rule 7). Under a quantum predicate the cell receives
+// select(predicate, new, old) (rules 9, 20).
 void lowerSlotAtomic(LoweringContext &ctx, Instruction &I) {
   FnState &st = stateOf(ctx, I);
   auto *rmw = dyn_cast<AtomicRMWInst>(&I);
   auto *cx = dyn_cast<AtomicCmpXchgInst>(&I);
   if (!rmw && !cx)
     internalError("mem-slots: lowerSlotAtomic of an instruction that is neither atomicrmw nor cmpxchg", &I);
-  if ((rmw && rmw->isVolatile()) || (cx && cx->isVolatile()))
-    unimplemented("mem-slots: a volatile atomic read-modify-write of a slot cell", &I);
   const Value *ptr = accessPtr(&I);
   if (ctx.T.isFatPointer(ptr, ctx.S))
     unimplemented("mem-slots: an atomic read-modify-write through a fat pointer (rule 21)", &I);
@@ -5791,53 +5825,102 @@ void lowerSlotAtomic(LoweringContext &ctx, Instruction &I) {
     unimplemented("mem-slots: a walked access beyond its slot object other than a load (rule 21)", &I);
   if (s.info->view || s.info->boolCells)
     unimplemented("mem-slots: an atomic read-modify-write of a bit-view or _Bool slot cell", &I);
-  if (ctx.currentFlag())
-    unimplemented("mem-slots: an atomic read-modify-write of a slot cell under a quantum predicate", &I);
-  if (!ty->isIntegerTy())
-    unimplemented("mem-slots: an atomic read-modify-write of a non-integer slot cell", &I);
+  if (ty->isPointerTy())
+    unimplemented("mem-slots: a pointer stored into a slot object", &I);
   RailType w = cellRail(*s.info, ty, I);
+  LLVMContext &C = ctx.M.getContext();
   Operand old = readCell(ctx, st, s, I, ty);
   if (!old.handle)
     internalError("mem-slots: a slot cell read as a classical value", &I);
   auto shape2 = [](const Operand &a, const Operand &b) {
     return a.handle && b.handle ? "" : a.handle ? "hl" : "lh";
   };
+  auto tmpl = [&](StringRef op, ArrayRef<Operand> ops, StringRef shape, StringRef pred = "") {
+    abi::TemplateSpec sp;
+    sp.op = op.str();
+    sp.pred = pred.str();
+    sp.w = w;
+    sp.shape = shape.str();
+    return Operand{ctx.emitTemplate(sp, ops), true};
+  };
+  auto boolTmpl = [&](StringRef op, Operand a, Operand b) {
+    abi::TemplateSpec sp;
+    sp.op = op.str();
+    sp.w = RailType{Kind::Int, 1};
+    return Operand{ctx.emitTemplate(sp, {a, b}), true};
+  };
+  auto select = [&](Operand c, Operand a, Operand b) {
+    abi::TemplateSpec sp;
+    sp.op = "select";
+    sp.w = w;
+    sp.shape = a.handle && b.handle ? "" : a.handle ? "hl" : b.handle ? "lh" : "ll";
+    return Operand{ctx.emitTemplate(sp, {c, a, b}), true};
+  };
+  auto intLit = [&](uint64_t k) { return Operand{ConstantInt::get(ty, k), false}; };
   Operand nv;
+  bool exchange = false;
   if (rmw) {
     Operand v = ctx.operand(rmw->getValOperand());
-    const char *op = nullptr;
     switch (rmw->getOperation()) {
-    case AtomicRMWInst::Add: op = "add"; break;
-    case AtomicRMWInst::Sub: op = "sub"; break;
-    case AtomicRMWInst::And: op = "and"; break;
-    case AtomicRMWInst::Or: op = "or"; break;
-    case AtomicRMWInst::Xor: op = "xor"; break;
-    default:
-      unimplemented("mem-slots: an atomicrmw operation other than add, sub, and, or, xor on a slot cell", &I);
+    case AtomicRMWInst::Xchg: nv = v; exchange = true; break;
+    case AtomicRMWInst::Add: nv = tmpl("add", {old, v}, shape2(old, v)); break;
+    case AtomicRMWInst::Sub: nv = tmpl("sub", {old, v}, shape2(old, v)); break;
+    case AtomicRMWInst::And: nv = tmpl("and", {old, v}, shape2(old, v)); break;
+    case AtomicRMWInst::Or: nv = tmpl("or", {old, v}, shape2(old, v)); break;
+    case AtomicRMWInst::Xor: nv = tmpl("xor", {old, v}, shape2(old, v)); break;
+    case AtomicRMWInst::Nand:
+      nv = tmpl("xor", {tmpl("and", {old, v}, shape2(old, v)), Operand{Constant::getAllOnesValue(ty), false}}, "hl");
+      break;
+    case AtomicRMWInst::Max: nv = tmpl("smax", {old, v}, shape2(old, v)); break;
+    case AtomicRMWInst::Min: nv = tmpl("smin", {old, v}, shape2(old, v)); break;
+    case AtomicRMWInst::UMax: nv = tmpl("umax", {old, v}, shape2(old, v)); break;
+    case AtomicRMWInst::UMin: nv = tmpl("umin", {old, v}, shape2(old, v)); break;
+    case AtomicRMWInst::FAdd: nv = tmpl("fadd", {old, v}, shape2(old, v)); break;
+    case AtomicRMWInst::FSub: nv = tmpl("fsub", {old, v}, shape2(old, v)); break;
+    case AtomicRMWInst::FMax: nv = tmpl("fmax", {old, v}, shape2(old, v)); break;
+    case AtomicRMWInst::FMin: nv = tmpl("fmin", {old, v}, shape2(old, v)); break;
+    case AtomicRMWInst::UIncWrap: {
+      Operand wrap = tmpl("icmp", {old, v}, shape2(old, v), "uge");
+      nv = select(wrap, intLit(0), tmpl("add", {old, intLit(1)}, "hl"));
+      break;
     }
-    abi::TemplateSpec sp;
-    sp.op = op;
-    sp.w = w;
-    sp.shape = shape2(old, v);
-    nv = Operand{ctx.emitTemplate(sp, {old, v}), true};
+    case AtomicRMWInst::UDecWrap: {
+      Operand zero = tmpl("icmp", {old, intLit(0)}, "hl", "eq");
+      Operand above = tmpl("icmp", {old, v}, shape2(old, v), "ugt");
+      nv = select(boolTmpl("or", zero, above), v, tmpl("sub", {old, intLit(1)}, "hl"));
+      break;
+    }
+    default:
+      internalError("mem-slots: an atomicrmw operation LLVM 19 does not define", &I);
+    }
     ctx.bindFields(&I, {old});
   } else {
     Operand cmp = ctx.operand(cx->getCompareOperand());
     Operand v = ctx.operand(cx->getNewValOperand());
-    abi::TemplateSpec eq;
-    eq.op = "icmp";
-    eq.pred = "eq";
-    eq.w = w;
-    eq.shape = shape2(old, cmp);
-    Value *f = ctx.emitTemplate(eq, {old, cmp});
-    abi::TemplateSpec sel;
-    sel.op = "select";
-    sel.w = w;
-    sel.shape = v.handle ? "" : "lh";
-    nv = Operand{ctx.emitTemplate(sel, {Operand{f, true}, v, old}), true};
-    ctx.bindFields(&I, {old, Operand{f, true}});
+    Operand f = tmpl("icmp", {old, cmp}, shape2(old, cmp), "eq");
+    // The icmp's rail is an i1 whatever the cell's width: tmpl names the compare by the cell's type.
+    nv = select(f, v, old);
+    ctx.bindFields(&I, {old, f});
   }
-  finishStore(ctx, st, s, I, ty, nv, StoreWhat::Computed);
+  StoreWhat what = StoreWhat::Computed;
+  if (ctx.currentFlag()) {
+    const Pred &p = ctx.currentPredicate();
+    nv = Operand{selectChain(ctx, {{p, nv}, {!p, old}}, w), true};
+  } else if (exchange && !nv.handle) {
+    CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {nv.v});
+    ctx.unc().recordSeed(a);
+    nv = Operand{a, true};
+    what = StoreWhat::Seed;
+  } else if (exchange) {
+    CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(C, w))});
+    RailId aid = ctx.unc().recordSeed(a);
+    abi::CoreSpec cp{abi::Core::Copy, w};
+    CallInst *cc = ctx.emitCore(cp, {nv.v, a});
+    ctx.unc().recordCore(cc, cp, {nv, Operand{a, true}}, aid);
+    nv = Operand{a, true};
+    what = StoreWhat::Copy;
+  }
+  finishStore(ctx, st, s, I, ty, nv, what);
 }
 
 // 102 (program slots, see programSlot): a clone call `lowered` (just emitted for orig, callee `callee`) whose

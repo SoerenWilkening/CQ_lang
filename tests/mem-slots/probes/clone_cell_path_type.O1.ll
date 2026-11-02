@@ -65,4 +65,4 @@ attributes #5 = { nounwind }
 !7 = !{!"double", !8, i64 0}
 !8 = !{!"omnipotent char", !9, i64 0}
 !9 = !{!"Simple C/C++ TBAA"}
-; EXPECT-ERROR: mem-slots: a clone writes a caller cell at different types on paths a classical condition chooses
+; USERCHECK clone_cell_path_type

@@ -1,6 +1,7 @@
 #include "CQ.h"
-/* cq-nyto (3), review c1: the clone stores the caller's cell as i64 on one classical path and as double on
-   the other; the rail type the caller reads depends on the path: unimplemented. */
+/* cq-nyto (3), review c1; cq-qrvh: the clone stores the caller's cell as i64 on one classical path and as double
+   on the other. The cell's rail has one type, the one the caller reads (the floating-point type): the i64 store
+   stores its bitcast view (rule 3). The view is measured (kept). */
 #include <stdint.h>
 #include <string.h>
 __attribute__((noinline)) static int g(int64_t x, double *ip, int c) {
