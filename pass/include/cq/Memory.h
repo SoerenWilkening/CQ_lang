@@ -1,5 +1,6 @@
 // Frozen interface (cq-arch). Changes only under cq-arch's freeze rule.
 #pragma once
+#include "llvm/ADT/STLFunctionalExtras.h"
 
 #include "cq/Lowering.h"
 #include "cq/Taint.h"
@@ -108,6 +109,12 @@ void endSlotLifetime(LoweringContext &, ObjectId, llvm::Instruction *at);  // me
 void lowerQromLoad(LoweringContext &, llvm::LoadInst &);          // mem-qrom
 void lowerQramLoad(LoweringContext &, llvm::LoadInst &);          // mem-qram
 void lowerQramStore(LoweringContext &, llvm::StoreInst &);        // mem-qram
+// cq-py5f (CR rule 24, 94; rule 20): a read-modify-write of one QRAM cell through ptr (an atomicrmw or
+// cmpxchg, the plain load + op + store single-threaded): ONE qram_load of the cell into a fresh rail old,
+// next = combine(old) (a handle), then ONE qram_store of next under the current predicate's flag, recorded
+// as lowerQramLoad / lowerQramStore record theirs. Returns old. Consumer: eff-conc.
+llvm::Value *rmwQramCell(LoweringContext &, llvm::Instruction &I, const llvm::Value *ptr, llvm::Type *ty,
+                         llvm::function_ref<llvm::Value *(llvm::Value *old)> combine);
 void allocateQram(LoweringContext &, llvm::Instruction &site);    // mem-qram
 void endQramLifetime(LoweringContext &, ObjectId, llvm::Instruction *at);  // mem-qram
 void reallocQram(LoweringContext &, llvm::CallBase &realloc);   // mem-qram (M5, cq-arch 2026-11-01)

@@ -916,6 +916,12 @@ bool qramEscapes(LoweringContext &ctx, const Value *root) {
       }
       if (isa<ICmpInst>(usr))
         continue;
+      // cq-py5f (rule 24): an atomic read-modify-write through the pointer is an access, not an escape.
+      if (auto *rmw = dyn_cast<AtomicRMWInst>(usr); rmw && rmw->getPointerOperand() == v && rmw->getValOperand() != v)
+        continue;
+      if (auto *cx = dyn_cast<AtomicCmpXchgInst>(usr); cx && cx->getPointerOperand() == v &&
+                                                      cx->getNewValOperand() != v && cx->getCompareOperand() != v)
+        continue;
       if (auto *CB = dyn_cast<CallBase>(usr)) {
         if (isa<DbgInfoIntrinsic>(CB) || isa<MemIntrinsic>(CB) || isCqSurface(*CB))
           continue;
@@ -1802,6 +1808,27 @@ void lowerQramStore(LoweringContext &ctx, StoreInst &st) {
   if (!v.handle)
     v = Operand{seedOf(ctx, col->w, v.v), true};
   emitStore(ctx, busOf(*acc.q, acc.a.root, col, st), *col, idx, v.v, flag, st);
+}
+
+// cq-py5f (CR rule 24, 94): an atomicrmw / cmpxchg on a QRAM cell is the plain read-modify-write: the cell
+// read as lowerQramLoad reads it, combine, the result stored as lowerQramStore stores it (the load's un-copy
+// follows the store's pop, as for any load and later store of one cell).
+Value *rmwQramCell(LoweringContext &ctx, Instruction &I, const Value *ptr, Type *ty,
+                   function_ref<Value *(Value *)> combine) {
+  if (Addr r = decompose(ptr, ctx.M.getDataLayout()); r.ok && isFormalQram(ctx, r.root))
+    unimplemented("mem-qram: a read-modify-write through a QRAM triple formal (fatptr's derivation, P1)", &I);
+  QAccess acc = qramAccess(ctx, ptr, I);
+  if (!ty->isIntegerTy() && !ty->isFloatingPointTy())
+    unimplemented("mem-qram: a QRAM access of a non-scalar or pointer value (rules 21, 25)", &I);
+  const Column *col = exactCell(ctx, *acc.q, acc.a, ty);
+  if (!col)
+    unimplemented("mem-qram: a QRAM access at another type than its cell (a bit view, 63)", &I);
+  QIndex idx = cellIndex(ctx, *acc.q, acc.a, I);
+  Value *bus = busOf(*acc.q, acc.a.root, col, I);
+  Value *old = emitLoad(ctx, bus, *col, idx);
+  Value *next = combine(old);
+  emitStore(ctx, bus, *col, idx, next, ctx.currentFlag(), I);
+  return old;
 }
 
 // Rule 20: a local (alloca) or heap QRAM is ONE cqrt_qram_alloc_<W>(n) per column at its allocation

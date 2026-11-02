@@ -513,6 +513,13 @@ bool cleanable(LoweringContext &ctx, Value *y) {
   // cq-necw: a cell load is cleanable only as the new content of a cell whose old rail an _inv<c> cleans.
   if (isa<LoadInst>(I) && !spine::shared(ctx).invCellImages.count(ctx.operand(y).v))
     return false;
+  // cq-py5f (rule 24 on a QRAM cell): an atomicrmw / cmpxchg yields the cell's old value as a QRAM load
+  // (mem::rmwQramCell), uncomputed by its un-copy against the cell, as a load's: never by rule 6.
+  if (isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I))
+    if (auto *c = dyn_cast<CallInst>(ctx.operand(y).v); c && c->getCalledFunction())
+      if (std::optional<abi::CoreSpec> k = abi::parseCore(c->getCalledFunction()->getName());
+          k && k->op == abi::Core::QramLoad)
+        return false;
   if (auto *sel = dyn_cast<SelectInst>(I); sel && !spine::isQ(ctx, sel->getCondition()))
     return false;
   // A field of a clone call's composite result (an extractvalue of the lowered call, U2): the call's

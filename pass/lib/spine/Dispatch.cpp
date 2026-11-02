@@ -430,6 +430,10 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
 
 } // namespace
 
+// cq-py5f: rule 21's quantum tag of an access's pointer, as the spine routes loads and stores (eff-conc routes
+// a volatile or atomic access the same way).
+bool accessHasQuantumTag(LoweringContext &ctx, const Value *p) { return quantumTag(ctx, p); }
+
 namespace {
 
 bool boolRangeLoad(const LoadInst *ld) {

@@ -34,6 +34,7 @@
 // calls::lowerLiftedVia with argMap {3}; a classical one: the original), status 0; pthread_join with a null
 // result pointer and the mutex locks are no-ops, status 0.
 // lowerSetjmp, lowerLongjmp: Setjmp.cpp (101's escaped-flag construction, contract at its top).
+#include "../../spine/SpineInternal.h"
 #include "cq/Calls.h"
 #include "cq/Effects.h"
 #include "cq/FatPtr.h"
@@ -167,7 +168,7 @@ void copyClassical(LoweringContext &ctx, Instruction &I, bool dropVolatile) {
 // The plain access (rule 20/21 routing) of an access with something quantum in it.
 void routePlain(LoweringContext &ctx, Instruction &I, const Value *ptr, StringRef what) {
   // Rule 21: a quantum tag is a fat pointer, whose accesses are rule 20's per object (fatptr).
-  if (ctx.T.isFatPointer(ptr, ctx.S) || ctx.T.isQuantum(ptr, ctx.S)) {
+  if (spine::accessHasQuantumTag(ctx, ptr)) {
     if (auto *ld = dyn_cast<LoadInst>(&I))
       return fatptr::lowerLoad(ctx, *ld);
     return fatptr::lowerStore(ctx, cast<StoreInst>(I));
@@ -205,6 +206,100 @@ const CallBase *joinAskingResult(const Module &M) {
                                                cast<Constant>(J->getArgOperand(1))->isNullValue()))
           return J;
   return nullptr;
+}
+
+// Rule 24 (94) on a QRAM cell: the plain read-modify-write, the old value read and the new one stored by
+// mem-qram (rmwQramCell). atomicrmw yields the old value; cmpxchg yields {old, old == cmp} and stores
+// select(old == cmp, new, old).
+void lowerQramRmw(LoweringContext &ctx, Instruction &I, const Value *ptr) {
+  auto *rmw = dyn_cast<AtomicRMWInst>(&I);
+  auto *cx = dyn_cast<AtomicCmpXchgInst>(&I);
+  Type *ty = rmw ? rmw->getValOperand()->getType() : cx->getNewValOperand()->getType();
+  RailType w = railTypeOf(ty);
+  auto shape2 = [](const Operand &a, const Operand &b) -> std::string {
+    return a.handle && b.handle ? "" : a.handle ? "hl" : "lh";
+  };
+  auto bin = [&](const char *op, Operand a, Operand b) {
+    abi::TemplateSpec sp;
+    sp.op = op;
+    sp.w = w;
+    sp.shape = shape2(a, b);
+    return Operand{ctx.emitTemplate(sp, {a, b}), true};
+  };
+  auto cmp = [&](const char *pred, Operand a, Operand b) {
+    abi::TemplateSpec sp;
+    sp.op = "icmp";
+    sp.pred = pred;
+    sp.w = w;
+    sp.shape = shape2(a, b);
+    return Operand{ctx.emitTemplate(sp, {a, b}), true};
+  };
+  auto sel = [&](Operand c, Operand t, Operand f) {
+    abi::TemplateSpec sp;
+    sp.op = "select";
+    sp.w = w;
+    sp.shape = t.handle && f.handle ? "" : std::string(t.handle ? "h" : "l") + (f.handle ? "h" : "l");
+    return Operand{ctx.emitTemplate(sp, {c, t, f}), true};
+  };
+  auto lit = [&](uint64_t v) { return Operand{ConstantInt::get(ty, v), false}; };
+  Operand eqFlag;
+  auto combine = [&](Value *oldV) -> Value * {
+    Operand old{oldV, true};
+    if (cx) {
+      Operand c = ctx.operand(cx->getCompareOperand()), v = ctx.operand(cx->getNewValOperand());
+      eqFlag = cmp("eq", old, c);
+      Operand r = sel(eqFlag, v, old);
+      return r.v;
+    }
+    Operand v = ctx.operand(rmw->getValOperand());
+    Operand r;
+    switch (rmw->getOperation()) {
+    case AtomicRMWInst::Xchg:
+      // The cell takes v (a store copies it in, v unchanged); a classical v is first a seed (rule 7).
+      if (v.handle) {
+        r = v;
+      } else {
+        CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {v.v});
+        ctx.unc().recordSeed(seed);
+        r = Operand{seed, true};
+      }
+      break;
+    case AtomicRMWInst::Add: r = bin("add", old, v); break;
+    case AtomicRMWInst::Sub: r = bin("sub", old, v); break;
+    case AtomicRMWInst::And: r = bin("and", old, v); break;
+    case AtomicRMWInst::Or: r = bin("or", old, v); break;
+    case AtomicRMWInst::Xor: r = bin("xor", old, v); break;
+    case AtomicRMWInst::Nand: r = bin("xor", bin("and", old, v), lit(~uint64_t(0))); break;
+    case AtomicRMWInst::Max: r = bin("smax", old, v); break;
+    case AtomicRMWInst::Min: r = bin("smin", old, v); break;
+    case AtomicRMWInst::UMax: r = bin("umax", old, v); break;
+    case AtomicRMWInst::UMin: r = bin("umin", old, v); break;
+    case AtomicRMWInst::FAdd: r = bin("fadd", old, v); break;
+    case AtomicRMWInst::FSub: r = bin("fsub", old, v); break;
+    case AtomicRMWInst::FMax: r = bin("fmax", old, v); break;
+    case AtomicRMWInst::FMin: r = bin("fmin", old, v); break;
+    case AtomicRMWInst::UIncWrap:   // old >= v ? 0 : old + 1
+      r = sel(cmp("uge", old, v), lit(0), bin("add", old, lit(1)));
+      break;
+    case AtomicRMWInst::UDecWrap: {  // old == 0 || old > v ? v : old - 1
+      Operand z = cmp("eq", old, lit(0)), g = cmp("ugt", old, v);
+      abi::TemplateSpec orS;
+      orS.op = "or";
+      orS.w = RailType{Kind::Int, 1};
+      Operand zg{ctx.emitTemplate(orS, {z, g}), true};
+      r = sel(zg, v, bin("sub", old, lit(1)));
+      break;
+    }
+    default:
+      internalError("eff-conc: an atomicrmw operation LLVM 19 does not define", &I);
+    }
+    return r.v;
+  };
+  Value *old = mem::rmwQramCell(ctx, I, ptr, ty, combine);
+  if (cx)
+    ctx.bindFields(&I, {Operand{old, true}, eqFlag});
+  else
+    ctx.bind(&I, old);
 }
 
 } // namespace
@@ -254,7 +349,7 @@ void lowerAtomic(LoweringContext &ctx, Instruction &I) {
                                              : cast<AtomicCmpXchgInst>(I).getPointerOperand();
     if (!involvesQuantum(ctx, I, ptr))
       return copyClassical(ctx, I, /*dropVolatile=*/false);
-    if (ctx.T.isFatPointer(ptr, ctx.S) || ctx.T.isQuantum(ptr, ctx.S))
+    if (spine::accessHasQuantumTag(ctx, ptr))
       unimplemented("eff-conc: an atomic read-modify-write through a fat pointer (rule 24's load + op + store "
                     "over rule 21's per-object accesses; fatptr exposes no read-modify-write, cq-z28j)",
                     &I);
@@ -269,10 +364,11 @@ void lowerAtomic(LoweringContext &ctx, Instruction &I) {
       internalError("eff-conc: a read-modify-write with quantum data on memory taint classified Classical (rule "
                     "20: a quantum value or offset stored makes it a slot or a QRAM)",
                     &I);
-    unimplemented(std::string("eff-conc: ") + (isa<AtomicRMWInst>(I) ? "atomicrmw" : "cmpxchg") +
-                      " on a QRAM object or on several objects (rule 24's load + op + store over rule 20's "
-                      "QRAM accesses; mem-qram exposes no read-modify-write, cq-z28j)",
-                  &I);
+    if (!qram || slot || classical)
+      internalError("eff-conc: a read-modify-write on a pointer to several objects that is not a fat pointer "
+                    "(rule 21: a pointer chosen among objects by quantum data carries a quantum tag)",
+                    &I);
+    return lowerQramRmw(ctx, I, ptr);
   }
   internalError("eff-conc: lowerAtomic of an instruction that is not atomic", &I);
 }

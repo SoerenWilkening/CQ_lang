@@ -225,6 +225,8 @@ struct Shared {
 // A context for an inlined callee: the same Shared state, the callee's specialization (Context.cpp).
 std::unique_ptr<LoweringContext> childContext(LoweringContext &parent, const Specialization &S);
 Shared &shared(LoweringContext &);
+// cq-py5f: the spine's rule-21 routing test of a load/store pointer (a quantum tag: a fat pointer access).
+bool accessHasQuantumTag(LoweringContext &, const llvm::Value *ptr);
 // cq-8un4 (Context.cpp): the walker brackets each loop unit's loops:: call; LoweringContext::loopUnit()
 // reads the innermost one running.
 void pushLoopUnit(LoweringContext &, const llvm::Loop &);
