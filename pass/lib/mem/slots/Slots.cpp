@@ -2020,6 +2020,22 @@ bool cellArms(LoweringContext &ctx, FnState &st, const Site &s, const Instructio
     if (!CB || !cloneCallee(ctx, *CB) || !mayWrite(ctx, *s.info, s.o, X, s.a, size) ||
         !isPotentiallyReachable(&X, &I, nullptr, st.DT.get()))
       continue;
+    // The clone call reading the cell at its own entry (its copy-in) sees what it wrote only in an earlier
+    // run of itself, on a cycle.
+    if (&X == &I) {
+      const BasicBlock *b = I.getParent();
+      SmallPtrSet<const BasicBlock *, 16> seen;
+      SmallVector<const BasicBlock *, 16> work(succ_begin(b), succ_end(b));
+      bool cycle = false;
+      while (!work.empty() && !cycle) {
+        const BasicBlock *n = work.pop_back_val();
+        cycle = n == b;
+        if (seen.insert(n).second)
+          work.append(succ_begin(n), succ_end(n));
+      }
+      if (!cycle)
+        continue;
+    }
     // M1: a clone call that may write the cell: its new handles are the caller's loads after it.
     auto c = st.callOut.find(&X);
     if (c == st.callOut.end()) {
