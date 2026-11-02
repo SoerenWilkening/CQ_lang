@@ -44,3 +44,4 @@ IR and the expected rule for each are in the named bead's worker report/comments
 - loops (cq-w3cd, cq-b58q): rule 14 case 3 classical value read after the loop (control-dependent exit value); a rule-14 loop with no live exit; computed goto or invoke inside a rule-14 loop.
 - mem-slots (cq-e5lj): sret/byval struct parameter of an entry with a quantum field narrower than 4 bytes; reading an internal global slot cell no earlier access wrote (are internal-global rails outputs?); program-slot (102) reads outside the tracked entry shape.
 - rule 19 (cq-i9wk): a callee whose returns keep different numbers of registers (kept clone's extra results).
+- rule 19 (cq-i9wk): results of an in-place callee in a cycle of in-place calls.
