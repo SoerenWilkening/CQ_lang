@@ -72,9 +72,9 @@
 // FINAL flags rail, fenv state the caller can read, an output like 71's global (rule 23: "the final
 // flags rail is an output"). The final quantum MODE is kept for the same reason (orchestrator
 // decision under rule 23 and NORTHSTAR goal 2, recorded on cq-w1-eff-fenv). The state at each return
-// of an entry is final (atEntryReturn, called by the spine before flushAtExit): kept itself when it is
-// a rail no later state superseded on any path, else copied out (alloc_i32(0), copy_i32, the copy
-// kept). Earlier, when the instruction is reached on every classical path, outside every loop, and
+// of an entry is final (atEntryReturn, called by the spine before flushAtExit): kept itself when the
+// entry has one return and it is no merge, else copied out (alloc_i32(0), copy_i32, the copy kept).
+// Earlier, when the instruction is reached on every classical path, outside every loop, and
 // no instruction that may change the state or measure is reachable after it (in the original CFG or
 // in a later linearized quantum arm), its state is already final and kept then (settle). A state rail
 // rule 2 makes classical (its sources measured, before or after it was computed: owner ruling
@@ -95,7 +95,7 @@
 // a quantum MODE passed into or returned from a clone (82's ABI carries a classical mode and returns
 // only the flags; the mode clone's name is owed, CR §8); a constrained op with no rule 4 template
 // (a libm intrinsic: its clone's mode parameter is the same owed name); a fenv_t / fexcept_t object
-// holding a quantum part that other code reads or writes. Not built yet (rule 14, build step 5): a
+// holding a quantum part that other code reads or writes. Open (cq-v1fu, needs the loop module): a
 // quantum change inside a classically bounded loop (its loop-carried state).
 #include "cq/Effects.h"
 
@@ -1084,7 +1084,8 @@ void requirePlaced(LoweringContext &ctx, State &st, const Instruction &I) {
   for (const Loop *L = LI.getLoopFor(I.getParent()); L; L = L->getParentLoop())
     if (loops::classify(*L, ctx.T, ctx.S) != loops::Case::QuantumExit)
       unimplemented("eff-fenv: the quantum floating-point environment changes inside a classically bounded loop "
-                    "(rule 14 cases 1 and 3: a loop-carried rule 23 state, its header phi and reverse; build step 5)",
+                    "(rule 14 cases 1 and 3: a loop-carried rule 23 state, its header phi and the copy-out before the "
+                    "reverse need the loop module, cq-v1fu)",
                     &I);
 }
 
