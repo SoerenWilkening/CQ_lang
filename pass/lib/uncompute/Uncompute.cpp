@@ -357,6 +357,9 @@ struct Uncompute::Impl {
     BasicBlock *placedAt = nullptr;            // the block the program continues in after the item
     // F1b: the QRAM buses an owned store writes, each with the highest popK among its owned POPs.
     SmallVector<std::pair<RailId, unsigned>, 1> buses;
+    // cq-odo1 (A2 over F1): the QRAM buses an owned load reads, each with the least version k among those
+    // loads: the item un-copies them, so it follows POP(j) of every store on the bus with j > k.
+    SmallVector<std::pair<RailId, unsigned>, 1> readBuses;
   };
   struct Scope {
     unsigned begin, end;
@@ -1141,6 +1144,16 @@ struct Uncompute::Impl {
             out.push_back(o);
         }
       }
+      // cq-odo1 (A2): an owned load reading v_k is un-copied by the item, after POP(j) for every j > k.
+      for (auto [b, k] : d.readBuses)
+        for (unsigned j = k; j < rails[b].pops.size(); ++j) {
+          RailId p = rails[b].pops[j];
+          if (rails[p].ownedBy == rails[g].deferred)
+            continue;
+          RailId o = ownerOf(p, g);
+          if (o != g && !is_contained(out, o))
+            out.push_back(o);
+        }
       return out;
     }
     SmallVector<RailId, 4> ns = ownNames(g); // cq-lshe: not the readers through a keeper
@@ -3428,7 +3441,10 @@ struct Uncompute::Impl {
       for (Instruction *h : rails[x].aliasHits)
         if (!aliasRuledOut(h, via))
           evs.push_back(h);
-      bool written = any_of(d.buses, [&](const std::pair<RailId, unsigned> &bt) { return bt.first == x; });
+      // F1b: a later store on a bus the item writes is popped first; cq-odo1 (A2): so is one on a bus an owned
+      // load reads (readersOf), so the item's un-copy sees the version its load read.
+      bool written = any_of(d.buses, [&](const std::pair<RailId, unsigned> &bt) { return bt.first == x; }) ||
+                     any_of(d.readBuses, [&](const std::pair<RailId, unsigned> &bt) { return bt.first == x; });
       for (unsigned w : rails[x].writes)
         if (rails[x].ownedBy == kNone && !(written && storePopped(w))) // F1b: a later store is popped first
           evs.push_back(records[w].forward);
@@ -4605,8 +4621,19 @@ void Uncompute::recordDeferred(ArrayRef<unsigned> scopes, ArrayRef<RailId> exitR
       internalError("uncompute: recordDeferred over a scope that is not closed: " + std::to_string(s));
     for (unsigned rec = I.scopes[s].begin; rec < I.scopes[s].end; ++rec) {
       d.region.insert(I.records[rec].forward->getParent());
-      if (isCreator(I.info[rec].kind) && I.info[rec].item != kNone)
+      if (isCreator(I.info[rec].kind) && I.info[rec].item != kNone) {
         I.rails[I.info[rec].item].ownedBy = di;
+        // cq-odo1 (A2): an owned load's versions (a bus the loop allocates is the item's own).
+        for (auto [b, k] : I.rails[I.info[rec].item].versions) {
+          if (I.rails[b].ownedBy == di)
+            continue;
+          auto it = find_if(d.readBuses, [&](const std::pair<RailId, unsigned> &bt) { return bt.first == b; });
+          if (it == d.readBuses.end())
+            d.readBuses.push_back({b, k});
+          else
+            it->second = std::min(it->second, k);
+        }
+      }
       // F1b: a QRAM store of the scopes is popped by the item's mirror, which makes it a writer of the bus.
       if (I.info[rec].kind == RecKind::QramStore && I.info[rec].item != kNone && I.isPop(I.info[rec].item)) {
         RailId p = I.info[rec].item, b = I.rails[p].popBus;
