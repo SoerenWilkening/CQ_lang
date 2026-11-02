@@ -967,6 +967,12 @@ class JoinRepair {
   // the output CFG from its entry; a back edge of a classical loop contributes nothing).
   unsigned edgeFacts(BasicBlock *p, BasicBlock *J, const std::set<unsigned> &vars) {
     Decoder D(*this);
+    unsigned fp = inFacts(D, p, vars);
+    return m.andOp(fp, D.edge(p, J));
+  }
+
+  // The classical facts over `vars` every forward output path from the entry establishes on reaching U.
+  unsigned inFacts(Decoder &D, BasicBlock *U, const std::set<unsigned> &vars) {
     for (unsigned v : vars) {
       const Atom &a = atomOf(v);
       if (a.kind == AtomKind::Cond)
@@ -995,10 +1001,36 @@ class JoinRepair {
       }
       in[b] = f;
     }
-    auto pi = in.find(p);
-    unsigned fp = pi == in.end() ? Bdd::T : pi->second;
-    return m.andOp(fp, D.edge(p, J));
+    auto pi = in.find(U);
+    return pi == in.end() ? Bdd::T : pi->second;
   }
+
+  // The classical facts that hold wherever the output reaches the point U: the conditions of the
+  // classical branches and switches on every path to it, over every classical atom of the function's
+  // path predicates that has its value in the output by now. A rail read at U is needed only where
+  // they hold (a path they exclude never reaches U), so they join the caller's don't-care set: an
+  // output edge into a join above U that they exclude carries a don't-care (rule 9's arm on its own
+  // edge). The point's predicate is the quantum part of its block's (rule 8: C stays a classical
+  // branch), so its classical facts are known only from the output CFG.
+  unsigned factsAt(BasicBlock *U) {
+    if (!pointVars) {
+      pointVars.emplace();
+      const PathStorage &I = storage(ctx.preds());
+      std::set<unsigned> sup;
+      for (const auto &e : I.edges)
+        m.support(nodeOf(e.second), sup);
+      for (const auto &b : I.blocks)
+        m.support(nodeOf(b.second), sup);
+      for (unsigned v : sup) {
+        const Atom &a = atomOf(v);
+        if (a.kind != AtomKind::Entry && !ql(v) && ctx.bound(a.v))
+          pointVars->insert(v);
+      }
+    }
+    Decoder D(*this);
+    return inFacts(D, U, *pointVars);
+  }
+  std::optional<std::set<unsigned>> pointVars;
 
   // The nearest block at or above U (through unique predecessors) with several predecessors.
   BasicBlock *joinAbove(BasicBlock *U, const Value *what, const std::string &read) {
@@ -1233,7 +1265,14 @@ public:
   }
 
   Value *flagHere(unsigned n, unsigned care, const Value *what) {
-    return flagAt(n, care, ctx.B().GetInsertBlock(), ctx.B().GetInsertPoint(), what);
+    BasicBlock *U = ctx.B().GetInsertBlock();
+    return flagAt(n, pointCare(care, U), U, ctx.B().GetInsertPoint(), what);
+  }
+
+  // The caller's don't-care set narrowed by the classical facts at U (factsAt).
+  unsigned pointCare(unsigned care, BasicBlock *U) {
+    unsigned c = m.andOp(care, factsAt(U));
+    return c == Bdd::F ? care : c;
   }
 
   // What a carried value is needed for: a merge arm (var < 0), unneeded on an edge where `node` (its
@@ -1332,8 +1371,9 @@ public:
 
   // The arm is read only where `care` holds: outside it, it is a don't-care.
   Operand operandHere(const Operand &op, RailType w, unsigned armNode, unsigned care, const Value *what) {
-    return Operand{carry(op.v, op.handle, w, Carry{armNode, care, -1}, ctx.B().GetInsertBlock(),
-                         ctx.B().GetInsertPoint(), what),
+    BasicBlock *U = ctx.B().GetInsertBlock();
+    return Operand{carry(op.v, op.handle, w, Carry{armNode, pointCare(care, U), -1}, U, ctx.B().GetInsertPoint(),
+                         what),
                    op.handle};
   }
 };
