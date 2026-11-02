@@ -1,7 +1,9 @@
-; Rule 22: a quantum-length memcpy from a quantum source pointer whose length is not a select on the
-; source's own condition: the length's bound per source object is not derived (a bound valid for every
-; object would speculate host bytes past one), so it is unimplemented.
-; EXPECT-ERROR: mem-qram: a quantum-length memcpy/memmove from a quantum source pointer whose length is not selected with it
+; Rule 22 (cq-pf4n, f684858): a quantum-length memcpy from a quantum source pointer whose length is not a select on
+; the source's own condition: each source object's bound is the length's bound at the intrinsic (a bound on every
+; path, those selecting the object included), capped by the object's extent; cells 0 and 1 are guarded by
+; len >u 3 and len >u 7. cqcheck user (20 samples): PASS.
+; CHECK-COUNT fat_src_len_apart: call i32 @cq_template_icmp_ugt_i64_hl( 2
+; CHECK-COUNT fat_src_len_apart: call i32 @cq_template_icmp_eq_i32_hl( 3
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 

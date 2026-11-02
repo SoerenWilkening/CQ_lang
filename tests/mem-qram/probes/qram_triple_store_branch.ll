@@ -1,6 +1,7 @@
-; M2 (cq-w2a-mem-qram phase 4): a clone's store through a QRAM triple formal under a branch is unimplemented.
+; M2 (cq-w2a-mem-qram phase 4; cq-pf4n): a clone's store through a QRAM triple formal under a CLASSICAL branch is
+; unimplemented (a quantum branch's store is a _controlled deferred store: qram_triple_m2.ll).
 ; From C: static noinline void br(int *p, int *q, int c) { int t = *q; if (c) p[0] = t; }
-; EXPECT-ERROR: a store through a QRAM triple formal under a branch or in a loop of the clone
+; EXPECT-ERROR: a store through a QRAM triple formal under a classical branch or in a loop of the clone
 ; ModuleID = 't.O1.ll'
 source_filename = "t.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"

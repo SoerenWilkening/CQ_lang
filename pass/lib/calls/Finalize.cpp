@@ -259,14 +259,14 @@ bool readBefore(Function &F, StoreInst *SI) {
 }
 
 // M2b (191): a store a clone makes through a triple formal onto a QRAM object, after its body's
-// uncompute: a non-ctl cqrt_qram_store on a formal bus followed, up to the return, only by such stores
+// uncompute: a cqrt_qram_store[_hl][_controlled] on a formal bus followed, up to the return, only by such stores
 // and the return value's insertvalues. The twin drops it (the caller pops it, U3).
 bool trailingQramStore(const Instruction &I) {
   auto isStore = [](const Instruction *J) {
     auto *c = dyn_cast<CallInst>(J);
     std::optional<abi::CoreSpec> cs =
         c && c->getCalledFunction() ? abi::parseCore(c->getCalledFunction()->getName()) : std::nullopt;
-    return cs && cs->op == abi::Core::QramStore && !cs->ctl && !cs->unc && isa<Argument>(c->getArgOperand(0));
+    return cs && cs->op == abi::Core::QramStore && !cs->unc && isa<Argument>(c->getArgOperand(cs->ctl ? 1 : 0));
   };
   if (!isStore(&I))
     return false;

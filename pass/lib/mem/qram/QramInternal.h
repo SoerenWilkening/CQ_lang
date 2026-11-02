@@ -50,9 +50,11 @@ HostTriple hostTriple(LoweringContext &, const llvm::Value *ptr, const llvm::Ins
 void registerFormalQram(LoweringContext &, const llvm::Argument &A, llvm::Value *bus);
 // True when root is a triple formal registered by registerFormalQram in this output function.
 bool isFormalQram(LoweringContext &, const llvm::Value *root);
-// M2b, a store through a registered formal at cell idx (the formal's own idx rail, or a classical i64
-// cell index): the rule 18 copy-out of v (a fresh rail, alloc 0 + copy, Role::Result), the store itself
-// emitted by emitCalleeQramStores after the clone's body uncompute.
-void deferFormalStore(LoweringContext &, const llvm::Value *root, Operand idx, llvm::Type *ty, llvm::Value *v,
-                      llvm::Value *flag, const llvm::Instruction &at);
+// M2b, a store through a registered formal at cell idx (the formal's own idx rail, a classical i64 cell
+// index, or a computed rail idx of idxBits bits) under flag (the current predicate, or null): the rule 18
+// copy-out of v (a fresh rail, alloc 0 + copy, Role::Result), of a computed or offset index (M2's index rail),
+// and of the flag; the store itself (_controlled under the flag's copy) emitted by emitCalleeQramStores after
+// the clone's body uncompute.
+void deferFormalStore(LoweringContext &, const llvm::Value *root, Operand idx, unsigned idxBits, llvm::Type *ty,
+                      llvm::Value *v, llvm::Value *flag, const llvm::Instruction &at);
 }

@@ -2486,7 +2486,14 @@ SmallVector<Operand, 8> loadHostCells(LoweringContext &ctx, const Value *src, Ty
     if (!mayName(ctx, f, r) || isa<ConstantPointerNull>(r))
       continue;
     roots.push_back(r);
-    bounds.push_back(bound(r));
+    // Rule 22: never past r's object (an in-domain copy from a constant cell of it ends inside it).
+    uint64_t b = bound(r);
+    std::optional<uint64_t> ob = objectBytes(ctx, r);
+    if (auto *gv = dyn_cast<GlobalVariable>(r); gv && gv->getValueType()->isSized())
+      ob = DL.getTypeAllocSize(gv->getValueType()).getFixedValue();
+    if (ob && ci && base >= 0)
+      b = std::min<uint64_t>(b, *ob > uint64_t(base) ? *ob - uint64_t(base) : 0);
+    bounds.push_back(b);
   }
   if (roots.empty())
     internalError("fatptr: a fat pointer naming none of its roots", &at);
@@ -2737,12 +2744,9 @@ void lowerStore(LoweringContext &ctx, StoreInst &st) {
       if (b->pointee != ObjClass::Qram)
         unimplemented("fatptr: a store through a slot or host triple formal (rule 21)", &st);
       // M2b: the store is the clone's copy-out, emitted after its body's uncompute. Its cell must still
-      // be addressable there: the formal's own idx rail, or a classical index.
-      if (f.idx.handle && f.idx.v != b->idx.v)
-        unimplemented("fatptr: a store through a QRAM triple formal at a computed quantum cell index (M2b: the "
-                      "index rail is uncomputed before the deferred store)",
-                      &st);
-      mem::deferFormalStore(ctx, r, f.idx, ty, v.v, flag, st);
+      // be addressable there: the formal's own idx rail, a classical index, or a computed index rail mem-qram
+      // copies out with the store (M2's index rail).
+      mem::deferFormalStore(ctx, r, f.idx, f.idxBits, ty, v.v, flag, st);
       continue;
     }
     if (!mem::isQramRoot(ctx, r))

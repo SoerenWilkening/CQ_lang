@@ -3666,17 +3666,20 @@ RailId Uncompute::recordTemplate(CallInst *fwd, const abi::TemplateSpec &spec, A
 RailId Uncompute::recordCore(CallInst *fwd, const abi::CoreSpec &spec, ArrayRef<Operand> ops, RailId out) {
   using abi::Core;
   // U6/U3: a store the clone call fwd made inside the clone, recorded on the caller's bus with the call
-  // as its forward: its operands (bus, idx, v) are the caller's, not fwd's arguments. Allowed only once
-  // noteCallBusRead(fwd, bus) placed the call group on that bus.
+  // as its forward: its operands ([flag,] bus, idx, v) are the caller's, not fwd's arguments (cq-pf4n: a
+  // _controlled store under the flag the clone copied out). Allowed only once noteCallBusRead(fwd, bus) placed
+  // the call group on that bus.
   bool cloneStore = false;
-  if (spec.op == Core::QramStore && !spec.ctl && fwd && fwd->getCalledFunction() &&
+  if (spec.op == Core::QramStore && fwd && fwd->getCalledFunction() &&
       !fwd->getCalledFunction()->getName().starts_with("cqrt_")) {
     unsigned rec = impl->callRecord(fwd);
     if (rec == kNone || impl->info[rec].kind != RecKind::Call)
       internalError("uncompute: recordCore: a QRAM store whose forward is a clone call with no recordCall", fwd);
     RailId lead = impl->records[rec].out;
-    if (ops.size() != 3 || !ops[0].handle || !ops[2].handle || out >= impl->rails.size())
-      internalError("uncompute: recordCore: a clone call's QRAM store takes (bus, idx, v)", fwd);
+    unsigned k0 = spec.ctl ? 1 : 0;
+    if (ops.size() != 3 + k0 || (spec.ctl && !ops[0].handle) || !ops[k0].handle || !ops[k0 + 2].handle ||
+        out >= impl->rails.size())
+      internalError("uncompute: recordCore: a clone call's QRAM store takes ([flag,] bus, idx, v)", fwd);
     for (auto [b, k] : impl->rails[lead].versions)
       cloneStore = cloneStore || b == out;
     if (!cloneStore)
