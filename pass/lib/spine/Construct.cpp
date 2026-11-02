@@ -225,7 +225,8 @@ private:
     Pred p;
   };
   std::vector<Lit> cands;
-  DenseMap<const BasicBlock *, std::pair<std::vector<unsigned>, BasicBlock *>> guards;
+  // A guard's condition is a disjunction of cubes, each a conjunction of literals (indices into cands).
+  DenseMap<const BasicBlock *, std::pair<std::vector<std::vector<unsigned>>, BasicBlock *>> guards;
   // cq-174f: the classical facts each planned output edge establishes (planGuards), and per original
   // block the output edges actually emitted into its output block, with their facts (and the loop
   // when the edge is a unit's exit). A quantum phi of a block reached by several output edges is
@@ -546,10 +547,59 @@ void Walker::planGuards() {
         sel.push_back(k);
         conj = conj & l.p;
       }
-      if (!(inB & conj & !cf).isBottom())
-        unimplemented("spine: the classical factor of a block predicate is not a conjunction of branch-condition "
-                      "literals that dominate the block (rule 8)",
-                      b->getTerminator());
+      std::vector<std::vector<unsigned>> cubes{sel};
+      if (!(inB & conj & !cf).isBottom()) {
+        // The factor is no conjunction of literals here (c1 || c2): a disjunction of cubes over the
+        // literals that dominate b, found by splitting on one literal at a time until each cube implies
+        // the factor (or contradicts it) on the facts established here (rule 8: the factor is a function
+        // of classical branch-condition terms; the cover is that function, evaluated at b).
+        size_t half = cands.size() / 2;   // cands[k + half] is cands[k] negated
+        std::vector<unsigned> atoms;
+        for (unsigned k = 0; k < half; ++k) {
+          const Lit &l = cands[k];
+          if (auto *def = dyn_cast<Instruction>(l.v); def && !DT.dominates(def, b))
+            continue;
+          if ((inB & cf & l.p).isBottom() && (inB & cf & !l.p).isBottom())
+            continue;
+          atoms.push_back(k);
+        }
+        cubes.clear();
+        bool ok = true;
+        std::function<void(std::vector<unsigned> &, const Pred &, size_t)> cover =
+            [&](std::vector<unsigned> &cube, const Pred &c, size_t next) {
+              if (!ok || (inB & c).isBottom() || (inB & c & cf).isBottom())
+                return;
+              if ((inB & c & !cf).isBottom()) {
+                cubes.push_back(cube);
+                return;
+              }
+              if (next == atoms.size() || cubes.size() > 64) {
+                ok = false;
+                return;
+              }
+              unsigned k = atoms[next];
+              for (unsigned lit : {k, unsigned(k + half)}) {
+                cube.push_back(lit);
+                cover(cube, c & cands[lit].p, next + 1);
+                cube.pop_back();
+              }
+            };
+        std::vector<unsigned> cube;
+        cover(cube, Pred::top(), 0);
+        if (!ok)
+          unimplemented("spine: the classical factor of a block predicate depends on a branch condition that does "
+                        "not dominate the block (rule 8)",
+                        b->getTerminator());
+        conj = Pred::bottom();
+        for (const std::vector<unsigned> &cb : cubes) {
+          Pred q = Pred::top();
+          for (unsigned lit : cb)
+            q = q & cands[lit].p;
+          conj = conj | q;
+        }
+        if (!(inB & conj & !cf).isBottom() || !(inB & cf & !conj).isBottom())
+          internalError("spine: a classical guard cover that is not the block's factor", b->getTerminator());
+      }
       BasicBlock *skip = nullptr;
       for (unsigned j = idx.lookup(b) + 1; j < L.size() && !skip; ++j) {
         BasicBlock *y = L[j];
@@ -562,10 +612,9 @@ void Walker::planGuards() {
       }
       if (!skip)
         internalError("spine: a classical guard with nothing to skip to", b->getTerminator());
-      for (PHINode &phi : skip->phis())
-        if (!spine::isQ(ctx, &phi))
-          unimplemented("spine: a classical guard skipping to a block with a classical phi", &phi);
-      guards[b] = {sel, skip};
+      // A classical phi of skip takes the skip edge's value from the original edges its facts admit
+      // (run(): classical phis are completed per output edge).
+      guards[b] = {cubes, skip};
       add(skip, inB & !conj);
       guardFacts.insert({b, inB & !conj});
     }
@@ -1603,16 +1652,24 @@ void Walker::emitGuard(BasicBlock *b) {
   IRBuilder<> &B = ctx.B();
   sh.cur = &*b->getFirstNonPHIIt();
   Value *cond = nullptr;
-  for (unsigned k : g->second.first) {
-    const Lit &l = cands[k];
-    Operand op = ctx.operand(l.v);
-    if (op.handle)
-      internalError("spine: a classical guard literal that is a rail", l.v);
-    Value *v = l.eq ? B.CreateICmpEQ(op.v, ConstantInt::get(op.v->getType(), l.val)) : op.v;
-    if (l.neg)
-      v = B.CreateNot(v);
-    cond = cond ? B.CreateAnd(cond, v) : v;
+  for (const std::vector<unsigned> &cube : g->second.first) {
+    Value *cc = nullptr;
+    for (unsigned k : cube) {
+      const Lit &l = cands[k];
+      Operand op = ctx.operand(l.v);
+      if (op.handle)
+        internalError("spine: a classical guard literal that is a rail", l.v);
+      Value *v = l.eq ? B.CreateICmpEQ(op.v, ConstantInt::get(op.v->getType(), l.val)) : op.v;
+      if (l.neg)
+        v = B.CreateNot(v);
+      cc = cc ? B.CreateAnd(cc, v) : v;
+    }
+    if (!cc)
+      cc = B.getTrue();
+    cond = cond ? B.CreateOr(cond, cc) : cc;
   }
+  if (!cond)
+    cond = B.getFalse();
   BasicBlock *cont = BasicBlock::Create(ctx.M.getContext(), "", &ctx.out());
   const BasicBlock *skip = g->second.second;
   // cq-174f: when the skip block has a quantum phi, the skip edge gets a block of its own, where the
@@ -1729,19 +1786,56 @@ void Walker::run() {
       continue;
     emitBlock(b);
   }
+  // A classical phi takes, on each output edge into its block, the value of the original edge that
+  // edge stands for: a real classical edge (edgeOut) its own incoming; an edge the linearization
+  // redirected (a classical branch joining with a quantum arm still to run, cq-mtt, cq-bq0) or a classical
+  // guard's skip edge (rule 8) the incoming of the original edges its classical facts admit (they all
+  // carry one value: the facts are the classical branches taken, which choose the original edge).
   for (auto &[op, np] : classicalPhis) {
+    const BasicBlock *blk = op->getParent();
     for (unsigned i = 0; i < op->getNumIncomingValues(); ++i) {
       BasicBlock *u = op->getIncomingBlock(i);
-      auto e = edgeOut.find({u, op->getParent()});
+      auto e = edgeOut.find({u, blk});
       if (e == edgeOut.end())
-        unimplemented("spine: a classical phi over an edge the linearization redirected: a classical branch "
-                      "joining with a quantum arm (cq-mtt, cq-bq0)",
-                      op);
+        continue;
       sh.cur = u->getTerminator();
       Operand v = ctx.operand(op->getIncomingValue(i));
       if (v.handle)
         internalError("spine: a classical phi with a rail incoming", op);
       np->addIncoming(v.v, e->second);
+    }
+    BasicBlock *ob = np->getParent();
+    SmallVector<BasicBlock *, 4> preds(predecessors(ob));
+    for (BasicBlock *P : preds) {
+      if (np->getBasicBlockIndex(P) >= 0)
+        continue;
+      const InEdge *ie = nullptr;
+      if (auto ies = inEdges.find(blk); ies != inEdges.end())
+        for (const InEdge &x : ies->second)
+          if (x.out == P)
+            ie = &x;
+      const Value *v = nullptr;
+      const BasicBlock *vu = nullptr;
+      for (unsigned i = 0; i < op->getNumIncomingValues(); ++i) {
+        const BasicBlock *u = op->getIncomingBlock(i);
+        if (!idx.count(u) || (ie && ie->facts && (ctx.preds().edge(u, blk) & *ie->facts).isBottom()))
+          continue;
+        if (v && v != op->getIncomingValue(i))
+          unimplemented("spine: a classical phi whose output edge the linearization made stands for several "
+                        "original edges with different incomings (cq-mtt, cq-bq0)",
+                        op);
+        v = op->getIncomingValue(i);
+        vu = u;
+      }
+      if (!v)
+        internalError("spine: a classical phi's output edge admits no original edge", op);
+      sh.cur = vu->getTerminator();
+      Operand o = ctx.operand(v);
+      if (o.handle)
+        internalError("spine: a classical phi with a rail incoming", op);
+      for (BasicBlock *s2 : successors(P))
+        if (s2 == ob)
+          np->addIncoming(o.v, P);
     }
   }
   sh.cur = nullptr;
