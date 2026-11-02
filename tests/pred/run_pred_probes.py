@@ -28,10 +28,15 @@ def main() -> int:
     a = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     failures = 0
-    for c in sorted((Path(__file__).parent / "probes").glob("*.c")):
-        if a.names and c.stem not in a.names:
+    probes = Path(__file__).parent / "probes"
+    # A probe is probes/<name>.c with its clang -O1 output probes/<name>.O1.ll, or a hand-written IR probe
+    # probes/<name>.ir.ll (a shape -O1 does not spell from C) with `; USERCHECK <fn>` lines.
+    for c in sorted(list(probes.glob("*.c")) + list(probes.glob("*.ir.ll"))):
+        name = c.name[:-len(".ir.ll")] if c.name.endswith(".ir.ll") else c.stem
+        if a.names and name not in a.names:
             continue
-        o1, dest = c.with_suffix(".O1.ll"), OUT / (c.stem + ".lowered.ll")
+        o1 = c if c.name.endswith(".ir.ll") else c.with_suffix(".O1.ll")
+        dest = OUT / (name + ".lowered.ll")
         reasons = []
         r = subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-lower", "-cq-k-default=4", "-S",
                             str(o1), "-o", str(dest)], capture_output=True, text=True)
@@ -42,7 +47,7 @@ def main() -> int:
                                 str(dest)], capture_output=True, text=True)
             if v.returncode != 0:
                 reasons.append("cq-verify: " + first(v.stderr))
-            for fn in re.findall(r"^// USERCHECK (\w+)$", c.read_text(), re.M):
+            for fn in re.findall(r"^(?://|;) USERCHECK (\w+)$", c.read_text(), re.M):
                 u = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(o1), "--lowered", str(dest),
                                     "--entry", fn], capture_output=True, text=True, cwd=ROOT / "checker")
                 if u.returncode != 0 or "PASS" not in u.stdout + u.stderr:

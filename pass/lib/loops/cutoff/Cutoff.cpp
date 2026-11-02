@@ -1121,7 +1121,15 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
             continue;
           }
           if (!classicalTerms) {
-            set(&P, Operand{lowerMerge(ctx, P), true});
+            if (P.getType()->isPointerTy()) {
+              fatptr::lower(ctx, &P);   // rule 21: a quantum pointer merge is a fat pointer
+            } else if (P.getType()->isAggregateType() || P.getType()->isVectorTy()) {
+              // cq-pfpy: a composite merges field by field (rule 26), bound or rebound per trip.
+              bool first = mine.insert(&P).second;
+              lowerMergeFields(ctx, P, /*rebind=*/!first);
+            } else {
+              set(&P, Operand{lowerMerge(ctx, P), true});
+            }
             continue;
           }
           // A trip with a classical branch or switch has no output blocks to join classically (it is

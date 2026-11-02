@@ -442,6 +442,8 @@ private:
   // join's value per real edge: shared by the walks of a loop and its sub-loops (a sub-loop's exit edge
   // enters a block of its parent).
   DenseMap<std::pair<const PHINode *, const BasicBlock *>, Value *> edgeSeedM, edgeValM;
+  // cq-pfpy: a composite phi's value per field at a mixed join's real edge (rule 26 over rule 9).
+  DenseMap<std::pair<const PHINode *, const BasicBlock *>, SmallVector<Operand, 4>> edgeFieldsM;
 
   bool isQ(const Value *v) {
     if (isa<Constant>(v) || isa<BasicBlock>(v) || isa<MetadataAsValue>(v))
@@ -1363,7 +1365,13 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       if (!real) {
         if (!q)
           internalError("loops-classical: a classical phi at a linearized join", &p);
-        ctx.bind(&p, lowerMerge(ctx, p));
+        // cq-pfpy: a composite merges field by field (rule 26), a pointer is a fat-pointer merge (rule 21).
+        if (p.getType()->isPointerTy())
+          fatptr::lower(ctx, &p);
+        else if (p.getType()->isAggregateType() || p.getType()->isVectorTy())
+          lowerMergeFields(ctx, p);
+        else
+          ctx.bind(&p, lowerMerge(ctx, p));
         continue;
       }
       if (q && p.getType()->isPointerTy()) {
@@ -1398,6 +1406,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         In in{it->second, {}};
         if (auto e = edgeVal.find({&p, u}); e != edgeVal.end())
           in.f.push_back(Operand{e->second, true});
+        else if (auto ef = edgeFieldsM.find({&p, u}); ef != edgeFieldsM.end())
+          in.f = ef->second;
         else if (composite)
           in.f = aggr::flattenResult(ctx, p.getIncomingValue(i));
         else
@@ -1463,8 +1473,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     };
     const Pred uf = factAt(u);
     for (PHINode &p : s->phis()) {
-      if (edgeVal.count({&p, u}))
+      if (edgeVal.count({&p, u}) || edgeFieldsM.count({&p, u}))
         continue;
+      const bool composite = p.getType()->isAggregateType() || p.getType()->isVectorTy();
       std::vector<std::pair<Pred, Operand>> arms;
       SmallVector<const Value *, 4> vals;
       for (unsigned i = 0; i < p.getNumIncomingValues(); ++i) {
@@ -1489,7 +1500,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           continue;
         }
         vals.push_back(v);
-        arms.push_back({e, ctx.operand(v)});
+        arms.push_back({e, composite || p.getType()->isPointerTy() ? Operand{nullptr, false} : ctx.operand(v)});
       }
       if (arms.empty())
         internalError("loops-classical: a real edge into a mixed join carries no incoming", &p);
@@ -1501,8 +1512,53 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       if (p.getType()->isAggregateType() || p.getType()->isVectorTy() || p.getType()->isPointerTy()) {
         if (arms.size() == 1)
           continue;   // u's own incoming, field-wise (emitPhis)
-        lowerMerge(ctx, p);   // a quantum choice of a composite: pred's merge
-        internalError("loops-classical: pred's merge of a composite phi returned", &p);
+        if (p.getType()->isPointerTy()) {
+          fatptr::lower(ctx, &p);   // rule 21: a quantum pointer merge is a fat pointer
+          internalError("loops-classical: fatptr::lower of a quantum pointer phi returned", &p);
+        }
+        // cq-pfpy (rules 9, 26): a quantum choice of a composite is rule 9's select chain per field, made
+        // at the end of u's output block like a scalar's.
+        std::vector<SmallVector<Operand, 4>> fields;
+        for (const Value *v : vals)
+          fields.push_back(aggr::flattenResult(ctx, v));
+        SmallVector<Type *, 8> leafTys;
+        std::function<void(Type *)> leaves = [&](Type *t) {
+          if (auto *st = dyn_cast<StructType>(t))
+            for (Type *e : st->elements())
+              leaves(e);
+          else if (auto *at = dyn_cast<ArrayType>(t))
+            for (uint64_t i = 0; i < at->getNumElements(); ++i)
+              leaves(at->getElementType());
+          else if (auto *vt = dyn_cast<FixedVectorType>(t))
+            for (unsigned i = 0; i < vt->getNumElements(); ++i)
+              leafTys.push_back(vt->getElementType());
+          else
+            leafTys.push_back(t);
+        };
+        leaves(p.getType());
+        if (leafTys.size() != fields[0].size())
+          unimplemented("pred: a merge of a composite with a packed integer leaf (cq-0umd: its field widths are not "
+                        "recorded)", &p);
+        SmallVector<Operand, 4> out;
+        for (unsigned k = 0; k < fields[0].size(); ++k) {
+          bool same = true;
+          for (auto &f : fields) {
+            if (f.size() != fields[0].size())
+              internalError("loops-classical: incomings of one composite phi with different field counts", &p);
+            same &= f[k].v == fields[0][k].v;
+          }
+          if (same) {
+            out.push_back(fields[0][k]);
+            continue;
+          }
+          std::vector<std::pair<Pred, Operand>> fa;
+          for (size_t a = 0; a < arms.size(); ++a)
+            fa.push_back({arms[a].first, fields[a][k]});
+          Type *lt = leafTys[k];
+          out.push_back(Operand{selectChain(ctx, fa, lt->isPointerTy() ? RailType{Kind::Int, 64} : railTypeOf(lt)), true});
+        }
+        edgeFieldsM[{&p, u}] = out;
+        continue;
       }
       Value *h = arms.size() == 1 ? asHandle(arms[0].second, p.getType())
                                   : selectChain(ctx, arms, railTypeOf(p.getType()));

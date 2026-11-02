@@ -55,7 +55,8 @@ void lowerBranch(LoweringContext &, llvm::BranchInst &);
 llvm::Value *lowerMerge(LoweringContext &, llvm::PHINode &);
 // cq-oa67 (rules 9, 25, 26): a quantum phi of a vector, struct or array, merged field by field; binds its
 // fields (aggr). The spine routes such phis here.
-void lowerMergeFields(LoweringContext &, llvm::PHINode &);
+// rebind (cq-pfpy): the phi is bound already (a trip of a cutoff loop rebinds it), its fields replace it.
+void lowerMergeFields(LoweringContext &, llvm::PHINode &, bool rebind = false);
 llvm::Value *lowerSelect(LoweringContext &, llvm::SelectInst &);
 llvm::Value *selectChain(LoweringContext &, llvm::ArrayRef<std::pair<Pred, Operand>> arms, RailType);
 // cq-pfpy: the same select chain read only where `care` holds (the classical facts of the output edge it

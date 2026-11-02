@@ -86,6 +86,7 @@
 // counterpart for. BennettVM.jl 23d28e6 src/history/Replay.jl:unrun! replays a recorded forward path
 // last-in-first-out, which is the reverse walk of step 5.
 #include "cq/Effects.h"
+#include "cq/FatPtr.h"
 
 #include <map>
 #include <optional>
@@ -933,7 +934,13 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
           }
           if (!intra || later)
             unimplemented("eff-invert: a classical join of different rails inside a cq_invert region", &phi);
-          ctx.bind(&phi, lowerMerge(ctx, phi));
+          // cq-pfpy: a composite merges field by field (rule 26), a pointer is a fat-pointer merge (rule 21).
+          if (phi.getType()->isPointerTy())
+            fatptr::lower(ctx, &phi);
+          else if (phi.getType()->isAggregateType() || phi.getType()->isVectorTy())
+            lowerMergeFields(ctx, phi);
+          else
+            ctx.bind(&phi, lowerMerge(ctx, phi));
           continue;
         }
         if (head) {

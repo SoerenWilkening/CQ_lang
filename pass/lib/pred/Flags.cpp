@@ -1461,8 +1461,8 @@ Value *lowerMerge(LoweringContext &ctx, PHINode &phi) {
   if (I.loopHeaders.count(bb))
     internalError("pred: lowerMerge on a loop-header phi (a carried value: the loop modules)", &phi);
   if (!scalarRailType(phi.getType()))
-    unimplemented("pred: lowerMerge of a vector or aggregate phi from a loop or invert module (the spine merges "
-                  "them field-wise with lowerMergeFields; this caller does not yet)",
+    internalError("pred: lowerMerge of a vector, aggregate or pointer phi (every caller routes a composite to "
+                  "lowerMergeFields and a pointer to fatptr, rules 21, 26)",
                   &phi);
 
   // Rule 9 at a58c3a4: every incoming edge chosen classically makes a classical phi over the handles.
@@ -1527,7 +1527,7 @@ void scalarLeafTypes(Type *t, SmallVectorImpl<Type *> &out) {
 // lowerMerge merges a scalar: a classical phi over the field's handles where every incoming edge is
 // chosen classically, else the rule 9 select chain of the field's distinct incoming values. A field
 // that is the same classical value on every arm stays classical. Binds the phi's fields (aggr).
-void lowerMergeFields(LoweringContext &ctx, PHINode &phi) {
+void lowerMergeFields(LoweringContext &ctx, PHINode &phi, bool rebind) {
   const PathStorage &I = storage(ctx.preds());
   const BasicBlock *bb = phi.getParent();
   if (I.F != bb->getParent())
@@ -1558,7 +1558,10 @@ void lowerMergeFields(LoweringContext &ctx, PHINode &phi) {
     for (unsigned k = 0; k < tys.size(); ++k)
       out.push_back(classicalPhiOf(phi, ctx.B().GetInsertBlock(), ctx.B(), outOf, sink, railOf(tys[k]), tys[k],
                                    [&](const Value *v) { return fieldsOf(v)[k]; }, /*seedClassical=*/false));
-    aggr::bindLeafFields(ctx, &phi, out, SmallVector<unsigned, 8>(tys.size(), 1));
+    if (rebind)
+      ctx.rebind(&phi, out);
+    else
+      aggr::bindLeafFields(ctx, &phi, out, SmallVector<unsigned, 8>(tys.size(), 1));
     return;
   }
 
@@ -1601,7 +1604,10 @@ void lowerMergeFields(LoweringContext &ctx, PHINode &phi) {
       chain.push_back({makePred(arms[a].node), armFields[a][k]});
     out.push_back(Operand{selectChainAt(ctx, chain, railTypeOf(tys[k]), nodeOf(I.blocks.lookup(bb)), &phi), true});
   }
-  aggr::bindLeafFields(ctx, &phi, out, SmallVector<unsigned, 8>(tys.size(), 1));
+  if (rebind)
+    ctx.rebind(&phi, out);
+  else
+    aggr::bindLeafFields(ctx, &phi, out, SmallVector<unsigned, 8>(tys.size(), 1));
 }
 
 Value *lowerSelect(LoweringContext &ctx, SelectInst &sel) {
