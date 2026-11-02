@@ -51,7 +51,7 @@ RailType railTypeOf(llvm::Type *t) {
   // fp128 is unreachable from C on this target (CR §1.1, rule 25); ppc_fp128 is not x86-64.
   // Anything else (pointer, vector, aggregate, void) is no rail.
   if (t->isFloatingPointTy())
-    unimplemented("abi: railTypeOf: fp type with no CR §1.1 rail width: " + os.str());
+    unimplemented("abi: railTypeOf: awaiting owner ruling: SPEC_ISSUES IR outside the C x86-64 -O1 input language: an fp type with no CR §1.1 rail width: " + os.str());
   internalError("abi: railTypeOf: not a scalar rail type: " + os.str());
 }
 

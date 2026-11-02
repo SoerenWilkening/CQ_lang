@@ -499,7 +499,7 @@ unsigned Analyzer::lanesOf(Type *T) {
   else if (T->isVoidTy() || T->isLabelTy() || T->isMetadataTy() || T->isTokenTy())
     n = 0;
   else
-    unimplemented("taint: lanes of a value of an unhandled type");
+    unimplemented("taint: awaiting owner ruling: SPEC_ISSUES IR outside the C x86-64 -O1 input language: lanes of a value of an unhandled type");
   st.laneCount[T] = n;
   return n;
 }
@@ -1636,7 +1636,7 @@ void Analyzer::transferGEP(GetElementPtrInst &G) {
   Lanes bl = L(Base);
   Lanes l(lanesOf(G.getType()));
   if (!G.getType()->isPointerTy())
-    unimplemented("taint: vector getelementptr", &G);
+    unimplemented("taint: awaiting owner ruling: SPEC_ISSUES IR outside the C x86-64 -O1 input language: a vector getelementptr", &G);
   if (bl.size() >= 2) {
     if (bl.test(0))
       l.set(0);
@@ -2021,7 +2021,7 @@ static constexpr int64_t kVaOverflowOff = 8, kVaRegSaveOff = 16, kVaListSize = 2
 void Analyzer::transferVaStart(CallBase &CB) {
   const Triple TT(st.M->getTargetTriple());
   if (TT.getArch() != Triple::x86_64)
-    unimplemented("taint: llvm.va_start on a target other than x86-64 SysV", &CB);
+    unimplemented("taint: awaiting owner ruling: SPEC_ISSUES IR outside the C x86-64 -O1 input language: llvm.va_start on a target other than x86-64 SysV", &CB);
   unsigned area = siteFor(&CB, SiteKind::Alloca, cur->F);
   bool anyQ = false, anyPtr = false;
   PtrInfo held;
@@ -2746,7 +2746,9 @@ void Analyzer::transferCall(CallBase &CB) {
   if (CB.isInlineAsm()) {
     for (const Use &A : CB.args())
       if (L(A.get()).any())
-        unimplemented("taint: inline asm with a quantum operand (rule 27, no CQ_spec example yet)", &CB);
+        unimplemented("taint: inline asm with a quantum operand (build step: rule 27 inline asm, waits for its "
+                      "CQ_spec example)",
+                      &CB);
     return;
   }
   Function *G = CB.getCalledFunction();
@@ -2807,7 +2809,8 @@ void Analyzer::transferCall(CallBase &CB) {
     return;
   }
   if (G->getName().starts_with("cqrt_") || G->getName().starts_with("cq_template_"))
-    unimplemented("taint: input module already calls the CQ backend ABI", &CB);
+    unimplemented("taint: awaiting owner ruling: SPEC_ISSUES a C program that calls the cqrt_/cq_template_ namespace "
+                  "itself", &CB);
   if (auto *MI = dyn_cast<MemIntrinsic>(&CB)) {
     transferMemIntrinsic(*MI);
     return;
@@ -3212,7 +3215,7 @@ void Analyzer::transfer(Instruction &I) {
   }
   if (isa<PHINode>(&I))
     return;
-  unimplemented("taint: instruction", &I);
+  unimplemented("taint: awaiting owner ruling: SPEC_ISSUES IR outside the C x86-64 -O1 input language: an exception-handling instruction", &I);
 }
 
 void Analyzer::analyze(SpecState &S) {
@@ -3401,9 +3404,11 @@ void Analyzer::run() {
   for (const abi::CloneSpec &R : st.opts.roots) {
     Function *F = M.getFunction(R.fn);
     if (!F || F->isDeclaration())
-      unimplemented("taint: -cq-roots names a function with no body in the module: " + R.fn);
+      unimplemented("taint: -cq-roots names a function with no body in the module (build step: rule 27's "
+                    "library-build mode, not reached): " + R.fn);
     if (R.mask.size() != F->arg_size())
-      unimplemented("taint: -cq-roots mask over aggregate or pointer formals: " + R.fn);
+      unimplemented("taint: -cq-roots mask over aggregate or pointer formals (build step: rule 27's library-build "
+                    "mode, not reached): " + R.fn);
     std::vector<Lanes> z;
     std::vector<Type *> tys;
     for (Argument &A : F->args()) {
