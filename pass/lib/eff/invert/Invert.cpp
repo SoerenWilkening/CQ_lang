@@ -13,12 +13,12 @@
 // returns inside, or that nests needs no analysis.
 //
 // Uncompute placement (rule 5, placement is free; rule 17: "the compiler places no uncompute of a rail
-// allocated before the region inside it"). At begin, the rails already done with are resolved before it
-// (flushBefore); every rail still pending is held (Uncompute::openInvert) and its item follows the end
-// marker (closeInvert). A rail the region makes is placed by the ordinary rules: right after its last
-// use, inside the region when every use is (the backend then reverses compute and uncompute into
-// themselves); a rail the region makes and the program reads after it outlives the region, as rule 17
-// says.
+// allocated before the region inside it"). Every rail pending at begin is held while the region is open
+// (Uncompute::openInvert); at end (closeInvert) its item follows the end marker when the region used it,
+// else it goes after its last use before the begin. A rail the region makes is placed by the ordinary
+// rules: right after its last use, inside the region when every use is (the backend then reverses a
+// compute/uncompute pair into itself); a rail the region makes and the program reads after it outlives
+// the region, as rule 17 says.
 //
 // References: Bennett.jl 824458d src/bennett_transform.jl:_bennett_default replays a gate list in reverse
 // order, each gate by its inverse; BACKEND_ABI 1.13 cites src/circuit.jl:adjoint for the backend's half.
@@ -74,7 +74,6 @@ void lowerMarker(LoweringContext &ctx, CallInst &marker) {
   Module &M = *ctx.B().GetInsertBlock()->getModule();
   abi::CoreSpec spec{begin ? abi::Core::InvertBegin : abi::Core::InvertEnd};
   CallInst *c = ctx.B().CreateCall(abi::declare(M, spec));
-  ctx.unc().flushBefore(c);   // rails done with before the marker are resolved before it
   if (begin)
     ctx.unc().openInvert(c);
   else

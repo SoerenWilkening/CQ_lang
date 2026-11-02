@@ -892,9 +892,11 @@ struct Uncompute::Impl {
 
   // cq-4593 (CR rule 17): the rails pending at each open cq_invert region's begin (openInvert), innermost
   // last. No flush places their items while the region is open.
-  SmallVector<DenseSet<RailId>, 2> invertFrozen;
+  // Per rail, its anchors at the begin: a rail with no anchor added inside the region is placed after its
+  // last earlier anchor, before the begin.
+  SmallVector<DenseMap<RailId, SmallPtrSet<Instruction *, 8>>, 2> invertFrozen;
   bool frozen(RailId g) const {
-    return any_of(invertFrozen, [&](const DenseSet<RailId> &s) { return s.count(g) != 0; });
+    return any_of(invertFrozen, [&](const DenseMap<RailId, SmallPtrSet<Instruction *, 8>> &s) { return s.count(g) != 0; });
   }
 
   bool resolvable(RailId g) const {
@@ -4262,15 +4264,19 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
 
 // cq-4593 (CR rule 17: "the compiler places no uncompute of a rail allocated before the region inside it";
 // placement is free, rule 5). The rails pending at begin stay pending while the region is open; at its end
-// the end marker becomes a use of each, so their items follow it. Regions nest.
+// the end marker becomes a use of each that gained an anchor inside the region, so its item follows the
+// end; one with none is placed after its last anchor before the begin. Regions nest.
 void Uncompute::openInvert(Instruction *begin) {
   Impl &I = *impl;
   if (!begin || !begin->getParent())
     internalError("uncompute: openInvert needs an instruction in a block");
-  DenseSet<RailId> s;
+  DenseMap<RailId, SmallPtrSet<Instruction *, 8>> s;
   for (RailId g = 0; g < I.rails.size(); ++g)
-    if (I.resolvable(g))
-      s.insert(g);
+    if (I.resolvable(g)) {
+      SmallPtrSet<Instruction *, 8> &a = s[g];
+      for (Instruction *x : I.anchors(g))
+        a.insert(x);
+    }
   I.invertFrozen.push_back(std::move(s));
 }
 
@@ -4280,9 +4286,9 @@ void Uncompute::closeInvert(Instruction *end) {
     internalError("uncompute: closeInvert needs an instruction in a block");
   if (I.invertFrozen.empty())
     return;   // the region was opened by another function's lowering (begin and end are run-time events)
-  DenseSet<RailId> s = I.invertFrozen.pop_back_val();
-  for (RailId g : s)
-    if (I.resolvable(g)) {
+  DenseMap<RailId, SmallPtrSet<Instruction *, 8>> s = I.invertFrozen.pop_back_val();
+  for (auto &[g, before] : s)
+    if (I.resolvable(g) && any_of(I.anchors(g), [&](Instruction *x) { return !before.count(x); })) {
       RailId t = I.rails[g].popBus != kNone ? I.rails[g].popBus : g;   // a POP follows its bus's uses
       if (!is_contained(I.rails[t].uses, end))
         I.rails[t].uses.push_back(end);

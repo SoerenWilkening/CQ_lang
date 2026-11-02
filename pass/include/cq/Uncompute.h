@@ -120,7 +120,8 @@ public:
   void flushAtExit(llvm::ReturnInst *);
   // cq-4593 (cq-arch 2026-11-02, CR rule 17): begin/end are the new-IR cqrt_invert_begin/_end calls of one
   // cq_invert region. No flush places the item of a rail pending at openInvert until closeInvert, which
-  // notes end as a use of each (their items follow the end marker). Nested pairs nest; a closeInvert with
+  // notes end as a use of each that gained a use or reader inside the region (its item follows the end
+  // marker); the others are placed after their last earlier anchor. Nested pairs nest; a closeInvert with
   // no open region (the begin was another function's) does nothing.
   void openInvert(llvm::Instruction *begin);
   void closeInvert(llvm::Instruction *end);
