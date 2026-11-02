@@ -102,6 +102,7 @@ substitutions are not probed (the probe build has no substitution).
 """
 from __future__ import annotations
 
+import bisect
 import hashlib
 from collections import Counter
 import functools
@@ -2431,11 +2432,29 @@ def ub_row(row: Row) -> bool:
     return False
 
 
+# cq-hfj9: per rows_by_site table (by identity; the tables are built once and never changed), the
+# ub_row rows of each site that has one. A search tests every observation against them; asking ub_row
+# of every row of every observed site each time was most of a search's time (erff).
+_UB_ROWS: Dict[int, Tuple[Dict[int, List[Row]], Dict[int, List[Row]]]] = {}
+
+
+def _ub_rows(rows_by_site: Dict[int, List[Row]]) -> Dict[int, List[Row]]:
+    hit = _UB_ROWS.get(id(rows_by_site))
+    if hit is not None and hit[0] is rows_by_site:
+        return hit[1]
+    ub = {sid: us for sid, rows in rows_by_site.items() if (us := [row for row in rows if ub_row(row)])}
+    _UB_ROWS[id(rows_by_site)] = (rows_by_site, ub)
+    return ub
+
+
 def _ub(o: "Obs", rows_by_site: Dict[int, List[Row]]) -> bool:
     """The sample executes an operation whose operands hit an LLVM-undefined row (ub_row)."""
+    ub = _ub_rows(rows_by_site)
+    if not ub:
+        return False
     for sid, recs in o.p.items():
-        for row in rows_by_site.get(sid, []):
-            if ub_row(row) and any(row.hit(r) for r in recs):
+        for row in ub.get(sid, ()):
+            if any(row.hit(r) for r in recs):
                 return True
     return False
 
@@ -3268,22 +3287,6 @@ def confirm_cap(pb: "ProbeBuild", keys: Sequence[Tuple[int, Tuple[str, ...]]], o
             obs[k].cap_ok = _cap_clean(r)
 
 
-def _shuffle(rng: random.Random, x: list) -> None:
-    """rng.shuffle(x), the same permutation from the same draws, without a call per element."""
-    if type(rng).shuffle is not random.Random.shuffle or \
-            type(rng)._randbelow is not random.Random._randbelow_with_getrandbits:
-        rng.shuffle(x)
-        return
-    getrandbits = rng.getrandbits
-    for i in range(len(x) - 1, 0, -1):
-        n = i + 1
-        k = n.bit_length()
-        j = getrandbits(k)
-        while j >= n:
-            j = getrandbits(k)
-        x[i], x[j] = x[j], x[i]
-
-
 class Searcher:
     """Mutation search over the scalar arguments of one call, guided by a distance to the target."""
 
@@ -3292,6 +3295,12 @@ class Searcher:
         self.cache: Dict[Tuple[int, Tuple[str, ...]], Obs] = {}
         self.runs = 0
         self.oracle_runs = 0
+        # cq-hfj9: every cached candidate's validity, settled once observe() has its cap_ok; the valid
+        # ones in observation order; and, per record kind ("p" and "m" by site, "t" by loop) and id,
+        # the valid candidates whose observation has records there (Searcher.search's `support`)
+        self._valid: Dict[Tuple[int, Tuple[str, ...]], bool] = {}
+        self.valid_keys: List[Tuple[int, Tuple[str, ...]]] = []
+        self._with: Dict[Tuple[str, int], List[Tuple[int, Tuple[str, ...]]]] = {}
 
     def valid(self, o: Obs) -> bool:
         return _valid(o, self.rows_by_site)
@@ -3308,7 +3317,18 @@ class Searcher:
             if flagged:
                 self.oracle_runs += len(flagged)
                 confirm_cap(self.pb, flagged, [self.cache[k] for k in flagged])
+            for k, o in zip(uniq, obs):
+                v = self._valid[k] = _valid(o, self.rows_by_site)
+                if v:
+                    self.valid_keys.append(k)
+                    for kind, recs in (("p", o.p), ("m", o.m), ("t", o.t)):
+                        for i in recs:
+                            self._with.setdefault((kind, i), []).append(k)
         return [self.cache[(c, tuple(a))] for c, a in cands]
+
+    def key_valid(self, k: Tuple[int, Tuple[str, ...]]) -> bool:
+        """valid() of a cached candidate."""
+        return self._valid[k]
 
     def interesting(self, call: int, j: int) -> List[int]:
         ct = self.g.cts[call][j]
@@ -3375,29 +3395,57 @@ class Searcher:
         return a
 
     def search(self, pool: List[Tuple[int, List[str]]], dist: Callable[[Obs], float],
-               budget: int = 0) -> Optional[Tuple[int, List[str]]]:
-        """The first candidate with distance 0, or None after the budget (default search_budget())."""
+               budget: int = 0, support: Optional[Tuple[str, int, float]] = None) -> Optional[Tuple[int, List[str]]]:
+        """The first candidate with distance 0, or None after the budget (default search_budget()).
+
+        Each round mutates the elite: the 8 candidates of least distance, ties at the cut broken
+        uniformly at random. cq-hfj9: the candidates are kept grouped by distance, so a round draws its
+        elite from the lowest groups instead of shuffling and sorting every candidate seen so far (the
+        same choice in distribution; that shuffle and sort were most of a search's time on musl's
+        erff, whose distances are mostly ties). `support` (kind, id, default): `dist` reads only the
+        observation's records of that kind ("p" or "m" at a site, "t" at a loop) and is `default` on
+        one with none there, so only the candidates with records there are measured; the others form
+        the `default` group as they are."""
         budget = budget or search_budget()
         self.observe(pool)
-        scored = []
+        groups: Dict[float, List[Tuple[int, Tuple[str, ...]]]] = {}
+
+        def put(d, k):
+            grp = groups.get(d)
+            if grp is None:
+                groups[d] = [k]
+            else:
+                grp.append(k)
         # every candidate observed so far (the pool and earlier searches) is a starting point
-        for (c, a), o in self.cache.items():
-            if not self.valid(o):
-                continue
-            d = dist(o)
+        if support is None:
+            measured = self.valid_keys
+        else:
+            measured = self._with.get(support[:2], [])
+            if len(measured) < len(self.valid_keys):
+                ms = set(measured)
+                rest = [k for k in self.valid_keys if k not in ms]
+                if rest:
+                    groups[support[2]] = rest
+        for k in measured:
+            d = dist(self.cache[k])
             if d == 0:
-                return c, list(a)
-            scored.append((d, c, list(a)))
-        if not scored:
+                return k[0], list(k[1])
+            put(d, k)
+        if not groups:
             return None
+        ds = sorted(groups)
         spent = 0
         while spent < budget:
-            _shuffle(self.rng, scored)
-            scored.sort(key=lambda t: t[0])
-            elite = scored[:8]
+            elite: List[Tuple[int, Tuple[str, ...]]] = []
+            for d in ds:
+                grp = groups[d]
+                need = 8 - len(elite)
+                elite += grp if len(grp) <= need else self.rng.sample(grp, need)
+                if len(elite) == 8:
+                    break
             batch = []
             for _ in range(SEARCH_BATCH):
-                d, c, a = self.rng.choice(elite)
+                c, a = self.rng.choice(elite)
                 if not (self.g.quantum_slots(c) or self.g.classical_slots(c)):
                     continue
                 batch.append((c, self.mutate(c, a)))
@@ -3405,12 +3453,14 @@ class Searcher:
                 return None
             spent += len(batch)
             for (c, a), o in zip(batch, self.observe(batch)):
-                if not self.valid(o):
+                if not self._valid[(c, tuple(a))]:
                     continue
                 d = dist(o)
                 if d == 0:
                     return c, a
-                scored.append((d, c, a))
+                if d not in groups:
+                    bisect.insort(ds, d)
+                put(d, (c, tuple(a)))
         return None
 
 
@@ -3554,7 +3604,7 @@ def build_sample_set(spec: DriverSpec, example_dir: Path, exempt_baseline: bool 
                     def dist(o, s=s, row=row):
                         recs = _records(o, s)
                         return min((row.dist(r) for r in recs), default=1e308)
-                    found = searcher.search(pool, dist)
+                    found = searcher.search(pool, dist, support=("m" if s.kind == "mem" else "p", s.id, 1e308))
                     if found:
                         hits = [g.add(*found)]
                 if hits:
@@ -3674,7 +3724,7 @@ def trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_sit
     searcher.observe(pool)
 
     def with_count(lp: Loop, pred) -> List[Tuple[int, Tuple[str, ...]]]:
-        ks = [k for k, o in searcher.cache.items() if searcher.valid(o) and pred(o.t.get(lp.id, []))]
+        ks = [k for k, o in searcher.cache.items() if searcher.key_valid(k) and pred(o.t.get(lp.id, []))]
         ks.sort(key=lambda k: (k not in g.index, g.index.get(k, 0)))
         return ks
 
@@ -3686,7 +3736,7 @@ def trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_sit
                 if not with_count(lp, lambda ns, u=u: u in ns):
                     def dist(o, lp=lp, u=u):
                         return min((abs(n - u) for n in o.t.get(lp.id, [])), default=1e308)
-                    found = searcher.search(pool, dist)
+                    found = searcher.search(pool, dist, support=("t", lp.id, 1e308))
                     if found:
                         cands.append((found[0], tuple(found[1])))
             # up to 8 candidates per probe count near t
