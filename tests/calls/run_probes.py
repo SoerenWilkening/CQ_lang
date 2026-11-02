@@ -138,6 +138,20 @@ CASES = [
     # cq-88vg: a measured classical switch phi over a clone's slot outs (52's shape): edge copies; the twin of a
     # clone with a classical result and cell copy-outs.
     ("switch_slot_arms", "sw", [], "pass", [r"call void @__cq_q_put2_\w+_unc\("]),
+    # cq-s2zz (CR §1.4 variadic clones, rule 20 save area): the x86-64 SysV layout of the variadic actuals
+    # (gp registers, xmm slots at 48 + 16k, the overflow area after 176, a named pointer parameter, a classical
+    # pointer actual, an x86_fp80). "lower": the checker's probe counts every read of the save area's xmm and
+    # overflow slots, and of an object reached through a pointer read from it, as an access past an object
+    # (no sample in the domain; bead in the report).
+    ("varargs_wide", "vw_fp", [], "lower", [r"call i32 @__cq_q_fsum_0100\(ptr %\d+, i32 %\d+, i64 %\d+, double 2\.5"]),
+    ("varargs_wide", "vw_ld", [], "lower", [r"call i32 @__cq_q_lsum_001\(i32 poison, x86_fp80 %\d+, i32 %\d+\)"]),
+    ("varargs_wide", "vw_ptr", [], "lower", [r"call i32 @__cq_q_pptr_100\(i32 %\d+, ptr @tab, i32 %\d+\)"]),
+    ("varargs_over", "vw_over", [], "lower", [r"getelementptr inbounds i8, ptr %va\.save, i64 176"]),
+    # cq-s2zz (CR rule 27 Results, rules 25, 26): a declared clone with an aggregate result (a struct of handles,
+    # one twin) and an aggregate argument (one digit per field). "lower": the callees have no body anywhere,
+    # so neither oracle can run them.
+    ("declared_aggr", "da_res", [], "lower", [r"call \{ i32, i32 \} @__cq_q_ext_rot_10\(i32 %\d+, double %\d+, i32 4\)"]),
+    ("declared_aggr", "da_arg", [], "lower", [r"call i32 @__cq_q_ext_sum_10\(i32 %\d+, i64 %\d+, i32 4\)"]),
 ]
 
 

@@ -167,7 +167,8 @@ void leafTypes(Type *t, SmallVectorImpl<Type *> &out, const Value *at) {
     for (unsigned k = 0; k < v->getNumElements(); ++k)
       out.push_back(v->getElementType());
   } else if (isa<ScalableVectorType>(t)) {
-    unimplemented("calls: a scalable vector across a call", at);
+    // CR §0: x86-64 only; no x86-64 C type is a scalable vector, so none reaches a call of the input.
+    internalError("calls: a scalable vector across a call (no x86-64 C type lowers to one, CR §0)", at);
   } else {
     out.push_back(t);
   }
@@ -190,12 +191,26 @@ struct FormalLayout {
   SmallVector<unsigned, 4> cuts;
 };
 
-// The types of the variadic actuals of the call sites of variadic S (CR §1.4: one clone per call-site
-// arity; every call taint maps to S has the same arity, the mask's). Integers of at most 64 bits only
-// (95, 109: int actuals; the x86-64 save area's gp slots): anything else is unimplemented.
-SmallVector<Type *, 4> variadicActualTypes(const TaintInfo &T, const Specialization &S, const Value *at) {
+// The variadic actuals of the call sites of variadic S (CR §1.4: one clone per call-site arity; every call
+// taint maps to S has the same arity, the mask's): their IR types, and for a byval actual (an aggregate the
+// x86-64 C ABI passes in memory) its byval type. lowerVarargs lays them out as the x86-64 SysV calling
+// convention places them (registers, then the overflow area).
+struct VariadicActual {
+  Type *ty;
+  Type *byval = nullptr;
+};
+
+// A scalar the x86-64 SysV convention passes in one or two gp registers, an xmm register or memory, and that
+// -O1's va_arg code reads back as one value: the variadic actuals a save area lays out (lowerVarargs).
+bool vaScalar(Type *t) {
+  return t->isPointerTy() || (t->isIntegerTy() && t->getIntegerBitWidth() <= 128) || t->isFloatTy() ||
+         t->isDoubleTy() || t->isX86_FP80Ty();
+}
+
+SmallVector<VariadicActual, 4> variadicActuals(const TaintInfo &T, const Specialization &S, const Value *at) {
   unsigned fixed = S.F->arg_size();
-  std::optional<SmallVector<Type *, 4>> found;
+  std::optional<SmallVector<VariadicActual, 4>> found;
+  const CallBase *first = nullptr;
   for (const Use &U : S.F->uses()) {
     auto *CB = dyn_cast<CallBase>(U.getUser());
     if (!CB || !CB->isCallee(&U))
@@ -203,18 +218,28 @@ SmallVector<Type *, 4> variadicActualTypes(const TaintInfo &T, const Specializat
     for (const Specialization &C : T.specializations()) {
       if (C.F != CB->getFunction() || T.calleeSpecialization(*CB, C) != &S)
         continue;
-      SmallVector<Type *, 4> ts;
+      SmallVector<VariadicActual, 4> ts;
       for (unsigned i = fixed; i < CB->arg_size(); ++i) {
-        Type *t = CB->getArgOperand(i)->getType();
-        if (!t->isIntegerTy() || t->getIntegerBitWidth() > 64)
-          unimplemented("calls: a variadic actual of a quantum clone that is not an integer of at most 64 bits "
-                        "(x86-64 gp save-area slots only: 95, 109)",
-                        CB);
-        ts.push_back(t);
+        VariadicActual va{CB->getArgOperand(i)->getType()};
+        if (CB->isByValArgument(i))
+          va.byval = CB->getParamByValType(i);
+        else if (!vaScalar(va.ty) && !va.ty->isVectorTy())
+          internalError("calls: a variadic actual of a type no x86-64 C call passes (CR §0)", CB);
+        ts.push_back(va);
       }
-      if (found && *found != ts)
-        internalError("calls: call sites of one variadic clone with different variadic actual types", CB);
+      auto same = [](const SmallVector<VariadicActual, 4> &a, const SmallVector<VariadicActual, 4> &b) {
+        return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](const VariadicActual &x,
+                                                                                    const VariadicActual &y) {
+                 return x.ty == y.ty && x.byval == y.byval;
+               });
+      };
+      if (found && !same(*found, ts))
+        unimplemented("calls: awaiting owner ruling: SPEC_ISSUES \"variadic clone per call-site arity: two call "
+                      "sites of one arity and mask with different variadic actual types\" (here and at " +
+                          first->getFunction()->getName().str() + ")",
+                      CB);
       found = ts;
+      first = CB;
     }
   }
   if (!found)
@@ -224,7 +249,7 @@ SmallVector<Type *, 4> variadicActualTypes(const TaintInfo &T, const Specializat
 
 std::vector<FormalLayout> formalLayout(const TaintInfo &T, const Specialization &S, const Value *at) {
   std::vector<FormalLayout> fs;
-  unsigned need = 0, nPtr = 0;
+  unsigned need = 0;
   for (Argument &A : S.F->args()) {
     FormalLayout f;
     leafTypes(A.getType(), f.leaves, &A);
@@ -273,7 +298,6 @@ std::vector<FormalLayout> formalLayout(const TaintInfo &T, const Specialization 
           f.q.push_back(false);
         }
       }
-      ++nPtr;
     } else {
       need += f.leaves.size();
     }
@@ -282,20 +306,32 @@ std::vector<FormalLayout> formalLayout(const TaintInfo &T, const Specialization 
   // CR §1.4 (95, 109): a variadic function's clone is per call-site arity; its formals past the fixed
   // ones are the call's variadic actuals, one digit each (the mask's last digits), of the actuals' types.
   if (S.F->isVarArg()) {
-    SmallVector<Type *, 4> vt = variadicActualTypes(T, S, at);
-    for (Type *t : vt) {
+    SmallVector<VariadicActual, 4> vt = variadicActuals(T, S, at);
+    for (const VariadicActual &va : vt) {
       FormalLayout f;
-      f.leaves.push_back(t);
+      f.leaves.push_back(va.ty);
       f.q.push_back(false);
       need += 1;
       fs.push_back(std::move(f));
     }
-    if (nPtr != 0)
-      unimplemented("calls: a variadic clone with a pointer formal (rule 21 digits with variadic actuals)", at);
-    if (S.mask.size() != need)
+    // A pointer formal contributes its own digits (T4: taint's pointerFormal), before the variadic ones.
+    size_t ptrDigits = 0;
+    for (const FormalLayout &f : fs)
+      if (f.pointer)
+        ptrDigits += f.digits;
+    if (S.mask.size() != need + ptrDigits)
       internalError("calls: a variadic clone whose mask is not one digit per fixed field and variadic actual", at);
-    for (size_t k = 0; k < vt.size(); ++k)
-      fs[fs.size() - vt.size() + k].q[0] = S.mask[S.mask.size() - vt.size() + k] == '1';
+    for (size_t k = 0; k < vt.size(); ++k) {
+      bool q = S.mask[S.mask.size() - vt.size() + k] == '1';
+      fs[fs.size() - vt.size() + k].q[0] = q;
+      // A quantum actual crosses as its one handle and its save-area cell holds that handle (rule 20's
+      // uniform slot array). A quantum pointer (rule 21's fat pointer in a pointer-kind cell), a quantum
+      // vector (rule 25's lanes) or a quantum aggregate passed in memory has no one-handle cell.
+      if (q && (!vaScalar(vt[k].ty) || vt[k].ty->isPointerTy() || vt[k].byval))
+        unimplemented("calls: a quantum variadic actual that is a pointer, a vector or an aggregate in memory "
+                      "(its save-area cell is no one handle: rules 21, 25, 26 in the variadic save area)",
+                      at);
+    }
   }
   // The name's digits (taint's mask) must say the same, formal by formal. A pointer formal's digits
   // describe its pointee (one per cell or record field, '1' where the caller's cell holds a handle at
@@ -305,10 +341,6 @@ std::vector<FormalLayout> formalLayout(const TaintInfo &T, const Specialization 
   // barrier, cq-fwto). How many digits each pointer formal has is taint's (T1, not in Taint.h): with
   // several pointer formals the digits are not split, and fieldMask alone gives the scalar formals'.
   const std::string &m = S.mask;
-  if (nPtr == 0 && m.size() != need)
-    unimplemented("calls: a clone whose mask has another digit count than its formals' scalar fields (a "
-                  "packed-integer formal, 159: cq-0umd)",
-                  at);
   size_t total = need;
   for (const FormalLayout &f : fs)
     if (f.pointer) {
@@ -392,8 +424,9 @@ ResultLayout resultLayout(const TaintInfo &T, const Specialization &S, const Val
     r.q = {true, true};
     return r;
   }
-  if (!isComposite(rt) && !scalarRailType(rt) && !(rt->isPointerTy() && !T.resultQuantum(S, 0)))
-    unimplemented("calls: a clone with a pointer result (rule 21 fat-pointer result: fatptr)", at);
+  // Every other return type of C on x86-64 is a scalar rail type, a composite or a (classical) pointer.
+  if (!isComposite(rt) && !scalarRailType(rt) && !rt->isPointerTy())
+    internalError("calls: a clone result type no C function on x86-64 returns", at);
   if (packedIntegerResult(*S.F) && !rt->isIntegerTy()) {
     // cq-0umd (166, rule 26): a leaf packed from fields (the coerced inner struct) crosses as its fields.
     for (const SmallVector<unsigned, 4> &c : spine::resultLeafCuts(*S.F))
@@ -467,25 +500,50 @@ Value *ctlFlag(LoweringContext &ctx, const CallBase &CB) {
   return f;
 }
 
-// Remapped actual arguments of CB for a callee whose mask digits are `mask` (one per formal).
+// CR rules 2, 7: an actual whose rail was measured at a point dominating the call denotes the classical
+// outcome (rule 2), while the clone's mask digit, fixed by taint for every call site of the clone, is
+// quantum. The clone takes a handle there: the outcome minted as a seed rail alloc_<W>(v) (rule 7: a rail
+// minted from a classical value and never written, freed directly once its last reader, the call and its
+// twin, has run).
+Operand seedActual(LoweringContext &ctx, const Operand &o) {
+  if (o.handle)
+    return o;
+  CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(o.v->getType())}, {o.v});
+  ctx.unc().recordSeed(seed);
+  return Operand{seed, true};
+}
+
+// The fields of a non-pointer actual (CR §1.4: a scalar is one field; an aggregate or vector one per scalar
+// leaf, rules 25, 26, flattened depth first).
+SmallVector<Operand, 4> actualFields(LoweringContext &ctx, const Value *a) {
+  if (isComposite(a->getType()))
+    return aggr::flattenResult(ctx, a);
+  return {ctx.operand(a)};
+}
+
+// Remapped actual arguments of CB for a callee whose mask digits are `mask` (one per field of the actuals,
+// CR §1.4; no pointer actual: rule 27's pointers are lowerDeclaredPointers').
 void appendActuals(LoweringContext &ctx, const CallBase &CB, StringRef mask, SmallVectorImpl<Value *> &args,
                    SmallVectorImpl<Operand> &ops) {
-  if (mask.size() != CB.arg_size())
-    unimplemented("calls: a call whose mask is not one digit per argument (aggregate or pointer fields: "
-                  "aggr/fatptr)",
-                  &CB);
+  size_t d = 0;
   for (unsigned i = 0; i < CB.arg_size(); ++i) {
     const Value *a = CB.getArgOperand(i);
-    if (!scalarRailType(a->getType()))
-      unimplemented("calls: a pointer, aggregate or vector argument of a quantum call (rules 21, 25, 26)", &CB);
-    Operand o = ctx.operand(a);
-    if (mask[i] == '1' && !o.handle)
-      unimplemented("calls: a measured (collapsed, rule 2) value passed where the clone's mask is quantum", &CB);
-    if (mask[i] == '0' && o.handle)
-      internalError("calls: a rail passed where the clone's mask is classical", &CB);
-    args.push_back(o.v);
-    ops.push_back(o);
+    if (a->getType()->isPointerTy())
+      internalError("calls: a pointer actual of a declared clone outside lowerDeclaredPointers", &CB);
+    for (Operand o : actualFields(ctx, a)) {
+      if (d >= mask.size())
+        internalError("calls: a call with more fields than its clone's mask digits", &CB);
+      if (mask[d] == '1')
+        o = seedActual(ctx, o);
+      if (mask[d] == '0' && o.handle)
+        internalError("calls: a rail passed where the clone's mask is classical", &CB);
+      ++d;
+      args.push_back(o.v);
+      ops.push_back(o);
+    }
   }
+  if (d != mask.size())
+    internalError("calls: a call with fewer fields than its clone's mask digits", &CB);
 }
 
 // Binds CB's result to the lowered call's result and records a quantum result (see the contract).
@@ -653,10 +711,11 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
   }
   struct ByVal { unsigned k; Type *T; Align al; };
   SmallVector<ByVal, 2> byvals;
+  // A direct call's arity is its callee's (a mismatched call is indirect: getCalledFunction is null), the
+  // variadic actuals being formals of the per-arity clone (formalLayout); an argument map names one operand
+  // per formal (lowerLiftedVia).
   if (nArgs != fs.size())
-    unimplemented("calls: a call whose argument count differs from the callee's formals (a variadic clone per "
-                  "call-site arity, CR §1.4)",
-                  &CB);
+    internalError("calls: a call whose argument count differs from the clone's formals", &CB);
   for (unsigned i = 0; i < nArgs; ++i) {
     const Value *a = CB.getArgOperand(op(i));
     if (fs[i].pointer && fs[i].abi != PtrAbi::Raw) {
@@ -686,13 +745,13 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
     if (leaves.size() != fs[i].leaves.size())
       internalError("calls: an actual with another field count than its formal", &CB);
     for (unsigned k = 0; k < leaves.size(); ++k) {
-      const Operand &o = leaves[k];
-      if (fs[i].q[k] && !o.handle)
-        unimplemented("calls: a measured (collapsed, rule 2) value passed where the clone's mask is quantum", &CB);
+      Operand o = leaves[k];
+      if (fs[i].q[k])
+        o = seedActual(ctx, o);
       if (!fs[i].q[k] && o.handle)
         internalError("calls: a rail passed where the clone's mask is classical", &CB);
       Value *v = o.v;
-      if (CB.isByValArgument(op(i)) && byvalCopied(*S.F->getArg(i))) {
+      if (op(i) < S.F->arg_size() && CB.isByValArgument(op(i)) && byvalCopied(*S.F->getArg(i))) {
         if (pointsToSlot(ctx, a))
           unimplemented("calls: a slot record passed by value to a clone that may write its copy (the copy "
                         "would need the record's lowered layout on both sides: rules 20, 26)",
@@ -871,11 +930,20 @@ Value *declaredK(LoweringContext &ctx, const Function &F, const Value *at) {
   unsigned K;
   if (n == F.getName()) {
     K = ctx.K(F);
-  } else if (GlobalValue *G = ctx.M.getNamedValue(n)) {
-    auto *NF = dyn_cast<Function>(G);
-    if (!NF)
-      unimplemented("calls: the libm name @" + n + " of an LLVM math intrinsic names a global that is not a function", at);
-    K = ctx.K(*NF);
+  } else if (GlobalValue *G = ctx.M.getNamedValue(n); G && isa<Function>(G)) {
+    K = ctx.K(*cast<Function>(G));
+  } else if (G) {
+    // A file-scope object of the libm name (legal in a TU that includes no <math.h>, C17 §7.1.3): K resolves
+    // on the name alone (flag, CQ_K, global, default). The object steps aside for the question's
+    // declaration and gets its name back.
+    std::string keep = G->getName().str();
+    G->setName(keep + ".cq.k");
+    Function *tmp = Function::Create(F.getFunctionType(), GlobalValue::ExternalLinkage, n, &ctx.M);
+    if (tmp->getName() != n)
+      internalError("calls: the K question's declaration did not get the libm name @" + n, at);
+    K = ctx.K(*tmp);
+    tmp->eraseFromParent();
+    G->setName(keep);
   } else {
     Function *tmp = Function::Create(F.getFunctionType(), GlobalValue::ExternalLinkage, n, &ctx.M);
     K = ctx.K(*tmp);
@@ -887,10 +955,10 @@ Value *declaredK(LoweringContext &ctx, const Function &F, const Value *at) {
 // The declared clone of F for CB (rule 27): declared here, called at the builder.
 CallInst *emitDeclaredCall(LoweringContext &ctx, CallBase &CB, Function &F, StringRef mask, Value *flag) {
   LLVMContext &C = ctx.M.getContext();
+  // CR §1.4: a variadic clone is specialised per call-site arity: the declared clone's formals are the
+  // call's actuals (fixed and variadic alike, one digit each), its type the actuals' (rule 27 Name).
   if (!F.getFunctionType()->isVarArg() && F.arg_size() != CB.arg_size())
     internalError("calls: a declared callee called with another argument count", &CB);
-  if (F.getFunctionType()->isVarArg())
-    unimplemented("calls: a variadic declared callee (rule 27 per call-site arity)", &CB);
   bool ctl = flag != nullptr;
   SmallVector<Value *, 8> args;
   SmallVector<Operand, 8> ops;
@@ -902,10 +970,23 @@ CallInst *emitDeclaredCall(LoweringContext &ctx, CallBase &CB, Function &F, Stri
   Value *K = declaredK(ctx, F, &CB);
   args.push_back(K);
   ops.push_back(Operand{K, false});
+  // Rule 27 Results: every result a handle, an i32 per scalar; an aggregate or vector result is the literal
+  // struct of its leaves' handles (CR §1.4, rules 25, 26).
   Type *rt = CB.getType();
-  if (!rt->isVoidTy()) {
-    if (!scalarRailType(rt))
-      unimplemented("calls: a declared clone with an aggregate, vector or pointer result (rule 27, aggr)", &CB);
+  SmallVector<Type *, 4> leaves;
+  if (rt->isPointerTy())
+    unimplemented("calls: awaiting owner ruling: SPEC_ISSUES \"rule 27: a declared clone with a pointer result "
+                  "(the provenance of a fat pointer an opaque clone returns)\"",
+                  &CB);
+  if (isComposite(rt)) {
+    leafTypes(rt, leaves, &CB);
+    for (Type *l : leaves)
+      if (l->isPointerTy())
+        unimplemented("calls: awaiting owner ruling: SPEC_ISSUES \"rule 27: a declared clone with a pointer "
+                      "result (the provenance of a fat pointer an opaque clone returns)\"",
+                      &CB);
+    rt = StructType::get(C, SmallVector<Type *, 4>(leaves.size(), handleTy(C)));
+  } else if (!rt->isVoidTy()) {
     rt = handleTy(C);
   }
   SmallVector<Type *, 8> ps;
@@ -920,7 +1001,21 @@ CallInst *emitDeclaredCall(LoweringContext &ctx, CallBase &CB, Function &F, Stri
   if (!D)
     D = Function::Create(FT, GlobalValue::ExternalLinkage, name, ctx.M);
   CallInst *call = ctx.B().CreateCall(D, args);   // C calling convention (rule 27)
-  if (!CB.getType()->isVoidTy()) {
+  if (!leaves.empty()) {
+    // The fields, undone together by the twin <clone>_unc(outs..., args..., K) (U2).
+    SmallVector<Operand, 4> fops;
+    SmallVector<Value *, 4> outs;
+    for (unsigned k = 0; k < leaves.size(); ++k) {
+      Value *e = ctx.B().CreateExtractValue(call, {k});
+      fops.push_back(Operand{e, true});
+      outs.push_back(e);
+    }
+    SmallVector<bool, 4> tq = ctx.T.fieldMask(&CB, ctx.S);
+    if (tq.size() != leaves.size() || !all_of(tq, [](bool q) { return q; }))
+      internalError("calls: a declared clone's composite result whose fields taint does not all make quantum", &CB);
+    ctx.unc().recordCall(call, outs, {}, {});
+    ctx.bindFields(&CB, fops);
+  } else if (!CB.getType()->isVoidTy()) {
     // Every result a handle (rule 27); taint agrees for a declared callee.
     if (!ctx.T.isQuantum(&CB, ctx.S))
       internalError("calls: a declared clone's result that taint says is classical", &CB);
@@ -930,13 +1025,18 @@ CallInst *emitDeclaredCall(LoweringContext &ctx, CallBase &CB, Function &F, Stri
   return call;
 }
 
-// The mask of a call site from its actuals (scalar arguments only).
+// The mask of a call site from its non-pointer actuals (CR §1.4: one digit per field; an aggregate or vector
+// one per scalar leaf, taint's field mask).
 std::string siteMask(LoweringContext &ctx, const CallBase &CB) {
   std::string m;
   for (const Use &u : CB.args()) {
-    if (!scalarRailType(u->getType()))
-      unimplemented("calls: a pointer, aggregate or vector argument of a quantum call (rules 21, 25, 26)", &CB);
-    m.push_back(ctx.T.isQuantum(u.get(), ctx.S) ? '1' : '0');
+    if (u->getType()->isPointerTy())
+      internalError("calls: siteMask of a call with a pointer actual (its digits are the callee's T4)", &CB);
+    if (isComposite(u->getType()))
+      for (bool q : ctx.T.fieldMask(u.get(), ctx.S))
+        m.push_back(q ? '1' : '0');
+    else
+      m.push_back(ctx.T.isQuantum(u.get(), ctx.S) ? '1' : '0');
   }
   return m;
 }
@@ -1182,8 +1282,9 @@ Function *materialize(Module &M, const Specialization &S) {
       if (MaybeAlign al = A.getParamAlign())
         NF->addParamAttr(p, Attribute::getWithAlignment(C, *al));
     }
+    // CR §0: x86-64 only; inalloca and preallocated are the 32-bit Windows C++ ABI's.
     if (A.hasInAllocaAttr() || A.hasPreallocatedAttr())
-      unimplemented("calls: an inalloca or preallocated formal of a clone", &A);
+      internalError("calls: an inalloca or preallocated formal (no x86-64 C function has one, CR §0)", &A);
     p += unsigned(fl[A.getArgNo()].leaves.size());
   }
   return NF;
@@ -1770,8 +1871,6 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
 // quantum or multi-object pointer are unimplemented.
 void lowerDeclaredPointers(LoweringContext &ctx, CallBase &CB, Function &F) {
   LLVMContext &C = ctx.M.getContext();
-  if (F.getFunctionType()->isVarArg())
-    unimplemented("calls: a variadic declared callee (rule 27 per call-site arity)", &CB);
   if (!CB.getType()->isVoidTy())
     unimplemented("calls: a declared clone with a pointer argument and a result (rule 27: the result's twin and the "
                   "snapshot in one item)",
@@ -1806,8 +1905,10 @@ void lowerDeclaredPointers(LoweringContext &ctx, CallBase &CB, Function &F) {
     if (!scalarRailType(a->getType()))
       unimplemented("calls: a pointer, aggregate or vector argument of a quantum call (rules 21, 25, 26)", &CB);
     Operand o = ctx.operand(a);
-    if (o.handle != ctx.T.isQuantum(a, ctx.S))
-      unimplemented("calls: a measured (collapsed, rule 2) value passed where the clone's mask is quantum", &CB);
+    if (ctx.T.isQuantum(a, ctx.S))
+      o = seedActual(ctx, o);
+    else if (o.handle)
+      internalError("calls: a rail where taint says the actual is classical", &CB);
     args.push_back(o.v);
     mask.push_back(o.handle ? '1' : '0');
   }
@@ -2083,8 +2184,20 @@ std::map<const Function *, SmallVector<VaArea, 2>> &vaAreas() {
 
 void lowerVarargs(LoweringContext &ctx, Instruction &I) {
   auto *II = dyn_cast<IntrinsicInst>(&I);
+  // clang's x86-64 SysV ABI expands va_arg into loads of the save and overflow areas (CR §0: x86-64, -O1
+  // only), so no va_arg instruction reaches the pass.
   if (!II)
-    unimplemented("calls: a va_arg instruction in a variadic clone (clang -O1 expands va_arg on x86-64)", &I);
+    internalError("calls: a va_arg instruction (clang expands va_arg on x86-64, CR §0)", &I);
+  // An entry is called classically: its variadic actuals are classical and its va_list host memory, so
+  // the intrinsics are the ordinary ones even under a quantum predicate (initialising a va_list carries
+  // no quantum data and nothing reads it but the va_arg code of the same activation).
+  if (ctx.S.isEntry()) {
+    for (const Use &u : II->args())
+      if (ctx.operand(u.get()).handle)
+        internalError("calls: a va_list pointer bound to a rail", &I);
+    spine::copyClassical(ctx, I);
+    return;
+  }
   LLVMContext &C = ctx.M.getContext();
   IRBuilder<> &B = ctx.B();
   Type *i32 = Type::getInt32Ty(C), *i8 = Type::getInt8Ty(C);
@@ -2104,34 +2217,108 @@ void lowerVarargs(LoweringContext &ctx, Instruction &I) {
     internalError("calls: lowerVarargs of another intrinsic", &I);
   }
   const Function &F = *ctx.S.F;
-  if (!F.isVarArg() || ctx.S.isEntry())
-    unimplemented("calls: llvm.va_start outside a variadic clone (an entry's quantum va_list)", &I);
+  if (!F.isVarArg())
+    internalError("calls: llvm.va_start in a function that is not variadic (invalid IR)", &I);
   if (Triple(ctx.M.getTargetTriple()).getArch() != Triple::x86_64)
-    unimplemented("calls: llvm.va_start on a target other than x86-64 SysV", &I);
-  unsigned named = 0;
+    internalError("calls: llvm.va_start on a target other than x86-64 SysV (CR §0)", &I);
+  const DataLayout &DL = ctx.M.getDataLayout();
+  // The registers the named parameters take (x86-64 SysV, as LLVM's CC_X86_64_C assigns the IR parameters
+  // clang emits): an integer of at most 64 bits or a pointer one of the 6 gp registers, a wider integer
+  // (at most 128 bits) two, a float, double or vector of at most 128 bits one of the 8 xmm registers; an
+  // x86_fp80, a byval aggregate and whatever finds its registers taken go to the stack, which va_arg never
+  // reads for a named parameter.
+  unsigned gp = 0, fp = 0;
+  auto takeGp = [&](unsigned n) {
+    if (gp + n <= 6) {
+      gp += n;
+      return true;
+    }
+    return false;
+  };
+  auto takeFp = [&]() {
+    if (fp < 8) {
+      ++fp;
+      return true;
+    }
+    return false;
+  };
   for (const Argument &A : F.args()) {
     Type *t = A.getType();
-    if (!(t->isPointerTy() || (t->isIntegerTy() && t->getIntegerBitWidth() <= 64)) || A.hasByValAttr())
-      unimplemented("calls: a variadic clone with a named parameter that is not one gp register", &A);
-    ++named;
+    if (A.hasByValAttr() || t->isX86_FP80Ty())
+      continue;
+    if (t->isPointerTy() || (t->isIntegerTy() && t->getIntegerBitWidth() <= 64))
+      takeGp(1);
+    else if (t->isIntegerTy() && t->getIntegerBitWidth() <= 128)
+      takeGp(2);
+    else if (t->isFloatingPointTy() || (t->isVectorTy() && DL.getTypeSizeInBits(t).getFixedValue() <= 128))
+      takeFp();
+    else
+      internalError("calls: a named parameter of a type no x86-64 C function has (CR §0)", &A);
   }
+  unsigned gpNamed = gp, fpNamed = fp;
   spine::Shared &sh = spine::shared(ctx);
   const SmallVector<Operand, 4> &va = sh.varargs;
-  if (named + va.size() > 6)
-    unimplemented("calls: a variadic clone whose gp arguments overflow the 6 registers (the overflow area)", &I);
+  SmallVector<VariadicActual, 4> vt = variadicActuals(ctx.T, ctx.S, &I);
+  if (vt.size() != va.size())
+    internalError("calls: a variadic clone whose parameters are not its call sites' variadic actuals", &I);
   bool handles = any_of(va, [](const Operand &o) { return o.handle; });
+  // Where each actual goes: the register save area (gp slot k at 8k, xmm slot k at 48 + 16k) or the overflow
+  // area, which follows the save area at 176 in the same object (taint's one save-area object) in 8-byte
+  // slots, 16-byte aligned for an x86_fp80, a 16-byte integer and an aggregate of 16-byte alignment.
+  struct Place { uint64_t off; uint64_t size; };
+  SmallVector<Place, 4> place;
+  uint64_t over = 0;
+  auto overflow = [&](uint64_t size, uint64_t align) {
+    over = alignTo(over, std::max<uint64_t>(align, 8));
+    Place p{176 + over, size};
+    over += alignTo(size, 8);
+    return p;
+  };
+  for (const VariadicActual &a : vt) {
+    Type *t = a.ty;
+    if (a.byval) {
+      if (handles)
+        unimplemented("calls: a variadic clone whose save area holds handles and an aggregate actual passed in "
+                      "memory (its fields' cells: rules 20, 26 in the variadic save area)",
+                      &I);
+      place.push_back(overflow(DL.getTypeAllocSize(a.byval), std::max<uint64_t>(DL.getABITypeAlign(a.byval).value(), 8)));
+    } else if (t->isPointerTy() || (t->isIntegerTy() && t->getIntegerBitWidth() <= 64)) {
+      unsigned k = gp;
+      place.push_back(takeGp(1) ? Place{8 * k, 8} : overflow(8, 8));
+    } else if (t->isIntegerTy()) {
+      unsigned k = gp;
+      place.push_back(takeGp(2) ? Place{8 * k, 16} : overflow(16, 16));
+    } else if (t->isX86_FP80Ty()) {
+      place.push_back(overflow(16, 16));
+    } else {
+      if (handles && t->isVectorTy())
+        unimplemented("calls: a variadic clone whose save area holds handles and a vector actual (rule 25's "
+                      "lanes in the variadic save area)",
+                      &I);
+      uint64_t sz = DL.getTypeAllocSize(t);
+      unsigned k = fp;
+      place.push_back(takeFp() ? Place{48 + 16 * k, 16} : overflow(sz, sz > 8 ? 16 : 8));
+    }
+  }
   Operand ap = ctx.operand(II->getArgOperand(0));
   if (ap.handle)
     internalError("calls: a va_list pointer bound to a rail", &I);
   IRBuilder<> EB(&ctx.out().getEntryBlock(), ctx.out().getEntryBlock().getFirstInsertionPt());
-  AllocaInst *area = EB.CreateAlloca(ArrayType::get(Type::getInt64Ty(C), 6), nullptr, "va.save");
+  AllocaInst *area = EB.CreateAlloca(ArrayType::get(Type::getInt8Ty(C), 176 + std::max<uint64_t>(over, 8)), nullptr,
+                                     "va.save");
   area->setAlignment(Align(16));
-  AllocaInst *over = EB.CreateAlloca(Type::getInt64Ty(C), nullptr, "va.overflow");
   VaArea rec;
   for (unsigned k = 0; k < va.size(); ++k) {
-    Value *slot = B.CreateConstInBoundsGEP1_64(i8, area, 8 * (named + k));
+    Value *slot = B.CreateConstInBoundsGEP1_64(i8, area, place[k].off);
     Value *v = va[k].v;
-    if (handles && !va[k].handle) {
+    if (vt[k].byval) {
+      Align al = DL.getABITypeAlign(vt[k].byval);
+      B.CreateMemCpy(slot, Align(8), v, al, DL.getTypeAllocSize(vt[k].byval));
+      continue;
+    }
+    if (handles && !va[k].handle && !v->getType()->isPointerTy()) {
+      // A classical actual in a save area of handles is promoted to a seed rail (rule 7, 95's reference);
+      // a classical pointer stays the pointer the cell holds (taint: its pointer actuals are its pointers).
       CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(v->getType())}, {v});
       rec.rails.push_back(ctx.unc().recordSeed(seed));
       v = seed;
@@ -2140,9 +2327,10 @@ void lowerVarargs(LoweringContext &ctx, Instruction &I) {
     }
     B.CreateAlignedStore(v, slot, Align(8));
   }
-  B.CreateAlignedStore(ConstantInt::get(i32, 8 * named), ap.v, Align(16));
-  B.CreateAlignedStore(ConstantInt::get(i32, 48), B.CreateConstInBoundsGEP1_64(i8, ap.v, 4), Align(4));
-  B.CreateAlignedStore(over, B.CreateConstInBoundsGEP1_64(i8, ap.v, 8), Align(8));
+  B.CreateAlignedStore(ConstantInt::get(i32, 8 * gpNamed), ap.v, Align(16));
+  B.CreateAlignedStore(ConstantInt::get(i32, 48 + 16 * fpNamed), B.CreateConstInBoundsGEP1_64(i8, ap.v, 4), Align(4));
+  B.CreateAlignedStore(B.CreateConstInBoundsGEP1_64(i8, area, 176), B.CreateConstInBoundsGEP1_64(i8, ap.v, 8),
+                       Align(8));
   B.CreateAlignedStore(area, B.CreateConstInBoundsGEP1_64(i8, ap.v, 16), Align(8));
   if (handles) {
     rec.obj = ctx.T.objectOf(II);
@@ -2166,11 +2354,19 @@ bool lowerVaAreaLoad(LoweringContext &ctx, LoadInst &ld) {
       a = &r;
   if (!a)
     return false;
-  if (!ld.getType()->isIntegerTy() || ld.getType()->getIntegerBitWidth() > 64 || ld.isVolatile() || ld.isAtomic())
-    unimplemented("calls: a read of the variadic save area that is not one integer actual's slot", &ld);
   Operand p = ctx.operand(ld.getPointerOperand());
   if (p.handle)
     internalError("calls: a save-area pointer bound to a rail", &ld);
+  if (ld.getType()->isPointerTy()) {
+    // A pointer cell holds the classical pointer actual (lowerVarargs): the host load.
+    LoadInst *n = ctx.B().CreateAlignedLoad(ld.getType(), p.v, ld.getAlign());
+    ctx.bind(&ld, n);
+    return true;
+  }
+  // Every other cell of a save area of handles holds one actual's handle (lowerVarargs lays out scalars
+  // only there): -O1's va_arg code reads an actual as one value of its type at its slot.
+  if (!scalarRailType(ld.getType()))
+    internalError("calls: a read of a variadic save area of handles that is not one scalar actual", &ld);
   // The slot holds a handle (one of the actuals' rails, rule 20's uniform slot array).
   LoadInst *h = ctx.B().CreateAlignedLoad(handleTy(ctx.M.getContext()), p.v, Align(4));
   ctx.unc().recordCellLoad(h, a->rails);
