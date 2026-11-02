@@ -68,6 +68,10 @@ CASES = [
     ("fenv_reached_mode", "md_up", [], "pass", [r"call \{ i32, i32 \} @__cq_q_third_1\(i32 %\d+, i32 2048, i32 %\d+\)",
                                                 r"cq_template_fdiv_f64_hl_rm\("]),
     ("fenv_reached_mode", "md_plain", [], "pass", []),
+    # cq-4e6m (rule 23): the reached mode is the LOWERED chain's: `other` holds the fenv state and calls third but
+    # is not on ch_split's chain, so split and third are plain clones (no mode, no flags) writing the caller's cells.
+    ("fenv_chain_default", "ch_split", [], "pass", [r"call void @__cq_q_split_100\(i32 %\d+, ptr %\d+\)\n",
+                                                    r"call i32 @__cq_q_third_1\(i32 %0\)\n"]),
     # cq-567j (gate 2a unc-h1 p16-p19): a clone that only reads a caller's slot cell through a pointer formal:
     # the cell's rails are used by the forward call (and read by its item when it has a twin), never freed before.
     ("read_only_ptr", "ro_bump", [], "pass", []),

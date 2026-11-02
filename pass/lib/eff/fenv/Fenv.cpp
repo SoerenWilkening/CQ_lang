@@ -347,31 +347,59 @@ bool bodyTouchesFenv(const Function &F, SmallPtrSetImpl<const Function *> &seen)
 }
 
 // Rule 23 (ruling 2026-11-02, cq-75n4): the round.dynamic mode of a body that holds no environment itself
-// is the mode at the root of its call chain: the default unless an ancestor holds the fenv state. May F
-// be reached from such an ancestor: a function with a body that calls F directly and holds or changes
-// the environment, itself or through its callees (bodyTouchesFenv), or is itself so reached? Function
-// level and over every direct caller, so a body shared by a default and a non-default chain carries the
-// environment for both (its default callers pass mode 0 and an empty flags rail, which is exact).
-bool envReached(const Function &F, SmallPtrSetImpl<const Function *> &seen) {
-  if (!seen.insert(&F).second)
+// is the mode at the root of its call chain: the default unless an ancestor on that chain holds the fenv
+// state. The chain is the lowered one: the specializations taint lifts from the roots, the edges its
+// callee specializations (direct and indirect candidates). A caller elsewhere in the module that holds
+// the state (musl's fma calling scalbn) is not on the chain of a clone it does not reach (cq-4e6m: sin's
+// __rem_pio2_large calling scalbn is the default chain, the plain templates). May S be reached from such
+// an ancestor: a specialization whose body calls S and holds or changes the environment, itself or through
+// its callees (bodyTouchesFenv), or is itself so reached? A clone shared by a default and a non-default
+// chain carries the environment for both (its default callers pass mode 0 and an empty flags rail, which
+// is exact).
+bool sameSpec(const Specialization &a, const Specialization &b) {
+  return a.F == b.F && a.mask == b.mask && a.ctl == b.ctl && a.pure == b.pure && a.adj == b.adj &&
+         a.depth == b.depth && a.bounds == b.bounds;
+}
+
+bool callsSpec(const TaintInfo &T, const Specialization &P, const Specialization &S) {
+  for (const BasicBlock &BB : *P.F)
+    for (const Instruction &I : BB) {
+      auto *CB = dyn_cast<CallBase>(&I);
+      if (!CB || CB->isInlineAsm())
+        continue;
+      if (const Function *G = CB->getCalledFunction()) {
+        if (G != S.F)
+          continue;
+        if (const Specialization *cs = T.calleeSpecialization(*CB, P); cs && sameSpec(*cs, S))
+          return true;
+        continue;
+      }
+      for (auto &[G, cs] : T.calleeCandidates(*CB, P))
+        if (G == S.F && cs && sameSpec(*cs, S))
+          return true;
+    }
+  return false;
+}
+
+bool envReached(const TaintInfo &T, const Specialization &S, SmallVectorImpl<const Specialization *> &seen) {
+  if (any_of(seen, [&](const Specialization *x) { return sameSpec(*x, S); }))
     return false;
-  for (const User *U : F.users()) {
-    auto *CB = dyn_cast<CallBase>(U);
-    if (!CB || CB->getCalledOperand() != &F)
+  seen.push_back(&S);
+  for (const Specialization &P : T.specializations()) {
+    if (!P.F || P.F->isDeclaration() || !callsSpec(T, P, S))
       continue;
-    const Function &G = *CB->getFunction();
     SmallPtrSet<const Function *, 8> s2;
-    if (bodyTouchesFenv(G, s2) || envReached(G, seen))
+    if (bodyTouchesFenv(*P.F, s2) || envReached(T, P, seen))
       return true;
   }
   return false;
 }
 
-bool readsReachedMode(const Function &F) {
-  if (!any_of(instructions(F), [](const Instruction &I) { return dynamicOp(I); }))
+bool readsReachedMode(const TaintInfo &T, const Specialization &S) {
+  if (!any_of(instructions(*S.F), [](const Instruction &I) { return dynamicOp(I); }))
     return false;
-  SmallPtrSet<const Function *, 8> seen;
-  return envReached(F, seen);
+  SmallVector<const Specialization *, 8> seen;
+  return envReached(T, S, seen);
 }
 
 // E1 (82): does a clone of S carry the environment (CR rule 23: "a clone that does constrained FP work
@@ -393,7 +421,7 @@ bool carriesEnvImpl(const TaintInfo &T, const Specialization &S, SmallPtrSetImpl
     return false;
   if (!seen.insert(&S).second)
     return false;   // a cycle of lifted calls: its bodies are judged where they are first reached
-  if (ownBodyTouchesFenv(*S.F) || readsReachedMode(*S.F))
+  if (ownBodyTouchesFenv(*S.F) || readsReachedMode(T, S))
     return true;
   // Rule 23 (ruling 2026-11-02): a body with the fenv state (FENV_ACCESS or -frounding-math: strictfp, or
   // a fenv call) that holds a strict op through a callee takes 82's ABI (169's __cq_q_logb_1(x, mode,
