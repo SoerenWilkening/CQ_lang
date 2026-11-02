@@ -732,6 +732,13 @@ bool deadAtCleanup(LoweringContext &ctx, Value *Y, Value *h, Instruction *at,
       return nullptr;
     return AI;
   };
+  auto localQram = [&](const StoreInst *st) {
+    auto *AI = dyn_cast<AllocaInst>(getUnderlyingObject(st->getPointerOperand()));
+    if (!AI || AI->getFunction() != at->getFunction())
+      return false;
+    ArrayRef<ObjectId> prov = ctx.T.provenance(st->getPointerOperand(), ctx.S);
+    return !prov.empty() && all_of(prov, [&](ObjectId o) { return ctx.T.classOf(o) == ObjClass::Qram; });
+  };
   // Every load of the object (through constant GEPs); false when the address has any other use (a
   // call argument, a stored or returned pointer, a memory intrinsic: the cell may be read elsewhere).
   auto cellLoads = [&](const AllocaInst *AI, const std::function<void(const Instruction *)> &each) {
@@ -789,6 +796,11 @@ bool deadAtCleanup(LoweringContext &ctx, Value *Y, Value *h, Instruction *at,
         // escape: the cell's loads read the rail (their values are its aliases, followed for escapes),
         // and Uncompute places the clean-up after them (the new-IR store holds it to the scope exit
         // when they come later). Only memory read after the function returns or a QRAM store keeps it.
+        // cq-719y: a store into a local QRAM (an alloca of this function every object the pointer may
+        // name is a QRAM bus of) copies the value onto the bus: its POP re-reads the rail (a reader that
+        // moves the clean-up, Uncompute's order) and the bus dies with the frame; its loads copy out.
+        if (st->getValueOperand() == w && localQram(st))
+          continue;
         const AllocaInst *cell = st->getValueOperand() == w ? localSlotCell(st) : nullptr;
         if (!cell)
           return false;
@@ -828,6 +840,16 @@ bool reads(LoweringContext &ctx, Value *z, Value *y, unsigned depth = 0) {
   bool narrow = sh.narrowSkipped.count(z) || sh.views.count(z);
   if (!narrow && (bi == sh.binds.end() || none_of(bi->second, [](const Operand &o) { return o.handle; })))
     return false;
+  // cq-719y: a load of a QRAM object y was stored into reads y's value through the bus (168: the rmw's new
+  // value stored, then a load at another quantum index that may be its cell).
+  if (auto *ld = dyn_cast<LoadInst>(I)) {
+    ArrayRef<ObjectId> lp = ctx.T.provenance(ld->getPointerOperand(), ctx.S);
+    for (User *u : y->users())
+      if (auto *st = dyn_cast<StoreInst>(u); st && st->getValueOperand() == y)
+        for (ObjectId o : ctx.T.provenance(st->getPointerOperand(), ctx.S))
+          if (ctx.T.classOf(o) == ObjClass::Qram && is_contained(lp, o))
+            return true;
+  }
   for (Value *op : I->operands())
     if (reads(ctx, op, y, depth + 1))
       return true;
