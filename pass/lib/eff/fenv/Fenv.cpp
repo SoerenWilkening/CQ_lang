@@ -99,6 +99,7 @@
 #include "llvm/IR/FPEnv.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InlineAsm.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/Support/KnownBits.h"
@@ -147,9 +148,37 @@ FenvFn fenvFn(const CallBase &CB) {
   return FenvFn::None;
 }
 
+// CR rule 23 (ruling 2026-11-02, cq-75n4): only fpexcept.strict (FENV_ACCESS ON) raises observably;
+// fpexcept.ignore and fpexcept.maytrap (-frounding-math without the pragma) raise nothing: no _exc, no
+// flags rail.
 bool raises(const ConstrainedFPIntrinsic &CI) {
   std::optional<fp::ExceptionBehavior> eb = CI.getExceptionBehavior();
-  return eb && *eb != fp::ebIgnore;
+  return eb && *eb == fp::ebStrict;
+}
+
+// Does this instruction hold or change the environment itself (rule 23: "a strict op or a fenv call")? A
+// raising constrained op, a <fenv.h> call, a rounding intrinsic, or an indirect call (which may reach any).
+// A non-raising constrained op only reads the mode (dynamicOp).
+bool envOp(const Instruction &I) {
+  auto *CB = dyn_cast<CallBase>(&I);
+  if (!CB)
+    return false;
+  if (auto *CI = dyn_cast<ConstrainedFPIntrinsic>(CB))
+    return raises(*CI);
+  if (fenvFn(*CB) != FenvFn::None)
+    return true;
+  if (auto *II = dyn_cast<IntrinsicInst>(CB))
+    return II->getIntrinsicID() == Intrinsic::set_rounding || II->getIntrinsicID() == Intrinsic::get_rounding;
+  return !CB->getCalledFunction() && !CB->isInlineAsm();
+}
+
+// A constrained op that rounds in the dynamic mode (round.dynamic).
+bool dynamicOp(const Instruction &I) {
+  auto *CI = dyn_cast<ConstrainedFPIntrinsic>(&I);
+  if (!CI)
+    return false;
+  std::optional<RoundingMode> rm = CI->getRoundingMode();
+  return rm && *rm == RoundingMode::Dynamic;
 }
 
 // May this instruction change the FLAGS / MODE part (when it runs on quantum state)?
@@ -191,17 +220,11 @@ bool bodyTouchesFenv(const Function &F, SmallPtrSetImpl<const Function *> &seen)
       auto *CB = dyn_cast<CallBase>(&I);
       if (!CB)
         continue;
-      if (isa<ConstrainedFPIntrinsic>(CB) || fenvFn(*CB) != FenvFn::None)
-        return true;
-      if (auto *II = dyn_cast<IntrinsicInst>(CB))
-        if (II->getIntrinsicID() == Intrinsic::set_rounding || II->getIntrinsicID() == Intrinsic::get_rounding)
-          return true;
+      if (envOp(I))
+        return true;   // an indirect call may reach anything
       const Function *G = CB->getCalledFunction();
-      if (!G) {
-        if (!CB->isInlineAsm())
-          return true;   // an indirect call may reach anything
+      if (!G)
         continue;
-      }
       if (!G->isDeclaration() && bodyTouchesFenv(*G, seen))
         return true;
     }
@@ -226,19 +249,38 @@ bool accessesEnv(const Function &F) {
 // or an indirect call, which may reach anything)?
 bool ownBodyTouchesFenv(const Function &F) {
   for (const BasicBlock &BB : F)
-    for (const Instruction &I : BB) {
-      auto *CB = dyn_cast<CallBase>(&I);
-      if (!CB)
-        continue;
-      if (isa<ConstrainedFPIntrinsic>(CB) || fenvFn(*CB) != FenvFn::None)
+    for (const Instruction &I : BB)
+      if (envOp(I))
         return true;
-      if (auto *II = dyn_cast<IntrinsicInst>(CB))
-        if (II->getIntrinsicID() == Intrinsic::set_rounding || II->getIntrinsicID() == Intrinsic::get_rounding)
-          return true;
-      if (!CB->getCalledFunction() && !CB->isInlineAsm())
-        return true;
-    }
   return false;
+}
+
+// Rule 23 (ruling 2026-11-02, cq-75n4): the round.dynamic mode of a body that holds no environment itself
+// is the mode at the root of its call chain: the default unless an ancestor holds the fenv state. May F
+// be reached from such an ancestor: a function with a body that calls F directly and holds or changes
+// the environment, itself or through its callees (bodyTouchesFenv), or is itself so reached? Function
+// level and over every direct caller, so a body shared by a default and a non-default chain carries the
+// environment for both (its default callers pass mode 0 and an empty flags rail, which is exact).
+bool envReached(const Function &F, SmallPtrSetImpl<const Function *> &seen) {
+  if (!seen.insert(&F).second)
+    return false;
+  for (const User *U : F.users()) {
+    auto *CB = dyn_cast<CallBase>(U);
+    if (!CB || CB->getCalledOperand() != &F)
+      continue;
+    const Function &G = *CB->getFunction();
+    SmallPtrSet<const Function *, 8> s2;
+    if (bodyTouchesFenv(G, s2) || envReached(G, seen))
+      return true;
+  }
+  return false;
+}
+
+bool readsReachedMode(const Function &F) {
+  if (!any_of(instructions(F), [](const Instruction &I) { return dynamicOp(I); }))
+    return false;
+  SmallPtrSet<const Function *, 8> seen;
+  return envReached(F, seen);
 }
 
 // E1 (82): does a clone of S carry the environment (CR rule 23: "a clone that does constrained FP work
@@ -259,7 +301,7 @@ bool carriesEnvImpl(const TaintInfo &T, const Specialization &S, SmallPtrSetImpl
     return false;
   if (!seen.insert(&S).second)
     return false;   // a cycle of lifted calls: its bodies are judged where they are first reached
-  if (ownBodyTouchesFenv(*S.F))
+  if (ownBodyTouchesFenv(*S.F) || readsReachedMode(*S.F))
     return true;
   if (!liftsCarrying(T, S, seen))
     return false;
@@ -893,8 +935,9 @@ bool cacheValid(const State &st, const Instruction &I) {
 Value *classicalMode(LoweringContext &ctx, State &st, const Instruction &I) {
   if (st.cloneBound)
     return st.cloneMode;   // E1: the caller's mode; bindCloneEnv refused a clone that changes it
-  if (!ctx.S.isEntry() && !accessesEnv(*ctx.S.F))
-    return i32(ctx, 0);    // a clone without FENV_ACCESS runs in the default environment: FE_TONEAREST (169)
+  if (!accessesEnv(*ctx.S.F))
+    return i32(ctx, 0);    // a function without the fenv state runs in the default environment: FE_TONEAREST
+                           // (169's __divdc3; rule 23 ruling 2026-11-02: a default caller passes mode 0)
   if (cacheValid(st, I))
     return st.modeVal;
   st.modeVal = hostGetRound(ctx);
@@ -909,6 +952,11 @@ struct ModeOp {
 };
 
 // The mode operand of a constrained op; the classical dynamic value is only fetched on `need`.
+// CI lies in the clone being lowered (not a callee lowered into it) and that clone carries no environment.
+bool defaultModeClone(LoweringContext &ctx, const ConstrainedFPIntrinsic &CI) {
+  return ctx.S.F && CI.getFunction() == ctx.S.F && !carriesEnvImpl(ctx.T, ctx.S);
+}
+
 ModeOp modeOperand(LoweringContext &ctx, State &st, const ConstrainedFPIntrinsic &CI, bool need) {
   ModeOp m;
   std::optional<RoundingMode> rm = CI.getRoundingMode();
@@ -931,6 +979,9 @@ ModeOp modeOperand(LoweringContext &ctx, State &st, const ConstrainedFPIntrinsic
     return m;
   case RoundingMode::Dynamic:
     m.dynamic = true;
+    if (!ctx.S.isEntry() && !st.cloneBound && !st.mode && defaultModeClone(ctx, CI))
+      return m;   // rule 23 (ruling 2026-11-02): a clone that does not carry the environment rounds in the
+                  // default mode of its chain's root: the plain template (169's scalbn, 175's exp)
     if (st.mode) {
       requireValid(ctx, st.modeAt, CI, "rounding mode");
       m.rm = abi::TemplateSpec::RmRail;

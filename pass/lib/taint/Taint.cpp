@@ -2887,8 +2887,9 @@ void Analyzer::transferCall(CallBase &CB) {
       std::optional<RoundingMode> rmode = CFP->getRoundingMode();
       if (rmode && *rmode == RoundingMode::Dynamic && (fenvNow() & 1))
         q = true;
+      // Only fpexcept.strict raises observably (rule 23 ruling 2026-11-02): ignore and maytrap raise nothing.
       std::optional<fp::ExceptionBehavior> eb = CFP->getExceptionBehavior();
-      if (eb && *eb != fp::ebIgnore) {
+      if (eb && *eb == fp::ebStrict) {
         bool underQ = blockCT(CB.getParent()) || cur->ctl;
         fenvAssign(1, (q || underQ) ? 1 : fenvstate::nib(fenvCur, 1));
       }
