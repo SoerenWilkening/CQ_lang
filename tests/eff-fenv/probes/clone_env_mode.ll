@@ -1,6 +1,7 @@
 ; cq-hzji: clones carrying the environment that change the mode (classically; quantum, restored before return),
-; and a clone compiled without FENV_ACCESS between a FENV_ACCESS caller and a strict callee: it carries 82's ABI
-; (an ancestor holds the fenv state). cqcheck user PASS: clone_mode, clone_qmode, chain.
+; and a clone compiled without FENV_ACCESS between a FENV_ACCESS caller and a strict callee: by the rule 23
+; ruling of 2026-11-02 (cq-57ju) it is a caller without the fenv state (mode 0, an empty flags rail, the returned
+; flags dropped) whoever calls it. cqcheck user PASS: clone_mode, clone_qmode.
 ; C source (clang-19 -O1, -include CQ.h):
 ;   #include <fenv.h>
 ;   #pragma STDC FENV_ACCESS ON
@@ -37,7 +38,8 @@
 ;   }
 ; CHECK __cq_q_scaled_up_10: call i32 @fesetround(i32 noundef 2048)
 ; CHECK __cq_q_qmode_100: call i32 @cq_template_fmul_f64_hl_rmq(
-; CHECK chain: call fastcc { i32, i32 } @__cq_q_mid_10(
+; CHECK chain: call fastcc i32 @__cq_q_mid_10(
+; CHECK __cq_q_mid_10: call fastcc { i32, i32 } @__cq_q_leaf_10(i32 %{{a}}, double %{{b}}, i32 0,
 ; ModuleID = 'clone_env.c'
 source_filename = "clone_env.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
