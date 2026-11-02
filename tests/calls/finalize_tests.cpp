@@ -1219,7 +1219,7 @@ define internal fastcc i32 @__cq_q_a_10_b3_1(i32 %x, i32 %y) {
 )";
 
 // An externally visible function rewritten in place (it calls ABI symbols) that also has a clone
-// and no in-module caller.
+// and no in-module caller: the lowered entry stays (cq-i9wk; it is not the unlifted body §1.4 drops).
 const char *kInPlace = R"(
 define i32 @g(i32 %a, double %t) {
   %q = call i32 @cqrt_alloc_i32(i32 %a)
@@ -1259,6 +1259,7 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"drop_mutual_recursion", [] { expectDropped("drop_mutual_recursion", kMutual, {"even_step", "odd_step"}); }},
     {"drop_chain", [] { expectDropped("drop_chain", kChain, {"f", "g", "h"}); }},
     {"keep_live_chain", [] { expectDropped("keep_live_chain", kLiveChain, {}); }},
+    {"keep_inplace_entry", [] { expectDropped("keep_inplace_entry", kInPlace, {}); }},   // cq-i9wk
     {"drop_external_original", [] { expectDropped("drop_external_original", kExternal, {"__muldc3", "memcmp"}); }},
     {"drop_dead_references",
      [] {
@@ -1281,7 +1282,6 @@ const std::map<std::string, std::function<void()>> kPositive = {
 const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_uniquified", [] { expectDropped("fatal_uniquified", kUniquified, {}); }},
     {"fatal_ambiguous", [] { expectDropped("fatal_ambiguous", kAmbiguous, {}); }},
-    {"fatal_inplace_entry", [] { expectDropped("fatal_inplace_entry", kInPlace, {}); }},
     {"fatal_materialize_no_taint", materializeNoTaint},
     {"fatal_twin_effect", [] { expectTwins("fatal_twin_effect", kTwinEffect, {}, {}); }},
     {"fatal_twin_no_copyout", [] { expectTwins("fatal_twin_no_copyout", kTwinNoCopyOut, {}, {}); }},

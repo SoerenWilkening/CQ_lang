@@ -37,6 +37,7 @@
 #include "cq/Switch.h"
 
 #include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/ScalarEvolution.h"
@@ -46,6 +47,9 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/TargetParser/Triple.h"
+
+#include <deque>
+#include <functional>
 
 using namespace llvm;
 
@@ -58,10 +62,16 @@ struct PendingEntry {
   Type *retType;   // rule 19: the i32 handle replacing a C return type that cannot hold it, or null
 };
 thread_local std::map<const Module *, std::vector<PendingEntry>> pendingEntries;
+// cq-i9wk: per module, the specializations constructed so far (the epilogue runs after the last one), and
+// the in-place lowerings' return records (spine::entryReturn).
+thread_local std::map<const Module *, size_t> constructedCount;
+thread_local std::map<const Function *, spine::EntryReturn> entryReturns;
 
 // Move each lowered entry body into its function. The original bodies are dropped here, after the
 // last construct() of the module, when nothing reads them any more.
 void finishEntries(Module &M) {
+  for (Function &F : M)
+    entryReturns.erase(&F);
   auto it = pendingEntries.find(&M);
   if (it == pendingEntries.end())
     return;
@@ -248,6 +258,7 @@ private:
   void emitGuard(BasicBlock *b);
   void emitBody(BasicBlock *b, const Instruction *resume);
   void emitTerminator(BasicBlock *b);
+  void noteEntryReturn(bool frozen, Instruction *t);   // rule 19 (cq-i9wk)
   void emitCloneReturn(ReturnInst *ret);
   bool emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigned extra, SmallVectorImpl<Value *> &vals);
   void resultFields(ReturnInst *ret, Value *rv, StructType *st, unsigned extra, SmallVectorImpl<Value *> &vals);
@@ -1070,6 +1081,8 @@ void Walker::resultFields(ReturnInst *ret, Value *rv, StructType *st, unsigned e
 void Walker::emitCloneReturn(ReturnInst *ret) {
   IRBuilder<> &B = ctx.B();
   Function *C = ctx.B().GetInsertBlock()->getParent();
+  // cq-i9wk: a kept clone's returns build its base result; emitTerminator appends the registers.
+  Type *CRT = spine::keptCloneBaseType(*C) ? spine::keptCloneBaseType(*C) : C->getReturnType();
   if (fenv::cloneCarriesEnv(ctx.T, ctx.S)) {
     // E1 (CR rule 23, 82): the final flags are copied out into a fresh rail (Role::Result, as the
     // result's) and returned as the last field, after the result's (calls::materialize).
@@ -1085,14 +1098,14 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
       return f;
     };
     SmallVector<Value *, 4> vals;
-    auto *st = dyn_cast<StructType>(C->getReturnType());
+    auto *st = dyn_cast<StructType>(CRT);
     Value *rv = ret->getReturnValue();
     if (rv) {
       // cq-xhv4: the result's fields (a field-wise result's leaves, or the one value) then the flags.
       resultFields(ret, rv, st, 1, vals);
       if (!st || st->getNumElements() != vals.size() + 1 || st->getElementType(0) != vals[0]->getType())
         internalError("spine: a clone carrying the environment whose result type is not {fields..., flags}", ret);
-    } else if (C->getReturnType() != handleTy(LC)) {
+    } else if (CRT != handleTy(LC)) {
       internalError("spine: a void clone carrying the environment that does not return the flags handle", ret);
     }
     Value *flags = copyOut(Operand{fenv::cloneExitFlags(ctx, *ret), true}, RailType{Kind::Int, 32});
@@ -1118,7 +1131,7 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
     Value *v = esc;
     if (Value *rv = ret->getReturnValue()) {
       // The result's fields (a field-wise or fat-pointer result's leaves, or the one value) then the flag.
-      auto *st = dyn_cast<StructType>(C->getReturnType());
+      auto *st = dyn_cast<StructType>(CRT);
       SmallVector<Value *, 4> vals;
       resultFields(ret, rv, st, 1, vals);
       if (!st || st->getNumElements() != vals.size() + 1)
@@ -1131,7 +1144,7 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
         v = B.CreateInsertValue(v, vals[k], {k});
       }
     }
-    if (v->getType() != C->getReturnType())
+    if (v->getType() != CRT)
       internalError("spine: an escaping clone's return value is not of its return type", ret);
     ReturnInst *nr = B.CreateRet(v);
     ctx.unc().flushAtExit(nr);
@@ -1152,8 +1165,8 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
     // M2 (calls::cloneResultType): the result's leaves (handles where quantum), then one handle per store.
     SmallVector<Value *, 4> res;
     if (Value *rv = ret->getReturnValue())
-      resultFields(ret, rv, dyn_cast<StructType>(C->getReturnType()), stores, res);
-    ReturnInst *nr = B.CreateRet(PoisonValue::get(C->getReturnType()));
+      resultFields(ret, rv, dyn_cast<StructType>(CRT), stores, res);
+    ReturnInst *nr = B.CreateRet(PoisonValue::get(CRT));
     ctx.unc().flushAtExit(nr);
     B.SetInsertPoint(nr);
     SmallVector<Value *, 2> rails = mem::emitCalleeQramStores(ctx);
@@ -1163,7 +1176,7 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
     if (res.empty() && stores == 1) {
       v = rails[0];
     } else {
-      auto *st = dyn_cast<StructType>(C->getReturnType());
+      auto *st = dyn_cast<StructType>(CRT);
       if (!st || st->getNumElements() != res.size() + stores)
         internalError("spine: a clone's result type does not match its result and QRAM stores", ret);
       v = PoisonValue::get(st);
@@ -1173,7 +1186,7 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
       for (Value *h : rails)
         v = B.CreateInsertValue(v, h, {k++});
     }
-    if (v->getType() != C->getReturnType())
+    if (v->getType() != CRT)
       internalError("spine: a clone's return value with QRAM stores is not of its return type", ret);
     nr->setOperand(0, v);
     return;
@@ -1181,8 +1194,8 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
   ReturnInst *nr;
   if (Value *rv = ret->getReturnValue()) {
     SmallVector<Value *, 4> vals;
-    if (emitCloneFields(ret, rv, dyn_cast<StructType>(C->getReturnType()), 0, vals)) {
-      Value *agg = PoisonValue::get(C->getReturnType());
+    if (emitCloneFields(ret, rv, dyn_cast<StructType>(CRT), 0, vals)) {
+      Value *agg = PoisonValue::get(CRT);
       for (unsigned k = 0; k < vals.size(); ++k)
         agg = B.CreateInsertValue(agg, vals[k], {k});
       nr = B.CreateRet(agg);
@@ -1193,10 +1206,10 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
     Value *v = op.v;
     if (copiedOut.count(rv)) {
       // Copied out on each incoming edge already (returnCopyOut): v is the phi of the result rails.
-      if (!op.handle || C->getReturnType() != handleTy(ctx.M.getContext()))
+      if (!op.handle || CRT != handleTy(ctx.M.getContext()))
         internalError("spine: a return phi copied out per edge that is not a handle of the clone's type", ret);
     } else if (op.handle) {
-      if (C->getReturnType() != handleTy(ctx.M.getContext()))
+      if (CRT != handleTy(ctx.M.getContext()))
         internalError("spine: a clone with a quantum result whose return type is not the handle type", ret);
       RailType w = railTypeOf(rv->getType());
       CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
@@ -1207,7 +1220,7 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
       ctx.unc().recordCore(c, cp, {op, Operand{f, true}}, fid);
       ctx.unc().setRole(fid, Role::Result);
       v = f;
-    } else if (v->getType() != C->getReturnType()) {
+    } else if (v->getType() != CRT) {
       internalError("spine: a clone's classical result does not have the clone's return type", ret);
     }
     nr = B.CreateRet(v);
@@ -1244,7 +1257,8 @@ Value *Walker::returnCopyOut(PHINode &phi) {
     if (&o != &phi && !visited.count(&o) && spine::isQ(ctx, &o))
       return nullptr;
   Function *C = ctx.B().GetInsertBlock()->getParent();
-  if (C->getReturnType() != handleTy(ctx.M.getContext()))
+  Type *CRT = spine::keptCloneBaseType(*C) ? spine::keptCloneBaseType(*C) : C->getReturnType();
+  if (CRT != handleTy(ctx.M.getContext()))
     return nullptr;
   BasicBlock *ob = out(b);
   // One value per output edge block; every output edge into ob is one of them.
@@ -1343,6 +1357,20 @@ Value *Walker::returnCopyOut(PHINode &phi) {
   return np;
 }
 
+// Rule 19 (cq-i9wk): one return of an in-place lowering returning a quantum value: whether it is frozen,
+// how many registers stay allocated, the lowered return type (spine::entryReturn).
+void Walker::noteEntryReturn(bool frozen, Instruction *t) {
+  auto [er, fresh] = entryReturns.try_emplace(sh.orig);
+  unsigned regs = unsigned(spine::liveRegisters(ctx).size());
+  if (!fresh && er->second.registers != regs)
+    unimplemented("spine: awaiting owner ruling: SPEC_ISSUES rule 19 extra results of a callee whose returns "
+                  "keep different numbers of registers",
+                  t);
+  er->second.frozen = (fresh || er->second.frozen) && frozen;
+  er->second.registers = regs;
+  er->second.ret = sh.out->getReturnType();
+}
+
 void Walker::emitTerminator(BasicBlock *b) {
   Instruction *t = b->getTerminator();
   sh.cur = t;
@@ -1352,8 +1380,45 @@ void Walker::emitTerminator(BasicBlock *b) {
   if (auto *ret = dyn_cast<ReturnInst>(t)) {
     if (ctx.T.controlTainted(b, ctx.S))
       unimplemented("spine: a return under a quantum predicate", t);
-    if (!ctx.S.isEntry())
+    if (!ctx.S.isEntry() && !ctx.S.kept)
       return emitCloneReturn(ret);
+    if (ctx.S.kept) {
+      // Rule 19 (cq-i9wk): a kept clone returns its results (rule 18's copy-out) and then the handle of
+      // each register it minted that is still allocated, for its twin to clean against.
+      SmallVector<Value *, 4> regs = spine::liveRegisters(ctx);
+      const spine::EntryReturn *er = spine::entryReturn(*ctx.S.F);
+      if (!er || er->registers != regs.size())
+        internalError("spine: a kept clone keeps another number of registers than its in-place lowering", t);
+      if (regs.empty())
+        return emitCloneReturn(ret);   // nothing appended (calls::materialize)
+      SmallPtrSet<ReturnInst *, 4> before;
+      for (BasicBlock &OB : *sh.out)
+        if (auto *r = dyn_cast_or_null<ReturnInst>(OB.getTerminator()))
+          before.insert(r);
+      emitCloneReturn(ret);
+      auto *wt = cast<StructType>(sh.out->getReturnType());
+      for (BasicBlock &OB : *sh.out) {
+        auto *nr = dyn_cast_or_null<ReturnInst>(OB.getTerminator());
+        if (!nr || before.count(nr))
+          continue;
+        IRBuilder<> RB(nr);
+        Value *base = nr->getReturnValue();
+        Value *agg = PoisonValue::get(wt);
+        unsigned k = 0;
+        if (auto *bst = dyn_cast<StructType>(base->getType())) {
+          for (unsigned e = 0; e < bst->getNumElements(); ++e)
+            agg = RB.CreateInsertValue(agg, RB.CreateExtractValue(base, {e}), {k++});
+        } else {
+          agg = RB.CreateInsertValue(agg, base, {k++});
+        }
+        for (Value *r : regs)
+          agg = RB.CreateInsertValue(agg, r, {k++});
+        if (k != wt->getNumElements())
+          internalError("spine: a kept clone's return type does not match its result and registers", t);
+        nr->setOperand(0, agg);
+      }
+      return;
+    }
     fenv::atEntryReturn(ctx, *ret);   // cq-hzji: the final rule 23 state is kept (Effects.h)
     ReturnInst *nr;
     if (Value *rv = ret->getReturnValue(); rv && (rv->getType()->isAggregateType() || rv->getType()->isVectorTy()) &&
@@ -1383,11 +1448,23 @@ void Walker::emitTerminator(BasicBlock *b) {
           internalError("spine: an entry's return leaf of another type than its field", t);
         agg = B.CreateInsertValue(agg, v, {k});
       }
+      // Rule 19 (cq-i9wk): frozen when every quantum leaf is a frozen rail (a seeded classical leaf is not).
+      {
+        bool frozen = true;
+        for (unsigned k = 0; k < leaves.size(); ++k)
+          if (q[k])
+            frozen = frozen && leaves[k].handle && spine::frozenRail(sh, leaves[k].v);
+        noteEntryReturn(frozen, t);
+        entryReturns[sh.orig].leafQ.assign(q.begin(), q.end());
+      }
       nr = B.CreateRet(agg);
     } else if (Value *rv = ret->getReturnValue()) {
       Operand op = ctx.operand(rv);
       Value *v = op.v;
       if (op.handle) {
+        // Rule 19 (cq-i9wk): an in-module caller keeps a frozen result as its own register; any other
+        // result is a clone's, cleaned by its twin.
+        noteEntryReturn(spine::frozenRail(sh, op.v), t);
         // §1.1: an entry returns an unmeasured quantum value as its handle; the rail escapes.
         ctx.unc().setRole(ctx.unc().idOf(op.v), Role::Escaped);
         Type *rt = sh.out->getReturnType();
@@ -1407,6 +1484,7 @@ void Walker::emitTerminator(BasicBlock *b) {
         if (!ct->isIntegerTy() && !ct->isFloatingPointTy())
           internalError("spine: a classical return of a handle-returning entry that is no scalar", t);
         CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(ct)}, {v});
+        noteEntryReturn(false, t);   // rule 19: a seed is no register (cq-i9wk)
         ctx.unc().setRole(ctx.unc().recordSeed(a), Role::Escaped);
         if (sh.out->getReturnType() != a->getType())
           internalError("spine: an entry returns a classical value of another type than its return type", t);
@@ -1871,14 +1949,27 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
     internalError("spine: construct of a specialization with no function");
   ArrayRef<Specialization> all = T.specializations();
   bool inList = !all.empty() && &S >= all.begin() && &S < all.end();
-  bool last = !inList || &S == &all.back();
+  // The plugin may construct callees before callers (rule 19's frozen results, cq-i9wk): the epilogue
+  // runs after the last specialization constructed, whichever it is.
+  bool last = !S.kept && (!inList || ++constructedCount[&M] == all.size());
+  if (last)
+    constructedCount.erase(&M);
+  // Rule 19 (cq-i9wk): the kept clones the callers asked for are built from the original bodies, before
+  // the epilogue moves the lowered entries into them.
+  auto buildKept = [&] {
+    for (std::vector<const Specialization *> v = spine::takeKeptClones(M); !v.empty(); v = spine::takeKeptClones(M))
+      for (const Specialization *K : v)
+        construct(M, T, *K, KO);
+  };
   // Rule 27 (161): a declared specialization has no body to construct. The compiler only emits
   // declarations, and calls emits the declared clone (and its _ctl and twin declarations) at each
   // call site. The module-wide epilogue still runs when it is the last specialization.
   if (S.F->isDeclaration()) {
     if (last) {
+      buildKept();
       finishEntries(M);
       dropDeadSurface(M);
+      spine::forgetKeptClones(M);
     }
     return;
   }
@@ -2102,9 +2193,97 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
   mem::finishSlots(ctx);   // M8: register arrays' readers against their rule-6 clean-ups (114)
 
   if (last) {
+    buildKept();
     finishEntries(M);
     dropDeadSurface(M);
+    spine::forgetKeptClones(M);
   }
 }
 
 } // namespace cq
+
+namespace cq::spine {
+
+bool frozenRail(Shared &sh, Value *h) {
+  SmallPtrSet<Value *, 8> seen;
+  std::function<bool(Value *)> frozen = [&](Value *r) {
+    if (!seen.insert(r).second)
+      return false;
+    if (sh.rotations.count(r) || sh.frozenResults.count(r))
+      return true;
+    auto it = sh.hist.find(r);
+    if (it == sh.hist.end() || !it->second.tmpl)
+      return false;
+    for (const Operand &o : it->second.ops)
+      if (o.handle && sh.ruleSixCleaned.count(o.v) && frozen(o.v))
+        return true;
+    return false;
+  };
+  return frozen(h);
+}
+
+SmallVector<Value *, 4> liveRegisters(LoweringContext &ctx) {
+  Shared &sh = shared(ctx);
+  SmallVector<Value *, 4> regs;
+  for (BasicBlock &BB : *sh.out)
+    for (Instruction &I : BB) {
+      if (!sh.rotations.count(&I) && !sh.frozenResults.count(&I))
+        continue;
+      if (sh.ruleSixCleaned.count(&I))
+        continue;
+      std::optional<Role> role = ctx.unc().liveRole(ctx.unc().idOf(&I));
+      if (role && (*role == Role::UserRegister || *role == Role::Frozen))
+        regs.push_back(&I);
+    }
+  return regs;
+}
+
+namespace {
+struct KeptClones {
+  std::deque<Specialization> specs;
+  std::vector<const Specialization *> pending;
+};
+thread_local std::map<const Module *, KeptClones> keptClones;
+thread_local DenseMap<const Function *, Type *> keptBaseTypes;
+} // namespace
+
+const Specialization &keptSpec(const Module &M, const Specialization &inPlace) {
+  KeptClones &kc = keptClones[&M];
+  for (const Specialization &k : kc.specs)
+    if (k.F == inPlace.F)
+      return k;
+  Specialization k = inPlace;
+  k.kept = true;
+  kc.specs.push_back(k);
+  kc.pending.push_back(&kc.specs.back());
+  return kc.specs.back();
+}
+
+std::vector<const Specialization *> takeKeptClones(const Module &M) {
+  auto it = keptClones.find(&M);
+  if (it == keptClones.end())
+    return {};
+  std::vector<const Specialization *> v;
+  v.swap(it->second.pending);
+  return v;
+}
+
+Type *keptCloneBaseType(const Function &clone) {
+  auto it = keptBaseTypes.find(&clone);
+  return it == keptBaseTypes.end() ? nullptr : it->second;
+}
+
+void setKeptCloneBaseType(const Function &clone, Type *base) { keptBaseTypes[&clone] = base; }
+
+void forgetKeptClones(const Module &M) {
+  keptClones.erase(&M);
+  for (const Function &F : M)
+    keptBaseTypes.erase(&F);
+}
+
+const EntryReturn *entryReturn(const Function &F) {
+  auto it = entryReturns.find(&F);
+  return it == entryReturns.end() ? nullptr : &it->second;
+}
+
+} // namespace cq::spine

@@ -38,11 +38,12 @@
 //
 // Shapes not lowered here (cq::unimplemented): a "__cq_q_" symbol that is not a canonical clone
 // name (a uniquified clone, CR §1.4 ruling 2026-10-27: the clone table belongs to materialize, which
-// finalize cannot see through Calls.h); a dead original whose body was rewritten in place (it calls
-// an ABI symbol: a tainted entry function that also has clones and no in-module caller).
+// finalize cannot see through Calls.h). An original whose body was rewritten in place (it calls an ABI
+// symbol) is the lowered entry and stays live (cq-i9wk).
 #include "cq/Abi.h"
 #include "cq/Calls.h"
 #include "cq/Common.h"
+#include "../spine/SpineInternal.h"
 
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -280,7 +281,8 @@ bool trailingQramStore(const Instruction &I) {
 
 // Does replaying F (and the forward clones it calls) recompute its value and nothing else? top: F is
 // the twin's own source, whose trailing QRAM stores the twin drops (M2b).
-void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &seen, bool top = false) {
+void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &seen, bool top = false,
+                     const SmallPtrSetImpl<const Instruction *> *exempt = nullptr) {
   if (!seen.insert(&F).second)
     return;
   auto refuse = [&](const Twine &why, const Value *at) {
@@ -295,6 +297,8 @@ void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &s
     return isa<AllocaInst>(u) || (A && A->getParent() == &F && A->hasByValAttr());
   };
   for (Instruction &I : instructions(F)) {
+    if (exempt && exempt->count(&I))
+      continue;   // cq-i9wk: the making of a kept clone's register, which its twin takes as a parameter
     if (auto *SI = dyn_cast<StoreInst>(&I)) {
       // The clone's frame: its allocas and its byval formals (the callee's own copy, cq-09xh; the twin
       // gets the caller's snapshot, which nothing reads after the twin).
@@ -361,9 +365,85 @@ Function *twinSource(Module &M, Function &fwd) {
   return &fwd;
 }
 
+// cq-i9wk (CR rule 19): a kept clone's registers. Its returns end with the handle of each register it minted
+// that is still allocated (nRegs fields); its twin takes them first and recomputes against them. regs[k]: the
+// k-th register value of each return; made: the instructions that make a register (its cqrt_alloc, the
+// classical merges naming it, the non-diagonal gates and copies that write it), which the twin does not
+// replay: it reads its parameter instead.
+struct KeptRegisters {
+  unsigned n = 0;
+  SmallVector<SmallVector<Value *, 2>, 4> regs;
+  SmallPtrSet<const Instruction *, 8> made;
+  SmallVector<Instruction *, 8> defs;     // allocs and merges, replaced by the parameter
+};
+KeptRegisters keptRegisters(Function &src) {
+  KeptRegisters kr;
+  Attribute a = src.getFnAttribute(spine::kKeptRegistersAttr);
+  if (!a.isValid())
+    return kr;
+  kr.n = unsigned(std::stoul(a.getValueAsString().str()));
+  auto *srt = dyn_cast<StructType>(src.getReturnType());
+  if (!srt || srt->getNumElements() < kr.n)
+    internalError("calls: calls::finalize: a kept clone whose return type does not end with its registers", &src);
+  kr.regs.resize(kr.n);
+  unsigned first = srt->getNumElements() - kr.n;
+  for (BasicBlock &BB : src)
+    if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
+      for (Value *v = R->getReturnValue(); auto *iv = dyn_cast<InsertValueInst>(v); v = iv->getAggregateOperand())
+        if (iv->getNumIndices() == 1 && iv->getIndices()[0] >= first)
+          kr.regs[iv->getIndices()[0] - first].push_back(iv->getInsertedValueOperand());
+  SmallVector<Value *, 8> work;
+  for (auto &vs : kr.regs) {
+    if (vs.empty())
+      internalError("calls: calls::finalize: a kept clone return that does not name one of its registers", &src);
+    work.append(vs.begin(), vs.end());
+  }
+  SmallPtrSet<Value *, 8> seen;
+  while (!work.empty()) {
+    Value *d = work.pop_back_val();
+    if (!seen.insert(d).second)
+      continue;
+    auto *di = dyn_cast<Instruction>(d);
+    if (!di)
+      internalError("calls: calls::finalize: a kept clone register that is not an instruction", &src);
+    if (auto *pn = dyn_cast<PHINode>(di)) {
+      work.append(pn->incoming_values().begin(), pn->incoming_values().end());
+    } else if (auto *sel = dyn_cast<SelectInst>(di)) {
+      work.push_back(sel->getTrueValue());
+      work.push_back(sel->getFalseValue());
+    } else {
+      auto *ci = dyn_cast<CallInst>(di);
+      std::optional<abi::CoreSpec> c =
+          ci && ci->getCalledFunction() ? abi::parseCore(ci->getCalledFunction()->getName()) : std::nullopt;
+      if (!c || c->op != abi::Core::Alloc)
+        unimplemented("calls: calls::finalize: a kept clone register that is not minted by cqrt_alloc or a classical "
+                      "merge of such rails (rule 19)",
+                      di);
+    }
+    kr.defs.push_back(di);
+    kr.made.insert(di);
+    for (User *U : di->users()) {
+      auto *g = dyn_cast<CallInst>(U);
+      std::optional<abi::CoreSpec> c =
+          g && g->getCalledFunction() ? abi::parseCore(g->getCalledFunction()->getName()) : std::nullopt;
+      if (!c)
+        continue;
+      unsigned target = c->ctl ? 1 : 0;
+      bool writes = (nonPureCore(c->op) && c->op != abi::Core::Measure && g->arg_size() > target &&
+                     g->getArgOperand(target) == di) ||
+                    (c->op == abi::Core::Copy && g->arg_size() > 1 && g->getArgOperand(g->arg_size() - 1) == di);
+      if (writes)
+        kr.made.insert(g);
+    }
+  }
+  return kr;
+}
+
 void defineTwin(Module &M, Function &twin, Function &src) {
   LLVMContext &C = M.getContext();
   Type *h = Type::getInt32Ty(C);
+  KeptRegisters kr = keptRegisters(src);
+  unsigned nRegs = kr.n;
   // Outs: one for an i32 handle result, one per handle field of a field-wise result (CR §1.4).
   // Phase 2: the trailing old cells, one per cell copy-out of src (formal order, ascending offset).
   SmallVector<CellCopyOut, 4> cells = cellCopyOuts(src);
@@ -378,38 +458,73 @@ void defineTwin(Module &M, Function &twin, Function &src) {
   auto *srt = dyn_cast<StructType>(src.getReturnType());
   // An i32 result is a handle when the twin has an out for it; with none (52's reduce: int n + 1 and
   // two cell copy-outs) it is a classical result, which the twin drops.
-  if (twin.arg_size() < src.arg_size() + nCells)
+  if (twin.arg_size() < src.arg_size() + nCells + nRegs)
     internalError("calls: calls::finalize: twin @" + twin.getName().str() + " does not match the clone @" +
                       src.getName().str() + " (its outs, the clone's arguments, then the old cells)",
                   &twin);
-  unsigned nOuts = twin.arg_size() - src.arg_size() - nCells;
+  unsigned nOuts = twin.arg_size() - src.arg_size() - nCells - nRegs;
   bool handleRet = srt || (src.getReturnType() == h && nOuts == 1);
   if ((!handleRet && nCells == 0) || (!srt && nOuts > 1) || (!handleRet && nOuts != 0))
     internalError("calls: calls::finalize: twin @" + twin.getName().str() + " does not match the clone @" +
                       src.getName().str() + " (an i32 handle result or a struct of fields, its arguments after the outs)",
                   &twin);
   for (unsigned i = 0; i < src.arg_size(); ++i)
-    if (twin.getArg(i + nOuts)->getType() != src.getArg(i)->getType())
+    if (twin.getArg(i + nRegs + nOuts)->getType() != src.getArg(i)->getType())
       internalError("calls: calls::finalize: twin @" + twin.getName().str() + " argument types differ from @" +
                         src.getName().str(),
                     &twin);
   SmallPtrSet<Function *, 8> seen;
-  checkReplayable(src, twin, seen, true);
+  checkReplayable(src, twin, seen, true, &kr.made);
 
   ValueToValueMapTy VM;
+  for (unsigned k = 0; k < nRegs; ++k)
+    twin.getArg(k)->setName("reg" + std::to_string(k));
   for (unsigned j = 0; j < nOuts; ++j)
-    twin.getArg(j)->setName(nOuts == 1 ? "out" : "out" + std::to_string(j));
+    twin.getArg(nRegs + j)->setName(nOuts == 1 ? "out" : "out" + std::to_string(j));
   for (unsigned i = 0; i < src.arg_size(); ++i) {
-    VM[src.getArg(i)] = twin.getArg(i + nOuts);
-    twin.getArg(i + nOuts)->setName(src.getArg(i)->getName());
+    VM[src.getArg(i)] = twin.getArg(i + nRegs + nOuts);
+    twin.getArg(i + nRegs + nOuts)->setName(src.getArg(i)->getName());
   }
   for (unsigned k = 0; k < nCells; ++k)
-    twin.getArg(nOuts + src.arg_size() + k)->setName("old" + std::to_string(k));
+    twin.getArg(nRegs + nOuts + src.arg_size() + k)->setName("old" + std::to_string(k));
   SmallVector<ReturnInst *, 4> rets;
   CloneFunctionInto(&twin, &src, VM, CloneFunctionChangeType::LocalChangesOnly, rets);
   twin.setAttributes(AttributeList());
   twin.setCallingConv(CallingConv::C);
   twin.setLinkage(GlobalValue::InternalLinkage);
+
+  // cq-i9wk (rule 19): the twin reads each kept register from its parameter instead of making it again. The
+  // twin's copies are taken first: VM's handles follow replaceAllUsesWith.
+  if (nRegs) {
+    SmallPtrSet<const Instruction *, 8> isDef(kr.defs.begin(), kr.defs.end());
+    SmallVector<Instruction *, 8> gates;
+    for (const Instruction *m : kr.made)
+      if (!isDef.count(m))
+        gates.push_back(cast<Instruction>(VM[m]));
+    SmallVector<std::pair<Instruction *, unsigned>, 8> defs;   // twin copy, register index
+    for (unsigned k = 0; k < nRegs; ++k) {
+      SmallVector<Value *, 8> work(kr.regs[k].begin(), kr.regs[k].end());
+      SmallPtrSet<Value *, 8> done;
+      while (!work.empty()) {
+        Value *d = work.pop_back_val();
+        if (!done.insert(d).second)
+          continue;
+        if (auto *pn = dyn_cast<PHINode>(d))
+          work.append(pn->incoming_values().begin(), pn->incoming_values().end());
+        else if (auto *sel = dyn_cast<SelectInst>(d)) {
+          work.push_back(sel->getTrueValue());
+          work.push_back(sel->getFalseValue());
+        }
+        defs.push_back({cast<Instruction>(VM[d]), k});
+      }
+    }
+    for (Instruction *g : gates)
+      g->eraseFromParent();
+    for (auto &[td, k] : defs)
+      td->replaceAllUsesWith(twin.getArg(k));
+    for (auto &[td, k] : defs)
+      td->eraseFromParent();
+  }
 
   // Phase 2: each cell copy-out f = alloc(0); copy(r, f); store f, cell becomes c = load cell (the handle
   // the forward left there, the caller's reloaded rail); copy(r, c) (XORs it out); store old_k, cell (the
@@ -419,7 +534,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
     const CellCopyOut &co = cells[k];
     auto *st = cast<StoreInst>(VM[co.st]);
     auto *f = cast<CallInst>(VM[co.f]);
-    Argument *old = twin.getArg(nOuts + src.arg_size() + cellOf[k]);
+    Argument *old = twin.getArg(nRegs + nOuts + src.arg_size() + cellOf[k]);
     // A slot cell is physically an i32 handle cell (rule 20): the caller passes its content before the call
     // (mem-slots slotCellsBeforeCall), the clone stores a handle there.
     if (old->getType() != st->getValueOperand()->getType())
@@ -452,7 +567,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
                       ld);
       }
     IRBuilder<> B(f);
-    Value *at = twin.getArg(nOuts + co.formal->getArgNo());
+    Value *at = twin.getArg(nRegs + nOuts + co.formal->getArgNo());
     if (co.off)
       at = B.CreateConstInBoundsGEP1_64(B.getInt8Ty(), at, uint64_t(co.off));
     Value *c = B.CreateAlignedLoad(st->getValueOperand()->getType(), at, st->getAlign(), "cell");
@@ -523,6 +638,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
       // A field-wise result: the insertvalue chain of the return; its handle fields (the copy-outs, in
       // field order) are the outs.
       SmallVector<Value *, 4> fields(srt->getNumElements(), nullptr);
+      unsigned nFields = srt->getNumElements() - nRegs;   // cq-i9wk: the registers are no outs
       Value *v = ret;
       while (auto *iv = dyn_cast<InsertValueInst>(v)) {
         // The spine builds every field-wise return as one insertvalue chain from poison (emitCloneReturn).
@@ -536,7 +652,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
       if (!isa<PoisonValue>(v) && !isa<UndefValue>(v))
         internalError("calls: calls::finalize: a field-wise clone return that is not built from poison", R);
       unsigned j = 0;
-      for (unsigned k = 0; k < fields.size(); ++k) {
+      for (unsigned k = 0; k < nFields; ++k) {
         auto *f = dyn_cast_or_null<CallInst>(fields[k]);
         std::optional<abi::CoreSpec> a =
             f && f->getCalledFunction() ? abi::parseCore(f->getCalledFunction()->getName()) : std::nullopt;
@@ -545,7 +661,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
         if (j >= nOuts)
           internalError("calls: calls::finalize: a field-wise clone return with more handle fields than its twin's outs",
                         R);
-        retarget(f, twin.getArg(j++), R);
+        retarget(f, twin.getArg(nRegs + j++), R);
       }
       if (j != nOuts)
         internalError("calls: calls::finalize: a field-wise clone return with fewer handle fields than its twin's outs",
@@ -562,7 +678,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
         results.insert(ret);
       }
       for (Value *rv : results)
-        retarget(rv, twin.getArg(0), R);
+        retarget(rv, twin.getArg(nRegs), R);
     }
     ReturnInst::Create(C, nullptr, R->getIterator());
     R->eraseFromParent();
@@ -819,6 +935,8 @@ void finalize(Module &M) {
   if (clones.empty())
     return;
   defineTwins(M);
+  for (Function &F : M)
+    F.removeFnAttr(spine::kKeptRegistersAttr);   // cq-i9wk: read by the twins only
 
   SetVector<Function *> originals;
   for (Function *C : clones)

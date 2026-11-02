@@ -605,8 +605,6 @@ static void noteGateAt(Shared &sh, CallInst *call) {
   SmallVector<const Instruction *, 2> &at = sh.gateAt[call];
   if (sh.cur)
     at.push_back(sh.cur);
-  for (size_t i = sh.inlineStack.size(); i-- > 0;)
-    at.push_back(sh.inlineStack[i]);
 }
 
 void noteCore(Shared &sh, CallInst *call, const abi::CoreSpec &spec, ArrayRef<Value *> args) {

@@ -213,6 +213,11 @@ struct ImplState {
 
   std::vector<Site> sites;
   llvm::DenseMap<const llvm::Value *, unsigned> siteOf;
+  // cq-i9wk: a function's own frame, heap and unknown-object sites (owner != null) named while an
+  // in-place specialization runs: the classical activation of the function (an entry, or a callee
+  // reached with no quantum argument) is a different frame from every clone's, so what a clone stores
+  // into its alloca says nothing about the in-place activation's (sin's y[2] for __rem_pio2).
+  llvm::DenseMap<const llvm::Value *, unsigned> siteOfInPlace;
   std::vector<Object> objects;
 
   std::vector<std::unique_ptr<SpecState>> specs;

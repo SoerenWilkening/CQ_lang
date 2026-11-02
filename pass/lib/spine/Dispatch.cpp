@@ -410,23 +410,8 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
   case Class::InvertEnd:
     internalError("spine: a cq_invert marker outside the walker's region handling", &CB);
   case Class::Lift: {
-    // Rule 19: an in-module entry function that returns an unmeasured quantum value, called with
-    // no quantum argument, is inlined into its in-module caller (162). Everything else is rule 18.
-    const Function *callee = CB.getCalledFunction();
-    bool qArg = false;
-    for (const Use &u : CB.args())
-      qArg |= isQ(ctx, u.get());
-    if (callee && !qArg && !CB.getType()->isVoidTy() && isQ(ctx, &CB)) {
-      const Specialization *cs = ctx.T.calleeSpecialization(CB, ctx.S);
-      if (!cs || !cs->isEntry()) {
-        cs = nullptr;
-        for (const Specialization &s : ctx.T.specializations())
-          if (s.F == callee && s.isEntry())
-            cs = &s;
-      }
-      if (cs && cs->isEntry())
-        return lowerInline(ctx, CB, *cs);
-    }
+    // Rules 18 and 19: the compiler never inlines (cq-i9wk). A callee reached with a quantum argument is
+    // a clone; one reached with none is called as it is (calls::lowerLifted).
     Instruction *before = ctx.B().GetInsertPoint() == ctx.B().GetInsertBlock()->begin()
                               ? nullptr
                               : &*std::prev(ctx.B().GetInsertPoint());
@@ -594,12 +579,9 @@ bool speculated(LoweringContext &ctx) {
   const Loop *U = ctx.loopUnit();
   if (!U || !sh.cur)
     return false;
-  const Instruction *at = sh.cur;   // walk out through inlined call sites into the unit's function
-  for (size_t i = sh.inlineStack.size(); at->getFunction() != U->getHeader()->getParent();) {
-    if (i == 0)
-      internalError("spine: the current instruction is outside its loop unit's function", sh.cur);
-    at = sh.inlineStack[--i];
-  }
+  const Instruction *at = sh.cur;
+  if (at->getFunction() != U->getHeader()->getParent())
+    internalError("spine: the current instruction is outside its loop unit's function", sh.cur);
   // Each loop from U down to the innermost one holding `at`: only rule 14 case 1 runs its trips exactly
   // where C does.
   for (const Loop *L = U; L && L->contains(at->getParent());) {
@@ -841,42 +823,3 @@ void lowerInstruction(LoweringContext &ctx, Instruction &I, Value *tripFlag) {
 }
 
 } // namespace cq
-
-namespace cq::spine {
-
-void lowerInline(LoweringContext &ctx, CallBase &CB, const Specialization &callee) {
-  Function &F = *callee.F;
-  if (F.size() != 1 || !isa<ReturnInst>(F.getEntryBlock().getTerminator()))
-    unimplemented("spine: rule 19 inline of a callee with more than one block", &CB);
-  if (!ctx.currentPredicate().isTop() || shared(ctx).tripFlag)
-    unimplemented("spine: rule 19 inline under a quantum predicate", &CB);
-  Shared &sh = shared(ctx);
-  std::unique_ptr<LoweringContext> child = childContext(ctx, callee);
-  for (unsigned i = 0; i < F.arg_size(); ++i)
-    bindOperand(*child, F.getArg(i), ctx.operand(CB.getArgOperand(i)));
-  sh.inlineStack.push_back(&CB);
-  const Instruction *saved = sh.cur;
-  for (Instruction &I : F.getEntryBlock()) {
-    if (auto *ret = dyn_cast<ReturnInst>(&I)) {
-      Value *rv = ret->getReturnValue();
-      if (!rv)
-        internalError("spine: rule 19 inline of a void callee", &CB);
-      sh.cur = &I;
-      Operand r = child->operand(rv);
-      sh.inlineStack.pop_back();
-      sh.cur = saved;
-      // The callee's values are bound per inlined call: drop them so a second call site rebinds.
-      for (Argument &a : F.args())
-        sh.binds.erase(&a);
-      for (Instruction &J : F.getEntryBlock())
-        sh.binds.erase(&J);
-      bindOperand(ctx, &CB, r);
-      return;
-    }
-    sh.cur = &I;
-    dispatch(*child, I);
-  }
-  internalError("spine: rule 19 inline: callee block has no return", &CB);
-}
-
-} // namespace cq::spine

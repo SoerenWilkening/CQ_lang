@@ -92,7 +92,7 @@ struct RailHist {
   bool opaque = false;
 };
 
-// What every LoweringContext of one construct() run shares (an inlined callee's context included).
+// What every LoweringContext of one construct() run shares.
 struct Shared {
   llvm::Module &M;
   const loops::KOptions &KO;
@@ -134,7 +134,7 @@ struct Shared {
   llvm::DenseSet<const llvm::Value *> statePreps;
   // Dominance over the original function(s): one tree per function read.
   std::map<const llvm::Function *, std::unique_ptr<llvm::DominatorTree>> dts;
-  // The original instruction being lowered, and for an inlined callee the call it stands for.
+  // The original instruction being lowered.
   const llvm::Instruction *cur = nullptr;
   // cq-99f7: the loop module's trip rail for the lowerInstruction call in progress (nullptr = none),
   // and the conjunction flag minted for it (nullptr until currentFlag() asks under a non-top predicate).
@@ -142,7 +142,6 @@ struct Shared {
   llvm::Value *tripConj = nullptr;
   // cq-s7c4: lowerConditionAsData in progress: a factored branch condition is still computed as data.
   bool conditionAsData = false;
-  std::vector<const llvm::CallBase *> inlineStack;
   // cq-s32y: a register's pre-rotation value read after its in-place rotation reads a copy taken
   // just before the Ry (PreRotation.cpp). orig -> (the cq_theta, the rotated rail h, the copy c, the
   // original blocks reachable from the cq_theta's end without redefining orig).
@@ -161,7 +160,7 @@ struct Shared {
   // cq-nvfi: every non-diagonal gate (ry, ry_qangle, controlled or not) on a rail, in emission order.
   llvm::DenseMap<const llvm::Value *, llvm::SmallVector<llvm::CallInst *, 2>> rotations;
   // cq-5ajv: for each non-diagonal gate (rotations) and each in-place write (RailHist::writes), the
-  // original instruction being lowered when it was emitted, then the inlined call sites outward.
+  // original instruction being lowered when it was emitted.
   llvm::DenseMap<const llvm::CallInst *, llvm::SmallVector<const llvm::Instruction *, 2>> gateAt;
   // cq-su3p (Views.cpp): rule 3 representation views of a narrow register. A view phi (iN) merges
   // zexts of one iM register's states and constants: it names the register's rail (bits M) and has
@@ -187,6 +186,9 @@ struct Shared {
   // CR rule 6: the rails a clean-up was requested for (Opcode.cpp). A template rail reading one of them
   // is no longer garbage rule 5 can uncompute (cq-tmvo).
   llvm::DenseSet<const llvm::Value *> ruleSixCleaned;
+  // cq-i9wk (CR rule 19): results of calls of in-place callees reached with no quantum argument that are
+  // FROZEN (a register the callee minted or its rule-6 image): kept here like a register of this function.
+  llvm::DenseSet<const llvm::Value *> frozenResults;
   // cq-necw (CR rules 6, 18, §1.4 _inv<c>): the new-IR handle loads of a caller cell's new content after a
   // clone call that overwrote it, when the call's group has that load as its only member (no quantum result,
   // one cell written) and the cell's old rail got the _inv<c> clean-up (calls cleanDeadCells: the object's
@@ -222,8 +224,6 @@ struct Shared {
   bool dominatesCurrent(const llvm::Instruction *def);
 };
 
-// A context for an inlined callee: the same Shared state, the callee's specialization (Context.cpp).
-std::unique_ptr<LoweringContext> childContext(LoweringContext &parent, const Specialization &S);
 Shared &shared(LoweringContext &);
 // cq-py5f: the spine's rule-21 routing test of a load/store pointer (a quantum tag: a fat pointer access).
 bool accessHasQuantumTag(LoweringContext &, const llvm::Value *ptr);
@@ -339,11 +339,42 @@ void bindOperand(LoweringContext &, const llvm::Value *orig, Operand op);
 // walked function are the walker's; dispatch handles every other instruction.
 void dispatch(LoweringContext &, llvm::Instruction &);
 
+// cq-i9wk (CR rule 19, Construct.cpp): is the rail h, returned by an in-place lowering, FROZEN: a register
+// this function minted (a rail a non-diagonal gate hit), a frozen result of a call it made, or the rule-6
+// image of such a rail (a template result whose dead operand rule 6 cleaned against it)?
+bool frozenRail(Shared &, llvm::Value *h);
+// The record of an in-place lowering's quantum returns, read by its in-module callers (calls::lowerLifted):
+// nullptr until F's in-place specialization was constructed (the plugin constructs a callee first unless
+// the calls form a cycle); frozen when every quantum value F returns is a frozen rail; registers: how many
+// registers it minted are still allocated at its return (liveRegisters), the extra results of its kept
+// clone (rule 19).
+struct EntryReturn {
+  bool frozen = true;
+  unsigned registers = 0;
+  llvm::Type *ret = nullptr;              // the lowered entry's return type (rule 19, 193; rule 26 leaves)
+  llvm::SmallVector<bool, 4> leafQ;       // an aggregate return: which leaves are handles
+};
+const EntryReturn *entryReturn(const llvm::Function &F);
+// cq-i9wk (CR rule 19): the registers this function minted (rails a non-diagonal gate hit, frozen results of
+// its rule-19 calls) still allocated at a return being lowered (kept, and no rule-6 clean-up registered),
+// in the output function's instruction order.
+llvm::SmallVector<llvm::Value *, 4> liveRegisters(LoweringContext &);
+// cq-i9wk (Construct.cpp): the kept clone (Specialization::kept) of in-place specialization inPlace, one per
+// (module, function), made on first request; takeKeptClones: those not constructed yet, which construct()
+// builds before the module's epilogue.
+const Specialization &keptSpec(const llvm::Module &, const Specialization &inPlace);
+std::vector<const Specialization *> takeKeptClones(const llvm::Module &);
+// cq-i9wk: the string function attribute a kept clone carries: how many registers it returns after its
+// results (calls::finalize's twin takes them first).
+inline constexpr const char *kKeptRegistersAttr = "cq-kept-registers";
+// cq-i9wk (Calls.cpp, calls::materialize): a kept clone's return type before its registers were appended
+// (what its returns build); nullptr for any other function.
+llvm::Type *keptCloneBaseType(const llvm::Function &clone);
+void setKeptCloneBaseType(const llvm::Function &clone, llvm::Type *base);
+void forgetKeptClones(const llvm::Module &);   // the module's epilogue
+
 // Classical copy of an original instruction into the new IR, operands remapped (Dispatch.cpp).
 llvm::Instruction *copyClassical(LoweringContext &, llvm::Instruction &);
-
-// Rule 19 inline of an in-module entry callee returning an unmeasured quantum value (Dispatch.cpp).
-void lowerInline(LoweringContext &, llvm::CallBase &, const Specialization &callee);
 
 // Rule 20, _Bool cells (cq-sj2j): is this original load or store an access of a _Bool slot object,
 // whose cells hold i1 rails behind i8 memory? The object's definition is mem-slots' (Slots.cpp,

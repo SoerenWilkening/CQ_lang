@@ -532,8 +532,12 @@ unsigned Analyzer::laneOffset(Type *Agg, ArrayRef<unsigned> idx) {
 // Sites and objects.
 
 unsigned Analyzer::siteFor(const Value *V, SiteKind k, const Function *owner) {
-  auto it = st.siteOf.find(V);
-  if (it != st.siteOf.end())
+  // cq-i9wk: a site of the running function's own activation is per context (ImplState::siteOfInPlace).
+  bool inPlaceCtx = owner && cur && cur->F == owner && cur->inPlace && k != SiteKind::Function &&
+                    k != SiteKind::Global;
+  auto &map = inPlaceCtx ? st.siteOfInPlace : st.siteOf;
+  auto it = map.find(V);
+  if (it != map.end())
     return it->second;
   unsigned id = st.sites.size();
   Site s;
@@ -541,7 +545,7 @@ unsigned Analyzer::siteFor(const Value *V, SiteKind k, const Function *owner) {
   s.v = V;
   s.owner = owner;
   st.sites.push_back(s);
-  st.siteOf[V] = id;
+  map[V] = id;
   if (k != SiteKind::Function) {
     Object o;
     o.site = id;
@@ -2480,9 +2484,9 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
     std::vector<Lanes> z;
     for (Type *T : tys)
       z.push_back(Lanes(lanesOf(T)));
+    // The in-place specialization is the function as it is: no cell digits (its key is the root's, so a
+    // function has one in-place specialization whether a root or a classical call reaches it; cq-i9wk).
     std::vector<std::string> zc(cells.size());
-    for (unsigned i = 0; i < cells.size(); ++i)
-      zc[i] = cells[i];
     SpecState *C = getSpec(G, z, tys, zc, false, false, false, 0, {});
     recordCallee(CB, C);
     for (unsigned i = 0; i < actuals.size(); ++i)
@@ -3841,7 +3845,7 @@ namespace cq {
 using namespace taintimpl;
 
 bool Specialization::isEntry() const {
-  if (!F || F->isDeclaration() || ctl || pure || adj || depth || !bounds.empty())
+  if (!F || F->isDeclaration() || ctl || pure || adj || depth || !bounds.empty() || kept)
     return false;
   return mask.find('1') == std::string::npos;
 }
@@ -3857,6 +3861,7 @@ SpecState *stateOf(const ImplState &I, const Specialization &S) {
   for (size_t k = 0; k < I.published.size(); ++k)
     if (&I.published[k] == &S)
       return I.publishedState[k];
+  // A kept clone (cq-i9wk) is answered by the in-place specialization of its F: kept is not compared.
   for (size_t k = 0; k < I.published.size(); ++k) {
     const Specialization &P = I.published[k];
     if (P.F == S.F && P.mask == S.mask && P.ctl == S.ctl && P.pure == S.pure && P.adj == S.adj &&
@@ -4123,21 +4128,51 @@ bool TaintInfo::resultQuantum(const Specialization &S, unsigned field) const {
   return false;
 }
 
-ObjectId TaintInfo::objectOf(const llvm::Value *site) const {
-  const ImplState &I = needImpl(impl);
+namespace {
+const llvm::Value *objectSiteValue(const llvm::Value *site) {
   // Rule 24, 108: one thread, so llvm.threadlocal.address(@g) is the base of @g's one object (a
   // classical host intrinsic returning the object's address; its provenance is @g's).
   if (auto *TL = dyn_cast<llvm::IntrinsicInst>(site);
       TL && TL->getIntrinsicID() == llvm::Intrinsic::threadlocal_address)
     site = TL->getArgOperand(0)->stripPointerCasts();
-  auto it = I.siteOf.find(site);
-  if (it == I.siteOf.end())
-    internalError("taint: not a memory site of this module", site);
-  const Site &s = I.sites[it->second];
+  return site;
+}
+ObjectId soleObjectOfSite(const ImplState &I, unsigned id, const llvm::Value *site) {
+  const Site &s = I.sites[id];
   if (s.objects.size() != 1)
     internalError("taint: an array-of-structs site is one object per field column; use provenance",
                   site);
   return s.objects.front();
+}
+} // namespace
+
+ObjectId TaintInfo::objectOf(const llvm::Value *site) const {
+  const ImplState &I = needImpl(impl);
+  site = objectSiteValue(site);
+  auto it = I.siteOf.find(site);
+  auto ip = I.siteOfInPlace.find(site);
+  if (it != I.siteOf.end() && ip != I.siteOfInPlace.end())
+    internalError("taint: a site of both the in-place and a clone activation; use objectOf(site, S)", site);
+  if (it != I.siteOf.end())
+    return soleObjectOfSite(I, it->second, site);
+  if (ip != I.siteOfInPlace.end())
+    return soleObjectOfSite(I, ip->second, site);
+  internalError("taint: not a memory site of this module", site);
+}
+
+ObjectId TaintInfo::objectOf(const llvm::Value *site, const Specialization &S) const {
+  const ImplState &I = needImpl(impl);
+  site = objectSiteValue(site);
+  // cq-i9wk: a site of S's own activation is the in-place one when S is in place.
+  if (stateOf(I, S)->inPlace) {
+    auto ip = I.siteOfInPlace.find(site);
+    if (ip != I.siteOfInPlace.end())
+      return soleObjectOfSite(I, ip->second, site);
+  }
+  auto it = I.siteOf.find(site);
+  if (it == I.siteOf.end())
+    internalError("taint: not a memory site of this module", site);
+  return soleObjectOfSite(I, it->second, site);
 }
 
 ObjClass TaintInfo::classOf(ObjectId id) const {

@@ -14,8 +14,6 @@ struct LoweringContext::Impl {
 };
 
 namespace {
-// Set only while childContext constructs a context that adopts its parent's state.
-thread_local std::shared_ptr<spine::Shared> tlsAdopt;
 // The frozen header gives free functions no access to Impl; every constructor registers its state
 // here (an address reused by a later context is overwritten by that context's constructor).
 thread_local DenseMap<const LoweringContext *, std::weak_ptr<spine::Shared>> registry;
@@ -83,14 +81,9 @@ DominatorTree &Shared::dt(const Function &F) {
 bool Shared::dominatesCurrent(const Instruction *def) {
   if (!cur)
     return false;
-  // Walk out through inlined call sites until def and the point are in one function.
   const Instruction *at = cur;
-  size_t i = inlineStack.size();
-  while (at->getFunction() != def->getFunction()) {
-    if (i == 0)
-      return false;
-    at = inlineStack[--i];
-  }
+  if (at->getFunction() != def->getFunction())
+    return false;
   if (at == def)
     return false;
   return dt(*def->getFunction()).dominates(def, at);
@@ -102,16 +95,6 @@ Shared &shared(LoweringContext &ctx) {
   if (!sh)
     internalError("spine: a LoweringContext with no registered state");
   return *sh;
-}
-
-std::unique_ptr<LoweringContext> childContext(LoweringContext &parent, const Specialization &S) {
-  auto it = registry.find(&parent);
-  if (it == registry.end() || it->second.expired())
-    internalError("spine: childContext of an unregistered context");
-  tlsAdopt = it->second.lock();
-  auto child = std::make_unique<LoweringContext>(parent.M, parent.T, S, tlsAdopt->KO);
-  tlsAdopt.reset();
-  return child;
 }
 
 bool isQ(LoweringContext &ctx, const Value *v) {
@@ -140,13 +123,9 @@ void bindOperand(LoweringContext &ctx, const Value *orig, Operand op) {
 LoweringContext::LoweringContext(Module &M, const TaintInfo &T, const Specialization &S,
                                  const loops::KOptions &KO)
     : M(M), T(T), S(S), impl(std::make_shared<Impl>()) {
-  if (tlsAdopt) {
-    impl->sh = tlsAdopt;
-  } else {
-    impl->sh = std::make_shared<spine::Shared>(M, KO);
-    impl->sh->unc = std::make_unique<Uncompute>();
-    impl->sh->preds = std::make_unique<PathPredicates>();
-  }
+  impl->sh = std::make_shared<spine::Shared>(M, KO);
+  impl->sh->unc = std::make_unique<Uncompute>();
+  impl->sh->preds = std::make_unique<PathPredicates>();
   registry[this] = impl->sh;
 }
 

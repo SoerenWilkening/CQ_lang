@@ -1711,7 +1711,7 @@ Site siteOf(LoweringContext &ctx, FnState &st, const Instruction &I, const Value
   a.off += extra;   // M7: a cell past the pointer (a fat-pointer load's byte offset)
   // A pointer formal's provenance is the caller's object (taint has no site for an argument).
   // A field column (129) is one of several objects of its site (objInfo's columnOf checks it).
-  if (!isa<Argument>(a.root) && !columnStruct(a.root) && ctx.T.objectOf(a.root) != objs.front())
+  if (!isa<Argument>(a.root) && !columnStruct(a.root) && ctx.T.objectOf(a.root, ctx.S) != objs.front())
     internalError("mem-slots: the address root is not the object taint names", &I);
   ObjInfo &info = objInfo(ctx, st, a.root, objs.front());
   uint64_t bytes = ctx.M.getDataLayout().getTypeAllocSize(ty).getFixedValue();
@@ -4239,7 +4239,7 @@ bool hostRecord(LoweringContext &ctx, const Value *root) {
   if (!I || !I->getFnAttr(Attribute::AllocKind).isValid() || ctx.T.isQuantum(root, ctx.S))
     return false;
   ArrayRef<ObjectId> objs = ctx.T.provenance(root, ctx.S);
-  if (objs.size() != 1 || ctx.T.objectOf(root) != objs.front())
+  if (objs.size() != 1 || ctx.T.objectOf(root, ctx.S) != objs.front())
     return false;
   ObjectId o = objs.front();
   if (ctx.T.classOf(o) != ObjClass::Slot)
@@ -4890,7 +4890,7 @@ bool lowerPtrCell(LoweringContext &ctx, FnState &st, Instruction &I) {
     lowerPtrCellCloneAccess(ctx, st, I, *A, a);
     return true;
   }
-  if (columnStruct(a.root) || ctx.T.objectOf(a.root) != objs.front())
+  if (columnStruct(a.root) || ctx.T.objectOf(a.root, ctx.S) != objs.front())
     return false;   // a field column (129) is one of several objects of its site: never a record
   ObjInfo &info = objInfo(ctx, st, a.root, objs.front());
   if (!info.record)
@@ -5999,7 +5999,7 @@ void noteProgramSlotCall(LoweringContext &ctx, const CallBase &orig, const Speci
     if (!callee.ctl || callee.pure || callee.adj)
       unimplemented(pre + "that is not a _ctl clone (the guarded store)", &orig);
     if (!ctx.S.isEntry() || orig.getFunction() != ctx.S.F)
-      unimplemented(pre + "from a clone or an inlined callee", &orig);
+      unimplemented(pre + "from a clone", &orig);
     if (ctx.loopUnit() || !ctx.preds().block(orig.getParent()).classicalFactor(ctx.T, ctx.S).isTop())
       unimplemented(pre + "in a loop or under a classical branch", &orig);
     FnState &st = stateOf(ctx, orig);

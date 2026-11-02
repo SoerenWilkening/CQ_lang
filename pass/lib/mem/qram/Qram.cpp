@@ -629,7 +629,7 @@ void lowerSlotMemset(LoweringContext &ctx, MemSetInst &MS, ObjectId o) {
   Addr a = decompose(MS.getDest(), DL);
   if (!a.ok)
     unimplemented("mem-qram: a memset of a slot object whose destination is not an object plus GEP offsets", &MS);
-  if (ctx.T.objectOf(a.root) != o)
+  if (ctx.T.objectOf(a.root, ctx.S) != o)
     internalError("mem-qram: the memset destination's root is not the object taint names", &MS);
   ObjInfo &info = objInfo(ctx, st, a.root, o);
   Type *cellTy = cellType(ctx, st, info, o);
@@ -1306,8 +1306,7 @@ Value *emitLoad(LoweringContext &ctx, Value *bus, const Column &c, QIndex idx) {
 // cq-8un4 (owner 2026-11-01 on cq-dxii): a QRAM store is recorded once per lowering of its instruction, so
 // a store executed on every trip of a loop of its own function is right only when a loop unit (loops::
 // lowerClassical / lowerCutoff) lowers each trip; a loop the walker copied as a real loop would run the
-// store each trip and pop it once (the store-twice hazard). A rule-19 inlined callee's loops count: the
-// LoopInfo is of the store's own function.
+// store each trip and pop it once (the store-twice hazard). The LoopInfo is of the store's own function.
 void checkStoreOnce(LoweringContext &ctx, const Instruction &orig) {
   const Function &F = *orig.getFunction();
   DominatorTree DT(const_cast<Function &>(F));
@@ -2334,7 +2333,7 @@ void lowerSlotIntrinsicM6(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o) {
   IRBuilder<> &B = ctx.B();
   FnState &st = stateOf(ctx, MI);
   Addr a = decompose(MI.getDest(), DL);
-  if (!a.ok || ctx.T.objectOf(a.root) != o)
+  if (!a.ok || ctx.T.objectOf(a.root, ctx.S) != o)
     unimplemented("mem-qram: a memory intrinsic into a slot object whose destination is not its object plus GEP "
                   "offsets",
                   &MI);

@@ -106,6 +106,22 @@ CASES = [
      "below its proved depth bound 3", []),
     ("depth_classical_formal", "r13", [], "fatal: cq: unimplemented: calls: a quantum-depth recursion cut at "
      "level 1 below its proved depth bound 3", []),
+    # cq-i9wk (CR rules 18, 19, 20): a function's in-place activation has its own frame: the entry g (called
+    # classically by h) is not rewritten although g's clone keeps handles in the same alloca (musl sin's y[2]).
+    ("inplace_frame", "f", [], "pass", [r"define i32 @g\(i32 noundef %0\)[^{]*\{(?:(?!cqrt_|cq_template_|__cq_q_)[^}])*\}"]),
+    # cq-i9wk (CR rule 19, owner 2026-11-02: the compiler never inlines): a callee reached with no quantum argument
+    # is called as it is. A frozen result (the callee's register or its rule-6 image) is kept by the caller like
+    # its own register; any other result comes from the kept clone, which returns the registers still allocated
+    # after it; the twin takes them first.
+    ("rule19_kept", "k_frozen", [], "pass", [r"call i32 @image\(i32 noundef %0, double noundef %1, i32 noundef %2\)"]),
+    ("rule19_kept", "k_frozen_rot", [], "pass", [r"%(\d+) = call i32 @image\([^)]*\)\n  call void @cqrt_ry_i32\(i32 %\1, "]),
+    ("rule19_kept", "k_twin", [], "pass", [r"call \{ i32, i32 \} @__cq_q_square_00\(i32 %0, double %1\)",
+                                           r"call void @__cq_q_square_00_unc\(i32 %\d+, i32 %\d+, i32 %0, double %1\)",
+                                           r"define internal void @__cq_q_square_00_unc\(i32 %reg0, i32 %out, i32 %0, "
+                                           r"double %1\) \{\n  %\d+ = call i32 @cq_template_mul_i32\(i32 %reg0, i32 %reg0\)"]),
+    ("rule19_kept", "k_meas", [], "pass", [r"call \{ i32, i32 \} @__cq_q_square_00\(i32 %0, double %1\)"]),
+    ("rule19_kept", "k_twin2", [], "pass", [r"call void @__cq_q_mix_0000_unc\(i32 %\d+, i32 %\d+, i32 %\d+, i32 %0, "
+                                            r"double %1, i32 %2, double %3\)"]),
     # cq-09xh: a byval formal stays byval; the caller passes a snapshot, which the twin gets too.
     ("byval", "b3", [], "pass", [r"call i32 @__cq_q_f_\w+\(ptr byval\(%struct\.B\)"]),
     ("byval", "b_twin", [], "pass", [r"call void @__cq_q_f_\w+_unc\(i32 %\w+, ptr %byval\.snap"]),

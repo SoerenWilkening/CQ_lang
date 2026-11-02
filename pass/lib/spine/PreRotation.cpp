@@ -163,14 +163,9 @@ const Instruction *useAfter(Shared &sh, const Value *w, const Instruction *P, co
   return first;
 }
 
-// The point standing for T in function F: T itself, or the inlined call site in F that leads to it.
-const Instruction *pointIn(Shared &sh, const Instruction *T, const Function *F) {
-  if (T->getFunction() == F)
-    return T;
-  for (size_t i = sh.inlineStack.size(); i-- > 0;)
-    if (sh.inlineStack[i]->getFunction() == F)
-      return sh.inlineStack[i];
-  return nullptr;
+// The point standing for T in function F: T itself when it is in F (the compiler never inlines, rule 19).
+const Instruction *pointIn(Shared &, const Instruction *T, const Function *F) {
+  return T->getFunction() == F ? T : nullptr;
 }
 
 bool inCycle(const BasicBlock *b) {
@@ -232,7 +227,7 @@ bool hoistable(LoweringContext &ctx, const Instruction &T, const Instruction *I,
 // between T and its original place are not lowered yet.
 void hoistReaders(LoweringContext &ctx, CallInst &T, const Value *v, Value *h) {
   Shared &sh = shared(ctx);
-  if (T.getFunction() != sh.orig || !sh.inlineStack.empty() || sh.tripFlag || inCycle(T.getParent()))
+  if (T.getFunction() != sh.orig || sh.tripFlag || inCycle(T.getParent()))
     return;
   SmallVector<const Value *, 4> aliases;
   for (auto &[w, ops] : sh.binds)
@@ -449,7 +444,7 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T, b
     return pc;
   };
   // cq-c09h (owner 2026-11-02, C semantics): a by-value formal is a copy. h, the rail a formal of T's
-  // function is bound to, is the caller's (a clone's or an inlined callee's actual): the Ry hits a copy
+  // function is bound to, is the caller's (a clone's actual): the Ry hits a copy
   // of it, the caller's rail is untouched. A merge that may name a formal's rail at run time would need
   // the copy on some paths only: not built.
   {

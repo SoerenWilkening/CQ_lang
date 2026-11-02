@@ -67,6 +67,7 @@
 #include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/ValueTracking.h"
+#include "llvm/IR/AttributeMask.h"
 #include "llvm/IR/ConstantRange.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Dominators.h"
@@ -96,9 +97,15 @@ const TaintInfo &taintOf(const Specialization &S) {
   if (!runTaint)
     internalError("calls: materialize of a clone before any call site of the run was lowered (no TaintInfo)", S.F);
   ArrayRef<Specialization> all = runTaint->specializations();
-  if (all.empty() || &S < all.begin() || &S >= all.end())
-    internalError("calls: materialize of a specialization that is not one of the run's TaintInfo", S.F);
-  return *runTaint;
+  if (S.kept) {
+    // cq-i9wk: a kept clone is calls' own (keptSpec), answered by taint as its in-place specialization.
+    for (const Specialization &P : all)
+      if (P.F == S.F && P.isEntry())
+        return *runTaint;
+  } else if (!all.empty() && &S >= all.begin() && &S < all.end()) {
+    return *runTaint;
+  }
+  internalError("calls: materialize of a specialization that is not one of the run's TaintInfo", S.F);
 }
 
 abi::CloneSpec cloneSpecOf(const Specialization &S) {
@@ -1296,6 +1303,26 @@ Function *materialize(Module &M, const Specialization &S) {
                     S.F);
     rt = rt->isVoidTy() ? static_cast<Type *>(handleTy(C)) : StructType::get(C, {rt, handleTy(C)});
   }
+  // Rule 19 (cq-i9wk): a kept clone returns, after all of the above, the handle of each register it minted
+  // that is still allocated at its return (spine::liveRegisters, counted by its in-place lowering).
+  Type *keptBase = nullptr;
+  unsigned keptRegs = 0;
+  if (S.kept) {
+    const spine::EntryReturn *er = spine::entryReturn(*S.F);
+    if (!er)
+      internalError("calls: materialize of a kept clone before its in-place lowering", S.F);
+    keptRegs = er->registers;
+    if (keptRegs) {
+      keptBase = rt;
+      SmallVector<Type *, 4> es;
+      if (auto *st = dyn_cast<StructType>(rt))
+        es.append(st->element_begin(), st->element_end());
+      else
+        es.push_back(rt);
+      es.append(keptRegs, handleTy(C));
+      rt = StructType::get(C, es);
+    }
+  }
   FunctionType *FT = FunctionType::get(rt, ps, false);
 
   if (Function *ex = M.getFunction(name)) {
@@ -1305,6 +1332,10 @@ Function *materialize(Module &M, const Specialization &S) {
   }
   Function *NF = Function::Create(FT, GlobalValue::InternalLinkage, name, &M);
   NF->setCallingConv(S.F->getCallingConv());
+  if (keptBase) {
+    spine::setKeptCloneBaseType(*NF, keptBase);
+    NF->addFnAttr(spine::kKeptRegistersAttr, std::to_string(keptRegs));
+  }
   // A byval formal the callee may write stays byval (cq-09xh): the clone writes its own copy, never
   // the caller's object. A read-only one is the caller's pointer (byvalCopied).
   unsigned p = S.ctl ? 1 : 0;
@@ -1826,6 +1857,144 @@ void cleanDeadCells(LoweringContext &ctx, CallBase &CB, const Specialization &S,
   }
 }
 
+// Rule 19 (cq-i9wk): a callee reached with no quantum argument whose quantum result is not frozen is a
+// clone: its in-place body lowered as a clone (Specialization::kept, built before the module's epilogue),
+// which copies its results out, uncomputes, and returns after them the handle of each register it minted
+// that is still allocated. The caller keeps those registers like its own (never freed) and its twin
+// zeroes the results against them: <clone>_unc(registers..., outs..., args..., old cells...).
+void lowerKeptClone(LoweringContext &ctx, CallBase &CB, const Specialization &cs) {
+  const Specialization &K = spine::keptSpec(ctx.M, cs);
+  CloneCall r = emitCloneCall(ctx, CB, K, nullptr);
+  if (conc::cloneEscapes(ctx.T, K) || r.res.qramFormal)
+    unimplemented("calls: a kept clone (rule 19) that escapes by longjmp (rule 24) or stores through a QRAM triple",
+                  &CB);
+  IRBuilder<> &B = ctx.B();
+  auto *wt = dyn_cast<StructType>(r.call->getType());
+  unsigned nRegs = 0;
+  if (const Attribute a = r.call->getCalledFunction()->getFnAttribute(spine::kKeptRegistersAttr); a.isValid())
+    nRegs = unsigned(std::stoul(a.getValueAsString().str()));
+  bool env = fenv::cloneCarriesEnv(ctx.T, K);
+  // The base result (what the clone returns before its registers): its fields (the result's leaves, then
+  // the flags handle when it carries the environment), or the one handle.
+  Type *baseTy = nRegs ? spine::keptCloneBaseType(*r.call->getCalledFunction()) : r.call->getType();
+  if (!baseTy || (nRegs && (!wt || wt->getNumElements() < nRegs)))
+    internalError("calls: a kept clone whose return type is not its result then its registers", &CB);
+  SmallVector<Value *, 4> base;
+  if (auto *bst = dyn_cast<StructType>(baseTy))
+    for (unsigned k = 0; k < bst->getNumElements(); ++k)
+      base.push_back(B.CreateExtractValue(r.call, {k}));
+  else
+    base.push_back(nRegs ? B.CreateExtractValue(r.call, {0u}) : static_cast<Value *>(r.call));
+  unsigned nBase = unsigned(base.size());
+  SmallVector<Value *, 4> regs;
+  for (unsigned k = 0; k < nRegs; ++k) {
+    Value *h = B.CreateExtractValue(r.call, {nBase + k});
+    ctx.unc().recordExternal(h, Role::UserRegister);   // kept like the caller's own registers
+    spine::shared(ctx).frozenResults.insert(h);
+    regs.push_back(h);
+  }
+  SmallVector<Value *, 4> outs;
+  Value *flags = nullptr;
+  if (env) {
+    flags = base.pop_back_val();
+  }
+  if (r.fieldwise) {
+    const ResultLayout &res = r.res;
+    if (base.size() != res.leaves.size())
+      internalError("calls: a kept clone's field-wise result with another field count than its layout", &CB);
+    SmallVector<Operand, 4> ops;
+    for (unsigned k = 0; k < res.leaves.size(); ++k) {
+      ops.push_back(Operand{base[k], res.q[k]});
+      if (res.q[k])
+        outs.push_back(base[k]);
+    }
+    if (!res.leafFields.empty())
+      aggr::bindLeafFields(ctx, &CB, ops, res.leafFields);
+    else
+      ctx.bindFields(&CB, ops);
+  } else {
+    if (base.size() != 1 || !r.handle)
+      internalError("calls: a kept clone whose result is not one handle", &CB);
+    outs.push_back(base[0]);
+    ctx.bind(&CB, base[0]);
+  }
+  if (flags)
+    outs.push_back(flags);
+  SmallVector<Operand, 4> extra(r.extra.begin(), r.extra.end());
+  for (Value *h : regs)
+    extra.push_back(Operand{h, true});
+  ctx.unc().recordCall(r.call, outs, r.slotOuts, extra);
+  ctx.unc().noteCallExtraFirst(r.call, nRegs);
+  fatptr::finishSlotTableCall(ctx, r.call);
+  if (!r.slotOuts.empty())
+    cleanDeadCells(ctx, CB, K, r, outs);
+  if (flags)
+    fenv::afterCloneCall(ctx, CB, flags);
+}
+
+// Rule 19 (cq-i9wk, ruling 2026-11-02: the compiler never inlines): a callee with a body reached with no
+// quantum argument is called as it is: the call of its in-place lowering (the entry). A quantum result is
+// the handle the entry returns (the C return type when it is an integer of 32 bits or more, the handle
+// zero-extended; i32 otherwise). When every quantum value the callee returns is FROZEN (a register it
+// minted or that register's rule-6 image; spine::entryReturn), the caller keeps the rail like its own
+// registers: never uncomputed, never freed (162).
+void lowerEntryCall(LoweringContext &ctx, CallBase &CB, const Specialization &cs) {
+  for (const Use &u : CB.args())
+    if (ctx.operand(u.get()).handle)
+      internalError("calls: a quantum argument to a callee with no clone", &CB);
+  if (CB.getType()->isVoidTy() || !ctx.T.isQuantum(&CB, ctx.S))
+    return ordinaryCall(ctx, CB);
+  if (!ctx.currentPredicate().isTop() || ctx.S.ctl || spine::shared(ctx).tripFlag)
+    internalError("calls: an in-place callee reached under a quantum predicate (taint makes it a _ctl clone)", &CB);
+  Function &F = *cs.F;
+  Type *crt = CB.getType();
+  const spine::EntryReturn *er = spine::entryReturn(F);
+  if (!er)
+    unimplemented("calls: awaiting owner ruling: SPEC_ISSUES rule 19 results of an in-place callee in a cycle of "
+                  "in-place calls (its frozen record is made after the call is lowered)",
+                  &CB);
+  if (!er->frozen)
+    return lowerKeptClone(ctx, CB, cs);
+  LLVMContext &C = ctx.M.getContext();
+  Type *i32 = Type::getInt32Ty(C);
+  Type *rt = er->ret;   // the lowered entry's return type (rule 19: the C one, the i32 handle, or the leaves)
+  if (!rt)
+    internalError("calls: an in-place callee's return record without its return type", &CB);
+  SmallVector<Value *, 8> args;
+  for (const Use &u : CB.args())
+    args.push_back(ctx.operand(u.get()).v);
+  FunctionType *FT = FunctionType::get(rt, F.getFunctionType()->params(), F.isVarArg());
+  CallInst *call = ctx.B().CreateCall(FT, &F, args, CB.getName());
+  call->setCallingConv(CB.getCallingConv());
+  AttributeList AL = CB.getAttributes();
+  if (rt != crt)
+    AL = AL.removeRetAttributes(C, AttributeMask(AL.getRetAttrs()));
+  call->setAttributes(AL);
+  auto keep = [&](Value *h) {
+    ctx.unc().recordExternal(h, Role::UserRegister);
+    spine::shared(ctx).frozenResults.insert(h);
+  };
+  if (auto *st = dyn_cast<StructType>(rt)) {
+    // Rule 26: the literal struct of the leaves; each quantum leaf is a frozen rail, kept.
+    if (er->leafQ.size() != st->getNumElements())
+      internalError("calls: an in-place callee's aggregate return record does not match its leaves", &CB);
+    SmallVector<Operand, 4> ops;
+    for (unsigned k = 0; k < st->getNumElements(); ++k) {
+      Value *e = ctx.B().CreateExtractValue(call, {k});
+      if (er->leafQ[k])
+        keep(e);
+      ops.push_back(Operand{e, bool(er->leafQ[k])});
+    }
+    ctx.bindFields(&CB, ops);
+    return;
+  }
+  if (!rt->isIntegerTy() || rt->getIntegerBitWidth() < 32)
+    internalError("calls: an in-place callee returning a handle in a return type that cannot hold it", &CB);
+  Value *h = rt == i32 ? static_cast<Value *>(call) : ctx.B().CreateTrunc(call, i32);
+  keep(h);
+  spine::bindOperand(ctx, &CB, Operand{h, true});
+}
+
 } // namespace
 
 void lowerLifted(LoweringContext &ctx, CallBase &CB) {
@@ -1847,13 +2016,15 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
                     &CB);
     return loops::lowerQuantumDepthRecursion(ctx, CB, K, B);
   }
-  if (!cs || cs->isEntry()) {
-    // An untainted callee or the in-place specialization: the ordinary call (rule 19's inline of an
-    // entry returning a quantum value is the spine's). Under a quantum predicate (or in a _ctl clone)
-    // taint lifted the call to the callee's untainted in-place specialization: classical arguments and
-    // no gate in the body (a gate makes a _ctl clone, which taint publishes). Rule 19 (ruling
-    // 2026-11-02, cq-fl4n): such a host call stays the host call, executed unguarded, its classical result
-    // merged like any classical arm value (rule 9): musl's __math_oflow(0) in exp, __math_divzero(1) in log.
+  // An untainted callee or the in-place specialization. Under a quantum predicate (or in a _ctl clone)
+  // taint lifted the call to the callee's untainted in-place specialization: classical arguments and
+  // no gate in the body (a gate makes a _ctl clone, which taint publishes). Rule 19 (ruling
+  // 2026-11-02, cq-fl4n): such a host call stays the host call, executed unguarded, its classical result
+  // merged like any classical arm value (rule 9): musl's __math_oflow(0) in exp, __math_divzero(1) in log.
+  // A tainted in-place callee reached with no quantum argument is called as it is (rule 19, cq-i9wk).
+  if (cs && cs->isEntry())
+    return lowerEntryCall(ctx, CB, *cs);
+  if (!cs) {
     for (const Use &u : CB.args())
       if (ctx.operand(u.get()).handle)
         internalError("calls: a quantum argument to a callee with no clone", &CB);
@@ -2481,7 +2652,7 @@ void lowerVarargs(LoweringContext &ctx, Instruction &I) {
                        Align(8));
   B.CreateAlignedStore(area, B.CreateConstInBoundsGEP1_64(i8, ap.v, 16), Align(8));
   if (handles) {
-    rec.obj = ctx.T.objectOf(II);
+    rec.obj = ctx.T.objectOf(II, ctx.S);
     vaAreas()[&ctx.out()].push_back(rec);
   }
 }
@@ -2590,3 +2761,4 @@ void lowerLiftedVia(LoweringContext &ctx, llvm::CallBase &site, llvm::ArrayRef<u
   fatptr::finishSlotTableCall(ctx, r.call);
 }
 } // namespace cq::calls
+

@@ -19,7 +19,12 @@
 // Taint.h  (rule 3; rule 20 classification; rule 21 provenance)
 namespace cq {
 struct Specialization { llvm::Function *F; Mask mask; bool ctl = false, pure = false, adj = false;
-                        unsigned depth = 0; std::vector<uint64_t> bounds; bool isEntry() const; };
+                        unsigned depth = 0; std::vector<uint64_t> bounds; bool isEntry() const;
+                        // cq-i9wk (CR rule 19): the clone of a callee reached with no quantum argument whose
+                        // result is not frozen (calls makes it; taint publishes none): the in-place body as
+                        // a clone, its still-allocated registers returned after its results. Taint answers
+                        // for it as for the in-place specialization of F (same mask, no flags).
+                        bool kept = false; };
 using ObjectId = unsigned;                           // alloca, global, heap site, SROA field column
 enum class ObjClass : uint8_t { Classical, Slot, Qram };   // QROM is a load kind on a Classical object
 enum class OffsetKind : uint8_t { Classical, Quantum };
@@ -68,6 +73,11 @@ public:
   // mixed class: unimplemented).
   PtrFormal pointerFormal(const Specialization &callee, unsigned argNo) const;
   ObjectId objectOf(const llvm::Value *siteOrGlobal) const;
+  // cq-i9wk (CR rules 18, 19, 20): the object of a site as specialization S sees it. A function's own
+  // alloca, heap or unknown-object site is one object in its in-place activation (the entry, or a callee
+  // reached with no quantum argument) and another in its clones'; the one-argument form is only for a
+  // site with one of them (a global, or a function reached in one context).
+  ObjectId objectOf(const llvm::Value *siteOrGlobal, const Specialization &S) const;
   ObjClass classOf(ObjectId) const;
   bool mayHoldHandle(ObjectId) const;
   OffsetKind offsetKind(const llvm::Instruction *access, const Specialization &) const;

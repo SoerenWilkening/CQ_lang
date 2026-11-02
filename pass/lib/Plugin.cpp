@@ -12,7 +12,9 @@
 // A module with no call to a CQ.h function and no -cq-roots is returned untouched before anything
 // runs (owner ruling 2 on cq-arch: the condition is on calls, not declarations or other uses): the
 // pass's identity (NORTHSTAR principle 1, kernel tier 1).
+#include <functional>
 #include <string>
+#include <vector>
 
 #include "cq/Abi.h"
 #include "cq/Calls.h"
@@ -22,10 +24,12 @@
 #include "cq/Taint.h"
 #include "cq/Verify.h"
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/IR/InstrTypes.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Passes/PassBuilder.h"
@@ -121,6 +125,33 @@ bool callsCqSurface(const Module &M) {
   return false;
 }
 
+// cq-i9wk (CR rule 19): an in-place callee (reached with no quantum argument) is constructed before its
+// callers, which read whether its quantum results are frozen (spine::entryReturn). Otherwise taint's
+// order; a cycle of in-place calls keeps it.
+std::vector<const cq::Specialization *> constructionOrder(const cq::TaintInfo &T) {
+  llvm::ArrayRef<cq::Specialization> all = T.specializations();
+  std::vector<const cq::Specialization *> order;
+  llvm::DenseMap<const cq::Specialization *, int> state;   // 1 in progress, 2 done
+  std::function<void(const cq::Specialization &)> visit = [&](const cq::Specialization &S) {
+    int &st = state[&S];
+    if (st)
+      return;
+    st = 1;
+    if (!S.F->isDeclaration() && !S.pure)
+      for (BasicBlock &BB : *S.F)
+        for (Instruction &I : BB)
+          if (auto *CB = dyn_cast<CallBase>(&I);
+              CB && CB->getCalledFunction() && !CB->getCalledFunction()->isDeclaration() && !CB->isInlineAsm())
+            if (const cq::Specialization *C = T.calleeSpecialization(*CB, S); C && C != &S && C->isEntry())
+              visit(*C);
+    state[&S] = 2;
+    order.push_back(&S);
+  };
+  for (const cq::Specialization &S : all)
+    visit(S);
+  return order;
+}
+
 struct CQLowerPass : PassInfoMixin<CQLowerPass> {
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM) {
     cq::TaintOptions TO = readTaintOptions();
@@ -167,8 +198,8 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
 
     // 4. The general construction, once per specialization. The CFG is final from here on.
     trace("construct");
-    for (const cq::Specialization &S : Final.specializations())
-      cq::construct(M, Final, S, KO);
+    for (const cq::Specialization *S : constructionOrder(Final))
+      cq::construct(M, Final, *S, KO);
 
     // 5. Drop originals with no classical caller (rule 18).
     cq::calls::finalize(M);

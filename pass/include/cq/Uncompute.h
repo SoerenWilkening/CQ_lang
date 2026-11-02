@@ -67,6 +67,10 @@ public:
   // keeps its other arms; the pseudo stays pending (the twin always runs). Inside an open scope:
   // unimplemented.
   RailId recordDeclaredWrites(llvm::CallInst *fwd, llvm::ArrayRef<Operand> extra);
+  // cq-i9wk (CR rule 19): the last n extra operands of fwd's call group (recordCall) are the registers a kept
+  // clone returned after its results; its twin takes them first: <callee>_unc(those n..., outs..., fwd
+  // args..., the other extra...).
+  void noteCallExtraFirst(llvm::CallInst *fwd, unsigned n);
   // U4 (cq-arch 2026-11-01, CR rule 5): rails in caller cells a clone call reads (its twin
   // recompute-reads them): the call group's item reads them, so their own items follow it.
   void noteCallReads(llvm::CallInst *fwd, llvm::ArrayRef<RailId> rails);

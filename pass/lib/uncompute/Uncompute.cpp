@@ -358,6 +358,7 @@ struct Uncompute::Impl {
     SmallVector<RailId, 4> outs, slotOuts, members;
     SmallVector<Value *, 4> extra;
     bool declared = false;   // U7: recordDeclaredWrites (a pseudo leader: the twin alone, nothing freed)
+    unsigned extraFirst = 0; // cq-i9wk: the last extraFirst extra operands lead the twin's operands
   };
   std::vector<CallGroup> groups;
   // U4: rails in caller cells a clone call reads (noteCallReads, before or after its recordCall).
@@ -2045,6 +2046,11 @@ struct Uncompute::Impl {
       LLVMContext &C = M.getContext();
       SmallVector<Type *, 8> ps;
       SmallVector<Value *, 8> args;
+      size_t restExtra = cg.extra.size() - cg.extraFirst;
+      for (size_t k = restExtra; k < cg.extra.size(); ++k) {
+        ps.push_back(cg.extra[k]->getType());
+        args.push_back(cg.extra[k]);
+      }
       for (RailId o : cg.outs) {
         ps.push_back(Type::getInt32Ty(C));
         args.push_back(rails[o].handle);
@@ -2053,9 +2059,9 @@ struct Uncompute::Impl {
         ps.push_back(a->getType());
         args.push_back(a);
       }
-      for (Value *e : cg.extra) {
-        ps.push_back(e->getType());
-        args.push_back(e);
+      for (size_t k = 0; k < restExtra; ++k) {
+        ps.push_back(cg.extra[k]->getType());
+        args.push_back(cg.extra[k]);
       }
       FunctionType *TT = FunctionType::get(Type::getVoidTy(C), ps, false);
       CallInst *twin = track(B.CreateCall(declareFn(M, (fwd->getCalledFunction()->getName() + "_unc").str(), TT, fwd),
@@ -3745,6 +3751,18 @@ SmallVector<RailId, 4> Uncompute::recordCall(CallInst *fwd, ArrayRef<Value *> ou
   cg.outs.assign(ids.begin(), ids.begin() + outs.size());
   cg.slotOuts.assign(ids.begin() + outs.size(), ids.end());
   return ids;
+}
+
+void Uncompute::noteCallExtraFirst(CallInst *fwd, unsigned n) {
+  Impl &I = *impl;
+  for (Impl::CallGroup &cg : I.groups)
+    if (cg.fwd == fwd && !cg.declared) {
+      if (n > cg.extra.size())
+        internalError("uncompute: noteCallExtraFirst: more leading operands than the call's extra operands", fwd);
+      cg.extraFirst = n;
+      return;
+    }
+  internalError("uncompute: noteCallExtraFirst: no call group recorded for this forward call", fwd);
 }
 
 RailId Uncompute::recordDeclaredWrites(CallInst *fwd, ArrayRef<Operand> extra) {

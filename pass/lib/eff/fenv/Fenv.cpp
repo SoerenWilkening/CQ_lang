@@ -471,7 +471,7 @@ struct State {
   DenseSet<const Value *> merges;     // phis and selects over handles this module recorded as merges
   // Rule 2 collapse probes (writeBack): private binding keys, one per state piece (0 FLAGS, 1 MODE).
   Instruction *probeKey[2] = {nullptr, nullptr};
-  // Analyses of original functions (the walked one and any rule-19 inlined callee).
+  // Analyses of original functions (the walked one).
   std::map<const Function *, std::unique_ptr<DominatorTree>> dt;
   std::map<const Function *, std::unique_ptr<LoopInfo>> li;
   std::map<const Function *, std::unique_ptr<PostDominatorTree>> pdt;
@@ -487,8 +487,7 @@ std::map<const Function *, std::unique_ptr<State>> &states() {
 
 State &state(LoweringContext &ctx, const Module *M) {
   auto &p = states()[&ctx.out()];
-  // The walked original is taken from the first context that reaches this output function; a
-  // rule-19 inlined callee is a different original lowered into the same output.
+  // The walked original is taken from the first context that reaches this output function.
   if (!p || (p->orig && p->orig->getParent() != M))
     p = std::make_unique<State>();
   if (!p->orig)
@@ -1079,7 +1078,7 @@ bool anyLinearizedAfter(LoweringContext &ctx, State &st, const Instruction &I, P
 // are straight-line state changes under predicateFlag, nothing more.
 void requirePlaced(LoweringContext &ctx, State &st, const Instruction &I) {
   if (I.getFunction() != ctx.S.F)
-    return;   // a rule-19 inlined callee: its loops are no unit of this walk
+    return;   // not the walked function: its loops are no unit of this walk
   LoopInfo &LI = loopInfo(st, *I.getFunction());
   for (const Loop *L = LI.getLoopFor(I.getParent()); L; L = L->getParentLoop())
     if (loops::classify(*L, ctx.T, ctx.S) != loops::Case::QuantumExit)
