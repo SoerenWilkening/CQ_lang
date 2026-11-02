@@ -26,6 +26,9 @@ mutated reference and an empty output are both rejected. Three parts:
    control (the reference against itself with substitution off) must be green too, or the mutant
    is unproven. (A register only cq_theta substitution sets, 59's bits, reads 0 without it: there
    the evaluation with substitution already fails on the rotation list.)
+   A mutant of a class in SUBST_ONLY (cq-3o3v) is evaluated, with its control, on the samples with
+   cq_theta substitution only: there the value after an Ry is the substituted reach's on every side,
+   so the rotation list's pre-gate value check is what must reject it.
 3. Empty output. For every example of the corpus (counted from the directory), an empty lowered
    module (zero bytes: the pass emitted nothing) is evaluated as our output (reference_mode=False)
    and must FAIL both §6 checks, each with a reason that names the missing definition.
@@ -52,7 +55,7 @@ import sys
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from cqcheck import report
 from cqcheck.contracts import Verdict, to_json
@@ -101,6 +104,10 @@ CLASSES: Dict[str, Tuple[str, str, Optional[str]]] = {
     "kloop_one_trip_short": ("a K-bounded loop runs K-1 trips: inputs with K trips get another result "
                              "and a_K", f"{_MEAS}|{_OUT_REF}", rf"{_MEAS}|{_RET_C}|a_K of loop"),
     "phase_moved_flag": ("a phase sits on another flag", _ROT_REF, _ROT_C),
+    # owner ruling 2026-11-02 on cq-3o3v: the Ry's target holds, just before the gate, the C register's
+    # value at its cq_theta site; the value after it is the substituted reach's either way
+    "ry_on_other_value": ("an Ry acts on a rail holding another value than the C register at its site",
+                          _ROT_REF, _ROT_C),
     # host output (cq-e4jk, compare.py "Host output"): the tape's printed text and performed effects
     "changed_tape_output": ("a tape field takes another value: the text the tape prints changes",
                             _HOST_OUT, _HOST_OUT),
@@ -116,6 +123,12 @@ ROTATION_ONLY: Dict[str, Tuple[str, str]] = {
     "dropped_rotation": (_ROT_REF, _ROT_C),
     "changed_angle": (_ROT_REF, _ROT_C),
 }
+
+# Classes judged on the samples with cq_theta substitution only (cq-3o3v): without it an Ry keeps its
+# target's value, so a changed value under an Ry changes the outputs first; with it the value after
+# the Ry is the substituted reach's on both sides and the pre-gate value check alone sees the change.
+# Their control is the reference evaluated the same way.
+SUBST_ONLY = frozenset({"ry_on_other_value"})
 
 # The empty output: no definition, so the build of our side fails at the link on the entry symbol.
 EMPTY_PATTERN = r"violations on our side: .*'what': 'build'.*Undefined symbols"
@@ -263,8 +276,8 @@ def _record(store: Path, o: Outcome, lock: threading.Lock) -> None:
                 print("      substitution off: " + _short(o.verdict_off, 3), flush=True)
 
 
-def _control(ex: report.Example, substitution: bool) -> Outcome:
-    cid = ex.name if substitution else f"{ex.name}/subst-off"
+def _control(ex: report.Example, substitution: Any) -> Outcome:
+    cid = f"{ex.name}/subst-only" if substitution == "only" else ex.name if substitution else f"{ex.name}/subst-off"
     try:
         v = report.evaluate(ex, ex.reference, short_circuit=False, reference_mode=True,
                             substitution=substitution)
@@ -299,17 +312,24 @@ def _example_job(ex: report.Example, mutants: List[Mutant], empty: bool, emit) -
     substitution off also needs that control green), then the empty output."""
     out: List[Outcome] = []
     if mutants:
-        ctl = _control(ex, True)
-        emit(ctl)
-        out.append(ctl)
+        ctls: Dict[Any, Outcome] = {}       # the controls by substitution mode, each once, when needed
+
+        def control(mode: Any) -> Outcome:
+            if mode not in ctls:
+                ctls[mode] = _control(ex, mode)
+                emit(ctls[mode])
+                out.append(ctls[mode])
+            return ctls[mode]
         ctl_off: List[Outcome] = []         # the control with substitution off, once, when needed
         for m in mutants:
+            mode = "only" if m.cls in SUBST_ONLY else True
+            ctl = control(mode)
             if not ctl.ok:
                 o = Outcome("mutant", m.id, ex.name, m.cls, False, ["unproven: the control is not green"])
             else:
                 try:
                     path = materialize(m, ex)
-                    v = report.evaluate(ex, path, short_circuit=False, reference_mode=True)
+                    v = report.evaluate(ex, path, short_circuit=False, reference_mode=True, substitution=mode)
                     v_off = None
                     if needs_subst_off(m.cls, v):
                         if not ctl_off:

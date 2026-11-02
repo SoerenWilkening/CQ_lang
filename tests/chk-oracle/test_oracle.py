@@ -336,7 +336,7 @@ void inv_q(int x0, double t) { int x = x0; cq_invert_begin(); cq_theta(&x, t); c
             ev = tr({"call": 0, "args": [i32(x), HALF, pa]})
             self.assertEqual(trips(ev), [n], (x, ev))
             self.assertEqual(ev[0], {"ev": "site", "fn": "loop_q", "site": 0, "kind": "theta",
-                                     "angle": HALF, "reg": hex(x)})
+                                     "angle": HALF, "reg": hex(x), "pre": hex(x)})   # pre: cq-3o3v
             phis = [e for e in ev if e["ev"] == "site" and e["kind"] == "phi"]
             self.assertEqual(len(phis), 1 if n == 2 else 0)
             if phis:
@@ -353,7 +353,7 @@ void inv_q(int x0, double t) { int x = x0; cq_invert_begin(); cq_theta(&x, t); c
         self.assertEqual(rr.sample, {"call": 0, "args": [i32(4), HALF, pa]})
         self.assertEqual([(r["ev"], r["kind"]) for r in rr.rotations], [("site", "theta"), ("site", "phi")])
         self.assertEqual(rr.rotations[0], {"ev": "site", "fn": "loop_q", "site": 0, "kind": "theta",
-                                           "angle": HALF, "reg": hex(4)})
+                                           "angle": HALF, "reg": hex(4), "pre": hex(4)})
         self.assertEqual(rr.measured, [{"h": None, "w": "i32", "v": "0x2"}])
         self.assertEqual(rr.outputs, {"ret": [{"call": 0, "fn": "loop_q", "v": {"w": "i32", "v": "0x2"}}],
                                       "end": "ret",
@@ -408,6 +408,7 @@ int gp_q(int m0, double t, int c, int early) {
         self.assertEqual(rr.outputs["ret"], [{"call": 0, "fn": "id_q", "v": {"w": "f64", "v": f64(2.0)}}])
         r = oracle.run_samples(o1, sp, [{"call": 0, "args": [f64(1.0), HALF], "subst": {"id_q:0": f64(5.0)}}])[0]
         self.assertEqual(r.events[0]["reg"], f64(5.0))
+        self.assertEqual(r.events[0]["pre"], f64(1.0))   # cq-3o3v: the register before the substitution
         self.assertEqual(r.events[-1]["v"], f64(6.0))
 
 

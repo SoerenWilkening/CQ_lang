@@ -392,6 +392,8 @@ typedef struct {
   uint8_t fenv;  /* cq-tt2j, rule 23: 1 flags lineage (an _exc result or written from one), 2 a mode operand */
   uint8_t out;   /* cq-tt2j: at exit, its handle sits in a cell of output memory (mark_outputs) */
   uint64_t t_create, t_write, t_nd, t_meas;                       /* event clock; 0 = never */
+  uint64_t ry_t, ry_ang;  /* cq-3o3v: the last firing Ry on the rail (clock after it, angle bits) */
+  uint64_t *ry_pre, *ry_post; /* its target's value before and after it (v.nw words each) */
   int32_t *deps;
   uint32_t ndeps, capdeps;
 } rail_t;
@@ -473,6 +475,32 @@ void cqe__mark_written(int32_t h) {
   rails[h].written = 1;
   rails[h].t_write = cqe__tick();
 }
+/* cq-3o3v: a firing Ry on h that took a C reach changed its value from pre to the reach's value. A
+ * later firing Ry on h with the negated angle, with h neither written nor changed since and no C
+ * reach of its own, is that Ry's adjoint in this branch (CR rule 10's un-prep): Ry(-θ)·Ry(θ) = I, so
+ * h holds pre again (cqe__ry_unprep). */
+void cqe__ry_note(int32_t h, uint64_t angle, const cqe_val *pre) {
+  rail_t *r = &rails[h];
+  uint32_t nw = r->v.nw;
+  if (!r->ry_pre) {
+    r->ry_pre = xcalloc(nw ? nw : 1, sizeof *r->ry_pre);
+    r->ry_post = xcalloc(nw ? nw : 1, sizeof *r->ry_post);
+  }
+  memcpy(r->ry_pre, pre->w, nw * sizeof *r->ry_pre);
+  memcpy(r->ry_post, r->v.w, nw * sizeof *r->ry_post);
+  r->ry_ang = angle;
+  r->ry_t = cqe__tick();
+}
+int cqe__ry_unprep(int32_t h, uint64_t angle) {
+  rail_t *r = &rails[h];
+  if (!r->ry_t || r->t_write > r->ry_t || angle != (r->ry_ang ^ (1ULL << 63)) ||
+      memcmp(r->ry_post, r->v.w, r->v.nw * sizeof *r->ry_post) != 0)
+    return 0;
+  memcpy(r->v.w, r->ry_pre, r->v.nw * sizeof *r->ry_pre);
+  r->ry_t = 0;
+  return 1;
+}
+void cqe__ry_forget(int32_t h) { rails[h].ry_t = 0; }
 void cqe__mark_nd(int32_t h) {
   rails[h].frozen = 1;
   rails[h].t_nd = cqe__tick();

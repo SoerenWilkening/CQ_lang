@@ -786,6 +786,14 @@ void __cqo_site(const char *fn, int32_t site, int32_t kind, uint64_t angle, void
     if (kind == 2 && sh_pending_read) kind = 5; /* rule 2: a classical read, no measurement (cq-y1ll) */
     sh_pending_read = 0;
     int sk = kind == 0 ? skey_of(fn, site) : -1;
+    /* cq-3o3v: a theta site's register before the substitution (compare checks the lowered Ry's
+     * target against it) */
+    char pre[160] = "";
+    if (kind == 0 && reg && !trips_only) {
+        char h[140];
+        hexbits(h, reg, (unsigned)bits);
+        snprintf(pre, sizeof pre, ",\"pre\":\"%s\"", h);
+    }
     if (sk >= 0) {
         int occ = (int)(skeys[sk].reach++ % skeys[sk].period);
         for (int i = 0; i < nsubst; ++i)
@@ -802,7 +810,7 @@ void __cqo_site(const char *fn, int32_t site, int32_t kind, uint64_t angle, void
         else if (kind != 5) n_rotations++;
         return;
     }
-    char f[300], a[40] = "null", r[64] = "null", line[600];
+    char f[300], a[40] = "null", r[64] = "null", line[800];
     jsonstr(f, sizeof f, fn);
     if (kind == 0 || kind == 1) {
         char h[40];
@@ -814,8 +822,8 @@ void __cqo_site(const char *fn, int32_t site, int32_t kind, uint64_t angle, void
         hexbits(h, reg, (unsigned)bits);
         snprintf(r, sizeof r, "\"%s\"", h);
     }
-    snprintf(line, sizeof line, "{\"ev\":\"site\",\"fn\":%s,\"site\":%d,\"kind\":\"%s\",\"angle\":%s,\"reg\":%s}",
-             f, site, kinds[kind], a, r);
+    snprintf(line, sizeof line, "{\"ev\":\"site\",\"fn\":%s,\"site\":%d,\"kind\":\"%s\",\"angle\":%s,\"reg\":%s%s}",
+             f, site, kinds[kind], a, r, pre);
     out_line(trace_fd, line);
     if (kind == 2) n_measured++;
     else if (kind != 5) n_rotations++;

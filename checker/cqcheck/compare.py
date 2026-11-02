@@ -18,7 +18,12 @@ What is compared (CR §6, CLAUDE.md "The §6 checker"):
   frozen register, a measured value, an output, a result or a rule-kept rail (_leaks below);
 - the rotation list: (gate, target, angle or angle-rail value, control predicate per input), up to
   reordering of commuting gates (below) and renaming of rails. Rails are matched by (type,
-  value function over the group's samples). A phase P(θ) on a flag is e^{iθ·f}: its predicate is the
+  value function over the group's samples). Each Ry acts on a rail whose basis value just before
+  the gate (the record's "pre", where it fires) is part of the gate (owner ruling 2026-11-02 on
+  cq-3o3v): against the reference both sides' pre-values must agree per sample, against the C
+  oracle the pre-value must equal the C register's value at the matching cq_theta site before the C
+  side substituted it (the site event's "pre"). The value after the gate is the substituted reach's
+  on both sides, so without this a wrong value under an Ry would be invisible. A phase P(θ) on a flag is e^{iθ·f}: its predicate is the
   flag's value, whichever rail carries it. Global phases are dropped on both sides: a classical-angle
   phase whose predicate is constant over the group (never an Ry, never an angle-rail phase). Against
   the reference phases are compared as a TOTAL, never one gate at a time (CR §6 item 2, ruling
@@ -97,9 +102,12 @@ record self-contained; values are hex bit patterns or ints):
     {"ev":"ry","h","theta","ctl":[h],"ctlv":[b]}, {"ev":"ry_qangle","h","a","aval","ctl","ctlv"},
     {"ev":"phase","f","fv","theta"}, {"ev":"phase_qangle","a","aval","ctl","ctlv"};
   an Ry record may carry "w" and "v" (the target's type and its value at the gate); missing, they
-  are read from the target's entry in `kept` (a rotated rail is never written in place again).
-- rotations (C oracle side, cq-arch T1): {"ev":"site","fn","site","kind","angle","reg"} per reached
-  site of kind theta, phi, invert_begin or invert_end (the markers' angle and reg null), in
+  are read from the target's entry in `kept` (a rotated rail is never written in place again); a
+  firing Ry's record carries "pre", the target's value just before the gate (cq-3o3v; missing
+  reads as None, which equals only a missing one on the other side).
+- rotations (C oracle side, cq-arch T1): {"ev":"site","fn","site","kind","angle","reg"[,"pre"]} per
+  reached site of kind theta, phi, invert_begin or invert_end (the markers' angle and reg null; a
+  theta site's "pre" its register before the substitution, cq-3o3v), in
   execution order.
 - kept: the exit event's live list, [{"h","w","v","role"}].
 - clean: the free events, [{"h","v","known"}]. From run.py's compact trace (cq-8m6v): the setup's
@@ -396,6 +404,7 @@ class _Ev:
     ctlfn: Dict[int, Tuple] = field(default_factory=dict)  # Ry: control rail -> its value per sample
     cpred: Optional[Tuple[int, ...]] = None  # Ry: control on per sample, an identity angle included
     rawang: Optional[Tuple] = None   # Ry: the angle bits where the control is on (identity included)
+    pre: Optional[Tuple] = None      # Ry: the target's value just before the gate where it fires (cq-3o3v)
 
 
 def _kept_by_h(rr: RunResult, memo: Optional[Dict[int, Dict[Any, List[Dict[str, Any]]]]] = None
@@ -497,6 +506,7 @@ def _lowered_events(runs: List[RunResult], regs_out: Optional[Dict[Tuple[int, in
         rawang: List[Optional[int]] = []
         afn: List[Optional[int]] = []
         tvals: List[int] = []
+        pvals: List[Optional[int]] = []
         w = None
         theta = _int(r0.get("theta")) if kind in ("ry", "ph") else None
         for s in S:
@@ -520,6 +530,7 @@ def _lowered_events(runs: List[RunResult], regs_out: Optional[Dict[Tuple[int, in
             if kind in ("ry", "ryq"):
                 w, v = _target_value(runs[s], rec, kept_by[s])
                 tvals.append(v)
+                pvals.append(_masked(_int(rec.get("pre")), w) if on else None)
         target = r0.get("h") if kind in ("ry", "ryq") else None
         if target is not None:
             regs[(target, nver.get(target, 0))] = tuple(tvals)
@@ -534,7 +545,8 @@ def _lowered_events(runs: List[RunResult], regs_out: Optional[Dict[Tuple[int, in
                        pred=tuple(fired), label=_describe(r0),
                        flag=r0.get("f") if kind == "ph" else None, ctlfn=ctlfn,
                        cpred=tuple(ctl_on) if kind in ("ry", "ryq") else None,
-                       rawang=tuple(rawang) if kind in ("ry", "ryq") else None))
+                       rawang=tuple(rawang) if kind in ("ry", "ryq") else None,
+                       pre=tuple(pvals) if kind in ("ry", "ryq") else None))
     live, glob, idle = [], [], []
     for e in evs:
         if not any(e.pred):
@@ -570,7 +582,7 @@ def _describe(rec: Dict[str, Any]) -> str:
 
 def _same(a: _Ev, b: _Ev, m: Dict[int, int], minv: Dict[int, int]) -> Optional[Tuple[int, int]]:
     """None if a != b; else the rail pair the match needs (or (-1, -1) for none)."""
-    if a.kind != b.kind or a.pred != b.pred or a.theta != b.theta or a.afn != b.afn:
+    if a.kind != b.kind or a.pred != b.pred or a.theta != b.theta or a.afn != b.afn or a.pre != b.pre:
         return None
     if a.target is None:
         return (-1, -1)
@@ -806,6 +818,9 @@ class _Site:
     kind: str                        # theta | phi
     # per sample: the site's reaches in emission order, (position in that sample's hits, angle, raw register)
     occ: List[List[Tuple[int, Any, Optional[int]]]]
+    # per sample, parallel to occ: a theta reach's register before the C side substituted it (the
+    # site event's "pre", cq-3o3v; None when the event has none)
+    pre: List[List[Optional[int]]] = field(default_factory=list)
 
 
 _MARKERS = ("invert_begin", "invert_end")
@@ -867,9 +882,10 @@ def _c_sites(runs: List[RunResult], nan_eq: bool, open_end: Sequence[bool] = (),
                 continue
             st = sites.get(key)
             if st is None:
-                st = sites[key] = _Site(key, rec["kind"], [[] for _ in range(nS)])
+                st = sites[key] = _Site(key, rec["kind"], [[] for _ in range(nS)], [[] for _ in range(nS)])
             st.occ[s].append((epos, _fpv(ang, "f64", nan_eq),
                               _int(rec.get("reg")) if rec["kind"] == "theta" else None))
+            st.pre[s].append(_int(rec.get("pre")) if rec["kind"] == "theta" else None)
     return [sites[k] for k in sorted(sites, key=repr)], reasons
 
 
@@ -1050,21 +1066,21 @@ def _match_input(ours: List[_Ev], sites: List[_Site], nS: int, capped: List[bool
         return got
 
     widths: Dict[Any, int] = {}
-    for afn, rfn, w in full:
+    for afn, rfn, w, pfn in full:
         widths.setdefault(w, len(widths))
     wlist = list(widths) or [None]   # at least one width class: the reader takes one id per class
     n = len(ours)
     need_ord = any(comm)
     data = [n, nS, len(sites), len(wlist), MATCH_BUDGET] + [1 if c else 0 for c in capped]
     for i, e in enumerate(ours):
-        afn, rfn, w = full[i]
+        afn, rfn, w, pfn = full[i]
         sup = sorted(e.support)
         data += [1 if ckind[i] == "theta" else 0, 0, 1 if free_ok[i] else 0,
                  0 if e.target is None else 1, 0 if e.target is None else int(e.target), len(sup)]
         data += [int(r) for r in sup]
         data += [1 if e.pred[s] else 0 for s in range(nS)]
         data += [iid(afn[s]) for s in range(nS)]
-        data += [iid(_fpv(rfn[s], w, nan_eq)) for s in range(nS)]
+        data += [iid((_fpv(rfn[s], w, nan_eq), _fpv(pfn[s], w, nan_eq))) for s in range(nS)]
         data += [widths[w], len(cands[i])] + list(cands[i])
         if partner[i] is None:
             data += [-1, 0]
@@ -1077,8 +1093,9 @@ def _match_input(ours: List[_Ev], sites: List[_Site], nS: int, capped: List[bool
         for s in range(nS):
             occ = st.occ[s]
             data.append(len(occ))
-            for epos, a, r in occ:
-                data += [epos, iid(a)] + [iid(_fpv(r, w, nan_eq)) for w in wlist]
+            for t, (epos, a, r) in enumerate(occ):
+                p = st.pre[s][t] if st.pre else None
+                data += [epos, iid(a)] + [iid((_fpv(r, w, nan_eq), _fpv(p, w, nan_eq))) for w in wlist]
     return data
 
 
@@ -1113,7 +1130,8 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
             afn = tuple(_fpv(e.theta, "f64", nan_eq) if p else None for p in e.pred)
         w = e.tclass[0] if e.target is not None else None
         rfn = e.tclass[1] if e.target is not None else tuple(None for _ in e.pred)
-        return afn, rfn, w
+        pfn = e.pre if e.pre is not None else tuple(None for _ in e.pred)
+        return afn, rfn, w, pfn
 
     full = [lfull(e) for e in ours]
     ckind = ["theta" if e.kind in ("ry", "ryq") else "phi" for e in ours]
@@ -1126,7 +1144,7 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
              ) -> Optional[Used]:
         """Gate i taken by site j: the new state, or None (it disagrees, or takes no reach)."""
         e, st = ours[i], sites[j]
-        afn, rfn, w = full[i]
+        afn, rfn, w, pfn = full[i]
         new: Optional[List[int]] = None
         for s in range(nS):
             if not e.pred[s]:
@@ -1134,7 +1152,11 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
             m = used[j * nS + s]
             hit = None
             for t, (epos, a, r) in enumerate(st.occ[s]):
-                if not (m >> t) & 1 and a == afn[s] and (st.kind != "theta" or _fpv(r, w, nan_eq) == _fpv(rfn[s], w, nan_eq)):
+                # theta: the register after (the chosen value) and before the C side substituted it,
+                # the latter the Ry target's value just before the gate (owner ruling on cq-3o3v)
+                if not (m >> t) & 1 and a == afn[s] and (st.kind != "theta" or (
+                        _fpv(r, w, nan_eq) == _fpv(rfn[s], w, nan_eq)
+                        and _fpv(st.pre[s][t] if st.pre else None, w, nan_eq) == _fpv(pfn[s], w, nan_eq))):
                     hit = t
                     break
             if hit is None:
@@ -1178,7 +1200,8 @@ def _match_c(ours: List[_Ev], glob: List[_Ev], sites: List[_Site], nan_eq: bool,
                 s, t = bad[0]
                 reach = _fn([len(o) for o in st.occ])
                 why.append(f"C site {st.key[0]}:{st.key[1]} ({st.kind}, reach {t} at sample {s}; reaches per "
-                           f"sample {reach}) has no lowered gate with that predicate, angle and register")
+                           f"sample {reach}) has no lowered gate with that predicate, angle and register "
+                           f"(value before and after)")
         return why
 
     start: Used = tuple(0 for _ in range(len(sites) * nS))

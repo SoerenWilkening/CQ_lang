@@ -1369,6 +1369,67 @@ class UnPrep(unittest.TestCase):
         self.check(self.ours(), self.c(first=False), False)
 
 
+class PreValue(unittest.TestCase):
+    """Owner ruling 2026-11-02 on cq-3o3v: each Ry acts on a rail whose basis value just before the
+    gate (the record's "pre") equals the C register's value at the matching cq_theta site before the
+    C side substituted it (the site event's "pre"); against the reference both sides' pre-values
+    agree. m3's shape: x (h=1) = a; then r (h=3, i32) is set to 5 and prepared Ry(0.5) when a (C
+    site f:1, chosen value b). The value after the gate is the substituted reach's on every side, so
+    a wrong value under the Ry is visible only through "pre"."""
+
+    @staticmethod
+    def site(fn, site, angle, reg, pre):
+        return {"ev": "site", "fn": fn, "site": site, "kind": "theta", "angle": ang(angle), "reg": hex(reg),
+                "pre": hex(pre)}
+
+    def c(self):
+        return [RunResult(side="c", sample={"call": 0, "args": [s & 1, s >> 1]}, outputs={"ret": [], "end": "ret"},
+                          measured=[], rotations=[self.site("f", 0, 1.0, s & 1, 0)]
+                          + ([self.site("f", 1, 0.5, s >> 1, 5)] if s & 1 else []),
+                          kept=None, clean=None, violations=[]) for s in range(4)]
+
+    @staticmethod
+    def ours(pre_r, name="o"):
+        """pre_r(a, b): our r's value just before its Ry."""
+        return side(name, lambda a, b, s: dict(
+            rots=[dict(ry(1, 1.0), w="i1", v=hex(a), pre="0x0"),
+                  dict(ry(3, 0.5, [7], [a]), w="i32", v=hex(b if a else 0),
+                       **({"pre": hex(pre_r(a, b))} if a else {}))],
+            kept=[keep(1, a), keep(3, b if a else 0, "i32")]))
+
+    def check(self, ours, other, against, equal, needle=None):
+        r = compare(ours, other, QKEY, against)
+        self.assertEqual(r.equal, equal, r.reasons)
+        if needle:
+            self.assertTrue(any(needle in x for x in r.reasons), r.reasons)
+
+    def test_equal_pre_value(self):
+        self.check(self.ours(lambda a, b: 5), self.c(), "c", True)
+        self.check(self.ours(lambda a, b: 5), self.ours(lambda a, b: 5, "r"), "ref", True)
+
+    def test_wrong_pre_value_against_c_rejected(self):
+        # m3's old lowering: r = 5 as xorc 5 into a rail an earlier Ry left at another value
+        for pre in (lambda a, b: 0, lambda a, b: 4, lambda a, b: 5 ^ b):
+            self.check(self.ours(pre), self.c(), "c", False, "no lowered gate with that predicate, angle and register")
+
+    def test_wrong_pre_value_against_ref_rejected(self):
+        self.check(self.ours(lambda a, b: 4), self.ours(lambda a, b: 5, "r"), "ref", False, "rotation list differs")
+        self.check(self.ours(lambda a, b: 5 ^ b), self.ours(lambda a, b: 5, "r"), "ref", False,
+                   "rotation list differs")
+
+    def test_pre_value_nan_insensitive_against_c(self):
+        nan1, nan2 = 0x7ff8000000000000, 0x7ff8000000000001
+        c = [RunResult(side="c", sample={"call": 0, "args": [s & 1, s >> 1]}, outputs={"ret": [], "end": "ret"},
+                       measured=[], rotations=[self.site("f", 0, 1.0, s, nan1)], kept=None, clean=None,
+                       violations=[]) for s in range(4)]
+
+        def ours(pre):
+            return side("o", lambda a, b, s: dict(rots=[dict(ry(1, 1.0), w="f64", v=hex(s), pre=hex(pre))],
+                                                  kept=[keep(1, s, "f64")]))
+        self.check(ours(nan2), c, "c", True)
+        self.check(ours(0), c, "c", False)
+
+
 class HostOutput(unittest.TestCase):
     """Host output (cq-e4jk): outputs["stdout"] and outputs["effects"] are compared against both
     oracles; against "c" the C side's are a prefix of ours on a capped sample (exact on an ended one,

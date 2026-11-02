@@ -415,6 +415,22 @@
           "new": ""
         }
       ]
+    },
+    {
+      "id": "03-ry-on-changed-value",
+      "class": "ry_on_other_value",
+      "example": "03_phase_arm_eq",
+      "note": "x ^= 1 just before its Ry: the Ry acts on a rail holding x0 ^ 1, not the C register's x0 (cq-3o3v); the value after the Ry is the substituted reach's either way, so only the pre-gate value check sees it",
+      "edits": [
+        {
+          "old": "  call void @cqrt_ry_i32(i32 %5, double %1)",
+          "new": "  call void @cqrt_xorc_i32(i32 %5, i32 1)\n  call void @cqrt_ry_i32(i32 %5, double %1)"
+        },
+        {
+          "old": "declare void @cqrt_ry_i32(i32, double)",
+          "new": "declare void @cqrt_ry_i32(i32, double)\n\ndeclare void @cqrt_xorc_i32(i32, i32)"
+        }
+      ]
     }
   ]
 }

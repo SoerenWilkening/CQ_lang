@@ -561,6 +561,45 @@ class ThetaSubstitution(unittest.TestCase):
                                        ("ry_qangle", 5, "0x23456789")])
 
 
+class ThetaPreAndUnprep(ThetaSubstitution):
+    """cq-3o3v: a firing Ry's event carries "pre", its target's value before the gate (before the
+    substitution); a firing Ry that takes no reach and is the adjoint of the last Ry on a rail
+    nothing wrote since puts that Ry's pre-value back after it is logged (CR rule 10's un-prep)."""
+    ARGS = ("int tu(int,double)", "tu", ["int", "double"])
+
+    def trace(self, theta):
+        spec = spec1(*self.ARGS)
+        prog = run.build(HERE / "theta_unprep.ll", spec, (), RT, FAM)
+        with tempfile.TemporaryDirectory() as d:
+            t, f, th = Path(d) / "t.jsonl", Path(d) / "s", Path(d) / "theta"
+            f.write_text(drivers.sample_file(spec, [run.canonical_sample(spec, {"call": 0, "args": [0, 0.5]})]))
+            env = dict(os.environ, CQE_TRACE=str(t), CQD_SAMPLES=str(f))
+            env.pop("CQE_THETA", None)
+            if theta is not None:
+                th.write_text(theta)
+                env["CQE_THETA"] = str(th)
+            subprocess.run([str(prog)], env=env, check=True, capture_output=True)
+            return [e for e in (json.loads(l) for l in t.read_text().splitlines() if l.strip())
+                    if e["ev"] not in ("shot", "shot_end")]
+
+    def test_pre_and_unprep(self):
+        ev = self.trace("0x3fe0000000000000 i32 0x2a\n0x3fd0000000000000 i32 0x10\n"
+                        "0x3fe8000000000000 i32 0x7\n0x3fe8000000000000 i32 0x9\n")
+        self.assertEqual([(e["h"], e["pre"], e["v"]) for e in ev if e["ev"] == "ry"],
+                         [(1, "0x3", "0x2a"), (1, "0x2a", "0x2a"), (2, "0x3", "0x10"), (2, "0x11", "0x11"),
+                          (3, "0x3", "0x7"), (3, "0x7", "0x9")])
+        self.assertEqual([e["v"] for e in ev if e["ev"] == "measure"], ["0x3", "0x11", "0x9"])
+
+    def test_no_schedule_no_unprep(self):
+        ev = self.trace(None)
+        self.assertEqual([e["v"] for e in ev if e["ev"] == "measure"], ["0x3", "0x2", "0x3"])
+
+    # the inherited cases are theta_subst.ll's
+    test_no_schedule_is_the_identity = test_reaches_by_width_and_angle = None
+    test_control_zero_takes_nothing_and_misses_are_logged = test_angle_a_few_ulps_off_takes_its_reach = None
+    test_wide_and_fp_values = None
+
+
 class HandlerOrder(unittest.TestCase):
     """M1 (cq-mgi) multi-handler dispatch through the real core (cq-f69), with multifam.c's three
     handlers for mul: first acceptor wins, a decline's writes are discarded, -1 ends the search,

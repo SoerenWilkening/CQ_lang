@@ -103,6 +103,9 @@ void cqe__setrole(int32_t h, int role);
 void cqe__setfenv(int32_t h, int bits); /* core.c (cq-tt2j) */
 void cqe__mark_written(int32_t h);
 void cqe__mark_nd(int32_t h);
+void cqe__ry_note(int32_t h, uint64_t angle, const cqe_val *pre); /* core.c (cq-3o3v) */
+int cqe__ry_unprep(int32_t h, uint64_t angle);
+void cqe__ry_forget(int32_t h);
 void cqe__mark_measured(int32_t h);
 void cqe__add_dep(int32_t h, int32_t src);
 int cqe__free_note(int32_t h, int known); /* core.c (cq-8m6v) */
@@ -527,7 +530,8 @@ static void log_gate(const call_t *c, int32_t h, const int32_t *srcs, int ns) {
   free(b.p);
 }
 
-static void log_rot(const char *ev, const call_t *c, int32_t h, int32_t ctl, const char *angle_fields) {
+static void log_rot(const char *ev, const call_t *c, int32_t h, int32_t ctl, const char *angle_fields,
+                    const char *pre) {
   sbuf b = {0};
   sb_addf(&b, "{\"ev\":\"%s\",\"h\":%d,%s,\"ctl\":[", ev, (int)h, angle_fields);
   if (ctl > 0)
@@ -537,6 +541,10 @@ static void log_rot(const char *ev, const call_t *c, int32_t h, int32_t ctl, con
     sb_addf(&b, "%d", (int)(cqe__val(ctl)->w[0] & 1));
   sb_addf(&b, "],\"w\":\"%s\",\"v\":\"", cqe__w(h));
   sb_hex(&b, cqe__val(h));
+  if (pre) {
+    sb_add(&b, "\",\"pre\":\"");
+    sb_add(&b, pre);
+  }
   sb_add(&b, "\"}");
   cqe_log(b.p);
   free(b.p);
@@ -708,12 +716,13 @@ static int64_t f64_ordered(uint64_t b) { return (b >> 63) ? -(int64_t)(b & ~(1UL
 
 #define THETA_NEAR_ULPS (1ULL << 32) /* an angle within this many ulps of a reach's still takes it */
 
-/* A firing Ry on rail h with angle bits `angle`: take the schedule's reach (header). */
-static void theta_substitute(int32_t h, uint64_t angle) {
+/* A firing Ry on rail h with angle bits `angle`: take the schedule's reach (header). 1 when it took
+ * one, 0 when there is no schedule, -1 when it matched no reach. */
+static int theta_substitute(int32_t h, uint64_t angle) {
   if (!theta_loaded)
     theta_load();
   if (!theta_sched)
-    return;
+    return 0;
   const char *w = cqe__w(h);
   theta_reach *r = NULL, *near = NULL;
   uint64_t best = THETA_NEAR_ULPS + 1;
@@ -746,10 +755,37 @@ static void theta_substitute(int32_t h, uint64_t angle) {
       x->w[k] = k < 2 ? r->v[k] : 0;
     if (x->bits % 64)
       x->w[x->nw - 1] &= (1ULL << (x->bits % 64)) - 1;
-    return;
+    return 1;
   }
   cqe__logf("{\"ev\":\"theta_unmatched\",\"h\":%d,\"w\":\"%s\",\"angle\":\"0x%llx\"}", (int)h, w,
             (unsigned long long)angle);
+  return -1;
+}
+
+/* A firing Ry (cq-3o3v): its target's value before the gate is the record's "pre" (compare checks it
+ * against the C register's value at the cq_theta site the gate takes, before the C side substitutes
+ * it). The substitution then sets the chosen value. A firing Ry that took a reach is noted on its
+ * rail; one that matched no reach and is the noted Ry's adjoint on an untouched rail (CR rule 10's
+ * un-prep) puts the noted pre-value back after it is logged (its record's "v" stays the value it
+ * acted on), as Ry(-θ)·Ry(θ) = I. */
+static char *ry_fire(int32_t h, uint64_t angle, int *undo) {
+  cqe_val *x = cqe__val(h);
+  cqe_val pre = *x;
+  pre.w = malloc((x->nw ? x->nw : 1) * sizeof *pre.w);
+  if (!pre.w)
+    abort();
+  memcpy(pre.w, x->w, x->nw * sizeof *pre.w);
+  char *hx = cqe__hexa(&pre);
+  int got = theta_substitute(h, angle);
+  *undo = 0;
+  if (got > 0)
+    cqe__ry_note(h, angle, &pre);
+  else if (got < 0)
+    *undo = 1;
+  else
+    cqe__ry_forget(h);
+  free(pre.w);
+  return hx;
 }
 
 static void gate_ry(call_t *c, const char *w, int q, int ctl) {
@@ -766,7 +802,9 @@ static void gate_ry(call_t *c, const char *w, int q, int ctl) {
   if (cqe__measured(h))
     cqe__violation("rotate_after_measure", h, "%s: rail %d was measured", c->sym, (int)h);
   char fields[256];
-  int finite;
+  int finite, undo = 0;
+  uint64_t ang;
+  char *pre = NULL; /* the target's value before a firing gate (cq-3o3v) */
   if (q) {
     int32_t a = as_i32(&c->raw[n - 1]);
     if (!operand(c, a, "f64"))
@@ -775,24 +813,26 @@ static void gate_ry(call_t *c, const char *w, int q, int ctl) {
       return;
     double av = as_f64(cqe__val(a));
     finite = isfinite(av);
-    if (!ctl || (cqe__val(cf)->w[0] & 1)) {
-      uint64_t ab;
-      memcpy(&ab, &av, 8);
-      theta_substitute(h, ab);
-    }
+    memcpy(&ang, &av, 8);
+    if (!ctl || (cqe__val(cf)->w[0] & 1))
+      pre = ry_fire(h, ang, &undo);
     char *hx = cqe__hexa(cqe__val(a));
     snprintf(fields, sizeof fields, "\"a\":%d,\"aval\":\"%s\"", (int)a, hx);
     free(hx);
-    log_rot("ry_qangle", c, h, cf, fields);
+    log_rot("ry_qangle", c, h, cf, fields, pre);
     cqe__add_dep(h, a);
   } else {
     double th = as_f64(&c->raw[n - 1]);
     finite = isfinite(th);
+    ang = c->raw[n - 1].w[0];
     if (!ctl || (cqe__val(cf)->w[0] & 1))
-      theta_substitute(h, c->raw[n - 1].w[0]);
+      pre = ry_fire(h, ang, &undo);
     snprintf(fields, sizeof fields, "\"theta\":\"0x%llx\"", (unsigned long long)c->raw[n - 1].w[0]);
-    log_rot("ry", c, h, cf, fields);
+    log_rot("ry", c, h, cf, fields, pre);
   }
+  free(pre);
+  if (undo && cqe__ry_unprep(h, ang))
+    cqe__logf("{\"ev\":\"ry_unprep\",\"h\":%d}", (int)h);
   if (ctl)
     cqe__add_dep(h, cf);
   /* A non-finite literal angle is the identity on every branch; an angle rail may be finite on
