@@ -27,7 +27,6 @@
 #include "SpineInternal.h"
 #include "../loops/cutoff/Exits.h"
 #include "../fatptr/FatPtrInternal.h"
-#include "../eff/conc/Setjmp.h"
 
 #include "cq/Aggregates.h"
 #include "cq/Effects.h"
@@ -211,11 +210,6 @@ private:
   // phi identified with a carried value's final state). The walker does not merge them again.
   DenseSet<const PHINode *> unitBoundPhis;
   std::vector<const Instruction *> blockDefs;           // original quantum defs in the current output block
-  // CR rule 24 (101): setjmp diamonds on a quantum test (conc::setjmpDiamond), by head; their normal arms
-  // and joins, to the head.
-  DenseMap<const BasicBlock *, conc::SetjmpDiamond> sjByHead;
-  DenseMap<const BasicBlock *, const BasicBlock *> sjArmHead, sjJoinHead;
-  void lowerSetjmpJoin(PHINode &phi, const conc::SetjmpDiamond &d);
   SmallVector<const BasicBlock *, 4> openRegions;       // ipdoms of quantum terminators not yet reached
   std::unique_ptr<TargetLibraryInfoImpl> tlii;
   std::unique_ptr<TargetLibraryInfo> tli;
@@ -349,25 +343,11 @@ void Walker::plan() {
       if (seen.insert(s).second)
         stack.push_back({s, s->getTerminator()->getNumSuccessors()});
     }
-    // CR rule 24 (101): an escaping clone returns the escaped flag its longjmp arms copy out, so its
-    // return blocks come after every other block (a return has no successor: still a topological order).
-    if (conc::cloneEscapes(ctx.T, ctx.S))
-      std::stable_partition(post.begin(), post.end(),
-                            [](BasicBlock *b) { return isa<ReturnInst>(b->getTerminator()); });
     for (auto it = post.rbegin(); it != post.rend(); ++it) {
       idx[*it] = L.size();
       L.push_back(*it);
     }
   }
-  // CR rule 24 (101): a setjmp diamond. Its test is quantum (taint: a longjmp under a quantum predicate
-  // makes the setjmp's result quantum); nothing of the test is emitted (emitBody, lowerSetjmpJoin).
-  for (BasicBlock *b : L)
-    if (isQuantumTerm(ctx, b->getTerminator()))
-      if (std::optional<conc::SetjmpDiamond> d = conc::setjmpDiamond(ctx, *b)) {
-        sjByHead.insert({b, *d});
-        sjArmHead[d->normal] = b;
-        sjJoinHead[d->join] = b;
-      }
   for (Loop *lp : LI.getTopLevelLoops()) {
     if (pureClassical(*lp)) {
       for (Loop *sub : lp->getLoopsInPreorder())
@@ -1137,63 +1117,24 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
       nr->setOperand(0, v);
       return;
     }
-    // CR rule 24 (101) with 82: an escaping clone returns its escaped flag after the flags (calls::materialize:
-    // {fields..., flags, escaped}, {flags, escaped} for a void clone).
-    Value *esc = nullptr;
-    if (conc::cloneEscapes(ctx.T, ctx.S)) {
-      esc = conc::cloneEscapedFlag(ctx);
-      if (!esc)
-        internalError("spine: an escaping clone's return reached before its longjmp (plan orders returns last)", ret);
-    }
-    unsigned tail = esc ? 2 : 1;
     if (rv) {
       // cq-xhv4: the result's fields (a field-wise result's leaves, or the one value) then the flags.
-      resultFields(ret, rv, st, tail, vals);
-      if (!st || st->getNumElements() != vals.size() + tail || st->getElementType(0) != vals[0]->getType())
+      resultFields(ret, rv, st, 1, vals);
+      if (!st || st->getNumElements() != vals.size() + 1 || st->getElementType(0) != vals[0]->getType())
         internalError("spine: a clone carrying the environment whose result type is not {fields..., flags}", ret);
-    } else if (esc ? !(st && st->getNumElements() == 2) : CRT != handleTy(LC)) {
+    } else if (CRT != handleTy(LC)) {
       internalError("spine: a void clone carrying the environment that does not return the flags handle", ret);
     }
     Value *flags = copyOut(Operand{fenv::cloneExitFlags(ctx, *ret), true}, RailType{Kind::Int, 32});
     Value *v = flags;
-    if (rv || esc) {
+    if (rv) {
       vals.push_back(flags);
-      if (esc)
-        vals.push_back(esc);
       if (vals.size() != st->getNumElements())
         internalError("spine: a clone carrying the environment whose result type is not {fields..., flags}", ret);
       v = PoisonValue::get(st);
       for (unsigned k = 0; k < vals.size(); ++k)
         v = B.CreateInsertValue(v, vals[k], {k});
     }
-    ReturnInst *nr = B.CreateRet(v);
-    ctx.unc().flushAtExit(nr);
-    return;
-  }
-  if (conc::cloneEscapes(ctx.T, ctx.S)) {
-    // CR rule 24 (101): the result (copied out as below) then the escaped flag lowerLongjmp copied out
-    // (calls::materialize: {result, escaped}, or escaped alone for a void clone).
-    Value *esc = conc::cloneEscapedFlag(ctx);
-    if (!esc)
-      internalError("spine: an escaping clone's return reached before its longjmp (plan orders returns last)", ret);
-    Value *v = esc;
-    if (Value *rv = ret->getReturnValue()) {
-      // The result's fields (a field-wise or fat-pointer result's leaves, or the one value) then the flag.
-      auto *st = dyn_cast<StructType>(CRT);
-      SmallVector<Value *, 4> vals;
-      resultFields(ret, rv, st, 1, vals);
-      if (!st || st->getNumElements() != vals.size() + 1)
-        internalError("spine: an escaping clone whose return type is not {fields..., escaped}", ret);
-      vals.push_back(esc);
-      v = PoisonValue::get(st);
-      for (unsigned k = 0; k < vals.size(); ++k) {
-        if (vals[k]->getType() != st->getElementType(k))
-          internalError("spine: an escaping clone's return field of another type than its result's", ret);
-        v = B.CreateInsertValue(v, vals[k], {k});
-      }
-    }
-    if (v->getType() != CRT)
-      internalError("spine: an escaping clone's return value is not of its return type", ret);
     ReturnInst *nr = B.CreateRet(v);
     ctx.unc().flushAtExit(nr);
     return;
@@ -1645,10 +1586,6 @@ void Walker::emitBlock(BasicBlock *b) {
   while (!openRegions.empty() && openRegions.back() == b)
     openRegions.pop_back();
   sh.curPred = ctx.preds().block(b).quantumPart(ctx.T, ctx.S);
-  // Rule 24 (101): a setjmp's first-return arm always runs (an escape happens inside its call): the
-  // head's predicate, not the test's.
-  if (auto a = sjArmHead.find(b); a != sjArmHead.end())
-    sh.curPred = ctx.preds().block(a->second).quantumPart(ctx.T, ctx.S);
 
   if (unitOf.count(b)) {
     // The header's guard comes first: the unit runs only under it (cq-uevr).
@@ -1728,11 +1665,6 @@ void Walker::emitBlock(BasicBlock *b) {
   for (PHINode &phi : b->phis()) {
     sh.cur = &phi;
     visited.insert(&phi);
-    if (auto j = sjJoinHead.find(b); j != sjJoinHead.end()) {
-      lowerSetjmpJoin(phi, sjByHead.find(j->second)->second);
-      blockDefs.push_back(&phi);
-      continue;
-    }
     if (unitBoundPhis.count(&phi)) {
       if (auto ie = inEdges.find(b); ie != inEdges.end() && ie->second.size() > 1)
         joinUnitPhi(phi, ie->second);
@@ -1851,8 +1783,6 @@ void Walker::emitBody(BasicBlock *b, const Instruction *resume) {
     Instruction &I = *it;
     sh.cur = &I;
     visited.insert(&I);
-    if (auto d = sjByHead.find(b); d != sjByHead.end() && (&I == d->second.setjmp || &I == d->second.cmp))
-      continue;   // rule 24 (101): the host setjmp is not executed; its test is the escaped flag
     if (auto *CB = dyn_cast<CallInst>(&I);
         CB && calls::classify(*CB, ctx.T, ctx.S) == calls::Class::InvertBegin) {
       // Rule 17: eff-invert owns the bracketed region, up to and including its end marker.
@@ -1906,25 +1836,6 @@ void Walker::emitBody(BasicBlock *b, const Instruction *resume) {
     }
   }
   emitTerminator(b);
-}
-
-// CR rule 24 (101): a phi of a setjmp diamond's join is select(escaped, value on setjmp's second return,
-// value from the first-return arm), escaped the flag the arm's escaping call returned.
-void Walker::lowerSetjmpJoin(PHINode &phi, const conc::SetjmpDiamond &d) {
-  Value *esc = conc::escapedOut(ctx, *d.call);
-  if (!esc)
-    internalError("spine: a setjmp join reached before its escaping call was lowered", &phi);
-  if (!spine::isQ(ctx, &phi))
-    unimplemented("spine: a classical phi at a setjmp join (rule 24)", &phi);
-  Operand e = ctx.operand(phi.getIncomingValueForBlock(d.head));
-  Operand n = ctx.operand(phi.getIncomingValueForBlock(d.normal));
-  abi::TemplateSpec spec;
-  spec.op = "select";
-  spec.w = railTypeOf(phi.getType());
-  std::string shape = std::string(e.handle ? "h" : "l") + (n.handle ? "h" : "l");
-  spec.shape = shape == "hh" ? "" : shape;
-  Value *m = ctx.emitTemplate(spec, {Operand{esc, true}, e, n});
-  spine::bindOperand(ctx, &phi, Operand{m, true});
 }
 
 void Walker::run() {

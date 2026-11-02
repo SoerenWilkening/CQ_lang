@@ -1307,6 +1307,9 @@ Value *lowerMerge(LoweringContext &ctx, PHINode &phi) {
   // One arm per distinct incoming value, in the phi's incoming order (its first occurrence).
   struct Arm { const Value *v; unsigned node; unsigned order; };
   std::vector<Arm> arms;
+  // LLVM's refinement of poison/undef (cq-lyzw, rule 24's escape returns): an incoming poison or undef
+  // value is no arm of its own unless every incoming value is one.
+  bool allUndef = all_of(phi.incoming_values(), [](const Value *v) { return isa<UndefValue>(v); });
   Bdd &m = Bdd::get();
   for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i) {
     const BasicBlock *from = phi.getIncomingBlock(i);
@@ -1315,6 +1318,8 @@ Value *lowerMerge(LoweringContext &ctx, PHINode &phi) {
       continue;   // an unreachable predecessor never selects
     unsigned e = nodeOf(ctx.preds().edge(from, bb));
     const Value *v = phi.getIncomingValue(i);
+    if (isa<UndefValue>(v) && !allUndef)
+      continue;   // poison or undef on that edge: any value refines it, the other arms' merge among them
     auto it = std::find_if(arms.begin(), arms.end(), [&](const Arm &a) { return a.v == v; });
     if (it == arms.end())
       arms.push_back({v, e, i});
@@ -1386,6 +1391,9 @@ void lowerMergeFields(LoweringContext &ctx, PHINode &phi) {
 
   struct Arm { const Value *v; unsigned node; unsigned order; };
   std::vector<Arm> arms;
+  // LLVM's refinement of poison/undef (cq-lyzw, rule 24's escape returns): an incoming poison or undef
+  // value is no arm of its own unless every incoming value is one.
+  bool allUndef = all_of(phi.incoming_values(), [](const Value *v) { return isa<UndefValue>(v); });
   Bdd &m = Bdd::get();
   for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i) {
     const BasicBlock *from = phi.getIncomingBlock(i);
@@ -1393,6 +1401,8 @@ void lowerMergeFields(LoweringContext &ctx, PHINode &phi) {
       continue;   // an unreachable predecessor never selects
     unsigned e = nodeOf(ctx.preds().edge(from, bb));
     const Value *v = phi.getIncomingValue(i);
+    if (isa<UndefValue>(v) && !allUndef)
+      continue;   // poison or undef on that edge: any value refines it, the other arms' merge among them
     auto it = std::find_if(arms.begin(), arms.end(), [&](const Arm &a) { return a.v == v; });
     if (it == arms.end())
       arms.push_back({v, e, i});

@@ -24,6 +24,7 @@
 #include "cq/Loops.h"
 #include "cq/Taint.h"
 #include "cq/Verify.h"
+#include "eff/conc/Setjmp.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
@@ -181,6 +182,20 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
       for (Function &F : M)
         if (!F.isDeclaration() && T.isTainted(F))
           Tainted.push_back(&F);
+    }
+
+    // 1c. CR rule 24: setjmp/longjmp as explicit control flow (eff-conc, Setjmp.cpp), in the tainted
+    // functions holding a setjmp and the escape clones it makes. Its CFG changes are final-taint input.
+    SmallVector<Function *, 8> SJ = cq::conc::explicitSetjmp(M, T);
+    if (!SJ.empty()) {
+      trace("explicit-setjmp: changed");
+      CFGChanged = true;
+      Tainted.clear();
+      for (Function &F : M)
+        if (!F.isDeclaration() && (T.isTainted(F) || is_contained(SJ, &F)))
+          Tainted.push_back(&F);
+      for (Function *F : SJ)
+        FAM.invalidate(*F, PreservedAnalyses::none());
     }
 
     // 2. Reducible control flow, on tainted functions only (NORTHSTAR principle 1). The pass
