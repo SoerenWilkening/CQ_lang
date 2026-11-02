@@ -1448,11 +1448,12 @@ Function *materializeInv(Module &M, const Specialization &S, Function *C, unsign
     return k;
   };
   IRBuilder<> B(BasicBlock::Create(Cx, "", G));
-  const DataLayout &DL = M.getDataLayout();
-  uint64_t cellOff = cell * DL.getTypeStoreSize(ch.store->getValueOperand()->getType());
+  // cq-ja4w: the clone's slot formal holds one i32 handle per cell (a local scalar or scalar-array object,
+  // the only kind cleanDeadCells admits), addressed as the forward clone addresses it (mem-slots
+  // cellPointer): the i32 cell index, whatever the cell's C width.
   Value *cellPtr = G->getArg(paramOf(argNo));
-  if (cellOff)
-    cellPtr = B.CreateConstGEP1_64(Type::getInt8Ty(Cx), cellPtr, cellOff);
+  if (cell)
+    cellPtr = B.CreateConstInBoundsGEP1_64(i32, cellPtr, cell);
   Value *yp = B.CreateAlignedLoad(i32, cellPtr, Align(4));
   SmallPtrSet<const Value *, 4> loadSet{ch.load};
   auto operandOf = [&](Value *z) -> Operand {
