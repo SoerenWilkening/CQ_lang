@@ -23,7 +23,10 @@ PROBE = PROBES / "fatptr.O1.ll"
 ENTRIES = ["f_ne_two", "f_eq_three", "f_eq_arms", "f_lt_global", "f_eq_signed", "f_rail_off", "f_rail_off_store", "f_ptrmask",
            "f_ret_ptr", "f_slot_rmw", "f_slot_rmw_old", "f_slot_peek", "f_field_store",
            # cq-b244: roots inside their objects (&t[4]) at negative cell indices
-           "f_neg_qrom", "f_neg_qrom_sext", "f_neg_cmp", "f_neg_inttoptr"]
+           "f_neg_qrom", "f_neg_qrom_sext", "f_neg_cmp", "f_neg_inttoptr",
+           # cq-5xm0 (no stops): rules 20, 21 over their whole class
+           "f_2d_qrom", "f_2d_qram", "f_sel_cells", "f_sel_classical", "f_host_idx", "f_slot_store", "f_slot_cls",
+           "f_host_zero", "f_slot_plain", "f_int_unknown", "f_int_bytes", "f_host_interior", "f_host_interior_tab", "f_qram_addr"]
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 FAT = re.compile(r"@cq_template_(select_i32|icmp_eq_i32|icmp_ne_i32|\w+_i64)")
 

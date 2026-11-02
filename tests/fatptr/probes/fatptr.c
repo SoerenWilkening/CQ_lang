@@ -247,3 +247,77 @@ int f_slot_cls(int x0, double th, int a0, double ta, int c) {
   int w = peek1(p);
   return cq_measure(r) + 2 * cq_measure(a) + 4 * cq_measure(b) + 8 * cq_measure(w);
 }
+/* cq-5xm0 (rule 21): a load at the classical idx 0 through a quantum select of two host globals (each object's
+ * access unguarded, merged on the tag) */
+static int LA[4] = {1, 2, 3, 4}, LB[4] = {5, 6, 7, 8};
+int f_host_zero(unsigned x0, double th) {
+  unsigned x = x0; cq_theta(&x, th);
+  int *p = (x & 1) ? LB : LA;
+  return cq_measure(*p);
+}
+/* cq-5xm0 (rules 9, 20, 21; 129): a plain store through a quantum select of slot objects, then a clone's
+ * read-modify-write through the same pointer (the object table) */
+__attribute__((noinline)) static void bump2(int *p) { *p += 1; }
+int f_slot_plain(int x0, double th, int k, int a0, double ta, int b0, double tb) {
+  int x = x0, a = a0, b = b0;
+  cq_theta(&x, th); cq_theta(&a, ta); cq_theta(&b, tb);
+  int *p = (x > k) ? &a : &b;
+  *p = 7;
+  bump2(p);
+  return cq_measure(a) + cq_measure(b);
+}
+/* cq-5xm0 (rule 21): an integer of unknown origin (a select of two addresses) back to a pointer: decoded by range
+ * tests over the candidate objects */
+int f_int_unknown(unsigned x0, double th, int v) {
+  unsigned x = x0; cq_theta(&x, th);
+  int a[4] = {v, v + 1, v + 2, v + 3}, b[4] = {10, 11, 12, 13};
+  uintptr_t ua = (uintptr_t)a, ub = (uintptr_t)b;
+  uintptr_t m = (uintptr_t)0 - (x & 1);
+  uintptr_t u = ((ua & m) | (ub & ~m)) + 4 * ((x >> 1) & 3);
+  return cq_measure(*(int *)u);
+}
+/* cq-5xm0 (rule 21): an inttoptr accessed at two sizes and through a GEP: byte cells, converted at each access */
+int f_int_bytes(unsigned x0, double th, int v) {
+  unsigned x = x0; cq_theta(&x, th);
+  int a[4] = {v, v + 1, v + 2, v + 3}, b[4] = {10, 11, 12, 13};
+  int *p = (x & 1) ? a : b;
+  uintptr_t u = (uintptr_t)p + 4 * ((x >> 1) & 3);
+  short *s = (short *)u;
+  return cq_measure(s[1] + *(int *)u);
+}
+/* cq-5xm0 (rule 21; 189): pointers to cells inside objects stored into host memory, loaded through a fat pointer:
+ * each loaded address decoded by range tests over the stored pointers' roots (tag and idx) */
+int IG1[4] = {1, 2, 3, 4}, IG2[6] = {5, 6, 7, 8, 9, 10};
+int f_host_interior(unsigned x0, double th, int i, int j) {
+  unsigned x = x0; cq_theta(&x, th);
+  if (i < 0 || i > 3) i = 0;
+  if (j < 0 || j > 5) j = 0;
+  int *tab[2];
+  tab[0] = &IG1[i];
+  tab[1] = IG2 + j;
+  int **p = (x & 1) ? &tab[1] : &tab[0];
+  int *q = *p;
+  return cq_measure(*q);
+}
+/* the same through a global table the program keeps (its stores not forwarded to the load) */
+int *ITAB[2];
+int f_host_interior_tab(unsigned x0, double th, int i, int j) {
+  unsigned x = x0; cq_theta(&x, th);
+  if (i < 0 || i > 3) i = 0;
+  if (j < 0 || j > 5) j = 0;
+  ITAB[0] = &IG1[i];
+  ITAB[1] = IG2 + j;
+  int **p = (x & 1) ? &ITAB[1] : &ITAB[0];
+  int *q = *p;
+  return cq_measure(q[0]);
+}
+/* cq-5xm0 (rule 21): an address compare of fat pointers into two global QRAM objects (globals may alias: over
+ * addresses, each object's base in the QRAM address space) */
+static int QG1[8], QG2[8];
+int f_qram_addr(unsigned x0, double th, int v) {
+  unsigned x = x0; cq_theta(&x, th);
+  int *p = ((x & 1) ? QG1 : QG2) + ((x >> 1) & 7);
+  *p = v;
+  int *q = ((x & 16) ? QG1 : QG2) + ((x >> 5) & 7);
+  return cq_measure(p == q) + 2 * cq_measure(QG1[3] + QG2[5]);
+}

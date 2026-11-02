@@ -1,8 +1,9 @@
 ; cq-b244: an inttoptr over pointer-argument roots (their place in their objects unknown) at a quantum offset
-; that may move below them: its i32 cell index cannot be read soundly, an internal error.
+; that may move below them: fatptr keeps the exact i64 difference (cq-5xm0); the QROM over an object of unknown
+; extent is mem-qrom's stop (rule 20's length for a root with no static extent).
 ; Source: int argroot(unsigned x0, double th, int *a, int *b) { cq_theta(&x, th); p = (x & 1) ? a : b;
 ;   r = (int *)((unsigned long)p + ((x >> 1) & 7) * 4 - 16); return cq_measure(*r); }
-; EXPECT-ERROR: relative to a root that may lie inside its object
+; EXPECT-ERROR: mem-qrom: a fat-pointer QROM over a root whose extent is not static
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 

@@ -9,7 +9,6 @@ target triple = "x86_64-apple-macosx16.0.0"
 @H = global [8 x i32] zeroinitializer, align 16
 @QA = internal unnamed_addr constant [300 x i32] [i32 3, i32 0, i32 0, i32 0, i32 0, i32 0, i32 6, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 100, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 255, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 262, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 299], align 16
 @QB = internal unnamed_addr constant [300 x i32] [i32 5, i32 0, i32 0, i32 0, i32 0, i32 0, i32 60, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 1000, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 2550, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 2620, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 2990], align 16
-@__const.f_ptr_roundtrip.b = private unnamed_addr constant [4 x i32] [i32 10, i32 11, i32 12, i32 13], align 16
 @__const.f_ptr_roundtrip.c = private unnamed_addr constant [4 x i32] [i32 20, i32 21, i32 22, i32 23], align 16
 @NT1 = internal unnamed_addr constant [8 x i32] [i32 10, i32 11, i32 12, i32 13, i32 14, i32 15, i32 16, i32 17], align 16
 @NT2 = internal unnamed_addr constant [8 x i32] [i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27], align 16
@@ -21,6 +20,12 @@ target triple = "x86_64-apple-macosx16.0.0"
 @LW = internal unnamed_addr constant [4 x i64] [i64 100, i64 -200, i64 300, i64 -400], align 16
 @HG1 = local_unnamed_addr global [4 x i32] [i32 1, i32 2, i32 3, i32 4], align 16
 @HG2 = local_unnamed_addr global [6 x i32] [i32 5, i32 6, i32 7, i32 8, i32 9, i32 10], align 16
+@__const.f_int_bytes.b = private unnamed_addr constant [4 x i32] [i32 10, i32 11, i32 12, i32 13], align 16
+@IG1 = global [4 x i32] [i32 1, i32 2, i32 3, i32 4], align 16
+@IG2 = global [6 x i32] [i32 5, i32 6, i32 7, i32 8, i32 9, i32 10], align 16
+@ITAB = local_unnamed_addr global [2 x ptr] zeroinitializer, align 16
+@QG1 = internal global [8 x i32] zeroinitializer, align 16
+@QG2 = internal global [8 x i32] zeroinitializer, align 16
 
 ; Function Attrs: nounwind ssp uwtable
 define i32 @f_ne_two(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
@@ -244,7 +249,7 @@ define i32 @f_ptr_roundtrip(i32 noundef %0, double noundef %1, i32 noundef %2) l
   %13 = add nsw i32 %2, 3
   store i32 %13, ptr %12, align 4, !tbaa !6
   call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %5) #10
-  call void @llvm.memcpy.p0.p0.i64(ptr noundef nonnull align 16 dereferenceable(16) %5, ptr noundef nonnull align 16 dereferenceable(16) @__const.f_ptr_roundtrip.b, i64 16, i1 false)
+  call void @llvm.memcpy.p0.p0.i64(ptr noundef nonnull align 16 dereferenceable(16) %5, ptr noundef nonnull align 16 dereferenceable(16) @__const.f_int_bytes.b, i64 16, i1 false)
   call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %6) #10
   call void @llvm.memcpy.p0.p0.i64(ptr noundef nonnull align 16 dereferenceable(16) %6, ptr noundef nonnull align 16 dereferenceable(16) @__const.f_ptr_roundtrip.c, i64 16, i1 false)
   %14 = and i32 %7, 1
@@ -862,6 +867,198 @@ define i32 @f_slot_cls(i32 noundef %0, double noundef %1, i32 noundef %2, double
   ret i32 %27
 }
 
+; Function Attrs: nounwind ssp uwtable
+define i32 @f_host_zero(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
+  %3 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #9
+  %4 = and i32 %3, 1
+  %5 = icmp eq i32 %4, 0
+  %6 = select i1 %5, i32 1, i32 5
+  %7 = tail call i32 @cq_measure_si32(i32 noundef %6) #10
+  ret i32 %7
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @f_slot_plain(i32 noundef %0, double noundef %1, i32 noundef %2, i32 noundef %3, double noundef %4, i32 noundef %5, double noundef %6) local_unnamed_addr #0 {
+  %8 = alloca i32, align 4
+  %9 = alloca i32, align 4
+  call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %8) #10
+  store i32 %3, ptr %8, align 4, !tbaa !6
+  call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %9) #10
+  store i32 %5, ptr %9, align 4, !tbaa !6
+  %10 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %1) #9
+  %11 = tail call i32 @cq_theta_si32(i32 noundef %3, double noundef %4) #9
+  store i32 %11, ptr %8, align 4, !tbaa !6
+  %12 = tail call i32 @cq_theta_si32(i32 noundef %5, double noundef %6) #9
+  store i32 %12, ptr %9, align 4, !tbaa !6
+  %13 = icmp sgt i32 %10, %2
+  %14 = select i1 %13, ptr %8, ptr %9
+  store i32 7, ptr %14, align 4, !tbaa !6
+  call fastcc void @bump2(ptr noundef nonnull %14)
+  %15 = load i32, ptr %8, align 4, !tbaa !6
+  %16 = tail call i32 @cq_measure_si32(i32 noundef %15) #10
+  %17 = load i32, ptr %9, align 4, !tbaa !6
+  %18 = tail call i32 @cq_measure_si32(i32 noundef %17) #10
+  %19 = add nsw i32 %18, %16
+  call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %9) #10
+  call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %8) #10
+  ret i32 %19
+}
+
+; Function Attrs: mustprogress nofree noinline norecurse nosync nounwind ssp willreturn memory(argmem: readwrite) uwtable
+define internal fastcc void @bump2(ptr nocapture noundef %0) unnamed_addr #7 {
+  %2 = load i32, ptr %0, align 4, !tbaa !6
+  %3 = add nsw i32 %2, 1
+  store i32 %3, ptr %0, align 4, !tbaa !6
+  ret void
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @f_int_unknown(i32 noundef %0, double noundef %1, i32 noundef %2) local_unnamed_addr #0 {
+  %4 = alloca [4 x i32], align 16
+  %5 = alloca [4 x i32], align 16
+  %6 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #9
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %4) #10
+  store i32 %2, ptr %4, align 16, !tbaa !6
+  %7 = getelementptr inbounds i8, ptr %4, i64 4
+  %8 = add nsw i32 %2, 1
+  store i32 %8, ptr %7, align 4, !tbaa !6
+  %9 = getelementptr inbounds i8, ptr %4, i64 8
+  %10 = add nsw i32 %2, 2
+  store i32 %10, ptr %9, align 8, !tbaa !6
+  %11 = getelementptr inbounds i8, ptr %4, i64 12
+  %12 = add nsw i32 %2, 3
+  store i32 %12, ptr %11, align 4, !tbaa !6
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %5) #10
+  call void @llvm.memcpy.p0.p0.i64(ptr noundef nonnull align 16 dereferenceable(16) %5, ptr noundef nonnull align 16 dereferenceable(16) @__const.f_int_bytes.b, i64 16, i1 false)
+  %13 = ptrtoint ptr %4 to i64
+  %14 = ptrtoint ptr %5 to i64
+  %15 = and i32 %6, 1
+  %16 = zext nneg i32 %15 to i64
+  %17 = sub nsw i64 0, %16
+  %18 = and i64 %17, %13
+  %19 = icmp eq i32 %15, 0
+  %20 = select i1 %19, i64 %14, i64 0
+  %21 = or i64 %18, %20
+  %22 = shl i32 %6, 1
+  %23 = and i32 %22, 12
+  %24 = zext nneg i32 %23 to i64
+  %25 = or disjoint i64 %21, %24
+  %26 = inttoptr i64 %25 to ptr
+  %27 = load i32, ptr %26, align 4, !tbaa !6
+  %28 = call i32 @cq_measure_si32(i32 noundef %27) #10
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %5) #10
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #10
+  ret i32 %28
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @f_int_bytes(i32 noundef %0, double noundef %1, i32 noundef %2) local_unnamed_addr #0 {
+  %4 = alloca [4 x i32], align 16
+  %5 = alloca [4 x i32], align 16
+  %6 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #9
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %4) #10
+  store i32 %2, ptr %4, align 16, !tbaa !6
+  %7 = getelementptr inbounds i8, ptr %4, i64 4
+  %8 = add nsw i32 %2, 1
+  store i32 %8, ptr %7, align 4, !tbaa !6
+  %9 = getelementptr inbounds i8, ptr %4, i64 8
+  %10 = add nsw i32 %2, 2
+  store i32 %10, ptr %9, align 8, !tbaa !6
+  %11 = getelementptr inbounds i8, ptr %4, i64 12
+  %12 = add nsw i32 %2, 3
+  store i32 %12, ptr %11, align 4, !tbaa !6
+  call void @llvm.lifetime.start.p0(i64 16, ptr nonnull %5) #10
+  call void @llvm.memcpy.p0.p0.i64(ptr noundef nonnull align 16 dereferenceable(16) %5, ptr noundef nonnull align 16 dereferenceable(16) @__const.f_int_bytes.b, i64 16, i1 false)
+  %13 = and i32 %6, 1
+  %14 = icmp eq i32 %13, 0
+  %15 = select i1 %14, ptr %5, ptr %4
+  %16 = ptrtoint ptr %15 to i64
+  %17 = shl i32 %6, 1
+  %18 = and i32 %17, 12
+  %19 = zext nneg i32 %18 to i64
+  %20 = or disjoint i64 %16, %19
+  %21 = inttoptr i64 %20 to ptr
+  %22 = getelementptr inbounds i8, ptr %21, i64 2
+  %23 = load i16, ptr %22, align 2, !tbaa !10
+  %24 = sext i16 %23 to i32
+  %25 = load i32, ptr %21, align 4, !tbaa !6
+  %26 = add nsw i32 %25, %24
+  %27 = call i32 @cq_measure_si32(i32 noundef %26) #10
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %5) #10
+  call void @llvm.lifetime.end.p0(i64 16, ptr nonnull %4) #10
+  ret i32 %27
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @f_host_interior(i32 noundef %0, double noundef %1, i32 noundef %2, i32 noundef %3) local_unnamed_addr #0 {
+  %5 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #9
+  %6 = icmp ugt i32 %2, 3
+  %7 = select i1 %6, i32 0, i32 %2
+  %8 = icmp ugt i32 %3, 5
+  %9 = select i1 %8, i32 0, i32 %3
+  %10 = zext nneg i32 %7 to i64
+  %11 = getelementptr inbounds [4 x i32], ptr @IG1, i64 0, i64 %10
+  %12 = zext nneg i32 %9 to i64
+  %13 = getelementptr inbounds i32, ptr @IG2, i64 %12
+  %14 = and i32 %5, 1
+  %15 = icmp eq i32 %14, 0
+  %16 = select i1 %15, ptr %11, ptr %13
+  %17 = load i32, ptr %16, align 4, !tbaa !6
+  %18 = tail call i32 @cq_measure_si32(i32 noundef %17) #10
+  ret i32 %18
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @f_host_interior_tab(i32 noundef %0, double noundef %1, i32 noundef %2, i32 noundef %3) local_unnamed_addr #0 {
+  %5 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #9
+  %6 = icmp ugt i32 %2, 3
+  %7 = select i1 %6, i32 0, i32 %2
+  %8 = icmp ugt i32 %3, 5
+  %9 = select i1 %8, i32 0, i32 %3
+  %10 = zext nneg i32 %7 to i64
+  %11 = getelementptr inbounds [4 x i32], ptr @IG1, i64 0, i64 %10
+  store ptr %11, ptr @ITAB, align 16, !tbaa !17
+  %12 = zext nneg i32 %9 to i64
+  %13 = getelementptr inbounds i32, ptr @IG2, i64 %12
+  store ptr %13, ptr getelementptr inbounds (i8, ptr @ITAB, i64 8), align 8, !tbaa !17
+  %14 = and i32 %5, 1
+  %15 = icmp eq i32 %14, 0
+  %16 = select i1 %15, ptr %11, ptr %13
+  %17 = load i32, ptr %16, align 4, !tbaa !6
+  %18 = tail call i32 @cq_measure_si32(i32 noundef %17) #10
+  ret i32 %18
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @f_qram_addr(i32 noundef %0, double noundef %1, i32 noundef %2) local_unnamed_addr #0 {
+  %4 = tail call i32 @cq_theta_ui32(i32 noundef %0, double noundef %1) #9
+  %5 = and i32 %4, 1
+  %6 = icmp eq i32 %5, 0
+  %7 = select i1 %6, ptr @QG2, ptr @QG1
+  %8 = lshr i32 %4, 1
+  %9 = and i32 %8, 7
+  %10 = zext nneg i32 %9 to i64
+  %11 = getelementptr inbounds i32, ptr %7, i64 %10
+  store i32 %2, ptr %11, align 4, !tbaa !6
+  %12 = and i32 %4, 16
+  %13 = icmp eq i32 %12, 0
+  %14 = select i1 %13, ptr @QG2, ptr @QG1
+  %15 = lshr i32 %4, 5
+  %16 = and i32 %15, 7
+  %17 = zext nneg i32 %16 to i64
+  %18 = getelementptr inbounds i32, ptr %14, i64 %17
+  %19 = icmp eq ptr %11, %18
+  %20 = zext i1 %19 to i32
+  %21 = tail call i32 @cq_measure_si32(i32 noundef %20) #10
+  %22 = load i32, ptr getelementptr inbounds (i8, ptr @QG1, i64 12), align 4, !tbaa !6
+  %23 = load i32, ptr getelementptr inbounds (i8, ptr @QG2, i64 20), align 4, !tbaa !6
+  %24 = add nsw i32 %23, %22
+  %25 = tail call i32 @cq_measure_si32(i32 noundef %24) #10
+  %26 = shl nsw i32 %25, 1
+  %27 = add nsw i32 %26, %21
+  ret i32 %27
+}
+
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #1 = { mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
 attributes #2 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
@@ -894,3 +1091,5 @@ attributes #10 = { nounwind }
 !14 = !{!13, !7, i64 4}
 !15 = !{!13, !7, i64 8}
 !16 = !{}
+!17 = !{!18, !18, i64 0}
+!18 = !{!"any pointer", !8, i64 0}

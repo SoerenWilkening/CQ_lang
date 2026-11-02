@@ -63,6 +63,7 @@
 #include "../mem/qrom/QromInternal.h"
 #include "FatPtrInternal.h"
 #include "llvm/Analysis/CFG.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "../spine/SpineInternal.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/Analysis/CFG.h"
@@ -471,16 +472,22 @@ std::optional<bool> readsAt(const IdxRange &R, unsigned W) {
 // exact in its low W bits (a ptrtoint difference, a QRAM-stored i32 field): its extension, or
 // unimplemented when its in-domain indices are not all readable at W (cq-b244). Roots that all start
 // their objects keep the unsigned reading (their indices are non-negative).
-bool idxSextAt(LoweringContext &ctx, ArrayRef<const Value *> roots, uint64_t cell, unsigned W, const Value *at) {
+std::optional<bool> idxSextMaybe(LoweringContext &ctx, ArrayRef<const Value *> roots, uint64_t cell, unsigned W) {
   // No cell size: every pointer the idx comes from has the constant idx 0 (Fat::cell), read either way.
-  if (cell == 0 || !mayPrecede(ctx, roots, cell))
-    return false;
+  if (cell == 0 || !mayPrecede(ctx, roots, cell) || W >= 64)
+    return W >= 64 && cell && mayPrecede(ctx, roots, cell);
   std::optional<IdxRange> R = relRange(ctx, roots, cell);
-  std::optional<bool> sx = R ? readsAt(*R, W) : std::nullopt;
+  return R ? readsAt(*R, W) : std::nullopt;
+}
+
+bool idxSextAt(LoweringContext &ctx, ArrayRef<const Value *> roots, uint64_t cell, unsigned W, const Value *at) {
+  std::optional<bool> sx = idxSextMaybe(ctx, roots, cell, W);
   if (!sx)
-    unimplemented("fatptr: a " + std::to_string(W) + "-bit cell index relative to a root that may lie inside its "
-                      "object (a constant offset into it, or an unknown place: a pointer argument or a loaded "
-                      "pointer) whose in-bounds indices, some negative, are unknown or do not fit it",
+    unimplemented("awaiting owner ruling: SPEC_ISSUES rule 21 i32 idx field of a pointer whose root's place in its "
+                  "object is unknown (a " +
+                      std::to_string(W) +
+                      "-bit cell index relative to a pointer argument or a loaded pointer, stored in a QRAM of "
+                      "pointers or returned by a clone)",
                   at);
   return *sx;
 }
@@ -868,6 +875,8 @@ Fat deriveHostLoaded(LoweringContext &ctx, const LoadInst &ld, ArrayRef<ObjectId
     return false;
   };
   Fat f;
+  bool interior = false;
+  uint64_t cell = 0;
   for (const Instruction &I : instructions(*ctx.S.F)) {
     if (auto *MI = dyn_cast<MemIntrinsic>(&I); MI && intersects(ctx.T.provenance(MI->getDest(), ctx.S), src))
       unimplemented("fatptr: a memory intrinsic writing memory a pointer is loaded from (rule 21)", &I);
@@ -877,11 +886,22 @@ Fat deriveHostLoaded(LoweringContext &ctx, const LoadInst &ld, ArrayRef<ObjectId
     if (!st->getValueOperand()->getType()->isPointerTy())
       continue;
     const Value *v = st->getValueOperand();
-    if (!isa<ConstantPointerNull>(v) && (!isRoot(ctx, v) || isa<GEPOperator>(v) || !distinctAllocation(ctx, v)))
-      unimplemented("fatptr: a pointer stored into memory a fat pointer loads from that is not a distinct "
-                    "allocation's start or NULL (rule 21 decoded idx)",
-                    st);
-    addRoots(f, {v});
+    if (isa<ConstantPointerNull>(v) || (isRoot(ctx, v) && !isa<GEPOperator>(v) && distinctAllocation(ctx, v))) {
+      addRoots(f, {v});
+      continue;
+    }
+    // An interior pointer, or the start of an object that is not a distinct allocation (a global): the loaded
+    // address is decoded by range tests over the stored pointers' roots (rule 21), its idx decoded with it.
+    Fat sv = derive(ctx, v, /*emit=*/false);
+    if (sv.tag.handle || sv.idx.handle)
+      internalError("fatptr: a quantum pointer stored into classical host memory", st);
+    interior = true;
+    for (const Value *r : sv.roots)
+      if (!isa<ConstantPointerNull>(r) && !isRoot(ctx, r))
+        internalError("fatptr: a stored pointer whose root is not a root", st);
+    addRoots(f, sv.roots);
+    if (sv.cell)
+      cell = cell ? std::gcd(cell, sv.cell) : sv.cell;
   }
   for (ObjectId o : ctx.T.provenance(&ld, ctx.S)) {
     bool covered = false;
@@ -896,6 +916,25 @@ Fat deriveHostLoaded(LoweringContext &ctx, const LoadInst &ld, ArrayRef<ObjectId
   if (f.roots.empty())
     unimplemented("fatptr: a pointer loaded from host memory into which this function stores no pointer", &ld);
   llvm::sort(f.roots, [&](const Value *x, const Value *y) { return rootNumber(ctx, x) < rootNumber(ctx, y); });
+  if (interior) {
+    // The decoded idx: an i64 rail in cells of the stored pointers' common cell (the byte when none has one).
+    if (!is_contained(f.roots, (const Value *)ConstantPointerNull::get(cast<PointerType>(ld.getType()))))
+      f.roots.insert(f.roots.begin(), ConstantPointerNull::get(cast<PointerType>(ld.getType())));
+    f.nullMoved = true;
+    f.cell = cell ? cell : 1;
+    f.idxBits = 64;
+    f.idxSext = false;
+    f.tag = Operand{nullptr, true};
+    f.idx = Operand{nullptr, true};
+    if (!emit)
+      return f;
+    SmallVector<Operand, 4> fl = ctx.fields(&ld);
+    if (fl.size() != 2 || !fl[1].handle)
+      internalError("fatptr: a decoded interior pointer bound to other than its (tag, idx) rails", &ld);
+    f.tag = fl[0];
+    f.idx = fl[1];
+    return f;
+  }
   f.idx = Operand{ConstantInt::get(i64(ctx), 0), false};
   if (!emit) {
     f.tag = Operand{nullptr, true};
@@ -912,13 +951,26 @@ Fat deriveHostLoaded(LoweringContext &ctx, const LoadInst &ld, ArrayRef<ObjectId
 // loader bound. Its roots are the roots of the pointers this function stores into the objects the load
 // reads, restricted to the load's provenance; its cell size their common one.
 Fat deriveLoaded(LoweringContext &ctx, const LoadInst &ld, bool emit) {
-  static unsigned depth = 0;
+  // The roots of a pointer loaded from memory are the least fixed point over the pointers stored there: a stored
+  // pointer that is itself (through this load again) loaded from the same memory adds no root of its own, so the
+  // shape derivation re-entering this load contributes nothing (a cycle: a list node's next loaded and stored).
+  static SmallPtrSet<const LoadInst *, 8> active;
+  if (!emit && active.count(&ld)) {
+    Fat cyc;
+    cyc.tag = Operand{nullptr, true};
+    cyc.idx = Operand{nullptr, true};
+    cyc.idxBits = 32;
+    return cyc;
+  }
   struct Guard {
-    Guard() { ++depth; }
-    ~Guard() { --depth; }
-  } guard;
-  if (depth > 8)
-    unimplemented("fatptr: pointers loaded from a QRAM of pointers nested more than 8 deep", &ld);
+    const LoadInst *l;
+    bool mine;
+    Guard(const LoadInst *l) : l(l), mine(active.insert(l).second) {}
+    ~Guard() {
+      if (mine)
+        active.erase(l);
+    }
+  } guard(&ld);
   ArrayRef<ObjectId> src = ctx.T.provenance(ld.getPointerOperand(), ctx.S);
   if (src.empty())
     unimplemented("fatptr: a pointer loaded through a pointer with no known object (rule 21)", &ld);
@@ -1211,6 +1263,14 @@ using Bases = DenseMap<const Value *, Value *>;   // root -> its ptrtoint, one p
 Value *rootBase(LoweringContext &ctx, const Value *root, Bases &bases) {
   if (Value *b = bases.lookup(root))
     return b;
+  // A QRAM object has no host block: its base is its address in the QRAM address space, the non-canonical
+  // 0x4000_0000_0000_0000 + 0x1000·n for object n (rule 21), n its object number.
+  if (mem::isQramRoot(ctx, root) && !boundOf(ctx, root)) {
+    ArrayRef<ObjectId> objs = ctx.T.provenance(root, ctx.S);
+    if (objs.size() != 1)
+      internalError("fatptr: a QRAM root of other than one object", root);
+    return bases[root] = ConstantInt::get(i64(ctx), (uint64_t(1) << 62) + uint64_t(0x1000) * uint64_t(objs.front()));
+  }
   for (ObjectId o : ctx.T.provenance(root, ctx.S))
     if (ctx.T.classOf(o) == ObjClass::Slot)
       unimplemented("fatptr: the address of a slot object (rule 21)", root);
@@ -1322,6 +1382,9 @@ const PtrToIntInst *derivedFrom(const Value *v) {
 
 // The cell size of the inttoptr's pointer: the size of every load and store directly through it (rule 21:
 // idx is a cell index of the access type; the byte offset converts at the access).
+// When the pointer is used other than by loads and stores of one size (a GEP on it, a compare, two access sizes,
+// no access), the cell is the byte: idx = addr - base[tag] is exact, and each access converts it to its own cells
+// (fitCells, rule 21: "byte arithmetic converts at the access by the element size").
 uint64_t accessCell(LoweringContext &ctx, const IntToPtrInst &I) {
   const DataLayout &DL = ctx.M.getDataLayout();
   uint64_t cell = 0;
@@ -1332,23 +1395,120 @@ uint64_t accessCell(LoweringContext &ctx, const IntToPtrInst &I) {
     else if (auto *st = dyn_cast<StoreInst>(u); st && st->getPointerOperand() == &I)
       t = st->getValueOperand()->getType();
     else
-      unimplemented("fatptr: an inttoptr pointer used other than by a load or store through it (rule 21)", u);
+      return 1;
     uint64_t s = DL.getTypeAllocSize(t).getFixedValue();
     if (cell && s != cell)
-      unimplemented("fatptr: an inttoptr pointer accessed at two cell sizes (rule 21)", &I);
+      return 1;
     cell = s;
   }
-  if (!cell)
-    unimplemented("fatptr: an inttoptr pointer with no access through it (rule 21)", &I);
-  return cell;
+  return cell ? cell : 1;
+}
+
+// Rule 21, an integer of unknown origin: the candidate objects are the inttoptr's provenance; each is named by
+// the root of this function that is its start (an alloca, a global, an allocation call), and NULL (tag 0: an
+// address in no candidate decodes as NULL plus the address, so its flat address is kept exactly).
+SmallVector<const Value *, 4> candidateRoots(LoweringContext &ctx, const IntToPtrInst &I) {
+  SmallVector<const Value *, 4> out;
+  out.push_back(ConstantPointerNull::get(cast<PointerType>(I.getType())));
+  const Function *F = ctx.S.F;
+  SmallPtrSet<const Value *, 32> seen;
+  SmallVector<const Value *, 32> table;
+  auto visit = [&](const Value *v) {
+    if (v->getType()->isPointerTy() && seen.insert(v).second)
+      table.push_back(v);
+  };
+  for (const Argument &a : F->args())
+    visit(&a);
+  for (const BasicBlock &bb : *F)
+    for (const Instruction &J : bb) {
+      for (const Use &u : J.operands())
+        if (isa<Constant>(u.get()) && !isa<BasicBlock>(u.get()))
+          visit(u.get());
+      visit(&J);
+    }
+  // The integer's own data flow: when every leaf of its integer computation is a constant, a ptrtoint or a value
+  // narrower than an address, the
+  // candidates are those ptrtoints' roots (an address computed here lies in one of them, or in none: NULL).
+  {
+    SmallPtrSet<const Value *, 16> seenV;
+    SmallVector<const Value *, 8> work{I.getOperand(0)};
+    SmallVector<const Value *, 4> found;
+    bool closed = true;
+    while (!work.empty() && closed) {
+      const Value *v = work.pop_back_val();
+      if (!seenV.insert(v).second || isa<Constant>(v))
+        continue;
+      if (auto *pi = dyn_cast<PtrToIntInst>(v)) {
+        for (const Value *r : derive(ctx, pi->getPointerOperand(), /*emit=*/false).roots)
+          if (!is_contained(found, r))
+            found.push_back(r);
+        continue;
+      }
+      if (isa<BinaryOperator>(v) || isa<SelectInst>(v) || isa<PHINode>(v) || isa<CastInst>(v)) {
+        auto *U = cast<User>(v);
+        for (unsigned k = isa<SelectInst>(v) ? 1 : 0; k < U->getNumOperands(); ++k)
+          work.push_back(U->getOperand(k));
+        continue;
+      }
+      // Another leaf (a call, an argument, a load) narrower than an address is an offset: it cannot hold an x86-64
+      // address. An address-wide one may hold any exposed address: the candidates are then the provenance's.
+      if (!v->getType()->isIntegerTy() || v->getType()->getIntegerBitWidth() >= 64)
+        closed = false;
+    }
+    if (closed) {
+      for (const Value *r : found)
+        if (!is_contained(out, r))
+          out.push_back(r);
+      llvm::sort(out, [&](const Value *x, const Value *y) { return rootNumber(ctx, x) < rootNumber(ctx, y); });
+      return out;
+    }
+  }
+  for (ObjectId o : ctx.T.provenance(&I, ctx.S)) {
+    const Value *found = nullptr;
+    for (const Value *v : table) {
+      if (isa<ConstantPointerNull>(v) || !isRoot(ctx, v))
+        continue;
+      auto *CB = dyn_cast<CallBase>(v);
+      bool start = isa<AllocaInst>(v) || isa<GlobalVariable>(v) ||
+                   (CB && CB->getFnAttr(Attribute::AllocSize).isValid());
+      ArrayRef<ObjectId> po = ctx.T.provenance(v, ctx.S);
+      if (start && po.size() == 1 && po.front() == o) {
+        found = v;
+        break;
+      }
+    }
+    if (!found)
+      unimplemented("fatptr: inttoptr of an integer of unknown origin whose candidate object has no start root in "
+                    "this function (rule 21 range decoding)",
+                    &I);
+    if (!is_contained(out, found))
+      out.push_back(found);
+  }
+  llvm::sort(out, [&](const Value *x, const Value *y) { return rootNumber(ctx, x) < rootNumber(ctx, y); });
+  return out;
 }
 
 Fat deriveIntToPtr(LoweringContext &ctx, const IntToPtrInst &I, bool emit) {
   const PtrToIntInst *pi = derivedFrom(I.getOperand(0));
-  if (!pi)
-    unimplemented("fatptr: inttoptr of an integer of unknown origin (rule 21 range decoding over the candidate "
-                  "objects)",
-                  &I);
+  if (!pi) {
+    // Range decoding: tag the candidate the address lies in, idx = (addr - base[tag]) / size as an i64 rail.
+    Fat f;
+    f.roots = candidateRoots(ctx, I);
+    f.nullMoved = true;
+    f.cell = accessCell(ctx, I);
+    f.idxBits = 64;
+    f.idxSext = false;
+    f.tag = Operand{nullptr, true};
+    f.idx = Operand{nullptr, true};
+    if (!emit)
+      return f;
+    SmallVector<Operand, 4> fl = ctx.fields(&I);
+    if (fl.size() != 2 || !fl[0].handle || !fl[1].handle)
+      internalError("fatptr: a range-decoded inttoptr bound to other than its (tag, idx) rails", &I);
+    f.tag = fl[0];
+    f.idx = fl[1];
+    return f;
+  }
   Fat src = derive(ctx, pi->getPointerOperand(), /*emit=*/false);
   Fat f;
   f.roots = src.roots;
@@ -1364,7 +1524,15 @@ Fat deriveIntToPtr(LoweringContext &ctx, const IntToPtrInst &I, bool emit) {
     if (!f.idx.handle)
       f.idxBits = 64;
     // A root inside its object (cq-b244): a negative difference, read signed (a classical i64 is exact).
-    f.idxSext = f.idx.handle ? idxSextAt(ctx, f.roots, f.cell, 32, &I) : mayPrecede(ctx, f.roots, f.cell);
+    if (f.idx.handle) {
+      // The logical i32 idx when every in-domain index reads exactly at 32 bits, else the exact i64 difference
+      // (signed: a root of unknown place may lie inside its object).
+      std::optional<bool> sx = idxSextMaybe(ctx, f.roots, f.cell, 32);
+      f.idxBits = sx ? 32 : 64;
+      f.idxSext = sx ? *sx : true;
+    } else {
+      f.idxSext = mayPrecede(ctx, f.roots, f.cell);
+    }
     return f;
   }
   Fat sh = deriveIntToPtr(ctx, I, /*emit=*/false);
@@ -1462,7 +1630,14 @@ Fat derivePtrMask(LoweringContext &ctx, const IntrinsicInst &pm, bool emit, bool
   bool railIdx = a.idxRail() || a.tagRail() || isQ(ctx, pm.getArgOperand(1));
   f.idxBits = a.idxRail() ? std::max(32u, a.idxBits) : 64;
   // A root inside its object (cq-b244): the masked address may precede it, a negative idx read signed.
-  f.idxSext = railIdx ? idxSextAt(ctx, f.roots, f.cell, f.idxBits, &pm) : mayPrecede(ctx, f.roots, f.cell);
+  if (railIdx) {
+    std::optional<bool> sx = idxSextMaybe(ctx, f.roots, f.cell, f.idxBits);
+    if (!sx)
+      f.idxBits = 64;   // the exact i64 difference, read signed
+    f.idxSext = sx ? *sx : true;
+  } else {
+    f.idxSext = mayPrecede(ctx, f.roots, f.cell);
+  }
   if (!emit) {
     f.idx = Operand{nullptr, railIdx};
     return f;
@@ -1536,10 +1711,10 @@ bool mayName(LoweringContext &ctx, const Fat &f, const Value *r) {
 
 // The guard of root r: tag == r's number, conjoined with the current flag (a fresh i1 rail,
 // alloc_i1(false) + and_i1(flag, eq, g), 84). nullptr = unguarded.
-Value *guardOf(LoweringContext &ctx, const Fat &f, const Value *r, Value *flag) {
+Value *guardTag(LoweringContext &ctx, const Fat &f, unsigned k, Value *flag) {
   if (!f.tag.handle)
     return flag;
-  Operand eq = icmp(ctx, CmpInst::ICMP_EQ, 32, f.tag, Operand{ConstantInt::get(i32(ctx), rootNumber(ctx, r)), false});
+  Operand eq = icmp(ctx, CmpInst::ICMP_EQ, 32, f.tag, Operand{ConstantInt::get(i32(ctx), k), false});
   if (!eq.handle)
     internalError("fatptr: a tag compare of a rail tag that is classical");
   if (!flag)
@@ -1550,6 +1725,10 @@ Value *guardOf(LoweringContext &ctx, const Fat &f, const Value *r, Value *flag) 
   CallInst *c = ctx.emitCore(andSpec, {flag, eq.v, g});
   ctx.unc().recordCore(c, andSpec, {Operand{flag, true}, eq, Operand{g, true}}, gid);
   return g;
+}
+
+Value *guardOf(LoweringContext &ctx, const Fat &f, const Value *r, Value *flag) {
+  return guardTag(ctx, f, rootNumber(ctx, r), flag);
 }
 } // namespace
 
@@ -1753,8 +1932,6 @@ void checkTableAccess(LoweringContext &ctx, Bound &b, const Fat &f, Type *ty, co
     internalError("fatptr: an access through a slot object table formal at a quantum cell", &I);
   if (ty != b.cellTy)
     internalError("fatptr: an access through a slot object table formal at another type than its update", &I);
-  if (ctx.currentFlag())
-    unimplemented("fatptr: an access through a slot object table formal under a quantum predicate (M7)", &I);
 }
 } // namespace
 
@@ -1764,8 +1941,8 @@ void checkTableAccess(LoweringContext &ctx, Bound &b, const Fat &f, Type *ty, co
 // a cutoff runs), the handle merged with the seed by a classical select (U1).
 Value *boundSlotLoad(LoweringContext &ctx, Bound &b, const Fat &f, Type *ty, const LoadInst &ld) {
   if (f.idx.handle)
-    unimplemented("fatptr: a load through a slot triple formal at a quantum cell index (rule 21 guarded slot "
-                  "select)",
+    internalError("fatptr: a load through a slot triple formal at a quantum cell index (rule 20: such an object is "
+                  "a QRAM)",
                   &ld);
   if (f.cell != b.cell || ty != b.cellTy)
     unimplemented("fatptr: a load through a slot triple formal at another cell size or type than its cells", &ld);
@@ -1798,6 +1975,18 @@ Value *hostExtent(LoweringContext &ctx, const Value *root) {
   const DataLayout &DL = ctx.M.getDataLayout();
   APInt off(64, 0);
   const Value *obj = root->stripAndAccumulateConstantOffsets(DL, off, /*AllowNonInbounds=*/true);
+  if (isa<GEPOperator>(obj)) {
+    // A run-time offset into its object (a classical GEP): the object's extent less the root's distance from it.
+    const Value *u = getUnderlyingObject(obj);
+    if (u == obj || isa<GEPOperator>(u))
+      return nullptr;
+    Value *whole = hostExtent(ctx, u);
+    Operand r = ctx.operand(root), o = ctx.operand(u);
+    if (!whole || r.handle || o.handle)
+      return nullptr;
+    IRBuilder<> &B = ctx.B();
+    return B.CreateSub(whole, B.CreateSub(B.CreatePtrToInt(r.v, i64(ctx)), B.CreatePtrToInt(o.v, i64(ctx))));
+  }
   int64_t o = off.getSExtValue();
   if (auto *gv = dyn_cast<GlobalVariable>(obj))
     return ConstantInt::get(i64(ctx), int64_t(DL.getTypeAllocSize(gv->getValueType()).getFixedValue()) - o);
@@ -1888,7 +2077,9 @@ Operand hostArm(LoweringContext &ctx, const Value *r, const Fat &f, Type *ty, In
 // the value then 0; otherwise it is a plain load (107: the count is passed, the body ignores it).
 Operand boundHostLoad(LoweringContext &ctx, Bound &b, const Fat &f, Type *ty, LoadInst &ld, bool check) {
   if (f.idx.handle)
-    internalError("fatptr: a host triple formal at a rail idx", &ld);
+    unimplemented("fatptr: a load through a host triple formal at a quantum cell index (a QROM over the caller's "
+                  "object of the triple's cell count: mem-qrom has no triple-formal QROM)",
+                  &ld);
   const DataLayout &DL = ctx.M.getDataLayout();
   if (DL.getTypeAllocSize(ty).getFixedValue() != b.cell || f.cell != b.cell)
     internalError("fatptr: a load through a host triple formal at another cell size than the formal's", &ld);
@@ -1949,6 +2140,48 @@ Value *decodeTag(LoweringContext &ctx, Value *addrPtr, ArrayRef<const Value *> r
   return acc;
 }
 
+// Rule 21, a host address loaded at run time that may point inside its object: decoded by range tests over the
+// roots (base <= addr <= base + size·n, one past the end included; an object starting at the address wins over
+// the one it is one past, ruling 2026-11-02 cq-0w0g: the one-past tests first, the interior tests after), its
+// idx = (addr - base[tag]) / cell. No match (NULL) is tag 0 with idx addr / cell. Classical selects.
+std::pair<Value *, Value *> decodeRange(LoweringContext &ctx, Value *addrPtr, ArrayRef<const Value *> roots,
+                                        uint64_t cell, const Instruction &at) {
+  IRBuilder<> &B = ctx.B();
+  Value *addr = B.CreatePtrToInt(addrPtr, i64(ctx));
+  struct Cand {
+    const Value *r;
+    Value *base, *end;
+  };
+  SmallVector<Cand, 4> cs;
+  for (const Value *r : roots) {
+    if (isa<ConstantPointerNull>(r))
+      continue;
+    Operand b = ctx.operand(r);
+    if (b.handle)
+      internalError("fatptr: a root pointer bound to a rail", r);
+    Value *ext = hostExtent(ctx, r);
+    if (!ext)
+      unimplemented("awaiting owner ruling: SPEC_ISSUES rule 21 range decoding over a candidate object with no "
+                    "known extent",
+                    &at);
+    Value *base = B.CreatePtrToInt(b.v, i64(ctx));
+    cs.push_back({r, base, B.CreateAdd(base, ext)});
+  }
+  Value *tag = ConstantInt::get(i32(ctx), 0), *base = ConstantInt::get(i64(ctx), 0);
+  auto pick = [&](Value *c, const Cand &k) {
+    tag = B.CreateSelect(c, ConstantInt::get(i32(ctx), rootNumber(ctx, k.r)), tag);
+    base = B.CreateSelect(c, k.base, base);
+  };
+  for (const Cand &k : cs)
+    pick(B.CreateICmpEQ(addr, k.end), k);
+  for (const Cand &k : cs)
+    pick(B.CreateAnd(B.CreateICmpUGE(addr, k.base), B.CreateICmpULT(addr, k.end)), k);
+  Value *off = B.CreateSub(addr, base);
+  if (cell != 1)
+    off = isPowerOf2_64(cell) ? B.CreateLShr(off, Log2_64(cell)) : B.CreateUDiv(off, ConstantInt::get(i64(ctx), cell));
+  return {tag, off};
+}
+
 // The load through such a fat pointer: one unguarded access per root at the classical byte offset (a heap
 // record's field: its handle, or the host load of a classical field; a classical object: a host load, which
 // must lie inside the object), merged by select on tag == k, the first root innermost (the complement; NULL
@@ -1962,7 +2195,15 @@ void lowerHostLoad(LoweringContext &ctx, LoadInst &ld, const Fat &f) {
     Fat lf = derive(ctx, &ld, /*emit=*/false);
     loadedRoots.assign(lf.roots.begin(), lf.roots.end());
   }
+  bool interior = false;
+  uint64_t loadedCell = 0;
+  if (ptr) {
+    Fat lf = derive(ctx, &ld, /*emit=*/false);
+    interior = lf.idx.handle;
+    loadedCell = lf.cell;
+  }
   SmallVector<std::pair<const Value *, Operand>, 4> arms;
+  SmallVector<Operand, 4> idxArms;
   for (const Value *r : f.roots) {
     if (isa<ConstantPointerNull>(r))
       continue;
@@ -1970,9 +2211,37 @@ void lowerHostLoad(LoweringContext &ctx, LoadInst &ld, const Fat &f) {
     if (ptr) {
       if (v.handle)
         internalError("fatptr: a pointer field holding a handle", &ld);
-      v = Operand{decodeTag(ctx, v.v, loadedRoots), false};
+      if (interior) {
+        auto [t, i] = decodeRange(ctx, v.v, loadedRoots, loadedCell, ld);
+        v = Operand{t, false};
+        idxArms.push_back(Operand{i, false});
+      } else {
+        v = Operand{decodeTag(ctx, v.v, loadedRoots), false};
+      }
     }
     arms.push_back({r, v});
+  }
+  if (interior) {
+    Operand tacc = arms[0].second, iacc = idxArms[0];
+    for (size_t i = 1; i < arms.size(); ++i) {
+      Operand eq = icmp(ctx, CmpInst::ICMP_EQ, 32, f.tag,
+                        Operand{ConstantInt::get(i32(ctx), rootNumber(ctx, arms[i].first)), false});
+      auto sel = [&](RailType w, Operand x, Operand acc) {
+        std::string shape = std::string(x.handle ? "h" : "l") + (acc.handle ? "h" : "l");
+        return Operand{tmpl(ctx, "select", w, {eq, x, acc}, shape == "hh" ? "" : shape), true};
+      };
+      tacc = sel(intRail(32), arms[i].second, tacc);
+      iacc = sel(intRail(64), idxArms[i], iacc);
+    }
+    auto rail = [&](Operand o, RailType w) {
+      if (o.handle)
+        return o;
+      CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {o.v});
+      ctx.unc().recordSeed(seed);
+      return Operand{seed, true};
+    };
+    ctx.bindFields(&ld, {tacc, rail(iacc, intRail(64))});
+    return;
   }
   if (arms.empty())
     internalError("fatptr: a fat pointer naming none of its roots", &ld);
@@ -2192,27 +2461,28 @@ SmallVector<Operand, 8> loadHostCells(LoweringContext &ctx, const Value *src, Ty
   Fat f = derive(ctx, src, /*emit=*/true);
   if (f.trips)
     unimplemented("fatptr: a memory intrinsic through a pointer to K-loop trip objects (R1)", &at);
-  if (f.idxRail())
-    unimplemented("fatptr: a memory intrinsic's fat source pointer at a quantum cell index (a QROM per cell, rules "
-                  "20, 22)",
-                  &at);
-  auto *ci = dyn_cast<ConstantInt>(f.idx.v);
-  if (!ci)
-    unimplemented("fatptr: a memory intrinsic's fat source pointer at a run-time classical cell index", &at);
   if (!cellTy->isIntegerTy() && !cellTy->isFloatingPointTy())
     unimplemented("fatptr: a memory intrinsic copying cells that are not integers or floating point through a fat "
                   "source pointer",
                   &at);
   const DataLayout &DL = ctx.M.getDataLayout();
   uint64_t size = DL.getTypeAllocSize(cellTy).getFixedValue();
-  int64_t base = ci->getSExtValue() * int64_t(f.cell);
+  Align srcAlign(1);
+  if (auto *MT = dyn_cast<MemTransferInst>(&at))
+    srcAlign = MT->getSourceAlign().valueOrOne();
+  auto *ci = f.idx.handle ? nullptr : dyn_cast<ConstantInt>(f.idx.v);
+  int64_t base = ci ? ci->getSExtValue() * int64_t(f.cell) : 0;
+  // A rail idx (rules 20, 22): one quantum-offset load per cell, at idx + j in cells of the copied type.
+  Fat g = f;
+  if (f.idxRail() && !fitCells(ctx, g, size, srcAlign))
+    unimplemented("fatptr: a memory intrinsic's fat source pointer at a quantum cell index whose cells do not "
+                  "convert to the copied cells (a misaligned bit view, rule 21)",
+                  &at);
   SmallVector<const Value *, 4> roots;
   SmallVector<uint64_t, 4> bounds;
   for (const Value *r : f.roots) {
-    if (!mayName(ctx, f, r))
+    if (!mayName(ctx, f, r) || isa<ConstantPointerNull>(r))
       continue;
-    if (!classicalMemoryOnly(ctx, r))
-      unimplemented("fatptr: a memory intrinsic's fat source pointer into a slot or QRAM object (rules 21, 22)", &at);
     roots.push_back(r);
     bounds.push_back(bound(r));
   }
@@ -2229,18 +2499,62 @@ SmallVector<Operand, 8> loadHostCells(LoweringContext &ctx, const Value *src, Ty
   };
   IRBuilder<> &B = ctx.B();
   LLVMContext &C = ctx.M.getContext();
+  // Cell j of root r: a classical memory object is a host load (a constant idx: at its byte, as -O1 addresses it;
+  // a run-time idx: checked against the object's extent, 0 beyond it, rule 21) or a QROM at a rail idx; a QRAM a
+  // QRAM load; a local slot object the handle (or classical value) in its cell at a constant idx.
+  auto cellOf = [&](const Value *r, uint64_t j) -> Operand {
+    Operand rv = ctx.operand(r);
+    if (rv.handle)
+      internalError("fatptr: a root pointer bound to a rail", r);
+    if (g.idxRail()) {
+      Operand ij = g.idx;
+      if (j)
+        ij = Operand{tmpl(ctx, "add", intRail(g.idxBits),
+                          {ij, Operand{ConstantInt::get(IntegerType::get(C, g.idxBits), j), false}}, "hl"),
+                     true};
+      if (mem::isQramRoot(ctx, r)) {
+        if (mem::qramElemBytes(ctx, r, at) != size)
+          unimplemented("fatptr: a memory intrinsic's quantum-index source into a QRAM of another element size", &at);
+        return Operand{mem::qramLoadAt(ctx, r, ij, cellTy, at), true};
+      }
+      if (classicalMemoryOnly(ctx, r))
+        return Operand{mem::qromLoadAt(ctx, r, ij, g.idxBits, g.idxSext, cellTy, at), true};
+      unimplemented("fatptr: a memory intrinsic's quantum-index source into a slot object (mem-slots: a QRAM)", &at);
+    }
+    if (mem::isQramRoot(ctx, r)) {
+      if (mem::qramElemBytes(ctx, r, at) != size || (f.cell && f.cell != size))
+        unimplemented("fatptr: a memory intrinsic's source into a QRAM at cells of another size", &at);
+      Value *ij = B.CreateAdd(f.idx.v, ConstantInt::get(i64(ctx), j));
+      return Operand{mem::qramLoadAt(ctx, r, Operand{ij, false}, cellTy, at), true};
+    }
+    if (isSlotRoot(ctx, r)) {
+      if (!ci)
+        unimplemented("fatptr: a memory intrinsic's source into a slot object at a run-time cell index (mem-slots: "
+                      "a per-object dynamic slot load)",
+                      &at);
+      return mem::readFatCell(ctx, r, cellTy, base + int64_t(j * size), const_cast<Instruction &>(at));
+    }
+    if (!classicalMemoryOnly(ctx, r))
+      unimplemented("fatptr: a memory intrinsic's fat source pointer into a heap slot record (rules 21, 22)", &at);
+    if (ci) {
+      int64_t off = base + int64_t(j * size);
+      Value *p = off ? B.CreateInBoundsGEP(Type::getInt8Ty(C), rv.v, ConstantInt::get(i64(ctx), off)) : rv.v;
+      return Operand{B.CreateLoad(cellTy, p), false};
+    }
+    Fat h = f;
+    h.cell = 1;
+    h.idx = Operand{B.CreateAdd(B.CreateMul(f.idx.v, ConstantInt::get(i64(ctx), f.cell)),
+                                ConstantInt::get(i64(ctx), j * size)),
+                    false};
+    return hostArm(ctx, r, h, cellTy, const_cast<Instruction &>(at), /*check=*/true, Align(1));
+  };
   SmallVector<Operand, 8> out;
   for (uint64_t j = 0; j < n; ++j) {
     std::optional<Operand> acc;
     for (unsigned i = 0; i < roots.size(); ++i) {
       if (j * size >= bounds[i])
         continue;
-      Operand r = ctx.operand(roots[i]);
-      if (r.handle)
-        internalError("fatptr: a root pointer bound to a rail", roots[i]);
-      int64_t off = base + int64_t(j * size);
-      Value *p = off ? B.CreateInBoundsGEP(Type::getInt8Ty(C), r.v, ConstantInt::get(i64(ctx), off)) : r.v;
-      Operand v{B.CreateLoad(cellTy, p), false};
+      Operand v = cellOf(roots[i], j);
       if (!acc) {
         acc = v;
         continue;
@@ -2316,7 +2630,8 @@ void lowerStore(LoweringContext &ctx, StoreInst &st) {
       for (unsigned k = 0; k < b->table; ++k) {
         Value *cell = nullptr;
         Value *old = tableCell(ctx, *b, f, k, cell);
-        Operand eq = icmp(ctx, CmpInst::ICMP_EQ, 32, f.tag, Operand{ConstantInt::get(i32(ctx), k + 1), false});
+        // Under a quantum predicate the guard is tag == k and the flag (rule 9, 84).
+        Operand eq{guardTag(ctx, f, k + 1, ctx.currentFlag()), true};
         Value *w = tmpl(ctx, "select", railTypeOf(ty), {eq, v, Operand{old, true}}, v.handle ? "" : "lh");
         ctx.unc().setRole(ctx.unc().idOf(w), Role::Result);
         ctx.B().CreateAlignedStore(w, cell, Align(4));
@@ -2476,9 +2791,6 @@ void lowerPtrToInt(LoweringContext &ctx, Instruction &I) {
   unsigned w = I.getType()->getIntegerBitWidth();
   Flat fl;
   fl.f = derive(ctx, pi->getPointerOperand(), /*emit=*/true);
-  for (const Value *r : fl.f.roots)
-    if (mem::isQramRoot(ctx, r))
-      unimplemented("fatptr: ptrtoint of a fat pointer into a QRAM object (rule 21 QRAM address space)", &I);
   Bases cache;
   fl.base = baseOf(ctx, fl.f, cache);
   Operand a = address(ctx, fl.f, cache, fl.base);
@@ -2494,6 +2806,67 @@ void lowerPtrToInt(LoweringContext &ctx, Instruction &I) {
   ctx.bindFields(&I, {a});
 }
 
+// Rule 21: inttoptr of an integer of unknown origin, decoded by range tests over the candidate objects
+// (candidateRoots): base <= addr <= base + size·n, one past the end included. An address that is one object's
+// end and another's start names the object starting there (ruling 2026-11-02, cq-0w0g): the one-past tests are
+// applied first, the interior tests (base <= addr < end) after them, so an interior match wins. No match is NULL
+// (tag 0, base 0). idx = (addr - base[tag]) / size, an i64 rail (exact for an in-domain address, which lies on a
+// cell of its object; the cell is the byte unless every access through the pointer has one size).
+void lowerRangeDecode(LoweringContext &ctx, const IntToPtrInst &I) {
+  Fat f = deriveIntToPtr(ctx, I, /*emit=*/false);
+  Operand u = ctx.operand(I.getOperand(0));
+  if (unsigned uw = I.getOperand(0)->getType()->getIntegerBitWidth(); uw != 64) {
+    StringRef op = uw < 64 ? "zext" : "trunc";
+    u = u.handle ? Operand{tmpl(ctx, op, intRail(uw), {u}, "", "", intRail(64)), true}
+                 : Operand{ctx.B().CreateZExtOrTrunc(u.v, i64(ctx)), false};
+  }
+  if (!u.handle) {
+    CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, intRail(64)}, {u.v});
+    ctx.unc().recordSeed(seed);
+    u = Operand{seed, true};
+  }
+  IRBuilder<> &B = ctx.B();
+  Bases cache;
+  struct Cand {
+    const Value *r;
+    Value *base, *end;
+  };
+  SmallVector<Cand, 4> cs;
+  for (const Value *r : f.roots) {
+    if (isa<ConstantPointerNull>(r))
+      continue;
+    Value *ext = hostExtent(ctx, r);
+    if (!ext)
+      unimplemented("awaiting owner ruling: SPEC_ISSUES rule 21 range decoding over a candidate object with no "
+                    "known extent",
+                    &I);
+    Value *base = rootBase(ctx, r, cache);
+    cs.push_back({r, base, B.CreateAdd(base, ext)});
+  }
+  Operand tag{ConstantInt::get(i32(ctx), 0), false};
+  auto pick = [&](Operand cond, const Value *r) {
+    tag = select(ctx, 32, cond, Operand{ConstantInt::get(i32(ctx), rootNumber(ctx, r)), false}, tag);
+  };
+  for (const Cand &c : cs)
+    pick(icmp(ctx, CmpInst::ICMP_EQ, 64, u, Operand{c.end, false}), c.r);
+  for (const Cand &c : cs) {
+    Operand ge = icmp(ctx, CmpInst::ICMP_UGE, 64, u, Operand{c.base, false});
+    Operand lt = icmp(ctx, CmpInst::ICMP_ULT, 64, u, Operand{c.end, false});
+    pick(commutative(ctx, "and", 1, ge, lt), c.r);
+  }
+  Fat g = f;
+  g.tag = tag;
+  Operand base = baseOf(ctx, g, cache);
+  Operand off = Operand{tmpl(ctx, "sub", intRail(64), {u, base}, base.handle ? "" : "hl"), true};
+  if (f.cell != 1) {
+    bool p2 = isPowerOf2_64(f.cell);
+    off = Operand{tmpl(ctx, p2 ? "lshr" : "udiv", intRail(64),
+                       {off, Operand{ConstantInt::get(i64(ctx), p2 ? Log2_64(f.cell) : f.cell), false}}, "hl"),
+                  true};
+  }
+  ctx.bindFields(&I, {tag, off});
+}
+
 // Rule 21 (89, 107): inttoptr of an integer derived from ptrtoint(p) keeps p's provenance: tag = p's tag (the
 // same rail), idx = (addr - base[tag]) / size in cells of the access through the result (sub, lshr by log2
 // size, trunc to the logical i32 index rail; one past the end included). base[tag] is the one that ptrtoint
@@ -2505,10 +2878,10 @@ void lowerIntToPtr(LoweringContext &ctx, Instruction &I) {
   if (!ip)
     internalError("fatptr: lowerIntToPtr of a non-inttoptr", &I);
   const PtrToIntInst *pi = derivedFrom(I.getOperand(0));
-  if (!pi)
-    unimplemented("fatptr: inttoptr of an integer of unknown origin (rule 21 range decoding over the candidate "
-                  "objects)",
-                  &I);
+  if (!pi) {
+    lowerRangeDecode(ctx, *ip);
+    return;
+  }
   Fat shape = deriveIntToPtr(ctx, *ip, /*emit=*/false);
   Operand tag{nullptr, false}, base{nullptr, false};
   auto &fm = flats()[&ctx.out()];
@@ -2552,8 +2925,8 @@ void lowerIntToPtr(LoweringContext &ctx, Instruction &I) {
                                                    : (sx ? ctx.B().CreateSDiv(idx.v, k) : ctx.B().CreateUDiv(idx.v, k)),
                                false};
   }
-  if (idx.handle)
-    idx = Operand{tmpl(ctx, "trunc", intRail(64), {idx}, "", "", intRail(32)), true};
+  if (idx.handle && shape.idxBits < 64)
+    idx = Operand{tmpl(ctx, "trunc", intRail(64), {idx}, "", "", intRail(shape.idxBits)), true};
   ctx.bindFields(&I, {tag, idx});
 }
 
@@ -2583,7 +2956,7 @@ uint64_t hostFormalCellBytes(const Argument &A) {
         MapVector<Value *, APInt> vars;
         APInt cst(64, 0);
         if (!g->collectOffset(DL, 64, vars, cst))
-          unimplemented("fatptr: a GEP whose offset is not linear in its indices", g);
+          internalError("fatptr: a GEP over a scalable vector type on x86-64", g);
         for (auto &[x, scale] : vars)
           see(scale.getZExtValue(), g);
         work.push_back(g);
@@ -2740,11 +3113,13 @@ SmallVector<Value *, 4> afterSlotTableCall(LoweringContext &ctx, const CallBase 
     out.push_back(mem::reloadFatCell(ctx, r, u->ty, 0, orig, fwd));
   }
   // The clean-ups read the reloaded cells, which recordCall registers: finishSlotTableCall emits them.
-  pendingTableCleanups()[fwd].push_back([&ctx, &orig, f, rs, olds, out, u = *u]() {
+  // Under a quantum predicate the clone (its _ctl form, rule 18) wrote under tag == k and the predicate: the
+  // clean-up's guard is the same conjunction.
+  Value *callFlag = ctx.currentFlag();
+  pendingTableCleanups()[fwd].push_back([&ctx, &orig, f, rs, olds, out, u = *u, callFlag]() {
     for (unsigned k = 0; k < rs.size(); ++k) {
-      Operand eq =
-          icmp(ctx, CmpInst::ICMP_EQ, 32, f.tag, Operand{ConstantInt::get(i32(ctx), rootNumber(ctx, rs[k])), false});
-      cleanOldCell(ctx, olds[k], eq.v, out[k], u, Operand{const_cast<Value *>(u.z), false}, rs[k], orig);
+      Value *g = guardTag(ctx, f, rootNumber(ctx, rs[k]), callFlag);
+      cleanOldCell(ctx, olds[k], g, out[k], u, Operand{const_cast<Value *>(u.z), false}, rs[k], orig);
     }
   });
   return out;
@@ -2884,15 +3259,16 @@ void bindFormal(LoweringContext &ctx, const Argument &formal, Value *object, Ope
   b.idx = idx;
   switch (pf.pointee) {
   case ObjClass::Qram:
-    if (cellCount)
-      unimplemented("fatptr: a QRAM triple formal with a cell count", &formal);
+    // A cell count (the uniform ABI passes it whenever the callee loads through the pointer, rule 21) is unused:
+    // a QRAM's extent is its bus, an out-of-range index reads 0 (§2).
     (void)mem::calleeQramStoreCount(T, S);   // M2's contract over the clone's uses of the formal
     b.cellTy = mem::formalCellType(formal);
     mem::registerFormalQram(ctx, formal, object);
     break;
   case ObjClass::Slot: {
-    if (idx.handle)
-      unimplemented("fatptr: a slot triple formal at a quantum cell index (rule 21 guarded slot select)", &formal);
+    // A rail idx is bound as it is: a load through it would be a quantum-offset load of memory that may hold a
+    // handle, which makes the caller's object a QRAM (rule 20), so only non-accessing uses (a compare, a
+    // ptrtoint, a return) meet it.
     if (tag.handle) {
       // M7 (129): an object table of slot objects, one cell digit each (the clone reads and writes the one
       // cell idx of each, calleeCellUpdate); they all hold handles at the call.
@@ -2935,8 +3311,6 @@ void bindFormal(LoweringContext &ctx, const Argument &formal, Value *object, Ope
   case ObjClass::Classical:
     // 85: a host object's pointer the clone derives and returns. Its loads and stores stay unimplemented
     // (lowerLoad, lowerStore: a load beyond the cell count, rule 21).
-    if (idx.handle)
-      unimplemented("fatptr: a host triple formal at a quantum cell index (rule 21)", &formal);
     b.cell = hostFormalCellBytes(formal);
     break;
   }
