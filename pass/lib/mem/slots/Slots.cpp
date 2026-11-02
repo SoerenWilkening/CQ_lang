@@ -4325,8 +4325,12 @@ void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &
 // back to the store that does not re-execute the allocation (the store on a cycle of its own) is excluded.
 bool freshCell(LoweringContext &ctx, FnState &st, const Site &s, const StoreInst &S) {
   if (!s.a.ok || s.beyond || s.info->view || s.info->boolCells || s.info->record || s.info->split ||
-      s.info->escaping || S.isVolatile() || S.isAtomic())
+      s.info->escaping)
     return false;
+  // cq-z75a (CR rule 24): a volatile or atomic store that reaches a slot store is the plain store (eff-conc
+  // routes an unobservable volatile access and an atomic one here as the plain op; an observable volatile
+  // store is a tape effect and never arrives), so it writes a fresh cell like any store. Excluding it left
+  // select(p, v, old) reading a cell no write had given a handle (exp10f's FORCE_EVAL volatile local).
   if (s.info->kind != RootKind::Heap && s.info->kind != RootKind::Local)
     return false;
   auto *R = dyn_cast<Instruction>(s.a.root);
@@ -4343,13 +4347,31 @@ bool freshCell(LoweringContext &ctx, FnState &st, const Site &s, const StoreInst
   } else if (!isa<AllocaInst>(R)) {
     return false;
   }
-  if (R->getParent() != S.getParent() && onCycleWithin(S.getParent(), between(R->getParent(), S.getParent())))
-    return false;
   for (const Instruction &X : instructions(*st.F))
     if (auto *MI = dyn_cast<MemIntrinsic>(&X); MI && hasObject(ctx, MI->getDest(), s.o))
       return false;
   uint64_t size = storeBytes(ctx.M.getDataLayout(), S.getValueOperand()->getType());
-  if (!clearBetween(ctx, *s.info, s.o, R, &S, s.a, size))
+  // The cell is fresh at S when a point that leaves the whole object undef dominates S with no write of the
+  // cell in between and no path back to S that avoids that point: the allocation, or (cq-z75a) an
+  // llvm.lifetime.start of an alloca, after which LLVM reads the object as undef (musl's FORCE_EVAL local,
+  // exp10f: lifetime.start, store volatile, load volatile, all under the quantum predicate).
+  auto freshFrom = [&](const Instruction *F0) {
+    if (!st.DT->dominates(F0, &S))
+      return false;
+    if (F0->getParent() != S.getParent() &&
+        onCycleWithin(S.getParent(), between(F0->getParent(), S.getParent())))
+      return false;
+    return clearBetween(ctx, *s.info, s.o, F0, &S, s.a, size);
+  };
+  bool fresh = freshFrom(R);
+  if (!fresh && isa<AllocaInst>(R))
+    for (const User *U : R->users())
+      if (auto *II = dyn_cast<IntrinsicInst>(U);
+          II && II->getIntrinsicID() == Intrinsic::lifetime_start && II->getArgOperand(1) == R && freshFrom(II)) {
+        fresh = true;
+        break;
+      }
+  if (!fresh)
     return false;
   // cq-2wfi: the lowered program runs the arms of a quantum branch one after the other, so a store to the
   // cell that the CFG orders neither before nor after S (a sibling arm's store: mutually exclusive in C)
