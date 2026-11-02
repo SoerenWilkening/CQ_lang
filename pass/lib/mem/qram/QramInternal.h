@@ -18,8 +18,9 @@ bool isQramRoot(LoweringContext &, const llvm::Value *root);
 uint64_t qramElemBytes(LoweringContext &, const llvm::Value *root, const llvm::Instruction &at);
 // One load of type ty at cell idx of the QRAM at root (column at offset 0), unguarded: a quantum idx
 // is the logical index rail, a classical one an i64 cell index. Returns the fresh recorded rail.
+// idxBits: a rail idx's width (a triple formal's loads after its deferred stores compare indices, M2b).
 llvm::Value *qramLoadAt(LoweringContext &, const llvm::Value *root, Operand idx, llvm::Type *ty,
-                        const llvm::Instruction &at);
+                        const llvm::Instruction &at, unsigned idxBits = 32);
 // The (tag, idx) halves of the pointer cell idx of the QRAM of pointers at root, loaded unguarded.
 std::pair<llvm::Value *, llvm::Value *> qramLoadPtrAt(LoweringContext &, const llvm::Value *root, Operand idx,
                                                       const llvm::Instruction &at);

@@ -1,6 +1,8 @@
-; M2b (cq-w2a-mem-qram phase 4): a load through a QRAM triple formal after a deferred store is unimplemented.
+; M2b (cq-w2a-mem-qram phase 4; cq-pf4n): a load through a QRAM triple formal after a deferred store through ANOTHER
+; formal is unimplemented (the clone cannot compare the two buses); through the same formal it is forwarded
+; (qram_triple_m2_load_after_store.ll).
 ; From C: static noinline int la(int *p, int *q) { *p = 4; return *q; }
-; EXPECT-ERROR: a load through a QRAM triple formal after a store through one
+; EXPECT-ERROR: a load through a QRAM triple formal after a store through another triple formal
 ; ModuleID = 't.O1.ll'
 source_filename = "t.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"

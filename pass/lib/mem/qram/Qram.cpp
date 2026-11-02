@@ -2750,10 +2750,17 @@ uint64_t qramElemBytes(LoweringContext &ctx, const Value *root, const Instructio
   return qramObj(ctx, root, at).elemBytes;
 }
 
-Value *qramLoadAt(LoweringContext &ctx, const Value *root, Operand idx, Type *ty, const Instruction &at) {
+Value *forwardDeferredStores(LoweringContext &ctx, const Value *root, Operand idx, unsigned idxBits, Value *loaded,
+                             const Instruction &at);
+
+Value *qramLoadAt(LoweringContext &ctx, const Value *root, Operand idx, Type *ty, const Instruction &at,
+                  unsigned idxBits) {
   QramObj &q = qramObj(ctx, root, at);
   const Column &c = firstColumn(ctx, q, ty, at);
-  return emitLoad(ctx, busOf(q, root, &c, at), c, fatIndex(ctx, q, idx));
+  Value *h = emitLoad(ctx, busOf(q, root, &c, at), c, fatIndex(ctx, q, idx));
+  if (isFormalQram(ctx, root))
+    h = forwardDeferredStores(ctx, root, idx, idxBits, h, at);
+  return h;
 }
 
 std::pair<Value *, Value *> qramLoadPtrAt(LoweringContext &ctx, const Value *root, Operand idx,
@@ -3407,6 +3414,12 @@ struct DeferredStore {
   Value *v;
   Value *flag;
   bool idxOut = false;   // the index rail is one of the clone's results (FormalStore::idxRail)
+  // The store as the clone's body made it (M2b's forwarding to later loads): its formal, index (a classical
+  // i64 or a rail of idxBits bits), value rail and predicate flag (or null).
+  const Value *root = nullptr;
+  Operand idxOrig;
+  unsigned idxBits = 64;
+  Value *vOrig = nullptr, *flagOrig = nullptr;
 };
 
 std::map<const Function *, SmallVector<DeferredStore, 2>> &deferredStores() {
@@ -3561,14 +3574,15 @@ SmallVector<FormalStore, 2> formalQramStores(const TaintInfo &T, const Specializ
   Function &F = *S.F;
   const DataLayout &DL = F.getParent()->getDataLayout();
   SmallVector<FormalStore, 2> out;
-  SmallVector<const LoadInst *, 8> loads;
+  SmallVector<std::pair<const LoadInst *, unsigned>, 8> loads;
   for (Argument &A : F.args()) {
     if (!isQramTriple(T, S, A))
       continue;
     Type *cellTy = cellTypeOfUses(A, /*strict=*/true);
     int64_t E = int64_t(DL.getTypeAllocSize(cellTy).getFixedValue());
     FormalUses u = formalUses(A, /*strict=*/true);
-    loads.append(u.loads.begin(), u.loads.end());
+    for (const LoadInst *ld : u.loads)
+      loads.push_back({ld, A.getArgNo()});
     bool idxQ = formalIdxQuantum(T, S, A.getArgNo());
     for (const StoreInst *st : u.stores) {
       Addr a = decompose(st->getPointerOperand(), DL);
@@ -3613,11 +3627,14 @@ SmallVector<FormalStore, 2> formalQramStores(const TaintInfo &T, const Specializ
   llvm::sort(out, [&](const FormalStore &x, const FormalStore &y) {
     return x.st != y.st && DT.dominates(x.st, y.st);
   });
-  for (const LoadInst *ld : loads)
+  // A load after stores through its own formal reads them forwarded (forwardDeferredStores). Two formals may
+  // name one caller object, and the clone cannot compare their buses (handles): a load after a store through
+  // another formal is a stop.
+  for (auto [ld, argNo] : loads)
     for (const FormalStore &fs : out)
-      if (isPotentiallyReachable(fs.st, ld, nullptr, &DT, &LI))
-        unimplemented("mem-qram: a load through a QRAM triple formal after a store through one (M2b defers the "
-                      "store to the clone's end)",
+      if (fs.argNo != argNo && isPotentiallyReachable(fs.st, ld, nullptr, &DT, &LI))
+        unimplemented("mem-qram: a load through a QRAM triple formal after a store through another triple formal "
+                      "(M2b defers the store; the clone cannot tell whether the two name one object)",
                       ld);
   return out;
 }
@@ -3764,6 +3781,11 @@ void deferFormalStore(LoweringContext &ctx, const Value *root, Operand idx, unsi
   };
   DeferredStore d{busOf(q, root, &c, at), c, QIndex{}, copyOut(v, c.w), nullptr};
   d.idxOut = fs->idxRail;
+  d.root = root;
+  d.idxOrig = idx;
+  d.idxBits = idx.handle ? idxBits : 64;
+  d.vOrig = v;
+  d.flagOrig = flag;
   if (fs->idxRail) {
     // The index as a rail of the clone's results, which the caller's pop reads: a quantum one copied out, a
     // classical one a seed of its value (the twin XORs the value out where the clone minted it, rule 18).
@@ -3783,6 +3805,64 @@ void deferFormalStore(LoweringContext &ctx, const Value *root, Operand idx, unsi
   if (flag)
     d.flag = copyOut(flag, RailType{Kind::Int, 1});
   deferredStores()[&ctx.out()].push_back(d);
+}
+
+// M2b: a load through a triple formal after stores through it that the clone defers to its end reads what C
+// reads: the cell's content, replaced by the value of each earlier store (program order) whose index equals the
+// load's and whose predicate holds, select(idx == idx_j && flag_j, v_j, ...) over the rails the store read (the
+// body's own: its twin replays them after the caller popped the stores, against the same cells).
+Value *forwardDeferredStores(LoweringContext &ctx, const Value *root, Operand idx, unsigned idxBits, Value *loaded,
+                             const Instruction &at) {
+  auto it = deferredStores().find(&ctx.out());
+  if (it == deferredStores().end() || it->second.empty())
+    return loaded;
+  LLVMContext &C = ctx.M.getContext();
+  IRBuilder<> &B = ctx.B();
+  auto tmpl = [&](StringRef op, RailType w, ArrayRef<Operand> ops, StringRef shape, std::optional<RailType> to = {},
+                  StringRef pred = "") {
+    abi::TemplateSpec sp;
+    sp.op = op.str();
+    sp.w = w;
+    sp.shape = shape.str();
+    if (to)
+      sp.to = *to;
+    sp.pred = pred.str();
+    return ctx.emitTemplate(sp, ops);
+  };
+  // Two indices as operands of one width (a classical one at the rail's width; two rails zero-extended to the
+  // wider: a triple formal is at its object's start, its indices are non-negative).
+  auto eqOf = [&](Operand a, unsigned aw, Operand b, unsigned bw) -> Value * {
+    if (!a.handle && !b.handle) {
+      Type *i64 = Type::getInt64Ty(C);
+      Value *c = B.CreateICmpEQ(B.CreateSExtOrTrunc(a.v, i64), B.CreateSExtOrTrunc(b.v, i64));
+      return seedOf(ctx, RailType{Kind::Int, 1}, c);
+    }
+    if (!a.handle) {
+      std::swap(a, b);
+      std::swap(aw, bw);
+    }
+    if (!b.handle)
+      return tmpl("icmp", RailType{Kind::Int, aw},
+                  {a, Operand{B.CreateSExtOrTrunc(b.v, IntegerType::get(C, aw)), false}}, "hl", {}, "eq");
+    unsigned w = std::max(aw, bw);
+    if (aw < w)
+      a = Operand{tmpl("zext", RailType{Kind::Int, aw}, {a}, "", RailType{Kind::Int, w}), true};
+    if (bw < w)
+      b = Operand{tmpl("zext", RailType{Kind::Int, bw}, {b}, "", RailType{Kind::Int, w}), true};
+    return tmpl("icmp", RailType{Kind::Int, w}, {a, b}, "", {}, "eq");
+  };
+  Value *val = loaded;
+  for (const DeferredStore &d : it->second) {
+    if (d.root != root)
+      internalError("mem-qram: a load through a triple formal after a deferred store through another formal (M2's "
+                    "analysis stops on it)",
+                    &at);
+    Value *p = eqOf(idx, idx.handle ? idxBits : 64, d.idxOrig, d.idxBits);
+    if (d.flagOrig)
+      p = tmpl("and", RailType{Kind::Int, 1}, {Operand{d.flagOrig, true}, Operand{p, true}}, "");
+    val = tmpl("select", d.col.w, {Operand{p, true}, Operand{d.vOrig, true}, Operand{val, true}}, "");
+  }
+  return val;
 }
 
 unsigned calleeQramStoreCount(const TaintInfo &T, const Specialization &callee) {

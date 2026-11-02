@@ -2398,7 +2398,7 @@ void lowerLoad(LoweringContext &ctx, LoadInst &ld) {
         auto [t, i] = mem::qramLoadPtrAt(ctx, r, g.idx, ld);
         hs.push_back({Operand{t, true}, Operand{i, true}});
       } else {
-        hs.push_back({Operand{mem::qramLoadAt(ctx, r, g.idx, ty, ld), true}, none});
+        hs.push_back({Operand{mem::qramLoadAt(ctx, r, g.idx, ty, ld, g.idxBits), true}, none});
       }
       continue;
     }
@@ -2524,7 +2524,7 @@ SmallVector<Operand, 8> loadHostCells(LoweringContext &ctx, const Value *src, Ty
       if (mem::isQramRoot(ctx, r)) {
         if (mem::qramElemBytes(ctx, r, at) != size)
           unimplemented("fatptr: a memory intrinsic's quantum-index source into a QRAM of another element size", &at);
-        return Operand{mem::qramLoadAt(ctx, r, ij, cellTy, at), true};
+        return Operand{mem::qramLoadAt(ctx, r, ij, cellTy, at, g.idxBits), true};
       }
       if (classicalMemoryOnly(ctx, r))
         return Operand{mem::qromLoadAt(ctx, r, ij, g.idxBits, g.idxSext, cellTy, at), true};
