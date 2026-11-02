@@ -1081,8 +1081,8 @@ void lowerRegion(LoweringContext &ctx, const Region &R) {
       for (unsigned s = 0; s < nS; ++s)
         for (unsigned i = 0; i < G[s].size(); ++i) {
           const Gate &g = G[s][i];
-          // A clone call hits the rails it was noted non-diagonal on (its rotated cells and by-value
-          // formals, calls noteRotatedCells; cq-c969).
+          // A clone call hits the rails it was noted non-diagonal on (its rotated cells, calls
+          // noteRotatedCells; cq-c969).
           bool hit = g.kind == GK::Clone ? U.mayHit(op, g.call) : writeTarget(g) == op;
           if (g.call == m.call || !hit)
             continue;

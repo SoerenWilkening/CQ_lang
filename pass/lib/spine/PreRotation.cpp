@@ -450,6 +450,40 @@ std::optional<PendingCopy> beginPreRotation(LoweringContext &ctx, CallInst &T, b
     pc.rotCopy = true;
     return pc;
   };
+  // cq-c09h (owner 2026-11-02, C semantics): a by-value formal is a copy. h, the rail a formal of T's
+  // function is bound to, is the caller's (a clone's or an inlined callee's actual): the Ry hits a copy
+  // of it, the caller's rail is untouched. A merge that may name a formal's rail at run time would need
+  // the copy on some paths only: not built.
+  {
+    const Function *TF = T.getFunction();
+    for (const Argument &A : TF->args()) {
+      auto ai = sh.binds.find(&A);
+      if (ai == sh.binds.end() || ai->second.size() != 1 || !ai->second.front().handle)
+        continue;
+      Value *r = ai->second.front().v;
+      if (r == h)
+        return rotateCopy();
+      SmallVector<const Value *, 8> work{h};
+      SmallPtrSet<const Value *, 8> seen{h};
+      while (!work.empty()) {
+        const Value *a = work.pop_back_val();
+        SmallVector<const Value *, 2> ins;
+        if (auto *p = dyn_cast<PHINode>(a))
+          ins.append(p->incoming_values().begin(), p->incoming_values().end());
+        else if (auto *sl = dyn_cast<SelectInst>(a))
+          ins.append({sl->getTrueValue(), sl->getFalseValue()});
+        for (const Value *in : ins) {
+          if (in == r)
+            unimplemented("spine: cq_theta rotates " + describe(h) + ", a merge that may name the rail of the "
+                              "by-value formal " + describe(&A) + ": the copy would be needed on some paths only "
+                              "(cq-c09h)",
+                          &T);
+          if (seen.insert(in).second)
+            work.push_back(in);
+        }
+      }
+    }
+  }
   if (auto *L = dyn_cast<LoadInst>(v); L && cellReadAfter(sh, T, *L))
     return rotateCopy();   // cq-xu07
   // cq-6qum. v is a rule 10 register state (a prep, a controlled rotation or a merge of them; rot-cry

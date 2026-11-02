@@ -564,54 +564,14 @@ bool pointsToSlot(LoweringContext &ctx, const Value *actual) {
 // non-diagonal gate there: noteNonDiagonal, so a garbage item reading it goes before the call (or the
 // rail is kept entangled), and a merged cell needs every arm kept. The cells are the scalar leaves of
 // the object's C type (taint's cell indices from the object's root), read with M4 as of the call.
-// cq-kkgh (CR rule 2): does the body rotate the rail V names in place? cq_theta on an existing handle
-// rotates that rail; V's rail reaches it as V itself, through a cq_theta result (the same rail), a
-// merge that may name it, or a by-value actual of a defined callee. Conservative on a merge.
-bool rotatesInPlace(const Value *V, SmallPtrSetImpl<const Value *> &seen) {
-  if (!seen.insert(V).second)
-    return false;
-  for (const User *U : V->users()) {
-    if (isa<PHINode>(U) || isa<SelectInst>(U) || isa<FreezeInst>(U)) {
-      if (rotatesInPlace(U, seen))
-        return true;
-      continue;
-    }
-    auto *C = dyn_cast<CallBase>(U);
-    const Function *G = C ? C->getCalledFunction() : nullptr;
-    if (!G)
-      continue;
-    if (G->getName().starts_with("cq_theta_")) {
-      if (C->arg_size() >= 1 && C->getArgOperand(0) == V)
-        return true;
-      continue;
-    }
-    if (G->isDeclaration())
-      continue;
-    for (unsigned k = 0; k < C->arg_size() && k < G->arg_size(); ++k)
-      if (C->getArgOperand(k) == V && !V->getType()->isPointerTy() && rotatesInPlace(G->getArg(k), seen))
-        return true;
-  }
-  return false;
-}
-
+// A by-value formal is a copy (C semantics, owner 2026-11-02, cq-c09h): a clone's cq_theta on it rotates
+// a copy the clone mints (spine beginPreRotation), never the caller's rail, so only pointer formals hit.
 void noteRotatedCells(LoweringContext &ctx, CallBase &CB, const Specialization &S,
                       const std::vector<FormalLayout> &fs, CallInst *fwd, ArrayRef<unsigned> argMap = {}) {
   unsigned nArgs = argMap.empty() ? CB.arg_size() : unsigned(argMap.size());
   for (unsigned i = 0; i < nArgs && i < fs.size(); ++i) {
-    if (!fs[i].pointer) {
-      // A by-value quantum formal the clone rotates in place: the caller's rail is rotated by the
-      // call (a non-diagonal gate on it, CR rules 2 and 5), never uncomputed through it.
-      if (fs[i].leaves.size() != 1 || fs[i].q.empty() || !fs[i].q[0] || i >= S.F->arg_size())
-        continue;
-      SmallPtrSet<const Value *, 16> seen;
-      if (!rotatesInPlace(S.F->getArg(i), seen))
-        continue;
-      Operand a = ctx.operand(CB.getArgOperand(argMap.empty() ? i : argMap[i]));
-      if (!a.handle)
-        internalError("calls: a clone rotates a quantum by-value formal whose actual holds no rail", &CB);
-      ctx.unc().noteNonDiagonal(ctx.unc().idOf(a.v), fwd);
+    if (!fs[i].pointer)
       continue;
-    }
     SmallVector<unsigned, 4> cells = ctx.T.cellsRotated(S, i);
     if (cells.empty())
       continue;

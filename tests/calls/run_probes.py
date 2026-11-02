@@ -61,8 +61,10 @@ CASES = [
     ("depth_le0", "r4", [], "pass", []),
     # cq-xhv4 (169): a twin computes no rule 14 kept overflow predicate a_K of its own (the forward keeps one).
     ("twin_kept_overflow", "tk", [], "pass", []),
-    # cq-kkgh: a clone's in-place rotation of a by-value formal is a non-diagonal gate on the caller's rail.
-    ("byvalue_rotated", "p5", [], "pass", []),
+    # cq-c09h (owner 2026-11-02, revisits cq-kkgh): a by-value formal is a copy: the clone's cq_theta on it
+    # rotates a copy of the caller's rail (copy, then Ry on the copy); the caller's rail is untouched.
+    ("byvalue_rotated", "p5", [], "pass", [r"call void @cqrt_copy_i32\(i32 %0, i32 (%\d+)\)\n  call void @cqrt_ry_i32\(i32 \1, "]),
+    ("byvalue_copied", "p3", [], "pass", [r"call void @cqrt_copy_i32\(i32 %0, i32 (%\d+)\)\n  call void @cqrt_ry_i32\(i32 \1, "]),
     # cq-budv (117): an in-place rotation at a variable offset (T3 kAnyCell) of a runtime-length slot array.
     ("rotated_any", "ra", [], "pass", [r"call fastcc void @__cq_q_rot_all_100\("]),
     ("depth_lt0", "r1", [], "fatal: cq: unimplemented: loops-cutoff: a quantum-depth recursion cut at K with B > K "
