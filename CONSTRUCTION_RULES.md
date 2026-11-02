@@ -538,7 +538,11 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     (§1.4). The clone computes, **copies each result into a fresh rail**, uncomputes its body and
     returns the copies (a one-template body may return its rail directly). Its `_unc` twin
     recomputes, XORs each result out with `copy_<W>`, uncomputes, and the caller frees the result
-    rails after the twin. Rule 6 clean-up of caller cells a clone overwrote happens in the CALLER
+    rails after the twin. When some results of one call are measured (or escape) and others are
+    dead, the caller first copies each measured one into a fresh rail (`cqrt_copy_<W>`), runs the
+    twin on the clone's own result rails, frees them, and measures the copies: the twin always
+    zeroes every result it returned, and no measured rail is ever gated (ruling 2026-11-02,
+    cq-75n4; example owed, §8). Rule 6 clean-up of caller cells a clone overwrote happens in the CALLER
     after the call (the caller knows the old handles and whether they are dead; a clone is shared by
     every call site with its mask): per dead cell the caller calls the clone's `_inv<c>` kind
     (§1.4), which zeroes the old rail from the cell's new content, and then frees it. The caller
@@ -552,7 +556,13 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     then calls the twin, which takes those rails first (191).
     Library code is injected source (musl, linked before lowering) and lifted like any callee; an
     LLVM math intrinsic on a quantum operand (`llvm.exp.f64`, `llvm.sin.f64`, `llvm.pow.f64`, …)
-    is the call of the libm function of the same name and is lifted the same way (175, 184).
+    is the call of the libm function of the same name and is lifted the same way (175, 184;
+    `llvm.<f>.f32` is `<f>f`, `llvm.<f>.f80` is `<f>l`): whenever that function has a body in the
+    module after injection the intrinsic is lifted from it, whatever flags the user's TU was
+    compiled with, and only a function with no body is a declared clone (175 shows the lowering
+    without a bundle; ruling 2026-11-02, cq-odjk). The rule-23 flags rail is an argument like any
+    other: a helper with classical data arguments called from a strict body with the flags rail is
+    reached with a quantum argument and is a clone.
     A library may instead be lowered once and linked (rule 27).
     A function the program defines shadows the injected body of the same name, as in C linking
     (169's `__divdc3` and 173's `__mulsc3`/`__divsc3` are the example's own). For every function the
@@ -575,11 +585,23 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     `char`, `short`, every floating or pointer type: a handle cannot be narrowed, and no value the
     program does not measure is measured to fit a signature; 193). An aggregate return is the
     struct of handles and classical values of §1.1 (rule 26). An in-module caller of such a
-    function inlines it (162). A call through a classical function pointer dispatches over
+    function inlines it (162): IR inlining of the callee's body into the caller before taint, after
+    which the inlined body is lowered as the caller's own code by the same constructions. There is
+    no separate procedure for an inlined body, and nothing about the callee's shape (block count,
+    loops, calls, stores through its parameters) is a condition. The reason is 162's: a clone with
+    no quantum argument that mints a register inside has no twin. A callee reached with a quantum
+    argument is never inlined by this rule; it is a rule-18 clone, whatever it returns and however
+    it returns it (musl's `__rem_pio2(x, &y)` inside `sin` is a clone with a slot parameter, 31 and
+    163; ruling 2026-11-02, cq-ab9c). A call through a classical function pointer dispatches over
     the static callee set; a function pointer loaded at a quantum index is a QROM of callee tags
     with every candidate clone called unguarded and merged by `select`; a callee under a quantum
     predicate becomes a `_ctl` clone iff its body has a non-pure gate (rotation, phase, slot or
-    QRAM store, tape), otherwise it is called unguarded and merged. A callee with no body follows
+    QRAM store, tape), otherwise it is called unguarded and merged. That includes a call with no
+    quantum argument at all: a host call with classical arguments, a classical result and no gate
+    under a quantum predicate stays the host call, executed unguarded, its result merged like any
+    classical arm value (rule 9); a `volatile` access to a dead local inside it is nothing (rule
+    24). musl's `__math_oflow(0)` in `exp` and `__math_divzero(1)` in `log` are this case (ruling
+    2026-11-02, cq-fl4n; example owed, §8). A callee with no body follows
     rule 27. — 96, 97, 102, 117, 124.
 
 20. **Memory classification.** Each memory object (an `alloca`, global or heap block as -O1
@@ -694,7 +716,22 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     are a host alloca plus the compiler-tracked quantum part, never a slot array, a QRAM or a
     rule-21 pointer; a clone that does constrained FP work takes the caller's mode and flags rail
     and returns the new flags rail beside its result (82); the final flags rail is an output,
-    unless rule 2 collapsed it into a host write-back (65). — 65, 80, 81, 82, 100.
+    unless rule 2 collapsed it into a host write-back (65).
+    Three exception behaviours. `fpexcept.strict` (`FENV_ACCESS ON`) is the model above.
+    `fpexcept.ignore` and `fpexcept.maytrap` (clang's `-frounding-math` without the pragma: every
+    TU of musl's libm, LIBC_COVERAGE.md) raise nothing observable: no `_exc`, no flags rail. Their
+    `round.dynamic` mode is the mode of the environment at the root of the call chain, which is the
+    default (C17 §7.6.1: a non-default mode without `FENV_ACCESS` is undefined) unless an ancestor
+    holds the fenv state. So in a chain whose root has no fenv access every such op is the plain
+    template and the clone has no mode and no flags parameter (169's `__cq_q_scalbn_10(x, n)`,
+    175's `__cq_q_exp_1(x)`; musl `floor`, `atan`, `exp`, `log`, `sin` alike). A body that contains
+    a strict op or a fenv call, itself or through a callee, takes 82's ABI; a caller without the
+    fenv state passes the mode literal 0 and an empty flags rail, and the returned flags rail is
+    fenv state the program never reads: twin, free, never kept (169's `__divdc3` calling
+    `__cq_q_logb_1(x, 0, flags)`). A body of `round.dynamic` ops reached from a caller whose mode
+    is a non-default literal or a rail takes that mode as 82's mode parameter and its ops become
+    `_rm`/`_rmq`; it is a distinct clone from the default-environment one, and its name is fixed
+    with its example (§8, owed). Ruling 2026-11-02 (cq-75n4). — 65, 80, 81, 82, 100.
 
 24. **Threads, atomics, volatile, setjmp.** Single-thread collapse: atomics are plain ops, fences
     nothing, `pthread_create` a direct call of the clone, mutexes no-ops; an unobservable
@@ -872,6 +909,7 @@ UNCOVERED, never dead and never a PASS (cq-3nla turned an ERROR into a PASS this
 | 19 return type (2026-10-31, cq-juf6) | none (161, 162 return `i32`); CQ_lang2 probe 976_u06 (`_Bool` entry truncated the handle) | done: rule 19 text; 193 `narrow_quantum_return` witnesses `_Bool`, `short` (return type `i32`) and `long` (handle zero-extended) |
 | §1.2 `sadd_sat` `ssub_sat` (2026-10-31, CQ_lang2 verifier on 194) | 194 (`llvm.sadd.sat.i32` from compiler-rt's inline `scalbn`, lowered to `cq_template_sadd_sat_i32` while §1.2 listed only the unsigned pair) | done: §1.2 lists `sadd_sat ssub_sat`; semantics in ABI §2.7 (saturate to `[−2^(W−1), 2^(W−1) − 1]`, total, no §2 row needed); the saturating intrinsics are templates, never expanded into add + compare + select in the lowered IR |
 | 18 pinned body (2026-10-29, cq-ezan) | 169 (`__cq_q_logb_1` followed a musl `ilogb` without its `#pragma STDC FENV_ACCESS ON`, inlined into `logb`) | done 2026-10-31: regenerated from the pinned bundle as built: `__cq_q_logb_1(x, mode, flags)` calls a strictfp `__cq_q_ilogb_1(x, mode, flags)` on 82's ABI (unguarded, merged by select, result and flags phis alike), the INVALID of both `FORCE_EVAL(0/0.0f)` arms as `flags \| select(pred, 1, 0)`, the K-loop and its `a_K` in the ilogb clone (one per activation: the twin re-runs the forward clone), `__cq_q___divdc3_0011` minting an empty flags rail and the mode literal 0 and dropping the returned flags; 173 unchanged (its `.c` defines `__mulsc3`/`__divsc3`) |
+| 19 inlining, 23 exception behaviours, 18 partial measurement and intrinsic binding (2026-11-02, CQ_lang2 cq-ab9c, cq-fl4n, cq-75n4, cq-odjk) | none (162, 169, 175 conform); the CQ_lang2 pass stopped on musl `sin`, `exp`, `log` and on a plain caller of a musl clone, each inside a construction the text left implicit | done: rule 19 (inlining is IR inlining before taint, same lowering after; a quantum argument makes a rule-18 clone; a classical host call under a quantum predicate is unguarded and merged), rule 23 (`fpexcept.ignore`/`maytrap` ops are plain templates with no fenv parameters; a strict op or fenv call brings 82's ABI; a default caller passes mode 0 and an empty flags rail and drops the returned flags), rule 18 (measured results of a clone with dead siblings are copied out before the twin; an intrinsic binds to the injected body whenever one exists); three examples owed (§8) |
 
 ## 8. Examples written 2026-10-26 (144–180)
 
@@ -919,5 +957,14 @@ operand, as a declared clone (rule 27).
 To write (2026-11-01): a clone that overwrites a caller cell with a rule-6 bijection whose old value is dead
 after the call (`p[0] = p[0] * 3 + n` in a noinline callee, the caller measures `a[0]`): the `_inv<c>` kind of
 §1.4 and rule 18 (CQ_lang2 cq-xivx, probes p18/p19); the same with two coupled cells (a swap) for the group form.
+
+To write (2026-11-02, from CQ_lang2's musl probes): (a) a static callee under `#pragma STDC FENV_ACCESS ON`
+measured from a plain caller (`return cq_measure(scaled(x, c))`): the default caller's mode literal 0 and empty
+flags rail, and rule 18's copy-out of the measured result before the twin zeroes the dead flags rail (cq-75n4);
+(b) a host call with classical arguments and no gate under a quantum predicate (`if (x > k) r = helper(3);` with
+`helper` noinline and a `volatile` local inside), executed unguarded and merged (rule 19, cq-fl4n); (c) a
+`FENV_ACCESS ON` caller with `fesetround(FE_UPWARD)` calling a `-frounding-math` body (a static callee compiled
+with `#pragma STDC FENV_ROUND FE_DYNAMIC`): the mode flows into the `round.dynamic` ops as `_rm`, and this example
+fixes the name of that clone (rule 23).
 
 Out of scope by §0: an `-O0`+mem2reg or `-O2` variant of any example.
