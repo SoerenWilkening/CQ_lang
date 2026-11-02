@@ -21,6 +21,9 @@
 namespace cq {
 struct Specialization { llvm::Function *F; Mask mask; bool ctl = false, pure = false, adj = false;
                         unsigned depth = 0; std::vector<uint64_t> bounds; bool isEntry() const;
+                        // cq-qc70 (CR §1.4): boundFormals[i] is the formal index bounds[i] bounds (a clone's
+                        // name spells only the values; the clone table is keyed by the fields).
+                        std::vector<unsigned> boundFormals;
                         // cq-i9wk (CR rule 19): the clone of a callee reached with no quantum argument whose
                         // result is not frozen (calls makes it; taint publishes none): the in-place body as
                         // a clone, its still-allocated registers returned after its results. Taint answers

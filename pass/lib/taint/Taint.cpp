@@ -278,7 +278,7 @@ private:
   // Specializations.
   SpecState *getSpec(Function *F, std::vector<Lanes> formal, std::vector<Type *> tys,
                      std::vector<std::string> cells, bool ctl, bool pure, bool adj, unsigned depth,
-                     std::vector<uint64_t> bounds);
+                     std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals = {});
   void analyze(SpecState &S);
 
   // Per-value access within cur.
@@ -777,7 +777,17 @@ std::string lanesStr(const Lanes &l) {
 
 SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector<Type *> tys,
                              std::vector<std::string> cells, bool ctl, bool pure, bool adj,
-                             unsigned depth, std::vector<uint64_t> bounds) {
+                             unsigned depth, std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals) {
+  // A bound with no formal named (a library-build root read from its name): the quantum integer formals
+  // in order, the reading §1.4's name gives.
+  if (boundFormals.size() != bounds.size()) {
+    boundFormals.clear();
+    for (unsigned i = 0; i < formal.size() && boundFormals.size() < bounds.size(); ++i)
+      if (i < tys.size() && tys[i]->isIntegerTy() && tys[i]->getIntegerBitWidth() > 1 && formal[i].any())
+        boundFormals.push_back(i);
+    if (boundFormals.size() != bounds.size())
+      internalError("taint: a clone's bounds outnumber its quantum integer formals", F);
+  }
   std::string key = F->getName().str();
   key += "|";
   for (unsigned i = 0; i < formal.size(); ++i) {
@@ -788,8 +798,8 @@ SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector
   }
   key += "|" + std::to_string(ctl) + std::to_string(pure) + std::to_string(adj) + ":" +
          std::to_string(depth);
-  for (uint64_t b : bounds)
-    key += ":b" + std::to_string(b);
+  for (size_t i = 0; i < bounds.size(); ++i)
+    key += ":b" + std::to_string(boundFormals[i]) + "=" + std::to_string(bounds[i]);
   auto it = st.byKey.find(key);
   if (it != st.byKey.end())
     return it->second;
@@ -805,6 +815,7 @@ SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector
   S->adj = adj;
   S->depth = depth;
   S->bounds = std::move(bounds);
+  S->boundFormals = std::move(boundFormals);
   S->declared = F->isDeclaration();
   bool zero = !ctl && !pure && !adj && depth == 0 && S->bounds.empty();
   for (const Lanes &l : S->formal)
@@ -2599,18 +2610,25 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
       ctl = true;
   }
   std::vector<uint64_t> bounds;
+  std::vector<unsigned> boundFormals;
   for (unsigned i = 0; i < actuals.size(); ++i)
     if (actuals[i]->getType()->isIntegerTy() && formal[i].any())
       if (auto b = rangeBound(actuals[i])) {
         unsigned W = actuals[i]->getType()->getIntegerBitWidth();
-        if (W > 1 && (W >= 64 || *b < ((uint64_t(1) << W) - 1)))
+        if (W > 1 && (W >= 64 || *b < ((uint64_t(1) << W) - 1))) {
           bounds.push_back(*b);
+          boundFormals.push_back(i);
+        }
       }
-  if (depth > 0)
+  if (depth > 0) {
     bounds = cur->bounds; // a level clone carries the bounds of its level-0 clone (98: _b3_d1)
-  if (viaIntrinsic)
+    boundFormals = cur->boundFormals;
+  }
+  if (viaIntrinsic) {
     bounds.clear();
-  SpecState *C = getSpec(G, formal, tys, cells, ctl, false, adj, depth, bounds);
+    boundFormals.clear();
+  }
+  SpecState *C = getSpec(G, formal, tys, cells, ctl, false, adj, depth, bounds, boundFormals);
   if (depth > 0) {
     // Several level-(d-1) clones may reach one level-d clone (a stale key from an earlier round
     // too): the cutoff is the smallest any of them carries.
@@ -3989,6 +4007,7 @@ void Analyzer::finish() {
     P.adj = S->adj;
     P.depth = S->depth;
     P.bounds = S->bounds;
+    P.boundFormals = S->boundFormals;
     st.published.push_back(P);
     st.publishedState.push_back(S);
   };
@@ -4043,7 +4062,7 @@ SpecState *stateOf(const ImplState &I, const Specialization &S) {
   for (size_t k = 0; k < I.published.size(); ++k) {
     const Specialization &P = I.published[k];
     if (P.F == S.F && P.mask == S.mask && P.ctl == S.ctl && P.pure == S.pure && P.adj == S.adj &&
-        P.depth == S.depth && P.bounds == S.bounds)
+        P.depth == S.depth && P.bounds == S.bounds && P.boundFormals == S.boundFormals)
       return I.publishedState[k];
   }
   internalError("taint: not a specialization of this TaintInfo");

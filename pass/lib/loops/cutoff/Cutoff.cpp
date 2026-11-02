@@ -1002,10 +1002,15 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     auto opOf = [&](Value *v) { return tag ? fatptr::carriedTag(ctx, v) : ctx.operand(v); };
     if (Value *v = startOf(h))
       return opOf(v);
-    if (!isQ(h))
-      unimplemented("loops-cutoff: a classical carried value entering a K-loop with several starts (a classical "
-                    "phi at the walker's join before the loop; cq-kldr)",
-                    h);
+    if (!isQ(h)) {
+      // cq-kldr: the walker made the classical choice at its join before the loop (a phi of its edges
+      // into the header's output block) and bound h to it: that is the start.
+      Operand v = ctx.operand(h);
+      if (v.handle)
+        internalError("loops-cutoff: a classical carried value's start bound to a rail", h);
+      mine.insert(h);
+      return v;
+    }
     std::vector<std::pair<Pred, Operand>> arms;
     for (BasicBlock *u : outside)
       arms.push_back({ctx.preds().edge(u, H), opOf(h->getIncomingValueForBlock(u))});
@@ -1801,26 +1806,27 @@ std::optional<uint64_t> cutoffBound(const Loop &L, ScalarEvolution &SE, const Ta
     const SCEV *btc = SE.getSymbolicMaxBackedgeTakenCount(&L);
     if (!isa<SCEVCouldNotCompute>(btc)) {
       const SCEV *tc = SE.getAddExpr(btc, SE.getOne(btc->getType()));
+      // CR §1.4: one bound per quantum integer formal whose call-site range bounded it; taint names the
+      // formal of each (Specialization::boundFormals).
       Function &F = *L.getHeader()->getParent();
-      SmallVector<const Argument *, 4> qints;
-      for (const Argument &A : F.args())
-        if (A.getType()->isIntegerTy() && A.getType()->getIntegerBitWidth() > 1 && T.isQuantum(&A, S))
-          qints.push_back(&A);
-      bool uses = any_of(qints, [&](const Argument *A) {
+      if (S.boundFormals.size() != S.bounds.size())
+        internalError("loops-cutoff: a clone's bounds without their formals", L.getHeader());
+      SmallVector<std::pair<const Argument *, uint64_t>, 4> bounded;
+      for (size_t i = 0; i < S.bounds.size(); ++i) {
+        if (S.boundFormals[i] >= F.arg_size())
+          internalError("loops-cutoff: a bound of a formal the clone does not have", L.getHeader());
+        bounded.push_back({F.getArg(S.boundFormals[i]), S.bounds[i]});
+      }
+      bool uses = any_of(bounded, [&](const auto &ab) {
         return SCEVExprContains(tc, [&](const SCEV *x) {
           auto *u = dyn_cast<SCEVUnknown>(x);
-          return u && u->getValue() == A;
+          return u && u->getValue() == ab.first;
         });
       });
       if (uses) {
-        if (qints.size() != S.bounds.size())
-          unimplemented("loops-cutoff: a K-loop in a clone with _b bounds whose bounds cannot be matched to its "
-                        "quantum integer formals (some formal had no call-site bound) (cq-qc70)",
-                        L.getHeader()->getTerminator());
         ValueToSCEVMapTy map;
-        for (size_t i = 0; i < qints.size(); ++i)
-          map[qints[i]] = SE.getUMinExpr(SE.getSCEV(const_cast<Argument *>(qints[i])),
-                                         SE.getConstant(qints[i]->getType(), S.bounds[i]));
+        for (auto &[A, b] : bounded)
+          map[A] = SE.getUMinExpr(SE.getSCEV(const_cast<Argument *>(A)), SE.getConstant(A->getType(), b));
         const SCEV *tcb = SCEVParameterRewriter::rewrite(tc, SE, map);
         if (tcb->getType() != tc->getType())
           internalError("loops-cutoff: a bounded trip count changed type", L.getHeader());

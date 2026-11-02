@@ -1187,7 +1187,7 @@ std::optional<uint64_t> provedDepthBound(const TaintInfo &T, const Specializatio
     for (const Specialization &SH : T.specializations())
       if (SH.F == C->getFunction())
         if (const Specialization *cs = T.calleeSpecialization(*C, SH))
-          starts |= cs->F == &G && cs->depth == 0 && cs->bounds == S.bounds;
+          starts |= cs->F == &G && cs->depth == 0 && cs->bounds == S.bounds && cs->boundFormals == S.boundFormals;
     if (starts)
       outside.push_back(C);
   }

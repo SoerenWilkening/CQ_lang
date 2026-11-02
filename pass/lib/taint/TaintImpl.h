@@ -155,6 +155,7 @@ struct SpecState {
   bool ctl = false, pure = false, adj = false;
   unsigned depth = 0;
   std::vector<uint64_t> bounds;
+  std::vector<unsigned> boundFormals; // cq-qc70: the formal each bound bounds
   bool declared = false; // rule 27: F has no body
   bool inPlace = false;  // all-classical, no flags: the function rewritten in place
   std::vector<Lanes> formal;     // fixed formals, then the variadic actuals of this arity

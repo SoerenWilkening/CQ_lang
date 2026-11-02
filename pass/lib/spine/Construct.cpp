@@ -1671,9 +1671,32 @@ void Walker::emitBlock(BasicBlock *b) {
   sh.curPred = ctx.preds().block(b).quantumPart(ctx.T, ctx.S);
 
   if (unitOf.count(b)) {
+    Loop &lp = *unitOf.lookup(b);
+    // cq-kldr: a classical header phi entered from several blocks outside the loop with different values
+    // is a classical choice at this join (rule 9: a classical select is a classical phi): a phi of the
+    // output block over the walker's edges into it, completed with the other classical phis from the
+    // incomings outside the loop (run()). The loop module reads it as the carried value's start.
+    for (PHINode &h : b->phis()) {
+      if (spine::isQ(ctx, &h))
+        continue;
+      const Value *v0 = nullptr;
+      bool differ = false;
+      for (unsigned i = 0; i < h.getNumIncomingValues(); ++i) {
+        if (lp.contains(h.getIncomingBlock(i)))
+          continue;
+        if (v0 && v0 != h.getIncomingValue(i))
+          differ = true;
+        v0 = h.getIncomingValue(i);
+      }
+      if (!differ)
+        continue;
+      BasicBlock *ob = ctx.B().GetInsertBlock();
+      PHINode *np = PHINode::Create(h.getType(), h.getNumIncomingValues(), h.getName(), ob->getFirstNonPHIIt());
+      classicalPhis.push_back({&h, np});
+      spine::bindOperand(ctx, &h, Operand{np, false});
+    }
     // The header's guard comes first: the unit runs only under it (cq-uevr).
     emitGuard(b);
-    Loop &lp = *unitOf.lookup(b);
     const loops::exits::Unit &U = units.find(&lp)->second;
     // The unit's exit edges: the edges into its continuation from the loop or its exit arm (an exit
     // into an effect-free dead end is none: UB to take).
@@ -1960,8 +1983,13 @@ void Walker::run() {
   // carry one value: the facts are the classical branches taken, which choose the original edge).
   for (auto &[op, np] : classicalPhis) {
     const BasicBlock *blk = op->getParent();
+    // A unit header's start phi (cq-kldr) takes only the incomings from outside its loop.
+    const Loop *unitLoop = unitOf.count(blk) ? unitOf.lookup(blk) : nullptr;
+    auto inUnit = [&](const BasicBlock *u) { return unitLoop && unitLoop->contains(u); };
     for (unsigned i = 0; i < op->getNumIncomingValues(); ++i) {
       BasicBlock *u = op->getIncomingBlock(i);
+      if (inUnit(u))
+        continue;
       auto e = edgeOut.find({u, blk});
       if (e == edgeOut.end())
         continue;
@@ -1985,7 +2013,7 @@ void Walker::run() {
       const BasicBlock *vu = nullptr;
       for (unsigned i = 0; i < op->getNumIncomingValues(); ++i) {
         const BasicBlock *u = op->getIncomingBlock(i);
-        if (!idx.count(u) || (ie && ie->facts && (ctx.preds().edge(u, blk) & *ie->facts).isBottom()))
+        if (!idx.count(u) || inUnit(u) || (ie && ie->facts && (ctx.preds().edge(u, blk) & *ie->facts).isBottom()))
           continue;
         if (v && v != op->getIncomingValue(i))
           unimplemented("spine: a classical phi whose output edge the linearization made stands for several "
