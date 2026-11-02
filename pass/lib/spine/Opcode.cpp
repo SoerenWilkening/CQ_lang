@@ -15,10 +15,12 @@
 #include <optional>
 
 #include "cq/Abi.h"
+#include "cq/Calls.h"
 #include "cq/Memory.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
 
@@ -567,6 +569,73 @@ bool deadAfter(LoweringContext &ctx, Value *y, Instruction *at, ArrayRef<const I
   return true;
 }
 
+// cq-bdf3 (CR rule 6: an escape is "a call argument the callee KEEPS"): a clone call (rule 18) whose callee
+// only reads argument argNo into fresh rails keeps nothing of it; the call is a reader (its group item,
+// the twin, reads the argument, so Uncompute places the clean-up after it). Narrow class: a direct call
+// lifted to a defined, non-variadic callee with no effect at all, transitively (no memory write, no call
+// other than a memory-free intrinsic or another such callee: no rotation, phase, measurement, store or
+// host call), passing a scalar integer or fp value whose formal reaches no return, store or call through
+// casts, freezes, selects, phis or aggregate moves. Anything else stays an escape.
+bool effectFree(const Function &F, SmallPtrSetImpl<const Function *> &seen) {
+  if (!seen.insert(&F).second)
+    return true;
+  for (const Instruction &I : instructions(F)) {
+    if (auto *CB = dyn_cast<CallBase>(&I)) {
+      const Function *G = CB->getCalledFunction();
+      if (!G)
+        return false;
+      if (G->isIntrinsic()) {
+        if (CB->doesNotAccessMemory() || G->getIntrinsicID() == Intrinsic::lifetime_start ||
+            G->getIntrinsicID() == Intrinsic::lifetime_end)
+          continue;
+        return false;
+      }
+      if (G->isDeclaration() || G->isVarArg() || !effectFree(*G, seen))
+        return false;
+      continue;
+    }
+    if (I.mayWriteToMemory() || I.mayThrow())
+      return false;
+  }
+  return true;
+}
+
+bool pureCloneReader(LoweringContext &ctx, const CallBase &cb, unsigned argNo) {
+  const Function *F = cb.getCalledFunction();
+  if (!F || F->isDeclaration() || F->isIntrinsic() || F->isVarArg() || !cb.isArgOperand(&cb.getOperandUse(argNo)) ||
+      argNo >= F->arg_size() || F->getFunctionType() != cb.getFunctionType())
+    return false;
+  Type *ty = cb.getArgOperand(argNo)->getType();
+  if (!(ty->isIntegerTy() || ty->isFloatingPointTy()) || cb.paramHasAttr(argNo, Attribute::ByVal))
+    return false;
+  if (calls::classify(cb, ctx.T, ctx.S) != calls::Class::Lift)
+    return false;
+  SmallPtrSet<const Function *, 8> seen;
+  if (!effectFree(*F, seen))
+    return false;
+  SmallVector<const Value *, 8> work{F->getArg(argNo)};
+  SmallPtrSet<const Value *, 8> vis;
+  while (!work.empty()) {
+    const Value *v = work.pop_back_val();
+    if (!vis.insert(v).second)
+      continue;
+    for (const User *u : v->users()) {
+      if (isa<ReturnInst>(u) || isa<StoreInst>(u) || isa<AtomicRMWInst>(u) || isa<AtomicCmpXchgInst>(u))
+        return false;
+      if (auto *c = dyn_cast<CallBase>(u)) {
+        if (isa<IntrinsicInst>(c) && c->doesNotAccessMemory())
+          continue;   // a template over it
+        return false;
+      }
+      if (isa<CastInst>(u) || isa<FreezeInst>(u) || isa<SelectInst>(u) || isa<PHINode>(u) ||
+          isa<InsertValueInst>(u) || isa<ExtractValueInst>(u) || isa<InsertElementInst>(u) ||
+          isa<ExtractElementInst>(u) || isa<ShuffleVectorInst>(u))
+        work.push_back(u);
+    }
+  }
+  return true;
+}
+
 // CR rule 6 Dead (CQ_spec cbda16a, owner ruling 2026-11-01 on cq-k7f8): asked at the CLEAN-UP POINT,
 // one placement rule for every opcode. Uncompute places the clean-up after the old value's last reader
 // (every IR use of a value naming the rail, every load of a cell holding it, every _unc re-reading it)
@@ -733,6 +802,8 @@ bool deadAtCleanup(LoweringContext &ctx, Value *Y, Value *h, Instruction *at,
       if (auto *cb = dyn_cast<CallBase>(ui)) {
         if (isa<IntrinsicInst>(cb) && cb->doesNotAccessMemory())
           continue;   // lowered to a template that reads the rail
+        if (pureCloneReader(ctx, *cb, U->getOperandNo()))
+          continue;   // cq-bdf3: the callee keeps nothing of it
         return false;
       }
       // Any other instruction reads the rail into a fresh one (a template, a compare, an atomic's operand).
