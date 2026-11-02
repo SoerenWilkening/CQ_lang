@@ -97,6 +97,8 @@ public:
         c = br->getCondition();
       if (auto *sw = dyn_cast<SwitchInst>(t))
         c = sw->getCondition();
+      if (auto *ib = dyn_cast<IndirectBrInst>(t))
+        c = ib->getAddress();
       if (!c || !quantum.count(c))
         continue;
       for (BasicBlock &B : F)
@@ -1597,8 +1599,80 @@ static void testDeadEnds() {
   }
 }
 
+// cq-fbqi (CR rule 13): clang's one `indirectgoto` block, the address a phi over the `goto *p` sites (a
+// blockaddress constant, a constant-table read); an asm goto with classical operands.
+static const char *GotoIR = R"(
+@t = internal constant [2 x ptr] [ptr blockaddress(@cg, %a), ptr blockaddress(@cg, %b)]
+declare i32 @cq_theta_i32(i32, double)
+define i32 @cg(i32 %x0, i32 %c) {
+entry:
+  %x = call i32 @cq_theta_i32(i32 %x0, double 3.000000e-01)
+  %q = icmp sgt i32 %x, 3
+  br i1 %q, label %ig, label %tbl
+tbl:
+  %i = and i32 %x, 1
+  %iz = zext nneg i32 %i to i64
+  %g = getelementptr inbounds [2 x ptr], ptr @t, i64 0, i64 %iz
+  %ld = load ptr, ptr %g, align 8
+  br label %ig
+ig:
+  %p = phi ptr [ blockaddress(@cg, %b), %entry ], [ %ld, %tbl ]
+  indirectbr ptr %p, [label %a, label %b]
+a:
+  br label %j
+b:
+  br label %j
+j:
+  %r = phi i32 [ 1, %a ], [ 2, %b ]
+  ret i32 %r
+}
+define i32 @ag(i32 %x0, i32 %c) {
+entry:
+  %x = call i32 @cq_theta_i32(i32 %x0, double 3.000000e-01)
+  callbr void asm "", "r,!i"(i32 %c) to label %ft [label %ind]
+ft:
+  br label %j
+ind:
+  br label %j
+j:
+  %r = phi i32 [ %x, %ft ], [ 0, %ind ]
+  ret i32 %r
+}
+)";
+
+static void testComputedGoto() {
+  SMDiagnostic err;
+  std::unique_ptr<Module> own = parseAssemblyString(GotoIR, err, Ctx);
+  CHECK(own, "computed-goto IR parses");
+  if (!own) {
+    err.print("pred_unit", errs());
+    return;
+  }
+  {
+    Function &F = *own->getFunction("cg");
+    unsigned q = C(val(F, "%q"));
+    unsigned i0 = m.ithVar(atomVar(AtomKind::Eq, val(F, "%i"), APInt(32, 0)));
+    Computed c = compute(F);
+    // a: the table's entry 0 on the edge tbl -> ig; b: the constant on entry -> ig, or entry 1.
+    expectBlock(c, F, "%a", A(N(q), i0));
+    expectBlock(c, F, "%b", Or(q, A(N(q), N(i0))));   // the table's last entry: the complement
+    expectBlock(c, F, "%j", Bdd::T);
+  }
+  {
+    Function &F = *own->getFunction("ag");
+    auto *cb = cast<CallBrInst>(blk(F, "%entry")->getTerminator());
+    unsigned k0 = m.ithVar(atomVar(AtomKind::Eq, cb, APInt(32, 0)));
+    unsigned k1 = m.ithVar(atomVar(AtomKind::Eq, cb, APInt(32, 1)));
+    Computed c = compute(F);
+    expectBlock(c, F, "%ft", k0);
+    expectBlock(c, F, "%ind", k1);
+  }
+  modules.push_back(std::move(own));
+}
+
 int main() {
   testAlgebra();
+  testComputedGoto();
   testExamples();
   testSelectTree();
   testDeadEnds();

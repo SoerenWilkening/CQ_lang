@@ -318,8 +318,11 @@ static const BasicBlock *destIn(const BasicBlock *d, const Function &F) {
   internalError("pred: a computed goto destination outside its own function", &*F.begin()->begin());
 }
 
+// The path predicate of the edge u -> b, when the caller has it (null: none, or not for this edge).
+using EdgePredFn = std::function<std::optional<Pred>(const BasicBlock *u, const BasicBlock *b)>;
+
 static bool addressCases(const Value *a, const Pred &under, const Function &F,
-                         SmallVectorImpl<std::pair<Pred, const BasicBlock *>> &cases) {
+                         SmallVectorImpl<std::pair<Pred, const BasicBlock *>> &cases, const EdgePredFn *edgeOf) {
   a = a->stripPointerCasts();
   if (auto *ba = dyn_cast<BlockAddress>(a)) {
     cases.push_back({under, destIn(ba->getBasicBlock(), F)});
@@ -327,14 +330,47 @@ static bool addressCases(const Value *a, const Pred &under, const Function &F,
   }
   if (auto *sel = dyn_cast<SelectInst>(a)) {
     Pred c = Pred::atom(sel->getCondition());
-    return addressCases(sel->getTrueValue(), under & c, F, cases) &&
-           addressCases(sel->getFalseValue(), under & !c, F, cases);
+    return addressCases(sel->getTrueValue(), under & c, F, cases, edgeOf) &&
+           addressCases(sel->getFalseValue(), under & !c, F, cases, edgeOf);
+  }
+  // A phi of addresses (clang's one `indirectgoto` block, every `goto *p` of the function feeding its
+  // phi): the integer is the one each incoming edge's address is derived from, chosen by the edge
+  // (rule 9: the choice of incoming edge), so its cases are each incoming's cases under that edge's
+  // path predicate. The edge predicates are absolute (block predicates of the forward CFG); a carried
+  // phi (an edge of a loop's back edge) has none: SPEC_ISSUES "the integer a computed goto's address
+  // is derived from" (cq-8i5g).
+  if (auto *phi = dyn_cast<PHINode>(a)) {
+    if (!edgeOf)
+      return false;
+    SmallPtrSet<const BasicBlock *, 8> seen;
+    for (unsigned i = 0; i < phi->getNumIncomingValues(); ++i) {
+      const BasicBlock *u = phi->getIncomingBlock(i);
+      if (!seen.insert(u).second)
+        continue;
+      std::optional<Pred> e = (*edgeOf)(u, phi->getParent());
+      if (!e)
+        return false;
+      if (!addressCases(phi->getIncomingValue(i), under & *e, F, cases, edgeOf))
+        return false;
+    }
+    return true;
   }
   if (std::optional<GotoTableRead> t = gotoTableRead(a)) {
+    // An index past the table, or an entry that names no block, is undefined behaviour (a load past
+    // the object, a jump to no label): outside the domain. The last entry naming a block is the
+    // complement of the others, as the last case of a switch whose default is unreachable (rule 13).
+    unsigned w = t->index->getType()->getIntegerBitWidth();
+    int last = -1;
     for (unsigned k = 0; k < t->entries.size(); ++k)
       if (t->entries[k])
-        cases.push_back({under & Pred::eqAtom(t->index, APInt(t->index->getType()->getIntegerBitWidth(), k)),
-                         destIn(t->entries[k], F)});
+        last = int(k);
+    Pred others = Pred::bottom();
+    for (unsigned k = 0; k < t->entries.size(); ++k)
+      if (t->entries[k]) {
+        Pred eq = Pred::eqAtom(t->index, APInt(w, k));
+        cases.push_back({under & (int(k) == last ? !others : eq), destIn(t->entries[k], F)});
+        others = others | eq;
+      }
     return true;
   }
   return false;
@@ -342,7 +378,16 @@ static bool addressCases(const Value *a, const Pred &under, const Function &F,
 
 std::optional<SmallVector<std::pair<Pred, const BasicBlock *>, 4>> computedGotoCases(const IndirectBrInst &ib) {
   SmallVector<std::pair<Pred, const BasicBlock *>, 4> cases;
-  if (!addressCases(ib.getAddress(), Pred::top(), *ib.getFunction(), cases))
+  if (!addressCases(ib.getAddress(), Pred::top(), *ib.getFunction(), cases, nullptr))
+    return std::nullopt;
+  return cases;
+}
+
+// computedGotoCases with the path predicates of the forward edges computed so far (a phi of addresses).
+static std::optional<SmallVector<std::pair<Pred, const BasicBlock *>, 4>>
+computedGotoCases(const IndirectBrInst &ib, const EdgePredFn &edgeOf) {
+  SmallVector<std::pair<Pred, const BasicBlock *>, 4> cases;
+  if (!addressCases(ib.getAddress(), Pred::top(), *ib.getFunction(), cases, &edgeOf))
     return std::nullopt;
   return cases;
 }
@@ -350,7 +395,7 @@ std::optional<SmallVector<std::pair<Pred, const BasicBlock *>, 4>> computedGotoC
 namespace pred_detail {
 
 // The condition under which the terminator of `from` transfers control to `to`.
-static unsigned edgeCond(const BasicBlock *from, const BasicBlock *to, Oracle &O) {
+static unsigned edgeCond(const BasicBlock *from, const BasicBlock *to, Oracle &O, const PathStorage &I) {
   Bdd &m = Bdd::get();
   const Instruction *term = from->getTerminator();
   if (const auto *br = dyn_cast<BranchInst>(term)) {
@@ -392,11 +437,25 @@ static unsigned edgeCond(const BasicBlock *from, const BasicBlock *to, Oracle &O
     return r;
   }
   if (const auto *ib = dyn_cast<IndirectBrInst>(term)) {
-    std::optional<SmallVector<std::pair<Pred, const BasicBlock *>, 4>> cases = computedGotoCases(*ib);
+    // A forward edge into a phi's block has its path predicate once that block was evaluated; it implies
+    // the predicate of `from` (the phi's block dominates the computed goto), so the case is exact
+    // relative to it.
+    EdgePredFn edgeOf = [&](const BasicBlock *u, const BasicBlock *b) -> std::optional<Pred> {
+      auto ui = I.rpo.find(u), bi = I.rpo.find(b);
+      if (ui == I.rpo.end())
+        return Pred::bottom();   // an unreachable incoming is never taken
+      if (bi == I.rpo.end() || ui->second >= bi->second)
+        return std::nullopt;     // a back edge: a carried address
+      auto e = I.edges.find({u, b});
+      if (e == I.edges.end())
+        internalError("pred: a computed goto's address phi read before its block's edges were evaluated", term);
+      return e->second;
+    };
+    std::optional<SmallVector<std::pair<Pred, const BasicBlock *>, 4>> cases = computedGotoCases(*ib, edgeOf);
     if (!cases)
-      unimplemented("pred: a computed goto whose address is not derived from an integer through blockaddress "
-                    "constants, selects and constant blockaddress tables (SPEC_ISSUES: the integer a computed "
-                    "goto's address is derived from)",
+      unimplemented("pred: a computed goto whose address is carried around a loop or stored to memory and loaded "
+                    "back (SPEC_ISSUES: loops-cutoff (cq-8i5g), the integer a computed goto's address is derived "
+                    "from through memory or a carried phi)",
                     term);
     unsigned r = Bdd::F;
     for (auto &[p, d] : *cases)
@@ -404,15 +463,34 @@ static unsigned edgeCond(const BasicBlock *from, const BasicBlock *to, Oracle &O
         r = m.orOp(r, nodeOf(p));
     return r;
   }
-  unimplemented("pred: path predicate across this terminator", term);
+  if (const auto *cb = dyn_cast<CallBrInst>(term)) {
+    // Rule 13: `callbr` (asm goto) is inline asm (rule 27). With a quantum operand it is rule 27's
+    // inline asm, built once CQ_spec has its example (CLAUDE.md build step 3). Without one the asm
+    // chooses its destination classically: destination k (0 the fallthrough, then the indirect
+    // destinations in order) is the classical case atom "the asm went to k", a classical branch
+    // (rule 8) like a classical switch's case.
+    for (const Use &a : cb->args())
+      if (O.isQuantum(a.get()))
+        unimplemented("pred: asm goto (callbr) with a quantum operand: inline asm with a quantum operand (rule 27) "
+                      "waits for its CQ_spec example (build step 3)",
+                      term);
+    unsigned r = Bdd::F;
+    for (unsigned k = 0; k < cb->getNumSuccessors(); ++k)
+      if (cb->getSuccessor(k) == to)
+        r = m.orOp(r, m.ithVar(atomVar(AtomKind::Eq, cb, APInt(32, k))));
+    return r;
+  }
+  internalError("pred: a terminator the pinned pipeline cannot emit (CR rule 25, §0: C, x86-64, clang -O1; "
+                "invoke, catchswitch, catchret and cleanupret come from no C translation unit)",
+                term);
 }
 
 // edgeCond with dead ends (cq-820w): an edge between two live blocks out of a branch that also has a
 // dead-end successor; the last live successor in successor order takes the complement of the other
 // live successors' conditions, so the dead ends' share falls to it.
-static unsigned liveEdgeCond(const BasicBlock *from, const BasicBlock *to, Oracle &O) {
+static unsigned liveEdgeCond(const BasicBlock *from, const BasicBlock *to, Oracle &O, const PathStorage &I) {
   if (O.deadEnd(from) || O.deadEnd(to))
-    return edgeCond(from, to, O);
+    return edgeCond(from, to, O, I);
   SmallVector<const BasicBlock *, 4> live;
   bool anyDead = false;
   for (const BasicBlock *s : successors(from)) {
@@ -422,12 +500,12 @@ static unsigned liveEdgeCond(const BasicBlock *from, const BasicBlock *to, Oracl
       live.push_back(s);
   }
   if (!anyDead || live.back() != to)
-    return edgeCond(from, to, O);
+    return edgeCond(from, to, O, I);
   Bdd &m = Bdd::get();
   unsigned others = Bdd::F;
   for (const BasicBlock *s : live)
     if (s != to)
-      others = m.orOp(others, edgeCond(from, s, O));
+      others = m.orOp(others, edgeCond(from, s, O, I));
   return m.notOp(others);
 }
 
@@ -546,7 +624,7 @@ void computePaths(PathStorage &I, Function &F, const LoopInfo &LI, Oracle &O, Va
         if (i + 1 == edgesInOrder.size()) {
           x = m.notOp(covered);
         } else {
-          unsigned d = m.restrict(m.andOp(predOf(ep), liveEdgeCond(ep, eb, O)), h);
+          unsigned d = m.restrict(m.andOp(predOf(ep), liveEdgeCond(ep, eb, O, I)), h);
           x = m.andOp(d, m.notOp(covered));
         }
         covered = m.orOp(covered, x);
@@ -573,13 +651,13 @@ void computePaths(PathStorage &I, Function &F, const LoopInfo &LI, Oracle &O, Va
       unsigned contrib;
       const Loop *out = leftLoop(p, bb);
       if (out && O.deadEnd(bb) && !O.deadEnd(p))
-        contrib = m.andOp(predOf(p), edgeCond(p, bb, O));   // a loop exit into a dead end
+        contrib = m.andOp(predOf(p), edgeCond(p, bb, O, I));   // a loop exit into a dead end
       else if (out && liveUniqueExit(out) == bb)
         contrib = predOf(out->getHeader());
       else if (out)
         contrib = exitContribution(out, p, bb);
       else
-        contrib = m.andOp(predOf(p), liveEdgeCond(p, bb, O));
+        contrib = m.andOp(predOf(p), liveEdgeCond(p, bb, O, I));
       I.edges[{p, bb}] = makePred(contrib);
       acc = m.orOp(acc, contrib);
     }
@@ -591,7 +669,7 @@ void computePaths(PathStorage &I, Function &F, const LoopInfo &LI, Oracle &O, Va
     for (const BasicBlock *s : successors(bb)) {
       if (!seen.insert(s).second || I.edges.count({bb, s}))
         continue;
-      I.edges[{bb, s}] = makePred(m.andOp(predOf(bb), liveEdgeCond(bb, s, O)));
+      I.edges[{bb, s}] = makePred(m.andOp(predOf(bb), liveEdgeCond(bb, s, O, I)));
     }
   }
   // A1: control dependence is taint's. A block taint calls free of tainted control must not carry a
