@@ -1657,6 +1657,14 @@ Function *materialize(Module &M, const Specialization &S) {
     // CR §0: x86-64 only; inalloca and preallocated are the 32-bit Windows C++ ABI's.
     if (A.hasInAllocaAttr() || A.hasPreallocatedAttr())
       internalError("calls: an inalloca or preallocated formal (no x86-64 C function has one, CR §0)", &A);
+    // cq-utb8 (CR rules 5, 18): a pointer formal the C body never accesses through (readnone) is one the clone and
+    // its twin never access either (the lowering accesses only what the C body does): its pointer parameters
+    // carry readnone, so a twin's footprint leaves its object out (musl c32rtomb's ps handed to wcrtomb).
+    if (A.getType()->isPointerTy() && A.hasAttribute(Attribute::ReadNone))
+      for (unsigned k = 0; k < fl[A.getArgNo()].leaves.size(); ++k)
+        if (fl[A.getArgNo()].leaves[k]->isPointerTy() && p + k < NF->arg_size() &&
+            NF->getArg(p + k)->getType()->isPointerTy())
+          NF->addParamAttr(p + k, Attribute::ReadNone);
     p += unsigned(fl[A.getArgNo()].leaves.size());
   }
   return NF;

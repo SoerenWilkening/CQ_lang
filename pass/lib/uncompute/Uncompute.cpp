@@ -1474,8 +1474,11 @@ struct Uncompute::Impl {
       auto *G = dyn_cast<GlobalVariable>(getUnderlyingObject(p));
       return G && G->isConstant();
     };
-    for (const Value *a : fwd->args())
-      if (a->getType()->isPointerTy() && !immutable(a))
+    // cq-utb8: a pointer the clone never accesses through (calls::materialize's readnone parameter) is no part
+    // of what its twin reads.
+    for (unsigned i = 0; i < fwd->arg_size(); ++i)
+      if (const Value *a = fwd->getArgOperand(i); a->getType()->isPointerTy() && !immutable(a) &&
+                                                  !(cf && i < cf->arg_size() && cf->getArg(i)->hasAttribute(Attribute::ReadNone)))
         fp.objs.push_back({a, 0});
     const Function *src = cf ? cloneSource(*cf) : nullptr;
     if (!src)
