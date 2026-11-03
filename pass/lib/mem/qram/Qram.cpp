@@ -61,6 +61,12 @@
 #include "cq/Effects.h"
 #include "cq/Memory.h"
 #include "QramInternal.h"
+#include "../../loops/cutoff/Exits.h"
+#include "cq/Loops.h"
+#include "llvm/Analysis/AssumptionCache.h"
+#include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/TargetParser/Triple.h"
 #include "../slots/SlotsInternal.h"
 #include "../../fatptr/FatPtrInternal.h"
 
@@ -3379,6 +3385,12 @@ struct DeferredStore {
   Value *vOrig = nullptr, *flagOrig = nullptr;
 };
 
+// Per output function: how many times each store instruction (or a call's callee store `inner`) has been deferred.
+std::map<const Function *, std::map<std::pair<const Instruction *, unsigned>, unsigned>> &deferCounts() {
+  static std::map<const Function *, std::map<std::pair<const Instruction *, unsigned>, unsigned>> d;
+  return d;
+}
+
 std::map<const Function *, SmallVector<DeferredStore, 2>> &deferredStores() {
   static std::map<const Function *, SmallVector<DeferredStore, 2>> d;
   return d;
@@ -3518,6 +3530,9 @@ struct FormalStore {
   // this clone handed it at `call`, which lands in this formal's object.
   const CallBase *call = nullptr;
   unsigned inner = 0;
+  // Rule 14 case 2: the instance number of a store in an unrolled K-loop trip (the k-th lowering of the store
+  // instruction, trip-major), 0 outside K-loops.
+  unsigned trip = 0;
   const Instruction *at() const { return st ? static_cast<const Instruction *>(st) : call; }
   // The store's index is not the caller's actual idx plus a constant (a run-time offset, or a constant offset
   // from a quantum idx): the clone copies its index out as a rail of its own (the caller's pop reads it).
@@ -3687,10 +3702,39 @@ SmallVector<FormalStore, 2> formalQramStores(const TaintInfo &T, const Specializ
   DominatorTree DT(F);
   PostDominatorTree PDT(F);
   LoopInfo LI(DT);
+  // Rule 14 case 2 (loops-cutoff): a quantum-exit loop runs c = min(K, B) trips UNROLLED, its body lowered once per
+  // trip under the trip predicate; a store in it is c store instances, each its own copied-out rails (the per-trip
+  // rails rule 14 mints for every value of a trip), a _controlled store under the trip's flag. Nested K-loops
+  // multiply. The trip counts are the cutoff module's: K resolved per function, B its cutoffBound.
+  TargetLibraryInfoImpl tlii(Triple(F.getParent()->getTargetTriple()));
+  TargetLibraryInfo tli(tlii, &F);
+  AssumptionCache ac(F);
+  ScalarEvolution SE(F, tli, ac, DT, LI);
+  auto kLoop = [&](const Loop *L) { return loops::classify(*L, T, S) == loops::Case::QuantumExit; };
+  auto tripsOf = [&](const Loop *L) -> unsigned {
+    unsigned K = m2KOptions() ? loops::resolveK(F, *m2KOptions()) : 4;
+    std::optional<uint64_t> B = loops::exits::cutoffBound(*L, SE, T, S);
+    return unsigned(B ? std::min<uint64_t>(K, *B) : K);
+  };
+  // A store whose every enclosing loop is a K-loop is unrolled with them: it runs on every trip's path.
+  auto unrolled = [&](const FormalStore &fs) {
+    const Loop *L = LI.getLoopFor(fs.at()->getParent());
+    if (!L)
+      return false;
+    for (; L; L = L->getParentLoop())
+      if (!kLoop(L))
+        return false;
+    return true;
+  };
   DenseSet<const BasicBlock *> always;
   bool alwaysDone = false;
   for (FormalStore &fs : out) {
     const BasicBlock *b = fs.at()->getParent();
+    if (unrolled(fs)) {
+      fs.flagged = true;   // the trip predicate (and the callee's flag, a _ctl callee's under it)
+      fs.idxRail = true;   // each trip's own cell
+      continue;
+    }
     bool everyPath = PDT.dominates(b, &F.getEntryBlock());
     for (const BasicBlock &r : F)
       if (isa<ReturnInst>(r.getTerminator()))
@@ -3714,6 +3758,35 @@ SmallVector<FormalStore, 2> formalQramStores(const TaintInfo &T, const Specializ
   llvm::stable_sort(out, [&](const FormalStore &x, const FormalStore &y) {
     return x.at() != y.at() && DT.dominates(x.at(), y.at());
   });
+  // The trip instances in lowering order: a K-loop's stores trip-major (trip 0's in program order, then trip 1's,
+  // ...), nested K-loops expanded inside each trip; the instance number of each store instruction counts its
+  // lowerings (deferFormalStore, deferCallStore).
+  {
+    SmallVector<FormalStore, 2> ordered;
+    std::map<std::pair<const Instruction *, unsigned>, unsigned> instance;
+    std::function<void(ArrayRef<FormalStore>, const Loop *)> expand = [&](ArrayRef<FormalStore> xs, const Loop *L) {
+      for (size_t i = 0; i < xs.size();) {
+        // The child loop of L (a K-loop) holding xs[i], if any.
+        const Loop *C = LI.getLoopFor(xs[i].at()->getParent());
+        while (C && C->getParentLoop() != L)
+          C = C->getParentLoop();
+        if (!C || !unrolled(xs[i])) {
+          FormalStore fs = xs[i++];
+          fs.trip = instance[{fs.at(), fs.inner}]++;
+          ordered.push_back(fs);
+          continue;
+        }
+        size_t j = i;
+        while (j < xs.size() && C->contains(xs[j].at()->getParent()))
+          ++j;
+        for (unsigned t = 0, n = tripsOf(C); t < n; ++t)
+          expand(xs.slice(i, j - i), C);
+        i = j;
+      }
+    };
+    expand(out, nullptr);
+    out = std::move(ordered);
+  }
   // A callee that reads the object through the triple after a store this clone defers would read the cell
   // without it.
   for (auto [cb, j] : calls)
@@ -3811,8 +3884,9 @@ RailType indexRailType(Value *idx) {
 // and flag copied out; M2b forwards it to later loads).
 void deferCallStore(LoweringContext &ctx, const CallBase &call, unsigned inner, const Value *formal, const Column &col,
                     Operand idx, Value *v, Value *flag) {
-  std::optional<FormalStore> fs =
-      listedStore(ctx, [&](const FormalStore &x) { return x.call == &call && x.inner == inner; }, call);
+  unsigned k = deferCounts()[&ctx.out()][{&call, inner}]++;   // the k-th lowering of the call (a K-loop trip)
+  std::optional<FormalStore> fs = listedStore(
+      ctx, [&](const FormalStore &x) { return x.call == &call && x.inner == inner && x.trip == k; }, call);
   QramObj &q = qramObj(ctx, formal, call);
   LLVMContext &C = ctx.M.getContext();
   DeferredStore d{nullptr, col, QIndex{}, copyOutRail(ctx, v, col.w), nullptr};
@@ -3982,6 +4056,11 @@ HostTriple hostTriple(LoweringContext &ctx, const Value *ptr, const Instruction 
 
 Constant *qramObjectBase(LoweringContext &ctx, ObjectId o) { return qramBase(ctx, o); }
 
+const loops::KOptions *&m2KOptions() {
+  static const loops::KOptions *k = nullptr;
+  return k;
+}
+
 namespace {
 // Rule 21: the QRAM root a classical pointer into one QRAM object names in this function, when the pointer is not
 // that root plus GEP offsets (a classical merge walking the object, a clone's pointer result, a pointer loaded or
@@ -4109,7 +4188,9 @@ bool isFormalQram(LoweringContext &ctx, const Value *root) {
 
 void deferFormalStore(LoweringContext &ctx, const Value *root, Operand idx, unsigned idxBits, Type *ty, Value *v,
                       Value *flag, const Instruction &at) {
-  std::optional<FormalStore> fs = listedStore(ctx, [&](const FormalStore &x) { return x.st == &at; }, at);
+  unsigned k = deferCounts()[&ctx.out()][{&at, 0u}]++;   // the k-th lowering of this store (a K-loop trip)
+  std::optional<FormalStore> fs =
+      listedStore(ctx, [&](const FormalStore &x) { return x.st == &at && x.trip == k; }, at);
   if ((flag != nullptr) != fs->flagged)
     internalError("mem-qram: a deferred store's predicate disagrees with M2's analysis", &at);
   QramObj &q = qramObj(ctx, root, at);

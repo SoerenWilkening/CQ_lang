@@ -16,7 +16,8 @@
 namespace cq::fatptr {
 // The fat pointer (tag, idx) of ptr as two i32 operands (each a rail or a classical i32): what a QRAM
 // of pointers stores. The tag is ptr's root number in its function's object table; the idx a cell index.
-std::pair<Operand, Operand> storedFields(LoweringContext &, const llvm::Value *ptr);
+// cellBytes (non-zero): idx in cells of that size (a triple's cells), converted from the pointer's own.
+std::pair<Operand, Operand> storedFields(LoweringContext &, const llvm::Value *ptr, uint64_t cellBytes = 0);
 // Rule 21 (85): the fat pointer a clone returns as its two i32 fields (tag, idx) in the caller's table (its
 // roots are triple formals onto host or slot objects, whose tag is the caller's, and NULL, tag 0).
 std::pair<Operand, Operand> resultFields(LoweringContext &, const llvm::ReturnInst &ret);

@@ -3177,10 +3177,30 @@ bool isExitPointer(LoweringContext &ctx, const Value *p) {
   }
 }
 
-std::pair<Operand, Operand> storedFields(LoweringContext &ctx, const Value *ptr) {
+std::pair<Operand, Operand> storedFields(LoweringContext &ctx, const Value *ptr, uint64_t cellBytes) {
   Fat f = derive(ctx, ptr, /*emit=*/true);
   if (f.trips)
     unimplemented("fatptr: a pointer to K-loop trip objects stored into memory (R1)", ptr);
+  if (cellBytes && f.cell && f.cell != cellBytes) {
+    // Rule 21: idx counts cellBytes-sized cells (a triple's, the object's elements): a pointer derived at another
+    // cell (a byte offset into an int array) converts exactly (an in-domain pointer handed on lies on a cell).
+    if (f.cell % cellBytes == 0) {
+      rescale(ctx, f, cellBytes, /*emit=*/true);
+    } else if (cellBytes % f.cell == 0) {
+      uint64_t k = cellBytes / f.cell;
+      if (!f.idx.handle) {
+        f.idx = Operand{ctx.B().CreateExactSDiv(f.idx.v, ConstantInt::get(f.idx.v->getType(), k)), false};
+      } else {
+        IntegerType *ty = IntegerType::get(ctx.M.getContext(), f.idxBits);
+        bool p2 = isPowerOf2_64(k);
+        StringRef op = p2 ? (f.idxSext ? "ashr" : "lshr") : (f.idxSext ? "sdiv" : "udiv");
+        f.idx = Operand{tmpl(ctx, op, intRail(f.idxBits),
+                             {f.idx, Operand{ConstantInt::get(ty, p2 ? Log2_64(k) : k), false}}, "hl"),
+                        true};
+      }
+      f.cell = cellBytes;
+    }
+  }
   Operand idx = f.idx;
   if (!idx.handle) {
     idx = Operand{ctx.B().CreateTrunc(idx.v, i32(ctx)), false};
@@ -3919,7 +3939,7 @@ Triple passAcrossCall(LoweringContext &ctx, const Value *ptr) {
   checkCalleeCells(ctx, ptr, E, mem::qramCellType(ctx, f.roots[0], *at));
   // A clone's fat-pointer result derived from this triple names the QRAM root in this table (85, rule 21).
   crossings()[&ctx.out()][ptr] = Crossed{f.roots[0], E};
-  auto [tag, idx] = storedFields(ctx, ptr);
+  auto [tag, idx] = storedFields(ctx, ptr, E);   // in the object's elements
   return Triple{bus, tag.v, idx.v, nullptr};
 }
 

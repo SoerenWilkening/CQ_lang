@@ -1,6 +1,7 @@
 // Module-internal interface of mem-qram for fatptr (both stream C's, not frozen): rule 21's per-object
 // accesses of a fat pointer whose provenance holds QRAM objects.
 #pragma once
+#include "cq/Loops.h"
 
 #include <utility>
 
@@ -59,6 +60,9 @@ HostTriple hostTriple(LoweringContext &, const llvm::Value *ptr, const llvm::Ins
 // In a clone: the Qram-pointee triple formal A crosses as the caller's bus `bus` (P1). Registers A as a
 // one-column QRAM object of cell type formalCellType(A) over that bus; the clone neither pops nor frees it.
 void registerFormalQram(LoweringContext &, const llvm::Argument &A, llvm::Value *bus);
+// Rule 14 case 2 with M2: the pass's K options (set before construction), for the trip counts of K-loops whose
+// unrolled trips each make their own deferred store instances.
+const loops::KOptions *&m2KOptions();
 // Rule 21: the classical base address of QRAM object o (the non-canonical address the program's pointers to it hold).
 llvm::Constant *qramObjectBase(LoweringContext &, ObjectId o);
 // Rule 21 (P1): a load or store through a pointer derived from a QRAM triple formal by a classical merge (a phi

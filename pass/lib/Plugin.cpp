@@ -25,6 +25,7 @@
 #include "cq/Effects.h"
 #include "cq/Lowering.h"
 #include "cq/Loops.h"
+#include "mem/qram/QramInternal.h"
 #include "cq/Taint.h"
 #include "cq/Verify.h"
 #include "eff/conc/Setjmp.h"
@@ -483,6 +484,7 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
 
     // 4. The general construction, once per specialization. The CFG is final from here on.
     trace("construct");
+    cq::mem::m2KOptions() = &KO;   // M2's trip counts of K-loops (mem-qram formalQramStores)
     for (const cq::Specialization *S : constructionOrder(Final))
       cq::construct(M, Final, *S, KO);
 
