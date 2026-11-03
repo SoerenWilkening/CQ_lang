@@ -791,6 +791,11 @@ void laneRuleSix(LoweringContext &ctx, Instruction &I, unsigned l, ArrayRef<Oper
                                  : (unsigned(org->lane) < pf.size() ? pf[unsigned(org->lane)] : Operand{nullptr, false});
       if (!at.handle || at.v != h || isa<SelectInst>(h) || isa<PHINode>(h))
         continue;   // a classical merge over handles aliases its arms (cq-oa67)
+      // A field of a clone call's composite result (an extractvalue of the lowered call, U2; musl cacosf's
+      // fneg of casinf's <2 x float>): the call's result rails are undone together by its twin (rule 18,
+      // 166), never one of them by rule 6, as in the scalar clean-up (spine cleanable).
+      if (isa<ExtractValueInst>(h))
+        continue;
     }
     // Dead after the update.
     SmallVector<LaneRef, 8> aliases;
