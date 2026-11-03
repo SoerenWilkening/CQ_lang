@@ -2157,8 +2157,13 @@ void cleanDeadCells(LoweringContext &ctx, CallBase &CB, const Specialization &S,
         reads.push_back(r.slotOuts[0]);
       // cq-p8r6 (CR rules 6, 18): a possibly dead old rail of a shape the _inv<c> kind is not built for: no
       // silent keep; a stop unless the call's twin restores the cell.
+      // cq-utb8 (CR rules 5, 7): only a seed (a dynamic object's cell register minted by cqrt_alloc) is released
+      // this way, by its own item when no twin restores it (Uncompute emitItem); any other user register is kept by
+      // its role (rule 5: a user register is never uncomputed).
+      auto *oc = dyn_cast<CallInst>(old.v);
+      bool seed = oc && oc->getCalledFunction() && oc->getCalledFunction()->getName().starts_with("cqrt_alloc_");
       auto unbuilt = [&](std::optional<int64_t> off, const char *shape) {
-        if (oldDeadAfter(ctx, CB, old.v, CB.getArgOperand(i), off) == Dead::No)
+        if (!seed || oldDeadAfter(ctx, CB, old.v, CB.getArgOperand(i), off) == Dead::No)
           return;
         ctx.unc().cleanupUnbuilt(ctx.unc().idOf(old.v),
                                  std::string("calls: _inv<c> (CR §1.4, rule 18): the dead old content of a caller "

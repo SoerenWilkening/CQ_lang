@@ -2357,8 +2357,13 @@ struct Uncompute::Impl {
       }
       return track(B.CreateCall(uncOf(fwd, false, B), argsOf(fwd, nullptr)));
     }
-    if (r.cleanup && !r.cleanup->unbuilt.empty())
+    if (r.cleanup && !r.cleanup->unbuilt.empty()) {
       unimplemented(r.cleanup->unbuilt, r.cleanup->unbuiltAt);
+      // cq-utb8 (CR rules 7, 18): the dead old content of a caller cell a clone overwrote, no twin restoring it, is a
+      // seed (calls registers only those): the seed's own item, its in-place writes undone, then released (a seed hit
+      // by a non-diagonal gate was made KeptEntangled at placement).
+      r.cleanup.reset();
+    }
     if (r.cleanup && !r.cleanup->alts.empty())
       return emitGuardedCleanup(g, B);
     if (r.cleanup && r.cleanup->via) {
