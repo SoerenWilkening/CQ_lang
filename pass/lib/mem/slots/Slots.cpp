@@ -239,10 +239,61 @@ bool differentCell(const Addr &a, const Addr &b, uint64_t sizeA, uint64_t sizeB)
   return a.off + int64_t(sizeA) <= b.off || b.off + int64_t(sizeB) <= a.off;
 }
 
+Addr decompose(const Value *p, const DataLayout &DL);
+
+// cq-utb8 (CR rules 18, 20, 21): the address a call of a defined function returns, in the caller's terms, when
+// every return of the body hands back the same one: a global plus a constant (musl's __errno_location, the TLS
+// block's errno cell) or a pointer formal plus a constant (wcscpy's `returned` d: the call's actual). The call
+// is still emitted; its result names that cell of that object, as taint's provenance of the result does (the
+// callee's retPtr). An allocation (a noalias result) is its own object, never resolved.
+const Value *returnedAddress(const CallBase &CB, const DataLayout &DL, int64_t &off) {
+  static thread_local unsigned depth = 0;
+  const Function *F = CB.getCalledFunction();
+  if (!F || F->isDeclaration() || F->isVarArg() || isa<IntrinsicInst>(CB) || !CB.getType()->isPointerTy() ||
+      CB.returnDoesNotAlias() || F->hasFnAttribute(Attribute::AllocSize) ||
+      F->hasFnAttribute(Attribute::AllocKind) || depth > 8)
+    return nullptr;
+  ++depth;
+  const Value *root = nullptr;
+  int64_t o = 0;
+  bool ok = true, any = false;
+  for (const BasicBlock &BB : *F) {
+    auto *R = dyn_cast<ReturnInst>(BB.getTerminator());
+    if (!R)
+      continue;
+    Addr r = decompose(R->getReturnValue(), DL);
+    const Value *x = r.ok && r.terms.empty() ? r.root : nullptr;
+    if (auto *A = dyn_cast_or_null<Argument>(x); A && A->getParent() != F)
+      x = nullptr;
+    if (!x || !(isa<GlobalVariable>(x) || isa<Argument>(x)) || (any && (x != root || r.off != o))) {
+      ok = false;
+      break;
+    }
+    root = x;
+    o = r.off;
+    any = true;
+  }
+  --depth;
+  if (!ok || !any)
+    return nullptr;
+  off = o;
+  if (auto *A = dyn_cast<Argument>(root))
+    return A->getArgNo() < CB.arg_size() ? CB.getArgOperand(A->getArgNo()) : nullptr;
+  return root;
+}
+
 Addr decompose(const Value *p, const DataLayout &DL) {
   Addr a;
   a.ptr = p;
   for (unsigned guard = 0; guard < 64; ++guard) {
+    if (auto *CB = dyn_cast<CallBase>(p)) {
+      int64_t o = 0;
+      if (const Value *r = returnedAddress(*CB, DL, o)) {
+        a.off += o;
+        p = r;
+        continue;
+      }
+    }
     if (auto *g = dyn_cast<GEPOperator>(p)) {
       for (gep_type_iterator gti = gep_type_begin(g), e = gep_type_end(g); gti != e; ++gti) {
         const Value *idx = gti.getOperand();
