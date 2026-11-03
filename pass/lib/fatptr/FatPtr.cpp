@@ -3699,6 +3699,27 @@ void checkCalleeCells(LoweringContext &ctx, const Value *ptr, uint64_t cellBytes
   }
 }
 
+// Whether a clone this function calls with ptr takes it as a host triple formal it never indexes or accesses (its
+// cell size is 0, accessCellBytes).
+bool cellFreeCallee(LoweringContext &ctx, const Value *ptr) {
+  for (const Use &u : ptr->uses()) {
+    auto *CB = dyn_cast<CallBase>(u.getUser());
+    if (!CB || !CB->isArgOperand(&u) || CB->getFunction() != ctx.S.F)
+      continue;
+    const Specialization *cs = ctx.T.calleeSpecialization(*CB, ctx.S);
+    const Function *G = CB->getCalledFunction();
+    if (!cs || cs->isEntry() || !G || cs->F != G || G->isDeclaration())
+      continue;
+    unsigned argNo = CB->getArgOperandNo(&u);
+    if (argNo >= G->arg_size() || ctx.T.pointerFormal(*cs, argNo).abi == PtrAbi::Raw ||
+        ctx.T.pointerFormal(*cs, argNo).pointee != ObjClass::Classical)
+      continue;
+    if (hostFormalCellBytes(*G->getArg(argNo)) == 0)
+      return true;
+  }
+  return false;
+}
+
 // Rule 21 at a clone boundary (CR §1.4; 190, 191). A pointer into ONE QRAM object crosses as (bus, tag,
 // idx): the object's bus handle, its i32 tag (the root number; classical for a single object) and its i32
 // cell index (a rail or a classical value, as storedFields); cellCount is null (a QRAM's extent is its
@@ -3889,6 +3910,16 @@ Triple passAcrossCall(LoweringContext &ctx, const Value *ptr) {
                     "object table or guarded cells)",
                     ptr);
     mem::HostTriple h = mem::hostTriple(ctx, ptr, *at);
+    // Rule 21: a clone that never indexes or accesses its formal (nor do its callees) has no cells of its own, so it
+    // cannot scale an idx: the pointer crosses as the object that starts at it (its own address, idx 0), the
+    // clone's address is that object (boundHostAddress). The count is the extent from the pointer on.
+    auto *i0 = dyn_cast<ConstantInt>(h.idx);
+    if (!h.object && (!i0 || !i0->isZero()) && cellFreeCallee(ctx, ptr)) {
+      Operand p = ctx.operand(ptr);   // classical (checked above)
+      crossings()[&ctx.out()][ptr] = Crossed{ptr, h.cellBytes};
+      Value *count = h.cellCount ? ctx.B().CreateSub(h.cellCount, h.idx) : nullptr;
+      return Triple{p.v, ConstantInt::get(i32(ctx), rootNumber(ctx, ptr)), ConstantInt::get(i32(ctx), 0), count};
+    }
     checkCalleeCells(ctx, ptr, h.cellBytes, nullptr);
     crossings()[&ctx.out()][ptr] = Crossed{h.root, h.cellBytes};
     if (h.object)   // P1: this clone's own triple formal's object, crossing on with the caller's tag
@@ -4080,8 +4111,10 @@ Value *boundHostAddress(LoweringContext &ctx, const Argument &formal) {
   Bound *b = boundOf(ctx, &formal);
   if (!b || b->pointee != ObjClass::Classical || b->tag.handle || b->idx.handle)
     return nullptr;
+  // Rule 21: a formal this clone (and its callees) never indexes or accesses has no cell size of its own; its caller
+  // crosses it as the object that starts at the pointer (passAcrossCall: idx 0), so its address is the object.
   if (!b->cell)
-    internalError("fatptr: a host triple formal bound with no cell size", &formal);
+    return b->object;
   IRBuilder<> &B = ctx.B();
   Value *ix = B.CreateSExt(b->idx.v, B.getInt64Ty());
   return B.CreateGEP(B.getInt8Ty(), b->object, B.CreateMul(ix, B.getInt64(b->cell)));
