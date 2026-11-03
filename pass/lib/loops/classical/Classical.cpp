@@ -1992,10 +1992,14 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       // A phi of the arm (rule 9): its incoming on the edge this trip took, a select chain over the edges' flags
       // (disjoint within a trip).
       for (PHINode &P : b->phis()) {
-        if (P.getNumIncomingValues() == 1 || all_of(P.incoming_values(), [&](const Value *v) {
-              return v == P.getIncomingValue(0);
-            })) {
-          Operand o = ctx.operand(P.getIncomingValue(0));
+        // cq-h8y6: an incoming from outside the unit (a tail block's outside path, Exits.h) is no edge of a trip:
+        // the walker lowers that path.
+        SmallVector<unsigned, 4> ins;
+        for (unsigned i = 0; i < P.getNumIncomingValues(); ++i)
+          if (inUnit(P.getIncomingBlock(i)))
+            ins.push_back(i);
+        if (ins.size() == 1 || all_of(ins, [&](unsigned i) { return P.getIncomingValue(i) == P.getIncomingValue(ins[0]); })) {
+          Operand o = ctx.operand(P.getIncomingValue(ins[0]));
           ctx.bind(&P, isQ(&P) ? asHandle(o, P.getType()) : o.v);
           continue;
         }
@@ -2005,7 +2009,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
                         &P);
         RailType w = railOf(P.getType());
         Value *acc = nullptr;
-        for (unsigned i = P.getNumIncomingValues(); i-- > 0;) {
+        for (unsigned k = unsigned(ins.size()); k-- > 0;) {
+          unsigned i = ins[k];
           Operand o = ctx.operand(P.getIncomingValue(i));
           if (!acc) {
             acc = asHandle(o, P.getType());
