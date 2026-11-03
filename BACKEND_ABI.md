@@ -253,6 +253,7 @@ first materialized by `cqrt_alloc_<W>` *(corpus, README)*.
 |---|---|
 | `i32 @cqrt_qram_alloc_<W>(i32 n)` | n cells of W qubits, all `\|0⟩`; returns bus `a`. n is classical (a quantum size is allocated at its upper bound). |
 | `i32 @cqrt_qram_alloc_host_<W>(ptr p, i64 n)` | n cells of W qubits (n = 0: 2^64); cell j starts in the basis state of the W-bit little-endian element at host address `p + j·size` (size = the type's alloc size, as `qrom_load`), read AT THE CALL; the host object is never read again. Returns bus `a`. The form of every global QRAM: called once by a module constructor on the global's own storage, the handle kept in `@g.qram` (CR rule 20; 160, 192; 2026-11-02). |
+| `i32 @cqrt_qram_alloc_host_<W>_s(ptr base, i64 n, i64 stride)` | Strided: cell j is the W-bit element at `base + j·stride` (stride in **bytes**, `base` already offset to the field), as `qrom_load_<W>_s`. One bus per scalar column of a global array of records (CR rule 20; 2026-11-03). |
 | `i32 @cqrt_qram_realloc_<W>(i32 a, i32 n)` → `a'` | Same object, **logical** size n. No gate, and no cell moves. Shrinking hides cells ≥ n: they stay physically allocated and are out of range by §2. Growing maps the new indices to **fresh** `\|0⟩` cells, never to hidden ones. `a'` replaces `a` for every later access. |
 | `void @cqrt_qram_realloc_<W>_unc(i32 a', i32 n_old)` | Restores the old size. Precondition: every store made through `a'` was popped. Afterwards `a` is the bus again (91, 186). |
 | `void @cqrt_qram_store_<W>[_hl][_controlled]([c,] a, idx\|j, v)` | Takes a fresh W-qubit tape slot t, swaps t ↔ cell[idx] (the displaced cell goes out), then cell[idx] ^= v. v is unchanged. `_controlled`: under c = 0 nothing happens and t stays `\|0⟩`. |
@@ -336,8 +337,9 @@ call time.
   classical control, in a loop, or across a function return. `__cq_invert_begin/end` are
   `noduplicate` in `CQ.h`, so -O1 never copies a marker into the arms of a branch; a marker the
   program writes inside a quantum arm is a host call executed on every path, and the region then
-  holds the arm's controlled gates, whose inverses are the controlled inverses (CR rule 17,
-  2026-11-02).
+  holds the arm's controlled gates, whose inverses are the controlled inverses; a marker present in
+  every arm and matching one marker outside is emitted once, at the join or at the branch (CR rule
+  17, 2026-11-02/03).
 - **Rails.** None of its own. **§2.** None. **Ref.** BJ `src/circuit.jl:adjoint` (reverse the gate
   list, invert each gate). **Ex.** 44, 61, 126.
 

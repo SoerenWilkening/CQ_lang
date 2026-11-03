@@ -159,6 +159,10 @@ qram_alloc_host_<W>(ptr p, i64 n) -> a
                                   qrom_load) AT THE CALL; the host object is not read again. The form of every global
                                   QRAM, called once by the module constructor on the global's own storage (rule 20;
                                   cq-pf4n, 2026-11-02)
+qram_alloc_host_<W>_s(ptr base, i64 n, i64 stride) -> a
+                                  the strided form: cell j is the W-bit element at base + j*stride (stride in BYTES,
+                                  base already offset to the field), one bus per scalar column of a global array of
+                                  records, as qrom_load_<W>_s (rule 20; cq-z7hz, 2026-11-03)
 qram_realloc_<W>(a, n) -> a'      the same object with LOGICAL size n (a quantum n: its upper bound): no gate, no cell
                                   moves; shrinking hides the cells >= n (still physically allocated, out of range by
                                   §2); growing maps the new logical indices to FRESH |0> cells, never to cells a shrink
@@ -513,9 +517,15 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     a value merge (rule 9), a loop-carried address a carried handle (rule 14), a stored and
     reloaded address a slot or QRAM cell (rule 20). The flags are `icmp_eq_i64_hl(h,
     ptrtoint(blockaddress ...))`; the default is `unreachable` (LangRef: an address outside the
-    list), so the last destination is the complement of the others. Classical or quantum by this
-    rule; `callbr` (`asm goto`) is inline asm (rule 27). Ruling 2026-11-02 (cq-29ej, cq-b58q; the
-    hidden-index question cq-8i5g); example owed (§8). — 22, 49, 123, 131, 142; new example
+    list), so the last destination is the complement of the others. LangRef's undefined equality
+    of label addresses concerns an `icmp` on `blockaddress` values in the IR; the lowered program
+    holds none: the compare is made inside the runtime between two run-time words, and both the
+    address the program carries and the case literal come from `blockaddress` constants of the
+    same lowered function, which codegen materialises once per block. The compiler keeps every
+    destination block a distinct block (giving each a stand-in with its own code is an acceptable
+    way to keep codegen from merging two); nothing else is needed (cq-zaes, 2026-11-03). Classical
+    or quantum by this rule; `callbr` (`asm goto`) is inline asm (rule 27). Ruling 2026-11-02
+    (cq-29ej, cq-b58q; the hidden-index question cq-8i5g); example owed (§8). — 22, 49, 123, 131, 142; new example
     for a reachable default (§8).
 
 14. **Loops.**
@@ -672,9 +682,15 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     `begin` in arm A with its `end` after the join the order is `A1|f, B|not f, begin, A2|f, T|f,
     end, T|not f` (A1/A2 the arm before/after the marker, B the other arm), and the mirror image for
     an `end` in an arm whose `begin` is before the branch (`begin, prefix, B|not f, T|not f, A1|f,
-    end, A2|f, T|f`). A path on which the markers do not pair (a `begin` in one arm and its `end`
+    end, A2|f, T|f`). A marker present in EVERY arm of a quantum branch and matching one marker
+    outside it (an `end` in each arm closing a `begin` before the branch; a `begin` in each arm
+    closed by one `end` after the join) is one event: it is emitted once, at the join (an `end`)
+    or at the branch (a `begin`), with every arm's controlled gates inside the region (on each path
+    the region is the prefix plus that path's arm, and the other arm's gates are the identity under
+    its flag). A path on which the markers do not pair (a `begin` in one arm and its `end`
     in the other) is the C program's own error (`CQ.h`: a bracket) and is lowered as it stands: the
-    calls are made where they fall. Ruling 2026-11-02 (cq-asfn); example owed (§8). — 44, 61, 126.
+    calls are made where they fall. Ruling 2026-11-02 (cq-asfn; the every-arm case cq-z7hz,
+    2026-11-03); example owed (§8). — 44, 61, 126.
 
 18. **Function lifting.** A callee reached with a quantum argument is cloned per taint mask
     (§1.4). The clone computes, **copies each result into a fresh rail**, uncomputes its body and
@@ -818,14 +834,23 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       bus is seeded from at program start: the initializer, or for an `extern` the definer's; `n` is
       its cell count, 0 for an unknown extent), the compiler never reads an initializer, and the bus
       handle lives in a compiler-made `@g.qram = internal global i32 0` that every access loads
-      (160, 192; cq-pf4n, 2026-11-02). Its stores are never popped (its state is the
+      (160, 192; cq-pf4n, 2026-11-02). A global array of records is one bus per scalar field
+      column (as any array of structs, above), each allocated by the strided form
+      `qram_alloc_host_<W>_s(ptr base, i64 n, i64 stride)` with `base` already offset to the field
+      and `stride` the record size in bytes, exactly as `qrom_load_<W>_s` reads such a column (§1.3;
+      cq-z7hz, 2026-11-03). Its stores are never popped (its state is the
       program's visible result) and it is never freed (160). A global or `static` slot cell that
       holds a handle on any path holds one from program start: its start value is materialised as a
       seed rail by the module constructor (`alloc_<W>` of the initializer, or of a host load of the
       cell when the initializer is not in the module: an `extern`; 102, 160), a load with no dominating store in the function
       reads the cell's current handle (no gate) in any function, and at process exit the rails its
       cells hold are the program's visible result like 160's QRAM: kept, never freed, no destructor
-      (cq-e5lj, 2026-11-02).
+      (cq-e5lj, 2026-11-02). One confined shape is cheaper and stays: a function-local `static`
+      whose address never escapes and whose every load is dominated by a store of the same
+      activation can never hand a rail to a later call, so it is the slot of example 31's `alloca`:
+      the rail it holds is uncomputed and freed when dead, and the cell's content at exit is
+      nothing the program can observe (67; cq-05pa, 2026-11-03). Any other global or `static` cell
+      is kept as above.
     - An object with no extent in the module (an `extern` declaration whose definition is not linked,
       a host pointer whose place in its object is unknown) has as extent the range of the indices
       that reach it (LLVM's range facts, `2^W` cells as the fallback, spelled `n = 0` in §1.3): that
@@ -1140,6 +1165,7 @@ UNCOVERED, never dead and never a PASS (cq-3nla turned an ERROR into a PASS this
 
 | 17 run-time adjoint, and the no-stops rulings (2026-11-02, CQ_lang2 round 1: cq-py5f, cq-eive, cq-hzji, cq-oa67, cq-29ej, cq-k65d, cq-5xm0, cq-s2zz, cq-lshe, cq-w3cd, cq-b58q, cq-e5lj, cq-i9wk, cq-mzqo) | 44, 61, 126 (the adjoint constructed at compile time: reversed gate lists, `_adj` clones, a reversed loop); 61 of the pass's stops asked for rulings on shapes the text left open | done: rule 17 is `invert_begin()`/`invert_end()` (§1.3), the backend reverses and inverts the recorded gates; 44, 61, 126 regenerated as their forward lowering between the two calls; `_adj` retired (§1.4). Rulings written into §1.1 (handle 0, handles are classical values, the namespaces), §1.2 (`bitreverse`), §1.3 (`qram_size`, `n = 0`, `tape_str_begin/end`, `clone_register/resolve`), rules 2 (collapse is static), 6 (dead on one classical path), 10 (second prep after a reader), 13 (computed goto), 14 (no live exit), 16 (tape order, fields, deferred results, signal table, callbacks), 18 (twin point, half/vector/constrained intrinsics), 19 (extra results per path, cycles, quantum function pointers, empty candidate set), 20 (globals at exit, unknown extent, entry records), 21 (slot bases, `i64 idx`), 22 (loop form), 23 (callee reached with the flags rail, `fenv_t` crossing, traps), 24 (observable volatile), 25 (input the pipeline cannot emit), 27 (pointer results, callbacks); §6 reads a `cq_invert` example through the reversal |
 | 13 computed goto with a hidden index, 17 a marker under a quantum predicate, 20 a global QRAM of unknown extent or foreign contents (2026-11-02, CQ_lang2 round 2: cq-8i5g, cq-asfn, cq-pf4n) | rule 13 said "the integer the target address was derived from" (nothing to recover when the address is carried in a `phi` or reloaded from memory); -O1 jump-threaded `__cq_invert_begin` into both arms of a quantum branch and rule 17 did not say where the region starts; rule 20 seeded a global QRAM from an initializer an `extern` of unknown extent does not have | done: the scrutinee is the address and the case values are the `blockaddress` constants (rule 13); `__cq_invert_begin/end` are `noduplicate` in `CQ.h` (44, 61, 126 `.O1.ll` regenerated, attribute groups only) and rule 17 says what a marker inside a quantum arm means (the tail lowered under both flags when the match is outside the arm); every global QRAM is `qram_alloc_host_<W>(ptr @g, i64 n)` seeded from host memory at program start with the handle in `@g.qram` (§1.3, BACKEND_ABI 1.10; 160 and 192 regenerated) |
+| round-2 follow-ups (2026-11-03: cq-z7hz, cq-zaes, cq-05pa, cq-n7e9) | rule 17 did not say what two `end`s (one per quantum arm) closing one `begin` mean; `qram_alloc_host` had no strided form for a global array of records; rule 13's address compare looked like LangRef's undefined label-address equality; 67 frees a `static` cell's rail that rule 20 says is kept; 87 classifies a walked pointer as a fat pointer where rule 14 and 190/189 index a slot array at the classical trip offset | done: a marker in every arm matching one outside is one event at the join/branch (rule 17); `qram_alloc_host_<W>_s` (§1.3, BACKEND_ABI 1.10); the compare is inside the runtime, no `icmp` on `blockaddress` exists in the lowered IR, destination blocks stay distinct (rule 13); 67's confined `static` (no escape, every load dominated by a store of the activation) is a rule-31-style slot, freed when dead, every other global cell kept (rule 20); 87 is stale and owed a regeneration to rule 14's text (§8) |
 
 ## 8. Examples written 2026-10-26 (144–180)
 
@@ -1213,6 +1239,10 @@ To write (2026-11-02, from CQ_lang2's round 2): a computed `goto` whose address 
 `cq_invert_begin()` inside a quantum arm with its `end` after the join (the tail lowered under both flags), and a
 pair both inside one arm (rule 17, cq-asfn); a QRAM over `extern int g[]` of unknown extent stored at a quantum
 offset, the driver defining `g` with non-zero contents (rule 20, `qram_alloc_host` with `n = 0`, cq-pf4n); a global
-QRAM with a non-zero initializer (rule 20, the same call).
+QRAM with a non-zero initializer (rule 20, the same call); a global array of records of unknown extent stored at a
+quantum offset (rule 20, `qram_alloc_host_<W>_s`, one bus per column, cq-z7hz); an `end` in each arm of a quantum
+branch closing one `begin` before it (rule 17, one event at the join, cq-z7hz). To regenerate: 87 `pointer_induction`
+to rule 14's affine-induction form (the walked pointer indexes the slot array at the classical `start + j·step`; `s`
+is a slot array, not a QRAM; 190's `l`, `r` and 189's `i` already show it; cq-n7e9).
 
 Out of scope by §0: an `-O0`+mem2reg or `-O2` variant of any example.
