@@ -85,7 +85,11 @@ def one(name, plugin, limit):
         kind = 'STOP' if m.group(1) == 'unimplemented' else 'ICE'
         msg = m.group(2).strip()
     else:
-        kind, msg = 'ICE', 'crash: ' + ((err.strip().splitlines() or ['?'])[-1][:200])
+        # a crash with no cq message: the site is the first frame of the pass in the backtrace
+        fr = re.findall(r'^\s*#\d+ 0x[0-9a-f]+ (cq::[^(]*)\(', err, re.M)
+        fr = [f for f in fr if 'cq::unimplementedAt' not in f and 'cq::internalErrorAt' not in f]
+        site = fr[0].strip()[:90] if fr else '-'
+        kind, msg = 'ICE', 'crash in ' + (fr[0].strip()[:90] if fr else '?') + ': ' + ((err.strip().splitlines() or ['?'])[-1][:120])
     return (kind, name, site, msg)
 
 
