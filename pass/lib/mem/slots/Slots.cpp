@@ -1851,9 +1851,18 @@ Site siteOf(LoweringContext &ctx, FnState &st, const Instruction &I, const Value
   // the access is at a classical cell, folded here. A cell beyond the object (a trip the C program does
   // not run) reads |0> (rule 21).
   bool beyond = false;
-  if (any_of(a.terms, [&](const auto &t) { return ctx.walkedPointer(t.first) != nullptr; })) {
+  // cq-e6ky (CR rule 14 affine induction): in a classical loop (case 1 or 3) the trip index of a walked pointer is
+  // a run-time classical i64 (loops-classical binds it): the term stays an index term of stride step, read like
+  // any classical index (cellPointer).
+  auto runTimeTrip = [&](const Value *v) {
+    if (!ctx.walkedPointer(v))
+      return false;
+    Operand j = ctx.operand(v);
+    return !j.handle && !isa<Constant>(j.v) && j.v->getType()->isIntegerTy(64);
+  };
+  if (any_of(a.terms, [&](const auto &t) { return ctx.walkedPointer(t.first) != nullptr && !runTimeTrip(t.first); })) {
     for (auto it = a.terms.begin(); it != a.terms.end();) {
-      if (!ctx.walkedPointer(it->first)) {
+      if (!ctx.walkedPointer(it->first) || runTimeTrip(it->first)) {
         ++it;
         continue;
       }
@@ -1951,7 +1960,7 @@ Value *cellIndex(LoweringContext &ctx, const Site &s, const Instruction &I) {
   Type *i64 = Type::getInt64Ty(ctx.M.getContext());
   Value *idx = nullptr;
   for (auto &[v, stride] : s.a.terms) {
-    if (stride % cb || v->getType()->isPointerTy())
+    if (stride % cb || (v->getType()->isPointerTy() && !ctx.walkedPointer(v)))
       internalError("mem-slots: cellIndex of a stride inside a cell or a walked pointer", &I);
     Operand x = ctx.operand(v);
     if (x.handle)
@@ -2039,10 +2048,8 @@ Value *cellPointer(LoweringContext &ctx, const Site &s, const Instruction &I) {
   for (auto &[v, stride] : s.a.terms) {
     if (stride % cb)
       unimplemented("mem-slots: a GEP stride that is not a whole number of cells", &I);
-    if (v->getType()->isPointerTy() && !ctx.walkedPointer(v))
-      unimplemented("mem-slots: a slot access through a walked pointer outside a K-loop trip (its index is not "
-                    "bound: rule 14 case 1 pointer inductions)",
-                    &I);
+    // A pointer term is a walked pointer (decompose): its operand is the trip index a loop module binds, j of a
+    // K-loop trip (folded by siteOf) or the run-time j of a classical loop (cq-e6ky, CR rule 14 affine induction).
     Operand x = ctx.operand(v);
     if (x.handle)
       internalError("mem-slots: a quantum index into a slot object (QRAM, rule 20)", &I);

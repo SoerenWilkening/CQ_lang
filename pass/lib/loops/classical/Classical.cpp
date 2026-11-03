@@ -468,6 +468,29 @@ private:
       return false;
     return ctx.T.isQuantum(v, ctx.S);
   }
+  // Rule 14 (affine induction, cq-e6ky; as loops-cutoff's cq-9w75): a classical header phi pointing into slot or
+  // QRAM memory, walked by a constant step from a start outside the loop, is no operand of its own (address
+  // arithmetic into such memory is never emitted, rules 20, 21): the loop carries its trip index j (an i64 from
+  // 0, one more per trip) and memory reads the pointer as start + j*step (LoweringContext::walkedPointer).
+  std::optional<std::pair<const Value *, int64_t>> walkedStep(const Loop *L, PHINode &p) {
+    if (!L || L->getHeader() != p.getParent() || !p.getType()->isPointerTy() || isQ(&p) ||
+        p.getNumIncomingValues() != 2 || isCodeAddress(&p) || !L->getLoopLatch())
+      return std::nullopt;
+    bool nonClassical = ctx.T.isFatPointer(&p, ctx.S);
+    for (ObjectId o : ctx.T.provenance(&p, ctx.S))
+      nonClassical |= ctx.T.classOf(o) != ObjClass::Classical;
+    if (!nonClassical)
+      return std::nullopt;
+    auto *g = dyn_cast<GEPOperator>(p.getIncomingValueForBlock(L->getLoopLatch()));
+    const DataLayout &DL = ctx.M.getDataLayout();
+    APInt off(DL.getIndexTypeSizeInBits(p.getType()), 0);
+    const Value *start = p.getIncomingValue(p.getIncomingBlock(0) == L->getLoopLatch() ? 1 : 0);
+    auto *si = dyn_cast<Instruction>(start);
+    if (!g || g->getPointerOperand() != &p || !g->accumulateConstantOffset(DL, off) || off.isZero() ||
+        (si && L->contains(si)))
+      return std::nullopt;
+    return std::make_pair(start, off.getSExtValue());
+  }
   Pred qp(const BasicBlock *b) { return ctx.preds().block(b).quantumPart(ctx.T, ctx.S); }
   // Rule 8 / P1 (cq-pkjc): the classical facts the output path into the block being walked
   // establishes, and those of every walked original block.
@@ -1154,6 +1177,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     PHINode *orig;
     PHINode *np;
     bool q;
+    bool walked = false;   // cq-e6ky: a walked pointer carried as its trip index (walkedStep)
   };
   std::vector<Carried> carried;
   std::vector<std::pair<Value *, bool>> inits;
@@ -1207,6 +1231,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     return Operand{np, q};
   };
   for (PHINode &p : header->phis()) {
+    if (walkedStep(&L, p)) {
+      inits.push_back({ConstantInt::get(Type::getInt64Ty(ctx.M.getContext()), 0), false});
+      continue;
+    }
     Operand o = startOf(p);
     bool q = isQ(&p);
     if (const R6 *r = q ? r6Of(&p) : nullptr) {
@@ -1272,15 +1300,18 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     unsigned k = 0;
     for (PHINode &p : header->phis()) {
       auto [v, q] = inits[k++];
-      PHINode *np = ctx.B().CreatePHI(q ? handleTy(ctx.M.getContext()) : p.getType(), 2, p.getName());
+      std::optional<std::pair<const Value *, int64_t>> w = walkedStep(&L, p);
+      PHINode *np = ctx.B().CreatePHI(q ? handleTy(ctx.M.getContext()) : v->getType(), 2, p.getName());
       np->addIncoming(v, entryFrom);
       if (q)
         ctx.unc().recordExternal(np, Role::UserRegister);
+      if (w)
+        ctx.bindWalkedPointer(&p, WalkedPtr{w->first, w->second});   // memory reads it as start + j*step
       if (ctx.bound(&p))
         ctx.rebind(&p, {Operand{np, q}});   // the spine's classical choice of several starts (its operand above)
       else
         ctx.bind(&p, np);
-      carried.push_back({&p, np, q});
+      carried.push_back({&p, np, q, bool(w)});
     }
   }
   PHINode *aPhi = nullptr;
@@ -1425,6 +1456,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   std::vector<Value *> nexts;
   auto latchNexts = [&]() {
     for (Carried &cv : carried) {
+      if (cv.walked) {
+        // Rule 14 (affine induction, cq-e6ky): the walked pointer's trip index advances by one per trip.
+        nexts.push_back(ctx.B().CreateAdd(cv.np, ConstantInt::get(cv.np->getType(), 1)));
+        continue;
+      }
       Operand o = ctx.operand(cv.orig->getIncomingValueForBlock(latch));
       if (!cv.q) {
         if (o.handle)

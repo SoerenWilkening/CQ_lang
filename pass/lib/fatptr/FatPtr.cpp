@@ -1345,9 +1345,25 @@ Fat derive(LoweringContext &ctx, const Value *p, bool emit, bool eager) {
       }
       return f;
     }
-    auto *j = dyn_cast<ConstantInt>(ctx.operand(p).v);
-    if (!j)
+    Operand jo = ctx.operand(p);
+    auto *j = dyn_cast<ConstantInt>(jo.v);
+    if (!j && (jo.handle || !jo.v->getType()->isIntegerTy(64)))
       internalError("fatptr: a walked pointer not bound to its trip index", p);
+    if (!j) {
+      // cq-e6ky (CR rule 14 affine induction): in a classical loop (case 1 or 3) the trip index j is a run-time
+      // classical i64 (loops-classical); the pointer is the start moved by j*step / cell cells.
+      Value *cells = ctx.B().CreateMul(jo.v, ConstantInt::get(i64(ctx), w->step / int64_t(f.cell), /*signed=*/true));
+      if (f.idxRail()) {
+        Operand r = widenRail(ctx, f.idx, f.idxBits, f.idxSext, railBits);
+        Value *lit = ctx.B().CreateSExtOrTrunc(cells, IntegerType::get(ctx.M.getContext(), railBits));
+        f.idx = Operand{tmpl(ctx, "add", intRail(railBits), {r, Operand{lit, false}}, "hl"), true};
+        f.idxBits = railBits;
+        f.idxSext = railSext;
+        return f;
+      }
+      f.idx = Operand{ctx.B().CreateAdd(f.idx.v, cells), false};
+      return f;
+    }
     int64_t bytes = j->getSExtValue() * w->step;
     if (f.idxRail()) {
       Operand r = widenRail(ctx, f.idx, f.idxBits, f.idxSext, railBits);
