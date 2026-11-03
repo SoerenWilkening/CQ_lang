@@ -433,12 +433,15 @@ ResultLayout resultLayout(const TaintInfo &T, const Specialization &S, const Val
     return r;
   }
   if (rt->isPointerTy() && T.resultQuantum(S, 0)) {
-    if (hasQramTriple(T, S))
-      unimplemented("calls: a clone with a fat-pointer result and a triple formal onto a QRAM (rule 21, M2)", at);
     Type *i32 = Type::getInt32Ty(rt->getContext());
     r.composite = r.fatPtr = true;
     r.leaves = {i32, i32};
     r.q = {true, true};
+    // Rules 18, 21, M2 (85 with 191): the fat pointer's two fields, then one handle per store the clone makes
+    // through a triple formal onto a QRAM (cloneResultType), as after any other result's leaves.
+    r.qramFormal = hasQramTriple(T, S);
+    if (r.qramFormal)
+      r.stores = mem::calleeQramStoreCount(T, S);
     return r;
   }
   // Every other return type of C on x86-64 is a scalar rail type, a composite or a (classical) pointer.
