@@ -1125,6 +1125,14 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         if (all_of(P.incoming_values(), [&](const Value *v) { return v == v0; }) && !(vi && inUnit(vi->getParent())))
           continue;
       }
+      // cq-h8y6: an incoming from a tail block (Exits.h) on the outside paths, not classically excluded from the
+      // unit: the walker selects it in over this binding (the unit's capture), a classical one it joins.
+      for (unsigned i = 0; i < P.getNumIncomingValues(); ++i)
+        if (BasicBlock *u = P.getIncomingBlock(i); is_contained(UX.tail, u)) {
+          Pred e = exits::tailPred(ctx, L, UX, u, *mxDT) & ctx.preds().edge(u, UX.cont);
+          if (!e.isBottom() && !(e & hb.classicalFactor(ctx.T, ctx.S)).isBottom())
+            ctx.addJoinArm(&P, e, P.getIncomingValue(i));
+        }
       for (unsigned i = 0; i < P.getNumIncomingValues(); ++i)
         if (!inUnit(P.getIncomingBlock(i)) && !(ctx.preds().edge(P.getIncomingBlock(i), UX.cont) & hb).isBottom())
           unimplemented("loops-classical: a phi joining a case-3 loop's exits with an incoming from outside the loop "

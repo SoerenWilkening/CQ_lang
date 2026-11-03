@@ -1002,6 +1002,20 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         else
           outside.push_back({e, ctx.operand(v)});
       }
+      // cq-h8y6: an incoming from a tail block (Exits.h) on the outside paths: the walker lowers the tail after the
+      // unit; where those paths are not classically excluded from the unit (a quantum choice) it selects their
+      // value in under their predicate (tailPred & the edge) over this binding, a classical one it joins
+      // (joinUnitPhi).
+      if (!earlier)
+        for (unsigned i = 0; i < P.getNumIncomingValues(); ++i) {
+          BasicBlock *u = P.getIncomingBlock(i);
+          if (!is_contained(U.tail, u))
+            continue;
+          Pred e = exits::tailPred(ctx, L, U, u, A.DT) & ctx.preds().edge(u, C);
+          if (e.isBottom() || (e & cH).isBottom())
+            continue;
+          ctx.addJoinArm(&P, e, P.getIncomingValue(i));
+        }
       // With no incoming from outside, the value where no trip exits (the cutoff reached first) is 0.
       Operand acc;
       if (earlier)
@@ -2029,12 +2043,21 @@ Unit unitOf(const Loop &L) {
       if (s != c && !L.contains(s) && arm.insert(s).second)
         work.push_back(s);
   }
+  // cq-h8y6 (rule 9 at the join): an arm block also entered from outside the loop is a join of the unit's paths
+  // and the outside ones; it and every arm block it reaches are the TAIL (Exits.h), lowered per trip for the
+  // unit's paths and by the walker for the outside paths, under their own predicate.
+  SmallPtrSet<BasicBlock *, 8> tail;
+  SmallVector<BasicBlock *, 8> twork;
   for (BasicBlock *b : arm)
     for (BasicBlock *p : predecessors(b))
-      if (!L.contains(p) && !arm.count(p))
-        unimplemented("loops-cutoff: a block between a rule-14 loop's exits and their join that is also entered from "
-                      "outside the loop (cq-0dvv)",
-                      b->getTerminator());
+      if (!L.contains(p) && !arm.count(p) && tail.insert(b).second)
+        twork.push_back(b);
+  while (!twork.empty()) {
+    BasicBlock *b = twork.pop_back_val();
+    for (BasicBlock *s : successors(b))
+      if (arm.count(s) && tail.insert(s).second)
+        twork.push_back(s);
+  }
   // Topological order (DFS post-order reversed), back edges dropped: every cycle is a natural loop
   // (fix-irreducible runs first, CR rule 14 "Irreducible control flow"), a loop OF THE ARM that the loop
   // module lowers inside each trip's evaluation of the arm, like a sub-loop of a trip.
@@ -2057,9 +2080,27 @@ Unit unitOf(const Loop &L) {
   for (BasicBlock *x : U.live)
     if (arm.count(x) && !done.count(x))
       dfs(x);
-  for (auto it = post.rbegin(); it != post.rend(); ++it)
+  for (auto it = post.rbegin(); it != post.rend(); ++it) {
     U.arm.push_back(*it);
+    if (tail.count(*it))
+      U.tail.push_back(*it);
+  }
   return U;
+}
+
+Pred tailPred(LoweringContext &ctx, const Loop &L, const Unit &U, const BasicBlock *b, const DominatorTree &DT) {
+  Pred acc = Pred::bottom();
+  for (const BasicBlock *p : predecessors(b)) {
+    if (L.contains(p) || DT.dominates(b, p))
+      continue;   // the unit's own edge, or a back edge (a loop of the tail)
+    if (is_contained(U.arm, p)) {
+      if (is_contained(U.tail, p))
+        acc = acc | (tailPred(ctx, L, U, p, DT) & ctx.preds().edge(p, b));
+      continue;   // an arm block not entered from outside: the unit's path
+    }
+    acc = acc | ctx.preds().edge(p, b);
+  }
+  return acc;
 }
 
 BasicBlock *liveExiting(const Loop &L) {

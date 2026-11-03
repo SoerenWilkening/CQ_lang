@@ -7,20 +7,22 @@
 // it, outside the domain; 131's switch default) is no exit of the unit. With one live exit block, C is
 // that block and the unit is the loop. With several (121, 190's memcmp: `n && *l == *r`), C is their
 // nearest common post-dominator and the unit also holds the EXIT ARM: the blocks outside the loop
-// between the live exits and C, entered only from the loop. The loop module lowers the exit arm with
-// the loop (each trip's exit through it, rule 9 inside the trip) and binds every phi of C that has an
-// incoming from the unit; on return the builder sits where C continues.
+// between the live exits and C. The loop module lowers the exit arm with the loop (each trip's exit
+// through it, rule 9 inside the trip) and binds every phi of C that has an incoming from the unit; on
+// return the builder sits where C continues. An arm block also entered from outside the loop starts the
+// arm's TAIL (Unit::tail), which the walker lowers once more for those outside paths (cq-h8y6).
 #pragma once
 
 #include <cstdint>
 #include <optional>
 
+#include "cq/Predicate.h"
 #include "cq/Taint.h"
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
 
-namespace llvm { class Loop; class ScalarEvolution; class Value; }
+namespace llvm { class Loop; class ScalarEvolution; class Value; class DominatorTree; }
 namespace cq { class LoweringContext; }
 
 namespace cq::loops::exits {
@@ -34,6 +36,13 @@ struct Unit {
   // loop exits into (a noreturn call: abort, exit), in a topological order. The loop module lowers them
   // per trip under that trip's exit flag (rule 16's abort arm); the walker never runs them.
   llvm::SmallVector<llvm::BasicBlock *, 4> abort;
+  // cq-h8y6 (CR rule 14 with rules 8, 9): the TAIL, the arm blocks also entered from outside the unit (an arm
+  // block with a predecessor outside the loop and the arm, and every arm block it reaches), in the arm's order.
+  // The loop module lowers them per trip like the rest of the arm, for the unit's paths only (an edge from
+  // outside is no edge of a trip); the walker lowers them once more for the paths that enter them from outside,
+  // under those paths' predicate (tailPred), and joins C's phis with them (rule 9: the unit's value where it
+  // ran, the outside path's where it ran).
+  llvm::SmallVector<llvm::BasicBlock *, 4> tail;
   bool multi() const { return live.size() > 1; }
   bool contains(const llvm::Loop &L, const llvm::BasicBlock *b) const;
 };
@@ -45,9 +54,15 @@ llvm::BasicBlock *liveExiting(const llvm::Loop &L);
 llvm::BasicBlock *liveExit(const llvm::Loop &L);
 
 // With no live exit, cont is nullptr: the program's continuation after the loop is unreachable (CR rule
-// 14 "No live exit"). cq::unimplemented when the live exits have no common post-dominator that every path
-// out of the loop reaches through blocks entered only from the loop.
+// 14 "No live exit"). cq::unimplemented when the live exits have no common post-dominator.
 Unit unitOf(const llvm::Loop &L);
+
+// cq-h8y6: the predicate under which a tail block b of U (U.tail) is entered from outside the unit: over b's
+// edges from outside the loop and the arm, the edge's predicate; over its forward edges from another tail
+// block, that block's tail predicate & the edge's. The unit's own paths into b are not in it (they are the
+// loop module's, under its trips' exit flags). DT is the original function's.
+Pred tailPred(cq::LoweringContext &ctx, const llvm::Loop &L, const Unit &U, const llvm::BasicBlock *b,
+              const llvm::DominatorTree &DT);
 
 // The cutoff bound B of a quantum-exit loop (CR rule 14): the least of loops::tripBound and, in
 // a clone with `_b` bounds (CR §1.4: "a clone's loop cutoffs use only these bounds and its own range

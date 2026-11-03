@@ -270,6 +270,12 @@ private:
   DenseMap<const BasicBlock *, Loop *> unitOf;          // blocks of loops dispatched as units
   DenseSet<const BasicBlock *> pureHeaders;             // headers of purely classical loops walked inline
   DenseMap<const Loop *, loops::exits::Unit> units;     // per unit: continuation and exit arm
+  // cq-h8y6: a unit's tail blocks (arm blocks also entered from outside the loop, Exits.h): the loop module
+  // lowers them per trip for the unit's paths, the walker once more for the outside paths, under tailPred.
+  DenseMap<const BasicBlock *, Loop *> tailOf;
+  DenseMap<const BasicBlock *, Pred> tailPreds;
+  const Pred &tailPredOf(const BasicBlock *b);
+  void tailMerge(PHINode &phi);
   DenseMap<const BasicBlock *, SmallVector<BasicBlock *, 2>> outEdges;
   DenseMap<const BasicBlock *, unsigned> outPreds;
   DenseSet<const BasicBlock *> merged;
@@ -461,7 +467,8 @@ void Walker::plan() {
       loops::exits::Unit U = loops::exits::unitOf(*lp);
       for (auto *list : {&U.arm, &U.dead, &U.abort})
         for (BasicBlock *b : *list)
-          inOtherUnit.insert(b);
+          if (!is_contained(U.tail, b))   // a loop of the tail runs on the outside paths as a unit of its own
+            inOtherUnit.insert(b);
     }
   for (Loop *lp : LI.getTopLevelLoops()) {
     if (inOtherUnit.count(lp->getHeader()))
@@ -477,7 +484,10 @@ void Walker::plan() {
     // lowers it with the loop, and the unit continues at the exits' join.
     loops::exits::Unit U = loops::exits::unitOf(*lp);
     for (BasicBlock *b : U.arm)
-      unitOf[b] = lp;
+      if (is_contained(U.tail, b))
+        tailOf[b] = lp;   // the walker's too (cq-h8y6)
+      else
+        unitOf[b] = lp;
     for (BasicBlock *b : U.dead)
       unitOf[b] = lp;   // never run (UB to reach): nothing of it is lowered
     for (BasicBlock *b : U.abort)
@@ -489,6 +499,9 @@ void Walker::plan() {
   for (unsigned i = L.size(); i-- > 0;) {
     reach[i].set(i);
     for (BasicBlock *s : successors(L[i])) {
+      // A unit's own paths into its tail are the loop module's: the unit continues at C (cq-h8y6).
+      if (Loop *t = tailOf.lookup(s); t && unitOf.lookup(L[i]) == t)
+        continue;
       unsigned j = idx.lookup(s);
       if (j > i)
         reach[i] |= reach[j];
@@ -1056,6 +1069,116 @@ Value *Walker::factoredMerge(PHINode &phi) {
 // reaches (the zero-trip guard): a classical phi over handles on the output edges, the unit's binding
 // on the unit's edge, on each other edge the one incoming its facts admit (a classical value seeded
 // where the edge leaves), recorded as a merge (rule 9 at a58c3a4).
+const Pred &Walker::tailPredOf(const BasicBlock *b) {
+  auto tp = tailPreds.find(b);
+  if (tp == tailPreds.end()) {
+    Loop *t = tailOf.lookup(b);
+    tp = tailPreds.insert({b, loops::exits::tailPred(ctx, *t, units.find(t)->second, b, DT)}).first;
+  }
+  return tp->second;
+}
+
+// cq-h8y6 (rule 9 at a tail block, CR rule 14): a quantum phi of a unit's tail block on the outside paths merges
+// the incomings of those paths only, each under its edge's predicate on them (tailPred & the edge): the unit's own
+// edges into the block are the loop module's (its trips' exit flags), and their values do not reach here. One
+// value is that value (a classical one seeded, rule 7); several are rule 9's select chain, field by field (a data
+// pointer's fat (tag, idx) at their common shape, rule 21; a composite's leaves, rule 26).
+void Walker::tailMerge(PHINode &phi) {
+  const BasicBlock *b = phi.getParent();
+  Loop &lp = *tailOf.lookup(b);
+  const loops::exits::Unit &U = units.find(&lp)->second;
+  std::vector<std::pair<Pred, const Value *>> kept;
+  for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i) {
+    const BasicBlock *u = phi.getIncomingBlock(i);
+    if (lp.contains(u) || DT.dominates(b, u) || !idx.count(u))
+      continue;
+    Pred e = Pred::bottom();
+    if (is_contained(U.arm, u)) {
+      if (!tailOf.count(u))
+        continue;   // the unit's path
+      e = tailPredOf(u) & ctx.preds().edge(u, b);
+    } else {
+      e = ctx.preds().edge(u, b);
+    }
+    if (e.isBottom())
+      continue;
+    const Value *v = phi.getIncomingValue(i);
+    auto same = find_if(kept, [&](const auto &k) { return k.second == v; });
+    if (same != kept.end())
+      same->first = same->first | e;
+    else
+      kept.push_back({e, v});
+  }
+  bool fat = phi.getType()->isPointerTy() && !isCodeAddress(&phi);
+  bool composite = phi.getType()->isAggregateType() || phi.getType()->isVectorTy();
+  SmallVector<RailType, 4> ws;
+  if (fat) {
+    ws = {RailType{Kind::Int, 32}, RailType{Kind::Int, 64}};
+    SmallVector<const Value *, 4> vals;
+    for (auto &[e, v] : kept)
+      vals.push_back(v);
+    fatptr::exitShape(ctx, &phi, vals, [](const BasicBlock *) { return false; });
+  } else if (composite) {
+    std::function<void(Type *)> leaves = [&](Type *t) {
+      if (auto *st = dyn_cast<StructType>(t))
+        for (Type *e : st->elements())
+          leaves(e);
+      else if (auto *at = dyn_cast<ArrayType>(t))
+        for (uint64_t k = 0; k < at->getNumElements(); ++k)
+          leaves(at->getElementType());
+      else if (auto *vt = dyn_cast<FixedVectorType>(t))
+        for (unsigned k = 0; k < vt->getNumElements(); ++k)
+          leaves(vt->getElementType());
+      else
+        ws.push_back(t->isPointerTy() ? RailType{Kind::Int, 64} : railTypeOf(t));
+    };
+    leaves(phi.getType());
+  } else {
+    ws = {phi.getType()->isPointerTy() ? RailType{Kind::Int, 64} : railTypeOf(phi.getType())};
+  }
+  auto fieldsOf = [&](const Value *v) -> SmallVector<Operand, 4> {
+    if (fat) {
+      auto [t, i] = fatptr::exitFields(ctx, v, [](const BasicBlock *) { return false; }, &phi);
+      return {t, i};
+    }
+    if (composite)
+      return aggr::flattenResult(ctx, v);
+    Operand o = ctx.operand(v);
+    if (phi.getType()->isPointerTy() && !o.handle)   // rule 13: a code address is an i64
+      o = Operand{ctx.B().CreatePtrToInt(o.v, ctx.B().getInt64Ty()), false};
+    return {o};
+  };
+  SmallVector<Operand, 4> out;
+  if (kept.empty()) {
+    // No outside path reaches the block (it runs on none): a don't-care, the null value.
+    for (RailType w : ws)
+      out.push_back(Operand{ConstantInt::get(irTypeOf(ctx.M.getContext(), w), 0), false});
+  } else if (kept.size() == 1) {
+    out = fieldsOf(kept.front().second);
+  } else {
+    std::vector<std::vector<std::pair<Pred, Operand>>> arms(ws.size());
+    for (auto &[e, v] : kept) {
+      SmallVector<Operand, 4> fv = fieldsOf(v);
+      for (unsigned f = 0; f < ws.size() && f < fv.size(); ++f)
+        arms[f].push_back({e, fv[f]});
+    }
+    for (unsigned f = 0; f < ws.size(); ++f)
+      out.push_back(Operand{selectChain(ctx, arms[f], ws[f]), true});
+  }
+  for (unsigned f = 0; f < out.size() && f < ws.size(); ++f)
+    if (!out[f].handle) {
+      CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, ws[f]}, {out[f].v});
+      ctx.unc().recordSeed(a);
+      out[f] = Operand{a, true};
+    }
+  if (composite)
+    aggr::bindLeafFields(ctx, &phi, out, SmallVector<unsigned, 8>(out.size(), 1));
+  else
+    ctx.bindFields(&phi, out);
+  if (fat)
+    fatptr::bindExit(ctx, &phi);
+}
+
 void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in) {
   const BasicBlock *b = phi.getParent();
   BasicBlock *join = out(b);
@@ -2015,6 +2138,15 @@ void Walker::emitBlock(BasicBlock *b) {
   while (!openRegions.empty() && openRegions.back() == b)
     openRegions.pop_back();
   sh.curPred = ctx.preds().block(b).quantumPart(ctx.T, ctx.S);
+  if (Loop *t = tailOf.lookup(b)) {
+    // cq-h8y6 (rules 8, 9): a tail block on the paths that enter it from outside its unit (the unit lowered it per
+    // trip for its own paths): it runs under those paths' predicate, the loop's exit flags no part of it, and its
+    // values are this lowering's (each trip's binding replaced).
+    (void)t;
+    sh.curPred = tailPredOf(b).quantumPart(ctx.T, ctx.S);
+    for (Instruction &I : *b)
+      sh.binds.erase(&I);
+  }
 
   if (unitOf.count(b)) {
     Loop &lp = *unitOf.lookup(b);
@@ -2049,7 +2181,9 @@ void Walker::emitBlock(BasicBlock *b) {
     SmallVector<std::pair<BasicBlock *, BasicBlock *>, 4> exits;
     {
       SmallVector<BasicBlock *, 16> from(lp.blocks().begin(), lp.blocks().end());
-      from.append(U.arm.begin(), U.arm.end());
+      for (BasicBlock *a : U.arm)
+        if (!is_contained(U.tail, a))   // a tail block's edge into C is the walker's (cq-h8y6)
+          from.push_back(a);
       for (BasicBlock *f : from)
         for (BasicBlock *s : successors(f))
           if (s == U.cont)
@@ -2128,6 +2262,11 @@ void Walker::emitBlock(BasicBlock *b) {
   for (PHINode &phi : b->phis()) {
     sh.cur = &phi;
     visited.insert(&phi);
+    if (tailOf.count(b) && spine::isQ(ctx, &phi)) {
+      tailMerge(phi);
+      blockDefs.push_back(&phi);
+      continue;
+    }
     if (unitBoundPhis.count(&phi)) {
       if (auto ie = inEdges.find(b); ie != inEdges.end() && ie->second.size() > 1)
         joinUnitPhi(phi, ie->second);
