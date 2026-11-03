@@ -3252,10 +3252,13 @@ void lowerIntToPtr(LoweringContext &ctx, Instruction &I) {
 // must be the caller's cell size cellBytes (and, onto a QRAM, its cell type): the triple's idx and cell
 // count are in the caller's cells.
 // The cell size of a host-pointee triple formal (85): the scale of its GEPs' variable terms and the size of
-// its accesses, through GEPs, casts, selects and phis; a compare or return of a derived pointer is no
-// access. Two sizes, an escape (a store of the pointer, a call) or none at all are unimplemented.
-uint64_t hostFormalCellBytes(const Argument &A) {
-  const DataLayout &DL = A.getParent()->getParent()->getDataLayout();
+// its accesses (loads, stores and atomics through it), through GEPs, casts, selects, phis and freezes. Rule 21:
+// the triple crosses on to a callee with a body as the same caller object in the same cells (passAcrossCall
+// forwards it), so the callee's accesses through its formal count as this function's. Every other use reads no
+// cell through the pointer: a compare, a return, a ptrtoint (the address, base[tag] + size * idx), the pointer
+// stored as a value, a memory intrinsic (rule 22 works per cell of the object as it is accessed) or a callee
+// with no body (rule 27: the caller's address). Two sizes or none at all are unimplemented.
+uint64_t accessCellBytes(const Value &A, const DataLayout &DL) {
   uint64_t cell = 0;
   auto see = [&](uint64_t c, const Value *at) {
     if (c == 0 || (cell && cell != c))
@@ -3278,22 +3281,32 @@ uint64_t hostFormalCellBytes(const Argument &A) {
         for (auto &[x, scale] : vars)
           see(scale.getZExtValue(), g);
         work.push_back(g);
-      } else if (isa<BitCastOperator>(U) || isa<SelectInst>(U) || isa<PHINode>(U)) {
+      } else if (isa<BitCastOperator>(U) || isa<AddrSpaceCastOperator>(U) || isa<PHINode>(U) || isa<FreezeInst>(U) ||
+                 (isa<SelectInst>(U) && U->getOperand(0) != v)) {
         work.push_back(U);
       } else if (auto *ld = dyn_cast<LoadInst>(U)) {
         see(DL.getTypeAllocSize(ld->getType()).getFixedValue(), ld);
       } else if (auto *st = dyn_cast<StoreInst>(U); st && st->getPointerOperand() == v) {
         see(DL.getTypeAllocSize(st->getValueOperand()->getType()).getFixedValue(), st);
-      } else if (isa<ReturnInst>(U) || isa<ICmpInst>(U)) {
-        continue;
-      } else {
-        unimplemented("fatptr: a host triple formal whose pointer escapes (rule 21)", U);
+      } else if (auto *rmw = dyn_cast<AtomicRMWInst>(U); rmw && rmw->getPointerOperand() == v) {
+        see(DL.getTypeAllocSize(rmw->getValOperand()->getType()).getFixedValue(), rmw);   // rule 24: the plain op
+      } else if (auto *cx = dyn_cast<AtomicCmpXchgInst>(U); cx && cx->getPointerOperand() == v) {
+        see(DL.getTypeAllocSize(cx->getNewValOperand()->getType()).getFixedValue(), cx);
+      } else if (auto *cb = dyn_cast<CallBase>(U); cb && cb->isArgOperand(&u) && !isa<IntrinsicInst>(cb) &&
+                                                  cb->getCalledFunction() &&
+                                                  !cb->getCalledFunction()->isDeclaration() &&
+                                                  cb->getArgOperandNo(&u) < cb->getCalledFunction()->arg_size()) {
+        work.push_back(cb->getCalledFunction()->getArg(cb->getArgOperandNo(&u)));
       }
     }
   }
   if (!cell)
     unimplemented("fatptr: a host triple formal its clone never indexes or accesses (its cells are the caller's)", &A);
   return cell;
+}
+
+uint64_t hostFormalCellBytes(const Argument &A) {
+  return accessCellBytes(A, A.getParent()->getParent()->getDataLayout());
 }
 
 void checkCalleeCells(LoweringContext &ctx, const Value *ptr, uint64_t cellBytes, Type *qramCellTy) {
