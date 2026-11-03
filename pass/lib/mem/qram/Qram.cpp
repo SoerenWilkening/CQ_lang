@@ -3667,10 +3667,12 @@ HostTriple hostTriple(LoweringContext &ctx, const Value *ptr, const Instruction 
   // idx plus the offset in the formal's cells).
   fatptr::FormalTriple ft;
   bool formal = a.ok && isa<Argument>(a.root) && fatptr::boundTriple(ctx, a.root, ft);
-  if (!a.ok || !(isa<AllocaInst>(a.root) || isa<GlobalVariable>(a.root) || formal)) {
+  bool local = a.ok && (isa<AllocaInst>(a.root) || isa<GlobalVariable>(a.root)) &&
+               ctx.T.provenance(ptr, ctx.S).size() == 1;
+  if (!local && !formal) {
     // Rules 20, 21 (cq-k65d, cq-5xm0): any other object (a parameter of a function that is no clone of its caller,
-    // a heap block, a call's result, a loaded pointer, a merge): the object that starts at the pointer, its count
-    // the extent from the pointer on (0: unknown extent).
+    // a heap block, a call's result, a loaded pointer, a merge, an integer cast to a pointer): the object that
+    // starts at the pointer, its count the extent from the pointer on (0: unknown extent).
     fatptr::ownPlaceTriple(ctx, ptr, ft);
     HostTriple h{ptr, ft.idx, ft.cellCount, ft.cell};
     h.object = ft.object;

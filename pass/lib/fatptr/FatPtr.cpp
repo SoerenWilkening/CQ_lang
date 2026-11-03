@@ -3314,13 +3314,14 @@ uint64_t hostFormalCellBytes(const Argument &A) {
 }
 
 // Rule 21 with rule 20 (cq-k65d, cq-5xm0): a classical pointer whose place in its object this function does not
-// hold statically (a parameter of a function that is no clone of its caller's, an allocation call's block reached
-// through a merge, a call's result, a loaded pointer, a merge or an inttoptr) crosses as the object that starts at
-// the pointer: the pointer is its root (its tag in this function's table, its base its own address), idx 0, its
-// cells the size its accesses and its callees' use (accessCellBytes), its cell count the object's extent from the
-// pointer on when the pointer derives from one allocation (an alloca of static size, a global or an allocation
-// call: the allocation's cells less the pointer's cell distance from its start, in handle cells of 4 bytes for a
-// slot object), else 0 (an object of unknown extent, n = 0: every index reaching it is in range, rule 20).
+// hold statically (a parameter of a function that is no clone of its caller, a heap block, a call's result, a
+// loaded pointer, a merge over objects, an integer cast to a pointer) crosses as the object that starts at the
+// pointer: the pointer is its root (its tag in this function's table, its base its own address), idx 0, its cells
+// the size its accesses and its callees' use (accessCellBytes), its cell count the extent from the pointer on of
+// the allocation it lies in: among the allocations it derives from (an alloca of static size, a global, an
+// allocation call), the one whose cells contain it (one past the end included), less its cell distance from that
+// allocation's start (in handle cells of 4 bytes for a slot object); 0 when it lies in none of known extent (an
+// object of unknown extent, n = 0: every index reaching it is in range, rule 20).
 void ownPlaceTriple(LoweringContext &ctx, const Value *ptr, FormalTriple &out) {
   const DataLayout &DL = ctx.M.getDataLayout();
   IRBuilder<> &B = ctx.B();
@@ -3332,8 +3333,10 @@ void ownPlaceTriple(LoweringContext &ctx, const Value *ptr, FormalTriple &out) {
   Value *count = ConstantInt::get(i32(ctx), 0);
   SmallVector<const Value *, 4> us;
   getUnderlyingObjects(ptr, us);
-  if (us.size() == 1 && us.front() != ptr) {
-    const Value *u = us.front();
+  Value *addr = nullptr;
+  for (const Value *u : us) {
+    if (u == ptr)
+      continue;
     std::optional<uint64_t> bytes;
     Value *rt = nullptr;   // an allocation call's run-time size
     if (auto *gv = dyn_cast<GlobalVariable>(u)) {
@@ -3345,13 +3348,18 @@ void ownPlaceTriple(LoweringContext &ctx, const Value *ptr, FormalTriple &out) {
       rt = hostExtent(ctx, u);   // its allocsize, classical
     }
     Operand base = ctx.operand(u);
-    if ((bytes || rt) && !base.handle) {
-      Value *whole = rt ? rt : ConstantInt::get(i64(ctx), *bytes);
-      Value *cells = B.CreateUDiv(whole, ConstantInt::get(i64(ctx), cb));
-      Value *dist = B.CreateSub(B.CreatePtrToInt(p, i64(ctx)), B.CreatePtrToInt(base.v, i64(ctx)));
-      Value *at = B.CreateUDiv(dist, ConstantInt::get(i64(ctx), slot ? 4 : cb));
-      count = B.CreateTrunc(B.CreateSub(cells, at), i32(ctx));
-    }
+    if (!(bytes || rt) || base.handle)
+      continue;
+    if (!addr)
+      addr = B.CreatePtrToInt(p, i64(ctx));
+    Value *cells = B.CreateUDiv(rt ? rt : ConstantInt::get(i64(ctx), *bytes), ConstantInt::get(i64(ctx), cb));
+    uint64_t step = slot ? 4 : cb;
+    Value *lo = B.CreatePtrToInt(base.v, i64(ctx));
+    Value *dist = B.CreateSub(addr, lo);
+    Value *in = B.CreateAnd(B.CreateICmpUGE(addr, lo),
+                            B.CreateICmpULE(dist, B.CreateMul(cells, ConstantInt::get(i64(ctx), step))));
+    Value *k = B.CreateTrunc(B.CreateSub(cells, B.CreateUDiv(dist, ConstantInt::get(i64(ctx), step))), i32(ctx));
+    count = us.size() == 1 ? k : B.CreateSelect(in, k, count);
   }
   out.object = p;
   out.tag = ConstantInt::get(i32(ctx), rootNumber(ctx, ptr));
@@ -3561,7 +3569,10 @@ Triple passAcrossCall(LoweringContext &ctx, const Value *ptr) {
   }
   ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
   bool classical = !isQ(ctx, ptr) && !ctx.T.isFatPointer(ptr, ctx.S);
-  if (objs.size() == 1 && ctx.T.classOf(objs.front()) != ObjClass::Qram) {
+  // Rule 21: a classical pointer into no QRAM names one object at run time, whatever its provenance (none: an
+  // integer cast to a pointer, NULL; several: a classical merge): mem::hostTriple gives its triple.
+  bool hostOnly = llvm::none_of(objs, [&](ObjectId o) { return ctx.T.classOf(o) == ObjClass::Qram; });
+  if ((objs.size() == 1 && ctx.T.classOf(objs.front()) != ObjClass::Qram) || (classical && hostOnly)) {
     const Instruction *at = dyn_cast<Instruction>(ptr);
     if (!at)
       for (const User *u : ptr->users())
