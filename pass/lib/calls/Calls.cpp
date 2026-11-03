@@ -1746,8 +1746,8 @@ void bindEnvResult(LoweringContext &ctx, CallBase &CB, const Specialization &S, 
     // cq-xhv4: a field-wise result (bindFieldwiseResult's binding) whose last field is the new flags.
     const ResultLayout &res = r.res;
     SmallVector<bool, 4> tq = ctx.T.fieldMask(&CB, ctx.S);
-    if (res.cuts.size() > 2)
-      tq = res.q;   // cq-0umd: a packed integer result's fields are the callee's (resultQuantum)
+    if (res.cuts.size() > 2 || res.fatPtr)
+      tq = res.q;   // cq-0umd: a packed integer result's fields are the callee's (resultQuantum); 85: {tag, idx}
     if (tq.size() != res.q.size() || !std::equal(tq.begin(), tq.end(), res.q.begin()))
       internalError("calls: the clone's result fields and taint's field mask of the call disagree", &CB);
     auto *st = dyn_cast<StructType>(r.call->getType());
