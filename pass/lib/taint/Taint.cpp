@@ -92,16 +92,37 @@ bool PtrInfo::join(const PtrInfo &o) {
     *this = o;
     return true;
   }
-  PtrInfo before = *this;
-  SmallVector<unsigned, 4> u(sites.begin(), sites.end());
-  u.append(o.sites.begin(), o.sites.end());
-  sortUnique(u);
-  sites.assign(u.begin(), u.end());
-  top = top || o.top;
-  if (!top) {
-    g = gcd64(gcd64(g, o.g), absDiff(c, o.c));
+  bool changed = false;
+  // The union of the sorted, unique site lists in one merge (cq-e0tq: a load reading many objects joins every
+  // stored pointer of each; a sort per join made that the taint fixed point's cost).
+  auto strict = [](ArrayRef<unsigned> v) { return std::adjacent_find(v.begin(), v.end(), std::greater_equal<unsigned>()) == v.end(); };
+  if (!o.sites.empty()) {
+    if (strict(sites) && strict(o.sites)) {
+      if (!std::includes(sites.begin(), sites.end(), o.sites.begin(), o.sites.end())) {
+        SmallVector<unsigned, 4> u;
+        u.reserve(sites.size() + o.sites.size());
+        std::set_union(sites.begin(), sites.end(), o.sites.begin(), o.sites.end(), std::back_inserter(u));
+        sites.assign(u.begin(), u.end());
+        changed = true;
+      }
+    } else {
+      SmallVector<unsigned, 4> u(sites.begin(), sites.end());
+      u.append(o.sites.begin(), o.sites.end());
+      sortUnique(u);
+      changed = !std::equal(u.begin(), u.end(), sites.begin(), sites.end());
+      sites.assign(u.begin(), u.end());
+    }
   }
-  return before.sites != sites || before.top != top || before.g != g || before.c != c;
+  if (o.top && !top) {
+    top = true;
+    changed = true;
+  }
+  if (!top) {
+    uint64_t ng = gcd64(gcd64(g, o.g), absDiff(c, o.c));
+    changed = changed || ng != g;
+    g = ng;
+  }
+  return changed;
 }
 
 bool PtrInfo::sameOffset(const PtrInfo &o) const {
@@ -254,8 +275,10 @@ private:
     PtrInfo e;
     e.init = true;
     e.top = true;
+    bool sorted = llvm::is_sorted(st.escaped.sites);
     for (unsigned s : p.sites)
-      if (!llvm::is_contained(st.escaped.sites, s))
+      if (sorted ? !std::binary_search(st.escaped.sites.begin(), st.escaped.sites.end(), s)
+                 : !llvm::is_contained(st.escaped.sites, s))
         e.sites.push_back(s);
     if (!e.sites.empty() && st.escaped.join(e))
       touchObject();
@@ -1789,6 +1812,7 @@ void Analyzer::recordWrite(Instruction &I, const PtrInfo &p, uint64_t size, bool
                            const PtrInfo *storedPtr, const Lanes *storedLanes) {
   auto ex = p.exact();
   bool unknownCell = !ex;
+  bool escaped = false;   // the stored pointer escapes once per write, not once per destination object
   for (unsigned s : p.sites) {
     const Site &site = st.sites[s];
     if (site.kind == SiteKind::Function)
@@ -1815,7 +1839,9 @@ void Analyzer::recordWrite(Instruction &I, const PtrInfo &p, uint64_t size, bool
           touchObject();
         }
         if (storedPtr) {
-          escape(*storedPtr);
+          if (!escaped)
+            escape(*storedPtr);
+          escaped = true;
           // A store instruction's pointers are seen only by loads it may reach (88: a pointer
           // stored after a load is not in that load's provenance); memcpy and initializers are
           // merged unconditionally.
@@ -1889,6 +1915,25 @@ void Analyzer::transferLoad(Instruction &I, Value *ptr, Type *T) {
   bool q = fat;
   auto ex = p.exact();
   PtrInfo loaded;
+  // cq-e0tq: the stored pointers of every object read, gathered as a site set and one offset join (a load of
+  // many objects, each stored by many stores, joined one PtrInfo at a time, cost the size of the result per store).
+  BitVector loadedSites;
+  PtrInfo loadedOff;
+  auto gather = [&](const PtrInfo &q) {
+    if (!q.init)
+      return;
+    for (unsigned x : q.sites) {
+      if (x >= loadedSites.size())
+        loadedSites.resize(std::max<size_t>(x + 1, st.sites.size()));
+      loadedSites.set(x);
+    }
+    PtrInfo o;
+    o.init = true;
+    o.top = q.top;
+    o.c = q.c;
+    o.g = q.g;
+    loadedOff.join(o);
+  };
   bool tagQ = false, idxQ = false, intPun = false;
   for (unsigned s : p.sites) {
     for (ObjectId oid : objectsAt(s, p)) {
@@ -1900,16 +1945,16 @@ void Analyzer::transferLoad(Instruction &I, Value *ptr, Type *T) {
       if (O.cellHandle(ex, size))
         q = true;
       if (T->isPointerTy()) {
-        loaded.join(O.stored);
+        gather(O.stored);
         for (auto &[SI, sp] : O.storedBy) {
           if (SI->getFunction() != I.getFunction() ||
               !storeOrderHolds(I.getFunction(), st.sites[O.site])) {
-            loaded.join(sp);
+            gather(sp);
             continue;
           }
           FnInfo &fi = fn(I.getFunction());
           if (isPotentiallyReachable(SI, &I, nullptr, fi.DT.get(), fi.LI.get()))
-            loaded.join(sp);
+            gather(sp);
         }
         tagQ = tagQ || O.storedTagQ;
         idxQ = idxQ || O.storedIdxQ;
@@ -1924,6 +1969,11 @@ void Analyzer::transferLoad(Instruction &I, Value *ptr, Type *T) {
         }
       }
     }
+  }
+  if (loadedOff.init) {
+    loaded = loadedOff;
+    for (unsigned x : loadedSites.set_bits())
+      loaded.sites.push_back(x);
   }
   if (T->isPointerTy()) {
     if (intPun)
