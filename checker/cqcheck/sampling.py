@@ -3866,8 +3866,10 @@ def trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_sit
             if t == K + 1:
                 # the oracle cuts a quantum-exit loop at K: a longer probe run is a K+1 candidate
                 cands += with_count(lp, lambda ns: any(n > t + 1 for n in ns))[:8]
-    cands = list(dict.fromkeys([(c, tuple(a)) for c, a in
-                                [(g.samples[i]["call"], g.samples[i]["args"]) for i in range(len(spec.calls))]] + cands))
+    # the drivers.txt calls first, those still samples: cqcheck user's made-up baseline is domain-filtered
+    # (exempt_baseline=False, cq-sujz) and may be gone, so g.samples[ci] is no baseline there (cq-0jq1)
+    base = [(ci, tuple(g.base[ci])) for ci in range(len(spec.calls)) if (ci, tuple(g.base[ci])) in g.index]
+    cands = list(dict.fromkeys(base + [(c, tuple(a)) for c, a in cands]))
     o1 = sorted(Path(example_dir).glob("*.O1.ll"))[0]
     runs = oracle.run_samples(o1, spec, [{"call": c, "args": list(a)} for c, a in cands])
     seen: Dict[str, Set[int]] = {}
