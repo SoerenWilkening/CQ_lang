@@ -2692,14 +2692,47 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
         classicalComposites.push_back({A, ops});   // rebuilt as one value in the entry block (below)
     }
     if (F.isVarArg()) {
-      // CR §1.4 (95, 109): the variadic actuals, one parameter each after the fixed formals' fields,
-      // their digits the mask's last.
-      unsigned nv = C->arg_size() - p - (fenv::cloneCarriesEnv(ctx.T, S) ? 2 : 0);
-      if (nv > S.mask.size())
-        internalError("spine: a variadic clone with more variadic parameters than mask digits", C);
-      for (unsigned k = 0; k < nv; ++k) {
+      // CR §1.4 (95, 109; cq-tqev): the variadic actuals after the fixed formals' fields, fields of the clone's
+      // formal list like the fixed ones (calls::formalLayout): a scalar is one parameter, its digit the mask's
+      // next; a pointer is a pointer formal of taint's T4 ABI, the caller's raw pointer (its digits describe the
+      // pointee) or, where its address is no host pointer, the triple. Each is the value llvm.va_start spills
+      // into the save area (calls::lowerVarargs), where the va_arg code reads it back.
+      size_t d = 0;
+      for (unsigned j = 0; j < F.arg_size(); ++j) {
+        Argument *Aj = F.getArg(j);
+        SmallVector<unsigned, 4> cj = Aj->getType()->isIntegerTy() ? spine::unpackCuts(Aj) : SmallVector<unsigned, 4>{};
+        d += Aj->getType()->isPointerTy() ? T.pointerFormal(S, j).digits
+             : cj.size() > 2              ? cj.size() - 1
+                                          : T.fieldMask(Aj, S).size();
+      }
+      SmallVector<Type *, 4> vts = calls::variadicTypes(T, S, &F);
+      for (unsigned k = 0; k < vts.size(); ++k) {
+        unsigned i = F.arg_size() + k;
+        if (vts[k]->isPointerTy()) {
+          PtrFormal pf = T.pointerFormal(S, i);
+          unsigned n = pf.abi == PtrAbi::Raw ? 1 : pf.abi == PtrAbi::TripleCount ? 4 : 3;
+          if (p + n > C->arg_size() || d + pf.digits > S.mask.size())
+            internalError("spine: a clone with fewer parameters than its formals' fields", C);
+          Argument *P = C->getArg(p);
+          if (pf.abi == PtrAbi::Raw) {
+            sh.varargs.push_back(Operand{P, false});
+          } else {
+            // A quantum tag or idx, or a QRAM bus: the caller's rails, never freed here. The save-area cell
+            // would hold the fat pointer (rule 21 in the variadic save area, calls::formalLayout's site).
+            bool objH = pf.pointee == ObjClass::Qram, tagH = S.mask[d] == '1', idxH = S.mask[d + 1] == '1';
+            for (auto [a, h] : {std::pair{P, objH}, {C->getArg(p + 1), tagH}, {C->getArg(p + 2), idxH}})
+              if (h)
+                ctx.unc().recordExternal(a, Role::UserRegister);
+            sh.varargs.push_back(Operand{P, objH});
+          }
+          p += n;
+          d += pf.digits;
+          continue;
+        }
+        if (p >= C->arg_size() || d >= S.mask.size())
+          internalError("spine: a clone with fewer parameters than its formals' fields", C);
         Argument *P = C->getArg(p++);
-        bool q = S.mask[S.mask.size() - nv + k] == '1';
+        bool q = S.mask[d++] == '1';
         if (q)
           ctx.unc().recordExternal(P, Role::UserRegister);   // the caller's rail: never freed here
         sh.varargs.push_back(Operand{P, q});

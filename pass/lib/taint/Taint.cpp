@@ -4028,8 +4028,14 @@ std::string Analyzer::buildMask(SpecState &S) {
       // Rule 21: a formal handed on to a callee's triple formal is a triple itself: the object, its tag and its
       // cell count come from where the object is known, and a raw pointer carries none of them.
       cq::PtrAbi onward = handedOnAbi(S, i);
-      bool triple = S.declared || tag || idx || qramObj || multi || ptrHandles || walk ||
-                    calleeDerivesFat(S, i) || onward != cq::PtrAbi::Raw;
+      // CR §1.4, rules 16, 21 (cq-tqev): a variadic actual (a formal past F's fixed ones) reaches the body only
+      // through llvm.va_start's save area, where -O1's va_arg code reads it back as a loaded pointer (rule 21:
+      // the object starting at the pointer). Its classical tag and idx are the address itself: it crosses as the
+      // caller's raw pointer, a triple only where the address is no host pointer (a quantum tag or idx, a QRAM).
+      bool variadicActual = !S.declared && i >= S.F->arg_size();
+      bool triple = S.declared || tag || idx || qramObj ||
+                    (!variadicActual && (multi || ptrHandles || walk || calleeDerivesFat(S, i) ||
+                                         onward != cq::PtrAbi::Raw));
       // T4: the pointee's class over the formal's objects.
       bool anyQ = false, anyS = false, anyC = false;
       if (i < S.formalPtr.size())
@@ -5579,7 +5585,12 @@ void TaintInfo::print(llvm::raw_ostream &os) const {
   if (getenv("CQ_TAINT_DEBUG"))
     for (size_t k = 0; k < I.published.size(); ++k) {
       SpecState *SS = I.publishedState[k];
-      os << "  debug " << specName(k) << " key=" << SS->key << " cut=" << SS->depthCut << "\n";
+      os << "  debug " << specName(k) << " key=" << SS->key << " cut=" << SS->depthCut;
+      for (size_t i = 0; i < SS->ptrFormal.size() && i < SS->formalTy.size(); ++i)
+        if (SS->formalTy[i]->isPointerTy())
+          os << " ptr" << i << "=" << unsigned(SS->ptrFormal[i].abi) << "/" << unsigned(SS->ptrFormal[i].pointee) << "/"
+             << SS->ptrFormal[i].digits;
+      os << "\n";
       if (SS->declared)
         continue;
       for (const llvm::BasicBlock &BB : *SS->F) {

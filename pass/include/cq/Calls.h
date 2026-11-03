@@ -19,6 +19,9 @@ void lowerLifted(LoweringContext &, llvm::CallBase &);
 void lowerIndirect(LoweringContext &, llvm::CallBase &);
 void lowerDeclared(LoweringContext &, llvm::CallBase &);
 void lowerVarargs(LoweringContext &, llvm::Instruction &);
+// CR §1.4 (cq-tqev): the IR types of variadic S's variadic actuals, its call sites' signature (the clone's
+// formals past S.F's fixed ones).
+llvm::SmallVector<llvm::Type *, 4> variadicTypes(const TaintInfo &, const Specialization &, const llvm::Value *at);
 // CR §1.4, rule 20 (95, 109): a load of the variadic save area lowerVarargs spilled handles into (a read
 // by -O1's va_arg code): the slot's handle, recorded as a cell load over the actuals' rails; true when
 // ld reads such an area. Consumer: mem-slots lowerSlotLoad.

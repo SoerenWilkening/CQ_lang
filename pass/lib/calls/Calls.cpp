@@ -206,6 +206,8 @@ struct FormalLayout {
   // cq-0umd (rule 26): an integer formal the callee unpacks into fields (159's coerced struct): one
   // leaf per field at spine::unpackCuts, the digits the mask's.
   SmallVector<unsigned, 4> cuts;
+  // CR §1.4 (cq-tqev): a variadic actual of the per-signature clone; a scalar's one digit is the mask's.
+  bool variadic = false;
 };
 
 // The variadic actuals of the call sites of variadic S (CR §1.4: one clone per call-site arity; every call
@@ -264,6 +266,43 @@ SmallVector<VariadicActual, 4> variadicActuals(const TaintInfo &T, const Special
   return *found;
 }
 
+// T4 (CR rule 21, §1.4): pointer formal argNo of S (a fixed formal, or a variadic actual of the per-signature
+// clone) crosses as the caller's raw pointer, or as the triple (object, tag, idx[, cell count]), taint's
+// pointerFormal deciding; f holds the formal's one leaf of type ty.
+void pointerLayout(const TaintInfo &T, const Specialization &S, unsigned argNo, Type *ty, const Value *at,
+                   FormalLayout &f) {
+  PtrFormal pf = T.pointerFormal(S, argNo);
+  f.abi = pf.abi;
+  f.pointee = pf.pointee;
+  f.digits = pf.digits;
+  const Argument *A = argNo < S.F->arg_size() ? S.F->getArg(argNo) : nullptr;
+  const Value *where = A ? static_cast<const Value *>(A) : at;
+  if (pf.abi == PtrAbi::Raw) {
+    if (f.q[0] || (A && T.isFatPointer(A, S)))
+      internalError("calls: a fat-pointer formal taint passes as a raw pointer", where);
+    if (A)
+      for (ObjectId o : T.provenance(A, S))
+        if (T.classOf(o) == ObjClass::Qram)
+          internalError("calls: a pointer formal into a QRAM object taint passes as a raw pointer", where);
+    return;
+  }
+  // T4 triple: object, tag, idx (handles where the digits say quantum), then the cell count.
+  Type *i32 = Type::getInt32Ty(ty->getContext());
+  f.leaves.clear();
+  f.q.clear();
+  bool qramObj = pf.pointee == ObjClass::Qram;
+  f.leaves.push_back(qramObj ? i32 : ty);
+  f.q.push_back(qramObj);
+  f.leaves.push_back(i32);
+  f.q.push_back(false);
+  f.leaves.push_back(i32);
+  f.q.push_back(false);
+  if (pf.abi == PtrAbi::TripleCount) {
+    f.leaves.push_back(i32);
+    f.q.push_back(false);
+  }
+}
+
 std::vector<FormalLayout> formalLayout(const TaintInfo &T, const Specialization &S, const Value *at) {
   std::vector<FormalLayout> fs;
   unsigned need = 0;
@@ -287,67 +326,38 @@ std::vector<FormalLayout> formalLayout(const TaintInfo &T, const Specialization 
     for (Type *l : f.leaves)
       if (l->isPointerTy() && !f.pointer)
         unimplemented("calls: an aggregate formal with a pointer field (rule 21 fat-pointer fields)", &A);
-    if (f.pointer) {
-      PtrFormal pf = T.pointerFormal(S, A.getArgNo());
-      f.abi = pf.abi;
-      f.pointee = pf.pointee;
-      f.digits = pf.digits;
-      if (pf.abi == PtrAbi::Raw) {
-        if (f.q[0] || T.isFatPointer(&A, S))
-          internalError("calls: a fat-pointer formal taint passes as a raw pointer", &A);
-        for (ObjectId o : T.provenance(&A, S))
-          if (T.classOf(o) == ObjClass::Qram)
-            internalError("calls: a pointer formal into a QRAM object taint passes as a raw pointer", &A);
-      } else {
-        // T4 triple: object, tag, idx (handles where the digits say quantum), then the cell count.
-        Type *i32 = Type::getInt32Ty(A.getContext());
-        f.leaves.clear();
-        f.q.clear();
-        bool qramObj = pf.pointee == ObjClass::Qram;
-        f.leaves.push_back(qramObj ? static_cast<Type *>(i32) : A.getType());
-        f.q.push_back(qramObj);
-        f.leaves.push_back(i32);
-        f.q.push_back(false);
-        f.leaves.push_back(i32);
-        f.q.push_back(false);
-        if (pf.abi == PtrAbi::TripleCount) {
-          f.leaves.push_back(i32);
-          f.q.push_back(false);
-        }
-      }
-    } else {
+    if (f.pointer)
+      pointerLayout(T, S, A.getArgNo(), A.getType(), &A, f);
+    else
       need += f.leaves.size();
-    }
     fs.push_back(std::move(f));
   }
-  // CR §1.4 (95, 109): a variadic function's clone is per call-site arity; its formals past the fixed
-  // ones are the call's variadic actuals, one digit each (the mask's last digits), of the actuals' types.
+  // CR §1.4 (95, 109; cq-tqev): a variadic function's clone is per call-site signature; its formals past the
+  // fixed ones are the call's variadic actuals, of the actuals' types, fields of the clone's formal list like
+  // any other: a scalar is one field (one digit), a pointer is a pointer formal (taint's T4 pointerFormal:
+  // the raw pointer's digits, or the rule 21 triple's tag, idx and pointee-cell digits; scanf's `int *`
+  // targets). Their digits follow the fixed formals' in the mask, left to right.
   if (S.F->isVarArg()) {
     SmallVector<VariadicActual, 4> vt = variadicActuals(T, S, at);
-    for (const VariadicActual &va : vt) {
-      FormalLayout f;
-      f.leaves.push_back(va.ty);
-      f.q.push_back(false);
-      need += 1;
-      fs.push_back(std::move(f));
-    }
-    // A pointer formal contributes its own digits (T4: taint's pointerFormal), before the variadic ones.
-    size_t ptrDigits = 0;
-    for (const FormalLayout &f : fs)
-      if (f.pointer)
-        ptrDigits += f.digits;
-    if (S.mask.size() != need + ptrDigits)
-      internalError("calls: a variadic clone whose mask is not one digit per fixed field and variadic actual", at);
+    unsigned fixed = S.F->arg_size();
     for (size_t k = 0; k < vt.size(); ++k) {
-      bool q = S.mask[S.mask.size() - vt.size() + k] == '1';
-      fs[fs.size() - vt.size() + k].q[0] = q;
-      // A quantum actual crosses as its one handle and its save-area cell holds that handle (rule 20's
-      // uniform slot array). A quantum pointer (rule 21's fat pointer in a pointer-kind cell), a quantum
-      // vector (rule 25's lanes) or a quantum aggregate passed in memory has no one-handle cell.
-      if (q && (!vaScalar(vt[k].ty) || vt[k].ty->isPointerTy() || vt[k].byval))
-        unimplemented("calls: a quantum variadic actual that is a pointer, a vector or an aggregate in memory "
-                      "(its save-area cell is no one handle: rules 21, 25, 26 in the variadic save area)",
-                      at);
+      FormalLayout f;
+      f.variadic = true;
+      f.leaves.push_back(vt[k].ty);
+      f.q.push_back(false);
+      if (vt[k].ty->isPointerTy()) {
+        f.pointer = true;
+        pointerLayout(T, S, fixed + unsigned(k), vt[k].ty, at, f);
+        // Taint makes a variadic pointer a triple only where its address is no host pointer: a quantum tag or
+        // idx, or a QRAM pointee (its bus). The save-area cell va_arg reads it back from then holds a fat pointer.
+        if (f.abi != PtrAbi::Raw)
+          unimplemented("calls: a quantum variadic actual that is a pointer, a vector or an aggregate in memory "
+                        "(its save-area cell is no one handle: rules 21, 25, 26 in the variadic save area)",
+                        at);
+      } else {
+        need += 1;
+      }
+      fs.push_back(std::move(f));
     }
   }
   // The name's digits (taint's mask) must say the same, formal by formal. A pointer formal's digits
@@ -381,6 +391,16 @@ std::vector<FormalLayout> formalLayout(const TaintInfo &T, const Specialization 
     if (f.cuts.size() > 2) {
       for (unsigned k = 0; k < f.q.size(); ++k)
         f.q[k] = m[d++] == '1';
+      continue;
+    }
+    if (f.variadic) {
+      // A quantum scalar actual crosses as its one handle; its save-area cell holds that handle (rule 20's
+      // uniform slot array, lowerVarargs). A vector actual's digits are its lanes (rule 25, buildMask).
+      f.q[0] = m[d++] == '1';
+      if (f.q[0] && !vaScalar(f.leaves[0]))
+        unimplemented("calls: a quantum variadic actual that is a pointer, a vector or an aggregate in memory "
+                      "(its save-area cell is no one handle: rules 21, 25, 26 in the variadic save area)",
+                      at);
       continue;
     }
     for (bool q : f.q)
@@ -3271,6 +3291,13 @@ void lowerVarargs(LoweringContext &ctx, Instruction &I) {
     rec.obj = ctx.T.objectOf(II, ctx.S);
     vaAreas()[&ctx.out()].push_back(rec);
   }
+}
+
+SmallVector<Type *, 4> variadicTypes(const TaintInfo &T, const Specialization &S, const Value *at) {
+  SmallVector<Type *, 4> out;
+  for (const VariadicActual &a : variadicActuals(T, S, at))
+    out.push_back(a.ty);
+  return out;
 }
 
 bool isVaArea(LoweringContext &ctx, ObjectId o) {

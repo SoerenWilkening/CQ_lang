@@ -78,6 +78,7 @@
 #include <utility>
 
 #include "cq/Abi.h"
+#include "cq/Calls.h"
 #include "cq/FatPtr.h"
 #include "cq/Predicate.h"
 #include "cq/Uncompute.h"
@@ -4339,6 +4340,20 @@ void noteCalleeQramStores(LoweringContext &ctx, const CallBase &orig, const Spec
   SmallVector<Value *, 2> buses;
   unsigned p = callee.ctl ? 1 : 0;
   size_t d = 0;
+  auto pointerFormal = [&](unsigned argNo) {
+    PtrFormal pf = T.pointerFormal(callee, argNo);
+    unsigned n = pf.abi == PtrAbi::Raw ? 1 : pf.abi == PtrAbi::Triple ? 3 : 4;
+    if (pf.abi != PtrAbi::Raw && pf.pointee == ObjClass::Qram) {
+      if (p + 3 > fwd->arg_size() || d + 2 > callee.mask.size())
+        internalError("mem-qram: a clone call with fewer arguments than its triple formals", fwd);
+      Value *bus = fwd->getArgOperand(p);
+      triple[argNo] = {bus, Operand{fwd->getArgOperand(p + 2), callee.mask[d + 1] == '1'}};
+      if (!llvm::is_contained(buses, bus))
+        buses.push_back(bus);
+    }
+    p += n;
+    d += pf.digits;
+  };
   for (Argument &A : callee.F->args()) {
     if (!A.getType()->isPointerTy()) {
       size_t n = T.fieldMask(&A, callee).size();
@@ -4346,18 +4361,21 @@ void noteCalleeQramStores(LoweringContext &ctx, const CallBase &orig, const Spec
       d += n;
       continue;
     }
-    PtrFormal pf = T.pointerFormal(callee, A.getArgNo());
-    unsigned n = pf.abi == PtrAbi::Raw ? 1 : pf.abi == PtrAbi::Triple ? 3 : 4;
-    if (pf.abi != PtrAbi::Raw && pf.pointee == ObjClass::Qram) {
-      if (p + 3 > fwd->arg_size() || d + 2 > callee.mask.size())
-        internalError("mem-qram: a clone call with fewer arguments than its triple formals", fwd);
-      Value *bus = fwd->getArgOperand(p);
-      triple[A.getArgNo()] = {bus, Operand{fwd->getArgOperand(p + 2), callee.mask[d + 1] == '1'}};
-      if (!llvm::is_contained(buses, bus))
-        buses.push_back(bus);
+    pointerFormal(A.getArgNo());
+  }
+  if (callee.F->isVarArg()) {
+    // CR §1.4 (cq-tqev): a variadic clone's variadic actuals follow its fixed formals, fields of the formal list
+    // like them (calls::formalLayout): a scalar one parameter and one digit, a pointer a pointer formal (a QRAM
+    // pointee's bus is read by the call like a fixed triple's).
+    SmallVector<Type *, 4> vts = calls::variadicTypes(T, callee, &orig);
+    for (unsigned k = 0; k < vts.size(); ++k) {
+      if (vts[k]->isPointerTy()) {
+        pointerFormal(callee.F->arg_size() + k);
+        continue;
+      }
+      p += 1;
+      d += 1;
     }
-    p += n;
-    d += pf.digits;
   }
   if (fenv::cloneCarriesEnv(T, callee))
     p += 2;   // E1 (82): the caller's mode and flags trail the formals (calls::materialize)
