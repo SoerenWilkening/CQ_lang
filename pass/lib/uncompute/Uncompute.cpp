@@ -215,6 +215,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/ADT/MapVector.h"
+#include "llvm/Analysis/CaptureTracking.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/SSAUpdater.h"
@@ -1482,6 +1483,42 @@ struct Uncompute::Impl {
     fp.unbounded = S.unbounded;
     return fp;
   }
+  // Does the C function capture its pointer formal A (keep its address past the call: store it, return it,
+  // convert it, hand it to a callee that may)? LLVM's CaptureTracking over A,
+  // with a call operand of a callee with a body followed into that callee's formal: the C semantics of the
+  // body, whatever attributes the library build inferred (cq-wwzz: musl wctomb, c32rtomb, time and mbtowc
+  // hand their output pointer to wcrtomb or store through it, with no nocapture on the formal). A formal met
+  // again on the way (recursion) adds no capture of its own.
+  static bool formalCaptured(const Argument &A) {
+    SmallPtrSet<const Argument *, 8> seen;
+    return formalCaptured(A, seen);
+  }
+  static bool formalCaptured(const Argument &A, SmallPtrSetImpl<const Argument *> &seen) {
+    if (A.hasNoCaptureAttr() || A.hasByValAttr() || !seen.insert(&A).second)
+      return false;
+    struct Tracker : CaptureTracker {
+      SmallPtrSetImpl<const Argument *> &seen;
+      bool hit = false;
+      explicit Tracker(SmallPtrSetImpl<const Argument *> &s) : seen(s) {}
+      void tooManyUses() override { hit = true; }
+      bool captured(const Use *U) override {
+        // A comparison hands no address anywhere (reachable() reads an icmp user the same way); LLVM counts
+        // one with null as a capture unless the pointer is dereferenceable (musl time's `if (t) *t = ...`).
+        if (isa<ICmpInst>(U->getUser()))
+          return false;
+        auto *cb = dyn_cast<CallBase>(U->getUser());
+        const Function *g = cb ? cb->getCalledFunction() : nullptr;
+        if (g && !g->isDeclaration() && !g->isVarArg() && cb->isArgOperand(U) &&
+            cb->getFunctionType() == g->getFunctionType() && cb->getArgOperandNo(U) < g->arg_size() &&
+            !formalCaptured(*g->getArg(cb->getArgOperandNo(U)), seen))
+          return false;
+        hit = true;
+        return true;
+      }
+    } t(seen);
+    PointerMayBeCaptured(&A, &t);
+    return t.hit;
+  }
   // May code outside the caller's frame reach the object p points into: a global, a formal's object,
   // an unknown pointer, or an alloca whose address escapes (stored, converted, or passed to a callee
   // that may capture it).
@@ -1522,7 +1559,7 @@ struct Uncompute::Impl {
           // A clone (or its twin) captures nothing when the C function it recomputes captures no
           // pointer formal.
           if (const Function *src = cf ? cloneSource(*cf) : nullptr; src && !src->isDeclaration() &&
-              all_of(src->args(), [](const Argument &a) { return !a.getType()->isPointerTy() || a.hasNoCaptureAttr(); }))
+              all_of(src->args(), [](const Argument &a) { return !a.getType()->isPointerTy() || !formalCaptured(a); }))
             continue;
           return true;
         }
