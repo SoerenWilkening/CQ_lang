@@ -32,7 +32,8 @@
 // classical value is unimplemented): the clone computes, copies out, uncomputes,
 // so the twin computes, XORs out, uncomputes. A twin body that calls another twin defines it in turn.
 // The body is checked to replay nothing but the pure value: no rotation, phase, measurement, tape,
-// abort or QRAM store, no host call that may write memory (unimplemented otherwise: a clone with
+// abort or QRAM store (one into a bus of the replayed frame, which that frame pops and frees, is part of
+// the computation: frameBus), no host call that may write memory (unimplemented otherwise: a clone with
 // effects and no _pure clone). Twins use the C calling convention (Uncompute spells their calls) and
 // internal linkage. A twin of a clone with no body here (rule 27) stays a declaration.
 //
@@ -61,6 +62,8 @@
 #include "llvm/Transforms/Utils/Cloning.h"
 
 #include <optional>
+#include <set>
+#include <vector>
 
 #include <string>
 
@@ -301,6 +304,79 @@ bool trailingQramStore(const Instruction &I) {
   return false;
 }
 
+// CR rules 18, 20, §1.3 (cq-wwzz): a frame bus of F, the QRAM of an object of F's own frame (musl
+// __rem_pio2_large's iq[], f[], fq[], q[] read at a quantum index): a cqrt_qram_alloc_<W> in F, a
+// qram_realloc of a frame bus, a classical merge of frame buses, or a formal of F a call of the replay
+// binds to one (busArgs). Its stores are recorded gates of F's body: F pops every one of them (rule 5, §1.3
+// POP) before it releases the bus (qram_free requires it), and the bus is released on every path from its
+// alloc to a return (checked in replayableBus), so a replay allocates, stores, pops and frees a bus of its
+// own and leaves nothing behind: the store is the computation, no effect. The twin recomputes through it
+// like through an alloca of F.
+bool frameBus(const Value *v, const SmallPtrSetImpl<const Argument *> &busArgs, SmallPtrSetImpl<const Value *> &seen,
+              SmallVectorImpl<const CallInst *> &allocs) {
+  if (!seen.insert(v).second)
+    return true;
+  if (auto *A = dyn_cast<Argument>(v))
+    return busArgs.count(A) > 0;
+  if (auto *pn = dyn_cast<PHINode>(v))
+    return all_of(pn->incoming_values(), [&](const Value *x) { return frameBus(x, busArgs, seen, allocs); });
+  if (auto *sel = dyn_cast<SelectInst>(v))
+    return frameBus(sel->getTrueValue(), busArgs, seen, allocs) && frameBus(sel->getFalseValue(), busArgs, seen, allocs);
+  auto *c = dyn_cast<CallInst>(v);
+  std::optional<abi::CoreSpec> cs =
+      c && c->getCalledFunction() ? abi::parseCore(c->getCalledFunction()->getName()) : std::nullopt;
+  if (!cs || cs->unc)
+    return false;
+  if (cs->op == abi::Core::QramRealloc)
+    return frameBus(c->getArgOperand(0), busArgs, seen, allocs);
+  if (cs->op != abi::Core::QramAlloc)
+    return false;
+  if (!is_contained(allocs, c))
+    allocs.push_back(c);
+  return true;
+}
+
+// Is every path from the frame bus's alloc to a return of its function through a cqrt_qram_free of it?
+bool releasedOnEveryPath(const CallInst *alloc) {
+  SmallPtrSet<const BasicBlock *, 8> frees;
+  const Instruction *sameBlockFree = nullptr;
+  for (const User *U : alloc->users())
+    if (auto *f = dyn_cast<CallInst>(U); f && f->getCalledFunction())
+      if (std::optional<abi::CoreSpec> cs = abi::parseCore(f->getCalledFunction()->getName());
+          cs && cs->op == abi::Core::QramFree && f->getArgOperand(0) == alloc) {
+        if (f->getParent() == alloc->getParent() && alloc->comesBefore(f))
+          sameBlockFree = f;
+        else
+          frees.insert(f->getParent());
+      }
+  if (sameBlockFree)
+    return true;
+  if (isa<ReturnInst>(alloc->getParent()->getTerminator()))
+    return false;
+  SmallVector<const BasicBlock *, 16> work(succ_begin(alloc->getParent()), succ_end(alloc->getParent()));
+  SmallPtrSet<const BasicBlock *, 32> seen;
+  while (!work.empty()) {
+    const BasicBlock *b = work.pop_back_val();
+    if (frees.count(b) || !seen.insert(b).second)
+      continue;
+    if (isa<ReturnInst>(b->getTerminator()))
+      return false;
+    work.append(succ_begin(b), succ_end(b));
+  }
+  return true;
+}
+
+// The QRAM store or realloc I (or its _unc: the pop, the size restore) writes a frame bus of F (above), every
+// alloc of which F releases on every path.
+bool replayableBus(const CallInst &I, const abi::CoreSpec &cs, const SmallPtrSetImpl<const Argument *> &busArgs) {
+  if (cs.op != abi::Core::QramStore && cs.op != abi::Core::QramRealloc)
+    return false;
+  const Value *bus = I.getArgOperand(cs.op == abi::Core::QramStore && cs.ctl ? 1 : 0);
+  SmallPtrSet<const Value *, 8> seen;
+  SmallVector<const CallInst *, 2> allocs;
+  return frameBus(bus, busArgs, seen, allocs) && all_of(allocs, releasedOnEveryPath);
+}
+
 // Does replaying F (and the forward clones it calls) recompute its value and nothing else? top: F is
 // the twin's own source, whose trailing QRAM stores the twin drops (M2b).
 // The host <fenv.h> flag calls of eff-fenv's BRACKET and PROBE (hostFn: i32 name(i32), no body in the module):
@@ -313,10 +389,31 @@ bool hostFlagCall(const CallBase &CB) {
 
 // hostFlags: set when the replay touches the host flags (a strict constrained host op, a host flag call); the
 // twin then restores them around its body (defineTwin).
-void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &seen, bool &hostFlags,
-                     bool top = false, const SmallPtrSetImpl<const Instruction *> *exempt = nullptr) {
-  if (!seen.insert(&F).second)
+// busArgs: the formals of F that the call of the replay reaching F binds to frame buses (frameBus).
+using ReplaySeen = std::set<std::pair<Function *, std::vector<unsigned>>>;
+void checkReplayable(Function &F, Function &twin, ReplaySeen &seen, bool &hostFlags, bool top = false,
+                     const SmallPtrSetImpl<const Instruction *> *exempt = nullptr,
+                     const SmallPtrSetImpl<const Argument *> *busArgs = nullptr) {
+  SmallPtrSet<const Argument *, 4> noBusArgs;
+  const SmallPtrSetImpl<const Argument *> &frameArgs = busArgs ? *busArgs : noBusArgs;
+  std::vector<unsigned> busKey;
+  for (const Argument *A : frameArgs)
+    busKey.push_back(A->getArgNo());
+  llvm::sort(busKey);
+  if (!seen.insert({&F, busKey}).second)
     return;
+  // The formals of a callee G that the call CB binds to frame buses of F.
+  auto calleeBusArgs = [&](CallBase &CB, Function &G) {
+    SmallPtrSet<const Argument *, 4> out;
+    for (unsigned i = 0; i < CB.arg_size() && i < G.arg_size(); ++i) {
+      SmallPtrSet<const Value *, 8> vs;
+      SmallVector<const CallInst *, 2> allocs;
+      if (CB.getArgOperand(i)->getType()->isIntegerTy(32) && frameBus(CB.getArgOperand(i), frameArgs, vs, allocs) &&
+          all_of(allocs, releasedOnEveryPath))
+        out.insert(G.getArg(i));
+    }
+    return out;
+  };
   auto refuse = [&](const Twine &why, const Value *at) {
     unimplemented(("calls: calls::finalize: the twin @" + twin.getName() + " would replay " + why +
                    " (a clone with effects and no _pure clone)")
@@ -389,13 +486,17 @@ void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &s
     if (std::optional<abi::CoreSpec> c = abi::parseCore(G->getName())) {
       if (top && trailingQramStore(I))
         continue;   // dropped from the twin below (M2b)
+      if (replayableBus(cast<CallInst>(I), *c, frameArgs))
+        continue;   // a store into (or a realloc of) F's own frame bus, popped before F releases it
       if (nonPureCore(c->op))
         refuse("the core gate @" + G->getName(), &I);
       continue;
     }
     if (std::optional<abi::CloneSpec> c = abi::parseClone(G->getName())) {
-      if (!c->unc && !G->isDeclaration())
-        checkReplayable(*G, twin, seen, hostFlags);
+      if (!c->unc && !G->isDeclaration()) {
+        SmallPtrSet<const Argument *, 4> gb = calleeBusArgs(*CB, *G);
+        checkReplayable(*G, twin, seen, hostFlags, false, nullptr, &gb);
+      }
       continue;   // a twin is checked when it is defined; a declared clone is rule 27's
     }
     if (CB->onlyReadsMemory() && CB->willReturn())
@@ -404,7 +505,8 @@ void checkReplayable(Function &F, Function &twin, SmallPtrSetImpl<Function *> &s
     // not lift, musl's __math_oflowf(0)) replays what that body does: it is replayable when the body is,
     // its volatile accesses to its own dead locals being nothing (rule 24).
     if (!G->isDeclaration()) {
-      checkReplayable(*G, twin, seen, hostFlags);
+      SmallPtrSet<const Argument *, 4> gb = calleeBusArgs(*CB, *G);
+      checkReplayable(*G, twin, seen, hostFlags, false, nullptr, &gb);
       continue;
     }
     refuse("the host call @" + G->getName(), &I);
@@ -533,7 +635,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
       internalError("calls: calls::finalize: twin @" + twin.getName().str() + " argument types differ from @" +
                         src.getName().str(),
                     &twin);
-  SmallPtrSet<Function *, 8> seen;
+  ReplaySeen seen;
   bool hostFlags = false;
   checkReplayable(src, twin, seen, hostFlags, true, &kr.made);
 
