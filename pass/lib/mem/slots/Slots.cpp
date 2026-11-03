@@ -832,10 +832,9 @@ uint64_t scalarCellBytes(Type *t, const DataLayout &DL, const Value *at) {
     unimplemented("mem-slots: a slot record (a struct object holding handles: sret/byval, rule 20, 163, 164)", at);
   if (t->isVectorTy())
     unimplemented("mem-slots: a slot object of vector type (aggr, rule 25)", at);
-  if (!t->isIntegerTy() && !t->isFloatingPointTy())
-    unimplemented("mem-slots: a slot object whose cells are not integers or floating point (pointers in a "
-                  "handle object)",
-                  at);
+  // CR rules 20, 21 (cq-dd3q): a pointer cell is a cell of its C size; one that holds a fat pointer is of pointer
+  // kind, its two handles (tag, idx) in its first 8 bytes (a local's pointers: recordType; a field column's or a
+  // global's: ptrField, halfPointer).
   return DL.getTypeAllocSize(t).getFixedValue();
 }
 
@@ -878,11 +877,17 @@ void flattenRecord(Type *t, int64_t off, const DataLayout &DL, SmallVectorImpl<O
 // structs that taint does not split into field columns (columnStruct: a struct of one field, or one with an
 // aggregate field) is one record of its flattened scalar fields, every element's in turn (rule 20 per cell,
 // rule 26 field-wise: 168's columns are the split case of the same layout).
+// CR rules 20, 21 (cq-dd3q): a local whose scalar cells are pointers (`char *end`, `thrd_t t[2]`) is the same
+// record: one cell per pointer, a pointer cell some write fills with a fat pointer of pointer kind (tag, idx),
+// one never so filled a classical cell keeping the host pointer (decideFields). Rule 13's code-address cells
+// (i64 handles, codeCells) are not pointer-kind cells.
 Type *recordType(const Value *root) {
   if (auto *ai = dyn_cast<AllocaInst>(root)) {
     Type *t = ai->getAllocatedType();
     if (isa<ArrayType>(t) && scalarCellType(t)->isStructTy())
       return columnStruct(root) ? nullptr : t;
+    if (scalarCellType(t)->isPointerTy() && !codeAddressCells(root))
+      return t;
     return dyn_cast<StructType>(t);
   }
   if (auto *A = dyn_cast<Argument>(root)) {
@@ -5049,14 +5054,21 @@ namespace {
 //    reloads it, the twin zeroes it and restores the old idx). Anything else is unimplemented.
 
 bool ptrField(const ObjInfo &info, int64_t off) {
+  // cq-dd3q (CR rules 20, 21): a field column or a global of pointers holds handles in every cell (rule 20: a
+  // slot cell is homogeneous), so each is of pointer kind, tag and idx in the cell's first 8 bytes (the object
+  // keeps its own layout, cellPointer). Rule 13's code-address cells are i64 cells, not pointers.
   if (!info.record)
-    return false;
+    return (info.colStride || info.kind == RootKind::Global) && info.cellTy && info.cellTy->isPointerTy();
   int k = fieldAt(info, off);
   return k >= 0 && info.fields[unsigned(k)].ty->isPointerTy() && info.fields[unsigned(k)].handle != 0;   // cq-z6q1
 }
 
-// The i32 pointer of half h (0 tag, 1 idx) of the pointer-kind cell of a caller's record.
+// The i32 pointer of half h (0 tag, 1 idx) of the pointer-kind cell of a caller's record, field column or global.
 Value *halfPointer(LoweringContext &ctx, const Site &s, const Instruction &I, unsigned h) {
+  if (!s.info->record) {
+    Value *p = cellPointer(ctx, s, I);   // the cell's first 4 bytes; the idx half the next 4 (cq-dd3q)
+    return h ? ctx.B().CreateConstInBoundsGEP1_64(Type::getInt8Ty(ctx.M.getContext()), p, 4) : p;
+  }
   Operand base = ctx.operand(s.a.root);
   int k = fieldAt(*s.info, s.a.off);
   if (base.handle || k < 0 || !s.a.terms.empty() || !s.info->recTy)
@@ -5192,7 +5204,7 @@ uint64_t formalPtrUnit(LoweringContext &ctx, const Argument &A, int64_t off, con
 
 // The (tag, idx) handles the caller's pointer-kind cell s holds at I.
 std::pair<Operand, Operand> readPtrCell(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &I) {
-  Type *pty = s.info->fields[unsigned(fieldAt(*s.info, s.a.off))].ty;
+  Type *pty = s.info->record ? s.info->fields[unsigned(fieldAt(*s.info, s.a.off))].ty : s.info->cellTy;
   const Instruction *src = sourceOf(ctx, st, *s.info, s.o, &I, s.a, pty);
   if (!src)
     unimplemented("mem-slots: a read of a pointer-kind slot cell that no dominating store or clone call of this "
@@ -5476,13 +5488,13 @@ bool lowerPtrCell(LoweringContext &ctx, FnState &st, Instruction &I) {
     lowerPtrCellCloneAccess(ctx, st, I, *A, a);
     return true;
   }
-  if (columnStruct(a.root) || ctx.T.objectOf(a.root, ctx.S, a.off) != objs.front())
-    return false;   // a field column (129) is one of several objects of its site: never a record
-  ObjInfo &info = objInfo(ctx, st, a.root, objs.front());
-  if (!info.record)
+  // A field column (129) is one of several objects of its site (objectOf at the access's offset names it); a column
+  // of pointers is of pointer kind cell by cell (ptrField), at a run-time element index as at a constant one.
+  if (ctx.T.objectOf(a.root, ctx.S, a.off) != objs.front())
     return false;
+  ObjInfo &info = objInfo(ctx, st, a.root, objs.front());
   decideFields(ctx, st, info, objs.front());
-  if (!a.terms.empty() || !ptrField(info, a.off))
+  if ((info.record && !a.terms.empty()) || !ptrField(info, a.off))
     return false;
   Site s{objs.front(), &info, a};
   if (auto *ld = dyn_cast<LoadInst>(&I))
