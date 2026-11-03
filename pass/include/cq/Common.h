@@ -15,6 +15,12 @@
 namespace cq {
 [[noreturn]] void unimplemented(llvm::StringRef what, const llvm::Value *at = nullptr); // "cq: unimplemented: ..."
 [[noreturn]] void internalError(llvm::StringRef what, const llvm::Value *at = nullptr);
+// Every stop names its source site ("  site: file:line" after the message): tools/stopcheck.py groups the musl
+// functions by it (owner 2026-11-03). The macros route the call sites above through these.
+[[noreturn]] void unimplementedAt(const char *file, int line, llvm::StringRef what, const llvm::Value *at = nullptr);
+[[noreturn]] void internalErrorAt(const char *file, int line, llvm::StringRef what, const llvm::Value *at = nullptr);
+#define unimplemented(...) unimplementedAt(__FILE__, __LINE__, __VA_ARGS__)
+#define internalError(...) internalErrorAt(__FILE__, __LINE__, __VA_ARGS__)
 enum class Kind : uint8_t { Int, Fp, BFloat };
 struct RailType { Kind kind; unsigned bits; };      // i<N> (N >= 1), f16, f32, f64, f80, bf16 (BFloat: bits == 16)
 RailType railTypeOf(llvm::Type *);                  // iN/half/float/double/x86_fp80/bfloat

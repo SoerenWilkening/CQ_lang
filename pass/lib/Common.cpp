@@ -22,20 +22,32 @@
 #include "llvm/Support/raw_ostream.h"
 
 namespace {
-[[noreturn]] void fail(llvm::StringRef prefix, llvm::StringRef what, const llvm::Value *at) {
+[[noreturn]] void fail(llvm::StringRef prefix, llvm::StringRef what, const llvm::Value *at, const char *file = nullptr,
+                       int line = 0) {
   std::string msg;
   llvm::raw_string_ostream os(msg);
   os << prefix << what;
   if (at)
     os << "\n  at: " << *at;
+  if (file) {
+    llvm::StringRef f(file);
+    size_t p = f.find("pass/");
+    os << "\n  site: " << (p == llvm::StringRef::npos ? f : f.substr(p)) << ":" << line;
+  }
   // No crash diagnostics: a clean non-zero exit. opt removes its output file on the way out.
   llvm::report_fatal_error(llvm::Twine(os.str()), /*gen_crash_diag=*/false);
 }
 } // namespace
 
 namespace cq {
-void unimplemented(llvm::StringRef what, const llvm::Value *at) { fail("cq: unimplemented: ", what, at); }
-void internalError(llvm::StringRef what, const llvm::Value *at) { fail("cq: internal error: ", what, at); }
+void (unimplemented)(llvm::StringRef what, const llvm::Value *at) { fail("cq: unimplemented: ", what, at); }
+void (internalError)(llvm::StringRef what, const llvm::Value *at) { fail("cq: internal error: ", what, at); }
+void unimplementedAt(const char *file, int line, llvm::StringRef what, const llvm::Value *at) {
+  fail("cq: unimplemented: ", what, at, file, line);
+}
+void internalErrorAt(const char *file, int line, llvm::StringRef what, const llvm::Value *at) {
+  fail("cq: internal error: ", what, at, file, line);
+}
 } // namespace cq
 
 namespace cq {
