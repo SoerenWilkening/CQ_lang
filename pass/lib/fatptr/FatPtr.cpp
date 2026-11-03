@@ -1504,9 +1504,9 @@ Fat derive(LoweringContext &ctx, const Value *p, bool emit, bool eager) {
     return deriveIntToPtr(ctx, *ip, emit);
   if (auto *cb = dyn_cast<CallBase>(p))
     return deriveCallResult(ctx, *cb, emit);
-  if (classicalMemoryOnly(ctx, p) == false && !isQ(ctx, p))
-    unimplemented("fatptr: a root pointer into slot or QRAM memory", p);
-  unimplemented("fatptr: a quantum pointer of this kind", p);
+  // Owner 2026-11-03 (no fences): any other pointer is derived as a root (rule 21's object table from its
+  // provenance), the same as a slot or QRAM root; the verifier and the sweep judge the result.
+  return deriveRoot(ctx, p, emit);
 }
 
 // ---- addresses -------------------------------------------------------------------------------

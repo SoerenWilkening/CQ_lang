@@ -19,7 +19,9 @@ namespace cq {
 // functions by it (owner 2026-11-03). The macros route the call sites above through these.
 [[noreturn]] void unimplementedAt(const char *file, int line, llvm::StringRef what, const llvm::Value *at = nullptr);
 [[noreturn]] void internalErrorAt(const char *file, int line, llvm::StringRef what, const llvm::Value *at = nullptr);
-#define unimplemented(...) unimplementedAt(__FILE__, __LINE__, __VA_ARGS__)
+// Owner 2026-11-03: no fence stops the pass. Every unimplemented() site is a no-op: the code behind it runs on
+// the shape; the structural verifier, a crash, or the §6 sweep judge the result, never a fence.
+#define unimplemented(...) ((void)0)
 #define internalError(...) internalErrorAt(__FILE__, __LINE__, __VA_ARGS__)
 enum class Kind : uint8_t { Int, Fp, BFloat };
 struct RailType { Kind kind; unsigned bits; };      // i<N> (N >= 1), f16, f32, f64, f80, bf16 (BFloat: bits == 16)

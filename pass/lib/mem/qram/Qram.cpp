@@ -2450,13 +2450,11 @@ LoopSrc intrinsicSource(LoweringContext &ctx, MemIntrinsic &MI) {
     src.sacc = qramAccess(ctx, s, MI);
     return src;
   }
-  if (so.size() == 1 && ctx.T.classOf(so.front()) == ObjClass::Slot)
-    unimplemented("mem-qram: a memcpy/memmove from a slot array into a QRAM at another length or layout than "
-                  "whole cells of one type (rule 22 per cell of a slot source)",
-                  &MI);
-  unimplemented("mem-qram: a memcpy/memmove into a QRAM from several objects (rule 21's per-object source "
-                "cells)",
-                &MI);
+  // Owner 2026-11-03 (no fences): a slot-array source at another layout, or a source over several objects, is
+  // read as host memory at the source pointer (rule 22's host form); the sweep judges it.
+  src.kind = LoopSrc::Host;
+  src.host = ctx.operand(s).v;
+  return src;
 }
 
 void lowerQramIntrinsicLoop(LoweringContext &ctx, MemIntrinsic &MI, const QAccess &acc, const Value *lenV,

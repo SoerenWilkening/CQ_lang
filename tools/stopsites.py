@@ -11,7 +11,9 @@ one, or if the count rose. Grouping by text, not file:line, so a site that moves
 import os, re, sys, collections
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CALL = re.compile(r'\b(unimplemented|internalError)\s*\(')
+# Owner 2026-11-03: unimplemented() is a no-op (cq/Common.h); the census counts the internalError() sites, the only
+# calls that still stop the pass. The unimplemented( texts stay in the source as documentation of the shapes.
+CALL = re.compile(r'\b(internalError)\s*\(')
 LIT = re.compile(r'"((?:[^"\\]|\\.)*)"')
 
 

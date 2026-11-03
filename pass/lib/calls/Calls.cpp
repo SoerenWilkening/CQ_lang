@@ -1093,9 +1093,13 @@ std::string calleeName(const Function &F, const Value *at) {
     return base + "f";
   if (t && t->isX86_FP80Ty())
     return base + "l";
-  unimplemented("calls: awaiting owner ruling: SPEC_ISSUES \"rule 18: an LLVM math intrinsic on a quantum operand "
-                "whose first operand is not float, double or x86_fp80 (half, bfloat, a vector: no libm name)\"",
-                at);
+  // Owner 2026-11-03 (no fences): whatever LLVM does. Codegen promotes half/bfloat to float and scalarises a vector
+  // per element, so the name is the element type's: half/bfloat -> the float name, anything else the double name.
+  if (Type *e = t ? t->getScalarType() : nullptr; e && (e->isHalfTy() || e->isBFloatTy() || e->isFloatTy()))
+    return base + "f";
+  if (Type *e = t ? t->getScalarType() : nullptr; e && e->isX86_FP80Ty())
+    return base + "l";
+  return base;
 }
 
 // Rule 27: the trailing i32 K of a declared clone is the callee's K (flag, CQ_K, global, default 4),
