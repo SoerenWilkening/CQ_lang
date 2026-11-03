@@ -928,6 +928,11 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   struct CPhi {
     PHINode *P;
     Operand acc;
+    // CR rules 14, 21 (cq-p45s): a data pointer joining the exits is a fat pointer; acc is then unused, accs its
+    // (tag i32, idx i64) capture rails at its exit shape (fatptr exitShape / exitFields), bound with bindExit.
+    bool ptr = false;
+    bool shaped = false;
+    SmallVector<Operand, 2> accs;
   };
   std::vector<CPhi> cphis;
   // A value of the unit read after it other than by a phi of C: its exit value, a rail that takes this
@@ -965,8 +970,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         continue;
       if (!isQ(&P))
         unimplemented("loops-cutoff: a classical phi joining a multi-exit K-loop's exits (cq-uytx)", &P);
-      if (!(P.getType()->isIntegerTy() || P.getType()->isFloatingPointTy()))
+      const bool ptrPhi = P.getType()->isPointerTy() && !isCodeAddress(&P);
+      if (!ptrPhi && !(P.getType()->isIntegerTy() || P.getType()->isFloatingPointTy()))
         unimplemented("loops-cutoff: a non-scalar phi joining a multi-exit K-loop's exits (cq-p45s)", &P);
+      std::vector<std::pair<Pred, const Value *>> outsideP;   // ptrPhi: the outside incomings, by value
       // The value where the unit does not run. Its incomings from outside the unit are taken only where the
       // header is not reached (mutually exclusive with every trip's exit). Several differing ones are rule 9's
       // select chain over their edge predicates, built before the loop. A phi a unit lowered earlier already
@@ -996,6 +1003,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           continue;   // or another loop unit's exit: it selects its value in over this binding when lowered
         }
         Pred e = ctx.preds().edge(u, C);
+        if (ptrPhi) {
+          outsideP.push_back({e, v});
+          continue;
+        }
         auto same = find_if(outside, [&](const std::pair<Pred, Operand> &a) { return a.second.v == ctx.operand(v).v; });
         if (same != outside.end())
           same->first = same->first | e;
@@ -1016,6 +1027,41 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
             continue;
           ctx.addJoinArm(&P, e, P.getIncomingValue(i));
         }
+      if (ptrPhi) {
+        // Rule 21: its fields (tag, idx) where no trip exits: an earlier unit's binding, the outside values' fields
+        // at the exit shape (rule 9's select chain over their edges), or NULL's (0, 0) (CR rule 14's 0).
+        CPhi cp{&P, Operand{}};
+        cp.ptr = true;
+        LLVMContext &Cx = ctx.M.getContext();
+        Type *tys[2] = {Type::getInt32Ty(Cx), Type::getInt64Ty(Cx)};
+        if (earlier) {
+          SmallVector<Operand, 4> fl = ctx.fields(&P);
+          cp.accs.assign(fl.begin(), fl.end());
+        } else if (outsideP.empty()) {
+          for (Type *t : tys)
+            cp.accs.push_back(Operand{seedRail(Constant::getNullValue(t), t), true});
+        } else {
+          SmallVector<const Value *, 4> vals(P.value_op_begin(), P.value_op_end());
+          fatptr::exitShape(ctx, &P, vals, inUnit);
+          cp.shaped = true;
+          std::vector<std::pair<Pred, Operand>> arms[2];
+          for (auto &[e, v] : outsideP) {
+            auto [t, i] = fatptr::exitFields(ctx, v, inUnit, &P);
+            arms[0].push_back({e, t});
+            arms[1].push_back({e, i});
+          }
+          for (unsigned k = 0; k < 2; ++k)
+            cp.accs.push_back(Operand{arms[k].size() == 1 && arms[k][0].second.handle
+                                          ? arms[k][0].second.v
+                                          : selectChain(ctx, arms[k], railOf(tys[k])),
+                                      true});
+        }
+        for (unsigned k = 0; k < cp.accs.size() && k < 2; ++k)
+          if (!cp.accs[k].handle)
+            cp.accs[k] = Operand{seedRail(cp.accs[k].v, tys[k]), true};
+        cphis.push_back(cp);
+        continue;
+      }
       // With no incoming from outside, the value where no trip exits (the cutoff reached first) is 0.
       Operand acc;
       if (earlier)
@@ -1561,6 +1607,40 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       lowerInsts(b, q, acc);
     }
     for (CPhi &cp : cphis) {
+      if (cp.ptr) {
+        // Rule 21: this trip's (tag, idx) at the exit shape on each unit edge into C, selected into the captures
+        // where the trip exits through it.
+        auto inUnitC = [&](const BasicBlock *b) { return U.contains(L, b); };
+        std::vector<std::pair<Pred, Operand>> arms[2];
+        Pred E = Pred::bottom();
+        for (unsigned i = 0; i < cp.P->getNumIncomingValues(); ++i) {
+          BasicBlock *u = cp.P->getIncomingBlock(i);
+          auto ei = edgeIn(u, U.cont);
+          if (!ei || ei->isBottom())
+            continue;
+          if (!cp.shaped) {
+            SmallVector<const Value *, 4> vals(cp.P->value_op_begin(), cp.P->value_op_end());
+            fatptr::exitShape(ctx, cp.P, vals, inUnitC);
+            cp.shaped = true;
+          }
+          E = E | *ei;
+          auto [t, ix] = fatptr::exitFields(ctx, cp.P->getIncomingValue(i), inUnitC, cp.P);
+          arms[0].push_back({*ei, t});
+          arms[1].push_back({*ei, ix});
+        }
+        if (arms[0].empty())
+          continue;
+        Value *f = conj(q, E, U.cont->getFirstNonPHI());
+        RailType ws[2] = {RailType{Kind::Int, 32}, RailType{Kind::Int, 64}};
+        for (unsigned k = 0; k < 2; ++k) {
+          Value *v = selectChain(ctx, arms[k], ws[k]);
+          abi::TemplateSpec sel;
+          sel.op = "select";
+          sel.w = ws[k];
+          cp.accs[k] = Operand{ctx.emitTemplate(sel, {Operand{f, true}, Operand{v, true}, cp.accs[k]}), true};
+        }
+        continue;
+      }
       std::vector<std::pair<Pred, Operand>> arms;
       Pred E = Pred::bottom();
       for (unsigned i = 0; i < cp.P->getNumIncomingValues(); ++i) {
@@ -1895,6 +1975,15 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       set(P, f);
   }
   for (CPhi &cp : cphis) {
+    if (cp.ptr) {
+      // Rule 21: the fat pointer's two capture rails, its derivations after the loop reading them (bindExit).
+      if (ctx.bound(cp.P))
+        ctx.rebind(cp.P, cp.accs);
+      else
+        ctx.bindFields(cp.P, cp.accs);
+      fatptr::bindExit(ctx, cp.P);
+      continue;
+    }
     if (!top)
       set(cp.P, cp.acc);   // a nested unit: bound once per outer trip
     else if (ctx.bound(cp.P))
