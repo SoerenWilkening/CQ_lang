@@ -2166,8 +2166,17 @@ void cleanDeadCells(LoweringContext &ctx, CallBase &CB, const Specialization &S,
       // cq-utb8 (CR rules 5, 7): only a seed (a dynamic object's cell register minted by cqrt_alloc) is released
       // this way, by its own item when no twin restores it (Uncompute emitItem); any other user register is kept by
       // its role (rule 5: a user register is never uncomputed).
+      // A cq_theta register is a cqrt_alloc rotated in place (rule 2): a rail some Ry, Rz or measurement reached is
+      // in no known basis state, a user register.
       auto *oc = dyn_cast<CallInst>(old.v);
-      bool seed = oc && oc->getCalledFunction() && oc->getCalledFunction()->getName().starts_with("cqrt_alloc_");
+      bool seed = oc && oc->getCalledFunction() && oc->getCalledFunction()->getName().starts_with("cqrt_alloc_") &&
+                  none_of(oc->users(), [](const User *u) {
+                    auto *c = dyn_cast<CallBase>(u);
+                    std::optional<abi::CoreSpec> k =
+                        c && c->getCalledFunction() ? abi::parseCore(c->getCalledFunction()->getName()) : std::nullopt;
+                    return k && (k->op == abi::Core::Ry || k->op == abi::Core::RyQAngle || k->op == abi::Core::RzI1 ||
+                                 k->op == abi::Core::RzQAngle || k->op == abi::Core::Measure);
+                  });
       auto unbuilt = [&](std::optional<int64_t> off, const char *shape) {
         if (!seed || oldDeadAfter(ctx, CB, old.v, CB.getArgOperand(i), off) == Dead::No)
           return;
