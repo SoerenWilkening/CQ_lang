@@ -346,6 +346,12 @@ void lowerMemoryAccess(LoweringContext &ctx, Instruction &I) {
   case Access::Classical:
     break;
   }
+  // CR rule 21 (cq-utb8): a pointer naming no object (its provenance empty: NULL handed to a formal, musl mbrlen's
+  // mbrtowc(0, ...)) is dereferenced by one access per object of its provenance: none. The program runs such a
+  // store only outside the domain (a null dereference), here under the clone's own `if (pwc)`.
+  if (isQ(ctx, st->getValueOperand()) && ctx.T.provenance(st->getPointerOperand(), ctx.S).empty() &&
+      !ctx.T.isFatPointer(st->getPointerOperand(), ctx.S))
+    return;
   if (isQ(ctx, st->getValueOperand()))
     internalError("spine: a quantum value stored into memory taint classified Classical", st);
   copyClassical(ctx, I);

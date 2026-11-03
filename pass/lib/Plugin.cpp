@@ -231,6 +231,142 @@ SmallVector<Function *, 4> mergeAliasedPointerArgs(Module &M, const cq::TaintInf
   return made;
 }
 
+// CR rules 20, 21 (cq-utb8): an access through a CLASSICAL pointer select over several objects, at least one a slot
+// object (musl's `ps ? ps : &internal` mbstate pointer in mbrtowc, c16rtomb, mbrlen), is rule 21's dereference with a
+// classical tag: one access per object of the provenance, under the guard that names it. The guard is classical,
+// so the per-object accesses are its two arms: before the final taint the access (a load, store, atomic, or a call
+// handed the pointer) becomes `br c, T, F`, each arm the access through its own object (the address computed from
+// that arm), the result a phi. A semantics-preserving rewrite like fix-irreducible: the C program runs exactly the
+// arm whose object the select names. A select whose condition is quantum (or a fat pointer) is rule 21's fat pointer
+// and is left to fatptr. Returns the functions changed.
+SmallVector<Function *, 4> splitClassicalPointerSelects(Module &M, const cq::TaintInfo &T,
+                                                        ArrayRef<Function *> tainted) {
+  SmallVector<Function *, 4> changed;
+  LLVMContext &C = M.getContext();
+  // The select an access's address is computed from (through GEPs and casts), and that chain, outermost last.
+  auto selectOf = [](Value *p, SmallVectorImpl<Instruction *> &chain) -> SelectInst * {
+    chain.clear();
+    for (unsigned guard = 0; guard < 32; ++guard) {
+      if (auto *S = dyn_cast<SelectInst>(p))
+        return S->getType()->isPointerTy() ? S : nullptr;
+      if (auto *G = dyn_cast<GetElementPtrInst>(p)) {
+        chain.push_back(G);
+        p = G->getPointerOperand();
+        continue;
+      }
+      if (auto *B = dyn_cast<BitCastInst>(p); B && B->getType()->isPointerTy()) {
+        chain.push_back(B);
+        p = B->getOperand(0);
+        continue;
+      }
+      return nullptr;
+    }
+    return nullptr;
+  };
+  for (Function *F : tainted) {
+    SmallVector<const cq::Specialization *, 4> specs;
+    for (const cq::Specialization &S : T.specializations())
+      if (S.F == F)
+        specs.push_back(&S);
+    if (specs.empty())
+      continue;
+    // Several objects, one of them a slot object, chosen by a classical condition in every specialization.
+    auto splits = [&](SelectInst *S) {
+      bool many = false;
+      for (const cq::Specialization *Sp : specs) {
+        if (T.isQuantum(S->getCondition(), *Sp) || T.isFatPointer(S, *Sp) || T.isQuantum(S, *Sp))
+          return false;
+        ArrayRef<cq::ObjectId> objs = T.provenance(S, *Sp);
+        bool slot = any_of(objs, [&](cq::ObjectId o) { return T.classOf(o) == cq::ObjClass::Slot; });
+        many |= objs.size() >= 2 && slot;
+      }
+      return many;
+    };
+    bool any = false;
+    for (bool again = true; again;) {
+      again = false;
+      for (BasicBlock &BB : *F) {
+        for (Instruction &I : BB) {
+          if (isa<PHINode>(I) || isa<DbgInfoIntrinsic>(I))
+            continue;
+          if (auto *II = dyn_cast<IntrinsicInst>(&I); II && (II->isLifetimeStartOrEnd() || II->isAssumeLikeIntrinsic()))
+            continue;
+          auto *CB = dyn_cast<CallBase>(&I);
+          if (CB && (CB->isMustTailCall() || CB->hasOperandBundles() || isa<InvokeInst>(CB) || isa<CallBrInst>(CB)))
+            continue;
+          // The operand the access reads its address from: a load's, store's or atomic's pointer, a call's argument.
+          SmallVector<unsigned, 4> ops;
+          if (isa<LoadInst>(I))
+            ops.push_back(0);
+          else if (isa<StoreInst>(I) || isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I))
+            ops.push_back(isa<StoreInst>(I) ? 1 : 0);
+          else if (CB)
+            for (unsigned k = 0; k < CB->arg_size(); ++k)
+              if (CB->getArgOperand(k)->getType()->isPointerTy())
+                ops.push_back(k);
+          SmallVector<Instruction *, 4> chain;
+          SelectInst *S = nullptr;
+          unsigned opNo = 0;
+          for (unsigned k : ops)
+            if ((S = selectOf(I.getOperand(k), chain)) && splits(S)) {
+              opNo = k;
+              break;
+            } else {
+              S = nullptr;
+            }
+          if (!S)
+            continue;
+          // BB: ... br c, T, F;  T: chain(arm t), I(t);  F: chain(arm f), I(f);  Tail: phi, rest of BB.
+          BasicBlock *Tail = BB.splitBasicBlock(I.getIterator(), BB.getName() + ".cq.sel");
+          BasicBlock *TB = BasicBlock::Create(C, BB.getName() + ".cq.sel.t", F, Tail);
+          BasicBlock *FB = BasicBlock::Create(C, BB.getName() + ".cq.sel.f", F, Tail);
+          BB.getTerminator()->eraseFromParent();
+          BranchInst::Create(TB, FB, S->getCondition(), &BB);
+          Instruction *arms[2];
+          for (unsigned a = 0; a < 2; ++a) {
+            BasicBlock *AB = a ? FB : TB;
+            IRBuilder<> B(AB);
+            Value *addr = a ? S->getFalseValue() : S->getTrueValue();
+            for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
+              Instruction *X = (*it)->clone();
+              X->setOperand(0, addr);
+              B.Insert(X);
+              addr = X;
+            }
+            Instruction *X = I.clone();
+            X->setOperand(opNo, addr);
+            if (!I.getName().empty())
+              X->setName(I.getName() + (a ? ".f" : ".t"));
+            B.Insert(X);
+            B.CreateBr(Tail);
+            arms[a] = X;
+          }
+          if (!I.getType()->isVoidTy()) {
+            PHINode *phi = PHINode::Create(I.getType(), 2, "", Tail->begin());
+            phi->addIncoming(arms[0], TB);
+            phi->addIncoming(arms[1], FB);
+            phi->takeName(&I);
+            I.replaceAllUsesWith(phi);
+          }
+          I.eraseFromParent();
+          for (Instruction *X : chain)
+            if (X->use_empty())
+              X->eraseFromParent();
+          if (S->use_empty())
+            S->eraseFromParent();
+          any = again = true;
+          break;
+        }
+        if (again)
+          break;
+      }
+    }
+    if (any)
+      changed.push_back(F);
+  }
+  return changed;
+}
+
 // The CQ.h surface: cq_theta_*, cq_measure_*, cq_phi, __cq_invert_begin, __cq_invert_end.
 // cq-jkq8: one return block per tainted function, the same kind of rewrite as fix-irreducible (CR rule 14:
 // a semantics-preserving CFG rewrite before the final taint; §6 compares semantics, never CFG shape). Each
@@ -388,6 +524,23 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
     // null buffer (cq-a63l). No CFG change; the taint below is recomputed when it rewrote anything.
     bool CFGChanged = cq::tape::rewriteDeferredResults(M, T);
     if (CFGChanged) {
+      T = cq::TaintInfo();
+      T = cq::computeTaint(M, TO);
+      Tainted.clear();
+      for (Function &F : M)
+        if (!F.isDeclaration() && T.isTainted(F))
+          Tainted.push_back(&F);
+    }
+
+    // 1b'. CR rules 20, 21 (cq-utb8): an access through a classical pointer select over several objects as one
+    // access per object under its classical guard. The steps below read taint on the split functions, so it is
+    // recomputed when anything was split (as 1b's); the CFG change is final-taint input.
+    if (SmallVector<Function *, 4> SP = splitClassicalPointerSelects(M, T, Tainted); !SP.empty()) {
+      for (Function *F : SP) {
+        trace("classical pointer selects: split @" + F->getName());
+        FAM.invalidate(*F, PreservedAnalyses::none());
+      }
+      CFGChanged = true;
       T = cq::TaintInfo();
       T = cq::computeTaint(M, TO);
       Tainted.clear();
