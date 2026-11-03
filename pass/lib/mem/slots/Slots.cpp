@@ -63,8 +63,9 @@
 //        keeps every rail stored into it and its alias loads read the cell's current handle (rule 20,
 //        cq-e5lj); a confined one (67) has no alias load;
 //      * an object whose pointer escapes to a call (or anywhere but loads, stores and the memory and
-//        lifetime intrinsics) may have its cells written by the callee: an alias load of it, and any
-//        store into it other than of a register, are unimplemented (rule 18 twins: 31, 52, 106).
+//        lifetime intrinsics) may have its cells read, rotated or written by the callee: a seed, copy or
+//        computed rail stored into it is kept (rule 6's escape clause, cq-e6ky); an alias load of it is
+//        unimplemented (rule 18 twins: 31, 52, 106).
 //
 // Lifetime. endSlotLifetime emits the classical free of a heap block and nothing else: forwarded
 // rails follow their own roles, alias and dynamic-cell rails are kept.
@@ -4481,10 +4482,16 @@ void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &
     switch (s.info->kind) {
     case RootKind::Local:
     case RootKind::Heap:
-      if (s.info->escaping)
-        unimplemented("mem-slots: a seed or computed rail stored into a slot object whose pointer escapes to a "
-                      "call (its clean-up is the callee twin's: rule 18, 31, 106)",
-                      &I);
+      if (s.info->escaping) {
+        // Rule 6 Dead (cq-e6ky): "kept only when no such point exists: it escapes (... a call argument the callee
+        // keeps ...)". A callee keeping the object's pointer may read, rotate in place or overwrite the cell at
+        // any point of the object's lifetime, unseen by this function, so no clean-up point exists for the seed,
+        // copy or computed rail the cell holds (a seed a gate may reach is in no known basis state, CR §0): it
+        // stays allocated, the cell's register like a dynamic cell's (58, 59).
+        ctx.unc().setRole(id, Role::Escaped);
+        st.registers.insert(val.v);
+        break;
+      }
       if (isDynamic(ctx, st, *s.info, s.o)) {
         // A copy into a dynamic cell is that cell's register, like its seed (58, 59; cq-dr4o).
         if (what == What::Computed) {
