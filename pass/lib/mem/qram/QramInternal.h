@@ -59,6 +59,20 @@ HostTriple hostTriple(LoweringContext &, const llvm::Value *ptr, const llvm::Ins
 // In a clone: the Qram-pointee triple formal A crosses as the caller's bus `bus` (P1). Registers A as a
 // one-column QRAM object of cell type formalCellType(A) over that bus; the clone neither pops nor frees it.
 void registerFormalQram(LoweringContext &, const llvm::Argument &A, llvm::Value *bus);
+// Rule 21: the classical base address of QRAM object o (the non-canonical address the program's pointers to it hold).
+llvm::Constant *qramObjectBase(LoweringContext &, ObjectId o);
+// Rule 21 (P1): a load or store through a pointer derived from a QRAM triple formal by a classical merge (a phi
+// or select walking the caller's object): its cell is the formal's idx plus the pointer's distance from the formal's
+// address in cells. False when ptr is no such pointer (the access is lowered as before).
+bool lowerFormalWalkLoad(LoweringContext &, llvm::LoadInst &);
+// A pointer that is not an object plus GEP offsets and derives only from this clone's QRAM triple formals (a fat
+// walk over the caller's object): fatptr lowers the access.
+bool formalFatWalk(LoweringContext &, const llvm::Value *ptr);
+// Rule 21: a classical pointer (an instruction) into one QRAM object that is not its root plus GEP offsets (a call's
+// result, a loaded or merged pointer): the object's root in this function (a triple formal, an allocation site, a
+// global) and the pointer's cell index on it (i64, classical: the root's idx plus the address distance in cells).
+bool qramAddressed(LoweringContext &, const llvm::Value *ptr, const llvm::Value *&root, llvm::Value *&idx);
+bool lowerFormalWalkStore(LoweringContext &, llvm::StoreInst &);
 // True when root is a triple formal registered by registerFormalQram in this output function.
 bool isFormalQram(LoweringContext &, const llvm::Value *root);
 // M2b, a store through a registered formal at cell idx (the formal's own idx rail, a classical i64 cell

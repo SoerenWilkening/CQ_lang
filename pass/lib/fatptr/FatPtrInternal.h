@@ -51,6 +51,12 @@ bool boundTriple(LoweringContext &, const llvm::Value *formal, FormalTriple &out
 // statically: the object starting at the pointer (its root number the tag, idx 0), its cell count the extent from
 // the pointer on when it derives from one allocation, else 0 (unknown extent, n = 0).
 void ownPlaceTriple(LoweringContext &, const llvm::Value *ptr, FormalTriple &out);
+// Rule 21 (P1): a QRAM triple formal with a classical tag and idx is, as a classical pointer, its object's address
+// in the QRAM address space (the caller's object's base, qramObjectBase of the formal's object, plus idx cells):
+// what a classical walk, compare, ptrtoint or return of it reads. Null when the formal is no such one. And the
+// formal's classical i32 idx.
+llvm::Value *boundQramAddress(LoweringContext &, const llvm::Argument &formal);
+llvm::Value *boundFormalIdx(LoweringContext &, const llvm::Argument &formal);
 // M7 (cq-g1ty, CR rules 6, 18, 20, 21; 129): fat pointers over whole local slot objects, a quantum select
 // tree of their allocas (each at cell 0).
 //  - writesSlotCell (consumer mem-slots sourceOf, structural): X writes the cell at byte `byte` (size bytes)

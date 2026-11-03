@@ -2987,6 +2987,10 @@ void lowerMemIntrinsic(LoweringContext &ctx, MemIntrinsic &MI) {
 void lowerQramLoad(LoweringContext &ctx, LoadInst &ld) {
   if (Addr r = decompose(ld.getPointerOperand(), ctx.M.getDataLayout(), &ctx); r.ok && isFormalQram(ctx, r.root))
     return fatptr::lowerLoad(ctx, ld);   // through a triple formal: its idx plus the offset (P1)
+  if (lowerFormalWalkLoad(ctx, ld))
+    return;   // through a classical walk of a triple formal's object (P1, rule 21)
+  if (formalFatWalk(ctx, ld.getPointerOperand()))
+    return fatptr::lowerLoad(ctx, ld);   // through a fat pointer over a triple formal's object (rule 21)
   QAccess acc = qramAccess(ctx, ld.getPointerOperand(), ld);
   if (ld.getType()->isPointerTy() && !isCodeAddress(&ld)) {
     // A pointer cell (rule 21, 88): its tag and idx halves, the loaded fat pointer's two fields.
@@ -3015,6 +3019,10 @@ void lowerQramLoad(LoweringContext &ctx, LoadInst &ld) {
 void lowerQramStore(LoweringContext &ctx, StoreInst &st) {
   if (Addr r = decompose(st.getPointerOperand(), ctx.M.getDataLayout(), &ctx); r.ok && isFormalQram(ctx, r.root))
     return fatptr::lowerStore(ctx, st);   // through a triple formal: the deferred copy-out (P1, M2b)
+  if (lowerFormalWalkStore(ctx, st))
+    return;   // through a classical walk of a triple formal's object: the deferred copy-out (P1, M2b)
+  if (formalFatWalk(ctx, st.getPointerOperand()))
+    return fatptr::lowerStore(ctx, st);   // through a fat pointer over a triple formal's object (rule 21)
   Value *val = st.getValueOperand();
   QAccess acc = qramAccess(ctx, st.getPointerOperand(), st);
   Value *flag = ctx.currentFlag();
@@ -3972,6 +3980,117 @@ HostTriple hostTriple(LoweringContext &ctx, const Value *ptr, const Instruction 
   return {a.root, B.CreateTrunc(j, i32), ConstantInt::get(i32, bytes / cb), cb};
 }
 
+Constant *qramObjectBase(LoweringContext &ctx, ObjectId o) { return qramBase(ctx, o); }
+
+namespace {
+// Rule 21: the QRAM root a classical pointer into one QRAM object names in this function, when the pointer is not
+// that root plus GEP offsets (a classical merge walking the object, a clone's pointer result, a pointer loaded or
+// computed): a QRAM triple formal of this clone every object of the pointer derives from (through GEPs, casts,
+// phis and selects), else the allocation site or global of the pointer's one QRAM object. Its cell index is the
+// root's own (the formal's classical idx, 0 for a site) plus the distance of the pointer's address from the root's
+// in cells: the pointer's classical value is an address in the QRAM address space (qramBase, boundQramAddress).
+struct Addressed {
+  const Value *root = nullptr;
+  Value *rootIdx = nullptr;   // i64
+};
+Addressed addressedRoot(LoweringContext &ctx, const Value *ptr) {
+  Addressed out;
+  Addr r = decompose(ptr, ctx.M.getDataLayout(), &ctx);
+  if (r.ok && (isFormalQram(ctx, r.root) || isQramRoot(ctx, r.root)))
+    return out;   // the root plus GEP offsets: the usual access
+  if (ctx.T.isFatPointer(ptr, ctx.S) || ctx.T.isQuantum(ptr, ctx.S) || !ctx.bound(ptr) || ctx.operand(ptr).handle)
+    return out;
+  IRBuilder<> &B = ctx.B();
+  SmallVector<const Value *, 4> us;
+  getUnderlyingObjects(ptr, us);
+  auto *A = us.empty() ? nullptr : dyn_cast<Argument>(us.front());
+  if (A && isFormalQram(ctx, A) && llvm::all_of(us, [&](const Value *x) { return x == A; })) {
+    if (!ctx.bound(A) || ctx.operand(A).handle || !fatptr::boundFormalIdx(ctx, *A))
+      return out;
+    out.root = A;
+    out.rootIdx = B.CreateSExtOrTrunc(fatptr::boundFormalIdx(ctx, *A), B.getInt64Ty());
+    return out;
+  }
+  ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
+  if (objs.size() != 1 || ctx.T.classOf(objs.front()) != ObjClass::Qram)
+    return out;
+  for (auto &[site, q] : qramStates()[&ctx.out()].objs) {
+    if (isa<Argument>(site) || isa<GlobalVariable>(site) || !ctx.bound(site) || ctx.operand(site).handle)
+      continue;
+    if (ctx.T.objectOf(site, ctx.S) != objs.front())
+      continue;
+    out.root = site;
+    out.rootIdx = B.getInt64(0);
+    return out;
+  }
+  // A global QRAM keeps its host storage: a pointer to it holds the global's own address.
+  for (GlobalVariable &G : ctx.M.globals())
+    if (isQramRoot(ctx, &G) && ctx.T.objectOf(&G, ctx.S) == objs.front()) {
+      out.root = &G;
+      out.rootIdx = B.getInt64(0);
+      return out;
+    }
+  return out;
+}
+
+// The cell ptr names: the root's idx plus (address(ptr) - address(root)) / E, E the object's element size.
+Operand addressedCell(LoweringContext &ctx, const Addressed &a, const Value *ptr, uint64_t E) {
+  IRBuilder<> &B = ctx.B();
+  Type *i64 = B.getInt64Ty();
+  Value *d = B.CreateSub(B.CreatePtrToInt(ctx.operand(ptr).v, i64), B.CreatePtrToInt(ctx.operand(a.root).v, i64));
+  Value *cells = isPowerOf2_64(E) ? B.CreateAShr(d, Log2_64(E)) : B.CreateSDiv(d, ConstantInt::get(i64, E));
+  return Operand{B.CreateAdd(a.rootIdx, cells), false};
+}
+} // namespace
+
+// A pointer that is not an object plus GEP offsets and that derives only from triple formals of this clone (a
+// merge of fat pointers over them, a K-loop's carried walk): fatptr derives its (tag, idx).
+bool formalFatWalk(LoweringContext &ctx, const Value *ptr) {
+  if (decompose(ptr, ctx.M.getDataLayout(), &ctx).ok)
+    return false;
+  SmallVector<const Value *, 4> us;
+  getUnderlyingObjects(ptr, us);
+  return !us.empty() && llvm::all_of(us, [&](const Value *x) { return isa<Argument>(x) && isFormalQram(ctx, x); });
+}
+
+bool qramAddressed(LoweringContext &ctx, const Value *ptr, const Value *&root, Value *&idx) {
+  Addressed a = addressedRoot(ctx, ptr);
+  if (!a.root)
+    return false;
+  root = a.root;
+  idx = addressedCell(ctx, a, ptr, qramObj(ctx, a.root, *cast<Instruction>(ptr)).elemBytes).v;
+  return true;
+}
+
+bool lowerFormalWalkLoad(LoweringContext &ctx, LoadInst &ld) {
+  Addressed a = addressedRoot(ctx, ld.getPointerOperand());
+  if (!a.root || ld.getType()->isPointerTy())
+    return false;
+  QramObj &q = qramObj(ctx, a.root, ld);
+  const Column &c = firstColumn(ctx, q, ld.getType(), ld);
+  Operand j = addressedCell(ctx, a, ld.getPointerOperand(), q.elemBytes);
+  ctx.bind(&ld, qramLoadAt(ctx, a.root, j, ld.getType(), ld, 64));
+  return true;
+}
+
+bool lowerFormalWalkStore(LoweringContext &ctx, StoreInst &st) {
+  Addressed a = addressedRoot(ctx, st.getPointerOperand());
+  Type *ty = st.getValueOperand()->getType();
+  if (!a.root || ty->isPointerTy())
+    return false;
+  QramObj &q = qramObj(ctx, a.root, st);
+  const Column &c = firstColumn(ctx, q, ty, st);
+  Operand j = addressedCell(ctx, a, st.getPointerOperand(), q.elemBytes);
+  Operand v = ctx.operand(st.getValueOperand());
+  if (!v.handle)
+    v = Operand{seedOf(ctx, c.w, v.v), true};
+  if (isFormalQram(ctx, a.root))
+    deferFormalStore(ctx, a.root, j, 64, ty, v.v, ctx.currentFlag(), st);
+  else
+    qramStoreAt(ctx, a.root, j, ty, v.v, ctx.currentFlag(), st);
+  return true;
+}
+
 void registerFormalQram(LoweringContext &ctx, const Argument &A, Value *bus) {
   QramState &st = qramStates()[&ctx.out()];
   QramObj q = layoutOf(cellTypeOfUses(A, /*strict=*/true), ctx.M.getDataLayout(), &A);
@@ -4171,8 +4290,10 @@ void noteCalleeQramStores(LoweringContext &ctx, const CallBase &orig, const Spec
     if (global)
       globalBuses.insert(bus);
     // A bus this clone was handed (its triple formal's) is the caller's rail: no store lands on it in this clone's
-    // body (its own are deferred, a callee's popped right after the call), so the call reads it as it is.
-    if (!formalOfBus(ctx, bus))
+    // body (its own are deferred, a callee's popped right after the call), so the call reads it as it is. A global
+    // QRAM's bus is an output whose stores are never popped (rule 20, 160): it has no versions to order the call
+    // after.
+    if (!formalOfBus(ctx, bus) && !global)
       ctx.unc().noteCallBusRead(fwd, ctx.unc().idOf(bus));
   }
   for (Argument &A : callee.F->args())

@@ -1561,6 +1561,14 @@ Value *rootBase(LoweringContext &ctx, const Value *root, Bases &bases) {
   // A slot object's base is its lowered alloca's address, its size the C element size (rule 21, f684858): a root
   // inside a slot object (a classical GEP into it) lies at the object's lowered address plus its C byte offset,
   // so address arithmetic inside the object agrees with C whatever the handle-cell layout.
+  // A QRAM triple formal (P1): its fat pointer's idx counts from the caller's object's start, so its base is that
+  // object's QRAM address (the first object of its provenance: QRAM bases are 0x1000-aligned, so address
+  // arithmetic modulo the alignment agrees for every object the formal may name).
+  if (Bound *b = boundOf(ctx, root); b && b->pointee == ObjClass::Qram) {
+    ArrayRef<ObjectId> objs = ctx.T.provenance(root, ctx.S);
+    if (!objs.empty())
+      return bases[root] = ConstantExpr::getPtrToInt(mem::qramObjectBase(ctx, objs.front()), i64(ctx));
+  }
   bool slot = false;
   for (ObjectId o : ctx.T.provenance(root, ctx.S))
     slot = slot || ctx.T.classOf(o) == ObjClass::Slot;
@@ -3598,6 +3606,8 @@ void ownPlaceTriple(LoweringContext &ctx, const Value *ptr, FormalTriple &out) {
   const DataLayout &DL = ctx.M.getDataLayout();
   IRBuilder<> &B = ctx.B();
   uint64_t cb = accessCellBytes(*ptr, DL);
+  if (!cb)
+    cb = 1;   // nothing accesses it: untyped memory, whose cell is the byte (rule 22)
   Value *p = ctx.operand(ptr).v;
   bool slot = false;
   for (ObjectId o : ctx.T.provenance(ptr, ctx.S))
@@ -3869,6 +3879,19 @@ Triple passAcrossCall(LoweringContext &ctx, const Value *ptr) {
     return Triple{base.v, ConstantInt::get(i32(ctx), rootNumber(ctx, h.root)), h.idx, h.cellCount};
   }
   Fat f = derive(ctx, ptr, /*emit=*/false);
+  // Rule 21: a classical pointer into one QRAM object that is not its root plus GEP offsets (a pointer loaded from
+  // classical memory, a call's result, a merge): its object's root in this function and its cell on it.
+  const Value *aroot = nullptr;
+  Value *aidx = nullptr;
+  if ((f.roots.size() != 1 || !mem::isQramRoot(ctx, f.roots[0])) && classical && isa<Instruction>(ptr) &&
+      mem::qramAddressed(ctx, ptr, aroot, aidx)) {
+    const Instruction *at = cast<Instruction>(ptr);
+    uint64_t E = mem::qramElemBytes(ctx, aroot, *at);
+    Value *bus = mem::qramBusOf(ctx, aroot, *at);
+    checkCalleeCells(ctx, ptr, E, mem::qramCellType(ctx, aroot, *at));
+    crossings()[&ctx.out()][ptr] = Crossed{aroot, E};
+    return Triple{bus, ConstantInt::get(i32(ctx), rootNumber(ctx, ptr)), ctx.B().CreateTrunc(aidx, i32(ctx)), nullptr};
+  }
   if (f.roots.size() != 1 || !mem::isQramRoot(ctx, f.roots[0]))
     unimplemented("fatptr: a pointer crossing a clone boundary that is not into one QRAM, slot or host object "
                   "(rule 21 object table)",
@@ -4014,6 +4037,23 @@ bool boundTriple(LoweringContext &ctx, const Value *formal, FormalTriple &out) {
   out.cellCount = b->cellCount;
   out.cell = b->cell;
   return true;
+}
+
+Value *boundQramAddress(LoweringContext &ctx, const Argument &formal) {
+  Bound *b = boundOf(ctx, &formal);
+  if (!b || b->pointee != ObjClass::Qram || b->tag.handle || b->idx.handle || !b->cell)
+    return nullptr;
+  ArrayRef<ObjectId> objs = ctx.T.provenance(&formal, ctx.S);
+  if (objs.empty())
+    return nullptr;
+  IRBuilder<> &B = ctx.B();
+  Value *ix = B.CreateSExt(b->idx.v, B.getInt64Ty());
+  return B.CreateGEP(B.getInt8Ty(), mem::qramObjectBase(ctx, objs.front()), B.CreateMul(ix, B.getInt64(b->cell)));
+}
+
+Value *boundFormalIdx(LoweringContext &ctx, const Argument &formal) {
+  Bound *b = boundOf(ctx, &formal);
+  return b && !b->idx.handle ? b->idx.v : nullptr;
 }
 
 Value *boundHostAddress(LoweringContext &ctx, const Argument &formal) {
