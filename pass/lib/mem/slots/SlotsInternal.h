@@ -27,6 +27,17 @@ void noteMemsetSeeds(LoweringContext &, const llvm::MemSetInst &MS, ObjectId o,
 // or through the formals of the functions it is handed to) when that differs in size from its declared element,
 // otherwise the declared scalar element. mem-slots, mem-qram and rule 21's triples agree on it.
 llvm::Type *localCellType(const llvm::AllocaInst &ai);
+// cq-dd3q (CR rules 20, 21, 22): mem-slots' cells of the slot object o rooted at root (its objInfo, in the
+// function of `at`), so that mem-qram's rule-22 writes and rule 21's triples classify an object exactly as
+// mem-slots lays it out. record: one cell per field of its own type (cellBytes 0; pointerField when a field is a
+// pointer); otherwise cells of cellBytes bytes and C type cellTy (_Bool cells: boolCells), view a bit view (63),
+// split byte cells whose wider classical stores are split (90, 120), colStride a field column's (129).
+struct SlotLayout {
+  bool record = false, pointerField = false, boolCells = false, view = false, split = false;
+  uint64_t cellBytes = 0, colStride = 0;
+  llvm::Type *cellTy = nullptr;
+};
+SlotLayout slotLayout(LoweringContext &, const llvm::Value *root, ObjectId o, const llvm::Instruction &at);
 void noteProgramSlotCall(LoweringContext &, const llvm::CallBase &orig, const Specialization &callee,
                          llvm::CallInst *lowered);
 }

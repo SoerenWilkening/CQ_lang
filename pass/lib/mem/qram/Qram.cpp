@@ -54,9 +54,10 @@
 //  - a memset under a quantum predicate (select(predicate, value, old) per cell), a quantum fill byte
 //    or a quantum length (rule 22's guarded cells) are not built: unimplemented.
 //
-// The object predicates (_Bool cells, escaping, dynamic) are mem-slots' and private to Slots.cpp; they
-// are restated below verbatim (the "addresses" to "isDynamic" sections) so that both modules classify
-// an object the same way.
+// The object predicates (escaping, dynamic) are mem-slots' and private to Slots.cpp; they are restated
+// below verbatim (the "addresses" to "isDynamic" sections) so that both modules classify an object the same
+// way. The cells themselves (size, type, _Bool cells, record, view) are never restated: mem::slotLayout is
+// mem-slots' objInfo (cq-dd3q).
 #include "cq/Effects.h"
 #include "cq/Memory.h"
 #include "QramInternal.h"
@@ -193,6 +194,9 @@ struct ObjInfo {
   RootKind kind;
   const Value *root;
   uint64_t cellBytes = 0;
+  Type *cellTy = nullptr;   // mem-slots' cell type (slotLayout); null for a record
+  bool record = false;      // mem-slots' slot record: one cell per field of its own type (cellBytes 0)
+  bool view = false;        // mem-slots' bit-view object (63)
   bool boolCells = false;
   bool escaping = false;
   int dynamic = -1;   // -1 not computed
@@ -303,75 +307,28 @@ bool escapes(const Value *root) {
   return false;
 }
 
-bool boolValueStored(const Value *v) {
-  if (auto *z = dyn_cast<ZExtInst>(v))
-    return z->getSrcTy()->isIntegerTy(1);
-  if (auto *c = dyn_cast<ConstantInt>(v))
-    return c->getBitWidth() == 8 && c->getZExtValue() <= 1;
-  return false;
-}
-
-bool boolRange(const LoadInst *ld) {
-  MDNode *r = ld->getMetadata(LLVMContext::MD_range);
-  if (!r || r->getNumOperands() != 2)
-    return false;
-  auto *lo = mdconst::dyn_extract<ConstantInt>(r->getOperand(0));
-  auto *hi = mdconst::dyn_extract<ConstantInt>(r->getOperand(1));
-  return lo && hi && lo->isZero() && hi->getZExtValue() == 2;
-}
-
-uint64_t scalarCellBytes(Type *t, const DataLayout &DL, const Value *at) {
-  while (auto *at2 = dyn_cast<ArrayType>(t))
-    t = at2->getElementType();
-  if (t->isStructTy())
-    unimplemented("mem-slots: a slot record (a struct object holding handles: sret/byval, rule 20, 163, 164)", at);
-  if (t->isVectorTy())
-    unimplemented("mem-slots: a slot object of vector type (aggr, rule 25)", at);
-  if (!t->isIntegerTy() && !t->isFloatingPointTy())
-    unimplemented("mem-slots: a slot object whose cells are not integers or floating point (pointers in a "
-                  "handle object)",
-                  at);
-  return DL.getTypeAllocSize(t).getFixedValue();
-}
-
-ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId o) {
+// cq-dd3q (CR rules 20, 22): an object's cells are mem-slots' (slotLayout: its objInfo), never restated here: a
+// local struct or union read across its fields is byte cells (63), a local of pointers a record of its pointer
+// cells (rule 21), a punned local the narrow cells of 90; mem-qram's rule-22 writes go cell by cell over them.
+ObjInfo &objInfo(LoweringContext &ctx, FnState &st, const Value *root, ObjectId o, const Instruction &at) {
   auto it = st.objs.find(root);
   if (it != st.objs.end())
     return it->second;
-  const DataLayout &DL = ctx.M.getDataLayout();
   ObjInfo info;
   info.root = root;
-  if (auto *ai = dyn_cast<AllocaInst>(root)) {
+  if (isa<AllocaInst>(root))
     info.kind = RootKind::Local;
-    info.cellBytes = scalarCellBytes(localCellType(*ai), DL, ai);
-  } else if (auto *gv = dyn_cast<GlobalVariable>(root)) {
+  else if (isa<GlobalVariable>(root))
     info.kind = RootKind::Global;
-    info.cellBytes = scalarCellBytes(gv->getValueType(), DL, gv);
-  } else {
+  else
     info.kind = isa<Argument>(root) ? RootKind::Param : RootKind::Heap;
-    for (const Access &a : accessesOf(ctx, *st.F, o)) {
-      uint64_t b = DL.getTypeAllocSize(a.ty).getFixedValue();
-      if (info.cellBytes && info.cellBytes != b)
-        unimplemented("mem-slots: a parameter or heap slot object accessed at two widths (a bit view, 63)", a.I);
-      info.cellBytes = b;
-    }
-    if (!info.cellBytes)
-      unimplemented("mem-slots: a parameter or heap slot object this function never loads or stores (its cell "
-                    "size is known only to another function)",
-                    root);
-  }
+  SlotLayout L = slotLayout(ctx, root, o, at);
+  info.record = L.record;
+  info.view = L.view;
+  info.cellBytes = L.cellBytes;
+  info.cellTy = L.record ? nullptr : L.cellTy;
+  info.boolCells = L.boolCells;
   info.escaping = escapes(root);
-  if (info.cellBytes == 1) {
-    bool any = false, all = true;
-    for (const Access &a : accessesOf(ctx, *st.F, o)) {
-      any = true;
-      if (auto *ld = dyn_cast<LoadInst>(a.I))
-        all &= boolRange(ld);
-      else
-        all &= boolValueStored(cast<StoreInst>(a.I)->getValueOperand());
-    }
-    info.boolCells = any && all;
-  }
   return st.objs.emplace(root, info).first->second;
 }
 
@@ -534,21 +491,21 @@ bool isDynamic(LoweringContext &ctx, FnState &st, ObjInfo &info, ObjectId o) {
 
 // ==== end of the restatement ======================================================================
 
-// The scalar type of a cell (mem-slots' cell: arrays stripped; a parameter or heap block: the type its
-// accesses use, which objInfo has checked to be one width).
+// The scalar type of a cell (mem-slots' cell, slotLayout; a parameter or heap block: the type its accesses in
+// this function use, which mem-slots has checked to be one width, else mem-slots' own: the type the functions it
+// is handed to access it as, or bytes). Null for a record.
 Type *cellType(LoweringContext &ctx, FnState &st, const ObjInfo &info, ObjectId o) {
+  if (info.kind == RootKind::Local || info.kind == RootKind::Global || info.record)
+    return info.cellTy;   // rules 20, 22, cq-366o
   Type *t = nullptr;
-  if (auto *ai = dyn_cast<AllocaInst>(info.root))
-    t = localCellType(*ai);   // rules 20, 22 (cq-366o)
-  else if (auto *gv = dyn_cast<GlobalVariable>(info.root))
-    t = gv->getValueType();
-  else
-    for (const Access &a : accessesOf(ctx, *st.F, o))
-      if (!t || a.ty == t)
-        t = a.ty;
-      else
-        unimplemented("mem-qram: a memset of a parameter or heap slot object accessed as two types of one width",
-                      a.I);
+  for (const Access &a : accessesOf(ctx, *st.F, o))
+    if (!t || a.ty == t)
+      t = a.ty;
+    else
+      unimplemented("mem-qram: a memset of a parameter or heap slot object accessed as two types of one width",
+                    a.I);
+  if (!t)
+    return info.cellTy;
   while (auto *at = dyn_cast<ArrayType>(t))
     t = at->getElementType();
   return t;
@@ -640,8 +597,12 @@ void lowerSlotMemset(LoweringContext &ctx, MemSetInst &MS, ObjectId o) {
     return lowerSlotIntrinsicM6(ctx, MS, o);
   if (ctx.T.objectOf(a.root, ctx.S, a.off) != o)
     internalError("mem-qram: the memset destination's root is not the object taint names", &MS);
-  ObjInfo &info = objInfo(ctx, st, a.root, o);
+  ObjInfo &info = objInfo(ctx, st, a.root, o, MS);
   Type *cellTy = cellType(ctx, st, info, o);
+  // A record's cells are its fields, each of its own type, and a pointer cell is two handles (rule 21): rule 22's
+  // per-cell update on mem-slots' write path (M6) owns them.
+  if (info.record || !cellTy || !(cellTy->isIntegerTy() || cellTy->isFloatingPointTy()))
+    return lowerSlotIntrinsicM6(ctx, MS, o);
   RailType w = info.boolCells ? RailType{Kind::Int, 1} : railTypeOf(cellTy);
   int64_t cb = int64_t(info.cellBytes);
 
@@ -1400,6 +1361,8 @@ Value *bytesToCell(LoweringContext &ctx, Value *x, uint64_t rel, Type *cellTy) {
   LLVMContext &C = ctx.M.getContext();
   if (rel)
     x = B.CreateLShr(x, ConstantInt::get(x->getType(), rel * 8));
+  if (cellTy->isPointerTy())   // a pointer cell's bytes are its address (rule 21)
+    return B.CreateIntToPtr(B.CreateTrunc(x, ctx.M.getDataLayout().getIntPtrType(cellTy)), cellTy);
   unsigned bits = unsigned(cellTy->getPrimitiveSizeInBits().getFixedValue());
   Value *v = B.CreateTrunc(x, IntegerType::get(C, bits));
   if (!cellTy->isIntegerTy())
@@ -2832,27 +2795,14 @@ void lowerSlotIntrinsicM6(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o) {
     unimplemented("mem-qram: a memory intrinsic into a slot object whose destination is not its object plus GEP "
                   "offsets",
                   &MI);
-  ObjInfo &info = objInfo(ctx, st, a.root, o);
+  ObjInfo &info = objInfo(ctx, st, a.root, o, MI);
   Type *cellTy = cellType(ctx, st, info, o);
   uint64_t cb = info.cellBytes;
-  // mem-slots' cells (Slots.cpp objInfo, restated): a local a memory intrinsic writes whose narrowest
-  // access is narrower than its integer element has byte cells of that width (-O1's punned alloca i32 of
-  // 90's unsigned char d[4]; mem-slots splits each wider classical store per cell). Any other local
-  // accessed at another width than its cell is a bit view (63).
-  bool view = false;
-  if (info.kind == RootKind::Local) {
-    uint64_t narrow = cb;
-    for (const Access &x : accessesOf(ctx, *st.F, o))
-      narrow = std::min(narrow, uint64_t(DL.getTypeAllocSize(x.ty).getFixedValue()));
-    if (narrow < cb && cellTy->isIntegerTy()) {
-      cb = narrow;
-      cellTy = IntegerType::get(C, unsigned(8 * narrow));
-    } else {
-      for (const Access &x : accessesOf(ctx, *st.F, o))
-        view |= DL.getTypeAllocSize(x.ty).getFixedValue() != cb;
-    }
-  }
-  if (view || isa<StructType>(cellTy))
+  // mem-slots' cells (slotLayout, cq-dd3q): a local a memory intrinsic writes whose narrowest access is narrower
+  // than its integer element already has byte cells of that width there (-O1's punned alloca i32 of 90's
+  // unsigned char d[4]; mem-slots splits each wider classical store per cell). A bit view (63) or a record
+  // (one cell per field of its own type) is not one run of cells of one type.
+  if (info.view || info.record || !cellTy)
     unimplemented("mem-qram: a memory intrinsic into a slot object accessed at another width than its cell or a "
                   "record (mem-slots' cells: a bit view 63, -O1's punned alloca of 90)",
                   &MI);
@@ -3725,9 +3675,14 @@ HostTriple hostTriple(LoweringContext &ctx, const Value *ptr, const Instruction 
     objTy = gv->getValueType();
     bytes = DL.getTypeAllocSize(objTy).getFixedValue();
   }
-  if (auto *st = dyn_cast_or_null<StructType>(objTy); st && isa<AllocaInst>(a.root) && !rtBytes) {
-    // cq-oocu (CR rules 20, 21; 107): a local slot record with a pointer-kind field crosses as ONE cell (the
-    // record), at its start: (object, tag, idx 0, count 1).
+  if (!formal) {
+    ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
+    if (objs.size() != 1)
+      internalError("mem-qram: hostTriple of a pointer with other than one object", &at);
+    // cq-dd3q (CR rules 20, 21): a slot object's cells are mem-slots' (slotLayout), a host object's its C type's.
+    std::optional<SlotLayout> L;
+    if (ctx.T.classOf(objs.front()) == ObjClass::Slot)
+      L = slotLayout(ctx, a.root, objs.front(), at);
     std::function<bool(Type *)> hasPtr = [&](Type *t) {
       if (auto *s2 = dyn_cast<StructType>(t))
         return llvm::any_of(s2->elements(), hasPtr);
@@ -3735,7 +3690,10 @@ HostTriple hostTriple(LoweringContext &ctx, const Value *ptr, const Instruction 
         return hasPtr(a2->getElementType());
       return t->isPointerTy();
     };
-    if (hasPtr(st)) {
+    bool ptrRecord = L ? L->record && L->pointerField : isa<StructType>(objTy) && hasPtr(objTy);
+    if (ptrRecord && isa<AllocaInst>(a.root) && !rtBytes) {
+      // cq-oocu (CR rules 20, 21; 107): a local slot record with a pointer-kind field crosses as ONE cell (the
+      // record), at its start: (object, tag, idx 0, count 1).
       if (a.off != 0 || !a.terms.empty())
         unimplemented("mem-qram: a pointer into a slot record with a pointer-kind field crossing a clone boundary "
                       "other than at the record's start (rule 21 triple)",
@@ -3743,15 +3701,24 @@ HostTriple hostTriple(LoweringContext &ctx, const Value *ptr, const Instruction 
       LLVMContext &C = ctx.M.getContext();
       return {a.root, ConstantInt::get(Type::getInt32Ty(C), 0), ConstantInt::get(Type::getInt32Ty(C), 1), bytes};
     }
-  }
-  if (!formal) {
-    // Rules 20, 22 (cq-366o): a local's cells are the type the program accesses it as.
-    cb = scalarCellBytes(isa<AllocaInst>(a.root) ? localCellType(*cast<AllocaInst>(a.root)) : objTy, DL, &at);
+    // Rules 20, 22 (cq-366o): a local's cells are the type the program accesses it as. A slot object's are
+    // mem-slots' (byte cells of a struct read across its fields, 63; the narrow cells of 90). Otherwise the C
+    // type's scalar (arrays stripped, a vector's lanes, rule 25), a struct of one leaf type that leaf (an array by
+    // another name), a struct of several leaf types ONE cell, the record (rule 21's idx counts cells; the
+    // callee's own accesses are checked against it, checkCalleeCells).
+    if (L && !L->record) {
+      cb = L->cellBytes;
+    } else {
+      Type *t = isa<AllocaInst>(a.root) && !L ? localCellType(*cast<AllocaInst>(a.root)) : objTy;
+      SmallVector<Type *, 8> leaves;
+      scalarLeafTypes(t, leaves);
+      bool one = all_of(leaves, [&](Type *x) { return x == leaves.front(); });
+      while (isa<ArrayType>(t))
+        t = t->getArrayElementType();
+      cb = DL.getTypeAllocSize(one && !leaves.empty() ? leaves.front() : t).getFixedValue();
+    }
     // mem-slots' cells are the scalar element; an object accessed at another width has other cells
     // (a bit view, or -O1's punned local, 90).
-    ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
-    if (objs.size() != 1)
-      internalError("mem-qram: hostTriple of a pointer with other than one object", &at);
     for (const Access &x : accessesOf(ctx, *at.getFunction(), objs.front()))
       if (DL.getTypeAllocSize(x.ty).getFixedValue() != cb)
         unimplemented("mem-qram: an object crossing a clone boundary as a rule 21 triple that is accessed at another "

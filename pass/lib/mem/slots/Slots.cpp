@@ -5122,6 +5122,25 @@ uint64_t storedPtrUnit(LoweringContext &ctx, const Function &F, const Value *roo
 // pointer kind (two mask digits per accessed cell).
 } // namespace
 
+// cq-dd3q (CR rules 20, 21, 22): mem-slots' cells of slot object o (objInfo), for mem-qram's rule-22 writes and
+// rule 21's triples: they classify an object exactly as mem-slots lays it out.
+SlotLayout slotLayout(LoweringContext &ctx, const Value *root, ObjectId o, const Instruction &at) {
+  FnState &st = stateOf(ctx, at);
+  ObjInfo &info = objInfo(ctx, st, root, o);
+  SlotLayout L;
+  L.record = info.record;
+  L.cellBytes = info.cellBytes;
+  L.cellTy = info.cellTy;
+  L.boolCells = info.boolCells;
+  L.view = info.view;
+  L.split = info.split;
+  L.colStride = info.colStride;
+  if (info.record)
+    for (const ObjInfo::Field &f : info.fields)
+      L.pointerField |= f.ty->isPointerTy();
+  return L;
+}
+
 bool isPointerKindFormal(LoweringContext &ctx, const Argument &A) {
   if (ctx.S.isEntry() || !A.getType()->isPointerTy())
     return false;
