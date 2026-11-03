@@ -82,12 +82,15 @@ public:
   // T4: pointer formal argNo of clone `callee` (non-pointer formal: internal error; pointee objects of
   // mixed class: unimplemented).
   PtrFormal pointerFormal(const Specialization &callee, unsigned argNo) const;
-  ObjectId objectOf(const llvm::Value *siteOrGlobal) const;
+  // `byte`: the byte offset from the site's base the access names. An array-of-structs site is one object per
+  // scalar field column (rule 20): its object there is the column of the field holding that byte (the offset
+  // modulo the element size), as provenance names it; any other site is one object whatever the offset.
+  ObjectId objectOf(const llvm::Value *siteOrGlobal, int64_t byte = 0) const;
   // cq-i9wk (CR rules 18, 19, 20): the object of a site as specialization S sees it. A function's own
   // alloca, heap or unknown-object site is one object in its in-place activation (the entry, or a callee
   // reached with no quantum argument) and another in its clones'; the one-argument form is only for a
   // site with one of them (a global, or a function reached in one context).
-  ObjectId objectOf(const llvm::Value *siteOrGlobal, const Specialization &S) const;
+  ObjectId objectOf(const llvm::Value *siteOrGlobal, const Specialization &S, int64_t byte = 0) const;
   ObjClass classOf(ObjectId) const;
   bool mayHoldHandle(ObjectId) const;
   // cq-1c5j (CR rule 20): every cell of the object has one C scalar type (a scalar or an array of scalars, or

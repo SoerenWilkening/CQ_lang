@@ -638,7 +638,7 @@ void lowerSlotMemset(LoweringContext &ctx, MemSetInst &MS, ObjectId o) {
   Addr a = decompose(MS.getDest(), DL);
   if (!a.ok)
     return lowerSlotIntrinsicM6(ctx, MS, o);
-  if (ctx.T.objectOf(a.root, ctx.S) != o)
+  if (ctx.T.objectOf(a.root, ctx.S, a.off) != o)
     internalError("mem-qram: the memset destination's root is not the object taint names", &MS);
   ObjInfo &info = objInfo(ctx, st, a.root, o);
   Type *cellTy = cellType(ctx, st, info, o);
@@ -2830,7 +2830,7 @@ void lowerSlotIntrinsicM6(LoweringContext &ctx, MemIntrinsic &MI, ObjectId o) {
   IRBuilder<> &B = ctx.B();
   FnState &st = stateOf(ctx, MI);
   Addr a = decompose(MI.getDest(), DL);
-  if (!a.ok || ctx.T.objectOf(a.root, ctx.S) != o)
+  if (!a.ok || ctx.T.objectOf(a.root, ctx.S, a.off) != o)
     unimplemented("mem-qram: a memory intrinsic into a slot object whose destination is not its object plus GEP "
                   "offsets",
                   &MI);

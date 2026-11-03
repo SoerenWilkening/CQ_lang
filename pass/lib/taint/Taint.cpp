@@ -4380,16 +4380,21 @@ const llvm::Value *objectSiteValue(const llvm::Value *site) {
     site = TL->getArgOperand(0)->stripPointerCasts();
   return site;
 }
-ObjectId soleObjectOfSite(const ImplState &I, unsigned id, const llvm::Value *site) {
+// The object of site `id` holding byte `byte` from its base: a split site's field column there (rule 20, the
+// column provenance names for that offset: the last field at or below it modulo the element size).
+ObjectId objectOfSiteAt(const ImplState &I, unsigned id, int64_t byte) {
   const Site &s = I.sites[id];
-  if (s.objects.size() != 1)
-    internalError("taint: an array-of-structs site is one object per field column; use provenance",
-                  site);
+  if (!s.stride || s.objects.size() == 1)
+    return s.objects.front();
+  int64_t E = int64_t(s.stride), m = ((byte % E) + E) % E;
+  for (unsigned c = unsigned(s.columns.size()); c-- > 0;)
+    if (s.columns[c] <= m)
+      return s.objects[c];
   return s.objects.front();
 }
 } // namespace
 
-ObjectId TaintInfo::objectOf(const llvm::Value *site) const {
+ObjectId TaintInfo::objectOf(const llvm::Value *site, int64_t byte) const {
   const ImplState &I = needImpl(impl);
   site = objectSiteValue(site);
   std::optional<unsigned> found;
@@ -4405,20 +4410,20 @@ ObjectId TaintInfo::objectOf(const llvm::Value *site) const {
       note(it->second);
   if (!found)
     internalError("taint: not a memory site of this module", site);
-  return soleObjectOfSite(I, *found, site);
+  return objectOfSiteAt(I, *found, byte);
 }
 
-ObjectId TaintInfo::objectOf(const llvm::Value *site, const Specialization &S) const {
+ObjectId TaintInfo::objectOf(const llvm::Value *site, const Specialization &S, int64_t byte) const {
   const ImplState &I = needImpl(impl);
   site = objectSiteValue(site);
   // cq-i9wk, cq-1c5j: a site of S's own activation is S's frame.
   if (auto fr = I.siteOfFrame.find(stateOf(I, S)); fr != I.siteOfFrame.end())
     if (auto ip = fr->second.find(site); ip != fr->second.end())
-      return soleObjectOfSite(I, ip->second, site);
+      return objectOfSiteAt(I, ip->second, byte);
   auto it = I.siteOf.find(site);
   if (it == I.siteOf.end())
     internalError("taint: not a memory site of this module", site);
-  return soleObjectOfSite(I, it->second, site);
+  return objectOfSiteAt(I, it->second, byte);
 }
 
 bool TaintInfo::uniformCells(ObjectId id) const {

@@ -1843,7 +1843,7 @@ Site siteOf(LoweringContext &ctx, FnState &st, const Instruction &I, const Value
   a.off += extra;   // M7: a cell past the pointer (a fat-pointer load's byte offset)
   // A pointer formal's provenance is the caller's object (taint has no site for an argument).
   // A field column (129) is one of several objects of its site (objInfo's columnOf checks it).
-  if (!isa<Argument>(a.root) && !columnStruct(a.root) && ctx.T.objectOf(a.root, ctx.S) != objs.front())
+  if (!isa<Argument>(a.root) && !columnStruct(a.root) && ctx.T.objectOf(a.root, ctx.S, a.off) != objs.front())
     internalError("mem-slots: the address root is not the object taint names", &I);
   ObjInfo &info = objInfo(ctx, st, a.root, objs.front());
   uint64_t bytes = ctx.M.getDataLayout().getTypeAllocSize(ty).getFixedValue();
@@ -5476,7 +5476,7 @@ bool lowerPtrCell(LoweringContext &ctx, FnState &st, Instruction &I) {
     lowerPtrCellCloneAccess(ctx, st, I, *A, a);
     return true;
   }
-  if (columnStruct(a.root) || ctx.T.objectOf(a.root, ctx.S) != objs.front())
+  if (columnStruct(a.root) || ctx.T.objectOf(a.root, ctx.S, a.off) != objs.front())
     return false;   // a field column (129) is one of several objects of its site: never a record
   ObjInfo &info = objInfo(ctx, st, a.root, objs.front());
   if (!info.record)
