@@ -494,6 +494,7 @@ struct FnState {
     Value *old = nullptr, *f = nullptr;
     std::vector<std::pair<Pred, Operand>> writes;
     unsigned pending = 0;   // accesses not lowered yet: the writes' rails stay pinned until the last one
+    bool inLoop = false;    // cq-utb8: an access was lowered in a loop unit (per trip): pinned to the exit
   };
   std::map<std::pair<const Value *, int64_t>, std::optional<CloneCell>> cloneCells;
   // Register updates (CR rules 6, 20; 114): per object, whether its every store has a register-update
@@ -4451,7 +4452,14 @@ Operand cloneCellValue(LoweringContext &ctx, FnState::CloneCell &c, const Instru
 }
 
 // One access of the clone cell lowered: after the last one no access reads the writes' rails any more.
+// cq-utb8 (CR rule 14): an access lowered inside a loop unit runs once per trip (a K-loop's body and exit arms,
+// musl mbrtowc's `*(unsigned *)st = c` on the decode loop's exits): the count no longer bounds the accesses, so
+// the writes' rails stay pinned to the exit (flushAtExit releases every pin).
 void cloneCellAccessed(LoweringContext &ctx, FnState::CloneCell &c) {
+  if (ctx.loopUnit())
+    c.inLoop = true;
+  if (c.inLoop)
+    return;
   if (c.pending == 0)
     internalError("mem-slots: a clone cell accessed more often than cloneCellOf counted");
   if (--c.pending == 0)
