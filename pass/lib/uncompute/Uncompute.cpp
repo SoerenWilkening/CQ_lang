@@ -945,15 +945,19 @@ struct Uncompute::Impl {
     return any_of(invertFrozen, [&](const DenseMap<RailId, SmallPtrSet<Instruction *, 8>> &s) { return s.count(g) != 0; });
   }
 
-  bool resolvable(RailId g) const {
+  // g's item may be placed now: it is still to come and no construction pinned g.
+  bool resolvable(RailId g) const { return !pinned.count(g) && pending(g); }
+  // cq-sdqu (CR rule 5: an operand rail outlives every _unc that reads it): g's item is still to come, now or once
+  // it is unpinned (cq-gujb). A pinned rail is not kept: as a reader it holds back the items of the rails its item
+  // reads exactly as a resolvable one does (a clone cell's select(p, v, old) is uncomputed after the cell's last
+  // access, so v outlives it: musl __rem_pio2_large's y[0] = ih ? -fw : fw under a quantum predicate).
+  bool pending(RailId g) const {
     const Rail &r = rails[g];
     if (r.popBus != kNone)
       return !r.released && r.role == Role::Garbage && busPoppable(r.popBus);
     if (r.qram && replacedForGood(g))
       return false;
     if (!r.versions.empty() && loadOfReplaced(g))
-      return false;
-    if (pinned.count(g))
       return false;
     return !r.released && r.arms.empty() && (r.cleanup || r.role == Role::Garbage || r.role == Role::Seed);
   }
@@ -1277,7 +1281,7 @@ struct Uncompute::Impl {
       rails[rails[b].pops[j - 1]].role = Role::KeptEntangled;
     for (RailId l : rails[b].loads)
       for (auto [bus, k] : rails[l].versions)
-        if (bus == b && k < rails[g].popK && resolvable(l)) {
+        if (bus == b && k < rails[g].popK && pending(l)) {
           rails[l].role = Role::KeptEntangled;
           rails[l].cleanup.reset();
         }
@@ -1774,7 +1778,7 @@ struct Uncompute::Impl {
     // snapshot, so the order of m's arms changes nothing; rails kept already stay as they are.
     DenseSet<RailId> live;
     for (RailId x : closure(m))
-      if (resolvable(x))
+      if (pending(x))
         live.insert(x);
     for (RailId x : closure(m)) {
       if (x == m)
@@ -2466,7 +2470,7 @@ struct Uncompute::Impl {
       for (unsigned i = 0; i < cands.size(); ++i) {
         RailId g = cands[i];
         for (RailId o : readersOf(g)) {
-          if (in.count(o) || !resolvable(o) || done(o, c))
+          if (in.count(o) || !pending(o) || done(o, c))
             continue;
           if (fatal)
             internalError("uncompute: mirror would free " + describe(rails[g].handle) +
@@ -3415,7 +3419,7 @@ struct Uncompute::Impl {
         continue;   // F2: the hosting region's own records (its reverse undoes them)
       for (unsigned rec = sc.begin; rec < sc.end; ++rec) {
         RailId it = info[rec].item;
-        if (it == kNone || rails[it].ownedBy == rails[g].deferred || !resolvable(it))
+        if (it == kNone || rails[it].ownedBy == rails[g].deferred || !pending(it))
           continue;
         // cq-nqa6 (span mode): only a pending record P lies inside (on one cycle with it) is such a region;
         // one before P on no cycle with it is an earlier item still to come (a reader, or a rail the item
@@ -4229,7 +4233,7 @@ void Uncompute::noteNonDiagonal(RailId target, Instruction *gate) {
     // the hit; a resolvable one is hit only where the merge chose it (a classical choice), so its item and
     // the items that read it are kept there and run elsewhere (placeAt's run flag).
     for (RailId a : impl->leaves(target)) {
-      if (impl->resolvable(a))
+      if (impl->pending(a))
         impl->rails[a].condHits.push_back({gate, target});
       else
         impl->rails[a].hits.push_back(gate);
@@ -4381,7 +4385,7 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
     for (RailId g : deferred) {
       if (!I.deferredLocalReady(g, point))
         continue;
-      if (any_of(I.readersOf(g), [&](RailId o) { return I.resolvable(o) && !I.done(o, c); }))
+      if (any_of(I.readersOf(g), [&](RailId o) { return I.pending(o) && !I.done(o, c); }))
         continue;
       I.place(g, c);
     }
@@ -4410,7 +4414,7 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
     for (RailId g = 0; g < I.rails.size(); ++g) {
       if (I.rails[g].deferred == kNone || I.frozen(g) || !I.resolvable(g) || !I.deferredLocalReady(g, point, true))
         continue;
-      if (any_of(I.readersOf(g), [&](RailId o) { return I.resolvable(o) && !I.done(o, c); }))
+      if (any_of(I.readersOf(g), [&](RailId o) { return I.pending(o) && !I.done(o, c); }))
         continue;
       I.place(g, c);
       progress = true;
@@ -4428,7 +4432,7 @@ void Uncompute::openInvert(Instruction *begin) {
     internalError("uncompute: openInvert needs an instruction in a block");
   DenseMap<RailId, SmallPtrSet<Instruction *, 8>> s;
   for (RailId g = 0; g < I.rails.size(); ++g)
-    if (I.resolvable(g)) {
+    if (I.pending(g)) {
       SmallPtrSet<Instruction *, 8> &a = s[g];
       for (Instruction *x : I.anchors(g))
         a.insert(x);
@@ -4446,7 +4450,7 @@ void Uncompute::closeInvert(Instruction *end) {
   DenseMap<RailId, SmallPtrSet<Instruction *, 8>> s = I.invertFrozen.pop_back_val();
   I.lastRegionStart = I.invertStart.pop_back_val();
   for (auto &[g, before] : s)
-    if (I.resolvable(g) && any_of(I.anchors(g), [&](Instruction *x) { return !before.count(x); })) {
+    if (I.pending(g) && any_of(I.anchors(g), [&](Instruction *x) { return !before.count(x); })) {
       RailId t = I.rails[g].popBus != kNone ? I.rails[g].popBus : g;   // a POP follows its bus's uses
       if (!is_contained(I.rails[t].uses, end))
         I.rails[t].uses.push_back(end);
@@ -4487,7 +4491,7 @@ SmallVector<Value *, 8> Uncompute::resolveRegionMade(Instruction *end, function_
     changed = false;
     for (unsigned i = 0; i < cands.size(); ++i)
       if (any_of(I.readersOf(cands[i]), [&](RailId o) {
-            return I.resolvable(o) && !I.rails[o].released && I.rails[o].exitsDone.empty() && !is_contained(cands, o);
+            return I.pending(o) && !I.rails[o].released && I.rails[o].exitsDone.empty() && !is_contained(cands, o);
           })) {
         cands.erase(cands.begin() + i);
         changed = true;
@@ -4542,7 +4546,7 @@ void Uncompute::resolveAt(Instruction *P, ArrayRef<RailId> list) {
       if (a == P || Impl::after(a, P))
         internalError("uncompute: resolveAt: " + describe(x.handle) + " is still used after the point", a);
     for (RailId o : I.readersOf(g))
-      if (I.resolvable(o) && !I.rails[o].released && I.rails[o].exitsDone.empty() && !is_contained(cands, o))
+      if (I.pending(o) && !I.rails[o].released && I.rails[o].exitsDone.empty() && !is_contained(cands, o))
         internalError("uncompute: resolveAt: " + describe(x.handle) + " is read by the pending item of " +
                           describe(I.rails[o].handle) + ", which is not resolved with it",
                       P);
