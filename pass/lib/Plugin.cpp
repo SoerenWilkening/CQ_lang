@@ -344,8 +344,19 @@ std::vector<const cq::Specialization *> constructionOrder(const cq::TaintInfo &T
         for (Instruction &I : BB)
           if (auto *CB = dyn_cast<CallBase>(&I);
               CB && CB->getCalledFunction() && !CB->getCalledFunction()->isDeclaration() && !CB->isInlineAsm())
-            if (const cq::Specialization *C = T.calleeSpecialization(*CB, S); C && C != &S && C->isEntry())
-              visit(*C);
+            if (const cq::Specialization *C = T.calleeSpecialization(*CB, S); C && C != &S) {
+              // M2 through a call (mem-qram noteCalleeQramStores): a clone handed a QRAM triple by a clone is built
+              // first, so its caller reads the widths of the index rails it returns from its body.
+              bool qramTriple = false;
+              if (!C->isEntry() && !S.isEntry() && C->F == CB->getCalledFunction())
+                for (unsigned i = 0; i < CB->arg_size() && i < C->F->arg_size(); ++i)
+                  if (CB->getArgOperand(i)->getType()->isPointerTy()) {
+                    cq::PtrFormal pf = T.pointerFormal(*C, i);
+                    qramTriple |= pf.abi != cq::PtrAbi::Raw && pf.pointee == cq::ObjClass::Qram;
+                  }
+              if (C->isEntry() || qramTriple)
+                visit(*C);
+            }
     state[&S] = 2;
     order.push_back(&S);
   };

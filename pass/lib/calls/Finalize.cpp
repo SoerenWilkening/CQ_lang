@@ -391,14 +391,21 @@ bool hostFlagCall(const CallBase &CB) {
 // twin then restores them around its body (defineTwin).
 // busArgs: the formals of F that the call of the replay reaching F binds to frame buses (frameBus).
 using ReplaySeen = std::set<std::pair<Function *, std::vector<unsigned>>>;
+// popped: the formals of F whose buses the call of the replay reaching F pops right after it (M2 through a call,
+// mem::noteCalleeQramStores): F's trailing QRAM stores on them are undone there, so the replay leaves them as it
+// found them.
 void checkReplayable(Function &F, Function &twin, ReplaySeen &seen, bool &hostFlags, bool top = false,
                      const SmallPtrSetImpl<const Instruction *> *exempt = nullptr,
-                     const SmallPtrSetImpl<const Argument *> *busArgs = nullptr) {
+                     const SmallPtrSetImpl<const Argument *> *busArgs = nullptr,
+                     const SmallPtrSetImpl<const Argument *> *popped = nullptr) {
   SmallPtrSet<const Argument *, 4> noBusArgs;
   const SmallPtrSetImpl<const Argument *> &frameArgs = busArgs ? *busArgs : noBusArgs;
   std::vector<unsigned> busKey;
   for (const Argument *A : frameArgs)
     busKey.push_back(A->getArgNo());
+  if (popped)
+    for (const Argument *A : *popped)
+      busKey.push_back(A->getArgNo() + (1u << 20));
   llvm::sort(busKey);
   if (!seen.insert({&F, busKey}).second)
     return;
@@ -413,6 +420,42 @@ void checkReplayable(Function &F, Function &twin, ReplaySeen &seen, bool &hostFl
         out.insert(G.getArg(i));
     }
     return out;
+  };
+  // The formals of a callee G whose buses F pops right after the call CB: the bus operands of the QRAM store _unc
+  // calls that follow CB (past classical instructions, the extraction of its results and the copy-outs of the
+  // popped stores' rails).
+  SmallPtrSet<const Instruction *, 4> callPops;   // the pops calleePopped found: replayed with their call
+  auto calleePopped = [&](CallBase &CB, Function &G) {
+    SmallPtrSet<const Argument *, 4> out;
+    SmallPtrSet<const Value *, 4> buses;
+    for (const Instruction *J = CB.getNextNode(); J; J = J->getNextNode()) {
+      auto *c = dyn_cast<CallInst>(J);
+      std::optional<abi::CoreSpec> cs =
+          c && c->getCalledFunction() ? abi::parseCore(c->getCalledFunction()->getName()) : std::nullopt;
+      if (cs && cs->op == abi::Core::QramStore && cs->unc) {
+        buses.insert(c->getArgOperand(cs->ctl ? 1 : 0));
+        callPops.insert(J);
+        continue;
+      }
+      if (!buses.empty())
+        break;
+      if (c) {
+        if (cs && (cs->op == abi::Core::Alloc || cs->op == abi::Core::Copy))
+          continue;
+        break;
+      }
+      if (J->isTerminator() || J->mayWriteToMemory())
+        break;
+    }
+    for (unsigned i = 0; i < CB.arg_size() && i < G.arg_size(); ++i)
+      if (buses.count(CB.getArgOperand(i)))
+        out.insert(G.getArg(i));
+    return out;
+  };
+  auto busArgOf = [](const Instruction &I) -> const Argument * {
+    auto *c = cast<CallInst>(&I);
+    std::optional<abi::CoreSpec> cs = abi::parseCore(c->getCalledFunction()->getName());
+    return dyn_cast<Argument>(c->getArgOperand(cs->ctl ? 1 : 0));
   };
   auto refuse = [&](const Twine &why, const Value *at) {
     unimplemented(("calls: calls::finalize: the twin @" + twin.getName() + " would replay " + why +
@@ -486,6 +529,10 @@ void checkReplayable(Function &F, Function &twin, ReplaySeen &seen, bool &hostFl
     if (std::optional<abi::CoreSpec> c = abi::parseCore(G->getName())) {
       if (top && trailingQramStore(I))
         continue;   // dropped from the twin below (M2b)
+      if (popped && trailingQramStore(I) && popped->count(busArgOf(I)))
+        continue;   // popped by the caller right after the call (M2 through a call)
+      if (callPops.count(&I))
+        continue;   // the pop of a callee's trailing store, right after its call: the pair leaves the bus as is
       if (replayableBus(cast<CallInst>(I), *c, frameArgs))
         continue;   // a store into (or a realloc of) F's own frame bus, popped before F releases it
       if (nonPureCore(c->op))
@@ -495,7 +542,8 @@ void checkReplayable(Function &F, Function &twin, ReplaySeen &seen, bool &hostFl
     if (std::optional<abi::CloneSpec> c = abi::parseClone(G->getName())) {
       if (!c->unc && !G->isDeclaration()) {
         SmallPtrSet<const Argument *, 4> gb = calleeBusArgs(*CB, *G);
-        checkReplayable(*G, twin, seen, hostFlags, false, nullptr, &gb);
+        SmallPtrSet<const Argument *, 4> gp = calleePopped(*CB, *G);
+        checkReplayable(*G, twin, seen, hostFlags, false, nullptr, &gb, &gp);
       }
       continue;   // a twin is checked when it is defined; a declared clone is rule 27's
     }

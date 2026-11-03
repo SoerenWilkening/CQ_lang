@@ -3873,10 +3873,9 @@ Triple passAcrossCall(LoweringContext &ctx, const Value *ptr) {
     unimplemented("fatptr: a pointer crossing a clone boundary that is not into one QRAM, slot or host object "
                   "(rule 21 object table)",
                   ptr);
-  if (boundOf(ctx, f.roots[0]))
-    unimplemented("fatptr: a triple formal passed on to another clone (its stores would be the outer clone's, "
-                  "rule 18)",
-                  ptr);
+  // A pointer derived from this clone's own QRAM triple formal crosses on over the caller's bus (registered as a
+  // QRAM of this clone, registerFormalQram); the callee's stores through it are this clone's (M2 through a call:
+  // mem::noteCalleeQramStores pops them after the call and defers them with its own).
   // A constant pointer (the QRAM global itself, a constant GEP into it) crosses at its call: its uses in this
   // function name the object as any instruction's would.
   const Instruction *at = dyn_cast<Instruction>(ptr);

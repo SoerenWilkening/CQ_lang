@@ -3381,7 +3381,33 @@ std::map<const Function *, SmallVector<DeferredStore, 2>> &deferredStores() {
 struct FormalUses {
   SmallVector<const LoadInst *, 4> loads;
   SmallVector<const StoreInst *, 4> stores;
+  // M2 through a call (rules 18, 21): a pointer derived from the formal handed to a direct call of a function with
+  // a body that never calls back into this one (the call's argument operand number).
+  SmallVector<std::pair<const CallBase *, unsigned>, 2> calls;
 };
+
+void tripleUseStop(const Value *usr) {
+  unimplemented("mem-qram: a use of a pointer derived from a rule 21 triple formal other than a load, a store "
+                "or address arithmetic (a call, a memory intrinsic, free, realloc, a compare, a merge or an "
+                "escape of the triple: P1, M2)",
+                usr);
+}
+
+// Whether G reaches F through direct calls of functions with bodies (G == F included).
+bool reachesByCalls(const Function *G, const Function *F) {
+  SmallVector<const Function *, 8> work{G};
+  SmallPtrSet<const Function *, 16> seen{G};
+  while (!work.empty()) {
+    const Function *h = work.pop_back_val();
+    if (h == F)
+      return true;
+    for (const Instruction &I : instructions(*h))
+      if (auto *cb = dyn_cast<CallBase>(&I))
+        if (const Function *c = cb->getCalledFunction(); c && !c->isDeclaration() && seen.insert(c).second)
+          work.push_back(c);
+  }
+  return false;
+}
 
 FormalUses formalUses(const Argument &A, bool strict, bool throughCalls = false) {
   FormalUses out;
@@ -3429,10 +3455,17 @@ FormalUses formalUses(const Argument &A, bool strict, bool throughCalls = false)
       // ptrtoint (over the address) read no cell through the pointer.
       if (isa<ReturnInst>(usr) || isa<ICmpInst>(usr) || isa<PtrToIntInst>(usr))
         continue;
-      unimplemented("mem-qram: a use of a pointer derived from a rule 21 triple formal other than a load, a store "
-                    "or address arithmetic (a call, a memory intrinsic, free, realloc, a compare, a merge or an "
-                    "escape of the triple: P1, M2)",
-                    usr);
+      // Rules 18, 21 (M2 through a call): the triple handed on to a lifted callee, whose stores through it are
+      // this clone's (formalQramStores).
+      if (auto *cb = dyn_cast<CallBase>(usr); cb && cb->isArgOperand(&u) && !isa<IntrinsicInst>(cb) &&
+                                               cb->getCalledFunction() && !cb->getCalledFunction()->isDeclaration() &&
+                                               !cb->getCalledFunction()->isVarArg() &&
+                                               cb->getArgOperandNo(&u) < cb->getCalledFunction()->arg_size() &&
+                                               !reachesByCalls(cb->getCalledFunction(), A.getParent())) {
+        out.calls.push_back({cb, cb->getArgOperandNo(&u)});
+        continue;
+      }
+      tripleUseStop(usr);
     }
   }
   return out;
@@ -3472,7 +3505,12 @@ struct FormalStore {
   unsigned argNo;
   int64_t cell;   // cell offset from the formal's idx (when !idxRail)
   Type *ty;
-  const StoreInst *st;
+  const StoreInst *st;   // null for a store a callee makes (call)
+  // M2 through a call (rules 18, 21): the callee's store number `inner` (its own M2 order) through a pointer
+  // this clone handed it at `call`, which lands in this formal's object.
+  const CallBase *call = nullptr;
+  unsigned inner = 0;
+  const Instruction *at() const { return st ? static_cast<const Instruction *>(st) : call; }
   // The store's index is not the caller's actual idx plus a constant (a run-time offset, or a constant offset
   // from a quantum idx): the clone copies its index out as a rail of its own (the caller's pop reads it).
   bool idxRail = false;
@@ -3547,6 +3585,7 @@ SmallVector<FormalStore, 2> formalQramStores(const TaintInfo &T, const Specializ
   const DataLayout &DL = F.getParent()->getDataLayout();
   SmallVector<FormalStore, 2> out;
   SmallVector<std::pair<const LoadInst *, unsigned>, 8> loads;
+  SmallVector<std::pair<const CallBase *, unsigned>, 4> calls;   // the triple handed on, every formal's
   for (Argument &A : F.args()) {
     if (!isQramTriple(T, S, A))
       continue;
@@ -3555,6 +3594,9 @@ SmallVector<FormalStore, 2> formalQramStores(const TaintInfo &T, const Specializ
     FormalUses u = formalUses(A, /*strict=*/true);
     for (const LoadInst *ld : u.loads)
       loads.push_back({ld, A.getArgNo()});
+    for (auto c : u.calls)
+      if (!is_contained(calls, c))
+        calls.push_back(c);
     bool idxQ = formalIdxQuantum(T, S, A.getArgNo());
     for (const StoreInst *st : u.stores) {
       Addr a = decompose(st->getPointerOperand(), DL);
@@ -3581,6 +3623,57 @@ SmallVector<FormalStore, 2> formalQramStores(const TaintInfo &T, const Specializ
       out.push_back(fs);
     }
   }
+  // M2 through a call (rules 18, 21; 191): a callee handed a pointer into a QRAM formal's object stores into the
+  // caller's bus. It applies its stores at its end; this clone pops them right after the call (they are its own
+  // stores now) and defers them like its own (noteCalleeQramStores), one entry per callee store that lands in one
+  // of its QRAM formals' objects: at the actual's cell plus the callee's offset, a classical one when the actual is
+  // the formal plus a constant, else the index copied out as a rail. A callee store with an index rail of its own
+  // (whose width only the callee knows), an actual that merges a formal's object with another, and a callee that
+  // reads the object after a store this clone defers (it would not see it) stop with the triple's use.
+  SmallPtrSet<const CallBase *, 4> done;
+  for (auto [cb, j] : calls) {
+    if (!done.insert(cb).second)
+      continue;
+    const Specialization *C = T.calleeSpecialization(*cb, S);
+    if (!C || C->isEntry() || C->F != cb->getCalledFunction()) {
+      tripleUseStop(cb);
+      continue;   // no clone: no store of its own reaches the bus
+    }
+    SmallVector<FormalStore, 2> in = formalQramStores(T, *C);
+    for (unsigned k = 0; k < in.size(); ++k) {
+      const Value *act = cb->getArgOperand(in[k].argNo);
+      SmallVector<const Value *, 4> us;
+      getUnderlyingObjects(act, us);
+      const Argument *B = us.empty() ? nullptr : dyn_cast<Argument>(us.front());
+      bool own = B && B->getParent() == &F && isQramTriple(T, S, *B) &&
+                 llvm::all_of(us, [&](const Value *x) { return x == B; });
+      if (!own) {
+        // The actual names no QRAM formal of this clone: the callee stores into an object of this clone's own (U3).
+        if (llvm::any_of(us, [&](const Value *x) {
+              auto *X = dyn_cast<Argument>(x);
+              return X && X->getParent() == &F && isQramTriple(T, S, *X);
+            }))
+          tripleUseStop(cb);
+        continue;
+      }
+      Type *cellTy = cellTypeOfUses(*B, /*strict=*/true);
+      int64_t E = int64_t(DL.getTypeAllocSize(cellTy).getFixedValue());
+      Addr a = decompose(act, DL);
+      FormalStore fs{B->getArgNo(), 0, in[k].ty, nullptr};
+      fs.call = cb;
+      fs.inner = k;
+      fs.flagged = in[k].flagged;   // the callee's flag (a _ctl callee's include its caller's predicate)
+      if (in[k].idxRail) {
+        fs.idxRail = true;   // the callee's own index rail, copied out again at its width (deferCallStore)
+      } else if (a.ok && a.root == B && a.terms.empty() && a.off % E == 0) {
+        fs.cell = a.off / E + in[k].cell;
+        fs.idxRail = formalIdxQuantum(T, S, B->getArgNo()) && fs.cell != 0;
+      } else {
+        fs.idxRail = true;
+      }
+      out.push_back(fs);
+    }
+  }
   if (out.empty())
     return out;
   DominatorTree DT(F);
@@ -3589,7 +3682,7 @@ SmallVector<FormalStore, 2> formalQramStores(const TaintInfo &T, const Specializ
   DenseSet<const BasicBlock *> always;
   bool alwaysDone = false;
   for (FormalStore &fs : out) {
-    const BasicBlock *b = fs.st->getParent();
+    const BasicBlock *b = fs.at()->getParent();
     bool everyPath = PDT.dominates(b, &F.getEntryBlock());
     for (const BasicBlock &r : F)
       if (isa<ReturnInst>(r.getTerminator()))
@@ -3602,22 +3695,30 @@ SmallVector<FormalStore, 2> formalQramStores(const TaintInfo &T, const Specializ
         alwaysDone = true;
       }
       everyPath = always.count(b) != 0;
-      fs.flagged = true;
+      if (!fs.call)
+        fs.flagged = true;
     }
     if (!everyPath || LI.getLoopFor(b))
       unimplemented("mem-qram: a store through a QRAM triple formal under a classical branch or in a loop of the "
                     "clone (M2: the clone's stores are deferred, one copied-out rail each, in program order)",
-                    fs.st);
+                    fs.at());
   }
-  llvm::sort(out, [&](const FormalStore &x, const FormalStore &y) {
-    return x.st != y.st && DT.dominates(x.st, y.st);
+  llvm::stable_sort(out, [&](const FormalStore &x, const FormalStore &y) {
+    return x.at() != y.at() && DT.dominates(x.at(), y.at());
   });
+  // A callee that reads the object through the triple after a store this clone defers would read the cell
+  // without it.
+  for (auto [cb, j] : calls)
+    for (const FormalStore &fs : out)
+      if (fs.at() != cb && isPotentiallyReachable(fs.at(), cb, nullptr, &DT, &LI) &&
+          !formalUses(*cb->getCalledFunction()->getArg(j), /*strict=*/false, /*throughCalls=*/true).loads.empty())
+        tripleUseStop(cb);
   // A load after stores through its own formal reads them forwarded (forwardDeferredStores). Two formals may
   // name one caller object, and the clone cannot compare their buses (handles): a load after a store through
   // another formal is a stop.
   for (auto [ld, argNo] : loads)
     for (const FormalStore &fs : out)
-      if (fs.argNo != argNo && isPotentiallyReachable(fs.st, ld, nullptr, &DT, &LI))
+      if (fs.argNo != argNo && isPotentiallyReachable(fs.at(), ld, nullptr, &DT, &LI))
         unimplemented("mem-qram: a load through a QRAM triple formal after a store through another triple formal "
                       "(M2b defers the store; the clone cannot tell whether the two name one object)",
                       ld);
@@ -3635,6 +3736,102 @@ const Column *columnOfBus(LoweringContext &ctx, Value *bus, bool &global) {
           return &q.cols[k];
         }
   return nullptr;
+}
+
+// The entry of M2's analysis (formalQramStores) a deferred store is.
+std::optional<FormalStore> listedStore(LoweringContext &ctx, function_ref<bool(const FormalStore &)> match,
+                                       const Instruction &at) {
+  std::optional<FormalStore> fs;
+  for (const FormalStore &x : formalQramStores(ctx.T, ctx.S))
+    if (match(x))
+      fs = x;
+  if (!fs)
+    internalError("mem-qram: a deferred store that M2's analysis does not list", &at);
+  return fs;
+}
+
+// The triple formal of this clone whose caller's bus `bus` is (registerFormalQram), or null.
+const Value *formalOfBus(LoweringContext &ctx, Value *bus) {
+  QramState &st = qramStates()[&ctx.out()];
+  for (auto &[site, q] : st.objs)
+    for (auto &[root, hs] : q.buses)
+      if (is_contained(hs, bus) && st.formals.count(site))
+        return site;
+  return nullptr;
+}
+
+// The rule 18 copy-out of a rail x: f = alloc 0, copy(x, f), a result of the clone.
+Value *copyOutRail(LoweringContext &ctx, Value *x, RailType w) {
+  LLVMContext &C = ctx.M.getContext();
+  CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(C, w))});
+  RailId fid = ctx.unc().recordSeed(f);
+  abi::CoreSpec cp{abi::Core::Copy, w};
+  CallInst *cpy = ctx.emitCore(cp, {x, f});
+  ctx.unc().recordCore(cpy, cp, {Operand{x, true}, Operand{f, true}}, fid);
+  ctx.unc().setRole(fid, Role::Result);
+  return f;
+}
+
+// The width of an index rail a call to a clone returns (its M2 copy-out: the field of the clone's built body is
+// the result of cqrt_alloc_<W>, a seed or a copy-out's fresh rail); the i32 triple idx otherwise (rule 21: the
+// index crosses a clone boundary as an i32). constructionOrder builds such a clone before its caller.
+RailType indexRailType(Value *idx) {
+  auto *ev = dyn_cast<ExtractValueInst>(idx);
+  auto *call = ev ? dyn_cast<CallInst>(ev->getAggregateOperand()) : nullptr;
+  Function *G = call ? call->getCalledFunction() : nullptr;
+  if (G && !G->isDeclaration() && ev->getNumIndices() == 1)
+    for (BasicBlock &BB : *G)
+      if (auto *ret = dyn_cast<ReturnInst>(BB.getTerminator()); ret && ret->getReturnValue()) {
+        // The insertvalue that writes the field.
+        for (Value *v = ret->getReturnValue(); auto *iv = dyn_cast<InsertValueInst>(v); v = iv->getAggregateOperand())
+          if (iv->getNumIndices() == 1 && iv->getIndices()[0] == ev->getIndices()[0]) {
+            auto *a = dyn_cast<CallInst>(iv->getInsertedValueOperand());
+            std::optional<abi::CoreSpec> cs = a && a->getCalledFunction()
+                                                  ? abi::parseCore(a->getCalledFunction()->getName())
+                                                  : std::nullopt;
+            if (cs && cs->op == abi::Core::Alloc)
+              return cs->w;
+            break;
+          }
+      }
+  return RailType{Kind::Int, 32};
+}
+
+// M2 through a call (formalQramStores): the callee's store number `inner` at `call`, of value v at idx (this
+// clone's bus coordinates: the i32 triple idx it handed on plus the callee's offset, or a classical index) under
+// flag, on the bus of this clone's triple formal `formal`: deferred like the clone's own stores (its value, index
+// and flag copied out; M2b forwards it to later loads).
+void deferCallStore(LoweringContext &ctx, const CallBase &call, unsigned inner, const Value *formal, const Column &col,
+                    Operand idx, Value *v, Value *flag) {
+  std::optional<FormalStore> fs =
+      listedStore(ctx, [&](const FormalStore &x) { return x.call == &call && x.inner == inner; }, call);
+  QramObj &q = qramObj(ctx, formal, call);
+  LLVMContext &C = ctx.M.getContext();
+  DeferredStore d{nullptr, col, QIndex{}, copyOutRail(ctx, v, col.w), nullptr};
+  d.bus = busOf(q, formal, &col, call);
+  d.idxOut = fs->idxRail;
+  d.root = formal;
+  d.idxOrig = idx;
+  d.idxBits = idx.handle ? 32 : 64;
+  d.vOrig = v;
+  d.flagOrig = flag;
+  if (fs->idxRail) {
+    if (idx.handle) {
+      d.idx = {copyOutRail(ctx, idx.v, indexRailType(idx.v)), true};
+    } else {
+      Type *i32 = Type::getInt32Ty(C);
+      CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 32}},
+                                    {ctx.B().CreateSExtOrTrunc(idx.v, i32)});
+      RailId sid = ctx.unc().recordSeed(seed);
+      ctx.unc().setRole(sid, Role::Result);
+      d.idx = {seed, true};
+    }
+  } else {
+    d.idx = fatIndex(ctx, q, idx);
+  }
+  if (flag)
+    d.flag = copyOutRail(ctx, flag, RailType{Kind::Int, 1});
+  deferredStores()[&ctx.out()].push_back(d);
 }
 
 } // namespace
@@ -3793,12 +3990,7 @@ bool isFormalQram(LoweringContext &ctx, const Value *root) {
 
 void deferFormalStore(LoweringContext &ctx, const Value *root, Operand idx, unsigned idxBits, Type *ty, Value *v,
                       Value *flag, const Instruction &at) {
-  std::optional<FormalStore> fs;
-  for (const FormalStore &x : formalQramStores(ctx.T, ctx.S))
-    if (x.st == &at)
-      fs = x;
-  if (!fs)
-    internalError("mem-qram: a deferred store that M2's analysis does not list", &at);
+  std::optional<FormalStore> fs = listedStore(ctx, [&](const FormalStore &x) { return x.st == &at; }, at);
   if ((flag != nullptr) != fs->flagged)
     internalError("mem-qram: a deferred store's predicate disagrees with M2's analysis", &at);
   QramObj &q = qramObj(ctx, root, at);
@@ -3978,7 +4170,10 @@ void noteCalleeQramStores(LoweringContext &ctx, const CallBase &orig, const Spec
       internalError("mem-qram: a clone call's QRAM triple whose bus is no QRAM of this function", fwd);
     if (global)
       globalBuses.insert(bus);
-    ctx.unc().noteCallBusRead(fwd, ctx.unc().idOf(bus));
+    // A bus this clone was handed (its triple formal's) is the caller's rail: no store lands on it in this clone's
+    // body (its own are deferred, a callee's popped right after the call), so the call reads it as it is.
+    if (!formalOfBus(ctx, bus))
+      ctx.unc().noteCallBusRead(fwd, ctx.unc().idOf(bus));
   }
   for (Argument &A : callee.F->args())
     if (isQramTriple(T, callee, A) && triple.count(A.getArgNo()) && globalBuses.count(triple[A.getArgNo()].first) &&
@@ -3988,6 +4183,7 @@ void noteCalleeQramStores(LoweringContext &ctx, const CallBase &orig, const Spec
                     &orig);
   IRBuilder<> &B = ctx.B();
   unsigned r = 0;
+  SmallVector<std::pair<abi::CoreSpec, SmallVector<Operand, 4>>, 2> pops;   // the call's stores on formals' buses
   for (size_t k = 0; k < stores.size(); ++k) {
     const FormalStore &fs = stores[k];
     auto [bus, idx] = triple.at(fs.argNo);
@@ -3996,7 +4192,7 @@ void noteCalleeQramStores(LoweringContext &ctx, const CallBase &orig, const Spec
       idx = Operand{storedRails[r++], true};
     } else if (fs.cell) {
       if (idx.handle)
-        internalError("mem-qram: a store at a constant offset from a quantum idx that M2 does not copy out", fs.st);
+        internalError("mem-qram: a store at a constant offset from a quantum idx that M2 does not copy out", fs.at());
       idx = Operand{B.CreateAdd(idx.v, ConstantInt::get(idx.v->getType(), fs.cell, true)), false};
     }
     Value *flag = fs.flagged ? storedRails[r++] : nullptr;
@@ -4008,13 +4204,31 @@ void noteCalleeQramStores(LoweringContext &ctx, const CallBase &orig, const Spec
     if (!sameCellType(ctx.M.getDataLayout(), fs.ty, *col))
       unimplemented("mem-qram: a clone storing through a QRAM triple formal at another type than the caller's "
                     "cells (a bit view, 63)",
-                    fs.st);
+                    fs.at());
     abi::CoreSpec spec{abi::Core::QramStore, w, flag != nullptr, !idx.handle};
     SmallVector<Operand, 4> ops;
     if (flag)
       ops.push_back(Operand{flag, true});
     ops.append({Operand{bus, true}, idx, Operand{v, true}});
+    if (const Value *formal = formalOfBus(ctx, bus)) {
+      // M2 through a call: the bus is this clone's own triple formal's, its caller's object. The store is this
+      // clone's: popped right after the call (below, last first), deferred like its own stores.
+      deferCallStore(ctx, orig, k, formal, *col, idx, v, flag);
+      pops.push_back({spec, ops});
+      continue;
+    }
     ctx.unc().recordCore(fwd, spec, ops, ctx.unc().idOf(bus));
+  }
+  for (auto it = pops.rbegin(); it != pops.rend(); ++it) {
+    abi::CoreSpec spec = it->first;
+    spec.unc = true;
+    SmallVector<Value *, 4> args;
+    for (const Operand &o : it->second)
+      args.push_back(o.v);
+    CallInst *pop = B.CreateCall(abi::declare(ctx.M, spec), args);
+    for (const Operand &o : it->second)
+      if (o.handle)
+        ctx.unc().noteUse(ctx.unc().idOf(o.v), pop);
   }
 }
 } // namespace cq::mem
