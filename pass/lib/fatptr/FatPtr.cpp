@@ -1462,6 +1462,21 @@ Fat derive(LoweringContext &ctx, const Value *p, bool emit, bool eager) {
     return derivePtrMask(ctx, *pm, emit, eager);
   if (isCarried(ctx, p)) {
     // R2 (cq-z6q1): the loop's tag rail at the classical idx 0, over the roots of its incomings.
+    // An incoming computed from p itself (p moved by a GEP: a carried idx) reaches p again: there p is a pointer of
+    // unknown idx, which its incoming's check below sees (cq-h8y6: not an endless derivation).
+    static thread_local SmallPtrSet<const Value *, 4> deriving;
+    if (deriving.count(p)) {
+      Fat f;
+      f.tag = Operand{nullptr, true};
+      f.idx = Operand{nullptr, true};
+      f.idxBits = 64;
+      return f;
+    }
+    deriving.insert(p);
+    struct Done {
+      const Value *p;
+      ~Done() { deriving.erase(p); }
+    } done{p};
     Fat f;
     for (const Value *in : cast<PHINode>(p)->incoming_values()) {
       if (in == p)
