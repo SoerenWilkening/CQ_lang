@@ -1123,6 +1123,33 @@ class JoinRepair {
     return phi;
   }
 
+  // cq-b9w7: phiOf over the entry edges `per` of a classical loop header J, J's own value on each back edge
+  // (backEdge): one value on every entry (a loop has one) is J's value as it is; otherwise a phi over the
+  // entries naming itself on each back edge (as a merge it names what it named on entry, U1).
+  Value *loopPhiOf(BasicBlock *J, ArrayRef<std::pair<BasicBlock *, Value *>> per,
+                   const std::function<bool(BasicBlock *)> &backEdge, bool handle) {
+    if (none_of(uniquePreds(J), backEdge) ||
+        all_of(per, [&](const auto &e) { return e.second == per[0].second; }))
+      return phiOf(J, per, handle);
+    Type *ty = per[0].second->getType();
+    PHINode *phi = PHINode::Create(ty, unsigned(pred_size(J)), "");
+    phi->insertInto(J, J->begin());
+    for (BasicBlock *p : predecessors(J)) {
+      if (backEdge(p)) {
+        phi->addIncoming(phi, p);
+        continue;
+      }
+      for (const auto &x : per)
+        if (x.first == p) {
+          phi->addIncoming(x.second, p);   // one type: the carried value's (or its handle's), as phiOf checks
+          break;
+        }
+    }
+    if (handle)
+      ctx.unc().recordMerge(phi);
+    return phi;
+  }
+
   // cq-pfpy: a join whose per-edge values are being built. Reached again through a back edge, it is a
   // placeholder phi standing for the value the join will carry, replaced by it once built.
   using JoinKey = std::tuple<Value *, unsigned, unsigned, int, BasicBlock *>;
@@ -1285,8 +1312,20 @@ public:
     JoinKey jkey{nullptr, n, care, -2, J};
     if (Value *x = reentered(jkey, Type::getInt32Ty(ctx.M.getContext())))
       return x;
+    // cq-b9w7 (CR rules 8, 14): J heads a classical loop and every atom n reads is defined outside it: n is
+    // the same on every trip, so on a back edge the flag is J's own (not a seed per trip; the facts of an edge
+    // inside the loop are one trip's, not those of the point after the loop the care set speaks of).
+    std::set<unsigned> nsup;
+    m.support(n, nsup);
+    bool invariant = all_of(nsup, [&](unsigned v) {
+      auto *x = dyn_cast_or_null<Instruction>(atomValue(v));
+      return !x || !DT().dominates(J, x->getParent());
+    });
+    auto backEdge = [&](BasicBlock *p) { return invariant && DT().dominates(J, p); };
     std::vector<std::pair<BasicBlock *, Value *>> per;
     for (BasicBlock *p : uniquePreds(J)) {
+      if (backEdge(p))
+        continue;
       unsigned c = m.andOp(care, edgeFacts(p, J, vars));
       unsigned np = c == Bdd::F ? Bdd::F : m.restrict(n, c);
       auto key = std::make_tuple(np, c, p);
@@ -1297,7 +1336,7 @@ public:
         v = flagMemo[key] = flagAt(np, c, p, p->getTerminator()->getIterator(), what);
       per.push_back({p, v});
     }
-    return settle(jkey, phiOf(J, per, true));
+    return settle(jkey, loopPhiOf(J, per, backEdge, true));
   }
 
   Value *flagHere(unsigned n, unsigned care, const Value *what) {
@@ -1330,8 +1369,18 @@ public:
     std::set<unsigned> vars;
     classicalVars(k.node, vars);
     classicalVars(k.care, vars);
+    // cq-b9w7 (CR rules 9, 14): J heads a classical loop that v is defined outside of. Around the loop's
+    // back edges v is what it was at J (no block of the loop defines it): the carried value is J's own phi
+    // there, on every back edge, needed or not. A don't-care seed on a back edge would mint a rail per trip
+    // (and the classical facts of an edge inside the loop are those of one trip, not of the point after the
+    // loop the care set speaks of).
+    auto *vi = dyn_cast<Instruction>(v);
+    bool outside = !vi || !DT().dominates(J, vi->getParent());
+    auto backEdge = [&](BasicBlock *p) { return outside && DT().dominates(J, p); };
     std::vector<std::pair<BasicBlock *, Value *>> per;
     for (BasicBlock *p : uniquePreds(J)) {
+      if (backEdge(p))
+        continue;
       unsigned c = m.andOp(k.care, edgeFacts(p, J, vars));
       unsigned a = c == Bdd::F ? Bdd::F : m.restrict(k.node, c);
       bool unneeded, one = false;
@@ -1413,7 +1462,7 @@ public:
       }
       per.push_back({p, x});
     }
-    return settle(jkey, phiOf(J, per, handle));
+    return settle(jkey, loopPhiOf(J, per, backEdge, handle));
   }
 
   // The arm is read only where `care` holds: outside it, it is a don't-care.

@@ -52,7 +52,7 @@
 //    role. ops are the inverse template's forward operands.
 //  - recordMerge(m) (U1, CR rule 9 at a58c3a4): m is a classical select (condition not a rail) or a
 //    complete phi (one incoming per predecessor) whose every value operand is a recorded rail or
-//    merge, none freed. m's handle becomes a MERGE: idOf(m) answers, and it may be an operand of any
+//    merge, none freed, or m itself (a loop's back edge carrying m unchanged, cq-b9w7: no arm). m's handle becomes a MERGE: idOf(m) answers, and it may be an operand of any
 //    record, noteUse and setRole. A merge names one of its arms at run time, so:
 //      * it is never resolved itself: no _unc, no cqrt_free, never live at exit as a rail of its own;
 //      * a use of m (an IR user of m's handle, a noted use, a record reading m, a rule 6 clean-up
@@ -3961,8 +3961,11 @@ RailId Uncompute::recordMerge(Instruction *merged) {
   } else if (auto *phi = dyn_cast<PHINode>(merged)) {
     if (phi->getNumIncomingValues() != pred_size(phi->getParent()))
       internalError("uncompute: recordMerge: the phi is not complete (an incoming per predecessor)", merged);
+    // cq-b9w7: the phi itself on a loop's back edge (a value carried unchanged around a classical loop, pred
+    // JoinRepair) names what the phi named on entry: no arm of its own.
     for (Value *v : phi->incoming_values())
-      vals.push_back(v);
+      if (v != merged)
+        vals.push_back(v);
   } else {
     internalError("uncompute: recordMerge: a merge is a select or a phi", merged);
   }
