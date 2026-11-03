@@ -1210,10 +1210,8 @@ QramObj &qramObj(LoweringContext &ctx, const Value *root, const Instruction &I) 
     return it->second;
   auto *gv = const_cast<GlobalVariable *>(dyn_cast<GlobalVariable>(root));
   if (!gv) {
-    if (isa<Argument>(root))
-      unimplemented("mem-qram: a QRAM access through a parameter (the caller's bus crosses the call as a rule 21 "
-                    "triple)",
-                    &I);
+    // A parameter pointing into a QRAM is a triple formal of a clone (CR §1.4: a QRAM pointer is a quantum argument,
+    // taint lifts its callee), registered as a QRAM over the caller's bus (registerFormalQram): it is found above.
     unimplemented("mem-qram: a QRAM access to a site that was not allocated as a QRAM (field columns of "
                   "different classes, rule 20, or an allocation not lowered before the access)",
                   &I);

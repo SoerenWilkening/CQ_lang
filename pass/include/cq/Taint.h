@@ -28,7 +28,11 @@ struct Specialization { llvm::Function *F; Mask mask; bool ctl = false, pure = f
                         // result is not frozen (calls makes it; taint publishes none): the in-place body as
                         // a clone, its still-allocated registers returned after its results. Taint answers
                         // for it as for the in-place specialization of F (same mask, no flags).
-                        bool kept = false; };
+                        bool kept = false;
+                        // cq-7bzk (CR §1.4): a clone a QRAM pointer reaches with no other quantum argument: its
+                        // mask has no 1 (a QRAM's cells get no digits, the bus is quantum by definition), and it
+                        // is no entry. Taint publishes it on every clone (never on an in-place or declared one).
+                        bool bus = false; };
 using ObjectId = unsigned;                           // alloca, global, heap site, SROA field column
 enum class ObjClass : uint8_t { Classical, Slot, Qram };   // QROM is a load kind on a Classical object
 enum class OffsetKind : uint8_t { Classical, Quantum };

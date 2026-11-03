@@ -777,6 +777,9 @@ std::string lanesStr(const Lanes &l) {
   return s;
 }
 
+// A pointer actual's naming record (cellDigits) names a QRAM object ("OQ;").
+static bool qramRecord(const std::string &c) { return c.find("OQ;") != std::string::npos; }
+
 SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector<Type *> tys,
                              std::vector<std::string> cells, bool ctl, bool pure,
                              unsigned depth, std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals) {
@@ -822,7 +825,7 @@ SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector
   for (const Lanes &l : S->formal)
     zero = zero && l.none();
   for (const std::string &c : S->cells)
-    zero = zero && c.find('1') == std::string::npos;
+    zero = zero && c.find('1') == std::string::npos && !qramRecord(c);
   S->inPlace = zero && !S->declared;
   S->key = key;
   S->ret = Lanes(lanesOf(F->getReturnType()));
@@ -2471,7 +2474,9 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
     anyQ = anyQ || l.any();
     if (A->getType()->isPointerTy()) {
       std::string c = cellDigits(CB, G, i, A);
-      if (c.find('1') != std::string::npos)
+      // CR §1.4: a pointer into a QRAM is a quantum argument (its object crosses as the bus, a rail; the QRAM's
+      // cells get no digits, the object is quantum by definition).
+      if (c.find('1') != std::string::npos || qramRecord(c))
         anyQ = true;
       cells.push_back(c);
     } else {
@@ -2528,7 +2533,9 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
         cells[i] = memo->cells[i];
     bool inPlace = !memo->ctl && depth == 0 && memo->bounds.empty() &&
                    llvm::none_of(formal, [](const Lanes &l) { return l.any(); }) &&
-                   llvm::none_of(cells, [](const std::string &c) { return c.find('1') != std::string::npos; });
+                   llvm::none_of(cells, [](const std::string &c) {
+                     return c.find('1') != std::string::npos || qramRecord(c);
+                   });
     if (!inPlace) {
       SpecState *C = getSpec(G, formal, tys, cells, memo->ctl, false, depth, memo->bounds);
       // Its pointer formals point where the actuals do, also when the ordinary path below takes over (a
@@ -4103,6 +4110,8 @@ void Analyzer::finish() {
     P.depth = S->depth;
     P.bounds = S->bounds;
     P.boundFormals = S->boundFormals;
+    // CR §1.4: a clone whose mask has no 1 (a QRAM reaches it through a triple) is no entry.
+    P.bus = !S->inPlace && !S->declared;
     st.published.push_back(P);
     st.publishedState.push_back(S);
   };
@@ -4137,7 +4146,7 @@ namespace cq {
 using namespace taintimpl;
 
 bool Specialization::isEntry() const {
-  if (!F || F->isDeclaration() || ctl || pure || depth || !bounds.empty() || kept)
+  if (!F || F->isDeclaration() || ctl || pure || depth || !bounds.empty() || kept || bus)
     return false;
   return mask.find('1') == std::string::npos;
 }
