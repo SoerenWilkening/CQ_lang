@@ -1254,17 +1254,39 @@ class Instrumenter:
             inc.append(f"[ {self.sid(f, v)}, {b} ]")
         return f"{sh} = phi i32 {', '.join(inc)}"
 
+    @staticmethod
+    def byval_type(param: str) -> Optional[str]:
+        """The pointee type of a byval parameter ("ptr noundef byval({ x86_fp80, x86_fp80 }) align 16
+        %0"), or None for any other parameter."""
+        m = re.search(r"\bbyval\(", param)
+        return D._balanced(param, m.end() - 1).strip() if m else None
+
     def param_entry(self, f: D.Function) -> List[str]:
         """At `f`'s entry: the allocation site of each pointer parameter, as its caller passed it in
         @__cqd_aid when @__cqd_afn names `f` (a direct call from the module), else 0; @__cqd_afn is
-        cleared, so a call from outside the module (a driver, a library callback) passes nothing."""
-        ptrs = [(k, v) for k, (ty, v) in enumerate(f.params)
-                if ty != "..." and v and split_type(ty)[0] == "ptr" and k < self.NAID]
+        cleared, so a call from outside the module (a driver, a library callback) passes nothing.
+        A byval parameter (cq-0jq1) points at the callee's own copy of the argument, made between the
+        caller and the callee (LangRef, byval) at an address no object of the caller has: it is an
+        object of `f`'s frame, registered here as an alloca of its type is, with that provenance (the
+        C oracle does the same, OracleInstr.cpp's __cqo_sh_byval_in)."""
+        out: List[str] = []
+        ptrs = []
+        for k, (ty, v) in enumerate(f.params):
+            if ty == "..." or not v or split_type(ty)[0] != "ptr":
+                continue
+            bt = self.byval_type(ty)
+            if bt is not None:
+                sh = self.tmp()
+                out.append(f"{sh} = call i32 @__cqd_rega(ptr {v}, i64 ptrtoint (ptr getelementptr ({bt}, "
+                           f"ptr null, i32 1) to i64), i32 {self.alloca_site(f, v)})")
+                self.param_ids[(f.name, v)] = sh
+            elif k < self.NAID:
+                ptrs.append((k, v))
         if not ptrs:
-            return []
+            return out
         fn, ok = self.tmp(), self.tmp()
-        out = [f"{fn} = load ptr, ptr @__cqd_afn", f"{ok} = icmp eq ptr {fn}, {f.name}",
-               "store ptr null, ptr @__cqd_afn"]
+        out += [f"{fn} = load ptr, ptr @__cqd_afn", f"{ok} = icmp eq ptr {fn}, {f.name}",
+                "store ptr null, ptr @__cqd_afn"]
         for k, v in ptrs:
             g, l, sel = self.tmp(), self.tmp(), self.tmp()
             out += [f"{g} = getelementptr [{self.NAID} x i32], ptr @__cqd_aid, i64 0, i64 {k}",

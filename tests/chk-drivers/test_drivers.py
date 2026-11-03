@@ -1199,6 +1199,56 @@ class ZeroByteAlloca(unittest.TestCase):
         self.assertEqual(o.end, "oob")
 
 
+BYVAL_LL = """target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-apple-macosx"
+
+@g = global [4 x i8] zeroinitializer, align 1
+
+define internal x86_fp80 @rd(ptr byval({ x86_fp80, x86_fp80 }) align 16 %0, i32 %1) noinline {
+  %3 = sext i32 %1 to i64
+  %4 = getelementptr x86_fp80, ptr %0, i64 %3
+  %5 = load x86_fp80, ptr %4, align 16
+  ret x86_fp80 %5
+}
+
+define x86_fp80 @bv(x86_fp80 %0, x86_fp80 %1, i32 %2) {
+  %4 = alloca { x86_fp80, x86_fp80 }, align 16
+  store x86_fp80 %0, ptr %4, align 16
+  %5 = getelementptr inbounds i8, ptr %4, i64 16
+  store x86_fp80 %1, ptr %5, align 16
+  store i8 1, ptr @g, align 1
+  %6 = call x86_fp80 @rd(ptr byval({ x86_fp80, x86_fp80 }) align 16 %4, i32 %2)
+  ret x86_fp80 %6
+}
+"""
+BYVAL_LINE = "906_probe_byval|long double bv(long double,long double,int);|bv(1,2,0)"
+
+
+class ByvalCopy(unittest.TestCase):
+    """cq-0jq1: a byval parameter points at the callee's own copy of the argument (long double
+    _Complex, the libc sweep's cabsl and the other *l complex functions), at an address no object of
+    the caller has. The probe once read it through the caller's provenance and found the object
+    below it (a global), so every sample was outside the domain; it is an object of the callee's
+    frame, checked like an alloca: inside it the access is in the domain, past it is not."""
+
+    def test_byval_copy_is_an_object(self):
+        one, two = "0x3fff8000000000000000", "0x40008000000000000000"
+        smp = [{"call": 0, "args": [one, two, f"0x{i & 0xffffffff:08x}"]} for i in (0, 1, 2, -1)]
+        obs = ZeroByteAlloca.synth("906_probe_byval", BYVAL_LINE, smp, ll_text=BYVAL_LL)
+        self.assertEqual([(o.ran, o.end, o.oob) for o in obs[:2]], [(True, "exit", set())] * 2)
+        for o in obs[:2]:
+            self.assertTrue(S._in_domain(o))
+        self.assertEqual([o.end for o in obs[2:]], ["oob", "oob"])
+        for o in obs[2:]:
+            self.assertFalse(S._in_domain(o))
+
+    def test_byval_type(self):
+        self.assertEqual(S.Instrumenter.byval_type(
+            "ptr nocapture noundef readonly byval({ x86_fp80, x86_fp80 }) align 16 %0"), "{ x86_fp80, x86_fp80 }")
+        self.assertEqual(S.Instrumenter.byval_type("ptr noundef byval(%struct.S) align 8 %1"), "%struct.S")
+        self.assertIsNone(S.Instrumenter.byval_type("ptr noundef %0"))
+
+
 class ProbeDeterminism(unittest.TestCase):
     """cq-ir5z: every probe observation is a function of the input only. An access outside its
     object ends the sample at the access (end "oob", the header count there), before it lands;
