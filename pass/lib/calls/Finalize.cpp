@@ -809,6 +809,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
     Value *ret = R->getReturnValue();
     PHINode *rp = nullptr;
     SmallVector<Instruction *, 4> chain;
+    SmallVector<PHINode *, 2> fieldPhis;
     if (srt) {
       // A field-wise result: the insertvalue chain of the return; its handle fields (the copy-outs, in
       // field order) are the outs.
@@ -829,16 +830,32 @@ void defineTwin(Module &M, Function &twin, Function &src) {
       if (!isa<PoisonValue>(v) && !isa<UndefValue>(v) && !isa<ConstantAggregate>(v))
         internalError("calls: calls::finalize: a field-wise clone return that is not built from poison", R);
       unsigned j = 0;
-      for (unsigned k = 0; k < nFields; ++k) {
-        auto *f = dyn_cast_or_null<CallInst>(fields[k]);
+      auto isAlloc = [](Value *x) {
+        auto *ci = dyn_cast_or_null<CallInst>(x);
         std::optional<abi::CoreSpec> a =
-            f && f->getCalledFunction() ? abi::parseCore(f->getCalledFunction()->getName()) : std::nullopt;
-        if (!a || a->op != abi::Core::Alloc)
+            ci && ci->getCalledFunction() ? abi::parseCore(ci->getCalledFunction()->getName()) : std::nullopt;
+        return a && a->op == abi::Core::Alloc;
+      };
+      for (unsigned k = 0; k < nFields; ++k) {
+        // A handle field is a copy-out f, or a phi chosen classically of one copy-out per incoming edge
+        // (Walker::returnCopyOut) followed by an appended field (cq-ew5z: a level's overflow predicate): each
+        // copy targets the field's out, the phi goes with the chain.
+        SmallSetVector<Value *, 2> results;
+        auto *fp = dyn_cast_or_null<PHINode>(fields[k]);
+        if (fp && fp->hasOneUse() && all_of(fp->incoming_values(), [&](Value *x) { return isAlloc(x); }))
+          results.insert(fp->incoming_values().begin(), fp->incoming_values().end());
+        else if (isAlloc(fields[k]))
+          results.insert(fields[k]);
+        else
           continue;   // a classical field
         if (j >= nOuts)
           internalError("calls: calls::finalize: a field-wise clone return with more handle fields than its twin's outs",
                         R);
-        retarget(f, twin.getArg(nRegs + j++), R);
+        for (Value *rv : results)
+          retarget(rv, twin.getArg(nRegs + j), R);
+        ++j;
+        if (results.front() != fields[k])
+          fieldPhis.push_back(fp);
       }
       if (j != nOuts)
         internalError("calls: calls::finalize: a field-wise clone return with fewer handle fields than its twin's outs",
@@ -863,6 +880,8 @@ void defineTwin(Module &M, Function &twin, Function &src) {
       iv->eraseFromParent();
     if (rp)
       rp->eraseFromParent();
+    for (PHINode *fp : fieldPhis)
+      fp->eraseFromParent();
   }
   for (Instruction *f : dead)
     if (f->use_empty())
@@ -873,7 +892,8 @@ void defineTwin(Module &M, Function &twin, Function &src) {
   // Rule 14's kept overflow predicate a_K = alloc_i1(0); and_i1(a_n, test, a_K), never freed, read by
   // nothing: the forward keeps it (one per activation); the twin, which only uncomputes the forward's
   // outs, does not compute it (169: "__cq_q_ilogb_1_unc itself keeps nothing"). Its test is the twin's
-  // garbage as in the forward, uncomputed there.
+  // garbage as in the forward, uncomputed there. A recursion's overflow predicate kept by its first outside
+  // caller (cq-ew5z: alloc_i1(0); and_i1(p, ovf, k), or copy_i1(ovf, k) with no predicate) is the same.
   SmallVector<CallInst *, 2> keptK;
   for (Instruction &I : instructions(twin)) {
     auto *a = dyn_cast<CallInst>(&I);
@@ -884,6 +904,9 @@ void defineTwin(Module &M, Function &twin, Function &src) {
     auto *g = dyn_cast<CallInst>(a->user_back());
     if (g && g->getCalledFunction() && g->getCalledFunction()->getName() == "cqrt_and_i1" &&
         g->arg_size() == 3 && g->getArgOperand(2) == a && g->getArgOperand(0) != a && g->getArgOperand(1) != a)
+      keptK.push_back(a);
+    else if (g && g->getCalledFunction() && g->getCalledFunction()->getName() == "cqrt_copy_i1" &&
+             g->arg_size() == 2 && g->getArgOperand(1) == a && g->getArgOperand(0) != a)
       keptK.push_back(a);
   }
   for (CallInst *a : keptK) {

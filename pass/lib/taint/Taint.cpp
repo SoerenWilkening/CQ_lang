@@ -14,6 +14,7 @@
 #include "TaintImpl.h"
 
 #include <algorithm>
+#include <functional>
 #include <numeric>
 #include <set>
 
@@ -2535,6 +2536,10 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
           C->depthCut = want;
           st.changed = true;
         }
+        if (cur->keepsOverflow && !C->keepsOverflow) {
+          C->keepsOverflow = true;   // cq-ew5z: the level-0 clone's
+          st.changed = true;
+        }
       }
       if (depth == 0 && !G->isDeclaration() && callsReach(G, G) && C->depthCut == 0) {
         memo = nullptr;   // the depth cutoff below derives from the actuals: take the ordinary path
@@ -2619,6 +2624,10 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
       C->depthCut = want;
       st.changed = true;
     }
+    if (cur->keepsOverflow && !C->keepsOverflow) {
+      C->keepsOverflow = true;   // cq-ew5z: the level-0 clone's
+      st.changed = true;
+    }
   }
   // The B of a quantum-depth recursion: the bound of the formal the recursive call decrements.
   if (depth == 0 && !G->isDeclaration()) {
@@ -2637,6 +2646,8 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
       unsigned K = resolveK(*G);
       unsigned cut = B ? unsigned(std::min<uint64_t>(K, *B)) : K;
       C->depthCut = cut;
+      // cq-ew5z (CR rule 14): the cut keeps the overflow predicate iff B > K or no bound is known.
+      C->keepsOverflow = !B || *B > K;
     }
   }
   recordCallee(CB, C);
@@ -3965,6 +3976,33 @@ void Analyzer::finish() {
       if (other)
         for (SpecState *C : v)
           C->needsTwin = true;
+    }
+  }
+  // cq-ew5z (CR rule 14 with rule 19): a level of a quantum-depth recursion whose cut keeps the overflow
+  // predicate returns it after its result (a level with a cut call, or one calling such a next level); it is
+  // garbage at every call (a term of the caller's predicate, or copied into the kept rail), so every call of
+  // such a level needs the twin.
+  {
+    DenseMap<SpecState *, bool> carries;
+    std::function<bool(SpecState *)> carry = [&](SpecState *S) -> bool {
+      auto [it, fresh] = carries.try_emplace(S, false);
+      if (!fresh)
+        return it->second;
+      bool c = S->keepsOverflow && !S->declared && !S->inPlace && !S->cutCalls.empty();
+      for (auto &[CB, v] : S->callees)
+        for (SpecState *C : v)
+          if (!c && C->F == CB->getCalledFunction() && C->depth == S->depth + 1 && carry(C))
+            c = true;
+      carries[S] = c;
+      return c;
+    };
+    for (auto &S : st.specs) {
+      if (!S->reachable)
+        continue;
+      for (auto &[CB, v] : S->callees)
+        for (SpecState *C : v)
+          if (C->keepsOverflow && carry(C))
+            C->needsTwin = true;
     }
   }
   // _pure: what a twin recomputes through when the callee has effects (119).

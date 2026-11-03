@@ -327,6 +327,7 @@ private:
   void emitTerminator(BasicBlock *b);
   void noteEntryReturn(bool frozen, Instruction *t);   // rule 19 (cq-i9wk)
   void emitCloneReturn(ReturnInst *ret);
+  void emitOverflowReturn(ReturnInst *ret);             // rule 14 with rule 19 (cq-ew5z)
   bool emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigned extra, SmallVectorImpl<Value *> &vals);
   void resultFields(ReturnInst *ret, Value *rv, StructType *st, unsigned extra, SmallVectorImpl<Value *> &vals);
   Value *returnCopyOut(PHINode &phi);
@@ -1464,10 +1465,86 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
       internalError("spine: a clone's classical result does not have the clone's return type", ret);
     }
     nr = B.CreateRet(v);
+  } else if (!C->getReturnType()->isVoidTy()) {
+    // cq-ew5z: a void base with the overflow predicate appended (calls::materialize); emitOverflowReturn sets
+    // the returned handle.
+    nr = B.CreateRet(PoisonValue::get(C->getReturnType()));
   } else {
     nr = B.CreateRetVoid();
   }
   ctx.unc().flushAtExit(nr);
+}
+
+// CR rule 14 (recursion with quantum depth) with rule 19's extra result (cq-ew5z). A level clone whose cut keeps
+// the overflow predicate (calls::overflowResult) returns its base result as any clone does (emitCloneReturn,
+// the base type keptCloneBaseType) and after it the handle of a fresh i1 rail holding this level's overflow
+// predicate: "a call at the cut level would recurse once more" under this level's own predicates
+// (calls::overflowOfLevel). It is copied out like a result (rule 18: alloc_i1(0), copy_i1, Role::Result)
+// before the body is uncomputed, so the twin XORs it out of its last out like any result and the caller
+// frees it after the twin; the first caller outside the recursion keeps its value (calls).
+void Walker::emitOverflowReturn(ReturnInst *ret) {
+  LLVMContext &LC = ctx.M.getContext();
+  RailType i1{Kind::Int, 1};
+  Value *acc = calls::overflowOfLevel(ctx);
+  CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(LC)});
+  RailId fid = ctx.unc().recordSeed(f);
+  abi::CoreSpec cp{abi::Core::Copy, i1};
+  CallInst *c = ctx.emitCore(cp, {acc, f});
+  ctx.unc().recordCore(c, cp, {Operand{acc, true}, Operand{f, true}}, fid);
+  ctx.unc().setRole(fid, Role::Result);
+  SmallPtrSet<ReturnInst *, 4> before;
+  for (BasicBlock &OB : *sh.out)
+    if (auto *r = dyn_cast_or_null<ReturnInst>(OB.getTerminator()))
+      before.insert(r);
+  emitCloneReturn(ret);
+  Type *base = spine::keptCloneBaseType(*sh.out);
+  for (BasicBlock &OB : *sh.out) {
+    auto *nr = dyn_cast_or_null<ReturnInst>(OB.getTerminator());
+    if (!nr || before.count(nr))
+      continue;
+    if (base->isVoidTy()) {
+      nr->setOperand(0, f);
+      continue;
+    }
+    // The base's fields (the values its insertvalue chain from poison put there, as emitCloneReturn builds a
+    // field-wise return), then the rail: one insertvalue chain from poison (calls::finalize's twin reads it).
+    auto *wt = cast<StructType>(sh.out->getReturnType());
+    IRBuilder<> RB(nr);
+    Value *old = nr->getReturnValue();
+    SmallVector<Value *, 4> fields;
+    if (auto *bst = dyn_cast<StructType>(base)) {
+      for (unsigned k = 0; k < bst->getNumElements(); ++k) {
+        Value *e = nullptr;
+        for (Value *v = old; !e;) {
+          if (auto *iv = dyn_cast<InsertValueInst>(v)) {
+            if (iv->getNumIndices() == 1 && iv->getIndices()[0] == k)
+              e = iv->getInsertedValueOperand();
+            else if (iv->getIndices()[0] == k)
+              break;   // a nested insert into field k: the field is read back whole below
+            else
+              v = iv->getAggregateOperand();
+          } else {
+            if (auto *cv = dyn_cast<Constant>(v))
+              e = cv->getAggregateElement(k);
+            break;
+          }
+        }
+        fields.push_back(e ? e : RB.CreateExtractValue(old, {k}));
+      }
+    } else {
+      fields.push_back(old);
+    }
+    fields.push_back(f);
+    Value *agg = PoisonValue::get(wt);
+    for (unsigned k = 0; k < fields.size(); ++k)
+      agg = RB.CreateInsertValue(agg, fields[k], {k});
+    nr->setOperand(0, agg);
+    for (auto *iv = dyn_cast<InsertValueInst>(old); iv && iv->use_empty();) {
+      auto *next = dyn_cast<InsertValueInst>(iv->getAggregateOperand());
+      iv->eraseFromParent();
+      iv = next;
+    }
+  }
 }
 
 // Rule 18 copy-out of a return phi chosen classically (cq-mjwb, 119). A clone's return value that
@@ -1639,7 +1716,7 @@ void Walker::emitTerminator(BasicBlock *b) {
                     "returns of every tainted function)",
                     t);
     if (!ctx.S.isEntry() && !ctx.S.kept)
-      return emitCloneReturn(ret);
+      return calls::overflowResult(ctx.S) ? emitOverflowReturn(ret) : emitCloneReturn(ret);
     if (ctx.S.kept) {
       // Rule 19 (cq-i9wk): a kept clone returns its results (rule 18's copy-out) and then the handle of
       // each register it minted that is still allocated, for its twin to clean against.

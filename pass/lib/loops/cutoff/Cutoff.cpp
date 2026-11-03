@@ -2099,14 +2099,14 @@ unsigned resolveK(const Function &F, const KOptions &KO) {
 // min(K, B); the recursive call at level C is CUT: its value is a fresh |0> rail per quantum scalar field
 // (a seed, rule 7: freed directly once its readers are uncomputed; a classical field is the constant 0), a
 // void cut call is nothing. The overflow predicate "the cut level would recurse once more" is kept iff
-// B > K or no bound is known; with B <= K the call never runs and nothing is kept (98).
+// B > K or no bound is known; with B <= K the call never runs and nothing is kept (98). Kept (cq-ew5z, rules
+// 14 and 19): the cut call's predicate is a term of its level's predicate, which each level returns to the one
+// below as an extra result and the recursion's first outside caller keeps (calls::lowerLifted notes the term
+// before it reaches here; calls::materialize, Walker::emitOverflowReturn).
 void lowerQuantumDepthRecursion(LoweringContext &ctx, llvm::CallBase &CB, unsigned K, std::optional<uint64_t> B) {
   LLVMContext &C = ctx.M.getContext();
-  if (!B || *B > K)
-    unimplemented("loops-cutoff: a quantum-depth recursion cut at K with B > K or no bound: the kept overflow "
-                  "predicate (rule 14) is a rail kept inside a level clone, which calls does not return to the "
-                  "caller nor the checker count as kept (cq-ew5z)",
-                  &CB);
+  (void)K;
+  (void)B;
   if (CB.getType()->isVoidTy())
     return;
   // The scalar leaves of the result (rules 25, 26: struct and array elements, vector lanes).

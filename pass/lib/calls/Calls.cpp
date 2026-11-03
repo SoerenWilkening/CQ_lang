@@ -62,6 +62,7 @@
 #include "../mem/slots/SlotsInternal.h"
 #include "../fatptr/FatPtrInternal.h"
 
+#include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/PostDominators.h"
@@ -77,6 +78,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/TargetParser/Triple.h"
+#include "llvm/Transforms/Utils/SSAUpdater.h"
 
 #include <map>
 #include <optional>
@@ -89,8 +91,16 @@ namespace {
 
 // The TaintInfo of the current run (see the contract).
 std::optional<TaintInfo> runTaint;
+// The run's K resolution (CLAUDE.md "K per loop"), captured with it: rule 14's cut of a quantum-depth
+// recursion decides from K and B whether a clone returns the overflow predicate (cq-ew5z).
+std::optional<loops::KOptions> runKO;
 
-void capture(LoweringContext &ctx) { runTaint = ctx.T; }
+void capture(LoweringContext &ctx) {
+  runTaint = ctx.T;
+  runKO = spine::shared(ctx).KO;
+}
+
+bool carriesOverflow(const TaintInfo &T, const Specialization &S);
 
 const TaintInfo &taintOf(const Specialization &S) {
   if (!runTaint)
@@ -508,6 +518,80 @@ Value *ctlFlag(LoweringContext &ctx, const CallBase &CB) {
   return f;
 }
 
+// ---- Rule 14's kept overflow predicate of a quantum-depth recursion (cq-ew5z) -------------------------------
+//
+// CR rule 14: a recursion with quantum depth runs one clone per level, the call at the cut level is a |0> rail,
+// and "the cut level would recurse once more" is the kept overflow predicate when B > K or no bound is
+// proved. The levels run unguarded or as _ctl clones (rule 19), so a cut call's own predicate holds the
+// recursion's path only from its level on: the predicate is built up the levels, each returning it as an
+// extra result (rule 19's extra results; calls::materialize, Walker::emitOverflowReturn). At level d it is
+// the OR over d's recursive call sites s of (the quantum predicate s runs under) AND (at a cut call: true; at
+// a call of level d + 1: the predicate that level returned). A level's returned rail is a result of its call,
+// zeroed by the twin with the others (rule 18), so every level's rails are clean; the first caller outside
+// the chain (the entry, or a clone calling the recursion) keeps a fresh rail holding the returned predicate
+// under its own call's predicate (Role::KeptOverflow), never read, one per activation of the recursion like
+// a K-loop's a_K (rule 14, 169); a twin replaying such a caller does not compute it again (calls::finalize).
+
+// x & y into a fresh i1 rail (and_i1, recorded: the uncompute spine undoes it).
+Value *andRail(LoweringContext &ctx, Value *x, Value *y) {
+  RailType i1{Kind::Int, 1};
+  CallInst *t = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(ctx.M.getContext())});
+  RailId id = ctx.unc().recordSeed(t);
+  abi::CoreSpec spec{abi::Core::AndI1, i1};
+  CallInst *g = ctx.emitCore(spec, {x, y, t});
+  ctx.unc().recordCore(g, spec, {Operand{x, true}, Operand{y, true}, Operand{t, true}}, id);
+  return t;
+}
+
+// x | y into a fresh i1 rail (or_i1, recorded).
+Value *orRail(LoweringContext &ctx, Value *x, Value *y) {
+  RailType i1{Kind::Int, 1};
+  CallInst *t = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(ctx.M.getContext())});
+  RailId id = ctx.unc().recordSeed(t);
+  abi::CoreSpec spec{abi::Core::OrI1, i1};
+  CallInst *g = ctx.emitCore(spec, {x, y, t});
+  ctx.unc().recordCore(g, spec, {Operand{x, true}, Operand{y, true}, Operand{t, true}}, id);
+  return t;
+}
+
+// A copy of x in a fresh i1 rail (alloc_i1(0), copy_i1, recorded).
+Value *copyRail(LoweringContext &ctx, Value *x) {
+  RailType i1{Kind::Int, 1};
+  CallInst *t = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(ctx.M.getContext())});
+  RailId id = ctx.unc().recordSeed(t);
+  abi::CoreSpec spec{abi::Core::Copy, i1};
+  CallInst *g = ctx.emitCore(spec, {x, t});
+  ctx.unc().recordCore(g, spec, {Operand{x, true}, Operand{t, true}}, id);
+  return t;
+}
+
+// One recursive call site's term of its level's predicate: a fresh rail the level's return reads, pinned so no
+// flush before the return uncomputes it.
+void addOverflowArm(LoweringContext &ctx, Value *c) {
+  ctx.unc().pin(ctx.unc().idOf(c));
+  spine::shared(ctx).overflowArms.push_back(c);
+}
+
+// A cut call keeping the overflow predicate: its term is the predicate it runs under (|1> when none).
+void overflowAtCut(LoweringContext &ctx, const CallBase &CB) {
+  if (underQuantumPredicate(ctx))
+    return addOverflowArm(ctx, copyRail(ctx, ctlFlag(ctx, CB)));
+  CallInst *one = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 1}},
+                               {ConstantInt::getTrue(ctx.M.getContext())});
+  ctx.unc().recordSeed(one);
+  addOverflowArm(ctx, one);
+}
+
+// After a call of a clone returning the overflow predicate ovf (a result of the call, zeroed by its twin), made
+// under the quantum predicate p (nullptr: none, or a _ctl call: its clone's predicates, ovf's terms included,
+// are conjoined with its entry flag p already). A call of the next level from a level returning the predicate
+// is a term of that level's (p & ovf); any other caller keeps p & ovf in a fresh rail.
+void overflowAfterCall(LoweringContext &ctx, Value *ovf, Value *p, bool level) {
+  if (level)
+    return addOverflowArm(ctx, p ? andRail(ctx, p, ovf) : copyRail(ctx, ovf));
+  ctx.unc().setRole(ctx.unc().idOf(p ? andRail(ctx, p, ovf) : copyRail(ctx, ovf)), Role::KeptOverflow);
+}
+
 // CR rules 2, 7: an actual whose rail was measured at a point dominating the call denotes the classical
 // outcome (rule 2), while the clone's mask digit, fixed by taint for every call site of the clone, is
 // quantum. The clone takes a handle there: the outcome minted as a seed rail alloc_<W>(v) (rule 7: a rail
@@ -601,6 +685,13 @@ struct CloneCall {
   // operands; slotOuts: the handles loaded from those cells right after the call.
   SmallVector<Operand, 4> extra;
   SmallVector<Value *, 4> slotOuts;
+  // CR rule 14 with rule 19 (cq-ew5z): a level clone returning the overflow predicate after its base result
+  // (materialize). ovf: the handle of that rail, a result of the call undone by the twin with the others (the
+  // last out); value: the base result as the binders read it (the call itself when the base is a struct, whose
+  // fields keep their indices; the scalar field 0; nullptr for a void base). Without it, ovf is null and value
+  // is the call.
+  Value *ovf = nullptr;
+  Value *value = nullptr;
 };
 
 // A byval formal the callee may write is a private copy (cq-09xh): the clone keeps byval and the call
@@ -836,6 +927,19 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
       mem::slotRailsReadByCall(ctx, CB, i, r.call, argMap);
   mem::noteProgramSlotCall(ctx, CB, S, r.call);   // 102: a _ctl clone's guarded store into a program slot
   noteRotatedCells(ctx, CB, S, fs, r.call, argMap);
+  r.value = r.call;
+  if (Type *base = spine::keptCloneBaseType(*C); base && !S.kept && carriesOverflow(ctx.T, S)) {
+    // cq-ew5z: {base fields..., ovf} or the ovf handle alone (materialize).
+    if (base->isVoidTy()) {
+      r.ovf = r.call;
+      r.value = nullptr;
+    } else {
+      auto *st = cast<StructType>(r.call->getType());
+      r.ovf = ctx.B().CreateExtractValue(r.call, {st->getNumElements() - 1});
+      if (!isa<StructType>(base))
+        r.value = ctx.B().CreateExtractValue(r.call, {0u});
+    }
+  }
   return r;
 }
 
@@ -843,7 +947,7 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
 // extractvalue per field right after the call, the field operands bound to CB (aggr reads them), and
 // the handles recorded as the call's results, undone together by the twin (U2).
 void bindFieldwiseResult(LoweringContext &ctx, CallBase &CB, CallInst *call, const ResultLayout &res,
-                         ArrayRef<Value *> slotOuts = {}, ArrayRef<Operand> extra = {}) {
+                         ArrayRef<Value *> slotOuts = {}, ArrayRef<Operand> extra = {}, Value *ovf = nullptr) {
   SmallVector<bool, 4> tq = ctx.T.fieldMask(&CB, ctx.S);
   if (res.cuts.size() > 2 || !res.leafFields.empty() || res.fatPtr)
     tq = res.q;   // cq-0umd: a packed integer result's fields are the callee's (resultQuantum); 85: {tag, idx}
@@ -859,6 +963,8 @@ void bindFieldwiseResult(LoweringContext &ctx, CallBase &CB, CallInst *call, con
     if (res.q[k])
       outs.push_back(e);
   }
+  if (ovf)
+    outs.push_back(ovf);   // cq-ew5z: the overflow predicate, the clone's last field
   ctx.unc().recordCall(call, outs, slotOuts, extra);
   fatptr::finishSlotTableCall(ctx, call);
   mem::finishParamCells(ctx, call);
@@ -892,12 +998,12 @@ void bindQramCloneResult(LoweringContext &ctx, CallBase &CB, const Specializatio
       if (r.handle != ctx.T.isQuantum(&CB, ctx.S))
         internalError("calls: the call's result kind and taint's disagree", &CB);
       if (r.handle)
-        outs.push_back(r.call);
-      ctx.bind(&CB, r.call);
+        outs.push_back(r.value);
+      ctx.bind(&CB, r.value);
     }
   } else if (!hasResult && res.stores == 1) {
-    outs.push_back(r.call);
-    stored.push_back(r.call);
+    outs.push_back(r.value);
+    stored.push_back(r.value);
   } else {
     SmallVector<Operand, 4> ops;
     for (unsigned k = 0; k < res.leaves.size(); ++k) {
@@ -921,6 +1027,8 @@ void bindQramCloneResult(LoweringContext &ctx, CallBase &CB, const Specializatio
       }
     }
   }
+  if (r.ovf)
+    outs.push_back(r.ovf);   // cq-ew5z: the overflow predicate, the clone's last field
   if (outs.empty() && r.slotOuts.empty()) {
     // Nothing to undo: no result rail, no store (a clone that only reads the bus classically).
     if (!r.extra.empty())
@@ -1293,7 +1401,118 @@ std::optional<uint64_t> provedDepthBound(const TaintInfo &T, const Specializatio
   return best;
 }
 
+// Rule 14 (recursion with quantum depth): the cut call keeps the overflow predicate "the cut level would
+// recurse once more" iff B > K or no bound is proved; with B <= K no call at the cut level runs (98).
+bool cutKeepsOverflow(unsigned K, std::optional<uint64_t> B) { return !B || *B > K; }
+
+// isCutRecursion over taint alone (no lowering context): CB, a call of S's body, is a recursive call taint cut.
+bool cutCall(const TaintInfo &T, const Specialization &S, const CallBase &CB) {
+  const Function *G = CB.getCalledFunction();
+  if (!G || G->isDeclaration() || S.isEntry() || T.calleeSpecialization(CB, S) || !reaches(G, S.F))
+    return false;
+  if (classify(CB, T, S) != Class::Lift)
+    return false;
+  bool q = !CB.getType()->isVoidTy() && T.isQuantum(&CB, S);
+  for (const Use &u : CB.args())
+    q |= T.isQuantum(u.get(), S);
+  return q;
+}
+
+// CR rule 14 with rule 19's extra result (cq-ew5z): does the clone of S return the overflow predicate of a
+// quantum-depth recursion as an extra result? S is a clone (neither the in-place body nor a kept clone,
+// whose ABI is the C one or rule 19's registers) whose body has a cut call keeping the predicate (B > K or
+// no bound), or a direct call of the next level (depth + 1) whose clone returns one. Each level returns the
+// predicate up to the level below it; the first caller outside the chain keeps it.
+bool carriesOverflow(const TaintInfo &T, const Specialization &S) {
+  if (!runKO || !S.F || S.F->isDeclaration() || S.isEntry() || S.kept)
+    return false;
+  SmallPtrSet<const BasicBlock *, 32> seen{&S.F->getEntryBlock()};
+  SmallVector<const BasicBlock *, 32> work{&S.F->getEntryBlock()};
+  while (!work.empty()) {
+    const BasicBlock *BB = work.pop_back_val();
+    for (const Instruction &I : *BB) {
+      auto *CB = dyn_cast<CallBase>(&I);
+      const Function *G = CB ? CB->getCalledFunction() : nullptr;
+      if (!G || G->isDeclaration())
+        continue;
+      if (const Specialization *cs = T.calleeSpecialization(*CB, S)) {
+        if (cs->F == G && cs->depth == S.depth + 1 && carriesOverflow(T, *cs))
+          return true;
+        continue;
+      }
+      if (cutCall(T, S, *CB)) {
+        std::optional<uint64_t> B;
+        if (S.F == G)
+          B = provedDepthBound(T, S);
+        if (cutKeepsOverflow(loops::resolveK(*G, *runKO), B))
+          return true;
+      }
+    }
+    for (const BasicBlock *X : successors(BB))
+      if (seen.insert(X).second)
+        work.push_back(X);
+  }
+  return false;
+}
+
 } // namespace
+
+bool overflowResult(const Specialization &S) { return runTaint && carriesOverflow(*runTaint, S); }
+
+Value *overflowOfLevel(LoweringContext &ctx) {
+  SmallVector<Value *, 2> arms;
+  arms.swap(spine::shared(ctx).overflowArms);
+  IRBuilder<> &B = ctx.B();
+  BasicBlock *at = B.GetInsertBlock();
+  Function &F = *at->getParent();
+  LLVMContext &C = ctx.M.getContext();
+  RailType i1{Kind::Int, 1};
+  for (Value *c : arms)
+    ctx.unc().unpin(ctx.unc().idOf(c));
+  DominatorTree DT(F);
+  SmallVector<Value *, 2> terms;
+  for (Value *c : arms) {
+    BasicBlock *cb = cast<Instruction>(c)->getParent();
+    if (DT.dominates(cb, at)) {
+      terms.push_back(c);
+      continue;
+    }
+    // A call site in a classical arm (rule 9): its term on the paths through it, a |0> seed elsewhere (minted
+    // in the entry, before every branch), merged by classical phis.
+    CallInst *z;
+    {
+      IRBuilderBase::InsertPointGuard guard(B);
+      BasicBlock &E = F.getEntryBlock();
+      B.SetInsertPoint(E.getTerminator());
+      z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(C)});
+      ctx.unc().recordSeed(z);
+    }
+    SmallVector<PHINode *, 4> phis;
+    SSAUpdater up(&phis);
+    up.Initialize(handleTy(C), "cq.ovf");
+    up.AddAvailableValue(&F.getEntryBlock(), z);
+    up.AddAvailableValue(cb, c);
+    Value *v = up.GetValueInMiddleOfBlock(at);
+    DenseMap<const BasicBlock *, unsigned> order;
+    for (BasicBlock *b : ReversePostOrderTraversal<Function *>(&F))
+      order[b] = unsigned(order.size());
+    llvm::sort(phis, [&](PHINode *a, PHINode *b) { return order.lookup(a->getParent()) < order.lookup(b->getParent()); });
+    for (PHINode *phi : phis)
+      ctx.unc().recordMerge(phi);
+    terms.push_back(v);
+  }
+  if (terms.empty()) {
+    // No recursive call site lowered on any path (the body's cut call lies where the walk emits nothing): the
+    // predicate is 0.
+    CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(C)});
+    ctx.unc().recordSeed(z);
+    return z;
+  }
+  Value *acc = terms.front();
+  for (size_t k = 1; k < terms.size(); ++k)
+    acc = orRail(ctx, acc, terms[k]);
+  return acc;
+}
 
 Function *materialize(Module &M, const Specialization &S) {
   if (!S.F || S.F->isDeclaration())
@@ -1361,6 +1580,26 @@ Function *materialize(Module &M, const Specialization &S) {
       rt = StructType::get(C, es);
     }
   }
+  // CR rule 14 with rule 19's extra result (cq-ew5z): a level of a quantum-depth recursion whose cut keeps the
+  // overflow predicate returns, after all of the above, the handle of a fresh i1 rail holding it (copied out
+  // like a result, zeroed by the twin with the results): the handle alone for an otherwise void clone, else
+  // the base result's fields (or the one scalar) followed by it. The spine builds the base as for any clone
+  // (the base type, keptCloneBaseType) and appends the rail (Walker::emitOverflowReturn).
+  Type *ovfBase = nullptr;
+  if (!S.kept && carriesOverflow(T, S)) {
+    ovfBase = rt;
+    if (rt->isVoidTy()) {
+      rt = handleTy(C);
+    } else {
+      SmallVector<Type *, 4> es;
+      if (auto *st = dyn_cast<StructType>(rt))
+        es.append(st->element_begin(), st->element_end());
+      else
+        es.push_back(rt);
+      es.push_back(handleTy(C));
+      rt = StructType::get(C, es);
+    }
+  }
   FunctionType *FT = FunctionType::get(rt, ps, false);
 
   if (Function *ex = M.getFunction(name)) {
@@ -1374,6 +1613,8 @@ Function *materialize(Module &M, const Specialization &S) {
     spine::setKeptCloneBaseType(*NF, keptBase);
     NF->addFnAttr(spine::kKeptRegistersAttr, std::to_string(keptRegs));
   }
+  if (ovfBase)
+    spine::setKeptCloneBaseType(*NF, ovfBase);
   // A byval formal the callee may write stays byval (cq-09xh): the clone writes its own copy, never
   // the caller's object. A read-only one is the caller's pointer (byvalCopied).
   unsigned p = S.ctl ? 1 : 0;
@@ -1402,10 +1643,14 @@ void cleanDeadCells(LoweringContext &ctx, CallBase &CB, const Specialization &S,
 
 void bindEnvResult(LoweringContext &ctx, CallBase &CB, const Specialization &S, const CloneCall &r) {
   SmallVector<Value *, 4> outs;
-  Value *flags = r.call;
+  Value *flags = r.value;
+  // cq-ew5z: a level clone's overflow predicate follows the flags (materialize).
+  unsigned ovfField = r.ovf ? 1 : 0;
   // The call's caller cells (rules 18, 20: the reloaded slot results and the old cells the twin restores) are
   // recorded with its outs, as for a clone without the environment.
   auto finish = [&]() {
+    if (r.ovf)
+      outs.push_back(r.ovf);
     ctx.unc().recordCall(r.call, outs, r.slotOuts, r.extra);
     fatptr::finishSlotTableCall(ctx, r.call);
     mem::finishParamCells(ctx, r.call);
@@ -1417,7 +1662,7 @@ void bindEnvResult(LoweringContext &ctx, CallBase &CB, const Specialization &S, 
     // twin (U3), as bindQramCloneResult's.
     const ResultLayout &res = r.res;
     auto *st = dyn_cast<StructType>(r.call->getType());
-    if (!st || st->getNumElements() != res.leaves.size() + res.stores + 1)
+    if (!st || st->getNumElements() != res.leaves.size() + res.stores + 1 + ovfField)
       internalError("calls: a clone carrying the environment with QRAM stores whose result is not "
                     "{leaves..., stores..., flags}",
                     &CB);
@@ -1463,7 +1708,7 @@ void bindEnvResult(LoweringContext &ctx, CallBase &CB, const Specialization &S, 
     if (tq.size() != res.q.size() || !std::equal(tq.begin(), tq.end(), res.q.begin()))
       internalError("calls: the clone's result fields and taint's field mask of the call disagree", &CB);
     auto *st = dyn_cast<StructType>(r.call->getType());
-    if (!st || st->getNumElements() != res.leaves.size() + 1)
+    if (!st || st->getNumElements() != res.leaves.size() + 1 + ovfField)
       internalError("calls: a clone carrying the environment whose field-wise result is not {fields..., flags}",
                     &CB);
     SmallVector<Operand, 4> ops;
@@ -2102,6 +2347,44 @@ void lowerEntryCall(LoweringContext &ctx, CallBase &CB, const Specialization &cs
 
 } // namespace
 
+namespace {
+// The binding of a lifted clone call's results (lowerLifted): by the clone's result ABI, its outs recorded as
+// one call group undone by the twin (U2), the overflow predicate of a recursion level last (cq-ew5z).
+void bindCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization &cs, const CloneCall &r) {
+  if (fenv::cloneCarriesEnv(ctx.T, cs))
+    return bindEnvResult(ctx, CB, cs, r);
+  if (r.res.qramFormal)
+    return bindQramCloneResult(ctx, CB, cs, r);
+  if (r.fieldwise)
+    return bindFieldwiseResult(ctx, CB, r.call, r.res, r.slotOuts, r.extra, r.ovf);
+  if (!r.slotOuts.empty() || !r.extra.empty() || r.ovf) {
+    // Phase 2: the result (if a handle) and the reloaded cells are one call's results, undone together
+    // by the twin <clone>_unc(out?, args..., old cells...) (U2). cq-ew5z: a recursion level's overflow
+    // predicate is the last out.
+    SmallVector<Value *, 2> outs;
+    if (!CB.getType()->isVoidTy()) {
+      bool q = ctx.T.isQuantum(&CB, ctx.S);
+      if (r.handle != q)
+        internalError("calls: the call's result kind and taint's disagree", &CB);
+      if (r.handle)
+        outs.push_back(r.value);
+      ctx.bind(&CB, r.value);
+    }
+    if (r.ovf)
+      outs.push_back(r.ovf);
+    if (r.slotOuts.empty() && !r.extra.empty())
+      internalError("calls: old slot cells passed to a clone that reloads none", &CB);
+    ctx.unc().recordCall(r.call, outs, r.slotOuts, r.extra);
+    fatptr::finishSlotTableCall(ctx, r.call);
+    mem::finishParamCells(ctx, r.call);
+    if (!r.slotOuts.empty())
+      cleanDeadCells(ctx, CB, cs, r, outs);
+    return;
+  }
+  bindResult(ctx, CB, r.call, r.handle, r.ops);
+}
+} // namespace
+
 void lowerLifted(LoweringContext &ctx, CallBase &CB) {
   capture(ctx);
   const Specialization *cs = ctx.T.calleeSpecialization(CB, ctx.S);
@@ -2119,6 +2402,10 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
       unimplemented("calls: a quantum-depth recursion cut at level " + std::to_string(ctx.S.depth) +
                         " below its proved depth bound " + std::to_string(*B) + " (rule 14)",
                     &CB);
+    // cq-ew5z: the cut call's term of this level's overflow predicate (B > K or no bound), returned by the
+    // level clone (calls::materialize's extra result) and kept by the recursion's first outside caller.
+    if (cutKeepsOverflow(K, B))
+      overflowAtCut(ctx, CB);
     return loops::lowerQuantumDepthRecursion(ctx, CB, K, B);
   }
   // An untainted callee or the in-place specialization. Under a quantum predicate (or in a _ctl clone)
@@ -2141,33 +2428,13 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
     return;
   }
   CloneCall r = emitCloneCall(ctx, CB, *cs, nullptr);
-  if (fenv::cloneCarriesEnv(ctx.T, *cs))
-    return bindEnvResult(ctx, CB, *cs, r);
-  if (r.res.qramFormal)
-    return bindQramCloneResult(ctx, CB, *cs, r);
-  if (r.fieldwise)
-    return bindFieldwiseResult(ctx, CB, r.call, r.res, r.slotOuts, r.extra);
-  if (!r.slotOuts.empty() || !r.extra.empty()) {
-    // Phase 2: the result (if a handle) and the reloaded cells are one call's results, undone together
-    // by the twin <clone>_unc(out?, args..., old cells...) (U2).
-    SmallVector<Value *, 1> outs;
-    if (!CB.getType()->isVoidTy()) {
-      bool q = ctx.T.isQuantum(&CB, ctx.S);
-      if (r.handle != q)
-        internalError("calls: the call's result kind and taint's disagree", &CB);
-      if (r.handle)
-        outs.push_back(r.call);
-      ctx.bind(&CB, r.call);
-    }
-    if (r.slotOuts.empty())
-      internalError("calls: old slot cells passed to a clone that reloads none", &CB);
-    ctx.unc().recordCall(r.call, outs, r.slotOuts, r.extra);
-    fatptr::finishSlotTableCall(ctx, r.call);
-    mem::finishParamCells(ctx, r.call);
-    cleanDeadCells(ctx, CB, *cs, r, outs);
-    return;
+  bindCloneCall(ctx, CB, *cs, r);
+  if (r.ovf) {
+    // cq-ew5z: the callee returned the overflow predicate of a quantum-depth recursion. A call of the next
+    // level from a level that returns it too is a term of this level's; any other caller keeps it.
+    bool level = overflowResult(ctx.S) && cs->depth == ctx.S.depth + 1 && cs->F == CB.getCalledFunction();
+    overflowAfterCall(ctx, r.ovf, !cs->ctl && underQuantumPredicate(ctx) ? ctlFlag(ctx, CB) : nullptr, level);
   }
-  bindResult(ctx, CB, r.call, r.handle, r.ops);
 }
 
 // cq-r8-d (CR rule 27 Pointers; 190): a void declared call with a pointer argument into a local slot object.
@@ -2406,10 +2673,14 @@ SmallVector<Operand, 4> emitCandidate(LoweringContext &ctx, CallBase &CB, Functi
         classicalLeaves(ctx.B(), res, fields);
       }
     } else {
-      envOut = r.call;
+      envOut = r.value;
     }
     outs.push_back(envOut);
+    if (r.ovf)
+      outs.push_back(r.ovf);   // cq-ew5z: the overflow predicate, the clone's last field
     ctx.unc().recordCall(r.call, outs, {}, {});
+    if (r.ovf)
+      overflowAfterCall(ctx, r.ovf, s->ctl ? nullptr : flag, false);   // a call outside the recursion keeps it
     return fields;
   }
   if (r.fieldwise) {
@@ -2420,7 +2691,26 @@ SmallVector<Operand, 4> emitCandidate(LoweringContext &ctx, CallBase &CB, Functi
       if (r.res.q[k])
         outs.push_back(e);
     }
+    if (r.ovf)
+      outs.push_back(r.ovf);
     ctx.unc().recordCall(r.call, outs, {}, {});
+    if (r.ovf)
+      overflowAfterCall(ctx, r.ovf, s->ctl ? nullptr : flag, false);
+    return fields;
+  }
+  if (r.ovf) {
+    // cq-ew5z: the result (when a handle) and the overflow predicate, one call group; the predicate kept here.
+    SmallVector<Value *, 2> outs;
+    if (r.handle) {
+      outs.push_back(r.value);
+      fields.push_back(Operand{r.value, true});
+    } else if (!CB.getType()->isVoidTy()) {
+      whole = r.value;
+      classicalLeaves(ctx.B(), r.value, fields);
+    }
+    outs.push_back(r.ovf);
+    ctx.unc().recordCall(r.call, outs, {}, {});
+    overflowAfterCall(ctx, r.ovf, s->ctl ? nullptr : flag, false);
     return fields;
   }
   if (r.handle) {
@@ -2969,11 +3259,11 @@ void lowerLiftedVia(LoweringContext &ctx, llvm::CallBase &site, llvm::ArrayRef<u
   // environment is its own: the creator's FLAGS stay as they were (no fenv::afterCloneCall); the returned
   // rail is fenv state the program never reads, undone by the twin with the result (rule 23: twin, free,
   // never kept).
-  Value *res = r.call;
+  Value *res = r.value;
   if (env) {
     auto *st = dyn_cast<StructType>(r.call->getType());
     if (st) {
-      unsigned last = st->getNumElements() - 1;
+      unsigned last = st->getNumElements() - 1 - (r.ovf ? 1 : 0);   // cq-ew5z: the overflow predicate follows
       outs.push_back(ctx.B().CreateExtractValue(r.call, {last}));
       if (r.fieldwise) {
         for (unsigned k = 0; k < r.res.leaves.size(); ++k)
@@ -2994,6 +3284,8 @@ void lowerLiftedVia(LoweringContext &ctx, llvm::CallBase &site, llvm::ArrayRef<u
   } else if (!env && r.handle) {
     outs.push_back(res);
   }
+  if (r.ovf)
+    outs.push_back(r.ovf);   // cq-ew5z: the overflow predicate, the clone's last field
   if (outs.empty() && r.slotOuts.empty()) {
     if (!r.extra.empty())
       internalError("calls: old slot cells passed to a clone that reloads none", &site);
@@ -3002,6 +3294,8 @@ void lowerLiftedVia(LoweringContext &ctx, llvm::CallBase &site, llvm::ArrayRef<u
   ctx.unc().recordCall(r.call, outs, r.slotOuts, r.extra);
   fatptr::finishSlotTableCall(ctx, r.call);
   mem::finishParamCells(ctx, r.call);
+  if (r.ovf)
+    overflowAfterCall(ctx, r.ovf, !cs->ctl && underQuantumPredicate(ctx) ? ctlFlag(ctx, site) : nullptr, false);
 }
 } // namespace cq::calls
 

@@ -167,6 +167,9 @@ struct SpecState {
   std::vector<bool> mixedPointee;
   std::string key;
   unsigned depthCut = 0;          // cutoff min(K, B) of a quantum-depth recursion, 0 = none
+  // cq-ew5z (CR rule 14 with rule 19): the recursion's cut keeps the overflow predicate (B > K or no bound
+  // from the actuals' ranges), set on its level-0 clone and handed on to every level.
+  bool keepsOverflow = false;
   std::optional<uint64_t> depthB; // B of the outermost call (rule 14)
   bool depthBUnknown = false;
 
