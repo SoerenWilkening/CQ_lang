@@ -3751,13 +3751,43 @@ void Analyzer::solve() {
     RS->reachable = RS->isRoot = true;
   }
 
+  // cq-e0tq (cq-1c5j): a round analyzes the specializations the program reaches over the current callee maps,
+  // and those the round itself creates. A specialization a rising key left behind (its caller now calls the
+  // one of the risen key, which covers it) keeps the facts it already contributed but adds none: analyzed
+  // every round, the specializations left behind on the way cost as much as the reached ones (musl
+  // strftime's and the scanf family's hundreds of memcpy/sn_write/__fwritex keys). A round ends the fixed
+  // point only when every specialization reached after it was analyzed in it.
+  auto reached = [&]() {
+    DenseSet<SpecState *> live;
+    SmallVector<SpecState *, 32> work;
+    for (auto &S : st.specs)
+      if (S->isRoot || (S->inPlace && (!S->F->hasLocalLinkage() || S->F->hasAddressTaken())))
+        work.push_back(S.get());
+    while (!work.empty()) {
+      SpecState *S = work.pop_back_val();
+      if (!live.insert(S).second)
+        continue;
+      for (auto &[CB, v] : S->callees)
+        for (SpecState *C : v)
+          work.push_back(C);
+    }
+    return live;
+  };
   unsigned iter = 0;
   do {
     st.changed = false;
+    DenseSet<SpecState *> live = reached(), done;
+    size_t before = st.specs.size();
     for (size_t i = 0; i < st.specs.size(); ++i) {
       SpecState &S = *st.specs[i];
+      if (i < before && !live.count(&S))
+        continue;
+      done.insert(&S);
       analyze(S);
     }
+    for (SpecState *S : reached())
+      if (!done.count(S))
+        st.changed = true;
     // Transitive gate facts (rule 19's non-pure test, effects).
     for (auto &S : st.specs) {
       bool np = S->hasTheta || S->hasPhi || S->hasEffect || S->writesOuter;
