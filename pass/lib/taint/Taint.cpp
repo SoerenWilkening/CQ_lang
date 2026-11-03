@@ -2403,14 +2403,21 @@ std::string Analyzer::cellDigits(CallBase &CB, Function *G, unsigned argNo, cons
     }
   }
   auto cells = G ? accessedCells(G, argNo, *st.DL) : std::nullopt;
+  // A QRAM pointee is named once, however many QRAM objects the pointer may name: it adds no mask digit (rule
+  // 21: it crosses as its table, buildMask skips it), so their number never tells two specializations apart.
+  // Counted, the key would grow with every frame object a new specialization escapes into the provenance
+  // and name a new specialization with a new frame in turn: the fixed point would not terminate (setvbuf).
+  bool qramNamed = false;
   for (unsigned s : p.sites) {
     for (ObjectId oid : objectsAt(s, p)) {
       const Object &O = st.objects[oid];
-      out += "O";
       if (O.qram) {
-        out += "Q;";
+        if (!qramNamed)
+          out += "OQ;";
+        qramNamed = true;
         continue;
       }
+      out += "O";
       if (!cells && G) {
         // T4 (190): a walk at a run-time offset into a fixed-size object: one digit per cell from the
         // pointer handed over to the object's end, at the walk's access size (the triple with its cell
