@@ -42,9 +42,19 @@ llvm::Type *qramCellType(LoweringContext &, const llvm::Value *root, const llvm:
 llvm::Type *formalCellType(const llvm::Argument &A);
 // The rule 21 triple's fields of a one-object, classical pointer `ptr` into a slot or host object (a
 // local or global plus classical GEPs): the root, the classical cell index (i32), the object's cell
-// count (i32) and its cell size in bytes (mem-slots' cells: the scalar element). Any other root, an
-// offset that is not a whole number of cells, or an object accessed at another width, is unimplemented.
-struct HostTriple { const llvm::Value *root; llvm::Value *idx; llvm::Value *cellCount; uint64_t cellBytes; };
+// count (i32) and its cell size in bytes (mem-slots' cells: the scalar element). Any other root crosses as the
+// object starting at the pointer (fatptr::ownPlaceTriple). An offset that is not a whole number of cells, or an
+// object accessed at another width, is unimplemented.
+// A pointer derived from a clone's own host or slot triple formal (rule 21, P1) crosses on as the triple the formal
+// came with: object and tag are then the caller's (the formal's), idx the formal's idx plus the offset in cells,
+// the count the formal's (null when it came with none); otherwise object and tag are null (the root's own).
+struct HostTriple {
+  const llvm::Value *root;
+  llvm::Value *idx;
+  llvm::Value *cellCount;
+  uint64_t cellBytes;
+  llvm::Value *object = nullptr, *tag = nullptr;
+};
 HostTriple hostTriple(LoweringContext &, const llvm::Value *ptr, const llvm::Instruction &at);
 // In a clone: the Qram-pointee triple formal A crosses as the caller's bus `bus` (P1). Registers A as a
 // one-column QRAM object of cell type formalCellType(A) over that bus; the clone neither pops nor frees it.

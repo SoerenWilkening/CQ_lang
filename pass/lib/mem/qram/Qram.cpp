@@ -3662,14 +3662,27 @@ Type *formalCellType(const Argument &A) { return cellTypeOfUses(A, /*strict=*/fa
 HostTriple hostTriple(LoweringContext &ctx, const Value *ptr, const Instruction &at) {
   const DataLayout &DL = ctx.M.getDataLayout();
   Addr a = decompose(ptr, DL);
-  if (!a.ok || !(isa<AllocaInst>(a.root) || isa<GlobalVariable>(a.root)))
-    unimplemented("mem-qram: a slot or host pointer crossing a clone boundary whose object is not a local or "
-                  "global (rule 21 triple: its cell count)",
-                  &at);
-  Type *objTy;
-  uint64_t bytes = 0;
+  // Rule 21 (P1): a pointer derived from this clone's own host or slot triple formal points into the caller's
+  // object the formal came with; it crosses on as that triple (object, tag and cell count the formal's, idx its
+  // idx plus the offset in the formal's cells).
+  fatptr::FormalTriple ft;
+  bool formal = a.ok && isa<Argument>(a.root) && fatptr::boundTriple(ctx, a.root, ft);
+  if (!a.ok || !(isa<AllocaInst>(a.root) || isa<GlobalVariable>(a.root) || formal)) {
+    // Rules 20, 21 (cq-k65d, cq-5xm0): any other object (a parameter of a function that is no clone of its caller,
+    // a heap block, a call's result, a loaded pointer, a merge): the object that starts at the pointer, its count
+    // the extent from the pointer on (0: unknown extent).
+    fatptr::ownPlaceTriple(ctx, ptr, ft);
+    HostTriple h{ptr, ft.idx, ft.cellCount, ft.cell};
+    h.object = ft.object;
+    h.tag = ft.tag;
+    return h;
+  }
+  Type *objTy = nullptr;
+  uint64_t bytes = 0, cb = ft.cell;
   Value *rtBytes = nullptr;   // a VLA's size, computed at the call (rule 21: the count follows the triple)
-  if (auto *ai = dyn_cast<AllocaInst>(a.root)) {
+  if (formal) {
+    // The formal's cells: its clone's accesses (and its callees', hostFormalCellBytes / formalCellType).
+  } else if (auto *ai = dyn_cast<AllocaInst>(a.root)) {
     auto sz = ai->getAllocationSize(DL);
     objTy = ai->getAllocatedType();
     if (sz && !sz->isScalable()) {
@@ -3687,7 +3700,7 @@ HostTriple hostTriple(LoweringContext &ctx, const Value *ptr, const Instruction 
     objTy = gv->getValueType();
     bytes = DL.getTypeAllocSize(objTy).getFixedValue();
   }
-  if (auto *st = dyn_cast<StructType>(objTy); st && isa<AllocaInst>(a.root) && !rtBytes) {
+  if (auto *st = dyn_cast_or_null<StructType>(objTy); st && isa<AllocaInst>(a.root) && !rtBytes) {
     // cq-oocu (CR rules 20, 21; 107): a local slot record with a pointer-kind field crosses as ONE cell (the
     // record), at its start: (object, tag, idx 0, count 1).
     std::function<bool(Type *)> hasPtr = [&](Type *t) {
@@ -3706,18 +3719,20 @@ HostTriple hostTriple(LoweringContext &ctx, const Value *ptr, const Instruction 
       return {a.root, ConstantInt::get(Type::getInt32Ty(C), 0), ConstantInt::get(Type::getInt32Ty(C), 1), bytes};
     }
   }
-  // Rules 20, 22 (cq-366o): a local's cells are the type the program accesses it as.
-  uint64_t cb = scalarCellBytes(isa<AllocaInst>(a.root) ? localCellType(*cast<AllocaInst>(a.root)) : objTy, DL, &at);
-  // mem-slots' cells are the scalar element; an object accessed at another width has other cells
-  // (a bit view, or -O1's punned local, 90).
-  ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
-  if (objs.size() != 1)
-    internalError("mem-qram: hostTriple of a pointer with other than one object", &at);
-  for (const Access &x : accessesOf(ctx, *at.getFunction(), objs.front()))
-    if (DL.getTypeAllocSize(x.ty).getFixedValue() != cb)
-      unimplemented("mem-qram: an object crossing a clone boundary as a rule 21 triple that is accessed at another "
-                    "width than its cell (a bit view, 63)",
-                    x.I);
+  if (!formal) {
+    // Rules 20, 22 (cq-366o): a local's cells are the type the program accesses it as.
+    cb = scalarCellBytes(isa<AllocaInst>(a.root) ? localCellType(*cast<AllocaInst>(a.root)) : objTy, DL, &at);
+    // mem-slots' cells are the scalar element; an object accessed at another width has other cells
+    // (a bit view, or -O1's punned local, 90).
+    ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
+    if (objs.size() != 1)
+      internalError("mem-qram: hostTriple of a pointer with other than one object", &at);
+    for (const Access &x : accessesOf(ctx, *at.getFunction(), objs.front()))
+      if (DL.getTypeAllocSize(x.ty).getFixedValue() != cb)
+        unimplemented("mem-qram: an object crossing a clone boundary as a rule 21 triple that is accessed at another "
+                      "width than its cell (a bit view, 63)",
+                      x.I);
+  }
   IRBuilder<> &B = ctx.B();
   LLVMContext &C = ctx.M.getContext();
   Type *i64 = Type::getInt64Ty(C), *i32 = Type::getInt32Ty(C);
@@ -3734,6 +3749,12 @@ HostTriple hostTriple(LoweringContext &ctx, const Value *ptr, const Instruction 
     if (stride / int64_t(cb) != 1)
       t = B.CreateMul(t, ConstantInt::get(i64, stride / int64_t(cb), true));
     j = B.CreateAdd(j, t);
+  }
+  if (formal) {
+    HostTriple h{a.root, B.CreateTrunc(B.CreateAdd(B.CreateSExt(ft.idx, i64), j), i32), ft.cellCount, cb};
+    h.object = ft.object;
+    h.tag = ft.tag;
+    return h;
   }
   if (rtBytes)
     return {a.root, B.CreateTrunc(j, i32), B.CreateTrunc(B.CreateUDiv(rtBytes, ConstantInt::get(i64, cb)), i32), cb};

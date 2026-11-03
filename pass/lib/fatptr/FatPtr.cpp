@@ -2192,7 +2192,9 @@ Value *boundSlotLoad(LoweringContext &ctx, Bound &b, const Fat &f, Type *ty, con
   // A cell is one scalar (rule 20); a load of another type of the same size is its bit view (rule 4 bitcast).
   if (ty != b.cellTy && DL.getTypeStoreSize(ty) != DL.getTypeStoreSize(b.cellTy))
     unimplemented("fatptr: a load through a slot triple formal of part of a cell (a sub-cell view, rules 20, 21)", &ld);
-  Value *ok = B.CreateICmpULT(j, B.CreateZExt(b.cellCount, i64(ctx)));
+  // A count of 0 is an object of unknown extent (rule 20, n = 0): every index reaching it is in range.
+  Value *ok = B.CreateOr(B.CreateICmpULT(j, B.CreateZExt(b.cellCount, i64(ctx))),
+                         B.CreateICmpEQ(b.cellCount, ConstantInt::get(i32(ctx), 0)));
   Value *safe = B.CreateSelect(ok, j, ConstantInt::get(i64(ctx), 0));
   Value *p = B.CreateInBoundsGEP(handleTy(C), b.object, safe);
   LoadInst *h = B.CreateAlignedLoad(handleTy(C), p, Align(4));
@@ -2343,7 +2345,9 @@ Operand boundHostLoad(LoweringContext &ctx, Bound &b, const Fat &f, Type *ty, Lo
   }
   if (!b.cellCount)
     internalError("fatptr: a host triple formal loaded through with no cell count (rule 21 TripleCount)", &ld);
-  Value *ok = B.CreateICmpULT(j, B.CreateZExt(b.cellCount, i64(ctx)));
+  // A count of 0 is an object of unknown extent (rule 20, n = 0): every index reaching it is in range.
+  Value *ok = B.CreateOr(B.CreateICmpULT(j, B.CreateZExt(b.cellCount, i64(ctx))),
+                         B.CreateICmpEQ(b.cellCount, ConstantInt::get(i32(ctx), 0)));
   Value *safe = B.CreateSelect(ok, j, ConstantInt::get(i64(ctx), 0));
   Value *v = B.CreateAlignedLoad(ty, B.CreateInBoundsGEP(ty, b.object, safe), ld.getAlign());
   return Operand{B.CreateSelect(ok, v, Constant::getNullValue(ty)), false};
@@ -3309,6 +3313,53 @@ uint64_t hostFormalCellBytes(const Argument &A) {
   return accessCellBytes(A, A.getParent()->getParent()->getDataLayout());
 }
 
+// Rule 21 with rule 20 (cq-k65d, cq-5xm0): a classical pointer whose place in its object this function does not
+// hold statically (a parameter of a function that is no clone of its caller's, an allocation call's block reached
+// through a merge, a call's result, a loaded pointer, a merge or an inttoptr) crosses as the object that starts at
+// the pointer: the pointer is its root (its tag in this function's table, its base its own address), idx 0, its
+// cells the size its accesses and its callees' use (accessCellBytes), its cell count the object's extent from the
+// pointer on when the pointer derives from one allocation (an alloca of static size, a global or an allocation
+// call: the allocation's cells less the pointer's cell distance from its start, in handle cells of 4 bytes for a
+// slot object), else 0 (an object of unknown extent, n = 0: every index reaching it is in range, rule 20).
+void ownPlaceTriple(LoweringContext &ctx, const Value *ptr, FormalTriple &out) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  IRBuilder<> &B = ctx.B();
+  uint64_t cb = accessCellBytes(*ptr, DL);
+  Value *p = ctx.operand(ptr).v;
+  bool slot = false;
+  for (ObjectId o : ctx.T.provenance(ptr, ctx.S))
+    slot = slot || ctx.T.classOf(o) == ObjClass::Slot;
+  Value *count = ConstantInt::get(i32(ctx), 0);
+  SmallVector<const Value *, 4> us;
+  getUnderlyingObjects(ptr, us);
+  if (us.size() == 1 && us.front() != ptr) {
+    const Value *u = us.front();
+    std::optional<uint64_t> bytes;
+    Value *rt = nullptr;   // an allocation call's run-time size
+    if (auto *gv = dyn_cast<GlobalVariable>(u)) {
+      bytes = DL.getTypeAllocSize(gv->getValueType()).getFixedValue();
+    } else if (auto *ai = dyn_cast<AllocaInst>(u)) {
+      if (std::optional<TypeSize> t = ai->getAllocationSize(DL); t && !t->isScalable())
+        bytes = t->getFixedValue();
+    } else if (isa<CallBase>(u)) {
+      rt = hostExtent(ctx, u);   // its allocsize, classical
+    }
+    Operand base = ctx.operand(u);
+    if ((bytes || rt) && !base.handle) {
+      Value *whole = rt ? rt : ConstantInt::get(i64(ctx), *bytes);
+      Value *cells = B.CreateUDiv(whole, ConstantInt::get(i64(ctx), cb));
+      Value *dist = B.CreateSub(B.CreatePtrToInt(p, i64(ctx)), B.CreatePtrToInt(base.v, i64(ctx)));
+      Value *at = B.CreateUDiv(dist, ConstantInt::get(i64(ctx), slot ? 4 : cb));
+      count = B.CreateTrunc(B.CreateSub(cells, at), i32(ctx));
+    }
+  }
+  out.object = p;
+  out.tag = ConstantInt::get(i32(ctx), rootNumber(ctx, ptr));
+  out.idx = ConstantInt::get(i32(ctx), 0);
+  out.cellCount = count;
+  out.cell = cb;
+}
+
 void checkCalleeCells(LoweringContext &ctx, const Value *ptr, uint64_t cellBytes, Type *qramCellTy) {
   const DataLayout &DL = ctx.M.getDataLayout();
   for (const Use &u : ptr->uses()) {
@@ -3526,10 +3577,12 @@ Triple passAcrossCall(LoweringContext &ctx, const Value *ptr) {
                     ptr);
     mem::HostTriple h = mem::hostTriple(ctx, ptr, *at);
     checkCalleeCells(ctx, ptr, h.cellBytes, nullptr);
+    crossings()[&ctx.out()][ptr] = Crossed{h.root, h.cellBytes};
+    if (h.object)   // P1: this clone's own triple formal's object, crossing on with the caller's tag
+      return Triple{h.object, h.tag, h.idx, h.cellCount};
     Operand base = ctx.operand(h.root);
     if (base.handle)
       internalError("fatptr: a slot or host object bound to a rail", h.root);
-    crossings()[&ctx.out()][ptr] = Crossed{h.root, h.cellBytes};
     return Triple{base.v, ConstantInt::get(i32(ctx), rootNumber(ctx, h.root)), h.idx, h.cellCount};
   }
   Fat f = derive(ctx, ptr, /*emit=*/false);
@@ -3666,6 +3719,19 @@ void bindFormal(LoweringContext &ctx, const Argument &formal, Value *object, Ope
     b.cell = DL.getTypeAllocSize(b.cellTy).getFixedValue();
   if (!boundFormals()[&ctx.out()].try_emplace(&formal, b).second)
     internalError("fatptr: a triple formal bound twice", &formal);
+}
+
+bool boundTriple(LoweringContext &ctx, const Value *formal, FormalTriple &out) {
+  Bound *b = boundOf(ctx, formal);
+  // bindFormal gives every host or slot formal its cell size (hostFormalCellBytes, formalCellType).
+  if (!b || b->pointee == ObjClass::Qram || b->table || b->tag.handle || b->idx.handle || !b->cell)
+    return false;
+  out.object = b->object;
+  out.tag = b->tag.v;
+  out.idx = b->idx.v;
+  out.cellCount = b->cellCount;
+  out.cell = b->cell;
+  return true;
 }
 
 Value *boundHostAddress(LoweringContext &ctx, const Argument &formal) {

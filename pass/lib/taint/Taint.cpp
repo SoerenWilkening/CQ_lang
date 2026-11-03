@@ -399,6 +399,7 @@ private:
   void finish();
   std::string buildMask(SpecState &S);
   bool calleeDerivesFat(SpecState &S, unsigned argNo);
+  cq::PtrAbi handedOnAbi(SpecState &S, unsigned argNo);
   bool calleeLoadsThrough(SpecState &S, unsigned argNo);
   bool accessInQuantumExitLoop(SpecState &S, unsigned argNo);
 };
@@ -3722,6 +3723,38 @@ bool Analyzer::calleeLoadsThrough(SpecState &S, unsigned argNo) {
   return false;
 }
 
+// Rule 21: the widest ABI a callee (as S calls it) takes formal argNo at, where S hands the formal on (through
+// GEPs, casts, phis and selects) as a call argument; Raw when it hands it to no triple formal.
+cq::PtrAbi Analyzer::handedOnAbi(SpecState &S, unsigned argNo) {
+  cq::PtrAbi abi = cq::PtrAbi::Raw;
+  if (S.declared || argNo >= S.F->arg_size())
+    return abi;
+  SmallVector<const Value *, 8> work{S.F->getArg(argNo)};
+  SmallPtrSet<const Value *, 16> seen;
+  while (!work.empty()) {
+    const Value *V = work.pop_back_val();
+    if (!seen.insert(V).second)
+      continue;
+    for (const Use &u : V->uses()) {
+      const User *U = u.getUser();
+      if (auto *CB = dyn_cast<CallBase>(U); CB && CB->isArgOperand(&u)) {
+        auto it = S.callees.find(CB);
+        if (it == S.callees.end())
+          continue;
+        unsigned j = CB->getArgOperandNo(&u);
+        for (SpecState *C : it->second)   // an in-place callee is an ordinary call: the pointer as it is
+          if (!C->inPlace && j < C->ptrFormal.size() && j < C->formalTy.size() && C->formalTy[j]->isPointerTy() &&
+              unsigned(C->ptrFormal[j].abi) > unsigned(abi))
+            abi = C->ptrFormal[j].abi;
+      } else if (isa<GEPOperator>(U) || isa<PHINode>(U) || isa<SelectInst>(U) || isa<BitCastOperator>(U) ||
+                 isa<AddrSpaceCastOperator>(U)) {
+        work.push_back(U);
+      }
+    }
+  }
+  return abi;
+}
+
 bool Analyzer::calleeDerivesFat(SpecState &S, unsigned argNo) {
   if (S.declared || argNo >= S.F->arg_size())
     return false;
@@ -3817,8 +3850,11 @@ std::string Analyzer::buildMask(SpecState &S) {
       for (const std::string &o : objs)
         walk = walk || (!o.empty() && o[0] == 'W');
       walk = walk && accessInQuantumExitLoop(S, i);
+      // Rule 21: a formal handed on to a callee's triple formal is a triple itself: the object, its tag and its
+      // cell count come from where the object is known, and a raw pointer carries none of them.
+      cq::PtrAbi onward = handedOnAbi(S, i);
       bool triple = S.declared || tag || idx || qramObj || multi || ptrHandles || walk ||
-                    calleeDerivesFat(S, i);
+                    calleeDerivesFat(S, i) || onward != cq::PtrAbi::Raw;
       // T4: the pointee's class over the formal's objects.
       bool anyQ = false, anyS = false, anyC = false;
       if (i < S.formalPtr.size())
@@ -3857,7 +3893,8 @@ std::string Analyzer::buildMask(SpecState &S) {
       m += idx ? '1' : '0';
       // Rule 21: the object's cell count follows the triple when the callee loads through it from a
       // slot or host object (a QRAM reads 0 out of range by §2); rule 27 always passes it.
-      bool count = S.declared || (pointee != cq::ObjClass::Qram && calleeLoadsThrough(S, i));
+      bool count = S.declared || (pointee != cq::ObjClass::Qram &&
+                                  (calleeLoadsThrough(S, i) || onward == cq::PtrAbi::TripleCount));
       if (S.declared) {
         m += anyD;
         noteFormal(cq::PtrAbi::TripleCount);
@@ -4038,11 +4075,24 @@ void Analyzer::finish() {
             w.push_back(D);
     }
   }
-  // Publish.
-  for (auto &S : st.specs) {
-    if (!S->reachable)
-      continue;
-    S->mask = buildMask(*S);
+  // Publish. A formal's T4 ABI may follow its callees' (handedOnAbi): the masks are rebuilt until no formal's
+  // ABI changes (each step only widens one, Raw to Triple to TripleCount).
+  for (bool changed = true; changed;) {
+    changed = false;
+    for (auto &S : st.specs) {
+      if (!S->reachable)
+        continue;
+      std::vector<cq::PtrFormal> before = S->ptrFormal;
+      S->mask = buildMask(*S);
+      if (before.size() != S->ptrFormal.size()) {
+        changed = true;
+        continue;
+      }
+      for (size_t k = 0; k < before.size(); ++k)
+        if (before[k].abi != S->ptrFormal[k].abi || before[k].pointee != S->ptrFormal[k].pointee ||
+            before[k].digits != S->ptrFormal[k].digits)
+          changed = true;
+    }
   }
   auto publish = [&](SpecState *S, bool pure) {
     Specialization P;

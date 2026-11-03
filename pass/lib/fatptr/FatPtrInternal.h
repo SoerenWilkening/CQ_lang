@@ -39,6 +39,18 @@ Operand addressOf(LoweringContext &, const llvm::Value *ptr);
 std::optional<int64_t> constantByteOffset(LoweringContext &, const llvm::Value *ptr);
 llvm::SmallVector<const llvm::Value *, 4> rootsOf(LoweringContext &, const llvm::Value *ptr);
 llvm::Value *boundSlotObject(LoweringContext &, const llvm::Argument &A);
+// Rule 21 (P1): in a clone, the triple a host- or slot-pointee triple formal came with (a classical tag and
+// idx): the caller's object (its host object, or its handle cells), the tag, the i32 idx, the i32 cell count
+// (null for a formal without one) and the formal's cell size in bytes. False when formal is no such bound formal.
+struct FormalTriple {
+  llvm::Value *object = nullptr, *tag = nullptr, *idx = nullptr, *cellCount = nullptr;
+  uint64_t cell = 0;
+};
+bool boundTriple(LoweringContext &, const llvm::Value *formal, FormalTriple &out);
+// Rule 21 with rule 20: the triple of a classical pointer whose place in its object this function does not hold
+// statically: the object starting at the pointer (its root number the tag, idx 0), its cell count the extent from
+// the pointer on when it derives from one allocation, else 0 (unknown extent, n = 0).
+void ownPlaceTriple(LoweringContext &, const llvm::Value *ptr, FormalTriple &out);
 // M7 (cq-g1ty, CR rules 6, 18, 20, 21; 129): fat pointers over whole local slot objects, a quantum select
 // tree of their allocas (each at cell 0).
 //  - writesSlotCell (consumer mem-slots sourceOf, structural): X writes the cell at byte `byte` (size bytes)
