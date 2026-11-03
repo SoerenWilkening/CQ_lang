@@ -1978,6 +1978,39 @@ std::optional<InvChain> invChainOf(const Specialization &S, unsigned argNo, unsi
   return ch;
 }
 
+// CR rule 6 applies to a bijection of the old content only. False when every store of the callee into cell `cell` of
+// formal argNo (at the cell's constant offset) writes a value that reads no load of that cell: the new content is no
+// function of the old one (a classical value, another cell's content), and the old rail is rule 5's (a register
+// kept, garbage uncomputed by its producer). True otherwise, also when no such store is found (the cell written
+// otherwise: through a variable offset or a nested call).
+bool cellUpdateReadsOld(const Specialization &S, unsigned argNo, unsigned cell) {
+  Function &F = *S.F;
+  const DataLayout &DL = F.getParent()->getDataLayout();
+  Argument *A = F.getArg(argNo);
+  bool any = false;
+  for (Instruction &I : instructions(F)) {
+    auto *st = dyn_cast<StoreInst>(&I);
+    if (!st)
+      continue;
+    auto [b, off] = baseOffset(st->getPointerOperand(), DL);
+    Type *ty = st->getValueOperand()->getType();
+    uint64_t sz = DL.getTypeStoreSize(ty);
+    if (b != A || off != int64_t(cell * sz))
+      continue;
+    any = true;
+    SmallPtrSet<const Value *, 4> loads;
+    for (Instruction &J : instructions(F))
+      if (auto *ld = dyn_cast<LoadInst>(&J); ld && ld->getType() == ty) {
+        auto [lb, loff] = baseOffset(ld->getPointerOperand(), DL);
+        if (lb == A && loff == off)
+          loads.insert(ld);
+      }
+    if (readsAny(st->getValueOperand(), loads))
+      return true;
+  }
+  return !any;
+}
+
 // The CR §1.4 _inv clone of C (the forward clone of S) for cell position `pos`: (forward args..., old).
 Function *materializeInv(Module &M, const Specialization &S, Function *C, unsigned pos, unsigned argNo,
                          unsigned cell, const InvChain &ch, const std::vector<FormalLayout> &fs, const CallBase &site) {
@@ -2180,6 +2213,8 @@ void cleanDeadCells(LoweringContext &ctx, CallBase &CB, const Specialization &S,
       auto unbuilt = [&](std::optional<int64_t> off, const char *shape) {
         if (!seed || oldDeadAfter(ctx, CB, old.v, CB.getArgOperand(i), off) == Dead::No)
           return;
+        if (!cellUpdateReadsOld(S, i, c))
+          return;   // rule 6 needs a bijection of the old content: an overwrite leaves the old rail to rule 5
         ctx.unc().cleanupUnbuilt(ctx.unc().idOf(old.v),
                                  std::string("calls: _inv<c> (CR §1.4, rule 18): the dead old content of a caller "
                                              "cell a clone overwrote, ") +
