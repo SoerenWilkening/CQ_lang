@@ -269,6 +269,13 @@ private:
   void splitSite(unsigned s, uint64_t stride, StructType *ST);
   SmallVector<ObjectId, 4> objectsAt(unsigned site, const PtrInfo &p);
   SmallVector<ObjectId, 4> objectsOf(const PtrInfo &p);
+  // A constant global: a write into it is undefined (LLVM), outside the domain, so no write classifies it; read at
+  // a quantum offset it is a QROM (rule 20, §1.3 qrom_load), never a QRAM.
+  bool readOnlySite(unsigned s) const {
+    auto *gv = dyn_cast_or_null<GlobalVariable>(st.sites[s].v);
+    return st.sites[s].kind == SiteKind::Global && gv && gv->isConstant();
+  }
+  bool readOnlyObject(ObjectId o) const { return readOnlySite(st.objects[o].site); }
   void touchObject() { st.changed = true; }
   // cq-n58p: escaped addresses (ImplState::escaped).
   void escape(const PtrInfo &p) {
@@ -1819,7 +1826,7 @@ void Analyzer::recordWrite(Instruction &I, const PtrInfo &p, uint64_t size, bool
   bool escaped = false;   // the stored pointer escapes once per write, not once per destination object
   for (unsigned s : p.sites) {
     const Site &site = st.sites[s];
-    if (site.kind == SiteKind::Function)
+    if (site.kind == SiteKind::Function || readOnlySite(s))
       continue;
     for (ObjectId oid : objectsAt(s, p)) {
       Object &O = st.objects[oid];
@@ -2016,7 +2023,7 @@ void Analyzer::transferStore(Instruction &I, Value *ptr, Value *val, Type *T) {
   bool handle = vl.any() || pl.any() || blockCT(I.getParent()) || cur->ctl;
   if (pl.size() >= 2 && pl.test(1)) {
     for (ObjectId oid : objectsOf(p))
-      if (!st.objects[oid].qram) {
+      if (!st.objects[oid].qram && !readOnlyObject(oid)) {
         st.objects[oid].qram = true; // quantum-offset store (rule 20)
         touchObject();
       }
@@ -2063,7 +2070,7 @@ void Analyzer::transferMemIntrinsic(MemIntrinsic &MI) {
     len = C->getZExtValue();
   if (dl.size() >= 2 && dl.test(1))
     for (ObjectId oid : objectsOf(d))
-      if (!st.objects[oid].qram) {
+      if (!st.objects[oid].qram && !readOnlyObject(oid)) {
         st.objects[oid].qram = true;
         touchObject();
       }
