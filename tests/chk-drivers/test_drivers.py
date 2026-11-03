@@ -1249,6 +1249,53 @@ class ByvalCopy(unittest.TestCase):
         self.assertIsNone(S.Instrumenter.byval_type("ptr noundef %0"))
 
 
+ALLOOB_LL = """target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-apple-macosx"
+
+@g = global [4 x i32] zeroinitializer, align 4
+
+define i32 @alloob(i32 %0) {
+  br label %2
+
+2:
+  %3 = phi i64 [ 0, %1 ], [ %8, %2 ]
+  %4 = phi i32 [ %0, %1 ], [ %7, %2 ]
+  %5 = getelementptr i32, ptr @g, i64 %3
+  %6 = load volatile i32, ptr %5, align 4
+  %7 = add i32 %4, %6
+  %8 = add i64 %3, 1
+  %9 = icmp ult i64 %8, 6
+  br i1 %9, label %2, label %10
+
+10:
+  ret i32 %7
+}
+"""
+ALLOOB_LINE = "907_probe_alloob|int alloob(int);|alloob(0)"
+
+
+class BaselineDropped(unittest.TestCase):
+    """cq-0jq1: cqcheck user's baseline is domain-filtered (exempt_baseline=False, cq-sujz). With every
+    sample outside the domain (here every one reads g[4]) the trip search of a program with a loop
+    once read g.samples[0] as the baseline (IndexError at its candidate list); it starts from the
+    drivers.txt calls that are still samples, and the set comes back empty with its reasons."""
+
+    def test_no_sample_left_and_a_loop(self):
+        with tempfile.TemporaryDirectory() as d:
+            t = Path(d)
+            name = "907_probe_alloob"
+            ex = t / "examples" / name
+            ex.mkdir(parents=True)
+            (t / "_tools").mkdir()
+            (t / "_tools" / "drivers.txt").write_text(ALLOOB_LINE + "\n")
+            (ex / "probe_alloob.O1.ll").write_text(ALLOOB_LL)
+            spec = D.driver_spec(name, ex)
+            ss = S.build_sample_set(spec, ex, exempt_baseline=False)
+        self.assertEqual(ss.samples, [])
+        (lp,) = ss.classes["trips"]["loops"]
+        self.assertTrue(all("empty" in e for e in lp["trips"].values()), lp)
+
+
 class ProbeDeterminism(unittest.TestCase):
     """cq-ir5z: every probe observation is a function of the input only. An access outside its
     object ends the sample at the access (end "oob", the header count there), before it lands;
