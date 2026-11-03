@@ -207,6 +207,7 @@ private:
     SmallVector<Operand, 2> acc;
     SmallVector<RailType, 2> rails;
     bool ptr = false;
+    bool shaped = false;   // ptr: fatptr exitShape recorded (at the first trip, once its walked pointers are bound)
   };
   // CR rule 14 (the exit value is quantum: it depends on which trip exited) with rules 21 and 26: the capture
   // rails of a value V of the unit read after it, seeded with V's value where no trip exits (0, NULL's (0, 0)).
@@ -252,10 +253,13 @@ private:
     return xa;
   }
   // V's fields in this trip, one per capture rail, at the builder.
-  SmallVector<Operand, 4> tripFields(const XAcc &xa, function_ref<bool(const BasicBlock *)> inUnit) {
+  SmallVector<Operand, 4> tripFields(XAcc &xa, function_ref<bool(const BasicBlock *)> inUnit) {
     Type *ty = xa.V->getType();
     if (xa.ptr) {
-      auto [tag, idx] = fatptr::exitFields(ctx, xa.V, inUnit);
+      if (!xa.shaped)
+        fatptr::exitShape(ctx, xa.V, {xa.V}, inUnit);
+      xa.shaped = true;
+      auto [tag, idx] = fatptr::exitFields(ctx, xa.V, inUnit, xa.V);
       return {tag, idx};
     }
     if (ty->isAggregateType() || ty->isVectorTy())
@@ -267,9 +271,9 @@ private:
   }
   // After the loop: V is its capture rails.
   void bindCapture(const XAcc &xa) {
-    if (xa.ptr)
-      fatptr::bindExit(ctx, xa.V, xa.acc[0], xa.acc[1]);
     ctx.rebind(xa.V, xa.acc);
+    if (xa.ptr)
+      fatptr::bindExit(ctx, xa.V);
   }
 
   // q & flag(p): the conjunction of a trip predicate with a predicate local to the trip.

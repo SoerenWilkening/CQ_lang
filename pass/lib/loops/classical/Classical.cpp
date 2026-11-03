@@ -97,6 +97,7 @@
 #include "cq/Calls.h"
 #include "cq/Aggregates.h"
 #include "cq/FatPtr.h"
+#include "../../fatptr/FatPtrInternal.h"
 #include "cq/Memory.h"
 #include "cq/Predicate.h"
 #include "cq/Switch.h"
@@ -988,11 +989,17 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           break;
         }
   // Multi-exit: the latch, the exit arm, the phis of C.
+  // cq-h8y6 (CR rules 9, 21, 26): a data pointer's exit value is a fat pointer (tag i32, idx i64: fatptr exitShape /
+  // exitFields over every value the phi merges), an aggregate's or vector's one rail per scalar leaf, each field a
+  // capture rail of its own; a scalar (a code address an i64, rule 13) is one field.
   struct CPhi {
     PHINode *P;                     // a phi of C, or nullptr for a read after the loop (xreads)
     const Instruction *x = nullptr; // that read's loop value: its incoming on every unit edge into C
-    PHINode *cap = nullptr;         // the carried capture rail
-    Value *res = nullptr;           // this trip's res
+    SmallVector<PHINode *, 2> cap;  // the carried capture rails, one per field
+    SmallVector<Value *, 2> res;    // this trip's res, one per field
+    SmallVector<RailType, 2> rails; // the fields' rail types
+    bool ptr = false;               // a data pointer: a fat pointer's (tag, idx)
+    bool shaped = false;            // ptr: its fatptr exit shape is recorded (the first trip, walked pointers bound)
     const Value *orig() const { return P ? static_cast<const Value *>(P) : x; }
     Type *type() const { return orig()->getType(); }
     // The unit edges into C and their values.
@@ -1078,8 +1085,15 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       bool fromUnit = any_of(P.blocks(), [&](const BasicBlock *u) { return inUnit(u); });
       if (!fromUnit)
         continue;
-      if (!isQ(&P) || !(P.getType()->isIntegerTy() || P.getType()->isFloatingPointTy()))
-        unimplemented("loops-classical: a classical or non-scalar phi joining a case-3 loop's exits", &P);
+      // A classical phi whose every incoming is one value from before the loop is that value wherever the loop exits
+      // (the walker binds it); any other phi joining the exits holds the value of the edge the exiting trip took,
+      // which depends on the quantum exit (rule 14: quantum), whatever its type: captured per field below.
+      if (!isQ(&P)) {
+        const Value *v0 = P.getIncomingValue(0);
+        auto *vi = dyn_cast<Instruction>(v0);
+        if (all_of(P.incoming_values(), [&](const Value *v) { return v == v0; }) && !(vi && inUnit(vi->getParent())))
+          continue;
+      }
       for (unsigned i = 0; i < P.getNumIncomingValues(); ++i)
         if (!inUnit(P.getIncomingBlock(i)) && !(ctx.preds().edge(P.getIncomingBlock(i), UX.cont) & hb).isBottom())
           unimplemented("loops-classical: a phi joining a case-3 loop's exits with an incoming from outside the loop "
@@ -1284,8 +1298,31 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         capInits.push_back(seed(Constant::getNullValue(irTypeOf(ctx.M.getContext(), w)), w));
       }
     for (CPhi &cp : cphis) {
-      RailType w = railOf(cp.type());
-      capInits.push_back(seed(Constant::getNullValue(irTypeOf(ctx.M.getContext(), w)), w));
+      Type *ty = cp.type();
+      LLVMContext &C = ctx.M.getContext();
+      if (ty->isPointerTy() && !isCodeAddress(cp.orig())) {
+        cp.ptr = true;
+        cp.rails = {RailType{Kind::Int, 32}, RailType{Kind::Int, 64}};
+      } else if (ty->isAggregateType() || ty->isVectorTy()) {
+        std::function<void(Type *)> leaves = [&](Type *t) {
+          if (auto *st = dyn_cast<StructType>(t))
+            for (Type *e : st->elements())
+              leaves(e);
+          else if (auto *at = dyn_cast<ArrayType>(t))
+            for (uint64_t k = 0; k < at->getNumElements(); ++k)
+              leaves(at->getElementType());
+          else if (auto *vt = dyn_cast<FixedVectorType>(t))
+            for (unsigned k = 0; k < vt->getNumElements(); ++k)
+              leaves(vt->getElementType());
+          else
+            cp.rails.push_back(railOf(t));
+        };
+        leaves(ty);
+      } else {
+        cp.rails = {railOf(ty)};
+      }
+      for (RailType w : cp.rails)
+        capInits.push_back(seed(Constant::getNullValue(irTypeOf(C, w)), w));
     }
   }
   BasicBlock *H = newBlock();
@@ -1321,12 +1358,17 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     aPhi->addIncoming(aInit, entryFrom);
     ctx.unc().recordExternal(aPhi, Role::UserRegister);
     aCur = aPhi;
-    for (unsigned k = 0; k < cphis.size(); ++k) {
-      PHINode *cp = ctx.B().CreatePHI(handleTy(ctx.M.getContext()), 2, "xcap");
-      cp->addIncoming(capInits[capInits.size() - cphis.size() + k], entryFrom);
-      ctx.unc().recordExternal(cp, Role::UserRegister);
-      cphis[k].cap = cp;
-    }
+    unsigned nf = 0;
+    for (const CPhi &cp : cphis)
+      nf += unsigned(cp.rails.size());
+    unsigned at = unsigned(capInits.size()) - nf;
+    for (CPhi &c : cphis)
+      for (unsigned f = 0; f < c.rails.size(); ++f) {
+        PHINode *cp = ctx.B().CreatePHI(handleTy(ctx.M.getContext()), 2, "xcap");
+        cp->addIncoming(capInits[at++], entryFrom);
+        ctx.unc().recordExternal(cp, Role::UserRegister);
+        c.cap.push_back(cp);
+      }
     unsigned k = 0;
     for (const Instruction *v : liveOut)
       if (!nextOf.count(v)) {
@@ -1336,6 +1378,34 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         caps.push_back({v, cp});
       }
   }
+
+  // cq-h8y6: a value's fields as the continuation phi (or read after the loop) cp takes it, at the builder: a data
+  // pointer's fat (tag, idx) at cp's exit shape (rule 21), an aggregate's or vector's scalar leaves (rule 26), a
+  // scalar itself (a classical code address as its i64, rule 13).
+  auto fieldsOf = [&](CPhi &cp, const Value *val) -> SmallVector<Operand, 2> {
+    if (cp.ptr) {
+      if (!cp.shaped) {
+        SmallVector<const Value *, 4> vals;
+        if (cp.P)
+          vals.append(cp.P->value_op_begin(), cp.P->value_op_end());
+        else
+          vals.push_back(cp.x);
+        fatptr::exitShape(ctx, cp.orig(), vals, inUnit);
+        cp.shaped = true;
+      }
+      auto [t, i] = fatptr::exitFields(ctx, val, inUnit, cp.orig());
+      return {t, i};
+    }
+    Type *ty = cp.type();
+    if (ty->isAggregateType() || ty->isVectorTy()) {
+      SmallVector<Operand, 4> fs = aggr::flattenResult(ctx, val);
+      return SmallVector<Operand, 2>(fs.begin(), fs.end());
+    }
+    Operand o = ctx.operand(val);
+    if (ty->isPointerTy() && !o.handle)
+      o = Operand{ctx.B().CreatePtrToInt(o.v, Type::getInt64Ty(ctx.M.getContext())), false};
+    return {o};
+  };
 
   // The body walk.
   const Pred hq = qp(header);
@@ -1912,24 +1982,29 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           lowerInstruction(ctx, I, f);
     }
     for (CPhi &cp : cphis) {
-      RailType w = railOf(cp.type());
-      Value *c = cp.cap;
-      Operand vl{nullptr, false};
+      SmallVector<Value *, 2> c(cp.cap.begin(), cp.cap.end());
+      SmallVector<Operand, 2> vl;
       for (auto &[u, val] : cp.incomings(inUnit, UX.cont)) {
         if (u == cxb) {
           if (u == latch)
-            vl = ctx.operand(val);
+            vl = fieldsOf(cp, val);
           continue;   // the classical exit: res (at the header, headerRes)
         }
         Value *g = flagOfEdge(u, UX.cont);
         if (!g)
           internalError("loops-classical: a unit edge into a case-3 loop's continuation with no exit flag",
                         cp.orig());
-        c = select(g, ctx.operand(val), Operand{c, true}, w);
+        SmallVector<Operand, 2> fv = fieldsOf(cp, val);
+        for (unsigned f = 0; f < c.size(); ++f)
+          c[f] = select(g, fv[f], Operand{c[f], true}, cp.rails[f]);
       }
-      cp.cap->addIncoming(c, cur);
-      if (cxb != header || cxb == latch)
-        cp.res = vl.v ? select(aCur, vl, Operand{c, true}, w) : c;
+      for (unsigned f = 0; f < c.size(); ++f)
+        cp.cap[f]->addIncoming(c[f], cur);
+      if (cxb != header || cxb == latch) {
+        cp.res.clear();
+        for (unsigned f = 0; f < c.size(); ++f)
+          cp.res.push_back(!vl.empty() ? select(aCur, vl[f], Operand{c[f], true}, cp.rails[f]) : c[f]);
+      }
     }
     aPhi->addIncoming(aCur, cur);
   };
@@ -1944,7 +2019,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       if (!val)
         internalError("loops-classical: a case-3 loop's classical exit edge with no value for its continuation",
                       cp.orig());
-      cp.res = select(aCur, ctx.operand(val), Operand{cp.cap, true}, railOf(cp.type()));
+      SmallVector<Operand, 2> fv = fieldsOf(cp, val);
+      cp.res.clear();
+      for (unsigned f = 0; f < cp.cap.size(); ++f)
+        cp.res.push_back(select(aCur, fv[f], Operand{cp.cap[f], true}, cp.rails[f]));
     }
   };
 
@@ -2288,11 +2366,18 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           was.insert(&P);
       auto subOut = lowerLoop(*sl, sc, ob(sx), false);
       outerTrip = savedTrip;
-      for (auto &[v, op] : subOut) {
+      // One entry per field, a value's fields consecutive (a fat pointer's tag and idx, a composite's leaves).
+      for (size_t i = 0; i < subOut.size();) {
+        const Value *v = subOut[i].first;
+        SmallVector<Operand, 2> ops;
+        for (; i < subOut.size() && subOut[i].first == v; ++i)
+          ops.push_back(subOut[i].second);
         if (ctx.bound(v))
-          ctx.rebind(v, {op});
+          ctx.rebind(v, ops);
         else
-          ctx.bindFields(v, {op});   // a phi of the multi-exit sub-loop's continuation (its exit value)
+          ctx.bindFields(v, ops);   // a phi of the multi-exit sub-loop's continuation (its exit value)
+        if (v->getType()->isPointerTy() && !isCodeAddress(v) && ops.size() == 2)
+          fatptr::bindExit(ctx, v);
       }
       if (SU.multi()) {
         for (PHINode &P : sx->phis())
@@ -2354,21 +2439,44 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   closeSeg();
 
   // Exit values of the values read after the loop.
+  // One entry per field (a fat pointer's or a composite's several, in order; cq-h8y6), outW its rail type.
   std::vector<std::pair<const Value *, Operand>> out;
+  std::vector<RailType> outW;
   DenseSet<const Value *> unbound;   // multi-exit: C's phis, bound here for the first time
+  DenseMap<const Value *, unsigned> nFields;   // a value of several fields (or a fat pointer): their count
+  DenseSet<const Value *> fat;                 // a fat pointer's exit value (fatptr bindExit once bound)
   for (CPhi &cp : cphis) {
-    if (!cp.res)
+    if (cp.res.empty())
       internalError("loops-classical: a continuation phi of a case-3 loop with no exit value", cp.orig());
-    out.push_back({cp.orig(), Operand{cp.res, true}});
+    for (unsigned f = 0; f < cp.res.size(); ++f) {
+      out.push_back({cp.orig(), Operand{cp.res[f], true}});
+      outW.push_back(cp.rails[f]);
+    }
+    if (cp.res.size() != 1 || cp.ptr || cp.type()->isAggregateType() || cp.type()->isVectorTy())
+      nFields[cp.orig()] = unsigned(cp.res.size());
+    if (cp.ptr)
+      fat.insert(cp.orig());
     if (cp.P)
       unbound.insert(cp.P);
   }
+  DenseMap<const Value *, SmallVector<Operand, 2>> pend;
   auto put = [&](const Value *v, Operand op) {
+    SmallVector<Operand, 2> ops{op};
+    if (auto nf = nFields.find(v); nf != nFields.end()) {
+      SmallVector<Operand, 2> &p = pend[v];
+      p.push_back(op);
+      if (p.size() < nf->second)
+        return;
+      ops = p;
+      pend.erase(v);
+    }
     // A unit lowered once per trip of an enclosing K-loop (cq-h5uj) binds its continuation's phis again.
     if (unbound.erase(v) && !ctx.bound(v))
-      ctx.bindFields(v, {op});
+      ctx.bindFields(v, ops);
     else
-      ctx.rebind(v, {op});
+      ctx.rebind(v, ops);
+    if (fat.count(v))
+      fatptr::bindExit(ctx, v);
   };
   for (const Instruction *v : liveOut) {
     if (!isQ(v) && !c3)
@@ -2379,13 +2487,17 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         while (carried[k].orig != n->second)
           ++k;
         out.push_back({v, Operand{nexts[k], true}});
+        outW.push_back(railOf(v->getType()));
       } else {
         for (auto &[cv, cp] : caps)
-          if (cv == v)
+          if (cv == v) {
             out.push_back({v, Operand{cp->getIncomingValueForBlock(edgeFrom[{latch, header}]), true}});
+            outW.push_back(railOf(v->getType()));
+          }
       }
     } else {
       out.push_back({v, ctx.operand(v)});
+      outW.push_back(railOf(v->getType()));
     }
   }
   if (outermost) {
@@ -2403,8 +2515,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         if (!r.forward->getType()->isVoidTy())
           ownedH.insert(r.forward);
     std::vector<RailId> exits;
-    for (auto &[v, op] : out) {
-      RailType w = railOf(v->getType());
+    for (unsigned oi = 0; oi < out.size(); ++oi) {
+      const Value *v = out[oi].first;
+      Operand op = out[oi].second;
+      RailType w = outW[oi];
       if (!op.handle)
         internalError("loops-classical: a quantum value read after the loop whose exit value is classical", v);
       if (keptFinal.count(op.v)) {

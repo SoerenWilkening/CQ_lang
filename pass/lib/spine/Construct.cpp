@@ -1059,12 +1059,50 @@ Value *Walker::factoredMerge(PHINode &phi) {
 void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in) {
   const BasicBlock *b = phi.getParent();
   BasicBlock *join = out(b);
-  Operand unitVal = ctx.operand(&phi);
-  RailType w = railTypeOf(phi.getType());
-  std::vector<std::pair<BasicBlock *, Value *>> inc;
+  // cq-h8y6 (CR rules 9, 21, 26): the unit may bind phi as several fields, joined field by field: a data pointer's
+  // exit value as its fat pointer (tag i32, idx i64; a value from outside the loop read at that exit shape, fatptr
+  // exitFields), a composite's scalar leaves; a scalar is one field.
+  SmallVector<Operand, 4> unitVals = ctx.fields(&phi);
+  bool fat = fatptr::isExitPointer(ctx, &phi);
+  bool composite = phi.getType()->isAggregateType() || phi.getType()->isVectorTy();
+  SmallVector<RailType, 4> ws;
+  if (fat) {
+    ws = {RailType{Kind::Int, 32}, RailType{Kind::Int, 64}};
+  } else if (composite) {
+    std::function<void(Type *)> leaves = [&](Type *t) {
+      if (auto *st = dyn_cast<StructType>(t))
+        for (Type *e : st->elements())
+          leaves(e);
+      else if (auto *at = dyn_cast<ArrayType>(t))
+        for (uint64_t k = 0; k < at->getNumElements(); ++k)
+          leaves(at->getElementType());
+      else if (auto *vt = dyn_cast<FixedVectorType>(t))
+        for (unsigned k = 0; k < vt->getNumElements(); ++k)
+          leaves(vt->getElementType());
+      else
+        ws.push_back(t->isPointerTy() ? RailType{Kind::Int, 64} : railTypeOf(t));
+    };
+    leaves(phi.getType());
+  } else {
+    unitVals = {ctx.operand(&phi)};
+    ws = {railTypeOf(phi.getType())};
+  }
+  auto fieldsOf = [&](const Value *v) -> SmallVector<Operand, 4> {
+    if (fat) {
+      auto [t, i] = fatptr::exitFields(ctx, v, [](const BasicBlock *) { return false; }, &phi);
+      return {t, i};
+    }
+    if (composite)
+      return aggr::flattenResult(ctx, v);
+    return {ctx.operand(v)};
+  };
+  std::vector<std::pair<BasicBlock *, SmallVector<Value *, 4>>> inc;
   for (const InEdge &e : in) {
     if (e.unit) {
-      inc.push_back({e.out, unitVal.v});
+      SmallVector<Value *, 4> vs;
+      for (const Operand &o : unitVals)
+        vs.push_back(o.v);
+      inc.push_back({e.out, vs});
       continue;
     }
     // The original incomings this output edge stands for: those whose edge predicate meets its classical
@@ -1085,20 +1123,23 @@ void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in) {
     if (!t)
       internalError("spine: the output block of an incoming edge has no terminator yet", &phi);
     ctx.B().SetInsertPoint(t);
-    Operand o;
+    SmallVector<Operand, 4> os;
     if (cands.empty()) {
       // No original edge into b meets the facts: the output edge is never taken (its path is one the
       // classical branches exclude); any rail serves, a |0> seed.
-      o = Operand{ConstantInt::get(irTypeOf(ctx.M.getContext(), w), 0), false};
+      for (RailType w : ws)
+        os.push_back(Operand{ConstantInt::get(irTypeOf(ctx.M.getContext(), w), 0), false});
     } else if (cands.size() == 1) {
       const Value *v = phi.getIncomingValue(cands.front());
       Pred p = Pred::bottom();
       for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i)
         if (phi.getIncomingValue(i) == v && idx.count(phi.getIncomingBlock(i)) && !unitOf.count(phi.getIncomingBlock(i)))
           p = p | ctx.preds().edge(phi.getIncomingBlock(i), b);
-      o = reachingOperand(ctx, ctx.operand(v), w, p, F);   // cq-pfpy
+      SmallVector<Operand, 4> fv = fieldsOf(v);
+      for (unsigned k = 0; k < ws.size(); ++k)
+        os.push_back(reachingOperand(ctx, fv[k], ws[k], p, F));   // cq-pfpy
     } else {
-      std::vector<std::pair<Pred, Operand>> arms;
+      std::vector<std::vector<std::pair<Pred, Operand>>> arms(ws.size());
       for (unsigned k : cands) {
         Pred p = Pred::bottom();
         for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i)
@@ -1110,23 +1151,35 @@ void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in) {
           unimplemented("spine: a unit-bound phi whose output edge stands for several original edges that the edge's "
                         "classical facts do not tell apart (cq-mtt)",
                         &phi);
-        arms.push_back({p.quantumPart(ctx.T, ctx.S), ctx.operand(phi.getIncomingValue(k))});
+        SmallVector<Operand, 4> fv = fieldsOf(phi.getIncomingValue(k));
+        for (unsigned f = 0; f < ws.size(); ++f)
+          arms[f].push_back({p.quantumPart(ctx.T, ctx.S), fv[f]});
       }
-      o = Operand{selectChain(ctx, arms, w, F), true};
+      for (unsigned f = 0; f < ws.size(); ++f)
+        os.push_back(Operand{selectChain(ctx, arms[f], ws[f], F), true});
     }
-    if (!o.handle) {
-      CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {o.v});
-      ctx.unc().recordSeed(a);
-      o = Operand{a, true};
+    SmallVector<Value *, 4> vs;
+    for (unsigned f = 0; f < ws.size(); ++f) {
+      Operand o = os[f];
+      if (!o.handle) {
+        CallInst *a = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, ws[f]}, {o.v});
+        ctx.unc().recordSeed(a);
+        o = Operand{a, true};
+      }
+      vs.push_back(o.v);
     }
-    inc.push_back({e.out, o.v});
+    inc.push_back({e.out, vs});
   }
-  PHINode *np = PHINode::Create(unitVal.v->getType(), unsigned(inc.size()), phi.getName());
-  np->insertInto(join, join->getFirstNonPHIIt());
-  for (auto &[from, v] : inc)
-    np->addIncoming(v, from);
-  ctx.unc().recordMerge(np);
-  ctx.rebind(&phi, {Operand{np, true}});
+  SmallVector<Operand, 4> merged;
+  for (unsigned f = 0; f < ws.size(); ++f) {
+    PHINode *np = PHINode::Create(unitVals[f].v->getType(), unsigned(inc.size()), phi.getName());
+    np->insertInto(join, join->getFirstNonPHIIt());
+    for (auto &[from, vs] : inc)
+      np->addIncoming(vs[f], from);
+    ctx.unc().recordMerge(np);
+    merged.push_back(Operand{np, true});
+  }
+  ctx.rebind(&phi, merged);
 }
 
 void Walker::lowerUnit(Loop &lp) {
