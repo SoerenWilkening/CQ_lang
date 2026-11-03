@@ -177,6 +177,20 @@ void reachDefs(Function &OF) {
   }
 }
 
+// cq-wwzz (CR rules 5, 20): a QRAM allocation site (an alloca, or an allocator call, whose object is a QRAM)
+// defines its buses, Seed rails that every later access of the object reads (a store's POP, a load's
+// un-copy). It is a definition of its block like a rail-valued instruction: no flush resolves a bus while an
+// access of its object is still to be lowered (musl __rem_pio2_large's f[] bus was freed at the entry's
+// classical branch, before the f[] loop stored into it).
+bool definesBus(LoweringContext &ctx, const Instruction &I) {
+  if (!I.getType()->isPointerTy() || !(isa<AllocaInst>(I) || isa<CallBase>(I)))
+    return false;
+  for (ObjectId o : ctx.T.provenance(&I, ctx.S))
+    if (ctx.T.classOf(o) == ObjClass::Qram)
+      return true;
+  return false;
+}
+
 bool isQuantumTerm(LoweringContext &ctx, const Instruction *t) {
   if (auto *br = dyn_cast<BranchInst>(t))
     return br->isConditional() && spine::isQ(ctx, br->getCondition());
@@ -820,6 +834,24 @@ void Walker::maybeFlush(Instruction *term) {
     for (const Use *U : uses)
       if (auto *ui = dyn_cast<Instruction>(U->getUser()); ui && !visited.count(ui))
         return;
+    // A QRAM site (definesBus): an access of its object through an address derived from it reads its buses.
+    if (definesBus(ctx, *d)) {
+      SmallVector<const Value *, 16> work{d};
+      SmallPtrSet<const Value *, 16> seen{d};
+      while (!work.empty()) {
+        const Value *v = work.pop_back_val();
+        for (const User *u : v->users()) {
+          auto *ui = dyn_cast<Instruction>(u);
+          if (!ui)
+            continue;
+          if (!visited.count(ui))
+            return;
+          if ((isa<GetElementPtrInst>(ui) || isa<CastInst>(ui) || isa<PHINode>(ui) || isa<SelectInst>(ui)) &&
+              ui->getType()->isPointerTy() && seen.insert(ui).second)
+            work.push_back(ui);
+        }
+      }
+    }
   }
   // cq-nqa6 (U7): the handles a later instruction may still read (every binding of an original value
   // with a reading use not lowered yet), so arm-local rails nothing reads any more are resolved here.
@@ -1953,7 +1985,8 @@ void Walker::emitBlock(BasicBlock *b) {
     for (BasicBlock *lb : lp.blocks())
       for (Instruction &I : *lb) {
         auto bi = sh.binds.find(&I);
-        if (bi != sh.binds.end() && any_of(bi->second, [](const Operand &o) { return o.handle; }))
+        if ((bi != sh.binds.end() && any_of(bi->second, [](const Operand &o) { return o.handle; })) ||
+            definesBus(ctx, I))
           blockDefs.push_back(&I);
       }
     BranchInst *br = ctx.B().CreateBr(out(n));
@@ -2112,6 +2145,8 @@ void Walker::emitBody(BasicBlock *b) {
             blockDefs.push_back(&I);
             break;
           }
+      if (definesBus(ctx, I) && !is_contained(blockDefs, &I))
+        blockDefs.push_back(&I);
     }
   }
   emitTerminator(b);
