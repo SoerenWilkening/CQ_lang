@@ -3451,13 +3451,25 @@ FormalUses formalUses(const Argument &A, bool strict, bool throughCalls = false)
         out.stores.push_back(st);   // rule 24: plain
         continue;
       }
-      bool walk = isa<GEPOperator>(usr) || isa<BitCastOperator>(usr) ||
-                  (!strict && (isa<PHINode>(usr) || isa<SelectInst>(usr)));
+      // A merge (phi, select) of pointers that all derive from the formals this walk follows is address
+      // arithmetic on one object: a walk through the caller's QRAM (strict or not). A merge with any other object
+      // is not (M2 could not tell the formal's stores from the other object's).
+      bool merge = isa<PHINode>(usr) || (isa<SelectInst>(usr) && cast<SelectInst>(usr)->getCondition() != v);
+      if (merge && strict) {
+        SmallVector<const Value *, 4> us;
+        getUnderlyingObjects(usr, us);
+        merge = !us.empty() && llvm::all_of(us, [&](const Value *x) { return isa<Argument>(x) && seen.count(x); });
+      }
+      bool walk = isa<GEPOperator>(usr) || isa<BitCastOperator>(usr) || isa<AddrSpaceCastOperator>(usr) || merge;
       if (walk) {
         if (seen.insert(usr).second)
           work.push_back(usr);
         continue;
       }
+      // Rule 21: a return (the clone's fat-pointer result, its fields the triple's tag and idx), a compare and a
+      // ptrtoint (over the address) read no cell through the pointer.
+      if (isa<ReturnInst>(usr) || isa<ICmpInst>(usr) || isa<PtrToIntInst>(usr))
+        continue;
       unimplemented("mem-qram: a use of a pointer derived from a rule 21 triple formal other than a load, a store "
                     "or address arithmetic (a call, a memory intrinsic, free, realloc, a compare, a merge or an "
                     "escape of the triple: P1, M2)",
@@ -3587,6 +3599,19 @@ SmallVector<FormalStore, 2> formalQramStores(const TaintInfo &T, const Specializ
     bool idxQ = formalIdxQuantum(T, S, A.getArgNo());
     for (const StoreInst *st : u.stores) {
       Addr a = decompose(st->getPointerOperand(), DL);
+      if (!a.ok) {
+        // Through a merge of pointers into the formal's object (formalUses): its cell is the run-time index fatptr
+        // derives, copied out with the store (M2's index rail).
+        SmallVector<const Value *, 4> us;
+        getUnderlyingObjects(st->getPointerOperand(), us);
+        if (llvm::all_of(us, [&](const Value *x) { return x == &A; })) {
+          FormalStore fs{A.getArgNo(), 0, cellTy, st};
+          fs.idxRail = true;
+          fs.flagged = S.ctl;
+          out.push_back(fs);
+          continue;
+        }
+      }
       if (!a.ok || a.root != &A)
         internalError("mem-qram: a store through a QRAM triple formal that is not the formal plus GEP offsets", st);
       if (a.off % E)

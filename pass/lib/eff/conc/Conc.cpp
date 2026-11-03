@@ -432,8 +432,21 @@ SmallVector<Function *, 8> collapseFatAtomics(Module &M, const TaintInfo &T) {
                                                    : nullptr;
       if (!p)
         continue;
+      // Rule 24 with rule 21 (P1, M2): an atomic through a clone's triple formal onto a QRAM is its plain load and
+      // store too, which M2 defers like the clone's other stores through the formal.
+      SmallVector<const Value *, 4> us;
+      getUnderlyingObjects(p, us);
+      auto viaQramTriple = [&](const Specialization &S) {
+        return !us.empty() && llvm::all_of(us, [&](const Value *u) {
+          auto *A = dyn_cast<Argument>(u);
+          if (!A || A->getParent() != &F || !A->getType()->isPointerTy() || S.isEntry())
+            return false;
+          PtrFormal pf = T.pointerFormal(S, A->getArgNo());
+          return pf.abi != PtrAbi::Raw && pf.pointee == ObjClass::Qram;
+        });
+      };
       for (const Specialization &S : T.specializations())
-        if (S.F == &F && T.isFatPointer(p, S)) {
+        if (S.F == &F && (T.isFatPointer(p, S) || viaQramTriple(S))) {
           todo.push_back(&I);
           break;
         }
