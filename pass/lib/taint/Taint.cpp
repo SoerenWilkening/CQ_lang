@@ -363,6 +363,9 @@ private:
   // the specializations the program reaches contribute.
   struct CalleeMemo { std::vector<Lanes> formal; std::vector<std::string> cells; bool ctl; std::vector<uint64_t> bounds; };
   std::map<std::tuple<std::string, const CallBase *, const Function *>, CalleeMemo> calleeMemo;
+  // The globals the first run found QRAM: in the second run their objects are QRAM from the start, so no call
+  // reaches a callee in place with a pointer into one before the fixed point learns it (rules 19, 20; CR §1.4).
+  std::set<const Value *> qramGlobals;
   void solve();
   void computeReachable();
   void resetAnalysis();
@@ -601,6 +604,7 @@ unsigned Analyzer::siteFor(const Value *V, SiteKind k, const Function *owner) {
   if (k != SiteKind::Function) {
     Object o;
     o.site = id;
+    o.qram = k == SiteKind::Global && qramGlobals.count(V);
     st.sites[id].objects.push_back(st.objects.size());
     st.objects.push_back(o);
   }
@@ -2601,7 +2605,8 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
   // cq-1c5j: the second run takes the first run's final key of this call at once, when it covers what the
   // actuals give now (lanes and cell digits only rise during the fixed point).
   const CalleeMemo *memo = nullptr;
-  if (!calleeMemo.empty() && !collect) {
+  // The memo also serves an indirect call's candidates (rule 19's candidate set): each takes its final key at once.
+  if (!calleeMemo.empty()) {
     auto it = calleeMemo.find({cur->key, &CB, G});
     if (it != calleeMemo.end() && it->second.formal.size() == formal.size() && it->second.cells.size() >= cells.size()) {
       const CalleeMemo &m = it->second;
@@ -3603,6 +3608,15 @@ void Analyzer::run() {
   bool stale = false;
   for (auto &S : st.specs)
     stale = stale || !S->reachable;
+  // Decision (rules 19, 20, 27; owner 2026-11-03): an in-place body reached with a pointer into a QRAM is a clone
+  // like any direct callee, lifted per mask at the call (the indirect call: over rule 19's candidate set); a QRAM
+  // object in an in-place specialization's formal is a join the fixed point made before the object was a QRAM, so
+  // the second run (each call taking its final key at once) rebuilds it without that join.
+  for (auto &S : st.specs)
+    if (S->reachable && S->inPlace && !S->declared)
+      for (unsigned i = 0; i < S->formalPtr.size() && !stale; ++i)
+        for (ObjectId o : objectsOf(S->formalPtr[i]))
+          stale = stale || st.objects[o].qram;
   if (stale) {
     // cq-1c5j: the second run (CalleeMemo). Each reachable specialization's final direct callees.
     for (auto &S : st.specs) {
@@ -3612,6 +3626,9 @@ void Analyzer::run() {
         for (SpecState *C : v)
           calleeMemo[{S->key, CB, C->F}] = CalleeMemo{C->formal, C->cells, C->ctl, C->bounds};
     }
+    for (const Object &O : st.objects)
+      if (O.qram && st.sites[O.site].kind == SiteKind::Global)
+        qramGlobals.insert(st.sites[O.site].v);
     resetAnalysis();
     solve();
   }

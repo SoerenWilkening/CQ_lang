@@ -1190,6 +1190,9 @@ QramObj &qramObj(LoweringContext &ctx, const Value *root, const Instruction &I) 
   if (!gv) {
     // A parameter pointing into a QRAM is a triple formal of a clone (CR §1.4: a QRAM pointer is a quantum argument,
     // taint lifts its callee), registered as a QRAM over the caller's bus (registerFormalQram): it is found above.
+    // Decision (rules 19, 20, 27; owner 2026-11-03): an in-place body reached through a function pointer with a QRAM
+    // pointer is a clone like any direct callee, lifted per mask at the indirect call over rule 19's candidate set
+    // (taint's second run), so its parameter is a rule 21 triple there, never a per-activation object.
     unimplemented("mem-qram: a QRAM access to a site that was not allocated as a QRAM (field columns of "
                   "different classes, rule 20, or an allocation not lowered before the access)",
                   &I);
