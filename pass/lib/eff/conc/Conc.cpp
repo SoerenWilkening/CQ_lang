@@ -433,7 +433,8 @@ SmallVector<Function *, 8> collapseFatAtomics(Module &M, const TaintInfo &T) {
       if (!p)
         continue;
       // Rule 24 with rule 21 (P1, M2): an atomic through a clone's triple formal onto a QRAM is its plain load and
-      // store too, which M2 defers like the clone's other stores through the formal.
+      // store too, which M2 defers like the clone's other stores through the formal; through a triple formal onto
+      // slot objects (bound by fatptr, its accesses rule 21's against the cell count) likewise.
       SmallVector<const Value *, 4> us;
       getUnderlyingObjects(p, us);
       auto viaQramTriple = [&](const Specialization &S) {
@@ -442,7 +443,7 @@ SmallVector<Function *, 8> collapseFatAtomics(Module &M, const TaintInfo &T) {
           if (!A || A->getParent() != &F || !A->getType()->isPointerTy() || S.isEntry())
             return false;
           PtrFormal pf = T.pointerFormal(S, A->getArgNo());
-          return pf.abi != PtrAbi::Raw && pf.pointee == ObjClass::Qram;
+          return pf.abi != PtrAbi::Raw && (pf.pointee == ObjClass::Qram || pf.pointee == ObjClass::Slot);
         });
       };
       for (const Specialization &S : T.specializations())
