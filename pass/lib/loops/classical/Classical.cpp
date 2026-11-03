@@ -1024,6 +1024,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // header with the quantum exit at the latch (cq-nqa6, 117's is_marked: `k + 1 == n` at the header,
   // `v == m[k + 1]` at the latch). Its exit edge gives res; it enters C directly.
   BasicBlock *cxb = nullptr;
+  SmallVector<Disj, 4> mixedDs;   // cq-h8y6: the classical disjuncts of a mixed exit test at cxb (empty: cxb is classical)
   if (mx) {
     SmallVector<BasicBlock *, 4> exiting;
     L.getExitingBlocks(exiting);
@@ -1042,6 +1043,37 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
                       u->getTerminator());
       cxb = u;
     }
+    // cq-h8y6 (CR rule 14 case 3, "a mixed exit c_classical || q"): with no purely classical exit test, the bound is
+    // a classical disjunct of a quantum exit test (strncmp: `n && *r && *l == *r` at the header). That block is the
+    // classical exit test for its classical disjuncts (the loop branches on them) and a quantum exit for the whole
+    // test: e = a & f, f the flag of the exit condition with its classical terms seeded (rule 8), so where a
+    // classical disjunct holds the trip exits through it under a and the captures take its value. The header is
+    // preferred, then the latch; another mixed exit stays a quantum exit (its classical terms seeded in its flag).
+    SmallVector<BasicBlock *, 4> byPref{header, latch};
+    for (BasicBlock *u : exiting)
+      if (!is_contained(byPref, u))
+        byPref.push_back(u);
+    if (!cxb)
+      for (BasicBlock *u : byPref) {
+          if (cxb || !is_contained(exiting, u))
+            continue;
+          auto *br = dyn_cast<BranchInst>(u->getTerminator());
+          if (!br || !br->isConditional() || !isQ(br->getCondition()) ||
+              L.contains(br->getSuccessor(0)) == L.contains(br->getSuccessor(1)) ||
+              none_of(successors(u), [&](BasicBlock *x) { return !L.contains(x) && is_contained(UX.live, x); }))
+            continue;
+          SmallVector<Disj, 4> d;
+          SmallPtrSet<const Value *, 8> inner;
+          disjuncts(br->getCondition(), !L.contains(br->getSuccessor(0)), d, inner);
+          SmallVector<Disj, 4> c;
+          for (const Disj &x : d)
+            if (!isQ(x.v))
+              c.push_back(x);
+          if (c.empty())
+            continue;
+          cxb = u;
+          mixedDs = c;
+        }
     if (cxb && cxb != latch && cxb != header)
       unimplemented("loops-classical: a multi-exit case-3 loop whose classical exit test is neither its latch's nor "
                     "its header's",
@@ -1049,11 +1081,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     auto *lbr = dyn_cast<BranchInst>(latch->getTerminator());
     if (!lbr)
       unimplemented("loops-classical: a multi-exit case-3 loop whose latch test is quantum", latch->getTerminator());
-    if (lbr->isConditional() && isQ(lbr->getCondition()) &&
-        !(cxb == header && cxb != latch && L.contains(lbr->getSuccessor(0)) != L.contains(lbr->getSuccessor(1))))
-      unimplemented("loops-classical: a multi-exit case-3 loop whose latch test is quantum (other than its quantum exit "
-                    "with the classical bound tested at the header)",
-                    latch->getTerminator());
+    // A quantum latch test is a quantum exit of the trip (e = a & f, the back edge taken under a & NOT f): the
+    // classical bound is tested at the header (cq-nqa6, 117), or is a classical disjunct of the latch's own test or
+    // of the header's (mixedDs above). Its back edge is the classical branch on the bound's disjuncts (at the latch)
+    // or unconditional (the bound tested at the header).
     if (cxb)
       for (BasicBlock *x : successors(cxb))
         if (!L.contains(x) && x != UX.cont && is_contained(UX.live, x))
@@ -1491,6 +1522,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       return kReal(k) ? EK::Real : EK::Linear;
     if (subOf(u))
       return EK::Real;   // a sub-loop always ends in a real branch
+    if (u == cxb && !mixedDs.empty())
+      return EK::Real;   // cq-h8y6: a mixed exit test branches classically on its classical disjuncts
     const Instruction *t = u->getTerminator();
     if (termQ(t))
       return EK::Linear;
@@ -1985,7 +2018,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       SmallVector<Value *, 2> c(cp.cap.begin(), cp.cap.end());
       SmallVector<Operand, 2> vl;
       for (auto &[u, val] : cp.incomings(inUnit, UX.cont)) {
-        if (u == cxb) {
+        if (u == cxb && mixedDs.empty()) {
           if (u == latch)
             vl = fieldsOf(cp, val);
           continue;   // the classical exit: res (at the header, headerRes)
@@ -2050,6 +2083,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       auto *br = dyn_cast<BranchInst>(t);
       Value *a2 = seed(ConstantInt::getFalse(ctx.M.getContext()), RailType{Kind::Int, 1});
       gate(abi::Core::XorI1, {aCur, a2});
+      // The exit condition read whole as the exit's atom (cq-s7c4): computed as data even where pred factored the
+      // branch (a mixed test `c && q`, rule 8).
+      if (br)
+        if (auto *ci = dyn_cast<Instruction>(br->getCondition()); ci && !ctx.bound(ci))
+          lowerConditionAsData(ctx, *ci);
       for (BasicBlock *x : xs) {
         Pred ex;
         if (br) {
@@ -2075,18 +2113,40 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         sw::lowerSwitch(ctx, *sw);
       else if (!isa<IndirectBrInst>(t))   // rule 13: a quantum computed goto's edges are pred's; nothing to emit
         internalError("loops-classical: a quantum exit terminator other than br, switch or computed goto", t);
+      // cq-h8y6: a mixed exit test (cxb with classical disjuncts) leaves the loop classically where one of them
+      // holds: there its flag is 1, so this trip's exit took its value under a (the captures, or res).
+      Value *cExit = nullptr;
+      if (u == cxb)
+        for (const Disj &d : mixedDs) {
+          Operand o = ctx.operand(d.v);
+          Value *x = d.pos ? o.v : ctx.B().CreateNot(o.v);
+          cExit = cExit ? ctx.B().CreateOr(cExit, x) : x;
+        }
       if (u == latch) {
         // The quantum exit at the latch (cq-nqa6): the next values and captures under a', then the back edge.
         latchNexts();
         latchExits();
         for (BasicBlock *s : successors(u))
           edgeFrom[{u, s}] = cur;
-        ctx.B().CreateBr(H);
+        if (cExit)
+          ctx.B().CreateCondBr(cExit, T, H);
+        else
+          ctx.B().CreateBr(H);
         cur = nullptr;
         return;
       }
       for (BasicBlock *s : successors(u))
         edgeFrom[{u, s}] = cur;
+      if (cExit) {
+        BasicBlock *in = nullptr;
+        for (BasicBlock *s : successors(u))
+          if (L.contains(s))
+            in = s;
+        for (BasicBlock *s : successors(u))
+          mintEdgeSeeds(u, s);
+        ctx.B().CreateCondBr(cExit, T, target(in));
+        cur = nullptr;
+      }
       return;
     }
     if (c3 && !mx && u == latch) {
