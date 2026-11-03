@@ -2980,8 +2980,25 @@ void Analyzer::transferCall(CallBase &CB) {
     Value *Callee = CB.getCalledOperand();
     PtrInfo p = P(Callee);
     SmallVector<Function *, 4> cands;
+    // CR rule 19 (cq-utb8): the static candidate set is the functions of COMPATIBLE type whose address reaches the
+    // pointer. One of another parameter list (or a result the call reads that it does not return) is never the
+    // callee of a call the C program defines: a call through an incompatible type is UB, outside the domain
+    // (lowerIndirect: a pointer outside the set). musl's FILE record holds read, write, seek and close pointers,
+    // and a load of one names them all; f->close(f) never runs __stdio_read.
+    auto compatible = [&](const Function *F) {
+      FunctionType *a = F->getFunctionType(), *b = CB.getFunctionType();
+      if (a == b)
+        return true;
+      if (a->isVarArg() != b->isVarArg() || a->getNumParams() != b->getNumParams() ||
+          !b->getReturnType()->isVoidTy())
+        return false;
+      for (unsigned i = 0; i < a->getNumParams(); ++i)
+        if (a->getParamType(i) != b->getParamType(i))
+          return false;
+      return true;   // a call that discards the result of a function returning one
+    };
     for (unsigned s : p.sites)
-      if (st.sites[s].kind == SiteKind::Function)
+      if (st.sites[s].kind == SiteKind::Function && compatible(cast<Function>(st.sites[s].v)))
         cands.push_back(const_cast<Function *>(cast<Function>(st.sites[s].v)));
     if (cands.empty())
       for (Function &F : *st.M)
