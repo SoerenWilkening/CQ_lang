@@ -1134,7 +1134,9 @@ Fat deriveLoaded(LoweringContext &ctx, const LoadInst &ld, bool emit) {
   for (ObjectId o : src)
     if (ctx.T.classOf(o) != ObjClass::Qram && !slotCell)
       unimplemented("fatptr: a pointer loaded through a fat pointer from QRAM and other memory (rule 21)", &ld);
-  SmallVector<ObjectId, 4> mine(ctx.T.provenance(&ld, ctx.S).begin(), ctx.T.provenance(&ld, ctx.S).end());
+  // One provenance answer: each call caches a fresh copy, so begin and end must come from the same one.
+  ArrayRef<ObjectId> lp = ctx.T.provenance(&ld, ctx.S);
+  SmallVector<ObjectId, 4> mine(lp.begin(), lp.end());
   auto intersects = [](ArrayRef<ObjectId> a, ArrayRef<ObjectId> b) {
     for (ObjectId x : a)
       if (llvm::is_contained(b, x))
