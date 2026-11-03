@@ -1594,6 +1594,12 @@ struct Uncompute::Impl {
       return any_of(fp.objs, [&](const Cell &c) { return mayAlias(c, {p, 0}, DL); }) ||
              (fp.unbounded && reachable(p));
     };
+    // A clone (or call) of a C function that only reads memory writes no object (rule 18: a clone writes the cells
+    // its C body writes, none here): musl strcmp called per trip of a K-loop between an earlier trip's call and
+    // its twin.
+    if (const Function *cf = cb->getCalledFunction())
+      if (const Function *src = cloneSource(*cf); src && !src->isDeclaration() && src->onlyReadsMemory())
+        return false;
     for (const Value *a : cb->args())
       if (a->getType()->isPointerTy() && hits(a))
         return true;
