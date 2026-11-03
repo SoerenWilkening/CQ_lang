@@ -36,6 +36,9 @@
 
 #include "cq/Loops.h"
 #include "cq/Taint.h"
+// cq/Common.h routes the pass's unimplemented()/internalError() through site-naming macros; the oracle has its own.
+#undef unimplemented
+#undef internalError
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
