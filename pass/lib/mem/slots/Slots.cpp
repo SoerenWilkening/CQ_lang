@@ -245,7 +245,9 @@ Addr decompose(const Value *p, const DataLayout &DL);
 // every return of the body hands back the same one: a global plus a constant (musl's __errno_location, the TLS
 // block's errno cell) or a pointer formal plus a constant (wcscpy's `returned` d: the call's actual). The call
 // is still emitted; its result names that cell of that object, as taint's provenance of the result does (the
-// callee's retPtr). An allocation (a noalias result) is its own object, never resolved.
+// callee's retPtr). A returned value is read through phis and selects; a null leaf is no address (an access
+// through it is outside the domain: the program's access runs only where the result is the other address,
+// fgetws's `return s` or NULL). An allocation (a noalias result) is its own object, never resolved.
 const Value *returnedAddress(const CallBase &CB, const DataLayout &DL, int64_t &off) {
   static thread_local unsigned depth = 0;
   const Function *F = CB.getCalledFunction();
@@ -257,11 +259,26 @@ const Value *returnedAddress(const CallBase &CB, const DataLayout &DL, int64_t &
   const Value *root = nullptr;
   int64_t o = 0;
   bool ok = true, any = false;
-  for (const BasicBlock &BB : *F) {
-    auto *R = dyn_cast<ReturnInst>(BB.getTerminator());
-    if (!R)
+  SmallVector<const Value *, 8> leaves;
+  SmallPtrSet<const Value *, 16> seen;
+  for (const BasicBlock &BB : *F)
+    if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
+      leaves.push_back(R->getReturnValue());
+  while (ok && !leaves.empty()) {
+    const Value *v = leaves.pop_back_val();
+    if (!seen.insert(v).second || isa<ConstantPointerNull>(v) || isa<UndefValue>(v))
       continue;
-    Addr r = decompose(R->getReturnValue(), DL);
+    if (auto *phi = dyn_cast<PHINode>(v)) {
+      for (const Value *in : phi->incoming_values())
+        leaves.push_back(in);
+      continue;
+    }
+    if (auto *sel = dyn_cast<SelectInst>(v)) {
+      leaves.push_back(sel->getTrueValue());
+      leaves.push_back(sel->getFalseValue());
+      continue;
+    }
+    Addr r = decompose(v, DL);
     const Value *x = r.ok && r.terms.empty() ? r.root : nullptr;
     if (auto *A = dyn_cast_or_null<Argument>(x); A && A->getParent() != F)
       x = nullptr;
@@ -3148,7 +3165,16 @@ Operand readCell(LoweringContext &ctx, FnState &st, const Site &s, const Instruc
     ctx.unc().recordSeed(z);
     return Operand{z, true};
   }
-  if (const Instruction *src = sourceOf(ctx, st, *s.info, s.o, &I, s.a, ty)) {
+  const Instruction *src = sourceOf(ctx, st, *s.info, s.o, &I, s.a, ty);
+  // cq-utb8 (CR rules 20, 22): mem-qram's seed form of a memset (a dynamic object's seeds, its registers: one per
+  // cell, rule 7) names no cell in callOut; the cell is read at run time below (M3), as every alias read of a
+  // dynamic object is.
+  if (auto *MI = dyn_cast_or_null<MemIntrinsic>(src)) {
+    auto c = st.callOut.find(MI);
+    if (c == st.callOut.end() || !c->second.count(s.a.off))
+      src = nullptr;
+  }
+  if (src) {
     if (auto f = st.fatOut.find(src); f != st.fatOut.end()) {
       auto k = f->second.find({s.a.root, s.a.off});
       if (k == f->second.end())
