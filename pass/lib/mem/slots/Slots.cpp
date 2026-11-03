@@ -597,6 +597,9 @@ bool declaredCallOn(LoweringContext &ctx, const Instruction &X, ObjectId o) {
 // formal 0 is operand 3).
 unsigned numFormals(const CallBase &CB) { return threadStart(CB) ? 1 : CB.arg_size(); }
 const Value *formalActual(const CallBase &CB, unsigned k) { return CB.getArgOperand(threadStart(CB) ? 3 : k); }
+// cq-dd3q (CR rules 20, 26; cq-09xh): formal k is handed a byval copy of its actual: the callee writes the copy,
+// never the caller's object.
+bool byvalActual(const CallBase &CB, unsigned k) { return !threadStart(CB) && CB.isByValArgument(k); }
 
 SmallVector<unsigned, 4> cellsWrittenBy(LoweringContext &ctx, const Specialization &S, unsigned argNo) {
   if (detail::cellsWrittenOverride())
@@ -897,6 +900,14 @@ Type *recordType(const Value *root) {
     return t ? dyn_cast<StructType>(t) : nullptr;
   }
   return nullptr;
+}
+
+// cq-dd3q (CR rules 20, 26; cq-09xh): a byval formal its function may write is that function's own copy (C
+// semantics: the caller made it, the callee owns it), a frame object like a local: a store into it is never a
+// caller's cell (no slot result, no twin restore), its rails the function's own.
+bool byvalFrame(const Value *root) {
+  auto *A = dyn_cast<Argument>(root);
+  return A && A->hasByValAttr() && !A->onlyReadsMemory();
 }
 
 int fieldAt(const ObjInfo &info, int64_t off) {
@@ -1465,9 +1476,10 @@ bool mayWrite(LoweringContext &ctx, const ObjInfo &info, ObjectId o, const Instr
     return callMayTouchInternalGlobal(*CB, *cast<GlobalVariable>(info.root));
   if ((info.kind == RootKind::Local || info.kind == RootKind::Heap) && !info.escaping)
     if (const Specialization *S = cloneCallee(ctx, *CB)) {
-      // M1: the clone writes the cells cellsWritten names, at their offsets from the pointer it is handed.
+      // M1: the clone writes the cells cellsWritten names, at their offsets from the pointer it is handed (a byval
+      // actual's copy, never the object itself).
       for (unsigned i = 0; i < numFormals(*CB); ++i) {
-        if (!hasObject(ctx, formalActual(*CB, i), o))
+        if (!hasObject(ctx, formalActual(*CB, i), o) || byvalActual(*CB, i))
           continue;
         Addr pa = decompose(formalActual(*CB, i), DL);
         if (!pa.ok || !pa.terms.empty())
@@ -1507,15 +1519,17 @@ bool mayWrite(LoweringContext &ctx, const ObjInfo &info, ObjectId o, const Instr
   return false;
 }
 
-// M1: the clone call X writes exactly the cell at `cell` (size bytes) of object o.
+// M1: the clone call X writes exactly the cell at `cell` (size bytes) of object o. copies: also when it writes the
+// cell's byval copy (cq-dd3q: the caller's record is laid out as the copy the clone writes, decideFields; the
+// object itself keeps its content).
 bool cloneWritesCell(LoweringContext &ctx, const ObjInfo &info, ObjectId o, const Instruction &X, const Addr &cell,
-                     uint64_t size) {
+                     uint64_t size, bool copies = false) {
   auto *CB = dyn_cast<CallBase>(&X);
   const Specialization *S = CB ? cloneCallee(ctx, *CB) : nullptr;
   if (!S)
     return false;
   for (unsigned i = 0; i < numFormals(*CB); ++i) {
-    if (!hasObject(ctx, formalActual(*CB, i), o))
+    if (!hasObject(ctx, formalActual(*CB, i), o) || (!copies && byvalActual(*CB, i)))
       continue;
     Addr pa = decompose(formalActual(*CB, i), ctx.M.getDataLayout());
     if (!pa.ok || !pa.terms.empty())
@@ -1772,7 +1786,7 @@ void decideFields(LoweringContext &ctx, FnState &st, ObjInfo &info, ObjectId o) 
         h = true;
     }
     for (const Instruction &X : instructions(*st.F))
-      if (cloneWritesCell(ctx, info, o, X, cell, sz))
+      if (cloneWritesCell(ctx, info, o, X, cell, sz, /*copies=*/true))
         h = true;
     // A pointer field no write fills with a fat pointer is a classical cell (rules 20, 26: classical fields stay
     // classical): it keeps the host pointer as written, in a local or parameter record as in a heap one.
@@ -1808,6 +1822,14 @@ void decideFields(LoweringContext &ctx, FnState &st, ObjInfo &info, ObjectId o) 
     cells.push_back(f.handle ? handleTy(ctx.M.getContext()) : f.ty);
   }
   info.recTy = StructType::get(ctx.M.getContext(), cells);
+  // cq-dd3q (CR rules 20, 26; cq-09xh): a clone's byval formal it writes stays byval; the copy its caller hands it is
+  // the caller's lowered record (calls byvalSnapshot), so the formal's byval type is the record's layout.
+  if (info.kind == RootKind::Param && !ctx.S.isEntry() && byvalFrame(info.root))
+    if (auto *LA = dyn_cast<Argument>(ctx.operand(info.root).v); LA && LA->hasByValAttr()) {
+      Function *NF = LA->getParent();
+      NF->removeParamAttr(LA->getArgNo(), Attribute::ByVal);
+      NF->addParamAttr(LA->getArgNo(), Attribute::getWithByValType(ctx.M.getContext(), info.recTy));
+    }
   if (info.kind == RootKind::Heap) {
     // cq-z6q1: a heap record keeps its host block: every cell at its field's offset.
     const StructLayout *SL = DL.getStructLayout(info.recTy);
@@ -3165,7 +3187,7 @@ Operand readCell(LoweringContext &ctx, FnState &st, const Site &s, const Instruc
     break;
   }
   LoadInst *h = ctx.B().CreateAlignedLoad(handleTy(ctx.M.getContext()), cellPointer(ctx, s, I), Align(4));
-  if (s.info->kind == RootKind::Local || s.info->kind == RootKind::Heap) {
+  if (s.info->kind == RootKind::Local || s.info->kind == RootKind::Heap || (!ctx.S.isEntry() && byvalFrame(s.a.root))) {
     // M3 (CR rules 5, 20): the handle names one of the rails the stores of this function may have left
     // in the cell. When one of them is not a register, the load is a merge over them (recordCellLoad):
     // its readers' clean-ups come before theirs, and a kept role on it keeps them.
@@ -4045,7 +4067,7 @@ void lowerViewStore(LoweringContext &ctx, FnState &st, StoreInst &stI, const Sit
 // the clone.
 bool mergedCloneStore(LoweringContext &ctx, FnState &st, const Site &s, StoreInst &stI, Operand val) {
   if (s.info->kind != RootKind::Param || ctx.S.isEntry() || !ctx.currentFlag() || s.info->view ||
-      s.info->boolCells || !s.a.terms.empty())
+      s.info->boolCells || !s.a.terms.empty() || byvalFrame(s.a.root))
     return false;
   const DataLayout &DL = ctx.M.getDataLayout();
   Type *vty = stI.getValueOperand()->getType();
@@ -4148,7 +4170,8 @@ bool mergedCloneStore(LoweringContext &ctx, FnState &st, const Site &s, StoreIns
 // path, and a path that writes nothing leaves f = old; the twin replays the copies on the same path.
 FnState::CloneCell *cloneCellOf(LoweringContext &ctx, FnState &st, const Site &s, const Instruction &at) {
   if (s.info->kind != RootKind::Param || ctx.S.isEntry() || !isa<Argument>(s.a.root) || !s.a.ok ||
-      !s.a.terms.empty() || s.beyond || s.info->view || s.info->boolCells || s.info->record || s.info->split)
+      !s.a.terms.empty() || s.beyond || s.info->view || s.info->boolCells || s.info->record || s.info->split ||
+      byvalFrame(s.a.root))
     return nullptr;
   auto key = std::make_pair(s.a.root, s.a.off);
   auto it = st.cloneCells.find(key);
@@ -4562,6 +4585,8 @@ void finishStore(LoweringContext &ctx, FnState &st, const Site &s, Instruction &
       }
       break;
     case RootKind::Param:
+      if (!ctx.S.isEntry() && byvalFrame(s.a.root))
+        break;   // cq-dd3q: the clone's own byval copy, a frame object: the rail stays the clone's (as a local's)
       if (!ctx.S.isEntry()) {
         // T5 (109's put): the clone stores a formal's handle unchanged into the caller's cell (taint's
         // cellForward): the cell holds the caller's own rail after the call; no copy-out, no twin for it.

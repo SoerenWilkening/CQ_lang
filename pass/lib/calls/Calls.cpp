@@ -703,6 +703,44 @@ struct CloneCall {
 // uncompute barrier, cq-fwto). 164: a slot record (handle cells) passed read-only by value.
 bool byvalCopied(const Argument &A) { return A.hasByValAttr() && !A.onlyReadsMemory(); }
 
+// cq-09xh: the snapshot of byval actual k of CB (lowered: obj) the clone's copy is made from, its byval type and
+// alignment. cq-dd3q (CR rules 20, 26): a slot record's snapshot is its lowered record (handle cells and classical
+// cells, rule 20) copied whole, so the copy names the caller's rails, which the call only reads; the clone's own
+// byval formal is that layout (mem-slots decideFields: the caller's fields hold a handle where the clone's do,
+// the clone's writes included, cloneWritesCell).
+std::tuple<Value *, Type *, Align> byvalSnapshot(LoweringContext &ctx, CallBase &CB, unsigned k, Value *obj,
+                                                 bool slot) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  Type *T = CB.getParamByValType(k);
+  Align al = CB.getParamAlign(k).value_or(DL.getABITypeAlign(T));
+  if (slot) {
+    // The clone's formal is a record of the byval type's fields (rule 26); the caller's object must be laid out as
+    // that record (mem-slots: a struct read across its fields is byte cells instead, 63).
+    ArrayRef<ObjectId> objs = ctx.T.provenance(CB.getArgOperand(k), ctx.S);
+    if (objs.size() != 1 ||
+        !mem::slotLayout(ctx, getUnderlyingObject(CB.getArgOperand(k)), objs.front(), CB).record)
+      unimplemented("calls: a slot record passed by value to a clone that may write its copy (the copy "
+                    "would need the record's lowered layout on both sides: rules 20, 26)",
+                    &CB);
+    // The lowered record: a local's (mem-slots allocateSlots: one alloca of its record type) or a clone's own byval
+    // formal handed on (its byval type is its record's, decideFields).
+    if (auto *rec = dyn_cast<AllocaInst>(obj); rec && !rec->isArrayAllocation()) {
+      T = rec->getAllocatedType();
+      al = std::max(al, rec->getAlign());
+    } else if (auto *A = dyn_cast<Argument>(obj); A && A->hasByValAttr()) {
+      T = A->getParamByValType();
+    } else {
+      internalError("calls: a byval actual that is not the start of its object (clang passes a byval "
+                    "aggregate's own temporary or the aggregate itself)",
+                    &CB);
+    }
+  }
+  AllocaInst *snap = ctx.B().CreateAlloca(T, DL.getAllocaAddrSpace(), nullptr, "byval.snap");
+  snap->setAlignment(al);
+  ctx.B().CreateMemCpy(snap, al, obj, al, DL.getTypeAllocSize(T));
+  return {snap, T, al};
+}
+
 // Does the caller's actual point into a slot object (rule 20)?
 bool pointsToSlot(LoweringContext &ctx, const Value *actual) {
   for (ObjectId o : ctx.T.provenance(actual, ctx.S))
@@ -784,11 +822,13 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
       tableArgs.push_back(i);
       continue;
     }
-    if (fs[i].pointer && pointsToSlot(ctx, CB.getArgOperand(op(i))) && !ctx.T.cellsWritten(S, i).empty()) {
+    // cq-dd3q (CR rules 20, 26; cq-09xh): a byval actual is the callee's own copy (C semantics): the clone writes
+    // the copy it is handed (byvalSnapshot), never the caller's cells, so the caller reloads nothing (no slot
+    // result) and its rails in the record are only read by the call (slotRailsReadByCall).
+    if (fs[i].pointer && pointsToSlot(ctx, CB.getArgOperand(op(i))) && !ctx.T.cellsWritten(S, i).empty() &&
+        !CB.isByValArgument(op(i))) {
       // A triple formal (rule 21) names the same caller cells as a raw one: the clone writes them through the
       // object, the caller reads their new handles after the call (M1) whatever the ABI.
-      if (CB.isByValArgument(op(i)))
-        unimplemented("calls: a byval slot record a clone writes (rules 20, 26: 164)", &CB);
       slotArgs.push_back(i);
       // A non-constant i32 old cell is a handle (a slot cell is homogeneous, rule 20; poison where never
       // written): a read of the twin's item. A classical i32 cell of a record would be refused by
@@ -831,21 +871,12 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
       if (snapByval) {
         if (fs[i].pointee == ObjClass::Qram)
           internalError("calls: a byval formal onto a QRAM object (a byval copy is host memory)", &CB);
-        if (fs[i].pointee != ObjClass::Classical)
-          unimplemented("calls: a slot record passed by value to a clone that may write its copy (the copy "
-                        "would need the record's lowered layout on both sides: rules 20, 26)",
-                        &CB);
         auto *idx0 = dyn_cast<ConstantInt>(t.idx);
         if (!idx0 || !idx0->isZero())
           internalError("calls: a byval actual that is not the start of its object (clang passes a byval "
                         "aggregate's own temporary or the aggregate itself)",
                         &CB);
-        Type *BT = CB.getParamByValType(op(i));
-        const DataLayout &DL = ctx.M.getDataLayout();
-        Align al = CB.getParamAlign(op(i)).value_or(DL.getABITypeAlign(BT));
-        AllocaInst *snap = ctx.B().CreateAlloca(BT, DL.getAllocaAddrSpace(), nullptr, "byval.snap");
-        snap->setAlignment(al);
-        ctx.B().CreateMemCpy(snap, al, t.object, al, DL.getTypeAllocSize(BT));
+        auto [snap, BT, al] = byvalSnapshot(ctx, CB, op(i), t.object, fs[i].pointee != ObjClass::Classical);
         t.object = snap;
         byvals.push_back({unsigned(args.size()), BT, al});
       }
@@ -880,20 +911,11 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
         internalError("calls: a rail passed where the clone's mask is classical", &CB);
       Value *v = o.v;
       if (op(i) < S.F->arg_size() && CB.isByValArgument(op(i)) && byvalCopied(*S.F->getArg(i))) {
-        if (pointsToSlot(ctx, a))
-          unimplemented("calls: a slot record passed by value to a clone that may write its copy (the copy "
-                        "would need the record's lowered layout on both sides: rules 20, 26)",
-                        &CB);
         // byval (cq-09xh): the clone gets a copy of the object as of the call. The copy is made from
         // a snapshot the caller takes here, and the snapshot is what the forward and the twin receive:
         // the twin, run later, recomputes from the values the forward saw, whatever the caller has
         // written into its object since.
-        Type *T = CB.getParamByValType(op(i));
-        const DataLayout &DL = ctx.M.getDataLayout();
-        Align al = CB.getParamAlign(op(i)).value_or(DL.getABITypeAlign(T));
-        AllocaInst *snap = ctx.B().CreateAlloca(T, DL.getAllocaAddrSpace(), nullptr, "byval.snap");
-        snap->setAlignment(al);
-        ctx.B().CreateMemCpy(snap, al, v, al, DL.getTypeAllocSize(T));
+        auto [snap, T, al] = byvalSnapshot(ctx, CB, op(i), v, pointsToSlot(ctx, a));
         v = snap;
         byvals.push_back({unsigned(args.size()), T, al});
       }
