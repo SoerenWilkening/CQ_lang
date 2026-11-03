@@ -1190,33 +1190,50 @@ Fat deriveLoaded(LoweringContext &ctx, const LoadInst &ld, bool emit) {
 Fat deriveIntToPtr(LoweringContext &ctx, const IntToPtrInst &I, bool emit);
 
 // The roots a clone's pointer result is derived from (85): its formals and NULL, through selects, phis,
-// GEPs and casts. Any other origin (a local, a global, a loaded or computed pointer) is unimplemented.
-// nullMoved: NULL is reached through a GEP with an offset (Fat::nullMoved).
+// GEPs and casts, and through the result of a call of a function with a body (rule 18: a nested clone's
+// fat-pointer result is derived from ITS formals and NULL, each formal the actual this call hands it, walked on in
+// the calling function). Any other origin (a local, a global, a loaded or computed pointer; a recursive call's
+// result) is unimplemented. nullMoved: NULL is reached through a GEP with an offset (Fat::nullMoved).
 void calleeResultRoots(const Function &G, SmallVectorImpl<const Value *> &out, bool &nullMoved, const Value *at) {
-  std::set<std::pair<const Value *, bool>> seen;
-  SmallVector<std::pair<const Value *, bool>, 8> work;   // (value, a GEP with an offset lies above it)
+  // The calls the walk is inside of, innermost last: a formal of the innermost call's callee is that call's actual.
+  using Stack = SmallVector<const CallBase *, 4>;
+  std::set<std::tuple<const Value *, bool, Stack>> seen;
+  SmallVector<std::tuple<const Value *, bool, Stack>, 8> work;   // (value, a GEP with an offset lies above it, calls)
   for (const BasicBlock &BB : G)
     if (auto *RI = dyn_cast<ReturnInst>(BB.getTerminator()))
-      work.push_back({RI->getReturnValue(), false});
+      work.push_back({RI->getReturnValue(), false, {}});
   while (!work.empty()) {
-    auto [v, moved] = work.pop_back_val();
-    if (!seen.insert({v, moved}).second)
+    auto [v, moved, stack] = work.pop_back_val();
+    if (!seen.insert({v, moved, stack}).second)
       continue;
-    if (isa<Argument>(v) || isa<ConstantPointerNull>(v)) {
+    if (auto *A = dyn_cast<Argument>(v); A && !stack.empty()) {
+      const CallBase *cb = stack.back();
+      stack.pop_back();
+      work.push_back({cb->getArgOperand(A->getArgNo()), moved, stack});
+    } else if (isa<Argument>(v) || isa<ConstantPointerNull>(v)) {
       if (llvm::find(out, v) == out.end())
         out.push_back(v);
       if (isa<ConstantPointerNull>(v) && moved)
         nullMoved = true;
     } else if (auto *sel = dyn_cast<SelectInst>(v)) {
-      work.push_back({sel->getTrueValue(), moved});
-      work.push_back({sel->getFalseValue(), moved});
+      work.push_back({sel->getTrueValue(), moved, stack});
+      work.push_back({sel->getFalseValue(), moved, stack});
     } else if (auto *phi = dyn_cast<PHINode>(v)) {
       for (const Value *in : phi->incoming_values())
-        work.push_back({in, moved});
+        work.push_back({in, moved, stack});
     } else if (auto *g = dyn_cast<GEPOperator>(v)) {
-      work.push_back({g->getPointerOperand(), moved || !g->hasAllZeroIndices()});
+      work.push_back({g->getPointerOperand(), moved || !g->hasAllZeroIndices(), stack});
     } else if (auto *bc = dyn_cast<BitCastOperator>(v)) {
-      work.push_back({bc->getOperand(0), moved});
+      work.push_back({bc->getOperand(0), moved, stack});
+    } else if (auto *cb = dyn_cast<CallBase>(v); cb && !isa<IntrinsicInst>(cb) && cb->getCalledFunction() &&
+                                                 !cb->getCalledFunction()->isDeclaration() &&
+                                                 !cb->getCalledFunction()->isVarArg() && !is_contained(stack, cb) &&
+                                                 cb->getCalledFunction()->arg_size() == cb->arg_size()) {
+      Stack inner = stack;
+      inner.push_back(cb);
+      for (const BasicBlock &BB : *cb->getCalledFunction())
+        if (auto *RI = dyn_cast<ReturnInst>(BB.getTerminator()))
+          work.push_back({RI->getReturnValue(), moved, inner});
     } else {
       unimplemented("fatptr: a clone's fat-pointer result not derived from its triple formals or NULL (rule 21 "
                     "object table across the call)",
