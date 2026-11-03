@@ -562,7 +562,9 @@ unsigned Analyzer::siteFor(const Value *V, SiteKind k, const Function *owner) {
   // cq-i9wk, cq-1c5j: a site of the running function's own activation is per specialization
   // (ImplState::siteOfFrame).
   bool frameCtx = owner && cur && cur->F == owner && k != SiteKind::Function && k != SiteKind::Global;
-  auto &map = frameCtx ? st.siteOfFrame[cur] : st.siteOf;
+  // cq-e0tq: an unknown object a clone names is the clones' (ImplState::siteOfCloneUnknown), not its frame's.
+  bool cloneUnknown = frameCtx && k == SiteKind::External && !cur->inPlace;
+  auto &map = cloneUnknown ? st.siteOfCloneUnknown : frameCtx ? st.siteOfFrame[cur->frame] : st.siteOf;
   auto it = map.find(V);
   if (it != map.end())
     return it->second;
@@ -780,6 +782,48 @@ std::string lanesStr(const Lanes &l) {
 // A pointer actual's naming record (cellDigits) names a QRAM object ("OQ;").
 static bool qramRecord(const std::string &c) { return c.find("OQ;") != std::string::npos; }
 
+// cq-e0tq (CR rules 18, 20, 21): the key of a specialization's activation frame. A clone's frame is its own
+// (cq-i9wk, cq-1c5j), but the per-object records of a pointer formal's naming record (cellDigits: one per object
+// in provenance) count objects, and the objects include frame and unknown-object sites of other clones: a lost
+// provenance (every escaped object) or a recursive call handing on the pointer its own activation loaded. A frame
+// per full key then names new sites per new key and new keys per new site, a fixed point that never closes
+// (musl fflush's FILE list under its recursion, __stdio_write's iovec escaping through the syscall). Two clones
+// of one function whose keys differ only in how many objects carry the same record (same lanes, same A and
+// S digits, the same set of object records, flags, depth and bounds) see the same pointee cells, so they write
+// the same facts into their frames: they share one frame. The frame keys of a function are then finite.
+static std::string frameKey(StringRef key) {
+  std::string out;
+  size_t p = 0;
+  while (p < key.size()) {
+    size_t lb = key.find('[', p);
+    if (lb == StringRef::npos) {
+      out += key.substr(p).str();
+      break;
+    }
+    out += key.substr(p, lb + 1 - p).str();
+    size_t rb = key.find(']', lb);
+    StringRef c = key.substr(lb + 1, rb - lb - 1);
+    std::set<std::string> objs;
+    size_t q = 0;
+    while (q < c.size()) {
+      char k = c[q];
+      if (k == 'O') {
+        size_t e = c.find(';', q);
+        objs.insert(c.substr(q, e + 1 - q).str());
+        q = e + 1;
+      } else {
+        out += k;
+        ++q;
+      }
+    }
+    for (const std::string &o : objs)
+      out += o;
+    out += ']';
+    p = rb + 1;
+  }
+  return out;
+}
+
 SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector<Type *> tys,
                              std::vector<std::string> cells, bool ctl, bool pure,
                              unsigned depth, std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals) {
@@ -831,6 +875,7 @@ SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector
   S->ret = Lanes(lanesOf(F->getReturnType()));
   SpecState *raw = S.get();
   st.byKey[key] = raw;
+  raw->frame = st.frameOf.emplace(frameKey(key), raw).first->second;
   st.specs.push_back(std::move(S));
   st.changed = true;
   return raw;
@@ -3527,9 +3572,11 @@ void Analyzer::resetAnalysis() {
   st.sites.clear();
   st.siteOf.clear();
   st.siteOfFrame.clear();
+  st.siteOfCloneUnknown.clear();
   st.objects.clear();
   st.specs.clear();
   st.byKey.clear();
+  st.frameOf.clear();
   st.changed = false;
   st.longjmpUnderQuantum = false;
   st.fenvSaved.clear();
@@ -4474,6 +4521,8 @@ ObjectId TaintInfo::objectOf(const llvm::Value *site, int64_t byte) const {
   for (const auto &[SS, m] : I.siteOfFrame)
     if (auto it = m.find(site); it != m.end())
       note(it->second);
+  if (auto it = I.siteOfCloneUnknown.find(site); it != I.siteOfCloneUnknown.end())
+    note(it->second);
   if (!found)
     internalError("taint: not a memory site of this module", site);
   return objectOfSiteAt(I, *found, byte);
@@ -4483,9 +4532,13 @@ ObjectId TaintInfo::objectOf(const llvm::Value *site, const Specialization &S, i
   const ImplState &I = needImpl(impl);
   site = objectSiteValue(site);
   // cq-i9wk, cq-1c5j: a site of S's own activation is S's frame.
-  if (auto fr = I.siteOfFrame.find(stateOf(I, S)); fr != I.siteOfFrame.end())
+  const SpecState *SS = stateOf(I, S);
+  if (auto fr = I.siteOfFrame.find(SS->frame); fr != I.siteOfFrame.end())
     if (auto ip = fr->second.find(site); ip != fr->second.end())
       return objectOfSiteAt(I, ip->second, byte);
+  if (!SS->inPlace)
+    if (auto it = I.siteOfCloneUnknown.find(site); it != I.siteOfCloneUnknown.end())
+      return objectOfSiteAt(I, it->second, byte);
   auto it = I.siteOf.find(site);
   if (it == I.siteOf.end())
     internalError("taint: not a memory site of this module", site);

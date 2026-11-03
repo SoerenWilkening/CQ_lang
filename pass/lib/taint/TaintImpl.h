@@ -205,6 +205,9 @@ struct SpecState {
   bool nonPure = false;   // transitively: rotation, phase, outer store, tape (rule 19 _ctl test)
   std::string mask;
   std::string name;
+  // cq-e0tq (CR rules 18, 20, 21): the specialization whose activation frame this one's frame sites are
+  // (ImplState::siteOfFrame): the first one of its frame key (Analyzer::frameKey).
+  SpecState *frame = nullptr;
 };
 
 struct LookupKey; // fwd
@@ -231,10 +234,19 @@ struct ImplState {
   // another clone's frame of the same function (cos's y[2] in its flags-only clone, handed classically to the
   // in-place __rem_pio2, and in its quantum clone, written by __rem_pio2's clone).
   std::map<const SpecState *, llvm::DenseMap<const llvm::Value *, unsigned>> siteOfFrame;
+  // cq-e0tq (CR rules 18, 20, 21): the unknown objects (SiteKind::External: a pointer of unknown origin loaded,
+  // a formal no call has handed, an address no escaped object explains) named in clones. An unknown object is
+  // memory the activation reached, not memory it allocated: one object per naming value for every clone (the
+  // in-place activation, the host's memory, keeps its own in its frame, cq-i9wk). Named per clone frame, every
+  // new clone named new objects that the pointers of other clones then carried (a lost provenance, a pointer
+  // stored and read back), so the clone keys enumerating those objects rose without end (musl fflush, the
+  // printf and strftime families: the FILE pointer's objects).
+  llvm::DenseMap<const llvm::Value *, unsigned> siteOfCloneUnknown;
   std::vector<Object> objects;
 
   std::vector<std::unique_ptr<SpecState>> specs;
   std::map<std::string, SpecState *> byKey;
+  std::map<std::string, SpecState *> frameOf;   // frame key -> the specialization owning those frame sites
   std::map<const llvm::Function *, std::unique_ptr<FnInfo>> fns;
   llvm::DenseMap<llvm::Type *, unsigned> laneCount;
   bool changed = false;
