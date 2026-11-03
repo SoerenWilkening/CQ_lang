@@ -187,7 +187,7 @@ def cmd_baseline(a) -> int:
 
 def cmd_user(a) -> int:
     fn = _delegate("user", "usercheck", "main")
-    return fn(a.o1, a.lowered, a.entry, a.samples) if fn else _unimplemented("usercheck: user.main")
+    return fn(a.o1, a.lowered, a.entry, a.samples, a.light) if fn else _unimplemented("usercheck: user.main")
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -214,6 +214,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     user.add_argument("--lowered", required=True)
     user.add_argument("--entry", required=True)
     user.add_argument("--samples", type=int)
+    user.add_argument("--light", action="store_true",
+                      help="edge/special/seeded samples only, no probe-build search (the libc sweep's smoke check)")
     a = p.parse_args(argv)
     from cqcheck import tmpdirs
     tmpdirs.sweep()   # cq-3fjt: run directories of killed checker processes

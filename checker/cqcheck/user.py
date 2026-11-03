@@ -527,7 +527,10 @@ def check(o1: Path, lowered: Path, entry: str, samples: Optional[int], work: Pat
     # the all-zero baseline is made up: domain-filtered like every other sample (cq-sujz)
     ss = sampling.sample_set(spec, exdir, exempt_baseline=False)
     if not ss.samples:
-        raise UserCheckError(f"cqcheck user: entry {entry}: no sample inside the C program's domain")
+        whys = sorted({str(e.get("empty"))[:200] for cls in ss.classes.values() if isinstance(cls, dict)
+                       for e in cls.values() if isinstance(e, dict) and e.get("empty")})
+        raise UserCheckError(f"cqcheck user: entry {entry}: no sample inside the C program's domain"
+                             + ("; reasons: " + " | ".join(whys) if whys else ""))
     ckey = compare.classical_key_from_driver(spec)
     chosen = subset(ss.samples, samples, ckey, spec)
     nsubst = sum(1 for s in chosen if "subst" in s)
@@ -565,8 +568,11 @@ def check(o1: Path, lowered: Path, entry: str, samples: Optional[int], work: Pat
     return PASS_STATUS, lines
 
 
-def main(o1: str, lowered: str, entry: str, samples: Optional[int]) -> int:
+def main(o1: str, lowered: str, entry: str, samples: Optional[int], light: bool = False) -> int:
     """cq-arch Z1: the C-oracle check of one program; the exit status (0 pass, 1 fail, 2 error)."""
+    if light:
+        from cqcheck import sampling as _s
+        _s.LIGHT = True
     try:
         for p, what in ((o1, "--o1"), (lowered, "--lowered")):
             if not Path(p).is_file():

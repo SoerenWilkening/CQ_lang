@@ -3559,8 +3559,16 @@ def _cache_dir() -> Path:
     return Path(os.environ.get("CQ_SAMPLES_CACHE", D.REPO / "build" / "chk-drivers"))
 
 
+# Light mode (owner 2026-11-03, the libc sweep): the edge, fp-special, exhaustive and seeded samples only; no
+# probe-build search (no totalization rows, no loop-trip inputs). A smoke check that catches wrong scripts, never
+# the blocker itself. Set by cqcheck user --light.
+LIGHT = False
+
+
 def _cache_key(spec: DriverSpec, example_dir: Path, exempt_baseline: bool = True) -> str:
     h = hashlib.sha256()
+    if LIGHT:
+        h.update(b"light\n")
     if not exempt_baseline:
         h.update(b"baseline-filtered\n")      # cqcheck user (cq-sujz); the corpus key adds nothing
     h.update(b"full\n" if full_mode() else b"quick\n" if quick_mode() else b"default\n")   # the mode
@@ -3670,9 +3678,9 @@ def build_sample_set(spec: DriverSpec, example_dir: Path, exempt_baseline: bool 
         for o in pool_obs:
             reached_sites |= set(o.p) | set(o.m)
 
-        # totalization rows
+        # totalization rows (skipped in light mode)
         tot_rows = []
-        for s in sites:
+        for s in (sites if not LIGHT else []):
             for row in rows_by_site[s.id]:
                 entry = {"site": s.key(), "row": row.row}
                 sr = static_reason(row)
@@ -3705,16 +3713,18 @@ def build_sample_set(spec: DriverSpec, example_dir: Path, exempt_baseline: bool 
                                       + f"; {searcher.runs} probe runs in total")
                 tot_rows.append(entry)
         totalization = {"rows": tot_rows} if tot_rows else {
-            "rows": [], "empty": "no instruction of the example is named by a CR §2 row"}
+            "rows": [], "empty": "light mode: no totalization search" if LIGHT else
+            "no instruction of the example is named by a CR §2 row"}
 
         # trips
         bounded = [str(ci) for ci in range(len(spec.calls)) if g.has_driver_object(ci) and g.classical_slots(ci)]
         bound_note = (f"; in calls {', '.join(bounded)} (which pass a driver object) an integer classical "
                       f"argument ranges over [0, its drivers.txt value]") if bounded else ""
-        loops_out = trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_site, bound_note)
+        loops_out = [] if LIGHT else trip_classes(spec, example_dir, g, pb, searcher, pool, pool_obs, rows_by_site,
+                                                  bound_note)
         trips_cls = {"K": K, "loops": loops_out}
         if not loops_out:
-            trips_cls["empty"] = "the example has no loop"
+            trips_cls["empty"] = "light mode: no trip search" if LIGHT else "the example has no loop"
 
         # cq-rzey: reach every cq_theta / cq_phi site some input reaches. A site no sample reaches is
         # never compared (137's nine-leaf condition: no random sample satisfies all nine compares).
