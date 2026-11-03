@@ -1665,6 +1665,12 @@ Function *materialize(Module &M, const Specialization &S) {
         if (fl[A.getArgNo()].leaves[k]->isPointerTy() && p + k < NF->arg_size() &&
             NF->getArg(p + k)->getType()->isPointerTy())
           NF->addParamAttr(p + k, Attribute::ReadNone);
+    // cq-utb8 (C restrict, CR rules 5, 18): a pointer formal the C body names noalias (musl c32rtomb's
+    // char *restrict s) crosses as one pointer parameter that keeps it: during the clone, the object it points into
+    // is accessed through it alone, never through a pointer the clone or a callee loads (Uncompute::reachable).
+    if (A.getType()->isPointerTy() && A.hasNoAliasAttr() && fl[A.getArgNo()].leaves.size() == 1 &&
+        p < NF->arg_size() && NF->getArg(p)->getType()->isPointerTy())
+      NF->addParamAttr(p, Attribute::NoAlias);
     p += unsigned(fl[A.getArgNo()].leaves.size());
   }
   return NF;

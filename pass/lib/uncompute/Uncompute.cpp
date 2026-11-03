@@ -606,6 +606,14 @@ struct Uncompute::Impl {
       const Value *ua = getUnderlyingObject(a.base), *ub = getUnderlyingObject(b.base);
       if (ua != ub && identified(ua) && identified(ub))
         return false;
+      // cq-utb8 (C restrict): a noalias parameter the clone does not capture names an object no other pointer of the
+      // clone's execution reaches (a global's cells, another formal's: musl c32rtomb's s beside the TLS block).
+      auto restrictParam = [](const Value *u) {
+        auto *A = dyn_cast<Argument>(u);
+        return A && A->hasNoAliasAttr() && !PointerMayBeCaptured(A, true, true);
+      };
+      if (ua != ub && (restrictParam(ua) || restrictParam(ub)))
+        return false;
       // cq-lqz3: a pointer from outside the frame (a formal, a global, a loaded pointer, a call's result)
       // never points into an alloca whose address does not escape (185: a load of tk[i] next to the slot
       // arrays k[] and c[]).
@@ -1531,6 +1539,11 @@ struct Uncompute::Impl {
   // that may capture it).
   static bool reachable(const Value *p) {
     const Value *u = getUnderlyingObject(p);
+    // cq-utb8 (C restrict): a noalias pointer parameter of the clone (calls::materialize keeps the C formal's) that
+    // the clone does not capture: during the clone its object is accessed through it alone, so code reaching memory
+    // through a pointer it loaded never reaches that object (musl c32rtomb's s while wcrtomb reads the locale).
+    if (auto *A = dyn_cast<Argument>(u); A && A->hasNoAliasAttr() && !PointerMayBeCaptured(A, true, true))
+      return false;
     auto *AI = dyn_cast<AllocaInst>(u);
     if (!AI)
       return true;
