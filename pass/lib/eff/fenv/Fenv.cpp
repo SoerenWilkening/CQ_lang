@@ -784,14 +784,26 @@ Value *objectPtr(LoweringContext &ctx, const Value *obj) {
 // --------------------------------------------------------------------------------------------
 // The SSA variables over the output CFG.
 
-Part readStart(LoweringContext &ctx, State &st, const Key &k, BasicBlock *B, SmallPtrSetImpl<BasicBlock *> &visiting);
+// One read (readAt): the blocks on the walk's stack with their depths, and the value at the start of every block
+// this read already settled. Without the memo a read walks every path of the output CFG back to the defining blocks,
+// exponential in a chain of classical diamonds with no definition (cq-e0tq: musl __rem_pio2_large's cutoff loops
+// under sinf, every op reading the mode). `low` is the least stack depth a pending read in the current subtree hit:
+// a block's value is settled when no pending below it refers to a block above it (then it is the same in every
+// walk of this read), and only a settled value is kept. Nothing a read does adds blocks, edges or definitions.
+struct ReadWalk {
+  DenseMap<BasicBlock *, unsigned> onStack;
+  DenseMap<BasicBlock *, Part> settled;
+  unsigned low = ~0u;
+};
 
-Part readEnd(LoweringContext &ctx, State &st, const Key &k, BasicBlock *B, SmallPtrSetImpl<BasicBlock *> &visiting) {
+Part readStart(LoweringContext &ctx, State &st, const Key &k, BasicBlock *B, ReadWalk &w);
+
+Part readEnd(LoweringContext &ctx, State &st, const Key &k, BasicBlock *B, ReadWalk &w) {
   Var &v = st.vars[k];
   auto it = v.end.find(B);
   if (it != v.end.end())
     return it->second;
-  return readStart(ctx, st, k, B, visiting);
+  return readStart(ctx, st, k, B, w);
 }
 
 // The part of an object made FULL at the builder's point (its rails hold the whole value).
@@ -885,25 +897,33 @@ Part mergeAt(LoweringContext &ctx, State &st, const Key &k, BasicBlock *B, Array
   return r;
 }
 
-Part readStart(LoweringContext &ctx, State &st, const Key &k, BasicBlock *B, SmallPtrSetImpl<BasicBlock *> &visiting) {
+Part readStart(LoweringContext &ctx, State &st, const Key &k, BasicBlock *B, ReadWalk &w) {
   {
     Var &v = st.vars[k];
     auto it = v.start.find(B);
     if (it != v.start.end())
       return it->second;
   }
+  if (auto it = w.settled.find(B); it != w.settled.end())
+    return it->second;
   SmallVector<BasicBlock *, 4> preds(predecessors(B));
   if (preds.empty())
     return k == kState ? st.initial : Part{};
-  if (!visiting.insert(B).second) {
+  if (auto it = w.onStack.find(B); it != w.onStack.end()) {
+    w.low = std::min(w.low, it->second);
     Part p;
     p.pending = true;
     return p;
   }
+  unsigned depth = w.onStack.size(), outerLow = w.low;
+  w.onStack[B] = depth;
+  w.low = ~0u;
   SmallVector<Part, 4> in;
   for (BasicBlock *P : preds)
-    in.push_back(readEnd(ctx, st, k, P, visiting));
-  visiting.erase(B);
+    in.push_back(readEnd(ctx, st, k, P, w));
+  w.onStack.erase(B);
+  bool settles = w.low >= depth;   // every pending below B was a read of B itself
+  w.low = std::min(outerLow, w.low);
   const Part *first = nullptr;
   bool anyPending = false, differ = false;
   for (const Part &p : in) {
@@ -921,8 +941,11 @@ Part readStart(LoweringContext &ctx, State &st, const Key &k, BasicBlock *B, Sma
     p.pending = true;
     return p;
   }
-  if (!differ)
+  if (!differ) {
+    if (settles)
+      w.settled[B] = *first;
     return *first;
+  }
   if (anyPending)
     internalError("eff-fenv: the floating-point environment state differs around an output cycle (requirePlaced "
                   "admits no change in a classically bounded loop)",
@@ -933,8 +956,8 @@ Part readStart(LoweringContext &ctx, State &st, const Key &k, BasicBlock *B, Sma
 }
 
 Part readAt(LoweringContext &ctx, State &st, const Key &k) {
-  SmallPtrSet<BasicBlock *, 16> visiting;
-  Part p = readEnd(ctx, st, k, ctx.B().GetInsertBlock(), visiting);
+  ReadWalk w;
+  Part p = readEnd(ctx, st, k, ctx.B().GetInsertBlock(), w);
   if (p.pending)
     internalError("eff-fenv: the floating-point environment state read on an output cycle with no entry");
   return p;
