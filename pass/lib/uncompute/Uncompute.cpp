@@ -4846,14 +4846,16 @@ void Uncompute::noteCallBusRead(llvm::CallInst *fwd, RailId bus) {
   if (rec == kNone || I.info[rec].kind != RecKind::Call)
     internalError("uncompute: noteCallBusRead before recordCall of this clone call", fwd);
   RailId lead = I.records[rec].out;
-  if (bus >= I.rails.size() || !I.rails[bus].qram || I.isMerge(bus))
-    internalError("uncompute: noteCallBusRead of a rail that is not a single QRAM bus", fwd);
   if (!is_contained(I.info[rec].reads, bus))
     internalError("uncompute: noteCallBusRead of a bus the clone call does not take", fwd);
-  for (auto [b, k] : I.rails[lead].versions)
-    if (b == bus)
-      internalError("uncompute: noteCallBusRead twice for one bus", fwd);
-  I.rails[lead].versions.push_back({bus, static_cast<unsigned>(I.rails[bus].pops.size())});
-  I.rails[bus].loads.push_back(lead);
+  // As a QRAM load (recordCore QramLoad): the call reads v_k of each bus the operand may name (a merge's leaves; a
+  // bus this function was handed, a triple formal's, has no stores of its own here: k = 0).
+  for (RailId b : I.leaves(bus)) {
+    for (auto [b2, k] : I.rails[lead].versions)
+      if (b2 == b)
+        internalError("uncompute: noteCallBusRead twice for one bus", fwd);
+    I.rails[lead].versions.push_back({b, static_cast<unsigned>(I.rails[b].pops.size())});
+    I.rails[b].loads.push_back(lead);
+  }
 }
 } // namespace cq
