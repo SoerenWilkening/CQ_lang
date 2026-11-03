@@ -31,13 +31,16 @@ llvm::Type *localCellType(const llvm::AllocaInst &ai);
 // function of `at`), so that mem-qram's rule-22 writes and rule 21's triples classify an object exactly as
 // mem-slots lays it out. record: one cell per field of its own type (cellBytes 0; pointerField when a field is a
 // pointer); otherwise cells of cellBytes bytes and C type cellTy (_Bool cells: boolCells), view a bit view (63),
-// split byte cells whose wider classical stores are split (90, 120), colStride a field column's (129).
+// split byte cells whose wider classical stores are split (90, 120), colStride a field column's (129). fields: the
+// record's field kinds are decided (decideFields) and handleCellBytes is set when every field is a handle cell of
+// one C size (no pointer field): the record is then laid out as a slot array of that cell size (4-byte handles).
 struct SlotLayout {
   bool record = false, pointerField = false, boolCells = false, view = false, split = false;
-  uint64_t cellBytes = 0, colStride = 0;
+  uint64_t cellBytes = 0, colStride = 0, handleCellBytes = 0;
   llvm::Type *cellTy = nullptr;
 };
-SlotLayout slotLayout(LoweringContext &, const llvm::Value *root, ObjectId o, const llvm::Instruction &at);
+SlotLayout slotLayout(LoweringContext &, const llvm::Value *root, ObjectId o, const llvm::Instruction &at,
+                      bool fields = false);
 void noteProgramSlotCall(LoweringContext &, const llvm::CallBase &orig, const Specialization &callee,
                          llvm::CallInst *lowered);
 }

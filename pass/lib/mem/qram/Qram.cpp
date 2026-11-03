@@ -3682,7 +3682,7 @@ HostTriple hostTriple(LoweringContext &ctx, const Value *ptr, const Instruction 
     // cq-dd3q (CR rules 20, 21): a slot object's cells are mem-slots' (slotLayout), a host object's its C type's.
     std::optional<SlotLayout> L;
     if (ctx.T.classOf(objs.front()) == ObjClass::Slot)
-      L = slotLayout(ctx, a.root, objs.front(), at);
+      L = slotLayout(ctx, a.root, objs.front(), at, /*fields=*/true);
     std::function<bool(Type *)> hasPtr = [&](Type *t) {
       if (auto *s2 = dyn_cast<StructType>(t))
         return llvm::any_of(s2->elements(), hasPtr);
@@ -3702,14 +3702,23 @@ HostTriple hostTriple(LoweringContext &ctx, const Value *ptr, const Instruction 
       return {a.root, ConstantInt::get(Type::getInt32Ty(C), 0), ConstantInt::get(Type::getInt32Ty(C), 1), bytes};
     }
     // Rules 20, 22 (cq-366o): a local's cells are the type the program accesses it as. A slot object's are
-    // mem-slots' (byte cells of a struct read across its fields, 63; the narrow cells of 90). Otherwise the C
-    // type's scalar (arrays stripped, a vector's lanes, rule 25), a struct of one leaf type that leaf (an array by
-    // another name), a struct of several leaf types ONE cell, the record (rule 21's idx counts cells; the
-    // callee's own accesses are checked against it, checkCalleeCells).
-    if (L && !L->record) {
+    // mem-slots' (byte cells of a struct read across its fields, 63; the narrow cells of 90), a slot record's its
+    // fields when they are all handle cells of one size (the lowered record is then the slot array the triple's
+    // idx indexes); a slot record of classical fields or of several sizes has no one cell a triple's idx counts
+    // (its lowered layout is not the C one). A host object's cells are its C type's scalar (arrays stripped, a
+    // vector's lanes, rule 25), a struct of one leaf type that leaf (an array by another name), a struct of
+    // several leaf types ONE cell, the record (host memory is C's own layout; the callee's accesses are checked,
+    // checkCalleeCells).
+    if (L && L->record && !L->handleCellBytes) {
+      unimplemented("mem-qram: an object crossing a clone boundary as a rule 21 triple that is accessed at another "
+                    "width than its cell (a bit view, 63)",
+                    &at);
+    } else if (L && L->record) {
+      cb = L->handleCellBytes;
+    } else if (L) {
       cb = L->cellBytes;
     } else {
-      Type *t = isa<AllocaInst>(a.root) && !L ? localCellType(*cast<AllocaInst>(a.root)) : objTy;
+      Type *t = isa<AllocaInst>(a.root) ? localCellType(*cast<AllocaInst>(a.root)) : objTy;
       SmallVector<Type *, 8> leaves;
       scalarLeafTypes(t, leaves);
       bool one = all_of(leaves, [&](Type *x) { return x == leaves.front(); });

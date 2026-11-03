@@ -5149,7 +5149,7 @@ uint64_t storedPtrUnit(LoweringContext &ctx, const Function &F, const Value *roo
 
 // cq-dd3q (CR rules 20, 21, 22): mem-slots' cells of slot object o (objInfo), for mem-qram's rule-22 writes and
 // rule 21's triples: they classify an object exactly as mem-slots lays it out.
-SlotLayout slotLayout(LoweringContext &ctx, const Value *root, ObjectId o, const Instruction &at) {
+SlotLayout slotLayout(LoweringContext &ctx, const Value *root, ObjectId o, const Instruction &at, bool fields) {
   FnState &st = stateOf(ctx, at);
   ObjInfo &info = objInfo(ctx, st, root, o);
   SlotLayout L;
@@ -5163,6 +5163,17 @@ SlotLayout slotLayout(LoweringContext &ctx, const Value *root, ObjectId o, const
   if (info.record)
     for (const ObjInfo::Field &f : info.fields)
       L.pointerField |= f.ty->isPointerTy();
+  if (info.record && fields && !info.fields.empty()) {
+    decideFields(ctx, st, info, o);
+    const DataLayout &DL = ctx.M.getDataLayout();
+    uint64_t sz = storeBytes(DL, info.fields.front().ty);
+    bool uniform = true;
+    for (const ObjInfo::Field &f : info.fields)
+      uniform &= f.handle == 1 && !f.ty->isPointerTy() && storeBytes(DL, f.ty) == sz &&
+                 DL.getTypeAllocSize(f.ty).getFixedValue() == sz;
+    if (uniform)
+      L.handleCellBytes = sz;
+  }
   return L;
 }
 
