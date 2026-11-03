@@ -4545,9 +4545,10 @@ const PtrInfo &ptrOrDie(const ImplState &I, const SpecState &SS, const llvm::Val
 // writes a handle when the cell is a slot cell of the pointee (rule 20 homogeneity: a classical value
 // becomes a seed rail), or when its value, its address or its block's control is quantum, or S is _ctl
 // (as transferStore records it). The cell index is the byte offset from the object's root over the
-// store's size. Unimplemented: a write through the formal at a variable offset, by a memory
-// intrinsic, an atomic or a call, an escape of the formal, a pointee offset that differs between the
-// callers, stores of several sizes, or an offset that is not a multiple of the size.
+// store's size. A write whose cell is not known (a variable offset, a pointee offset that differs between the
+// callers, a rule 27 opaque callee handed the formal) may write every cell; an escape of the formal is followed
+// through the memory it is stored into. Unimplemented: stores of several sizes into an object with no C type,
+// or an offset that is not a multiple of the size.
 namespace {
 // The load L when SI stores back a chain of cq_theta of a load of the cell it stores to: a rotation
 // of the rail the cell holds, in place (124's step: *r = cq_theta(*r); 61's prep: the second
@@ -4610,9 +4611,68 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
   // A write through the formal: a store (st) in SS or, through the formal handed on to a call (cq-1c5j: musl's
   // frexp hands its int *e to its own recursive call; 31/163's slot parameter), in a callee's specialization ss;
   // or a memory intrinsic or an atomic writing the cells (rules 22, 24), `handle` deciding it.
+  // `any`: a write at a cell the walk cannot name (a variable offset; a rule 27 opaque callee handed the formal):
+  // it may hit every cell of the pointee.
   struct W { int64_t off; uint64_t size; const llvm::StoreInst *st; const SpecState *ss = nullptr; bool handle = false;
-             const llvm::Instruction *at = nullptr; };
+             const llvm::Instruction *at = nullptr; bool any = false; };
   SmallVector<W, 4> writes;
+  // A formal naming no data object (a function pointer: signal's handler) has no cells to write or rotate.
+  if (objs.empty())
+    return {};
+  // Rules 3, 20 (provenance through memory): a value derived from the formal stored into memory escapes into
+  // the objects the store's pointer names; a load of them in S or a specialization S reaches carries it on.
+  std::set<ObjectId> escInto;
+  std::optional<std::optional<int64_t>> escOff;   // the escaped values' offset from the formal, when one
+  auto objsIn = [&](const SpecState *ss, const llvm::Value *p) -> std::optional<SmallVector<ObjectId, 4>> {
+    if (!p->getType()->isPointerTy())
+      return std::nullopt;
+    auto it = ss->ptr.find(p);
+    if (it != ss->ptr.end())
+      return objectsFor(I, it->second);
+    if (auto *Ar = dyn_cast<llvm::Argument>(p); Ar && Ar->getParent() == ss->F && Ar->getArgNo() < ss->formalPtr.size())
+      return objectsFor(I, ss->formalPtr[Ar->getArgNo()]);
+    if (isa<llvm::Constant>(p)) {
+      PtrInfo t;
+      return objectsFor(I, ptrOrDie(I, *ss, p, t));
+    }
+    return std::nullopt;   // no provenance answer: may name any object
+  };
+  auto escapeTo = [&](const llvm::Value *ptr, const SpecState *ss, std::optional<int64_t> off) {
+    if (!escOff)
+      escOff = off;
+    else if (*escOff != off)
+      escOff = std::optional<int64_t>();
+    if (auto os = objsIn(ss, ptr)) {
+      escInto.insert(os->begin(), os->end());
+      return;
+    }
+    for (ObjectId o = 0; o < I.objects.size(); ++o)
+      escInto.insert(o);
+  };
+  auto hitsEsc = [&](const SpecState *ss, const llvm::Value *p) {
+    auto os = objsIn(ss, p);
+    return !os || any_of(*os, [&](ObjectId o) { return escInto.count(o) != 0; });
+  };
+  // Rule 27: a callee with no body handed the formal at argument j that may write through it (its declared clone,
+  // or rule 19's clone_resolve all-handles clone) may overwrite any cell of the pointee with a handle it minted.
+  // It never rotates a caller's rail in place: its twin restores every cell from the caller's snapshot (T3 none).
+  auto opaqueWrite = [&](const llvm::CallBase *CB, unsigned j, const SpecState *ss) {
+    if (CB->getArgOperand(j)->getType()->isPointerTy() && mayWriteThroughArg(*CB, j))
+      writes.push_back({0, 0, nullptr, ss, true, CB, true});
+  };
+  // Rule 19: an indirect call with no in-module candidate is the clone_resolve call when quantum (an argument
+  // lane, a pointee cell holding a handle, or a quantum predicate), else the host's own function.
+  auto resolvedQuantum = [&](const llvm::CallBase *CB, const SpecState *ss) {
+    auto bit = ss->cdt.find(CB->getParent());
+    bool q = ss->ctl || (bit != ss->cdt.end() && !bit->second.empty());
+    for (const llvm::Use &a : CB->args()) {
+      q = q || lanesOfValue(I, *ss, a.get()).any();
+      if (auto os = objsIn(ss, a.get()))
+        for (ObjectId o : *os)
+          q = q || I.objects[o].mayHoldHandle();
+    }
+    return q;
+  };
   SmallVector<const llvm::StoreInst *, 2> varInPlace;   // T2: in-place round trips at a variable offset
   // cq-ee23: every value derived from the formal is followed: pointers (GEP, casts, freeze, phi,
   // select), the integers ptrtoint makes of them (a constant add or sub keeps the offset, any other
@@ -4632,7 +4692,55 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
   auto isPrefix = [](llvm::ArrayRef<unsigned> a, llvm::ArrayRef<unsigned> b) {
     return a.size() <= b.size() && std::equal(a.begin(), a.end(), b.begin());
   };
-  while (!work.empty()) {
+  // The escape (rules 3, 20): every load of a cell the formal (or a value derived from it) was stored into, in
+  // S or a specialization it reaches, may read it back; a copy of such a cell (rule 22) is one more; a rule 27
+  // opaque callee handed such a cell may write through the formal it reads there. True when it found more to walk.
+  std::set<const llvm::CallBase *> escOpaque;
+  auto escScan = [&]() {
+    SmallVector<const SpecState *, 8> reach{SS};
+    for (size_t k = 0; k < reach.size(); ++k)
+      for (const auto &cv : reach[k]->callees)
+        for (const SpecState *C : cv.second)
+          if (!C->declared && !is_contained(reach, C))
+            reach.push_back(C);
+    while (!escInto.empty()) {
+      bool grew = false;
+      for (const SpecState *R : reach)
+        for (const llvm::BasicBlock &BB : *R->F)
+          for (const llvm::Instruction &X : BB) {
+            if (auto *Ld = dyn_cast<llvm::LoadInst>(&X)) {
+              llvm::Type *t = Ld->getType();
+              if ((t->isPointerTy() || (t->isIntegerTy() && t->getIntegerBitWidth() >= 64)) &&
+                  hitsEsc(R, Ld->getPointerOperand()) && !seen.count({Ld, SmallVector<unsigned, 2>{}, R}))
+                work.push_back({Ld, *escOff, {}, R});
+            } else if (auto *MT = dyn_cast<llvm::MemTransferInst>(&X)) {
+              if (hitsEsc(R, MT->getRawSource())) {
+                size_t before = escInto.size();
+                escapeTo(MT->getRawDest(), R, *escOff);
+                grew = grew || escInto.size() != before;
+              }
+            } else if (auto *CB = dyn_cast<llvm::CallBase>(&X); CB && !R->cutCalls.count(CB)) {
+              auto cit = R->callees.find(CB);
+              bool opaque = cit == R->callees.end() || cit->second.empty()
+                                ? !CB->getCalledFunction() && !CB->isInlineAsm() && resolvedQuantum(CB, R)
+                                : any_of(cit->second, [](const SpecState *C) { return C->declared; });
+              if (opaque && !escOpaque.count(CB))
+                for (unsigned j = 0; j < CB->arg_size(); ++j)
+                  if (hitsEsc(R, CB->getArgOperand(j))) {
+                    escOpaque.insert(CB);
+                    writes.push_back({0, 0, nullptr, R, true, CB, true});
+                    break;
+                  }
+            }
+          }
+      if (!work.empty())
+        return true;
+      if (!grew)
+        return false;
+    }
+    return false;
+  };
+  while (!work.empty() || escScan()) {
     Item it = work.pop_back_val();
     const llvm::Value *V = it.v;
     std::optional<int64_t> off = it.off;
@@ -4702,20 +4810,24 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
       } else if (isa<llvm::LoadInst>(U) || isa<llvm::ICmpInst>(U) || isa<llvm::ReturnInst>(U)) {
         continue;
       } else if (auto *SI = dyn_cast<llvm::StoreInst>(U)) {
+        if (SI->getValueOperand() == V)
+          escapeTo(SI->getPointerOperand(), ss, off);
         if (SI->getPointerOperand() != V)
-          refuse("the formal escapes into memory", SI);
+          continue;
         if (!V->getType()->isPointerTy())
           internalError("taint: cellsWritten: a store through a non-pointer", SI);
         if (!off) {
           // 117: T2 at a variable offset: a store back of a rotation of the cell's own quantum load (an
-          // in-place cq_theta on a runtime-indexed cell) leaves the handle in the cell; allowed when every
-          // write through the formal is such a round trip (checked below).
+          // in-place cq_theta on a runtime-indexed cell) leaves the handle in the cell.
           // T3 (cq-budv, 117): such a round trip rotates the rail of whichever cell the offset names at
           // run time: any cell (kAnyCell).
           const llvm::LoadInst *r = inPlaceRoot(SI, true);
-          if (!r || !lanesOfValue(I, *ss, r).any())
-            refuse("a store through the formal at a variable offset", SI);
-          varInPlace.push_back(SI);
+          if (r && lanesOfValue(I, *ss, r).any()) {
+            varInPlace.push_back(SI);
+            continue;
+          }
+          // Rule 20: any other store at a variable offset may write every cell of the pointee.
+          writes.push_back({0, DL.getTypeStoreSize(SI->getValueOperand()->getType()), SI, ss, false, SI, true});
           continue;
         }
         writes.push_back({*off, DL.getTypeStoreSize(SI->getValueOperand()->getType()), SI, ss});
@@ -4733,8 +4845,6 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
         if (MI->getRawDest() != V)
           continue;
         auto *len = dyn_cast<llvm::ConstantInt>(MI->getLength());
-        if (!off || !len)
-          refuse("a memory intrinsic through the formal at a variable offset or of a run-time length", U);
         bool h = ss->ctl || blockCT(ss, MI->getParent()) || lanesOfValue(I, *ss, MI->getLength()).any() ||
                  lanesOfValue(I, *ss, MI->getRawDest()).any();
         if (auto *MS = dyn_cast<llvm::MemSetInst>(MI))
@@ -4746,41 +4856,85 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
           for (ObjectId o : objectsFor(I, sp))
             h = h || I.objects[o].mayHoldHandle();
         }
-        if (len->getZExtValue())
+        // At a variable offset or of a run-time length it may write every cell of the pointee.
+        if (!off || !len)
+          writes.push_back({0, 0, nullptr, ss, h, MI, true});
+        else if (len->getZExtValue())
           writes.push_back({*off, len->getZExtValue(), nullptr, ss, h, MI});
       } else if (isa<llvm::AtomicRMWInst>(U) || isa<llvm::AtomicCmpXchgInst>(U)) {
         // Rule 24: an atomic is a read and a write of its cell.
         auto *RMW = dyn_cast<llvm::AtomicRMWInst>(U);
         auto *CX = dyn_cast<llvm::AtomicCmpXchgInst>(U);
         const llvm::Value *ptr = RMW ? RMW->getPointerOperand() : CX->getPointerOperand();
-        if (ptr != V)
-          refuse("the formal escapes into memory through an atomic", U);
-        if (!off)
-          refuse("an atomic through the formal at a variable offset", U);
         const llvm::Value *val = RMW ? RMW->getValOperand() : CX->getNewValOperand();
+        if (val == V)
+          escapeTo(ptr, ss, off);   // the formal stored into memory by the atomic
+        if (ptr != V)
+          continue;
         bool h = ss->ctl || blockCT(ss, cast<llvm::Instruction>(U)->getParent()) ||
                  lanesOfValue(I, *ss, val).any() || lanesOfValue(I, *ss, ptr).any() ||
                  (CX && lanesOfValue(I, *ss, CX->getCompareOperand()).any());
-        writes.push_back({*off, DL.getTypeStoreSize(val->getType()), nullptr, ss, h, cast<llvm::Instruction>(U)});
-      } else if (auto *CB = dyn_cast<llvm::CallBase>(U); CB && CB->getCalledFunction() &&
-                                                       !CB->getCalledFunction()->isDeclaration() &&
-                                                       !isa<llvm::IntrinsicInst>(CB)) {
-        // Rule 18: the formal handed on to a call of a function with a body: the callee's writes through its
-        // own formal are this clone's, at the same cells (the specialization the call takes in ss).
-        if (CB->getCalledOperand() == V)
-          refuse("a call through the formal", U);
+        writes.push_back({off.value_or(0), DL.getTypeStoreSize(val->getType()), nullptr, ss, h,
+                          cast<llvm::Instruction>(U), !off});
+      } else if (auto *VA = dyn_cast<llvm::VAArgInst>(U)) {
+        // va_arg through a va_list the formal points to advances the list: a classical write at a cell the walk
+        // does not name (its value is the list's, not derived from the formal's address).
+        writes.push_back({0, 0, nullptr, ss, ss->ctl || blockCT(ss, VA->getParent()), VA, true});
+      } else if (auto *CB = dyn_cast<llvm::CallBase>(U)) {
         if (ss->cutCalls.count(CB))
           continue;   // rule 14: a depth-recursion call past the cutoff runs nothing (its result is |0>)
+        const llvm::Function *G = CB->getCalledFunction();
+        if (CB->isInlineAsm() || isa<llvm::IntrinsicInst>(CB)) {
+          // An intrinsic routed nowhere above, or an asm (rule 27: with a quantum operand an opaque callee, else
+          // the host boundary): a value it returns from the formal is followed; a write through the formal is a
+          // write at a cell the walk does not name, a handle one with a quantum operand or under a quantum predicate.
+          bool q = false;
+          for (const llvm::Use &a : CB->args())
+            q = q || lanesOfValue(I, *ss, a.get()).any();
+          if (!CB->getType()->isVoidTy())
+            work.push_back({U, std::nullopt, {}, ss});
+          for (unsigned j = 0; j < CB->arg_size(); ++j)
+            if (CB->getArgOperand(j) == V && mayWriteThroughArg(*CB, j)) {
+              if (CB->isInlineAsm() && q)
+                opaqueWrite(CB, j, ss);
+              else
+                writes.push_back({0, 0, nullptr, ss, q || ss->ctl || blockCT(ss, CB->getParent()), CB, true});
+            }
+          continue;
+        }
         auto cit = ss->callees.find(CB);
-        if (cit == ss->callees.end() || cit->second.empty())
+        bool lifted = cit != ss->callees.end() && !cit->second.empty();
+        if (G && !G->isDeclaration() && !lifted)
           refuse("a call handed the formal that taint did not lift", U);
+        // Rule 24 (106): pthread_create(t, attr, f, p) is the call f(p): operand 3 is the start routine's formal 0.
+        bool viaStart = G && G->isDeclaration() && G->getName() == "pthread_create" && CB->arg_size() == 4;
         for (unsigned j = 0; j < CB->arg_size(); ++j) {
           if (CB->getArgOperand(j) != V)
             continue;
+          if (!lifted) {
+            // Rule 19: an indirect call with no in-module candidate, quantum, is the clone_resolve call (opaque).
+            // Any other call the analysis makes no clone of is a host call (rule 16: a tape entry under a quantum
+            // predicate, never run; else the host's function on classical memory: the call is quantum, a declared
+            // clone or a tape entry, when a pointer argument names a cell holding a handle) or rule 23's fenv
+            // call (the environment it saves is eff-fenv's state, no cell handle): it stores no handle.
+            if (!G && resolvedQuantum(CB, ss))
+              opaqueWrite(CB, j, ss);
+            continue;
+          }
           for (const SpecState *C : cit->second) {
-            if (C->declared || j >= C->F->arg_size())
+            if (C->declared) {
+              opaqueWrite(CB, j, ss);   // rule 27: the declared clone
+              continue;
+            }
+            // Rule 18 (rule 19 for an indirect call's candidates): the formal handed on to a call of a function
+            // with a body: the callee's writes through its own formal are this clone's, at the same cells (the
+            // specialization the call takes in ss).
+            unsigned fj = viaStart ? (j == 3 ? 0u : ~0u) : j;
+            if (viaStart && fj == ~0u)
+              continue;   // the thread primitive's own operand (rule 24's sequential collapse): no write
+            if (fj >= C->F->arg_size())
               refuse("the formal handed to a function with no body", U);
-            const llvm::Argument *CA = C->F->getArg(j);
+            const llvm::Argument *CA = C->F->getArg(fj);
             auto [fo, fresh] = formalOff.try_emplace({CA, C}, off);
             std::optional<int64_t> at = off;
             if (!fresh && fo->second != off) {
@@ -4861,8 +5015,11 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
   };
   // A round trip at a variable offset may hit any cell: every other write must be a round trip too (each
   // then stores back the handle the cell holds, so no cell's handle changes).
+  // A write at a cell the walk cannot name is counted below over every cell (T2) and rotates none (T3).
   if (!varInPlace.empty())
     for (const W &w : writes) {
+      if (w.any)
+        continue;
       const llvm::LoadInst *r = w.st ? inPlaceRoot(w.st, true) : nullptr;
       if (!r || !lanesOfValue(I, *w.ss, r).any())
         refuse("a store through the formal beside an in-place rotation at a variable offset", w.st ? w.st : w.at);
@@ -4871,7 +5028,27 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
     return {TaintInfo::kAnyCell};
   SmallVector<unsigned, 4> out;
   uint64_t size = 0;
+  // T2: the writes at a cell the walk cannot name, and whether one of them stores a handle whatever the cell
+  // (a quantum value, address or control, a _ctl clone, an opaque callee) or only into slot cells (rule 20: a
+  // classical value stored into a slot cell becomes a seed rail).
+  bool anyCell = false, anyHandle = false;
+  uint64_t anySize = 0;
   for (const W &w : writes) {
+    if (!w.any)
+      continue;
+    if (rotated)
+      continue;
+    anyCell = true;
+    anyHandle = anyHandle || (w.st ? w.ss->ctl || lanesOfValue(I, *w.ss, w.st->getValueOperand()).any() ||
+                                         lanesOfValue(I, *w.ss, w.st->getPointerOperand()).any() ||
+                                         blockCT(w.ss, w.st->getParent())
+                                   : w.handle);
+    if (w.size)
+      anySize = anySize ? std::min(anySize, w.size) : w.size;
+  }
+  for (const W &w : writes) {
+    if (w.any)
+      continue;
     std::optional<int64_t> base = fp.exact();
     // A store past every cell of every object the formal may point to is undefined where it runs (an access
     // past an object, outside the domain): it writes no cell (rule 21; mem-slots lowers it as nothing). musl
@@ -4882,9 +5059,11 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
         I.pastPointee.insert({pastKey(S), w.st});
       continue;
     }
-    bool handle = w.st ? w.ss->ctl || lanesOfValue(I, *w.ss, w.st->getValueOperand()).any() ||
-                             lanesOfValue(I, *w.ss, w.st->getPointerOperand()).any() || blockCT(w.ss, w.st->getParent())
-                       : w.handle;
+    bool ownHandle = w.st ? w.ss->ctl || lanesOfValue(I, *w.ss, w.st->getValueOperand()).any() ||
+                                lanesOfValue(I, *w.ss, w.st->getPointerOperand()).any() ||
+                                blockCT(w.ss, w.st->getParent())
+                          : w.handle;
+    bool handle = ownHandle;
     for (ObjectId o : objs)
       if (I.objects[o].cellHandle(base ? std::optional<int64_t>(*base + w.off) : std::nullopt, w.size))
         handle = true;
@@ -4897,15 +5076,25 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
     if (root && !lanesOfValue(I, *w.ss, root).any())
       root = nullptr;
     bool inPlace = root && all_of(writes, [&](const W &o) {
-      return o.off + int64_t(o.size) <= w.off || w.off + int64_t(w.size) <= o.off ||
+      return o.any || o.off + int64_t(o.size) <= w.off || w.off + int64_t(w.size) <= o.off ||
              (o.off == w.off && o.size == w.size && o.st && inPlaceRoot(o.st) == root);
     });
     if (rotated ? !root : inPlace)
       continue;
     if (!handle && !rotated)
       continue;
-    if (!base)
-      refuse("a pointee offset that differs between the clone's callers", w.st ? w.st : w.at);
+    if (!base) {
+      // Rule 20: the formal's offset into its object differs between the clone's callers (or the analysis lost
+      // it): the cell the write names is not known, so it may be any of the pointee's (T2, counted below); a
+      // rotation in place there may hit any cell (T3).
+      if (rotated)
+        return {TaintInfo::kAnyCell};
+      anyCell = true;
+      anyHandle = anyHandle || ownHandle;
+      if (w.size)
+        anySize = anySize ? std::min(anySize, w.size) : w.size;
+      continue;
+    }
     if (typed) {
       SmallVector<unsigned, 4> ks = overlapped(*base + w.off, w.size, w.st ? (const llvm::Value *)w.st : w.at);
       for (unsigned k : ks)
@@ -4924,6 +5113,49 @@ llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &
     unsigned cell = unsigned(at / int64_t(size));
     if (!is_contained(out, cell))
       out.push_back(cell);
+  }
+  if (anyCell) {
+    // Every cell of the pointee: a typed object's scalar leaves; an object with no C type, its cells of the
+    // access size over its extent (a column object, one per element). Where the extent is not a constant (a
+    // run-time block, a host object) no list names them: kAnyCell, as T3's variable-offset rotation.
+    auto add = [&](unsigned c) {
+      if (!is_contained(out, c))
+        out.push_back(c);
+    };
+    if (typed) {
+      for (size_t k = 0; k < objs.size(); ++k)
+        for (unsigned c = 0; c < objLeaves[k].size(); ++c)
+          if (anyHandle || I.objects[objs[k]].cellHandle(objLeaves[k][c].off, objLeaves[k][c].size))
+            add(c);
+    } else {
+      uint64_t cs = size ? size : anySize;
+      for (ObjectId o : objs) {
+        const Site &site = I.sites[I.objects[o].site];
+        std::optional<uint64_t> ext;
+        if (auto *AI = dyn_cast<llvm::AllocaInst>(site.v)) {
+          if (auto s = AI->getAllocationSize(DL); s && !s->isScalable())
+            ext = s->getFixedValue();
+        } else if (auto *GV = dyn_cast<llvm::GlobalVariable>(site.v)) {
+          ext = DL.getTypeAllocSize(GV->getValueType());
+        } else if (auto *HC = dyn_cast<llvm::CallBase>(site.v); HC && HC->getCalledFunction()) {
+          if (auto as = HC->getCalledFunction()->getAttributes().getFnAttrs().getAllocSizeArgs()) {
+            auto *n0 = dyn_cast<llvm::ConstantInt>(HC->getArgOperand(as->first));
+            auto *n1 = as->second ? dyn_cast<llvm::ConstantInt>(HC->getArgOperand(*as->second)) : nullptr;
+            if (n0 && (!as->second || n1))
+              ext = n0->getZExtValue() * (n1 ? n1->getZExtValue() : 1);
+          }
+        }
+        uint64_t step = site.stride ? site.stride : cs;
+        if (!ext || !step) {
+          out.assign(1, TaintInfo::kAnyCell);
+          return out;
+        }
+        int64_t col = site.stride && I.objects[o].column >= 0 ? site.columns[unsigned(I.objects[o].column)] : 0;
+        for (uint64_t c = 0; c < *ext / step; ++c)
+          if (anyHandle || I.objects[o].cellHandle(col + int64_t(c * step), site.stride ? cs : step))
+            add(unsigned(c));
+      }
+    }
   }
   llvm::sort(out);
   return out;

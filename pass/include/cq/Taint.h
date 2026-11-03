@@ -58,7 +58,9 @@ public:
   calleeCandidates(const llvm::CallBase &, const Specialization &caller) const;
   bool resultQuantum(const Specialization &, unsigned field) const;   // per-clone record (rule 18)
   // T2 (cq-arch 2026-11-01): the pointee cells (ascending cell indices of the object argNo points to) that
-  // the clone `callee` may store a handle into (rules 18, 20); empty for a non-pointer formal.
+  // the clone `callee` may store a handle into (rules 18, 20); empty for a non-pointer formal. A write at a cell
+  // the clone cannot name (a variable offset, a rule 27 opaque callee) names every cell; {kAnyCell} alone when
+  // the pointee's extent is not a constant.
   llvm::SmallVector<unsigned, 4> cellsWritten(const Specialization &callee, unsigned argNo) const;
   // T3 (cq-arch 2026-11-01, CR rules 5, 18, 20): the pointee cells (ascending cell indices of the object
   // argNo points to, at the size of the access) that the clone `callee` may apply a non-diagonal gate to
