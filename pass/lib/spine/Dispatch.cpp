@@ -26,6 +26,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include "../mem/slots/SlotsInternal.h"
+#include "../fatptr/FatPtrInternal.h"
 
 using namespace llvm;
 
@@ -37,6 +38,10 @@ bool involvesNonClassicalMemory(LoweringContext &ctx, const Value *ptr) {
   if (!ptr->getType()->isPointerTy())
     return false;
   if (ctx.T.isFatPointer(ptr, ctx.S))
+    return true;
+  // cq-h8y6 (CR rules 14, 21): a loop's pointer exit value is a fat pointer; an address computed from it is
+  // re-derived at its access.
+  if (fatptr::isExitPointer(ctx, ptr))
     return true;
   for (ObjectId o : ctx.T.provenance(ptr, ctx.S))
     if (ctx.T.classOf(o) != ObjClass::Classical && !calls::isVaArea(ctx, o))
@@ -202,6 +207,10 @@ bool lowerLogicalSelect(LoweringContext &ctx, SelectInst &sel) {
 // wrong (a classical tag is a guard that is constant), only less direct.
 bool quantumTagImpl(LoweringContext &ctx, const Value *p, SmallPtrSetImpl<const Value *> &seen) {
   for (;;) {
+    // cq-h8y6 (CR rules 14, 21): a loop's pointer exit value is a fat pointer whose tag is a capture rail (the
+    // trip that exited, or NULL where none did).
+    if (fatptr::isExitPointer(ctx, p))
+      return true;
     if (auto *g = dyn_cast<GEPOperator>(p)) {
       p = g->getPointerOperand();
       continue;

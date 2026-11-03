@@ -138,9 +138,20 @@ bool differentCell(const Addr &a, const Addr &b, uint64_t sizeA, uint64_t sizeB)
   return a.off + int64_t(sizeA) <= b.off || b.off + int64_t(sizeB) <= a.off;
 }
 
-Addr decompose(const Value *p, const DataLayout &DL) {
+// With ctx (an access being lowered): a K-loop's walked pointer (cq-9w75, CR rule 14: start + j*step in trip j, the
+// phi bound to the trip's constant j) is its start moved by j*step bytes, a classical offset (cq-h8y6).
+Addr decompose(const Value *p, const DataLayout &DL, LoweringContext *ctx = nullptr) {
   Addr a;
   for (unsigned guard = 0; guard < 64; ++guard) {
+    if (const WalkedPtr *w = ctx ? ctx->walkedPointer(p) : nullptr) {
+      SmallVector<Operand, 4> fl = ctx->fields(p);
+      auto *j = fl.size() == 1 && !fl.front().handle ? dyn_cast<ConstantInt>(fl.front().v) : nullptr;
+      if (!j)
+        return a;
+      a.off += j->getSExtValue() * w->step;
+      p = w->start;
+      continue;
+    }
     if (auto *g = dyn_cast<GEPOperator>(p)) {
       for (gep_type_iterator gti = gep_type_begin(g), e = gep_type_end(g); gti != e; ++gti) {
         const Value *idx = gti.getOperand();
@@ -1387,7 +1398,7 @@ struct QAccess {
 
 QAccess qramAccess(LoweringContext &ctx, const Value *ptr, const Instruction &I) {
   soleQram(ctx, ptr, I);
-  Addr a = decompose(ptr, ctx.M.getDataLayout());
+  Addr a = decompose(ptr, ctx.M.getDataLayout(), &ctx);
   if (!a.ok)
     unimplemented("mem-qram: a QRAM access whose address is not an object plus GEP offsets (rule 21)", &I);
   if (isFormalQram(ctx, a.root))
@@ -2976,7 +2987,7 @@ void lowerMemIntrinsic(LoweringContext &ctx, MemIntrinsic &MI) {
 // executed unguarded under a quantum predicate (rule 21's reading): its result is a value arm like any
 // template.
 void lowerQramLoad(LoweringContext &ctx, LoadInst &ld) {
-  if (Addr r = decompose(ld.getPointerOperand(), ctx.M.getDataLayout()); r.ok && isFormalQram(ctx, r.root))
+  if (Addr r = decompose(ld.getPointerOperand(), ctx.M.getDataLayout(), &ctx); r.ok && isFormalQram(ctx, r.root))
     return fatptr::lowerLoad(ctx, ld);   // through a triple formal: its idx plus the offset (P1)
   QAccess acc = qramAccess(ctx, ld.getPointerOperand(), ld);
   if (ld.getType()->isPointerTy() && !isCodeAddress(&ld)) {
@@ -3004,7 +3015,7 @@ void lowerQramLoad(LoweringContext &ctx, LoadInst &ld) {
 // one. It is recorded on the bus: the bus's item pops its stores last-in-first-out (a global bus is an
 // output and is never popped). A classical value over several whole cells is one store per cell.
 void lowerQramStore(LoweringContext &ctx, StoreInst &st) {
-  if (Addr r = decompose(st.getPointerOperand(), ctx.M.getDataLayout()); r.ok && isFormalQram(ctx, r.root))
+  if (Addr r = decompose(st.getPointerOperand(), ctx.M.getDataLayout(), &ctx); r.ok && isFormalQram(ctx, r.root))
     return fatptr::lowerStore(ctx, st);   // through a triple formal: the deferred copy-out (P1, M2b)
   Value *val = st.getValueOperand();
   QAccess acc = qramAccess(ctx, st.getPointerOperand(), st);

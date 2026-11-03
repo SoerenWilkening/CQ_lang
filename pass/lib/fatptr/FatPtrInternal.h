@@ -70,4 +70,22 @@ llvm::SmallVector<llvm::Value *, 4> afterSlotTableCall(LoweringContext &, const 
 void finishSlotTableCall(LoweringContext &, llvm::CallInst *fwd);
 // A pointer loaded from a QRAM of pointers (or through a fat pointer over such QRAMs) is bound by its
 // loader with ctx.bindFields(load, {tag, idx}), two i32 rails; fatptr's derivation reads them back.
+//
+// cq-h8y6 (CR rules 14, 21): the EXIT VALUE of a pointer V computed in a loop with a quantum exit (a K-loop, or
+// a case-3 loop) and read after it depends on which trip exited, so it is a fat pointer (rule 21) whose fields
+// are capture rails: each trip's (tag, idx) selected in where that trip exits. The loop module calls
+// exitFields once per trip, at the trip's builder, for V's fields at V's exit shape (tag an i32, idx an i64 in
+// cells of the shape's cell; the roots loop-invariant: a classical pointer into classical memory that the loop
+// redefines per trip is its loop-invariant base, `inLoop` naming the loop's blocks, moved by the trip's byte
+// offset from it), and after the loop bindExit with the capture rails (their initial value NULL's fields
+// (0, 0): where no trip exits the cutoff ran out, CR rule 14's 0). V is then that fat pointer, over its roots
+// and NULL, for every derivation after the loop (a GEP of it, a phi or select reading it, an access, a
+// compare, ptrtoint); isExitPointer(p): p is such a V, or an address computed from one by GEPs and casts.
+std::pair<Operand, Operand> exitFields(LoweringContext &, const llvm::Value *ptr,
+                                       llvm::function_ref<bool(const llvm::BasicBlock *)> inLoop);
+void bindExit(LoweringContext &, const llvm::Value *ptr, Operand tag, Operand idx);
+bool isExitPointer(LoweringContext &, const llvm::Value *p);
+// Before a loop is lowered again (a nested loop, once per outer trip): its values are the trip's own until its
+// exit binds them again.
+void forgetExits(LoweringContext &, llvm::function_ref<bool(const llvm::BasicBlock *)> inLoop);
 }

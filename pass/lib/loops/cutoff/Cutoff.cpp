@@ -52,7 +52,9 @@
 #include <vector>
 
 #include "Exits.h"
+#include "cq/Aggregates.h"
 #include "cq/FatPtr.h"
+#include "../../fatptr/FatPtrInternal.h"
 #include "cq/Memory.h"
 #include "cq/Predicate.h"
 #include "cq/Uncompute.h"
@@ -195,6 +197,81 @@ private:
     ctx.unc().recordSeed(s);
     return s;
   }
+  // A value of the unit read after it other than by a phi of C: its exit value, capture rails that take this trip's
+  // value where the trip leaves the loop (lowerLoop's general exit capture). A pointer's exit value is a fat pointer
+  // (rule 21): its two fields (tag i32, idx i64, fatptr exitFields) each a capture rail, bound after the loop by
+  // fatptr::bindExit. An aggregate's or vector's is one capture rail per scalar leaf (rule 26), as rule 9 merges a
+  // composite field by field (lowerMergeFields).
+  struct XAcc {
+    Instruction *V;
+    SmallVector<Operand, 2> acc;
+    SmallVector<RailType, 2> rails;
+    bool ptr = false;
+  };
+  // CR rule 14 (the exit value is quantum: it depends on which trip exited) with rules 21 and 26: the capture
+  // rails of a value V of the unit read after it, seeded with V's value where no trip exits (0, NULL's (0, 0)).
+  XAcc exitCapture(Instruction &I) {
+    XAcc xa;
+    xa.V = &I;
+    Type *ty = I.getType();
+    LLVMContext &C = ctx.M.getContext();
+    auto seed = [&](RailType w, Type *t) {
+      xa.rails.push_back(w);
+      xa.acc.push_back(Operand{seedRail(Constant::getNullValue(t), t), true});
+    };
+    if (ty->isPointerTy() && !isCodeAddress(&I)) {
+      xa.ptr = true;
+      seed(RailType{Kind::Int, 32}, Type::getInt32Ty(C));
+      seed(RailType{Kind::Int, 64}, Type::getInt64Ty(C));
+    } else if (ty->isPointerTy()) {
+      seed(RailType{Kind::Int, 64}, Type::getInt64Ty(C));   // rule 13: a code address is an i64
+    } else if (ty->isAggregateType() || ty->isVectorTy()) {
+      SmallVector<Type *, 8> tys;
+      std::function<void(Type *)> leaves = [&](Type *t) {
+        if (auto *st = dyn_cast<StructType>(t))
+          for (Type *e : st->elements())
+            leaves(e);
+        else if (auto *at = dyn_cast<ArrayType>(t))
+          for (uint64_t k = 0; k < at->getNumElements(); ++k)
+            leaves(at->getElementType());
+        else if (auto *vt = dyn_cast<FixedVectorType>(t))
+          for (unsigned k = 0; k < vt->getNumElements(); ++k)
+            leaves(vt->getElementType());
+        else
+          tys.push_back(t);
+      };
+      leaves(ty);
+      for (Type *t : tys)
+        if (t->isPointerTy())
+          seed(RailType{Kind::Int, 64}, Type::getInt64Ty(C));
+        else
+          seed(railTypeOf(t), t);
+    } else {
+      seed(railOf(ty), ty);
+    }
+    return xa;
+  }
+  // V's fields in this trip, one per capture rail, at the builder.
+  SmallVector<Operand, 4> tripFields(const XAcc &xa, function_ref<bool(const BasicBlock *)> inUnit) {
+    Type *ty = xa.V->getType();
+    if (xa.ptr) {
+      auto [tag, idx] = fatptr::exitFields(ctx, xa.V, inUnit);
+      return {tag, idx};
+    }
+    if (ty->isAggregateType() || ty->isVectorTy())
+      return aggr::flattenResult(ctx, xa.V);
+    Operand v = ctx.operand(xa.V);
+    if (ty->isPointerTy() && !v.handle)
+      v = Operand{ctx.B().CreatePtrToInt(v.v, Type::getInt64Ty(ctx.M.getContext())), false};
+    return {v};
+  }
+  // After the loop: V is its capture rails.
+  void bindCapture(const XAcc &xa) {
+    if (xa.ptr)
+      fatptr::bindExit(ctx, xa.V, xa.acc[0], xa.acc[1]);
+    ctx.rebind(xa.V, xa.acc);
+  }
+
   // q & flag(p): the conjunction of a trip predicate with a predicate local to the trip.
   Value *conj(Value *q, const Pred &p, const Instruction *at) {
     if (p.isBottom())
@@ -853,14 +930,11 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // trip's value where the trip leaves the loop (acc' = select(q_j & X_j, v_j, acc), X_j the trip's
   // exit edges). SSA dominance makes v defined on every path to the reader, so where the reader runs
   // the exit that was taken passed v's definition in that trip. Rebound to the reader after the loop.
-  struct XAcc {
-    Instruction *V;
-    Operand acc;
-  };
   std::vector<XAcc> xaccs;
   if (multi) {
     BasicBlock *C = U.cont;
     auto inUnit = [&](const BasicBlock *b) { return U.contains(L, b); };
+    fatptr::forgetExits(ctx, inUnit);   // lowered again (an outer trip): its pointers are the trips' own
     SmallVector<BasicBlock *, 16> unitBlocks(L.blocks().begin(), L.blocks().end());
     unitBlocks.append(U.arm.begin(), U.arm.end());
     for (BasicBlock *b : unitBlocks)
@@ -874,12 +948,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
             continue;
           if (any_of(xaccs, [&](const XAcc &x) { return x.V == &I; }))
             continue;
-          Type *ty = I.getType();
-          if (!(ty->isIntegerTy() || ty->isFloatingPointTy()))
-            unimplemented("loops-cutoff: the exit value of a pointer or aggregate computed in a K-loop (rules 21, 26: "
-                          "a fat pointer or per-field rails; cq-p45s)",
-                          &I);
-          xaccs.push_back({&I, Operand{seedRail(Constant::getNullValue(ty), ty), true}});
+          xaccs.push_back(exitCapture(I));
         }
     for (BasicBlock *a : U.arm)
       checkTerminator(a->getTerminator());
@@ -1010,6 +1079,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
                       "constant step from a loop-invariant start (cq-p45s)",
                       h);
       for (const User *u : h->users()) {
+        // A read after the unit is of the walked pointer's exit value: the general exit capture's fat pointer
+        // (cq-h8y6, rules 14, 21), not the trip's address.
+        if (!U.contains(L, cast<Instruction>(u)->getParent()))
+          continue;
         bool ok = u == g || isa<GetElementPtrInst>(u) || (isa<LoadInst>(u) && cast<LoadInst>(u)->getPointerOperand() == h) ||
                   (isa<StoreInst>(u) && cast<StoreInst>(u)->getPointerOperand() == h);
         if (!ok)
@@ -1519,12 +1592,14 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (X.isBottom())
         continue;
       Value *f = conj(q, X, U.cont->getFirstNonPHI());
-      Operand v = ctx.operand(xa.V);
-      abi::TemplateSpec sel;
-      sel.op = "select";
-      sel.w = railOf(xa.V->getType());
-      sel.shape = v.handle ? "" : "lh";
-      xa.acc = Operand{ctx.emitTemplate(sel, {Operand{f, true}, v, xa.acc}), true};
+      SmallVector<Operand, 4> vs = tripFields(xa, [&](const BasicBlock *b) { return U.contains(L, b); });
+      for (unsigned k = 0; k < xa.acc.size() && k < vs.size(); ++k) {
+        abi::TemplateSpec sel;
+        sel.op = "select";
+        sel.w = xa.rails[k];
+        sel.shape = vs[k].handle ? "" : "lh";
+        xa.acc[k] = Operand{ctx.emitTemplate(sel, {Operand{f, true}, vs[k], xa.acc[k]}), true};
+      }
     }
     armPick = nullptr;
   };
@@ -1810,7 +1885,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       ctx.bindFields(cp.P, {cp.acc});
   }
   for (XAcc &xa : xaccs)
-    ctx.rebind(xa.V, {xa.acc});
+    bindCapture(xa);
   for (TripPhi &tp : tripPhis) {
     fatptr::bindTripPointer(ctx, *tp.P, tp.tag, tp.objs);
     ctx.bindFields(tp.P, {tp.tag});

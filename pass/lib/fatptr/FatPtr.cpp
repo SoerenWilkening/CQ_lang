@@ -256,6 +256,27 @@ bool isCarried(LoweringContext &ctx, const Value *p) {
   return it != carriedPhis().end() && it->second.count(p);
 }
 
+// cq-h8y6 (CR rules 14, 21): a loop's pointer exit value (FatPtrInternal.h exitFields / bindExit): its shape,
+// recorded by the trips' exitFields, and after the loop its capture rails.
+struct ExitPtr {
+  SmallVector<const Value *, 4> roots;
+  uint64_t cell = 0;
+  bool nullMoved = false;
+  Operand tag{nullptr, true}, idx{nullptr, true};
+  bool bound = false;   // bindExit ran: derivations read the capture rails
+};
+std::map<const Function *, DenseMap<const Value *, ExitPtr>> &exitPtrs() {
+  static std::map<const Function *, DenseMap<const Value *, ExitPtr>> e;
+  return e;
+}
+const ExitPtr *exitPtrOf(LoweringContext &ctx, const Value *p) {
+  auto it = exitPtrs().find(&ctx.out());
+  if (it == exitPtrs().end())
+    return nullptr;
+  auto jt = it->second.find(p);
+  return jt == it->second.end() || !jt->second.bound ? nullptr : &jt->second;
+}
+
 // The byte size of a root's object: an alloca's, or an allocation call's constant allocsize.
 std::optional<uint64_t> objectBytes(LoweringContext &ctx, const Value *root) {
   const DataLayout &DL = ctx.M.getDataLayout();
@@ -1322,6 +1343,18 @@ Fat derive(LoweringContext &ctx, const Value *p, bool emit, bool eager) {
     }
     return f;
   }
+  if (const ExitPtr *x = exitPtrOf(ctx, p)) {
+    // cq-h8y6 (CR rules 14, 21): a loop's pointer exit value, the capture rails over its roots and NULL.
+    Fat f;
+    f.roots = x->roots;
+    f.cell = x->cell;
+    f.nullMoved = x->nullMoved;
+    f.tag = emit ? x->tag : Operand{nullptr, true};
+    f.idx = emit ? x->idx : Operand{nullptr, true};
+    f.idxBits = 64;
+    f.idxSext = true;
+    return f;
+  }
   if (const TripPtr *t = tripOf(ctx, p)) {
     // R1: the bound tag rail at the classical idx 0, over null and the trip objects.
     Fat f;
@@ -1333,7 +1366,23 @@ Fat derive(LoweringContext &ctx, const Value *p, bool emit, bool eager) {
     f.idx = Operand{ConstantInt::get(i64(ctx), 0), false};
     return f;
   }
-  if (isRoot(ctx, p))
+  // An address computed from a loop's pointer exit value is derived from that fat pointer, never a root of its
+  // own (cq-h8y6: a classical pointer into classical memory would be).
+  auto fromExit = [&](const Value *q) {
+    for (;;) {
+      if (exitPtrOf(ctx, q))
+        return true;
+      if (auto *g = dyn_cast<GEPOperator>(q))
+        q = g->getPointerOperand();
+      else if (auto *c = dyn_cast<BitCastOperator>(q))
+        q = c->getOperand(0);
+      else if (auto *c = dyn_cast<AddrSpaceCastOperator>(q))
+        q = c->getPointerOperand();
+      else
+        return false;
+    }
+  };
+  if (isRoot(ctx, p) && !fromExit(p))
     return deriveRoot(ctx, p, emit);
   if (auto *g = dyn_cast<GEPOperator>(p))
     return deriveGEP(ctx, *g, emit);
@@ -2914,6 +2963,166 @@ std::optional<int64_t> constantByteOffset(LoweringContext &ctx, const Value *ptr
 Value *boundSlotObject(LoweringContext &ctx, const Argument &A) {
   Bound *b = boundOf(ctx, &A);
   return b && b->pointee == ObjClass::Slot ? b->object : nullptr;
+}
+
+namespace {
+// cq-h8y6: the loop-invariant base S of a classical pointer into classical memory that the loop redefines per
+// trip (its derivation roots at itself), through GEPs, casts and the loop's phis (each start outside the loop,
+// each other incoming moved from a phi of the chain): every value it takes is S plus a byte offset, g the
+// greatest common divisor of the offsets' terms (0: none). nullptr when no single such S exists.
+const Value *loopBase(LoweringContext &ctx, const Value *v, function_ref<bool(const BasicBlock *)> inLoop,
+                      uint64_t &g, SmallPtrSetImpl<const Value *> &onPath) {
+  const DataLayout &DL = ctx.M.getDataLayout();
+  auto addG = [&](const APInt &a) {
+    uint64_t m = a.isNegative() ? (-a).getZExtValue() : a.getZExtValue();
+    if (m)
+      g = g ? std::gcd(g, m) : m;
+  };
+  for (;;) {
+    if (auto *c = dyn_cast<BitCastOperator>(v)) {
+      v = c->getOperand(0);
+      continue;
+    }
+    if (auto *c = dyn_cast<AddrSpaceCastOperator>(v)) {
+      v = c->getPointerOperand();
+      continue;
+    }
+    auto *I = dyn_cast<Instruction>(v);
+    if (!I || !inLoop(I->getParent()))
+      return v;
+    if (auto *gep = dyn_cast<GEPOperator>(v)) {
+      MapVector<Value *, APInt> vars;
+      APInt off(64, 0);
+      if (!gep->collectOffset(DL, 64, vars, off))
+        return nullptr;
+      addG(off);
+      for (auto &[x, sc] : vars)
+        addG(sc);
+      v = gep->getPointerOperand();
+      continue;
+    }
+    if (auto *phi = dyn_cast<PHINode>(v)) {
+      if (!onPath.insert(phi).second)
+        return phi;   // a cycle back to a phi of the chain: an offset from it, no base of its own
+      const Value *S = nullptr;
+      for (const Value *in : phi->incoming_values()) {
+        const Value *b = loopBase(ctx, in, inLoop, g, onPath);
+        if (!b)
+          return nullptr;
+        if (onPath.count(b))
+          continue;
+        if (S && S != b)
+          return nullptr;
+        S = b;
+      }
+      onPath.erase(phi);
+      return S;
+    }
+    return nullptr;
+  }
+}
+} // namespace
+
+std::pair<Operand, Operand> exitFields(LoweringContext &ctx, const Value *ptr,
+                                       function_ref<bool(const BasicBlock *)> inLoop) {
+  // In the loop the value is the trip's own: an exit binding of an earlier run of the loop (an outer trip's) is
+  // not read here.
+  auto &tbl = exitPtrs()[&ctx.out()];
+  tbl[ptr].bound = false;
+  Fat shape = derive(ctx, ptr, /*emit=*/false);
+  bool variant = any_of(shape.roots, [&](const Value *r) {
+    auto *I = dyn_cast<Instruction>(r);
+    return I && inLoop(I->getParent());
+  });
+  Fat f;
+  if (variant) {
+    // A classical pointer into classical memory the loop redefines: its loop-invariant base S moved by the trip's
+    // byte offset (a classical value of the trip), in cells dividing every offset (rule 21: idx is a cell index).
+    uint64_t g = 0;
+    SmallPtrSet<const Value *, 8> onPath;
+    const Value *S = loopBase(ctx, ptr, inLoop, g, onPath);
+    if (!S || onPath.count(S)) {
+      g = 1;
+      S = getUnderlyingObject(ptr);
+    }
+    f = derive(ctx, S, /*emit=*/true);
+    uint64_t c = g ? (f.cell ? std::gcd(f.cell, g) : g) : (f.cell ? f.cell : 1);
+    rescale(ctx, f, c, /*emit=*/true);
+    IRBuilder<> &B = ctx.B();
+    Value *off = B.CreateSub(B.CreatePtrToInt(ctx.operand(ptr).v, i64(ctx)), B.CreatePtrToInt(ctx.operand(S).v, i64(ctx)));
+    Value *cells = c == 1 ? off : B.CreateExactSDiv(off, ConstantInt::get(i64(ctx), c));
+    if (f.idxRail())
+      f.idx = Operand{tmpl(ctx, "add", intRail(64), {widenRail(ctx, f.idx, f.idxBits, f.idxSext, 64), Operand{cells, false}},
+                           "hl"),
+                      true};
+    else
+      f.idx = Operand{B.CreateAdd(f.idx.v ? f.idx.v : ConstantInt::get(i64(ctx), 0), cells), false};
+    f.idxBits = 64;
+    f.idxSext = true;
+  } else {
+    f = derive(ctx, ptr, /*emit=*/true);
+  }
+  ExitPtr &x = tbl[ptr];
+  x.roots = f.roots;
+  x.cell = f.cell;
+  x.nullMoved = f.nullMoved;
+  Operand idx = f.idx;
+  if (idx.handle)
+    idx = widenRail(ctx, idx, f.idxBits, f.idxSext, 64);
+  else if (!idx.v)
+    idx = Operand{ConstantInt::get(i64(ctx), 0), false};
+  else if (idx.v->getType() != i64(ctx))
+    idx = Operand{ctx.B().CreateSExtOrTrunc(idx.v, i64(ctx)), false};
+  return {f.tag, idx};
+}
+
+void bindExit(LoweringContext &ctx, const Value *ptr, Operand tag, Operand idx) {
+  auto &tbl = exitPtrs()[&ctx.out()];
+  auto it = tbl.find(ptr);
+  ExitPtr x;
+  if (it != tbl.end()) {
+    x = it->second;
+  } else {
+    // No trip reached the value: it is NULL's (0, 0) wherever it is read.
+    x.bound = false;
+    tbl[ptr] = x;
+    Fat shape = derive(ctx, ptr, /*emit=*/false);
+    x.roots = shape.roots;
+    x.cell = shape.cell;
+    x.nullMoved = shape.nullMoved;
+  }
+  const Value *null = ConstantPointerNull::get(cast<PointerType>(ptr->getType()));
+  if (!is_contained(x.roots, null))
+    x.roots.push_back(null);
+  llvm::sort(x.roots, [&](const Value *a, const Value *b) { return rootNumber(ctx, a) < rootNumber(ctx, b); });
+  x.tag = tag;
+  x.idx = idx;
+  x.bound = true;
+  tbl[ptr] = x;
+}
+
+void forgetExits(LoweringContext &ctx, function_ref<bool(const BasicBlock *)> inLoop) {
+  auto it = exitPtrs().find(&ctx.out());
+  if (it == exitPtrs().end())
+    return;
+  for (auto &[v, x] : it->second)
+    if (auto *I = dyn_cast<Instruction>(v); I && inLoop(I->getParent()))
+      x.bound = false;
+}
+
+bool isExitPointer(LoweringContext &ctx, const Value *p) {
+  for (;;) {
+    if (exitPtrOf(ctx, p))
+      return true;
+    if (auto *g = dyn_cast<GEPOperator>(p))
+      p = g->getPointerOperand();
+    else if (auto *c = dyn_cast<BitCastOperator>(p))
+      p = c->getOperand(0);
+    else if (auto *c = dyn_cast<AddrSpaceCastOperator>(p))
+      p = c->getPointerOperand();
+    else
+      return false;
+  }
 }
 
 std::pair<Operand, Operand> storedFields(LoweringContext &ctx, const Value *ptr) {
