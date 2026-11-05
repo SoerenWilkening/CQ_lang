@@ -284,82 +284,12 @@ private:
   // The condition under which a trip goes from p to its successor b (rule 8 atoms for a br, rule 13
   // case atoms for a switch: a case edge is its value's equality, the default edge the complement of
   // every case; a computed goto is the switch over its destinations).
-  static Pred tripEdge(const BasicBlock *p, const BasicBlock *b) {
-    const Instruction *t = p->getTerminator();
-    if (auto *br = dyn_cast<BranchInst>(t)) {
-      if (!br->isConditional() || br->getSuccessor(0) == br->getSuccessor(1))
-        return Pred::top();
-      Pred a = Pred::atom(br->getCondition());
-      return br->getSuccessor(0) == b ? a : !a;
-    }
-    if (auto *sw = dyn_cast<SwitchInst>(t)) {
-      Pred e = Pred::bottom(), none = Pred::top();
-      for (auto &c : sw->cases()) {
-        Pred a = Pred::eqAtom(sw->getCondition(), c.getCaseValue()->getValue());
-        none = none & !a;
-        if (c.getCaseSuccessor() == b)
-          e = e | a;
-      }
-      if (sw->getDefaultDest() == b)
-        e = e | none;
-      return e;
-    }
-    if (auto *ib = dyn_cast<IndirectBrInst>(t))
-      return computedGotoEdge(*ib, b);
-    checkTerminator(t);
-    internalError("loops-cutoff: a trip edge from a terminator checkTerminator accepted", t);
-  }
+  static Pred tripEdge(const BasicBlock *p, const BasicBlock *b) { return exits::tripEdge(p, b); }
   // The classical part of tripEdge as a classical i1 of the current trip: a quantum condition counts
   // as true. A classical phi's incoming edge is chosen by classical conditions alone (taint: a phi
   // whose choice depends on a quantum condition is quantum), so among edges whose classical part
   // holds, every one carries the merged value.
-  Value *classicalEdge(const BasicBlock *p, const BasicBlock *b) {
-    IRBuilder<> &Bd = ctx.B();
-    LLVMContext &C = ctx.M.getContext();
-    const Instruction *t = p->getTerminator();
-    if (auto *br = dyn_cast<BranchInst>(t)) {
-      if (!br->isConditional() || br->getSuccessor(0) == br->getSuccessor(1) || isQ(br->getCondition()))
-        return ConstantInt::getTrue(C);
-      Value *c = ctx.operand(br->getCondition()).v;
-      return br->getSuccessor(0) == b ? c : Bd.CreateNot(c);
-    }
-    if (auto *ib = dyn_cast<IndirectBrInst>(t)) {
-      // Rule 13: the address against each destination's blockaddress; the last distinct destination is
-      // the complement of the others.
-      if (isQ(ib->getAddress()))
-        return ConstantInt::getTrue(C);
-      Value *a = ctx.operand(ib->getAddress()).v;
-      Value *x = a->getType()->isPointerTy() ? Bd.CreatePtrToInt(a, Bd.getInt64Ty()) : a;
-      SmallVector<const BasicBlock *, 4> ds;
-      for (const BasicBlock *d : successors(ib))
-        if (!is_contained(ds, d))
-          ds.push_back(d);
-      Value *others = ConstantInt::getFalse(C);
-      for (const BasicBlock *d : ds) {
-        if (d == ds.back())
-          return d == b ? Bd.CreateNot(others) : ConstantInt::getFalse(C);
-        Value *e = Bd.CreateICmpEQ(x, caseAddress(d));
-        if (d == b)
-          return e;
-        others = Bd.CreateOr(others, e);
-      }
-      return ConstantInt::getFalse(C);
-    }
-    auto *sw = cast<SwitchInst>(t);
-    if (isQ(sw->getCondition()))
-      return ConstantInt::getTrue(C);
-    Value *x = ctx.operand(sw->getCondition()).v;
-    Value *e = ConstantInt::getFalse(C), *none = ConstantInt::getTrue(C);
-    for (auto &c : sw->cases()) {
-      Value *a = Bd.CreateICmpEQ(x, const_cast<ConstantInt *>(c.getCaseValue()));
-      none = Bd.CreateAnd(none, Bd.CreateNot(a));
-      if (c.getCaseSuccessor() == b)
-        e = Bd.CreateOr(e, a);
-    }
-    if (sw->getDefaultDest() == b)
-      e = Bd.CreateOr(e, none);
-    return e;
-  }
+  Value *classicalEdge(const BasicBlock *p, const BasicBlock *b) { return exits::classicalEdge(ctx, p, b); }
   // A classical select chain over (condition, value): the first arm whose condition holds, the last
   // arm where none does (rule 9's classical select, ruling 2026-10-27).
   Value *classicalChain(ArrayRef<std::pair<Value *, Value *>> arms) {
@@ -913,6 +843,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // a classical choice at a classical join the walker owns.
   auto initOf = [&](PHINode *h, bool tag) -> Operand {
     auto opOf = [&](Value *v) { return ctx.operand(v); };
+    // The header is the continuation of a loop just before this one: that unit bound h on its exit edge (the exit value
+    // of the trip that left, not its carried state).
+    if (isQ(h) && exits::boundByLoopBefore(ctx, *h, A.LI))
+      return ctx.operand(h);
     if (Value *v = startOf(h))
       return opOf(v);
     if (!isQ(h)) {
@@ -1834,6 +1768,95 @@ void lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed) {
   std::optional<uint64_t> B = cutoffBound(*mL, A.SE, ctx.T, ctx.S);
   unsigned c = B ? unsigned(std::min<uint64_t>(K, *B)) : K;
   Cutoff(ctx, A).lowerLoop(*mL, seed, c, !B || *B > K, false);
+}
+
+Pred tripEdge(const BasicBlock *p, const BasicBlock *b) {
+  const Instruction *t = p->getTerminator();
+  if (auto *br = dyn_cast<BranchInst>(t)) {
+    if (!br->isConditional() || br->getSuccessor(0) == br->getSuccessor(1))
+      return Pred::top();
+    Pred a = Pred::atom(br->getCondition());
+    return br->getSuccessor(0) == b ? a : !a;
+  }
+  if (auto *sw = dyn_cast<SwitchInst>(t)) {
+    Pred e = Pred::bottom(), none = Pred::top();
+    for (auto &c : sw->cases()) {
+      Pred a = Pred::eqAtom(sw->getCondition(), c.getCaseValue()->getValue());
+      none = none & !a;
+      if (c.getCaseSuccessor() == b)
+        e = e | a;
+    }
+    if (sw->getDefaultDest() == b)
+      e = e | none;
+    return e;
+  }
+  if (auto *ib = dyn_cast<IndirectBrInst>(t))
+    return computedGotoEdge(*ib, b);
+  (void)t;
+  internalError("loops-cutoff: a trip edge from a terminator that is no br, switch or computed goto", t);
+}
+
+Value *classicalEdge(LoweringContext &ctx, const BasicBlock *p, const BasicBlock *b) {
+  auto isQ = [&](const Value *v) { return !isa<Constant>(v) && ctx.T.isQuantum(v, ctx.S); };
+  IRBuilder<> &Bd = ctx.B();
+  LLVMContext &C = ctx.M.getContext();
+  const Instruction *t = p->getTerminator();
+  if (auto *br = dyn_cast<BranchInst>(t)) {
+    if (!br->isConditional() || br->getSuccessor(0) == br->getSuccessor(1) || isQ(br->getCondition()))
+      return ConstantInt::getTrue(C);
+    Value *c = ctx.operand(br->getCondition()).v;
+    return br->getSuccessor(0) == b ? c : Bd.CreateNot(c);
+  }
+  if (auto *ib = dyn_cast<IndirectBrInst>(t)) {
+    // Rule 13: the address against each destination's blockaddress; the last distinct destination is
+    // the complement of the others.
+    if (isQ(ib->getAddress()))
+      return ConstantInt::getTrue(C);
+    Value *a = ctx.operand(ib->getAddress()).v;
+    Value *x = a->getType()->isPointerTy() ? Bd.CreatePtrToInt(a, Bd.getInt64Ty()) : a;
+    SmallVector<const BasicBlock *, 4> ds;
+    for (const BasicBlock *d : successors(ib))
+      if (!is_contained(ds, d))
+        ds.push_back(d);
+    Value *others = ConstantInt::getFalse(C);
+    for (const BasicBlock *d : ds) {
+      if (d == ds.back())
+        return d == b ? Bd.CreateNot(others) : ConstantInt::getFalse(C);
+      Value *e = Bd.CreateICmpEQ(x, caseAddress(d));
+      if (d == b)
+        return e;
+      others = Bd.CreateOr(others, e);
+    }
+    return ConstantInt::getFalse(C);
+  }
+  auto *sw = cast<SwitchInst>(t);
+  if (isQ(sw->getCondition()))
+    return ConstantInt::getTrue(C);
+  Value *x = ctx.operand(sw->getCondition()).v;
+  Value *e = ConstantInt::getFalse(C), *none = ConstantInt::getTrue(C);
+  for (auto &c : sw->cases()) {
+    Value *a = Bd.CreateICmpEQ(x, const_cast<ConstantInt *>(c.getCaseValue()));
+    none = Bd.CreateAnd(none, Bd.CreateNot(a));
+    if (c.getCaseSuccessor() == b)
+      e = Bd.CreateOr(e, a);
+  }
+  if (sw->getDefaultDest() == b)
+    e = Bd.CreateOr(e, none);
+  return e;
+}
+
+bool boundByLoopBefore(LoweringContext &ctx, const PHINode &h, const LoopInfo &LI) {
+  if (!ctx.bound(&h))
+    return false;
+  const Loop *own = LI.getLoopFor(h.getParent());
+  for (const BasicBlock *u : h.blocks()) {
+    if (own && own->contains(u))
+      continue;
+    for (const Loop *l = LI.getLoopFor(u); l && !l->contains(h.getParent()); l = l->getParentLoop())
+      if (unitOf(*l).cont == h.getParent())
+        return true;
+  }
+  return false;
 }
 
 bool Unit::contains(const Loop &L, const BasicBlock *b) const {

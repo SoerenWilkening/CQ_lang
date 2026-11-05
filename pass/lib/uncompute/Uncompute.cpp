@@ -488,7 +488,7 @@ struct Uncompute::Impl {
                       fwd);
       if (ops[i].handle) {
         RailId r = lookup(ops[i].v, who, fwd);
-        if (anyReleased(r))
+        if (anyReleased(r) && (getenv("CQDUMP") ? fwd->getFunction()->print(llvm::errs()), true : true))
           internalError(std::string("uncompute: ") + who + ": operand " + describe(ops[i].v) +
                             " was already uncomputed and freed",
                         fwd);

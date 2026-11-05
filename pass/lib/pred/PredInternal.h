@@ -16,6 +16,7 @@
 #include <optional>
 #include <type_traits>
 #include <map>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -48,6 +49,9 @@ struct PathPredicates::Impl {
   llvm::DenseMap<const llvm::BasicBlock *, unsigned> rpo;   // reachable blocks only
   llvm::DenseSet<const llvm::BasicBlock *> loopHeaders;
   llvm::Value *entryFlag = nullptr;
+  std::optional<Pred> assumed;   // PathPredicates::assume
+  unsigned assumedId = 0;
+  std::map<std::tuple<unsigned, const llvm::BasicBlock *, const llvm::BasicBlock *>, Pred> underAssumed;
 };
 
 namespace pred_detail {

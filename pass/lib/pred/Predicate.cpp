@@ -803,7 +803,16 @@ const Pred &PathPredicates::block(const BasicBlock *b) const {
   auto it = impl->blocks.find(b);
   if (it == impl->blocks.end())
     internalError("pred: PathPredicates::block of a block outside the computed function", b);
+  if (impl->assumed)
+    return impl->underAssumed.try_emplace({impl->assumedId, b, nullptr}, it->second & *impl->assumed).first->second;
   return it->second;
+}
+
+std::optional<Pred> PathPredicates::assume(std::optional<Pred> p) {
+  std::optional<Pred> was = impl->assumed;
+  impl->assumed = std::move(p);
+  ++impl->assumedId;
+  return was;
 }
 
 const Pred &PathPredicates::edge(const BasicBlock *from, const BasicBlock *to) const {
@@ -812,6 +821,8 @@ const Pred &PathPredicates::edge(const BasicBlock *from, const BasicBlock *to) c
   auto it = impl->edges.find({from, to});
   if (it == impl->edges.end())
     internalError("pred: PathPredicates::edge of a pair that is no reachable CFG edge", from);
+  if (impl->assumed)
+    return impl->underAssumed.try_emplace({impl->assumedId, from, to}, it->second & *impl->assumed).first->second;
   return it->second;
 }
 

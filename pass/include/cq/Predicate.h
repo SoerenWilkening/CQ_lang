@@ -55,6 +55,10 @@ public:
   const Pred &block(const llvm::BasicBlock *) const;
   const Pred &edge(const llvm::BasicBlock *from, const llvm::BasicBlock *to) const;
   llvm::Value *flag(LoweringContext &, const Pred &);
+  // CR rule 14 with rule 9 (a block lowered for some of its paths only: an exit arm's tail on the paths from outside the
+  // unit, an arm on a loop's classical exit): until restored, block() and edge() answer under `p`, the condition of those
+  // paths. Returns the assumption it replaces, to restore. The results stay valid across later calls.
+  std::optional<Pred> assume(std::optional<Pred> p);
   // Rule 8: the rail of the atom when the predicate is exactly its negation (the false edge is an X bracket on it), a
   // flag that controls a kept store being kept with it (rule 5). nullptr otherwise.
   llvm::Value *negatedAtomRail(LoweringContext &, const Pred &);

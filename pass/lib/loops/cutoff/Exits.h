@@ -22,7 +22,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
 
-namespace llvm { class Loop; class PHINode; class ScalarEvolution; class Value; class DominatorTree; }
+namespace llvm { class Loop; class LoopInfo; class PHINode; class ScalarEvolution; class Value; class DominatorTree; }
 namespace cq { class LoweringContext; }
 
 namespace cq::loops::exits {
@@ -52,6 +52,15 @@ struct Unit {
 // exits into effect-free dead ends set aside.
 llvm::BasicBlock *liveExiting(const llvm::Loop &L);
 llvm::BasicBlock *liveExit(const llvm::Loop &L);
+
+// The condition under which p goes to its successor b, over p's own branch condition (rule 8 atoms for a br, rule 13
+// case atoms for a switch, the address cases for a computed goto), and its classical part as a classical i1 at the
+// builder (a quantum condition counts as true).
+Pred tripEdge(const llvm::BasicBlock *p, const llvm::BasicBlock *b);
+llvm::Value *classicalEdge(cq::LoweringContext &ctx, const llvm::BasicBlock *p, const llvm::BasicBlock *b);
+
+// Is the header phi h, bound, the continuation phi of a loop that exits into its header (a loop right after a loop)?
+bool boundByLoopBefore(cq::LoweringContext &ctx, const llvm::PHINode &h, const llvm::LoopInfo &LI);
 
 // With no live exit, cont is nullptr: the program's continuation after the loop is unreachable (CR rule
 // 14 "No live exit"). cq::unimplemented when the live exits have no common post-dominator.
