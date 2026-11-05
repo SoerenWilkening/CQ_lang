@@ -314,6 +314,32 @@ _NAME = r'([-\w$.]+|"[^"]+")'
 _DECLARED = re.compile(r'^(?:declare\b[^@]*@' + _NAME + r'\(|@' + _NAME + r' = (?:\S+ )*?external\b)', re.M)
 
 
+_LIBM_INTRINSIC = re.compile(r'^declare\b[^@]*@llvm\.(exp|exp2|exp10|log|log2|log10|sin|cos|tan|asin|acos|atan|sinh|cosh|'
+                             r'tanh|pow)\.(f32|f64|f80)\(', re.M)
+_LIBM_TYPE = {"f32": ("float", "f"), "f64": ("double", ""), "f80": ("x86_fp80", "l")}
+
+
+def _libm_intrinsics(ll_text: str) -> List[Tuple[str, str]]:
+    """The libm functions the module's LLVM math intrinsics stand for (CR rule 18): (name, its declaration)."""
+    out = []
+    for op, t in _LIBM_INTRINSIC.findall(ll_text):
+        ty, sfx = _LIBM_TYPE[t]
+        params = f"{ty}, {ty}" if op == "pow" else ty
+        out.append((op + sfx, f"declare {ty} @{op}{sfx}({params})\n"))
+    return out
+
+
+def bundle_libm_decls(ll_text: str, bundle: Sequence[Path]) -> str:
+    """Declarations that make `--only-needed` link the bundle's body of each libm function an intrinsic of the module
+    stands for (rule 18: lifted from its body whenever the module has one after injection), which no call names."""
+    defined = set()
+    for b in bundle:
+        defined |= set(_bundle_info(Path(b))[0])
+    mach = "-apple-" in _triple(ll_text)
+    declared = {(a or b).strip('"') for a, b in _DECLARED.findall(ll_text)}
+    return "".join(d for n, d in _libm_intrinsics(ll_text) if ("_" + n if mach else n) in defined and n not in declared)
+
+
 def bundle_for(ll_text: str) -> List[Path]:
     """The injection bundle files to link into a module (cq-b041; CR rule 18, CLAUDE.md "Pipeline"):
     every bundle/manifest.json file, linked --only-needed, when the module declares without a body
@@ -322,6 +348,7 @@ def bundle_for(ll_text: str) -> List[Path]:
     if not bundle:
         return []
     names = {(a or b).strip('"') for a, b in _DECLARED.findall(ll_text)}
+    names |= {n for n, _ in _libm_intrinsics(ll_text)}
     if "-apple-" in _triple(ll_text):  # Mach-O symbol names carry a leading underscore
         names = {"_" + n for n in names}
     if any(names & _bundle_info(b)[0] for b in bundle):
@@ -489,7 +516,7 @@ def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[in
         callees = drivers.effect_callees(text, frozenset(defined) | drivers.corpus_roots())
         renamed = _k2_sites(drivers.rename_effects(text, callees), text)
         decls = "".join(f"declare {r} @{drivers.FX_PREFIX}{c}({p})\n" for c, (_, r, p) in callees.items())
-        (d / "prog.ll").write_text(renamed + decls)
+        (d / "prog.ll").write_text(renamed + decls + (bundle_libm_decls(text, bundle) if bundle else ""))
         (d / "fx.ll").write_text(f'target triple = "{triple}"\n' + drivers.effect_wrappers_ir(callees))
         _run([_tool("clang"), "-target", triple, "-O0", "-Wno-override-module", "-c", str(d / "fx.ll"), "-o", str(d / "fx.o")],
              "compiling the host calls' wrappers")

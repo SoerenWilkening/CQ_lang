@@ -246,6 +246,23 @@ def bundle_needed(linked: Path, bundle, work: Path) -> bool:
     return bool(defined & declared)
 
 
+def libm_decls(linked: Path, bundle, work: Path) -> dict:
+    """The libm functions the bundle defines that the module's LLVM math intrinsics stand for and no declaration names."""
+    defined = set()
+    for f in bundle:
+        defined |= nm(f, ["--defined-only"], f"llvm-nm of the injection bundle {f.name}", work)
+    text = Path(linked).read_text()
+    types = {"f32": ("float", "f"), "f64": ("double", ""), "f80": ("x86_fp80", "l")}
+    out = {}
+    for op, t in re.findall(r"(?m)^declare\b[^@]*@llvm\.(exp|exp2|exp10|log|log2|log10|sin|cos|tan|asin|acos|atan|sinh|cosh|"
+                            r"tanh|pow)\.(f32|f64|f80)\(", text):
+        ty, sfx = types[t]
+        n = op + sfx
+        if ("_" + n in defined or n in defined) and not re.search(rf"(?m)^(declare|define)\b[^@]*@{n}\(", text):
+            out[n] = f"declare {ty} @{n}({ty}, {ty})\n" if op == "pow" else f"declare {ty} @{n}({ty})\n"
+    return out
+
+
 def main(argv) -> int:
     o = parse_args(argv)
     header = SPEC_DIR / "CQ.h"
@@ -284,7 +301,11 @@ def main(argv) -> int:
         else:
             run([tool("llvm-link"), "-S", *units, "-o", linked], "llvm-link of the user units")
         bundle = bundle_files()
-        if bundle and bundle_needed(linked, bundle, tmp):
+        libm = libm_decls(linked, bundle, tmp) if bundle else {}
+        if bundle and (libm or bundle_needed(linked, bundle, tmp)):
+            # Rule 18: a math intrinsic is lifted from the libm body the bundle has; its declaration makes it needed.
+            with open(linked, "a") as f:
+                f.write("".join(libm.values()))
             run([tool("llvm-link"), "-S", linked, "--only-needed", *bundle, "-o", linked],
                 "llvm-link with the injection bundle")
 

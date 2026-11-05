@@ -258,8 +258,13 @@ def lower(ex: Example, dest: Path) -> Tuple[Optional[Path], str]:
 
 def _lower_uncached(ex: Example, src: Path, bundle: List[Path], dest: Path) -> Tuple[Optional[Path], str]:
     if bundle:
+        from cqcheck import oracle
         linked = dest.parent / f"{ex.base}.linked.ll"
-        r = _run([str(LLVM_BIN / "llvm-link"), "-S", str(src), "--only-needed", *map(str, bundle),
+        decls = dest.parent / f"{ex.base}.libm.ll"
+        text = src.read_text()
+        head = "".join(l + "\n" for l in text.splitlines() if l.startswith(("target datalayout", "target triple")))
+        decls.write_text(head + oracle.bundle_libm_decls(text, bundle))
+        r = _run([str(LLVM_BIN / "llvm-link"), "-S", str(src), str(decls), "--only-needed", *map(str, bundle),
                   "-o", str(linked)])
         if r.returncode != 0:
             return None, f"llvm-link with the injection bundle exited {r.returncode}: {_first_error_line(r.stderr)}"
