@@ -680,6 +680,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
               foreign = true;
           }
         } else {
+          // An edge the paths this loop is lowered for exclude (the tail of an earlier unit, whose own path binds the phi
+          // on its edge): the general capture binds the phi for these paths.
+          if (ctx.preds().edge(u, X).isBottom())
+            foreign = true;
           for (PHINode *c : hphis)
             if (startOf(c) == v &&
                 (ctx.preds().edge(u, X) & pH).isBottom()) {
@@ -694,7 +698,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         else
           id = h;
       }
-      if (ok && id && ctx.preds().block(H).classicalFactor(ctx.T, ctx.S).isTop()) {
+      if (ok && !foreign && id && ctx.preds().block(H).classicalFactor(ctx.T, ctx.S).isTop()) {
         exitPhis.push_back({&P, id});
         continue;
       }

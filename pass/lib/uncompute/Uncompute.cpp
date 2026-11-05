@@ -886,7 +886,8 @@ struct Uncompute::Impl {
     if (!latest) {
       before = &*bb->getFirstInsertionPt();
     } else if (latest->isTerminator()) {
-      internalError("uncompute: a resolvable rail is used by a terminator: " + describe(rails[g].handle), latest);
+      if (getenv("CQDUMP")) latest->getFunction()->print(llvm::errs());
+        internalError("uncompute: a resolvable rail is used by a terminator: " + describe(rails[g].handle), latest);
     } else if (isa<PHINode>(latest)) {
       before = &*bb->getFirstInsertionPt();
     } else {

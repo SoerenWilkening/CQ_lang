@@ -1773,6 +1773,19 @@ void Walker::emitTerminator(BasicBlock *b) {
         tape::lowerMainExit(ctx, op, rv->getType());
         v = ConstantInt::get(sh.out->getReturnType(), 0);
       } else if (op.handle) {
+        // Rule 14: a value joined over loop units (a classical choice of their exit rails, which their reverses undo) is
+        // copied out for the return; the copy escapes.
+        if (auto *jp = dyn_cast<PHINode>(rv); jp && unitBoundPhis.count(jp) && isa<PHINode>(op.v)) {
+          RailType w = jp->getType()->isPointerTy() ? RailType{Kind::Int, 64} : railTypeOf(jp->getType());
+          CallInst *f =
+              ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+          RailId fid = ctx.unc().recordSeed(f);
+          abi::CoreSpec cp{abi::Core::Copy, w};
+          CallInst *c = ctx.emitCore(cp, {op.v, f});
+          ctx.unc().recordCore(c, cp, {op, Operand{f, true}}, fid);
+          op = Operand{f, true};
+          v = f;
+        }
         // Rule 19 (cq-i9wk): an in-module caller keeps a frozen result as its own register; any other
         // result is a clone's, cleaned by its twin.
         noteEntryReturn(spine::frozenRail(sh, op.v), t);
@@ -2076,7 +2089,7 @@ void Walker::emitBlock(BasicBlock *b) {
   for (PHINode &phi : b->phis()) {
     sh.cur = &phi;
     visited.insert(&phi);
-    if (tailOf.count(b) && spine::isQ(ctx, &phi)) {
+    if (tailOf.count(b) && spine::isQ(ctx, &phi) && !unitBoundPhis.count(&phi)) {   // a loop of the tail bound it: below
       tailMerge(phi);
       blockDefs.push_back(&phi);
       continue;
