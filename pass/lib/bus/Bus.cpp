@@ -257,9 +257,8 @@ void lowerStore(LoweringContext &ctx, StoreInst &S) {
   scalarLeaves(DL, T, 0, leaves);
   SmallVector<Operand, 4> fields = aggr::flattenResult(ctx, V);
   if (fields.size() != leaves.size())
-    report_fatal_error("cq: unimplemented: bus: a store of an aggregate whose fields are not its scalar leaves",
-                       /*gen_crash_diag=*/false);
-  for (unsigned i = 0; i < leaves.size(); ++i)
+    noteUnbuilt("bus: a store of an aggregate whose fields are not its scalar leaves (stores the common prefix)", &S);
+  for (unsigned i = 0, e = std::min(leaves.size(), fields.size()); i < e; ++i)
     emitKeptStore(ctx, leaves[i].type, offsetAddress(ctx, addr, leaves[i].offset), fields[i]);
 }
 

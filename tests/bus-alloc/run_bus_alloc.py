@@ -83,6 +83,10 @@ def check_k2(a):
         b = body(t, "k_len_bound")
         if ", 7\n" not in b or "i64 4096" in b:
             bad.append("k_len_bound: the copy's trip bound is not B = 7, with no overflow predicate")
+        b = body(t, "k_len_pred")
+        # cq-fti6: the kept overflow is (n > K2) & c, the raw compare undone before the load loop
+        if not re.search(r"(?s)icmp_ugt_i64_hl\(i32 %\d+, i64 4096\).*?@cqrt_and_i1\(.*?icmp_ugt_i64_hl_unc\(i32 %\d+, i32 %\d+, i64 4096\)", b):
+            bad.append("k_len_pred: the kept overflow is not (n > K2) & c with the raw compare undone")
         b = body(t, "k_align")
         if "@__cq_alloc(i64 64, i64 4096)" not in b:
             bad.append("k_align: a rail alignment is not K2 rounded up to a power of two")
