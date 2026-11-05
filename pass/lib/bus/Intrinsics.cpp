@@ -123,11 +123,18 @@ CallInst *byteLoad(LoweringContext &ctx, Value *c, Operand addr) {
 
 CallInst *byteStore(LoweringContext &ctx, Value *c, Operand addr, Value *v) {
   abi::CoreSpec s{abi::Core::QramStore, W8, /*ctl=*/c != nullptr, /*hl=*/!addr.handle};
+  Value *k = keptControl(ctx, c, v);
   SmallVector<Value *, 4> args;
-  if (c)
-    args.push_back(c);
+  if (k)
+    args.push_back(k);
   args.append({mem(ctx), addr.v, v});
-  return ctx.emitCore(s, args);
+  abi::CoreSpec x{abi::Core::NotI1, RailType{Kind::Int, 1}};
+  if (k != c)
+    ctx.emitCore(x, {k});   // rule 8: the false edge is an X bracket on the flag
+  CallInst *st = ctx.emitCore(s, args);
+  if (k != c)
+    ctx.emitCore(x, {k});
+  return st;
 }
 
 // p_j = icmp_ugt_i64_hl(n, j); under a predicate c in scope the byte's ONE predicate is their conjunction and p_j is
@@ -320,7 +327,7 @@ void emitCopy(LoweringContext &ctx, const CopySpec &s) {
     endByteAddress(ctx, a);
     if (first) {
       first = false;
-      ctx.unc().noteKeptStore(st, h, c);
+      ctx.unc().noteKeptStore(st, h, keptControl(ctx, c, h));
       ctx.unc().noteVersionChange(st);
     }
   });
@@ -350,7 +357,7 @@ static void emitSet(LoweringContext &ctx, Operand dst, Operand byte, Operand len
     endByteAddress(ctx, a);
     if (first) {
       first = false;
-      ctx.unc().noteKeptStore(st, v, c);
+      ctx.unc().noteKeptStore(st, v, keptControl(ctx, c, v));
       ctx.unc().noteVersionChange(st);
     }
   });

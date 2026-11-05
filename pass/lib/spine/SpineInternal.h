@@ -136,6 +136,8 @@ struct Shared {
   // and the conjunction flag minted for it (nullptr until currentFlag() asks under a non-top predicate).
   llvm::Value *tripFlag = nullptr;
   llvm::Value *tripConj = nullptr;
+  // The predicate the trip rail implies by its seed (nullptr = none known): lowerInstruction's seedPred.
+  const Pred *tripSeedPred = nullptr;
   // cq-s7c4: lowerConditionAsData in progress: a factored branch condition is still computed as data.
   bool conditionAsData = false;
   // cq-s32y: a register's pre-rotation value read after its in-place rotation reads a copy taken

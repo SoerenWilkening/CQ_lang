@@ -62,6 +62,10 @@ public:
   // Rule 5 sentence 3: the value rail (a seed included) and the control rail of a kept store are kept: Role::Kept,
   // never resolved. Rule 5 sentence 1: a load copy that is the value rail is never un-copied, Role::Kept too.
   void noteKeptStore(llvm::CallInst *store, llvm::Value *value, llvm::Value *ctl);
+  // Rule 8 (cq-5aus): the IR's flag g when `flag` is the false-edge rail of g, |0> then not_i1, xor_i1(g) and nothing
+  // since, and g still holds that value; else nullptr. A kept store under it keeps g, not the negation: the store
+  // reads g inside a closed X bracket and the kept rail holds the IR's SSA value (rule 5, 51, 55, 109).
+  llvm::Value *negatedAtomOf(llvm::Value *flag) const;
   // Rule 2/10: a load copy a rotation acted on, or that is measured: never un-copied, Role::Frozen / Role::Measured.
   void freezeLoadCopy(RailId);
   // U5 (cq-arch 2026-11-01, CR rule 5): emits before P the items of the listed pending rails. P is

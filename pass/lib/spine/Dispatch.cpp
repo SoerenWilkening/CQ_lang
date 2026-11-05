@@ -620,6 +620,10 @@ void lowerConditionAsData(LoweringContext &ctx, Instruction &I) {
 }
 
 void lowerInstruction(LoweringContext &ctx, Instruction &I, Value *tripFlag) {
+  lowerInstruction(ctx, I, tripFlag, nullptr);
+}
+
+void lowerInstruction(LoweringContext &ctx, Instruction &I, Value *tripFlag, const Pred *seedPred) {
   if (isa<PHINode>(I) || I.isTerminator())
     internalError("spine: lowerInstruction of a phi or terminator", &I);
   if (tripFlag && !tripFlag->getType()->isIntegerTy(32))
@@ -628,6 +632,8 @@ void lowerInstruction(LoweringContext &ctx, Instruction &I, Value *tripFlag) {
   const Instruction *savedCur = sh.cur;
   std::optional<Pred> savedPred = sh.curPred;
   Value *savedTrip = sh.tripFlag, *savedConj = sh.tripConj;
+  const Pred *savedSeed = sh.tripSeedPred;
+  sh.tripSeedPred = seedPred;
   sh.cur = &I;
   sh.curPred = ctx.preds().block(I.getParent()).quantumPart(ctx.T, ctx.S);
   sh.tripFlag = tripFlag;
@@ -641,6 +647,7 @@ void lowerInstruction(LoweringContext &ctx, Instruction &I, Value *tripFlag) {
   sh.curPred = savedPred;
   sh.tripFlag = savedTrip;
   sh.tripConj = savedConj;
+  sh.tripSeedPred = savedSeed;
 }
 
 } // namespace cq
