@@ -32,3 +32,4 @@ One line per decision on what CQ_spec leaves open. OWNER-FLAG: we proceed on it,
 - cq-fti6: DECIDED — quantum-length copy under c: per-byte `t = and_i1(p_j, c)` kept, `p_j` undone in-trip; overflow is `(n > K2) & c` kept, raw `icmp_ugt_i64_hl(n, K2)` undone at once (raw would read 1 on an untaken arm).
 - cq-ssyq: DECIDED — `load i8 !range [0,2)`: trunc user → access at the truncated width; icmp eq/ne against another `[0,2)` load → i1 (xor_i1); otherwise the load's own i8. Current code stays; 114 `%71` (i1, "SPEC GAP 2") goes to SPEC_ISSUES and runs `--oracle c`.
 - cq-5aus: DECIDED — a kept flag holds the IR SSA value: the X bracket always closes (rule 8), the closing `not_i1` placed after the flag's last reader; 55 keeps `m < 0`, no SPEC_ISSUES entry.
+- pthread_join: DECIDED — keep Conc.cpp's result store: a join with a non-null result writes `*t` then `*r`; a null join stays nothing (106). Owner note: CR wording should add "unless a join reads the result".
