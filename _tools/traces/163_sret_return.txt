@@ -1,29 +1,26 @@
 # driver: sret_return(0,.5,3)
 # call: sret_return(0,.5,3)
-cqrt_alloc_i64(0) -> h0
-cqrt_ry_i64(h0, 0x1p-1)
-cq_template_add_i64_hl(h0, 3) -> h1
+cqrt_qram_alloc_i8(0) -> m1
+# __cq_alloc(24, 8) -> P0
 cqrt_alloc_i64(0) -> h2
-cqrt_copy_i64(h1, h2)
-cq_template_mul_i64_hl(h0, 3) -> h3
-cqrt_alloc_i64(0) -> h4
-cqrt_copy_i64(h3, h4)
-cq_template_mul_i64_hl_unc(h3, h0, 3)
-cqrt_free(h3)
-cq_template_add_i64_hl_unc(h1, h0, 3)
-cqrt_free(h1)
-cq_template_add_i64(h4, h2) -> h5
-cq_template_add_i64_hl(h5, 3) -> h6
-cq_template_add_i64_unc(h5, h4, h2)
-cqrt_free(h5)
-cq_template_add_i64_hl(h0, 3) -> h7
-cqrt_copy_i64(h7, h2)
-cq_template_mul_i64_hl(h0, 3) -> h8
-cqrt_copy_i64(h8, h4)
-cq_template_mul_i64_hl_unc(h8, h0, 3)
+cqrt_ry_i64(h2, 0x1p-1)
+cq_template_add_i64_hl(h2, 3) -> h3
+cqrt_qram_store_i64_hl(m1, P0, h3)
+cq_template_mul_i64_hl(h2, 3) -> h4
+cqrt_qram_store_i64_hl(m1, P0+8, h4)
+cqrt_alloc_i64(3) -> h5
+cqrt_qram_store_i64_hl(m1, P0+16, h5)
+cqrt_qram_load_i64_hl(m1, P0) -> h6
+cqrt_qram_load_i64_hl(m1, P0+8) -> h7
+cq_template_add_i64(h7, h6) -> h8
+cqrt_qram_load_i64_hl(m1, P0+16) -> h9
+cq_template_add_i64(h8, h9) -> h10
+cqrt_qram_load_i64_hl_unc(h9, m1, P0+16)
+cqrt_free(h9)
+cq_template_add_i64_unc(h8, h7, h6)
 cqrt_free(h8)
-cq_template_add_i64_hl_unc(h7, h0, 3)
+cqrt_qram_load_i64_hl_unc(h7, m1, P0+8)
+cqrt_qram_load_i64_hl_unc(h6, m1, P0)
 cqrt_free(h7)
-cqrt_free(h2)
-cqrt_free(h4)
-cqrt_measure_i64(h6) -> 0
+cqrt_free(h6)
+cqrt_measure_i64(h10) -> 0

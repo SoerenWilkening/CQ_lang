@@ -5,7 +5,7 @@ int union_ptr_to_int(unsigned x0, double th, int w) {
     cq_theta(&x, th);
     int a[2] = {1, 2}, b[2] = {3, 4};
     union pv u;
-    u.p = (x & 1) ? a : b + 1;               /* write the pointer member: a quantum fat pointer */
+    u.p = (x & 1) ? a : b;                   /* write the pointer member: a quantum pointer */
     u.v += 4;                                /* read it as an integer, arithmetic, write it back */
     return cq_measure(*u.p + w);             /* read it as a pointer again and dereference */
 }

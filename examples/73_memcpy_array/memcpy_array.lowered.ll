@@ -1,166 +1,211 @@
-; HAND-WRITTEN. Rules: 22, 20, 14, 4, 5, 7, 2.
-; Checked: memcpy_classical: a[0] + a[3] after a[x & 3] += 1 over the memcpy'd src; memcpy_quantum: a[1] + b[1] with
-; b a copy of a = {x + i} and b[y & 3] = c (measured).
-; Clean: memcpy_classical: the four basis-state source handles (rule 7), the index rail x & 3, the read-modify-write
-; load and its increment, both fixed-index copy-outs, and the QRAM a; memcpy_quantum: the four fill rails x + i (the
-; cells of the slot array a, uncomputed by the reverse fill loop once no store on b reads them), the index rail y & 3,
-; the basis-state handle c, the copy-out b[1], and the QRAM b (every store popped, then cqrt_qram_free).
-; Kept: the user registers (x; x and y); the result rail (measured).
-; Rotations: Ry(th) on x (memcpy_classical); Ry(tx) on x and Ry(ty) on y (memcpy_quantum).
-; Rule 20 classifies each object by its accesses' offsets. An object with a quantum-offset store (or a quantum-offset
-; load while it may hold a handle) is a QRAM for its whole lifetime (ABI = the QRAM contract of §1.3): cqrt_qram_alloc_<W>(n)
-; at the alloca (cells |0>), every access ONE call, the classical-offset accesses in their _hl form (_hl = classical
-; INDEX). An object with only classical offsets that may hold a handle is a SLOT ARRAY: a classical array of handles,
-; loads and stores move handles and emit no gate. llvm.memcpy with a classical length works per cell (rule 22).
-; memcpy_classical: a[x & 3] += 1 is a quantum-offset read-modify-write, so a is a QRAM from its alloca, and the memcpy
-; from the classical source is, per cell, a classical load of src[j] materialised as a basis-state handle by
-; cqrt_alloc_<W> (a QRAM store value is ALWAYS a handle) and one store_hl; the read is one cqrt_qram_load_<W>(arr, idx)
-; -> fresh rail (cell preserved) with the logical-i32 index rail (x & 3; -O1's zext to i64 and the gep scaling are not
-; emitted), the write-back one cqrt_qram_store_<W>(arr, idx, val) of the incremented rail; a[0], a[3] are fixed-index
-; copy-outs cqrt_qram_load_<W>_hl. memcpy_quantum: a is only accessed at classical offsets (the fill a[i], the memcpy
-; source cells, a[1]), so a is a slot array (alloca [4 x i32] of handles): the fill loop stores the rail x + i into slot
-; i. b is written at the quantum index y & 3, so b is a QRAM, and memcpy(b, a) is a QRAM memcpy: per cell one slot load
-; of a[j] (a handle, no gate) and one cqrt_qram_store_<W>_hl(b, j, handle); the quantum-index write b[y & 3] = c is one
-; cqrt_qram_store_<W> of c as a handle; a[1] is a slot load (the rail x + 1 itself), b[1] a fixed-index copy-out. The
-; backend keeps each displaced cell on its own tape; the stores are popped LIFO per array by their _unc (same args),
-; copy-outs are un-copied, the fill rails are uncomputed by the reverse fill loop (reading each handle back from its
-; slot) after b's stores that read them are popped, then cqrt_qram_free releases each all-|0> QRAM.
+; HAND-WRITTEN. Rules: 20, 22, 21, 16, 14, 5, 6, 7, 4, 2.
+; Checked: memcpy_classical: a[0] + a[3] (the add rail %33, measured -> %34) after memcpy(a, src) and a[x & 3] += 1;
+; the cells of a at exit, read from the bus at the block's address: a[i] = src[i] + (i == (x & 3)).
+; memcpy_quantum: a[1] + b[1] (the add rail %45, measured -> %46) with a[i] = x + i, b a byte copy of a and
+; b[y & 3] = c; the cells at exit: a[i] = x + i, b[i] = (i == (y & 3)) ? c : x + i.
+; Clean: memcpy_classical: the address chain of &a[x & 3] (and / zext / mul / add, %22..%25), uncomputed and freed
+; right after the second swap of the in-place form; the three rails of the in-place form (the swap rail %26, the
+; rule-6 inverse %28, the updated rail %27); the load copies a[0] and a[3] (%29, %32), un-copied after the add: no
+; memory version change follows them. memcpy_quantum: the address chain of &b[y & 3] (%34..%37), uncomputed and freed
+; right after the store; the load copies a[1] and b[1] (%41, %44), un-copied after the add.
+; Kept: memcpy_classical: x (%8, the rotated register); the 16 byte load copies of src (%12 per trip), each the value
+; rail of a kept byte store (rule 5, sentences 1 and 3; classical-valued, so no qubit, §0); the tape slots of the 16
+; byte stores; the sum (%33, measured). The in-place form itself keeps nothing. memcpy_quantum: x and y (%11, %12, the
+; rotated registers); the four fill rails x + i (%16 per trip), each the value rail of a kept store (rule 5 sentence
+; 3), so the fill loop pushes nothing and has no reverse loop (rule 14); the 16 byte load copies of a (%24 per trip),
+; each the value rail of a kept byte store into b; the seed c (%38), the value rail of the kept store b[y & 3] = c;
+; the tape slots of the 4 + 16 + 1 stores; the sum (%45, measured).
+; Rotations: memcpy_classical: (Ry, x, th, 1). memcpy_quantum: (Ry, x, tx, 1); (Ry, y, ty, 1).
+; Expected: memcpy_classical(0, .5, icoef) with icoef = {1, 2, 3, 4}: each bit of x flips with p = sin^2(.25) =
+; 0.061209, so x & 3 is 0 or 3 with 0.885076 and the measured value is 1 + 4 + 1 = 6, otherwise (0.114924) 5.
+; memcpy_quantum(0, 1, .5, .25, 9): y & 3 = 1 with (1 - sin^2(.125))^2 = 0.969154 and then the value is (x + 1) + 9
+; (10 when x stays 0, cos^2(.25)^32 = 0.132498 of that branch); otherwise it is 2 * (x + 1).
+; ONE BUS (rule 20). Every alloca here is BUS-RESIDENT: memcpy_classical's a is the destination of a copy from a
+; pointer argument (not a host-resident source) and is indexed by a rail; memcpy_quantum's a takes stores of rails
+; (x + i) and is the source of a copy into a bus-resident b; b is indexed by a rail. Each is __cq_alloc(16, 16) at the
+; alloca's program point (rule 16), no alloca remains, and the lifetime markers are dropped. m = __cq_mem() is called
+; once at function entry (§5); a pointer argument's run-time address (src) is its ptrtoint, placed once after it (206).
+; Nothing is known about an address: the bases are run-time i64s, and a getelementptr with a tainted index is 64-bit
+; template arithmetic into an address rail (the index rail, -O1's zext, mul_i64_hl by 4, add_i64_hl of the run-time
+; base); a getelementptr with constant indices stays and its ptrtoint is the _hl address. Every other word load is
+; one qram_load_i32[_hl] and every other word store one qram_store_i32[_hl]; the load/store pair of a[x & 3] += 1 is
+; the in-place swap pair below, a memcpy is byte accesses (below), and a classical stored value is first its seed
+; (rule 7).
+; MEMCPY (rule 22): each llvm.memcpy of 16 bytes into a bus-resident destination is a byte copy on the bus, a host
+; loop of 16 qram_load_i8_hl at the source address that pushes each byte's load copy on cqrt_push, then a host loop of
+; 16 qram_store_i8_hl at the destination that pops them (bytes 15 down to 0; a copy has no direction), never widened
+; into word accesses and never unrolled. Each byte store is a kept store: its tape slot and its value rail (the load
+; copy) stay. In memcpy_classical the source src is the host array the caller passed (HOST cells through the overlay,
+; nothing seeded); in memcpy_quantum the source cells of a are QUANTUM (x + i) and the byte copies carry them into b.
+; IN-PLACE FORM (rules 5, 6): a[x & 3] += 1 is load; add 1; store through the same SSA pointer with no memory version
+; change between, so it is emitted at the store's position as swap-out into a fresh |0> rail, the add with rule 6's
+; clean of the old rail (t = y' - 1, copy, _unc), swap-in; the address rail is template garbage, uncomputed right after
+; the second swap. No copy of the cell, tape slot or old value remains. b[y & 3] = c is a plain kept store at an
+; address rail: its seed and tape slot stay. The loads a[0], a[3], a[1], b[1] are bus loads at classical addresses,
+; each un-copied after the add that reads it (its last reader), before the measurement of the sum.
 source_filename = "memcpy_array.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 
 define i32 @memcpy_classical(i32 noundef %0, double noundef %1, ptr nocapture noundef readonly %2) {
-  %4 = call i32 @cqrt_qram_alloc_i32(i32 4)    ; IR: %4 = alloca [4 x i32]: a 4-cell QRAM, cells |0> (the array is read-modify-written at a quantum index: a quantum-offset store)
-  %5 = call i32 @cqrt_alloc_i32(i32 %0)    ; IR: %5 = cq_theta_ui32(%0, %1)  [register x]
-  call void @cqrt_ry_i32(i32 %5, double %1)    ; IR: %5 = cq_theta_ui32(%0, %1)  [Ry]
-  %6 = load i32, ptr %2, align 4    ; IR: call @llvm.memcpy(%4, %2, 16): src[0]  (classical load from the classical source)
-  %7 = call i32 @cqrt_alloc_i32(i32 %6)    ; IR: memcpy: the classical src[0] as a basis-state handle
-  call void @cqrt_qram_store_i32_hl(i32 %4, i32 0, i32 %7)    ; IR: memcpy: a[0] = src[0]  (fixed-index store)
-  %8 = getelementptr inbounds i8, ptr %2, i64 4    ; IR: memcpy: &src[1]  (classical)
-  %9 = load i32, ptr %8, align 4    ; IR: memcpy: src[1]  (classical)
-  %10 = call i32 @cqrt_alloc_i32(i32 %9)    ; IR: memcpy: src[1] as a basis-state handle
-  call void @cqrt_qram_store_i32_hl(i32 %4, i32 1, i32 %10)    ; IR: memcpy: a[1] = src[1]
-  %11 = getelementptr inbounds i8, ptr %2, i64 8    ; IR: memcpy: &src[2]  (classical)
-  %12 = load i32, ptr %11, align 4    ; IR: memcpy: src[2]  (classical)
-  %13 = call i32 @cqrt_alloc_i32(i32 %12)    ; IR: memcpy: src[2] as a basis-state handle
-  call void @cqrt_qram_store_i32_hl(i32 %4, i32 2, i32 %13)    ; IR: memcpy: a[2] = src[2]
-  %14 = getelementptr inbounds i8, ptr %2, i64 12    ; IR: memcpy: &src[3]  (classical)
-  %15 = load i32, ptr %14, align 4    ; IR: memcpy: src[3]  (classical)
-  %16 = call i32 @cqrt_alloc_i32(i32 %15)    ; IR: memcpy: src[3] as a basis-state handle
-  call void @cqrt_qram_store_i32_hl(i32 %4, i32 3, i32 %16)    ; IR: memcpy: a[3] = src[3]
-  %17 = call i32 @cq_template_and_i32_hl(i32 %5, i32 3)    ; IR: %6 = and i32 %5, 3  [the index rail; the %7 zext and the %8 gep are not emitted]
-  %18 = call i32 @cqrt_qram_load_i32(i32 %4, i32 %17)    ; IR: %9 = load i32, ptr %8: a[x & 3]  (one access: copy-out at the quantum index, cell preserved)
-  %19 = call i32 @cq_template_add_i32_hl(i32 %18, i32 1)    ; IR: %10 = add nsw i32 %9, 1
-  call void @cqrt_qram_store_i32(i32 %4, i32 %17, i32 %19)    ; IR: store i32 %10, ptr %8: a[x & 3] = a[x & 3] + 1  (one access; the displaced cell goes onto the backend's tape)
-  %20 = call i32 @cqrt_qram_load_i32_hl(i32 %4, i32 0)    ; IR: %11 = load i32, ptr %4: a[0]  (fixed-index copy-out)
-  %21 = call i32 @cqrt_qram_load_i32_hl(i32 %4, i32 3)    ; IR: %13 = load i32, ptr %12: a[3]  (the %12 gep is not emitted)
-  %22 = call i32 @cq_template_add_i32(i32 %21, i32 %20)    ; IR: %14 = add nsw i32 %13, %11  [result rail]
-  call void @cqrt_qram_load_i32_hl_unc(i32 %21, i32 %4, i32 3)    ; IR: uncompute %13 (un-copy)
-  call void @cqrt_free(i32 %21)    ; IR: release it (|0>)
-  call void @cqrt_qram_load_i32_hl_unc(i32 %20, i32 %4, i32 0)    ; IR: uncompute %11 (un-copy)
-  call void @cqrt_free(i32 %20)    ; IR: release it (|0>)
-  call void @cqrt_qram_store_i32_unc(i32 %4, i32 %17, i32 %19)    ; IR: pop the quantum-index store: a[x & 3] holds src[x & 3] again
-  call void @cq_template_add_i32_hl_unc(i32 %19, i32 %18, i32 1)    ; IR: uncompute %10
-  call void @cqrt_free(i32 %19)    ; IR: release the %10 rail (|0>)
-  call void @cqrt_qram_load_i32_unc(i32 %18, i32 %4, i32 %17)    ; IR: uncompute %9: the cell holds the value it had at the copy-out, so it un-copies
-  call void @cqrt_free(i32 %18)    ; IR: release the %9 rail (|0>)
-  call void @cq_template_and_i32_hl_unc(i32 %17, i32 %5, i32 3)    ; IR: uncompute %6
-  call void @cqrt_free(i32 %17)    ; IR: release the %6 rail (|0>)
-  call void @cqrt_qram_store_i32_hl_unc(i32 %4, i32 3, i32 %16)    ; IR: pop the memcpy stores LIFO: a[3] back to |0>
-  call void @cqrt_free(i32 %16)    ; IR: release the basis-state handle src[3]
-  call void @cqrt_qram_store_i32_hl_unc(i32 %4, i32 2, i32 %13)    ; IR: a[2]
-  call void @cqrt_free(i32 %13)    ; IR: release the basis-state handle src[2]
-  call void @cqrt_qram_store_i32_hl_unc(i32 %4, i32 1, i32 %10)    ; IR: a[1]
-  call void @cqrt_free(i32 %10)    ; IR: release the basis-state handle src[1]
-  call void @cqrt_qram_store_i32_hl_unc(i32 %4, i32 0, i32 %7)    ; IR: a[0]
-  call void @cqrt_free(i32 %7)    ; IR: release the basis-state handle src[0]
-  call void @cqrt_qram_free(i32 %4)    ; IR: llvm.lifetime.end: release the array (every store popped, all cells |0>)
-  %23 = call i32 @cqrt_measure_i32(i32 %22)    ; IR: %15 = cq_measure_si32(%14)
-  ret i32 %23    ; IR: ret i32 %15
+  %4 = call i32 @__cq_mem()    ; IR: the bus m (§5: once, at function entry)
+  %5 = call ptr @__cq_alloc(i64 16, i64 16)    ; IR: %4 = alloca [4 x i32], align 16  [a is bus-resident: one zeroed block, no alloca remains (rules 16, 20)]
+  %6 = ptrtoint ptr %5 to i64    ; IR: (no instruction) the run-time address of a, a classical i64 (rule 21)
+  %7 = ptrtoint ptr %2 to i64    ; IR: (no instruction) src: the run-time address in %2, a classical i64 (rule 21)
+  %8 = call i32 @cqrt_alloc_i32(i32 %0)    ; IR: %5 = cq_theta_ui32(%0, %1)  [register x]
+  call void @cqrt_ry_i32(i32 %8, double %1)    ; IR: %5 = cq_theta_ui32(%0, %1)  [Ry]
+  br label %9    ; IR: llvm.lifetime.start(16, %4) dropped (rule 16); llvm.memcpy(%4, %2, 16)  [rule 22: load all 16 source bytes, then store all 16]
+
+9:
+  %10 = phi i64 [ 0, %3 ], [ %13, %9 ]    ; IR: llvm.memcpy: byte index of the load loop (classical)
+  %11 = add i64 %7, %10    ; IR: llvm.memcpy: the source byte's address src + j (classical)
+  %12 = call i32 @cqrt_qram_load_i8_hl(i32 %4, i64 %11)    ; IR: llvm.memcpy: source byte j (a bus load of a HOST cell; the copy is the value rail of byte j's store, KEPT, rule 5)
+  call void @cqrt_push(i32 %12)    ; IR: llvm.memcpy: hand the byte rail to the store loop (rule 22)
+  %13 = add nuw nsw i64 %10, 1
+  %14 = icmp eq i64 %13, 16
+  br i1 %14, label %15, label %9
+
+15:
+  %16 = phi i64 [ 16, %9 ], [ %17, %15 ]    ; IR: llvm.memcpy: bytes left to store (classical)
+  %17 = add nsw i64 %16, -1    ; IR: llvm.memcpy: byte index of this store, 15 down to 0 (the pop order)
+  %18 = call i32 @cqrt_pop()    ; IR: llvm.memcpy: the load copy of byte %17
+  %19 = add i64 %6, %17    ; IR: llvm.memcpy: the destination byte's address a + j (classical)
+  call void @cqrt_qram_store_i8_hl(i32 %4, i64 %19, i32 %18)    ; IR: llvm.memcpy: destination byte j  (a kept store, rule 5; classical-valued, the cell stays HOST)
+  %20 = icmp eq i64 %17, 0
+  br i1 %20, label %21, label %15
+
+21:
+  %22 = call i32 @cq_template_and_i32_hl(i32 %8, i32 3)    ; IR: %6 = and i32 %5, 3
+  %23 = call i32 @cq_template_zext_i32_to_i64(i32 %22)    ; IR: %7 = zext nneg i32 %6 to i64
+  %24 = call i32 @cq_template_mul_i64_hl(i32 %23, i64 4)    ; IR: %8 = getelementptr inbounds [4 x i32], ptr %4, i64 0, i64 %7  [the tainted index scaled by the element size (rule 20)]
+  %25 = call i32 @cq_template_add_i64_hl(i32 %24, i64 %6)    ; IR: %8 = getelementptr  [+ the run-time base: the address rail of &a[x & 3]]
+  %26 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: %9 = load i32, ptr %8 ... store i32 %10, ptr %8: the in-place form (rule 5), a fresh |0> rail
+  call void @cqrt_qram_swap_i32(i32 %4, i32 %25, i32 %26)    ; IR: %9 = load i32, ptr %8: swap out: the rail holds a[x & 3], the cell |0>
+  %27 = call i32 @cq_template_add_i32_hl(i32 %26, i32 1)    ; IR: %10 = add nsw i32 %9, 1
+  %28 = call i32 @cq_template_sub_i32_hl(i32 %27, i32 1)    ; IR: rule 6: t = y' - 1 recomputes the old value (the update is a bijection in it)
+  call void @cqrt_copy_i32(i32 %28, i32 %26)    ; IR: rule 6: the old rail ^= t: now |0>
+  call void @cq_template_sub_i32_hl_unc(i32 %28, i32 %27, i32 1)    ; IR: rule 6: uncompute t
+  call void @cqrt_free(i32 %28)    ; IR: release t (|0>)
+  call void @cqrt_free(i32 %26)    ; IR: release the old rail (|0> after the copy)
+  call void @cqrt_qram_swap_i32(i32 %4, i32 %25, i32 %27)    ; IR: store i32 %10, ptr %8: swap in: the cell holds a[x & 3] + 1, the rail |0>
+  call void @cqrt_free(i32 %27)    ; IR: release the %10 rail (|0>)
+  call void @cq_template_add_i64_hl_unc(i32 %25, i32 %24, i64 %6)    ; IR: uncompute %8  [the second swap was the address rail's last reader (rule 20)]
+  call void @cqrt_free(i32 %25)    ; IR: release the %8 rail (|0>)
+  call void @cq_template_mul_i64_hl_unc(i32 %24, i32 %23, i64 4)    ; IR: uncompute %8 (the scaled index)
+  call void @cqrt_free(i32 %24)    ; IR: release the scaled-index rail (|0>)
+  call void @cq_template_zext_i32_to_i64_unc(i32 %23, i32 %22)    ; IR: uncompute %7
+  call void @cqrt_free(i32 %23)    ; IR: release the %7 rail (|0>)
+  call void @cq_template_and_i32_hl_unc(i32 %22, i32 %8, i32 3)    ; IR: uncompute %6
+  call void @cqrt_free(i32 %22)    ; IR: release the %6 rail (|0>)
+  %29 = call i32 @cqrt_qram_load_i32_hl(i32 %4, i64 %6)    ; IR: %11 = load i32, ptr %4: a[0]  (bus load at a classical address: a rail)
+  %30 = getelementptr inbounds i8, ptr %5, i64 12    ; IR: %12 = getelementptr inbounds i8, ptr %4, i64 12  (classical)
+  %31 = ptrtoint ptr %30 to i64    ; IR: (no instruction) the run-time address of a[3] (classical)
+  %32 = call i32 @cqrt_qram_load_i32_hl(i32 %4, i64 %31)    ; IR: %13 = load i32, ptr %12: a[3]
+  %33 = call i32 @cq_template_add_i32(i32 %32, i32 %29)    ; IR: %14 = add nsw i32 %13, %11  [result rail]
+  call void @cqrt_qram_load_i32_hl_unc(i32 %32, i32 %4, i64 %31)    ; IR: un-copy %13 (no memory version change since the load)
+  call void @cqrt_free(i32 %32)    ; IR: release the %13 rail (|0>)
+  call void @cqrt_qram_load_i32_hl_unc(i32 %29, i32 %4, i64 %6)    ; IR: un-copy %11
+  call void @cqrt_free(i32 %29)    ; IR: release the %11 rail (|0>)
+  %34 = call i32 @cqrt_measure_i32(i32 %33)    ; IR: %15 = cq_measure_si32(%14)
+  ret i32 %34    ; IR: llvm.lifetime.end(16, %4) dropped (rule 16); ret i32 %15
 }
 
 define i32 @memcpy_quantum(i32 noundef %0, i32 noundef %1, double noundef %2, double noundef %3, i32 noundef %4) {
-  %6 = alloca [4 x i32], align 4    ; IR: %6 = alloca [4 x i32]: a, a SLOT ARRAY (every access has a classical offset; its cells hold handles)
-  %7 = call i32 @cqrt_qram_alloc_i32(i32 4)    ; IR: %7 = alloca [4 x i32]: b, a 4-cell QRAM, cells |0> (b is written at a quantum index)
-  %8 = call i32 @cqrt_alloc_i32(i32 %0)    ; IR: %8 = cq_theta_ui32(%0, %2)  [register x]
-  call void @cqrt_ry_i32(i32 %8, double %2)    ; IR: %8 = cq_theta_ui32(%0, %2)  [Ry]
-  %9 = call i32 @cqrt_alloc_i32(i32 %1)    ; IR: %9 = cq_theta_ui32(%1, %3)  [register y]
-  call void @cqrt_ry_i32(i32 %9, double %3)    ; IR: %9 = cq_theta_ui32(%1, %3)  [Ry]
-  br label %10    ; IR: br label %20
+  %6 = call i32 @__cq_mem()    ; IR: the bus m (§5: once, at function entry)
+  %7 = call ptr @__cq_alloc(i64 16, i64 16)    ; IR: %6 = alloca [4 x i32], align 16  [a is bus-resident: it takes stores of rails (rules 16, 20)]
+  %8 = call ptr @__cq_alloc(i64 16, i64 16)    ; IR: %7 = alloca [4 x i32], align 16  [b is bus-resident: indexed by a rail]
+  %9 = ptrtoint ptr %7 to i64    ; IR: (no instruction) the run-time address of a (classical)
+  %10 = ptrtoint ptr %8 to i64    ; IR: (no instruction) the run-time address of b (classical)
+  %11 = call i32 @cqrt_alloc_i32(i32 %0)    ; IR: %8 = cq_theta_ui32(%0, %2)  [register x]
+  call void @cqrt_ry_i32(i32 %11, double %2)    ; IR: %8 = cq_theta_ui32(%0, %2)  [Ry]
+  %12 = call i32 @cqrt_alloc_i32(i32 %1)    ; IR: %9 = cq_theta_ui32(%1, %3)  [register y]
+  call void @cqrt_ry_i32(i32 %12, double %3)    ; IR: %9 = cq_theta_ui32(%1, %3)  [Ry]
+  br label %13    ; IR: llvm.lifetime.start of %6 and %7 dropped (rule 16); br label %20
 
-10:
-  %11 = phi i64 [ 0, %5 ], [ %15, %10 ]    ; IR: %21 = phi i64 [ 0, %5 ], [ %25, %20 ]  (classical i)
-  %12 = trunc nuw nsw i64 %11 to i32    ; IR: %22 = trunc nuw nsw i64 %21 to i32  (classical)
-  %13 = call i32 @cq_template_add_i32_hl(i32 %8, i32 %12)    ; IR: %23 = add i32 %8, %22  [a[i]'s value rail]
-  %14 = getelementptr inbounds [4 x i32], ptr %6, i64 0, i64 %11    ; IR: %24  (slot of a[i])
-  store i32 %13, ptr %14, align 4    ; IR: store i32 %23, ptr %24: a[i] = x + i  (the slot takes the handle; no gate)
-  %15 = add nuw nsw i64 %11, 1    ; IR: %25 = add nuw nsw i64 %21, 1  (classical)
-  %16 = icmp eq i64 %15, 4    ; IR: %26 = icmp eq i64 %25, 4  (classical bound)
-  br i1 %16, label %17, label %10    ; IR: br i1 %26, label %10, label %20
+13:
+  %14 = phi i64 [ 0, %5 ], [ %19, %13 ]    ; IR: %21 = phi i64 [ 0, %5 ], [ %25, %20 ]  (classical i)
+  %15 = trunc nuw nsw i64 %14 to i32    ; IR: %22 = trunc nuw nsw i64 %21 to i32  (classical)
+  %16 = call i32 @cq_template_add_i32_hl(i32 %11, i32 %15)    ; IR: %23 = add i32 %8, %22  [a[i]'s value rail: the value rail of a kept store, so not pushed (rule 14)]
+  %17 = getelementptr inbounds [4 x i32], ptr %7, i64 0, i64 %14    ; IR: %24 = getelementptr inbounds [4 x i32], ptr %6, i64 0, i64 %21  (classical)
+  %18 = ptrtoint ptr %17 to i64    ; IR: (no instruction) the run-time address of a[i] (classical)
+  call void @cqrt_qram_store_i32_hl(i32 %6, i64 %18, i32 %16)    ; IR: store i32 %23, ptr %24: a[i] = x + i  (a kept store: its tape slot and value rail stay, rule 5)
+  %19 = add nuw nsw i64 %14, 1    ; IR: %25 = add nuw nsw i64 %21, 1  (classical)
+  %20 = icmp eq i64 %19, 4    ; IR: %26 = icmp eq i64 %25, 4  (classical bound)
+  br i1 %20, label %21, label %13    ; IR: br i1 %26, label %10, label %20  [no reverse loop: every trip rail is kept]
 
-17:
-  %18 = load i32, ptr %6, align 4    ; IR: call @llvm.memcpy(%7, %6, 16): a[0]  (the handle in slot 0, no gate)
-  call void @cqrt_qram_store_i32_hl(i32 %7, i32 0, i32 %18)    ; IR: memcpy: b[0] = a[0]  (fixed-index store of a's cell rail)
-  %19 = getelementptr inbounds [4 x i32], ptr %6, i64 0, i64 1
-  %20 = load i32, ptr %19, align 4    ; IR: memcpy: a[1]  (slot load)
-  call void @cqrt_qram_store_i32_hl(i32 %7, i32 1, i32 %20)    ; IR: memcpy: b[1] = a[1]
-  %21 = getelementptr inbounds [4 x i32], ptr %6, i64 0, i64 2
-  %22 = load i32, ptr %21, align 4    ; IR: memcpy: a[2]  (slot load)
-  call void @cqrt_qram_store_i32_hl(i32 %7, i32 2, i32 %22)    ; IR: memcpy: b[2] = a[2]
-  %23 = getelementptr inbounds [4 x i32], ptr %6, i64 0, i64 3
-  %24 = load i32, ptr %23, align 4    ; IR: memcpy: a[3]  (slot load)
-  call void @cqrt_qram_store_i32_hl(i32 %7, i32 3, i32 %24)    ; IR: memcpy: b[3] = a[3]
-  %25 = call i32 @cq_template_and_i32_hl(i32 %9, i32 3)    ; IR: %11 = and i32 %9, 3  [the index rail; the %12 zext and the %13 gep are not emitted]
-  %26 = call i32 @cqrt_alloc_i32(i32 %4)    ; IR: store i32 %4, ptr %13: the classical value c as a basis-state handle
-  call void @cqrt_qram_store_i32(i32 %7, i32 %25, i32 %26)    ; IR: store i32 %4, ptr %13: b[y & 3] = c  (one access; the backend fans out over the cells)
-  %27 = load i32, ptr %19, align 4    ; IR: %15 = load i32, ptr %14: a[1]  (the handle in slot 1, no gate; the %14 gep is cell 1)
-  %28 = call i32 @cqrt_qram_load_i32_hl(i32 %7, i32 1)    ; IR: %17 = load i32, ptr %16: b[1]  (fixed-index copy-out; the %16 gep is not emitted)
-  %29 = call i32 @cq_template_add_i32(i32 %28, i32 %27)    ; IR: %18 = add nsw i32 %17, %15  [result rail]
-  call void @cqrt_qram_load_i32_hl_unc(i32 %28, i32 %7, i32 1)    ; IR: uncompute %17 (un-copy)
-  call void @cqrt_free(i32 %28)    ; IR: release it (|0>)
-  call void @cqrt_qram_store_i32_unc(i32 %7, i32 %25, i32 %26)    ; IR: pop the quantum-index store: every b cell holds its copy again
-  call void @cqrt_free(i32 %26)    ; IR: release the value handle (basis state c)
-  call void @cq_template_and_i32_hl_unc(i32 %25, i32 %9, i32 3)    ; IR: uncompute %11
-  call void @cqrt_free(i32 %25)    ; IR: release the %11 rail (|0>)
-  call void @cqrt_qram_store_i32_hl_unc(i32 %7, i32 3, i32 %24)    ; IR: pop the memcpy stores LIFO: b[3] back to |0>
-  call void @cqrt_qram_store_i32_hl_unc(i32 %7, i32 2, i32 %22)    ; IR: b[2]
-  call void @cqrt_qram_store_i32_hl_unc(i32 %7, i32 1, i32 %20)    ; IR: b[1]
-  call void @cqrt_qram_store_i32_hl_unc(i32 %7, i32 0, i32 %18)    ; IR: b[0]
-  br label %30
+21:
+  %22 = phi i64 [ 0, %13 ], [ %25, %21 ]    ; IR: llvm.memcpy(%7, %6, 16): byte index of the load loop (classical)  [rule 22: load all 16 source bytes, then store all 16]
+  %23 = add i64 %9, %22    ; IR: llvm.memcpy: the source byte's address a + j (classical)
+  %24 = call i32 @cqrt_qram_load_i8_hl(i32 %6, i64 %23)    ; IR: llvm.memcpy: source byte j of a (a QUANTUM cell; the copy is the value rail of byte j's store, KEPT, rule 5)
+  call void @cqrt_push(i32 %24)    ; IR: llvm.memcpy: hand the byte rail to the store loop (rule 22)
+  %25 = add nuw nsw i64 %22, 1
+  %26 = icmp eq i64 %25, 16
+  br i1 %26, label %27, label %21
 
-30:
-  %31 = phi i64 [ 3, %17 ], [ %35, %30 ]    ; IR: reverse of the fill loop: i from 3 down to 0
-  %32 = trunc nuw nsw i64 %31 to i32    ; IR: %22 of that trip (classical)
-  %33 = getelementptr inbounds [4 x i32], ptr %6, i64 0, i64 %31    ; IR: %24 of that trip
-  %34 = load i32, ptr %33, align 4    ; IR: the %23 rail of that trip (the handle a[i] holds)
-  call void @cq_template_add_i32_hl_unc(i32 %34, i32 %8, i32 %32)    ; IR: uncompute %23 (no store on b reads it any more)
-  call void @cqrt_free(i32 %34)    ; IR: release the %23 rail (|0>)
-  %35 = add nsw i64 %31, -1
-  %36 = icmp sgt i64 %31, 0
-  br i1 %36, label %30, label %37
+27:
+  %28 = phi i64 [ 16, %21 ], [ %29, %27 ]    ; IR: llvm.memcpy: bytes left to store (classical)
+  %29 = add nsw i64 %28, -1    ; IR: llvm.memcpy: byte index of this store, 15 down to 0 (the pop order)
+  %30 = call i32 @cqrt_pop()    ; IR: llvm.memcpy: the load copy of byte %29
+  %31 = add i64 %10, %29    ; IR: llvm.memcpy: the destination byte's address b + j (classical)
+  call void @cqrt_qram_store_i8_hl(i32 %6, i64 %31, i32 %30)    ; IR: llvm.memcpy: destination byte j of b  (a kept store, rule 5)
+  %32 = icmp eq i64 %29, 0
+  br i1 %32, label %33, label %27
 
-37:
-  call void @cqrt_qram_free(i32 %7)    ; IR: llvm.lifetime.end(%7): release b (every store popped, all cells |0>)
-  %38 = call i32 @cqrt_measure_i32(i32 %29)    ; IR: %19 = cq_measure_si32(%18)
-  ret i32 %38    ; IR: ret i32 %19
+33:
+  %34 = call i32 @cq_template_and_i32_hl(i32 %12, i32 3)    ; IR: %11 = and i32 %9, 3
+  %35 = call i32 @cq_template_zext_i32_to_i64(i32 %34)    ; IR: %12 = zext nneg i32 %11 to i64
+  %36 = call i32 @cq_template_mul_i64_hl(i32 %35, i64 4)    ; IR: %13 = getelementptr inbounds [4 x i32], ptr %7, i64 0, i64 %12  [the tainted index scaled by the element size (rule 20)]
+  %37 = call i32 @cq_template_add_i64_hl(i32 %36, i64 %10)    ; IR: %13 = getelementptr  [+ the run-time base: the address rail of &b[y & 3]]
+  %38 = call i32 @cqrt_alloc_i32(i32 %4)    ; IR: store i32 %4, ptr %13: the value seed c (rule 7; kept with the store)
+  call void @cqrt_qram_store_i32(i32 %6, i32 %37, i32 %38)    ; IR: store i32 %4, ptr %13: b[y & 3] = c  (a kept store at an address rail, rule 5)
+  call void @cq_template_add_i64_hl_unc(i32 %37, i32 %36, i64 %10)    ; IR: uncompute %13  [the store was the address rail's last reader (rules 5, 20)]
+  call void @cqrt_free(i32 %37)    ; IR: release the %13 rail (|0>)
+  call void @cq_template_mul_i64_hl_unc(i32 %36, i32 %35, i64 4)    ; IR: uncompute %13 (the scaled index)
+  call void @cqrt_free(i32 %36)    ; IR: release the scaled-index rail (|0>)
+  call void @cq_template_zext_i32_to_i64_unc(i32 %35, i32 %34)    ; IR: uncompute %12
+  call void @cqrt_free(i32 %35)    ; IR: release the %12 rail (|0>)
+  call void @cq_template_and_i32_hl_unc(i32 %34, i32 %12, i32 3)    ; IR: uncompute %11
+  call void @cqrt_free(i32 %34)    ; IR: release the %11 rail (|0>)
+  %39 = getelementptr inbounds i8, ptr %7, i64 4    ; IR: %14 = getelementptr inbounds i8, ptr %6, i64 4  (classical)
+  %40 = ptrtoint ptr %39 to i64    ; IR: (no instruction) the run-time address of a[1] (classical)
+  %41 = call i32 @cqrt_qram_load_i32_hl(i32 %6, i64 %40)    ; IR: %15 = load i32, ptr %14: a[1]  (bus load at a classical address: a rail)
+  %42 = getelementptr inbounds i8, ptr %8, i64 4    ; IR: %16 = getelementptr inbounds i8, ptr %7, i64 4  (classical)
+  %43 = ptrtoint ptr %42 to i64    ; IR: (no instruction) the run-time address of b[1] (classical)
+  %44 = call i32 @cqrt_qram_load_i32_hl(i32 %6, i64 %43)    ; IR: %17 = load i32, ptr %16: b[1]
+  %45 = call i32 @cq_template_add_i32(i32 %44, i32 %41)    ; IR: %18 = add nsw i32 %17, %15  [result rail]
+  call void @cqrt_qram_load_i32_hl_unc(i32 %44, i32 %6, i64 %43)    ; IR: un-copy %17 (no memory version change since the load)
+  call void @cqrt_free(i32 %44)    ; IR: release the %17 rail (|0>)
+  call void @cqrt_qram_load_i32_hl_unc(i32 %41, i32 %6, i64 %40)    ; IR: un-copy %15
+  call void @cqrt_free(i32 %41)    ; IR: release the %15 rail (|0>)
+  %46 = call i32 @cqrt_measure_i32(i32 %45)    ; IR: %19 = cq_measure_si32(%18)
+  ret i32 %46    ; IR: llvm.lifetime.end of %7 and %6 dropped (rule 16); ret i32 %19
 }
 
+declare i32 @__cq_mem()
+declare ptr @__cq_alloc(i64, i64)
 declare i32 @cqrt_alloc_i32(i32)
 declare void @cqrt_ry_i32(i32, double)
 declare void @cqrt_free(i32)
 declare i32 @cqrt_measure_i32(i32)
-declare i32 @cqrt_qram_alloc_i32(i32)
-declare void @cqrt_qram_free(i32)
-declare i32 @cqrt_qram_load_i32(i32, i32)
-declare void @cqrt_qram_load_i32_unc(i32, i32, i32)
-declare i32 @cqrt_qram_load_i32_hl(i32, i32)
-declare void @cqrt_qram_load_i32_hl_unc(i32, i32, i32)
+declare void @cqrt_copy_i32(i32, i32)
+declare void @cqrt_push(i32)
+declare i32 @cqrt_pop()
+declare i32 @cqrt_qram_load_i8_hl(i32, i64)
+declare void @cqrt_qram_store_i8_hl(i32, i64, i32)
+declare i32 @cqrt_qram_load_i32_hl(i32, i64)
+declare void @cqrt_qram_load_i32_hl_unc(i32, i32, i64)
+declare void @cqrt_qram_store_i32_hl(i32, i64, i32)
 declare void @cqrt_qram_store_i32(i32, i32, i32)
-declare void @cqrt_qram_store_i32_unc(i32, i32, i32)
-declare void @cqrt_qram_store_i32_hl(i32, i32, i32)
-declare void @cqrt_qram_store_i32_hl_unc(i32, i32, i32)
-declare i32 @cq_template_add_i32_hl(i32, i32)
-declare void @cq_template_add_i32_hl_unc(i32, i32, i32)
-declare i32 @cq_template_add_i32(i32, i32)
+declare void @cqrt_qram_swap_i32(i32, i32, i32)
 declare i32 @cq_template_and_i32_hl(i32, i32)
 declare void @cq_template_and_i32_hl_unc(i32, i32, i32)
+declare i32 @cq_template_zext_i32_to_i64(i32)
+declare void @cq_template_zext_i32_to_i64_unc(i32, i32)
+declare i32 @cq_template_mul_i64_hl(i32, i64)
+declare void @cq_template_mul_i64_hl_unc(i32, i32, i64)
+declare i32 @cq_template_add_i64_hl(i32, i64)
+declare void @cq_template_add_i64_hl_unc(i32, i32, i64)
+declare i32 @cq_template_add_i32_hl(i32, i32)
+declare i32 @cq_template_sub_i32_hl(i32, i32)
+declare void @cq_template_sub_i32_hl_unc(i32, i32, i32)
+declare i32 @cq_template_add_i32(i32, i32)

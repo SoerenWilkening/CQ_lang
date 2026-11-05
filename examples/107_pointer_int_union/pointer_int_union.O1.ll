@@ -16,17 +16,16 @@ define i32 @union_ptr_to_int(i32 noundef %0, double noundef %1, i32 noundef %2) 
   store i64 17179869187, ptr %5, align 8    ; C: b = {3, 4}
   %7 = and i32 %6, 1    ; C: x & 1
   %8 = icmp eq i32 %7, 0    ; C: (x & 1) ? ... : ...
-  %9 = getelementptr inbounds i8, ptr %5, i64 4    ; C: b + 1
-  %10 = select i1 %8, ptr %9, ptr %4    ; C: u.p = (x & 1) ? a : b + 1;  (the union is folded into its value by SROA)
-  %11 = ptrtoint ptr %10 to i64    ; C: u.v  (the pointer member read as an integer)
-  %12 = add i64 %11, 4    ; C: u.v += 4;
-  %13 = inttoptr i64 %12 to ptr    ; C: u.p  (the integer member read as a pointer)
-  %14 = load i32, ptr %13, align 4, !tbaa !6    ; C: *u.p
-  %15 = add nsw i32 %14, %2    ; C: *u.p + w
-  %16 = call i32 @cq_measure_si32(i32 noundef %15) #5    ; C: cq_measure(*u.p + w)
+  %9 = select i1 %8, ptr %5, ptr %4    ; C: u.p = (x & 1) ? a : b;  (the union is folded into its value by SROA)
+  %10 = ptrtoint ptr %9 to i64    ; C: u.v  (the pointer member read as an integer)
+  %11 = or disjoint i64 %10, 4    ; C: u.v += 4;  (both arrays are 8-aligned, so -O1 writes the add as a disjoint or)
+  %12 = inttoptr i64 %11 to ptr    ; C: u.p  (the integer member read as a pointer)
+  %13 = load i32, ptr %12, align 4, !tbaa !6    ; C: *u.p
+  %14 = add nsw i32 %13, %2    ; C: *u.p + w
+  %15 = call i32 @cq_measure_si32(i32 noundef %14) #5    ; C: cq_measure(*u.p + w)
   call void @llvm.lifetime.end.p0(i64 8, ptr nonnull %5) #5    ; C: (b goes out of scope)
   call void @llvm.lifetime.end.p0(i64 8, ptr nonnull %4) #5    ; C: (a goes out of scope)
-  ret i32 %16    ; C: return
+  ret i32 %15    ; C: return
 }
 
 ; Function Attrs: mustprogress nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)

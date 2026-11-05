@@ -1,174 +1,239 @@
-; HAND-WRITTEN. Rules: 20 (bool x[nq] and y[nq] are runtime-sized slot arrays: one `alloca i32, nq` of i1 handle cells each,
-; as 74), 2 (cq_theta(false, pi/2), -O1's constant-propagated init, mints alloc_i1(0) + ry_i1 and the handle is stored in
-; the cell; the second cq_theta rotates the cell's rail in place), 14 (every loop has the classical bound nq and stays a
-; ROLLED classical loop), 4 (the oracle bit y[i] = x[i] ^ (x[j] & (s >> i) & 1), at -O1's widths: zext_i1_to_i32 of x[j]
-; once, then per trip zext_i1_to_i32 of x[i], and_i32_hl against the classical (s >> i), icmp_ne_i32 of the two: every
-; one a fresh rail; the icmp rail IS the output register y[i] and is stored into y's cell), 5 (the two per-trip rails are
-; uncomputed in their own trip right after the icmp, their last consumer; nothing is carried, so no handle stack is needed;
-; the hoisted x[j] view is uncomputed at the loop exit; all of it before the Ry(-pi/2) loop rotates x), 3 (the cttz/select
-; computing j and the lshr of s are classical).
-; Checked: x[0..nq-1] (measured after H^n) and y[0..nq-1] (the output register f(x), measured).
-; Clean: the x[j] view, and per trip the x[i] view and the and rail (2 * nq + 1 rails).
-; Kept: x[0..nq-1] and y[0..nq-1] (all measured). y stays entangled with x by construction (it is f(x)); it is a user
-;   register, not garbage.
-; Rotations: Ry(pi/2) on x[0..nq-1] (control 1); Ry(-pi/2) on x[0..nq-1] (control 1). No phase gate.
-; Expected: f(x) = x ^ (x_j ? s : 0) satisfies f(x) = f(x ^ s), so every outcome m of x satisfies m . s = 0 (mod 2) and is
-;   uniform over that subspace (2^(nq-1) values for s != 0); the y outcome is uniform over the image of f and equals f of
-;   the collapsed coset. Replayed (state vector over the trace): simon(3, 5) -> m in {0, 2, 5, 7}, p = 1/4 each, for each m
-;   y uniform over the 4 values with y_0 = 0; simon(4, 6) -> m in {0, 1, 6, 7, 8, 9, 14, 15}, p = 1/8 each, y uniform over
-;   the 8 values with y_1 = 0; every free hits |0>. Return value m | (y << 16).
-; -O1 keeps the three loops in source order: the oracle loop reads x's cells after the Ry(pi/2) loop and before the
-; Ry(-pi/2) loop, so every gate of the oracle is emitted at the position of the instruction it lowers; no instruction is
-; moved across a rotation. LICM hoisted the load of x[j] and its zext out of the oracle loop into the guarded preheader %14:
-; that rail is computed once and read by every trip. The `(s >> i) & zext(x[j])` keeps all 32 bits of s >> i, but x[j] is 0
-; or 1, so the and rail is ((s >> i) & 1) & x[j]; `icmp ne` against zext(x[i]) is the xor of two bits. The measurement loops
-; read the cells (handles unchanged) and measure with cqrt_measure_i1.
+; HAND-WRITTEN. Rules: 20, 21, 16, 2, 3, 4, 5, 7, 14; §1.3 (the bus, __cq_mem, __cq_alloc, qram_swap).
+; Checked: m = sum_i cq_measure(x[i]) << i and f = sum_i cq_measure(y[i]) << i: each measured bit is the i1 load copy of
+; cell x + i (IR %66/%67 -> %68) or y + i (IR %84/%85 -> %86). The cells of the blocks x and y on the bus at exit: the
+; low bit of cell x + i holds the measured outcome of x[i], that of cell y + i the measured y[i] (their high 7 bits 0).
+; Clean: per H trip and per Ry(-pi/2) trip, the swap rail of the in-place form (|0> after its swap-in, freed). Per oracle
+; trip: the i8 load copy of x[i] (%34), its zext rail (%35), the and rail (%38) and the compare rail (%39), all
+; uncomputed and freed in the trip before the store into y[i] (rule 5 sentence 1: the copy's last reader, the zext _unc,
+; precedes the store, the next memory version change). After the oracle loop: the zext rail of the x[j] copy (%18).
+; Left allocated, un-copied: the i8 load copy of x[j] (%17), un-copied at the loop exit after its last reader, the zext
+; _unc; the stores into y lie between, so it is overtaken and not freed (rule 5 sentence 1).
+; Kept: by rule 5 sentence 3 the nq kept stores `store i8 0, ptr %22` of the H loop, each with its tape slot and its
+; value seed alloc_i8(0) (rule 7; classical-valued, no qubit), and the nq kept stores into y[i], each with its tape
+; slot (the displaced cell: 0 from __cq_alloc) and its value rail, the zext_i1_to_i8 rail of %41 (a basis copy of y[i]);
+; by rule 2 the 2 nq measured i1 load copies (%67, %85). The cells x[i] and
+; y[i] themselves are the registers.
+; Rotations: (Ry, cell x[i], pi/2, 1) for i = 0..nq-1; (Ry, cell x[i], -pi/2, 1) for i = 0..nq-1. No phase gate.
+; Simon's problem on nq input qubits, nq and s runtime parameters: every loop is a ROLLED classical loop with the
+; classical bound nq (rule 14), and no size is fixed at compile time. ONE BUS (rules 16, 20, 21). `bool x[nq], y[nq]`
+; are -O1's two `alloca i8, i64 nq`; each stores a tainted value (x the rotated bit, y the oracle bit), which no user of
+; rule 20 (b) allows, so both are BUS-RESIDENT: __cq_alloc(nq, 16) each at its program point, no alloca remains (rule 16:
+; zeroed host memory at an address never reused; the size is classical, no K2). m = __cq_mem() is called once, at entry
+; (§5). Every index is the classical loop counter (or the classical j), so every getelementptr stays and every access is
+; `_hl` at the ptrtoint of its getelementptr. The cells are the registers: no handle is ever stored (§1.1).
+; Gate shapes:
+;  (0) H layer `x[i] = false; cq_theta(&x[i], pi/2)`: `store i8 0, ptr %22` is a KEPT store of the seed alloc_i8(0)
+;      (rules 5 sentence 3, 7); -O1 forwarded the stored 0 into the theta (`cq_theta_i1(false, ..)`), and the theta,
+;      `zext`, `store i8 %24, ptr %22` is rule 5's in-place form at width i1 (Readers: y is the forwarded value, the
+;      interval runs from the first store; Width casts), as 115: alloc_i1(0), qram_swap_i1_hl, Ry(pi/2) on the swap
+;      rail, qram_swap_i1_hl, free.
+;  (1) oracle y[i] = x[i] ^ (x[j] & ((s >> i) & 1)): LICM hoisted `load i8 x[j]; zext nneg i8 to i32` into the guarded
+;      preheader %14: a bus load at the access type i8 (no trunc), qram_load_i8_hl, and zext_i8_to_i32 into a fresh rail
+;      read by every trip. Per trip: x[i] is qram_load_i8_hl and zext_i8_to_i32 (fresh rails), the and against the
+;      classical s >> i is and_i32_hl (handle first), the `icmp ne` of the two is icmp_ne_i32 into a fresh i1 rail, and
+;      `zext i1 to i8; store i8` into y[i] is the zext_i1_to_i8 template (rule 4) and a kept store qram_store_i8_hl of
+;      its rail (rules 5 sentence 3, 20: the access type i8). The compare rail's only consumer is that zext, whose rail
+;      is kept, so the compare, the and, the x[i] zext and the x[i] copy are uncomputed right after the zext, before
+;      the store. The x[j] copy is read through its zext rail by every trip, the last read is the zext _unc at the loop
+;      exit, after the stores: the copy is un-copied right after that _unc and, overtaken, not freed (rule 5 sentence 1).
+;  (2) Ry(-pi/2) layer: `load i8; trunc nuw to i1; cq_theta_i1; zext; store i8` on the SSA pointer %50 is rule 5's
+;      in-place form at width i1: alloc_i1(0), qram_swap_i1_hl, Ry(-pi/2) on the swap rail, qram_swap_i1_hl, free.
+;  (3) measure loops: `load i8; trunc nuw to i1; cq_measure_i1` is a plain bus load at width i1 (SPEC GAP 1), measured
+;      and never un-copied (rule 2).
+; Nothing is pushed: every rail that rule 5 does not keep dies inside its trip or at the oracle loop's exit (rule 14).
+; Expected: the x[j] copy is a computational-basis record of x[j] taken after H^n and before the oracle; it is
+;   un-copied at the oracle loop's exit, before the second H^n. The stores between write only y's cells, so the un-copy
+;   reads the value it copied and leaves the rail |0> (rule 5 never asks this, so the rail is not freed): x is not
+;   entangled with it, and the Simon property holds. Analytic (not replayed): simon(3, 5) -> m in {0, 2, 5, 7}
+;   (p = 1/4 each), y uniform over the 4 values with y_0 = 0; simon(4, 6) -> m in {0, 1, 6, 7, 8, 9, 14, 15} (p = 1/8
+;   each), y uniform over the 8 values with y_1 = 0; every m . s = 0. The other kept rails are classical-valued (the
+;   seeds, the tape slots of zeroed cells) or basis copies of the measured y (the y store value rails), and change no
+;   outcome. Return value m | (f << 16).
+; -O1 keeps the five loops (H, oracle, Ry(-pi/2), measure x, measure y) in source order: the oracle loop reads x's cells after the Ry(pi/2) loop and before the
+; Ry(-pi/2) loop, so every gate is emitted at the position of the instruction it lowers. The `(s >> i) & zext(x[j])`
+; keeps all 32 bits of s >> i, but x[j] is 0 or 1, so the and rail is ((s >> i) & 1) & x[j]; `icmp ne` against
+; zext(x[i]) is the xor of two bits.
+; SPEC GAP 1: rule 5's Width-casts clause fixes the width U = i1 only for a reader's plain load of a form. The measure
+; loops' `load i8; trunc nuw to i1` reads no SSA value of a form; chosen as 115 and 117 do: one qram_load_i1_hl at the
+; trunc's width (the low bit of the cell), measured, not a qram_load_i8 and a trunc template. The oracle's `load i8`
+; feeds `zext nneg i8 to i32` with no trunc and is qram_load_i8_hl at the access type.
 source_filename = "simon.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 
 define i32 @simon(i32 noundef %0, i32 noundef %1) {
-  %3 = zext i32 %0 to i64    ; IR: %3 = zext i32 %0 to i64  (classical cell count)
-  %4 = alloca i32, i64 %3, align 16    ; IR: %4 = alloca i8, i64 %3  (slot array of runtime length nq: one i1 handle per cell of x; rule 20)
-  %5 = alloca i32, i64 %3, align 16    ; IR: %5 = alloca i8, i64 %3  (slot array of runtime length nq: one i1 handle per cell of y)
-  %6 = icmp eq i32 %1, 0    ; IR: %6  (classical)
-  %7 = call i32 @llvm.cttz.i32(i32 %1, i1 true)    ; IR: %7 = llvm.cttz.i32(%1, true)  (classical)
-  %8 = select i1 %6, i32 0, i32 %7    ; IR: %8  (classical j)
-  %9 = icmp sgt i32 %0, 0    ; IR: %9  (classical)
-  br i1 %9, label %10, label %18    ; IR: br i1 %9, label %10, label %12
+  %3 = call i32 @__cq_mem()    ; IR: (no instruction) the bus handle m (once, at function entry, §5)
+  %4 = zext i32 %0 to i64    ; IR: %3 = zext i32 %0 to i64  (classical nq: each block's size in bytes)
+  %5 = call ptr @__cq_alloc(i64 %4, i64 16)    ; IR: %4 = alloca i8, i64 %3, align 16  [x: bus-resident (a store of a tainted value): one zeroed block, no alloca remains (rules 16, 20)]
+  %6 = call ptr @__cq_alloc(i64 %4, i64 16)    ; IR: %5 = alloca i8, i64 %3, align 16  [y: bus-resident (a store of a tainted value): one zeroed block]
+  %7 = icmp eq i32 %1, 0    ; IR: %6  (classical)
+  %8 = call i32 @llvm.cttz.i32(i32 %1, i1 true)    ; IR: %7 = llvm.cttz.i32(%1, true)  (classical)
+  %9 = select i1 %7, i32 0, i32 %8    ; IR: %8  (classical j)
+  %10 = icmp sgt i32 %0, 0    ; IR: %9  (classical)
+  br i1 %10, label %11, label %21    ; IR: br i1 %9, label %10, label %12
 
-10:; IR: block %10
-  %11 = zext nneg i32 %0 to i64    ; IR: %11  (classical bound)
-  br label %12    ; IR: br label %20
+11:; IR: block %10
+  %12 = zext nneg i32 %0 to i64    ; IR: %11  (classical bound)
+  br label %13    ; IR: br label %20
 
-12:; IR: block %20  (x[i] = false; H^n: the Ry(pi/2) loop, classical bound nq)
-  %13 = phi i64 [ 0, %10 ], [ %16, %12 ]    ; IR: %21  (classical i)
-  %14 = getelementptr inbounds i32, ptr %4, i64 %13    ; IR: %22  (slot of x[i])
-  %15 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: store i8 0, ptr %22; %23 = cq_theta_i1(false, pi/2)  [register x[i], minted from the literal false]
-  call void @cqrt_ry_i1(i32 %15, double 0x3FF921FB54442D18)    ; IR: %23 = cq_theta_i1(false, pi/2)  [Ry(pi/2) on x[i]]
-  store i32 %15, ptr %14, align 4    ; IR: %24 = zext; store i8 %24, ptr %22  (the cell holds the handle of x[i])
-  %16 = add nuw nsw i64 %13, 1    ; IR: %25  (classical)
-  %17 = icmp eq i64 %16, %11    ; IR: %26  (classical)
-  br i1 %17, label %18, label %12    ; IR: br i1 %26, label %12, label %20
+13:; IR: block %20  (x[i] = false; H^n: the Ry(pi/2) loop, classical bound nq)
+  %14 = phi i64 [ 0, %11 ], [ %19, %13 ]    ; IR: %21  (classical i)
+  %15 = getelementptr inbounds i8, ptr %5, i64 %14    ; IR: %22 = getelementptr inbounds i8, ptr %4, i64 %21  (untainted index: stays)
+  %16 = ptrtoint ptr %15 to i64    ; IR: %22 as its run-time address (the _hl operand)
+  %17 = call i32 @cqrt_alloc_i8(i8 0)    ; IR: store i8 0, ptr %22  [the seed of the classical 0: the store's value rail, KEPT with it (rules 5, 7)]
+  call void @cqrt_qram_store_i8_hl(i32 %3, i64 %16, i32 %17)    ; IR: store i8 0, ptr %22  [a kept store at a classical address (rule 5 sentence 3); classical-valued, the cell stays HOST]
+  %18 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: %23 = cq_theta_i1(false, pi/2): in-place form at width i1 on %22, y the 0 -O1 forwarded from the store (rule 5 Readers, Width casts); the swap rail (|0>)
+  call void @cqrt_qram_swap_i1_hl(i32 %3, i64 %16, i32 %18)    ; IR: swap-out of the low bit: the rail holds x[i] (= 0), the cell's bit |0>
+  call void @cqrt_ry_i1(i32 %18, double 0x3FF921FB54442D18)    ; IR: %23 = cq_theta_i1(false, pi/2)  [Ry(pi/2) on x[i]]
+  call void @cqrt_qram_swap_i1_hl(i32 %3, i64 %16, i32 %18)    ; IR: %24 = zext i1 %23 to i8; store i8 %24, ptr %22: swap-in: the cell holds x[i]
+  call void @cqrt_free(i32 %18)    ; IR: release the swap rail (|0>)
+  %19 = add nuw nsw i64 %14, 1    ; IR: %25  (classical)
+  %20 = icmp eq i64 %19, %12    ; IR: %26  (classical)
+  br i1 %20, label %21, label %13    ; IR: br i1 %26, label %12, label %20
 
-18:; IR: block %12
-  %19 = icmp sgt i32 %0, 0    ; IR: %13  (classical)
-  br i1 %19, label %20, label %39    ; IR: br i1 %13, label %14, label %27
+21:; IR: block %12
+  %22 = icmp sgt i32 %0, 0    ; IR: %13  (classical)
+  br i1 %22, label %23, label %46    ; IR: br i1 %13, label %14, label %27
 
-20:; IR: block %14  (the oracle loop's preheader)
-  %21 = zext nneg i32 %8 to i64    ; IR: %15  (classical)
-  %22 = getelementptr inbounds i32, ptr %4, i64 %21    ; IR: %16  (slot of x[j])
-  %23 = load i32, ptr %22, align 4    ; IR: %17 = load i8, ptr %16  (handle of x[j]; no gate)
-  %24 = call i32 @cq_template_zext_i1_to_i32(i32 %23)    ; IR: %18 = zext nneg i8 %17 to i32  [x[j] widened into a fresh rail]
-  %25 = zext nneg i32 %0 to i64    ; IR: %19  (classical bound)
-  br label %26    ; IR: br label %31
+23:; IR: block %14  (the oracle loop's preheader)
+  %24 = zext nneg i32 %9 to i64    ; IR: %15  (classical)
+  %25 = getelementptr inbounds i8, ptr %5, i64 %24    ; IR: %16 = getelementptr inbounds i8, ptr %4, i64 %15  (the cell x[j]; untainted index: stays)
+  %26 = ptrtoint ptr %25 to i64    ; IR: %16 as its run-time address
+  %27 = call i32 @cqrt_qram_load_i8_hl(i32 %3, i64 %26)    ; IR: %17 = load i8, ptr %16  [a bus load at the access type i8 (no trunc): the copy of x[j]; the stores into y overtake it before its last reader: un-copied at the loop exit, not freed (rule 5 sentence 1)]
+  %28 = call i32 @cq_template_zext_i8_to_i32(i32 %27)    ; IR: %18 = zext nneg i8 %17 to i32  [x[j] widened into a fresh rail]
+  %29 = zext nneg i32 %0 to i64    ; IR: %19  (classical bound)
+  br label %30    ; IR: br label %31
 
-26:; IR: block %31  (the oracle: y[i] = x[i] ^ (x[j] & s_i), classical bound nq)
-  %27 = phi i64 [ 0, %20 ], [ %36, %26 ]    ; IR: %32  (classical i)
-  %28 = getelementptr inbounds i32, ptr %4, i64 %27    ; IR: %33  (slot of x[i])
-  %29 = load i32, ptr %28, align 4    ; IR: %34 = load i8, ptr %33  (handle of x[i]; no gate)
-  %30 = call i32 @cq_template_zext_i1_to_i32(i32 %29)    ; IR: %35 = zext nneg i8 %34 to i32  [fresh rail]
-  %31 = trunc nuw nsw i64 %27 to i32    ; IR: %36  (classical)
-  %32 = lshr i32 %1, %31    ; IR: %37 = lshr i32 %1, %36  (classical s >> i)
-  %33 = call i32 @cq_template_and_i32_hl(i32 %24, i32 %32)    ; IR: %38 = and i32 %37, %18  [commutative: handle first; fresh rail]
-  %34 = call i32 @cq_template_icmp_ne_i32(i32 %33, i32 %30)    ; IR: %39 = icmp ne i32 %38, %35  [fresh i1 rail: the register y[i]]
-  %35 = getelementptr inbounds i32, ptr %5, i64 %27    ; IR: %40  (slot of y[i])
-  store i32 %34, ptr %35, align 4    ; IR: %41 = zext i1 %39 to i8; store i8 %41, ptr %40  (the cell holds the handle of y[i])
-  call void @cq_template_and_i32_hl_unc(i32 %33, i32 %24, i32 %32)    ; IR: uncompute %38 (its last consumer was %39)
-  call void @cqrt_free(i32 %33)    ; IR: release the %38 rail (|0>)
-  call void @cq_template_zext_i1_to_i32_unc(i32 %30, i32 %29)    ; IR: uncompute %35
-  call void @cqrt_free(i32 %30)    ; IR: release the %35 rail (|0>)
-  %36 = add nuw nsw i64 %27, 1    ; IR: %42  (classical)
-  %37 = icmp eq i64 %36, %25    ; IR: %43  (classical)
-  br i1 %37, label %38, label %26    ; IR: br i1 %43, label %27, label %31
+30:; IR: block %31  (the oracle: y[i] = x[i] ^ (x[j] & s_i), classical bound nq)
+  %31 = phi i64 [ 0, %23 ], [ %43, %30 ]    ; IR: %32  (classical i)
+  %32 = getelementptr inbounds i8, ptr %5, i64 %31    ; IR: %33 = getelementptr inbounds i8, ptr %4, i64 %32  (untainted index: stays)
+  %33 = ptrtoint ptr %32 to i64    ; IR: %33 as its run-time address
+  %34 = call i32 @cqrt_qram_load_i8_hl(i32 %3, i64 %33)    ; IR: %34 = load i8, ptr %33  [a bus load at the access type i8: the copy of x[i]]
+  %35 = call i32 @cq_template_zext_i8_to_i32(i32 %34)    ; IR: %35 = zext nneg i8 %34 to i32  [fresh rail]
+  %36 = trunc nuw nsw i64 %31 to i32    ; IR: %36  (classical)
+  %37 = lshr i32 %1, %36    ; IR: %37 = lshr i32 %1, %36  (classical s >> i)
+  %38 = call i32 @cq_template_and_i32_hl(i32 %28, i32 %37)    ; IR: %38 = and i32 %37, %18  [commutative: handle first; fresh rail]
+  %39 = call i32 @cq_template_icmp_ne_i32(i32 %38, i32 %35)    ; IR: %39 = icmp ne i32 %38, %35  [fresh i1 rail: the bit y[i]]
+  %40 = getelementptr inbounds i8, ptr %6, i64 %31    ; IR: %40 = getelementptr inbounds i8, ptr %5, i64 %32  (untainted index: stays)
+  %41 = ptrtoint ptr %40 to i64    ; IR: %40 as its run-time address
+  %42 = call i32 @cq_template_zext_i1_to_i8(i32 %39)    ; IR: %41 = zext i1 %39 to i8  [fresh rail: the value rail of the store, KEPT with it (rule 5 sentence 3)]
+  call void @cq_template_icmp_ne_i32_unc(i32 %39, i32 %38, i32 %35)    ; IR: uncompute %39 (its last consumer was %41, whose rail is kept and never uncomputed)
+  call void @cqrt_free(i32 %39)    ; IR: release the %39 rail (|0>)
+  call void @cq_template_and_i32_hl_unc(i32 %38, i32 %28, i32 %37)    ; IR: uncompute %38
+  call void @cqrt_free(i32 %38)    ; IR: release the %38 rail (|0>)
+  call void @cq_template_zext_i8_to_i32_unc(i32 %35, i32 %34)    ; IR: uncompute %35
+  call void @cqrt_free(i32 %35)    ; IR: release the %35 rail (|0>)
+  call void @cqrt_qram_load_i8_hl_unc(i32 %34, i32 %3, i64 %33)    ; IR: un-copy %34 (rule 5 sentence 1: its last reader, the %35 _unc, precedes the store below, the next memory version change)
+  call void @cqrt_free(i32 %34)    ; IR: release the %34 rail (|0>)
+  call void @cqrt_qram_store_i8_hl(i32 %3, i64 %41, i32 %42)    ; IR: store i8 %41, ptr %40  [a kept store at a classical address (rule 5 sentence 3): its tape slot and its value rail %41 stay; the cell holds y[i]]
+  %43 = add nuw nsw i64 %31, 1    ; IR: %42  (classical)
+  %44 = icmp eq i64 %43, %29    ; IR: %43  (classical)
+  br i1 %44, label %45, label %30    ; IR: br i1 %43, label %27, label %31
 
-38:; IR: edge %31 -> %27 (the oracle loop's exit)
-  call void @cq_template_zext_i1_to_i32_unc(i32 %24, i32 %23)    ; IR: uncompute %18 after its last consumer (x[j] unchanged: the rotation comes next)
-  call void @cqrt_free(i32 %24)    ; IR: release the %18 rail (|0>)
-  br label %39    ; IR: br label %27
+45:; IR: edge %31 -> %27 (the oracle loop's exit)
+  call void @cq_template_zext_i8_to_i32_unc(i32 %28, i32 %27)    ; IR: uncompute %18 after its last consumer (the x[j] copy unchanged)
+  call void @cqrt_free(i32 %28)    ; IR: release the %18 rail (|0>)
+  call void @cqrt_qram_load_i8_hl_unc(i32 %27, i32 %3, i64 %26)    ; IR: un-copy %17 after its last reader, the %18 _unc; the stores into y lie between (memory version changes), so it is not freed (rule 5 sentence 1)
+  br label %46    ; IR: br label %27
 
-39:; IR: block %27
-  %40 = icmp sgt i32 %0, 0    ; IR: %28  (classical)
-  br i1 %40, label %41, label %43    ; IR: br i1 %28, label %29, label %44
+46:; IR: block %27
+  %47 = icmp sgt i32 %0, 0    ; IR: %28  (classical)
+  br i1 %47, label %48, label %50    ; IR: br i1 %28, label %29, label %44
 
-41:; IR: block %29
-  %42 = zext nneg i32 %0 to i64    ; IR: %30  (classical bound)
-  br label %47    ; IR: br label %48
+48:; IR: block %29
+  %49 = zext nneg i32 %0 to i64    ; IR: %30  (classical bound)
+  br label %54    ; IR: br label %48
 
-43:; IR: block %44
-  %44 = icmp sgt i32 %0, 0    ; IR: %45  (classical)
-  br i1 %44, label %45, label %53    ; IR: br i1 %45, label %46, label %57
+50:; IR: block %44
+  %51 = icmp sgt i32 %0, 0    ; IR: %45  (classical)
+  br i1 %51, label %52, label %61    ; IR: br i1 %45, label %46, label %57
 
-45:; IR: block %46
-  %46 = zext nneg i32 %0 to i64    ; IR: %47  (classical bound)
-  br label %58    ; IR: br label %62
+52:; IR: block %46
+  %53 = zext nneg i32 %0 to i64    ; IR: %47  (classical bound)
+  br label %66    ; IR: br label %62
 
-47:; IR: block %48  (H^n: the Ry(-pi/2) loop, classical bound nq)
-  %48 = phi i64 [ 0, %41 ], [ %51, %47 ]    ; IR: %49  (classical i)
-  %49 = getelementptr inbounds i32, ptr %4, i64 %48    ; IR: %50  (slot of x[i])
-  %50 = load i32, ptr %49, align 4    ; IR: %51 = load i8, ptr %50; %52 = trunc to i1  (handle of x[i]; no gate)
-  call void @cqrt_ry_i1(i32 %50, double 0xBFF921FB54442D18)    ; IR: %53 = cq_theta_i1(%52, -pi/2)  [Ry(-pi/2) in place on x[i]]; %54/store: handle unchanged
-  %51 = add nuw nsw i64 %48, 1    ; IR: %55  (classical)
-  %52 = icmp eq i64 %51, %42    ; IR: %56  (classical)
-  br i1 %52, label %43, label %47    ; IR: br i1 %56, label %44, label %48
+54:; IR: block %48  (H^n: the Ry(-pi/2) loop, classical bound nq)
+  %55 = phi i64 [ 0, %48 ], [ %59, %54 ]    ; IR: %49  (classical i)
+  %56 = getelementptr inbounds i8, ptr %5, i64 %55    ; IR: %50 = getelementptr inbounds i8, ptr %4, i64 %49  (untainted index: stays)
+  %57 = ptrtoint ptr %56 to i64    ; IR: %50 as its run-time address
+  %58 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: %51 = load i8, ptr %50; %52 = trunc nuw to i1: in-place form at width i1 (rule 5, Width casts), the swap rail (|0>)
+  call void @cqrt_qram_swap_i1_hl(i32 %3, i64 %57, i32 %58)    ; IR: %51/%52: swap-out: the rail holds x[i], the cell's bit |0>
+  call void @cqrt_ry_i1(i32 %58, double 0xBFF921FB54442D18)    ; IR: %53 = cq_theta_i1(%52, -pi/2)  [Ry(-pi/2) on x[i]]
+  call void @cqrt_qram_swap_i1_hl(i32 %3, i64 %57, i32 %58)    ; IR: %54 = zext i1 %53 to i8; store i8 %54, ptr %50: swap-in: the cell holds %53
+  call void @cqrt_free(i32 %58)    ; IR: release the swap rail (|0>)
+  %59 = add nuw nsw i64 %55, 1    ; IR: %55  (classical)
+  %60 = icmp eq i64 %59, %49    ; IR: %56  (classical)
+  br i1 %60, label %50, label %54    ; IR: br i1 %56, label %44, label %48
 
-53:; IR: block %57
-  %54 = phi i32 [ 0, %43 ], [ %67, %58 ]    ; IR: %58  (classical m)
-  %55 = icmp sgt i32 %0, 0    ; IR: %59  (classical)
-  br i1 %55, label %56, label %72    ; IR: br i1 %59, label %60, label %77
+61:; IR: block %57
+  %62 = phi i32 [ 0, %50 ], [ %76, %66 ]    ; IR: %58  (classical m)
+  %63 = icmp sgt i32 %0, 0    ; IR: %59  (classical)
+  br i1 %63, label %64, label %81    ; IR: br i1 %59, label %60, label %77
 
-56:; IR: block %60
-  %57 = zext nneg i32 %0 to i64    ; IR: %61  (classical bound)
-  br label %75    ; IR: br label %80
+64:; IR: block %60
+  %65 = zext nneg i32 %0 to i64    ; IR: %61  (classical bound)
+  br label %84    ; IR: br label %80
 
-58:; IR: block %62  (measure x, classical bound nq)
-  %59 = phi i64 [ 0, %45 ], [ %68, %58 ]    ; IR: %63  (classical i)
-  %60 = phi i32 [ 0, %45 ], [ %67, %58 ]    ; IR: %64  (classical m)
-  %61 = getelementptr inbounds i32, ptr %4, i64 %59    ; IR: %65  (slot of x[i])
-  %62 = load i32, ptr %61, align 4    ; IR: %66 = load i8, ptr %65; %67 = trunc to i1  (handle of x[i])
-  %63 = call i1 @cqrt_measure_i1(i32 %62)    ; IR: %68 = cq_measure_i1(%67)
-  %64 = zext i1 %63 to i32    ; IR: %69  (classical)
-  %65 = trunc nuw nsw i64 %59 to i32    ; IR: %70  (classical)
-  %66 = shl nuw i32 %64, %65    ; IR: %71  (classical)
-  %67 = or i32 %66, %60    ; IR: %72  (classical)
-  %68 = add nuw nsw i64 %59, 1    ; IR: %73  (classical)
-  %69 = icmp eq i64 %68, %46    ; IR: %74  (classical)
-  br i1 %69, label %53, label %58    ; IR: br i1 %74, label %57, label %62
+66:; IR: block %62  (measure x, classical bound nq)
+  %67 = phi i64 [ 0, %52 ], [ %77, %66 ]    ; IR: %63  (classical i)
+  %68 = phi i32 [ 0, %52 ], [ %76, %66 ]    ; IR: %64  (classical m)
+  %69 = getelementptr inbounds i8, ptr %5, i64 %67    ; IR: %65 = getelementptr inbounds i8, ptr %4, i64 %63  (untainted index: stays)
+  %70 = ptrtoint ptr %69 to i64    ; IR: %65 as its run-time address
+  %71 = call i32 @cqrt_qram_load_i1_hl(i32 %3, i64 %70)    ; IR: %66 = load i8, ptr %65; %67 = trunc nuw to i1  (a plain bus load at width i1, SPEC GAP 1)
+  %72 = call i1 @cqrt_measure_i1(i32 %71)    ; IR: %68 = cq_measure_i1(%67)  [the load copy is measured and stays allocated (rule 2)]
+  %73 = zext i1 %72 to i32    ; IR: %69  (classical)
+  %74 = trunc nuw nsw i64 %67 to i32    ; IR: %70  (classical)
+  %75 = shl nuw i32 %73, %74    ; IR: %71  (classical)
+  %76 = or i32 %75, %68    ; IR: %72  (classical)
+  %77 = add nuw nsw i64 %67, 1    ; IR: %73  (classical)
+  %78 = icmp eq i64 %77, %53    ; IR: %74  (classical)
+  br i1 %78, label %61, label %66    ; IR: br i1 %74, label %57, label %62
 
-70:; IR: block %75
-  %71 = shl i32 %84, 16    ; IR: %76  (classical)
-  br label %72    ; IR: br label %77
+79:; IR: block %75
+  %80 = shl i32 %94, 16    ; IR: %76  (classical)
+  br label %81    ; IR: br label %77
 
-72:; IR: block %77
-  %73 = phi i32 [ 0, %53 ], [ %71, %70 ]    ; IR: %78  (classical)
-  %74 = or i32 %73, %54    ; IR: %79  (classical)
-  ret i32 %74    ; IR: ret i32 %79
+81:; IR: block %77
+  %82 = phi i32 [ 0, %61 ], [ %80, %79 ]    ; IR: %78  (classical)
+  %83 = or i32 %82, %62    ; IR: %79  (classical)
+  ret i32 %83    ; IR: ret i32 %79
 
-75:; IR: block %80  (measure y, classical bound nq)
-  %76 = phi i64 [ 0, %56 ], [ %85, %75 ]    ; IR: %81  (classical i)
-  %77 = phi i32 [ 0, %56 ], [ %84, %75 ]    ; IR: %82  (classical f)
-  %78 = getelementptr inbounds i32, ptr %5, i64 %76    ; IR: %83  (slot of y[i])
-  %79 = load i32, ptr %78, align 4    ; IR: %84 = load i8, ptr %83; %85 = trunc to i1  (handle of y[i])
-  %80 = call i1 @cqrt_measure_i1(i32 %79)    ; IR: %86 = cq_measure_i1(%85)  [y[i] measured; its rail stays allocated]
-  %81 = zext i1 %80 to i32    ; IR: %87  (classical)
-  %82 = trunc nuw nsw i64 %76 to i32    ; IR: %88  (classical)
-  %83 = shl nuw i32 %81, %82    ; IR: %89  (classical)
-  %84 = or i32 %83, %77    ; IR: %90  (classical)
-  %85 = add nuw nsw i64 %76, 1    ; IR: %91  (classical)
-  %86 = icmp eq i64 %85, %57    ; IR: %92  (classical)
-  br i1 %86, label %70, label %75    ; IR: br i1 %92, label %75, label %80
+84:; IR: block %80  (measure y, classical bound nq)
+  %85 = phi i64 [ 0, %64 ], [ %95, %84 ]    ; IR: %81  (classical i)
+  %86 = phi i32 [ 0, %64 ], [ %94, %84 ]    ; IR: %82  (classical f)
+  %87 = getelementptr inbounds i8, ptr %6, i64 %85    ; IR: %83 = getelementptr inbounds i8, ptr %5, i64 %81  (untainted index: stays)
+  %88 = ptrtoint ptr %87 to i64    ; IR: %83 as its run-time address
+  %89 = call i32 @cqrt_qram_load_i1_hl(i32 %3, i64 %88)    ; IR: %84 = load i8, ptr %83; %85 = trunc nuw to i1  (a plain bus load at width i1, SPEC GAP 1)
+  %90 = call i1 @cqrt_measure_i1(i32 %89)    ; IR: %86 = cq_measure_i1(%85)  [the load copy is measured and stays allocated (rule 2)]
+  %91 = zext i1 %90 to i32    ; IR: %87  (classical)
+  %92 = trunc nuw nsw i64 %85 to i32    ; IR: %88  (classical)
+  %93 = shl nuw i32 %91, %92    ; IR: %89  (classical)
+  %94 = or i32 %93, %86    ; IR: %90  (classical)
+  %95 = add nuw nsw i64 %85, 1    ; IR: %91  (classical)
+  %96 = icmp eq i64 %95, %65    ; IR: %92  (classical)
+  br i1 %96, label %79, label %84    ; IR: br i1 %92, label %75, label %80
 }
 
 declare i32 @llvm.cttz.i32(i32, i1 immarg)
+declare i32 @__cq_mem()
+declare ptr @__cq_alloc(i64, i64)
+declare i32 @cqrt_alloc_i8(i8)
+declare void @cqrt_qram_store_i8_hl(i32, i64, i32)
 declare i32 @cqrt_alloc_i1(i1)
+declare void @cqrt_qram_swap_i1_hl(i32, i64, i32)
 declare void @cqrt_ry_i1(i32, double)
 declare void @cqrt_free(i32)
+declare i32 @cqrt_qram_load_i8_hl(i32, i64)
+declare void @cqrt_qram_load_i8_hl_unc(i32, i32, i64)
+declare i32 @cqrt_qram_load_i1_hl(i32, i64)
 declare i1 @cqrt_measure_i1(i32)
-declare i32 @cq_template_zext_i1_to_i32(i32)
-declare void @cq_template_zext_i1_to_i32_unc(i32, i32)
+declare i32 @cq_template_zext_i8_to_i32(i32)
+declare void @cq_template_zext_i8_to_i32_unc(i32, i32)
 declare i32 @cq_template_and_i32_hl(i32, i32)
 declare void @cq_template_and_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_icmp_ne_i32(i32, i32)
+declare void @cq_template_icmp_ne_i32_unc(i32, i32, i32)
+declare i32 @cq_template_zext_i1_to_i8(i32)
 
 !llvm.module.flags = !{!0, !1, !2, !3, !4}
 !llvm.ident = !{!5}

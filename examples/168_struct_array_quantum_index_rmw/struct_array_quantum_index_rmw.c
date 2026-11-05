@@ -1,4 +1,4 @@
-/* Rules 20, 26: an array of structs written AND read at a quantum index (a QRAM of struct cells, one QRAM per field),
+/* Rules 20, 22, 26: an array of structs written AND read at a quantum index (bus memory at 64-bit address rails),
  * with a read-modify-write of one field. */
 struct cell { int v; int w; };
 int struct_array_quantum_index_rmw(unsigned i0, double ti, int c) {

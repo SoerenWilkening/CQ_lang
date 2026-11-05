@@ -1,22 +1,25 @@
 # driver: static_global_slot(0,.5,3)
 # call: static_global_slot(0,.5,3)
-cqrt_alloc_i32(0) -> h0
-cqrt_ry_i32(h0, 0x1p-1)
-cq_template_mul_i32_hl(h0, 3) -> h1
-cqrt_tape_alloc() -> t2
-cqrt_tape_fmt(t2, "%d\n")
-cqrt_tape_write_i32(t2, h1) -> h3
-cq_template_add_i32_hl(h1, 1) -> h4
-cqrt_alloc_i32(0) -> h5
-cqrt_copy_i32(h4, h5)
-cq_template_add_i32_hl_unc(h4, h1, 1)
-cqrt_free(h4)
-cq_template_add_i32(h1, h5) -> h6
-cq_template_add_i32_hl(h1, 1) -> h7
-cqrt_copy_i32(h7, h5)
-cq_template_add_i32_hl_unc(h7, h1, 1)
+cqrt_qram_alloc_i8(0) -> m1
+cqrt_alloc_i32(0) -> h2
+cqrt_ry_i32(h2, 0x1p-1)
+cq_template_mul_i32_hl(h2, 3) -> h3
+cqrt_qram_store_i32_hl(m1, P0, h3)
+cqrt_tape_alloc() -> t4
+cqrt_tape_fmt(t4, "%d\n")
+cqrt_tape_write_i32(t4, h3) -> h5
+cq_template_add_i32_hl(h3, 1) -> h6
+cqrt_alloc_i32(0) -> h7
+cqrt_copy_i32(h6, h7)
+cq_template_add_i32_hl_unc(h6, h3, 1)
+cqrt_free(h6)
+cqrt_qram_load_i32_hl(m1, P0) -> h8
+cq_template_add_i32(h8, h7) -> h9
+cqrt_qram_load_i32_hl_unc(h8, m1, P0)
+cqrt_free(h8)
+cq_template_add_i32_hl(h3, 1) -> h10
+cqrt_copy_i32(h10, h7)
+cq_template_add_i32_hl_unc(h10, h3, 1)
+cqrt_free(h10)
 cqrt_free(h7)
-cqrt_free(h5)
-cq_template_mul_i32_hl_unc(h1, h0, 3)
-cqrt_free(h1)
-cqrt_measure_i32(h6) -> 0
+cqrt_measure_i32(h9) -> 0

@@ -103,4 +103,8 @@ __attribute__((noduplicate)) void __cq_invert_end(void);
  * these lines, e.g. CQ_K(sin, 53) CQ_K(fmod, 2046); a compiler flag for that function overrides it. */
 #define CQ_K(fn, k) __attribute__((used)) static const int __cq_k_##fn = (k);
 
+/* Default allocation bound, in bytes, of a function's allocations whose size is quantum (CONSTRUCTION_RULES
+ * section 0, rule 16), e.g. CQ_K2(parse, 65536); a compiler flag for that function overrides it. */
+#define CQ_K2(fn, k) __attribute__((used)) static const long __cq_k2_##fn = (k);
+
 #endif

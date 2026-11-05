@@ -1,34 +1,51 @@
-; HAND-WRITTEN. Rules: 2, 4, 5, 6, 16, 18, 20, 24, §1.4.
+; HAND-WRITTEN. Rules: 2, 4, 5, 6, 16, 18, 20, 21, 24; §1.3 (the bus, __cq_mem), §1.4 (own symbol).
 ; Checked: ctz_q: (unsigned)ctzll(x | 1 << 32) (measured, the trunc rail %6 -> %7); trap_q: x + 1 (measured, %6 -> %8);
-; tls_q: tl * 2 (measured, the shl rail %8 -> %9).
-; Clean: ctz_q: the or rail (%4) and the cttz rail (%5), uncomputed and freed; tls_q: the slot's rail x + 1 (%5) and
-; the clone's rail x + 1 + c (%7, zeroed by the __cq_q_touch_10_unc twin), both freed; trap_q: the old x rail (%4, rule 6:
-; dead after x + 1) and t = r - 1 (%7), both freed.
-; Kept: x in ctz_q and tls_q (%3 of ctz_q, 64 bits; %4 of tls_q: rotated user registers whose results have no inverse);
-; trap_q's result x + 1 (%6, measured) and its
-; abort flag x > k (%5): a noreturn-arm predicate passed to cqrt_abort_i1 stays allocated and the backend measures it
-; after the program's last own measurement.
+; tls_q: tl * 2 (measured, the shl rail %11 -> %12), and the cell tl = x + 1 + c (read from the bus at exit at the
+; thread-local's address).
+; Clean: ctz_q: the or rail (%4) and the cttz rail (%5), uncomputed and freed; trap_q: the old x rail (%4, rule 6:
+; dead after x + 1) and t = r - 1 (%7), both freed; tls_q: the old x rail (%5, rule 6: x + 1 is a bijection in x and x
+; is dead after it; the image x + 1 is kept), t = (x + 1) - 1 (%7), and the load copy of tl (%10, un-copied after the
+; shl, before the measurement: no memory version change follows the load); touch: the swapped-out old *p (%5, rule 6),
+; the inverse t = y' - c (%7) and the rail the cell's |0> went to (%6).
+; Kept: x in ctz_q (%3, 64 bits: a rotated user register whose result has no inverse); trap_q's result x + 1 (%6,
+; measured) and its abort flag x > k (%5): a noreturn-arm predicate passed to cqrt_abort_i1 stays allocated and the
+; backend measures it after the program's last own measurement; tls_q: by rule 5 the tape slot of the store
+; `tl = x + 1` (no handle: it is in the backend and holds the displaced tl) and its value rail x + 1 (%6), and the shl
+; rail (%11, measured). touch keeps nothing (the in-place form leaves no rail, tape slot or old value).
 ; Rotations: (Ry, x, th, 1) in each of the three functions (an i64 Ry in ctz_q).
 ; The three intrinsics the CQ musl architecture headers produce when their asm is spelled as
 ; builtins (LIBC_COVERAGE.md): llvm.cttz (a_ctz_64 = bsf) is the unary template cq_template_cttz_<W> exactly as 56's ctlz,
 ; the is_zero_poison literal being a promise about the operand, not an operand; llvm.trap (a_crash = hlt) is a noreturn
 ; under a quantum predicate, 45's abort arm: the predicate rail goes to cqrt_abort_i1 and stays allocated, the backend
 ; measures it after the program's last own measurement; llvm.threadlocal.address (every __thread access) and
-; llvm.thread.pointer (__get_tp = mov %fs:0) are classical host intrinsics kept as they are: ONE THREAD, so the TLS block is
-; one object of the table with a classical base, and a thread_local global is a classical slot holding a handle exactly
-; like 67's static global (the quantum value stored into it is a rail, the load after the call yields that handle). The
-; Darwin x86-64 backend has no code generation for llvm.thread.pointer, so this host's trace cannot exercise it; its
-; lowering is the same as threadlocal.address's (a classical call returning the object's base), only the latter is shown.
-; The callee
-; touching the slot through a classical pointer is the clone of 106; its mask is per §1.4, left to right: the pointer-to-slot
-; formal p carries one quantum field (digit 1), c is classical (digit 0), __cq_q_touch_10. Its _unc twin takes (args..., old
-; slot handles in slot order) = (p, c, the cell's previous handle), zeroes the new rail in place and restores the slot; the
-; caller frees the new rail.
+; llvm.thread.pointer (__get_tp = mov %fs:0) are classical host intrinsics kept as they are: ONE THREAD (rule 24), so a
+; thread-local object is the one thread's object at its host address, and llvm.threadlocal.address IS that address, a
+; classical ptr. The object lives on the bus through the overlay like any global (rule 20): nothing is allocated, seeded
+; or registered for it. The Darwin x86-64 backend has no code generation for llvm.thread.pointer, so this host's trace
+; cannot exercise it; its lowering is the same as threadlocal.address's (a classical call returning an address), only the
+; latter is shown.
+; tls_q. `tl = x + 1` is a bus store at the classical address of tl (ptrtoint of the intrinsic's result), a KEPT store
+; (rule 5, sentence 3): its tape slot and its value rail x + 1 stay for the shot. Because the image x + 1 now lives, x is
+; dead after the add and rule 6 cleans it right after the update (t = (x + 1) - 1, copy, uncompute t, free x).
+; touch(&tl, c) passes a classical pointer and a classical int: the all-zero mask (§1.4, rules 18, 21: a pointer is one
+; scalar, nothing about the pointee crosses the call), touch's OWN symbol, never inlined. The call is a memory version
+; change (touch writes memory). The load of tl after it is a fresh bus-load copy (rule 3); the shl reads it, and the copy
+; is un-copied right after the shl, before its measurement (rule 5 sentence 1; no memory version change follows).
+; touch. `*p += c` is load, add, store on the same SSA pointer with nothing between: rule 5's IN-PLACE FORM with a rule-6
+; bijection (the add of the classical c) as its one step, as 195's bump: swap-out into a fresh |0> rail, y' = y + c with
+; the clean of the old rail, swap-in of y', free of the rail that now holds the cell's |0>. The same body serves host
+; callers and all-classical calls (§1.3 overlay).
+; SPEC GAP: rule 19 / §1.3 ask for a __cq_clone_register row (the _t clone, _t_ctl and their twins) per externally
+; visible function. No conforming example of the corpus emits one for a function that is only externally visible; this
+; module follows the corpus (197, 200, 204) and registers nothing for ctz_q, trap_q and tls_q.
+; SPEC GAP: CR fixes no calling convention, linkage or attributes for a lowered own symbol; touch keeps -O1's internal
+; fastcc (195, 200), and the memory facts of the original (nocapture, memory(argmem: readwrite)) are dropped: the
+; lowered body calls the backend.
 source_filename = "arch_primitives.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 
-@tl = internal thread_local global i32 0, align 4    ; IR: @tl  (the TLS object: one thread, one object; a classical slot holding a handle)
+@tl = internal thread_local global i32 0, align 4    ; IR: @tl  (the one thread's object at its host address, on the bus through the overlay: rules 20, 24)
 
 define i32 @ctz_q(i64 noundef %0, double noundef %1) {
   %3 = call i32 @cqrt_alloc_i64(i64 %0)    ; IR: %3 = cq_theta_ull(%0, %1)  [register x, 64 bits]
@@ -60,42 +77,51 @@ define i32 @trap_q(i32 noundef %0, double noundef %1, i32 noundef %2) {
 }
 
 define i32 @tls_q(i32 noundef %0, double noundef %1, i32 noundef %2) {
-  %4 = call i32 @cqrt_alloc_i32(i32 %0)    ; IR: %4 = cq_theta_si32(%0, %1)  [register x]
-  call void @cqrt_ry_i32(i32 %4, double %1)    ; IR: %4 = cq_theta_si32(%0, %1)  [Ry]
-  %5 = call i32 @cq_template_add_i32_hl(i32 %4, i32 1)    ; IR: %5 = add nsw i32 %4, 1
-  %6 = call align 4 ptr @llvm.threadlocal.address.p0(ptr align 4 @tl)    ; IR: %6 = llvm.threadlocal.address(@tl)  (classical host intrinsic: the slot's address)
-  store i32 %5, ptr %6, align 4    ; IR: store i32 %5, ptr %6  (the slot takes the handle of %5)
-  call fastcc void @__cq_q_touch_10(ptr %6, i32 %2)    ; IR: call @touch(%6, %2): clone, mask 10 (the slot parameter carries one quantum field, c is classical; 106)
-  %7 = load i32, ptr %6, align 4    ; IR: %7 = load i32, ptr %6  (the handle the clone stored: x + 1 + c)
-  %8 = call i32 @cq_template_shl_i32_hl(i32 %7, i32 1)    ; IR: %8 = shl nsw i32 %7, 1  [result rail]
-  call fastcc void @__cq_q_touch_10_unc(ptr %6, i32 %2, i32 %5)    ; IR: twin (args..., old slot handle): the new rail is zeroed, the slot holds %5 again
-  call void @cqrt_free(i32 %7)    ; IR: release the clone's rail (|0>)
-  call void @cq_template_add_i32_hl_unc(i32 %5, i32 %4, i32 1)    ; IR: uncompute %5 (the slot's rail)
-  call void @cqrt_free(i32 %5)    ; IR: release the %5 rail (|0>); the slot's handle is dead
-  %9 = call i32 @cqrt_measure_i32(i32 %8)    ; IR: %9 = cq_measure_si32(%8)
-  ret i32 %9    ; IR: ret i32 %9
+  %4 = call i32 @__cq_mem()    ; IR: the bus m (§5: once, at function entry)
+  %5 = call i32 @cqrt_alloc_i32(i32 %0)    ; IR: %4 = cq_theta_si32(%0, %1)  [register x]
+  call void @cqrt_ry_i32(i32 %5, double %1)    ; IR: %4 = cq_theta_si32(%0, %1)  [Ry]
+  %6 = call i32 @cq_template_add_i32_hl(i32 %5, i32 1)    ; IR: %5 = add nsw i32 %4, 1
+  %7 = call i32 @cq_template_sub_i32_hl(i32 %6, i32 1)    ; IR: rule 6: t = (x + 1) - 1 recomputes the old x (the add is a bijection in it; its image is kept by the store)
+  call void @cqrt_copy_i32(i32 %7, i32 %5)    ; IR: rule 6: x ^= t: the dead x rail is now |0>
+  call void @cq_template_sub_i32_hl_unc(i32 %7, i32 %6, i32 1)    ; IR: rule 6: uncompute t
+  call void @cqrt_free(i32 %7)    ; IR: release t (|0>)
+  call void @cqrt_free(i32 %5)    ; IR: release the old x rail (|0> after the copy)
+  %8 = call align 4 ptr @llvm.threadlocal.address.p0(ptr align 4 @tl)    ; IR: %6 = llvm.threadlocal.address(@tl)  (classical host intrinsic: the one thread's address of tl, rule 24)
+  %9 = ptrtoint ptr %8 to i64    ; IR: %6 as its run-time address (the _hl operand)
+  call void @cqrt_qram_store_i32_hl(i32 %4, i64 %9, i32 %6)    ; IR: store i32 %5, ptr %6: tl = x + 1  (kept store at a classical address: tape slot and value rail stay, no _unc)
+  call fastcc void @touch(ptr %8, i32 %2)    ; IR: call fastcc void @touch(ptr %6, i32 %2): a classical pointer and a classical int, mask 00 = touch's own symbol (a memory version change)
+  %10 = call i32 @cqrt_qram_load_i32_hl(i32 %4, i64 %9)    ; IR: %7 = load i32, ptr %6: tl  (a fresh copy of the cell after touch's update)
+  %11 = call i32 @cq_template_shl_i32_hl(i32 %10, i32 1)    ; IR: %8 = shl nsw i32 %7, 1  [result rail]
+  call void @cqrt_qram_load_i32_hl_unc(i32 %10, i32 %4, i64 %9)    ; IR: un-copy %7 (its last reader %8 is done; no memory version change since the load, rule 5)
+  call void @cqrt_free(i32 %10)    ; IR: release the %7 rail (|0>)
+  %12 = call i32 @cqrt_measure_i32(i32 %11)    ; IR: %9 = cq_measure_si32(%8)
+  ret i32 %12    ; IR: ret i32 %9
 }
 
-define internal fastcc void @__cq_q_touch_10(ptr noundef %0, i32 noundef %1) {
-  %3 = load i32, ptr %0, align 4    ; IR: %3 = load i32, ptr %0  (the cell's handle)
-  %4 = call i32 @cq_template_add_i32_hl(i32 %3, i32 %1)    ; IR: %4 = add nsw i32 %3, %1  [fresh rail]
-  store i32 %4, ptr %0, align 4    ; IR: store i32 %4, ptr %0  (the cell takes the new handle)
+define internal fastcc void @touch(ptr %0, i32 %1) unnamed_addr {
+  %3 = call i32 @__cq_mem()    ; IR: the bus m (§5: once, at function entry)
+  %4 = ptrtoint ptr %0 to i64    ; IR: the address p as the _hl operand (classical, run time)
+  %5 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: %3 = load i32, ptr %0: in-place form, the swap rail (|0>)
+  call void @cqrt_qram_swap_i32_hl(i32 %3, i64 %4, i32 %5)    ; IR: %3 = load i32, ptr %0: swap-out: the rail holds *p, the cell |0>
+  %6 = call i32 @cq_template_add_i32_hl(i32 %5, i32 %1)    ; IR: %4 = add nsw i32 %3, %1
+  %7 = call i32 @cq_template_sub_i32_hl(i32 %6, i32 %1)    ; IR: rule 6: t = y' - c recomputes the old *p
+  call void @cqrt_copy_i32(i32 %7, i32 %5)    ; IR: rule 6: the old rail ^= t: |0>
+  call void @cq_template_sub_i32_hl_unc(i32 %7, i32 %6, i32 %1)    ; IR: rule 6: uncompute t
+  call void @cqrt_free(i32 %7)    ; IR: release t (|0>)
+  call void @cqrt_free(i32 %5)    ; IR: release the old *p rail (|0> after the copy)
+  call void @cqrt_qram_swap_i32_hl(i32 %3, i64 %4, i32 %6)    ; IR: store i32 %4, ptr %0: swap-in: the cell holds *p + c, the rail the cell's |0>
+  call void @cqrt_free(i32 %6)    ; IR: release the rail (|0>): nothing remains of the update
   ret void    ; IR: ret void
 }
 
-define internal fastcc void @__cq_q_touch_10_unc(ptr noundef %0, i32 noundef %1, i32 %2) {
-  %4 = load i32, ptr %0, align 4    ; IR: the cell's current handle (%4)
-  call void @cq_template_add_i32_hl_unc(i32 %4, i32 %2, i32 %1)    ; IR: uncompute %4 in place (|0>)
-  store i32 %2, ptr %0, align 4    ; IR: the cell holds the previous handle again
-  ret void    ; IR: ret void
-}
-
+declare i32 @__cq_mem()
+declare void @cqrt_qram_store_i32_hl(i32, i64, i32)
+declare i32 @cqrt_qram_load_i32_hl(i32, i64)
+declare void @cqrt_qram_load_i32_hl_unc(i32, i32, i64)
+declare void @cqrt_qram_swap_i32_hl(i32, i64, i32)
 declare void @cqrt_copy_i32(i32, i32)
-
 declare void @cq_template_sub_i32_hl_unc(i32, i32, i32)
-
 declare i32 @cq_template_sub_i32_hl(i32, i32)
-
 declare i32 @cqrt_alloc_i64(i64)
 declare void @cqrt_ry_i64(i32, double)
 declare i32 @cqrt_alloc_i32(i32)
@@ -110,11 +136,8 @@ declare void @cq_template_cttz_i64_unc(i32, i32)
 declare i32 @cq_template_trunc_i64_to_i32(i32)
 declare i32 @cq_template_icmp_sgt_i32_hl(i32, i32)
 declare i32 @cq_template_add_i32_hl(i32, i32)
-declare void @cq_template_add_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_shl_i32_hl(i32, i32)
 declare ptr @llvm.threadlocal.address.p0(ptr)
-
-attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 
 !llvm.module.flags = !{!0, !1, !2, !3, !4}
 !llvm.ident = !{!5}

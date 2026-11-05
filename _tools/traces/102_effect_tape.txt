@@ -1,39 +1,73 @@
 # driver: raise_handled(0,.5,1);raise_default(0,.5,1);remove_cond(0,.5,1)
-cqrt_alloc_i32(0) -> h0
 # call: raise_handled(0,.5,1)
-cqrt_tape_alloc() -> t1
-cqrt_alloc_i32(0) -> h2
-cqrt_ry_i32(h2, 0x1p-1)
-cq_template_icmp_sgt_i32_hl(h2, 1) -> h3
-cqrt_tape_effect_controlled(h3, t1, "raise")
-cqrt_tape_write_i32_lit(t1, 30)
-cq_template_select_i32_lh(h3, 30, h0) -> h100000
-cq_template_icmp_sgt_i32_hl_unc(h3, h2, 1)
-cqrt_free(h3)
-cqrt_measure_i32(h2) -> 0
-cq_template_icmp_sgt_i32_hl(h2, 1) -> h4
-cq_template_select_i32_lh_unc(h100000, h4, 30, h0)
-cqrt_free(h100000)
-cq_template_icmp_sgt_i32_hl_unc(h4, h2, 1)
+cqrt_qram_alloc_i8(0) -> m1
+cqrt_tape_alloc() -> t2
+cqrt_alloc_i32(0) -> h3
+cqrt_ry_i32(h3, 0x1p-1)
+cqrt_qram_load_i64_hl(m1, P0) -> h4
+cqrt_qram_load_i64_hl_unc(h4, m1, P0)
 cqrt_free(h4)
-cqrt_alloc_i32(0) -> h5
-cqrt_free(h0)
-# call: raise_default(0,.5,1)
-cqrt_tape_alloc() -> t6
-cqrt_alloc_i32(0) -> h7
-cqrt_ry_i32(h7, 0x1p-1)
-cq_template_icmp_sgt_i32_hl(h7, 1) -> h8
-cqrt_tape_effect_controlled(h8, t6, "raise")
-cqrt_tape_write_i32_lit(t6, 6)
-cqrt_abort_i1(h8)
-cqrt_measure_i32(h7) -> 0
-# call: remove_cond(0,.5,1)
-cqrt_tape_alloc() -> t9
-cqrt_alloc_i32(0) -> h10
-cqrt_ry_i32(h10, 0x1p-1)
-cq_template_icmp_sgt_i32_hl(h10, 1) -> h11
-cqrt_tape_effect_controlled(h11, t9, "remove")
-cqrt_tape_write_str_lit(t9, "/tmp/cq_x")
-cq_template_icmp_sgt_i32_hl_unc(h11, h10, 1)
+cqrt_alloc_i64(P1) -> h5
+cqrt_qram_store_i64_hl(m1, P0, h5)
+cq_template_icmp_sgt_i32_hl(h3, 1) -> h6
+cqrt_qram_load_i64_hl_controlled(h6, m1, P0) -> h7
+cq_template_icmp_eq_i64_hl(h7, P1) -> h8
+cqrt_alloc_i1(0) -> h9
+cqrt_and_i1(h6, h8, h9)
+cqrt_alloc_i32(30) -> h10
+cqrt_qram_store_i32_hl_controlled(h9, m1, P0+288, h10)
+cqrt_alloc_i1(0) -> h11
+cqrt_not_i1(h8)
+cqrt_and_i1(h6, h8, h11)
+cqrt_not_i1(h8)
+cqrt_tape_write_i32_lit(t2, 30)
+cqrt_tape_effect_controlled(h11, t2, "raise")
+cqrt_not_i1(h8)
+cqrt_and_i1(h6, h8, h11)
+cqrt_not_i1(h8)
 cqrt_free(h11)
-cqrt_measure_i32(h10) -> 0
+cq_template_icmp_eq_i64_hl_unc(h8, h7, P1)
+cqrt_free(h8)
+cqrt_qram_load_i64_hl_controlled_unc(h7, h6, m1, P0)
+cq_template_icmp_sgt_i32_hl_unc(h6, h3, 1)
+cqrt_free(h6)
+cqrt_measure_i32(h3) -> 0
+cqrt_qram_load_i32_hl(m1, P0+288) -> h12
+cqrt_measure_i32(h12) -> 0
+# call: raise_default(0,.5,1)
+cqrt_tape_alloc() -> t13
+cqrt_alloc_i32(0) -> h14
+cqrt_ry_i32(h14, 0x1p-1)
+cq_template_icmp_sgt_i32_hl(h14, 1) -> h15
+cqrt_qram_load_i64_hl_controlled(h15, m1, P0) -> h16
+cq_template_icmp_eq_i64_hl(h16, P1) -> h17
+cqrt_alloc_i1(0) -> h18
+cqrt_and_i1(h15, h17, h18)
+cqrt_alloc_i32(6) -> h19
+cqrt_qram_store_i32_hl_controlled(h18, m1, P0+480, h19)
+cqrt_alloc_i1(0) -> h20
+cqrt_not_i1(h17)
+cqrt_and_i1(h15, h17, h20)
+cqrt_not_i1(h17)
+cqrt_tape_write_i32_lit(t13, 6)
+cqrt_tape_effect_controlled(h20, t13, "raise")
+cqrt_not_i1(h17)
+cqrt_and_i1(h15, h17, h20)
+cqrt_not_i1(h17)
+cqrt_free(h20)
+cq_template_icmp_eq_i64_hl_unc(h17, h16, P1)
+cqrt_free(h17)
+cqrt_qram_load_i64_hl_controlled_unc(h16, h15, m1, P0)
+cq_template_icmp_sgt_i32_hl_unc(h15, h14, 1)
+cqrt_free(h15)
+cqrt_measure_i32(h14) -> 0
+# call: remove_cond(0,.5,1)
+cqrt_tape_alloc() -> t21
+cqrt_alloc_i32(0) -> h22
+cqrt_ry_i32(h22, 0x1p-1)
+cq_template_icmp_sgt_i32_hl(h22, 1) -> h23
+cqrt_tape_write_i64_lit(t21, P0)
+cqrt_tape_effect_controlled(h23, t21, "remove")
+cq_template_icmp_sgt_i32_hl_unc(h23, h22, 1)
+cqrt_free(h23)
+cqrt_measure_i32(h22) -> 0

@@ -2,54 +2,69 @@
 
 This document and `examples/` are the specification of the CQ compiler. A compiler is correct when,
 for every example, the circuit it emits from `name.c` compiled with `clang -O1` (x86-64) is
-semantically equal to `name.lowered.ll` under §6. The lowered files are hand-written witnesses of
-these rules; where a lowered file and this document disagree, the document wins and the example is
-to be fixed (§7 lists the known cases).
-
-Owner rulings of 2026-10-26 are folded in. Nothing here refers to any earlier implementation.
+semantically equal to `name.lowered.ll` under §6. The lowered files are hand-written witnesses;
+where one disagrees with this document, the document wins and the example is to be fixed (§7). An
+example §7 lists as "regeneration owed (flat memory)" is not normative for memory until regenerated.
 
 ## 0. Scope and fixed decisions
 
 - **No declines.** Every C program lowers. There is no diagnostic path in the compiler.
-  - A quantum call to a function with no body becomes a call to a declared clone (rule 27). If
-    nothing linked defines it, the program fails with an ordinary undefined-symbol link error.
+  - A call to a bodiless function with a quantum argument or under a quantum predicate is an
+    effect entry (rule 16). A call to a function a linked lowered library lists is its declared
+    clone whatever the arguments (rule 27); one that nothing defines is an ordinary link error.
   - Cloning cannot arise: every copy the compiler emits is a basis copy (CNOT fan-out).
   - A loop or recursion whose exit depends on quantum data runs for a cutoff **K** (rule 14).
-- **Ground truth** for reversible construction is Bennett.jl
-  (revision `824458d10e879c3fef673c231a02e5461dac667f`), including its totalization of partial
-  operations (§2). Where Bennett.jl has no implementation (f16/f32/f80 arithmetic, `frem`,
-  directed rounding, `is_fpclass`) the contract in §2 applies.
+- **Ground truth** for the templates (§1.2) and the totalization of partial operations (§2) is
+  Bennett.jl (revision `824458d10e879c3fef673c231a02e5461dac667f`). Where Bennett.jl has no
+  implementation (f16/f32/f80 arithmetic, `frem`, directed rounding, `is_fpclass`) the contract in
+  §2 applies. Memory, pointers, calls and loops are defined by this document alone.
+- **No pointer is resolved at compile time.** No rule requires knowing what a pointer points into,
+  which objects exist, or how large one is. A pointer is its x86-64 address, a classical value or
+  a 64-bit rail (§1.1), and all memory is one bus indexed by that address (§1.3, rule 20).
+- **Every body is lowered**; none is called unlowered. The lowering for all-classical arguments is
+  the function's own symbol (§1.4). The only bodies never lifted are those rule 16 names.
+- **Qubits are allocated lazily.** A rail is classical bits in the backend until a gate forces
+  qubits. The lowered program never asks whether a rail is classical: no such symbol exists.
 - **Garbage policy.** Garbage that compute–copy–uncompute can clean must be cleaned. A rail that
   cannot be returned to a known basis state (entangled by a measurement or by a non-diagonal gate
   on its source) stays allocated. `cqrt_free` accepts any rail in a *known classical basis state*;
-  the backend resets it.
-- **Measurement** is a backend concern. The spec never simulates outcomes; `cqrt_measure_<W>`
-  returns the outcome, and dominated uses of the measured SSA value denote that classical value.
-  The call is synchronous: the backend runs the circuit up to the measurement (mid-circuit
-  measurement with classical feed-forward) and returns the real outcome. There is no emit-only mode.
-- **Quantum rotation angle** is one primitive (`cqrt_ry_<W>_qangle[_controlled]`, `cqrt_rz_qangle[_controlled]`);
-  the angle precision **N** (bits of the fixed-point ladder) is a toolchain flag consumed by the
-  backend only. The lowered code does not depend on N (§1.3).
+  the backend resets it. What a bus store or a load copy keeps for the shot is rule 5 alone.
+- **Measurement** is a backend concern. The spec never simulates outcomes. `cqrt_measure_<W>` is
+  synchronous (mid-circuit measurement with classical feed-forward; no emit-only mode) and returns
+  the real outcome; dominated uses of the measured SSA value denote that classical value.
+- **Quantum rotation angle** is one primitive (`cqrt_ry_<W>_qangle[_controlled]`,
+  `cqrt_rz_qangle[_controlled]`, §1.3); the precision **N** of its ladder is a backend flag only.
 - **Loop cutoff K** is per loop. The K of a loop in function `f`, first match wins: a per-loop
-  annotation; the per-function compiler flag (e.g. `fmod=2046,sin=53`); a `CQ_K(f, k)` line in the
-  translation unit, which `CQ.h` defines as the `used` constant `__cq_k_<f>` the compiler reads; the
-  global flag; the built-in default. A lowered library ships a header of `CQ_K` lines with its
-  recommended per-function defaults (a build output, e.g. from trip counts measured by running the
-  classical functions), included like `CQ.h`. A declared clone (rule 27) receives its K as a
-  classical run-time argument, so one lowered library serves every choice of K. The corpus fixes
-  K = 4 (lines tagged `[K]`). **The built-in default is 4** (the corpus value; a real program sets
-  its K by flag or `CQ_K`). The per-loop annotation has no syntax yet (`CQ.h` defines none); until
-  it does the chain is flag → `CQ_K` → global flag → default, and when it is added it will be a
-  marker in the loop body, never a pragma (2026-10-27).
-- **Target**: x86-64 only. **Optimization level**: `-O1` only.
-- **Retired**: the whole `cq_template_*_inv` family and the controlled arithmetic grid. The
-  template surface is forward + `_unc` (§1.2); the core keeps the few controlled gates in §1.3.
-- **No simulator.** Equivalence is decided by §6.
+  annotation (no syntax yet; it will be a marker in the loop body, never a pragma); the
+  per-function compiler flag; a `CQ_K(f, k)` line in the translation unit, which `CQ.h` defines
+  as the `used` constant `__cq_k_<f>`; the global flag; the built-in default, **4** (the corpus
+  value, lines tagged `[K]`). A lowered library ships a header of `CQ_K` lines with its defaults,
+  included like `CQ.h`; its declared clones (rule 27) receive K as a classical run-time argument.
+  A loop whose exit reads a value loaded from the bus is a K-loop like any other (rule 14).
+- **Allocation bound K2.** An allocation whose size is a rail (`malloc`, `calloc`, `aligned_alloc`,
+  `realloc`, a VLA) is made at **K2** bytes (rule 16), and a memory intrinsic whose length is a
+  rail copies at most K2 bytes (rule 22). K2 resolves as K does, with `CQ_K2(f, k)`
+  (the `used` constant `__cq_k2_<f>`) and the built-in default **4096** (the corpus value, lines
+  tagged `[K2]`, never `[K]`). The overflow predicate
+  `n > K2` is a kept output rail, as `a_K` is for a loop. The backend's K2 for a host input call
+  whose length is a rail is a configuration value of its own, like N (BACKEND_ABI §1.11).
+- **Target**: x86-64 only. **Optimization level**: `-O1` only. **No simulator**: §6 decides equivalence.
+- **Retired** (the one list; none of these exists). Gates: every `cq_template_*_inv`, the
+  controlled arithmetic grid, `cqrt_x`, `cqrt_cnot`, `cqrt_toffoli`, `cqrt_phase_f64[_controlled]`,
+  `cqrt_measure_<W>_controlled`, `cqrt_rz_<W>`, `cqrt_ry_*_controlled_inv`, `cqrt_cswap`,
+  `cqrt_tape_write_str_lit`, `cqrt_tape_str_begin/end`, the `ry_<W>_qangle(A, h)` argument
+  order. Memory: per-object buses, `qram_alloc_<W>(n)` with n > 0 or
+  W other than i8, `qram_alloc_host_<W>[_s]`, `@g.qram`, `qram_realloc[_unc]`, `qram_size`,
+  `qram_free`, `qram_store*_unc`, the memory mirror, slot arrays, QROM (`cq_template_qrom_load[_s]`),
+  fat pointers, object tables, assigned base addresses, range decoding, bound checks, cell counts,
+  the `i32` `_hl` index. Clones: tag, idx, pointee and per-field digits, object-table and
+  cell-count parameters, the pointer triple, per-signature variadic clones, `_inv<c>`, `_adj`,
+  `_d<depth>`, a depth argument, storing clones and word counts, stored rails as extra results,
+  snapshot twins.
 - **The circuit is generated at run time.** The lowered program is an ordinary host program;
-  executing it emits the gate sequence. Classical values known only at run time (loop bounds,
-  QROM tables, host addresses, pushed per-trip values, classically computed angles) parametrise
-  the circuit. A backend is therefore a circuit builder driven by the host execution, not a
-  static translator of the lowered IR.
+  executing it emits the gate sequence, parametrised by classical values known only at run time
+  (loop bounds, host memory, host addresses, pushed words, classically computed angles). A backend
+  is a circuit builder driven by the host execution, not a static translator of the lowered IR.
 
 ## 1. ABI
 
@@ -58,25 +73,24 @@ Owner rulings of 2026-10-26 are folded in. Nothing here refers to any earlier im
 Every quantum value is an `i32` **handle** to a rail whose logical width is the IR type's width
 (`i1`, `i7`, `i8`, …, `i128`, `f16`, `bf16`, `f32`, `f64`, `f80`; any `N ≥ 1` is legal, `_BitInt`,
 `__bf16` (bfloat16: 8 exponent bits, 7 fraction bits, same rounding and NaN rules as the IEEE
-widths) and the x87 bit pattern included; `fp128` is unreachable from C on this target, rule 25). An aggregate, vector or fat pointer is a literal struct of handles
-and classical values in field order. Narrow handle arguments carry the C ABI's `signext`/`zeroext`
+widths) and the x87 bit pattern included; `fp128` is unreachable from C on this target, rule 25). An aggregate or vector is a literal struct of handles
+and classical values in field order. A pointer value is a classical `ptr`/`i64` or ONE handle to a
+64-bit rail holding the x86-64 address. Narrow handle arguments carry the C ABI's `signext`/`zeroext`
 only at externally visible signatures.
 
-A handle is a classical run-time value of the lowered program, which is an ordinary host program
-(§0): the lowered code may compare handles (`icmp eq i32`), branch on them, `select` over them and
-store them (rule 9's classical `select` over handles, rule 6's classical-index branch, 190); the
-circuit is built per execution, so a decision the lowered program takes by comparing two handles is a
-classical decision like any other. **Handle 0 is reserved**: the backend never allocates it, and it
-denotes "no rail" wherever a handle slot has no rail on the path taken (rule 19's extra results).
-Ruling 2026-11-02 (cq-lshe, cq-i9wk).
+A handle is a classical run-time value of the lowered program (§0): the lowered code may compare
+handles (`icmp eq i32`), branch on them and `select` over them (rule 9), a classical decision like
+any other. A handle is never stored in program memory: memory holds bytes on the bus (§1.3), and
+a handle that must outlive its SSA value goes to `cqrt_push`. **Handle 0 is reserved**: the
+backend never allocates it, and it denotes "no rail" wherever a handle slot has no rail on the
+path taken (rule 19's extra results).
 
-Three symbol namespaces, never mixed. A program that itself spells a `cqrt_*` or `cq_template_*` name
-gets what the link gives (a duplicate or a resolved symbol, as for any other name): the compiler
-has no diagnostic path (§0) and does nothing about it (cq-oa67).
+Three symbol namespaces, never mixed. A program that itself spells a `cqrt_*` or `cq_template_*`
+name gets what the link gives: the compiler has no diagnostic path (§0).
 
 | prefix | meaning |
 |---|---|
-| `cq_*`, `__cq_*` | the user surface in `CQ.h` (`cq_theta_*`, `cq_measure_*`, `cq_phi`, `__cq_invert_begin/end`) |
+| `cq_*`, `__cq_*` | the user surface in `CQ.h` (`cq_theta_*`, `cq_measure_*`, `cq_phi`, `__cq_invert_begin/end`), the injection-bundle host symbols `__cq_mem`, `__cq_alloc`, `__cq_clone_*`, `__cq_sig` (§1.3), the clones `__cq_q_*` (§1.4) and the module-internal `__cq_register`, `__cq_act_*` (§1.3, §1.4) |
 | `cqrt_*` | core gates and backend primitives (§1.3) |
 | `cq_template_*` | generated out-of-place reversible operations, each with an `_unc` twin (§1.2) |
 
@@ -89,58 +103,47 @@ op       := add sub mul udiv sdiv urem srem and or xor shl lshr ashr
             zext sext trunc fpext fptrunc sitofp uitofp fptosi fptoui bitcast
             fma fshl fshr abs ctlz cttz ctpop bswap bitreverse smax smin umax umin uadd_sat usub_sat sadd_sat ssub_sat
             {u,s}{add,sub,mul}_overflow fabs copysign fmax fmin floor ceil trunc rint round sqrt
-            is_fpclass qrom_load qrom_load_s
+            is_fpclass
 pred     := an icmp/fcmp predicate. A compare with the literal on the left is spelled by flipping
             the predicate; compares never take _lh.
 W        := i<N> | f16 | bf16 | f32 | f64 | f80 ; casts spell <from>_to_<to>
 shape    := one letter per DATA operand in signature order, h or q = handle, l = literal;
-            omitted = all handles. Binary ops: _hl, or _lh for a non-commutative op only
-            (a commutative op swaps its operands to _hl; for an fp op only when the literal is not
-            a compile-time NaN constant, else it is spelled _lh; a run-time classical operand is
-            always swapped to _hl: §2's "IR operand order" is the template's operand order, and the
-            two-NaN case, the only one the swap can change, is unspecified in native code anyway). _ll: a binary op whose only quantum operand is the
-            _rmq mode. select: the two ARMS (hl, lh, ll);
-            the condition is always a handle. Ternary: every mix of q and l over the three operands,
-            bare for qqq; for fma the product operands are commutative and lqq, lql are spelled qlq, qll
-            unless the literal is a NaN, which keeps its position (as for binary ops); fshl and fshr are
-            not commutative and keep every mixed shape (lqq, lql, llq included).
+            omitted = all handles. Binary ops: _hl, or _lh for a non-commutative op only. A
+            commutative op swaps its operands to _hl (§2's "IR operand order" is the template's
+            order), except an fp op whose literal is a compile-time NaN constant, spelled _lh.
+            _ll: a binary op whose only quantum operand is the _rmq mode. select: the two ARMS
+            (hl, lh, ll); the condition is always a handle. Ternary: every mix of q and l, bare for
+            qqq; fma's product operands are commutative, so lqq, lql are spelled qlq, qll unless
+            the literal is a NaN; fshl and fshr keep every mixed shape.
 _rm/_rmq := rounding mode appended as the LAST argument (i32 literal / handle), the x86-64 FE_*
             value: bits 10-11 select 0 nearest-even, 1 down, 2 up, 3 toward zero; other bits ignored.
 _exc     := the same operands; the fresh i32 result rail holds the x86 exception bits the operation
             raises: INVALID 1, DIVBYZERO 4, OVERFLOW 8, UNDERFLOW 16, INEXACT 32 (no DENORMAL);
             tininess after rounding, UNDERFLOW only together with INEXACT; a quiet NaN operand
             raises INVALID only in fcmps, conversions to integer and invalid arithmetic.
-qrom     := qrom_load_<W>(ptr base, i64 n, idx) reads element idx of n little-endian elements of
-            the type's ALLOC size (f80: 16 bytes); qrom_load_<W>_s(ptr base, i64 n, i64 stride, idx)
-            uses a stride in bytes (an array-of-struct field, 78).
 ```
 `trunc` with `_to_` is the integer cast, without it the fp rounding op. A rail may fill several
 operand slots of one template (112 `fshr_i32(%5, %5, %6)`); the result rail is always fresh.
 Runtime declarations may carry `signext`/`zeroext`; the backend reads only the low W bits of a
-narrow operand either way.
-
-Forward form: returns the fresh result handle, computed into a `|0⟩` rail.
-`_unc` form: `void`, arguments `(out, <exactly the forward argument list, same literals>)`;
-returns `out` to `|0⟩` by recomputation. Literals carry the LLVM operand type (`i1 true`,
+narrow operand either way. The forward form returns the fresh result handle, computed into a `|0⟩`
+rail. The `_unc` form is `void`, takes `(out, <exactly the forward argument list, same literals>)`
+and returns `out` to `|0⟩` by recomputation. Literals carry the LLVM operand type (`i1 true`,
 `i128`, `double`). Every template is a total function of its operands (§2).
 
 ### 1.3 Core gates (`cqrt_*`)
 
-Control flag is always argument 0 of a `_controlled` form. `_unc` of an in-place core gate takes
-the same arguments.
+Control flag is always argument 0 of a `_controlled` form.
 
 ```
 alloc_<W>(lit) -> h               fresh rail in basis state |lit>
 free(h)                           reset; h must be in a known classical basis state
-measure_<W>(h) -> value           projective measurement; h is never freed; afterwards it holds the outcome (a known basis
-                                  state) and may still be read as an operand or control; a later gate on it acts on
-                                  that basis state (a rotation of a measured rail is alloc(outcome) then the gate; rule 2)
+measure_<W>(h) -> value           projective measurement; h is never freed and holds the outcome afterwards, a known
+                                  basis state that later operands, controls and gates act on (rule 2)
 ry_<W>(h, θ)                      Ry(θ) = exp(−iθY/2) on every qubit of h; non-finite θ = identity
 ry_<W>_controlled(c, h, θ)
-ry_<W>_qangle(h, A)               Ry(val(A)) on h, val(A) the IEEE f64 the angle rail A holds. The backend
-                                  reduces val(A) exactly mod P (4π for Ry, 2π for a phase), rounds it to
-                                  nearest-even onto the grid P·k/2^N, and ladder bit i fires P·2^(i−N);
-                                  non-finite = identity
+ry_<W>_qangle(h, A)               Ry(val(A)) on h, val(A) the IEEE f64 the angle rail A holds, reduced exactly mod P
+                                  (4π for Ry, 2π for a phase) and rounded to nearest-even onto the grid P·k/2^N;
+                                  ladder bit i fires P·2^(i−N); non-finite = identity
 ry_<W>_qangle_controlled(c, h, A)
 rz_i1(f, θ)                       the phase gate P(θ) = diag(1, e^{iθ}) on the flag f (the name says rz; it is P)
 rz_qangle(A)                      the phase e^{i val(A)} on each basis branch of A (rz_i1's P(θ) with a quantum θ)
@@ -152,147 +155,176 @@ xor_i1(a, t)                      t ^= a              (CNOT)
 copy_<W>(s, d)                    d ^= s              (unconditional XOR, an involution; d need not be |0>)
 copy_<W>_controlled(c, s, d)
 xorc_<W>(h, lit), xorc_<W>_controlled(c, h, lit)
-qram_alloc_<W>(n) -> a            n cells, all |0>; n classical (a quantum size allocates at its upper bound)
-qram_alloc_host_<W>(ptr p, i64 n) -> a
-                                  n cells (n = 0: 2^64) whose cell j starts in the basis state of the W-bit
-                                  little-endian element at host address p + j*size (size = the type's alloc size, as
-                                  qrom_load) AT THE CALL; the host object is not read again. The form of every global
-                                  QRAM, called once by the module constructor on the global's own storage (rule 20;
-                                  cq-pf4n, 2026-11-02)
-qram_alloc_host_<W>_s(ptr base, i64 n, i64 stride) -> a
-                                  the strided form: cell j is the W-bit element at base + j*stride (stride in BYTES,
-                                  base already offset to the field), one bus per scalar column of a global array of
-                                  records, as qrom_load_<W>_s (rule 20; cq-z7hz, 2026-11-03)
-qram_realloc_<W>(a, n) -> a'      the same object with LOGICAL size n (a quantum n: its upper bound): no gate, no cell
-                                  moves; shrinking hides the cells >= n (still physically allocated, out of range by
-                                  §2); growing maps the new logical indices to FRESH |0> cells, never to cells a shrink
-                                  hid (C's grown part is indeterminate = 0, §6). The hidden cells stay allocated until
-                                  the _unc chain re-exposes them for their pops, or the object is kept (§0). a' replaces a for every later access.
-                                  _unc(a', n_old) restores the old size, after every store made through a' was popped;
-                                  a pop is evaluated at the logical size its forward store saw
-qram_store_<W>[_hl][_controlled]([c,] a, idx | j, v)
-                                  each store owns a fresh W-qubit tape slot t: t <-> cell[idx] (swap the displaced cell
-                                  out), then cell[idx] ^= v (a copy; v unchanged). _controlled: under c = 0 nothing
-                                  happens and t stays |0>. _unc (same arguments): cell[idx] ^= v, t <-> cell[idx], t is
-                                  |0> again and released. PRECONDITION of the pop: v, idx and c hold their forward
-                                  values (a store whose value rail is later rotated or measured cannot be popped: the
-                                  object stays allocated, §0). Pops are ordered last-in-first-out only among stores that
-                                  may touch the same cell; stores to provably different cells commute. Unpopped
-                                  stores keep their tape slots allocated (a Kept item). A `_unc` pops the most
-                                  recent unpopped slot whose (a, idx | j, v[, c]) are the same rails/literals
-qram_load_<W>[_hl][_controlled]([c,] a, idx | j) -> h        h ^= (c ? cell[idx] : 0) (fresh h; cell unchanged); _unc(h, [c,] a,
-                                  idx | j) requires the cell to hold the value it had at the load
-qram_free(a)                      after every store was popped
-qram_size(a) -> n                 the bus's current LOGICAL size, a classical host read of the backend's bookkeeping
-                                  (no gate): the n_old a realloc's _unc needs when the function did not allocate the
-                                  bus and the program never held its size (cq-lshe, 2026-11-02)
-                                  idx = quantum index rail: the QRAM query (address decoding is the backend's
-                                  circuit, never per-cell code in the IR); _hl j = direct cell access: no address
-                                  decoding, O(W) gates, constant depth; _hl accesses to different cells commute.
-                                  A cell count n = 0 (alloc, realloc, the qrom n) denotes 2^64 cells: an object of
-                                  unknown extent (rule 20); what the shot needs of it is the backend's resource
-                                  question, like N and K (cq-k65d, 2026-11-02)
+qram_alloc_i8(0) -> m             the memory bus M, the only QRAM: 8-bit cells, 2^64 cells (n = 0), cell index = the
+                                  x86-64 address; created once per process, reached only through __cq_mem(), never freed
+qram_load_<W>[_hl][_controlled]([c,] m, addr) -> h
+                                  fresh h ^= the S consecutive cells from addr, little-endian (the cells unchanged;
+                                  _controlled under c = 0: nothing is touched and h stays |0>). _unc(h, [c,] m, addr)
+                                  requires the cells to hold the value they had at the load
+qram_store_<W>[_hl][_controlled]([c,] m, addr, v)
+                                  each store owns a fresh tape slot t of S cells: t <-> cells (the displaced cells go
+                                  out), then cells ^= v (a copy; v unchanged). v is always a handle; a classical value
+                                  is first alloc_<W>(lit). _controlled: under c = 0 nothing is touched and t stays
+                                  |0>. No _unc: a store is never popped and t is Kept (rule 5)
+qram_swap_<W>[_hl][_controlled]([c,] m, addr, h)
+                                  h <-> cells (for N not a multiple of 8 the low N bits of the S cells; their high
+                                  bits stay); its own inverse, no tape slot, no _unc. _controlled: under c = 0
+                                  nothing is touched. Its only use is the in-place form of rule 5, the only way a
+                                  non-diagonal gate acts on a cell
+                                  addr: the i32 handle of a 64-bit address rail (the QRAM query, decoded by the
+                                  backend), or with _hl a classical i64 computed at run time. <W> is the width token
+                                  of the access's LLVM type T (§1.2; a ptr is i64). S = DataLayout store-size(T) in
+                                  cells: ceil(N/8) for iN, 2 for f16 and bf16, 4 for f32, 8 for f64, 10 for f80. An
+                                  iN, N not a multiple of 8, is stored zero-extended and loaded from the low N bits.
+                                  One call per access: a wide access is never spelled as byte accesses
 tape_alloc() -> t
-tape_fmt[_controlled]([c,] t, fmt), tape_effect_controlled(c, t, name)
-tape_write_<W>[_controlled]([c,] t, h) -> h', tape_write_<W>_lit(t, lit), tape_write_str_lit(t, s)
-tape_str_begin(t), tape_str_end(t) the i8 fields written between them form ONE %s field (printed up to the first byte
-                                  that measures 0; a _controlled field under c = 0 is such a byte): a string whose
-                                  bytes or address are quantum (rule 16, 2026-11-02)
+tape_fmt[_controlled]([c,] t, fmt)
+tape_effect[_<W>]_controlled(c, t, name) [-> r]
+                                  the effect entry of the host call `name` with the fields written to t; the _<W>
+                                  form returns a fresh rail r of the callee's result type (below). A null `name`:
+                                  the callee is the host address in the entry's first field (rule 19)
+tape_write_<W>[_controlled]([c,] t, h) -> h', tape_write_<W>_lit(t, lit)
 abort_i1(f)                       kept flag, measured at the end of the shot
-invert_begin(), invert_end()      rule 17: the backend emits the gates recorded between the two calls reversed, each
-                                  inverted (allocations stay where they are, frees move after the reversed list; a
-                                  measurement inside flushes the gates recorded before it forward, since it needs
-                                  them, and only the gates after the last measurement are reversed at the end; tape
-                                  writes and abort flags are gates and bookkeeping like any other); nested pairs
-                                  nest; no gate of their own
-clone_register(fn, clone, ctl, unc) module constructor: registers the all-handles clone (and its _ctl and _unc) of a
-                                  function whose address escapes the module (rule 27)
-clone_resolve(fn, kind) -> ptr    the registered clone of the function at host address fn (kind 0 forward, 1 _ctl,
-                                  2 _unc): a call through a function pointer with no in-module candidate (rule 19)
-push(w), pop() -> w               compiler-internal classical i32 word stack; not a circuit primitive; a wider
-                                  classical value is pushed as i32 words, low word first, popped in reverse
+invert_begin(), invert_end()      the adjoint region of rule 17; nested pairs nest; no gate of their own
+push(w), pop() -> w               compiler-internal classical i32 word stack, not a circuit primitive (a wider value
+                                  is i32 words, low word first); popped by rule 14's reverse loops and by a
+                                  table clone's twin (§1.4)
 ```
 
-Retired spellings: `cqrt_x`, `cqrt_cnot`, `cqrt_toffoli` (use `not_i1`, `xor_i1`, `and_i1`), `cqrt_phase_f64[_controlled]`
-(use `rz_qangle[_controlled]`), `cqrt_measure_<W>_controlled` (a measurement is never conditioned), `ry_<W>_qangle(A, h)` argument order (now `(h, A)`),
-`cqrt_rz_<W>`, `cqrt_ry_*_controlled_inv`, `cqrt_cswap`, every `*_inv` template.
+**The memory bus.** All memory of the program is the one bus `M`; `m` above is always the value of
+`i32 @__cq_mem()`. A cell is HOST or QUANTUM. Every cell starts HOST: its value is the host byte at
+that address, read at each access. A store or swap whose address, control and resulting cell
+content are classical-valued writes host memory and leaves the cells HOST; any other store or swap
+makes every cell it can reach QUANTUM until a later such event makes it HOST again. Host code
+(system calls, bodiless callees, startup data, initializers) therefore sees and is seen by the bus
+with no seeding and no module constructor; at a QUANTUM cell it reads an unspecified byte, and a
+byte it writes there is not seen by the bus. Out-of-domain addresses are totalized in §2; what is
+un-copied, what is kept and the `_controlled` forms are rule 5.
 
-The tape and the abort flag follow the deferred-measurement model: tape rails and abort flags are
-never freed. All tape entries and abort flags form ONE event sequence in call order. At the end
-of the shot (process exit: return from `main`, `exit`, or an `atexit` handler the backend registers;
-a classical `_Exit` loses the tape as it loses unflushed stdio) the backend measures them and
-performs, in sequence order, each entry whose predicate read 1 and that no earlier abort flag
-reading 1 precedes: a format entry prints, an effect entry performs the host call with the recorded
-arguments. Strings are copied at call time. An in-place target is never one of its own controls.
+The injection-bundle host symbols (classical host C shared by every module and library; no gate):
+
+```
+i32 @__cq_mem()                   the handle of M; the first call creates it with cqrt_qram_alloc_i8(i32 0)
+[65 x i64] @__cq_sig              zero-initialised host array, one cell per signal number: the registered
+                                  handler's address (rule 16)
+ptr @__cq_alloc(i64 size, i64 align)
+                                  size bytes of zeroed host memory at the given alignment, at an address that is
+                                  never reused, with size as an i64 in the 8 host bytes before that address (rule
+                                  16): every bus-resident alloca (a VLA included) and
+                                  malloc/calloc/aligned_alloc/realloc block. Nothing frees it
+void @__cq_clone_register(ptr fn, ptr sig, ptr clone, ptr ctl, ptr unc, ptr ctl_unc)
+                                  module constructor: one row of the process-wide clone table per function whose
+                                  address is taken or that is externally visible: fn = its host address, sig = its
+                                  LLVM function type as a C string, then its table clone (§1.4) and that clone's
+                                  _ctl, _unc and _ctl_unc. The function's own symbol is never a row
+ptr @__cq_clone_resolve(ptr fn, i32 kind)
+                                  the row's clone for host address fn (kind 0 forward, 1 _ctl, 2 _unc, 3 _ctl_unc);
+                                  null when fn has no row (host code; rule 19)
+i32 @__cq_clone_count(ptr sig), ptr @__cq_clone_at(ptr sig, i32 i)
+                                  the n registered addresses of function type sig, i < n in registration order
+                                  (the candidates of a function-pointer rail, rule 19)
+```
+
+The constructor is `internal void @__cq_register()` in `@llvm.global_ctors` at priority 65535. A
+`sig` string is the private constant `@.cq.sig` (further function types `@.cq.sig.1`, `@.cq.sig.2`,
+…): the LLVM 19 print of the function type with no attributes (`i32 (i32)`, `void (ptr, i64)`). A
+module-internal `__cq_*` name that collides with a program symbol is renamed by the compiler.
+
+Tape rails and abort flags are never freed, and all tape entries and abort flags form ONE event
+sequence in call order. When the backend performs an entry (at its call, merged, or at the end of
+the shot, where the tape rails that captured an output buffer's QUANTUM cells at the call are
+measured) is BACKEND_ABI §1.11 alone; the compiler emits the same one call in every case and the
+lowered program asks nothing. `tape_effect_<W>_controlled` returns the call's result in `r`.
+`fmt`, `name` and the buffers of an entry are captured at the call (BACKEND_ABI §1.11). An
+in-place target is never one of its own controls.
 
 ### 1.4 Clone naming
 
 ```
-clone := "__cq_q_" fn "_" mask [ "_b" bound { "_" bound } ] [ "_ctl" ] [ "_pure" ] [ "_adj" ] [ "_d" depth ] [ "_inv" cell { "_" cell } ] [ "_unc" ]
-mask  := one digit per FIELD of the clone's formal list, LEFT TO RIGHT, 1 = quantum, 0 = classical.
-         A scalar parameter is one field; an aggregate or pointer-to-slot parameter contributes
-         one digit per field it carries (159 `shift_110`, 163 `mk_00010`, 129 `bump_1011`); a
-         field's digit is 1 iff the cell holds a handle AT THE CALL (a cell the callee makes
-         quantum is 0 and is a slot result); a pointer passed as a fat-pointer triple
-         `(object, tag, idx)` contributes a tag digit and an idx digit (the object none), followed by
-         one digit per pointee cell the callee accesses (1 iff it holds a handle at the call;
-         107 `bump_0011`; QRAM cells get no digits: a QRAM object is quantum by definition, 191
-         `addto_0001`); a pointer to a runtime-length register (`bool x[n]`)
-         is one digit, 1 iff any cell holds a handle (117 `grover_1000_ctl`); a
-         variadic clone is specialised per call-site SIGNATURE (arity and the IR types of the
-         variadic actuals after default promotion, which the clone's formal list spells; two call sites
-         of different variadic types are two clones, cq-s2zz) and a dead formal is passed as poison.
-         The compiler-added object-table parameter of a fat pointer gets no digit.
-_ctl   := the clone takes the block predicate as its FIRST parameter and controls every gate.
+clone := "__cq_q_" fn "_" mask [ "_b" bound { "_" bound } ] [ "_t" ] [ "_ctl" ] [ "_pure" ] [ "_unc" ]
+mask  := one digit per SCALAR formal of the function, LEFT TO RIGHT, after aggregate flattening,
+         1 = quantum (a handle), 0 = classical (159 `shift_110`). A pointer is one scalar: 1 = a
+         handle to a 64-bit address rail, 0 = the classical `ptr`; nothing about the pointee
+         appears in a name or a parameter list. A variadic clone's formals are its fixed formals
+         followed by ONE classical `ptr`, digit 0: the address of the block holding the variadic
+         actuals (rule 16). A dead formal is passed as poison. A function with no scalar formal
+         has the mask `v` (`__cq_q_get_v_unc`).
+         The all-zero mask with no suffix is the function's OWN symbol with its C parameter list:
+         the lowered body, reached by host code and all-classical calls. A variadic function's
+         block form and the plain-`ptr` form of a function with a `byval` formal (rule 26) are
+         always spelled by this grammar, all-zero mask included; their own symbol keeps the C
+         signature for host callers.
+_t     := the table clone (below).
+_ctl   := the clone takes the block predicate as its FIRST parameter and applies it to everything
+          that is not a template on SSA values: rotations, phases, bus accesses, tape and abort
+          events, measurements (rule 19) and the calls of its `_ctl` callees. Templates and the
+          copy-out run unguarded (rule 9): a result is not |0> where the predicate is 0, and the
+          caller merges it by `select`.
 _pure  := the clone without its phase effects (what the twins recompute through).
-_adj   := retired 2026-11-02 (rule 17 is a run-time primitive; no adjoint clone exists).
-_dK    := recursion depth clone (rule 14).
 _bN..  := one upper bound per quantum integer argument whose range facts at the call site bound it
           (`memcmp(.., x & 3)` -> `_b3`); a clone's loop cutoffs use only these bounds and its own range
           facts (rule 14), never a bound of one particular call site that is not in its name.
 ```
-Reading a clone name is right to left: the suffix words, then the `_b` bounds, then the mask (the
-rightmost token of binary digits), and `fn` is whatever remains; that reading is normative. A name
-with bounds is internal to its module (rule 27 clones carry none), so the compiler never binds a
-clone by re-reading its name: the clone table is keyed by the clone's fields, and a function is
-created with a uniquifying constructor so that two distinct clones whose names would coincide (a
-`fn` that itself ends in `_<binary>_b<N>`) get distinct symbols (ruling 2026-10-27).
+A clone name is read right to left: the suffix words, then the `_b` bounds, then the mask (`v` or
+the rightmost token of binary digits), and `fn` is whatever remains. A name with bounds is internal
+to its module, so the compiler never binds a clone by re-reading its name: the clone table is
+keyed by the clone's fields, and two distinct clones whose names would coincide (a `fn` that
+itself ends in `_<binary>_b<N>`) get distinct symbols.
 
-Result: one `i32` handle per quantum scalar result regardless of width, the C type for a classical
-result, a literal struct of scalar fields in field order for several results (a nested aggregate is
-flattened: 166 returns `{ i32, i32, double }`). Twin:
-`_unc(outs…, args…, old slot handles in slot order)`, `void`; the old handles are those of exactly
-the cells, or halves of a pointer-kind cell, that the clone WRITES (107's bump writes the idx half:
-its twin takes the old idx only; ruling 2026-11-01, cq-47n3). A twin nobody calls is not defined.
-INVERSE-UPDATE kind `_inv<c>`: for a caller cell c the clone overwrites with a rule-6 bijection in
-the cell's old value, `__cq_q_<fn>_<mask>_inv<c>(args…, old handle of c)` reads the cell's new
-content, computes f_c⁻¹ fresh by the inverse chain (`sub` for `add`, the odd literal's modular
-inverse for `mul`, `fshr` for `fshl`, a `select` of inverses on the same condition, …), copies it
-onto the old rail with `copy_<W>`, uncomputes and frees its own rails, `void`; the caller then frees
-the old rail. Cells whose updates read each other's old values (a swap) form one group with one
-`_inv<c>_<c'>` taking all their old handles. Defined only when a call site uses it (rule 18;
-ruling 2026-11-01, cq-xivx).
-The original (unlifted) body is kept only while a classical call site still uses it; a callee whose
-every call was retargeted is dropped.
+Result: one `i32` handle per quantum scalar result regardless of width (a pointer result that is a
+rail included), the C type for a classical result, a literal struct of scalar fields in field order
+for several results (a nested aggregate is flattened: 166 returns `{ i32, i32, double }`). Twin:
+`_unc(outs…, args…)`, `void`; a `_ctl` clone's is `_ctl_unc(pred, outs…, args…)`. A twin nobody
+calls is not defined, a table clone's excepted (below). An internal function with no remaining use
+is dropped. A clone called by name and a lowered own symbol keep the original's linkage, calling
+convention and `unnamed_addr` (`internal fastcc` stays, and its calls stay `fastcc`); a clone whose
+name has `_b` bounds is `internal` whatever the original (above). Every function, parameter and return attribute that states a memory, capture, nullness, range or purity
+fact (`memory(...)`, `readnone`, `readonly`, `writeonly`, `nocapture`, `nonnull`, `dereferenceable`,
+`noalias`, `nofree`, `nosync`, `willreturn`, `speculatable`, `range`) is dropped from the definition
+of every clone and lowered own symbol and from every call of one; `noundef` stays, and a call of a host function or an intrinsic keeps its attributes as it stands (203). Attributes are not compared (§6).
+
+**Recursion.** There is ONE clone per function, mask and kind, whatever the recursion depth, and
+no depth is passed. A function that lies on a call cycle by name in its module, or has a table
+clone (which anything may re-enter), has one module-internal classical counter of its live
+`_ctl` activations: each of its `_ctl` clones and `_ctl_unc` twins reads it on entry (the
+activation's depth `d`, rule 14), adds 1, and subtracts 1 at every return. The counter is
+`@__cq_act_<fn> = internal global i32 0`, read and written by plain `load` and `store`; the cut
+test is `icmp ult i32 d, K`. It is compiler state, not program memory: its accesses are no bus
+accesses and no memory version changes (rule 5), and make no function one that writes memory.
+
+**Table clones.** A clone reached without its body in view (a row of the clone table, §1.3, or a
+declared clone, rule 27) has ONE ABI, so that the call follows from the function's C signature
+alone. Its name is `__cq_q_<fn>_<mask>_t` with every mask digit 1 (a variadic function's block
+pointer keeps its digit 0) and no `_b` bounds. It takes every scalar formal as a handle, then the
+cutoff K as a classical `i32` (rule 27), and returns every scalar result as a handle (a
+classical result as a seed rail) and no extra result: it pushes the handles of the registers it
+minted (rule 19) on `cqrt_push`. Its `_unc` twin always exists and pops those handles. For a
+function rule 18 gives no twin it does nothing else, and every result stays allocated (KEPT);
+otherwise it is rule 18's twin, frees the results it zeroes and leaves a FROZEN result (rule 19)
+allocated. The caller frees no result of a table clone. A result that is rule 19's controlled-copy
+rail (a `cq_measure` inside a `_ctl` clone) is returned as that rail, not copied and not pushed; in the clone without
+a predicate the outcome is classical and is returned as a seed rail like any classical result (211).
+`_t_ctl` and `_t_ctl_unc` take the predicate first; a table twin is `_unc([pred,] outs…, args…,
+K)`. A `_ctl` table clone whose body is only templates on SSA values computes unguarded and reads
+its predicate only for the cut. A call by name of a function whose body is in
+the module is never the table clone: it is the rule-18 clone of its mask, all-ones included.
 
 ## 2. Totalization table
 
-The classical reference evaluator (§6) and every backend use the same table. Where the native x86-64
-`-O1` program reaches a library call whose behaviour is vendor-dependent (compiler-rt or libm:
-rounding mode and INEXACT for `sitofp`/`uitofp` from more than 64 bits, `_exc` of `fptosi`/`fptoui`
-to more than 64 bits, INVALID for `frem` of 0 or ±Inf and for `fmax`/`fmin` with a signalling NaN),
-IEEE 754 at the operation's width and the `_rm`/`_exc` contract of §1.2 are normative, as for the NaN
-row (ruling 2026-10-27). The line is: what LLVM 19's own code generation fixes inline (a `cvtt`,
-`fist`, a shift, a double rounding through `float`, `ExpandLargeFpConvert`) is the C program's
-semantics and is adopted for the VALUE where C leaves the result to the implementation (which
-neighbour a rounding lands on, out-of-range and NaN inputs). A value C fixes exactly is never taken
-from a miscompile: LLVM 19's `ExpandLargeFpConvert` gives `uitofp` from more than 128 bits to f80 a
-negative result when the top bit is set; §2 gives the non-negative value rounded to nearest even at
-f80's 64-bit significand (`_rm` when present), and the C oracle of §6 is overridden on those inputs
-as for the NaN row (cq-cqcj, 2026-10-28). What a vendor library computes is not fixed by the program,
-and IEEE 754 is normative for it; exception FLAGS follow IEEE/x87 at the operation's width in every
-case where native raises none. IR that clang 19 emits and LLVM 19's own parser rejects (`fpext`/
-`fptrunc` between `half` and `bfloat`) never reaches the compiler and is out of scope.
+The classical reference evaluator (§6) and every backend use the same table. What LLVM 19's own
+code generation fixes inline (a `cvtt`, `fist`, a shift, a double rounding through `float`,
+`ExpandLargeFpConvert`) is the C program's semantics and is adopted for the VALUE where C leaves
+the result to the implementation (rounding neighbour, out-of-range and NaN inputs). What a vendor
+library computes (compiler-rt or libm: rounding mode and INEXACT for `sitofp`/`uitofp` from more
+than 64 bits, `_exc` of `fptosi`/`fptoui` to more than 64 bits, INVALID for `frem` of 0 or ±Inf
+and for `fmax`/`fmin` with a signalling NaN) is not fixed by the program: IEEE 754 at the
+operation's width and the `_rm`/`_exc` contract of §1.2 are normative, and exception FLAGS follow
+IEEE/x87 at that width wherever native raises none. A value C fixes exactly is never taken from a
+miscompile: `uitofp` from more than 128 bits to f80 (LLVM 19's `ExpandLargeFpConvert` goes
+negative when the top bit is set) is the non-negative value rounded to nearest even at f80's
+64-bit significand (`_rm` when present), and the C oracle of §6 is overridden there as for the NaN
+row. IR that clang 19 emits and LLVM 19's parser rejects (`fpext`/`fptrunc` between `half` and
+`bfloat`) is out of scope.
 
 | operation | out-of-domain input | result |
 |---|---|---|
@@ -319,94 +351,205 @@ case where native raises none. IR that clang 19 emits and LLVM 19's own parser r
 | bf16 conversions | | `fpext` bf16 → f32 is inline, a bare shift (an sNaN stays signalling). `fptrunc` f32 → bf16 and f64 → bf16 are compiler-rt calls (`__truncsfbf2`, `__truncdfbf2`), so IEEE is normative: one rounding to nearest even from the source width, a NaN becomes a quiet NaN carrying the high payload bits and never an Inf. `sitofp`/`uitofp` iN → bf16 is codegen's inline route iN → f32 (rounded) followed by that f32 → bf16 conversion (two roundings, visible for N > 24) (ruling 2026-10-27) |
 | `is_fpclass` | | pure bit test; on f80 a pseudo-denormal is subnormal and a non-canonical encoding is a quiet NaN (native is inconsistent here; the table decides) |
 | `ry`/`rz`/`phase` with a non-finite angle (literal or angle rail) | | identity |
-| `qrom_load`, `qram_load` | index `≥ n` (UNSIGNED reading of the index rail at its width; a `_hl` literal likewise) | `0`; no cell is read |
-| `qram_store` | index `≥ n` (unsigned reading, as above) | no-op (its tape slot stays `|0⟩`) |
+| `qram_load` | a cell that is HOST and whose address is not readable host memory (address rail or `_hl` address; decided per cell) | that cell reads `0`; never a fault |
+| `qram_store`, `qram_swap` | a HOST cell whose address is not writable host memory | the cell becomes QUANTUM (its displaced content is `0` when unreadable); never a fault |
+| `qram_load`, `qram_store`, `qram_swap`, `_controlled` | control `0` | nothing is touched: no cell, no host byte; a load's `h` and a store's tape slot stay `|0⟩` |
+| any bus access | address + S beyond 2^64 | the cell index wraps mod 2^64 |
 
 ## 3. Construction rules
 
 Each rule names its witness examples. "Fresh" always means a `|0⟩` rail allocated for the result.
 
-1. **Handle ABI.** Every quantum value is an `i32` handle (§1.1). Aggregates, vectors and fat
-   pointers are tuples of handles and classical values; a template exists for every width on
-   demand. — 01, 46, 64, 93, 103, 110, 111.
+1. **Handle ABI.** Every quantum value is an `i32` handle (§1.1). Aggregates and vectors are
+   tuples of handles and classical values. A pointer is never a tuple: it is one classical
+   `ptr`/`i64` or one handle to a 64-bit rail holding the address. A template exists for every
+   width on demand. — 01, 46, 64, 93, 103, 110, 111, 200.
 
 2. **Source and sink.** `cq_theta_*(v, θ)` on a classical `v` mints `alloc_<W>(v)` then
-   `ry_<W>(h, θ)`; on an existing handle it rotates that rail in place. `cq_measure_*` is
-   `measure_<W>(h)`; the rail stays allocated; dominated uses of the measured SSA value denote the
-   outcome; a re-measurement of the same rail is a classical re-read. A measurement inside a
-   quantum arm is never conditioned on quantum data: it is executed unconditionally at its
-   program point, so the measured register is collapsed on every branch (a deviation from the C
-   program that is the user's responsibility; the compiler may warn, it never declines). The arm
-   flag is never measured. The outcome merges with the other incoming values by `select` under the
-   flag, so the value the C program reads is tainted (§0). Measurements of one rail in several
-   arms are one measurement (the later ones are classical re-reads). **Classical collapse:** a
-   value computed only from measured rails and classical values is classical: its rail (a flag
-   too) is uncomputed while its sources still hold the outcome, and the value is recomputed by
-   ordinary classical instructions from the outcomes; a merge under such a flag is a classical
-   `select`. Collapse is a data-flow condition, not a program-order one: a rail computed *before*
-   the measurement of its only quantum source collapses too (its `_unc` reads the measured rail,
-   which still holds the outcome; that is what "while its sources still hold the outcome" means),
-   and it is uncomputed at the collapse point (convention: right after the measurement). A
-   `cq_measure` of a value this rule made classical is a classical read and emits no measurement.
-   When the measurement happened inside a clone that returns only a function of the outcome, the
-   caller RE-READS the rail with `measure_<W>` at the collapse point (a classical re-read of a
-   measured rail, §1.3; the backend logs no measurement) to obtain the outcome it recomputes the
-   collapsed values from (136).
-   A collapsed rule 23 rail (flags or mode) is written back to the host environment at the collapse
-   point (`feraiseexcept(v)` / `fesetround(m)` of its classical value), so nothing of it stays an
-   output (65; ruling 2026-10-29).
-   **Collapse is static.** It applies to a value whose quantum sources are measured on EVERY path
-   reaching it. A rail measured on some classical paths only (a `cq_measure` under a classical
-   branch, in the function or in a callee) is lowered as unmeasured everywhere after the join:
-   templates, twins and in-place gates act on the basis state it then holds and are exact there, the
-   measured value is the classical outcome on its own path as always, and nothing is re-read. A
-   clone that measures a rail on some of its classical paths returns, on those paths, the outcome as
-   a seed rail (rule 27's clause), its twin leaves that rail alone, and the caller frees the result
-   after the twin as usual (a basis state either way). Ruling 2026-11-02 (cq-29ej); example owed
-   (§8). — 01, 38, 42, 65, 120, 128, 136, 140, 155.
+   `ry_<W>(h, θ)`; on an existing handle it rotates that rail in place. On a loaded value
+   (`cq_theta(p, θ)` is `load p`, rotate, `store p` in the -O1 code) it is rule 5's in-place
+   form when the result is stored straight back through the same SSA pointer: the gate acts
+   on the cell. `<W>` is the `cq_theta`'s own width, not the cell's access type (a `_Bool`
+   cell is `qram_swap_i1`, `ry_i1`). A `cq_theta` on the value -O1 forwarded from a store to the
+   cell it is stored back through (rule 5 *Readers*; a literal included) is that in-place form
+   on the cell, never a mint. In every other case (the result is not stored, is stored
+   through another pointer, or a memory version change lies between the load and the store)
+   the rotation acts on the load copy, as the C program says: the copy is a FROZEN register
+   from there on (never un-copied, rule 10) and a later store of it is an ordinary kept store
+   (rule 5).
+   `cq_measure_*` is `measure_<W>(h)`; the rail stays allocated; dominated uses of the measured
+   SSA value denote the outcome; a re-measurement of the same rail is a classical re-read, and
+   `cq_measure` of a value that never was a rail is that value: no gate. A
+   measurement inside a quantum arm is never conditioned on quantum data: it is executed
+   unconditionally at its program point, so the measured register is collapsed on every branch
+   (a deviation from the C program that is the user's responsibility; the compiler may warn).
+   Inside a `_ctl` clone the measurement is rule 19's controlled copy instead. The arm flag is never measured. The outcome merges with the other incoming values by
+   `select` under the flag, so the value the C program reads is tainted. Measurements of one
+   rail in several arms are one measurement.
+   **Classical collapse.** A value computed only from measured rails and classical values is
+   classical: its rail (a flag too) is uncomputed while its sources still hold the outcome
+   (convention: right after the measurement), the value is recomputed classically from the
+   outcomes, and a merge under such a flag is a classical `select`. A rail computed *before*
+   the measurement of its only quantum source collapses too. A `cq_measure` of a collapsed
+   value is a classical read. When the measurement happened inside a clone that returns only
+   a function of the outcome, the caller re-reads the rail with `measure_<W>` at the collapse
+   point (136). A collapsed rule-23 rail (flags or mode) is written back to the host
+   environment there (`feraiseexcept(v)` / `fesetround(m)`) and is no output (65).
+   **Collapse is static.** It applies to a value whose quantum sources are measured on EVERY
+   path reaching it. A rail measured on some classical paths only is lowered as unmeasured
+   after the join, and nothing is re-read. A clone that measures a rail on some of its
+   classical paths returns the outcome there as a seed rail; its twin leaves that rail alone
+   and the caller frees it after the twin (a table clone's results stay allocated, §1.4).
+   Example owed (§8).
+   — 01, 38, 42, 65, 128, 136, 140, 155, 195, 205, 207, 211; 120 (regeneration owed).
 
-3. **Taint propagation.** Forward over SSA. Through memory per rule 20, through calls per rule 18,
-   through pointers per rule 21. The angle operand of a rotation is classical unless rule 15
-   applies. Casts, `freeze`, `insertvalue`/`extractvalue`/`shufflevector` on handles are
-   representation changes and emit no gate for lane moves. — 17, 18, 26, 56, 63, 103.
+3. **Taint propagation.** Forward over SSA, and through calls per rule 18.
+   - *Through memory.* Every load is a bus load and its result is a rail; the exceptions are a
+     load of a host-resident object (rule 20) and an observable `volatile` load at a classical
+     address (rule 24), which are classical. Nothing is asked about what the cell holds: a
+     classical value or a measured outcome that was stored and is loaded again is a rail.
+     Over-taint is accepted (§0: such a rail costs no qubit).
+   - *Pointers.* A pointer is tainted iff it is computed from a rail, and is then one 64-bit
+     address rail (rule 21).
+   - *Loops.* A value defined inside a quantum-exit loop (rule 14) and used after it is quantum,
+     whatever it is inside the loop: it depends on which trip exited.
+
+   The angle operand of a rotation is classical unless rule 15 applies. Casts, `freeze`,
+   `insertvalue`/`extractvalue`/`shufflevector` on handles are representation changes and emit no
+   gate for lane moves. — 17, 18, 26, 56, 103, 195, 203; 63 (regeneration owed).
 
 4. **Opcode lowering, always out of place.** A tainted opcode becomes
    `cq_template_<op>[_<pred>]_<W>[_shape]` into a fresh rail (§1.2). A classical operand is a
-   literal (`_hl`/`_lh`); a commutative op puts the handle first. `*.with.overflow` and `cmpxchg`
-   are two templates over the same operands. There is no in-place template; in-place is reserved
-   for rule 2 (rotation of an existing rail), rule 9 (controlled Ry) and `xorc` on a basis-state
-   seed. — 10, 11, 13, 14, 56, 92, 94, 112, 130.
+   literal (`_hl`/`_lh`); a commutative op puts the handle first. `*.with.overflow` is two
+   templates over the same operands; `cmpxchg` and `atomicrmw` are a bus load, the compare and
+   `select` (or the operation's) templates, and a bus store (rules 20, 24), lowered by rule 5 as
+   if written (an `add`, `sub` or `xor` is the in-place form, its result a plain load before the swap-out). There is no in-place
+   template; in-place is reserved for rule 2 (rotation of an existing rail), rule 10 (controlled
+   Ry), `xorc` on a basis-state seed and rule 5's in-place form on a memory cell. — 10, 11, 13,
+   14, 56, 92, 112; 94, 130 (regeneration owed).
 
-5. **Uncompute spine.** Every rail that is not a user register, a result, a tape/abort rail or an
-   output is uncomputed by its producer's `_unc(out, operands…)` and freed. Order: reverse
-   dependency order (a rail is uncomputed before every rail its producer read, and an operand rail
-   outlives every `_unc` that reads it); rails with no dependency between them uncompute in any
-   order (they commute). Scheduling invariant: a garbage rail is uncomputed after its last
-   consumer and before any non-diagonal gate on any of its sources. Convention for the examples
-   (not a requirement): uncompute as early as the invariant allows. — 02, 04, 07, 20, 66, 118.
+5. **Uncompute spine.** Every rail that is not a user register, a result, a tape/abort rail, an
+   output or a rail kept below is uncomputed by its producer's `_unc(out, operands…)` and freed.
+   Order: reverse dependency order (a rail is uncomputed before every rail its producer read,
+   and an operand rail outlives every `_unc` that reads it); rails with no dependency between
+   them uncompute in any order. Scheduling invariant: a garbage rail is uncomputed after its
+   last consumer and before any non-diagonal gate on any of its sources. Convention for the
+   examples (not a requirement): uncompute as early as the invariant allows.
+
+   **Memory.** The bus `M` is ONE linear value (§1.3), and two bus accesses never commute for
+   the compiler: no rule asks at compile time whether two addresses differ (the one run-time test of two
+   classical addresses is the in-place form's *Readers* clause). A *memory version change* is a bus
+   store, an in-place form, a plain store or memory intrinsic to a host-resident object (rule
+   20), an observable `volatile` store (rule 24), an allocation (rule 16), an effect entry or a host call that is
+   not `memory(none)` or `memory(read)` (rule 16; a format entry is none), a call of a table
+   clone (rules 19, 27), or a call of a function that *writes memory*: one whose body contains
+   any of these (a static property, the least fixpoint over calls by name). Three sentences
+   are the whole of memory uncomputation:
+   1. *Load.* Every bus load is un-copied (`_unc`: the same load again, at the same address
+      rail and control) after its value's last reader (the last consumer and, where that
+      consumer is uncomputed, its `_unc`; rule 6's inverse included). A consumer that is never
+      uncomputed (a measured, returned, kept or carried rail, a rule-6 image) has no `_unc` to
+      wait for. Convention: right after the last reader, before a measurement of the consumer.
+      The copy is freed only when that point precedes the next memory version change on every
+      path; otherwise it is un-copied all the same and stays allocated (*overtaken*: `|0⟩`
+      where the cell was not written in between, garbage where it was; no rule asks which).
+      Exceptions, never un-copied and KEPT: a load copy that is itself measured (rule 2's
+      measured rail), one that is the value rail of a kept store, and one a rotation acted on
+      (rule 2's fallback). A load copy is never cleaned by rule 6.
+   2. *In-place form* (below). It leaves nothing behind, and it is the only way a
+      non-diagonal gate or a garbage-free update reaches a cell.
+   3. *Store.* Every other bus store is KEPT for the shot: its tape slot stays allocated and
+      nothing pops it, and in the function that makes the store so do its value rail (a seed
+      included) and its control rail; a caller that passed either as an argument or a `_ctl`
+      predicate treats it by its own rules. Its address rail follows its producer: a template
+      result is uncomputed after the store, the result of a clone that has a twin is zeroed
+      by that twin after the store (rule 18) and freed, a load copy is overtaken by the store
+      (sentence 1: un-copied after it, not freed). A caller that passed the address rail to a storing callee treats
+      it the same way after the call. One rail may be the value rail of several kept stores.
+
+   Under a quantum predicate (an arm flag, a trip predicate of rule 14, a `_ctl` clone's
+   predicate) every bus access is the `_controlled` form under that predicate; a load's `_unc`
+   takes the same control at the value it had at the load (an access made inside an X bracket
+   is un-copied inside the same bracket). No bus access is hoisted or speculated. Kept rails
+   are which-path copies of what the program stored or loaded; the scheduling invariant and
+   rule 6 are promised for SSA values and for the in-place form only. §6 lists kept store
+   rails, kept load copies and tape slots as kept by this rule.
+
+   **In-place form.** `y = load p; y_1 = g_1(y, …); …; y' = g_n(y_{n−1}, …); store y', p` on
+   the same SSA pointer with no memory version change between the load and the store, where
+   every step `g_i` is a `cq_theta` of the previous value (rules 2, 10) or a rule-6 bijection
+   in it, is
+
+         h = alloc_<W>(0); qram_swap_<W>(m, p, h)        ; h holds the cell, the cell |0>
+         each step in order: the gate on h, or the update with rule 6's clean of the previous rail
+         qram_swap_<W>(m, p, h or y'); free              ; the cell holds the result, the rail |0>
+
+   with `_hl` swaps for a classical `p` and the plain form for an address rail. The form is
+   emitted at the STORE's position and no bus access lies between its two swaps: a load a step
+   reads (`*p += *q`) is a plain load at its own program point, before the swap-out. The
+   address rail and the steps' other operands are uncomputed after the second swap when their
+   producer is a template; one that is a bus load copy is overtaken by the form (a memory
+   version change): sentence 1 un-copies it after the second swap and does not free it (`*p += *q`: the copy of `*q`; `**pp += 3`: that of `*pp`).
+   - *Width casts.* `y = load T p; trunc T y to U` (`nuw`, or a range fact that the high bits
+     are 0), the steps at `U`, `zext U to T; store T, p` is the form at width `U` (a `_Bool`
+     cell: `qram_swap_i1`, `ry_i1`, `qram_swap_i1`); the high bits stay in the cells (§1.3).
+     Every load of a `_Bool` cell used as `i1` (`trunc nuw` to `i1`, or a `[0,2)` range fact) is
+     ONE access at `i1` (`qram_load_i1`), never `qram_load_i8` and a trunc template; `zext (icmp
+     ne x, y)` of two such loads is the step `xor_i1`, so `*p ^= *q` on `_Bool` cells is the form at `i1`.
+   - *Readers.* `y` may be the value -O1 forwarded from the preceding store to `p`: each store
+     closes its own form, and the interval then runs from that store. Where `y` is the result
+     of the preceding form it has no rail of its own: before a memory version change in the
+     interval the lowered code takes a plain load of `p` as `y`'s copy, the steps act on that
+     copy (rule 2) and the store is a kept store. No copy is taken, and the form stands, when
+     the change is a bus store or in-place form at a classical address `q` (S_q cells), `p` is
+     classical and a classical run-time branch finds the cells disjoint:
+     `d = (q − p ≥ S_p && p − q ≥ S_q)`, the differences mod 2^64 and the compares unsigned,
+     computed from the run-time addresses immediately before the change. The code branches on
+     `d` twice and duplicates nothing: `br d` around the plain load of `p` (taken when d = 0),
+     the change, emitted once, then `br d` at the store's position: d = 1 the form, d = 0 the
+     steps on the copy and the kept store. The copy's handle reaches the second branch through
+     a classical `phi` whose d = 1 incoming is `poison`; a later reader of `y'` reads a plain
+     load taken after the swap-in when d = 1 and the copy rail when d = 0, joined by a
+     classical `phi` of handles. With several changes in the interval `d` is the AND of their
+     tests, computed before the first of them, where the one copy is taken; a change of any
+     other kind, a change whose address is not yet computed at that point, or an address rail `p`, makes `d` the constant 0 (the copy, no branch).
+     Another reader of `y`, or of a step value before the first `cq_theta` step, reads a plain
+     load taken before the swap-out (the bijections recomputed on that copy); every later reader
+     of `y'` (no branch) ONE plain load taken right after the swap-in. A value at or
+     after a `cq_theta` step that has another reader, other than its own store and the first
+     step of the next form on the same SSA pointer (the forwarded `y` above), ends its form
+     there: the reader reads a plain load taken after that swap-in, and the remaining steps
+     are the next form.
+   - *Under a quantum predicate* `c` the swaps are `_controlled` under `c`, each gate is its
+     controlled form and each update the composite `c ? g(h, …) : h` (a rule-6 bijection), so
+     `h` and `y'` are `|0⟩` again on the `c = 0` branch.
+
+   An update of a cell that is not this shape is a plain load, the templates and a kept store;
+   for `cq_theta` see rule 2. — 02, 04, 07, 20, 66, 118; 195, 198, 199, 202, 205, 206, 207.
 
 6. **Bijective update of a dead value.** When `y' = f(y, …)` is a bijection in `y` for every value
    of the other operands and `y`'s old value is dead, the old rail is cleaned: compute
    `t = f⁻¹(y', …)` fresh, `copy_<W>(t, y_old)`, `_unc` of `t`, free `y_old`. When the old value is
    still needed to uncompute other rails, those are uncomputed first and then this rule applies (to
-   the composite update, 127).
-   - *Dead:* asked at the CLEAN-UP POINT, not at the update instruction (the clean-up is an
-     uncompute and its placement is free, §0). The clean-up is placed after the old value's last
-     reader in the function (every SSA use, every load of a cell that still holds its handle, and
-     every `_unc` that re-reads it) and before the first non-diagonal gate on the rail that holds
-     its bijective image; it cleans the old rail from whatever bijective image is live there (`y'`,
-     or a later bijective image of `y'`: the composite update). A later reader of the old value
-     never keeps it, it only moves the clean-up (94: the cmpxchg `select` reads the old x after the
-     fetch-add; x is cleaned from `x + c` after the select). The old value is kept only when no
-     such point exists: it escapes (`ret`, a call argument the callee keeps, memory read after the
-     function returns), it is measured (rule 2 instead), or a reader of it follows a non-diagonal
-     gate on its image (the program itself keeps both values live). Ruling 2026-11-01 (CQ_lang2
-     cq-k7f8); one placement rule for every opcode, never a per-opcode exemption.
-   - *Every such rail:* the rule is not an optimisation and has no other trigger. It applies to a
-     rotated user register (01, 38, 180) as to a template result (127). A kept old value is a
-     which-path record of the rail that replaced it: a later non-diagonal gate on `y'` or on an
-     operand of `f`, in this function or in a caller the rail escapes to (162), would act on a
-     dephased register. A seed (rule 7) is freed directly instead.
+   the composite update, 127). The rule is not an optimisation and has no other trigger: it
+   applies to a rotated user register (01, 38, 180) as to a template result (127). A seed (rule
+   7) is freed directly instead.
+   - *Dead* is asked at the CLEAN-UP POINT, not at the update instruction. The clean-up is placed
+     after the old value's last reader in the function (every SSA use and every `_unc` that
+     re-reads it) and before the first non-diagonal gate on the rail that holds its bijective
+     image or on one of `f`'s other operands (convention: right after the update); it cleans
+     the old rail from whatever bijective image is live there (`y'`, or a later image: the
+     composite update). A later reader never keeps the old value, it only moves the clean-up.
+     A chain of bijective updates is cleaned step by step, each old rail right after its own
+     update. A call result that rule 18 keeps (no twin) is cleaned by this rule like any other
+     rail: KEPT there only means that no twin is called. In a clone whose result is the
+     bijective image, the image rail is returned directly (no copy-out), and a classical `phi`
+     incoming that is a seed is freed by the same clean-up (204).
+     The old value is kept only when no such point exists: it escapes (`ret`, a call argument
+     the callee keeps), it is the value or control rail of a kept store (rule 5), it is
+     measured (rule 2 instead), or a reader of it follows a non-diagonal gate on its image.
+     A kept old value is a which-path record of the rail that replaced it: a later
+     non-diagonal gate on `y'` or on an operand of `f` acts on a dephased register (162).
    - *Bijections:* `add`, `sub`, `xor` with any other operand (classical or a rail), `sub 0, y`,
      `xor y, -1`, `mul` by an odd literal, `fshl`/`fshr` with `y` in both value slots, `bswap`,
      `bitreverse`, `fneg`; a select whose arms are such updates of `y` or `y` itself (125) and
@@ -418,648 +561,722 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
      garbage, uncomputed as usual).
    - *In a rolled loop (rule 14):* a carried value whose trip update is such a bijection and whose
      trip predicate does not read it (a counter, an accumulator) is cleaned in the body of the
-     same trip: the arm's garbage whose `_unc` reads the old value is uncomputed first, then
-     `t = f⁻¹(y', a, …)` (the composite update's inverse, e.g. `a ? y' - 1 : y'`) is computed
-     fresh, copied onto the old rail, uncomputed and freed, and the old rail is freed. The
-     cleaned rail is not pushed and the reverse loop never sees it; the final carried rail is the
-     loop's result and is measured directly (no copy-out); trip 0's old rail is the `|0⟩`
-     incoming, freed by the same clean-up. 05, 09, 150 (the counter), 149 (s), 27 (acc).
-   - *A cell chosen by a classical index* (190): the compiler knows each cell's content class
-     statically and the index at run time, so a classical branch on the index cleans a register
-     cell and frees a seed cell directly.
-   - *Both operands dead* (`x + z`, two rails): when one of them is garbage that rule 5 uncomputes
-     anyway, rule 6 cleans the other, first (its inverse reads the garbage), and the garbage's `_unc`
-     follows in its usual place. When that `_unc` reads the other operand (the garbage was computed
-     from it), the garbage is uncomputed first and rule 6 asks the composite update (127): `g = 2x`,
-     `y' = g + x` is `y' = 3x`, a bijection, so `x` is cleaned. Only when neither operand is such
-     garbage is operand 0 of the IR instruction cleaned and the other kept (its inverse would read
-     the rail just cleaned) (cq-12cr, 2026-10-28).
-   - *Placement:* `t` reads `y'` and `f`'s other operands, so the clean comes before the next
-     non-diagonal gate on any of them (convention: right after the update). The old rail is kept
-     only when `f` has no inverse in `y` or when an uncompute that must precede the clean has to
-     follow such a gate.
-   - *Dead on one classical path only* (a classical `select` or `phi`, rule 9, between `y'` and `y`
-     itself or another value: `c > 1 ? x + 7 : x`): the old value is dead after the join on the path
-     that chose `y'` and live on the other, so the clean-up runs under a classical branch on that
-     path's condition at the clean-up point (after the join's readers, as always), and on the other
-     path the old rail is simply the live value. Ruling 2026-11-02 (cq-mzqo); example owed (§8).
+     same trip, with the composite update's inverse (e.g. `a ? y' - 1 : y'`), after the arm's
+     garbage whose `_unc` reads the old value. The cleaned rail is not pushed and the reverse
+     loop never sees it; the final carried rail is the loop's result and is measured directly
+     (no copy-out); trip 0's old rail is the incoming rail, whatever it is (a `|0⟩` rail, a
+     seed, a rotated user register: 203), cleaned and freed by the same clean-up, a bus load copy
+     excepted: rule 5 sentence 1 decides that one (un-copied after trip 0's update), and the
+     register's handle is the carried rail from then on. Trip 0's own treatment runs under a
+     classical branch on the trip index (the loop is not peeled). A final carried rail that
+     nothing reads after the loop stays allocated (kept, §6). A loop-invariant rail read by such
+     an update in every trip is cleaned from the last trip's image on the exit edge, and kept
+     on a zero-trip path (75). 05, 09, 150 (the counter), 149 (s), 27 (acc).
+   - *A memory cell.* `y = load p; y' = f(y, …); store y', p` (`g++`, `*p += x`, `s->n ^= k`) is
+     rule 5's in-place form: the cell is the register, and no copy of the cell, tape slot
+     or old value remains, at a classical address or an address rail alike (a load copy that
+     supplied the address or an operand is un-copied after it and not freed, rule 5). Nothing else in memory
+     is cleaned by this rule.
+   - *Both operands dead* (`x + z`, two rails): when one is garbage that rule 5 uncomputes
+     anyway (a template result, or a bus load copy that sentence 1 does not except), rule 6 cleans
+     the other first (its inverse reads the garbage; 195). A load copy that sentence 1 excepts is
+     kept, and rule 6 then cleans the other operand only if that is not itself rule-5 garbage;
+     when both operands are garbage rule 6 has no trigger (198). When the garbage's
+     `_unc` reads the other operand, the garbage is uncomputed first and rule 6 asks the
+     composite update (127: `g = 2x`, `y' = g + x` is `y' = 3x`, so `x` is cleaned). When
+     neither is such garbage, operand 0 of the IR instruction is cleaned and the other kept.
+   - *Dead on one classical path only* (a classical `select` or `phi` between `y'` and `y`:
+     `c > 1 ? x + 7 : x`): the clean-up runs under a classical branch on that path's condition
+     at the clean-up point; on the other path the old rail is the live value. Example owed (§8).
 
-   — 01, 38, 125, 127, 144, 145, 180.
+   — 01, 38, 125, 127, 144, 145, 180; 195, 198 (a cell), 203, 204.
 
 7. **Seed rails.** A rail minted from a classical constant or parameter and never written is in a
-   known basis state and is freed directly (§0 free policy). — 25, 28, 57, 62, 94, 95.
+   known basis state and is freed directly (§0), whatever its value (`alloc_i1(true)`). The seed a store of a classical value mints
+   is that store's value rail and is kept with it (rule 5; a basis state costs no qubit).
+   — 25, 57, 62; 28, 94, 95 (regeneration owed).
 
 8. **Branch flags.** A tainted `br` condition becomes a flag rail: the compare template's result,
    or the bare `i1` rail. A conjunction of flags is `and_i1` into a fresh `|0⟩`; a disjunction
    `or_i1`; a flag used as data is the `cq_template_and_i1`/`or_i1` form. The false edge is an
    X bracket (`not_i1`) on the flag. A phase arm is `rz_i1(flag, θ)`. A mixed condition is first
-   factored as `C && Q` on its Boolean function (not its syntax: -O1 may spell `c && q` as two
-   branches or as one `and i1`), where `C` is the conjunction of every classical term that is a
-   conjunct of the whole condition and `Q` is the rest. `C` stays a classical branch around the
-   quantum part (23 `cond_mixed`, 180). `Q` is one flag: a classical `i1` term inside it that cannot
-   be factored out (`c || q`, Annex G's `isnan` tests) becomes a seed rail (rule 7) and joins by
-   `and_i1`/`or_i1` (ruling 2026-10-27).
-   A purely classical condition is always a classical branch, also inside a clone; a clone body is
-   never flattened as a whole. The flag is uncomputed after its last controlled gate. — 03, 08,
-   21, 23, 59, 69, 137, 138, 146, 154.
+   factored as `C && Q` on its Boolean function (not its syntax), where `C` is the conjunction
+   of every classical term that is a conjunct of the whole condition and `Q` is the rest. `C`
+   stays a classical branch around the quantum part (23 `cond_mixed`, 180). `Q` is one flag: a
+   classical `i1` term inside it that cannot be factored out (`c || q`) becomes a seed rail
+   (rule 7) and joins by `and_i1`/`or_i1`. A purely classical condition is always a classical
+   branch, also inside a clone; a clone body is never flattened as a whole. The flag is
+   uncomputed after its last controlled gate; a flag that controls a kept store is kept with
+   it (rule 5). — 03, 08, 21, 23, 69, 137, 138, 146, 154; 59 (regeneration owed).
 
-9. **Value arms.** Pure arm code is hoisted and computed unguarded into fresh rails; the merge
+9. **Value arms.** Pure arm code (templates on SSA values) is hoisted and computed unguarded into
+   fresh rails. A bus access is never hoisted: it stays in its arm as the `_controlled` form under
+   the arm flag (rule 5), and a `_controlled` load's rail is `|0⟩` on the other branch. The merge
    (`phi` or `select`) is one `cq_template_select_<W>[_shape]` per distinct incoming, chained with
    the complement arm innermost, into a fresh rail; arm rails are then uncomputed. No other merge
    spelling. Nested value arms nest their selects; a conjunction flag is needed only where a
-   phase or in-place gate sits in the inner arm, never for a pure select. A `select` or `phi` whose
-   condition (or choice of incoming edge) is purely classical is a classical `select`/`phi` over the
-   handles, no gate, like a classical branch (rule 8); each arm's rails are still computed and
-   uncomputed as usual, and the chosen handle is the merged value (ruling 2026-10-27). — 04, 20,
-   21, 22, 24, 49, 123, 135, 143, 148, 158.
+   phase gate, an in-place gate or a bus access (`_controlled` under it) sits in the inner arm;
+   one that controls a kept store is kept with it (rules 5, 8). A `select` or `phi` whose condition (or choice
+   of incoming edge) is purely classical is a classical `select`/`phi` over the handles, no
+   gate (rule 8); each arm's rails are still computed and uncomputed, and the chosen handle is
+   the merged value; a literal incoming of a classical `phi` over handles is a seed minted in
+   a block on that incoming edge. — 04, 20, 21, 22, 24, 49, 123, 135, 143, 148, 158, 204.
 
 10. **Controlled Ry and state prep.** A `phi` of `cq_theta(v, θ)` against `v` (or two thetas of one
     seed) is `ry_<W>_controlled(flag, rail)` on a rail seeded with `v`; `r = c;` before the prep
     adds `xorc_<W>_controlled`; a second prep of a rail nothing read in between undoes the first by
     its adjoint under the conjunction flag. When something did read the rail in between (a template,
-    a flag, a store) or a rotation hit it, the first prep cannot be undone (its readers are
-    entangled with it): the second prep is a prep of a FRESH rail seeded with `v`, the register's
-    handle moves to it, the old rail stays allocated as a frozen which-path record (rule 6's kept
-    old value), and the arms merge by rule 9 over the two handles. Ruling 2026-11-02 (cq-oa67);
-    example owed (§8). The rotated rail is frozen (never reverse-played). A
-    flag that read the rotated register stays allocated. — 39, 66, 120, 125, 133, 141.
+    a flag, a store) or a rotation hit it, the second prep is a prep of a FRESH rail seeded
+    with `v`, the register's handle moves to it, the old rail stays allocated as a frozen
+    which-path record (rule 6's kept old value), and the arms merge by rule 9 over the two
+    handles (example owed, §8). The rotated rail is frozen (never reverse-played). A flag that
+    read the rotated register stays allocated.
+    On a memory cell the controlled Ry is rule 5's in-place form with `ry_<W>_controlled(flag, h,
+    θ)` on the swapped-out rail, and the cell is the register. `r = c;` before a prep of a cell
+    is a kept store: its tape slot holds the displaced content, so whether anything read the
+    cell in between is never asked. — 39, 66, 125, 133, 141; 120 (regeneration owed).
 
 11. **Angle select is a quantum angle.** An angle that depends on quantum data in any way (a
-    `select` or `phi` on a quantum flag, a `switch` over a quantum scrutinee, a table read at a
-    quantum index, arithmetic on a register) is computed into an `f64` rail by ordinary templates
-    (`select_f64[_ll|_hl|_lh]`, `qrom_load_f64`, arithmetic) and consumed by rule 15's single
-    primitive. The compiler never expands it into per-arm controlled rotations; the ladder is the
-    backend's. A `cq_phi` whose angle -O1 merged into one `phi` over the edges of a quantum
-    `switch` or diamond (22 `switch_phase`) is this case: the `phi` is the rule 9/13 select chain
-    of its incoming values, and the phase fires as `rz_qangle_controlled` under the shared block's
-    predicate. Rule 13's "phase arms per rule 8" is for distinct `cq_phi` calls that stayed in
-    their own blocks (ruling 2026-10-29). — 22, 132, 141, 142.
+    `select` or `phi` on a quantum flag, a `switch` over a quantum scrutinee, a value loaded from
+    the bus, arithmetic on a register) is computed into an `f64` rail by ordinary templates and
+    bus loads and consumed by rule 15's single primitive, never expanded into per-arm
+    controlled rotations. A `cq_phi` whose angle -O1 merged into one `phi` over the edges of a
+    quantum `switch` or diamond (22 `switch_phase`) is this case: the `phi` is the rule 9/13
+    select chain of its incoming values, and the phase fires as `rz_qangle_controlled` under
+    the shared block's predicate. — 22, 132, 141; 142 (regeneration owed).
 
 12. **Phase deletion.** `cq_phi(θ)` is deleted only when no quantum predicate is in scope at any
     call depth. Inside a `_ctl` clone or a callee reached from a quantum arm it is
     `rz_i1(pred, θ)`. Under a purely classical condition at top level it is a global phase and is
-    deleted. — 41; new example required (§8, item 3).
+    deleted. — 41, 146.
 
 13. **switch.** One equality flag per reachable case on the scrutinee; a shared or fallthrough
     block gets `or_i1` of its edge flags; an `unreachable` default gets no flag, and then the last
     case needs none either: it is the complement of the others and becomes the innermost select
-    arm; a reachable default is the complement of the case flags. Value arms merge per rule 9, phase arms per
-    rule 8 (distinct `cq_phi` calls in their own blocks; one merged call with a `phi` angle is rule 11,
-    22 `switch_phase`). A computed `goto` (`indirectbr`) is a `switch` over its destination list: the
-    scrutinee is the ADDRESS itself, an integer of pointer width, and the case value of each
-    destination is `ptrtoint(blockaddress(@f, %bb))`, a run-time constant (the lowered function
-    keeps every destination block under its identity, and every `blockaddress` constant in the
-    module, initializers included, denotes the lowered block). No index is recovered: where the
-    address came from is irrelevant. A code address is an integer, never a data pointer (rule 21
-    decodes no provenance for it; a cell only code addresses are stored into holds an `i64`
-    handle), so its producers lower by their own rules: a `blockaddress` table read at a quantum
-    index is a QROM load of the table (rule 20) whose result is the scrutinee, a `select` or `phi`
-    a value merge (rule 9), a loop-carried address a carried handle (rule 14), a stored and
-    reloaded address a slot or QRAM cell (rule 20). The flags are `icmp_eq_i64_hl(h,
-    ptrtoint(blockaddress ...))`; the default is `unreachable` (LangRef: an address outside the
-    list), so the last destination is the complement of the others. LangRef's undefined equality
-    of label addresses concerns an `icmp` on `blockaddress` values in the IR; the lowered program
-    holds none: the compare is made inside the runtime between two run-time words, and both the
-    address the program carries and the case literal come from `blockaddress` constants of the
-    same lowered function, which codegen materialises once per block. The compiler keeps every
-    destination block a distinct block (giving each a stand-in with its own code is an acceptable
-    way to keep codegen from merging two); nothing else is needed (cq-zaes, 2026-11-03). Classical
-    or quantum by this rule; `callbr` (`asm goto`) is inline asm (rule 27). Ruling 2026-11-02
-    (cq-29ej, cq-b58q; the hidden-index question cq-8i5g); example owed (§8). — 22, 49, 123, 131, 142; new example
-    for a reachable default (§8).
+    arm; a reachable default is the complement of the case flags. Value arms merge per rule 9,
+    phase arms per rule 8 (distinct `cq_phi` calls in their own blocks; one merged call with a
+    `phi` angle is rule 11).
+    A computed `goto` (`indirectbr`) is a `switch` over its destination list: the scrutinee is
+    the ADDRESS itself (an integer like every pointer, rule 21; no index is recovered) and the
+    flags are `icmp_eq_i64_hl(h, ptrtoint(blockaddress(@f, %bb)))`, a run-time constant. The
+    default is `unreachable` (LangRef), so the last destination is the complement of the
+    others. The lowered function keeps every destination block distinct (a stand-in with its
+    own code is acceptable), and every `blockaddress` constant in the module denotes the
+    lowered block. `callbr` (`asm goto`) is inline asm (rule 27). — 22, 49, 123, 131; 142
+    (regeneration owed); examples owed for a computed `goto` and a reachable default (§8).
 
 14. **Loops.**
-    - *Classical bound, quantum body*: the loop stays a classical loop. Each trip computes next
-      values into fresh rails and pushes every trip-local rail (and any classical per-trip value
-      not expressible from the trip index) on `push`; after the result is copied out
-      (`alloc` + `copy`) a reverse loop pops and uncomputes each trip. An array (slot cells or
-      QRAM) the loop writes and the program reads afterwards is not copied out: the reads use it in
-      place, and the reverse loop runs after those readers are uncomputed, restoring each trip's old
-      slot handles or popping its stores (187, 188). — 25, 27, 28, 57, 62, 131, 187, 188.
-    - *Quantum-dependent exit, cutoff K*: the loop is re-rolled so the pre-header guard is trip 0
-      of the latch test (equality by SCEV); it runs exactly K trips under the predicate chain
-      `a_j = a_{j−1} & cond_j`, seeded `|1⟩` (or the arm flag when the loop sits in an arm); every
-      carried value advances by a `select` on `a_j`; the mirror pops K trips. An AFFINE INDUCTION
-      is not carried: a value with a loop-invariant start and an unconditional classical step (SCEV
-      `{start,+,step}`: a counter, a walked pointer, a decremented length) has in trip j the value
-      `start + j·step`, which is classical when the start is classical and otherwise one template
-      from the invariant start rail and the literal `j·step` (190: `n − j`); nothing is carried for
-      it. A pointer walked this way with a classical start indexes a SLOT array at the classical
-      index `start + j·step`, bounds-checked against the object's cell count (beyond reads `|0⟩`,
-      rule 21), never a QRAM (rule 20: no quantum offset; 190's `l`, `r`, 189's `i`). Only the
-      induction's EXIT value is quantum (it depends on which trip exited): when the program reads it
-      after the loop, a carried rail advancing by `select` on `a_j` is kept for that read alone
-      (rule 6 cleans it per trip as a counter) and is never used as an index (87's `n`). 87's `p`
-      is regenerated from its QRAM form (§7). Ruling 2026-11-01 (CQ_lang2 cq-n7e9). **The overflow
-      predicate is kept as an output rail**: `a_K` denotes the result of the exit test evaluated
-      after the K-th body (`a_{K−1} & cond_K` for the test that would admit a (K+1)-th trip), so
-      `a_K = 1` iff the loop would run another trip (non-convergence is observable, and a loop that
-      exits after exactly K trips reads 0). The cutoff of a loop is min(K, B) where B is an upper bound
-      of its trip count from LLVM's range facts (`i < (x & 3)`: B = 3); `a_K` is kept only when B > K
-      or no bound is known (91). The K-th trip's own body predicate is not `a_K`; it is
-      uncomputed by the mirror like every earlier one. A test-at-bottom loop (`do … while`) runs
-      trip 0 under the `|1⟩` seed and computes `a_{j+1}` after the body (150).
-      Where -O1 tests at the loop header with no pre-header guard (09, 37, 54, 189) the loop is
-      re-rolled the same way: the first header test is computed before the loop as trip 0 of the
-      chain, and each of the K trips is body then test, so that after the K-th body the chain ends
-      in the test admitting trip K+1, which is `a_K`. Keeping the K-th header test instead would read
-      1 on an input that runs exactly K trips, contradicting the definition above (ruling 2026-10-28;
-      the four references were rewritten the same day). A loop
-      seeded by an arm flag `F` tears `F` down by its compare's `_unc` after the chain, never as a
-      seed (153). Nested K-loops keep one inner `a_K` per outer trip plus the outer one (68, 153). A
-      carried value whose exit `phi` -O1 folded to a literal is copied out from the carried rail
-      (149). — 05, 09, 37, 53, 54, 55, 68, 87, 149, 150, 151, 152, 153, 169, 189.
+    - *Classical bound, quantum body*: the loop stays a classical loop. The bound is classical only
+      when every value its exit test reads is; a bound loaded from the bus is a rail (rule 3) and
+      the loop is the next case. Each trip computes next values into fresh rails and pushes every
+      trip-local rail that rule 5 does not keep (and any classical per-trip value its `_unc`s
+      need that is not expressible from the trip index) on `push`; after the result is copied
+      out (`alloc` + `copy`) a reverse loop pops and uncomputes each trip. A rail rule 5 keeps
+      that a reverse-loop `_unc` reads is reached by pushing its handle per trip (`cqrt_push`/
+      `cqrt_pop`), never by recomputing it, and is neither uncomputed nor freed. Rule 5 decides each
+      load as anywhere. — 25, 27, 57, 62, 131; 28, 187, 188 (regeneration owed).
+    - *Quantum-dependent exit, cutoff K*: a loop whose exit test reads a rail, a value loaded from
+      the bus included (the user raises K, §0). The loop is re-rolled so the pre-header guard is
+      trip 0 of the latch test (equality by SCEV: the same expression over SCEV-equal
+      operands, a load equal to a load of the same type at a SCEV-equal address when no
+      memory version change lies between the guard and the loop header, 203); it runs exactly K trips under the predicate
+      chain `a_j = a_{j−1} & cond_j`, seeded `|1⟩` (or the arm flag when the loop sits in an
+      arm); every carried value advances by a `select` on `a_j`; the reverse loop pops K trips.
+      Every bus access of trip j is the `_controlled` form under `a_j`, except one that the
+      exit test of trip j reads: that one is under the predicate of reaching the test, and its `_unc`
+      takes the same rail: `a_{j−1}` where the test of trip j gives `a_j` (the seed or the arm flag for trip 0,
+      `a_{K−1}` for the test that gives `a_K`), `a_j` in the test-at-bottom form, where the test after body j
+      gives `a_{j+1}`. None is made before the loop on the loop's behalf: a trip C would not run touches no cell and no host byte.
+      An AFFINE INDUCTION is not carried: a value with a loop-invariant start and an
+      unconditional classical step (SCEV `{start,+,step}`) has in trip j the value
+      `start + j·step`, classical when the start is (a walked pointer's accesses are then
+      `_hl`; the value is recomputed from the trip index in the forward and in the reverse
+      loop, by arithmetic without `inbounds`/`nuw`/`nsw`, and never pushed) and otherwise one template from the invariant start rail and the literal
+      `j·step`. Only its EXIT value is quantum: when the program reads it after the loop, a
+      carried rail advancing by `select` on `a_j` is kept for that read alone (rule 6).
+      **The overflow predicate is kept as an output rail**: `a_K` is the exit test evaluated
+      after the K-th body (`a_{K−1} & cond_K`), so `a_K = 1` iff the loop would run another
+      trip, and a loop that exits after exactly K trips reads 0. That test is made like every
+      other: a load it reads is a bus load at trip K's address under `a_{K−1}`, un-copied at
+      once, whatever object the address lies in (rule 21, §2). The cutoff is min(K, B), B an
+      upper bound of the trip count from LLVM's range facts (`i < (x & 3)`: B = 3), taken
+      only from the value ranges of the integers the exit test reads: an object's extent,
+      `inbounds`, `dereferenceable` and the undefined behaviour of an access never bound a
+      trip count (rule 21), so a scan over an array has no B (203). `a_K` is
+      kept only when B > K or no bound is known. The K-th trip's own body predicate is not
+      `a_K` and is uncomputed by the reverse loop like every earlier one; a predicate that
+      controls a kept store, and every other trip rail rule 5 keeps, is not pushed but for its handle (first bullet). A test-at-bottom
+      loop (`do … while`) runs trip 0 under the `|1⟩` seed and computes `a_{j+1}` after the
+      body (150). Where -O1 tests at the loop header with no pre-header guard (09, 37, 54) the
+      first header test is trip 0 of the chain, computed before the loop, and each of the K
+      trips is body then test. Where the pre-header guard is not the latch test at trip 0 by
+      SCEV (a pointer chase `while (n) { …; n = n->next; }`), the guard stays a classical
+      branch (rule 8) or an arm flag that seeds the chain, the loop inside it is the
+      test-at-bottom form, and a carried pointer with a classical start enters as the seed
+      `alloc_i64(start)`. A loop seeded by an arm flag `F` tears `F` down by its compare's
+      `_unc` after the chain, never as a seed (153). Nested K-loops keep one inner `a_K` per
+      outer trip plus the outer one (68, 153). A carried value whose exit `phi` -O1 folded to
+      a literal is copied out from the carried rail (149). — 05, 09, 37, 53, 54, 68, 149, 150,
+      151, 152, 153, 169; 203 (an exit on a loaded value); 55, 87, 189 (regeneration owed).
     - *Classical bound with a quantum exit* (`for (i = 0; i < n; i++) if (q) break;`, a mixed exit
       `c_classical || q`): no cutoff applies. The loop is a classical loop over the classical bound,
       `q` feeds the predicate chain, and **every** predicate, the last included, is a function of
-      the inputs and is uncomputed by the mirror. Nothing is kept. The chain's `|1⟩` seed is minted
-      after the classical zero-trip test, where a trip can run, never on the skip path (26). — 26,
-      121, 130, 139.
-    - *Recursion with quantum depth*: one clone per level `_d1.._dK`; the call at level K is
-      replaced by a `|0⟩` rail; the depth cutoff is min(K, B) like a loop's, and the kept overflow
-      predicate is "the cut level would recurse once more" (0 on every branch when B ≤ K). — 98.
+      the inputs and is uncomputed by the reverse loop (one that controls a kept store is kept,
+      rule 5). The chain's `|1⟩` seed is minted after the classical zero-trip test, where a trip
+      can run, never on the skip path (26). — 26, 139; 121, 130 (regeneration owed).
+    - *Recursion with quantum depth* (a function re-entered under a quantum predicate,
+      directly, through other functions or through a function-pointer rail): ONE clone per
+      function, mask and kind. A `_ctl` clone that has a depth `d` (§1.4) counts it against
+      the cutoff by a classical branch on entry: while `d` is below K the body runs; at the
+      cutoff the clone returns at once, each of its results a `|0⟩` rail, and a
+      `copy_i1` of its predicate into a fresh rail is the kept overflow predicate (an output
+      rail, one per cut activation). Only `_ctl` activations count: the one that enters the
+      recursion with no quantum predicate in scope does not, so up to K bodies run under a
+      quantum predicate and the overflow predicate is the conjunction of K+1 arm predicates.
+      The count is per function, so a call chain that re-enters
+      nothing is never cut; a recursion entered under a quantum predicate is cut at K whatever
+      decides its depth (the user raises K). Every activation has its own rails by the host
+      recursion and its own bus-resident locals by `__cq_alloc`. Clone and twin are rule 18's
+      like any other; the twin makes the same cut, and its cut activation mints nothing and calls no gate; a table twin still
+      frees the cut activation's `|0⟩` result rails (§1.4, 211). A forward clone that a twin calls to recompute is an activation like any other
+      and keeps its overflow copy at the cut. — 205; 98 (regeneration owed).
     - `continue`, `return` inside a K-loop, nested K-loops: same chain, inner chain seeded by the
-      outer trip predicate. New examples required (§8).
-    - *No live exit*: a K-loop whose every exit edge leads only to a `noreturn` arm runs its K trips
-      and each such edge is rule 16's abort arm under that trip's exit flag; a loop with no exit
-      edge at all (`for (;;)` with a quantum body) runs K trips and then `abort_i1` on the `|1⟩`
-      seed: the program's continuation is unreachable, and in C the shot never completes either.
-      A classical carried value of a quantum-exit loop that the program reads after the loop is the
-      affine-induction case above (its exit value is quantum: a carried rail advanced by `select`,
-      kept for that read, 87's `n`). Ruling 2026-11-02 (cq-w3cd, cq-b58q); example owed (§8).
+      outer trip predicate. — 149, 151, 153.
+    - *No live exit*: a K-loop whose every exit edge leads only to a `noreturn` arm runs its K
+      trips, each such edge rule 16's abort arm under that trip's exit flag; a loop with no
+      exit edge at all runs K trips and then `abort_i1` on the `|1⟩` seed. Example owed (§8).
     - *Irreducible control flow* (a `goto` into a loop body, Duff's device) has no construction of
-      its own: the compiler first makes every cycle a natural loop (LLVM's `fix-irreducible`, a
-      semantics-preserving CFG rewrite that adds a dispatch header and one carried state value) and
-      applies the cases above to the result; the dispatch value is a carried value like any other.
-      §6 compares semantics, never CFG shape. New example required (§8, 2026-10-27).
+      its own: the compiler first makes every cycle a natural loop (LLVM's `fix-irreducible`) and
+      applies the cases above to the result; the dispatch value is a carried value like any
+      other. New example required (§8).
 
 15. **Quantum angle.** An angle derived from a register is computed into an `f64` rail by ordinary
     templates and consumed by one primitive: `ry_<W>_qangle[_controlled]([c,] h, A)` for `cq_theta`,
-    `rz_qangle[_controlled]([c,] A)` for `cq_phi`. The angle rail is uncomputed afterwards. The backend
+    `rz_qangle[_controlled]([c,] A)` for `cq_phi`. The angle rail is uncomputed afterwards (a bus load copy by rule 5 sentence 1). The backend
     supplies the N-bit ladder. — 79, 143.
 
-16. **Noreturn arms and host effects.** Calls the compiler does not lift are classified:
-    - pure classical call (no side effect, no quantum argument): ordinary call;
-    - side-effecting host call under a quantum predicate (`printf`, `puts`, `fprintf`, `write`,
-      `remove`, `raise`, `signal`, …): a tape entry with the predicate; never executed;
+16. **Noreturn arms and host effects.** A callee with no body (after injection, and no declared
+    clone of rule 27) is the host boundary. Its call is classified by the call site and by the
+    callee's LLVM attributes. The only callees recognised by name and signature are ISO C and
+    POSIX interfaces, and a body the bundle has for one of them is never lifted for the call:
+    `malloc`, `calloc`, `aligned_alloc`, `realloc`, `free`; the *stream calls*: every
+    `<stdio.h>` function, input and output alike, and the POSIX descriptor calls (`open`,
+    `close`, `read`, `write`, `lseek`), except the string formatters `sprintf`, `snprintf`,
+    `sscanf` and their `v` forms, which are injected and lifted (the bundle builds them over bundle-internal names
+    for the formatting cores they call on their private `FILE`, `__cq_vfprintf` and
+    `__cq_vfscanf`, lifted like any body, so no stream call by name remains in a lifted
+    body); `signal`, `raise`; rule 23's
+    fenv functions; rule 24's `setjmp`, `longjmp` and `pthread_*`. `stdin`, `stdout`, `stderr`
+    and every `FILE` are the host C library's objects.
+    - *Ordinary host call*: every argument classical, no quantum predicate in scope, not a
+      stream call with a pointer argument (the backend alone sees whether a buffer's cells are
+      QUANTUM), and no tape or abort event can precede it: none from which the call is
+      reachable in its function's CFG, no earlier call there of a function that contains one,
+      itself or through its callees (an indirect callee and a declared clone count), and its
+      function is not *called after an event*: one a call of which by name is so preceded in
+      its caller, or whose caller is called after an event (the least fixpoint); a function
+      whose address is taken or that is externally visible is, whenever the module contains
+      an event; inside a table clone (`_t`, `_t_ctl`, their twins) every function is, always:
+      its caller is not in view. The call is made as it stands and reads and writes host bytes, which the bus
+      sees through the overlay (§1.3).
+    - *Effect entry*: every other call that is in no class below, an unknown callee included
+      (it is never dropped). It is ONE call sequence on the function's tape `t` (one
+      `tape_alloc` at the entry of each function that records an entry; 47): the fields, then
+      `tape_effect[_<W>]_controlled(c, t, name)`. `c` is the predicate in scope or an
+      `alloc_i1(true)` seed (rule 7: freed right after the effect call); the entry captures
+      `c`, which is uncomputed afterwards like any flag. The `_<W>` form is used when the
+      program reads the result, which is the rail it returns: KEPT, it has no `_unc` and is
+      never freed. `name` is the callee's symbol name (its C identifier: a leading `\01` and
+      the target's symbol prefix, `_` on Mach-O, removed) as `@.cq.effect.<name> = private
+      unnamed_addr constant [<len+1> x i8] c"<name>\00", align 1`, one per host callee per
+      module, after the module's own globals. The fields are the arguments in order: a
+      classical one a `tape_write_<W>_lit`, a rail a `tape_write_<W>` field (`<W>` the width
+      token of the argument's IR type at the call, §1.2), a pointer its address (`i64`), a
+      vector its lanes. A buffer or
+      string is never expanded into fields. When the backend performs the call, what a
+      deferred result holds and how a buffer is read is BACKEND_ABI §1.11 alone; the lowered
+      program asks nothing. `printf` is the format entry `tape_fmt[_controlled]([c,] t, fmt)`
+      with its variadic arguments as fields by promoted IR type (47, 138). A result the
+      program reads of `printf` or `fprintf` (the count, `%n`) is not an entry's rail: it is
+      the lifted `snprintf(0, 0, fmt, args…)` (rule 18), and the effect goes to the tape with
+      no result. The result rail of any other output call the backend defers is `|0⟩` (a
+      stated deviation; the compiler may warn).
+    - *Pure*: a callee LLVM marks `memory(none)` and `willreturn`. With classical arguments
+      under a quantum predicate it is executed unguarded and its result merged like any
+      classical arm value (rule 9).
     - `noreturn` (`abort`, `exit`, `_Exit`, `__builtin_trap`, `__assert_fail`, any
-      `noreturn`-attributed function): `abort_i1(pred)`; rails later modified in place are
-      snapshotted under the predicate first;
-    - allocation (`malloc`, `calloc`, `aligned_alloc`): `qram_alloc` (a quantum size at its upper
-      bound) when the block is a QRAM (rule 20), else a host call; `realloc` of a QRAM is
-      `qram_realloc` (one object across the call, 91), of a slot block a host `realloc`;
-    - deallocation is a lifetime end, not an effect: `free(p)` of a quantum block under a
-      classical predicate uncomputes every cell that can be proven clean (pop the stores, last-in-first-out among those that may touch the same cell, un-copy loads) and then `qram_free`s the block; entangled cells stay allocated
-      (§0). `free(p)` under a quantum predicate emits nothing (a reset cannot be conditioned on
-      quantum data): the block lives to the end of the enclosing scope, where the classical rule
-      applies. `free` of a classical block is an ordinary call.
-    Recognition is by the callee's attributes and semantics, never only by name.
-    Tape rulings 2026-11-02 (cq-py5f; examples owed, §8):
-    - *Tape order.* Once an entry is on the tape, every later host effect that could observe or be
-      observed by a recorded one (the same stream or file, `fclose`/`fflush`/`fseek` of it, the
-      signal state, process exit) is recorded in program order too, an unconditional one under an
-      `alloc_i1(true)` seed as its predicate (1.11 has only the controlled effect form).
-    - *Fields.* An effect entry's fields are the call's arguments in order. A `FILE *` or any other
-      classical host pointer is an `i64` `_lit` (its `ptrtoint`, rule 25). A buffer argument
-      (`fwrite`, `write`) is its cells, one `_W` field per cell up to the length's upper bound, each
-      `_controlled` under `n > j` when the length `n` is quantum, and the length itself a field; a
-      run-time classical count is a classical loop of field writes in the lowered program. A `%s`
-      whose pointer is quantum (rule 21) or whose bytes are handles is `tape_str_begin`, one `i8`
-      field per byte up to the largest candidate object's cell count (the byte read as the program
-      would read it: a rule-21 load per candidate, merged; a slot cell's handle), `tape_str_end`
-      (§1.3). A vector argument is its lanes (rule 25). A run-time classical format string is a
-      `_lit` like any pointer and the variadic arguments are fields by their promoted IR type (a
-      mismatch between the format read at replay and the fields is the C program's own undefined
-      behaviour, C17 7.21.6.1p9).
-    - *A result the program reads.* The value a deferred host call returns or writes (`printf`'s
-      count, `%n`) is a pure function of its arguments: the compiler rewrites that value as the
-      library's own formatting body on a null buffer (`snprintf(0, 0, fmt, args…)`, musl, injected)
-      and lifts it by rule 18 into a rail; the effect itself goes to the tape unchanged.
-    - *Signal table.* `signal(sig, h)` under a quantum predicate makes the handler of `sig` a merged
-      value: a tag over the candidate handlers, `select` under the predicate (rule 9); `raise(sig)`
-      then dispatches over the candidates as rule 19 dispatches a function pointer (102 is the
-      classical-table case). `raise` of a signal whose default action terminates is 102 (b): the
-      predicate goes to `abort_i1`, unconditional: under the `alloc_i1(true)` seed.
-    - *Callback.* A host function with a body is injected (rule 18) and the function pointer it is
-      handed is a classical dispatch (rule 19). A bodiless callee handed a function pointer calls it
-      back through `clone_resolve` (rule 27).
-    — 45, 47, 99,
-    102, 108, 138; 91 (conditional `free` emits nothing, `realloc`); 186 (unconditional and
-    classically guarded `free` of a QRAM with `qram_realloc`, and a block left allocated because a
-    cell is entangled).
+      `noreturn`-attributed function): under a quantum predicate, `abort_i1(pred)`; rails later
+      modified in place are snapshotted under the predicate first. With a rail argument and no
+      quantum predicate it is the effect entry of its name under an `alloc_i1(true)` seed,
+      then `abort_i1` of that seed. The `unreachable` after an unconditional `noreturn` call
+      is a return of zero-valued results (`|0⟩` rails).
+    - *Allocation* (`malloc`, `calloc`, `aligned_alloc`, `realloc`, any callee whose
+      declaration carries `allockind`, a bus-resident `alloca` (rule 20), fixed or variable-length) is
+      `__cq_alloc(size, align)` (§1.3; alignment 16 where the call names none): zeroed host
+      memory at an address that is never reused, with the block's size as an `i64` in the 8
+      bytes before it. It is classical host code, so under a quantum predicate it is executed
+      unguarded and its address merged like any classical arm value (rule 9); in a loop every
+      trip allocates. A size that is a rail `n` is allocated at **K2** bytes (§0), the header
+      holds K2, and the overflow predicate `icmp_ugt_i64_hl(n, K2)` is kept as an output rail
+      (omitted when range facts bound `n` by K2), computed immediately before the
+      `__cq_alloc` call, so that it reads `n` at the value the call saw; a rail alignment is
+      K2 rounded up to a power of two. `calloc(n, s)` is the size `n·s`. `realloc(p, n)` is,
+      in this order: `q = __cq_alloc(n, 16)`; `s` = the `i64` bus load at `p − 8`
+      (`qram_load_i64_hl(m, p − 8)` for a classical `p`; for an address rail at the rail
+      `add_i64_hl(p, -8)`, uncomputed after the un-copy of `s`); the length rail
+      `umin_i64[_hl](s, n)`; a rule-22 quantum-length copy from `p` to `q` with that length,
+      its trip bound the new block's size (`n`, or K2) in place of min(K2, B), with no overflow predicate of its own (the
+      length exceeds the bound only where the allocation's kept `n > K2` rail reads 1, §6); nothing for `p`. Allocating
+      first lets `s` be un-copied before the copy's first store (rule 5). The size is always
+      this bus load, a rail (rule 3), also for a classical `p` and `n`: never a host read.
+    - *Deallocation*: `free` is nothing, under any predicate. `llvm.lifetime.*` and
+      `llvm.stacksave`/`stackrestore` are dropped for bus-resident objects.
+    - *Variadic calls.* The caller of a variadic clone (§1.4) stores every variadic argument
+      into a `__cq_alloc` block in the SysV overflow-area layout (in order, 8-byte slots at
+      the promoted type, 16-byte-aligned types in 16) and passes the block's address as the
+      clone's last formal. In the clone `va_start(ap)` is the bus stores of `{gp_offset = 48,
+      fp_offset = 176, overflow_arg_area = block, reg_save_area = 0}` into `ap`; `va_arg`,
+      `va_copy` and `va_end` are the -O1 code as it stands. In the own symbol of a variadic
+      function `va_start` stays the intrinsic: it fills `ap` with host bytes.
+    - *Signal table.* The bundle has a host array `__cq_sig` of one `i64` per signal number.
+      `signal(sig, h)` is the bus load of the cell `&__cq_sig[sig]` (its result; emitted
+      also when unused, and then un-copied before the store) and a bus
+      store of `h` there (controlled under a predicate in scope, at an address rail for a rail
+      `sig`), after the host call when every argument is classical and no predicate is in
+      scope: that host call is made as it stands whatever precedes it (the ordinary-host-call
+      test is not asked for `signal`). With a rail argument or a predicate in scope there is
+      no host call and no effect entry. `raise(sig)` loads that cell and calls through the
+      loaded address rail by rule 19, as a call of function type `void (i32)` with `sig` as
+      its one actual, except that the complement branch (no registered function: the default
+      action or a host handler) is the effect entry `raise` with `sig` as its one field. A
+      result of `raise` the program reads is the `_i32` entry's rail under the complement and
+      the literal 0 under every candidate flag (rule 9). No handler is tracked at compile time.
+    - *Callback.* A library that calls back into the program (`qsort`, `bsearch`) must itself be
+      lowered: injected (rule 18) or a lowered library (rule 27).
+
+    — 45, 47, 138, 201, 208, 209, 210, 212, 213; 91, 99, 102, 108, 186 (regeneration owed).
 
 17. **`cq_invert`.** The markers are the run-time primitives `invert_begin()` / `invert_end()`
-    (§1.3): the code between them is lowered exactly as it would be anywhere else, and the backend,
-    which builds the circuit as the host program runs (§0), emits the gates recorded between the two
-    calls reversed with each gate inverted (angles negated; a compute/uncompute pair reverses into
-    itself; a classical loop's trips come out in reverse order because its gates do; a clone's
-    gates like any others). Allocations are not gates and stay where they are; a `free` inside the
-    region is performed after the reversed list, so a rail the region allocates and frees is freed
-    there and a rail that outlives the region outlives the adjoint. The compiler places no
-    uncompute of a rail allocated before the region inside it (placement is free, rule 5). A
-    measurement inside the region has no adjoint: it flushes the gates recorded before it forward
-    (it needs them), and only the gates recorded after the last measurement are reversed at the
-    `end` (the compiler may warn, it never declines, as rule 2); a tape write is an XOR gate and an
-    abort flag bookkeeping, inverted and kept like any other. Nested pairs nest; a `begin` and an `end` are events, so a path that
-    returns inside a region, or a region a classical branch opens, needs no analysis. The asm
-    fences in `CQ.h`'s macros are consumed. No `_adj` clone exists (§1.4). Ruling 2026-11-02
-    (cq-eive; until then the adjoint was constructed at compile time and 44, 61, 126 showed it; the
-    three are regenerated, §7).
-    **A marker under a quantum predicate.** `__cq_invert_begin/end` are `noduplicate` in `CQ.h`
-    (2026-11-02), so -O1 never copies a marker into the arms of a branch (jump threading of a shared
-    condition did, cq-asfn; with the attribute the marker stays one call in the block every path
-    reaches, and 44, 61, 126's `.O1.ll` differ only in attribute groups). What remains is a marker
-    the C program wrote inside a quantum arm. A marker is a host call and the host cannot test a
-    quantum value, so it is executed on every path, at its position in the arm's lowered code,
-    whose gates carry the arm flag (rule 8). When its match is in the same arm nothing more is
-    needed: the region holds the arm's controlled gates, and the inverse of a controlled gate is
-    the controlled inverse, which is the adjoint of the arm; the flag's compute and uncompute lie
-    outside the region. When its match is not in the same arm (after the join, or before the
-    branch), the region's extent differs per path and no single host bracket spans it: the code
-    between the join and the match (the tail T) is lowered twice, under the arm flag `f` as a
-    nested arm inside the bracket and under `not f` outside it, and the other arm's gates are
-    placed outside the bracket (they carry `not f` and commute with everything under `f`). For a
-    `begin` in arm A with its `end` after the join the order is `A1|f, B|not f, begin, A2|f, T|f,
-    end, T|not f` (A1/A2 the arm before/after the marker, B the other arm), and the mirror image for
-    an `end` in an arm whose `begin` is before the branch (`begin, prefix, B|not f, T|not f, A1|f,
-    end, A2|f, T|f`). A marker present in EVERY arm of a quantum branch and matching one marker
-    outside it (an `end` in each arm closing a `begin` before the branch; a `begin` in each arm
-    closed by one `end` after the join) is one event: it is emitted once, at the join (an `end`)
-    or at the branch (a `begin`), with every arm's controlled gates inside the region (on each path
-    the region is the prefix plus that path's arm, and the other arm's gates are the identity under
-    its flag). A path on which the markers do not pair (a `begin` in one arm and its `end`
-    in the other) is the C program's own error (`CQ.h`: a bracket) and is lowered as it stands: the
-    calls are made where they fall. Ruling 2026-11-02 (cq-asfn; the every-arm case cq-z7hz,
-    2026-11-03); example owed (§8). — 44, 61, 126.
+    (§1.3): the code between them is lowered exactly as it would be anywhere else, and the
+    backend emits the gates recorded between the two calls reversed with each gate inverted.
+    Allocations are not gates and stay where they are; a `free` inside the region is performed
+    after the reversed list. The compiler places no uncompute of a rail allocated before the
+    region inside it. A measurement inside the region has no adjoint: it flushes the gates
+    recorded before it forward, and only the gates recorded after the last measurement are
+    reversed at the `end` (the compiler may warn). A bus store and an effect entry the backend
+    performs at its call are flush points in the same way: performed in place and kept (rule
+    5), with only the gates after the last flush point reversed. A tape write is an XOR gate
+    and an abort flag bookkeeping, inverted and kept like any other. Nested pairs nest; a `begin` and an
+    `end` are events, so a path that returns inside a region, or a region a classical branch
+    opens, needs no analysis. The asm fences in `CQ.h`'s macros are consumed.
+    **Memory.** An in-place form inverts exactly (swap, gate, swap reversed is the form of
+    the inverse gate), and a load un-copied inside the region reverses into itself. Example owed (§8).
+    **A marker under a quantum predicate.** `__cq_invert_begin/end` are `noduplicate`, so the
+    only marker in an arm is one the C program wrote there. It is a host call, executed on
+    every path at its position in the arm's lowered code, whose gates carry the arm flag.
+    - *Match in the same arm:* nothing more is needed (the inverse of a controlled gate is the
+      controlled inverse; the flag's compute and uncompute lie outside the region).
+    - *Match outside the arm* (after the join, or before the branch): the code between the
+      join and the match (the tail T) is lowered twice, under the arm flag `f` inside the
+      bracket and under `not f` outside it, and the other arm's gates are placed outside the
+      bracket. For a `begin` in arm A with its `end` after the join the order is `A1|f, B|not
+      f, begin, A2|f, T|f, end, T|not f` (A1/A2 the arm before/after the marker, B the other
+      arm); for an `end` in an arm whose `begin` is before the branch, `begin, prefix, B|not
+      f, T|not f, A1|f, end, A2|f, T|f`.
+    - *A marker in EVERY arm matching one marker outside* is one event, emitted once at the
+      join (an `end`) or at the branch (a `begin`), with every arm's controlled gates inside
+      the region.
+    - *Markers that do not pair on a path* are the C program's own error and are lowered as
+      they stand.
 
-18. **Function lifting.** A callee reached with a quantum argument is cloned per taint mask
-    (§1.4). The clone computes, **copies each result into a fresh rail**, uncomputes its body and
-    returns the copies (a one-template body may return its rail directly). Its `_unc` twin
-    recomputes, XORs each result out with `copy_<W>`, uncomputes, and the caller frees the result
-    rails after the twin. When some results of one call are measured (or escape) and others are
-    dead, the caller first copies each measured one into a fresh rail (`cqrt_copy_<W>`), runs the
-    twin on the clone's own result rails, frees them, and measures the copies: the twin always
-    zeroes every result it returned, and no measured rail is ever gated (ruling 2026-11-02,
-    cq-75n4; example owed, §8). Rule 6 clean-up of caller cells a clone overwrote happens in the CALLER
-    after the call (the caller knows the old handles and whether they are dead; a clone is shared by
-    every call site with its mask): per dead cell the caller calls the clone's `_inv<c>` kind
-    (§1.4), which zeroes the old rail from the cell's new content, and then frees it. The caller
-    never rebuilds the inverse inline (no partial inlining; a recursive callee has none), and the
-    clone never cleans a caller cell itself (it does not know the cell's deadness). The `_inv` of a
-    cell and the `_unc` restoring the same cell never both run at one call site: a cell the twin
-    restores is read again by that twin, so its old value is not dead (rule 6). Ruling 2026-11-01
-    (cq-xivx); new example required (§8). A callee that measures returns a classical value and has no twin. A
-    callee that stores into a caller's QRAM returns each stored value rail as an extra `i32`
-    result (the pop needs it, §1.3); the caller pops that store at the object's lifetime end and
-    then calls the twin, which takes those rails first (191).
-    **Twin point.** The twin runs after the last read of a result or of a cell the clone may have
-    written and BEFORE the first write of the caller into any such cell (the clone's footprint:
-    every cell of every object it has a pointer into; with an object of unknown extent, that whole
-    object): a write there drops the handle the clone stored, and the rail behind it must be zero by
-    then. A result or footprint cell still live at that point is first copied out
-    (`cqrt_copy_<W>` into a fresh rail, as the partial-measurement clause) and the copy continues as
-    the value. One construction for known and unknown extents (ruling 2026-11-02, cq-lshe; example
-    owed, §8).
-    Library code is injected source (musl, linked before lowering) and lifted like any callee; an
-    LLVM math intrinsic on a quantum operand (`llvm.exp.f64`, `llvm.sin.f64`, `llvm.pow.f64`, …)
-    is the call of the libm function of the same name and is lifted the same way (175, 184;
-    `llvm.<f>.f32` is `<f>f`, `llvm.<f>.f80` is `<f>l`): whenever that function has a body in the
-    module after injection the intrinsic is lifted from it, whatever flags the user's TU was
-    compiled with, and only a function with no body is a declared clone (175 shows the lowering
-    without a bundle; ruling 2026-11-02, cq-odjk). The rule-23 flags rail is an argument like any
-    other: a helper with classical data arguments called from a strict body with the flags rail is
-    reached with a quantum argument and is a clone. An intrinsic on `half`/`bfloat` binds to the
-    `float` body around `fpext`/`fptrunc` (LLVM's own x86-64 legalisation of those libcalls); on a
-    vector operand it is the scalar binding per lane (rule 25); a constrained intrinsic
-    (`llvm.experimental.constrained.<f>`) is `llvm.<f>` under its exception behaviour (rule 23: ignore
-    and maytrap bind to the plain body, strict to 82's ABI) (cq-s2zz, cq-hzji, 2026-11-02).
-    A library may instead be lowered once and linked (rule 27).
-    A function the program defines shadows the injected body of the same name, as in C linking
-    (169's `__divdc3` and 173's `__mulsc3`/`__divsc3` are the example's own). For every function the
-    program does not define, the body this rule lifts is the pinned library source as the bundle
-    builds it (clang 19.1.7 `-O1`, the pinned flags), pragmas included: musl's `ilogb.c` carries
-    `#pragma STDC FENV_ACCESS ON`, so `ilogb` is a strictfp clone of its own (LLVM never inlines a
-    strictfp callee into a non-strictfp caller), lowered by rule 23 with 82's calling convention
-    (the caller's mode and flags rail in, the new flags rail out beside the result), and its
-    `FORCE_EVAL(0/0.0f)` is a constrained `fdiv` of two literals whose INVALID bit enters the flags
-    rail under the arm predicate (the volatile store stays nothing, rule 24). A reference that
-    depicts another body pins nothing (169, §7; ruling 2026-10-29).
+    Examples owed (§8). — 44; 61, 126 (regeneration owed).
+
+18. **Function lifting.** Every function with a body is lowered (rule 19), once per taint mask of
+    its scalar formals that a call uses (§1.4); the all-zero mask is the function itself. A
+    pointer formal is one scalar, a classical address or an address rail: the clone reaches
+    memory through the bus, and nothing about the pointee crosses the call.
+    **Clone.** One form for every clone: it computes, **copies each result into a fresh
+    rail**, uncomputes its SSA body by rule 5 and returns the copies (a one-template body may
+    return its rail directly). What rule 5 keeps inside it (store rails, tape slots, kept load
+    copies) simply stays.
+    **Twin.** `_unc` recomputes the results (templates, bus loads, its callees' clones and
+    twins), XORs each out with `copy_<W>` and uncomputes; the caller frees the result rails
+    after it. It repeats no phase and no tape or abort event (it recomputes through `_pure`,
+    §1.4) and makes no memory version change: a function that writes memory (rule 5),
+    measures or reads the result rail of an effect entry has no twin (its table clone's is
+    §1.4's), and its rail results are KEPT by the caller. The twin reads memory again, so the call of a clone that loads
+    from the bus, itself or through a callee, is a load for rule 5: its twin runs after the
+    results' last consumer and before the next memory version change after the call on every
+    path, and where that change comes first the results are KEPT and no twin is called. When
+    some results of one call are measured (or escape) and others are dead, the caller first
+    copies each measured one into a fresh rail (`copy_<W>`), runs the twin on the clone's own
+    result rails, frees them, and measures the copies: the twin always zeroes every result it
+    returned, and no measured rail is ever gated (example owed, §8). A clone with no results has
+    its twin right after the call; a twin (`_t_unc` included) never undoes a kept store and is no memory version change (190).
+    **Library code** is injected source (musl, linked before lowering) and lifted like any
+    callee. An LLVM math intrinsic on a quantum operand (`llvm.exp.f64`, `llvm.sin.f64`, …) is
+    the call of the libm function of the same name (`llvm.<f>.f32` is `<f>f`, `llvm.<f>.f80`
+    is `<f>l`), lifted from its body whenever the module has one after injection and a
+    declared clone otherwise (175; 184, regeneration owed). On `half`/`bfloat` it binds to the
+    `float` body around `fpext`/`fptrunc`, on a vector operand per lane (rule 25), and a
+    constrained intrinsic is `llvm.<f>` under its exception behaviour (rule 23: ignore and
+    maytrap bind to the plain body, strict to 82's ABI). The rule-23 flags rail is an argument
+    like any other. A function the program defines shadows the injected body of the same name
+    (169, 173). Every other body lifted is the pinned library source as the bundle builds it
+    (clang 19.1.7 `-O1`, the pinned flags), pragmas included: musl's `ilogb` is a strictfp
+    clone, lowered by rule 23. A reference that depicts another body pins nothing (169).
     Result taint is recorded per clone (an `i32` return is a handle or a classical int by that
-    record, not by its type). Recursion with classical depth is ordinary calls. — 06, 07, 33, 34,
-    36, 51, 64, 82, 95, 109, 119, 136.
+    record, not by its type); a result computed from a bus load is a rail (rule 3), also in the
+    all-zero mask. Recursion with classical depth is ordinary calls; with quantum depth it is
+    rule 14. — 06, 07, 33, 34, 64, 82, 119, 136, 195, 200, 204; 36, 51, 95, 109 (regeneration owed).
 
-19. **Indirect and opaque callees.** An external function that returns an unmeasured quantum
-    value returns the handle (escaped, never freed): its parameter list keeps the C ABI, and its
-    return type is the C return type when that is an integer of 32 bits or more (the `i32` handle
-    as is, 162, or zero-extended to the wider type, 193 `long`) and `i32` otherwise (`_Bool`,
-    `char`, `short`, every floating or pointer type: a handle cannot be narrowed, and no value the
-    program does not measure is measured to fit a signature; 193). An aggregate return is the
-    struct of handles and classical values of §1.1 (rule 26). **The compiler never inlines.** An
-    in-module call of such a function is a call, lowered like every other call (ruling 2026-11-02,
-    cq-ab9c; until then 162's consumer inlined the entry): a callee reached with a quantum argument
-    is a rule-18 clone, whatever it returns and however it returns it (musl's `__rem_pio2(x, &y)`
-    inside `sin` is a clone with a slot parameter, 31 and 163); a callee reached with no quantum
-    argument whose body reaches a rotation is called as it is. Its results are recorded per callee
-    (rule 18): a result that is a register the callee minted, or that register's rule-6 image, is
-    FROZEN, and the caller keeps it like its own registers (never uncomputed, never freed, rotated
-    or read as an operand like any register; 162's consumer keeps the returned x + c rail and
-    cleans nothing). Every other result is zeroed by the twin as usual, and so that the twin can,
-    the clone returns the handle of each register it minted that is still allocated at its return
-    as an extra `i32` result after the results (191's stored rails likewise), the twin taking
-    those handles first. The extra results are the union over the callee's return paths, in a
-    fixed order (by mint site); on a classical path that did not mint one of them the callee
-    returns handle 0 there (§1.1: no rail), and the twin, replaying the same classical path, never
-    reads it (a register minted under a QUANTUM predicate is minted on every path, rule 10). In a
-    cycle of in-place callees (classical-depth recursion, rule 18) the records (frozen or not,
-    extra registers) are the least fixpoint over the cycle. Ruling 2026-11-02 (cq-i9wk). A clone that
-    would coincide with the lowered entry in signature and body
-    is the entry: the call targets it (162 `quantum_return_consumer` calls
-    `quantum_return_entry`). A call through a classical function pointer dispatches over
-    the static callee set; a function pointer that depends on quantum data in any way (a `select`
-    or `phi` under a quantum flag, a load at a quantum index, arithmetic) is a tag rail over the
-    static candidate set (the functions of compatible type whose address reaches it; a loaded one is
-    a QROM of callee tags) with every candidate clone called unguarded and merged by `select`; a
-    pointer with NO in-module candidate denotes a function outside the program (a host-filled
-    table, an entry's parameter, `signal`'s result) and a call through it with a quantum argument
-    is rule 27's declared-clone call with the callee taken from `clone_resolve(fp, kind)` (§1.3)
-    instead of a name (cq-s2zz, 2026-11-02); a callee under a quantum
-    predicate becomes a `_ctl` clone iff its body has a non-pure gate (rotation, phase, slot or
-    QRAM store, tape), otherwise it is called unguarded and merged. That includes a call with no
-    quantum argument at all: a host call with classical arguments, a classical result and no gate
-    under a quantum predicate stays the host call, executed unguarded, its result merged like any
-    classical arm value (rule 9); a `volatile` access to a dead local inside it is nothing (rule
-    24). musl's `__math_oflow(0)` in `exp` and `__math_divzero(1)` in `log` are this case (ruling
-    2026-11-02, cq-fl4n; example owed, §8). A callee with no body follows
-    rule 27. — 96, 97, 102, 117, 124.
+19. **Indirect and opaque callees.**
+    **Every body is lowered** (§0). The own symbol (§1.4) is what an all-classical call and
+    host code reach, and a clone that would coincide with it is it (162). A body with no bus
+    access, no `cq_*` call and no call is its own lowering. **The compiler never inlines**: a
+    callee reached with a quantum argument is a rule-18 clone, whatever it returns and however
+    it returns it (musl's `__rem_pio2(x, &y)` inside `sin`; 31, 163, regeneration owed).
+    **Results.** A function's own symbol that returns an unmeasured quantum value returns the
+    handle (escaped, never freed): its parameter list keeps the C ABI, and its return type is
+    the C return type when that is an integer of 32 bits or more (the handle zero-extended,
+    162, 193) and `i32` otherwise (`_Bool`, `char`, `short`, every floating or pointer type;
+    193). An aggregate return is the struct of §1.1 (rule 26). The results of a callee are
+    recorded per callee: a result that is a register the callee minted, or that register's
+    rule-6 image, is FROZEN, and the caller keeps it like its own registers (162). Every other
+    result is zeroed by the twin, and so that the twin can, the clone returns the handle of
+    each register it minted that is still allocated at its return as an extra `i32` result
+    after the results, the twin taking those handles first. The extra results are the union
+    over the callee's return paths in mint-site order; on a classical path that did not mint
+    one the callee returns handle 0 (§1.1), which the twin, replaying the same path, never
+    reads. In a cycle of callees the records are the least fixpoint over the cycle.
+    **Entry.** Host code that calls a function of the program (`main`, a callback, a signal
+    handler) reaches its own symbol and reads a rail result as the handle, not the value.
+    `main` is the exception: a `main` that returns a rail `r` makes the effect entry `exit`
+    with `r` as its field under an `alloc_i1(true)` seed (rule 16) and then returns 0.
+    **Function pointers.** A function pointer is the function's address (rule 21), a classical
+    `ptr` or an address rail. Which functions it can denote is never analysed. Every module
+    and lowered library registers the table clone (§1.4) of each of its address-taken and
+    externally visible functions (`__cq_clone_register`, §1.3), and an indirect call is
+    resolved from that table at run time. It is always a call of a table clone, with that
+    ABI: the classical actuals are minted as seeds (rule 7), every result is a handle, and K
+    is the K of the caller's enclosing function (§0). The caller has no record of the callee:
+    the call is a memory version change (rule 5), and its twin is called exactly once, so
+    that the handles the clone pushed are popped (§1.4): at its rule-18 position, or, where rule 18 would keep a result, right before
+    that memory version change, after the result is copied into a fresh rail that is KEPT in
+    its place.
+    - *Classical pointer* `fp`: the callee is `__cq_clone_resolve(fp, kind)`. When that is null,
+      `fp` is host code and the call is rule 16's host boundary with `fp` as the callee: the
+      instruction as it stands, or an effect entry with a null `name` and the address as its
+      first field (§1.3).
+    - *Address rail* `r`: every registered function of the call's function type is a
+      candidate. For `i < __cq_clone_count(sig)`, `a_i = __cq_clone_at(sig, i)`, the flag is
+      `f_i = icmp_eq_i64_hl(r, a_i)` (rule 13's compare) and the `_ctl` clone of `a_i` (kind
+      1) is called under `f_i` conjoined with the predicate in scope; the loop over the
+      candidates is classical code. Under the complement of the flags `r` is host code: rule
+      16's effect entry with a null `name` and `r` as its first field. The results merge by
+      `select` under the flags (rule 9), each candidate's twin is its `_ctl_unc` (kind 3)
+      under the same flag, and the flags are uncomputed after their last use. A candidate
+      that calls through the same type again is recursion with quantum depth (rule 14).
+      The loop carries two rails: the complement p (p_0 = the predicate in scope, or an
+      `alloc_i1(true)` seed) and the merge out (out_0 = `alloc_<W>(0)`). Trip i: `f_i`; where
+      a predicate P is in scope the candidate's control `and_i1(P, f_i, fresh)`, uncomputed
+      after the twin; the `_ctl` call; the result copied into a fresh rail c_i that is KEPT
+      (every candidate call is a memory version change); the twin; `p_{i+1} = p_i & NOT f_i`
+      (`not_i1(f_i); and_i1(p_i, f_i, fresh); not_i1(f_i)`); `out_{i+1} = select_<W>(f_i,
+      c_i, out_i)`; push p_i, out_i, c_i, f_i. After the loop the effect entry is made under
+      p_n and the call's value is `select_<W>(p_n, r_e, out_n)`, copied out where it is
+      measured or kept. The reverse loop pops each trip and uncomputes its select, its
+      p_{i+1} and its flag (a_i again from `__cq_clone_at`); the seeds p_0 and out_0 are freed.
+      The dispatch runs functions the program never called, so inside every `_ctl` clone
+      (table or by name; a `_ctl` clone may be reached from the dispatch)
+      `cq_measure(h)` measures a controlled copy, `t = alloc_<W>(0); copy_<W>_controlled(pred,
+      h, t); measure_<W>(t)`: `t` is the measured rail, `h` is not collapsed where pred = 0,
+      the outcome is tainted, and rule 2's classical collapse does not apply to `h` there.
 
-20. **Memory classification.** Each memory object (an `alloca`, global or heap block as -O1
-    leaves it; SROA has already split structs; an array of structs is one object per scalar field
-    column, all indexed by the same index rail, field-wise as in rule 26 (168); nothing is split further)
-    is classified once, over all of its accesses in the whole program after lifting (rule 18):
-    loads, stores and memory intrinsics, direct or through a pointer. Every access has an
-    **offset** (cell index into the object), classical or quantum (tainted).
+    **Under a quantum predicate** a callee becomes a `_ctl` clone iff its body, itself or through
+    its callees, has anything but templates on SSA values: a rotation, a phase, a bus access,
+    a tape or abort event, an indirect or bodiless call, a call cycle through itself. Otherwise it is called unguarded and
+    its results merged like any classical arm value (rule 9), a call with no quantum argument
+    included (musl's `__math_oflow(0)` in `exp`; a `volatile` access to a dead local inside it
+    is nothing, rule 24; example owed, §8). A callee with no body follows rules 16 and 27.
+    — 162, 193; 197, 200, 211, 212; 96, 97, 102, 117, 124 (regeneration owed).
 
-    | access | classical offset | quantum offset |
+20. **Memory.** All memory of the program is the one bus `M` (§1.3). Nothing is known about an
+    address: not the object it lies in, its extent, or what its cells hold. Globals, `static` and
+    thread-local objects, string literals, heap blocks and whatever the host mapped live at their
+    host addresses, on the bus through the overlay: nothing is allocated, seeded or registered
+    for them.
+
+    | access of type T | classical address `p` | address rail `r` |
     |---|---|---|
-    | load, the object holds only classical values | classical load | **QROM** (host reads the table) |
-    | load, the object may hold a handle | slot load (the handle, no gate) | **QRAM load** |
-    | store | slot store: the rail replaces the cell; under a quantum predicate `select` into a fresh rail (rule 9) | **QRAM store** |
-    | memory intrinsic with a quantum length | per-cell guarded update (rule 22) | as a quantum-offset store |
+    | load | `h = qram_load_<W>_hl(m, p)` | `h = qram_load_<W>(m, r)` |
+    | store of `v` | `qram_store_<W>_hl(m, p, v)` | `qram_store_<W>(m, r, v)` |
+    | in-place form (rule 5) | `qram_swap_<W>_hl(m, p, h)` | `qram_swap_<W>(m, r, h)` |
 
-    - An object is a **QRAM** iff some access to it is a QRAM access (quantum-offset store, or
-      quantum-offset load while it may hold a handle). It is a QRAM for its whole lifetime: every
-      other access to it is the classical-index (`_hl`) form of the QRAM call. One call per access
-      (§1.3); the backend chooses the circuit (never linear per-cell code in the IR); stores are
-      popped last-in-first-out among stores that may touch the same cell (§1.3).
-    - Otherwise an object that may hold a handle is a **slot array**: a classical array of handles,
-      4-byte cells; -O1's byte-offset GEPs are divided by the element size and re-emitted. A
-      runtime-sized object (`bool q[n]`, `malloc(n)`) is a slot array of runtime length (one
-      `alloca i32, n` or heap block of handle cells). A VLA's lifetime ends at its scope's end
-    (`llvm.stackrestore` or the function return); its clean-up runs there (192). An object that never holds a handle is
-      ordinary classical memory, read at a quantum offset as a **QROM**:
-      `cq_template_qrom_load_<W>[_s]` over its contents AT THE LOAD (the backend embeds those
-      values; the `_unc` uses the same values, never a re-read); length = the object's cell count
-      when known, otherwise the index's upper bound from LLVM's range facts (`2^W` fallback), strided and flattened forms for struct arrays and 2-D arrays (30, 50; a 2-D
-      QRAM flattens `r·cols + c` the same way, 191).
-    - Holding quantum values never makes an object a QRAM; only a quantum offset does.
-    - A slot cell is homogeneous: if it holds a handle on any path it holds a handle on every path,
-      and a classical store into it materialises the value as a seed rail `alloc_<W>(v)` (rule 7)
-      (102, 106, 129).
-    - **Index operand** of a QROM or QRAM access: the logical index rail at the width of the C
-      index expression. The `zext` to `i64` and the GEP scaling are address arithmetic and are
-      never emitted.
-    - `extern` globals are outputs and never freed; TLS and `static` locals are slots. A global
-      QRAM is allocated once by a module constructor as `qram_alloc_host_<W>(ptr @g, i64 n)` (§1.3):
-      the global keeps its definition or declaration as it is (its storage is the host object the
-      bus is seeded from at program start: the initializer, or for an `extern` the definer's; `n` is
-      its cell count, 0 for an unknown extent), the compiler never reads an initializer, and the bus
-      handle lives in a compiler-made `@g.qram = internal global i32 0` that every access loads
-      (160, 192; cq-pf4n, 2026-11-02). A global array of records is one bus per scalar field
-      column (as any array of structs, above), each allocated by the strided form
-      `qram_alloc_host_<W>_s(ptr base, i64 n, i64 stride)` with `base` already offset to the field
-      and `stride` the record size in bytes, exactly as `qrom_load_<W>_s` reads such a column (§1.3;
-      cq-z7hz, 2026-11-03). Its stores are never popped (its state is the
-      program's visible result) and it is never freed (160). A global or `static` slot cell that
-      holds a handle on any path holds one from program start: its start value is materialised as a
-      seed rail by the module constructor (`alloc_<W>` of the initializer, or of a host load of the
-      cell when the initializer is not in the module: an `extern`; 102, 160), a load with no dominating store in the function
-      reads the cell's current handle (no gate) in any function, and at process exit the rails its
-      cells hold are the program's visible result like 160's QRAM: kept, never freed, no destructor
-      (cq-e5lj, 2026-11-02). One confined shape is cheaper and stays: a function-local `static`
-      whose address never escapes and whose every load is dominated by a store of the same
-      activation can never hand a rail to a later call, so it is the slot of example 31's `alloca`:
-      the rail it holds is uncomputed and freed when dead, and the cell's content at exit is
-      nothing the program can observe (67; cq-05pa, 2026-11-03). Any other global or `static` cell
-      is kept as above.
-    - An object with no extent in the module (an `extern` declaration whose definition is not linked,
-      a host pointer whose place in its object is unknown) has as extent the range of the indices
-      that reach it (LLVM's range facts, `2^W` cells as the fallback, spelled `n = 0` in §1.3): that
-      is its QROM length, its QRAM size, its bound check and its range-decoding candidate (rule 21);
-      every basis input is a C execution of the program and therefore in range of the real object
-      (cq-k65d, cq-5xm0, 2026-11-02).
-    - A slot record for an `sret`/`byval` aggregate keeps classical fields as classical cells and
-      quantum fields as handle cells (163, 164); for an entry's `sret`/`byval` parameter the record is
-      §1.1's literal struct of handles and classical values laid out by LLVM (a quantum `char` field
-      is a 4-byte handle cell): rule 19's aggregate return, through the pointer (cq-e5lj).
-    — 29, 30, 31, 32, 48, 50, 58, 63, 67, 71, 72, 74, 75, 76, 77, 78, 108, 114, 120, 160, 168.
+    - **Every load is a bus load and its result is a rail; every store is a bus store** (the
+      exceptions: a host-resident object, below, except as the source of a rule-22 copy into
+      bus memory, and rule 24's observable `volatile`). `p` is the pointer's run-time `i64`,
+      spelled `ptrtoint` of the pointer: the instruction for an instruction-valued pointer
+      (for a pointer argument at any point that dominates its uses, the position not compared; 206 places it once at function entry, after `__cq_mem()`), the
+      constant expression `ptrtoint (ptr @G to i64)` for a global, also inside an `_hl`
+      literal of address arithmetic. `v` is a handle, a classical value first the seed
+      `alloc_<W>(v)` (rule 7). The `_controlled` forms, what is un-copied and what is kept are
+      rule 5. `m` is the value of `__cq_mem()`.
+    - **Store size.** One call per access of S = store-size(T) cells (§1.3). A vector access is
+      one access per lane, lane i at `address + i·S(lane)`; an aggregate access one per scalar
+      field at its DataLayout offset. Alignment is not an operand. Union views, byte views,
+      packed fields and bit-fields need no rule: each is an access of the type and at the
+      address its instruction names.
+    - **Host-resident objects.** An access whose pointer operand is, through `getelementptr`s
+      with untainted indices only, a host-resident object stays the plain LLVM instruction and
+      its load is classical, when no quantum predicate is in scope at the access (code C
+      would not run reads no host byte). An object is host-resident iff it is
+      (a) a global with `isConstant()`, whose access under a quantum predicate is the
+      `_hl_controlled` bus access (HOST cells, §2); or
+      (b) an `alloca` with an untainted size whose every transitive user, through such
+      `getelementptr`s, is: a load with no quantum predicate in scope; a store THROUGH it of an untainted value with no quantum predicate in scope; a lifetime or
+      debug intrinsic; an `icmp`; or a memory intrinsic with an untainted length and no quantum
+      predicate in scope that writes it (`memset` of an untainted byte, a copy from a
+      host-resident source) or reads it into a host-resident destination.
+      Any other user makes the `alloca` bus-resident. The test is local to one lowered function
+      body (asked per clone) and is one monotone fixpoint with taint (rule 3): every `alloca`
+      starts host-resident, a failing user demotes it, its loads become rails, and the test
+      repeats. Rules 23 and 24 each add one case. The bytes of a host-resident object are on
+      the bus all the same: an access that reaches them any other way reads HOST cells.
+    - **Address arithmetic.** A `getelementptr` with a tainted base or index is 64-bit template
+      arithmetic into an address rail: each tainted index brought to `i64` (`sext_<W>_to_i64`
+      where -O1 wrote no cast), scaled by `mul_i64_hl(·, size)` (or `shl_i64_hl`; §6 compares
+      semantics; no scale at size 1) and added by `add_i64[_hl]`, per `getelementptr`
+      instruction: two that share an index rail each emit their own scale and add. The untainted part (a classical base's run-time
+      address, offsets, untainted indices) is one classical `i64`, the `_hl` literal. With
+      nothing tainted the `getelementptr` stays. The address rail is rule-5 garbage: a load's
+      address rail always outlives the load's `_unc`; for an access with no `_unc` (a load copy
+      rule 5 excepts, a store, the second swap of an in-place form) the access is its last
+      reader and the rail is uncomputed right after it. No index is narrowed, bounded or
+      checked.
+    - **Allocation.** A bus-resident `alloca` is `__cq_alloc(size, align)` at its program point
+      (rule 16) and no `alloca` remains for it: one zeroed block per activation. A
+      host-resident `alloca` stays, with its lifetime markers. Those of a bus-resident object
+      are dropped (rule 16), so a block-scoped bus-resident object is one block whose cells
+      carry over from trip to trip, and the end of its lifetime undoes nothing.
 
-21. **Quantum pointers.** A pointer depending on quantum data is a fat pointer `(tag, idx)` over a
-    per-function object table; `idx` is always a **cell index** of the object; byte arithmetic
-    (`ptrtoint`, `char *` casts) converts at the access by the element size. A dereference is one
-    access per object in the provenance, guarded by `tag == o` (guards disjoint): a load is the
-    pure access executed unguarded (an out-of-range index reads 0 by §2; a slot or host load checks
-    the index against the object's cell count from the object table and reads 0 beyond it, never
-    host memory past the object) and merged by `select` on
-    the guards; a store is the `_controlled` form under its guard (QRAM) or a guarded `select`
-    (slot). Its offset is `idx`: a quantum `idx` makes it a quantum-offset access of
-    each such object (rule 20: QRAM, or QROM for classical memory); a classical `idx` with a
-    quantum `tag` is a guarded classical-offset access (slot load / `select` store; a classical
-    load of classical memory). A pointer
-    LOADED through a fat pointer is itself a fat pointer: the per-object guarded loads yield the
-    stored pointers, each mapped to `(tag, idx)` by its provenance, merged by `select` (189).
-    Pointer compares compare addresses: the object table maps each tag to the object's classical
-    base address, and a compare is over `base[tag] + size·idx` (`base[tag]` is a `select` chain on the flags `tag == o`, complement innermost, like any
-    multi-way merge, rule 9);
-    when every object in both provenances is a distinct allocation of this function it reduces to
-    comparing tags, then indices (parameters and globals may alias: they always use addresses).
-    A host object's base is its real host address; a slot object's base is its lowered `alloca`'s
-    address and its `size` the C element size, so address arithmetic inside the object agrees with C
-    (cq-5xm0). A QRAM object has no host block: its base is
-    its address in the QRAM address space, a unique constant the compiler assigns from a reserved
-    range of x86-64 NON-CANONICAL addresses (base `0x4000_0000_0000_0000 + 0x1000·n` for object
-    n; no host pointer can take such a value), aligned, `size` bytes per cell, so equality is exact, order is
-    exact within an object and consistent across objects; `inttoptr` of an integer derived from
-    `ptrtoint(p)` keeps `p`'s provenance (LLVM's rule): tag = p's tag, `idx = (addr − base[tag]) /
-    size`, one-past-the-end included; only an integer of unknown origin is decoded by range tests
-    over the candidate objects (`base ≤ addr ≤ base + size·n`, one-past included); a pointer crossing a
-    clone boundary is passed as `(object, tag, i32 idx)` (`i64 idx` for an object of 2^32 cells or
-    more: the index keeps the width of the C index expression, rule 20; cq-k65d): `object` is the host pointer of a host
-    object or the bus handle `a` of a QRAM object, and the caller's object table (bases, cell counts
-    and handles) whenever the provenance has several objects or the callee needs a base (compare,
-    `ptrtoint` whose base does not cancel); `tag` is a classical constant when the provenance is
-    one object; when the callee loads through the pointer, the object's cell count follows the triple
-    as a compiler-added `i32` (no mask digit, 190; the count is passed whenever the callee loads
-    through the pointer, a uniform ABI). A slot or host load beyond the cell count reads
-    0 as a shared `|0⟩` seed rail (rule 7). The CHECK is emitted iff the index can lie outside the
-    object on a branch the circuit executes: a quantum `idx`, or a classical index whose access runs
-    under a quantum predicate the C program would not have reached (a K-loop trip, a hoisted arm:
-    190's memcmp). A classical index executed exactly when C executes it is a plain load with no
-    check (107's bump: the count is passed, the body ignores it; an out-of-range access there is
-    the C program's own undefined behaviour). Ruling 2026-11-01 (cq-47n3). A pointer decoded from a loaded host address carries its
-    decoded `idx`; when that `idx` is the same classical value in every merged arm (a node pointer
-    always points at cell 0), it is that classical value and the access stays a classical-offset
-    access (189). — 84, 85, 86, 88, 89, 105, 107, 129.
+    — 195, 196, 197, 199, 203, 204; 29, 30, 50, 58, 67, 71, 74, 75, 76, 77, 78, 160, 168
+    (regeneration owed).
 
-22. **Memory intrinsics.** `memset`/`memcpy`/`memmove` work per **cell** of the destination (the
-    element type the object is accessed as; for a `char` array a cell is a byte). A classical
-    length is one ordinary update per cell (slot: the source handle or a shared basis-state seed;
-    QRAM: one `_hl` store per cell), emitted as a classical loop over the cells in the lowered
-    program when the length is a run-time value, and at the compiler's choice otherwise (no unroll
-    bound; §6 compares semantics; cq-k65d). A quantum length `n` (bytes) guards cell `j` of size `s` by
-    `n ≥ s(j+1)`; a cell the copy can cover only partly (`sj < n < s(j+1)`) is a byte-masked merge
-    of old and new value under `n > sj`. Slot array: the guarded cell is `select(guard, new, old)`
-    into a fresh rail; QRAM: `store_hl_controlled(guard, …)`. Only cells some execution of the C
-    program can touch are emitted: cell `j` exists iff `sj <` the upper bound of the length (LLVM
-    range facts / known bits; per object of a quantum source pointer, the bound of the length on
-    the paths that select that object). A classical source byte is a host load and is never
-    speculated past that bound. `memcmp`, `strlen`, `strcmp` and the other non-intrinsic
-    string/memory functions are library calls: injected musl source lifted by rule 18 (190; 121 writes the same loops in user code).
-    — 72, 73, 90.
+21. **Pointers.** A pointer is an integer, its x86-64 address: a classical `ptr`/`i64`, or ONE
+    handle to a 64-bit rail iff it is computed from a rail (rule 3: loaded from the bus, merged
+    under a quantum flag, or derived from either). Nothing else belongs to a pointer: no object,
+    base, extent or origin. `inbounds`, `nonnull`, `dereferenceable`, `align`, `noalias` and
+    TBAA are never consulted.
+    - *Dereference.* One bus access at the address (rule 20), with no guard and no bounds
+      check; an address that is not memory is totalized by §2.
+    - *Arithmetic.* `getelementptr` is rule 20's. `ptrtoint` and `inttoptr` are identities at 64
+      bits (to or from another width the `trunc`/`zext` template), so pointer difference,
+      tagging, `llvm.ptrmask` and alignment tests are rule 4's integer templates.
+    - *Compare.* The integer compare of the addresses, `icmp_<pred>_i64[_hl]`; `null` is the
+      literal 0.
+    - *Merge.* A pointer `select` or `phi` under a quantum flag is `select_i64[_hl|_lh|_ll]`
+      (rule 9), a classical pointer entering as its `i64` literal; under a classical condition
+      it is the classical `select`/`phi`, over handles when an incoming is a rail (a classical
+      incoming is then a seed, rule 7).
+    - *Nested pointers.* A pointer in memory is an `i64` cell value: stored as its address,
+      loaded as the `qram_load_i64` rail, which is the address of the next access, to any depth.
+    - *Calls.* A pointer argument or result is one scalar: one mask digit, one `ptr` or one
+      handle (§1.4). Function pointers and block addresses are addresses too (rules 19, 13); a
+      pointer handed to host code is its address.
+
+    Pointer values are compared only relationally (§6).
+    — 198, 200, 208; 84, 85, 86, 88, 89, 105, 107, 129, 167, 189 (regeneration owed).
+
+22. **Memory intrinsics.** `llvm.memcpy`, `llvm.memmove` and `llvm.memset` (`.inline` forms
+    included) are byte accesses on the bus, `qram_load_i8` and `qram_store_i8`: `_hl` at a
+    classical address, at the fresh rail `add_i64_hl(r, j)` for byte j of an address rail `r`
+    (j = 0 included), uncomputed and freed right after its access in the same trip. A copy
+    LOADS ALL its source bytes and then STORES ALL of them: it has no direction and is exact
+    for any overlap. Its load loop pushes each trip's byte rail on `cqrt_push` (for a quantum
+    length the trip's predicate first, then the byte rail) and its store loop pops them, so
+    it stores bytes n−1 down to 0. This hand-over and the `c_i` of rule 19's dispatch loop are, like rule 14's,
+    pushes of a kept rail's handle only; a copy has no reverse loop, and the byte order inside either
+    loop is not compared (§6). `memset` is ONE loop of byte stores of one `i8` value rail
+    (the seed `alloc_i8(v)` for a classical byte). An intrinsic is never widened into word
+    accesses and is always emitted: whether the destination is fresh `__cq_alloc` memory or
+    already holds the value is never asked (§0).
+    - *Classical length* n (a constant or a run-time value): host loops of n trips. A
+      constant n is never unrolled: every length is the one rolled construction.
+    - *Quantum length* (a rail n): the same loops as rule-14 K-loops. Trip j runs under ONE
+      predicate per byte, `p_j = icmp_ugt_i64_hl(n, j)`, computed in the load loop and kept
+      as that byte's store control (rule 5); the chain is the `p_j` themselves. The cutoff is
+      min(K2, B), K2 that of the enclosing function (§0) and B the bound of n from range
+      facts; `n > K2` is the kept overflow predicate when B > K2 or no bound is known. A
+      predicate `c` in scope is conjoined with `p_j`. The length rail (and what produced it)
+      has its last consumer in the load loop and is uncomputed between the two loops (for a `memset`, whose one loop computes `p_j`, right after that loop).
+    - Each byte store is a kept store (rule 5): its tape slot stays, and so does its value
+      rail, the load copy of that byte (never un-copied, never freed; a `memset`'s one seed
+      rail likewise).
+    - *Host-resident destination* (rule 20): the intrinsic stays the instruction.
+    - *Any other destination*: nothing is asked about the source. Every source byte is
+      `qram_load_i8[_hl]`, whatever the source pointer is (a constant global is read as HOST cells, the
+      copies classical-valued; an `alloca` that is such a source is bus-resident by rule 20 (b)).
+
+    A struct assignment, a `byval` copy (rule 26) and `realloc`'s copy are this copy; padding
+    bytes are bytes. `memcmp`, `strlen`, `strcmp` and the other string and memory functions are
+    library calls, lifted by rule 18.
+    — 196, 200 (a `memset`), 201, 208 (a rail length); 202, 72, 73, 90, 190 (regeneration owed).
 
 23. **Floating-point environment.** The C17 §7.6 functions (`fegetround`, `fesetround`,
     `feclearexcept`, `feraiseexcept`, `fetestexcept`, `fegetexceptflag`, `fesetexceptflag`,
-    `fegetenv`, `fesetenv`, `feholdexcept`, `feupdateenv`) are recognised by name and signature as
-    the standard interface to the environment, like the intrinsic routes (they are reserved
-    identifiers, C17 §7.1.3, so no user body carries the name; an exception to rule 27, ruling
-    2026-10-29). Under `FENV_ACCESS` the mode and flags split into a host part
-    (real calls) and a quantum part (rail); constrained ops take `_rm`/`_rmq` and emit a second
-    `_exc` template; fenv calls on quantum state are rail operations; `fenv_t`/`fexcept_t` objects
-    are a host alloca plus the compiler-tracked quantum part, never a slot array, a QRAM or a
-    rule-21 pointer; a clone that does constrained FP work takes the caller's mode and flags rail
-    and returns the new flags rail beside its result (82); the final flags rail is an output,
-    unless rule 2 collapsed it into a host write-back (65).
+    `fegetenv`, `fesetenv`, `feholdexcept`, `feupdateenv`) are recognised by name and signature
+    (rule 16; reserved identifiers, C17 §7.1.3). Under `FENV_ACCESS` the mode and flags split
+    into a host part (real calls) and a quantum part (rail); constrained ops take `_rm`/`_rmq`
+    and emit a second `_exc` template; fenv calls on quantum state are rail operations; a clone
+    that does constrained FP work takes the caller's mode and flags rail and returns the new
+    flags rail beside its result (82); the final flags rail is an output, unless rule 2
+    collapsed it into a host write-back (65).
     Three exception behaviours. `fpexcept.strict` (`FENV_ACCESS ON`) is the model above.
     `fpexcept.ignore` and `fpexcept.maytrap` (clang's `-frounding-math` without the pragma: every
-    TU of musl's libm, LIBC_COVERAGE.md) raise nothing observable: no `_exc`, no flags rail. Their
-    `round.dynamic` mode is the mode of the environment at the root of the call chain, which is the
-    default (C17 §7.6.1: a non-default mode without `FENV_ACCESS` is undefined) unless an ancestor
+    TU of musl's libm) raise nothing observable: no `_exc`, no flags rail. Their `round.dynamic`
+    mode is the mode at the root of the call chain, the default (C17 §7.6.1) unless an ancestor
     holds the fenv state. So in a chain whose root has no fenv access every such op is the plain
     template and the clone has no mode and no flags parameter (169's `__cq_q_scalbn_10(x, n)`,
-    175's `__cq_q_exp_1(x)`; musl `floor`, `atan`, `exp`, `log`, `sin` alike). A body that contains
-    a strict op or a fenv call, itself or through a callee, takes 82's ABI; a caller without the
-    fenv state passes the mode literal 0 and an empty flags rail, and the returned flags rail is
-    fenv state the program never reads: twin, free, never kept (169's `__divdc3` calling
-    `__cq_q_logb_1(x, 0, flags)`). A body of `round.dynamic` ops reached from a caller whose mode
-    is a non-default literal or a rail takes that mode as 82's mode parameter and its ops become
-    `_rm`/`_rmq`; it is a distinct clone from the default-environment one, and its name is fixed
-    with its example (§8, owed). Ruling 2026-11-02 (cq-75n4).
+    175's `__cq_q_exp_1(x)`). A body that contains a strict op or a fenv call, itself or through
+    a callee, takes 82's ABI; a caller without the fenv state passes the mode literal 0 and an
+    empty flags rail, and the returned flags rail is never read: twin, free, never kept (169's
+    `__divdc3` calling `__cq_q_logb_1(x, 0, flags)`). A body of `round.dynamic` ops reached from
+    a caller whose mode is a non-default literal or a rail takes that mode as 82's mode
+    parameter and its ops become `_rm`/`_rmq`; it is a distinct clone, its name fixed with its
+    example (§8, owed).
     Once the environment has a quantum part, every callee whose body (itself or through a callee)
     reads or writes the environment is reached with the flags rail and the mode as arguments,
-    whatever its data arguments: it is a clone, never a classical call (rule 18). A `fenv_t` or
-    `fexcept_t` that crosses a call is its host part plus the compiler-tracked quantum part passed
-    as the two extra arguments (rule 26: the quantum part is its quantum fields); a `memcpy` of one
-    copies both (the handle, classically); any other access to its bytes reads the host part (its
-    representation is unspecified in C, so the program cannot portably read more). The constrained
-    intrinsics bind per rule 18. `feenableexcept`/`fedisableexcept` are not C17 and have no musl
-    body: rule 27 (cq-hzji, 2026-11-02). — 65, 80, 81, 82, 100.
+    whatever its data arguments: those two digits of its mask are 1. `feenableexcept` and
+    `fedisableexcept` are not C17 and have no musl body: rule 27.
+    **Environment objects.** A `fenv_t` or `fexcept_t` object is memory like any other (rule 20),
+    and a host fenv call reads and writes its host bytes. One confined shape keeps the quantum
+    part out of memory: an `alloca` whose every user is a recognised fenv call taking the `alloca`
+    itself (lifetime and debug intrinsics aside) is host-resident, and its quantum part (the
+    flags rail, the mode when it is a rail) is carried per object as SSA values, saved by the
+    saving call and reinstated by the restoring one (82). Every other such object holds the
+    whole environment in its own bytes:
+    - a restoring call whose argument is a constant, a `constant` global or a constant pointer
+      expression (musl's `FE_DFL_ENV`) is the host call as it stands and empties the quantum
+      part: an empty flags rail and the mode literal 0 (100);
+    - after a saving call (`fegetenv`, `feholdexcept`, `fegetexceptflag`) the quantum part is
+      merged into the object's exception-flag and rounding-mode fields: a bus load, the `or` or
+      `select` template, a bus store;
+    - a restoring call (`fesetenv`, `feupdateenv`, `fesetexceptflag`) loads those two fields
+      from the bus as the new flags rail and mode, then makes the host call on a `__cq_alloc`
+      copy of the object (rule 22) in which both fields are stored as 0.
 
-24. **Threads, atomics, volatile, setjmp.** Single-thread collapse: atomics are plain ops, fences
-    nothing, `pthread_create` a direct call of the clone, mutexes no-ops; an unobservable
-    `volatile` access is classical; an OBSERVABLE volatile access with quantum data (MMIO, an
-    `extern` volatile object, an escaping address) is a host effect: a store is a rule-16 tape
-    effect entry (`volatile_store`, the address as an `i64` `_lit`, the value a field, under the
-    predicate), a load is a host read executed unguarded at its program point and merged (rule 19's
-    classical call under a predicate; cq-py5f, 2026-11-02); `longjmp` under a quantum predicate is
-    an escaped-flag result merged at the `setjmp` diamond. — 32, 48, 94, 101, 106.
+    The field offsets are the target libc's, fixed with the example (§8, owed).
+    — 65, 80, 81, 82, 100.
+
+24. **Threads, atomics, volatile, setjmp.** Single-thread collapse: an atomic access is the
+    ordinary access (`load atomic`/`store atomic` are rule 20's, `cmpxchg` and `atomicrmw` rule
+    4's), fences are nothing, `pthread_create` is a direct call of the start routine (rule 19
+    when it is a pointer) that writes no `pthread_t`, `pthread_join` is nothing, mutexes are
+    no-ops (these operands are no users for rule 20 (b), and a constant start routine is not
+    address-taken by that use), and a thread-local object is the one thread's
+    object at its address (`llvm.threadlocal.address` is that address).
+    `volatile` is read off the access and its pointer operand:
+    - *Unobservable.* The pointer operand is, through `getelementptr`s with untainted indices,
+      an `alloca` or an internal global whose every use (for the global, in the module) is,
+      through such `getelementptr`s, a load or a store through it, lifetime and debug intrinsics aside. The qualifier is dropped
+      and the access is rule 20's. Such a global that no instruction stores to is
+      host-resident like a constant (48).
+    - *Observable.* Every other `volatile` access is made on the host, never on the bus. With a
+      classical address, an untainted value and no quantum predicate in scope it is the
+      instruction as it stands. A store of a rail, or under a quantum predicate, is the
+      rule-16 effect entry `volatile_store` (fields: the address, the value); a load under a
+      quantum predicate is a host read executed unguarded and merged (rule 19). At an address
+      rail the store is the same entry and the load the effect entry `volatile_load`, whose
+      result rail is the value.
+
+    `setjmp` and `longjmp` are host calls as they stand, and a `longjmp` under a quantum
+    predicate is rule 16's `noreturn` arm. One pairing is made, by operand and never by what a
+    pointer might reach: when exactly one `setjmp` in the module has an internal global `G` as
+    its operand and every other use of `G` in the module is the operand of a `longjmp`, each
+    such `longjmp` is an escaped-flag result merged at that `setjmp`'s diamond, and no host
+    call is made for either (101). — 48, 101; 32, 94, 106 (regeneration owed).
 
 25. **Widths and ABI extras.** `i128`, `_BitInt`, `_Float16`, `x86_fp80` are width variants;
-    `<2 x T>` is a pair of lanes; `signext`/`zeroext` are ABI notes. `fp128` is unreachable from C
-    on this target. IR the pinned pipeline (§0: C, x86-64, `clang -O1`, the pinned flags) cannot
-    emit (`fp128`, scalable or pointer vectors, `invoke`/`landingpad`/`resume`, `inalloca`,
-    `va_arg` instructions, a non-x86-64 `va_start`) is not an input: meeting it is an internal
-    error that names §0, never a stop (cq-oa67, cq-s2zz, 2026-11-02). — 19, 63, 93, 103, 110, 111.
+    `<2 x T>` is a pair of lanes, in memory one access per lane (rule 20); `signext`/`zeroext`
+    are ABI notes. IR the pinned pipeline (§0) cannot emit (`fp128`, scalable or pointer
+    vectors, `invoke`/`landingpad`/`resume`, `inalloca`, `va_arg` instructions, a non-x86-64
+    `va_start`) is not an input: meeting it is an internal error that names §0, never a stop.
+    — 19, 93, 103, 110, 111; 63 (regeneration owed).
 
-26. **Aggregates and complex.** One rail per quantum scalar field, classical fields stay classical;
-    the mask is applied field-wise; `extractvalue`/`insertvalue` on handles are classical. `sret`
-    and `byval` are slot parameters (rule 20). `_Complex` arithmetic follows clang's Annex G IR:
-    the inlined fast path lowers by rule 4, the `__mul*c3`/`__div*c3` fallback is injected and
-    cloned by rule 18, and its `fcmp uno` branches are quantum control by rule 8. — 64, 69, 70,
-    78, 103, 107, 122; new examples required (§8).
+26. **Aggregates and complex.** An SSA aggregate is one rail per quantum scalar field, classical
+    fields stay classical; the mask is applied field-wise; `extractvalue`/`insertvalue` on handles
+    are classical. An aggregate in memory is bus memory at its address like any object (rule
+    20), and nothing about its type crosses a call.
+    - `sret`: the parameter is a pointer formal like any other (one mask digit); the callee
+      stores the result through it and the caller loads it. The attribute stays, an ABI note.
+      A field an entry stored as a rail is a QUANTUM cell, unspecified to host code (§1.3).
+    - `byval`: the caller makes the copy, `q = __cq_alloc(size, align)` and a bus copy of `size`
+      bytes (rule 22), and passes `q` as a plain pointer: a lowered call carries no `byval`,
+      and the callee is reached by the plain-`ptr` form of §1.4. Its own symbol keeps the C
+      signature for host callers. The copy is made right before the call, after its other
+      arguments and every earlier access of the source; under a quantum predicate its bus accesses are `_controlled` under it, like the call.
 
-27. **Callees without a body: declared clones.** The compiler knows no library by name. Every
-    quantum call to a function with no body in the module (after injection, and except the calls
-    rule 16, rule 22, rule 23 and the intrinsic routes classify) is a call to the clone that §1.4 names, and
-    the compiler only emits declarations of that clone and of the twins it calls. Whatever is linked
-    supplies the definitions. A missing one is an ordinary undefined-symbol link error, and there is
-    no fallback to the original function. A call with no quantum argument stays the ordinary call.
-    Injected source has a body, so it is lifted by rule 18 with full knowledge of that body. This
-    rule only fixes the ABI for the case where the body is absent, so that the name and the call
-    follow from the call site alone:
-    - *Name.* The mask is formed as in §1.4 with no `_b` bounds. A pointer argument contributes
-      its tag and idx digits and ONE digit for its pointee object, 1 iff any cell holds a handle
-      at the call (as for a runtime-length register).
-    - *Results.* Every result is a handle (an `i32` per scalar), and the `_unc` twin always exists.
-      A clone whose value is classical (e.g. measured) returns it as a seed rail, and its twin
-      leaves that rail alone (a known basis state, freed by the caller). A pointer result crosses
-      as the rule-21 triple `(object, tag, idx)`, three results, and the twin takes the `tag` and
-      `idx` handles among its outs (cq-s2zz, 2026-11-02).
-    - *Callbacks and host-held pointers.* A function whose address escapes the module (stored into
-      an `extern` object, passed to a callee without a body, returned by an entry) gets its
-      ALL-HANDLES clone (every mask digit 1; a classical actual arrives as a seed rail, rule 7;
-      pointers as triples) with its `_ctl` and `_unc`, registered under the function's host address
-      by a module constructor (`clone_register`, §1.3). A declared clone handed a function pointer
-      calls back through `clone_resolve(fp, kind)` with this ABI, and so does an in-module call
-      through a pointer with no in-module candidate (rule 19). Ruling 2026-11-02 (cq-s2zz, cq-py5f);
-      example owed (§8).
-    - *Under a quantum predicate.* The call is always `<clone>_ctl(pred, …)` and the caller merges
-      its results by `select`. A pure clone's `_ctl` may ignore `pred`.
-    - *Pointers.* A pointer crosses as the rule-21 triple `(object, tag, idx)` followed by the
-      object-table cell count (as in 190's memcmp clone). The clone may overwrite cells of a pointee
-      object marked 1 with handles it minted. Before the call, the caller copies that object's
-      cells (handle numbers, a classical copy) into a snapshot of the same size. The twin takes
-      `(outs…, args…, snapshot pointer per marked object)`: it uncomputes what the clone wrote and
-      restores every cell from the snapshot. The caller uncomputes its own rails through its own
-      SSA values as usual and calls the twin after the last read of the result or of a cell
-      the clone may have written. The clone leaves no garbage of its own (rule 18).
-    - *Cutoff.* The clone takes one more classical `i32` argument, K, after all others. The twin
-      takes the same forward arguments, K included, before any snapshot pointers. Every
-      quantum-exit loop and quantum-depth recursion inside the clone and its callees runs for
-      min(K, B) trips, where B is the loop's own bound (rule 14). The caller passes the callee's K
-      resolved as in §0 (flag, `CQ_K` header, default). A loop-free clone ignores it.
-      Since K is not baked in, no K variant of a library exists and none can mismatch.
-    - *Linkage.* Declared clones and their twins use the default C calling convention (not
-      `fastcc`), since they cross translation units.
-    - *Inline asm.* An `asm` statement with a quantum operand is a callee without a body: its
-      clone is named `__cq_q_asm_<h>_<mask>` where `<h>` is the first 16 lowercase hex digits of
-      the SHA-256 of the asm string as LLVM spells it (`$N` operands), a single NUL byte, and the
-      constraint string, with the mask over its operands in order; the
-      call, results, `_ctl` form, twin and K follow this rule. An asm with only classical operands
-      stays the asm (the host boundary). An asm with a quantum operand and no outputs under a
-      quantum predicate is a rule-16 tape effect with the asm string as its name (2026-10-27).
-    - *Library build.* A lowered library is the same compiler run over the library source, given a
-      list of root clone names. Each root is lowered as if a call site with that name existed and is
-      exported under this ABI, together with its `_ctl` form and its twins. Calls inside the library
-      have bodies and follow rule 18, passing the K they received down. The classical bodies stay
-      and serve classical callers. The root list, and any per-function K the library build
-      recommends (e.g. measured by running the classical functions), are build inputs and outputs,
-      not part of this spec.
-    — 161, 190.
+    `_Complex` arithmetic follows clang's Annex G IR: the inlined fast path lowers by rule 4, the
+    `__mul*c3`/`__div*c3` fallback is injected and cloned by rule 18, and its `fcmp uno` branches
+    are quantum control by rule 8. — 64, 69, 103, 159, 165, 166, 169; 70, 78, 107, 122, 163,
+    164 (regeneration owed).
+
+27. **Callees without a body: declared clones.** The compiler knows no library by name (rule
+    16's ISO C interfaces excepted). Which bodiless functions are lowered code is a build
+    input: the root lists of the lowered libraries the program links (shipped with their
+    headers, §0; another translation unit of the program is such a library). A bodiless callee
+    on no list is the host boundary (rule 16). A call from lowered code to a listed function is
+    a call of its declared clone, whatever its arguments: the compiler emits only declarations
+    of the clone and its twin, the link supplies the definitions, and a missing one is an
+    ordinary undefined-symbol error (no fallback to the original function). Injected source
+    has a body and is rule 18's. The declared clone is the table clone of §1.4, so that name
+    and call follow from the callee's C signature alone:
+    - *Call.* `__cq_q_<fn>_<1…1>_t(handles…, K)`. Every scalar actual is a handle (a
+      classical one a seed, rule 7; a classical pointer `alloc_i64` of its address); K is the
+      callee's K resolved as in §0 (for an indirect
+      call see rule 19). Every result is a handle. The call is a memory version change; its
+      twin `_unc(outs…, args…)` is called, and frees the results, as rule 19 says for a table
+      clone. Under a quantum predicate the call is `_t_ctl(pred, …)` and the results merge by
+      `select`. Default C calling convention, not `fastcc`.
+    - *Cutoff.* Every quantum-exit loop and quantum-depth recursion inside the clone and its
+      callees runs min(K, B) trips (rule 14); no K variant of a library exists.
+    - *The table.* The same symbol is the row a function pointer reaches (rule 19); a declared
+      clone handed a function pointer calls back through the table.
+    - *Inline asm.* An `asm` statement with a quantum operand is a callee without a body, named
+      `__cq_q_asm_<h>_<1…1>_t`: `<h>` is the first 16 lowercase hex digits of the SHA-256 of
+      the asm string as LLVM spells it (`$N` operands), a single NUL byte and the constraint
+      string; the mask is over its operands in order. With only classical operands and no
+      quantum predicate in scope it stays the asm (host bytes, §1.3); with a quantum operand,
+      no outputs and a quantum predicate it is a rule-16 effect entry named by the asm string.
+    - *Library build.* The same compiler run over the library source with a list of roots:
+      each root's table clone, with its `_ctl` form and twins, is exported and registered;
+      calls inside the library are rule 18's and pass the received K down; each own symbol
+      serves host callers. Root lists and recommended K values are build inputs.
+
+    — 161, 190 (regeneration owed); a callback through the table and an inline asm owed (§8).
 
 ## 4. Metadata and non-normative artefacts
 
-`!cq.branchphase` and any other metadata in a lowered file is non-normative. `_tools/` (traces,
-drivers, viewer, checkers) is tooling, not spec. The checkers (`sample_check.py`, `trace_check.py`, `make_trace.py`, `replay/`)
-built and verified this suite; they are not part of the compiler's acceptance. A compiler is
-accepted by matching the examples under §6, nothing else. Comments in lowered files explain; they never add
-requirements beyond this document.
+Metadata in a lowered file (`!cq.branchphase` and any other) is non-normative. `_tools/` (traces,
+drivers, viewer, checkers) built and verified this suite and is no part of the compiler's
+acceptance: a compiler is accepted by matching the examples under §6, nothing else. Comments in
+lowered files explain; they never add requirements.
 
 ## 5. Conventions for the corpus
 
 - Uncompute as early as rule 5 allows; flags computed just before first use and uncomputed right
   after their last controlled gate.
-- Local names are plain LLVM numbering (`_tools/renumber_locals.py`).
-- Every example header states: the construction rules it witnesses, the registers whose final
-  value is checked, which rails are expected clean, and the rotation list (§6).
+- Local names are plain LLVM numbering (`_tools/renumber_locals.py`). `m = __cq_mem()` is called
+  once, at function entry, in every function that accesses the bus.
+- Every example header states: the construction rules it witnesses, the registers and memory
+  cells whose final value is checked, which rails are expected clean, which rails and tape slots
+  are kept and by which rule, and the rotation list (§6). A bus store's tape slot has no handle
+  in the lowered program: the header names it by its store (the line or IR value).
+- An example omits the clone-table row, the table clone, `_t_ctl` and their twins of an externally
+  visible function whose address it never takes: only rows of address-taken functions are shown
+  (96, 97, 211, 212), and an example with an address-rail call has no other externally visible function of
+  that call's function type. The compiler emits them for every such function (§1.3, rule 19); nobody calls them in the example, they emit no gate, and §6 does not compare them.
 
 ## 6. Semantic acceptance
 
@@ -1070,179 +1287,133 @@ that class are equal iff:
 1. **Permutation part.** Run as a classical reversible program on basis inputs (each `cq_theta`
    input replaced by a chosen bit pattern, templates evaluated by §2), the named output registers
    equal the C program evaluated classically on the same inputs under §2, and every rail the
-   example declares clean is `0`. A rail still allocated at exit is a frozen register (rule 10), a
-   measured value, or a kept rail a rule names (6, 14, 26); any other live rail is a leak and FAILS,
-   with or without a reference: a user program under the checker has no clean-list, so every rail
-   it does not name is clean (ruling 2026-11-01, CQ_lang2 cq-nyto: an entangled rail live at exit
-   that the checker did not see).
+   example declares clean is `0`. A named output that lives in memory is read from the bus at
+   exit, at the address the C object has in that run. A rail still allocated at exit is a frozen
+   register (rule 10), a measured value, an effect entry's result rail, or a kept rail a rule names (5, 6, 14, 16, 18, 19; the
+   overflow predicates `a_K` and `n > K2` among them); any other live rail is a leak and FAILS,
+   with or without a reference: a user program under the checker has no clean-list, so every
+   rail it does not name is clean. Rule 5 keeps, for the shot: a store's tape slot and, as far as
+   the storing function owns them, its value rail (a seed included) and control rail; a load copy that a memory version change
+   overtook before its `_unc` (un-copied, not freed), and a result of a clone that loads that one overtook before its twin. An in-place form keeps
+   nothing.
 2. **Rotation list.** The sequence of `(gate, target register, angle or angle-rail expression,
-   control predicate as a Boolean function of the inputs)` is equal up to reordering of gates
-   with disjoint support, reordering of any two phases (classical-angle or angle-rail: diagonal
-   gates commute whatever their supports), reordering of an Ry with any gate that neither acts on
-   the Ry's target rail nor is non-diagonal on one of its control rails (a controlled Ry is
-   diagonal on its controls, so a phase whose predicate does not read the Ry's target commutes
-   with it: 125 and 133 order the same prep against its sibling phase both ways and are equal;
-   ruling 2026-10-29), and rail renaming. An Ry is ordered against every other gate it overlaps. A phase P(θ) on a flag rail is the phase
-   e^{iθ·f} on every basis branch, where f is the flag's Boolean function of the inputs; which rail
-   carries it is irrelevant. So `and_i1(a, b, t) · rz_i1(t, θ) · and_i1(a, b, t)` with t |0⟩ equals the
-   doubly-controlled phase CCP(θ) on a, b (never a controlled Rz, which differs by a relative phase).
-   Phases are compared as a TOTAL, never one gate at a time: within a set of phases movable to a
-   common position, the two sides are equal iff Σ θ_k·f_k(inputs) agrees on every basis input
-   (mod 2π). So one phase on a disjunction of pairwise-disjoint predicates equals the per-edge
-   phases of the same angle (117: the reference kicks back O once per exit edge of is_marked, a
-   conforming pass fires one `rz_i1` on the block predicate, the OR of the edges; both are rule 8
-   constructions and §6 accepts both). Ruling 2026-11-01 (cq-u2mw).
+   control predicate as a Boolean function of the inputs)` is equal up to rail renaming and
+   reordering of: gates with disjoint support; any two phases (diagonal gates commute whatever
+   their supports); an Ry with any gate that neither acts on the Ry's target rail nor is
+   non-diagonal on one of its control rails (so a phase whose predicate does not read the Ry's
+   target commutes with a controlled Ry: 125 and 133 are equal). An Ry is ordered against
+   every other gate it overlaps. A phase P(θ) on a flag rail is the phase e^{iθ·f} on every
+   basis branch, f the flag's Boolean function of the inputs; which rail carries it is
+   irrelevant. So `and_i1(a, b, t) · rz_i1(t, θ) · and_i1(a, b, t)` with t |0⟩ equals the
+   doubly-controlled phase CCP(θ) on a, b (never a controlled Rz, which differs by a relative
+   phase). Phases are compared as a TOTAL, never one gate at a time: within a set of phases
+   movable to a common position, the two sides are equal iff Σ θ_k·f_k(inputs) agrees on every
+   basis input (mod 2π). So one phase on a disjunction of pairwise-disjoint predicates equals
+   the per-edge phases of the same angle (117: one `rz_i1` on the block predicate or one per
+   exit edge; both are rule-8 constructions).
 
 A phase whose control predicate (every enclosing arm predicate included) is constant over the quantum
 inputs once the classical arguments and the outcomes of the measurements executed before it are fixed,
-and whose angle is classical, is a global phase: whether either side emits it is not compared (each
-outcome branch is a separately collapsed state and the phase a scalar on it; rules 2 and 12 compose to
-this, ruling 2026-10-29; it never applies to an Ry, nor to a phase with an angle rail).
+and whose angle is classical, is a global phase: whether either side emits it is not compared (rules 2
+and 12 compose to this; it never applies to an Ry, nor to a phase with an angle rail).
 
 The classical reference of item 1 runs every quantum-exit loop and quantum-depth recursion with the
 same cutoff as the circuit: a loop is stopped after K trips (the exit test after the K-th body gives
 `a_K`). On an input where the C program would run more than K trips the compared outputs are the
 circuit's, `a_K` must read 1, and the rotation list is compared through trip K; on an input with at
-most K trips `a_K` must read 0 and everything is compared (ruling 2026-10-27). A function with no body
-(rule 27) is modelled on both sides by one deterministic stand-in of the name and argument bits; the
-model is the checker's, not the spec's.
+most K trips `a_K` must read 0 and everything is compared. Likewise the kept rail `n > K2` of a
+rail-sized allocation must read `n > K2` on every input; where it reads 1 the reference allocates
+K2 bytes as the circuit does, and an access at or beyond byte K2 of that block is outside the block
+on both sides (totalized by §2, not compared against C). A function with no body (rules 16, 27) is
+modelled on both sides by one deterministic stand-in of the name and argument bits; the model is the
+checker's, not the spec's.
 
-An indeterminate value the C program reads (a cell never written: `malloc`, `realloc` growth,
-an uninitialized local) is taken as 0 by the classical reference, the value the circuit's fresh
-`|0⟩` cell holds; no code is emitted for it.
+An indeterminate value the C program reads is what its cell holds on the bus: 0 for a cell never
+written since its `__cq_alloc` (`malloc`, an uninitialized bus-resident local, the grown part of a
+`realloc` block), and for a block-scoped object re-entered by a loop the value the trip before
+left there (rule 20: one block). The classical reference models both. An
+uninitialized cell of a host-resident `alloca` (host stack memory) is not compared.
 
 Pointer values (`ptrtoint`, printed addresses) are compared only relationally (equality and
-order), never as absolute numbers: host addresses differ per run and QRAM bases are assigned.
-
-Byte identity of traces is never required.
+order): host addresses differ per run. Byte identity of traces is never required.
 
 The circuit compared is the one the backend builds from the lowered program's execution (§0): the
 gates between `invert_begin()` and `invert_end()` enter it reversed and inverted (rule 17), so the
-rotation list of a `cq_invert` example is read through that reversal, never from the IR's textual
-order (2026-11-02).
+rotation list of a `cq_invert` example is read through that reversal, never from the IR's order.
 
-A checker that samples inputs reports its coverage honestly and never narrows the claim. A coverage
-target of its own making (a loop trip class, a branch) whose cheapest reaching input runs the C
-program past the checker's stated cost budget is reported as uncovered, with that input and its
-cost; it is never counted as compared, never counted as a failure of the compiler, and never made
-to disappear by changing the example or by lowering the budget (117: the inner k-loop's zero-trip
-exit is reached only at t = 32, after 2^31 − 1 trips of the earlier j; the claim at t = 32 stands,
-the sampler says it did not witness it). The budget is the checker's, not the spec's. Exhausting a
-search or work budget proves nothing: a target the checker could not prove dead from range facts is
-UNCOVERED, never dead and never a PASS (cq-3nla turned an ERROR into a PASS this way). Ruling
-2026-11-01 (CQ_lang2 checker, 117).
+A checker that samples inputs reports its coverage and never narrows the claim. A coverage target
+of its own making (a loop trip class, a branch) whose cheapest reaching input exceeds the checker's
+stated cost budget is reported as UNCOVERED, with that input and its cost: never compared, never a
+failure of the compiler, never dead, never a PASS, and never removed by changing the example or the
+budget (117: the inner k-loop's zero-trip exit is reached only at t = 32, after 2^31 − 1 trips).
+Only a target proved dead from range facts is dead. The budget is the checker's, not the spec's.
 
 ## 7. Examples normalised under these rules (done 2026-10-26)
 
-| rule | examples that currently deviate | change |
-|---|---|---|
-| §1.4 mask order | 06, 07, 09, 24, 31, 33, 34, 35, 36, 37, 64, 143; `_ctl` after the mask in 102, 117, 124 | rename clones left-to-right |
-| §1.4 dead originals | 06, 07 (kept the unlifted body with no classical caller) | dropped |
-| §1.4 slot twins | 107, 108, 122, 31, 52, 106 (129 since 2026-10-27: no twin, rule 6 in the caller) | twin takes `(outs…, args…, old handles)` |
-| 18 copy-out | 36, 51, 82, 95, 109; 163 (2026-11-01: the sret slot results were stored as template rails) | copy result to a fresh rail |
-| 9 merge spelling | 143, 121 | `cq_template_select_<W>` |
-| 4 out-of-place | 113, 114 (in-place `xor_i1` on user registers), 107, 91 (xor-merge), 121 (`xorc_i8` on a `|0⟩`) | fresh-rail templates |
-| 8 i1 gates | 69, 84, 90 (`and_i1` template as flag; 12 and 86 use the conjunction as data and keep the template), 23/49/54/123 (OR by CNOT+Toffoli), 118 (`select_i1_lh` as OR) | `and_i1`/`or_i1` for flags |
-| §1.3 spellings | 143 (`cqrt_x`) | `not_i1` |
-| 7 seed frees | 05, 09, 26, 37, 54, 131, 139 (redundant reset before free) | free directly |
-| 20 index operand | 29, 30 (read), 74, 76, 78, 97, 120 (50 has no zext: -O1 folded it) | logical index rail, drop the `zext` |
-| 14 output `a_K` | 05, 09, 26, 37, 53, 54, 55, 68, 87, 139 (57 has a classical bound and no chain) | keep the last predicate as an output |
-| 16 lifetime | 91 (`free` under a quantum predicate emits nothing; the block is uncomputed and freed at scope end where provable) | ruling 2026-10-26 |
-| 6 bijective cleanup | 125, 127 (also applied in 113, 114 to the superseded CNOT targets) | rewrite as the two witnesses |
-| 14 affine induction | 87 (p's idx carried as a rail, making s a QRAM; ruling 2026-11-01, regeneration owed) | slot array read at the classical trip index with the cell-count check, as 190's memcmp; n stays a carried rail |
-| 21 / §1.4 triple count, twin args | 107 (bump's triple lacked the cell count; its twin restored the unwritten tag half; regenerated 2026-11-01) | count follows the triple; the twin takes the old idx only |
-| 12 | 41 | header: deletion is scope-dependent |
-| 3 lane gate | 103 (dead `fadd_f32` on an unread lane) | remove |
-| §1.4 mask and bounds (2026-10-27) | 52 (`reduce_1000`: the `out` pointer carries two cells, so two digits), 98 (`chain_10`: the call-site bound `n & 3` must appear as `_b3`) | renamed `__cq_q_reduce_10000`, `__cq_q_chain_10_b3[_dN]` |
-| 27 declared clones (2026-10-27) | 161 (`ext_fn` called with the raw handle), 190 `escape` (`ext_sink` gets slot memory of handles) | done 2026-10-27: `__cq_q_ext_fn_10`, `__cq_q_ext_sink_0010` (snapshot twin), trailing K argument |
-| 6 unconditional (2026-10-28, cq-qpsb) | references that kept a dead old value under a bijective update | done: 01, 02, 10 (sub_qc, xor_qq), 12 (add_i8/16/64), 13 (fneg_q), 38, 43, 45 (unreachable_arm), 94, 108 (trap_q), 109 (bswap_q), 112 (usub_overflow_qq, rotr_qc, rotr_qq), 156 (sub_qq_i8), 162 (entry), 186 (free_uncond, free_classical_cond). Triaged, no change (no inverse, or the value is read later): 20, 25, 67, 109 (others), 122, 162 (consumer), 177, 189 (calloc_aligned). Triaged 2026-10-31: rewritten 05, 09, 150 (the counter n, cleaned per trip), 149 (s), 27 (acc), 190 memmove_overlap (the loaded register under a classical branch on j & 3; the seed cell is freed directly). No change: 26 (acc*c + i: no bijection), 54 (x -= k under x > k, x >> 1), 68 (i-- under i > 0 and j++ under j < i: the predicate reads the value; acc*a + j), 91 (i++ under i < (x & 3)), 139 (acc += … under a break test that reads acc), 73, 75 (x is live: the cells are x + i), 100 (flags OR), 116 ((y*ap) % N), 123 (the merge's complement arm is the classical y0: the old y' is rule-5 garbage), 129 (guarded_field_store's select(y > c, 3y, y - c) is not injective; ptr_select_rmw already cleans by rule 6) |
-| 2 collapse, 11, 14, §6 (2026-10-29; rulings to CQ_lang2 cq-r6bc, cq-5h88, cq-ph2i, cq-vrwm, cq-xidq, cq-8q9i, cq-eina, cq-3wo5) | 65 (both functions measure y and kept rails that are functions of the outcome, and measured one), 22 `switch_phase` (per-case `rz_i1` for one merged `cq_phi` with a `phi` angle), 26 `break_with_body` (the `|1⟩` seed minted before the zero-trip test, live on the skip path), drivers 86 (`ptr_less` called with `a == b` only), 44/61/126 `.O1.ll` (stale inline-asm `!srcloc` offsets) | done: 65 collapses after the measurement and writes the flags back to the host (`; Classical reads (rule 2): 1`); 22 angle rail + `rz_qangle_controlled`; 26 seed in a preheader; two more `ptr_less` calls with `a != b`, both orders; `!srcloc` re-captured (non-normative) |
-| 2 collapse through a callee measurement (2026-10-31, cq-9hwg) | 136 (`cq_measure(y)` of y = x + c, x measured inside the clone, was emitted as a measurement) | done: the caller re-reads x's rail, uncomputes y against it, recomputes y classically; `; Classical reads (rule 2): 1` |
-| 19 return type (2026-10-31, cq-juf6) | none (161, 162 return `i32`); CQ_lang2 probe 976_u06 (`_Bool` entry truncated the handle) | done: rule 19 text; 193 `narrow_quantum_return` witnesses `_Bool`, `short` (return type `i32`) and `long` (handle zero-extended) |
-| §1.2 `sadd_sat` `ssub_sat` (2026-10-31, CQ_lang2 verifier on 194) | 194 (`llvm.sadd.sat.i32` from compiler-rt's inline `scalbn`, lowered to `cq_template_sadd_sat_i32` while §1.2 listed only the unsigned pair) | done: §1.2 lists `sadd_sat ssub_sat`; semantics in ABI §2.7 (saturate to `[−2^(W−1), 2^(W−1) − 1]`, total, no §2 row needed); the saturating intrinsics are templates, never expanded into add + compare + select in the lowered IR |
-| 18 pinned body (2026-10-29, cq-ezan) | 169 (`__cq_q_logb_1` followed a musl `ilogb` without its `#pragma STDC FENV_ACCESS ON`, inlined into `logb`) | done 2026-10-31: regenerated from the pinned bundle as built: `__cq_q_logb_1(x, mode, flags)` calls a strictfp `__cq_q_ilogb_1(x, mode, flags)` on 82's ABI (unguarded, merged by select, result and flags phis alike), the INVALID of both `FORCE_EVAL(0/0.0f)` arms as `flags \| select(pred, 1, 0)`, the K-loop and its `a_K` in the ilogb clone (one per activation: the twin re-runs the forward clone), `__cq_q___divdc3_0011` minting an empty flags rail and the mode literal 0 and dropping the returned flags; 173 unchanged (its `.c` defines `__mulsc3`/`__divsc3`) |
-| 19 no inlining, 23 exception behaviours, 18 partial measurement and intrinsic binding (2026-11-02, CQ_lang2 cq-ab9c, cq-fl4n, cq-75n4, cq-odjk) | 162 (the consumer inlined the entry's body); 169, 175 conform; the CQ_lang2 pass stopped on musl `sin`, `exp`, `log` and on a plain caller of a musl clone, each inside a construction the text left implicit | done: rule 19 (the compiler never inlines: a callee with a quantum argument is a rule-18 clone, a callee with none is called as it is, its minted register or rule-6 image a FROZEN result, other minted registers returned as extra results for the twin; 162's consumer regenerated: calls the entry, keeps the returned rail; a classical host call under a quantum predicate is unguarded and merged), rule 23 (`fpexcept.ignore`/`maytrap` ops are plain templates with no fenv parameters; a strict op or fenv call brings 82's ABI; a default caller passes mode 0 and an empty flags rail and drops the returned flags), rule 18 (measured results of a clone with dead siblings are copied out before the twin; an intrinsic binds to the injected body whenever one exists); three examples owed (§8) |
+Every example not listed below conforms.
 
-| 17 run-time adjoint, and the no-stops rulings (2026-11-02, CQ_lang2 round 1: cq-py5f, cq-eive, cq-hzji, cq-oa67, cq-29ej, cq-k65d, cq-5xm0, cq-s2zz, cq-lshe, cq-w3cd, cq-b58q, cq-e5lj, cq-i9wk, cq-mzqo) | 44, 61, 126 (the adjoint constructed at compile time: reversed gate lists, `_adj` clones, a reversed loop); 61 of the pass's stops asked for rulings on shapes the text left open | done: rule 17 is `invert_begin()`/`invert_end()` (§1.3), the backend reverses and inverts the recorded gates; 44, 61, 126 regenerated as their forward lowering between the two calls; `_adj` retired (§1.4). Rulings written into §1.1 (handle 0, handles are classical values, the namespaces), §1.2 (`bitreverse`), §1.3 (`qram_size`, `n = 0`, `tape_str_begin/end`, `clone_register/resolve`), rules 2 (collapse is static), 6 (dead on one classical path), 10 (second prep after a reader), 13 (computed goto), 14 (no live exit), 16 (tape order, fields, deferred results, signal table, callbacks), 18 (twin point, half/vector/constrained intrinsics), 19 (extra results per path, cycles, quantum function pointers, empty candidate set), 20 (globals at exit, unknown extent, entry records), 21 (slot bases, `i64 idx`), 22 (loop form), 23 (callee reached with the flags rail, `fenv_t` crossing, traps), 24 (observable volatile), 25 (input the pipeline cannot emit), 27 (pointer results, callbacks); §6 reads a `cq_invert` example through the reversal |
-| 13 computed goto with a hidden index, 17 a marker under a quantum predicate, 20 a global QRAM of unknown extent or foreign contents (2026-11-02, CQ_lang2 round 2: cq-8i5g, cq-asfn, cq-pf4n) | rule 13 said "the integer the target address was derived from" (nothing to recover when the address is carried in a `phi` or reloaded from memory); -O1 jump-threaded `__cq_invert_begin` into both arms of a quantum branch and rule 17 did not say where the region starts; rule 20 seeded a global QRAM from an initializer an `extern` of unknown extent does not have | done: the scrutinee is the address and the case values are the `blockaddress` constants (rule 13); `__cq_invert_begin/end` are `noduplicate` in `CQ.h` (44, 61, 126 `.O1.ll` regenerated, attribute groups only) and rule 17 says what a marker inside a quantum arm means (the tail lowered under both flags when the match is outside the arm); every global QRAM is `qram_alloc_host_<W>(ptr @g, i64 n)` seeded from host memory at program start with the handle in `@g.qram` (§1.3, BACKEND_ABI 1.10; 160 and 192 regenerated) |
-| round-2 follow-ups (2026-11-03: cq-z7hz, cq-zaes, cq-05pa, cq-n7e9) | rule 17 did not say what two `end`s (one per quantum arm) closing one `begin` mean; `qram_alloc_host` had no strided form for a global array of records; rule 13's address compare looked like LangRef's undefined label-address equality; 67 frees a `static` cell's rail that rule 20 says is kept; 87 classifies a walked pointer as a fat pointer where rule 14 and 190/189 index a slot array at the classical trip offset | done: a marker in every arm matching one outside is one event at the join/branch (rule 17); `qram_alloc_host_<W>_s` (§1.3, BACKEND_ABI 1.10); the compare is inside the runtime, no `icmp` on `blockaddress` exists in the lowered IR, destination blocks stay distinct (rule 13); 67's confined `static` (no escape, every load dominated by a store of the activation) is a rule-31-style slot, freed when dead, every other global cell kept (rule 20); 87 is stale and owed a regeneration to rule 14's text (§8) |
+**Regeneration owed (flat memory).** The lowered files of the 73 examples below show memory in
+forms these rules do not have. Until regenerated, an example is not normative for its bus
+accesses, pointers, memory intrinsics, allocation, the pointer arguments and results of its
+clones, and the uncompute around them. The 121 other examples stay normative.
+
+| what the lowered file shows | examples | owed under |
+|---|---|---|
+| a pointer that depends on quantum data | 84, 85, 86, 87, 88, 89, 90, 91, 105, 107, 129, 167, 186, 189, 190, 191 | rule 21: one 64-bit address rail, one bus access per dereference |
+| an array or a global accessed at a quantum index | 30, 55, 72, 73, 77, 160, 168, 188, 192 | rule 20: the one bus, the address by templates; rule 22 |
+| a pointer argument, out-parameter, `sret` or `byval` of a clone | 31, 36, 51, 52, 61, 70, 106, 108, 109, 117, 122, 124, 163, 164 | §1.4, rules 18, 26: one scalar per pointer; what a clone stores is kept (rule 5) |
+| a heap block | 75 | rule 16: `__cq_alloc` |
+| a global or `static` object | 67, 71, 99, 102 | rule 20: bus accesses at the object's host address |
+| a table of classical data read at a quantum index | 29, 50, 74, 76, 78, 97, 120, 142, 184 | rule 20: a bus load at an address rail |
+| a local array or cell of registers | 58, 59, 60, 94, 95, 114, 115, 116, 121, 176, 177, 178, 179, 185, 187 | rule 20: a bus-resident `alloca`; rules 2, 5: the in-place form |
+| a local whose address does not escape, holding a rail | 32, 63 | rule 20 (b): bus-resident |
+| a load through a host pointer parameter | 28, 126, 130 | rule 3: the load is a rail |
+
+Four of the 73 also change outside memory: 95 (rule 16: the variadic block, `__cq_q_sum3_00` in
+place of the per-signature clone), 97 (rule 19: candidates enumerated from the clone table, their
+`_t_ctl` clones under address compares), 99 (rule 16: `fwrite` and `fputs` are one effect entry
+each, the buffer is not expanded into fields), 102 (rule 16: `signal` and `raise` through the
+`__cq_sig` cells and rule 19; `raise` with no handler is the effect entry, not an abort arm).
+
+**Regeneration owed (clone ABI).** Three of the 121 are not normative for one construction each:
+96 (rule 19: a classical function pointer resolved through the clone table to a `_t` clone), 98
+(rule 14: one clone with a per-function activation count in place of one clone per depth), 161
+(rule 27: `__cq_q_ext_fn_11_t` with the K argument). 101 conforms to rule 24 as it stands.
+**Regeneration owed (rule 22).** 202 unrolls its constant-length copy into SSA handles; the one
+spelling is the rolled loops with `cqrt_push`/`cqrt_pop` (196; 200's `memset` is already rolled).
 
 ## 8. Examples written 2026-10-26 (144–180)
 
-Each states its outcome per §5. The sketches that produced them:
+144–194 each state their outcome per §5; the rules cite them as witnesses.
 
-1. 144 `value_arm_then_rotate` — `cq_theta(&y,ty); if (x>k) y += 1; cq_theta(&y,t);` (rule 6).
-2. 145 `swap_test` — quantum-controlled swap of two quantum registers, then un-rotate the control (rule 6).
-3. 146 `callee_phase_under_control` — `static void g(double p){ cq_phi(p); } if (x>k) g(p);` and the classically-conditioned twin (rule 12).
-4. 147 `switch_sparse_default`, 148 — `case 1/5/9/default` on a runtime scrutinee; `nested_switch` (rule 13).
-5. 149 `continue_quantum`, 150 `do_while_quantum`, 151 `return_in_kloop`, 152 `phase_in_kloop`, 153 `nested_kloops_in_arm` (rule 14).
-6. 154 `short_circuit_call_rhs` — `if (x>k && f(x,c)==m)` with `f` noinline (rule 8).
-7. 155 `measure_in_arm` — `if (x>k) m = cq_measure(y);` (rule 2).
-8. 156 `qq_width_matrix`, 157 — sub/shl/ashr/sdiv/srem/udiv/fadd/fdiv/and with both operands quantum at i8, i16, i32, i64, f32; `uitofp_q`; quantum shift amount at i64 (rule 4).
-9. 158 `value_arm_depth3`, 159 `struct_byvalue_quantum`, 160 `global_qram` (rules 9, 26, 20).
-10. 161 `opaque_callee` — an external declaration called with a quantum argument (rule 27 since 2026-10-27).
-11. 162 `quantum_return_entry` — an entry function returning an unmeasured quantum value (§1.1); its in-module consumer calls it and keeps the frozen result (rule 19, regenerated 2026-11-02).
-12. 163–168 aggregates: `sret` return > 16 B, `byval` > 16 B, `{int,int}` coerced to `i64`, `{i64,i32}`, nested struct return, struct with a quantum pointer field, struct in a quantum-indexed array written and read (rule 26).
-13. 169–174 complex: `__divdc3`, `__muldc3` both-quantum, imaginary-only-quantum variants of every existing complex example, `cabs`, `conj`, `__mulsc3`/`__divsc3`, `long double` mul/div (rule 26).
-14. 175 `libm_quantum` — `exp`, `sin`, `log`, `pow`, `atan2` on a quantum `double` (rule 18 with injected libm source). The call sites and clone signatures are the witness; 184 shows one lifted body in full.
-15. 176–180 algorithms: `grover_search`, `deutsch_jozsa`, `bernstein_vazirani`, `simon`, `teleport`.
+Owed, no source yet. Each fixes the construction its rule names:
+- rule 2: a measurement under a classical branch inside a callee, the result read and rotated afterwards. Rule 6:
+  an old value dead on one classical path only. Rule 10: a second `cq_theta` prep after a reader of the first.
+- rule 13: a `switch` with a reachable default; a computed `goto` over a `blockaddress` table read at a quantum
+  index, one whose address is a loop-carried `phi` chosen under a quantum flag, one stored and reloaded.
+- rule 14: an irreducible loop (`goto` into a loop body with a quantum exit); a K-loop whose only exit aborts and
+  a `for (;;)` with a quantum body; a pointer-chase K-loop.
+- rule 16: `printf` whose count the program reads, and `%s` of a pointer rail; an output call of a buffer that holds QUANTUM cells (with 99); a variadic call's block (with
+  95); `main` returning a loaded value and `exit` of one (rule 19).
+- rule 17: a K-loop with a clone call inside a region; `cq_invert_begin()` inside a quantum arm with its `end`
+  after the join, a pair inside one arm, an `end` in each arm closing one `begin`; a kept store and an in-place
+  form inside a region.
+- rule 18: a static callee under `#pragma STDC FENV_ACCESS ON` measured from a plain caller (the mode literal 0,
+  the empty flags rail, the copy-out of the measured result before the twin).
+- rule 19: a host call with classical arguments and no gate under a quantum predicate; an in-place callee minting
+  a register on one classical path only (handle 0); a `select` of two function pointers under a quantum flag; a
+  function with no formals under a quantum predicate (mask `v`).
+- rule 23: a `FENV_ACCESS ON` caller with `fesetround(FE_UPWARD)` calling a `round.dynamic` body (fixes that
+  clone's name); a `fenv_t` reached through a pointer (fixes the field offsets).
+- rule 24: an observable `volatile` access at an address rail. Rule 26: a `byval`
+  copy (with 164). Rule 27: a callback through a declared clone and the table; an `asm` with a quantum operand.
 
-Added 2026-10-26 (181–185): 181/182 imaginary-only-quantum complex at float and long double width
-(`__mulsc3`/`__mulxc3` lifted with mask 1100: Annex G's `im * 0 + re` taints the real part too), 183
-`cabs` through the `complex.h` entry point (clang inlines musl's `cabs` and `hypot`, so the bodies
-lower straight-line in the entries), 184 musl `atan` on a quantum double with the whole body shown
-(`atanhi[id]`/`atanlo[id]` at a quantum `id` are QROM loads), 185 QPE with a quantum angle register
-(`cqrt_rz_qangle_controlled` per counting qubit; replay: every basis `k` reads `kv·2^(t−nk)` with p = 1 when `t ≥ nk`). The algorithm examples
-114, 115, 117, 176–179, 185 take their sizes and problem data as function inputs; 113, 116, 118 stay fixed-size on purpose.
-
-Added 2026-10-27: 186 `free_qram` (QRAM lifetime end at `free`, `qram_realloc`, entangled block kept).
-
-Added 2026-10-31: 193 `narrow_quantum_return` (rule 19: entries returning an unmeasured `_Bool`, `short` and `long`
-quantum value; the first two return the `i32` handle, the `long` carries it zero-extended; consumers inlined by clang).
-
-Added 2026-10-31: 194 `complex_builtin_lifted` (rule 18 with the REAL builtin bodies: complex multiplication and
-division without defining `__muldc3`/`__divdc3`, so the pinned compiler-rt 19.1.7 bodies of the injection bundle are
-lifted: inline `__compiler_rt_logb`/`scalbn`/`fmax` with `ctlz`, `sadd.sat`, `smax`, no libm call, no loop, no `a_K`;
-the `__muldc3` call sits under a quantum NaN-check predicate and is called unguarded and merged, rule 19; 169–174 define
-their own helpers and witness the lifted-musl shape instead).
-
-To write (2026-10-27): an irreducible loop (`goto` into a loop body with a quantum exit) under rule 14's
-`fix-irreducible` bullet; a `switch` with a reachable default (rule 13); an inline `asm` with a quantum
-operand, as a declared clone (rule 27).
-
-To write (2026-11-01): a clone that overwrites a caller cell with a rule-6 bijection whose old value is dead
-after the call (`p[0] = p[0] * 3 + n` in a noinline callee, the caller measures `a[0]`): the `_inv<c>` kind of
-§1.4 and rule 18 (CQ_lang2 cq-xivx, probes p18/p19); the same with two coupled cells (a swap) for the group form.
-
-To write (2026-11-02, from CQ_lang2's musl probes): (a) a static callee under `#pragma STDC FENV_ACCESS ON`
-measured from a plain caller (`return cq_measure(scaled(x, c))`): the default caller's mode literal 0 and empty
-flags rail, and rule 18's copy-out of the measured result before the twin zeroes the dead flags rail (cq-75n4);
-(b) a host call with classical arguments and no gate under a quantum predicate (`if (x > k) r = helper(3);` with
-`helper` noinline and a `volatile` local inside), executed unguarded and merged (rule 19, cq-fl4n); (c) a
-`FENV_ACCESS ON` caller with `fesetround(FE_UPWARD)` calling a `-frounding-math` body (a static callee compiled
-with `#pragma STDC FENV_ROUND FE_DYNAMIC`): the mode flows into the `round.dynamic` ops as `_rm`, and this example
-fixes the name of that clone (rule 23).
-
-To write (2026-11-02, from CQ_lang2's no-stops round 1; each fixes the construction its ruling names): a
-measurement under a classical branch inside a callee, the result read and rotated afterwards (rule 2, collapse is
-static); a rule-6 old value dead on one classical path only (rule 6, cq-mzqo); a second `cq_theta` prep after a
-reader of the first (rule 10); a computed `goto` over a `blockaddress` table read at a quantum index (rule 13); a
-K-loop whose only exit aborts and a `for (;;)` with a quantum body (rule 14); `printf` whose count the program
-reads, and `%s` of a quantum pointer (rule 16, `tape_str_begin/end`); a caller writing into a clone's footprint
-before the twin (rule 18, twin point); an in-place callee minting a register on one classical path only (rule 19,
-handle 0) and a `select` of two function pointers under a quantum flag (rule 19); a callback through a bodiless
-callee (rule 27, `clone_register/resolve`); a K-loop inside a `cq_invert` region with a clone call in its body (rule
-17: nothing but the two markers around the forward lowering).
-
-To write (2026-11-02, from CQ_lang2's round 2): a computed `goto` whose address is a loop-carried `phi` of
-`blockaddress` constants chosen under a quantum flag, and one stored to a slot and reloaded (rule 13, cq-8i5g);
-`cq_invert_begin()` inside a quantum arm with its `end` after the join (the tail lowered under both flags), and a
-pair both inside one arm (rule 17, cq-asfn); a QRAM over `extern int g[]` of unknown extent stored at a quantum
-offset, the driver defining `g` with non-zero contents (rule 20, `qram_alloc_host` with `n = 0`, cq-pf4n); a global
-QRAM with a non-zero initializer (rule 20, the same call); a global array of records of unknown extent stored at a
-quantum offset (rule 20, `qram_alloc_host_<W>_s`, one bus per column, cq-z7hz); an `end` in each arm of a quantum
-branch closing one `begin` before it (rule 17, one event at the join, cq-z7hz). To regenerate: 87 `pointer_induction`
-to rule 14's affine-induction form (the walked pointer indexes the slot array at the classical `start + j·step`; `s`
-is a slot array, not a QRAM; 190's `l`, `r` and 189's `i` already show it; cq-n7e9).
+Written 2026-11-05 (flat memory), 195–213: each states its outcome per §5 and has a trace; the rules cite
+them as witnesses. Bus accesses at classical addresses and address rails, store size, pointers in cells:
+195–199 (rules 3, 5, 6, 20, 21). A pointer as one scalar, a clone that stores, one block per activation:
+200, 204 (§1.4, rules 18, 20). Allocation: 201, 208, 213 (rule 16, K2). Kept and un-copied load copies: 202.
+A host-resident `alloca` beside an escaped one, a scan K-loop: 203. One clone per quantum-depth recursion:
+205 (rule 14). `cq_theta` on a cell twice and on a load copy: 206, 207 (rules 2, 5). Host and input calls
+behind a deferred output: 209, 210 (BACKEND_ABI §1.11). A function-pointer rail: 211. The signal table: 212.
 
 Out of scope by §0: an `-O0`+mem2reg or `-O2` variant of any example.

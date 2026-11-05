@@ -1,24 +1,43 @@
 # driver: struct_quantum_ptr_field(0,.5,1,10,20)
 # call: struct_quantum_ptr_field(0,.5,1,10,20)
-cqrt_alloc_i32(0) -> h0
-cqrt_ry_i32(h0, 0x1p-1)
-cq_template_icmp_sgt_i32_hl(h0, 1) -> h1
-cq_template_select_i32_ll(h1, 1, 2) -> h100000
-cq_template_and_i32_hl(h0, 3) -> h2
-cq_template_icmp_eq_i32_hl(h100000, 1) -> h3
-cq_template_qrom_load_i32(table, 4, h2) -> h100001
-cq_template_qrom_load_i32(table, 4, h2) -> h100002
-cq_template_select_i32(h3, h100001, h100002) -> h100003
-cq_template_qrom_load_i32_unc(h100002, table, 4, h2)
-cqrt_free(h100002)
-cq_template_qrom_load_i32_unc(h100001, table, 4, h2)
-cqrt_free(h100001)
-cq_template_icmp_eq_i32_hl_unc(h3, h100000, 1)
-cqrt_free(h3)
-cq_template_and_i32_hl_unc(h2, h0, 3)
-cqrt_free(h2)
-cq_template_select_i32_ll_unc(h100000, h1, 1, 2)
+cqrt_qram_alloc_i8(0) -> m1
+# __cq_alloc(16, 16) -> P0
+# __cq_alloc(16, 16) -> P0+32
+cqrt_alloc_i32(10) -> h2
+cqrt_qram_store_i32_hl(m1, P0, h2)
+cqrt_alloc_i32(11) -> h3
+cqrt_qram_store_i32_hl(m1, P0+4, h3)
+cqrt_alloc_i32(12) -> h4
+cqrt_qram_store_i32_hl(m1, P0+8, h4)
+cqrt_alloc_i32(13) -> h5
+cqrt_qram_store_i32_hl(m1, P0+12, h5)
+cqrt_alloc_i32(20) -> h6
+cqrt_qram_store_i32_hl(m1, P0+32, h6)
+cqrt_alloc_i32(21) -> h7
+cqrt_qram_store_i32_hl(m1, P0+36, h7)
+cqrt_alloc_i32(22) -> h8
+cqrt_qram_store_i32_hl(m1, P0+40, h8)
+cqrt_alloc_i32(23) -> h9
+cqrt_qram_store_i32_hl(m1, P0+44, h9)
+cqrt_alloc_i32(0) -> h10
+cqrt_ry_i32(h10, 0x1p-1)
+cq_template_icmp_sgt_i32_hl(h10, 1) -> h11
+cq_template_select_i64_ll(h11, P0, P0+32) -> h100000
+cq_template_and_i32_hl(h10, 3) -> h12
+cq_template_zext_i32_to_i64(h12) -> h13
+cq_template_mul_i64_hl(h13, 4) -> h14
+cq_template_add_i64(h100000, h14) -> h15
+cqrt_qram_load_i32(m1, h15) -> h16
+cq_template_add_i64_unc(h15, h100000, h14)
+cqrt_free(h15)
+cq_template_mul_i64_hl_unc(h14, h13, 4)
+cqrt_free(h14)
+cq_template_zext_i32_to_i64_unc(h13, h12)
+cqrt_free(h13)
+cq_template_and_i32_hl_unc(h12, h10, 3)
+cqrt_free(h12)
+cq_template_select_i64_ll_unc(h100000, h11, P0, P0+32)
 cqrt_free(h100000)
-cq_template_icmp_sgt_i32_hl_unc(h1, h0, 1)
-cqrt_free(h1)
-cqrt_measure_i32(h100003) -> 0
+cq_template_icmp_sgt_i32_hl_unc(h11, h10, 1)
+cqrt_free(h11)
+cqrt_measure_i32(h16) -> 0

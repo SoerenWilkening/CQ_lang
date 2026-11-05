@@ -1,5 +1,6 @@
-/* Rule 20: a GLOBAL array written and read at a quantum index is a QRAM; a global read only at classical indices is a
- * slot array. The global persists across calls: it is an output, never freed. */
+/* Rule 20: a global lives at its host address on the one bus; an access at a quantum index is a bus access at an
+ * address rail, one at a classical index a bus access at its classical address. The global persists across calls: its
+ * cells are program state, never freed. */
 static int table[8];
 static int slots[4];
 int global_qram(unsigned i0, double ti, int v, int c) {

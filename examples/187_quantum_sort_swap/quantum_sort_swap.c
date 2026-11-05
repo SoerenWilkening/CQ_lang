@@ -1,4 +1,4 @@
-/* One bubble-sort pass over four quantum cells (classical i: the array is a slot array, the swap is a quantum arm), then
+/* One bubble-sort pass over four quantum cells (classical i: the array is a bus-resident block, the swap is two controlled bus stores under the compare flag), then
  * a max scan over the result. */
 unsigned quantum_sort_swap(unsigned x0, double th) {
     unsigned x = x0;

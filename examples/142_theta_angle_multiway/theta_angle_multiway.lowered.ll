@@ -1,8 +1,11 @@
-; HAND-WRITTEN. Rules: 11, 15, 9, 13, 20, 4, 5, 2.
+; HAND-WRITTEN. Rules: 11, 15, 9, 13, 20, 21, 4, 5, 2.
 ; Checked: r + x (measured) in each function.
-; Clean: every flag (x > k1, x > k2; the case flags (x & 3) == 0, 1, 2), every angle rail (the inner selects and A),
-; the scrutinee / index x & 3 (theta_switch_angle, theta_table_angle), all uncomputed and freed.
-; Kept: the user register x of each function; r (seeded with r0, rotated by the angle rail, measured).
+; Clean: every flag (x > k1, x > k2; the case flags (x & 3) == 0, 1, 2), every angle rail (the inner selects and A; in
+; theta_table_angle A is the bus load copy, un-copied after its last reader, rule 5 sentence 1), the scrutinee / index
+; x & 3 (theta_switch_angle, theta_table_angle) and the address chain of &tab[x & 3] (zext / mul / add), all
+; uncomputed and freed.
+; Kept: the user register x of each function; r (seeded with r0, rotated by the angle rail, measured). No tape slot
+; and no load copy is kept: theta_table_angle makes no store.
 ; Rotations: theta_nested_angle_select: (Ry, x, th, 1); (Ry, r, val(A), 1) with A = select(x > k1, a, select(x > k2,
 ; b, c)). theta_switch_angle: (Ry, x, th, 1); (Ry, r, val(A), 1) with A = select((x & 3) == 0, p0, select((x & 3) == 1,
 ; p1, select((x & 3) == 2, p2, p3))). theta_table_angle: (Ry, x, th, 1); (Ry, r, val(A), 1) with A = tab[x & 3],
@@ -13,10 +16,16 @@
 ; its selects (rule 9: the inner select on the inner flag, computed unguarded, is the else arm of the outer one;
 ; runtime-classical arms are literals, select_f64_ll / _lh); a switch over a quantum scrutinee is the select chain over
 ; its case eq flags (rule 13; the default is unreachable, so the last case 3 is the complement, needs no flag and is the
-; innermost arm, as 49); a constant table read at a quantum index is one QROM load cq_template_qrom_load_f64 on the
-; logical index rail x & 3 (rule 20; the zext and the GEP are address arithmetic, never emitted), as 184 does. The
-; register r keeps its classical seed via cqrt_alloc and is rotated once. Afterwards the angle chain is uncomputed LIFO
-; and freed, then the flags and the scrutinee (rule 5).
+; innermost arm, as 49); a constant table read at a quantum index is ONE BUS LOAD at an address rail (rules 20, 21):
+; the constant global lives at its host address (HOST cells through the overlay, nothing seeded or registered), and
+; the getelementptr with a tainted index is 64-bit template arithmetic, the index rail x & 3 brought to i64 by -O1's
+; zext, mul_i64_hl by the element size 8 and add_i64_hl of the classical part, the table's address ptrtoint
+; (ptr @theta_table_angle.tab to i64) (the constant index 0 contributes 0). The load is qram_load_f64 at that rail,
+; m = __cq_mem() once at entry (§5); nothing is known about what the address points to, and no index is narrowed,
+; bounded or checked. Its copy A is read only by the rotation and no memory version change follows, so it is un-copied
+; right after the rotation (load _unc, free) and the address rail, which outlives the access's _unc (rule 20), is then
+; uncomputed LIFO with the index. The register r keeps its classical seed via cqrt_alloc and is rotated once.
+; Afterwards the angle chain is uncomputed LIFO and freed, then the flags and the scrutinee (rule 5).
 source_filename = "theta_angle_multiway.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
@@ -79,20 +88,30 @@ define i32 @theta_switch_angle(i32 noundef %0, double noundef %1, i32 noundef %2
 }
 
 define i32 @theta_table_angle(i32 noundef %0, double noundef %1, i32 noundef %2) {
-  %4 = call i32 @cqrt_alloc_i32(i32 %0)    ; IR: %4 = cq_theta_si32(%0, %1)  [register x]
-  call void @cqrt_ry_i32(i32 %4, double %1)    ; IR: %4 = cq_theta_si32(%0, %1)  [Ry]
-  %5 = call i32 @cq_template_and_i32_hl(i32 %4, i32 3)    ; IR: %5 = and i32 %4, 3  [logical index rail; %6 = zext and %7 = GEP are address arithmetic]
-  %6 = call i32 @cq_template_qrom_load_f64(ptr @theta_table_angle.tab, i64 4, i32 %5)    ; IR: %7 = getelementptr tab, %6; %8 = load double, ptr %7  [QROM: constant table, quantum index; angle rail A]
-  %7 = call i32 @cqrt_alloc_i32(i32 %2)    ; IR: %9 = cq_theta_si32(%2, %8)  [register r, seeded with r0]
-  call void @cqrt_ry_i32_qangle(i32 %7, i32 %6)    ; IR: %9 = cq_theta_si32(%2, %8)  [Ry(val(A)) on r]
-  call void @cq_template_qrom_load_f64_unc(i32 %6, ptr @theta_table_angle.tab, i64 4, i32 %5)    ; IR: uncompute %8
-  call void @cqrt_free(i32 %6)    ; IR: release the angle rail (|0>)
-  call void @cq_template_and_i32_hl_unc(i32 %5, i32 %4, i32 3)    ; IR: uncompute %5
-  call void @cqrt_free(i32 %5)    ; IR: release the %5 rail (|0>)
-  %8 = call i32 @cqrt_measure_i32(i32 %7)    ; IR: %10 = cq_measure_si32(%9)
-  %9 = call i32 @cqrt_measure_i32(i32 %4)    ; IR: %11 = cq_measure_si32(%4)
-  %10 = add nsw i32 %9, %8    ; IR: %12 = add nsw i32 %11, %10  (classical)
-  ret i32 %10    ; IR: ret i32 %12
+  %4 = call i32 @__cq_mem()    ; the bus M, once at function entry (§5)
+  %5 = call i32 @cqrt_alloc_i32(i32 %0)    ; IR: %4 = cq_theta_si32(%0, %1)  [register x]
+  call void @cqrt_ry_i32(i32 %5, double %1)    ; IR: %4 = cq_theta_si32(%0, %1)  [Ry]
+  %6 = call i32 @cq_template_and_i32_hl(i32 %5, i32 3)    ; IR: %5 = and i32 %4, 3  [index rail]
+  %7 = call i32 @cq_template_zext_i32_to_i64(i32 %6)    ; IR: %6 = zext nneg i32 %5 to i64  [the tainted index at i64 (rule 20)]
+  %8 = call i32 @cq_template_mul_i64_hl(i32 %7, i64 8)    ; IR: %7 = getelementptr inbounds [4 x double], ptr @theta_table_angle.tab, i64 0, i64 %6  [scaled by the element size 8 (rule 20)]
+  %9 = call i32 @cq_template_add_i64_hl(i32 %8, i64 ptrtoint (ptr @theta_table_angle.tab to i64))    ; IR: %7 = getelementptr  [+ the classical part, the table's host address: the address rail of &tab[x & 3] (rule 21)]
+  %10 = call i32 @cqrt_qram_load_f64(i32 %4, i32 %9)    ; IR: %8 = load double, ptr %7  [ONE bus load at the address rail, 8 HOST cells: angle rail A (rule 20)]
+  %11 = call i32 @cqrt_alloc_i32(i32 %2)    ; IR: %9 = cq_theta_si32(%2, %8)  [register r, seeded with r0]
+  call void @cqrt_ry_i32_qangle(i32 %11, i32 %10)    ; IR: %9 = cq_theta_si32(%2, %8)  [Ry(val(A)) on r]
+  call void @cqrt_qram_load_f64_unc(i32 %10, i32 %4, i32 %9)    ; IR: un-copy %8  [after its last reader, no memory version change since the load (rule 5 sentence 1)]
+  call void @cqrt_free(i32 %10)    ; IR: release the angle rail (|0>)
+  call void @cq_template_add_i64_hl_unc(i32 %9, i32 %8, i64 ptrtoint (ptr @theta_table_angle.tab to i64))    ; IR: uncompute %7  [the address rail outlives its access's _unc (rule 20)]
+  call void @cqrt_free(i32 %9)    ; IR: release the %7 rail (|0>)
+  call void @cq_template_mul_i64_hl_unc(i32 %8, i32 %7, i64 8)    ; IR: uncompute %7 (the scaled index)
+  call void @cqrt_free(i32 %8)    ; IR: release the scaled-index rail (|0>)
+  call void @cq_template_zext_i32_to_i64_unc(i32 %7, i32 %6)    ; IR: uncompute %6
+  call void @cqrt_free(i32 %7)    ; IR: release the %6 rail (|0>)
+  call void @cq_template_and_i32_hl_unc(i32 %6, i32 %5, i32 3)    ; IR: uncompute %5
+  call void @cqrt_free(i32 %6)    ; IR: release the %5 rail (|0>)
+  %12 = call i32 @cqrt_measure_i32(i32 %11)    ; IR: %10 = cq_measure_si32(%9)
+  %13 = call i32 @cqrt_measure_i32(i32 %5)    ; IR: %11 = cq_measure_si32(%4)
+  %14 = add nsw i32 %13, %12    ; IR: %12 = add nsw i32 %11, %10  (classical)
+  ret i32 %14    ; IR: ret i32 %12
 }
 
 declare i32 @cqrt_alloc_i32(i32)
@@ -108,7 +127,14 @@ declare i32 @cq_template_select_f64_ll(i32, double, double)
 declare void @cq_template_select_f64_ll_unc(i32, i32, double, double)
 declare i32 @cq_template_select_f64_lh(i32, double, i32)
 declare void @cq_template_select_f64_lh_unc(i32, i32, double, i32)
-declare i32 @cq_template_qrom_load_f64(ptr, i64, i32)
-declare void @cq_template_qrom_load_f64_unc(i32, ptr, i64, i32)
+declare i32 @cq_template_zext_i32_to_i64(i32)
+declare void @cq_template_zext_i32_to_i64_unc(i32, i32)
+declare i32 @cq_template_mul_i64_hl(i32, i64)
+declare void @cq_template_mul_i64_hl_unc(i32, i32, i64)
+declare i32 @cq_template_add_i64_hl(i32, i64)
+declare void @cq_template_add_i64_hl_unc(i32, i32, i64)
+declare i32 @__cq_mem()
+declare i32 @cqrt_qram_load_f64(i32, i32)
+declare void @cqrt_qram_load_f64_unc(i32, i32, i32)
 declare void @cqrt_free(i32)
 declare i32 @cqrt_measure_i32(i32)

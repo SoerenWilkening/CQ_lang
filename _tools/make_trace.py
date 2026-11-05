@@ -1,12 +1,26 @@
 #!/usr/bin/env python3
-"""make_trace.py NN_name [...]: verify, link and run one example; writes traces/NN_name.txt and runs trace_check.
-Recipe from README.txt. Old repo runtime + trace_stubs.c supply the symbols."""
+"""make_trace.py [--out DIR] NN_name [...]: verify, link and run one example; writes traces/NN_name.txt (or DIR/NN_name.txt)
+and runs trace_check. Recipe from README.txt. Old repo runtime + trace_stubs.c supply the symbols.
+BUS MODE (one-bus memory model, 2026-11-05): an example whose lowered module references @__cq_mem is linked with
+trace_stubs.c -DCQ_BUS and with a private copy of libcq_runtime.a whose retired cqrt_qram_* (32-bit index) symbols are
+renamed to cqrt_retired_qram_*, so the bus stubs are the only definitions; a trace_check error then fails the run.
+Every other example links exactly as before."""
 import re, sys, subprocess, pathlib, os
 HERE = pathlib.Path(__file__).resolve().parent; SPEC = HERE.parent
 LLVM = pathlib.Path('/usr/local/opt/llvm@19/bin'); OLD = pathlib.Path.home() / 'Desktop/Projects/CQ_lang'
 RT = [str(OLD / 'build/runtime/libcq_templates.a'), str(OLD / 'build/runtime/libcq_runtime.a')]
 drivers = {l.split('|')[0]: (l.rstrip('\n').split('|')[1:] + [''])[:3] for l in open(HERE / 'drivers.txt') if '|' in l}
 rc_all = 0
+OUT = HERE / 'traces'
+if sys.argv[1:2] == ['--out']: OUT = pathlib.Path(sys.argv[2]); OUT.mkdir(parents=True, exist_ok=True); del sys.argv[1:3]
+def bus_runtime(tmp):
+    """A copy of libcq_runtime.a without the retired cqrt_qram_* definitions (renamed; the read-only archive is untouched)."""
+    nm = subprocess.run([str(LLVM / 'llvm-nm'), '-g', '--defined-only', RT[1]], capture_output=True, text=True, check=True).stdout
+    syms = sorted({l.split()[-1] for l in nm.splitlines() if l.split()[-1:] and l.split()[-1].startswith('_cqrt_qram_')})
+    (tmp / 'retire.map').write_text(''.join(f'{x} _cqrt_retired{x[5:]}\n' for x in syms))
+    out = tmp / 'libcq_runtime_bus.a'
+    subprocess.run([str(LLVM / 'llvm-objcopy'), f'--redefine-syms={tmp / "retire.map"}', RT[1], str(out)], check=True)
+    return [RT[0], str(out)]
 def norm_addrs(text):
     """Stack/heap addresses reach the trace as classical i64 operands (examples 84-85: a pointer is an i64 rail, cell
     addresses are classical operands). They differ per run (ASLR), so they are printed as P<n>+<off> relative to the first
@@ -36,11 +50,13 @@ for name in sys.argv[1:]:
     drv += 'int main(void){\n  ' + extra + '\n' + ''.join(f'  puts("# call: {c}"); (void){c};\n' for c in calls.split(';')) + '  return 0; }\n'
     tmp = pathlib.Path(f'/tmp/cq_spec_trace_{name}'); tmp.mkdir(exist_ok=True)   # per example: parallel runs must not share drv.c
     (tmp / 'drv.c').write_text(drv)
-    cc = subprocess.run([str(LLVM / 'clang'), '-w', str(low), str(tmp / 'drv.c'), str(HERE / 'trace_stubs.c')] + ([str(HERE / 'stubs.d' / f'{name}.c')] if (HERE / 'stubs.d' / f'{name}.c').exists() else []) + RT + ['-o', str(tmp / 'a.out')], capture_output=True, text=True)
+    bus = re.search(r'@__cq_mem\b', low.read_text()) is not None   # CR §5: every function that accesses the bus calls __cq_mem()
+    cc = subprocess.run([str(LLVM / 'clang'), '-w'] + (['-DCQ_BUS'] if bus else []) + [str(low), str(tmp / 'drv.c'), str(HERE / 'trace_stubs.c')] + ([str(HERE / 'stubs.d' / f'{name}.c')] if (HERE / 'stubs.d' / f'{name}.c').exists() else []) + (bus_runtime(tmp) if bus else RT) + ['-o', str(tmp / 'a.out')], capture_output=True, text=True)
     if cc.returncode: print(f'{name}: LINK FAILED\n{cc.stderr}'); rc_all = 1; continue
     run = subprocess.run([str(tmp / 'a.out')], capture_output=True, text=True)
     out = f'# driver: {calls}\n' + norm_addrs(run.stdout)
-    (HERE / 'traces' / f'{name}.txt').write_text(out)
-    print(f'{name}: trace {len(out.splitlines())} lines, exit {run.returncode}')
-    subprocess.run([sys.executable, str(HERE / 'trace_check.py'), str(HERE / 'traces' / f'{name}.txt')])
+    (OUT / f'{name}.txt').write_text(out)
+    print(f'{name}: trace {len(out.splitlines())} lines, exit {run.returncode}' + (' [bus]' if bus else ''))
+    chk = subprocess.run([sys.executable, str(HERE / 'trace_check.py'), str(OUT / f'{name}.txt')])
+    if bus and (chk.returncode or run.returncode): rc_all = 1
 sys.exit(rc_all)

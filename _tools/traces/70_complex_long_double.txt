@@ -1,19 +1,109 @@
 # driver: complex_long_double(0,.5,1)
 # call: complex_long_double(0,.5,1)
-cqrt_alloc_f80(0x0p+0) -> h0
-cqrt_ry_f80(h0, 0x1p-1)
-cq_template_fadd_f80_hl(h0, 0x0p+0) -> h1
-cq_template_fadd_f80(h1, h1) -> h2
-cqrt_alloc_f80(0x0p+0) -> h3
-cqrt_copy_f80(h2, h3)
-cq_template_fadd_f80_unc(h2, h1, h1)
-cqrt_free(h2)
-cq_template_fadd_f80_hl(h3, 0x8p-2) -> h4
-cq_template_fadd_f80(h1, h1) -> h5
-cqrt_copy_f80(h5, h3)
-cq_template_fadd_f80_unc(h5, h1, h1)
-cqrt_free(h5)
-cqrt_free(h3)
-cq_template_fadd_f80_hl_unc(h1, h0, 0x0p+0)
-cqrt_free(h1)
-cqrt_measure_f80(h4) -> 0x0p+0
+cqrt_qram_alloc_i8(0) -> m1
+# __cq_alloc(32, 16) -> P0
+cqrt_alloc_f80(0x0p+0) -> h2
+cqrt_ry_f80(h2, 0x1p-1)
+cq_template_fadd_f80_hl(h2, 0x0p+0) -> h3
+cqrt_qram_store_f80_hl(m1, P0, h3)
+cqrt_alloc_f80(0x8p-3) -> h4
+cqrt_qram_store_f80_hl(m1, P0+16, h4)
+# __cq_alloc(32, 16) -> P0+48
+cqrt_qram_load_i8_hl(m1, P0) -> h5
+cqrt_qram_load_i8_hl(m1, P0+1) -> h6
+cqrt_qram_load_i8_hl(m1, P0+2) -> h7
+cqrt_qram_load_i8_hl(m1, P0+3) -> h8
+cqrt_qram_load_i8_hl(m1, P0+4) -> h9
+cqrt_qram_load_i8_hl(m1, P0+5) -> h10
+cqrt_qram_load_i8_hl(m1, P0+6) -> h11
+cqrt_qram_load_i8_hl(m1, P0+7) -> h12
+cqrt_qram_load_i8_hl(m1, P0+8) -> h13
+cqrt_qram_load_i8_hl(m1, P0+9) -> h14
+cqrt_qram_load_i8_hl(m1, P0+10) -> h15
+cqrt_qram_load_i8_hl(m1, P0+11) -> h16
+cqrt_qram_load_i8_hl(m1, P0+12) -> h17
+cqrt_qram_load_i8_hl(m1, P0+13) -> h18
+cqrt_qram_load_i8_hl(m1, P0+14) -> h19
+cqrt_qram_load_i8_hl(m1, P0+15) -> h20
+cqrt_qram_load_i8_hl(m1, P0+16) -> h21
+cqrt_qram_load_i8_hl(m1, P0+17) -> h22
+cqrt_qram_load_i8_hl(m1, P0+18) -> h23
+cqrt_qram_load_i8_hl(m1, P0+19) -> h24
+cqrt_qram_load_i8_hl(m1, P0+20) -> h25
+cqrt_qram_load_i8_hl(m1, P0+21) -> h26
+cqrt_qram_load_i8_hl(m1, P0+22) -> h27
+cqrt_qram_load_i8_hl(m1, P0+23) -> h28
+cqrt_qram_load_i8_hl(m1, P0+24) -> h29
+cqrt_qram_load_i8_hl(m1, P0+25) -> h30
+cqrt_qram_load_i8_hl(m1, P0+26) -> h31
+cqrt_qram_load_i8_hl(m1, P0+27) -> h32
+cqrt_qram_load_i8_hl(m1, P0+28) -> h33
+cqrt_qram_load_i8_hl(m1, P0+29) -> h34
+cqrt_qram_load_i8_hl(m1, P0+30) -> h35
+cqrt_qram_load_i8_hl(m1, P0+31) -> h36
+cqrt_qram_store_i8_hl(m1, P0+79, h36)
+cqrt_qram_store_i8_hl(m1, P0+78, h35)
+cqrt_qram_store_i8_hl(m1, P0+77, h34)
+cqrt_qram_store_i8_hl(m1, P0+76, h33)
+cqrt_qram_store_i8_hl(m1, P0+75, h32)
+cqrt_qram_store_i8_hl(m1, P0+74, h31)
+cqrt_qram_store_i8_hl(m1, P0+73, h30)
+cqrt_qram_store_i8_hl(m1, P0+72, h29)
+cqrt_qram_store_i8_hl(m1, P0+71, h28)
+cqrt_qram_store_i8_hl(m1, P0+70, h27)
+cqrt_qram_store_i8_hl(m1, P0+69, h26)
+cqrt_qram_store_i8_hl(m1, P0+68, h25)
+cqrt_qram_store_i8_hl(m1, P0+67, h24)
+cqrt_qram_store_i8_hl(m1, P0+66, h23)
+cqrt_qram_store_i8_hl(m1, P0+65, h22)
+cqrt_qram_store_i8_hl(m1, P0+64, h21)
+cqrt_qram_store_i8_hl(m1, P0+63, h20)
+cqrt_qram_store_i8_hl(m1, P0+62, h19)
+cqrt_qram_store_i8_hl(m1, P0+61, h18)
+cqrt_qram_store_i8_hl(m1, P0+60, h17)
+cqrt_qram_store_i8_hl(m1, P0+59, h16)
+cqrt_qram_store_i8_hl(m1, P0+58, h15)
+cqrt_qram_store_i8_hl(m1, P0+57, h14)
+cqrt_qram_store_i8_hl(m1, P0+56, h13)
+cqrt_qram_store_i8_hl(m1, P0+55, h12)
+cqrt_qram_store_i8_hl(m1, P0+54, h11)
+cqrt_qram_store_i8_hl(m1, P0+53, h10)
+cqrt_qram_store_i8_hl(m1, P0+52, h9)
+cqrt_qram_store_i8_hl(m1, P0+51, h8)
+cqrt_qram_store_i8_hl(m1, P0+50, h7)
+cqrt_qram_store_i8_hl(m1, P0+49, h6)
+cqrt_qram_store_i8_hl(m1, P0+48, h5)
+cqrt_qram_load_f80_hl(m1, P0+48) -> h37
+cqrt_qram_load_f80_hl(m1, P0+64) -> h38
+cq_template_fadd_f80(h37, h37) -> h39
+cq_template_fadd_f80(h38, h38) -> h40
+cqrt_alloc_f80(0x0p+0) -> h41
+cqrt_copy_f80(h39, h41)
+cq_template_fadd_f80_unc(h39, h37, h37)
+cqrt_free(h39)
+cqrt_alloc_f80(0x0p+0) -> h42
+cqrt_copy_f80(h40, h42)
+cq_template_fadd_f80_unc(h40, h38, h38)
+cqrt_free(h40)
+cqrt_qram_load_f80_hl_unc(h38, m1, P0+64)
+cqrt_free(h38)
+cqrt_qram_load_f80_hl_unc(h37, m1, P0+48)
+cqrt_free(h37)
+cq_template_fadd_f80(h41, h42) -> h43
+cqrt_qram_load_f80_hl(m1, P0+48) -> h44
+cqrt_qram_load_f80_hl(m1, P0+64) -> h45
+cq_template_fadd_f80(h44, h44) -> h46
+cqrt_copy_f80(h46, h41)
+cq_template_fadd_f80_unc(h46, h44, h44)
+cqrt_free(h46)
+cq_template_fadd_f80(h45, h45) -> h47
+cqrt_copy_f80(h47, h42)
+cq_template_fadd_f80_unc(h47, h45, h45)
+cqrt_free(h47)
+cqrt_qram_load_f80_hl_unc(h45, m1, P0+64)
+cqrt_free(h45)
+cqrt_qram_load_f80_hl_unc(h44, m1, P0+48)
+cqrt_free(h44)
+cqrt_free(h41)
+cqrt_free(h42)
+cqrt_measure_f80(h43) -> 0x0p+0

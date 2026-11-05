@@ -1,9 +1,30 @@
 # driver: vla_array(0,.5,5,3)
 # call: vla_array(0,.5,5,3)
-cqrt_alloc_i32(0) -> h0
-cqrt_ry_i32(h0, 0x1p-1)
-cq_template_urem_i32_hl(h0, 5) -> h1
-cq_template_qrom_load_i32(table, 5, h1) -> h100000
-cq_template_urem_i32_hl_unc(h1, h0, 5)
-cqrt_free(h1)
-cqrt_measure_i32(h100000) -> 0
+cqrt_qram_alloc_i8(0) -> m1
+cqrt_alloc_i32(0) -> h2
+cqrt_ry_i32(h2, 0x1p-1)
+# __cq_alloc(20, 16) -> P0
+cqrt_alloc_i32(0) -> h3
+cqrt_qram_store_i32_hl(m1, P0, h3)
+cqrt_alloc_i32(3) -> h4
+cqrt_qram_store_i32_hl(m1, P0+4, h4)
+cqrt_alloc_i32(6) -> h5
+cqrt_qram_store_i32_hl(m1, P0+8, h5)
+cqrt_alloc_i32(9) -> h6
+cqrt_qram_store_i32_hl(m1, P0+12, h6)
+cqrt_alloc_i32(12) -> h7
+cqrt_qram_store_i32_hl(m1, P0+16, h7)
+cq_template_urem_i32_hl(h2, 5) -> h8
+cq_template_zext_i32_to_i64(h8) -> h9
+cq_template_mul_i64_hl(h9, 4) -> h10
+cq_template_add_i64_hl(h10, P0) -> h11
+cqrt_qram_load_i32(m1, h11) -> h12
+cq_template_add_i64_hl_unc(h11, h10, P0)
+cqrt_free(h11)
+cq_template_mul_i64_hl_unc(h10, h9, 4)
+cqrt_free(h10)
+cq_template_zext_i32_to_i64_unc(h9, h8)
+cqrt_free(h9)
+cq_template_urem_i32_hl_unc(h8, h2, 5)
+cqrt_free(h8)
+cqrt_measure_i32(h12) -> 0

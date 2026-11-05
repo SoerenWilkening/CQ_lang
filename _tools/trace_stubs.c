@@ -1,8 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
-static int st[4096], sp; static int nh = 100000;
+/* The push stack grows on demand (a K2-trip copy holds 2*K2 handles); a failed grow aborts with a diagnostic. */
+static int *st, sp, scap; static int nh = 100000;
 int cqrt_sp(void) { return sp; }
-void cqrt_push(int h) { st[sp++] = h; }
+void cqrt_push(int h) { if (sp == scap) { int nc = scap ? 2 * scap : 4096; int *ns = realloc(st, (size_t)nc * sizeof *st); if (!ns) { puts("PUSH OVERFLOW"); exit(9); } st = ns; scap = nc; } st[sp++] = h; }
 int cqrt_pop(void) { if (!sp) { puts("POP EMPTY"); exit(9); } return st[--sp]; }
 void cqrt_not_i1(int h) { printf("cqrt_not_i1(h%d)\n", h); }
 /* CR rule 17 (2026-11-02): cq_invert is a run-time region; the backend reverses and inverts the gates recorded between the two calls. */
@@ -10,7 +11,9 @@ void cqrt_invert_begin(void) { puts("cqrt_invert_begin()"); }
 void cqrt_invert_end(void) { puts("cqrt_invert_end()"); }
 /* CR rule 20 (2026-11-02): a global QRAM is seeded from its host storage at program start (n = 0: 2^64 cells). */
 int cqrt_alloc_handle(void);
+#ifndef CQ_BUS   /* retired per-object memory model: old examples only */
 int cqrt_qram_alloc_host_i32(const void *p, long long n) { int a = cqrt_alloc_handle(); (void)p; printf("cqrt_qram_alloc_host_i32(table, %lld) -> a%d\n", n, a); return a; }
+#endif
 void cqrt_and_i1(int a, int b, int t) { printf("cqrt_and_i1(h%d, h%d, h%d)\n", a, b, t); }
 void cqrt_or_i1(int a, int b, int t) { printf("cqrt_or_i1(h%d, h%d, h%d)\n", a, b, t); }
 #define SEL(N, TA, TB, FA, FB) int cq_template_select_i32##N(int c, TA a, TB b) { int h = nh++; printf("cq_template_select_i32" #N "(h%d, " FA ", " FB ") -> h%d\n", c, a, b, h); return h; } \
@@ -30,6 +33,7 @@ void cqrt_rz_qangle_controlled(int c, int a) { printf("cqrt_rz_qangle_controlled
  * logical-i32 handle, or a classical literal in the _hl forms (_hl = classical INDEX); a store value is ALWAYS a handle (a
  * classical value is materialised by cqrt_alloc_<W>); a store displaces the old cell onto a backend tape and its _unc pops
  * it, LIFO per array. These stubs add the controlled forms the runtime lacks and the free of an all-|0> array. */
+#ifndef CQ_BUS   /* retired per-object memory model: old examples only */
 static int na = 1000;   /* bus ids minted by qram_realloc */
 #define QR(W) void cqrt_qram_store_##W##_hl_controlled(int c, int a, int j, int v) { printf("cqrt_qram_store_" #W "_hl_controlled(h%d, a%d, %d, h%d)\n", c, a, j, v); } \
   void cqrt_qram_store_##W##_hl_controlled_unc(int c, int a, int j, int v) { printf("cqrt_qram_store_" #W "_hl_controlled_unc(h%d, a%d, %d, h%d)\n", c, a, j, v); } \
@@ -41,9 +45,12 @@ static int na = 1000;   /* bus ids minted by qram_realloc */
   void cqrt_qram_realloc_##W##_unc(int b, int n) { printf("cqrt_qram_realloc_" #W "_unc(a%d, %d)\n", b, n); }
 QR(i8) QR(i32) QR(i64)
 void cqrt_qram_free(int a) { printf("cqrt_qram_free(a%d)\n", a); }
+#endif
 void cqrt_xor_i1(int a, int t) { printf("cqrt_xor_i1(h%d, h%d)\n", a, t); }
+#ifndef CQ_BUS   /* retired per-object memory model: old examples only */
 int cq_template_qrom_load_i32(const int *t, long long n, int idx) { int h = nh++; printf("cq_template_qrom_load_i32(table, %lld, h%d) -> h%d\n", n, idx, h); return h; }
 void cq_template_qrom_load_i32_unc(int o, const int *t, long long n, int idx) { printf("cq_template_qrom_load_i32_unc(h%d, table, %lld, h%d)\n", o, n, idx); }
+#endif
 
 void cqrt_abort_i1(int h) { printf("cqrt_abort_i1(h%d)\n", h); }
 static void pfmt(const char *f) { for (; *f; f++) { if (*f == '\n') printf("\\n"); else putchar(*f); } }
@@ -59,16 +66,20 @@ SELW(f64, , int, int, "h%d", "h%d") SELW(f64, _hl, int, double, "h%d", "%g") SEL
 SELW(i64, , int, int, "h%d", "h%d") SELW(i64, _hl, int, long long, "h%d", "%lld") SELW(i64, _lh, long long, int, "%lld", "h%d")
 SELW(i1, , int, int, "h%d", "h%d") SELW(i1, _hl, int, int, "h%d", "%d") SELW(i1, _lh, int, int, "%d", "h%d")
 SELW(f80, , int, int, "h%d", "h%d")
+#ifndef CQ_BUS   /* retired per-object memory model: old examples only */
 int cq_template_qrom_load_f64(const double *t, long long n, int idx) { int h = nh++; printf("cq_template_qrom_load_f64(table, %lld, h%d) -> h%d\n", n, idx, h); return h; }
 void cq_template_qrom_load_f64_unc(int o, const double *t, long long n, int idx) { printf("cq_template_qrom_load_f64_unc(h%d, table, %lld, h%d)\n", o, n, idx); }
+#endif
 /* 72: byte-cell select */
 SELW(i8, _lh, signed char, int, "%d", "h%d")
 
 /* --- added for examples 76-79: strided QROM over an array of structs --- */
+#ifndef CQ_BUS   /* retired per-object memory model: old examples only */
 int cq_template_qrom_load_i32_s(const void *b, long long n, long long st, int idx) { int h = nh++; printf("cq_template_qrom_load_i32_s(base, %lld, %lld, h%d) -> h%d\n", n, st, idx, h); return h; }
 void cq_template_qrom_load_i32_s_unc(int o, const void *b, long long n, long long st, int idx) { printf("cq_template_qrom_load_i32_s_unc(h%d, base, %lld, %lld, h%d)\n", o, n, st, idx); }
 int cq_template_qrom_load_f64_s(const void *b, long long n, long long st, int idx) { int h = nh++; printf("cq_template_qrom_load_f64_s(base, %lld, %lld, h%d) -> h%d\n", n, st, idx, h); return h; }
 void cq_template_qrom_load_f64_s_unc(int o, const void *b, long long n, long long st, int idx) { printf("cq_template_qrom_load_f64_s_unc(h%d, base, %lld, %lld, h%d)\n", o, n, st, idx); }
+#endif
 
 /* 80-82: full fenv. _rm = classical rounding mode operand (last), _rmq = mode handle (last), _exc = the op's exception bits */
 #define FENV_HL(N, MF) int cq_template_##N(int a, double b, int m) { int h = nh++; printf("cq_template_" #N "(h%d, %a, " MF ") -> h%d\n", a, b, m, h); return h; } \
@@ -110,7 +121,7 @@ int cq_template_fadd_f64_ll_rmq_exc(double a, double b, int m) { int h = nh++; p
 void cq_template_fadd_f64_ll_rmq_exc_unc(int o, double a, double b, int m) { printf("cq_template_fadd_f64_ll_rmq_exc_unc(h%d, %a, %a, h%d)\n", o, a, b, m); }
 
 /* --- 102: effects under a quantum predicate (cqrt_tape_effect_controlled, accepted by the owner 2026-10-20) --- */
-void cqrt_tape_effect_controlled(int c, int t, const char *name) { printf("cqrt_tape_effect_controlled(h%d, t%d, \"%s\")\n", c, t, name); }
+void cqrt_tape_effect_controlled(int c, int t, const char *name) { if (name) printf("cqrt_tape_effect_controlled(h%d, t%d, \"%s\")\n", c, t, name); else printf("cqrt_tape_effect_controlled(h%d, t%d, null)\n", c, t); }
 void cqrt_tape_write_str_lit(int t, const char *s) { printf("cqrt_tape_write_str_lit(t%d, \"", t); pfmt(s); printf("\")\n"); }
 
 /* --- 103-105: fp classification intrinsic (llvm.is.fpclass -> cq_template_is_fpclass_<W>_hl(h, mask), an i1 rail) --- */
@@ -183,3 +194,73 @@ void __cq_q_pow_10_unc(int o, int x, double y) { printf("__cq_q_pow_10_unc(h%d, 
 /* 190: the opaque external callee (rule 19). It receives the raw slot memory: n i32 handles. Prints them, writes nothing. */
 void __cq_q_ext_sink_0010(int *p, int tag, int idx, int n_cells, int n, int k) { printf("__cq_q_ext_sink_0010(cells:"); for (int i = 0; i < n_cells; i++) printf(" h%d", p[i]); printf(", %d, %d, %d, %d, %d)\n", tag, idx, n_cells, n, k); }
 void __cq_q_ext_sink_0010_unc(int *p, int tag, int idx, int n_cells, int n, int k, int *snap) { printf("__cq_q_ext_sink_0010_unc(cells:"); for (int i = 0; i < n_cells; i++) printf(" h%d", p[i]); printf(", %d, %d, %d, %d, %d)\n# twin snapshot:", tag, idx, n_cells, n, k); for (int i = 0; i < n_cells; i++) printf(" h%d", snap[i]); printf("\n"); }
+
+
+/* ===== the one-bus memory model (owner rulings 2026-11-05; BACKEND_ABI §1.10, §1.11, §1.14; CR §1.3) =====
+ * make_trace.py compiles this file with -DCQ_BUS for an example whose lowered module references @__cq_mem, and links a
+ * copy of libcq_runtime.a whose old cqrt_qram_* (32-bit index) symbols are renamed away, so the definitions below are the
+ * only ones. Print style: the bus handle is m<N>; an address rail is h<N>; a classical address (_hl) is printed as a
+ * full unsigned decimal, which make_trace.py norm_addrs rewrites to P<n>+<off>. One line per call, nothing computed. */
+#ifdef CQ_BUS
+typedef unsigned long long cq_addr;
+__attribute__((constructor)) static void cq_reserve_handle_0(void) { static int done; if (!done) { done = 1; (void)cqrt_alloc_handle(); } }   /* §0: handle 0 is reserved; the archive counter starts at 0 */
+int cqrt_qram_alloc_i8(int n) { int m; cq_reserve_handle_0(); m = cqrt_alloc_handle(); printf("cqrt_qram_alloc_i8(%d) -> m%d\n", n, m); return m; }
+#define BUS(W) \
+  int cqrt_qram_load_##W(int m, int A) { int h = cqrt_alloc_handle(); printf("cqrt_qram_load_" #W "(m%d, h%d) -> h%d\n", m, A, h); return h; } \
+  void cqrt_qram_load_##W##_unc(int h, int m, int A) { printf("cqrt_qram_load_" #W "_unc(h%d, m%d, h%d)\n", h, m, A); } \
+  int cqrt_qram_load_##W##_hl(int m, cq_addr a) { int h = cqrt_alloc_handle(); printf("cqrt_qram_load_" #W "_hl(m%d, %llu) -> h%d\n", m, a, h); return h; } \
+  void cqrt_qram_load_##W##_hl_unc(int h, int m, cq_addr a) { printf("cqrt_qram_load_" #W "_hl_unc(h%d, m%d, %llu)\n", h, m, a); } \
+  int cqrt_qram_load_##W##_controlled(int c, int m, int A) { int h = cqrt_alloc_handle(); printf("cqrt_qram_load_" #W "_controlled(h%d, m%d, h%d) -> h%d\n", c, m, A, h); return h; } \
+  void cqrt_qram_load_##W##_controlled_unc(int h, int c, int m, int A) { printf("cqrt_qram_load_" #W "_controlled_unc(h%d, h%d, m%d, h%d)\n", h, c, m, A); } \
+  int cqrt_qram_load_##W##_hl_controlled(int c, int m, cq_addr a) { int h = cqrt_alloc_handle(); printf("cqrt_qram_load_" #W "_hl_controlled(h%d, m%d, %llu) -> h%d\n", c, m, a, h); return h; } \
+  void cqrt_qram_load_##W##_hl_controlled_unc(int h, int c, int m, cq_addr a) { printf("cqrt_qram_load_" #W "_hl_controlled_unc(h%d, h%d, m%d, %llu)\n", h, c, m, a); } \
+  void cqrt_qram_store_##W(int m, int A, int v) { printf("cqrt_qram_store_" #W "(m%d, h%d, h%d)\n", m, A, v); } \
+  void cqrt_qram_store_##W##_hl(int m, cq_addr a, int v) { printf("cqrt_qram_store_" #W "_hl(m%d, %llu, h%d)\n", m, a, v); } \
+  void cqrt_qram_store_##W##_controlled(int c, int m, int A, int v) { printf("cqrt_qram_store_" #W "_controlled(h%d, m%d, h%d, h%d)\n", c, m, A, v); } \
+  void cqrt_qram_store_##W##_hl_controlled(int c, int m, cq_addr a, int v) { printf("cqrt_qram_store_" #W "_hl_controlled(h%d, m%d, %llu, h%d)\n", c, m, a, v); } \
+  void cqrt_qram_swap_##W(int m, int A, int h) { printf("cqrt_qram_swap_" #W "(m%d, h%d, h%d)\n", m, A, h); } \
+  void cqrt_qram_swap_##W##_hl(int m, cq_addr a, int h) { printf("cqrt_qram_swap_" #W "_hl(m%d, %llu, h%d)\n", m, a, h); } \
+  void cqrt_qram_swap_##W##_controlled(int c, int m, int A, int h) { printf("cqrt_qram_swap_" #W "_controlled(h%d, m%d, h%d, h%d)\n", c, m, A, h); } \
+  void cqrt_qram_swap_##W##_hl_controlled(int c, int m, cq_addr a, int h) { printf("cqrt_qram_swap_" #W "_hl_controlled(h%d, m%d, %llu, h%d)\n", c, m, a, h); }
+BUS(i1) BUS(i7) BUS(i8) BUS(i16) BUS(i32) BUS(i64) BUS(i80) BUS(i100) BUS(i128) BUS(f16) BUS(bf16) BUS(f32) BUS(f64) BUS(f80)
+#endif
+
+/* Effect entries (§1.11): the result form of every width, and the field writes the archive lacks. r / h' are fresh rails. */
+#define EFFW(W) int cqrt_tape_effect_##W##_controlled(int c, int t, const char *name) { int r = cqrt_alloc_handle(); \
+    if (name) printf("cqrt_tape_effect_" #W "_controlled(h%d, t%d, \"%s\") -> h%d\n", c, t, name, r); else printf("cqrt_tape_effect_" #W "_controlled(h%d, t%d, null) -> h%d\n", c, t, r); return r; }
+EFFW(i1) EFFW(i8) EFFW(i16) EFFW(i32) EFFW(i64) EFFW(i128) EFFW(f16) EFFW(f32) EFFW(f64) EFFW(f80)
+#define TWR(W) int cqrt_tape_write_##W(int t, int s) { int h = cqrt_alloc_handle(); printf("cqrt_tape_write_" #W "(t%d, h%d) -> h%d\n", t, s, h); return h; }
+#define TWRC(W) int cqrt_tape_write_##W##_controlled(int c, int t, int s) { int h = cqrt_alloc_handle(); printf("cqrt_tape_write_" #W "_controlled(h%d, t%d, h%d) -> h%d\n", c, t, s, h); return h; }
+TWR(i128) TWR(f16) TWR(f32) TWR(f80)   /* i1..i64 are the archive's; the forward f64 is the stub above */
+TWRC(i128) TWRC(f16) TWRC(f32) TWRC(f64) TWRC(f80)
+void cqrt_tape_write_i1_lit(int t, int v) { printf("cqrt_tape_write_i1_lit(t%d, %d)\n", t, v & 1); }
+void cqrt_tape_write_i16_lit(int t, short v) { printf("cqrt_tape_write_i16_lit(t%d, %d)\n", t, v); }
+void cqrt_tape_write_f32_lit(int t, float v) { printf("cqrt_tape_write_f32_lit(t%d, %a)\n", t, v); }
+void cqrt_tape_write_f64_lit(int t, double v) { printf("cqrt_tape_write_f64_lit(t%d, %a)\n", t, v); }
+void cqrt_tape_write_f80_lit(int t, long double v) { printf("cqrt_tape_write_f80_lit(t%d, %La)\n", t, v); }
+
+/* The injection bundle (CR §1.3): classical host C, no gate, no trace line of its own. All weak, so a lowered module
+ * that carries its own definition wins. __cq_alloc prints a COMMENT line (# __cq_alloc(size, align) -> address): it
+ * names the block behind each P<n> and lets trace_check.py see the allocation as a memory version change (rule 5). */
+#include <string.h>
+#include <sys/mman.h>
+#define CQ_WEAK __attribute__((weak))
+int cqrt_qram_alloc_i8(int n);
+CQ_WEAK int __cq_mem(void) { static int m, made; if (!made) { made = 1; m = cqrt_qram_alloc_i8(0); } return m; }   /* once per process */
+CQ_WEAK long long __cq_sig[65];
+CQ_WEAK void *__cq_alloc(unsigned long long size, unsigned long long align) {   /* bump arena: zeroed, never reused */
+  static unsigned long long cur, end;
+  if (!cur) { void *p = mmap(0, 1ull << 30, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0); if (p == MAP_FAILED) { puts("__cq_alloc: mmap failed"); exit(9); } cur = (unsigned long long)p; end = cur + (1ull << 30); }
+  unsigned long long al = align; if (al < 16 || (al & (al - 1))) al = 16;   /* the arena's own alignment; the line below prints the caller's */
+  unsigned long long a = (cur + 8 + al - 1) & ~(al - 1);
+  if (a + size > end || a + size < a) { puts("__cq_alloc: arena exhausted"); exit(9); }
+  memcpy((void *)(a - 8), &size, 8); cur = a + size;
+  printf("# __cq_alloc(%llu, %llu) -> %llu\n", size, align, a); return (void *)a;
+}
+static struct { void *fn; const char *sig; void *k[4]; } cq_ct[4096]; static int cq_nct;
+CQ_WEAK void __cq_clone_register(void *fn, const char *sig, void *clone, void *ctl, void *unc, void *ctl_unc) {
+  if (cq_nct == 4096) { puts("__cq_clone_register: table full"); exit(9); }
+  cq_ct[cq_nct].fn = fn; cq_ct[cq_nct].sig = sig; cq_ct[cq_nct].k[0] = clone; cq_ct[cq_nct].k[1] = ctl; cq_ct[cq_nct].k[2] = unc; cq_ct[cq_nct].k[3] = ctl_unc; cq_nct++; }
+CQ_WEAK void *__cq_clone_resolve(void *fn, int kind) { for (int i = 0; i < cq_nct; i++) if (cq_ct[i].fn == fn) return cq_ct[i].k[kind & 3]; return 0; }
+CQ_WEAK int __cq_clone_count(const char *sig) { int n = 0; for (int i = 0; i < cq_nct; i++) n += !strcmp(cq_ct[i].sig, sig); return n; }
+CQ_WEAK void *__cq_clone_at(const char *sig, int j) { for (int i = 0; i < cq_nct; i++) if (!strcmp(cq_ct[i].sig, sig) && !j--) return cq_ct[i].fn; return 0; }

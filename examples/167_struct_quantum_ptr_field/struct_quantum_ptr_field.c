@@ -1,6 +1,6 @@
-/* Rules 21, 26: a struct whose pointer field is selected by a quantum condition (a fat pointer inside a struct);
- * dereferencing it at the quantum index n.w is one QROM load per object in the provenance (both buffers hold only
- * classical values), merged by a select on the tag. */
+/* Rules 21, 20, 26: a struct whose pointer field depends on quantum data. n.p is a pointer that depends on quantum data:
+ * one 64-bit address rail select(x > k, &bufA, &bufB). &n.p[n.w] is address arithmetic on that rail, and *(&n.p[n.w])
+ * is ONE bus load at it (rule 21). bufA and bufB are bus-resident (rule 20 (b)). */
 struct node { int *p; int w; };
 int struct_quantum_ptr_field(int x0, double tx, int k, int a, int b) {
     int bufA[4] = { a, a + 1, a + 2, a + 3 };

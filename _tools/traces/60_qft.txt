@@ -1,24 +1,51 @@
 # driver: qft(q,3,.5)
-cqrt_alloc_i1(0) -> h0
-cqrt_alloc_i1(0) -> h1
-cqrt_alloc_i1(0) -> h2
-cqrt_alloc_i1(0) -> h3
 # call: qft(q,3,.5)
-cqrt_ry_i1(h0, 0x1p-1)
-cqrt_alloc_i1(0) -> h4
-cqrt_and_i1(h1, h0, h4)
-cqrt_rz_i1(h4, 0x1p-2)
-cqrt_and_i1(h1, h0, h4)
-cqrt_free(h4)
-cqrt_alloc_i1(0) -> h5
-cqrt_and_i1(h2, h0, h5)
-cqrt_rz_i1(h5, 0x1p-3)
-cqrt_and_i1(h2, h0, h5)
-cqrt_free(h5)
-cqrt_ry_i1(h1, 0x1p-1)
-cqrt_alloc_i1(0) -> h6
-cqrt_and_i1(h2, h1, h6)
-cqrt_rz_i1(h6, 0x1p-2)
-cqrt_and_i1(h2, h1, h6)
-cqrt_free(h6)
+cqrt_qram_alloc_i8(0) -> m1
+cqrt_alloc_i1(0) -> h2
+cqrt_qram_swap_i1_hl(m1, P0, h2)
 cqrt_ry_i1(h2, 0x1p-1)
+cqrt_qram_swap_i1_hl(m1, P0, h2)
+cqrt_free(h2)
+cqrt_qram_load_i1_hl(m1, P0+1) -> h3
+cqrt_qram_load_i1_hl_controlled(h3, m1, P0) -> h4
+cqrt_alloc_i1(0) -> h5
+cqrt_and_i1(h3, h4, h5)
+cqrt_rz_i1(h5, 0x1p-2)
+cqrt_and_i1(h3, h4, h5)
+cqrt_free(h5)
+cqrt_qram_load_i1_hl_controlled_unc(h4, h3, m1, P0)
+cqrt_free(h4)
+cqrt_qram_load_i1_hl_unc(h3, m1, P0+1)
+cqrt_free(h3)
+cqrt_qram_load_i1_hl(m1, P0+2) -> h6
+cqrt_qram_load_i1_hl_controlled(h6, m1, P0) -> h7
+cqrt_alloc_i1(0) -> h8
+cqrt_and_i1(h6, h7, h8)
+cqrt_rz_i1(h8, 0x1p-3)
+cqrt_and_i1(h6, h7, h8)
+cqrt_free(h8)
+cqrt_qram_load_i1_hl_controlled_unc(h7, h6, m1, P0)
+cqrt_free(h7)
+cqrt_qram_load_i1_hl_unc(h6, m1, P0+2)
+cqrt_free(h6)
+cqrt_alloc_i1(0) -> h9
+cqrt_qram_swap_i1_hl(m1, P0+1, h9)
+cqrt_ry_i1(h9, 0x1p-1)
+cqrt_qram_swap_i1_hl(m1, P0+1, h9)
+cqrt_free(h9)
+cqrt_qram_load_i1_hl(m1, P0+2) -> h10
+cqrt_qram_load_i1_hl_controlled(h10, m1, P0+1) -> h11
+cqrt_alloc_i1(0) -> h12
+cqrt_and_i1(h10, h11, h12)
+cqrt_rz_i1(h12, 0x1p-2)
+cqrt_and_i1(h10, h11, h12)
+cqrt_free(h12)
+cqrt_qram_load_i1_hl_controlled_unc(h11, h10, m1, P0+1)
+cqrt_free(h11)
+cqrt_qram_load_i1_hl_unc(h10, m1, P0+2)
+cqrt_free(h10)
+cqrt_alloc_i1(0) -> h13
+cqrt_qram_swap_i1_hl(m1, P0+2, h13)
+cqrt_ry_i1(h13, 0x1p-1)
+cqrt_qram_swap_i1_hl(m1, P0+2, h13)
+cqrt_free(h13)

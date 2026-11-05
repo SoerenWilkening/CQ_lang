@@ -1,0 +1,54 @@
+# driver: signal_table(0,.5,1)
+# call: signal_table(0,.5,1)
+cqrt_qram_alloc_i8(0) -> m1
+cqrt_tape_alloc() -> t2
+cqrt_alloc_i32(0) -> h3
+cqrt_ry_i32(h3, 0x1p-1)
+cqrt_qram_load_i64_hl(m1, P0) -> h4
+cqrt_qram_load_i64_hl_unc(h4, m1, P0)
+cqrt_free(h4)
+cqrt_alloc_i64(P1) -> h5
+cqrt_qram_store_i64_hl(m1, P0, h5)
+cq_template_icmp_sgt_i32_hl(h3, 1) -> h6
+cqrt_qram_load_i64_hl_controlled(h6, m1, P0) -> h7
+cq_template_icmp_eq_i64_hl(h7, P1) -> h8
+cqrt_alloc_i1(0) -> h9
+cqrt_and_i1(h6, h8, h9)
+cqrt_alloc_i32(30) -> h10
+cqrt_alloc_i32(0) -> h11
+cqrt_qram_swap_i32_hl_controlled(h9, m1, P0+288, h11)
+cq_template_add_i32(h11, h10) -> h12
+cq_template_select_i32(h9, h12, h11) -> h100000
+cq_template_add_i32_unc(h12, h11, h10)
+cqrt_free(h12)
+cq_template_sub_i32(h100000, h10) -> h13
+cq_template_select_i32(h9, h13, h100000) -> h100001
+cqrt_copy_i32(h100001, h11)
+cq_template_select_i32_unc(h100001, h9, h13, h100000)
+cq_template_sub_i32_unc(h13, h100000, h10)
+cqrt_free(h100001)
+cqrt_free(h13)
+cqrt_free(h11)
+cqrt_qram_swap_i32_hl_controlled(h9, m1, P0+288, h100000)
+cqrt_free(h100000)
+cqrt_free(h10)
+cqrt_and_i1(h6, h8, h9)
+cqrt_free(h9)
+cqrt_alloc_i1(0) -> h14
+cqrt_not_i1(h8)
+cqrt_and_i1(h6, h8, h14)
+cqrt_not_i1(h8)
+cqrt_tape_write_i32_lit(t2, 30)
+cqrt_tape_effect_controlled(h14, t2, "raise")
+cqrt_not_i1(h8)
+cqrt_and_i1(h6, h8, h14)
+cqrt_not_i1(h8)
+cqrt_free(h14)
+cq_template_icmp_eq_i64_hl_unc(h8, h7, P1)
+cqrt_free(h8)
+cqrt_qram_load_i64_hl_controlled_unc(h7, h6, m1, P0)
+cq_template_icmp_sgt_i32_hl_unc(h6, h3, 1)
+cqrt_free(h6)
+cqrt_measure_i32(h3) -> 0
+cqrt_qram_load_i32_hl(m1, P0+288) -> h15
+cqrt_measure_i32(h15) -> 0

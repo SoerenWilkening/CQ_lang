@@ -1,130 +1,112 @@
-; HAND-WRITTEN. Rules: 21, 20, 8, 7, 4, 5.
-; Checked: a[0] + b[1], the returned sum (the add rail %24 -> %25).
-; Clean: every rail and both arrays but the register x: the block predicate B = (x > 5) (%11), the tag chain (%12..%14), the
-; idx chain (%15, %16), the two object compares (%18, %20) and guards g_a, g_b (%19, %21), the two fixed-index loads (%22,
-; %23), the shared value handle v (%17) and the four initializer handles (%7..%10), all freed; the two stores are popped
-; LIFO and both QRAM objects (%4, %5) are released.
-; Kept: x (%6, the rotated register) and the sum (%24, measured).
+; HAND-WRITTEN. Rules: 21, 20, 5, 9, 8, 7, 16, 4, 2.
+; Checked: a[0] + b[1], the returned sum (the add rail %26 -> %27). The store reaches a[0] iff B and x & 1 == 1 and
+; (x >> 1) & 1 == 0, b[1] iff B and x & 1 == 0 and (x >> 1) & 1 == 1 (B = x > 5; a[1] and b[0] are not read), so the sum
+; is 1 + 4 = 5, v + 4 or 1 + v.
+; Clean: the arm's pure chain: x & 1 (%13), the flag (x & 1) == 0 (%14), the address rail p = select(flag, b, a) (%15),
+; x >> 1 (%16), the index (%17) and the gep chain zext / mul / add (%18..%20), all uncomputed and freed right after the
+; store, their last reader (rule 20); the two fixed-address load copies a[0] and b[1] (%22, %25), un-copied after the add
+; (no memory version change follows them, rule 5 sentence 1).
+; Kept: x (%9, the rotated register); the sum (%26, measured); the predicate B = x > 5 (%12), the control rail of the
+; kept store (rules 5, 8); the seed v (%21, the value rail of the kept store); the seeds 8589934593 and 17179869187
+; (%10, %11, the value rails of the two kept initializer stores, rule 7); the tape slots of the three stores (store i64
+; 8589934593, ptr %4; store i64 17179869187, ptr %5; store i32 %2, ptr %15).
 ; Rotations: (Ry, x, th, 1).
-; The object guards g_o = B & (tag == o) are branch flags: cqrt_and_i1 into a fresh |0> rail, re-applied to uncompute
-; (rule 8). A QUANTUM POINTER IS A FAT POINTER (tag, idx) (rule 21): tag is an i32 rail naming the OBJECT (0 = NULL,
-; then the function's objects in definition order: here a = 1, b = 2; a compile-time object table holds each object's
-; storage, cell width and size), idx is an i32 rail holding the CELL index inside it (the logical index; -O1's byte
-; scaling and i64 extension are not emitted; a provenance of mixed cell widths would carry a byte offset and rescale at
-; the access). Either half may be classical when the IR makes it so (here both selected pointers are object bases: idx is
-; the classical 0 until the gep adds the index). Pointer instructions never touch memory: select/phi select the halves,
-; gep adds to idx, icmp compares the halves, ptrtoint would materialise base[tag] + idx. Only load/store consume the
-; pointer, and a deref is ONE ACCESS OF EVERY OBJECT in the pointer's provenance, guarded by g_o = B and tag == o (B the
-; predicate of the block holding the access). Its offset is idx. Here idx = (x >> 1) & 1 is QUANTUM, so the store is a
-; quantum-offset store into a and into b, which makes both objects QRAMs (rule 20) for their whole lifetime:
-; cqrt_qram_alloc at the alloca, the classical initializer one cqrt_qram_store_<W>_hl per cell (classical index), the
-; store one cqrt_qram_store_<W>_controlled(g_o, arr_o, idx, val) per object (the value always a handle: the classical v
-; is materialised once by cqrt_alloc_<W>, shared by both origins, freed once the stores are popped), and the later
-; fixed-index reads a[0], b[1] cqrt_qram_load_<W>_hl copy-outs. (Were idx classical, the tag alone being quantum, the
-; store would instead be a guarded classical-offset slot store merged by select, no QRAM: rule 21, example 129.) The
-; arm's pure ops run unguarded (a value computed under a false predicate is read by nothing). Stores are popped LIFO per
-; array by their _unc, then the arrays are released. The address decoding of the controlled store is the backend's
-; circuit (Bennett.jl memory.jl, fan-out per origin guarded by block AND origin predicate).
+; ONE BUS (rules 20, 21). Both allocas are BUS-RESIDENT: a select of their addresses under a quantum flag is among
+; their users, which no clause of rule 20 (b) allows. So each is __cq_alloc(8, 8) at its program point (rule 16), no
+; alloca remains and the lifetime markers are dropped; m = __cq_mem() is called once, at entry (§5). The initializers
+; are the -O1 i64 stores, each ONE qram_store_i64_hl at the block's classical run-time address, its value the seed
+; alloc_i64(lit) (rules 7, 20); every value, address and control is classical-valued, so the cells stay HOST.
+; A POINTER IS AN INTEGER (rule 21): p = (x & 1) ? a : b is select_i64_ll on the quantum flag (IR %10, lowered %14) over the two blocks'
+; classical i64 addresses, ONE 64-bit address rail; nothing about a, b, objects or origins belongs to it. The arm's
+; pure code is hoisted and computed unguarded (rule 9): the index chain and the gep, 64-bit template arithmetic into an
+; address rail (rule 20): -O1's zext to i64, mul_i64_hl by the element size 4, add_i64 of the address rail p (a rail,
+; so no _hl). The store p[(x >> 1) & 1] = v is ONE bus access, qram_store_i32_controlled under the block predicate B
+; (rule 5: a bus access is never hoisted), with no guard per origin and no bounds check (rule 21); the classical v is
+; first the seed alloc_i32(v). The store is KEPT: its tape slot, its value rail and its control rail B stay (rule 5
+; sentence 3, rule 8), so B is never uncomputed. The address rail and its whole chain are template garbage, uncomputed
+; right after the store. After the join no quantum predicate is in scope: a[0] and b[1] are plain bus loads at the
+; classical addresses a and b + 4 (qram_load_i32_hl; &b[1] is the untainted gep, which stays, and its ptrtoint, %23 and
+; %24, rule 20), un-copied by their _unc after the add, their last reader.
 source_filename = "multi_origin_pointer.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 
 define i32 @ptr_select_store(i32 noundef %0, double noundef %1, i32 noundef %2) {
-  %4 = call i32 @cqrt_qram_alloc_i32(i32 2)    ; IR: %4 = alloca [2 x i32]  (object 1: a, a 2-cell QRAM: a store reaches it at a quantum offset)
-  %5 = call i32 @cqrt_qram_alloc_i32(i32 2)    ; IR: %5 = alloca [2 x i32]  (object 2: b)
-  %6 = call i32 @cqrt_alloc_i32(i32 %0)    ; IR: %6 = cq_theta_ui32(%0, %1)  [register x]
-  call void @cqrt_ry_i32(i32 %6, double %1)    ; IR: %6 = cq_theta_ui32(%0, %1)  [Ry]
-  %7 = call i32 @cqrt_alloc_i32(i32 1)    ; IR: store i64 8589934593, ptr %4  (a = {1, 2}: the classical initializer, cell by cell, values as basis-state handles)
-  call void @cqrt_qram_store_i32_hl(i32 %4, i32 0, i32 %7)    ; IR: a[0] = 1
-  %8 = call i32 @cqrt_alloc_i32(i32 2)    ; IR: a[1] = 2
-  call void @cqrt_qram_store_i32_hl(i32 %4, i32 1, i32 %8)    ; IR: a[1] = 2
-  %9 = call i32 @cqrt_alloc_i32(i32 3)    ; IR: store i64 17179869187, ptr %5  (b = {3, 4})
-  call void @cqrt_qram_store_i32_hl(i32 %5, i32 0, i32 %9)    ; IR: b[0] = 3
-  %10 = call i32 @cqrt_alloc_i32(i32 4)    ; IR: b[1] = 4
-  call void @cqrt_qram_store_i32_hl(i32 %5, i32 1, i32 %10)    ; IR: b[1] = 4
-  %11 = call i32 @cq_template_icmp_ugt_i32_hl(i32 %6, i32 5)    ; IR: %7 = icmp ugt i32 %6, 5  [predicate B of block %8]
-  %12 = call i32 @cq_template_and_i32_hl(i32 %6, i32 1)    ; IR: %9 = and i32 %6, 1
-  %13 = call i32 @cq_template_icmp_eq_i32_hl(i32 %12, i32 0)    ; IR: %10 = icmp eq i32 %9, 0
-  %14 = call i32 @cq_template_select_i32_ll(i32 %13, i32 2, i32 1)    ; IR: %11 = select i1 %10, ptr %5, ptr %4  [the pointer's tag: b (2) or a (1); its idx is the classical 0]
-  %15 = call i32 @cq_template_lshr_i32_hl(i32 %6, i32 1)    ; IR: %12 = lshr i32 %6, 1
-  %16 = call i32 @cq_template_and_i32_hl(i32 %15, i32 1)    ; IR: %13 = and i32 %12, 1  [the pointer's idx after the gep: cell 0 + ((x >> 1) & 1); %14 zext and the %15 scaling are not emitted]
-  %17 = call i32 @cqrt_alloc_i32(i32 %2)    ; IR: store i32 %2, ptr %15: the classical value v as a basis-state handle, shared by both origins
-  %18 = call i32 @cq_template_icmp_eq_i32_hl(i32 %14, i32 1)    ; IR: object a addressed iff tag == 1
-  %19 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: guard g_a = B and tag == 1  [fresh flag rail]
-  call void @cqrt_and_i1(i32 %11, i32 %18, i32 %19)    ; IR: guard g_a = B and tag == 1
-  call void @cqrt_qram_store_i32_controlled(i32 %19, i32 %4, i32 %16, i32 %17)    ; IR: store i32 %2, ptr %15 into a: a[idx] = v under g_a (one access; the backend fans out over the cells)
-  %20 = call i32 @cq_template_icmp_eq_i32_hl(i32 %14, i32 2)    ; IR: object b addressed iff tag == 2
-  %21 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: guard g_b = B and tag == 2  [fresh flag rail]
-  call void @cqrt_and_i1(i32 %11, i32 %20, i32 %21)    ; IR: guard g_b = B and tag == 2
-  call void @cqrt_qram_store_i32_controlled(i32 %21, i32 %5, i32 %16, i32 %17)    ; IR: store into b: b[idx] = v under g_b
-  %22 = call i32 @cqrt_qram_load_i32_hl(i32 %4, i32 0)    ; IR: %17 = load a[0]  (fixed index into the quantum array: copy-out)
-  %23 = call i32 @cqrt_qram_load_i32_hl(i32 %5, i32 1)    ; IR: %19 = load b[1]
-  %24 = call i32 @cq_template_add_i32(i32 %23, i32 %22)    ; IR: %20 = add nsw i32 %19, %17  [result rail]
-  call void @cqrt_qram_load_i32_hl_unc(i32 %23, i32 %5, i32 1)    ; IR: uncompute %19
-  call void @cqrt_free(i32 %23)    ; IR: release it (|0>)
-  call void @cqrt_qram_load_i32_hl_unc(i32 %22, i32 %4, i32 0)    ; IR: uncompute %17
+  %4 = call i32 @__cq_mem()    ; the bus M, once at function entry (§5)
+  %5 = call ptr @__cq_alloc(i64 8, i64 8)    ; IR: %4 = alloca [2 x i32], align 8  (a)  [bus-resident: one zeroed block, no alloca remains (rules 16, 20)]
+  %6 = ptrtoint ptr %5 to i64    ; IR: %4 as its run-time address (classical, rule 21)
+  %7 = call ptr @__cq_alloc(i64 8, i64 8)    ; IR: %5 = alloca [2 x i32], align 8  (b)  [bus-resident]
+  %8 = ptrtoint ptr %7 to i64    ; IR: %5 as its run-time address (classical)
+  %9 = call i32 @cqrt_alloc_i32(i32 %0)    ; IR: %6 = cq_theta_ui32(%0, %1)  [register x]
+  call void @cqrt_ry_i32(i32 %9, double %1)    ; IR: %6 = cq_theta_ui32(%0, %1)  [Ry]
+  %10 = call i32 @cqrt_alloc_i64(i64 8589934593)    ; IR: store i64 8589934593, ptr %4  (a = {1, 2})  [the stored value as a seed rail, kept with its store: rule 7; llvm.lifetime.start(8, %4) dropped (rule 16)]
+  call void @cqrt_qram_store_i64_hl(i32 %4, i64 %6, i32 %10)    ; IR: store i64 8589934593, ptr %4  [ONE i64 access at a: a kept store (rule 5); classical-valued, the cells stay HOST]
+  %11 = call i32 @cqrt_alloc_i64(i64 17179869187)    ; IR: store i64 17179869187, ptr %5  (b = {3, 4})  [seed rail, kept with its store; llvm.lifetime.start(8, %5) dropped]
+  call void @cqrt_qram_store_i64_hl(i32 %4, i64 %8, i32 %11)    ; IR: store i64 17179869187, ptr %5  [a kept store at b]
+  %12 = call i32 @cq_template_icmp_ugt_i32_hl(i32 %9, i32 5)    ; IR: %7 = icmp ugt i32 %6, 5  [predicate B of block %8; it controls the kept store, so it is kept (rules 5, 8)]
+  %13 = call i32 @cq_template_and_i32_hl(i32 %9, i32 1)    ; IR: %9 = and i32 %6, 1
+  %14 = call i32 @cq_template_icmp_eq_i32_hl(i32 %13, i32 0)    ; IR: %10 = icmp eq i32 %9, 0
+  %15 = call i32 @cq_template_select_i64_ll(i32 %14, i64 %8, i64 %6)    ; IR: %11 = select i1 %10, ptr %5, ptr %4  [rule 21: the address rail p = flag ? b : a, the classical addresses as literals]
+  %16 = call i32 @cq_template_lshr_i32_hl(i32 %9, i32 1)    ; IR: %12 = lshr i32 %6, 1
+  %17 = call i32 @cq_template_and_i32_hl(i32 %16, i32 1)    ; IR: %13 = and i32 %12, 1
+  %18 = call i32 @cq_template_zext_i32_to_i64(i32 %17)    ; IR: %14 = zext nneg i32 %13 to i64  [the index brought to i64 (rule 20)]
+  %19 = call i32 @cq_template_mul_i64_hl(i32 %18, i64 4)    ; IR: %15 = getelementptr inbounds i32, ptr %11, i64 %14  [the tainted index scaled by the element size 4]
+  %20 = call i32 @cq_template_add_i64(i32 %19, i32 %15)    ; IR: %15 = getelementptr  [+ the address rail p: the address rail of &p[(x >> 1) & 1]]
+  %21 = call i32 @cqrt_alloc_i32(i32 %2)    ; IR: store i32 %2, ptr %15: the classical value v as a seed rail (rule 7), the value rail of the kept store
+  call void @cqrt_qram_store_i32_controlled(i32 %12, i32 %4, i32 %20, i32 %21)    ; IR: store i32 %2, ptr %15  [ONE bus access at the address rail under B (rule 5); kept: its slot, v and B stay]
+  call void @cq_template_add_i64_unc(i32 %20, i32 %19, i32 %15)    ; IR: uncompute %15  [the address rail, its store its last reader (rule 20)]
+  call void @cqrt_free(i32 %20)    ; IR: release the %15 rail (|0>)
+  call void @cq_template_mul_i64_hl_unc(i32 %19, i32 %18, i64 4)    ; IR: uncompute %15 (the scaled index)
+  call void @cqrt_free(i32 %19)    ; IR: release the scaled-index rail (|0>)
+  call void @cq_template_zext_i32_to_i64_unc(i32 %18, i32 %17)    ; IR: uncompute %14
+  call void @cqrt_free(i32 %18)    ; IR: release the %14 rail (|0>)
+  call void @cq_template_and_i32_hl_unc(i32 %17, i32 %16, i32 1)    ; IR: uncompute %13
+  call void @cqrt_free(i32 %17)    ; IR: release the %13 rail (|0>)
+  call void @cq_template_lshr_i32_hl_unc(i32 %16, i32 %9, i32 1)    ; IR: uncompute %12
+  call void @cqrt_free(i32 %16)    ; IR: release the %12 rail (|0>)
+  call void @cq_template_select_i64_ll_unc(i32 %15, i32 %14, i64 %8, i64 %6)    ; IR: uncompute the address rail p (%11)
+  call void @cqrt_free(i32 %15)    ; IR: release the %11 rail (|0>)
+  call void @cq_template_icmp_eq_i32_hl_unc(i32 %14, i32 %13, i32 0)    ; IR: uncompute %10
+  call void @cqrt_free(i32 %14)    ; IR: release the %10 rail (|0>)
+  call void @cq_template_and_i32_hl_unc(i32 %13, i32 %9, i32 1)    ; IR: uncompute %9
+  call void @cqrt_free(i32 %13)    ; IR: release the %9 rail (|0>)
+  %22 = call i32 @cqrt_qram_load_i32_hl(i32 %4, i64 %6)    ; IR: %17 = load i32, ptr %4  (a[0], no quantum predicate in scope: a plain bus load at a classical address)
+  %23 = getelementptr inbounds i8, ptr %7, i64 4    ; IR: %18 = getelementptr inbounds i8, ptr %5, i64 4  (&b[1]: nothing tainted, the gep stays on the block, rule 20)
+  %24 = ptrtoint ptr %23 to i64    ; IR: %18 as its run-time address (classical)
+  %25 = call i32 @cqrt_qram_load_i32_hl(i32 %4, i64 %24)    ; IR: %19 = load i32, ptr %18  (b[1])
+  %26 = call i32 @cq_template_add_i32(i32 %25, i32 %22)    ; IR: %20 = add nsw i32 %19, %17  [result rail]
+  call void @cqrt_qram_load_i32_hl_unc(i32 %25, i32 %4, i64 %24)    ; IR: un-copy %19 (its last reader done, no memory version change since the load: rule 5 sentence 1)
+  call void @cqrt_free(i32 %25)    ; IR: release it (|0>)
+  call void @cqrt_qram_load_i32_hl_unc(i32 %22, i32 %4, i64 %6)    ; IR: un-copy %17
   call void @cqrt_free(i32 %22)    ; IR: release it (|0>)
-  call void @cqrt_qram_store_i32_controlled_unc(i32 %21, i32 %5, i32 %16, i32 %17)    ; IR: pop the store into b
-  call void @cqrt_and_i1(i32 %11, i32 %20, i32 %21)    ; IR: uncompute g_b  [self-inverse]
-  call void @cqrt_free(i32 %21)    ; IR: release it (|0>)
-  call void @cq_template_icmp_eq_i32_hl_unc(i32 %20, i32 %14, i32 2)    ; IR: uncompute the b tag flag
-  call void @cqrt_free(i32 %20)    ; IR: release it (|0>)
-  call void @cqrt_qram_store_i32_controlled_unc(i32 %19, i32 %4, i32 %16, i32 %17)    ; IR: pop the store into a
-  call void @cqrt_and_i1(i32 %11, i32 %18, i32 %19)    ; IR: uncompute g_a  [self-inverse]
-  call void @cqrt_free(i32 %19)    ; IR: release it (|0>)
-  call void @cq_template_icmp_eq_i32_hl_unc(i32 %18, i32 %14, i32 1)    ; IR: uncompute the a tag flag
-  call void @cqrt_free(i32 %18)    ; IR: release it (|0>)
-  call void @cqrt_free(i32 %17)    ; IR: release the value handle (basis state v)
-  call void @cq_template_and_i32_hl_unc(i32 %16, i32 %15, i32 1)    ; IR: uncompute %13
-  call void @cqrt_free(i32 %16)    ; IR: release the %13 rail (|0>)
-  call void @cq_template_lshr_i32_hl_unc(i32 %15, i32 %6, i32 1)    ; IR: uncompute %12
-  call void @cqrt_free(i32 %15)    ; IR: release the %12 rail (|0>)
-  call void @cq_template_select_i32_ll_unc(i32 %14, i32 %13, i32 2, i32 1)    ; IR: uncompute the pointer's tag %11
-  call void @cqrt_free(i32 %14)    ; IR: release the %11 rail (|0>)
-  call void @cq_template_icmp_eq_i32_hl_unc(i32 %13, i32 %12, i32 0)    ; IR: uncompute %10
-  call void @cqrt_free(i32 %13)    ; IR: release the %10 rail (|0>)
-  call void @cq_template_and_i32_hl_unc(i32 %12, i32 %6, i32 1)    ; IR: uncompute %9
-  call void @cqrt_free(i32 %12)    ; IR: release the %9 rail (|0>)
-  call void @cq_template_icmp_ugt_i32_hl_unc(i32 %11, i32 %6, i32 5)    ; IR: uncompute %7
-  call void @cqrt_free(i32 %11)    ; IR: release the %7 rail (|0>)
-  call void @cqrt_qram_store_i32_hl_unc(i32 %5, i32 1, i32 %10)    ; IR: pop the initializer of b (LIFO)
-  call void @cqrt_free(i32 %10)    ; IR: release the basis-state handle 4
-  call void @cqrt_qram_store_i32_hl_unc(i32 %5, i32 0, i32 %9)    ; IR: b[0]
-  call void @cqrt_free(i32 %9)    ; IR: release the basis-state handle 3
-  call void @cqrt_qram_store_i32_hl_unc(i32 %4, i32 1, i32 %8)    ; IR: a[1]
-  call void @cqrt_free(i32 %8)    ; IR: release the basis-state handle 2
-  call void @cqrt_qram_store_i32_hl_unc(i32 %4, i32 0, i32 %7)    ; IR: a[0]
-  call void @cqrt_free(i32 %7)    ; IR: release the basis-state handle 1
-  call void @cqrt_qram_free(i32 %5)    ; IR: release object b (all cells |0>)
-  call void @cqrt_qram_free(i32 %4)    ; IR: release object a
-  %25 = call i32 @cqrt_measure_i32(i32 %24)    ; IR: %21 = cq_measure_si32(%20)
-  ret i32 %25    ; IR: ret i32 %21
+  %27 = call i32 @cqrt_measure_i32(i32 %26)    ; IR: %21 = cq_measure_si32(%20)
+  ret i32 %27    ; IR: llvm.lifetime.end(8, %5), llvm.lifetime.end(8, %4) dropped (rule 16); ret i32 %21
 }
 
-declare void @cqrt_and_i1(i32, i32, i32)
-
-declare i32 @cqrt_alloc_i1(i1 zeroext)
-
+declare i32 @__cq_mem()
+declare ptr @__cq_alloc(i64, i64)
+declare i32 @cqrt_alloc_i32(i32)
+declare i32 @cqrt_alloc_i64(i64)
+declare void @cqrt_ry_i32(i32, double)
+declare void @cqrt_qram_store_i64_hl(i32, i64, i32)
+declare void @cqrt_qram_store_i32_controlled(i32, i32, i32, i32)
+declare i32 @cqrt_qram_load_i32_hl(i32, i64)
+declare void @cqrt_qram_load_i32_hl_unc(i32, i32, i64)
 declare i32 @cq_template_add_i32(i32, i32)
 declare i32 @cq_template_and_i32_hl(i32, i32)
 declare void @cq_template_and_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_icmp_eq_i32_hl(i32, i32)
 declare void @cq_template_icmp_eq_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_icmp_ugt_i32_hl(i32, i32)
-declare void @cq_template_icmp_ugt_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_lshr_i32_hl(i32, i32)
 declare void @cq_template_lshr_i32_hl_unc(i32, i32, i32)
-declare i32 @cq_template_select_i32_ll(i32, i32, i32)
-declare void @cq_template_select_i32_ll_unc(i32, i32, i32, i32)
-declare i32 @cqrt_alloc_i32(i32)
+declare i32 @cq_template_select_i64_ll(i32, i64, i64)
+declare void @cq_template_select_i64_ll_unc(i32, i32, i64, i64)
+declare i32 @cq_template_zext_i32_to_i64(i32)
+declare void @cq_template_zext_i32_to_i64_unc(i32, i32)
+declare i32 @cq_template_mul_i64_hl(i32, i64)
+declare void @cq_template_mul_i64_hl_unc(i32, i32, i64)
+declare i32 @cq_template_add_i64(i32, i32)
+declare void @cq_template_add_i64_unc(i32, i32, i32)
 declare void @cqrt_free(i32)
 declare i32 @cqrt_measure_i32(i32)
-declare i32 @cqrt_qram_alloc_i32(i32)
-declare void @cqrt_qram_free(i32)
-declare i32 @cqrt_qram_load_i32_hl(i32, i32)
-declare void @cqrt_qram_load_i32_hl_unc(i32, i32, i32)
-declare void @cqrt_qram_store_i32_controlled(i32, i32, i32, i32)
-declare void @cqrt_qram_store_i32_controlled_unc(i32, i32, i32, i32)
-declare void @cqrt_qram_store_i32_hl(i32, i32, i32)
-declare void @cqrt_qram_store_i32_hl_unc(i32, i32, i32)
-declare void @cqrt_ry_i32(i32, double)

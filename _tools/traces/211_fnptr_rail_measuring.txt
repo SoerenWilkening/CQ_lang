@@ -1,0 +1,73 @@
+# driver: fnptr_rail_measuring(1,.5,4,.25)
+# call: fnptr_rail_measuring(1,.5,4,.25)
+cqrt_qram_alloc_i8(0) -> m1
+cqrt_tape_alloc() -> t2
+cqrt_alloc_i32(1) -> h3
+cqrt_ry_i32(h3, 0x1p-1)
+cqrt_alloc_i32(4) -> h4
+cqrt_ry_i32(h4, 0x1p-2)
+cq_template_and_i32_hl(h3, 1) -> h5
+cq_template_zext_i32_to_i64(h5) -> h6
+cq_template_mul_i64_hl(h6, 8) -> h7
+cq_template_add_i64_hl(h7, P0) -> h8
+cqrt_qram_load_i64(m1, h8) -> h9
+cqrt_alloc_i1(1) -> h10
+cqrt_alloc_i32(0) -> h11
+cq_template_icmp_eq_i64_hl(h9, P1) -> h12
+cq_template_add_i32_hl(h4, 1) -> h13
+cqrt_alloc_i32(0) -> h14
+cqrt_copy_i32(h13, h14)
+cq_template_add_i32_hl_unc(h13, h4, 1)
+cqrt_free(h13)
+cqrt_alloc_i1(0) -> h15
+cqrt_not_i1(h12)
+cqrt_and_i1(h10, h12, h15)
+cqrt_not_i1(h12)
+cq_template_select_i32(h12, h14, h11) -> h100000
+cq_template_icmp_eq_i64_hl(h9, P1+16) -> h16
+cqrt_alloc_i32(0) -> h17
+cqrt_copy_i32_controlled(h16, h4, h17)
+cqrt_measure_i32(h17) -> 0
+cqrt_alloc_i32(0) -> h18
+cqrt_copy_i32(h17, h18)
+cqrt_alloc_i1(0) -> h19
+cqrt_not_i1(h16)
+cqrt_and_i1(h15, h16, h19)
+cqrt_not_i1(h16)
+cq_template_select_i32(h16, h18, h100000) -> h100001
+cqrt_tape_write_i64_controlled(h19, t2, h9) -> h20
+cqrt_tape_write_i32_controlled(h19, t2, h4) -> h21
+cqrt_tape_effect_i32_controlled(h19, t2, null) -> h22
+cq_template_select_i32(h19, h22, h100001) -> h100002
+cqrt_alloc_i32(0) -> h23
+cqrt_copy_i32(h100002, h23)
+cq_template_select_i32_unc(h100002, h19, h22, h100001)
+cqrt_free(h100002)
+cq_template_select_i32_unc(h100001, h16, h18, h100000)
+cqrt_free(h100001)
+cqrt_not_i1(h16)
+cqrt_and_i1(h15, h16, h19)
+cqrt_not_i1(h16)
+cqrt_free(h19)
+cq_template_icmp_eq_i64_hl_unc(h16, h9, P1+16)
+cqrt_free(h16)
+cq_template_select_i32_unc(h100000, h12, h14, h11)
+cqrt_free(h100000)
+cqrt_not_i1(h12)
+cqrt_and_i1(h10, h12, h15)
+cqrt_not_i1(h12)
+cqrt_free(h15)
+cq_template_icmp_eq_i64_hl_unc(h12, h9, P1)
+cqrt_free(h12)
+cqrt_qram_load_i64_unc(h9, m1, h8)
+cq_template_add_i64_hl_unc(h8, h7, P0)
+cqrt_free(h8)
+cq_template_mul_i64_hl_unc(h7, h6, 8)
+cqrt_free(h7)
+cq_template_zext_i32_to_i64_unc(h6, h5)
+cqrt_free(h6)
+cq_template_and_i32_hl_unc(h5, h3, 1)
+cqrt_free(h5)
+cqrt_free(h10)
+cqrt_free(h11)
+cqrt_measure_i32(h23) -> 0

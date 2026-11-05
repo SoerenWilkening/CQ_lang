@@ -1,24 +1,78 @@
 # driver: register_array(coef,3);register_array(coef,4)
 # call: register_array(coef,3)
-cqrt_alloc_i1(0) -> h0
-cqrt_alloc_i1(0) -> h1
-cqrt_alloc_i1(0) -> h2
-cqrt_ry_i1(h0, 0x1p+0)
-cqrt_ry_i1(h1, 0x1p+1)
-cqrt_ry_i1(h2, 0x1.8p+1)
-cqrt_measure_i1(h0) -> 0
-cqrt_measure_i1(h1) -> 0
-cqrt_measure_i1(h2) -> 0
-# call: register_array(coef,4)
-cqrt_alloc_i1(0) -> h3
+cqrt_qram_alloc_i8(0) -> m1
+# __cq_alloc(3, 16) -> P0
+cqrt_alloc_i8(0) -> h2
+cqrt_qram_store_i8_hl(m1, P0, h2)
+cqrt_qram_store_i8_hl(m1, P0+1, h2)
+cqrt_qram_store_i8_hl(m1, P0+2, h2)
+cqrt_qram_load_f64_hl(m1, P1) -> h3
 cqrt_alloc_i1(0) -> h4
-cqrt_alloc_i1(0) -> h5
+cqrt_qram_swap_i1_hl(m1, P0, h4)
+cqrt_ry_i1_qangle(h4, h3)
+cqrt_qram_swap_i1_hl(m1, P0, h4)
+cqrt_qram_load_f64_hl_unc(h3, m1, P1)
+cqrt_free(h4)
+cqrt_qram_load_f64_hl(m1, P1+8) -> h5
 cqrt_alloc_i1(0) -> h6
-cqrt_ry_i1(h3, 0x1p+0)
-cqrt_ry_i1(h4, 0x1p+1)
-cqrt_ry_i1(h5, 0x1.8p+1)
-cqrt_ry_i1(h6, 0x1p+2)
-cqrt_measure_i1(h3) -> 0
-cqrt_measure_i1(h4) -> 0
-cqrt_measure_i1(h5) -> 0
-cqrt_measure_i1(h6) -> 0
+cqrt_qram_swap_i1_hl(m1, P0+1, h6)
+cqrt_ry_i1_qangle(h6, h5)
+cqrt_qram_swap_i1_hl(m1, P0+1, h6)
+cqrt_qram_load_f64_hl_unc(h5, m1, P1+8)
+cqrt_free(h6)
+cqrt_qram_load_f64_hl(m1, P1+16) -> h7
+cqrt_alloc_i1(0) -> h8
+cqrt_qram_swap_i1_hl(m1, P0+2, h8)
+cqrt_ry_i1_qangle(h8, h7)
+cqrt_qram_swap_i1_hl(m1, P0+2, h8)
+cqrt_qram_load_f64_hl_unc(h7, m1, P1+16)
+cqrt_free(h8)
+cqrt_qram_load_i1_hl(m1, P0) -> h9
+cqrt_measure_i1(h9) -> 0
+cqrt_qram_load_i1_hl(m1, P0+1) -> h10
+cqrt_measure_i1(h10) -> 0
+cqrt_qram_load_i1_hl(m1, P0+2) -> h11
+cqrt_measure_i1(h11) -> 0
+# call: register_array(coef,4)
+# __cq_alloc(4, 16) -> P0
+cqrt_alloc_i8(0) -> h12
+cqrt_qram_store_i8_hl(m1, P0, h12)
+cqrt_qram_store_i8_hl(m1, P0+1, h12)
+cqrt_qram_store_i8_hl(m1, P0+2, h12)
+cqrt_qram_store_i8_hl(m1, P0+3, h12)
+cqrt_qram_load_f64_hl(m1, P1) -> h13
+cqrt_alloc_i1(0) -> h14
+cqrt_qram_swap_i1_hl(m1, P0, h14)
+cqrt_ry_i1_qangle(h14, h13)
+cqrt_qram_swap_i1_hl(m1, P0, h14)
+cqrt_qram_load_f64_hl_unc(h13, m1, P1)
+cqrt_free(h14)
+cqrt_qram_load_f64_hl(m1, P1+8) -> h15
+cqrt_alloc_i1(0) -> h16
+cqrt_qram_swap_i1_hl(m1, P0+1, h16)
+cqrt_ry_i1_qangle(h16, h15)
+cqrt_qram_swap_i1_hl(m1, P0+1, h16)
+cqrt_qram_load_f64_hl_unc(h15, m1, P1+8)
+cqrt_free(h16)
+cqrt_qram_load_f64_hl(m1, P1+16) -> h17
+cqrt_alloc_i1(0) -> h18
+cqrt_qram_swap_i1_hl(m1, P0+2, h18)
+cqrt_ry_i1_qangle(h18, h17)
+cqrt_qram_swap_i1_hl(m1, P0+2, h18)
+cqrt_qram_load_f64_hl_unc(h17, m1, P1+16)
+cqrt_free(h18)
+cqrt_qram_load_f64_hl(m1, P1+24) -> h19
+cqrt_alloc_i1(0) -> h20
+cqrt_qram_swap_i1_hl(m1, P0+3, h20)
+cqrt_ry_i1_qangle(h20, h19)
+cqrt_qram_swap_i1_hl(m1, P0+3, h20)
+cqrt_qram_load_f64_hl_unc(h19, m1, P1+24)
+cqrt_free(h20)
+cqrt_qram_load_i1_hl(m1, P0) -> h21
+cqrt_measure_i1(h21) -> 0
+cqrt_qram_load_i1_hl(m1, P0+1) -> h22
+cqrt_measure_i1(h22) -> 0
+cqrt_qram_load_i1_hl(m1, P0+2) -> h23
+cqrt_measure_i1(h23) -> 0
+cqrt_qram_load_i1_hl(m1, P0+3) -> h24
+cqrt_measure_i1(h24) -> 0

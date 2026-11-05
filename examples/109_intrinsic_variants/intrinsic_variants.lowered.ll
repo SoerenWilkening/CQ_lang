@@ -1,34 +1,87 @@
-; HAND-WRITTEN. Rules: 4, 18, 20, 14, 7, 5, 6, 2, §1.4.
+; HAND-WRITTEN. Rules: 4, 18, 20, 16, 22, 14, 3, 7, 8, 9, 5, 6, 2, 21, §1.3, §1.4.
 ; Checked: smin_q: min(x, c) (measured, %5 -> %6); bswap_q: bswap(x) (measured, %4 -> %6); usub_sat_q: x > c ? x - c : 0
-; (measured, %5 -> %6); va_copy_q: sum_twice(2, x, a) = 2 * (x + a) (measured: the clone's copied-out result rail %69,
-; %5 -> %6 in the caller); vla_loop_q: acc (measured, the copied-out rail %23 -> %34, or the never-written |0> rail %6
-; when m <= 0).
-; Clean: in __cq_q_sum_twice_010 every trip rail of both walks (popped and uncomputed by the two reverse loops), the
-; final sums s and t, the |0> incomings of the two accumulator phis and the promoted rail of the classical argument a
-; (freed directly); in bswap_q the old x rail (%3, rule 6: bswap is a bijection, its own inverse) and t = bswap(r)
-; (%5), both freed; in vla_loop_q every trip's x + i and acc rails (popped and uncomputed) and the |0> incoming of acc.
-; Kept: x in the other four functions (%4 of smin_q, %4 of usub_sat_q, %4 of va_copy_q, %5 of vla_loop_q: rotated user
-; registers whose results have no inverse in them); bswap_q's measured result %4.
+; (measured, %5 -> %6); va_copy_q: sum_twice(2, x, a) = 2 * (x + a) (measured: the clone's returned rule-6 image s + t,
+; %10 -> %11 in the caller); vla_loop_q: acc = sum over i < m of x + i (measured: the carried rail, rule 6 left no other
+; acc rail; the never-written |0> seed when m <= 0). The bus cells (the variadic block, ap, bp, the VLAs) are no named
+; output.
+; Clean: in bswap_q the old x rail (%3, rule 6: bswap is a bijection, its own inverse) and t = bswap(r) (%5), both
+; freed. In __cq_q_sum_twice_00, per trip of each walk: the slot-address chain (the zext of gp_offset, reg_save_area +
+; gp_offset, the select of the slot address), un-copied/uncomputed after the slot's load; the slot's load copy (IR %31 /
+; %53, un-copied in the trip: no memory version change between the load and its _unc); the old s / t (rule 6 in the
+; body, trip 0's the |0> seed) and its inverse; the old overflow_arg_area of every trip but trip 0 (rule 6: the update
+; f ? ovf : ovf + 8 is a bijection in ovf and f does not read it) and the two inverse rails; every carried gp_offset
+; rail (IR %29 / %51: popped and uncomputed by the reverse loop, the last against the load copy); after the walks
+; t (rule 6: operand 0 of s + t, cleaned from the sum) and its inverse; un-copied but left allocated (rule 5 sentence 1:
+; each overtaken by trip 0's stores): the load copies of ap.gp_offset, ap.reg_save_area, ap.overflow_arg_area (IR %4,
+; %7, %8), un-copied after the first walk's last undo, and of the same three bp fields (IR %10, %13, %14), un-copied
+; after the second walk's. In vla_loop_q, per trip: x + i (IR %17,
+; uncomputed after the call it was passed to), the load copy of v[0] (IR %18, un-copied in the trip), the old acc (rule 6
+; in the body; trip 0's the |0> seed) and its inverse.
+; Kept: x in the other four functions (%4 of smin_q, %4 of usub_sat_q, %5 of va_copy_q, %6 of vla_loop_q: rotated user
+; registers whose results have no inverse in them); bswap_q's measured result %4. va_copy_q (rule 5): the tape slots of
+; the two stores into the variadic block, the seed of a (the second store's value rail; x is the first's). In
+; __cq_q_sum_twice_00 (rule 5 unless named): the four seeds 48, 176, the block address and 0 of va_start and their four
+; tape slots; the 24 byte load copies of va_copy (the value rails of its 24 byte stores into bp) and their 24 tape
+; slots (rule 22); per trip of each walk the flag
+; gp_offset < 41 (control rail of both of its stores), gp_offset + 8 and overflow_arg_area + 8 (value rails) and the two
+; tape slots; the final overflow_arg_area of each walk (IR %28 / %50 of the last trip, a dead rule-6 image, SPEC GAP
+; below); s (IR %32 of the last trip, rule 6: the operand of s + t that is not cleaned). The result s + t is returned
+; (no twin: the clone writes memory, rule 18) and measured. vla_loop_q: per trip the tape slot of put's store (its value
+; rail x + i is the caller's, uncomputed); the carried acc (measured).
 ; Rotations: (Ry, x, th, 1) in each of the five functions.
 ; The last intrinsics of the musl census
 ; (LIBC_COVERAGE.md), each the width/op variant of an existing family: llvm.smin is 56's smax/umin family
 ; (cq_template_smin_<W>[_hl]); llvm.bswap is a unary bit permutation like 56's ctlz (cq_template_bswap_<W>, no classical
-; operand); llvm.usub.sat is 92's uadd.sat family (cq_template_usub_sat_<W>[_hl|_lh]). llvm.va_copy is a classical copy of
-; the 24-byte va_list (gp_offset, fp_offset, overflow_arg_area, reg_save_area): the copy points at the SAME register save
-; area, the slot array of handles of 95, so the second walk reads the same handles and no gate is emitted; each walk is a
-; classically bounded rolled loop (n = 2 propagated by -O1) carrying a quantum accumulator with 25's handle stack, and the
-; two reverse loops run in reverse order (second walk first) after s + t is copied into a fresh result rail (rule 18).
-; llvm.stacksave/stackrestore around a VLA in a loop are the
-; host's classical stack bookkeeping and stay as written (74): the VLA is one classical object per trip (a slot of
-; handles here: put's clone stores the argument's handle into v[0]: no gate, so no _unc twin), and the loop carries
-; acc with 25's stack; the reverse loop recomputes the classical i of each trip (m - 1 - j) for the add's _unc.
+; operand); llvm.usub.sat is 92's uadd.sat family (cq_template_usub_sat_<W>[_hl|_lh]).
+; THE VARIADIC CALL (rule 16, §1.4). va_copy_q stores the two variadic actuals into ONE __cq_alloc(16, 16) block in the
+; SysV overflow-area layout (8-byte slots, the promoted i32 at its slot's address): x's rail at block + 0 (a kept store,
+; the value rail the user register), a's seed at block + 8 (a kept store with its seed). It calls the block form
+; __cq_q_sum_twice_00(i32 poison, ptr block): the fixed formal n (dead, poison, digit 0), then the block address (digit
+; 0); no handle and no per-signature clone. The clone keeps sum_twice's linkage and calling convention (internal, C).
+; In the clone ap and bp are BUS-RESIDENT (rule 20 (b): va_start and va_copy are users no host-resident case allows):
+; __cq_alloc(24, 16) each, the lifetime markers dropped. va_start(ap) is the four kept bus stores {gp_offset = 48,
+; fp_offset = 176, overflow_arg_area = block, reg_save_area = 0}; va_copy(bp, ap) of the bus-resident ap is rule 22's
+; copy of its 24 bytes (a host loop of 24 byte loads at ap + j, each pushed, then 24 byte stores at bp + i popped, i = 23
+; down to 0, all kept; SPEC GAP below); va_end is the -O1 code as it stands (the intrinsic, a no-op on x86-64).
+; Every load of a va_list field is a bus load and its value a rail (rule 3: over-taint, a classical-valued rail costs no
+; qubit), so each va_arg is quantum control: gp_offset < 41 is a flag (rule 8, always 0 here: gp_offset
+; is 48 and every argument is read from the overflow area), the arms' address and offset arithmetic is hoisted and
+; computed unguarded, the two field stores stay in their arms as _hl_controlled stores under f and NOT f (X bracket),
+; and the three phis are select templates (rule 9): the slot address, the next gp_offset, the next overflow_arg_area.
+; The slot is read by a bus load at that address rail. Each walk is a classically bounded loop (n = 2 propagated by
+; -O1, the latch tests i == 0). Rule 6 cleans in the body (as 27, 204): s (or t), whose other operand is the slot's load
+; copy, and the overflow_arg_area (f does not read it; trip 0's old value is the load copy, so the clean-up runs
+; on trips i != 0 only, under the classical branch on i == 0). gp_offset's update f ? gp + 8 : gp has a condition that
+; reads gp: no rule-6 bijection, so each trip pushes its kept flag and gp + 8 and (trips i != 0) its old gp, and the
+; reverse loop after the walk pops them and uncomputes the selects (trip 0's against the load copy). After both walks s + t is formed and rule 6 cleans operand 0, t;
+; the sum is returned directly (an image is never copied out, rule 6). The second walk reads the same block through
+; bp's copied overflow_arg_area, so x and a are loaded twice: sum = 2x + 2a.
+; THE VLA (rules 16, 20). v is passed to put, a user no host-resident case allows, so the VLA is bus-resident: every trip
+; allocates __cq_alloc(4 n, 16) at the alloca's program point; llvm.stacksave/stackrestore are dropped for it. put(v, x +
+; i) is the clone __cq_q_put_01(ptr, i32): a classical pointer (digit 0, the ptr itself) and a value rail; put stores the
+; rail at the classical address (a kept store), so put writes memory and has no twin. The caller uncomputes x + i after
+; the call (a template result it passed, rule 5 sentence 3); trace_check reports that _unc and free as "a value rail
+; freed": its docstring names this case legal by rule 5, read by hand. v[0] is a bus load (a rail); acc' = v[0] + acc
+; is rule 6 in the body (as 204), the load copy is un-copied before the next trip's __cq_alloc, and the final acc is
+; measured directly: no push, no reverse loop.
+; SPEC GAP: rule 16 says va_copy is "the -O1 code as it stands", the llvm.va_copy intrinsic, a host copy of ap's 24
+; bytes. That reads unspecified bytes wherever ap's cells are QUANTUM (a va_copy after a va_arg's controlled stores),
+; and the compiler may never ask whether a cell is HOST (rule 20). Read here: va_copy of a bus-resident va_list is rule
+; 22's copy of its 24 bytes from ap to bp (the intrinsic stays only when both are host-resident); va_end stays.
+; The reverse loop of gp_offset needs the trip's flag and gp + 8, which rule 5 keeps: each trip pushes both handles and
+; the reverse loop pops them (nothing is recomputed). The push of the old gp is made on trips i != 0 only (trip 0's
+; old gp is the load copy); the last undo, against that load copy, follows the reverse loop, and the three field load
+; copies are un-copied right after it.
+; SPEC GAP: rule 6 in a rolled loop excepts trip 0's old rail when it is a bus load copy, but says nothing of where the
+; exception is decided. Read here: a classical branch on the trip index (i == 0, the same compare -O1 uses as the
+; latch test) skips the clean-up and the push on trip 0; no loop peeling.
+; SPEC GAP: the final overflow_arg_area of a walk is dead after the loop, and rule 6 has cleaned the old rail its select
+; reads, so no producer can uncompute it. Read here: it stays allocated as rule 6's image (kept), like a carried result.
 source_filename = "intrinsic_variants.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 
-%struct.__va_list_tag = type { i32, i32, ptr, ptr }    ; IR: %struct.__va_list_tag  (gp_offset, fp_offset, overflow_arg_area, reg_save_area)
-
-define i32 @smin_q(i32 noundef %0, double noundef %1, i32 noundef %2) {
+define i32 @smin_q(i32 noundef %0, double noundef %1, i32 noundef %2) local_unnamed_addr {
   %4 = call i32 @cqrt_alloc_i32(i32 %0)    ; IR: %4 = cq_theta_si32(%0, %1)  [register x]
   call void @cqrt_ry_i32(i32 %4, double %1)    ; IR: %4 = cq_theta_si32(%0, %1)  [Ry]
   %5 = call i32 @cq_template_smin_i32_hl(i32 %4, i32 %2)    ; IR: %5 = llvm.smin.i32(%4, %2)  [result rail]
@@ -36,7 +89,7 @@ define i32 @smin_q(i32 noundef %0, double noundef %1, i32 noundef %2) {
   ret i32 %6    ; IR: ret i32 %6
 }
 
-define i32 @bswap_q(i32 noundef %0, double noundef %1) {
+define i32 @bswap_q(i32 noundef %0, double noundef %1) local_unnamed_addr {
   %3 = call i32 @cqrt_alloc_i32(i32 %0)    ; IR: %3 = cq_theta_ui32(%0, %1)  [register x]
   call void @cqrt_ry_i32(i32 %3, double %1)    ; IR: %3 = cq_theta_ui32(%0, %1)  [Ry]
   %4 = call i32 @cq_template_bswap_i32(i32 %3)    ; IR: %4 = llvm.bswap.i32(%3)  [result rail]
@@ -49,7 +102,7 @@ define i32 @bswap_q(i32 noundef %0, double noundef %1) {
   ret i32 %6    ; IR: ret i32 %5
 }
 
-define i32 @usub_sat_q(i32 noundef %0, double noundef %1, i32 noundef %2) {
+define i32 @usub_sat_q(i32 noundef %0, double noundef %1, i32 noundef %2) local_unnamed_addr {
   %4 = call i32 @cqrt_alloc_i32(i32 %0)    ; IR: %4 = cq_theta_ui32(%0, %1)  [register x]
   call void @cqrt_ry_i32(i32 %4, double %1)    ; IR: %4 = cq_theta_ui32(%0, %1)  [Ry]
   %5 = call i32 @cq_template_usub_sat_i32_hl(i32 %4, i32 %2)    ; IR: %5 = llvm.usub.sat.i32(%4, %2)  [result rail]
@@ -57,216 +110,326 @@ define i32 @usub_sat_q(i32 noundef %0, double noundef %1, i32 noundef %2) {
   ret i32 %6    ; IR: ret i32 %6
 }
 
-define i32 @va_copy_q(i32 noundef %0, double noundef %1, i32 noundef %2) {
-  %4 = call i32 @cqrt_alloc_i32(i32 %0)    ; IR: %4 = cq_theta_si32(%0, %1)  [register x]
-  call void @cqrt_ry_i32(i32 %4, double %1)    ; IR: %4 = cq_theta_si32(%0, %1)  [Ry]
-  %5 = call fastcc i32 @__cq_q_sum_twice_010(i32 poison, i32 %4, i32 %2)    ; IR: %5 = call @sum_twice(poison, %4, %2), clone for arity 3 (arg 1 quantum)
-  %6 = call i32 @cqrt_measure_i32(i32 %5)    ; IR: %6 = cq_measure_si32(%5)
-  ret i32 %6    ; IR: ret i32 %6
+define i32 @va_copy_q(i32 noundef %0, double noundef %1, i32 noundef %2) local_unnamed_addr {
+  %4 = call i32 @__cq_mem()    ; the bus M, once at function entry (§5)
+  %5 = call i32 @cqrt_alloc_i32(i32 %0)    ; IR: %4 = cq_theta_si32(%0, %1)  [register x]
+  call void @cqrt_ry_i32(i32 %5, double %1)    ; IR: %4 = cq_theta_si32(%0, %1)  [Ry]
+  %6 = call ptr @__cq_alloc(i64 16, i64 16)    ; IR: %5 = call @sum_twice(poison, %4, %2): the variadic block, two 8-byte slots (rule 16)
+  %7 = ptrtoint ptr %6 to i64    ; the block's run-time address, a classical i64 (rule 21)
+  call void @cqrt_qram_store_i32_hl(i32 %4, i64 %7, i32 %5)    ; IR: variadic actual 1, x (%4), at block + 0  [kept store, rule 5: its tape slot stays; the value rail is the user register]
+  %8 = add i64 %7, 8    ; slot 2 at block + 8 (classical)
+  %9 = call i32 @cqrt_alloc_i32(i32 %2)    ; IR: variadic actual 2, a (%2): the classical value as a seed (rule 7), the store's value rail, KEPT with it
+  call void @cqrt_qram_store_i32_hl(i32 %4, i64 %8, i32 %9)    ; IR: variadic actual 2 at block + 8  [kept store, rule 5]
+  %10 = call i32 @__cq_q_sum_twice_00(i32 poison, ptr %6)    ; IR: %5 = call @sum_twice(poison, %4, %2): the block form (§1.4: n dead and classical, digit 0; the block ptr, digit 0); it writes memory, so no twin (rule 18)
+  %11 = call i32 @cqrt_measure_i32(i32 %10)    ; IR: %6 = cq_measure_si32(%5)
+  ret i32 %11    ; IR: ret i32 %6
 }
 
-define internal fastcc i32 @__cq_q_sum_twice_010(i32 %0, i32 %1, i32 %2) {
-  %4 = alloca [1 x %struct.__va_list_tag], align 16    ; IR: %2 = alloca va_list ap  (classical: offsets and pointers)
-  %5 = alloca [1 x %struct.__va_list_tag], align 16    ; IR: %3 = alloca va_list bp  (classical)
-  %6 = alloca [6 x i64], align 16    ; IR: va_start: the register save area, 6 gp slots  (a slot array of handles)
-  %7 = alloca i64, align 8    ; IR: va_start: the overflow argument area  (empty: both variadic args are in registers)
-  %8 = getelementptr inbounds i8, ptr %6, i64 8    ; IR: va_start: gp slot 1 (slot 0 is the named parameter's)
-  store i32 %1, ptr %8, align 8    ; IR: va_start: spill x's handle
-  %9 = call i32 @cqrt_alloc_i32(i32 %2)    ; IR: va_start: variadic arg a (classical) promoted to a rail
-  %10 = getelementptr inbounds i8, ptr %6, i64 16    ; IR: va_start: gp slot 2
-  store i32 %9, ptr %10, align 8    ; IR: va_start: spill a's handle
-  store i32 8, ptr %4, align 16    ; IR: va_start: ap.gp_offset = 8  (one named gp parameter)
-  %11 = getelementptr inbounds i8, ptr %4, i64 4    ; IR: va_start: &ap.fp_offset
-  store i32 48, ptr %11, align 4    ; IR: va_start: ap.fp_offset = 48
-  %12 = getelementptr inbounds i8, ptr %4, i64 8    ; IR: va_start: &ap.overflow_arg_area
-  store ptr %7, ptr %12, align 8    ; IR: va_start: ap.overflow_arg_area
-  %13 = getelementptr inbounds i8, ptr %4, i64 16    ; IR: va_start: &ap.reg_save_area
-  store ptr %6, ptr %13, align 8    ; IR: va_start: ap.reg_save_area
-  call void @llvm.memcpy.p0.p0.i64(ptr %5, ptr %4, i64 24, i1 false)    ; IR: llvm.va_copy(%3, %2): bp = ap, a classical copy of the four fields (same save area, same handles)
-  %14 = load i32, ptr %4, align 16    ; IR: %4 = load i32, ptr %2  (ap.gp_offset, classical)
-  %15 = getelementptr inbounds i8, ptr %4, i64 8    ; IR: %5
-  %16 = getelementptr inbounds i8, ptr %4, i64 16    ; IR: %6
-  %17 = load ptr, ptr %16, align 16    ; IR: %7 = load ptr, ptr %6  (ap.reg_save_area, classical)
-  %18 = load ptr, ptr %15, align 8    ; IR: %8 = load ptr, ptr %5  (ap.overflow_arg_area, classical)
-  %19 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: incoming 0 of phi %18  [s before trip 0]
-  br label %20    ; IR: br label %15
-20:
-  %21 = phi ptr [ %18, %3 ], [ %33, %32 ]    ; IR: %16 = phi ptr  (classical)
-  %22 = phi i32 [ 0, %3 ], [ %38, %32 ]    ; IR: %17 = phi i32  (i, classical)
-  %23 = phi i32 [ %19, %3 ], [ %37, %32 ]    ; IR: %18 = phi i32 [ 0, %1 ], [ %32, %27 ]  (s: a handle)
-  %24 = phi i32 [ %14, %3 ], [ %34, %32 ]    ; IR: %19 = phi i32  (ap.gp_offset, classical)
-  %25 = icmp ult i32 %24, 41    ; IR: %20 = icmp ult i32 %19, 41  (classical)
-  br i1 %25, label %26, label %30    ; IR: br i1 %20, label %21, label %25
-26:
-  %27 = zext nneg i32 %24 to i64    ; IR: %22 = zext nneg i32 %19 to i64  (classical)
-  %28 = getelementptr i8, ptr %17, i64 %27    ; IR: %23 = getelementptr i8, ptr %7, i64 %22  (the slot)
-  %29 = add nuw nsw i32 %24, 8    ; IR: %24 = add nuw nsw i32 %19, 8  (classical)
-  store i32 %29, ptr %4, align 16    ; IR: store i32 %24, ptr %2  (classical)
-  br label %32    ; IR: br label %27
-30:
-  %31 = getelementptr i8, ptr %21, i64 8    ; IR: %26 = getelementptr i8, ptr %16, i64 8  (classical)
-  store ptr %31, ptr %15, align 8    ; IR: store ptr %26, ptr %5  (classical)
-  br label %32    ; IR: br label %27
-32:
-  %33 = phi ptr [ %21, %26 ], [ %31, %30 ]    ; IR: %28 = phi ptr  (classical)
-  %34 = phi i32 [ %29, %26 ], [ %24, %30 ]    ; IR: %29 = phi i32  (classical)
-  %35 = phi ptr [ %28, %26 ], [ %21, %30 ]    ; IR: %30 = phi ptr  (the argument slot, classical)
-  %36 = load i32, ptr %35, align 4    ; IR: %31 = load i32, ptr %30  (the argument's handle)
-  %37 = call i32 @cq_template_add_i32(i32 %36, i32 %23)    ; IR: %32 = add nsw i32 %31, %18
-  call void @cqrt_push(i32 %23)
-  call void @cqrt_push(i32 %36)
-  %38 = add nuw nsw i32 %22, 1    ; IR: %33 = add nuw nsw i32 %17, 1  (classical)
-  %39 = icmp eq i32 %22, 0    ; IR: %34 = icmp eq i32 %17, 0  (classical: 2 trips)
-  br i1 %39, label %20, label %40    ; IR: br i1 %34, label %15, label %9
-40:
-  %41 = load i32, ptr %5, align 16    ; IR: %10 = load i32, ptr %3  (bp.gp_offset, classical: the copied 8)
-  %42 = getelementptr inbounds i8, ptr %5, i64 8    ; IR: %11
-  %43 = getelementptr inbounds i8, ptr %5, i64 16    ; IR: %12
-  %44 = load ptr, ptr %43, align 16    ; IR: %13 = load ptr, ptr %12  (bp.reg_save_area: the same save area)
-  %45 = load ptr, ptr %42, align 8    ; IR: %14 = load ptr, ptr %11  (bp.overflow_arg_area, classical)
-  %46 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: incoming 0 of phi %40  [t before trip 0]
-  br label %47    ; IR: br label %37
-47:
-  %48 = phi ptr [ %45, %40 ], [ %60, %59 ]    ; IR: %38 = phi ptr  (classical)
-  %49 = phi i32 [ 0, %40 ], [ %65, %59 ]    ; IR: %39 = phi i32  (i, classical)
-  %50 = phi i32 [ %46, %40 ], [ %64, %59 ]    ; IR: %40 = phi i32 [ 0, %9 ], [ %54, %49 ]  (t: a handle)
-  %51 = phi i32 [ %41, %40 ], [ %61, %59 ]    ; IR: %41 = phi i32  (bp.gp_offset, classical)
-  %52 = icmp ult i32 %51, 41    ; IR: %42 = icmp ult i32 %41, 41  (classical)
-  br i1 %52, label %53, label %57    ; IR: br i1 %42, label %43, label %47
-53:
-  %54 = zext nneg i32 %51 to i64    ; IR: %44 = zext nneg i32 %41 to i64  (classical)
-  %55 = getelementptr i8, ptr %44, i64 %54    ; IR: %45 = getelementptr i8, ptr %13, i64 %44  (the slot)
-  %56 = add nuw nsw i32 %51, 8    ; IR: %46 = add nuw nsw i32 %41, 8  (classical)
-  store i32 %56, ptr %5, align 16    ; IR: store i32 %46, ptr %3  (classical)
-  br label %59    ; IR: br label %49
-57:
-  %58 = getelementptr i8, ptr %48, i64 8    ; IR: %48 = getelementptr i8, ptr %38, i64 8  (classical)
-  store ptr %58, ptr %42, align 8    ; IR: store ptr %48, ptr %11  (classical)
-  br label %59    ; IR: br label %49
-59:
-  %60 = phi ptr [ %48, %53 ], [ %58, %57 ]    ; IR: %50 = phi ptr  (classical)
-  %61 = phi i32 [ %56, %53 ], [ %51, %57 ]    ; IR: %51 = phi i32  (classical)
-  %62 = phi ptr [ %55, %53 ], [ %48, %57 ]    ; IR: %52 = phi ptr  (the argument slot, classical)
-  %63 = load i32, ptr %62, align 4    ; IR: %53 = load i32, ptr %52  (the argument's handle, the same as the first walk's)
-  %64 = call i32 @cq_template_add_i32(i32 %63, i32 %50)    ; IR: %54 = add nsw i32 %53, %40
-  call void @cqrt_push(i32 %50)
-  call void @cqrt_push(i32 %63)
-  %65 = add nuw nsw i32 %49, 1    ; IR: %55 = add nuw nsw i32 %39, 1  (classical)
-  %66 = icmp eq i32 %49, 0    ; IR: %56 = icmp eq i32 %39, 0  (classical: 2 trips)
-  br i1 %66, label %47, label %67    ; IR: br i1 %56, label %37, label %35
-67:
-  %68 = call i32 @cq_template_add_i32(i32 %64, i32 %37)    ; IR: va_end(bp), va_end(ap): nothing; %36 = add nsw i32 %54, %32
-  %69 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: ret i32 %36  [result rail of the call, rule 18]
-  call void @cqrt_copy_i32(i32 %68, i32 %69)    ; IR: copy the result out
-  call void @cq_template_add_i32_unc(i32 %68, i32 %64, i32 %37)    ; IR: uncompute %36
-  call void @cqrt_free(i32 %68)    ; IR: release the %36 rail (|0>)
-  br label %70
-70:
-  %71 = phi i32 [ 0, %67 ], [ %75, %70 ]
-  %72 = phi i32 [ %64, %67 ], [ %74, %70 ]    ; IR: %54 of the trip being undone (second walk, undone first)
-  %73 = call i32 @cqrt_pop()    ; IR: %53 of that trip
-  %74 = call i32 @cqrt_pop()    ; IR: %40 of that trip
-  call void @cq_template_add_i32_unc(i32 %72, i32 %73, i32 %74)    ; IR: uncompute %54
-  call void @cqrt_free(i32 %72)    ; IR: release the %54 rail (|0>)
-  %75 = add nuw nsw i32 %71, 1
-  %76 = icmp eq i32 %75, 2
-  br i1 %76, label %77, label %70
-77:
-  call void @cqrt_free(i32 %74)    ; IR: release incoming 0 of phi %40 (never written, |0>)
-  br label %78
-78:
-  %79 = phi i32 [ 0, %77 ], [ %83, %78 ]
-  %80 = phi i32 [ %37, %77 ], [ %82, %78 ]    ; IR: %32 of the trip being undone (first walk)
-  %81 = call i32 @cqrt_pop()    ; IR: %31 of that trip
-  %82 = call i32 @cqrt_pop()    ; IR: %18 of that trip
-  call void @cq_template_add_i32_unc(i32 %80, i32 %81, i32 %82)    ; IR: uncompute %32
-  call void @cqrt_free(i32 %80)    ; IR: release the %32 rail (|0>)
-  %83 = add nuw nsw i32 %79, 1
-  %84 = icmp eq i32 %83, 2
-  br i1 %84, label %85, label %78
-85:
-  call void @cqrt_free(i32 %82)    ; IR: release incoming 0 of phi %18 (never written, |0>)
-  call void @cqrt_free(i32 %9)    ; IR: release a's rail (never entangled, holds the classical %2)
-  ret i32 %69    ; IR: ret i32 %36
-}
+define internal i32 @__cq_q_sum_twice_00(i32 %0, ptr %1) unnamed_addr {
+  %3 = call i32 @__cq_mem()    ; the bus M, once at function entry (§5)
+  %4 = call ptr @__cq_alloc(i64 24, i64 16)    ; IR: %2 = alloca va_list ap  [bus-resident (va_start, va_copy: rule 20 (b)): one zeroed block, no alloca remains; llvm.lifetime.start dropped]
+  %5 = ptrtoint ptr %4 to i64    ; ap's run-time address (classical)
+  %6 = call ptr @__cq_alloc(i64 24, i64 16)    ; IR: %3 = alloca va_list bp  [bus-resident; llvm.lifetime.start dropped]
+  %7 = call i32 @cqrt_alloc_i32(i32 48)    ; IR: va_start(%2): gp_offset = 48 (rule 16), a seed (rule 7) kept with its store
+  call void @cqrt_qram_store_i32_hl(i32 %3, i64 %5, i32 %7)    ; IR: va_start: ap.gp_offset  [kept store, rule 5]
+  %8 = add i64 %5, 4    ; &ap.fp_offset (classical)
+  %9 = call i32 @cqrt_alloc_i32(i32 176)    ; IR: va_start: fp_offset = 176, a seed kept with its store
+  call void @cqrt_qram_store_i32_hl(i32 %3, i64 %8, i32 %9)    ; IR: va_start: ap.fp_offset  [kept store]
+  %10 = add i64 %5, 8    ; &ap.overflow_arg_area (classical)
+  %11 = ptrtoint ptr %1 to i64    ; the block's address (the last formal)
+  %12 = call i32 @cqrt_alloc_i64(i64 %11)    ; IR: va_start: overflow_arg_area = block, a seed kept with its store
+  call void @cqrt_qram_store_i64_hl(i32 %3, i64 %10, i32 %12)    ; IR: va_start: ap.overflow_arg_area  [kept store]
+  %13 = add i64 %5, 16    ; &ap.reg_save_area (classical)
+  %14 = call i32 @cqrt_alloc_i64(i64 0)    ; IR: va_start: reg_save_area = 0, a seed kept with its store
+  call void @cqrt_qram_store_i64_hl(i32 %3, i64 %13, i32 %14)    ; IR: va_start: ap.reg_save_area  [kept store]
+  %15 = ptrtoint ptr %6 to i64    ; bp's run-time address (classical)
+  br label %16    ; IR: llvm.va_copy(%3, %2): a bus-resident va_list, so rule 22's copy of its 24 bytes from ap to bp (load all, then store all)  ; SPEC GAP: rule 16 reads "as it stands"
 
-define i32 @vla_loop_q(i32 noundef %0, double noundef %1, i32 noundef %2, i32 noundef %3) {
-  %5 = call i32 @cqrt_alloc_i32(i32 %0)    ; IR: %5 = cq_theta_si32(%0, %1)  [register x]
-  call void @cqrt_ry_i32(i32 %5, double %1)    ; IR: %5 = cq_theta_si32(%0, %1)  [Ry]
-  %6 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: incoming 0 of phi %13 / %10  [acc before trip 0]
-  %7 = icmp sgt i32 %3, 0    ; IR: %6 = icmp sgt i32 %3, 0  (classical)
-  br i1 %7, label %10, label %8    ; IR: br i1 %6, label %7, label %9
-8:
-  %9 = call i32 @cqrt_measure_i32(i32 %6)    ; IR: %11 = cq_measure_si32(%10), %10 = 0 from %4
-  ret i32 %9    ; IR: ret i32 %11
-10:
-  %11 = zext i32 %2 to i64    ; IR: %8 = zext i32 %2 to i64  (classical element count)
-  br label %12    ; IR: br label %12
-12:
-  %13 = phi i32 [ %6, %10 ], [ %19, %12 ]    ; IR: %13 = phi i32 [ 0, %7 ], [ %19, %12 ]  (acc: a handle)
-  %14 = phi i32 [ 0, %10 ], [ %20, %12 ]    ; IR: %14 = phi i32  (i, classical)
-  %15 = call ptr @llvm.stacksave.p0()    ; IR: %15 = llvm.stacksave()  (classical host stack mark)
-  %16 = alloca i32, i64 %11, align 16    ; IR: %16 = alloca i32, i64 %8  (the VLA of this trip: classical memory, a slot of handles)
-  %17 = call i32 @cq_template_add_i32_hl(i32 %5, i32 %14)    ; IR: %17 = add nsw i32 %14, %5  (commutative: the _hl form)
-  call fastcc void @__cq_q_put_01(ptr %16, i32 %17)    ; IR: call @put(%16, %17), clone (arg 1 quantum): stores the handle into v[0]
-  %18 = load i32, ptr %16, align 16    ; IR: %18 = load i32, ptr %16  (v[0]: the handle %17)
-  %19 = call i32 @cq_template_add_i32(i32 %18, i32 %13)    ; IR: %19 = add nsw i32 %18, %13
-  call void @cqrt_push(i32 %13)
-  call void @cqrt_push(i32 %17)
-  call void @llvm.stackrestore.p0(ptr %15)    ; IR: llvm.stackrestore(%15)  (classical: the VLA's storage is released; its handle lives on)
-  %20 = add nuw nsw i32 %14, 1    ; IR: %20 = add nuw nsw i32 %14, 1  (classical)
-  %21 = icmp eq i32 %20, %3    ; IR: %21 = icmp eq i32 %20, %3  (classical bound)
-  br i1 %21, label %22, label %12    ; IR: br i1 %21, label %9, label %12
+16:
+  %17 = phi i64 [ 0, %2 ], [ %20, %16 ]    ; byte index of the load loop (classical)
+  %18 = add i64 %5, %17    ; the source byte's address, ap + j (classical)
+  %19 = call i32 @cqrt_qram_load_i8_hl(i32 %3, i64 %18)    ; IR: va_copy  [byte j of ap: a bus load; the copy is the value rail of byte j's store, KEPT (rule 22)]
+  call void @cqrt_push(i32 %19)    ; the handle outlives its SSA value (§1.1, rule 22)
+  %20 = add nuw nsw i64 %17, 1
+  %21 = icmp eq i64 %20, 24
+  br i1 %21, label %22, label %16
+
 22:
-  %23 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: %10 = phi i32 [ %19, %12 ]  [copied-out result]
-  call void @cqrt_copy_i32(i32 %19, i32 %23)    ; IR: %10
-  %24 = add nsw i32 %3, -1    ; IR: m - 1  (classical: i of the last trip)
-  br label %25
-25:
-  %26 = phi i32 [ 0, %22 ], [ %31, %25 ]
-  %27 = phi i32 [ %19, %22 ], [ %29, %25 ]    ; IR: %19 of the trip being undone
-  %28 = call i32 @cqrt_pop()    ; IR: %17 of that trip
-  %29 = call i32 @cqrt_pop()    ; IR: %13 of that trip
-  call void @cq_template_add_i32_unc(i32 %27, i32 %28, i32 %29)    ; IR: uncompute %19
-  call void @cqrt_free(i32 %27)    ; IR: release the %19 rail (|0>)
-  %30 = sub nsw i32 %24, %26    ; IR: i of that trip  (classical: m - 1 - j)
-  call void @cq_template_add_i32_hl_unc(i32 %28, i32 %5, i32 %30)    ; IR: uncompute %17
-  call void @cqrt_free(i32 %28)    ; IR: release the %17 rail (|0>)
-  %31 = add nuw nsw i32 %26, 1
-  %32 = icmp eq i32 %31, %3
-  br i1 %32, label %33, label %25
+  %23 = phi i64 [ 24, %16 ], [ %24, %22 ]    ; bytes left to store (classical)
+  %24 = add nsw i64 %23, -1    ; byte index of this store: 23 down to 0 (the pop order)
+  %25 = call i32 @cqrt_pop()    ; the load copy of byte %vki
+  %26 = add i64 %15, %24    ; the destination byte's address, bp + i (classical)
+  call void @cqrt_qram_store_i8_hl(i32 %3, i64 %26, i32 %25)    ; IR: va_copy  [byte i of bp: a kept store (rule 22): its tape slot and value rail stay]
+  %27 = icmp eq i64 %24, 0
+  br i1 %27, label %28, label %22
+
+28:
+  %29 = call i32 @cqrt_qram_load_i32_hl(i32 %3, i64 %5)    ; IR: %4 = load i32, ptr %2  [ap.gp_offset: a bus load, a rail (rule 3); overtaken by trip 0's store, un-copied after the walk]
+  %30 = call i32 @cqrt_qram_load_i64_hl(i32 %3, i64 %13)    ; IR: %6 = gep %2, 16; %7 = load ptr, ptr %6  [ap.reg_save_area: an address rail (rule 21); overtaken, un-copied after the walk]
+  %31 = call i32 @cqrt_qram_load_i64_hl(i32 %3, i64 %10)    ; IR: %5 = gep %2, 8; %8 = load ptr, ptr %5  [ap.overflow_arg_area: an address rail; overtaken, un-copied after the walk]
+  %32 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: incoming 0 of phi %18  [s before trip 0: trip 0's old s, cleaned by rule 6]
+  br label %33    ; IR: br label %15
+
 33:
-  call void @cqrt_free(i32 %29)    ; IR: release incoming 0 of phi %13 (never written, |0>)
-  %34 = call i32 @cqrt_measure_i32(i32 %23)    ; IR: %11 = cq_measure_si32(%10)
-  ret i32 %34    ; IR: ret i32 %11
+  %34 = phi i32 [ %31, %28 ], [ %43, %53 ]    ; IR: %16 = phi ptr  (overflow_arg_area: a handle)
+  %35 = phi i32 [ 0, %28 ], [ %54, %53 ]    ; IR: %17 = phi i32  (i, classical)
+  %36 = phi i32 [ %32, %28 ], [ %47, %53 ]    ; IR: %18 = phi i32 [ 0, %1 ], [ %32, %27 ]  (s: a handle)
+  %37 = phi i32 [ %29, %28 ], [ %44, %53 ]    ; IR: %19 = phi i32  (gp_offset: a handle)
+  %38 = call i32 @cq_template_icmp_ult_i32_hl(i32 %37, i32 41)    ; IR: %20 = icmp ult i32 %19, 41  [the arm flag (rule 8); KEPT: control rail of both stores below]
+  %39 = call i32 @cq_template_zext_i32_to_i64(i32 %37)    ; IR: %22 = zext nneg i32 %19 to i64  (arm %21, hoisted: rule 9)
+  %40 = call i32 @cq_template_add_i64(i32 %30, i32 %39)    ; IR: %23 = getelementptr i8, ptr %7, i64 %22  (arm %21, hoisted)  [reg_save_area + gp_offset]
+  %41 = call i32 @cq_template_add_i32_hl(i32 %37, i32 8)    ; IR: %24 = add nuw nsw i32 %19, 8  (arm %21, hoisted)  [KEPT: the value rail of the store below]
+  %42 = call i32 @cq_template_add_i64_hl(i32 %34, i64 8)    ; IR: %26 = getelementptr i8, ptr %16, i64 8  (arm %25, hoisted)  [KEPT: the value rail of the store below]
+  call void @cqrt_qram_store_i32_hl_controlled(i32 %38, i32 %3, i64 %5, i32 %41)    ; IR: store i32 %24, ptr %2  (arm %21: under f, never hoisted; kept store, rule 5)
+  call void @cqrt_not_i1(i32 %38)    ; IR: arm %25: the false edge (rule 8)
+  call void @cqrt_qram_store_i64_hl_controlled(i32 %38, i32 %3, i64 %10, i32 %42)    ; IR: store ptr %26, ptr %5  (arm %25: under NOT f; kept store)
+  call void @cqrt_not_i1(i32 %38)    ; IR: close the X bracket
+  %43 = call i32 @cq_template_select_i64(i32 %38, i32 %34, i32 %42)    ; IR: %28 = phi ptr [ %16, %21 ], [ %26, %25 ]  [the next overflow_arg_area (rule 9)]
+  %44 = call i32 @cq_template_select_i32(i32 %38, i32 %41, i32 %37)    ; IR: %29 = phi i32 [ %24, %21 ], [ %19, %25 ]  [the next gp_offset]
+  %45 = call i32 @cq_template_select_i64(i32 %38, i32 %40, i32 %34)    ; IR: %30 = phi ptr [ %23, %21 ], [ %16, %25 ]  [the argument slot: an address rail]
+  %46 = call i32 @cqrt_qram_load_i32(i32 %3, i32 %45)    ; IR: %31 = load i32, ptr %30  [va_arg(ap, int): a bus load at the address rail]
+  %47 = call i32 @cq_template_add_i32(i32 %46, i32 %36)    ; IR: %32 = add nsw i32 %31, %18
+  %48 = call i32 @cq_template_sub_i32(i32 %47, i32 %46)    ; IR: rule 6: t = s' - v recomputes the old s (the other operand is the load copy, rule-5 garbage)
+  call void @cqrt_copy_i32(i32 %48, i32 %36)    ; IR: rule 6: old s ^= t: |0> (trip 0: the |0> seed, unchanged)
+  call void @cq_template_sub_i32_unc(i32 %48, i32 %47, i32 %46)    ; IR: rule 6: uncompute t
+  call void @cqrt_free(i32 %48)    ; IR: release t (|0>)
+  call void @cqrt_free(i32 %36)    ; IR: rule 6: release the old s rail (|0> after the copy); it is not pushed
+  call void @cqrt_qram_load_i32_unc(i32 %46, i32 %3, i32 %45)    ; IR: un-copy %31 (rule 5: no memory version change since the load)
+  call void @cqrt_free(i32 %46)    ; IR: release the %31 rail (|0>)
+  call void @cq_template_select_i64_unc(i32 %45, i32 %38, i32 %40, i32 %34)    ; IR: uncompute %30 (the address rail outlived its load's _unc)
+  call void @cqrt_free(i32 %45)    ; IR: release the %30 rail (|0>)
+  call void @cq_template_add_i64_unc(i32 %40, i32 %30, i32 %39)    ; IR: uncompute %23
+  call void @cqrt_free(i32 %40)    ; IR: release the %23 rail (|0>)
+  call void @cq_template_zext_i32_to_i64_unc(i32 %39, i32 %37)    ; IR: uncompute %22
+  call void @cqrt_free(i32 %39)    ; IR: release the %22 rail (|0>)
+  call void @cqrt_push(i32 %38)    ; IR: %20 of this trip (kept: only its handle), for the reverse loop (rule 14)
+  call void @cqrt_push(i32 %41)    ; IR: %24 of this trip (kept: only its handle), for the reverse loop
+  %49 = icmp eq i32 %35, 0    ; IR: %34 = icmp eq i32 %17, 0  (classical: trip 0, and the latch test of 2 trips)
+  br i1 %49, label %53, label %50
+
+50:
+  %51 = call i32 @cq_template_sub_i64_hl(i32 %43, i64 8)    ; IR: rule 6 (trip i != 0): ovf' - 8
+  %52 = call i32 @cq_template_select_i64(i32 %38, i32 %43, i32 %51)    ; IR: rule 6: t = f ? ovf' : ovf' - 8 recomputes the old %16 (f does not read it)
+  call void @cqrt_copy_i64(i32 %52, i32 %34)    ; IR: rule 6: old %16 ^= t: |0>
+  call void @cq_template_select_i64_unc(i32 %52, i32 %38, i32 %43, i32 %51)    ; IR: rule 6: uncompute t
+  call void @cqrt_free(i32 %52)    ; IR: release t (|0>)
+  call void @cq_template_sub_i64_hl_unc(i32 %51, i32 %43, i64 8)    ; IR: uncompute ovf' - 8
+  call void @cqrt_free(i32 %51)    ; IR: release ovf' - 8 (|0>)
+  call void @cqrt_free(i32 %34)    ; IR: rule 6: release the old %16 rail (|0>); trip 0's is the kept load copy %8, never cleaned
+  call void @cqrt_push(i32 %37)    ; IR: %19 of this trip, for the reverse loop (trip 0's is the kept load copy %4: not pushed)
+  br label %53
+
+53:
+  %54 = add nuw nsw i32 %35, 1    ; IR: %33 = add nuw nsw i32 %17, 1  (classical)
+  br i1 %49, label %33, label %55    ; IR: br i1 %34, label %15, label %9
+
+55:
+  %56 = phi i32 [ 0, %53 ], [ %61, %55 ]
+  %57 = phi i32 [ %44, %53 ], [ %58, %55 ]    ; IR: %29 of the trip being undone
+  %58 = call i32 @cqrt_pop()    ; IR: %19 of that trip
+  %59 = call i32 @cqrt_pop()    ; IR: %24 of that trip (kept: its handle)
+  %60 = call i32 @cqrt_pop()    ; IR: %20 of that trip (kept: its handle)
+  call void @cq_template_select_i32_unc(i32 %57, i32 %60, i32 %59, i32 %58)    ; IR: uncompute %29
+  call void @cqrt_free(i32 %57)    ; IR: release the %29 rail (|0>)
+  %61 = add nuw nsw i32 %56, 1
+  %62 = icmp eq i32 %61, 1    ; the trips i != 0 (one: n = 2)
+  br i1 %62, label %63, label %55
+
+63:
+  %64 = call i32 @cqrt_pop()    ; IR: %24 of trip 0 (kept: its handle)
+  %65 = call i32 @cqrt_pop()    ; IR: %20 of trip 0 (kept: its handle)
+  call void @cq_template_select_i32_unc(i32 %58, i32 %65, i32 %64, i32 %29)    ; IR: uncompute %29 of trip 0 (against the load copy %4)
+  call void @cqrt_free(i32 %58)    ; IR: release that rail (|0>)
+  call void @cqrt_qram_load_i32_hl_unc(i32 %29, i32 %3, i64 %5)    ; IR: un-copy %4 (after its last reader; overtaken by trip 0's store, so it stays allocated: rule 5 sentence 1)
+  call void @cqrt_qram_load_i64_hl_unc(i32 %30, i32 %3, i64 %13)    ; IR: un-copy %7 (its last reader was the last trip's slot-address _unc; overtaken, stays allocated)
+  call void @cqrt_qram_load_i64_hl_unc(i32 %31, i32 %3, i64 %10)    ; IR: un-copy %8 (its last reader was trip 0's slot-select _unc; overtaken, stays allocated)
+  %66 = call i32 @cqrt_qram_load_i32_hl(i32 %3, i64 %15)    ; IR: %10 = load i32, ptr %3  [bp.gp_offset: a rail; overtaken, un-copied after the walk]
+  %67 = add i64 %15, 8    ; IR: %11 = getelementptr inbounds i8, ptr %3, i64 8
+  %68 = add i64 %15, 16    ; IR: %12 = getelementptr inbounds i8, ptr %3, i64 16
+  %69 = call i32 @cqrt_qram_load_i64_hl(i32 %3, i64 %68)    ; IR: %13 = load ptr, ptr %12  [bp.reg_save_area: an address rail; overtaken, un-copied after the walk]
+  %70 = call i32 @cqrt_qram_load_i64_hl(i32 %3, i64 %67)    ; IR: %14 = load ptr, ptr %11  [bp.overflow_arg_area: the copied block address, an address rail; overtaken, un-copied after the walk]
+  %71 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: incoming 0 of phi %40  [t before trip 0: trip 0's old t, cleaned by rule 6]
+  br label %72    ; IR: br label %37
+
+72:
+  %73 = phi i32 [ %70, %63 ], [ %82, %92 ]    ; IR: %38 = phi ptr  (a handle)
+  %74 = phi i32 [ 0, %63 ], [ %93, %92 ]    ; IR: %39 = phi i32  (i, classical)
+  %75 = phi i32 [ %71, %63 ], [ %86, %92 ]    ; IR: %40 = phi i32 [ 0, %9 ], [ %54, %49 ]  (t: a handle)
+  %76 = phi i32 [ %66, %63 ], [ %83, %92 ]    ; IR: %41 = phi i32  (a handle)
+  %77 = call i32 @cq_template_icmp_ult_i32_hl(i32 %76, i32 41)    ; IR: %42 = icmp ult i32 %41, 41  [the arm flag; KEPT: control rail of both stores]
+  %78 = call i32 @cq_template_zext_i32_to_i64(i32 %76)    ; IR: %44 = zext nneg i32 %41 to i64  (hoisted)
+  %79 = call i32 @cq_template_add_i64(i32 %69, i32 %78)    ; IR: %45 = getelementptr i8, ptr %13, i64 %44  (hoisted)
+  %80 = call i32 @cq_template_add_i32_hl(i32 %76, i32 8)    ; IR: %46 = add nuw nsw i32 %41, 8  (hoisted)  [KEPT: value rail]
+  %81 = call i32 @cq_template_add_i64_hl(i32 %73, i64 8)    ; IR: %48 = getelementptr i8, ptr %38, i64 8  (hoisted)  [KEPT: value rail]
+  call void @cqrt_qram_store_i32_hl_controlled(i32 %77, i32 %3, i64 %15, i32 %80)    ; IR: store i32 %46, ptr %3  (arm %43: under g; kept store)
+  call void @cqrt_not_i1(i32 %77)    ; IR: arm %47: the false edge
+  call void @cqrt_qram_store_i64_hl_controlled(i32 %77, i32 %3, i64 %67, i32 %81)    ; IR: store ptr %48, ptr %11  (arm %47: under NOT g; kept store)
+  call void @cqrt_not_i1(i32 %77)    ; IR: close the X bracket
+  %82 = call i32 @cq_template_select_i64(i32 %77, i32 %73, i32 %81)    ; IR: %50 = phi ptr [ %38, %43 ], [ %48, %47 ]
+  %83 = call i32 @cq_template_select_i32(i32 %77, i32 %80, i32 %76)    ; IR: %51 = phi i32 [ %46, %43 ], [ %41, %47 ]
+  %84 = call i32 @cq_template_select_i64(i32 %77, i32 %79, i32 %73)    ; IR: %52 = phi ptr [ %45, %43 ], [ %38, %47 ]  [the argument slot: the same cells as the first walk's]
+  %85 = call i32 @cqrt_qram_load_i32(i32 %3, i32 %84)    ; IR: %53 = load i32, ptr %52  [va_arg(bp, int)]
+  %86 = call i32 @cq_template_add_i32(i32 %85, i32 %75)    ; IR: %54 = add nsw i32 %53, %40
+  %87 = call i32 @cq_template_sub_i32(i32 %86, i32 %85)    ; IR: rule 6: t' - w recomputes the old t
+  call void @cqrt_copy_i32(i32 %87, i32 %75)    ; IR: rule 6: old t ^= that: |0>
+  call void @cq_template_sub_i32_unc(i32 %87, i32 %86, i32 %85)
+  call void @cqrt_free(i32 %87)
+  call void @cqrt_free(i32 %75)    ; IR: rule 6: release the old t rail (|0>)
+  call void @cqrt_qram_load_i32_unc(i32 %85, i32 %3, i32 %84)    ; IR: un-copy %53 (rule 5)
+  call void @cqrt_free(i32 %85)    ; IR: release the %53 rail (|0>)
+  call void @cq_template_select_i64_unc(i32 %84, i32 %77, i32 %79, i32 %73)    ; IR: uncompute %52
+  call void @cqrt_free(i32 %84)
+  call void @cq_template_add_i64_unc(i32 %79, i32 %69, i32 %78)    ; IR: uncompute %45
+  call void @cqrt_free(i32 %79)
+  call void @cq_template_zext_i32_to_i64_unc(i32 %78, i32 %76)    ; IR: uncompute %44
+  call void @cqrt_free(i32 %78)
+  call void @cqrt_push(i32 %77)    ; IR: %42 of this trip (kept: only its handle), for the reverse loop
+  call void @cqrt_push(i32 %80)    ; IR: %46 of this trip (kept: only its handle), for the reverse loop
+  %88 = icmp eq i32 %74, 0    ; IR: %56 = icmp eq i32 %39, 0  (classical: trip 0, and the latch test)
+  br i1 %88, label %92, label %89
+
+89:
+  %90 = call i32 @cq_template_sub_i64_hl(i32 %82, i64 8)    ; IR: rule 6 (trip i != 0): ovf' - 8
+  %91 = call i32 @cq_template_select_i64(i32 %77, i32 %82, i32 %90)    ; IR: rule 6: recomputes the old %38
+  call void @cqrt_copy_i64(i32 %91, i32 %73)    ; IR: rule 6: old %38 ^= t: |0>
+  call void @cq_template_select_i64_unc(i32 %91, i32 %77, i32 %82, i32 %90)
+  call void @cqrt_free(i32 %91)
+  call void @cq_template_sub_i64_hl_unc(i32 %90, i32 %82, i64 8)
+  call void @cqrt_free(i32 %90)
+  call void @cqrt_free(i32 %73)    ; IR: rule 6: release the old %38 rail (|0>); trip 0's is the kept load copy %14
+  call void @cqrt_push(i32 %76)    ; IR: %41 of this trip, for the reverse loop
+  br label %92
+
+92:
+  %93 = add nuw nsw i32 %74, 1    ; IR: %55 = add nuw nsw i32 %39, 1  (classical)
+  br i1 %88, label %72, label %94    ; IR: br i1 %56, label %37, label %35
+
+94:
+  %95 = phi i32 [ 0, %92 ], [ %100, %94 ]
+  %96 = phi i32 [ %83, %92 ], [ %97, %94 ]    ; IR: %51 of the trip being undone
+  %97 = call i32 @cqrt_pop()    ; IR: %41 of that trip
+  %98 = call i32 @cqrt_pop()    ; IR: %46 of that trip (kept: its handle)
+  %99 = call i32 @cqrt_pop()    ; IR: %42 of that trip (kept: its handle)
+  call void @cq_template_select_i32_unc(i32 %96, i32 %99, i32 %98, i32 %97)    ; IR: uncompute %51
+  call void @cqrt_free(i32 %96)
+  %100 = add nuw nsw i32 %95, 1
+  %101 = icmp eq i32 %100, 1
+  br i1 %101, label %102, label %94
+
+102:
+  %103 = call i32 @cqrt_pop()    ; IR: %46 of trip 0 (kept: its handle)
+  %104 = call i32 @cqrt_pop()    ; IR: %42 of trip 0 (kept: its handle)
+  call void @cq_template_select_i32_unc(i32 %97, i32 %104, i32 %103, i32 %66)    ; IR: uncompute %51 of trip 0 (against the load copy %10)
+  call void @cqrt_free(i32 %97)
+  call void @cqrt_qram_load_i32_hl_unc(i32 %66, i32 %3, i64 %15)    ; IR: un-copy %10 (after its last reader; overtaken by trip 0's store, so it stays allocated: rule 5 sentence 1)
+  call void @cqrt_qram_load_i64_hl_unc(i32 %69, i32 %3, i64 %68)    ; IR: un-copy %13 (overtaken, stays allocated)
+  call void @cqrt_qram_load_i64_hl_unc(i32 %70, i32 %3, i64 %67)    ; IR: un-copy %14 (overtaken, stays allocated)
+  call void @llvm.va_end.p0(ptr %6)    ; IR: va_end(%3), as it stands (rule 16)
+  call void @llvm.va_end.p0(ptr %4)    ; IR: va_end(%2), as it stands
+  %105 = call i32 @cq_template_add_i32(i32 %86, i32 %47)    ; IR: %36 = add nsw i32 %54, %32  [the result: llvm.lifetime.end dropped]
+  %106 = call i32 @cq_template_sub_i32(i32 %105, i32 %47)    ; IR: rule 6: (s + t) - s recomputes t (operand 0; neither operand is garbage, so s is kept)
+  call void @cqrt_copy_i32(i32 %106, i32 %86)    ; IR: rule 6: t ^= that: |0>
+  call void @cq_template_sub_i32_unc(i32 %106, i32 %105, i32 %47)
+  call void @cqrt_free(i32 %106)
+  call void @cqrt_free(i32 %86)    ; IR: rule 6: release the %54 rail (|0>)
+  ret i32 %105    ; IR: ret i32 %36  [the rule-6 image is returned directly, no copy-out]
 }
 
-define internal fastcc void @__cq_q_put_01(ptr noundef %0, i32 %1) {
-  store i32 %1, ptr %0, align 4    ; IR: store i32 %1, ptr %0  (the cell takes the handle; no gate, so no _unc twin)
+define i32 @vla_loop_q(i32 noundef %0, double noundef %1, i32 noundef %2, i32 noundef %3) local_unnamed_addr {
+  %5 = call i32 @__cq_mem()    ; the bus M, once at function entry (§5)
+  %6 = call i32 @cqrt_alloc_i32(i32 %0)    ; IR: %5 = cq_theta_si32(%0, %1)  [register x]
+  call void @cqrt_ry_i32(i32 %6, double %1)    ; IR: %5 = cq_theta_si32(%0, %1)  [Ry]
+  %7 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: incoming 0 of phi %13 / %10  [acc before trip 0: trip 0's old acc, cleaned by rule 6; measured itself when no trip runs]
+  %8 = icmp sgt i32 %3, 0    ; IR: %6 = icmp sgt i32 %3, 0  (classical)
+  br i1 %8, label %9, label %11    ; IR: br i1 %6, label %7, label %9
+
+9:
+  %10 = zext i32 %2 to i64    ; IR: %8 = zext i32 %2 to i64  (classical element count)
+  br label %14    ; IR: br label %12
+
+11:
+  %12 = phi i32 [ %7, %4 ], [ %22, %14 ]    ; IR: %10 = phi i32 [ 0, %4 ], [ %19, %12 ]  (a classical phi over handles, rule 9)
+  %13 = call i32 @cqrt_measure_i32(i32 %12)    ; IR: %11 = cq_measure_si32(%10)  [the carried acc: rule 6 left no other acc rail, so no copy-out and no reverse loop]
+  ret i32 %13    ; IR: ret i32 %11
+
+14:
+  %15 = phi i32 [ %7, %9 ], [ %22, %14 ]    ; IR: %13 = phi i32 [ 0, %7 ], [ %19, %12 ]  (acc: a handle)
+  %16 = phi i32 [ 0, %9 ], [ %24, %14 ]    ; IR: %14 = phi i32  (i, classical)
+  %17 = mul i64 %10, 4    ; IR: %16 = alloca i32, i64 %8, align 16  [the VLA's size in bytes, 4 n (classical); %15 = llvm.stacksave() dropped (rule 16)]
+  %18 = call ptr @__cq_alloc(i64 %17, i64 16)    ; IR: %16 = alloca i32, i64 %8, align 16  [bus-resident (passed to put): a zeroed block every trip, no alloca remains (rules 16, 20)]
+  %19 = ptrtoint ptr %18 to i64    ; IR: %16 as its run-time address (classical)
+  %20 = call i32 @cq_template_add_i32_hl(i32 %6, i32 %16)    ; IR: %17 = add nsw i32 %14, %5  (commutative: the _hl form)
+  call fastcc void @__cq_q_put_01(ptr noundef %18, i32 noundef %20)    ; IR: call fastcc @put(%16, %17): the clone of mask 01 (the classical ptr stays a ptr, a value rail); it stores, so no twin (rule 18)
+  call void @cq_template_add_i32_hl_unc(i32 %20, i32 %6, i32 %16)    ; IR: uncompute %17 (a template result the caller passed to a storing clone: its own rule, rule 5 sentence 3)
+  call void @cqrt_free(i32 %20)    ; IR: release the %17 rail (|0>; the cell keeps its copy)
+  %21 = call i32 @cqrt_qram_load_i32_hl(i32 %5, i64 %19)    ; IR: %18 = load i32, ptr %16  [v[0]: a bus load, a rail (rule 3)]
+  %22 = call i32 @cq_template_add_i32(i32 %21, i32 %15)    ; IR: %19 = add nsw i32 %18, %13
+  %23 = call i32 @cq_template_sub_i32(i32 %22, i32 %21)    ; IR: rule 6: t = acc' - v[0] recomputes the old acc (the other operand is the load copy, rule-5 garbage)
+  call void @cqrt_copy_i32(i32 %23, i32 %15)    ; IR: rule 6: old acc ^= t: |0> (trip 0: the |0> seed, unchanged)
+  call void @cq_template_sub_i32_unc(i32 %23, i32 %22, i32 %21)    ; IR: rule 6: uncompute t
+  call void @cqrt_free(i32 %23)    ; IR: release t (|0>)
+  call void @cqrt_free(i32 %15)    ; IR: rule 6: release the old acc rail (|0> after the copy); it is not pushed
+  call void @cqrt_qram_load_i32_hl_unc(i32 %21, i32 %5, i64 %19)    ; IR: un-copy %18 (rule 5: before the next trip's __cq_alloc)
+  call void @cqrt_free(i32 %21)    ; IR: release the %18 rail (|0>); llvm.stackrestore(%15) dropped (rule 16)
+  %24 = add nuw nsw i32 %16, 1    ; IR: %20 = add nuw nsw i32 %14, 1  (classical)
+  %25 = icmp eq i32 %24, %3    ; IR: %21 = icmp eq i32 %20, %3  (classical bound)
+  br i1 %25, label %11, label %14    ; IR: br i1 %21, label %9, label %12
+}
+
+define internal fastcc void @__cq_q_put_01(ptr noundef %0, i32 noundef %1) unnamed_addr {
+  %3 = call i32 @__cq_mem()    ; the bus M
+  %4 = ptrtoint ptr %0 to i64    ; IR: %0 as its run-time address (mask digit 0: the formal is the C ptr)
+  call void @cqrt_qram_store_i32_hl(i32 %3, i64 %4, i32 %1)    ; IR: store i32 %1, ptr %0  [the value rail at a classical address; kept store: no _unc, the clone has no twin]
   ret void    ; IR: ret void
 }
 
-declare void @cq_template_bswap_i32_unc(i32, i32)
-
+declare i32 @__cq_mem()
+declare ptr @__cq_alloc(i64, i64)
 declare i32 @cqrt_alloc_i32(i32)
+declare i32 @cqrt_alloc_i64(i64)
 declare void @cqrt_ry_i32(i32, double)
 declare i32 @cqrt_measure_i32(i32)
 declare void @cqrt_free(i32)
 declare void @cqrt_copy_i32(i32, i32)
+declare void @cqrt_copy_i64(i32, i32)
+declare void @cqrt_not_i1(i32)
 declare void @cqrt_push(i32)
 declare i32 @cqrt_pop()
+declare void @cqrt_qram_store_i32_hl(i32, i64, i32)
+declare void @cqrt_qram_store_i64_hl(i32, i64, i32)
+declare void @cqrt_qram_store_i32_hl_controlled(i32, i32, i64, i32)
+declare void @cqrt_qram_store_i64_hl_controlled(i32, i32, i64, i32)
+declare i32 @cqrt_qram_load_i32_hl(i32, i64)
+declare void @cqrt_qram_load_i32_hl_unc(i32, i32, i64)
+declare i32 @cqrt_qram_load_i64_hl(i32, i64)
+declare void @cqrt_qram_load_i64_hl_unc(i32, i32, i64)
+declare i32 @cqrt_qram_load_i8_hl(i32, i64)
+declare void @cqrt_qram_store_i8_hl(i32, i64, i32)
+declare i32 @cqrt_qram_load_i32(i32, i32)
+declare void @cqrt_qram_load_i32_unc(i32, i32, i32)
 declare i32 @cq_template_smin_i32_hl(i32, i32)
 declare i32 @cq_template_bswap_i32(i32)
+declare void @cq_template_bswap_i32_unc(i32, i32)
 declare i32 @cq_template_usub_sat_i32_hl(i32, i32)
 declare i32 @cq_template_add_i32(i32, i32)
-declare void @cq_template_add_i32_unc(i32, i32, i32)
+declare i32 @cq_template_sub_i32(i32, i32)
+declare void @cq_template_sub_i32_unc(i32, i32, i32)
 declare i32 @cq_template_add_i32_hl(i32, i32)
 declare void @cq_template_add_i32_hl_unc(i32, i32, i32)
-declare void @llvm.memcpy.p0.p0.i64(ptr noalias nocapture writeonly, ptr noalias nocapture readonly, i64, i1 immarg)
-declare ptr @llvm.stacksave.p0()
-declare void @llvm.stackrestore.p0(ptr)
-
-attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
+declare i32 @cq_template_icmp_ult_i32_hl(i32, i32)
+declare void @cq_template_icmp_ult_i32_hl_unc(i32, i32, i32)
+declare i32 @cq_template_zext_i32_to_i64(i32)
+declare void @cq_template_zext_i32_to_i64_unc(i32, i32)
+declare i32 @cq_template_add_i64(i32, i32)
+declare void @cq_template_add_i64_unc(i32, i32, i32)
+declare i32 @cq_template_add_i64_hl(i32, i64)
+declare i32 @cq_template_sub_i64_hl(i32, i64)
+declare void @cq_template_sub_i64_hl_unc(i32, i32, i64)
+declare i32 @cq_template_select_i32(i32, i32, i32)
+declare void @cq_template_select_i32_unc(i32, i32, i32, i32)
+declare i32 @cq_template_select_i64(i32, i32, i32)
+declare void @cq_template_select_i64_unc(i32, i32, i32, i32)
+declare void @llvm.va_end.p0(ptr)
 
 !llvm.module.flags = !{!0, !1, !2, !3, !4}
 !llvm.ident = !{!5}

@@ -6,6 +6,12 @@ primitives; the 2026-10-27 run reports 51 covered intrinsics measured from the e
 in some `examples/*/*.O1.ll` (constrained FP intrinsics by the 80–82 template grammar when the plain op does).
 Not part of the spec: `examples/` and `CQ.h` are the spec; this file records a measurement.
 
+**Memory model of the measurement.** Every number in this file was measured while the examples lowered memory by the
+retired per-object model; none was re-run under the flat memory bus (CONSTRUCTION_RULES.md §1.3, rules 20–22). The
+census reads only `examples/*/*.O1.ll`, which the memory model does not change. An example marked † is owed
+regeneration (flat memory): its `.O1.ll` still counts for the census, its lowering is not normative for memory, and
+neither checker can verify a bus-form lowering yet (`_tools/README.txt`, TOOL STATUS).
+
 ## Method
 
 Every C-standard-library translation unit of **musl** (commit `b1efda5`, 2026-10-05) is compiled with
@@ -55,35 +61,35 @@ The per-directory rows are the stock build; with `--arch-cq` every directory is 
 The 86 stock-build non-clean TUs all carry inline asm and nothing else uncovered: `syscall` 50, thread-local storage
 (`%fs:`) 42, x86 atomics (`lock`/`xchg`) 16, traps (`hlt`/`ud2`) 6, `bsf`/`bsr` 2 (an empty asm with a memory clobber is
 a compiler fence and is not counted). That is the
-kernel/CPU boundary: it stays classical and is where the tape (47, 99, 102) hands effects over. The two
+kernel/CPU boundary: it stays classical and is where the tape (47, 99†, 102†) hands effects over. The two
 `bsf`/`bsr` cases are the only asm that computes a value; they are `llvm.cttz`/`llvm.ctlz` in disguise (56).
 
 ## Which examples closed which construct
 
 | construct (first seen in the census) | example |
 |---|---|
-| quantum pointers: select/phi of pointers, deref of a multi-origin pointer | 84, 85 |
-| pointer difference and comparison, pointer-carried loop, `int **`, stored pointers | 86, 87, 88 |
-| `ptrtoint` / `inttoptr` | 89 |
-| `llvm.memcpy` / `memset` with a tainted length | 90 |
-| `malloc` / `realloc` / `free` with a quantum size, allocation in a loop | 91 |
+| quantum pointers (a 64-bit address rail): select/phi of pointers, deref of a quantum address | 84†, 85† |
+| pointer difference and comparison, pointer-carried loop, `int **`, stored pointers | 86†, 87†, 88† |
+| `ptrtoint` / `inttoptr` (identities) | 89† |
+| `llvm.memcpy` / `memset` with a tainted length | 90† |
+| `malloc` / `realloc` / `free` with a quantum size, allocation in a loop | 91† |
 | `llvm.*.with.overflow`, `llvm.*.sat` | 92 |
 | `i128` | 93 |
-| `cmpxchg`, `atomicrmw`, `fence`, atomic load/store | 94 |
-| `va_start` / `va_arg` | 95 |
-| indirect call through a classical pointer, through a quantum pointer | 96, 97 |
+| `cmpxchg`, `atomicrmw`, `fence`, atomic load/store | 94† |
+| `va_start` / `va_arg` | 95† |
+| indirect call through a classical pointer, through a quantum pointer | 96, 97† |
 | recursion with quantum depth | 98 |
-| byte output | 99 |
+| byte output | 99† |
 | `fesetenv(FE_DFL_ENV)`, narrow exception masks, constrained op in a quantum arm, quantum `fesetround` | 100 |
 | `setjmp` / `longjmp` | 101 |
-| `raise`, `signal`, `remove` under a quantum predicate | 102 |
+| `raise`, `signal`, `remove` under a quantum predicate | 102† |
 | `<2 x float>` (the x86-64 ABI of `float _Complex`) | 103 |
 | `llvm.is.fpclass` | 104 |
-| `llvm.ptrmask` | 105 |
-| `pthread_create` / `join`, mutexes (single-thread collapse) | 106 |
-| union of pointer and integer: punning on values and through a slot | 107 |
-| `llvm.cttz`, `llvm.trap` under a quantum predicate, a thread-local slot (the CQ arch primitives) | 108 |
-| `llvm.smin`, `llvm.bswap`, `llvm.usub.sat`, `llvm.va_copy`, `llvm.stacksave`/`stackrestore` | 109 |
+| `llvm.ptrmask` | 105† |
+| `pthread_create` / `join`, mutexes (single-thread collapse) | 106† |
+| union of pointer and integer: punning on values and through memory | 107† |
+| `llvm.cttz`, `llvm.trap` under a quantum predicate, a thread-local object (the CQ arch primitives) | 108† |
+| `llvm.smin`, `llvm.bswap`, `llvm.usub.sat`, `llvm.va_copy`, `llvm.stacksave`/`stackrestore` | 109† |
 | C23 `_BitInt(N)` (templates per width N on demand) | 110 |
 | C23 `_Float16` (`half`, promoted through `fpext`/`fptrunc`) | 111 |
 | `llvm.uadd`/`usub.with.overflow`, `llvm.fshr` (LLVM libc's libm) | 112 |
@@ -95,23 +101,26 @@ the library build (like openlibm's `src/` vs `.S`), not a lowering gap:
 
 | asm kind | model | lowering | TUs it alone explains |
 |---|---|---|---|
-| atomics, barriers | ordinary memory ops; a fence is nothing | 94 | 1 |
-| TLS (`%fs:` thread pointer) | one thread: the TLS block is a global object | 67/71 | 30 cumulative |
+| atomics, barriers | ordinary memory ops; a fence is nothing | 94† | 1 |
+| TLS (`%fs:` thread pointer) | one thread: the TLS block is a global object, bus memory like any other | 67†/71† | 30 cumulative |
 | `bsf`/`bsr` | `cttz`/`ctlz` | 56 | 32 |
 | traps | `abort` | 45 | 34 |
-| `syscall` | a classical host call; quantum args or a quantum predicate make it a tape entry | 47/102 | the remaining 49 |
+| `syscall` | a classical host call, its buffers host memory seen through the bus overlay; quantum args or a quantum predicate make it a tape entry | 47/102† | the remaining 49 |
 
 Threads (owner, 2026-10-20): reversibility needs a deterministic program, so pthread/`threads.h` code is lowered
-under the **single-thread collapse** (Bennett.jl's stance): data-race-free fork/join gives the same result under
-every schedule, and the sequential one is taken (106: `create` = a clone call, `join` = nothing, locks = no-ops).
+under the **single-thread collapse**: data-race-free fork/join gives the same result under
+every schedule, and the sequential one is taken (106†: `create` = a clone call, `join` = nothing, locks = no-ops).
 Condition variables, barriers and busy-waits need a scheduler and stay out of scope. Multi-QPU placement is a
 backend matter over the handle graph, not a lowering concern.
 
 The musl build for the library bundle is `_tools/musl_arch_cq/` (owner, 2026-10-20): three headers replacing musl's
 arch primitives by the builtin with the same contract — `atomic_arch.h` → `__atomic_*`, `__builtin_ctzll`/`clzll`,
 `__builtin_trap`; `pthread_arch.h` → the address of one bundle-provided TLS object `__cq_tp` (one thread); `syscall_arch.h`
-→ a bodiless `__cq_syscall(n, a1..a6)`. Measured with them: **752/752**; the single classical boundary is `__cq_syscall`,
-a host call with classical arguments and a tape entry (102) under quantum control.
+→ a bodiless `__cq_syscall(n, a1..a6)`. Measured with them: **752/752**; the classical boundaries are the stream calls of CR rule 16 (every `<stdio.h>` function and `open`/`close`/`read`/`write`/`lseek`: host calls, never lifted; the stdio row counts their musl bodies, which a lowered program reaches only through the string formatters) and `__cq_syscall`,
+a host call with classical arguments and a tape entry (102†) with a quantum argument or under quantum control. Memory
+the call reads or writes is host memory, which the bus overlay shares with no seeding and no write-back; a QUANTUM cell
+it reads is an unspecified byte. `malloc`, `calloc`, `aligned_alloc`, `realloc` and `free` calls of a lowered program
+are served by the bundle allocator `__cq_alloc`, not by musl's `malloc` TUs, which the census still counts.
 
 ## openlibm (math.h, complex.h), measured earlier the same day
 
@@ -135,11 +144,11 @@ No examples yet; the two IR constructs they add that the corpus lacks, to be pin
 1. `invoke` / `landingpad` / `resume` (C++ exceptions, Rust `panic=unwind`): 101's mechanism generalised — the
    callee's clone returns `{ result, unwound }`, the landing pad is the escaped continuation, destructors and
    drops are clones run under the unwound flag. With `-fno-exceptions` / `-C panic=abort` it reduces to 45.
-2. The Rust scalar-pair ABI (`{ i64, i64 }` for small aggregates) and `sret` for large returns: width
-   variants of 64/70.
+2. The Rust scalar-pair ABI (`{ i64, i64 }` for small aggregates): width variants of 64. `sret` for large
+   returns: bus memory at its address like any object (70†).
 
 Everything else (slices, `Option<&T>` niches, enums, bounds checks, vtables, generics, `Box`/`Vec`, closures,
-atomics) maps onto examples 22, 45, 64, 84–97. Rust must be compiled at `-C opt-level=1` (its level 0 leaves
+atomics) maps onto examples 22, 45, 64, 84–97 (all of 84–97 but 92, 93, 96 are †). Rust must be compiled at `-C opt-level=1` (its level 0 leaves
 every alloca, like C `-O0`). A census of libc++ / Rust `core`+`alloc` with `_tools/libc_census.py`'s method is
 the first measurement to take.
 
@@ -154,8 +163,8 @@ The pass sees IR, so C23 matters only where it adds a type or an intrinsic. Comp
 | `_Float128` | clang 19 does not accept the type in C; `__float128` gives `fp128` ops on Linux targets only (not on this Darwin host) | width variant of 19 (`fdiv fp128`); no example, nothing to trace here |
 | `_Decimal32/64/128` | not implemented by clang | nothing to lower |
 | `stdckdint.h` (`ckd_add`…) | `llvm.*.with.overflow` + `extractvalue` + `select` | 92 |
-| `stdbit.h` | `__builtin_clzg`/`ctzg`/`popcountg` → `ctlz`/`cttz`/`ctpop` | 56, 108 (the header itself is the libc's; clang 19 ships none and musl b1efda5 has none yet) |
-| `unreachable()`, `#embed`, `nullptr`, `typeof`, `constexpr`, `auto`, binary literals, attributes, enum underlying types | `unreachable` (45), constant data (29/50), or nothing | covered / none |
+| `stdbit.h` | `__builtin_clzg`/`ctzg`/`popcountg` → `ctlz`/`cttz`/`ctpop` | 56, 108† (the header itself is the libc's; clang 19 ships none and musl b1efda5 has none yet) |
+| `unreachable()`, `#embed`, `nullptr`, `typeof`, `constexpr`, `auto`, binary literals, attributes, enum underlying types | `unreachable` (45), constant data (29†/50†), or nothing | covered / none |
 
 So C23 costs one rule (parametric widths, 110) and one width example (111): every other language addition folds into IR the corpus already pins.
 
