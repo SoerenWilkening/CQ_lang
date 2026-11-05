@@ -55,7 +55,7 @@ CHECKED = {"invert.O1.ll": ["p_flat", "p_arms", "p_nest", "p_around", "p_two"],
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(|call void asm")
 # Two markers of one kind in exclusive quantum arms, neither paired in its arm: rule 17 does not say how they merge.
 EXCL = "SPEC_ISSUES: two cq_invert end markers in arms of a quantum branch that exclude each other"
-ERRORS = {
+ERRORS = {}
 MARKER = re.compile(r"call void @(?:__cq|cqrt)_invert_(begin|end)\(")
 
 

@@ -282,7 +282,7 @@ public:
           int32_t c = 0;
           if (cs && idOf.count(cs))
             c = idOf[cs];
-          bool lvl = recursive(&F, G) && (T.controlTainted(CB->getParent(), S) || S.depth > 0);
+          bool lvl = recursive(&F, G) && T.controlTainted(CB->getParent(), S);
           if (lvl && c == 0 && G == &F)
             c = i;  // a level past the clones taint built: the frame keeps its specialization
           if (c) {
