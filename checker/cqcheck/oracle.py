@@ -484,14 +484,12 @@ def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[in
 
     def fill(d: Path) -> None:
         linked = d / "linked.bc"
-        # no direct host call runs for real (rulings Q8), and the named outputs in memory get their reader
-        # beside the program's globals (drivers.py; both on the program's own text)
+        # no direct host call runs for real (rulings Q8)
         from . import drivers
         callees = drivers.effect_callees(text, frozenset(defined) | drivers.corpus_roots())
         renamed = _k2_sites(drivers.rename_effects(text, callees), text)
         decls = "".join(f"declare {r} @{drivers.FX_PREFIX}{c}({p})\n" for c, (_, r, p) in callees.items())
-        (d / "prog.ll").write_text(renamed + decls
-                                   + drivers.out_globals_ir(text, text, "__cqo_out_globals", "__cqo_out_mem", "__cqo_out_object"))
+        (d / "prog.ll").write_text(renamed + decls)
         (d / "fx.ll").write_text(f'target triple = "{triple}"\n' + drivers.effect_wrappers_ir(callees))
         _run([_tool("clang"), "-target", triple, "-O0", "-Wno-override-module", "-c", str(d / "fx.ll"), "-o", str(d / "fx.o")],
              "compiling the host calls' wrappers")
@@ -508,9 +506,14 @@ def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[in
         iso = sorted(set(und) & _ISOLATE) + (["thread_local"] if "thread_local" in text else [])
         (d / "isolate.txt").write_text("".join(n + "\n" for n in iso))
         _run([_tool("opt"), f"-load-pass-plugin={plugin}", "-passes=cq-oracle",
-              f"-cq-oracle-stubs={d / 'stubs.txt'}", *kf, str(linked), "-o", str(d / "prog.bc")],
+              f"-cq-oracle-stubs={d / 'stubs.txt'}", *kf, "-S", str(linked), "-o", str(d / "prog.inst.ll")],
              "the cq-oracle instrumentation of the program")
-        _run([_tool("clang"), "-target", triple, "-O0", "-Wno-override-module", "-c", str(d / "prog.bc"),
+        # the named outputs' reader joins after the instrumentation: its uses of the globals' addresses
+        # are no escape of the program's (rule 2's collapse reads them), and its accesses no program access
+        inst = (d / "prog.inst.ll").read_text()
+        (d / "prog.inst.ll").write_text(inst + drivers.out_globals_ir(text, inst, "__cqo_out_globals", "__cqo_out_mem",
+                                                                       "__cqo_out_object"))
+        _run([_tool("clang"), "-target", triple, "-O0", "-Wno-override-module", "-c", str(d / "prog.inst.ll"),
               "-o", str(d / "prog.o")], "compiling the instrumented program")
 
     d = _atomic_dir(_build_root() / "prog" / f"{o1.stem}-{key}", fill)
