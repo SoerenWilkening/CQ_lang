@@ -124,6 +124,8 @@ struct SpecState {
   bool hasEventT = false;
   // Rule 20 (b): the allocas of F this specialization demoted (bus-resident); every other is host-resident.
   llvm::SmallPtrSet<const llvm::AllocaInst *, 4> demoted;
+  // Rule 24: each volatile access of this specialization, read off its pointer operand on the pristine module.
+  llvm::DenseMap<const llvm::Instruction *, bool> volObservable;
   bool anyQuantum = false;
   // Rule 23 (cq-pu8b): the floating-point environment as point-wise state (see FenvState below).
   // fenvIn is concrete (the join of every caller's state at its call; 0 for a root), every other
@@ -155,6 +157,8 @@ struct ImplState {
   std::unique_ptr<llvm::TargetLibraryInfoImpl> TLII;
   std::unique_ptr<llvm::TargetLibraryInfo> TLI;
 
+  // Rule 20 (a), rule 24: the host-resident globals, read on the pristine module.
+  llvm::DenseSet<const llvm::GlobalVariable *> hostGlobals;
   std::vector<std::unique_ptr<SpecState>> specs;
   std::map<std::string, SpecState *> byKey;
   std::map<const llvm::Function *, std::unique_ptr<FnInfo>> fns;

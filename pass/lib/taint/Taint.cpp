@@ -142,10 +142,10 @@ bool countsAsCall(const CallBase &CB) {
   }
 }
 
-// Rule 24: every use of the global is, through getelementptrs, a load or a store through it (lifetime and debug
-// intrinsics aside).
-bool onlyAccessedThrough(const GlobalVariable &GV, bool *stored = nullptr) {
-  SmallVector<const Value *, 8> work{&GV};
+// Rule 24: every use of the object is, through getelementptrs with untainted indices, a load or a store through it
+// (lifetime and debug intrinsics aside).
+bool onlyAccessedThrough(const Value &Obj, function_ref<bool(const Value *)> tainted, bool *stored = nullptr) {
+  SmallVector<const Value *, 8> work{&Obj};
   SmallPtrSet<const Value *, 16> seen;
   while (!work.empty()) {
     const Value *V = work.pop_back_val();
@@ -153,7 +153,10 @@ bool onlyAccessedThrough(const GlobalVariable &GV, bool *stored = nullptr) {
       continue;
     for (const Use &Us : V->uses()) {
       const User *U = Us.getUser();
-      if (isa<GEPOperator>(U) && Us.getOperandNo() == 0) {
+      if (auto *G = dyn_cast<GEPOperator>(U); G && Us.getOperandNo() == 0) {
+        for (const Use &Idx : G->indices())
+          if (tainted(Idx.get()))
+            return false;
         work.push_back(U);
       } else if (isa<LoadInst>(U)) {
         continue;
@@ -177,7 +180,8 @@ bool hostGlobal(const GlobalVariable &GV) {
   if (GV.isConstant())
     return true;
   bool stored = false;
-  return GV.hasLocalLinkage() && GV.hasInitializer() && onlyAccessedThrough(GV, &stored) && !stored;
+  return GV.hasLocalLinkage() && GV.hasInitializer() &&
+         onlyAccessedThrough(GV, [](const Value *) { return false; }, &stored) && !stored;
 }
 
 // <fenv.h> (C17 7.6): the floating-point environment calls rule 23 splits into host and rail parts.
@@ -282,6 +286,14 @@ private:
   // The host-resident object p reaches, else nullptr (rule 20: no pointer is otherwise resolved).
   const Value *hostObject(const Value *ptr);
   bool quantumScope(const BasicBlock *BB) const { return blockCT(BB) || cur->ctl; }
+  // Rule 24's test of a getelementptr index: a value of another function has no answer in this specialization.
+  std::function<bool(const Value *)> ownTainted() {
+    return [this](const Value *v) {
+      auto *I = dyn_cast<Instruction>(v);
+      auto *Ar = dyn_cast<Argument>(v);
+      return !(I && I->getFunction() != cur->F) && !(Ar && Ar->getParent() != cur->F) && L(v).any();
+    };
+  }
   void transferLoad(LoadInst &LI);
   void transferStore(Instruction &I, Value *ptr, Value *val);
   void transferMemIntrinsic(MemIntrinsic &MI);
@@ -1370,14 +1382,21 @@ void Analyzer::demoteAllocas(SpecState &S) {
       }
 }
 
-// Rule 24: an access is unobservable when its pointer reaches, through getelementptrs, an alloca or an internal
-// global whose every use is a load or store through it; every other volatile access is observable.
-static bool observableVolatile(const Value *ptr) {
-  const Value *b = getUnderlyingObject(ptr);
-  if (isa<AllocaInst>(b))
-    return false;
+// Rule 24: a volatile access is unobservable when its pointer operand is, through getelementptrs with untainted
+// indices, an alloca or an internal global whose every use is, through such getelementptrs, a load or a store through
+// it; every other volatile access is observable.
+bool observableVolatile(const Value *ptr, function_ref<bool(const Value *)> tainted) {
+  const Value *b = ptr;
+  while (auto *G = dyn_cast<GEPOperator>(b)) {
+    for (const Use &Idx : G->indices())
+      if (tainted(Idx.get()))
+        return true;
+    b = G->getPointerOperand();
+  }
   auto *GV = dyn_cast<GlobalVariable>(b);
-  return !(GV && GV->hasLocalLinkage() && onlyAccessedThrough(*GV));
+  if (!isa<AllocaInst>(b) && !(GV && GV->hasLocalLinkage()))
+    return true;
+  return !onlyAccessedThrough(*b, tainted);
 }
 
 void Analyzer::transferLoad(LoadInst &LI) {
@@ -1386,7 +1405,7 @@ void Analyzer::transferLoad(LoadInst &LI) {
   // Rule 3: every load is a bus load and its result a rail, except a load of a host-resident object with no quantum
   // predicate in scope (rule 20) and an observable volatile load at a classical address (rule 24).
   bool host = hostObject(ptr) && !quantumScope(LI.getParent());
-  bool volatileHost = LI.isVolatile() && observableVolatile(ptr) && !L(ptr).any();
+  bool volatileHost = LI.isVolatile() && observableVolatile(ptr, ownTainted()) && !L(ptr).any();
   if (!host && !volatileHost)
     cur->busLoad = true;
   setL(&LI, host || volatileHost ? Lanes(n) : allLanes(n));
@@ -1396,7 +1415,7 @@ void Analyzer::transferStore(Instruction &I, Value *ptr, Value *val) {
   auto *SI = dyn_cast<StoreInst>(&I);
   if (SI && hostObject(ptr) && !L(val).any() && !quantumScope(I.getParent()))
     return;   // a plain store into a host-resident object (rule 20)
-  if (SI && SI->isVolatile() && observableVolatile(ptr)) {
+  if (SI && SI->isVolatile() && observableVolatile(ptr, ownTainted())) {
     if (L(ptr).any() || L(val).any() || quantumScope(I.getParent())) {
       cur->hasEffect = true;   // rule 24: the effect entry volatile_store
       cur->anyQuantum = true;
@@ -3079,10 +3098,16 @@ bool TaintInfo::hostResident(const llvm::Value *obj, const Specialization &S) co
   const ImplState &I = needImpl(impl);
   const SpecState *SS = stateOf(I, S);
   if (auto *GV = dyn_cast<llvm::GlobalVariable>(obj))
-    return hostGlobal(*GV);
+    return I.hostGlobals.count(GV);
   if (auto *AI = dyn_cast<llvm::AllocaInst>(obj))
     return AI->getFunction() == SS->F && !SS->demoted.count(AI);
   return false;
+}
+
+bool TaintInfo::observableVolatile(const llvm::Instruction &access, const Specialization &S) const {
+  const SpecState *SS = stateOf(needImpl(impl), S);
+  auto it = SS->volObservable.find(&access);
+  return it == SS->volObservable.end() || it->second;
 }
 
 const llvm::Value *TaintInfo::hostObjectOf(const llvm::Value *p, const Specialization &S) const {
@@ -3227,6 +3252,28 @@ TaintInfo computeTaint(llvm::Module &M, const TaintOptions &opts) {
   T.impl->opts = opts;
   taintimpl::Analyzer A(*T.impl);
   A.run();
+  // The answers that read a global's uses, taken now: the module the pass then builds beside the bodies uses them too.
+  for (const llvm::GlobalVariable &GV : M.globals())
+    if (taintimpl::hostGlobal(GV))
+      T.impl->hostGlobals.insert(&GV);
+  for (auto &SS : T.impl->specs) {
+    if (!SS->F || SS->F->isDeclaration())
+      continue;
+    auto tainted = [&](const llvm::Value *v) {
+      auto *In = dyn_cast<llvm::Instruction>(v);
+      auto *Ar = dyn_cast<llvm::Argument>(v);
+      if ((In && In->getFunction() != SS->F) || (Ar && Ar->getParent() != SS->F))
+        return false;
+      return lanesOfValue(*T.impl, *SS, v).any();
+    };
+    for (const llvm::BasicBlock &BB : *SS->F)
+      for (const llvm::Instruction &X : BB) {
+        const llvm::LoadInst *LI = dyn_cast<llvm::LoadInst>(&X);
+        const llvm::StoreInst *St = dyn_cast<llvm::StoreInst>(&X);
+        if ((LI && LI->isVolatile()) || (St && St->isVolatile()))
+          SS->volObservable[&X] = taintimpl::observableVolatile(llvm::getLoadStorePointerOperand(&X), tainted);
+      }
+  }
   return T;
 }
 } // namespace cq

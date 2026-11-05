@@ -652,6 +652,22 @@ static void op_tape_fmt(int ctl, int32_t c, int32_t t, const char *s, const char
   if (!e->need) entry_complete(e);
 }
 
+/* CR rule 24: the store a `volatile_store` entry stands for (address, then the value's fields, little-endian), a write
+ * the backend makes for the entry (ABI §1.10), so later host reads and the named outputs see what the C program stored. */
+static void perform_volatile_store(event *e) {
+  if (e->nfields < 2 || !e->pred || e->behind_abort)
+    return;
+  if (!g_bus) { cqe_fail("tape: %s: a bus store with no bus linked", e->str); return; }
+  uint64_t at = field_low64(&e->fields[0]);
+  for (int i = 1; i < e->nfields; i++) {
+    const field *f = &e->fields[i];
+    unsigned bytes = f->w[0] == 'f' ? (!strcmp(f->w, "f80") ? 10 : (unsigned)strtoul(f->w + 1, NULL, 10) / 8)
+                                    : ((unsigned)strtoul(f->w + 1, NULL, 10) + 7) / 8;
+    for (unsigned j = 0; j < bytes; j++)
+      g_bus->cstore(at++, (uint8_t)(f->v.w[j / 8] >> (8 * (j % 8))));
+  }
+}
+
 /* Returns the result rail, or 0 for the bare form. */
 static int32_t op_tape_effect(int32_t c, int32_t t, const char *name, const char *rw, const char *sym) {
   ensure_exit();
@@ -675,6 +691,7 @@ static int32_t op_tape_effect(int32_t c, int32_t t, const char *name, const char
   }
   if (!name && e->nfields == 0) cqe_fail("tape: %s: a null name with no host address field", sym);
   entry_log(e, seq);
+  if (name && !strcmp(name, "volatile_store")) perform_volatile_store(e);
   if (ent && e->nfields < (int)strlen(ent->roles))
     cqe_fail("tape: %s: %s has %d fields, its arguments are %d", sym, name, e->nfields, (int)strlen(ent->roles));
   e->complete = 1;

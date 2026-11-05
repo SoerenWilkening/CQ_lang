@@ -24,7 +24,10 @@ namespace cq::tape   { void lowerHostEffect(LoweringContext &, llvm::CallBase &)
                        // cq-lyzw (CR rule 24 at f684858): an observable volatile store with quantum data,
                        // the rule-16 effect entry `volatile_store` under the predicate: its address field
                        // (an i64, literal when classical), then the stored value's fields (its lanes).
-                       void lowerVolatileStore(LoweringContext &, llvm::StoreInst &, Operand address); }
+                       void lowerVolatileStore(LoweringContext &, llvm::StoreInst &, Operand address);
+                       // CR rule 24: an observable volatile load at an address rail, the effect entry `volatile_load`:
+                       // the address field, then tape_effect_<W>_controlled, whose result rail is the value (bound).
+                       void lowerVolatileLoad(LoweringContext &, llvm::LoadInst &, Operand address); }
 namespace cq::invert { // cq-4593 (cq-arch 2026-11-02, CR rule 17, §1.3): a __cq_invert_begin/_end call becomes
                        // cqrt_invert_begin/_end where the walker reaches it (the region's code is lowered as
                        // anywhere else); CQ.h's asm fence beside a marker (isMarkerFence) emits nothing.

@@ -73,9 +73,9 @@ SHAPES = {"p_vol_internal": (None, r"volatile"),
           "p_runtime_routine": (r"call ptr %\d+\(ptr", r"@pthread_(create|join)\("),
           "p_vol_atomic": (r"store atomic volatile i32 %\d+, ptr @vcell seq_cst", None),
           "p_sj_scalar": _SJ, "p_sj_void": _SJ, "p_sj_classical": _SJ, "p_sj_qarm": _SJ,
-          "vol_quantum_observable": (r"cqrt_tape_effect_controlled\([^\n]*@\.cq\.effect\.volatile_store\)[\s\S]*"
-                                     r"cqrt_tape_write_i64_lit\(i32 %\d+, i64 ptrtoint \(ptr @sink to i64\)\)"
-                                     r"[\s\S]*cqrt_tape_write_i32\(", r"store volatile"),
+          "vol_quantum_observable": (r"cqrt_tape_write_i64_lit\(i32 %\d+, i64 ptrtoint \(ptr @sink to i64\)\)"
+                                     r"[\s\S]*cqrt_tape_write_i32\([\s\S]*"
+                                     r"cqrt_tape_effect_controlled\([^\n]*@\.cq\.effect\.volatile_store\)", r"store volatile"),
           "p_vol_obs_pred": (r"@\.cq\.effect\.volatile_store", r"store volatile"),
           "p_rmw_fat": (None, r"atomicrmw|cmpxchg"), "p_cas_fat": (None, r"atomicrmw|cmpxchg"),
           "p_sjh_local": (r"call i32 @setjmp\(", None), "p_sjh_two": (r"call i32 @setjmp\(ptr[^\n]*@twice", None),

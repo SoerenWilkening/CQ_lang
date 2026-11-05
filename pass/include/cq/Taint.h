@@ -37,6 +37,10 @@ public:
   bool isTainted(const llvm::Function &) const;   // Q2: F is rewritten (not its own lowering)
   // A1: control dependence on tainted terminators is taint's answer (rules 3, 9, 20).
   bool controlTainted(const llvm::BasicBlock *, const Specialization &) const;
+  // Rule 24: is this volatile load or store observable? Not when its pointer operand is, through getelementptrs with
+  // untainted indices, an alloca or an internal global whose every use is, through such getelementptrs, a load or a
+  // store through it.
+  bool observableVolatile(const llvm::Instruction &access, const Specialization &) const;
   llvm::ArrayRef<Specialization> specializations() const;
   const Specialization *calleeSpecialization(const llvm::CallBase &, const Specialization &caller) const;
   // cq-s2zz (CR rule 19): every candidate taint lifted for an indirect call (or raise's handlers), in its
