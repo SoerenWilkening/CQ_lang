@@ -2863,8 +2863,7 @@ SmallVector<RailId, 4> Uncompute::recordCall(CallInst *fwd, ArrayRef<Value *> ou
                                              bool loadsBus) {
   Impl &I = *impl;
   if (loadsBus)
-    report_fatal_error("cq: unimplemented: bus: recordCall of a callee that loads from the bus (rule 18)",
-                       /*gen_crash_diag=*/false);
+    noteUnbuilt("bus: recordCall of a callee that loads from the bus (rule 18)", fwd);
   if (!directOrResolved(fwd) || !fwd->getParent())
     internalError("uncompute: recordCall: the forward must be a direct call in a block", fwd);
   if (outs.empty())

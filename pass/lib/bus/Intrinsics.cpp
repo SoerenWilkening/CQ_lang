@@ -364,10 +364,20 @@ static void emitSet(LoweringContext &ctx, Operand dst, Operand byte, Operand len
 }
 
 // A rail length: min(K2, B) trips, and the kept overflow predicate n > K2 when B > K2 or no bound is known.
-static Value *quantumTrips(LoweringContext &ctx, Operand n, std::optional<uint64_t> bound) {
+// Under a predicate c in scope the kept overflow is (n > K2) & c (rule 22 with rule 14's chain), the raw compare undone at once.
+static Value *quantumTrips(LoweringContext &ctx, Operand n, std::optional<uint64_t> bound, Value *c) {
   uint64_t k2 = K2(ctx);
   Type *I64 = Type::getInt64Ty(ctx.M.getContext());
   if (!bound || *bound > k2) {
+    if (c) {
+      abi::TemplateSpec g = ugtHl();
+      CallInst *r = rawTemplate(ctx, g, {n.v, ConstantInt::get(I64, k2)});
+      CallInst *o = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, W1}, {ConstantInt::getFalse(ctx.M.getContext())});
+      ctx.unc().recordExternal(o, Role::KeptOverflow);
+      ctx.emitCore(abi::CoreSpec{abi::Core::AndI1}, {r, c, o});
+      undoRaw(ctx, g, r);
+      return ConstantInt::get(I64, k2);
+    }
     Value *o = ctx.emitTemplate(ugtHl(), {n, Operand{ConstantInt::get(I64, k2), false}});
     ctx.unc().setRole(ctx.unc().idOf(o), Role::KeptOverflow);
     return ConstantInt::get(I64, k2);
@@ -378,19 +388,30 @@ static Value *quantumTrips(LoweringContext &ctx, Operand n, std::optional<uint64
 void lowerMemIntrinsic(LoweringContext &ctx, MemIntrinsic &MI) {
   const Value *len = MI.getLength();
   Operand n = ctx.operand(len);
-  if (!len->getType()->isIntegerTy(64))
-    report_fatal_error("cq: unimplemented: bus: a memory intrinsic whose length is not i64", /*gen_crash_diag=*/false);
+  if (!len->getType()->isIntegerTy(64)) {
+    noteUnbuilt("bus: a memory intrinsic whose length is not i64 (brought to i64)", &MI);
+    unsigned bits = len->getType()->getIntegerBitWidth();
+    if (!n.handle) {
+      n = Operand{ctx.B().CreateZExtOrTrunc(n.v, Type::getInt64Ty(ctx.M.getContext())), false};
+    } else {
+      abi::TemplateSpec z;
+      z.op = bits > 64 ? "trunc" : "zext";
+      z.w = RailType{Kind::Int, bits};
+      z.to = RailType{Kind::Int, 64};
+      n = Operand{ctx.emitTemplate(z, {n}), true};
+    }
+  }
   Value *ctl = accessControl(ctx);
   Operand dst = address(ctx, MI.getRawDest());
   if (auto *M = dyn_cast<MemSetInst>(&MI)) {
     Operand byte = ctx.operand(M->getValue());
-    Value *trips = n.handle ? quantumTrips(ctx, n, rangeBound(ctx, len)) : n.v;
+    Value *trips = n.handle ? quantumTrips(ctx, n, rangeBound(ctx, len), ctl) : n.v;
     emitSet(ctx, dst, byte, n, trips, ctl);
     return;
   }
   if (auto *M = dyn_cast<MemSetInlineInst>(&MI)) {
     Operand byte = ctx.operand(M->getValue());
-    Value *trips = n.handle ? quantumTrips(ctx, n, rangeBound(ctx, len)) : n.v;
+    Value *trips = n.handle ? quantumTrips(ctx, n, rangeBound(ctx, len), ctl) : n.v;
     emitSet(ctx, dst, byte, n, trips, ctl);
     return;
   }
@@ -404,7 +425,7 @@ void lowerMemIntrinsic(LoweringContext &ctx, MemIntrinsic &MI) {
   s.dst = dst;
   s.src = address(ctx, origSrc);
   s.length = n;
-  s.trips = n.handle ? quantumTrips(ctx, n, rangeBound(ctx, len)) : n.v;
+  s.trips = n.handle ? quantumTrips(ctx, n, rangeBound(ctx, len), ctl) : n.v;
   s.ctl = ctl;
   s.at = &MI;
   emitCopy(ctx, s);
@@ -415,7 +436,7 @@ void lowerCopy(LoweringContext &ctx, Operand dst, Operand src, Operand len, Valu
   s.dst = dst;
   s.src = src;
   s.length = len;
-  s.trips = len.handle ? quantumTrips(ctx, len, std::nullopt) : len.v;
+  s.trips = len.handle ? quantumTrips(ctx, len, std::nullopt, ctl) : len.v;
   s.ctl = ctl;
   s.at = &at;
   emitCopy(ctx, s);

@@ -30,10 +30,10 @@ Operand asI64(LoweringContext &ctx, const Value *orig) {
     return o;
   if (!o.handle)
     return Operand{ctx.B().CreateZExtOrTrunc(o.v, i64Ty(ctx)), false};
-  if (bits > 64)
-    report_fatal_error("cq: unimplemented: bus: an allocation size wider than 64 bits", /*gen_crash_diag=*/false);
   abi::TemplateSpec z;
-  z.op = "zext";
+  if (bits > 64)
+    noteUnbuilt("bus: an allocation size wider than 64 bits (truncated to i64)", orig);
+  z.op = bits > 64 ? "trunc" : "zext";
   z.w = RailType{Kind::Int, bits};
   z.to = RailType{Kind::Int, 64};
   return Operand{ctx.emitTemplate(z, {o}), true};
@@ -121,9 +121,15 @@ AllocShape callShape(LoweringContext &ctx, CallBase &CB) {
     s.align = alignOperand(ctx, CB.getArgOperand(0));
   } else {
     Attribute A = F->getFnAttribute(Attribute::AllocSize);
-    if (!A.isValid())
-      report_fatal_error(Twine("cq: unimplemented: bus: an allockind callee with no allocsize: ") + n,
-                         /*gen_crash_diag=*/false);
+    if (!A.isValid()) {
+      noteUnbuilt((Twine("bus: an allockind callee with no allocsize, size taken as argument 0: ") + n).str(), &CB);
+      s = single(CB.getArgOperand(0));
+      if (const Value *al = CB.getArgOperandWithAttribute(Attribute::AllocAlign))
+        s.align = alignOperand(ctx, al);
+      if (!s.align)
+        s.align = lit(ctx, 16);
+      return s;
+    }
     auto [e, c] = A.getAllocSizeArgs();
     s = c ? product(CB.getArgOperand(e), CB.getArgOperand(*c)) : single(CB.getArgOperand(e));
     if (const Value *al = CB.getArgOperandWithAttribute(Attribute::AllocAlign))

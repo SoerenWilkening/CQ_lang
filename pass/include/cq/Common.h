@@ -23,6 +23,10 @@ namespace cq {
 // the shape; the structural verifier, a crash, or the §6 sweep judge the result, never a fence.
 #define unimplemented(...) ((void)0)
 #define internalError(...) internalErrorAt(__FILE__, __LINE__, __VA_ARGS__)
+// Owner 2026-11-05: a shape not built yet is not a stop. One non-fatal line on stderr names the site; the code runs on.
+// "cq: note: unbuilt: <what>  site: file:line" (then "  at: <instruction>" when `at` is given, still one line).
+void noteUnbuiltAt(const char *file, int line, llvm::StringRef what, const llvm::Value *at = nullptr);
+#define noteUnbuilt(...) noteUnbuiltAt(__FILE__, __LINE__, __VA_ARGS__)
 enum class Kind : uint8_t { Int, Fp, BFloat };
 struct RailType { Kind kind; unsigned bits; };      // i<N> (N >= 1), f16, f32, f64, f80, bf16 (BFloat: bits == 16)
 RailType railTypeOf(llvm::Type *);                  // iN/half/float/double/x86_fp80/bfloat

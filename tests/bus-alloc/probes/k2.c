@@ -36,3 +36,11 @@ int k_align(unsigned long n0, double th) {
     a[0] = 1;
     return cq_measure(a[n & 1]);
 }
+int k_len_pred(unsigned long n0, double th, unsigned char *d, const unsigned char *s, unsigned long m0, double ph) {
+    unsigned long n = n0, m = m0;
+    cq_theta(&n, th);
+    cq_theta(&m, ph);
+    if (m & 1)
+        memcpy(d, s, n);
+    return cq_measure(d[0]);
+}
