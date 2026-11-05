@@ -730,11 +730,14 @@ namespace {
 // the lowered own symbols replaced the originals.
 std::map<const Module *, std::vector<TableRow>> tableRows;
 
-// §1.4: a table clone's twin does nothing but count and pop when rule 18 gives the function none. A measurement on a
-// classical path keeps a rule-18 twin (Q3) but a table clone's results stay allocated (rule 2), so any measurement does.
+// §1.4: a table clone's twin does nothing but count and pop when rule 18 gives it none: a tainted measurement (Q3), which
+// is every measurement in a _ctl clone (rule 19's controlled copy). A measurement on a classical path of the clone with no
+// predicate keeps its rule-18 twin; the outcome's seed stays allocated (rule 2, rulings3 E, Finalize's defineTwin).
 bool tableKeepsResults(const TaintInfo &T, const Specialization &S) {
   if (!hasTwin(T, S))
     return true;
+  if (!S.ctl)
+    return false;
   SmallPtrSet<const Function *, 8> seen{S.F};
   SmallVector<const Function *, 8> work{S.F};
   while (!work.empty()) {
@@ -766,32 +769,96 @@ void noteTableClone(Module &M, const TaintInfo &T, const Specialization &S, cons
     rows.back().ctl = abi::name(f);
     it = std::prev(rows.end());
   }
-  it->keepsResults = it->keepsResults || tableKeepsResults(T, S);
+  (S.ctl ? it->ctlKeepsResults : it->forwardKeepsResults) = tableKeepsResults(T, S);
 }
 } // namespace
 
-ArrayRef<const CallBase *> mintSites(const TaintInfo &T, const Specialization &S) {
-  static std::map<std::pair<const void *, const Specialization *>, SmallVector<const CallBase *, 2>> memo;
+namespace {
+// F's body rotates, itself or through a callee by name.
+bool rotates(const Function &F) {
+  SmallPtrSet<const Function *, 8> seen{&F};
+  SmallVector<const Function *, 8> work{&F};
+  while (!work.empty()) {
+    const Function *X = work.pop_back_val();
+    for (const Instruction &I : instructions(*X))
+      if (auto *CB = dyn_cast<CallBase>(&I))
+        if (const Function *G = CB->getCalledFunction()) {
+          if (G->getName().starts_with("cq_theta_"))
+            return true;
+          if (!G->isDeclaration() && seen.insert(G).second)
+            work.push_back(G);
+        }
+  }
+  return false;
+}
+
+// The rails a call hands back for the caller's twin, in slot order, per the clone being lowered.
+std::map<std::pair<const Function *, const CallBase *>, SmallVector<Value *, 2>> callRegisters;
+
+// Rule 19: a call whose callee rotates carries its slots' indices for the twin (Finalize's replay).
+void tagRegisterCall(LoweringContext &ctx, CallBase &CB, CallInst *call, bool ownSymbol) {
+  ArrayRef<MintSlot> slots = mintSites(ctx.T, ctx.S);
+  auto at = find_if(slots, [&](const MintSlot &m) { return m.site == &CB; });
+  if (at == slots.end())
+    return;
+  Type *i32 = Type::getInt32Ty(ctx.M.getContext());
+  call->setMetadata("cq.mint.call", MDNode::get(ctx.M.getContext(), {ConstantAsMetadata::get(ConstantInt::get(i32, at - slots.begin())),
+                                                                       ConstantAsMetadata::get(ConstantInt::get(i32, ownSymbol))}));
+}
+} // namespace
+
+ArrayRef<MintSlot> mintSites(const TaintInfo &T, const Specialization &S) {
+  static std::map<std::pair<const void *, const Specialization *>, SmallVector<MintSlot, 2>> memo;
+  static std::set<const Specialization *> open;
+  static const SmallVector<MintSlot, 2> none;
   auto key = std::make_pair(static_cast<const void *>(T.specializations().data()), &S);
   auto it = memo.find(key);
   if (it != memo.end())
     return it->second;
-  SmallVector<const CallBase *, 2> sites;
+  if (!open.insert(&S).second)
+    return none;   // a call cycle: one clone for all its activations (noted below)
+  SmallVector<MintSlot, 2> sites;
   // A table clone's twin that does something, or a by-name clone's that runs and has a result to zero.
   bool twin = S.table ? !tableKeepsResults(T, S)
                       : !S.isEntry() && !S.F->getReturnType()->isVoidTy() && T.needsTwin(S) && hasTwin(T, S) && !fenv::cloneCarriesEnv(T, S);
   if (twin) {
     DominatorTree DT(*S.F);
     LoopInfo LI(DT);
-    for (const Instruction &I : instructions(*S.F))
-      if (auto *CB = dyn_cast<CallBase>(&I))
-        if (const Function *G = CB->getCalledFunction(); G && G->isDeclaration() && G->getName().starts_with("cq_theta_")) {
-          if (LI.getLoopFor(CB->getParent()))
-            noteUnbuilt("calls: a rotation in a loop of a clone with a twin (rule 19's registers are per site)", CB);
-          else
-            sites.push_back(CB);
-        }
+    for (const Instruction &I : instructions(*S.F)) {
+      auto *CB = dyn_cast<CallBase>(&I);
+      const Function *G = CB ? CB->getCalledFunction() : nullptr;
+      if (!G)
+        continue;
+      bool loop = LI.getLoopFor(CB->getParent()) != nullptr;
+      if (G->isDeclaration() && G->getName().starts_with("cq_theta_")) {
+        if (loop)
+          noteUnbuilt("calls: a rotation in a loop of a clone with a twin (rule 19's registers are per site)", CB);
+        else
+          sites.push_back({CB, 0});
+        continue;
+      }
+      if (G->isDeclaration() || G->getReturnType()->isVoidTy() || !rotates(*G))
+        continue;
+      const Specialization *C = T.calleeSpecialization(*CB, S);
+      if (!C)
+        continue;
+      if (open.count(C) || loop) {
+        noteUnbuilt("calls: a callee that rotates, on a call cycle or in a loop of a clone with a twin (rule 19's registers are per site)", CB);
+        continue;
+      }
+      if (C->isEntry()) {
+        if (T.isQuantum(CB, S) && !G->getReturnType()->isStructTy())
+          sites.push_back({CB, 0});
+        else if (T.isQuantum(CB, S) || !G->getReturnType()->isVoidTy())
+          noteUnbuilt("calls: an own symbol that rotates with a composite or classical result, in a clone with a twin", CB);
+        continue;
+      }
+      unsigned n = unsigned(mintSites(T, *C).size());
+      for (unsigned k = 0; k < n; ++k)
+        sites.push_back({CB, k});
+    }
   }
+  open.erase(&S);
   return memo[key] = std::move(sites);
 }
 
@@ -800,8 +867,8 @@ unsigned mintCount(const Function &clone) { return mintCounts.lookup(&clone); }
 void noteMint(LoweringContext &ctx, CallInst &site, BasicBlock *startBlock, Instruction *before) {
   if (ctx.S.isEntry())
     return;
-  ArrayRef<const CallBase *> sites = mintSites(ctx.T, ctx.S);
-  auto at = find(sites, &site);
+  ArrayRef<MintSlot> sites = mintSites(ctx.T, ctx.S);
+  auto at = find_if(sites, [&](const MintSlot &m) { return m.site == &site; });
   if (at == sites.end())
     return;
   auto bi = spine::shared(ctx).binds.find(&site);
@@ -823,20 +890,30 @@ void noteMint(LoweringContext &ctx, CallInst &site, BasicBlock *startBlock, Inst
     if (c == h || is_contained(c->args(), h))
       c->setMetadata("cq.mint", tag);
   }
+  // A rail rotated in place: whatever made it (a template, a merge of arms) the twin does not make again.
+  SmallPtrSet<Value *, 4> seen;
+  SmallVector<Value *, 4> work{h};
+  while (!work.empty()) {
+    Value *v = work.pop_back_val();
+    if (!seen.insert(v).second)
+      continue;
+    if (auto *p = dyn_cast<PHINode>(v))
+      work.append(p->value_op_begin(), p->value_op_end());
+    else if (auto *c = dyn_cast<CallInst>(v))
+      c->setMetadata("cq.mint", tag);
+  }
 }
 
-Value *mintHandle(LoweringContext &ctx, const CallBase &site) {
+Value *mintHandle(LoweringContext &ctx, const MintSlot &slot) {
   Value *zero = ConstantInt::get(Type::getInt32Ty(ctx.M.getContext()), 0);
+  if (auto it = callRegisters.find({&ctx.out(), slot.site}); it != callRegisters.end())
+    return slot.sub < it->second.size() ? it->second[slot.sub] : zero;
   spine::Shared &sh = spine::shared(ctx);
-  auto bi = sh.binds.find(&site);
+  auto bi = sh.binds.find(slot.site);
   if (bi == sh.binds.end() || bi->second.size() != 1 || !bi->second[0].handle)
     return zero;
-  auto *h = dyn_cast<CallInst>(bi->second[0].v);
-  if (!h || !h->getMetadata("cq.mint"))
-    return zero;
-  if (sh.ruleSixCleaned.count(h))
-    return zero;   // absorbed by rule 6: no register remains
-  return h;
+  // Finalize's settleRegisters reads what became of the rail: rule 6 may still free it, or it may be minted on some paths only.
+  return bi->second[0].v;
 }
 
 std::vector<TableRow> takeTableRows(const Module &M) {
@@ -1031,7 +1108,14 @@ namespace {
 void bindEnvResult(LoweringContext &ctx, CallBase &CB, const Specialization &S, const CloneCall &r) {
   SmallVector<Value *, 4> outs;
   Value *flags = r.value;
-  auto finish = [&]() { ctx.unc().recordCall(r.call, outs, {}); };
+  auto finish = [&]() {
+    if (hasTwin(ctx.T, S)) {
+      ctx.unc().recordCall(r.call, outs, {});
+      return;
+    }
+    for (Value *h : outs)
+      ctx.unc().recordExternal(h, Role::Kept);   // rule 18: no twin
+  };
   if (r.fieldwise) {
     // cq-xhv4: a field-wise result (bindFieldwiseResult's binding) whose last field is the new flags.
     const ResultLayout &res = r.res;
@@ -1111,8 +1195,13 @@ void lowerEntryCall(LoweringContext &ctx, CallBase &CB, const Specialization &cs
   for (const Use &u : CB.args())
     if (ctx.operand(u.get()).handle)
       internalError("calls: a quantum argument to a callee with no clone", &CB);
-  if (CB.getType()->isVoidTy() || !ctx.T.isQuantum(&CB, ctx.S))
-    return ordinaryCall(ctx, CB);
+  if (CB.getType()->isVoidTy() || !ctx.T.isQuantum(&CB, ctx.S)) {
+    ordinaryCall(ctx, CB);
+    auto *made = dyn_cast<CallInst>(&ctx.B().GetInsertBlock()->back());
+    if (CB.getType()->isVoidTy() && made && made->getCalledFunction() == cs.F && rotates(*cs.F))
+      made->setMetadata("cq.mint.drop", MDNode::get(ctx.M.getContext(), {}));
+    return;
+  }
   if (underQuantumPredicate(ctx))
     internalError("calls: an in-place callee reached under a quantum predicate (taint makes it a _ctl clone)", &CB);
   Function &F = *cs.F;
@@ -1139,7 +1228,7 @@ void lowerEntryCall(LoweringContext &ctx, CallBase &CB, const Specialization &cs
   call->setAttributes(AL);
   // Rule 19: a frozen result is kept like the caller's own registers. Rule 18: every other result is zeroed by the twin
   // __cq_q_<fn>_<mask>_unc (the all-zero mask, `v` with no formal), a load for rule 5; with no twin KEPT.
-  bool twin = hasTwin(ctx.T, cs) && er->registers == 0;
+  bool twin = hasTwin(ctx.T, cs) && er->registers == 0 && !rotates(F);
   std::string twinName = abi::name(abi::CloneSpec{F.getName().str(), cs.mask.empty() ? "v" : cs.mask, {}, false, false, true});
   SmallVector<Value *, 2> dead;
   auto keep = [&](Value *h) {
@@ -1177,6 +1266,8 @@ void lowerEntryCall(LoweringContext &ctx, CallBase &CB, const Specialization &cs
     internalError("calls: an in-place callee returning a handle in a return type that cannot hold it", &CB);
   Value *h = rt == i32 ? static_cast<Value *>(call) : ctx.B().CreateTrunc(call, i32);
   keep(h);
+  callRegisters[{&ctx.out(), &CB}].push_back(h);
+  tagRegisterCall(ctx, CB, call, true);
   recordDead();
   spine::bindOperand(ctx, &CB, Operand{h, true});
 }
@@ -1203,7 +1294,9 @@ void bindCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization &cs,
       Value *e = ctx.B().CreateExtractValue(r.call, {n + k});
       ctx.unc().recordExternal(e, Role::Kept);
       extra.push_back(Operand{e, true});
+      callRegisters[{&ctx.out(), &CB}].push_back(e);
     }
+    tagRegisterCall(ctx, CB, r.call, false);
     ctx.unc().recordCall(r.call, outs, extra, ctx.T.loadsBus(cs));
     if (r.res.composite)
       ctx.bindFields(&CB, ops);
@@ -1243,6 +1336,8 @@ void lowerLifted(LoweringContext &ctx, CallBase &CB) {
     return;
   }
   CloneCall r = emitCloneCall(ctx, CB, *cs, nullptr);
+  if (CB.getType()->isVoidTy() && rotates(*cs->F))
+    r.call->setMetadata("cq.mint.drop", MDNode::get(ctx.M.getContext(), {}));
   bindCloneCall(ctx, CB, *cs, r);
 }
 
@@ -1348,6 +1443,10 @@ void callTableTwin(Module &M, IRBuilder<> &B, Value *twin, Value *pred, ArrayRef
 // Rules 18, 19: must the value be a kept rail? Measured, stored or returned by an own symbol, or a memory version change
 // (or another block) comes before its last consumer. The twin then runs right after the copy: no change lies between.
 bool keptResult(LoweringContext &ctx, CallBase &CB) {
+  // Rule 14: in a loop the reverse reads the result, past the next trip's call (a memory version change).
+  DominatorTree DT(*CB.getFunction());
+  if (LoopInfo(DT).getLoopFor(CB.getParent()))
+    return true;
   SmallVector<const Instruction *, 8> work{&CB};
   SmallPtrSet<const Instruction *, 8> seen{&CB};
   const BasicBlock *bb = CB.getParent();
@@ -1356,9 +1455,12 @@ bool keptResult(LoweringContext &ctx, CallBase &CB) {
     const Instruction *D = work.pop_back_val();
     for (const User *U : D->users()) {
       auto *I = cast<Instruction>(U);
-      if (I->getParent() != bb || isa<PHINode>(I) || isa<StoreInst>(I))
+      // A branch's flag reads the result until the arms' merge, which the arms' memory version changes precede.
+      if (I->getParent() != bb || isa<PHINode>(I) || isa<StoreInst>(I) || I->isTerminator())
         return true;
-      if (isa<ReturnInst>(I) && ctx.S.isEntry())
+      // The caller's next uses are behind a return. A table call writes memory, so this clone has no twin (rule 18): its result
+      // is KEPT here (and returned as that rail, bindKeptValue).
+      if (isa<ReturnInst>(I))
         return true;
       if (auto *c = dyn_cast<CallBase>(I)) {
         const Function *G = c->getCalledFunction();
@@ -1401,6 +1503,11 @@ void deferValue(LoweringContext &ctx, CallBase &CB, ArrayRef<Value *> merged, Ar
   Uncompute &U = ctx.unc();
   SmallVector<Value *, 4> vals;
   std::vector<RailId> ids;
+  // The item's region is one block of its own: Uncompute places a deferred item after the uses outside its region.
+  IRBuilder<> &IB = ctx.B();
+  BasicBlock *Region = BasicBlock::Create(M.getContext(), "", &ctx.out()), *After = BasicBlock::Create(M.getContext(), "", &ctx.out());
+  IB.CreateBr(Region);
+  IB.SetInsertPoint(Region);
   unsigned sc = U.openScope();
   for (Type *t : leaves) {
     RailType w = railTypeOf(t);
@@ -1411,6 +1518,8 @@ void deferValue(LoweringContext &ctx, CallBase &CB, ArrayRef<Value *> merged, Ar
   U.closeScope(sc);
   for (unsigned k = 0; k < vals.size(); ++k)
     ctx.emitCore(abi::CoreSpec{abi::Core::Copy, railTypeOf(leaves[k])}, {merged[k], vals[k]});
+  IB.CreateBr(After);
+  IB.SetInsertPoint(After);
   std::vector<RailId> reads;
   for (Value *h : readHandles)
     if (RailId r = U.idOf(h); !is_contained(reads, r))
@@ -1426,6 +1535,14 @@ void deferValue(LoweringContext &ctx, CallBase &CB, ArrayRef<Value *> merged, Ar
                    },
                    reads);
   bindCallValue(ctx, CB, vals);
+}
+
+// The call's value in KEPT rails. A rail only returned is the clone's result as it is, not copied again (rule 18, no twin).
+void bindKeptValue(LoweringContext &ctx, CallBase &CB, ArrayRef<Value *> kept) {
+  if (kept.size() == 1 && !isComposite(CB.getType()) && !ctx.S.isEntry() && !CB.use_empty() &&
+      all_of(CB.users(), [](const User *U) { return isa<ReturnInst>(U); }) && !CB.getType()->isPointerTy())
+    spine::shared(ctx).ctlMeasured.insert(kept[0]);
+  bindCallValue(ctx, CB, kept);
 }
 
 // The value copied out into fresh KEPT rails.
@@ -1533,7 +1650,7 @@ void lowerClassicalPointer(LoweringContext &ctx, CallBase &CB, Value *fp) {
     for (Value *m : merged)
       ctx.unc().recordExternal(m, Role::Kept);
     noteReads(ctx, readHandles);
-    bindCallValue(ctx, CB, merged);
+    bindKeptValue(ctx, CB, merged);
     return;
   }
   // Rule 18's position: after the last consumer.
@@ -1763,7 +1880,7 @@ void dispatchOverRail(LoweringContext &ctx, CallBase &CB, FunctionType *FT, Valu
     for (Value *c : kept)
       ctx.unc().recordExternal(c, Role::Kept);
     noteReads(ctx, readHandles);
-    bindCallValue(ctx, CB, kept);
+    bindKeptValue(ctx, CB, kept);
     return;
   }
   deferValue(ctx, CB, vals, leaves, readHandles, [undoSelects, R](IRBuilder<> &TB) {

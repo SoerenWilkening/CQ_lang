@@ -1445,11 +1445,11 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
     return;
   }
   ReturnInst *nr;
-  ArrayRef<const CallBase *> mints = calls::mintSites(ctx.T, ctx.S);
+  ArrayRef<calls::MintSlot> mints = calls::mintSites(ctx.T, ctx.S);
   if (ctx.S.table) {
     // §1.4: a table clone pushes the registers it minted, its twin pops them.
-    for (const CallBase *site : mints) {
-      CallInst *p = ctx.emitCore(abi::CoreSpec{abi::Core::Push}, {calls::mintHandle(ctx, *site)});
+    for (const calls::MintSlot &site : mints) {
+      CallInst *p = ctx.emitCore(abi::CoreSpec{abi::Core::Push}, {calls::mintHandle(ctx, site)});
       p->setMetadata("cq.mint.push", MDNode::get(ctx.M.getContext(), {}));
     }
   } else if (Value *rv = ret->getReturnValue(); rv && !mints.empty()) {
@@ -1468,8 +1468,8 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
     } else {
       resultFields(ret, rv, st, unsigned(mints.size()), vals);
     }
-    for (const CallBase *site : mints)
-      vals.push_back(calls::mintHandle(ctx, *site));
+    for (const calls::MintSlot &site : mints)
+      vals.push_back(calls::mintHandle(ctx, site));
     if (vals.size() != st->getNumElements())
       internalError("spine: a clone's result type does not have its results and the registers it minted", ret);
     Value *agg = PoisonValue::get(CRT);
@@ -2553,7 +2553,7 @@ SmallVector<Value *, 4> liveRegisters(LoweringContext &ctx) {
     for (Instruction &I : BB) {
       if (!sh.rotations.count(&I) && !sh.frozenResults.count(&I))
         continue;
-      if (sh.ruleSixCleaned.count(&I))
+      if (sh.ruleSixCleaned.count(&I) || !ctx.unc().recorded(&I))
         continue;
       std::optional<Role> role = ctx.unc().liveRole(ctx.unc().idOf(&I));
       if (role && (*role == Role::UserRegister || *role == Role::Frozen))

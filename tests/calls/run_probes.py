@@ -161,6 +161,26 @@ CASES = [
     ("trip_ctl", "t3_arm", [], "pass", [r"call void @__cq_q_tc_phase_1_b\d+_ctl\(i32 %\d+, i32 %\d+\)",
                                         r"call i32 @cqrt_tape_effect_f64_controlled\("]),
     ("trip_ctl", "t1_decl", [], "pass", [r"call i32 @cqrt_tape_effect_f64_controlled\("]),
+    # rulings3 E (§1.4, rules 2, 18, Q3): a classical-path measurement leaves _t its rule-18 twin, which zeroes and frees the add
+    # rail; in _t_ctl the measurement is the controlled copy, tainted, so its twin only counts and the result is kept.
+    ("table_twin_measure", "e_cl", [], "pass", [
+        r"define internal void @__cq_q_g_11_t_unc\(i32 %out(?:(?!\n}\n)[\s\S])*call void @cqrt_copy_i32\(i32 %\d+, i32 %out\)"
+        r"(?:(?!\n}\n)[\s\S])*call void @cqrt_free\(i32 %out\)",
+        r"define internal void @__cq_q_g_11_t_ctl_unc\(i32 %0(?:(?!\n}\n|@cqrt_)[\s\S])*\n}\n"]),
+    # e_rail lowers: its _t_ctl result is KEPT by the ruling; cqcheck user calls that kept rail a leak (cq-tt2j's rule, checker).
+    ("table_twin_measure", "e_rail", [], "lower", []),
+    # Rule 19, cq-ylng: a twin's recompute through a by-name callee that rotates goes through the callee's twin on the registers
+    # handed up (no Ry in any twin), a call of an own symbol's rail is one register, a void one is not repeated.
+    ("twin_rotating_callee", "y2a", [], "pass", [r"define internal fastcc void @__cq_q_f_11_unc\((?:(?!\n}\n)[\s\S])*call void @__cq_q_rot_1_unc\(i32 (%\d+)(?:(?!\n}\n)[\s\S])*call void @__cq_q_rot_1_unc\(i32 \1"]),
+    ("twin_rotating_callee", "y2b", [], "pass", []),
+    ("twin_rotating_callee", "y2c", [], "pass", []),
+    ("twin_rotating_callee_phase", "y3a", [], "pass", []),
+    ("twin_rotating_callee_phase", "y3b", [], "pass", []),
+    # Rule 19: a template rail rotated in place is a register; a rule-6 image rotated too; one minted on one classical path only.
+    ("twin_register_kinds", "l2", [], "pass", []),
+    ("twin_register_kinds", "l3", [], "pass", []),
+    ("twin_register_kinds", "l4", [], "pass", []),
+    ("twin_register_kinds", "l5", [], "pass", []),
 ]
 
 

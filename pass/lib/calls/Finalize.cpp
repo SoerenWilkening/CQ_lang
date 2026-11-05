@@ -37,6 +37,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Analysis/CFG.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/GlobalVariable.h"
@@ -45,7 +46,10 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Cloning.h"
+#include "llvm/Transforms/Utils/Local.h"
+#include "llvm/Transforms/Utils/SSAUpdater.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 
 #include <optional>
@@ -112,6 +116,26 @@ void collectReferences(Function &F, SetVector<GlobalValue *> &out) {
 
 // ---- twins ----------------------------------------------------------------------------------------
 
+// A classical value computed from a measurement's outcome in this function (rule 2's collapsed value).
+bool fromMeasurement(Value *v) {
+  SmallPtrSet<Value *, 8> seen;
+  SmallVector<Value *, 8> work{v};
+  while (!work.empty()) {
+    auto *I = dyn_cast<Instruction>(work.pop_back_val());
+    if (!I || !seen.insert(I).second)
+      continue;
+    if (auto *CB = dyn_cast<CallBase>(I)) {
+      const Function *G = CB->getCalledFunction();
+      std::optional<abi::CoreSpec> c = G ? abi::parseCore(G->getName()) : std::nullopt;
+      if (c && c->op == abi::Core::Measure)
+        return true;
+      continue;
+    }
+    work.append(I->op_begin(), I->op_end());
+  }
+  return false;
+}
+
 
 // The host <fenv.h> flag calls of eff-fenv's BRACKET and PROBE (hostFn: i32 name(i32), no body in the module):
 // they read or write the host flags only. A program body of that name is replayed as any body.
@@ -153,6 +177,121 @@ Function *twinSource(Module &M, Function &fwd) {
       return P;
   }
   return &fwd;
+}
+
+// The width of field k of a clone's result: its copy-out's alloc (a phi of them on classical paths).
+std::optional<abi::CoreSpec> resultAlloc(Function &g, unsigned k) {
+  auto allocOf = [](Value *v) -> std::optional<abi::CoreSpec> {
+    if (auto *p = dyn_cast<PHINode>(v))
+      v = p->getIncomingValue(0);
+    auto *c = dyn_cast<CallInst>(v);
+    std::optional<abi::CoreSpec> a = c && c->getCalledFunction() ? abi::parseCore(c->getCalledFunction()->getName()) : std::nullopt;
+    return a && a->op == abi::Core::Alloc ? a : std::nullopt;
+  };
+  for (BasicBlock &BB : g)
+    if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator())) {
+      for (Value *v = R->getReturnValue(); auto *iv = dyn_cast<InsertValueInst>(v); v = iv->getAggregateOperand())
+        if (iv->getIndices()[0] == k)
+          return allocOf(iv->getInsertedValueOperand());
+    }
+  return std::nullopt;
+}
+
+// Rule 19: in a twin, the call of a callee that rotates. Its own symbol's rail is one of the registers handed over. A by-name
+// clone is not called again: its twin XORs its results into fresh |0> rails from the registers it minted, which is the
+// recompute with no rotation repeated; the twin's zeroing of them, replayed from the forward, follows as there.
+void replayRegisterCall(Module &M, CallInst &c, ArrayRef<Value *> handed) {
+  MDNode *md = c.getMetadata("cq.mint.call");
+  unsigned base = unsigned(mdconst::extract<ConstantInt>(md->getOperand(0))->getZExtValue());
+  bool own = !mdconst::extract<ConstantInt>(md->getOperand(1))->isZero();
+  Function &g = *c.getCalledFunction();
+  IRBuilder<> B(&c);
+  LLVMContext &C = M.getContext();
+  Type *i32 = Type::getInt32Ty(C);
+  if (own) {
+    Value *h = handed[base];
+    c.replaceAllUsesWith(c.getType() == i32 ? h : B.CreateZExt(h, c.getType()));
+    c.eraseFromParent();
+    return;
+  }
+  unsigned n = mintCount(g);
+  auto *st = cast<StructType>(c.getType());
+  unsigned nFields = st->getNumElements() - n;
+  std::optional<abi::CloneSpec> spec = abi::parseClone(g.getName());
+  unsigned first = spec->ctl ? 1 : 0;
+  SmallVector<Value *, 4> outs(nFields, nullptr);
+  SmallVector<Value *, 8> args;
+  SmallVector<Type *, 8> ps;
+  for (unsigned i = 0; i < first; ++i)
+    args.push_back(c.getArgOperand(i));
+  for (unsigned k = 0; k < nFields; ++k) {
+    std::optional<abi::CoreSpec> a = resultAlloc(g, k);
+    if (!a) {
+      noteUnbuilt("calls: a twin's recompute through a callee that rotates, a result that is no copy-out", &c);
+      return;
+    }
+    outs[k] = B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Alloc, a->w}), {Constant::getNullValue(irTypeOf(C, a->w))});
+    args.push_back(outs[k]);
+  }
+  for (unsigned i = first; i < c.arg_size(); ++i)
+    args.push_back(c.getArgOperand(i));
+  for (unsigned j = 0; j < n; ++j)
+    args.push_back(handed[base + j]);
+  for (Value *v : args)
+    ps.push_back(v->getType());
+  std::string name = (g.getName() + "_unc").str();
+  Function *tw = M.getFunction(name);
+  if (!tw)
+    tw = Function::Create(FunctionType::get(Type::getVoidTy(C), ps, false), GlobalValue::InternalLinkage, name, &M);
+  B.CreateCall(tw, args);
+  SmallVector<ExtractValueInst *, 4> exts;
+  for (User *U : c.users())
+    exts.push_back(cast<ExtractValueInst>(U));
+  for (ExtractValueInst *e : exts) {
+    unsigned k = e->getIndices()[0];
+    e->replaceAllUsesWith(k < nFields ? outs[k] : handed[base + k - nFields]);
+    e->eraseFromParent();
+  }
+  c.eraseFromParent();
+}
+
+// Rule 19, on a clone just lowered, before its twin is made: what the forward hands over at a return. A register's handle where
+// the register was made on one path only is 0 on the others (§1.1); a register rule 6 freed from its image is no more.
+void settleRegisters(Function &F, unsigned mints) {
+  LLVMContext &C = F.getContext();
+  Constant *zero = ConstantInt::get(Type::getInt32Ty(C), 0);
+  DominatorTree DT(F);
+  auto settle = [&](Instruction *at, Use &u) {
+    auto *h = dyn_cast<Instruction>(u.get());
+    if (!h)
+      return;
+    if (any_of(h->users(), [](User *U) {
+          auto *c = dyn_cast<CallInst>(U);
+          return c && c->getCalledFunction() && c->getCalledFunction()->getName() == "cqrt_free";
+        })) {
+      u.set(zero);
+      return;
+    }
+    if (DT.dominates(h, at))
+      return;
+    SSAUpdater SU;
+    SU.Initialize(h->getType(), "cq.reg");
+    SU.AddAvailableValue(&F.getEntryBlock(), zero);
+    SU.AddAvailableValue(h->getParent(), h);
+    u.set(SU.GetValueInMiddleOfBlock(at->getParent()));
+  };
+  for (BasicBlock &BB : F)
+    for (Instruction &I : BB) {
+      if (I.getMetadata("cq.mint.push"))
+        settle(&I, cast<CallInst>(I).getArgOperandUse(0));
+      auto *R = dyn_cast<ReturnInst>(&I);
+      if (!R || !mints || !R->getReturnValue() || !R->getReturnValue()->getType()->isStructTy())
+        continue;
+      unsigned n = cast<StructType>(R->getReturnValue()->getType())->getNumElements();
+      for (Value *v = R->getReturnValue(); auto *iv = dyn_cast<InsertValueInst>(v); v = iv->getAggregateOperand())
+        if (iv->getIndices()[0] >= n - mints)
+          settle(iv, iv->getOperandUse(InsertValueInst::getInsertedValueOperandIndex()));
+    }
 }
 
 void defineTwin(Module &M, Function &twin, Function &src) {
@@ -205,11 +344,39 @@ void defineTwin(Module &M, Function &twin, Function &src) {
   SmallVector<Instruction *, 4> dead;
   // The copy-out of rule 18: f = cqrt_alloc_<W>(0), cqrt_copy_<W>(r, f), ..., ret f: the copy is made
   // to target `out` instead and f goes.
+  // §1.4, rule 2, rulings3 E: a table twin leaves the seed of a measurement's outcome allocated and frees the results it
+  // zeroes. freeResult frees `out` before R's replacement; where only some paths zeroed it, under a classical phi.
+  auto outcomeSeed = [&](Value *rv) {
+    auto *f = dyn_cast_or_null<CallInst>(rv);
+    std::optional<abi::CoreSpec> a =
+        f && f->getCalledFunction() ? abi::parseCore(f->getCalledFunction()->getName()) : std::nullopt;
+    return table && a && a->op == abi::Core::Alloc && fromMeasurement(f->getArgOperand(0));
+  };
+  auto freeResult = [&](Argument *out, PHINode *phi, ReturnInst *ret) {
+    FunctionCallee fr = abi::declare(M, abi::CoreSpec{abi::Core::Free});
+    if (!phi || none_of(phi->incoming_values(), outcomeSeed)) {
+      IRBuilder<>(ret).CreateCall(fr, {out});
+      return;
+    }
+    if (all_of(phi->incoming_values(), outcomeSeed))
+      return;
+    PHINode *zeroed = PHINode::Create(Type::getInt1Ty(C), phi->getNumIncomingValues(), "", phi->getIterator());
+    for (unsigned i = 0; i < phi->getNumIncomingValues(); ++i)
+      zeroed->addIncoming(ConstantInt::getBool(C, !outcomeSeed(phi->getIncomingValue(i))), phi->getIncomingBlock(i));
+    IRBuilder<>(SplitBlockAndInsertIfThen(zeroed, ret, false)).CreateCall(fr, {out});
+  };
   auto retarget = [&](Value *rv, Argument *out, ReturnInst *R) {
     auto *f = dyn_cast_or_null<CallInst>(rv);
     std::optional<abi::CoreSpec> a =
         f && f->getCalledFunction() ? abi::parseCore(f->getCalledFunction()->getName()) : std::nullopt;
     auto *zero = f ? dyn_cast<Constant>(f->getArgOperand(0)) : nullptr;
+    if (outcomeSeed(f)) {
+      if (!f->hasOneUse() && any_of(f->users(), [](User *U) { return !isa<ReturnInst, PHINode, InsertValueInst>(U); }))
+        unimplemented("calls: calls::finalize: an outcome's seed rail used other than by the return", f);
+      if (!is_contained(dead, f))
+        dead.push_back(f);
+      return;
+    }
     if (!a || a->op != abi::Core::Alloc)
       unimplemented("calls: calls::finalize: a clone return that is not the rule 18 copy-out (a fresh |0> "
                     "rail returned)",
@@ -244,6 +411,12 @@ void defineTwin(Module &M, Function &twin, Function &src) {
     PHINode *rp = nullptr;
     SmallVector<Instruction *, 4> chain;
     SmallVector<PHINode *, 2> fieldPhis;
+    struct TableOut {
+      Argument *out;
+      PHINode *phi;
+      Value *result;
+    };
+    SmallVector<TableOut, 2> tableOuts;
     if (srt) {
       // A field-wise result: the insertvalue chain of the return; its handle fields (the copy-outs, in
       // field order) are the outs.
@@ -287,6 +460,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
                         R);
         for (Value *rv : results)
           retarget(rv, twin.getArg(first + j), R);
+        tableOuts.push_back({twin.getArg(first + j), results.front() != fields[k] ? fp : nullptr, results.front()});
         ++j;
         if (results.front() != fields[k])
           fieldPhis.push_back(fp);
@@ -307,9 +481,14 @@ void defineTwin(Module &M, Function &twin, Function &src) {
       }
       for (Value *rv : results)
         retarget(rv, twin.getArg(first), R);
+      tableOuts.push_back({twin.getArg(first), rp, results.front()});
     }
-    ReturnInst::Create(C, nullptr, R->getIterator());
+    ReturnInst *newRet = ReturnInst::Create(C, nullptr, R->getIterator());
     R->eraseFromParent();
+    if (table)
+      for (const TableOut &o : tableOuts)
+        if (o.phi || !outcomeSeed(o.result))
+          freeResult(o.out, o.phi, newRet);
     for (Instruction *iv : chain)
       iv->eraseFromParent();
     if (rp)
@@ -332,23 +511,59 @@ void defineTwin(Module &M, Function &twin, Function &src) {
     if (table)
       for (unsigned k = mints; k-- > 0;)
         handed[k] = PB.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Pop}));
-    SmallVector<CallInst *, 4> tagged;
+    SmallVector<CallInst *, 4> tagged, regCalls, drops;
     SmallVector<Instruction *, 2> pushes;
     for (Instruction &I : instructions(twin)) {
       if (I.getMetadata("cq.mint.push"))
         pushes.push_back(&I);
       if (I.getMetadata("cq.mint"))
         tagged.push_back(cast<CallInst>(&I));
+      if (I.getMetadata("cq.mint.call"))
+        regCalls.push_back(cast<CallInst>(&I));
+      if (I.getMetadata("cq.mint.drop"))
+        drops.push_back(cast<CallInst>(&I));
     }
     for (Instruction *I : pushes)
       I->eraseFromParent();
-    for (CallInst *c : tagged) {
-      std::optional<abi::CoreSpec> a = abi::parseCore(c->getCalledFunction()->getName());
-      if (a && a->op == abi::Core::Alloc)
+    for (CallInst *c : drops)
+      c->eraseFromParent();   // no result: what it did stands, and nothing here reads it
+    for (CallInst *c : regCalls)
+      replayRegisterCall(M, *c, handed);
+    SmallVector<PHINode *, 2> phis;
+    for (CallInst *c : tagged)
+      if (!c->getType()->isVoidTy())
         c->replaceAllUsesWith(handed[mdconst::extract<ConstantInt>(c->getMetadata("cq.mint")->getOperand(0))->getZExtValue()]);
-    }
     for (CallInst *c : tagged)
       c->eraseFromParent();
+    // Rule 6 freed a register from its image in the forward: the twin does not do it again.
+    for (Value *h : handed) {
+      if (!h)
+        continue;
+      SmallVector<CallInst *, 2> writes;
+      for (User *U : h->users()) {
+        auto *c = dyn_cast<CallInst>(U);
+        std::optional<abi::CoreSpec> cs = c && c->getCalledFunction() ? abi::parseCore(c->getCalledFunction()->getName()) : std::nullopt;
+        if (cs && (cs->op == abi::Core::Free || (cs->op == abi::Core::Copy && !cs->ctl && c->getArgOperand(1) == h)))
+          writes.push_back(c);
+      }
+      for (CallInst *c : writes)
+        c->eraseFromParent();
+    }
+    // A merge of handed registers is the register; a result nobody reads now need not be made again.
+    for (bool changed = true; changed;) {
+      changed = false;
+      SmallVector<Instruction *, 8> gone;
+      for (Instruction &I : instructions(twin)) {
+        auto *c = dyn_cast<CallInst>(&I);
+        std::optional<abi::CloneSpec> cl = c && c->getCalledFunction() ? abi::parseClone(c->getCalledFunction()->getName()) : std::nullopt;
+        if (I.use_empty() && (isa<PHINode, ExtractValueInst>(I) || (cl && !cl->unc && !I.getType()->isVoidTy())))
+          gone.push_back(&I);
+      }
+      for (Instruction *I : gone) {
+        I->eraseFromParent();
+        changed = true;
+      }
+    }
   }
 
   // Rule 14's kept overflow predicate a_K = alloc_i1(0); and_i1(a_n, test, a_K), never freed, read by
@@ -399,14 +614,14 @@ void defineTwin(Module &M, Function &twin, Function &src) {
   }
 }
 
-// The functions of the module whose table twins leave the results allocated (defineTableClones).
+// The table twins of the module that leave the results allocated, by symbol (defineTableClones).
 std::set<std::string> keepsResults;
 
 // §1.4: a table twin. For a function rule 18 gives no twin it does nothing but count its activation and pop; otherwise it
 // is rule 18's twin that frees the results it zeroes.
 void defineTableTwin(Module &M, Function &twin, Function &fwd) {
   std::optional<abi::CloneSpec> ts = abi::parseClone(twin.getName());
-  bool keeps = keepsResults.count(ts->fn) != 0;
+  bool keeps = keepsResults.count(twin.getName().str()) != 0;
   LLVMContext &C = M.getContext();
   if (keeps) {
     IRBuilder<> B(BasicBlock::Create(C, "", &twin));
@@ -422,17 +637,23 @@ void defineTableTwin(Module &M, Function &twin, Function &fwd) {
     twin.setLinkage(GlobalValue::InternalLinkage);
     return;
   }
-  Function &src = *twinSource(M, fwd);
-  defineTwin(M, twin, src);
-  unsigned nOuts = twin.arg_size() - src.arg_size();
-  unsigned first = ts->ctl ? 1 : 0;
-  FunctionCallee fr = abi::declare(M, abi::CoreSpec{abi::Core::Free});
-  for (BasicBlock &BB : twin)
-    if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator())) {
-      IRBuilder<> B(R);
-      for (unsigned j = 0; j < nOuts; ++j)
-        B.CreateCall(fr, {twin.getArg(first + j)});
+  defineTwin(M, twin, *twinSource(M, fwd));
+  // Rule 2: what the twin replays of a measurement only to zero a rail it left alone goes: a re-read has no effect (211).
+  for (bool changed = true; changed;) {
+    changed = false;
+    SmallVector<Instruction *, 8> gone;
+    for (Instruction &I : instructions(twin)) {
+      auto *CB = dyn_cast<CallBase>(&I);
+      const Function *G = CB ? CB->getCalledFunction() : nullptr;
+      std::optional<abi::CoreSpec> c = G ? abi::parseCore(G->getName()) : std::nullopt;
+      if (I.use_empty() && ((c && c->op == abi::Core::Measure) || isInstructionTriviallyDead(&I)))
+        gone.push_back(&I);
     }
+    for (Instruction *I : gone) {
+      I->eraseFromParent();
+      changed = true;
+    }
+  }
 }
 
 // §1.3, rule 19: every table clone's twins declared and `internal void @__cq_register()` in llvm.global_ctors at 65535,
@@ -466,9 +687,12 @@ void defineTableClones(Module &M) {
     Function *fn = M.getFunction(r.fn), *t = M.getFunction(r.forward), *tc = M.getFunction(r.ctl);
     if (!fn || !t || !tc)
       internalError("calls: calls::finalize: a clone-table row without its function or table clones: @" + r.fn);
-    if (r.keepsResults)
-      keepsResults.insert(r.fn);
-    B.CreateCall(add, {fn, sigString(M, r.type), t, tc, twinOf(t, false), twinOf(tc, true)});
+    Function *tu = twinOf(t, false), *tcu = twinOf(tc, true);
+    if (r.forwardKeepsResults)
+      keepsResults.insert(tu->getName().str());
+    if (r.ctlKeepsResults)
+      keepsResults.insert(tcu->getName().str());
+    B.CreateCall(add, {fn, sigString(M, r.type), t, tc, tu, tcu});
   }
   B.CreateRetVoid();
   appendToGlobalCtors(M, reg, 65535);
@@ -566,12 +790,17 @@ void finalize(Module &M) {
   }
   if (clones.empty())
     return;
+  for (Function *F : clones)
+    if (!F->isDeclaration() && mintCount(*F))
+      settleRegisters(*F, std::optional<abi::CloneSpec>(abi::parseClone(F->getName()))->table ? 0 : mintCount(*F));
   defineTableClones(M);
   defineTwins(M);
   for (Function &F : M)
     for (Instruction &I : instructions(F)) {
       I.setMetadata("cq.mint", nullptr);
       I.setMetadata("cq.mint.push", nullptr);
+      I.setMetadata("cq.mint.call", nullptr);
+      I.setMetadata("cq.mint.drop", nullptr);
     }
 
   SetVector<Function *> originals;
