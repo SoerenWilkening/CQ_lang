@@ -1,21 +1,5 @@
 // Module rot-qangle (cq-w1-rot-qangle): quantum rotation angles, CR rules 11 and 15.
 //
-//   Rule 11: "An angle that depends on quantum data in any way (a select or phi on a quantum flag, a
-//   switch over a quantum scrutinee, a table read at a quantum index, arithmetic on a register) is
-//   computed into an f64 rail by ordinary templates (select_f64[_ll|_hl|_lh], qrom_load_f64,
-//   arithmetic) and consumed by rule 15's single primitive. The compiler never expands it into
-//   per-arm controlled rotations; the ladder is the backend's."  Witnesses: 132, 141, 142.
-//   Rule 15: "An angle derived from a register is computed into an f64 rail by ordinary templates and
-//   consumed by one primitive: ry_<W>_qangle[_controlled]([c,] h, A) for cq_theta,
-//   rz_qangle[_controlled]([c,] A) for cq_phi. The angle rail is uncomputed afterwards. The backend
-//   supplies the N-bit ladder."  Witnesses: 79, 143.
-//
-// The angle rail A is the operand the spine already bound to the cq_theta/cq_phi angle: the select,
-// phi, switch, QROM load or arithmetic that computed it was lowered by its own construction (rules 4,
-// 9, 13, 20). This module emits only the one primitive that reads A. A is a control of that
-// primitive (an IR user of its handle), so the spine's LIFO uncompute resolves it after its last
-// consumer (132 shared_angle_select: one rail read by two primitives, uncomputed once after both).
-//
 // cq_theta(v, A)
 //  - v a rail: in place (rule 2). v classical: a register alloc_<W>(v), a seed (79 theta, 132).
 //  - No quantum predicate in scope: ry_<W>_qangle(h, A). The rail is rotated: a user register (38),

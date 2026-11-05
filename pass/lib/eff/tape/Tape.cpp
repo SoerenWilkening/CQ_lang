@@ -12,11 +12,6 @@
 //    lit); a classical pointer converted by %s is cqrt_tape_write_str_lit(t, s) (the backend copies the
 //    string at call time). The fields of a controlled entry are controlled by the same flag; literal
 //    fields have no controlled form (the entry's predicate covers them).
-//  - fwrite(buf, size, n, stdout) with constant size and n, buf one slot object of byte cells (99): one
-//    entry with the format "%c" repeated size * n times, then one i8 field per cell (mem::readSlotCells,
-//    M4): a handle cell is cqrt_tape_write_i8[_controlled] -> a fresh tape rail, a classical cell a
-//    literal. fputs(s, stdout) of a constant string without '%': an entry with format s, no fields.
-//    stdout is the function's tape; another stream is unimplemented.
 //  - A classical host effect that a tape point precedes (owner ruling 2026-11-02, cq-t8oo / cq-64lv; the
 //    tape-order rule of calls::classify) arrives here with no predicate: printf, fputs and fwrite as above,
 //    puts(s) as the format entry "%s\n" with s a string field, putchar(c) as "%c" with c a field; any
@@ -32,35 +27,14 @@
 //    entry, then the module's handler as a _ctl clone call, or the abort arm, lowerRaise, 102); an entry inside a _ctl clone. An entry inside a plain clone is
 //    the clone's own tape entry (67); inside a _pure clone (what a twin recomputes through) it is dropped.
 //
-// lowerNoreturn: a noreturn call under a quantum predicate (45, 102, 108) is cqrt_abort_i1(f), f the
-// current block's flag, kept (Role::Abort: never _unc'd, never freed) and measured by the backend at the
-// end of the shot. The program continues uncontrolled. Before the call, every rail that a later
-// operation may modify IN PLACE on the abort branch is snapshotted under the flag:
-// s = cqrt_alloc_<W>(0); cqrt_copy_<W>_controlled(f, h, s), s kept (45 abort_then_rotate). In place is
-// what CR rule 4 reserves: a rotation of an existing rail (rule 2, rule 10's controlled Ry, rule 15's
-// quantum-angle Ry). "Later on the abort branch" is read on the original CFG: an instruction in a block X
-// that cannot reach the abort block and whose path predicate is compatible with the abort block's
-// (block(X) & block(abort) is not false). A rotation target is snapshotted when it is a value available
-// at the abort (an argument or an instruction dominating it); a target defined later is a fresh rail
-// unless it may alias an earlier one (phi, select, load, extractvalue, ...), which is unimplemented, as
-// is any later operation that may modify a rail in place without being a visible rotation: a QRAM store
-// or memory intrinsic into a QRAM object, a QRAM lifetime end, a call with a quantum or non-classical
-// pointer argument whose callee is opaque or may rotate (transitively) or store. Also unimplemented: a
-// noreturn inside an inlined callee or a clone (the later code is the caller's), an abort block whose
-// predecessors lie in a loop (later iterations), a quantum argument of the noreturn call. Classical
-// arguments of the noreturn call (exit's status, __assert_fail's strings) are dropped: rule 16 lowers
-// the call to abort_i1(pred) alone.
-//
 // Orchestrator decisions under CR rule 16 / §1.3 (owner may override) are recorded on the bead.
 #include "cq/Effects.h"
 
-#include "../../fatptr/FatPtrInternal.h"
 
 #include "cq/Abi.h"
 #include "cq/Aggregates.h"
 #include "cq/Calls.h"
 #include "cq/Common.h"
-#include "cq/Memory.h"
 #include "cq/Predicate.h"
 #include "cq/Taint.h"
 #include "cq/Uncompute.h"
@@ -113,12 +87,7 @@ bool nonClassicalPointer(LoweringContext &ctx, const Value *p) {
     return false;
   if (!isa<Constant>(p) && ctx.T.isQuantum(p, ctx.S))
     return true;
-  if (ctx.T.isFatPointer(p, ctx.S))
-    return true;
-  for (ObjectId o : ctx.T.provenance(p, ctx.S))
-    if (ctx.T.classOf(o) != ObjClass::Classical)
-      return true;
-  return false;
+  return !isa<ConstantPointerNull>(p) && !ctx.T.hostObjectOf(p, ctx.S);
 }
 
 // ------------------------------------------------------------------ the tape
@@ -261,80 +230,9 @@ void leafTypes(Type *t, SmallVectorImpl<Type *> &out) {
   }
 }
 
-// The byte extent of the single object a classical pointer into a slot object points into, from the
-// pointer (CR rule 16: one i8 field per byte up to the object's cell count).
-std::optional<uint64_t> bytesToObjectEnd(LoweringContext &ctx, const Value *p) {
-  const DataLayout &DL = ctx.M.getDataLayout();
-  APInt off(DL.getIndexTypeSizeInBits(p->getType()), 0);
-  const Value *base = p->stripAndAccumulateConstantOffsets(DL, off, /*AllowNonInbounds=*/true);
-  std::optional<uint64_t> size;
-  if (auto *ai = dyn_cast<AllocaInst>(base)) {
-    if (auto sz = ai->getAllocationSize(DL); sz && !sz->isScalable())
-      size = sz->getFixedValue();
-  } else if (auto *gv = dyn_cast<GlobalVariable>(base)) {
-    size = DL.getTypeAllocSize(gv->getValueType());
-  }
-  if (!size || off.isNegative() || off.getZExtValue() > *size)
-    return std::nullopt;
-  return *size - off.getZExtValue();
-}
 
-// The byte size of a rule-21 root object (an alloca, a global, an allocation of constant size).
-std::optional<uint64_t> rootBytes(LoweringContext &ctx, const Value *r) {
-  const DataLayout &DL = ctx.M.getDataLayout();
-  if (auto *ai = dyn_cast<AllocaInst>(r)) {
-    if (auto sz = ai->getAllocationSize(DL); sz && !sz->isScalable())
-      return sz->getFixedValue();
-    return std::nullopt;
-  }
-  if (auto *gv = dyn_cast<GlobalVariable>(r))
-    return DL.getTypeAllocSize(gv->getValueType()).getFixedValue();
-  if (auto *CB = dyn_cast<CallBase>(r)) {
-    Attribute as = CB->getFnAttr(Attribute::AllocSize);
-    if (!as.isValid())
-      if (const Function *F = CB->getCalledFunction())
-        as = F->getFnAttribute(Attribute::AllocSize);
-    if (as.isValid()) {
-      auto [a, b] = as.getAllocSizeArgs();
-      auto *n = dyn_cast<ConstantInt>(CB->getArgOperand(a));
-      auto *m = b ? dyn_cast<ConstantInt>(CB->getArgOperand(*b)) : nullptr;
-      if (n && (!b || m))
-        return n->getZExtValue() * (m ? m->getZExtValue() : 1);
-    }
-  }
-  return std::nullopt;
-}
 
-// The cells of a quantum pointer's bytes (rule 21: a load per candidate object, merged on the tag), up to
-// `limit` bytes past it and each object's extent past it (fatptr::loadHostCells).
-SmallVector<Operand, 8> fatBytes(LoweringContext &ctx, CallBase &CB, const Value *p, std::optional<uint64_t> limit) {
-  std::optional<int64_t> off = fatptr::constantByteOffset(ctx, p);
-  uint64_t n = 0;
-  bool unknown = false;
-  auto boundOf = [&](const Value *r) -> uint64_t {
-    std::optional<uint64_t> sz = rootBytes(ctx, r);
-    if (!sz) {
-      unknown = true;
-      return limit.value_or(0);
-    }
-    int64_t b = int64_t(*sz) - off.value_or(0);
-    uint64_t u = b < 0 ? 0 : uint64_t(b);
-    return limit ? std::min(u, *limit) : u;
-  };
-  // The largest bound over the candidate roots is the field count.
-  for (const Value *r : fatptr::rootsOf(ctx, p))
-    n = std::max(n, boundOf(r));
-  if (unknown && !limit)
-    unimplemented("eff-tape: the bytes of a quantum pointer one of whose objects has no static extent, with no "
-                  "length bounding them",
-                  &CB);
-  return fatptr::loadHostCells(ctx, p, Type::getInt8Ty(ctx.M.getContext()), n, boundOf, CB);
-}
 
-// A %s whose bytes are handles (a classical pointer into a slot object, CR rule 16 fields):
-// tape_str_begin(t), one i8 field per byte of the object from the pointer to its end (a slot cell's handle,
-// or its classical value), tape_str_end(t). The backend prints up to the first byte that measures 0.
-void slotStringField(LoweringContext &ctx, CallBase &CB, const Value *str, Value *tape, Value *flag);
 
 // One field of an entry, argument a of CB. conv is printf's conversion character for it ('*' a width or
 // precision; 0 for an effect entry). A conversion that does not match its argument's type is undefined
@@ -343,28 +241,8 @@ void slotStringField(LoweringContext &ctx, CallBase &CB, const Value *str, Value
 void emitField(LoweringContext &ctx, CallBase &CB, unsigned a, char conv, Value *tape, Value *flag) {
   Value *v = CB.getArgOperand(a);
   Type *ty = v->getType();
-  if (ty->isPointerTy()) {
-    if (conv == 's' && nonClassicalPointer(ctx, v)) {
-      slotStringField(ctx, CB, v, tape, flag);
-      return;
-    }
-    if (nonClassicalPointer(ctx, v) && (ctx.T.isFatPointer(v, ctx.S) || ctx.T.isQuantum(v, ctx.S))) {
-      // A quantum pointer (rule 21) as a value field (%p, an effect's argument): its address, the i64 its
-      // ptrtoint is (a rail when the tag or idx is one).
-      scalarField(ctx, tape, flag, fatptr::addressOf(ctx, v), Type::getInt64Ty(ctx.M.getContext()));
-      return;
-    }
-    Operand s = ctx.operand(v);
-    if (conv == 's' || (!conv && constantCString(v) &&
-                        (CB.paramHasAttr(a, Attribute::ReadOnly) || CB.paramHasAttr(a, Attribute::ReadNone)))) {
-      ctx.emitCore(abi::CoreSpec{abi::Core::TapeWriteStrLit}, {tape, s.v});
-      return;
-    }
-    // Any other classical host pointer (a FILE *, %p, %n's destination, a callback, a pointer of a run-time
-    // format): its address, an i64 literal.
-    emitPointerValue(ctx, s.v, tape);
-    return;
-  }
+  if (ty->isPointerTy())
+    report_fatal_error("cq: unimplemented: bus: a pointer field of an effect entry (rule 16)", /*gen_crash_diag=*/false);
   if (ty->isIntegerTy() || ty->isFloatingPointTy()) {
     scalarField(ctx, tape, flag, ctx.operand(v), ty);
     return;
@@ -516,9 +394,6 @@ SmallVector<std::pair<Value *, Type *>, 4> laterInPlaceTargets(LoweringContext &
   // (rules 4, 18, 27, U2); a load's cell content is mem's: the rail the cell holds at the abort when its
   // address is available there.
   SetVector<const Value *> roots;
-  SmallVector<std::pair<const LoadInst *, Type *>, 2> cellLoads;
-  struct ObjectCells { const Value *base; Type *ty; uint64_t n; };
-  SmallVector<ObjectCells, 2> objectCells;
   SmallPtrSet<const Value *, 32> visited;
   std::function<void(const Value *)> target = [&](const Value *v) {
     if (!visited.insert(v).second)
@@ -558,49 +433,8 @@ SmallVector<std::pair<Value *, Type *>, 4> laterInPlaceTargets(LoweringContext &
       target(ie->getOperand(1));
       return;
     }
-    if (auto *ld = dyn_cast<LoadInst>(I)) {
-      const Value *p = ld->getPointerOperand();
-      bool slot = false;
-      for (ObjectId o : ctx.T.provenance(p, ctx.S))
-        slot |= ctx.T.classOf(o) == ObjClass::Slot;
-      if (!slot)
-        return;   // a QRAM or QROM load copies out into a fresh rail (§1.3)
-      auto *pi = dyn_cast<Instruction>(p);
-      if (!pi || DT.dominates(pi, &CB)) {
-        cellLoads.push_back({ld, ld->getType()});
-        return;
-      }
-      if (auto *gep = dyn_cast<GetElementPtrInst>(pi); gep && all_of(gep->operands(), [&](const Value *x) {
-            auto *xi = dyn_cast<Instruction>(x);
-            return !xi || DT.dominates(xi, &CB);
-          })) {
-        cellLoads.push_back({ld, ld->getType()});
-        return;
-      }
-      // The address is computed after the arm: the rotated cell is one of the object's, unknown at the
-      // abort, so every cell of each object it may name is snapshotted (each holds its rail at the abort).
-      const DataLayout &DL = ctx.M.getDataLayout();
-      SmallVector<const Value *, 4> bases;
-      getUnderlyingObjects(p, bases);
-      for (const Value *b : bases) {
-        auto *bi = dyn_cast<Instruction>(b);
-        if (bi && !DT.dominates(bi, &CB))
-          internalError("eff-tape: a slot object allocated after the noreturn arm read by a later rotation", ld);
-        std::optional<uint64_t> size;
-        if (auto *ai = dyn_cast<AllocaInst>(b)) {
-          if (auto sz = ai->getAllocationSize(DL); sz && !sz->isScalable())
-            size = sz->getFixedValue();
-        } else if (auto *gv = dyn_cast<GlobalVariable>(b)) {
-          size = DL.getTypeAllocSize(gv->getValueType());
-        }
-        uint64_t cell = DL.getTypeStoreSize(ld->getType());
-        if (!size || !cell)
-          unimplemented("eff-tape: a rotation after a noreturn arm of a cell of a slot object of unknown extent "
-                        "at an address computed after the arm",
-                        ld);
-        objectCells.push_back({b, ld->getType(), *size / cell});
-      }
-      return;
+    if (isa<LoadInst>(I)) {
+      return;   // a bus load copies out into a fresh rail (§1.3)
     }
     // Any other instruction (a template, a call's result) is a fresh rail made after the abort (rule 4).
   };
@@ -614,8 +448,6 @@ SmallVector<std::pair<Value *, Type *>, 4> laterInPlaceTargets(LoweringContext &
     if (!inLoop && (ctx.preds().block(&X) & pa).isBottom())
       continue;   // never runs on the abort branch
     for (Instruction &I : X) {
-      // CR rule 4: in place is a rotation of an existing rail (rules 2, 10, 15) and nothing else. A QRAM
-      // store, pop or memory intrinsic swaps and copies cells (§1.3), an atomic is a plain access (rule 24).
       auto *C = dyn_cast<CallBase>(&I);
       if (!C)
         continue;
@@ -627,8 +459,6 @@ SmallVector<std::pair<Value *, Type *>, 4> laterInPlaceTargets(LoweringContext &
       }
       if (k == Class::Lift || k == Class::Declared || k == Class::Indirect || k == Class::Asm ||
           k == Class::Thread || k == Class::Varargs) {
-        // A callee may rotate what it is handed (rule 18): its quantum scalar arguments, and the cells of
-        // slot objects behind its pointer arguments.
         SmallPtrSet<const Function *, 8> seen;
         if (k == Class::Lift && !bodyMayModifyInPlace(calleeOf(*C), seen))
           continue;
@@ -638,9 +468,6 @@ SmallVector<std::pair<Value *, Type *>, 4> laterInPlaceTargets(LoweringContext &
             target(a);
             continue;
           }
-          for (const User *usr : a->users())
-            if (auto *ld = dyn_cast<LoadInst>(usr); ld && ld->getPointerOperand() == a)
-              target(ld);
         }
       }
     }
@@ -654,23 +481,6 @@ SmallVector<std::pair<Value *, Type *>, 4> laterInPlaceTargets(LoweringContext &
       continue;   // measured before the abort: a classical outcome, nothing to snapshot
     if (seenH.insert(op.v).second)
       out.push_back({op.v, v->getType()});
-  }
-  // A slot cell a later load reads: the rail it holds at the abort (mem::readSlotCells, M4).
-  for (auto &cl : cellLoads) {
-    if (!cl.second->isIntegerTy() && !cl.second->isFloatingPointTy())
-      continue;
-    SmallVector<Operand, 1> c = mem::readSlotCells(ctx, cl.first->getPointerOperand(),
-                                                   cl.second, 1, CB);
-    if (!c.empty() && c[0].handle && seenH.insert(c[0].v).second)
-      out.push_back({c[0].v, cl.second});
-  }
-  for (auto &oc : objectCells) {
-    if (!oc.ty->isIntegerTy() && !oc.ty->isFloatingPointTy())
-      continue;
-    SmallVector<Operand, 8> c = mem::readSlotCells(ctx, oc.base, oc.ty, oc.n, CB);
-    for (const Operand &x : c)
-      if (x.handle && seenH.insert(x.v).second)
-        out.push_back({x.v, oc.ty});
   }
   return out;
 }
@@ -771,65 +581,12 @@ std::map<const Function *, std::pair<WeakVH, std::vector<TapedInstall>>> &tapedI
   static std::map<const Function *, std::pair<WeakVH, std::vector<TapedInstall>>> m;
   return m;
 }
-std::vector<TapedInstall> &installsOf(LoweringContext &ctx) {
-  auto &e = tapedInstalls()[ctx.S.F];
-  Value *entry = &ctx.out().getEntryBlock().front();
-  if (e.first != entry) {
-    e.first = entry;
-    e.second.clear();
-  }
-  return e.second;
-}
 
 bool isInstall(StringRef n) { return n == "signal" || n == "sigaction" || n == "bsd_signal" || n == "sigset"; }
 
-// The handler the host's signal table holds for sig at run time (classical): sigaction(sig, NULL, &old), the
-// handler being the first word of struct sigaction on every x86-64 target (Darwin's __sigaction_u, Linux's
-// sa_handler).
-Value *installedHandler(LoweringContext &ctx, Value *sig) {
-  LLVMContext &C = ctx.M.getContext();
-  Type *ptr = PointerType::get(C, 0), *i32 = Type::getInt32Ty(C);
-  FunctionCallee sa = ctx.M.getOrInsertFunction("sigaction", FunctionType::get(i32, {i32, ptr, ptr}, false));
-  IRBuilder<> &B = ctx.B();
-  AllocaInst *buf;
-  {
-    BasicBlock &entry = ctx.out().getEntryBlock();
-    IRBuilder<> E(&entry, entry.getFirstInsertionPt());
-    buf = E.CreateAlloca(ArrayType::get(Type::getInt8Ty(C), 256), nullptr, "cq.sigaction");
-    buf->setAlignment(Align(8));
-  }
-  B.CreateCall(sa, {sig, ConstantPointerNull::get(cast<PointerType>(ptr)), buf});
-  return B.CreateLoad(ptr, buf);
-}
 
-// A readable word for a null act (the select above never reads it then).
-Value *installedHandlerSlot(LoweringContext &ctx) {
-  BasicBlock &entry = ctx.out().getEntryBlock();
-  IRBuilder<> E(&entry, entry.getFirstInsertionPt());
-  AllocaInst *a = E.CreateAlloca(PointerType::get(ctx.M.getContext(), 0), nullptr, "cq.sigaction.none");
-  return a;
-}
 
-// Whether the default action of the classical signal number sig terminates the process (run time).
-Value *terminatesByDefault(LoweringContext &ctx, Value *sig) {
-  IRBuilder<> &B = ctx.B();
-  Value *acc = B.getFalse();
-  for (int64_t s = 1; s <= 64; ++s)
-    if (signalDefault(ctx.M, s) == SigDefault::Terminate)
-      acc = B.CreateOr(acc, B.CreateICmpEQ(sig, ConstantInt::get(sig->getType(), s)));
-  return acc;
-}
 
-// One classical test of the builder's block: true goes to a fresh arm block (the builder moves there), false
-// to the returned continuation.
-BasicBlock *armIf(LoweringContext &ctx, Value *cond) {
-  LLVMContext &C = ctx.M.getContext();
-  Function &out = ctx.out();
-  BasicBlock *arm = BasicBlock::Create(C, "", &out), *next = BasicBlock::Create(C, "", &out);
-  ctx.B().CreateCondBr(cond, arm, next);
-  ctx.B().SetInsertPoint(arm);
-  return next;
-}
 
 // CR rule 16 (102): raise(sig) under a quantum predicate. The delivery is an effect entry
 // (cqrt_tape_effect_controlled(flag, tape, "raise"), the signal number its field). Then the handler runs:
@@ -846,409 +603,21 @@ BasicBlock *armIf(LoweringContext &ctx, Value *cond) {
 //    abort arm under flag & OR of the (sig == s) whose default terminates and whose table holds SIG_DFL.
 // Handlers installed under a quantum predicate are tape entries (signalTableEntry): the host table holds
 // the classical installations.
-void lowerRaise(LoweringContext &ctx, CallBase &CB, Value *flag, bool classicalRaise = false) {
-  const Value *sigV = CB.getArgOperand(0);
-  auto *sigC = dyn_cast<ConstantInt>(sigV);
-  // The classical-table case: what the module installs for sig. A classical raise on the tape (tape order,
-  // flag the |1> seed) always reads the table: its handlers are the untainted bodies, called in order.
-  SmallPtrSet<const Function *, 2> handlers;
-  bool ign = false, dfl = false, dynamic = !sigC || classicalRaise;
-  for (const Function &G : ctx.M)
-    for (const User *u : G.users()) {
-      if (dynamic)
-        break;
-      auto *C = dyn_cast<CallBase>(u);
-      if (!C || C->getCalledOperand() != &G || !G.isDeclaration())
-        continue;
-      StringRef n = G.getName();
-      if (n == "sigaction") {
-        dynamic = true;
-        break;
-      }
-      if ((n != "signal" && n != "bsd_signal" && n != "sigset") || C->arg_size() != 2)
-        continue;
-      auto *s = dyn_cast<ConstantInt>(C->getArgOperand(0));
-      if (!s) {
-        dynamic = true;
-        break;
-      }
-      if (s->getSExtValue() != sigC->getSExtValue())
-        continue;
-      const Value *h = C->getArgOperand(1)->stripPointerCasts();
-      if (auto *H = dyn_cast<Function>(h); H && !H->isDeclaration()) {
-        handlers.insert(H);
-        continue;
-      }
-      if (isa<ConstantPointerNull>(h)) {
-        dfl = true;
-        continue;
-      }
-      if (auto *ce = dyn_cast<ConstantExpr>(h); ce && ce->getOpcode() == Instruction::IntToPtr)
-        if (auto *ci = dyn_cast<ConstantInt>(ce->getOperand(0)); ci && (ci->isZero() || ci->isOne())) {
-          (ci->isZero() ? dfl : ign) = true;
-          continue;
-        }
-      dynamic = true;
-    }
-  if (handlers.size() + ign + dfl > 1)
-    dynamic = true;
-  // An installation on the tape (under a quantum predicate, or after a tape point) is not in the host table:
-  // the handler is a merged value (below).
-  for (const Function &G : ctx.M)
-    if (!dynamic && G.isDeclaration() && isInstall(G.getName()))
-      for (const User *u : G.users())
-        if (auto *C = dyn_cast<CallBase>(u); C && C->getCalledOperand() == &G)
-          for (const Specialization &S2 : ctx.T.specializations())
-            if (S2.F == C->getFunction() && !S2.pure && calls::classify(*C, ctx.T, S2) == calls::Class::HostEffect)
-              dynamic = true;
-
-  Value *tape = tapeOf(ctx);
-  ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffect, {}, /*ctl=*/true}, {flag, tape, effectName(ctx.M, "raise")});
-  emitField(ctx, CB, 0, 0, tape, flag);
-
-  if (!dynamic) {
-    int64_t sig = sigC->getSExtValue();
-    bool byDefault = handlers.empty() && !ign;
-    // A default action of stop suspends the process until SIGCONT, after which it continues: the delivery
-    // entry alone, as for ignore (orchestrator decision under rule 16, owner may override).
-    bool terminate = byDefault && signalDefault(ctx.M, sig) == SigDefault::Terminate;
-    if (terminate)
-      requireEntry(ctx, CB, "a terminating raise");
-    const Specialization *cs = handlers.empty() ? nullptr : ctx.T.calleeSpecialization(CB, ctx.S);
-    if (!handlers.empty() && (!cs || cs->F != *handlers.begin() || !cs->ctl))
-      internalError("eff-tape: raise of a handled signal under a quantum predicate whose callee taint does not "
-                    "name as the handler's _ctl clone",
-                    &CB);
-    if (cs) {
-      unsigned argMap[1] = {0};
-      calls::lowerLiftedVia(ctx, CB, argMap);
-      return;
-    }
-    if (terminate)
-      abortArm(ctx, CB, flag);
-    return;
-  }
-
-  // The dynamic table: dispatch over taint's candidates on the handler the host table holds.
-  auto cands = ctx.T.calleeCandidates(CB, ctx.S);
-  LLVMContext &C = ctx.M.getContext();
-  IRBuilder<> &B = ctx.B();
-  Type *ptrTy = PointerType::get(C, 0);
-  Operand sig = ctx.operand(sigV);
-  auto dispatch = [&](Value *h, Value *g) {
-    for (auto &[G, s] : cands) {
-      BasicBlock *next = armIf(ctx, B.CreateICmpEQ(h, G));
-      if (calls::emitDispatchArm(ctx, CB, *G, s, g))
-        unimplemented("eff-tape: a signal handler carrying the floating-point environment (rule 23) dispatched on "
-                      "the host table (its flags rail merged over the arms)",
-                      &CB);
-      B.CreateBr(next);
-      B.SetInsertPoint(next);
-    }
-  };
-  // Taped installations (rule 16 signal table): the handler is a merged value. Every one the module makes must
-  // be visible here: in this function, before this raise on every path (its predicate rail then exists here).
-  std::vector<TapedInstall> taped;
-  {
-    // An installation lowered before this raise in this function with no classical guard of its own (its
-    // classical factor top) lies on the linearized path to it: its values and predicate are available here.
-    for (const TapedInstall &t : installsOf(ctx))
-      if (isPotentiallyReachable(t.call, &CB))
-        taped.push_back(t);
-    for (const Function &G : ctx.M)
-      if (G.isDeclaration() && isInstall(G.getName()))
-        for (const User *u : G.users())
-          if (auto *C = dyn_cast<CallBase>(u); C && C->getCalledOperand() == &G)
-            for (const Specialization &S2 : ctx.T.specializations())
-              if (S2.F == C->getFunction() && !S2.pure && calls::classify(*C, ctx.T, S2) == calls::Class::HostEffect &&
-                  none_of(taped, [&](const TapedInstall &t) { return t.call == C; }))
-                unimplemented("eff-tape: a raise after a handler installation on the tape that is not in its function "
-                              "before it on every path (rule 16 signal table across a call or a join)",
-                              &CB);
-  }
-  if (!taped.empty()) {
-    if (sig.handle)
-      unimplemented("eff-tape: a raise of a quantum signal number after a handler installation on the tape", &CB);
-    Value *h = installedHandler(ctx, sig.v);
-    RailType i1{Kind::Int, 1};
-    // The rail "the merged handler is X": the host table's, overridden by each taped installation in order.
-    auto handlerIs = [&](Value *X) -> Value * {
-      CallInst *c0 = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {B.CreateICmpEQ(h, X)});
-      ctx.unc().recordSeed(c0);
-      Value *c = c0;
-      for (const TapedInstall &t : taped) {
-        Value *same = B.CreateICmpEQ(B.CreateSExtOrTrunc(t.sig, sig.v->getType()), sig.v);
-        if (t.applies)
-          same = B.CreateAnd(same, t.applies);
-        abi::TemplateSpec sel;
-        sel.op = "select";
-        sel.w = i1;
-        sel.shape = "lh";
-        Value *pf = t.q ? ctx.preds().flag(ctx, *t.q) : nullptr;
-        Value *eqX = B.CreateICmpEQ(t.handler, X);
-        Value *n;
-        if (!pf) {
-          CallInst *sd = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {eqX});
-          ctx.unc().recordSeed(sd);
-          n = sd;
-        } else {
-          n = ctx.emitTemplate(sel, {Operand{pf, true}, Operand{eqX, false}, Operand{c, true}});
-        }
-        auto *m = cast<Instruction>(B.CreateSelect(same, n, c));
-        ctx.unc().recordMerge(m);
-        c = m;
-      }
-      abi::TemplateSpec andT;
-      andT.op = "and";
-      andT.w = i1;
-      return ctx.emitTemplate(andT, {Operand{c, true}, Operand{flag, true}});
-    };
-    for (auto &[G, s] : cands)
-      if (Value *env = calls::emitDispatchArm(ctx, CB, *G, s, handlerIs(G)))
-        fenv::afterCloneCall(ctx, CB, env);   // unconditional arms: each takes and returns the environment
-    Value *term = terminatesByDefault(ctx, sig.v);
-    if (auto *k = dyn_cast<ConstantInt>(term); k && k->isZero())
-      return;
-    requireEntry(ctx, CB, "a terminating raise");
-    Value *g = handlerIs(ConstantPointerNull::get(cast<PointerType>(ptrTy)));
-    BasicBlock *next = armIf(ctx, term);
-    abortArm(ctx, CB, g);
-    B.CreateBr(next);
-    B.SetInsertPoint(next);
-    return;
-  }
-  if (!sig.handle) {
-    Value *h = installedHandler(ctx, sig.v);
-    dispatch(h, flag);
-    Value *abort = B.CreateAnd(B.CreateICmpEQ(h, ConstantPointerNull::get(cast<PointerType>(ptrTy))),
-                               terminatesByDefault(ctx, sig.v));
-    if (auto *k = dyn_cast<ConstantInt>(abort); k && k->isZero())
-      return;
-    requireEntry(ctx, CB, "a terminating raise");
-    BasicBlock *next = armIf(ctx, abort);
-    abortArm(ctx, CB, flag);
-    B.CreateBr(next);
-    B.SetInsertPoint(next);
-    return;
-  }
-  // A quantum signal number: every signal number s, under g_s = flag & (sig == s).
-  unsigned bits = sigV->getType()->getIntegerBitWidth();
-  RailType i1{Kind::Int, 1};
-  Value *term = nullptr;   // the rail OR of the (sig == s) whose table holds a terminating SIG_DFL
-  for (int64_t s = 1; s <= 64; ++s) {
-    abi::TemplateSpec eq;
-    eq.op = "icmp";
-    eq.pred = "eq";
-    eq.w = RailType{Kind::Int, bits};
-    eq.shape = "hl";
-    Value *e = ctx.emitTemplate(eq, {sig, Operand{ConstantInt::get(sigV->getType(), s), false}});
-    abi::TemplateSpec andT;
-    andT.op = "and";
-    andT.w = i1;
-    Value *g = ctx.emitTemplate(andT, {Operand{e, true}, Operand{flag, true}});
-    Value *h = installedHandler(ctx, ConstantInt::get(Type::getInt32Ty(C), s));
-    dispatch(h, g);
-    if (signalDefault(ctx.M, s) != SigDefault::Terminate)
-      continue;
-    // The table's choice is classical: a classical select over the two handles (rule 9).
-    Value *isDfl = B.CreateICmpEQ(h, ConstantPointerNull::get(cast<PointerType>(ptrTy)));
-    if (!term) {
-      CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {B.getFalse()});
-      ctx.unc().recordSeed(z);
-      term = z;
-    }
-    abi::TemplateSpec orT;
-    orT.op = "or";
-    orT.w = i1;
-    Value *o = ctx.emitTemplate(orT, {Operand{term, true}, Operand{e, true}});
-    Instruction *sel = cast<Instruction>(B.CreateSelect(isDfl, o, term));
-    ctx.unc().recordMerge(sel);
-    term = sel;
-  }
-  requireEntry(ctx, CB, "a terminating raise");
-  abi::TemplateSpec andT;
-  andT.op = "and";
-  andT.w = i1;
-  abortArm(ctx, CB, ctx.emitTemplate(andT, {Operand{term, true}, Operand{flag, true}}));
+void lowerRaise(LoweringContext &, CallBase &, Value *, bool = false) {
+  report_fatal_error("cq: unimplemented: bus: raise through the signal table (rule 16)", /*gen_crash_diag=*/false);
 }
 
-// The quantum length of a buffer field (CR rule 16 fields): len > j as an i1 rail, `and`ed with the entry's
-// flag (one control per field).
-Value *byteGuard(LoweringContext &ctx, const Operand &len, unsigned lenBits, uint64_t j, Value *flag) {
-  abi::TemplateSpec gt;
-  gt.op = "icmp";
-  gt.pred = "ugt";
-  gt.w = RailType{Kind::Int, lenBits};
-  gt.shape = "hl";
-  Value *c = ctx.emitTemplate(gt, {len, Operand{ConstantInt::get(IntegerType::get(ctx.M.getContext(), lenBits), j), false}});
-  if (!flag)
-    return c;
-  abi::TemplateSpec andT;
-  andT.op = "and";
-  andT.w = RailType{Kind::Int, 1};
-  return ctx.emitTemplate(andT, {Operand{c, true}, Operand{flag, true}});
-}
 
-// One i8 field under a per-field control (a quantum length): a classical byte is first a seed rail (rule 7),
-// since a literal field has no controlled form.
-void guardedByteField(LoweringContext &ctx, Value *tape, Value *ctl, Operand c) {
-  RailType w{Kind::Int, 8};
-  if (!c.handle) {
-    CallInst *sd = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {c.v});
-    ctx.unc().recordSeed(sd);
-    c = Operand{sd, true};
-  }
-  CallInst *h2 = ctx.emitCore(abi::CoreSpec{abi::Core::TapeWrite, w, /*ctl=*/true}, {ctl, tape, c.v});
-  ctx.unc().recordExternal(h2, Role::Tape);
-}
 
-// The upper bound of a classical-or-quantum length (LLVM's range facts of the original value).
-std::optional<uint64_t> lengthBound(const Value *v, const DataLayout &DL) {
-  if (auto *ci = dyn_cast<ConstantInt>(v))
-    return ci->getZExtValue();
-  if (!v->getType()->isIntegerTy())
-    return std::nullopt;
-  ConstantRange R = computeConstantRange(v, /*ForSigned=*/false, /*UseInstrInfo=*/true);
-  R = R.intersectWith(ConstantRange::fromKnownBits(computeKnownBits(v, DL), /*IsSigned=*/false),
-                      ConstantRange::Unsigned);
-  if (R.isFullSet() || R.isWrappedSet())
-    return std::nullopt;
-  APInt hi = R.getUnsignedMax();
-  if (hi.getActiveBits() > 63)
-    return std::nullopt;
-  return hi.getZExtValue();
-}
 
 // A buffer argument (CR rule 16 fields: fwrite's, write's): its cells, one i8 field per byte up to the
 // length's upper bound, each _controlled under len > j when the length is quantum; a run-time classical
 // length is a classical loop of field writes. elemSize * count bytes (count the original call's operand;
 // elemSize a constant, or 0 when the byte count is count itself).
-void bufferFields(LoweringContext &ctx, CallBase &CB, const Value *buf, const Value *sizeV, const Value *countV,
-                  Value *tape, Value *flag) {
-  LLVMContext &C = ctx.M.getContext();
-  const DataLayout &DL = ctx.M.getDataLayout();
-  IRBuilder<> &B = ctx.B();
-  Type *i8 = Type::getInt8Ty(C), *i64 = Type::getInt64Ty(C);
-  bool fat = ctx.T.isFatPointer(buf, ctx.S) || ctx.T.isQuantum(buf, ctx.S);
-  bool slot = false, classical = false, qram = false;
-  for (ObjectId o : ctx.T.provenance(buf, ctx.S)) {
-    ObjClass k = ctx.T.classOf(o);
-    (k == ObjClass::Slot ? slot : k == ObjClass::Classical ? classical : qram) = true;
-  }
-  // A quantum pointer, or one into a QRAM or into several classes of object, reads its bytes by rule 21
-  // (a load per candidate object, merged on the tag).
-  fat = fat || qram || (slot && classical);
-  // The byte count: sizeV * countV (sizeV null: countV alone).
-  Operand cnt = ctx.operand(countV);
-  Operand sz = sizeV ? ctx.operand(sizeV) : Operand{ConstantInt::get(countV->getType(), 1), false};
-  unsigned bits = countV->getType()->getIntegerBitWidth();
-  Operand len;
-  if (!cnt.handle && !sz.handle) {
-    len = Operand{B.CreateMul(sz.v, cnt.v), false};
-  } else {
-    abi::TemplateSpec mul;
-    mul.op = "mul";
-    mul.w = RailType{Kind::Int, bits};
-    if (cnt.handle && sz.handle)
-      len = Operand{ctx.emitTemplate(mul, {cnt, sz}), true};
-    else if (cnt.handle && isa<ConstantInt>(sz.v) && cast<ConstantInt>(sz.v)->isOne())
-      len = cnt;
-    else if (sz.handle && isa<ConstantInt>(cnt.v) && cast<ConstantInt>(cnt.v)->isOne())
-      len = sz;
-    else {
-      mul.shape = "hl";
-      len = cnt.handle ? Operand{ctx.emitTemplate(mul, {cnt, sz}), true} : Operand{ctx.emitTemplate(mul, {sz, cnt}), true};
-    }
-  }
-  auto *lenC = len.handle ? nullptr : dyn_cast<ConstantInt>(len.v);
-  // The bound: the constant length, else the lengths' range product, capped by the object's extent.
-  std::optional<uint64_t> bound;
-  if (lenC)
-    bound = lenC->getZExtValue();
-  else {
-    std::optional<uint64_t> a = lengthBound(countV, DL), b = sizeV ? lengthBound(sizeV, DL) : std::optional<uint64_t>(1);
-    if (a && b && (!*b || *a <= UINT64_MAX / *b))
-      bound = *a * *b;
-    if (std::optional<uint64_t> e = bytesToObjectEnd(ctx, buf); e && (!bound || *e < *bound))
-      bound = *e;
-  }
-  if (!slot && !fat && !len.handle && !lenC) {
-    // A classical host buffer of a run-time classical length: a classical loop of literal fields.
-    Function &out = ctx.out();
-    Value *p = ctx.operand(buf).v;
-    Value *n = B.CreateZExtOrTrunc(len.v, i64);
-    BasicBlock *pre = B.GetInsertBlock();
-    BasicBlock *head = BasicBlock::Create(C, "", &out);
-    BasicBlock *body = BasicBlock::Create(C, "", &out);
-    BasicBlock *done = BasicBlock::Create(C, "", &out);
-    B.CreateBr(head);
-    B.SetInsertPoint(head);
-    PHINode *j = B.CreatePHI(i64, 2);
-    j->addIncoming(ConstantInt::get(i64, 0), pre);
-    B.CreateCondBr(B.CreateICmpULT(j, n), body, done);
-    B.SetInsertPoint(body);
-    Value *byte = B.CreateLoad(i8, B.CreateInBoundsGEP(i8, p, j));
-    ctx.emitCore(abi::CoreSpec{abi::Core::TapeWriteLit, RailType{Kind::Int, 8}}, {tape, byte});
-    j->addIncoming(B.CreateAdd(j, ConstantInt::get(i64, 1)), body);
-    B.CreateBr(head);
-    B.SetInsertPoint(done);
-    return;
-  }
-  if (!bound && fat) {
-    // The length's range is unknown: the bytes up to each candidate object's extent (fatBytes).
-    std::optional<uint64_t> none;
-    SmallVector<Operand, 8> c = fatBytes(ctx, CB, buf, none);
-    bound = c.size();
-  }
-  if (!bound)
-    unimplemented("eff-tape: a buffer field of a length with no upper bound over an object of unknown extent", &CB);
-  SmallVector<Operand, 8> cells;
-  if (fat) {
-    cells = fatBytes(ctx, CB, buf, bound);
-  } else if (slot) {
-    cells = mem::readSlotCells(ctx, buf, i8, *bound, CB);
-  } else {
-    // A classical buffer: its bytes read at the call (copied at call time). Under a quantum length a byte
-    // past the length is not read by the program; it is read here only within the object's extent.
-    Value *p = ctx.operand(buf).v;
-    for (uint64_t i = 0; i < *bound; ++i)
-      cells.push_back(Operand{B.CreateLoad(i8, B.CreateConstInBoundsGEP1_64(i8, p, i)), false});
-  }
-  for (uint64_t i = 0; i < cells.size(); ++i) {
-    if (len.handle) {
-      guardedByteField(ctx, tape, byteGuard(ctx, len, bits, i, flag), cells[i]);
-      continue;
-    }
-    if (lenC) {
-      scalarField(ctx, tape, flag, cells[i], i8);
-      continue;
-    }
-    // A slot buffer of a run-time classical length: each field under the classical guard j < len.
-    Function &out = ctx.out();
-    BasicBlock *arm = BasicBlock::Create(C, "", &out);
-    BasicBlock *next = BasicBlock::Create(C, "", &out);
-    B.CreateCondBr(B.CreateICmpULT(ConstantInt::get(len.v->getType(), i), len.v), arm, next);
-    B.SetInsertPoint(arm);
-    scalarField(ctx, tape, flag, cells[i], i8);
-    B.CreateBr(next);
-    B.SetInsertPoint(next);
-  }
+void bufferFields(LoweringContext &, CallBase &, const Value *, const Value *, const Value *, Value *, Value *) {
+  report_fatal_error("cq: unimplemented: bus: a buffer field of an effect entry (rule 16)", /*gen_crash_diag=*/false);
 }
 
-void slotStringField(LoweringContext &ctx, CallBase &CB, const Value *str, Value *tape, Value *flag) {
-  bool fat = ctx.T.isFatPointer(str, ctx.S) || ctx.T.isQuantum(str, ctx.S);
-  for (ObjectId o : ctx.T.provenance(str, ctx.S))
-    fat |= ctx.T.classOf(o) != ObjClass::Slot;
-  std::optional<uint64_t> n = fat ? std::nullopt : bytesToObjectEnd(ctx, str);
-  // A quantum pointer, a pointer into a QRAM or several classes of object, or one at a run-time offset:
-  // the bytes by rule 21 (a load per candidate object and byte, merged on the tag).
-  SmallVector<Operand, 8> cells = n ? mem::readSlotCells(ctx, str, Type::getInt8Ty(ctx.M.getContext()), *n, CB)
-                                    : fatBytes(ctx, CB, str, std::nullopt);
-  ctx.emitCore(abi::CoreSpec{abi::Core::TapeStrBegin}, {tape});
-  for (const Operand &c : cells)
-    scalarField(ctx, tape, flag, c, Type::getInt8Ty(ctx.M.getContext()));
-  ctx.emitCore(abi::CoreSpec{abi::Core::TapeStrEnd}, {tape});
-}
 
 // A signal-table call (signal, sigaction, bsd_signal, sigset, kill, killpg, pthread_kill, sigqueue) that
 // goes on the tape: an effect entry with its arguments as fields (rule 16). kill and its kin send a signal
@@ -1280,31 +649,9 @@ void signalTableEntry(LoweringContext &ctx, CallBase &CB, const Function &F) {
   ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffect, {}, /*ctl=*/true}, {ctl, tape, effectName(ctx.M, n)});
   for (unsigned a = 0; a < CB.arg_size(); ++a)
     emitField(ctx, CB, a, 0, tape, flag);
-  if (installs && CB.arg_size() >= 2) {
-    // The installation for a later raise's merged handler (lowerRaise).
-    Operand sg = ctx.operand(CB.getArgOperand(0)), hv = ctx.operand(CB.getArgOperand(1));
-    if (sg.handle || hv.handle || ctx.T.isFatPointer(CB.getArgOperand(1), ctx.S))
-      unimplemented("eff-tape: a handler installation on the tape with a quantum signal number or handler", &CB);
-    Value *handler = hv.v, *applies = nullptr;
-    if (n == "sigaction") {
-      // The handler is the first word of *act; a null act installs nothing.
-      LLVMContext &C = ctx.M.getContext();
-      Type *ptr = PointerType::get(C, 0);
-      IRBuilder<> &B = ctx.B();
-      applies = B.CreateICmpNE(hv.v, ConstantPointerNull::get(cast<PointerType>(ptr)));
-      Value *safe = B.CreateSelect(applies, hv.v, installedHandlerSlot(ctx));
-      handler = B.CreateLoad(ptr, safe);
-    }
-    Pred full = ctx.preds().block(CB.getParent());
-    if (!full.classicalFactor(ctx.T, ctx.S).isTop())
-      unimplemented("eff-tape: a handler installation on the tape under a classical guard (rule 16 signal table: "
-                    "the merged handler across the guard's join)",
-                    &CB);
-    std::optional<Pred> qp;
-    if (flag)
-      qp = full.quantumPart(ctx.T, ctx.S);
-    installsOf(ctx).push_back({&CB, qp, sg.v, handler, applies});
-  }
+  if (installs && CB.arg_size() >= 2)
+    report_fatal_error("cq: unimplemented: bus: a handler installation in the signal table (rule 16)",
+                       /*gen_crash_diag=*/false);
 }
 
 } // namespace
@@ -1333,11 +680,6 @@ void lowerHostEffect(LoweringContext &ctx, CallBase &CB) {
       ctx.emitCore(abi::CoreSpec{abi::Core::TapeFmt}, {tape, fmt});
   };
 
-  // fwrite(buf, size, n, stdout) with a constant size * n (99): one entry of size * n raw %c bytes, one i8
-  // field per byte (C17 7.21.8.2: fputc of each byte). A slot buffer's cells (mem::readSlotCells, M4) are
-  // rails or literals; a classical buffer's bytes are read at the call (literal fields: copied at call time).
-  // Any other fwrite (another stream, a run-time or quantum length) is an effect entry below, its buffer
-  // its cells (rule 16 fields).
   if (libFunc(*F, LibFunc_fwrite) && isStdout(CB.getArgOperand(3)) && isa<ConstantInt>(CB.getArgOperand(1)) &&
       isa<ConstantInt>(CB.getArgOperand(2))) {
     uint64_t n = cast<ConstantInt>(CB.getArgOperand(1))->getZExtValue() *

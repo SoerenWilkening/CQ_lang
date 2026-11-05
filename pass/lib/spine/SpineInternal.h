@@ -102,7 +102,6 @@ struct Shared {
   // a handle where the mask's digit is 1; calls::lowerVarargs spills them at llvm.va_start.
   llvm::SmallVector<Operand, 4> varargs;
   llvm::DenseMap<const llvm::BasicBlock *, llvm::BasicBlock *> blocks;
-  llvm::DenseMap<const llvm::Value *, WalkedPtr> walked;   // cq-9w75: walked pointer phis of K-loops
   std::unique_ptr<Uncompute> unc;
   std::unique_ptr<PathPredicates> preds;
   std::optional<Pred> curPred;
@@ -160,13 +159,6 @@ struct Shared {
   // cq-5ajv: for each non-diagonal gate (rotations) and each in-place write (RailHist::writes), the
   // original instruction being lowered when it was emitted.
   llvm::DenseMap<const llvm::CallInst *, llvm::SmallVector<const llvm::Instruction *, 2>> gateAt;
-  // cq-su3p (Views.cpp): rule 3 representation views of a narrow register. A view phi (iN) merges
-  // zexts of one iM register's states and constants: it names the register's rail (bits M) and has
-  // no wide rail unless a user needs one (then `binds` holds a zext template of the rail, taken at
-  // the phi). A skipped zext (narrowSkipped) has no binding: every user narrows it to its source.
-  // A _Bool slot cell load (cq-nd2i) read by a narrowed compare is a view too (cell = true): an i8
-  // naming its cell's i1 rail; its binding, when it has one, is mem-slots' zext_i1_to_i8 of the rail.
-  // A cell view never takes part in a view phi.
   struct View {
     llvm::Value *rail = nullptr;
     unsigned bits = 0;
@@ -200,15 +192,6 @@ struct Shared {
   // cq-i9wk (CR rule 19): results of calls of in-place callees reached with no quantum argument that are
   // FROZEN (a register the callee minted or its rule-6 image): kept here like a register of this function.
   llvm::DenseSet<const llvm::Value *> frozenResults;
-  // cq-necw (CR rules 6, 18, §1.4 _inv<c>): the new-IR handle loads of a caller cell's new content after a
-  // clone call that overwrote it, when the call's group has that load as its only member (no quantum result,
-  // one cell written) and the cell's old rail got the _inv<c> clean-up (calls cleanDeadCells: the object's
-  // address reaches only constant-offset loads and stores, the call is in no cycle, nothing writes the
-  // object after it). Rule 6 may clean such a load at a later bijective update like any register (cleanable),
-  // instead of the call's twin, which would restore the dead old content.
-  llvm::DenseSet<const llvm::Value *> invCellImages;
-  // cq-2ql9 (Opcode.cpp ruleSixRetry): an old value Y whose clean-up against I's image (yp) waits for the
-  // garbage rails that still read Y (blockers) to be settled; ctx is the context that lowered I.
   struct PendingSix {
     LoweringContext *ctx;
     llvm::Value *Y;
@@ -236,8 +219,6 @@ struct Shared {
 };
 
 Shared &shared(LoweringContext &);
-// cq-py5f: the spine's rule-21 routing test of a load/store pointer (a quantum tag: a fat pointer access).
-bool accessHasQuantumTag(LoweringContext &, const llvm::Value *ptr);
 // cq-8un4 (Context.cpp): the walker brackets each loop unit's loops:: call; LoweringContext::loopUnit()
 // reads the innermost one running.
 void pushLoopUnit(LoweringContext &, const llvm::Loop &);
@@ -247,9 +228,6 @@ void ruleSixAfter(LoweringContext &, llvm::Instruction &);
 // cq-2ql9: rule 6 clean-ups ruleSixAfter deferred until the garbage rails reading the old value settle;
 // called after every ruleSixAfter (Opcode.cpp).
 void ruleSixRetry(LoweringContext &);
-// cq-xivx (CR §1.4 _inv<c>, rule 18; Opcode.cpp): rule 6's inverse of one bijective update U of Y,
-// the template and its forward operands computing Y from yp (U's value). operandOf resolves U's other
-// operands, readsY tells whether one reads Y (then U is no bijection in Y). nullopt: no rule 6 bijection.
 struct InverseStep { abi::TemplateSpec spec; llvm::SmallVector<Operand, 3> ops; };
 std::optional<InverseStep> inverseStep(llvm::Instruction &U, llvm::Value *Y, Operand yp,
                                        llvm::function_ref<Operand(llvm::Value *)> operandOf,
@@ -386,32 +364,11 @@ const EntryReturn *entryReturn(const llvm::Function &F);
 // its rule-19 calls) still allocated at a return being lowered (kept, and no rule-6 clean-up registered),
 // in the output function's instruction order.
 llvm::SmallVector<llvm::Value *, 4> liveRegisters(LoweringContext &);
-// CR rule 19: a live register's mint site, the first original value (in the original function's order)
-// bound to its rail; the identity of an extra result across the in-place lowering and its kept clone.
 const llvm::Value *registerMintSite(LoweringContext &, llvm::Value *rail);
-// cq-i9wk (Construct.cpp): the kept clone (Specialization::kept) of in-place specialization inPlace, one per
-// (module, function), made on first request; takeKeptClones: those not constructed yet, which construct()
-// builds before the module's epilogue.
-const Specialization &keptSpec(const llvm::Module &, const Specialization &inPlace);
-std::vector<const Specialization *> takeKeptClones(const llvm::Module &);
-// cq-i9wk: the string function attribute a kept clone carries: how many registers it returns after its
-// results (calls::finalize's twin takes them first).
-inline constexpr const char *kKeptRegistersAttr = "cq-kept-registers";
-// cq-i9wk (Calls.cpp, calls::materialize): a kept clone's return type before its registers were appended
-// (what its returns build); nullptr for any other function.
-llvm::Type *keptCloneBaseType(const llvm::Function &clone);
-void setKeptCloneBaseType(const llvm::Function &clone, llvm::Type *base);
-void forgetKeptClones(const llvm::Module &);   // the module's epilogue
 
 // Classical copy of an original instruction into the new IR, operands remapped (Dispatch.cpp).
 llvm::Instruction *copyClassical(LoweringContext &, llvm::Instruction &);
 
-// Rule 20, _Bool cells (cq-sj2j): is this original load or store an access of a _Bool slot object,
-// whose cells hold i1 rails behind i8 memory? The object's definition is mem-slots' (Slots.cpp,
-// boolCells): the access goes to mem-slots (one slot object), and every load or store of that object
-// in the function is an i8 load carrying !range [0, 2) or an i8 store of a zext from i1 or of the
-// constant 0 / 1 (Dispatch.cpp).
-bool boolCellAccess(LoweringContext &, const llvm::Instruction &access);
 
 // Is v (an original value) quantum in this context's specialization?
 bool isQ(LoweringContext &, const llvm::Value *v);

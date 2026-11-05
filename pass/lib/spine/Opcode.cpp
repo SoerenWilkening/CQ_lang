@@ -16,7 +16,6 @@
 
 #include "cq/Abi.h"
 #include "cq/Calls.h"
-#include "cq/Memory.h"
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/ValueTracking.h"
@@ -32,9 +31,6 @@ namespace cq {
 
 namespace {
 
-// The rail type of a scalar. Every caller passes a scalar: a vector is lanes (rule 25, dispatch routes it
-// to aggr), a pointer a fat pointer (rule 21, fatptr), and fp128 is unreachable from C on this target
-// (rule 25, CR §1.1); the CQ.h surface takes scalars only (calls::classify's surface()).
 RailType rt(Type *t, const Value *at) {
   if (!t->isIntegerTy() && !t->isHalfTy() && !t->isBFloatTy() && !t->isFloatTy() && !t->isDoubleTy() && !t->isX86_FP80Ty())
     internalError("spine: a scalar rail type asked of a vector, pointer or fp128 (rules 21, 25: routed elsewhere)", at);
@@ -398,27 +394,6 @@ void lowerIntrinsic(LoweringContext &ctx, IntrinsicInst &II) {
   ctx.emitTemplate(spec, ops, &II);
 }
 
-// Rule 20 with rule 3 (cq-sj2j; 58, 60: "the i8<->i1 zext/trunc are representation changes, no
-// gate"): a _Bool slot cell holds an i1 rail behind i8 memory, so the trunc i8 -> i1 of its load
-// and the zext i1 -> i8 of a value stored only into such cells name the same rail.
-bool boolCellRepresentation(LoweringContext &ctx, const CastInst &ci) {
-  LLVMContext &C = ctx.M.getContext();
-  if (isa<TruncInst>(ci) && ci.getSrcTy() == Type::getInt8Ty(C) && ci.getDestTy() == Type::getInt1Ty(C)) {
-    auto *ld = dyn_cast<LoadInst>(ci.getOperand(0));
-    return ld && spine::boolCellAccess(ctx, *ld);
-  }
-  if (isa<ZExtInst>(ci) && ci.getSrcTy() == Type::getInt1Ty(C) && ci.getDestTy() == Type::getInt8Ty(C)) {
-    if (ci.use_empty())
-      return false;
-    for (const Use &u : ci.uses()) {
-      auto *st = dyn_cast<StoreInst>(u.getUser());
-      if (!st || u.getOperandNo() != 0 || !spine::boolCellAccess(ctx, *st))
-        return false;
-    }
-    return true;
-  }
-  return false;
-}
 
 } // namespace
 
@@ -455,7 +430,7 @@ void lowerOpcode(LoweringContext &ctx, Instruction &I) {
 
   if (auto *cmp = dyn_cast<CmpInst>(&I)) {
     if (!cmp->getOperand(0)->getType()->isIntegerTy() && !cmp->getOperand(0)->getType()->isFloatingPointTy())
-      internalError("spine: a compare of non-scalar operands reached lowerOpcode (fatptr::lowerCompare)", &I);
+      internalError("spine: a compare of non-scalar operands reached lowerOpcode (rule 3::lowerCompare)", &I);
     Operand x = ctx.operand(cmp->getOperand(0)), y = ctx.operand(cmp->getOperand(1));
     if (!x.handle && !y.handle) {
       spine::bindOperand(ctx, &I, Operand{spine::copyClassical(ctx, I), false});
@@ -482,7 +457,7 @@ void lowerOpcode(LoweringContext &ctx, Instruction &I) {
   if (auto *ci = dyn_cast<CastInst>(&I)) {
     const char *op = castName(ci->getOpcode());
     if (!op)
-      internalError("spine: a pointer cast reached lowerOpcode (fatptr)", &I);
+      internalError("spine: a pointer cast reached lowerOpcode (rule 3)", &I);
     Operand x = ctx.operand(ci->getOperand(0));
     if (!x.handle) {
       spine::bindOperand(ctx, &I, Operand{spine::copyClassical(ctx, I), false});
@@ -490,10 +465,6 @@ void lowerOpcode(LoweringContext &ctx, Instruction &I) {
     }
     Type *from = ci->getSrcTy(), *to = ci->getDestTy();
     if (from == to) {   // a no-op bitcast: a representation change with no gate (rule 3)
-      spine::bindOperand(ctx, &I, x);
-      return;
-    }
-    if (boolCellRepresentation(ctx, *ci)) {
       spine::bindOperand(ctx, &I, x);
       return;
     }
@@ -613,16 +584,9 @@ bool cleanable(LoweringContext &ctx, Value *y) {
   auto *I = dyn_cast<Instruction>(y);
   if (!I || isa<PHINode>(I))
     return false;
-  // cq-necw: a cell load is cleanable only as the new content of a cell whose old rail an _inv<c> cleans.
-  if (isa<LoadInst>(I) && !spine::shared(ctx).invCellImages.count(ctx.operand(y).v))
+  // Rule 5: a bus load (an atomic's old value included) is undone by its un-copy, never by rule 6.
+  if (isa<LoadInst>(I) || isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I))
     return false;
-  // cq-py5f (rule 24 on a QRAM cell): an atomicrmw / cmpxchg yields the cell's old value as a QRAM load
-  // (mem::rmwQramCell), uncomputed by its un-copy against the cell, as a load's: never by rule 6.
-  if (isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I))
-    if (auto *c = dyn_cast<CallInst>(ctx.operand(y).v); c && c->getCalledFunction())
-      if (std::optional<abi::CoreSpec> k = abi::parseCore(c->getCalledFunction()->getName());
-          k && k->op == abi::Core::QramLoad)
-        return false;
   if (auto *sel = dyn_cast<SelectInst>(I); sel && !spine::isQ(ctx, sel->getCondition()))
     return false;
   // A field of a clone call's composite result (an extractvalue of the lowered call, U2): the call's
@@ -795,10 +759,6 @@ bool deadAtCleanup(LoweringContext &ctx, Value *Y, Value *h, Instruction *at,
   for (auto &[w, v] : sh.views)
     if (v.rail == h)
       A.insert(w);
-  const Value *cellPtr = nullptr;
-  if (auto *rmw = dyn_cast<AtomicRMWInst>(at))
-    cellPtr = rmw->getPointerOperand();
-  DominatorTree &DT = sh.dt(*at->getFunction());
   // A user not lowered yet that may name the rail itself (a freeze, a cast the spine may skip, a
   // classical select or an aggregate or vector carrying it) is followed as an alias.
   auto mayAlias = [&](const Instruction *ui) {
@@ -838,64 +798,6 @@ bool deadAtCleanup(LoweringContext &ctx, Value *Y, Value *h, Instruction *at,
       return sel->getCondition() != w && spine::isQ(ctx, sel->getCondition());
     return false;   // an atomic's value operand is no update of it (the rmw updates the cell's old value)
   };
-  // A store's cell: an alloca of this function that taint classifies as slot cells (every object the
-  // pointer may name), at a classical offset.
-  auto localSlotCell = [&](const StoreInst *st) -> const AllocaInst * {
-    auto *AI = dyn_cast<AllocaInst>(getUnderlyingObject(st->getPointerOperand()));
-    if (!AI || AI->getFunction() != at->getFunction())
-      return nullptr;
-    ArrayRef<ObjectId> prov = ctx.T.provenance(st->getPointerOperand(), ctx.S);
-    if (prov.empty() || any_of(prov, [&](ObjectId o) { return ctx.T.classOf(o) != ObjClass::Slot; }) ||
-        ctx.T.offsetKind(st, ctx.S) != OffsetKind::Classical)
-      return nullptr;
-    return AI;
-  };
-  auto localQram = [&](const StoreInst *st) {
-    auto *AI = dyn_cast<AllocaInst>(getUnderlyingObject(st->getPointerOperand()));
-    if (!AI || AI->getFunction() != at->getFunction())
-      return false;
-    ArrayRef<ObjectId> prov = ctx.T.provenance(st->getPointerOperand(), ctx.S);
-    return !prov.empty() && all_of(prov, [&](ObjectId o) { return ctx.T.classOf(o) == ObjClass::Qram; });
-  };
-  // Every load of the object (through GEPs); false when the address has any other use (a
-  // call argument, a stored or returned pointer, a memory intrinsic: the cell may be read elsewhere).
-  // cq-8101: a load through a GEP with a run-time (classical) index may name the rail too. Its handle is
-  // an alias mem-slots may record as a register of its own (Uncompute then sees no use of the rail), so
-  // such a load is reported in dynLoads (the caller defers the clean-up until it can note the reads,
-  // ruleSixRetry); a caller that passes no dynLoads keeps the rail.
-  auto cellLoads = [&](const AllocaInst *AI, const std::function<void(const Instruction *)> &each) {
-    SmallVector<std::pair<const Value *, bool>, 8> ptrs{{AI, false}};
-    SmallPtrSet<const Value *, 8> seenP;
-    while (!ptrs.empty()) {
-      auto [p, dyn] = ptrs.pop_back_val();
-      if (!seenP.insert(p).second)
-        continue;
-      for (const User *u : p->users()) {
-        if (auto *ld = dyn_cast<LoadInst>(u)) {
-          if (dyn) {
-            if (ctx.T.offsetKind(ld, ctx.S) != OffsetKind::Classical || !dynLoads)
-              return false;
-            if (!is_contained(*dynLoads, ld))
-              dynLoads->push_back(ld);
-          }
-          each(ld);
-          continue;
-        }
-        if (auto *s2 = dyn_cast<StoreInst>(u); s2 && s2->getPointerOperand() == p && s2->getValueOperand() != p)
-          continue;
-        if (auto *g = dyn_cast<GetElementPtrInst>(u); g && g->getPointerOperand() == p) {
-          ptrs.push_back({g, dyn || !g->hasAllConstantIndices()});
-          continue;
-        }
-        if (auto *II = dyn_cast<IntrinsicInst>(u); II && II->isLifetimeStartOrEnd())
-          continue;
-        if (auto *ms = dyn_cast<MemSetInst>(u); ms && ms->getDest() == p)
-          continue;   // cq-8101: a write of constant bytes (mem-slots' seeds), no reader
-        return false;
-      }
-    }
-    return true;
-  };
   SmallVector<const Value *, 8> work(A.begin(), A.end());
   while (!work.empty()) {
     const Value *w = work.pop_back_val();
@@ -919,28 +821,8 @@ bool deadAtCleanup(LoweringContext &ctx, Value *Y, Value *h, Instruction *at,
         return false;
       if (isa<ReturnInst>(ui) || isa<PHINode>(ui))
         return false;
-      if (auto *st = dyn_cast<StoreInst>(ui)) {
-        if (cellPtr && st->getValueOperand() == w && st->getPointerOperand() == cellPtr && DT.dominates(st, at))
-          continue;
-        // cq-1jxg (owner 2026-11-01): a store into a local slot cell extends the reader set, it is no
-        // escape: the cell's loads read the rail (their values are its aliases, followed for escapes),
-        // and Uncompute places the clean-up after them (the new-IR store holds it to the scope exit
-        // when they come later). Only memory read after the function returns or a QRAM store keeps it.
-        // cq-719y: a store into a local QRAM (an alloca of this function every object the pointer may
-        // name is a QRAM bus of) copies the value onto the bus: its POP re-reads the rail (a reader that
-        // moves the clean-up, Uncompute's order) and the bus dies with the frame; its loads copy out.
-        if (st->getValueOperand() == w && localQram(st))
-          continue;
-        const AllocaInst *cell = st->getValueOperand() == w ? localSlotCell(st) : nullptr;
-        if (!cell)
-          return false;
-        if (!cellLoads(cell, [&](const Instruction *ld) {
-              if (A.insert(ld).second)
-                work.push_back(ld);
-            }))
-          return false;
-        continue;
-      }
+      if (isa<StoreInst>(ui))
+        return false;   // rule 5: a store's value rail is kept
       if (auto *cb = dyn_cast<CallBase>(ui)) {
         if (isa<IntrinsicInst>(cb) && cb->doesNotAccessMemory())
           continue;   // lowered to a template that reads the rail
@@ -977,16 +859,6 @@ bool reads(LoweringContext &ctx, Value *z, Value *y, unsigned depth, DenseMap<Va
   bool narrow = sh.narrowSkipped.count(z) || sh.views.count(z);
   if (!narrow && (bi == sh.binds.end() || none_of(bi->second, [](const Operand &o) { return o.handle; })))
     return false;
-  // cq-719y: a load of a QRAM object y was stored into reads y's value through the bus (168: the rmw's new
-  // value stored, then a load at another quantum index that may be its cell).
-  if (auto *ld = dyn_cast<LoadInst>(I)) {
-    ArrayRef<ObjectId> lp = ctx.T.provenance(ld->getPointerOperand(), ctx.S);
-    for (User *u : y->users())
-      if (auto *st = dyn_cast<StoreInst>(u); st && st->getValueOperand() == y)
-        for (ObjectId o : ctx.T.provenance(st->getPointerOperand(), ctx.S))
-          if (ctx.T.classOf(o) == ObjClass::Qram && is_contained(lp, o))
-            return true;
-  }
   for (Value *op : I->operands())
     if (reads(ctx, op, y, depth + 1, seen))
       return true;
@@ -1078,12 +950,6 @@ APInt oddInverse(const APInt &k) {
   return x;
 }
 
-// CR rule 6's bijections: when U = f(y, ...) is a bijection in y for every value of its other
-// operands (which do not read y), the inverse computing y from yp (the rail holding f's value).
-// Nothing is emitted. The caller has established that y is cleanable and dead.
-// cq-xivx: the case analysis is inverseStepWith's, over resolvers for the other operands (operandOf) and
-// for "does this value read y" (readsY), so the _inv<c> clone (calls, CR §1.4) reuses it over a callee's
-// original body.
 std::optional<Inverse> inverseStepWith(Instruction &U, Value *Y, Operand yp,
                                        function_ref<Operand(Value *)> operandOf,
                                        function_ref<bool(Value *)> readsY) {
@@ -1302,12 +1168,6 @@ void compositeCleanup(LoweringContext &ctx, Instruction &I, Value *X, Operand yp
   unsigned W = VT->getIntegerBitWidth();
   std::optional<Affine> f = affineIn(ctx, &I, X, W);
   if (!f) {
-    // CR rule 6: the composite update y' = F(x) cleans x iff F is a bijection; its inverse is then computed
-    // fresh from y'. Beyond the affine class, F (a function of x and literals) is decided exhaustively at
-    // the widths where that is a table: a collision means no inverse (x is kept, rule 6), a bijection is
-    // inverted by a QROM of its inverse table at y' (rule 20's constant-table read). A wider F, or one that
-    // reads another value, has no inverse this rule can compute: x is kept (rule 6: "kept only when f has
-    // no inverse in y"; SPEC_ISSUES rule 6 composite updates beyond the affine ones).
     Type *XT = X->getType();
     if (!XT->isIntegerTy() || XT->getIntegerBitWidth() != W || W > 16)
       return;
@@ -1324,19 +1184,8 @@ void compositeCleanup(LoweringContext &ctx, Instruction &I, Value *X, Operand yp
         return;   // a collision: F is no bijection, x is kept (rule 6)
       inv[yv] = xv;
     }
-    LLVMContext &C = ctx.M.getContext();
-    SmallVector<Constant *, 256> elems;
-    for (uint64_t yv = 0; yv < n; ++yv)
-      elems.push_back(ConstantInt::get(VT, inv[yv]));
-    ArrayType *AT = ArrayType::get(VT, n);
-    auto *G = new GlobalVariable(ctx.M, AT, true, GlobalValue::PrivateLinkage, ConstantArray::get(AT, elems),
-                                 "cq.r6.inv");
-    G->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
-    abi::TemplateSpec qs;
-    qs.op = "qrom_load";
-    qs.w = rt(VT, &I);
-    clean(ctx, X, Inverse{qs, {Operand{G, false}, Operand{ConstantInt::get(Type::getInt64Ty(C), n), false}, yp}});
-    return;
+    report_fatal_error("cq: unimplemented: bus: rule 6 inverse table (a constant global read at a rail index)",
+                       /*gen_crash_diag=*/false);
   }
   if (!f->a[0])
     return;   // an even multiplier: no inverse, x is kept
@@ -1636,11 +1485,6 @@ void narrowRuleSix(LoweringContext &ctx, Instruction &I, ArrayRef<const Value *>
 
 namespace {
 
-// CR rules 6 and 24 on an atomic read-modify-write of a slot cell (94): mem-slots lowers
-// `old = atomicrmw add|sub|xor p, v` to y' = old op v stored into the cell, binding the instruction to
-// old's rail. y' is a bijection in old when v does not read it, so a dead old rail is cleaned from y':
-// old = y' - v, y' + v, y' ^ v. The old rail must be one this function minted (a register's or a
-// template's rail, not a formal or a merge of cell contents).
 void atomicRuleSix(LoweringContext &ctx, AtomicRMWInst &I) {
   spine::Shared &sh = spine::shared(ctx);
   const char *inverse = nullptr, *fwdOp = nullptr;
@@ -1663,7 +1507,6 @@ void atomicRuleSix(LoweringContext &ctx, AtomicRMWInst &I) {
   Operand v = ctx.operand(I.getValOperand());
   if (v.handle && railReads(sh, v.v, h))
     return;
-  // y': the template mem-slots just emitted over (old, v) in the current block.
   CallInst *yp = nullptr;
   for (User *u : h->users()) {
     auto *c = dyn_cast<CallInst>(u);
@@ -1778,14 +1621,6 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
     return out;
   };
   auto neededLater = [&](Value *Y) { return !blockersOf(Y).empty(); };
-  // CR rule 6, a cell chosen by a classical index (cq-bfz4, 190): the old value is a run-time slot load
-  // whose cells mem-slots knows statically (registers cleaned, seeds skipped, on a classical branch).
-  for (Value *Y : I.operands())
-    if (auto *ld = dyn_cast<LoadInst>(Y); ld && mem::indexedCellLoadDead(ctx, *ld, I))
-      if (auto inv = inverseOf(ctx, I, Y, yp)) {
-        mem::cleanIndexedCellLoad(ctx, *ld, I, inv->spec, inv->ops);
-        return;
-      }
   // cq-mgkr (CR rule 6, composite through a classical merge): I = f(M, ...) a bijection in M, M a classical
   // merge of bijective updates of a dead y with nothing else reading M: y is cleaned from I's image, on the
   // path that chose arm U by t = U^-1(f^-1(I)), f^-1(I) a fresh garbage rail (compositeCleanup's inner step).
@@ -1989,11 +1824,6 @@ void ruleSixRetry(LoweringContext &ctx) {
         [&](Value *Z) { return reads(ctx, Z, e.Y); });
     if (!inv || unbound || any_of(inv->ops, [&](const Operand &o) { return o.handle && !live(o.v); }))
       continue;
-    // cq-8101: a run-time cell load that may name the old rail is not a use Uncompute sees (mem-slots
-    // records its handle as a register of its own): its new-IR load and every reader of it are noted as
-    // uses of the old rail, so the clean-up follows them. A reader whose rail rule 5 would uncompute
-    // re-reads the cell's value in its _unc, after any point a noted use gives: no clean-up point is
-    // known, stop.
     RailId yid = ctx.unc().idOf(h);
     for (const Instruction *ld : e.loads) {
       Value *lo = boundRail(ld);
@@ -2018,7 +1848,6 @@ void ruleSixRetry(LoweringContext &ctx) {
 }
 
 
-// cq-xivx (CR §1.4 _inv<c>, rule 18): rule 6's per-instruction inverse over caller-supplied resolvers.
 std::optional<InverseStep> inverseStep(Instruction &U, Value *Y, Operand yp, function_ref<Operand(Value *)> operandOf,
                                        function_ref<bool(Value *)> readsY) {
   std::optional<Inverse> inv = inverseStepWith(U, Y, yp, operandOf, readsY);

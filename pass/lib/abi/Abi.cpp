@@ -168,7 +168,7 @@ llvm::FunctionCallee declareChecked(llvm::Module &M, StringRef name, llvm::Funct
 // ---------------------------------------------------------------------------------------------
 // Templates (CR §1.2)
 // ---------------------------------------------------------------------------------------------
-enum class Arity : uint8_t { Unary, Binary, Select, Ternary, Qrom };
+enum class Arity : uint8_t { Unary, Binary, Select, Ternary };
 enum class Dom : uint8_t { Int, Fp, Any, CastII, CastFF, CastIF, CastFI, Bitcast, TruncEither };
 enum class Comm : uint8_t { No, Int, Fp, Cmp, FmaProduct };
 
@@ -180,8 +180,6 @@ struct OpInfo {
   bool hasPred;
 };
 
-// The op set of CR §1.2. "qrom_load_s" is spelled qrom_load_<W>_s (TemplateSpec::strided), so it is
-// not an op name of its own here.
 const OpInfo kOps[] = {
     {"add", Arity::Binary, Dom::Int, Comm::Int, false},
     {"sub", Arity::Binary, Dom::Int, Comm::No, false},
@@ -250,7 +248,6 @@ const OpInfo kOps[] = {
     {"round", Arity::Unary, Dom::Fp, Comm::No, false},
     {"sqrt", Arity::Unary, Dom::Fp, Comm::No, false},
     {"is_fpclass", Arity::Binary, Dom::Fp, Comm::No, false},
-    {"qrom_load", Arity::Qrom, Dom::Any, Comm::No, false},
 };
 
 const OpInfo *findOp(StringRef op) {
@@ -277,7 +274,6 @@ unsigned dataOperands(Arity a) {
   case Arity::Binary: return 2;
   case Arity::Select: return 2; // the two arms; the condition is always a handle
   case Arity::Ternary: return 3;
-  case Arity::Qrom: return 0;
   }
   return 0;
 }
@@ -362,16 +358,11 @@ std::string checkTemplate(const TemplateSpec &s) {
   if (s.op == "bswap" && s.w.bits % 16 != 0)
     return "bswap needs a width that is a multiple of 16";
 
-  // Strided QROM.
-  if (s.strided && o->arity != Arity::Qrom)
-    return "_s is qrom_load only";
 
   // Rounding mode and exception bits: only where an fp value is involved.
   bool fp = isFpKind(wk) || (s.to && isFpKind(s.to->kind));
   if ((s.rm != TemplateSpec::NoRm || s.exc) && !fp)
     return "_rm/_rmq/_exc need an fp operand or result";
-  if (o->arity == Arity::Qrom && (s.rm != TemplateSpec::NoRm || s.exc))
-    return "qrom_load takes no _rm/_rmq/_exc";
 
   // Shape.
   const std::string &sh = s.shape;
@@ -424,8 +415,6 @@ std::string templateName(const TemplateSpec &s, bool unc) {
     n += "_to_" + widthToken(*s.to);
   if (!s.shape.empty())
     n += "_" + s.shape;
-  if (s.strided)
-    n += "_s";
   if (s.rm == TemplateSpec::RmLit)
     n += "_rm";
   else if (s.rm == TemplateSpec::RmRail)
@@ -465,19 +454,14 @@ const CoreInfo kCores[] = {
     {Core::XorI1, "xor_i1", WidthUse::FixedI1, false, false, false, false},
     {Core::Copy, "copy", WidthUse::Any, true, false, false, false},
     {Core::Xorc, "xorc", WidthUse::Any, true, false, false, false},
-    {Core::QramAllocHost, "qram_alloc_host", WidthUse::Any, false, false, false, false},
     {Core::QramAlloc, "qram_alloc", WidthUse::Any, false, false, false, false},
-    {Core::QramRealloc, "qram_realloc", WidthUse::Any, false, false, false, true},
-    {Core::QramStore, "qram_store", WidthUse::Any, true, false, true, true},
+    {Core::QramStore, "qram_store", WidthUse::Any, true, false, true, false},
     {Core::QramLoad, "qram_load", WidthUse::Any, true, false, true, true},
-    {Core::QramFree, "qram_free", WidthUse::None, false, false, false, false},
-    {Core::QramSize, "qram_size", WidthUse::None, false, false, false, false},
+    {Core::QramSwap, "qram_swap", WidthUse::Any, true, false, true, false},
     {Core::TapeAlloc, "tape_alloc", WidthUse::None, false, false, false, false},
     {Core::TapeFmt, "tape_fmt", WidthUse::None, true, false, false, false},
+    {Core::TapeEffectW, "tape_effect", WidthUse::Any, true, true, false, false},
     {Core::TapeEffect, "tape_effect", WidthUse::None, true, true, false, false},
-    {Core::TapeWriteStrLit, "tape_write_str_lit", WidthUse::None, false, false, false, false},
-    {Core::TapeStrBegin, "tape_str_begin", WidthUse::None, false, false, false, false},
-    {Core::TapeStrEnd, "tape_str_end", WidthUse::None, false, false, false, false},
     {Core::TapeWrite, "tape_write", WidthUse::Any, true, false, false, false},
     {Core::TapeWriteLit, "tape_write", WidthUse::Any, false, false, false, false}, // tape_write_<W>_lit
     {Core::AbortI1, "abort_i1", WidthUse::FixedI1, false, false, false, false},
@@ -485,8 +469,6 @@ const CoreInfo kCores[] = {
     {Core::Pop, "pop", WidthUse::None, false, false, false, false},
     {Core::InvertBegin, "invert_begin", WidthUse::None, false, false, false, false},
     {Core::InvertEnd, "invert_end", WidthUse::None, false, false, false, false},
-    {Core::CloneRegister, "clone_register", WidthUse::None, false, false, false, false},
-    {Core::CloneResolve, "clone_resolve", WidthUse::None, false, false, false, false},
 };
 
 const CoreInfo &coreInfo(Core op) {
@@ -558,14 +540,12 @@ std::string cloneName(const CloneSpec &s) {
   std::string n = "__cq_q_" + s.fn + "_" + s.mask;
   for (size_t i = 0; i < s.bounds.size(); ++i)
     n += (i == 0 ? "_b" : "_") + std::to_string(s.bounds[i]);
+  if (s.table)
+    n += "_t";
   if (s.ctl)
     n += "_ctl";
   if (s.pure)
     n += "_pure";
-  if (s.depth)
-    n += "_d" + std::to_string(s.depth);
-  for (size_t i = 0; i < s.inv.size(); ++i)
-    n += (i == 0 ? "_inv" : "_") + std::to_string(s.inv[i]);
   if (s.unc)
     n += "_unc";
   return n;
@@ -579,38 +559,9 @@ std::optional<CloneSpec> parseCloneImpl(StringRef sym) {
   size_t n = t.size();
   // Suffixes, right to left, in the reverse of their fixed order.
   if (n && t[n - 1] == "unc") { s.unc = true; --n; }
-  // cq-xivx: "_inv" cell { "_" cell }: trailing decimal tokens back to an "inv<N>" token. A reading that
-  // leaves no mask is not this suffix (a fn or mask token that merely looks like one).
-  {
-    size_t k = n;
-    while (k > 0 && allDigits(t[k - 1]))
-      --k;
-    if (k > 1 && t[k - 1].size() > 3 && t[k - 1].starts_with("inv") && allDigits(t[k - 1].drop_front(3))) {
-      std::vector<unsigned> cells;
-      bool ok = true;
-      for (size_t i = k - 1; i < n && ok; ++i) {
-        StringRef c = i == k - 1 ? t[i].drop_front(3) : t[i];
-        unsigned v;
-        ok = canonicalDecimal(c, true) && !c.getAsInteger(10, v);
-        if (ok)
-          cells.push_back(v);
-      }
-      bool maskLeft = false;
-      for (size_t i = 0; i + 1 < k; ++i)
-        maskLeft |= isMask(t[i]);
-      if (ok && maskLeft) {
-        s.inv = std::move(cells);
-        n = k - 1;
-      }
-    }
-  }
-  if (n && t[n - 1].size() > 1 && t[n - 1][0] == 'd' && canonicalDecimal(t[n - 1].drop_front(), false)) {
-    if (t[n - 1].drop_front().getAsInteger(10, s.depth))
-      return std::nullopt;
-    --n;
-  }
   if (n && t[n - 1] == "pure") { s.pure = true; --n; }
   if (n && t[n - 1] == "ctl") { s.ctl = true; --n; }
+  if (n > 1 && t[n - 1] == "t" && isMask(t[n - 2])) { s.table = true; --n; }
   if (n == 0)
     return std::nullopt;
   // Bounds: "<mask>_b<N>{_<N>}". Walk back over all-digit tokens to a "b<N>" token preceded by a mask.
@@ -664,13 +615,7 @@ llvm::FunctionCallee declare(llvm::Module &M, const TemplateSpec &s, bool unc) {
   llvm::SmallVector<llvm::Type *, 6> args;
   if (unc)
     args.push_back(h); // out
-  if (o->arity == Arity::Qrom) {
-    args.push_back(llvm::PointerType::getUnqual(C));
-    args.push_back(llvm::Type::getInt64Ty(C));
-    if (s.strided)
-      args.push_back(llvm::Type::getInt64Ty(C));
-    args.push_back(h); // idx
-  } else {
+  {
     if (o->arity == Arity::Select)
       args.push_back(h); // condition
     unsigned n = dataOperands(o->arity);
@@ -731,7 +676,6 @@ std::optional<TemplateSpec> parseTemplate(llvm::StringRef sym, bool *unc) {
   }
   if (i < n && !t[i].empty() && llvm::all_of(t[i], [](char c) { return c == 'h' || c == 'q' || c == 'l'; }))
     s.shape = t[i++].str();
-  if (at("s")) { s.strided = true; ++i; }
   if (at("rm")) { s.rm = TemplateSpec::RmLit; ++i; }
   else if (at("rmq")) { s.rm = TemplateSpec::RmRail; ++i; }
   if (at("exc")) { s.exc = true; ++i; }
@@ -781,39 +725,51 @@ llvm::FunctionCallee declare(llvm::Module &M, const CoreSpec &s) {
   case Core::Copy: a.append({h, h}); break;
   case Core::Xorc: a.append({h, T()}); break;
   case Core::QramAlloc: ret = h; a.push_back(i32); break;
-  case Core::QramAllocHost: ret = h; a.append({p, llvm::Type::getInt64Ty(C)}); break;   // (ptr p, i64 n) -> a
-  case Core::QramRealloc:
-    // forward (a, n) -> a'; _unc (a', n_old)
-    ret = s.unc ? v : h;
-    a.append({h, i32});
-    break;
-  case Core::QramStore: a.append({h, s.hl ? i32 : h, h}); break; // (a, idx | j, v); _unc same
+  // CR §1.3: addr is an i64 address rail, or the classical i64 address with _hl.
+  case Core::QramStore: a.append({h, s.hl ? llvm::Type::getInt64Ty(C) : h, h}); break;   // (m, addr, v)
+  case Core::QramSwap: a.append({h, s.hl ? llvm::Type::getInt64Ty(C) : h, h}); break;    // (m, addr, h)
   case Core::QramLoad:
     if (s.unc) {
-      a.insert(a.begin(), h); // _unc(h, [c,] a, idx | j)
+      a.insert(a.begin(), h);   // _unc(h, [c,] m, addr)
     } else {
       ret = h;
     }
-    a.append({h, s.hl ? i32 : h});
+    a.append({h, s.hl ? llvm::Type::getInt64Ty(C) : h});
     break;
-  case Core::QramFree: a.push_back(h); break;
-  case Core::QramSize: ret = i32; a.push_back(h); break;
   case Core::TapeAlloc: ret = h; break;
   case Core::TapeFmt: a.append({h, p}); break;
   case Core::TapeEffect: a.append({h, p}); break;
+  case Core::TapeEffectW: ret = h; a.append({h, p}); break;
   case Core::TapeWrite: ret = h; a.append({h, h}); break;
   case Core::TapeWriteLit: a.append({h, T()}); break;
-  case Core::TapeWriteStrLit: a.append({h, p}); break;
-  case Core::TapeStrBegin: case Core::TapeStrEnd: a.push_back(h); break;
   case Core::AbortI1: a.push_back(h); break;
   case Core::Push: a.push_back(i32); break;
   case Core::Pop: ret = i32; break;
   case Core::InvertBegin:
   case Core::InvertEnd: break;
-  case Core::CloneRegister: a.append({p, p, p, p}); break;
-  case Core::CloneResolve: ret = p; a.append({p, i32}); break;
   }
   return declareChecked(M, coreName(s), llvm::FunctionType::get(ret, a, false));
+}
+
+llvm::FunctionCallee declareHost(llvm::Module &M, Host f) {
+  llvm::LLVMContext &C = M.getContext();
+  llvm::Type *i32 = llvm::Type::getInt32Ty(C), *i64 = llvm::Type::getInt64Ty(C), *v = llvm::Type::getVoidTy(C);
+  llvm::Type *p = llvm::PointerType::getUnqual(C);
+  switch (f) {
+  case Host::Mem: return declareChecked(M, "__cq_mem", llvm::FunctionType::get(i32, false));
+  case Host::Alloc: return declareChecked(M, "__cq_alloc", llvm::FunctionType::get(p, {i64, i64}, false));
+  case Host::CloneRegister:
+    return declareChecked(M, "__cq_clone_register", llvm::FunctionType::get(v, {p, p, p, p, p, p}, false));
+  case Host::CloneResolve: return declareChecked(M, "__cq_clone_resolve", llvm::FunctionType::get(p, {p, i32}, false));
+  case Host::CloneCount: return declareChecked(M, "__cq_clone_count", llvm::FunctionType::get(i32, {p}, false));
+  case Host::CloneAt: return declareChecked(M, "__cq_clone_at", llvm::FunctionType::get(p, {p, i32}, false));
+  }
+  llvm_unreachable("cq: host symbols are the enum's");
+}
+
+llvm::GlobalVariable *sigTable(llvm::Module &M) {
+  auto *T = llvm::ArrayType::get(llvm::Type::getInt64Ty(M.getContext()), 65);
+  return llvm::cast<llvm::GlobalVariable>(M.getOrInsertGlobal("__cq_sig", T));
 }
 
 std::optional<CoreSpec> parseCore(llvm::StringRef sym) {

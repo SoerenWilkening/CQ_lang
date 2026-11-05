@@ -19,18 +19,13 @@ namespace {
   report_fatal_error(Twine(os.str()), /*gen_crash_diag=*/false);
 }
 
-// CR §1.2: [select: condition handle] [qrom: base, n (, stride)] data operands per shape [rm last].
 void templateRoles(Sig &S, const CallBase &CB, unsigned nargs) {
   const abi::TemplateSpec &T = *S.tmpl;
   SmallVector<Role, 6> fwd;
-  bool qrom = StringRef(T.op).starts_with("qrom_load");
   unsigned lead = 0, trail = T.rm != abi::TemplateSpec::NoRm ? 1 : 0;
   if (T.op == "select") {
     fwd.push_back(Role::Read);
     lead = 1;
-  } else if (qrom) {
-    lead = (T.strided || T.op == "qrom_load_s") ? 3 : 2;
-    fwd.append(lead, Role::Classical);
   }
   unsigned fwdArgs = S.unc ? nargs - 1 : nargs;
   if (fwdArgs < lead + trail || (S.unc && nargs == 0))
@@ -116,16 +111,8 @@ void coreRoles(Sig &S, const CallBase &CB) {
     R.push_back(Role::Classical);
     S.res = Res::Known;
     break;
-  case Core::QramAllocHost:   // (ptr p, i64 n): cells seeded from host memory, a known basis state
-    R.append({Role::Classical, Role::Classical});
-    S.res = Res::Known;
-    break;
-  case Core::QramRealloc:
-    // forward (a, n) -> a'; _unc (a', n_old)
-    R.append({Role::Read, Role::Classical});
-    S.res = C.unc ? Res::None : Res::Known;
-    break;
   case Core::QramStore:
+  case Core::QramSwap:
     R.append({Role::Read, C.hl ? Role::Classical : Role::Read, Role::Read});
     S.res = Res::None;
     break;
@@ -134,10 +121,6 @@ void coreRoles(Sig &S, const CallBase &CB) {
       R.insert(R.begin(), Role::UncOut);
     R.append({Role::Read, C.hl ? Role::Classical : Role::Read});
     S.res = C.unc ? Res::None : Res::Dirty;
-    break;
-  case Core::QramFree:
-    R.push_back(Role::BusFree);
-    S.res = Res::None;
     break;
   case Core::TapeAlloc:
     S.res = Res::Known;
@@ -152,18 +135,16 @@ void coreRoles(Sig &S, const CallBase &CB) {
     R.append({Role::Read, Role::Classical});
     S.res = Res::None;
     break;
+  case Core::TapeEffectW:   // CR §1.3: (c, t, name) -> r; the flag is argument 0
+    R.append({Role::Read, Role::Classical});
+    S.res = Res::Known;
+    break;
   case Core::TapeWrite:
     R.append({Role::Read, Role::Read});
     S.res = Res::Dirty;
     break;
   case Core::TapeWriteLit:
-  case Core::TapeWriteStrLit:
     R.append({Role::Read, Role::Classical});
-    S.res = Res::None;
-    break;
-  case Core::TapeStrBegin:
-  case Core::TapeStrEnd:
-    R.push_back(Role::Read);
     S.res = Res::None;
     break;
   case Core::AbortI1:
@@ -177,21 +158,9 @@ void coreRoles(Sig &S, const CallBase &CB) {
   case Core::Pop:
     S.res = Res::Word;
     break;
-  case Core::QramSize:   // CR §1.3: a classical read of the bus's logical size
-    R.push_back(Role::Read);
-    S.res = Res::Word;
-    break;
   case Core::InvertBegin:
   case Core::InvertEnd:
     S.res = Res::None;   // rule 17: events of the host execution, no rail
-    break;
-  case Core::CloneRegister:   // CR §1.3 (rule 27): a symbol table of host addresses, no rail
-    R.append({Role::Classical, Role::Classical, Role::Classical, Role::Classical});
-    S.res = Res::None;
-    break;
-  case Core::CloneResolve:
-    R.append({Role::Classical, Role::Classical});
-    S.res = Res::Word;
     break;
   }
   (void)CB;

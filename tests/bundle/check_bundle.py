@@ -76,9 +76,8 @@ def lifted(lowered_text):
     """<fn> of every __cq_q_<fn>_<mask>[...] definition (CR §1.4 names)."""
     out = set()
     for name in re.findall(r"^define [^@]*@__cq_q_([\w.$]+)\(", lowered_text, re.M):
-        name = re.sub(r"_(unc|ctl|adj|pure)$", "", name)
-        name = re.sub(r"_d\d+$", "", name)
-        name = re.sub(r"_b\d+$", "", name)
+        name = re.sub(r"(_t)?(_ctl)?(_pure)?(_unc)?$", "", name)
+        name = re.sub(r"_b\d+(_\d+)*$", "", name)
         m = re.match(r"^(.*)_[01]+$", name)
         out.add(m.group(1) if m else name)
     return out

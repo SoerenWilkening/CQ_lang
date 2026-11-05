@@ -97,10 +97,10 @@ Shared &shared(LoweringContext &ctx) {
   return *sh;
 }
 
-// CR rule 13 (b137e75): a code address is an integer of pointer width: where the ABI takes an i64 (a seed, a
-// literal operand), a classical code address of the new IR is read as ptrtoint.
+// Rule 3: a pointer is an integer of pointer width: where the ABI takes an i64 (a seed, a literal operand), a
+// classical pointer of the new IR is read as ptrtoint.
 Value *codeAddressAsInt(IRBuilder<> &B, Value *v, Type *want) {
-  if (!v->getType()->isPointerTy() || !want->isIntegerTy(64) || !isCodeAddress(v))
+  if (!v->getType()->isPointerTy() || !want->isIntegerTy(64))
     return v;
   if (auto *c = dyn_cast<Constant>(v))
     return ConstantExpr::getPtrToInt(c, want);
@@ -366,14 +366,7 @@ std::vector<CallInst *> LoweringContext::endGateLog(unsigned token) {
   return std::move(sh.gateLogs[token]);
 }
 
-void LoweringContext::bindWalkedPointer(const PHINode *phi, WalkedPtr w) {
-  impl->sh->walked[phi] = w;   // a nested K-loop registers its phi again in each outer trip
-}
 
-const WalkedPtr *LoweringContext::walkedPointer(const Value *v) const {
-  auto it = impl->sh->walked.find(v);
-  return it == impl->sh->walked.end() ? nullptr : &it->second;
-}
 
 unsigned LoweringContext::K(const llvm::Loop *L) const {
   if (!L)

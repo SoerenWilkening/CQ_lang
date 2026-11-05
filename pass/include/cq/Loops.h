@@ -22,5 +22,4 @@ void lowerClassical(LoweringContext &, llvm::Loop &, Case);
 void lowerCutoff(LoweringContext &, llvm::Loop &, unsigned K, std::optional<uint64_t> B);
 std::optional<uint64_t> tripBound(const llvm::Loop &, llvm::ScalarEvolution &);
 unsigned resolveK(const llvm::Function &, const KOptions &);   // flag, CQ_K, global, default 4
-void lowerQuantumDepthRecursion(LoweringContext &, llvm::CallBase &, unsigned K, std::optional<uint64_t> B);
 }

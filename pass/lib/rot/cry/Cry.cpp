@@ -399,85 +399,21 @@ Lin ptrLin(const DataLayout &DL, const Value *p, unsigned depth = 0) {
   return r;
 }
 
-// Two pointers that are different cell addresses on every run: two distinct allocas, or one base
-// whose linear forms differ by a nonzero constant (120's q[i][0] and q[i][1]; 114's q[m-1] and
-// q[m-2]). completePhis (the original IR only: a new-IR loop phi still lacks its back edge): two
-// leftover phi terms of one block that differ by a constant on every trip (59's q[i] and q[i + 1]).
-bool cellsDiffer(const DataLayout &DL, const Value *a, const Value *b, bool completePhis) {
-  Lin la = ptrLin(DL, a), lb = ptrLin(DL, b);
-  const Value *ua = getUnderlyingObject(la.base), *ub = getUnderlyingObject(lb.base);
-  if (ua != ub && isa<AllocaInst>(ua) && isa<AllocaInst>(ub))
-    return true;
-  if (la.base != lb.base)
-    return false;
-  Lin d = lb;
-  d.addLin(la, uint64_t(0) - 1);
-  SmallVector<std::pair<const Value *, uint64_t>, 2> left;
-  for (auto &[x, k] : d.terms)
-    if (k != 0)
-      left.push_back({x, k});
-  if (left.size() == 2 && completePhis && left[0].second + left[1].second == 0) {
-    // k * (x - y): x and y two phis differing by a constant on every trip.
-    const Value *x = left[0].first, *y = left[1].first;
-    PairDiff none;
-    if (std::optional<int64_t> e = constDiff(y, x, none)) {
-      d.c += left[0].second * uint64_t(*e);
-      left.clear();
-    }
-  }
-  return left.empty() && d.c != 0;
-}
 
-// Two leaves name different rails on every run: two distinct gate results; a confined rail and any
-// other value; loads of two different cells; a gate result only ever stored into cells other than
-// the one a load reads (114's q[m-1] ^= q[m-2] then the controlled Ry on q[m-2]). A slot cell holds a
-// rail no other cell holds (mem-slots stores a copy of a stored value it does not own), so different
-// cells name different rails.
-bool storedOnlyElsewhere(const DataLayout &DL, const CallInst *def, const LoadInst *L) {
-  for (const User *U : def->users()) {
-    if (auto *St = dyn_cast<StoreInst>(U)) {
-      // Same block as the definition: each run of the definition stores it once, with the address
-      // values current wherever the definition's value is.
-      if (St->getValueOperand() != def || St->getParent() != def->getParent() ||
-          !cellsDiffer(DL, St->getPointerOperand(), L->getPointerOperand(), false))
-        return false;
-      continue;
-    }
-    auto *CI = dyn_cast<CallInst>(U);
-    const Function *G = CI ? CI->getCalledFunction() : nullptr;
-    if (G && ((G->getName().starts_with("cqrt_") && !G->getName().starts_with("cqrt_qram") &&
-               !G->getName().starts_with("cqrt_push") && !G->getName().starts_with("cqrt_tape")) ||
-              G->getName().starts_with("cq_template_")))
-      continue;
-    return false;
-  }
-  return true;
-}
 
 bool leavesDistinct(LoweringContext &ctx, Value *a, Value *b) {
   if (a == b)
     return false;
   // cq-nqa6 (117's grover_1000_ctl: cRy(pred, x[i])): a _ctl clone's entry flag names no rail the clone
-  // reaches otherwise. The clone is marked, and calls::finalize checks that invariant at each of its call
-  // sites (kCtlDistinctAttr) or stops with cq::unimplemented.
+  // reaches otherwise (rule 19).
   for (Value *v : {a, b})
     if (auto *A = dyn_cast<Argument>(v); A && ctx.S.ctl && A->getParent() == &ctx.out() && A->getArgNo() == 0) {
-      ctx.out().addFnAttr(calls::kCtlDistinctAttr);
       return true;
     }
   if (isa<CallInst>(a) && isa<CallInst>(b))
     return true;
   if (confined(a) || confined(b))
     return true;
-  const DataLayout &DL = ctx.M.getDataLayout();
-  auto *la = dyn_cast<LoadInst>(a), *lb = dyn_cast<LoadInst>(b);
-  if (la && lb)
-    return cellsDiffer(DL, la->getPointerOperand(), lb->getPointerOperand(), false);
-  auto *ca = dyn_cast<CallInst>(a), *cb = dyn_cast<CallInst>(b);
-  if (ca && lb)
-    return storedOnlyElsewhere(DL, ca, lb);
-  if (cb && la)
-    return storedOnlyElsewhere(DL, cb, la);
   return false;
 }
 
@@ -516,15 +452,7 @@ Alias mayAlias(LoweringContext &ctx, const CallInst &T, const DominatorTree &dt,
       all &= leavesDistinct(ctx, a, b);
   if (all)
     return Alias::Distinct;
-  if (!isa<LoadInst>(flag) || !isa<LoadInst>(rail))
-    return Alias::Unknown;
-  // Two cell loads: different cells by the original IR's addresses (59), else the same cell iff the
-  // same address at run time (120 register_grid's q[0][1] and q[rows-1][1], one cell iff rows == 1).
-  const LoadInst *lf = originalLoad(ctx, T, dt, flag), *lt = originalLoad(ctx, T, dt, rail);
-  if (lf && lt && lf != lt &&
-      cellsDiffer(ctx.M.getDataLayout(), lf->getPointerOperand(), lt->getPointerOperand(), true))
-    return Alias::Distinct;
-  return Alias::Cells;
+  return Alias::Unknown;
 }
 
 // ry_<W>_controlled(flag, rail, θ): a non-diagonal gate on the rail (A4), which is frozen (rule 10).

@@ -7,18 +7,13 @@ set(CQ_CALLS_CASES
   noop_no_clone noop_clone_namespace_absent drop_retargeted keep_classical_caller keep_address_taken
   keep_used_global drop_mutual_recursion drop_chain keep_live_chain drop_external_original keep_inplace_entry
   drop_dead_references keep_shared_references declared_clone_only twin_only
-  twin_define twin_fieldwise twin_slot_cell twin_slot_cell_arms twin_chain twin_pure twin_declared twin_return_phi)
+  twin_define twin_fieldwise twin_chain twin_pure twin_declared twin_return_phi)
 foreach(c ${CQ_CALLS_CASES})
   add_test(NAME calls.${c} COMMAND calls_finalize_tests ${c})
 endforeach()
 
 set(CQ_CALLS_FATAL
-  "fatal_uniquified=cq: unimplemented: calls: calls::finalize: a symbol in the clone namespace that is not a canonical clone name"
-  "fatal_ambiguous=cq: unimplemented: calls: calls::finalize: a clone name that reads as a clone of more than one in-module function"
-  "fatal_materialize_no_taint=cq: internal error: calls: materialize of a clone before any call site of the run"
-  "fatal_twin_effect=cq: unimplemented: calls: calls::finalize: the twin @__cq_q_f_10_unc would replay the core gate @cqrt_rz_i1"
-  "fatal_twin_no_copyout=cq: unimplemented: calls: calls::finalize: a clone return that is not the rule 18 copy-out"
-  "fatal_twin_classical_arm=cq: unimplemented: calls: calls::finalize: a clone return seeded with a classical value")
+  "fatal_materialize_no_taint=cq: internal error: calls: materialize of a clone before any call site of the run")
 foreach(entry ${CQ_CALLS_FATAL})
   string(FIND "${entry}" "=" eq)
   string(SUBSTRING "${entry}" 0 ${eq} c)

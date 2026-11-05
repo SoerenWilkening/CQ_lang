@@ -23,22 +23,9 @@
 //  - recordTemplate(fwd, spec, ops): fwd is the forward cq_template_* call, already in the IR; ops is
 //    exactly fwd's argument list (checked operand by operand). The result is a new rail, Role::Garbage.
 //  - recordSeed(alloc): a cqrt_alloc_<W> call; a new rail, Role::Seed (rule 7).
-//  - recordCore(fwd, spec, ops, out): a reversible core gate, ops = fwd's argument list.
-//      in place on the rail `out` (out must be fwd's target operand): copy, xorc, not_i1, and_i1, or_i1,
-//        xor_i1 (involutions: undone by the same call, BACKEND_ABI §1.8, §1.9) and qram_store on the
-//        bus `out` (undone by its _unc as an item of its own, POP(k), see QRAM versions below);
-//      with a fresh result (`out` is ignored, the new rail's id is returned): qram_load (Role::Garbage,
-//        undone by its _unc(h, args...)), qram_alloc (Role::Seed, released by cqrt_qram_free),
-//        qram_realloc (cq-vtfq, CR §1.3: ops (a, classical n); a' is a bus of its own, Role::Seed, released
-//        by qram_realloc_<W>_unc(a', n_old) after every POP and load un-copy on a'; n_old is a's qram_alloc
-//        or qram_realloc size; a's qram_free, its POPs and its load un-copies follow that release; a kept a'
-//        with a resolvable item on a is unimplemented), alloc (= recordSeed). Any other core gate is not reversible and is an internal error here.
-//  - recordExternal(h, role): a rail with no producer (a formal, a clone's result, a loaded slot cell).
 //  - setRole: Garbage and Seed are resolvable; every other role is kept (never _unc'd, never freed).
 //    A Seed whose only writes are uncontrolled xorc is freed directly; a Seed with other writes is
 //    undone write by write, then freed.
-//  - noteUse(r, i): i reads r without being an IR user of r's handle (e.g. a load of a slot cell that
-//    holds r). IR users of the handle are uses automatically.
 //  - noteNonDiagonal(x, g): g is a non-diagonal gate on x (Ry, a quantum-angle Ry; the caller decides,
 //    a computational-basis measurement is not one: 42). It is a barrier for every _unc that needs x.
 //    cq-igqp: when x's handle is a phi or select over handles that is not a merge (a classically
@@ -85,41 +72,6 @@
 //        unimplemented; cleanupBijective(m) is an internal error; Role::Seed on m is an internal error.
 //      * an arm whose definition does not dominate the return where it would be resolved (a phi
 //        over arm-local garbage handles) is unimplemented (cq-ut4k).
-//  - recordCellLoad(load, mayName) (M3, cq-arch 2026-11-01; CR rules 5, 20): load is a new-IR load of
-//    a slot cell's handle that names at run time one of mayName (recorded, unfreed rails). It is a
-//    merge as above with mayName as its arms: never resolved itself, a use of it is a use of every arm,
-//    a barrier on it binds every arm. It has no join, so a kept role on it (or on a merge naming it)
-//    keeps every resolvable arm, with no edge logic. mayName empty is an internal error.
-//  - noteCellsDistinct(a, b) (M3b, cq-arch 2026-11-01; CR rules 5, 20): the loads a and b of slot cells
-//    name different rails at run time (mem-slots proved the cells different, one rail per cell). A
-//    non-diagonal gate whose target handle is a (or b) is then no AliasHit barrier on the item of a
-//    record that reads b (or a) itself: the alias hit it left on a rail b may name is skipped when that
-//    rail is reached through the read of b. A direct hit (a merge arm both loads may name) and every
-//    other route to the rail stay barriers.
-//  - recordCall(fwd, outs, slotOuts, extra) (U2, cq-arch 2026-11-01; CR §1.4, rules 18, 27): the result
-//    rails of one clone call. The first member (outs, then slotOuts) is the leader: it carries a Call
-//    record over fwd's arguments and extra (their handles are its reads) and the group's one item; every
-//    other member is a merge over the leader alone (as a cell load: a use of it is a use of the leader,
-//    a kept role on it keeps the leader). The item emits <callee>_unc(outs..., fwd args..., extra...)
-//    (C calling convention) and then cqrt_free of every member in order. Every member kept: nothing.
-//    A kept leader with a member that was not given a kept role itself is unimplemented at flushAtExit
-//    (the twin would zero the kept results); KeptEntangled (a barrier) keeps all of them. The item
-//    follows the definitions of every member and of every extra operand defined after fwd (cq-b73i).
-//    cq-necw: a group of one slotOut and no out whose member has a rule 6 clean-up emits that clean-up
-//    instead of the twin (the cell's new content cleaned like an inline update's result, CR rules 6, 18).
-//  - noteCallReads(fwd, rails) (U4, cq-arch 2026-11-01; CR rule 5): rails in caller cells the clone call
-//    fwd reads (its twin recompute-reads them). They are reads of fwd's group item, as fwd's handle
-//    arguments are: their own items follow it, and a barrier on one binds it. It may come before or
-//    after fwd's recordCall (or its recordTemplate, a clone with one result). Beyond the noted ones, a
-//    clone call (a callee that is not a cq_template_ or cqrt_ function) reads every pending rail that
-//    may sit in a cell of its twin's footprint (railCells), cq-w2a-calls: the objects its pointer
-//    arguments point to, the globals the C body accesses, and every object reachable from outside the
-//    frame when the body accesses memory through a pointer it loaded (cq-99z6). A write into the
-//    footprint between the call and its twin is a barrier of the call's item; a cell the clone writes
-//    (slotOuts) that the footprint reaches by a second route is unimplemented (cq-aqk1).
-//
-// Emission. Each resolvable rail g is resolved once, as one ITEM: its records undone in reverse
-// (or its rule 6 clean-up, or nothing for a direct seed free), then cqrt_free / cqrt_qram_free.
 //  - Order (rule 5): the item of g comes after every use of g and after the item of every rail whose
 //    item reads g (an operand outlives every _unc that reads it); a batch is emitted readers first.
 //  - Placement: as early as these allow (the corpus convention), i.e. right after the last of them.
@@ -137,15 +89,6 @@
 //    pending resolvable rail created by a record of the scope. Its operands are the forward Values;
 //    a caller that mirrors outside their dominance region (a reverse loop) remaps the instructions
 //    emitted between B's insertion point before and after the call. No barrier check is made.
-//  - QRAM versions (amendment A2, cq-w6ie). A bus's stores s_1..s_m in program order are each an item
-//    POP(k) (the store's _unc alone), which reads the store's index, value and control rails. A load
-//    made after s_k reads version v_k. POP(k) follows every use of the bus, POP(k+1) and the un-copy
-//    of every load reading v_j, j >= k; a load reading v_k is un-copied after every POP(j), j > k (the
-//    cell holds v_k again), so a later popped store is no barrier for it. The bus's item is
-//    cqrt_qram_free alone, after every POP and load un-copy (77: pop the rmw store, sum, old, the
-//    index, then the initializers). A kept bus (a global, Output) has no POP: its stores stay and stay
-//    barriers. A POP made KeptEntangled by a hit on a rail it reads keeps every earlier POP, every load
-//    reading an earlier version, and the bus.
 //  - Deferred items (F1, freeze bead cq-fx3s; CR rule 14: the reverse loop runs after the readers of the
 //    loop's exit values, 153, 178, 187, 188). recordDeferred(scopes, exits, emit, reads): the rails created
 //    by records of the (closed) scopes are OWNED by the item: no flush resolves them, emit's mirrors do.
@@ -171,14 +114,6 @@
 //    An exit rail with no IR use outside the region (it reaches later code only through memory: cell-load
 //    merges, M3) that became kept is not copied and not undone: every trip's instance keeps its role
 //    (rule 5, rule 14 case 1; 179). An owned record reading it is still undone.
-//  - F1b (cq-arch 2026-11-01; CR rule 14, §1.3: 72, 188). A QRAM store recorded in the item's scopes is
-//    popped by the item's mirror (its POP is owned) and makes the item a writer of that bus b (one the
-//    scopes do not allocate): the item follows POP(j) of every store recorded on b after the scopes and
-//    the un-copy of every load of b reading a version at or above the last owned POP, it reads b (b's
-//    release, cqrt_qram_free, follows it), and every earlier POP or load un-copy that must follow an
-//    owned POP follows the item. Every use of b after the loop anchors the item, and a later store on b
-//    that is popped before the item is no barrier of it. exitRails may be empty when b has a use after
-//    the loop; otherwise an empty list is an internal error.
 //  - resolveAt(P, rails) (U5, cq-arch 2026-11-01; CR rule 5): emits right before P, readers first, the
 //    items of the listed pending rails (kept or resolved ones are skipped), with rule 5's barrier check.
 //    Precondition, else an internal error: each rail's definition dominates P, none of its uses comes
@@ -244,15 +179,11 @@ constexpr unsigned kNone = ~0u;
 enum class RecKind : uint8_t {
   Template,  // fresh out, undone by name_unc(out, args...)
   Seed,      // cqrt_alloc: nothing to undo, released by cqrt_free
-  QramAlloc, // nothing to undo, released by cqrt_qram_free
-  QramRealloc, // CR §1.3 a' = qram_realloc_<W>(a, n): nothing to undo, released by qram_realloc_<W>_unc(a', n_old)
-  QramLoad,  // fresh out, undone by name_unc(out, args...)
   Involution,// in place on out, undone by the same call
-  QramStore, // in place on the object, undone by name_unc(args...)
   Call,      // U2: a clone call's results, undone together by name_unc(outs..., args..., extra...)
 };
 
-bool isCreator(RecKind k) { return k != RecKind::Involution && k != RecKind::QramStore; }
+bool isCreator(RecKind k) { return k != RecKind::Involution; }
 
 std::string describe(const Value *v) {
   std::string s;
@@ -292,15 +223,12 @@ struct Uncompute::Impl {
     RecKind kind;
     SmallVector<RailId, 3> reads; // handle operands other than the record's own rail
     bool preserving = false;      // an uncontrolled xorc: a seed stays in a known basis state
-    RailId item = kNone;          // the item that undoes it: out, or a QRAM store's POP (A2)
+    RailId item = kNone;          // the item that undoes it: out
   };
   struct Cleanup {
     abi::TemplateSpec inverse;
     SmallVector<Operand, 3> ops;
     SmallVector<RailId, 3> reads;
-    Function *via = nullptr;   // U8: the clean-up is the call via(ops..., old) (inverse unused)
-    std::string unbuilt;                    // cq-p8r6: placed only to stop (cleanupUnbuilt)
-    const Instruction *unbuiltAt = nullptr;
     // cq-mgkr (cleanupBijectiveUnder): the guarded form. Each alternative cleans the rail where its classical
     // guard holds; elsewhere the item is the rail's plain one. inverse/ops above are unused; reads is the
     // union of the alternatives' reads.
@@ -312,29 +240,18 @@ struct Uncompute::Impl {
     Value *handle = nullptr;
     Role role = Role::Garbage;
     bool released = false; // resolved for good (placed in its defining block, or mirrored)
-    bool qram = false;
     unsigned creator = kNone;
     SmallVector<unsigned, 2> writes;
     SmallVector<Instruction *, 2> uses; // noted, beyond the IR users of handle
     SmallVector<Instruction *, 2> hits; // noted non-diagonal gates
-    SmallVector<Instruction *, 1> aliasHits; // cq-zh7z: gates on another handle that may name this rail
     SmallVector<unsigned, 4> readerRecs; // records with this rail among their reads
     SmallVector<RailId, 2> cleanupReaders; // rails whose rule 6 clean-up reads this rail
     std::optional<Cleanup> cleanup;
     SmallPtrSet<const BasicBlock *, 2> exitsDone; // returns this rail was placed for
     SmallVector<RailId, 2> arms;       // U1: non-empty iff this rail is a merge (its handle aliases one arm)
     SmallVector<RailId, 2> mergedInto; // U1: the merges that name this rail as an arm
-    bool cellLoad = false;             // M3: a merge that is a load of a slot cell's handle
     unsigned group = kNone;            // U2: the call group this rail is a member of
     bool explicitKept = false;         // U2: setRole gave this rail a kept role itself
-    // A2 (cq-w6ie): QRAM versions. A bus's stores s_1..s_m (program order) are POP items of their
-    // own; a load records, per bus it may read, the number k of stores made before it (it reads v_k).
-    RailId popBus = kNone;             // POP(popK) of this bus: a pseudo rail, handle = the store call
-    unsigned popK = 0;                 // 1-based
-    SmallVector<RailId, 4> pops;       // on a bus: POP(1..m)
-    SmallVector<RailId, 4> loads;      // on a bus: the loads that recorded a version on it
-    SmallVector<std::pair<RailId, unsigned>, 1> versions; // on a load: (bus, k)
-    SmallVector<RailId, 1> reallocs;   // cq-vtfq: on a bus, the buses qram_realloc made from it (a')
     // cq-lshe (CR rule 9, §0): the kept merges that keep this rail where they choose it. It stays
     // resolvable: its item runs under the classical predicate "no keeper chose it" (a re-branch on the
     // conditions that chose the arm), placed after its own uses (not those through a keeper).
@@ -356,11 +273,6 @@ struct Uncompute::Impl {
     SmallVector<unsigned, 8> hostScopes;       // F2: an enclosing region's scopes (its trip hosts the item)
     RailId pseudo = kNone;
     BasicBlock *placedAt = nullptr;            // the block the program continues in after the item
-    // F1b: the QRAM buses an owned store writes, each with the highest popK among its owned POPs.
-    SmallVector<std::pair<RailId, unsigned>, 1> buses;
-    // cq-odo1 (A2 over F1): the QRAM buses an owned load reads, each with the least version k among those
-    // loads: the item un-copies them, so it follows POP(j) of every store on the bus with j > k.
-    SmallVector<std::pair<RailId, unsigned>, 1> readBuses;
   };
   struct Scope {
     unsigned begin, end;
@@ -375,77 +287,13 @@ struct Uncompute::Impl {
   DenseMap<const Value *, RailId> byHandle;
   std::vector<Scope> scopes;
   std::vector<Deferred> defs;
-  // U2: one clone call's results. members[0] (the leader, an out or else a slotOut) carries the Call
-  // record and the item; every other member is a merge over the leader alone (cellLoad, no join), so a
-  // use of it is a use of the leader and a kept role on it keeps the leader.
   struct CallGroup {
     CallInst *fwd;
-    SmallVector<RailId, 4> outs, slotOuts, members;
+    SmallVector<RailId, 4> outs, members;
     SmallVector<Value *, 4> extra;
-    bool declared = false;   // U7: recordDeclaredWrites (a pseudo leader: the twin alone, nothing freed)
-    unsigned extraFirst = 0; // cq-i9wk: the last extraFirst extra operands lead the twin's operands
   };
   std::vector<CallGroup> groups;
-  // U4: rails in caller cells a clone call reads (noteCallReads, before or after its recordCall).
-  DenseMap<const CallInst *, SmallVector<RailId, 4>> callReads;
-  void addCallRead(unsigned rec, RailId r) {
-    if (is_contained(info[rec].reads, r) || r == info[rec].item)
-      return;
-    info[rec].reads.push_back(r);
-    rails[r].readerRecs.push_back(rec);
-  }
-  // The record of a clone call (a U2 group's Call record, or a single result's template record).
-  unsigned callRecord(const CallInst *fwd) const {
-    for (unsigned k = 0; k < records.size(); ++k)
-      if (records[k].forward == fwd && (info[k].kind == RecKind::Call || info[k].kind == RecKind::Template))
-        return k;
-    return kNone;
-  }
-  // A clone call's twin reads the objects its pointer arguments point to (CR rule 5, 164: the handle
-  // cells of a slot record the clone loads): every pending rail that may sit in a cell of one of them
-  // when the call runs (railCells: stored there, or copied there by a memory intrinsic) is a read of
-  // the call's record, so its item follows the twin. U4's noted reads are a subset.
-  void addObjectReads(CallInst *fwd, unsigned rec) {
-    const DataLayout &DL = fwd->getModule()->getDataLayout();
-    Footprint fp = footprint(fwd);
-    if (fp.empty())
-      return;
-    for (RailId g = 0; g < rails.size(); ++g) {
-      if (g == info[rec].item || isMerge(g) || rails[g].released || rails[g].popBus != kNone ||
-          rails[g].deferred != kNone)
-        continue;
-      if (auto *d = dyn_cast<Instruction>(rails[g].handle); d && !(d != fwd && after(fwd, d)))
-        continue;
-      SmallVector<Cell, 8> cells;
-      railCells(g, cells);
-      for (const Cell &c : cells)
-        if (any_of(fp.objs, [&](const Cell &o) { return mayAlias(o, c, DL); }) ||
-            (fp.unbounded && reachable(c.ptr))) {
-          addCallRead(rec, g);
-          break;
-        }
-    }
-  }
-  void takeCallReads(CallInst *fwd, unsigned rec) {
-    for (RailId r : callReads.lookup(fwd))
-      addCallRead(rec, r);
-    addObjectReads(fwd, rec);
-  }
   SmallVector<unsigned, 4> openStack;
-  // M3b: pairs of loads proven to name different rails (both orders), and the target handles each
-  // noted non-diagonal gate was noted on.
-  DenseSet<std::pair<const Value *, const Value *>> distinctLoads;
-  DenseMap<const Instruction *, SmallVector<const Value *, 1>> gateTargets;
-  // An alias hit of gate on a rail reached through a read of handle `via` that M3b rules out: every
-  // handle the gate was noted on names a different rail than via at run time.
-  bool aliasRuledOut(const Instruction *gate, const Value *via) const {
-    if (!via || distinctLoads.empty())
-      return false;
-    auto it = gateTargets.find(gate);
-    if (it == gateTargets.end() || it->second.empty())
-      return false;
-    return all_of(it->second, [&](const Value *t) { return distinctLoads.count({t, via}) > 0; });
-  }
   DenseSet<const Instruction *> emitted;
   DenseMap<std::pair<RailId, const BasicBlock *>, Instruction *> itemEnd;
   // cq-ut4k: rails pending at the return being flushed whose definition does not dominate it (an arm
@@ -476,188 +324,6 @@ struct Uncompute::Impl {
   // ---- merges (U1) ------------------------------------------------------------------------------
 
   bool isMerge(RailId g) const { return !rails[g].arms.empty(); }
-
-  // ---- memory aliases of handles (cq-zh7z, cq-vdaa) ---------------------------------------------
-  // A handle reaches memory by a store of it (a slot cell) and is read back by a load, which is a
-  // rail of its own (recordExternal). A cell is a pointer and the byte size accessed through it
-  // (0: unknown extent, the whole object from there on).
-  struct Cell {
-    const Value *ptr;
-    uint64_t size;
-    bool operator==(const Cell &o) const { return ptr == o.ptr && size == o.size; }
-  };
-  static uint64_t accessSize(Type *t, const DataLayout &DL) {
-    TypeSize ts = DL.getTypeStoreSize(t);
-    return ts.isScalable() ? 0 : ts.getFixedValue();
-  }
-  // The cells a rail may sit in, closed over copies (cq-vdaa): the pointers its handle (or a merge
-  // naming it) was stored to or loaded from; then every load of the function that may read one of
-  // those cells may be the rail, so the cells that load (or a phi or select of it) is stored to join
-  // the set; a memcpy or memmove whose source may overlap a cell copies the rail to an unknown cell
-  // of its destination object. Repeated to a fixed point.
-  void railCells(RailId y, SmallVectorImpl<Cell> &out) const {
-    SmallVector<const Value *, 8> vals;
-    for (RailId n : names(y))
-      if (rails[n].handle && !is_contained(vals, rails[n].handle))
-        vals.push_back(rails[n].handle);
-    const Function *F = nullptr;
-    for (const Value *v : vals)
-      if (auto *I = dyn_cast<Instruction>(v)) {
-        F = I->getFunction();
-        break;
-      } else if (auto *A = dyn_cast<Argument>(v)) {
-        F = A->getParent();
-        break;
-      }
-    if (!F)
-      return;
-    const DataLayout &DL = F->getDataLayout();
-    // cq-2cl6: the stores that put a value of the closure into each cell (null: the cell was read or copied, so
-    // the value may be in it at any time). A load in the entry block before every such store of an entry-block
-    // cell cannot read the value (no path from the store reaches it): mem-slots' clone cell loads the caller's
-    // handle there before it stores its slot result into the cell.
-    SmallVector<SmallVector<const StoreInst *, 2>, 8> origin(out.size(), SmallVector<const StoreInst *, 2>{nullptr});
-    auto addCellFrom = [&](Cell c, const StoreInst *st) {
-      auto it = llvm::find(out, c);
-      if (it == out.end()) {
-        out.push_back(c);
-        origin.emplace_back();
-        origin.back().push_back(st);
-        return;
-      }
-      auto &o = origin[it - out.begin()];
-      if (!is_contained(o, st))
-        o.push_back(st);
-    };
-    auto addCell = [&](Cell c) { addCellFrom(c, nullptr); };
-    auto before = [&](size_t ci, const LoadInst *ld) {
-      const BasicBlock *E = &F->getEntryBlock();
-      if (ld->getParent() != E)
-        return false;
-      for (const StoreInst *st : origin[ci])
-        if (!st || st->getParent() != E || !ld->comesBefore(st))
-          return false;
-      return true;
-    };
-    auto addVal = [&](const Value *v) {
-      if (!is_contained(vals, v))
-        vals.push_back(v);
-    };
-    size_t vi = 0, ci = 0;
-    while (vi < vals.size() || ci < out.size()) {
-      // Values to the cells they sit in.
-      for (; vi < vals.size(); ++vi) {
-        const Value *h = vals[vi];
-        if (auto *ld = dyn_cast<LoadInst>(h))
-          addCell({ld->getPointerOperand(), accessSize(ld->getType(), DL)});
-        for (const User *u : h->users()) {
-          if (auto *st = dyn_cast<StoreInst>(u); st && st->getValueOperand() == h)
-            addCellFrom({st->getPointerOperand(), accessSize(h->getType(), DL)}, st);
-          else if (isa<PHINode>(u) || (isa<SelectInst>(u) && cast<SelectInst>(u)->getCondition() != h))
-            addVal(u);
-        }
-      }
-      // Cells to the loads and copies that may read them.
-      for (; ci < out.size(); ++ci) {
-        Cell c = out[ci];
-        for (const Instruction &I : instructions(*F)) {
-          if (auto *ld = dyn_cast<LoadInst>(&I)) {
-            if (mayAlias(c, {ld->getPointerOperand(), accessSize(ld->getType(), DL)}, DL) && !before(ci, ld))
-              addVal(ld);
-          } else if (auto *mt = dyn_cast<MemTransferInst>(&I)) {
-            if (mayAlias(c, {mt->getRawSource(), 0}, DL))
-              addCell({getUnderlyingObject(mt->getRawDest()), 0});
-          }
-        }
-      }
-    }
-  }
-  // Base object plus constant and variable byte offsets, through GEPs.
-  struct Addr {
-    const Value *base;
-    APInt off{64, 0};
-    MapVector<Value *, APInt> vars;
-    bool exact = true;
-  };
-  static Addr decompose(const Value *p, const DataLayout &DL) {
-    Addr a;
-    for (unsigned depth = 0; depth < 16; ++depth) {
-      p = p->stripPointerCasts();
-      auto *g = dyn_cast<GEPOperator>(p);
-      if (!g)
-        break;
-      if (!g->collectOffset(DL, 64, a.vars, a.off)) {
-        a.exact = false;
-        p = getUnderlyingObject(p);
-        break;
-      }
-      p = g->getPointerOperand();
-    }
-    a.base = p;
-    return a;
-  }
-  static bool identified(const Value *v) { return isa<AllocaInst>(v) || isa<GlobalVariable>(v); }
-  // False only when the two cells provably do not overlap.
-  static bool mayAlias(const Cell &p, const Cell &q, const DataLayout &DL) {
-    if (p.ptr == q.ptr)
-      return true;
-    Addr a = decompose(p.ptr, DL), b = decompose(q.ptr, DL);
-    if (a.base != b.base) {
-      const Value *ua = getUnderlyingObject(a.base), *ub = getUnderlyingObject(b.base);
-      if (ua != ub && identified(ua) && identified(ub))
-        return false;
-      // cq-utb8 (C restrict): a noalias parameter the clone does not capture names an object no other pointer of the
-      // clone's execution reaches (a global's cells, another formal's: musl c32rtomb's s beside the TLS block).
-      auto restrictParam = [](const Value *u) {
-        auto *A = dyn_cast<Argument>(u);
-        return A && A->hasNoAliasAttr() && !PointerMayBeCaptured(A, true, true);
-      };
-      if (ua != ub && (restrictParam(ua) || restrictParam(ub)))
-        return false;
-      // cq-lqz3: a pointer from outside the frame (a formal, a global, a loaded pointer, a call's result)
-      // never points into an alloca whose address does not escape (185: a load of tk[i] next to the slot
-      // arrays k[] and c[]).
-      auto outside = [](const Value *u) {
-        return isa<Argument>(u) || isa<GlobalValue>(u) || isa<LoadInst>(u) || isa<CallBase>(u);
-      };
-      if (ua != ub && ((isa<AllocaInst>(ua) && outside(ub) && !reachable(ua)) ||
-                       (isa<AllocaInst>(ub) && outside(ua) && !reachable(ub))))
-        return false;
-      return true;
-    }
-    if (!a.exact || !b.exact || a.vars.size() != b.vars.size() || p.size == 0 || q.size == 0)
-      return true;
-    for (auto &kv : a.vars) {
-      auto it = b.vars.find(kv.first);
-      if (it == b.vars.end() || it->second != kv.second)
-        return true;
-    }
-    // [a.off, a.off + p.size) and [b.off, b.off + q.size) overlap.
-    return a.off.slt(b.off + q.size) && b.off.slt(a.off + p.size);
-  }
-  // A gate on target may hit every other live rail that sits in a cell target's handle may share.
-  void noteAliasHits(RailId target, Instruction *gate) {
-    const DataLayout &DL = gate->getModule()->getDataLayout();
-    SmallVector<RailId, 4> self = leaves(target);
-    SmallVector<Cell, 8> mine;
-    for (RailId t : self)
-      railCells(t, mine);
-    if (mine.empty())
-      return;
-    for (RailId y = 0; y < rails.size(); ++y) {
-      Rail &ry = rails[y];
-      if (isMerge(y) || ry.released || ry.popBus != kNone || ry.deferred != kNone || is_contained(self, y))
-        continue;
-      SmallVector<Cell, 8> theirs;
-      railCells(y, theirs);
-      bool hit = false;
-      for (const Cell &p : mine)
-        for (const Cell &q : theirs)
-          hit = hit || mayAlias(p, q, DL);
-      if (hit)
-        ry.aliasHits.push_back(gate);
-    }
-  }
 
   bool isMergeHandle(const Value *v) const {
     auto it = byHandle.find(v);
@@ -907,38 +573,8 @@ struct Uncompute::Impl {
 
   // ---- items -----------------------------------------------------------------------------------
 
-  bool isPop(RailId g) const { return rails[g].popBus != kNone; }
 
-  // A bus whose stores are popped: one that is itself resolved (a kept bus, e.g. a global, Output,
-  // keeps every store; a KeptEntangled bus keeps the stores below a kept POP).
-  bool busPoppable(RailId b) const {
-    const Rail &r = rails[b];
-    return !r.cleanup && r.arms.empty() && (r.role == Role::Seed || r.role == Role::Garbage) && !replacedForGood(b);
-  }
-  // cq-lshe (CR §0, §1.3, rule 16): a bus whose qram_realloc result a' is kept (escaped, an output) is
-  // replaced by a' for good: the object lives on, so the stores made through the old bus stay, the old bus
-  // is never released, and a load of it cannot be un-copied once a store through a' may have changed a cell.
-  bool replacedForGood(RailId b) const {
-    for (RailId a2 : rails[b].reallocs)
-      if (rails[a2].cleanup || keptRole(rails[a2].role) || replacedForGood(a2))
-        return true;
-    return false;
-  }
-  bool loadOfReplaced(RailId g) const {
-    for (auto [b, k] : rails[g].versions)
-      for (RailId a2 : rails[b].reallocs)
-        if ((rails[a2].cleanup || keptRole(rails[a2].role) || replacedForGood(a2)) &&
-            (!rails[a2].pops.empty() || replacedForGood(a2)))
-          return true;
-    return false;
-  }
 
-  // The store record w is (or will be) popped before the bus is released.
-  bool storePopped(unsigned w) const {
-    RailId p = info[w].item;
-    return info[w].kind == RecKind::QramStore && isPop(p) && rails[p].role == Role::Garbage &&
-           busPoppable(rails[p].popBus);
-  }
 
   // cq-4593 (CR rule 17): the rails pending at each open cq_invert region's begin (openInvert), innermost
   // last. No flush places their items while the region is open.
@@ -961,12 +597,6 @@ struct Uncompute::Impl {
   // access, so v outlives it: musl __rem_pio2_large's y[0] = ih ? -fw : fw under a quantum predicate).
   bool pending(RailId g) const {
     const Rail &r = rails[g];
-    if (r.popBus != kNone)
-      return !r.released && r.role == Role::Garbage && busPoppable(r.popBus);
-    if (r.qram && replacedForGood(g))
-      return false;
-    if (!r.versions.empty() && loadOfReplaced(g))
-      return false;
     return !r.released && r.arms.empty() && (r.cleanup || r.role == Role::Garbage || r.role == Role::Seed);
   }
 
@@ -974,8 +604,6 @@ struct Uncompute::Impl {
     const Rail &r = rails[g];
     if (r.cleanup || r.role != Role::Seed)
       return false;
-    if (r.creator != kNone && info[r.creator].kind == RecKind::QramRealloc)
-      return false; // cq-vtfq: its item reads the old bus, which is released after it
     for (unsigned w : r.writes)
       if (!info[w].preserving)
         return false;
@@ -991,8 +619,7 @@ struct Uncompute::Impl {
     if (r.creator != kNone)
       out.push_back(r.creator);
     for (unsigned w : r.writes)
-      if (info[w].kind != RecKind::QramStore) // A2: each store is its own POP item
-        out.push_back(w);
+      out.push_back(w);
     return out;
   }
 
@@ -1029,28 +656,24 @@ struct Uncompute::Impl {
           out.push_back(x);
     return out;
   }
-  // cq-lshe (CR rule 5): the in-place write records that may lie between g's item's records and the item,
-  // on a rail the item reads or on a rail such a write reads (transitively): a write after the record
-  // that read the rail, except a QRAM store that a load's un-copy follows anyway (A2, popped first).
   SmallVector<unsigned, 4> sandwichCands(RailId g) const {
     SmallVector<unsigned, 4> out;
     const Rail &r = rails[g];
     if (r.deferred != kNone)
       return out;
-    // (rail, the record that read it, a later store on it is popped first: a QRAM load's bus, A2)
-    struct Rd { RailId x; const Instruction *at; bool popsFirst; };
+    struct Rd { RailId x; const Instruction *at; };
     SmallVector<Rd, 8> R;
-    auto addReads = [&](ArrayRef<RailId> xs, const Instruction *at, bool popsFirst) {
+    auto addReads = [&](ArrayRef<RailId> xs, const Instruction *at) {
       for (RailId x0 : xs)
         for (RailId x : leaves(x0))
           if (x != g)
-            R.push_back({x, at, popsFirst});
+            R.push_back({x, at});
     };
     if (r.cleanup) {
-      addReads(r.cleanup->reads, r.creator != kNone ? records[r.creator].forward : nullptr, false);
+      addReads(r.cleanup->reads, r.creator != kNone ? records[r.creator].forward : nullptr);
     } else {
       for (unsigned rec : undone(g))
-        addReads(info[rec].reads, records[rec].forward, info[rec].kind == RecKind::QramLoad);
+        addReads(info[rec].reads, records[rec].forward);
     }
     for (unsigned i = 0; i < R.size(); ++i) {
       Rd rd = R[i];
@@ -1058,13 +681,11 @@ struct Uncompute::Impl {
         const Instruction *f = records[w].forward;
         if (is_contained(out, w) || !f->getParent() || (rd.at && (f == rd.at || !after(f, rd.at))))
           continue;
-        if (rd.popsFirst && storePopped(w))
-          continue;   // A2: a later store on a load's bus is popped before the load is un-copied
         out.push_back(w);
         for (RailId y0 : info[w].reads)
           for (RailId y : leaves(y0))
             if (y != g)
-              R.push_back({y, f, false});
+              R.push_back({y, f});
       }
     }
     return out;
@@ -1167,33 +788,6 @@ struct Uncompute::Impl {
         for (RailId o : readersOf(x))
           if (o != g && rails[o].ownedBy != rails[g].deferred && !is_contained(out, o))
             out.push_back(o);
-      // F1b: a writer of bus b follows POP(j) of every store recorded on b after its scopes and the
-      // un-copy of every load of b made after them (a later version, k at or above its last owned POP).
-      for (auto [b, top] : d.buses) {
-        SmallVector<RailId, 8> later;
-        for (RailId p : rails[b].pops)
-          if (rails[p].popK > top && rails[p].ownedBy == kNone)
-            later.push_back(p);
-        for (RailId l : rails[b].loads)
-          for (auto [bus, k] : rails[l].versions)
-            if (bus == b && k >= top && rails[l].ownedBy != rails[g].deferred)
-              later.push_back(l);
-        for (RailId o : later) {
-          o = ownerOf(o, g);
-          if (o != g && !is_contained(out, o))
-            out.push_back(o);
-        }
-      }
-      // cq-odo1 (A2): an owned load reading v_k is un-copied by the item, after POP(j) for every j > k.
-      for (auto [b, k] : d.readBuses)
-        for (unsigned j = k; j < rails[b].pops.size(); ++j) {
-          RailId p = rails[b].pops[j];
-          if (rails[p].ownedBy == rails[g].deferred)
-            continue;
-          RailId o = ownerOf(p, g);
-          if (o != g && !is_contained(out, o))
-            out.push_back(o);
-        }
       return out;
     }
     SmallVector<RailId, 4> ns = ownNames(g); // cq-lshe: not the readers through a keeper
@@ -1231,70 +825,10 @@ struct Uncompute::Impl {
       if (o != g && !is_contained(out, o))
         out.push_back(o);
     }
-    for (RailId o : versionBefore(g)) {
-      o = ownerOf(o, g); // F1b: an owned POP or load is undone by its deferred item
-      if (o != g && !is_contained(out, o))
-        out.push_back(o);
-    }
-    return out;
-  }
-  // The item that undoes o as seen from g: o itself, or the pseudo rail of the deferred item that owns
-  // o while that item is not placed (and g is not owned by it).
-  RailId ownerOf(RailId o, RailId g) const {
-    unsigned di = rails[o].ownedBy;
-    if (di != kNone && rails[g].ownedBy != di && rails[g].deferred != di && !rails[defs[di].pseudo].released)
-      return defs[di].pseudo;
-    return o;
-  }
-
-  // A2 (cq-w6ie): the QRAM version order, items that must precede g's item beyond its readers.
-  //  - POP(k) follows POP(k+1) (last in, first out) and the un-copy of every load reading v_j, j >= k;
-  //  - a load reading v_k is un-copied after POP(j) for every j > k (the cell holds v_k again);
-  //  - the bus (cqrt_qram_free) follows every POP (its loads are readers already).
-  SmallVector<RailId, 4> versionBefore(RailId g) const {
-    const Rail &r = rails[g];
-    SmallVector<RailId, 4> out;
-    if (r.popBus != kNone) {
-      const Rail &b = rails[r.popBus];
-      if (r.popK < b.pops.size())
-        out.push_back(b.pops[r.popK]);
-      for (RailId l : b.loads)
-        for (auto [bus, k] : rails[l].versions)
-          if (bus == r.popBus && k >= r.popK && !is_contained(out, l))
-            out.push_back(l);
-      // cq-vtfq: a store through a is popped once every realloc result a' of a is undone (a is the
-      // bus again only after qram_realloc_unc).
-      for (RailId a2 : b.reallocs)
-        if (!is_contained(out, a2))
-          out.push_back(a2);
-      return out;
-    }
-    for (auto [bus, k] : r.versions) {
-      for (unsigned j = k; j < rails[bus].pops.size(); ++j)
-        out.push_back(rails[bus].pops[j]);
-      for (RailId a2 : rails[bus].reallocs) // cq-vtfq: a load through a is un-copied after a' is undone
-        if (!is_contained(out, a2))
-          out.push_back(a2);
-    }
-    out.append(r.pops.begin(), r.pops.end());
     return out;
   }
 
-  // POP(k) of a bus is kept (a non-diagonal gate hit a rail it reads): its store stays, so every
-  // earlier store stays, every load reading an earlier version cannot be un-copied, and the bus is
-  // never freed (CR §0; A4).
-  void keepBelow(RailId g) {
-    RailId b = rails[g].popBus;
-    for (unsigned j = 1; j < rails[g].popK; ++j)
-      rails[rails[b].pops[j - 1]].role = Role::KeptEntangled;
-    for (RailId l : rails[b].loads)
-      for (auto [bus, k] : rails[l].versions)
-        if (bus == b && k < rails[g].popK && pending(l)) {
-          rails[l].role = Role::KeptEntangled;
-          rails[l].cleanup.reset();
-        }
-    rails[b].role = Role::KeptEntangled;
-  }
+
 
   const BasicBlock *defBlock(RailId g) const {
     const Rail &r = rails[g];
@@ -1310,18 +844,10 @@ struct Uncompute::Impl {
   // Every instruction g's item must follow (except the items of readers, added at placement).
   SmallVector<Instruction *, 8> anchors(RailId g) const {
     const Rail &r = rails[g];
-    if (r.popBus != kNone) {
-      // POP(k) follows every use of the bus (those after s_k are the ones that matter).
-      SmallVector<Instruction *, 8> out = anchors(r.popBus);
-      out.push_back(records[r.creator].forward);
-      return out;
-    }
     SmallVector<Instruction *, 8> out;
     if (r.creator != kNone)
       out.push_back(records[r.creator].forward);
     if (r.group != kNone && r.creator != kNone && info[r.creator].kind == RecKind::Call) {
-      // cq-b73i: the group's item names every member's handle and extra operand, so it follows their
-      // definitions even when nothing uses them (a slotOut loaded after the call and never read).
       const CallGroup &cg = groups[r.group];
       for (RailId m : cg.members)
         if (auto *i = dyn_cast<Instruction>(rails[m].handle))
@@ -1369,321 +895,19 @@ struct Uncompute::Impl {
     return {bb, before};
   }
 
-  // cq-99z6 (orchestrator decision under CR rule 5 and NORTHSTAR p2, owner may override): the memory a
-  // clone call's twin reads or writes when it runs (it recomputes the clone's body): the objects its
-  // pointer arguments point to, every non-constant global the clone (transitively) accesses, and, when
-  // the clone accesses memory through a pointer that is neither a formal, a global nor its own frame (a
-  // loaded pointer, a call's result, an unknown callee), every object reachable from outside the
-  // caller's frame (`unbounded`). Summarized on the original bodies, which survive until the end of the
-  // run.
-  struct MemSummary {
-    SmallVector<const GlobalVariable *, 4> globals;
-    bool unbounded = false;
-  };
-  struct Footprint {
-    SmallVector<Cell, 4> objs;   // pointer arguments and globals (whole objects: size 0)
-    bool unbounded = false;
-    bool empty() const { return objs.empty() && !unbounded; }
-  };
-  static bool isRuntimeName(StringRef n) { return n.starts_with("cq_template_") || n.starts_with("cqrt_"); }
-  // The C callee a clone (or a twin, or a declared clone) recomputes, or null.
-  static const Function *cloneSource(const Function &cf) {
-    std::optional<abi::CloneSpec> s = abi::parseClone(cf.getName());
-    if (!s)
-      return nullptr;
-    return cf.getParent()->getFunction(s->fn);
-  }
-  // Classifies an address used by F: a formal or F's frame is fine (a formal's object is classified at
-  // F's call site), a non-constant global is recorded, anything else makes the footprint unbounded.
-  static void classifyAddr(const Value *p, MemSummary &S) {
-    SmallVector<const Value *, 4> objs;
-    getUnderlyingObjects(p, objs);
-    for (const Value *u : objs) {
-      if (isa<Argument>(u) || isa<AllocaInst>(u) || isa<ConstantPointerNull>(u) || isa<UndefValue>(u))
-        continue;
-      if (auto *g = dyn_cast<GlobalVariable>(u)) {
-        if (!g->isConstant() && !is_contained(S.globals, g))
-          S.globals.push_back(g);
-        continue;
-      }
-      if (isa<Function>(u))
-        continue;
-      S.unbounded = true;
-    }
-  }
-  static void summarize(const Function &F, MemSummary &S, SmallPtrSetImpl<const Function *> &seen) {
-    if (!seen.insert(&F).second)
-      return;
-    if (F.isDeclaration()) {
-      if (F.isIntrinsic() || F.doesNotAccessMemory() || F.onlyWritesMemory() || F.onlyAccessesArgMemory() ||
-          isRuntimeName(F.getName()) || F.getName().starts_with("cq_"))
-        return;
-      S.unbounded = true;
-      return;
-    }
-    for (const Instruction &I : instructions(F)) {
-      if (!I.mayReadOrWriteMemory())
-        continue;
-      if (auto *L = dyn_cast<LoadInst>(&I))
-        classifyAddr(L->getPointerOperand(), S);
-      else if (auto *St = dyn_cast<StoreInst>(&I))
-        classifyAddr(St->getPointerOperand(), S);
-      else if (auto *A = dyn_cast<AtomicRMWInst>(&I))
-        classifyAddr(A->getPointerOperand(), S);
-      else if (auto *X = dyn_cast<AtomicCmpXchgInst>(&I))
-        classifyAddr(X->getPointerOperand(), S);
-      else if (auto *CB = dyn_cast<CallBase>(&I)) {
-        if (auto *ii = dyn_cast<IntrinsicInst>(CB); ii && (ii->isLifetimeStartOrEnd() || ii->isAssumeLikeIntrinsic()))
-          continue;
-        const Function *G = CB->getCalledFunction();
-        if (!G || CB->isInlineAsm()) {
-          S.unbounded = true;
-          continue;
-        }
-        if (CB->doesNotAccessMemory())
-          continue;
-        // The callee's own accesses (its formals' objects are its actuals here).
-        for (const Value *a : CB->args())
-          if (a->getType()->isPointerTy())
-            classifyAddr(a, S);
-        // cq-hnqg: memory only the program cannot name (the constrained FP intrinsics' FP environment,
-        // CR rule 23 state that eff-fenv carries) is no C object; its pointer actuals are classified above.
-        if (G->isIntrinsic() && !isa<MemIntrinsic>(CB) && !CB->onlyAccessesArgMemory() &&
-            !CB->onlyAccessesInaccessibleMemory() && !CB->onlyAccessesInaccessibleMemOrArgMem())
-          S.unbounded = true;
-        else if (!G->isIntrinsic())
-          summarize(*G, S, seen);
-      } else {
-        S.unbounded = true;   // va_arg, fence and the like
-      }
-    }
-  }
-  mutable DenseMap<const Function *, MemSummary> summaries;
-  const MemSummary &summaryOf(const Function *F) const {
-    auto it = summaries.find(F);
-    if (it == summaries.end()) {
-      MemSummary S;
-      SmallPtrSet<const Function *, 8> seen;
-      summarize(*F, S, seen);
-      it = summaries.try_emplace(F, std::move(S)).first;
-    }
-    return it->second;
-  }
-  Footprint footprint(const CallInst *fwd) const {
-    Footprint fp;
-    const Function *cf = fwd->getCalledFunction();
-    if (!cf && !resolvedBy(fwd))
-      return fp;
-    if (cf && isRuntimeName(cf->getName()))
-      return fp;
-    // A constant global is in no footprint: nothing writes it (a write would be undefined), so the twin reads
-    // what the call read (cq-sd95: musl erfl's coefficient tables handed to __polevll).
-    auto immutable = [](const Value *p) {
-      auto *G = dyn_cast<GlobalVariable>(getUnderlyingObject(p));
-      return G && G->isConstant();
-    };
-    // cq-utb8: a pointer the clone never accesses through (calls::materialize's readnone parameter) is no part
-    // of what its twin reads.
-    for (unsigned i = 0; i < fwd->arg_size(); ++i)
-      if (const Value *a = fwd->getArgOperand(i); a->getType()->isPointerTy() && !immutable(a) &&
-                                                  !(cf && i < cf->arg_size() && cf->getArg(i)->hasAttribute(Attribute::ReadNone)))
-        fp.objs.push_back({a, 0});
-    const Function *src = cf ? cloneSource(*cf) : nullptr;
-    if (!src)
-      return fp;   // a resolved callee (rule 27), or a declared clone of an LLVM math intrinsic (no C body): its pointer arguments only
-    const MemSummary &S = summaryOf(src);
-    for (const GlobalVariable *g : S.globals)
-      if (!g->isConstant())
-        fp.objs.push_back({g, 0});
-    fp.unbounded = S.unbounded;
-    return fp;
-  }
-  // Does the C function capture its pointer formal A (keep its address past the call: store it, return it,
-  // convert it, hand it to a callee that may)? LLVM's CaptureTracking over A,
-  // with a call operand of a callee with a body followed into that callee's formal: the C semantics of the
-  // body, whatever attributes the library build inferred (cq-wwzz: musl wctomb, c32rtomb, time and mbtowc
-  // hand their output pointer to wcrtomb or store through it, with no nocapture on the formal). A formal met
-  // again on the way (recursion) adds no capture of its own.
-  static bool formalCaptured(const Argument &A) {
-    SmallPtrSet<const Argument *, 8> seen;
-    return formalCaptured(A, seen);
-  }
-  static bool formalCaptured(const Argument &A, SmallPtrSetImpl<const Argument *> &seen) {
-    if (A.hasNoCaptureAttr() || A.hasByValAttr() || !seen.insert(&A).second)
-      return false;
-    struct Tracker : CaptureTracker {
-      SmallPtrSetImpl<const Argument *> &seen;
-      bool hit = false;
-      explicit Tracker(SmallPtrSetImpl<const Argument *> &s) : seen(s) {}
-      void tooManyUses() override { hit = true; }
-      bool captured(const Use *U) override {
-        // A comparison hands no address anywhere (reachable() reads an icmp user the same way); LLVM counts
-        // one with null as a capture unless the pointer is dereferenceable (musl time's `if (t) *t = ...`).
-        if (isa<ICmpInst>(U->getUser()))
-          return false;
-        auto *cb = dyn_cast<CallBase>(U->getUser());
-        const Function *g = cb ? cb->getCalledFunction() : nullptr;
-        if (g && !g->isDeclaration() && !g->isVarArg() && cb->isArgOperand(U) &&
-            cb->getFunctionType() == g->getFunctionType() && cb->getArgOperandNo(U) < g->arg_size() &&
-            !formalCaptured(*g->getArg(cb->getArgOperandNo(U)), seen))
-          return false;
-        hit = true;
-        return true;
-      }
-    } t(seen);
-    PointerMayBeCaptured(&A, &t);
-    return t.hit;
-  }
-  // May code outside the caller's frame reach the object p points into: a global, a formal's object,
-  // an unknown pointer, or an alloca whose address escapes (stored, converted, or passed to a callee
-  // that may capture it).
-  static bool reachable(const Value *p) {
-    const Value *u = getUnderlyingObject(p);
-    // cq-utb8 (C restrict): a noalias pointer parameter of the clone (calls::materialize keeps the C formal's) that
-    // the clone does not capture: during the clone its object is accessed through it alone, so code reaching memory
-    // through a pointer it loaded never reaches that object (musl c32rtomb's s while wcrtomb reads the locale).
-    if (auto *A = dyn_cast<Argument>(u); A && A->hasNoAliasAttr() && !PointerMayBeCaptured(A, true, true))
-      return false;
-    auto *AI = dyn_cast<AllocaInst>(u);
-    if (!AI)
-      return true;
-    SmallVector<const Value *, 8> work{AI};
-    SmallPtrSet<const Value *, 16> seen{AI};
-    while (!work.empty()) {
-      const Value *v = work.pop_back_val();
-      for (const Use &U : v->uses()) {
-        const User *us = U.getUser();
-        if (isa<GetElementPtrInst>(us) || isa<BitCastInst>(us) || isa<AddrSpaceCastInst>(us) ||
-            isa<SelectInst>(us) || isa<PHINode>(us)) {
-          if (seen.insert(us).second)
-            work.push_back(us);
-          continue;
-        }
-        if (isa<LoadInst>(us) || isa<ICmpInst>(us) || isa<MemIntrinsic>(us))
-          continue;
-        if (auto *st = dyn_cast<StoreInst>(us)) {
-          if (st->getValueOperand() == v)
-            return true;
-          continue;
-        }
-        if (auto *cb = dyn_cast<CallBase>(us)) {
-          if (auto *ii = dyn_cast<IntrinsicInst>(cb); ii && (ii->isLifetimeStartOrEnd() || ii->isAssumeLikeIntrinsic()))
-            continue;
-          if (!cb->isArgOperand(&U))
-            return true;
-          const Function *cf = cb->getCalledFunction();
-          if (cf && isRuntimeName(cf->getName()))
-            continue;
-          if (cb->doesNotCapture(cb->getArgOperandNo(&U)))
-            continue;
-          // A clone (or its twin) captures nothing when the C function it recomputes captures no
-          // pointer formal.
-          if (const Function *src = cf ? cloneSource(*cf) : nullptr; src && !src->isDeclaration() &&
-              all_of(src->args(), [](const Argument &a) { return !a.getType()->isPointerTy() || !formalCaptured(a); }))
-            continue;
-          return true;
-        }
-        return true;   // ptrtoint, ret, an atomic's value, ...
-      }
-    }
-    return false;
-  }
-  // Does call cb (after a clone call whose twin has footprint fp) possibly write fp's memory?
-  bool callMayWrite(const CallBase *cb, const Footprint &fp, const DataLayout &DL) const {
-    auto hits = [&](const Value *p) {
-      return any_of(fp.objs, [&](const Cell &c) { return mayAlias(c, {p, 0}, DL); }) ||
-             (fp.unbounded && reachable(p));
-    };
-    // A clone (or call) of a C function that only reads memory writes no object (rule 18: a clone writes the cells
-    // its C body writes, none here): musl strcmp called per trip of a K-loop between an earlier trip's call and
-    // its twin.
-    if (const Function *cf = cb->getCalledFunction())
-      if (const Function *src = cloneSource(*cf); src && !src->isDeclaration() && src->onlyReadsMemory())
-        return false;
-    for (const Value *a : cb->args())
-      if (a->getType()->isPointerTy() && hits(a))
-        return true;
-    const Function *cf = cb->getCalledFunction();
-    bool beyondArgs = !cb->onlyAccessesArgMemory();
-    const Function *src = cf ? cloneSource(*cf) : nullptr;
-    if (!src && cf && !cf->isDeclaration() && !cf->isIntrinsic())
-      src = cf;   // a defined classical callee
-    if (src && !src->isDeclaration()) {
-      // The callee's own summary decides (its pointer arguments are checked above).
-      const MemSummary &S = summaryOf(src);
-      if (!S.unbounded)
-        return any_of(S.globals, [&](const GlobalVariable *g) { return hits(g); });
-      beyondArgs = true;
-    }
-    if (!beyondArgs)
-      return false;
-    // A callee that may write memory beyond its arguments reaches every object code outside the frame can.
-    return fp.unbounded || any_of(fp.objs, [&](const Cell &c) { return reachable(c.ptr); });
-  }
-
-  enum class Bar { Hit, Write, AliasHit, PointeeWrite };
-  // cq-fwto (orchestrator decision under CR rule 5, NORTHSTAR p2): a clone's twin reads the objects its
-  // pointer arguments point to when it runs, so every instruction after the forward call that may write
-  // one of them is a barrier of the call's item: a store, an atomic or a memory intrinsic whose address
-  // may overlap the object, or a call (other than one uncompute emitted or one that only reads memory)
-  // taking a pointer that may (not a runtime gate or template). A clone call counts: a classical store
-  // inside it is not visible here.
-  template <typename AfterFn>
-  void pointeeWrites(CallInst *fwd, AfterFn &&isAfter, SmallVectorImpl<std::pair<Instruction *, Bar>> &out) const {
-    const DataLayout &DL = fwd->getModule()->getDataLayout();
-    Footprint fp = footprint(fwd);
-    if (fp.empty())
-      return;
-    // cq-99z6: a write into the footprint: an address that may overlap one of its objects, or, for an
-    // unbounded footprint, any address reachable from outside the caller's frame.
-    auto hits = [&](const Value *p, uint64_t size) {
-      return any_of(fp.objs, [&](const Cell &c) { return mayAlias(c, {p, size}, DL); }) ||
-             (fp.unbounded && reachable(p));
-    };
-    for (Instruction &i : instructions(*fwd->getFunction())) {
-      if (&i == fwd || emitted.count(&i) || !isAfter(&i))
-        continue;
-      bool w = false;
-      if (auto *st = dyn_cast<StoreInst>(&i))
-        w = hits(st->getPointerOperand(), accessSize(st->getValueOperand()->getType(), DL));
-      else if (auto *rmw = dyn_cast<AtomicRMWInst>(&i))
-        w = hits(rmw->getPointerOperand(), 0);
-      else if (auto *cx = dyn_cast<AtomicCmpXchgInst>(&i))
-        w = hits(cx->getPointerOperand(), 0);
-      else if (auto *mi = dyn_cast<MemIntrinsic>(&i))
-        w = hits(mi->getRawDest(), 0);
-      else if (auto *cb = dyn_cast<CallBase>(&i)) {
-        if (auto *ii = dyn_cast<IntrinsicInst>(cb); ii && (ii->isLifetimeStartOrEnd() || ii->isAssumeLikeIntrinsic()))
-          continue;
-        if (cb->onlyReadsMemory())
-          continue;
-        // Runtime gates and templates (a QROM table read included) write no C object.
-        if (Function *cf = cb->getCalledFunction(); cf && isRuntimeName(cf->getName()))
-          continue;
-        w = callMayWrite(cb, fp, DL);
-      } else if (i.mayWriteToMemory()) {
-        w = true;   // a fence, va_arg, ...
-      }
-      if (w)
-        out.push_back({&i, Bar::PointeeWrite});
-    }
-  }
-
+  enum class Bar { Hit, Write };
   // The barrier events of g's item: (event, kind) that must not precede the item.
   SmallVector<std::pair<Instruction *, Bar>, 4> barriers(RailId g) const {
     SmallVector<std::pair<Instruction *, Bar>, 4> out;
-    auto eventsOf = [&](RailId x, auto &&isAfterBase, bool popsFirst = false, const Value *via = nullptr) {
+    auto eventsOf = [&](RailId x, auto &&isAfterBase) {
       const Rail &rx = rails[x];
       for (Instruction *h : rx.hits)
         if (isAfterBase(h))
           out.push_back({h, Bar::Hit});
-      for (Instruction *h : rx.aliasHits)
-        if (isAfterBase(h) && !aliasRuledOut(h, via)) // M3b
-          out.push_back({h, Bar::AliasHit});
       if (x == g)
         return; // g's own writes are undone by its item
       for (unsigned w : rx.writes)
-        if (isAfterBase(records[w].forward) && !(popsFirst && storePopped(w)))
+        if (isAfterBase(records[w].forward))
           out.push_back({records[w].forward, Bar::Write});
     };
     const Rail &r = rails[g];
@@ -1705,21 +929,16 @@ struct Uncompute::Impl {
       };
       for (RailId x0 : r.cleanup->reads)
         for (RailId x : leaves(x0))
-          eventsOf(x, afterAll, false, rails[x0].handle);
+          eventsOf(x, afterAll);
       eventsOf(g, afterAll);
       return out;
     }
     for (unsigned rec : undone(g)) {
       const Instruction *f = records[rec].forward;
       auto afterRec = [&](const Instruction *e) { return e != f && after(e, f); };
-      if (info[rec].kind == RecKind::Call || info[rec].kind == RecKind::Template) // a clone call (one result: a template record)
-        pointeeWrites(cast<CallInst>(records[rec].forward), afterRec, out);
-      // A2: a later store on a load's bus is popped before the load is un-copied (not a barrier),
-      // unless the bus keeps its stores.
-      bool popsFirst = info[rec].kind == RecKind::QramLoad;
       for (RailId x0 : info[rec].reads)
         for (RailId x : leaves(x0)) // U1: a read of a merge reads one of its arms
-          eventsOf(x, afterRec, popsFirst, rails[x0].handle);
+          eventsOf(x, afterRec);
     }
     // Hits on g itself after it was minted (a rotated seed or result is never freed).
     if (r.creator != kNone) {
@@ -1732,8 +951,6 @@ struct Uncompute::Impl {
     } else {
       for (Instruction *h : r.hits)
         out.push_back({h, Bar::Hit});
-      for (Instruction *h : r.aliasHits)
-        out.push_back({h, Bar::AliasHit});
     }
     // De-duplicate (an event may be reachable through several records).
     SmallVector<std::pair<Instruction *, Bar>, 4> uniq;
@@ -1743,21 +960,6 @@ struct Uncompute::Impl {
     return uniq;
   }
 
-  // ---- kept merges (cq-bv91, cq-lshe) -----------------------------------------------------------
-  //
-  // CR rule 9 (ruling 2026-10-27): a classical select or phi over handles names the chosen arm; a kept
-  // role on it keeps the chosen arm, and every other arm is garbage on that path (CR §0: cleaned). The
-  // choice is classical, so the lowering re-branches on it: each resolvable arm a the merge may name
-  // gets the merge as a KEEPER and stays resolvable. Its item is placed like any garbage item, after a's
-  // own uses (a use of the keeper is a use of a only where the keeper chose a, where a is kept), and
-  // runs under the classical flag "a exists and no keeper chose it since" (flagAt; chooses(m, a) is the
-  // choice spelled over the merge's own classical conditions: an i1 phi over its incoming edges, an i1
-  // select on its condition). An arm a cell load may name (M3, the cell's content is not a classical
-  // choice) is kept outright, as is a rail a deferred rule-14 item owns (its reverse loop undoes every
-  // trip's instance; the copy taken where the loop exits keeps the role, placeDeferred).
-  bool isDeclaredPseudo(RailId g) const {
-    return rails[g].group != kNone && groups[rails[g].group].declared;
-  }
 
   // m and every rail it may name, merges included (m first).
   SmallVector<RailId, 4> closure(RailId m) const {
@@ -1776,7 +978,7 @@ struct Uncompute::Impl {
       return true;
     if (!isMerge(n) || depth > 32)
       return false;
-    if (rails[n].cellLoad) {
+    if (rails[n].group != kNone) {
       for (RailId x : rails[n].arms)
         if (alwaysChosen(x, a, depth + 1))
           return true;
@@ -1809,8 +1011,8 @@ struct Uncompute::Impl {
         rails[x].role = role;
         continue;
       }
-      if (!live.count(x) || isDeclaredPseudo(x))
-        continue;   // U7: a declared clone's twin runs whatever the caller keeps
+      if (!live.count(x))
+        continue;
       if (rails[x].ownedBy != kNone || alwaysChosen(m, x))
         rails[x].role = role;
       else if (!is_contained(rails[x].keepers, m))
@@ -1833,7 +1035,7 @@ struct Uncompute::Impl {
     if (auto it = chooseMemo.find({n, a}); it != chooseMemo.end())
       return it->second;
     auto *nh = cast<Instruction>(rails[n].handle);
-    if (rails[n].cellLoad) {
+    if (rails[n].group != kNone) {
       if (is_contained(rails[n].arms, a))
         return chooseMemo[{n, a}] = ConstantInt::getTrue(C);
       Value *v = ConstantInt::getFalse(C);
@@ -1906,7 +1108,6 @@ struct Uncompute::Impl {
     RailId merge = kNone, arm = kNone; // the clear's cond: chooses(merge, arm); merge kNone: true
     Value *cond = nullptr;             // cq-4lqy: a clear by this run-time i1 instead (merge unused)
   };
-  DenseMap<RailId, SmallVector<FlagEv, 2>> inheritedEvs;   // cq-4lqy: see placeAt (a POP kept on some paths)
   Value *flagAt(Instruction *at, ArrayRef<FlagEv> evs, bool dflt) {
     LLVMContext &C = at->getContext();
     Type *I1 = Type::getInt1Ty(C);
@@ -2167,67 +1368,14 @@ struct Uncompute::Impl {
   // CR §1.3 (cq-lshe, 2026-11-02): a realloc of a bus with a leaf the function did not allocate (a formal's,
   // a loaded one) reads the old logical size by cqrt_qram_size(a) right before the realloc; keyed by the
   // realloc's record, used by its release qram_realloc_<W>_unc(a', n_old).
-  DenseMap<unsigned, Value *> reallocOldSize;
-  bool foreignBus(RailId a) {
-    return any_of(leaves(a), [&](RailId x) { return rails[x].creator == kNone; });
-  }
 
-  // cq-vtfq: the logical size a bus was made with (qram_alloc's n, a realloc's n).
-  // cq-lshe (CR rule 9): a merged bus's size is its chosen arm's, a select over the arms' sizes on the
-  // classical choice (chooses); at must lie where the merge's choice values are available (null: check only).
-  Value *busSize(RailId b, Instruction *at = nullptr) {
-    if (isMerge(b)) {
-      SmallVector<RailId, 4> ls = leaves(b);
-      for (RailId x : ls)
-        busSize(x);
-      if (!at)
-        return nullptr;
-      Value *v = busSize(ls.back(), at);
-      for (unsigned i = ls.size() - 1; i-- > 0;) {
-        Value *c = chooses(b, ls[i]);
-        if (auto *k = dyn_cast<ConstantInt>(c)) {
-          if (k->isOne())
-            v = busSize(ls[i], at);
-          continue;
-        }
-        v = track(SelectInst::Create(c, busSize(ls[i], at), v, "cq.n", at));
-      }
-      return v;
-    }
-    const Rail &r = rails[b];
-    if (r.creator == kNone)
-      internalError("uncompute: the size of a QRAM bus the function did not allocate (its realloc reads it by "
-                    "cqrt_qram_size, foreignBus)",
-                    r.handle);
-    CallInst *f = records[r.creator].forward;
-    switch (info[r.creator].kind) {
-    case RecKind::QramAlloc:
-      return f->getArgOperand(0);
-    case RecKind::QramRealloc:
-      return f->getArgOperand(1);
-    default:
-      internalError("uncompute: a qram_realloc operand that is not a bus", f);
-    }
-  }
 
   CallInst *emitRelease(RailId g, IRBuilder<> &B) {
     Rail &r = rails[g];
     Module &M = *B.GetInsertBlock()->getModule();
     LLVMContext &C = M.getContext();
     FunctionType *FT = FunctionType::get(Type::getVoidTy(C), {Type::getInt32Ty(C)}, false);
-    if (r.creator != kNone && info[r.creator].kind == RecKind::QramRealloc) {
-      // CR §1.3: qram_realloc_<W>_unc(a', n_old); a is the bus again afterwards. a' reads a, so a's
-      // qram_free follows this item; a's POPs and load un-copies follow it by versionBefore.
-      CallInst *fwd = records[r.creator].forward;
-      RailId a = info[r.creator].reads.front();
-      FunctionType *UT = FunctionType::get(Type::getVoidTy(C), {Type::getInt32Ty(C), Type::getInt32Ty(C)}, false);
-      Value *n = reallocOldSize.lookup(r.creator);
-      if (!n)
-        n = busSize(a, &*B.GetInsertPoint());
-      return track(B.CreateCall(declareFn(M, (fwd->getCalledFunction()->getName() + "_unc").str(), UT, fwd),
-                                {r.handle, n}));
-    }
-    return track(B.CreateCall(declareFn(M, r.qram ? "cqrt_qram_free" : "cqrt_free", FT, r.handle), {r.handle}));
+    return track(B.CreateCall(declareFn(M, "cqrt_free", FT, r.handle), {r.handle}));
   }
 
   // cq-mgkr (CR rule 6, dead on one classical path only): each alternative's clean-up under its guard, then
@@ -2305,40 +1453,15 @@ struct Uncompute::Impl {
 
   Instruction *emitItem(RailId g, IRBuilder<> &B) {
     Rail &r = rails[g];
-    {
-      // cq-vtfq: an item that names a bus a (its qram_free, a POP, a load un-copy) runs after every
-      // realloc result a' of a is undone; a kept a' (never undone) leaves a replaced for good.
-      SmallVector<RailId, 2> buses;
-      if (r.qram)
-        buses.push_back(g);
-      if (r.popBus != kNone)
-        buses.push_back(r.popBus);
-      if (loadOfReplaced(g))
-        internalError("uncompute: a load un-copied after a store through a kept qram_realloc result", r.handle);
-      for (RailId b : buses)
-        for (RailId a2 : rails[b].reallocs)
-          if (rails[a2].cleanup || (rails[a2].role != Role::Seed && rails[a2].role != Role::Garbage))
-            internalError("uncompute: an item on a QRAM bus whose qram_realloc result is kept (replacedForGood "
-                          "keeps every such item)",
-                          rails[a2].handle);
-    }
-    // cq-necw (CR rules 6, 18): a group whose only member is a slotOut (no result) and that rule 6 cleans (the
-    // new content of a cell an _inv<c> cleans, spine invCellImages) has no twin: its item is the clean-up.
     bool soleCellCleaned = r.cleanup && r.group != kNone && groups[r.group].outs.empty() &&
                            groups[r.group].members.size() == 1;
     if (r.group != kNone && r.creator != kNone && info[r.creator].kind == RecKind::Call && !soleCellCleaned) {
-      // U2: twin(outs..., fwd args..., extra...), then free every out and slotOut in order.
       const CallGroup &cg = groups[r.group];
       CallInst *fwd = cg.fwd;
       Module &M = *B.GetInsertBlock()->getModule();
       LLVMContext &C = M.getContext();
       SmallVector<Type *, 8> ps;
       SmallVector<Value *, 8> args;
-      size_t restExtra = cg.extra.size() - cg.extraFirst;
-      for (size_t k = restExtra; k < cg.extra.size(); ++k) {
-        ps.push_back(cg.extra[k]->getType());
-        args.push_back(cg.extra[k]);
-      }
       for (RailId o : cg.outs) {
         ps.push_back(Type::getInt32Ty(C));
         args.push_back(rails[o].handle);
@@ -2347,14 +1470,12 @@ struct Uncompute::Impl {
         ps.push_back(a->getType());
         args.push_back(a);
       }
-      for (size_t k = 0; k < restExtra; ++k) {
+      for (size_t k = 0; k < cg.extra.size(); ++k) {
         ps.push_back(cg.extra[k]->getType());
         args.push_back(cg.extra[k]);
       }
       FunctionType *TT = FunctionType::get(Type::getVoidTy(C), ps, false);
-      CallInst *twin = track(B.CreateCall(twinOf(fwd, TT, B), args));
-      if (cg.declared)
-        return twin;   // U7: the cells' rails are the clone's (the twin restores them) or the caller's own
+      track(B.CreateCall(twinOf(fwd, TT, B), args));
       FunctionType *FT = FunctionType::get(Type::getVoidTy(C), {Type::getInt32Ty(C)}, false);
       Instruction *last = nullptr;
       for (RailId o : cg.members)
@@ -2362,39 +1483,8 @@ struct Uncompute::Impl {
                                                                {rails[o].handle}));
       return last;
     }
-    if (r.popBus != kNone) {
-      // A2: POP(k) is the store's _unc alone; the bus's own item frees it.
-      CallInst *fwd = records[r.creator].forward;
-      if (fwd->getCalledFunction() && !fwd->getCalledFunction()->getName().starts_with("cqrt_")) {
-        // U6/U3: a store the clone made: its _unc from the record's spec and the caller's (bus, idx, v).
-        abi::CoreSpec spec = std::get<abi::CoreSpec>(records[r.creator].spec);
-        spec.unc = true;
-        SmallVector<Value *, 3> args;
-        for (const Operand &o : records[r.creator].ops)
-          args.push_back(o.v);
-        return track(B.CreateCall(abi::declare(*B.GetInsertBlock()->getModule(), spec), args));
-      }
-      return track(B.CreateCall(uncOf(fwd, false, B), argsOf(fwd, nullptr)));
-    }
-    if (r.cleanup && !r.cleanup->unbuilt.empty()) {
-      unimplemented(r.cleanup->unbuilt, r.cleanup->unbuiltAt);
-      // cq-utb8 (CR rules 7, 18): the dead old content of a caller cell a clone overwrote, no twin restoring it, is a
-      // seed (calls registers only those): the seed's own item, its in-place writes undone, then released (a seed hit
-      // by a non-diagonal gate was made KeptEntangled at placement).
-      r.cleanup.reset();
-    }
     if (r.cleanup && !r.cleanup->alts.empty())
       return emitGuardedCleanup(g, B);
-    if (r.cleanup && r.cleanup->via) {
-      // U8 (cq-xivx): via(ops..., old) zeroes old; free old.
-      SmallVector<Value *, 6> args;
-      for (const Operand &o : r.cleanup->ops)
-        args.push_back(o.v);
-      args.push_back(r.handle);
-      CallInst *c = track(B.CreateCall(r.cleanup->via, args));
-      c->setCallingConv(r.cleanup->via->getCallingConv());
-      return emitRelease(g, B);
-    }
     if (r.cleanup) {
       // Rule 6: t = f^-1(ops); copy(t, old); f^-1_unc(t, ops); free t; free old.
       Module &M = *B.GetInsertBlock()->getModule();
@@ -2413,8 +1503,7 @@ struct Uncompute::Impl {
       return emitRelease(g, B);
     }
     if (!directRelease(g)) {
-      if (r.role == Role::Seed && r.creator != kNone && info[r.creator].kind != RecKind::Seed &&
-          info[r.creator].kind != RecKind::QramAlloc && info[r.creator].kind != RecKind::QramRealloc)
+      if (r.role == Role::Seed && r.creator != kNone && info[r.creator].kind != RecKind::Seed)
         internalError("uncompute: Role::Seed on a rail not minted by alloc", r.handle);
       SmallVector<unsigned, 4> recs = undone(g);
       if (r.creator == kNone)
@@ -2423,19 +1512,14 @@ struct Uncompute::Impl {
         CallInst *fwd = records[*it].forward;
         switch (info[*it].kind) {
         case RecKind::Template:
-        case RecKind::QramLoad:
           track(B.CreateCall(uncOf(fwd, true, B), argsOf(fwd, fwd)));
           break;
         case RecKind::Involution:
           track(B.CreateCall(fwd->getFunctionType(), fwd->getCalledOperand(), argsOf(fwd, nullptr)));
           break;
-        case RecKind::QramStore:
-          internalError("uncompute: a QRAM store is undone by its own POP item", fwd);
         case RecKind::Call:
           internalError("uncompute: a call group's record outside its leader's item", fwd);
         case RecKind::Seed:
-        case RecKind::QramAlloc:
-        case RecKind::QramRealloc:
           break;
         }
       }
@@ -2586,7 +1670,7 @@ struct Uncompute::Impl {
     Rail &r = rails[g];
     // cq-lshe (CR rule 6): a clean-up reads its inverse's operands, which must exist wherever the item runs; one
     // whose operand is defined on some paths to pos only (an arm) gives way to g's own uncompute.
-    if (r.cleanup && !r.cleanup->via && r.cleanup->unbuilt.empty() && r.creator != kNone &&
+    if (r.cleanup && r.creator != kNone &&
         any_of(r.cleanup->reads, [&](RailId x) {
           auto *h = dyn_cast<Instruction>(rails[x].handle);
           return h && (!dominates(h->getParent(), pos.bb) || (h->getParent() == pos.bb && !h->comesBefore(pos.before)));
@@ -2602,7 +1686,7 @@ struct Uncompute::Impl {
     auto beforePos = [&](const Instruction *e) {
       return e->getParent() == pos.bb ? (e != pos.before && e->comesBefore(pos.before)) : reaches(e->getParent(), pos.bb);
     };
-    bool written = false, pointee = false;
+    bool written = false;
     for (auto [e, kind] : barriers(g)) {
       if (!beforePos(e))
         continue;
@@ -2611,21 +1695,7 @@ struct Uncompute::Impl {
         gated = true;
         continue;
       }
-      if (kind == Bar::PointeeWrite) {
-        pointee = true;
-        continue;
-      }
-      if (kind == Bar::Write) {
-        written = true;
-        continue;
-      }
-      // cq-zh7z, cq-4lqy (CR §0, rule 5; §1.1: handles are classical values the lowered program may
-      // compare): the gate's handle may name an operand rail x of g's item through memory (a cell that may
-      // hold it). Where it does, x is entangled and g stays allocated on that path (as for a direct hit);
-      // where it does not, g is cleaned as usual. Which one holds is decided at run time by comparing the
-      // gate's handle with x's (handle 0, no rail, where x does not exist at the gate).
-      evs.push_back({e, false, kNone, kNone, aliasHitCond(g, e)});
-      gated = true;
+      written = true;
     }
     // The record that defines g's value (the gates and choices before it concern an older instance).
     Instruction *def = r.creator != kNone ? records[r.creator].forward : dyn_cast<Instruction>(r.handle);
@@ -2634,11 +1704,6 @@ struct Uncompute::Impl {
     SmallVector<unsigned, 4> sandwich;
     if (written)
       sandwichOf(g, def, beforePos, sandwich, evs, gated);
-    // cq-lshe (CR rule 18, cq-fwto): a write into the memory a clone call's twin reads, between the call and
-    // the twin: the object is snapshotted after the call and swapped in around the twin.
-    SmallVector<std::pair<CallInst *, Value *>, 2> swaps;
-    if (pointee)
-      swapsOf(g, swaps);
     for (RailId m : r.keepers)
       if (auto *mi = dyn_cast<Instruction>(rails[m].handle); mi && mi->getParent())
         evs.push_back({mi, false, m, g});
@@ -2653,13 +1718,6 @@ struct Uncompute::Impl {
           evs.push_back({gate, false, n, x});
           gated = true;
         }
-    // cq-4lqy: the hit events a later POP of the same bus left here (where it stayed, this item stays too).
-    if (auto it = inheritedEvs.find(g); it != inheritedEvs.end())
-      for (const FlagEv &e : it->second)
-        if (e.at->getParent() && beforePos(e.at)) {
-          evs.push_back(e);
-          gated = true;
-        }
     bool guard = exists || !evs.empty();
     Value *cond = nullptr;
     if (guard) {
@@ -2672,8 +1730,6 @@ struct Uncompute::Impl {
           if (gated || r.keepers.empty()) {
             r.role = Role::KeptEntangled;
             r.cleanup.reset();
-            if (r.popBus != kNone)
-              keepBelow(g);
           } else {
             r.role = rails[r.keepers.front()].role;
           }
@@ -2681,28 +1737,6 @@ struct Uncompute::Impl {
         }
         guard = false;
       }
-    }
-    if (guard && r.popBus != kNone) {
-      // cq-4lqy (CR §1.3: pops are LIFO among stores that may touch the same cell; an unpopped store keeps its
-      // slot and the object stays allocated, §0): POP(k) runs under its run flag; on the paths where a gate
-      // kept it, every earlier POP, every load of an earlier version and the bus stay too (keepBelow, per
-      // path): they inherit the clear events, so their own items run under the same condition.
-      SmallVector<FlagEv, 4> clears;
-      for (const FlagEv &e : evs)
-        if (!e.set && e.at != def && e.at != pos.before)
-          clears.push_back(e);
-      RailId b = r.popBus;
-      SmallVector<RailId, 8> below;
-      for (unsigned j = 1; j < r.popK; ++j)
-        below.push_back(rails[b].pops[j - 1]);
-      for (RailId l : rails[b].loads)
-        for (auto [bus, k] : rails[l].versions)
-          if (bus == b && k < r.popK && !is_contained(below, l))
-            below.push_back(l);
-      below.push_back(b);
-      for (RailId y : below)
-        for (const FlagEv &e : clears)
-          inheritedEvs[y].push_back(e);
     }
     auto &wraps = local ? localWraps : armItems;
     // Each sandwich write that does not run on every path from g's definition to pos is undone and redone
@@ -2724,9 +1758,6 @@ struct Uncompute::Impl {
     };
     for (unsigned k = sandwich.size(); k-- > 0;)
       guarded(wcond[k], [&] { return emitWrite(sandwich[k], B, /*undo=*/true); });
-    SmallVector<Value *, 2> tmps;
-    for (auto [fwd, obj] : swaps)
-      tmps.push_back(swapIn(fwd, obj, B));
     Instruction *prev = pos.before->getPrevNode();
     SmallVector<Seg, 4> segs;
     segOut = &segs;
@@ -2735,8 +1766,8 @@ struct Uncompute::Impl {
     Instruction *first = prev ? prev->getNextNode() : &pos.bb->front();
     if (!segs.empty()) {
       // cq-mgkr: a guarded rule 6 clean-up: each segment under its own condition (and the run flag).
-      if (!sandwich.empty() || !swaps.empty())
-        internalError("uncompute: a rule 6 clean-up under a classical guard with in-place writes or swaps around it",
+      if (!sandwich.empty())
+        internalError("uncompute: a rule 6 clean-up under a classical guard with in-place writes around it",
                       r.handle);
       for (Seg &sg : segs) {
         Value *c = sg.cond;
@@ -2754,8 +1785,6 @@ struct Uncompute::Impl {
       return;
     }
     Instruction *last = end;
-    for (unsigned k = 0; k < swaps.size(); ++k)
-      last = swapOut(swaps[k].second, tmps[k], B);
     for (unsigned k = 0; k < sandwich.size(); ++k)
       last = guarded(wcond[k], [&] { return emitWrite(sandwich[k], B, /*undo=*/false); });
     itemEnd[{g, pos.bb}] = last;
@@ -2793,7 +1822,7 @@ struct Uncompute::Impl {
               return templateResultType(*t);
             --i;
           }
-          if (StringRef(t->op).starts_with("qrom_load") || (t->rm == abi::TemplateSpec::RmRail && i + 1 == c->arg_size()))
+          if ((t->rm == abi::TemplateSpec::RmRail && i + 1 == c->arg_size()))
             continue;
           if (t->op == "select" && i == 0)
             return RailType{Kind::Int, 1};
@@ -2840,9 +1869,6 @@ struct Uncompute::Impl {
       internalError("uncompute: a kept clone result that is not an instruction in a block", fwd);
     Module &M = *fwd->getModule();
     std::optional<RailType> wo = handleWidth(h);
-    auto kc = keptCells.find(h);
-    if (!wo && kc != keptCells.end())
-      wo = kc->second;
     if (!wo)
       internalError("uncompute: a kept clone result whose width no gate, template or copy reading it names", fwd);
     RailType w = *wo;
@@ -2851,10 +1877,6 @@ struct Uncompute::Impl {
                                      {Constant::getNullValue(irTypeOf(M.getContext(), w))}));
     CallInst *cp = track(B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Copy, w}), {h, c}));
     h->replaceUsesWithIf(c, [&](Use &u) { return u.getUser() != cp; });
-    if (kc != keptCells.end())
-      // noteKeptCell: the copy continues as the cell's content. Not tracked: it is a write into the call's
-      // footprint before the twin, which the twin's placement swaps around (pointeeWrites, swapsOf).
-      B.CreateAlignedStore(c, cast<LoadInst>(h)->getPointerOperand(), cast<LoadInst>(h)->getAlign());
     Role role = rails[m].role;
     RailId cid = newRail(c, role, "copyOutResult"); // may move rails: indices only from here
     Rail &rm = rails[m], &rc = rails[cid];
@@ -2880,8 +1902,6 @@ struct Uncompute::Impl {
     rm.uses.clear();
     rc.hits = std::move(rm.hits);
     rm.hits.clear();
-    rc.aliasHits = std::move(rm.aliasHits);
-    rm.aliasHits.clear();
     rc.condHits = std::move(rm.condHits);
     rm.condHits.clear();
     rc.cleanupReaders = std::move(rm.cleanupReaders);
@@ -2900,10 +1920,6 @@ struct Uncompute::Impl {
       rc.mergedInto.push_back(mg);
       llvm::erase(rm.mergedInto, mg);
     }
-    for (auto &kv : gateTargets)
-      for (const Value *&t : kv.second)
-        if (t == h)
-          t = c;
     for (Deferred &d : defs) {
       for (RailId &x : d.reads)
         if (x == m)
@@ -2917,59 +1933,6 @@ struct Uncompute::Impl {
     rc.explicitKept = true;
   }
 
-  // cq-4lqy (CR §0, §1.1): the run-time condition "the alias gate e hits a rail g's item reads (or g)": an
-  // icmp eq of each handle e was noted on against each such rail's handle as it is at e (0 where the rail
-  // does not exist there), or'ed. Exact: a rail M3b rules out compares unequal at run time anyway.
-  Value *aliasHitCond(RailId g, Instruction *e) {
-    SmallVector<RailId, 8> xs{g};
-    for (RailId x0 : itemReads(g))
-      for (RailId x : leaves(x0))
-        if (!is_contained(xs, x))
-          xs.push_back(x);
-    if (rails[g].cleanup)
-      for (RailId x0 : rails[g].cleanup->reads)
-        for (RailId x : leaves(x0))
-          if (!is_contained(xs, x))
-            xs.push_back(x);
-    auto tg = gateTargets.find(e);
-    if (tg == gateTargets.end() || tg->second.empty())
-      internalError("uncompute: an alias hit by a gate with no noted target", e);
-    LLVMContext &C = e->getContext();
-    Type *I32 = Type::getInt32Ty(C);
-    Value *any = nullptr;
-    for (RailId x : xs) {
-      if (!is_contained(rails[x].aliasHits, e))
-        continue;
-      Value *xh = rails[x].handle;
-      Value *at = xh;
-      if (auto *xi = dyn_cast<Instruction>(xh)) {
-        BasicBlock *D = xi->getParent(), *Eb = e->getParent();
-        if (!(D == Eb ? xi->comesBefore(e) : dominates(D, Eb))) {
-          // x's handle as it is at e: 0 on the paths where it was not defined (CR §1.1).
-          SmallVector<BasicBlock *, 4> ps(predecessors(Eb));
-          if (D == Eb || ps.empty()) {
-            at = ConstantInt::get(I32, 0);
-          } else if (ps.size() == 1) {
-            at = carryTo(ps[0], true, D, xh, ConstantInt::get(I32, 0), "cq.h");
-          } else {
-            PHINode *phi = PHINode::Create(I32, ps.size(), "cq.h");
-            phi->insertInto(Eb, Eb->begin());
-            emitted.insert(phi);
-            for (BasicBlock *p : ps)
-              phi->addIncoming(carryTo(p, true, D, xh, ConstantInt::get(I32, 0), "cq.h"), p);
-            at = phi;
-          }
-        }
-      }
-      for (const Value *t : tg->second) {
-        Value *eq = track(new ICmpInst(e, ICmpInst::ICMP_EQ, const_cast<Value *>(t), at, "cq.hit"));
-        any = any ? track(BinaryOperator::CreateOr(any, eq, "cq.hit", e)) : eq;
-      }
-    }
-    if (!any)
-      internalError("uncompute: an alias-hit barrier with no rail of the item it may hit", e);
-    return any;
-  }
 
   // The sandwich of g's item: every in-place write record on a rail the item reads, or on a rail such a
   // write reads, that runs after g's definition and before the placement (beforePos), in program order.
@@ -2983,8 +1946,8 @@ struct Uncompute::Impl {
       Instruction *f = records[w].forward;
       if ((def && !after(f, def)) || !beforePos(f))
         continue;
-      if (info[w].kind != RecKind::Involution && info[w].kind != RecKind::QramStore)
-        internalError("uncompute: an in-place write record that is neither an involution nor a QRAM store", f);
+      if (info[w].kind != RecKind::Involution)
+        internalError("uncompute: an in-place write record that is not an involution", f);
       if (reachesAgain(f->getParent(), f->getParent(), {def ? def->getParent() : &f->getFunction()->getEntryBlock()}))
         unimplemented("uncompute: an in-place write on an operand rail of " + describe(rails[g].handle) +
                           " may run more than once between its record and its earliest uncompute (a loop "
@@ -3009,7 +1972,6 @@ struct Uncompute::Impl {
     });
   }
 
-  // An in-place write record undone (an involution: the same call; a QRAM store: its _unc) or redone.
   CallInst *emitWrite(unsigned w, IRBuilder<> &B, bool undo) {
     CallInst *fwd = records[w].forward;
     if (fwd->getCalledFunction() && !fwd->getCalledFunction()->getName().starts_with("cqrt_")) {
@@ -3021,83 +1983,9 @@ struct Uncompute::Impl {
         args.push_back(o.v);
       return track(B.CreateCall(abi::declare(*B.GetInsertBlock()->getModule(), spec), args));
     }
-    if (undo && info[w].kind == RecKind::QramStore)
-      return track(B.CreateCall(uncOf(fwd, false, B), argsOf(fwd, nullptr)));
     return track(B.CreateCall(fwd->getFunctionType(), fwd->getCalledOperand(), argsOf(fwd, nullptr)));
   }
 
-  // The objects the twin of a clone call g's item undoes reads (its footprint), each to be swapped back to
-  // its content right after the call. An object of unknown extent (a formal's or the heap's, a dynamic
-  // alloca, every object reachable from outside the frame) is unimplemented.
-  void swapsOf(RailId g, SmallVectorImpl<std::pair<CallInst *, Value *>> &out) {
-    for (unsigned rec : undone(g)) {
-      if (info[rec].kind != RecKind::Call && info[rec].kind != RecKind::Template)
-        continue;
-      auto *fwd = cast<CallInst>(records[rec].forward);
-      Footprint fp = footprint(fwd);
-      if (fp.empty())
-        continue;
-      if (fp.unbounded)
-        unimplemented("awaiting owner ruling: SPEC_ISSUES a write into a clone's footprint of unknown extent before "
-                      "its twin: a write into memory a clone call's twin reads lies between the call and the twin "
-                      "(" + describe(rails[g].handle) + "), and the clone reads memory reached through a pointer it "
-                      "loaded or an unknown callee (its extent is not known: cq-99z6)",
-                      fwd);
-      for (const Cell &c : fp.objs) {
-        Value *obj = const_cast<Value *>(getUnderlyingObject(c.ptr));
-        bool sized = false;
-        if (auto *AI = dyn_cast<AllocaInst>(obj))
-          sized = AI->isStaticAlloca() && AI->getAllocationSize(fwd->getModule()->getDataLayout()).has_value();
-        else if (auto *GV = dyn_cast<GlobalVariable>(obj))
-          sized = GV->getValueType()->isSized();
-        if (!sized)
-          unimplemented("awaiting owner ruling: SPEC_ISSUES a write into a clone's footprint of unknown extent before "
-                        "its twin: a write into memory a clone call's twin reads lies between the call and the twin "
-                        "(" + describe(rails[g].handle) + "), in an object whose extent is not known here (a "
-                        "formal's object, the heap, a dynamic alloca)",
-                        fwd);
-        if (!is_contained(out, std::make_pair(fwd, obj)))
-          out.push_back({fwd, obj});
-      }
-    }
-  }
-  uint64_t objectSize(Value *obj) const {
-    const DataLayout &DL = cast<Instruction>(obj) ? cast<Instruction>(obj)->getModule()->getDataLayout()
-                                                  : cast<GlobalVariable>(obj)->getParent()->getDataLayout();
-    if (auto *AI = dyn_cast<AllocaInst>(obj))
-      return AI->getAllocationSize(DL)->getFixedValue();
-    return DL.getTypeAllocSize(cast<GlobalVariable>(obj)->getValueType()).getFixedValue();
-  }
-  // A frame buffer of obj's size in the entry block.
-  Value *frameCopy(Function &F, Value *obj, const Twine &name) {
-    LLVMContext &C = F.getContext();
-    IRBuilder<> E(&*F.getEntryBlock().getFirstInsertionPt());
-    auto *a = E.CreateAlloca(ArrayType::get(Type::getInt8Ty(C), objectSize(obj)), nullptr, name);
-    emitted.insert(a);
-    return a;
-  }
-  DenseMap<std::pair<CallInst *, Value *>, Value *> snaps;
-  // cq-05pa (noteKeptCell): slot outs whose cell is visible at exit, with the cell's rail type.
-  DenseMap<const Value *, RailType> keptCells;
-  Value *swapIn(CallInst *fwd, Value *obj, IRBuilder<> &B) {
-    Function &F = *fwd->getFunction();
-    uint64_t n = objectSize(obj);
-    Value *&snap = snaps[{fwd, obj}];
-    if (!snap) {
-      snap = frameCopy(F, obj, "cq.snap");
-      IRBuilder<> A(fwd->getNextNode());
-      emitted.insert(A.CreateMemCpy(snap, MaybeAlign(1), obj, MaybeAlign(1), n));
-    }
-    Value *tmp = frameCopy(F, obj, "cq.cur");
-    emitted.insert(B.CreateMemCpy(tmp, MaybeAlign(1), obj, MaybeAlign(1), n));
-    emitted.insert(B.CreateMemCpy(obj, MaybeAlign(1), snap, MaybeAlign(1), n));
-    return tmp;
-  }
-  Instruction *swapOut(Value *obj, Value *tmp, IRBuilder<> &B) {
-    CallInst *c = B.CreateMemCpy(obj, MaybeAlign(1), tmp, MaybeAlign(1), objectSize(obj));
-    emitted.insert(c);
-    return c;
-  }
 
   // cq-lshe: the block where each instance of g (defined on a cycle) is resolved: one that every path from
   // g's definition passes before reaching the definition again or a return, after which no anchor of
@@ -3330,26 +2218,12 @@ struct Uncompute::Impl {
           if (i->getParent() && !beforeOrIn(d, i->getParent()))
             as.push_back(i);
       }
-    // F1b: every use of a bus the item writes after the loop (its loads and stores there).
-    for (auto [b, top] : d.buses)
-      for (RailId n : names(b))
-        for (User *u : rails[n].handle->users())
-          if (auto *i = dyn_cast<Instruction>(u); i && i->getParent() && !beforeOrIn(d, i->getParent()))
-            as.push_back(i);
     return as;
   }
 
-  // cq-nqa6 (U7, CR rules 5, 8, 9): an ARM-LOCAL rail at a flush point P (flushBefore with the caller's
-  // liveness): defined in a block D that does not dominate P (a classical arm), read after the arm's join
-  // (a merge, a phase's flags), every use and reader item already before P, and no instruction lowered
-  // after P reading it (live: the caller's set, through every merge naming it). Its item is placed at P
-  // for good under D's selector, as cq-ut4k does at a return: D and P on no cycle, every path from D
-  // reaches P, the handle never reaches memory, a clone call or a return (only gate calls, merges and
-  // classical selects read it), no call group or QRAM version.
   bool spanReady(RailId g, Instruction *point, const DenseSet<RailId> &live) const {
     const Rail &r = rails[g];
-    if (r.ownedBy != kNone || r.deferred != kNone || !resolvable(g) || !r.exitsDone.empty() || r.group != kNone ||
-        r.popBus != kNone || r.qram || r.cleanup || !r.versions.empty())
+    if (r.ownedBy != kNone || r.deferred != kNone || !resolvable(g) || !r.exitsDone.empty() || r.group != kNone || r.cleanup)
       return false;
     BasicBlock *P = point->getParent();
     const BasicBlock *D = defBlock(g);
@@ -3518,10 +2392,6 @@ struct Uncompute::Impl {
     }
     if (!pos.before)
       internalError("uncompute: no insertion point for a deferred item", r.handle);
-    // Rule 5: every rail the item reads (and every exit rail) must still hold the value its records
-    // read. A non-diagonal gate or an in-place write after the loop that the placement does not
-    // precede would be undone against the changed rail.
-    // (rail, the handle it is read through: M3b rules out some alias hits for a read of a load).
     SmallVector<std::pair<RailId, const Value *>, 8> xs;
     for (RailId x0 : d.reads)
       for (RailId x : leaves(x0))
@@ -3534,15 +2404,8 @@ struct Uncompute::Impl {
     RailId barrierRail = kNone;
     for (auto [x, via] : xs) {
       SmallVector<Instruction *, 8> evs(rails[x].hits.begin(), rails[x].hits.end());
-      for (Instruction *h : rails[x].aliasHits)
-        if (!aliasRuledOut(h, via))
-          evs.push_back(h);
-      // F1b: a later store on a bus the item writes is popped first; cq-odo1 (A2): so is one on a bus an owned
-      // load reads (readersOf), so the item's un-copy sees the version its load read.
-      bool written = any_of(d.buses, [&](const std::pair<RailId, unsigned> &bt) { return bt.first == x; }) ||
-                     any_of(d.readBuses, [&](const std::pair<RailId, unsigned> &bt) { return bt.first == x; });
       for (unsigned w : rails[x].writes)
-        if (rails[x].ownedBy == kNone && !(written && storePopped(w))) // F1b: a later store is popped first
+        if (rails[x].ownedBy == kNone)
           evs.push_back(records[w].forward);
       for (Instruction *e : evs) {
         if (!e->getParent() || !afterRegion(d, e->getParent()))
@@ -3602,21 +2465,6 @@ struct Uncompute::Impl {
         internalError("uncompute: the loop's exit block of a deferred item does not continue in one block",
                       X->getTerminator());
       pos = {S, &*S->getFirstInsertionPt()};
-      // cq-9o04 (CR rules 5, 14; §0): a QRAM bus the item writes is restored by it (its stores are
-      // popped), so a read of the bus after the loop must precede the item. Placed where the loop
-      // exits, every such read would follow it and see the popped cells.
-      for (auto [b, top] : d.buses)
-        for (RailId nb : names(b))
-          for (User *u : rails[nb].handle->users())
-            if (auto *i = dyn_cast<Instruction>(u); i && i->getParent() && afterRegion(d, i->getParent()) &&
-                                                    !emitted.count(i))
-              unimplemented("uncompute: a non-diagonal gate or an in-place write on a rail the deferred rule-14 "
-                                "reverse loop reads (" + describe(rails[barrierRail].handle) +
-                                ") precedes a read after the loop of a QRAM the loop writes (" +
-                                describe(rails[b].handle) +
-                                "), which the reverse loop pops: it can run neither before that read nor after "
-                                "the gate",
-                            i);
     }
     // An exit rail that became kept (measured, escaped, a kept merge's arm) is kept by a copy taken
     // here, and the reverse loop undoes the rail itself (every trip's instance is undone alike).
@@ -3748,13 +2596,7 @@ struct Uncompute::Impl {
         }
     };
     move(rails[x].hits, rails[fid].hits);
-    move(rails[x].aliasHits, rails[fid].aliasHits);
     move(rails[x].uses, rails[fid].uses);
-    for (auto &kv : gateTargets)
-      if (outside(kv.first))
-        for (const Value *&t : kv.second)
-          if (t == xh)
-            t = f;
   }
 
   // At a return R: a deferred item already placed must lie on every path from its loop to R.
@@ -3833,35 +2675,13 @@ Uncompute::Uncompute() : impl(std::make_shared<Impl>()) {}
 RailId Uncompute::recordTemplate(CallInst *fwd, const abi::TemplateSpec &spec, ArrayRef<Operand> ops) {
   impl->checkOps(fwd, ops, "recordTemplate");
   RailId out = impl->newRail(fwd, Role::Garbage, "recordTemplate");
-  unsigned rec = impl->addRecord(fwd, spec, ops, out, RecKind::Template, false);
-  impl->takeCallReads(fwd, rec);
+  impl->addRecord(fwd, spec, ops, out, RecKind::Template, false);
   return out;
 }
 
 RailId Uncompute::recordCore(CallInst *fwd, const abi::CoreSpec &spec, ArrayRef<Operand> ops, RailId out) {
   using abi::Core;
-  // U6/U3: a store the clone call fwd made inside the clone, recorded on the caller's bus with the call
-  // as its forward: its operands ([flag,] bus, idx, v) are the caller's, not fwd's arguments (cq-pf4n: a
-  // _controlled store under the flag the clone copied out). Allowed only once noteCallBusRead(fwd, bus) placed
-  // the call group on that bus.
-  bool cloneStore = false;
-  if (spec.op == Core::QramStore && fwd && fwd->getCalledFunction() &&
-      !fwd->getCalledFunction()->getName().starts_with("cqrt_")) {
-    unsigned rec = impl->callRecord(fwd);
-    if (rec == kNone || impl->info[rec].kind != RecKind::Call)
-      internalError("uncompute: recordCore: a QRAM store whose forward is a clone call with no recordCall", fwd);
-    RailId lead = impl->records[rec].out;
-    unsigned k0 = spec.ctl ? 1 : 0;
-    if (ops.size() != 3 + k0 || (spec.ctl && !ops[0].handle) || !ops[k0].handle || !ops[k0 + 2].handle ||
-        out >= impl->rails.size())
-      internalError("uncompute: recordCore: a clone call's QRAM store takes ([flag,] bus, idx, v)", fwd);
-    for (auto [b, k] : impl->rails[lead].versions)
-      cloneStore = cloneStore || b == out;
-    if (!cloneStore)
-      internalError("uncompute: recordCore: a clone call's QRAM store on a bus with no noteCallBusRead", fwd);
-  }
-  if (!cloneStore)
-    impl->checkOps(fwd, ops, "recordCore");
+  impl->checkOps(fwd, ops, "recordCore");
   if (spec.unc)
     internalError("uncompute: recordCore of an _unc call", fwd);
   auto target = [&](unsigned i) -> RailId {
@@ -3878,24 +2698,6 @@ RailId Uncompute::recordCore(CallInst *fwd, const abi::CoreSpec &spec, ArrayRef<
   switch (spec.op) {
   case Core::Alloc:
     return recordSeed(fwd);
-  case Core::QramAlloc: {
-    RailId r = impl->newRail(fwd, Role::Seed, "recordCore");
-    impl->rails[r].qram = true;
-    impl->addRecord(fwd, spec, ops, r, RecKind::QramAlloc, false);
-    return r;
-  }
-  case Core::QramLoad: {
-    RailId r = impl->newRail(fwd, Role::Garbage, "recordCore");
-    impl->addRecord(fwd, spec, ops, r, RecKind::QramLoad, false);
-    if (ops.empty() || !ops[0].handle)
-      internalError("uncompute: recordCore: a QRAM load's first operand is its bus", fwd);
-    // A2: the load reads v_k, k = the stores made so far on each bus its operand may name.
-    for (RailId b : impl->leaves(impl->lookup(ops[0].v, "recordCore", fwd))) {
-      impl->rails[r].versions.push_back({b, static_cast<unsigned>(impl->rails[b].pops.size())});
-      impl->rails[b].loads.push_back(r);
-    }
-    return r;
-  }
   case Core::Copy:
     impl->addRecord(fwd, spec, ops, target(c + 1), RecKind::Involution, false);
     return out;
@@ -3912,53 +2714,6 @@ RailId Uncompute::recordCore(CallInst *fwd, const abi::CoreSpec &spec, ArrayRef<
   case Core::XorI1:
     impl->addRecord(fwd, spec, ops, target(1), RecKind::Involution, false);
     return out;
-  case Core::QramStore: {
-    unsigned rec = impl->addRecord(fwd, spec, ops, target(c), RecKind::QramStore, false);
-    // A2: the store is undone by its own item POP(k), a pseudo rail outside byHandle.
-    RailId p = impl->rails.size();
-    impl->rails.emplace_back();
-    Impl::Rail &pr = impl->rails.back();
-    pr.handle = fwd;
-    pr.creator = rec;
-    pr.popBus = out;
-    pr.popK = impl->rails[out].pops.size() + 1;
-    impl->rails[out].pops.push_back(p);
-    impl->info[rec].item = p;
-    return out;
-  }
-  case Core::QramRealloc: {
-    // cq-vtfq, CR §1.3: a' = qram_realloc_<W>(a, n) is a bus of its own (stores and loads through it
-    // record on it) whose release is qram_realloc_<W>_unc(a', n_old), after every POP and load un-copy
-    // on a'; it reads a, so a's own item (cqrt_qram_free) follows it, and so does every POP of a store
-    // and every un-copy of a load made through a (versionBefore). n is classical (a quantum size is
-    // resized at its upper bound by the caller).
-    if (ops.size() != 2 || !ops[0].handle || ops[1].handle)
-      internalError("uncompute: recordCore: qram_realloc takes (bus, classical n)", fwd);
-    RailId a = impl->lookup(ops[0].v, "recordCore", fwd);
-    // cq-lshe: a merged bus (a classical choice of buses) is reallocated as the arm it names: a' is a
-    // realloc of every arm (each arm's items follow its release), released with the chosen arm's size.
-    for (RailId b : impl->leaves(a))
-      if (!impl->rails[b].qram)
-        internalError("uncompute: recordCore: qram_realloc of a rail that is not a QRAM bus", fwd);
-    // CR §1.3: a bus the function did not allocate (on some arm) has its old size read by cqrt_qram_size
-    // right before the realloc (a classical host read, no gate); every other size is known statically.
-    Value *oldSize = nullptr;
-    if (impl->foreignBus(a)) {
-      IRBuilder<> SB(fwd);
-      oldSize = impl->track(SB.CreateCall(abi::declare(*fwd->getModule(), abi::CoreSpec{abi::Core::QramSize}),
-                                          {ops[0].v}, "cq.n.old"));
-    } else {
-      impl->busSize(a);
-    }
-    RailId r = impl->newRail(fwd, Role::Seed, "recordCore");
-    impl->rails[r].qram = true;
-    unsigned rrec = impl->addRecord(fwd, spec, ops, r, RecKind::QramRealloc, false);
-    if (oldSize)
-      impl->reallocOldSize[rrec] = oldSize;
-    for (RailId b : impl->leaves(a))
-      impl->rails[b].reallocs.push_back(r);
-    return r;
-  }
   default:
     internalError("uncompute: recordCore: core gate " + fwd->getCalledFunction()->getName().str() +
                       " is not a reversible record",
@@ -4015,36 +2770,16 @@ RailId Uncompute::recordMerge(Instruction *merged) {
   return m;
 }
 
-RailId Uncompute::recordCellLoad(Instruction *load, ArrayRef<RailId> mayName) {
-  Impl &I = *impl;
-  if (!load || !load->getParent())
-    internalError("uncompute: recordCellLoad needs an instruction in a block");
-  if (mayName.empty())
-    internalError("uncompute: recordCellLoad: a cell load that may name no rail", load);
-  SmallVector<RailId, 2> arms;
-  for (RailId a : mayName) {
-    I.rail(a, "recordCellLoad");
-    if (I.anyReleased(a))
-      internalError("uncompute: recordCellLoad: arm " + describe(I.rails[a].handle) +
-                        " was already uncomputed and freed",
-                    load);
-    if (!is_contained(arms, a))
-      arms.push_back(a);
-  }
-  RailId m = I.newRail(load, Role::Garbage, "recordCellLoad");
-  I.rails[m].arms = arms;
-  I.rails[m].cellLoad = true;
-  for (RailId a : arms)
-    I.rails[a].mergedInto.push_back(m);
-  return m;
-}
 
-SmallVector<RailId, 4> Uncompute::recordCall(CallInst *fwd, ArrayRef<Value *> outs, ArrayRef<Value *> slotOuts,
-                                             ArrayRef<Operand> extra) {
+SmallVector<RailId, 4> Uncompute::recordCall(CallInst *fwd, ArrayRef<Value *> outs, ArrayRef<Operand> extra,
+                                             bool loadsBus) {
   Impl &I = *impl;
+  if (loadsBus)
+    report_fatal_error("cq: unimplemented: bus: recordCall of a callee that loads from the bus (rule 18)",
+                       /*gen_crash_diag=*/false);
   if (!directOrResolved(fwd) || !fwd->getParent())
     internalError("uncompute: recordCall: the forward must be a direct call in a block", fwd);
-  if (outs.empty() && slotOuts.empty())
+  if (outs.empty())
     internalError("uncompute: recordCall: a call with no result rail", fwd);
   SmallVector<Operand, 8> ops;
   for (Value *a : fwd->args()) {
@@ -4053,7 +2788,7 @@ SmallVector<RailId, 4> Uncompute::recordCall(CallInst *fwd, ArrayRef<Value *> ou
   }
   I.checkOps(fwd, ops, "recordCall");
   unsigned gi = I.groups.size();
-  I.groups.push_back({fwd, {}, {}, {}, {}});
+  I.groups.push_back({fwd, {}, {}, {}});
   for (const Operand &e : extra) {
     if (e.handle) {
       RailId r = I.lookup(e.v, "recordCall", fwd);
@@ -4063,123 +2798,42 @@ SmallVector<RailId, 4> Uncompute::recordCall(CallInst *fwd, ArrayRef<Value *> ou
     ops.push_back(e);
     I.groups[gi].extra.push_back(e.v);
   }
-  SmallVector<Value *, 8> all(outs.begin(), outs.end());
-  all.append(slotOuts.begin(), slotOuts.end());
-  for (Value *h : all)
+  for (Value *h : outs)
     if (auto *ins = dyn_cast<Instruction>(h); !ins || !ins->getParent())
       internalError("uncompute: recordCall: a result handle that is not an instruction in a block", fwd);
-  RailId lead = I.newRail(all.front(), Role::Garbage, "recordCall");
+  RailId lead = I.newRail(outs.front(), Role::Garbage, "recordCall");
   I.rails[lead].group = gi;
-  unsigned rec = I.addRecord(fwd, abi::TemplateSpec{}, ops, lead, RecKind::Call, false);
-  I.takeCallReads(fwd, rec);
-  // cq-aqk1: the twin restores each caller cell the clone wrote (slotOuts) and reads the cell's handle
-  // through the formal that wrote it (finalize); a read of the same cell by another route (a second
-  // pointer argument that may alias it, a global, memory reached through a loaded pointer) would see
-  // the forward's handle instead of the old content. Unimplemented.
-  {
-    const DataLayout &DL = fwd->getModule()->getDataLayout();
-    Impl::Footprint fp = I.footprint(fwd);
-    for (Value *h : slotOuts) {
-      auto *L = dyn_cast<LoadInst>(h);
-      if (!L)
-        internalError("uncompute: recordCall: a slot out that is not a load of the caller's cell", fwd);
-      Impl::Cell cell{L->getPointerOperand(), Impl::accessSize(L->getType(), DL)};
-      unsigned routes = 0;
-      for (const Impl::Cell &o : fp.objs)
-        routes += Impl::mayAlias(o, cell, DL);
-      routes += fp.unbounded && Impl::reachable(cell.ptr);
-      if (routes > 1)
-        unimplemented("uncompute: a clone call whose twin may read a caller cell the clone writes by another "
-                      "route than the writing pointer (aliasing pointer arguments, a global, or memory reached "
-                      "through a loaded pointer: cq-aqk1)",
-                      fwd);
-    }
-  }
+  I.addRecord(fwd, abi::TemplateSpec{}, ops, lead, RecKind::Call, false);
   SmallVector<RailId, 4> ids{lead};
-  for (size_t k = 1; k < all.size(); ++k) {
-    RailId m = I.newRail(all[k], Role::Garbage, "recordCall");
+  for (size_t k = 1; k < outs.size(); ++k) {
+    RailId m = I.newRail(outs[k], Role::Garbage, "recordCall");
     I.rails[m].arms = {lead};
-    I.rails[m].cellLoad = true;
     I.rails[m].group = gi;
     I.rails[lead].mergedInto.push_back(m);
     ids.push_back(m);
   }
   Impl::CallGroup &cg = I.groups[gi];
   cg.members.assign(ids.begin(), ids.end());
-  cg.outs.assign(ids.begin(), ids.begin() + outs.size());
-  cg.slotOuts.assign(ids.begin() + outs.size(), ids.end());
-  for (size_t k = outs.size(); k < all.size(); ++k)
-    if (I.keptCells.count(all[k]))
-      setRole(ids[k], Role::Output);   // noteKeptCell
+  cg.outs.assign(ids.begin(), ids.end());
   return ids;
 }
 
-void Uncompute::noteKeptCell(LoadInst *slotOut, RailType w) {
-  if (!slotOut || !slotOut->getParent())
-    internalError("uncompute: noteKeptCell of a slot out that is not a load in a block", slotOut);
-  impl->keptCells[slotOut] = w;
+RailId Uncompute::recordBusLoad(CallInst *, ArrayRef<Operand>) {
+  report_fatal_error("cq: unimplemented: bus: recordBusLoad", /*gen_crash_diag=*/false);
+}
+void Uncompute::noteVersionChange(Instruction *) {
+  report_fatal_error("cq: unimplemented: bus: noteVersionChange", /*gen_crash_diag=*/false);
+}
+void Uncompute::noteKeptStore(CallInst *, Value *, Value *) {
+  report_fatal_error("cq: unimplemented: bus: noteKeptStore", /*gen_crash_diag=*/false);
+}
+void Uncompute::freezeLoadCopy(RailId) {
+  report_fatal_error("cq: unimplemented: bus: freezeLoadCopy", /*gen_crash_diag=*/false);
 }
 
-void Uncompute::noteCallExtraFirst(CallInst *fwd, unsigned n) {
-  Impl &I = *impl;
-  for (Impl::CallGroup &cg : I.groups)
-    if (cg.fwd == fwd && !cg.declared) {
-      if (n > cg.extra.size())
-        internalError("uncompute: noteCallExtraFirst: more leading operands than the call's extra operands", fwd);
-      cg.extraFirst = n;
-      return;
-    }
-  internalError("uncompute: noteCallExtraFirst: no call group recorded for this forward call", fwd);
-}
 
-RailId Uncompute::recordDeclaredWrites(CallInst *fwd, ArrayRef<Operand> extra) {
-  Impl &I = *impl;
-  if (!directOrResolved(fwd) || !fwd->getParent() || !fwd->getType()->isVoidTy())
-    internalError("uncompute: recordDeclaredWrites: the forward must be a void direct call in a block", fwd);
-  if (!I.openStack.empty())
-    unimplemented("uncompute: a declared clone that may write caller cells inside an open scope (a classically "
-                  "bounded loop's trip: its mirror would have to run the twin)",
-                  fwd);
-  SmallVector<Operand, 8> ops;
-  for (Value *a : fwd->args())
-    ops.push_back(Operand{a, I.byHandle.count(a) > 0});
-  I.checkOps(fwd, ops, "recordDeclaredWrites");
-  unsigned gi = I.groups.size();
-  I.groups.push_back({fwd, {}, {}, {}, {}, true});
-  for (const Operand &e : extra) {
-    if (e.handle)
-      internalError("uncompute: recordDeclaredWrites: a twin operand after the forward's that is a handle", fwd);
-    ops.push_back(e);
-    I.groups[gi].extra.push_back(e.v);
-  }
-  // The pseudo leader: no handle of its own (the twin frees nothing), so it is not in byHandle.
-  RailId lead = I.rails.size();
-  I.rails.emplace_back();
-  I.rails.back().handle = fwd;
-  I.rails.back().group = gi;
-  unsigned rec = I.addRecord(fwd, abi::TemplateSpec{}, ops, lead, RecKind::Call, false);
-  I.takeCallReads(fwd, rec);
-  I.groups[gi].members.push_back(lead);
-  return lead;
-}
 
-void Uncompute::noteCallReads(CallInst *fwd, ArrayRef<RailId> reads) {
-  Impl &I = *impl;
-  if (!fwd || !fwd->getParent())
-    internalError("uncompute: noteCallReads needs a call in a block", fwd);
-  for (RailId r : reads) {
-    I.rail(r, "noteCallReads");
-    if (I.anyReleased(r))
-      internalError("uncompute: noteCallReads: " + describe(I.rails[r].handle) + " was already uncomputed and freed",
-                    fwd);
-    SmallVector<RailId, 4> &v = I.callReads[fwd];
-    if (!is_contained(v, r))
-      v.push_back(r);
-    // Recorded already: the call's record reads it from now on.
-    if (unsigned rec = I.callRecord(fwd); rec != kNone)
-      I.addCallRead(rec, r);
-  }
-}
+
 
 RailId Uncompute::idOf(Value *handle) const { return impl->lookup(handle, "idOf", handle); }
 
@@ -4197,8 +2851,6 @@ bool Uncompute::mayHit(const Value *handle, const Instruction *gate) const {
     for (auto [h, n] : r.condHits)
       if (h == gate)
         return true;
-    if (is_contained(r.aliasHits, gate) && !impl->aliasRuledOut(gate, handle))
-      return true;
   }
   return false;
 }
@@ -4253,8 +2905,6 @@ void Uncompute::noteNonDiagonal(RailId target, Instruction *gate) {
   Impl::Rail &x = impl->rail(target, "noteNonDiagonal");
   if (!gate)
     internalError("uncompute: noteNonDiagonal without a gate", x.handle);
-  if (!is_contained(impl->gateTargets[gate], x.handle))
-    impl->gateTargets[gate].push_back(x.handle);
   if (impl->isMerge(target)) {
     // cq-bv91, cq-lshe (CR §0, rules 5, 9, 10): the gate hits the arm the merge chose. A kept arm takes
     // the hit; a resolvable one is hit only where the merge chose it (a classical choice), so its item and
@@ -4266,26 +2916,15 @@ void Uncompute::noteNonDiagonal(RailId target, Instruction *gate) {
         impl->rails[a].hits.push_back(gate);
     }
     impl->rails[target].hits.push_back(gate);
-    impl->noteAliasHits(target, gate);
     impl->syncPhiHits();   // cq-igqp: an arm may be a phi over handles
     return;
   }
   if (x.released)
     internalError("uncompute: gate on " + describe(x.handle) + " after it was uncomputed and freed", gate);
   x.hits.push_back(gate);
-  impl->noteAliasHits(target, gate);
   impl->syncPhiHits();   // cq-igqp: the rails a phi over handles may name
 }
 
-void Uncompute::noteCellsDistinct(Instruction *loadA, Instruction *loadB) {
-  if (!loadA || !loadB || !isa<LoadInst>(loadA))
-    internalError("uncompute: noteCellsDistinct takes a load of a slot cell and a load or a stored rail",
-                  loadA ? loadA : loadB);
-  if (loadA == loadB)
-    internalError("uncompute: noteCellsDistinct of a load with itself", loadA);
-  impl->distinctLoads.insert({loadA, loadB});
-  impl->distinctLoads.insert({loadB, loadA});
-}
 
 void Uncompute::cleanupBijective(RailId oldRail, const abi::TemplateSpec &inverse, ArrayRef<Operand> ops) {
   Impl::Rail &x = impl->rail(oldRail, "cleanupBijective");
@@ -4345,31 +2984,7 @@ void Uncompute::cleanupBijectiveUnder(RailId oldRail, Value *guard, const abi::T
   x.cleanup->everyPath = everyPath;
 }
 
-void Uncompute::cleanupByCall(RailId oldRail, Function *inv, ArrayRef<Operand> args, ArrayRef<Value *> alsoReads) {
-  if (!inv)
-    internalError("uncompute: cleanupByCall without a function");
-  SmallVector<Operand, 6> ops(args.begin(), args.end());
-  for (Value *v : alsoReads)
-    ops.push_back(Operand{v, true});
-  cleanupBijective(oldRail, abi::TemplateSpec{}, ops);
-  Impl::Rail &x = impl->rails[oldRail];
-  x.cleanup->via = inv;
-  x.cleanup->ops.assign(args.begin(), args.end());
-}
 
-void Uncompute::cleanupUnbuilt(RailId oldRail, const std::string &what, const Instruction *at,
-                               ArrayRef<Value *> alsoReads) {
-  if (what.empty())
-    internalError("uncompute: cleanupUnbuilt without a description", at);
-  if (impl->isMerge(oldRail))
-    unimplemented(what + " (the old content a merged handle)", at);
-  SmallVector<Operand, 4> ops;
-  for (Value *v : alsoReads)
-    ops.push_back(Operand{v, true});
-  cleanupBijective(oldRail, abi::TemplateSpec{}, ops);
-  impl->rails[oldRail].cleanup->unbuilt = what;
-  impl->rails[oldRail].cleanup->unbuiltAt = at;
-}
 
 void Uncompute::flushBefore(Instruction *point) { flushBefore(point, nullptr); }
 
@@ -4478,9 +3093,8 @@ void Uncompute::closeInvert(Instruction *end) {
   I.lastRegionStart = I.invertStart.pop_back_val();
   for (auto &[g, before] : s)
     if (I.pending(g) && any_of(I.anchors(g), [&](Instruction *x) { return !before.count(x); })) {
-      RailId t = I.rails[g].popBus != kNone ? I.rails[g].popBus : g;   // a POP follows its bus's uses
-      if (!is_contained(I.rails[t].uses, end))
-        I.rails[t].uses.push_back(end);
+      if (!is_contained(I.rails[g].uses, end))
+        I.rails[g].uses.push_back(end);
     }
 }
 
@@ -4502,7 +3116,7 @@ SmallVector<Value *, 8> Uncompute::resolveRegionMade(Instruction *end, function_
   for (RailId g = start; g < I.rails.size(); ++g) {
     const Impl::Rail &r = I.rails[g];
     if (!I.resolvable(g) || I.frozen(g) || r.ownedBy != kNone || r.deferred != kNone || I.isMerge(g) || r.cleanup ||
-        r.popBus != kNone || r.qram || !r.exitsDone.empty() || !r.handle || keep(r.handle))
+        !r.exitsDone.empty() || !r.handle || keep(r.handle))
       continue;
     if (any_of(I.anchors(g), [&](Instruction *a) { return a == end || Impl::after(a, end); }))
       continue;
@@ -4614,8 +3228,6 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
   // measurements read the copies (Role::Measured), and the call's own result rails are garbage the twin
   // zeroes: the twin always zeroes every result it returned, and no measured rail is ever gated.
   for (size_t gi = 0; gi < I.groups.size(); ++gi) {
-    if (I.groups[gi].declared)
-      continue;
     SmallVector<RailId, 4> members = I.groups[gi].members;
     bool anyKept = false, anyDead = false;
     for (RailId m : members)
@@ -4716,7 +3328,7 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
 
 void Uncompute::recordDeferred(ArrayRef<unsigned> scopes, ArrayRef<RailId> exitRails,
                                std::function<void(IRBuilder<> &)> emit, ArrayRef<RailId> reads,
-                               ArrayRef<unsigned> hostScopes, bool busUseFollows) {
+                               ArrayRef<unsigned> hostScopes) {
   Impl &I = *impl;
   if (!emit)
     internalError("uncompute: recordDeferred without an emitter");
@@ -4724,7 +3336,6 @@ void Uncompute::recordDeferred(ArrayRef<unsigned> scopes, ArrayRef<RailId> exitR
   Impl::Deferred d;
   d.emit = std::move(emit);
   d.hostScopes.assign(hostScopes.begin(), hostScopes.end());
-  Value *firstStore = nullptr;
   for (unsigned s : scopes) {
     if (s >= I.scopes.size() || I.scopes[s].open)
       internalError("uncompute: recordDeferred over a scope that is not closed: " + std::to_string(s));
@@ -4732,45 +3343,11 @@ void Uncompute::recordDeferred(ArrayRef<unsigned> scopes, ArrayRef<RailId> exitR
       d.region.insert(I.records[rec].forward->getParent());
       if (isCreator(I.info[rec].kind) && I.info[rec].item != kNone) {
         I.rails[I.info[rec].item].ownedBy = di;
-        // cq-odo1 (A2): an owned load's versions (a bus the loop allocates is the item's own).
-        for (auto [b, k] : I.rails[I.info[rec].item].versions) {
-          if (I.rails[b].ownedBy == di)
-            continue;
-          auto it = find_if(d.readBuses, [&](const std::pair<RailId, unsigned> &bt) { return bt.first == b; });
-          if (it == d.readBuses.end())
-            d.readBuses.push_back({b, k});
-          else
-            it->second = std::min(it->second, k);
-        }
-      }
-      // F1b: a QRAM store of the scopes is popped by the item's mirror, which makes it a writer of the bus.
-      if (I.info[rec].kind == RecKind::QramStore && I.info[rec].item != kNone && I.isPop(I.info[rec].item)) {
-        RailId p = I.info[rec].item, b = I.rails[p].popBus;
-        I.rails[p].ownedBy = di;
-        if (I.rails[b].ownedBy == di)
-          continue; // a bus the loop allocates is the item's own
-        if (!firstStore)
-          firstStore = I.records[rec].forward;
-        auto it = find_if(d.buses, [&](const std::pair<RailId, unsigned> &bt) { return bt.first == b; });
-        if (it == d.buses.end())
-          d.buses.push_back({b, I.rails[p].popK});
-        else
-          it->second = std::max(it->second, I.rails[p].popK);
       }
     }
   }
-  if (exitRails.empty()) {
-    // F1b: no exit rail is allowed when a bus the item writes is used after the loop (those uses anchor it).
-    bool busUsed = false;
-    for (auto [b, top] : d.buses)
-      for (RailId n : I.names(b))
-        for (User *u : I.rails[n].handle->users())
-          if (auto *ui = dyn_cast<Instruction>(u); ui && ui->getParent() && !I.beforeOrIn(d, ui->getParent()))
-            busUsed = true;
-    if (!busUsed && !(busUseFollows && !d.buses.empty()))
-      internalError("uncompute: recordDeferred without exit rails and without a QRAM bus its stores write that is "
-                    "used after the loop");
-  }
+  if (exitRails.empty())
+    internalError("uncompute: recordDeferred without exit rails");
   for (RailId x : exitRails) {
     Impl::Rail &rx = I.rail(x, "recordDeferred");
     if (rx.ownedBy != di || rx.released || I.isMerge(x))
@@ -4780,15 +3357,10 @@ void Uncompute::recordDeferred(ArrayRef<unsigned> scopes, ArrayRef<RailId> exitR
   }
   RailId g = I.rails.size();
   I.rails.emplace_back();
-  I.rails.back().handle = d.exits.empty() ? firstStore : I.rails[d.exits.front()].handle;
+  I.rails.back().handle = I.rails[d.exits.front()].handle;
   I.rails.back().deferred = di;
   d.pseudo = g;
-  // F1b: the item reads each bus it writes, so the bus's release follows it.
-  SmallVector<RailId, 8> allReads(reads.begin(), reads.end());
-  for (auto [b, top] : d.buses)
-    if (!is_contained(allReads, b))
-      allReads.push_back(b);
-  for (RailId r : allReads) {
+  for (RailId r : reads) {
     Impl::Rail &rr = I.rail(r, "recordDeferred");
     if (rr.ownedBy == di)
       internalError("uncompute: recordDeferred: a read rail owned by the item", rr.handle);
@@ -4843,25 +3415,4 @@ void Uncompute::emitMirror(unsigned s, IRBuilder<> &B) {
 } // namespace cq
 
 namespace cq {
-// U6 (cq-arch 2026-11-01): stub until stream A builds it.
-// U6: the group's item is placed like a QRAM load reading v_k (A2 versionBefore): after POP(j) of every
-// store recorded on the bus later (j > k), before POP(k) and the bus's release.
-void Uncompute::noteCallBusRead(llvm::CallInst *fwd, RailId bus) {
-  Impl &I = *impl;
-  unsigned rec = I.callRecord(fwd);
-  if (rec == kNone || I.info[rec].kind != RecKind::Call)
-    internalError("uncompute: noteCallBusRead before recordCall of this clone call", fwd);
-  RailId lead = I.records[rec].out;
-  if (!is_contained(I.info[rec].reads, bus))
-    internalError("uncompute: noteCallBusRead of a bus the clone call does not take", fwd);
-  // As a QRAM load (recordCore QramLoad): the call reads v_k of each bus the operand may name (a merge's leaves; a
-  // bus this function was handed, a triple formal's, has no stores of its own here: k = 0).
-  for (RailId b : I.leaves(bus)) {
-    for (auto [b2, k] : I.rails[lead].versions)
-      if (b2 == b)
-        internalError("uncompute: noteCallBusRead twice for one bus", fwd);
-    I.rails[lead].versions.push_back({b, static_cast<unsigned>(I.rails[b].pops.size())});
-    I.rails[b].loads.push_back(lead);
-  }
-}
 } // namespace cq

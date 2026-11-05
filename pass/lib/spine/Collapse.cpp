@@ -7,12 +7,6 @@
 //  by ordinary classical instructions from the outcomes; a merge under such a flag is a classical
 //  select" (155, 140).
 //
-//  - History. Every rail minted through LoweringContext::emitTemplate (a template forward call) or
-//    emitCore (an alloc seed) gets a RailHist; every later in-place XOR-type core gate emitted on it
-//    (not_i1, xor_i1, and_i1, or_i1, copy, xorc and their controlled forms) is appended to it. A
-//    non-diagonal gate on it (ry, ry_qangle) makes it opaque. Rails the spine's emitters did not mint
-//    (clone formals, QRAM loads, tape writes, rails other modules emit directly) have no history and
-//    never collapse.
 //  - Collapsible at the builder's point. A rail is classical there when it was measured at a point
 //    that reaches it (the original measurement dominates the instruction being lowered, or the
 //    output measurement call dominates the builder's point), or when its minting call and every
@@ -201,13 +195,6 @@ Value *recompute(LoweringContext &ctx, Value *h);
 
 Value *classicalOf(LoweringContext &ctx, const Operand &o) { return o.handle ? recompute(ctx, o.v) : o.v; }
 
-// A template record recomputed by classical instructions whose value equals the template's total
-// function (CR §1.2, §2) on every input. Integer arithmetic, bitwise ops, compares, integer casts,
-// bitcasts and the integer intrinsics are recomputed, with §2's totalization made explicit where
-// LLVM's own result is poison or UB (division by 0, INT_MIN / -1, a shift amount at or above W). A
-// record whose value depends on the floating-point environment or on vendor semantics (fp
-// arithmetic, fp conversions, fp compares, _rm/_rmq, _exc), or that reads memory or returns a pair
-// (qrom_load, *_overflow), is recomputed too (fromRecord below).
 Value *fromRecordIn(LoweringContext &ctx, const RailHist &r, size_t n);
 
 // The host fenv calls the recomputation of a _rm or _exc record brackets its operation with (fenv_t of
@@ -288,22 +275,6 @@ Value *fromRecordIn(LoweringContext &ctx, const RailHist &r, size_t n) {
       if (s.pred == pn)
         return B.CreateICmp(p, a[0], a[1]);
     return fail();
-  }
-  if (s.op == "qrom_load" && (n == 3 || n == 4) && args(n)) {
-    // §1.2: element idx of n little-endian elements of the type's alloc size (or the stride), 0 at
-    // idx >= n (unsigned, §2). The table is read here, so this is the template's value when the object
-    // still holds what it held at the load: a QROM object is classical memory, and a record whose
-    // table may have changed since is never reached here (the value collapses where it was loaded,
-    // through its original load instruction, when it has one).
-    Type *et = irTypeOf(B.getContext(), s.w);
-    Value *base = a[0], *cnt = a[1], *idx = a[n - 1];
-    Value *i64 = B.CreateZExt(idx, B.getInt64Ty());
-    Value *in = B.CreateICmpULT(i64, cnt);
-    Value *safe = B.CreateSelect(in, i64, B.getInt64(0));
-    Value *off = n == 4 ? B.CreateMul(safe, a[2])
-                        : B.CreateMul(safe, B.getInt64(ctx.M.getDataLayout().getTypeAllocSize(et)));
-    Value *ld = B.CreateLoad(et, B.CreateGEP(B.getInt8Ty(), base, off));
-    return B.CreateSelect(in, ld, Constant::getNullValue(et));
   }
   if (s.w.kind != Kind::Int || (s.to && s.to->kind != Kind::Int)) {
     // Floating point (CR §2): IEEE at the operation's width in the record's mode (the default mode

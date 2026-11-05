@@ -5,7 +5,8 @@
       -> llvm-link of the user units, then the injection bundle (bundle/manifest.json) --only-needed,
          only when the linked user module needs it (the bundle rule below)
       -> opt -load-pass-plugin=libCQLower.so -passes=cq-lower [-cq-k=...] [-cq-k-default=...]
-      -> the lowered module (-S), an object (-c) or an executable linked with the --backend libraries
+      -> the lowered module (-S), an object (-c) or an executable linked with the --backend libraries and, when
+         the lowered module asks for a __cq_* host symbol, bundle/host/cq_host.c (rulings Q7)
     --cq-check additionally runs `python3 -m cqcheck user` on the linked module and the lowered one.
 
 Usage: cqcc [options] inputs...
@@ -24,6 +25,7 @@ The whole program is one module (NORTHSTAR principle 3): -c makes one object fro
 Options:
   -cq-k=<fn>=<k>,...   per-function loop cutoff, passed through to cq-lower (repeatable)
   -cq-k-default=<k>    global loop cutoff, passed through to cq-lower
+  --cq-roots FILE      library-build roots, one clone name per line, passed through to cq-lower (rule 27)
   --backend LIB        a backend library for the final link: a path, -lname or -Ldir (repeatable)
   --cq-check           run `cqcheck user` (the C-oracle check) on the result; its exit status is cqcc's
   --cq-entry FN        the entry function for --cq-check (default main)
@@ -69,6 +71,9 @@ MANIFEST = Path(os.environ.get("CQ_BUNDLE_MANIFEST", str(ROOT / "bundle" / "mani
 C_SUFFIXES = {".c", ".i"}
 IR_SUFFIXES = {".ll", ".bc"}
 LINK_SUFFIXES = {".o", ".a", ".dylib", ".so", ".tbd"}
+HOST_SOURCE = ROOT / "bundle" / "host" / "cq_host.c"
+HOST_SYMBOLS = {"__cq_mem", "__cq_alloc", "__cq_sig", "__cq_clone_register", "__cq_clone_resolve", "__cq_clone_count",
+                "__cq_clone_at"}
 
 VERBOSE = False
 
@@ -133,6 +138,10 @@ def parse_args(argv):
             o["kflags"].append("-cq-k-default=" + a.split("=", 1)[1])
         elif a in ("-cq-k", "--cq-k", "-cq-k-default", "--cq-k-default"):
             o["kflags"].append(f"-{a.lstrip('-')}={value(a)}")
+        elif a == "--cq-roots":
+            o["kflags"].append("-cq-roots=" + str(Path(value(a)).resolve()))
+        elif a.startswith("--cq-roots="):
+            o["kflags"].append("-cq-roots=" + str(Path(a.split("=", 1)[1]).resolve()))
         elif a == "--backend":
             o["backend"].append(value(a))
         elif a.startswith("--backend="):
@@ -291,6 +300,13 @@ def main(argv) -> int:
                  "-o", staged], "clang -c of the lowered module")
         else:
             objs = [p for p in o["inputs"] if p.suffix in LINK_SUFFIXES]
+            # Rulings Q7: the host symbols are one runtime object linked after the pass, never lowered; only when the
+            # lowered module asks for one (a module the pass left as it was needs no bus and no backend).
+            undefined = nm(lowered, ["--undefined-only"], "llvm-nm of the lowered module", tmp)
+            if {n.removeprefix("_") for n in undefined} & HOST_SYMBOLS:   # Mach-O spells C names with a leading _
+                host_obj = tmp / "cq_host.o"
+                run([tool("clang"), "-O1", "-c", HOST_SOURCE, "-o", host_obj], "clang -c of bundle/host/cq_host.c")
+                objs.insert(0, host_obj)
             run([tool("clang"), "-O1", "-Xclang", "-disable-llvm-passes", "-x", "ir", lowered, "-x", "none",
                  *objs, *o["backend"], "-o", staged], "link of the lowered program")
 

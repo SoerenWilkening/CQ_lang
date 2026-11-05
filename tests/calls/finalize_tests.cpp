@@ -605,152 +605,12 @@ const char *kTwinFieldwiseExpected = R"(define internal void @__cq_q_g_10_unc(i3
 // Phase 2 (CR rules 18, 20, §1.4; cq-arch T2 + M1, 31's shape): the clone copies two computed rails out
 // into the caller's cells 1 and 0 (offsets 4 and 0 of its pointer formal); the twin takes the old cells
 // last (ascending), loads each stored handle, XORs the rail out of it and restores the old cell.
-const char *kTwinSlotCell = R"(
-define i32 @entry(i32 %a, double %t, i32 %k) {
-  %q = call i32 @cqrt_alloc_i32(i32 %a)
-  call void @cqrt_ry_i32(i32 %q, double %t)
-  %cells = alloca i32, i64 2, align 4
-  %r = call fastcc i32 @__cq_q_split_100(i32 %q, i32 %k, ptr %cells)
-  %c1p = getelementptr inbounds i8, ptr %cells, i64 4
-  %c0 = load i32, ptr %cells, align 4
-  %c1 = load i32, ptr %c1p, align 4
-  call void @__cq_q_split_100_unc(i32 %r, i32 %q, i32 %k, ptr %cells, i32 poison, i32 7)
-  call void @cqrt_free(i32 %r)
-  call void @cqrt_free(i32 %c0)
-  call void @cqrt_free(i32 %c1)
-  %m = call i32 @cqrt_measure_i32(i32 %q)
-  ret i32 %m
-}
-
-define internal fastcc i32 @split(i32 %v, i32 %k, ptr %p) {
-  %a = ashr i32 %v, %k
-  %p1 = getelementptr inbounds i8, ptr %p, i64 4
-  store i32 %a, ptr %p1, align 4
-  %b = add i32 %v, 1
-  store i32 %b, ptr %p, align 4
-  %c = and i32 %v, 255
-  ret i32 %c
-}
-
-define internal fastcc i32 @__cq_q_split_100(i32 %0, i32 %1, ptr %2) {
-  %4 = call i32 @cq_template_ashr_i32_hl(i32 %0, i32 %1)
-  %5 = call i32 @cqrt_alloc_i32(i32 0)
-  call void @cqrt_copy_i32(i32 %4, i32 %5)
-  %6 = getelementptr inbounds i8, ptr %2, i64 4
-  store i32 %5, ptr %6, align 4
-  %7 = call i32 @cq_template_add_i32_hl(i32 %0, i32 1)
-  %8 = call i32 @cqrt_alloc_i32(i32 0)
-  call void @cqrt_copy_i32(i32 %7, i32 %8)
-  store i32 %8, ptr %2, align 4
-  %9 = call i32 @cq_template_and_i32_hl(i32 %0, i32 255)
-  %10 = call i32 @cqrt_alloc_i32(i32 0)
-  call void @cqrt_copy_i32(i32 %9, i32 %10)
-  call void @cq_template_and_i32_hl_unc(i32 %9, i32 %0, i32 255)
-  call void @cqrt_free(i32 %9)
-  call void @cq_template_add_i32_hl_unc(i32 %7, i32 %0, i32 1)
-  call void @cqrt_free(i32 %7)
-  call void @cq_template_ashr_i32_hl_unc(i32 %4, i32 %0, i32 %1)
-  call void @cqrt_free(i32 %4)
-  ret i32 %10
-}
-
-declare void @__cq_q_split_100_unc(i32, i32, i32, ptr, i32, i32)
-declare i32 @cqrt_alloc_i32(i32)
-declare void @cqrt_ry_i32(i32, double)
-declare i32 @cqrt_measure_i32(i32)
-declare void @cqrt_free(i32)
-declare void @cqrt_copy_i32(i32, i32)
-declare i32 @cq_template_ashr_i32_hl(i32, i32)
-declare i32 @cq_template_add_i32_hl(i32, i32)
-declare i32 @cq_template_and_i32_hl(i32, i32)
-declare void @cq_template_ashr_i32_hl_unc(i32, i32, i32)
-declare void @cq_template_add_i32_hl_unc(i32, i32, i32)
-declare void @cq_template_and_i32_hl_unc(i32, i32, i32)
-)";
 
 // cq-vxgm: a clone writing a caller cell on some paths (stream B's construction): the entry copies the
 // cell's old content into the copy-out rail f and stores f; each arm store copies the old content out of
 // f and its value in. One copy-out, several copies: the twin aims every copy at the cell's handle.
-const char *kTwinSlotCellArms = R"(
-define i32 @entry(i32 %a, double %t) {
-  %q = call i32 @cqrt_alloc_i32(i32 %a)
-  call void @cqrt_ry_i32(i32 %q, double %t)
-  %cell = alloca i32, align 4
-  %s = call i32 @cqrt_alloc_i32(i32 3)
-  store i32 %s, ptr %cell, align 4
-  call fastcc void @__cq_q_g_10(i32 %q, ptr %cell)
-  %c = load i32, ptr %cell, align 4
-  call void @__cq_q_g_10_unc(i32 %q, ptr %cell, i32 %s)
-  call void @cqrt_free(i32 %c)
-  call void @cqrt_free(i32 %s)
-  %m = call i32 @cqrt_measure_i32(i32 %q)
-  ret i32 %m
-}
 
-define internal fastcc void @g(i32 %v, ptr %p) {
-  %b = add i32 %v, 1
-  store i32 %b, ptr %p, align 4
-  ret void
-}
 
-define internal fastcc void @__cq_q_g_10(i32 %0, ptr %1) {
-  %3 = load i32, ptr %1, align 4
-  %4 = call i32 @cqrt_alloc_i32(i32 0)
-  call void @cqrt_copy_i32(i32 %3, i32 %4)
-  store i32 %4, ptr %1, align 4
-  %5 = call i32 @cq_template_add_i32_hl(i32 %0, i32 1)
-  call void @cqrt_copy_i32(i32 %3, i32 %4)
-  call void @cqrt_copy_i32(i32 %5, i32 %4)
-  call void @cq_template_add_i32_hl_unc(i32 %5, i32 %0, i32 1)
-  call void @cqrt_free(i32 %5)
-  ret void
-}
-
-declare void @__cq_q_g_10_unc(i32, ptr, i32)
-declare i32 @cqrt_alloc_i32(i32)
-declare void @cqrt_ry_i32(i32, double)
-declare i32 @cqrt_measure_i32(i32)
-declare void @cqrt_free(i32)
-declare void @cqrt_copy_i32(i32, i32)
-declare i32 @cq_template_add_i32_hl(i32, i32)
-declare void @cq_template_add_i32_hl_unc(i32, i32, i32)
-)";
-
-const char *kTwinSlotCellArmsExpected = R"(define internal void @__cq_q_g_10_unc(i32 %0, ptr %1, i32 %old0) {
-  %cell = load i32, ptr %1, align 4
-  call void @cqrt_copy_i32(i32 %old0, i32 %cell)
-  store i32 %old0, ptr %1, align 4
-  %3 = call i32 @cq_template_add_i32_hl(i32 %0, i32 1)
-  call void @cqrt_copy_i32(i32 %old0, i32 %cell)
-  call void @cqrt_copy_i32(i32 %3, i32 %cell)
-  call void @cq_template_add_i32_hl_unc(i32 %3, i32 %0, i32 1)
-  call void @cqrt_free(i32 %3)
-  ret void
-}
-)";
-
-const char *kTwinSlotCellExpected = R"(define internal void @__cq_q_split_100_unc(i32 %out, i32 %0, i32 %1, ptr %2, i32 %old0, i32 %old1) {
-  %4 = call i32 @cq_template_ashr_i32_hl(i32 %0, i32 %1)
-  %5 = getelementptr inbounds i8, ptr %2, i64 4
-  %cell1 = load i32, ptr %5, align 4
-  call void @cqrt_copy_i32(i32 %4, i32 %cell1)
-  %6 = getelementptr inbounds i8, ptr %2, i64 4
-  store i32 %old1, ptr %6, align 4
-  %7 = call i32 @cq_template_add_i32_hl(i32 %0, i32 1)
-  %cell = load i32, ptr %2, align 4
-  call void @cqrt_copy_i32(i32 %7, i32 %cell)
-  store i32 %old0, ptr %2, align 4
-  %8 = call i32 @cq_template_and_i32_hl(i32 %0, i32 255)
-  call void @cqrt_copy_i32(i32 %8, i32 %out)
-  call void @cq_template_and_i32_hl_unc(i32 %8, i32 %0, i32 255)
-  call void @cqrt_free(i32 %8)
-  call void @cq_template_add_i32_hl_unc(i32 %7, i32 %0, i32 1)
-  call void @cqrt_free(i32 %7)
-  call void @cq_template_ashr_i32_hl_unc(i32 %4, i32 %0, i32 %1)
-  call void @cqrt_free(i32 %4)
-  ret void
-}
-)";
 
 const char *kTwinDefine = R"(
 define i32 @entry(i32 %a, double %t, i32 %c) {
@@ -1123,21 +983,7 @@ void twinFieldwise() {
   });
 }
 
-void twinSlotCell() {
-  expectTwins("twin_slot_cell", kTwinSlotCell, {"__cq_q_split_100_unc"}, {}, [](Module &M) {
-    std::string got = printFn(M, "__cq_q_split_100_unc");
-    if (got != kTwinSlotCellExpected)
-      fail("twin_slot_cell", "twin body:\n" + got + "expected:\n" + kTwinSlotCellExpected);
-  });
-}
 
-void twinSlotCellArms() {
-  expectTwins("twin_slot_cell_arms", kTwinSlotCellArms, {"__cq_q_g_10_unc"}, {}, [](Module &M) {
-    std::string got = printFn(M, "__cq_q_g_10_unc");
-    if (got != kTwinSlotCellArmsExpected)
-      fail("twin_slot_cell_arms", "twin body:\n" + got + "expected:\n" + kTwinSlotCellArmsExpected);
-  });
-}
 
 void twinChain() {
   expectTwins("twin_chain", kTwinChain, {"__cq_q_g_100_unc", "__cq_q_h_10_unc"}, {}, [](Module &M) {
@@ -1271,8 +1117,6 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"twin_only", [] { expectDropped("twin_only", kTwinOnly, {"f"}); }},
     {"twin_define", twinDefine},
     {"twin_fieldwise", twinFieldwise},
-    {"twin_slot_cell", twinSlotCell},
-    {"twin_slot_cell_arms", twinSlotCellArms},
     {"twin_chain", twinChain},
     {"twin_pure", twinPure},
     {"twin_declared", twinDeclared},

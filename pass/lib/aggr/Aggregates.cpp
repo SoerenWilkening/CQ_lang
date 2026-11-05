@@ -1049,7 +1049,7 @@ void lowerCompositeSelect(LoweringContext &ctx, SelectInst &sel) {
       }
       if (ft->isPointerTy())
         unimplemented("aggr: a pointer field of a select that chooses between two pointers on a rail (rule 21's "
-                      "fat-pointer merge of a field)",
+                      "pointer merge of a field)",
                       &sel);
       out.push_back(selectLeaf(ctx, c, a, b, railTypeOf(ft), &sel));
     }

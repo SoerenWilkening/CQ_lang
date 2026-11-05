@@ -17,9 +17,6 @@ target_compile_definitions(taint_deadend PRIVATE CQ_SPEC_DIR="${CQ_SPEC_DIR}")
 cq_add_unit_test(taint_exitread taint_exitread.cpp)
 # cq-41y3: rule 2, a read of a measured value its measurement dominates is classical (the outcome).
 cq_add_unit_test(taint_measured taint_measured.cpp)
-# cq-cvwx: a known library function writing only through its pointer arguments (frexp, modf) with a
-# quantum argument is a declared clone (rule 27), not a host effect (rule 16); its pointee holds a handle.
-cq_add_unit_test(taint_libwriter taint_libwriter.cpp)
 # cq-bxc4: a phi at a join that depends on a tainted terminator is chosen by it when the incoming edge
 # still depends on it given the join (shared/fallthrough case blocks, if/else-if joins).
 cq_add_unit_test(taint_joinchoice taint_joinchoice.cpp)
@@ -27,16 +24,3 @@ target_compile_definitions(taint_joinchoice PRIVATE CQ_SPEC_DIR="${CQ_SPEC_DIR}"
 # cq-wxch: a loop exit through select c, t, true / select c, false, f / xor x, true keeps its
 # classical disjunct (rule 14 case 3).
 cq_add_unit_test(taint_exitselect taint_exitselect.cpp)
-# T2 (cq-arch 2026-11-01): TaintInfo::cellsWritten, a clone's handle stores through a pointer formal.
-cq_add_unit_test(taint_cellswritten taint_cellswritten.cpp)
-# cq-0hdy: a pointer walked by a fixed classical GEP per trip of a quantum-exit loop is a function of
-# the trip index (rule 14 by SCEV, 189, 190): classical offset, the object stays a slot array.
-cq_add_unit_test(taint_ptrinduction taint_ptrinduction.cpp)
-# cq-tzqz (108): llvm.threadlocal.address(@g) names @g's object (objectOf), one thread (rule 24).
-cq_add_unit_test(taint_threadlocal taint_threadlocal.cpp)
-# cq-prvy (95, 109): va_start's save area holds the variadic actuals' handles; va_copy copies the
-# va_list's area pointers; the va_arg reads are quantum (CR §1.4, rules 3, 20).
-cq_add_unit_test(taint_varargs taint_varargs.cpp)
-# cq-erjd, cq-n58p, cq-0y74, cq-kuuf: sound taint where provenance is lost (a store reaching a load in
-# the next activation; inttoptr of a loaded integer; a byte-wise pointer copy; an i64 cmpxchg).
-cq_add_unit_test(taint_lostprov taint_lostprov.cpp)

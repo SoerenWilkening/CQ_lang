@@ -32,13 +32,10 @@ CASES = [
     # CR §0, rule 5, §1.1 (cq-4lqy): a gate through a slot cell that may name an operand rail of pending garbage is
     # decided at run time by comparing handles (was: 'awaiting owner ruling: ... a gate through a slot cell').
     # ah_loop fails §6 with a leaked i1 rail: bead cq-asp1 (suspected mem-slots, a register cell copy overwritten).
-    ("alias_hit", "ah_loop", [], "pass", [r"icmp eq i32 .*cq\.hit|%cq\.hit = icmp eq"]),
-    ("alias_hit", "ah_line", [], "pass", [r"%cq\.hit = icmp eq"]),
     # CR rule 18 twin point (cq-4lqy): a live result of a clone call is copied out before the twin (was: 'a call
     # whose results are partly kept').
     ("copy_out", "co", [], "pass", [r"call void @__cq_q_two_1_unc"]),
     # CR §1.3 (cq-4lqy): a POP kept on some paths keeps the earlier POPs and the bus on the same paths.
-    ("pop_partial", "pp", [], "pass", [r"br i1 %cq\.run\d*, label %\.cq\.arm"]),
     # kp, kq (a measured merge whose arm t is measured again as t * 7): bead cq-g72r (rule 2 collapse of t * 7 where
     # the merge measured t); listed once it is fixed.
 ]

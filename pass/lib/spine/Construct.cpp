@@ -27,14 +27,11 @@
 #include "SpineInternal.h"
 #include "../loops/cutoff/Exits.h"
 #include "../taint/DeadEnd.h"
-#include "../fatptr/FatPtrInternal.h"
 #include "../eff/invert/Split.h"
 
 #include "cq/Aggregates.h"
+#include "cq/Bus.h"
 #include "cq/Effects.h"
-#include "cq/FatPtr.h"
-#include "cq/Memory.h"
-#include "../mem/slots/SlotsInternal.h"
 #include "cq/Rotation.h"
 #include "cq/Switch.h"
 
@@ -177,19 +174,6 @@ void reachDefs(Function &OF) {
   }
 }
 
-// cq-wwzz (CR rules 5, 20): a QRAM allocation site (an alloca, or an allocator call, whose object is a QRAM)
-// defines its buses, Seed rails that every later access of the object reads (a store's POP, a load's
-// un-copy). It is a definition of its block like a rail-valued instruction: no flush resolves a bus while an
-// access of its object is still to be lowered (musl __rem_pio2_large's f[] bus was freed at the entry's
-// classical branch, before the f[] loop stored into it).
-bool definesBus(LoweringContext &ctx, const Instruction &I) {
-  if (!I.getType()->isPointerTy() || !(isa<AllocaInst>(I) || isa<CallBase>(I)))
-    return false;
-  for (ObjectId o : ctx.T.provenance(&I, ctx.S))
-    if (ctx.T.classOf(o) == ObjClass::Qram)
-      return true;
-  return false;
-}
 
 bool isQuantumTerm(LoweringContext &ctx, const Instruction *t) {
   if (auto *br = dyn_cast<BranchInst>(t))
@@ -333,7 +317,6 @@ private:
   void emitTerminator(BasicBlock *b);
   void noteEntryReturn(bool frozen, Instruction *t);   // rule 19 (cq-i9wk)
   void emitCloneReturn(ReturnInst *ret);
-  void emitOverflowReturn(ReturnInst *ret);             // rule 14 with rule 19 (cq-ew5z)
   bool emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigned extra, SmallVectorImpl<Value *> &vals);
   void resultFields(ReturnInst *ret, Value *rv, StructType *st, unsigned extra, SmallVectorImpl<Value *> &vals);
   Value *returnCopyOut(PHINode &phi);
@@ -352,24 +335,12 @@ bool Walker::pureClassical(const Loop &lp) {
       if (auto *CB = dyn_cast<CallBase>(&I))
         if (!isa<DbgInfoIntrinsic>(CB) && calls::classify(*CB, ctx.T, ctx.S) != calls::Class::Classical)
           return false;
-      if (auto *ld = dyn_cast<LoadInst>(&I))
-        if (ctx.T.offsetKind(ld, ctx.S) == OffsetKind::Quantum)
+      // Rules 5, 20: a bus access or a write into the bus is recorded per dynamic access, so the loop is not walked
+      // inline: it goes to rule 14's classical-bound construction (loops-classical).
+      if (isa<LoadInst>(I) || isa<StoreInst>(I) || isa<MemIntrinsic>(I) || isa<AtomicRMWInst>(I) ||
+          isa<AtomicCmpXchgInst>(I) || isa<AllocaInst>(I))
+        if (!bus::hostAccess(ctx, I) && !(isa<AllocaInst>(I) && ctx.T.hostResident(&I, ctx.S)))
           return false;
-      // A write into a QRAM or slot object (cq-dxii) is recorded per dynamic store, so the loop is not
-      // walked inline: it goes to rule 14's classical-bound construction (loops-classical).
-      const Value *dst = nullptr;
-      if (auto *st = dyn_cast<StoreInst>(&I))
-        dst = st->getPointerOperand();
-      else if (auto *mi = dyn_cast<MemIntrinsic>(&I))
-        dst = mi->getRawDest();
-      else if (auto *rmw = dyn_cast<AtomicRMWInst>(&I))
-        dst = rmw->getPointerOperand();
-      else if (auto *cx = dyn_cast<AtomicCmpXchgInst>(&I))
-        dst = cx->getPointerOperand();
-      if (dst)
-        for (ObjectId o : ctx.T.provenance(dst, ctx.S))
-          if (ctx.T.classOf(o) != ObjClass::Classical)
-            return false;
     }
   return true;
 }
@@ -848,24 +819,6 @@ void Walker::maybeFlush(Instruction *term) {
     for (const Use *U : uses)
       if (auto *ui = dyn_cast<Instruction>(U->getUser()); ui && !visited.count(ui))
         return;
-    // A QRAM site (definesBus): an access of its object through an address derived from it reads its buses.
-    if (definesBus(ctx, *d)) {
-      SmallVector<const Value *, 16> work{d};
-      SmallPtrSet<const Value *, 16> seen{d};
-      while (!work.empty()) {
-        const Value *v = work.pop_back_val();
-        for (const User *u : v->users()) {
-          auto *ui = dyn_cast<Instruction>(u);
-          if (!ui)
-            continue;
-          if (!visited.count(ui))
-            return;
-          if ((isa<GetElementPtrInst>(ui) || isa<CastInst>(ui) || isa<PHINode>(ui) || isa<SelectInst>(ui)) &&
-              ui->getType()->isPointerTy() && seen.insert(ui).second)
-            work.push_back(ui);
-        }
-      }
-    }
   }
   // cq-nqa6 (U7): the handles a later instruction may still read (every binding of an original value
   // with a reading use not lowered yet), so arm-local rails nothing reads any more are resolved here.
@@ -1109,16 +1062,9 @@ void Walker::tailMerge(PHINode &phi) {
     else
       kept.push_back({e, v});
   }
-  bool fat = phi.getType()->isPointerTy() && !isCodeAddress(&phi);
-  bool composite = phi.getType()->isAggregateType() || phi.getType()->isVectorTy();
+    bool composite = phi.getType()->isAggregateType() || phi.getType()->isVectorTy();
   SmallVector<RailType, 4> ws;
-  if (fat) {
-    ws = {RailType{Kind::Int, 32}, RailType{Kind::Int, 64}};
-    SmallVector<const Value *, 4> vals;
-    for (auto &[e, v] : kept)
-      vals.push_back(v);
-    fatptr::exitShape(ctx, &phi, vals, [](const BasicBlock *) { return false; });
-  } else if (composite) {
+  if (composite) {
     std::function<void(Type *)> leaves = [&](Type *t) {
       if (auto *st = dyn_cast<StructType>(t))
         for (Type *e : st->elements())
@@ -1137,10 +1083,6 @@ void Walker::tailMerge(PHINode &phi) {
     ws = {phi.getType()->isPointerTy() ? RailType{Kind::Int, 64} : railTypeOf(phi.getType())};
   }
   auto fieldsOf = [&](const Value *v) -> SmallVector<Operand, 4> {
-    if (fat) {
-      auto [t, i] = fatptr::exitFields(ctx, v, [](const BasicBlock *) { return false; }, &phi);
-      return {t, i};
-    }
     if (composite)
       return aggr::flattenResult(ctx, v);
     Operand o = ctx.operand(v);
@@ -1175,23 +1117,17 @@ void Walker::tailMerge(PHINode &phi) {
     aggr::bindLeafFields(ctx, &phi, out, SmallVector<unsigned, 8>(out.size(), 1));
   else
     ctx.bindFields(&phi, out);
-  if (fat)
-    fatptr::bindExit(ctx, &phi);
 }
 
 void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in) {
   const BasicBlock *b = phi.getParent();
   BasicBlock *join = out(b);
-  // cq-h8y6 (CR rules 9, 21, 26): the unit may bind phi as several fields, joined field by field: a data pointer's
-  // exit value as its fat pointer (tag i32, idx i64; a value from outside the loop read at that exit shape, fatptr
-  // exitFields), a composite's scalar leaves; a scalar is one field.
+  // CR rules 9, 26: the unit may bind phi as several fields, joined field by field: a composite's scalar leaves; a
+  // scalar is one field.
   SmallVector<Operand, 4> unitVals = ctx.fields(&phi);
-  bool fat = fatptr::isExitPointer(ctx, &phi);
   bool composite = phi.getType()->isAggregateType() || phi.getType()->isVectorTy();
   SmallVector<RailType, 4> ws;
-  if (fat) {
-    ws = {RailType{Kind::Int, 32}, RailType{Kind::Int, 64}};
-  } else if (composite) {
+  if (composite) {
     std::function<void(Type *)> leaves = [&](Type *t) {
       if (auto *st = dyn_cast<StructType>(t))
         for (Type *e : st->elements())
@@ -1208,13 +1144,9 @@ void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in) {
     leaves(phi.getType());
   } else {
     unitVals = {ctx.operand(&phi)};
-    ws = {railTypeOf(phi.getType())};
+    ws = {phi.getType()->isPointerTy() ? RailType{Kind::Int, 64} : railTypeOf(phi.getType())};
   }
   auto fieldsOf = [&](const Value *v) -> SmallVector<Operand, 4> {
-    if (fat) {
-      auto [t, i] = fatptr::exitFields(ctx, v, [](const BasicBlock *) { return false; }, &phi);
-      return {t, i};
-    }
     if (composite)
       return aggr::flattenResult(ctx, v);
     return {ctx.operand(v)};
@@ -1362,12 +1294,7 @@ bool Walker::emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigne
     // CR §1.4: a literal struct of the result's leaves, handles where quantum; each quantum leaf is
     // copied out into a fresh rail (rule 18) like a scalar result.
     SmallVector<Operand, 4> leaves;
-    if (fat) {
-      auto [tag, idx] = fatptr::resultFields(ctx, *ret);
-      leaves = {tag, idx};
-    } else {
-      leaves = pcuts.size() > 2 ? spine::packFields(ctx, rv, pcuts) : aggregateFields(ret, rv);
-    }
+    leaves = pcuts.size() > 2 ? spine::packFields(ctx, rv, pcuts) : aggregateFields(ret, rv);
     auto leafTy = [&](unsigned k) -> Type * {
       if (fat)
         return Type::getInt32Ty(ctx.M.getContext());
@@ -1451,10 +1378,6 @@ SmallVector<Operand, 4> Walker::aggregateFields(ReturnInst *ret, Value *rv) {
   return out;
 }
 
-// The result's fields as a clone returns them before its trailing extras (the flags of E1, the escaped
-// flag of rule 24, the stored rails of M2): a field-wise or fat-pointer result's leaves (emitCloneFields,
-// `extra` trailing fields in st), else the one value: a return phi copied out per edge as it is, a
-// handle copied out into a fresh Result rail (rule 18), a classical value as it is.
 void Walker::resultFields(ReturnInst *ret, Value *rv, StructType *st, unsigned extra, SmallVectorImpl<Value *> &vals) {
   if (emitCloneFields(ret, rv, st, extra, vals))
     return;
@@ -1479,29 +1402,11 @@ void Walker::resultFields(ReturnInst *ret, Value *rv, StructType *st, unsigned e
   vals.push_back(f);
 }
 
-// Rule 18 copy-out at a clone's return (cq-b0w, orchestrator decision: the spine owns it). A
-// quantum result r is copied into a fresh rail f = cqrt_alloc_<W>(0); cqrt_copy_<W>(r, f), f is kept
-// (Role::Result: the caller frees it after the twin) and returned; flushAtExit then uncomputes the
-// body, which the copy reads, after it (06, 07, 33, 34). The copy is made even for a one-template
-// body (CR allows returning that rail directly; the corpus always copies). A classical result (a
-// callee that measures, or a mask under which the result does not depend on a quantum value) is
-// returned as is.
-// Does a formal of the clone being built cross as a triple onto a QRAM object (calls::hasQramTriple)?
-static bool hasQramTripleFormal(LoweringContext &ctx) {
-  for (Argument &A : ctx.S.F->args())
-    if (A.getType()->isPointerTy()) {
-      PtrFormal pf = ctx.T.pointerFormal(ctx.S, A.getArgNo());
-      if (pf.abi != PtrAbi::Raw && pf.pointee == ObjClass::Qram)
-        return true;
-    }
-  return false;
-}
 
 void Walker::emitCloneReturn(ReturnInst *ret) {
   IRBuilder<> &B = ctx.B();
   Function *C = ctx.B().GetInsertBlock()->getParent();
-  // cq-i9wk: a kept clone's returns build its base result; emitTerminator appends the registers.
-  Type *CRT = spine::keptCloneBaseType(*C) ? spine::keptCloneBaseType(*C) : C->getReturnType();
+  Type *CRT = C->getReturnType();
   if (fenv::cloneCarriesEnv(ctx.T, ctx.S)) {
     // E1 (CR rule 23, 82): the final flags are copied out into a fresh rail (Role::Result, as the
     // result's) and returned as the last field, after the result's (calls::materialize).
@@ -1519,32 +1424,6 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
     SmallVector<Value *, 4> vals;
     auto *st = dyn_cast<StructType>(CRT);
     Value *rv = ret->getReturnValue();
-    if (unsigned stores = mem::calleeQramStoreCount(ctx.T, ctx.S); stores && hasQramTripleFormal(ctx)) {
-      // 191 with 82 (calls::materialize): {leaves..., stores..., flags}. The flags are copied out before the
-      // body's uncompute; the QRAM stores come after it, right before the return (M2b: the twin drops them).
-      if (rv)
-        resultFields(ret, rv, st, stores + 1, vals);
-      Value *flags = copyOut(Operand{fenv::cloneExitFlags(ctx, *ret), true}, RailType{Kind::Int, 32});
-      if (!st || st->getNumElements() != vals.size() + stores + 1)
-        internalError("spine: a clone carrying the environment with QRAM stores whose result type is not "
-                      "{leaves..., stores..., flags}",
-                      ret);
-      ReturnInst *nr = B.CreateRet(PoisonValue::get(CRT));
-      ctx.unc().flushAtExit(nr);
-      B.SetInsertPoint(nr);
-      SmallVector<Value *, 2> rails = mem::emitCalleeQramStores(ctx);
-      if (rails.size() != stores)
-        internalError("spine: emitCalleeQramStores returned another count than calleeQramStoreCount", ret);
-      Value *v = PoisonValue::get(st);
-      unsigned k = 0;
-      for (Value *r : vals)
-        v = B.CreateInsertValue(v, r, {k++});
-      for (Value *h : rails)
-        v = B.CreateInsertValue(v, h, {k++});
-      v = B.CreateInsertValue(v, flags, {k++});
-      nr->setOperand(0, v);
-      return;
-    }
     if (rv) {
       // cq-xhv4: the result's fields (a field-wise result's leaves, or the one value) then the flags.
       resultFields(ret, rv, st, 1, vals);
@@ -1565,47 +1444,6 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
     }
     ReturnInst *nr = B.CreateRet(v);
     ctx.unc().flushAtExit(nr);
-    return;
-  }
-  // M2/M2b (191): the clone's stores through triple formals onto a QRAM object are emitted after the
-  // body's uncompute and their copied-out rails returned after the result (calls::cloneResultType).
-  unsigned stores = 0;
-  for (Argument &A : ctx.S.F->args())
-    if (A.getType()->isPointerTy()) {
-      PtrFormal pf = ctx.T.pointerFormal(ctx.S, A.getArgNo());
-      if (pf.abi != PtrAbi::Raw && pf.pointee == ObjClass::Qram) {
-        stores = mem::calleeQramStoreCount(ctx.T, ctx.S);
-        break;
-      }
-    }
-  if (stores) {
-    // M2 (calls::cloneResultType): the result's leaves (handles where quantum), then one handle per store.
-    SmallVector<Value *, 4> res;
-    if (Value *rv = ret->getReturnValue())
-      resultFields(ret, rv, dyn_cast<StructType>(CRT), stores, res);
-    ReturnInst *nr = B.CreateRet(PoisonValue::get(CRT));
-    ctx.unc().flushAtExit(nr);
-    B.SetInsertPoint(nr);
-    SmallVector<Value *, 2> rails = mem::emitCalleeQramStores(ctx);
-    if (rails.size() != stores)
-      internalError("spine: emitCalleeQramStores returned another count than calleeQramStoreCount", ret);
-    Value *v;
-    if (res.empty() && stores == 1) {
-      v = rails[0];
-    } else {
-      auto *st = dyn_cast<StructType>(CRT);
-      if (!st || st->getNumElements() != res.size() + stores)
-        internalError("spine: a clone's result type does not match its result and QRAM stores", ret);
-      v = PoisonValue::get(st);
-      unsigned k = 0;
-      for (Value *r : res)
-        v = B.CreateInsertValue(v, r, {k++});
-      for (Value *h : rails)
-        v = B.CreateInsertValue(v, h, {k++});
-    }
-    if (v->getType() != CRT)
-      internalError("spine: a clone's return value with QRAM stores is not of its return type", ret);
-    nr->setOperand(0, v);
     return;
   }
   ReturnInst *nr;
@@ -1651,77 +1489,6 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
   ctx.unc().flushAtExit(nr);
 }
 
-// CR rule 14 (recursion with quantum depth) with rule 19's extra result (cq-ew5z). A level clone whose cut keeps
-// the overflow predicate (calls::overflowResult) returns its base result as any clone does (emitCloneReturn,
-// the base type keptCloneBaseType) and after it the handle of a fresh i1 rail holding this level's overflow
-// predicate: "a call at the cut level would recurse once more" under this level's own predicates
-// (calls::overflowOfLevel). It is copied out like a result (rule 18: alloc_i1(0), copy_i1, Role::Result)
-// before the body is uncomputed, so the twin XORs it out of its last out like any result and the caller
-// frees it after the twin; the first caller outside the recursion keeps its value (calls).
-void Walker::emitOverflowReturn(ReturnInst *ret) {
-  LLVMContext &LC = ctx.M.getContext();
-  RailType i1{Kind::Int, 1};
-  Value *acc = calls::overflowOfLevel(ctx);
-  CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(LC)});
-  RailId fid = ctx.unc().recordSeed(f);
-  abi::CoreSpec cp{abi::Core::Copy, i1};
-  CallInst *c = ctx.emitCore(cp, {acc, f});
-  ctx.unc().recordCore(c, cp, {Operand{acc, true}, Operand{f, true}}, fid);
-  ctx.unc().setRole(fid, Role::Result);
-  SmallPtrSet<ReturnInst *, 4> before;
-  for (BasicBlock &OB : *sh.out)
-    if (auto *r = dyn_cast_or_null<ReturnInst>(OB.getTerminator()))
-      before.insert(r);
-  emitCloneReturn(ret);
-  Type *base = spine::keptCloneBaseType(*sh.out);
-  for (BasicBlock &OB : *sh.out) {
-    auto *nr = dyn_cast_or_null<ReturnInst>(OB.getTerminator());
-    if (!nr || before.count(nr))
-      continue;
-    if (base->isVoidTy()) {
-      nr->setOperand(0, f);
-      continue;
-    }
-    // The base's fields (the values its insertvalue chain from poison put there, as emitCloneReturn builds a
-    // field-wise return), then the rail: one insertvalue chain from poison (calls::finalize's twin reads it).
-    auto *wt = cast<StructType>(sh.out->getReturnType());
-    IRBuilder<> RB(nr);
-    Value *old = nr->getReturnValue();
-    SmallVector<Value *, 4> fields;
-    if (auto *bst = dyn_cast<StructType>(base)) {
-      for (unsigned k = 0; k < bst->getNumElements(); ++k) {
-        Value *e = nullptr;
-        for (Value *v = old; !e;) {
-          if (auto *iv = dyn_cast<InsertValueInst>(v)) {
-            if (iv->getNumIndices() == 1 && iv->getIndices()[0] == k)
-              e = iv->getInsertedValueOperand();
-            else if (iv->getIndices()[0] == k)
-              break;   // a nested insert into field k: the field is read back whole below
-            else
-              v = iv->getAggregateOperand();
-          } else {
-            if (auto *cv = dyn_cast<Constant>(v))
-              e = cv->getAggregateElement(k);
-            break;
-          }
-        }
-        fields.push_back(e ? e : RB.CreateExtractValue(old, {k}));
-      }
-    } else {
-      fields.push_back(old);
-    }
-    fields.push_back(f);
-    Value *agg = PoisonValue::get(wt);
-    for (unsigned k = 0; k < fields.size(); ++k)
-      agg = RB.CreateInsertValue(agg, fields[k], {k});
-    nr->setOperand(0, agg);
-    for (auto *iv = dyn_cast<InsertValueInst>(old); iv && iv->use_empty();) {
-      auto *next = dyn_cast<InsertValueInst>(iv->getAggregateOperand());
-      iv->eraseFromParent();
-      iv = next;
-    }
-  }
-}
 
 // Rule 18 copy-out of a return phi chosen classically (cq-mjwb, 119). A clone's return value that
 // is a phi of the return's own block, read by the return alone, whose every incoming edge is chosen
@@ -1750,7 +1517,7 @@ Value *Walker::returnCopyOut(PHINode &phi) {
     if (&o != &phi && !visited.count(&o) && spine::isQ(ctx, &o))
       return nullptr;
   Function *C = ctx.B().GetInsertBlock()->getParent();
-  Type *CRT = spine::keptCloneBaseType(*C) ? spine::keptCloneBaseType(*C) : C->getReturnType();
+  Type *CRT = C->getReturnType();
   if (CRT != handleTy(ctx.M.getContext()))
     return nullptr;
   BasicBlock *ob = out(b);
@@ -1854,8 +1621,6 @@ Value *Walker::returnCopyOut(PHINode &phi) {
 // how many registers stay allocated, the lowered return type (spine::entryReturn).
 void Walker::noteEntryReturn(bool frozen, Instruction *t) {
   auto [er, fresh] = entryReturns.try_emplace(sh.orig);
-  // CR rule 19 (f684858): the extra results are the union over the return paths, by mint site in a fixed
-  // order; a path that did not mint one returns handle 0 for it (the kept clone's returns).
   DenseMap<const Value *, unsigned> pos;
   {
     unsigned n = 0;
@@ -1891,70 +1656,8 @@ void Walker::emitTerminator(BasicBlock *b) {
       internalError("spine: a return under a quantum predicate beside another return (the plugin unifies the "
                     "returns of every tainted function)",
                     t);
-    if (!ctx.S.isEntry() && !ctx.S.kept)
-      return calls::overflowResult(ctx.S) ? emitOverflowReturn(ret) : emitCloneReturn(ret);
-    if (ctx.S.kept) {
-      // Rule 19 (cq-i9wk): a kept clone returns its results (rule 18's copy-out) and then the handle of
-      // each register it minted that is still allocated, for its twin to clean against.
-      const spine::EntryReturn *er = spine::entryReturn(*ctx.S.F);
-      if (!er)
-        internalError("spine: a kept clone lowered before its in-place lowering", t);
-      if (er->mints.empty())
-        return emitCloneReturn(ret);   // nothing appended (calls::materialize)
-      // The union of the in-place lowering's return paths, by mint site; a register this path did not
-      // mint is handle 0 (§1.1, rule 19: the twin, replaying the same classical path, never reads it).
-      SmallVector<Value *, 4> regs(er->mints.size(), nullptr);
-      for (Value *r : spine::liveRegisters(ctx)) {
-        const Value *m = spine::registerMintSite(ctx, r);
-        auto it = find(er->mints, m);
-        if (it == er->mints.end() || regs[it - er->mints.begin()])
-          internalError("spine: a kept clone keeps a register its in-place lowering does not return", t);
-        regs[it - er->mints.begin()] = r;
-      }
-      for (Value *&r : regs)
-        if (!r)
-          r = ConstantInt::get(handleTy(ctx.M.getContext()), 0);
-      SmallPtrSet<ReturnInst *, 4> before;
-      for (BasicBlock &OB : *sh.out)
-        if (auto *r = dyn_cast_or_null<ReturnInst>(OB.getTerminator()))
-          before.insert(r);
-      emitCloneReturn(ret);
-      auto *wt = cast<StructType>(sh.out->getReturnType());
-      for (BasicBlock &OB : *sh.out) {
-        auto *nr = dyn_cast_or_null<ReturnInst>(OB.getTerminator());
-        if (!nr || before.count(nr))
-          continue;
-        IRBuilder<> RB(nr);
-        Value *base = nr->getReturnValue();
-        Value *agg = PoisonValue::get(wt);
-        unsigned k = 0;
-        if (auto *bst = dyn_cast<StructType>(base->getType())) {
-          for (unsigned e = 0; e < bst->getNumElements(); ++e)
-            agg = RB.CreateInsertValue(agg, RB.CreateExtractValue(base, {e}), {k++});
-        } else {
-          agg = RB.CreateInsertValue(agg, base, {k++});
-        }
-        DominatorTree ODT(*sh.out);
-        for (Value *r : regs) {
-          // A register minted on some classical paths only reaches this return as itself where it was
-          // minted and as handle 0 elsewhere (§1.1, rule 19: the twin, replaying the same path, never
-          // reads it).
-          auto *ri = dyn_cast<Instruction>(r);
-          if (ri && !ODT.dominates(ri, nr)) {
-            SSAUpdater up;
-            up.Initialize(r->getType(), r->getName());
-            up.AddAvailableValue(&sh.out->getEntryBlock(), ConstantInt::get(r->getType(), 0));
-            up.AddAvailableValue(ri->getParent(), ri);
-            r = up.GetValueAtEndOfBlock(nr->getParent());
-          }
-          agg = RB.CreateInsertValue(agg, r, {k++});
-        }
-        if (k != wt->getNumElements())
-          internalError("spine: a kept clone's return type does not match its result and registers", t);
-        nr->setOperand(0, agg);
-      }
-      return;
-    }
+    if (!ctx.S.isEntry())
+      return emitCloneReturn(ret);
     fenv::atEntryReturn(ctx, *ret);   // cq-hzji: the final rule 23 state is kept (Effects.h)
     ReturnInst *nr;
     if (Value *rv = ret->getReturnValue(); rv && (rv->getType()->isAggregateType() || rv->getType()->isVectorTy()) &&
@@ -2249,8 +1952,7 @@ void Walker::emitBlock(BasicBlock *b) {
     for (BasicBlock *lb : lp.blocks())
       for (Instruction &I : *lb) {
         auto bi = sh.binds.find(&I);
-        if ((bi != sh.binds.end() && any_of(bi->second, [](const Operand &o) { return o.handle; })) ||
-            definesBus(ctx, I))
+        if (bi != sh.binds.end() && any_of(bi->second, [](const Operand &o) { return o.handle; }))
           blockDefs.push_back(&I);
       }
     BranchInst *br = ctx.B().CreateBr(out(n));
@@ -2301,13 +2003,6 @@ void Walker::emitBlock(BasicBlock *b) {
       if (any_of(phi.incoming_values(), [&](const Value *u) { return sh.statePreps.count(u); })) {
         sh.statePreps.insert(&phi);
         rot::lowerStatePrepMerge(ctx, phi);
-        blockDefs.push_back(&phi);
-        continue;
-      }
-      if (phi.getType()->isPointerTy() && !isCodeAddress(&phi)) {
-        // Rule 21: a quantum pointer merge is a fat pointer (tag, idx) merged over the edge predicates,
-        // fatptr's like the select's (cq-xb7r): it binds the phi's fields here.
-        fatptr::lower(ctx, &phi);
         blockDefs.push_back(&phi);
         continue;
       }
@@ -2414,8 +2109,6 @@ void Walker::emitBody(BasicBlock *b) {
             blockDefs.push_back(&I);
             break;
           }
-      if (definesBus(ctx, I) && !is_contained(blockDefs, &I))
-        blockDefs.push_back(&I);
     }
   }
   emitTerminator(b);
@@ -2509,25 +2202,16 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
   bool inList = !all.empty() && &S >= all.begin() && &S < all.end();
   // The plugin may construct callees before callers (rule 19's frozen results, cq-i9wk): the epilogue
   // runs after the last specialization constructed, whichever it is.
-  bool last = !S.kept && (!inList || ++constructedCount[&M] == all.size());
+  bool last = (!inList || ++constructedCount[&M] == all.size());
   if (last)
     constructedCount.erase(&M);
-  // Rule 19 (cq-i9wk): the kept clones the callers asked for are built from the original bodies, before
-  // the epilogue moves the lowered entries into them.
-  auto buildKept = [&] {
-    for (std::vector<const Specialization *> v = spine::takeKeptClones(M); !v.empty(); v = spine::takeKeptClones(M))
-      for (const Specialization *K : v)
-        construct(M, T, *K, KO);
-  };
   // Rule 27 (161): a declared specialization has no body to construct. The compiler only emits
   // declarations, and calls emits the declared clone (and its _ctl and twin declarations) at each
   // call site. The module-wide epilogue still runs when it is the last specialization.
   if (S.F->isDeclaration()) {
     if (last) {
-      buildKept();
       finishEntries(M);
       dropDeadSurface(M);
-      spine::forgetKeptClones(M);
     }
     return;
   }
@@ -2539,9 +2223,6 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
 
   Value *entryFlag = nullptr;
   SmallVector<std::pair<Argument *, SmallVector<Operand, 4>>, 2> classicalComposites;
-  SmallVector<std::tuple<Argument *, Value *, Value *>, 2> slotTripleCells;   // cq-1c5j
-  SmallVector<Argument *, 2> hostTripleFormals;                                 // cq-sd95
-  SmallVector<Argument *, 2> qramTripleFormals;                                 // rule 21 (P1)
   if (S.isEntry()) {
     // Rule 19 (193): an entry returning an unmeasured quantum value returns its handle. The return
     // type stays the C one when it is an integer of 32 bits or more (the handle as is or
@@ -2593,51 +2274,6 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
     unsigned p = off;
     for (unsigned i = 0; i < F.arg_size(); ++i) {
       Argument *A = F.getArg(i);
-      if (A->getType()->isPointerTy()) {
-        PtrFormal pf = T.pointerFormal(S, i);
-        if (pf.abi != PtrAbi::Raw) {
-          // T4/P1 (CR rule 21, §1.4): (object, tag, idx[, cell count]); the bus of a Qram pointee and a
-          // quantum tag or idx are the caller's rails, never freed here.
-          unsigned n = pf.abi == PtrAbi::TripleCount ? 4 : 3;
-          if (p + n > C->arg_size())
-            internalError("spine: a clone with fewer parameters than its triple formal's", C);
-          Argument *obj = C->getArg(p), *tag = C->getArg(p + 1), *idx = C->getArg(p + 2);
-          Argument *cnt = n == 4 ? C->getArg(p + 3) : nullptr;
-          p += n;
-          bool objH = pf.pointee == ObjClass::Qram;
-          // The digits before this formal's: its tag and idx digits are the first two of its own.
-          size_t d = 0;
-          for (unsigned j = 0; j < i; ++j) {
-            Argument *Aj = F.getArg(j);
-            SmallVector<unsigned, 4> cj = Aj->getType()->isIntegerTy() ? spine::unpackCuts(Aj) : SmallVector<unsigned, 4>{};
-            d += Aj->getType()->isPointerTy() ? T.pointerFormal(S, j).digits
-                 : cj.size() > 2              ? cj.size() - 1
-                                              : T.fieldMask(Aj, S).size();
-          }
-          if (d + 2 > S.mask.size())
-            internalError("spine: a triple formal past the clone's mask", A);
-          bool tagH = S.mask[d] == '1', idxH = S.mask[d + 1] == '1';
-          if (objH)
-            ctx.unc().recordExternal(obj, Role::UserRegister);
-          if (tagH)
-            ctx.unc().recordExternal(tag, Role::UserRegister);
-          if (idxH)
-            ctx.unc().recordExternal(idx, Role::UserRegister);
-          fatptr::bindFormal(ctx, *A, obj, Operand{tag, tagH}, Operand{idx, idxH}, cnt);
-          if (pf.pointee == ObjClass::Slot && !tagH && !idxH && !mem::isPointerKindFormal(ctx, *A)) {
-            // cq-1c5j (CR rules 18, 20, 21): a classical (tag, idx) into the caller's slot object names one cell
-            // of its handle cells: the formal is that cell's address, as a raw slot pointer formal is (31), and
-            // mem-slots lowers the clone's accesses through it (fatptr keeps the cell-count checked loads of a
-            // TripleCount formal, 190).
-            slotTripleCells.push_back({A, obj, idx});
-          }
-          if (pf.pointee == ObjClass::Classical && !tagH && !idxH)
-            hostTripleFormals.push_back(A);   // cq-sd95: the caller's classical host pointer
-          if (pf.pointee == ObjClass::Qram && !tagH && !idxH)
-            qramTripleFormals.push_back(A);   // rule 21: its address in the QRAM address space
-          continue;
-        }
-      }
       SmallVector<bool, 4> fm = T.fieldMask(A, S);
       bool composite = A->getType()->isStructTy() || A->getType()->isArrayTy() || A->getType()->isVectorTy();
       // cq-0umd (rule 26): an integer formal the callee unpacks is the coerced struct's fields, one
@@ -2649,9 +2285,7 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
         for (unsigned j = 0; j < i; ++j) {
           Argument *Aj = F.getArg(j);
           SmallVector<unsigned, 4> cj = Aj->getType()->isIntegerTy() ? spine::unpackCuts(Aj) : SmallVector<unsigned, 4>{};
-          d += Aj->getType()->isPointerTy() ? T.pointerFormal(S, j).digits
-               : cj.size() > 2              ? cj.size() - 1
-                                            : T.fieldMask(Aj, S).size();
+          d += cj.size() > 2 ? cj.size() - 1 : T.fieldMask(Aj, S).size();
         }
         unsigned n = cuts.size() - 1;
         if (d + n > S.mask.size() || p + n > C->arg_size())
@@ -2701,34 +2335,10 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
       for (unsigned j = 0; j < F.arg_size(); ++j) {
         Argument *Aj = F.getArg(j);
         SmallVector<unsigned, 4> cj = Aj->getType()->isIntegerTy() ? spine::unpackCuts(Aj) : SmallVector<unsigned, 4>{};
-        d += Aj->getType()->isPointerTy() ? T.pointerFormal(S, j).digits
-             : cj.size() > 2              ? cj.size() - 1
-                                          : T.fieldMask(Aj, S).size();
+        d += cj.size() > 2 ? cj.size() - 1 : T.fieldMask(Aj, S).size();
       }
       SmallVector<Type *, 4> vts = calls::variadicTypes(T, S, &F);
       for (unsigned k = 0; k < vts.size(); ++k) {
-        unsigned i = F.arg_size() + k;
-        if (vts[k]->isPointerTy()) {
-          PtrFormal pf = T.pointerFormal(S, i);
-          unsigned n = pf.abi == PtrAbi::Raw ? 1 : pf.abi == PtrAbi::TripleCount ? 4 : 3;
-          if (p + n > C->arg_size() || d + pf.digits > S.mask.size())
-            internalError("spine: a clone with fewer parameters than its formals' fields", C);
-          Argument *P = C->getArg(p);
-          if (pf.abi == PtrAbi::Raw) {
-            sh.varargs.push_back(Operand{P, false});
-          } else {
-            // A quantum tag or idx, or a QRAM bus: the caller's rails, never freed here. The save-area cell
-            // would hold the fat pointer (rule 21 in the variadic save area, calls::formalLayout's site).
-            bool objH = pf.pointee == ObjClass::Qram, tagH = S.mask[d] == '1', idxH = S.mask[d + 1] == '1';
-            for (auto [a, h] : {std::pair{P, objH}, {C->getArg(p + 1), tagH}, {C->getArg(p + 2), idxH}})
-              if (h)
-                ctx.unc().recordExternal(a, Role::UserRegister);
-            sh.varargs.push_back(Operand{P, objH});
-          }
-          p += n;
-          d += pf.digits;
-          continue;
-        }
         if (p >= C->arg_size() || d >= S.mask.size())
           internalError("spine: a clone with fewer parameters than its formals' fields", C);
         Argument *P = C->getArg(p++);
@@ -2753,41 +2363,6 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
   LoopInfo LI(DT);
   ctx.preds().compute(F, LI, T, S, entryFlag);
   ctx.B().SetInsertPoint(BasicBlock::Create(M.getContext(), "", sh.out));
-  SmallVector<Instruction *, 4> slotTripleAddrs;   // erased again when no access used them (fatptr's, 190)
-  for (auto &[A, obj, idx] : slotTripleCells) {
-    IRBuilder<> &EB = ctx.B();
-    Value *ix = EB.CreateSExt(idx, EB.getInt64Ty());
-    Value *at = EB.CreateInBoundsGEP(EB.getInt32Ty(), obj, ix);
-    spine::bindOperand(ctx, A, Operand{at, false});
-    for (Value *v : {at, ix})
-      if (auto *I = dyn_cast<Instruction>(v))
-        slotTripleAddrs.push_back(I);
-  }
-  // CR rule 21 (cq-sd95): a triple onto host objects with a classical tag and idx is the caller's classical
-  // pointer (object + size * idx); the clone's classical uses of the formal (a load of a constant table,
-  // musl's __polevll over erfl's P and Q) read through it as through any classical pointer.
-  for (Argument *A : hostTripleFormals) {
-    Value *at = fatptr::boundHostAddress(ctx, *A);
-    if (!at)
-      internalError("spine: a classical host triple formal fatptr did not bind", A);
-    spine::bindOperand(ctx, A, Operand{at, false});
-    // The address, its byte offset and the widened idx, users first.
-    for (Value *v = at; auto *I = dyn_cast<Instruction>(v);
-         v = isa<GetElementPtrInst>(I) ? I->getOperand(1) : I->getOperand(0))
-      slotTripleAddrs.push_back(I);
-  }
-  // CR rule 21 (P1): a QRAM triple formal with a classical tag and idx is, as a classical pointer, its object's
-  // address in the QRAM address space: a classical walk of the caller's object (a phi over it), a compare, a
-  // ptrtoint or a return read it; its accesses stay the QRAM's (fatptr, mem-qram's walked cells).
-  for (Argument *A : qramTripleFormals) {
-    Value *at = fatptr::boundQramAddress(ctx, *A);
-    if (!at)
-      continue;
-    spine::bindOperand(ctx, A, Operand{at, false});
-    for (Value *v = at; auto *I = dyn_cast<Instruction>(v);
-         v = isa<GetElementPtrInst>(I) ? I->getOperand(1) : I->getOperand(0))
-      slotTripleAddrs.push_back(I);
-  }
   // CR §1.4: a composite formal crosses as one parameter per leaf; with no quantum leaf it is a classical
   // value of its own type, rebuilt from its leaves (struct and array fields, vector lanes, in order).
   for (auto &[A, ops] : classicalComposites) {
@@ -2827,10 +2402,6 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
   }
   Walker(ctx, F, DT, LI).run();
   llvm::erase_if(sh.ruleSixPending, [&](const spine::Shared::PendingSix &p) { return p.ctx == &ctx; });
-  mem::finishSlots(ctx);   // M8: register arrays' readers against their rule-6 clean-ups (114)
-  for (Instruction *I : slotTripleAddrs)
-    if (I->use_empty())
-      I->eraseFromParent();
   reachDefs(*sh.out);   // cq-pfpy: rule 9's hoisted arm values reach every point that reads them
 
   // Rule 13 (b137e75): the lowered entry keeps every address-taken block under its identity: the block its
@@ -2872,10 +2443,8 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
   }
 
   if (last) {
-    buildKept();
     finishEntries(M);
     dropDeadSurface(M);
-    spine::forgetKeptClones(M);
   }
 }
 
@@ -2941,48 +2510,11 @@ const Value *registerMintSite(LoweringContext &ctx, Value *rail) {
   return best;
 }
 
-namespace {
-struct KeptClones {
-  std::deque<Specialization> specs;
-  std::vector<const Specialization *> pending;
-};
-thread_local std::map<const Module *, KeptClones> keptClones;
-thread_local DenseMap<const Function *, Type *> keptBaseTypes;
-} // namespace
 
-const Specialization &keptSpec(const Module &M, const Specialization &inPlace) {
-  KeptClones &kc = keptClones[&M];
-  for (const Specialization &k : kc.specs)
-    if (k.F == inPlace.F)
-      return k;
-  Specialization k = inPlace;
-  k.kept = true;
-  kc.specs.push_back(k);
-  kc.pending.push_back(&kc.specs.back());
-  return kc.specs.back();
-}
 
-std::vector<const Specialization *> takeKeptClones(const Module &M) {
-  auto it = keptClones.find(&M);
-  if (it == keptClones.end())
-    return {};
-  std::vector<const Specialization *> v;
-  v.swap(it->second.pending);
-  return v;
-}
 
-Type *keptCloneBaseType(const Function &clone) {
-  auto it = keptBaseTypes.find(&clone);
-  return it == keptBaseTypes.end() ? nullptr : it->second;
-}
 
-void setKeptCloneBaseType(const Function &clone, Type *base) { keptBaseTypes[&clone] = base; }
 
-void forgetKeptClones(const Module &M) {
-  keptClones.erase(&M);
-  for (const Function &F : M)
-    keptBaseTypes.erase(&F);
-}
 
 const EntryReturn *entryReturn(const Function &F) {
   auto it = entryReturns.find(&F);

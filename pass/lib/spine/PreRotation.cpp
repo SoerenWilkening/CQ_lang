@@ -11,24 +11,10 @@
 //  at T cannot serve every reader, the Ry hits a copy of h instead (rotateCopy) and h keeps v's value
 //  on every path and trip: no stop.
 //
-//  - Need. Before the cq_theta T is lowered (uncontrolled, rule 10 controlled, or rule 15 quantum
-//    angle), every value w bound to h is checked for a use after T: a non-phi user lowered after T
-//    in the original CFG (reachable from T's end without passing w's definition, which would make it
-//    another instance of w), a phi incoming whose edge is so reachable, or a non-phi user not lowered
-//    yet that precedes T (a lazy reader such as fatptr's deriveGEP or a value -O1 sank, which reads w
-//    when it is finally emitted; cq-drcl: a user in a block T cannot reach, a sibling arm, is no
-//    reader after T). The operand v needing it gets the copy, as does any other value bound to h; one
-//    bound to a rail h may name at run time (h a phi or select over handles, cq-igqp) rotates a copy.
-//    No use after T: nothing is emitted (the common case is unchanged).
 //  - Classical guards (cq-drcl). A reader after T whose block's classical factor does not imply T's
 //    block's is reached by a path on which T did not run: the Ry hits a copy (h is v on every path).
 //  - Not after T (cq-drcl). An instruction lowered after the rebinding that T does not reach (a
 //    sibling arm, quantum or classical) reads h for v: there the rotation did not happen.
-//  - Copy. c = cqrt_alloc_<W>(0), copy_<W>(h, c), recorded (recordSeed, recordCore): a Garbage rail
-//    that read h, so the Ry's noteNonDiagonal makes it KeptEntangled (A4) unless a later measurement
-//    gives it Role::Measured. After the lowering emitted the Ry on h, v is rebound to c: every later
-//    operand(v), fatptr's lazy derivations included, reads the pre-rotation value. Classical
-//    collapse never reads through the copy to a later outcome of h (Collapse.cpp, cq-nvfi).
 //  - Phi edges. A phi lowered after T whose incoming v arrives only on edges not after T reads h
 //    (atPhiEdge). A phi with edges of both kinds for v: the Ry hits a copy.
 //  - Loops. v read on a later trip of a cycle around T (v invariant over the cycle): the Ry hits a

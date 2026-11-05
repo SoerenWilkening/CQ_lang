@@ -12,15 +12,7 @@ add_test(NAME loops-cutoff-rule6
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # A-loops (wave 2a round 7): CR rule 14 multi-exit loops, dead-end exits, walked pointers, a clone's _b bound.
-add_test(NAME loops-cutoff-multi-exit
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_multi_exit.py
-          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-r7-91: CR rules 14, 20, 21 trip objects (a malloc in a K-loop read after it through the last trip's pointer).
-add_test(NAME loops-cutoff-trip-objects
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_trip_objects.py
-          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-zge7: a clone's _b bound below SCEV's constant maximum (an unsigned i32 trip count) still bounds the cutoff.
 add_test(NAME loops-cutoff-b-bound
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_b_bound.py
@@ -36,8 +28,8 @@ add_test(NAME loops-cutoff-widened
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/trip_cfg.O1.ll ${CMAKE_CURRENT_SOURCE_DIR}/probes/latches.O1.ll
-          ${CMAKE_CURRENT_SOURCE_DIR}/probes/latches_ir.O1.ll ${CMAKE_CURRENT_SOURCE_DIR}/probes/recursion.O1.ll
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/latches_ir.O1.ll 
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/exits.O1.ll ${CMAKE_CURRENT_SOURCE_DIR}/probes/entries_ir.O1.ll
-          ${CMAKE_CURRENT_SOURCE_DIR}/probes/noexit.O1.ll ${CMAKE_CURRENT_SOURCE_DIR}/probes/cgoto.O1.ll
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/noexit.O1.ll 
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/b_bound_pos.O1.ll ${CMAKE_CURRENT_SOURCE_DIR}/probes/arm_loop.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

@@ -48,6 +48,12 @@
 using namespace llvm;
 
 // ---- test double of pass/lib/loops/classical/Classical.cpp ----------------------------------------
+namespace cq::loops::exits {
+void lowerClassicalInTrip(cq::LoweringContext &, llvm::Loop &, llvm::Value *) {
+  cq::internalError("test double: lowerClassicalInTrip");
+}
+} // namespace cq::loops::exits
+
 namespace cq::loops {
 unsigned units = 0;
 void lowerClassical(LoweringContext &ctx, Loop &L, Case) {

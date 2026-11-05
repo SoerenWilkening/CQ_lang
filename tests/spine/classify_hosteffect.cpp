@@ -78,7 +78,7 @@ int main() {
     }
   };
   check("q", cq::calls::Class::HostEffect);   // fwrite over the slot buffer
-  check("c", cq::calls::Class::Classical);    // fwrite over a classical buffer
+  check("c", cq::calls::Class::HostEffect);   // rule 20 (b): a call argument makes the buffer bus-resident
   ++checks;                                   // "_fwritex" is no library function: no host effect
   if (cq::calls::classify(at("w"), T, *S) == cq::calls::Class::HostEffect) {
     ++failures;

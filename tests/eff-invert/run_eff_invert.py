@@ -35,19 +35,19 @@ ROOT = Path(__file__).resolve().parents[2]
 PROBES = Path(__file__).parent / "probes"
 CHECKED = {"invert.O1.ll": ["p_flat", "p_arms", "p_nest", "p_around", "p_two"],
            "invert2.O1.ll": ["p_inplace", "p_cbr", "p_reg", "p_cswitch"],
-           "invert_loop.O1.ll": ["p_cloop"],
+           
            "invert_adj.O1.ll": ["p_adj"],
            "invert_barrier.O1.ll": ["p_barrier"],
-           "invert_seed.O1.ll": ["p_seedin", "p_seedtrip", "p_seedarm"],
-           "invert_ret.O1.ll": ["p_adjret"],
-           "invert_retq.O1.ll": ["p_adjretq"],
-           "invert_calls.O1.ll": ["p_between", "p_nested"],
-           "clone_rot.O1.ll": ["p12"],
+           
+           
+           
+           
+           
            "invert_measure.O1.ll": ["p_meas"],
            "guard.O1.ll": ["p_guard"],
-           "mem_clone_global.O1.ll": ["i12"],
-           "mem_clone_pair.O1.ll": ["i11"],
-           "mem_clone_qrom.O1.ll": ["i10"],
+           
+           
+           
            "region_output.O1.ll": ["p_out"],
            "dup_begin.O1.ll": ["p_dup"],
            "dup_end.O1.ll": ["p_dupend"],
@@ -55,7 +55,7 @@ CHECKED = {"invert.O1.ll": ["p_flat", "p_arms", "p_nest", "p_around", "p_two"],
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(|call void asm")
 # Two markers of one kind in exclusive quantum arms, neither paired in its arm: rule 17 does not say how they merge.
 EXCL = "SPEC_ISSUES: two cq_invert end markers in arms of a quantum branch that exclude each other"
-ERRORS = {"excl_ends_error.O1.ll": EXCL}
+ERRORS = {}
 MARKER = re.compile(r"call void @(?:__cq|cqrt)_invert_(begin|end)\(")
 
 

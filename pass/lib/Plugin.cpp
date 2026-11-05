@@ -6,15 +6,15 @@
 //   opt -load-pass-plugin=build/pass/libCQLower.so -passes='cq-verify<reference>' (a reference)
 //
 // cq-lower: a preliminary taint, used only for isTainted(F) and by eff-conc's pre-taint rewrites (rule 24:
-// atomic read-modify-writes through fat pointers and the thread calls collapsed, setjmp/longjmp made
-// explicit control flow,
-// Setjmp.h); FixIrreduciblePass on those
+// the thread calls collapsed, setjmp/longjmp made explicit control flow, Setjmp.h); FixIrreduciblePass on those
 // functions; if any function changed, a fresh taint over the module with the preliminary result
 // discarded; construct per specialization; calls::finalize; verifyLowered. Taint is computed once
 // over the final CFG and nothing mutates the CFG after it (owner ruling on cq-5k5, option (a)).
-// A module with no call to a CQ.h function and no -cq-roots is returned untouched before anything
-// runs (owner ruling 2 on cq-arch: the condition is on calls, not declarations or other uses): the
-// pass's identity (NORTHSTAR principle 1, kernel tier 1).
+// Q2 (rulings): a module with no call to a CQ.h function, no -cq-roots and no reference to a declared clone of a
+// linked lowered library (no __cq_q_* declaration) is returned untouched before anything runs (owner ruling 2 on
+// cq-arch: the condition is on calls, not declarations or other uses): the pass's identity (NORTHSTAR principle 1,
+// kernel tier 1). Inside any other module every function is rewritten unless it has no bus access, no cq_* call and
+// no call (rule 19, TaintInfo::isTainted).
 #include <functional>
 #include <string>
 #include <vector>
@@ -25,7 +25,6 @@
 #include "cq/Effects.h"
 #include "cq/Lowering.h"
 #include "cq/Loops.h"
-#include "mem/qram/QramInternal.h"
 #include "cq/Taint.h"
 #include "cq/Verify.h"
 #include "eff/conc/Setjmp.h"
@@ -120,253 +119,6 @@ cq::TaintOptions readTaintOptions() {
   return TO;
 }
 
-// CR rule 18 (twin point; cq-aqk1, cq-366o): a call handing one pointer to several pointer formals of a callee
-// that writes through one of them (musl's sincos(x, buf, buf), f(x, &s, &s)). In C the formals are then one
-// pointer: every store through one is seen by every load through another, in program order. The call becomes a
-// call of the callee's alias variant, `<callee>.cq.alias.<i>to<j>…`, whose body names formal j by formal i (j
-// dropped from its formal list): the same C function on the same arguments, so the same semantics, and its one
-// route per caller cell is what rule 18's clone construction and its twin (which restores each cell through the
-// formal that wrote it) assume. A semantics-preserving rewrite before the final taint, like fix-irreducible; on
-// calls in tainted functions to tainted callees with a body only. Returns the variants made.
-SmallVector<Function *, 4> mergeAliasedPointerArgs(Module &M, const cq::TaintInfo &T,
-                                                   ArrayRef<Function *> tainted) {
-  SmallVector<Function *, 4> made;
-  const DataLayout &DL = M.getDataLayout();
-  auto same = [&](Value *a, Value *b) {
-    if (a == b)
-      return true;
-    APInt oa(DL.getIndexTypeSizeInBits(a->getType()), 0), ob(DL.getIndexTypeSizeInBits(b->getType()), 0);
-    const Value *ba = a->stripAndAccumulateConstantOffsets(DL, oa, /*AllowNonInbounds=*/true);
-    const Value *bb = b->stripAndAccumulateConstantOffsets(DL, ob, /*AllowNonInbounds=*/true);
-    return ba == bb && oa == ob;
-  };
-  for (Function *F : tainted) {
-    SmallVector<CallInst *, 4> calls;
-    for (BasicBlock &BB : *F)
-      for (Instruction &I : BB)
-        if (auto *CI = dyn_cast<CallInst>(&I))
-          calls.push_back(CI);
-    for (CallInst *CI : calls) {
-      Function *G = CI->getCalledFunction();
-      if (!G || G->isDeclaration() || G->isVarArg() || G->isIntrinsic() || !T.isTainted(*G) ||
-          CI->arg_size() != G->arg_size() || CI->hasOperandBundles())
-        continue;
-      // to[j] = i < j: formal j is formal i (both actuals the same pointer), the first such i.
-      SmallVector<int, 8> to(G->arg_size(), -1);
-      bool any = false;
-      for (unsigned j = 0; j < G->arg_size(); ++j) {
-        Argument *Aj = G->getArg(j);
-        if (!Aj->getType()->isPointerTy() || Aj->hasByValAttr() || Aj->hasStructRetAttr() || Aj->hasInAllocaAttr())
-          continue;
-        for (unsigned i = 0; i < j; ++i) {
-          Argument *Ai = G->getArg(i);
-          if (to[i] >= 0 || !Ai->getType()->isPointerTy() || Ai->hasByValAttr() || Ai->hasStructRetAttr() ||
-              Ai->hasInAllocaAttr() || !same(CI->getArgOperand(i), CI->getArgOperand(j)))
-            continue;
-          // Only a pair the callee may write through: two read-only routes leave every twin read unchanged.
-          if (Ai->onlyReadsMemory() && Aj->onlyReadsMemory())
-            continue;
-          to[j] = int(i);
-          any = true;
-          break;
-        }
-      }
-      if (!any)
-        continue;
-      std::string name = (G->getName() + ".cq.alias").str();
-      for (unsigned j = 0; j < to.size(); ++j)
-        if (to[j] >= 0)
-          name += "." + std::to_string(to[j]) + "to" + std::to_string(j);
-      Function *V = M.getFunction(name);
-      if (!V) {
-        SmallVector<Type *, 8> ps;
-        for (unsigned k = 0; k < G->arg_size(); ++k)
-          if (to[k] < 0)
-            ps.push_back(G->getArg(k)->getType());
-        FunctionType *FT = FunctionType::get(G->getReturnType(), ps, false);
-        V = Function::Create(FT, GlobalValue::InternalLinkage, name, &M);
-        V->copyAttributesFrom(G);
-        V->setLinkage(GlobalValue::InternalLinkage);
-        V->setVisibility(GlobalValue::DefaultVisibility);
-        ValueToValueMapTy VM;
-        SmallVector<AttributeSet, 8> pa;
-        unsigned n = 0;
-        for (unsigned k = 0; k < G->arg_size(); ++k)
-          if (to[k] < 0) {
-            VM[G->getArg(k)] = V->getArg(n);
-            V->getArg(n)->setName(G->getArg(k)->getName());
-            pa.push_back(G->getAttributes().getParamAttrs(k));
-            ++n;
-          }
-        for (unsigned k = 0; k < G->arg_size(); ++k)
-          if (to[k] >= 0)
-            VM[G->getArg(k)] = VM[G->getArg(unsigned(to[k]))];
-        SmallVector<ReturnInst *, 4> rets;
-        CloneFunctionInto(V, G, VM, CloneFunctionChangeType::LocalChangesOnly, rets);
-        AttributeList GA = G->getAttributes();
-        // noalias on a formal that now stands for two would be a lie; the merged formals keep the rest.
-        for (AttributeSet &as : pa)
-          as = as.removeAttribute(M.getContext(), Attribute::NoAlias);
-        V->setAttributes(AttributeList::get(M.getContext(), GA.getFnAttrs(), GA.getRetAttrs(), pa));
-        made.push_back(V);
-      }
-      SmallVector<Value *, 8> args;
-      SmallVector<AttributeSet, 8> pa;
-      for (unsigned k = 0; k < CI->arg_size(); ++k)
-        if (to[k] < 0) {
-          args.push_back(CI->getArgOperand(k));
-          pa.push_back(CI->getAttributes().getParamAttrs(k).removeAttribute(M.getContext(), Attribute::NoAlias));
-        }
-      CallInst *NC = CallInst::Create(V->getFunctionType(), V, args, "", CI->getIterator());
-      NC->takeName(CI);
-      NC->setTailCallKind(CI->getTailCallKind());
-      NC->setCallingConv(CI->getCallingConv());
-      NC->setDebugLoc(CI->getDebugLoc());
-      AttributeList CA = CI->getAttributes();
-      NC->setAttributes(AttributeList::get(M.getContext(), CA.getFnAttrs(), CA.getRetAttrs(), pa));
-      CI->replaceAllUsesWith(NC);
-      CI->eraseFromParent();
-    }
-  }
-  return made;
-}
-
-// CR rules 20, 21 (cq-utb8): an access through a CLASSICAL pointer select over several objects, at least one a slot
-// object (musl's `ps ? ps : &internal` mbstate pointer in mbrtowc, c16rtomb, mbrlen), is rule 21's dereference with a
-// classical tag: one access per object of the provenance, under the guard that names it. The guard is classical,
-// so the per-object accesses are its two arms: before the final taint the access (a load, store, atomic, or a call
-// handed the pointer) becomes `br c, T, F`, each arm the access through its own object (the address computed from
-// that arm), the result a phi. A semantics-preserving rewrite like fix-irreducible: the C program runs exactly the
-// arm whose object the select names. A select whose condition is quantum (or a fat pointer) is rule 21's fat pointer
-// and is left to fatptr. Returns the functions changed.
-SmallVector<Function *, 4> splitClassicalPointerSelects(Module &M, const cq::TaintInfo &T,
-                                                        ArrayRef<Function *> tainted) {
-  SmallVector<Function *, 4> changed;
-  LLVMContext &C = M.getContext();
-  // The select an access's address is computed from (through GEPs and casts), and that chain, outermost last.
-  auto selectOf = [](Value *p, SmallVectorImpl<Instruction *> &chain) -> SelectInst * {
-    chain.clear();
-    for (unsigned guard = 0; guard < 32; ++guard) {
-      if (auto *S = dyn_cast<SelectInst>(p))
-        return S->getType()->isPointerTy() ? S : nullptr;
-      if (auto *G = dyn_cast<GetElementPtrInst>(p)) {
-        chain.push_back(G);
-        p = G->getPointerOperand();
-        continue;
-      }
-      if (auto *B = dyn_cast<BitCastInst>(p); B && B->getType()->isPointerTy()) {
-        chain.push_back(B);
-        p = B->getOperand(0);
-        continue;
-      }
-      return nullptr;
-    }
-    return nullptr;
-  };
-  for (Function *F : tainted) {
-    SmallVector<const cq::Specialization *, 4> specs;
-    for (const cq::Specialization &S : T.specializations())
-      if (S.F == F)
-        specs.push_back(&S);
-    if (specs.empty())
-      continue;
-    // Several objects, one of them a slot object, chosen by a classical condition in every specialization.
-    auto splits = [&](SelectInst *S) {
-      bool many = false;
-      for (const cq::Specialization *Sp : specs) {
-        if (T.isQuantum(S->getCondition(), *Sp) || T.isFatPointer(S, *Sp) || T.isQuantum(S, *Sp))
-          return false;
-        ArrayRef<cq::ObjectId> objs = T.provenance(S, *Sp);
-        bool slot = any_of(objs, [&](cq::ObjectId o) { return T.classOf(o) == cq::ObjClass::Slot; });
-        many |= objs.size() >= 2 && slot;
-      }
-      return many;
-    };
-    bool any = false;
-    for (bool again = true; again;) {
-      again = false;
-      for (BasicBlock &BB : *F) {
-        for (Instruction &I : BB) {
-          if (isa<PHINode>(I) || isa<DbgInfoIntrinsic>(I))
-            continue;
-          if (auto *II = dyn_cast<IntrinsicInst>(&I); II && (II->isLifetimeStartOrEnd() || II->isAssumeLikeIntrinsic()))
-            continue;
-          auto *CB = dyn_cast<CallBase>(&I);
-          if (CB && (CB->isMustTailCall() || CB->hasOperandBundles() || isa<InvokeInst>(CB) || isa<CallBrInst>(CB)))
-            continue;
-          // The operand the access reads its address from: a load's, store's or atomic's pointer, a call's argument.
-          SmallVector<unsigned, 4> ops;
-          if (isa<LoadInst>(I))
-            ops.push_back(0);
-          else if (isa<StoreInst>(I) || isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I))
-            ops.push_back(isa<StoreInst>(I) ? 1 : 0);
-          else if (CB)
-            for (unsigned k = 0; k < CB->arg_size(); ++k)
-              if (CB->getArgOperand(k)->getType()->isPointerTy())
-                ops.push_back(k);
-          SmallVector<Instruction *, 4> chain;
-          SelectInst *S = nullptr;
-          unsigned opNo = 0;
-          for (unsigned k : ops)
-            if ((S = selectOf(I.getOperand(k), chain)) && splits(S)) {
-              opNo = k;
-              break;
-            } else {
-              S = nullptr;
-            }
-          if (!S)
-            continue;
-          // BB: ... br c, T, F;  T: chain(arm t), I(t);  F: chain(arm f), I(f);  Tail: phi, rest of BB.
-          BasicBlock *Tail = BB.splitBasicBlock(I.getIterator(), BB.getName() + ".cq.sel");
-          BasicBlock *TB = BasicBlock::Create(C, BB.getName() + ".cq.sel.t", F, Tail);
-          BasicBlock *FB = BasicBlock::Create(C, BB.getName() + ".cq.sel.f", F, Tail);
-          BB.getTerminator()->eraseFromParent();
-          BranchInst::Create(TB, FB, S->getCondition(), &BB);
-          Instruction *arms[2];
-          for (unsigned a = 0; a < 2; ++a) {
-            BasicBlock *AB = a ? FB : TB;
-            IRBuilder<> B(AB);
-            Value *addr = a ? S->getFalseValue() : S->getTrueValue();
-            for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
-              Instruction *X = (*it)->clone();
-              X->setOperand(0, addr);
-              B.Insert(X);
-              addr = X;
-            }
-            Instruction *X = I.clone();
-            X->setOperand(opNo, addr);
-            if (!I.getName().empty())
-              X->setName(I.getName() + (a ? ".f" : ".t"));
-            B.Insert(X);
-            B.CreateBr(Tail);
-            arms[a] = X;
-          }
-          if (!I.getType()->isVoidTy()) {
-            PHINode *phi = PHINode::Create(I.getType(), 2, "", Tail->begin());
-            phi->addIncoming(arms[0], TB);
-            phi->addIncoming(arms[1], FB);
-            phi->takeName(&I);
-            I.replaceAllUsesWith(phi);
-          }
-          I.eraseFromParent();
-          for (Instruction *X : chain)
-            if (X->use_empty())
-              X->eraseFromParent();
-          if (S->use_empty())
-            S->eraseFromParent();
-          any = again = true;
-          break;
-        }
-        if (again)
-          break;
-      }
-    }
-    if (any)
-      changed.push_back(F);
-  }
-  return changed;
-}
-
 // The CQ.h surface: cq_theta_*, cq_measure_*, cq_phi, __cq_invert_begin, __cq_invert_end.
 // cq-jkq8: one return block per tainted function, the same kind of rewrite as fix-irreducible (CR rule 14:
 // a semantics-preserving CFG rewrite before the final taint; §6 compares semantics, never CFG shape). Each
@@ -449,6 +201,14 @@ bool isCqSurface(StringRef name) {
          name == "__cq_invert_begin" || name == "__cq_invert_end";
 }
 
+// Q2 (c): a reference to a declared clone of a linked lowered library.
+bool referencesDeclaredClone(const Module &M) {
+  for (const Function &F : M)
+    if (F.isDeclaration() && F.getName().starts_with("__cq_q_"))
+      return true;
+  return false;
+}
+
 // True iff some call site calls a CQ.h surface function directly (owner ruling 2 on cq-arch). Only
 // a CallBase whose callee operand is the function counts: a declaration, a store of the address, an
 // @llvm.used entry, a constant expression or the function passed as a call argument does not.
@@ -482,16 +242,7 @@ std::vector<const cq::Specialization *> constructionOrder(const cq::TaintInfo &T
           if (auto *CB = dyn_cast<CallBase>(&I);
               CB && CB->getCalledFunction() && !CB->getCalledFunction()->isDeclaration() && !CB->isInlineAsm())
             if (const cq::Specialization *C = T.calleeSpecialization(*CB, S); C && C != &S) {
-              // M2 through a call (mem-qram noteCalleeQramStores): a clone handed a QRAM triple by a clone is built
-              // first, so its caller reads the widths of the index rails it returns from its body.
-              bool qramTriple = false;
-              if (!C->isEntry() && !S.isEntry() && C->F == CB->getCalledFunction())
-                for (unsigned i = 0; i < CB->arg_size() && i < C->F->arg_size(); ++i)
-                  if (CB->getArgOperand(i)->getType()->isPointerTy()) {
-                    cq::PtrFormal pf = T.pointerFormal(*C, i);
-                    qramTriple |= pf.abi != cq::PtrAbi::Raw && pf.pointee == cq::ObjClass::Qram;
-                  }
-              if (C->isEntry() || qramTriple)
+              if (C->isEntry())
                 visit(*C);
             }
     state[&S] = 2;
@@ -507,7 +258,7 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
     cq::TaintOptions TO = readTaintOptions();
     // Read before the identity exit so a malformed flag fails on every module.
     cq::loops::KOptions KO = readKOptions();
-    if (TO.roots.empty() && !callsCqSurface(M))
+    if (TO.roots.empty() && !callsCqSurface(M) && !referencesDeclaredClone(M))
       return PreservedAnalyses::all();
 
     FunctionAnalysisManager &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
@@ -532,30 +283,10 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
           Tainted.push_back(&F);
     }
 
-    // 1b'. CR rules 20, 21 (cq-utb8): an access through a classical pointer select over several objects as one
-    // access per object under its classical guard. The steps below read taint on the split functions, so it is
-    // recomputed when anything was split (as 1b's); the CFG change is final-taint input.
-    if (SmallVector<Function *, 4> SP = splitClassicalPointerSelects(M, T, Tainted); !SP.empty()) {
-      for (Function *F : SP) {
-        trace("classical pointer selects: split @" + F->getName());
-        FAM.invalidate(*F, PreservedAnalyses::none());
-      }
-      CFGChanged = true;
-      T = cq::TaintInfo();
-      T = cq::computeTaint(M, TO);
-      Tainted.clear();
-      for (Function &F : M)
-        if (!F.isDeclaration() && T.isTainted(F))
-          Tainted.push_back(&F);
-    }
-
-    // 1c. CR rule 24 (eff-conc, Setjmp.h), in tainted functions: atomic read-modify-writes through fat
-    // pointers as the plain load + op + store, the thread calls as the sequential schedule, then (it may
-    // erase originals, so T is read before) setjmp/longjmp as explicit control flow with its escape clones.
+    // 1c. CR rule 24 (eff-conc, Setjmp.h), in tainted functions: the thread calls as the sequential schedule, then
+    // (it may erase originals, so T is read before) setjmp/longjmp as explicit control flow with its escape clones.
     // Their CFG changes are final-taint input.
     SmallPtrSet<Function *, 8> changed;
-    for (Function *F : cq::conc::collapseFatAtomics(M, T))
-      changed.insert(F);
     for (Function *F : cq::conc::collapseThreads(M, T))
       changed.insert(F);
     for (Function *F : cq::conc::explicitSetjmp(M, T))   // may erase originals: compared, never read
@@ -583,15 +314,6 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
       trace("rule 17 marker paths: changed @" + F->getName());
       CFGChanged = true;
       FAM.invalidate(*F, PreservedAnalyses::none());
-    }
-
-    // 1e. CR rule 18 (cq-aqk1, cq-366o): one pointer handed to two pointer formals of a callee writing through
-    // them is a call of the callee's alias variant. New functions: final-taint input.
-    if (SmallVector<Function *, 4> AV = mergeAliasedPointerArgs(M, T, Tainted); !AV.empty()) {
-      trace("aliased pointer arguments: merged");
-      CFGChanged = true;
-      for (Function *F : AV)
-        Tainted.push_back(F);
     }
 
     // 2. Reducible control flow, on tainted functions only (NORTHSTAR principle 1). The pass
@@ -637,7 +359,6 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
 
     // 4. The general construction, once per specialization. The CFG is final from here on.
     trace("construct");
-    cq::mem::m2KOptions() = &KO;   // M2's trip counts of K-loops (mem-qram formalQramStores)
     for (const cq::Specialization *S : constructionOrder(Final))
       cq::construct(M, Final, *S, KO);
 

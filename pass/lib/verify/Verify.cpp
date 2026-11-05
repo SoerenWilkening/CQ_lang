@@ -4,25 +4,6 @@
 // -passes=cq-verify) and fails with report_fatal_error listing every violation, each line naming its
 // check and the offending instruction. The checks:
 //
-//   free-without-unc            a cqrt_free whose rail is in no known basis state: neither returned to
-//                               |0> by its producer's _unc (or a clone twin) nor a seed (CR §0, rules 5, 7)
-//   use-after-free              a use of a handle after its cqrt_free / cqrt_qram_free
-//   inplace-on-frozen           a rotated rail reverse-played: the result rail of an _unc was rotated
-//                               (rule 10: frozen, never reverse-played); or a rotation of a measured rail
-//                               (CR §1.3). copy, xorc and not_i1 on a rotated rail are CR's own (rules 6,
-//                               10, 8) and are not violations.
-//   unc-operand-mismatch        an _unc (template, QRAM core, clone twin) whose operands differ from its
-//                               forward call (CR §1.2, §1.3, §1.4)
-//   handle-in-classical-op      a handle reaching a classical instruction or a classical operand slot
-//                               (a zext feeding only the return is rule 19's wide return, 193)
-//   classical-control-on-taint  a br / switch / select condition computed from a handle
-//   unwritten-measurement       a cqrt_measure the source did not write: a second measurement of a rail
-//                               already measured on every path (rule 2: a re-measurement is a classical
-//                               re-read, never a second call); and, outside reference mode, the
-//                               provenance marker (cq-arch V1): a cqrt_measure_<W> without !cq.measure, a
-//                               !cq.measure that is not the uniqued empty tuple, or one on any other
-//                               instruction. Reference mode (cq-verify<reference>) ignores the marker.
-//
 // Handles are recognised from ABI call results and operand slots (abi::parse*), closed over
 // phi/select/freeze. The rail checks are a forward must-analysis: a rail's state is the set of states
 // it may be in at a program point (known basis, measured, dirty, rotated, freed); a check fires only
@@ -404,11 +385,10 @@ private:
   // the forward call may be the _pure spelling or not.
   bool isForwardOf(const CallBase &CB, const abi::CloneSpec &Twin) {
     const Sig &S = Sigs.get(CB);
-    if (S.kind != Kind::Clone || S.unc || !S.clone->inv.empty())
+    if (S.kind != Kind::Clone || S.unc)
       return false;
     const abi::CloneSpec &C = *S.clone;
-    return C.fn == Twin.fn && C.mask == Twin.mask && C.bounds == Twin.bounds && C.ctl == Twin.ctl &&
-           C.depth == Twin.depth;
+    return C.fn == Twin.fn && C.mask == Twin.mask && C.bounds == Twin.bounds && C.ctl == Twin.ctl;
   }
 
   bool isForwardCloneResult(const Value *V, const abi::CloneSpec &Twin) {
@@ -483,15 +463,6 @@ private:
       return;
     }
     if (Sg && Sg->kind == Kind::Clone) {
-      // cq-xivx (CR §1.4 _inv<c>): the clone copies f_c^-1 of the cell's new content onto the trailing old
-      // rails (one per cell of the group), returning each to |0>.
-      if (!Sg->clone->inv.empty() && !Sg->unc) {
-        unsigned n = Sg->clone->inv.size();
-        for (unsigned i = CB->arg_size() >= n ? CB->arg_size() - n : 0; i < CB->arg_size(); ++i)
-          if (H.count(CB->getArgOperand(i)))
-            set(S, CB->getArgOperand(i), SK);
-        return;
-      }
       if (Sg->unc)
         for (const Value *V : CB->args())
           if (H.count(V) && originsAny(V, [&](const Value *R) { return isForwardCloneResult(R, *Sg->clone); }))
@@ -738,50 +709,6 @@ private:
           report("unc-operand-mismatch",
                  anyFwd ? Twine("operands differ from the forward call of @") + S.fwd
                         : Twine("result operand is not produced by @") + S.fwd,
-                 I);
-        continue;
-      }
-      if (S.kind == Kind::Core && S.core->op == abi::Core::QramStore) {
-        bool matched = false;
-        for (const CallBase *Fwd : callsTo[S.fwd])
-          if (Fwd->arg_size() == CB->arg_size() && argsMatch(*Fwd, *CB, 0, &Sigs.get(*Fwd)))
-            matched = true;
-        bool opaque = false;
-        for (unsigned i = 0; i < CB->arg_size(); ++i)
-          if (H.count(CB->getArgOperand(i)))
-            for (const Value *R : origins(CB->getArgOperand(i)))
-              opaque |= !traceable(R);
-        if (!matched && !opaque)
-          report("unc-operand-mismatch", Twine("no forward @") + S.fwd + " with these operands", I);
-        continue;
-      }
-      if (S.kind == Kind::Core && S.core->op == abi::Core::QramRealloc) {
-        // _unc(a', n_old): a' is a realloc result and n_old the size its input object had.
-        bool matched = false, opaque = false, anyFwd = false;
-        for (const Value *R : origins(CB->getArgOperand(0))) {
-          const CallBase *Fwd = asCallTo(R, S.fwd);
-          if (!Fwd) {
-            opaque |= !traceable(R);
-            continue;
-          }
-          anyFwd = true;
-          for (const Value *R2 : origins(Fwd->getArgOperand(0))) {
-            auto *Prev = dyn_cast<CallBase>(R2);
-            const Sig *PS = Prev ? &Sigs.get(*Prev) : nullptr;
-            if (!PS || PS->kind != Kind::Core ||
-                (PS->core->op != abi::Core::QramAlloc && PS->core->op != abi::Core::QramRealloc)) {
-              matched = true;  // the old size is not visible here
-              continue;
-            }
-            const Value *N = Prev->getArgOperand(PS->core->op == abi::Core::QramAlloc ? 0 : 1);
-            if (sameClassical(N, CB->getArgOperand(1)))
-              matched = true;
-          }
-        }
-        if (!matched && !opaque)
-          report("unc-operand-mismatch",
-                 anyFwd ? Twine("old size differs from the size of the object @") + S.fwd + " resized"
-                        : Twine("bus operand is not produced by @") + S.fwd,
                  I);
         continue;
       }

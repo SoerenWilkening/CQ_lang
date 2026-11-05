@@ -9,8 +9,6 @@ the same answer) is compared with name.lowered.ll:
            specialization);
   entries  a function present in both files has an in-place specialization iff the reference
            rewrote its body (comments, attribute groups and metadata ignored);
-  qram     the QRAM allocation count equals the reference's cqrt_qram_alloc_* call sites;
-  qrom     the QROM load count equals the reference's cq_template_qrom_load_* call sites.
 
 A computeTaint that stops (cq: unimplemented / internal error) is a failure of that example.
 
@@ -84,18 +82,16 @@ def expected(ex):
     clones = {f for f in set(ld) | ldecl if f.startswith('__cq_q_') and not f.endswith('_unc')}
     rewritten = {f for f in od if f in ld and norm_body(od[f]) != norm_body(ld[f])}
     kept = {f for f in od if f in ld}
-    qram = len(re.findall(r'call [^\n]*@cqrt_qram_alloc_', ltxt))
-    qrom = len(re.findall(r'call [^\n]*@cq_template_qrom_load_[^\s(]*(?<!_unc)\(', ltxt))
-    return o1, clones, rewritten, kept, qram, qrom
+    return o1, clones, rewritten, kept
 
 
 def run(dump, ex):
-    o1, clones, rewritten, kept, qram, qrom = expected(ex)
+    o1, clones, rewritten, kept = expected(ex)
     p = subprocess.run([dump, str(o1)], capture_output=True, text=True)
     if p.returncode != 0:
         err = (p.stderr.strip().splitlines() or ['exit %d' % p.returncode])
         return ex.name, ['stopped: ' + ' | '.join(err[:2])], ''
-    got_clones, got_entries, got_qram, got_qrom = set(), set(), 0, 0
+    got_clones, got_entries = set(), set()
     for line in p.stdout.splitlines():
         m = re.match(r'cq-taint: spec (\S+) fn=@(\S+) .* entry=(\d)', line)
         if m:
@@ -103,10 +99,6 @@ def run(dump, ex):
                 got_entries.add(m.group(2))
             else:
                 got_clones.add(m.group(1))
-        if line.startswith('cq-taint: qram-alloc'):
-            got_qram += 1
-        if line.startswith('cq-taint: qrom'):
-            got_qrom += 1
     reasons = []
     if got_clones != clones:
         reasons.append('clones: missing %s extra %s' % (sorted(clones - got_clones),
@@ -115,10 +107,6 @@ def run(dump, ex):
     if got_rew != rewritten:
         reasons.append('entries: reference rewrote %s, taint says %s' % (sorted(rewritten),
                                                                           sorted(got_rew)))
-    if got_qram != qram:
-        reasons.append('qram: reference %d, taint %d' % (qram, got_qram))
-    if got_qrom != qrom:
-        reasons.append('qrom: reference %d, taint %d' % (qrom, got_qrom))
     return ex.name, reasons, p.stdout
 
 
@@ -129,7 +117,9 @@ def main():
     ap.add_argument('-v', action='store_true')
     ap.add_argument('examples', nargs='*')
     a = ap.parse_args()
-    exs = sorted(p for p in (Path(a.spec) / 'examples').iterdir() if p.is_dir())
+    # Until the bus constructions land (W3+), the examples the flat-memory cut keeps lowering.
+    nonbus = set((ROOT / 'tests' / 'nonbus_examples.txt').read_text().split())
+    exs = sorted(p for p in (Path(a.spec) / 'examples').iterdir() if p.is_dir() and p.name in nonbus)
     if a.examples:
         exs = [e for e in exs if e.name.split('_')[0] in a.examples or e.name in a.examples]
     with ThreadPoolExecutor(8) as pool:

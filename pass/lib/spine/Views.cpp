@@ -29,14 +29,6 @@
 //    the narrow operand (no gate). An icmp eq/ne whose operands are views, skipped or classical zexts
 //    or constants is lowered at width M: ne at i1 is xor_i1 (113's `q2 ^= q1`), any other is
 //    icmp_<pred>_iM; rule 6 reads a narrowed xor's narrow operands (Shared::narrowXor).
-//  - Cell view (cq-nd2i). A quantum load of a _Bool slot cell (boolCellAccess) is a narrow value of
-//    width 1: an icmp eq/ne reading it narrows (114's q[m-1] ^= q[m-2] is xor_i1 of the two cells'
-//    rails). At the compare the load is registered as a view of its cell's i1 rail (View::cell): the
-//    rail mem-slots bound it to, or the operand of the zext_i1_to_i8 mem-slots took at the load for an
-//    i8 reader when the compare is in the load's output block with no rotation of the rail since the
-//    load, else a trunc_i8_to_i1 of that zext's rail taken at the compare (it holds the loaded value).
-//    A cell view never takes part in a view phi. A classical
-//    _Bool cell load is read narrow as its trunc to i1.
 //
 //  Packed integers (cq-0umd; CR rules 26 and 3: -O1's ABI coercion of struct { int, int } to one i64
 //  in 159 and 166 is classical arithmetic on the coercion and emits no gate).
@@ -96,50 +88,7 @@ const ZExtInst *intZext(const Value *v) {
 
 bool registerState(Shared &sh, const Value *n) { return sh.statePreps.count(n) || sh.views.count(n); }
 
-// A load of a _Bool slot cell (rule 20, cq-sj2j): an i8 whose cell holds an i1 rail (cq-nd2i).
-bool boolLoad(LoweringContext &ctx, const Value *v) {
-  auto *ld = dyn_cast<LoadInst>(v);
-  return ld && ld->getType()->isIntegerTy(8) && boolCellAccess(ctx, *ld);
-}
 
-// Registers the quantum _Bool cell load L, read by a narrowed compare, as a cell view of its i1 rail
-// (cq-nd2i). mem-slots binds L to the rail itself, or (an i8 reader) to a zext_i1_to_i8 of it taken at
-// the load: the view names the zext's operand when that rail was not rotated since the load, else a
-// trunc of the zext's rail (the compare reads the loaded value, not the rotated register).
-void cellView(LoweringContext &ctx, const LoadInst &L) {
-  Shared &sh = shared(ctx);
-  if (sh.views.count(&L))
-    return;
-  Operand o = ctx.operand(&L);
-  if (!o.handle)
-    return;
-  Value *h = o.v;
-  auto hi = sh.hist.find(o.v);
-  if (hi != sh.hist.end() && hi->second.tmpl && hi->second.orig == &L) {
-    const RailHist &r = hi->second;
-    if (r.spec.op != "zext" || r.spec.w.kind != Kind::Int || r.spec.w.bits != 1 || !r.spec.to ||
-        r.spec.to->kind != Kind::Int || r.spec.to->bits != 8 || r.ops.size() != 1 || !r.ops.front().handle)
-      internalError("spine: a _Bool cell load bound to a rail that is not the cell's or its zext_i1_to_i8", &L);
-    h = r.ops.front().v;
-    CallInst *def = r.def;
-    // The cell's rail h holds the loaded value at the compare when nothing rotated it since the load,
-    // which is read on the output IR: the load's zext and the compare in one block, no rotation of h
-    // between them. Otherwise the zext's rail z (zext_i1_to_i8 of h at the load) still holds it: the
-    // view names trunc_i8_to_i1(z), a fresh rail (rule 4; rule 3: the bit the zext moved).
-    bool rotatedSince = !def || def->getParent() != sh.B.GetInsertBlock();
-    if (auto rt = sh.rotations.find(h); rt != sh.rotations.end() && !rotatedSince)
-      for (CallInst *g : rt->second)
-        rotatedSince |= g->getParent() == def->getParent() && def->comesBefore(g);
-    if (rotatedSince) {
-      abi::TemplateSpec spec;
-      spec.op = "trunc";
-      spec.w = RailType{Kind::Int, 8};
-      spec.to = RailType{Kind::Int, 1};
-      h = ctx.emitTemplate(spec, {o}, nullptr);
-    }
-  }
-  sh.views[&L] = Shared::View{h, 1, true};
-}
 
 // Every incoming of P has a narrow value of one width M < N (constants fit it). 0: no.
 unsigned phiWidth(Shared &sh, const PHINode &P) {
@@ -194,8 +143,6 @@ bool icmpOperandNarrows(LoweringContext &ctx, const Value *w, unsigned M,
     return fits(c, M);
   if (auto it = sh.views.find(w); it != sh.views.end())
     return it->second.bits == M;
-  if (boolLoad(ctx, w))
-    return M == 1;
   const ZExtInst *z = intZext(w);
   if (!z || widthOf(z->getOperand(0)) != M)
     return false;
@@ -247,12 +194,6 @@ Operand narrowOperand(LoweringContext &ctx, const Value *w, unsigned M) {
     return Operand{it->second.rail, true};
   if (const ZExtInst *z = intZext(w))
     return ctx.operand(z->getOperand(0));
-  if (boolLoad(ctx, w)) {
-    Operand o = ctx.operand(w);
-    if (o.handle)
-      internalError("spine: a quantum _Bool cell load narrowed with no cell view", w);
-    return Operand{sh.B.CreateTrunc(o.v, IntegerType::get(ctx.M.getContext(), 1)), false};   // its value is 0 or 1
-  }
   internalError("spine: narrowOperand of a value with no narrow form", w);
 }
 
@@ -263,8 +204,6 @@ bool narrowsNow(LoweringContext &ctx, const Value *w, unsigned M) {
     return fits(c, M);
   if (auto it = sh.views.find(w); it != sh.views.end())
     return it->second.bits == M;
-  if (boolLoad(ctx, w))
-    return M == 1;
   const ZExtInst *z = intZext(w);
   if (!z || widthOf(z->getOperand(0)) != M)
     return false;
@@ -449,9 +388,7 @@ bool lowerNarrow(LoweringContext &ctx, Instruction &I) {
   for (const Value *w : {a, b}) {
     unsigned m = 0;
     if (!narrowValue(sh, w, m)) {
-      if (!boolLoad(ctx, w))
-        return false;
-      m = 1;   // a _Bool cell's i8 (cq-nd2i)
+      return false;
     }
     if (m && M && m != M)
       return false;
@@ -465,12 +402,8 @@ bool lowerNarrow(LoweringContext &ctx, Instruction &I) {
     return false;
   }
   // Narrow only what has no wide rail: a view, a skipped zext or a _Bool cell load among the operands.
-  bool cells = boolLoad(ctx, a) || boolLoad(ctx, b);
-  if (!skipped && !cells && !sh.views.count(a) && !sh.views.count(b))
+  if (!skipped && !sh.views.count(a) && !sh.views.count(b))
     return false;
-  for (const Value *w : {a, b})
-    if (boolLoad(ctx, w))
-      cellView(ctx, *cast<LoadInst>(w));
   Operand x = narrowOperand(ctx, a, M), y = narrowOperand(ctx, b, M);
   if (!x.handle && y.handle)
     std::swap(x, y);   // eq/ne are symmetric: the handle first
