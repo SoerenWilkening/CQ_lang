@@ -564,7 +564,7 @@ std::optional<CloneSpec> parseCloneImpl(StringRef sym) {
   if (n && t[n - 1] == "unc") { s.unc = true; --n; }
   if (n && t[n - 1] == "pure") { s.pure = true; --n; }
   if (n && t[n - 1] == "ctl") { s.ctl = true; --n; }
-  if (n > 1 && t[n - 1] == "t" && isMask(t[n - 2])) { s.table = true; --n; }
+  if (n > 1 && t[n - 1] == "t" && (isMask(t[n - 2]) || t[n - 2] == "v")) { s.table = true; --n; }
   if (n == 0)
     return std::nullopt;
   // Bounds: "<mask>_b<N>{_<N>}". Walk back over all-digit tokens to a "b<N>" token preceded by a mask.
@@ -586,7 +586,7 @@ std::optional<CloneSpec> parseCloneImpl(StringRef sym) {
     }
     maskAt = k - 2;
   }
-  if (!isMask(t[maskAt]))
+  if (!isMask(t[maskAt]) && t[maskAt] != "v")   // §1.4: `v`, a function with no scalar formal
     return std::nullopt;
   s.mask = t[maskAt].str();
   std::string fn;
@@ -834,7 +834,7 @@ std::optional<CoreSpec> parseCore(llvm::StringRef sym) {
 std::string name(const CloneSpec &s) {
   if (s.fn.empty())
     internalError("abi: clone spec: empty function name");
-  if (!isMask(s.mask))
+  if (!isMask(s.mask) && s.mask != "v")   // §1.4: `v`, a function with no scalar formal
     internalError("abi: clone spec: mask '" + s.mask + "' is not binary digits");
   return cloneName(s);
 }
