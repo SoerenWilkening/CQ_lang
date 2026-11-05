@@ -127,6 +127,14 @@ class FlatDrivers(unittest.TestCase):
             t, low = o.read_text(), Path(str(o).replace(".O1.ll", ".lowered.ll")).read_text()
             self.assertEqual({n for n, _, _ in D.writable_globals(t)} - {n for n, _, _ in D.writable_globals(low)}, set(), name)
 
+    def test_effect_callees_hidden(self):
+        # a `declare hidden` libc internal with no body is a stand-in; other `__` names stay real
+        t = ('declare hidden i32 @__private_cond_signal(ptr noundef, i32 noundef) local_unnamed_addr #6\n'
+             'declare i32 @__muldc3(i32)\ndeclare hidden ptr @__cq_alloc(i64, i64)\ndeclare hidden void @__stack_chk_fail()\n')
+        c = D.effect_callees(t)
+        self.assertEqual(sorted(c), ["__private_cond_signal"])
+        self.assertEqual(c["__private_cond_signal"][1], "i32")
+
     def test_effect_callees(self):
         t = ('declare i32 @putchar(i32 noundef)\ndeclare noalias ptr @malloc(i64)\ndeclare i64 @"\\01_fwrite"(ptr noundef, i64, i64, ptr)\n'
              'declare double @sin(double)\ndeclare i32 @printf(ptr, ...)\ndeclare i32 @ext(i32)\ndeclare i32 @rooted(i32)\ndeclare void @llvm.foo(i32)\n'

@@ -515,7 +515,8 @@ def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[in
     bundle = bundle_for(text)
     kf = _k_flags(k, k_default)
     from . import drivers as _drv
-    key = hashlib.sha256("\0".join([text, SRC_KEY, *kf, *sorted(defined), *sorted(_drv.corpus_roots())] + ([bundle_key(bundle)] if bundle else [])).encode()).hexdigest()[:20]
+    key = hashlib.sha256("\0".join([text, SRC_KEY, *kf, *sorted(defined), *sorted(_drv.corpus_roots()),
+                                   *sorted(_drv.effect_callees(text, frozenset(defined) | _drv.corpus_roots()))] + ([bundle_key(bundle)] if bundle else [])).encode()).hexdigest()[:20]
     triple = _triple(text)
 
     def fill(d: Path) -> None:
