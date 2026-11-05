@@ -302,7 +302,8 @@ def main(argv) -> int:
             objs = [p for p in o["inputs"] if p.suffix in LINK_SUFFIXES]
             # Rulings Q7: the host symbols are one runtime object linked after the pass, never lowered; only when the
             # lowered module asks for one (a module the pass left as it was needs no bus and no backend).
-            if nm(lowered, ["--undefined-only"], "llvm-nm of the lowered module", tmp) & HOST_SYMBOLS:
+            undefined = nm(lowered, ["--undefined-only"], "llvm-nm of the lowered module", tmp)
+            if {n.removeprefix("_") for n in undefined} & HOST_SYMBOLS:   # Mach-O spells C names with a leading _
                 host_obj = tmp / "cq_host.o"
                 run([tool("clang"), "-O1", "-c", HOST_SOURCE, "-o", host_obj], "clang -c of bundle/host/cq_host.c")
                 objs.insert(0, host_obj)
