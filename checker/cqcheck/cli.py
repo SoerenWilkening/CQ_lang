@@ -61,7 +61,9 @@ def _one(ex: report.Example, ours_dir: Optional[Path], oracle: str) -> Verdict:
             ours = report.ours_path(ex, ours_dir)
         except FileNotFoundError as e:
             return report.evaluate(ex, None, oracle, lower_error=str(e))
-        return report.evaluate(ex, ours, oracle, diff_out=diff_out)
+        # tools/ref_as_ours.py's tree holds references: cq-verify<reference>, and no short circuit
+        as_ref = (ours_dir / "REFERENCE").exists()
+        return report.evaluate(ex, ours, oracle, diff_out=diff_out, reference_mode=as_ref, short_circuit=not as_ref)
     lowered, err = report.lower(ex, store / "ours" / ex.name / f"{ex.base}.lowered.ll")
     return report.evaluate(ex, lowered, oracle, lower_error=err, diff_out=diff_out)
 

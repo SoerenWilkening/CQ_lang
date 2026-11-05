@@ -9,7 +9,7 @@ injection bundle), `lowered` its lowering, `entry` the function both run from. T
 the C program only (CLAUDE.md "The §6 checker", oracle (b)); there is no reference.
 
 Inputs. A program has no drivers.txt line, so nothing says which entry arguments are quantum: every
-argument of the entry is classical (a handle-cell object aside, below), and the quantum inputs are
+argument of the entry is classical, and the quantum inputs are
 the values reaching the program's cq_theta sites (CR §6 item 1, "each cq_theta input replaced by a chosen bit pattern"). Both sides
 take the same sampled basis value at each reach of a site: the sample's "subst" (cq-arch Z4) is what
 cq_theta returns in the C oracle and what the evaluator's firing Ry leaves on its target (run.py's
@@ -26,21 +26,12 @@ CQ_spec checkout (`_tools/drivers.txt`, `examples/00_user_<entry>/<base>.O1.ll`)
 sampling reads it (Z1.1). The prototype spells each IR parameter type as the C type with the same
 calling convention (iN with signext/zeroext as the signed/unsigned C integer, half/float/double/
 x86_fp80, ptr as void *); the baseline argument is 0. A pointer parameter gets a driver object of its
-own, a zeroed 4096-byte, 16-aligned static array (sampling never varies a pointer). An IR shape with
+own, a zeroed 4096-byte, 16-aligned static array (sampling never varies a pointer). When memory it points
+to flows into a cq_theta (drivers.quantum_params; a `bool *` to the caller's registers, example 60), its
+first FILL_ELEMENTS elements are quantum inputs as a drivers.txt fill is (drivers.py "Driver objects"), of
+the C type the entry loads through it (`_Bool` for an i8 whose loads are all `trunc nuw` to i1). An IR shape with
 no such C spelling (byval, sret, a struct or vector parameter, an internal entry) is an internal
 error of the checker, `cq: unimplemented: usercheck: ...`.
-
-A pointer parameter the lowered entry reads as handle cells (an i32 loaded through it reaches a
-rail operand of a cqrt_* or cq_template_* call, a template's `l` shape positions excluded, directly or through a defined callee: a `bool *` to the caller's
-quantum registers, CR rule 20, example 60) gets instead an object of HANDLE_CELLS seeded handles,
-`static int cqu_objJ[HANDLE_CELLS]` with every cell `cqrt_alloc_iW(0)` in the setup, as 60's
-drivers.txt line does (cq-sujz decision 1). The cells are quantum inputs (cq-rbe6): drivers.py's
-handle cells, varied by every quantum class of the sampling, the lowered side holding rails at the
-sampled values and the C program reading them as its own element type. W is the width of the cqrt
-operation the handles reach.
-The object is 4 * HANDLE_CELLS bytes on both sides: a C element narrower than the 4-byte cell (60's
-bool) leaves indices HANDLE_CELLS .. 4 * HANDLE_CELLS / sizeof - 1 inside the C program's domain but
-past the lowered side's cells (a gap, bead cq-562f).
 
 The baseline call (every argument 0) is made up, not spec data: it is filtered by the C program's
 domain like every other sample (sampling.sample_set(..., exempt_baseline=False), cq-sujz decision 2),
@@ -78,10 +69,9 @@ from cqcheck.contracts import DriverSpec
 PASS_STATUS, FAIL_STATUS, ERROR_STATUS = 0, 1, 2
 MAIN_RENAMED = "__cqu_main"
 OBJ_BYTES = 4096
-HANDLE_CELLS = 64     # seeded handle cells behind a pointer the lowered entry reads handles through
+FILL_ELEMENTS = 64    # the quantum inputs behind a pointer parameter (module docstring)
 # compare._match_c's reason when its order-consistent search runs out of its node budget (cq-sujz)
 _OUT_OF_BUDGET = re.compile(r"exceeded \d+ search nodes without an order-consistent matching")
-_ALLOC_C = {1: "_Bool", 8: "signed char", 16: "short", 32: "int"}   # cqrt_alloc_i<W>'s parameter
 SUBSET_SEED = 20261028
 DEFAULT_JOBS = 4      # runner processes when $CQCHECK_JOBS is unset (machine load, CLAUDE.md memory)
 
@@ -197,176 +187,6 @@ def entry_prototype(o1_text: str, fn: str) -> Tuple[str, List[str]]:
 
 
 # ------------------------------------------------------------------------------------------------
-# Handle cells: a pointer parameter the lowered entry reads quantum handles through
-
-
-_WIDTH = re.compile(r"_i(\d+)(?![0-9])")
-ANY_WIDTH = -1        # a rail operand of any width (cqrt_free, a template whose name gives none)
-_TW = r"(i\d+|f\d+|bf16)"
-
-
-def _w(t: str) -> int:
-    """A rail width from an ABI type suffix: iN its N; an fp rail 0 (no cell is seeded with one)."""
-    return int(t[1:]) if t.startswith("i") else 0
-
-
-def _core_widths(name: str, nargs: int) -> List[Optional[int]]:
-    """Per argument of `@cqrt_<name>`, its rail width (0: a rail no cell is seeded with, an f64
-    angle or an index of unstated width; ANY_WIDTH: any) or None (no rail: a classical literal,
-    angle, size, pointer or word, a QRAM bus or a tape), by the signatures of BACKEND_ABI.md §1."""
-    m = re.fullmatch(r"(alloc_.*|qram_alloc_.*|qram_realloc_.*|qram_free|qram_size|tape_alloc|tape_fmt|push|pop"
-                     r"|tape_write_.*_lit|tape_write_str_lit|tape_str_begin|tape_str_end"
-                     r"|clone_register|clone_resolve)", name)
-    if m:
-        return [None] * nargs                                   # alloc(lit), push(w): "Rails. None"
-    if name == "free":
-        return [ANY_WIDTH]
-    m = re.fullmatch(r"measure_" + _TW, name)
-    if m:
-        return [_w(m.group(1))]
-    m = re.fullmatch(r"ry_" + _TW + r"(_qangle)?(_controlled)?", name)
-    if m:
-        w = _w(m.group(1))
-        return ([1] if m.group(3) else []) + [w] + ([0] if m.group(2) else [None])   # [c,] h, θ | A
-    if name == "rz_i1":
-        return [1, None]                                        # (f, θ)
-    if name in ("rz_qangle", "rz_qangle_controlled"):
-        return ([1] if name.endswith("_controlled") else []) + [0]                    # [c,] A
-    if name in ("not_i1", "and_i1", "or_i1", "xor_i1", "abort_i1"):
-        return [1] * nargs
-    m = re.fullmatch(r"(copy|xorc)_" + _TW + r"(_controlled)?", name)
-    if m:
-        w = _w(m.group(2))
-        return ([1] if m.group(3) else []) + ([w, w] if m.group(1) == "copy" else [w, None])  # (s, d) | (h, lit)
-    m = re.fullmatch(r"qram_(store|load)_" + _TW + r"(_hl)?(_controlled)?(_unc)?", name)
-    if m:
-        w = _w(m.group(2))
-        idx = None if m.group(3) else 0
-        out = ([w] if m.group(1) == "load" and m.group(5) else [])                    # load_unc's h
-        out += ([1] if m.group(4) else []) + [None, idx]                              # [c,] a, idx | j
-        out += [w] if m.group(1) == "store" else []                                   # store's v
-        return out
-    m = re.fullmatch(r"tape_(fmt|effect)_controlled", name)
-    if m:
-        return [1, None, None]                                  # (c, t, fmt | name)
-    m = re.fullmatch(r"tape_write_" + _TW + r"(_controlled)?", name)
-    if m:
-        return ([1] if m.group(2) else []) + [None, _w(m.group(1))]                   # [c,] t, h
-    unimplemented(f"a call of @cqrt_{name}: no BACKEND_ABI.md §1 signature known to the handle-cell scan")
-
-
-def _rail_width(callee: str, k: int, nargs: int) -> Optional[int]:
-    """The rail width of argument k of a call to callee (ANY_WIDTH, or 0 for a width no cell is
-    seeded with), or None when it is no rail handle (BACKEND_ABI.md core signatures and template
-    naming)."""
-    if callee.startswith("@cqrt_"):
-        ws = _core_widths(callee[len("@cqrt_"):], nargs)
-        if len(ws) != nargs:
-            unimplemented(f"a call of {callee} with {nargs} arguments (BACKEND_ABI.md §1 gives {len(ws)})")
-        return ws[k]
-    if not callee.startswith("@cq_template_"):
-        return None
-    parts = callee[len("@cq_template_"):].split("_")
-    unc = parts[-1] == "unc"
-    if unc:
-        parts.pop()
-    if parts[-1] == "exc":
-        parts.pop()
-    if parts[-1] in ("rm", "rmq"):
-        if parts.pop() == "rm" and k == nargs - 1:
-            return None                      # the classical rounding mode, after the data operands
-    # the shape: one letter per data operand, `l` a literal (ABI "cq_template_<op>...[_<shape>]"); an
-    # _unc form takes the output handle first, select its condition handle before the arms
-    shape = parts[-1] if len(parts) > 2 and re.fullmatch(r"[hlq]+", parts[-1]) else ""
-    off = (1 if unc else 0) + (1 if parts[0] == "select" else 0)
-    if 0 <= k - off < len(shape) and shape[k - off] == "l":
-        return None
-    m = _WIDTH.search(callee)
-    return int(m.group(1)) if m else ANY_WIDTH
-
-
-def _rail_position(callee: str, k: int, nargs: int) -> bool:
-    """Argument k of a call to callee is a rail handle."""
-    return _rail_width(callee, k, nargs) is not None
-
-
-def _handle_widths(mod, f, v: str, seen: set) -> Tuple[bool, set]:
-    """(v reaches a handle operand, the rail widths of the operations it reaches): v an i32 SSA
-    value of f, followed through phi/select and into defined callees."""
-    if (f.name, v) in seen:
-        return False, set()
-    seen.add((f.name, v))
-    used, widths = False, set()
-    for inst in f.insts():
-        if v not in inst.refs():
-            continue
-        if inst.op == "call" and inst.callee:
-            for k, a in enumerate(inst.call_args):
-                if v not in a.split():
-                    continue
-                if inst.callee.startswith(("@cqrt_", "@cq_template_")):
-                    w = _rail_width(inst.callee, k, len(inst.call_args))
-                    if w is None:
-                        continue
-                    used = True
-                    if w != ANY_WIDTH:
-                        widths.add(w)
-                elif inst.callee in mod.functions:
-                    g = mod.functions[inst.callee]
-                    if k < len(g.params):
-                        u, w = _handle_widths(mod, g, g.params[k][1], seen)
-                        used, widths = used or u, widths | w
-        elif inst.op in ("phi", "select") and inst.dest:
-            u, w = _handle_widths(mod, f, inst.dest, seen)
-            used, widths = used or u, widths | w
-    return used, widths
-
-
-def _cell_widths(mod, f, p: str, seen: set) -> Tuple[bool, set]:
-    """Whether f reads handles through the pointer p (an i32 load rooted at p reaching a handle
-    operand, in f or in a defined callee p is passed to), and their rail widths."""
-    from cqcheck import drivers as D
-    if (f.name, "ptr", p) in seen:
-        return False, set()
-    seen.add((f.name, "ptr", p))
-    used, widths = False, set()
-    for inst in f.insts():
-        if inst.op == "load" and inst.dest and inst.operands and inst.operands[0] == "i32" \
-                and p in D._operand_roots(f, inst.operands[1], set()):
-            u, w = _handle_widths(mod, f, inst.dest, seen)
-            used, widths = used or u, widths | w
-        elif inst.op == "call" and inst.callee in mod.functions:
-            g = mod.functions[inst.callee]
-            for k, a in enumerate(inst.call_args):
-                if k < len(g.params) and a.split()[0] == "ptr" and p in D._operand_roots(f, a, set()):
-                    u, w = _cell_widths(mod, g, g.params[k][1], seen)
-                    used, widths = used or u, widths | w
-    return used, widths
-
-
-def handle_cell_params(low_path: Path, entry: str) -> Dict[int, int]:
-    """param index -> rail width, for each pointer parameter of the lowered entry it reads quantum
-    handles through."""
-    from cqcheck import drivers as D
-    mod = D.read_module(low_path)
-    f = mod.functions.get("@" + entry)
-    if f is None:
-        raise UserCheckError(f"cqcheck user: the entry {entry} has no definition in the lowered module")
-    out: Dict[int, int] = {}
-    for j, (t, p) in enumerate(f.params):
-        if not t.split() or t.split()[0] != "ptr":
-            continue
-        used, widths = _cell_widths(mod, f, p, set())
-        if not used:
-            continue
-        if len(widths) != 1 or next(iter(widths)) not in _ALLOC_C:
-            unimplemented(f"parameter {j} of {entry} holds handles of rail widths {sorted(widths)} "
-                          f"(one of i1, i8, i16, i32 is seeded)")
-        out[j] = next(iter(widths))
-    return out
-
-
-# ------------------------------------------------------------------------------------------------
 # The work tree
 
 
@@ -378,10 +198,33 @@ def _defines(text: str, fn: str) -> bool:
     return _define_line(text, fn) is not None
 
 
-def build_spec(o1_text: str, entry: str, root: Path,
-               cells: Optional[Dict[int, int]] = None) -> Tuple[DriverSpec, Path]:
-    """The work tree under root and the DriverSpec of the entry (every argument classical). `cells`:
-    param index -> rail width of each pointer parameter that gets seeded handle cells. Returns
+def _fill_ctype(mod, f, p: str, seen: set) -> set:
+    """The C element types f loads through its pointer parameter p, and through the defined callees it
+    is passed to."""
+    from cqcheck import drivers as D
+    got: set = set()
+    if (f.name, p) in seen:
+        return got
+    seen.add((f.name, p))
+    for ins in f.insts():
+        if ins.op == "load" and p in D._operand_roots(f, ins.operands[1], set()):
+            t = ins.operands[0].split()[0]
+            users = [u for u in f.insts() if ins.dest in u.refs()]
+            if t == "i8" and users and all(u.op == "trunc" and re.search(r"\bnuw\b", u.text) and u.text.rstrip().endswith("to i1")
+                                           for u in users):
+                got.add("_Bool")
+            else:
+                got.add(D._IR_ELEMENT.get(t, t))
+        elif ins.op == "call" and ins.callee in mod.functions:
+            g = mod.functions[ins.callee]
+            for k, a in enumerate(ins.call_args):
+                if k < len(g.params) and g.params[k][1] and p in D._operand_roots(f, a, set()):
+                    got |= _fill_ctype(mod, g, g.params[k][1], seen)
+    return got
+
+
+def build_spec(o1_text: str, entry: str, root: Path) -> Tuple[DriverSpec, Path]:
+    """The work tree under root and the DriverSpec of the entry (every argument classical). Returns
     (spec, the example directory holding <base>.O1.ll)."""
     from cqcheck import drivers as D
     if not re.fullmatch(r"[A-Za-z_]\w*", entry):
@@ -396,32 +239,39 @@ def build_spec(o1_text: str, entry: str, root: Path,
     if entry == MAIN_RENAMED and pct:
         unimplemented("main with parameters (argc/argv) as the entry; pass --entry with a function "
                       "that takes scalar arguments")
-    setup, args, allocs = [], [], set()
+    setup, args = [], []
     for j, ct in enumerate(pct):
-        if ct.endswith("*") and j in (cells or {}):
-            nm, w = f"cqu_obj{j}", cells[j]
-            allocs.add(w)
-            setup.append(f"static int {nm}[{HANDLE_CELLS}]; for (int cqu_i = 0; cqu_i < {HANDLE_CELLS}; "
-                         f"cqu_i++) {nm}[cqu_i] = cqrt_alloc_i{w}(0);")
-            args.append(nm)
-        elif ct.endswith("*"):
+        if ct.endswith("*"):
             nm = f"cqu_obj{j}"
             setup.append(f"static unsigned char {nm}[{OBJ_BYTES}] __attribute__((aligned(16)));")
             args.append(nm)
         else:
             args.append("0")
-    proto += "".join(f"int cqrt_alloc_i{w}({_ALLOC_C[w]});" for w in sorted(allocs))
     fields = [example, proto, f"{entry}({','.join(args)})"] + ([" ".join(setup)] if setup else [])
     tools = root / "_tools"
     tools.mkdir()
     (tools / "drivers.txt").write_text("|".join(fields) + "\n")
     line = D.read_drivers_txt(tools / "drivers.txt")[example]
     spec = D.build_driver_spec(line, D.read_module(o1))
-    # every argument classical but a handle-cell object (drivers.handle_cells): its cells are quantum
-    # inputs, sampled like any other (cq-rbe6), and no part of the classical key
-    calls = [{"fn": c["fn"], "args": [dict(a, quantum=True) if a.get("cells") else
-                                      {"ctype": a["ctype"], "quantum": False} for a in c["args"]]}
-             for c in spec.calls]
+    # every argument classical but the elements behind a pointer that feeds a cq_theta (module docstring)
+    mod = D.read_module(o1)
+    irf = mod.functions["@" + entry]
+    qp = D.quantum_params(mod)
+    calls = []
+    for c in spec.calls:
+        args = []
+        for j, a in enumerate(c["args"]):
+            if D.parse_ctype(a["ctype"]).kind == "p" and ("@" + entry, j) in qp.pointee:
+                types = _fill_ctype(mod, irf, irf.params[j][1], set())
+                if len(types) > 1 or not all(t in D._INT_TYPES or t in D._FP_TYPES for t in types):
+                    unimplemented(f"parameter {j} of {entry} is loaded as {sorted(types)}: one scalar element type is filled")
+                ctype = next(iter(types), "unsigned char")
+                ect = D.parse_ctype(ctype)
+                n = min(FILL_ELEMENTS, OBJ_BYTES // (16 if ect.bits == 80 else ect.storage_bits // 8))
+                args.append(dict(a, quantum=True, fill={"ctype": ctype, "w": ect.bits, "n": n}))
+            else:
+                args.append({k: v for k, v in dict(a, quantum=False).items() if k != "fill"})
+        calls.append({"fn": c["fn"], "args": args})
     return DriverSpec(example=spec.example, protos=spec.protos, setup=spec.setup, calls=calls), exdir
 
 
@@ -521,7 +371,7 @@ def check(o1: Path, lowered: Path, entry: str, samples: Optional[int], work: Pat
         raise UserCheckError(f"cqcheck user: the entry {entry} has no definition in the lowered module")
     low = work / f"user_{entry}.lowered.ll"
     low.write_text(low_text)
-    spec, exdir = build_spec(o1_text, entry, work, handle_cell_params(low, entry))
+    spec, exdir = build_spec(o1_text, entry, work)
     c_module = next(exdir.glob("*.O1.ll"))
 
     # the all-zero baseline is made up: domain-filtered like every other sample (cq-sujz)

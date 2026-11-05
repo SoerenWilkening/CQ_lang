@@ -228,17 +228,6 @@ void __cqo_alloca(void *p, uint64_t n) {
     sh_clear(p, n);
 }
 
-/* Handle cells (cq-rbe6, cq-oou2): the C program's view of a driver object whose setup fills it with
- * rail handles is an array of its N cells (drivers.py), so the object ends after N cells of the C
- * type, not where the setup's `int q[N]` ends: 60's bool *q has 4 elements, not 16. */
-void __cqo_cells_object(void *p, uint64_t n) {
-    objvec *ts[3] = {&stack_objs, &heap_objs, &global_objs};
-    uintptr_t a = (uintptr_t)p;
-    for (int t = 0; t < 3; t++)
-        for (size_t i = 0; i < ts[t]->n; i++)
-            if (ts[t]->v[i].lo == a && a + n < ts[t]->v[i].hi) ts[t]->v[i].hi = a + n;
-}
-
 /* An object of the current frame that already holds its value: a byval parameter copy. */
 void __cqo_object(void *p, uint64_t n) { ov_push(&stack_objs, (uintptr_t)p, (uintptr_t)p + n); }
 
@@ -254,14 +243,9 @@ void __cqo_va_start(void *ap, int64_t ovf) {
     if (ovf > 0) ov_push(&stack_objs, (uintptr_t)overflow, (uintptr_t)overflow + (uint64_t)ovf);
 }
 
-void __cqo_zero(void *p, int64_t n) {
-    const obj *o = find_obj((uintptr_t)p);
-    if (!o) return;
-    uintptr_t a = (uintptr_t)p, e = n < 0 ? o->hi : a + (uint64_t)n;
-    if (e > o->hi) e = o->hi;
-    memset(p, 0, e - a);
-    sh_clear(p, e - a);
-}
+/* llvm.lifetime.start: nothing (CR §6, rulings Q16): a block-scoped object re-entered by a loop holds
+ * what the trip before left there, rule 20's one block; a fresh object reads 0 by its allocation. */
+void __cqo_zero(void *p, int64_t n) { (void)p, (void)n; }
 
 /* The object an access belongs to: the one containing its base pointer, else the one containing the
  * accessed address. NULL: no object (every byte reads 0, stores are dropped). */
@@ -961,12 +945,6 @@ void __cqo_unreachable(const char *fn) { note("ub unreachable %s", fn); _exit(97
 /* The checker's stand-in for a function nothing defines: one source with the evaluator (cq-rft). */
 uint64_t __cqo_mix(uint64_t h, uint64_t w) { return cq_standin_mix(h, w); }
 
-/* A driver setup that allocates rails (`cqrt_alloc_<W>(v)`) means the value v on the C side. */
-int32_t cqrt_alloc_i1(_Bool v) { return v; }
-int32_t cqrt_alloc_i8(int8_t v) { return v; }
-int32_t cqrt_alloc_i16(int16_t v) { return v; }
-int32_t cqrt_alloc_i32(int32_t v) { return v; }
-
 /* ------------------------------------------------------------------ samples (cq-pz9h)
  *
  * The driver (oracle.py) brackets each record's call with
@@ -1262,6 +1240,59 @@ void __cqo_fx_end(void) {
     fxn += (size_t)sprintf(fxline + fxn, "]}");
     out_long(fxline, fxn);
     fx_on = 0;
+}
+/* A direct host call: the stand-in, one source with the evaluator (fx_call.h; rulings Q8). */
+#define FX_LOG(line, n) do { if (sample_running()) out_long(line, n); } while (0)
+#include "fx_call.h"
+
+/* The named outputs in memory (CR §6 item 1; drivers.py "Driver objects"): one object's bytes, a little-endian
+ * hex value `w` = i<8n> wide. Host memory is the C program's memory: a plain read. */
+void __cqo_out_mem(const char *name, const void *addr, uint64_t n) {
+    if (!sample_running() || !bigline) return;
+    if (2 * n + 512 > BIG_CAP) { note("internal out_mem: object %s of %llu bytes", name, (unsigned long long)n); return; }
+    size_t m = (size_t)sprintf(bigline, "{\"ev\":\"out_mem\",\"name\":\"%s\",\"addr\":\"0x%llx\",\"w\":\"i%llu\",\"v\":\"0x",
+                               name, (unsigned long long)(uintptr_t)addr, (unsigned long long)n * 8);
+    for (uint64_t i = n; i-- > 0;) m += (size_t)sprintf(bigline + m, "%02x", ((const unsigned char *)addr)[i]);
+    if (!n) bigline[m++] = '0';
+    m += (size_t)sprintf(bigline + m, "\"}");
+    out_long(bigline, m);
+}
+void __cqo_out_object(const char *name, const void *addr, uint64_t n) {
+    if (!sample_running()) return;
+    char b[512];
+    int m = snprintf(b, sizeof b, "{\"ev\":\"object\",\"name\":\"%s\",\"addr\":\"0x%llx\",\"size\":%llu}", name,
+                     (unsigned long long)(uintptr_t)addr, (unsigned long long)n);
+    out_long(b, (size_t)m);
+}
+/* Rail-sized allocations (CR §6, rule 16; oracle.py _k2_sites): the block is K2 bytes, and the size goes to the trace. */
+static void k2_note(uint64_t n, uint64_t k2) {
+    if (!sample_running()) return;
+    char b[96];
+    int m = snprintf(b, sizeof b, "{\"ev\":\"k2\",\"n\":%llu,\"k2\":%llu}", (unsigned long long)n, (unsigned long long)k2);
+    out_long(b, (size_t)m);
+}
+void *__cqo_malloc_k2(size_t n, size_t k2) { k2_note(n, k2); return __cqo_malloc(n > k2 ? k2 : n); }
+void *__cqo_calloc_k2(size_t c, size_t n, size_t k2) {
+    size_t t = c && n > (size_t)-1 / c ? (size_t)-1 : c * n;
+    k2_note(t, k2);
+    return __cqo_malloc(t > k2 ? k2 : t);
+}
+void *__cqo_aligned_alloc_k2(size_t al, size_t n, size_t k2) { k2_note(n, k2); return heap_alloc(al, n > k2 ? k2 : n); }
+void *__cqo_realloc_k2(void *p, size_t n, size_t k2) { k2_note(n, k2); return __cqo_realloc(p, n > k2 ? k2 : n); }
+
+/* The ranges a pointer the program made may lie in (compare.py "Pointers"). */
+void __cqo_out_regions(void) {
+    if (!sample_running()) return;
+    char b[256];
+    uintptr_t sp = (uintptr_t)__builtin_frame_address(0);
+    int m = snprintf(b, sizeof b, "{\"ev\":\"region\",\"name\":\"stack\",\"lo\":\"0x%llx\",\"hi\":\"0x%llx\"}",
+                     (unsigned long long)(sp - ((uintptr_t)8 << 20)), (unsigned long long)(sp + ((uintptr_t)1 << 16)));
+    out_long(b, (size_t)m);
+    if (arena_base) {
+        m = snprintf(b, sizeof b, "{\"ev\":\"region\",\"name\":\"heap\",\"lo\":\"0x%llx\",\"hi\":\"0x%llx\"}",
+                     (unsigned long long)(uintptr_t)arena_base, (unsigned long long)(uintptr_t)arena_top);
+        out_long(b, (size_t)m);
+    }
 }
 
 static void *sys_alloc(size_t n) {

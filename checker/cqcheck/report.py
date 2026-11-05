@@ -426,6 +426,10 @@ def _sample_set_gaps(ex: Example, spec, ss) -> Tuple[List[str], List[str]]:
     return bad, [g.line() for g in found if g.kind != gaps.MISSING]
 
 
+# An uncut run of a trip sample (55 at m = 2^31 - 1) ends at the oracle's own caps; the hang guard stays out of it.
+UNCUT_TIMEOUT_MS = 20000
+
+
 def _trip_disagreements(ex: Example, spec, ss, c_raw: Optional[list], samples: list) -> List[str]:
     """Each trip sample's count in the C oracle's trip counters (sampling.confirm_trips), from the
     C oracle's runs of the §6 comparison, or from a run of the trip samples alone when the C
@@ -445,7 +449,8 @@ def _trip_disagreements(ex: Example, spec, ss, c_raw: Optional[list], samples: l
     import copy
     from cqcheck import sampling
     trip = [ss.samples[i] for i in idx]
-    for smp, ur in zip(trip, sibling("oracle", "run_samples")(ex.o1, spec, trip, k=sampling.uncut_k(Path(ex.o1)))):
+    for smp, ur in zip(trip, sibling("oracle", "run_samples")(ex.o1, spec, trip, timeout_ms=UNCUT_TIMEOUT_MS,
+                                                                  k=sampling.uncut_k(Path(ex.o1)))):
         key = json.dumps(smp, sort_keys=True)
         r = runs[key]
         r = runs[key] = copy.copy(r)
@@ -585,6 +590,7 @@ def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_erro
                 sampling_bad, sampling_notes = [_exc_reason("sampling gaps", e)], []
             reasons += sampling_bad
             c_raw: Optional[list] = [] if want_c else None
+            c_samples = samples
             if need_ref_run:
                 try:
                     ref_results = _side_results(_evaluator_batch, ex.reference, spec, samples, "ref")
@@ -595,15 +601,21 @@ def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_erro
                     reasons.append(_exc_reason("s6", e))
             if want_c:
                 try:
-                    c_results = _side_results(_oracle_batch, ex.o1, spec, samples, c_raw)
-                    c_oracle, rs = _compare(ours_results, c_results, "c", spec, ex.o1)
+                    # rulings Q10: a call C gives no meaning to is compared against the reference only
+                    from cqcheck import drivers as _D
+                    o1mod = _D.read_module(Path(ex.o1))
+                    in_c = [not _D.c_out_of_domain(spec, sm, o1mod) for sm in samples]
+                    c_samples = [sm for sm, k in zip(samples, in_c) if k]
+                    c_results = _side_results(_oracle_batch, ex.o1, spec, c_samples, c_raw)
+                    c_ours = [r for r, k in zip(ours_results, in_c) if k]
+                    c_oracle, rs = _compare(c_ours, c_results, "c", spec, ex.o1)
                     reasons += rs
                 except Exception as e:  # noqa: BLE001
                     c_oracle = ERROR
                     reasons.append(_exc_reason("c_oracle", e))
                     c_raw = None
             try:
-                trip_bad = _trip_disagreements(ex, spec, ss, c_raw, samples)
+                trip_bad = _trip_disagreements(ex, spec, ss, c_raw, c_samples)
             except Exception as e:  # noqa: BLE001
                 trip_bad = [_exc_reason("sampling trip confirmation", e)]
             reasons += trip_bad

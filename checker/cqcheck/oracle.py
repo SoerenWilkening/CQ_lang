@@ -26,9 +26,16 @@ Trace events (cq-arch; values are hex bit patterns ``0x`` + lowercase digits, no
   the guard may reach the header directly or through single-predecessor blocks that branch
   unconditionally on (a preheader, as in 55).
 - ``{"ev":"ret","v"}``: the driver call's return value (``null`` for void).
-- ``{"ev":"effect","name","args"}`` (cq-e4jk): a call of a host-effect function (compare.HOST_EFFECTS:
-  remove, unlink, rename, raise), logged at the call, before it runs; args ``[{"s": str} | {"w":
-  "i<N>", "v": hex}]`` (a pointer argument read as a C string, an integer at its IR width).
+- ``{"ev":"effect","name","args"}`` (cq-e4jk, rulings Q8): a call of a host-effect function
+  (compare.HOST_EFFECTS: raise, real, ``args``) or any other direct host call (drivers.effect_callees),
+  which is that log and §6's stand-in, never the real call (fx_call.h, ``fields``: an INPUT call stores the
+  stand-in's bytes). A field is ``{"w": "i<N>", "v": hex[, "p": 1][, "cap": str]}``: a value at its
+  width, a pointer ("p"), the bytes it reads ("cap").
+- ``{"ev":"out_mem","name","addr","w","v"}`` (CR §6 item 1, drivers.py "Driver objects"): a named
+  output in memory after the driver call, ``v`` its bytes little-endian; ``{"ev":"object","name",
+  "addr","size"}``, ``{"ev":"region","name","lo","hi"}``: the addresses that read a pointer value
+  relationally (compare.py "Pointers"); ``{"ev":"allocs","n"}``: the sample's heap blocks. They go to
+  side 'c' outputs["mem"], ["objects"], ["regions"], ["allocs"], never to ``SampleRun.events``.
 - ``{"ev":"stdout","s"}`` (cq-e4jk): once per sample, at its end, what the program printed to stdout
   (the driver's setup, then the sample), bytes as the code points of the same number. stdout is
   unbuffered in the oracle, so a sample that ends by abort or a signal keeps what it printed before
@@ -54,11 +61,14 @@ trip event (the loop never took an exit edge).
 
 §2 and §6 in the C program: div/rem by 0 and INT_MIN/-1, shifts >= W (amount mod W), fptosi/fptoui
 (row by row), maxnum/minnum, fmuladd unfused, abs(INT_MIN), ctlz/cttz(0) are rewritten to the table;
-allocas, lifetime starts and heap blocks read 0 until written; a load outside every object (globals,
+allocas and heap blocks read 0 until written, a lifetime start changes nothing (a block-scoped object
+re-entered by a loop holds what the trip before left there: rule 20's one block, rulings Q16), and no
+address of a heap block comes back; a load outside every object (globals,
 allocas, heap blocks, byval parameter copies, the register save and overflow areas va_start points
 at) reads 0 and a store there is dropped. Threads collapse (rule 24).
 
-A function nothing defines (after libc/libm) gets the checker's model (OracleInstr.cpp ``stubs``):
+A rule 27 root (tools/corpus_roots.txt) or another function neither libc nor the driver defines and
+drivers.effect_callees leaves gets the checker's model (OracleInstr.cpp ``stubs``):
 FNV-1a-64 over the name bytes, then ``h = (h ^ w) * 0x100000001b3`` per 64-bit word of each non-pointer
 argument; the result is the low W bits; no memory effect.
 
@@ -189,7 +199,8 @@ def _pass_inputs() -> List[Path]:
 
 def _src_hash() -> str:
     h = hashlib.sha256()
-    for p in [SRC / "OracleInstr.cpp", SRC / "TripFacts.cpp", SRC / "cqo_rt.c", STANDIN] + _pass_inputs():
+    for p in [SRC / "OracleInstr.cpp", SRC / "TripFacts.cpp", SRC / "cqo_rt.c", SRC / "fx_call.h", STANDIN,
+              STANDIN.with_name("fx_standin.h")] + _pass_inputs():
         h.update(str(p.relative_to(ROOT)).encode() + b"\0" + p.read_bytes() + b"\0")
     return h.hexdigest()[:16]
 
@@ -338,7 +349,7 @@ def _host_defines(name: str) -> bool:
 
 
 # Provided by the instrumentation or the runtime, never modelled.
-_PROVIDED = re.compile(r"^(llvm\.|__cqo_|cq_theta_|cq_measure_|cq_phi$|__cq_invert_|cqrt_alloc_i(1|8|16|32)$)")
+_PROVIDED = re.compile(r"^(llvm\.|__cqo_|cqd_fx_|cq_theta_|cq_measure_|cq_phi$|__cq_invert_)")
 
 
 def _k_flags(k: Optional[Dict[str, int]], k_default: Optional[int]) -> List[str]:
@@ -383,24 +394,106 @@ def isolated(prog_o: Path) -> bool:
     return f.exists() and bool(f.read_text().strip())
 
 
-def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[int] = None) -> Tuple[Path, str]:
+K2_DEFAULT = 4096        # CR §0: CQ_K2(f, k), -cq-k2, -cq-k2-default, 4096
+_K2_ALLOC = {"malloc": "__cqo_malloc_k2", "calloc": "__cqo_calloc_k2", "aligned_alloc": "__cqo_aligned_alloc_k2",
+             "realloc": "__cqo_realloc_k2"}
+
+
+def _k2_sites(text: str, o1_text: str) -> str:
+    """Rulings Q16, CR §6: a rail-sized allocation is made at K2 bytes, and an access at or beyond byte K2 is
+    outside the block (cqo_rt.c totalizes it). Each allocation whose size derives, by SSA or through a defined
+    callee's parameter, from a cq_theta result, a load (rule 3: every load is a rail) or a call result, goes to
+    the runtime's _k2 entry with K2 as a last argument. A size no such value reaches is classical."""
+    import tempfile
+    from . import drivers
+    with tempfile.NamedTemporaryFile("w", suffix=".ll") as t:
+        t.write(o1_text)
+        t.flush()
+        mod = drivers.read_module(Path(t.name))
+    tainted: Dict[str, set] = {f: set() for f in mod.functions}
+    changed = True
+    while changed:
+        changed = False
+        for f in mod.functions.values():
+            s = tainted[f.name]
+            for ins in f.insts():
+                hit = False
+                if ins.dest and ins.dest not in s:
+                    if ins.op == "load" or (ins.op == "call" and ins.callee not in mod.functions):
+                        hit = not (ins.callee or "").startswith("@llvm.") or any(r in s for r in ins.refs())
+                    elif ins.op not in ("alloca", "getelementptr") or any(r in s for r in ins.refs()):
+                        hit = any(r in s for r in ins.refs())
+                    if ins.op == "call" and ins.callee in mod.functions:
+                        g = mod.functions[ins.callee]
+                        hit = hit or any(r in tainted[g.name] for j in g.insts() if j.op == "ret" for r in j.refs())
+                if hit:
+                    s.add(ins.dest)
+                    changed = True
+                if ins.op == "call" and ins.callee in mod.functions:
+                    g = mod.functions[ins.callee]
+                    for i, a in enumerate(ins.call_args):
+                        if i < len(g.params) and g.params[i][1] and g.params[i][1] not in tainted[g.name] \
+                                and any(r in s for r in drivers.locals_in(a)):
+                            tainted[g.name].add(g.params[i][1])
+                            changed = True
+    sized = {"malloc": [0], "calloc": [0, 1], "aligned_alloc": [1], "realloc": [1]}
+    lines = text.splitlines()
+    fname = None
+    used = set()
+    for li, line in enumerate(lines):
+        m = re.match(r'define [^@]*(@(?:"[^"]*"|[-A-Za-z$._0-9]+))\(', line)
+        if m:
+            fname = m.group(1)
+        m = re.search(r"@(malloc|calloc|aligned_alloc|realloc)\(", line)
+        if not m or line.startswith(("declare", "define")) or fname not in tainted:
+            continue
+        name = m.group(1)
+        start = m.end() - 1
+        args = drivers.split_operands(drivers._balanced(line, start))
+        if not any(r in tainted[fname] for i in sized[name] for r in drivers.locals_in(args[i])):
+            continue
+        fm = re.search(r"@__cq_k2_" + re.escape(fname[1:]) + r"\s*=[^\n]*?\bi64 (\d+)", o1_text)
+        k2 = int(fm.group(1)) if fm else K2_DEFAULT
+        end = start + len(drivers._balanced(line, start)) + 2
+        lines[li] = line[:m.start()] + f"@{_K2_ALLOC[name]}(" + ", ".join(args + [f"i64 {k2}"]) + ")" + line[end:]
+        used.add(name)
+    decls = {"malloc": "declare noalias ptr @__cqo_malloc_k2(i64, i64)", "calloc": "declare noalias ptr @__cqo_calloc_k2(i64, i64, i64)",
+             "aligned_alloc": "declare noalias ptr @__cqo_aligned_alloc_k2(i64, i64, i64)",
+             "realloc": "declare ptr @__cqo_realloc_k2(ptr, i64, i64)"}
+    return "\n".join(lines + [decls[n] for n in sorted(used)]) + "\n"
+
+
+def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[int] = None,
+            defined: Sequence[str] = ()) -> Tuple[Path, str]:
     """The instrumented program object of one .O1.ll (cached), and its target triple. k / k_default:
-    the cutoff flags (default none: CQ_K, then 4)."""
+    the cutoff flags (default none: CQ_K, then 4). defined: the functions the driver line defines (203's
+    ext_fill): neither stand-in nor model; the driver's body is linked. Beside the object, fx.o: the direct
+    host calls' wrappers, apart from the instrumented module, so a callee stays bodiless for its taint."""
     o1 = Path(o1)
     st = o1.stat()
-    memo = (str(o1.resolve()), st.st_mtime_ns, repr((sorted((k or {}).items()), k_default)))
+    memo = (str(o1.resolve()), st.st_mtime_ns, repr((sorted((k or {}).items()), k_default, sorted(defined), os.environ.get("CQ_ROOTS_EXTRA"))))
     if memo in _PROGRAMS and _PROGRAMS[memo][0].exists():
         return _PROGRAMS[memo]
     plugin, rt = toolchain()
     text = o1.read_text()
     bundle = bundle_for(text)
     kf = _k_flags(k, k_default)
-    key = hashlib.sha256("\0".join([text, SRC_KEY, *kf] + ([bundle_key(bundle)] if bundle else [])).encode()).hexdigest()[:20]
+    from . import drivers as _drv
+    key = hashlib.sha256("\0".join([text, SRC_KEY, *kf, *sorted(defined), *sorted(_drv.corpus_roots())] + ([bundle_key(bundle)] if bundle else [])).encode()).hexdigest()[:20]
     triple = _triple(text)
 
     def fill(d: Path) -> None:
         linked = d / "linked.bc"
-        _run([_tool("llvm-as"), str(o1), "-o", str(linked)], "llvm-as")
+        # no direct host call runs for real (rulings Q8)
+        from . import drivers
+        callees = drivers.effect_callees(text, frozenset(defined) | drivers.corpus_roots())
+        renamed = _k2_sites(drivers.rename_effects(text, callees), text)
+        decls = "".join(f"declare {r} @{drivers.FX_PREFIX}{c}({p})\n" for c, (_, r, p) in callees.items())
+        (d / "prog.ll").write_text(renamed + decls)
+        (d / "fx.ll").write_text(f'target triple = "{triple}"\n' + drivers.effect_wrappers_ir(callees))
+        _run([_tool("clang"), "-target", triple, "-O0", "-Wno-override-module", "-c", str(d / "fx.ll"), "-o", str(d / "fx.o")],
+             "compiling the host calls' wrappers")
+        _run([_tool("llvm-as"), str(d / "prog.ll"), "-o", str(linked)], "llvm-as")
         if bundle:
             _run([_tool("llvm-link"), str(linked), "--only-needed", *map(str, bundle), "-o", str(linked)],
                  "llvm-link with the injection bundle")
@@ -408,14 +501,19 @@ def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[in
                    "llvm-nm").stdout.split()
         if "-apple-" in triple:  # Mach-O symbol names carry a leading underscore
             und = [n[1:] if n.startswith("_") else n for n in und]
-        stubs = sorted(n for n in und if not _PROVIDED.match(n) and not _host_defines(n))
+        stubs = sorted(n for n in und if not _PROVIDED.match(n) and not _host_defines(n) and n not in defined)
         (d / "stubs.txt").write_text("".join(n + "\n" for n in stubs))
         iso = sorted(set(und) & _ISOLATE) + (["thread_local"] if "thread_local" in text else [])
         (d / "isolate.txt").write_text("".join(n + "\n" for n in iso))
         _run([_tool("opt"), f"-load-pass-plugin={plugin}", "-passes=cq-oracle",
-              f"-cq-oracle-stubs={d / 'stubs.txt'}", *kf, str(linked), "-o", str(d / "prog.bc")],
+              f"-cq-oracle-stubs={d / 'stubs.txt'}", *kf, "-S", str(linked), "-o", str(d / "prog.inst.ll")],
              "the cq-oracle instrumentation of the program")
-        _run([_tool("clang"), "-target", triple, "-O0", "-Wno-override-module", "-c", str(d / "prog.bc"),
+        # the named outputs' reader joins after the instrumentation: its uses of the globals' addresses
+        # are no escape of the program's (rule 2's collapse reads them), and its accesses no program access
+        inst = (d / "prog.inst.ll").read_text()
+        (d / "prog.inst.ll").write_text(inst + drivers.out_globals_ir(text, inst, "__cqo_out_globals", "__cqo_out_mem",
+                                                                       "__cqo_out_object"))
+        _run([_tool("clang"), "-target", triple, "-O0", "-Wno-override-module", "-c", str(d / "prog.inst.ll"),
               "-o", str(d / "prog.o")], "compiling the instrumented program")
 
     d = _atomic_dir(_build_root() / "prog" / f"{o1.stem}-{key}", fill)
@@ -425,8 +523,12 @@ def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[in
 
 # cqo_rt.c, samples: the worker runs each record's call in-process from the post-setup state; a sample
 # that ends by exit, abort or the runtime's own end jumps back here.
-DRIVER_PRELUDE = ("#include <setjmp.h>\nsigjmp_buf *__cqo_jb(void); void __cqo_resume(void); "
-                  "int __cqo_sample_begin(int); void __cqo_sample_end(void);\n")
+DRIVER_PRELUDE = ("#include <setjmp.h>\n#include <stdint.h>\n#include <string.h>\n"
+                  "sigjmp_buf *__cqo_jb(void); void __cqo_resume(void); "
+                  "int __cqo_sample_begin(int); void __cqo_sample_end(void);\n"
+                  "void __cqo_out_mem(const char *, const void *, unsigned long long); void __cqo_out_globals(void); "
+                  "void __cqo_out_regions(void); void __cqo_out_globals_tls(void);\n"
+                  "static void __cqo_out_all(void) { __cqo_out_globals(); __cqo_out_regions(); }\n")
 BEFORE_CALL = ("if (sigsetjmp(*__cqo_jb(), 1) != 0) __cqo_resume(); "
                "else if (__cqo_sample_begin(CQD_SAMPLE)) {")
 AFTER_CALL = "__cqo_sample_end(); }"
@@ -440,22 +542,12 @@ def _drivers():
     return drivers
 
 
-CELLS_C_SIDE = "    } else {          /* the setup's cqrt_alloc_i"
-
-
 def _driver_source(spec: DriverSpec, samples: Sequence[dict]) -> str:
-    src = _drivers().driver_source(spec, list(samples), before_call=BEFORE_CALL,
-                                   after_call=AFTER_CALL, main_name=DRIVER_MAIN)
-    # handle cells (cq-oou2): the object the C program sees is its N cells (cqo_rt.c __cqo_cells_object)
-    for w in sorted({a["cells"]["w"] for c in spec.calls for a in c["args"] if a.get("cells")}):
-        head = f"static void cqd_cells_i{w}(void *p, int n, const unsigned long long *v) {{"
-        i = src.find(head)
-        j = src.find(CELLS_C_SIDE, i)
-        if i < 0 or j < 0:
-            raise OracleError(f"cq: unimplemented: chk-oracle: the driver's handle cell writer for i{w} not found")
-        j = src.index("\n", j) + 1
-        src = (src[:j] + f"        __cqo_cells_object(p, (unsigned long long)n * {max(1, w // 8)});\n" + src[j:])
-    return DRIVER_PRELUDE + "void __cqo_cells_object(void *, unsigned long long);\n" + src
+    d = _drivers()
+    return (DRIVER_PRELUDE
+            + d.driver_source(spec, list(samples), before_call=BEFORE_CALL, after_call=AFTER_CALL,
+                              main_name=DRIVER_MAIN, out_mem="__cqo_out_mem", out_globals="__cqo_out_all",
+                              reset_globals="__cqo_out_globals_tls"))
 
 
 def executable(o1: Path, spec: DriverSpec, samples: Sequence[dict] = (),
@@ -463,7 +555,7 @@ def executable(o1: Path, spec: DriverSpec, samples: Sequence[dict] = (),
     """The oracle program of one example: instrumented program + instrumented driver + runtime. The
     driver reads its samples at run time (cq-arch Z2), so one build serves every sample; `samples`
     only supply the pointer expressions the driver accepts."""
-    prog_o, triple = program(o1, k, k_default)
+    prog_o, triple = program(o1, k, k_default, sorted(_drivers().proto_definitions(spec)))
     plugin, rt = toolchain()
     src = _driver_source(spec, samples)
     entries = sorted({c["fn"] for c in spec.calls})   # every call the driver can make
@@ -473,7 +565,7 @@ def executable(o1: Path, spec: DriverSpec, samples: Sequence[dict] = (),
         (d / "driver.c").write_text(src)
         env = dict(os.environ, CQO_AT_END="1", CQO_ENTRIES=",".join(entries))
         _run([_tool("clang"), "-target", triple, "-std=gnu17", "-O1", "-w", f"-fpass-plugin={plugin}",
-              str(d / "driver.c"), str(prog_o), str(rt), "-o", str(d / "prog")],
+              str(d / "driver.c"), str(prog_o), str(prog_o.parent / "fx.o"), str(rt), "-o", str(d / "prog")],
              "compiling, instrumenting and linking the driver", env=env)
 
     d = _atomic_dir(_build_root() / "exe" / f"{Path(o1).stem}-{key}", fill)
@@ -495,6 +587,10 @@ class SampleRun:
     loops: List[Dict[str, Any]] = field(default_factory=list)   # T2 cutoff records (outputs["loops"])
     stdout: str = ""             # the program's stdout in this sample (outputs["stdout"], cq-e4jk)
     effects: List[Dict[str, Any]] = field(default_factory=list)  # its host-effect calls (outputs["effects"])
+    mem: List[Dict[str, Any]] = field(default_factory=list)      # named outputs in memory (outputs["mem"])
+    objects: List[Dict[str, Any]] = field(default_factory=list)  # its address table (outputs["objects"])
+    regions: List[Dict[str, Any]] = field(default_factory=list)  # (outputs["regions"])
+    k2: List[List[int]] = field(default_factory=list)  # its rail-sized blocks, [n, K2] (outputs["k2"])
 
 
 def _classify(sr: SampleRun) -> None:
@@ -766,7 +862,8 @@ _MEMO_LOCK = threading.Lock()
 
 
 _RUNS_VERSION = "oracle-runs-1"
-_RUN_FIELDS = ("events", "outcome", "failed", "reason", "notes", "loops", "stdout", "effects")
+_RUN_FIELDS = ("events", "outcome", "failed", "reason", "notes", "loops", "stdout", "effects", "mem", "objects",
+               "regions", "k2")
 
 
 def _run_batch(exe: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]], timeout_ms: int, tripcap: int,
@@ -831,8 +928,22 @@ def _parse_runs(samples: Sequence[Dict[str, Any]], trace, status: str) -> List[S
             runs[i].stdout = _bytes_text(e.get("s", ""))
         elif e.get("ev") == "effect":
             runs[i].effects.append({"name": e.get("name"), "args": [
-                {"s": _bytes_text(a["s"])} if "s" in a else {"w": a.get("w"), "v": a.get("v")}
-                for a in e.get("args", [])]})
+                {"s": _bytes_text(a["s"])} if "s" in a
+                else dict({k: a[k] for k in ("w", "v", "p") if k in a}, **({"cap": _bytes_text(a["cap"])} if "cap" in a else {}))
+                for a in e.get("fields", e.get("args", []))]})
+        elif e.get("ev") == "out_mem":
+            del e["ev"]
+            runs[i].mem.append(e)
+        elif e.get("ev") == "object":
+            del e["ev"]
+            runs[i].objects.append(e)
+        elif e.get("ev") == "region":
+            del e["ev"]
+            runs[i].regions.append(e)
+        elif e.get("ev") == "allocs":
+            pass
+        elif e.get("ev") == "k2":
+            runs[i].k2.append([int(e["n"]), int(e["k2"])])
         else:
             runs[i].events.append(e)
     for line in status.splitlines():
@@ -928,30 +1039,43 @@ def _typed_ret(spec: DriverSpec, sr: SampleRun) -> List[Dict[str, Any]]:
     return [{"call": sr.sample["call"], "fn": fn, "v": v}]
 
 
+def _effects_of(sr: SampleRun) -> List[dict]:
+    """The C program's effect sequence: a raise a handler took, or one that does nothing, is no effect of
+    the circuit (rule 16's signal table dispatches it in lowered code; only the complement branch, the
+    fatal raise that ends the sample here, is an entry)."""
+    fatal = sr.outcome.startswith("raise:")
+    return [e for e in sr.effects if e.get("name") != "raise" or fatal]
+
+
 def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
     """A sample under the C oracle as the side 'c' RunResult (cq-arch T1.5).
 
     outputs: {"ret": [{"call", "fn", "v"}] in run.py's encoding (integer returns {"w": "i<N>"} at the
     C width, fp {"w": "f32"|"f64"|"f80"|...}, an aggregate bare hex; void, pointer and samples that
     did not return give no record), "end": outcome, "loops": the T2 cutoff records, "stdout": the
-    program's stdout, "effects": its host-effect calls (cq-e4jk)}; measured: [{"h": None, "w": the register's rail
+    program's stdout, "effects": its host-effect calls (cq-e4jk), "mem", "objects", "regions":
+    the module docstring's; "k2": the rail-sized blocks, [n, K2] (_k2_sites)}; measured: [{"h": None, "w": the register's rail
     type, "v": hex}] per reached measure site that is a gate (not a rule 2 classical read), in order; rotations: the site events of kind theta,
     phi, invert_begin and invert_end verbatim, in order, each with "nmeas", the number of entries of
     measured before it (cq-459d); kept/clean: None (the C program has no
     rails); violations: [] or [{"what": "c_oracle", "h": None, "msg": reason}]."""
-    measured, rotations = [], []
+    measured, rotations, reads = [], [], []
     for e in sr.events:
         if e.get("ev") != "site":
             continue
         if e["kind"] == "measure":
             measured.append({"h": None, "w": _measure_rail(o1, e["fn"], e["site"]), "v": e["reg"]})
         elif e["kind"] == "read":
-            continue   # CR rule 2: a classical read of a collapsed value, no gate (cq-y1ll)
+            # CR rule 2: a classical read of a collapsed value, no gate (cq-y1ll); the lowered side may
+            # measure a load copy of it, classical-valued (rule 3: every load is a rail, 207)
+            reads.append({"w": _measure_rail(o1, e["fn"], e["site"]), "v": e["reg"]})
         else:
             rotations.append(dict(e, nmeas=len(measured)))   # the measurements before it (cq-459d)
     return RunResult(side="c", sample=sr.sample,
                      outputs={"ret": _typed_ret(spec, sr), "end": sr.outcome, "loops": list(sr.loops),
-                              "stdout": sr.stdout, "effects": list(sr.effects)},
+                              "stdout": sr.stdout, "effects": _effects_of(sr),
+                              "mem": list(sr.mem), "objects": list(sr.objects), "regions": list(sr.regions),
+                              "k2": list(sr.k2), "reads": reads},
                      measured=measured, rotations=rotations, kept=None, clean=None,
                      violations=[{"what": "c_oracle", "h": None, "msg": sr.reason}] if sr.failed else [])
 

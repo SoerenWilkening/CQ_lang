@@ -63,6 +63,11 @@ def rets(o1, sp, samples):
     return out
 
 
+def _no_mem(outputs):
+    """outputs without the memory and address tables (asserted on their own, FlatMemory below)."""
+    return {k: v for k, v in outputs.items() if k not in ("mem", "objects", "regions", "k2", "reads")}
+
+
 class Totalization(unittest.TestCase):
     """CR §2 rows in the C program."""
 
@@ -356,10 +361,10 @@ void inv_q(int x0, double t) { int x = x0; cq_invert_begin(); cq_theta(&x, t); c
                                            "angle": HALF, "reg": hex(4), "pre": hex(4),
                                            "nmeas": 0})   # nmeas: cq-459d
         self.assertEqual(rr.measured, [{"h": None, "w": "i32", "v": "0x2"}])
-        self.assertEqual(rr.outputs, {"ret": [{"call": 0, "fn": "loop_q", "v": {"w": "i32", "v": "0x2"}}],
-                                      "end": "ret",
-                                      "loops": [{"loop": "loop_q:%6", "act": 0, "n": 2, "capped": False}],
-                                      "stdout": "", "effects": []})
+        self.assertEqual(_no_mem(rr.outputs), {"ret": [{"call": 0, "fn": "loop_q", "v": {"w": "i32", "v": "0x2"}}],
+                                               "end": "ret",
+                                               "loops": [{"loop": "loop_q:%6", "act": 0, "n": 2, "capped": False}],
+                                               "stdout": "", "effects": []})
         self.assertEqual(rr.violations, [])
         self.assertIsNone(rr.kept)
         self.assertIsNone(rr.clean)
@@ -482,7 +487,7 @@ int spin_q(unsigned x0, double t, unsigned c) { unsigned x = x0; cq_theta(&x, t)
         self.assertIn("nonterminating", rr.violations[0]["msg"])
         self.assertEqual(rr.outputs["ret"], [])
         rr = oracle.run_sample(o1, sp, {"call": 0, "args": [i32(2), HALF, i32(2)]})
-        self.assertEqual(rr.outputs, {"ret": [], "end": "noreturn:abort", "loops": [], "stdout": "", "effects": []})
+        self.assertEqual(_no_mem(rr.outputs), {"ret": [], "end": "noreturn:abort", "loops": [], "stdout": "", "effects": []})
         self.assertEqual(rr.violations, [])
 
     def test_no_wall_clock_outcome(self):
@@ -724,14 +729,16 @@ int out_q(int x, int k) {
         smp = [{"call": 0, "args": [i32(x), i32(3)]} for x in (1, 5, 7, 8, 2)]
         runs = oracle.run_samples(o1, sp, smp)
         self.assertEqual([r.stdout for r in runs], ["x=1\n", "x=5\n", "x=7\n", "x=8\n", "x=2\n"])
-        rm = {"name": "remove", "args": [{"s": "/nonexistent/cq_e4jk"}]}
-        self.assertEqual([r.effects for r in runs],
-                         [[], [rm], [rm, {"name": "raise", "args": [{"w": "i32", "v": "0x6"}]}], [rm], []])
+        # rulings Q8: remove is the stand-in: its pointer and the string it reads; raise is real
+        rm = ("remove", "/nonexistent/cq_e4jk")
+        short = lambda r: [(e["name"], e["args"][0]["cap"]) if e["name"] == "remove" else (e["name"], e["args"]) for e in r.effects]
+        self.assertEqual([short(r) for r in runs],
+                         [[], [rm], [rm, ("raise", [{"w": "i32", "v": "0x6"}])], [rm], []])
         self.assertEqual([r.outcome for r in runs], ["ret", "ret", "raise:6", "noreturn:abort", "ret"])
         for r in runs:
             self.assertFalse(any(e["ev"] in ("stdout", "effect") for e in r.events), r.events)
         rr = oracle.run_result(runs[1], sp, o1)
-        self.assertEqual((rr.outputs["stdout"], rr.outputs["effects"]), ("x=5\n", [rm]))
+        self.assertEqual((rr.outputs["stdout"], rr.outputs["effects"][0]["args"][0]["cap"]), ("x=5\n", rm[1]))
 
 
 class DiskCaps(unittest.TestCase):
@@ -1176,6 +1183,54 @@ class RunnerLeases(unittest.TestCase):
             self.assertEqual(len(got[j]), 40)
             for g in got[j]:
                 self.assertEqual([int(v, 16) for v in g], [int(v, 16) for v in want[j]])
+
+
+class FlatMemory(unittest.TestCase):
+    """CR §6, rulings Q8, Q16: named outputs, lifetime markers, direct host calls."""
+
+    def test_named_output_in_memory(self):
+        o1 = compile_c("gout", """
+int dst = 7;
+const int tab[2] = {1, 2};
+int set_it(int x) { dst = x + tab[1]; return x; }
+""")
+        sp = spec("gout", "int set_it(int)", [("set_it", ["int"])])
+        rr = oracle.run_sample(o1, sp, {"call": 0, "args": [i32(9)]})
+        self.assertEqual([(m["name"], m["w"], int(m["v"], 16)) for m in rr.outputs["mem"]], [("dst", "i32", 11)])
+        self.assertTrue(any(o["name"] == "tab" and o["size"] == 8 for o in rr.outputs["objects"]), rr.outputs["objects"])
+        self.assertTrue(any(o["name"] == "set_it" for o in rr.outputs["objects"]))
+
+    def test_lifetime_start_keeps_the_trip_before(self):
+        # rule 20's one block: a block-scoped object re-entered by a loop holds what the trip before left
+        o1 = compile_c("lifetime", """
+__attribute__((noinline)) void touch(int *p) { *p = *p + 1; }
+int reenter(int n) {
+    int r = 0;
+    for (int i = 0; i < n; i++) { int a; touch(&a); r = a; }
+    return r;
+}
+""")
+        sp = spec("lifetime", "int reenter(int)", [("reenter", ["int"])])
+        rr = oracle.run_sample(o1, sp, {"call": 0, "args": [i32(2)]})
+        self.assertEqual(rr.violations, [])
+        self.assertEqual(rr.outputs["ret"][0]["v"], {"w": "i32", "v": "0x2"})
+
+    def test_stand_ins_not_real_calls(self):
+        # rulings Q8: nothing is printed, the result is fx_standin.h's, and an unknown callee logs too
+        o1 = compile_c("stand", """
+#include <stdio.h>
+int ext_unknown(int);
+int go(int x) { putchar(x); int r = ext_unknown(x); char b[8] = {0}; fgets(b, 8, stdin); return b[0] != 0 ? r : -1; }
+""")
+        sp = spec("stand", "int go(int)", [("go", ["int"])])
+        rr = oracle.run_sample(o1, sp, {"call": 0, "args": [i32(65)]})
+        self.assertEqual(rr.violations, [])
+        self.assertEqual(rr.outputs["stdout"], "")
+        self.assertEqual([e["name"] for e in rr.outputs["effects"]], ["putchar", "ext_unknown", "fgets"])
+        self.assertEqual(rr.outputs["effects"][0]["args"], [{"w": "i32", "v": "0x41"}])
+        self.assertEqual(rr.outputs["effects"][2]["args"][0]["p"], 1)
+        ret = rr.outputs["ret"][0]["v"]
+        self.assertNotEqual(ret["v"], "0xffffffff")   # fgets stored the stand-in's line
 
 
 if __name__ == "__main__":

@@ -582,14 +582,25 @@ class LeakRule(unittest.TestCase):
         return dict(keep(h, v, w, role), known=known)
 
     def test_kept_roles_pass(self):
-        for role in ("measured", "abort", "tape", "qram_cell", "kept_entangled", "output"):
+        for role in ("measured", "abort", "tape", "tape_slot", "store_kept", "overtaken", "kept_entangled"):
             c = compare(self.ours(lambda a, b: [self.leak(9, a ^ b, "i8", role)]), self.c_side(), QKEY, "c")
             self.assertTrue(c.equal, (role, c.reasons))
 
-    def test_output_in_memory_passes(self):
-        # the handle of the rail sits in an out-parameter's cell at exit (rt/core.c mark_outputs)
-        c = compare(self.ours(lambda a, b: [self.leak(9, a ^ b, "i32", "output")]), self.c_side(), QKEY, "c")
+    def test_retired_roles_are_leaks(self):
+        # the old model's rail handles in memory and QRAM blocks are gone: nothing keeps such a rail
+        for role in ("qram_cell", "output"):
+            c = compare(self.ours(lambda a, b: [self.leak(9, a ^ b, "i32", role)]), self.c_side(), QKEY, "c")
+            self.assertFalse(c.equal, role)
+
+    def test_k2_rail_needs_an_allocation(self):
+        # rule 20's kept n > K2: a garbage i1 is allowed per block the C program allocated, no more
+        rail = lambda a, b: [self.leak(9, a ^ b, "i1", "garbage")]
+        self.assertFalse(compare(self.ours(rail), self.c_side(), QKEY, "c").equal)
+        one = [dataclasses.replace(r, outputs=dict(r.outputs, k2=[[8, 4096]])) for r in self.c_side()]
+        c = compare(self.ours(rail), one, QKEY, "c")
         self.assertTrue(c.equal, c.reasons)
+        two = lambda a, b: rail(a, b) + [self.leak(10, a, "i1", "garbage")]
+        self.assertFalse(compare(self.ours(two), one, QKEY, "c").equal)
 
     def test_garbage_fails(self):
         # an entangled garbage rail its sources could still clean, left live (c8, c7)
@@ -1568,8 +1579,7 @@ class COraclePhaseTotal(unittest.TestCase):
 class HostOutput(unittest.TestCase):
     """Host output (cq-e4jk): outputs["stdout"] and outputs["effects"] are compared against both
     oracles; against "c" the C side's are a prefix of ours on a capped sample (exact on an ended one,
-    cq-64lv); an effect name of
-    ours outside HOST_EFFECTS is a CompareError against "c". Shaped like AbortRule's 45: x = s,
+    cq-64lv). Shaped like AbortRule's 45: x = s,
     abort on x == 3."""
 
     RM = {"name": "remove", "args": [{"s": "/tmp/cq_x"}]}
@@ -1639,12 +1649,236 @@ class HostOutput(unittest.TestCase):
         bad = [dataclasses.replace(r, outputs=dict(r.outputs, stdout="y\n")) for r in ours("")]
         self.check(bad, c, "c", False, "host stdout differs")
 
-    def test_unknown_effect_against_c_is_an_error(self):
-        from cqcheck.compare import CompareError
-        fx = lambda s: [{"name": "kill", "args": []}]
-        with self.assertRaises(CompareError):
-            compare(self.ours(fx=fx), self.c(fx=fx), QKEY, "c")
+    def test_effect_sequence_against_both(self):
+        # rulings Q8: any bodiless callee is logged by both sides; a name, a field or the order differs
+        fx = lambda s: [{"name": "putchar", "args": [{"w": "i32", "v": hex(s)}]}]
         self.check(self.ours(fx=fx), self.ours(side="r", fx=fx), "ref", True)
+        self.check(self.ours(fx=fx), self.c(fx=fx), "c", True)
+        bad = lambda s: [{"name": "putchar", "args": [{"w": "i32", "v": "0x7"}]}]
+        self.check(self.ours(fx=bad), self.ours(side="r", fx=fx), "ref", False, "host effects differ")
+        self.check(self.ours(fx=bad), self.c(fx=fx), "c", False, "host effects differ")
+        name = lambda s: [{"name": "fputc", "args": [{"w": "i32", "v": hex(s)}]}]
+        self.check(self.ours(fx=name), self.c(fx=fx), "c", False, "host effects differ")
+        two = lambda s: [{"name": "a", "args": []}, {"name": "b", "args": []}]
+        owt = lambda s: [{"name": "b", "args": []}, {"name": "a", "args": []}]
+        self.check(self.ours(fx=two), self.ours(side="r", fx=owt), "ref", False, "host effects differ")
+
+    def test_event_sequence_against_the_reference(self):
+        # rulings Q8: name, predicate, fields, order, performed; never the handles or the class
+        e = lambda pred, v: {"seq": 0, "kind": "effect", "pred": pred, "performed": bool(pred), "name": "b",
+                             "fields": [{"w": "i32", "v": hex(v)}]}
+        def tape(f):
+            return [dataclasses.replace(r, outputs=dict(r.outputs, tape=f(s))) for s, r in enumerate(self.ours(side="r"))]
+        same = tape(lambda s: [e(s & 1, s)])
+        self.check(same, tape(lambda s: [e(s & 1, s)]), "ref", True)
+        self.check(same, tape(lambda s: [e(1, s)]), "ref", False, "event sequence differs")
+        self.check(same, tape(lambda s: [e(s & 1, s + 1)]), "ref", False, "event sequence differs")
+        self.check(same, tape(lambda s: []), "ref", False, "event sequence differs")
+
+    def test_capture_compared(self):
+        fx = lambda cap: (lambda s: [{"name": "fwrite", "args": [{"w": "i64", "v": "0x0", "cap": cap}]}])
+        self.check(self.ours(fx=fx("ab")), self.c(fx=fx("ab")), "c", True)
+        self.check(self.ours(fx=fx("ab")), self.c(fx=fx("ac")), "c", False, "host effects differ")
+        self.check(self.ours(fx=fx("ab")), self.ours(side="r", fx=fx("ac")), "ref", False, "host effects differ")
+
+    def test_unplaced_pointer_field_against_c(self):
+        # a libc stream: both non-null is equal against C, a null one is not; bit for bit against the reference
+        fx = lambda v, p: (lambda s: [{"name": "fputs", "args": [dict({"w": "i64", "v": hex(v)}, **({"p": 1} if p else {}))]}])
+        self.check(self.ours(fx=fx(0x7000, 0)), self.c(fx=fx(0x8000, 1)), "c", True)
+        self.check(self.ours(fx=fx(0, 0)), self.c(fx=fx(0x8000, 1)), "c", False, "host effects differ")
+        self.check(self.ours(fx=fx(0x7000, 0)), self.c(fx=fx(0x8000, 0)), "c", False, "host effects differ")
+
+    def test_deviation_excluded_against_c_only(self):
+        # rulings Q8: rule 16's stated deviation
+        ours = [dataclasses.replace(r, measured=[dict(m, v="0x9") for m in r.measured]) for r in self.ours()]
+        dev = [dataclasses.replace(r, outputs=dict(r.outputs, deviation=True)) for r in ours]
+        self.assertTrue(compare(dev, self.c(), QKEY, "c").equal)
+        self.assertFalse(compare(ours, self.c(), QKEY, "c").equal)
+        self.check(dev, self.ours(side="r"), "ref", False)
+
+    def test_pointer_field_relational(self):
+        # CR §6: host addresses differ per run; a pointer into one object reads as (object, offset)
+        def fx(base):
+            return lambda s: [{"name": "fputs", "args": [{"w": "i64", "v": hex(base + s)}]}]
+        def ob(rs, base):
+            return [dataclasses.replace(r, outputs=dict(r.outputs, objects=[{"name": ".str", "addr": hex(base), "size": 8}]))
+                    for r in rs]
+        a, b = 0x100001000, 0x200002000
+        self.check(ob(self.ours(fx=fx(a)), a), ob(self.ours(side="r", fx=fx(b)), b), "ref", True)
+        other = lambda s: [{"name": "fputs", "args": [{"w": "i64", "v": hex(b + (s ^ 1))}]}]
+        self.check(ob(self.ours(fx=fx(a)), a), ob(self.ours(side="r", fx=other), b), "ref", False, "host effects differ")
+
+
+class Memory(unittest.TestCase):
+    """CR §6 item 1: a named output that lives in memory is read from the bus at exit."""
+
+    @staticmethod
+    def with_mem(rs, mem, extra=None):
+        return [dataclasses.replace(r, outputs=dict(r.outputs or {}, mem=mem(i), **(extra or {})))
+                for i, r in enumerate(rs)]
+
+    def base(self, name):
+        return side(name, ref_ab())
+
+    def test_equal(self):
+        mem = lambda s: [{"name": "dst", "addr": "0x1000", "w": "i32", "v": hex(s)}]
+        c = compare(self.with_mem(self.base("o"), mem), self.with_mem(self.base("r"), mem), QKEY, "ref")
+        self.assertTrue(c.equal, c.reasons)
+
+    def test_byte_differs_and_is_named(self):
+        mem = lambda s: [{"name": "dst", "addr": "0x1000", "w": "i32", "v": hex(s)}]
+        bad = lambda s: [{"name": "dst", "addr": "0x1000", "w": "i32", "v": hex(s | 0x100)}]
+        c = compare(self.with_mem(self.base("o"), bad), self.with_mem(self.base("r"), mem), QKEY, "ref")
+        self.assertFalse(c.equal)
+        self.assertTrue(any("memory output dst differs at byte 1" in r for r in c.reasons), c.reasons)
+
+    def test_a_missing_output_differs(self):
+        mem = lambda s: [{"name": "dst", "addr": "0x1000", "w": "i32", "v": "0x0"}]
+        c = compare(self.base("o"), self.with_mem(self.base("r"), mem), QKEY, "ref")
+        self.assertFalse(c.equal)
+        self.assertTrue(any("exists only on the other side" in r for r in c.reasons), c.reasons)
+        c = compare(self.with_mem(self.base("o"), mem), self.base("r"), QKEY, "ref")
+        self.assertTrue(any("exists only on the our side" in r for r in c.reasons), c.reasons)
+
+    def test_split_and_whole_agree(self):
+        # one event for the object or one per cell: compared per (name, byte offset)
+        whole = lambda s: [{"name": "x", "addr": "0x1001", "w": "i16", "v": "0x0201"}]
+        cells = lambda s: [{"name": "x", "addr": "0x1001", "off": 0, "w": "i8", "v": "0x01"},
+                           {"name": "x", "addr": "0x1002", "off": 1, "w": "i8", "v": "0x02"}]
+        c = compare(self.with_mem(self.base("o"), whole), self.with_mem(self.base("r"), cells), QKEY, "ref")
+        self.assertTrue(c.equal, c.reasons)
+
+    def test_pointer_cell_reads_relationally(self):
+        # a cell holding &obj+4: other address, same object and offset
+        def mem(p, g):
+            return lambda s: [{"name": "cell", "addr": hex(g), "w": "i64", "v": hex(p + 4)},
+                              {"name": "obj", "addr": hex(p), "w": "i64", "v": "0x0"}]
+        a, b = 0x100001000, 0x200002000
+        c = compare(self.with_mem(self.base("o"), mem(a, a + 16)), self.with_mem(self.base("r"), mem(b, b + 32)), QKEY, "ref")
+        self.assertTrue(c.equal, c.reasons)
+        wrong = lambda s: [{"name": "cell", "addr": hex(b + 32), "w": "i64", "v": hex(b + 8)},
+                           {"name": "obj", "addr": hex(b), "w": "i64", "v": "0x0"}]
+        c = compare(self.with_mem(self.base("o"), mem(a, a + 16)), self.with_mem(self.base("r"), wrong), QKEY, "ref")
+        self.assertFalse(c.equal)
+
+    def test_a_data_word_is_not_a_pointer(self):
+        # two ints (3, 1) look like an address of the image: nothing but a known range makes a pointer
+        mem = lambda v: (lambda s: [{"name": "pair", "addr": "0x2000", "w": "i64", "v": hex(v)}])
+        c = compare(self.with_mem(self.base("o"), mem(0x100000003)), self.with_mem(self.base("r"), mem(0x100000004)), QKEY, "ref")
+        self.assertFalse(c.equal)
+
+    def test_c_side_compared_and_not_on_a_capped_sample(self):
+        ab = AbortRule()
+        mem = lambda s: [{"name": "dst", "addr": "0x1000", "w": "i32", "v": hex(s)}]
+        bad = lambda s: [{"name": "dst", "addr": "0x1000", "w": "i32", "v": "0x7"}]
+        c = compare(self.with_mem(ab.ours(), bad), self.with_mem(ab.c(), mem), QKEY, "c")
+        self.assertFalse(c.equal)
+        self.assertTrue(any("memory output dst" in r for r in c.reasons), c.reasons)
+        # the ended sample s = 3 has no outputs: ours may hold what it likes there
+        ended = lambda s: mem(s) if s != 3 else []
+        c = compare(self.with_mem(ab.ours(), mem), self.with_mem(ab.c(), ended), QKEY, "c")
+        self.assertTrue(c.equal, c.reasons)
+
+    def test_heap_pointer_class_against_c(self):
+        # a local lives on the C stack and in our arena: one class against C, the offset against ref
+        def res(rs, addr, lo, hi):
+            return [dataclasses.replace(r, outputs=dict(r.outputs or {},
+                    mem=[{"name": "cell", "addr": "0x1000", "w": "i64", "v": hex(addr)}],
+                    regions=[{"name": "stack" if lo > 1 << 40 else "heap", "lo": hex(lo), "hi": hex(hi)}])) for r in rs]
+        ab = AbortRule()
+        c = compare(res(ab.ours(), 0x300000010, 0x300000000, 0x300010000),
+                    res(ab.c(), (1 << 44) + 8, 1 << 44, (1 << 44) + 4096), QKEY, "c")
+        self.assertTrue(c.equal, c.reasons)
+        o = res(side("o", ref_ab()), 0x300000010, 0x300000000, 0x300010000)
+        r = res(side("r", ref_ab()), 0x500000018, 0x500000000, 0x500010000)
+        self.assertFalse(compare(o, r, QKEY, "ref").equal)
+
+
+class RailSizedAllocation(unittest.TestCase):
+    """CR §6: the kept rail n > K2 of a rail-sized allocation must read n > K2 on every input."""
+
+    def run_(self, flag):
+        rule = LeakRule()
+        o = rule.ours(lambda a, b: [rule.leak(9, flag(a, b), "i1", "garbage")] if flag else [])
+        c = rule.c_side()
+        return o, [dataclasses.replace(r, outputs=dict(r.outputs, k2=[[9000 if s & 1 else 8, 4096]])) for s, r in enumerate(c)]
+
+    def test_reads_the_predicate(self):
+        o, c = self.run_(lambda a, b: a)
+        r = compare(o, c, QKEY, "c")
+        self.assertTrue(r.equal, r.reasons)
+
+    def test_another_value_fails(self):
+        o, c = self.run_(lambda a, b: b)
+        r = compare(o, c, QKEY, "c")
+        self.assertTrue(any("reads n > K2" in x for x in r.reasons), r.reasons)
+
+    def test_no_rail_fails(self):
+        o, c = self.run_(None)
+        r = compare(o, c, QKEY, "c")
+        self.assertTrue(any("reads n > K2" in x for x in r.reasons), r.reasons)
+
+
+class FlatKept(unittest.TestCase):
+    """CR §6 item 1, rule 5: tape slots and overtaken copies are kept rails; a free is legal iff the
+    rail is classical-valued or reads 0 (rulings, "Every _unc must leave 0")."""
+
+    def ref(self, name, extra=()):
+        return side(name, lambda a, b, s: dict(rots=[ry(1, 1.0), ry(2, 2.0)],
+                                               kept=[keep(1, a), keep(2, b)] + [e(a, b) for e in extra]))
+
+    def test_tape_slot_in_the_multiset(self):
+        slot = lambda a, b: keep(50, a, "i32", "tape_slot")
+        c = compare(self.ref("o", [slot]), self.ref("r", [slot]), QKEY, "ref")
+        self.assertTrue(c.equal, c.reasons)
+        c = compare(self.ref("o"), self.ref("r", [slot]), QKEY, "ref")
+        self.assertFalse(c.equal)
+        self.assertTrue(any("are not kept on our side" in r for r in c.reasons), c.reasons)
+
+    def test_displaced_value_counts(self):
+        one = lambda a, b: keep(50, a, "i32", "tape_slot")
+        two = lambda a, b: keep(50, b, "i32", "tape_slot")
+        self.assertFalse(compare(self.ref("o", [one]), self.ref("r", [two]), QKEY, "ref").equal)
+
+    def test_kept_address_rail_relational(self):
+        def run_(name, base):
+            rs = self.ref(name, [lambda a, b: keep(60, base + 4 * a, "i64", "store_kept")])
+            return [dataclasses.replace(r, outputs={"objects": [{"name": "g", "addr": hex(base), "size": 8}]}) for r in rs]
+        a, b = run_("o", 0x100001000), run_("r", 0x200002000)
+        c = compare(a, b, QKEY, "ref")
+        self.assertTrue(c.equal, c.reasons)
+        shift = [dataclasses.replace(r, kept=[dict(k, v=hex(int(k["v"], 16) + 8)) if k["h"] == 60 else k for k in r.kept])
+                 for r in b]
+        self.assertFalse(compare(a, shift, QKEY, "ref").equal)
+
+    def test_compact_rows_compare_as_their_rails(self):
+        # run._compact_kept: a K2 copy's thousands of slots as rows; the multiset is the rails'
+        from cqcheck.run import _compact_kept
+        def side_(name, hi):
+            def build(a, b, s):
+                live = [dict(keep(100 + i, a if i == hi else 0, "i8", "tape_slot"), known=True) for i in range(8)]
+                return dict(rots=[ry(1, 1.0), ry(2, 2.0)], kept=[keep(1, a), keep(2, b)] + _compact_kept(live))
+            return side(name, build)
+        self.assertLess(len(side_("o", 3)[0].kept), 2 + 8)
+        c = compare(side_("o", 3), side_("r", 5), QKEY, "ref")      # same multiset at other handles: rails rename
+        self.assertTrue(c.equal, c.reasons)
+        other = side("r", lambda a, b, s: dict(rots=[ry(1, 1.0), ry(2, 2.0)], kept=[keep(1, a), keep(2, b)]
+                                               + [keep(100 + i, b if i == 3 else 0, "i8", "tape_slot") for i in range(8)]))
+        self.assertFalse(compare(side_("o", 3), other, QKEY, "ref").equal)
+
+    def test_free_of_a_classical_valued_rail_with_any_value(self):
+        ok = side("o", lambda a, b, s: dict(rots=[ry(1, 1.0), ry(2, 2.0)], kept=[keep(1, a), keep(2, b)],
+                                            clean=[{"h": 9, "v": "0x5", "known": 1}]))
+        c = compare(ok, self.ref("r"), QKEY, "ref")
+        self.assertFalse(any("known basis state" in r for r in c.reasons), c.reasons)
+
+    def test_free_at_zero_not_classical_valued_is_legal_but_never_nonzero(self):
+        clean = side("o", lambda a, b, s: dict(rots=[ry(1, 1.0), ry(2, 2.0)], kept=[keep(1, a), keep(2, b)],
+                                               clean=[{"h": 9, "v": "0x0", "known": 0}]))
+        self.assertFalse(any("known basis state" in r for r in compare(clean, self.ref("r"), QKEY, "ref").reasons))
+        dirty = side("o", lambda a, b, s: dict(rots=[ry(1, 1.0), ry(2, 2.0)], kept=[keep(1, a), keep(2, b)],
+                                               clean=[{"h": 9, "v": hex(a & b), "known": 0}]))
+        self.assertTrue(any("known basis state" in r for r in compare(dirty, self.ref("r"), QKEY, "ref").reasons))
 
 
 if __name__ == "__main__":

@@ -61,9 +61,93 @@ class DriverSpecs(unittest.TestCase):
         # registers computed inside the program: no quantum argument (58, 113)
         self.assertEqual(q(s["58_register_array"]), [False, False])
         self.assertEqual(s["113_dicke4"].calls[0]["args"], [])
-        # a pointer to the caller's registers (60): handle cells, each a quantum input (cq-rbe6)
+        # a pointer to the caller's registers (60): a host object whose elements are quantum inputs
         self.assertEqual(q(s["60_qft"]), [True, False, False])
-        self.assertEqual(s["60_qft"].calls[0]["args"][0].get("cells"), {"w": 1, "n": 4})
+        self.assertEqual(s["60_qft"].calls[0]["args"][0].get("fill"), {"ctype": "_Bool", "w": 1, "n": 4})
+        self.assertEqual(s["60_qft"].calls[0]["args"][0].get("object"), "q")
+
+
+class FlatDrivers(unittest.TestCase):
+    """drivers.py "Driver objects", rulings Q6, Q8, Q10."""
+
+    def test_printing_stubs_of_a_library_go(self):
+        # rulings Q6: drivers.txt's printing bodies of __cq_q_* are the spec tooling's, never the checker's
+        for ex in ("161_opaque_callee", "190_memmove_memcmp_escape"):
+            protos = D.read_drivers_txt()[ex].protos
+            self.assertFalse(any("__cq_q_" in p or "printf" in p or "_nh" in p or "/*" in p for p in protos), protos)
+
+    def test_a_body_in_the_line_stays(self):
+        spec = D.driver_specs(["203_bus_plain_and_overtaint"])["203_bus_plain_and_overtaint"]
+        self.assertTrue(any(p.startswith("void ext_fill(") and p.endswith("}") for p in spec.protos), spec.protos)
+        self.assertEqual(D.proto_definitions(spec), frozenset({"ext_fill"}))
+
+    def test_extern_line_and_module_objects(self):
+        spec = D.driver_specs(["206_theta_twice_store_between"])["206_theta_twice_store_between"]
+        a = spec.calls[1]["args"]
+        self.assertEqual(a[0]["fill"], {"ctype": "int", "w": 32, "n": 1})
+        self.assertNotIn("object", a[0])     # a module global: read by out_globals_ir
+
+    def test_a_stream_is_no_object(self):
+        spec = D.driver_specs(["210_input_behind_output"])["210_input_behind_output"]
+        self.assertEqual({k: v for k, v in spec.calls[0]["args"][4].items() if k != "ctype"}, {"quantum": False})
+
+    def test_const_objects_are_not_filled(self):
+        for ex in ("28_horner_accumulator", "58_register_array", "78_array_of_structs"):
+            spec = D.driver_specs([ex])[ex]
+            for c in spec.calls:
+                self.assertFalse(any(a.get("fill") for a in c["args"]), ex)
+
+    def test_no_handle_cell_in_any_line(self):
+        for name, spec in D.driver_specs().items():
+            self.assertNotIn("cqrt_alloc", spec.setup, name)
+
+    def test_noalias_call_is_out_of_the_c_domain(self):
+        # rulings Q10: 206's third call passes &cell twice to noalias parameters, stored through
+        ex = "206_theta_twice_store_between"
+        spec = D.driver_specs([ex])[ex]
+        mod = D.read_module(D.o1_path(ex))
+        calls = [{"call": 1, "args": ["&cell", "&g", "0x0", "0x0"]}, {"call": 2, "args": ["&cell", "&cell", "0x0", "0x0"]},
+                 {"call": 2, "args": ["&cell@fill:0x5", "&cell", "0x0", "0x0"]}]
+        self.assertEqual([D.c_out_of_domain(spec, s, mod) for s in calls], [False, True, True])
+
+    def test_writable_globals_and_their_reader(self):
+        t = D.o1_path("207_theta_of_load_copy").read_text()
+        self.assertEqual([n for n, _, _ in D.writable_globals(t)], ["@src", "@dst"])
+        ir = D.out_globals_ir(t, t, "f", "h", "tb")
+        self.assertIn("call void @h(ptr @.cqd.gname.0, ptr @src, i64 ptrtoint (ptr getelementptr (i32, ptr null, i32 1) to i64))", ir)
+        self.assertIn("call void @tb(", ir)
+        # a global the module lacks gets no read: that output is then missing on that side
+        self.assertNotIn("@dst", D.out_globals_ir(t, "@src = global i32 0\n", "f", "h", "tb"))
+        tls = D.writable_globals("@tl = thread_local global i32 0, align 4\n@c = constant i32 1\n@e = external global i32\n")
+        self.assertEqual(tls, [("@tl", "i32", True)])
+
+    def test_every_writable_global_of_the_corpus_parses_and_lives_in_its_reference(self):
+        for name in D.all_examples():
+            o = D.o1_path(name)
+            t, low = o.read_text(), Path(str(o).replace(".O1.ll", ".lowered.ll")).read_text()
+            self.assertEqual({n for n, _, _ in D.writable_globals(t)} - {n for n, _, _ in D.writable_globals(low)}, set(), name)
+
+    def test_effect_callees(self):
+        t = ('declare i32 @putchar(i32 noundef)\ndeclare noalias ptr @malloc(i64)\ndeclare i64 @"\\01_fwrite"(ptr noundef, i64, i64, ptr)\n'
+             'declare double @sin(double)\ndeclare i32 @printf(ptr, ...)\ndeclare i32 @ext(i32)\ndeclare i32 @rooted(i32)\ndeclare void @llvm.foo(i32)\n'
+             'declare ptr @__cq_alloc(i64, i64)\n  %1 = call i32 @putchar(i32 3)\n  %2 = call i64 @"\\01_fwrite"(ptr %0, i64 1, i64 1, ptr %0)\n')
+        c = D.effect_callees(t, frozenset({"rooted"}))
+        self.assertEqual(sorted(c), ["ext", "fwrite", "putchar"])
+        out = D.rename_effects(t, c)
+        self.assertIn("call i32 @cqd_fx_putchar(i32 3)", out)
+        self.assertIn("call i64 @cqd_fx_fwrite(", out)
+        self.assertNotIn("declare i32 @putchar", out)
+        ir = D.effect_wrappers_ir(c)
+        self.assertIn("define i64 @cqd_fx_fwrite(ptr %a0, i64 %a1, i64 %a2, ptr %a3)", ir)
+        with self.assertRaisesRegex(RuntimeError, "cq: unimplemented: chk-drivers: a direct host call of variadic"):
+            D.effect_wrappers_ir({"v": ("v", "i32", "ptr, ...")})
+
+    def test_wrappers_parse(self):
+        all_ = {"a": ("a", "void", "ptr, i32"), "b": ("b", "double", "double, float"), "c": ("c", "x86_fp80", "x86_fp80"),
+                "d": ("d", "ptr", ""), "e": ("e", "i8", "i8 signext, i128")}
+        r = subprocess.run([str(S.LLVM_BIN / "llvm-as"), "-o", "/dev/null", "-"], input=D.effect_wrappers_ir(all_),
+                           text=True, capture_output=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
 
 
 class Loops(unittest.TestCase):
@@ -183,11 +267,11 @@ def baked_driver_source(spec, samples):
         for a, ct, v in zip(call["args"], cts, s["args"]):
             if ct.kind == "p":
                 v, cv = D.split_ptr(v)
-                cells = a.get("cells")
-                if cells:    # the C side's view of the handle cells (cq-rbe6): element k = value k
-                    nb = max(1, cells["w"] // 8)
-                    for k, x in enumerate(cv or ["0x0"] * cells["n"]):
-                        writes.append(f"{{ unsigned long long x = {int(x, 16) & ((1 << cells['w']) - 1)}ULL; "
+                fill = a.get("fill")
+                if fill:    # the object's elements, the same bytes on every side
+                    nb = fill["w"] // 8 or 1
+                    for k, x in enumerate(cv or []):
+                        writes.append(f"{{ unsigned long long x = {int(x, 16) & ((1 << fill['w']) - 1)}ULL; "
                                       f"memcpy((char *)({v}) + {k * nb}, &x, {nb}); }}")
             vals.append(baked_c_value(ct, v))
         out.append(f"    {{ {' '.join(writes)} (void){call['fn']}({', '.join(vals)}); }}")
@@ -340,21 +424,22 @@ class Sampling(unittest.TestCase):
         self.assertTrue({("0x8000000000000000",), ("0x7fffffffffffffff",), ("0xffffffffffffffff",)} <= edge)
         self.assertIn("empty", ss.classes["specials"]["0"])
 
-    def test_handle_cells_are_quantum_inputs(self):
-        """cq-rbe6: 60's register array (int q[4] of cqrt_alloc_i1(0) handles) is a quantum input:
-        exhaustive (with the cq_theta reaches) and edge over its 4 cells, and classical tuples crossed with random cell values."""
+    def test_object_elements_are_quantum_inputs(self):
+        """60's register array (static _Bool q[4]) is a quantum input: exhaustive (with the cq_theta
+        reaches) and edge over its 4 elements, and classical tuples crossed with random element values."""
         spec, ss = self.sample("60_qft")
         cells = lambda i: tuple(D.split_ptr(ss.samples[i]["args"][0])[1] or ["0x0"] * 4)
         ex = ss.classes["exhaustive"]["0"]
-        self.assertEqual(ex["bits"], 4 + 3)                  # the cells crossed with qft:0's 3 reaches
+        self.assertEqual(ex["bits"], 4 + 3)                  # the elements crossed with qft:0's 3 reaches
         self.assertEqual({cells(i) for i in ex["samples"]},
                          {tuple(f"0x{(n >> k) & 1:x}" for k in range(4)) for n in range(16)})
         self.assertEqual(len({cells(i) for i in ss.classes["edge"]["0"]["samples"]}), 16)
         rc = ss.classes["random_seed"]["classical"]["0"]["samples"]
         self.assertGreater(len({(ss.samples[i]["args"][1], cells(i)) for i in rc}),
                            len({ss.samples[i]["args"][1] for i in rc}))
-        self.assertEqual(D.sample_record(spec, {"call": 0, "args": ["q@cells:0x1,0x0,0x1,0x1", "0x3", "0x0"]}),
+        self.assertEqual(D.sample_record(spec, {"call": 0, "args": ["q@fill:0x1,0x0,0x1,0x1", "0x3", "0x0"]}),
                          "0 p71 0x1 0x0 0x1 0x1 0x3 0x0")
+        self.assertEqual(D.sample_record(spec, {"call": 0, "args": ["q", "0x3", "0x0"]}), "0 p71 - 0x3 0x0")
 
     def test_exhaustive_bound_is_8_bits(self):
         """cq-l1wi (owner decision): 8 quantum bits are exhaustive, 9 are not."""
@@ -1364,7 +1449,7 @@ class ProbeDeterminism(unittest.TestCase):
         self.assertEqual([o.end for o in a], ["exit", "oob", "oob", "exit", "timeout"])
         self.assertEqual(a[1].oob, {-1})
         self.assertEqual(a[1].hdrs, 0)
-        self.assertEqual(a[4].hdrs, S.HDR_CAP + 1)
+        self.assertEqual(a[4].hdrs, S.hdr_cap() + 1)
 
     def test_residue_and_library_ranges(self):
         """cq-z8gj: an uninitialized stack read sees the same bytes whatever sample ran before it in

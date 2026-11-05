@@ -70,6 +70,7 @@ _OUT_REF = r"outputs .* != "
 _RET_C = r"returns .* != "
 _HOST_OUT = r"host stdout differs"
 _HOST_FX = r"host effects differ"
+_MEM = r"memory output .* (differs|exists only)"
 
 # class -> (description, pattern a reason of the reference check must match, pattern for the
 # C-oracle check or None when the class is invisible to the C program).
@@ -114,6 +115,13 @@ CLASSES: Dict[str, Tuple[str, str, Optional[str]]] = {
                             _HOST_OUT, _HOST_OUT),
     "dropped_tape_effect": ("a tape effect entry is deleted: the host call is never performed",
                             _HOST_FX, _HOST_FX),
+    # the one bus (CR §6 item 1, rule 5; plan §3 W2)
+    "bus_store_other_address": ("a bus store goes to another global's address", _MEM, _MEM),
+    "bus_load_narrower": ("a bus load reads i16 of an i32 cell: the rail holds another value",
+                          rf"violations on our side|{_MEAS}|{_OUT_REF}|{_ROT_REF}|{_MEM}",
+                          rf"violations on our side|{_MEAS}|{_RET_C}|{_ROT_C}|{_MEM}"),
+    "bus_dropped_kept_store": ("a kept bus store is deleted: the cell, its tape slot and the value rail's role change",
+                               rf"rail\(s\) .* are not kept on our side|{_MEAS}|{_OUT_REF}", rf"{_MEAS}|{_RET_C}|a leak; cq-tt2j"),
 }
 
 # Classes whose evaluation may FAIL on an output difference before the rotation list: each must also

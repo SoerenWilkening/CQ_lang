@@ -15,7 +15,9 @@ What is compared (CR §6, CLAUDE.md "The §6 checker"):
 - oracle "ref" only: kept rails (live at exit, every role, A4's kept_entangled included) as a
   multiset of (type, value function over the group's samples);
 - oracle "c" only: the leak rule (CR §6 item 1, cq-tt2j): every rail of ours live at exit is a
-  frozen register, a measured value, an output, a result or a rule-kept rail (_leaks below);
+  frozen register, a measured value, an effect entry's result, a result or a rule-kept rail (_leaks
+  below);
+- per sample against both oracles: the named outputs in memory (below, "Memory");
 - the rotation list: (gate, target, angle or angle-rail value, control predicate per input), up to
   reordering of commuting gates (below) and renaming of rails. Rails are matched by (type,
   value function over the group's samples). Each Ry acts on a rail whose basis value just before
@@ -151,19 +153,42 @@ record self-contained; values are hex bit patterns or ints):
   "cap:<loop>"). Whether the oracle stops the whole program at the cap or goes on is its choice;
   compare reads nothing past the earliest cut either way.
 
+Memory (CR §6 item 1, flat memory). outputs["mem"] on every side: the driver's named outputs read
+after the call (drivers.py "Driver objects"), each {"name", "addr", "w", "v"[, "off"]}, "w" the width
+of little-endian value "v" in bits (i8, i32, i<8n>; an f<N> or bf16 token its storage bytes) and "off"
+its offset in the object (default 0). They are compared per (name, byte offset), byte for byte
+(fp NaN-insensitivity has no place here: nothing types the bytes). A name one side lacks differs.
+Against the C oracle a capped or ended sample has no outputs to compare, as for "ret". Which order a
+copy wrote its bytes in (CR rule 22) cannot show. An uninitialized cell of a host-resident local is
+in no output.
+
+Pointers (CR §6: compared only relationally; host addresses differ per run). A value of an i64 rail
+or an aligned word in a named output that lies in a known object of its own run reads as
+("name", offset): outputs["objects"] (globals and functions, {"name", "addr", "size"}) and the
+outputs["mem"] entries themselves. One in a run's outputs["regions"] ({"name", "lo", "hi"}; the
+allocation arena "heap" and the "stack") reads as ("heap", offset from lo) against the reference,
+and as the one class "<mem>" against the C oracle, where a local lives on the stack that lives in the
+arena on our side. Every other value is itself. So a kept rail or a cell holding the address of
+another object than the reference's differs, and so does one holding a data word.
+
 Host output (cq-e4jk; CR rule 16 and §1.3). outputs["stdout"] (str, missing = "") and
 outputs["effects"] (missing = []) on every side: what the run printed and the host-effect calls it
 made, each effect {"name", "args": [{"s": str} | {"w": "i<N>", "v": hex}]}. On ours and the
 reference (run.py) stdout is the process's output followed by the tape's end-of-shot text, and
 effects the module's direct host-effect calls followed by the effect entries the tape performed; on
-the C side (oracle.py) they are the C program's stdout and its calls of the host-effect functions
-(HOST_EFFECTS), in order. Both are compared exactly, args as typed scalars, against either oracle;
+the C side (oracle.py) they are the C program's stdout and its direct host calls (raise and the
+stand-ins, drivers.effect_callees), in order; ours hold only entries whose predicate read 1 with no
+earlier abort reading 1 (rt_tape.c). Both are compared exactly, args as typed scalars with the bytes
+captured ("cap") and pointer-valued ones relationally (above), against either oracle (rulings Q8).
+Against the reference outputs["tape"], the shot's whole event sequence (name or format, predicate,
+fields, order, performed, text, result; never the evaluator's class), is compared too. A sample
+with outputs["deviation"] true (a deferred entry whose result the program reads: rt_tape.c) is rule 16's
+stated deviation: excluded from the C-oracle comparison on that input (rulings Q8), the reference
+comparison stands;
 against the C oracle on a capped sample (below) the C side's stdout and effects must be a prefix of
 ours (the circuit runs on past the cut). On an ended sample they are compared exactly (owner ruling
 2026-11-02, cq-64lv): every host effect after an abort under a quantum predicate is a tape entry, and
-the backend performs no entry after an abort flag reading 1 (CR §1.3). Against the C oracle an effect name of
-ours outside HOST_EFFECTS is a CompareError (the C oracle logs no such call, so the comparison
-could not be decided). A program that interleaves direct and taped output is compared in the
+the backend performs no entry after an abort flag reading 1 (CR §1.3). A program that interleaves direct and taped output is compared in the
 circuit's order (direct first, the tape at the end of the shot, CR §1.3).
 
 The a_K rule (CR §6, ruling 2026-10-27, cq-1di; against="c" only). A sample is capped when one of
@@ -183,7 +208,7 @@ capped sample:
 On a sample with no capped record everything is compared, and every a_K must read 0.
 a_K is located on our side by value function, like every rail (CLAUDE.md): within each comparison
 group, each (loop, act) capped on at least one sample of the group must be matched to its own kept
-i1 rail of ours (role not measured, abort, tape, qram, qram_cell, qram_slot) that reads 1 on every
+i1 rail of ours (role not measured, abort, tape, tape_slot, overtaken) that reads 1 on every
 sample where it is capped, 0 on every uncapped sample and on every sample whose record of it says
 capped false, and anything on a sample capped by another activation that has no record of it (it
 lay past the cut). An activation never capped in a group cannot be told from other 0 rails there,
@@ -200,7 +225,9 @@ on. On an ended sample:
   capped sample at its cut: our first len(C measured) measurements are compared with them, ours may
   have more, and a lowered gate may fire after the end with any angle (the same "precedes a
   reached gate" exception applies);
-- ours must keep an i1 rail of role "abort" that reads 1.
+- ours must keep an i1 rail of role "abort" that reads 1; or, on a "raise:<sig>" sample, have an effect
+  entry raise performed (rule 16's signal table: the complement branch, 102, 212), past which the
+  stand-in's shot runs on, so the C side's effects are a prefix of ours there.
 On a sample that returns (neither ended nor capped) every kept abort-role i1 rail of ours reads 0.
 A capped sample says nothing about abort flags (an abort past the cut is unknown). The abort
 rails are read by role, which the evaluator sets on the operand of abort_i1 (BACKEND_ABI §1.2),
@@ -249,9 +276,10 @@ class CompareError(Exception):
     """A RunResult this module cannot read: an internal error of the checker, never a verdict."""
 
 
-# The host-effect functions whose calls both sides log (cq-e4jk): run.py renames a lowered module's
-# direct calls to checker/rt/host_fx.c's wrappers, the C oracle logs them at the call
-# (OracleInstr.cpp, effects). Tape effect entries of these names are compared with them.
+# The host-effect functions with a logging stand-in in checker/rt/host_fx.c: run.py renames a lowered
+# module's direct calls to them. Every other direct host call goes to a generated wrapper on both sides
+# (drivers.effect_callees, rulings Q8); on the C side these do too, but for raise, which the C oracle
+# logs and makes (OracleInstr.cpp, effects): it ends the sample or runs the handler.
 HOST_EFFECTS = ("remove", "unlink", "rename", "raise")
 
 
@@ -378,6 +406,17 @@ def _ctl_on(rec: Dict[str, Any]) -> int:
     return int(all(_int(b) for b in rec.get("ctlv", []) or []))
 
 
+def _kept_rows(rr: RunResult):
+    """The live rails of a run, each row of a run (run._compact_kept) as its rails."""
+    for k in rr.kept or []:
+        n = k.get("n")
+        if n is None:
+            yield k
+        else:
+            for i in range(n):
+                yield {"h": k["h"] + i * k["step"], "w": k.get("w"), "v": k.get("v"), "role": k.get("role")}
+
+
 def _shape_of(rr: RunResult) -> Tuple:
     """The structure of one lowered run: everything but data values."""
     rots = []
@@ -387,7 +426,7 @@ def _shape_of(rr: RunResult) -> Tuple:
             raise CompareError(f"cq: unimplemented: chk-compare: rotation event {rec!r}")
         theta = _int(rec.get("theta")) if ev in ("ry", "phase") else None
         rots.append((ev, rec.get("h"), rec.get("a"), rec.get("f"), tuple(rec.get("ctl", []) or []), theta))
-    kept = tuple(sorted((k["h"], k.get("w")) for k in rr.kept or []))
+    kept = hash(tuple(sorted((k["h"], k.get("w")) for k in _kept_rows(rr))))
     # every free in order: the setup's free events, then the sample's summary (run.py's compact trace,
     # cq-8m6v: the count and a digest of the handles), or the sample's free events when there is none
     clean = rr.clean or []
@@ -1749,7 +1788,7 @@ def _classes_mod_2pi(vals: Sequence[Fraction], mg: Sequence[float]) -> Optional[
 
 # ---------------------------------------------------------------- the a_K rule (against "c")
 
-_NOT_AK_ROLES = ("measured", "abort", "tape", "qram", "qram_cell", "qram_slot")
+_NOT_AK_ROLES = ("measured", "abort", "tape", "tape_slot", "store_kept", "overtaken")
 
 
 def _loops(rr: RunResult) -> List[Dict[str, Any]]:
@@ -1839,38 +1878,42 @@ def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult], ended: Sequence[
 
 # ---------------------------------------------------------------- the leak rule (against "c")
 
-# CR §6 item 1 (CQ_spec 47b0a38, ruling 2026-11-01 on cq-nyto; cq-tt2j): a rail still allocated at exit
-# is a frozen register (rule 10), a measured value, or a kept rail a rule names (6, 14, 26); any other
+# CR §6 item 1 (cq-tt2j, CQ_spec bff98cb): a rail still allocated at exit is a frozen register (rule 10),
+# a measured value, an effect entry's result rail, or a kept rail a rule names (5, 6, 14, 16, 18, 19; the
+# overflow predicates a_K and n > K2 among them); any other
 # live rail is a leak and FAILS, with or without a reference. Against the reference the kept multiset
 # already decides it; against the C oracle (the C-oracle verdict; cqcheck user, which has no
 # clean-list) each live rail of ours is read by the role the evaluator gives it at exit (rt/core.c
 # exit_role) and what the run says of it:
 #   kept      measured, frozen (rotated, or a rule-6 image carrying a rotated register's content: rule 19's
-#             FROZEN result a caller keeps, rt/core.c cqe__carry; cq-qhow), abort and tape rails (rules 5, 16), QRAM blocks (qram,
-#             qram_cell, qram_slot), kept_entangled (a source received a non-diagonal gate or a
-#             measurement after the rail was written: no _unc can clean it; rules 5 and 6), output (its
-#             handle sits in output memory at exit: an out-parameter's or output object's cell, a
-#             global, the object a returned pointer reaches; orchestrator decision on cq-tt2j), a
-#             result (the handle a handle-returning function returns, run.resolve_handle_rets:
-#             "result"), a seed that received an Ry (a register whose Ry was the identity);
+#             FROZEN result a caller keeps, rt/core.c cqe__carry; cq-qhow), abort and tape rails (rule 16),
+#             a bus store's tape slot, its value rail and control rail (tape_slot, store_kept: rule 5
+#             sentence 3), an overtaken load copy (overtaken: rule 5), kept_entangled (a source received
+#             a non-diagonal gate or a measurement after the rail was written: no _unc can clean it;
+#             rules 5 and 6), a result (the handle a handle-returning function returns,
+#             run.resolve_handle_rets: "result"), a seed that received an Ry (a register whose Ry was
+#             the identity);
 #   rule 23   at most one fenv_flags rail (the final flags rail is an output) and one fenv_mode rail;
 #   known     a rail in a known classical basis state (owner ruling 2026-11-01 on cq-tt2j: not a
 #             leak; LIVE_KNOWN_IS_LEAK below flips it);
-#   a_K       a "garbage" i1 rail, at most one per activation the C oracle recorded on the sample whose
+#   a_K, n>K2 a "garbage" i1 rail, at most one per activation the C oracle recorded on the sample whose
 #             (loop, act) it capped after K trips on some sample of the comparison (rule 14's output
 #             predicate, kept only when the bound B exceeds K: an activation never capped has B <= K
-#             as far as the samples show, which include a K+1-trip search per loop), any number on a
-#             capped or ended sample (activations past the cut are not recorded);
+#             as far as the samples show, which include a K+1-trip search per loop), and at most one
+#             per rail-sized block the C program allocated on the sample (outputs["k2"]; rule 20's kept n > K2
+#             of a rail-sized allocation), any number on a capped or ended sample (activations past
+#             the cut are not recorded);
 #   leak      anything else: a rail its sources could still clean, left live.
 LIVE_KNOWN_IS_LEAK = False   # owner ruling 2026-11-01 (cq-tt2j): a live rail in a known basis state is no leak
-_KEPT_ROLES = frozenset(("measured", "frozen", "abort", "tape", "qram", "qram_cell", "qram_slot", "kept_entangled",
-                         "output"))
+_KEPT_ROLES = frozenset(("measured", "frozen", "abort", "tape", "tape_slot", "store_kept", "overtaken",
+                         "kept_entangled"))
 _FENV_ROLES = ("fenv_flags", "fenv_mode")
 
 
 def _leaks(k: str, o: RunResult, c: RunResult, cut: bool, capkeys: Set[Tuple[str, int]] = frozenset()) -> List[str]:
     rotated = {e.get("h") for e in o.rotations or [] if isinstance(e, dict) and e.get("ev") in ("ry", "ry_qangle")}
     acts = len({(r["loop"], r["act"]) for r in _loops(c)} & set(capkeys))
+    allocs = len(c.outputs.get("k2", [])) if isinstance(c.outputs, dict) else 0
     i1 = 0
     fenv: Dict[str, int] = {}
     bad = []
@@ -1886,14 +1929,15 @@ def _leaks(k: str, o: RunResult, c: RunResult, cut: bool, capkeys: Set[Tuple[str
                 continue
         elif role == "garbage" and ent.get("w") == "i1":
             i1 += 1
-            if cut or i1 <= acts:
+            if cut or i1 <= acts + allocs:
                 continue
         bad.append(f"{ent.get('h')} ({ent.get('w')} = {ent.get('v')}, {role})")
     if not bad:
         return []
     return [f"sample {k}: our side leaves {len(bad)} rail(s) live at exit that are no frozen register, "
-            f"measured value, output, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): {', '.join(bad)}"
-            + (f"; {acts} K-cut loop activation(s) allow as many a_K rails" if acts else "")]
+            f"measured value, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): {', '.join(bad)}"
+            + (f"; {acts} K-cut loop activation(s) allow as many a_K rails" if acts else "")
+            + (f"; {allocs} allocation(s) allow as many n > K2 rails" if allocs else "")]
 
 
 # ---------------------------------------------------------------- the abort rule (against "c")
@@ -1907,7 +1951,43 @@ def _ended(rr: RunResult) -> bool:
     return isinstance(end, str) and end.startswith(_ENDS)
 
 
-def _check_abort(o_runs: List[RunResult], ended: Sequence[bool], capped: Sequence[bool]) -> List[str]:
+def _check_k2(o_runs: List[RunResult], c_runs: List[RunResult], open_end: Sequence[bool]) -> List[str]:
+    """CR §6: the kept rail n > K2 of a rail-sized allocation must read n > K2 on every input. The k-th
+    rail-sized block the C program made (outputs["k2"]: [n, K2]) must have its own kept i1 rail of ours
+    reading exactly that over the group, once the group tells it from a constant (else any 0 rail would)."""
+    maxk = max((len((c.outputs or {}).get("k2", [])) for c in c_runs), default=0)
+    if not maxk:
+        return []
+    rails: Dict[Any, Tuple[int, ...]] = {}
+    for h in {e["h"] for rr in o_runs for e in rr.kept or [] if e.get("w") == "i1" and e.get("role") == "garbage"}:
+        vals = []
+        for rr in o_runs:
+            ent = next((e for e in rr.kept or [] if e["h"] == h), None)
+            vals.append(_masked(_int(ent["v"]), "i1") if ent else None)
+        rails[h] = tuple(vals)
+    reasons = []
+    taken: Set[Any] = set()
+    for k in range(maxk):
+        want = [None if len(c.outputs.get("k2", [])) <= k else int(c.outputs["k2"][k][0] > c.outputs["k2"][k][1]) for c in c_runs]
+        seen = {w for w, e in zip(want, open_end) if w is not None and not e}
+        if len(seen) < 2:
+            continue
+        h = next((h for h, v in rails.items() if h not in taken and all(
+            w is None or e or x == w for x, w, e in zip(v, want, open_end))), None)
+        if h is None:
+            reasons.append(f"rail-sized allocation {k}: no kept i1 rail of ours reads n > K2 (CR §6): want {_fn(tuple(want))}")
+        else:
+            taken.add(h)
+    return reasons
+
+
+def _raised(c: RunResult) -> bool:
+    end = c.outputs.get("end") if isinstance(c.outputs, dict) else None
+    return isinstance(end, str) and end.startswith("raise:")
+
+
+def _check_abort(o_runs: List[RunResult], ended: Sequence[bool], capped: Sequence[bool],
+                 c_runs: Sequence[RunResult] = ()) -> List[str]:
     """Some kept abort-role i1 rail of ours reads 1 on every ended sample; every one reads 0 on
     every sample that returns (module docstring)."""
     flags: Dict[Any, List[int]] = {}
@@ -1918,6 +1998,9 @@ def _check_abort(o_runs: List[RunResult], ended: Sequence[bool], capped: Sequenc
     reasons = []
     for s in range(len(o_runs)):
         on = [h for h, v in flags.items() if v[s]]
+        if ended[s] and not on and c_runs and _raised(c_runs[s]) and any(
+                e.get("name") == "raise" for e in (o_runs[s].outputs or {}).get("effects", [])):
+            continue
         if ended[s] and not on:
             reasons.append(f"sample {_skey(o_runs[s].sample)}: the C program ends early (noreturn or fatal raise) "
                            f"and no kept abort flag of ours reads 1")
@@ -1925,6 +2008,100 @@ def _check_abort(o_runs: List[RunResult], ended: Sequence[bool], capped: Sequenc
             reasons.append(f"sample {_skey(o_runs[s].sample)}: the C program returns and our abort flag(s) "
                            f"{on} read 1")
     return reasons
+
+
+# ---------------------------------------------------------------- pointers and memory (module docstring)
+
+def _addr_table(rr: RunResult) -> Tuple[List[Tuple[int, int, str]], List[Tuple[int, int, str]]]:
+    """(objects, regions) of one run: (lo, hi inclusive of one past the end, name)."""
+    out = rr.outputs if isinstance(rr.outputs, dict) else {}
+    objs = [(_int(o["addr"]), _int(o["addr"]) + int(o.get("size", 0)), o["name"]) for o in out.get("objects", [])]
+    objs += [(_int(m["addr"]), _int(m["addr"]) + _mem_bytes(m), m["name"]) for m in out.get("mem", []) if "addr" in m]
+    objs.sort(key=lambda t: t[1] - t[0])
+    regs = [(_int(g["lo"]), _int(g["hi"]), g["name"]) for g in out.get("regions", [])]
+    return objs, regs
+
+
+def _addr_token(v: int, table: Tuple[list, list], against: str) -> Any:
+    """What a 64-bit value reads as relationally (module docstring): v itself unless it lies in a known
+    object or region of its run."""
+    for lo, hi, name in table[0]:
+        if lo <= v <= hi:
+            return (name, v - lo)
+    for lo, hi, name in table[1]:
+        if lo <= v < hi:
+            return "<mem>" if against == "c" else (name, v - lo) if name == "heap" else name
+    return v
+
+
+def _mem_bytes(m: Dict[str, Any]) -> int:
+    w = m.get("w")
+    if w == "f80":
+        return 10
+    b = _bits(w)
+    if b is None:
+        raise CompareError(f"cq: unimplemented: chk-compare: a memory output with no width {m!r}")
+    return (b + 7) // 8
+
+
+def _memory(rr: RunResult, against: str) -> Dict[Tuple[str, int], Any]:
+    """The named outputs of one run: (name, byte offset) -> the byte, or, at an aligned word that holds a
+    pointer of this run (module docstring), its relational token at the word's offset and None at the
+    other seven bytes."""
+    out = rr.outputs if isinstance(rr.outputs, dict) else {}
+    table = _addr_table(rr)
+    addr_of = {o["name"]: _int(o["addr"]) for o in out.get("objects", [])}
+    cells: Dict[Tuple[str, int], Any] = {}
+    for m in out.get("mem", []):
+        name, off, n = m["name"], int(m.get("off", 0)), _mem_bytes(m)
+        val = _int(m["v"]) or 0
+        base = _int(m["addr"]) if "addr" in m else addr_of.get(name)
+        if base is not None:
+            base += int(m.get("off", 0))
+        i = 0
+        while i < n:
+            if base is not None and (base + i) % 8 == 0 and i + 8 <= n:
+                word = (val >> (8 * i)) & ((1 << 64) - 1)
+                tok = _addr_token(word, table, against)
+                if tok != word:
+                    cells[(name, off + i)] = tok
+                    for j in range(1, 8):
+                        cells[(name, off + i + j)] = None
+                    i += 8
+                    continue
+            cells[(name, off + i)] = (val >> (8 * i)) & 0xFF
+            i += 1
+    return cells
+
+
+def _memory_reasons(k: str, o: RunResult, r: RunResult, against: str) -> List[str]:
+    co, cr = _memory(o, against), _memory(r, against)
+    if co == cr:
+        return []
+    names = sorted({n for n, _ in co} | {n for n, _ in cr})
+    why = []
+    for name in names:
+        po = {i: v for (n, i), v in co.items() if n == name}
+        pr = {i: v for (n, i), v in cr.items() if n == name}
+        if not po or not pr:
+            why.append(f"sample {k}: memory output {name} exists only on the "
+                       f"{'our' if po else 'other'} side (CR §6 item 1)")
+        elif po != pr:
+            i = min(j for j in set(po) | set(pr) if po.get(j) != pr.get(j))
+            why.append(f"sample {k}: memory output {name} differs at byte {i}: ours {po.get(i)} != {pr.get(i)} "
+                       f"(CR §6 item 1)")
+    return why
+
+
+def _rel_value(rr: RunResult, v: Optional[int], w: Optional[str], against: str, memo: Dict[int, Any]) -> Any:
+    """A rail's value as compared: masked to its type, and an i64 relationally."""
+    v = _masked(v, w)
+    if w != "i64" or v is None:
+        return v
+    t = memo.get(id(rr))
+    if t is None:
+        t = memo[id(rr)] = _addr_table(rr)
+    return _addr_token(v, t, against)
 
 
 # ---------------------------------------------------------------- driver
@@ -1981,6 +2158,10 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             if cap is not None:
                 r_by[k] = _truncate(r_by[k], cap)      # a cut inside a cq_invert region closes it (cq-088c)
 
+    # rulings Q8: rule 16's stated deviation is excluded from the C-oracle comparison on that input
+    if oracle == "c":
+        keys = [k for k in keys if not _deviated(o_by[k])]
+
     # per sample: violations, outputs, measured values, frees
     meas_opts: Dict[str, List[Tuple[FrozenSet[int], FrozenSet[int]]]] = {}
     for k in keys:
@@ -1995,8 +2176,10 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             if not (capped[k] or ended[k]) and _norm(oo, nan_eq) != _norm(ro, nan_eq):
                 reasons.append(f"sample {k}: returns {oo} != {ro} (ours {o.outputs}, C {r.outputs})")
         elif _norm(_rest(o.outputs, "our"), nan_eq) != _norm(_rest(r.outputs, "reference"), nan_eq):
-            reasons.append(f"sample {k}: outputs {o.outputs} != {r.outputs}")
-        reasons += _host_output(k, o.outputs, r.outputs, oracle, oracle == "c" and capped[k])
+            reasons.append(f"sample {k}: outputs {_rest(o.outputs, 'our')} != {_rest(r.outputs, 'reference')}")
+        if not (oracle == "c" and (capped[k] or ended[k])):
+            reasons += _memory_reasons(k, o, r, oracle)
+        reasons += _host_output(k, o, r, oracle, oracle == "c" and (capped[k] or _raised(r)))
         if oracle == "ref":
             reasons += _measured_positional(k, o, r, False, nan_eq)
         else:
@@ -2006,8 +2189,10 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             for c in rr.clean or []:
                 if "freed" in c:
                     continue           # the compact trace's summary of the sample's frees (run.py)
+                # rulings ("Every _unc must leave 0"): legal iff the rail is classical-valued or reads 0
+                # (never non-zero across the samples: each sample is checked here)
                 known = c.get("known")
-                if (known is not None and not _int(known)) or (known is None and _int(c.get("v")) != 0):
+                if not (known is not None and _int(known)) and _int(c.get("v")) != 0:
                     reasons.append(f"sample {k}: {side} side frees rail {c.get('h')} = {c.get('v')} "
                                    f"not in a known basis state")
         if oracle == "c":
@@ -2072,8 +2257,8 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
         if oracle == "ref":
             r_regs: Dict[Tuple[int, int], Tuple] = {}
             r_evs, _, _ = _lowered_events(r_runs, r_regs)
-            kept_o = _kept_multiset(o_runs)
-            kept_r = _kept_multiset(r_runs)
+            kept_o = _kept_multiset(o_runs, oracle)
+            kept_r = _kept_multiset(r_runs, oracle)
             if kept_o != kept_r:
                 for cls in sorted(set(kept_o) | set(kept_r), key=repr):
                     d = kept_o.get(cls, 0) - kept_r.get(cls, 0)
@@ -2097,7 +2282,9 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
                 reasons.append(f"{tag}: {why}")
             for why in _check_ak(o_runs, r_runs, [ended[k] for k in ks]):
                 reasons.append(f"{tag}: {why}")
-            for why in _check_abort(o_runs, [ended[k] for k in ks], [capped[k] for k in ks]):
+            for why in _check_abort(o_runs, [ended[k] for k in ks], [capped[k] for k in ks], r_runs):
+                reasons.append(f"{tag}: {why}")
+            for why in _check_k2(o_runs, r_runs, [capped[k] or ended[k] for k in ks]):
                 reasons.append(f"{tag}: {why}")
             for k in ks:
                 for why in _meas_extra(k):
@@ -2156,6 +2343,26 @@ def _meas_options(k: str, o: RunResult, r: RunResult, open_end: bool, nan_eq: bo
 
     emb(0, 0, ())
     if opts:
+        # a measurement of ours left over that reads what the C program read classically (its "read"
+        # sites, outputs["reads"]): the circuit measured a load copy of it, which is no difference
+        # Rule 19: so is one of a _ctl clone's controlled copies reading 0, its predicate 0 on this input
+        reads = (r.outputs or {}).get("reads", []) if isinstance(r.outputs, dict) else []
+        ctl = set((o.outputs or {}).get("ctl_measured", [])) if isinstance(o.outputs, dict) else set()
+        if reads or ctl:
+            for img in list(opts):
+                left = list(reads)
+                extra = set()
+                for i in range(n):
+                    if i not in img:
+                        if mo[i].get("h") in ctl and _int(mo[i].get("v")) == 0:
+                            extra.add(i)
+                            continue
+                        for b in left:
+                            if not _meas_eq(o, r, mo[i], b, nan_eq):
+                                left.remove(b)
+                                extra.add(i)
+                                break
+                opts[img] = opts[img] | frozenset(extra)
         return list(opts.items()), []
     why = _measured_positional(k, o, r, open_end, nan_eq)
     if not why or (len(mo) > len(mr) and not open_end):
@@ -2173,7 +2380,7 @@ def _ret(outputs: Any, side: str) -> Any:
     return outputs.get("ret", [])
 
 
-_HOST_KEYS = ("stdout", "effects")
+_HOST_KEYS = ("stdout", "effects", "tape", "deviation", "mem", "objects", "regions", "ctl_measured")
 
 
 def _rest(outputs: Any, side: str) -> Any:
@@ -2196,23 +2403,81 @@ def _host(outputs: Any, side: str) -> Tuple[str, List[Any]]:
     return out, fx
 
 
-def _host_output(k: str, o_out: Any, r_out: Any, oracle: str, open_end: bool) -> List[str]:
+def _field_read(a: Dict[str, Any], table: Tuple[list, list], oracle: str) -> Dict[str, Any]:
+    if "s" in a:
+        return {"s": a["s"]}
+    v = _masked(_int(a.get("v")), a.get("w"))
+    if a.get("w") == "i64" and v is not None:
+        v = _addr_token(v, table, oracle)
+    return dict({"w": a.get("w"), "v": v}, **({"cap": a["cap"]} if "cap" in a else {}), **({"p": 1} if a.get("p") else {}))
+
+
+def _effects_read(rr: RunResult, fx: List[Any], oracle: str) -> List[Any]:
+    """The effect sequence of one side as compared (module docstring, rulings Q8): the name and the fields,
+    every pointer-valued one read relationally."""
+    table = _addr_table(rr)
+    return [{"name": e["name"], "args": [_field_read(a, table, oracle) for a in e["args"]]} for e in fx]
+
+
+def _tape_read(rr: RunResult) -> List[Any]:
+    """The shot's event sequence as compared against the reference."""
+    table = _addr_table(rr)
+    out = []
+    for e in (rr.outputs or {}).get("tape", []):
+        ent = dict(e)
+        if "fields" in e:
+            ent["fields"] = [_field_read(a, table, "ref") for a in e["fields"]]
+        if "r" in e:
+            ent["r"] = _field_read(e["r"], table, "ref")
+        out.append(ent)
+    return out
+
+
+def _fields_match(ours: List[Any], other: List[Any]) -> bool:
+    """Effect sequences against the C oracle: a value neither run could place in an object or region
+    (a libc stream, say) passed as a pointer by the C program is equal when both are non-null or both
+    null (CR §6: pointers compare relationally). A capture is compared where both sides made one."""
+    if len(ours) != len(other):
+        return False
+    for a, b in zip(ours, other):
+        if a["name"] != b["name"] or len(a["args"]) != len(b["args"]):
+            return False
+        for x, y in zip(a["args"], b["args"]):
+            if "cap" in x and "cap" in y and x["cap"] != y["cap"]:
+                return False
+            if x.get("v") == y.get("v") and x.get("w") == y.get("w") and x.get("s") == y.get("s"):
+                continue
+            if y.get("p") and isinstance(x.get("v"), int) and isinstance(y.get("v"), int) and bool(x["v"]) == bool(y["v"]):
+                continue
+            return False
+    return True
+
+
+def _deviated(o: RunResult) -> bool:
+    """Rule 16's stated deviation (module docstring)."""
+    return bool((o.outputs or {}).get("deviation"))
+
+
+def _host_output(k: str, o: RunResult, r: RunResult, oracle: str, open_end: bool) -> List[str]:
     """The host-output reasons of one sample (module docstring, Host output)."""
     other = "C" if oracle == "c" else "reference"
-    (os_, ofx), (rs, rfx) = _host(o_out, "our"), _host(r_out, other)
-    if oracle == "c":
-        bad = sorted({e["name"] for e in ofx} - set(HOST_EFFECTS))
-        if bad:
-            raise CompareError(f"cq: unimplemented: chk-compare: sample {k}: host effect(s) {bad} of ours have no "
-                               f"C-oracle log (HOST_EFFECTS {list(HOST_EFFECTS)})")
+    (os_, ofx), (rs, rfx) = _host(o.outputs, "our"), _host(r.outputs, other)
     why = []
     if os_ != rs and not (open_end and os_.startswith(rs)):
         why.append(f"sample {k}: host stdout differs: ours {os_!r} != {other} {rs!r}"
                    + (" (the C output must be a prefix of ours on a capped sample)" if open_end else ""))
-    nf, nr = _norm(ofx), _norm(rfx)
-    if nf != nr and not (open_end and nf[:len(nr)] == nr):
+    nf, nr = _effects_read(o, ofx, oracle), _effects_read(r, rfx, oracle)
+    same = _fields_match(nf, nr) if oracle == "c" else nf == nr
+    pre = open_end and (_fields_match(nf[:len(nr)], nr) if oracle == "c" else nf[:len(nr)] == nr)
+    if not same and not pre:
         why.append(f"sample {k}: host effects differ: ours {ofx} != {other} {rfx}"
                    + (" (the C effects must be a prefix of ours on a capped sample)" if open_end else ""))
+    if oracle == "ref":
+        to, tr = _tape_read(o), _tape_read(r)
+        if to != tr:
+            i = next((j for j, (x, y) in enumerate(zip(to, tr)) if x != y), min(len(to), len(tr)))
+            why.append(f"sample {k}: the event sequence differs at entry {i}: ours {to[i:i + 1]} != reference {tr[i:i + 1]} "
+                       f"({len(to)} and {len(tr)} entries; rulings Q8)")
     return why
 
 
@@ -2226,19 +2491,25 @@ def _kept_type(rr: RunResult, h: Any) -> Optional[str]:
     return None
 
 
-def _kept_multiset(runs: List[RunResult]) -> Dict[Tuple, int]:
-    hs = [k["h"] for k in runs[0].kept or []]
+def _kept_multiset(runs: List[RunResult], against: str = "ref") -> Dict[Tuple, int]:
+    hs = [k["h"] for k in _kept_rows(runs[0])]
+    pos = {h: i for i, h in enumerate(hs)}
+    ws: List[Optional[str]] = [None] * len(hs)
+    cols: List[List[Any]] = [[] for _ in hs]
+    memo: Dict[int, Any] = {}
+    for rr in runs:
+        seen = 0
+        for ent in _kept_rows(rr):
+            i = pos.get(ent["h"])
+            if i is None:
+                continue
+            ws[i] = ws[i] or ent.get("w")
+            cols[i].append(_rel_value(rr, _int(ent.get("v")), ws[i], against, memo))
+            seen += 1
+        if seen != len(hs):
+            raise StopIteration          # the group's runs keep the same rails (their shapes are equal)
     out: Dict[Tuple, int] = {}
-    by = [_kept_by_h(rr) for rr in runs]
-    for h in hs:
-        w = None
-        vals = []
-        for rr, b in zip(runs, by):
-            if h not in b:
-                raise StopIteration          # as next() over no entry raised it
-            ent = b[h][0]
-            w = w or ent.get("w")
-            vals.append(_int(ent.get("v")))
-        cls = (w, tuple(_masked(v, w) for v in vals))
+    for w, col in zip(ws, cols):
+        cls = (w, tuple(col))
         out[cls] = out.get(cls, 0) + 1
     return out
