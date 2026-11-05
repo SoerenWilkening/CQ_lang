@@ -34,6 +34,14 @@
 //    after the gate): those rails are never uncomputed through it. An unchosen arm of a kept merge so
 //    hit on every path to its edge stays allocated there (A4); on some paths only: unimplemented. A
 //    rail already uncomputed and freed that such a gate reaches: unimplemented.
+//  - recordBusLoad(load, ops) (rule 5 sentence 1): load is a new-IR cqrt_qram_load_<W>[_hl][_controlled]; a new rail,
+//    Role::Garbage, whose item is the same call's _unc(h, ops...) then cqrt_free(h). The item is placed like a
+//    template's (after the last reader and its _unc; its address rail and control outlive it). At the placement the
+//    version changes noted so far decide: one on a path from the load to the point leaves the rail allocated,
+//    Role::Overtaken. A kept role (Measured, UserRegister, Frozen, Kept) means no item at all.
+//  - noteVersionChange(at): at is the first new-IR instruction of a memory version change (rule 5 Memory).
+//  - noteKeptStore(store, value, ctl) (rule 5 sentence 3): the value and control rails stay, Role::Kept unless they
+//    already hold a kept role; a pending rule 6 clean-up of either is dropped.
 //  - cleanupBijective(old, inverse, ops): rule 6. Instead of its producer's _unc, `old` is cleaned by
 //    t = inverse(ops); copy_<W>(t, old); inverse_unc(t, ops); free t; free old. It overrides old's
 //    role. ops are the inverse template's forward operands.
@@ -181,6 +189,7 @@ enum class RecKind : uint8_t {
   Seed,      // cqrt_alloc: nothing to undo, released by cqrt_free
   Involution,// in place on out, undone by the same call
   Call,      // U2: a clone call's results, undone together by name_unc(outs..., args..., extra...)
+  BusLoad,   // rule 5 sentence 1: fresh out, un-copied by name_unc(out, args...), freed iff no version change between
 };
 
 bool isCreator(RecKind k) { return k != RecKind::Involution; }
@@ -293,6 +302,8 @@ struct Uncompute::Impl {
     SmallVector<Value *, 4> extra;
   };
   std::vector<CallGroup> groups;
+  // Rule 5 Memory: the memory version changes of the new IR (noteVersionChange), in the order noted.
+  SmallVector<Instruction *, 16> versions;
   SmallVector<unsigned, 4> openStack;
   DenseSet<const Instruction *> emitted;
   DenseMap<std::pair<RailId, const BasicBlock *>, Instruction *> itemEnd;
@@ -1512,6 +1523,7 @@ struct Uncompute::Impl {
         CallInst *fwd = records[*it].forward;
         switch (info[*it].kind) {
         case RecKind::Template:
+        case RecKind::BusLoad:
           track(B.CreateCall(uncOf(fwd, true, B), argsOf(fwd, fwd)));
           break;
         case RecKind::Involution:
@@ -1524,7 +1536,62 @@ struct Uncompute::Impl {
         }
       }
     }
+    // Rule 5 sentence 1: a load copy a memory version change overtook is un-copied all the same and not freed.
+    if (r.creator != kNone && info[r.creator].kind == RecKind::BusLoad &&
+        overtakenAt(records[r.creator].forward, B.GetInsertBlock(), B.GetInsertPoint())) {
+      r.role = Role::Overtaken;
+      return &*std::prev(B.GetInsertPoint());
+    }
     return emitRelease(g, B);
+  }
+
+  // Rule 5 Memory: does a memory version change lie on a path from `load` to the point (bb, at), the load not run
+  // again in between? `at` may be bb's end (a mirror's builder).
+  bool overtakenAt(const Instruction *load, const BasicBlock *bb, BasicBlock::const_iterator at) const {
+    const BasicBlock *LB = load->getParent();
+    auto before = [&](const Instruction *v) {
+      for (auto it = bb->begin(); it != at; ++it)
+        if (&*it == v)
+          return true;
+      return false;
+    };
+    bool linear = LB == bb && (at == bb->end() || load->comesBefore(&*at));
+    if (linear) {
+      for (const Instruction *v : versions)
+        if (v->getParent() == LB && load->comesBefore(v) && before(v))
+          return true;
+      return false;
+    }
+    SmallPtrSet<const BasicBlock *, 16> fwd, back;
+    SmallVector<const BasicBlock *, 16> work;
+    auto succs = [&](const BasicBlock *b) {
+      if (const Instruction *t = b->getTerminator())
+        for (const BasicBlock *s : successors(t))
+          if (s != LB && fwd.insert(s).second)
+            work.push_back(s);
+    };
+    succs(LB);
+    while (!work.empty())
+      succs(work.pop_back_val());
+    work.push_back(bb);
+    back.insert(bb);
+    while (!work.empty())
+      for (const BasicBlock *p : predecessors(work.pop_back_val()))
+        if (p != LB && back.insert(p).second)
+          work.push_back(p);
+    for (const Instruction *v : versions) {
+      const BasicBlock *VB = v->getParent();
+      if (VB == LB) {
+        if (load->comesBefore(v))
+          return true;
+      } else if (VB == bb) {
+        if (fwd.count(bb) && before(v))
+          return true;
+      } else if (fwd.count(VB) && back.count(VB)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // ---- batches ---------------------------------------------------------------------------------
@@ -2818,22 +2885,59 @@ SmallVector<RailId, 4> Uncompute::recordCall(CallInst *fwd, ArrayRef<Value *> ou
   return ids;
 }
 
-RailId Uncompute::recordBusLoad(CallInst *, ArrayRef<Operand>) {
-  report_fatal_error("cq: unimplemented: bus: recordBusLoad", /*gen_crash_diag=*/false);
-}
-void Uncompute::noteVersionChange(Instruction *) {
-  report_fatal_error("cq: unimplemented: bus: noteVersionChange", /*gen_crash_diag=*/false);
-}
-void Uncompute::noteKeptStore(CallInst *, Value *, Value *) {
-  report_fatal_error("cq: unimplemented: bus: noteKeptStore", /*gen_crash_diag=*/false);
-}
-void Uncompute::freezeLoadCopy(RailId) {
-  report_fatal_error("cq: unimplemented: bus: freezeLoadCopy", /*gen_crash_diag=*/false);
+RailId Uncompute::recordBusLoad(CallInst *load, ArrayRef<Operand> ops) {
+  Impl &I = *impl;
+  if (!load || !load->getParent())
+    internalError("uncompute: recordBusLoad needs a call in a block", load);
+  I.checkOps(load, ops, "recordBusLoad");
+  std::optional<abi::CoreSpec> spec = load->getCalledFunction() ? abi::parseCore(load->getCalledFunction()->getName())
+                                                                : std::nullopt;
+  if (!spec || spec->op != abi::Core::QramLoad || spec->unc)
+    internalError("uncompute: recordBusLoad of a call that is no cqrt_qram_load_<W>", load);
+  RailId out = I.newRail(load, Role::Garbage, "recordBusLoad");
+  I.addRecord(load, *spec, ops, out, RecKind::BusLoad, false);
+  return out;
 }
 
+void Uncompute::noteVersionChange(Instruction *at) {
+  if (!at || !at->getParent())
+    internalError("uncompute: noteVersionChange needs an instruction in a block", at);
+  impl->versions.push_back(at);
+}
 
+void Uncompute::noteKeptStore(CallInst *store, Value *value, Value *ctl) {
+  Impl &I = *impl;
+  if (!store || !store->getParent())
+    internalError("uncompute: noteKeptStore needs a call in a block", store);
+  for (Value *h : {value, ctl}) {
+    if (!h)
+      continue;
+    RailId r = I.lookup(h, "noteKeptStore", store);
+    Impl::Rail &x = I.rails[r];
+    if (I.anyReleased(r))
+      internalError("uncompute: noteKeptStore: " + describe(h) + " was already uncomputed and freed", store);
+    // Rule 6: the old value is kept when it is the value or control rail of a kept store.
+    if (x.cleanup) {
+      for (RailId y : x.cleanup->reads)
+        llvm::erase(I.rails[y].cleanupReaders, r);
+      x.cleanup.reset();
+    }
+    if (!Impl::keptRole(x.role))
+      setRole(r, Role::Kept);
+    I.rails[r].uses.push_back(store);
+  }
+}
 
-
+void Uncompute::freezeLoadCopy(RailId r) {
+  Impl &I = *impl;
+  Impl::Rail &x = I.rail(r, "freezeLoadCopy");
+  if (x.creator == kNone || I.info[x.creator].kind != RecKind::BusLoad)
+    internalError("uncompute: freezeLoadCopy of a rail no bus load made", x.handle);
+  if (x.released)
+    internalError("uncompute: freezeLoadCopy of a load copy already un-copied", x.handle);
+  if (!Impl::keptRole(x.role))
+    x.role = Role::Frozen;
+}
 
 RailId Uncompute::idOf(Value *handle) const { return impl->lookup(handle, "idOf", handle); }
 

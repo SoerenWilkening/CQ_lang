@@ -52,7 +52,7 @@ public:
   // nothing.
   void noteVersionChange(llvm::Instruction *at);
   // Rule 5 sentence 3: the value rail (a seed included) and the control rail of a kept store are kept: Role::Kept,
-  // never resolved; a load copy that is the value rail is Role::Overtaken (un-copied, not freed) per rule 5.
+  // never resolved. Rule 5 sentence 1: a load copy that is the value rail is never un-copied, Role::Kept too.
   void noteKeptStore(llvm::CallInst *store, llvm::Value *value, llvm::Value *ctl);
   // Rule 2/10: a load copy a rotation acted on, or that is measured: never un-copied, Role::Frozen / Role::Measured.
   void freezeLoadCopy(RailId);

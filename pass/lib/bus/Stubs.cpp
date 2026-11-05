@@ -12,16 +12,9 @@ namespace {
 }
 } // namespace
 
-Value *mem(LoweringContext &) { stop("mem"); }
-Operand address(LoweringContext &, const Value *) { stop("address"); }
-void lowerLoad(LoweringContext &, LoadInst &) { stop("lowerLoad"); }
-void lowerStore(LoweringContext &, StoreInst &) { stop("lowerStore"); }
-void lowerAtomic(LoweringContext &, Instruction &) { stop("lowerAtomic"); }
 void lowerMemIntrinsic(LoweringContext &, MemIntrinsic &) { stop("lowerMemIntrinsic"); }
 void lowerCopy(LoweringContext &, Operand, Operand, Operand, Value *, Instruction &) { stop("lowerCopy"); }
 void lowerAlloc(LoweringContext &, Instruction &) { stop("lowerAlloc"); }
 void lowerRealloc(LoweringContext &, CallBase &) { stop("lowerRealloc"); }
-bool versionChange(const LoweringContext &, const Instruction &) { stop("versionChange"); }
-bool writesMemory(const TaintInfo &, const Function &) { stop("writesMemory"); }
 unsigned K2(const LoweringContext &) { stop("K2"); }
 }

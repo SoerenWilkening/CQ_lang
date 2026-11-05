@@ -32,6 +32,8 @@ namespace cq {
 namespace {
 
 RailType rt(Type *t, const Value *at) {
+  if (t->isPointerTy())
+    return RailType{Kind::Int, 64};   // rule 21: a pointer is its address, an i64
   if (!t->isIntegerTy() && !t->isHalfTy() && !t->isBFloatTy() && !t->isFloatTy() && !t->isDoubleTy() && !t->isX86_FP80Ty())
     internalError("spine: a scalar rail type asked of a vector, pointer or fp128 (rules 21, 25: routed elsewhere)", at);
   return railTypeOf(t);
@@ -259,6 +261,14 @@ void lowerIntrinsic(LoweringContext &ctx, IntrinsicInst &II) {
   Intrinsic::ID id = II.getIntrinsicID();
   if (lowerHintIntrinsic(ctx, II))
     return;
+  if (id == Intrinsic::ptrmask) {   // rule 21: an integer template over the address
+    abi::TemplateSpec spec;
+    spec.op = "and";
+    spec.w = RailType{Kind::Int, 64};
+    if (!binary(ctx, spec, II.getArgOperand(0), II.getArgOperand(1), &II))
+      spine::bindOperand(ctx, &II, Operand{spine::copyClassical(ctx, II), false});
+    return;
+  }
   std::string op = intrinsicOp(id);
   if (op.empty())
     internalError("spine: lowerOpcode on an intrinsic with no template", &II);
@@ -429,7 +439,8 @@ void lowerOpcode(LoweringContext &ctx, Instruction &I) {
   }
 
   if (auto *cmp = dyn_cast<CmpInst>(&I)) {
-    if (!cmp->getOperand(0)->getType()->isIntegerTy() && !cmp->getOperand(0)->getType()->isFloatingPointTy())
+    if (!cmp->getOperand(0)->getType()->isIntegerTy() && !cmp->getOperand(0)->getType()->isFloatingPointTy() &&
+        !cmp->getOperand(0)->getType()->isPointerTy())   // rule 21: the integer compare of the addresses
       internalError("spine: a compare of non-scalar operands reached lowerOpcode (rule 3::lowerCompare)", &I);
     Operand x = ctx.operand(cmp->getOperand(0)), y = ctx.operand(cmp->getOperand(1));
     if (!x.handle && !y.handle) {
@@ -456,6 +467,9 @@ void lowerOpcode(LoweringContext &ctx, Instruction &I) {
 
   if (auto *ci = dyn_cast<CastInst>(&I)) {
     const char *op = castName(ci->getOpcode());
+    // Rule 21: ptrtoint and inttoptr to or from another width than 64 are the trunc/zext template.
+    if (isa<PtrToIntInst>(ci) || isa<IntToPtrInst>(ci))
+      op = rt(ci->getSrcTy(), &I).bits > rt(ci->getDestTy(), &I).bits ? "trunc" : "zext";
     if (!op)
       internalError("spine: a pointer cast reached lowerOpcode (rule 3)", &I);
     Operand x = ctx.operand(ci->getOperand(0));
