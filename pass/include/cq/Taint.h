@@ -30,6 +30,10 @@ struct Specialization { llvm::Function *F; Mask mask; bool ctl = false, pure = f
                         bool plain = false; };
 struct TaintOptions { std::vector<abi::CloneSpec> roots;   // library-build and stress roots
                       std::vector<std::string> listed; };   // rule 27: the bodiless functions the root lists name
+// Rule 23, a fenv call's object: the confined alloca (host-resident, its quantum part SSA), a constant (an empty part),
+// or memory (the whole environment in its own bytes).
+enum class FenvObject { Confined, Constant, Memory };
+FenvObject fenvObjectKind(const llvm::Value *ptr);
 class TaintInfo {
 public:
   bool isQuantum(const llvm::Value *, const Specialization &) const;

@@ -1313,6 +1313,17 @@ static bool confinedFenvObject(const AllocaInst &A) {
   return any;
 }
 
+FenvObject fenvObjectKindOf(const Value *ptr) {
+  if (auto *A = dyn_cast<AllocaInst>(ptr); A && confinedFenvObject(*A))
+    return FenvObject::Confined;
+  if (isa<Constant>(ptr)) {
+    auto *G = dyn_cast<GlobalVariable>(getUnderlyingObject(ptr));
+    if (!G || G->isConstant())
+      return FenvObject::Constant;
+  }
+  return FenvObject::Memory;
+}
+
 // Rule 20 (b): every transitive user of the alloca through getelementptrs with untainted indices.
 bool Analyzer::hostUsersOk(const AllocaInst &A) {
   if (L(A.getArraySize()).any())
@@ -1593,31 +1604,34 @@ void Analyzer::transferFenvCall(CallBase &CB, StringRef cname, ArrayRef<Value *>
   bool rail = q || underQ;
   uint8_t before = fenvCur, now = fenvNow();
   bool resQ = false;
-  // Rule 23: the objects a saving call's facts live in, by the pointer's underlying object (the confined shape, an
-  // alloca taken itself; anything else is the one union entry: its fields are on the bus, W6). A constant is
-  // musl's FE_DFL_ENV, an object never saved.
-  auto objKey = [](Value *ptr) -> const Value * {
-    const Value *o = getUnderlyingObject(ptr);
-    return isa<AllocaInst>(o) || isa<Constant>(o) ? o : nullptr;
-  };
+  // Rule 23: only a confined object's quantum part is SSA (these facts); a constant one has an empty part; any other
+  // object holds the environment in its bytes: a save merges the part through the bus, a restore loads two fields
+  // from the bus as the new flags rail and mode, and copies the object for its host call (bus stores).
+  auto kindOf = [](Value *ptr) { return fenvObjectKindOf(ptr); };
   auto savedIn = [&](Value *ptr) {
-    uint8_t b = 0;
-    if (!ptr->getType()->isPointerTy())
-      return b;
-    const Value *k = objKey(ptr);
-    for (auto &[o, bits] : st.fenvSaved)
-      if (!k || !o || o == k)
-        b |= bits;
-    return b;
+    auto it = st.fenvSaved.find(ptr);
+    return it == st.fenvSaved.end() ? uint8_t(0) : it->second;
   };
   auto saveTo = [&](Value *ptr, uint8_t bits) {
-    if (!ptr->getType()->isPointerTy())
+    if (kindOf(ptr) != FenvObject::Confined) {
+      if (bits) {
+        cur->writesOuter = true;
+        cur->anyQuantum = true;
+      }
       return;
-    uint8_t &x = st.fenvSaved[objKey(ptr)];
+    }
+    uint8_t &x = st.fenvSaved[ptr];
     if ((x | bits) != x) {
       x |= bits;
       st.changed = true;
     }
+  };
+  auto restoreMemory = [&](Value *ptr) {
+    if (kindOf(ptr) != FenvObject::Memory)
+      return false;
+    cur->writesOuter = true;
+    cur->anyQuantum = true;
+    return true;
   };
   auto bit = [](bool b) { return uint8_t(b ? 1 : 0); };
   if (cname == "fegetround") {
@@ -1640,7 +1654,7 @@ void Analyzer::transferFenvCall(CallBase &CB, StringRef cname, ArrayRef<Value *>
   } else if (cname == "fegetexceptflag") {
     saveTo(actuals[0], (now & 2) | (q ? 2 : 0));
   } else if (cname == "fesetexceptflag") {
-    fenvAssign(1, rail ? 1 : (nib(fenvCur, 1) | bit(savedIn(actuals[0]) & 2)));
+    fenvAssign(1, restoreMemory(actuals[0]) || rail ? 1 : (nib(fenvCur, 1) | bit(savedIn(actuals[0]) & 2)));
   } else if (cname == "fegetenv" || cname == "feholdexcept") {
     saveTo(actuals[0], now | (q ? 3 : 0));
     if (cname == "feholdexcept")
@@ -1648,12 +1662,13 @@ void Analyzer::transferFenvCall(CallBase &CB, StringRef cname, ArrayRef<Value *>
   } else if (cname == "fesetenv" || cname == "feupdateenv") {
     // fesetenv: the state := the object's saved part; feupdateenv: MODE := its mode, FLAGS := its
     // flags | FLAGS. An object never saved (FE_DFL_ENV) has an empty part.
+    bool mem = restoreMemory(actuals[0]);
     uint8_t sv = savedIn(actuals[0]);
-    fenvAssign(0, rail ? 1 : bit(sv & 1));
+    fenvAssign(0, mem || rail ? 1 : bit(sv & 1));
     uint8_t f = bit(sv & 2);
     if (cname == "feupdateenv")
       f |= nib(fenvCur, 1);
-    fenvAssign(1, rail ? 1 : f);
+    fenvAssign(1, mem || rail ? 1 : f);
   } else {
     // fegetexcept, feenableexcept, fedisableexcept: host calls, trapping is not modelled on rails
     // (eff-fenv); no environment fact changes.
@@ -2842,6 +2857,8 @@ Lanes lanesOfValue(const ImplState &I, const SpecState &SS, const llvm::Value *V
   internalError("taint: no taint answer for this value", V);
 }
 } // namespace
+
+FenvObject fenvObjectKind(const llvm::Value *ptr) { return taintimpl::fenvObjectKindOf(ptr); }
 
 bool TaintInfo::isQuantum(const llvm::Value *V, const Specialization &S) const {
   const ImplState &I = needImpl(impl);
