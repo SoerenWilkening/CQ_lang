@@ -1550,6 +1550,20 @@ struct Uncompute::Impl {
   // again in between? `at` may be bb's end (a mirror's builder).
   bool overtakenAt(const Instruction *load, const BasicBlock *bb, BasicBlock::const_iterator at) const {
     const BasicBlock *LB = load->getParent();
+    // A reverse loop's block (emitMirror, not linked yet): the copy of every trip waits for it, so a version change
+    // anywhere the forward region can go after the load overtakes it, a later trip's included (rules 5, 14).
+    if (bb != LB && pred_empty(bb) && !bb->isEntryBlock()) {
+      SmallPtrSet<const BasicBlock *, 16> reach;
+      SmallVector<const BasicBlock *, 16> work{LB};
+      while (!work.empty())
+        if (const Instruction *t = work.pop_back_val()->getTerminator())
+          for (const BasicBlock *s : successors(t))
+            if (reach.insert(s).second)
+              work.push_back(s);
+      return any_of(versions, [&](const Instruction *v) {
+        return reach.count(v->getParent()) || (v->getParent() == LB && load->comesBefore(v));
+      });
+    }
     auto before = [&](const Instruction *v) {
       for (auto it = bb->begin(); it != at; ++it)
         if (&*it == v)
