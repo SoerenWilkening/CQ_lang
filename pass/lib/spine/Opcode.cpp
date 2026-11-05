@@ -552,6 +552,19 @@ void lowerMeasure(LoweringContext &ctx, CallInst &call) {
     spine::bindOperand(ctx, &call, x);
     return;
   }
+  if (ctx.S.ctl) {
+    // Rule 19, Q13: inside a _ctl clone cq_measure measures a controlled copy under the clone's formal: t is the measured
+    // rail, h is not collapsed where the predicate is 0, the outcome is tainted, and no classical collapse applies.
+    RailType cw = rt(call.getArgOperand(0)->getType(), &call);
+    CallInst *t = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, cw}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), cw))});
+    ctx.unc().recordExternal(t, Role::Measured);
+    ctx.emitCore(abi::CoreSpec{abi::Core::Copy, cw, /*ctl=*/true}, {ctx.out().getArg(0), x.v, t});
+    CallInst *m = ctx.emitCore(abi::CoreSpec{abi::Core::Measure, cw}, {t});
+    m->setMetadata("cq.measure", MDNode::get(ctx.M.getContext(), {}));
+    spine::shared(ctx).ctlMeasured.insert(t);
+    spine::bindOperand(ctx, &call, Operand{t, true});
+    return;
+  }
   // cq-ihlt: a value whose only quantum sources a callee measured is classical; its sources' rails
   // are re-read in the caller right after the clone call (rule 2) and cq_measure reads it classically.
   Value *c = spine::calleeCollapse(ctx, x.v, call);
@@ -612,6 +625,9 @@ bool cleanable(LoweringContext &ctx, Value *y) {
   auto &binds = spine::shared(ctx).binds;
   auto bi = binds.find(y);
   if (bi == binds.end() || bi->second.size() != 1)
+    return false;
+  // Rule 19: a controlled copy a _ctl clone measured is never uncomputed.
+  if (spine::shared(ctx).ctlMeasured.count(bi->second[0].v))
     return false;
   auto *I = dyn_cast<Instruction>(y);
   if (!I || isa<PHINode>(I))

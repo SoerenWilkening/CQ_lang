@@ -231,14 +231,9 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
       return *c;
   }
 
-  if (!F) {
-    if (qArg || qRes || qPred || quantumValue(T, S, CB.getCalledOperand()))
-      return Class::Indirect;
-    for (const Use &u : CB.args())
-      if (nonClassicalObject(T, S, u.get()))
-        return Class::Indirect;
-    return Class::Classical;
-  }
+  // Rule 19: a call through a function pointer is always a call of a table clone, resolved at run time.
+  if (!F)
+    return Class::Indirect;
 
   if (F->isIntrinsic()) {
     Intrinsic::ID id = F->getIntrinsicID();
@@ -382,6 +377,11 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
       return Class::Classical;
     return Class::HostEffect;   // rule 16: the effect entry of its name, then abort_i1 of its seed
   }
+  // Rule 16 Signal table: no handler is tracked at compile time.
+  if (F->getName() == "signal" && CB.arg_size() == 2)
+    return Class::Signal;
+  if (F->getName() == "raise" && CB.arg_size() == 1)
+    return Class::Raise;
   // Rule 27: a listed function is its declared clone, whatever its arguments. Rule 16: every other call the entry test
   // of taint made an effect entry (a format entry for printf); the rest is the ordinary host call or pure.
   if (T.listedRoot(*F))

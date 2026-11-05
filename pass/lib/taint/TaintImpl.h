@@ -101,6 +101,7 @@ struct SpecState {
   bool declared = false; // rule 27: F has no body
   bool inPlace = false;  // all-classical, no flags: the function rewritten in place
   bool plain = false;    // §1.4: the block form / plain-ptr form (Specialization::plain)
+  bool table = false;    // §1.4: the table clone (Specialization::table)
   std::vector<Lanes> formal;     // the fixed formals (a variadic clone's block is the mask's last digit 0)
   std::vector<llvm::Type *> formalTy;
   std::string key;
@@ -174,6 +175,7 @@ struct ImplState {
   std::vector<Specialization> published;
   std::vector<SpecState *> publishedState;
   llvm::DenseSet<const llvm::Function *> tainted;
+  llvm::DenseSet<const llvm::Function *> cloned;   // hasClone
 };
 
 } // namespace cq::taintimpl

@@ -325,6 +325,8 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
     return noteCalleeMeasures(ctx, CB, startBlock, before);
   }
   case Class::Indirect: return calls::lowerIndirect(ctx, CB);
+  case Class::Signal: return calls::lowerSignal(ctx, CB);
+  case Class::Raise: return calls::lowerRaise(ctx, CB);
   case Class::Declared: return calls::lowerDeclared(ctx, CB);
   case Class::Asm: {
     if (invert::isMarkerFence(CB))

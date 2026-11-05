@@ -686,6 +686,9 @@ void noteCalleeMeasures(LoweringContext &ctx, const CallBase &orig, BasicBlock *
   const Function *F = orig.getCalledFunction();
   if (!F || F->isDeclaration())
     return;
+  // Rule 19: a _ctl clone measures a controlled copy: the actual is not collapsed.
+  if (const Specialization *cs = ctx.T.calleeSpecialization(orig, ctx.S); cs && cs->ctl)
+    return;
   for (unsigned i = 0; i < orig.arg_size(); ++i) {
     const Value *a = orig.getArgOperand(i);
     auto b = sh.binds.find(a);

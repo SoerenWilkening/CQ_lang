@@ -27,7 +27,10 @@ struct Specialization { llvm::Function *F; Mask mask; bool ctl = false, pure = f
                         // §1.4: the block form of a variadic function (its fixed formals, then ONE classical ptr, digit
                         // 0) or the plain-ptr form of a function with a byval formal; spelled by the grammar with the
                         // all-zero mask too, never the own symbol.
-                        bool plain = false; };
+                        bool plain = false;
+                        // §1.4: the table clone _t / _t_ctl: every scalar formal a handle, then the cutoff K as a
+                        // classical i32, every result a handle (rule 19). Reached through a row of the clone table only.
+                        bool table = false; };
 struct TaintOptions { std::vector<abi::CloneSpec> roots;   // library-build and stress roots
                       std::vector<std::string> listed; };   // rule 27: the bodiless functions the root lists name
 // Rule 23, a fenv call's object: the confined alloca (host-resident, its quantum part SSA), a constant (an empty part),
@@ -39,6 +42,8 @@ public:
   bool isQuantum(const llvm::Value *, const Specialization &) const;
   llvm::SmallVector<bool, 4> fieldMask(const llvm::Value *, const Specialization &) const;
   bool isTainted(const llvm::Function &) const;   // Q2: F is rewritten (not its own lowering)
+  // Rule 19, §1.4: F has a clone of any kind, a table clone included (its body is read by a construct()).
+  bool hasClone(const llvm::Function &) const;
   // A1: control dependence on tainted terminators is taint's answer (rules 3, 9, 20).
   bool controlTainted(const llvm::BasicBlock *, const Specialization &) const;
   // Rule 24: is this volatile load or store observable? Not when its pointer operand is, through getelementptrs with

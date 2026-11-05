@@ -1275,7 +1275,7 @@ bool Walker::emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigne
   bool fieldwise = false;
   unsigned nLeaves = 0;
   // Rule 26 (cq-jkq8): the fields are the union of the returns' packings, this return's value split there.
-  SmallVector<unsigned, 4> pcuts = rty->isIntegerTy() ? spine::resultIntCuts(*ctx.S.F) : SmallVector<unsigned, 4>{};
+  SmallVector<unsigned, 4> pcuts = rty->isIntegerTy() && !ctx.S.table ? spine::resultIntCuts(*ctx.S.F) : SmallVector<unsigned, 4>{};
   if (pcuts.size() > 2 && st) {
     nLeaves = pcuts.size() - 1;   // cq-0umd: a packed integer result's fields
     fieldwise = true;
@@ -1405,7 +1405,7 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
   IRBuilder<> &B = ctx.B();
   Function *C = ctx.B().GetInsertBlock()->getParent();
   Type *CRT = C->getReturnType();
-  if (fenv::cloneCarriesEnv(ctx.T, ctx.S)) {
+  if (!ctx.S.table && fenv::cloneCarriesEnv(ctx.T, ctx.S)) {
     // E1 (CR rule 23, 82): the final flags are copied out into a fresh rail (Role::Result, as the
     // result's) and returned as the last field, after the result's (calls::materialize).
     LLVMContext &LC = ctx.M.getContext();
@@ -1469,6 +1469,10 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
       CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(lit->getType())}, {lit});
       ctx.unc().setRole(ctx.unc().recordSeed(f), Role::Result);
       v = f;
+    } else if (op.handle && sh.ctlMeasured.count(op.v)) {
+      // Rule 19, §1.4: the controlled-copy rail is returned as that rail, not copied (211).
+      if (CRT != handleTy(ctx.M.getContext()))
+        internalError("spine: a clone with a quantum result whose return type is not the handle type", ret);
     } else if (op.handle && spine::ruleSixImage(sh, op.v) && !calls::hasTwin(ctx.T, ctx.S)) {
       // 204: a result that is a rule-6 image cannot be uncomputed: it is returned directly (no twin reads it).
       if (CRT != handleTy(ctx.M.getContext()))
@@ -1491,9 +1495,7 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
     }
     nr = B.CreateRet(v);
   } else if (!C->getReturnType()->isVoidTy()) {
-    // cq-ew5z: a void base with the overflow predicate appended (calls::materialize); emitOverflowReturn sets
-    // the returned handle.
-    nr = B.CreateRet(PoisonValue::get(C->getReturnType()));
+    internalError("spine: a void return in a clone that returns a value", ret);
   } else {
     nr = B.CreateRetVoid();
   }
@@ -2250,6 +2252,7 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
   LoweringContext ctx(M, T, S, KO);
   spine::Shared &sh = spine::shared(ctx);
   sh.orig = &F;
+  calls::noteRun(ctx);
 
   Value *entryFlag = nullptr;
   SmallVector<std::pair<Argument *, SmallVector<Operand, 4>>, 2> classicalComposites;
@@ -2308,13 +2311,13 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
       bool composite = A->getType()->isStructTy() || A->getType()->isArrayTy() || A->getType()->isVectorTy();
       // cq-0umd (rule 26): an integer formal the callee unpacks is the coerced struct's fields, one
       // parameter each, a handle where the mask's digit is 1.
-      if (SmallVector<unsigned, 4> cuts = A->getType()->isIntegerTy() ? spine::unpackCuts(A)
-                                                                       : SmallVector<unsigned, 4>{};
+      if (SmallVector<unsigned, 4> cuts = A->getType()->isIntegerTy() && !S.table ? spine::unpackCuts(A)
+                                                                                   : SmallVector<unsigned, 4>{};
           cuts.size() > 2) {
         size_t d = 0;
         for (unsigned j = 0; j < i; ++j) {
           Argument *Aj = F.getArg(j);
-          SmallVector<unsigned, 4> cj = Aj->getType()->isIntegerTy() ? spine::unpackCuts(Aj) : SmallVector<unsigned, 4>{};
+          SmallVector<unsigned, 4> cj = Aj->getType()->isIntegerTy() ? spine::unpackCuts(Aj) : SmallVector<unsigned, 4>{};   // !S.table here
           d += cj.size() > 2 ? cj.size() - 1 : T.fieldMask(Aj, S).size();
         }
         unsigned n = cuts.size() - 1;
@@ -2361,12 +2364,18 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
         internalError("spine: a variadic clone with no block parameter", C);
       sh.varargs.push_back(Operand{C->getArg(p++), false});
     }
-    if (fenv::cloneCarriesEnv(ctx.T, S)) {
+    if (!S.table && fenv::cloneCarriesEnv(ctx.T, S)) {
       // E1 (CR rule 23, 82): the caller's mode and flags, the two trailing parameters.
       if (p + 2 > C->arg_size())
         internalError("spine: a clone carrying the environment without its mode and flags parameters", C);
       fenv::bindCloneEnv(ctx, C->getArg(p), C->getArg(p + 1));
       p += 2;
+    }
+    if (S.table) {
+      // §1.4: the cutoff K, the table clone's last parameter (a classical i32).
+      if (p >= C->arg_size())
+        internalError("spine: a table clone with no K parameter", C);
+      sh.tableK = C->getArg(p++);
     }
     if (p != C->arg_size())   // calls::materialize gives one parameter per formal field, varargs and env
       internalError("spine: a clone with more parameters than its formals' fields", C);
@@ -2416,6 +2425,7 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
   Walker(ctx, F, DT, LI).run();
   llvm::erase_if(sh.ruleSixPending, [&](const spine::Shared::PendingSix &p) { return p.ctx == &ctx; });
   reachDefs(*sh.out);   // cq-pfpy: rule 9's hoisted arm values reach every point that reads them
+  calls::insertActivationCounter(ctx);   // rule 14, §1.4
 
   // Rule 13 (b137e75): the lowered entry keeps every address-taken block under its identity: the block its
   // walk lowered it into when that block is its own (not the entry, not shared with another address-taken

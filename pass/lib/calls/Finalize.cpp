@@ -28,6 +28,7 @@
 // symbol) is the lowered entry and stays live (cq-i9wk).
 #include "cq/Abi.h"
 #include "cq/Calls.h"
+#include "CallsInternal.h"
 #include "cq/Common.h"
 #include "../spine/SpineInternal.h"
 
@@ -45,6 +46,7 @@
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/Transforms/Utils/Cloning.h"
+#include "llvm/Transforms/Utils/ModuleUtils.h"
 
 #include <optional>
 #include <set>
@@ -366,6 +368,81 @@ void defineTwin(Module &M, Function &twin, Function &src) {
   }
 }
 
+// The functions of the module whose table twins leave the results allocated (defineTableClones).
+std::set<std::string> keepsResults;
+
+// §1.4: a table twin. For a function rule 18 gives no twin it does nothing but count its activation and pop; otherwise it
+// is rule 18's twin that frees the results it zeroes.
+void defineTableTwin(Module &M, Function &twin, Function &fwd) {
+  std::optional<abi::CloneSpec> ts = abi::parseClone(twin.getName());
+  bool keeps = keepsResults.count(ts->fn) != 0;
+  LLVMContext &C = M.getContext();
+  if (keeps) {
+    IRBuilder<> B(BasicBlock::Create(C, "", &twin));
+    if (ts->ctl) {
+      Type *i32 = Type::getInt32Ty(C);
+      GlobalVariable *act = activationCounter(M, ts->fn);
+      Value *d = B.CreateLoad(i32, act);
+      B.CreateStore(B.CreateAdd(d, ConstantInt::get(i32, 1)), act);
+      Value *n = B.CreateLoad(i32, act);
+      B.CreateStore(B.CreateAdd(n, ConstantInt::get(i32, -1, true)), act);
+    }
+    B.CreateRetVoid();
+    twin.setLinkage(GlobalValue::InternalLinkage);
+    return;
+  }
+  Function &src = *twinSource(M, fwd);
+  defineTwin(M, twin, src);
+  unsigned nOuts = twin.arg_size() - src.arg_size();
+  unsigned first = ts->ctl ? 1 : 0;
+  FunctionCallee fr = abi::declare(M, abi::CoreSpec{abi::Core::Free});
+  for (BasicBlock &BB : twin)
+    if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator())) {
+      IRBuilder<> B(R);
+      for (unsigned j = 0; j < nOuts; ++j)
+        B.CreateCall(fr, {twin.getArg(first + j)});
+    }
+}
+
+// §1.3, rule 19: every table clone's twins declared and `internal void @__cq_register()` in llvm.global_ctors at 65535,
+// one row per function: fn, its C function type as a string, _t, _t_ctl, _t_unc, _t_ctl_unc.
+void defineTableClones(Module &M) {
+  std::vector<TableRow> rows = takeTableRows(M);
+  keepsResults.clear();
+  if (rows.empty())
+    return;
+  LLVMContext &C = M.getContext();
+  Function *reg = Function::Create(FunctionType::get(Type::getVoidTy(C), false), GlobalValue::InternalLinkage, "__cq_register", &M);
+  IRBuilder<> B(BasicBlock::Create(C, "", reg));
+  FunctionCallee add = abi::declareHost(M, abi::Host::CloneRegister);
+  auto twinOf = [&](Function *fwd, bool ctl) {
+    std::string name = (fwd->getName() + "_unc").str();
+    SmallVector<Type *, 8> ps;
+    ArrayRef<Type *> params = fwd->getFunctionType()->params();
+    if (ctl) {
+      ps.push_back(params.front());
+      params = params.drop_front();
+    }
+    Type *rt = fwd->getReturnType();
+    if (auto *st = dyn_cast<StructType>(rt))
+      ps.append(st->getNumElements(), Type::getInt32Ty(C));
+    else if (!rt->isVoidTy())
+      ps.push_back(Type::getInt32Ty(C));
+    ps.append(params.begin(), params.end());
+    return Function::Create(FunctionType::get(Type::getVoidTy(C), ps, false), GlobalValue::InternalLinkage, name, &M);
+  };
+  for (const TableRow &r : rows) {
+    Function *fn = M.getFunction(r.fn), *t = M.getFunction(r.forward), *tc = M.getFunction(r.ctl);
+    if (!fn || !t || !tc)
+      internalError("calls: calls::finalize: a clone-table row without its function or table clones: @" + r.fn);
+    if (r.keepsResults)
+      keepsResults.insert(r.fn);
+    B.CreateCall(add, {fn, sigString(M, r.type), t, tc, twinOf(t, false), twinOf(tc, true)});
+  }
+  B.CreateRetVoid();
+  appendToGlobalCtors(M, reg, 65535);
+}
+
 // Defines every called, undefined twin whose forward clone has a body (see the header).
 void defineTwins(Module &M) {
   for (bool changed = true; changed;) {
@@ -392,7 +469,10 @@ void defineTwins(Module &M) {
       }
       if (!fwd || fwd->isDeclaration())
         continue;   // rule 27: whatever is linked defines it
-      defineTwin(M, *T, *twinSource(M, *fwd));
+      if (ts->table)
+        defineTableTwin(M, *T, *fwd);
+      else
+        defineTwin(M, *T, *twinSource(M, *fwd));
       changed = true;
     }
   }
@@ -455,6 +535,7 @@ void finalize(Module &M) {
   }
   if (clones.empty())
     return;
+  defineTableClones(M);
   defineTwins(M);
 
   SetVector<Function *> originals;
