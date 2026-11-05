@@ -14,6 +14,14 @@ namespace cq::tape   { void lowerHostEffect(LoweringContext &, llvm::CallBase &)
                        // Rule 19: main returning the rail r: the effect entry exit under an alloc_i1(true) seed.
                        void lowerMainExit(LoweringContext &, Operand r, llvm::Type *ty);
                        void lowerNoreturn(LoweringContext &, llvm::CallBase &);
+                       // Rule 19 (BACKEND_ABI §1.11): the effect entry of a callee with no row of the clone table:
+                       // a null name, the callee's address the first field, the actuals after it, under flag or an
+                       // alloc_i1(true) seed. The result rails it returns are KEPT, none when the program reads none.
+                       llvm::SmallVector<llvm::Value *, 2> lowerTableEffect(LoweringContext &, llvm::CallBase &,
+                                                                            Operand callee, llvm::Value *flag);
+                       // Rule 16 Signal table: raise's complement, the entry `raise` with its one actual as its field.
+                       llvm::SmallVector<llvm::Value *, 2> lowerRaiseEffect(LoweringContext &, llvm::CallBase &,
+                                                                            llvm::Value *flag);
                        // cq-a63l (CR rule 16, "a result the program reads"; amendment on cq-arch): before
                        // the final taint, a deferred printf/fprintf (a host effect of some specialization)
                        // whose count the program reads or whose format may hold %n gets the library's

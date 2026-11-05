@@ -498,6 +498,55 @@ void lowerHostEffect(LoweringContext &ctx, CallBase &CB) {
     abortArm(ctx, CB, ctl);
 }
 
+namespace {
+// One entry under flag or an alloc_i1(true) seed freed right after it (rule 7): the optional first field, the actuals, the
+// effect at `name`. A result the program reads is the _<W> rail; a composite's are |0> rails.
+SmallVector<Value *, 2> entryOnTape(LoweringContext &ctx, CallBase &CB, const Operand *first, Constant *name, Value *flag) {
+  LLVMContext &C = ctx.M.getContext();
+  CallInst *one = flag ? nullptr
+                       : ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 1}}, {ConstantInt::getTrue(C)});
+  Value *ctl = flag ? flag : one;
+  Value *tape = tapeOf(ctx);
+  if (first)
+    scalarField(ctx, tape, flag, *first, Type::getInt64Ty(C));
+  for (unsigned a = 0; a < CB.arg_size(); ++a)
+    emitField(ctx, CB, a, tape, flag);
+  Type *rt = CB.getType();
+  bool reads = !rt->isVoidTy() && !CB.use_empty();
+  bool wide = reads && (rt->isAggregateType() || rt->isVectorTy());
+  reads = reads && !wide;
+  CallInst *eff = reads ? ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffectW, railTypeOf(rt), /*ctl=*/true}, {ctl, tape, name})
+                        : ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffect, {}, /*ctl=*/true}, {ctl, tape, name});
+  ctx.unc().noteVersionChange(eff);
+  SmallVector<Value *, 2> out;
+  if (reads) {
+    ctx.unc().recordExternal(eff, Role::Kept);
+    out.push_back(eff);
+  }
+  if (wide) {
+    SmallVector<Type *, 4> tys;
+    leafTypes(rt, tys);
+    for (Type *t : tys) {
+      RailType w = railTypeOf(t);
+      CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(C, w))});
+      ctx.unc().recordExternal(z, Role::Kept);
+      out.push_back(z);
+    }
+  }
+  if (one)
+    ctx.emitCore(abi::CoreSpec{abi::Core::Free}, {one});
+  return out;
+}
+} // namespace
+
+SmallVector<Value *, 2> lowerTableEffect(LoweringContext &ctx, CallBase &CB, Operand callee, Value *flag) {
+  return entryOnTape(ctx, CB, &callee, ConstantPointerNull::get(PointerType::getUnqual(ctx.M.getContext())), flag);
+}
+
+SmallVector<Value *, 2> lowerRaiseEffect(LoweringContext &ctx, CallBase &CB, Value *flag) {
+  return entryOnTape(ctx, CB, nullptr, effectName(ctx.M, "raise"), flag);
+}
+
 void lowerMainExit(LoweringContext &ctx, Operand r, Type *ty) {
   if (ctx.S.pure)
     return;

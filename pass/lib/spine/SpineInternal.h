@@ -211,10 +211,10 @@ struct Shared {
   // hoistedDefs into the current block's definitions after the dispatch that hoisted them.
   llvm::DenseSet<const llvm::Instruction *> hoisted;
   std::vector<const llvm::Instruction *> hoistedDefs;
-  // cq-ew5z (CR rule 14 with rule 19): in a level clone returning the overflow predicate, one i1 rail per
-  // recursive call site lowered (a cut call's predicate, or the next level's returned predicate under the
-  // call's), pinned until the return ORs them (calls::overflowOfLevel).
-  llvm::SmallVector<llvm::Value *, 2> overflowArms;
+  // §1.4: a table clone's K formal.
+  llvm::Value *tableK = nullptr;
+  // Rule 19: the controlled copies a _ctl clone measured: each is the value (a rail), never uncomputed.
+  llvm::DenseSet<llvm::Value *> ctlMeasured;
 
   Shared(llvm::Module &M, const loops::KOptions &KO) : M(M), KO(KO), B(M.getContext()) {}
   llvm::DominatorTree &dt(const llvm::Function &F);
@@ -387,12 +387,3 @@ bool anyQuantumOperand(LoweringContext &, const llvm::Instruction &);
 
 } // namespace cq::spine
 
-namespace cq::calls {
-// cq-ew5z (CR rule 14, recursion with quantum depth, with rule 19's extra result; Calls.cpp). Does the clone of
-// S return the overflow predicate after its base result (a level whose cut keeps it, or a level calling such
-// a next level)? Valid once a call site of the run was lowered (calls captures the run's taint and K).
-bool overflowResult(const Specialization &S);
-// At a level clone's return: the OR of its pinned overflow arms (spine::Shared::overflowArms), unpinned; an
-// arm defined in a classical arm is |0> on the paths that skip it (a seed in the entry, merged classically).
-llvm::Value *overflowOfLevel(LoweringContext &);
-} // namespace cq::calls

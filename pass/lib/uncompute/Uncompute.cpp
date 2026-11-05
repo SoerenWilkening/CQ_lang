@@ -168,19 +168,6 @@ using namespace llvm;
 namespace cq {
 
 namespace {
-// cq-sd95 (CR rules 19, 27; §1.3 clone_resolve): a call through the pointer cqrt_clone_resolve(fp, kind) returned:
-// a declared clone without a symbol. Its twin is cqrt_clone_resolve(fp, 2) called with the twin's arguments.
-const CallInst *resolvedBy(const CallInst *fwd) {
-  if (!fwd || fwd->getCalledFunction())
-    return nullptr;
-  auto *rc = dyn_cast<CallInst>(fwd->getCalledOperand());
-  const Function *rf = rc ? rc->getCalledFunction() : nullptr;
-  return rf && rf->getName() == "cqrt_clone_resolve" && rc->arg_size() == 2 ? rc : nullptr;
-}
-bool directOrResolved(const CallInst *fwd) { return fwd && (fwd->getCalledFunction() || resolvedBy(fwd)); }
-} // namespace
-
-namespace {
 
 constexpr unsigned kNone = ~0u;
 
@@ -489,7 +476,7 @@ struct Uncompute::Impl {
   }
 
   void checkOps(CallInst *fwd, ArrayRef<Operand> ops, const char *who) {
-    if (!directOrResolved(fwd))
+    if (!fwd || !fwd->getCalledFunction())
       internalError(std::string("uncompute: ") + who + ": the forward must be a direct call", fwd);
     if (ops.size() != fwd->arg_size())
       internalError(std::string("uncompute: ") + who + ": operand list differs from the forward call", fwd);
@@ -1373,13 +1360,8 @@ struct Uncompute::Impl {
     FunctionType *FT = FunctionType::get(Type::getVoidTy(fwd->getContext()), ps, false);
     return twinOf(fwd, FT, B);
   }
-  // The twin <callee>_unc of FT; a resolved forward's twin is the registered _unc (kind 2) of the same pointer.
-  FunctionCallee twinOf(CallInst *fwd, FunctionType *FT, IRBuilder<> &B) {
-    if (const CallInst *rc = resolvedBy(fwd)) {
-      Value *u = track(B.CreateCall(rc->getFunctionType(), rc->getCalledOperand(),
-                                    {rc->getArgOperand(0), B.getInt32(2)}));
-      return {FT, u};
-    }
+  // The twin <callee>_unc of FT.
+  FunctionCallee twinOf(CallInst *fwd, FunctionType *FT, IRBuilder<> &) {
     if (auto it = twinNames.find(fwd); it != twinNames.end())
       return declareFn(*fwd->getModule(), it->second, FT, fwd);
     return declareFn(*fwd->getModule(), (fwd->getCalledFunction()->getName() + "_unc").str(), FT, fwd);
@@ -2911,7 +2893,7 @@ RailId Uncompute::recordMerge(Instruction *merged) {
 SmallVector<RailId, 4> Uncompute::recordCall(CallInst *fwd, ArrayRef<Value *> outs, ArrayRef<Operand> extra,
                                              bool loadsBus) {
   Impl &I = *impl;
-  if (!directOrResolved(fwd) || !fwd->getParent())
+  if (!fwd || !fwd->getCalledFunction() || !fwd->getParent())
     internalError("uncompute: recordCall: the forward must be a direct call in a block", fwd);
   if (outs.empty())
     internalError("uncompute: recordCall: a call with no result rail", fwd);
@@ -3060,6 +3042,24 @@ bool Uncompute::mayHit(const Value *handle, const Instruction *gate) const {
         return true;
   }
   return false;
+}
+
+bool Uncompute::deferredExit(RailId r) const {
+  for (const Impl::Deferred &d : impl->defs)
+    if (is_contained(d.exits, r))
+      return true;
+  for (RailId a : impl->rails[r].arms)   // a merge of rails: its arms'
+    if (a != r && deferredExit(a))
+      return true;
+  return false;
+}
+
+void Uncompute::mergeToRail(RailId m) {
+  Impl::Rail &x = impl->rail(m, "mergeToRail");
+  for (RailId a : x.arms)
+    llvm::erase(impl->rails[a].mergedInto, m);
+  x.arms.clear();
+  x.role = Role::Garbage;
 }
 
 std::optional<Role> Uncompute::liveRole(RailId r) const {

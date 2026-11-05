@@ -20,15 +20,13 @@
 //    kept (measured, escaped, rule 6 cleaned it). The recorded TemplateSpec is a placeholder (op is
 //    empty, w the result's rail type); no consumer may spell a symbol from it. A classical result
 //    (a measuring callee, rule 18) is bound as it is and has no twin. A void call records nothing.
-//  - lowerIndirect(ctx, call): rule 19, a call through a classical function pointer: a classical
-//    chain of pointer-equality tests over the static callee set (!callees, else every address-taken
-//    function of the call's type, as taint reads it), each arm calling its candidate's clone; the
-//    last test's false edge is unreachable (a pointer outside the set is the program's UB). A
-//    result is merged by a classical phi of handles (Uncompute::recordMerge). The builder is left
-//    in the join block.
+//  - lowerIndirect(ctx, call): rule 19, always a call of a table clone resolved at run time: a classical pointer through
+//    __cq_clone_resolve (null: rule 16's host boundary), an address rail through the dispatch loop over the registered
+//    functions of the call's type. The builder is left in the join block.
 //  - lowerVarargs: the va intrinsics of a variadic clone (rule 16 block form); lowerAsm waits on
 //    CQ_spec's inline-asm example (build step 3, rule 27).
 #include "cq/Calls.h"
+#include "CallsInternal.h"
 
 #include "cq/Abi.h"
 #include "cq/Aggregates.h"
@@ -46,6 +44,7 @@
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/CFG.h"
+#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/AttributeMask.h"
@@ -58,6 +57,7 @@
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PatternMatch.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
 #include "llvm/Transforms/Utils/SSAUpdater.h"
 
@@ -79,13 +79,9 @@ namespace {
 
 // The TaintInfo of the current run (see the contract).
 std::optional<TaintInfo> runTaint;
-// The run's K resolution (CLAUDE.md "K per loop"), captured with it: rule 14's cut of a quantum-depth
-// recursion decides from K and B whether a clone returns the overflow predicate (cq-ew5z).
-std::optional<loops::KOptions> runKO;
 
 void capture(LoweringContext &ctx) {
   runTaint = ctx.T;
-  runKO = spine::shared(ctx).KO;
 }
 
 const TaintInfo &taintOf(const Specialization &S) {
@@ -99,12 +95,12 @@ const TaintInfo &taintOf(const Specialization &S) {
 }
 
 abi::CloneSpec cloneSpecOf(const Specialization &S) {
-  return abi::CloneSpec{S.F->getName().str(), S.mask, S.bounds, S.ctl, S.pure, false};
+  return abi::CloneSpec{S.F->getName().str(), S.mask.empty() ? "v" : S.mask, S.bounds, S.ctl, S.pure, false, S.table};
 }
 
 bool sameFields(const abi::CloneSpec &a, const abi::CloneSpec &b) {
   return a.fn == b.fn && a.mask == b.mask && a.bounds == b.bounds && a.ctl == b.ctl && a.pure == b.pure &&
-         a.unc == b.unc;
+         a.unc == b.unc && a.table == b.table;
 }
 
 // The CR §1.4 name of cs; unimplemented when the right-to-left reading does not give cs back.
@@ -190,7 +186,7 @@ std::vector<FormalLayout> formalLayout(const TaintInfo &T, const Specialization 
     FormalLayout f;
     leafTypes(A.getType(), f.leaves, &A);
     f.q = T.fieldMask(&A, S);
-    if (A.getType()->isIntegerTy()) {
+    if (A.getType()->isIntegerTy() && !S.table) {
       SmallVector<unsigned, 4> cuts = spine::unpackCuts(&A);
       if (cuts.size() > 2) {
         f.cuts = cuts;
@@ -254,6 +250,8 @@ struct ResultLayout {
   // cq-0umd (166): an aggregate result with a packed integer leaf: the fields per leaf (the leaves are
   // then the fields, a packed leaf split); empty when every leaf is one field.
   SmallVector<unsigned, 4> leafFields;
+  // Rule 19: the registers a by-name clone returns after its results.
+  unsigned extras = 0;
   bool anyQ() const { return is_contained(q, true); }
 };
 
@@ -267,11 +265,12 @@ ResultLayout resultLayout(const TaintInfo &T, const Specialization &S, const Val
   // Every other return type of C on x86-64 is a scalar rail type, a composite or a (classical) pointer.
   if (!isComposite(rt) && !scalarRailType(rt) && !rt->isPointerTy())
     internalError("calls: a clone result type no C function on x86-64 returns", at);
-  if (packedIntegerResult(*S.F) && !rt->isIntegerTy()) {
+  bool packed = !S.table && packedIntegerResult(*S.F);   // §1.4: a table clone's ABI follows from the C signature alone
+  if (packed && !rt->isIntegerTy()) {
     // cq-0umd (166, rule 26): a leaf packed from fields (the coerced inner struct) crosses as its fields.
     for (const SmallVector<unsigned, 4> &c : spine::resultLeafCuts(*S.F))
       r.leafFields.push_back(c.size() > 2 ? unsigned(c.size() - 1) : 1u);
-  } else if (packedIntegerResult(*S.F)) {
+  } else if (packed) {
     r.cuts = spine::resultIntCuts(*S.F);   // the union of the returns' packings (rule 26, cq-jkq8)
   }
   r.composite = isComposite(rt) || r.cuts.size() > 2;
@@ -285,10 +284,19 @@ ResultLayout resultLayout(const TaintInfo &T, const Specialization &S, const Val
   }
   for (unsigned k = 0; k < r.leaves.size(); ++k)
     r.q.push_back(T.resultQuantum(S, k));
+  if (!S.table)
+    r.extras = unsigned(mintSites(T, S).size());
   return r;
 }
 
 Type *cloneResultType(LLVMContext &C, const ResultLayout &r, Type *orig) {
+  if (r.extras) {
+    SmallVector<Type *, 4> es;
+    for (unsigned k = 0; k < r.leaves.size(); ++k)
+      es.push_back(r.q[k] ? handleTy(C) : r.leaves[k]);
+    es.append(r.extras, handleTy(C));
+    return StructType::get(C, es);
+  }
   if (orig->isVoidTy() || !r.anyQ())
     return orig;
   if (!r.composite)
@@ -322,26 +330,6 @@ Value *ctlFlag(LoweringContext &ctx, const CallBase &CB) {
     internalError("calls: a _ctl call with no quantum predicate in scope", &CB);
   return f;
 }
-
-// ---- Rule 14's kept overflow predicate of a quantum-depth recursion (cq-ew5z) -------------------------------
-//
-// CR rule 14: a recursion with quantum depth runs one clone per level, the call at the cut level is a |0> rail,
-// and "the cut level would recurse once more" is the kept overflow predicate when B > K or no bound is
-// proved. The levels run unguarded or as _ctl clones (rule 19), so a cut call's own predicate holds the
-// recursion's path only from its level on: the predicate is built up the levels, each returning it as an
-// extra result (rule 19's extra results; calls::materialize, Walker::emitOverflowReturn). At level d it is
-// the OR over d's recursive call sites s of (the quantum predicate s runs under) AND (at a cut call: true; at
-// a call of level d + 1: the predicate that level returned). A level's returned rail is a result of its call,
-// zeroed by the twin with the others (rule 18), so every level's rails are clean; the first caller outside
-// the chain (the entry, or a clone calling the recursion) keeps a fresh rail holding the returned predicate
-// under its own call's predicate (Role::KeptOverflow), never read, one per activation of the recursion like
-// a K-loop's a_K (rule 14, 169); a twin replaying such a caller does not compute it again (calls::finalize).
-
-
-
-
-
-
 
 // CR rules 2, 7: an actual whose rail was measured at a point dominating the call denotes the classical
 // outcome (rule 2), while the clone's mask digit, fixed by taint for every call site of the clone, is
@@ -563,8 +551,8 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
   for (unsigned p = 0; p < C->arg_size(); ++p)
     if (C->hasParamAttribute(p, Attribute::StructRet))
       r.call->addParamAttr(p, C->getParamAttribute(p, Attribute::StructRet));
-  r.handle = !S.F->getReturnType()->isVoidTy() && !r.res.composite && r.res.anyQ();
-  r.fieldwise = r.res.composite && r.res.anyQ();
+  r.handle = !S.F->getReturnType()->isVoidTy() && !r.res.composite && r.res.anyQ() && !r.res.extras;
+  r.fieldwise = r.res.composite && r.res.anyQ() && !r.res.extras;
   r.value = r.call;
   return r;
 }
@@ -605,6 +593,8 @@ void bindFieldwiseResult(LoweringContext &ctx, CallBase &CB, CallInst *call, con
 // (rule 18), so llvm.exp.f64 resolves as exp. LoweringContext::K keys on a Function's name: an
 // existing function of that name is asked, else a declaration made for the question and erased.
 Value *declaredK(LoweringContext &ctx, const Function &F, const Value *at) {
+  if (ctx.S.table)
+    return spine::shared(ctx).tableK;   // rule 27: calls inside a table clone pass the received K down
   std::string n = calleeName(F, at);
   unsigned K;
   if (n == F.getName()) {
@@ -732,6 +722,226 @@ bool reaches(const Function *G, const Function *F) {
 
 
 
+// ---- The clone table (rule 19, §1.4) ---------------------------------------------------------------------------------
+
+namespace {
+// One row per function with a table clone, in the order of the run's specializations. The function type and the twin
+// facts are read here, while S.F is the original and the run's TaintInfo in hand: the row is emitted by finalize, after
+// the lowered own symbols replaced the originals.
+std::map<const Module *, std::vector<TableRow>> tableRows;
+
+// §1.4: a table clone's twin does nothing but count and pop when rule 18 gives the function none. A measurement on a
+// classical path keeps a rule-18 twin (Q3) but a table clone's results stay allocated (rule 2), so any measurement does.
+bool tableKeepsResults(const TaintInfo &T, const Specialization &S) {
+  if (!hasTwin(T, S))
+    return true;
+  SmallPtrSet<const Function *, 8> seen{S.F};
+  SmallVector<const Function *, 8> work{S.F};
+  while (!work.empty()) {
+    const Function *X = work.pop_back_val();
+    for (const BasicBlock &BB : *X)
+      for (const Instruction &I : BB)
+        if (auto *CB = dyn_cast<CallBase>(&I))
+          if (const Function *G = CB->getCalledFunction()) {
+            if (G->isDeclaration() && G->getName().starts_with("cq_measure_"))
+              return true;
+            if (!G->isDeclaration() && seen.insert(G).second)
+              work.push_back(G);
+          }
+  }
+  return false;
+}
+
+DenseMap<const Function *, unsigned> mintCounts;
+
+void noteTableClone(Module &M, const TaintInfo &T, const Specialization &S, const abi::CloneSpec &cs) {
+  std::vector<TableRow> &rows = tableRows[&M];
+  auto it = find_if(rows, [&](const TableRow &r) { return r.fn == cs.fn; });
+  if (it == rows.end()) {
+    rows.push_back(TableRow{cs.fn, S.F->getFunctionType(), {}, {}});
+    abi::CloneSpec f = cs;
+    f.ctl = false;
+    rows.back().forward = abi::name(f);
+    f.ctl = true;
+    rows.back().ctl = abi::name(f);
+    it = std::prev(rows.end());
+  }
+  it->keepsResults = it->keepsResults || tableKeepsResults(T, S);
+}
+} // namespace
+
+ArrayRef<const CallBase *> mintSites(const TaintInfo &T, const Specialization &S) {
+  static std::map<std::pair<const void *, const Specialization *>, SmallVector<const CallBase *, 2>> memo;
+  auto key = std::make_pair(static_cast<const void *>(T.specializations().data()), &S);
+  auto it = memo.find(key);
+  if (it != memo.end())
+    return it->second;
+  SmallVector<const CallBase *, 2> sites;
+  // A table clone's twin that does something, or a by-name clone's that runs and has a result to zero.
+  bool twin = S.table ? !tableKeepsResults(T, S)
+                      : !S.isEntry() && !S.F->getReturnType()->isVoidTy() && T.needsTwin(S) && hasTwin(T, S) && !fenv::cloneCarriesEnv(T, S);
+  if (twin) {
+    DominatorTree DT(*S.F);
+    LoopInfo LI(DT);
+    for (const Instruction &I : instructions(*S.F))
+      if (auto *CB = dyn_cast<CallBase>(&I))
+        if (const Function *G = CB->getCalledFunction(); G && G->isDeclaration() && G->getName().starts_with("cq_theta_")) {
+          if (LI.getLoopFor(CB->getParent()))
+            noteUnbuilt("calls: a rotation in a loop of a clone with a twin (rule 19's registers are per site)", CB);
+          else
+            sites.push_back(CB);
+        }
+  }
+  return memo[key] = std::move(sites);
+}
+
+unsigned mintCount(const Function &clone) { return mintCounts.lookup(&clone); }
+
+void noteMint(LoweringContext &ctx, CallInst &site, BasicBlock *startBlock, Instruction *before) {
+  if (ctx.S.isEntry())
+    return;
+  ArrayRef<const CallBase *> sites = mintSites(ctx.T, ctx.S);
+  auto at = find(sites, &site);
+  if (at == sites.end())
+    return;
+  auto bi = spine::shared(ctx).binds.find(&site);
+  if (bi == spine::shared(ctx).binds.end() || bi->second.size() != 1 || !bi->second[0].handle)
+    return;
+  Value *h = bi->second[0].v;
+  Type *i32 = Type::getInt32Ty(ctx.M.getContext());
+  MDNode *tag = MDNode::get(ctx.M.getContext(), ConstantAsMetadata::get(ConstantInt::get(i32, at - sites.begin())));
+  BasicBlock *bb = ctx.B().GetInsertBlock();
+  if (bb != startBlock) {
+    noteUnbuilt("calls: a rotation whose lowering branched, its register is not handed to the twin", &site);
+    return;
+  }
+  for (Instruction *I = before ? before->getNextNode() : &bb->front(); I; I = I->getNextNode()) {
+    auto *c = dyn_cast<CallInst>(I);
+    const Function *G = c ? c->getCalledFunction() : nullptr;
+    if (!G || !G->getName().starts_with("cqrt_"))
+      continue;
+    if (c == h || is_contained(c->args(), h))
+      c->setMetadata("cq.mint", tag);
+  }
+}
+
+Value *mintHandle(LoweringContext &ctx, const CallBase &site) {
+  Value *zero = ConstantInt::get(Type::getInt32Ty(ctx.M.getContext()), 0);
+  spine::Shared &sh = spine::shared(ctx);
+  auto bi = sh.binds.find(&site);
+  if (bi == sh.binds.end() || bi->second.size() != 1 || !bi->second[0].handle)
+    return zero;
+  auto *h = dyn_cast<CallInst>(bi->second[0].v);
+  if (!h || !h->getMetadata("cq.mint"))
+    return zero;
+  if (sh.ruleSixCleaned.count(h))
+    return zero;   // absorbed by rule 6: no register remains
+  return h;
+}
+
+std::vector<TableRow> takeTableRows(const Module &M) {
+  auto it = tableRows.find(&M);
+  if (it == tableRows.end())
+    return {};
+  std::vector<TableRow> r = std::move(it->second);
+  tableRows.erase(it);
+  return r;
+}
+
+Constant *sigString(Module &M, FunctionType *FT) {
+  std::string s;
+  raw_string_ostream os(s);
+  FT->print(os);
+  os.flush();
+  Constant *init = ConstantDataArray::getString(M.getContext(), s, /*AddNull=*/true);
+  for (GlobalVariable &G : M.globals())
+    if (G.getName().starts_with(".cq.sig") && G.hasInitializer() && G.getInitializer() == init)
+      return &G;
+  auto *gv = new GlobalVariable(M, init->getType(), /*isConstant=*/true, GlobalValue::PrivateLinkage, init, ".cq.sig");
+  gv->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
+  gv->setAlignment(Align(1));
+  return gv;
+}
+
+Value *enclosingK(LoweringContext &ctx) {
+  if (ctx.S.table)
+    return spine::shared(ctx).tableK;
+  return ConstantInt::get(Type::getInt32Ty(ctx.M.getContext()), ctx.K(*ctx.S.F));
+}
+
+GlobalVariable *activationCounter(Module &M, StringRef fn) {
+  std::string n = ("__cq_act_" + fn).str();
+  if (GlobalVariable *g = M.getGlobalVariable(n, /*AllowInternal=*/true))
+    return g;
+  Type *i32 = Type::getInt32Ty(M.getContext());
+  auto *g = new GlobalVariable(M, i32, false, GlobalValue::InternalLinkage, ConstantInt::get(i32, 0), n);
+  g->setAlignment(Align(4));
+  return g;
+}
+
+void insertActivationCounter(LoweringContext &ctx) {
+  const Specialization &S = ctx.S;
+  if (!S.ctl)
+    return;
+  const Function &F = *S.F;
+  if (!S.table && F.hasLocalLinkage() && !F.hasAddressTaken() && !reaches(&F, &F))
+    return;
+  Function &C = ctx.out();
+  LLVMContext &LC = ctx.M.getContext();
+  Type *i32 = Type::getInt32Ty(LC);
+  GlobalVariable *act = activationCounter(ctx.M, F.getName());
+  Value *K = S.table ? static_cast<Value *>(C.getArg(C.arg_size() - 1)) : ConstantInt::get(i32, ctx.K(F));
+  BasicBlock *body = &C.getEntryBlock();
+  BasicBlock *entry = BasicBlock::Create(LC, "", &C, body);
+  BasicBlock *cut = BasicBlock::Create(LC, "", &C);
+  IRBuilder<> B(entry);
+  Value *d = B.CreateLoad(i32, act);
+  B.CreateStore(B.CreateAdd(d, ConstantInt::get(i32, 1)), act);
+  B.CreateCondBr(B.CreateICmpULT(d, K), body, cut);
+
+  // The cut: each result a |0> rail, a copy_i1 of the predicate the kept overflow predicate (rule 14).
+  B.SetInsertPoint(cut);
+  auto zero = [&](RailType w) -> Value * {
+    return B.CreateCall(abi::declare(ctx.M, abi::CoreSpec{abi::Core::Alloc, w}), {Constant::getNullValue(irTypeOf(LC, w))});
+  };
+  ResultLayout rl = resultLayout(ctx.T, S, &F);
+  Type *RT = C.getReturnType();
+  Value *rv = nullptr;
+  auto field = [&](unsigned k, Type *t) -> Value * {
+    if (k < rl.leaves.size() && rl.q[k])
+      return zero(railTypeOf(rl.leaves[k]));
+    if (k >= rl.leaves.size() + rl.extras && t == handleTy(LC))
+      return zero(RailType{Kind::Int, 32});   // rule 23: a clone's flags rail
+    return Constant::getNullValue(t);
+  };
+  if (auto *st = dyn_cast<StructType>(RT); st && (rl.anyQ() || rl.extras || rl.leaves.size() != st->getNumElements())) {
+    rv = PoisonValue::get(st);
+    for (unsigned k = 0; k < st->getNumElements(); ++k)
+      rv = B.CreateInsertValue(rv, field(k, st->getElementType(k)), {k});
+  } else if (!RT->isVoidTy()) {
+    rv = rl.anyQ() ? field(0, RT) : Constant::getNullValue(RT);
+  }
+  RailType i1{Kind::Int, 1};
+  Value *o = zero(i1);
+  B.CreateCall(abi::declare(ctx.M, abi::CoreSpec{abi::Core::Copy, i1}), {C.getArg(0), o});
+  if (S.table)
+    for (unsigned k = 0; k < mintSites(ctx.T, S).size(); ++k) {
+      CallInst *p = B.CreateCall(abi::declare(ctx.M, abi::CoreSpec{abi::Core::Push}), {ConstantInt::get(i32, 0)});
+      p->setMetadata("cq.mint.push", MDNode::get(LC, {}));
+    }
+  if (rv)
+    B.CreateRet(rv);
+  else
+    B.CreateRetVoid();
+
+  for (BasicBlock &BB : C)
+    if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator())) {
+      IRBuilder<> RB(R);
+      Value *n = RB.CreateLoad(i32, act);
+      RB.CreateStore(RB.CreateAdd(n, ConstantInt::get(i32, -1, true)), act);
+    }
+}
+
 Function *materialize(Module &M, const Specialization &S) {
   if (!S.F || S.F->isDeclaration())
     internalError("calls: materialize of a specialization with no body (a declared clone is rule 27's)");
@@ -750,6 +960,8 @@ Function *materialize(Module &M, const Specialization &S) {
       ps.push_back(f.q[k] ? handleTy(C) : f.leaves[k]);
   ResultLayout rl = resultLayout(T, S, S.F);
   Type *rt = cloneResultType(C, rl, S.F->getReturnType());
+  if (S.table)
+    ps.push_back(Type::getInt32Ty(C));   // §1.4: the cutoff K
   if (fenv::cloneCarriesEnv(T, S)) {
     // E1 (CR rule 23, 82): the caller's mode and flags trail the parameters; the new flags handle is
     // the result's last field: i32 alone for an otherwise void clone, {result, i32} for a scalar result,
@@ -786,9 +998,16 @@ Function *materialize(Module &M, const Specialization &S) {
   }
   // §1.4: a clone called by name keeps the original's linkage, calling convention and unnamed_addr; a name with _b
   // bounds is internal to its module.
-  Function *NF = Function::Create(FT, S.bounds.empty() ? S.F->getLinkage() : GlobalValue::InternalLinkage, name, &M);
-  NF->setCallingConv(S.F->getCallingConv());
-  NF->setUnnamedAddr(S.F->getUnnamedAddr());
+  // §1.4: a table clone is reached through its row: module-internal, the C calling convention.
+  Function *NF = Function::Create(FT, S.bounds.empty() && !S.table ? S.F->getLinkage() : GlobalValue::InternalLinkage, name, &M);
+  mintCounts[NF] = unsigned(mintSites(T, S).size());
+  if (S.table) {
+    if (!S.pure)
+      noteTableClone(M, T, S, cs);
+  } else {
+    NF->setCallingConv(S.F->getCallingConv());
+    NF->setUnnamedAddr(S.F->getUnnamedAddr());
+  }
   unsigned p = S.ctl ? 1 : 0;
   std::vector<FormalLayout> fl = formalLayout(T, S, S.F);
   for (Argument &A : S.F->args()) {
@@ -796,7 +1015,7 @@ Function *materialize(Module &M, const Specialization &S) {
     if (A.hasInAllocaAttr() || A.hasPreallocatedAttr())
       internalError("calls: an inalloca or preallocated formal (no x86-64 C function has one, CR §0)", &A);
     // Rule 26: `sret` stays on the classical ptr formal, an ABI note.
-    if (A.hasStructRetAttr() && NF->getArg(p)->getType()->isPointerTy())
+    if (!S.table && A.hasStructRetAttr() && NF->getArg(p)->getType()->isPointerTy())
       NF->addParamAttr(p, Attribute::getWithStructRetType(C, A.getParamStructRetType()));
     p += unsigned(fl[A.getArgNo()].leaves.size());
   }
@@ -888,6 +1107,7 @@ enum class Dead { No, Yes, Unknown };
 // minted or that register's rule-6 image; spine::entryReturn), the caller keeps the rail like its own
 // registers: never uncomputed, never freed (162).
 void lowerEntryCall(LoweringContext &ctx, CallBase &CB, const Specialization &cs) {
+  // (An own symbol keeps the C ABI: it cannot return a register's handle for a twin; such a result is KEPT, below.)
   for (const Use &u : CB.args())
     if (ctx.operand(u.get()).handle)
       internalError("calls: a quantum argument to a callee with no clone", &CB);
@@ -919,7 +1139,7 @@ void lowerEntryCall(LoweringContext &ctx, CallBase &CB, const Specialization &cs
   call->setAttributes(AL);
   // Rule 19: a frozen result is kept like the caller's own registers. Rule 18: every other result is zeroed by the twin
   // __cq_q_<fn>_<mask>_unc (the all-zero mask, `v` with no formal), a load for rule 5; with no twin KEPT.
-  bool twin = hasTwin(ctx.T, cs);
+  bool twin = hasTwin(ctx.T, cs) && er->registers == 0;
   std::string twinName = abi::name(abi::CloneSpec{F.getName().str(), cs.mask.empty() ? "v" : cs.mask, {}, false, false, true});
   SmallVector<Value *, 2> dead;
   auto keep = [&](Value *h) {
@@ -967,6 +1187,30 @@ namespace {
 // The binding of a lifted clone call's results (lowerLifted): by the clone's result ABI, its outs recorded as
 // one call group undone by the twin (U2), the overflow predicate of a recursion level last (cq-ew5z).
 void bindCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization &cs, const CloneCall &r) {
+  if (r.res.extras) {
+    // Rule 19: the results, then the handles of the registers the callee minted, which stay allocated and which its twin
+    // reads.
+    SmallVector<Operand, 4> ops, extra;
+    SmallVector<Value *, 4> outs;
+    unsigned n = unsigned(r.res.leaves.size());
+    for (unsigned k = 0; k < n; ++k) {
+      Value *e = ctx.B().CreateExtractValue(r.call, {k});
+      ops.push_back(Operand{e, r.res.q[k]});
+      if (r.res.q[k])
+        outs.push_back(e);
+    }
+    for (unsigned k = 0; k < r.res.extras; ++k) {
+      Value *e = ctx.B().CreateExtractValue(r.call, {n + k});
+      ctx.unc().recordExternal(e, Role::Kept);
+      extra.push_back(Operand{e, true});
+    }
+    ctx.unc().recordCall(r.call, outs, extra, ctx.T.loadsBus(cs));
+    if (r.res.composite)
+      ctx.bindFields(&CB, ops);
+    else
+      spine::bindOperand(ctx, &CB, ops[0]);
+    return;
+  }
   if (fenv::cloneCarriesEnv(ctx.T, cs))
     return bindEnvResult(ctx, CB, cs, r);
   if (r.fieldwise)
@@ -975,12 +1219,11 @@ void bindCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization &cs,
 }
 } // namespace
 
+void noteRun(LoweringContext &ctx) { capture(ctx); }
+
 void lowerLifted(LoweringContext &ctx, CallBase &CB) {
   capture(ctx);
   const Specialization *cs = ctx.T.calleeSpecialization(CB, ctx.S);
-  // Rule 14: a recursive call under a quantum predicate is the one clone with its activation counter.
-  if (const Function *G = CB.getCalledFunction(); G && ctx.T.controlTainted(CB.getParent(), ctx.S) && reaches(G, ctx.S.F))
-    report_fatal_error("cq: unimplemented: bus: recursion activation counter (rule 14)", /*gen_crash_diag=*/false);
   // An untainted callee or the in-place specialization. Under a quantum predicate (or in a _ctl clone)
   // taint lifted the call to the callee's untainted in-place specialization: classical arguments and
   // no gate in the body (a gate makes a _ctl clone, which taint publishes). Rule 19 (ruling
@@ -1013,15 +1256,605 @@ void lowerDeclared(LoweringContext &ctx, CallBase &CB) {
 }
 
 
-// CR rule 19: a call through a classical function pointer dispatches over the static callee set (taint's
-// candidates: the pointer's provenance, else every address-taken function of the call's type): a classical
-// chain of pointer-equality tests, each arm calling its candidate as a direct call would (its clone, its _ctl
-// clone under the block's quantum predicate, its rule 27 declared clone, or the untainted original); the last
-// test's false edge is unreachable (a pointer outside the set is the program's UB). A result field is merged
-// by a classical phi (Uncompute::recordMerge for a handle); an arm's classical field of a quantum merged field
-// enters as a seed rail (rule 7). The builder is left in the join block.
-void lowerIndirect(LoweringContext &, CallBase &) {
-  report_fatal_error("cq: unimplemented: bus: lowerTableCall (rule 19)", /*gen_crash_diag=*/false);
+// ---- Rule 19: the call through a function pointer ---------------------------------------------------------------------
+//
+// It is always a call of a table clone (§1.4, BACKEND_ABI §1.14), and the caller has no record of the callee: its rails
+// are not Uncompute's. What Uncompute sees is the call's value: a kept rail (the twin ran already), or a fresh rail
+// holding the value whose deferred item undoes the rest after the value's readers.
+
+namespace {
+
+// kind of __cq_clone_resolve (BACKEND_ABI §1.14)
+enum : unsigned { kForward = 0, kCtl = 1, kUnc = 2, kCtlUnc = 3 };
+
+void resultLeaves(const CallBase &CB, SmallVectorImpl<Type *> &leaves) {
+  if (!CB.getType()->isVoidTy())
+    leafTypes(CB.getType(), leaves, &CB);
+}
+
+// The actual's scalar fields: a pointer its address (rule 21), a composite its leaves, classical ones not yet seeds.
+SmallVector<Operand, 8> tableActuals(LoweringContext &ctx, CallBase &CB) {
+  SmallVector<Operand, 8> out;
+  for (const Use &u : CB.args()) {
+    if (u->getType()->isPointerTy()) {
+      out.push_back(bus::address(ctx, u.get()));
+      continue;
+    }
+    for (const Operand &o : actualFields(ctx, u.get()))
+      out.push_back(o);
+  }
+  return out;
+}
+
+// Rule 7: the handle of an actual: its rail, or a seed made here, which the caller frees (`seeds`).
+Value *actualHandle(Module &M, IRBuilder<> &B, const Operand &o, SmallVectorImpl<Value *> &seeds) {
+  if (o.handle)
+    return o.v;
+  Value *v = o.v;
+  if (v->getType()->isPointerTy())
+    v = B.CreatePtrToInt(v, Type::getInt64Ty(M.getContext()));
+  Value *s = B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Alloc, railTypeOf(v->getType())}), {v});
+  seeds.push_back(s);
+  return s;
+}
+
+void freeRail(Module &M, IRBuilder<> &B, Value *h) { B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Free}), {h}); }
+
+Value *zeroRail(Module &M, IRBuilder<> &B, RailType w) {
+  return B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Alloc, w}), {Constant::getNullValue(irTypeOf(M.getContext(), w))});
+}
+
+Value *resolveClone(Module &M, IRBuilder<> &B, Value *fn, unsigned kind) {
+  return B.CreateCall(abi::declareHost(M, abi::Host::CloneResolve), {fn, B.getInt32(kind)});
+}
+
+// The table clone's call at a resolved pointer: ([pred,] handles..., K), one result per leaf.
+SmallVector<Value *, 2> callTable(Module &M, IRBuilder<> &B, Value *callee, Value *pred, ArrayRef<Value *> handles, Value *K,
+                                  ArrayRef<Type *> leaves) {
+  LLVMContext &C = M.getContext();
+  Type *h = handleTy(C);
+  SmallVector<Value *, 8> args;
+  if (pred)
+    args.push_back(pred);
+  args.append(handles.begin(), handles.end());
+  args.push_back(K);
+  Type *rt = leaves.empty()      ? Type::getVoidTy(C)
+             : leaves.size() == 1 ? h
+                                  : static_cast<Type *>(StructType::get(C, SmallVector<Type *, 4>(leaves.size(), h)));
+  FunctionType *FT = FunctionType::get(rt, SmallVector<Type *, 8>(args.size(), h), false);
+  CallInst *call = B.CreateCall(FT, callee, args);
+  SmallVector<Value *, 2> out;
+  if (leaves.size() == 1)
+    out.push_back(call);
+  else
+    for (unsigned k = 0; k < leaves.size(); ++k)
+      out.push_back(B.CreateExtractValue(call, {k}));
+  return out;
+}
+
+// The table twin: ([pred,] outs..., handles..., K).
+void callTableTwin(Module &M, IRBuilder<> &B, Value *twin, Value *pred, ArrayRef<Value *> outs, ArrayRef<Value *> handles,
+                   Value *K) {
+  LLVMContext &C = M.getContext();
+  SmallVector<Value *, 8> args;
+  if (pred)
+    args.push_back(pred);
+  args.append(outs.begin(), outs.end());
+  args.append(handles.begin(), handles.end());
+  args.push_back(K);
+  B.CreateCall(FunctionType::get(Type::getVoidTy(C), SmallVector<Type *, 8>(args.size(), handleTy(C)), false), twin, args);
+}
+
+// Rules 18, 19: must the value be a kept rail? Measured, stored or returned by an own symbol, or a memory version change
+// (or another block) comes before its last consumer. The twin then runs right after the copy: no change lies between.
+bool keptResult(LoweringContext &ctx, CallBase &CB) {
+  SmallVector<const Instruction *, 8> work{&CB};
+  SmallPtrSet<const Instruction *, 8> seen{&CB};
+  const BasicBlock *bb = CB.getParent();
+  const Instruction *last = &CB;
+  while (!work.empty()) {
+    const Instruction *D = work.pop_back_val();
+    for (const User *U : D->users()) {
+      auto *I = cast<Instruction>(U);
+      if (I->getParent() != bb || isa<PHINode>(I) || isa<StoreInst>(I))
+        return true;
+      if (isa<ReturnInst>(I) && ctx.S.isEntry())
+        return true;
+      if (auto *c = dyn_cast<CallBase>(I)) {
+        const Function *G = c->getCalledFunction();
+        if (!G || G->getName().starts_with("cq_measure_"))
+          return true;
+      }
+      if (last->comesBefore(I))
+        last = I;
+      if (!I->getType()->isVoidTy() && seen.insert(I).second)
+        work.push_back(I);
+    }
+  }
+  for (const Instruction *I = CB.getNextNode(); I && last != &CB; I = I->getNextNode()) {
+    if (bus::versionChange(ctx, *I))
+      return true;
+    if (I == last)
+      break;
+  }
+  return false;
+}
+
+void bindCallValue(LoweringContext &ctx, CallBase &CB, ArrayRef<Value *> values) {
+  if (values.empty())
+    return;
+  if (!isComposite(CB.getType())) {
+    spine::bindOperand(ctx, &CB, Operand{values[0], true});
+    return;
+  }
+  SmallVector<Operand, 4> ops;
+  for (Value *v : values)
+    ops.push_back(Operand{v, true});
+  ctx.bindFields(&CB, ops);
+}
+
+// The value in fresh rails the readers read; `tail` (run with the builder after their last item, the fresh rails already
+// |0>, freed) undoes what remains.
+void deferValue(LoweringContext &ctx, CallBase &CB, ArrayRef<Value *> merged, ArrayRef<Type *> leaves,
+                ArrayRef<Value *> readHandles, std::function<void(IRBuilder<> &)> tail) {
+  Module &M = ctx.M;
+  Uncompute &U = ctx.unc();
+  SmallVector<Value *, 4> vals;
+  std::vector<RailId> ids;
+  unsigned sc = U.openScope();
+  for (Type *t : leaves) {
+    RailType w = railTypeOf(t);
+    CallInst *v = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(M.getContext(), w))});
+    ids.push_back(U.recordSeed(v));
+    vals.push_back(v);
+  }
+  U.closeScope(sc);
+  for (unsigned k = 0; k < vals.size(); ++k)
+    ctx.emitCore(abi::CoreSpec{abi::Core::Copy, railTypeOf(leaves[k])}, {merged[k], vals[k]});
+  std::vector<RailId> reads;
+  for (Value *h : readHandles)
+    if (RailId r = U.idOf(h); !is_contained(reads, r))
+      reads.push_back(r);
+  SmallVector<Value *, 4> mergedCopy(merged.begin(), merged.end());
+  SmallVector<Type *, 4> leafCopy(leaves.begin(), leaves.end());
+  U.recordDeferred({sc}, ids,
+                   [&M, vals, mergedCopy, leafCopy, tail](IRBuilder<> &B) {
+                     for (unsigned k = 0; k < vals.size(); ++k) {
+                       B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Copy, railTypeOf(leafCopy[k])}), {mergedCopy[k], vals[k]});
+                       freeRail(M, B, vals[k]);
+                     }
+                     tail(B);
+                   },
+                   reads);
+  bindCallValue(ctx, CB, vals);
+}
+
+// The value copied out into fresh KEPT rails.
+SmallVector<Value *, 2> copyOutKept(LoweringContext &ctx, ArrayRef<Value *> vals, ArrayRef<Type *> leaves) {
+  SmallVector<Value *, 2> out;
+  for (unsigned k = 0; k < vals.size(); ++k) {
+    RailType w = railTypeOf(leaves[k]);
+    Value *c = zeroRail(ctx.M, ctx.B(), w);
+    ctx.emitCore(abi::CoreSpec{abi::Core::Copy, w}, {vals[k], c});
+    out.push_back(c);
+  }
+  return out;
+}
+
+void noteReads(LoweringContext &ctx, ArrayRef<Value *> handles) {
+  BasicBlock *bb = ctx.B().GetInsertBlock();
+  if (bb->empty())
+    return;
+  Instruction *last = &bb->back();
+  for (Value *h : handles)
+    ctx.unc().noteUse(ctx.unc().idOf(h), last);
+}
+
+// Rule 19 Classical pointer: __cq_clone_resolve(fp, kind); null is rule 16's host boundary with fp as the callee.
+void lowerClassicalPointer(LoweringContext &ctx, CallBase &CB, Value *fp) {
+  Module &M = ctx.M;
+  IRBuilder<> &B = ctx.B();
+  LLVMContext &C = M.getContext();
+  Function &Out = ctx.out();
+  Value *flag = bus::accessControl(ctx);
+  Value *K = enclosingK(ctx);
+  SmallVector<Type *, 4> leaves;
+  resultLeaves(CB, leaves);
+  SmallVector<Operand, 8> actuals = tableActuals(ctx, CB);
+  bool allClassical = none_of(actuals, [](const Operand &o) { return o.handle; });
+  bool ordinary = allClassical && !flag && !ctx.T.afterEvent(CB, ctx.S);
+  SmallVector<Value *, 8> seeds, handles;
+  for (const Operand &o : actuals)
+    handles.push_back(actualHandle(M, B, o, seeds));
+  SmallVector<Value *, 8> readHandles;
+  for (const Operand &o : actuals)
+    if (o.handle)
+      readHandles.push_back(o.v);
+  if (flag)
+    readHandles.push_back(flag);
+
+  bool keep = !leaves.empty() && keptResult(ctx, CB);
+  Value *fwd = resolveClone(M, B, fp, flag ? kCtl : kForward);
+  Value *none = B.CreateICmpEQ(fwd, ConstantPointerNull::get(cast<PointerType>(fwd->getType())));
+  BasicBlock *Tbl = BasicBlock::Create(C, "", &Out), *Host = BasicBlock::Create(C, "", &Out),
+             *Join = BasicBlock::Create(C, "", &Out);
+  B.CreateCondBr(none, Host, Tbl);
+
+  B.SetInsertPoint(Tbl);
+  SmallVector<Value *, 2> res = callTable(M, B, fwd, flag, handles, K, leaves);
+  SmallVector<Value *, 2> tblOut = res;
+  if (leaves.empty() || keep) {
+    tblOut = copyOutKept(ctx, res, leaves);
+    callTableTwin(M, B, resolveClone(M, B, fp, flag ? kCtlUnc : kUnc), flag, res, handles, K);
+  }
+  BasicBlock *TblEnd = B.GetInsertBlock();
+  B.CreateBr(Join);
+
+  B.SetInsertPoint(Host);
+  SmallVector<Value *, 2> hostOut;
+  if (ordinary) {
+    // The instruction as it stands; its classical result a seed (every result of the call is a handle).
+    Instruction *n = CB.clone();
+    for (unsigned i = 0; i < n->getNumOperands(); ++i) {
+      Value *v = CB.getOperand(i);
+      if (!isa<BasicBlock>(v) && !isa<MetadataAsValue>(v) && !isa<Function>(v))
+        n->setOperand(i, ctx.operand(v).v);
+    }
+    B.Insert(n);
+    if (!CB.getType()->isVoidTy()) {
+      if (isComposite(CB.getType()))
+        noteUnbuilt("calls: a composite result of an ordinary call through a function pointer", &CB);
+      for (unsigned k = 0; k < leaves.size(); ++k) {
+        Value *v = leaves.size() == 1 ? static_cast<Value *>(n) : B.CreateExtractValue(n, {k});
+        if (v->getType()->isPointerTy())
+          v = B.CreatePtrToInt(v, Type::getInt64Ty(C));
+        hostOut.push_back(B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Alloc, railTypeOf(v->getType())}), {v}));
+      }
+    }
+  } else {
+    hostOut = tape::lowerTableEffect(ctx, CB, Operand{B.CreatePtrToInt(fp, Type::getInt64Ty(C)), false}, flag);
+    if (!leaves.empty() && hostOut.size() != leaves.size())   // a result the program does not read: no _<W> form
+      for (unsigned k = hostOut.size(); k < leaves.size(); ++k)
+        hostOut.push_back(zeroRail(M, B, railTypeOf(leaves[k])));
+  }
+  BasicBlock *HostEnd = B.GetInsertBlock();
+  B.CreateBr(Join);
+
+  B.SetInsertPoint(Join);
+  SmallVector<Value *, 2> merged;
+  for (unsigned k = 0; k < leaves.size(); ++k) {
+    PHINode *p = B.CreatePHI(handleTy(C), 2);
+    p->addIncoming(tblOut[k], TblEnd);
+    p->addIncoming(hostOut[k], HostEnd);
+    merged.push_back(p);
+  }
+  if (leaves.empty() || keep) {
+    for (Value *s : seeds)
+      freeRail(M, B, s);
+    for (Value *m : merged)
+      ctx.unc().recordExternal(m, Role::Kept);
+    noteReads(ctx, readHandles);
+    bindCallValue(ctx, CB, merged);
+    return;
+  }
+  // Rule 18's position: after the last consumer.
+  SmallVector<Value *, 2> resCopy = res, hostCopy = hostOut, handleCopy(handles.begin(), handles.end()), seedCopy(seeds.begin(), seeds.end());
+  deferValue(ctx, CB, merged, leaves, readHandles,
+             [&M, fp, flag, K, none, ordinary, resCopy, hostCopy, handleCopy, seedCopy, &Out](IRBuilder<> &TB) {
+               LLVMContext &LC = M.getContext();
+               BasicBlock *TwinB = BasicBlock::Create(LC, "", &Out), *HostB = BasicBlock::Create(LC, "", &Out),
+                          *Cont = BasicBlock::Create(LC, "", &Out);
+               TB.CreateCondBr(none, HostB, TwinB);
+               TB.SetInsertPoint(TwinB);
+               callTableTwin(M, TB, resolveClone(M, TB, fp, flag ? kCtlUnc : kUnc), flag, resCopy, handleCopy, K);
+               TB.CreateBr(Cont);
+               TB.SetInsertPoint(HostB);
+               if (ordinary)
+                 for (Value *h : hostCopy)
+                   freeRail(M, TB, h);
+               TB.CreateBr(Cont);
+               TB.SetInsertPoint(Cont);
+               for (Value *s : seedCopy)
+                 freeRail(M, TB, s);
+             });
+}
+
+// The reverse of the dispatch loop: pops each trip, uncomputes its select, its p_{i+1} and its flag; the seeds p_0
+// (unless it is the predicate in scope) and out_0 are freed.
+struct ReverseLoop {
+  Module *M;
+  Function *Out;
+  Value *n, *sig, *rail, *pn, *pred;
+  SmallVector<Value *, 2> outN;
+  SmallVector<Type *, 2> leaves;
+  void emit(IRBuilder<> &B) const {
+    LLVMContext &C = M->getContext();
+    Type *i32 = Type::getInt32Ty(C), *i64 = Type::getInt64Ty(C), *h = handleTy(C);
+    RailType i1w{Kind::Int, 1}, i64w{Kind::Int, 64};
+    FunctionCallee pop = abi::declare(*M, abi::CoreSpec{abi::Core::Pop});
+    FunctionCallee notI1 = abi::declare(*M, abi::CoreSpec{abi::Core::NotI1, i1w});
+    FunctionCallee andI1 = abi::declare(*M, abi::CoreSpec{abi::Core::AndI1, i1w});
+    BasicBlock *pre = B.GetInsertBlock();
+    BasicBlock *Hdr = BasicBlock::Create(C, "", Out), *Body = BasicBlock::Create(C, "", Out), *End = BasicBlock::Create(C, "", Out);
+    B.CreateBr(Hdr);
+    B.SetInsertPoint(Hdr);
+    PHINode *k = B.CreatePHI(i32, 2), *p = B.CreatePHI(h, 2);
+    SmallVector<PHINode *, 2> outs;
+    for (Value *o : outN) {
+      PHINode *ph = B.CreatePHI(h, 2);
+      ph->addIncoming(o, pre);
+      outs.push_back(ph);
+    }
+    k->addIncoming(n, pre);
+    p->addIncoming(pn, pre);
+    B.CreateCondBr(B.CreateICmpEQ(k, ConstantInt::get(i32, 0)), End, Body);
+    B.SetInsertPoint(Body);
+    Value *k1 = B.CreateAdd(k, ConstantInt::get(i32, -1, true));
+    Value *f = B.CreateCall(pop);
+    SmallVector<Value *, 2> cs(leaves.size()), prev(leaves.size());
+    for (unsigned j = leaves.size(); j-- > 0;)
+      cs[j] = B.CreateCall(pop);
+    for (unsigned j = leaves.size(); j-- > 0;)
+      prev[j] = B.CreateCall(pop);
+    Value *pp = B.CreateCall(pop);
+    for (unsigned j = 0; j < leaves.size(); ++j) {
+      abi::TemplateSpec sel;
+      sel.op = "select";
+      sel.w = railTypeOf(leaves[j]);
+      B.CreateCall(abi::declare(*M, sel, true), {outs[j], f, cs[j], prev[j]});
+      freeRail(*M, B, outs[j]);
+      outs[j]->addIncoming(prev[j], Body);
+    }
+    B.CreateCall(notI1, {f});
+    B.CreateCall(andI1, {pp, f, p});
+    B.CreateCall(notI1, {f});
+    freeRail(*M, B, p);
+    Value *a = B.CreateCall(abi::declareHost(*M, abi::Host::CloneAt), {sig, k1});
+    Value *ai = B.CreatePtrToInt(a, i64);
+    abi::TemplateSpec eq;
+    eq.op = "icmp";
+    eq.pred = "eq";
+    eq.w = i64w;
+    eq.shape = "hl";
+    B.CreateCall(abi::declare(*M, eq, true), {f, rail, ai});
+    freeRail(*M, B, f);
+    k->addIncoming(k1, Body);
+    p->addIncoming(pp, Body);
+    B.CreateBr(Hdr);
+    B.SetInsertPoint(End);
+    if (!pred)
+      freeRail(*M, B, p);
+    for (PHINode *o : outs)
+      freeRail(*M, B, o);
+  }
+};
+
+// Rule 19 Address rail (and rule 16's raise): one classical loop over the registered functions of type FT, the complement
+// made by `complement` under p_n, its results returned; the reverse loop. The builder is left where the code continues.
+void dispatchOverRail(LoweringContext &ctx, CallBase &CB, FunctionType *FT, Value *rail, ArrayRef<Type *> leaves,
+                      ArrayRef<Operand> actuals, function_ref<SmallVector<Value *, 2>(Value *pn)> complement) {
+  Module &M = ctx.M;
+  IRBuilder<> &B = ctx.B();
+  LLVMContext &C = M.getContext();
+  Function &Out = ctx.out();
+  Type *i32 = Type::getInt32Ty(C), *i64 = Type::getInt64Ty(C), *h = handleTy(C);
+  RailType i1w{Kind::Int, 1}, i64w{Kind::Int, 64};
+  Value *P = bus::accessControl(ctx);
+  Value *K = enclosingK(ctx);
+  Value *sig = sigString(M, FT);
+  Value *n = B.CreateCall(abi::declareHost(M, abi::Host::CloneCount), {sig});
+  Value *p0 = P ? P : ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1w}, {ConstantInt::getTrue(C)});
+  SmallVector<Value *, 2> out0;
+  for (Type *t : leaves)
+    out0.push_back(zeroRail(M, B, railTypeOf(t)));
+  FunctionCallee push = abi::declare(M, abi::CoreSpec{abi::Core::Push});
+  FunctionCallee notI1 = abi::declare(M, abi::CoreSpec{abi::Core::NotI1, i1w});
+  FunctionCallee andI1 = abi::declare(M, abi::CoreSpec{abi::Core::AndI1, i1w});
+
+  BasicBlock *pre = B.GetInsertBlock();
+  BasicBlock *Hdr = BasicBlock::Create(C, "", &Out), *Body = BasicBlock::Create(C, "", &Out), *Exit = BasicBlock::Create(C, "", &Out);
+  B.CreateBr(Hdr);
+  B.SetInsertPoint(Hdr);
+  PHINode *i = B.CreatePHI(i32, 2), *p = B.CreatePHI(h, 2);
+  i->addIncoming(ConstantInt::get(i32, 0), pre);
+  p->addIncoming(p0, pre);
+  SmallVector<PHINode *, 2> outs;
+  for (Value *o : out0) {
+    PHINode *ph = B.CreatePHI(h, 2);
+    ph->addIncoming(o, pre);
+    outs.push_back(ph);
+  }
+  B.CreateCondBr(B.CreateICmpULT(i, n), Body, Exit);
+
+  B.SetInsertPoint(Body);
+  Value *a = B.CreateCall(abi::declareHost(M, abi::Host::CloneAt), {sig, i});
+  Value *ai = B.CreatePtrToInt(a, i64);
+  abi::TemplateSpec eq;
+  eq.op = "icmp";
+  eq.pred = "eq";
+  eq.w = i64w;
+  eq.shape = "hl";
+  Value *f = B.CreateCall(abi::declare(M, eq, false), {rail, ai});
+  Value *ctl = f;
+  if (P) {
+    ctl = zeroRail(M, B, i1w);
+    B.CreateCall(andI1, {P, f, ctl});
+  }
+  SmallVector<Value *, 8> seeds, handles;
+  for (const Operand &o : actuals)
+    handles.push_back(actualHandle(M, B, o, seeds));
+  SmallVector<Value *, 2> res = callTable(M, B, resolveClone(M, B, a, kCtl), ctl, handles, K, leaves);
+  SmallVector<Value *, 2> cs;
+  for (unsigned j = 0; j < leaves.size(); ++j) {
+    RailType w = railTypeOf(leaves[j]);
+    Value *c = zeroRail(M, B, w);
+    B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Copy, w}), {res[j], c});
+    cs.push_back(c);
+  }
+  callTableTwin(M, B, resolveClone(M, B, a, kCtlUnc), ctl, res, handles, K);
+  for (Value *s : seeds)
+    freeRail(M, B, s);
+  if (P) {
+    B.CreateCall(andI1, {P, f, ctl});
+    freeRail(M, B, ctl);
+  }
+  Value *p1 = zeroRail(M, B, i1w);
+  B.CreateCall(notI1, {f});
+  B.CreateCall(andI1, {p, f, p1});
+  B.CreateCall(notI1, {f});
+  B.CreateCall(push, {p});
+  for (unsigned j = 0; j < leaves.size(); ++j) {
+    abi::TemplateSpec sel;
+    sel.op = "select";
+    sel.w = railTypeOf(leaves[j]);
+    Value *o1 = B.CreateCall(abi::declare(M, sel, false), {f, cs[j], outs[j]});
+    B.CreateCall(push, {outs[j]});
+    outs[j]->addIncoming(o1, Body);
+  }
+  for (Value *c : cs)
+    B.CreateCall(push, {c});
+  B.CreateCall(push, {f});
+  Value *i1 = B.CreateAdd(i, ConstantInt::get(i32, 1));
+  i->addIncoming(i1, Body);
+  p->addIncoming(p1, Body);
+  B.CreateBr(Hdr);
+
+  B.SetInsertPoint(Exit);
+  ReverseLoop R{&M, &Out, n, sig, rail, p, P, {}, {}};
+  R.leaves.assign(leaves.begin(), leaves.end());
+  for (PHINode *o : outs)
+    R.outN.push_back(o);
+  SmallVector<Value *, 8> readHandles{rail};
+  for (const Operand &o : actuals)
+    if (o.handle)
+      readHandles.push_back(o.v);
+  if (P)
+    readHandles.push_back(P);
+
+  SmallVector<Value *, 2> re = complement(p);
+  if (leaves.empty()) {
+    R.emit(B);
+    noteReads(ctx, readHandles);
+    return;
+  }
+  // The call's value: select_<W>(p_n, r_e, out_n).
+  SmallVector<Value *, 2> vals;
+  for (unsigned j = 0; j < leaves.size(); ++j) {
+    abi::TemplateSpec sel;
+    sel.op = "select";
+    sel.w = railTypeOf(leaves[j]);
+    Value *rj = j < re.size() ? re[j] : zeroRail(M, B, railTypeOf(leaves[j]));
+    re.resize(std::max<size_t>(re.size(), j + 1));
+    re[j] = rj;
+    vals.push_back(B.CreateCall(abi::declare(M, sel, false), {p, rj, outs[j]}));
+  }
+  auto undoSelects = [&M, vals, re, p, outsV = SmallVector<Value *, 2>(R.outN), L = SmallVector<Type *, 2>(R.leaves)](IRBuilder<> &TB) {
+    for (unsigned j = 0; j < L.size(); ++j) {
+      abi::TemplateSpec sel;
+      sel.op = "select";
+      sel.w = railTypeOf(L[j]);
+      TB.CreateCall(abi::declare(M, sel, true), {vals[j], p, re[j], outsV[j]});
+      freeRail(M, TB, vals[j]);
+    }
+  };
+  if (keptResult(ctx, CB)) {
+    SmallVector<Value *, 2> kept = copyOutKept(ctx, vals, leaves);
+    undoSelects(B);
+    R.emit(B);
+    for (Value *c : kept)
+      ctx.unc().recordExternal(c, Role::Kept);
+    noteReads(ctx, readHandles);
+    bindCallValue(ctx, CB, kept);
+    return;
+  }
+  deferValue(ctx, CB, vals, leaves, readHandles, [undoSelects, R](IRBuilder<> &TB) {
+    undoSelects(TB);
+    R.emit(TB);
+  });
+}
+
+// &__cq_sig[sig] (rule 16): classical, or an address rail for a rail sig (rule 20).
+Operand signalCell(LoweringContext &ctx, Operand sig) {
+  Module &M = ctx.M;
+  IRBuilder<> &B = ctx.B();
+  Type *i64 = Type::getInt64Ty(M.getContext());
+  GlobalVariable *tbl = abi::sigTable(M);
+  if (!sig.handle) {
+    Value *cell = B.CreateInBoundsGEP(tbl->getValueType(), tbl, {ConstantInt::get(i64, 0), B.CreateSExt(sig.v, i64)});
+    return Operand{B.CreatePtrToInt(cell, i64), false};
+  }
+  RailType w64{Kind::Int, 64};
+  abi::TemplateSpec sx;
+  sx.op = "sext";
+  sx.w = railTypeOf(sig.v->getType());
+  sx.w = RailType{Kind::Int, 32};
+  sx.to = w64;
+  Value *wide = ctx.emitTemplate(sx, {sig});
+  abi::TemplateSpec mul;
+  mul.op = "mul";
+  mul.w = w64;
+  mul.shape = "hl";
+  Value *scaled = ctx.emitTemplate(mul, {Operand{wide, true}, Operand{ConstantInt::get(i64, 8), false}});
+  abi::TemplateSpec add;
+  add.op = "add";
+  add.w = w64;
+  add.shape = "hl";
+  return Operand{ctx.emitTemplate(add, {Operand{scaled, true}, Operand{B.CreatePtrToInt(tbl, i64), false}}), true};
+}
+
+} // namespace
+
+void lowerIndirect(LoweringContext &ctx, CallBase &CB) {
+  capture(ctx);
+  Operand fp = ctx.operand(CB.getCalledOperand());
+  if (!fp.handle)
+    return lowerClassicalPointer(ctx, CB, fp.v);
+  SmallVector<Type *, 4> leaves;
+  resultLeaves(CB, leaves);
+  SmallVector<Operand, 8> actuals = tableActuals(ctx, CB);
+  dispatchOverRail(ctx, CB, CB.getFunctionType(), fp.v, leaves, actuals, [&](Value *pn) {
+    return tape::lowerTableEffect(ctx, CB, fp, pn);
+  });
+}
+
+void lowerSignal(LoweringContext &ctx, CallBase &CB) {
+  capture(ctx);
+  Operand sig = ctx.operand(CB.getArgOperand(0));
+  Operand h = bus::address(ctx, CB.getArgOperand(1));
+  if (!sig.handle && !h.handle && !bus::accessControl(ctx)) {
+    // The host call as it stands, whatever precedes it (the ordinary-host-call test is not asked for signal).
+    Instruction *n = CB.clone();
+    for (unsigned i = 0; i < CB.arg_size(); ++i)
+      n->setOperand(i, ctx.operand(CB.getArgOperand(i)).v);
+    ctx.B().Insert(n);
+  }
+  Type *i64 = Type::getInt64Ty(ctx.M.getContext());
+  Operand cell = signalCell(ctx, sig);
+  CallInst *old = bus::emitLoad(ctx, i64, cell);
+  bus::emitKeptStore(ctx, i64, cell, h);
+  if (CB.use_empty())
+    ctx.unc().resolveAt(old->getNextNode(), {ctx.unc().idOf(old)});   // un-copied before the store
+  else
+    spine::bindOperand(ctx, &CB, Operand{old, true});
+}
+
+void lowerRaise(LoweringContext &ctx, CallBase &CB) {
+  capture(ctx);
+  LLVMContext &C = ctx.M.getContext();
+  Type *i64 = Type::getInt64Ty(C);
+  Operand sig = ctx.operand(CB.getArgOperand(0));
+  Operand cell = signalCell(ctx, sig);
+  Value *rail = bus::emitLoad(ctx, i64, cell);
+  // A call of function type void (i32) with sig as its one actual.
+  FunctionType *FT = FunctionType::get(Type::getVoidTy(C), {Type::getInt32Ty(C)}, false);
+  SmallVector<Value *, 2> re;
+  dispatchOverRail(ctx, CB, FT, rail, {}, {sig}, [&](Value *pn) {
+    re = tape::lowerRaiseEffect(ctx, CB, pn);
+    return SmallVector<Value *, 2>{};
+  });
+  // A result the program reads: the entry's rail under the complement, 0 under every candidate flag (|0> there, rule 9).
+  if (!re.empty())
+    spine::bindOperand(ctx, &CB, Operand{re[0], true});
 }
 
 // Rule 16 Variadic calls, in a clone. va_start(ap) is the bus stores of {gp_offset = 48, fp_offset = 176,

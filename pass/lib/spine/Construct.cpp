@@ -1275,7 +1275,7 @@ bool Walker::emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigne
   bool fieldwise = false;
   unsigned nLeaves = 0;
   // Rule 26 (cq-jkq8): the fields are the union of the returns' packings, this return's value split there.
-  SmallVector<unsigned, 4> pcuts = rty->isIntegerTy() ? spine::resultIntCuts(*ctx.S.F) : SmallVector<unsigned, 4>{};
+  SmallVector<unsigned, 4> pcuts = rty->isIntegerTy() && !ctx.S.table ? spine::resultIntCuts(*ctx.S.F) : SmallVector<unsigned, 4>{};
   if (pcuts.size() > 2 && st) {
     nLeaves = pcuts.size() - 1;   // cq-0umd: a packed integer result's fields
     fieldwise = true;
@@ -1445,6 +1445,40 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
     return;
   }
   ReturnInst *nr;
+  ArrayRef<const CallBase *> mints = calls::mintSites(ctx.T, ctx.S);
+  if (ctx.S.table) {
+    // §1.4: a table clone pushes the registers it minted, its twin pops them.
+    for (const CallBase *site : mints) {
+      CallInst *p = ctx.emitCore(abi::CoreSpec{abi::Core::Push}, {calls::mintHandle(ctx, *site)});
+      p->setMetadata("cq.mint.push", MDNode::get(ctx.M.getContext(), {}));
+    }
+  } else if (Value *rv = ret->getReturnValue(); rv && !mints.empty()) {
+    // Rule 19: the handle of each register after the results.
+    SmallVector<Value *, 4> vals;
+    auto *st = cast<StructType>(CRT);
+    if (!rv->getType()->isAggregateType() && !rv->getType()->isVectorTy() && ctx.T.resultQuantum(ctx.S, 0) &&
+        !ctx.operand(rv).handle) {
+      // A classical value on this path of a result taint records quantum: a seed rail holding it (rule 7).
+      Value *lit = ctx.operand(rv).v;
+      if (lit->getType()->isPointerTy())
+        lit = B.CreatePtrToInt(lit, Type::getInt64Ty(ctx.M.getContext()));
+      CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(lit->getType())}, {lit});
+      ctx.unc().setRole(ctx.unc().recordSeed(f), Role::Result);
+      vals.push_back(f);
+    } else {
+      resultFields(ret, rv, st, unsigned(mints.size()), vals);
+    }
+    for (const CallBase *site : mints)
+      vals.push_back(calls::mintHandle(ctx, *site));
+    if (vals.size() != st->getNumElements())
+      internalError("spine: a clone's result type does not have its results and the registers it minted", ret);
+    Value *agg = PoisonValue::get(CRT);
+    for (unsigned k = 0; k < vals.size(); ++k)
+      agg = B.CreateInsertValue(agg, vals[k], {k});
+    nr = B.CreateRet(agg);
+    ctx.unc().flushAtExit(nr);
+    return;
+  }
   if (Value *rv = ret->getReturnValue()) {
     SmallVector<Value *, 4> vals;
     if (emitCloneFields(ret, rv, dyn_cast<StructType>(CRT), 0, vals)) {
@@ -1469,6 +1503,10 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
       CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(lit->getType())}, {lit});
       ctx.unc().setRole(ctx.unc().recordSeed(f), Role::Result);
       v = f;
+    } else if (op.handle && sh.ctlMeasured.count(op.v)) {
+      // Rule 19, §1.4: the controlled-copy rail is returned as that rail, not copied (211).
+      if (CRT != handleTy(ctx.M.getContext()))
+        internalError("spine: a clone with a quantum result whose return type is not the handle type", ret);
     } else if (op.handle && spine::ruleSixImage(sh, op.v) && !calls::hasTwin(ctx.T, ctx.S)) {
       // 204: a result that is a rule-6 image cannot be uncomputed: it is returned directly (no twin reads it).
       if (CRT != handleTy(ctx.M.getContext()))
@@ -1491,9 +1529,7 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
     }
     nr = B.CreateRet(v);
   } else if (!C->getReturnType()->isVoidTy()) {
-    // cq-ew5z: a void base with the overflow predicate appended (calls::materialize); emitOverflowReturn sets
-    // the returned handle.
-    nr = B.CreateRet(PoisonValue::get(C->getReturnType()));
+    internalError("spine: a void return in a clone that returns a value", ret);
   } else {
     nr = B.CreateRetVoid();
   }
@@ -1720,6 +1756,18 @@ void Walker::emitTerminator(BasicBlock *b) {
         // Rule 19 (cq-i9wk): an in-module caller keeps a frozen result as its own register; any other
         // result is a clone's, cleaned by its twin.
         noteEntryReturn(spine::frozenRail(sh, op.v), t);
+        // Rule 14: a value read in place whose reverse loop is deferred until after its readers (the return is the last):
+        // the handle that escapes is a copy, the reverse runs before the return.
+        if (ctx.unc().deferredExit(ctx.unc().idOf(op.v))) {
+          RailType w = railTypeOf(rv->getType());
+          CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+          RailId fid = ctx.unc().recordSeed(f);
+          abi::CoreSpec cp{abi::Core::Copy, w};
+          CallInst *c = ctx.emitCore(cp, {op.v, f});
+          ctx.unc().recordCore(c, cp, {op, Operand{f, true}}, fid);
+          op.v = f;
+          v = f;
+        }
         // §1.1: an entry returns an unmeasured quantum value as its handle; the rail escapes.
         ctx.unc().setRole(ctx.unc().idOf(op.v), Role::Escaped);
         Type *rt = sh.out->getReturnType();
@@ -2250,6 +2298,7 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
   LoweringContext ctx(M, T, S, KO);
   spine::Shared &sh = spine::shared(ctx);
   sh.orig = &F;
+  calls::noteRun(ctx);
 
   Value *entryFlag = nullptr;
   SmallVector<std::pair<Argument *, SmallVector<Operand, 4>>, 2> classicalComposites;
@@ -2308,13 +2357,13 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
       bool composite = A->getType()->isStructTy() || A->getType()->isArrayTy() || A->getType()->isVectorTy();
       // cq-0umd (rule 26): an integer formal the callee unpacks is the coerced struct's fields, one
       // parameter each, a handle where the mask's digit is 1.
-      if (SmallVector<unsigned, 4> cuts = A->getType()->isIntegerTy() ? spine::unpackCuts(A)
-                                                                       : SmallVector<unsigned, 4>{};
+      if (SmallVector<unsigned, 4> cuts = A->getType()->isIntegerTy() && !S.table ? spine::unpackCuts(A)
+                                                                                   : SmallVector<unsigned, 4>{};
           cuts.size() > 2) {
         size_t d = 0;
         for (unsigned j = 0; j < i; ++j) {
           Argument *Aj = F.getArg(j);
-          SmallVector<unsigned, 4> cj = Aj->getType()->isIntegerTy() ? spine::unpackCuts(Aj) : SmallVector<unsigned, 4>{};
+          SmallVector<unsigned, 4> cj = Aj->getType()->isIntegerTy() ? spine::unpackCuts(Aj) : SmallVector<unsigned, 4>{};   // !S.table here
           d += cj.size() > 2 ? cj.size() - 1 : T.fieldMask(Aj, S).size();
         }
         unsigned n = cuts.size() - 1;
@@ -2368,6 +2417,12 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
       fenv::bindCloneEnv(ctx, C->getArg(p), C->getArg(p + 1));
       p += 2;
     }
+    if (S.table) {
+      // §1.4: the cutoff K, the table clone's last parameter (a classical i32).
+      if (p >= C->arg_size())
+        internalError("spine: a table clone with no K parameter", C);
+      sh.tableK = C->getArg(p++);
+    }
     if (p != C->arg_size())   // calls::materialize gives one parameter per formal field, varargs and env
       internalError("spine: a clone with more parameters than its formals' fields", C);
   }
@@ -2416,6 +2471,7 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
   Walker(ctx, F, DT, LI).run();
   llvm::erase_if(sh.ruleSixPending, [&](const spine::Shared::PendingSix &p) { return p.ctx == &ctx; });
   reachDefs(*sh.out);   // cq-pfpy: rule 9's hoisted arm values reach every point that reads them
+  calls::insertActivationCounter(ctx);   // rule 14, §1.4
 
   // Rule 13 (b137e75): the lowered entry keeps every address-taken block under its identity: the block its
   // walk lowered it into when that block is its own (not the entry, not shared with another address-taken

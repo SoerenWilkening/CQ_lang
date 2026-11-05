@@ -552,6 +552,19 @@ void lowerMeasure(LoweringContext &ctx, CallInst &call) {
     spine::bindOperand(ctx, &call, x);
     return;
   }
+  if (ctx.S.ctl) {
+    // Rule 19, Q13: inside a _ctl clone cq_measure measures a controlled copy under the clone's formal: t is the measured
+    // rail, h is not collapsed where the predicate is 0, the outcome is tainted, and no classical collapse applies.
+    RailType cw = rt(call.getArgOperand(0)->getType(), &call);
+    CallInst *t = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, cw}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), cw))});
+    ctx.unc().recordExternal(t, Role::Measured);
+    ctx.emitCore(abi::CoreSpec{abi::Core::Copy, cw, /*ctl=*/true}, {ctx.out().getArg(0), x.v, t});
+    CallInst *m = ctx.emitCore(abi::CoreSpec{abi::Core::Measure, cw}, {t});
+    m->setMetadata("cq.measure", MDNode::get(ctx.M.getContext(), {}));
+    spine::shared(ctx).ctlMeasured.insert(t);
+    spine::bindOperand(ctx, &call, Operand{t, true});
+    return;
+  }
   // cq-ihlt: a value whose only quantum sources a callee measured is classical; its sources' rails
   // are re-read in the caller right after the clone call (rule 2) and cq_measure reads it classically.
   Value *c = spine::calleeCollapse(ctx, x.v, call);
@@ -603,15 +616,53 @@ bool busLoadCopy(LoweringContext &ctx, const Value *y) {
   return G && G->getName().starts_with("cqrt_qram_load_");
 }
 
+// Rule 6, rule 18 (204): a classical phi over handles whose arms are KEPT no-twin results and seeds: the update of it is
+// a bijection in one rail on every path, so it is cleaned as that rail. A seed arm is freed on the other paths; it must
+// dominate them along single predecessors.
+PHINode *keptMerge(LoweringContext &ctx, Value *y) {
+  if (!isa<PHINode>(y) || !ctx.bound(y))
+    return nullptr;
+  Operand o = ctx.operand(y);
+  auto *np = o.handle ? dyn_cast<PHINode>(o.v) : nullptr;
+  if (!np)
+    return nullptr;
+  bool kept = false;
+  for (unsigned i = 0; i < np->getNumIncomingValues(); ++i) {
+    auto *c = dyn_cast<CallInst>(np->getIncomingValue(i));
+    std::optional<Role> role = c ? ctx.unc().liveRole(ctx.unc().idOf(c)) : std::nullopt;
+    if (role == Role::Kept) {
+      kept = true;
+    } else if (role == Role::Seed && c->hasOneUse()) {
+      for (unsigned j = 0; j < np->getNumIncomingValues(); ++j) {
+        if (np->getIncomingValue(j) == c)
+          continue;
+        const BasicBlock *b = np->getIncomingBlock(j);
+        while (b && b != c->getParent())
+          b = b->getSinglePredecessor();
+        if (!b)
+          return nullptr;
+      }
+    } else {
+      return nullptr;
+    }
+  }
+  return kept ? np : nullptr;
+}
+
 // The old value is a rail the rule may clean: a value this function computed into a rail of its
 // own (not an argument, a load, a phi or a classical select over handles, which alias other rails).
 bool cleanable(LoweringContext &ctx, Value *y) {
+  if (keptMerge(ctx, y))
+    return true;
   // Rule 5: a load copy is undone by its un-copy, never by rule 6, whatever re-binds it (an extractvalue, a freeze).
   if (busLoadCopy(ctx, y))
     return false;
   auto &binds = spine::shared(ctx).binds;
   auto bi = binds.find(y);
   if (bi == binds.end() || bi->second.size() != 1)
+    return false;
+  // Rule 19: a controlled copy a _ctl clone measured is never uncomputed.
+  if (spine::shared(ctx).ctlMeasured.count(bi->second[0].v))
     return false;
   auto *I = dyn_cast<Instruction>(y);
   if (!I || isa<PHINode>(I))
@@ -1064,6 +1115,23 @@ std::optional<Inverse> inverseOf(LoweringContext &ctx, Instruction &U, Value *Y,
 
 void clean(LoweringContext &ctx, Value *y, const Inverse &inv) {
   Value *h = ctx.operand(y).v;
+  if (PHINode *np = keptMerge(ctx, y)) {
+    // The rail freed through the phi: a seed arm is freed here on the paths that did not choose it.
+    SmallVector<std::pair<CallInst *, unsigned>, 2> seeds;
+    for (unsigned i = 0; i < np->getNumIncomingValues(); ++i)
+      if (auto *c = cast<CallInst>(np->getIncomingValue(i)); ctx.unc().liveRole(ctx.unc().idOf(c)) == Role::Seed)
+        seeds.push_back({c, i});
+    for (auto &[c, i] : seeds) {
+      for (unsigned j = 0; j < np->getNumIncomingValues(); ++j) {
+        if (np->getIncomingValue(j) == c)
+          continue;
+        IRBuilder<> B(np->getIncomingBlock(j)->getTerminator());
+        B.CreateCall(abi::declare(ctx.M, abi::CoreSpec{abi::Core::Free}), {c});
+      }
+      ctx.unc().setRole(ctx.unc().idOf(c), Role::Kept);
+    }
+    ctx.unc().mergeToRail(ctx.unc().idOf(h));
+  }
   ctx.unc().cleanupBijective(ctx.unc().idOf(h), inv.spec, inv.ops);
   spine::shared(ctx).ruleSixCleaned.insert(h);
 }

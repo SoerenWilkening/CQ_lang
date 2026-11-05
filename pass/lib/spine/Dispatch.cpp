@@ -270,6 +270,8 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
     // cq-6qum: an uncontrolled rotation of a register state rotates a copy: rule 2's (classical
     // angle) and rule 15's (quantum angle, cq-r9j0) alike.
     bool uncontrolled = ctx.currentPredicate().isTop() && !shared(ctx).tripFlag;
+    BasicBlock *thetaBlock = ctx.B().GetInsertBlock();
+    Instruction *thetaBefore = ctx.B().GetInsertPoint() == thetaBlock->begin() ? nullptr : &*std::prev(ctx.B().GetInsertPoint());
     std::optional<PendingCopy> pre = beginPreRotation(ctx, *CI, uncontrolled);
     if (isQ(ctx, CI->getArgOperand(1))) {
       // cq-t3rd: under a flag it is rule 10's in-place rotation (rot-cry), a register state as the
@@ -284,6 +286,7 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
       lowerTheta(ctx, *CI);                                               // rule 2
     }
     finishPreRotation(ctx, pre);
+    calls::noteMint(ctx, *CI, thetaBlock, thetaBefore);   // rule 19
     return;
   }
   case Class::Measure:
@@ -325,6 +328,8 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
     return noteCalleeMeasures(ctx, CB, startBlock, before);
   }
   case Class::Indirect: return calls::lowerIndirect(ctx, CB);
+  case Class::Signal: return calls::lowerSignal(ctx, CB);
+  case Class::Raise: return calls::lowerRaise(ctx, CB);
   case Class::Declared: return calls::lowerDeclared(ctx, CB);
   case Class::Asm: {
     if (invert::isMarkerFence(CB))

@@ -290,7 +290,7 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
     cq::TaintInfo T = cq::computeTaint(M, TO);
     SmallVector<Function *, 16> Tainted;
     for (Function &F : M)
-      if (!F.isDeclaration() && T.isTainted(F))
+      if (!F.isDeclaration() && (T.isTainted(F) || T.hasClone(F)))
         Tainted.push_back(&F);
 
     // 1b. Rule 16: a deferred host call's result the program reads is the library's formatting body on a
@@ -301,7 +301,7 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
       T = cq::computeTaint(M, TO);
       Tainted.clear();
       for (Function &F : M)
-        if (!F.isDeclaration() && T.isTainted(F))
+        if (!F.isDeclaration() && (T.isTainted(F) || T.hasClone(F)))
           Tainted.push_back(&F);
     }
 
@@ -324,7 +324,7 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
       CFGChanged = true;
       Tainted.clear();
       for (Function &F : M)
-        if (!F.isDeclaration() && (T.isTainted(F) || is_contained(SJ, &F)))
+        if (!F.isDeclaration() && (T.isTainted(F) || T.hasClone(F) || is_contained(SJ, &F)))
           Tainted.push_back(&F);
       for (Function *F : SJ)
         FAM.invalidate(*F, PreservedAnalyses::none());

@@ -80,6 +80,12 @@ public:
   void unpin(RailId);
   // U7 (cq-g1ty, CR rule 7; 129): the role of a rail not yet uncomputed or freed anywhere, else nullopt.
   std::optional<Role> liveRole(RailId) const;
+  // Is the rail, or an arm of the merge it is, an exit rail of a deferred item (recordDeferred)? Its reverse must still
+  // read it, so it cannot escape.
+  bool deferredExit(RailId) const;
+  // Rule 6 (204): a merge of kept rails becomes one rail of its own, Role::Garbage, which a clean-up may then clean; its
+  // arms keep their roles.
+  void mergeToRail(RailId);
   void noteUse(RailId, llvm::Instruction *consumer);
   void noteNonDiagonal(RailId target, llvm::Instruction *gate);
   // U9 (cq-c969, CR rules 5, 17): may `gate` (noted by noteNonDiagonal) hit a rail `handle` may name at run time? false

@@ -433,7 +433,8 @@ bool readsReachedMode(const TaintInfo &T, const Specialization &S) {
 bool liftsCarrying(const TaintInfo &T, const Specialization &S, SmallPtrSetImpl<const Specialization *> &seen);
 
 bool carriesEnvImpl(const TaintInfo &T, const Specialization &S, SmallPtrSetImpl<const Specialization *> &seen) {
-  if (!S.F || S.F->isDeclaration() || S.isEntry())
+  // §1.4: a table clone's ABI follows from the C signature alone: it carries no environment.
+  if (!S.F || S.F->isDeclaration() || S.isEntry() || S.table)
     return false;
   if (!seen.insert(&S).second)
     return false;   // a cycle of lifted calls: its bodies are judged where they are first reached

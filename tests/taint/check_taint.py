@@ -29,9 +29,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BUNDLE_DEPENDENT = {'169': 'cq-dav', '190': 'cq-dav'}
 # Bead cq-6ols: clone sets of constructions later flat-memory waves land (_t table clones, one recursion clone, the
 # plain-ptr byval form, needsCtl, _pure, the variadic mask). Printed, not failed, until that wave removes its entry.
-LATER_WAVE = {'67': 'W3d', '70': 'W3d', '95': 'W3d', '96': 'W4', '97': 'W4', '98': 'W4', '102': 'W4',
-              '109': 'W3d', '161': 'W4', '164': 'W3d', '173': 'W3d', '174': 'W3d', '194': 'W3d', '204': 'W4',
-              '205': 'W4', '211': 'W4', '212': 'W4'}
+LATER_WAVE = {'67': 'W3d', '70': 'W3d', '95': 'W3d', '109': 'W3d', '164': 'W3d', '173': 'W3d', '174': 'W3d', '194': 'W3d'}
 
 
 def strip_comment(line):
@@ -92,7 +90,7 @@ def expected(ex):
 
 def run(dump, ex):
     o1, clones, rewritten, kept = expected(ex)
-    p = subprocess.run([dump, str(o1)], capture_output=True, text=True)
+    p = subprocess.run([dump, '--roots=' + str(ROOT / 'tools' / 'corpus_roots.txt'), str(o1)], capture_output=True, text=True)
     if p.returncode != 0:
         err = (p.stderr.strip().splitlines() or ['exit %d' % p.returncode])
         return ex.name, ['stopped: ' + ' | '.join(err[:2])], ''
@@ -100,6 +98,9 @@ def run(dump, ex):
     for line in p.stdout.splitlines():
         m = re.match(r'cq-taint: spec (\S+) fn=@(\S+) .* entry=(\d)', line)
         if m:
+            # CR §5: an example omits the table clones of a function whose address it never takes, and what they reach.
+            if ' rowonly=1' in line:
+                continue
             if m.group(3) == '1':
                 got_entries.add(m.group(2))
             else:
