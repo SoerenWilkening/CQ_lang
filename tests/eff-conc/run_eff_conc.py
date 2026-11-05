@@ -49,6 +49,7 @@ MODULES = {"conc.O1.ll": ENTRIES, "setjmp.O1.ll": ["p_sj_scalar", "p_sj_void", "
            # cq-lyzw (rule 24 at f684858): an observable volatile access with quantum data is a host effect.
            "vol_observable.O1.ll": ["vol_quantum_observable", "p_vol_obs_pred"],
            "vol_rail.O1.ll": ["p_vol_rail_store", "p_vol_rail_load", "p_vol_local_rail"],
+           "conc_tls.O1.ll": ["p_tls", "p_mutex_init"],
            # cq-lyzw (rule 24 with rule 21): an atomic read-modify-write through a pointer rail.
            "conc_rmw_fat.O1.ll": ["p_rmw_fat", "p_cas_fat"],
            # cq-lyzw (rule 24, 106): thread calls collapsed in the IR.
@@ -78,6 +79,7 @@ SHAPES = {"p_vol_internal": (None, r"volatile"),
                                      r"[\s\S]*cqrt_tape_write_i32\([\s\S]*"
                                      r"cqrt_tape_effect_controlled\([^\n]*@\.cq\.effect\.volatile_store\)", r"store volatile"),
           "p_vol_obs_pred": (r"@\.cq\.effect\.volatile_store", r"store volatile"),
+          "p_tls": (r"llvm.threadlocal.address", None), "p_mutex_init": (None, r"@pthread_"),
           "p_vol_rail_store": (r"cqrt_tape_write_i64\([\s\S]*@\.cq\.effect\.volatile_store", r"qram_store"),
           "p_vol_rail_load": (r"cqrt_tape_write_i64\([\s\S]*cqrt_tape_effect_i32_controlled\([^\n]*@\.cq\.effect\.volatile_load", r"qram_load"),
           "p_vol_local_rail": (r"@\.cq\.effect\.volatile_store", r"store volatile i32 9"),

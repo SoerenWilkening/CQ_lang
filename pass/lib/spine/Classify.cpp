@@ -320,7 +320,7 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
     if (n.starts_with("\01_"))
       n = n.drop_front(2);
     if (n == "pthread_create" || n == "pthread_join" || n == "pthread_mutex_lock" || n == "pthread_mutex_unlock" ||
-        n == "pthread_mutex_trylock")
+        n == "pthread_mutex_trylock" || n == "pthread_mutex_init" || n == "pthread_mutex_destroy")
       return Class::Thread;
   }
 
