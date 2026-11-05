@@ -3,6 +3,9 @@
 
 #include "cq/Bus.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/IR/Attributes.h"
+
+#include <optional>
 
 namespace cq::bus {
 
@@ -27,4 +30,18 @@ void emitKeptStore(LoweringContext &, llvm::Type *T, Operand addr, Operand value
 // store is the kept store.
 bool isInPlaceForm(LoweringContext &, const llvm::StoreInst &);
 void lowerInPlace(LoweringContext &, llvm::StoreInst &);
+
+// LLVM's range facts of an integer value: its unsigned upper bound, when it has one (rule 16, rule 22).
+std::optional<uint64_t> rangeBound(LoweringContext &, const llvm::Value *);
+// Rule 16: an allocation by the declaration's allockind, or by name (malloc, calloc, aligned_alloc, realloc, free).
+llvm::AllocFnKind hostAllocKind(const llvm::Function &);
+
+// Rule 22: one copy. `length` is a rail (a quantum-length copy: one p_j per byte) or classical; `trips` the classical
+// trip count of both loops (the length itself, min(K2, B), or realloc's new block size). `ctl` the predicate in scope.
+struct CopySpec {
+  Operand dst, src, length;
+  llvm::Value *trips = nullptr, *ctl = nullptr;
+  llvm::Instruction *at = nullptr;
+};
+void emitCopy(LoweringContext &, const CopySpec &);
 }

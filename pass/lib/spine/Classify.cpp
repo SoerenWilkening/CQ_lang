@@ -12,6 +12,7 @@
 // A call with no quantum involvement (no quantum argument or result, no quantum predicate in scope,
 // not in a _ctl clone) is Classical whatever its callee, except the CQ.h surface.
 #include "SpineInternal.h"
+#include "../bus/BusInternal.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/CFG.h"
@@ -48,6 +49,20 @@ bool underQuantumPredicate(const CallBase &CB, const TaintInfo &T, const Special
 // Rule 20: a pointer that reaches no host-resident object through getelementptrs with untainted indices.
 bool nonClassicalObject(const TaintInfo &T, const Specialization &S, const Value *ptr) {
   return ptr->getType()->isPointerTy() && !isa<ConstantPointerNull>(ptr) && !T.hostObjectOf(ptr, S);
+}
+
+// Rule 16: llvm.stackrestore in a scope of bus-resident objects only (one at least) is dropped; with a host-resident
+// alloca in scope it restores the host stack as it stands.
+bool busScope(const TaintInfo &T, const Specialization &S, const CallBase &restore) {
+  SmallVector<const AllocaInst *, 4> scope;
+  spine::scopeAllocas(restore, scope);
+  bool any = false;
+  for (const AllocaInst *A : scope) {
+    if (!nonClassicalObject(T, S, A))
+      return false;
+    any = true;
+  }
+  return any;
 }
 
 // The CQ.h surface (CQ.h at the pinned spec): name and signature.
@@ -261,16 +276,14 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
       return nonClassicalObject(T, S, CB.getArgOperand(1)) ? Class::Alloc : Class::Classical;
     case Intrinsic::lifetime_end:
       return nonClassicalObject(T, S, CB.getArgOperand(1)) ? Class::Dealloc : Class::Classical;
-    case Intrinsic::stackrestore: {
-      if (!qPred && !qArg)
-        return Class::Classical;
-      SmallVector<const AllocaInst *, 4> scope;
-      spine::scopeAllocas(CB, scope);
-      for (const AllocaInst *A : scope)
-        if (nonClassicalObject(T, S, A))
-          return Class::Dealloc;
-      return Class::Classical;
-    }
+    case Intrinsic::stackrestore:
+      return busScope(T, S, CB) ? Class::Dealloc : Class::Classical;
+    case Intrinsic::stacksave:
+      // Rule 16: dropped with the stackrestores that read it.
+      for (const User *u : CB.users())
+        if (auto *R = dyn_cast<CallBase>(u); !R || !busScope(T, S, *R))
+          return Class::Classical;
+      return CB.use_empty() ? Class::Classical : Class::Dealloc;
     case Intrinsic::ptrmask:
       // Rule 21 (105): the mask of an address rail: integer templates over the address.
       return qArg || qRes ? Class::TemplateIntrinsic : Class::Classical;
@@ -319,18 +332,14 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
   if (CB.hasFnAttr(Attribute::ReturnsTwice) || F->hasFnAttribute(Attribute::ReturnsTwice))
     return qPred || qArg || qRes ? Class::Setjmp : Class::Classical;
 
-  AllocFnKind ak = F->getAttributes().getFnAttrs().getAllocKind();
-  if (ak != AllocFnKind::Unknown) {
-    if ((ak & AllocFnKind::Free) != AllocFnKind::Unknown) {
-      const Value *p = CB.arg_size() ? CB.getArgOperand(0) : nullptr;
-      return p && (nonClassicalObject(T, S, p) || qArg) ? Class::Dealloc : Class::Classical;
-    }
-    bool block = nonClassicalObject(T, S, &CB);   // provenance: array-of-structs sites (cq-qj49)
-    if ((ak & AllocFnKind::Realloc) != AllocFnKind::Unknown)
-      return block || qArg ? Class::Realloc : Class::Classical;
-    if ((ak & AllocFnKind::Alloc) != AllocFnKind::Unknown)
-      return block || qArg ? Class::Alloc : Class::Classical;
-  }
+  // Rule 16: an allocation is always __cq_alloc, `free` is nothing, under any predicate.
+  AllocFnKind ak = bus::hostAllocKind(*F);
+  if ((ak & AllocFnKind::Free) != AllocFnKind::Unknown)
+    return Class::Dealloc;
+  if ((ak & AllocFnKind::Realloc) != AllocFnKind::Unknown)
+    return Class::Realloc;
+  if ((ak & AllocFnKind::Alloc) != AllocFnKind::Unknown)
+    return Class::Alloc;
 
   if (!F->isDeclaration() && (CB.doesNotReturn() || F->doesNotReturn())) {
     // cq-wskg: a defined noreturn callee (rule 16) is never lifted (taint publishes no clone for it).

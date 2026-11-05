@@ -27,12 +27,11 @@ bool isSurface(const Function &G) {
 
 // Rule 16: an allocation is a change; `free` is nothing.
 bool allocates(const Function &G) {
-  AllocFnKind k = G.getAttributes().getFnAttrs().getAllocKind();
+  AllocFnKind k = hostAllocKind(G);
   return k != AllocFnKind::Unknown && (k & AllocFnKind::Free) == AllocFnKind::Unknown;
 }
 bool frees(const Function &G) {
-  AllocFnKind k = G.getAttributes().getFnAttrs().getAllocKind();
-  return (k & AllocFnKind::Free) != AllocFnKind::Unknown;
+  return (hostAllocKind(G) & AllocFnKind::Free) != AllocFnKind::Unknown;
 }
 
 // Rulings Q14: a host call is no change iff LLVM says it does not write memory.
@@ -123,6 +122,20 @@ bool writesMemory(const TaintInfo &T, const Function &F) {
           work.push_back(c);
   }
   return cache.writes.count(&F) != 0;
+}
+
+bool notesOwnChange(const LoweringContext &ctx, const Instruction &I) {
+  if (auto *A = dyn_cast<AllocaInst>(&I))
+    return !ctx.T.hostResident(A, ctx.S);
+  auto *CB = dyn_cast<CallBase>(&I);
+  if (!CB || isa<DbgInfoIntrinsic>(CB))
+    return false;
+  if (const Function *G = calleeOf(*CB); G && allocates(*G))
+    return true;
+  if (!isa<MemIntrinsic>(CB))
+    return false;
+  // Rule 22: a host-resident destination keeps the intrinsic, a plain change; a copy's change is its first store.
+  return calls::classify(*CB, ctx.T, ctx.S) == calls::Class::MemIntrinsic;
 }
 
 bool versionChange(const LoweringContext &ctx, const Instruction &I) {

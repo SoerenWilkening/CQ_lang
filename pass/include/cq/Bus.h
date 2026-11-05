@@ -42,5 +42,7 @@ void lowerRealloc(LoweringContext &, llvm::CallBase &);
 // table-clone call, call of a function that writes memory)? writesMemory is the least fixpoint over calls by name.
 bool versionChange(const LoweringContext &, const llvm::Instruction &origI);
 bool writesMemory(const TaintInfo &, const llvm::Function &);
+// An allocation or a bus copy: its lowering notes the change itself, at the __cq_alloc call or the copy's first store.
+bool notesOwnChange(const LoweringContext &, const llvm::Instruction &origI);
 unsigned K2(const LoweringContext &);   // CQ_K2(f, k) / -cq-k2 / -cq-k2-default / 4096
 }
