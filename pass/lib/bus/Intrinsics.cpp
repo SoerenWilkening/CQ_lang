@@ -173,12 +173,21 @@ void liveLaterRails(LoweringContext &ctx, DenseSet<const Value *> &live) {
   }
 }
 
-// `from` reaches `to` over single-successor blocks only: every path from `from` passes `to`.
+// Every path of the IR built so far from `from` passes `to`: none ends, nor runs into a block still being built, first.
 bool onEveryPath(const BasicBlock *from, const BasicBlock *to) {
-  SmallPtrSet<const BasicBlock *, 8> seen;
-  for (const BasicBlock *b = from; b != to; b = b->getSingleSuccessor())
-    if (!b || !seen.insert(b).second)
+  SmallPtrSet<const BasicBlock *, 16> seen{from};
+  SmallVector<const BasicBlock *, 16> work{from};
+  while (!work.empty()) {
+    const BasicBlock *b = work.pop_back_val();
+    if (b == to)
+      continue;
+    const Instruction *t = b->getTerminator();
+    if (!t || t->getNumSuccessors() == 0)
       return false;
+    for (const BasicBlock *sb : successors(t))
+      if (seen.insert(sb).second)
+        work.push_back(sb);
+  }
   return true;
 }
 
