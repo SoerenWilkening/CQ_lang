@@ -1033,6 +1033,43 @@ void lowerWithChanges(LoweringContext &ctx, Form &F, const Plan &P) {
     ctx.unc().recordMerge(phi);
     spine::bindOperand(ctx, last, Operand{phi, true});
   }
+  // Rule 5 sentence 1: a load copy only the steps read (an angle, an operand) is un-copied here, past the two arms that
+  // read it, not left to a later flush: the arms are one trip of a classical loop like any other code.
+  SmallVector<RailId, 2> done;
+  DominatorTree &DT = spine::shared(ctx).dt(*F.S->getFunction());
+  auto consider = [&](const Value *orig) {
+    if (!orig || isa<Constant>(orig) || !ctx.bound(orig))
+      return;
+    if (!all_of(orig->users(), [&](const User *u) {
+          auto *I = dyn_cast<Instruction>(u);
+          return I && (DT.dominates(I, F.S) || any_of(F.steps, [&](const Step &st) { return st.def == I; }));
+        }))
+      return;
+    Operand o = ctx.operand(orig);
+    auto *lc = o.handle ? dyn_cast<CallInst>(o.v) : nullptr;
+    if (!lc || !lc->getCalledFunction() || !lc->getCalledFunction()->getName().starts_with("cqrt_qram_load_"))
+      return;
+    for (const User *u : lc->users()) {
+      auto *g = dyn_cast<CallInst>(u);
+      const Function *G = g ? g->getCalledFunction() : nullptr;
+      if (!G || !(g->getParent() == form || g->getParent() == over) ||
+          !(G->getName().starts_with("cqrt_") || G->getName().starts_with("cq_template_")))
+        return;
+    }
+    if (ctx.unc().liveRole(ctx.unc().idOf(lc)))
+      done.push_back(ctx.unc().idOf(lc));
+  };
+  for (const Step &st : F.steps) {
+    if (st.theta)
+      consider(st.theta->getArgOperand(1));
+    consider(st.a.z);
+  }
+  if (!done.empty()) {
+    Instruction *at = cast<Instruction>(B.CreateFreeze(PoisonValue::get(B.getInt1Ty())));
+    ctx.unc().resolveAt(at, done);
+    at->eraseFromParent();
+    B.SetInsertPoint(join);
+  }
 }
 
 } // namespace

@@ -2486,6 +2486,26 @@ struct Uncompute::Impl {
         }
       }
     }
+    // Rule 5 sentence 1 with rule 14 (116): the reverse un-copies the trips' load copies; a memory version change after
+    // the loop that the placement does not precede overtakes them, and when every exit rail is kept nothing holds the
+    // reverse back: it runs where the loop exits (below), its copies clean. An exit rail still read by templates after
+    // the change keeps the placement, and the copies are overtaken there (185).
+    if (!barrier && all_of(d.exits, [&](RailId x) { return keptRole(rails[x].role); })) {
+      bool loads = false;
+      for (unsigned i = 0; i < records.size() && !loads; ++i)
+        loads = info[i].kind == RecKind::BusLoad && rails[info[i].item].ownedBy == r.deferred &&
+                !keptRole(rails[info[i].item].role);
+      if (loads)
+        for (Instruction *v : versions) {
+          if (!v->getParent() || !afterRegion(d, v->getParent()))
+            continue;
+          if (v->getParent() == pos.bb ? !(pos.before == v || pos.before->comesBefore(v))
+                                       : reaches(v->getParent(), pos.bb)) {
+            barrier = v;
+            break;
+          }
+        }
+    }
     // The loop's exit block X: the one block outside the region the region's blocks branch to.
     auto exitBlock = [&](const Value *at) -> BasicBlock * {
       BasicBlock *X = nullptr;
