@@ -558,6 +558,24 @@ static void invert(void) {
   fr(h);
 }
 
+/* An INPUT effect entry under a control that is not classical-valued: its bytes are bus stores (rt_tape.h, qstore):
+ * the cells QUANTUM, one kept slot per cell, no host write; where the control reads 0 the cells keep their value. */
+static unsigned char inbuf[8] = {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7};
+static void effect_qstore(int cv) {
+  __cq_mem();
+  int32_t c = seed1(cv);
+  ry1(c);
+  int32_t t = (int32_t)callv("cqrt_tape_alloc", "i32|", 0);
+  C2("cqrt_tape_write_i64_lit", "void|i32,i64", t, A(inbuf));
+  C2("cqrt_tape_write_i32_lit", "void|i32,i32", t, 4);
+  C2("cqrt_tape_write_i64_lit", "void|i32,i64", t, 0x1000);
+  C3("cqrt_tape_effect_i64_controlled", "i32|i32,i32,ptr", c, t, A("fgets"));
+  CHECK(inbuf[0] == 0xA0 && inbuf[1] == 0xA1); /* no host write */
+  __cqe_out_mem("inbuf", A(inbuf), 4);
+}
+static void effect_qstore_1(void) { effect_qstore(1); }
+static void effect_qstore_0(void) { effect_qstore(0); }
+
 int main(int argc, char **argv) {
 #define S(n) {#n, n}
   static const struct { const char *name; void (*fn)(void); } sc[] = {
@@ -565,6 +583,7 @@ int main(int argc, char **argv) {
       S(overtaken_freed), S(roles), S(v_rotated_copy_unc), S(v_measured_copy_unc), S(v_unc_address), S(v_dirty_load_free),
       S(v_second_bus), S(v_bad_bus), S(v_no_bus), S(v_sized_bus), S(v_other_width_bus), S(v_addr_width), S(v_value_width), S(v_store_unc),
       S(v_swap_alias), S(v_retired), S(widths), S(alloc), S(clones), S(clone_bad_kind), S(shots), S(invert),
+      S(effect_qstore_1), S(effect_qstore_0),
   };
   if (argc != 2)
     return 2;

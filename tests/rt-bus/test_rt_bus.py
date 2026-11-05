@@ -199,6 +199,19 @@ class Scenarios(unittest.TestCase):
             self.assertEqual(s[3]["name"], names[3], "the __cq_alloc address is the same in every sample")
         self.assertEqual([len(e["q"]) for e in ev if e["ev"] == "cells"], [4, 4, 4])
 
+    def test_effect_stores_through_the_bus(self):
+        ev = self.ok("effect_qstore_1")
+        n = len(cells(ev))
+        self.assertGreaterEqual(n, 1)
+        slots = [r for r in live(ev) if r["role"] == "tape_slot"]
+        self.assertEqual(len(slots), n)
+        self.assertEqual(slots[0]["v"], "0xa0")       # the displaced content
+        self.assertTrue(all(not r["known"] for r in slots))
+        ev0 = self.ok("effect_qstore_0")
+        self.assertEqual(len(cells(ev0)), n)          # the cells it can reach
+        self.assertEqual(next(e for e in ev0 if e["ev"] == "out_mem")["v"], "0xa3a2a1a0")   # kept
+        self.assertEqual({r["v"] for r in live(ev0) if r["role"] == "tape_slot"}, {"0x0"})
+
     def test_invert_region(self):
         ev = self.ok("invert")
         self.assertEqual([e["op"] for e in bus(ev)][:2], ["swap", "swap"])

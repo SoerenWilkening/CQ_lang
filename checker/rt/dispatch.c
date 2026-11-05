@@ -1120,7 +1120,7 @@ static void family_call(call_t *c, const cqe_tname *t) {
   int32_t before = (int32_t)cqe__nrails_peek();
   int r = run_handlers(c->sym, t, c->raw, c->nargs, &out);
   int32_t after = (int32_t)cqe__nrails_peek() + 1;
-  int role = !strcmp(t->op, "tape_write") ? 2 : !strcmp(t->op, "tape_effect") ? 6 : 0;
+  int role = !strcmp(t->op, "tape_write") ? 2 : 0;
   if (role)
     for (int32_t h = before + 1; h < after; ++h)
       cqe__setrole(h, role);

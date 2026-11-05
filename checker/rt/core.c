@@ -24,8 +24,8 @@
  * this file); the end-of-shot handlers and the exit event run once per sample, and the trace is
  * flushed at the end of each sample instead of per line.
  *
- * Exit roles (event "exit", field "role" of each live rail): measured, abort, tape, effect (an effect
- * entry's result rail, CR §6 item 1), tape_slot (a bus store's slot, rule 5), overtaken (a load copy un-copied
+ * Exit roles (event "exit", field "role" of each live rail): measured, abort, tape (an effect entry's result
+ * rail too, rt_tape.c), tape_slot (a bus store's slot, rule 5), overtaken (a load copy un-copied
  * and not freed, rule 5), frozen (rotated, not measured, or a rule-6 image carrying a rotated register's
  * content: cqe__carry, cq-qhow), store_kept (a value or control rail of a bus store still live, rule 5
  * sentence 3), kept_entangled (cq-arch A4: a rail one of whose direct sources received
@@ -397,7 +397,7 @@ typedef struct {
   char w[8];
   cqe_val v;
   uint8_t live, known, measured, frozen, written, seed;
-  uint8_t role;  /* CQE_ROLE_*: 0 none, 1 abort, 2 tape, 4 tape_slot, 5 overtaken, 6 effect */
+  uint8_t role;  /* 0 none, 1 abort, 2 tape, 4 tape_slot, 5 overtaken */
   uint8_t busz;  /* a bus swap left it at 0 and nothing wrote it since (cqe__set_busz) */
   uint8_t store_kept; /* the value or control rail of a bus store (rule 5 sentence 3) */
   uint8_t fenv;  /* cq-tt2j, rule 23: 1 flags lineage (an _exc result or written from one), 2 a mode operand */
@@ -635,8 +635,6 @@ static const char *exit_role(int32_t h) {
     return "abort";
   if (r->role == 2)
     return "tape";
-  if (r->role == 6)
-    return "effect";
   if (r->role == 4)
     return "tape_slot";
   if (r->role == 5)

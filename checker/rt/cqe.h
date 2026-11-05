@@ -65,7 +65,7 @@ void    cqe_register_op(const char *op, cqe_op_fn);   /* a family registers from
  *   dereferenceable for the call only (a family that keeps a string or a table copies it).
  * Roles. The dispatcher, not the family, sets the exit role of tape and abort rails: before the
  *   handler runs, argument 0 of abort becomes role "abort"; every rail cqe_new_rail creates during
- *   a tape_write call becomes role "tape" and during a tape_effect call role "effect". The exit event reports such a live rail with that role,
+ *   a tape_write call becomes role "tape". The exit event reports such a live rail with that role,
  *   as kept. A cqrt_free of a tape or abort rail is a violation (free_forbidden) whatever its value
  *   and known flag, also after an _unc returned it to 0. Handles are never reused; cqe_rail of a
  *   freed or unknown handle records a violation and returns NULL.

@@ -44,6 +44,7 @@
 #include <string.h>
 
 #include "cqe.h"
+#include "rt_tape.h"
 
 /* core.c, dispatch.c */
 uint32_t cqe__wtok_bits(const char *w, char *kind);
@@ -607,6 +608,34 @@ void __cqe_out_mem(const char *name, uint64_t addr, uint64_t bytes) {
   free(buf);
 }
 
+/* ---- the tape family's view of the bus (rt_tape.h, BACKEND_ABI §1.11) ---- */
+
+static int tape_peek(uint64_t addr, uint8_t *byte) {
+  const cell_t *c = cell_find(addr);
+  if (c) {
+    *byte = c->value;
+    return 1;
+  }
+  host_read(addr, 1, byte);
+  return 0;
+}
+
+/* A store the backend makes for an effect entry with a quantum address, control or length (ABI §1.10): the cell goes
+ * QUANTUM and a fresh kept i8 slot takes what it displaced; write == 0 is this branch not storing: the value stays and
+ * the slot reads 0. */
+static void tape_qstore(uint64_t addr, uint8_t byte, int write) {
+  uint8_t old = 0;
+  tape_peek(addr, &old);
+  cell_quantum(addr, write ? byte : old, 0);
+  cqe_val disp;
+  cqe__val_init(&disp, 8, 'i');
+  disp.w[0] = write ? old : 0;
+  cqe__setrole(cqe__new("i8", &disp, 0, 0), ROLE_TAPE_SLOT);
+  cqe__val_free(&disp);
+}
+
+static const cqe_tape_bus tape_bus = {tape_peek, tape_qstore};
+
 /* ---- end of shot -------------------------------------------------------------------------- */
 
 static int cell_cmp(const void *a, const void *b) {
@@ -642,4 +671,5 @@ __attribute__((constructor)) static void bus_register(void) {
   cqe_register_op("qram_store", op_qram_store);
   cqe_register_op("qram_swap", op_qram_swap);
   atexit(bus_at_exit);
+  cqe_tape_set_bus(&tape_bus);
 }
