@@ -1108,7 +1108,14 @@ namespace {
 void bindEnvResult(LoweringContext &ctx, CallBase &CB, const Specialization &S, const CloneCall &r) {
   SmallVector<Value *, 4> outs;
   Value *flags = r.value;
-  auto finish = [&]() { ctx.unc().recordCall(r.call, outs, {}); };
+  auto finish = [&]() {
+    if (hasTwin(ctx.T, S)) {
+      ctx.unc().recordCall(r.call, outs, {});
+      return;
+    }
+    for (Value *h : outs)
+      ctx.unc().recordExternal(h, Role::Kept);   // rule 18: no twin
+  };
   if (r.fieldwise) {
     // cq-xhv4: a field-wise result (bindFieldwiseResult's binding) whose last field is the new flags.
     const ResultLayout &res = r.res;
@@ -1446,7 +1453,9 @@ bool keptResult(LoweringContext &ctx, CallBase &CB) {
       auto *I = cast<Instruction>(U);
       if (I->getParent() != bb || isa<PHINode>(I) || isa<StoreInst>(I))
         return true;
-      if (isa<ReturnInst>(I) && ctx.S.isEntry())
+      // The caller's next uses are behind a return. A table call writes memory, so this clone has no twin (rule 18): its result
+      // is KEPT here (and returned as that rail, bindKeptValue).
+      if (isa<ReturnInst>(I))
         return true;
       if (auto *c = dyn_cast<CallBase>(I)) {
         const Function *G = c->getCalledFunction();
@@ -1489,6 +1498,11 @@ void deferValue(LoweringContext &ctx, CallBase &CB, ArrayRef<Value *> merged, Ar
   Uncompute &U = ctx.unc();
   SmallVector<Value *, 4> vals;
   std::vector<RailId> ids;
+  // The item's region is one block of its own: Uncompute places a deferred item after the uses outside its region.
+  IRBuilder<> &IB = ctx.B();
+  BasicBlock *Region = BasicBlock::Create(M.getContext(), "", &ctx.out()), *After = BasicBlock::Create(M.getContext(), "", &ctx.out());
+  IB.CreateBr(Region);
+  IB.SetInsertPoint(Region);
   unsigned sc = U.openScope();
   for (Type *t : leaves) {
     RailType w = railTypeOf(t);
@@ -1499,6 +1513,8 @@ void deferValue(LoweringContext &ctx, CallBase &CB, ArrayRef<Value *> merged, Ar
   U.closeScope(sc);
   for (unsigned k = 0; k < vals.size(); ++k)
     ctx.emitCore(abi::CoreSpec{abi::Core::Copy, railTypeOf(leaves[k])}, {merged[k], vals[k]});
+  IB.CreateBr(After);
+  IB.SetInsertPoint(After);
   std::vector<RailId> reads;
   for (Value *h : readHandles)
     if (RailId r = U.idOf(h); !is_contained(reads, r))
@@ -1514,6 +1530,14 @@ void deferValue(LoweringContext &ctx, CallBase &CB, ArrayRef<Value *> merged, Ar
                    },
                    reads);
   bindCallValue(ctx, CB, vals);
+}
+
+// The call's value in KEPT rails. A rail only returned is the clone's result as it is, not copied again (rule 18, no twin).
+void bindKeptValue(LoweringContext &ctx, CallBase &CB, ArrayRef<Value *> kept) {
+  if (kept.size() == 1 && !isComposite(CB.getType()) && !ctx.S.isEntry() && !CB.use_empty() &&
+      all_of(CB.users(), [](const User *U) { return isa<ReturnInst>(U); }) && !CB.getType()->isPointerTy())
+    spine::shared(ctx).ctlMeasured.insert(kept[0]);
+  bindCallValue(ctx, CB, kept);
 }
 
 // The value copied out into fresh KEPT rails.
@@ -1621,7 +1645,7 @@ void lowerClassicalPointer(LoweringContext &ctx, CallBase &CB, Value *fp) {
     for (Value *m : merged)
       ctx.unc().recordExternal(m, Role::Kept);
     noteReads(ctx, readHandles);
-    bindCallValue(ctx, CB, merged);
+    bindKeptValue(ctx, CB, merged);
     return;
   }
   // Rule 18's position: after the last consumer.
@@ -1851,7 +1875,7 @@ void dispatchOverRail(LoweringContext &ctx, CallBase &CB, FunctionType *FT, Valu
     for (Value *c : kept)
       ctx.unc().recordExternal(c, Role::Kept);
     noteReads(ctx, readHandles);
-    bindCallValue(ctx, CB, kept);
+    bindKeptValue(ctx, CB, kept);
     return;
   }
   deferValue(ctx, CB, vals, leaves, readHandles, [undoSelects, R](IRBuilder<> &TB) {
