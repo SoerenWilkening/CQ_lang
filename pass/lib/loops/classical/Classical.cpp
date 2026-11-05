@@ -467,6 +467,11 @@ private:
   }
   void planRuleSix(Loop &L, Case c);
   void cleanInvariantOnExit(Loop &L, BasicBlock *T);
+  // cq-j5mq: a loop with several classical exit edges into one exit block. T's phi naming the edge taken, and per edge
+  // the segment block it leaves from: the reverse starts at that segment.
+  PHINode *exitIndex = nullptr;
+  std::vector<BasicBlock *> exitSegs;
+  BasicBlock *unitExit = nullptr;   // the outermost loop's T
   bool initDead(Loop &L, const Value *init, const PHINode *p);
   void disjuncts(const Value *v, bool pos, SmallVectorImpl<Disj> &out, SmallPtrSetImpl<const Value *> &inner);
   // Lowers L with the builder at `cur`; its exit edge goes to T. Returns the exit operand of every
@@ -855,6 +860,16 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     unimplemented("loops-classical: a quantum exit test that is not the latch's (rule 14 case 3)",
                   exits::liveExiting(L)->getTerminator());
   auto inUnit = [&](const BasicBlock *b) { return UX.contains(L, b); };
+  // cq-j5mq: several classical exit edges into one exit block (a `break` on a classical test): each edge is a real
+  // branch to T. The exit block's phis are bound at T, over the edges.
+  const bool cx = !c3 && outermost && !inTrip && exitB && !exits::liveExiting(L);
+  // A sub-loop's classical edges are real branches to wherever they go, in its parent or out of the unit.
+  if (!c3 && !cx && (outermost || inTrip) && (UX.multi() || !exits::liveExiting(L)))
+    report_fatal_error("cq: unimplemented: loops-classical: a classically bounded loop with several exit edges in a "
+                       "K-loop trip or into several exit blocks (cq-y7kw)",
+                       /*gen_crash_diag=*/false);
+  if (outermost)
+    unitExit = T;
 
   // Values of L read after it. Multi-exit (cq-nqa6, 117's is_marked): a scalar loop value read by a
   // non-phi in C or a block C dominates is the exit value of the trip that left, as a phi of C with that
@@ -866,6 +881,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     for (Instruction &I : *b)
       for (const Use &us : I.uses())
         if (auto *ui = dyn_cast<Instruction>(us.getUser()); ui && !L.contains(ui)) {
+          if (auto *xp = dyn_cast<PHINode>(ui); cx && xp && xp->getParent() == exitB && L.contains(xp->getIncomingBlock(us)))
+            continue;   // read by the exit block's phi on its edge: bound at T
           if (mx) {
             auto *phi = dyn_cast<PHINode>(ui);
             if (UX.contains(L, ui->getParent()) ||
@@ -1342,7 +1359,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // A case-3 sub-loop with several exits (its exit arm, lowered with it) is such a unit too: its classical
   // exit is a real branch into C, its C phis bound by it.
   for (Loop *s : L.getSubLoops())
-    if (classify(*s, ctx.T, ctx.S) == Case::QuantumExit || exits::unitOf(*s).multi()) {
+    if (Case sc = classify(*s, ctx.T, ctx.S);
+        sc == Case::QuantumExit || (sc == Case::ClassicalBoundQuantumExit && exits::unitOf(*s).multi())) {
       exits::Unit SU = exits::unitOf(*s);
       for (BasicBlock *b : s->blocks())
         kOf[b] = s;
@@ -1430,9 +1448,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   auto target = [&](const BasicBlock *s) -> BasicBlock * {
     if (s == header)
       return H;
-    if (!L.contains(s))
-      return T;
-    return ob(s);
+    if (L.contains(s) || top.contains(s))
+      return ob(s);
+    return unitExit;   // cq-j5mq: an edge out of the whole unit, also from a sub-loop
   };
 
   // Next values of the carried phis, computed at the latch before its terminator.
@@ -2303,7 +2321,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       for (PHINode &P : sx->phis())
         if (ctx.bound(&P))
           was.insert(&P);
-      auto subOut = lowerLoop(*sl, sc, ob(sx), false);
+      // A case-1 sub-loop's continuation may lie outside this loop (cq-j5mq): its edges are real branches (target).
+      auto subOut = lowerLoop(*sl, sc, sx && L.contains(sx) ? ob(sx) : nullptr, false);
       outerTrip = savedTrip;
       for (size_t i = 0; i < subOut.size();) {
         const Value *v = subOut[i].first;
@@ -2315,7 +2334,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         else
           ctx.bindFields(v, ops);   // a phi of the multi-exit sub-loop's continuation (its exit value)
       }
-      if (SU.multi()) {
+      if (SU.multi() && sc != Case::ClassicalBound) {
         for (PHINode &P : sx->phis())
           if (!was.count(&P) && ctx.bound(&P))
             kBound.insert(&P);
@@ -2436,6 +2455,60 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     ctx.B().SetInsertPoint(T);
     if (c == Case::ClassicalBound && !nested && !inTrip)
       cleanInvariantOnExit(L, T);
+    if (cx) {
+      // One fresh block per exit edge, where the edge's value of each exit phi is read: a classical one by a phi of T,
+      // a rail copied out (alloc + copy; a classical incoming the seed itself), the copy an output of the loop.
+      LLVMContext &Cx = ctx.M.getContext();
+      SmallVector<PHINode *, 4> xphis;
+      for (PHINode &P : exitB->phis())
+        if (any_of(P.blocks(), [&](const BasicBlock *u) { return L.contains(u); }))
+          xphis.push_back(&P);
+      SmallVector<PHINode *, 4> nps;
+      for (PHINode *P : xphis) {
+        PHINode *np = PHINode::Create(isQ(P) ? handleTy(Cx) : P->getType(), 2, P->getName(), T->begin());
+        nps.push_back(np);
+      }
+      exitIndex = PHINode::Create(Type::getInt32Ty(Cx), 2, "exit", T->begin());
+      unsigned k = 0;
+      for (BasicBlock *u : L.blocks()) {
+        if (!is_contained(successors(u), exitB))
+          continue;
+        auto ef = edgeFrom.find({u, exitB});
+        if (ef == edgeFrom.end())
+          internalError("loops-classical: an exit edge the walk did not make", u->getTerminator());
+        BasicBlock *from = ef->second, *Eb = newBlock();
+        from->getTerminator()->replaceSuccessorWith(T, Eb);
+        ctx.B().SetInsertPoint(Eb);
+        for (unsigned j = 0; j < xphis.size(); ++j) {
+          Operand o = ctx.operand(xphis[j]->getIncomingValueForBlock(u));
+          if (!isQ(xphis[j])) {
+            if (o.handle)
+              internalError("loops-classical: a classical exit phi with a rail incoming", xphis[j]);
+            nps[j]->addIncoming(o.v, Eb);
+            continue;
+          }
+          RailType w = railOf(xphis[j]->getType());
+          CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                                     {o.handle ? Constant::getNullValue(irTypeOf(Cx, w)) : o.v});
+          if (o.handle)
+            U.noteUse(U.idOf(o.v), ctx.emitCore(abi::CoreSpec{abi::Core::Copy, w}, {o.v, f}));
+          nps[j]->addIncoming(f, Eb);
+        }
+        exitIndex->addIncoming(ConstantInt::get(Type::getInt32Ty(Cx), k++), Eb);
+        exitSegs.push_back(from);
+        ctx.B().CreateBr(T);
+      }
+      ctx.B().SetInsertPoint(T);
+      for (unsigned j = 0; j < xphis.size(); ++j) {
+        bool q = isQ(xphis[j]);
+        if (q)
+          U.recordExternal(nps[j], Role::Output);
+        if (ctx.bound(xphis[j]))
+          ctx.rebind(xphis[j], {Operand{nps[j], q}});
+        else
+          ctx.bindFields(xphis[j], {Operand{nps[j], q}});
+      }
+    }
     // cq-fx3s: a value read after the loop whose exit rail is made by a record of the loop (a trip's
     // template, a seed of the entry) is read in place, and the reverse loop is deferred until after its
     // readers (Uncompute::recordDeferred, CR rule 14: 153, 178); any other (an alias of a carried value,
@@ -3108,13 +3181,24 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
   BasicBlock *copyBlock = nullptr;
   BasicBlock *guardBlock = BX.GetInsertBlock();
   {
-    BasicBlock *exitSeg = nullptr;
-    for (BasicBlock *p : predecessors(X)) {
-      if (!region.count(p) || (exitSeg && exitSeg != p))
-        internalError("loops-classical: the loop's exit block is not reached from exactly one segment");
-      exitSeg = p;
+    BasicBlock *start;
+    if (exitIndex) {
+      // cq-j5mq: the reverse starts at the segment of the exit edge taken.
+      start = newBlock();
+      Value *ix = guarded ? carryTo(guardBlock, X, exitIndex, PoisonValue::get(exitIndex->getType()), "exit", resetAt)
+                          : static_cast<Value *>(exitIndex);
+      SwitchInst *sw = SwitchInst::Create(ix, R[segOf.lookup(exitSegs[0])], exitSegs.size() - 1, start);
+      for (unsigned k = 1; k < exitSegs.size(); ++k)
+        sw->addCase(ConstantInt::get(i32, k), R[segOf.lookup(exitSegs[k])]);
+    } else {
+      BasicBlock *exitSeg = nullptr;
+      for (BasicBlock *p : predecessors(X)) {
+        if (!region.count(p) || (exitSeg && exitSeg != p))
+          internalError("loops-classical: the loop's exit block is not reached from exactly one segment");
+        exitSeg = p;
+      }
+      start = R[segOf.lookup(exitSeg)];
     }
-    BasicBlock *start = R[segOf.lookup(exitSeg)];
     if (copyScope != ~0u) {
       // cq-h5uj: the copies of the exit values are undone first (they read the last trip's rails).
       copyBlock = newBlock();
