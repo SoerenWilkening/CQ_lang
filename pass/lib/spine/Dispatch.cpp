@@ -457,10 +457,9 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
   dispatchOne(ctx, I);
   if (!bus::versionChange(ctx, I))
     return;
+  // Where its code begins, also when the lowering branched away from bb. Nothing emitted: nothing changed.
   Instruction *first = prev ? prev->getNextNode() : bb->empty() ? nullptr : &bb->front();
-  // bb may have been left behind (a lowering that branched): the first instruction after prev, or bb's first, is still
-  // where its code begins. Nothing emitted: nothing changed.
-  if (first && (first != &*B.GetInsertPoint() || B.GetInsertBlock() != bb) && !first->isTerminator())
+  if (first)
     ctx.unc().noteVersionChange(first);
 }
 

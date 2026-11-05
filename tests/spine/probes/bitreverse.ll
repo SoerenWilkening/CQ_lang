@@ -1,8 +1,9 @@
 ; cq-jkq8 (CR §1.2, f684858): llvm.bitreverse of a quantum value is its template; rule 6 cleans the dead old
 ; value through bitreverse (an involution). Rule 6 composite updates beyond the affine class (127): brev8's
-; bitreverse(x) ^ x is no bijection (x kept); gf2's (x << 1) ^ x is one, inverted by a QROM of its inverse table.
+; bitreverse(x) ^ x is no bijection (x kept); gf2's (x << 1) ^ x is one rule 6 does not list, so x is kept too (no QROM exists).
+; (Was: inverted by a table of its inverse table.
 ; CHECK brev32: call i32 @cq_template_bitreverse_i32(
-; CHECK gf2: @cqrt_qram_load_i8(
+; CHECK-COUNT gf2: cqrt_copy 0
 ; USERCHECK brev32
 ; USERCHECK brev8
 ; USERCHECK gf2
@@ -21,7 +22,7 @@
 ;     return cq_measure(y);
 ;   }
 ;   /* rule 6 composite update (127) beyond the affine class: y = (x << 1) ^ x is a bijection of x (decided over the
-;      width, inverted by a QROM of its inverse table); bitreverse(x) ^ x above is none (x is kept). */
+;      width, not on rule 6's list, x is kept); bitreverse(x) ^ x above is none (x is kept). */
 ;   unsigned char gf2(unsigned char x0, double th) {
 ;     unsigned char x = x0; cq_theta(&x, th);
 ;     unsigned char y = (unsigned char)(x << 1) ^ x;
