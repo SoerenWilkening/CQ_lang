@@ -304,9 +304,16 @@ def main(argv) -> int:
         libm = libm_decls(linked, bundle, tmp) if bundle else {}
         if bundle and (libm or bundle_needed(linked, bundle, tmp)):
             # Rule 18: a math intrinsic is lifted from the libm body the bundle has; its declaration makes it needed.
-            with open(linked, "a") as f:
-                f.write("".join(libm.values()))
-            run([tool("llvm-link"), "-S", linked, "--only-needed", *bundle, "-o", linked],
+            extra = []
+            if libm:
+                text = Path(linked).read_text()
+                head = "".join(l + "\n" for l in text.splitlines() if l.startswith(("target datalayout", "target triple")))
+                used = ", ".join(f"ptr @{n}" for n in libm)
+                unit = work / "libm.ll"
+                unit.write_text(head + "".join(libm.values()) + f"@llvm.compiler.used = appending global [{len(libm)} x ptr] "
+                                f'[{used}], section "llvm.metadata"\n')
+                extra = [unit]
+            run([tool("llvm-link"), "-S", linked, *extra, "--only-needed", *bundle, "-o", linked],
                 "llvm-link with the injection bundle")
 
         # 3. The pass, reading the module from stdin so the output does not name a temporary path.

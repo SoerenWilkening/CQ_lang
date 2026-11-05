@@ -330,14 +330,21 @@ def _libm_intrinsics(ll_text: str) -> List[Tuple[str, str]]:
 
 
 def bundle_libm_decls(ll_text: str, bundle: Sequence[Path]) -> str:
-    """Declarations that make `--only-needed` link the bundle's body of each libm function an intrinsic of the module
-    stands for (rule 18: lifted from its body whenever the module has one after injection), which no call names."""
+    """One small IR unit, linked before `--only-needed`, that makes it link the bundle's body of each libm function an
+    intrinsic of the module stands for (rule 18: lifted from its body whenever the module has one after injection), which
+    no call names: declarations held by @llvm.compiler.used (llvm-link drops an unused declaration). "" when none."""
     defined = set()
     for b in bundle:
         defined |= set(_bundle_info(Path(b))[0])
     mach = "-apple-" in _triple(ll_text)
     declared = {(a or b).strip('"') for a, b in _DECLARED.findall(ll_text)}
-    return "".join(d for n, d in _libm_intrinsics(ll_text) if ("_" + n if mach else n) in defined and n not in declared)
+    want = [(n, d) for n, d in _libm_intrinsics(ll_text) if ("_" + n if mach else n) in defined and n not in declared]
+    if not want:
+        return ""
+    head = "".join(l + "\n" for l in ll_text.splitlines() if l.startswith(("target datalayout", "target triple")))
+    used = ", ".join(f"ptr @{n}" for n, _ in want)
+    return (head + "".join(d for _, d in want) + f"@llvm.compiler.used = appending global [{len(want)} x ptr] [{used}], "
+            'section "llvm.metadata"\n')
 
 
 def bundle_for(ll_text: str) -> List[Path]:
@@ -516,13 +523,16 @@ def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[in
         callees = drivers.effect_callees(text, frozenset(defined) | drivers.corpus_roots())
         renamed = _k2_sites(drivers.rename_effects(text, callees), text)
         decls = "".join(f"declare {r} @{drivers.FX_PREFIX}{c}({p})\n" for c, (_, r, p) in callees.items())
-        (d / "prog.ll").write_text(renamed + decls + (bundle_libm_decls(text, bundle) if bundle else ""))
+        (d / "prog.ll").write_text(renamed + decls)
         (d / "fx.ll").write_text(f'target triple = "{triple}"\n' + drivers.effect_wrappers_ir(callees))
         _run([_tool("clang"), "-target", triple, "-O0", "-Wno-override-module", "-c", str(d / "fx.ll"), "-o", str(d / "fx.o")],
              "compiling the host calls' wrappers")
         _run([_tool("llvm-as"), str(d / "prog.ll"), "-o", str(linked)], "llvm-as")
         if bundle:
-            _run([_tool("llvm-link"), str(linked), "--only-needed", *map(str, bundle), "-o", str(linked)],
+            libm = bundle_libm_decls(text, bundle)
+            (d / "libm.ll").write_text(libm)
+            _run([_tool("llvm-link"), str(linked), *([str(d / "libm.ll")] if libm else []), "--only-needed",
+                  *map(str, bundle), "-o", str(linked)],
                  "llvm-link with the injection bundle")
         und = _run([_tool("llvm-nm"), "--undefined-only", "--format=just-symbols", str(linked)],
                    "llvm-nm").stdout.split()
