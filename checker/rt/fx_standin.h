@@ -41,7 +41,8 @@ static const cq_fx_ent cq_fx_table[] = {
     {"getchar", 'I', ""},   {"fwrite", 'O', "Bnnf"}, {"write", 'O', "fBn"}, {"puts", 'O', "s"},    {"fputs", 'O', "sf"},
     {"fprintf", 'O', "fF"}, {"perror", 'O', "s"},   {"putchar", 'O', "-"}, {"putc", 'O', "-f"},   {"fputc", 'O', "-f"},
     {"fflush", 'O', "f"},   {"fclose", 'O', "f"},   {"fopen", 'O', "pp"},  {"open", 'O', "p"},     {"close", 'O', "f"},
-    {"lseek", 'O', "f"},    {"remove", 'O', "p"},   {"unlink", 'O', "p"},  {"rename", 'O', "pp"},
+    {"lseek", 'O', "f--"},  {"remove", 'O', "p"},   {"unlink", 'O', "p"},  {"rename", 'O', "pp"},
+    {"raise", 'O', "-"},
 };
 
 static inline const cq_fx_ent *cq_fx_find(const char *name) {
@@ -49,6 +50,13 @@ static inline const cq_fx_ent *cq_fx_find(const char *name) {
   for (size_t i = 0; i < sizeof cq_fx_table / sizeof cq_fx_table[0]; ++i)
     if (!strcmp(cq_fx_table[i].name, name)) return &cq_fx_table[i];
   return NULL;
+}
+
+/* How many arguments a call of this callee takes, -1 when no fixed number does (printf-family's varargs, open's
+ * mode): one role per argument otherwise (rulings 2 C, cq-kzfv: the split of a tape's waiting fields). */
+static inline int cq_fx_arity(const cq_fx_ent *e) {
+  if (strchr(e->roles, 'F') || !strcmp(e->name, "open")) return -1;
+  return (int)strlen(e->roles);
 }
 
 /* The hash after the name; a null name (a host address) mixes no name. */

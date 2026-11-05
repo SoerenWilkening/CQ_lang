@@ -64,6 +64,7 @@ int cqe__measured(int32_t h);
 void cqe__setrole(int32_t h, int role);
 void cqe__set_busz(int32_t h);
 void cqe__set_store_kept(int32_t h);
+void cqe__set_load_copy(int32_t h);
 void cqe__mark_written(int32_t h);
 void cqe__add_dep(int32_t h, int32_t src);
 int cqe__val_iszero(const cqe_val *v);
@@ -389,6 +390,7 @@ static int op_load_forward(const cqe_tname *t, const cqe_val *args, int nargs, c
   int32_t h = cqe__new(t->w, &v, x.known && cknown, 0);
   add_deps(h, &x);
   load_note(h, x.addr, x.fire);
+  cqe__set_load_copy(h); /* rule 5: never cleaned by rule 6, so no rule-6 image (core.c, cqe__r6_unc) */
   log_bus(&x, "load", !anyq, h, cqe__val(h), 0);
   cqe__val_free(&v);
   out->w[0] = (uint32_t)h;
@@ -634,7 +636,22 @@ static void tape_qstore(uint64_t addr, uint8_t byte, int write) {
   cqe__val_free(&disp);
 }
 
-static const cqe_tape_bus tape_bus = {tape_peek, tape_qstore};
+/* The classical store of an INPUT entry's byte (ABI §1.10; rulings 2 D, cq-ytux): like any store whose address, control
+ * and content are classical-valued it writes host bytes and the cell is HOST, a QUANTUM cell too, and the slot takes what
+ * it displaced. It is the same write as op_qram_store's, one byte long. */
+static void tape_cstore(uint64_t addr, uint8_t byte) {
+  uint8_t old = 0;
+  int anyq = 0;
+  int known = cells_read(addr, 1, &old, &anyq);
+  cells_write(addr, 1, &byte, 1, 1);
+  cqe_val disp;
+  cqe__val_init(&disp, 8, 'i');
+  disp.w[0] = old;
+  cqe__setrole(cqe__new("i8", &disp, known, 0), ROLE_TAPE_SLOT);
+  cqe__val_free(&disp);
+}
+
+static const cqe_tape_bus tape_bus = {tape_peek, tape_qstore, tape_cstore};
 
 /* ---- end of shot -------------------------------------------------------------------------- */
 

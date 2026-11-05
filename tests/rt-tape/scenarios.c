@@ -60,7 +60,15 @@ static void td_qstore(uint64_t a, uint8_t b, int write) {
   cqe_log(l);
 }
 static void td_set(const void *p, uint8_t b) { int i = ncells++; cells[i].a = (uint64_t)(uintptr_t)p; cells[i].b = b; }
-static const cqe_tape_bus td_bus = {td_peek, td_qstore};
+static void td_cstore(uint64_t a, uint8_t b) {
+  int i = td_find(a);
+  if (i >= 0) cells[i] = cells[--ncells];     /* a classical store: the cell is HOST */
+  *(uint8_t *)(uintptr_t)a = b;
+  char l[128];
+  snprintf(l, sizeof l, "{\"ev\":\"cstore\",\"off\":%llu,\"b\":%d}", (unsigned long long)(a & 0xfff), b);
+  cqe_log(l);
+}
+static const cqe_tape_bus td_bus = {td_peek, td_qstore, td_cstore};
 int __cqe_fx_remove(const char *);
 int __cqe_fx_raise(int);
 
@@ -182,6 +190,7 @@ int main(int argc, char **argv) {
     eff(c, t, "putchar");
     fake_free(c);
   } else if (!strcmp(s, "abort_input")) {   /* an abort reading 1: outputs dead, input still at the call */
+    cqe_tape_set_bus(&td_bus);
     int32_t t = alloc();
     char b[8] = {0};
     ab(i1(1));
@@ -197,7 +206,8 @@ int main(int argc, char **argv) {
     ab(q1(0));
     li32(t, 65);
     eff(i1(1), t, "putchar");
-  } else if (!strcmp(s, "input_classical")) { /* behind a deferred output: at the call, host write */
+  } else if (!strcmp(s, "input_classical")) { /* behind a deferred output: at the call, a classical bus store */
+    cqe_tape_set_bus(&td_bus);
     int32_t t = alloc();
     char b[8] = "ZZZZZZZ";
     fmt(t, "%d\n");
@@ -264,6 +274,7 @@ int main(int argc, char **argv) {
     int32_t r = eff64(i1(1), t, "fgets");
     if (cqe_rail(r)->w[0] != 0 || b[0] != 'Z') cqe_fail("TEST: the deferred input acted");
   } else if (!strcmp(s, "read_fread_getc")) {
+    cqe_tape_set_bus(&td_bus);
     int32_t t = alloc();
     char a[32], b[32];
     memset(a, 'Z', 32), memset(b, 'Z', 32);
@@ -339,6 +350,32 @@ int main(int argc, char **argv) {
     fmt(t, "x\n");
     li32(t, 1);
     fmt(t, "y\n");
+  } else if (!strcmp(s, "excess_effect")) { /* rulings 2 C: printf("x\\n", 1, 2); raise(3): known arity, the last field is its */
+    int32_t t = alloc();
+    fmt(t, "x\n");
+    li32(t, 1);
+    li32(t, 2);
+    li32(t, 3);
+    eff(i1(1), t, "raise");
+  } else if (!strcmp(s, "excess_none")) {   /* printf("x\\n"); raise(3): nothing to split */
+    int32_t t = alloc();
+    fmt(t, "x\n");
+    li32(t, 3);
+    eff(i1(1), t, "raise");
+  } else if (!strcmp(s, "excess_unknown")) { /* an effect of no known arity behind a format: all its fields, marked */
+    int32_t t = alloc();
+    fmt(t, "x\n");
+    li32(t, 1);
+    li32(t, 2);
+    eff(i1(1), t, "frob");
+    li32(t, 5);
+    eff(i1(1), t, "frob");                  /* behind an effect entry the fields are its own: no mark */
+  } else if (!strcmp(s, "excess_variadic")) { /* fprintf has no fixed arity: no split, marked */
+    int32_t t = alloc();
+    fmt(t, "x\n");
+    li64(t, (uint64_t)(uintptr_t)stdout);
+    li64(t, (uint64_t)(uintptr_t)"y\n");
+    eff(i1(1), t, "fprintf");
   } else if (!strcmp(s, "retired")) {       /* the str family is gone */
     alloc();
     if (fake_rc("tape_write", "tape_write_str") != 1 || fake_rc("tape_write", "tape_str_begin") != 1 ||

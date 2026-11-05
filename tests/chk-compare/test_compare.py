@@ -582,7 +582,7 @@ class LeakRule(unittest.TestCase):
         return dict(keep(h, v, w, role), known=known)
 
     def test_kept_roles_pass(self):
-        for role in ("measured", "abort", "tape", "tape_slot", "store_kept", "overtaken", "kept_entangled"):
+        for role in ("measured", "abort", "tape", "tape_slot", "store_kept", "overtaken", "kept_entangled", "rule6_image"):
             c = compare(self.ours(lambda a, b: [self.leak(9, a ^ b, "i8", role)]), self.c_side(), QKEY, "c")
             self.assertTrue(c.equal, (role, c.reasons))
 
@@ -1602,6 +1602,22 @@ class HostOutput(unittest.TestCase):
     def test_equal_passes(self):
         self.check(self.ours(), self.ours(side="r"), "ref", True)
         self.check(self.ours(), self.c(), "c", True)
+
+    def test_split_open(self):
+        # rulings 2 C (cq-kzfv): an effect of no known arity behind a format entry takes every waiting field. Equal to
+        # the C call: compared as usual. More fields than the C call: the ABI's gap, an internal error, never a verdict.
+        arg = lambda v: {"w": "i32", "v": hex(v)}
+        c_fx = lambda s: [{"name": "frob", "args": [arg(2)]}]
+        fine = lambda s: [{"name": "frob", "args": [arg(2)], "split_open": True}]
+        self.check(self.ours(fx=fine), self.c(fx=c_fx), "c", True)
+        wrong = lambda s: [{"name": "frob", "args": [arg(3)], "split_open": True}]
+        self.check(self.ours(fx=wrong), self.c(fx=c_fx), "c", False, "host effects differ")
+        excess = lambda s: [{"name": "frob", "args": [arg(1), arg(2)], "split_open": True}]
+        from cqcheck.compare import CompareError
+        with self.assertRaisesRegex(CompareError, "SPEC_ISSUES: ABI 1.11"):
+            compare(self.ours(fx=excess), self.c(fx=c_fx), QKEY, "c")
+        unmarked = lambda s: [{"name": "frob", "args": [arg(1), arg(2)]}]
+        self.check(self.ours(fx=unmarked), self.c(fx=c_fx), "c", False, "host effects differ")
 
     def test_stdout_differs(self):
         # m5/47: printf of a literal instead of the register

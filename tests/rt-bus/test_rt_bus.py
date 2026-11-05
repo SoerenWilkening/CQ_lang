@@ -212,6 +212,18 @@ class Scenarios(unittest.TestCase):
         self.assertEqual(next(e for e in ev0 if e["ev"] == "out_mem")["v"], "0xa3a2a1a0")   # kept
         self.assertEqual({r["v"] for r in live(ev0) if r["role"] == "tape_slot"}, {"0x0"})
 
+    def test_classical_input_over_quantum_cells(self):
+        # rulings 2 D (cq-ytux): an all-classical fgets overwrites QUANTUM cells: they read the input, HOST again
+        ev = self.ok("effect_cstore")
+        self.assertEqual(cells(ev), [])
+        out = int(next(e for e in ev if e["ev"] == "out_mem")["v"], 16)
+        self.assertEqual(out >> 24, 0)                # the NUL
+        self.assertTrue(all(0x61 <= (out >> s) & 0xff <= 0x7a for s in (0, 8, 16)), hex(out))
+        slots = [r for r in live(ev) if r["role"] == "tape_slot"]
+        # the store's (the host bytes it displaced), then one per byte fgets stored, holding the quantum bytes
+        self.assertEqual([r["v"] for r in slots], ["0xb3b2b1b0", "0x88", "0x77", "0x66", "0x55"])
+        self.assertTrue(all(not r["known"] for r in slots[1:]), slots)
+
     def test_invert_region(self):
         ev = self.ok("invert")
         self.assertEqual([e["op"] for e in bus(ev)][:2], ["swap", "swap"])

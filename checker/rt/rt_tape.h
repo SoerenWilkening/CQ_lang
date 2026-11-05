@@ -1,5 +1,6 @@
 /* rt_tape.h: what the tape family needs of the bus (BACKEND_ABI §1.11: capture and the INPUT rows).
- * rt_bus.c registers it from a constructor. With no bus registered every cell is HOST. */
+ * rt_bus.c registers it from a constructor. With no bus registered every cell is HOST and an INPUT entry's store
+ * is a violation. */
 #ifndef CQE_RT_TAPE_H_
 #define CQE_RT_TAPE_H_
 
@@ -15,6 +16,10 @@ typedef struct {
    * its value and the slot stays 0. The hook sets the slot rail's exit role itself: the dispatcher sets roles
    * only for rails made under a qram op. */
   void (*qstore)(uint64_t addr, uint8_t byte, int write);
+  /* The same store with address, control and content classical-valued (§1.10 "A write the backend itself makes
+   * for an effect entry (§1.11) is a bus store"; rulings 2 D, cq-ytux): the cell holds byte, HOST if it can be
+   * written, whatever it was; a fresh kept tape slot takes the displaced content, known when the cell was. */
+  void (*cstore)(uint64_t addr, uint8_t byte);
 } cqe_tape_bus;
 
 void cqe_tape_set_bus(const cqe_tape_bus *bus);

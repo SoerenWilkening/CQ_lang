@@ -27,7 +27,8 @@
  * Exit roles (event "exit", field "role" of each live rail): measured, abort, tape (an effect entry's result
  * rail too, rt_tape.c), tape_slot (a bus store's slot, rule 5), overtaken (a load copy un-copied
  * and not freed, rule 5), frozen (rotated, not measured, or a rule-6 image carrying a rotated register's
- * content: cqe__carry, cq-qhow), store_kept (a value or control rail of a bus store still live, rule 5
+ * content: cqe__carry, cq-qhow), rule6_image (an operand of a rule-6 clean's inverse, frozen or not: cqe__r6_unc,
+ * cq-o9mx), store_kept (a value or control rail of a bus store still live, rule 5
  * sentence 3), kept_entangled (cq-arch A4: a rail one of whose direct sources received
  * a non-diagonal gate or a measurement after the rail was written), fenv_mode (a rail an _rmq template took as its
  * rounding mode; rule 23), fenv_flags (an _exc template's result or a rail written from one: the
@@ -401,6 +402,11 @@ typedef struct {
   uint8_t store_kept; /* the value or control rail of a bus store (rule 5 sentence 3) */
   uint8_t fenv;  /* cq-tt2j, rule 23: 1 flags lineage (an _exc result or written from one), 2 a mode operand */
   uint8_t image; /* cq-qhow: carries a frozen register's content (cqe__carry): a rule-6 image, FROZEN */
+  uint8_t r6;    /* cq-o9mx: an operand a rule-6 clean's inverse read: a rule-6 image, kept (cqe__r6_unc) */
+  uint8_t load_copy; /* a bus load's copy: rule 5, "A load copy is never cleaned by rule 6", so never an image */
+  int32_t r6_old;    /* cq-o9mx: the inverse t of a rule-6 clean: the dead rail its copy left at known |0> */
+  int32_t *r6_ops;   /* the old rail of a rule-6 clean whose t's _unc ran first: t's operands, till its free */
+  uint32_t r6_nops;
   uint64_t t_create, t_write, t_nd, t_meas;                       /* event clock; 0 = never */
   uint64_t ry_t, ry_ang;  /* cq-3o3v: the last firing Ry on the rail (clock after it, angle bits) */
   uint64_t *ry_pre, *ry_post; /* its target's value before and after it (v.nw words each) */
@@ -575,6 +581,50 @@ void cqe__carry(int32_t into, const int32_t *srcs, int n) {
       rails[srcs[i]].image = 1;
 }
 
+/* CR rule 5 sentence 1 ("A consumer that is never uncomputed (a measured, returned, kept or carried rail, a rule-6
+ * image) has no `_unc` to wait for") and rule 6; rulings 2 A (cq-o9mx). Rule 6 cleans a dead rail y against its image:
+ * t = g(r, ...); y ^= t (copy, leaving y at known |0>); t _unc against r, ...; free(y). The rails t's _unc reads are
+ * the clean's images, frozen or not: the rail's content now lives only there, and a live one at exit is a rule-named
+ * kept rail (role rule6_image), never a leak. The order of the _unc and free(y) is the lowering's, so whichever comes
+ * second marks. t must be made after y's last write: un-copying a copy of t (copy(t, c); copy(t, c)) cleans nothing,
+ * and a rail merely derived from a rotated register or a QUANTUM cell is never marked. Over-approximation, as in
+ * cqe__carry: every operand of the inverse is marked. A load copy never is (rule 5). A forgotten _unc of a rail that
+ * was only an ordinary template result stays a leak. */
+static void r6_mark(const int32_t *ops, uint32_t n) {
+  for (uint32_t i = 0; i < n; ++i)
+    if (!rails[ops[i]].measured && !rails[ops[i]].load_copy)
+      rails[ops[i]].r6 = 1;
+}
+
+void cqe__set_load_copy(int32_t h) { rails[h].load_copy = 1; }
+
+/* Before the XOR of copy(t, y): may this copy be a rule-6 clean of y? */
+int cqe__r6_before(int32_t t, int32_t y) { return rails[t].t_create > rails[y].t_write; }
+
+/* After it, and the known-basis rule: y reads known |0>, so t is the inverse of a rule-6 clean. */
+void cqe__r6_cleaned(int32_t t, int32_t y) {
+  if (cqe__val_iszero(&rails[y].v) && rails[y].known)
+    rails[t].r6_old = y;
+}
+
+/* t's _unc, reading the rails ops. */
+void cqe__r6_unc(int32_t t, const int32_t *ops, int n) {
+  int32_t y = rails[t].r6_old;
+  if (!y)
+    return;
+  rails[t].r6_old = 0;
+  if (!rails[y].live) {
+    r6_mark(ops, (uint32_t)n);
+    return;
+  }
+  int32_t *keep = realloc(rails[y].r6_ops, (size_t)(n ? n : 1) * sizeof *keep);
+  if (!keep)
+    abort();
+  memcpy(keep, ops, (size_t)n * sizeof *keep);
+  rails[y].r6_ops = keep;
+  rails[y].r6_nops = (uint32_t)n;
+}
+
 void cqe__add_dep(int32_t h, int32_t src) {
   rail_t *r = &rails[h];
   r->fenv |= rails[src].fenv & 1; /* cq-tt2j: a rail written from the flags is flags (rule 23 lineage) */
@@ -592,6 +642,11 @@ void cqe__add_dep(int32_t h, int32_t src) {
 
 void cqe__free(int32_t h) {
   rails[h].live = 0;
+  if (rails[h].r6_ops) {
+    r6_mark(rails[h].r6_ops, rails[h].r6_nops);
+    free(rails[h].r6_ops);
+    rails[h].r6_ops = NULL;
+  }
   /* a freed rail's role is never asked (the exit event lists live rails); its dependency list goes
    * back to the sample arena's free lists for the next rail (cq-8m6v). Its event times stay: a live
    * rail's role reads them. */
@@ -652,6 +707,8 @@ static const char *exit_role(int32_t h) {
     return "fenv_flags";
   if (r->seed && !r->written)
     return "seed";
+  if (r->r6)
+    return "rule6_image";
   return "garbage";
 }
 

@@ -576,6 +576,30 @@ static void effect_qstore(int cv) {
 static void effect_qstore_1(void) { effect_qstore(1); }
 static void effect_qstore_0(void) { effect_qstore(0); }
 
+/* An all-classical INPUT entry over QUANTUM cells (ABI §1.10, rulings 2 D, cq-ytux): its bytes are classical bus stores: the
+ * cells are HOST again and hold the input as C's buffer does, the quantum content they held goes to tape slots. */
+static unsigned char cbuf[8] = {0xB0, 0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6, 0xB7};
+static void effect_cstore(void) {
+  int32_t m = __cq_mem();
+  int32_t q = seed32(0x55667788);
+  ry32(q);
+  STOREHL32(m, cbuf, q);
+  CHECK(cbuf[0] == 0xB0); /* no host write yet */
+  int32_t t = (int32_t)callv("cqrt_tape_alloc", "i32|", 0);
+  C2("cqrt_tape_write_i64_lit", "void|i32,i64", t, A(cbuf));
+  C2("cqrt_tape_write_i32_lit", "void|i32,i32", t, 4);
+  C2("cqrt_tape_write_i64_lit", "void|i32,i64", t, 0x1000);
+  int32_t c = seed1(1);
+  C3("cqrt_tape_effect_i64_controlled", "i32|i32,i32,ptr", c, t, A("fgets"));
+  CHECK(cbuf[0] >= 'a' && cbuf[0] <= 'z' && cbuf[2] >= 'a' && cbuf[2] <= 'z' && cbuf[3] == 0); /* host bytes */
+  CHECK(cbuf[4] == 0xB4);
+  int32_t h = LOADHL32(m, cbuf);
+  CHECK(val(h) == (uint32_t)(cbuf[0] | cbuf[1] << 8 | cbuf[2] << 16)); /* the load reads the input, a rail of known bytes */
+  UNCHL32(h, m, cbuf);
+  fr(h);
+  __cqe_out_mem("cbuf", A(cbuf), 4);
+}
+
 int main(int argc, char **argv) {
 #define S(n) {#n, n}
   static const struct { const char *name; void (*fn)(void); } sc[] = {
@@ -583,7 +607,7 @@ int main(int argc, char **argv) {
       S(overtaken_freed), S(roles), S(v_rotated_copy_unc), S(v_measured_copy_unc), S(v_unc_address), S(v_dirty_load_free),
       S(v_second_bus), S(v_bad_bus), S(v_no_bus), S(v_sized_bus), S(v_other_width_bus), S(v_addr_width), S(v_value_width), S(v_store_unc),
       S(v_swap_alias), S(v_retired), S(widths), S(alloc), S(clones), S(clone_bad_kind), S(shots), S(invert),
-      S(effect_qstore_1), S(effect_qstore_0),
+      S(effect_qstore_1), S(effect_qstore_0), S(effect_cstore),
   };
   if (argc != 2)
     return 2;

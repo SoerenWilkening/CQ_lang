@@ -1169,7 +1169,10 @@ def _fx_arg(f: dict) -> dict:
 def _fx_event(e: dict) -> dict:
     """One {"ev":"effect"} line (rt_tape.c's entry object, host_fx.c's and fx_call.h's direct call) as
     compare reads it: what the C program does at this call."""
-    return {"name": e.get("name"), "args": [_fx_arg(a) for a in e.get("fields", e.get("args", []))]}
+    out = {"name": e.get("name"), "args": [_fx_arg(a) for a in e.get("fields", e.get("args", []))]}
+    if e.get("split_open"):
+        out["split_open"] = True   # rt_tape.c: no boundary known behind a format entry (compare._split_gap)
+    return out
 
 
 def _effects_in_order(lines: List[dict]) -> List[dict]:

@@ -1890,7 +1890,8 @@ def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult], ended: Sequence[
 #             a bus store's tape slot, its value rail and control rail (tape_slot, store_kept: rule 5
 #             sentence 3), an overtaken load copy (overtaken: rule 5), kept_entangled (a source received
 #             a non-diagonal gate or a measurement after the rail was written: no _unc can clean it;
-#             rules 5 and 6), a result (the handle a handle-returning function returns,
+#             rules 5 and 6), rule6_image (an operand a rule-6 clean's inverse read, frozen or not: rule 5
+#             sentence 1 names a rule-6 image as never uncomputed; rt/core.c cqe__r6_unc, cq-o9mx), a result (the handle a handle-returning function returns,
 #             run.resolve_handle_rets: "result"), a seed that received an Ry (a register whose Ry was
 #             the identity);
 #   rule 23   at most one fenv_flags rail (the final flags rail is an output) and one fenv_mode rail;
@@ -1906,7 +1907,7 @@ def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult], ended: Sequence[
 #   leak      anything else: a rail its sources could still clean, left live.
 LIVE_KNOWN_IS_LEAK = False   # owner ruling 2026-11-01 (cq-tt2j): a live rail in a known basis state is no leak
 _KEPT_ROLES = frozenset(("measured", "frozen", "abort", "tape", "tape_slot", "store_kept", "overtaken",
-                         "kept_entangled"))
+                         "kept_entangled", "rule6_image"))
 _FENV_ROLES = ("fenv_flags", "fenv_mode")
 
 
@@ -2458,10 +2459,24 @@ def _deviated(o: RunResult) -> bool:
     return bool((o.outputs or {}).get("deviation"))
 
 
+def _split_gap(k: str, ofx: List[Any], rfx: List[Any]) -> None:
+    """Rulings 2 C (cq-kzfv): a printf's excess arguments are its format entry's fields and ignored (CR rule 16), but for
+    a callee of no known arity the ABI gives no boundary between them and the effect entry's fields, so rt_tape.c gives
+    the effect all of them. The C call having fewer arguments shows such an excess. The comparison cannot be decided,
+    and neither side is wrong: an internal error, never a FAIL."""
+    for a, b in zip(ofx, rfx):
+        if a.get("split_open") and a.get("name") == b.get("name") and len(a["args"]) > len(b["args"]):
+            raise CompareError(f"cq: unimplemented: sample {k}: effect {a.get('name')!r} takes {len(a['args'])} fields, "
+                               f"its C call {len(b['args'])}: a format entry's excess fields with no boundary before an "
+                               f"effect of unknown arity (SPEC_ISSUES: ABI 1.11 vs rule 16, cq-kzfv)")
+
+
 def _host_output(k: str, o: RunResult, r: RunResult, oracle: str, open_end: bool) -> List[str]:
     """The host-output reasons of one sample (module docstring, Host output)."""
     other = "C" if oracle == "c" else "reference"
     (os_, ofx), (rs, rfx) = _host(o.outputs, "our"), _host(r.outputs, other)
+    if oracle == "c":
+        _split_gap(k, ofx, rfx)
     why = []
     if os_ != rs and not (open_end and os_.startswith(rs)):
         why.append(f"sample {k}: host stdout differs: ours {os_!r} != {other} {rs!r}"

@@ -1221,6 +1221,20 @@ class ExitRoles(unittest.TestCase):
         # handles in creation order: x g r t s (x, t freed)
         self.assertEqual(live, {2: "garbage", 3: "frozen", 5: "garbage"})
 
+    def test_rule6_image(self):
+        # cq-o9mx (rulings 2 A): a rule-6 clean's operands are rule6_image; an ordinary result, the operand of an
+        # un-copied temp and a bus load copy stay garbage (rule6_image.ll names them)
+        spec = DriverSpec(example="chk-core", protos=["int img(int,int)"], setup="",
+                          calls=[{"fn": "img", "args": [{"ctype": "int", "quantum": True},
+                                                        {"ctype": "int", "quantum": False}]}])
+        r = run.run_samples(HERE / "rule6_image.ll", spec, [{"call": 0, "args": [3, 4]}], "ours")[0]
+        self.assertEqual(r.violations, [])
+        roles = sorted((k["v"], k["role"]) for k in r.kept)
+        vals = {"s": 3 + 1 + 3 + 4, "vv": 4, "g": 22, "q": 5, "l": 3, "s2": 3 + 8}
+        self.assertEqual({v: role for v, role in roles if role != "frozen"},
+                         {hex(vals["s"]): "rule6_image", hex(vals["vv"]): "rule6_image", hex(vals["g"]): "garbage",
+                          hex(vals["q"]): "garbage", hex(vals["l"]): "garbage", hex(vals["s2"]): "rule6_image"})
+
     def test_kept_copy_of_a_table_result(self):
         # rule 19: the copy of a candidate's result is kept; an ordinary copy is not
         text = ("define void @f(ptr %fp, i32 %x) {\n  %r = call i32 %fp(i32 %x)\n  %c = call i32 @cqrt_alloc_i32(i32 0)\n"

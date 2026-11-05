@@ -1061,6 +1061,40 @@ declare noalias ptr @malloc(i64)
 """
 
 
+class CellProof(unittest.TestCase):
+    """Rulings 2 B (cq-b0rl): 203's loop leaves when c[i] reads 0, and ext_fill, the drivers.txt body, stores c[2] = 0. On the
+    .O1.ll linked with the body LLVM (MemorySSA, its alias analysis) proves at most 2 header executions. Every other body
+    below, and no body, must prove nothing: a wrong proof would turn a reachable trip target into IMPOSSIBLE."""
+
+    LOOP = "overtaint_kloop:%11"
+
+    def facts(self, bodies):
+        from cqcheck import gaps
+        o1 = sorted(D.example_dir("203_bus_plain_and_overtaint").glob("*.O1.ll"))[0]
+        return gaps.trip_facts(o1, S.LLVM_BIN, S.K + 1, bodies).get(self.LOOP, {})
+
+    def test_203(self):
+        spec = D.read_drivers_txt()["203_bus_plain_and_overtaint"]
+        g = self.facts(spec.protos)
+        self.assertEqual(sorted(g), [3, 4, 5])
+        self.assertTrue(all("finite-structure" in w and "at most 2 header executions" in w for w in g.values()), g)
+
+    def test_no_body_proves_nothing(self):
+        self.assertEqual(self.facts([]), {})
+
+    def test_other_bodies_prove_nothing(self):
+        for body in ("void ext_fill(int*p,int n){p[0]=n;p[1]=n+1;p[2]=n;}",         # no terminator stored
+                     "void ext_fill(int*p,int n){p[0]=n;p[1]=n+1;p[2]=0;p[n]=1;}",  # a later write may hit it
+                     "void ext_fill(int*p,int n){p[0]=n;p[1]=n+1;if(n>9)p[2]=0;}",  # not on every path
+                     "void ext_fill(int*p,int n){p[0]=n;p[1]=n+1;p[2]=7;}"):        # another constant
+            with self.subTest(body):
+                self.assertEqual(self.facts([body]), {})
+
+    def test_a_tighter_body_proves_more(self):
+        g = self.facts(["void ext_fill(int*p,int n){p[0]=n;p[1]=0;p[2]=n;}"])
+        self.assertEqual(sorted(g), [2, 3, 4, 5])
+
+
 class StructureProof(unittest.TestCase):
     """cq-97oj kind 3 (cq-fhoc, cq-w2a-chk-trips): TripFacts.cpp's finite-structure proof. A loop that
     follows a next pointer loaded from its loop-carried pointer, writes no memory and leaves on null
