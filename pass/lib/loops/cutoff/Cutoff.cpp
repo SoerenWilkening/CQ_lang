@@ -53,9 +53,7 @@
 
 #include "Exits.h"
 #include "cq/Aggregates.h"
-#include "cq/FatPtr.h"
-#include "../../fatptr/FatPtrInternal.h"
-#include "cq/Memory.h"
+#include "cq/Bus.h"
 #include "cq/Predicate.h"
 #include "cq/Uncompute.h"
 
@@ -154,18 +152,8 @@ private:
   // are computed too, so their copies carry no poison-generating flags (start + j*step may wrap past
   // the exit trip) and a division by one is not built.
   DenseSet<const Value *> perTrip;
-  DenseMap<const PHINode *, uint64_t> walkedTrip;   // walked pointer phi -> its trip index (cq-9w75)
-  DenseSet<const PHINode *> carriedPtr;             // quantum pointer phi carried as its tag (cq-z6q1, fatptr R2)
   Value *chainEnd = nullptr;                        // the last lowerLoop's last chain predicate (its a_K)
 
-  bool nonClassicalMemory(const Value *p) {
-    if (ctx.T.isFatPointer(p, ctx.S))
-      return true;
-    for (ObjectId o : ctx.T.provenance(p, ctx.S))
-      if (ctx.T.classOf(o) != ObjClass::Classical)
-        return true;
-    return false;
-  }
 
   bool isQ(const Value *v) {
     if (isa<Constant>(v) || isa<BasicBlock>(v) || isa<MetadataAsValue>(v))
@@ -220,12 +208,8 @@ private:
       xa.rails.push_back(w);
       xa.acc.push_back(Operand{seedRail(Constant::getNullValue(t), t), true});
     };
-    if (ty->isPointerTy() && !isCodeAddress(&I)) {
-      xa.ptr = true;
-      seed(RailType{Kind::Int, 32}, Type::getInt32Ty(C));
-      seed(RailType{Kind::Int, 64}, Type::getInt64Ty(C));
-    } else if (ty->isPointerTy()) {
-      seed(RailType{Kind::Int, 64}, Type::getInt64Ty(C));   // rule 13: a code address is an i64
+    if (ty->isPointerTy()) {
+      seed(RailType{Kind::Int, 64}, Type::getInt64Ty(C));   // rule 3: a pointer is an i64
     } else if (ty->isAggregateType() || ty->isVectorTy()) {
       SmallVector<Type *, 8> tys;
       std::function<void(Type *)> leaves = [&](Type *t) {
@@ -255,13 +239,6 @@ private:
   // V's fields in this trip, one per capture rail, at the builder.
   SmallVector<Operand, 4> tripFields(XAcc &xa, function_ref<bool(const BasicBlock *)> inUnit) {
     Type *ty = xa.V->getType();
-    if (xa.ptr) {
-      if (!xa.shaped)
-        fatptr::exitShape(ctx, xa.V, {xa.V}, inUnit);
-      xa.shaped = true;
-      auto [tag, idx] = fatptr::exitFields(ctx, xa.V, inUnit, xa.V);
-      return {tag, idx};
-    }
     if (ty->isAggregateType() || ty->isVectorTy())
       return aggr::flattenResult(ctx, xa.V);
     Operand v = ctx.operand(xa.V);
@@ -272,8 +249,6 @@ private:
   // After the loop: V is its capture rails.
   void bindCapture(const XAcc &xa) {
     ctx.rebind(xa.V, xa.acc);
-    if (xa.ptr)
-      fatptr::bindExit(ctx, xa.V);
   }
 
   // q & flag(p): the conjunction of a trip predicate with a predicate local to the trip.
@@ -647,32 +622,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // select(q_j, rail + step, rail) for that read alone (never used in the loop).
   DenseMap<PHINode *, Operand> exitRail;
   std::vector<Instruction *> regionQReads;   // region form: quantum values read after the loop
-  // TRIP OBJECTS (cq-r7-91, CR rules 14, 20, 21; 91): a malloc-like allocation in the loop whose pointer is
-  // read after the loop is one object per (site, trip). It is read only by phis P of the exit block on the
-  // latch's exit edge (the last trip's object) whose other incomings are null on edges that skip the loop.
-  // P is a fat pointer (fatptr R1) over null and the trip objects: its tag rail starts at null's tag and
-  // advances by select(q_j, tag of trip j, tag); the cells read through P after the loop are captured at the
-  // end of each trip. Built for a slot object (a block of handle cells), in a single-exit body-form K-loop at
-  // the top level, whose site's block dominates the latch and dereferences it (so the object is non-null in
-  // the domain), with P used after the loop only by eq/ne compares with null and loads at constant offsets.
-  struct TripPhi {
-    PHINode *P;
-    Instruction *site;
-    std::vector<std::pair<int64_t, Type *>> cells;   // (byte offset, type) read through P after the loop
-    unsigned tag0 = 0;
-    Operand tag{nullptr, true};
-    std::vector<fatptr::TripObject> objs;
-  };
-  std::vector<TripPhi> tripPhis;
-  auto tripSite = [&](Instruction &I) {
-    auto *CB = dyn_cast<CallBase>(&I);
-    if (!CB || !I.getType()->isPointerTy())
-      return false;
-    Attribute k = CB->getFnAttr(Attribute::AllocKind);
-    if (!k.isValid() || (AllocFnKind(k.getValueAsInt()) & AllocFnKind::Alloc) == AllocFnKind::Unknown)
-      return false;
-    return true;
-  };
   // GENERAL EXIT CAPTURE. The single-exit forms read an exit value from the final state (body form:
   // a header phi's latch incoming; region form: the last region evaluation, the state being frozen
   // once the loop exited). A read they cannot express that way (a body value of a header-tested loop,
@@ -712,45 +661,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     for (Instruction &I : *b) {
       if (multi || general)
         break;   // multi-exit form: read below
-      if (tripSite(I) && any_of(I.users(), [&](const User *u) {
-            return !L.contains(cast<Instruction>(u)->getParent());
-          })) {
-        if (regionForm || !top || !X)
-          unimplemented("loops-cutoff: an allocation of a K-loop read after the loop, outside a top-level single-exit "
-                        "body-form K-loop (rule 14 trip objects) (cq-p45s)",
-                        &I);
-        ArrayRef<ObjectId> objs = ctx.T.provenance(&I, ctx.S);
-        if (objs.size() != 1 || ctx.T.classOf(objs.front()) != ObjClass::Slot)
-          unimplemented("loops-cutoff: a K-loop trip object read after the loop that is not one slot object (a QRAM or "
-                        "host object per trip) (cq-p45s)",
-                        &I);
-        if (!A.DT.dominates(I.getParent(), latch))
-          unimplemented("loops-cutoff: a K-loop trip object whose allocation does not dominate the latch (cq-p45s)", &I);
-        bool deref = false;
-        for (auto it = std::next(I.getIterator()); it != I.getParent()->end(); ++it)
-          if (const Value *ap = getLoadStorePointerOperand(&*it); ap && ap->stripInBoundsConstantOffsets() == &I)
-            deref = true;
-        if (!deref)
-          unimplemented("loops-cutoff: a K-loop trip object not dereferenced in its allocation's block (it may be "
-                        "null: rule 21's tag compare needs distinct non-null objects) (cq-p45s)",
-                        &I);
-        for (const Use &U : I.uses()) {
-          auto *P = dyn_cast<PHINode>(U.getUser());
-          if (L.contains(cast<Instruction>(U.getUser())->getParent()))
-            continue;
-          if (!P || P->getParent() != X || P->getIncomingBlock(U) != latch)
-            unimplemented("loops-cutoff: a K-loop trip object read after the loop other than by a phi of the exit "
-                          "block on the latch's exit edge (cq-p45s)",
-                          &I);
-          if (any_of(tripPhis, [&](const TripPhi &t) { return t.P == P; }))
-            continue;
-          TripPhi tp;
-          tp.P = P;
-          tp.site = &I;
-          tripPhis.push_back(std::move(tp));
-        }
-        continue;
-      }
       bool outside = false;
       for (const Use &U : I.uses()) {
         auto *ui = cast<Instruction>(U.getUser());
@@ -809,62 +719,12 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     exitRebinds.clear();
     exitRail.clear();
     regionQReads.clear();
-    tripPhis.clear();
-  }
-  for (TripPhi &tp : tripPhis) {
-    PHINode *P = tp.P;
-    const Pred &pH = ctx.preds().block(H);
-    if (!isQ(P))
-      unimplemented("loops-cutoff: a phi of K-loop trip objects that taint calls classical (cq-p45s)", P);
-    if (!pH.classicalFactor(ctx.T, ctx.S).isTop())
-      unimplemented("loops-cutoff: a phi of K-loop trip objects of a loop under a classical condition (cq-p45s)", P);
-    for (unsigned i = 0; i < P->getNumIncomingValues(); ++i) {
-      BasicBlock *u = P->getIncomingBlock(i);
-      Value *v = P->getIncomingValue(i);
-      if (L.contains(u)) {
-        if (u != latch || v != tp.site)
-          unimplemented("loops-cutoff: a phi of K-loop trip objects with another incoming from the loop (cq-p45s)", P);
-        continue;
-      }
-      if (!isa<ConstantPointerNull>(v) || !(ctx.preds().edge(u, X) & pH).isBottom())
-        unimplemented("loops-cutoff: a phi of K-loop trip objects whose incoming from outside the loop is not null on "
-                      "an edge that skips the loop (cq-p45s)",
-                      P);
-    }
-    // Its uses after the loop: eq/ne with null, loads at constant offsets (through constant GEPs).
-    const DataLayout &DL = ctx.M.getDataLayout();
-    SmallVector<std::pair<const Value *, int64_t>, 8> work{{P, 0}};
-    while (!work.empty()) {
-      auto [v, off] = work.pop_back_val();
-      for (const User *u : v->users()) {
-        if (auto *ld = dyn_cast<LoadInst>(u); ld && ld->getPointerOperand() == v && ld->isSimple()) {
-          std::pair<int64_t, Type *> c{off, ld->getType()};
-          if (!is_contained(tp.cells, c))
-            tp.cells.push_back(c);
-          continue;
-        }
-        if (auto *cmp = dyn_cast<ICmpInst>(u); cmp && v == P && cmp->isEquality() &&
-                                              (isa<ConstantPointerNull>(cmp->getOperand(0)) ||
-                                               isa<ConstantPointerNull>(cmp->getOperand(1))))
-          continue;
-        if (auto *g = dyn_cast<GEPOperator>(u); g && g->getPointerOperand() == v && g->isInBounds()) {
-          APInt o(64, 0);
-          if (g->accumulateConstantOffset(DL, o)) {
-            work.push_back({g, off + o.getSExtValue()});
-            continue;
-          }
-        }
-        unimplemented("loops-cutoff: a phi of K-loop trip objects used after the loop other than by an eq/ne compare "
-                      "with null or a load at a constant offset (cq-p45s)",
-                      cast<Instruction>(u));
-      }
-    }
   }
   std::vector<std::pair<PHINode *, PHINode *>> exitPhis;   // exit phi -> header phi it denotes
   if (!regionForm && !multi && X) {
     const Pred &pH = ctx.preds().block(H);
     for (PHINode &P : X->phis()) {
-      if (!isQ(&P) || any_of(tripPhis, [&](const TripPhi &t) { return t.P == &P; }))
+      if (!isQ(&P))
         continue;
       PHINode *id = nullptr;
       bool ok = true, foreign = false;
@@ -917,8 +777,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       exitPhis.clear();
       exitRebinds.clear();
       exitRail.clear();
-      tripPhis.clear();
-    }
+      }
   }
 
   // Multi-exit form: what the unit gives C. A value of the loop or the arm is read outside the unit
@@ -943,7 +802,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   if (multi) {
     BasicBlock *C = U.cont;
     auto inUnit = [&](const BasicBlock *b) { return U.contains(L, b); };
-    fatptr::forgetExits(ctx, inUnit);   // lowered again (an outer trip): its pointers are the trips' own
     SmallVector<BasicBlock *, 16> unitBlocks(L.blocks().begin(), L.blocks().end());
     unitBlocks.append(U.arm.begin(), U.arm.end());
     for (BasicBlock *b : unitBlocks)
@@ -970,10 +828,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         continue;
       if (!isQ(&P))
         unimplemented("loops-cutoff: a classical phi joining a multi-exit K-loop's exits (cq-uytx)", &P);
-      const bool ptrPhi = P.getType()->isPointerTy() && !isCodeAddress(&P);
-      if (!ptrPhi && !(P.getType()->isIntegerTy() || P.getType()->isFloatingPointTy()))
+      if (!(P.getType()->isPointerTy() || P.getType()->isIntegerTy() || P.getType()->isFloatingPointTy()))
         unimplemented("loops-cutoff: a non-scalar phi joining a multi-exit K-loop's exits (cq-p45s)", &P);
-      std::vector<std::pair<Pred, const Value *>> outsideP;   // ptrPhi: the outside incomings, by value
       // The value where the unit does not run. Its incomings from outside the unit are taken only where the
       // header is not reached (mutually exclusive with every trip's exit). Several differing ones are rule 9's
       // select chain over their edge predicates, built before the loop. A phi a unit lowered earlier already
@@ -1003,10 +859,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           continue;   // or another loop unit's exit: it selects its value in over this binding when lowered
         }
         Pred e = ctx.preds().edge(u, C);
-        if (ptrPhi) {
-          outsideP.push_back({e, v});
-          continue;
-        }
         auto same = find_if(outside, [&](const std::pair<Pred, Operand> &a) { return a.second.v == ctx.operand(v).v; });
         if (same != outside.end())
           same->first = same->first | e;
@@ -1027,41 +879,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
             continue;
           ctx.addJoinArm(&P, e, P.getIncomingValue(i));
         }
-      if (ptrPhi) {
-        // Rule 21: its fields (tag, idx) where no trip exits: an earlier unit's binding, the outside values' fields
-        // at the exit shape (rule 9's select chain over their edges), or NULL's (0, 0) (CR rule 14's 0).
-        CPhi cp{&P, Operand{}};
-        cp.ptr = true;
-        LLVMContext &Cx = ctx.M.getContext();
-        Type *tys[2] = {Type::getInt32Ty(Cx), Type::getInt64Ty(Cx)};
-        if (earlier) {
-          SmallVector<Operand, 4> fl = ctx.fields(&P);
-          cp.accs.assign(fl.begin(), fl.end());
-        } else if (outsideP.empty()) {
-          for (Type *t : tys)
-            cp.accs.push_back(Operand{seedRail(Constant::getNullValue(t), t), true});
-        } else {
-          SmallVector<const Value *, 4> vals(P.value_op_begin(), P.value_op_end());
-          fatptr::exitShape(ctx, &P, vals, inUnit);
-          cp.shaped = true;
-          std::vector<std::pair<Pred, Operand>> arms[2];
-          for (auto &[e, v] : outsideP) {
-            auto [t, i] = fatptr::exitFields(ctx, v, inUnit, &P);
-            arms[0].push_back({e, t});
-            arms[1].push_back({e, i});
-          }
-          for (unsigned k = 0; k < 2; ++k)
-            cp.accs.push_back(Operand{arms[k].size() == 1 && arms[k][0].second.handle
-                                          ? arms[k][0].second.v
-                                          : selectChain(ctx, arms[k], railOf(tys[k])),
-                                      true});
-        }
-        for (unsigned k = 0; k < cp.accs.size() && k < 2; ++k)
-          if (!cp.accs[k].handle)
-            cp.accs[k] = Operand{seedRail(cp.accs[k].v, tys[k]), true};
-        cphis.push_back(cp);
-        continue;
-      }
       // With no incoming from outside, the value where no trip exits (the cutoff reached first) is 0.
       Operand acc;
       if (earlier)
@@ -1096,7 +913,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // evaluated here where the walker has reached the header). A classical phi with several starts is
   // a classical choice at a classical join the walker owns.
   auto initOf = [&](PHINode *h, bool tag) -> Operand {
-    auto opOf = [&](Value *v) { return tag ? fatptr::carriedTag(ctx, v) : ctx.operand(v); };
+    auto opOf = [&](Value *v) { return ctx.operand(v); };
     if (Value *v = startOf(h))
       return opOf(v);
     if (!isQ(h)) {
@@ -1116,64 +933,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // The state: header phis bound to their initial values (a classical initial value of a quantum phi
   // becomes a seed rail).
   for (PHINode *h : hphis) {
-    // cq-9w75 (CR rule 14 f981c89): a classical pointer into slot, QRAM or fat-pointer memory walked by
-    // a constant step is no operand: memory reads it as start + j*step (LoweringContext::walkedPointer),
-    // the phi bound to the trip index j, a constant of the unrolled trip.
-    if (!isQ(h) && h->getType()->isPointerTy() && nonClassicalMemory(h)) {
-      const Value *nx = h->getIncomingValueForBlock(latch);
-      auto *g = dyn_cast<GEPOperator>(nx);
-      APInt off(64, 0);
-      const Value *start = startOf(h);
-      if (!start)
-        unimplemented("loops-cutoff: a classical pointer into slot or QRAM memory entering a K-loop with several "
-                      "starts (a classical phi at the walker's join before the loop; cq-kldr)",
-                      h);
-      auto *si = dyn_cast<Instruction>(start);
-      bool sameNext = all_of(latches, [&](BasicBlock *l) { return h->getIncomingValueForBlock(l) == nx; });
-      // A loop-invariant pointer (every back edge carries the phi itself or its start) is walked by 0.
-      bool invariant = all_of(latches, [&](BasicBlock *l) {
-        const Value *v = h->getIncomingValueForBlock(l);
-        return v == h || v == start;
-      });
-      if (invariant && !(si && L.contains(si)))
-        g = nullptr;
-      else if (!sameNext || !g || g->getPointerOperand() != h ||
-               !g->accumulateConstantOffset(ctx.M.getDataLayout(), off) || (si && L.contains(si)))
-        unimplemented("loops-cutoff: a pointer into slot or QRAM memory carried by a K-loop that is not walked by a "
-                      "constant step from a loop-invariant start (cq-p45s)",
-                      h);
-      for (const User *u : h->users()) {
-        // A read after the unit is of the walked pointer's exit value: the general exit capture's fat pointer
-        // (cq-h8y6, rules 14, 21), not the trip's address.
-        if (!U.contains(L, cast<Instruction>(u)->getParent()))
-          continue;
-        bool ok = u == g || isa<GetElementPtrInst>(u) || (isa<LoadInst>(u) && cast<LoadInst>(u)->getPointerOperand() == h) ||
-                  (isa<StoreInst>(u) && cast<StoreInst>(u)->getPointerOperand() == h);
-        if (!ok)
-          unimplemented("loops-cutoff: a walked pointer of a K-loop used other than as an address (cq-p45s)", cast<Instruction>(u));
-      }
-      ctx.bindWalkedPointer(h, WalkedPtr{start, off.getSExtValue()});
-      walkedTrip[h] = 0;
-      set(h, Operand{ConstantInt::get(Type::getInt64Ty(ctx.M.getContext()), 0), false});
-      continue;
-    }
-    // cq-z6q1 (CR rules 14, 21; 189): a quantum pointer header phi is carried as its fat pointer's tag rail
-    // (fatptr R2: every incoming at the start of its objects, so idx is the classical 0 and not carried).
-    if (isQ(h) && h->getType()->isPointerTy() && !isCodeAddress(h)) {
-      if (exitRail.count(h) || qind.count(h))
-        unimplemented("loops-cutoff: a K-loop's carried pointer read after the loop (cq-p45s)", h);
-      fatptr::registerCarried(ctx, *h);
-      Operand init = initOf(h, true);
-      if (!init.handle)
-        init = Operand{seedRail(init.v, Type::getInt32Ty(ctx.M.getContext())), true};
-      carriedPtr.insert(h);
-      set(h, init);
-      continue;
-    }
     // A classical pointer header phi is an affine induction (taint, CR rule 14: a walked pointer with a
     // classical start): a classical value in each trip, nothing carried.
     if (!h->getType()->isIntegerTy() && !h->getType()->isFloatingPointTy() && (isQ(h) || !h->getType()->isPointerTy()) &&
-        !(h->getType()->isPointerTy() && isCodeAddress(h)))   // rule 13: a code address is carried as an i64 handle
+        !h->getType()->isPointerTy())   // rule 3: a pointer is carried as an i64 handle
       unimplemented("loops-cutoff: a carried value that is not a scalar (aggregates, pointers) (cq-p45s)", h);
     Operand init = initOf(h, false);
     if (isQ(h) && !init.handle)
@@ -1191,38 +954,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     }
     set(h, init);
   }
-
-  for (TripPhi &tp : tripPhis) {
-    tp.tag0 = fatptr::reserveTripTags(ctx, c);
-    const Value *null = nullptr;
-    for (const Value *v : tp.P->incoming_values())
-      if (isa<ConstantPointerNull>(v))
-        null = v;
-    unsigned t0 = null ? fatptr::rootTag(ctx, null) : 0;
-    tp.tag = Operand{seedRail(ConstantInt::get(Type::getInt32Ty(ctx.M.getContext()), t0),
-                              Type::getInt32Ty(ctx.M.getContext())),
-                     true};
-  }
-  // The end of trip j (q its predicate): each trip object's captured cells, and the tag's advance.
-  auto captureTrips = [&](Value *q, unsigned j) {
-    for (TripPhi &tp : tripPhis) {
-      fatptr::TripObject o;
-      o.tag = tp.tag0 + j;
-      for (auto &[off, ty] : tp.cells) {
-        SmallVector<Operand, 8> h = mem::readSlotCells(ctx, tp.site, ty, 1, *latch->getTerminator(), off);
-        o.cells.push_back(fatptr::TripCell{off, ty, h.front()});
-      }
-      tp.objs.push_back(std::move(o));
-      abi::TemplateSpec sel;
-      sel.op = "select";
-      sel.w = RailType{Kind::Int, 32};
-      sel.shape = "lh";
-      tp.tag = Operand{ctx.emitTemplate(sel, {Operand{q, true},
-                                              Operand{ConstantInt::get(Type::getInt32Ty(ctx.M.getContext()), o.tag), false},
-                                              tp.tag}),
-                       true};
-    }
-  };
 
   DenseSet<const PHINode *> boundThisTrip;
   // Classical reachability inside the current trip (classicalEdge: quantum conditions count as true),
@@ -1357,10 +1088,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         return f;
       }
       for (Type *t : leaves) {
-        if (t->isPointerTy() && !isCodeAddress(v))
-          unimplemented("loops-cutoff: a quantum data pointer read after a classically bounded loop of a K-loop trip "
-                        "(rule 21: the null fat pointer on the loop's classical skip path; cq-p45s)",
-                        at);
         RailType w = railOf(t);
         CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(Cx, w))});
         ctx.unc().recordSeed(z);
@@ -1450,9 +1177,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
             continue;
           }
           if (!classicalTerms) {
-            if (P.getType()->isPointerTy() && !isCodeAddress(&P)) {
-              fatptr::lower(ctx, &P);   // rule 21: a quantum pointer merge is a fat pointer
-            } else if (P.getType()->isAggregateType() || P.getType()->isVectorTy()) {
+            if (P.getType()->isAggregateType() || P.getType()->isVectorTy()) {
               // cq-pfpy: a composite merges field by field (rule 26), bound or rebound per trip.
               bool first = mine.insert(&P).second;
               lowerMergeFields(ctx, P, /*rebind=*/!first);
@@ -1607,40 +1332,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       lowerInsts(b, q, acc);
     }
     for (CPhi &cp : cphis) {
-      if (cp.ptr) {
-        // Rule 21: this trip's (tag, idx) at the exit shape on each unit edge into C, selected into the captures
-        // where the trip exits through it.
-        auto inUnitC = [&](const BasicBlock *b) { return U.contains(L, b); };
-        std::vector<std::pair<Pred, Operand>> arms[2];
-        Pred E = Pred::bottom();
-        for (unsigned i = 0; i < cp.P->getNumIncomingValues(); ++i) {
-          BasicBlock *u = cp.P->getIncomingBlock(i);
-          auto ei = edgeIn(u, U.cont);
-          if (!ei || ei->isBottom())
-            continue;
-          if (!cp.shaped) {
-            SmallVector<const Value *, 4> vals(cp.P->value_op_begin(), cp.P->value_op_end());
-            fatptr::exitShape(ctx, cp.P, vals, inUnitC);
-            cp.shaped = true;
-          }
-          E = E | *ei;
-          auto [t, ix] = fatptr::exitFields(ctx, cp.P->getIncomingValue(i), inUnitC, cp.P);
-          arms[0].push_back({*ei, t});
-          arms[1].push_back({*ei, ix});
-        }
-        if (arms[0].empty())
-          continue;
-        Value *f = conj(q, E, U.cont->getFirstNonPHI());
-        RailType ws[2] = {RailType{Kind::Int, 32}, RailType{Kind::Int, 64}};
-        for (unsigned k = 0; k < 2; ++k) {
-          Value *v = selectChain(ctx, arms[k], ws[k]);
-          abi::TemplateSpec sel;
-          sel.op = "select";
-          sel.w = ws[k];
-          cp.accs[k] = Operand{ctx.emitTemplate(sel, {Operand{f, true}, Operand{v, true}, cp.accs[k]}), true};
-        }
-        continue;
-      }
       std::vector<std::pair<Pred, Operand>> arms;
       Pred E = Pred::bottom();
       for (unsigned i = 0; i < cp.P->getNumIncomingValues(); ++i) {
@@ -1797,7 +1488,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // exit test drives: taint) by the classical select over the classical parts of those ends.
   auto nextOf = [&](PHINode *h) -> Operand {
     auto opOf = [&](Value *v) {
-      return carriedPtr.count(h) ? fatptr::carriedTag(ctx, v) : ctx.operand(v);
+      return ctx.operand(v);
     };
     Value *v0 = h->getIncomingValueForBlock(latches.front());
     if (all_of(latches, [&](BasicBlock *l) { return h->getIncomingValueForBlock(l) == v0; }))
@@ -1824,20 +1515,16 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           e = e | edgeCond(l, s);
       arms.push_back({local.find(l)->second & e, opOf(h->getIncomingValueForBlock(l))});
     }
-    RailType w = carriedPtr.count(h) ? RailType{Kind::Int, 32} : railOf(h->getType());
+    RailType w = railOf(h->getType());
     return Operand{selectChain(ctx, arms, w), true};
   };
   auto advance = [&](Value *q) {
     std::vector<Operand> next;
     for (PHINode *h : hphis)
-      next.push_back(walkedTrip.count(h) ? Operand{nullptr, false} : nextOf(h));
+      next.push_back(nextOf(h));
     for (size_t i = 0; i < hphis.size(); ++i) {
       PHINode *h = hphis[i];
       Operand nx = next[i];
-      if (auto wt = walkedTrip.find(h); wt != walkedTrip.end()) {
-        set(h, Operand{ConstantInt::get(Type::getInt64Ty(ctx.M.getContext()), ++wt->second), false});
-        continue;
-      }
       if (!isQ(h)) {
         if (nx.handle)
           internalError("loops-cutoff: a classical carried value with a rail next value", h);
@@ -1885,7 +1572,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         continue;
       abi::TemplateSpec spec;
       spec.op = "select";
-      spec.w = carriedPtr.count(h) ? RailType{Kind::Int, 32} : railOf(h->getType());   // R2: the tag rail
+      spec.w = railOf(h->getType());   // R2: the tag rail
       std::string shape = std::string(nx.handle ? "h" : "l") + "h";
       spec.shape = shape == "hh" ? "" : shape;
       set(h, Operand{ctx.emitTemplate(spec, {Operand{q, true}, nx, cur}), true});
@@ -1927,7 +1614,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       abortArms(q, all);
       if (multi)
         capture(q, all);
-      captureTrips(q, j);
       // With no exit edge at all (CR rule 14 "No live exit": every path of a trip takes a back edge) the
       // predicate stays q: every trip runs where the loop runs.
       Value *qn = conj(q, cont, latch->getTerminator());
@@ -1975,15 +1661,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       set(P, f);
   }
   for (CPhi &cp : cphis) {
-    if (cp.ptr) {
-      // Rule 21: the fat pointer's two capture rails, its derivations after the loop reading them (bindExit).
-      if (ctx.bound(cp.P))
-        ctx.rebind(cp.P, cp.accs);
-      else
-        ctx.bindFields(cp.P, cp.accs);
-      fatptr::bindExit(ctx, cp.P);
-      continue;
-    }
     if (!top)
       set(cp.P, cp.acc);   // a nested unit: bound once per outer trip
     else if (ctx.bound(cp.P))
@@ -1993,10 +1670,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   }
   for (XAcc &xa : xaccs)
     bindCapture(xa);
-  for (TripPhi &tp : tripPhis) {
-    fatptr::bindTripPointer(ctx, *tp.P, tp.tag, tp.objs);
-    ctx.bindFields(tp.P, {tp.tag});
-  }
 }
 
 } // namespace
@@ -2304,61 +1977,5 @@ unsigned resolveK(const Function &F, const KOptions &KO) {
   return 4;
 }
 
-// Rule 14, recursion with quantum depth (98): one clone per level _d1.._dC (taint publishes them), C =
-// min(K, B); the recursive call at level C is CUT: its value is a fresh |0> rail per quantum scalar field
-// (a seed, rule 7: freed directly once its readers are uncomputed; a classical field is the constant 0), a
-// void cut call is nothing. The overflow predicate "the cut level would recurse once more" is kept iff
-// B > K or no bound is known; with B <= K the call never runs and nothing is kept (98). Kept (cq-ew5z, rules
-// 14 and 19): the cut call's predicate is a term of its level's predicate, which each level returns to the one
-// below as an extra result and the recursion's first outside caller keeps (calls::lowerLifted notes the term
-// before it reaches here; calls::materialize, Walker::emitOverflowReturn).
-void lowerQuantumDepthRecursion(LoweringContext &ctx, llvm::CallBase &CB, unsigned K, std::optional<uint64_t> B) {
-  LLVMContext &C = ctx.M.getContext();
-  (void)K;
-  (void)B;
-  if (CB.getType()->isVoidTy())
-    return;
-  // The scalar leaves of the result (rules 25, 26: struct and array elements, vector lanes).
-  SmallVector<Type *, 4> leaves;
-  std::function<void(Type *)> walk = [&](Type *t) {
-    if (auto *st = dyn_cast<StructType>(t)) {
-      for (Type *e : st->elements())
-        walk(e);
-    } else if (auto *a = dyn_cast<ArrayType>(t)) {
-      for (uint64_t k = 0; k < a->getNumElements(); ++k)
-        walk(a->getElementType());
-    } else if (auto *v = dyn_cast<FixedVectorType>(t)) {
-      for (unsigned k = 0; k < v->getNumElements(); ++k)
-        leaves.push_back(v->getElementType());
-    } else {
-      leaves.push_back(t);
-    }
-  };
-  walk(CB.getType());
-  SmallVector<bool, 4> mask = ctx.T.fieldMask(&CB, ctx.S);
-  if (mask.size() != leaves.size())
-    internalError("loops-cutoff: a cut recursive call whose field mask does not match its leaves", &CB);
-  SmallVector<Operand, 4> fields;
-  for (size_t k = 0; k < leaves.size(); ++k) {
-    Type *t = leaves[k];
-    if (!mask[k]) {
-      fields.push_back(Operand{Constant::getNullValue(t), false});
-      continue;
-    }
-    if (!(t->isIntegerTy() || t->isFloatingPointTy()))
-      unimplemented("loops-cutoff: a cut recursive call with a quantum pointer field (rule 21: the null fat pointer; "
-                    "fatptr has no entry binding a call result; cq-p45s)",
-                    &CB);
-    RailType w = railOf(t);
-    CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(C, w))});
-    ctx.unc().recordSeed(z);
-    fields.push_back(Operand{z, true});
-  }
-  if (leaves.size() == 1 && !isa<StructType>(CB.getType()) && !isa<ArrayType>(CB.getType()) &&
-      !isa<VectorType>(CB.getType()) && fields[0].handle)
-    ctx.bind(&CB, fields[0].v);
-  else
-    ctx.bindFields(&CB, fields);
-}
 
 } // namespace cq::loops

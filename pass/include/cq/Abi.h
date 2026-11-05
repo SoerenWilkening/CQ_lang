@@ -18,27 +18,29 @@ struct TemplateSpec {
   RailType w; std::optional<RailType> to;
   std::string shape;                     // "" = all handles; else one of h/q/l per data operand
   enum Rm : uint8_t { NoRm, RmLit, RmRail } rm = NoRm;
-  bool exc = false, strided = false;     // _exc; qrom_load_<W>_s
+  bool exc = false;     // _exc
 };
 std::string name(const TemplateSpec &, bool unc);
 llvm::FunctionCallee declare(llvm::Module &, const TemplateSpec &, bool unc);
 std::optional<TemplateSpec> parseTemplate(llvm::StringRef symbol, bool *unc);
 enum class Core : uint8_t { Alloc, Free, Measure, Ry, RyQAngle, RzI1, RzQAngle, NotI1, AndI1, OrI1, XorI1,
-  Copy, Xorc, QramAlloc, QramRealloc, QramStore, QramLoad, QramFree, TapeAlloc, TapeFmt, TapeEffect,
-  TapeWrite, TapeWriteLit, TapeWriteStrLit, AbortI1, Push, Pop,
-  TapeStrBegin, TapeStrEnd,   // cq-a63l (CR §1.3, rule 16): tape_str_begin(t), tape_str_end(t)
-  QramSize, /* cq-4lqy (CR §1.3, 2026-11-02): i32 qram_size(a), a classical read, no gate */
-  InvertBegin, InvertEnd,     // cq-4593 (cq-arch 2026-11-02): CR §1.3, rule 17
-  CloneRegister, CloneResolve,   // cq-sd95: CR §1.3 clone_register(fn, clone, ctl, unc), clone_resolve(fn, kind) -> ptr
-  QramAllocHost };   // cq-z7hz (CR §1.3, rule 20, b137e75): i32 qram_alloc_host_<W>(ptr p, i64 n)
+  Copy, Xorc, QramAlloc, QramStore, QramLoad, QramSwap, TapeAlloc, TapeFmt, TapeEffect,
+  TapeEffectW,   // CR §1.3: tape_effect_<W>_controlled(c, t, name) -> r
+  TapeWrite, TapeWriteLit, AbortI1, Push, Pop,
+  InvertBegin, InvertEnd };   // cq-4593 (cq-arch 2026-11-02): CR §1.3, rule 17
+// CR §1.3: the host symbols of the injection bundle's runtime object (rules 16, 19): i32 __cq_mem(),
+// ptr __cq_alloc(i64 size, i64 align), void __cq_clone_register(ptr fn, ptr sig, ptr clone, ptr ctl, ptr unc,
+// ptr ctl_unc), ptr __cq_clone_resolve(ptr fn, i32 kind), i32 __cq_clone_count(ptr sig), ptr __cq_clone_at(ptr sig,
+// i32 i); [65 x i64] @__cq_sig is sigTable.
+enum class Host : uint8_t { Mem, Alloc, CloneRegister, CloneResolve, CloneCount, CloneAt };
+llvm::FunctionCallee declareHost(llvm::Module &, Host);
+llvm::GlobalVariable *sigTable(llvm::Module &);
 struct CoreSpec { Core op; RailType w{}; bool ctl = false, hl = false, unc = false; };
 std::string name(const CoreSpec &);
 llvm::FunctionCallee declare(llvm::Module &, const CoreSpec &);
 std::optional<CoreSpec> parseCore(llvm::StringRef symbol);
 struct CloneSpec { std::string fn; Mask mask; std::vector<uint64_t> bounds;
-                   bool ctl = false, pure = false; unsigned depth = 0; bool unc = false;
-                   // cq-xivx (CR §1.4 INVERSE-UPDATE kind): the cells of `_inv<c>{_<c'>}`, empty for none.
-                   std::vector<unsigned> inv = {}; };
+                   bool ctl = false, pure = false; bool unc = false; };
 std::string name(const CloneSpec &);
 std::optional<CloneSpec> parseClone(llvm::StringRef symbol);
 std::string asmCloneFn(const llvm::InlineAsm &);    // "asm_" + first 16 lowercase hex of sha256(asm string as LLVM spells it, one NUL byte, constraint string)

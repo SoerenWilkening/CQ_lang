@@ -96,9 +96,7 @@
 #include "cq/Abi.h"
 #include "cq/Calls.h"
 #include "cq/Aggregates.h"
-#include "cq/FatPtr.h"
-#include "../../fatptr/FatPtrInternal.h"
-#include "cq/Memory.h"
+#include "cq/Bus.h"
 #include "cq/Predicate.h"
 #include "cq/Switch.h"
 #include "../../spine/SpineInternal.h"
@@ -188,87 +186,6 @@ Value *carryTo(BasicBlock *at, BasicBlock *D, Value *v, Value *dflt, const Twine
   return r;
 }
 
-// CR rule 2 through memory (M3): some load of S's object that S may reach measures the loaded value
-// (directly or through a trunc to i1 / freeze view). mem-slots then gave S's rail Role::Measured at the
-// store (Slots.cpp, measuredThroughMemory, which also requires the load's cell to may-alias S's); this is
-// the same test coarsened to the object (and to overwrites through S's own pointer), so a rail it calls kept may still be garbage there (the reverse
-// then frees it before a read names it: an internal error, never a wrong circuit).
-bool measuredThroughMemory(LoweringContext &ctx, const StoreInst &S) {
-  ArrayRef<ObjectId> mine = ctx.T.provenance(S.getPointerOperand(), ctx.S);
-  auto measures = [](const Value *v) {
-    SmallVector<const Value *, 4> work{v};
-    SmallPtrSet<const Value *, 8> seen{v};
-    while (!work.empty()) {
-      const Value *x = work.pop_back_val();
-      for (const User *u : x->users()) {
-        if (auto *c = dyn_cast<CallInst>(u); c && c->getCalledFunction() &&
-                                             c->getCalledFunction()->getName().starts_with("cq_measure_"))
-          return true;
-        bool view = isa<FreezeInst>(u) || (isa<TruncInst>(u) && cast<TruncInst>(u)->getDestTy()->isIntegerTy(1));
-        if (view && seen.insert(u).second)
-          work.push_back(u);
-      }
-    }
-    return false;
-  };
-  // cq-lvx8: a path from S to the load on which no store through S's own pointer value comes first (while
-  // the path has not re-executed a definition that pointer is computed from). mem-slots kills at every
-  // store of exactly S's cell, a superset of these, so this test keeps every rail mem-slots keeps.
-  SmallPtrSet<const Instruction *, 8> defs;
-  {
-    SmallVector<const Value *, 8> w{S.getPointerOperand()};
-    while (!w.empty()) {
-      const Value *v = w.pop_back_val();
-      auto *I = dyn_cast<Instruction>(v);
-      if (!I || !defs.insert(I).second)
-        continue;
-      if (isa<GetElementPtrInst>(I) || isa<CastInst>(I) || isa<BinaryOperator>(I))
-        for (const Value *o : I->operands())
-          w.push_back(o);
-    }
-  }
-  auto hit = [&](const Instruction &X) {
-    auto *L = dyn_cast<LoadInst>(&X);
-    if (!L || !L->getPointerOperand()->getType()->isPointerTy())
-      return false;
-    bool shared = false;
-    for (ObjectId o : ctx.T.provenance(L->getPointerOperand(), ctx.S))
-      shared |= is_contained(mine, o);
-    return shared && measures(L);
-  };
-  auto kill = [&](const Instruction &X) {
-    auto *so = dyn_cast<StoreInst>(&X);
-    return so && so != &S && so->getPointerOperand() == S.getPointerOperand() && !so->isVolatile() &&
-           !so->isAtomic() && so->getValueOperand()->getType() == S.getValueOperand()->getType();
-  };
-  SmallVector<std::tuple<const BasicBlock *, BasicBlock::const_iterator, bool>, 16> work;
-  std::set<std::pair<const BasicBlock *, bool>> seen;
-  work.push_back({S.getParent(), std::next(S.getIterator()), true});
-  while (!work.empty()) {
-    auto [bb, it, fresh] = work.pop_back_val();
-    bool stop = false;
-    for (; it != bb->end(); ++it) {
-      if (&*it == &S) {
-        stop = true;
-        break;
-      }
-      if (defs.count(&*it))
-        fresh = false;
-      if (hit(*it))
-        return true;
-      if (fresh && kill(*it)) {
-        stop = true;
-        break;
-      }
-    }
-    if (stop)
-      continue;
-    for (const BasicBlock *n : successors(bb))
-      if (seen.insert({n, fresh}).second)
-        work.push_back({n, n->begin(), fresh});
-  }
-  return false;
-}
 
 bool samePred(const Pred &a, const Pred &b) { return (a & !b).isBottom() && (b & !a).isBottom(); }
 
@@ -468,29 +385,6 @@ private:
     if (isa<Constant>(v) || isa<BasicBlock>(v) || isa<MetadataAsValue>(v))
       return false;
     return ctx.T.isQuantum(v, ctx.S);
-  }
-  // Rule 14 (affine induction, cq-e6ky; as loops-cutoff's cq-9w75): a classical header phi pointing into slot or
-  // QRAM memory, walked by a constant step from a start outside the loop, is no operand of its own (address
-  // arithmetic into such memory is never emitted, rules 20, 21): the loop carries its trip index j (an i64 from
-  // 0, one more per trip) and memory reads the pointer as start + j*step (LoweringContext::walkedPointer).
-  std::optional<std::pair<const Value *, int64_t>> walkedStep(const Loop *L, PHINode &p) {
-    if (!L || L->getHeader() != p.getParent() || !p.getType()->isPointerTy() || isQ(&p) ||
-        p.getNumIncomingValues() != 2 || isCodeAddress(&p) || !L->getLoopLatch())
-      return std::nullopt;
-    bool nonClassical = ctx.T.isFatPointer(&p, ctx.S);
-    for (ObjectId o : ctx.T.provenance(&p, ctx.S))
-      nonClassical |= ctx.T.classOf(o) != ObjClass::Classical;
-    if (!nonClassical)
-      return std::nullopt;
-    auto *g = dyn_cast<GEPOperator>(p.getIncomingValueForBlock(L->getLoopLatch()));
-    const DataLayout &DL = ctx.M.getDataLayout();
-    APInt off(DL.getIndexTypeSizeInBits(p.getType()), 0);
-    const Value *start = p.getIncomingValue(p.getIncomingBlock(0) == L->getLoopLatch() ? 1 : 0);
-    auto *si = dyn_cast<Instruction>(start);
-    if (!g || g->getPointerOperand() != &p || !g->accumulateConstantOffset(DL, off) || off.isZero() ||
-        (si && L->contains(si)))
-      return std::nullopt;
-    return std::make_pair(start, off.getSExtValue());
   }
   Pred qp(const BasicBlock *b) { return ctx.preds().block(b).quantumPart(ctx.T, ctx.S); }
   // Rule 8 / P1 (cq-pkjc): the classical facts the output path into the block being walked
@@ -824,10 +718,8 @@ bool Unit::writesCallerCells(const CallBase &CB) const {
   const Specialization *S = ctx.T.calleeSpecialization(CB, ctx.S);
   if (!S)
     return false;
-  for (unsigned i = 0; i < CB.arg_size(); ++i)
-    if (CB.getArgOperand(i)->getType()->isPointerTy() && !ctx.T.cellsWritten(*S, i).empty())
-      return true;
-  return false;
+  (void)S;
+  return false;   // rule 18: a clone writes the bus at its address, no caller cell (W5: writesMemory)
 }
 
 bool Unit::twinOf(const CallBase &CB) const {
@@ -836,11 +728,6 @@ bool Unit::twinOf(const CallBase &CB) const {
     return true;
   if (!CB.getType()->isVoidTy() && is_contained(ctx.T.fieldMask(&CB, ctx.S), true))
     return true;
-  for (unsigned i = 0; i < CB.arg_size(); ++i)
-    if (CB.getArgOperand(i)->getType()->isPointerTy())
-      for (unsigned c : ctx.T.cellsWritten(*S, i))
-        if (ctx.T.cellForward(*S, i, c) < 0)
-          return true;   // a minted slot result (T5: a forwarded formal's handle is none)
   return false;
 }
 
@@ -854,7 +741,7 @@ void Unit::check(Loop &L, Case c) {
                   L.getHeader()->getTerminator());
   for (PHINode &p : L.getHeader()->phis())
     if (isQ(&p) && !(p.getType()->isIntegerTy() || p.getType()->isFloatingPointTy()) &&
-        !(p.getType()->isPointerTy() && isCodeAddress(&p)))   // rule 13: a carried code address is an i64 handle
+        !p.getType()->isPointerTy())   // rule 3: a carried pointer is an i64 handle
       unimplemented("loops-classical: a quantum carried value of non-scalar type (aggr, fatptr)", &p);
   for (BasicBlock *b : L.blocks())
     for (Instruction &I : *b) {
@@ -902,29 +789,8 @@ void Unit::check(Loop &L, Case c) {
         }
         continue;
       }
-      // Rule 20 slot cells at classical offsets go through mem-slots per trip (cq-sujx); a fat pointer
-      // (rule 21) or a QRAM object (rule 20, 187, 188) in the trip is not built yet.
-      if (isa<LoadInst>(I) || isa<StoreInst>(I)) {
-        const Value *ptr = getLoadStorePointerOperand(&I);
-        bool isStore = isa<StoreInst>(I);
-        ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
-        // Rule 14 case 1 with rule 20 (72, 188): a QRAM or QROM access of one object in the trip goes through
-        // mem-qram per trip (a quantum offset included); its POP and un-copy are mirrored by the reverse
-        // loop with pushed operands (F1b). A pointer of one QRAM object at a quantum offset carries offset
-        // lanes only (no quantum tag: the spine routes it to mem-qram); a fat pointer over several objects
-        // (rule 21) is not built.
-        bool qram = objs.size() == 1 && ctx.T.classOf(objs.front()) == ObjClass::Qram;
-        bool qrom = !isStore && objs.size() == 1 && ctx.T.classOf(objs.front()) == ObjClass::Classical && isQ(ptr) &&
-                    isa<GlobalVariable>(getUnderlyingObject(ptr)) &&
-                    cast<GlobalVariable>(getUnderlyingObject(ptr))->isConstant();
-        // Case 3: a QRAM store is mem-qram's store under currentFlag() (the trip rail), a QRAM or QROM load is
-        // pure and runs in every trip as any trip-local value (rule 14 case 3).
-        if ((ctx.T.isFatPointer(ptr, ctx.S) || isQ(ptr)) && !qram && !qrom)
-          unimplemented(std::string("loops-classical: a ") + (isStore ? "store" : "load") +
-                            " through a quantum (fat) pointer in a classically bounded loop (rule 21)",
-                        &I);
-        continue;
-      }
+      if (isa<LoadInst>(I) || isa<StoreInst>(I))
+        continue;   // rules 5, 20: per trip, by the spine's dispatch
       if (I.mayWriteToMemory() && (isQ(&I) || any_of(I.operands(), [&](const Use &u) { return isQ(u.get()); })))
         unimplemented("loops-classical: a quantum memory effect in a classically bounded loop", &I);
     }
@@ -1284,10 +1150,6 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     return Operand{np, q};
   };
   for (PHINode &p : header->phis()) {
-    if (walkedStep(&L, p)) {
-      inits.push_back({ConstantInt::get(Type::getInt64Ty(ctx.M.getContext()), 0), false});
-      continue;
-    }
     Operand o = startOf(p);
     bool q = isQ(&p);
     if (const R6 *r = q ? r6Of(&p) : nullptr) {
@@ -1339,10 +1201,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     for (CPhi &cp : cphis) {
       Type *ty = cp.type();
       LLVMContext &C = ctx.M.getContext();
-      if (ty->isPointerTy() && !isCodeAddress(cp.orig())) {
-        cp.ptr = true;
-        cp.rails = {RailType{Kind::Int, 32}, RailType{Kind::Int, 64}};
-      } else if (ty->isAggregateType() || ty->isVectorTy()) {
+      if (ty->isAggregateType() || ty->isVectorTy()) {
         std::function<void(Type *)> leaves = [&](Type *t) {
           if (auto *st = dyn_cast<StructType>(t))
             for (Type *e : st->elements())
@@ -1376,18 +1235,15 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     unsigned k = 0;
     for (PHINode &p : header->phis()) {
       auto [v, q] = inits[k++];
-      std::optional<std::pair<const Value *, int64_t>> w = walkedStep(&L, p);
       PHINode *np = ctx.B().CreatePHI(q ? handleTy(ctx.M.getContext()) : v->getType(), 2, p.getName());
       np->addIncoming(v, entryFrom);
       if (q)
         ctx.unc().recordExternal(np, Role::UserRegister);
-      if (w)
-        ctx.bindWalkedPointer(&p, WalkedPtr{w->first, w->second});   // memory reads it as start + j*step
       if (ctx.bound(&p))
         ctx.rebind(&p, {Operand{np, q}});   // the spine's classical choice of several starts (its operand above)
       else
         ctx.bind(&p, np);
-      carried.push_back({&p, np, q, bool(w)});
+      carried.push_back({&p, np, q, false});
     }
   }
   PHINode *aPhi = nullptr;
@@ -1422,19 +1278,6 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // pointer's fat (tag, idx) at cp's exit shape (rule 21), an aggregate's or vector's scalar leaves (rule 26), a
   // scalar itself (a classical code address as its i64, rule 13).
   auto fieldsOf = [&](CPhi &cp, const Value *val) -> SmallVector<Operand, 2> {
-    if (cp.ptr) {
-      if (!cp.shaped) {
-        SmallVector<const Value *, 4> vals;
-        if (cp.P)
-          vals.append(cp.P->value_op_begin(), cp.P->value_op_end());
-        else
-          vals.push_back(cp.x);
-        fatptr::exitShape(ctx, cp.orig(), vals, inUnit);
-        cp.shaped = true;
-      }
-      auto [t, i] = fatptr::exitFields(ctx, val, inUnit, cp.orig());
-      return {t, i};
-    }
     Type *ty = cp.type();
     if (ty->isAggregateType() || ty->isVectorTy()) {
       SmallVector<Operand, 4> fs = aggr::flattenResult(ctx, val);
@@ -1708,25 +1551,18 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         // Every arm names one rail (a register rotated in place on one arm, rule 10; 126): the merge is
         // that rail, no choice to make (the spine's state-prep merge).
         Value *one = ctx.operand(p.getIncomingValue(0)).v;
-        bool code = p.getType()->isPointerTy() && isCodeAddress(&p);   // rule 13: an i64 integer
+        bool code = p.getType()->isPointerTy();   // rule 3: an i64 integer
         if (!p.getType()->isVectorTy() && !p.getType()->isAggregateType() && (!p.getType()->isPointerTy() || code) &&
             all_of(p.incoming_values(), [&](Value *v) { return ctx.operand(v).v == one; })) {
           ctx.bind(&p, asHandle(ctx.operand(p.getIncomingValue(0)), p.getType()));
           continue;
         }
-        // cq-pfpy: a composite merges field by field (rule 26), a pointer is a fat-pointer merge (rule 21).
-        if (p.getType()->isPointerTy() && !code)
-          fatptr::lower(ctx, &p);
-        else if (p.getType()->isAggregateType() || p.getType()->isVectorTy())
+        // cq-pfpy: a composite merges field by field (rule 26).
+        if (p.getType()->isAggregateType() || p.getType()->isVectorTy())
           lowerMergeFields(ctx, p);
         else
           ctx.bind(&p, lowerMerge(ctx, p));
         continue;
-      }
-      if (q && p.getType()->isPointerTy() && !isCodeAddress(&p)) {
-        // Rule 21: a quantum pointer phi is a fat-pointer merge, fatptr's construction (its uses lower it).
-        fatptr::lower(ctx, &p);
-        internalError("loops-classical: fatptr::lower of a quantum pointer phi returned", &p);
       }
       // A classical join over handles (rule 9: a classical phi over the handles, no gate), field-wise for
       // a composite (rule 26: one phi per scalar leaf; a quantum leaf a phi of handles, a classical leaf a
@@ -1846,7 +1682,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           continue;
         }
         vals.push_back(v);
-        arms.push_back({e, composite || (p.getType()->isPointerTy() && !isCodeAddress(&p)) ? Operand{nullptr, false} : ctx.operand(v)});
+        arms.push_back({e, composite ? Operand{nullptr, false} : ctx.operand(v)});
       }
       if (arms.empty())
         internalError("loops-classical: a real edge into a mixed join carries no incoming", &p);
@@ -1855,14 +1691,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           internalError("loops-classical: a classical phi at a mixed join chosen by a quantum edge", &p);
         continue;   // the classical incoming of u's own edge (emitPhis)
       }
-      if (p.getType()->isAggregateType() || p.getType()->isVectorTy() ||
-          (p.getType()->isPointerTy() && !isCodeAddress(&p))) {
+      if (p.getType()->isAggregateType() || p.getType()->isVectorTy()) {
         if (arms.size() == 1)
           continue;   // u's own incoming, field-wise (emitPhis)
-        if (p.getType()->isPointerTy()) {
-          fatptr::lower(ctx, &p);   // rule 21: a quantum pointer merge is a fat pointer
-          internalError("loops-classical: fatptr::lower of a quantum pointer phi returned", &p);
-        }
         // cq-pfpy (rules 9, 26): a quantum choice of a composite is rule 9's select chain per field, made
         // at the end of u's output block like a scalar's.
         std::vector<SmallVector<Operand, 4>> fields;
@@ -2449,8 +2280,6 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           ctx.rebind(v, ops);
         else
           ctx.bindFields(v, ops);   // a phi of the multi-exit sub-loop's continuation (its exit value)
-        if (v->getType()->isPointerTy() && !isCodeAddress(v) && ops.size() == 2)
-          fatptr::bindExit(ctx, v);
       }
       if (SU.multi()) {
         for (PHINode &P : sx->phis())
@@ -2548,8 +2377,6 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       ctx.bindFields(v, ops);
     else
       ctx.rebind(v, ops);
-    if (fat.count(v))
-      fatptr::bindExit(ctx, v);
   };
   for (const Instruction *v : liveOut) {
     if (!isQ(v) && !c3)
@@ -2667,19 +2494,6 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         });
         if (!stored)
           continue;
-        // A register of a slot cell (a register update's new rail, 114) is kept: never undone, so no exit.
-        if (mem::isSlotRegister(ctx, r.forward))
-          continue;
-        // A rail mem-slots made Measured at its store is kept: the reverse never undoes it, and its
-        // reads after the loop need not wait for the reverse (179's y[i]).
-        bool kept = false;
-        for (BasicBlock *bb : L.blocks())
-          for (Instruction &I : *bb)
-            if (auto *si = dyn_cast<StoreInst>(&I); si && ctx.T.isQuantum(si->getValueOperand(), ctx.S) &&
-                                                    ctx.operand(si->getValueOperand()).v == r.forward)
-              kept |= measuredThroughMemory(ctx, *si);
-        if (kept)
-          continue;
         RailId x = U.idOf(r.forward);
         if (!is_contained(exits, x))
           exits.push_back(x);
@@ -2725,27 +2539,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       ctx.B().SetInsertPoint(Cont);
       return {};
     }
-    // F1b (72, 188): a QRAM store of the trip on an object the program accesses after the loop: its cell
-    // values are read there, so the reverse (which pops the store) is deferred after those accesses.
-    bool busAfter = false;
-    if (exits.empty() && !nested) {
-      DenseSet<ObjectId> stored;
-      for (BasicBlock *bb : L.blocks())
-        for (Instruction &I : *bb)
-          if (auto *si = dyn_cast<StoreInst>(&I))
-            for (ObjectId o : ctx.T.provenance(si->getPointerOperand(), ctx.S))
-              if (ctx.T.classOf(o) == ObjClass::Qram)
-                stored.insert(o);
-      for (BasicBlock &bb : F)
-        for (Instruction &I : bb)
-          if (!L.contains(&I) && (isa<LoadInst>(I) || isa<StoreInst>(I) || isa<CallBase>(I)))
-            for (const Use &u : I.operands())
-              if (u->getType()->isPointerTy() && !isa<Function>(u.get()) && !isa<InlineAsm>(u.get()))
-                for (ObjectId o : ctx.T.provenance(u.get(), ctx.S))
-                  if (stored.count(o) && !(isa<IntrinsicInst>(I) && cast<IntrinsicInst>(I).isLifetimeStartOrEnd()))
-                    busAfter = true;
-    }
-    if (exits.empty() && !busAfter) {
+    if (exits.empty()) {
       flushTrips();
       IRBuilder<> B(T);
       reverse(B, T, seedScope, false);
@@ -2780,8 +2574,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     auto self = shared_from_this();
     deferred = true;
     U.recordDeferred(scs, exits,
-                     [self, T, seedScope](IRBuilder<> &B) { self->reverse(B, T, seedScope, true); }, reads, {},
-                     busAfter);
+                     [self, T, seedScope](IRBuilder<> &B) { self->reverse(B, T, seedScope, true); }, reads, {});
     ctx.B().SetInsertPoint(Cont);
     return {};
   }

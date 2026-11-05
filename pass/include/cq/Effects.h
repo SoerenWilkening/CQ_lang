@@ -47,8 +47,7 @@ namespace cq::fenv   { void lowerConstrained(LoweringContext &, llvm::CallBase &
                        void afterCloneCall(LoweringContext &, llvm::CallBase &site, llvm::Value *flagsOut);
                        void bindCloneEnv(LoweringContext &, llvm::Argument *mode, llvm::Argument *flags);
                        llvm::Value *cloneExitFlags(LoweringContext &, llvm::ReturnInst &); }
-namespace cq::conc   { void lowerAtomic(LoweringContext &, llvm::Instruction &);
-                       void lowerVolatile(LoweringContext &, llvm::Instruction &);
+namespace cq::conc   { void lowerVolatile(LoweringContext &, llvm::Instruction &);
                        void lowerThreadCall(LoweringContext &, llvm::CallBase &);
                        void lowerSetjmp(LoweringContext &, llvm::CallBase &);
                        void lowerLongjmp(LoweringContext &, llvm::CallBase &); }

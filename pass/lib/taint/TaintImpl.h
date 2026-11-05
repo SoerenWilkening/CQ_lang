@@ -1,16 +1,13 @@
 // Private to module taint (cq-w0-taint). The storage behind TaintInfo (K1) and the analysis state.
 //
 // Lattice. Every SSA value carries a lane vector (Lanes): an integer leaf of width W has
-// max(1, ceil(W/8)) byte lanes, a floating-point leaf one lane, a pointer leaf two lanes (tag, idx:
-// rule 21), aggregates and vectors the concatenation of their leaves. A lane is 1 iff that part of the
-// value depends on a cq_theta result (rule 3). Byte lanes are what lets an ABI-coerced struct
+// max(1, ceil(W/8)) byte lanes, a floating-point leaf one lane, a pointer leaf one lane (rule 3: one 64-bit
+// address rail), aggregates and vectors the concatenation of their leaves. A lane is 1 iff that part of the
+// value depends on a cq_theta result or a bus load (rule 3). Byte lanes are what lets an ABI-coerced struct
 // (159: { int, int } as i64) keep one taint bit per field through zext/shl/or/lshr/trunc packing.
 //
-// Pointers carry, besides their two lanes, a PtrInfo: the memory sites they may point into and their
-// byte offset from the site's base as the lattice (c, g): offset = c + k*g for unknown k (g = 0: exact).
-//
-// The whole module is iterated to one fixed point (specializations, memory, provenance); computeTaint
-// is a pure function of the module: every piece of state lives in one Impl it builds from scratch.
+// The whole module is iterated to one fixed point (specializations, host-residency); computeTaint is a pure
+// function of the module: every piece of state lives in one Impl it builds from scratch.
 #pragma once
 
 #include <deque>
@@ -38,60 +35,6 @@
 namespace cq::taintimpl {
 
 using Lanes = llvm::SmallBitVector;
-
-// Offset lattice of a pointer relative to its site's base (bytes).
-struct PtrInfo {
-  llvm::SmallVector<unsigned, 2> sites; // sorted, unique
-  bool init = false;                     // false: no information yet (bottom)
-  bool top = false;                      // offset entirely unknown
-  int64_t c = 0;
-  uint64_t g = 0;
-  std::optional<int64_t> exact() const {
-    if (!init || top || g != 0)
-      return std::nullopt;
-    return c;
-  }
-  std::optional<int64_t> mod(uint64_t stride) const;
-  bool join(const PtrInfo &o); // returns true if changed
-  bool sameOffset(const PtrInfo &o) const;
-};
-
-enum class SiteKind : uint8_t { Alloca, Global, Heap, External, Function };
-
-// A memory site: an alloca, a global, a heap allocation call, an external (unknown) object, or a
-// function (function pointers are pointers to function sites).
-struct Site {
-  SiteKind kind;
-  const llvm::Value *v;            // the alloca/global/call/argument/load that names it
-  const llvm::Function *owner;     // function of an alloca/heap call/external, else null
-  uint64_t stride = 0;             // array-of-struct element size: one object per field column
-  llvm::SmallVector<int64_t, 4> columns; // field byte offsets within the stride (when stride != 0)
-  llvm::SmallVector<ObjectId, 4> objects; // one object, or one per column
-};
-
-struct Range {
-  int64_t off;
-  uint64_t size;
-};
-
-struct Object {
-  unsigned site;
-  int column = -1;                // index into Site::columns, -1 when the site is not split
-  bool anyHandle = false;          // a handle written at an unknown cell
-  std::vector<Range> handleCells;  // cells (byte ranges from the site base) written with a handle
-  std::vector<Range> ptrCells;     // cells written with a pointer (pointer-kind cells)
-  bool anyPtr = false;
-  // cq-n58p, cq-0y74, cq-kuuf: cells written by a non-pointer store whose value may carry an address
-  // (an integer, a byte of a pointer): a pointer read there has lost its provenance.
-  std::vector<Range> intCells;
-  bool anyInt = false;
-  bool qram = false;
-  bool storedTagQ = false, storedIdxQ = false;
-  PtrInfo stored;                  // pointers copied in (initializer, memcpy)
-  std::map<const llvm::Instruction *, PtrInfo> storedBy; // pointers stored by each store
-  bool cellHandle(std::optional<int64_t> off, uint64_t size) const;
-  bool mayHoldHandle() const { return qram || anyHandle || !handleCells.empty(); }
-};
 
 struct FnInfo {
   std::unique_ptr<llvm::DominatorTree> DT;
@@ -153,37 +96,26 @@ inline uint8_t compose(uint8_t X, uint8_t Y) {
 struct SpecState {
   llvm::Function *F = nullptr;
   bool ctl = false, pure = false;
-  unsigned depth = 0;
   std::vector<uint64_t> bounds;
   std::vector<unsigned> boundFormals; // cq-qc70: the formal each bound bounds
   bool declared = false; // rule 27: F has no body
   bool inPlace = false;  // all-classical, no flags: the function rewritten in place
   std::vector<Lanes> formal;     // fixed formals, then the variadic actuals of this arity
   std::vector<llvm::Type *> formalTy;
-  std::vector<std::string> cells; // per formal: the pointee-cell digits at the call (pointer formals)
-  std::vector<PtrInfo> formalPtr; // pointer formals: union of the callers' actuals
-  // T4: per formal, how a pointer formal crosses (buildMask); mixedPointee: objects of several classes.
-  std::vector<cq::PtrFormal> ptrFormal;
-  std::vector<bool> mixedPointee;
   std::string key;
-  unsigned depthCut = 0;          // cutoff min(K, B) of a quantum-depth recursion, 0 = none
-  // cq-ew5z (CR rule 14 with rule 19): the recursion's cut keeps the overflow predicate (B > K or no bound
-  // from the actuals' ranges), set on its level-0 clone and handed on to every level.
-  bool keepsOverflow = false;
-  std::optional<uint64_t> depthB; // B of the outermost call (rule 14)
-  bool depthBUnknown = false;
 
   llvm::DenseMap<const llvm::Value *, Lanes> lanes;
-  llvm::DenseMap<const llvm::Value *, PtrInfo> ptr;
   llvm::DenseMap<const llvm::BasicBlock *, llvm::SmallVector<const llvm::BasicBlock *, 2>> cdt;
   llvm::DenseSet<const llvm::BasicBlock *> taintedTerm;
   // Loops whose next trip is decided by a tainted terminator (rule 14; grows monotonically).
   llvm::SmallPtrSet<const llvm::Loop *, 4> exitQ;
   Lanes ret;
-  PtrInfo retPtr;
   bool analyzedOnce = false;
 
   bool hasTheta = false, hasPhi = false, hasEffect = false, writesOuter = false, hasMeasure = false;
+  bool hasCall = false;   // Q2: a call for rule 19's own-lowering test
+  // Rule 20 (b): the allocas of F this specialization demoted (bus-resident); every other is host-resident.
+  llvm::SmallPtrSet<const llvm::AllocaInst *, 4> demoted;
   bool anyQuantum = false;
   // Rule 23 (cq-pu8b): the floating-point environment as point-wise state (see FenvState below).
   // fenvIn is concrete (the join of every caller's state at its call; 0 for a root), every other
@@ -195,7 +127,6 @@ struct SpecState {
   // State before and after each instruction that reads or changes the environment (the dump).
   llvm::DenseMap<const llvm::Instruction *, std::pair<uint8_t, uint8_t>> fenvAt;
   llvm::DenseMap<const llvm::CallBase *, llvm::SmallVector<SpecState *, 2>> callees;
-  llvm::DenseSet<const llvm::CallBase *> cutCalls; // depth-recursion calls replaced by |0>
 
   // Post-fixpoint.
   bool reachable = false;
@@ -205,66 +136,30 @@ struct SpecState {
   bool nonPure = false;   // transitively: rotation, phase, outer store, tape (rule 19 _ctl test)
   std::string mask;
   std::string name;
-  // cq-e0tq (CR rules 18, 20, 21): the specialization whose activation frame this one's frame sites are
-  // (ImplState::siteOfFrame): the first one of its frame key (Analyzer::frameKey).
-  SpecState *frame = nullptr;
 };
 
 struct LookupKey; // fwd
 
 struct ImplState {
-  // cq-4e6m (rules 18, 20, 21): stores through a clone's pointer formal past every cell of every object the
-  // formal may point to (undefined where they run: they write no cell), per (clone key, store); filled by
-  // formalCells.
-  mutable std::set<std::pair<std::string, const llvm::StoreInst *>> pastPointee;
   llvm::Module *M = nullptr;
   const llvm::DataLayout *DL = nullptr;
   TaintOptions opts;
   std::unique_ptr<llvm::TargetLibraryInfoImpl> TLII;
   std::unique_ptr<llvm::TargetLibraryInfo> TLI;
 
-  std::vector<Site> sites;
-  llvm::DenseMap<const llvm::Value *, unsigned> siteOf;
-  // cq-i9wk: a function's own frame, heap and unknown-object sites (owner != null) named while an
-  // in-place specialization runs: the classical activation of the function (an entry, or a callee
-  // reached with no quantum argument) is a different frame from every clone's, so what a clone stores
-  // into its alloca says nothing about the in-place activation's (sin's y[2] for __rem_pio2).
-  // cq-1c5j (CR rules 18, 20): every clone is a function of its own, so each specialization's activation is a
-  // frame of its own, not only the in-place one: a clone that stores handles into its alloca says nothing about
-  // another clone's frame of the same function (cos's y[2] in its flags-only clone, handed classically to the
-  // in-place __rem_pio2, and in its quantum clone, written by __rem_pio2's clone).
-  std::map<const SpecState *, llvm::DenseMap<const llvm::Value *, unsigned>> siteOfFrame;
-  // cq-e0tq (CR rules 18, 20, 21): the unknown objects (SiteKind::External: a pointer of unknown origin loaded,
-  // a formal no call has handed, an address no escaped object explains) named in clones. An unknown object is
-  // memory the activation reached, not memory it allocated: one object per naming value for every clone (the
-  // in-place activation, the host's memory, keeps its own in its frame, cq-i9wk). Named per clone frame, every
-  // new clone named new objects that the pointers of other clones then carried (a lost provenance, a pointer
-  // stored and read back), so the clone keys enumerating those objects rose without end (musl fflush, the
-  // printf and strftime families: the FILE pointer's objects).
-  llvm::DenseMap<const llvm::Value *, unsigned> siteOfCloneUnknown;
-  std::vector<Object> objects;
-
   std::vector<std::unique_ptr<SpecState>> specs;
   std::map<std::string, SpecState *> byKey;
-  std::map<std::string, SpecState *> frameOf;   // frame key -> the specialization owning those frame sites
   std::map<const llvm::Function *, std::unique_ptr<FnInfo>> fns;
   llvm::DenseMap<llvm::Type *, unsigned> laneCount;
   bool changed = false;
   bool longjmpUnderQuantum = false;
   // Rule 23: the concrete environment facts saved into each fenv_t / fexcept_t object (fegetenv,
   // feholdexcept, fegetexceptflag), joined over every save; an object never saved holds none.
-  std::map<ObjectId, uint8_t> fenvSaved;
-  // cq-n58p: every site whose address escaped into memory or into an integer (a pointer stored, a
-  // ptrtoint, a pointer in a global initializer). A pointer whose provenance is lost (inttoptr of an
-  // integer not derived from one ptrtoint, a pointer read from a cell written as an integer) may point
-  // into any of them (offset unknown).
-  PtrInfo escaped;
-
+  std::map<const llvm::Value *, uint8_t> fenvSaved;   // key: the alloca or constant; nullptr: any other object
   // Published result.
   std::vector<Specialization> published;
   std::vector<SpecState *> publishedState;
   llvm::DenseSet<const llvm::Function *> tainted;
-  std::deque<std::vector<ObjectId>> provCache; // stable storage behind provenance()
 };
 
 } // namespace cq::taintimpl

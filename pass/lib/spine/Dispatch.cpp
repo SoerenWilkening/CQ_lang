@@ -8,8 +8,7 @@
 #include "cq/Abi.h"
 #include "cq/Aggregates.h"
 #include "cq/Effects.h"
-#include "cq/FatPtr.h"
-#include "cq/Memory.h"
+#include "cq/Bus.h"
 #include "cq/Rotation.h"
 #include "cq/Switch.h"
 #include "llvm/ADT/SetVector.h"
@@ -25,126 +24,11 @@
 #include "llvm/IR/Operator.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include "../mem/slots/SlotsInternal.h"
-#include "../fatptr/FatPtrInternal.h"
-
 using namespace llvm;
 
 namespace cq::spine {
 
 namespace {
-
-bool involvesNonClassicalMemory(LoweringContext &ctx, const Value *ptr) {
-  if (!ptr->getType()->isPointerTy())
-    return false;
-  if (ctx.T.isFatPointer(ptr, ctx.S))
-    return true;
-  // cq-h8y6 (CR rules 14, 21): a loop's pointer exit value is a fat pointer; an address computed from it is
-  // re-derived at its access.
-  if (fatptr::isExitPointer(ctx, ptr))
-    return true;
-  for (ObjectId o : ctx.T.provenance(ptr, ctx.S))
-    if (ctx.T.classOf(o) != ObjClass::Classical && !calls::isVaArea(ctx, o))
-      return true;   // a variadic save area is host memory holding handles (95): classical addresses
-  return false;
-}
-
-// The class of an allocation site: QRAM if any of its objects is, else Slot if any is. An
-// array-of-structs site is one object per field column (rule 20), so it is read through provenance,
-// never objectOf (cq-qj49).
-ObjClass objectsClass(LoweringContext &ctx, const Value *site) {
-  ObjClass c = ObjClass::Classical;
-  for (ObjectId o : ctx.T.provenance(site, ctx.S)) {
-    ObjClass k = ctx.T.classOf(o);
-    if (k == ObjClass::Qram)
-      return k;
-    if (k == ObjClass::Slot)
-      c = k;
-  }
-  return c;
-}
-
-// Rule 16 / rule 20: the lifetime end at `at` (lifetime.end, free, or a stackrestore for the scope's
-// allocas) of the non-classical objects `ptr` may name. One allocation site (an alloca, or a heap block:
-// an array of structs is one object per field column, all ended by the site's one end) goes to its
-// memory module once per class: a QRAM site to mem-qram (a heap QRAM has no host block, so no host free
-// follows), else to mem-slots (which emits the host free of a heap slot block). A free of a pointer that
-// may name several sites (a merged pointer) is a classical choice at run time (rule 9): each QRAM site
-// is ended under `p == its QRAM base` (rule 21: a unique non-canonical address), a host block by the host
-// free under `p` outside the QRAM address range.
-void endObjects(LoweringContext &ctx, const Value *ptr, CallBase &at) {
-  ArrayRef<ObjectId> objs = ctx.T.provenance(ptr, ctx.S);
-  auto firstOf = [&](ArrayRef<ObjectId> os, ObjClass k) -> std::optional<ObjectId> {
-    for (ObjectId o : os)
-      if (ctx.T.classOf(o) == k)
-        return o;
-    return std::nullopt;
-  };
-  SmallVector<const Value *, 4> roots;
-  getUnderlyingObjects(ptr, roots);
-  std::optional<ObjectId> q = firstOf(objs, ObjClass::Qram), sl = firstOf(objs, ObjClass::Slot);
-  if (roots.size() == 1 || !q) {
-    if (q)
-      return mem::endQramLifetime(ctx, *q, &at);
-    if (sl)
-      return mem::endSlotLifetime(ctx, *sl, &at);
-    internalError("spine: a lifetime end classified Dealloc with no slot or QRAM object", &at);
-  }
-  // A free of a merged pointer that may name a QRAM site.
-  IRBuilder<> &B = ctx.B();
-  LLVMContext &C = ctx.M.getContext();
-  Value *p = ctx.operand(ptr).v;
-  if (ctx.operand(ptr).handle || !p->getType()->isPointerTy())
-    internalError("spine: a free of a merged pointer that is no classical pointer", &at);
-  Type *i64 = Type::getInt64Ty(C);
-  auto branch = [&](Value *cond, function_ref<void()> body) {
-    BasicBlock *P = B.GetInsertBlock();
-    Function *F = P->getParent();
-    BasicBlock::iterator ip = B.GetInsertPoint();
-    BasicBlock *H = BasicBlock::Create(C, "", F, P);
-    H->splice(H->end(), P, P->begin(), ip);
-    for (BasicBlock *pr : SmallVector<BasicBlock *, 4>(predecessors(P)))
-      if (pr != H)
-        pr->getTerminator()->replaceSuccessorWith(P, H);
-    if (auto *ci = dyn_cast<Instruction>(cond); ci && ci->getParent() == P)
-      internalError("spine: a lifetime-end guard emitted at the split point", &at);
-    BasicBlock *T = BasicBlock::Create(C, "", F, P);
-    B.SetInsertPoint(H);
-    B.CreateCondBr(cond, T, P);
-    B.SetInsertPoint(T);
-    body();
-    B.CreateBr(P);
-    B.SetInsertPoint(P, P->begin());
-  };
-  bool host = false;
-  for (const Value *r : roots) {
-    ArrayRef<ObjectId> ro = ctx.T.provenance(r, ctx.S);
-    std::optional<ObjectId> rq = firstOf(ro, ObjClass::Qram);
-    if (!rq) {
-      host = true;
-      continue;
-    }
-    Operand base = ctx.operand(r);
-    if (base.handle || !isa<Constant>(base.v))
-      internalError("spine: a QRAM site not bound to its QRAM base address", &at);
-    CallBase *one = cast<CallBase>(at.clone());   // the end of this site alone (never inserted)
-    one->setArgOperand(isa<IntrinsicInst>(at) ? 1 : 0, const_cast<Value *>(r));
-    Value *eq = B.CreateICmpEQ(B.CreatePtrToInt(p, i64), B.CreatePtrToInt(base.v, i64));
-    branch(eq, [&] { mem::endQramLifetime(ctx, *rq, one); });
-    one->dropAllReferences();
-    one->deleteValue();
-  }
-  if (!host)
-    return;
-  // Rule 21: QRAM addresses are 0x4000'0000'0000'0000 + 0x1000 n, above every host address.
-  Value *isHost = B.CreateICmpULT(B.CreatePtrToInt(p, i64), ConstantInt::get(i64, 0x4000000000000000ull));
-  branch(isHost, [&] {
-    if (sl)
-      mem::endSlotLifetime(ctx, *sl, &at);
-    else
-      copyClassical(ctx, at);   // a classical host block among the candidates: its free
-  });
-}
 
 // A quantum i1 whose only users are branch conditions that pred expanded into their terms (rule 8:
 // the condition has a classical factor, so no edge predicate uses it as one atom) has no rail to
@@ -197,174 +81,28 @@ bool lowerLogicalSelect(LoweringContext &ctx, SelectInst &sel) {
   return true;
 }
 
-// Rule 21: whether a pointer's TAG (which object it points into) depends on quantum data. A pointer
-// is (tag, idx); a GEP index, its widening and its scaling only move idx, so a pointer whose every
-// root is a classical pointer has a classical tag even when taint calls it fat for a quantum index.
-// The tag is quantum where a quantum choice may pick between different objects (a select on a
-// quantum condition, a phi merging different provenances) or where the pointer itself arrives
-// quantum (loaded through a fat pointer, a clone parameter, inttoptr: rule 21's fat pointer). A
-// phi whose incomings differ in provenance counts as quantum-chosen: routing it to rule 21 is never
-// wrong (a classical tag is a guard that is constant), only less direct.
-bool quantumTagImpl(LoweringContext &ctx, const Value *p, SmallPtrSetImpl<const Value *> &seen) {
-  for (;;) {
-    // cq-h8y6 (CR rules 14, 21): a loop's pointer exit value is a fat pointer whose tag is a capture rail (the
-    // trip that exited, or NULL where none did).
-    if (fatptr::isExitPointer(ctx, p))
-      return true;
-    if (auto *g = dyn_cast<GEPOperator>(p)) {
-      p = g->getPointerOperand();
-      continue;
-    }
-    if (auto *bc = dyn_cast<BitCastOperator>(p)) {
-      p = bc->getOperand(0);
-      continue;
-    }
-    if (auto *ac = dyn_cast<AddrSpaceCastOperator>(p)) {
-      p = ac->getPointerOperand();
-      continue;
-    }
-    // cq-9w75: a K-loop's walked pointer is its start moved by the trip (LoweringContext::walkedPointer).
-    if (const WalkedPtr *w = ctx.walkedPointer(p)) {
-      p = w->start;
-      continue;
-    }
-    break;
-  }
-  // P1 (190): a clone's slot triple formal with a cell count is bound by fatptr (bindFormal); its
-  // accesses are rule 21's, checked against the cell count (fatptr boundSlotLoad).
-  if (auto *A = dyn_cast<Argument>(p); A && !ctx.S.isEntry() && A->getType()->isPointerTy()) {
-    PtrFormal pf = ctx.T.pointerFormal(ctx.S, A->getArgNo());
-    if (pf.abi == PtrAbi::TripleCount && pf.pointee == ObjClass::Slot && !mem::isPointerKindFormal(ctx, *A))
-      return true;   // cq-oocu: a pointer-kind formal's accesses are mem-slots' (107)
-  }
-  if (!ctx.T.isFatPointer(p, ctx.S) && !isQ(ctx, p))
-    return false;
-  if (!seen.insert(p).second)
-    return false;   // a cycle through phis adds no root of its own
-  auto sameObjects = [&](const Value *a, const Value *b) {
-    ArrayRef<ObjectId> x = ctx.T.provenance(a, ctx.S), y = ctx.T.provenance(b, ctx.S);
-    return x.size() == 1 && y.size() == 1 && x.front() == y.front();
-  };
-  if (auto *sel = dyn_cast<SelectInst>(p)) {
-    if (isQ(ctx, sel->getCondition()) && !sameObjects(sel->getTrueValue(), sel->getFalseValue()))
-      return true;
-    return quantumTagImpl(ctx, sel->getTrueValue(), seen) || quantumTagImpl(ctx, sel->getFalseValue(), seen);
-  }
-  if (auto *phi = dyn_cast<PHINode>(p)) {
-    for (const Value *in : phi->incoming_values())
-      if (in != phi && !sameObjects(in, phi))
-        return true;
-    for (const Value *in : phi->incoming_values())
-      if (quantumTagImpl(ctx, in, seen))
-        return true;
-    return false;
-  }
-  return true;
-}
-
-bool quantumTag(LoweringContext &ctx, const Value *p) {
-  SmallPtrSet<const Value *, 8> seen;
-  return quantumTagImpl(ctx, p, seen);
-}
-
-// The construction of one load or store, by rule 20's table and rule 21. A quantum tag is a fat
-// pointer (rule 21; its per-object accesses are rule 20's again). A classical tag reaches one
-// classified object: QRAM and slot objects take every access through their module (classical or
-// quantum offset); classical memory at a quantum offset is a QROM load; anything else is classical.
-enum class Access : uint8_t { Fat, Qram, Slot, Qrom, Classical };
-
-Access classifyAccess(LoweringContext &ctx, Instruction &I, const Value *p) {
-  if (quantumTag(ctx, p))
-    return Access::Fat;
-  bool qram = false, slot = false;
-  for (ObjectId o : ctx.T.provenance(p, ctx.S)) {
-    qram |= ctx.T.classOf(o) == ObjClass::Qram;
-    slot |= ctx.T.classOf(o) == ObjClass::Slot;
-  }
-  if (qram)
-    return Access::Qram;
-  if (slot)
-    return Access::Slot;
-  if (ctx.T.offsetKind(&I, ctx.S) == OffsetKind::Quantum) {
-    if (isa<StoreInst>(I))
-      internalError("spine: a quantum-offset store into memory taint classified Classical (rule 20: QRAM)", &I);
-    // Rules 20, 21 (cq-u9oy): a clone's host triple formal read at a quantum offset is the QROM over the caller's
-    // object of the triple's cell count, fatptr's (the formal is bound to the triple, not to one pointer).
-    if (auto *A = dyn_cast<Argument>(getUnderlyingObject(p)); A && !ctx.S.isEntry() && A->getType()->isPointerTy()) {
-      PtrFormal pf = ctx.T.pointerFormal(ctx.S, A->getArgNo());
-      if (pf.abi != PtrAbi::Raw && pf.pointee == ObjClass::Classical)
-        return Access::Fat;
-    }
-    return Access::Qrom;
-  }
-  return Access::Classical;
-}
-
+// Rule 20: a load or store. A host-resident object with no quantum predicate in scope keeps the plain instruction;
+// every other access is the bus (rule 5). Volatile is rule 24's.
 void lowerMemoryAccess(LoweringContext &ctx, Instruction &I) {
   if (auto *ld = dyn_cast<LoadInst>(&I)) {
-    if (ld->isVolatile() || ld->isAtomic()) {
-      if (ld->isAtomic())
-        conc::lowerAtomic(ctx, I);
-      else
-        conc::lowerVolatile(ctx, I);
+    if (ld->isVolatile())
+      return conc::lowerVolatile(ctx, I);
+    if (bus::hostAccess(ctx, I)) {
+      if (isQ(ctx, ld))
+        internalError("spine: a load of a host-resident object that taint calls quantum", ld);
+      bindOperand(ctx, ld, Operand{copyClassical(ctx, I), false});
       return;
     }
-    switch (classifyAccess(ctx, I, ld->getPointerOperand())) {
-    case Access::Fat:
-      return fatptr::lowerLoad(ctx, *ld);
-    case Access::Qram:
-      return mem::lowerQramLoad(ctx, *ld);
-    case Access::Slot:
-      return mem::lowerSlotLoad(ctx, *ld);
-    case Access::Qrom:
-      return mem::lowerQromLoad(ctx, *ld);
-    case Access::Classical:
-      break;
-    }
-    if (isQ(ctx, ld))
-      internalError("spine: a classical-offset load of classical memory that taint calls quantum", ld);
-    bindOperand(ctx, ld, Operand{copyClassical(ctx, I), false});
-    return;
+    return bus::lowerLoad(ctx, *ld);
   }
   auto *st = cast<StoreInst>(&I);
-  if (st->isVolatile() || st->isAtomic()) {
-    if (st->isAtomic())
-      conc::lowerAtomic(ctx, I);
-    else
-      conc::lowerVolatile(ctx, I);
+  if (st->isVolatile())
+    return conc::lowerVolatile(ctx, I);
+  if (bus::hostAccess(ctx, I) && !isQ(ctx, st->getValueOperand())) {
+    copyClassical(ctx, I);
     return;
   }
-  switch (classifyAccess(ctx, I, st->getPointerOperand())) {
-  case Access::Fat:
-    return fatptr::lowerStore(ctx, *st);
-  case Access::Qram:
-    return mem::lowerQramStore(ctx, *st);
-  case Access::Slot:
-    return mem::lowerSlotStore(ctx, *st);
-  case Access::Qrom:
-    internalError("spine: a QROM store", st);
-  case Access::Classical:
-    break;
-  }
-  // CR rule 21 (cq-utb8): a pointer naming no object (its provenance empty: NULL handed to a formal, musl mbrlen's
-  // mbrtowc(0, ...)) is dereferenced by one access per object of its provenance: none. The program runs such a
-  // store only outside the domain (a null dereference), here under the clone's own `if (pwc)`.
-  if (isQ(ctx, st->getValueOperand()) && ctx.T.provenance(st->getPointerOperand(), ctx.S).empty() &&
-      !ctx.T.isFatPointer(st->getPointerOperand(), ctx.S))
-    return;
-  if (isQ(ctx, st->getValueOperand()))
-    internalError("spine: a quantum value stored into memory taint classified Classical", st);
-  copyClassical(ctx, I);
-}
-
-// Rule 20, index operand: the widening of a quantum index is address arithmetic and never emitted
-// when its every use is a GEP index (that GEP has a quantum index, so it is never emitted either;
-// the access reads the logical index rail beneath the cast). A cast with any other use is a value
-// and lowered as one.
-bool onlyAddressIndex(const Instruction &I) {
-  return !I.use_empty() && llvm::all_of(I.uses(), [](const Use &u) {
-    return isa<GetElementPtrInst>(u.getUser()) && u.getOperandNo() != 0;
-  });
+  bus::lowerStore(ctx, *st);
 }
 
 // Rule 12 under a rule-14 trip (cq-99f7): the trip predicate is quantum, so a classical-angle phase is
@@ -581,45 +319,21 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
   case Class::HostEffect: return tape::lowerHostEffect(ctx, CB);
   case Class::Noreturn: return tape::lowerNoreturn(ctx, CB);
   case Class::Alloc:
-    if (auto *II = dyn_cast<IntrinsicInst>(&CB); II && II->getIntrinsicID() == Intrinsic::lifetime_start) {
-      // The start of a slot/QRAM object's scope: the object is allocated at its alloca.
+    // Rule 20 Allocation: a bus-resident object's lifetime markers are dropped.
+    if (auto *II = dyn_cast<IntrinsicInst>(&CB); II && II->getIntrinsicID() == Intrinsic::lifetime_start)
       return;
-    }
-    if (objectsClass(ctx, &CB) == ObjClass::Qram)
-      return mem::allocateQram(ctx, CB);
-    return mem::allocateSlots(ctx, CB);
-  case Class::Dealloc: {
-    if (auto *II = dyn_cast<IntrinsicInst>(&CB)) {
-      if (II->getIntrinsicID() == Intrinsic::lifetime_end)
-        return endObjects(ctx, II->getArgOperand(1), CB);
-      if (II->getIntrinsicID() != Intrinsic::stackrestore)
-        internalError("spine: a Dealloc intrinsic other than lifetime.end or stackrestore", &CB);
-      // Rule 20 (192): a VLA's lifetime ends at its scope's end: each slot or QRAM alloca of the scope
-      // is ended here, then the host stack is restored.
-      SmallVector<const AllocaInst *, 4> scope;
-      scopeAllocas(CB, scope);
-      for (const AllocaInst *A : scope)
-        if (objectsClass(ctx, A) != ObjClass::Classical)
-          endObjects(ctx, A, CB);
-      copyClassical(ctx, CB);
-      return;
-    }
-    return endObjects(ctx, CB.getArgOperand(0), CB);
-  }
+    return bus::lowerAlloc(ctx, CB);
+  case Class::Dealloc:
+    return;   // rule 16: `free` and a bus-resident object's end of lifetime are nothing
   case Class::Realloc:
-    if (objectsClass(ctx, &CB) == ObjClass::Qram)
-      return mem::reallocQram(ctx, CB);   // M5 (cq-arch 2026-11-01)
-    // Rule 16: realloc of a slot block is a host realloc (its handle cells move with it): mem-slots' heap
-    // allocation, the realloc call with its old block and its size in handle cells (allocsize).
-    return mem::allocateSlots(ctx, CB);
-  case Class::MemIntrinsic: return mem::lowerMemIntrinsic(ctx, cast<MemIntrinsic>(CB));
+    return bus::lowerRealloc(ctx, CB);
+  case Class::MemIntrinsic:
+    return bus::lowerMemIntrinsic(ctx, cast<MemIntrinsic>(CB));
   case Class::TemplateIntrinsic:
     if (isa<ConstrainedFPIntrinsic>(CB))
       return fenv::lowerConstrained(ctx, CB);   // a non-raising constrained op: the template in its chain's mode
-    if (auto *II = dyn_cast<IntrinsicInst>(&CB); II && II->getIntrinsicID() == Intrinsic::ptrmask) {
-      fatptr::lower(ctx, &CB);   // rule 21 (105): binds the masked pointer's (tag, idx) here
-      return;
-    }
+    if (auto *II = dyn_cast<IntrinsicInst>(&CB); II && II->getIntrinsicID() == Intrinsic::ptrmask)
+      report_fatal_error("cq: unimplemented: bus: llvm.ptrmask of an address rail", /*gen_crash_diag=*/false);
     if (CB.getType()->isVectorTy() || any_of(CB.args(), [](const Use &u) { return u->getType()->isVectorTy(); }))
       return aggr::lowerVectorOp(ctx, CB);   // rule 25: a vector is its lanes
     return lowerOpcode(ctx, CB);
@@ -636,79 +350,20 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
   case Class::Setjmp: return conc::lowerSetjmp(ctx, CB);
   case Class::Longjmp: return conc::lowerLongjmp(ctx, CB);
   case Class::Varargs: return calls::lowerVarargs(ctx, CB);
-  case Class::Atomic: return conc::lowerAtomic(ctx, CB);
+  case Class::Atomic: return bus::lowerAtomic(ctx, CB);
   }
   internalError("spine: unknown call class", &CB);
 }
 
 } // namespace
 
-// cq-py5f: rule 21's quantum tag of an access's pointer, as the spine routes loads and stores (eff-conc routes
-// a volatile or atomic access the same way).
-bool accessHasQuantumTag(LoweringContext &ctx, const Value *p) { return quantumTag(ctx, p); }
 
 namespace {
 
-bool boolRangeLoad(const LoadInst *ld) {
-  MDNode *r = ld->getMetadata(LLVMContext::MD_range);
-  if (!ld->getType()->isIntegerTy(8) || !r || r->getNumOperands() != 2)
-    return false;
-  auto *lo = mdconst::dyn_extract<ConstantInt>(r->getOperand(0));
-  auto *hi = mdconst::dyn_extract<ConstantInt>(r->getOperand(1));
-  return lo && hi && lo->isZero() && hi->getZExtValue() == 2;
-}
 
-bool boolValueStore(const StoreInst *st) {
-  const Value *v = st->getValueOperand();
-  if (auto *c = dyn_cast<ConstantInt>(v); c && c->getBitWidth() > 8 && c->getBitWidth() % 8 == 0) {
-    for (unsigned k = 0; k < c->getBitWidth() / 8; ++k)
-      if (c->getValue().extractBitsAsZExtValue(8, 8 * k) > 1)
-        return false;
-    return true;
-  }
-  if (!v->getType()->isIntegerTy(8))
-    return false;
-  if (auto *z = dyn_cast<ZExtInst>(v))
-    return z->getSrcTy()->isIntegerTy(1);
-  if (auto *c = dyn_cast<ConstantInt>(v))
-    return c->getZExtValue() <= 1;
-  return false;
-}
 
 } // namespace
 
-bool boolCellAccess(LoweringContext &ctx, const Instruction &access) {
-  const Value *p;
-  if (auto *ld = dyn_cast<LoadInst>(&access)) {
-    if (ld->isVolatile() || ld->isAtomic())
-      return false;
-    p = ld->getPointerOperand();
-  } else if (auto *st = dyn_cast<StoreInst>(&access)) {
-    if (st->isVolatile() || st->isAtomic())
-      return false;
-    p = st->getPointerOperand();
-  } else {
-    return false;
-  }
-  auto &I = const_cast<Instruction &>(access);
-  if (classifyAccess(ctx, I, p) != Access::Slot)
-    return false;
-  ArrayRef<ObjectId> objs = ctx.T.provenance(p, ctx.S);
-  if (objs.size() != 1)
-    return false;   // mem-slots stops on an access of several objects
-  ObjectId o = objs.front();
-  auto hasO = [&](const Value *q) { return llvm::is_contained(ctx.T.provenance(q, ctx.S), o); };
-  for (const Instruction &J : instructions(*access.getFunction())) {
-    if (auto *ld = dyn_cast<LoadInst>(&J)) {
-      if (hasO(ld->getPointerOperand()) && !boolRangeLoad(ld))
-        return false;
-    } else if (auto *st = dyn_cast<StoreInst>(&J)) {
-      if (hasO(st->getPointerOperand()) && !boolValueStore(st))
-        return false;
-    }
-  }
-  return true;
-}
 
 namespace {
 
@@ -808,51 +463,36 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
     vec |= u->getType()->isVectorTy();
 
   switch (I.getOpcode()) {
-  case Instruction::Alloca: {
-    ObjClass c = objectsClass(ctx, &I);
-    if (c == ObjClass::Slot)
-      return mem::allocateSlots(ctx, I);
-    if (c == ObjClass::Qram)
-      return mem::allocateQram(ctx, I);
+  case Instruction::Alloca:
+    if (!ctx.T.hostResident(&I, ctx.S))
+      return bus::lowerAlloc(ctx, I);
     bindOperand(ctx, &I, Operand{copyClassical(ctx, I), false});
     return;
-  }
   case Instruction::Load:
   case Instruction::Store:
-    if (q || involvesNonClassicalMemory(ctx, I.getOperand(isa<StoreInst>(I) ? 1 : 0)) ||
-        cast<Instruction>(I).isAtomic() ||
-        (isa<LoadInst>(I) && ctx.T.offsetKind(&I, ctx.S) == OffsetKind::Quantum))
-      return lowerMemoryAccess(ctx, I);
-    if (isa<LoadInst>(I) && cast<LoadInst>(I).isVolatile())
-      return conc::lowerVolatile(ctx, I);
-    if (isa<StoreInst>(I) && cast<StoreInst>(I).isVolatile())
-      return conc::lowerVolatile(ctx, I);
-    if (isa<StoreInst>(I)) {
-      copyClassical(ctx, I);
-    } else {
-      bindOperand(ctx, &I, Operand{copyClassical(ctx, I), false});
-    }
-    return;
-  case Instruction::ZExt:
-  case Instruction::SExt:
-    if (q && onlyAddressIndex(I))
-      return;
-    break;
+    if (cast<Instruction>(I).isAtomic() && !isa<LoadInst>(I) && !isa<StoreInst>(I))
+      internalError("spine: an atomic access that is neither a load nor a store here", &I);
+    return lowerMemoryAccess(ctx, I);
   case Instruction::GetElementPtr:
   case Instruction::AddrSpaceCast:
-    // Address arithmetic into a slot or QRAM object, or with a quantum index, is never emitted:
-    // the access re-derives the cell index (rules 20, 21). Classical address arithmetic is copied.
-    if (q || involvesNonClassicalMemory(ctx, &I))
+    // Rule 20 Address arithmetic: with nothing tainted the getelementptr stays.
+    if (q) {
+      bindOperand(ctx, &I, bus::address(ctx, &I));
       return;
+    }
     bindOperand(ctx, &I, Operand{copyClassical(ctx, I), false});
     return;
   case Instruction::PtrToInt:
-    if (q || ctx.T.isFatPointer(I.getOperand(0), ctx.S))
-      return fatptr::lowerPtrToInt(ctx, I);
+    if (q) {
+      bindOperand(ctx, &I, bus::address(ctx, I.getOperand(0)));   // rule 3: identity (a pointer is an i64)
+      return;
+    }
     break;
   case Instruction::IntToPtr:
-    if (q || ctx.T.isFatPointer(&I, ctx.S))
-      return fatptr::lowerIntToPtr(ctx, I);
+    if (q) {
+      bindOperand(ctx, &I, ctx.operand(I.getOperand(0)));   // rule 3: identity (a pointer is an i64)
+      return;
+    }
     break;
   case Instruction::ExtractValue:
     if (q)
@@ -864,9 +504,7 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
     break;
   case Instruction::AtomicRMW:
   case Instruction::AtomicCmpXchg:
-    if (q || involvesNonClassicalMemory(ctx, I.getOperand(0)))
-      return conc::lowerAtomic(ctx, I);
-    break;
+    return bus::lowerAtomic(ctx, I);
   case Instruction::Fence:
     break;   // single-thread collapse keeps a classical fence as it is (rule 24)
   case Instruction::VAArg:
@@ -876,13 +514,6 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
   case Instruction::Select:
     if (q) {
       auto &sel = cast<SelectInst>(I);
-      // Rule 21 (cq-xb7r): a quantum pointer select is a fat pointer (tag, idx), whether its tag is
-      // quantum (two objects) or classical (one object at a quantum offset); fatptr computes and binds
-      // its two fields here, at the select, so their rails are live wherever the pointer is used.
-      if (sel.getType()->isPointerTy() && !isCodeAddress(&sel)) {
-        fatptr::lower(ctx, &sel);
-        return;
-      }
       // Rules 25, 26 (cq-oa67): a vector, struct or array select merges lane by lane / field by field.
       if (sel.getType()->isVectorTy() || sel.getType()->isAggregateType())
         return aggr::lowerVectorOp(ctx, I);
@@ -903,10 +534,8 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
       return;
     break;
   case Instruction::ICmp:
-    if (q && I.getOperand(0)->getType()->isPointerTy()) {
-      bindOperand(ctx, &I, Operand{fatptr::lowerCompare(ctx, cast<ICmpInst>(I)), true});
-      return;
-    }
+    if (q && I.getOperand(0)->getType()->isPointerTy())
+      report_fatal_error("cq: unimplemented: bus: icmp of an address rail", /*gen_crash_diag=*/false);
     break;
   case Instruction::LandingPad:
   case Instruction::CleanupPad:

@@ -1,14 +1,14 @@
-// Module taint (cq-w0-taint): rule 3 forward taint, rule 18 specializations, rule 20 memory
-// classification, rule 21 provenance, A1 control dependence. See TaintImpl.h for the lattice.
+// Module taint: rule 3 forward taint, rule 18 specializations, rule 20 host-residency, A1 control dependence. See
+// TaintImpl.h for the lattice.
 //
 // computeTaint builds one fresh Impl and iterates the whole module to a fixed point:
 //   1. every defined function that is externally visible or address-taken gets its in-place
-//      specialization (the all-classical one, rewritten in place when it is tainted); -cq-roots add
+//      specialization (the all-classical one, the function's own symbol, rewritten when Q2 says); -cq-roots add
 //      library-build roots;
 //   2. each specialization is analysed: lanes of every SSA value, control dependence on tainted
-//      terminators, memory effects on the module's objects, and the callee specialization of every
+//      terminators, the host-residency of its allocas, and the callee specialization of every
 //      call (a new key creates a new specialization);
-//   3. repeat until nothing changes (lanes, objects, keys only grow);
+//   3. repeat until nothing changes (lanes, demotions, keys only grow);
 //   4. reachability from the roots, twins and _pure variants, masks, names, the published list.
 // No state outlives the call: computeTaint is safe to call twice on one module (cq-5k5, option a).
 #include "TaintImpl.h"
@@ -45,11 +45,6 @@ namespace {
 // ---------------------------------------------------------------------------------------------
 // Small lattice helpers.
 
-uint64_t gcd64(uint64_t a, uint64_t b) { return std::gcd(a, b); }
-
-uint64_t absDiff(int64_t a, int64_t b) {
-  return a > b ? uint64_t(a) - uint64_t(b) : uint64_t(b) - uint64_t(a);
-}
 
 bool orInto(Lanes &dst, const Lanes &src) {
   if (dst.size() < src.size())
@@ -69,98 +64,13 @@ Lanes allLanes(unsigned n) {
 
 bool anyLane(const Lanes &l) { return l.any(); }
 
-void sortUnique(SmallVectorImpl<unsigned> &v) {
-  llvm::sort(v);
-  v.erase(std::unique(v.begin(), v.end()), v.end());
-}
 
 } // namespace
 
-std::optional<int64_t> PtrInfo::mod(uint64_t stride) const {
-  if (!init || top || stride == 0)
-    return std::nullopt;
-  if (g % stride != 0)
-    return std::nullopt;
-  int64_t s = int64_t(stride);
-  return ((c % s) + s) % s;
-}
 
-bool PtrInfo::join(const PtrInfo &o) {
-  if (!o.init)
-    return false;
-  if (!init) {
-    *this = o;
-    return true;
-  }
-  bool changed = false;
-  // The union of the sorted, unique site lists in one merge (cq-e0tq: a load reading many objects joins every
-  // stored pointer of each; a sort per join made that the taint fixed point's cost).
-  auto strict = [](ArrayRef<unsigned> v) { return std::adjacent_find(v.begin(), v.end(), std::greater_equal<unsigned>()) == v.end(); };
-  if (!o.sites.empty()) {
-    if (strict(sites) && strict(o.sites)) {
-      if (!std::includes(sites.begin(), sites.end(), o.sites.begin(), o.sites.end())) {
-        SmallVector<unsigned, 4> u;
-        u.reserve(sites.size() + o.sites.size());
-        std::set_union(sites.begin(), sites.end(), o.sites.begin(), o.sites.end(), std::back_inserter(u));
-        sites.assign(u.begin(), u.end());
-        changed = true;
-      }
-    } else {
-      SmallVector<unsigned, 4> u(sites.begin(), sites.end());
-      u.append(o.sites.begin(), o.sites.end());
-      sortUnique(u);
-      changed = !std::equal(u.begin(), u.end(), sites.begin(), sites.end());
-      sites.assign(u.begin(), u.end());
-    }
-  }
-  if (o.top && !top) {
-    top = true;
-    changed = true;
-  }
-  if (!top) {
-    uint64_t ng = gcd64(gcd64(g, o.g), absDiff(c, o.c));
-    changed = changed || ng != g;
-    g = ng;
-  }
-  return changed;
-}
-
-bool PtrInfo::sameOffset(const PtrInfo &o) const {
-  auto a = exact(), b = o.exact();
-  return a && b && *a == *b;
-}
-
-bool Object::cellHandle(std::optional<int64_t> off, uint64_t size) const {
-  if (qram || anyHandle)
-    return true;
-  if (!off)
-    return !handleCells.empty();
-  for (const Range &r : handleCells)
-    if (r.off < *off + int64_t(size ? size : 1) && *off < r.off + int64_t(r.size ? r.size : 1))
-      return true;
-  return false;
-}
 
 namespace {
 
-bool overlapsAny(const std::vector<Range> &rs, std::optional<int64_t> off, uint64_t size, bool any) {
-  if (any)
-    return true;
-  if (!off)
-    return !rs.empty();
-  for (const Range &r : rs)
-    if (r.off < *off + int64_t(size ? size : 1) && *off < r.off + int64_t(r.size ? r.size : 1))
-      return true;
-  return false;
-}
-
-bool addRange(std::vector<Range> &rs, int64_t off, uint64_t size) {
-  for (const Range &r : rs)
-    if (r.off == off && r.size == size)
-      return false;
-  rs.push_back({off, size});
-  return true;
-}
 
 // ---------------------------------------------------------------------------------------------
 // CQ.h surface and callee recognition.
@@ -214,6 +124,62 @@ std::optional<std::string> libmNameOf(const Function *F) {
   return n;
 }
 
+// Q2 (rulings): a call for rule 19's "no call": any call site except a rule-4 opcode intrinsic (templates or opcodes)
+// and a lifetime, debug, assume or noalias-scope intrinsic.
+bool countsAsCall(const CallBase &CB) {
+  const Function *G = CB.getCalledFunction();
+  if (!G || !G->isIntrinsic())
+    return true;
+  if (isa<MemIntrinsic>(CB))
+    return true;
+  switch (G->getIntrinsicID()) {
+  case Intrinsic::vastart:
+  case Intrinsic::vacopy:
+  case Intrinsic::vaend:
+    return true;
+  default:
+    return libmNameOf(G).has_value();
+  }
+}
+
+// Rule 24: every use of the global is, through getelementptrs, a load or a store through it (lifetime and debug
+// intrinsics aside).
+bool onlyAccessedThrough(const GlobalVariable &GV, bool *stored = nullptr) {
+  SmallVector<const Value *, 8> work{&GV};
+  SmallPtrSet<const Value *, 16> seen;
+  while (!work.empty()) {
+    const Value *V = work.pop_back_val();
+    if (!seen.insert(V).second)
+      continue;
+    for (const Use &Us : V->uses()) {
+      const User *U = Us.getUser();
+      if (isa<GEPOperator>(U) && Us.getOperandNo() == 0) {
+        work.push_back(U);
+      } else if (isa<LoadInst>(U)) {
+        continue;
+      } else if (auto *SI = dyn_cast<StoreInst>(U)) {
+        if (SI->getPointerOperand() != V)
+          return false;
+        if (stored)
+          *stored = true;
+      } else if (auto *II = dyn_cast<IntrinsicInst>(U); II && (II->isLifetimeStartOrEnd() || isa<DbgInfoIntrinsic>(II))) {
+        continue;
+      } else {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+// Rule 20 (a) with rule 24's case: a constant global, or an internal global only loaded through (48).
+bool hostGlobal(const GlobalVariable &GV) {
+  if (GV.isConstant())
+    return true;
+  bool stored = false;
+  return GV.hasLocalLinkage() && GV.hasInitializer() && onlyAccessedThrough(GV, &stored) && !stored;
+}
+
 // <fenv.h> (C17 7.6): the floating-point environment calls rule 23 splits into host and rail parts.
 bool isFenvCall(StringRef n) {
   static const char *names[] = {"feclearexcept", "fegetexceptflag", "feraiseexcept",
@@ -260,55 +226,9 @@ private:
   void fenvRecord(const Instruction &I, uint8_t before) { cur->fenvAt[&I] = {before, fenvCur}; }
   void transferFenvCall(CallBase &CB, StringRef cname, ArrayRef<Value *> actuals, unsigned rn);
   void fenvAfterCall(CallBase &CB);
-  // CR §1.4, rules 3, 20 (95, 109; cq-prvy): the variadic actuals' save area and va_list copies.
-  void transferVaStart(CallBase &CB);
-  void transferVaCopy(CallBase &CB);
-
-  // Sites and objects.
-  unsigned siteFor(const Value *V, SiteKind k, const Function *owner);
-  void splitSite(unsigned s, uint64_t stride, StructType *ST);
-  SmallVector<ObjectId, 4> objectsAt(unsigned site, const PtrInfo &p);
-  SmallVector<ObjectId, 4> objectsOf(const PtrInfo &p);
-  // A constant global: a write into it is undefined (LLVM), outside the domain, so no write classifies it; read at
-  // a quantum offset it is a QROM (rule 20, §1.3 qrom_load), never a QRAM.
-  bool readOnlySite(unsigned s) const {
-    auto *gv = dyn_cast_or_null<GlobalVariable>(st.sites[s].v);
-    return st.sites[s].kind == SiteKind::Global && gv && gv->isConstant();
-  }
-  bool readOnlyObject(ObjectId o) const { return readOnlySite(st.objects[o].site); }
-  void touchObject() { st.changed = true; }
-  // cq-n58p: escaped addresses (ImplState::escaped).
-  void escape(const PtrInfo &p) {
-    PtrInfo e;
-    e.init = true;
-    e.top = true;
-    bool sorted = llvm::is_sorted(st.escaped.sites);
-    for (unsigned s : p.sites)
-      if (sorted ? !std::binary_search(st.escaped.sites.begin(), st.escaped.sites.end(), s)
-                 : !llvm::is_contained(st.escaped.sites, s))
-        e.sites.push_back(s);
-    if (!e.sites.empty() && st.escaped.join(e))
-      touchObject();
-  }
-  void escapeConstants(const Constant *C);
-  // The pointer a lost-provenance read in F may hold: any escaped site that may be live in F (an alloca
-  // only when its function is F or may be on the stack below F), at an unknown offset; an unknown
-  // object named by V when there is none.
-  PtrInfo escapedFor(const Value *V, const Function *F);
-  bool hasIndirectCall = false, hasReturnsTwice = false;
-  // cq-erjd: a store of F that cannot reach a load of F in the CFG cannot reach it in another
-  // activation either: F runs at most once per run, or the object is F's own alloca and F never
-  // recurses. Otherwise every store of the object reaches the load.
-  bool storeOrderHolds(const Function *F, const Site &site);
-  std::map<const Function *, int> runOnceMemo; // 0 in progress, 1 yes, 2 no
-  bool runOnce(const Function *F);
-  bool mayRecurse(const Function *F) {
-    return F->hasAddressTaken() || callsReach(F, F);
-  }
 
   // Specializations.
-  SpecState *getSpec(Function *F, std::vector<Lanes> formal, std::vector<Type *> tys,
-                     std::vector<std::string> cells, bool ctl, bool pure, unsigned depth,
+  SpecState *getSpec(Function *F, std::vector<Lanes> formal, std::vector<Type *> tys, bool ctl, bool pure,
                      std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals = {});
   void analyze(SpecState &S);
 
@@ -332,9 +252,7 @@ private:
   bool measuredRead(const Value *V);
   void computeExitQ(SpecState &S);
   Lanes L(const Value *V);
-  PtrInfo P(const Value *V);
   bool setL(const Value *V, const Lanes &l);
-  bool setP(const Value *V, const PtrInfo &p);
 
   void computeCDT(SpecState &S);
   bool blockCT(const BasicBlock *BB) const;
@@ -353,8 +271,17 @@ private:
   void transferBinary(BinaryOperator &BO);
   void transferCast(CastInst &CI);
   void transferGEP(GetElementPtrInst &G);
-  void transferLoad(Instruction &I, Value *ptr, Type *T);
-  void transferStore(Instruction &I, Value *ptr, Value *val, Type *T);
+  // Rule 20: the base of ptr through getelementptrs with untainted indices, as cur sees them.
+  const Value *hostBase(const Value *ptr);
+  // Rule 20 (b), rule 23's and rule 24's cases: the monotone demotion test, part of the fixed point.
+  bool hostAlloca(const AllocaInst *A) const { return !cur->demoted.count(A); }
+  bool hostUsersOk(const AllocaInst &A);
+  void demoteAllocas(SpecState &S);
+  // The host-resident object p reaches, else nullptr (rule 20: no pointer is otherwise resolved).
+  const Value *hostObject(const Value *ptr);
+  bool quantumScope(const BasicBlock *BB) const { return blockCT(BB) || cur->ctl; }
+  void transferLoad(LoadInst &LI);
+  void transferStore(Instruction &I, Value *ptr, Value *val);
   void transferMemIntrinsic(MemIntrinsic &MI);
   void transferCall(CallBase &CB);
   void lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool viaIntrinsic);
@@ -368,11 +295,8 @@ private:
   // objects, its own formals' provenance) although no final call reaches it. The analysis therefore runs a
   // second time from nothing, each call taking at once the key the first run ended with (CalleeMemo): only
   // the specializations the program reaches contribute.
-  struct CalleeMemo { std::vector<Lanes> formal; std::vector<std::string> cells; bool ctl; std::vector<uint64_t> bounds; };
+  struct CalleeMemo { std::vector<Lanes> formal; bool ctl; std::vector<uint64_t> bounds; };
   std::map<std::tuple<std::string, const CallBase *, const Function *>, CalleeMemo> calleeMemo;
-  // The globals the first run found QRAM: in the second run their objects are QRAM from the start, so no call
-  // reaches a callee in place with a pointer into one before the fixed point learns it (rules 19, 20; CR §1.4).
-  std::set<const Value *> qramGlobals;
   void solve();
   void computeReachable();
   void resetAnalysis();
@@ -388,14 +312,7 @@ private:
       localChanged = true;
     }
   }
-  void recordWrite(Instruction &I, const PtrInfo &p, uint64_t size, bool handle, Type *T,
-                   const PtrInfo *storedPtr, const Lanes *storedLanes);
-  // cq-n58p, cq-0y74, cq-kuuf: a non-pointer write of a value that may carry an address.
-  void recordIntWrite(const PtrInfo &p, uint64_t size);
-  std::string cellDigits(CallBase &CB, Function *G, unsigned argNo, const Value *actual);
-  bool writtenBefore(const Object &O, std::optional<int64_t> off, uint64_t size, const CallBase &CB);
   std::optional<uint64_t> rangeBound(const Value *V);
-  unsigned resolveK(const Function &F);
   std::map<int64_t, SmallVector<Function *, 2>> signalHandlers; // signal(sig, h) calls of the module
   static constexpr int64_t kAnySignal = INT64_MIN;                // installed under a run-time signal number
   // G reaches F through direct calls of defined functions (recursion, rule 14).
@@ -431,10 +348,6 @@ private:
   // Post-fixpoint.
   void finish();
   std::string buildMask(SpecState &S);
-  bool calleeDerivesFat(SpecState &S, unsigned argNo);
-  cq::PtrAbi handedOnAbi(SpecState &S, unsigned argNo);
-  bool calleeLoadsThrough(SpecState &S, unsigned argNo);
-  bool accessInQuantumExitLoop(SpecState &S, unsigned argNo);
 };
 
 FnInfo &Analyzer::fn(const Function *F) {
@@ -551,7 +464,7 @@ unsigned Analyzer::lanesOf(Type *T) {
   else if (T->isFloatingPointTy())
     n = 1;
   else if (T->isPointerTy())
-    n = 2;
+    n = 1;   // rule 3: one 64-bit address rail
   else if (auto *ST = dyn_cast<StructType>(T)) {
     for (Type *E : ST->elements())
       n += lanesOf(E);
@@ -588,220 +501,6 @@ unsigned Analyzer::laneOffset(Type *Agg, ArrayRef<unsigned> idx) {
   return off;
 }
 
-// ---------------------------------------------------------------------------------------------
-// Sites and objects.
-
-unsigned Analyzer::siteFor(const Value *V, SiteKind k, const Function *owner) {
-  // cq-i9wk, cq-1c5j: a site of the running function's own activation is per specialization
-  // (ImplState::siteOfFrame).
-  bool frameCtx = owner && cur && cur->F == owner && k != SiteKind::Function && k != SiteKind::Global;
-  // cq-e0tq: an unknown object a clone names is the clones' (ImplState::siteOfCloneUnknown), not its frame's.
-  bool cloneUnknown = frameCtx && k == SiteKind::External && !cur->inPlace;
-  auto &map = cloneUnknown ? st.siteOfCloneUnknown : frameCtx ? st.siteOfFrame[cur->frame] : st.siteOf;
-  auto it = map.find(V);
-  if (it != map.end())
-    return it->second;
-  unsigned id = st.sites.size();
-  Site s;
-  s.kind = k;
-  s.v = V;
-  s.owner = owner;
-  st.sites.push_back(s);
-  map[V] = id;
-  if (k != SiteKind::Function) {
-    Object o;
-    o.site = id;
-    o.qram = k == SiteKind::Global && qramGlobals.count(V);
-    st.sites[id].objects.push_back(st.objects.size());
-    st.objects.push_back(o);
-  }
-  // An array of structs is one object per scalar field column (rule 20).
-  Type *T = nullptr;
-  if (auto *AI = dyn_cast<AllocaInst>(V))
-    T = AI->getAllocatedType();
-  else if (auto *GV = dyn_cast<GlobalVariable>(V))
-    T = GV->getValueType();
-  if (T)
-    if (auto *AT = dyn_cast<ArrayType>(T))
-      if (auto *ST = dyn_cast<StructType>(AT->getElementType()))
-        splitSite(id, st.DL->getTypeAllocSize(ST), ST);
-  // Global initializers: the pointers they hold (function tables, 97).
-  if (auto *GV = dyn_cast<GlobalVariable>(V)) {
-    if (GV->hasInitializer()) {
-      SmallVector<const Constant *, 8> work{GV->getInitializer()};
-      PtrInfo stored;
-      bool any = false;
-      while (!work.empty()) {
-        const Constant *C = work.pop_back_val();
-        if (auto *G = dyn_cast<GlobalValue>(C)) {
-          PtrInfo p;
-          p.init = true;
-          p.top = true;
-          p.sites.push_back(siteFor(G, isa<Function>(G) ? SiteKind::Function : SiteKind::Global,
-                                    nullptr));
-          stored.join(p);
-          any = true;
-          continue;
-        }
-        for (const Use &U : C->operands())
-          if (auto *CC = dyn_cast<Constant>(U.get()))
-            work.push_back(CC);
-      }
-      if (any) {
-        for (ObjectId o : st.sites[id].objects) {
-          st.objects[o].stored.join(stored);
-          st.objects[o].anyPtr = true;
-        }
-        escape(stored);
-      }
-    }
-  }
-  return id;
-}
-
-void Analyzer::splitSite(unsigned s, uint64_t stride, StructType *ST) {
-  Site &site = st.sites[s];
-  if (site.stride)
-    return;
-  const StructLayout *SL = st.DL->getStructLayout(ST);
-  SmallVector<int64_t, 4> cols;
-  for (unsigned i = 0; i < ST->getNumElements(); ++i) {
-    Type *E = ST->getElementType(i);
-    if (E->isAggregateType() || E->isVectorTy())
-      return; // nested aggregates: kept whole (no example needs more)
-    cols.push_back(int64_t(SL->getElementOffset(i)));
-  }
-  if (cols.size() < 2)
-    return;
-  site.stride = stride;
-  site.columns.assign(cols.begin(), cols.end());
-  // Replace the single object by one per column. The first keeps its id.
-  ObjectId first = site.objects.front();
-  site.objects.clear();
-  for (unsigned c = 0; c < cols.size(); ++c) {
-    ObjectId id;
-    if (c == 0) {
-      id = first;
-    } else {
-      id = st.objects.size();
-      Object o = st.objects[first];
-      st.objects.push_back(o);
-    }
-    st.objects[id].column = int(c);
-    st.sites[s].objects.push_back(id);
-  }
-  st.changed = true;
-}
-
-SmallVector<ObjectId, 4> Analyzer::objectsAt(unsigned s, const PtrInfo &p) {
-  const Site &site = st.sites[s];
-  if (site.kind == SiteKind::Function)
-    return {};
-  if (!site.stride)
-    return {site.objects.front()};
-  if (auto m = p.mod(site.stride)) {
-    for (unsigned c = site.columns.size(); c-- > 0;)
-      if (site.columns[c] <= *m)
-        return {site.objects[c]};
-  }
-  return SmallVector<ObjectId, 4>(site.objects.begin(), site.objects.end());
-}
-
-SmallVector<ObjectId, 4> Analyzer::objectsOf(const PtrInfo &p) {
-  SmallVector<ObjectId, 4> out;
-  for (unsigned s : p.sites)
-    for (ObjectId o : objectsAt(s, p))
-      out.push_back(o);
-  return out;
-}
-
-// cq-n58p: a ptrtoint constant expression (an instruction operand, a global initializer) escapes the
-// address it converts.
-void Analyzer::escapeConstants(const Constant *C) {
-  SmallVector<const Constant *, 8> work{C};
-  SmallPtrSet<const Constant *, 16> seen;
-  while (!work.empty()) {
-    const Constant *X = work.pop_back_val();
-    if (!seen.insert(X).second || isa<GlobalValue>(X))
-      continue;
-    if (auto *CE = dyn_cast<ConstantExpr>(X))
-      if (CE->getOpcode() == Instruction::PtrToInt) {
-        APInt off(64, 0);
-        const Value *base =
-            CE->getOperand(0)->stripAndAccumulateConstantOffsets(*st.DL, off, /*AllowNonInbounds=*/true);
-        if (auto *G = dyn_cast<GlobalValue>(base)) {
-          PtrInfo p;
-          p.init = true;
-          p.sites.push_back(siteFor(G, isa<Function>(G) ? SiteKind::Function : SiteKind::Global, nullptr));
-          escape(p);
-        }
-      }
-    for (const Use &U : X->operands())
-      if (auto *CC = dyn_cast<Constant>(U.get()))
-        work.push_back(CC);
-  }
-}
-
-PtrInfo Analyzer::escapedFor(const Value *V, const Function *F) {
-  PtrInfo q;
-  q.init = true;
-  q.top = true;
-  for (unsigned s : st.escaped.sites) {
-    const Site &site = st.sites[s];
-    if (site.kind == SiteKind::Alloca && site.owner != F && !hasIndirectCall &&
-        !callsReach(site.owner, F))
-      continue;
-    q.sites.push_back(s);
-  }
-  // An address no escaped object can explain has no provenance (LLVM: a dereference is UB); an
-  // unknown object names it so the pointer is never bottom.
-  if (q.sites.empty())
-    q.sites.push_back(siteFor(V, SiteKind::External, F));
-  sortUnique(q.sites);
-  return q;
-}
-
-bool Analyzer::runOnce(const Function *F) {
-  auto it = runOnceMemo.find(F);
-  if (it != runOnceMemo.end())
-    return it->second == 1;
-  runOnceMemo[F] = 0; // a cycle through the callers: not once
-  bool once = !hasReturnsTwice && !F->hasAddressTaken() && !callsReach(F, F);
-  const CallBase *site = nullptr;
-  unsigned calls = 0;
-  if (once)
-    for (const User *U : F->users()) {
-      auto *CB = dyn_cast<CallBase>(U);
-      if (!CB || CB->getCalledFunction() != F) {
-        once = false;
-        break;
-      }
-      ++calls;
-      site = CB;
-    }
-  if (once && calls > 1)
-    once = false;
-  if (once && site) {
-    // The one call site runs once: its function runs once and the call is in no CFG cycle.
-    const BasicBlock *BB = site->getParent();
-    const Function *G = BB->getParent();
-    for (const BasicBlock *S : successors(BB))
-      if (isPotentiallyReachable(S, BB))
-        once = false;
-    if (once)
-      once = runOnce(G);
-  }
-  runOnceMemo[F] = once ? 1 : 2;
-  return once;
-}
-
-bool Analyzer::storeOrderHolds(const Function *F, const Site &site) {
-  if (hasReturnsTwice)
-    return false; // a longjmp re-enters a block after the setjmp (rule 24)
-  if (runOnce(F))
-    return true;
-  return site.kind == SiteKind::Alloca && site.owner == F && !mayRecurse(F);
-}
 
 // ---------------------------------------------------------------------------------------------
 // Specializations.
@@ -813,54 +512,9 @@ std::string lanesStr(const Lanes &l) {
   return s;
 }
 
-// A pointer actual's naming record (cellDigits) names a QRAM object ("OQ;").
-static bool qramRecord(const std::string &c) { return c.find("OQ;") != std::string::npos; }
 
-// cq-e0tq (CR rules 18, 20, 21): the key of a specialization's activation frame. A clone's frame is its own
-// (cq-i9wk, cq-1c5j), but the per-object records of a pointer formal's naming record (cellDigits: one per object
-// in provenance) count objects, and the objects include frame and unknown-object sites of other clones: a lost
-// provenance (every escaped object) or a recursive call handing on the pointer its own activation loaded. A frame
-// per full key then names new sites per new key and new keys per new site, a fixed point that never closes
-// (musl fflush's FILE list under its recursion, __stdio_write's iovec escaping through the syscall). Two clones
-// of one function whose keys differ only in how many objects carry the same record (same lanes, same A and
-// S digits, the same set of object records, flags, depth and bounds) see the same pointee cells, so they write
-// the same facts into their frames: they share one frame. The frame keys of a function are then finite.
-static std::string frameKey(StringRef key) {
-  std::string out;
-  size_t p = 0;
-  while (p < key.size()) {
-    size_t lb = key.find('[', p);
-    if (lb == StringRef::npos) {
-      out += key.substr(p).str();
-      break;
-    }
-    out += key.substr(p, lb + 1 - p).str();
-    size_t rb = key.find(']', lb);
-    StringRef c = key.substr(lb + 1, rb - lb - 1);
-    std::set<std::string> objs;
-    size_t q = 0;
-    while (q < c.size()) {
-      char k = c[q];
-      if (k == 'O') {
-        size_t e = c.find(';', q);
-        objs.insert(c.substr(q, e + 1 - q).str());
-        q = e + 1;
-      } else {
-        out += k;
-        ++q;
-      }
-    }
-    for (const std::string &o : objs)
-      out += o;
-    out += ']';
-    p = rb + 1;
-  }
-  return out;
-}
-
-SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector<Type *> tys,
-                             std::vector<std::string> cells, bool ctl, bool pure,
-                             unsigned depth, std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals) {
+SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector<Type *> tys, bool ctl, bool pure,
+                             std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals) {
   // A bound with no formal named (a library-build root read from its name): the quantum integer formals
   // in order, the reading §1.4's name gives.
   if (boundFormals.size() != bounds.size()) {
@@ -873,14 +527,9 @@ SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector
   }
   std::string key = F->getName().str();
   key += "|";
-  for (unsigned i = 0; i < formal.size(); ++i) {
-    key += lanesStr(formal[i]);
-    if (i < cells.size() && !cells[i].empty())
-      key += "[" + cells[i] + "]";
-    key += ",";
-  }
-  key += "|" + std::to_string(ctl) + std::to_string(pure) + ":" +
-         std::to_string(depth);
+  for (unsigned i = 0; i < formal.size(); ++i)
+    key += lanesStr(formal[i]) + ",";
+  key += "|" + std::to_string(ctl) + std::to_string(pure);
   for (size_t i = 0; i < bounds.size(); ++i)
     key += ":b" + std::to_string(boundFormals[i]) + "=" + std::to_string(bounds[i]);
   auto it = st.byKey.find(key);
@@ -890,26 +539,19 @@ SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector
   S->F = F;
   S->formal = std::move(formal);
   S->formalTy = std::move(tys);
-  S->cells = std::move(cells);
-  S->cells.resize(S->formal.size());
-  S->formalPtr.resize(S->formal.size());
   S->ctl = ctl;
   S->pure = pure;
-  S->depth = depth;
   S->bounds = std::move(bounds);
   S->boundFormals = std::move(boundFormals);
   S->declared = F->isDeclaration();
-  bool zero = !ctl && !pure && depth == 0 && S->bounds.empty();
+  bool zero = !ctl && !pure && S->bounds.empty();
   for (const Lanes &l : S->formal)
     zero = zero && l.none();
-  for (const std::string &c : S->cells)
-    zero = zero && c.find('1') == std::string::npos && !qramRecord(c);
   S->inPlace = zero && !S->declared;
   S->key = key;
   S->ret = Lanes(lanesOf(F->getReturnType()));
   SpecState *raw = S.get();
   st.byKey[key] = raw;
-  raw->frame = st.frameOf.emplace(frameKey(key), raw).first->second;
   st.specs.push_back(std::move(S));
   st.changed = true;
   return raw;
@@ -1005,45 +647,6 @@ void Analyzer::computeExitQ(SpecState &S) {
   }
 }
 
-PtrInfo Analyzer::P(const Value *V) {
-  auto it = cur->ptr.find(V);
-  if (it != cur->ptr.end())
-    return it->second;
-  PtrInfo p;
-  const Value *base = V;
-  if (auto *C = dyn_cast<Constant>(V)) {
-    APInt off(64, 0);
-    base = V->stripAndAccumulateConstantOffsets(*st.DL, off, /*AllowNonInbounds=*/true);
-    if (isa<ConstantPointerNull>(base) || isa<UndefValue>(base)) {
-      p.init = true;
-      return p;
-    }
-    // CR rule 13 (b137e75): a code address is an integer, never a data pointer: no object, no provenance; its
-    // value is no known offset (two code addresses chosen under a quantum condition are a quantum value).
-    if (isa<BlockAddress>(base)) {
-      p.init = true;
-      p.top = true;
-      return p;
-    }
-    if (auto *G = dyn_cast<GlobalValue>(base)) {
-      p.init = true;
-      p.c = off.getSExtValue();
-      p.sites.push_back(siteFor(G, isa<Function>(G) ? SiteKind::Function : SiteKind::Global, nullptr));
-      return p;
-    }
-    // Other constants (inttoptr of a literal address): an unknown external object.
-    (void)C;
-    p.init = true;
-    p.top = true;
-    p.sites.push_back(siteFor(V, SiteKind::External, nullptr));
-    return p;
-  }
-  if (auto *A = dyn_cast<Argument>(V)) {
-    if (A->getParent() == cur->F && A->getArgNo() < cur->formalPtr.size())
-      return cur->formalPtr[A->getArgNo()];
-  }
-  return p; // bottom
-}
 
 bool Analyzer::setL(const Value *V, const Lanes &l) {
   Lanes &dst = cur->lanes[V];
@@ -1056,14 +659,6 @@ bool Analyzer::setL(const Value *V, const Lanes &l) {
   return false;
 }
 
-bool Analyzer::setP(const Value *V, const PtrInfo &p) {
-  PtrInfo &dst = cur->ptr[V];
-  if (dst.join(p)) {
-    localChanged = true;
-    return true;
-  }
-  return false;
-}
 
 // ---------------------------------------------------------------------------------------------
 // Control dependence on tainted terminators (A1).
@@ -1500,33 +1095,8 @@ void Analyzer::transferPhi(PHINode &PN, const SmallPtrSetImpl<const PHINode *> &
     chosen = chosenAtDependentJoin(PN);
   if (chosen && classicalInduction(PN))
     chosen = false; // the trip index chooses it, a classical value (cq-0hdy)
-  if (PN.getType()->isPointerTy()) {
-    PtrInfo p;
-    for (const Value *In : PN.incoming_values())
-      p.join(P(In));
-    setP(&PN, p);
-    if (chosen) {
-      // Tag quantum iff the incomings may point into different objects; idx iff their offsets may
-      // differ (rule 21).
-      PtrInfo first = P(PN.getIncomingValue(0));
-      bool tag = false, idx = false;
-      for (const Value *In : PN.incoming_values()) {
-        if (In == &PN)
-          continue;
-        PtrInfo q = P(In);
-        if (q.sites != first.sites)
-          tag = true;
-        if (!q.sameOffset(first))
-          idx = true;
-      }
-      if (tag)
-        l.set(0);
-      if (idx)
-        l.set(1);
-    }
-  } else if (chosen) {
+  if (chosen)
     l = allLanes(n);
-  }
   setL(&PN, l);
 }
 
@@ -1537,23 +1107,8 @@ void Analyzer::transferSelect(SelectInst &SI) {
   orInto(l, L(SI.getFalseValue()));
   bool condQ = anyLane(L(SI.getCondition()));
   bool same = SI.getTrueValue() == SI.getFalseValue();
-  if (SI.getType()->isPointerTy()) {
-    PtrInfo a = P(SI.getTrueValue()), b = P(SI.getFalseValue());
-    PtrInfo p = a;
-    p.join(b);
-    setP(&SI, p);
-    if (condQ && !same) {
-      if (a.sites != b.sites)
-        l.set(0);
-      if (!a.sameOffset(b))
-        l.set(1);
-    }
-  } else if (condQ && !same) {
-    if (SI.getCondition()->getType()->isVectorTy())
-      l = allLanes(n);
-    else
-      l = allLanes(n);
-  }
+  if (condQ && !same)
+    l = allLanes(n);
   setL(&SI, l);
 }
 
@@ -1665,86 +1220,12 @@ void Analyzer::transferCast(CastInst &CI) {
     return;
   }
   case Instruction::PtrToInt:
-    escape(P(Src));
+  case Instruction::IntToPtr:
+    // Rule 3: identity (a pointer is an i64).
     setL(&CI, s.any() ? allLanes(n) : Lanes(n));
     return;
-  case Instruction::IntToPtr: {
-    // inttoptr of an integer derived from ptrtoint(p) keeps p's provenance (rule 21, LLVM's rule):
-    // tag = p's tag, idx from the integer arithmetic. An integer of unknown origin is decoded over
-    // unknown objects.
-    struct Walk {
-      const Value *p = nullptr;
-      int64_t c = 0;
-      uint64_t g = 0;
-      bool bad = false;
-    } w;
-    std::function<void(const Value *, int64_t)> go = [&](const Value *V, int64_t scale) {
-      using namespace PatternMatch;
-      const APInt *K;
-      const Value *X, *Y;
-      if (auto *PI = dyn_cast<PtrToIntInst>(V)) {
-        if (w.p || scale != 1)
-          w.bad = true;
-        w.p = PI->getOperand(0);
-        return;
-      }
-      if (match(V, m_APInt(K))) {
-        w.c += scale * K->getSExtValue();
-        return;
-      }
-      if (match(V, m_Add(m_Value(X), m_Value(Y))) ||
-          match(V, m_DisjointOr(m_Value(X), m_Value(Y)))) {
-        go(X, scale);
-        go(Y, scale);
-        return;
-      }
-      if (match(V, m_Sub(m_Value(X), m_APInt(K)))) {
-        go(X, scale);
-        w.c -= scale * K->getSExtValue();
-        return;
-      }
-      if (match(V, m_ZExtOrSExt(m_Value(X)))) {
-        go(X, scale);
-        return;
-      }
-      if (match(V, m_Shl(m_Value(X), m_APInt(K))) && K->ult(63)) {
-        w.g = gcd64(w.g, uint64_t(std::abs(scale)) << K->getZExtValue());
-        return;
-      }
-      if (match(V, m_Mul(m_Value(X), m_APInt(K)))) {
-        w.g = gcd64(w.g, uint64_t(std::abs(scale * K->getSExtValue())));
-        return;
-      }
-      w.g = gcd64(w.g, uint64_t(std::abs(scale)));
-    };
-    go(Src, 1);
-    Lanes l(2);
-    if (w.p && !w.bad) {
-      Lanes pl = L(w.p);
-      PtrInfo pp = P(w.p);
-      PtrInfo q = pp;
-      if (q.init && !q.top) {
-        q.c += w.c;
-        q.g = gcd64(q.g, w.g);
-      }
-      setP(&CI, q);
-      if (pl.test(0))
-        l.set(0);
-      if (pl.test(1) || s.any())
-        l.set(1);
-    } else {
-      // Provenance lost (cq-n58p): an unknown object, or any object whose address escaped.
-      setP(&CI, escapedFor(&CI, cur->F));
-      if (s.any())
-        l.set();
-    }
-    setL(&CI, l);
-    return;
-  }
   case Instruction::BitCast:
   case Instruction::AddrSpaceCast:
-    if (CI.getType()->isPointerTy())
-      setP(&CI, P(Src));
     if (lanesOf(Src->getType()) == n && CI.getType()->isPointerTy() == Src->getType()->isPointerTy()) {
       Lanes l = s;
       l.resize(n);
@@ -1764,508 +1245,180 @@ void Analyzer::transferCast(CastInst &CI) {
 }
 
 void Analyzer::transferGEP(GetElementPtrInst &G) {
-  Value *Base = G.getPointerOperand();
-  PtrInfo p = P(Base);
-  Lanes bl = L(Base);
-  Lanes l(lanesOf(G.getType()));
   if (!G.getType()->isPointerTy())
     internalError("taint: IR the pinned pipeline cannot emit (CR §0, rule 25): a vector getelementptr (a pointer vector)", &G);
-  if (bl.size() >= 2) {
-    if (bl.test(0))
-      l.set(0);
-    if (bl.test(1))
-      l.set(1);
-  }
-  PtrInfo q = p;
-  if (q.init && !q.top) {
-    for (gep_type_iterator GTI = gep_type_begin(G), E = gep_type_end(G); GTI != E; ++GTI) {
-      Value *Idx = GTI.getOperand();
-      if (StructType *ST = GTI.getStructTypeOrNull()) {
-        unsigned f = unsigned(cast<ConstantInt>(Idx)->getZExtValue());
-        q.c += int64_t(st.DL->getStructLayout(ST)->getElementOffset(f));
-        continue;
-      }
-      uint64_t sz = GTI.getSequentialElementStride(*st.DL);
-      if (auto *CIdx = dyn_cast<ConstantInt>(Idx)) {
-        q.c += CIdx->getSExtValue() * int64_t(sz);
-      } else {
-        q.g = gcd64(q.g, sz);
-        if (anyLane(L(Idx)))
-          l.set(1);
-      }
-    }
-  } else {
-    for (auto &Idx : G.indices())
-      if (anyLane(L(Idx.get())))
-        l.set(1);
-  }
-  // A struct element stride over a variable index marks an array of structs: split the sites into
-  // field columns (rule 20, 78).
-  {
-    gep_type_iterator GTI = gep_type_begin(G);
-    for (unsigned i = 0; GTI != gep_type_end(G); ++GTI, ++i) {
-      Value *Idx = GTI.getOperand();
-      if (GTI.isSequential() && !isa<ConstantInt>(Idx)) {
-        Type *Elt = GTI.getIndexedType();
-        if (auto *ST = dyn_cast<StructType>(Elt))
-          for (unsigned s : p.sites)
-            if (st.sites[s].kind != SiteKind::Function)
-              splitSite(s, st.DL->getTypeAllocSize(ST), ST);
-      }
-    }
-  }
-  setP(&G, q);
+  // Rule 3: tainted iff computed from a rail. A tainted pointer is one 64-bit address rail; nothing is decoded.
+  Lanes l(lanesOf(G.getType()));
+  bool q = L(G.getPointerOperand()).any();
+  for (auto &Idx : G.indices())
+    q = q || L(Idx.get()).any();
+  if (q)
+    l.set();
   setL(&G, l);
 }
 
-// Record a write (store, memset/memcpy destination, callee store) into the objects of p.
-void Analyzer::recordWrite(Instruction &I, const PtrInfo &p, uint64_t size, bool handle, Type *T,
-                           const PtrInfo *storedPtr, const Lanes *storedLanes) {
-  auto ex = p.exact();
-  bool unknownCell = !ex;
-  bool escaped = false;   // the stored pointer escapes once per write, not once per destination object
-  for (unsigned s : p.sites) {
-    const Site &site = st.sites[s];
-    if (site.kind == SiteKind::Function || readOnlySite(s))
+
+const Value *Analyzer::hostBase(const Value *p) {
+  for (;;) {
+    if (auto *G = dyn_cast<GEPOperator>(p)) {
+      for (const Use &U : G->indices())
+        if (L(U.get()).any())
+          return nullptr;
+      p = G->getPointerOperand();
       continue;
-    for (ObjectId oid : objectsAt(s, p)) {
-      Object &O = st.objects[oid];
-      if (handle) {
-        if (unknownCell) {
-          if (!O.anyHandle) {
-            O.anyHandle = true;
-            touchObject();
-          }
-        } else if (addRange(O.handleCells, *ex, size)) {
-          touchObject();
-        }
-      }
-      if (T && T->isPointerTy()) {
-        if (unknownCell) {
-          if (!O.anyPtr) {
-            O.anyPtr = true;
-            touchObject();
-          }
-        } else if (addRange(O.ptrCells, *ex, size)) {
-          touchObject();
-        }
-        if (storedPtr) {
-          if (!escaped)
-            escape(*storedPtr);
-          escaped = true;
-          // A store instruction's pointers are seen only by loads it may reach (88: a pointer
-          // stored after a load is not in that load's provenance); memcpy and initializers are
-          // merged unconditionally.
-          if (isa<StoreInst>(&I) || isa<AtomicRMWInst>(&I) || isa<AtomicCmpXchgInst>(&I)) {
-            PtrInfo &slot = O.storedBy[&I];
-            if (slot.join(*storedPtr))
-              touchObject();
-          } else if (O.stored.join(*storedPtr)) {
-            touchObject();
-          }
-        }
-        if (storedLanes && storedLanes->size() >= 2) {
-          if (storedLanes->test(0) && !O.storedTagQ) {
-            O.storedTagQ = true;
-            touchObject();
-          }
-          if (storedLanes->test(1) && !O.storedIdxQ) {
-            O.storedIdxQ = true;
-            touchObject();
-          }
-        }
-      }
     }
+    return p;
   }
 }
 
-// A stored non-pointer value may carry (part of) an address unless it is a constant built from no
-// global's address (a literal integer, null, undef, a float).
-static bool mayCarryAddress(const Value *V) {
-  auto *C = dyn_cast<Constant>(V);
-  if (!C)
+const Value *Analyzer::hostObject(const Value *ptr) {
+  const Value *b = hostBase(ptr);
+  if (!b)
+    return nullptr;
+  if (auto *GV = dyn_cast<GlobalVariable>(b))
+    return hostGlobal(*GV) ? b : nullptr;
+  if (auto *AI = dyn_cast<AllocaInst>(b))
+    return AI->getFunction() == cur->F && hostAlloca(AI) ? b : nullptr;
+  return nullptr;
+}
+
+// Rule 23: an alloca whose every user is a recognised fenv call taking the alloca itself (lifetime and debug
+// intrinsics aside) is host-resident, its quantum part carried as SSA values (82).
+static bool confinedFenvObject(const AllocaInst &A) {
+  bool any = false;
+  for (const User *U : A.users()) {
+    auto *CB = dyn_cast<CallBase>(U);
+    if (!CB)
+      return false;
+    if (auto *II = dyn_cast<IntrinsicInst>(CB); II && (II->isLifetimeStartOrEnd() || isa<DbgInfoIntrinsic>(II)))
+      continue;
+    const Function *G = CB->getCalledFunction();
+    if (!G || !isFenvCall(G->getName()))
+      return false;
+    any = true;
+  }
+  return any;
+}
+
+// Rule 20 (b): every transitive user of the alloca through getelementptrs with untainted indices.
+bool Analyzer::hostUsersOk(const AllocaInst &A) {
+  if (L(A.getArraySize()).any())
+    return false;
+  if (confinedFenvObject(A))
     return true;
-  SmallVector<const Constant *, 8> work{C};
+  SmallVector<const Value *, 8> work{&A};
+  SmallPtrSet<const Value *, 16> seen;
   while (!work.empty()) {
-    const Constant *X = work.pop_back_val();
-    if (isa<GlobalValue>(X) || isa<BlockAddress>(X) || isa<DSOLocalEquivalent>(X) ||
-        isa<NoCFIValue>(X))
-      return true;
-    for (const Use &U : X->operands())
-      if (auto *CC = dyn_cast<Constant>(U.get()))
-        work.push_back(CC);
-  }
-  return false;
-}
-
-void Analyzer::recordIntWrite(const PtrInfo &p, uint64_t size) {
-  auto ex = p.exact();
-  for (unsigned s : p.sites) {
-    if (st.sites[s].kind == SiteKind::Function)
+    const Value *V = work.pop_back_val();
+    if (!seen.insert(V).second)
       continue;
-    for (ObjectId oid : objectsAt(s, p)) {
-      Object &O = st.objects[oid];
-      if (!ex || !size) {
-        if (!O.anyInt) {
-          O.anyInt = true;
-          touchObject();
-        }
-      } else if (addRange(O.intCells, *ex, size)) {
-        touchObject();
+    for (const Use &Us : V->uses()) {
+      const User *U = Us.getUser();
+      if (auto *G = dyn_cast<GetElementPtrInst>(U)) {
+        if (Us.getOperandNo() != GetElementPtrInst::getPointerOperandIndex())
+          return false;
+        for (const Use &Idx : G->indices())
+          if (L(Idx.get()).any())
+            return false;
+        work.push_back(G);
+        continue;
       }
+      auto *I = dyn_cast<Instruction>(U);
+      if (!I)
+        return false;
+      if (isa<ICmpInst>(I))
+        continue;
+      if (isa<LoadInst>(I)) {
+        if (quantumScope(I->getParent()))
+          return false;
+        continue;
+      }
+      if (auto *SI = dyn_cast<StoreInst>(I)) {
+        if (SI->getPointerOperand() != V || L(SI->getValueOperand()).any() || quantumScope(I->getParent()))
+          return false;
+        continue;
+      }
+      if (auto *MI = dyn_cast<MemIntrinsic>(I)) {
+        if (L(MI->getLength()).any() || quantumScope(I->getParent()))
+          return false;
+        if (auto *MS = dyn_cast<MemSetInst>(MI)) {
+          if (L(MS->getValue()).any())
+            return false;
+          continue;
+        }
+        auto *MT = cast<MemTransferInst>(MI);
+        if (!hostObject(MT->getRawSource()) || !hostObject(MT->getRawDest()))
+          return false;
+        continue;
+      }
+      if (auto *II = dyn_cast<IntrinsicInst>(I); II && (II->isLifetimeStartOrEnd() || isa<DbgInfoIntrinsic>(II)))
+        continue;
+      return false;
     }
   }
+  return true;
 }
 
-void Analyzer::transferLoad(Instruction &I, Value *ptr, Type *T) {
-  PtrInfo p = P(ptr);
-  Lanes pl = L(ptr);
-  unsigned n = lanesOf(T);
-  uint64_t size = st.DL->getTypeStoreSize(T);
-  bool fat = pl.any();
-  bool q = fat;
-  auto ex = p.exact();
-  PtrInfo loaded;
-  // cq-e0tq: the stored pointers of every object read, gathered as a site set and one offset join (a load of
-  // many objects, each stored by many stores, joined one PtrInfo at a time, cost the size of the result per store).
-  BitVector loadedSites;
-  PtrInfo loadedOff;
-  auto gather = [&](const PtrInfo &q) {
-    if (!q.init)
-      return;
-    for (unsigned x : q.sites) {
-      if (x >= loadedSites.size())
-        loadedSites.resize(std::max<size_t>(x + 1, st.sites.size()));
-      loadedSites.set(x);
-    }
-    PtrInfo o;
-    o.init = true;
-    o.top = q.top;
-    o.c = q.c;
-    o.g = q.g;
-    loadedOff.join(o);
-  };
-  bool tagQ = false, idxQ = false, intPun = false;
-  for (unsigned s : p.sites) {
-    for (ObjectId oid : objectsAt(s, p)) {
-      Object &O = st.objects[oid];
-      if (pl.size() >= 2 && pl.test(1) && O.mayHoldHandle() && !O.qram) {
-        O.qram = true; // quantum-offset load of an object that may hold a handle (rule 20)
-        touchObject();
+// The one monotone fixpoint with taint (rule 20): a failing user demotes the alloca, its loads become rails.
+void Analyzer::demoteAllocas(SpecState &S) {
+  for (const BasicBlock *BB : fn(S.F).rpo)
+    for (const Instruction &I : *BB)
+      if (auto *A = dyn_cast<AllocaInst>(&I); A && !S.demoted.count(A) && !hostUsersOk(*A)) {
+        S.demoted.insert(A);
+        localChanged = true;
       }
-      if (O.cellHandle(ex, size))
-        q = true;
-      if (T->isPointerTy()) {
-        gather(O.stored);
-        for (auto &[SI, sp] : O.storedBy) {
-          if (SI->getFunction() != I.getFunction() ||
-              !storeOrderHolds(I.getFunction(), st.sites[O.site])) {
-            gather(sp);
-            continue;
-          }
-          FnInfo &fi = fn(I.getFunction());
-          if (isPotentiallyReachable(SI, &I, nullptr, fi.DT.get(), fi.LI.get()))
-            gather(sp);
-        }
-        tagQ = tagQ || O.storedTagQ;
-        idxQ = idxQ || O.storedIdxQ;
-        if (O.cellHandle(ex, size))
-          idxQ = true; // a handle cell of pointer kind holds (tag, idx) rails (107)
-        if (overlapsAny(O.intCells, ex, size, O.anyInt)) {
-          // A cell written as an integer (a pointer punned, copied byte-wise, compare-exchanged as
-          // i64): the pointer read back has lost its provenance (cq-n58p, cq-0y74, cq-kuuf).
-          intPun = true;
-          if (O.cellHandle(ex, size))
-            tagQ = idxQ = true;
-        }
-      }
+}
+
+// Rule 24: an access is unobservable when its pointer reaches, through getelementptrs, an alloca or an internal
+// global whose every use is a load or store through it; every other volatile access is observable.
+static bool observableVolatile(const Value *ptr) {
+  const Value *b = getUnderlyingObject(ptr);
+  if (isa<AllocaInst>(b))
+    return false;
+  auto *GV = dyn_cast<GlobalVariable>(b);
+  return !(GV && GV->hasLocalLinkage() && onlyAccessedThrough(*GV));
+}
+
+void Analyzer::transferLoad(LoadInst &LI) {
+  unsigned n = lanesOf(LI.getType());
+  const Value *ptr = LI.getPointerOperand();
+  // Rule 3: every load is a bus load and its result a rail, except a load of a host-resident object with no quantum
+  // predicate in scope (rule 20) and an observable volatile load at a classical address (rule 24).
+  bool host = hostObject(ptr) && !quantumScope(LI.getParent());
+  bool volatileHost = LI.isVolatile() && observableVolatile(ptr) && !L(ptr).any();
+  setL(&LI, host || volatileHost ? Lanes(n) : allLanes(n));
+}
+
+void Analyzer::transferStore(Instruction &I, Value *ptr, Value *val) {
+  auto *SI = dyn_cast<StoreInst>(&I);
+  if (SI && hostObject(ptr) && !L(val).any() && !quantumScope(I.getParent()))
+    return;   // a plain store into a host-resident object (rule 20)
+  if (SI && SI->isVolatile() && observableVolatile(ptr)) {
+    if (L(ptr).any() || L(val).any() || quantumScope(I.getParent())) {
+      cur->hasEffect = true;   // rule 24: the effect entry volatile_store
+      cur->anyQuantum = true;
     }
-  }
-  if (loadedOff.init) {
-    loaded = loadedOff;
-    for (unsigned x : loadedSites.set_bits())
-      loaded.sites.push_back(x);
-  }
-  if (T->isPointerTy()) {
-    if (intPun)
-      loaded.join(escapedFor(&I, cur->F));
-    if (!loaded.init || loaded.sites.empty()) {
-      // Pointer of unknown origin: an external object named by this load.
-      PtrInfo e;
-      e.init = true;
-      e.top = true;
-      e.sites.push_back(siteFor(&I, SiteKind::External, cur->F));
-      loaded.join(e);
-    }
-    setP(&I, loaded);
-    Lanes l(2);
-    if (tagQ || (fat && loaded.sites.size() > 1))
-      l.set(0);
-    if (idxQ || (fat && !loaded.exact()))
-      l.set(1);
-    if (pl.size() >= 2 && pl.test(1)) {
-      l.set(0);
-      l.set(1);
-    }
-    setL(&I, l);
     return;
   }
-  if (q)
-    setL(&I, allLanes(n));
-  else
-    setL(&I, Lanes(n));
-}
-
-void Analyzer::transferStore(Instruction &I, Value *ptr, Value *val, Type *T) {
-  PtrInfo p = P(ptr);
-  Lanes pl = L(ptr);
-  Lanes vl = L(val);
-  bool handle = vl.any() || pl.any() || blockCT(I.getParent()) || cur->ctl;
-  if (pl.size() >= 2 && pl.test(1)) {
-    for (ObjectId oid : objectsOf(p))
-      if (!st.objects[oid].qram && !readOnlyObject(oid)) {
-        st.objects[oid].qram = true; // quantum-offset store (rule 20)
-        touchObject();
-      }
-  }
-  PtrInfo sp;
-  const PtrInfo *spp = nullptr;
-  Lanes ctlLanes;
-  const Lanes *slp = &vl;
-  if (T->isPointerTy()) {
-    sp = P(val);
-    spp = &sp;
-    if (handle && !vl.any()) {
-      ctlLanes = Lanes(2);
-      if (blockCT(I.getParent()) || cur->ctl)
-        ctlLanes.set();
-      slp = &ctlLanes;
-    }
-  }
-  recordWrite(I, p, st.DL->getTypeStoreSize(T), handle, T, spp, slp);
-  if (!T->isPointerTy() && mayCarryAddress(val))
-    recordIntWrite(p, st.DL->getTypeStoreSize(T));
-  if (!p.sites.empty()) {
-    for (unsigned s : p.sites) {
-      const Site &site = st.sites[s];
-      if (!(site.kind == SiteKind::Alloca && site.owner == cur->F))
-        cur->writesOuter = true;
-    }
-  }
-  if (handle)
-    cur->anyQuantum = true;
-  // A classical store into a slot cell materializes a seed rail (rule 20 homogeneity, rule 7).
-  for (ObjectId oid : objectsOf(p))
-    if (st.objects[oid].cellHandle(p.exact(), st.DL->getTypeStoreSize(T)))
-      cur->anyQuantum = true;
+  cur->writesOuter = true;   // a bus store (rule 5)
+  cur->anyQuantum = true;
 }
 
 void Analyzer::transferMemIntrinsic(MemIntrinsic &MI) {
-  PtrInfo d = P(MI.getRawDest());
-  Lanes dl = L(MI.getRawDest());
-  Lanes nl = L(MI.getLength());
-  bool ctlQ = blockCT(MI.getParent()) || cur->ctl || nl.any() || dl.any();
-  std::optional<uint64_t> len;
-  if (auto *C = dyn_cast<ConstantInt>(MI.getLength()))
-    len = C->getZExtValue();
-  if (dl.size() >= 2 && dl.test(1))
-    for (ObjectId oid : objectsOf(d))
-      if (!st.objects[oid].qram && !readOnlyObject(oid)) {
-        st.objects[oid].qram = true;
-        touchObject();
-      }
-  for (unsigned s : d.sites) {
-    const Site &site = st.sites[s];
-    if (!(site.kind == SiteKind::Alloca && site.owner == cur->F))
-      cur->writesOuter = true;
-  }
-  if (auto *MS = dyn_cast<MemSetInst>(&MI)) {
-    bool handle = ctlQ || L(MS->getValue()).any();
-    recordWrite(MI, d, len.value_or(0), handle, nullptr, nullptr, nullptr);
-    if (!len && handle) {
-      PtrInfo u = d;
-      u.top = true;
-      recordWrite(MI, u, 0, true, nullptr, nullptr, nullptr);
-    }
-    return;
-  }
-  auto *MT = cast<MemTransferInst>(&MI);
-  PtrInfo s = P(MT->getRawSource());
-  Lanes sl = L(MT->getRawSource());
-  auto sx = s.exact();
-  auto dx = d.exact();
-  bool srcAny = false;
-  std::vector<Range> moved;
-  bool movedPtr = false, movedInt = false;
-  PtrInfo storedPtr;
-  bool sTag = false, sIdx = false;
-  for (unsigned site : s.sites) {
-    for (ObjectId oid : objectsAt(site, s)) {
-      Object &O = st.objects[oid];
-      if (sl.size() >= 2 && sl.test(1) && O.mayHoldHandle() && !O.qram) {
-        O.qram = true;
-        touchObject();
-      }
-      if (O.anyPtr || !O.ptrCells.empty()) {
-        movedPtr = true;
-        storedPtr.join(O.stored);
-        for (auto &[SI, sp] : O.storedBy)
-          storedPtr.join(sp);
-        sTag = sTag || O.storedTagQ;
-        sIdx = sIdx || O.storedIdxQ;
-      }
-      if (O.anyInt || !O.intCells.empty())
-        movedInt = true;
-      if (!O.mayHoldHandle())
-        continue;
-      if (O.anyHandle || O.qram || !sx || !dx || !len) {
-        srcAny = true;
-        continue;
-      }
-      for (const Range &r : O.handleCells)
-        if (r.off < *sx + int64_t(*len) && *sx < r.off + int64_t(r.size))
-          moved.push_back({r.off - *sx + *dx, r.size});
+  // Rule 22, host-resident destination: the intrinsic stays (the alloca's user test decided).
+  if (hostObject(MI.getRawDest()) && !quantumScope(MI.getParent()) && !L(MI.getLength()).any()) {
+    if (auto *MS = dyn_cast<MemSetInst>(&MI)) {
+      if (!L(MS->getValue()).any())
+        return;
+    } else if (hostObject(cast<MemTransferInst>(&MI)->getRawSource())) {
+      return;
     }
   }
-  if (sl.any())
-    srcAny = true;
-  if (ctlQ || srcAny) {
-    PtrInfo u = d;
-    if (!len || srcAny || !dx) {
-      u.top = !len || !dx ? true : u.top;
-    }
-    if (len && dx && !srcAny)
-      recordWrite(MI, d, *len, true, nullptr, nullptr, nullptr);
-    else {
-      PtrInfo uu = d;
-      uu.top = true;
-      recordWrite(MI, uu, 0, true, nullptr, nullptr, nullptr);
-    }
-  }
-  for (const Range &r : moved) {
-    PtrInfo at = d;
-    at.c = r.off;
-    at.g = 0;
-    recordWrite(MI, at, r.size, true, nullptr, nullptr, nullptr);
-  }
-  if (movedInt) {
-    PtrInfo uu = d;
-    uu.top = true;
-    recordIntWrite(uu, 0);
-  }
-  if (movedPtr) {
-    Lanes pl(2);
-    if (sTag)
-      pl.set(0);
-    if (sIdx)
-      pl.set(1);
-    PtrInfo uu = d;
-    uu.top = true;
-    PointerType *PT = PointerType::get(MI.getContext(), 0);
-    recordWrite(MI, uu, 8, false, PT, &storedPtr, &pl);
-  }
+  cur->writesOuter = true;
+  cur->anyQuantum = true;
 }
 
 // ---------------------------------------------------------------------------------------------
-// Variadic functions (CR §1.4, rules 3 and 20; 95, 109; cq-prvy).
-//
-// A variadic clone is specialised per call-site arity, so cur's formals past F's fixed parameters are
-// the variadic actuals. llvm.va_start(ap) is the target ABI's spill of them (x86-64 SysV: va_list is
-// { i32 gp_offset, i32 fp_offset, ptr overflow_arg_area, ptr reg_save_area }): one object of this
-// frame, named by the va_start call, that both area pointers point into. -O1's own va_arg code reads
-// the actuals back through those pointers at classical run-time offsets, so the object is uniform: when
-// any variadic actual is quantum every cell holds a handle (the classical actuals are promoted to
-// rails, 95's reference), and its pointer actuals are the pointers it may hold.
-static constexpr int64_t kVaOverflowOff = 8, kVaRegSaveOff = 16, kVaListSize = 24;
-
-void Analyzer::transferVaStart(CallBase &CB) {
-  const Triple TT(st.M->getTargetTriple());
-  if (TT.getArch() != Triple::x86_64)
-    internalError("taint: IR the pinned pipeline cannot emit (CR §0, rule 25): llvm.va_start on a target other than x86-64 SysV", &CB);
-  unsigned area = siteFor(&CB, SiteKind::Alloca, cur->F);
-  bool anyQ = false, anyPtr = false;
-  PtrInfo held;
-  Lanes heldLanes(2);
-  for (unsigned i = cur->F->arg_size(); i < cur->formal.size(); ++i) {
-    if (cur->formal[i].any())
-      anyQ = true;
-    if (i < cur->formalTy.size() && cur->formalTy[i] && cur->formalTy[i]->isPointerTy()) {
-      anyPtr = true;
-      if (i < cur->formalPtr.size())
-        held.join(cur->formalPtr[i]);
-      if (cur->formal[i].size() >= 2) {
-        if (cur->formal[i].test(0))
-          heldLanes.set(0);
-        if (cur->formal[i].test(1))
-          heldLanes.set(1);
-      }
-    }
-  }
-  PtrInfo cells;
-  cells.init = true;
-  cells.top = true;
-  cells.sites.push_back(area);
-  if (anyQ) {
-    recordWrite(CB, cells, 0, true, nullptr, nullptr, nullptr);
-    cur->anyQuantum = true;
-  }
-  PointerType *PT = PointerType::get(CB.getContext(), 0);
-  if (anyPtr && held.init)
-    recordWrite(CB, cells, 8, false, PT, &held, &heldLanes);
-  // ap's two area pointers point into the area (classical: the offsets are the ABI's).
-  PtrInfo ap = P(CB.getArgOperand(0));
-  Lanes classical(2);
-  for (int64_t off : {kVaOverflowOff, kVaRegSaveOff}) {
-    PtrInfo at = ap;
-    if (auto e = ap.exact())
-      at.c = *e + off;
-    else
-      at.top = true;
-    recordWrite(CB, at, 8, false, PT, &cells, &classical);
-  }
-}
-
-void Analyzer::transferVaCopy(CallBase &CB) {
-  // va_copy(dst, src): src's va_list cells into dst's, pointer cell by pointer cell.
-  PtrInfo dst = P(CB.getArgOperand(0)), src = P(CB.getArgOperand(1));
-  PointerType *PT = PointerType::get(CB.getContext(), 0);
-  for (int64_t off = 0; off < kVaListSize; off += 8) {
-    PtrInfo s = src, d = dst;
-    if (auto e = src.exact())
-      s.c = *e + off;
-    else
-      s.top = true;
-    if (auto e = dst.exact())
-      d.c = *e + off;
-    else
-      d.top = true;
-    PtrInfo moved;
-    bool any = false, tagQ = false, idxQ = false;
-    for (ObjectId oid : objectsOf(s)) {
-      Object &O = st.objects[oid];
-      // The va_list's cells hold what va_start wrote (two classical offsets, two pointers into the save
-      // and overflow areas): a handle in one of them is a store into the opaque va_list's bytes, which
-      // makes the later va_arg undefined (C17 7.16.1), outside the domain. Handles elsewhere in the
-      // object (a va_list inside a struct with quantum fields) are not moved by va_copy.
-      if (!(O.anyPtr || !O.ptrCells.empty()))
-        continue;
-      any = true;
-      moved.join(O.stored);
-      for (auto &[SI, sp] : O.storedBy)
-        moved.join(sp);
-      tagQ = tagQ || O.storedTagQ;
-      idxQ = idxQ || O.storedIdxQ;
-    }
-    if (!any)
-      continue;
-    Lanes pl(2);
-    if (tagQ)
-      pl.set(0);
-    if (idxQ)
-      pl.set(1);
-    recordWrite(CB, d, 8, false, PT, &moved, &pl);
-  }
-}
 
 // ---------------------------------------------------------------------------------------------
 // Calls.
@@ -2286,419 +1439,52 @@ std::optional<uint64_t> Analyzer::rangeBound(const Value *V) {
   return hi.getZExtValue();
 }
 
-unsigned Analyzer::resolveK(const Function &F) {
-  // CR §0 chain: per-function flag, CQ_K(f, k), global flag, default 4. The flags do not reach
-  // computeTaint (TaintOptions carries none; see the report), so this is CQ_K, then the default.
-  if (const GlobalVariable *GV = st.M->getGlobalVariable(("__cq_k_" + F.getName()).str(), true))
-    if (GV->hasInitializer())
-      if (auto *CI = dyn_cast<ConstantInt>(GV->getInitializer()))
-        if (CI->getZExtValue() > 0)
-          return unsigned(CI->getZExtValue());
-  return 4;
-}
 
-bool Analyzer::writtenBefore(const Object &O, std::optional<int64_t> off, uint64_t size,
-                             const CallBase &CB) {
-  const Site &site = st.sites[O.site];
-  const Function *F = CB.getFunction();
-  if (site.owner != F || site.kind == SiteKind::External)
-    return true;
-  FnInfo &fi = fn(F);
-  for (const BasicBlock *BB : fi.rpo)
-    for (const Instruction &I : *BB) {
-      if (&I == &CB)
-        continue;
-      const Value *ptr = nullptr;
-      uint64_t sz = 0;
-      if (auto *SI = dyn_cast<StoreInst>(&I)) {
-        ptr = SI->getPointerOperand();
-        sz = st.DL->getTypeStoreSize(SI->getValueOperand()->getType());
-      } else if (auto *MI = dyn_cast<MemIntrinsic>(&I)) {
-        ptr = MI->getRawDest();
-        if (auto *C = dyn_cast<ConstantInt>(MI->getLength()))
-          sz = C->getZExtValue();
-      } else if (auto *C2 = dyn_cast<CallBase>(&I)) {
-        if (isa<IntrinsicInst>(C2))
-          continue;
-        for (const Use &A : C2->args())
-          if (A->getType()->isPointerTy()) {
-            PtrInfo p = P(A.get());
-            if (llvm::is_contained(p.sites, O.site) &&
-                isPotentiallyReachable(&I, &CB, nullptr, fi.DT.get(), fi.LI.get()))
-              return true;
-          }
-        continue;
-      } else {
-        continue;
-      }
-      PtrInfo p = P(ptr);
-      if (!llvm::is_contained(p.sites, O.site))
-        continue;
-      auto ex = p.exact();
-      bool overl = !ex || !off || sz == 0 || (*ex < *off + int64_t(size) && *off < *ex + int64_t(sz));
-      if (!overl)
-        continue;
-      if (isPotentiallyReachable(&I, &CB, nullptr, fi.DT.get(), fi.LI.get()))
-        return true;
-    }
-  return false;
-}
 
-// The callee's accesses through formal argNo: byte offsets of the cells it touches, or nullopt for a
-// runtime-length register (a variable offset).
-static std::optional<std::vector<std::pair<int64_t, uint64_t>>>
-accessedCells(Function *G, unsigned argNo, const DataLayout &DL) {
-  if (G->isDeclaration() || argNo >= G->arg_size())
-    return std::nullopt;
-  std::vector<std::pair<int64_t, uint64_t>> out;
-  // (pointer, offset from the formal; nullopt once a variable offset was added)
-  SmallVector<std::pair<const Value *, std::optional<int64_t>>, 8> work{{G->getArg(argNo), 0}};
-  SmallPtrSet<const Value *, 16> seen;
-  bool runtime = false;
-  auto access = [&](std::optional<int64_t> off, uint64_t size) {
-    if (off)
-      out.push_back({*off, size});
-    else
-      runtime = true;
-  };
-  while (!work.empty()) {
-    auto [V, off] = work.pop_back_val();
-    if (!seen.insert(V).second)
-      continue;
-    for (const User *U : V->users()) {
-      if (auto *GEP = dyn_cast<GEPOperator>(U)) {
-        APInt o(64, 0);
-        if (off && GEP->accumulateConstantOffset(DL, o))
-          work.push_back({GEP, *off + o.getSExtValue()});
-        else
-          work.push_back({GEP, std::nullopt});
-      } else if (auto *LI = dyn_cast<LoadInst>(U)) {
-        access(off, DL.getTypeStoreSize(LI->getType()));
-      } else if (auto *SI = dyn_cast<StoreInst>(U)) {
-        if (SI->getPointerOperand() == V)
-          access(off, DL.getTypeStoreSize(SI->getValueOperand()->getType()));
-        else
-          runtime = true; // the pointer itself escapes into memory
-      } else if (isa<BitCastOperator>(U)) {
-        work.push_back({U, off});
-      } else if (isa<SelectInst>(U) || isa<PHINode>(U)) {
-        work.push_back({U, std::nullopt});
-      } else if (isa<ReturnInst>(U) || isa<ICmpInst>(U) || isa<PtrToIntInst>(U)) {
-        continue; // no access by the callee
-      } else if (auto *II = dyn_cast<IntrinsicInst>(U)) {
-        if (II->isLifetimeStartOrEnd())
-          continue;
-        runtime = true;
-      } else {
-        runtime = true;
-      }
-    }
-  }
-  if (runtime)
-    return std::nullopt;
-  llvm::sort(out);
-  out.erase(std::unique(out.begin(), out.end(),
-                        [](auto &a, auto &b) { return a.first == b.first; }),
-            out.end());
-  return out;
-}
-
-// Naming information of a pointer actual (CR §1.4), recorded in the key:
-//   A<d>      one digit: any pointee cell holds a handle at the call
-//   S<d...>   sret/byval: one digit per scalar field of the attribute type
-//   O<d...>;  per object in provenance (site order), one digit per accessed cell (two for a cell of
-//             pointer kind); "Q" for a QRAM object (no digits); "R<d>" for a runtime-length access.
-// T4 (190): the formal is walked at a run-time offset (a pointer phi, a GEP by a non-constant index) and
-// every access through it and its derived pointers is a load or store of one size: that size. A store of
-// the pointer itself, a call or any other use: nullopt (not a walk this record describes).
-static std::optional<uint64_t> walkAccessSize(Function *G, unsigned argNo, const DataLayout &DL) {
-  if (G->isDeclaration() || argNo >= G->arg_size())
-    return std::nullopt;
-  SmallVector<std::pair<const Value *, bool>, 8> work{{G->getArg(argNo), false}};
-  SmallPtrSet<const Value *, 16> seen;
-  std::optional<uint64_t> size;
-  bool varying = false;
-  auto access = [&](uint64_t s, bool var) {
-    varying = varying || var;
-    if (size && *size != s)
-      return false;
-    size = s;
-    return true;
-  };
-  while (!work.empty()) {
-    auto [V, var] = work.pop_back_val();
-    if (!seen.insert(V).second)
-      continue;
-    for (const User *U : V->users()) {
-      if (auto *GEP = dyn_cast<GEPOperator>(U)) {
-        work.push_back({GEP, var || !GEP->hasAllConstantIndices()});
-      } else if (isa<PHINode>(U) || isa<SelectInst>(U)) {
-        work.push_back({U, true});
-      } else if (auto *LI = dyn_cast<LoadInst>(U)) {
-        if (!access(DL.getTypeStoreSize(LI->getType()), var))
-          return std::nullopt;
-      } else if (auto *SI = dyn_cast<StoreInst>(U)) {
-        if (SI->getPointerOperand() != V || !access(DL.getTypeStoreSize(SI->getValueOperand()->getType()), var))
-          return std::nullopt;
-      } else if (isa<ICmpInst>(U) || isa<ReturnInst>(U)) {
-        continue;
-      } else if (auto *II = dyn_cast<IntrinsicInst>(U); II && II->isLifetimeStartOrEnd()) {
-        continue;
-      } else {
-        return std::nullopt;
-      }
-    }
-  }
-  if (!varying || !size)
-    return std::nullopt;
-  return size;
-}
-
-// The byte size of a site's object when it is a fixed-size local or global.
-static std::optional<uint64_t> fixedObjectBytes(const Site &site, const DataLayout &DL) {
-  if (auto *AI = dyn_cast<AllocaInst>(site.v)) {
-    if (auto s = AI->getAllocationSize(DL); s && !s->isScalable())
-      return s->getFixedValue();
-    return std::nullopt;
-  }
-  if (auto *GV = dyn_cast<GlobalVariable>(site.v))
-    return DL.getTypeAllocSize(GV->getValueType()).getFixedValue();
-  return std::nullopt;
-}
-
-std::string Analyzer::cellDigits(CallBase &CB, Function *G, unsigned argNo, const Value *actual) {
-  PtrInfo p = P(actual);
-  auto ex = p.exact();
-  std::string out = "A";
-  bool any = false;
-  for (ObjectId oid : objectsOf(p)) {
-    const Object &O = st.objects[oid];
-    if (O.mayHoldHandle() && writtenBefore(O, std::nullopt, 0, CB))
-      any = true;
-  }
-  out += any ? '1' : '0';
-  Type *AT = nullptr;
-  if (G && !G->isDeclaration() && argNo < G->arg_size()) {
-    if (G->hasParamAttribute(argNo, Attribute::StructRet))
-      AT = G->getParamStructRetType(argNo);
-    else if (G->hasParamAttribute(argNo, Attribute::ByVal))
-      AT = G->getParamByValType(argNo);
-  }
-  if (AT) {
-    out += "S";
-    SmallVector<std::pair<int64_t, uint64_t>, 8> leaves;
-    std::function<void(Type *, int64_t)> walk = [&](Type *T, int64_t base) {
-      if (auto *ST = dyn_cast<StructType>(T)) {
-        const StructLayout *SL = st.DL->getStructLayout(ST);
-        for (unsigned i = 0; i < ST->getNumElements(); ++i)
-          walk(ST->getElementType(i), base + int64_t(SL->getElementOffset(i)));
-      } else if (auto *ArT = dyn_cast<ArrayType>(T)) {
-        uint64_t es = st.DL->getTypeAllocSize(ArT->getElementType());
-        for (uint64_t i = 0; i < ArT->getNumElements(); ++i)
-          walk(ArT->getElementType(), base + int64_t(i * es));
-      } else {
-        leaves.push_back({base, st.DL->getTypeStoreSize(T)});
-      }
-    };
-    walk(AT, 0);
-    for (auto [off, sz] : leaves) {
-      bool d = false;
-      for (ObjectId oid : objectsOf(p)) {
-        const Object &O = st.objects[oid];
-        std::optional<int64_t> at = ex ? std::optional<int64_t>(*ex + off) : std::nullopt;
-        if (O.cellHandle(at, sz) && writtenBefore(O, at, sz, CB))
-          d = true;
-      }
-      out += d ? '1' : '0';
-    }
-  }
-  auto cells = G ? accessedCells(G, argNo, *st.DL) : std::nullopt;
-  // A QRAM pointee is named once, however many QRAM objects the pointer may name: it adds no mask digit (rule
-  // 21: it crosses as its table, buildMask skips it), so their number never tells two specializations apart.
-  // Counted, the key would grow with every frame object a new specialization escapes into the provenance
-  // and name a new specialization with a new frame in turn: the fixed point would not terminate (setvbuf).
-  bool qramNamed = false;
-  for (unsigned s : p.sites) {
-    for (ObjectId oid : objectsAt(s, p)) {
-      const Object &O = st.objects[oid];
-      if (O.qram) {
-        if (!qramNamed)
-          out += "OQ;";
-        qramNamed = true;
-        continue;
-      }
-      out += "O";
-      if (!cells && G) {
-        // T4 (190): a walk at a run-time offset into a fixed-size object: one digit per cell from the
-        // pointer handed over to the object's end, at the walk's access size (the triple with its cell
-        // count, rule 21).
-        auto ws = walkAccessSize(G, argNo, *st.DL);
-        auto bytes = fixedObjectBytes(st.sites[s], *st.DL);
-        if (ws && *ws && bytes && ex && *ex >= 0 && O.column < 0 && uint64_t(*ex) <= *bytes &&
-            (*bytes - uint64_t(*ex)) % *ws == 0) {
-          out += "W";
-          for (uint64_t at = uint64_t(*ex); at < *bytes; at += *ws) {
-            bool d = O.cellHandle(int64_t(at), *ws) && writtenBefore(O, int64_t(at), *ws, CB);
-            out += d ? '1' : '0';
-          }
-          out += ";";
-          continue;
-        }
-      }
-      if (!cells) {
-        bool d = O.mayHoldHandle() && writtenBefore(O, std::nullopt, 0, CB);
-        out += "R";
-        out += d ? '1' : '0';
-        out += ";";
-        continue;
-      }
-      for (auto [off, sz] : *cells) {
-        std::optional<int64_t> at = ex ? std::optional<int64_t>(*ex + off) : std::nullopt;
-        bool d = O.cellHandle(at, sz) && writtenBefore(O, at, sz, CB);
-        bool ptrKind = overlapsAny(O.ptrCells, at, sz, O.anyPtr && !O.ptrCells.empty() ? false : O.anyPtr);
-        out += d ? '1' : '0';
-        if (ptrKind)
-          out += d ? '1' : '0';
-      }
-      out += ";";
-    }
-  }
-  return out;
-}
 
 void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool viaIntrinsic) {
-  // Key of the callee specialization from the actuals' lanes (rule 18).
+  // Key of the callee specialization from the actuals' lanes (rule 18). A pointer actual is one scalar digit.
   std::vector<Lanes> formal;
   std::vector<Type *> tys;
-  std::vector<std::string> cells;
   bool anyQ = false;
   for (unsigned i = 0; i < actuals.size(); ++i) {
-    Value *A = actuals[i];
-    Lanes l = L(A);
+    Lanes l = L(actuals[i]);
     formal.push_back(l);
-    tys.push_back(A->getType());
+    tys.push_back(actuals[i]->getType());
     anyQ = anyQ || l.any();
-    if (A->getType()->isPointerTy()) {
-      std::string c = cellDigits(CB, G, i, A);
-      // CR §1.4: a pointer into a QRAM is a quantum argument (its object crosses as the bus, a rail; the QRAM's
-      // cells get no digits, the object is quantum by definition).
-      if (c.find('1') != std::string::npos || qramRecord(c))
-        anyQ = true;
-      cells.push_back(c);
-    } else {
-      cells.push_back("");
-    }
   }
   bool underQ = blockCT(CB.getParent()) || cur->ctl || candidateUnderQ;
-  // Depth recursion (rule 14): a recursive call under a quantum predicate.
-  unsigned depth = 0;
-  bool recursive = false;
-  if (!G->isDeclaration()) {
-    recursive = callsReach(G, cur->F);
-  }
-  if (recursive && (blockCT(CB.getParent()) || cur->depth > 0)) {
-    depth = cur->depth + 1;
-    unsigned cut = cur->depthCut;
-    if (cut == 0)
-      cut = resolveK(*G);
-    if (depth > cut) {
-      cur->cutCalls.insert(&CB);
-      cur->callees.erase(&CB);
-      if (!CB.getType()->isVoidTy())
-        setL(&CB, allLanes(lanesOf(CB.getType())));
-      return;
-    }
-  }
   // cq-1c5j: the second run takes the first run's final key of this call at once, when it covers what the
-  // actuals give now (lanes and cell digits only rise during the fixed point).
-  const CalleeMemo *memo = nullptr;
-  // The memo also serves an indirect call's candidates (rule 19's candidate set): each takes its final key at once.
+  // actuals give now (lanes only rise during the fixed point).
   if (!calleeMemo.empty()) {
     auto it = calleeMemo.find({cur->key, &CB, G});
-    if (it != calleeMemo.end() && it->second.formal.size() == formal.size() && it->second.cells.size() >= cells.size()) {
+    if (it != calleeMemo.end() && it->second.formal.size() == formal.size()) {
       const CalleeMemo &m = it->second;
       bool covers = true;
-      for (unsigned i = 0; i < formal.size() && covers; ++i) {
+      for (unsigned i = 0; i < formal.size() && covers; ++i)
         covers = m.formal[i].size() == formal[i].size() && !formal[i].test(m.formal[i]);
-        const std::string &a = cells[i], &b = m.cells[i];
-        if (covers && !a.empty() && !b.empty()) {
-          covers = a.size() == b.size();
-          for (size_t k = 0; covers && k < a.size(); ++k)
-            covers = a[k] == b[k] || (a[k] == '0' && b[k] == '1');
-        } else if (covers) {
-          covers = a.empty() == b.empty() || b.find('1') == std::string::npos;
-        }
-      }
-      if (covers)
-        memo = &m;
-    }
-  }
-  if (memo) {
-    formal = memo->formal;
-    for (unsigned i = 0; i < cells.size(); ++i)
-      if (!memo->cells[i].empty() || !cells[i].empty())
-        cells[i] = memo->cells[i];
-    bool inPlace = !memo->ctl && depth == 0 && memo->bounds.empty() &&
-                   llvm::none_of(formal, [](const Lanes &l) { return l.any(); }) &&
-                   llvm::none_of(cells, [](const std::string &c) {
-                     return c.find('1') != std::string::npos || qramRecord(c);
-                   });
-    if (!inPlace) {
-      SpecState *C = getSpec(G, formal, tys, cells, memo->ctl, false, depth, memo->bounds);
-      // Its pointer formals point where the actuals do, also when the ordinary path below takes over (a
-      // recursion's level-0 call): a specialization never analyzed with an unknown object in place of the
-      // caller's, which its own calls would hand on to the level clones the program reaches (cq-2cl6).
-      for (unsigned i = 0; i < actuals.size(); ++i)
-        if (actuals[i]->getType()->isPointerTy() && i < C->formalPtr.size())
-          if (C->formalPtr[i].join(P(actuals[i])))
-            st.changed = true;
-      if (depth > 0) {
-        unsigned want = cur->depthCut ? cur->depthCut : resolveK(*G);
-        if (C->depthCut == 0 || want < C->depthCut) {
-          C->depthCut = want;
-          st.changed = true;
-        }
-        if (cur->keepsOverflow && !C->keepsOverflow) {
-          C->keepsOverflow = true;   // cq-ew5z: the level-0 clone's
-          st.changed = true;
-        }
-      }
-      if (depth == 0 && !G->isDeclaration() && callsReach(G, G) && C->depthCut == 0) {
-        memo = nullptr;   // the depth cutoff below derives from the actuals: take the ordinary path
-      } else {
+      bool inPlace = !m.ctl && m.bounds.empty() && llvm::none_of(m.formal, [](const Lanes &l) { return l.any(); });
+      if (covers && !inPlace) {
+        SpecState *C = getSpec(G, m.formal, tys, m.ctl, false, m.bounds);
         recordCallee(CB, C);
-        if (!CB.getType()->isVoidTy()) {
-          Lanes r = C->ret;
-          if (C->declared)
-            r = allLanes(lanesOf(CB.getType()));
-          setL(&CB, r);
-          if (CB.getType()->isPointerTy())
-            setP(&CB, C->retPtr);
-        }
+        if (!CB.getType()->isVoidTy())
+          setL(&CB, C->declared ? allLanes(lanesOf(CB.getType())) : C->ret);
         cur->anyQuantum = true;
         return;
       }
+      if (covers)
+        formal = m.formal;
     }
   }
-  if (!anyQ && !underQ && depth == 0) {
-    // Classical call: the in-place specialization of the callee.
+  if (!anyQ && !underQ) {
+    // Classical call: the in-place specialization of the callee (the function's own symbol, §1.4).
     std::vector<Lanes> z;
     for (Type *T : tys)
       z.push_back(Lanes(lanesOf(T)));
-    // The in-place specialization is the function as it is: no cell digits (its key is the root's, so a
-    // function has one in-place specialization whether a root or a classical call reaches it; cq-i9wk).
-    std::vector<std::string> zc(cells.size());
-    SpecState *C = getSpec(G, z, tys, zc, false, false, 0, {});
+    SpecState *C = getSpec(G, z, tys, false, false, {});
     recordCallee(CB, C);
-    for (unsigned i = 0; i < actuals.size(); ++i)
-      if (actuals[i]->getType()->isPointerTy() && i < C->formalPtr.size())
-        if (C->formalPtr[i].join(P(actuals[i])))
-          st.changed = true;
-    if (!CB.getType()->isVoidTy()) {
+    if (!CB.getType()->isVoidTy())
       setL(&CB, C->ret);
-      if (CB.getType()->isPointerTy())
-        setP(&CB, C->retPtr);
-    }
     if (C->effectful || C->hasTheta || C->hasPhi)
       cur->hasEffect = cur->hasEffect || C->hasEffect;
     return;
@@ -2707,14 +1493,7 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
   // test reads the callee's specialization without the flag.
   bool ctl = false;
   if (underQ) {
-    SpecState *probe = getSpec(G, formal, tys, cells, false, false, depth, {});
-    // The probe is analyzed as this call would run it: its pointer formals point where the actuals do. Left
-    // unseeded it would take an unknown object for them (a root's), and its own calls would hand that object on
-    // to specializations the program does reach (a recursion's level clones: cq-2cl6).
-    for (unsigned i = 0; i < actuals.size(); ++i)
-      if (actuals[i]->getType()->isPointerTy() && i < probe->formalPtr.size())
-        if (probe->formalPtr[i].join(P(actuals[i])))
-          st.changed = true;
+    SpecState *probe = getSpec(G, formal, tys, false, false, {});
     if (probe->nonPure || probe->hasTheta || probe->hasPhi || probe->hasEffect || probe->writesOuter)
       ctl = true;
   }
@@ -2729,61 +1508,17 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
           boundFormals.push_back(i);
         }
       }
-  if (depth > 0) {
-    bounds = cur->bounds; // a level clone carries the bounds of its level-0 clone (98: _b3_d1)
-    boundFormals = cur->boundFormals;
-  }
   if (viaIntrinsic) {
     bounds.clear();
     boundFormals.clear();
   }
-  SpecState *C = getSpec(G, formal, tys, cells, ctl, false, depth, bounds, boundFormals);
-  if (depth > 0) {
-    // Several level-(d-1) clones may reach one level-d clone (a stale key from an earlier round
-    // too): the cutoff is the smallest any of them carries.
-    unsigned want = cur->depthCut ? cur->depthCut : resolveK(*G);
-    if (C->depthCut == 0 || want < C->depthCut) {
-      C->depthCut = want;
-      st.changed = true;
-    }
-    if (cur->keepsOverflow && !C->keepsOverflow) {
-      C->keepsOverflow = true;   // cq-ew5z: the level-0 clone's
-      st.changed = true;
-    }
-  }
-  // The B of a quantum-depth recursion: the bound of the formal the recursive call decrements.
-  if (depth == 0 && !G->isDeclaration()) {
-    if (callsReach(G, G) && C->depthCut == 0) {
-      std::optional<uint64_t> B;
-      for (BasicBlock &BB : *G)
-        for (Instruction &I : BB)
-          if (auto *RC = dyn_cast<CallBase>(&I))
-            if (RC->getCalledFunction() == G)
-              for (unsigned i = 0; i < RC->arg_size() && i < actuals.size(); ++i) {
-                using namespace PatternMatch;
-                if (match(RC->getArgOperand(i), m_Add(m_Specific(G->getArg(i)), m_AllOnes())))
-                  if (auto b = rangeBound(actuals[i]))
-                    B = B ? std::min(*B, *b) : *b;
-              }
-      unsigned K = resolveK(*G);
-      unsigned cut = B ? unsigned(std::min<uint64_t>(K, *B)) : K;
-      C->depthCut = cut;
-      // cq-ew5z (CR rule 14): the cut keeps the overflow predicate iff B > K or no bound is known.
-      C->keepsOverflow = !B || *B > K;
-    }
-  }
+  SpecState *C = getSpec(G, formal, tys, ctl, false, bounds, boundFormals);
   recordCallee(CB, C);
-  for (unsigned i = 0; i < actuals.size(); ++i)
-    if (actuals[i]->getType()->isPointerTy() && i < C->formalPtr.size())
-      if (C->formalPtr[i].join(P(actuals[i])))
-        st.changed = true;
   if (!CB.getType()->isVoidTy()) {
     Lanes r = C->ret;
     if (C->declared)
       r = allLanes(lanesOf(CB.getType()));
     setL(&CB, r);
-    if (CB.getType()->isPointerTy())
-      setP(&CB, C->retPtr);
   }
   cur->anyQuantum = true;
 }
@@ -2809,15 +1544,6 @@ static bool mayReachLongjmp(const Function *G) {
   return false;
 }
 
-// Whether a call may write through its argument operand argNo, by the call's attributes: the
-// parameter's readonly/readnone, and the call's memory effects on argument memory.
-static bool mayWriteThroughArg(const CallBase &CB, unsigned argNo) {
-  if (!CB.getArgOperand(argNo)->getType()->isPointerTy())
-    return false;
-  if (!isModSet(CB.getMemoryEffects().getModRef(IRMemLocation::ArgMem)))
-    return false;
-  return !CB.onlyReadsMemory(argNo);
-}
 
 // Rule 16, recognised by the callee's attributes and semantics, never by name: a call that may act
 // on the host beyond its pointer arguments. It may write memory other than its arguments' (a
@@ -2829,26 +1555,7 @@ static bool hostEffectBeyondArgs(const CallBase &CB) {
   return !ME.onlyReadsMemory() || CB.mayThrow() || !CB.willReturn();
 }
 
-void Analyzer::declaredClone(CallBase &CB, Function *G, ArrayRef<Value *> actuals) {
-  lift(CB, G, actuals, false);
-  // Rule 27: the clone may overwrite cells of a pointee object with handles it minted (rule 3,
-  // through memory and calls). With no body the cells it writes are unknown: every object a pointer
-  // argument the call may write through can reach holds a handle at an unknown cell after the call.
-  for (unsigned i = 0; i < actuals.size(); ++i) {
-    if (!mayWriteThroughArg(CB, i))
-      continue;
-    PtrInfo p = P(actuals[i]);
-    if (!p.init)
-      continue;
-    p.top = true;
-    recordWrite(CB, p, 0, true, nullptr, nullptr, nullptr);
-    for (unsigned s : p.sites) {
-      const Site &site = st.sites[s];
-      if (site.kind != SiteKind::Function && !(site.kind == SiteKind::Alloca && site.owner == cur->F))
-        cur->writesOuter = true;
-    }
-  }
-}
+void Analyzer::declaredClone(CallBase &CB, Function *G, ArrayRef<Value *> actuals) { lift(CB, G, actuals, false); }
 
 // <fenv.h> (C17 7.6) as rule 23 rail operations (eff-fenv), never a declared clone. Point-wise:
 // fenvCur is the state before the call and becomes the state after it. A change of a fact by a
@@ -2864,25 +1571,30 @@ void Analyzer::transferFenvCall(CallBase &CB, StringRef cname, ArrayRef<Value *>
   bool rail = q || underQ;
   uint8_t before = fenvCur, now = fenvNow();
   bool resQ = false;
+  // Rule 23: the objects a saving call's facts live in, by the pointer's underlying object (the confined shape, an
+  // alloca taken itself; anything else is the one union entry: its fields are on the bus, W6). A constant is
+  // musl's FE_DFL_ENV, an object never saved.
+  auto objKey = [](Value *ptr) -> const Value * {
+    const Value *o = getUnderlyingObject(ptr);
+    return isa<AllocaInst>(o) || isa<Constant>(o) ? o : nullptr;
+  };
   auto savedIn = [&](Value *ptr) {
     uint8_t b = 0;
-    if (ptr->getType()->isPointerTy())
-      for (ObjectId o : objectsOf(P(ptr))) {
-        auto it = st.fenvSaved.find(o);
-        if (it != st.fenvSaved.end())
-          b |= it->second;
-      }
+    if (!ptr->getType()->isPointerTy())
+      return b;
+    const Value *k = objKey(ptr);
+    for (auto &[o, bits] : st.fenvSaved)
+      if (!k || !o || o == k)
+        b |= bits;
     return b;
   };
   auto saveTo = [&](Value *ptr, uint8_t bits) {
     if (!ptr->getType()->isPointerTy())
       return;
-    for (ObjectId o : objectsOf(P(ptr))) {
-      uint8_t &x = st.fenvSaved[o];
-      if ((x | bits) != x) {
-        x |= bits;
-        touchObject();
-      }
+    uint8_t &x = st.fenvSaved[objKey(ptr)];
+    if ((x | bits) != x) {
+      x |= bits;
+      st.changed = true;
     }
   };
   auto bit = [](bool b) { return uint8_t(b ? 1 : 0); };
@@ -2941,7 +1653,7 @@ void Analyzer::transferFenvCall(CallBase &CB, StringRef cname, ArrayRef<Value *>
 void Analyzer::fenvAfterCall(CallBase &CB) {
   using namespace fenvstate;
   auto it = cur->callees.find(&CB);
-  if (it == cur->callees.end() || it->second.empty() || cur->cutCalls.count(&CB))
+  if (it == cur->callees.end() || it->second.empty())
     return;
   uint8_t before = fenvCur, E = fenvNow(), out = 0, writes = 0;
   bool underQ = blockCT(CB.getParent()) || cur->ctl;
@@ -2984,14 +1696,10 @@ void Analyzer::transferCall(CallBase &CB) {
   unsigned rn = lanesOf(CB.getType());
   if (!G) {
     // Indirect call (rule 19): every candidate of the called pointer's provenance.
+    // CR rule 19: until the clone table (W4) the candidates are the functions of compatible type whose address is
+    // taken. A call through an incompatible type is UB, outside the domain.
     Value *Callee = CB.getCalledOperand();
-    PtrInfo p = P(Callee);
     SmallVector<Function *, 4> cands;
-    // CR rule 19 (cq-utb8): the static candidate set is the functions of COMPATIBLE type whose address reaches the
-    // pointer. One of another parameter list (or a result the call reads that it does not return) is never the
-    // callee of a call the C program defines: a call through an incompatible type is UB, outside the domain
-    // (lowerIndirect: a pointer outside the set). musl's FILE record holds read, write, seek and close pointers,
-    // and a load of one names them all; f->close(f) never runs __stdio_read.
     auto compatible = [&](const Function *F) {
       FunctionType *a = F->getFunctionType(), *b = CB.getFunctionType();
       if (a == b)
@@ -3004,24 +1712,16 @@ void Analyzer::transferCall(CallBase &CB) {
           return false;
       return true;   // a call that discards the result of a function returning one
     };
-    for (unsigned s : p.sites)
-      if (st.sites[s].kind == SiteKind::Function && compatible(cast<Function>(st.sites[s].v)))
-        cands.push_back(const_cast<Function *>(cast<Function>(st.sites[s].v)));
-    if (cands.empty())
-      for (Function &F : *st.M)
-        if (F.hasAddressTaken() && F.getFunctionType() == CB.getFunctionType())
-          cands.push_back(&F);
+    for (Function &F : *st.M)
+      if (F.hasAddressTaken() && compatible(&F))
+        cands.push_back(&F);
     if (cands.empty()) {
       // Rules 19, 27 (cq-sd95): no in-module candidate: a function outside the program. With a quantum argument
       // (a lane, or a pointee cell holding a handle) or under a quantum predicate it is the call of its
       // registered all-handles clone (clone_resolve), opaque like a declared clone: every result a handle.
       bool anyQ = blockCT(CB.getParent()) || cur->ctl;
-      for (Value *A : actuals) {
+      for (Value *A : actuals)
         anyQ = anyQ || L(A).any();
-        if (A->getType()->isPointerTy())
-          for (ObjectId o : objectsOf(P(A)))
-            anyQ = anyQ || st.objects[o].mayHoldHandle();
-      }
       if (anyQ) {
         if (rn)
           setL(&CB, allLanes(rn));
@@ -3102,29 +1802,21 @@ void Analyzer::transferCall(CallBase &CB) {
         cur->hasEffect = true;
       return;
     case Intrinsic::vastart:
-      transferVaStart(CB);
-      return;
     case Intrinsic::vacopy:
-      transferVaCopy(CB);
+      // Rules 16, 22: bus stores into the va_list (bus-resident: a call argument demotes its alloca).
+      cur->anyQuantum = true;
+      cur->writesOuter = true;
       return;
-    case Intrinsic::stacksave: {
-      PtrInfo q;
-      q.init = true;
-      q.top = true;
-      q.sites.push_back(siteFor(&CB, SiteKind::External, cur->F));
-      setP(&CB, q);
+    case Intrinsic::stacksave:
       setL(&CB, Lanes(rn));
       return;
-    }
     case Intrinsic::threadlocal_address:
-      setP(&CB, P(actuals[0]));
       setL(&CB, L(actuals[0]));
       return;
     case Intrinsic::ptrmask: {
-      setP(&CB, P(actuals[0]));
       Lanes l = L(actuals[0]);
       if (L(actuals[1]).any())
-        l.set(1);
+        l.set();
       setL(&CB, l);
       return;
     }
@@ -3183,27 +1875,17 @@ void Analyzer::transferCall(CallBase &CB) {
     }
     if (q && rn)
       setL(&CB, allLanes(rn));
-    if (CB.getType()->isPointerTy()) {
-      PtrInfo e;
-      e.init = true;
-      e.top = true;
-      e.sites.push_back(siteFor(&CB, SiteKind::External, cur->F));
-      setP(&CB, e);
-    }
     return;
   }
   // Allocation, deallocation (rule 16): heap objects.
   if (isAllocationFn(&CB, st.TLI.get())) {
     if (Value *Old = getReallocatedOperand(&CB)) {
-      setP(&CB, P(Old));
       setL(&CB, L(Old));
+      cur->anyQuantum = true;   // rule 16 realloc: __cq_alloc and the rule-22 copy
       return;
     }
-    PtrInfo q;
-    q.init = true;
-    q.sites.push_back(siteFor(&CB, SiteKind::Heap, cur->F));
-    setP(&CB, q);
     setL(&CB, Lanes(rn));
+    cur->anyQuantum = true;   // __cq_alloc (rule 16)
     return;
   }
   if (getFreedOperand(&CB, st.TLI.get()))
@@ -3282,25 +1964,13 @@ void Analyzer::transferCall(CallBase &CB) {
   }
   bool readNone = G->doesNotAccessMemory() || G->onlyReadsMemory();
   bool quantumCall = false;
-  for (Value *A : actuals) {
+  for (Value *A : actuals)
     if (L(A).any())
       quantumCall = true;
-    else if (A->getType()->isPointerTy())
-      for (ObjectId o : objectsOf(P(A)))
-        if (st.objects[o].mayHoldHandle())
-          quantumCall = true;
-  }
   if (known && !readNone && !(quantumCall && !hostEffectBeyondArgs(CB))) {
     cur->hasEffect = true; // tape entry (rule 16) when quantum or under a quantum predicate
     if (quantumCall)
       cur->anyQuantum = true;
-    if (CB.getType()->isPointerTy()) {
-      PtrInfo e;
-      e.init = true;
-      e.top = true;
-      e.sites.push_back(siteFor(&CB, SiteKind::External, cur->F));
-      setP(&CB, e);
-    }
     return;
   }
   if (quantumCall) {
@@ -3309,13 +1979,6 @@ void Analyzer::transferCall(CallBase &CB) {
   }
   if (!readNone)
     cur->hasEffect = true;
-  if (CB.getType()->isPointerTy()) {
-    PtrInfo e;
-    e.init = true;
-    e.top = true;
-    e.sites.push_back(siteFor(&CB, SiteKind::External, cur->F));
-    setP(&CB, e);
-  }
 }
 
 void Analyzer::transfer(Instruction &I) {
@@ -3329,20 +1992,15 @@ void Analyzer::transfer(Instruction &I) {
   if (auto *G = dyn_cast<GetElementPtrInst>(&I))
     return transferGEP(*G);
   if (auto *LI = dyn_cast<LoadInst>(&I))
-    return transferLoad(I, LI->getPointerOperand(), LI->getType());
+    return transferLoad(*LI);
   if (auto *SI = dyn_cast<StoreInst>(&I))
-    return transferStore(I, SI->getPointerOperand(), SI->getValueOperand(),
-                         SI->getValueOperand()->getType());
+    return transferStore(I, SI->getPointerOperand(), SI->getValueOperand());
   if (auto *CB = dyn_cast<CallBase>(&I))
     return transferCall(*CB);
   if (auto *AI = dyn_cast<AllocaInst>(&I)) {
-    PtrInfo q;
-    q.init = true;
-    q.sites.push_back(siteFor(AI, SiteKind::Alloca, cur->F));
-    setP(AI, q);
-    setL(AI, Lanes(n));
-    if (anyLane(L(AI->getArraySize())))
-      setL(AI, Lanes(n)); // a quantum size allocates at its upper bound: the pointer stays classical
+    setL(AI, Lanes(n));   // a pointer is classical (a rail size allocates K2, rule 16)
+    if (!hostAlloca(AI))
+      cur->anyQuantum = true;   // __cq_alloc (rules 16, 20)
     return;
   }
   if (isa<CmpInst>(&I) || isa<UnaryOperator>(&I) || isa<FreezeInst>(&I)) {
@@ -3351,8 +2009,6 @@ void Analyzer::transfer(Instruction &I) {
       q = q || L(U.get()).any();
     if (auto *FI = dyn_cast<FreezeInst>(&I)) {
       setL(FI, L(FI->getOperand(0)));
-      if (FI->getType()->isPointerTy())
-        setP(FI, P(FI->getOperand(0)));
       return;
     }
     if (auto *UO = dyn_cast<UnaryOperator>(&I)) {
@@ -3375,8 +2031,6 @@ void Analyzer::transfer(Instruction &I) {
     setL(EV, l);
     // A pointer read out of an aggregate (a pointer compare-exchange's old value, an aggregate load
     // or call result): its provenance is not tracked through aggregates (cq-kuuf).
-    if (EV->getType()->isPointerTy())
-      setP(EV, escapedFor(EV, cur->F));
     return;
   }
   if (auto *IV = dyn_cast<InsertValueInst>(&I)) {
@@ -3455,23 +2109,13 @@ void Analyzer::transfer(Instruction &I) {
     return;
   }
   if (auto *RMW = dyn_cast<AtomicRMWInst>(&I)) {
-    transferLoad(I, RMW->getPointerOperand(), RMW->getType());
-    transferStore(I, RMW->getPointerOperand(), RMW->getValOperand(), RMW->getType());
-    if (L(RMW->getValOperand()).any())
-      setL(&I, allLanes(n));
+    transferStore(I, RMW->getPointerOperand(), RMW->getValOperand());
+    setL(&I, allLanes(n));   // rule 4: a bus load, the templates, a bus store
     return;
   }
   if (auto *CX = dyn_cast<AtomicCmpXchgInst>(&I)) {
-    Type *T = CX->getNewValOperand()->getType();
-    transferStore(I, CX->getPointerOperand(), CX->getNewValOperand(), T);
-    PtrInfo p = P(CX->getPointerOperand());
-    bool q = L(CX->getCompareOperand()).any() || L(CX->getNewValOperand()).any() ||
-             L(CX->getPointerOperand()).any();
-    for (ObjectId o : objectsOf(p))
-      if (st.objects[o].cellHandle(p.exact(), st.DL->getTypeStoreSize(T)))
-        q = true;
-    if (q)
-      setL(&I, allLanes(n));
+    transferStore(I, CX->getPointerOperand(), CX->getNewValOperand());
+    setL(&I, allLanes(n));   // rule 4: a bus load, the templates, a bus store
     return;
   }
   if (isa<FenceInst>(&I) || isa<UnreachableInst>(&I) || isa<BranchInst>(&I) ||
@@ -3480,8 +2124,6 @@ void Analyzer::transfer(Instruction &I) {
   if (auto *RI = dyn_cast<ReturnInst>(&I)) {
     if (Value *V = RI->getReturnValue()) {
       if (orInto(cur->ret, L(V)))
-        st.changed = true;
-      if (V->getType()->isPointerTy() && cur->retPtr.join(P(V)))
         st.changed = true;
     }
     return;
@@ -3502,29 +2144,12 @@ void Analyzer::analyze(SpecState &S) {
     return;
   }
   FnInfo &fi = fn(S.F);
-  // Pointer formals of an externally reachable in-place specialization point at unknown objects.
-  if (S.inPlace && (!S.F->hasLocalLinkage() || S.F->hasAddressTaken()))
-    for (Argument &A : S.F->args())
-      if (A.getType()->isPointerTy() && A.getArgNo() < S.formalPtr.size()) {
-        PtrInfo e;
-        e.init = true;
-        e.sites.push_back(siteFor(&A, SiteKind::External, S.F));
-        if (S.formalPtr[A.getArgNo()].join(e))
-          st.changed = true;
-      }
-  for (unsigned i = 0; i < S.formalPtr.size(); ++i)
-    if (i < S.F->arg_size() && S.F->getArg(i)->getType()->isPointerTy() && !S.formalPtr[i].init) {
-      // Not called yet with this key (a root): an unknown object.
-      PtrInfo e;
-      e.init = true;
-      e.sites.push_back(siteFor(S.F->getArg(i), SiteKind::External, S.F));
-      S.formalPtr[i].join(e);
-    }
   unsigned rounds = 0;
   do {
     localChanged = false;
     computeCDT(S);
     computeExitQ(S);
+    demoteAllocas(S);
     // Loop-header phis made quantum by a tainted next-trip decision.
     SmallPtrSet<const PHINode *, 16> headerQ;
     for (const BasicBlock *BB : fi.rpo)
@@ -3612,6 +2237,10 @@ void Analyzer::analyze(SpecState &S) {
   } while (localChanged);
   if (!S.taintedTerm.empty())
     S.anyQuantum = true;
+  for (const BasicBlock *BB : fi.rpo)
+    for (const Instruction &I : *BB)
+      if (auto *CB = dyn_cast<CallBase>(&I); CB && countsAsCall(*CB))
+        S.hasCall = true;
   for (auto &[V, l] : S.lanes)
     if (l.any())
       S.anyQuantum = true;
@@ -3632,15 +2261,6 @@ void Analyzer::run() {
   bool stale = false;
   for (auto &S : st.specs)
     stale = stale || !S->reachable;
-  // Decision (rules 19, 20, 27; owner 2026-11-03): an in-place body reached with a pointer into a QRAM is a clone
-  // like any direct callee, lifted per mask at the call (the indirect call: over rule 19's candidate set); a QRAM
-  // object in an in-place specialization's formal is a join the fixed point made before the object was a QRAM, so
-  // the second run (each call taking its final key at once) rebuilds it without that join.
-  for (auto &S : st.specs)
-    if (S->reachable && S->inPlace && !S->declared)
-      for (unsigned i = 0; i < S->formalPtr.size() && !stale; ++i)
-        for (ObjectId o : objectsOf(S->formalPtr[i]))
-          stale = stale || st.objects[o].qram;
   if (stale) {
     // cq-1c5j: the second run (CalleeMemo). Each reachable specialization's final direct callees.
     for (auto &S : st.specs) {
@@ -3648,11 +2268,8 @@ void Analyzer::run() {
         continue;
       for (auto &[CB, v] : S->callees)
         for (SpecState *C : v)
-          calleeMemo[{S->key, CB, C->F}] = CalleeMemo{C->formal, C->cells, C->ctl, C->bounds};
+          calleeMemo[{S->key, CB, C->F}] = CalleeMemo{C->formal, C->ctl, C->bounds};
     }
-    for (const Object &O : st.objects)
-      if (O.qram && st.sites[O.site].kind == SiteKind::Global)
-        qramGlobals.insert(st.sites[O.site].v);
     resetAnalysis();
     solve();
   }
@@ -3660,18 +2277,11 @@ void Analyzer::run() {
 }
 
 void Analyzer::resetAnalysis() {
-  st.sites.clear();
-  st.siteOf.clear();
-  st.siteOfFrame.clear();
-  st.siteOfCloneUnknown.clear();
-  st.objects.clear();
   st.specs.clear();
   st.byKey.clear();
-  st.frameOf.clear();
   st.changed = false;
   st.longjmpUnderQuantum = false;
   st.fenvSaved.clear();
-  st.escaped = PtrInfo();
   cur = nullptr;
   localChanged = false;
   fenvCur = 0;
@@ -3735,26 +2345,6 @@ void Analyzer::solve() {
           H.getArg(0)->getType()->isIntegerTy(32))
         addHandler(kAnySignal, &H);
 
-  // cq-n58p, cq-erjd: module facts for lost provenance and store order.
-  for (Function &F : M) {
-    if (F.hasAddressTaken())
-      hasIndirectCall = true;
-    for (BasicBlock &BB : F)
-      for (Instruction &I : BB) {
-        if (auto *CB = dyn_cast<CallBase>(&I)) {
-          if (CB->isIndirectCall())
-            hasIndirectCall = true;
-          if (CB->hasFnAttr(Attribute::ReturnsTwice))
-            hasReturnsTwice = true;
-        }
-        for (const Use &U : I.operands())
-          if (auto *C = dyn_cast<Constant>(U.get()))
-            escapeConstants(C);
-      }
-  }
-  for (GlobalVariable &GV : M.globals())
-    if (GV.hasInitializer())
-      escapeConstants(GV.getInitializer());
 
   // Roots: in-place specializations of every externally reachable function; library-build roots.
   for (Function &F : M) {
@@ -3767,7 +2357,7 @@ void Analyzer::solve() {
         z.push_back(Lanes(lanesOf(A.getType())));
         tys.push_back(A.getType());
       }
-      SpecState *R = getSpec(&F, z, tys, {}, false, false, 0, {});
+      SpecState *R = getSpec(&F, z, tys, false, false, {});
       R->reachable = R->isRoot = true;
     }
   }
@@ -3788,7 +2378,7 @@ void Analyzer::solve() {
       z.push_back(l);
       tys.push_back(A.getType());
     }
-    SpecState *RS = getSpec(F, z, tys, {}, R.ctl, R.pure, R.depth, R.bounds);
+    SpecState *RS = getSpec(F, z, tys, R.ctl, R.pure, R.bounds);
     RS->reachable = RS->isRoot = true;
   }
 
@@ -3853,101 +2443,6 @@ void Analyzer::solve() {
   } while (st.changed);
 }
 
-// T4: some load or store through formal argNo (or a pointer derived from it) lies in a loop of S whose
-// exit is quantum (rule 14 cutoff).
-bool Analyzer::accessInQuantumExitLoop(SpecState &S, unsigned argNo) {
-  if (S.declared || argNo >= S.F->arg_size() || S.exitQ.empty())
-    return false;
-  FnInfo &fi = fn(S.F);
-  SmallVector<const Value *, 8> work{S.F->getArg(argNo)};
-  SmallPtrSet<const Value *, 16> seen;
-  while (!work.empty()) {
-    const Value *V = work.pop_back_val();
-    if (!seen.insert(V).second)
-      continue;
-    for (const User *U : V->users()) {
-      if (isa<LoadInst>(U) || isa<StoreInst>(U)) {
-        for (const Loop *Lp = fi.LI->getLoopFor(cast<Instruction>(U)->getParent()); Lp; Lp = Lp->getParentLoop())
-          if (S.exitQ.count(Lp))
-            return true;
-      } else if (isa<GetElementPtrInst>(U) || isa<PHINode>(U) || isa<SelectInst>(U) || isa<BitCastInst>(U)) {
-        work.push_back(U);
-      }
-    }
-  }
-  return false;
-}
-
-// T4: the callee loads through formal argNo or a pointer derived from it.
-bool Analyzer::calleeLoadsThrough(SpecState &S, unsigned argNo) {
-  if (S.declared || argNo >= S.F->arg_size())
-    return false;
-  SmallVector<const Value *, 8> work{S.F->getArg(argNo)};
-  SmallPtrSet<const Value *, 16> seen;
-  while (!work.empty()) {
-    const Value *V = work.pop_back_val();
-    if (!seen.insert(V).second)
-      continue;
-    for (const User *U : V->users()) {
-      if (auto *LI = dyn_cast<LoadInst>(U); LI && LI->getPointerOperand() == V)
-        return true;
-      if (isa<GetElementPtrInst>(U) || isa<PHINode>(U) || isa<SelectInst>(U) || isa<BitCastInst>(U))
-        work.push_back(U);
-    }
-  }
-  return false;
-}
-
-// Rule 21: the widest ABI a callee (as S calls it) takes formal argNo at, where S hands the formal on (through
-// GEPs, casts, phis and selects) as a call argument; Raw when it hands it to no triple formal.
-cq::PtrAbi Analyzer::handedOnAbi(SpecState &S, unsigned argNo) {
-  cq::PtrAbi abi = cq::PtrAbi::Raw;
-  if (S.declared || argNo >= S.F->arg_size())
-    return abi;
-  SmallVector<const Value *, 8> work{S.F->getArg(argNo)};
-  SmallPtrSet<const Value *, 16> seen;
-  while (!work.empty()) {
-    const Value *V = work.pop_back_val();
-    if (!seen.insert(V).second)
-      continue;
-    for (const Use &u : V->uses()) {
-      const User *U = u.getUser();
-      if (auto *CB = dyn_cast<CallBase>(U); CB && CB->isArgOperand(&u)) {
-        auto it = S.callees.find(CB);
-        if (it == S.callees.end())
-          continue;
-        unsigned j = CB->getArgOperandNo(&u);
-        for (SpecState *C : it->second)   // an in-place callee is an ordinary call: the pointer as it is
-          if (!C->inPlace && j < C->ptrFormal.size() && j < C->formalTy.size() && C->formalTy[j]->isPointerTy() &&
-              unsigned(C->ptrFormal[j].abi) > unsigned(abi))
-            abi = C->ptrFormal[j].abi;
-      } else if (isa<GEPOperator>(U) || isa<PHINode>(U) || isa<SelectInst>(U) || isa<BitCastOperator>(U) ||
-                 isa<AddrSpaceCastOperator>(U)) {
-        work.push_back(U);
-      }
-    }
-  }
-  return abi;
-}
-
-bool Analyzer::calleeDerivesFat(SpecState &S, unsigned argNo) {
-  if (S.declared || argNo >= S.F->arg_size())
-    return false;
-  SmallVector<const Value *, 8> work{S.F->getArg(argNo)};
-  SmallPtrSet<const Value *, 16> seen;
-  while (!work.empty()) {
-    const Value *V = work.pop_back_val();
-    if (!seen.insert(V).second)
-      continue;
-    auto it = S.lanes.find(V);
-    if (it != S.lanes.end() && it->second.any())
-      return true;
-    for (const User *U : V->users())
-      if (isa<GetElementPtrInst>(U) || isa<PHINode>(U) || isa<SelectInst>(U) || isa<BitCastInst>(U))
-        work.push_back(U);
-  }
-  return false;
-}
 
 // Integer formal split into fields by its unpacking (an ABI-coerced struct, 159): a trunc to C bits
 // and an lshr by C, with C a multiple of 8. Returns field bit boundaries.
@@ -3984,114 +2479,7 @@ std::string Analyzer::buildMask(SpecState &S) {
     Type *T = S.formalTy[i];
     const Lanes &l = S.formal[i];
     if (T->isPointerTy()) {
-      const std::string &c = S.cells[i];
-      bool tag = l.size() >= 2 && l.test(0), idx = l.size() >= 2 && l.test(1);
-      // Fields of the naming record (see cellDigits).
-      char anyD = '0';
-      std::string sret;
-      std::vector<std::string> objs;
-      bool hasS = false;
-      size_t p = 0;
-      while (p < c.size()) {
-        char k = c[p++];
-        if (k == 'A') {
-          anyD = c[p++];
-        } else if (k == 'S') {
-          hasS = true;
-          while (p < c.size() && (c[p] == '0' || c[p] == '1'))
-            sret += c[p++];
-        } else if (k == 'O') {
-          size_t e = c.find(';', p);
-          objs.push_back(c.substr(p, e - p));
-          p = e + 1;
-        }
-      }
-      bool qramObj = false, multi = false, ptrHandles = false;
-      if (i < S.formalPtr.size()) {
-        auto os = objectsOf(S.formalPtr[i]);
-        multi = S.formalPtr[i].sites.size() > 1;
-        for (ObjectId o : os) {
-          qramObj = qramObj || st.objects[o].qram;
-          const Object &O = st.objects[o];
-          if ((O.storedTagQ || O.storedIdxQ) && O.mayHoldHandle())
-            ptrHandles = true;
-        }
-      }
-      // A walk record (190) makes a triple only when the walk runs in a quantum-exit loop of the clone:
-      // its cut trips execute the accesses whatever the program does, so they need the cell count
-      // (rule 21: 'the body stays safe for any cutoff'). A walk the program itself bounds (52's
-      // classical loop) stays a raw pointer.
-      bool walk = false;
-      for (const std::string &o : objs)
-        walk = walk || (!o.empty() && o[0] == 'W');
-      walk = walk && accessInQuantumExitLoop(S, i);
-      // Rule 21: a formal handed on to a callee's triple formal is a triple itself: the object, its tag and its
-      // cell count come from where the object is known, and a raw pointer carries none of them.
-      cq::PtrAbi onward = handedOnAbi(S, i);
-      // CR §1.4, rules 16, 21 (cq-tqev): a variadic actual (a formal past F's fixed ones) reaches the body only
-      // through llvm.va_start's save area, where -O1's va_arg code reads it back as a loaded pointer (rule 21:
-      // the object starting at the pointer). Its classical tag and idx are the address itself: it crosses as the
-      // caller's raw pointer, a triple only where the address is no host pointer (a quantum tag or idx, a QRAM).
-      bool variadicActual = !S.declared && i >= S.F->arg_size();
-      bool triple = S.declared || tag || idx || qramObj ||
-                    (!variadicActual && (multi || ptrHandles || walk || calleeDerivesFat(S, i) ||
-                                         onward != cq::PtrAbi::Raw));
-      // T4: the pointee's class over the formal's objects.
-      bool anyQ = false, anyS = false, anyC = false;
-      if (i < S.formalPtr.size())
-        for (ObjectId o : objectsOf(S.formalPtr[i])) {
-          const Object &O = st.objects[o];
-          if (O.qram)
-            anyQ = true;
-          else if (O.mayHoldHandle())
-            anyS = true;
-          else
-            anyC = true;
-        }
-      if (S.ptrFormal.size() < S.formal.size()) {
-        S.ptrFormal.resize(S.formal.size(), cq::PtrFormal{cq::PtrAbi::Raw, cq::ObjClass::Classical, 0});
-        S.mixedPointee.resize(S.formal.size(), false);
-      }
-      S.mixedPointee[i] = anyQ && (anyS || anyC);
-      cq::ObjClass pointee = anyQ ? cq::ObjClass::Qram : anyS ? cq::ObjClass::Slot : cq::ObjClass::Classical;
-      size_t before = m.size();
-      auto noteFormal = [&](cq::PtrAbi abi) {
-        S.ptrFormal[i] = cq::PtrFormal{abi, pointee, unsigned(m.size() - before)};
-      };
-      if (!triple) {
-        // A slot pointer: one digit per field of an sret/byval record, else one per pointee cell
-        // the callee accesses (106), else one for a runtime-length register (117).
-        if (hasS)
-          m += sret;
-        else if (objs.size() == 1 && !objs[0].empty() && objs[0][0] != 'R' && objs[0][0] != 'W' && objs[0] != "Q")
-          m += objs[0];
-        else
-          m += anyD;
-        noteFormal(cq::PtrAbi::Raw);
-        continue;
-      }
-      m += tag ? '1' : '0';
-      m += idx ? '1' : '0';
-      // Rule 21: the object's cell count follows the triple when the callee loads through it from a
-      // slot or host object (a QRAM reads 0 out of range by §2); rule 27 always passes it.
-      bool count = S.declared || (pointee != cq::ObjClass::Qram &&
-                                  (calleeLoadsThrough(S, i) || onward == cq::PtrAbi::TripleCount));
-      if (S.declared) {
-        m += anyD;
-        noteFormal(cq::PtrAbi::TripleCount);
-        continue;
-      }
-      for (const std::string &o : objs) {
-        if (o == "Q")
-          continue;
-        if (!o.empty() && o[0] == 'W' && !walk)
-          m += anyD;
-        else if (!o.empty() && (o[0] == 'R' || o[0] == 'W'))
-          m += o.substr(1);
-        else
-          m += o;
-      }
-      noteFormal(count ? cq::PtrAbi::TripleCount : cq::PtrAbi::Triple);
+      m += l.any() ? '1' : '0';   // CR §1.4: one digit, the pointer's own taint (rule 3: one 64-bit rail)
       continue;
     }
     if (auto *IT = dyn_cast<IntegerType>(T)) {
@@ -4203,33 +2591,6 @@ void Analyzer::finish() {
           C->needsTwin = true;
     }
   }
-  // cq-ew5z (CR rule 14 with rule 19): a level of a quantum-depth recursion whose cut keeps the overflow
-  // predicate returns it after its result (a level with a cut call, or one calling such a next level); it is
-  // garbage at every call (a term of the caller's predicate, or copied into the kept rail), so every call of
-  // such a level needs the twin.
-  {
-    DenseMap<SpecState *, bool> carries;
-    std::function<bool(SpecState *)> carry = [&](SpecState *S) -> bool {
-      auto [it, fresh] = carries.try_emplace(S, false);
-      if (!fresh)
-        return it->second;
-      bool c = S->keepsOverflow && !S->declared && !S->inPlace && !S->cutCalls.empty();
-      for (auto &[CB, v] : S->callees)
-        for (SpecState *C : v)
-          if (!c && C->F == CB->getCalledFunction() && C->depth == S->depth + 1 && carry(C))
-            c = true;
-      carries[S] = c;
-      return c;
-    };
-    for (auto &S : st.specs) {
-      if (!S->reachable)
-        continue;
-      for (auto &[CB, v] : S->callees)
-        for (SpecState *C : v)
-          if (C->keepsOverflow && carry(C))
-            C->needsTwin = true;
-    }
-  }
   // _pure: what a twin recomputes through when the callee has effects (119).
   std::vector<SpecState *> pureNeeded;
   {
@@ -4256,36 +2617,18 @@ void Analyzer::finish() {
             w.push_back(D);
     }
   }
-  // Publish. A formal's T4 ABI may follow its callees' (handedOnAbi): the masks are rebuilt until no formal's
-  // ABI changes (each step only widens one, Raw to Triple to TripleCount).
-  for (bool changed = true; changed;) {
-    changed = false;
-    for (auto &S : st.specs) {
-      if (!S->reachable)
-        continue;
-      std::vector<cq::PtrFormal> before = S->ptrFormal;
+  // Publish.
+  for (auto &S : st.specs)
+    if (S->reachable)
       S->mask = buildMask(*S);
-      if (before.size() != S->ptrFormal.size()) {
-        changed = true;
-        continue;
-      }
-      for (size_t k = 0; k < before.size(); ++k)
-        if (before[k].abi != S->ptrFormal[k].abi || before[k].pointee != S->ptrFormal[k].pointee ||
-            before[k].digits != S->ptrFormal[k].digits)
-          changed = true;
-    }
-  }
   auto publish = [&](SpecState *S, bool pure) {
     Specialization P;
     P.F = S->F;
     P.mask = S->mask;
     P.ctl = S->ctl;
     P.pure = pure;
-    P.depth = S->depth;
     P.bounds = S->bounds;
     P.boundFormals = S->boundFormals;
-    // CR §1.4: a clone whose mask has no 1 (a QRAM reaches it through a triple) is no entry.
-    P.bus = !S->inPlace && !S->declared;
     st.published.push_back(P);
     st.publishedState.push_back(S);
   };
@@ -4293,13 +2636,12 @@ void Analyzer::finish() {
     if (!S->reachable)
       continue;
     if (S->inPlace) {
-      bool tainted = S->anyQuantum;
+      // Q2 (rulings): F is its own lowering iff it has no bus access, no cq_* call and no call (rule 19).
+      bool tainted = S->anyQuantum || S->hasCall;
       for (auto &[CB, v] : S->callees)
         for (SpecState *C : v)
           if (!C->inPlace)
             tainted = true;
-      if (!S->cutCalls.empty())
-        tainted = true;
       if (!tainted)
         continue;
     }
@@ -4320,7 +2662,7 @@ namespace cq {
 using namespace taintimpl;
 
 bool Specialization::isEntry() const {
-  if (!F || F->isDeclaration() || ctl || pure || depth || !bounds.empty() || kept || bus)
+  if (!F || F->isDeclaration() || ctl || pure || !bounds.empty())
     return false;
   return mask.find('1') == std::string::npos;
 }
@@ -4336,13 +2678,6 @@ SpecState *stateOf(const ImplState &I, const Specialization &S) {
   for (size_t k = 0; k < I.published.size(); ++k)
     if (&I.published[k] == &S)
       return I.publishedState[k];
-  // A kept clone (cq-i9wk) is answered by the in-place specialization of its F: kept is not compared.
-  for (size_t k = 0; k < I.published.size(); ++k) {
-    const Specialization &P = I.published[k];
-    if (P.F == S.F && P.mask == S.mask && P.ctl == S.ctl && P.pure == S.pure &&
-        P.depth == S.depth && P.bounds == S.bounds && P.boundFormals == S.boundFormals)
-      return I.publishedState[k];
-  }
   internalError("taint: not a specialization of this TaintInfo");
 }
 
@@ -4378,8 +2713,7 @@ bool TaintInfo::isQuantum(const llvm::Value *V, const Specialization &S) const {
 }
 
 llvm::SmallVector<bool, 4> TaintInfo::fieldMask(const llvm::Value *V, const Specialization &S) const {
-  // One entry per scalar leaf of V's type (an aggregate's fields, a vector's lanes; a pointer is one
-  // leaf, quantum when its tag or idx is).
+  // One entry per scalar leaf of V's type (an aggregate's fields, a vector's lanes; a pointer is one leaf, rule 3).
   const ImplState &I = needImpl(impl);
   SpecState *SS = stateOf(I, S);
   Lanes l = lanesOfValue(I, *SS, V);
@@ -4398,8 +2732,6 @@ llvm::SmallVector<bool, 4> TaintInfo::fieldMask(const llvm::Value *V, const Spec
       unsigned n = 0;
       if (auto *IT = dyn_cast<llvm::IntegerType>(T))
         n = std::max(1u, (IT->getBitWidth() + 7) / 8);
-      else if (T->isPointerTy())
-        n = 2;
       else
         n = 1;
       bool q = false;
@@ -4559,8 +2891,7 @@ bool TaintInfo::resultQuantum(const Specialization &S, unsigned field) const {
         for (unsigned k = 0; k < VT->getNumElements(); ++k)
           walk(VT->getElementType(), lane);
       } else {
-        unsigned n = T->isIntegerTy() ? std::max(1u, (T->getIntegerBitWidth() + 7) / 8)
-                                      : T->isPointerTy() ? 2 : 1;
+        unsigned n = T->isIntegerTy() ? std::max(1u, (T->getIntegerBitWidth() + 7) / 8) : 1;
         // cq-0umd (166, rule 26): an integer leaf the returns pack from fields (the coerced inner
         // struct of { i64, double }) is one field per packed field, as for a packed integer result.
         unsigned leaf = unsigned(leafLanes.size());
@@ -4612,916 +2943,65 @@ bool TaintInfo::resultQuantum(const Specialization &S, unsigned field) const {
 }
 
 namespace {
-const llvm::Value *objectSiteValue(const llvm::Value *site) {
-  // Rule 24, 108: one thread, so llvm.threadlocal.address(@g) is the base of @g's one object (a
-  // classical host intrinsic returning the object's address; its provenance is @g's).
-  if (auto *TL = dyn_cast<llvm::IntrinsicInst>(site);
-      TL && TL->getIntrinsicID() == llvm::Intrinsic::threadlocal_address)
-    site = TL->getArgOperand(0)->stripPointerCasts();
-  return site;
-}
-// The object of site `id` holding byte `byte` from its base: a split site's field column there (rule 20, the
-// column provenance names for that offset: the last field at or below it modulo the element size).
-ObjectId objectOfSiteAt(const ImplState &I, unsigned id, int64_t byte) {
-  const Site &s = I.sites[id];
-  if (!s.stride || s.objects.size() == 1)
-    return s.objects.front();
-  int64_t E = int64_t(s.stride), m = ((byte % E) + E) % E;
-  for (unsigned c = unsigned(s.columns.size()); c-- > 0;)
-    if (s.columns[c] <= m)
-      return s.objects[c];
-  return s.objects.front();
+// One getelementptr-with-untainted-indices step of rule 20's walk, as a query after the fixed point.
+const llvm::Value *walkHostBase(const ImplState &I, const SpecState &SS, const llvm::Value *p) {
+  for (;;) {
+    if (auto *G = dyn_cast<llvm::GEPOperator>(p)) {
+      for (const llvm::Use &U : G->indices())
+        if (!isa<llvm::Constant>(U.get()) && lanesOfValue(I, SS, U.get()).any())
+          return nullptr;
+      p = G->getPointerOperand();
+      continue;
+    }
+    return p;
+  }
 }
 } // namespace
 
-ObjectId TaintInfo::objectOf(const llvm::Value *site, int64_t byte) const {
+bool TaintInfo::hostResident(const llvm::Value *obj, const Specialization &S) const {
   const ImplState &I = needImpl(impl);
-  site = objectSiteValue(site);
-  std::optional<unsigned> found;
-  auto note = [&](unsigned id) {
-    if (found && *found != id)
-      internalError("taint: a site of several activations (clones of its function); use objectOf(site, S)", site);
-    found = id;
-  };
-  if (auto it = I.siteOf.find(site); it != I.siteOf.end())
-    note(it->second);
-  for (const auto &[SS, m] : I.siteOfFrame)
-    if (auto it = m.find(site); it != m.end())
-      note(it->second);
-  if (auto it = I.siteOfCloneUnknown.find(site); it != I.siteOfCloneUnknown.end())
-    note(it->second);
-  if (!found)
-    internalError("taint: not a memory site of this module", site);
-  return objectOfSiteAt(I, *found, byte);
-}
-
-ObjectId TaintInfo::objectOf(const llvm::Value *site, const Specialization &S, int64_t byte) const {
-  const ImplState &I = needImpl(impl);
-  site = objectSiteValue(site);
-  // cq-i9wk, cq-1c5j: a site of S's own activation is S's frame.
   const SpecState *SS = stateOf(I, S);
-  if (auto fr = I.siteOfFrame.find(SS->frame); fr != I.siteOfFrame.end())
-    if (auto ip = fr->second.find(site); ip != fr->second.end())
-      return objectOfSiteAt(I, ip->second, byte);
-  if (!SS->inPlace)
-    if (auto it = I.siteOfCloneUnknown.find(site); it != I.siteOfCloneUnknown.end())
-      return objectOfSiteAt(I, it->second, byte);
-  auto it = I.siteOf.find(site);
-  if (it == I.siteOf.end())
-    internalError("taint: not a memory site of this module", site);
-  return objectOfSiteAt(I, it->second, byte);
+  if (auto *GV = dyn_cast<llvm::GlobalVariable>(obj))
+    return hostGlobal(*GV);
+  if (auto *AI = dyn_cast<llvm::AllocaInst>(obj))
+    return AI->getFunction() == SS->F && !SS->demoted.count(AI);
+  return false;
 }
 
-bool TaintInfo::uniformCells(ObjectId id) const {
+const llvm::Value *TaintInfo::hostObjectOf(const llvm::Value *p, const Specialization &S) const {
   const ImplState &I = needImpl(impl);
-  if (id >= I.objects.size())
-    internalError("taint: unknown object id");
-  const Object &O = I.objects[id];
-  const Site &site = I.sites[O.site];
-  if (O.column >= 0 || site.stride)
-    return true;   // one field column of an array of structs: one scalar per element (rule 20)
-  llvm::Type *ty = nullptr;
-  if (auto *AI = dyn_cast<llvm::AllocaInst>(site.v))
-    ty = AI->getAllocatedType();
-  else if (auto *GV = dyn_cast<llvm::GlobalVariable>(site.v))
-    ty = GV->getValueType();
-  else if (auto *AR = dyn_cast<llvm::Argument>(site.v); AR && (AR->hasByValAttr() || AR->hasStructRetAttr()))
-    ty = AR->hasByValAttr() ? AR->getParamByValType() : AR->getParamStructRetType();
-  while (ty && (ty->isArrayTy() || ty->isVectorTy()))
-    ty = ty->isArrayTy() ? ty->getArrayElementType() : cast<llvm::VectorType>(ty)->getElementType();
-  return !ty || !ty->isStructTy();
-}
-
-ObjClass TaintInfo::classOf(ObjectId id) const {
-  const ImplState &I = needImpl(impl);
-  if (id >= I.objects.size())
-    internalError("taint: unknown object id");
-  const Object &O = I.objects[id];
-  if (O.qram)
-    return ObjClass::Qram;
-  if (O.mayHoldHandle())
-    return ObjClass::Slot;
-  return ObjClass::Classical;
-}
-
-bool TaintInfo::mayHoldHandle(ObjectId id) const {
-  const ImplState &I = needImpl(impl);
-  if (id >= I.objects.size())
-    internalError("taint: unknown object id");
-  return I.objects[id].mayHoldHandle();
-}
-
-static const llvm::Value *accessPointer(const llvm::Instruction *I, bool *isMemIntr) {
-  *isMemIntr = false;
-  if (auto *L = dyn_cast<llvm::LoadInst>(I))
-    return L->getPointerOperand();
-  if (auto *S = dyn_cast<llvm::StoreInst>(I))
-    return S->getPointerOperand();
-  if (auto *R = dyn_cast<llvm::AtomicRMWInst>(I))
-    return R->getPointerOperand();
-  if (auto *X = dyn_cast<llvm::AtomicCmpXchgInst>(I))
-    return X->getPointerOperand();
-  if (auto *M = dyn_cast<llvm::MemIntrinsic>(I)) {
-    *isMemIntr = true;
-    return M->getRawDest();
-  }
-  internalError("taint: offsetKind of an instruction that is not a memory access", I);
-}
-
-OffsetKind TaintInfo::offsetKind(const llvm::Instruction *access, const Specialization &S) const {
-  const ImplState &I = needImpl(impl);
-  SpecState *SS = stateOf(I, S);
-  bool mi = false;
-  const llvm::Value *p = accessPointer(access, &mi);
-  Lanes l = lanesOfValue(I, *SS, p);
-  bool q = l.size() >= 2 && l.test(1);
-  if (mi)
-    if (auto *MT = dyn_cast<llvm::MemTransferInst>(access)) {
-      Lanes s = lanesOfValue(I, *SS, MT->getRawSource());
-      q = q || (s.size() >= 2 && s.test(1));
-    }
-  return q ? OffsetKind::Quantum : OffsetKind::Classical;
-}
-
-namespace {
-SmallVector<ObjectId, 4> objectsFor(const ImplState &I, const PtrInfo &p) {
-  SmallVector<ObjectId, 4> out;
-  for (unsigned s : p.sites) {
-    const Site &site = I.sites[s];
-    if (site.kind == SiteKind::Function)
-      continue;
-    if (!site.stride) {
-      out.push_back(site.objects.front());
-      continue;
-    }
-    if (auto m = p.mod(site.stride)) {
-      for (unsigned c = site.columns.size(); c-- > 0;)
-        if (site.columns[c] <= *m) {
-          out.push_back(site.objects[c]);
-          break;
-        }
-      continue;
-    }
-    out.append(site.objects.begin(), site.objects.end());
-  }
-  return out;
-}
-
-const PtrInfo &ptrOrDie(const ImplState &I, const SpecState &SS, const llvm::Value *V,
-                        PtrInfo &tmp) {
-  auto it = SS.ptr.find(V);
-  if (it != SS.ptr.end())
-    return it->second;
-  if (auto *A = dyn_cast<llvm::Argument>(V))
-    if (A->getParent() == SS.F && A->getArgNo() < SS.formalPtr.size())
-      return SS.formalPtr[A->getArgNo()];
-  if (auto *C = dyn_cast<llvm::Constant>(V)) {
-    llvm::APInt off(64, 0);
-    const llvm::Value *base =
-        C->stripAndAccumulateConstantOffsets(I.M->getDataLayout(), off, true);
-    tmp = PtrInfo();
-    tmp.init = true;
-    tmp.c = off.getSExtValue();
-    auto sit = I.siteOf.find(base);
-    if (sit != I.siteOf.end())
-      tmp.sites.push_back(sit->second);
-    return tmp;
-  }
-  internalError("taint: no provenance answer for this pointer (cq-5k5)", V);
-}
-} // namespace
-
-// T2 (cq-arch 2026-11-01; CR rules 18, 20): the cells of the object formal argNo points to that the
-// clone S may store a handle into, ascending. A store through the formal (constant offsets from it)
-// writes a handle when the cell is a slot cell of the pointee (rule 20 homogeneity: a classical value
-// becomes a seed rail), or when its value, its address or its block's control is quantum, or S is _ctl
-// (as transferStore records it). The cell index is the byte offset from the object's root over the
-// store's size. A write whose cell is not known (a variable offset, a pointee offset that differs between the
-// callers, a rule 27 opaque callee handed the formal) may write every cell; an escape of the formal is followed
-// through the memory it is stored into. Unimplemented: stores of several sizes into an object with no C type,
-// or an offset that is not a multiple of the size.
-namespace {
-// The load L when SI stores back a chain of cq_theta of a load of the cell it stores to: a rotation
-// of the rail the cell holds, in place (124's step: *r = cq_theta(*r); 61's prep: the second
-// *x = cq_theta(*x) forwarded by -O1 as cq_theta(cq_theta(load)), cq-kwmu). The handle stored is L's.
-const llvm::LoadInst *inPlaceRoot(const llvm::StoreInst *SI, bool bools = false) {
-  const llvm::Value *V = SI->getValueOperand();
-  // bools (T2 at a variable offset, 117): also a _Bool cell's round trip, zext i1 -> i8 of the rotation of
-  // the trunc i8 -> i1 of its load (the i1 rail's view).
-  bool boolView = false;
-  if (auto *Z = dyn_cast<llvm::ZExtInst>(V); bools && Z && Z->getSrcTy()->isIntegerTy(1)) {
-    V = Z->getOperand(0);
-    boolView = true;
-  }
-  bool rotated = false;
-  for (unsigned depth = 0; depth < 64; ++depth) {
-    auto *C = dyn_cast<llvm::CallInst>(V);
-    const llvm::Function *G = C ? C->getCalledFunction() : nullptr;
-    if (!G || !G->getName().starts_with("cq_theta_") || C->arg_size() < 1)
-      break;
-    rotated = true;
-    V = C->getArgOperand(0);
-  }
-  if (boolView) {
-    auto *Tr = dyn_cast<llvm::TruncInst>(V);
-    if (!Tr || !Tr->getDestTy()->isIntegerTy(1))
-      return nullptr;
-    V = Tr->getOperand(0);
-  }
-  auto *L = dyn_cast<llvm::LoadInst>(V);
-  if (!rotated || !L || L->getPointerOperand() != SI->getPointerOperand() ||
-      L->getType() != SI->getValueOperand()->getType())
+  const SpecState *SS = stateOf(I, S);
+  if (!p->getType()->isPointerTy())
     return nullptr;
-  return L;
+  const llvm::Value *base = walkHostBase(I, *SS, p);
+  return base && hostResident(base, S) ? base : nullptr;
 }
 
-// The key of a clone in ImplState::pastPointee: its function and taint mask (the formal's objects follow them).
-std::string pastKey(const Specialization &S) {
-  return S.F->getName().str() + "|" + std::string(S.mask) + (S.ctl ? "c" : "") + (S.pure ? "p" : "") + "|" + std::to_string(S.depth);
+const llvm::Value *TaintInfo::hostObjectOf(const llvm::Instruction &access, const Specialization &S) const {
+  const llvm::Value *p = nullptr;
+  if (auto *LI = dyn_cast<llvm::LoadInst>(&access))
+    p = LI->getPointerOperand();
+  else if (auto *SI = dyn_cast<llvm::StoreInst>(&access))
+    p = SI->getPointerOperand();
+  else if (auto *MI = dyn_cast<llvm::MemIntrinsic>(&access))
+    p = MI->getRawDest();
+  else if (auto *CB = dyn_cast<llvm::CallBase>(&access))
+    p = CB->arg_size() ? CB->getArgOperand(0) : nullptr;   // rule 23: a recognised fenv call taking the object itself
+  return p ? hostObjectOf(p, S) : nullptr;
 }
 
-// T2 cellsWritten (rotated = false) and T3 cellsRotated (rotated = true): one walk over the formal.
-llvm::SmallVector<unsigned, 4> formalCells(const ImplState &I, const TaintInfo &T, const Specialization &S,
-                                           unsigned argNo, bool rotated) {
-  SpecState *SS = stateOf(I, S);
-  llvm::Function *F = SS->F;
-  if (argNo >= F->arg_size() || !F->getArg(argNo)->getType()->isPointerTy())
-    return {};
-  const llvm::Argument *A = F->getArg(argNo);
-  const llvm::DataLayout &DL = F->getDataLayout();
-  PtrInfo tmp;
-  const PtrInfo &fp = ptrOrDie(I, *SS, A, tmp);
-  SmallVector<ObjectId, 4> objs = objectsFor(I, fp);
-  auto refuse = [&](const llvm::Twine &why, const llvm::Value *at) {
-    unimplemented(("taint: " + llvm::Twine(rotated ? "cellsRotated" : "cellsWritten") + ": " + why +
-                   (rotated ? " (T3, a clone's rotations through a pointer formal)"
-                            : " (T2, a clone's writes through a pointer formal)"))
-                      .str(),
-                  at);
-  };
-  // A write through the formal: a store (st) in SS or, through the formal handed on to a call (cq-1c5j: musl's
-  // frexp hands its int *e to its own recursive call; 31/163's slot parameter), in a callee's specialization ss;
-  // or a memory intrinsic or an atomic writing the cells (rules 22, 24), `handle` deciding it.
-  // `any`: a write at a cell the walk cannot name (a variable offset; a rule 27 opaque callee handed the formal):
-  // it may hit every cell of the pointee.
-  struct W { int64_t off; uint64_t size; const llvm::StoreInst *st; const SpecState *ss = nullptr; bool handle = false;
-             const llvm::Instruction *at = nullptr; bool any = false; };
-  SmallVector<W, 4> writes;
-  // A formal naming no data object (a function pointer: signal's handler) has no cells to write or rotate.
-  if (objs.empty())
-    return {};
-  // Rules 3, 20 (provenance through memory): a value derived from the formal stored into memory escapes into
-  // the objects the store's pointer names; a load of them in S or a specialization S reaches carries it on.
-  std::set<ObjectId> escInto;
-  std::optional<std::optional<int64_t>> escOff;   // the escaped values' offset from the formal, when one
-  auto objsIn = [&](const SpecState *ss, const llvm::Value *p) -> std::optional<SmallVector<ObjectId, 4>> {
-    if (!p->getType()->isPointerTy())
-      return std::nullopt;
-    auto it = ss->ptr.find(p);
-    if (it != ss->ptr.end())
-      return objectsFor(I, it->second);
-    if (auto *Ar = dyn_cast<llvm::Argument>(p); Ar && Ar->getParent() == ss->F && Ar->getArgNo() < ss->formalPtr.size())
-      return objectsFor(I, ss->formalPtr[Ar->getArgNo()]);
-    if (isa<llvm::Constant>(p)) {
-      PtrInfo t;
-      return objectsFor(I, ptrOrDie(I, *ss, p, t));
-    }
-    return std::nullopt;   // no provenance answer: may name any object
-  };
-  auto escapeTo = [&](const llvm::Value *ptr, const SpecState *ss, std::optional<int64_t> off) {
-    if (!escOff)
-      escOff = off;
-    else if (*escOff != off)
-      escOff = std::optional<int64_t>();
-    if (auto os = objsIn(ss, ptr)) {
-      escInto.insert(os->begin(), os->end());
-      return;
-    }
-    for (ObjectId o = 0; o < I.objects.size(); ++o)
-      escInto.insert(o);
-  };
-  auto hitsEsc = [&](const SpecState *ss, const llvm::Value *p) {
-    auto os = objsIn(ss, p);
-    return !os || any_of(*os, [&](ObjectId o) { return escInto.count(o) != 0; });
-  };
-  // Rule 27: a callee with no body handed the formal at argument j that may write through it (its declared clone,
-  // or rule 19's clone_resolve all-handles clone) may overwrite any cell of the pointee with a handle it minted.
-  // It never rotates a caller's rail in place: its twin restores every cell from the caller's snapshot (T3 none).
-  auto opaqueWrite = [&](const llvm::CallBase *CB, unsigned j, const SpecState *ss) {
-    if (CB->getArgOperand(j)->getType()->isPointerTy() && mayWriteThroughArg(*CB, j))
-      writes.push_back({0, 0, nullptr, ss, true, CB, true});
-  };
-  // Rule 19: an indirect call with no in-module candidate is the clone_resolve call when quantum (an argument
-  // lane, a pointee cell holding a handle, or a quantum predicate), else the host's own function.
-  auto resolvedQuantum = [&](const llvm::CallBase *CB, const SpecState *ss) {
-    auto bit = ss->cdt.find(CB->getParent());
-    bool q = ss->ctl || (bit != ss->cdt.end() && !bit->second.empty());
-    for (const llvm::Use &a : CB->args()) {
-      q = q || lanesOfValue(I, *ss, a.get()).any();
-      if (auto os = objsIn(ss, a.get()))
-        for (ObjectId o : *os)
-          q = q || I.objects[o].mayHoldHandle();
-    }
-    return q;
-  };
-  SmallVector<const llvm::StoreInst *, 2> varInPlace;   // T2: in-place round trips at a variable offset
-  // cq-ee23: every value derived from the formal is followed: pointers (GEP, casts, freeze, phi,
-  // select), the integers ptrtoint makes of them (a constant add or sub keeps the offset, any other
-  // arithmetic makes it variable) and the pointers inttoptr makes back, and aggregates holding it (the
-  // index path where it sits). Only a load, a comparison or a return ends a path; a store of a derived
-  // value or a call taking one is the escape, unimplemented.
-  struct Item { const llvm::Value *v; std::optional<int64_t> off; SmallVector<unsigned, 2> path;
-                const SpecState *ss = nullptr; };
-  SmallVector<Item, 8> work{{A, 0, {}, SS}};
-  std::set<std::tuple<const llvm::Value *, SmallVector<unsigned, 2>, const SpecState *>> seen;
-  // A callee's formal reached at two offsets (a recursion advancing the pointer) is walked at an unknown one.
-  std::map<std::pair<const llvm::Value *, const SpecState *>, std::optional<int64_t>> formalOff;
-  auto blockCT = [](const SpecState *ss, const llvm::BasicBlock *BB) {
-    auto it = ss->cdt.find(BB);
-    return it != ss->cdt.end() && !it->second.empty();
-  };
-  auto isPrefix = [](llvm::ArrayRef<unsigned> a, llvm::ArrayRef<unsigned> b) {
-    return a.size() <= b.size() && std::equal(a.begin(), a.end(), b.begin());
-  };
-  // The escape (rules 3, 20): every load of a cell the formal (or a value derived from it) was stored into, in
-  // S or a specialization it reaches, may read it back; a copy of such a cell (rule 22) is one more; a rule 27
-  // opaque callee handed such a cell may write through the formal it reads there. True when it found more to walk.
-  std::set<const llvm::CallBase *> escOpaque;
-  auto escScan = [&]() {
-    SmallVector<const SpecState *, 8> reach{SS};
-    for (size_t k = 0; k < reach.size(); ++k)
-      for (const auto &cv : reach[k]->callees)
-        for (const SpecState *C : cv.second)
-          if (!C->declared && !is_contained(reach, C))
-            reach.push_back(C);
-    while (!escInto.empty()) {
-      bool grew = false;
-      for (const SpecState *R : reach)
-        for (const llvm::BasicBlock &BB : *R->F)
-          for (const llvm::Instruction &X : BB) {
-            if (auto *Ld = dyn_cast<llvm::LoadInst>(&X)) {
-              llvm::Type *t = Ld->getType();
-              if ((t->isPointerTy() || (t->isIntegerTy() && t->getIntegerBitWidth() >= 64)) &&
-                  hitsEsc(R, Ld->getPointerOperand()) && !seen.count({Ld, SmallVector<unsigned, 2>{}, R}))
-                work.push_back({Ld, *escOff, {}, R});
-            } else if (auto *MT = dyn_cast<llvm::MemTransferInst>(&X)) {
-              if (hitsEsc(R, MT->getRawSource())) {
-                size_t before = escInto.size();
-                escapeTo(MT->getRawDest(), R, *escOff);
-                grew = grew || escInto.size() != before;
-              }
-            } else if (auto *CB = dyn_cast<llvm::CallBase>(&X); CB && !R->cutCalls.count(CB)) {
-              auto cit = R->callees.find(CB);
-              bool opaque = cit == R->callees.end() || cit->second.empty()
-                                ? !CB->getCalledFunction() && !CB->isInlineAsm() && resolvedQuantum(CB, R)
-                                : any_of(cit->second, [](const SpecState *C) { return C->declared; });
-              if (opaque && !escOpaque.count(CB))
-                for (unsigned j = 0; j < CB->arg_size(); ++j)
-                  if (hitsEsc(R, CB->getArgOperand(j))) {
-                    escOpaque.insert(CB);
-                    writes.push_back({0, 0, nullptr, R, true, CB, true});
-                    break;
-                  }
-            }
-          }
-      if (!work.empty())
-        return true;
-      if (!grew)
-        return false;
-    }
-    return false;
-  };
-  while (!work.empty() || escScan()) {
-    Item it = work.pop_back_val();
-    const llvm::Value *V = it.v;
-    std::optional<int64_t> off = it.off;
-    const SpecState *ss = it.ss;
-    if (!seen.insert({V, it.path, ss}).second)
-      continue;
-    for (const llvm::User *U : V->users()) {
-      if (!it.path.empty()) {
-        // V is an aggregate holding the formal (or a value derived from it) at it.path.
-        if (auto *EV = dyn_cast<llvm::ExtractValueInst>(U)) {
-          llvm::ArrayRef<unsigned> ix = EV->getIndices();
-          if (isPrefix(ix, it.path))
-            work.push_back({U, off, SmallVector<unsigned, 2>(it.path.begin() + ix.size(), it.path.end()), ss});
-          else if (!isPrefix(it.path, ix))
-            continue; // another field
-          else
-            refuse("a field inside the formal's slot of an aggregate", U);
-        } else if (auto *IV = dyn_cast<llvm::InsertValueInst>(U); IV && IV->getAggregateOperand() == V) {
-          if (!isPrefix(IV->getIndices(), it.path))
-            work.push_back({U, off, it.path, ss});
-          // else: the formal's slot is overwritten
-          if (IV->getInsertedValueOperand() == V)
-            refuse("an aggregate holding the formal inserted into itself", U);
-        } else if (auto *IV2 = dyn_cast<llvm::InsertValueInst>(U)) {
-          SmallVector<unsigned, 2> p(IV2->getIndices().begin(), IV2->getIndices().end());
-          p.append(it.path.begin(), it.path.end());
-          work.push_back({U, off, p, ss});
-        } else if (isa<llvm::PHINode>(U) || isa<llvm::SelectInst>(U) || isa<llvm::FreezeInst>(U)) {
-          if (auto *Sel = dyn_cast<llvm::SelectInst>(U); Sel && Sel->getCondition() == V)
-            continue;
-          work.push_back({U, std::nullopt, it.path, ss});
-        } else if (isa<llvm::ReturnInst>(U)) {
-          continue;
-        } else {
-          refuse("an aggregate holding the formal escapes (stored, passed or reinterpreted)", U);
-        }
-        continue;
-      }
-      if (auto *GEP = dyn_cast<llvm::GEPOperator>(U)) {
-        llvm::APInt o(64, 0);
-        if (off && GEP->getPointerOperand() == V && GEP->accumulateConstantOffset(DL, o))
-          work.push_back({GEP, *off + o.getSExtValue(), {}, ss});
-        else
-          work.push_back({GEP, std::nullopt, {}, ss});
-      } else if (isa<llvm::BitCastOperator>(U) || isa<llvm::AddrSpaceCastOperator>(U) ||
-                 isa<llvm::FreezeInst>(U) || isa<llvm::PtrToIntOperator>(U) ||
-                 (isa<llvm::Operator>(U) && cast<llvm::Operator>(U)->getOpcode() == llvm::Instruction::IntToPtr)) {
-        work.push_back({U, off, {}, ss});
-      } else if (auto *BO = dyn_cast<llvm::BinaryOperator>(U)) {
-        // An integer made from the formal's address.
-        std::optional<int64_t> o2;
-        const llvm::Value *other = BO->getOperand(0) == V ? BO->getOperand(1) : BO->getOperand(0);
-        auto *C = dyn_cast<llvm::ConstantInt>(other);
-        bool disjointOr = BO->getOpcode() == llvm::Instruction::Or && cast<llvm::PossiblyDisjointInst>(BO)->isDisjoint();
-        if (off && C && C->getBitWidth() <= 64 &&
-            (BO->getOpcode() == llvm::Instruction::Add || disjointOr))
-          o2 = *off + C->getSExtValue();
-        else if (off && C && C->getBitWidth() <= 64 && BO->getOpcode() == llvm::Instruction::Sub &&
-                 BO->getOperand(0) == V)
-          o2 = *off - C->getSExtValue();
-        work.push_back({U, o2, {}, ss});
-      } else if (auto *IV = dyn_cast<llvm::InsertValueInst>(U)) {
-        if (IV->getInsertedValueOperand() == V)
-          work.push_back({U, off, SmallVector<unsigned, 2>(IV->getIndices().begin(), IV->getIndices().end()), ss});
-        else
-          refuse("an aggregate built over a value derived from the formal", U);
-      } else if (isa<llvm::LoadInst>(U) || isa<llvm::ICmpInst>(U) || isa<llvm::ReturnInst>(U)) {
-        continue;
-      } else if (auto *SI = dyn_cast<llvm::StoreInst>(U)) {
-        if (SI->getValueOperand() == V)
-          escapeTo(SI->getPointerOperand(), ss, off);
-        if (SI->getPointerOperand() != V)
-          continue;
-        if (!V->getType()->isPointerTy())
-          internalError("taint: cellsWritten: a store through a non-pointer", SI);
-        if (!off) {
-          // 117: T2 at a variable offset: a store back of a rotation of the cell's own quantum load (an
-          // in-place cq_theta on a runtime-indexed cell) leaves the handle in the cell.
-          // T3 (cq-budv, 117): such a round trip rotates the rail of whichever cell the offset names at
-          // run time: any cell (kAnyCell).
-          const llvm::LoadInst *r = inPlaceRoot(SI, true);
-          if (r && lanesOfValue(I, *ss, r).any()) {
-            varInPlace.push_back(SI);
-            continue;
-          }
-          // Rule 20: any other store at a variable offset may write every cell of the pointee.
-          writes.push_back({0, DL.getTypeStoreSize(SI->getValueOperand()->getType()), SI, ss, false, SI, true});
-          continue;
-        }
-        writes.push_back({*off, DL.getTypeStoreSize(SI->getValueOperand()->getType()), SI, ss});
-      } else if (auto *II = dyn_cast<llvm::IntrinsicInst>(U); II && II->isLifetimeStartOrEnd()) {
-        continue;
-      } else if (auto *Sel = dyn_cast<llvm::SelectInst>(U); Sel && Sel->getCondition() == V) {
-        continue; // the formal decides, its value does not flow
-      } else if (isa<llvm::SelectInst>(U) || isa<llvm::PHINode>(U)) {
-        work.push_back({U, std::nullopt, {}, ss});
-      } else if (auto *Ins = dyn_cast<llvm::Instruction>(U);
-                 Ins && !Ins->mayWriteToMemory() && !isa<llvm::CallBase>(Ins) && !Ins->getType()->isVoidTy()) {
-        work.push_back({U, std::nullopt, {}, ss}); // any other value computed from it (casts, arithmetic)
-      } else if (auto *MI = dyn_cast<llvm::MemIntrinsic>(U)) {
-        // Rule 22: a memory intrinsic writes the destination's cells; reading through the formal writes none.
-        if (MI->getRawDest() != V)
-          continue;
-        auto *len = dyn_cast<llvm::ConstantInt>(MI->getLength());
-        bool h = ss->ctl || blockCT(ss, MI->getParent()) || lanesOfValue(I, *ss, MI->getLength()).any() ||
-                 lanesOfValue(I, *ss, MI->getRawDest()).any();
-        if (auto *MS = dyn_cast<llvm::MemSetInst>(MI))
-          h = h || lanesOfValue(I, *ss, MS->getValue()).any();
-        if (auto *MT = dyn_cast<llvm::MemTransferInst>(MI)) {
-          PtrInfo t2;
-          const PtrInfo &sp = ptrOrDie(I, *ss, MT->getRawSource(), t2);
-          h = h || lanesOfValue(I, *ss, MT->getRawSource()).any();
-          for (ObjectId o : objectsFor(I, sp))
-            h = h || I.objects[o].mayHoldHandle();
-        }
-        // At a variable offset or of a run-time length it may write every cell of the pointee.
-        if (!off || !len)
-          writes.push_back({0, 0, nullptr, ss, h, MI, true});
-        else if (len->getZExtValue())
-          writes.push_back({*off, len->getZExtValue(), nullptr, ss, h, MI});
-      } else if (isa<llvm::AtomicRMWInst>(U) || isa<llvm::AtomicCmpXchgInst>(U)) {
-        // Rule 24: an atomic is a read and a write of its cell.
-        auto *RMW = dyn_cast<llvm::AtomicRMWInst>(U);
-        auto *CX = dyn_cast<llvm::AtomicCmpXchgInst>(U);
-        const llvm::Value *ptr = RMW ? RMW->getPointerOperand() : CX->getPointerOperand();
-        const llvm::Value *val = RMW ? RMW->getValOperand() : CX->getNewValOperand();
-        if (val == V)
-          escapeTo(ptr, ss, off);   // the formal stored into memory by the atomic
-        if (ptr != V)
-          continue;
-        bool h = ss->ctl || blockCT(ss, cast<llvm::Instruction>(U)->getParent()) ||
-                 lanesOfValue(I, *ss, val).any() || lanesOfValue(I, *ss, ptr).any() ||
-                 (CX && lanesOfValue(I, *ss, CX->getCompareOperand()).any());
-        writes.push_back({off.value_or(0), DL.getTypeStoreSize(val->getType()), nullptr, ss, h,
-                          cast<llvm::Instruction>(U), !off});
-      } else if (auto *VA = dyn_cast<llvm::VAArgInst>(U)) {
-        // va_arg through a va_list the formal points to advances the list: a classical write at a cell the walk
-        // does not name (its value is the list's, not derived from the formal's address).
-        writes.push_back({0, 0, nullptr, ss, ss->ctl || blockCT(ss, VA->getParent()), VA, true});
-      } else if (auto *CB = dyn_cast<llvm::CallBase>(U)) {
-        if (ss->cutCalls.count(CB))
-          continue;   // rule 14: a depth-recursion call past the cutoff runs nothing (its result is |0>)
-        const llvm::Function *G = CB->getCalledFunction();
-        if (CB->isInlineAsm() || isa<llvm::IntrinsicInst>(CB)) {
-          // An intrinsic routed nowhere above, or an asm (rule 27: with a quantum operand an opaque callee, else
-          // the host boundary): a value it returns from the formal is followed; a write through the formal is a
-          // write at a cell the walk does not name, a handle one with a quantum operand or under a quantum predicate.
-          bool q = false;
-          for (const llvm::Use &a : CB->args())
-            q = q || lanesOfValue(I, *ss, a.get()).any();
-          if (!CB->getType()->isVoidTy())
-            work.push_back({U, std::nullopt, {}, ss});
-          for (unsigned j = 0; j < CB->arg_size(); ++j)
-            if (CB->getArgOperand(j) == V && mayWriteThroughArg(*CB, j)) {
-              if (CB->isInlineAsm() && q)
-                opaqueWrite(CB, j, ss);
-              else
-                writes.push_back({0, 0, nullptr, ss, q || ss->ctl || blockCT(ss, CB->getParent()), CB, true});
-            }
-          continue;
-        }
-        auto cit = ss->callees.find(CB);
-        bool lifted = cit != ss->callees.end() && !cit->second.empty();
-        if (G && !G->isDeclaration() && !lifted)
-          refuse("a call handed the formal that taint did not lift", U);
-        // Rule 24 (106): pthread_create(t, attr, f, p) is the call f(p): operand 3 is the start routine's formal 0.
-        bool viaStart = G && G->isDeclaration() && G->getName() == "pthread_create" && CB->arg_size() == 4;
-        for (unsigned j = 0; j < CB->arg_size(); ++j) {
-          if (CB->getArgOperand(j) != V)
-            continue;
-          if (!lifted) {
-            // Rule 19: an indirect call with no in-module candidate, quantum, is the clone_resolve call (opaque).
-            // Any other call the analysis makes no clone of is a host call (rule 16: a tape entry under a quantum
-            // predicate, never run; else the host's function on classical memory: the call is quantum, a declared
-            // clone or a tape entry, when a pointer argument names a cell holding a handle) or rule 23's fenv
-            // call (the environment it saves is eff-fenv's state, no cell handle): it stores no handle.
-            if (!G && resolvedQuantum(CB, ss))
-              opaqueWrite(CB, j, ss);
-            continue;
-          }
-          for (const SpecState *C : cit->second) {
-            if (C->declared) {
-              opaqueWrite(CB, j, ss);   // rule 27: the declared clone
-              continue;
-            }
-            // Rule 18 (rule 19 for an indirect call's candidates): the formal handed on to a call of a function
-            // with a body: the callee's writes through its own formal are this clone's, at the same cells (the
-            // specialization the call takes in ss).
-            unsigned fj = viaStart ? (j == 3 ? 0u : ~0u) : j;
-            if (viaStart && fj == ~0u)
-              continue;   // the thread primitive's own operand (rule 24's sequential collapse): no write
-            if (fj >= C->F->arg_size())
-              refuse("the formal handed to a function with no body", U);
-            const llvm::Argument *CA = C->F->getArg(fj);
-            auto [fo, fresh] = formalOff.try_emplace({CA, C}, off);
-            std::optional<int64_t> at = off;
-            if (!fresh && fo->second != off) {
-              if (fo->second) {
-                fo->second = std::nullopt;
-                seen.erase({CA, SmallVector<unsigned, 2>{}, C});
-              }
-              at = std::nullopt;
-            }
-            work.push_back({CA, at, {}, C});
-          }
-        }
-      } else {
-        refuse("a write through the formal by a call of a function with no body or through a pointer", U);
-      }
-    }
-  }
-  // cq-lv9a: a cell is a scalar leaf of the pointee object's C type (an int[4] has four 4-byte cells,
-  // a struct one cell per scalar field at its offset); a store names every cell it overlaps. In every object
-  // the formal may point to it names the same cell indices. An object with no C type (a heap block) falls back
-  // to cells of the store size (all stores of one size, at multiples of it).
-  // Each object's leaves; objects of different layouts name a written byte range by their own indices,
-  // which must agree for every write (a readonly formal over tables of different lengths names none: musl
-  // __polevll's coefficient arrays).
-  std::vector<std::vector<Range>> objLeaves;
-  bool typed = !objs.empty();
-  for (ObjectId o : objs) {
-    const Site &site = I.sites[I.objects[o].site];
-    llvm::Type *ty = nullptr;
-    if (auto *AI = dyn_cast<llvm::AllocaInst>(site.v); AI && !AI->isArrayAllocation())
-      ty = AI->getAllocatedType();
-    else if (auto *GV = dyn_cast<llvm::GlobalVariable>(site.v))
-      ty = GV->getValueType();
-    else if (auto *AR = dyn_cast<llvm::Argument>(site.v); AR && (AR->hasByValAttr() || AR->hasStructRetAttr()))
-      ty = AR->hasByValAttr() ? AR->getParamByValType() : AR->getParamStructRetType();
-    if (!ty || site.stride != 0) {
-      typed = false;
-      break;
-    }
-    std::vector<Range> lv;
-    std::function<void(llvm::Type *, int64_t)> walk = [&](llvm::Type *t, int64_t at) {
-      if (auto *ST = dyn_cast<llvm::StructType>(t)) {
-        const llvm::StructLayout *SL = DL.getStructLayout(ST);
-        for (unsigned k = 0; k < ST->getNumElements(); ++k)
-          walk(ST->getElementType(k), at + int64_t(SL->getElementOffset(k)));
-      } else if (auto *AT = dyn_cast<llvm::ArrayType>(t)) {
-        uint64_t es = DL.getTypeAllocSize(AT->getElementType());
-        for (uint64_t k = 0; k < AT->getNumElements(); ++k)
-          walk(AT->getElementType(), at + int64_t(k * es));
-      } else if (auto *VT = dyn_cast<llvm::FixedVectorType>(t)) {
-        uint64_t es = DL.getTypeAllocSize(VT->getElementType());
-        for (unsigned k = 0; k < VT->getNumElements(); ++k)
-          walk(VT->getElementType(), at + int64_t(k * es));
-      } else {
-        lv.push_back({at, DL.getTypeStoreSize(t)});
-      }
-    };
-    walk(ty, 0);
-    objLeaves.push_back(std::move(lv));
-  }
-  if (!typed)
-    objLeaves.clear();
-  // The cells of every object a write of [at, at + size) overlaps, as indices; the same in every object.
-  auto overlapped = [&](int64_t at, uint64_t sz, const llvm::Value *where) {
-    std::optional<SmallVector<unsigned, 4>> agreed;
-    for (const std::vector<Range> &lv : objLeaves) {
-      SmallVector<unsigned, 4> ks;
-      for (unsigned k = 0; k < lv.size(); ++k)
-        if (at < lv[k].off + int64_t(lv[k].size) && lv[k].off < at + int64_t(sz))
-          ks.push_back(k);
-      if (ks.empty())
-        continue;   // past this object's cells: undefined where it runs, no cell of it
-      if (agreed && *agreed != ks)
-        refuse("a write naming different cells of pointee objects of different layouts", where);
-      agreed = std::move(ks);
-    }
-    return agreed.value_or(SmallVector<unsigned, 4>{});
-  };
-  // A round trip at a variable offset may hit any cell: every other write must be a round trip too (each
-  // then stores back the handle the cell holds, so no cell's handle changes).
-  // A write at a cell the walk cannot name is counted below over every cell (T2) and rotates none (T3).
-  if (!varInPlace.empty())
-    for (const W &w : writes) {
-      if (w.any)
-        continue;
-      const llvm::LoadInst *r = w.st ? inPlaceRoot(w.st, true) : nullptr;
-      if (!r || !lanesOfValue(I, *w.ss, r).any())
-        refuse("a store through the formal beside an in-place rotation at a variable offset", w.st ? w.st : w.at);
-    }
-  if (rotated && !varInPlace.empty())
-    return {TaintInfo::kAnyCell};
-  SmallVector<unsigned, 4> out;
-  uint64_t size = 0;
-  // T2: the writes at a cell the walk cannot name, and whether one of them stores a handle whatever the cell
-  // (a quantum value, address or control, a _ctl clone, an opaque callee) or only into slot cells (rule 20: a
-  // classical value stored into a slot cell becomes a seed rail).
-  bool anyCell = false, anyHandle = false;
-  uint64_t anySize = 0;
-  for (const W &w : writes) {
-    if (!w.any)
-      continue;
-    if (rotated)
-      continue;
-    anyCell = true;
-    anyHandle = anyHandle || (w.st ? w.ss->ctl || lanesOfValue(I, *w.ss, w.st->getValueOperand()).any() ||
-                                         lanesOfValue(I, *w.ss, w.st->getPointerOperand()).any() ||
-                                         blockCT(w.ss, w.st->getParent())
-                                   : w.handle);
-    if (w.size)
-      anySize = anySize ? std::min(anySize, w.size) : w.size;
-  }
-  for (const W &w : writes) {
-    if (w.any)
-      continue;
-    std::optional<int64_t> base = fp.exact();
-    // A store past every cell of every object the formal may point to is undefined where it runs (an access
-    // past an object, outside the domain): it writes no cell (rule 21; mem-slots lowers it as nothing). musl
-    // __rem_pio2_large's y[1], y[2] for prec 0 into __rem_pio2f's double ty[1] (cq-4e6m). A write of a callee
-    // the formal is handed to is that callee's own (its formalCells records it).
-    if (typed && base && overlapped(*base + w.off, w.size, w.st ? (const llvm::Value *)w.st : w.at).empty()) {
-      if (w.st && w.ss == SS)
-        I.pastPointee.insert({pastKey(S), w.st});
-      continue;
-    }
-    bool ownHandle = w.st ? w.ss->ctl || lanesOfValue(I, *w.ss, w.st->getValueOperand()).any() ||
-                                lanesOfValue(I, *w.ss, w.st->getPointerOperand()).any() ||
-                                blockCT(w.ss, w.st->getParent())
-                          : w.handle;
-    bool handle = ownHandle;
-    for (ObjectId o : objs)
-      if (I.objects[o].cellHandle(base ? std::optional<int64_t>(*base + w.off) : std::nullopt, w.size))
-        handle = true;
-    // T3: a store of a rotation of the cell's loaded rail is the rotated cell (the gate acts on the rail
-    // the cell held at the load; a classical value loaded is minted instead, a write). T2: it is no handle write when every write of the cell stores back
-    // the handle of the same load of it (the load precedes them all: they store its value), so the cell
-    // holds that handle throughout; otherwise it writes the handle back over another (cq-kwmu).
-    // A rotation of a classical cell's value mints a rail (rule 2): a handle write, never in place.
-    const llvm::LoadInst *root = w.st ? inPlaceRoot(w.st) : nullptr;
-    if (root && !lanesOfValue(I, *w.ss, root).any())
-      root = nullptr;
-    bool inPlace = root && all_of(writes, [&](const W &o) {
-      return o.any || o.off + int64_t(o.size) <= w.off || w.off + int64_t(w.size) <= o.off ||
-             (o.off == w.off && o.size == w.size && o.st && inPlaceRoot(o.st) == root);
-    });
-    if (rotated ? !root : inPlace)
-      continue;
-    if (!handle && !rotated)
-      continue;
-    if (!base) {
-      // Rule 20: the formal's offset into its object differs between the clone's callers (or the analysis lost
-      // it): the cell the write names is not known, so it may be any of the pointee's (T2, counted below); a
-      // rotation in place there may hit any cell (T3).
-      if (rotated)
-        return {TaintInfo::kAnyCell};
-      anyCell = true;
-      anyHandle = anyHandle || ownHandle;
-      if (w.size)
-        anySize = anySize ? std::min(anySize, w.size) : w.size;
-      continue;
-    }
-    if (typed) {
-      SmallVector<unsigned, 4> ks = overlapped(*base + w.off, w.size, w.st ? (const llvm::Value *)w.st : w.at);
-      for (unsigned k : ks)
-        if (!is_contained(out, k))
-          out.push_back(k);
-      if (ks.empty())
-        internalError("taint: formalCells: a store past the pointee's cells reached the cell count", w.st ? w.st : w.at);
-      continue;
-    }
-    if (size && w.size != size)
-      refuse("stores of several sizes through the formal", w.st ? w.st : w.at);
-    size = w.size;
-    int64_t at = *base + w.off;
-    if (at < 0 || !size || at % int64_t(size))
-      refuse("a store at an offset that is not a multiple of its size", w.st ? w.st : w.at);
-    unsigned cell = unsigned(at / int64_t(size));
-    if (!is_contained(out, cell))
-      out.push_back(cell);
-  }
-  if (anyCell) {
-    // Every cell of the pointee: a typed object's scalar leaves; an object with no C type, its cells of the
-    // access size over its extent (a column object, one per element). Where the extent is not a constant (a
-    // run-time block, a host object) no list names them: kAnyCell, as T3's variable-offset rotation.
-    auto add = [&](unsigned c) {
-      if (!is_contained(out, c))
-        out.push_back(c);
-    };
-    if (typed) {
-      for (size_t k = 0; k < objs.size(); ++k)
-        for (unsigned c = 0; c < objLeaves[k].size(); ++c)
-          if (anyHandle || I.objects[objs[k]].cellHandle(objLeaves[k][c].off, objLeaves[k][c].size))
-            add(c);
-    } else {
-      uint64_t cs = size ? size : anySize;
-      for (ObjectId o : objs) {
-        const Site &site = I.sites[I.objects[o].site];
-        std::optional<uint64_t> ext;
-        if (auto *AI = dyn_cast<llvm::AllocaInst>(site.v)) {
-          if (auto s = AI->getAllocationSize(DL); s && !s->isScalable())
-            ext = s->getFixedValue();
-        } else if (auto *GV = dyn_cast<llvm::GlobalVariable>(site.v)) {
-          ext = DL.getTypeAllocSize(GV->getValueType());
-        } else if (auto *HC = dyn_cast<llvm::CallBase>(site.v); HC && HC->getCalledFunction()) {
-          if (auto as = HC->getCalledFunction()->getAttributes().getFnAttrs().getAllocSizeArgs()) {
-            auto *n0 = dyn_cast<llvm::ConstantInt>(HC->getArgOperand(as->first));
-            auto *n1 = as->second ? dyn_cast<llvm::ConstantInt>(HC->getArgOperand(*as->second)) : nullptr;
-            if (n0 && (!as->second || n1))
-              ext = n0->getZExtValue() * (n1 ? n1->getZExtValue() : 1);
-          }
-        }
-        uint64_t step = site.stride ? site.stride : cs;
-        if (!ext || !step) {
-          out.assign(1, TaintInfo::kAnyCell);
-          return out;
-        }
-        int64_t col = site.stride && I.objects[o].column >= 0 ? site.columns[unsigned(I.objects[o].column)] : 0;
-        for (uint64_t c = 0; c < *ext / step; ++c)
-          if (anyHandle || I.objects[o].cellHandle(col + int64_t(c * step), site.stride ? cs : step))
-            add(unsigned(c));
-      }
-    }
-  }
-  llvm::sort(out);
-  return out;
-}
-} // namespace
-
-llvm::SmallVector<unsigned, 4> TaintInfo::cellsWritten(const Specialization &S, unsigned argNo) const {
-  return formalCells(needImpl(impl), *this, S, argNo, false);
+bool TaintInfo::afterEvent(const llvm::CallBase &CB, const Specialization &S) const {
+  (void)stateOf(needImpl(impl), S);
+  (void)CB;
+  report_fatal_error("cq: unimplemented: bus: afterEvent", /*gen_crash_diag=*/false);
 }
 
-bool TaintInfo::writesPastPointee(const Specialization &S, unsigned argNo, const llvm::StoreInst &st) const {
+bool TaintInfo::needsCtl(const llvm::Function &F) const {
   const ImplState &I = needImpl(impl);
-  formalCells(I, *this, S, argNo, false);
-  return I.pastPointee.count({pastKey(S), &st}) != 0;
-}
-
-// T5 (109): see Taint.h. Structural over the clone's body; the narrow shape only.
-int TaintInfo::cellForward(const Specialization &S, unsigned argNo, unsigned cell) const {
-  const ImplState &I = needImpl(impl);
-  SpecState *SS = stateOf(I, S);
-  llvm::Function *F = SS->F;
-  if (S.ctl || F->isDeclaration() || argNo >= F->arg_size() ||
-      !F->getArg(argNo)->getType()->isPointerTy())
-    return -1;
-  const llvm::Argument *A = F->getArg(argNo);
-  const llvm::DataLayout &DL = F->getDataLayout();
-  const llvm::StoreInst *only = nullptr;
-  int64_t onlyOff = 0;
-  // Every use of A: a store through A (or a constant GEP of it, used only by stores and loads), or a load.
-  SmallVector<std::pair<const llvm::Value *, int64_t>, 4> ptrs{{A, 0}};
-  for (unsigned k = 0; k < ptrs.size(); ++k) {
-    auto [P, off] = ptrs[k];
-    for (const llvm::User *U : P->users()) {
-      if (auto *L = dyn_cast<llvm::LoadInst>(U); L && L->getPointerOperand() == P && L->isSimple())
-        continue;
-      if (auto *St = dyn_cast<llvm::StoreInst>(U); St && St->getPointerOperand() == P && St->isSimple() &&
-                                                    St->getValueOperand() != P) {
-        if (only)
-          return -1;
-        only = St;
-        onlyOff = off;
-        continue;
-      }
-      if (auto *G = dyn_cast<llvm::GetElementPtrInst>(U); G && G->getPointerOperand() == P) {
-        llvm::APInt o(64, 0);
-        if (!G->accumulateConstantOffset(DL, o))
-          return -1;
-        ptrs.push_back({G, off + o.getSExtValue()});
-        continue;
-      }
-      return -1;
-    }
-  }
-  if (!only || only->getParent() != &F->getEntryBlock())
-    return -1;
-  auto *J = dyn_cast<llvm::Argument>(only->getValueOperand());
-  if (!J || J->getParent() != F || J->getArgNo() == argNo || !J->hasOneUse() ||
-      !(J->getType()->isIntegerTy() || J->getType()->isFloatingPointTy()) || !isQuantum(J, S))
-    return -1;
-  uint64_t size = DL.getTypeStoreSize(J->getType()).getFixedValue();
-  if (onlyOff < 0 || onlyOff % int64_t(size) != 0 || uint64_t(onlyOff) / size != cell)
-    return -1;
-  return int(J->getArgNo());
-}
-
-// T3 (cq-arch 2026-11-01; CR rules 5, 18, 20): the cells of the object formal argNo points to that the
-// clone S may apply a non-diagonal gate to: a store back of cq_theta(load of the same cell) through the
-// formal (constant offsets from it), the rotation in place of the rail the cell holds. The same walk and
-// refusals as cellsWritten; a pointer passed on to a call is unimplemented there (no transitive answer).
-llvm::SmallVector<unsigned, 4> TaintInfo::cellsRotated(const Specialization &S, unsigned argNo) const {
-  return formalCells(needImpl(impl), *this, S, argNo, true);
-}
-
-llvm::ArrayRef<ObjectId> TaintInfo::provenance(const llvm::Value *ptr, const Specialization &S) const {
-  const ImplState &I = needImpl(impl);
-  SpecState *SS = stateOf(I, S);
-  if (!ptr->getType()->isPointerTy())
-    internalError("taint: provenance of a non-pointer", ptr);
-  PtrInfo tmp;
-  const PtrInfo &p = ptrOrDie(I, *SS, ptr, tmp);
-  // The answer must outlive the call: cache it on the (mutable) state.
-  static_assert(sizeof(ObjectId) == sizeof(unsigned), "ObjectId");
-  auto *self = const_cast<ImplState *>(&I);
-  auto out = objectsFor(I, p);
-  self->provCache.emplace_back(out.begin(), out.end());
-  return self->provCache.back();
-}
-
-// T6 (cq-hfah, CR rule 20 per cell): ptr names only globals (no other site kind), and the bytes [off, off + bytes)
-// past it hold a handle in none of them (Object::cellHandle, the answer the loads' taint uses): every access of
-// those bytes is classical program-wide and the global keeps its layout, so the cells stay host memory.
-bool TaintInfo::globalHostCell(const llvm::Value *ptr, int64_t off, uint64_t bytes, const Specialization &S) const {
-  const ImplState &I = needImpl(impl);
-  SpecState *SS = stateOf(I, S);
-  if (!ptr->getType()->isPointerTy())
-    internalError("taint: globalHostCell of a non-pointer", ptr);
-  PtrInfo tmp;
-  const PtrInfo &p = ptrOrDie(I, *SS, ptr, tmp);
-  if (p.sites.empty())
-    return false;
-  for (unsigned s : p.sites)
-    if (I.sites[s].kind != SiteKind::Global)
-      return false;
-  std::optional<int64_t> ex = p.exact();
-  if (ex)
-    *ex += off;
-  for (ObjectId o : objectsFor(I, p))
-    if (I.objects[o].cellHandle(ex, bytes))
-      return false;
-  return true;
-}
-
-bool TaintInfo::isFatPointer(const llvm::Value *ptr, const Specialization &S) const {
-  const ImplState &I = needImpl(impl);
-  return lanesOfValue(I, *stateOf(I, S), ptr).any();
+  for (size_t k = 0; k < I.published.size(); ++k)
+    if (I.published[k].F == &F && I.publishedState[k]->nonPure)
+      return true;
+  return false;
 }
 
 void TaintInfo::print(llvm::raw_ostream &os) const {
@@ -5540,7 +3020,6 @@ void TaintInfo::print(llvm::raw_ostream &os) const {
     C.bounds = P.bounds;
     C.ctl = P.ctl;
     C.pure = P.pure;
-    C.depth = P.depth;
     std::string n = abi::name(C);
     (void)SS;
     return n;
@@ -5585,12 +3064,7 @@ void TaintInfo::print(llvm::raw_ostream &os) const {
   if (getenv("CQ_TAINT_DEBUG"))
     for (size_t k = 0; k < I.published.size(); ++k) {
       SpecState *SS = I.publishedState[k];
-      os << "  debug " << specName(k) << " key=" << SS->key << " cut=" << SS->depthCut;
-      for (size_t i = 0; i < SS->ptrFormal.size() && i < SS->formalTy.size(); ++i)
-        if (SS->formalTy[i]->isPointerTy())
-          os << " ptr" << i << "=" << unsigned(SS->ptrFormal[i].abi) << "/" << unsigned(SS->ptrFormal[i].pointee) << "/"
-             << SS->ptrFormal[i].digits;
-      os << "\n";
+      os << "  debug " << specName(k) << " key=" << SS->key << "\n";
       if (SS->declared)
         continue;
       for (const llvm::BasicBlock &BB : *SS->F) {
@@ -5609,188 +3083,8 @@ void TaintInfo::print(llvm::raw_ostream &os) const {
     if (!F.isDeclaration())
       os << "cq-taint: function @" << F.getName() << " tainted=" << (I.tainted.count(&F) ? 1 : 0)
          << "\n";
-  for (ObjectId id = 0; id < I.objects.size(); ++id) {
-    const Object &O = I.objects[id];
-    const Site &s = I.sites[O.site];
-    const char *cls = O.qram ? "Qram" : O.mayHoldHandle() ? "Slot" : "Classical";
-    os << "cq-taint: object #" << id << " site=";
-    if (s.v->hasName())
-      os << s.v->getName();
-    else
-      s.v->printAsOperand(os, false);
-    if (s.owner)
-      os << " in @" << s.owner->getName();
-    os << " col=" << O.column << " class=" << cls << "\n";
-  }
-  // QRAM allocation sites per published specialization (each materializes its own copy) and QROM
-  // loads (a quantum-offset load of a classical object, one per object of its provenance).
-  for (size_t k = 0; k < I.published.size(); ++k) {
-    const Specialization &P = I.published[k];
-    SpecState *SS = I.publishedState[k];
-    if (P.F->isDeclaration())
-      continue;
-    for (const llvm::BasicBlock &BB : *P.F)
-      for (const llvm::Instruction &Ins : BB) {
-        if (auto *LI = dyn_cast<llvm::LoadInst>(&Ins)) {
-          auto it = SS->lanes.find(LI->getPointerOperand());
-          Lanes l;
-          if (it != SS->lanes.end())
-            l = it->second;
-          if (!(l.size() >= 2 && l.test(1)))
-            continue;
-          PtrInfo tmp;
-          const PtrInfo &pi = ptrOrDie(I, *SS, LI->getPointerOperand(), tmp);
-          for (ObjectId o : objectsFor(I, pi))
-            if (!I.objects[o].mayHoldHandle())
-              os << "cq-taint: qrom " << specName(k) << " object #" << o << "\n";
-        }
-      }
-  }
-  for (ObjectId id = 0; id < I.objects.size(); ++id) {
-    const Object &O = I.objects[id];
-    if (!O.qram)
-      continue;
-    const Site &s = I.sites[O.site];
-    // A QRAM of pointer cells is two QRAMs at the same cell index: the tag half and the idx half
-    // (rule 21's fat pointer is a pair of rails, 88).
-    int halves = (O.anyPtr || !O.ptrCells.empty()) ? 2 : 1;
-    for (int h = 0; h < halves; ++h) {
-      const char *half = halves == 2 ? (h == 0 ? " tag-half" : " idx-half") : "";
-      if (s.kind == SiteKind::Global || !s.owner) {
-        os << "cq-taint: qram-alloc object #" << id << half << "\n";
-        continue;
-      }
-      for (size_t k = 0; k < I.published.size(); ++k)
-        if (I.published[k].F == s.owner)
-          os << "cq-taint: qram-alloc object #" << id << half << " in " << specName(k) << "\n";
-    }
-  }
 }
 
-// ---- CR rule 13: code addresses ----
-namespace {
-// 1: a code address; 0: neutral (null, undef, poison, a cycle back); -1: something else.
-int codeSource(const Value *v, SmallPtrSetImpl<const Value *> &seen);
-
-int combine(int a, int b) { return a < 0 || b < 0 ? -1 : std::max(a, b); }
-
-int constantCells(const Constant *c) {
-  if (isa<BlockAddress>(c->stripPointerCasts()))
-    return 1;
-  if (c->getType()->isPointerTy())
-    return c->isNullValue() || isa<UndefValue>(c) ? 0 : -1;
-  if (isa<ConstantData>(c) && !c->getType()->isAggregateType() && !c->getType()->isVectorTy())
-    return 0;   // a non-pointer leaf (an integer or fp cell) stores no address
-  if (isa<ConstantAggregateZero>(c) || isa<UndefValue>(c))
-    return 0;
-  int r = 0;
-  if (isa<ConstantAggregate>(c) || isa<ConstantDataSequential>(c)) {
-    for (unsigned i = 0, n = c->getNumOperands(); i < n; ++i)
-      r = combine(r, constantCells(cast<Constant>(c->getOperand(i))));
-    return r;
-  }
-  return -1;
-}
-
-int objectCells(const Value *root, SmallPtrSetImpl<const Value *> &seen) {
-  int r = 0;
-  if (auto *gv = dyn_cast<GlobalVariable>(root)) {
-    if (!gv->hasDefinitiveInitializer())
-      return -1;
-    r = constantCells(gv->getInitializer());
-    if (r < 0)
-      return -1;
-    if (gv->isConstant())
-      return r;
-    if (!gv->hasLocalLinkage())
-      return -1;   // another unit may store any pointer
-  } else if (!isa<AllocaInst>(root)) {
-    return -1;
-  }
-  SmallVector<const Value *, 8> work{root};
-  SmallPtrSet<const Value *, 16> vis;
-  while (!work.empty()) {
-    const Value *p = work.pop_back_val();
-    if (!vis.insert(p).second)
-      continue;
-    for (const Use &U : p->uses()) {
-      const User *u = U.getUser();
-      if (isa<GetElementPtrInst>(u) || isa<BitCastInst>(u) || isa<AddrSpaceCastInst>(u) ||
-          (isa<ConstantExpr>(u) && cast<ConstantExpr>(u)->getOpcode() == Instruction::GetElementPtr)) {
-        work.push_back(u);
-        continue;
-      }
-      if (isa<LoadInst>(u))
-        continue;
-      if (auto *st = dyn_cast<StoreInst>(u)) {
-        if (U.getOperandNo() != st->getPointerOperandIndex())
-          return -1;   // the object's address escapes into memory
-        const Value *v = st->getValueOperand();
-        if (v->getType()->isPointerTy())
-          r = combine(r, codeSource(v, seen));
-        else if (auto *c = dyn_cast<Constant>(v))
-          r = combine(r, c->isNullValue() ? 0 : -1);
-        else
-          return -1;   // an integer stored over an address cell
-        if (r < 0)
-          return -1;
-        continue;
-      }
-      if (auto *ms = dyn_cast<MemSetInst>(u); ms && U.getOperandNo() == 0)
-        if (auto *k = dyn_cast<ConstantInt>(ms->getValue()); k && k->isZero())
-          continue;   // zero-initialized cells hold null
-      if (auto *ii = dyn_cast<IntrinsicInst>(u))
-        if (ii->isLifetimeStartOrEnd() || isa<DbgInfoIntrinsic>(ii))
-          continue;
-      return -1;
-    }
-  }
-  return r;
-}
-
-int codeSource(const Value *v, SmallPtrSetImpl<const Value *> &seen) {
-  v = v->stripPointerCasts();
-  if (isa<BlockAddress>(v))
-    return 1;
-  if (!v->getType()->isPointerTy())
-    return -1;
-  if (isa<ConstantPointerNull>(v) || isa<UndefValue>(v))
-    return 0;
-  if (!seen.insert(v).second)
-    return 0;   // a cycle: what the other sources say
-  if (auto *sel = dyn_cast<SelectInst>(v))
-    return combine(codeSource(sel->getTrueValue(), seen), codeSource(sel->getFalseValue(), seen));
-  if (auto *phi = dyn_cast<PHINode>(v)) {
-    int r = 0;
-    for (const Value *in : phi->incoming_values())
-      if ((r = combine(r, codeSource(in, seen))) < 0)
-        return -1;
-    return r;
-  }
-  if (auto *ld = dyn_cast<LoadInst>(v)) {
-    SmallVector<const Value *, 4> roots;
-    getUnderlyingObjects(ld->getPointerOperand(), roots, nullptr, 0);
-    int r = roots.empty() ? -1 : 0;
-    for (const Value *root : roots)
-      if ((r = combine(r, objectCells(root, seen))) < 0)
-        return -1;
-    return r;
-  }
-  return -1;
-}
-} // namespace
-
-bool isCodeAddress(const Value *v) {
-  if (!v || !v->getType()->isPointerTy())
-    return false;
-  SmallPtrSet<const Value *, 16> seen;
-  return codeSource(v, seen) > 0;
-}
-
-bool codeAddressCells(const Value *root) {
-  SmallPtrSet<const Value *, 16> seen;
-  return objectCells(root, seen) > 0;
-}
 
 TaintInfo computeTaint(llvm::Module &M, const TaintOptions &opts) {
   TaintInfo T;
@@ -5800,22 +3094,5 @@ TaintInfo computeTaint(llvm::Module &M, const TaintOptions &opts) {
   taintimpl::Analyzer A(*T.impl);
   A.run();
   return T;
-}
-} // namespace cq
-
-namespace cq {
-// T4 (cq-arch 2026-11-01): stub until taint builds it.
-PtrFormal TaintInfo::pointerFormal(const Specialization &callee, unsigned argNo) const {
-  const auto &I = needImpl(impl);
-  auto *SS = stateOf(I, callee);
-  if (argNo >= SS->formalTy.size() || !SS->formalTy[argNo]->isPointerTy())
-    internalError("taint: pointerFormal of a formal that is not a pointer", callee.F);
-  if (argNo >= SS->ptrFormal.size())
-    internalError("taint: pointerFormal before the clone's mask was built", callee.F);
-  if (SS->mixedPointee[argNo])
-    unimplemented("taint: a pointer formal whose objects are a QRAM and a slot or host object (T4)",
-                  argNo < callee.F->arg_size() ? static_cast<const llvm::Value *>(callee.F->getArg(argNo))
-                                               : callee.F);
-  return SS->ptrFormal[argNo];
 }
 } // namespace cq

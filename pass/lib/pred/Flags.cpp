@@ -770,7 +770,7 @@ public:
   explicit CtxMergeSink(LoweringContext &ctx) : ctx(ctx) {}
   Operand operand(const Value *orig) override {
     Operand op = ctx.operand(orig);
-    return orig->getType()->isPointerTy() && isCodeAddress(orig) ? addressAsInt(ctx, op) : op;
+    return orig->getType()->isPointerTy() ? addressAsInt(ctx, op) : op;
   }
   Value *seed(Value *classical, RailType w) override {
     CallInst *call = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {classical});
@@ -1596,7 +1596,7 @@ Value *lowerMerge(LoweringContext &ctx, PHINode &phi) {
     internalError("pred: lowerMerge before PathPredicates::compute of its function", &phi);
   if (I.loopHeaders.count(bb))
     internalError("pred: lowerMerge on a loop-header phi (a carried value: the loop modules)", &phi);
-  bool code = phi.getType()->isPointerTy() && isCodeAddress(&phi);   // rule 13: an i64 integer
+  bool code = phi.getType()->isPointerTy();   // rule 3: an i64 integer
   if (!scalarRailType(phi.getType()) && !code)
     internalError("pred: lowerMerge of a vector, aggregate or pointer phi (every caller routes a composite to "
                   "lowerMergeFields and a data pointer to fatptr, rules 21, 26)",
@@ -1764,7 +1764,7 @@ void lowerMergeFields(LoweringContext &ctx, PHINode &phi, bool rebind) {
 
 Value *lowerSelect(LoweringContext &ctx, SelectInst &sel) {
   Value *c = sel.getCondition();
-  bool code = sel.getType()->isPointerTy() && isCodeAddress(&sel);   // rule 13: an i64 integer
+  bool code = sel.getType()->isPointerTy();   // rule 3: an i64 integer
   if (c->getType()->isVectorTy() || (!scalarRailType(sel.getType()) && !code))
     internalError("pred: lowerSelect of a vector, aggregate or data pointer select (the spine routes them to aggr "
                   "and fatptr)",

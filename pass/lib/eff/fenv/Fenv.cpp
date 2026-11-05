@@ -358,7 +358,7 @@ bool bodyTouchesFenv(const Function &F, SmallPtrSetImpl<const Function *> &seen)
 // is exact).
 bool sameSpec(const Specialization &a, const Specialization &b) {
   return a.F == b.F && a.mask == b.mask && a.ctl == b.ctl && a.pure == b.pure &&
-         a.depth == b.depth && a.bounds == b.bounds;
+         a.bounds == b.bounds;
 }
 
 bool callsSpec(const TaintInfo &T, const Specialization &P, const Specialization &S) {

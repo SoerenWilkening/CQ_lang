@@ -45,15 +45,9 @@ bool underQuantumPredicate(const CallBase &CB, const TaintInfo &T, const Special
   return S.ctl || T.controlTainted(CB.getParent(), S);
 }
 
+// Rule 20: a pointer that reaches no host-resident object through getelementptrs with untainted indices.
 bool nonClassicalObject(const TaintInfo &T, const Specialization &S, const Value *ptr) {
-  if (!ptr->getType()->isPointerTy())
-    return false;
-  if (T.isFatPointer(ptr, S))
-    return true;
-  for (ObjectId o : T.provenance(ptr, S))
-    if (T.classOf(o) != ObjClass::Classical)
-      return true;
-  return false;
+  return ptr->getType()->isPointerTy() && !isa<ConstantPointerNull>(ptr) && !T.hostObjectOf(ptr, S);
 }
 
 // The CQ.h surface (CQ.h at the pinned spec): name and signature.
@@ -284,8 +278,7 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
       return Class::Classical;
     }
     case Intrinsic::ptrmask:
-      // Rule 21 (105): the mask of a fat pointer's flat address, 89's round trip (fatptr::lower), a
-      // sequence of integer templates over the address.
+      // Rule 21 (105): the mask of an address rail: integer templates over the address.
       return qArg || qRes ? Class::TemplateIntrinsic : Class::Classical;
     case Intrinsic::trap: case Intrinsic::ubsantrap: case Intrinsic::debugtrap:
       return qPred ? Class::Noreturn : Class::Classical;

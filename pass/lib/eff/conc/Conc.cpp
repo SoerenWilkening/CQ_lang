@@ -39,8 +39,7 @@
 #include "../../spine/SpineInternal.h"
 #include "cq/Calls.h"
 #include "cq/Effects.h"
-#include "cq/FatPtr.h"
-#include "cq/Memory.h"
+#include "cq/Bus.h"
 #include "cq/Predicate.h"
 #include "cq/Taint.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -132,13 +131,6 @@ bool involvesQuantum(LoweringContext &ctx, Instruction &I, const Value *ptr) {
   for (const Use &u : I.operands())
     if (ctx.T.isQuantum(u.get(), ctx.S))
       return true;
-  if (ctx.T.isFatPointer(ptr, ctx.S))
-    return true;
-  for (ObjectId o : ctx.T.provenance(ptr, ctx.S))
-    if (ctx.T.classOf(o) != ObjClass::Classical)
-      return true;
-  if (isa<LoadInst>(I) && ctx.T.offsetKind(&I, ctx.S) == OffsetKind::Quantum)
-    return true;
   return false;
 }
 
@@ -179,34 +171,10 @@ void copyClassical(LoweringContext &ctx, Instruction &I, bool dropVolatile) {
 }
 
 // The plain access (rule 20/21 routing) of an access with something quantum in it.
-void routePlain(LoweringContext &ctx, Instruction &I, const Value *ptr, StringRef what) {
-  // Rule 21: a quantum tag is a fat pointer, whose accesses are rule 20's per object (fatptr).
-  if (spine::accessHasQuantumTag(ctx, ptr)) {
-    if (auto *ld = dyn_cast<LoadInst>(&I))
-      return fatptr::lowerLoad(ctx, *ld);
-    return fatptr::lowerStore(ctx, cast<StoreInst>(I));
-  }
-  (void)what;
-  bool qram = false, slot = false;
-  for (ObjectId o : ctx.T.provenance(ptr, ctx.S)) {
-    qram |= ctx.T.classOf(o) == ObjClass::Qram;
-    slot |= ctx.T.classOf(o) == ObjClass::Slot;
-  }
-  if (auto *ld = dyn_cast<LoadInst>(&I)) {
-    if (qram)
-      return mem::lowerQramLoad(ctx, *ld);
-    if (slot)
-      return mem::lowerSlotLoad(ctx, *ld);
-    if (ctx.T.offsetKind(&I, ctx.S) == OffsetKind::Quantum)
-      return mem::lowerQromLoad(ctx, *ld);
-    internalError("eff-conc: a load from classical memory at a classical offset that taint calls quantum", &I);
-  }
-  auto *st = cast<StoreInst>(&I);
-  if (qram)
-    return mem::lowerQramStore(ctx, *st);
-  if (slot)
-    return mem::lowerSlotStore(ctx, *st);
-  internalError("eff-conc: a quantum value stored into memory taint classified Classical", &I);
+void routePlain(LoweringContext &ctx, Instruction &I) {
+  if (auto *ld = dyn_cast<LoadInst>(&I))
+    return bus::lowerLoad(ctx, *ld);
+  bus::lowerStore(ctx, cast<StoreInst>(I));
 }
 
 // A pthread_join of the module that asks for the start routine's result (a non-null second argument).
@@ -222,98 +190,6 @@ const CallBase *joinAskingResult(const Module &M) {
 }
 
 // Rule 24 (94) on a QRAM cell: the plain read-modify-write, the old value read and the new one stored by
-// mem-qram (rmwQramCell). atomicrmw yields the old value; cmpxchg yields {old, old == cmp} and stores
-// select(old == cmp, new, old).
-void lowerQramRmw(LoweringContext &ctx, Instruction &I, const Value *ptr) {
-  auto *rmw = dyn_cast<AtomicRMWInst>(&I);
-  auto *cx = dyn_cast<AtomicCmpXchgInst>(&I);
-  Type *ty = rmw ? rmw->getValOperand()->getType() : cx->getNewValOperand()->getType();
-  RailType w = railTypeOf(ty);
-  auto shape2 = [](const Operand &a, const Operand &b) -> std::string {
-    return a.handle && b.handle ? "" : a.handle ? "hl" : "lh";
-  };
-  auto bin = [&](const char *op, Operand a, Operand b) {
-    abi::TemplateSpec sp;
-    sp.op = op;
-    sp.w = w;
-    sp.shape = shape2(a, b);
-    return Operand{ctx.emitTemplate(sp, {a, b}), true};
-  };
-  auto cmp = [&](const char *pred, Operand a, Operand b) {
-    abi::TemplateSpec sp;
-    sp.op = "icmp";
-    sp.pred = pred;
-    sp.w = w;
-    sp.shape = shape2(a, b);
-    return Operand{ctx.emitTemplate(sp, {a, b}), true};
-  };
-  auto sel = [&](Operand c, Operand t, Operand f) {
-    abi::TemplateSpec sp;
-    sp.op = "select";
-    sp.w = w;
-    sp.shape = t.handle && f.handle ? "" : std::string(t.handle ? "h" : "l") + (f.handle ? "h" : "l");
-    return Operand{ctx.emitTemplate(sp, {c, t, f}), true};
-  };
-  auto lit = [&](uint64_t v) { return Operand{ConstantInt::get(ty, v), false}; };
-  Operand eqFlag;
-  auto combine = [&](Value *oldV) -> Value * {
-    Operand old{oldV, true};
-    if (cx) {
-      Operand c = ctx.operand(cx->getCompareOperand()), v = ctx.operand(cx->getNewValOperand());
-      eqFlag = cmp("eq", old, c);
-      Operand r = sel(eqFlag, v, old);
-      return r.v;
-    }
-    Operand v = ctx.operand(rmw->getValOperand());
-    Operand r;
-    switch (rmw->getOperation()) {
-    case AtomicRMWInst::Xchg:
-      // The cell takes v (a store copies it in, v unchanged); a classical v is first a seed (rule 7).
-      if (v.handle) {
-        r = v;
-      } else {
-        CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {v.v});
-        ctx.unc().recordSeed(seed);
-        r = Operand{seed, true};
-      }
-      break;
-    case AtomicRMWInst::Add: r = bin("add", old, v); break;
-    case AtomicRMWInst::Sub: r = bin("sub", old, v); break;
-    case AtomicRMWInst::And: r = bin("and", old, v); break;
-    case AtomicRMWInst::Or: r = bin("or", old, v); break;
-    case AtomicRMWInst::Xor: r = bin("xor", old, v); break;
-    case AtomicRMWInst::Nand: r = bin("xor", bin("and", old, v), lit(~uint64_t(0))); break;
-    case AtomicRMWInst::Max: r = bin("smax", old, v); break;
-    case AtomicRMWInst::Min: r = bin("smin", old, v); break;
-    case AtomicRMWInst::UMax: r = bin("umax", old, v); break;
-    case AtomicRMWInst::UMin: r = bin("umin", old, v); break;
-    case AtomicRMWInst::FAdd: r = bin("fadd", old, v); break;
-    case AtomicRMWInst::FSub: r = bin("fsub", old, v); break;
-    case AtomicRMWInst::FMax: r = bin("fmax", old, v); break;
-    case AtomicRMWInst::FMin: r = bin("fmin", old, v); break;
-    case AtomicRMWInst::UIncWrap:   // old >= v ? 0 : old + 1
-      r = sel(cmp("uge", old, v), lit(0), bin("add", old, lit(1)));
-      break;
-    case AtomicRMWInst::UDecWrap: {  // old == 0 || old > v ? v : old - 1
-      Operand z = cmp("eq", old, lit(0)), g = cmp("ugt", old, v);
-      abi::TemplateSpec orS;
-      orS.op = "or";
-      orS.w = RailType{Kind::Int, 1};
-      Operand zg{ctx.emitTemplate(orS, {z, g}), true};
-      r = sel(zg, v, bin("sub", old, lit(1)));
-      break;
-    }
-    default:
-      internalError("eff-conc: an atomicrmw operation LLVM 19 does not define", &I);
-    }
-    return r.v;
-  };
-  Value *old = mem::rmwQramCell(ctx, I, ptr, ty, combine);
-  if (cx)
-    ctx.bindFields(&I, {Operand{old, true}, eqFlag});
-  else
-    ctx.bind(&I, old);
-}
 
 } // namespace
 
@@ -332,19 +208,19 @@ void lowerVolatile(LoweringContext &ctx, Instruction &I) {
       return;
     if (!q)
       return copyClassical(ctx, I, /*dropVolatile=*/true);
-    return routePlain(ctx, I, ptr, "an unobservable volatile access");
+    return routePlain(ctx, I);
   }
   if (!q)
     return copyClassical(ctx, I, /*dropVolatile=*/false);
   // Rule 24 at f684858 (cq-py5f): an observable access with quantum data is a host effect; the object is
   // the host's, not the program's (its content is what the outside makes it).
-  bool qAddr = spine::accessHasQuantumTag(ctx, ptr);
+  bool qAddr = ctx.T.isQuantum(ptr, ctx.S);
   if (auto *st = dyn_cast<StoreInst>(&I)) {
     // A store: the rule-16 effect entry `volatile_store` under the predicate, the address an i64 (rule 21's
     // address of a quantum pointer, a rail).
     Operand addr;
     if (qAddr) {
-      addr = fatptr::addressOf(ctx, ptr);
+      addr = bus::address(ctx, ptr);
     } else {
       Operand p = ctx.operand(ptr);
       if (p.handle)
@@ -357,7 +233,7 @@ void lowerVolatile(LoweringContext &ctx, Instruction &I) {
   // merged as any value: the volatile load itself, a seed rail (rule 7) where taint reads a quantum value.
   // At a quantum address (rule 21) the read of every candidate cell, merged on the tag: the plain read.
   if (qAddr)
-    return routePlain(ctx, I, ptr, "an observable volatile load");
+    return routePlain(ctx, I);
   Instruction *n = I.clone();
   for (unsigned i = 0; i < n->getNumOperands(); ++i) {
     Operand op = ctx.operand(I.getOperand(i));
@@ -375,94 +251,7 @@ void lowerVolatile(LoweringContext &ctx, Instruction &I) {
   ctx.bind(&I, n);
 }
 
-void lowerAtomic(LoweringContext &ctx, Instruction &I) {
-  if (isa<CallBase>(I))
-    internalError("eff-conc: lowerAtomic of a call (calls::classify has no atomic call class: a bodiless "
-                  "__atomic_* callee is rule 27's or rule 16's)",
-                  &I);
-  if (isa<LoadInst>(I) || isa<StoreInst>(I)) {
-    if (!I.isAtomic())
-      internalError("eff-conc: lowerAtomic of a non-atomic load or store", &I);
-    const Value *ptr = getLoadStorePointerOperand(&I);
-    if (isa<LoadInst>(I) ? cast<LoadInst>(I).isVolatile() : cast<StoreInst>(I).isVolatile())
-      return lowerVolatile(ctx, I);
-    if (!involvesQuantum(ctx, I, ptr))
-      return copyClassical(ctx, I, /*dropVolatile=*/false);
-    return routePlain(ctx, I, ptr, "an atomic access");
-  }
-  if (isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I)) {
-    // Rule 24 (94): the plain read-modify-write. Classical: the host performs it.
-    const Value *ptr = isa<AtomicRMWInst>(I) ? cast<AtomicRMWInst>(I).getPointerOperand()
-                                             : cast<AtomicCmpXchgInst>(I).getPointerOperand();
-    if (!involvesQuantum(ctx, I, ptr))
-      return copyClassical(ctx, I, /*dropVolatile=*/false);
-    if (spine::accessHasQuantumTag(ctx, ptr))
-      internalError("eff-conc: an atomic read-modify-write through a fat pointer (collapseFatAtomics makes it the "
-                    "plain load + op + store before the final taint)",
-                    &I);
-    bool slot = false, qram = false, classical = false;
-    for (ObjectId o : ctx.T.provenance(ptr, ctx.S)) {
-      ObjClass k = ctx.T.classOf(o);
-      (k == ObjClass::Slot ? slot : k == ObjClass::Qram ? qram : classical) = true;
-    }
-    if (slot && !qram && !classical)
-      return mem::lowerSlotAtomic(ctx, I);
-    if (!slot && !qram)
-      internalError("eff-conc: a read-modify-write with quantum data on memory taint classified Classical (rule "
-                    "20: a quantum value or offset stored makes it a slot or a QRAM)",
-                    &I);
-    if (!qram || slot || classical)
-      internalError("eff-conc: a read-modify-write on a pointer to several objects that is not a fat pointer "
-                    "(rule 21: a pointer chosen among objects by quantum data carries a quantum tag)",
-                    &I);
-    return lowerQramRmw(ctx, I, ptr);
-  }
-  internalError("eff-conc: lowerAtomic of an instruction that is not atomic", &I);
-}
 
-SmallVector<Function *, 8> collapseFatAtomics(Module &M, const TaintInfo &T) {
-  SmallVector<Function *, 8> out;
-  for (Function &F : M) {
-    if (F.isDeclaration() || !T.isTainted(F))
-      continue;
-    SmallVector<Instruction *, 4> todo;
-    for (Instruction &I : instructions(F)) {
-      const Value *p = isa<AtomicRMWInst>(I)       ? cast<AtomicRMWInst>(I).getPointerOperand()
-                       : isa<AtomicCmpXchgInst>(I) ? cast<AtomicCmpXchgInst>(I).getPointerOperand()
-                                                   : nullptr;
-      if (!p)
-        continue;
-      // Rule 24 with rule 21 (P1, M2): an atomic through a clone's triple formal onto a QRAM is its plain load and
-      // store too, which M2 defers like the clone's other stores through the formal; through a triple formal onto
-      // slot objects (bound by fatptr, its accesses rule 21's against the cell count) likewise.
-      SmallVector<const Value *, 4> us;
-      getUnderlyingObjects(p, us);
-      auto viaQramTriple = [&](const Specialization &S) {
-        return !us.empty() && llvm::all_of(us, [&](const Value *u) {
-          auto *A = dyn_cast<Argument>(u);
-          if (!A || A->getParent() != &F || !A->getType()->isPointerTy() || S.isEntry())
-            return false;
-          PtrFormal pf = T.pointerFormal(S, A->getArgNo());
-          return pf.abi != PtrAbi::Raw && (pf.pointee == ObjClass::Qram || pf.pointee == ObjClass::Slot);
-        });
-      };
-      for (const Specialization &S : T.specializations())
-        if (S.F == &F && (T.isFatPointer(p, S) || viaQramTriple(S))) {
-          todo.push_back(&I);
-          break;
-        }
-    }
-    for (Instruction *I : todo) {
-      if (auto *rmw = dyn_cast<AtomicRMWInst>(I))
-        lowerAtomicRMWInst(rmw);
-      else
-        lowerAtomicCmpXchgInst(cast<AtomicCmpXchgInst>(I));
-    }
-    if (!todo.empty())
-      out.push_back(&F);
-  }
-  return out;
-}
 
 // Rule 24 (106): the thread primitives of a tainted function, collapsed to the sequential schedule in the
 // IR before the final taint. pthread_create(t, attr, f, p) is the call f(p) at its place (a direct call when

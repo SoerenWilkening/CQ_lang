@@ -16,7 +16,6 @@
 
 #include "cq/Abi.h"
 #include "cq/Calls.h"
-#include "cq/Memory.h"
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/ValueTracking.h"
@@ -398,27 +397,6 @@ void lowerIntrinsic(LoweringContext &ctx, IntrinsicInst &II) {
   ctx.emitTemplate(spec, ops, &II);
 }
 
-// Rule 20 with rule 3 (cq-sj2j; 58, 60: "the i8<->i1 zext/trunc are representation changes, no
-// gate"): a _Bool slot cell holds an i1 rail behind i8 memory, so the trunc i8 -> i1 of its load
-// and the zext i1 -> i8 of a value stored only into such cells name the same rail.
-bool boolCellRepresentation(LoweringContext &ctx, const CastInst &ci) {
-  LLVMContext &C = ctx.M.getContext();
-  if (isa<TruncInst>(ci) && ci.getSrcTy() == Type::getInt8Ty(C) && ci.getDestTy() == Type::getInt1Ty(C)) {
-    auto *ld = dyn_cast<LoadInst>(ci.getOperand(0));
-    return ld && spine::boolCellAccess(ctx, *ld);
-  }
-  if (isa<ZExtInst>(ci) && ci.getSrcTy() == Type::getInt1Ty(C) && ci.getDestTy() == Type::getInt8Ty(C)) {
-    if (ci.use_empty())
-      return false;
-    for (const Use &u : ci.uses()) {
-      auto *st = dyn_cast<StoreInst>(u.getUser());
-      if (!st || u.getOperandNo() != 0 || !spine::boolCellAccess(ctx, *st))
-        return false;
-    }
-    return true;
-  }
-  return false;
-}
 
 } // namespace
 
@@ -490,10 +468,6 @@ void lowerOpcode(LoweringContext &ctx, Instruction &I) {
     }
     Type *from = ci->getSrcTy(), *to = ci->getDestTy();
     if (from == to) {   // a no-op bitcast: a representation change with no gate (rule 3)
-      spine::bindOperand(ctx, &I, x);
-      return;
-    }
-    if (boolCellRepresentation(ctx, *ci)) {
       spine::bindOperand(ctx, &I, x);
       return;
     }
@@ -613,16 +587,9 @@ bool cleanable(LoweringContext &ctx, Value *y) {
   auto *I = dyn_cast<Instruction>(y);
   if (!I || isa<PHINode>(I))
     return false;
-  // cq-necw: a cell load is cleanable only as the new content of a cell whose old rail an _inv<c> cleans.
-  if (isa<LoadInst>(I) && !spine::shared(ctx).invCellImages.count(ctx.operand(y).v))
+  // Rule 5: a bus load (an atomic's old value included) is undone by its un-copy, never by rule 6.
+  if (isa<LoadInst>(I) || isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I))
     return false;
-  // cq-py5f (rule 24 on a QRAM cell): an atomicrmw / cmpxchg yields the cell's old value as a QRAM load
-  // (mem::rmwQramCell), uncomputed by its un-copy against the cell, as a load's: never by rule 6.
-  if (isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I))
-    if (auto *c = dyn_cast<CallInst>(ctx.operand(y).v); c && c->getCalledFunction())
-      if (std::optional<abi::CoreSpec> k = abi::parseCore(c->getCalledFunction()->getName());
-          k && k->op == abi::Core::QramLoad)
-        return false;
   if (auto *sel = dyn_cast<SelectInst>(I); sel && !spine::isQ(ctx, sel->getCondition()))
     return false;
   // A field of a clone call's composite result (an extractvalue of the lowered call, U2): the call's
@@ -795,10 +762,6 @@ bool deadAtCleanup(LoweringContext &ctx, Value *Y, Value *h, Instruction *at,
   for (auto &[w, v] : sh.views)
     if (v.rail == h)
       A.insert(w);
-  const Value *cellPtr = nullptr;
-  if (auto *rmw = dyn_cast<AtomicRMWInst>(at))
-    cellPtr = rmw->getPointerOperand();
-  DominatorTree &DT = sh.dt(*at->getFunction());
   // A user not lowered yet that may name the rail itself (a freeze, a cast the spine may skip, a
   // classical select or an aggregate or vector carrying it) is followed as an alias.
   auto mayAlias = [&](const Instruction *ui) {
@@ -838,64 +801,6 @@ bool deadAtCleanup(LoweringContext &ctx, Value *Y, Value *h, Instruction *at,
       return sel->getCondition() != w && spine::isQ(ctx, sel->getCondition());
     return false;   // an atomic's value operand is no update of it (the rmw updates the cell's old value)
   };
-  // A store's cell: an alloca of this function that taint classifies as slot cells (every object the
-  // pointer may name), at a classical offset.
-  auto localSlotCell = [&](const StoreInst *st) -> const AllocaInst * {
-    auto *AI = dyn_cast<AllocaInst>(getUnderlyingObject(st->getPointerOperand()));
-    if (!AI || AI->getFunction() != at->getFunction())
-      return nullptr;
-    ArrayRef<ObjectId> prov = ctx.T.provenance(st->getPointerOperand(), ctx.S);
-    if (prov.empty() || any_of(prov, [&](ObjectId o) { return ctx.T.classOf(o) != ObjClass::Slot; }) ||
-        ctx.T.offsetKind(st, ctx.S) != OffsetKind::Classical)
-      return nullptr;
-    return AI;
-  };
-  auto localQram = [&](const StoreInst *st) {
-    auto *AI = dyn_cast<AllocaInst>(getUnderlyingObject(st->getPointerOperand()));
-    if (!AI || AI->getFunction() != at->getFunction())
-      return false;
-    ArrayRef<ObjectId> prov = ctx.T.provenance(st->getPointerOperand(), ctx.S);
-    return !prov.empty() && all_of(prov, [&](ObjectId o) { return ctx.T.classOf(o) == ObjClass::Qram; });
-  };
-  // Every load of the object (through GEPs); false when the address has any other use (a
-  // call argument, a stored or returned pointer, a memory intrinsic: the cell may be read elsewhere).
-  // cq-8101: a load through a GEP with a run-time (classical) index may name the rail too. Its handle is
-  // an alias mem-slots may record as a register of its own (Uncompute then sees no use of the rail), so
-  // such a load is reported in dynLoads (the caller defers the clean-up until it can note the reads,
-  // ruleSixRetry); a caller that passes no dynLoads keeps the rail.
-  auto cellLoads = [&](const AllocaInst *AI, const std::function<void(const Instruction *)> &each) {
-    SmallVector<std::pair<const Value *, bool>, 8> ptrs{{AI, false}};
-    SmallPtrSet<const Value *, 8> seenP;
-    while (!ptrs.empty()) {
-      auto [p, dyn] = ptrs.pop_back_val();
-      if (!seenP.insert(p).second)
-        continue;
-      for (const User *u : p->users()) {
-        if (auto *ld = dyn_cast<LoadInst>(u)) {
-          if (dyn) {
-            if (ctx.T.offsetKind(ld, ctx.S) != OffsetKind::Classical || !dynLoads)
-              return false;
-            if (!is_contained(*dynLoads, ld))
-              dynLoads->push_back(ld);
-          }
-          each(ld);
-          continue;
-        }
-        if (auto *s2 = dyn_cast<StoreInst>(u); s2 && s2->getPointerOperand() == p && s2->getValueOperand() != p)
-          continue;
-        if (auto *g = dyn_cast<GetElementPtrInst>(u); g && g->getPointerOperand() == p) {
-          ptrs.push_back({g, dyn || !g->hasAllConstantIndices()});
-          continue;
-        }
-        if (auto *II = dyn_cast<IntrinsicInst>(u); II && II->isLifetimeStartOrEnd())
-          continue;
-        if (auto *ms = dyn_cast<MemSetInst>(u); ms && ms->getDest() == p)
-          continue;   // cq-8101: a write of constant bytes (mem-slots' seeds), no reader
-        return false;
-      }
-    }
-    return true;
-  };
   SmallVector<const Value *, 8> work(A.begin(), A.end());
   while (!work.empty()) {
     const Value *w = work.pop_back_val();
@@ -919,28 +824,8 @@ bool deadAtCleanup(LoweringContext &ctx, Value *Y, Value *h, Instruction *at,
         return false;
       if (isa<ReturnInst>(ui) || isa<PHINode>(ui))
         return false;
-      if (auto *st = dyn_cast<StoreInst>(ui)) {
-        if (cellPtr && st->getValueOperand() == w && st->getPointerOperand() == cellPtr && DT.dominates(st, at))
-          continue;
-        // cq-1jxg (owner 2026-11-01): a store into a local slot cell extends the reader set, it is no
-        // escape: the cell's loads read the rail (their values are its aliases, followed for escapes),
-        // and Uncompute places the clean-up after them (the new-IR store holds it to the scope exit
-        // when they come later). Only memory read after the function returns or a QRAM store keeps it.
-        // cq-719y: a store into a local QRAM (an alloca of this function every object the pointer may
-        // name is a QRAM bus of) copies the value onto the bus: its POP re-reads the rail (a reader that
-        // moves the clean-up, Uncompute's order) and the bus dies with the frame; its loads copy out.
-        if (st->getValueOperand() == w && localQram(st))
-          continue;
-        const AllocaInst *cell = st->getValueOperand() == w ? localSlotCell(st) : nullptr;
-        if (!cell)
-          return false;
-        if (!cellLoads(cell, [&](const Instruction *ld) {
-              if (A.insert(ld).second)
-                work.push_back(ld);
-            }))
-          return false;
-        continue;
-      }
+      if (isa<StoreInst>(ui))
+        return false;   // rule 5: a store's value rail is kept
       if (auto *cb = dyn_cast<CallBase>(ui)) {
         if (isa<IntrinsicInst>(cb) && cb->doesNotAccessMemory())
           continue;   // lowered to a template that reads the rail
@@ -977,16 +862,6 @@ bool reads(LoweringContext &ctx, Value *z, Value *y, unsigned depth, DenseMap<Va
   bool narrow = sh.narrowSkipped.count(z) || sh.views.count(z);
   if (!narrow && (bi == sh.binds.end() || none_of(bi->second, [](const Operand &o) { return o.handle; })))
     return false;
-  // cq-719y: a load of a QRAM object y was stored into reads y's value through the bus (168: the rmw's new
-  // value stored, then a load at another quantum index that may be its cell).
-  if (auto *ld = dyn_cast<LoadInst>(I)) {
-    ArrayRef<ObjectId> lp = ctx.T.provenance(ld->getPointerOperand(), ctx.S);
-    for (User *u : y->users())
-      if (auto *st = dyn_cast<StoreInst>(u); st && st->getValueOperand() == y)
-        for (ObjectId o : ctx.T.provenance(st->getPointerOperand(), ctx.S))
-          if (ctx.T.classOf(o) == ObjClass::Qram && is_contained(lp, o))
-            return true;
-  }
   for (Value *op : I->operands())
     if (reads(ctx, op, y, depth + 1, seen))
       return true;
@@ -1778,14 +1653,6 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
     return out;
   };
   auto neededLater = [&](Value *Y) { return !blockersOf(Y).empty(); };
-  // CR rule 6, a cell chosen by a classical index (cq-bfz4, 190): the old value is a run-time slot load
-  // whose cells mem-slots knows statically (registers cleaned, seeds skipped, on a classical branch).
-  for (Value *Y : I.operands())
-    if (auto *ld = dyn_cast<LoadInst>(Y); ld && mem::indexedCellLoadDead(ctx, *ld, I))
-      if (auto inv = inverseOf(ctx, I, Y, yp)) {
-        mem::cleanIndexedCellLoad(ctx, *ld, I, inv->spec, inv->ops);
-        return;
-      }
   // cq-mgkr (CR rule 6, composite through a classical merge): I = f(M, ...) a bijection in M, M a classical
   // merge of bijective updates of a dead y with nothing else reading M: y is cleaned from I's image, on the
   // path that chose arm U by t = U^-1(f^-1(I)), f^-1(I) a fresh garbage rail (compositeCleanup's inner step).

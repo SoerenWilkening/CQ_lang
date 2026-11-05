@@ -125,260 +125,7 @@ void collectReferences(Function &F, SetVector<GlobalValue *> &out) {
 
 // ---- twins ----------------------------------------------------------------------------------------
 
-bool nonPureCore(abi::Core op) {
-  using abi::Core;
-  switch (op) {
-  case Core::Measure: case Core::Ry: case Core::RyQAngle: case Core::RzI1: case Core::RzQAngle:
-  case Core::QramStore: case Core::QramRealloc: case Core::TapeAlloc: case Core::TapeFmt:
-  case Core::TapeEffect: case Core::TapeWrite: case Core::TapeWriteLit: case Core::TapeWriteStrLit:
-  case Core::TapeStrBegin: case Core::TapeStrEnd: case Core::AbortI1:
-    return true;
-  default:
-    return false;
-  }
-}
 
-// Phase 2 (CR rules 18, 20, §1.4; cq-arch T2 + M1): a clone's store of a computed rail into a caller's
-// slot cell is the rule 18 copy-out through a pointer formal: f = cqrt_alloc_<W>(0), cqrt_copy_<W>(r, f),
-// store f at a constant offset of a (non-byval) pointer formal; f has no other use.
-struct CellCopyOut {
-  StoreInst *st;
-  CallInst *f, *copy;
-  Argument *formal;
-  int64_t off;
-  // cq-1c5j (CR rule 21): a slot triple formal's cell: formal is the object parameter and idx the classical
-  // i32 cell index parameter; the cell is at handle idx of the object, then off bytes (spine binds the formal
-  // to that address at the clone's entry). base: the address the clone's accesses of the cell strip to.
-  Argument *idx = nullptr;
-  const Value *base = nullptr;
-};
-// The object and index parameters of `gep inbounds i32, obj, sext(idx)` (a slot triple formal's address).
-std::optional<std::pair<Argument *, Argument *>> tripleCellBase(const Value *v) {
-  auto *g = dyn_cast<GetElementPtrInst>(v);
-  if (!g || g->getNumIndices() != 1 || !g->getSourceElementType()->isIntegerTy(32))
-    return std::nullopt;
-  auto *obj = dyn_cast<Argument>(g->getPointerOperand());
-  const Value *i = g->getOperand(1);
-  if (auto *se = dyn_cast<SExtInst>(i))
-    i = se->getOperand(0);
-  auto *idx = dyn_cast<Argument>(const_cast<Value *>(i));
-  if (!obj || !idx || !obj->getType()->isPointerTy() || !idx->getType()->isIntegerTy(32))
-    return std::nullopt;
-  return std::make_pair(const_cast<Argument *>(obj), idx);
-}
-std::optional<CellCopyOut> cellCopyOut(StoreInst *SI) {
-  const DataLayout &DL = SI->getModule()->getDataLayout();
-  APInt off(64, 0);
-  const Value *base = SI->getPointerOperand()->stripAndAccumulateConstantOffsets(DL, off, true);
-  auto *A = dyn_cast<Argument>(const_cast<Value *>(base));
-  Argument *idxArg = nullptr;
-  if (auto t = tripleCellBase(base))
-    std::tie(A, idxArg) = *t;
-  if (!A || A->hasByValAttr() || !A->getType()->isPointerTy())
-    return std::nullopt;
-  auto *f = dyn_cast<CallInst>(SI->getValueOperand());
-  std::optional<abi::CoreSpec> a =
-      f && f->getCalledFunction() ? abi::parseCore(f->getCalledFunction()->getName()) : std::nullopt;
-  auto *zero = f ? dyn_cast<Constant>(f->getArgOperand(0)) : nullptr;
-  if (!a || a->op != abi::Core::Alloc || !zero || !zero->isNullValue())
-    return std::nullopt;
-  // One copy-out rail, possibly written by several copies (a clone storing into the cell on some paths:
-  // the entry copies the old content in, each arm store copies the old out and its value in; cq-vxgm).
-  SmallVector<CallInst *, 2> copies;
-  for (User *U : f->users()) {
-    if (U == SI)
-      continue;
-    auto *cp = dyn_cast<CallInst>(U);
-    std::optional<abi::CoreSpec> c =
-        cp && cp->getCalledFunction() ? abi::parseCore(cp->getCalledFunction()->getName()) : std::nullopt;
-    if (!c || c->op != abi::Core::Copy || c->ctl || cp->getArgOperand(1) != f || cp->getArgOperand(0) == f)
-      return std::nullopt;
-    copies.push_back(cp);
-  }
-  if (copies.empty() || f->getNumUses() != copies.size() + 1)
-    return std::nullopt;
-  return CellCopyOut{SI, f, copies.front(), A, off.getSExtValue(), idxArg, base};
-}
-
-// The cell copy-outs of F, in formal order then ascending offset (the twin's trailing old cells).
-SmallVector<CellCopyOut, 4> cellCopyOuts(Function &F) {
-  SmallVector<CellCopyOut, 4> out;
-  for (Instruction &I : instructions(F))
-    if (auto *SI = dyn_cast<StoreInst>(&I))
-      if (auto c = cellCopyOut(SI))
-        out.push_back(*c);
-  llvm::stable_sort(out, [](const CellCopyOut &a, const CellCopyOut &b) {
-    return a.formal->getArgNo() != b.formal->getArgNo() ? a.formal->getArgNo() < b.formal->getArgNo()
-                                                          : a.off < b.off;
-  });
-  // Copy-outs into one cell on exclusive paths (a classical branch whose arms each store their own result):
-  // one old cell for the twin, restored by whichever copy-out its replay reaches. Two that one path runs in
-  // sequence would leave the cell holding the later one's rail when the earlier one's replay reads it.
-  for (size_t k = 1; k < out.size(); ++k)
-    if (out[k].formal == out[k - 1].formal && out[k].off == out[k - 1].off)
-      for (size_t j = k; j-- > 0 && out[j].formal == out[k].formal && out[j].off == out[k].off;)
-        if (isPotentiallyReachable(out[j].st, out[k].st) || isPotentiallyReachable(out[k].st, out[j].st))
-          unimplemented("calls: calls::finalize: a clone storing into one caller cell twice on one path (the twin "
-                        "restores the cell once, from the first store's replay)",
-                        out[k].st);
-  return out;
-}
-
-// A classical value computed from the clone's arguments and constants alone (no memory read, no call,
-// no phi): the twin's replay computes the same value the forward did.
-bool argumentsOnly(const Value *v, unsigned depth = 0) {
-  if (isa<Argument>(v) || isa<Constant>(v))
-    return true;
-  auto *I = dyn_cast<Instruction>(v);
-  if (!I || depth > 32 || I->mayReadFromMemory() || isa<CallBase>(I) || isa<PHINode>(I))
-    return false;
-  return all_of(I->operands(), [&](const Use &u) { return argumentsOnly(u.get(), depth + 1); });
-}
-
-// cq-99z6 (ent_a1, ent_a2): may F read the memory SI writes before SI runs (a load, or a call reading
-// through a pointer, from which SI is reachable)? Then a replay of SI in the twin would make that read
-// see the stored value instead of the caller's. In F two formals may point into one object, and a
-// formal may point into a global; only distinct allocas of F, or an alloca against a formal or a
-// global, provably differ.
-bool readBefore(Function &F, StoreInst *SI) {
-  const Value *sb = getUnderlyingObject(SI->getPointerOperand());
-  auto mayAliasStore = [&](const Value *p) {
-    SmallVector<const Value *, 4> objs;
-    getUnderlyingObjects(p, objs);
-    for (const Value *u : objs) {
-      if (u == sb)
-        return true;
-      if (isa<AllocaInst>(u) || isa<AllocaInst>(sb))
-        continue;   // F's frame is not the caller's object, nor another alloca of F
-      if (auto *A = dyn_cast<Argument>(u); A && A->hasByValAttr())
-        continue;   // F's own copy
-      if (isa<GlobalVariable>(u) && isa<GlobalVariable>(sb))
-        continue;   // two distinct globals
-      if (isa<ConstantPointerNull>(u) || (isa<GlobalVariable>(u) && cast<GlobalVariable>(u)->isConstant()))
-        continue;
-      return true;
-    }
-    return false;
-  };
-  for (Instruction &I : instructions(F)) {
-    if (&I == SI || !I.mayReadFromMemory())
-      continue;
-    bool reads = false;
-    if (auto *L = dyn_cast<LoadInst>(&I))
-      reads = mayAliasStore(L->getPointerOperand());
-    else if (auto *CB = dyn_cast<CallBase>(&I)) {
-      if (auto *ii = dyn_cast<IntrinsicInst>(CB); ii && (ii->isLifetimeStartOrEnd() || ii->isAssumeLikeIntrinsic()))
-        continue;
-      if (Function *G = CB->getCalledFunction(); G && (G->getName().starts_with("cq_template_") ||
-                                                       G->getName().starts_with("cqrt_")))
-        continue;
-      reads = !CB->onlyAccessesArgMemory() ||
-              any_of(CB->args(), [&](const Use &a) { return a->getType()->isPointerTy() && mayAliasStore(a); });
-    } else {
-      reads = true;   // an atomic, va_arg, ...
-    }
-    if (reads && isPotentiallyReachable(&I, SI))
-      return true;
-  }
-  return false;
-}
-
-// M2b (191): a store a clone makes through a triple formal onto a QRAM object, after its body's
-// uncompute: a cqrt_qram_store[_hl][_controlled] on a formal bus followed, up to the return, only by such stores
-// and the return value's insertvalues. The twin drops it (the caller pops it, U3).
-bool trailingQramStore(const Instruction &I) {
-  auto isStore = [](const Instruction *J) {
-    auto *c = dyn_cast<CallInst>(J);
-    std::optional<abi::CoreSpec> cs =
-        c && c->getCalledFunction() ? abi::parseCore(c->getCalledFunction()->getName()) : std::nullopt;
-    return cs && cs->op == abi::Core::QramStore && !cs->unc && isa<Argument>(c->getArgOperand(cs->ctl ? 1 : 0));
-  };
-  if (!isStore(&I))
-    return false;
-  for (const Instruction *J = I.getNextNode(); J; J = J->getNextNode()) {
-    if (isa<ReturnInst>(J))
-      return true;
-    if (!isa<InsertValueInst>(J) && !isStore(J))
-      return false;
-  }
-  return false;
-}
-
-// CR rules 18, 20, §1.3 (cq-wwzz): a frame bus of F, the QRAM of an object of F's own frame (musl
-// __rem_pio2_large's iq[], f[], fq[], q[] read at a quantum index): a cqrt_qram_alloc_<W> in F, a
-// qram_realloc of a frame bus, a classical merge of frame buses, or a formal of F a call of the replay
-// binds to one (busArgs). Its stores are recorded gates of F's body: F pops every one of them (rule 5, §1.3
-// POP) before it releases the bus (qram_free requires it), and the bus is released on every path from its
-// alloc to a return (checked in replayableBus), so a replay allocates, stores, pops and frees a bus of its
-// own and leaves nothing behind: the store is the computation, no effect. The twin recomputes through it
-// like through an alloca of F.
-bool frameBus(const Value *v, const SmallPtrSetImpl<const Argument *> &busArgs, SmallPtrSetImpl<const Value *> &seen,
-              SmallVectorImpl<const CallInst *> &allocs) {
-  if (!seen.insert(v).second)
-    return true;
-  if (auto *A = dyn_cast<Argument>(v))
-    return busArgs.count(A) > 0;
-  if (auto *pn = dyn_cast<PHINode>(v))
-    return all_of(pn->incoming_values(), [&](const Value *x) { return frameBus(x, busArgs, seen, allocs); });
-  if (auto *sel = dyn_cast<SelectInst>(v))
-    return frameBus(sel->getTrueValue(), busArgs, seen, allocs) && frameBus(sel->getFalseValue(), busArgs, seen, allocs);
-  auto *c = dyn_cast<CallInst>(v);
-  std::optional<abi::CoreSpec> cs =
-      c && c->getCalledFunction() ? abi::parseCore(c->getCalledFunction()->getName()) : std::nullopt;
-  if (!cs || cs->unc)
-    return false;
-  if (cs->op == abi::Core::QramRealloc)
-    return frameBus(c->getArgOperand(0), busArgs, seen, allocs);
-  if (cs->op != abi::Core::QramAlloc)
-    return false;
-  if (!is_contained(allocs, c))
-    allocs.push_back(c);
-  return true;
-}
-
-// Is every path from the frame bus's alloc to a return of its function through a cqrt_qram_free of it?
-bool releasedOnEveryPath(const CallInst *alloc) {
-  SmallPtrSet<const BasicBlock *, 8> frees;
-  const Instruction *sameBlockFree = nullptr;
-  for (const User *U : alloc->users())
-    if (auto *f = dyn_cast<CallInst>(U); f && f->getCalledFunction())
-      if (std::optional<abi::CoreSpec> cs = abi::parseCore(f->getCalledFunction()->getName());
-          cs && cs->op == abi::Core::QramFree && f->getArgOperand(0) == alloc) {
-        if (f->getParent() == alloc->getParent() && alloc->comesBefore(f))
-          sameBlockFree = f;
-        else
-          frees.insert(f->getParent());
-      }
-  if (sameBlockFree)
-    return true;
-  if (isa<ReturnInst>(alloc->getParent()->getTerminator()))
-    return false;
-  SmallVector<const BasicBlock *, 16> work(succ_begin(alloc->getParent()), succ_end(alloc->getParent()));
-  SmallPtrSet<const BasicBlock *, 32> seen;
-  while (!work.empty()) {
-    const BasicBlock *b = work.pop_back_val();
-    if (frees.count(b) || !seen.insert(b).second)
-      continue;
-    if (isa<ReturnInst>(b->getTerminator()))
-      return false;
-    work.append(succ_begin(b), succ_end(b));
-  }
-  return true;
-}
-
-// The QRAM store or realloc I (or its _unc: the pop, the size restore) writes a frame bus of F (above), every
-// alloc of which F releases on every path.
-bool replayableBus(const CallInst &I, const abi::CoreSpec &cs, const SmallPtrSetImpl<const Argument *> &busArgs) {
-  if (cs.op != abi::Core::QramStore && cs.op != abi::Core::QramRealloc)
-    return false;
-  const Value *bus = I.getArgOperand(cs.op == abi::Core::QramStore && cs.ctl ? 1 : 0);
-  SmallPtrSet<const Value *, 8> seen;
-  SmallVector<const CallInst *, 2> allocs;
-  return frameBus(bus, busArgs, seen, allocs) && all_of(allocs, releasedOnEveryPath);
-}
-
-// Does replaying F (and the forward clones it calls) recompute its value and nothing else? top: F is
-// the twin's own source, whose trailing QRAM stores the twin drops (M2b).
 // The host <fenv.h> flag calls of eff-fenv's BRACKET and PROBE (hostFn: i32 name(i32), no body in the module):
 // they read or write the host flags only. A program body of that name is replayed as any body.
 bool hostFlagCall(const CallBase &CB) {
@@ -387,177 +134,25 @@ bool hostFlagCall(const CallBase &CB) {
          CB.arg_size() == 1 && CB.getType()->isIntegerTy(32) && CB.getArgOperand(0)->getType()->isIntegerTy(32);
 }
 
-// hostFlags: set when the replay touches the host flags (a strict constrained host op, a host flag call); the
+// hostFlags: set when the replay touches the host flags (a strict constrained host op, a host flag call): the
 // twin then restores them around its body (defineTwin).
-// busArgs: the formals of F that the call of the replay reaching F binds to frame buses (frameBus).
-using ReplaySeen = std::set<std::pair<Function *, std::vector<unsigned>>>;
-// popped: the formals of F whose buses the call of the replay reaching F pops right after it (M2 through a call,
-// mem::noteCalleeQramStores): F's trailing QRAM stores on them are undone there, so the replay leaves them as it
-// found them.
-void checkReplayable(Function &F, Function &twin, ReplaySeen &seen, bool &hostFlags, bool top = false,
-                     const SmallPtrSetImpl<const Instruction *> *exempt = nullptr,
-                     const SmallPtrSetImpl<const Argument *> *busArgs = nullptr,
-                     const SmallPtrSetImpl<const Argument *> *popped = nullptr) {
-  SmallPtrSet<const Argument *, 4> noBusArgs;
-  const SmallPtrSetImpl<const Argument *> &frameArgs = busArgs ? *busArgs : noBusArgs;
-  std::vector<unsigned> busKey;
-  for (const Argument *A : frameArgs)
-    busKey.push_back(A->getArgNo());
-  if (popped)
-    for (const Argument *A : *popped)
-      busKey.push_back(A->getArgNo() + (1u << 20));
-  llvm::sort(busKey);
-  if (!seen.insert({&F, busKey}).second)
+void scanHostFlags(Function &F, SmallPtrSetImpl<Function *> &seen, bool &hostFlags) {
+  if (!seen.insert(&F).second)
     return;
-  // The formals of a callee G that the call CB binds to frame buses of F.
-  auto calleeBusArgs = [&](CallBase &CB, Function &G) {
-    SmallPtrSet<const Argument *, 4> out;
-    for (unsigned i = 0; i < CB.arg_size() && i < G.arg_size(); ++i) {
-      SmallPtrSet<const Value *, 8> vs;
-      SmallVector<const CallInst *, 2> allocs;
-      if (CB.getArgOperand(i)->getType()->isIntegerTy(32) && frameBus(CB.getArgOperand(i), frameArgs, vs, allocs) &&
-          all_of(allocs, releasedOnEveryPath))
-        out.insert(G.getArg(i));
-    }
-    return out;
-  };
-  // The formals of a callee G whose buses F pops right after the call CB: the bus operands of the QRAM store _unc
-  // calls that follow CB (past classical instructions, the extraction of its results and the copy-outs of the
-  // popped stores' rails).
-  SmallPtrSet<const Instruction *, 4> callPops;   // the pops calleePopped found: replayed with their call
-  auto calleePopped = [&](CallBase &CB, Function &G) {
-    SmallPtrSet<const Argument *, 4> out;
-    SmallPtrSet<const Value *, 4> buses;
-    for (const Instruction *J = CB.getNextNode(); J; J = J->getNextNode()) {
-      auto *c = dyn_cast<CallInst>(J);
-      std::optional<abi::CoreSpec> cs =
-          c && c->getCalledFunction() ? abi::parseCore(c->getCalledFunction()->getName()) : std::nullopt;
-      if (cs && cs->op == abi::Core::QramStore && cs->unc) {
-        buses.insert(c->getArgOperand(cs->ctl ? 1 : 0));
-        callPops.insert(J);
-        continue;
-      }
-      if (!buses.empty())
-        break;
-      if (c) {
-        if (cs && (cs->op == abi::Core::Alloc || cs->op == abi::Core::Copy))
-          continue;
-        break;
-      }
-      if (J->isTerminator() || J->mayWriteToMemory())
-        break;
-    }
-    for (unsigned i = 0; i < CB.arg_size() && i < G.arg_size(); ++i)
-      if (buses.count(CB.getArgOperand(i)))
-        out.insert(G.getArg(i));
-    return out;
-  };
-  auto busArgOf = [](const Instruction &I) -> const Argument * {
-    auto *c = cast<CallInst>(&I);
-    std::optional<abi::CoreSpec> cs = abi::parseCore(c->getCalledFunction()->getName());
-    return dyn_cast<Argument>(c->getArgOperand(cs->ctl ? 1 : 0));
-  };
-  auto refuse = [&](const Twine &why, const Value *at) {
-    unimplemented(("calls: calls::finalize: the twin @" + twin.getName() + " would replay " + why +
-                   " (a clone with effects and no _pure clone)")
-                      .str(),
-                  at);
-  };
-  auto inFrame = [&](const Value *p) {
-    const Value *u = getUnderlyingObject(p);
-    auto *A = dyn_cast<Argument>(u);
-    return isa<AllocaInst>(u) || (A && A->getParent() == &F && A->hasByValAttr());
-  };
   for (Instruction &I : instructions(F)) {
-    if (exempt && exempt->count(&I))
-      continue;   // cq-i9wk: the making of a kept clone's register, which its twin takes as a parameter
-    if (auto *SI = dyn_cast<StoreInst>(&I)) {
-      // The clone's frame: its allocas and its byval formals (the callee's own copy, cq-09xh; the twin
-      // gets the caller's snapshot, which nothing reads after the twin).
-      // A cell copy-out (phase 2): the twin of F restores the cell; a forward clone F calls is undone
-      // by its own twin call in F's body.
-      // A classical store into a caller's object through a pointer formal of F itself, of a value of the
-      // arguments alone (163's sret field c): the twin writes the value the cell already holds (the
-      // object is not written between the call and its twin: an uncompute barrier, cq-fwto).
-      const Value *base = getUnderlyingObject(SI->getPointerOperand());
-      bool idempotent = isa<Argument>(base) && cast<Argument>(base)->getParent() == &F &&
-                        argumentsOnly(SI->getValueOperand()) && SI->isSimple() && !readBefore(F, SI);
-      if (!inFrame(SI->getPointerOperand()) && !cellCopyOut(SI) && !idempotent)
-        refuse("a store to memory outside the clone's frame", &I);
-      continue;
-    }
-    if (auto *MI = dyn_cast<MemIntrinsic>(&I)) {
-      if (!inFrame(MI->getRawDest()))
-        refuse("a memory intrinsic writing outside the clone's frame", &I);
-      continue;   // a byval snapshot (cq-09xh) or another write of the frame
-    }
-    if (auto *LI = dyn_cast<LoadInst>(&I)) {
-      // Rule 24: a volatile (or atomic, single-thread collapse) read of the frame is a plain read; the
-      // replay reads the same cell. One of memory outside the frame is the host's.
-      if (LI->isUnordered() || inFrame(LI->getPointerOperand()))
-        continue;
-      refuse("a volatile read of memory outside the clone's frame", &I);
-    }
-    if (I.mayWriteToMemory() && !isa<CallBase>(I))
-      refuse("a memory write", &I);
     auto *CB = dyn_cast<CallBase>(&I);
     if (!CB)
       continue;
-    if (CB->isInlineAsm())
-      refuse("inline asm", &I);
-    Function *G = CB->getCalledFunction();
-    if (!G)
-      refuse("an indirect call", &I);
-    if (isa<DbgInfoIntrinsic>(CB) || G->getIntrinsicID() == Intrinsic::lifetime_start ||
-        G->getIntrinsicID() == Intrinsic::lifetime_end)
-      continue;
-    bool unc = false;
-    if (abi::parseTemplate(G->getName(), &unc))
-      continue;
-    // Rule 23: a constrained op under fpexcept.ignore or fpexcept.maytrap raises nothing observable and
-    // rounds in the environment's mode, which the call and its twin share: a plain op, replayed like any
-    // classical computation. A constrained op left in a lowered body is a host op on classical operands
-    // (eff-fenv; its quantum form is a template); under fpexcept.strict it also raises into the host flags,
-    // as do the host flag calls of eff-fenv's BRACKET around it (cq-il07: musl llrintl's strict
-    // (long double)LONG_MAX). The replay recomputes the same value and the same bracketed bits (same
-    // operands, the shared mode); what it raises into the host flags the twin undoes: it restores the host
-    // flags it found on entry (hostFlags, defineTwin), so the replay leaves the environment as it was.
     if (isa<ConstrainedFPIntrinsic>(CB) || hostFlagCall(*CB)) {
       hostFlags = true;
       continue;
     }
-    if (std::optional<abi::CoreSpec> c = abi::parseCore(G->getName())) {
-      if (top && trailingQramStore(I))
-        continue;   // dropped from the twin below (M2b)
-      if (popped && trailingQramStore(I) && popped->count(busArgOf(I)))
-        continue;   // popped by the caller right after the call (M2 through a call)
-      if (callPops.count(&I))
-        continue;   // the pop of a callee's trailing store, right after its call: the pair leaves the bus as is
-      if (replayableBus(cast<CallInst>(I), *c, frameArgs))
-        continue;   // a store into (or a realloc of) F's own frame bus, popped before F releases it
-      if (nonPureCore(c->op))
-        refuse("the core gate @" + G->getName(), &I);
+    Function *G = CB->getCalledFunction();
+    if (!G || G->isDeclaration())
       continue;
-    }
-    if (std::optional<abi::CloneSpec> c = abi::parseClone(G->getName())) {
-      if (!c->unc && !G->isDeclaration()) {
-        SmallPtrSet<const Argument *, 4> gb = calleeBusArgs(*CB, *G);
-        SmallPtrSet<const Argument *, 4> gp = calleePopped(*CB, *G);
-        checkReplayable(*G, twin, seen, hostFlags, false, nullptr, &gb, &gp);
-      }
-      continue;   // a twin is checked when it is defined; a declared clone is rule 27's
-    }
-    if (CB->onlyReadsMemory() && CB->willReturn())
-      continue;
-    // Rule 19 (cq-fl4n): an ordinary call of a body (a host call with classical arguments that taint did
-    // not lift, musl's __math_oflowf(0)) replays what that body does: it is replayable when the body is,
-    // its volatile accesses to its own dead locals being nothing (rule 24).
-    if (!G->isDeclaration()) {
-      SmallPtrSet<const Argument *, 4> gb = calleeBusArgs(*CB, *G);
-      checkReplayable(*G, twin, seen, hostFlags, false, nullptr, &gb);
-      continue;
-    }
-    refuse("the host call @" + G->getName(), &I);
+    if (std::optional<abi::CloneSpec> c = abi::parseClone(G->getName()); c && c->unc)
+      continue;   // a twin is scanned when it is defined
+    scanHostFlags(*G, seen, hostFlags);
   }
 }
 
@@ -573,248 +168,44 @@ Function *twinSource(Module &M, Function &fwd) {
   return &fwd;
 }
 
-// cq-i9wk (CR rule 19): a kept clone's registers. Its returns end with the handle of each register it minted
-// that is still allocated (nRegs fields); its twin takes them first and recomputes against them. regs[k]: the
-// k-th register value of each return; made: the instructions that make a register (its cqrt_alloc, the
-// classical merges naming it, the non-diagonal gates and copies that write it), which the twin does not
-// replay: it reads its parameter instead.
-struct KeptRegisters {
-  unsigned n = 0;
-  SmallVector<SmallVector<Value *, 2>, 4> regs;
-  SmallPtrSet<const Instruction *, 8> made;
-  SmallVector<Instruction *, 8> defs;     // allocs and merges, replaced by the parameter
-};
-KeptRegisters keptRegisters(Function &src) {
-  KeptRegisters kr;
-  Attribute a = src.getFnAttribute(spine::kKeptRegistersAttr);
-  if (!a.isValid())
-    return kr;
-  kr.n = unsigned(std::stoul(a.getValueAsString().str()));
-  auto *srt = dyn_cast<StructType>(src.getReturnType());
-  if (!srt || srt->getNumElements() < kr.n)
-    internalError("calls: calls::finalize: a kept clone whose return type does not end with its registers", &src);
-  kr.regs.resize(kr.n);
-  unsigned first = srt->getNumElements() - kr.n;
-  for (BasicBlock &BB : src)
-    if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
-      for (Value *v = R->getReturnValue(); auto *iv = dyn_cast<InsertValueInst>(v); v = iv->getAggregateOperand())
-        if (iv->getNumIndices() == 1 && iv->getIndices()[0] >= first)
-          kr.regs[iv->getIndices()[0] - first].push_back(iv->getInsertedValueOperand());
-  SmallVector<Value *, 8> work;
-  for (auto &vs : kr.regs) {
-    if (vs.empty())
-      internalError("calls: calls::finalize: a kept clone return that does not name one of its registers", &src);
-    work.append(vs.begin(), vs.end());
-  }
-  SmallPtrSet<Value *, 8> seen;
-  while (!work.empty()) {
-    Value *d = work.pop_back_val();
-    if (!seen.insert(d).second)
-      continue;
-    if (auto *z = dyn_cast<ConstantInt>(d); z && z->isZero())
-      continue;   // handle 0: a return path that did not mint this register (§1.1, rule 19)
-    auto *di = dyn_cast<Instruction>(d);
-    if (!di)
-      internalError("calls: calls::finalize: a kept clone register that is not an instruction", &src);
-    if (auto *pn = dyn_cast<PHINode>(di)) {
-      work.append(pn->incoming_values().begin(), pn->incoming_values().end());
-    } else if (auto *sel = dyn_cast<SelectInst>(di)) {
-      work.push_back(sel->getTrueValue());
-      work.push_back(sel->getFalseValue());
-    } else {
-      auto *ci = dyn_cast<CallInst>(di);
-      std::optional<abi::CoreSpec> c =
-          ci && ci->getCalledFunction() ? abi::parseCore(ci->getCalledFunction()->getName()) : std::nullopt;
-      if (!c || c->op != abi::Core::Alloc)
-        unimplemented("calls: calls::finalize: a kept clone register that is not minted by cqrt_alloc or a classical "
-                      "merge of such rails (rule 19)",
-                      di);
-    }
-    kr.defs.push_back(di);
-    kr.made.insert(di);
-    for (User *U : di->users()) {
-      auto *g = dyn_cast<CallInst>(U);
-      std::optional<abi::CoreSpec> c =
-          g && g->getCalledFunction() ? abi::parseCore(g->getCalledFunction()->getName()) : std::nullopt;
-      if (!c)
-        continue;
-      unsigned target = c->ctl ? 1 : 0;
-      bool writes = (nonPureCore(c->op) && c->op != abi::Core::Measure && g->arg_size() > target &&
-                     g->getArgOperand(target) == di) ||
-                    (c->op == abi::Core::Copy && g->arg_size() > 1 && g->getArgOperand(g->arg_size() - 1) == di);
-      if (writes)
-        kr.made.insert(g);
-    }
-  }
-  return kr;
-}
-
 void defineTwin(Module &M, Function &twin, Function &src) {
   LLVMContext &C = M.getContext();
   Type *h = Type::getInt32Ty(C);
-  KeptRegisters kr = keptRegisters(src);
-  unsigned nRegs = kr.n;
   // Outs: one for an i32 handle result, one per handle field of a field-wise result (CR §1.4).
-  // Phase 2: the trailing old cells, one per cell copy-out of src (formal order, ascending offset).
-  SmallVector<CellCopyOut, 4> cells = cellCopyOuts(src);
-  // One old cell per distinct cell (copy-outs into one cell lie on exclusive paths: cellCopyOuts).
-  SmallVector<unsigned, 4> cellOf;
-  unsigned nCells = 0;
-  for (size_t k = 0; k < cells.size(); ++k) {
-    if (k == 0 || cells[k].formal != cells[k - 1].formal || cells[k].off != cells[k - 1].off)
-      ++nCells;
-    cellOf.push_back(nCells - 1);
-  }
   auto *srt = dyn_cast<StructType>(src.getReturnType());
-  // An i32 result is a handle when the twin has an out for it; with none (52's reduce: int n + 1 and
-  // two cell copy-outs) it is a classical result, which the twin drops.
-  if (twin.arg_size() < src.arg_size() + nCells + nRegs)
+  // An i32 result is a handle when the twin has an out for it; with none it is a classical result, which the twin
+  // drops.
+  if (twin.arg_size() < src.arg_size())
     internalError("calls: calls::finalize: twin @" + twin.getName().str() + " does not match the clone @" +
-                      src.getName().str() + " (its outs, the clone's arguments, then the old cells)",
+                      src.getName().str() + " (its outs, then the clone's arguments)",
                   &twin);
-  unsigned nOuts = twin.arg_size() - src.arg_size() - nCells - nRegs;
+  unsigned nOuts = twin.arg_size() - src.arg_size();
   bool handleRet = srt || (src.getReturnType() == h && nOuts == 1);
-  if ((!handleRet && nCells == 0) || (!srt && nOuts > 1) || (!handleRet && nOuts != 0))
+  if (!handleRet && nOuts != 0)
     internalError("calls: calls::finalize: twin @" + twin.getName().str() + " does not match the clone @" +
-                      src.getName().str() + " (an i32 handle result or a struct of fields, its arguments after the outs)",
+                      src.getName().str() + " (an i32 handle result or a struct of fields, its arguments after)",
                   &twin);
   for (unsigned i = 0; i < src.arg_size(); ++i)
-    if (twin.getArg(i + nRegs + nOuts)->getType() != src.getArg(i)->getType())
+    if (twin.getArg(i + nOuts)->getType() != src.getArg(i)->getType())
       internalError("calls: calls::finalize: twin @" + twin.getName().str() + " argument types differ from @" +
                         src.getName().str(),
                     &twin);
-  ReplaySeen seen;
+  SmallPtrSet<Function *, 8> seen;
   bool hostFlags = false;
-  checkReplayable(src, twin, seen, hostFlags, true, &kr.made);
+  scanHostFlags(src, seen, hostFlags);
 
   ValueToValueMapTy VM;
-  for (unsigned k = 0; k < nRegs; ++k)
-    twin.getArg(k)->setName("reg" + std::to_string(k));
   for (unsigned j = 0; j < nOuts; ++j)
-    twin.getArg(nRegs + j)->setName(nOuts == 1 ? "out" : "out" + std::to_string(j));
+    twin.getArg(j)->setName(nOuts == 1 ? "out" : "out" + std::to_string(j));
   for (unsigned i = 0; i < src.arg_size(); ++i) {
-    VM[src.getArg(i)] = twin.getArg(i + nRegs + nOuts);
-    twin.getArg(i + nRegs + nOuts)->setName(src.getArg(i)->getName());
+    VM[src.getArg(i)] = twin.getArg(i + nOuts);
+    twin.getArg(i + nOuts)->setName(src.getArg(i)->getName());
   }
-  for (unsigned k = 0; k < nCells; ++k)
-    twin.getArg(nRegs + nOuts + src.arg_size() + k)->setName("old" + std::to_string(k));
   SmallVector<ReturnInst *, 4> rets;
   CloneFunctionInto(&twin, &src, VM, CloneFunctionChangeType::LocalChangesOnly, rets);
   twin.setAttributes(AttributeList());
   twin.setCallingConv(CallingConv::C);
   twin.setLinkage(GlobalValue::InternalLinkage);
-
-  // cq-i9wk (rule 19): the twin reads each kept register from its parameter instead of making it again. The
-  // twin's copies are taken first: VM's handles follow replaceAllUsesWith.
-  if (nRegs) {
-    SmallPtrSet<const Instruction *, 8> isDef(kr.defs.begin(), kr.defs.end());
-    SmallVector<Instruction *, 8> gates;
-    for (const Instruction *m : kr.made)
-      if (!isDef.count(m))
-        gates.push_back(cast<Instruction>(VM[m]));
-    SmallVector<std::pair<Instruction *, unsigned>, 8> defs;   // twin copy, register index
-    for (unsigned k = 0; k < nRegs; ++k) {
-      SmallVector<Value *, 8> work(kr.regs[k].begin(), kr.regs[k].end());
-      SmallPtrSet<Value *, 8> done;
-      while (!work.empty()) {
-        Value *d = work.pop_back_val();
-        if (!done.insert(d).second || isa<ConstantInt>(d))
-          continue;   // handle 0 (rule 19): nothing to replace
-        if (auto *pn = dyn_cast<PHINode>(d))
-          work.append(pn->incoming_values().begin(), pn->incoming_values().end());
-        else if (auto *sel = dyn_cast<SelectInst>(d)) {
-          work.push_back(sel->getTrueValue());
-          work.push_back(sel->getFalseValue());
-        }
-        defs.push_back({cast<Instruction>(VM[d]), k});
-      }
-    }
-    for (Instruction *g : gates)
-      g->eraseFromParent();
-    for (auto &[td, k] : defs)
-      td->replaceAllUsesWith(twin.getArg(k));
-    for (auto &[td, k] : defs)
-      td->eraseFromParent();
-  }
-
-  // Phase 2: each cell copy-out f = alloc(0); copy(r, f); store f, cell becomes c = load cell (the handle
-  // the forward left there, the caller's reloaded rail); copy(r, c) (XORs it out); store old_k, cell (the
-  // cell's content before the call). Nothing in src reads a cell it copied out to.
-  SmallPtrSet<LoadInst *, 4> replaced;
-  for (unsigned k = 0; k < cells.size(); ++k) {
-    const CellCopyOut &co = cells[k];
-    auto *st = cast<StoreInst>(VM[co.st]);
-    auto *f = cast<CallInst>(VM[co.f]);
-    Argument *old = twin.getArg(nRegs + nOuts + src.arg_size() + cellOf[k]);
-    // A slot cell is physically an i32 handle cell (rule 20): the caller passes its content before the call
-    // (mem-slots slotCellsBeforeCall), the clone stores a handle there.
-    if (old->getType() != st->getValueOperand()->getType())
-      internalError("calls: calls::finalize: a twin's old cell of another type than the cell's handle", st);
-    // A load of the cell before the copy-out (122's read-modify-write, p->c += d) read the cell's content
-    // before the call; in the twin the cell holds the forward's copy instead, so it reads old_k. Any
-    // other load through the formal that may overlap the cell is unimplemented.
-    const DataLayout &DL = M.getDataLayout();
-    uint64_t cellSize = DL.getTypeStoreSize(st->getValueOperand()->getType());
-    for (Instruction &I : instructions(src))
-      if (auto *ld = dyn_cast<LoadInst>(&I)) {
-        APInt o(64, 0);
-        const Value *b = ld->getPointerOperand()->stripAndAccumulateConstantOffsets(DL, o, true);
-        if (b != co.base) {
-          // cq-u9oy: a load through the same formal at a run-time cell (fatptr's cell-count checked load of a
-          // TripleCount formal, 190) may read this cell before its copy-out: the twin would read the forward's
-          // copy instead of the old content.
-          const Value *ub = getUnderlyingObject(b), *uc = getUnderlyingObject(co.base);
-          if (ub == uc && isa<Argument>(ub) && !isPotentiallyReachable(co.st, ld))
-            unimplemented("calls: calls::finalize: a clone reading a caller cell through a pointer formal at a run-time "
-                          "cell before its copy-out to that object (the twin reads the old cell)",
-                          ld);
-          continue;
-        }
-        int64_t lo = o.getSExtValue();
-        uint64_t ls = DL.getTypeStoreSize(ld->getType());
-        if (lo + int64_t(ls) <= co.off || co.off + int64_t(cellSize) <= lo)
-          continue; // another cell
-        if (lo == co.off && ld->getType() == old->getType() && !isPotentiallyReachable(co.st, ld)) {
-          if (!replaced.insert(ld).second)
-            continue;   // another copy-out into this cell (an exclusive path) replaced it already
-          auto *tl = cast<LoadInst>(VM[ld]);
-          tl->replaceAllUsesWith(old);
-          tl->eraseFromParent();
-          continue;
-        }
-        unimplemented("calls: calls::finalize: a clone reading a caller cell through a pointer formal after (or "
-                      "beside) its copy-out to that cell",
-                      ld);
-      }
-    IRBuilder<> B(f);
-    Value *at = twin.getArg(nRegs + nOuts + co.formal->getArgNo());
-    if (co.idx)
-      at = B.CreateInBoundsGEP(B.getInt32Ty(), at,
-                               B.CreateSExt(twin.getArg(nRegs + nOuts + co.idx->getArgNo()), B.getInt64Ty()));
-    if (co.off)
-      at = B.CreateConstInBoundsGEP1_64(B.getInt8Ty(), at, uint64_t(co.off));
-    Value *c = B.CreateAlignedLoad(st->getValueOperand()->getType(), at, st->getAlign(), "cell");
-    f->replaceAllUsesWith(c);
-    f->eraseFromParent();
-    st->setOperand(0, old);
-  }
-
-  // M2b (191): the stores a clone makes through triple formals onto a QRAM object sit after its body's
-  // uncompute, right before the return (after them only the return value's insertvalues). They are the
-  // caller's to pop (U3) before it calls the twin, so the twin does not repeat them: dropped here, and
-  // their copied-out rails are XORed into the twin's outs like any result field.
-  for (ReturnInst *R : rets) {
-    SmallVector<Instruction *, 2> stores;
-    for (Instruction *I = R->getPrevNode(); I; I = I->getPrevNode()) {
-      if (isa<InsertValueInst>(I))
-        continue;
-      if (!trailingQramStore(*I))
-        break;
-      stores.push_back(I);
-    }
-    for (Instruction *I : stores)
-      I->eraseFromParent();
-  }
 
   SmallVector<Instruction *, 4> dead;
   // The copy-out of rule 18: f = cqrt_alloc_<W>(0), cqrt_copy_<W>(r, f), ..., ret f: the copy is made
@@ -862,7 +253,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
       // A field-wise result: the insertvalue chain of the return; its handle fields (the copy-outs, in
       // field order) are the outs.
       SmallVector<Value *, 4> fields(srt->getNumElements(), nullptr);
-      unsigned nFields = srt->getNumElements() - nRegs;   // cq-i9wk: the registers are no outs
+      unsigned nFields = srt->getNumElements();
       Value *v = ret;
       while (auto *iv = dyn_cast<InsertValueInst>(v)) {
         // The spine builds every field-wise return as one insertvalue chain from poison (emitCloneReturn).
@@ -900,7 +291,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
           internalError("calls: calls::finalize: a field-wise clone return with more handle fields than its twin's outs",
                         R);
         for (Value *rv : results)
-          retarget(rv, twin.getArg(nRegs + j), R);
+          retarget(rv, twin.getArg(j), R);
         ++j;
         if (results.front() != fields[k])
           fieldPhis.push_back(fp);
@@ -920,7 +311,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
         results.insert(ret);
       }
       for (Value *rv : results)
-        retarget(rv, twin.getArg(nRegs), R);
+        retarget(rv, twin.getArg(0), R);
     }
     ReturnInst::Create(C, nullptr, R->getIterator());
     R->eraseFromParent();
@@ -1008,173 +399,16 @@ void defineTwins(Module &M) {
   }
 }
 
-// cq-nqa6: the _ctl entry-flag invariant (kCtlDistinctAttr) at every call site of a marked clone. The
-// flag's handle leaves (through phis and selects) must each be one of: the caller's own entry flag (the
-// caller is then marked in turn); a rail made by a gate call whose handle, or a merge of it, reaches
-// only gate calls and the entry flag of _ctl clone calls (a predicate flag); a load of a cell of a local
-// slot array (an alloca reached through GEPs) whose address reaches only GEPs, loads, stores of a
-// handle into it and lifetime markers (the clone cannot reach its cells), when no other actual of the
-// call has a leaf that is a load of that array or a value stored into it (a slot cell holds a rail no
-// other cell holds, so no other cell names it either). Anything else is cq::unimplemented.
-void handleLeaves(Value *v, SmallVectorImpl<Value *> &out, SmallPtrSetImpl<Value *> &seen) {
-  if (!seen.insert(v).second)
-    return;
-  if (auto *P = dyn_cast<PHINode>(v)) {
-    for (Value *u : P->incoming_values())
-      handleLeaves(u, out, seen);
-    return;
-  }
-  if (auto *S = dyn_cast<SelectInst>(v)) {
-    handleLeaves(S->getTrueValue(), out, seen);
-    handleLeaves(S->getFalseValue(), out, seen);
-    return;
-  }
-  out.push_back(v);
-}
 
-bool gateCallee(const Function *G) {
-  return G && ((G->getName().starts_with("cqrt_") && !G->getName().starts_with("cqrt_qram") &&
-                !G->getName().starts_with("cqrt_push") && !G->getName().starts_with("cqrt_tape")) ||
-               G->getName().starts_with("cq_template_"));
-}
 
-bool isCtlCall(const CallInst *CI, unsigned opNo) {
-  const Function *G = CI->getCalledFunction();
-  if (!G || opNo != 0 || !isClone(*G))
-    return false;
-  std::optional<abi::CloneSpec> n = abi::parseClone(G->getName());
-  return n && n->ctl;
-}
 
-bool flagOnly(Value *h) {
-  SmallVector<Value *, 8> work{h};
-  SmallPtrSet<Value *, 8> seen;
-  while (!work.empty()) {
-    Value *v = work.pop_back_val();
-    if (!seen.insert(v).second)
-      continue;
-    for (Use &U : v->uses()) {
-      User *u = U.getUser();
-      if (isa<PHINode>(u) || isa<SelectInst>(u)) {
-        work.push_back(u);
-        continue;
-      }
-      auto *CI = dyn_cast<CallInst>(u);
-      if (CI && (gateCallee(CI->getCalledFunction()) || isCtlCall(CI, U.getOperandNo())))
-        continue;
-      return false;
-    }
-  }
-  return true;
-}
 
-// The local slot array a load reads a cell of, when its address does not escape; nullptr otherwise.
-AllocaInst *privateArray(LoadInst *L) {
-  auto *A = dyn_cast<AllocaInst>(getUnderlyingObject(L->getPointerOperand()));
-  if (!A)
-    return nullptr;
-  SmallVector<Value *, 8> work{A};
-  SmallPtrSet<Value *, 8> seen;
-  while (!work.empty()) {
-    Value *v = work.pop_back_val();
-    if (!seen.insert(v).second)
-      continue;
-    for (Use &U : v->uses()) {
-      User *u = U.getUser();
-      if (isa<GetElementPtrInst>(u)) {
-        work.push_back(u);
-        continue;
-      }
-      if (isa<LoadInst>(u))
-        continue;
-      if (auto *St = dyn_cast<StoreInst>(u); St && U.getOperandNo() == St->getPointerOperandIndex() &&
-                                             !St->getValueOperand()->getType()->isPointerTy())
-        continue;
-      if (auto *II = dyn_cast<IntrinsicInst>(u); II && II->isLifetimeStartOrEnd())
-        continue;
-      return nullptr;
-    }
-  }
-  return A;
-}
 
-void checkCtlDistinct(Module &M) {
-  SmallVector<Function *, 8> work;
-  SmallPtrSet<Function *, 8> marked;
-  for (Function &F : M)
-    if (F.hasFnAttribute(kCtlDistinctAttr) && marked.insert(&F).second)
-      work.push_back(&F);
-  while (!work.empty()) {
-    Function *C = work.pop_back_val();
-    for (User *U : C->users()) {
-      auto *CI = dyn_cast<CallInst>(U);
-      if (!CI || CI->getCalledOperand() != C || CI->arg_size() == 0)
-        unimplemented("calls: a use of a _ctl clone that relies on its entry flag naming no other rail, other "
-                      "than a direct call (cq-nqa6)",
-                      U);
-      Function *F = CI->getFunction();
-      SmallVector<Value *, 4> leaves;
-      SmallPtrSet<Value *, 8> seen;
-      handleLeaves(CI->getArgOperand(0), leaves, seen);
-      for (Value *l : leaves) {
-        if (auto *A = dyn_cast<Argument>(l); A && A->getParent() == F && A->getArgNo() == 0 && isClone(*F)) {
-          std::optional<abi::CloneSpec> n = abi::parseClone(F->getName());
-          if (n && n->ctl) {
-            if (marked.insert(F).second)
-              work.push_back(F);
-            continue;
-          }
-        }
-        if (auto *G = dyn_cast<CallInst>(l); G && gateCallee(G->getCalledFunction()) && flagOnly(G))
-          continue;
-        if (auto *L = dyn_cast<LoadInst>(l))
-          if (AllocaInst *A = privateArray(L)) {
-            // The rails A's cells may hold: its loads and the values stored into it.
-            SmallPtrSet<Value *, 16> held;
-            SmallVector<Value *, 8> ptrs{A};
-            SmallPtrSet<Value *, 8> pseen;
-            while (!ptrs.empty()) {
-              Value *p = ptrs.pop_back_val();
-              if (!pseen.insert(p).second)
-                continue;
-              for (User *u : p->users()) {
-                if (isa<GetElementPtrInst>(u))
-                  ptrs.push_back(u);
-                else if (isa<LoadInst>(u))
-                  held.insert(u);
-                else if (auto *St = dyn_cast<StoreInst>(u)) {
-                  SmallVector<Value *, 4> sl;
-                  SmallPtrSet<Value *, 8> ss;
-                  handleLeaves(St->getValueOperand(), sl, ss);
-                  held.insert(sl.begin(), sl.end());
-                }
-              }
-            }
-            bool clash = false;
-            for (unsigned i = 1; i < CI->arg_size() && !clash; ++i) {
-              SmallVector<Value *, 4> al;
-              SmallPtrSet<Value *, 8> as;
-              handleLeaves(CI->getArgOperand(i), al, as);
-              clash = any_of(al, [&](Value *x) { return held.count(x); });
-            }
-            if (!clash)
-              continue;
-          }
-        unimplemented("calls: a _ctl call whose entry flag may name a rail the clone reaches otherwise (the "
-                      "clone's controlled Ry relies on it, cq-nqa6)",
-                      l);
-      }
-    }
-  }
-  for (Function *C : marked)
-    C->removeFnAttr(kCtlDistinctAttr);
-}
 
 } // namespace
 
 void finalize(Module &M) {
-  checkCtlDistinct(M);
-  SmallVector<Function *, 8> clones, unusedInv;
+  SmallVector<Function *, 8> clones;
   for (Function &F : M) {
     if (!isClone(F))
       continue;
@@ -1183,30 +417,11 @@ void finalize(Module &M) {
       unimplemented("calls: calls::finalize: a symbol in the clone namespace that is not a canonical "
                     "clone name (a uniquified clone; CR §1.4)",
                     &F);
-    // cq-necw (CR §1.4, rule 18): an _inv<c> clone is defined only when a call site uses it. A call site's
-    // clean-up registered with it is pruned when the call's twin restores the cell (the old content is then
-    // not dead), leaving it unused.
-    if (!spec->inv.empty() && F.use_empty()) {
-      unusedInv.push_back(&F);
-      continue;
-    }
     clones.push_back(&F);
-  }
-  for (Function *F : unusedInv) {
-    SmallPtrSet<Function *, 8> callees;
-    for (Instruction &I : instructions(*F))
-      if (auto *CB = dyn_cast<CallBase>(&I); CB && CB->getCalledFunction())
-        callees.insert(CB->getCalledFunction());
-    F->eraseFromParent();
-    for (Function *D : callees)
-      if (D->isDeclaration() && D->use_empty())
-        D->eraseFromParent();
   }
   if (clones.empty())
     return;
   defineTwins(M);
-  for (Function &F : M)
-    F.removeFnAttr(spine::kKeptRegistersAttr);   // cq-i9wk: read by the twins only
 
   SetVector<Function *> originals;
   for (Function *C : clones)
