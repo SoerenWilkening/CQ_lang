@@ -2006,6 +2006,14 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // part of this evaluation.
   auto walkArm = [&](ArmEval &ev) {
     LLVMContext &Cx = ctx.M.getContext();
+    // The lowering branched inside the arm (a loop of the arm, rule 5's Readers test): the segment goes on where it joined.
+    auto followBuilder = [&]() {
+      if (BasicBlock *now = ctx.B().GetInsertBlock(); now != cur) {
+        segIdx[now] = segs.size() - 1;
+        segs.back().bb = now;
+        cur = now;
+      }
+    };
     for (BasicBlock *b : UX.arm) {
       Loop *S = armUnit.lookup(b);
       if (S && S->getHeader() != b)
@@ -2046,12 +2054,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           exits::lowerNestedCutoff(ctx, *S, f);
         } else {
           exits::lowerClassicalInTrip(ctx, *S, f);
-          // The loop's blocks are this segment's; it goes on where the loop continues.
-          if (BasicBlock *now = ctx.B().GetInsertBlock(); now != cur) {
-            segIdx[now] = segs.size() - 1;
-            segs.back().bb = now;
-            cur = now;
-          }
+          followBuilder();
         }
         for (PHINode *P : contPhis)
           if (ctx.bound(P))
@@ -2116,8 +2119,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       // The arm's flag is the block's whole predicate here: its instructions run under it, its effects controlled by it.
       const Pred bq = qp(b);
       for (Instruction &I : *b)
-        if (!isa<PHINode>(I) && !I.isTerminator())
+        if (!isa<PHINode>(I) && !I.isTerminator()) {
           lowerInstruction(ctx, I, f, &bq);
+          followBuilder();
+        }
     }
   };
   // A value cp takes on the unit edge u -> C: the incoming, or the phi itself where a loop of the arm bound it.
@@ -3469,7 +3474,8 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
       BasicBlock *exitSeg = nullptr;
       for (BasicBlock *p : predecessors(X)) {
         if (!region.count(p) || (exitSeg && exitSeg != p))
-          internalError("loops-classical: the loop's exit block is not reached from exactly one segment");
+          internalError("loops-classical: the loop's exit block is not reached from exactly one segment",
+                        top.getHeader()->getTerminator());
         exitSeg = p;
       }
       start = R[segOf.lookup(exitSeg)];
