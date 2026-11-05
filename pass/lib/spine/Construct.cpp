@@ -1940,10 +1940,9 @@ void Walker::emitBlock(BasicBlock *b) {
           }))
         continue;
       if (count_if(exits, [&](const auto &e) { return e.second == to; }) > 1 && !to->phis().empty())
-        cq::unimplementedAt(__FILE__, __LINE__,
-                            "spine: a loop unit with more than one exit edge into an exit block with a phi the loop "
-                            "module did not bind (the loop contract does not say which exit edge was taken; cq-qjm9)",
-                            &*to->phis().begin());
+        noteUnbuilt("spine: a loop unit with more than one exit edge into an exit block with a phi the loop module did "
+                    "not bind (the loop contract does not say which exit edge was taken; cq-qjm9)",
+                    &*to->phis().begin());
     }
     // Every exiting block's output block is where the loop module left the builder, the block the
     // exit edges leave from (cq-qctz): a phi of an exit block the loop module did not bind (a
