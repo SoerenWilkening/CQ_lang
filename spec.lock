@@ -3,7 +3,7 @@
 # and _tools/drivers.txt (input data). A drift in either of those two is a re-pin, not a spec issue.
 commit bff98cbc49d26a9c7928f1665bccab9760fda200
 d5b280ac13212f21fa0f5187da4190194f97e29a055e3257a22be4cbdda9d8d2  BACKEND_ABI.md
-026507c6a69ea88ba2d23ae663926bd7f15b06a3fc8eb9861664c9d7d02f4a91  CONSTRUCTION_RULES.md
+a364ababb10e84e6d00f63d3741bc0447c5c032b22872911cd1829806e3a4725  CONSTRUCTION_RULES.md
 a277b3618e436d7404ea74f7234976fd1ba9dc5e1f108845b3f8ce4bd9427d23  CQ.h
 67d23157d04738ecbbf3e921af158c597bc7ab1c270923b99dc5736e194093cd  _tools/drivers.txt
 721d422960294e2fe9c8821f9365f47679bd71dc815f2594c84f2cd3de8f7611  examples/01_add_classical_const/add_classical_const.O1.ll
