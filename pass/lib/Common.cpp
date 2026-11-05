@@ -48,6 +48,19 @@ void unimplementedAt(const char *file, int line, llvm::StringRef what, const llv
 void internalErrorAt(const char *file, int line, llvm::StringRef what, const llvm::Value *at) {
   fail("cq: internal error: ", what, at, file, line);
 }
+void noteUnbuiltAt(const char *file, int line, llvm::StringRef what, const llvm::Value *at) {
+  llvm::StringRef f(file);
+  size_t p = f.find("pass/");
+  llvm::errs() << "cq: note: unbuilt: " << what << "  site: " << (p == llvm::StringRef::npos ? f : f.substr(p)) << ":"
+               << line;
+  if (at) {
+    std::string s;
+    llvm::raw_string_ostream os(s);
+    os << *at;
+    llvm::errs() << "  at: " << llvm::StringRef(os.str()).trim();
+  }
+  llvm::errs() << "\n";
+}
 } // namespace cq
 
 namespace cq {
