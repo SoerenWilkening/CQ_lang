@@ -281,6 +281,30 @@ def test_link(tmp):
         ok("executable linked with --backend prints add_q(5, 0, 3) = 8")
 
 
+def test_host_link(tmp):
+    """Rulings Q7, Q6: cq_host.c is linked after the pass when the lowered module asks for a host symbol."""
+    main_c = tmp / "hostmain.c"
+    main_c.write_text('extern int __cq_mem(void);\nint main(void) { return __cq_mem() == __cq_mem() ? 42 : 1; }\n')
+    be_c = tmp / "busbackend.c"
+    be_c.write_text("int cqrt_qram_alloc_i8(int n) { return 5 + n; }\n")
+    backend = tmp / "busbackend.o"
+    run([LLVM / "clang", "-c", be_c, "-o", backend])
+    exe = tmp / "host.exe"
+    r = cqcc(main_c, "--backend", backend, "-o", exe)
+    code = subprocess.run([str(exe)]).returncode if exe.exists() else None
+    if r.returncode or code != 42:
+        fail("executable with the host object", r.stderr + str(code))
+    else:
+        ok("executable links bundle/host/cq_host.c when the lowered module asks for __cq_mem")
+    roots = tmp / "roots.txt"
+    roots.write_text("nosuchfunction_1\n")
+    r = cqcc("-S", main_c, "--cq-roots", roots, "-o", tmp / "roots.ll")
+    if r.returncode == 0 or "nosuchfunction" not in r.stderr + r.stdout:
+        ok("--cq-roots passed through") if r.returncode == 0 else fail("--cq-roots", r.stderr)
+    else:
+        ok("--cq-roots reaches cq-lower")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--plugin", default=str(ROOT / "build" / "pass" / "libCQLower.so"))
@@ -304,6 +328,7 @@ def main():
         test_k(tmp)
         test_check(tmp)
         test_link(tmp)
+        test_host_link(tmp)
     print(f"\n{len(failures)} failure(s)")
     return 1 if failures else 0
 
