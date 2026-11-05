@@ -29,7 +29,12 @@ ROOT = Path(__file__).resolve().parents[2]
 PROBES = Path(__file__).parent / "probes"
 ENTRIES = ["p_vol_internal", "p_vol_observable", "p_atomic_classical", "p_vol_local", "p_atomic_rmw"]
 ERRORS = {}
-MODULES = { "setjmp.O1.ll": ["p_sj_scalar", "p_sj_void", "p_sj_classical", "p_sj_qarm"],
+MODULES = {"conc.O1.ll": ENTRIES, "setjmp.O1.ll": ["p_sj_scalar", "p_sj_void", "p_sj_classical", "p_sj_qarm"],
+           "conc_widen.O1.ll": ["p_join_result", "p_vol_atomic", "p_runtime_routine"],
+           "conc_rmw.O1.ll": ["p_rmw_qram"],
+           # Rule 5's in-place form over its class, against the C program.
+           "inplace_forms.O1.ll": ["f_add_cells", "f_old", "f_new", "f_chain", "f_ends", "f_under", "f_select", "f_bool",
+                                   "f_fneg", "f_fwd"],
            # cq-py5f: rule 24 over its class (a join asking for the result, a volatile atomic access).
            
            
@@ -57,9 +62,13 @@ SHAPES = {"p_vol_internal": (None, r"volatile"),
           "p_atomic_classical": (r"store atomic i32 %\d+, ptr @acell seq_cst[\s\S]*load atomic i32, ptr @acell seq_cst",
                                  None),
           "p_vol_local": (None, r"volatile"),
-          "p_atomic_rmw": (r"cq_template_add_i32_hl", r"atomicrmw"),
+          "p_atomic_rmw": (r"cqrt_qram_swap_i32", r"atomicrmw"),
+          "f_add_cells": (None, None), "f_old": (r"cqrt_qram_swap_i32_hl", None), "f_new": (r"cqrt_qram_swap_i32_hl", None),
+          "f_chain": (r"cqrt_qram_swap_i32_hl", None), "f_ends": (r"cqrt_qram_swap_i32_hl", None),
+          "f_under": (r"cqrt_qram_swap_i32_hl_controlled", None), "f_select": (r"cq_template_select_i32", None),
+          "f_bool": (r"cqrt_qram_swap_i1_hl", None), "f_fneg": (r"cqrt_qram_swap_f64_hl", None), "f_fwd": (None, None),
           "p_join_result": (r"call ptr @job\(", r"@pthread_(create|join)\("),
-          "p_rmw_qram": (r"cqrt_qram_load_i32\(i32 %\d+, i32 %\d+\)[\s\S]*cqrt_qram_store_i32\(", r"atomicrmw|cmpxchg"),
+          "p_rmw_qram": (r"cqrt_qram_swap_i32\(i32 %\d+, i32 %\d+, i32 %\d+\)[\s\S]*cqrt_qram_store_i32\(", r"atomicrmw|cmpxchg"),
           "p_runtime_routine": (r"call ptr %\d+\(ptr", r"@pthread_(create|join)\("),
           "p_vol_atomic": (r"store atomic volatile i32 %\d+, ptr @vcell seq_cst", None),
           "p_sj_scalar": _SJ, "p_sj_void": _SJ, "p_sj_classical": _SJ, "p_sj_qarm": _SJ,

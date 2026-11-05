@@ -838,12 +838,34 @@ bool hasReader(const Form &F, const Value *v, const Plan &P) {
   return false;
 }
 
-// The plain load after the swap-in that a later reader reads (rule 5, Readers: at the form's width), bound.
+// The plain load after the swap-in that a later reader reads (rule 5, Readers: at the form's width), bound. A reader of
+// the zext that reads it at the form's width (a compare at i1, a form's step) reads that one load too.
 void bindReaders(LoweringContext &ctx, const Form &F, const Plan &P, unsigned e, Operand addr) {
   const Value *v = F.steps[e].def;
-  if (hasReader(F, v, P))
+  bool narrow = hasReader(F, v, P), wide = false;
+  if (e + 1 == F.steps.size() && F.zext)
+    for (const Use &u : F.zext->uses()) {
+      const User *x = u.getUser();
+      if (x == F.S)
+        continue;
+      bool step = false, next = false;
+      for (const std::unique_ptr<Form> &o : P.forms) {
+        step |= any_of(o->steps, [&](const Step &st) { return st.def == x && st.a.z == F.zext; });
+        next |= o->Prev == F.S && o->steps.front().def == x;
+      }
+      if (next)
+        continue;
+      if (step || spine::narrowUse(ctx, u, F.U->getIntegerBitWidth())) {
+        narrow = true;
+        if (!step)
+          spine::shared(ctx).narrowSkipped.insert(F.zext);
+      } else {
+        wide = true;
+      }
+    }
+  if (narrow)
     spine::bindOperand(ctx, v, Operand{emitLoad(ctx, F.U, addr), true});
-  if (e + 1 == F.steps.size() && F.zext && hasReader(F, F.zext, P))
+  if (wide)
     spine::bindOperand(ctx, F.zext, Operand{emitLoad(ctx, F.T, addr), true});
 }
 
