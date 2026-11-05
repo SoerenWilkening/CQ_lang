@@ -636,7 +636,22 @@ static void tape_qstore(uint64_t addr, uint8_t byte, int write) {
   cqe__val_free(&disp);
 }
 
-static const cqe_tape_bus tape_bus = {tape_peek, tape_qstore};
+/* The classical store of an INPUT entry's byte (ABI §1.10; rulings 2 D, cq-ytux): like any store whose address, control
+ * and content are classical-valued it writes host bytes and the cell is HOST, a QUANTUM cell too, and the slot takes what
+ * it displaced. It is the same write as op_qram_store's, one byte long. */
+static void tape_cstore(uint64_t addr, uint8_t byte) {
+  uint8_t old = 0;
+  int anyq = 0;
+  int known = cells_read(addr, 1, &old, &anyq);
+  cells_write(addr, 1, &byte, 1, 1);
+  cqe_val disp;
+  cqe__val_init(&disp, 8, 'i');
+  disp.w[0] = old;
+  cqe__setrole(cqe__new("i8", &disp, known, 0), ROLE_TAPE_SLOT);
+  cqe__val_free(&disp);
+}
+
+static const cqe_tape_bus tape_bus = {tape_peek, tape_qstore, tape_cstore};
 
 /* ---- end of shot -------------------------------------------------------------------------- */
 
