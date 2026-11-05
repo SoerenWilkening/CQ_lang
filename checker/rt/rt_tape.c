@@ -8,8 +8,13 @@
  *  - All format entries, effect entries and abort flags form ONE event sequence in call order.
  *  - A format entry is opened by tape_fmt and takes the fields its format string consumes. An effect
  *    entry takes the fields written to its tape since the previous entry, and is complete at its call.
- *    Fields past what a format consumes wait for the tape's next entry: the next effect entry takes
- *    them, a next format entry or the end of the shot gives them to the format entry they follow.
+ *    Fields past what a format consumes wait for the tape's next entry: every argument of a printf is a
+ *    field of its format entry and the excess is ignored as C ignores it (CR rule 16, C11 7.21.6.1p2;
+ *    rulings 2 C, cq-kzfv). A next format entry or the end of the shot gives them to the format entry
+ *    they follow; an effect entry of a callee of known arity (fx_standin.h) takes its last `arity` and
+ *    the earlier ones go to that format entry. For any other callee the ABI gives no boundary
+ *    (SPEC_ISSUES, ABI 1.11): the effect takes them all and its object says "split_open", and
+ *    compare.py reports a C call with fewer arguments as that gap, an internal error, never a verdict.
  *  - The predicate is read at the call. A classical-valued c is kept as its bit; any other c is copied
  *    to a fresh kept tape rail of the event, which the end of the shot reads.
  *  - Capture (at completion): the buffers and strings the backend knows by name (fx_standin.h roles, a
@@ -20,10 +25,11 @@
  *    resolved with no abort flag reading 1. An event that is not, and every later one, is DEFERRED. An
  *    effect entry not resolved at its call is deferred there (its r is |0>).
  *  - INPUT calls (by name) are performed at the call whatever precedes, unless an identifying argument
- *    is truly quantum (deferred). Stand-in bytes go to host memory when everything is classical
- *    (host_write: a host write at a QUANTUM cell is not seen by the bus) and otherwise by bus stores
- *    (cqe_tape_bus.qstore), over every cell the store can reach. An INPUT call with a quantum argument
- *    or predicate is performed and still not "resolved", so a later output stays behind it.
+ *    is truly quantum (deferred). Stand-in bytes are bus stores, as every write the backend makes for an
+ *    effect entry (ABI §1.10; rulings 2 D, cq-ytux): cqe_tape_bus.cstore when everything is classical
+ *    (the cell is HOST, a QUANTUM one too), else cqe_tape_bus.qstore over every cell the store can reach.
+ *    An INPUT call with a quantum argument or predicate is performed and still not "resolved", so a
+ *    later output stays behind it.
  *  - The result rail r of tape_effect_<W>: the stand-in result when performed at the call and the
  *    predicate is 1, else |0>. It is kept (role tape) and classical-valued when everything was.
  *  - An abort flag is kept. End of shot (process exit via return from main or exit(); _Exit loses the
@@ -205,6 +211,7 @@ typedef struct {
   int reads_quantum;     /* a capture took a tape rail */
   int cls;
   int behind_abort;      /* an earlier abort flag read 1 */
+  int split_open;        /* effect entry: it took fields waiting behind a format entry, with no boundary known */
   int performed;         /* the entry was performed at the call (or, at the shot, will be) */
   int32_t r;             /* the result rail, 0: bare form */
   char rw[8];
@@ -342,19 +349,6 @@ static int host_peek(uint64_t addr, uint8_t *byte) {
   return 0;
 }
 static int peek(uint64_t addr, uint8_t *byte) { return g_bus ? g_bus->peek(addr, byte) : host_peek(addr, byte); }
-
-/* The stand-in host call's write into host memory; a page it cannot write takes nothing. */
-static void host_write(uint64_t addr, uint8_t byte) {
-  mach_vm_address_t a = (mach_vm_address_t)addr;
-  mach_vm_size_t sz = 0;
-  vm_region_basic_info_data_64_t info;
-  mach_msg_type_number_t cnt = VM_REGION_BASIC_INFO_COUNT_64;
-  mach_port_t obj = MACH_PORT_NULL;
-  if (mach_vm_region(mach_task_self(), &a, &sz, VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info, &cnt, &obj) != KERN_SUCCESS)
-    return;
-  if (a > (mach_vm_address_t)addr || !(info.protection & VM_PROT_WRITE)) return;
-  *(volatile uint8_t *)(uintptr_t)addr = byte;
-}
 
 static uint64_t field_low64(const field *f) { return f->v.w[0]; }
 
@@ -498,9 +492,10 @@ static void perform_input(event *e, const cq_fx_ent *ent) {
     for (size_t j = 0; j < reach; j++) {
       int write = j < stored && cv;
       uint8_t byte = write ? cq_fx_input_byte(ent, h, j, stored) : 0;
-      if (classical) { if (write) host_write(addr + j, byte); continue; }
+      if (classical && !write) continue;
       if (!g_bus) { cqe_fail("tape: %s: a bus store with no bus linked", e->str); return; }
-      g_bus->qstore(addr + j, byte, write);
+      if (classical) g_bus->cstore(addr + j, byte);
+      else g_bus->qstore(addr + j, byte, write);
     }
   }
   uint64_t r = cv ? cq_fx_input_result(ent, h, addr, (uint64_t)v, bi >= 0 && li + 1 < e->nfields && ent->roles[li + 1] == 'n'
@@ -593,6 +588,20 @@ static void take_pending(int ti, event *e) {
   p->n = 0;
 }
 
+/* A format entry was the tape's last and fields wait: the excess of a printf (rulings 2 C, cq-kzfv) or the arguments
+ * of the effect entry e. A callee of known arity takes its last `arity`, the earlier ones close the format entry, which
+ * ignores them. No arity: the ABI gives no boundary (SPEC_ISSUES, ABI 1.11), e takes them all, marked. */
+static void split_after_format(int ti, event *fmt, event *e, const cq_fx_ent *ent) {
+  pendlist *p = &g_tape_pend[ti];
+  int arity = ent ? cq_fx_arity(ent) : -1;
+  if (arity < 0) { e->split_open = 1; return; }
+  int excess = p->n - arity;
+  if (excess <= 0) return;
+  for (int i = 0; i < excess; i++) *event_field_slot(fmt) = p->f[i];
+  memmove(p->f, p->f + excess, (size_t)arity * sizeof *p->f);
+  p->n = arity;
+}
+
 /* The event's copy of its predicate, read at the call. */
 static void capture_pred(event *e, int ctl, int32_t c, const char *sym) {
   e->c = ctl ? c : -1;
@@ -653,17 +662,19 @@ static int32_t op_tape_effect(int32_t c, int32_t t, const char *name, const char
   capture_pred(e, 1, c, sym);
   e->str = name ? dupstr(name) : NULL;
   snprintf(e->rw, sizeof e->rw, "%s", rw ? rw : "");
+  const cq_fx_ent *ent = cq_fx_find(name);
   if (ti >= 0) {
     if (g_tape_open[ti] >= 0) {
       cqe_fail("tape: %s: format entry %d on tape %d still lacks fields", sym, g_tape_open[ti], (int)t);
       g_tape_open[ti] = -1;
     }
+    if (g_tape_pend[ti].n && g_tape_last[ti] >= 0 && g_ev[g_tape_last[ti]].k == E_FMT)
+      split_after_format(ti, &g_ev[g_tape_last[ti]], e, ent);
     take_pending(ti, e);
     g_tape_last[ti] = seq;
   }
   if (!name && e->nfields == 0) cqe_fail("tape: %s: a null name with no host address field", sym);
   entry_log(e, seq);
-  const cq_fx_ent *ent = cq_fx_find(name);
   if (ent && e->nfields < (int)strlen(ent->roles))
     cqe_fail("tape: %s: %s has %d fields, its arguments are %d", sym, name, e->nfields, (int)strlen(ent->roles));
   e->complete = 1;
@@ -942,6 +953,7 @@ static void entry_json(sbuf *b, const event *e, const char *when) {
   sb_printf(b, "\"seq\":%d,\"kind\":\"%s\",\"t\":%d,\"pred\":%d,\"class\":\"%s\",\"performed\":%s,", (int)(e - g_ev),
             e->k == E_FMT ? "fmt" : "effect", (int)e->t, e->pred, cls[e->cls], e->performed ? "true" : "false");
   if (when) sb_printf(b, "\"when\":\"%s\",", when);
+  if (e->split_open) sb_puts(b, "\"split_open\":true,");
   sb_printf(b, "\"%s\":", e->k == E_FMT ? "fmt" : "name");
   if (e->str) sb_json_str(b, e->str, strlen(e->str));
   else sb_puts(b, "null");

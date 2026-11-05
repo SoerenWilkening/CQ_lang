@@ -2459,10 +2459,24 @@ def _deviated(o: RunResult) -> bool:
     return bool((o.outputs or {}).get("deviation"))
 
 
+def _split_gap(k: str, ofx: List[Any], rfx: List[Any]) -> None:
+    """Rulings 2 C (cq-kzfv): a printf's excess arguments are its format entry's fields and ignored (CR rule 16), but for
+    a callee of no known arity the ABI gives no boundary between them and the effect entry's fields, so rt_tape.c gives
+    the effect all of them. The C call having fewer arguments shows such an excess. The comparison cannot be decided,
+    and neither side is wrong: an internal error, never a FAIL."""
+    for a, b in zip(ofx, rfx):
+        if a.get("split_open") and a.get("name") == b.get("name") and len(a["args"]) > len(b["args"]):
+            raise CompareError(f"cq: unimplemented: sample {k}: effect {a.get('name')!r} takes {len(a['args'])} fields, "
+                               f"its C call {len(b['args'])}: a format entry's excess fields with no boundary before an "
+                               f"effect of unknown arity (SPEC_ISSUES: ABI 1.11 vs rule 16, cq-kzfv)")
+
+
 def _host_output(k: str, o: RunResult, r: RunResult, oracle: str, open_end: bool) -> List[str]:
     """The host-output reasons of one sample (module docstring, Host output)."""
     other = "C" if oracle == "c" else "reference"
     (os_, ofx), (rs, rfx) = _host(o.outputs, "our"), _host(r.outputs, other)
+    if oracle == "c":
+        _split_gap(k, ofx, rfx)
     why = []
     if os_ != rs and not (open_end and os_.startswith(rs)):
         why.append(f"sample {k}: host stdout differs: ours {os_!r} != {other} {rs!r}"
