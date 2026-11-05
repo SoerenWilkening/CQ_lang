@@ -369,18 +369,32 @@ def zero_meaning(f: "D.Function", header: str, blocks: set) -> str:
 
 def _region_may_exit(f: "D.Function", header: str, blocks: set) -> bool:
     """Whether a header run may only exit, leaving through the header's test region before a trip
-    begins (OracleInstr.cpp, trip counters: never when the header is a latch). Over-approximated:
-    the header is exiting, or a single-predecessor non-latch successor of it is."""
+    begins (OracleInstr.cpp, trip counters: never when the header is a latch, nor with a live exit outside the
+    region: two exit tests per trip, ruling Q15). Over-approximated: the header is exiting, or a single-predecessor
+    non-latch successor of it is. Only a live exit counts (a path out of it reaches a return or the loop; cq-2dxe)."""
     preds = f.preds()
     succ = {b: f.blocks[b][-1].successors() for b in f.order}
     latches = {p for p in preds.get(header, []) if p in blocks}
     if header in latches:
         return False
-    exiting = {b for b in blocks if any(s not in blocks for s in succ[b])}
-    if header in exiting:
-        return True
-    return any(s in blocks and s != header and set(preds.get(s, [])) == {header} and s not in latches
-               and s in exiting for s in succ[header])
+
+    def live(x: str) -> bool:
+        seen, work = {x}, [x]
+        while work:
+            b = work.pop()
+            if b in blocks or f.blocks[b][-1].op == "ret":
+                return True
+            for n in succ[b]:
+                if n not in seen:
+                    seen.add(n)
+                    work.append(n)
+        return False
+    exiting = {b for b in blocks if any(s not in blocks and live(s) for s in succ[b])}
+    region = {header} | {s for s in succ[header] if s in blocks and s != header and set(preds.get(s, [])) == {header}
+                         and s not in latches and s in exiting}
+    if exiting - region:
+        return False
+    return bool(exiting)
 
 
 def _trip_fact_lines(args: List[str], o1: Path, llvm_bin: Path, tmax: int) -> str:
