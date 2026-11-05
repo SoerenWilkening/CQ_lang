@@ -29,3 +29,4 @@ One line per decision on what CQ_spec leaves open. OWNER-FLAG: we proceed on it,
 - C (cq-kzfv): DECIDED — CR wins: excess printf arguments are the format entry's fields and ignored; the evaluator splits by the callee's known arity; an unknown callee after a surplus is a SPEC_ISSUES entry.
 - D (cq-ytux): DECIDED — INPUT bytes are classical bus stores (ABI 1.10), so fgets overwrites QUANTUM cells as C does; rt_tape.c's host_write was a bug.
 - Stops: OWNER RULED 2026-11-05: no-fence stands. Old `unimplemented()` sites stay no-ops, new code does not stop either; no fatal error, guard or decline for an unbuilt shape; `noteUnbuilt` writes one non-fatal log line naming the site; the checker decides correctness.
+- cq-fti6: DECIDED — quantum-length copy under c: per-byte `t = and_i1(p_j, c)` kept, `p_j` undone in-trip; overflow is `(n > K2) & c` kept, raw `icmp_ugt_i64_hl(n, K2)` undone at once (raw would read 1 on an untaken arm).
