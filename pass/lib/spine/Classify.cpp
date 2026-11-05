@@ -284,6 +284,12 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
         if (auto *R = dyn_cast<CallBase>(u); !R || !busScope(T, S, *R))
           return Class::Classical;
       return CB.use_empty() ? Class::Classical : Class::Dealloc;
+    case Intrinsic::assume:
+      // Rule 21: a hint is never consulted; one naming a rail (`"align"(p, r)` after aligned_alloc(r, n)) is nothing.
+      for (const Use &u : CB.data_ops())
+        if (quantumValue(T, S, u.get()))
+          return Class::TemplateIntrinsic;
+      return Class::Classical;
     case Intrinsic::ptrmask:
       // Rule 21 (105): the mask of an address rail: integer templates over the address.
       return qArg || qRes ? Class::TemplateIntrinsic : Class::Classical;

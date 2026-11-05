@@ -153,7 +153,8 @@ bool isRailCall(const Value *v) {
 }
 
 // Rail handles the original program may still read: every binding with a reading use that does not dominate the
-// instruction being lowered. Over-approximate: a kept rail stays only overtaken, never wrong.
+// instruction being lowered, or that a terminator reads (a quantum branch's condition is read again at its join).
+// Over-approximate: a kept rail stays only overtaken, never wrong.
 void liveLaterRails(LoweringContext &ctx, DenseSet<const Value *> &live) {
   spine::Shared &sh = spine::shared(ctx);
   const Instruction *cur = sh.cur;
@@ -163,7 +164,7 @@ void liveLaterRails(LoweringContext &ctx, DenseSet<const Value *> &live) {
     spine::readingUses(sh, orig, uses);
     for (const Use *U : uses) {
       auto *ui = dyn_cast<Instruction>(U->getUser());
-      if (!ui || ui == cur || (cur && DT.dominates(ui, cur)))
+      if (!ui || (!ui->isTerminator() && (ui == cur || (cur && DT.dominates(ui, cur)))))
         continue;
       for (const Operand &o : ops)
         if (o.handle)
