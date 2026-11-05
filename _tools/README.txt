@@ -109,29 +109,10 @@ were reproduced byte for byte by the old and the new tooling. A trace_check erro
                 one section, no bus access between) and the second swap's rail is freed. Not checked: the X bracket of
                 a controlled access, the Readers clause, host calls and plain stores as memory version changes
                 (they leave no trace line), value equality.
-TOOL STATUS: sample_check.py and sample_rt.c still model the retired per-object memory, so no flat-bus example can be
-SAMPLE-checked until they change (the trace path above works):
-  sample_check.py  Eval.qram, line 272 (qram_alloc): n = 0 makes a bus of zero cells, so every access is out of range.
-                   cqrt_qram_alloc_i8(0) must make the one overlay bus (2^64 byte cells, cell j = host byte at j).
-                   Eval.qram, line 290: `a[1] & M(32)` cuts a classical address to 32 bits; it must be M(64).
-                   Eval.qram, lines 291-310 (load, store, pop): one cell per call, cell size from W (line 274). An
-                   access must cover store-size(W) byte cells (f80: 10, not 16) and the tape slot the displaced bytes.
-                   Eval.call0, line 239, and Eval.qram: no cqrt_qram_swap_<W> (a swap would run as a store).
-                   HostCells.__getitem__, lines 173-175: a host byte is read once and cached. A HOST cell must be read
-                   at each access; only QUANTUM cells are kept by the evaluator.
-                   Overlay store: a store with classical-valued value, address and control must write the host byte.
-                   No evaluator-to-host channel exists (run.mem, lines 431-432, only reads) and the evaluator has no
-                   notion of a classical-valued rail.
-                   Eval.qram, lines 273-286 (qram_alloc_host, qram_free, qram_realloc) and Eval.tvalue, lines 326-328
-                   (qrom_load): retired symbols, to delete.
-                   Eval.call, line 229: every qram op inside a cq_invert region is Unsupported (SKIPPED).
-                   stubs_ll, line 340: stubs only cqrt_* / cq_template_* declarations; @__cq_mem and @__cq_alloc need
-                   definitions on the lowered side.
-                   check, lines 501-511: compares outputs, measured values and angles only; memory is not compared.
-  sample_rt.c      sc_call, line 42 (the `M addr len` request): dereferences the raw address, so a load of an unreadable
-                   address kills the run ("lowered run: exit -11") where the model reads 0. Needs a guarded read, a
-                   write request for the overlay store, and __cq_mem / __cq_alloc.
-  drivers.txt      60_qft passes an array of handles in host memory (a slot array).
+TOOL STATUS: sample_check.py and sample_rt.c are RETIRED for bus examples (owner, 2026-11-05). They model the old
+per-object memory and are kept only for examples with no memory access. Bus examples are checked here by the trace path
+above; their semantic check is the implementing compiler's own evaluator (CQ_lang2 checker), which reports a reference
+that disagrees with its C program as a spec issue.
 A QUANTUM ANGLE (79, 132, 141, 143; 142 and 185: regeneration owed) is one backend primitive for exactness reasons (rule 15).
 seq_locals.py FILE.ll    makes a hand-written file's local numbering sequential per function (LLVM refuses gaps) before
                          renumber_locals.py; keeps comments.
