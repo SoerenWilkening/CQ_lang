@@ -517,6 +517,18 @@ static void effect_line(const event *e, const char *when) {
   log_line(&b);
 }
 
+/* CR rule 24: what a resolved `volatile_load` entry reads: the bytes at its address field, on the host. */
+static uint64_t volatile_read(const event *e) {
+  uint64_t x = 0, at = e->nfields ? field_low64(&e->fields[0]) : 0;
+  unsigned bits = (unsigned)strtoul(e->rw[0] ? e->rw + 1 : "0", NULL, 10);
+  for (unsigned j = 0; g_bus && e->nfields && j < (bits + 7) / 8 && j < 8; j++) {
+    uint8_t b = 0;
+    g_bus->peek(at + j, &b);
+    x |= (uint64_t)b << (8 * j);
+  }
+  return x;
+}
+
 /* Resolves events in sequence order as far as they go. */
 static void advance(void) {
   while (!g_blocked && g_front < g_nev) {
@@ -537,7 +549,9 @@ static void advance(void) {
     if (e->cls == C_NONE) {                            /* an all-classical INPUT call took C_INPUT at its call */
       e->cls = C_RESOLVED;
       e->performed = e->pred;
-      if (e->k == E_EFFECT)
+      if (e->k == E_EFFECT && e->str && !strcmp(e->str, "volatile_load"))
+        set_result(e, e->pred ? volatile_read(e) : 0, 1);
+      else if (e->k == E_EFFECT)
         set_result(e, e->pred ? cq_fx_result(entry_hash(e, cq_fx_find(e->str)), (unsigned)strtoul(e->rw[0] ? e->rw + 1 : "0", NULL, 10)) : 0, 1);
       effect_line(e, "call");
     }
