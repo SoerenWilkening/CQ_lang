@@ -37,15 +37,6 @@ namespace cq::bus {
 
 namespace {
 
-[[noreturn]] void stop(const Twine &what, const Value *at) {
-  std::string s;
-  raw_string_ostream os(s);
-  os << "cq: unimplemented: bus: " << what;
-  if (at)
-    os << ": " << *at;
-  report_fatal_error(Twine(os.str()), /*gen_crash_diag=*/false);
-}
-
 bool isTheta(const Value *v) {
   auto *c = dyn_cast<CallInst>(v);
   const Function *G = c ? c->getCalledFunction() : nullptr;
@@ -610,12 +601,7 @@ Plan &plan(LoweringContext &ctx) {
         continue;
       auto *def = dyn_cast<Instruction>(F.steps[e].def);
       if (!F.changes.empty())
-        stop("rule 5 Readers: a form with changes in its interval that ends at a reader before its store", F.S);
-      for (const Instruction *x = def->getNextNode(); x && x != F.S; x = x->getNextNode())
-        if (isa<LoadInst>(x) && !hostAccess(ctx, *x))
-          stop("the in-place form: a part ends at a reader before the store and a bus load lies between", x);
-      if (def->getParent() != F.S->getParent())
-        stop("the in-place form: a part ends at a reader in another block than the store", def);
+        continue;   // the whole chain runs at the store, on the form or the copy
       p->earlyAt[def] = {&F, k};
     }
 
@@ -677,7 +663,6 @@ Operand zOperand(LoweringContext &ctx, const Value *z, Type *U) {
       return Operand{it->second.rail, true};
     if (auto *zx = dyn_cast<ZExtInst>(z); zx && zx->getSrcTy() == U)
       return ctx.operand(zx->getOperand(0));
-    stop("the in-place form: an operand with no value at the form's width", z);
   }
   return ctx.operand(z);
 }
@@ -916,15 +901,7 @@ void takeCopy(LoweringContext &ctx, Form &F, const Plan &P, const Instruction &a
   const DataLayout &DL = ctx.M.getDataLayout();
   F.d = nullptr;
   F.copied = true;
-  Operand addr{nullptr, false};
-  bool computed = true;
-  DominatorTree &DT = spine::shared(ctx).dt(*at.getFunction());
-  if (auto *pi = dyn_cast<Instruction>(F.ptr); pi && !DT.dominates(pi, &at))
-    computed = false;
-  if (computed)
-    addr = address(ctx, F.ptr);
-  else
-    stop("rule 5 Readers: the address of the form is not computed at the first change of its interval", &at);
+  Operand addr = address(ctx, F.ptr);
   Value *d = nullptr;
   if (!addr.handle && before) {
     uint64_t Sp = DL.getTypeStoreSize(F.U);
@@ -975,8 +952,8 @@ void takeCopy(LoweringContext &ctx, Form &F, const Plan &P, const Instruction &a
   F.copy = phi;
 }
 
-// The steps act on the copy (rule 2) and the store is a kept store. Returns the rail of y'.
-Value *stepsOnCopy(LoweringContext &ctx, Form &F, Value *copy, bool phiCopy) {
+// The steps act on the copy (rule 2) and the store is a kept store. rails: the rail of each step's value.
+void stepsOnCopy(LoweringContext &ctx, Form &F, Value *copy, bool phiCopy, SmallVectorImpl<Value *> &rails) {
   Value *c = accessControl(ctx);
   Value *cur = copy;
   RailId cid = phiCopy ? ctx.unc().recordExternal(copy, Role::Overtaken) : ctx.unc().idOf(copy);
@@ -984,6 +961,7 @@ Value *stepsOnCopy(LoweringContext &ctx, Form &F, Value *copy, bool phiCopy) {
   for (const Step &st : F.steps) {
     if (st.kind == Step::Theta) {
       rotate(ctx, *st.theta, cur, F.U, c);
+      CallInst *gate = cast<CallInst>(&*std::prev(ctx.B().GetInsertPoint()));
       if (cur == copy) {
         rotated = true;
         if (phiCopy)
@@ -993,13 +971,24 @@ Value *stepsOnCopy(LoweringContext &ctx, Form &F, Value *copy, bool phiCopy) {
       } else {
         ctx.unc().setRole(ctx.unc().idOf(cur), Role::Frozen);
       }
-      ctx.unc().noteNonDiagonal(ctx.unc().idOf(cur), cast<CallInst>(&*std::prev(ctx.B().GetInsertPoint())));
+      ctx.unc().noteNonDiagonal(ctx.unc().idOf(cur), gate);
     } else if (st.kind == Step::Single) {
       SmallVector<Raw, 1> none;
       cur = applyUpdate(ctx, st.a, cur, F.U, false, none, /*recorded=*/true);
     } else {
-      stop("rule 5 Readers: a select step on the copy of y", st.def);
+      // A select over the arms' rails (rule 9): a template on a rail condition, a classical select over the handles.
+      SmallVector<Raw, 1> none;
+      Value *a = applyUpdate(ctx, st.a, cur, F.U, false, none, true), *b = applyUpdate(ctx, st.b, cur, F.U, false, none, true);
+      Operand k = ctx.operand(st.cond);
+      if (k.handle) {
+        cur = ctx.emitTemplate(spec2("select", railTypeOf(F.U), ""), {k, Operand{a, true}, Operand{b, true}});
+      } else {
+        auto *m = cast<Instruction>(ctx.B().CreateSelect(k.v, a, b));
+        ctx.unc().recordMerge(m);
+        cur = m;
+      }
     }
+    rails.push_back(cur);
   }
   emitKeptStore(ctx, F.U, F.copyAddr, Operand{cur, true});
   if (phiCopy && !rotated && cur != copy) {
@@ -1011,22 +1000,24 @@ Value *stepsOnCopy(LoweringContext &ctx, Form &F, Value *copy, bool phiCopy) {
     abi::CoreSpec spec{abi::Core::QramLoad, railTypeOf(F.U), F.copyCtl != nullptr, !F.copyAddr.handle, /*unc=*/true};
     ctx.emitCore(spec, args);
   }
-  return cur;
 }
 
 void lowerWithChanges(LoweringContext &ctx, Form &F, const Plan &P) {
-  if (F.ends.size() != 1)
-    stop("rule 5 Readers: a form with changes in its interval that ends at a reader", F.S);
-  if (!F.copied || !F.copy)
-    internalError("bus: a form's store reached before the copy of its interval", F.S);
+  if (!F.copied || !F.copy) {
+    // The interval's first change was not walked before the store: the copy is taken here.
+    F.copyAddr = address(ctx, F.ptr);
+    F.copyCtl = accessControl(ctx);
+    F.copy = emitLoad(ctx, F.U, F.copyAddr);
+    F.d = nullptr;
+  }
   F.copied = false;
   IRBuilder<> &B = ctx.B();
-  const Value *last = F.steps.back().def;
-  bool reader = hasReader(F, last, P);
+  SmallVector<Value *, 4> rails;
   if (!F.d) {
-    Value *r = stepsOnCopy(ctx, F, F.copy, /*phiCopy=*/false);
-    if (reader)
-      spine::bindOperand(ctx, last, Operand{r, true});
+    stepsOnCopy(ctx, F, F.copy, /*phiCopy=*/false, rails);
+    for (unsigned e : F.ends)
+      if (hasReader(F, F.steps[e].def, P))
+        spine::bindOperand(ctx, F.steps[e].def, Operand{rails[e], true});
     return;
   }
   LLVMContext &C = ctx.M.getContext();
@@ -1037,23 +1028,30 @@ void lowerWithChanges(LoweringContext &ctx, Form &F, const Plan &P) {
   B.CreateCondBr(F.d, form, over);
   B.SetInsertPoint(form);
   Operand addr = address(ctx, F.ptr);
-  emitSteps(ctx, F, 0, F.steps.size(), addr, accessControl(ctx));
-  Value *loaded = reader ? emitLoad(ctx, F.U, addr) : nullptr;
+  Value *fc = accessControl(ctx);
+  // Each part on the cell, the plain load of a value with a reader after its swap-in.
+  SmallVector<std::pair<unsigned, Value *>, 2> loaded;
+  unsigned from = 0;
+  for (unsigned e : F.ends) {
+    emitSteps(ctx, F, from, e + 1, addr, fc);
+    from = e + 1;
+    if (hasReader(F, F.steps[e].def, P))
+      loaded.push_back({e, emitLoad(ctx, F.U, addr)});
+  }
   BasicBlock *formEnd = B.GetInsertBlock();
-  BranchInst *br1 = B.CreateBr(join);
+  B.CreateBr(join);
   B.SetInsertPoint(over);
-  Value *r = stepsOnCopy(ctx, F, F.copy, /*phiCopy=*/true);
+  stepsOnCopy(ctx, F, F.copy, /*phiCopy=*/true, rails);
   BasicBlock *overEnd = B.GetInsertBlock();
   BranchInst *br2 = B.CreateBr(join);
   ctx.unc().flushBefore(br2);
-  (void)br1;
   B.SetInsertPoint(join);
-  if (reader) {
-    PHINode *phi = B.CreatePHI(r->getType(), 2);
-    phi->addIncoming(loaded, formEnd);
-    phi->addIncoming(r, overEnd);
+  for (auto &[e, l] : loaded) {
+    PHINode *phi = B.CreatePHI(l->getType(), 2);
+    phi->addIncoming(l, formEnd);
+    phi->addIncoming(rails[e], overEnd);
     ctx.unc().recordMerge(phi);
-    spine::bindOperand(ctx, last, Operand{phi, true});
+    spine::bindOperand(ctx, F.steps[e].def, Operand{phi, true});
   }
   // Rule 5 sentence 1: a load copy only the steps read (an angle, an operand) is un-copied here, past the two arms that
   // read it, not left to a later flush: the arms are one trip of a classical loop like any other code.
