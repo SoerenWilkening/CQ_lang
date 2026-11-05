@@ -488,7 +488,7 @@ struct Uncompute::Impl {
                       fwd);
       if (ops[i].handle) {
         RailId r = lookup(ops[i].v, who, fwd);
-        if (anyReleased(r) && (getenv("CQDUMP") ? fwd->getFunction()->print(llvm::errs()), true : true))
+        if (anyReleased(r))
           internalError(std::string("uncompute: ") + who + ": operand " + describe(ops[i].v) +
                             " was already uncomputed and freed",
                         fwd);
@@ -886,8 +886,7 @@ struct Uncompute::Impl {
     if (!latest) {
       before = &*bb->getFirstInsertionPt();
     } else if (latest->isTerminator()) {
-      if (getenv("CQDUMP")) latest->getFunction()->print(llvm::errs());
-        internalError("uncompute: a resolvable rail is used by a terminator: " + describe(rails[g].handle), latest);
+      internalError("uncompute: a resolvable rail is used by a terminator: " + describe(rails[g].handle), latest);
     } else if (isa<PHINode>(latest)) {
       before = &*bb->getFirstInsertionPt();
     } else {
