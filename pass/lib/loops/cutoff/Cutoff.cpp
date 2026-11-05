@@ -24,7 +24,9 @@
 //    evaluated on the initial state; each of the c trips is body then test. q_j = q_{j-1} & cont(R_j),
 //    cont = the region continues into the body; c bodies, c + 1 region evaluations; q_c is a_K. Every
 //    exit leaves from the region; the state is frozen once the loop has exited (q = 0), so the last
-//    region evaluation holds every exit value.
+//    region evaluation holds every exit value not computed from an induction or a bus load (those take the
+//    general exit capture). With an exit from the body too (two exit tests per trip, 189) a_K is the
+//    predicate after the K-th latch test: c bodies, c region evaluations.
 //  - Body form (otherwise): trip j is the whole body under q_j, cont_j its back-edge predicate. Every
 //    exit leaves from the single latch; a value read after the loop is the latch incoming of a quantum
 //    header phi, so its exit value is that phi's final state (the state advances on q_j, the trip ran).
@@ -34,9 +36,9 @@
 // Nested K-loops are lowered the same way inside each trip, seeded by the trip predicate & the inner
 // header's predicate within the trip (68, 153).
 //
-// An instruction with effects in the body (a call, a store, an allocation, a phase or a rotation) is
+// An instruction with effects in the body (a call, a bus access, an allocation, a phase or a rotation) is
 // lowered under the trip predicate q_j & its block's trip-local predicate (rule 14 case 2, cq-99f7's
-// tripFlag); a pure instruction or a load is computed in every trip.
+// tripFlag); a pure instruction is computed in every trip.
 // A trip is any acyclic code (cq-b58q): classical and quantum branches and switches are its predicates (a
 // classical term seeded, rule 8), a classical phi a classical select (rule 9), several latches end a trip on
 // one back edge, several header entries merge a quantum start (rule 9). A read after a top-level loop that
@@ -630,7 +632,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     (void)at;
     general = true;
   };
-  // A value whose slice inside the loop reaches an induction: its trip value advances after the exit.
+  // A value whose slice inside the loop reaches an induction or a bus load: its trip value is not frozen after the
+  // exit (the address advances; a load under a predicate that is 0 reads nothing, rule 14).
   auto fromInduction = [&](const Instruction *I) {
     SmallVector<const Value *, 8> work{I};
     SmallPtrSet<const Value *, 16> seen;
@@ -639,6 +642,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       auto *VI = dyn_cast<Instruction>(V);
       if (!VI || !L.contains(VI) || !seen.insert(V).second)
         continue;
+      if (isa<LoadInst>(VI))
+        return true;
       if (auto *h = dyn_cast<PHINode>(VI)) {
         if (h->getParent() == H && VI != I && (!isQ(h) || qind.count(const_cast<PHINode *>(h))))
           return true;
@@ -1434,11 +1439,15 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       for (Instruction &I : *b) {
         if (isa<PHINode>(I) || I.isTerminator())
           continue;
-        // Rule 14 case 2: an instruction with effects (a call, a store, an allocation, a phase) runs in
+        // Rule 14 case 2: an instruction with effects (a call, a bus access, an allocation, a phase) runs in
         // trip j only where the trip runs, so it is lowered under the trip predicate (cq-99f7's
-        // tripFlag: the spine conjoins the block's own quantum predicate). A pure instruction or a load
-        // is computed in every trip; its value only reaches state through the select on q.
-        bool effects = isa<CallBase>(I) || I.mayHaveSideEffects() || I.mayWriteToMemory();
+        // tripFlag: the spine conjoins the block's own quantum predicate). A pure instruction
+        // is computed in every trip; its value only reaches state through the select on q. A bus load is an
+        // access (rule 14): a trip C would not run touches no cell and no host byte. Under q & the block's trip
+        // predicate, which for a load an exit test reads is the predicate of reaching that test, and the load's
+        // _unc takes the same rail.
+        bool effects = isa<CallBase>(I) || I.mayHaveSideEffects() || I.mayWriteToMemory() ||
+                       (isa<LoadInst>(I) && !bus::hostAccess(ctx, I));
         if (auto *II = dyn_cast<IntrinsicInst>(&I); II && (II->isLifetimeStartOrEnd() || isa<DbgInfoIntrinsic>(II)))
           effects = false;
         if (!effects) {
@@ -1455,15 +1464,16 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
             lowerConditionAsData(ctx, I);
           else
             lowerInstruction(ctx, I);
-          if (varies) {
+          // Rule 14: a value of a trip C may not run is arithmetic without inbounds, nuw or nsw (an address past the
+          // object is a value like any other, rule 21), whatever it was computed from.
+          bool gep = isa<GetElementPtrInst>(I) && !isQ(&I);
+          if (varies)
             perTrip.insert(&I);
-            // A pointer is no operand of its own (memory resolves it per access: rules 20, 21).
-            if (auto *NI = I.getType()->isPointerTy() ? nullptr : dyn_cast<Instruction>(ctx.operand(&I).v);
-                NI && NI != &I) {
+          if (varies || gep)
+            if (auto *NI = dyn_cast<Instruction>(ctx.operand(&I).v); NI && NI != &I) {
               NI->dropPoisonGeneratingFlags();
               NI->dropPoisonGeneratingMetadata();
             }
-          }
           continue;
         }
         if (!tripFlag)
@@ -1592,6 +1602,12 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         capture(q, inBody);
       Value *qb = bodyExits ? conj(q, cont, latch->getTerminator()) : q;
       advance(q);
+      // Rule 14 with two exit tests per trip (189, ruling Q15): a_K is the predicate after the K-th latch test; no
+      // header test of a (K+1)-th trip is made.
+      if (bodyExits && j + 1 == c) {
+        q = qb;
+        break;
+      }
       lowerBlocks(qb, inRegion);
       abortArms(qb, inRegion);
       if (multi)

@@ -2068,19 +2068,39 @@ public:
       // the blocks it reaches through single-predecessor in-loop edges that only compute and test
       // (no memory write, no call), none a latch. When the region holds an exit, a header run that
       // leaves through it only exits, and a trip begins on an edge from the region into the body
-      // (54: the two tests x > k and x * c > m are one test split over two blocks).
+      // (54: the two tests x > k and x * c > m are one test split over two blocks). Only a live exit counts, as for
+      // the circuit (pass/lib/loops/cutoff: testRegion, exits::unitOf): an exit into a noreturn arm or an effect-free
+      // dead end ends no test (cq-2dxe). A live exit outside the region is a second exit test per trip: the circuit
+      // ends at the K-th latch test and makes no header test of a (K+1)-th trip (ruling Q15, 189), so a header run
+      // begins a trip whatever it does.
       SmallPtrSet<BasicBlock *, 4> region;
       bool regionExits = false;
       {
+        auto liveExit = [&](BasicBlock *X) {
+          SmallVector<BasicBlock *, 8> work{X};
+          SmallPtrSet<BasicBlock *, 8> seen{X};
+          while (!work.empty()) {
+            BasicBlock *B = work.pop_back_val();
+            if (L->contains(B) || isa<ReturnInst>(B->getTerminator()))
+              return true;
+            for (BasicBlock *S : successors(B))
+              if (seen.insert(S).second)
+                work.push_back(S);
+          }
+          return false;
+        };
+        auto exiting = [&](BasicBlock *B) {
+          return any_of(successors(B), [&](BasicBlock *S) { return !L->contains(S) && liveExit(S); });
+        };
         SmallVector<BasicBlock *, 4> work{H};
         region.insert(H);
         while (!work.empty()) {
           BasicBlock *B = work.pop_back_val();
-          if (L->isLoopExiting(B))
+          if (exiting(B))
             regionExits = true;
           for (BasicBlock *S : successors(B)) {
             if (!L->contains(S) || S == H || region.count(S) || S->getSinglePredecessor() != B ||
-                L->isLoopLatch(S) || !L->isLoopExiting(S))
+                L->isLoopLatch(S) || !exiting(S))
               continue;
             bool pure = true;
             for (Instruction &I : *S)
@@ -2095,6 +2115,9 @@ public:
         }
         if (L->isLoopLatch(H))
           regionExits = false;
+        for (BasicBlock *B : L->blocks())
+          if (!region.count(B) && exiting(B))
+            regionExits = false;
       }
       if (kq) {
         if (regionExits) {

@@ -265,6 +265,7 @@ private:
   DenseSet<const BasicBlock *> merged;
   DenseMap<std::pair<const BasicBlock *, const BasicBlock *>, BasicBlock *> edgeOut;
   std::vector<std::pair<PHINode *, PHINode *>> classicalPhis;
+  DenseMap<const PHINode *, Value *> unitClassical;   // cq-j5mq: a classical phi's value on its loop unit's output edge
   DenseSet<const Instruction *> visited;
   // cq-lx8f: quantum phis of a unit's exit blocks that the loop module bound (rule 14 case 2: an exit
   // phi identified with a carried value's final state). The walker does not merge them again.
@@ -1897,7 +1898,7 @@ void Walker::emitBlock(BasicBlock *b) {
     SmallVector<const PHINode *, 4> exitPhis;
     for (auto &x : exits)
       for (PHINode &phi : x.second->phis())
-        if (spine::isQ(ctx, &phi) && !sh.binds.count(&phi) && !is_contained(exitPhis, &phi))
+        if (!sh.binds.count(&phi) && !is_contained(exitPhis, &phi))
           exitPhis.push_back(&phi);
     lowerUnit(lp);
     for (const PHINode *phi : exitPhis)
@@ -1968,6 +1969,15 @@ void Walker::emitBlock(BasicBlock *b) {
     if (tailOf.count(b) && spine::isQ(ctx, &phi)) {
       tailMerge(phi);
       blockDefs.push_back(&phi);
+      continue;
+    }
+    if (unitBoundPhis.count(&phi) && !spine::isQ(ctx, &phi)) {
+      // cq-j5mq: a classical phi the loop module bound over its exit edges: its one value on the unit's output edge.
+      Operand uv = ctx.operand(&phi);
+      PHINode *np = ctx.B().CreatePHI(phi.getType(), phi.getNumIncomingValues(), phi.getName());
+      classicalPhis.push_back({&phi, np});
+      unitClassical[&phi] = uv.v;
+      ctx.rebind(&phi, {Operand{np, false}});
       continue;
     }
     if (unitBoundPhis.count(&phi)) {
@@ -2140,6 +2150,11 @@ void Walker::run() {
       auto e = edgeOut.find({u, blk});
       if (e == edgeOut.end())
         continue;
+      if (auto uc = unitClassical.find(op); uc != unitClassical.end() && unitOf.count(u)) {
+        if (np->getBasicBlockIndex(e->second) < 0)
+          np->addIncoming(uc->second, e->second);
+        continue;
+      }
       sh.cur = u->getTerminator();
       Operand v = ctx.operand(op->getIncomingValue(i));
       if (v.handle)
