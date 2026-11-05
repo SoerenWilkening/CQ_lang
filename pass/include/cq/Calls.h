@@ -19,13 +19,12 @@ void lowerLifted(LoweringContext &, llvm::CallBase &);
 void lowerIndirect(LoweringContext &, llvm::CallBase &);
 void lowerDeclared(LoweringContext &, llvm::CallBase &);
 void lowerVarargs(LoweringContext &, llvm::Instruction &);
-// CR §1.4 (cq-tqev): the IR types of variadic S's variadic actuals, its call sites' signature (the clone's
-// formals past S.F's fixed ones).
-llvm::SmallVector<llvm::Type *, 4> variadicTypes(const TaintInfo &, const Specialization &, const llvm::Value *at);
 void lowerAsm(LoweringContext &, llvm::CallBase &);
 // C1 (cq-arch 2026-11-01, CR rule 24; 106): site lowered as a direct call of T.calleeSpecialization(site, S),
 // formal k = site operand argMap[k] (pthread_create(t, attr, f, p): argMap = {3}); M1, recordCall and the
 // twin as for a plain clone call. site's own result is not bound (the consumer binds it). Consumer: eff-conc.
 void lowerLiftedVia(LoweringContext &, llvm::CallBase &site, llvm::ArrayRef<unsigned> argMap);
 void finalize(llvm::Module &);
+// Rule 18: the clone of S has a twin: no memory write, no tainted measurement, no effect result read.
+bool hasTwin(const TaintInfo &, const Specialization &);
 }

@@ -55,6 +55,9 @@ public:
   const Pred &block(const llvm::BasicBlock *) const;
   const Pred &edge(const llvm::BasicBlock *from, const llvm::BasicBlock *to) const;
   llvm::Value *flag(LoweringContext &, const Pred &);
+  // Rule 8: the rail of the atom when the predicate is exactly its negation (the false edge is an X bracket on it), a
+  // flag that controls a kept store being kept with it (rule 5). nullptr otherwise.
+  llvm::Value *negatedAtomRail(LoweringContext &, const Pred &);
   // K1: storage owned by module pred.
 private:
   struct Impl; std::shared_ptr<Impl> impl;

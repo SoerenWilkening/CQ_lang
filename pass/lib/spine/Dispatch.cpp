@@ -52,6 +52,30 @@ bool onlyFactoredConditions(LoweringContext &ctx, const Instruction &I) {
   return true;
 }
 
+// Rule 8: -O1's logical select of two flags, read by branches alone: a conjunction of flags is and_i1 into a fresh |0>, a
+// disjunction or_i1 (138).
+bool lowerFlagSelect(LoweringContext &ctx, SelectInst &sel) {
+  if (!sel.getType()->isIntegerTy(1) || sel.use_empty() || spine::shared(ctx).conditionAsData ||
+      !all_of(sel.users(), [](const User *u) { return isa<BranchInst>(u); }))
+    return false;
+  auto *t = dyn_cast<ConstantInt>(sel.getTrueValue());
+  auto *f = dyn_cast<ConstantInt>(sel.getFalseValue());
+  bool isAnd = f && f->isZero() && !t, isOr = t && t->isOne() && !f;
+  if (!isAnd && !isOr)
+    return false;
+  Operand a = ctx.operand(sel.getCondition()), b = ctx.operand(isAnd ? sel.getTrueValue() : sel.getFalseValue());
+  if (!a.handle || !b.handle)
+    return false;
+  RailType i1{Kind::Int, 1};
+  CallInst *r = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(ctx.M.getContext())});
+  RailId rid = ctx.unc().recordSeed(r);
+  abi::CoreSpec g{isAnd ? abi::Core::AndI1 : abi::Core::OrI1, i1};
+  CallInst *c = ctx.emitCore(g, {a.v, b.v, r});
+  ctx.unc().recordCore(c, g, {a, b, Operand{r, true}}, rid);
+  spine::bindOperand(ctx, &sel, Operand{r, true});
+  return true;
+}
+
 // Rule 8: a mixed i1 used as data, -O1's logical select over a classical condition and a constant
 // arm: c ? q : false = q & c, c ? true : q = q | c (and their negated-c forms) is the i1 template
 // with c as the literal (rule 4, the handle first).
@@ -540,6 +564,8 @@ void dispatchOne(LoweringContext &ctx, Instruction &I) {
       if (sel.getType()->isVectorTy() || sel.getType()->isAggregateType())
         return aggr::lowerVectorOp(ctx, I);
       if (onlyFactoredConditions(ctx, I))
+        return;
+      if (lowerFlagSelect(ctx, sel))
         return;
       // A classical condition with a quantum arm: pred's lowerSelect emits a classical select over
       // the handles (rule 9 at a58c3a4).

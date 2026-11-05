@@ -1795,6 +1795,15 @@ void lowerBranch(LoweringContext &ctx, BranchInst &br) {
     internalError("pred: lowerBranch before PathPredicates::compute of its function", &br);
 }
 
+Value *PathPredicates::negatedAtomRail(LoweringContext &ctx, const Pred &q) {
+  std::shared_ptr<Oracle> O = taintOracle(ctx.T, ctx.S);
+  if (auto g = negatedAtom(nodeOf(q), quantumLikeFn(ctx, O))) {
+    CtxSink sink(ctx);
+    return sink.atomRail(*g);
+  }
+  return nullptr;
+}
+
 // Rule 12: a phase is rz_i1 on the flag of the quantum predicate in scope (a _ctl clone's predicate
 // included), and is deleted when there is none: a phase under a classical predicate is global.
 void lowerPhase(LoweringContext &ctx, CallInst &cqPhi) {

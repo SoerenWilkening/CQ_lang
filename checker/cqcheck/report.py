@@ -213,6 +213,10 @@ def _publish_entry(final: Path, files: Dict[str, bytes]) -> None:
         shutil.rmtree(tmp, ignore_errors=True)   # another process published the same entry
 
 
+# Rule 27, rulings Q6: the corpus's root lists, a build input of the lowering.
+CORPUS_ROOTS = Path(__file__).resolve().parents[2] / "tools" / "corpus_roots.txt"
+
+
 def lower(ex: Example, dest: Path) -> Tuple[Optional[Path], str]:
     """Our lowering of `ex`: its .O1.ll through `opt -passes=cq-lower` at K = 4. Returns (path, "")
     or (None, the internal error). Nothing is kept from a failed run but the linked input.
@@ -231,7 +235,7 @@ def lower(ex: Example, dest: Path) -> Tuple[Optional[Path], str]:
     # cached by (plugin, toolchain, K, input, the bundle linked into it): every file the run leaves
     # and its result
     # (the paths too: opt writes its input's path into the module, and messages name them)
-    entry = _tool_cache("lower", f"-cq-k-default={K_CHECK}", str(src), str(dest), text,
+    entry = _tool_cache("lower", f"-cq-k-default={K_CHECK}", CORPUS_ROOTS.read_text(), str(src), str(dest), text,
                         oracle.bundle_key(bundle) if bundle else "")
     linked_name = f"{ex.base}.linked.ll"
     if not (entry / "result").exists():
@@ -261,7 +265,7 @@ def _lower_uncached(ex: Example, src: Path, bundle: List[Path], dest: Path) -> T
             return None, f"llvm-link with the injection bundle exited {r.returncode}: {_first_error_line(r.stderr)}"
         src = linked
     r = _run([str(LLVM_BIN / "opt"), f"-load-pass-plugin={plugin_path()}", "-passes=cq-lower",
-              f"-cq-k-default={K_CHECK}", "-S", str(src), "-o", str(dest)])
+              f"-cq-k-default={K_CHECK}", f"-cq-roots={CORPUS_ROOTS}", "-S", str(src), "-o", str(dest)])
     if r.returncode != 0:
         if dest.exists():
             dest.unlink()

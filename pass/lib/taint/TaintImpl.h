@@ -100,7 +100,8 @@ struct SpecState {
   std::vector<unsigned> boundFormals; // cq-qc70: the formal each bound bounds
   bool declared = false; // rule 27: F has no body
   bool inPlace = false;  // all-classical, no flags: the function rewritten in place
-  std::vector<Lanes> formal;     // fixed formals, then the variadic actuals of this arity
+  bool plain = false;    // §1.4: the block form / plain-ptr form (Specialization::plain)
+  std::vector<Lanes> formal;     // the fixed formals (a variadic clone's block is the mask's last digit 0)
   std::vector<llvm::Type *> formalTy;
   std::string key;
 
@@ -114,6 +115,13 @@ struct SpecState {
 
   bool hasTheta = false, hasPhi = false, hasEffect = false, writesOuter = false, hasMeasure = false;
   bool hasCall = false;   // Q2: a call for rule 19's own-lowering test
+  bool busLoad = false, busLoadT = false;   // rule 18: a bus load, itself / transitively
+  bool taintedMeasure = false, readsEffect = false, noTwinT = false;   // rule 18, Q3: what forbids a twin besides a write
+  // Rule 16: the effect entries (format entries included) of this specialization; the events a later host call of
+  // its function may not overtake are these and the calls of callees with an event.
+  llvm::DenseSet<const llvm::CallBase *> effectEntries;
+  llvm::DenseSet<const llvm::CallBase *> aborts;   // a noreturn call under a quantum predicate
+  bool hasEventT = false;
   // Rule 20 (b): the allocas of F this specialization demoted (bus-resident); every other is host-resident.
   llvm::SmallPtrSet<const llvm::AllocaInst *, 4> demoted;
   bool anyQuantum = false;
@@ -153,6 +161,9 @@ struct ImplState {
   llvm::DenseMap<llvm::Type *, unsigned> laneCount;
   bool changed = false;
   bool longjmpUnderQuantum = false;
+  // Rule 16: functions called after an event (the least fixpoint, by name), and whether the module has an event.
+  llvm::DenseSet<const llvm::Function *> calledAfter;
+  bool moduleHasEvent = false;
   // Rule 23: the concrete environment facts saved into each fenv_t / fexcept_t object (fegetenv,
   // feholdexcept, fegetexceptflag), joined over every save; an object never saved holds none.
   std::map<const llvm::Value *, uint8_t> fenvSaved;   // key: the alloca or constant; nullptr: any other object

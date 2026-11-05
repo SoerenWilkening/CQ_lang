@@ -15,6 +15,7 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Module.h"
 #include "llvm/TargetParser/Triple.h"
 #include "llvm/IR/Value.h"
@@ -67,6 +68,42 @@ namespace cq {
 using namespace llvm;
 // A library function LLVM knows by semantics (TargetLibraryInfo for the module's triple), with its
 // LibFunc in lf.
+// The C name a declared clone is named after (CR §1.4 fn). Rule 18: an LLVM math intrinsic on a
+// quantum operand is the call of the libm function of the same name: llvm.<n>.<types> is n for a
+// double, nf for a float, nl for an x86_fp80 first operand (175).
+std::string calleeName(const Function &F, const Value *at) {
+  if (!F.isIntrinsic())
+    return F.getName().str();
+  StringRef n = F.getName();
+  if (!n.consume_front("llvm.") || n.empty())
+    internalError("calls: an intrinsic whose name is not llvm.<name>.<types>", at);
+  std::string base = n.take_until([](char c) { return c == '.'; }).str();
+  Type *t = F.arg_size() ? F.getFunctionType()->getParamType(0) : nullptr;
+  // The intrinsics whose C function has another name (taint's libmNameOf names the same): IEEE 754-2019
+  // minimum/maximum are C23 fminimum/fmaximum; powi has no C name and is LLVM's own libcall,
+  // compiler-rt's __powi<m>f2.
+  if (F.getIntrinsicID() == Intrinsic::minimum)
+    base = "fminimum";
+  else if (F.getIntrinsicID() == Intrinsic::maximum)
+    base = "fmaximum";
+  else if (F.getIntrinsicID() == Intrinsic::powi && t &&
+           (t->isFloatTy() || t->isDoubleTy() || t->isX86_FP80Ty()))
+    return t->isFloatTy() ? "__powisf2" : t->isDoubleTy() ? "__powidf2" : "__powixf2";
+  if (t && t->isDoubleTy())
+    return base;
+  if (t && t->isFloatTy())
+    return base + "f";
+  if (t && t->isX86_FP80Ty())
+    return base + "l";
+  // Owner 2026-11-03 (no fences): whatever LLVM does. Codegen promotes half/bfloat to float and scalarises a vector
+  // per element, so the name is the element type's: half/bfloat -> the float name, anything else the double name.
+  if (Type *e = t ? t->getScalarType() : nullptr; e && (e->isHalfTy() || e->isBFloatTy() || e->isFloatTy()))
+    return base + "f";
+  if (Type *e = t ? t->getScalarType() : nullptr; e && e->isX86_FP80Ty())
+    return base + "l";
+  return base;
+}
+
 bool libFuncOf(const Function &F, LibFunc &lf) {
   static thread_local std::unique_ptr<TargetLibraryInfoImpl> impl;
   static thread_local std::string triple;

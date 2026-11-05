@@ -37,6 +37,8 @@ struct Operand { llvm::Value *v; bool handle; };    // a rail handle, or a class
 // cq-my17 (rule 16, 99): F is a library function LLVM knows (TargetLibraryInfo for the module's triple,
 // prototype checked), its LibFunc in lf; a Mach-O asm label "\01_n" names C function n.
 bool libFuncOf(const llvm::Function &F, llvm::LibFunc &lf);
+// The C name of a callee: the function's own, or the libm function an LLVM math intrinsic stands for (rule 18).
+std::string calleeName(const llvm::Function &F, const llvm::Value *at);
 // cq-z6q1 (CR rule 14; 189): the exit of the loop headed by `header` from block `exiting` has an exit count
 // SCEV computes (its symbolic maximum): a classical exit test that bounds the trip count. A classical exit
 // whose count LLVM cannot compute (189's NULL read from memory) is no classical bound. Its own analyses.
