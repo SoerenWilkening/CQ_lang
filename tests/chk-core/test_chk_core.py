@@ -1244,6 +1244,17 @@ class ExitRoles(unittest.TestCase):
         self.assertLess(out.index("cqrt_copy_i32(i32 %r"), out.index("set_store_kept(i32 %c)"))
         self.assertLess(out.index("set_store_kept(i32 %c)"), out.index("cqrt_copy_i32(i32 %x"))
 
+    def test_kept_result_no_twin(self):
+        # rule 18: a callee with no twin leaves its rail result with the caller; one with a twin stays a leak if not zeroed
+        text = ("define i32 @w(i32 %x) {\n  %r = call i32 @cq_template_not_i32(i32 %x)\n  ret i32 %r\n}\n"
+                "define i32 @t(i32 %x) {\n  %r = call i32 @cq_template_not_i32(i32 %x)\n  ret i32 %r\n}\n"
+                "define void @t_unc(i32 %r, i32 %x) {\n  ret void\n}\n"
+                "define void @f(i32 %x) {\n  %a = call i32 @w(i32 %x)\n  %b = call i32 @t(i32 %x)\n  ret void\n}\n")
+        out = run.kept_results_module(text, run.handle_returning_fns(text))
+        self.assertEqual(out.count("call void @cqe__set_store_kept(i32 %a)"), 1)
+        self.assertNotIn("set_store_kept(i32 %b)", out)
+        self.assertNotIn("set_store_kept(i32 %r)", out)
+
     def test_ctl_measure_named(self):
         text = ("define i32 @p_t_ctl(i32 %c, i32 %v) {\n  %m = call i32 @cqrt_measure_i32(i32 %v)\n  ret i32 %m\n}\n"
                 "define i32 @p_t(i32 %v) {\n  %m = call i32 @cqrt_measure_i32(i32 %v)\n  ret i32 %m\n}\n")

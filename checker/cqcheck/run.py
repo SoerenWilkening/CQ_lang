@@ -534,7 +534,7 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
             tot = default_env_module(tot)
         if any(Path(o).name == "host_fx.o" for o in objs):  # cq-e4jk; a test's restricted runtime may omit it
             tot = host_effects_module(tot, defined)
-        tot = ctl_measures_module(kept_copies_module(tot))
+        tot = ctl_measures_module(kept_results_module(kept_copies_module(tot), handle_returning_fns(canon)))
         from cqcheck import drivers
         tot += drivers.out_globals_ir(ctext if ctext is not None else canon, canon, "__cqe_out_globals",
                                       "cqd_out_mem", "cqd_out_object")
@@ -1116,6 +1116,29 @@ def kept_copies_module(text: str) -> str:
             out.append(f"{m.group(1)}call void @cqe__set_store_kept(i32 {m.group(3)})")
             used = True
     if used:
+        out.append("declare void @cqe__set_store_kept(i32)")
+    return "\n".join(out) + "\n"
+
+
+_HANDLE_CALL = re.compile(r"^(\s+)(%[-\w.$\"]+) = (?:tail |notail )?call [^@]*@(\"?)([-\w.$]+)\3\(")
+
+
+def kept_results_module(text: str, handle_fns: Sequence[str]) -> str:
+    """Rule 18: a function that writes memory has no twin and its rail results are KEPT by the caller; rule 19:
+    an own symbol's rail result is escaped, never freed. Kept rails a rule names (CR §6 item 1): the result of a
+    call of a defined handle-returning function with no `_unc` in the module takes the kept role. A callee with a
+    twin is not touched: a result its twin should have zeroed and did not stays a leak."""
+    fns = {f for f in handle_fns if not re.search(rf"(?m)^(?:define|declare)\b[^@\n]*@\"?{re.escape(f)}_unc\"?\(", text)}
+    if not fns:
+        return text
+    out, used = [], False
+    for line in text.splitlines():
+        out.append(line)
+        m = _HANDLE_CALL.match(line)
+        if m and m.group(4) in fns and re.match(r"^\s+\S+ = (?:tail |notail )?call (?:[^@]*\s)?i32 @", line):
+            out.append(f"{m.group(1)}call void @cqe__set_store_kept(i32 {m.group(2)})")
+            used = True
+    if used and "declare void @cqe__set_store_kept" not in text:
         out.append("declare void @cqe__set_store_kept(i32)")
     return "\n".join(out) + "\n"
 
