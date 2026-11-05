@@ -223,6 +223,7 @@ void emitKeptStore(LoweringContext &ctx, Type *T, Operand addr, Operand value) {
   args.append({m, addr.v, v});
   CallInst *call = ctx.emitCore(spec, args);
   ctx.unc().noteKeptStore(call, v, c);
+  ctx.unc().noteVersionChange(call);
 }
 
 void lowerLoad(LoweringContext &ctx, LoadInst &L) {

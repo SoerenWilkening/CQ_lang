@@ -261,6 +261,7 @@ struct Uncompute::Impl {
     SmallVector<RailId, 2> mergedInto; // U1: the merges that name this rail as an arm
     unsigned group = kNone;            // U2: the call group this rail is a member of
     bool explicitKept = false;         // U2: setRole gave this rail a kept role itself
+    bool storeKept = false;            // rule 5 sentence 3: the value or control rail of a kept store
     // cq-lshe (CR rule 9, §0): the kept merges that keep this rail where they choose it. It stays
     // resolvable: its item runs under the classical predicate "no keeper chose it" (a re-branch on the
     // conditions that chose the arm), placed after its own uses (not those through a keeper).
@@ -2924,7 +2925,7 @@ void Uncompute::noteKeptStore(CallInst *store, Value *value, Value *ctl) {
     }
     if (!Impl::keptRole(x.role))
       setRole(r, Role::Kept);
-    I.rails[r].uses.push_back(store);
+    I.rails[r].storeKept = true;
   }
 }
 
@@ -3032,6 +3033,8 @@ void Uncompute::noteNonDiagonal(RailId target, Instruction *gate) {
 
 void Uncompute::cleanupBijective(RailId oldRail, const abi::TemplateSpec &inverse, ArrayRef<Operand> ops) {
   Impl::Rail &x = impl->rail(oldRail, "cleanupBijective");
+  if (x.storeKept)
+    return;   // rule 6: the old value is kept when it is the value or control rail of a kept store
   if (x.released || !x.exitsDone.empty())
     internalError("uncompute: cleanupBijective of a rail already uncomputed", x.handle);
   if (x.cleanup)
@@ -3058,6 +3061,8 @@ void Uncompute::cleanupBijective(RailId oldRail, const abi::TemplateSpec &invers
 void Uncompute::cleanupBijectiveUnder(RailId oldRail, Value *guard, const abi::TemplateSpec &inverse,
                                       ArrayRef<Operand> ops, bool everyPath) {
   Impl::Rail &x = impl->rail(oldRail, "cleanupBijectiveUnder");
+  if (x.storeKept)
+    return;   // rule 6: the old value is kept when it is the value or control rail of a kept store
   if (!guard || !guard->getType()->isIntegerTy(1))
     internalError("uncompute: cleanupBijectiveUnder without a classical i1 guard", x.handle);
   if (x.released || !x.exitsDone.empty())

@@ -444,6 +444,10 @@ private:
           // reset before a prep) and not_i1 (rule 8 bracket on a bare i1 flag).
           set(S, V, writeResult(st, src, hasSources));
           break;
+        case Role::Swap:
+          // After a swap the rail holds what the cells held: nothing this analysis tracks, nothing it may reject.
+          set(S, V, (st & SX) | ((st & ~SX) ? uint8_t(SK | SM | SD | SF) : 0));
+          break;
         case Role::Rotate:
           if (rep && st == SM)
             report("inplace-on-frozen", "rotation of a measured rail", I);
@@ -791,6 +795,13 @@ private:
               });
             if (outsOk && argsMatch(*Fwd, *CB, k, nullptr))
               matched = true;
+          }
+          // CR §1.4: a _ctl twin may take the predicate first, then outs, then the other arguments (205, 98).
+          for (unsigned k = 0; S.clone->ctl && Fwd->arg_size() && k + Fwd->arg_size() <= CB->arg_size() && !matched; ++k) {
+            bool same = sameOperand(Fwd->getArgOperand(0), CB->getArgOperand(0), Role::Word);
+            for (unsigned j = 1, e = Fwd->arg_size(); j < e && same; ++j)
+              same = sameOperand(Fwd->getArgOperand(j), CB->getArgOperand(k + j), Role::Word);
+            matched = same;
           }
           if (matched)
             break;

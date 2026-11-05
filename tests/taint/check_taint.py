@@ -27,6 +27,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 BUNDLE_DEPENDENT = {'169': 'cq-dav', '190': 'cq-dav'}
+# Bead cq-6ols: clone sets of constructions later flat-memory waves land (_t table clones, one recursion clone, the
+# plain-ptr byval form, needsCtl, _pure, the variadic mask). Printed, not failed, until that wave removes its entry.
+LATER_WAVE = {'67': 'W3d', '70': 'W3d', '95': 'W3d', '96': 'W4', '97': 'W4', '98': 'W4', '102': 'W4', '106': 'W6',
+              '109': 'W3d', '161': 'W4', '164': 'W3d', '173': 'W3d', '174': 'W3d', '194': 'W3d', '204': 'W4',
+              '205': 'W4', '211': 'W4', '212': 'W4'}
 
 
 def strip_comment(line):
@@ -117,9 +122,7 @@ def main():
     ap.add_argument('-v', action='store_true')
     ap.add_argument('examples', nargs='*')
     a = ap.parse_args()
-    # Until the bus constructions land (W3+), the examples the flat-memory cut keeps lowering.
-    nonbus = set((ROOT / 'tests' / 'nonbus_examples.txt').read_text().split())
-    exs = sorted(p for p in (Path(a.spec) / 'examples').iterdir() if p.is_dir() and p.name in nonbus)
+    exs = sorted(p for p in (Path(a.spec) / 'examples').iterdir() if p.is_dir())
     if a.examples:
         exs = [e for e in exs if e.name.split('_')[0] in a.examples or e.name in a.examples]
     with ThreadPoolExecutor(8) as pool:
@@ -132,6 +135,10 @@ def main():
             print('EXCLUDED %s (%s, needs the v1 injection bundle): %s' % (
                 name, BUNDLE_DEPENDENT[num], '; '.join(reasons) if reasons else 'matches'))
             continue
+        if num in LATER_WAVE:
+            excluded += 1
+            print('LATER %s (%s, cq-6ols): %s' % (name, LATER_WAVE[num], '; '.join(reasons) if reasons else 'matches'))
+            continue
         if reasons:
             bad += 1
             print('FAIL %s: %s' % (name, '; '.join(reasons)))
@@ -140,7 +147,7 @@ def main():
         elif a.v:
             print('ok   %s' % name)
     checked = len(results) - excluded
-    print('taint: %d of %d examples match (%d excluded pending the bundle)' % (
+    print('taint: %d of %d examples match (%d excluded pending the bundle or a later wave)' % (
         checked - bad, checked, excluded))
     return 1 if bad else 0
 

@@ -88,9 +88,7 @@ def main():
     if lock.returncode != 0:
         fail(f"spec.lock: {lock.stdout.strip()} {lock.stderr.strip()}")
 
-    # The verifier's bus rules land with W3a (load copy, kept store, tape slot): the non-bus references until then.
-    nonbus = set(Path(__file__).resolve().parents[1].joinpath("nonbus_examples.txt").read_text().split())
-    examples = sorted(p for p in Path(args.spec, "examples").iterdir() if p.is_dir() and p.name in nonbus)
+    examples = sorted(p for p in Path(args.spec, "examples").iterdir() if p.is_dir())
     refs = []
     for d in examples:
         found = sorted(d.glob("*.lowered.ll"))

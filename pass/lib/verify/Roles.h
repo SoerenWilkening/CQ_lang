@@ -18,6 +18,7 @@ enum class Role : uint8_t {
   Classical,  // a literal / classical value; a handle here is handle-in-classical-op
   Read,       // a handle read (operand, control, bus, tape, angle rail)
   Write,      // the target of an in-place XOR-type gate (not/and/or/xor_i1 t, copy d, xorc h)
+  Swap,       // qram_swap's rail: it takes the cells' content and gives its own (rule 5 in-place form)
   Rotate,     // the target of ry / ry_qangle
   UncOut,     // the result rail an _unc returns to |0>
   Free,       // cqrt_free
