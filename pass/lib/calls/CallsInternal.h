@@ -11,12 +11,12 @@
 
 namespace cq::calls {
 // One row of the module's clone table: the function's name and C function type (read before the lowered own symbols
-// replaced the originals), its table clones by symbol, and whether their twins leave the results allocated (§1.4).
+// replaced the originals), its table clones by symbol, and whether each one's twin leaves the results allocated (§1.4).
 struct TableRow {
   std::string fn;
   llvm::FunctionType *type;
   std::string forward, ctl;
-  bool keepsResults = false;
+  bool forwardKeepsResults = false, ctlKeepsResults = false;
 };
 // Rule 19: the rotations of the clone its twin does not repeat (Calls.cpp mintSites), recorded when it is materialized. The
 // forward's code of each carries !cq.mint with its index; a table clone's pushes !cq.mint.push.

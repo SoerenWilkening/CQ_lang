@@ -161,6 +161,13 @@ CASES = [
     ("trip_ctl", "t3_arm", [], "pass", [r"call void @__cq_q_tc_phase_1_b\d+_ctl\(i32 %\d+, i32 %\d+\)",
                                         r"call i32 @cqrt_tape_effect_f64_controlled\("]),
     ("trip_ctl", "t1_decl", [], "pass", [r"call i32 @cqrt_tape_effect_f64_controlled\("]),
+    # rulings3 E (§1.4, rules 2, 18, Q3): a classical-path measurement leaves _t its rule-18 twin, which zeroes and frees the add
+    # rail; in _t_ctl the measurement is the controlled copy, tainted, so its twin only counts and the result is kept.
+    ("table_twin_measure", "e_cl", [], "pass", [
+        r"define internal void @__cq_q_g_11_t_unc\(i32 %out(?:(?!\n}\n)[\s\S])*call void @cqrt_copy_i32\(i32 %\d+, i32 %out\)"
+        r"(?:(?!\n}\n)[\s\S])*call void @cqrt_free\(i32 %out\)",
+        r"define internal void @__cq_q_g_11_t_ctl_unc\(i32 %0(?:(?!\n}\n|@cqrt_)[\s\S])*\n}\n"]),
+    ("table_twin_measure", "e_rail", [], "pass", []),
 ]
 
 

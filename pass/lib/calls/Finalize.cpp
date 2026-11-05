@@ -45,7 +45,9 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Cloning.h"
+#include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 
 #include <optional>
@@ -111,6 +113,26 @@ void collectReferences(Function &F, SetVector<GlobalValue *> &out) {
 }
 
 // ---- twins ----------------------------------------------------------------------------------------
+
+// A classical value computed from a measurement's outcome in this function (rule 2's collapsed value).
+bool fromMeasurement(Value *v) {
+  SmallPtrSet<Value *, 8> seen;
+  SmallVector<Value *, 8> work{v};
+  while (!work.empty()) {
+    auto *I = dyn_cast<Instruction>(work.pop_back_val());
+    if (!I || !seen.insert(I).second)
+      continue;
+    if (auto *CB = dyn_cast<CallBase>(I)) {
+      const Function *G = CB->getCalledFunction();
+      std::optional<abi::CoreSpec> c = G ? abi::parseCore(G->getName()) : std::nullopt;
+      if (c && c->op == abi::Core::Measure)
+        return true;
+      continue;
+    }
+    work.append(I->op_begin(), I->op_end());
+  }
+  return false;
+}
 
 
 // The host <fenv.h> flag calls of eff-fenv's BRACKET and PROBE (hostFn: i32 name(i32), no body in the module):
@@ -205,11 +227,39 @@ void defineTwin(Module &M, Function &twin, Function &src) {
   SmallVector<Instruction *, 4> dead;
   // The copy-out of rule 18: f = cqrt_alloc_<W>(0), cqrt_copy_<W>(r, f), ..., ret f: the copy is made
   // to target `out` instead and f goes.
+  // §1.4, rule 2, rulings3 E: a table twin leaves the seed of a measurement's outcome allocated and frees the results it
+  // zeroes. freeResult frees `out` before R's replacement; where only some paths zeroed it, under a classical phi.
+  auto outcomeSeed = [&](Value *rv) {
+    auto *f = dyn_cast_or_null<CallInst>(rv);
+    std::optional<abi::CoreSpec> a =
+        f && f->getCalledFunction() ? abi::parseCore(f->getCalledFunction()->getName()) : std::nullopt;
+    return table && a && a->op == abi::Core::Alloc && fromMeasurement(f->getArgOperand(0));
+  };
+  auto freeResult = [&](Argument *out, PHINode *phi, ReturnInst *ret) {
+    FunctionCallee fr = abi::declare(M, abi::CoreSpec{abi::Core::Free});
+    if (!phi || none_of(phi->incoming_values(), outcomeSeed)) {
+      IRBuilder<>(ret).CreateCall(fr, {out});
+      return;
+    }
+    if (all_of(phi->incoming_values(), outcomeSeed))
+      return;
+    PHINode *zeroed = PHINode::Create(Type::getInt1Ty(C), phi->getNumIncomingValues(), "", phi->getIterator());
+    for (unsigned i = 0; i < phi->getNumIncomingValues(); ++i)
+      zeroed->addIncoming(ConstantInt::getBool(C, !outcomeSeed(phi->getIncomingValue(i))), phi->getIncomingBlock(i));
+    IRBuilder<>(SplitBlockAndInsertIfThen(zeroed, ret, false)).CreateCall(fr, {out});
+  };
   auto retarget = [&](Value *rv, Argument *out, ReturnInst *R) {
     auto *f = dyn_cast_or_null<CallInst>(rv);
     std::optional<abi::CoreSpec> a =
         f && f->getCalledFunction() ? abi::parseCore(f->getCalledFunction()->getName()) : std::nullopt;
     auto *zero = f ? dyn_cast<Constant>(f->getArgOperand(0)) : nullptr;
+    if (outcomeSeed(f)) {
+      if (!f->hasOneUse() && any_of(f->users(), [](User *U) { return !isa<ReturnInst, PHINode, InsertValueInst>(U); }))
+        unimplemented("calls: calls::finalize: an outcome's seed rail used other than by the return", f);
+      if (!is_contained(dead, f))
+        dead.push_back(f);
+      return;
+    }
     if (!a || a->op != abi::Core::Alloc)
       unimplemented("calls: calls::finalize: a clone return that is not the rule 18 copy-out (a fresh |0> "
                     "rail returned)",
@@ -244,6 +294,12 @@ void defineTwin(Module &M, Function &twin, Function &src) {
     PHINode *rp = nullptr;
     SmallVector<Instruction *, 4> chain;
     SmallVector<PHINode *, 2> fieldPhis;
+    struct TableOut {
+      Argument *out;
+      PHINode *phi;
+      Value *result;
+    };
+    SmallVector<TableOut, 2> tableOuts;
     if (srt) {
       // A field-wise result: the insertvalue chain of the return; its handle fields (the copy-outs, in
       // field order) are the outs.
@@ -287,6 +343,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
                         R);
         for (Value *rv : results)
           retarget(rv, twin.getArg(first + j), R);
+        tableOuts.push_back({twin.getArg(first + j), results.front() != fields[k] ? fp : nullptr, results.front()});
         ++j;
         if (results.front() != fields[k])
           fieldPhis.push_back(fp);
@@ -307,9 +364,14 @@ void defineTwin(Module &M, Function &twin, Function &src) {
       }
       for (Value *rv : results)
         retarget(rv, twin.getArg(first), R);
+      tableOuts.push_back({twin.getArg(first), rp, results.front()});
     }
-    ReturnInst::Create(C, nullptr, R->getIterator());
+    ReturnInst *newRet = ReturnInst::Create(C, nullptr, R->getIterator());
     R->eraseFromParent();
+    if (table)
+      for (const TableOut &o : tableOuts)
+        if (o.phi || !outcomeSeed(o.result))
+          freeResult(o.out, o.phi, newRet);
     for (Instruction *iv : chain)
       iv->eraseFromParent();
     if (rp)
@@ -399,14 +461,14 @@ void defineTwin(Module &M, Function &twin, Function &src) {
   }
 }
 
-// The functions of the module whose table twins leave the results allocated (defineTableClones).
+// The table twins of the module that leave the results allocated, by symbol (defineTableClones).
 std::set<std::string> keepsResults;
 
 // §1.4: a table twin. For a function rule 18 gives no twin it does nothing but count its activation and pop; otherwise it
 // is rule 18's twin that frees the results it zeroes.
 void defineTableTwin(Module &M, Function &twin, Function &fwd) {
   std::optional<abi::CloneSpec> ts = abi::parseClone(twin.getName());
-  bool keeps = keepsResults.count(ts->fn) != 0;
+  bool keeps = keepsResults.count(twin.getName().str()) != 0;
   LLVMContext &C = M.getContext();
   if (keeps) {
     IRBuilder<> B(BasicBlock::Create(C, "", &twin));
@@ -422,17 +484,23 @@ void defineTableTwin(Module &M, Function &twin, Function &fwd) {
     twin.setLinkage(GlobalValue::InternalLinkage);
     return;
   }
-  Function &src = *twinSource(M, fwd);
-  defineTwin(M, twin, src);
-  unsigned nOuts = twin.arg_size() - src.arg_size();
-  unsigned first = ts->ctl ? 1 : 0;
-  FunctionCallee fr = abi::declare(M, abi::CoreSpec{abi::Core::Free});
-  for (BasicBlock &BB : twin)
-    if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator())) {
-      IRBuilder<> B(R);
-      for (unsigned j = 0; j < nOuts; ++j)
-        B.CreateCall(fr, {twin.getArg(first + j)});
+  defineTwin(M, twin, *twinSource(M, fwd));
+  // Rule 2: what the twin replays of a measurement only to zero a rail it left alone goes: a re-read has no effect (211).
+  for (bool changed = true; changed;) {
+    changed = false;
+    SmallVector<Instruction *, 8> gone;
+    for (Instruction &I : instructions(twin)) {
+      auto *CB = dyn_cast<CallBase>(&I);
+      const Function *G = CB ? CB->getCalledFunction() : nullptr;
+      std::optional<abi::CoreSpec> c = G ? abi::parseCore(G->getName()) : std::nullopt;
+      if (I.use_empty() && ((c && c->op == abi::Core::Measure) || isInstructionTriviallyDead(&I)))
+        gone.push_back(&I);
     }
+    for (Instruction *I : gone) {
+      I->eraseFromParent();
+      changed = true;
+    }
+  }
 }
 
 // §1.3, rule 19: every table clone's twins declared and `internal void @__cq_register()` in llvm.global_ctors at 65535,
@@ -466,9 +534,12 @@ void defineTableClones(Module &M) {
     Function *fn = M.getFunction(r.fn), *t = M.getFunction(r.forward), *tc = M.getFunction(r.ctl);
     if (!fn || !t || !tc)
       internalError("calls: calls::finalize: a clone-table row without its function or table clones: @" + r.fn);
-    if (r.keepsResults)
-      keepsResults.insert(r.fn);
-    B.CreateCall(add, {fn, sigString(M, r.type), t, tc, twinOf(t, false), twinOf(tc, true)});
+    Function *tu = twinOf(t, false), *tcu = twinOf(tc, true);
+    if (r.forwardKeepsResults)
+      keepsResults.insert(tu->getName().str());
+    if (r.ctlKeepsResults)
+      keepsResults.insert(tcu->getName().str());
+    B.CreateCall(add, {fn, sigString(M, r.type), t, tc, tu, tcu});
   }
   B.CreateRetVoid();
   appendToGlobalCtors(M, reg, 65535);

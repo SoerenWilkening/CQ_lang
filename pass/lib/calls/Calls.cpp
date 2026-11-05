@@ -730,11 +730,14 @@ namespace {
 // the lowered own symbols replaced the originals.
 std::map<const Module *, std::vector<TableRow>> tableRows;
 
-// §1.4: a table clone's twin does nothing but count and pop when rule 18 gives the function none. A measurement on a
-// classical path keeps a rule-18 twin (Q3) but a table clone's results stay allocated (rule 2), so any measurement does.
+// §1.4: a table clone's twin does nothing but count and pop when rule 18 gives it none: a tainted measurement (Q3), which
+// is every measurement in a _ctl clone (rule 19's controlled copy). A measurement on a classical path of the clone with no
+// predicate keeps its rule-18 twin; the outcome's seed stays allocated (rule 2, rulings3 E, Finalize's defineTwin).
 bool tableKeepsResults(const TaintInfo &T, const Specialization &S) {
   if (!hasTwin(T, S))
     return true;
+  if (!S.ctl)
+    return false;
   SmallPtrSet<const Function *, 8> seen{S.F};
   SmallVector<const Function *, 8> work{S.F};
   while (!work.empty()) {
@@ -766,7 +769,7 @@ void noteTableClone(Module &M, const TaintInfo &T, const Specialization &S, cons
     rows.back().ctl = abi::name(f);
     it = std::prev(rows.end());
   }
-  it->keepsResults = it->keepsResults || tableKeepsResults(T, S);
+  (S.ctl ? it->ctlKeepsResults : it->forwardKeepsResults) = tableKeepsResults(T, S);
 }
 } // namespace
 
