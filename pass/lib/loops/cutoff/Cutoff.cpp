@@ -1518,7 +1518,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         }
         if (!tripFlag)
           tripFlag = conj(q, lp, b->getTerminator());
-        lowerInstruction(ctx, I, tripFlag, seedPred ? &*seedPred : nullptr);
+        // q & lp is exactly where this evaluation reaches b, so it implies b's own predicate: nothing to conjoin. That
+        // predicate may read an atom this evaluation never lowered (a tail block's phi on a path it did not take; strstr).
+        Pred own = ctx.preds().block(b).quantumPart(ctx.T, ctx.S);
+        lowerInstruction(ctx, I, tripFlag, &own);
       }
     }
   };
