@@ -317,6 +317,7 @@ private:
   struct Seg {
     BasicBlock *bb;
     unsigned scope;
+    BasicBlock *head;   // bb unless a body instruction branched inside the trip (rule 5's Readers test)
   };
   std::vector<Seg> segs;
   DenseMap<const BasicBlock *, unsigned> segIdx;
@@ -402,7 +403,7 @@ private:
   void startSeg(BasicBlock *bb) {
     closeSeg();
     segIdx[bb] = segs.size();
-    segs.push_back({bb, ctx.unc().openScope()});
+    segs.push_back({bb, ctx.unc().openScope(), bb});
     segOpen = true;
     cur = bb;
     ctx.B().SetInsertPoint(bb);
@@ -2104,6 +2105,12 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         continue;
       // case 3: the body runs under a_{j-1}; case 1: under the enclosing case-3 trip's rail, if any
       lowerInstruction(ctx, I, aPhi ? aPhi : outerTrip);
+      // Rule 5 Readers: the lowering branched on a classical test inside the trip; the segment goes on where it joined.
+      if (BasicBlock *now = ctx.B().GetInsertBlock(); cur && now != cur) {
+        segIdx[now] = segs.size() - 1;
+        segs.back().bb = now;
+        cur = now;
+      }
     }
   };
 
@@ -2644,10 +2651,10 @@ void Unit::flushTrips() {
   // fresh block (Uncompute::placeDeferred), so the segment's head is found again through this edge.
   entering.assign(segs.size(), {nullptr, 0});
   for (unsigned i = 0; i < segs.size(); ++i)
-    for (BasicBlock *p : predecessors(segs[i].bb)) {
+    for (BasicBlock *p : predecessors(segs[i].head)) {
       Instruction *t = p->getTerminator();
       for (unsigned k = 0; k < t->getNumSuccessors(); ++k)
-        if (t->getSuccessor(k) == segs[i].bb && !entering[i].first)
+        if (t->getSuccessor(k) == segs[i].head && !entering[i].first)
           entering[i] = {t, k};
     }
   BasicBlock *cut = newBlock();
@@ -2719,7 +2726,7 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
   std::vector<SmallVector<BasicBlock *, 4>> blocksOf(n);
   for (unsigned i = 0; i < n; ++i)
     headOf[i] = i < entering.size() && entering[i].first ? entering[i].first->getSuccessor(entering[i].second)
-                                                         : segs[i].bb;
+                                                         : segs[i].head;
   DenseSet<const BasicBlock *> stops;
   for (unsigned i = 0; i < n; ++i) {
     stops.insert(headOf[i]);

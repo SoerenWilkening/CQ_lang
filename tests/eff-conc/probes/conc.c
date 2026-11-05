@@ -1,0 +1,46 @@
+#include "CQ.h"
+/* eff-conc probes (rule 24): every entry is checked against its own C program. */
+static volatile double tiny = 1.0e-300;   /* unobservable: internal, address never escapes */
+volatile int obs_counter = 7;             /* observable: external linkage */
+static int acell;                         /* classical, accessed atomically */
+
+double p_vol_internal(double x0, double th, double k) {
+    double x = x0;
+    cq_theta(&x, th);
+    double r = x < k ? x * tiny : x - tiny;
+    return cq_measure(r);
+}
+
+int p_vol_observable(int x0, double th, int c) {
+    int x = x0;
+    cq_theta(&x, th);
+    int seen = obs_counter;   /* observable classical read: stays volatile */
+    obs_counter = c;          /* observable classical write, no quantum predicate */
+    return cq_measure(x + seen);
+}
+
+int p_atomic_classical(int x0, double th, int c) {
+    int x = x0;
+    cq_theta(&x, th);
+    __atomic_store_n(&acell, c, __ATOMIC_SEQ_CST);
+    int v = __atomic_load_n(&acell, __ATOMIC_SEQ_CST);
+    return cq_measure(x + v);
+}
+
+/* 32's shape (cq-r4cz): an unobservable volatile slot holding a quantum value is the plain slot access
+   (rule 24), so the volatile store forwards to its load. */
+int p_vol_local(int x0, double th, int c) {
+    int x = x0;
+    cq_theta(&x, th);
+    volatile int tmp = x + c;
+    return cq_measure(tmp * 2);
+}
+
+/* 94's shape (M4): atomicrmw on a slot cell is load + add + store, single-threaded (rule 24). */
+int p_atomic_rmw(int x0, double th, int c) {
+    int x = x0;
+    cq_theta(&x, th);
+    int cell = x;
+    __atomic_fetch_add(&cell, c, __ATOMIC_SEQ_CST);
+    return cq_measure(cell);
+}

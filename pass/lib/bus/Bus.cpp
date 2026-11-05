@@ -227,6 +227,8 @@ void emitKeptStore(LoweringContext &ctx, Type *T, Operand addr, Operand value) {
 }
 
 void lowerLoad(LoweringContext &ctx, LoadInst &L) {
+  if (isBoolCellLoad(ctx, L))
+    return lowerBoolCellLoad(ctx, L);
   const DataLayout &DL = ctx.M.getDataLayout();
   Type *T = L.getType();
   Operand addr = address(ctx, L.getPointerOperand());
@@ -301,8 +303,7 @@ void lowerAtomic(LoweringContext &ctx, Instruction &I) {
   using Op = AtomicRMWInst::BinOp;
   Op op = R->getOperation();
   if (op == Op::Add || op == Op::Sub || op == Op::Xor)
-    report_fatal_error("cq: unimplemented: bus: the in-place form of an atomicrmw add, sub or xor (rule 4)",
-                       /*gen_crash_diag=*/false);
+    return lowerInPlaceRMW(ctx, *R);
   Type *T = R->getValOperand()->getType();
   RailType w = accessType(C, T);
   Operand addr = address(ctx, R->getPointerOperand());

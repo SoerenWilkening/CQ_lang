@@ -451,10 +451,13 @@ void dispatchOne(LoweringContext &ctx, Instruction &I);
 // Rule 5 Memory: an original instruction that is a memory version change notes the first instruction its lowering
 // emitted (a load copy un-copied before that point precedes the change).
 void dispatch(LoweringContext &ctx, Instruction &I) {
+  if (bus::inPlaceBefore(ctx, I))
+    return;   // rule 5: the form is emitted at its store
   IRBuilder<> &B = ctx.B();
   BasicBlock *bb = B.GetInsertBlock();
   Instruction *prev = B.GetInsertPoint() == bb->begin() ? nullptr : &*std::prev(B.GetInsertPoint());
   dispatchOne(ctx, I);
+  bus::inPlaceAfter(ctx, I);
   if (!bus::versionChange(ctx, I) || bus::notesOwnChange(ctx, I))
     return;
   // Where its code begins, also when the lowering branched away from bb. Nothing emitted: nothing changed.
