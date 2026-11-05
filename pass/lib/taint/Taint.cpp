@@ -516,8 +516,31 @@ std::string lanesStr(const Lanes &l) {
 }
 
 
+static SmallVector<unsigned, 4> intFields(const Argument *A);
+
 SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector<Type *> tys, bool ctl, bool pure,
                              std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals, bool plain, bool table) {
+  // Rule 18, §1.4: a clone exists once per taint mask of its scalar formals, and a quantum scalar formal is one rail. Byte
+  // lanes of an integer actual (x & 4095) never split a mask digit: its whole field is the rail, so calls whose actuals
+  // differ only in their quantum bytes reach one clone.
+  for (unsigned i = 0; i < formal.size() && i < tys.size(); ++i) {
+    if (!tys[i]->isIntegerTy() || formal[i].none())
+      continue;
+    if (i >= F->arg_size() || F->isDeclaration() || !F->getArg(i)->getType()->isIntegerTy()) {
+      formal[i].set();
+      continue;
+    }
+    SmallVector<unsigned, 4> b = intFields(F->getArg(i));
+    for (unsigned k = 0; k + 1 < b.size(); ++k) {
+      unsigned lo = b[k] / 8, hi = std::min<unsigned>((b[k + 1] + 7) / 8, formal[i].size());
+      bool q = false;
+      for (unsigned lane = lo; lane < hi; ++lane)
+        q = q || formal[i].test(lane);
+      if (q)
+        for (unsigned lane = lo; lane < hi; ++lane)
+          formal[i].set(lane);
+    }
+  }
   // A bound with no formal named (a library-build root read from its name): the quantum integer formals
   // in order, the reading §1.4's name gives.
   if (boundFormals.size() != bounds.size()) {
@@ -582,8 +605,7 @@ Lanes Analyzer::L(const Value *V) {
 }
 
 bool Analyzer::exitRead(const Value *V) {
-  if (!curUser || cur->exitQ.empty() || curUser->getType()->isPointerTy() ||
-      V->getType()->isPointerTy())
+  if (!curUser || cur->exitQ.empty())
     return false;
   auto *I = dyn_cast<Instruction>(V);
   if (!I || I->getFunction() != curUser->getFunction())
@@ -1535,9 +1557,11 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool
   bool ctl = false;
   if (underQ) {
     SpecState *probe = getSpec(G, formal, tys, false, false, {}, {}, plain);
-    // Rule 19: ... or a call cycle through itself (rule 14: the one clone with its activation counter).
+    // Rule 19: ... or a call cycle through itself (rule 14: the one clone with its activation counter). §1.4 _ctl, rule 5:
+    // a bus access under a quantum predicate is the _controlled form, a load included ("no bus access is hoisted or
+    // speculated"), so a callee that loads takes the predicate.
     if (plain || probe->nonPure || probe->hasTheta || probe->hasPhi || probe->hasEffect || probe->writesOuter ||
-        callsReach(G, G))
+        probe->busLoadT || callsReach(G, G))
       ctl = true;
   }
   std::vector<uint64_t> bounds;
@@ -2273,9 +2297,9 @@ void Analyzer::analyze(SpecState &S) {
     // value (rule 14): L() reads it as quantum in any reader outside the loop (exitRead). The
     // reader's result is quantum too, also where V is a pointer or the reader reads it through
     // addresses computed after the loop (the load of an address evaluated per trip, 121), or the
-    // reader's transfer does not pass operand lanes to its result (a call). A reader that computes
-    // an address stays classical-offset (121). Several returns chosen by a tainted branch merge
-    // their values.
+    // reader's transfer does not pass operand lanes to its result (a call). A pointer is an integer (rule 21): a
+    // pointer exit value and an address computed from it are rails too. Several returns chosen by a tainted branch
+    // merge their values.
     for (const BasicBlock *BB : fi.rpo)
       for (const Loop *Lp = fi.LI->getLoopFor(BB); Lp; Lp = Lp->getParentLoop()) {
         if (!S.exitQ.count(Lp))
@@ -2694,6 +2718,10 @@ void Analyzer::finish() {
     SmallPtrSet<SpecState *, 16> seen;
     SmallVector<SpecState *, 16> w;
     for (auto &S : st.specs) {
+      // Rule 18: a function that measures or reads the result rail of an effect entry has no twin, so nothing recomputes
+      // through a _pure of it, whatever consumes its result (its effect's result rail exists only in the clone).
+      if (S->noTwinT)
+        continue;
       // cq-s2zz (rule 18): an effectful clone whose own result needs its twin recomputes through its _pure.
       // Rule 18, §1.4: an own symbol's twin always recomputes through its _pure clone (the own symbol returns its rail).
       if (S->reachable && S->needsTwin && (S->effectful || S->inPlace) && !S->declared)

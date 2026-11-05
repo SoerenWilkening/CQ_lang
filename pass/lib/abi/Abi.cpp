@@ -534,8 +534,9 @@ std::string coreName(const CoreSpec &s) {
 // ---------------------------------------------------------------------------------------------
 // Clones (CR §1.4)
 // ---------------------------------------------------------------------------------------------
+// §1.4: binary digits, or `v` for a function with no scalar formal.
 bool isMask(StringRef s) {
-  return llvm::all_of(s, [](char c) { return c == '0' || c == '1'; });
+  return s == "v" || llvm::all_of(s, [](char c) { return c == '0' || c == '1'; });
 }
 
 std::string cloneName(const CloneSpec &s) {

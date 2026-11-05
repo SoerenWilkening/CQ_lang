@@ -630,6 +630,8 @@ PHINode *keptMerge(LoweringContext &ctx, Value *y) {
   for (unsigned i = 0; i < np->getNumIncomingValues(); ++i) {
     auto *c = dyn_cast<CallInst>(np->getIncomingValue(i));
     std::optional<Role> role = c ? ctx.unc().liveRole(ctx.unc().idOf(c)) : std::nullopt;
+    if (c && c->getCalledFunction() && c->getCalledFunction()->getName().starts_with("cqrt_tape_effect_"))
+      return nullptr;   // rule 16: an effect entry's result rail is never freed
     if (role == Role::Kept) {
       kept = true;
     } else if (role == Role::Seed && c->hasOneUse()) {
@@ -649,13 +651,23 @@ PHINode *keptMerge(LoweringContext &ctx, Value *y) {
   return kept ? np : nullptr;
 }
 
+// The result rail of an effect entry (rule 16: KEPT, it has no _unc and is never freed).
+bool effectResult(LoweringContext &ctx, const Value *y) {
+  auto bi = spine::shared(ctx).binds.find(y);
+  if (bi == spine::shared(ctx).binds.end() || bi->second.size() != 1 || !bi->second[0].handle)
+    return false;
+  auto *c = dyn_cast<CallInst>(bi->second[0].v);
+  const Function *G = c ? c->getCalledFunction() : nullptr;
+  return G && G->getName().starts_with("cqrt_tape_effect_");
+}
+
 // The old value is a rail the rule may clean: a value this function computed into a rail of its
 // own (not an argument, a load, a phi or a classical select over handles, which alias other rails).
 bool cleanable(LoweringContext &ctx, Value *y) {
   if (keptMerge(ctx, y))
     return true;
   // Rule 5: a load copy is undone by its un-copy, never by rule 6, whatever re-binds it (an extractvalue, a freeze).
-  if (busLoadCopy(ctx, y))
+  if (busLoadCopy(ctx, y) || effectResult(ctx, y))
     return false;
   auto &binds = spine::shared(ctx).binds;
   auto bi = binds.find(y);
@@ -1110,7 +1122,15 @@ std::optional<Inverse> inverseStepWith(Instruction &U, Value *Y, Operand yp,
 
 std::optional<Inverse> inverseOf(LoweringContext &ctx, Instruction &U, Value *Y, Operand yp) {
   return inverseStepWith(
-      U, Y, yp, [&](Value *Z) { return ctx.operand(Z); }, [&](Value *Z) { return reads(ctx, Z, Y); });
+      U, Y, yp, [&](Value *Z) { return ctx.operand(Z); },
+      [&](Value *Z) {
+        if (reads(ctx, Z, Y))
+          return true;
+        // y' = y + z where z's rail depends on y only through a control (a bus load under a predicate that reads y,
+        // __shgetc's buf under cnt >= shlim): no bijection in y for fixed z.
+        Operand z = ctx.operand(Z), oy = ctx.operand(Y);
+        return z.handle && oy.handle && ctx.unc().railDependsOn(z.v, oy.v);
+      });
 }
 
 void clean(LoweringContext &ctx, Value *y, const Inverse &inv) {

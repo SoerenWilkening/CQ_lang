@@ -36,6 +36,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/IntrinsicInst.h"
@@ -176,6 +177,66 @@ bool unifyReturns(Function &F) {
     BranchInst::Create(U, BB);
   }
   return true;
+}
+
+// Rule 26: an aggregate is its scalar fields. A loop-carried aggregate (a cmpxchg's { i32, i1 } carried round musl's
+// __lockfile) is one phi per field, so the loop modules carry scalars only. No CFG change.
+bool splitCarriedAggregates(Function &F) {
+  DominatorTree DT(F);
+  SmallVector<PHINode *, 4> phis;
+  for (BasicBlock &BB : F) {
+    if (!any_of(predecessors(&BB), [&](BasicBlock *P) { return DT.dominates(&BB, P); }))
+      continue;
+    for (PHINode &P : BB.phis())
+      if (P.getType()->isAggregateType())
+        phis.push_back(&P);
+  }
+  for (PHINode *P : phis) {
+    SmallVector<SmallVector<unsigned, 2>, 4> paths;
+    SmallVector<Type *, 4> leaves;
+    std::function<void(Type *, SmallVector<unsigned, 2> &)> walk = [&](Type *T, SmallVector<unsigned, 2> &at) {
+      if (!T->isAggregateType()) {
+        paths.push_back(at);
+        leaves.push_back(T);
+        return;
+      }
+      unsigned n = isa<StructType>(T) ? cast<StructType>(T)->getNumElements() : cast<ArrayType>(T)->getNumElements();
+      for (unsigned k = 0; k < n; ++k) {
+        at.push_back(k);
+        walk(GetElementPtrInst::getTypeAtIndex(T, k), at);
+        at.pop_back();
+      }
+    };
+    SmallVector<unsigned, 2> at;
+    walk(P->getType(), at);
+    SmallVector<PHINode *, 4> parts;
+    for (unsigned k = 0; k < leaves.size(); ++k) {
+      PHINode *N = PHINode::Create(leaves[k], P->getNumIncomingValues(), P->getName(), P->getIterator());
+      for (unsigned i = 0; i < P->getNumIncomingValues(); ++i) {
+        IRBuilder<> B(P->getIncomingBlock(i)->getTerminator());
+        N->addIncoming(B.CreateExtractValue(P->getIncomingValue(i), paths[k]), P->getIncomingBlock(i));
+      }
+      parts.push_back(N);
+    }
+    SmallVector<User *, 4> users(P->users());
+    for (User *U : users)
+      if (auto *EV = dyn_cast<ExtractValueInst>(U))
+        for (unsigned k = 0; k < paths.size(); ++k)
+          if (EV->getIndices() == ArrayRef<unsigned>(paths[k])) {
+            EV->replaceAllUsesWith(parts[k]);
+            EV->eraseFromParent();
+            break;
+          }
+    if (!P->use_empty()) {
+      IRBuilder<> B(P->getParent(), P->getParent()->getFirstNonPHIIt());
+      Value *whole = PoisonValue::get(P->getType());
+      for (unsigned k = 0; k < parts.size(); ++k)
+        whole = B.CreateInsertValue(whole, parts[k], paths[k]);
+      P->replaceAllUsesWith(whole);
+    }
+    P->eraseFromParent();
+  }
+  return !phis.empty();
 }
 
 // cq-jkq8 (CR rule 23): llvm.get.rounding (C's FLT_ROUNDS) and llvm.set.rounding read and write the rounding
@@ -361,6 +422,15 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
       if (!unifyReturns(*F))
         continue;
       trace("unify-returns: changed @" + F->getName());
+      CFGChanged = true;
+      FAM.invalidate(*F, PreservedAnalyses::none());
+    }
+
+    // 2c. Rule 26: a loop-carried aggregate is its fields.
+    for (Function *F : Tainted) {
+      if (!splitCarriedAggregates(*F))
+        continue;
+      trace("carried aggregates: changed @" + F->getName());
       CFGChanged = true;
       FAM.invalidate(*F, PreservedAnalyses::none());
     }
