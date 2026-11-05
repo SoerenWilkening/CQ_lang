@@ -132,3 +132,9 @@ Entries 1 to 16 are from the flat-memory rulings (`wt/flat/rulings.md`, "Entries
 - Request: none.
 - Bead: cq-tltm
 
+## 129 declares `cqrt_qram_store_i32_hl` with four parameters
+- Rule: BACKEND_ABI §1.10, `void cqrt_qram_store_<W>_hl(i32 m, i64 addr, i32 v)`.
+- Disagreement: `examples/129_quantum_ptr_select_store/quantum_ptr_select_store.lowered.ll` line 232 declares `@cqrt_qram_store_i32_hl(i32, i32, i64, i32)` (the `_controlled` shape); its calls pass three arguments. The reference does not run: evaluator `malformed_call`, every sample of both calls.
+- Evidence: `cqcheck run 129_quantum_ptr_select_store --ours build/ref_as_ours --oracle c`, sample ptr_select_rmw(0, .5, 1, 2, .3, 5, .4): `cqrt_qram_store_i32_hl: 4 arguments (ABI §1.10)`, returns 0x2 != C's 0x9.
+- Request: fix the declare. Not copied; the example stays red against the reference until then.
+- Bead: cq-3s95

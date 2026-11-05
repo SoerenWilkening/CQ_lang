@@ -1084,7 +1084,7 @@ class ObjectDecl:
 def _setup_decl(setup: str, ident: str) -> Optional[ObjectDecl]:
     """The declaration of `ident` among the setup's top-level statements."""
     for stmt in _split_top(setup, ";"):
-        decls = _split_top(stmt, ",")
+        decls = _split_top(re.sub(r"__attribute__\s*\(\(.*\)\)", " ", stmt), ",")
         first = re.match(r"^\s*((?:static\s+|const\s+|volatile\s+)*)(.*?)\s*\b([A-Za-z_]\w*)\s*((?:\[[^\]]*\]\s*)*)(=.*)?$",
                          decls[0], re.S)
         if not first or not first.group(2).strip():
