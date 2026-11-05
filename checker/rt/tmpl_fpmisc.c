@@ -207,7 +207,7 @@ static void fm_putw(cqe_val *out, const uint64_t *w, uint32_t bits) {
 }
 
 /* The family claims a name only for plain (no _rm/_rmq/_exc) f16/bf16/f32/f64 forms. */
-static int fm_plain(const cqe_tname *t) { return !t->rm && !t->exc && !t->strided; }
+static int fm_plain(const cqe_tname *t) { return !t->rm && !t->exc; }
 
 /* ---------------------------------------------------------------- fp bit helpers */
 

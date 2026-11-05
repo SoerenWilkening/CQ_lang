@@ -14,9 +14,10 @@
  *     word first; fp as its bit pattern, x86_fp80 as 80 bits = 2 words):  h = cq_standin_mix(h, w)
  *   result = the low W bits of h, W the C result type's width (fp: as a bit pattern, f80: h
  *   zero-extended to 80 bits); void: nothing; a pointer result: null. No memory effect.
- * A declared clone's trailing K argument (rule 27), its _ctl predicate, a pointer's (object, tag,
- * idx, cell count) and a twin's out handles and snapshot pointers are not arguments of fn: they are
- * never mixed. A quantum argument mixes its rail's value. The twin XORs the same value out.
+ * A declared clone __cq_q_<fn>_<1...1>_t(handles..., i32 K) (rule 27, CR §1.4) takes a pointer as a handle to
+ * an i64 address rail. A pointer is an argument never mixed: an address differs per run (CR §6: pointer values
+ * are compared only relationally). The trailing K, the _ctl predicate and a twin's out handles are not arguments
+ * of fn. A quantum argument mixes its rail's value. The twin XORs the same value out; a table twin frees it.
  *
  * C17 and C++17 (header only, static inline). */
 #ifndef CQ_STANDIN_H

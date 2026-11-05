@@ -3,8 +3,7 @@
  * Evaluator semantics, on basis values, of every fp template whose operand width W or cast target
  * W2 is f80: fadd fsub fmul fdiv frem fneg fma sqrt fcmp fcmps fabs copysign fmax fmin floor ceil
  * trunc rint round is_fpclass fpext fptrunc sitofp uitofp fptosi fptoui, each with its _rm, _rmq
- * and _exc forms. (select_f80 is tmpl-cmp's, bitcast f80<->i80 is tmpl-int's, qrom_load_f80 with
- * its 16-byte element stride is rt-mem's.) Semantics: CONSTRUCTION_RULES §1.2 and §2 (normative),
+ * and _exc forms. (select_f80 is tmpl-cmp's, bitcast f80<->i80 is tmpl-int's.) Semantics: CONSTRUCTION_RULES §1.2 and §2 (normative),
  * BACKEND_ABI §2.1, §2.6, §2.9, §2.10.
  *
  * Arithmetic runs on the host x87 through `long double` (64-bit significand, precision control

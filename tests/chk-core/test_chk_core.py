@@ -166,8 +166,6 @@ class Violations(unittest.TestCase):
         self.assertEqual([v["what"] for v in r.violations], ["bad_handle"])
         self.assertIn("handle 0 is reserved", r.violations[0]["msg"])
 
-    def test_clone_resolve_bad_kind(self):
-        self.assertEqual(self.what("v_clone_kind.ll"), ["malformed_call"])
 
     def test_unc_after_nondiagonal(self):
         self.assertEqual(self.what("v_unc_after_nondiagonal.ll"), ["unc_after_nondiagonal", "dirty_free"])
@@ -638,15 +636,6 @@ class HandlerOrder(unittest.TestCase):
         self.assertIn("every registered handler declined", r.violations[0]["msg"])
 
 
-class KeptMerge(unittest.TestCase):
-    def test_qram_exit_entries_join_kept(self):
-        ev = [{"ev": "qram", "op": "exit", "live": [{"h": 0x5A000000, "w": "i32", "v": "0x3", "role": "qram_cell"}]},
-              {"ev": "exit", "live": [{"h": 1, "w": "i32", "v": "0x7", "role": "frozen"}]}]
-        r = run._result("ours", {}, ev, "", 0, [])
-        self.assertEqual([k["role"] for k in r.kept], ["frozen", "qram_cell"])
-        self.assertEqual(r.violations, [])
-
-
 class MultiWord(unittest.TestCase):
     def test_wide_rails(self):
         v = (1 << 127) | 0x1234
@@ -693,22 +682,27 @@ class Parser(unittest.TestCase):
                 "cq_template_trunc_f64|i32|i32", "cq_template_trunc_i64_to_i7_unc|void|i32,i32",
                 "cq_template_icmp_sgt_i32_hl|i32|i32,i32", "cq_template_fcmps_olt_f64_exc|i32|i32,i32",
                 "cq_template_select_i8_lh|i32|i32,i8,i32", "cq_template_fadd_f64_ll_rmq|i32|double,double,i32",
-                "cq_template_qrom_load_f64_s|i32|ptr,i64,i64,i32", "cq_template_uadd_sat_i32|i32|i32,i32",
+                "cq_template_uadd_sat_i32|i32|i32,i32",
                 "cq_template_fshl_i32_qll|i32|i32,i32,i32", "cq_template_is_fpclass_f64_hl|i32|i32,i32",
-                "cqrt_qram_store_i32_hl_controlled_unc|void|i32,i32,i32,i32", "cqrt_tape_write_str_lit|void|i32,ptr",
+                "cqrt_qram_store_i32_hl_controlled|void|i32,i32,i64,i32", "cqrt_qram_swap_i1|void|i32,i32,i32",
+                "cqrt_qram_load_i32_hl_unc|void|i32,i32,i64", "cqrt_qram_alloc_i8|i32|i32",
                 "cqrt_ry_i32_qangle_controlled|void|i32,i32,i32", "cqrt_copy_i7_unc|void|i32,i32", "cqrt_abort_i1|void|i32",
                 # cq-9ge: W = bf16, LLVM type bfloat
                 "cq_template_fadd_bf16_hl|i32|i32,bfloat", "cq_template_bitcast_bf16_to_i16_l|i32|bfloat",
                 "cq_template_bitcast_i16_to_bf16_unc|void|i32,i32", "cqrt_alloc_bf16|i32|bfloat",
                 "cqrt_measure_bf16|bfloat|i32",
-                # cq-06bi: CQ_spec f684858
-                "cqrt_qram_size|i32|i32", "cqrt_tape_str_begin|void|i32", "cqrt_tape_str_end|void|i32",
-                "cqrt_clone_register|void|ptr,ptr,ptr,ptr", "cqrt_clone_resolve|ptr|ptr,i32"]
+                ]
         rc, out = self.classify(good)
         self.assertEqual(rc, 0, out)
         bad = ["cq_template_icmp_foo_i32|i32|i32,i32", "cq_template_add_i0|i32|i32,i32", "cq_template_add_f128|i32|i32,i32",
                "cq_template_add_i32_hl_unc_rm|void|i32,i32,i32", "cqrt_cnot|void|i32,i32", "cq_template_select_i8_lh|i32|i8,i32",
-               "cq_template_fadd_bf32|i32|i32,i32", "cq_template_fadd_b16|i32|i32,i32"]
+               "cq_template_fadd_bf32|i32|i32,i32", "cq_template_fadd_b16|i32|i32,i32",
+               # retired (CR §0, ABI §0)
+               "cq_template_qrom_load_f64_s|i32|ptr,i64,i64,i32", "cq_template_qrom_load_i32|i32|ptr,i64,i32",
+               "cqrt_qram_size|i32|i32", "cqrt_qram_free|void|i32", "cqrt_qram_realloc_i32|i32|i32,i32",
+               "cqrt_qram_alloc_host_i32|i32|ptr,i64", "cqrt_tape_write_str_lit|void|i32,ptr",
+               "cqrt_tape_str_begin|void|i32", "cqrt_tape_str_end|void|i32",
+               "cqrt_clone_register|void|ptr,ptr,ptr,ptr", "cqrt_clone_resolve|ptr|ptr,i32"]
         rc, out = self.classify(bad)
         self.assertIn(f"failed {len(bad)}", out)
 
@@ -866,15 +860,14 @@ define i32 @pi(i32 %a, i32 %b) {
   %ha = call i32 @cqrt_alloc_i32(i32 %a)
   %hb = call i32 @cqrt_alloc_i32(i32 %b)
   %p = call i32 @cqrt_alloc_i1(i1 1)
-  %r1 = call i32 @__cq_q_e_i_10(i32 %ha, i32 %b, i32 4)
-  %r2 = call i32 @__cq_q_e_i_01(i32 %a, i32 %hb, i32 4)
-  %r3 = call i32 @__cq_q_e_i_11_ctl(i32 %p, i32 %ha, i32 %hb, i32 2)
-  call void @__cq_q_e_i_10_unc(i32 %r1, i32 %ha, i32 %b, i32 4)
-  call void @__cq_q_e_i_01_unc(i32 %r2, i32 %a, i32 %hb, i32 4)
-  call void @__cq_q_e_i_11_ctl_unc(i32 %r3, i32 %p, i32 %ha, i32 %hb, i32 2)
+  %r1 = call i32 @__cq_q_e_i_10(i32 %ha, i32 %b)
+  %r2 = call i32 @__cq_q_e_i_01(i32 %a, i32 %hb)
+  %r3 = call i32 @__cq_q_e_i_11_t_ctl(i32 %p, i32 %ha, i32 %hb, i32 2)
+  call void @__cq_q_e_i_10_unc(i32 %r1, i32 %ha, i32 %b)
+  call void @__cq_q_e_i_01_unc(i32 %r2, i32 %a, i32 %hb)
+  call void @__cq_q_e_i_11_t_ctl_unc(i32 %p, i32 %r3, i32 %ha, i32 %hb, i32 2)
   call void @cqrt_free(i32 %r1)
   call void @cqrt_free(i32 %r2)
-  call void @cqrt_free(i32 %r3)
   ret i32 0
 }
 
@@ -882,30 +875,29 @@ define double @pd(double %a, i8 %b, i64 %c) {
   %ha = call i32 @cqrt_alloc_f64(double %a)
   %hb = call i32 @cqrt_alloc_i8(i8 %b)
   %hc = call i32 @cqrt_alloc_i64(i64 %c)
-  %r1 = call i32 @__cq_q_e_d_111(i32 %ha, i32 %hb, i32 %hc, i32 4)
-  %r2 = call i32 @__cq_q_e_d_100(i32 %ha, i8 %b, i64 %c, i32 4)
-  call void @__cq_q_e_d_111_unc(i32 %r1, i32 %ha, i32 %hb, i32 %hc, i32 4)
-  call void @__cq_q_e_d_100_unc(i32 %r2, i32 %ha, i8 %b, i64 %c, i32 4)
-  call void @cqrt_free(i32 %r1)
+  %r1 = call i32 @__cq_q_e_d_111_t(i32 %ha, i32 %hb, i32 %hc, i32 4)
+  %r2 = call i32 @__cq_q_e_d_100(i32 %ha, i8 %b, i64 %c)
+  call void @__cq_q_e_d_111_t_unc(i32 %r1, i32 %ha, i32 %hb, i32 %hc, i32 4)
+  call void @__cq_q_e_d_100_unc(i32 %r2, i32 %ha, i8 %b, i64 %c)
   call void @cqrt_free(i32 %r2)
   ret double 0.0
 }
 
 define x86_fp80 @pl(x86_fp80 %a, i16 %b) {
   %ha = call i32 @cqrt_alloc_f80(x86_fp80 %a)
-  %r1 = call i32 @__cq_q_e_l_10(i32 %ha, i16 %b, i32 4)
-  call void @__cq_q_e_l_10_unc(i32 %r1, i32 %ha, i16 %b, i32 4)
-  call void @cqrt_free(i32 %r1)
+  %hb = call i32 @cqrt_alloc_i16(i16 %b)
+  %r1 = call i32 @__cq_q_e_l_11_t(i32 %ha, i32 %hb, i32 4)
+  call void @__cq_q_e_l_11_t_unc(i32 %r1, i32 %ha, i32 %hb, i32 4)
   ret x86_fp80 0xK00000000000000000000
 }
 
 define zeroext i8 @pb(i1 zeroext %a, float %b) {
   %ha = call i32 @cqrt_alloc_i1(i1 %a)
   %hb = call i32 @cqrt_alloc_f32(float %b)
-  %r1 = call i32 @__cq_q_e_b_10(i32 %ha, float %b, i32 4)
-  %r2 = call i32 @__cq_q_e_b_01(i1 %a, i32 %hb, i32 4)
-  call void @__cq_q_e_b_10_unc(i32 %r1, i32 %ha, float %b, i32 4)
-  call void @__cq_q_e_b_01_unc(i32 %r2, i1 %a, i32 %hb, i32 4)
+  %r1 = call i32 @__cq_q_e_b_10(i32 %ha, float %b)
+  %r2 = call i32 @__cq_q_e_b_01(i1 %a, i32 %hb)
+  call void @__cq_q_e_b_10_unc(i32 %r1, i32 %ha, float %b)
+  call void @__cq_q_e_b_01_unc(i32 %r2, i1 %a, i32 %hb)
   call void @cqrt_free(i32 %r1)
   call void @cqrt_free(i32 %r2)
   ret i8 0
@@ -914,8 +906,8 @@ define zeroext i8 @pb(i1 zeroext %a, float %b) {
 define i64 @pw(i64 %x, i32 %u) {
   %hx = call i32 @cqrt_alloc_i64(i64 %x)
   %c = alloca [2 x i32]
-  %r1 = call i32 @__cq_q_e_w_10000(i32 %hx, ptr %c, i32 0, i32 0, i32 2, i32 %u, i32 4)
-  call void @__cq_q_e_w_10000_unc(i32 %r1, i32 %hx, ptr %c, i32 0, i32 0, i32 2, i32 %u, i32 4)
+  %r1 = call i32 @__cq_q_e_w_100(i32 %hx, ptr %c, i32 %u)
+  call void @__cq_q_e_w_100_unc(i32 %r1, i32 %hx, ptr %c, i32 %u)
   call void @cqrt_free(i32 %r1)
   ret i64 0
 }
@@ -925,15 +917,16 @@ define half @ph(float %a, i32 %n) {
   %ht = call i32 @cqrt_alloc_f16(half %t)
   %hn = call i32 @cqrt_alloc_i32(i32 %n)
   %c = alloca [2 x i32]
-  %s = alloca [2 x i32]
-  %r1 = call i32 @__cq_q_e_h_10011(i32 %ht, ptr %c, i32 0, i32 0, i32 2, i32 %hn, i32 4)
-  call void @__cq_q_e_h_10011_unc(i32 %r1, i32 %ht, ptr %c, i32 0, i32 0, i32 2, i32 %hn, i32 4, ptr %s)
-  call void @cqrt_free(i32 %r1)
+  %ca = ptrtoint ptr %c to i64
+  %hc = call i32 @cqrt_alloc_i64(i64 %ca)
+  %r1 = call i32 @__cq_q_e_h_111_t(i32 %ht, i32 %hc, i32 %hn, i32 4)
+  call void @__cq_q_e_h_111_t_unc(i32 %r1, i32 %ht, i32 %hc, i32 %hn, i32 4)
   ret half 0.0
 }
 
 declare i32 @cqrt_alloc_i1(i1)
 declare i32 @cqrt_alloc_i8(i8)
+declare i32 @cqrt_alloc_i16(i16)
 declare i32 @cqrt_alloc_i32(i32)
 declare i32 @cqrt_alloc_i64(i64)
 declare i32 @cqrt_alloc_f16(half)
@@ -941,26 +934,26 @@ declare i32 @cqrt_alloc_f32(float)
 declare i32 @cqrt_alloc_f64(double)
 declare i32 @cqrt_alloc_f80(x86_fp80)
 declare void @cqrt_free(i32)
-declare i32 @__cq_q_e_i_10(i32, i32, i32)
-declare void @__cq_q_e_i_10_unc(i32, i32, i32, i32)
-declare i32 @__cq_q_e_i_01(i32, i32, i32)
-declare void @__cq_q_e_i_01_unc(i32, i32, i32, i32)
-declare i32 @__cq_q_e_i_11_ctl(i32, i32, i32, i32)
-declare void @__cq_q_e_i_11_ctl_unc(i32, i32, i32, i32, i32)
-declare i32 @__cq_q_e_d_111(i32, i32, i32, i32)
-declare void @__cq_q_e_d_111_unc(i32, i32, i32, i32, i32)
-declare i32 @__cq_q_e_d_100(i32, i8, i64, i32)
-declare void @__cq_q_e_d_100_unc(i32, i32, i8, i64, i32)
-declare i32 @__cq_q_e_l_10(i32, i16, i32)
-declare void @__cq_q_e_l_10_unc(i32, i32, i16, i32)
-declare i32 @__cq_q_e_b_10(i32, float, i32)
-declare void @__cq_q_e_b_10_unc(i32, i32, float, i32)
-declare i32 @__cq_q_e_b_01(i1, i32, i32)
-declare void @__cq_q_e_b_01_unc(i32, i1, i32, i32)
-declare i32 @__cq_q_e_w_10000(i32, ptr, i32, i32, i32, i32, i32)
-declare void @__cq_q_e_w_10000_unc(i32, i32, ptr, i32, i32, i32, i32, i32)
-declare i32 @__cq_q_e_h_10011(i32, ptr, i32, i32, i32, i32, i32)
-declare void @__cq_q_e_h_10011_unc(i32, i32, ptr, i32, i32, i32, i32, i32, ptr)
+declare i32 @__cq_q_e_i_10(i32, i32)
+declare void @__cq_q_e_i_10_unc(i32, i32, i32)
+declare i32 @__cq_q_e_i_01(i32, i32)
+declare void @__cq_q_e_i_01_unc(i32, i32, i32)
+declare i32 @__cq_q_e_i_11_t_ctl(i32, i32, i32, i32)
+declare void @__cq_q_e_i_11_t_ctl_unc(i32, i32, i32, i32, i32)
+declare i32 @__cq_q_e_d_111_t(i32, i32, i32, i32)
+declare void @__cq_q_e_d_111_t_unc(i32, i32, i32, i32, i32)
+declare i32 @__cq_q_e_d_100(i32, i8, i64)
+declare void @__cq_q_e_d_100_unc(i32, i32, i8, i64)
+declare i32 @__cq_q_e_l_11_t(i32, i32, i32)
+declare void @__cq_q_e_l_11_t_unc(i32, i32, i32, i32)
+declare i32 @__cq_q_e_b_10(i32, float)
+declare void @__cq_q_e_b_10_unc(i32, i32, float)
+declare i32 @__cq_q_e_b_01(i1, i32)
+declare void @__cq_q_e_b_01_unc(i32, i1, i32)
+declare i32 @__cq_q_e_w_100(i32, ptr, i32)
+declare void @__cq_q_e_w_100_unc(i32, i32, ptr, i32)
+declare i32 @__cq_q_e_h_111_t(i32, i32, i32, i32)
+declare void @__cq_q_e_h_111_t_unc(i32, i32, i32, i32, i32)
 """
 
 STANDIN_NCLONES = {"pi": 3, "pd": 2, "pl": 1, "pb": 2, "pw": 1, "ph": 1}
@@ -979,7 +972,7 @@ def standin_reference(name, args):
 
 class StandIn(unittest.TestCase):
     """cq-rft: the evaluator's declared clone stand-in gives the C oracle's value for the same callee and
-    arguments (CR §6: one deterministic stand-in on both sides), its twin leaves 0, and both sides
+    arguments (CR §6: one deterministic stand-in on both sides), its twin leaves 0 (a table twin frees the rail, §1.4), and both sides
     agree with cq_standin.h restated in Python."""
 
     @classmethod
@@ -1037,14 +1030,14 @@ class StandIn(unittest.TestCase):
     def test_stubgen_leaves_unknown_callees_undefined(self):
         text = STANDIN_LL + "declare i32 @__cq_q_absent_1(i32, i32)\n"
         out, names = stubgen.generate([text], [self.o1.read_text()])
-        self.assertIn("__cq_q_e_i_11_ctl_unc", names)
+        self.assertIn("__cq_q_e_i_11_t_ctl_unc", names)
         self.assertNotIn("__cq_q_absent_1", names)  # no C declaration: left to the link
         self.assertIn('c"e_w|i64|i64,ptr,i32\\00"', out)
 
     def test_malformed_clone_is_a_violation(self):
         # a K argument missing: the evaluator rejects the call rather than guessing
-        bad = STANDIN_LL.replace("@__cq_q_e_l_10(i32 %ha, i16 %b, i32 4)", "@__cq_q_e_l_10(i32 %ha, i16 %b)") \
-                        .replace("declare i32 @__cq_q_e_l_10(i32, i16, i32)", "declare i32 @__cq_q_e_l_10(i32, i16)")
+        bad = STANDIN_LL.replace("@__cq_q_e_l_11_t(i32 %ha, i32 %hb, i32 4)", "@__cq_q_e_l_11_t(i32 %ha, i32 %hb)") \
+                        .replace("declare i32 @__cq_q_e_l_11_t(i32, i32, i32)", "declare i32 @__cq_q_e_l_11_t(i32, i32)")
         ll = self.tmp / "standin_bad.ll"
         ll.write_text(bad)
         r = run.run_sample(ll, self.spec, {"call": 2, "args": [1.25, -2]}, "ours", rt_sources=RT,
@@ -1144,12 +1137,6 @@ class HandleValues(unittest.TestCase):
             self.assertEqual(len([e for e in ev if e["ev"] == "free"]), 2 if x0 % 2 else 1)
             self.assertEqual([e for e in ev if e["ev"] == "ret"][0]["v"], hex(8 + x0))
 
-    def test_clone_registry(self):
-        r = go("clone_registry.ll", *self.ARGS, [6, 0.5])
-        self.assertEqual(r.violations, [])
-        self.assertEqual(r.outputs["ret"][0]["v"], {"w": "i32", "v": hex(1006)})
-        self.assertEqual(freed(r), 1)
-
 
 class HandleReturn(unittest.TestCase):
     """cq-n6a0: an entry whose lowered return is a rail handle (CR §1.1) reports the rail's value as its
@@ -1237,7 +1224,7 @@ class ExitRoles(unittest.TestCase):
 
 class HostClone(unittest.TestCase):
     """cq-aou6: a declared clone whose fn the host defines (libm, also through an llvm.<fn>.f64 intrinsic
-    of the C module) computes the host's fn, as the C oracle links it; its twin XORs it out; K optional."""
+    of the C module) computes the host's fn, as the C oracle links it; its twin XORs it out; K only on a table clone."""
 
     def test_libm_values(self):
         spec = DriverSpec(example="chk-core", protos=["double hx(double,double)"], setup="",
@@ -1536,18 +1523,15 @@ class Fma16(unittest.TestCase):
 
 
 class Bf16Memory(unittest.TestCase):
-    """cq-7n88: rt-mem accepts the bf16 element width (a 2-byte fp element, CR §1.1): QROM and QRAM."""
+    """cq-7n88: the bus accepts the bf16 access width (2 cells, a 2-byte fp value, CR §1.3)."""
 
-    def test_qrom_load_bf16(self):
-        rc, out = TmplCall.call(["cq_template_qrom_load_bf16 i32|ptr,i64,i32 p:3412785600ff l:3 h:i8:1",
-                                 "cq_template_qrom_load_bf16 i32|ptr,i64,i32 p:3412785600ff l:3 h:i8:3"])
-        self.assertEqual((rc, out), (0, ["5678", "0"]))  # little-endian cell 1; out of range reads 0
-
-    def test_qram_bf16(self):
-        rc, out = TmplCall.call(["=cqrt_qram_alloc_bf16 i32|i32 l:4",
-                                 "cqrt_qram_store_bf16 void|i32,i32,i32 l:51000000 h:i8:2 h:bf16:3f80",
-                                 "cqrt_qram_load_bf16 i32|i32,i32 l:51000000 h:i8:2",
-                                 "cqrt_qram_load_bf16 i32|i32,i32 l:51000000 h:i8:1"])
+    def test_bus_bf16(self):
+        addr = 0x1000
+        rc, out = TmplCall.call(["=cqrt_qram_alloc_i8 i32|i32 l:0",
+                                 # an unmapped page: the store makes its cells QUANTUM (§2), the load reads them
+                                 f"cqrt_qram_store_bf16_hl void|i32,i64,i32 l:51000000 l:{addr:x} h:bf16:3f80",
+                                 f"cqrt_qram_load_bf16_hl i32|i32,i64 l:51000000 l:{addr:x}",
+                                 f"cqrt_qram_load_bf16_hl i32|i32,i64 l:51000000 l:{addr + 2:x}"])
         self.assertEqual((rc, out), (0, ["51000000", "void", "3f80", "0"]))
 
 

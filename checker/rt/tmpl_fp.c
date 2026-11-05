@@ -511,8 +511,8 @@ static int tf_eval(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *
     cqe_fail("tmpl-fp: %s at width '%s': not an fp format", t->op, t->w);
     return -1;
   }
-  if (t->pred[0] || t->to[0] || t->strided) {
-    cqe_fail("tmpl-fp: %s_%s: predicate, _to_ or stride on an fp arithmetic op", t->op, t->w);
+  if (t->pred[0] || t->to[0]) {
+    cqe_fail("tmpl-fp: %s_%s: predicate or _to_ on an fp arithmetic op", t->op, t->w);
     return -1;
   }
   int n = tf_ops[op].arity;

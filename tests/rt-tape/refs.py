@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The references of 209, 210, 99, 47 and 138 in the real evaluator (core.c, dispatch.c, the templates, rt_tape.c,
-host_fx.c) through a hand driver: their event sequences per BACKEND_ABI §1.11, with no violation.
-The bus is bus_shim.c until the evaluator's rt_bus.c is on the branch. Usage: refs.py --clang C --work D --spec S"""
+host_fx.c, rt_bus.c, the bundle's cq_host.c) through a hand driver: their event sequences per BACKEND_ABI §1.11, with no violation.
+Usage: refs.py --clang C --work D --spec S"""
 import argparse
 import glob
 import json
@@ -27,8 +27,8 @@ def sh(cmd, **kw):
 
 def runtime(clang, work):
     objs = []
-    srcs = [p for p in glob.glob(os.path.join(RT, "*.c")) if os.path.basename(p) not in ("rt_mem.c",)]
-    srcs.append(os.path.join(HERE, "bus_shim.c"))
+    srcs = glob.glob(os.path.join(RT, "*.c"))
+    srcs.append(os.path.join(ROOT, "bundle", "host", "cq_host.c"))
     for s in srcs:
         o = os.path.join(work, os.path.basename(s) + ".o")
         sh([clang, "-std=c17", "-O1", "-w", "-I", RT, "-c", s, "-o", o])

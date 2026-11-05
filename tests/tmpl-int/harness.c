@@ -298,7 +298,6 @@ static void neg_case(const char *what, const char *op, const char *w, const char
   if (pred_rm_exc == 1) snprintf(tn.pred, sizeof tn.pred, "eq");
   if (pred_rm_exc == 2) tn.rm = 1;
   if (pred_rm_exc == 3) tn.exc = 1;
-  if (pred_rm_exc == 4) tn.strided = 1;
   uint64_t buf[3][MAXN]; memset(buf, 0, sizeof buf);
   cqe_val av[3];
   for (int i = 0; i < 3; ++i) { av[i].bits = b0; av[i].kind = k0; av[i].nw = nw(b0 ? b0 : 1); av[i].w = buf[i]; }
@@ -336,7 +335,6 @@ static void negative_tests(void) {
   neg_case("predicate", "add", "i32", "", "", 1, 2, 32, 'i', -1, 0);
   neg_case("rounding mode", "add", "i32", "", "", 2, 2, 32, 'i', -1, 0);
   neg_case("_exc", "sdiv", "i32", "", "", 3, 2, 32, 'i', -1, 0);
-  neg_case("stride", "zext", "i8", "i32", "", 4, 1, 8, 'i', -1, 0);
   neg_case("shape length", "add", "i32", "", "hll", 0, 2, 32, 'i', -1, 0);
   neg_case("shape letter", "add", "i32", "", "hx", 0, 2, 32, 'i', -1, 0);
   neg_case("width i0", "add", "i0", "", "", 0, 2, 0, 'i', -1, 0);
