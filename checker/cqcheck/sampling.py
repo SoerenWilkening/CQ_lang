@@ -441,7 +441,7 @@ extern const int cqd_nsites, cqd_nloops, cqd_isolate;
 #define NS_USED ((size_t)(cqd_nsites < NSITE ? cqd_nsites : NSITE))
 #define NL_USED ((size_t)(cqd_nloops < NLOOP ? cqd_nloops : NLOOP))
 typedef struct {
-    size_t len; int nob; int done; long long hdrs;
+    size_t len; int nob; int done; long long hdrs, calls;
     unsigned char pcount[NSITE], mcount[NSITE], ocount[NSITE];
     long long cnt[NLOOP]; unsigned char has[NLOOP], ctx[NLOOP], ent[NLOOP], tc[NLOOP];
     uintptr_t ob[NOBJ]; uint64_t os[NOBJ]; uint32_t oi[NOBJ], osite[NOBJ]; uint32_t serial;
@@ -632,6 +632,8 @@ uint64_t __cqd_ms(void *root, const char *p, uint32_t id) {
     }
     return (uint64_t)(e - p);
 }
+/* a function entry: a recursion has no loop header, and its budget is the same number (204's depth 2^32) */
+void __cqd_fn(void) { if (++S->calls > C->hdrcap) cqd_stop("timeout", SIGALRM); }
 void __cqd_hdr(int l, bool be) {
     if (++S->hdrs > C->hdrcap) cqd_stop("timeout", SIGALRM);
     if (!be || !S->has[l]) { if (S->has[l]) cqd_trip(l, S->cnt[l]); S->cnt[l] = 1; S->has[l] = 1; }
@@ -688,7 +690,7 @@ static void cqd_restore(void) {
     char *mlo = cqd_ms_lo, *msave = cqd_ms_save; size_t mn = cqd_ms_n;
     for (int i = 0; i < ns; i++) memcpy(p[i], s[i], n[i]);
     memcpy(mlo, msave, mn);
-    S->len = B->len; S->nob = B->nob; S->done = 0; S->hdrs = 0;
+    S->len = B->len; S->nob = B->nob; S->done = 0; S->hdrs = 0; S->calls = 0;
     memcpy(S->pcount, B->pcount, NS_USED); memcpy(S->mcount, B->mcount, NS_USED);
     memcpy(S->ocount, B->ocount, NS_USED);
     memcpy(S->cnt, B->cnt, NL_USED * sizeof *S->cnt); memcpy(S->has, B->has, NL_USED);
@@ -1502,7 +1504,7 @@ class Instrumenter:
              "declare void @__cqd_pst(ptr, ptr, i32)", "declare i32 @__cqd_pld(ptr, ptr)",
              "@__cqd_afn = internal global ptr null", "@__cqd_rid = internal global i32 0",
              f"@__cqd_aid = internal global [{self.NAID} x i32] zeroinitializer",
-             "declare void @__cqd_hdr(i32, i1)", "declare void @__cqd_ctx(i32)"]
+             "declare void @__cqd_hdr(i32, i1)", "declare void @__cqd_ctx(i32)", "declare void @__cqd_fn()"]
         d.append("define void @__cqd_globals() {")
         for g, ty in self.registered_globals():
             d.append(f"  call void @__cqd_regg(ptr {g}, i64 ptrtoint (ptr getelementptr ({ty}, ptr null, i32 1) to i64), "
@@ -1534,7 +1536,7 @@ class Instrumenter:
             insts = f.blocks[b]
             pre: List[str] = []
             if bi == 0:
-                pre += self.param_entry(f)
+                pre += ["call void @__cqd_fn()"] + self.param_entry(f)
                 pre += [f"call void @__cqd_ctx(i32 {lp.id})" for lp in children.get(None, [])]
             phis = [x for x in insts if x.op == "phi"]
             rest = [x for x in insts if x.op != "phi"]
@@ -2002,6 +2004,11 @@ class ProbeBuild:
         # start routine runs to completion inside pthread_create, so every probe observation is a
         # function of the input (cq-nfv3: 106's real threads raced on the probe's buffer and counters)
         ll = re.sub(r"@pthread_(create|join|detach)\b", r"@__cqd_pthread_\1", ll)
+        # rulings Q8: no direct host call runs for real here either (a real fgets would read the server's
+        # own batch pipe: 210); the same stand-ins as the C oracle, so the same inputs reach the same paths
+        callees = D.effect_callees(ll, D.proto_definitions(self.spec) | D.corpus_roots())
+        ll = D.rename_effects(ll, callees) + D.effect_wrappers_ir(callees)
+        self.fx = bool(callees)
         (w / "probe.ll").write_text(ll + "\n" + "\n".join(stubs) + "\n")
         (w / "driver.c").write_text(_driver_main(self.spec)
                                     + f"const int cqd_nsites = {max(1, len(self.ins.sites))}, "
@@ -2083,6 +2090,10 @@ class ProbeBuild:
             fp = ex.submit(self._compile, "probe.ll")
             fd = ex.submit(self._compile, "driver.c", "-include", "stdbool.h")
         objs = [fp.result(), fd.result(), str(_rt_object())]
+        if self.fx:
+            (w / "fx_probe.c").write_text('#define FX_LOG(line, n) ((void)0)\n'
+                                          f'#include "{D.REPO / "checker" / "oracle" / "fx_call.h"}"\n')
+            objs.append(self._compile("fx_probe.c"))
         r = subprocess.run(_ld_command(objs, str(self.exe)), capture_output=True, text=True)
         if r.returncode != 0:
             undef = re.findall(r'^\s+"_([^"]+)", referenced from', r.stderr, re.M)

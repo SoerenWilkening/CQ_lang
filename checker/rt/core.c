@@ -29,8 +29,7 @@
  * and not freed, rule 5), frozen (rotated, not measured, or a rule-6 image carrying a rotated register's
  * content: cqe__carry, cq-qhow), store_kept (a value or control rail of a bus store still live, rule 5
  * sentence 3), kept_entangled (cq-arch A4: a rail one of whose direct sources received
- * a non-diagonal gate or a measurement after the rail was written), output (its handle sits in
- * output memory at exit, mark_outputs; cq-tt2j), fenv_mode (a rail an _rmq template took as its
+ * a non-diagonal gate or a measurement after the rail was written), fenv_mode (a rail an _rmq template took as its
  * rounding mode; rule 23), fenv_flags (an _exc template's result or a rail written from one: the
  * flags lineage of rule 23), seed (an alloc never written since), garbage (anything else). Each live
  * rail also carries "known" (its known-basis flag, above; cq-tt2j: CR §6 item 1's leak rule reads it).
@@ -401,7 +400,6 @@ typedef struct {
   uint8_t busz;  /* a bus swap left it at 0 and nothing wrote it since (cqe__set_busz) */
   uint8_t store_kept; /* the value or control rail of a bus store (rule 5 sentence 3) */
   uint8_t fenv;  /* cq-tt2j, rule 23: 1 flags lineage (an _exc result or written from one), 2 a mode operand */
-  uint8_t out;   /* cq-tt2j: at exit, its handle sits in a cell of output memory (mark_outputs) */
   uint8_t image; /* cq-qhow: carries a frozen register's content (cqe__carry): a rule-6 image, FROZEN */
   uint64_t t_create, t_write, t_nd, t_meas;                       /* event clock; 0 = never */
   uint64_t ry_t, ry_ang;  /* cq-3o3v: the last firing Ry on the rail (clock after it, angle bits) */
@@ -648,8 +646,6 @@ static const char *exit_role(int32_t h) {
     if ((s->t_nd && s->t_nd > r->t_write) || (s->t_meas && s->t_meas > r->t_write))
       return "kept_entangled";
   }
-  if (r->out)
-    return "output";
   if (r->fenv & 2)
     return "fenv_mode";
   if (r->fenv & 1)
@@ -657,75 +653,6 @@ static const char *exit_role(int32_t h) {
   if (r->seed && !r->written)
     return "seed";
   return "garbage";
-}
-
-/* ---- output memory at exit (cq-tt2j) -------------------------------------------------------
- * CR §6 item 1: a rail live at exit whose handle sits in output memory is a named output, never a
- * leak (orchestrator decision on cq-tt2j: a host or slot cell of an output object or out-parameter,
- * a global, the object a returned pointer reaches). run.py (cells_module) has the lowered module
- * call __cqe_cell_note(p, n) after each store of a type holding an i32 (the handle width) and each
- * memory intrinsic (n bytes at p): the cells the module wrote. At exit every noted cell that is still
- * allocated memory is read as 4-byte words; a word naming a live rail marks it "output". Not output
- * memory: a cell in a dead stack frame (below the driver's frame, R->stack_lo: every frame of the
- * lowered module has returned at the end of a sample) and a cell of a freed sample-arena block. The
- * driver's objects (its frame, statics), the module's globals and live heap blocks are output
- * memory. Writes outside the lowered module (the driver, the runtime) are not noted: the driver's
- * memory-borne inputs are rails it allocates itself, registers kept anyway. A classical word that
- * happens to equal a live handle in such a cell also marks the rail (a missed leak, never a false
- * one). */
-typedef struct {
-  uintptr_t p;
-  uint64_t n;
-} cellnote;
-static cellnote *cn_tab; /* open addressing on p; in __DATA and the sample arena: reset every shot */
-static size_t cn_cap, cn_n;
-
-static size_t cn_slot(cellnote *tab, size_t cap, uintptr_t p) {
-  size_t i = (size_t)((p >> 2) * 0x9E3779B97F4A7C15ULL) & (cap - 1);
-  while (tab[i].p && tab[i].p != p)
-    i = (i + 1) & (cap - 1);
-  return i;
-}
-
-void __cqe_cell_note(void *ptr, int64_t n) {
-  uintptr_t p = (uintptr_t)ptr;
-  if (!p || n <= 0)
-    return;
-  if (2 * (cn_n + 1) > cn_cap) {
-    size_t cap = cn_cap ? 2 * cn_cap : 256;
-    cellnote *tab = calloc(cap, sizeof *tab);
-    if (!tab)
-      abort();
-    for (size_t i = 0; i < cn_cap; ++i)
-      if (cn_tab[i].p)
-        tab[cn_slot(tab, cap, cn_tab[i].p)] = cn_tab[i];
-    free(cn_tab);
-    cn_tab = tab;
-    cn_cap = cap;
-  }
-  size_t i = cn_slot(cn_tab, cn_cap, p);
-  if (!cn_tab[i].p) {
-    cn_tab[i].p = p;
-    ++cn_n;
-  }
-  if ((uint64_t)n > cn_tab[i].n)
-    cn_tab[i].n = (uint64_t)n;
-}
-
-static int cell_dead(uintptr_t p); /* below, beside the arena */
-
-static void mark_outputs(void) {
-  for (size_t i = 0; i < cn_cap; ++i) {
-    uintptr_t p = cn_tab[i].p;
-    if (!p || cell_dead(p))
-      continue;
-    for (uintptr_t q = (p + 3) & ~(uintptr_t)3; q + 4 <= p + cn_tab[i].n; q += 4) {
-      int32_t v;
-      memcpy(&v, (const void *)q, 4);
-      if (v >= 1 && (uint32_t)v <= nrails && rails[v].live)
-        rails[v].out = 1;
-    }
-  }
 }
 
 static void at_exit_handler(void) {
@@ -744,7 +671,6 @@ static void at_exit_handler(void) {
     }                                                                                              \
     len += (size_t)snprintf(buf + len, cap - len, __VA_ARGS__);                                    \
   } while (0)
-  mark_outputs();
   APPEND("{\"ev\":\"exit\",\"live\":[");
   int first = 1;
   for (uint32_t h = 1; h <= nrails; ++h) {
@@ -918,7 +844,7 @@ void free(void *p) {
     size_t need = arena_need(*(size_t *)((char *)p - 16));
     size_t *mark = (size_t *)((char *)p - 8);
     if (*mark != ARENA_FREED) { /* a second free of a block changes nothing */
-      *mark = ARENA_FREED;   /* a large block is marked too: cell_dead reads the mark (cq-tt2j) */
+      *mark = ARENA_FREED;   /* a large block is marked too */
       if (need <= ARENA_FL_MAX) {
         *(void **)p = arena_fl[need / 16];
         arena_fl[need / 16] = p;
@@ -1028,27 +954,6 @@ struct shot_state {
 };
 
 #define FREED_DIG0 0xcbf29ce484222325ULL
-
-/* cq-tt2j (mark_outputs): p lies in a dead stack frame (below the driver's frame at the sample's
- * start; with no shot running, every stack address) or in a freed block of the sample arena. The
- * sample arena's blocks lie back to back from its base (header: size, free mark), so the block of p
- * is found by walking them; done once per noted cell at exit only. */
-static int cell_dead(uintptr_t p) {
-  char *hi = (char *)pthread_get_stackaddr_np(pthread_self());
-  char *lo = hi - pthread_get_stacksize_np(pthread_self());
-  if ((char *)p >= lo && (char *)p < hi)
-    return !(sample_running() && (char *)p >= R->stack_lo);
-  if (!in_arena(&a_sample, (void *)p) || (char *)p >= a_sample.top)
-    return 0;
-  for (char *b = a_sample.base; b < a_sample.top;) {
-    size_t n = *(size_t *)b;
-    char *next = b + arena_need(n);
-    if ((char *)p < next)
-      return (char *)p >= b + 16 && *(size_t *)(b + 8) == ARENA_FREED;
-    b = next;
-  }
-  return 0;
-}
 
 /* A cqrt_free of rail h with its known flag: counted into the running sample's summary; whether its
  * free event is written (always outside a sample and without the compact trace; in a sample of a

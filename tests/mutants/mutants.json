@@ -136,14 +136,14 @@
       "id": "71-leak-garbage",
       "class": "leaked_garbage",
       "example": "71_extern_global_output",
-      "note": "the clone's x * x rail is neither uncomputed nor freed: an entangled garbage rail live at exit, a leak by CR §6 item 1 (cq-tt2j); the sign rail @signflag holds stays an output",
+      "note": "the clone's x * x rail is neither uncomputed nor freed: an entangled garbage rail live at exit, a leak by CR §6 item 1 (cq-tt2j); the sign rail stays a kept store's value",
       "edits": [
         {
-          "old": "  call void @cq_template_mul_i32_unc(i32 %5, i32 %0, i32 %0)",
+          "old": "  call void @cq_template_mul_i32_unc(i32 %6, i32 %0, i32 %0)",
           "new": "  ; dropped"
         },
         {
-          "old": "  call void @cqrt_free(i32 %5)",
+          "old": "  call void @cqrt_free(i32 %6)",
           "new": "  ; dropped"
         }
       ]
@@ -411,7 +411,7 @@
           "new": ""
         },
         {
-          "old": "  call void @cqrt_tape_write_str_lit(i32 %4, ptr @.str)",
+          "old": "  call void @cqrt_tape_write_i64_lit(i32 %4, i64 ptrtoint (ptr @.str to i64))",
           "new": ""
         }
       ]

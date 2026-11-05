@@ -59,8 +59,8 @@ RunResult fields (JSON-serializable):
               sequence (rt_tape.c, _tape_entry), "deviation" rule 16's stated deviation; "mem" is the named outputs in memory, read from the bus
               after the driver call (CR §6 item 1, drivers.py "Driver objects"; rt_bus.c's {"ev":"out_mem",
               "name","addr","w","v"[,"off"]}); "objects" the address table of the module's globals and
-              functions ({"ev":"object","name","addr","size"}) and "regions" the host ranges a pointer may
-              lie in ({"ev":"region","name","lo","hi"}), which read pointer values relationally (CR §6,
+              functions ({"ev":"out_mem","table":"object","name","addr","size"}) and "regions" the host ranges a pointer may
+              lie in ({"ev":"out_mem","table":"region","name","lo","hi"}), which read pointer values relationally (CR §6,
               compare.py "Pointers"); "v" is the typed
               scalar {"w": rail type, "v": hex bit pattern} of an arithmetic return (cq-pq3:
               integers "i<N>" at their C width, two's complement; float "f32", double "f64",
@@ -289,9 +289,10 @@ static void cqd_ret(int call, const char *fn, const char *w, const void *p, size
 _OUT_PRELUDE = r"""
 __attribute__((weak)) void __cqe_out_mem(const char *, unsigned long long, unsigned long long);
 void __cqe_out_globals(void);
+void __cqe_out_globals_tls(void);
 void cqd_out_object(const char *name, const void *addr, unsigned long long bytes) {
   char b[512];
-  snprintf(b, sizeof b, "{\"ev\":\"object\",\"name\":\"%s\",\"addr\":\"0x%llx\",\"size\":%llu}", name,
+  snprintf(b, sizeof b, "{\"ev\":\"out_mem\",\"table\":\"object\",\"name\":\"%s\",\"addr\":\"0x%llx\",\"size\":%llu}", name,
            (unsigned long long)addr, bytes);
   cqe_log(b);
 }
@@ -299,14 +300,19 @@ void cqd_out_mem(const char *name, const void *addr, unsigned long long bytes) {
   if (__cqe_out_mem) __cqe_out_mem(name, (unsigned long long)addr, bytes);
   cqd_out_object(name, addr, bytes);
 }
+void cqd_out_ctl_measure(int h) {
+  char b[80];
+  snprintf(b, sizeof b, "{\"ev\":\"out_mem\",\"table\":\"ctl_measure\",\"h\":%d}", h);
+  cqe_log(b);
+}
 static void cqd_out_regions(void) {
   char b[160];
   unsigned long long sp = (unsigned long long)__builtin_frame_address(0);
-  snprintf(b, sizeof b, "{\"ev\":\"region\",\"name\":\"stack\",\"lo\":\"0x%llx\",\"hi\":\"0x%llx\"}",
+  snprintf(b, sizeof b, "{\"ev\":\"out_mem\",\"table\":\"region\",\"name\":\"stack\",\"lo\":\"0x%llx\",\"hi\":\"0x%llx\"}",
            sp - (8ULL << 20), sp + (1ULL << 16));
   cqe_log(b);
   /* bundle/host/cq_host.c: __cq_alloc's chunks from its fixed hint on */
-  cqe_log("{\"ev\":\"region\",\"name\":\"heap\",\"lo\":\"0x200000000000\",\"hi\":\"0x300000000000\"}");
+  cqe_log("{\"ev\":\"out_mem\",\"table\":\"region\",\"name\":\"heap\",\"lo\":\"0x200000000000\",\"hi\":\"0x300000000000\"}");
 }
 static void cqd_out_all(void) { __cqe_out_globals(); cqd_out_regions(); }
 """
@@ -318,7 +324,8 @@ def driver_c(spec: DriverSpec, samples: Sequence[dict]) -> str:
     process, each from the same post-setup state (core.c, shots; cq-e2i9)."""
     from cqcheck import drivers
     return _RESULT_PRELUDE + _OUT_PRELUDE + drivers.driver_source(
-        spec, list(samples), before_call=SHOT_BEFORE, after_call=SHOT_AFTER, out_mem="cqd_out_mem", out_globals="cqd_out_all")
+        spec, list(samples), before_call=SHOT_BEFORE, after_call=SHOT_AFTER, out_mem="cqd_out_mem", out_globals="cqd_out_all",
+        reset_globals="__cqe_out_globals_tls")
 
 
 # core.c, shots: the worker runs each record's call in-process from the post-setup state.
@@ -527,6 +534,7 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
             tot = default_env_module(tot)
         if any(Path(o).name == "host_fx.o" for o in objs):  # cq-e4jk; a test's restricted runtime may omit it
             tot = host_effects_module(tot, defined)
+        tot = ctl_measures_module(kept_copies_module(tot))
         from cqcheck import drivers
         tot += drivers.out_globals_ir(ctext if ctext is not None else canon, canon, "__cqe_out_globals",
                                       "cqd_out_mem", "cqd_out_object")
@@ -553,7 +561,7 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
         _sh([CLANG, "-std=c17", "-O1", "-w", "-target", triple, "-I", str(RT_DIR), "-c", str(e), "-o", str(o)])
         extra_objs.append(str(o))
     _sh([CLANG, "-O0", "-w", "-target", triple, *[str(o) for o in objs], *extra_objs, "lowered.steps.ll", str(driver_obj(dll, triple)), "stubs.ll",
-         "-lm", "-o", "prog"], cwd=tmp)
+         "-Wl,-U,___cqe_out_mem", "-lm", "-o", "prog"], cwd=tmp)
 
 
 def driver_ll(drv: str, triple: str) -> Path:
@@ -1015,6 +1023,7 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
     mem: List[dict] = []
     objects: List[dict] = []
     regions: List[dict] = []
+    ctl_measured: List[int] = []
     direct_fx: List[dict] = []
     tape_out, tape_seq, deviation = "", [], False
     last_exit: Optional[dict] = None
@@ -1037,11 +1046,14 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
         elif ev == "exit":
             last_exit = e
         elif ev == "out_mem":
-            mem.append({k: e[k] for k in ("name", "addr", "off", "w", "v") if k in e})
-        elif ev == "object":
-            objects.append({k: e[k] for k in ("name", "addr", "size") if k in e})
-        elif ev == "region":
-            regions.append({k: e[k] for k in ("name", "lo", "hi") if k in e})
+            if e.get("table") == "object":      # the driver's lines (_OUT_PRELUDE), kept by the same compact filter
+                objects.append({k: e[k] for k in ("name", "addr", "size") if k in e})
+            elif e.get("table") == "region":
+                regions.append({k: e[k] for k in ("name", "lo", "hi") if k in e})
+            elif e.get("table") == "ctl_measure":
+                ctl_measured.append(e.get("h"))
+            else:
+                mem.append({k: e[k] for k in ("name", "addr", "off", "w", "v") if k in e})
         elif ev == "tape" and e.get("op") == "shot":
             tape_out, tape_seq, deviation = _tape_shot(e)
         elif ev == "effect":
@@ -1055,8 +1067,56 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
     return RunResult(side=side, sample=sample, outputs={"ret": rets, "stdout": stdout + tape_out, "exit": code,
                                                     "effects": _effects_in_order(direct_fx), "tape": tape_seq,
                                                     "deviation": deviation, "mem": mem, "objects": objects,
-                                                    "regions": regions},
+                                                    "regions": regions, "ctl_measured": ctl_measured},
                      measured=measured, rotations=rots, kept=kept, clean=clean, violations=viol)
+
+
+_TABLE_RESULT = re.compile(r"^\s+(%[-\w.$\"]+) = (?:tail |notail )?call [^@]*?%[-\w.$\"]+\(")
+_COPY_OUT = re.compile(r"^(\s+)call void @cqrt_copy_\w+\(i32 (%[-\w.$\"]+), i32 (%[-\w.$\"]+)\)")
+
+
+def kept_copies_module(text: str) -> str:
+    """Rule 19: at a table dispatch the copy of a candidate's result (its result is zeroed by the twin) is
+    kept across the next memory version change: a kept rail a rule names (CR §6 item 1). Each copy out of
+    the result of an indirect call of a lowered clone takes the kept role a rule's value rail has."""
+    out, results = [], set()
+    used = False
+    for line in text.splitlines():
+        out.append(line)
+        if line.startswith("}"):
+            results = set()
+        m = _TABLE_RESULT.match(line)
+        if m:
+            results.add(m.group(1))
+        m = _COPY_OUT.match(line)
+        if m and m.group(2) in results:
+            out.append(f"{m.group(1)}call void @cqe__set_store_kept(i32 {m.group(3)})")
+            used = True
+    if used:
+        out.append("declare void @cqe__set_store_kept(i32)")
+    return "\n".join(out) + "\n"
+
+
+_MEASURE = re.compile(r"^(\s+)%[-\w.$\"]+ = call \S+ @cqrt_measure_\w+\(i32 (%[-\w.$\"]+)\)")
+
+
+def ctl_measures_module(text: str) -> str:
+    """Rule 19: inside a _ctl clone a cq_measure is a controlled copy, measured whatever the predicate; where
+    it reads 0 the predicate may be 0 and the C program never reached it (compare._meas_options). Each such
+    measurement names its rail to the trace."""
+    out = []
+    in_ctl = used = False
+    for line in text.splitlines():
+        if line.startswith("define"):
+            in_ctl = bool(re.search(r"@\S*_ctl\(", line))
+        m = _MEASURE.match(line) if in_ctl else None
+        if m:
+            out.append(f"{m.group(1)}call void @cqd_out_ctl_measure(i32 {m.group(2)})")
+            used = True
+        out.append(line)
+    if used:
+        out.append("declare void @cqd_out_ctl_measure(i32)")
+    return "\n".join(out) + "\n"
 
 
 def host_effects_module(text: str, defined: Sequence[str] = ()) -> str:

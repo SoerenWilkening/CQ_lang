@@ -337,8 +337,6 @@ static char *arena_base, *arena_top; /* arena_top is restored with __DATA: the r
 static uintptr_t last_setup_lo;      /* the setup's most recent block (the driver's sample buffer) */
 static size_t last_setup_n;
 
-static uint64_t sample_allocs;       /* the sample's heap blocks; restored with __DATA */
-
 static void *arena_alloc(size_t n, size_t al) {
     if (!arena_base) return 0;
     uintptr_t a = ((uintptr_t)arena_top + al - 1) & ~(uintptr_t)(al - 1);
@@ -364,7 +362,6 @@ static void *heap_alloc(size_t al, size_t n) {
         if (p && !sample_running()) last_setup_lo = (uintptr_t)p, last_setup_n = n;
     }
     if (p) heap_add(p, n), sh_clear(p, n);
-    if (sample_running()) sample_allocs++;
     return p;
 }
 
@@ -1267,7 +1264,23 @@ void __cqo_out_object(const char *name, const void *addr, uint64_t n) {
                      (unsigned long long)(uintptr_t)addr, (unsigned long long)n);
     out_long(b, (size_t)m);
 }
-/* The ranges a pointer the program made may lie in, and the blocks it allocated (compare.py "Pointers", _leaks). */
+/* Rail-sized allocations (CR §6, rule 16; oracle.py _k2_sites): the block is K2 bytes, and the size goes to the trace. */
+static void k2_note(uint64_t n, uint64_t k2) {
+    if (!sample_running()) return;
+    char b[96];
+    int m = snprintf(b, sizeof b, "{\"ev\":\"k2\",\"n\":%llu,\"k2\":%llu}", (unsigned long long)n, (unsigned long long)k2);
+    out_long(b, (size_t)m);
+}
+void *__cqo_malloc_k2(size_t n, size_t k2) { k2_note(n, k2); return __cqo_malloc(n > k2 ? k2 : n); }
+void *__cqo_calloc_k2(size_t c, size_t n, size_t k2) {
+    size_t t = c && n > (size_t)-1 / c ? (size_t)-1 : c * n;
+    k2_note(t, k2);
+    return __cqo_malloc(t > k2 ? k2 : t);
+}
+void *__cqo_aligned_alloc_k2(size_t al, size_t n, size_t k2) { k2_note(n, k2); return heap_alloc(al, n > k2 ? k2 : n); }
+void *__cqo_realloc_k2(void *p, size_t n, size_t k2) { k2_note(n, k2); return __cqo_realloc(p, n > k2 ? k2 : n); }
+
+/* The ranges a pointer the program made may lie in (compare.py "Pointers"). */
 void __cqo_out_regions(void) {
     if (!sample_running()) return;
     char b[256];
@@ -1280,8 +1293,6 @@ void __cqo_out_regions(void) {
                      (unsigned long long)(uintptr_t)arena_base, (unsigned long long)(uintptr_t)arena_top);
         out_long(b, (size_t)m);
     }
-    m = snprintf(b, sizeof b, "{\"ev\":\"allocs\",\"n\":%llu}", (unsigned long long)sample_allocs);
-    out_long(b, (size_t)m);
 }
 
 static void *sys_alloc(size_t n) {

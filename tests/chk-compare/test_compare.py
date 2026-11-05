@@ -596,7 +596,7 @@ class LeakRule(unittest.TestCase):
         # rule 20's kept n > K2: a garbage i1 is allowed per block the C program allocated, no more
         rail = lambda a, b: [self.leak(9, a ^ b, "i1", "garbage")]
         self.assertFalse(compare(self.ours(rail), self.c_side(), QKEY, "c").equal)
-        one = [dataclasses.replace(r, outputs=dict(r.outputs, allocs=1)) for r in self.c_side()]
+        one = [dataclasses.replace(r, outputs=dict(r.outputs, k2=[[8, 4096]])) for r in self.c_side()]
         c = compare(self.ours(rail), one, QKEY, "c")
         self.assertTrue(c.equal, c.reasons)
         two = lambda a, b: rail(a, b) + [self.leak(10, a, "i1", "garbage")]

@@ -1256,30 +1256,58 @@ class HostClone(unittest.TestCase):
 
 class HostOutput(unittest.TestCase):
     """cq-e4jk: outputs["stdout"] is the process's output followed by the tape's end-of-shot text;
-    outputs["effects"] the direct host-effect calls (host_fx.c) followed by the performed tape
-    effect entries."""
+    outputs["effects"] the {"ev":"effect"} lines in the C program's order (run._effects_in_order);
+    outputs["tape"] the shot's event sequence; outputs["deviation"] rule 16's stated deviation."""
 
     def test_tape_shot_and_effect_events(self):
+        fmt = {"seq": 0, "kind": "fmt", "t": 1, "pred": 1, "class": "deferred", "performed": True, "fmt": "big %d\n",
+               "fields": [], "text": "big 5\n"}
+        rm = {"seq": 1, "kind": "effect", "t": 1, "pred": 1, "class": "deferred", "performed": True, "name": "remove",
+              "fields": [{"k": "lit", "w": "i64", "v": "0x1000", "cap": "/tmp/cq_x"}]}
+        off = {"seq": 2, "kind": "effect", "t": 1, "pred": 0, "class": "deferred", "performed": False, "name": "raise",
+               "fields": [{"k": "lit", "w": "i32", "v": "0x6"}]}
+        rais = {"seq": 3, "kind": "effect", "t": 1, "pred": 1, "class": "input", "performed": True, "name": "fgets",
+                "fields": [{"k": "rail", "h": 9, "w": "i32", "v": "0x1e"}], "r": {"h": 12, "w": "i64", "v": "0x0"}}
         shot = {"ev": "tape", "op": "shot", "aborted": False, "abort_seq": -1, "stdout": "big 5\n\u00c3\u00a9",
-                "events": [
-                    {"seq": 0, "kind": "fmt", "t": 1, "pred": 1, "performed": True, "fmt": "big %d\n", "fields": [],
-                     "text": "big 5\n"},
-                    {"seq": 1, "kind": "effect", "t": 1, "pred": 1, "performed": True, "name": "remove",
-                     "fields": [{"k": "str", "s": "/tmp/cq_x"}]},
-                    {"seq": 2, "kind": "effect", "t": 1, "pred": 0, "performed": False, "name": "raise",
-                     "fields": [{"k": "lit", "w": "i32", "v": "0x6"}]},
-                    {"seq": 3, "kind": "effect", "t": 1, "pred": 1, "performed": True, "name": "raise",
-                     "fields": [{"k": "rail", "h": 9, "w": "i32", "v": "0x1e"}]}]}
-        direct = {"ev": "effect", "name": "unlink", "args": [{"s": "/a"}]}
-        ev = [direct, shot, {"ev": "exit", "live": []}]
+                "deviation": True, "events": [fmt, rm, off, rais, {"seq": 4, "kind": "abort", "f": 3, "fv": "0x0"}]}
+        direct = {"ev": "effect", "seq": -1, "kind": "effect", "class": "host", "pred": 1, "performed": True, "when": "call",
+                  "name": "unlink", "fields": [{"k": "lit", "w": "i64", "v": "0x2000", "cap": "/a"}]}
+        ev = [dict(rais, ev="effect", when="call"), direct, dict(fmt, ev="effect", when="end"),
+              dict(rm, ev="effect", when="end"), shot, {"ev": "exit", "live": []}]
         r = run._result("ours", {}, ev, "pre\n", 0, [])
         self.assertEqual(r.outputs["stdout"], "pre\nbig 5\n\u00e9")
+        # the sequence order: the deferred remove (seq 1) before the input performed at its call (seq 3); the
+        # direct call behind what its call followed; the format entry in stdout only
         self.assertEqual(r.outputs["effects"], [
-            {"name": "unlink", "args": [{"s": "/a"}]},
-            {"name": "remove", "args": [{"s": "/tmp/cq_x"}]},
-            {"name": "raise", "args": [{"w": "i32", "v": "0x1e"}]}])
+            {"name": "remove", "args": [{"w": "i64", "v": "0x1000", "cap": "/tmp/cq_x"}]},
+            {"name": "fgets", "args": [{"w": "i32", "v": "0x1e"}]},
+            {"name": "unlink", "args": [{"w": "i64", "v": "0x2000", "cap": "/a"}]}])
+        self.assertTrue(r.outputs["deviation"])
+        self.assertEqual([e.get("name", e.get("fmt", e["kind"])) for e in r.outputs["tape"]],
+                         ["big %d\n", "remove", "raise", "fgets", "abort"])
+        self.assertEqual(r.outputs["tape"][3]["r"], {"w": "i64", "v": "0x0"})
+        self.assertNotIn("h", r.outputs["tape"][3]["fields"][0])
         r = run._result("ours", {}, [{"ev": "exit", "live": []}], "", 0, [])
         self.assertEqual((r.outputs["stdout"], r.outputs["effects"]), ("", []))
+
+    def test_memory_and_table_lines(self):
+        ev = [{"ev": "out_mem", "name": "x", "w": "i32", "v": "0x5"},
+              {"ev": "out_mem", "table": "object", "name": "x", "addr": "0x1000", "size": 4},
+              {"ev": "out_mem", "table": "region", "name": "heap", "lo": "0x1", "hi": "0x2"}, {"ev": "exit", "live": []}]
+        r = run._result("ours", {}, ev, "", 0, [])
+        self.assertEqual(r.outputs["mem"], [{"name": "x", "w": "i32", "v": "0x5"}])
+        self.assertEqual(r.outputs["objects"], [{"name": "x", "addr": "0x1000", "size": 4}])
+        self.assertEqual(r.outputs["regions"], [{"name": "heap", "lo": "0x1", "hi": "0x2"}])
+
+    def test_direct_stream_call_is_the_stand_in(self):
+        # rulings Q8: every direct host call goes to a wrapper; what the driver line defines stays
+        text = ("declare i32 @putchar(i32)\ndeclare i32 @ext_fill(i32)\ndeclare i32 @printf(ptr, ...)\n"
+                "define i32 @g() {\n  %r = call i32 @putchar(i32 65)\n  %s = call i32 @ext_fill(i32 1)\n  ret i32 %r\n}\n")
+        out = run.host_effects_module(text, ["ext_fill"])
+        self.assertIn("call i32 @cqd_fx_putchar(i32 65)", out)
+        self.assertIn("define i32 @cqd_fx_putchar(i32 %a0)", out)
+        self.assertIn("call i32 @ext_fill(i32 1)", out)
+        self.assertIn("declare i32 @printf(ptr, ...)", out)
 
     def test_host_effects_module_renames_declared_only(self):
         text = ("declare i32 @remove(ptr)\ndefine i32 @g() {\n  %r = call i32 @remove(ptr @.cq.effect.remove)\n"
@@ -1295,7 +1323,7 @@ class HostOutput(unittest.TestCase):
         r = run.run_sample(HERE / "host_fx.ll", spec1("int fx(int)", "fx", ["int"]), {"call": 0, "args": [5]},
                            "ours", rt_sources=RT + [REPO / "checker" / "rt" / "host_fx.c"], extra_sources=FAM)
         self.assertEqual(r.violations, [])
-        self.assertEqual(r.outputs["effects"], [{"name": "remove", "args": [{"s": "/nonexistent/cq_e4jk\n"}]}])
+        self.assertEqual([(e["name"], e["args"][0]["cap"]) for e in r.outputs["effects"]], [("remove", "/nonexistent/cq_e4jk\n")])
         self.assertEqual(r.outputs["stdout"], "v=5\n")
 
 

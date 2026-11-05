@@ -121,7 +121,7 @@ CLASSES: Dict[str, Tuple[str, str, Optional[str]]] = {
                           rf"violations on our side|{_MEAS}|{_OUT_REF}|{_ROT_REF}|{_MEM}",
                           rf"violations on our side|{_MEAS}|{_RET_C}|{_ROT_C}|{_MEM}"),
     "bus_dropped_kept_store": ("a kept bus store is deleted: the cell, its tape slot and the value rail's role change",
-                               r"rail\(s\) .* are not kept on our side", rf"{_MEAS}|{_RET_C}|a leak; cq-tt2j"),
+                               rf"rail\(s\) .* are not kept on our side|{_MEAS}|{_OUT_REF}", rf"{_MEAS}|{_RET_C}|a leak; cq-tt2j"),
 }
 
 # Classes whose evaluation may FAIL on an output difference before the rotation list: each must also

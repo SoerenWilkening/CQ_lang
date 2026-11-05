@@ -1887,7 +1887,7 @@ def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult], ended: Sequence[
 #             (loop, act) it capped after K trips on some sample of the comparison (rule 14's output
 #             predicate, kept only when the bound B exceeds K: an activation never capped has B <= K
 #             as far as the samples show, which include a K+1-trip search per loop), and at most one
-#             per block the C program allocated on the sample (outputs["allocs"]; rule 20's kept n > K2
+#             per rail-sized block the C program allocated on the sample (outputs["k2"]; rule 20's kept n > K2
 #             of a rail-sized allocation), any number on a capped or ended sample (activations past
 #             the cut are not recorded);
 #   leak      anything else: a rail its sources could still clean, left live.
@@ -1900,7 +1900,7 @@ _FENV_ROLES = ("fenv_flags", "fenv_mode")
 def _leaks(k: str, o: RunResult, c: RunResult, cut: bool, capkeys: Set[Tuple[str, int]] = frozenset()) -> List[str]:
     rotated = {e.get("h") for e in o.rotations or [] if isinstance(e, dict) and e.get("ev") in ("ry", "ry_qangle")}
     acts = len({(r["loop"], r["act"]) for r in _loops(c)} & set(capkeys))
-    allocs = c.outputs.get("allocs", 0) if isinstance(c.outputs, dict) else 0
+    allocs = len(c.outputs.get("k2", [])) if isinstance(c.outputs, dict) else 0
     i1 = 0
     fenv: Dict[str, int] = {}
     bad = []
@@ -1936,6 +1936,36 @@ def _ended(rr: RunResult) -> bool:
     """A C sample that ended in a noreturn call or a fatal raise (module docstring)."""
     end = rr.outputs.get("end") if isinstance(rr.outputs, dict) else None
     return isinstance(end, str) and end.startswith(_ENDS)
+
+
+def _check_k2(o_runs: List[RunResult], c_runs: List[RunResult], open_end: Sequence[bool]) -> List[str]:
+    """CR §6: the kept rail n > K2 of a rail-sized allocation must read n > K2 on every input. The k-th
+    rail-sized block the C program made (outputs["k2"]: [n, K2]) must have its own kept i1 rail of ours
+    reading exactly that over the group, once the group tells it from a constant (else any 0 rail would)."""
+    maxk = max((len((c.outputs or {}).get("k2", [])) for c in c_runs), default=0)
+    if not maxk:
+        return []
+    rails: Dict[Any, Tuple[int, ...]] = {}
+    for h in {e["h"] for rr in o_runs for e in rr.kept or [] if e.get("w") == "i1" and e.get("role") == "garbage"}:
+        vals = []
+        for rr in o_runs:
+            ent = next((e for e in rr.kept or [] if e["h"] == h), None)
+            vals.append(_masked(_int(ent["v"]), "i1") if ent else None)
+        rails[h] = tuple(vals)
+    reasons = []
+    taken: Set[Any] = set()
+    for k in range(maxk):
+        want = [None if len(c.outputs.get("k2", [])) <= k else int(c.outputs["k2"][k][0] > c.outputs["k2"][k][1]) for c in c_runs]
+        seen = {w for w, e in zip(want, open_end) if w is not None and not e}
+        if len(seen) < 2:
+            continue
+        h = next((h for h, v in rails.items() if h not in taken and all(
+            w is None or e or x == w for x, w, e in zip(v, want, open_end))), None)
+        if h is None:
+            reasons.append(f"rail-sized allocation {k}: no kept i1 rail of ours reads n > K2 (CR §6): want {_fn(tuple(want))}")
+        else:
+            taken.add(h)
+    return reasons
 
 
 def _check_abort(o_runs: List[RunResult], ended: Sequence[bool], capped: Sequence[bool]) -> List[str]:
@@ -2232,6 +2262,8 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
                 reasons.append(f"{tag}: {why}")
             for why in _check_abort(o_runs, [ended[k] for k in ks], [capped[k] for k in ks]):
                 reasons.append(f"{tag}: {why}")
+            for why in _check_k2(o_runs, r_runs, [capped[k] or ended[k] for k in ks]):
+                reasons.append(f"{tag}: {why}")
             for k in ks:
                 for why in _meas_extra(k):
                     reasons.append(f"{tag}: {why}")
@@ -2289,6 +2321,26 @@ def _meas_options(k: str, o: RunResult, r: RunResult, open_end: bool, nan_eq: bo
 
     emb(0, 0, ())
     if opts:
+        # a measurement of ours left over that reads what the C program read classically (its "read"
+        # sites, outputs["reads"]): the circuit measured a load copy of it, which is no difference
+        # Rule 19: so is one of a _ctl clone's controlled copies reading 0, its predicate 0 on this input
+        reads = (r.outputs or {}).get("reads", []) if isinstance(r.outputs, dict) else []
+        ctl = set((o.outputs or {}).get("ctl_measured", [])) if isinstance(o.outputs, dict) else set()
+        if reads or ctl:
+            for img in list(opts):
+                left = list(reads)
+                extra = set()
+                for i in range(n):
+                    if i not in img:
+                        if mo[i].get("h") in ctl and _int(mo[i].get("v")) == 0:
+                            extra.add(i)
+                            continue
+                        for b in left:
+                            if not _meas_eq(o, r, mo[i], b, nan_eq):
+                                left.remove(b)
+                                extra.add(i)
+                                break
+                opts[img] = opts[img] | frozenset(extra)
         return list(opts.items()), []
     why = _measured_positional(k, o, r, open_end, nan_eq)
     if not why or (len(mo) > len(mr) and not open_end):
@@ -2306,7 +2358,7 @@ def _ret(outputs: Any, side: str) -> Any:
     return outputs.get("ret", [])
 
 
-_HOST_KEYS = ("stdout", "effects", "tape", "deviation", "mem", "objects", "regions")
+_HOST_KEYS = ("stdout", "effects", "tape", "deviation", "mem", "objects", "regions", "ctl_measured")
 
 
 def _rest(outputs: Any, side: str) -> Any:

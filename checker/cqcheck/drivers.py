@@ -1255,7 +1255,17 @@ def out_globals_ir(o1_text: str, module_text: str, fn: str, hook: str, table_hoo
     if tls and "@llvm.threadlocal.address.p0(" not in module_text:
         decl.append("declare ptr @llvm.threadlocal.address.p0(ptr)")
     decl = [d for d in decl if f"declare void @{hook}(" not in module_text or hook not in d]
-    return "\n".join([""] + strs + [f"define void @{fn}() {{"] + body + ["  ret void", "}"] + decl) + "\n"
+    # the thread-locals, which no shot's put-back reaches, go back to their initializers before each call
+    reset = [f"define void @{fn}_tls() {{"]
+    for line in module_text.splitlines():
+        m = _RE_GLOBAL.match(line) if line.startswith("@") else None
+        if m and re.search(r"\bthread_local\b", line.split("=", 1)[1]) and m.group(0) in {n for n, _, t in writable_globals(o1_text) if t}:
+            t = global_type(strip_comment(line))
+            init = lead_type(strip_comment(line).split("=", 1)[1].split(" global ", 1)[1])[1].split(", align")[0].strip()
+            reg = f"%r{len(reset)}"
+            reset += [f"  {reg} = call ptr @llvm.threadlocal.address.p0(ptr {m.group(0)})", f"  store {t} {init}, ptr {reg}"]
+    reset += ["  ret void", "}"]
+    return "\n".join([""] + strs + [f"define void @{fn}() {{"] + body + ["  ret void", "}"] + reset + decl) + "\n"
 
 
 # ---- direct host calls (CR §6, rulings Q8)
@@ -1751,7 +1761,8 @@ __attribute__((noinline)) static void cqd_zero_stack(void) { char cqd_z[1 << 18]
 
 
 def driver_source(spec: DriverSpec, samples: Sequence[dict], *, before_call: str = "",
-                  after_call: str = "", main_name: str = "main", out_mem: str = "", out_globals: str = "") -> str:
+                  after_call: str = "", main_name: str = "main", out_mem: str = "", out_globals: str = "",
+                  reset_globals: str = "") -> str:
     """A C driver (cq-arch Z2): `int <main_name>(void)` runs the setup once, then reads the sample
     file named by $CQD_SAMPLES (sample_file) and makes one call per record, in order. Scalar
     arguments are the records' bit patterns (bit-identical to c_value); a pointer argument is one of
@@ -1769,8 +1780,8 @@ def driver_source(spec: DriverSpec, samples: Sequence[dict], *, before_call: str
     `out_mem`, when given, is the C name of `void f(const char *name, const void *addr, unsigned long
     long bytes)`, which logs a named output in memory (module docstring): the driver calls it after
     each call for every object of the setup the call passed, and then calls `void <out_globals>(void)`
-    (out_globals_ir), the same for the module's writable globals. The consumer declares both ahead of
-    the source."""
+    (out_globals_ir), the same for the module's writable globals, and `void <reset_globals>(void)`
+    before each call. The consumer declares them ahead of the source."""
     ptrs = _pointer_exprs(spec, samples)
     out = [DRIVER_PRELUDE, _READER_PRELUDE]
     out += [p.strip() if p.strip().endswith("}") else p.strip().rstrip(";") + ";" for p in spec.protos if p.strip()]
@@ -1855,7 +1866,7 @@ def driver_source(spec: DriverSpec, samples: Sequence[dict], *, before_call: str
         if out_globals:
             outs.append(f"{out_globals}();")
         out.append(f"            {{ const int CQD_SAMPLE = cqd_idx; (void)CQD_SAMPLE; {before_call} "
-                   f"{' '.join(fills)} cqd_zero_stack(); {body} {' '.join(outs)} {after_call} }}")
+                   f"{reset_globals + '();' if reset_globals else ''} {' '.join(fills)} cqd_zero_stack(); {body} {' '.join(outs)} {after_call} }}")
         out.append("            break; }")
     out.append('        default: CQD_BAD("call index out of range");')
     out.append("        }")
