@@ -22,6 +22,7 @@
 #include "cq/Abi.h"
 #include "cq/Bus.h"
 #include "cq/Calls.h"
+#include "../../pass/lib/calls/CallsInternal.h"
 #include "cq/Common.h"
 #include "cq/Loops.h"
 #include "cq/Lowering.h"
@@ -42,13 +43,15 @@ using namespace llvm;
 namespace cq::calls {
 const TaintInfo *testTaint = nullptr;   // the taint construct() runs under (resultQuantum)
 Function *materialize(Module &M, const Specialization &S) {
-  abi::CloneSpec cs{S.F->getName().str(), S.mask, S.bounds, S.ctl, S.pure, false};
+  abi::CloneSpec cs{S.F->getName().str(), S.mask.empty() ? "v" : S.mask, S.bounds, S.ctl, S.pure, false, S.table};
   LLVMContext &C = M.getContext();
   std::vector<Type *> params;
   if (S.ctl)
     params.push_back(handleTy(C));
   for (unsigned i = 0; i < S.F->arg_size(); ++i)
     params.push_back(i < S.mask.size() && S.mask[i] == '1' ? handleTy(C) : S.F->getArg(i)->getType());
+  if (S.table)
+    params.push_back(Type::getInt32Ty(C));
   Type *rt = S.F->getReturnType();
   if (!rt->isVoidTy() && testTaint->resultQuantum(S, 0))
     rt = handleTy(C);
@@ -64,6 +67,17 @@ bool hasTwin(const TaintInfo &T, const Specialization &S) {
 void lowerLifted(LoweringContext &, CallBase &) { unimplemented("calls: calls::lowerLifted"); }
 void lowerLiftedVia(LoweringContext &, CallBase &, ArrayRef<unsigned>) { unimplemented("calls: calls::lowerLiftedVia"); }
 void lowerIndirect(LoweringContext &, CallBase &) { unimplemented("calls: calls::lowerIndirect"); }
+void lowerSignal(LoweringContext &, CallBase &) { unimplemented("calls: calls::lowerSignal"); }
+void lowerRaise(LoweringContext &, CallBase &) { unimplemented("calls: calls::lowerRaise"); }
+void noteRun(LoweringContext &) {}
+void insertActivationCounter(LoweringContext &) {}
+ArrayRef<const CallBase *> mintSites(const TaintInfo &, const Specialization &) { return {}; }
+void noteMint(LoweringContext &, CallInst &, BasicBlock *, Instruction *) {}
+Value *mintHandle(LoweringContext &, const CallBase &) { return nullptr; }
+unsigned mintCount(const Function &) { return 0; }
+std::vector<TableRow> takeTableRows(const Module &) { return {}; }
+Constant *sigString(Module &, FunctionType *) { return nullptr; }
+GlobalVariable *activationCounter(Module &, StringRef) { return nullptr; }
 void lowerDeclared(LoweringContext &, CallBase &) { unimplemented("calls: calls::lowerDeclared"); }
 void lowerVarargs(LoweringContext &, Instruction &) { unimplemented("calls: calls::lowerVarargs"); }
 void lowerAsm(LoweringContext &, CallBase &) { unimplemented("calls: calls::lowerAsm"); }
