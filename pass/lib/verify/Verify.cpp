@@ -385,6 +385,10 @@ private:
   // A forward call of the clone a twin undoes. Twins recompute through the _pure clone (CR §1.4), so
   // the forward call may be the _pure spelling or not.
   bool isForwardOf(const CallBase &CB, const abi::CloneSpec &Twin) {
+    // Rule 18 with rule 19: the forward of the all-zero mask's twin is the call of the function's in-place lowering.
+    if (const Function *G = CB.getCalledFunction(); G && G->getName() == Twin.fn && !Twin.ctl && Twin.bounds.empty() &&
+                                                    !StringRef(Twin.mask).contains('1'))
+      return true;
     const Sig &S = Sigs.get(CB);
     if (S.kind != Kind::Clone || S.unc)
       return false;
