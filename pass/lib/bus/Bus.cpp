@@ -204,6 +204,19 @@ CallInst *emitLoad(LoweringContext &ctx, Type *T, Operand addr) {
   return call;
 }
 
+Value *keptControl(LoweringContext &ctx, Value *c, Value *value) {
+  if (!c)
+    return nullptr;
+  Value *g = ctx.unc().negatedAtomOf(c);
+  if (!g)
+    return c;
+  if (g == value) {
+    noteUnbuilt("bus: a kept store of the i1 flag under its own false edge: no X bracket can read it as the value");
+    return c;
+  }
+  return g;
+}
+
 void emitKeptStore(LoweringContext &ctx, Type *T, Operand addr, Operand value) {
   LLVMContext &C = ctx.M.getContext();
   RailType w = accessType(C, T);
@@ -215,12 +228,21 @@ void emitKeptStore(LoweringContext &ctx, Type *T, Operand addr, Operand value) {
     v = seed;
   }
   Value *m = mem(ctx);
-  // Rule 8: the false edge is an X bracket on the flag, which rule 5 keeps with the store (95).
+  // Rule 8: the false edge is an X bracket on the flag, which rule 5 keeps with the store (95). The flag is the atom's
+  // rail itself; under a trip, the rail the trip rail negates (cq-5aus, 55).
   Value *neg = nullptr;
   const Pred &q = ctx.currentPredicate();
   if (!spine::shared(ctx).tripFlag && !q.isTop())
     neg = ctx.preds().negatedAtomRail(ctx, q);
-  Value *c = neg ? neg : accessControl(ctx);
+  if (neg == v)
+    neg = nullptr;   // keptControl says so: no bracket can read the flag as the store's value
+  Value *c = neg;
+  if (!c) {
+    Value *flag = accessControl(ctx);
+    c = keptControl(ctx, flag, v);
+    if (c != flag)
+      neg = c;
+  }
   abi::CoreSpec spec{abi::Core::QramStore, w, /*ctl=*/c != nullptr, /*hl=*/!addr.handle};
   SmallVector<Value *, 4> args;
   if (c)
@@ -230,8 +252,11 @@ void emitKeptStore(LoweringContext &ctx, Type *T, Operand addr, Operand value) {
   if (neg)
     ctx.emitCore(x, {neg});
   CallInst *call = ctx.emitCore(spec, args);
-  if (neg)
-    ctx.emitCore(x, {neg});
+  if (neg) {
+    CallInst *close = ctx.emitCore(x, {neg});
+    if (addr.handle)
+      ctx.unc().noteUse(ctx.unc().idOf(addr.v), close);   // the address's item may read the flag: never inside the bracket
+  }
   ctx.unc().noteKeptStore(call, v, c);
   ctx.unc().noteVersionChange(call);
 }

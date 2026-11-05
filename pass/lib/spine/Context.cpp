@@ -330,7 +330,7 @@ Value *LoweringContext::currentFlag() {
   }
   // cq-99f7: under a rule-14 trip the control is the trip rail, conjoined with the block's quantum
   // part when there is one (a fresh i1 rail, recorded, torn down by Uncompute like any pred flag).
-  if (p.isTop())
+  if (p.isTop() || (sh.tripSeedPred && (*sh.tripSeedPred & !p).isBottom()))
     return sh.tripFlag;
   if (sh.tripConj)
     return sh.tripConj;

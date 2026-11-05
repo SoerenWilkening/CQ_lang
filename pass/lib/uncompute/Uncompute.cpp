@@ -3005,6 +3005,32 @@ void Uncompute::noteKeptStore(CallInst *store, Value *value, Value *ctl) {
   }
 }
 
+Value *Uncompute::negatedAtomOf(Value *flag) const {
+  const Impl &I = *impl;
+  auto it = I.byHandle.find(flag);
+  if (it == I.byHandle.end())
+    return nullptr;
+  const Impl::Rail &t = I.rails[it->second];
+  if (t.creator == kNone || I.info[t.creator].kind != RecKind::Seed || t.writes.size() != 2)
+    return nullptr;
+  auto *seed = dyn_cast<ConstantInt>(I.records[t.creator].forward->getArgOperand(0));
+  CallInst *x = I.records[t.writes[1]].forward;
+  auto *openSpec = std::get_if<abi::CoreSpec>(&I.records[t.writes[0]].spec);
+  auto *xSpec = std::get_if<abi::CoreSpec>(&I.records[t.writes[1]].spec);
+  if (!seed || !seed->isZero() || !openSpec || openSpec->op != abi::Core::NotI1 || !xSpec ||
+      xSpec->op != abi::Core::XorI1 || xSpec->ctl)
+    return nullptr;
+  Value *g = x->getArgOperand(0);
+  auto gt = I.byHandle.find(g);
+  if (gt == I.byHandle.end())
+    return nullptr;
+  // A gate on g since the flag was computed: g no longer holds what the flag negates.
+  for (Instruction *h : I.rails[gt->second].hits)
+    if (h->getParent() == x->getParent() && x->comesBefore(h))
+      return nullptr;
+  return g;
+}
+
 void Uncompute::freezeLoadCopy(RailId r) {
   Impl &I = *impl;
   Impl::Rail &x = I.rail(r, "freezeLoadCopy");

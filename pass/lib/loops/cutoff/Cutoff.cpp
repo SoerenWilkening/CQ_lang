@@ -142,6 +142,7 @@ class Cutoff {
 public:
   Cutoff(LoweringContext &ctx, Analyses &A) : ctx(ctx), A(A) {}
   void lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top);
+  std::optional<Pred> seedPred;   // the predicate of the top loop's seed, which every trip rail implies (rule 14)
 
 private:
   LoweringContext &ctx;
@@ -1430,7 +1431,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       Value *f = conj(q, acc, b->getTerminator());
       for (Instruction &I : *b)
         if (!isa<PHINode>(I) && !I.isTerminator())
-          lowerInstruction(ctx, I, f);
+          lowerInstruction(ctx, I, f, seedPred ? &*seedPred : nullptr);
     }
   };
   lowerInsts = [&](BasicBlock *b, Value *q, const Pred &lp) {
@@ -1478,7 +1479,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         }
         if (!tripFlag)
           tripFlag = conj(q, lp, b->getTerminator());
-        lowerInstruction(ctx, I, tripFlag);
+        lowerInstruction(ctx, I, tripFlag, seedPred ? &*seedPred : nullptr);
       }
     }
   };
@@ -1695,7 +1696,9 @@ void lowerCutoff(LoweringContext &ctx, Loop &L, unsigned K, std::optional<uint64
     ctx.unc().recordSeed(s);
     seed = s;
   }
-  Cutoff(ctx, A).lowerLoop(*mL, seed, c, !B || *B > K, true);
+  Cutoff U(ctx, A);
+  U.seedPred = ctx.currentPredicate();
+  U.lowerLoop(*mL, seed, c, !B || *B > K, true);
 }
 
 namespace exits {
