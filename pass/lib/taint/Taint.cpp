@@ -516,8 +516,31 @@ std::string lanesStr(const Lanes &l) {
 }
 
 
+static SmallVector<unsigned, 4> intFields(const Argument *A);
+
 SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector<Type *> tys, bool ctl, bool pure,
                              std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals, bool plain, bool table) {
+  // Rule 18, §1.4: a clone exists once per taint mask of its scalar formals, and a quantum scalar formal is one rail. Byte
+  // lanes of an integer actual (x & 4095) never split a mask digit: its whole field is the rail, so calls whose actuals
+  // differ only in their quantum bytes reach one clone.
+  for (unsigned i = 0; i < formal.size() && i < tys.size(); ++i) {
+    if (!tys[i]->isIntegerTy() || formal[i].none())
+      continue;
+    if (i >= F->arg_size() || F->isDeclaration() || !F->getArg(i)->getType()->isIntegerTy()) {
+      formal[i].set();
+      continue;
+    }
+    SmallVector<unsigned, 4> b = intFields(F->getArg(i));
+    for (unsigned k = 0; k + 1 < b.size(); ++k) {
+      unsigned lo = b[k] / 8, hi = std::min<unsigned>((b[k + 1] + 7) / 8, formal[i].size());
+      bool q = false;
+      for (unsigned lane = lo; lane < hi; ++lane)
+        q = q || formal[i].test(lane);
+      if (q)
+        for (unsigned lane = lo; lane < hi; ++lane)
+          formal[i].set(lane);
+    }
+  }
   // A bound with no formal named (a library-build root read from its name): the quantum integer formals
   // in order, the reading §1.4's name gives.
   if (boundFormals.size() != bounds.size()) {
@@ -2694,6 +2717,10 @@ void Analyzer::finish() {
     SmallPtrSet<SpecState *, 16> seen;
     SmallVector<SpecState *, 16> w;
     for (auto &S : st.specs) {
+      // Rule 18: a function that measures or reads the result rail of an effect entry has no twin, so nothing recomputes
+      // through a _pure of it, whatever consumes its result (its effect's result rail exists only in the clone).
+      if (S->noTwinT)
+        continue;
       // cq-s2zz (rule 18): an effectful clone whose own result needs its twin recomputes through its _pure.
       // Rule 18, §1.4: an own symbol's twin always recomputes through its _pure clone (the own symbol returns its rail).
       if (S->reachable && S->needsTwin && (S->effectful || S->inPlace) && !S->declared)
