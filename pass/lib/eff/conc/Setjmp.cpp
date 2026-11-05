@@ -1,57 +1,55 @@
 // Module eff-conc (CR rule 24, 101): setjmp/longjmp.
 //
-// Rule 24: "longjmp under a quantum predicate is an escaped-flag result merged at the setjmp diamond".
-// 101's header: a longjmp is a MULTI-FRAME PREDICATED EARLY RETURN; every intermediate frame returns its
-// result beside an escaped flag (the OR of its callees' flags and its own longjmp arms), its continuation
-// after each call predicated on not-escaped; setjmp's second return IS the escaped branch, its value
-// longjmp's argument. The host setjmp and longjmp are not executed.
+// Rule 24: "`setjmp` and `longjmp` are host calls as they stand, and a `longjmp` under a quantum predicate is
+// rule 16's `noreturn` arm. One pairing is made, by operand and never by what a pointer might reach: when exactly
+// one `setjmp` in the module has an internal global `G` as its operand and every other use of `G` in the module is
+// the operand of a `longjmp`, each such `longjmp` is an escaped-flag result merged at that `setjmp`'s diamond, and
+// no host call is made for either (101)." 101's header: a longjmp is a MULTI-FRAME PREDICATED EARLY RETURN; every
+// intermediate frame returns its result beside an escaped flag (the OR of its callees' flags and its own longjmp
+// arms), its continuation after each call predicated on not-escaped; setjmp's second return IS the escaped branch,
+// its value longjmp's argument.
 //
-// The construction is that sentence made explicit control flow, as a CFG rewrite before the final taint
-// (the scaffold runs explicitSetjmp after the preliminary taint, then fix-irreducible, then a fresh taint;
-// nothing mutates the CFG after it). Every later construction then sees an ordinary program: the escaped
-// flag is a returned value, each continuation an ordinary block under the predicates rules 8 and 9 give
-// it, a cycle through a setjmp an ordinary loop (rule 14). The class is the rule's whole one: a longjmp
-// at any call depth below its setjmp, any number of setjmps and longjmps, any jmp_buf (a pointer compared
-// at run time), any value, any continuation shape.
+// The pairing is that sentence made explicit control flow, as a CFG rewrite before the final taint (the scaffold
+// runs explicitSetjmp after the preliminary taint, then fix-irreducible, then a fresh taint; nothing mutates the
+// CFG after it). Every later construction then sees an ordinary program: the escaped flag is a returned value, each
+// continuation an ordinary block under the predicates rules 8 and 9 give it, a cycle through a setjmp an ordinary
+// loop (rule 14). Taint does not enter: the pairing is by operand, at any call depth and for any value.
 //
-//  - ESCAPING functions: a function with a body that calls longjmp/_longjmp/siglongjmp/__longjmp_chk, or
-//    calls an escaping function directly. Per escaping function, the jmp_buf and value its escapes carry:
-//    one constant each when every escape source (transitively) agrees, else a run-time value.
-//  - REWRITTEN in place: every function the preliminary taint calls tainted that holds a setjmp (a
-//    returns_twice call taking the jmp_buf pointer). Its signature is unchanged.
-//  - ESCAPE CLONES: every escaping function a rewritten function or escape clone calls gets an internal
-//    clone G' with the same parameters, returning {G's result fields..., escaped (i1), [jmp_buf index
-//    (i32)], [jmp_buf (ptr)], [value]}. A constant jmp_buf travels as its index in the module's table of
-//    the constant jmp_bufs longjmp names (never a pointer chosen by quantum data, rule 21), the index -1
-//    naming the run-time pointer field; each bracketed field is present only when the escapes of G do not
-//    carry one constant. Its calls in rewritten functions and clones call G' instead; G' drops G's
-//    noreturn and `returned`, and gets memory(none) when its body has no effect and no cycle. An original
-//    left with no use is erased and G' takes its name.
-//  - In a rewritten body, each escape point (a longjmp(jb, v); after each call of an escape clone, the
-//    branch on its escaped field) jumps to one dispatch block with (jb, v). Each setjmp site s keeps, in
-//    frame-local slots, the jmp_buf it was last called on and a stamp of its last execution (0: never).
-//    The dispatch takes the matching site (same jmp_buf pointer) executed last: setjmp's second return
-//    is the site's continuation run again, a copy of the site's block after the setjmp with the result
-//    v != 0 ? v : 1 (C17 7.13.2.1p4), so `setjmp(jb) == 0` there is false. The first return is the
-//    original block with the result 0. No matching site: an escape clone returns {poison..., true, jb,
-//    v}; a rewritten function (its caller is outside the rewrite: a host frame, or a frame no taint
-//    reaches) leaves the lowered program through the host longjmp(jb, v), which lowerLongjmp below
-//    lowers: under a quantum predicate rule 16's noreturn arm, abort_i1(pred) (the program the shot
-//    lowers ends there), classical the host call.
-//  - Values defined in a site's continuation and read elsewhere, and any value whose definition no longer
-//    dominates a use after the new edges, go through frame-local slots, promoted back to SSA (mem2reg);
-//    the frame-local slots of the sites as well. The rewritten functions are then simplified (constant
-//    folding, constant branches, edges into `unreachable`, unreachable blocks, empty forwarding blocks,
-//    single-edge merges): a setjmp that dominates its
-//    escaping calls on one constant jmp_buf leaves a branch on the escaped flag alone (101).
+//  - PAIRED: pairedJmpBuf below. Every other setjmp and longjmp stays in the IR and is lowered at the end of the file.
+//  - ESCAPING functions: a function with a body that calls longjmp/_longjmp/siglongjmp/__longjmp_chk on a paired
+//    buffer, or calls an escaping function directly. Per escaping function, the buffers and value its escapes
+//    carry: one constant value when every escape source (transitively) agrees, else a run-time value.
+//  - REWRITTEN in place: every function that holds a paired setjmp. Its signature is unchanged.
+//  - ESCAPE CLONES: every escaping function a rewritten function or escape clone calls gets an internal clone G'
+//    with the same parameters, returning {G's result fields..., escaped (i1), [buffer index (i32)], [value]}. The
+//    buffer travels as its index in the module's table of paired buffers (never a pointer chosen by quantum data,
+//    rule 21); each bracketed field is present only when the escapes of G do not carry one constant. Its calls in
+//    rewritten functions and clones call G' instead; G' drops G's noreturn and `returned`, and gets memory(none)
+//    when its body has no effect and no cycle. An original left with no use is erased and G' takes its name.
+//  - In a rewritten body, each escape point (a paired longjmp(G, v); after each call of an escape clone, the branch
+//    on its escaped field) jumps to one dispatch block with (index, v). Each setjmp site keeps in a frame-local slot
+//    whether it ran in this frame. The dispatch takes the site of the escape's buffer if it ran: setjmp's second
+//    return is the site's continuation run again, a copy of the site's block after the setjmp with the result
+//    v != 0 ? v : 1 (C17 7.13.2.1p4), so `setjmp(G) == 0` there is false. The first return is the original block
+//    with the result 0. A site that has not run, or a buffer of another site: an escape clone returns
+//    {poison..., true, index, v}; a rewritten function has no caller in the rewrite, and C has no such longjmp
+//    (C17 7.13.2.1p2, a setjmp that was not invoked or whose function returned: undefined, outside the domain),
+//    so that edge is `unreachable`.
+//  - Values defined in a site's continuation and read elsewhere, and any value whose definition no longer dominates
+//    a use after the new edges, go through frame-local slots, promoted back to SSA (mem2reg); the frame-local slots
+//    of the sites as well. The rewritten functions are then simplified (constant folding, constant branches, edges
+//    into `unreachable`, unreachable blocks, empty forwarding blocks, single-edge merges): a setjmp that dominates
+//    its escaping calls on one buffer leaves a branch on the escaped flag alone (101).
 //
-// lowerSetjmp: a setjmp reaching the walker is a broken invariant (every tainted function holding one is
-// rewritten). A returns_twice call taking no jmp_buf (vfork) is rule 16's side-effecting host call.
+// lowerSetjmp, lowerLongjmp: the host calls as they stand; a longjmp under a quantum predicate is the noreturn arm.
 #include "Setjmp.h"
 
+#include "../../spine/SpineInternal.h"
+#include "cq/Abi.h"
 #include "cq/Common.h"
 #include "cq/Effects.h"
 #include "cq/Lowering.h"
+#include "cq/Uncompute.h"
 
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetVector.h"
@@ -98,6 +96,24 @@ bool isSetjmpCall(const CallBase &CB) {
          CB.getArgOperand(0)->getType()->isPointerTy() && CB.getType()->isIntegerTy();
 }
 
+// Rule 24's pairing, by operand: G internal, exactly one setjmp with G as its operand, and every other use of G in
+// the module the operand of a longjmp.
+bool pairedJmpBuf(const GlobalVariable &G) {
+  if (!G.hasLocalLinkage())
+    return false;
+  unsigned setjmps = 0;
+  for (const Use &U : G.uses()) {
+    auto *CB = dyn_cast<CallBase>(U.getUser());
+    if (!CB || U.getOperandNo() != 0)
+      return false;
+    if (isSetjmpCall(*CB))
+      ++setjmps;
+    else if (!isLongjmpCall(*CB))
+      return false;
+  }
+  return setjmps == 1;
+}
+
 // One constant, or a run-time value (Many).
 struct Lat {
   enum K { None, One, Many } k = None;
@@ -130,28 +146,9 @@ struct Lat {
     return join(o.v);
   }
 };
-// The jmp_bufs an escape may carry: constants (indices into the module's table of them, an i32 in the
-// rewritten program, never a pointer chosen by quantum data), and whether a run-time pointer is among them.
-struct JbSet {
-  SmallSetVector<Constant *, 4> consts;
-  bool dyn = false;
-  bool join(Value *x) {
-    if (auto *k = dyn_cast<Constant>(x))
-      return consts.insert(k);
-    bool c = !dyn;
-    dyn = true;
-    return c;
-  }
-  bool join(const JbSet &o) {
-    bool c = false;
-    for (Constant *k : o.consts)
-      c |= consts.insert(k);
-    if (o.dyn && !dyn)
-      c = dyn = true;
-    return c;
-  }
-  bool needIndex() const { return consts.size() > 1 || (!consts.empty() && dyn); }
-};
+// The paired buffers an escape may carry (indices into the module's table of them, an i32 in the rewritten program,
+// never a pointer chosen by quantum data).
+using JbSet = SmallSetVector<Constant *, 4>;
 struct Esc {
   JbSet jb;
   Lat val;
@@ -161,28 +158,29 @@ struct Layout {
   Type *orig = nullptr;
   bool flat = false;      // orig is a struct whose elements lead the fields
   unsigned nOrig = 0, esc = 0;
-  int jbIdx = -1, jbPtr = -1, val = -1;
+  int jbIdx = -1, val = -1;
   SmallVector<Type *, 6> fields;
   Type *ty = nullptr;     // the one field, or the struct of them
 };
 
 class Rewriter {
 public:
-  Rewriter(Module &M, const TaintInfo &T) : M(M), T(T), C(M.getContext()), DL(M.getDataLayout()) {}
+  explicit Rewriter(Module &M) : M(M), C(M.getContext()), DL(M.getDataLayout()) {}
   SmallVector<Function *, 8> run();
 
 private:
   Module &M;
-  const TaintInfo &T;
   LLVMContext &C;
   const DataLayout &DL;
   MapVector<Function *, Esc> esc;
   MapVector<Function *, Function *> clones;   // G -> G'
   DenseMap<Function *, Layout> layouts;       // by G'
   Type *valTy = nullptr;
-  SetVector<Constant *> table;   // the constant jmp_bufs of the module's longjmps, by index
-  Function *hostLongjmp = nullptr;
+  SmallPtrSet<const Value *, 8> paired;   // read once, before any body changes (a rewrite changes G's uses)
+  SetVector<Constant *> table;   // the paired buffers of the module's longjmps, by index
 
+  bool isPairedSetjmp(const CallBase &CB) const { return isSetjmpCall(CB) && paired.count(CB.getArgOperand(0)); }
+  bool isPairedLongjmp(const CallBase &CB) const { return isLongjmpCall(CB) && paired.count(CB.getArgOperand(0)); }
   void findEscaping();
   Layout layoutOf(Function &G);
   Function *makeClone(Function &G, const Layout &L);
@@ -192,7 +190,7 @@ private:
   unsigned indexOf(Constant *k) const {
     auto it = std::find(table.begin(), table.end(), k);
     if (it == table.end())
-      internalError("eff-conc: a constant jmp_buf outside the module's table of them", k);
+      internalError("eff-conc: a paired jmp_buf outside the module's table of them", k);
     return it - table.begin();
   }
   Function *escapeTarget(const CallBase &CB) const {
@@ -215,17 +213,15 @@ void Rewriter::findEscaping() {
         auto *CB = dyn_cast<CallBase>(&I);
         if (!CB)
           continue;
-        if (isLongjmpCall(*CB)) {
+        if (isPairedLongjmp(*CB)) {
           auto [it, ins] = esc.insert({&F, Esc{}});
           changed |= ins;
-          changed |= it->second.jb.join(CB->getArgOperand(0));
-          if (auto *k = dyn_cast<Constant>(CB->getArgOperand(0)))
-            table.insert(k);
+          auto *k = cast<Constant>(CB->getArgOperand(0));
+          changed |= it->second.jb.insert(k);
+          table.insert(k);
           changed |= it->second.val.join(CB->getArgOperand(1));
-          if (!hostLongjmp) {
-            hostLongjmp = CB->getCalledFunction();
+          if (!valTy)
             valTy = CB->getArgOperand(1)->getType();
-          }
           continue;
         }
         Function *G = CB->getCalledFunction();
@@ -237,7 +233,8 @@ void Rewriter::findEscaping() {
         Esc from = g->second;
         auto [it, ins] = esc.insert({&F, Esc{}});
         changed |= ins;
-        changed |= it->second.jb.join(from.jb);
+        for (Constant *k : from.jb)
+          changed |= it->second.jb.insert(k);
         changed |= it->second.val.join(from.val);
       }
     }
@@ -257,13 +254,9 @@ Layout Rewriter::layoutOf(Function &G) {
   L.esc = L.fields.size();
   L.fields.push_back(Type::getInt1Ty(C));
   const Esc &E = esc.find(&G)->second;
-  if (E.jb.needIndex()) {
+  if (E.jb.size() > 1) {
     L.jbIdx = L.fields.size();
     L.fields.push_back(Type::getInt32Ty(C));
-  }
-  if (E.jb.dyn) {
-    L.jbPtr = L.fields.size();
-    L.fields.push_back(PointerType::getUnqual(C));
   }
   if (E.val.k != Lat::One) {
     L.val = L.fields.size();
@@ -308,15 +301,13 @@ void Rewriter::rewrite(Function &H, const Layout *L) {
     auto *CB = dyn_cast<CallBase>(&I);
     if (!CB)
       continue;
-    if (isSetjmpCall(*CB))
+    if (isPairedSetjmp(*CB))
       sites.push_back(CB);
-    else if (isLongjmpCall(*CB))
+    else if (isPairedLongjmp(*CB))
       ljs.push_back(CB);
     else if (escapeTarget(*CB))
       calls.push_back(CB);
   }
-  Type *ptrTy = PointerType::getUnqual(C);
-  Type *i64 = Type::getInt64Ty(C);
   SmallVector<AllocaInst *, 8> allocas;
   BasicBlock &entry = H.getEntryBlock();
   auto slot = [&](Type *ty, Value *init, const Twine &name) {
@@ -330,12 +321,10 @@ void Rewriter::rewrite(Function &H, const Layout *L) {
 
   // The dispatch block: one per frame, (jb, v) its phis.
   BasicBlock *D = nullptr;
-  PHINode *idxD = nullptr, *ptrD = nullptr, *vD = nullptr;
-  JbSet frame;   // the jmp_bufs of the escapes reaching D
+  PHINode *idxD = nullptr, *vD = nullptr;
   Type *i32 = Type::getInt32Ty(C);
-  auto addEscape = [&](BasicBlock *from, Value *idx, Value *ptr, Value *v) {
+  auto addEscape = [&](BasicBlock *from, Value *idx, Value *v) {
     idxD->addIncoming(idx, from);
-    ptrD->addIncoming(ptr, from);
     vD->addIncoming(v, from);
   };
   bool anyEscape = !ljs.empty() || !calls.empty();
@@ -345,7 +334,6 @@ void Rewriter::rewrite(Function &H, const Layout *L) {
     D = BasicBlock::Create(C, "cq.sj.escape", &H);
     IRBuilder<> b(D);
     idxD = b.CreatePHI(i32, 2, "cq.sj.jbidx");
-    ptrD = b.CreatePHI(ptrTy, 2, "cq.sj.jb");
     vD = b.CreatePHI(valTy, 2, "cq.sj.val");
   }
 
@@ -353,7 +341,7 @@ void Rewriter::rewrite(Function &H, const Layout *L) {
   for (CallBase *LJ : ljs) {
     BasicBlock *B = LJ->getParent();
     IRBuilder<> b(LJ);
-    Value *jb = LJ->getArgOperand(0);
+    auto *jb = cast<Constant>(LJ->getArgOperand(0));
     Value *v = b.CreateSExtOrTrunc(LJ->getArgOperand(1), valTy);
     SmallPtrSet<BasicBlock *, 4> succs(succ_begin(B), succ_end(B));
     for (BasicBlock *S : succs)
@@ -366,12 +354,7 @@ void Rewriter::rewrite(Function &H, const Layout *L) {
     }
     LJ->eraseFromParent();
     BranchInst::Create(D, B);
-    frame.join(jb);
-    if (auto *k = dyn_cast<Constant>(jb))
-      addEscape(B, ConstantInt::get(i32, indexOf(k)),
-                PoisonValue::get(ptrTy), v);
-    else
-      addEscape(B, ConstantInt::get(i32, -1), jb, v);
+    addEscape(B, ConstantInt::get(i32, indexOf(jb)), v);
   }
 
   // A call of an escaping function: its escape clone, then the branch on the escaped field.
@@ -398,10 +381,7 @@ void Rewriter::rewrite(Function &H, const Layout *L) {
     N->setDebugLoc(CI->getDebugLoc());
     auto field = [&](unsigned k) -> Value * { return CL.ty->isStructTy() ? b.CreateExtractValue(N, {k}) : N; };
     Value *e = field(CL.esc);
-    Value *idx = CL.jbIdx >= 0 ? field(CL.jbIdx)
-                 : E.jb.consts.empty() ? ConstantInt::get(i32, -1)
-                                       : ConstantInt::get(i32, indexOf(E.jb.consts[0]));
-    Value *jbp = CL.jbPtr >= 0 ? field(CL.jbPtr) : PoisonValue::get(ptrTy);
+    Value *idx = CL.jbIdx >= 0 ? field(CL.jbIdx) : ConstantInt::get(i32, indexOf(E.jb[0]));
     Value *v = CL.val >= 0 ? field(CL.val) : b.CreateSExtOrTrunc(E.val.v, valTy);
     if (!CI->getType()->isVoidTy()) {
       Value *r;
@@ -421,8 +401,7 @@ void Rewriter::rewrite(Function &H, const Layout *L) {
     BasicBlock *Cont = B->splitBasicBlock(next, B->getName() + ".cq.ret");
     B->getTerminator()->eraseFromParent();
     BranchInst::Create(D, Cont, e, B);
-    frame.join(E.jb);
-    addEscape(B, idx, jbp, v);
+    addEscape(B, idx, v);
   }
 
   // The frame's exit for an escape no site of it catches.
@@ -452,8 +431,6 @@ void Rewriter::rewrite(Function &H, const Layout *L) {
       vals.push_back(ConstantInt::getFalse(C));
       if (L->jbIdx >= 0)
         vals.push_back(PoisonValue::get(i32));
-      if (L->jbPtr >= 0)
-        vals.push_back(PoisonValue::get(ptrTy));
       if (L->val >= 0)
         vals.push_back(PoisonValue::get(valTy));
       Ret->eraseFromParent();
@@ -468,8 +445,6 @@ void Rewriter::rewrite(Function &H, const Layout *L) {
       vals.push_back(ConstantInt::getTrue(C));
       if (L->jbIdx >= 0)
         vals.push_back(idxD);
-      if (L->jbPtr >= 0)
-        vals.push_back(ptrD);
       if (L->val >= 0)
         vals.push_back(vD);
       BranchInst::Create(R, Out);
@@ -485,23 +460,14 @@ void Rewriter::rewrite(Function &H, const Layout *L) {
     }
     rb.CreateRet(rv);
   } else if (D) {
-    // A rewritten function: the host longjmp, out of the lowered program.
-    Out = BasicBlock::Create(C, "cq.sj.leave", &H);
-    IRBuilder<> b(Out);
-    FunctionType *LT = hostLongjmp->getFunctionType();
-    // The jmp_buf as a pointer again: the run-time one, or the constant its index names.
-    Value *p = frame.dyn ? static_cast<Value *>(ptrD) : frame.consts[0];
-    for (Constant *k : frame.consts)
-      if (frame.dyn || k != frame.consts[0])
-        p = b.CreateSelect(b.CreateICmpEQ(idxD, ConstantInt::get(i32, indexOf(k))), k, p);
-    CallInst *lj = b.CreateCall(LT, hostLongjmp, {p, b.CreateSExtOrTrunc(vD, LT->getParamType(1))});
-    lj->setDoesNotReturn();
-    b.CreateUnreachable();
+    // A rewritten function: no frame below it catches this one (see the top of the file: undefined in C).
+    Out = BasicBlock::Create(C, "cq.sj.none", &H);
+    new UnreachableInst(C, Out);
   }
 
   // The setjmp sites.
-  AllocaInst *ctr = D && !sites.empty() ? slot(i64, ConstantInt::get(i64, 0), "cq.sj.clock") : nullptr;
-  SmallVector<AllocaInst *, 4> stamps, bufs;
+  SmallVector<AllocaInst *, 4> ran;
+  SmallVector<Constant *, 4> siteBuf;
   SmallVector<BasicBlock *, 4> again;
   for (CallBase *SJ : sites) {
     BasicBlock *S = SJ->getParent();
@@ -578,42 +544,31 @@ void Rewriter::rewrite(Function &H, const Layout *L) {
           P.addIncoming(it != VM.end() ? static_cast<Value *>(it->second) : in, Again);
         }
       }
-    // The first return: arm the site, the result 0.
-    AllocaInst *stamp = slot(i64, ConstantInt::get(i64, 0), "cq.sj.stamp");
-    AllocaInst *buf = slot(ptrTy, ConstantPointerNull::get(cast<PointerType>(ptrTy)), "cq.sj.buf");
-    IRBuilder<> ab(SJ);
-    Value *n = ab.CreateAdd(ab.CreateLoad(i64, ctr), ConstantInt::get(i64, 1));
-    ab.CreateStore(n, ctr);
-    ab.CreateStore(n, stamp);
-    ab.CreateStore(SJ->getArgOperand(0), buf);
+    // The first return: the site ran, the result 0.
+    auto *jbOf = cast<Constant>(SJ->getArgOperand(0));
+    AllocaInst *armed = slot(Type::getInt1Ty(C), ConstantInt::getFalse(C), "cq.sj.ran");
+    new StoreInst(ConstantInt::getTrue(C), armed, SJ->getIterator());
     SJ->replaceAllUsesWith(ConstantInt::get(SJ->getType(), 0));
     SJ->eraseFromParent();
-    stamps.push_back(stamp);
-    bufs.push_back(buf);
+    ran.push_back(armed);
+    siteBuf.push_back(jbOf);
     again.push_back(Again);
   }
 
-  // The dispatch: the matching site executed last, else out of the frame.
+  // The dispatch: the site of the escape's buffer if it ran, else out of the frame.
   if (D) {
     IRBuilder<> db(D);
     if (again.empty()) {
       db.CreateBr(Out);
     } else {
-      Value *best = ConstantInt::get(i32, -1), *bestStamp = ConstantInt::get(i64, 0);
+      Value *best = ConstantInt::get(i32, -1);
       for (unsigned k = 0; k < again.size(); ++k) {
-        Value *st = db.CreateLoad(i64, stamps[k]);
-        Value *bf = db.CreateLoad(ptrTy, bufs[k]);
-        // The site's jmp_buf is the escape's: the constant the index names, or the run-time pointer.
-        Value *same = ConstantInt::getFalse(C);
-        for (Constant *jk : frame.consts)
-          same = db.CreateOr(same, db.CreateAnd(db.CreateICmpEQ(idxD, ConstantInt::get(i32, indexOf(jk))),
-                                                db.CreateICmpEQ(bf, jk)));
-        if (frame.dyn)
-          same = db.CreateOr(same, db.CreateAnd(db.CreateICmpEQ(idxD, ConstantInt::get(i32, -1)),
-                                                db.CreateICmpEQ(bf, ptrD)));
-        Value *take = db.CreateAnd(same, db.CreateICmpUGT(st, bestStamp));
+        Constant *jb = siteBuf[k];
+        if (!table.contains(jb))
+          continue;   // no longjmp names this one
+        Value *take = db.CreateAnd(db.CreateICmpEQ(idxD, ConstantInt::get(i32, indexOf(jb))),
+                                   db.CreateLoad(Type::getInt1Ty(C), ran[k]));
         best = db.CreateSelect(take, ConstantInt::get(i32, k), best);
-        bestStamp = db.CreateSelect(take, st, bestStamp);
       }
       SwitchInst *sw = db.CreateSwitch(best, Out, again.size());
       for (unsigned k = 0; k < again.size(); ++k)
@@ -710,10 +665,15 @@ void Rewriter::simplify(Function &H) {
 SmallVector<Function *, 8> Rewriter::run() {
   SmallVector<Function *, 8> out;
   SmallVector<Function *, 4> inPlace;
+  for (const GlobalVariable &G : M.globals())
+    if (pairedJmpBuf(G))
+      paired.insert(&G);
+  if (paired.empty())
+    return out;
   for (Function &F : M)
-    if (!F.isDeclaration() && T.isTainted(F))
+    if (!F.isDeclaration())
       for (Instruction &I : instructions(F))
-        if (auto *CB = dyn_cast<CallBase>(&I); CB && isSetjmpCall(*CB)) {
+        if (auto *CB = dyn_cast<CallBase>(&I); CB && isPairedSetjmp(*CB)) {
           inPlace.push_back(&F);
           break;
         }
@@ -789,21 +749,25 @@ SmallVector<Function *, 8> Rewriter::run() {
 
 } // namespace
 
-SmallVector<Function *, 8> explicitSetjmp(Module &M, const TaintInfo &T) { return Rewriter(M, T).run(); }
+SmallVector<Function *, 8> explicitSetjmp(Module &M, const TaintInfo &) { return Rewriter(M).run(); }
 
+// A setjmp outside the pairing: the host call as it stands; its result is a classical value (a seed where taint made
+// it a rail). A returns_twice call with a rail operand has no host form and goes to the tape, as any such call.
 void lowerSetjmp(LoweringContext &ctx, CallBase &CB) {
-  if (isSetjmpCall(CB))
-    internalError("eff-conc: a setjmp in a lowered function (rule 24: conc::explicitSetjmp rewrites every tainted "
-                  "function that holds one before the final taint)",
-                  &CB);
-  // A returns_twice call that takes no jmp_buf (vfork): rule 16's side-effecting host call.
-  tape::lowerHostEffect(ctx, CB);
+  bool rail = false;
+  for (const Use &U : CB.args())
+    rail |= ctx.operand(U.get()).handle;
+  if (rail)
+    return tape::lowerHostEffect(ctx, CB);
+  Instruction *h = spine::copyClassical(ctx, CB);
+  if (!ctx.T.isQuantum(&CB, ctx.S))
+    return ctx.bind(&CB, h);
+  CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(CB.getType())}, {h});
+  ctx.unc().recordSeed(seed);
+  ctx.bind(&CB, seed);
 }
 
-void lowerLongjmp(LoweringContext &ctx, CallBase &CB) {
-  // Rule 24 after explicitSetjmp: a longjmp left in a lowered function escapes to a setjmp in no lowered
-  // frame (a host frame): the program the shot lowers ends there, rule 16's noreturn arm.
-  tape::lowerNoreturn(ctx, CB);
-}
+// A longjmp outside the pairing under a quantum predicate: rule 16's noreturn arm.
+void lowerLongjmp(LoweringContext &ctx, CallBase &CB) { tape::lowerNoreturn(ctx, CB); }
 
 } // namespace cq::conc
