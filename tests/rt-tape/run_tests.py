@@ -622,7 +622,8 @@ def main():
     print("scenarios: %d run, %d failed" % (len(checks), len(bad)))
     for n, m in bad:
         print("  FAIL %s: %s" % (n, m))
-    sys.exit(1 if dfails or bad else 0)
+    refs = subprocess.run([sys.executable, os.path.join(HERE, "refs.py"), "--clang", a.clang, "--work", os.path.join(work, "refs")])
+    sys.exit(1 if dfails or bad or refs.returncode else 0)
 
 
 if __name__ == "__main__":
