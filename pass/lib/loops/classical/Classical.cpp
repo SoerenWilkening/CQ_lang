@@ -2651,10 +2651,10 @@ void Unit::flushTrips() {
   // fresh block (Uncompute::placeDeferred), so the segment's head is found again through this edge.
   entering.assign(segs.size(), {nullptr, 0});
   for (unsigned i = 0; i < segs.size(); ++i)
-    for (BasicBlock *p : predecessors(segs[i].bb)) {
+    for (BasicBlock *p : predecessors(segs[i].head)) {
       Instruction *t = p->getTerminator();
       for (unsigned k = 0; k < t->getNumSuccessors(); ++k)
-        if (t->getSuccessor(k) == segs[i].bb && !entering[i].first)
+        if (t->getSuccessor(k) == segs[i].head && !entering[i].first)
           entering[i] = {t, k};
     }
   BasicBlock *cut = newBlock();
