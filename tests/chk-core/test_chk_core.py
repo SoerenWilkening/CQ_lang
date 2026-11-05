@@ -166,8 +166,6 @@ class Violations(unittest.TestCase):
         self.assertEqual([v["what"] for v in r.violations], ["bad_handle"])
         self.assertIn("handle 0 is reserved", r.violations[0]["msg"])
 
-    def test_clone_resolve_bad_kind(self):
-        self.assertEqual(self.what("v_clone_kind.ll"), ["malformed_call"])
 
     def test_unc_after_nondiagonal(self):
         self.assertEqual(self.what("v_unc_after_nondiagonal.ll"), ["unc_after_nondiagonal", "dirty_free"])
@@ -638,15 +636,6 @@ class HandlerOrder(unittest.TestCase):
         self.assertIn("every registered handler declined", r.violations[0]["msg"])
 
 
-class KeptMerge(unittest.TestCase):
-    def test_qram_exit_entries_join_kept(self):
-        ev = [{"ev": "qram", "op": "exit", "live": [{"h": 0x5A000000, "w": "i32", "v": "0x3", "role": "qram_cell"}]},
-              {"ev": "exit", "live": [{"h": 1, "w": "i32", "v": "0x7", "role": "frozen"}]}]
-        r = run._result("ours", {}, ev, "", 0, [])
-        self.assertEqual([k["role"] for k in r.kept], ["frozen", "qram_cell"])
-        self.assertEqual(r.violations, [])
-
-
 class MultiWord(unittest.TestCase):
     def test_wide_rails(self):
         v = (1 << 127) | 0x1234
@@ -693,22 +682,27 @@ class Parser(unittest.TestCase):
                 "cq_template_trunc_f64|i32|i32", "cq_template_trunc_i64_to_i7_unc|void|i32,i32",
                 "cq_template_icmp_sgt_i32_hl|i32|i32,i32", "cq_template_fcmps_olt_f64_exc|i32|i32,i32",
                 "cq_template_select_i8_lh|i32|i32,i8,i32", "cq_template_fadd_f64_ll_rmq|i32|double,double,i32",
-                "cq_template_qrom_load_f64_s|i32|ptr,i64,i64,i32", "cq_template_uadd_sat_i32|i32|i32,i32",
+                "cq_template_uadd_sat_i32|i32|i32,i32",
                 "cq_template_fshl_i32_qll|i32|i32,i32,i32", "cq_template_is_fpclass_f64_hl|i32|i32,i32",
-                "cqrt_qram_store_i32_hl_controlled_unc|void|i32,i32,i32,i32", "cqrt_tape_write_str_lit|void|i32,ptr",
+                "cqrt_qram_store_i32_hl_controlled|void|i32,i32,i64,i32", "cqrt_qram_swap_i1|void|i32,i32,i32",
+                "cqrt_qram_load_i32_hl_unc|void|i32,i32,i64", "cqrt_qram_alloc_i8|i32|i32",
                 "cqrt_ry_i32_qangle_controlled|void|i32,i32,i32", "cqrt_copy_i7_unc|void|i32,i32", "cqrt_abort_i1|void|i32",
                 # cq-9ge: W = bf16, LLVM type bfloat
                 "cq_template_fadd_bf16_hl|i32|i32,bfloat", "cq_template_bitcast_bf16_to_i16_l|i32|bfloat",
                 "cq_template_bitcast_i16_to_bf16_unc|void|i32,i32", "cqrt_alloc_bf16|i32|bfloat",
                 "cqrt_measure_bf16|bfloat|i32",
-                # cq-06bi: CQ_spec f684858
-                "cqrt_qram_size|i32|i32", "cqrt_tape_str_begin|void|i32", "cqrt_tape_str_end|void|i32",
-                "cqrt_clone_register|void|ptr,ptr,ptr,ptr", "cqrt_clone_resolve|ptr|ptr,i32"]
+                ]
         rc, out = self.classify(good)
         self.assertEqual(rc, 0, out)
         bad = ["cq_template_icmp_foo_i32|i32|i32,i32", "cq_template_add_i0|i32|i32,i32", "cq_template_add_f128|i32|i32,i32",
                "cq_template_add_i32_hl_unc_rm|void|i32,i32,i32", "cqrt_cnot|void|i32,i32", "cq_template_select_i8_lh|i32|i8,i32",
-               "cq_template_fadd_bf32|i32|i32,i32", "cq_template_fadd_b16|i32|i32,i32"]
+               "cq_template_fadd_bf32|i32|i32,i32", "cq_template_fadd_b16|i32|i32,i32",
+               # retired (CR §0, ABI §0)
+               "cq_template_qrom_load_f64_s|i32|ptr,i64,i64,i32", "cq_template_qrom_load_i32|i32|ptr,i64,i32",
+               "cqrt_qram_size|i32|i32", "cqrt_qram_free|void|i32", "cqrt_qram_realloc_i32|i32|i32,i32",
+               "cqrt_qram_alloc_host_i32|i32|ptr,i64", "cqrt_tape_write_str_lit|void|i32,ptr",
+               "cqrt_tape_str_begin|void|i32", "cqrt_tape_str_end|void|i32",
+               "cqrt_clone_register|void|ptr,ptr,ptr,ptr", "cqrt_clone_resolve|ptr|ptr,i32"]
         rc, out = self.classify(bad)
         self.assertIn(f"failed {len(bad)}", out)
 
@@ -1144,12 +1138,6 @@ class HandleValues(unittest.TestCase):
             self.assertEqual(len([e for e in ev if e["ev"] == "free"]), 2 if x0 % 2 else 1)
             self.assertEqual([e for e in ev if e["ev"] == "ret"][0]["v"], hex(8 + x0))
 
-    def test_clone_registry(self):
-        r = go("clone_registry.ll", *self.ARGS, [6, 0.5])
-        self.assertEqual(r.violations, [])
-        self.assertEqual(r.outputs["ret"][0]["v"], {"w": "i32", "v": hex(1006)})
-        self.assertEqual(freed(r), 1)
-
 
 class HandleReturn(unittest.TestCase):
     """cq-n6a0: an entry whose lowered return is a rail handle (CR §1.1) reports the rail's value as its
@@ -1536,18 +1524,15 @@ class Fma16(unittest.TestCase):
 
 
 class Bf16Memory(unittest.TestCase):
-    """cq-7n88: rt-mem accepts the bf16 element width (a 2-byte fp element, CR §1.1): QROM and QRAM."""
+    """cq-7n88: the bus accepts the bf16 access width (2 cells, a 2-byte fp value, CR §1.3)."""
 
-    def test_qrom_load_bf16(self):
-        rc, out = TmplCall.call(["cq_template_qrom_load_bf16 i32|ptr,i64,i32 p:3412785600ff l:3 h:i8:1",
-                                 "cq_template_qrom_load_bf16 i32|ptr,i64,i32 p:3412785600ff l:3 h:i8:3"])
-        self.assertEqual((rc, out), (0, ["5678", "0"]))  # little-endian cell 1; out of range reads 0
-
-    def test_qram_bf16(self):
-        rc, out = TmplCall.call(["=cqrt_qram_alloc_bf16 i32|i32 l:4",
-                                 "cqrt_qram_store_bf16 void|i32,i32,i32 l:51000000 h:i8:2 h:bf16:3f80",
-                                 "cqrt_qram_load_bf16 i32|i32,i32 l:51000000 h:i8:2",
-                                 "cqrt_qram_load_bf16 i32|i32,i32 l:51000000 h:i8:1"])
+    def test_bus_bf16(self):
+        addr = 0x1000
+        rc, out = TmplCall.call(["=cqrt_qram_alloc_i8 i32|i32 l:0",
+                                 # an unmapped page: the store makes its cells QUANTUM (§2), the load reads them
+                                 f"cqrt_qram_store_bf16_hl void|i32,i64,i32 l:51000000 l:{addr:x} h:bf16:3f80",
+                                 f"cqrt_qram_load_bf16_hl i32|i32,i64 l:51000000 l:{addr:x}",
+                                 f"cqrt_qram_load_bf16_hl i32|i32,i64 l:51000000 l:{addr + 2:x}"])
         self.assertEqual((rc, out), (0, ["51000000", "void", "3f80", "0"]))
 
 

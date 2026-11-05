@@ -300,8 +300,8 @@ static int tmpl_int_op_(const cqe_tname *tn, const cqe_val *args, int nargs, cqe
   if (op == OP_NONE) return CQE_OP_NOT_MINE;
   int is_cast = op >= OP_ZEXT;
   if (op == OP_TRUNC && tn->to[0] == '\0') return CQE_OP_NOT_MINE; /* fp rounding trunc */
-  if (tn->pred[0] || tn->rm || tn->exc || tn->strided) {
-    cqe_fail("tmpl_int: %s: no predicate, rounding mode, _exc or stride is defined for this op",
+  if (tn->pred[0] || tn->rm || tn->exc) {
+    cqe_fail("tmpl_int: %s: no predicate, rounding mode or _exc is defined for this op",
              tn->op);
     return -1;
   }

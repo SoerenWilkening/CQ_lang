@@ -10,15 +10,20 @@ do not define). Each definition stores its arguments to memory and calls
 type spellings. Return and parameter extension attributes (signext/zeroext) are kept so a narrow
 result is extended the way the declaration promises (BACKEND_ABI §0, CR §1.2).
 
-Rule 27 declared clones (cq-rft). Every __cq_q_* the input modules declare and do not define is a
-declared clone nothing links. Its definition is the checker's stand-in (checker/rt/cq_standin.h, the
-function the C oracle gives the same body-less callee): it calls
+cqrt_qram_alloc_i8 is the one runtime symbol never stubbed: the injection bundle's __cq_mem (bundle/host/cq_host.c)
+calls it from host C that no stubgen run sees, so checker/rt/rt_bus.c defines it.
+
+Rule 27 declared clones (cq-rft). Every __cq_q_* the input modules declare and do not define is a clone nothing
+links: a declared (table) clone __cq_q_<fn>_<1...1>_t(handles..., i32 K) and its _t_unc, or a rule 18 clone with its
+body omitted (175). A pointer scalar is a handle to an i64 rail (mask digit 1) or a classical ptr (digit 0). Its
+definition is the checker's stand-in (checker/rt/cq_standin.h, the function the C oracle gives the same body-less
+callee): it calls
 
     void cqe_standin(ptr sym, ptr sig, ptr csig, i32 nargs, ptr args, ptr ret)
 
 where csig = "<fn>|<ret>|<t0>,<t1>,..." is the C function's own signature, read from the --c-module
 files (the example's .O1.ll: the declaration of fn, rule 27's callee). fn is the clone name read right
-to left (CR §1.4): the suffix words (_unc, _dN, _pure, _ctl), then the mask. A clone whose fn
+to left (CR §1.4): the suffix words (_unc, _pure, _ctl, _t), then the mask (binary digits, or v). A clone whose fn
 the C modules do not declare is left undefined (no stub: an ordinary link error, as rule 27 says for
 a missing definition); one whose C signature has a non-scalar type is an error.
 
@@ -45,8 +50,9 @@ import sys
 
 RUNTIME_PREFIXES = ("cqrt_", "cq_template_")
 CLONE_PREFIX = "__cq_q_"
-SUFFIX = re.compile(r"_(unc|ctl|pure|d[0-9]+)$")
-MASK = re.compile(r"_([01]+)$")
+SUFFIX = re.compile(r"_(unc|ctl|pure|t)$")
+MASK = re.compile(r"_([01]+|v)$")
+NEVER_STUBBED = {"cqrt_qram_alloc_i8"}   # rt_bus.c defines it (module docstring)
 SCALAR = re.compile(r"^(void|i[1-9][0-9]*|half|bfloat|float|double|x86_fp80|ptr)$")
 KEEP_ATTRS = ("signext", "zeroext")
 DECL = re.compile(r"^declare\s+(?P<pre>.*?)@(?P<q>\"?)(?P<name>[A-Za-z0-9_.$]+)(?P=q)\s*\((?P<params>[^)]*)\)")
@@ -175,7 +181,7 @@ def collect(texts):
                 defined.add(m.group(1))
                 continue
             d = parse_decl(line)
-            if d is None:
+            if d is None or d[0] in NEVER_STUBBED:
                 continue
             name, ret, _, params = d
             sig = (ret, tuple(t for t, _ in params))

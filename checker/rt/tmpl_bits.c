@@ -126,9 +126,9 @@ static int tb_eval(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *
     cqe_fail("tmpl_bits: %s: width '%s' is not an integer type i<N>, N >= 1", t->op, t->w);
     return -1;
   }
-  if (t->to[0] || t->pred[0] || t->rm || t->exc || t->strided) {
-    cqe_fail("tmpl_bits: %s_%s: malformed name (to '%s', pred '%s', rm %u, exc %u, strided %u)", t->op,
-             t->w, t->to, t->pred, t->rm, t->exc, t->strided);
+  if (t->to[0] || t->pred[0] || t->rm || t->exc) {
+    cqe_fail("tmpl_bits: %s_%s: malformed name (to '%s', pred '%s', rm %u, exc %u)", t->op,
+             t->w, t->to, t->pred, t->rm, t->exc);
     return -1;
   }
   if (nargs != tb_ops[k].arity) {

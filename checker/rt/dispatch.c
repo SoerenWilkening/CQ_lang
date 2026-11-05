@@ -11,15 +11,12 @@
  * Routing.
  *   cqrt_<core gate>  handled here: alloc, free, measure, ry[_qangle][_controlled], rz_i1,
  *                     rz_qangle[_controlled], not/and/or/xor_i1, copy[_controlled], xorc[_controlled]
- *                     (an in-place gate's _unc is the same call), push, pop, and the rule 27 clone
- *                     registry clone_register / clone_resolve (BACKEND_ABI §1.14; no rail).
+ *                     (an in-place gate's _unc is the same call), push, pop.
  *   cq_template_*     parsed by cqe_parse_template; the handlers registered for tname.op are tried in
  *                     registration order. The core allocates the fresh result rail (forward) or XORs
  *                     the value into the out rail and checks the residue (_unc).
- *   cqrt_<other>      the family path: qram_alloc, qram_realloc, qram_store, qram_load, qram_free,
- *                     qram_size, tape_alloc, tape_fmt, tape_effect, tape_write, tape_write_str,
- *                     tape_str_begin, tape_str_end, abort. tname.op is
- *                     that stem; tname.w the width token ("" if none); tname.shape "hl" for _hl and "l"
+ *   cqrt_<other>      the family path: qram_alloc, qram_store, qram_load, qram_swap (rt_bus.c), tape_alloc,
+ *                     tape_fmt, tape_effect, tape_write, abort (rt_tape.c). tname.op is that stem; tname.w the width token ("" if none); tname.shape "hl" for _hl and "l"
  *                     for _lit; tname.pred "ctl" for _controlled; tname.unc for _unc.
  *
  * Handler convention: cqe.h M1 (freeze bead cq-mgi), restated:
@@ -33,7 +30,7 @@
  *                        or to the declared return type (family path; bits 0 for void). The handler
  *                        writes the value (bits above out->bits zero). The core owns out->w.
  *   template args        every forward argument in signature order (select condition, data operands,
- *                        the _rm/_rmq mode, qrom's table/n/stride/idx), each resolved: a handle to a
+ *                        the _rm/_rmq mode), each resolved: a handle to a
  *                        copy of its rail's value (bits = the rail's width), a literal to its value
  *                        with bits = its LLVM type's width, kind 'f' for half, bfloat (M2), float,
  *                        double and x86_fp80 (ptr: 64-bit 'i'). The _unc's leading out
@@ -44,7 +41,7 @@
  *                        (a handle as i32) in out.
  *
  * Violations written here (event "violation", field "what"): bad_handle, use_after_free (core.c),
- * dirty_free (free of a rail not in a known basis state), free_forbidden (free of a measured, tape or
+ * dirty_free (free of a rail that is not classical-valued and that no bus swap left at 0), free_forbidden (free of a measured, tape or
  * abort rail, BACKEND_ABI §1.2), unc_residue, unc_after_nondiagonal (an _unc after a non-diagonal
  * gate on its out rail or an operand since the out rail was computed, CR rule 5), width_mismatch,
  * target_aliases_operand, rotate_after_measure, pop_empty, malformed_call, bad_template,
@@ -101,6 +98,7 @@ uint64_t cqe__created(int32_t h);
 uint64_t cqe__last_nd(int32_t h);
 int cqe__measured(int32_t h);
 int cqe__role(int32_t h);
+int cqe__busz(int32_t h);
 void cqe__setrole(int32_t h, int role);
 void cqe__setfenv(int32_t h, int bits); /* core.c (cq-tt2j) */
 void cqe__mark_written(int32_t h);
@@ -226,7 +224,7 @@ static const char *const tmpl_ops[] = {
     "sitofp", "uitofp", "fptosi", "fptoui", "bitcast", "fma", "fshl", "fshr", "abs", "ctlz", "cttz", "ctpop", "bswap", "bitreverse",
     "smax", "smin", "umax", "umin", "uadd_sat", "usub_sat", "sadd_sat", "ssub_sat", "uadd_overflow", "sadd_overflow", "usub_overflow",
     "ssub_overflow", "umul_overflow", "smul_overflow", "fabs", "copysign", "fmax", "fmin", "floor", "ceil", "rint",
-    "round", "sqrt", "is_fpclass", "qrom_load", NULL};
+    "round", "sqrt", "is_fpclass", NULL};
 static const char *const icmp_preds[] = {"eq", "ne", "ugt", "uge", "ult", "ule", "sgt", "sge", "slt", "sle", NULL};
 static const char *const fcmp_preds[] = {"false", "oeq", "ogt", "oge", "olt", "ole", "one", "ord", "ueq",
                                          "ugt",   "uge", "ult", "ule", "une", "uno", "true", NULL};
@@ -302,10 +300,6 @@ int cqe_parse_template(const char *sym, cqe_tname *out) {
       return -1;
     ++i;
   }
-  if (i < nt && strcmp(tok[i], "s") == 0 && strcmp(out->op, "qrom_load") == 0) {
-    out->strided = 1;
-    ++i;
-  }
   if (i < nt && (strcmp(tok[i], "rm") == 0 || strcmp(tok[i], "rmq") == 0)) {
     out->rm = tok[i][2] ? 2 : 1;
     ++i;
@@ -339,15 +333,6 @@ static const char *result_w(const cqe_tname *t) {
 int cqe__template_layout(const cqe_tname *t, int nf, char *mask) {
   if (nf < 0 || nf > 64)
     return -1;
-  if (!strcmp(t->op, "qrom_load")) {
-    if (nf != (t->strided ? 4 : 3) || t->shape[0] || t->rm || t->exc)
-      return -1;
-    for (int i = 0; i < nf; ++i)
-      mask[i] = 'l';
-    mask[nf - 1] = 'h';
-    mask[nf] = 0;
-    return 0;
-  }
   int k = 0, sel = !strcmp(t->op, "select");
   int nd = nf - sel - (t->rm ? 1 : 0);
   if (nd < 1)
@@ -447,7 +432,7 @@ static double as_f64(const cqe_val *v) {
  * known iff no rail among d and the sources took a non-diagonal gate after the latest creation of
  * d and the sources (returns 0 when that test fails, 1 otherwise); if d is nonzero it is known iff
  * d and every source were known. */
-static int zero_rule(int32_t d, const int32_t *src, int ns) {
+int cqe__zero_rule(int32_t d, const int32_t *src, int ns) {
   if (cqe__val_iszero(cqe__val(d))) {
     uint64_t ref = cqe__created(d);
     for (int i = 0; i < ns; ++i)
@@ -613,7 +598,8 @@ static void gate_free(call_t *c) {
   if (cqe__check(h, c->sym) != 0)
     return;
   char *hx = cqe__hexa(cqe__val(h));
-  int known = cqe__known(h);
+  /* ABI §1.2: a classical-valued rail in any basis value; ABI §1.10 Undo 2: the rail the cells' 0 went to */
+  int known = cqe__known(h) || cqe__busz(h);
   if (cqe__free_note(h, known))
     cqe__logf("{\"ev\":\"free\",\"h\":%d,\"v\":\"%s\",\"known\":%s,\"w\":\"%s\"}", (int)h, hx, known ? "true" : "false",
             cqe__w(h));
@@ -622,7 +608,7 @@ static void gate_free(call_t *c) {
     cqe__violation("free_forbidden", h, "%s: rail %d is a %s rail", c->sym, (int)h,
                    cqe__measured(h) ? "measured" : cqe__role(h) == 1 ? "abort" : "tape");
   if (!known)
-    cqe__violation("dirty_free", h, "%s: rail %d is not in a known basis state", c->sym, (int)h);
+    cqe__violation("dirty_free", h, "%s: rail %d is not classical-valued and does not read 0 by a bus swap", c->sym, (int)h);
   cqe__free(h);
 }
 
@@ -909,7 +895,7 @@ static void gate_logic(call_t *c, const char *op) {
   cqe__mark_written(t);
   for (int i = 0; i < n - 1; ++i)
     cqe__add_dep(t, hs[i]);
-  zero_rule(t, hs, n - 1);   /* not_i1 too: a flag an X returns to 0 is known again (cq-aypc) */
+  cqe__zero_rule(t, hs, n - 1);   /* not_i1 too: a flag an X returns to 0 is known again (cq-aypc) */
   log_gate(c, t, hs, n - 1);
 }
 
@@ -961,7 +947,7 @@ static void gate_copy_xorc(call_t *c, const char *w, int is_copy, int ctl) {
   for (int i = 0; i < ns; ++i)
     cqe__add_dep(target, srcs[i]);
   if (is_copy || ctl)
-    zero_rule(target, srcs, ns);
+    cqe__zero_rule(target, srcs, ns);
   log_gate(c, target, srcs, ns);
 }
 
@@ -997,75 +983,6 @@ static void gate_pop(call_t *c) {
 }
 
 /* Route a cqrt_* core gate. 1 handled, 0 not a core gate. With c == NULL only classifies. */
-/* ---- rule 27 clone registry (BACKEND_ABI §1.14, CR §1.3) ---------------------------------- */
-/* cqrt_clone_register(ptr fn, ptr clone, ptr ctl, ptr unc): a module constructor records, under the
- * host address of a function whose address escapes its module, that function's all-handles clone and
- * its _ctl and _unc kinds. cqrt_clone_resolve(ptr fn, i32 kind) -> ptr: the registered clone of kind
- * (0 forward, 1 _ctl, 2 _unc), or null when fn has none (the C program's own undefined behaviour to
- * call). A symbol table of the host program: no rail, no gate, no trace event. The table is a static of
- * this file, filled by the constructors before the first shot and put back with __DATA between shots.
- * Violations (malformed_call): a wrong signature, a null fn, a kind outside 0..2, and fn registered
- * twice with different clones. */
-typedef struct {
-  uint64_t fn, k[3];
-} clone_ent;
-static clone_ent *clones_;
-static size_t nclones_, capclones_;
-
-static clone_ent *clone_find(uint64_t fn) {
-  for (size_t i = 0; i < nclones_; ++i)
-    if (clones_[i].fn == fn)
-      return &clones_[i];
-  return NULL;
-}
-
-static uint64_t as_u64(const cqe_val *v) { return v->nw ? v->w[0] : 0; }
-
-static void gate_clone_register(call_t *c) {
-  if (c->nargs != 4 || c->rty->kind != 'v' || c->ty[0].kind != 'p' || c->ty[1].kind != 'p' || c->ty[2].kind != 'p' ||
-      c->ty[3].kind != 'p') {
-    cqe__violation("malformed_call", -1, "%s: expected (ptr fn, ptr clone, ptr ctl, ptr unc) -> void", c->sym);
-    return;
-  }
-  uint64_t fn = as_u64(&c->raw[0]), k[3] = {as_u64(&c->raw[1]), as_u64(&c->raw[2]), as_u64(&c->raw[3])};
-  if (!fn) {
-    cqe__violation("malformed_call", -1, "%s: a null function address", c->sym);
-    return;
-  }
-  clone_ent *e = clone_find(fn);
-  if (e) {
-    if (memcmp(e->k, k, sizeof k) != 0)
-      cqe__violation("malformed_call", -1, "%s: function 0x%llx registered twice with different clones", c->sym,
-                     (unsigned long long)fn);
-    return;
-  }
-  if (nclones_ == capclones_) {
-    capclones_ = capclones_ ? 2 * capclones_ : 16;
-    clones_ = realloc(clones_, capclones_ * sizeof *clones_);
-    if (!clones_)
-      abort();
-  }
-  clones_[nclones_++] = (clone_ent){fn, {k[0], k[1], k[2]}};
-}
-
-static void gate_clone_resolve(call_t *c) {
-  if (c->nargs != 2 || c->rty->kind != 'p' || c->ty[0].kind != 'p' || strcmp(c->ty[1].ty, "i32") != 0) {
-    cqe__violation("malformed_call", -1, "%s: expected (ptr fn, i32 kind) -> ptr", c->sym);
-    return;
-  }
-  int32_t kind = as_i32(&c->raw[1]);
-  if (kind < 0 || kind > 2) {
-    cqe__violation("malformed_call", -1, "%s: kind %d is none of 0 (forward), 1 (_ctl), 2 (_unc)", c->sym, (int)kind);
-    return;
-  }
-  const clone_ent *e = clone_find(as_u64(&c->raw[0]));
-  cqe_val r;
-  cqe__val_init(&r, 64, 'i');
-  r.w[0] = e ? e->k[kind] : 0;
-  store_val(c->ret, c->rty, &r);
-  cqe__val_free(&r);
-}
-
 static int core_gate(call_t *c, const char *s, char *cls, size_t ncls) {
   char w[8];
   const char *r;
@@ -1079,12 +996,6 @@ static int core_gate(call_t *c, const char *s, char *cls, size_t ncls) {
     CLS("free");
     if (c)
       gate_free(c);
-    return 1;
-  }
-  if (!strcmp(s, "clone_register") || !strcmp(s, "clone_resolve")) {
-    CLS(s);
-    if (c)
-      (!strcmp(s, "clone_register") ? gate_clone_register : gate_clone_resolve)(c);
     return 1;
   }
   if (!strcmp(s, "push")) {
@@ -1152,10 +1063,8 @@ static int core_gate(call_t *c, const char *s, char *cls, size_t ncls) {
 
 /* ---- family path ------------------------------------------------------------------------- */
 
-static const char *const fam_stems[] = {"qram_alloc",  "qram_alloc_host", "qram_realloc",   "qram_store",   "qram_load",
-                                        "qram_free",   "qram_size",      "tape_alloc",   "tape_fmt",
-                                        "tape_effect", "tape_write_str", "tape_write",   "tape_str_begin",
-                                        "tape_str_end", "abort",         NULL};
+static const char *const fam_stems[] = {"qram_alloc", "qram_store", "qram_load", "qram_swap", "tape_alloc",
+                                        "tape_fmt",   "tape_effect", "tape_write", "abort",    NULL};
 
 /* Parse a non-core cqrt_ name (without the prefix) into t. 0 ok. */
 static int parse_family(const char *s, cqe_tname *t) {
@@ -1211,10 +1120,7 @@ static void family_call(call_t *c, const cqe_tname *t) {
   int32_t before = (int32_t)cqe__nrails_peek();
   int r = run_handlers(c->sym, t, c->raw, c->nargs, &out);
   int32_t after = (int32_t)cqe__nrails_peek() + 1;
-  int role = !strncmp(t->op, "tape_write", 10) ? 2 : (!strncmp(t->op, "qram_alloc", 10) || !strcmp(t->op, "qram_realloc") ||
-                                                      !strcmp(t->op, "qram_store"))
-                                                         ? 3
-                                                         : 0;
+  int role = !strcmp(t->op, "tape_write") ? 2 : !strcmp(t->op, "tape_effect") ? 6 : 0;
   if (role)
     for (int32_t h = before + 1; h < after; ++h)
       cqe__setrole(h, role);
@@ -1343,7 +1249,7 @@ static void template_call(call_t *c, const char *sym) {
         cqe__violation("unc_residue", o, "%s: out rail %d holds %s after its _unc", sym, (int)o, hx);
         free(hx);
         cqe__setknown(o, 0);
-      } else if (!zero_rule(o, hs, nh) || r != 0) {
+      } else if (!cqe__zero_rule(o, hs, nh) || r != 0) {
         if (r == 0)
           cqe__violation("unc_after_nondiagonal", o,
                          "%s: rail %d or an operand took a non-diagonal gate after rail %d was computed", sym, (int)o,
@@ -1447,16 +1353,17 @@ static const char *lty_wtok(const lty *t, char *buf, size_t n) {
   return buf;
 }
 
-/* Entry of every stub stubgen.py generates for a declared clone __cq_q_<fn>_<mask>[_ctl][_pure]
- * [_dN][_unc] that nothing links (rule 27). csig is "<fn>|<ret>|<t0>,..." of the C function fn.
- * The clone's ABI arguments (rule 27): [out handle, twin with a non-void result] [pred, _ctl] then per
- * C parameter a scalar (an i32 handle when its mask digit is 1, else the C-typed value) or a pointer
- * as (ptr object, i32 tag, i32 idx, i32 cell count) with three digits (tag, idx, object), then the
- * i32 K, then [one snapshot ptr per pointer whose object digit is 1, twin]. The value is the
- * cq_standin.h function of fn and the scalar arguments (a quantum one by its rail's value), the same
- * function the C oracle defines fn with. The forward clone returns a fresh rail holding it (void: no
- * effect), its _ctl form ignores pred (the stand-in is pure, rule 27), the twin XORs it out of the out
- * rail (void: no effect; the stand-in writes no cell, so the snapshot restore changes nothing). */
+/* Entry of every stub stubgen.py generates for a clone __cq_q_<fn>_<mask>[_t][_ctl][_pure][_unc] that
+ * nothing links. csig is "<fn>|<ret>|<t0>,..." of the C function fn. Its ABI arguments (CR §1.4, rule 27):
+ * [pred, _ctl] [out handle, a twin of a non-void fn] then per C parameter one scalar: an i32 handle when its
+ * mask digit is 1 (a pointer: a handle to a 64-bit address rail), else the C-typed value (a pointer: a
+ * classical ptr), then, for a table clone (_t, the declared clone of rule 27), the i32 K. The value is the
+ * cq_standin.h function of fn and the non-pointer scalar arguments (a quantum one by its rail's value), the
+ * same function the C oracle defines fn with. The forward clone returns a fresh rail holding it, a classical
+ * result as a seed rail (void: no effect); its _ctl form ignores pred (the stand-in has no effect to guard,
+ * rule 27); the twin XORs it out of the out rail (void: no effect) and, for a table clone, frees that rail
+ * (§1.4: "frees the results it zeroes"; the caller frees no result of a table clone). A pointer result is a
+ * rail holding null. */
 typedef void (*standin_thunk)(void **cargs, void *cret);
 
 static void standin(const char *sym, const char *sig, const char *csig, int32_t nargs, void **argv, void *ret,
@@ -1488,7 +1395,7 @@ static void standin(const char *sym, const char *sig, const char *csig, int32_t 
   const char *bar = strchr(csig, '|');
   char fn[256];
   if (nargs < 0 || nargs > 64 || parse_sig(sig, &rty, ty, &n) || !bar || (size_t)(bar - csig) >= sizeof fn ||
-      parse_sig(bar + 1, &crty, cty, &nc) || crty.kind == 'p') {
+      parse_sig(bar + 1, &crty, cty, &nc)) {
     cqe__violation("malformed_call", -1, "%s: bad stand-in stub signature '%s' / '%s'", sym, sig, csig);
     return;
   }
@@ -1509,8 +1416,11 @@ static void standin(const char *sym, const char *sig, const char *csig, int32_t 
   int ok = !strncmp(sym, "__cq_q_", 7) && !strncmp(sym + 7, fn, fl) && sym[7 + fl] == '_';
   const char *mask = ok ? sym + 8 + fl : "";
   size_t ml = strspn(mask, "01");
-  int unc = 0, ctl = 0;
-  for (const char *q = mask + ml; ok && *q;) {
+  int unc = 0, ctl = 0, table = 0;
+  if (!strncmp(mask, "v", 1) && (mask[1] == 0 || mask[1] == '_'))
+    ml = 0; /* §1.4: a function with no scalar formal */
+  const char *sfx = mask + ml + (ml == 0 && *mask == 'v' ? 1 : 0);
+  for (const char *q = sfx; ok && *q;) {
     if (*q != '_') {
       ok = 0;
       break;
@@ -1521,19 +1431,20 @@ static void standin(const char *sym, const char *sig, const char *csig, int32_t 
       unc = 1;
     else if (len == 3 && !strncmp(q + 1, "ctl", 3))
       ctl = 1;
-    else if (!((len == 4 && !strncmp(q + 1, "pure", 4)) || (len == 3 && !strncmp(q + 1, "adj", 3)) ||
-               (len >= 2 && q[1] == 'd' && strspn(q + 2, "0123456789") >= len - 1)))
+    else if (len == 1 && q[1] == 't')
+      table = 1;
+    else if (!(len == 4 && !strncmp(q + 1, "pure", 4)))
       ok = 0;
     q += 1 + len;
   }
-  if (!ok || ml == 0) {
+  if (!ok || (ml == 0 && nc != 0)) {
     cqe__violation("malformed_call", -1, "%s: not a declared clone of %s (CR §1.4, rule 27)", sym, fn);
     goto done;
   }
 
   /* walk the ABI arguments against the C signature and the mask */
   {
-    int a = 0, d = 0, nsnap = 0, nh = 0, known = 1;
+    int a = 0, d = 0, nh = 0, known = 1;
     int32_t out_h = -1, hs[64];
     uint64_t h = cq_standin_name(fn, fl);
     sbuf ab = {0};
@@ -1543,34 +1454,43 @@ static void standin(const char *sym, const char *sig, const char *csig, int32_t 
                      (unc || crty.kind == 'v') ? "void" : "an i32 handle");
       ok = 0;
     }
+    if (ok && ctl) { /* §1.4: _ctl_unc(pred, outs..., args...) */
+      if (a >= nargs || strcmp(ty[a].ty, "i32") != 0 || cqe__check(as_i32(&raw[a]), sym) < 0)
+        ok = 0;
+      ++a;
+    }
     if (ok && unc && crty.kind != 'v') {
       if (a >= nargs || strcmp(ty[a].ty, "i32") != 0)
         ok = 0;
       else
         out_h = as_i32(&raw[a++]);
     }
-    if (ok && ctl) {
-      if (a >= nargs || strcmp(ty[a].ty, "i32") != 0 || cqe__check(as_i32(&raw[a]), sym) < 0)
-        ok = 0;
-      ++a;
-    }
     for (int j = 0; ok && j < nc; ++j) {
-      if (cty[j].kind == 'p') {
-        if (thunk) { /* stubgen.py never pairs a thunk with a pointer parameter */
+      if (cty[j].kind == 'p') { /* one scalar (§1.4), never mixed (cq_standin.h: an address differs per run) */
+        if (thunk || a >= nargs || d >= (int)ml) { /* stubgen.py never pairs a thunk with a pointer parameter */
           ok = 0;
           break;
         }
-        if (a + 4 > nargs || ty[a].kind != 'p' || strcmp(ty[a + 1].ty, "i32") || strcmp(ty[a + 2].ty, "i32") ||
-            strcmp(ty[a + 3].ty, "i32") || d + 3 > (int)ml) {
-          ok = 0;
-          break;
-        }
-        for (int k = 0; k < 2; ++k) /* a quantum tag or idx is a handle */
-          if (mask[d + k] == '1' && cqe__check(as_i32(&raw[a + 1 + k]), sym) < 0)
+        if (mask[d] == '1') {
+          int32_t hh = as_i32(&raw[a]);
+          if (strcmp(ty[a].ty, "i32") || cqe__check(hh, sym) < 0) {
             ok = 0;
-        nsnap += unc && mask[d + 2] == '1';
-        a += 4;
-        d += 3;
+            break;
+          }
+          if (strcmp(cqe__w(hh), "i64") != 0) {
+            cqe__violation("width_mismatch", hh, "%s: pointer argument %d of %s: rail %d is %s, an address rail is i64", sym,
+                           j, fn, (int)hh, cqe__w(hh));
+            ok = 0;
+            break;
+          }
+          hs[nh++] = hh;
+          known = known && cqe__known(hh);
+        } else if (ty[a].kind != 'p') {
+          ok = 0;
+          break;
+        }
+        ++a;
+        ++d;
         continue;
       }
       if (a >= nargs || d >= (int)ml) {
@@ -1624,17 +1544,13 @@ static void standin(const char *sym, const char *sig, const char *csig, int32_t 
       ++a;
       ++d;
     }
-    /* K. A clone of a host function may also be a rule 18 lift of the injected libc/libm source (CR §8
-     * item 14, 175: __cq_q_exp_1(i32)), which has none (cq-aou6). */
-    if (thunk && a == nargs) /* no pointer parameter, so no snapshot either */
-      ;
-    else if (ok && (a >= nargs || strcmp(ty[a].ty, "i32") != 0))
-      ok = 0;
-    else
-      ++a;
-    for (int k = 0; ok && k < nsnap; ++k, ++a)
-      if (a >= nargs || ty[a].kind != 'p')
+    /* K: a table clone's trailing i32 (rule 27). A rule 18 clone (no _t, 175's __cq_q_exp_1(i32)) has none. */
+    if (ok && table) {
+      if (a >= nargs || strcmp(ty[a].ty, "i32") != 0)
         ok = 0;
+      else
+        ++a;
+    }
     if (ok && (a != nargs || d != (int)ml))
       ok = 0;
     sb_add(&ab, "]");
@@ -1650,9 +1566,14 @@ static void standin(const char *sym, const char *sig, const char *csig, int32_t 
       free(b.p);
     } else {
       char wt[16];
-      lty_wtok(&crty, wt, sizeof wt);
+      if (crty.kind == 'p')
+        snprintf(wt, sizeof wt, "i64"); /* cq_standin.h: a pointer result is null; a rail result is one 64-bit rail */
+      else
+        lty_wtok(&crty, wt, sizeof wt);
       cqe_val v;
-      if (thunk) { /* the host's fn (cq-aou6) */
+      if (crty.kind == 'p') {
+        cqe__val_init(&v, 64, 'i');
+      } else if (thunk) { /* the host's fn (cq-aou6) */
         memset(rbuf, 0, sizeof rbuf);
         thunk(cargs, rbuf);
         load_val(&v, &crty, rbuf);
@@ -1690,17 +1611,20 @@ static void standin(const char *sym, const char *sig, const char *csig, int32_t 
         sb_add(&b, "\"}");
         cqe_log(b.p);
         free(b.p);
-        if (iv_quiet_unc) {
-          zero_rule(out_h, hs, nh);
+        if (iv_quiet_unc) { /* the twin as the compute (cq_invert): the rail lives on, nothing to free */
+          cqe__zero_rule(out_h, hs, nh);
         } else if (!cqe__val_iszero(cqe__val(out_h))) {
           char *hx = cqe__hexa(cqe__val(out_h));
           cqe__violation("unc_residue", out_h, "%s: out rail %d holds %s after its twin", sym, (int)out_h, hx);
           free(hx);
           cqe__setknown(out_h, 0);
-        } else if (!zero_rule(out_h, hs, nh)) {
+        } else if (!cqe__zero_rule(out_h, hs, nh)) {
           cqe__violation("unc_after_nondiagonal", out_h,
                          "%s: rail %d or an operand took a non-diagonal gate after rail %d was computed", sym,
                          (int)out_h, (int)out_h);
+        } else if (table) { /* §1.4: a table twin frees the results it zeroes */
+          cqe__free_note(out_h, 1);
+          cqe__free(out_h);
         }
       }
       cqe__val_free(&v);
@@ -1716,19 +1640,19 @@ done:
  * cqrt_invert_begin opens a region; while one is open, a gate is RECORDED, not applied, and
  * cqrt_invert_end replays the region's gates reversed, each by its inverse, then the frees it recorded.
  *  - Gates: every template and _unc, every core XOR gate (not/and/or/xor_i1, copy, xorc), Ry and P
- *    (literal angle or angle rail), qram_store/_unc, qram_load/_unc, tape_write, and a declared clone
+ *    (literal angle or angle rail), qram_swap, qram_load/_unc, tape_write, and a declared clone
  *    (rule 27 stand-in) and its twin. An Ry or P is inverted by negating its angle (an angle rail's value
- *    is negated for the call), qram_store and its _unc are each other's inverse, every XOR gate is its
- *    own.
+ *    is negated for the call), a bus swap and every XOR gate are their own inverse.
  *  - A gate whose forward form makes a fresh rail (a template, qram_load, tape_write, a clone with a
  *    result) gets that rail at once, at |0> (allocations keep their place); the program holds its handle.
  *    The rail is PENDING until a replay first XORs into it: that replay is its compute, whichever of the
  *    pair it is (the reversed list runs a compute/uncompute pair the other way round), and the other one
  *    is its uncompute, with the residue check of an _unc.
- *  - Not gates, done at once: alloc, push/pop, qram_alloc/realloc, tape bookkeeping, abort flags.
- *    cqrt_free, cqrt_qram_free and qram_realloc's _unc (releases) are performed after the reversed list.
- *  - A measurement inside a region first replays the gates recorded so far forward, as recorded (it needs
- *    them; every open region, outermost first); only the gates recorded after it are reversed at the end.
+ *  - Not gates, done at once: alloc, push/pop, qram_alloc, tape bookkeeping, abort flags.
+ *    cqrt_free (a release) is performed after the reversed list.
+ *  - A measurement, a bus store or an effect entry inside a region has no inverse: it first replays the
+ *    gates recorded so far forward, as recorded (it needs them; every open region, outermost first) and is
+ *    performed in place; only the gates recorded after it are reversed at the end.
  *  - Nested regions: an inner end appends its reversed list and its frees to the enclosing region's
  *    record. A region still open at the end of the shot is closed there (innermost first).
  * Reference: CQ_spec _tools/sample_check.py Eval.call models the same region. */
@@ -1811,6 +1735,22 @@ static int32_t iv_reserve(const char *w, const lty *rty, void *ret) {
 }
 
 static void iv_run(const iv_op *op);
+
+/* The clone name read right to left (CR §1.4): its suffix words end in _t. */
+static int clone_is_table(const char *sym) {
+  char b[256];
+  snprintf(b, sizeof b, "%s", sym);
+  for (;;) {
+    if (ends_with(b, "_unc"))
+      b[strlen(b) - 4] = 0;
+    else if (ends_with(b, "_pure"))
+      b[strlen(b) - 5] = 0;
+    else if (ends_with(b, "_ctl"))
+      b[strlen(b) - 4] = 0;
+    else
+      return ends_with(b, "_t");
+  }
+}
 
 /* Replay every open region's record forward (a measurement needs the gates before it). */
 static void iv_flush_forward(void) {
@@ -1930,9 +1870,10 @@ static int iv_intercept(const char *sym, const char *sig, const char *csig, int3
       if (!strcmp(cls, "core:alloc") || !strcmp(cls, "core:push") || !strcmp(cls, "core:pop"))
         return 0;
     } else if (parse_family(s, &t) == 0) {
-      if (!strcmp(t.op, "qram_free") || (!strcmp(t.op, "qram_realloc") && t.unc)) {
-        op.kind = IV_FREE;
-      } else if (!strcmp(t.op, "qram_store")) {
+      if (!strcmp(t.op, "qram_store") || !strcmp(t.op, "tape_effect")) {
+        iv_flush_forward(); /* ABI 1.13: performed at its call, the store's slot kept */
+        return 0;
+      } else if (!strcmp(t.op, "qram_swap")) {
         op.kind = IV_GATE;
       } else if (!strcmp(t.op, "qram_load")) {
         op.kind = IV_XOR;
@@ -1959,7 +1900,7 @@ static int iv_intercept(const char *sym, const char *sig, const char *csig, int3
         op.out = iv_reserve(w, &rty, ret);
         cqe__setrole(op.out, 2); /* a tape rail (C1 roles) */
       } else {
-        return 0; /* bookkeeping: qram_alloc/realloc, tape_alloc/fmt/effect, literal writes, abort */
+        return 0; /* bookkeeping: qram_alloc, tape_alloc/fmt, literal writes, abort */
       }
     } else {
       return 0;
@@ -2018,11 +1959,6 @@ static void iv_run(const iv_op *op) {
       } else {
         buf[nargs - 1][7] ^= 0x80; /* the double literal negated */
       }
-    } else if (op->inv && strstr(sym, "qram_store")) {
-      if (ends_with(sym, "_unc"))
-        sym[strlen(sym) - 4] = 0;
-      else
-        strncat(sym, "_unc", sizeof sym - strlen(sym) - 1);
     }
     iv_call(op, sym, sig, argv, nargs, rbuf);
     if (a)
@@ -2047,6 +1983,10 @@ static void iv_run(const iv_op *op) {
                          sym, (int)op->out, hx);
           free(hx);
           cqe__setknown(op->out, 0);
+        } else if (!pend && op->standin && clone_is_table(sym) && cqe__exists(op->out)) {
+          /* a table clone's forward form replayed as its uncompute: the twin's free (§1.4) */
+          cqe__free_note(op->out, 1);
+          cqe__free(op->out);
         }
       }
     } else if (!op->unc) {
@@ -2062,8 +2002,7 @@ static void iv_run(const iv_op *op) {
       }
     } else if (!pend) {
       iv_call(op, sym, sig, argv, nargs, rbuf);
-    } else { /* a template's or qram_load's _unc as the compute: the forward form into the |0> rail (a
-              * forward QROM load takes the snapshot its _unc later matches) */
+    } else { /* a template's or qram_load's _unc as the compute: the forward form into the |0> rail */
       sym[strlen(sym) - 4] = 0;
       const char *rest = strchr(params, ',');
       snprintf(sig, sizeof sig, "i32|%s", rest ? rest + 1 : "");

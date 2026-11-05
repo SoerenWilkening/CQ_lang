@@ -7,12 +7,14 @@
  * handed it is a bad_handle. Handles are classical values of the host program (compared, selected,
  * stored); the evaluator sees only the ones passed to it. A rail
  * has a width token ("i32", "f80", ...), a basis value (cqe_val, little-endian 64-bit words, bits
- * above the width zero), a liveness state and its known-basis flag (CR §0, CLAUDE.md "The §6
- * checker"): a rail is known when it is in a known classical basis state, so cqrt_free may reset it.
- * Known: a seed (cqrt_alloc), a seed after an uncontrolled xorc, a template result or copy computed
- * only from known rails, a measured rail, and a rail an XOR-into write (template _unc, copy,
- * and/or/xor_i1) returned to 0 with no non-diagonal gate (Ry) on the target or any source after
- * the target's or the sources' creation (dispatch.c, zero_rule). A rotated rail is not known.
+ * above the width zero), a liveness state and its known flag: BACKEND_ABI §0's classical-valued (holds
+ * one basis value the backend knows; §1.2: cqrt_free may reset it whatever value it holds). Known: a
+ * seed (cqrt_alloc), a seed after an uncontrolled xorc, the result of a template, core gate or bus access
+ * whose operands, controls and cells are all known, a measured rail, and a rail an XOR-into write
+ * (template _unc, load _unc, copy, and/or/xor_i1) returned to 0 with no non-diagonal gate (Ry) on the
+ * target or any source after the target's or the sources' creation (dispatch.c, cqe__zero_rule). A rotated
+ * rail is not known (Q17). cqrt_free is legal on a known rail and on a rail a bus swap left at 0 (the
+ * rail the cells' 0 went to, ABI §1.10 Undo 2: cqe__set_busz); anything else is dirty_free.
  *
  * Trace. One JSON object per line, to the file named by $CQE_TRACE (stderr when unset), flushed
  * per line so a crash keeps every event before it. The frozen events of cq-arch are written with
@@ -22,9 +24,11 @@
  * this file); the end-of-shot handlers and the exit event run once per sample, and the trace is
  * flushed at the end of each sample instead of per line.
  *
- * Exit roles (event "exit", field "role" of each live rail): measured, abort, tape, qram, frozen
- * (rotated, not measured, or a rule-6 image carrying a rotated register's content: cqe__carry,
- * cq-qhow), kept_entangled (cq-arch A4: a rail one of whose direct sources received
+ * Exit roles (event "exit", field "role" of each live rail): measured, abort, tape, effect (an effect
+ * entry's result rail, CR §6 item 1), tape_slot (a bus store's slot, rule 5), overtaken (a load copy un-copied
+ * and not freed, rule 5), frozen (rotated, not measured, or a rule-6 image carrying a rotated register's
+ * content: cqe__carry, cq-qhow), store_kept (a value or control rail of a bus store still live, rule 5
+ * sentence 3), kept_entangled (cq-arch A4: a rail one of whose direct sources received
  * a non-diagonal gate or a measurement after the rail was written), output (its handle sits in
  * output memory at exit, mark_outputs; cq-tt2j), fenv_mode (a rail an _rmq template took as its
  * rounding mode; rule 23), fenv_flags (an _exc template's result or a rail written from one: the
@@ -262,8 +266,8 @@ static void trace_count(size_t n) {
 static void at_exit_handler(void);
 
 /* Compact trace (cq-8m6v, $CQE_COMPACT=1, set by run.py's runner): only the events run.py reads
- * reach the trace (rotations, measure, ret, violation, exit, effect, the shot frames, rt-mem's exit
- * and rt-tape's end-of-shot events, and the free events of the setup and the dirty ones of a sample);
+ * reach the trace (rotations, measure, ret, violation, exit, effect, the shot frames, rt-bus's bus,
+ * cells and out_mem events, rt-tape's end-of-shot events, and the free events of the setup and the dirty ones of a sample);
  * a sample's frees are summed up in its shot_end frame (cqe__free_note). Without it every event is
  * written, as before. */
 static int compact;
@@ -275,7 +279,7 @@ static int keep_event(const char *s) {
   const char *n = s + sizeof pre - 1;
   static const char *keep[] = {"ry\"", "ry_qangle\"", "phase\"", "phase_qangle\"", "measure\"", "ret\"",
                                "violation\"", "exit\"", "effect\"", "shot\"", "shot_end\"", "free\"",
-                               "qram\",\"op\":\"exit\"", "tape\",\"op\":\"shot\""};
+                               "bus\"", "cells\"", "out_mem\"", "tape\",\"op\":\"shot\""};
   for (size_t i = 0; i < sizeof keep / sizeof *keep; ++i)
     if (!strncmp(n, keep[i], strlen(keep[i])))
       return 1;
@@ -392,7 +396,10 @@ unsigned long cqe__violations(void) { return nviolations; }
 typedef struct {
   char w[8];
   cqe_val v;
-  uint8_t live, known, measured, frozen, written, seed, role;   /* role: 0 none, 1 abort, 2 tape, 3 qram */
+  uint8_t live, known, measured, frozen, written, seed;
+  uint8_t role;  /* CQE_ROLE_*: 0 none, 1 abort, 2 tape, 4 tape_slot, 5 overtaken, 6 effect */
+  uint8_t busz;  /* a bus swap left it at 0 and nothing wrote it since (cqe__set_busz) */
+  uint8_t store_kept; /* the value or control rail of a bus store (rule 5 sentence 3) */
   uint8_t fenv;  /* cq-tt2j, rule 23: 1 flags lineage (an _exc result or written from one), 2 a mode operand */
   uint8_t out;   /* cq-tt2j: at exit, its handle sits in a cell of output memory (mark_outputs) */
   uint8_t image; /* cq-qhow: carries a frozen register's content (cqe__carry): a rule-6 image, FROZEN */
@@ -403,7 +410,7 @@ typedef struct {
   uint32_t ndeps, capdeps;
 } rail_t;
 
-#define CQE_RAIL_LIMIT 0x51000000u /* rail handles stay below rt-mem's QRAM bus handles (cq-lxv) */
+#define CQE_RAIL_LIMIT 0x51000000u /* rail handles stay below the bus handle (rt_bus.c) */
 static rail_t *rails; /* rails[h], h >= 1 */
 static uint32_t nrails, caprails;
 static uint64_t clock_;
@@ -454,8 +461,7 @@ int32_t cqe__new(const char *w, const cqe_val *init, int known, int seed) {
       abort();
   }
   if (nrails + 1 >= CQE_RAIL_LIMIT) {
-    /* rt-mem numbers QRAM buses from 0x51000000 and its synthetic exit ids from 0x5A000000 */
-    fprintf(stderr, "cq: chk-core: rail handles exhausted (limit 0x%x, below rt-mem's bus range)\n",
+    fprintf(stderr, "cq: chk-core: rail handles exhausted (limit 0x%x, the bus handle)\n",
             (unsigned)CQE_RAIL_LIMIT);
     abort();
   }
@@ -505,9 +511,13 @@ int cqe__frozen(int32_t h) { return rails[h].frozen; }
 int cqe__role(int32_t h) { return rails[h].role; }
 void cqe__setfenv(int32_t h, int bits) { rails[h].fenv |= (uint8_t)bits; }
 void cqe__setrole(int32_t h, int role) { rails[h].role = (uint8_t)role; }
+void cqe__set_busz(int32_t h) { rails[h].busz = 1; }
+int cqe__busz(int32_t h) { return rails[h].busz; }
+void cqe__set_store_kept(int32_t h) { rails[h].store_kept = 1; }
 
 void cqe__mark_written(int32_t h) {
   rails[h].written = 1;
+  rails[h].busz = 0;
   rails[h].t_write = cqe__tick();
 }
 /* cq-3o3v: a firing Ry on h that took a C reach changed its value from pre to the reach's value. A
@@ -538,6 +548,7 @@ int cqe__ry_unprep(int32_t h, uint64_t angle) {
 void cqe__ry_forget(int32_t h) { rails[h].ry_t = 0; }
 void cqe__mark_nd(int32_t h) {
   rails[h].frozen = 1;
+  rails[h].busz = 0;
   rails[h].t_nd = cqe__tick();
 }
 /* CR rule 2, BACKEND_ABI 1.3 (cq-ihlt): measuring a measured rail again is a classical re-read of
@@ -624,10 +635,16 @@ static const char *exit_role(int32_t h) {
     return "abort";
   if (r->role == 2)
     return "tape";
-  if (r->role == 3)
-    return "qram";
+  if (r->role == 6)
+    return "effect";
+  if (r->role == 4)
+    return "tape_slot";
+  if (r->role == 5)
+    return "overtaken";
   if (r->frozen || r->image)
     return "frozen";
+  if (r->store_kept)
+    return "store_kept";
   for (uint32_t i = 0; i < r->ndeps; ++i) {
     rail_t *s = &rails[r->deps[i]];
     if ((s->t_nd && s->t_nd > r->t_write) || (s->t_meas && s->t_meas > r->t_write))
@@ -764,11 +781,12 @@ static void at_exit_handler(void) {
  * per sample had it):
  *   - the executable's writable data (__DATA: __data, __bss, __common): every static of the core, the
  *     dispatcher and the families (rails, handle counter, known flags, violation count, the theta
- *     schedule, rt-mem's and rt-tape's tables, the registered end-of-shot handlers) and the program's
+ *     schedule, rt-bus's cell map, rt-tape's tables, the registered end-of-shot handlers) and the program's
  *     own globals;
  *   - the heap: malloc, calloc, realloc and free of the executable are this file's (below). What the
  *     setup allocates (blocks under SETUP_BIG bytes) lies in the setup arena, whose contents are put
  *     back; what a sample allocates lies in the sample arena, emptied after every sample;
+ *   - the __cq_alloc arena (bundle/host/cq_host.c, through its two hooks): the same for program memory;
  *   - the stack above the driver's call (the setup's locals);
  *   - the floating-point environment (fesetenv), and the worker's signal handlers.
  * The end of a shot is the end of a process: the handlers registered with atexit (atexit of the
@@ -949,6 +967,9 @@ int atexit(void (*fn)(void)) {
 }
 
 void cqe__invert_close_all(void) __attribute__((weak)); /* dispatch.c (cq-4593) */
+/* bundle/host/cq_host.c: its __cq_alloc arena; these weak definitions are for a runtime linked without that file */
+__attribute__((weak)) void __cq_host_snapshot(void) {}
+__attribute__((weak)) void __cq_host_restore(void) {}
 
 static void run_exit_fns(void) {
   if (cqe__invert_close_all)
@@ -1389,6 +1410,7 @@ static void snapshot_take(void) {
   if (R->setup_n)
     memcpy(R->setup_copy, a_setup.base, R->setup_n);
   fegetenv(&R->fenv);
+  __cq_host_snapshot();
   /* every flag the worker sets is set before this copy, so the copy keeps it */
   for (int i = 0; i < R->nsect; ++i)
     memcpy(R->sect[i].copy, R->sect[i].at, R->sect[i].n);
@@ -1407,6 +1429,7 @@ static void arena_recycle(void) {
 }
 
 static void snapshot_restore(void) {
+  __cq_host_restore(); /* reads the sample's own statics: before __DATA is put back */
   for (int i = 0; i < R->nsect; ++i)
     memcpy(R->sect[i].at, R->sect[i].copy, R->sect[i].n);
   if (R->setup_n)

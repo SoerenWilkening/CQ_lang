@@ -10,7 +10,7 @@ extern "C" {
 
 /* checker/rt/cqe.h (C17, linked with the program under test) */
 typedef struct { uint32_t bits; char kind; uint32_t nw; uint64_t *w; } cqe_val;   /* 'i' or 'f', little-endian words */
-typedef struct { char op[24], pred[8], w[8], to[8], shape[8]; uint8_t rm, exc, strided, unc; } cqe_tname;
+typedef struct { char op[24], pred[8], w[8], to[8], shape[8]; uint8_t rm, exc, unc; } cqe_tname;
 int     cqe_parse_template(const char *sym, cqe_tname *out);
 typedef int (*cqe_op_fn)(const cqe_tname *, const cqe_val *args, int nargs, cqe_val *out);
 void    cqe_register_op(const char *op, cqe_op_fn);   /* a family registers from a constructor */
@@ -34,7 +34,7 @@ void    cqe_register_op(const char *op, cqe_op_fn);   /* a family registers from
  * args, owned by the dispatcher and valid for the call only.
  *   Template path (cq_template_*): every argument of the forward form in signature order, literals
  *   included, the _unc form's leading out handle omitted: the select condition, the data operands,
- *   the _rm/_rmq mode, qrom_load's table, n, stride and index. Each is resolved to a value: a
+ *   the _rm/_rmq mode. Each is resolved to a value: a
  *   handle to a copy of its rail's value (bits and kind the rail's), a literal to its value (bits
  *   its LLVM type's width; kind 'f' for half, bfloat (M2), float, double, x86_fp80, else 'i'; ptr a
  *   64-bit 'i').
@@ -47,18 +47,17 @@ void    cqe_register_op(const char *op, cqe_op_fn);   /* a family registers from
  *   in out. */
 /* C1 (freeze bead cq-4cy): the family path's names, arguments, roles and end of shot.
  * Names. A cqrt_ symbol that is not a core gate (alloc, free, measure, ry*, rz_*, not/and/or/xor_i1,
- *   copy*, xorc*, push, pop, clone_register, clone_resolve) is
- *   cqrt_<op>[_<W>][_hl|_lit][_controlled][_unc], op the longest of qram_alloc, qram_realloc,
- *   qram_store, qram_load, qram_free, qram_size, tape_alloc, tape_fmt, tape_effect, tape_write,
- *   tape_write_str, tape_str_begin, tape_str_end, abort that matches (qram_size, tape_str_begin/end
- *   and the clone pair: CQ_spec f684858), W a width token i<N> or f<N>. Any other cqrt_
+ *   copy*, xorc*, push, pop) is
+ *   cqrt_<op>[_<W>][_hl|_lit][_controlled][_unc], op the longest of qram_alloc, qram_store, qram_load,
+ *   qram_swap, tape_alloc, tape_fmt, tape_effect, tape_write, abort that matches, W a width token i<N>,
+ *   f<N> or bf16. Any other cqrt_
  *   name is a violation (unknown_symbol). The dispatcher passes a zeroed cqe_tname with op = <op>,
  *   w = W ("" if absent), shape = "hl" for _hl and "l" for _lit, pred = "ctl" for _controlled,
- *   unc = 1 for _unc; to, rm, exc and strided stay 0. A family registers the bare op only; telling
+ *   unc = 1 for _unc; to, rm and exc stay 0. A family registers the bare op only; telling
  *   _controlled by arity agrees with pred. Examples: cqrt_tape_write_i8_lit is {op "tape_write",
- *   w "i8", shape "l"}; cqrt_tape_write_str_lit is {op "tape_write_str", shape "l"}; cqrt_abort_i1 is
+ *   w "i8", shape "l"}; cqrt_abort_i1 is
  *   {op "abort", w "i1"}; cqrt_tape_effect_controlled is {op "tape_effect", pred "ctl"};
- *   cqrt_qram_store_i32_hl_controlled_unc is {op "qram_store", w "i32", shape "hl", pred "ctl", unc 1}.
+ *   cqrt_qram_load_i32_hl_controlled_unc is {op "qram_load", w "i32", shape "hl", pred "ctl", unc 1}.
  * Arguments (family path). args[i] is the i-th argument of the declared ABI signature, an _unc's
  *   leading out handle included: an i32 handle is a 32-bit 'i' holding its number; a literal has
  *   bits its LLVM type's width and kind 'f' for half, bfloat (M2), float, double, x86_fp80, else 'i';
@@ -66,7 +65,7 @@ void    cqe_register_op(const char *op, cqe_op_fn);   /* a family registers from
  *   dereferenceable for the call only (a family that keeps a string or a table copies it).
  * Roles. The dispatcher, not the family, sets the exit role of tape and abort rails: before the
  *   handler runs, argument 0 of abort becomes role "abort"; every rail cqe_new_rail creates during
- *   a tape_write call becomes role "tape". The exit event reports such a live rail with that role,
+ *   a tape_write call becomes role "tape" and during a tape_effect call role "effect". The exit event reports such a live rail with that role,
  *   as kept. A cqrt_free of a tape or abort rail is a violation (free_forbidden) whatever its value
  *   and known flag, also after an _unc returned it to 0. Handles are never reused; cqe_rail of a
  *   freed or unknown handle records a violation and returns NULL.
