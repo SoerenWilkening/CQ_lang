@@ -1347,6 +1347,37 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       } else {
         cp.rails = {railOf(ty)};
       }
+      // The capture's start: the value where no trip exits. A phi's incomings from outside the unit on a quantum edge
+      // that excludes the loop (a pre-header guard, strlen's `!*s`) are taken exactly where the trip predicate is 0 from
+      // the start: rule 9's select chain over those edges, built here; a classical skip is the walker's join.
+      std::vector<std::pair<Pred, Operand>> outside;
+      if (cp.P && cp.rails.size() == 1) {
+        const Pred hb = ctx.preds().block(header);
+        const Pred cH = hb.classicalFactor(ctx.T, ctx.S);
+        for (unsigned i = 0; i < cp.P->getNumIncomingValues(); ++i) {
+          BasicBlock *u = cp.P->getIncomingBlock(i);
+          const Pred &e = ctx.preds().edge(u, UX.cont);
+          if (inUnit(u) || (e & cH).isBottom() || !(e & hb).isBottom())
+            continue;
+          Value *v = cp.P->getIncomingValue(i);
+          if (!ctx.bound(v) && !isa<Constant>(v)) {
+            ctx.addJoinArm(cp.P, e, v);   // lowered after the loop: the walker selects it in
+            continue;
+          }
+          Operand o = ctx.operand(v);
+          if (ty->isPointerTy() && !o.handle)
+            o = Operand{ctx.B().CreatePtrToInt(o.v, Type::getInt64Ty(C)), false};
+          outside.push_back({e, o});
+        }
+      }
+      if (outside.size() == 1) {
+        capInits.push_back(asHandle(outside.front().second, ty->isPointerTy() ? Type::getInt64Ty(C) : ty));
+        continue;
+      }
+      if (outside.size() > 1) {
+        capInits.push_back(selectChain(ctx, outside, cp.rails.front()));
+        continue;
+      }
       for (RailType w : cp.rails)
         capInits.push_back(seed(Constant::getNullValue(irTypeOf(C, w)), w));
     }
@@ -2643,9 +2674,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     ArmEval ev;
     ev.entry[{cxb, cxArm}] = aAtCx;
     // The arm runs here for this edge's paths only: every predicate under it.
-    std::optional<Pred> wasAssumed = ctx.preds().assume(ctx.preds().edge(cxb, cxArm));
+    std::optional<Pred> wasAssumed = ctx.preds().assume(ctx.preds().edge(cxb, cxArm), ctx.T, ctx.S);
     walkArm(ev);
-    ctx.preds().assume(wasAssumed);
+    ctx.preds().assume(wasAssumed, ctx.T, ctx.S);
     for (CPhi &cp : cphis) {
       SmallVector<Value *, 2> c(cp.atCx.begin(), cp.atCx.end());
       for (auto &[u, val] : cp.incomings(inUnit, UX.cont)) {

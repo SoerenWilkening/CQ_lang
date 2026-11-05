@@ -1930,17 +1930,17 @@ void Walker::emitTerminator(BasicBlock *b) {
 void Walker::emitBlock(BasicBlock *b) {
   // A tail block is lowered here for the paths from outside its unit only (cq-h8y6): every predicate under them.
   struct Restore {
-    PathPredicates &P;
+    LoweringContext &C;
     std::optional<Pred> was;
     bool on;
     ~Restore() {
       if (on)
-        P.assume(was);
+        C.preds().assume(was, C.T, C.S);
     }
-  } restore{ctx.preds(), std::nullopt, false};
+  } restore{ctx, std::nullopt, false};
   if (tailOf.count(b)) {
     Pred tp = tailPredOf(b);
-    restore.was = ctx.preds().assume(tp);
+    restore.was = ctx.preds().assume(tp, ctx.T, ctx.S);
     restore.on = true;
   }
   if (merged.count(b)) {
@@ -1996,9 +1996,9 @@ void Walker::emitBlock(BasicBlock *b) {
     // A loop of another unit's tail, on outside paths that classically exclude that unit: the phis of its continuation
     // that unit bound hold nothing on these paths; each unit binds them for its own edge (joinUnitPhi).
     if (Loop *t = tailOf.lookup(b); t && U.cont) {
-      std::optional<Pred> was = ctx.preds().assume(std::nullopt);
+      std::optional<Pred> was = ctx.preds().assume(std::nullopt, ctx.T, ctx.S);
       Pred other = ctx.preds().block(t->getHeader()).classicalFactor(ctx.T, ctx.S);
-      ctx.preds().assume(was);
+      ctx.preds().assume(was, ctx.T, ctx.S);
       if ((tailPredOf(b) & other).isBottom())
         for (PHINode &phi : U.cont->phis())
           if (any_of(phi.blocks(), [&](const BasicBlock *u) { return lp.contains(u) || is_contained(U.arm, u); }))

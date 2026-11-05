@@ -50,6 +50,7 @@ struct PathPredicates::Impl {
   llvm::DenseSet<const llvm::BasicBlock *> loopHeaders;
   llvm::Value *entryFlag = nullptr;
   std::optional<Pred> assumed;   // PathPredicates::assume
+  Pred assumedClassical = Pred::top();
   unsigned assumedId = 0;
   std::map<std::tuple<unsigned, const llvm::BasicBlock *, const llvm::BasicBlock *>, Pred> underAssumed;
 };
