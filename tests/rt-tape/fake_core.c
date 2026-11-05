@@ -82,6 +82,15 @@ void cqe_set_known(int32_t h, int known) {
   if (r) r->known = known;
 }
 
+int cqe__known(int32_t h) {
+  rail *r = get(h);
+  return r ? r->known : 0;
+}
+void cqe__setrole(int32_t h, int role) {
+  rail *r = get(h);
+  if (r && role == 2) r->role = "tape";
+}
+
 void cqe_log(const char *json) { fprintf(tr(), "%s\n", json); fflush(tr()); }
 
 void cqe_fail(const char *fmt, ...) {
@@ -118,13 +127,13 @@ cqe_val fake_h(int32_t h) { return fake_i(32, (uint32_t)h, 0); }
 cqe_val fake_p(const void *p) { return fake_i(64, (uint64_t)(uintptr_t)p, 0); }
 
 int32_t fake_rail(const char *w, cqe_val v) { return cqe_new_rail(w, &v, 1); }
+int32_t fake_qrail(const char *w, cqe_val v) { return cqe_new_rail(w, &v, 0); }
 
 /* Plays the dispatcher of C1 (cqe.h): parses cqrt_<op>[_<W>][_hl|_lit][_controlled][_unc] into a zeroed
  * cqe_tname, sets the roles, presets out per M1, and checks the handler's return code and out. */
 int32_t fake_call(const char *sym, int nargs, ...) {
   static const char *const opnames[] = {"qram_alloc", "qram_realloc", "qram_store", "qram_load", "qram_free",
-                                        "tape_alloc", "tape_fmt", "tape_effect", "tape_write",
-                                        "tape_write_str", "tape_str_begin", "tape_str_end", "abort"};
+                                        "tape_alloc", "tape_fmt", "tape_effect", "tape_write", "abort"};
   cqe_val args[8];
   va_list ap;
   va_start(ap, nargs);
@@ -161,7 +170,8 @@ int32_t fake_call(const char *sym, int nargs, ...) {
   }
   fake_new_role = !strcmp(tn.op, "tape_write") ? "tape" : NULL;
   /* M1: out is the dispatcher's, preset to the declared return type (i32 handle or void), zeroed */
-  int ret = !strcmp(tn.op, "tape_alloc") || (!strcmp(tn.op, "tape_write") && strcmp(tn.shape, "l"));
+  int ret = !strcmp(tn.op, "tape_alloc") || (!strcmp(tn.op, "tape_write") && strcmp(tn.shape, "l")) ||
+            (!strcmp(tn.op, "tape_effect") && tn.w[0]);
   uint64_t word = 0;
   cqe_val out = {ret ? 32u : 0u, ret ? 'i' : 0, 1, &word};
   int handled = 0;

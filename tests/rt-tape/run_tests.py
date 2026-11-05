@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests of checker/rt/rt_tape.c (cq-w0-rt-tape).
+"""Tests of checker/rt/rt_tape.c and host_fx.c.
 
 1. Differential test against native x86-64 code. A tape format entry is performed at the end of the
    shot by printf on its measured fields (CR §1.3, BACKEND_ABI §1.11). For every case (a format and
@@ -12,8 +12,10 @@
    for edge values, fp specials and a seeded random set at every corpus width plus i1, i7, i100.
    The tape family has no CR §2 row (BACKEND_ABI §1.11: "§2. None"), so no totalization row applies.
 2. Semantic scenarios (scenarios.c): predicates, abort ordering, one sequence across tapes, controlled
-   writes at every width, copy-at-call strings, effect entries, exit()/_Exit, and one scenario per
-   violation, each of which must be reported.
+   writes at every width, copy-at-call strings, the host-boundary table of BACKEND_ABI §1.11 (resolved,
+   the INPUT rows, deferred) with the stand-in, capture, exit()/_Exit, and one scenario per violation,
+   each of which must be reported.
+3. The references of 209, 210, 99, 47 and 138 run in the real evaluator through a hand driver (refs.py).
 
 Usage: run_tests.py --clang <clang-19> [--work DIR] [--seed N]
 """
@@ -44,6 +46,26 @@ FP_FORMATS = ["%f", "%e", "%g", "%a", "%A", "%.3f", "%10.2e", "%-12g|", "%+.0f",
               "%.17g", "%F", "%Lg", "%Lf", "%Le", "%La", "%.21Lg", "%Lf %e"]
 STR_FORMATS = ["%s", "%10s|", "%-10s|", "%.2s|", "%%%s%%", "no conversions\n", "x=%d s=%s\n"]
 STRINGS = ["hello", "", "a\tb", "100%"]
+
+
+def standin(name, words):
+    """cq_standin.h over the argument words."""
+    h = 0xcbf29ce484222325
+    for c in name.encode():
+        h = ((h ^ c) * 0x100000001b3) & (2 ** 64 - 1)
+    for w in words:
+        h = ((h ^ w) * 0x100000001b3) & (2 ** 64 - 1)
+    return h
+
+
+def line_byte_h(h, j):
+    if j + 1 >= 6:
+        return 10
+    return ord("a") + ((h ^ j) * 0x100000001b3 & (2 ** 64 - 1)) % 26
+
+
+def line_byte(name, j):
+    return line_byte_h(standin(name, []), j)
 
 
 def parse_fmt(f):
@@ -231,7 +253,11 @@ int main(void) {
       fake_call("cqrt_tape_fmt", 2, fake_h(t), fake_p(cases[c].fmt));
       for (int i = 0; i < cases[c].n; i++) {
         const F *f = &fields[cases[c].first + i];
-        if (f->k == 's') { fake_call("cqrt_tape_write_str_lit", 2, fake_h(t), fake_p(f->s)); continue; }
+        if (f->k == 's') {
+          if (variant == 0) fake_call("cqrt_tape_write_i64", 2, fake_h(t), fake_h(fake_rail("i64", fake_p(f->s))));
+          else fake_call("cqrt_tape_write_i64_lit", 2, fake_h(t), fake_p(f->s));
+          continue;
+        }
         char wt[8], sym[48];
         snprintf(wt, sizeof wt, "%%c%%u", f->k, f->w);
         snprintf(sym, sizeof sym, "cqrt_tape_write_%%s%%s", wt, variant ? "_lit" : "");
@@ -257,7 +283,7 @@ def sh(cmd, **kw):
 def build(clang, work, name, srcs):
     exe = os.path.join(work, name)
     sh([clang, "-std=c17", "-O1", "-Wall", "-Wextra", "-Werror", "-I", RT, "-I", HERE, "-o", exe,
-        os.path.join(RT, "rt_tape.c"), os.path.join(HERE, "fake_core.c")] + srcs)
+        os.path.join(RT, "rt_tape.c"), os.path.join(RT, "host_fx.c"), os.path.join(HERE, "fake_core.c")] + srcs)
     return exe
 
 
@@ -338,6 +364,11 @@ def scenarios(clang, work):
             msg = "exception %r" % ex
         checks.append((name, msg))
 
+    def violation_of(pattern):
+        def fn(trace, shot, viol):
+            return None if any(re.search(pattern, v) for v in viol) else "no violation /%s/ in %s" % (pattern, viol)
+        return fn
+
     def ok_shot(expect_perf, stdout, aborted=None):
         def fn(trace, shot, viol):
             if viol:
@@ -372,8 +403,8 @@ def scenarios(clang, work):
                     and c["cv"] == 0 and a["w"] == b["w"] == c["w"]):
                 return "bad controlled write %s" % [a, b, c]
             for x in (a, b, c):
-                if x["h"] == x["src"] or allocs[x["h"]]["known"] != 0:
-                    return "tape rail not fresh/unknown: %s" % x
+                if x["h"] == x["src"] or allocs[x["h"]]["known"] != 1:
+                    return "tape rail of classical-valued operands not fresh and classical-valued: %s" % x
         f = shot["events"][0]["fields"]
         if [x["v"] for x in f] != [w["v"] for w in writes]:
             return "end-of-shot values differ from the writes"
@@ -381,39 +412,165 @@ def scenarios(clang, work):
     check("write_ctl", write_ctl)
     check("copy_at_call", ok_shot([("%s!\n", True)], b"orig!\n"))
 
-    def effect(trace, shot, viol):
-        if viol:
-            return "violations %s" % viol
+    def clean(fn):
+        def wrapped(trace, shot, viol):
+            if viol:
+                return "violations %s" % viol
+            return fn(trace, shot)
+        return wrapped
+
+    def classes(shot):
+        return [(e.get("fmt") or e.get("name"), e["class"], e["performed"]) for e in shot["events"] if e["kind"] != "abort"]
+
+    def lines(trace):
+        return [(e.get("fmt") or e.get("name"), e["when"]) for e in trace if e.get("ev") == "effect"]
+
+    def tap(trace, name, *ev):
+        return [e for e in trace if e.get("ev") == name]
+
+    def qstores(trace):
+        return [(e["off"] - min(x["off"] for x in tap(trace, "qstore")), e["write"]) for e in tap(trace, "qstore")]
+
+    def effect(trace, shot):
         if os.path.exists("/tmp/cq_rt_tape_must_not_exist"):
             return "effect executed"
-        if performed(shot) != [("remove", True), ("raise", False)] or shot["stdout"] != "":
-            return "performed %s" % performed(shot)
+        if classes(shot) != [("remove", "resolved", True), ("raise", "resolved", False)] or shot["stdout"] != "":
+            return "classes %s" % classes(shot)
+        if lines(trace) != [("remove", "call")]:
+            return "lines %s" % lines(trace)
         f = [e["fields"] for e in shot["events"]]
-        if f != [[{"k": "str", "s": "/tmp/cq_rt_tape_must_not_exist"}], [{"k": "lit", "w": "i32", "v": "0x1e"}]]:
+        if f[0][0].get("cap") != "/tmp/cq_rt_tape_must_not_exist" or f[1] != [{"k": "lit", "w": "i32", "v": "0x1e"}]:
             return "fields %s" % f
         return None
-    check("effect", effect)
-    def str_group(trace, shot, viol):
-        if viol:
-            return "violations %s" % viol
-        if text_bytes(shot["stdout"]) != b"[hi!] 7 <>\n":
-            return "stdout %r" % shot["stdout"]
-        f = shot["events"][0]["fields"]
-        if [x.get("k") for x in f] != ["str", "rail", "str"] or f[0]["s"] != "hi!" or f[2]["s"] != "":
-            return "fields %s" % f
-        return None
-    check("str_group", str_group)
+    check("effect", clean(effect))
 
-    def str_group_effect(trace, shot, viol):
-        if viol:
-            return "violations %s" % viol
-        if os.path.exists("/tmp/cq_rt_tape_str_group"):
-            return "effect executed"
-        f = [e["fields"] for e in shot["events"]]
-        if performed(shot) != [("remove", True)] or f != [[{"k": "str", "s": "/tmp/cq_rt_tape_str_group"}]]:
-            return "performed %s fields %s" % (performed(shot), f)
+    def res_result(trace, shot):
+        allocs = [e for e in trace if e.get("ev") == "alloc"]
+        r = [e for e in shot["events"]]
+        want = standin("raise", [30]) & 0xffffffff
+        if int(r[0]["r"]["v"], 16) != want or int(r[1]["r"]["v"], 16) != 0 or int(r[2]["r"]["v"], 16) != 0:
+            return "results %s, want %x" % ([x["r"] for x in r], want)
+        known = {e["h"]: e["known"] for e in allocs}
+        if not all(known[x["r"]["h"]] == 1 for x in r):
+            return "a result rail is not classical-valued"
         return None
-    check("str_group_effect", str_group_effect)
+    check("res_result", clean(res_result))
+
+    def addr_not_mixed(trace, shot):
+        r = [int(e["r"]["v"], 16) for e in shot["events"]]
+        want = standin("unknown_fn", [7]) & 0xffffffff
+        if r[0] != want or r[1] != want or r[2] != standin("", [7]) & 0xffffffff:
+            return "results %s" % r
+        if shot["events"][2]["name"] is not None:
+            return "null name %r" % shot["events"][2]["name"]
+        return None
+    check("addr_not_mixed", clean(addr_not_mixed))
+
+    def defer_field(trace, shot):
+        if classes(shot) != [("x=%d\n", "deferred", True), ("putchar", "deferred", True), ("end\n", "deferred", True)]:
+            return "classes %s" % classes(shot)
+        if lines(trace) != [("x=%d\n", "end"), ("putchar", "end"), ("end\n", "end")]:
+            return "lines %s" % lines(trace)
+        if int(shot["events"][1]["r"]["v"], 16) != 0 or not shot["deviation"]:
+            return "deferred result %s deviation %s" % (shot["events"][1]["r"], shot["deviation"])
+        return None if shot["stdout"] == "x=3\nend\n" else "stdout %r" % shot["stdout"]
+    check("defer_field", clean(defer_field))
+    check("resolved_then_deferred", clean(lambda tr, sh: None if (
+        classes(sh) == [("first\n", "resolved", True), ("putchar", "resolved", True), ("%d\n", "deferred", True)]
+        and lines(tr) == [("first\n", "call"), ("putchar", "call"), ("%d\n", "end")] and not sh["deviation"])
+        else "classes %s lines %s" % (classes(sh), lines(tr))))
+    check("pred_copy", ok_shot([("one\n", True), ("zero\n", False)], b"one\n"))
+    check("pred_copy_changed", violation_of("predicate rail .* changed"))
+    check("pred_seed_freed", clean(lambda tr, sh: None if (
+        classes(sh) == [("putchar", "resolved", True), ("%d", "deferred", True), ("putchar", "deferred", True)])
+        else "classes %s" % classes(sh)))
+    check("abort_input", clean(lambda tr, sh: None if (
+        classes(sh) == [("putchar", "deferred", False), ("fgets", "input", True)] and lines(tr) == [] and sh["aborted"])
+        else "classes %s lines %s" % (classes(sh), lines(tr))))
+    check("abort_q", clean(lambda tr, sh: None if (classes(sh) == [("putchar", "deferred", True)])
+                           else "classes %s" % classes(sh)))
+
+    def input_classical(trace, shot):
+        if classes(shot) != [("%d\n", "deferred", True), ("fgets", "input", True)]:
+            return "classes %s" % classes(shot)
+        if lines(trace) != [("fgets", "call"), ("%d\n", "end")]:
+            return "lines %s" % lines(trace)
+        p = tap(trace, "probe")[0]
+        return None if p["b0"] == line_byte("fgets", 0) and p["b1"] == line_byte("fgets", 1) else "bytes %s" % p
+    check("input_classical", clean(input_classical))
+    check("input_skip", clean(lambda tr, sh: None if classes(sh) == [("fgets", "input", False)] and not lines(tr)
+                              else "classes %s lines %s" % (classes(sh), lines(tr))))
+
+    def input_len_q(trace, shot):
+        if classes(shot) != [("fgets", "input", True)]:
+            return "classes %s" % classes(shot)
+        q = tap(trace, "qstore")
+        if [(e["write"]) for e in q] != [1, 1, 1, 0, 0, 0, 0]:     # v = 3: 2 bytes and the NUL of 7 cells reached
+            return "qstores %s" % q
+        want = [line_byte("fgets", 0), line_byte("fgets", 1), 0, 0, 0, 0, 0]
+        return None if [e["b"] for e in q] == want else "bytes %s want %s" % ([e["b"] for e in q], want)
+    check("input_len_q", clean(input_len_q))
+
+    def input_addr_q(trace, shot):
+        q = tap(trace, "qstore")
+        if [(e["write"], e["b"]) for e in q] != [(1, line_byte("fgets", 0)), (1, 0)]:
+            return "qstores %s" % q
+        # an INPUT call with a quantum address is performed and not resolved: a later output stays behind it
+        return None if classes(shot) == [("fgets", "input", True), ("after\n", "deferred", True)] else "classes %s" % classes(shot)
+    check("input_addr_q", clean(input_addr_q))
+
+    def input_pred_q(trace, shot):
+        q = tap(trace, "qstore")
+        if [e["write"] for e in q] != [0, 0, 1, 1]:
+            return "qstores %s" % q
+        # c = 0: the C program does not reach the call, so no effect line; the input is consumed all the same
+        if classes(shot) != [("fgets", "input", True), ("fgets", "input", True)]:
+            return "classes %s" % classes(shot)
+        return None if lines(trace) == [("fgets", "call")] else "lines %s" % lines(trace)
+    check("input_pred_q", clean(input_pred_q))
+    check("input_ident_q", clean(lambda tr, sh: None if (classes(sh) == [("fgets", "deferred", True)] and not tap(tr, "qstore")
+                                                         and sh["deviation"]) else "classes %s" % classes(sh)))
+
+    def read_fread_getc(trace, shot):
+        p = tap(trace, "probe")[0]
+        want = {"r": 6, "f": 3, "g": line_byte("getc", 0), "gc": line_byte("getchar", 0), "a6": ord("Z"), "b6": ord("Z"),
+                "a0": line_byte_h(standin("read", [3]), 0)}
+        return None if all(p[k] == v for k, v in want.items()) else "probe %s want %s" % (p, want)
+    check("read_fread_getc", clean(read_fread_getc))
+
+    def capture(trace, shot):
+        e = shot["events"]
+        if classes(shot) != [("fwrite", "deferred", True), ("fputs", "deferred", False)]:
+            return "classes %s" % classes(shot)
+        if e[0]["fields"][0].get("cap") != "ABz":
+            return "cap %r" % e[0]["fields"][0].get("cap")
+        if "cap" in e[1]["fields"][0]:
+            return "a capture under classical c = 0"
+        n = [x for x in trace if x.get("ev") == "alloc" and x["w"] == "i8" and x["known"] == 0]
+        return None if len(n) == 2 else "%d capture rails" % len(n)
+    check("capture", clean(capture))
+    check("capture_ql", clean(lambda tr, sh: None if (sh["events"][0]["class"] == "deferred" and
+                                                      sh["events"][0]["fields"][0]["cap"] == "abcd")
+                              else "%s" % sh["events"][0]))
+    check("string_rail", ok_shot([("[%s]", True), ("<%s>\n", True)], b"[cl]<qu>\n"))
+    check("string_quantum_cell", clean(lambda tr, sh: None if (
+        classes(sh) == [("%s\n", "deferred", True)] and sh["stdout"] == "aXc\n") else "%s" % sh["events"]))
+    check("fprintf_format", clean(lambda tr, sh: None if (
+        [f.get("cap") for f in sh["events"][0]["fields"]] == [None, "%s-%d", "str", None]) else "%s" % sh["events"]))
+    check("percent_n", ok_shot([("ab%nc\n", True)], b"abc\n"))
+    check("excess", clean(lambda tr, sh: None if (
+        [len(e["fields"]) for e in sh["events"]] == [1, 0] and sh["stdout"] == "x\ny\n") else "%s" % sh["events"]))
+    check("retired", ok_shot([], b""))
+
+    def host_fx(trace, shot):
+        p = tap(trace, "probe")[0]
+        e = tap(trace, "effect")
+        if p["r"] != standin("remove", []) & 0xffffffff or p["s"] != standin("raise", [9]) & 0xffffffff:
+            return "results %s" % p
+        if [x["name"] for x in e] != ["remove", "raise"] or e[0]["fields"][0]["cap"] != "/tmp/cq_rt_tape_host_fx":
+            return "lines %s" % e
+        return None
+    check("host_fx", clean(host_fx))
     # the literal is the number of h7, the first rail fake_core hands out (100): read as a literal, not a rail
     check("spellings", ok_shot([("%d %d %d %s\n", True)], b"7 8 100 s\n", False))
     check("not_mine", ok_shot([], b""))
@@ -436,19 +593,15 @@ def scenarios(clang, work):
     check("v_pred_dead", violation("predicate .* is not a live rail"))
     check("v_unc", violation("no _unc"))
     check("v_missing_field", violation("needs more fields"))
-    check("v_percent_n", violation("%n on a tape entry"))
+    check("v_bad_conv", violation("has no defined meaning"))
+    check("v_effect_arity", violation("fgets has 1 fields"))
+    check("v_null_name_empty", violation("null name with no host address"))
+    check("v_effect_open_format", violation("still lacks fields"))
     check("v_width_mismatch", violation("width i32 but rail .* is i8"))
     check("v_effect_uncontrolled", violation("cqrt_tape_effect: no such form"))
     check("v_hl", violation("no _hl form"))
     check("v_ctl_arity", violation("2 arguments, expected 3"))
     check("v_lit_ctl", violation("no such form"))
-    check("v_quantum_string", violation("%s on a quantum field"))
-    check("v_str_nested", violation("already has an open tape_str_begin group"))
-    check("v_str_end_alone", violation("has no open tape_str_begin group"))
-    check("v_str_open_at_end", violation("still open at the end of the shot"))
-    check("v_str_wide_field", violation("a i32 field inside a tape_str_begin group"))
-    check("v_str_no_entry", violation("has no open entry"))
-    check("v_str_entry_inside", violation("new entry on tape .* inside an open tape_str_begin group"))
     return checks
 
 
@@ -469,7 +622,8 @@ def main():
     print("scenarios: %d run, %d failed" % (len(checks), len(bad)))
     for n, m in bad:
         print("  FAIL %s: %s" % (n, m))
-    sys.exit(1 if dfails or bad else 0)
+    refs = subprocess.run([sys.executable, os.path.join(HERE, "refs.py"), "--clang", a.clang, "--work", os.path.join(work, "refs")])
+    sys.exit(1 if dfails or bad or refs.returncode else 0)
 
 
 if __name__ == "__main__":

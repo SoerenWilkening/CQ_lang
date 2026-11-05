@@ -1,54 +1,65 @@
-/* rt_tape.c: the evaluator semantics of the tape and abort family (cq-w0-rt-tape).
+/* rt_tape.c: the evaluator semantics of the tape and abort family.
  *
- * Symbols: cqrt_tape_alloc, cqrt_tape_fmt[_controlled], cqrt_tape_effect_controlled,
- * cqrt_tape_write_<W>[_controlled], cqrt_tape_write_<W>_lit, cqrt_tape_write_str_lit,
- * cqrt_tape_str_begin, cqrt_tape_str_end (CQ_spec f684858), cqrt_abort_i1.
- * Semantics: CONSTRUCTION_RULES §1.3 (the deferred-measurement paragraph, rule 16; it wins) and
- * BACKEND_ABI §1.11. §2 has no row for this family.
+ * Symbols: cqrt_tape_alloc, cqrt_tape_fmt[_controlled], cqrt_tape_effect[_<W>]_controlled,
+ * cqrt_tape_write_<W>[_controlled], cqrt_tape_write_<W>_lit, cqrt_abort_i1.
+ * Semantics: BACKEND_ABI §1.11, CR rule 16; the host is the stand-in of fx_standin.h (CR §6, ruling Q8):
+ * no host call is ever made. §2 has no row for this family.
  *
- *  - All tape entries and abort flags form ONE event sequence in call order, across every tape.
- *  - An entry (fmt or effect) records its predicate at call time (1 when uncontrolled). Its predicate
- *    rail may be uncomputed and freed afterwards (47), so the value is captured here.
- *  - Fields append to the most recent entry of their own tape. A rail field is a fresh write-only tape
- *    rail h' with h' ^= h (controlled: h' ^= c ? h : 0); h is unchanged; h' is never freed. Literal
- *    and string fields, the format string and the effect name are copied at call time.
- *  - The i8 fields written between tape_str_begin(t) and tape_str_end(t) form ONE %s field of t's
- *    open entry: at replay it holds the measured bytes up to the first that reads 0 (a _controlled byte
- *    under c = 0 is such a byte). In the end-of-shot event the group is one {"k":"str","s"} field.
- *  - An abort flag is kept and measured at the end of the shot.
- *  - End of shot (process exit via return from main or exit(); _Exit loses the tape): every entry
- *    whose predicate read 1 and that no earlier abort flag reading 1 precedes is performed. A format
- *    entry is printed with printf semantics on its measured fields; an effect entry is recorded as
- *    performed and never executed. The evaluator registers the end-of-shot handler with atexit on its
- *    first call, as BACKEND_ABI §1.11 prescribes for a backend.
+ *  - All format entries, effect entries and abort flags form ONE event sequence in call order.
+ *  - A format entry is opened by tape_fmt and takes the fields its format string consumes. An effect
+ *    entry takes the fields written to its tape since the previous entry, and is complete at its call.
+ *    Fields past what a format consumes wait for the tape's next entry: the next effect entry takes
+ *    them, a next format entry or the end of the shot gives them to the format entry they follow.
+ *  - The predicate is read at the call. A classical-valued c is kept as its bit; any other c is copied
+ *    to a fresh kept tape rail of the event, which the end of the shot reads.
+ *  - Capture (at completion): the buffers and strings the backend knows by name (fx_standin.h roles, a
+ *    format's %s) are read over their extent: a HOST cell as its byte, a QUANTUM cell or a cell at a
+ *    quantum address into a fresh kept i8 tape rail. Under a classical c = 0 nothing is read.
+ *  - Classification, the table of §1.11, is made in sequence order by advance(): an event is RESOLVED
+ *    when it is complete, its predicate, fields and captures are classical, and every earlier event is
+ *    resolved with no abort flag reading 1. An event that is not, and every later one, is DEFERRED. An
+ *    effect entry not resolved at its call is deferred there (its r is |0>).
+ *  - INPUT calls (by name) are performed at the call whatever precedes, unless an identifying argument
+ *    is truly quantum (deferred). Stand-in bytes go to host memory when everything is classical
+ *    (host_write: a host write at a QUANTUM cell is not seen by the bus) and otherwise by bus stores
+ *    (cqe_tape_bus.qstore), over every cell the store can reach. An INPUT call with a quantum argument
+ *    or predicate is performed and still not "resolved", so a later output stays behind it.
+ *  - The result rail r of tape_effect_<W>: the stand-in result when performed at the call and the
+ *    predicate is 1, else |0>. It is kept (role tape) and classical-valued when everything was.
+ *  - An abort flag is kept. End of shot (process exit via return from main or exit(); _Exit loses the
+ *    tape): deferred entries are read and those with predicate 1 and no earlier abort reading 1 count
+ *    as performed. A format entry is rendered with printf semantics, never printed.
  *
- * Violations (cqe_fail): a field with no open entry on its tape, a tape handle not returned by
- * cqrt_tape_alloc, a predicate or abort flag that is not a live i1 rail, a width token that disagrees
- * with the rail, an _unc of a tape/abort symbol, a tape rail or abort flag that is gone or changed at
- * the end of the shot, a format that needs a field the entry lacks, a conversion with no defined
- * meaning on a tape field (%n, an unknown conversion), a form the family does not define. Tape rails are
- * created with known = 0 (they stay entangled with their source, BACKEND_ABI §1.11). The dispatcher gives
- * them role "tape" and abort flags role "abort" and rejects a cqrt_free of either (C1, free_forbidden).
+ * Violations (cqe_fail): a field that no entry takes, a tape handle not returned by cqrt_tape_alloc, a
+ * predicate or abort flag that is not a live i1 rail, a width token that disagrees with the rail, an _unc
+ * of a tape/abort symbol, a tape rail or abort flag gone or changed at the end of the shot, a format that
+ * needs a field the entry lacks, an unknown conversion, a form the family does not define. The dispatcher
+ * gives tape_write rails role "tape", abort flags role "abort"; rails made here take role tape too.
  *
- * Trace events (cq-arch: "tape" free-form, "abort" frozen as {"ev","f","fv"}):
+ * Trace events ("tape" free-form, "abort" frozen as {"ev","f","fv"}):
  *   {"ev":"tape","op":"alloc","t"}
- *   {"ev":"tape","op":"fmt"|"effect","seq","t","c","cv","fmt"|"name"}      c = -1 when uncontrolled
- *   {"ev":"tape","op":"write","seq","t","field","c","cv","src","h","w","v"}
+ *   {"ev":"tape","op":"fmt"|"effect","seq","t","c","cv","cq","fmt"|"name"}  c = -1 when uncontrolled; cq: c is
+ *                                                                           classical-valued; name null: a host address
+ *   {"ev":"tape","op":"write","seq","t","field","c","cv","src","h","w","v"}  seq -1: waits for its entry
  *   {"ev":"tape","op":"write_lit","seq","t","field","w","v"}
- *   {"ev":"tape","op":"write_str","seq","t","field","s"}
  *   {"ev":"abort","f","fv","seq"}
- *   {"ev":"tape","op":"shot","aborted","abort_seq","stdout",
- *    "events":[{"seq","kind":"fmt"|"effect"|"abort", ...}]}                 one line at the end of the shot
- * In "events" an entry carries "t","pred","performed","fmt"|"name","fields":[{"k":"rail","h","w","v"}|
- * {"k":"lit","w","v"}|{"k":"str","s"}] (rail values read at the end of the shot) and, for a format
- * entry, "text" (what printf prints for it); an abort carries "f","fv" (its end-of-shot value).
- * Values are hex bit patterns ("0x…"). Strings are bytes, each written as the code point U+0000–U+00FF
- * of the same number.
+ *   {"ev":"effect", <an entry object below>, "when":"call"|"end"}           one per entry whose predicate read 1
+ *        with no earlier abort reading 1: what the C program does at this call. "call" lines precede
+ *        "end" lines; "seq" gives the sequence order.
+ *   {"ev":"tape","op":"shot","aborted","abort_seq","stdout","deviation",
+ *    "events":[{"seq","kind":"abort","f","fv"} | <an entry object>]}        one line at the end of the shot
+ * An entry object: "seq","kind":"fmt"|"effect","t","pred","class":"resolved"|"input"|"deferred","performed",
+ * "fmt"|"name" (null name: a host address, the first field),"fields":[{"k":"rail","h","w","v"[,"cap"]}|
+ * {"k":"lit","w","v"[,"cap"]}], "text" for a format entry (what printf prints for it), "r":{"h","w","v"} for
+ * the result form. "cap" is the bytes captured for that field. "deviation" is true when a deferred entry
+ * that the program reads the result of would have been performed: rule 16's stated deviation (ruling Q8).
+ * Values are hex bit patterns ("0x…"). Strings are bytes, each written as the code point U+0000–U+00FF of
+ * the same number.
  *
  * Dispatch (cqe.h M1 and C1): the family registers the bare ops tape_alloc, tape_fmt, tape_effect,
- * tape_write, tape_write_str and abort. cqe_tname.w is the width token, shape "l" marks _lit, pred "ctl"
- * marks _controlled (the arity must agree), and args are the raw ABI arguments (a handle as its i32
- * number, a ptr as a 64-bit 'i' holding the address, a literal in its own type). Return: 0 computed,
+ * tape_write and abort. cqe_tname.w is the width token, shape "l" marks _lit, pred "ctl" marks
+ * _controlled (the arity must agree), and args are the raw ABI arguments (a handle as its i32 number, a
+ * ptr as a 64-bit 'i' holding the address, a literal in its own type). Return: 0 computed,
  * CQE_OP_NOT_MINE for an op outside the family, -1 after cqe_fail.
  */
 #include <stdarg.h>
@@ -58,7 +69,17 @@
 #include <string.h>
 #include <wchar.h>
 
+#include <mach/mach.h>
+#include <mach/mach_vm.h>
+
 #include "cqe.h"
+#include "fx_standin.h"
+#include "rt_tape.h"
+
+/* core.c's rail attributes (the family path's only use: classical-valuedness and exit roles) */
+int cqe__known(int32_t h);
+void cqe__setrole(int32_t h, int role);
+#define ROLE_TAPE 2
 
 /* Every violation this family reports also makes the current call return -1 (cq-f69). */
 static int g_failed;
@@ -153,34 +174,57 @@ static char *dupstr(const char *s) {
 
 /* ---------- the event sequence ---------- */
 
-enum { F_RAIL, F_LIT, F_STR, F_MARK };   /* F_MARK: a group's begin, no byte */
+/* What one field's buffer or string held at capture: b[j] the byte, rail[j] its tape rail or 0 for a
+ * HOST byte. */
+typedef struct { size_t n; uint8_t *b; int32_t *rail; int done; } capture;
+
+enum { F_RAIL, F_LIT };
 typedef struct {
   int k;
   int32_t h, src, c;     /* rail fields: tape rail, source, predicate (-1: none) */
   int cv;
+  int known;             /* classical-valued at the write */
   char w[8];
   tval v;                /* rail: value at the call; lit: the literal */
-  char *s;               /* str */
-  int grp;               /* the tape_str_begin/end group the field belongs to, -1: none */
+  capture cap;
 } field;
 
 enum { E_FMT, E_EFFECT, E_ABORT };
+enum { C_NONE, C_RESOLVED, C_INPUT, C_DEFERRED };
 typedef struct {
   int k;
   int32_t t, c, f;       /* tape, predicate rail (-1: uncontrolled), abort flag */
   int pred;              /* predicate at the call (entry) or flag value at the call (abort) */
-  char *str;             /* fmt or effect name */
+  int pred_known;        /* classical-valued at the call */
+  int32_t prail;         /* the event's copy of a c that is not classical-valued, else 0 */
+  char *str;             /* fmt or effect name, NULL: a null name */
   field *fields;
   int nfields, capfields;
+  int need;              /* format entry: the fields its format consumes */
+  int complete;
+  int reads_quantum;     /* a capture took a tape rail */
+  int cls;
+  int behind_abort;      /* an earlier abort flag read 1 */
+  int performed;         /* the entry was performed at the call (or, at the shot, will be) */
+  int32_t r;             /* the result rail, 0: bare form */
+  char rw[8];
 } event;
+
+typedef struct { field *f; int n, cap; } pendlist;
 
 static event *g_ev;
 static int g_nev, g_capev;
-static int *g_tape_open;          /* per tape: index of its open entry in g_ev, or -1 */
-static int *g_tape_grp;           /* per tape: its open tape_str_begin group, or -1 */
-static int g_ngrp;
+static int *g_tape_open;          /* per tape: index of its last format entry in g_ev while it takes fields, or -1 */
+static int *g_tape_last;          /* per tape: index of its last entry, or -1 */
+static pendlist *g_tape_pend;     /* per tape: fields no entry has taken yet */
 static int g_ntapes, g_captapes;
 static int g_registered_exit;
+static int g_front;               /* the first event advance() has not resolved */
+static int g_blocked;             /* an event was deferred or an abort read 1: nothing later resolves */
+static int g_abort_seen;
+
+static const cqe_tape_bus *g_bus;
+void cqe_tape_set_bus(const cqe_tape_bus *bus) { g_bus = bus; }
 
 #define TAPE_BASE 0x7a000000      /* tape handles live in their own range, away from rail handles */
 
@@ -201,6 +245,7 @@ static event *new_event(int k) {
   e->k = k;
   e->c = -1;
   e->f = -1;
+  e->behind_abort = g_abort_seen;
   return e;
 }
 
@@ -229,6 +274,290 @@ static const char *arg_ptr(const cqe_val *a) { return (const char *)(uintptr_t)(
 
 static void log_line(sbuf *b) { cqe_log(b->p); free(b->p); }
 
+/* A fresh kept tape rail holding the low bits of the words (fp as its pattern). */
+static int32_t new_tape_rail(const char *w, const tval *v, int known) {
+  cqe_val init = {v->bits, v->kind, v->nw, v->w};
+  int32_t h = cqe_new_rail(w, &init, known);
+  cqe__setrole(h, ROLE_TAPE);
+  return h;
+}
+
+/* ---------- format strings ---------- */
+
+typedef struct {
+  char flags[16], width[16], prec[16];
+  int wstar, pstar, has_prec;
+  char len[3];
+  char conv;              /* 0: not a defined conversion */
+  const char *start, *end;
+} conv_t;
+
+/* The next conversion at or after p (literal text and %% go to lit, if any). NULL at the end of the string. */
+static const char *next_conv(const char *p, sbuf *lit, conv_t *c) {
+  while (*p) {
+    if (*p != '%') { if (lit) sb_put(lit, p, 1); p++; continue; }
+    if (p[1] == '%') { if (lit) sb_put(lit, "%", 1); p += 2; continue; }
+    memset(c, 0, sizeof *c);
+    c->start = p++;
+    size_t n = 0;
+    while (*p && strchr("-+ #0'", *p)) { if (n + 1 < sizeof c->flags) c->flags[n++] = *p; p++; }
+    if (*p == '*') { c->wstar = 1; p++; }
+    else { n = 0; while (*p >= '0' && *p <= '9') { if (n + 1 < sizeof c->width) c->width[n++] = *p; p++; } }
+    if (*p == '.') {
+      c->has_prec = 1;
+      p++;
+      if (*p == '*') { c->pstar = 1; p++; }
+      else { n = 0; while (*p >= '0' && *p <= '9') { if (n + 1 < sizeof c->prec) c->prec[n++] = *p; p++; } }
+    }
+    if (*p == 'h' || *p == 'l') {
+      c->len[0] = *p++;
+      if (*p == c->len[0]) c->len[1] = *p++;
+    } else if (*p && strchr("jztLq", *p)) {
+      c->len[0] = *p++;
+    }
+    char x = *p ? *p++ : 0;
+    c->conv = x && strchr("diuoxXcspfFeEgGaAn", x) ? x : 0;
+    c->end = p;
+    return p;
+  }
+  return NULL;
+}
+
+static int fields_consumed(const char *fmt) {
+  conv_t c;
+  int n = 0;
+  for (const char *p = fmt; (p = next_conv(p, NULL, &c)) != NULL;) n += c.wstar + c.pstar + 1;
+  return n;
+}
+
+/* ---------- memory the entries read and write ---------- */
+
+/* Without a bus every cell is HOST: its value is the host byte, read guarded. */
+static int host_peek(uint64_t addr, uint8_t *byte) {
+  mach_vm_size_t got = 0;
+  *byte = 0;
+  if (mach_vm_read_overwrite(mach_task_self(), (mach_vm_address_t)addr, 1, (mach_vm_address_t)(uintptr_t)byte, &got) !=
+      KERN_SUCCESS || got != 1)
+    *byte = 0;
+  return 0;
+}
+static int peek(uint64_t addr, uint8_t *byte) { return g_bus ? g_bus->peek(addr, byte) : host_peek(addr, byte); }
+
+/* The stand-in host call's write into host memory; a page it cannot write takes nothing. */
+static void host_write(uint64_t addr, uint8_t byte) {
+  mach_vm_address_t a = (mach_vm_address_t)addr;
+  mach_vm_size_t sz = 0;
+  vm_region_basic_info_data_64_t info;
+  mach_msg_type_number_t cnt = VM_REGION_BASIC_INFO_COUNT_64;
+  mach_port_t obj = MACH_PORT_NULL;
+  if (mach_vm_region(mach_task_self(), &a, &sz, VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info, &cnt, &obj) != KERN_SUCCESS)
+    return;
+  if (a > (mach_vm_address_t)addr || !(info.protection & VM_PROT_WRITE)) return;
+  *(volatile uint8_t *)(uintptr_t)addr = byte;
+}
+
+static uint64_t field_low64(const field *f) { return f->v.w[0]; }
+
+#define CAP_MAX (UINT64_C(1) << 24)
+
+/* Reads the extent into f->cap under the event's predicate. len < 0: a NUL-terminated string. */
+static void capture_field(event *e, field *f, int64_t len) {
+  if (f->cap.done || (e->pred_known && !e->pred)) return;
+  if (len >= 0 && (uint64_t)len > CAP_MAX) {
+    cqe_fail("tape: entry %d: a buffer of %lld bytes is more than the evaluator captures", (int)(e - g_ev), (long long)len);
+    return;
+  }
+  f->cap.done = 1;
+  uint64_t addr = field_low64(f);
+  size_t limit = len >= 0 ? (size_t)len : CQ_FX_K2;
+  f->cap.b = malloc(limit ? limit : 1);
+  f->cap.rail = calloc(limit ? limit : 1, sizeof(int32_t));
+  for (size_t j = 0; j < limit; j++) {
+    uint8_t byte = 0;
+    int q = peek(addr + j, &byte) || !f->known;
+    if (len < 0 && !q && byte == 0) break;          /* the first HOST 0 */
+    if (len < 0 && !f->known && byte == 0) break;   /* a quantum address: the string this sample reaches */
+    if (q) {
+      uint64_t word = e->pred ? byte : 0;
+      tval tv = {8, 'i', 1, &word};
+      f->cap.rail[j] = new_tape_rail("i8", &tv, 0);
+      byte = (uint8_t)word;
+      e->reads_quantum = 1;
+    }
+    f->cap.b[j] = byte;
+    f->cap.n = j + 1;
+  }
+}
+
+/* The product of the length fields from field i on, capped at K2 when one of them is a rail. */
+static int64_t length_of(const event *e, const char *roles, int i, int *lknown) {
+  uint64_t v = 1;
+  int known = 1;
+  for (int j = i; roles[j] == 'n' && j < e->nfields; j++) {
+    const field *f = &e->fields[j];
+    uint64_t x = field_low64(f);
+    if (f->v.bits < 64) {
+      x &= (UINT64_C(1) << f->v.bits) - 1;
+      if ((x >> (f->v.bits - 1)) & 1) x = 0;    /* a negative int length: nothing */
+    }
+    if (x && v > UINT64_MAX / x) v = UINT64_MAX;
+    else v *= x;
+    known &= f->known;
+  }
+  if (lknown) *lknown = known;
+  if (!known && v > CQ_FX_K2) v = CQ_FX_K2;
+  return v > (uint64_t)INT64_MAX ? INT64_MAX : (int64_t)v;
+}
+
+/* A format's %s fields, from field index first on. */
+static void capture_format(event *e, const char *fmt, int first) {
+  conv_t c;
+  int next = first;
+  for (const char *p = fmt; (p = next_conv(p, NULL, &c)) != NULL;) {
+    next += c.wstar + c.pstar;
+    if (c.conv == 's' && next < e->nfields) capture_field(e, &e->fields[next], -1);
+    next++;
+  }
+}
+
+static void capture_event(event *e) {
+  if (e->k == E_FMT) { capture_format(e, e->str, 0); return; }
+  const cq_fx_ent *ent = cq_fx_find(e->str);
+  if (!ent) return;
+  for (int i = 0; ent->roles[i] && i < e->nfields; i++) {
+    char role = ent->roles[i];
+    if (role == 's' || role == 'p') capture_field(e, &e->fields[i], -1);
+    else if (role == 'B') capture_field(e, &e->fields[i], length_of(e, ent->roles, i + 1, NULL));
+    else if (role == 'F') {
+      field *f = &e->fields[i];
+      capture_field(e, f, -1);
+      if (f->cap.done) {
+        char *fmt = calloc(f->cap.n + 1, 1);
+        memcpy(fmt, f->cap.b, f->cap.n);
+        capture_format(e, fmt, i + 1);
+        free(fmt);
+      }
+    }
+  }
+}
+
+/* ---------- the host, by the stand-in ---------- */
+
+static int fields_known(const event *e) {
+  for (int i = 0; i < e->nfields; i++)
+    if (e->fields[i].k == F_RAIL && !e->fields[i].known) return 0;
+  return 1;
+}
+
+/* The stand-in's hash over this entry's fields. */
+static uint64_t entry_hash(const event *e, const cq_fx_ent *ent) {
+  uint64_t h = cq_fx_begin(e->str);
+  for (int i = 0; i < e->nfields; i++) {
+    const field *f = &e->fields[i];
+    h = cq_fx_arg(h, ent, i, f->v.bits, f->v.w, (int)f->v.nw);
+  }
+  return h;
+}
+
+/* The result rail's value: words of width w from the low 64-bit value x. */
+static tval result_value(const char *w, uint64_t x) {
+  uint32_t bits = (uint32_t)strtoul(w + 1, NULL, 10);
+  tval v = tv_zero(bits ? bits : 1, w[0] == 'f' ? 'f' : 'i');
+  v.w[0] = x;
+  if (v.bits < 64) v.w[0] &= (UINT64_C(1) << v.bits) - 1;
+  return v;
+}
+
+static void set_result(event *e, uint64_t x, int known) {
+  if (!e->rw[0]) return;
+  tval v = result_value(e->rw, x);
+  e->r = new_tape_rail(e->rw, &v, known);
+  free(v.w);
+}
+
+/* Performs an INPUT call now (the four INPUT rows of §1.11). */
+static void perform_input(event *e, const cq_fx_ent *ent) {
+  int bi = -1, li = -1;
+  for (int i = 0; ent->roles[i]; i++) {
+    if (ent->roles[i] == 'W') bi = i;
+    if (ent->roles[i] == 'n' && li < 0) li = i;
+  }
+  int nknown = 1;
+  int64_t v = 0;
+  if (bi >= 0 && li >= 0 && li < e->nfields) v = length_of(e, ent->roles, li, &nknown);
+  uint64_t addr = bi >= 0 && bi < e->nfields ? field_low64(&e->fields[bi]) : 0;
+  int classical = e->pred_known && fields_known(e);
+  int cv = e->pred;
+  uint64_t h = entry_hash(e, ent);
+  size_t stored = 0, reach = 0;                       /* the bytes stored for v; the cells the store can reach */
+  if (bi >= 0) {
+    stored = cq_fx_input_stored(ent, (uint64_t)v);
+    reach = nknown ? stored : cq_fx_input_reach(ent);
+  }
+  if (!(e->pred_known && !cv)) {                      /* classical predicate 0: skipped, nothing is touched */
+    for (size_t j = 0; j < reach; j++) {
+      int write = j < stored && cv;
+      uint8_t byte = write ? cq_fx_input_byte(ent, h, j, stored) : 0;
+      if (classical) { if (write) host_write(addr + j, byte); continue; }
+      if (!g_bus) { cqe_fail("tape: %s: a bus store with no bus linked", e->str); return; }
+      g_bus->qstore(addr + j, byte, write);
+    }
+  }
+  uint64_t r = cv ? cq_fx_input_result(ent, h, addr, (uint64_t)v, bi >= 0 && li + 1 < e->nfields && ent->roles[li + 1] == 'n'
+                                                                       ? field_low64(&e->fields[li]) : 1) : 0;
+  set_result(e, r, classical);
+  e->cls = C_INPUT;
+  e->performed = !(e->pred_known && !cv);
+}
+
+/* ---------- classification ---------- */
+
+static void entry_json(sbuf *b, const event *e, const char *when);
+static void effect_line(const event *e, const char *when) {
+  if (!e->pred || e->behind_abort) return;
+  sbuf b = {0};
+  sb_puts(&b, "{\"ev\":\"effect\",");
+  entry_json(&b, e, when);
+  sb_puts(&b, "}");
+  log_line(&b);
+}
+
+/* Resolves events in sequence order as far as they go. */
+static void advance(void) {
+  while (!g_blocked && g_front < g_nev) {
+    event *e = &g_ev[g_front];
+    if (e->k == E_ABORT) {
+      if (!e->pred_known || e->pred) { g_blocked = 1; if (e->pred_known) { e->cls = C_RESOLVED; g_front++; } return; }
+      e->cls = C_RESOLVED;
+      g_front++;
+      continue;
+    }
+    if (e->cls == C_DEFERRED) { g_blocked = 1; return; }
+    if (!e->complete) return;
+    if (!(e->pred_known && fields_known(e) && !e->reads_quantum)) {
+      if (e->cls == C_NONE) e->cls = C_DEFERRED;
+      g_blocked = 1;
+      return;
+    }
+    if (e->cls == C_NONE) {                            /* an all-classical INPUT call took C_INPUT at its call */
+      e->cls = C_RESOLVED;
+      e->performed = e->pred;
+      if (e->k == E_EFFECT)
+        set_result(e, e->pred ? cq_fx_result(entry_hash(e, cq_fx_find(e->str)), (unsigned)strtoul(e->rw[0] ? e->rw + 1 : "0", NULL, 10)) : 0, 1);
+      effect_line(e, "call");
+    }
+    g_front++;
+  }
+}
+
+/* Past g_blocked a format entry is deferred when it completes. */
+static void entry_complete(event *e) {
+  e->complete = 1;
+  capture_event(e);
+  advance();
+  if (e->cls == C_NONE && g_blocked) e->cls = C_DEFERRED;
+}
+
 /* ---------- operations ---------- */
 
 static int32_t op_tape_alloc(void) {
@@ -236,10 +565,12 @@ static int32_t op_tape_alloc(void) {
   if (g_ntapes == g_captapes) {
     g_captapes = g_captapes ? 2 * g_captapes : 8;
     g_tape_open = realloc(g_tape_open, (size_t)g_captapes * sizeof(int));
-    g_tape_grp = realloc(g_tape_grp, (size_t)g_captapes * sizeof(int));
+    g_tape_last = realloc(g_tape_last, (size_t)g_captapes * sizeof(int));
+    g_tape_pend = realloc(g_tape_pend, (size_t)g_captapes * sizeof(pendlist));
   }
   g_tape_open[g_ntapes] = -1;
-  g_tape_grp[g_ntapes] = -1;
+  g_tape_last[g_ntapes] = -1;
+  memset(&g_tape_pend[g_ntapes], 0, sizeof(pendlist));
   int32_t t = TAPE_BASE + g_ntapes++;
   sbuf b = {0};
   sb_printf(&b, "{\"ev\":\"tape\",\"op\":\"alloc\",\"t\":%d}", (int)t);
@@ -247,54 +578,149 @@ static int32_t op_tape_alloc(void) {
   return t;
 }
 
-static void op_entry(int kind, int ctl, int32_t c, int32_t t, const char *s, const char *sym) {
-  ensure_exit();
-  int ti = tape_index(t, sym);
-  int pred = 1;
-  if (!ctl) c = -1;
-  else {
-    pred = read_i1(c, sym, "predicate");
-    if (pred < 0) pred = 0;
-  }
-  if (!s) { cqe_fail("tape: %s: null string", sym); s = ""; }
-  event *e = new_event(kind);
-  e->t = t;
-  e->c = c;
-  e->pred = pred;
-  e->str = dupstr(s);
-  if (ti >= 0 && g_tape_grp[ti] >= 0) {
-    cqe_fail("tape: %s: a new entry on tape %d inside an open tape_str_begin group", sym, (int)t);
-    g_tape_grp[ti] = -1;
-  }
-  if (ti >= 0) g_tape_open[ti] = g_nev - 1;
-  sbuf b = {0};
-  sb_printf(&b, "{\"ev\":\"tape\",\"op\":\"%s\",\"seq\":%d,\"t\":%d,\"c\":%d,\"cv\":%d,\"%s\":",
-            kind == E_FMT ? "fmt" : "effect", g_nev - 1, (int)t, (int)c, pred,
-            kind == E_FMT ? "fmt" : "name");
-  sb_json_str(&b, e->str, strlen(e->str));
-  sb_puts(&b, "}");
-  log_line(&b);
-}
-
-static field *new_field(int32_t t, const char *sym, int *seq, int *fi) {
-  int ti = tape_index(t, sym);
-  if (ti < 0) return NULL;
-  if (g_tape_open[ti] < 0) {
-    cqe_fail("tape: %s: field appended to tape %d with no open entry", sym, (int)t);
-    return NULL;
-  }
-  event *e = &g_ev[g_tape_open[ti]];
+static field *event_field_slot(event *e) {
   if (e->nfields == e->capfields) {
     e->capfields = e->capfields ? 2 * e->capfields : 4;
     e->fields = realloc(e->fields, (size_t)e->capfields * sizeof(field));
   }
-  field *f = &e->fields[e->nfields];
+  return &e->fields[e->nfields++];
+}
+
+/* Fields that waited on the tape go to e (an effect entry, or the format entry they follow). */
+static void take_pending(int ti, event *e) {
+  pendlist *p = &g_tape_pend[ti];
+  for (int i = 0; i < p->n; i++) *event_field_slot(e) = p->f[i];
+  p->n = 0;
+}
+
+/* The event's copy of its predicate, read at the call. */
+static void capture_pred(event *e, int ctl, int32_t c, const char *sym) {
+  e->c = ctl ? c : -1;
+  e->pred = 1;
+  e->pred_known = 1;
+  if (!ctl) return;
+  int pv = read_i1(c, sym, "predicate");
+  if (pv < 0) { e->pred = 0; return; }
+  e->pred = pv;
+  e->pred_known = cqe__known(c) != 0;
+  if (!e->pred_known) {
+    uint64_t word = (uint64_t)pv;
+    tval tv = {1, 'i', 1, &word};
+    e->prail = new_tape_rail("i1", &tv, 0);
+  }
+}
+
+static void entry_log(const event *e, int seq) {
+  sbuf b = {0};
+  sb_printf(&b, "{\"ev\":\"tape\",\"op\":\"%s\",\"seq\":%d,\"t\":%d,\"c\":%d,\"cv\":%d,\"cq\":%d,\"%s\":",
+            e->k == E_FMT ? "fmt" : "effect", seq, (int)e->t, (int)e->c, e->pred, e->pred_known,
+            e->k == E_FMT ? "fmt" : "name");
+  if (e->str) sb_json_str(&b, e->str, strlen(e->str));
+  else sb_puts(&b, "null");
+  sb_puts(&b, "}");
+  log_line(&b);
+}
+
+static void op_tape_fmt(int ctl, int32_t c, int32_t t, const char *s, const char *sym) {
+  ensure_exit();
+  int ti = tape_index(t, sym);
+  if (!s) { cqe_fail("tape: %s: null string", sym); s = ""; }
+  /* fields past the previous format's conversions are that entry's */
+  if (ti >= 0 && g_tape_pend[ti].n) {
+    if (g_tape_last[ti] >= 0 && g_ev[g_tape_last[ti]].k == E_FMT) take_pending(ti, &g_ev[g_tape_last[ti]]);
+    else cqe_fail("tape: %s: %d fields on tape %d with no open entry", sym, g_tape_pend[ti].n, (int)t);
+  }
+  event *e = new_event(E_FMT);
+  e->t = t;
+  capture_pred(e, ctl, c, sym);
+  e->str = dupstr(s);
+  e->need = fields_consumed(s);
+  if (ti >= 0) {
+    g_tape_open[ti] = e->need ? g_nev - 1 : -1;
+    g_tape_last[ti] = g_nev - 1;
+  }
+  entry_log(e, g_nev - 1);
+  if (!e->need) entry_complete(e);
+}
+
+/* Returns the result rail, or 0 for the bare form. */
+static int32_t op_tape_effect(int32_t c, int32_t t, const char *name, const char *rw, const char *sym) {
+  ensure_exit();
+  int ti = tape_index(t, sym);
+  event *e = new_event(E_EFFECT);
+  e->t = t;
+  int seq = g_nev - 1;
+  capture_pred(e, 1, c, sym);
+  e->str = name ? dupstr(name) : NULL;
+  snprintf(e->rw, sizeof e->rw, "%s", rw ? rw : "");
+  if (ti >= 0) {
+    if (g_tape_open[ti] >= 0) {
+      cqe_fail("tape: %s: format entry %d on tape %d still lacks fields", sym, g_tape_open[ti], (int)t);
+      g_tape_open[ti] = -1;
+    }
+    take_pending(ti, e);
+    g_tape_last[ti] = seq;
+  }
+  if (!name && e->nfields == 0) cqe_fail("tape: %s: a null name with no host address field", sym);
+  entry_log(e, seq);
+  const cq_fx_ent *ent = cq_fx_find(name);
+  if (ent && e->nfields < (int)strlen(ent->roles))
+    cqe_fail("tape: %s: %s has %d fields, its arguments are %d", sym, name, e->nfields, (int)strlen(ent->roles));
+  e->complete = 1;
+  capture_event(e);
+  int ident_quantum = 0;
+  if (ent)
+    for (int i = 0; ent->roles[i] && i < e->nfields; i++)
+      if (ent->roles[i] == 'f' && e->fields[i].k == F_RAIL && !e->fields[i].known) ident_quantum = 1;
+  if (ent && ent->cls == 'I' && !ident_quantum) {
+    perform_input(e, ent);
+    effect_line(e, "call");
+    advance();
+    return e->r;
+  }
+  advance();
+  if (e->cls != C_RESOLVED) {
+    e->cls = C_DEFERRED;
+    g_blocked = 1;
+    set_result(e, 0, 1);
+  }
+  return e->r;
+}
+
+/* The tape's next field: of its open format entry, or waiting for the next entry. */
+static field *new_field(int32_t t, const char *sym, int *seq, int *fi) {
+  int ti = tape_index(t, sym);
+  if (ti < 0) return NULL;
+  if (g_tape_open[ti] >= 0) {
+    event *e = &g_ev[g_tape_open[ti]];
+    field *f = event_field_slot(e);
+    memset(f, 0, sizeof *f);
+    f->h = f->src = f->c = -1;
+    *seq = g_tape_open[ti];
+    *fi = e->nfields - 1;
+    return f;
+  }
+  pendlist *p = &g_tape_pend[ti];
+  if (p->n == p->cap) {
+    p->cap = p->cap ? 2 * p->cap : 4;
+    p->f = realloc(p->f, (size_t)p->cap * sizeof(field));
+  }
+  field *f = &p->f[p->n];
   memset(f, 0, sizeof *f);
   f->h = f->src = f->c = -1;
-  f->grp = g_tape_grp[ti];
-  *seq = g_tape_open[ti];
-  *fi = e->nfields++;
+  *seq = -1;
+  *fi = p->n++;
   return f;
+}
+
+/* A format entry that has every field it consumes is complete. */
+static void field_done(int32_t t) {
+  int ti = (int)((int64_t)t - TAPE_BASE);
+  if (g_tape_open[ti] < 0) return;
+  event *e = &g_ev[g_tape_open[ti]];
+  if (e->nfields < e->need) return;
+  g_tape_open[ti] = -1;
+  entry_complete(e);
 }
 
 static int32_t op_tape_write(int ctl, int32_t c, int32_t t, int32_t h, const char *wtok, const char *sym) {
@@ -306,15 +732,16 @@ static int32_t op_tape_write(int ctl, int32_t c, int32_t t, int32_t h, const cha
   width_token(&v, w);
   if (wtok && *wtok && strcmp(wtok, w) != 0)
     cqe_fail("tape: %s: width %s but rail %d is %s", sym, wtok, (int)h, w);
-  int cv = 1;
+  int cv = 1, known = cqe__known(h) != 0;
   if (!ctl) c = -1;
   else {
     cv = read_i1(c, sym, "predicate");
     if (cv < 0) cv = 0;
+    else known = known && cqe__known(c);
   }
   if (!cv) { free(v.w); v = tv_zero(src->bits, src->kind); }
   cqe_val init = {v.bits, v.kind, v.nw, v.w};
-  int32_t hp = cqe_new_rail(w, &init, 0);   /* write-only, entangled with h: never in a known basis */
+  int32_t hp = cqe_new_rail(w, &init, known);
   int seq = -1, fi = -1;
   field *f = new_field(t, sym, &seq, &fi);
   sbuf b = {0};
@@ -324,11 +751,10 @@ static int32_t op_tape_write(int ctl, int32_t c, int32_t t, int32_t h, const cha
   sb_hex(&b, &v);
   sb_puts(&b, "}");
   log_line(&b);
-  if (f && f->grp >= 0 && strcmp(w, "i8") != 0)
-    cqe_fail("tape: %s: a %s field inside a tape_str_begin group (its fields are i8 bytes)", sym, w);
   if (f) {
-    f->k = F_RAIL; f->h = hp; f->src = h; f->c = c; f->cv = cv; f->v = v;
+    f->k = F_RAIL; f->h = hp; f->src = h; f->c = c; f->cv = cv; f->known = known; f->v = v;
     memcpy(f->w, w, 8);
+    field_done(t);
   } else {
     free(v.w);
   }
@@ -350,55 +776,12 @@ static void op_tape_write_lit(int32_t t, const cqe_val *lit, const char *wtok, c
   sb_hex(&b, &v);
   sb_puts(&b, "}");
   log_line(&b);
-  if (f && f->grp >= 0 && strcmp(w, "i8") != 0)
-    cqe_fail("tape: %s: a %s field inside a tape_str_begin group (its fields are i8 bytes)", sym, w);
-  if (f) { f->k = F_LIT; f->v = v; memcpy(f->w, w, 8); }
-  else free(v.w);
-}
-
-static void op_tape_write_str(int32_t t, const char *s, const char *sym) {
-  ensure_exit();
-  if (!s) { cqe_fail("tape: %s: null string", sym); s = ""; }
-  int seq = -1, fi = -1;
-  field *f = new_field(t, sym, &seq, &fi);
-  sbuf b = {0};
-  sb_printf(&b, "{\"ev\":\"tape\",\"op\":\"write_str\",\"seq\":%d,\"t\":%d,\"field\":%d,\"s\":", seq, (int)t, fi);
-  sb_json_str(&b, s, strlen(s));
-  sb_puts(&b, "}");
-  log_line(&b);
-  if (f && f->grp >= 0) cqe_fail("tape: %s: a string field inside a tape_str_begin group", sym);
-  if (f) { f->k = F_STR; f->s = dupstr(s); }
-}
-
-/* tape_str_begin(t) / tape_str_end(t) (CR §1.3, BACKEND_ABI §1.11, CQ_spec f684858): the i8 fields
- * written to t between the two form ONE %s field of t's open entry, printed up to the first byte that
- * measures 0 (a _controlled byte under c = 0 is such a byte). */
-static void op_tape_str(int begin, int32_t t, const char *sym) {
-  ensure_exit();
-  int ti = tape_index(t, sym);
-  if (ti < 0) return;
-  if (g_tape_open[ti] < 0) {
-    cqe_fail("tape: %s: tape %d has no open entry", sym, (int)t);
-    return;
+  if (f) {
+    f->k = F_LIT; f->known = 1; f->v = v; memcpy(f->w, w, 8);
+    field_done(t);
+  } else {
+    free(v.w);
   }
-  if (begin && g_tape_grp[ti] >= 0) {
-    cqe_fail("tape: %s: tape %d already has an open tape_str_begin group", sym, (int)t);
-    return;
-  }
-  if (!begin && g_tape_grp[ti] < 0) {
-    cqe_fail("tape: %s: tape %d has no open tape_str_begin group", sym, (int)t);
-    return;
-  }
-  g_tape_grp[ti] = begin ? g_ngrp++ : -1;
-  if (begin) { /* the group's marker: an empty group is still one (empty) string field */
-    int sq = -1, fi = -1;
-    field *f = new_field(t, sym, &sq, &fi);
-    if (f) f->k = F_MARK;
-  }
-  sbuf b = {0};
-  sb_printf(&b, "{\"ev\":\"tape\",\"op\":\"%s\",\"seq\":%d,\"t\":%d}", begin ? "str_begin" : "str_end",
-            g_tape_open[ti], (int)t);
-  log_line(&b);
 }
 
 static void op_abort(int32_t fh, const char *sym) {
@@ -407,9 +790,13 @@ static void op_abort(int32_t fh, const char *sym) {
   event *e = new_event(E_ABORT);
   e->f = fh;
   e->pred = fv < 0 ? 0 : fv;
+  e->pred_known = fv < 0 ? 1 : cqe__known(fh) != 0;
+  e->complete = 1;
+  if (e->pred) g_abort_seen = 1;
   sbuf b = {0};
   sb_printf(&b, "{\"ev\":\"abort\",\"f\":%d,\"fv\":\"0x%d\",\"seq\":%d}", (int)fh, e->pred, g_nev - 1);
   log_line(&b);
+  advance();
 }
 
 /* ---------- printf on measured fields ---------- */
@@ -464,75 +851,49 @@ static double field_d(const tval *v) {
 /* The printf text of one entry. A field that a conversion consumes is read as the C argument the
  * conversion expects: an integer field contributes its low bits, zero-extended or truncated to the
  * argument type (the lowering writes the promoted printf argument, so the widths agree in practice);
- * an fp field is converted to double, or to long double under L. Returns 0 after a violation. */
-static int format_entry(const event *e, const tval *vals, sbuf *out) {
+ * an fp field is converted to double, or to long double under L; %s prints the captured bytes up to the
+ * first 0; %n consumes its field and prints nothing (CR rule 16: the program's %n is the lifted snprintf).
+ * Returns 0 after a violation. */
+static int format_entry(const event *e, sbuf *out) {
   const char *p = e->str;
-  int next = 0, ok = 1;
-  while (*p) {
-    if (*p != '%') { sb_put(out, p, 1); p++; continue; }
-    const char *start = p++;
-    if (*p == '%') { sb_put(out, "%", 1); p++; continue; }
-    char spec[96];
-    size_t sn = 0;
-    spec[sn++] = '%';
-    while (*p && strchr("-+ #0'", *p) && sn < 40) spec[sn++] = *p++;
-    for (int part = 0; part < 2; part++) {          /* width, then precision */
-      if (part == 1) {
-        if (*p != '.') break;
-        spec[sn++] = *p++;
-      }
-      if (*p == '*') {
-        p++;
-        if (next >= e->nfields || e->fields[next].k == F_STR) {
-          cqe_fail("tape: entry %d: format \"%s\" needs an int field for '*'", (int)(e - g_ev), e->str);
-          return 0;
-        }
-        int x = (int)(uint32_t)low64(&vals[next++]);
-        sn += (size_t)snprintf(spec + sn, sizeof spec - sn, "%d", x);
-      } else {
-        while (*p >= '0' && *p <= '9' && sn < 80) spec[sn++] = *p++;
-      }
-    }
-    char len[3] = {0};
-    if (*p == 'h' || *p == 'l') {
-      len[0] = *p++;
-      if (*p == len[0]) len[1] = *p++;
-    } else if (*p && strchr("jztLq", *p)) {
-      len[0] = *p++;
-    }
-    char conv = *p ? *p++ : 0;
-    if (!conv || !strchr("diuoxXcspfFeEgGaAn", conv)) {
-      cqe_fail("tape: entry %d: format \"%s\": conversion \"%.*s\" has no defined meaning", (int)(e - g_ev),
-               e->str, (int)(p - start), start);
+  int next = 0, idx = (int)(e - g_ev);
+  conv_t c;
+  while ((p = next_conv(p, out, &c)) != NULL) {
+    if (!c.conv) {
+      cqe_fail("tape: entry %d: format \"%s\": conversion \"%.*s\" has no defined meaning", idx, e->str,
+               (int)(c.end - c.start), c.start);
       return 0;
     }
-    if (conv == 'n') {
-      cqe_fail("tape: entry %d: format \"%s\": %%n on a tape entry", (int)(e - g_ev), e->str);
+    if (next + c.wstar + c.pstar >= e->nfields) {
+      cqe_fail("tape: entry %d: format \"%s\" needs more fields than the entry has (%d)", idx, e->str, e->nfields);
       return 0;
     }
-    if (next >= e->nfields) {
-      cqe_fail("tape: entry %d: format \"%s\" needs more fields than the entry has (%d)", (int)(e - g_ev),
-               e->str, e->nfields);
-      return 0;
+    char spec[96], num[32];
+    snprintf(spec, sizeof spec, "%%%s", c.flags);
+    if (c.wstar) { snprintf(num, sizeof num, "%d", (int)(uint32_t)low64(&e->fields[next++].v)); strlcat(spec, num, sizeof spec); }
+    else strlcat(spec, c.width, sizeof spec);
+    if (c.has_prec) {
+      strlcat(spec, ".", sizeof spec);
+      if (c.pstar) { snprintf(num, sizeof num, "%d", (int)(uint32_t)low64(&e->fields[next++].v)); strlcat(spec, num, sizeof spec); }
+      else strlcat(spec, c.prec, sizeof spec);
     }
-    const field *f = &e->fields[next];
-    const tval *v = &vals[next];
-    next++;
-    spec[sn] = 0;
+    const field *f = &e->fields[next++];
+    const tval *v = &f->v;
+    char conv = c.conv;
+    const char *len = c.len;
     char full[112];
+    if (conv == 'n') continue;
     if (conv == 's') {
       if (len[0] == 'l') {
-        cqe_fail("tape: entry %d: %%ls on a tape entry", (int)(e - g_ev));
+        cqe_fail("tape: entry %d: %%ls on a tape entry", idx);
         return 0;
       }
-      if (f->k == F_STR) { snprintf(full, sizeof full, "%ss", spec); sb_printf(out, full, f->s); }
-      else if (f->k == F_LIT) { snprintf(full, sizeof full, "%ss", spec); sb_printf(out, full, (const char *)(uintptr_t)low64(v)); }
-      else { cqe_fail("tape: entry %d: %%s on a quantum field", (int)(e - g_ev)); ok = 0; }
+      char *text = calloc(f->cap.n + 1, 1);
+      if (f->cap.n) memcpy(text, f->cap.b, f->cap.n);
+      snprintf(full, sizeof full, "%ss", spec);
+      sb_printf(out, full, text);
+      free(text);
       continue;
-    }
-    if (f->k == F_STR) {
-      cqe_fail("tape: entry %d: format \"%s\": a string field for %%%c", (int)(e - g_ev), e->str, conv);
-      return 0;
     }
     uint64_t u = low64(v);
     switch (conv) {
@@ -571,52 +932,84 @@ static int format_entry(const event *e, const tval *vals, sbuf *out) {
       break;
     }
   }
-  return ok;
+  return 1;
+}
+
+/* ---------- the entry object ---------- */
+
+static void entry_json(sbuf *b, const event *e, const char *when) {
+  static const char *const cls[] = {"none", "resolved", "input", "deferred"};
+  sb_printf(b, "\"seq\":%d,\"kind\":\"%s\",\"t\":%d,\"pred\":%d,\"class\":\"%s\",\"performed\":%s,", (int)(e - g_ev),
+            e->k == E_FMT ? "fmt" : "effect", (int)e->t, e->pred, cls[e->cls], e->performed ? "true" : "false");
+  if (when) sb_printf(b, "\"when\":\"%s\",", when);
+  sb_printf(b, "\"%s\":", e->k == E_FMT ? "fmt" : "name");
+  if (e->str) sb_json_str(b, e->str, strlen(e->str));
+  else sb_puts(b, "null");
+  sb_puts(b, ",\"fields\":[");
+  for (int j = 0; j < e->nfields; j++) {
+    const field *f = &e->fields[j];
+    if (j) sb_puts(b, ",");
+    if (f->k == F_RAIL) sb_printf(b, "{\"k\":\"rail\",\"h\":%d,\"w\":\"%s\",\"v\":", (int)f->h, f->w);
+    else sb_printf(b, "{\"k\":\"lit\",\"w\":\"%s\",\"v\":", f->w);
+    sb_hex(b, &f->v);
+    if (f->cap.done) { sb_puts(b, ",\"cap\":"); sb_json_str(b, (const char *)f->cap.b, f->cap.n); }
+    sb_puts(b, "}");
+  }
+  sb_puts(b, "]");
+  if (e->k == E_FMT) {
+    sbuf t = {0};
+    sb_reserve(&t, 0);
+    format_entry(e, &t);
+    sb_puts(b, ",\"text\":");
+    sb_json_str(b, t.p, t.n);
+    free(t.p);
+  }
+  if (e->r) {
+    const cqe_val *v = cqe_rail(e->r);
+    sb_printf(b, ",\"r\":{\"h\":%d,\"w\":\"%s\",\"v\":", (int)e->r, e->rw);
+    if (v) { tval tv = tv_copy(v); sb_hex(b, &tv); free(tv.w); }
+    else sb_puts(b, "null");
+    sb_puts(b, "}");
+  }
 }
 
 /* ---------- end of shot ---------- */
 
-/* The entry's fields as replay reads them: each tape_str_begin/end group of i8 fields becomes ONE string
- * field, its bytes (measured values) up to the first 0. *nm receives the count; mv the values. */
-static field *merge_groups(const event *e, const tval *vals, tval **mv, int *nm) {
-  field *mf = calloc((size_t)(e->nfields ? e->nfields : 1), sizeof(field));
-  *mv = calloc((size_t)(e->nfields ? e->nfields : 1), sizeof(tval));
-  int k = 0;
-  for (int j = 0; j < e->nfields;) {
-    if (e->fields[j].grp < 0) {
-      mf[k] = e->fields[j];
-      (*mv)[k++] = vals[j++];
-      continue;
+/* Every kept rail of the entry still holds what it held at the call. */
+static void check_rails(const event *e, int i) {
+  for (int j = 0; j < e->nfields; j++) {
+    const field *f = &e->fields[j];
+    if (f->k == F_RAIL) {
+      const cqe_val *v = cqe_rail(f->h);
+      if (!v) cqe_fail("tape: tape rail %d (event %d field %d) is gone at the end of the shot", (int)f->h, i, j);
+      else if (!tv_eq(&f->v, v)) cqe_fail("tape: tape rail %d (event %d field %d) changed after its write", (int)f->h, i, j);
     }
-    int g = e->fields[j].grp, stop = 0;
-    sbuf sb = {0};
-    sb_reserve(&sb, 0);
-    for (; j < e->nfields && e->fields[j].grp == g; j++) {
-      if (e->fields[j].k == F_MARK) continue;
-      unsigned char c = (unsigned char)(vals[j].w ? vals[j].w[0] : 0);
-      if (!c) stop = 1;
-      if (!stop) sb_put(&sb, (const char *)&c, 1);
+    for (size_t x = 0; x < f->cap.n; x++) {
+      if (!f->cap.rail[x]) continue;
+      const cqe_val *v = cqe_rail(f->cap.rail[x]);
+      if (!v) cqe_fail("tape: capture rail %d (event %d field %d) is gone at the end of the shot", (int)f->cap.rail[x], i, j);
+      else if ((uint8_t)v->w[0] != f->cap.b[x]) cqe_fail("tape: capture rail %d (event %d field %d) changed", (int)f->cap.rail[x], i, j);
     }
-    memset(&mf[k], 0, sizeof mf[k]);
-    mf[k].k = F_STR;
-    mf[k].h = mf[k].src = mf[k].c = -1;
-    mf[k].grp = g;
-    mf[k].s = sb.p;
-    (*mv)[k++] = (tval){0, 'i', 1, NULL};
   }
-  *nm = k;
-  return mf;
+  if (e->prail) {
+    const cqe_val *v = cqe_rail(e->prail);
+    if (!v) cqe_fail("tape: the predicate rail %d of event %d is gone at the end of the shot", (int)e->prail, i);
+    else if ((int)(v->w[0] & 1) != e->pred) cqe_fail("tape: the predicate rail %d of event %d changed", (int)e->prail, i);
+  }
 }
 
 static void shot(void) {
   sbuf b = {0}, text = {0};
   sb_reserve(&text, 0);
-  int aborted = 0, abort_seq = -1;
-  for (int ti = 0; ti < g_ntapes; ti++)
-    if (g_tape_grp[ti] >= 0) {
-      cqe_fail("tape: tape %d: a tape_str_begin group is still open at the end of the shot", (int)(TAPE_BASE + ti));
-      g_tape_grp[ti] = -1;
+  int aborted = 0, abort_seq = -1, deviation = 0;
+  for (int ti = 0; ti < g_ntapes; ti++) {
+    if (!g_tape_pend[ti].n) continue;
+    if (g_tape_last[ti] >= 0 && g_ev[g_tape_last[ti]].k == E_FMT) take_pending(ti, &g_ev[g_tape_last[ti]]);
+    else {
+      cqe_fail("tape: %d fields on tape %d with no open entry at the end of the shot", g_tape_pend[ti].n, (int)(TAPE_BASE + ti));
+      g_tape_pend[ti].n = 0;
     }
+  }
   sb_puts(&b, "{\"ev\":\"tape\",\"op\":\"shot\",\"events\":[");
   for (int i = 0; i < g_nev; i++) {
     event *e = &g_ev[i];
@@ -637,73 +1030,28 @@ static void shot(void) {
       if (fv && !aborted) { aborted = 1; abort_seq = i; }
       continue;
     }
-    tval *vals = calloc((size_t)(e->nfields ? e->nfields : 1), sizeof(tval));
-    for (int j = 0; j < e->nfields; j++) {
-      field *f = &e->fields[j];
-      if (f->k == F_RAIL) {
-        const cqe_val *v = cqe_rail(f->h);
-        if (!v) {
-          cqe_fail("tape: tape rail %d (event %d field %d) is gone at the end of the shot", (int)f->h, i, j);
-          vals[j] = f->v;
-        } else {
-          if (!tv_eq(&f->v, v))
-            cqe_fail("tape: tape rail %d (event %d field %d) changed after its write", (int)f->h, i, j);
-          vals[j] = tv_copy(v);
-        }
-      } else {
-        vals[j] = f->v;
+    check_rails(e, i);
+    if (e->cls == C_NONE || e->cls == C_DEFERRED) {
+      e->cls = C_DEFERRED;
+      e->performed = e->pred && !aborted;
+      if (e->performed) {
+        effect_line(e, "end");
+        if (e->r) deviation = 1;
       }
     }
-    /* replay's view: tape_str groups merged into one string field each (restored below) */
-    field *raw_fields = e->fields;
-    int raw_n = e->nfields;
-    tval *raw_vals = vals;
-    int nm = 0;
-    tval *mv = NULL;
-    field *mf = merge_groups(e, vals, &mv, &nm);
-    e->fields = mf;
-    e->nfields = nm;
-    vals = mv;
-    int performed = e->pred && !aborted;
-    sb_printf(&b, "{\"seq\":%d,\"kind\":\"%s\",\"t\":%d,\"pred\":%d,\"performed\":%s,\"%s\":", i,
-              e->k == E_FMT ? "fmt" : "effect", (int)e->t, e->pred, performed ? "true" : "false",
-              e->k == E_FMT ? "fmt" : "name");
-    sb_json_str(&b, e->str, strlen(e->str));
-    sb_puts(&b, ",\"fields\":[");
-    for (int j = 0; j < e->nfields; j++) {
-      field *f = &e->fields[j];
-      if (j) sb_puts(&b, ",");
-      if (f->k == F_STR) { sb_puts(&b, "{\"k\":\"str\",\"s\":"); sb_json_str(&b, f->s, strlen(f->s)); sb_puts(&b, "}"); }
-      else {
-        if (f->k == F_RAIL) sb_printf(&b, "{\"k\":\"rail\",\"h\":%d,\"w\":\"%s\",\"v\":", (int)f->h, f->w);
-        else sb_printf(&b, "{\"k\":\"lit\",\"w\":\"%s\",\"v\":", f->w);
-        sb_hex(&b, &vals[j]);
-        sb_puts(&b, "}");
-      }
-    }
-    sb_puts(&b, "]");
-    if (e->k == E_FMT) {
+    sb_puts(&b, "{");
+    entry_json(&b, e, NULL);
+    sb_puts(&b, "}");
+    if (e->k == E_FMT && e->pred && !aborted) {
       sbuf t = {0};
       sb_reserve(&t, 0);
-      format_entry(e, vals, &t);
-      sb_puts(&b, ",\"text\":");
-      sb_json_str(&b, t.p, t.n);
-      if (performed) sb_put(&text, t.p, t.n);
+      format_entry(e, &t);
+      sb_put(&text, t.p, t.n);
       free(t.p);
     }
-    sb_puts(&b, "}");
-    for (int j = 0; j < nm; j++)
-      if (mf[j].grp >= 0 && mf[j].k == F_STR) free(mf[j].s);
-    free(mf);
-    free(mv);
-    e->fields = raw_fields;
-    e->nfields = raw_n;
-    vals = raw_vals;
-    for (int j = 0; j < e->nfields; j++)
-      if (e->fields[j].k == F_RAIL && vals[j].w != e->fields[j].v.w) free(vals[j].w);
-    free(vals);
   }
-  sb_printf(&b, "],\"aborted\":%s,\"abort_seq\":%d,\"stdout\":", aborted ? "true" : "false", abort_seq);
+  sb_printf(&b, "],\"aborted\":%s,\"abort_seq\":%d,\"deviation\":%s,\"stdout\":", aborted ? "true" : "false", abort_seq,
+            deviation ? "true" : "false");
   sb_json_str(&b, text.p, text.n);
   sb_puts(&b, "}");
   free(text.p);
@@ -724,8 +1072,7 @@ static int set_handle(cqe_val *out, int32_t h, const char *sym) {
 }
 
 static int tape_dispatch_(const cqe_tname *tn, const cqe_val *a, int n, cqe_val *out) {
-  static const char *const mine[] = {"tape_alloc", "tape_fmt",       "tape_effect", "tape_write",
-                                     "tape_write_str", "tape_str_begin", "tape_str_end", "abort"};
+  static const char *const mine[] = {"tape_alloc", "tape_fmt", "tape_effect", "tape_write", "abort"};
   int found = 0;
   for (size_t i = 0; i < sizeof mine / sizeof mine[0]; i++) found |= !strcmp(tn->op, mine[i]);
   if (!found) return CQE_OP_NOT_MINE;
@@ -750,15 +1097,16 @@ static int tape_dispatch_(const cqe_tname *tn, const cqe_val *a, int n, cqe_val 
   if (!strcmp(op, "tape_fmt")) {
     FORM(!lit && !wtok[0]);
     ARITY(ctl ? 3 : 2);
-    if (ctl) op_entry(E_FMT, 1, arg_i32(&a[0]), arg_i32(&a[1]), arg_ptr(&a[2]), sym);
-    else op_entry(E_FMT, 0, -1, arg_i32(&a[0]), arg_ptr(&a[1]), sym);
+    if (ctl) op_tape_fmt(1, arg_i32(&a[0]), arg_i32(&a[1]), arg_ptr(&a[2]), sym);
+    else op_tape_fmt(0, -1, arg_i32(&a[0]), arg_ptr(&a[1]), sym);
     return 0;
   }
   if (!strcmp(op, "tape_effect")) {
-    FORM(ctl && !lit && !wtok[0]);   /* no uncontrolled form exists */
+    FORM(ctl && !lit);   /* no uncontrolled form exists */
     ARITY(3);
-    op_entry(E_EFFECT, 1, arg_i32(&a[0]), arg_i32(&a[1]), arg_ptr(&a[2]), sym);
-    return 0;
+    int32_t r = op_tape_effect(arg_i32(&a[0]), arg_i32(&a[1]), arg_ptr(&a[2]), wtok, sym);
+    if (!wtok[0]) return 0;
+    return set_handle(out, r, sym);
   }
   if (!strcmp(op, "tape_write")) {
     FORM(wtok[0] && !(lit && ctl));
@@ -772,18 +1120,6 @@ static int tape_dispatch_(const cqe_tname *tn, const cqe_val *a, int n, cqe_val 
                      : op_tape_write(0, -1, arg_i32(&a[0]), arg_i32(&a[1]), wtok, sym);
     if (hp < 0) return -1;
     return set_handle(out, hp, sym);
-  }
-  if (!strcmp(op, "tape_write_str")) {
-    FORM(lit && !ctl && !wtok[0]);
-    ARITY(2);
-    op_tape_write_str(arg_i32(&a[0]), arg_ptr(&a[1]), sym);
-    return 0;
-  }
-  if (!strcmp(op, "tape_str_begin") || !strcmp(op, "tape_str_end")) {
-    FORM(!ctl && !lit && !wtok[0]);
-    ARITY(1);
-    op_tape_str(!strcmp(op, "tape_str_begin"), arg_i32(&a[0]), sym);
-    return 0;
   }
   /* abort */
   FORM(!ctl && !lit && !strcmp(wtok, "i1"));
@@ -802,7 +1138,6 @@ static int tape_dispatch(const cqe_tname *tn, const cqe_val *a, int n, cqe_val *
 
 __attribute__((constructor)) static void rt_tape_register(void) {
   /* C1: a family registers the bare op only. */
-  static const char *const keys[] = {"tape_alloc",     "tape_fmt",       "tape_effect",  "tape_write",
-                                     "tape_write_str", "tape_str_begin", "tape_str_end", "abort"};
+  static const char *const keys[] = {"tape_alloc", "tape_fmt", "tape_effect", "tape_write", "abort"};
   for (size_t i = 0; i < sizeof keys / sizeof keys[0]; i++) cqe_register_op(keys[i], tape_dispatch);
 }
