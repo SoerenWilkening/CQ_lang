@@ -431,6 +431,50 @@
           "new": "declare void @cqrt_ry_i32(i32, double)\n\ndeclare void @cqrt_xorc_i32(i32, i32)"
         }
       ]
+    },
+    {
+      "id": "207-store-other-global",
+      "class": "bus_store_other_address",
+      "example": "207_theta_of_load_copy",
+      "note": "dst = v stores at src's address: dst keeps 0 and src changes, both read at exit",
+      "edits": [
+        {
+          "old": "call void @cqrt_qram_store_i32_hl(i32 %2, i64 ptrtoint (ptr @dst to i64), i32 %3)",
+          "new": "call void @cqrt_qram_store_i32_hl(i32 %2, i64 ptrtoint (ptr @src to i64), i32 %3)"
+        }
+      ]
+    },
+    {
+      "id": "195-load-i16",
+      "class": "bus_load_narrower",
+      "example": "195_bus_fixed_address",
+      "note": "the bus load of cell as i16, forward and un-copy alike",
+      "edits": [
+        {
+          "old": "%8 = call i32 @cqrt_qram_load_i32_hl(i32 %5, i64 ptrtoint (ptr @cell to i64))",
+          "new": "%8 = call i32 @cqrt_qram_load_i16_hl(i32 %5, i64 ptrtoint (ptr @cell to i64))"
+        },
+        {
+          "old": "call void @cqrt_qram_load_i32_hl_unc(i32 %8, i32 %5, i64 ptrtoint (ptr @cell to i64))",
+          "new": "call void @cqrt_qram_load_i16_hl_unc(i32 %8, i32 %5, i64 ptrtoint (ptr @cell to i64))"
+        },
+        {
+          "old": "declare i32 @__cq_mem()",
+          "new": "declare i32 @__cq_mem()\ndeclare i32 @cqrt_qram_load_i16_hl(i32, i64)\ndeclare void @cqrt_qram_load_i16_hl_unc(i32, i32, i64)"
+        }
+      ]
+    },
+    {
+      "id": "202-drop-kept-store",
+      "class": "bus_dropped_kept_store",
+      "example": "202_bus_kept_and_uncopied",
+      "note": "a[k & 3] = y is gone: load 3 reads the old cell, and no tape slot exists",
+      "edits": [
+        {
+          "old": "call void @cqrt_qram_store_i32(i32 %7, i32 %28, i32 %11)",
+          "new": ""
+        }
+      ]
     }
   ]
 }

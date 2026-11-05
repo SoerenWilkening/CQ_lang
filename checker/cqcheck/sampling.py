@@ -5,10 +5,10 @@ where `i` indexes DriverSpec.calls and each argument is
 
   * a scalar: the hex bit pattern of the C value at its storage width, "0x..." (`_Bool` "0x0" or
     "0x1"; `long double` the 80-bit x87 pattern);
-  * a pointer: the C expression of the drivers.txt call, never varied; for an argument with handle
-    cells (drivers.handle_cells, 60_qft's register array) followed by the cells' values,
-    `<expr>@cells:<hex>,...`: each cell is a quantum input of the edge, specials, exhaustive and
-    random classes like a quantum scalar (cq-rbe6), and the probe build writes the C program's view.
+  * a pointer: the C expression of the drivers.txt call, never varied; for an argument with a fill
+    (drivers.py "Driver objects", 60_qft's register array) followed by the elements' values,
+    `<expr>@fill:<hex>,...`: each element is a quantum input of the edge, specials, exhaustive and
+    random classes like a quantum scalar, written into the object before the call on every side.
 
 Samples 0 .. len(calls)-1 are the drivers.txt calls themselves (the baseline), in order.
 
@@ -1841,10 +1841,10 @@ def _driver_main(spec: DriverSpec) -> str:
     out += spec.protos
     npt = sum(1 for c in spec.calls for a in c["args"] if D.parse_ctype(a["ctype"]).kind == "p")
     out.append(f"static void *cqd_ptr[{max(npt, 1)}];   /* the pointer expressions, evaluated after setup */")
-    # handle cells (cq-rbe6): the token "c:<hex>,<hex>,..." writes the C program's view of the cells
-    out.append("static void cqd_cells(void *p, int nb, int n, const char *s) {\n"
+    # a fill (drivers.py): the token "c:<hex>,<hex>,..." writes the object's elements
+    out.append("static void cqd_fill(void *p, int st, int nb, int n, const char *s) {\n"
                "    for (int k = 0; k < n && *s; k++) { char *e; unsigned long long x = strtoull(s, &e, 16);\n"
-               "        memcpy((char *)p + (size_t)k * nb, &x, nb); s = *e == ',' ? e + 1 : e; }\n}")
+               "        memcpy((char *)p + (size_t)k * st, &x, nb); s = *e == ',' ? e + 1 : e; }\n}")
     out.append("static void cqd_call(int call, char **tok) {")
     kp = 0
     out.append("    switch (call) {")
@@ -1853,9 +1853,11 @@ def _driver_main(spec: DriverSpec) -> str:
         for j, a in enumerate(call["args"]):
             ct = D.parse_ctype(a["ctype"])
             if ct.kind == "p":
-                if a.get("cells"):
-                    lines.append(f"        if (tok[{j}][0] == 'c') cqd_cells(cqd_ptr[{kp}], "
-                                 f"{max(1, a['cells']['w'] // 8)}, {a['cells']['n']}, tok[{j}] + 2);")
+                if a.get("fill"):
+                    if a["fill"]["w"] > 64:
+                        D.unimplemented(f"{spec.example}: a fill of {a['fill']['ctype']} in the probe build")
+                    lines.append(f"        if (tok[{j}][0] == 'c') cqd_fill(cqd_ptr[{kp}], {D._fill_stride(a['fill'])}, "
+                                 f"{a['fill']['w'] // 8 or 1}, {a['fill']['n']}, tok[{j}] + 2);")
                 kp += 1
                 continue
             n = 1 if ct.bits == 1 else (10 if ct.bits == 80 else ct.bits // 8)
@@ -2054,10 +2056,7 @@ class ProbeBuild:
                     ptrs.append(txt)
                     ident = D._ident_of(txt)
                     if ident:
-                        # handle cells (cq-oou2): the C program's view is the N cells (oracle: __cqo_cells_object)
-                        size = (f"{a['cells']['n'] * max(1, a['cells']['w'] // 8)}" if a.get("cells")
-                                else f"sizeof({ident})")
-                        regs.append(f"__cqd_reg((void *)&{ident}, {size});")
+                        regs.append(f"__cqd_reg((void *)&{ident}, sizeof({ident}));")
                 else:
                     actual.append(f"a{j}")
             body = body.replace(f"CQD_CALL_{ci};", f"(void){fn}({', '.join(actual)});")
@@ -2644,15 +2643,15 @@ class Gen:
         return [j for j, a in enumerate(self.spec.calls[call]["args"])
                 if not a["quantum"] and self.cts[call][j].kind != "p"]
 
-    def cell_slots(self, call: int) -> List[Tuple[int, int]]:
-        """(argument, cell) of every handle cell behind a quantum pointer argument (cq-rbe6,
-        drivers.handle_cells): memory-borne quantum inputs, sampled like the scalar ones."""
-        return [(j, k) for j, a in enumerate(self.spec.calls[call]["args"]) if a.get("cells")
-                for k in range(a["cells"]["n"])]
+    def fill_slots(self, call: int) -> List[Tuple[int, int]]:
+        """(argument, element) of every element behind a quantum pointer argument with a fill
+        (drivers.py "Driver objects"): memory-borne quantum inputs, sampled like the scalar ones."""
+        return [(j, k) for j, a in enumerate(self.spec.calls[call]["args"]) if a.get("fill")
+                for k in range(a["fill"]["n"])]
 
     def slot_ctype(self, call: int, slot) -> D.CType:
         if isinstance(slot, tuple):
-            return D.cell_ctype(self.spec.calls[call]["args"][slot[0]]["cells"])
+            return D.fill_ctype(self.spec.calls[call]["args"][slot[0]]["fill"])
         return self.cts[call][slot]
 
     def has_driver_object(self, call: int) -> bool:
@@ -2664,12 +2663,12 @@ class Gen:
     def set_values(self, call: int, args: Sequence[str], vals: Dict[object, int]) -> List[str]:
         a = list(args)
         for j, v in vals.items():
-            if isinstance(j, tuple):          # a handle cell (argument, cell): in the pointer value
-                cells = self.spec.calls[call]["args"][j[0]]["cells"]
+            if isinstance(j, tuple):          # an element (argument, element): in the pointer value
+                fill = self.spec.calls[call]["args"][j[0]]["fill"]
                 expr, cv = D.split_ptr(a[j[0]])
-                cv = list(cv) if cv is not None else ["0x0"] * cells["n"]
-                cv[j[1]] = hexw(D.cell_ctype(cells), v)
-                a[j[0]] = D.ptr_with_cells(expr, cv)
+                cv = list(cv) if cv is not None else ["0x0"] * fill["n"]
+                cv[j[1]] = hexw(D.fill_ctype(fill), v)
+                a[j[0]] = D.ptr_with_fill(expr, cv)
             else:
                 a[j] = hexw(self.cts[call][j], v)
         return a
@@ -2733,7 +2732,7 @@ def per_call_classes(g: Gen, rng: random.Random) -> Dict[str, dict]:
     edge, specials, exhaustive, rq = {}, {}, {}, {}
     for ci, call in enumerate(spec.calls):
         key = str(ci)
-        qs = g.quantum_slots(ci) + g.cell_slots(ci)
+        qs = g.quantum_slots(ci) + g.fill_slots(ci)
         cts = {j: g.slot_ctype(ci, j) for j in qs}
         cts.update(enumerate(g.cts[ci]))
         pointee = [j for j, a in enumerate(call["args"]) if a["quantum"] and cts[j].kind == "p"]
@@ -3030,7 +3029,7 @@ def subst_classes(g: Gen, rng: random.Random, sites: Dict[int, List["D.ThetaSite
             out[cls][key] = {"samples": sorted(set(idx)), "subst_sites": [st.key() for st in which]}
         # exhaustive: every value of every reach (with the quantum scalar arguments) when small
         nreach = [min(MAX_REACH_SLOTS, max(1, reaches.get(ci, {}).get(st.key(), 0))) for st in sts]
-        qs = g.quantum_slots(ci) + g.cell_slots(ci)      # handle cells too (cq-rbe6)
+        qs = g.quantum_slots(ci) + g.fill_slots(ci)      # the elements of a fill too
         sbits = sum(ct.bits * n for ct, n in zip(cts, nreach))
         abits = sum(g.slot_ctype(ci, j).bits for j in qs)
         if exhaustive_ok(sbits + abits):
@@ -3673,7 +3672,7 @@ def build_sample_set(spec: DriverSpec, example_dir: Path, exempt_baseline: bool 
             # cq-qdpd: each kept classical tuple with CROSS_Q further quantum values, so a group (one
             # classical tuple) holds several quantum inputs and a phase is "global" only when it
             # really is constant over them (a group of one makes every phase global)
-            qs = g.quantum_slots(ci) + g.cell_slots(ci)      # handle cells too (cq-rbe6)
+            qs = g.quantum_slots(ci) + g.fill_slots(ci)      # the elements of a fill too
             if kept and qs:
                 xc = []
                 for k in list(kept):
@@ -4252,7 +4251,7 @@ def exhaustive_inputs(g: "Gen", o1_text: str) -> Optional[List[Tuple[int, Tuple[
         if re.search(r"call [^@]*@cq_theta_", line) and line.strip() not in entry_ok:
             return None
     for ci, call in enumerate(g.spec.calls):
-        if g.cell_slots(ci):
+        if g.fill_slots(ci):
             return None
         m = re.search(r"^define [^\n]*@" + re.escape(call["fn"]) + r"\(([^\n]*)\)[^\n]*\{\n(.*?)^\}", o1_text,
                       re.M | re.S)

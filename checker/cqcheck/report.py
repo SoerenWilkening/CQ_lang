@@ -585,6 +585,7 @@ def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_erro
                 sampling_bad, sampling_notes = [_exc_reason("sampling gaps", e)], []
             reasons += sampling_bad
             c_raw: Optional[list] = [] if want_c else None
+            c_samples = samples
             if need_ref_run:
                 try:
                     ref_results = _side_results(_evaluator_batch, ex.reference, spec, samples, "ref")
@@ -595,15 +596,21 @@ def evaluate(ex: Example, ours: Optional[Path], oracle: str = "both", lower_erro
                     reasons.append(_exc_reason("s6", e))
             if want_c:
                 try:
-                    c_results = _side_results(_oracle_batch, ex.o1, spec, samples, c_raw)
-                    c_oracle, rs = _compare(ours_results, c_results, "c", spec, ex.o1)
+                    # rulings Q10: a call C gives no meaning to is compared against the reference only
+                    from cqcheck import drivers as _D
+                    o1mod = _D.read_module(Path(ex.o1))
+                    in_c = [not _D.c_out_of_domain(spec, sm, o1mod) for sm in samples]
+                    c_samples = [sm for sm, k in zip(samples, in_c) if k]
+                    c_results = _side_results(_oracle_batch, ex.o1, spec, c_samples, c_raw)
+                    c_ours = [r for r, k in zip(ours_results, in_c) if k]
+                    c_oracle, rs = _compare(c_ours, c_results, "c", spec, ex.o1)
                     reasons += rs
                 except Exception as e:  # noqa: BLE001
                     c_oracle = ERROR
                     reasons.append(_exc_reason("c_oracle", e))
                     c_raw = None
             try:
-                trip_bad = _trip_disagreements(ex, spec, ss, c_raw, samples)
+                trip_bad = _trip_disagreements(ex, spec, ss, c_raw, c_samples)
             except Exception as e:  # noqa: BLE001
                 trip_bad = [_exc_reason("sampling trip confirmation", e)]
             reasons += trip_bad

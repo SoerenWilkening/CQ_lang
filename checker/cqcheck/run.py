@@ -54,7 +54,14 @@ encoding (scalars "0x" + bit pattern, pointers a C expression) that drivers rend
 RunResult fields (JSON-serializable):
   side        the side argument ('ours' or 'ref')
   sample      the sample dict as given
-  outputs     {"ret": [{"call", "fn", "v"}], "stdout": str, "exit": int, "effects": [...]}; "v" is the typed
+  outputs     {"ret": [{"call", "fn", "v"}], "stdout": str, "exit": int, "effects": [...], "tape": [...],
+              "deviation": bool, "mem": [...], "objects": [...], "regions": [...]}; "tape" is the shot's event
+              sequence (rt_tape.c, _tape_entry), "deviation" rule 16's stated deviation; "mem" is the named outputs in memory, read from the bus
+              after the driver call (CR §6 item 1, drivers.py "Driver objects"; rt_bus.c's {"ev":"out_mem",
+              "name","addr","w","v"[,"off"]}); "objects" the address table of the module's globals and
+              functions ({"ev":"object","name","addr","size"}) and "regions" the host ranges a pointer may
+              lie in ({"ev":"region","name","lo","hi"}), which read pointer values relationally (CR §6,
+              compare.py "Pointers"); "v" is the typed
               scalar {"w": rail type, "v": hex bit pattern} of an arithmetic return (cq-pq3:
               integers "i<N>" at their C width, two's complement; float "f32", double "f64",
               long double "f80" as the x87 80-bit pattern), the bare hex of an aggregate return;
@@ -63,22 +70,21 @@ RunResult fields (JSON-serializable):
               "stdout" and "effects" are the host output of the run (cq-e4jk, compare.py "Host
               output"): stdout is what the process printed (the driver's setup, then the sample)
               followed by the tape's end-of-shot text (rt_tape.c's {"ev":"tape","op":"shot"} event,
-              "stdout": the format entries it performed); effects is the host-effect calls the
-              module made directly (host_fx.c's {"ev":"effect"} events, in call order) followed by
-              the effect entries the tape performed (in sequence order), each {"name", "args"} with
-              args [{"s": str} | {"w": "i<N>", "v": hex}] (a tape field's string, or its literal or
-              rail value at the end of the shot with its width token)
+              "stdout": the format entries it performed); effects is what the C program would do at
+              each call: the {"ev":"effect"} lines (rt_tape.c, host_fx.c, fx_call.h) in sequence order
+              (_effects_in_order), each {"name", "args"} with args [{"w": "i<N>", "v": hex[, "cap": str]
+              [, "p": 1]}] (a field's value at its width and the bytes captured for it)
   measured    [{"h", "w", "v"}] per cqrt_measure call, in order
   rotations   the rotation and phase trace events in order, as written, each with "nmeas", the number
               of measurements before it (cq-459d) (the shape compare.py
               reads): ry {ev, h, theta, ctl, ctlv, w, v}, ry_qangle {ev, h, a, aval, ctl, ctlv, w, v},
               phase {ev, f, fv, theta}, phase_qangle {ev, a, aval, ctl, ctlv}; theta is the hex bit
               pattern of the double; w and v are the Ry target's type and value at the gate
-  kept        the exit event's live rails [{"h", "w", "v", "role"}], followed by the live QRAM cells
-              and slots of rt-mem's {"ev":"qram","op":"exit"} event (roles qram_cell, qram_slot); a
-              core rail also has "known" (its known-basis flag, cq-tt2j) and the roles of rt/core.c's
-              header (output, fenv_flags, fenv_mode among them, cq-tt2j); a rail a handle-returning
-              function returns also has "result": true (cq-tt2j)
+  kept        the exit event's live rails [{"h", "w", "v", "role"}], the tape slots of bus stores
+              (role tape_slot) and overtaken load copies (role overtaken) among them; each also has
+              "known" (classical-valued, BACKEND_ABI §0) and the roles of rt/core.c's header (store_kept,
+              fenv_flags, fenv_mode among them, cq-tt2j); a rail a handle-returning function returns
+              also has "result": true (cq-tt2j)
   clean       the free events [{"h", "v", "known", "w"}]
   violations  the trace's violation events [{"what", "h", "msg"}] plus run failures:
               build, sample, timeout, signal, no_exit (the process ended without the exit event),
@@ -107,6 +113,8 @@ from cqcheck.contracts import DriverSpec, RunResult
 
 REPO = Path(__file__).resolve().parents[2]
 RT_DIR = REPO / "checker" / "rt"
+HOST_DIR = REPO / "bundle" / "host"     # the injection-bundle host symbols, linked after the pass (rulings Q7)
+FX_LOWERED = REPO / "checker" / "oracle" / "fx_lowered.c"  # direct host calls (drivers.py, rulings Q8)
 LLVM_BIN = Path(os.environ.get("CQ_LLVM_BIN", "/usr/local/opt/llvm@19/bin"))
 CLANG = str(LLVM_BIN / "clang")
 LLVM_LINK = str(LLVM_BIN / "llvm-link")
@@ -116,7 +124,7 @@ DEFAULT_TIMEOUT = 30.0
 # module is a 'timeout', deterministically (core.c, shots). `timeout` (seconds) is only a backstop and
 # counts the worker's CPU time, never wall time: no result depends on the machine's load.
 STEP_BUDGET = 1 << 28
-_VERSION = "chk-core-6"
+_VERSION = "chk-core-7"
 
 
 class BuildError(Exception):
@@ -274,13 +282,43 @@ static void cqd_ret(int call, const char *fn, const char *w, const void *p, size
 """
 
 
+# The named outputs in memory (drivers.py "Driver objects"). rt_bus.c's reader takes the bytes off the
+# bus; a test's restricted runtime has none, and then no memory output exists on this side, which
+# compare.py reports against any oracle that has one. The lowered module's generated __cqe_out_globals
+# (drivers.out_globals_ir) calls these too, so a module-internal global is reachable.
+_OUT_PRELUDE = r"""
+__attribute__((weak)) void __cqe_out_mem(const char *, unsigned long long, unsigned long long);
+void __cqe_out_globals(void);
+void cqd_out_object(const char *name, const void *addr, unsigned long long bytes) {
+  char b[512];
+  snprintf(b, sizeof b, "{\"ev\":\"object\",\"name\":\"%s\",\"addr\":\"0x%llx\",\"size\":%llu}", name,
+           (unsigned long long)addr, bytes);
+  cqe_log(b);
+}
+void cqd_out_mem(const char *name, const void *addr, unsigned long long bytes) {
+  if (__cqe_out_mem) __cqe_out_mem(name, (unsigned long long)addr, bytes);
+  cqd_out_object(name, addr, bytes);
+}
+static void cqd_out_regions(void) {
+  char b[160];
+  unsigned long long sp = (unsigned long long)__builtin_frame_address(0);
+  snprintf(b, sizeof b, "{\"ev\":\"region\",\"name\":\"stack\",\"lo\":\"0x%llx\",\"hi\":\"0x%llx\"}",
+           sp - (8ULL << 20), sp + (1ULL << 16));
+  cqe_log(b);
+  /* bundle/host/cq_host.c: __cq_alloc's chunks from its fixed hint on */
+  cqe_log("{\"ev\":\"region\",\"name\":\"heap\",\"lo\":\"0x200000000000\",\"hi\":\"0x300000000000\"}");
+}
+static void cqd_out_all(void) { __cqe_out_globals(); cqd_out_regions(); }
+"""
+
+
 def driver_c(spec: DriverSpec, samples: Sequence[dict]) -> str:
     """The driver C source: drivers.driver_source (cq-arch Z1/Z2: the one renderer of samples) with
     the result hook. It reads its samples from $CQD_SAMPLES at run time and runs them in one worker
     process, each from the same post-setup state (core.c, shots; cq-e2i9)."""
     from cqcheck import drivers
-    return _RESULT_PRELUDE + drivers.driver_source(spec, list(samples),
-                                                   before_call=SHOT_BEFORE, after_call=SHOT_AFTER)
+    return _RESULT_PRELUDE + _OUT_PRELUDE + drivers.driver_source(
+        spec, list(samples), before_call=SHOT_BEFORE, after_call=SHOT_AFTER, out_mem="cqd_out_mem", out_globals="cqd_out_all")
 
 
 # core.c, shots: the worker runs each record's call in-process from the post-setup state.
@@ -351,12 +389,13 @@ def _triple(lowered_text: str) -> str:
 
 def runtime_objects(triple: str, rt_sources: Optional[Sequence[Path]] = None) -> List[Path]:
     """Every runtime source compiled to an object (cached by content)."""
-    srcs = sorted(Path(s) for s in (rt_sources if rt_sources is not None else RT_DIR.glob("*.c")))
+    srcs = sorted(Path(s) for s in (rt_sources if rt_sources is not None
+                                    else [*RT_DIR.glob("*.c"), *HOST_DIR.glob("*.c"), FX_LOWERED]))
     h = hashlib.sha256((_VERSION + triple).encode())
     for s in srcs:
         h.update(str(s).encode())
         h.update(s.read_bytes())
-    for hdr in sorted(RT_DIR.glob("*.h")):  # cqe.h, cq_standin.h
+    for hdr in [*sorted(RT_DIR.glob("*.h")), FX_LOWERED.with_name("fx_call.h")]:  # cqe.h, cq_standin.h, fx_*.h
         h.update(hdr.read_bytes())
     d = tool_root() / "rt" / h.hexdigest()[:24]
     objs = [d / (s.stem + ".o") for s in srcs]
@@ -437,11 +476,12 @@ def build(lowered: Path, spec: DriverSpec, samples: Sequence[dict] = (),
     if (final / "prog").exists():
         return final / "prog"
     with key_lock(final):
-        return _build_locked(final, lowered, drv, triple, objs, ctext if c_module else None, extra_sources)
+        return _build_locked(final, lowered, drv, triple, objs, ctext if c_module else None, extra_sources,
+                             sorted(drivers.proto_definitions(spec)))
 
 
 def _build_locked(final: Path, lowered: Path, drv: str, triple: str, objs: Sequence[Path],
-                  ctext: Optional[str], extra_sources: Sequence[Path]) -> Path:
+                  ctext: Optional[str], extra_sources: Sequence[Path], defined: Sequence[str] = ()) -> Path:
     if (final / "prog").exists():
         return final / "prog"
     # A failed build is cached too (cq-3ebz): the same inputs fail the same way, so every later call
@@ -451,7 +491,7 @@ def _build_locked(final: Path, lowered: Path, drv: str, triple: str, objs: Seque
         raise BuildError(failed.read_text())
     tmp = Path(tempfile.mkdtemp(prefix="prog.", dir=_ensure(_cache_root() / "prog")))
     try:
-        _build_into(tmp, lowered, drv, triple, objs, ctext, extra_sources)
+        _build_into(tmp, lowered, drv, triple, objs, ctext, extra_sources, defined)
     except BuildError as e:
         shutil.rmtree(tmp, ignore_errors=True)
         ftmp = failed.with_name(f"{failed.name}.{os.getpid()}.tmp")
@@ -473,7 +513,7 @@ def _build_locked(final: Path, lowered: Path, drv: str, triple: str, objs: Seque
 
 
 def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[Path],
-                ctext: Optional[str], extra_sources: Sequence[Path]) -> None:
+                ctext: Optional[str], extra_sources: Sequence[Path], defined: Sequence[str] = ()) -> None:
     """The toolchain steps of build: tmp/prog from the lowered module and the driver source."""
     shutil.copy(lowered, tmp / "lowered.ll")
     dll = driver_ll(drv, triple)
@@ -486,8 +526,10 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
         if touches_fenv(canon):  # cq-6ady
             tot = default_env_module(tot)
         if any(Path(o).name == "host_fx.o" for o in objs):  # cq-e4jk; a test's restricted runtime may omit it
-            tot = host_effects_module(tot)
-        tot = cells_module(tot)  # cq-tt2j
+            tot = host_effects_module(tot, defined)
+        from cqcheck import drivers
+        tot += drivers.out_globals_ir(ctext if ctext is not None else canon, canon, "__cqe_out_globals",
+                                      "cqd_out_mem", "cqd_out_object")
         (tmp / "lowered.tot.ll").write_text(tot)
         (tmp / "handle_rets.json").write_text(json.dumps(handle_returning_fns(canon)))  # cq-n6a0
     except _Unimpl as e:
@@ -970,9 +1012,11 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
     rots: List[dict] = []
     clean: List[dict] = []
     viol: List[dict] = []
-    qram_live: List[dict] = []
+    mem: List[dict] = []
+    objects: List[dict] = []
+    regions: List[dict] = []
     direct_fx: List[dict] = []
-    tape_out, tape_fx = "", []
+    tape_out, tape_seq, deviation = "", [], False
     last_exit: Optional[dict] = None
     for e in events:
         ev = e.get("ev")
@@ -992,126 +1036,97 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
             viol.append({"what": e.get("what"), "h": e.get("h"), "msg": e.get("msg")})
         elif ev == "exit":
             last_exit = e
-        elif ev == "qram" and e.get("op") == "exit":
-            # rt-mem's QRAM cells and unpopped slots live outside core's rail table; its exit event
-            # lists them (roles qram_cell, qram_slot) and they are Kept items too (cq-lxv)
-            qram_live.extend(e.get("live", []))
+        elif ev == "out_mem":
+            mem.append({k: e[k] for k in ("name", "addr", "off", "w", "v") if k in e})
+        elif ev == "object":
+            objects.append({k: e[k] for k in ("name", "addr", "size") if k in e})
+        elif ev == "region":
+            regions.append({k: e[k] for k in ("name", "lo", "hi") if k in e})
         elif ev == "tape" and e.get("op") == "shot":
-            tape_out, tape_fx = _tape_shot(e)
+            tape_out, tape_seq, deviation = _tape_shot(e)
         elif ev == "effect":
-            direct_fx.append({"name": e.get("name"), "args": [_fx_arg(a) for a in e.get("args", [])]})
-    kept = (list(last_exit["live"]) if last_exit is not None else []) + qram_live
+            direct_fx.append(e)
+    kept = list(last_exit["live"]) if last_exit is not None else []
     if freed is not None:
         clean.append(dict(freed))
     viol += extra
     if last_exit is None and code is not None and not any(v["what"] in _STOP_WHATS for v in extra):
         viol.append({"what": "no_exit", "h": None, "msg": f"process ended (status {code}) without the exit event"})
     return RunResult(side=side, sample=sample, outputs={"ret": rets, "stdout": stdout + tape_out, "exit": code,
-                                                    "effects": direct_fx + tape_fx},
+                                                    "effects": _effects_in_order(direct_fx), "tape": tape_seq,
+                                                    "deviation": deviation, "mem": mem, "objects": objects,
+                                                    "regions": regions},
                      measured=measured, rotations=rots, kept=kept, clean=clean, violations=viol)
 
 
-# ---- output memory at exit (cq-tt2j) ----------------------------------------------------------
-#
-# CR §6 item 1's leak rule (compare._leaks) takes a rail whose handle sits in output memory at exit
-# as a named output. The evaluator finds those cells at exit (rt/core.c mark_outputs) among the cells
-# the lowered module wrote: cells_module has each store of a type holding an i32 (a handle's width)
-# and each memory intrinsic call __cqe_cell_note(ptr, bytes) right after it.
-
-_STORE = re.compile(r"^(?P<ind>\s+)store (?P<rest>.*)$")
-_MEMI = re.compile(r"^(?P<ind>\s+)(?:tail |musttail |notail )?call void @llvm\.mem(?:cpy|move|set)(?:\.inline)?\.[\w.]+"
-                   r"\((?P<args>.*)\)(?P<tail>[^()]*)$")
-
-
-def _lead_type(s: str) -> Tuple[str, str]:
-    """(the type that starts s, the rest): a bracketed aggregate or vector type, else the first token."""
-    s = s.lstrip()
-    if s[:1] in "[{<":
-        depth = 0
-        for i, ch in enumerate(s):
-            if ch in "([{<":
-                depth += 1
-            elif ch in ")]}>":
-                depth -= 1
-                if depth == 0:
-                    if s[:2] == "<{" and s[i + 1:i + 2] == ">":
-                        i += 1
-                    return s[:i + 1], s[i + 1:].strip()
-        raise _Unimpl(f"cells_module: unbalanced type in '{s}'")
-    t, _, rest = s.partition(" ")
-    return t, rest
-
-
-def cells_module(text: str) -> str:
-    """text with __cqe_cell_note calls after each handle-wide store and memory intrinsic (above)."""
-    out: List[str] = []
-    in_fn = used = False
-    for line in text.splitlines():
-        out.append(line)
-        if not in_fn:
-            in_fn = bool(_FN_START.match(line)) and line.rstrip().endswith("{")
-            continue
-        if line.startswith("}"):
-            in_fn = False
-            continue
-        m = _STORE.match(line)
-        if m:
-            rest = m.group("rest")
-            while rest.startswith(("volatile ", "atomic ")):
-                rest = rest.split(" ", 1)[1]
-            ops = _split_top(rest)
-            t, _ = _lead_type(ops[0])
-            if not re.search(r"\bi32\b", t):
-                continue
-            if len(ops) < 2 or not ops[1].startswith("ptr "):
-                raise _Unimpl(f"cells_module: store pointer operand of '{line.strip()}'")
-            ptr = ops[1][len("ptr "):].strip()   # a register, a global, or a constant expression (cq-z7hz)
-            out.append(f"{m.group('ind')}call void @__cqe_cell_note(ptr {ptr}, "
-                       f"i64 ptrtoint (ptr getelementptr ({t}, ptr null, i32 1) to i64))")
-            used = True
-            continue
-        m = _MEMI.match(line)
-        if m:
-            args = _split_top(m.group("args"))
-            if len(args) < 3 or not args[0].startswith("ptr "):
-                raise _Unimpl(f"cells_module: memory intrinsic operands of '{line.strip()}'")
-            dst = args[0].split()[-1]
-            lt, lv = args[2].split(" ", 1) if " " in args[2] else (args[2], "")
-            if lt != "i64":
-                if lt in ("i32", "i16", "i8") and re.fullmatch(r"[0-9]+", lv):
-                    lt = "i64"
-                else:
-                    raise _Unimpl(f"cells_module: memory intrinsic length of '{line.strip()}'")
-            out.append(f"{m.group('ind')}call void @__cqe_cell_note(ptr {dst}, i64 {lv})")
-            used = True
-    if used and not re.search(r"(?m)^declare [^\n]*@__cqe_cell_note\(", text):
-        out.append("declare void @__cqe_cell_note(ptr, i64)")
-    return "\n".join(out) + "\n"
-
-
-def host_effects_module(text: str) -> str:
-    """text with each call of a declared host-effect function (compare.HOST_EFFECTS) renamed to its
-    logging wrapper in checker/rt/host_fx.c (cq-e4jk): the effects the module performs directly are
-    logged as {"ev":"effect"} events. A module that defines such a function calls its own."""
+def host_effects_module(text: str, defined: Sequence[str] = ()) -> str:
+    """text with no direct call of a host function left (CR §6, rulings Q8): a declared host-effect
+    function (compare.HOST_EFFECTS) goes to its logging stand-in in checker/rt/host_fx.c (cq-e4jk), every
+    other drivers.effect_callees to a generated wrapper over checker/oracle/fx_call.h. All are logged as
+    {"ev":"effect"} events. A module that defines such a function calls its own; so does a driver's."""
+    from cqcheck import drivers
     for name in HOST_EFFECTS:
         if re.search(rf"(?m)^declare\b[^\n]*@{name}\(", text):
             text = re.sub(rf"@{name}(?=\()", f"@__cqe_fx_{name}", text)
-    return text
+    callees = drivers.effect_callees(text, frozenset(defined) | frozenset(HOST_EFFECTS))
+    return drivers.rename_effects(text, callees) + drivers.effect_wrappers_ir(callees)
 
 
 def _fx_arg(f: dict) -> dict:
-    """One argument of a host effect, as compare reads it: {"s": str} or {"w", "v"}."""
-    if f.get("k") == "str" or "s" in f:
-        return {"s": _bytes_text(f.get("s", ""))}
-    return {"w": f.get("w"), "v": f.get("v")}
+    """One field of an effect entry as compare reads it: {"s": str} (oracle's raise) or {"w", "v"} with
+    "cap" (the bytes captured, rt_tape.c) and "p" (fx_call.h: a pointer argument). A rail's handle goes."""
+    if "s" in f:
+        return {"s": _bytes_text(f["s"])}
+    out = {k: f[k] for k in ("w", "v", "p") if k in f}
+    if "cap" in f:
+        out["cap"] = _bytes_text(f["cap"])
+    return out
 
 
-def _tape_shot(e: dict) -> Tuple[str, List[dict]]:
-    """The host output of rt_tape.c's end-of-shot event: the text it printed and the effect entries
-    it performed, in sequence order."""
-    fx = [{"name": x.get("name"), "args": [_fx_arg(f) for f in x.get("fields", [])]}
-          for x in e.get("events", []) if x.get("kind") == "effect" and x.get("performed")]
-    return _bytes_text(e.get("stdout", "")), fx
+def _fx_event(e: dict) -> dict:
+    """One {"ev":"effect"} line (rt_tape.c's entry object, host_fx.c's and fx_call.h's direct call) as
+    compare reads it: what the C program does at this call."""
+    return {"name": e.get("name"), "args": [_fx_arg(a) for a in e.get("fields", e.get("args", []))]}
+
+
+def _effects_in_order(lines: List[dict]) -> List[dict]:
+    """The effect lines in the C program's order. rt_tape.c writes "call" lines at the call and "end"
+    lines at the end of the shot, each with its sequence number; a direct call (seq -1) stays behind the
+    entries already performed at their call. Format entries are compared as stdout, so they go."""
+    keyed = []
+    last = -1.0
+    for i, e in enumerate(lines):
+        seq = e.get("seq", -1)
+        if seq is None or seq < 0:
+            key = last + 0.5
+        else:
+            key = float(seq)
+            if e.get("when") == "call":
+                last = key
+        if e.get("kind") != "fmt":
+            keyed.append((key, i, e))
+    return [_fx_event(e) for _, _, e in sorted(keyed, key=lambda t: t[:2])]
+
+
+def _tape_entry(x: dict) -> dict:
+    """One event of the shot's sequence (rulings Q8) as compared against the reference: name or format,
+    predicate, fields, order, whether it was performed, its text and result; never handles or the
+    evaluator's class."""
+    if x.get("kind") == "abort":
+        return {"kind": "abort", "seq": x.get("seq"), "fv": x.get("fv")}
+    out = {k: x[k] for k in ("seq", "kind", "pred", "performed", "name", "fmt") if k in x}
+    out["fields"] = [_fx_arg(f) for f in x.get("fields", [])]
+    if "text" in x:
+        out["text"] = _bytes_text(x["text"])
+    if "r" in x:
+        out["r"] = {k: x["r"][k] for k in ("w", "v") if k in x["r"]}
+    return out
+
+
+def _tape_shot(e: dict) -> Tuple[str, List[dict], bool]:
+    """Of rt_tape.c's end-of-shot event: the text it printed, the event sequence, and rule 16's deviation."""
+    return (_bytes_text(e.get("stdout", "")), [_tape_entry(x) for x in e.get("events", [])],
+            bool(e.get("deviation")))
 
 
 def _parse_trace(text: str) -> Tuple[List[dict], List[dict]]:

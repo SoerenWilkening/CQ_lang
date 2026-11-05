@@ -7,20 +7,18 @@ Fails on any of:
   corpus    a CQ_spec example's reference lowered.ll is not green against its .O1.ll, with every entry
             of its drivers.txt line and no quantum flags (default 01, 02, 42, 60, 61, 120, 133 and
             117 at --samples 200; --examples NN_name[:samples]... for others). 60 takes a pointer to
-            handle cells, 120's all-zero baseline reads q[-1][1] (outside the domain), 117's big
+            registers its elements are quantum inputs of, 120's all-zero baseline reads q[-1][1] (outside the domain), 117's big
             groups run out of the matching budget (cq-sujz); 61 calls prep inside a cq_invert region
             and 133's prep_twice overwrites a prep with a NaN angle (cq-mopw)
   unit      in process: the verdict of out-of-budget reasons is undecided (2), never differs; a
-            --samples subset keeps classical groups whole, spread over their sizes; a template's literal
-            operand is no rail position, nor xorc_controlled's literal (c, h, lit) or push's word
-            (cq-oylm, src/xorc_cells.ll); cq-mopw: the sites a cq_invert region may reach (61:
+            --samples subset keeps classical groups whole, spread over their sizes; cq-mopw: the sites a cq_invert region may reach (61:
             prep's two and invert_theta's second, not invert_call's), and an Ry whose angle is the
             identity still counts as the overwriting prep of a rule-10 un-prep where the C program
             overwrites j's register by an identity reach after j's (cq-q15r, cq-ia96)
   mutant    a wrong lowered module is not rejected (exit 1): built from 01's reference with the Ry's
             angle negated, the add computed before the Ry (only cq_theta substitution sees it), the
             measured rail replaced by its classical input, and an empty body (ret 0); from 60's
-            reference, five wrong phases or Ry that only varied handle cells expose (cq-rbe6); from
+            reference, five wrong phases or Ry that only the varied elements behind q expose (cq-rbe6); from
             133's, an un-prep whose overwriting prep is an Ry(NaN) with no C reach (cq-q15r); from
             src/ia96/p.c's (green itself), an un-prep whose Ry(NaN) only another register's earlier
             NaN prep could back (m4, m5; cq-ia96); from src/yzuc's b.c (b_good green) and b2.c, an
@@ -120,36 +118,6 @@ def unit(spec_root):
     for m in (1, 2, 3, 7, 8, 107):
         got = U._spread(m)
         (ok if sorted(got) == list(range(m)) and got[0] == 0 else fail)(f"unit spread {m}", f"{got[:6]}")
-    for callee, nargs, k, want in (("@cq_template_icmp_eq_i32_hl", 2, 1, False),
-                                   ("@cq_template_icmp_eq_i32_hl_unc", 3, 2, False),
-                                   ("@cq_template_icmp_eq_i32_hl_unc", 3, 1, True),
-                                   ("@cq_template_sub_i32_lh", 2, 0, False),
-                                   ("@cq_template_select_i8_lh", 3, 1, False),
-                                   ("@cq_template_select_i8_lh", 3, 0, True),
-                                   ("@cq_template_fadd_f64_hl_rm_exc", 3, 2, False),
-                                   ("@cq_template_add_i32", 2, 1, True),
-                                   ("@cqrt_and_i1", 3, 2, True), ("@cqrt_xorc_i32", 2, 1, False),
-                                   ("@cqrt_alloc_i1", 1, 0, False), ("@cqrt_qram_load_i32_hl", 2, 1, False),
-                                   # cq-oylm: xorc_controlled is (c, h, lit); push's word is no rail
-                                   ("@cqrt_xorc_i32_controlled", 3, 0, True),
-                                   ("@cqrt_xorc_i32_controlled", 3, 1, True),
-                                   ("@cqrt_xorc_i32_controlled", 3, 2, False), ("@cqrt_push", 1, 0, False),
-                                   ("@cqrt_ry_i32_controlled", 3, 2, False),
-                                   ("@cqrt_tape_write_i32_controlled", 3, 1, False),
-                                   ("@cqrt_qram_store_i8_controlled", 4, 0, True),
-                                   ("@cqrt_qram_store_i8_controlled", 4, 1, False)):
-        got = U._rail_position(callee, k, nargs)
-        (ok if got == want else fail)(f"unit rail position {callee}#{k}", f"{got}")
-    # widths per operand: a control is an i1 rail whatever the gate's width
-    for callee, nargs, k, want in (("@cqrt_xorc_i32_controlled", 3, 0, 1), ("@cqrt_xorc_i32_controlled", 3, 1, 32),
-                                   ("@cqrt_copy_i8_controlled", 3, 2, 8), ("@cqrt_ry_i16_controlled", 3, 0, 1)):
-        got = U._rail_width(callee, k, nargs)
-        (ok if got == want else fail)(f"unit rail width {callee}#{k}", f"{got}" + ("" if got == want else f", want {want}"))
-    # cq-oylm repro (review cq-9edz): f's i32 cell is xorc's classical literal, g's is its target handle
-    from pathlib import Path as _P
-    got = {fn: U.handle_cell_params(_P(SRC / "xorc_cells.ll"), fn) for fn in ("f", "g", "k")}
-    want = {"f": {}, "g": {0: 32}, "k": {}}
-    (ok if got == want else fail)("unit handle cells xorc_controlled", f"{got}" + ("" if got == want else f", want {want}"))
     unit_mopw(spec_root)
 
 
@@ -253,19 +221,19 @@ def mutant133(ref_text):
 def mutants60(ref_text):
     """name -> a wrong lowered module of 60_qft (qft), cq-rbe6 (review cq-9edz's m60 mutants): the
     controlled phase dropped, negated, controlled on q[j] twice, on the wrong cell, and the Ry
-    negated. Only varied handle cells (the quantum inputs behind q) fire the phase."""
-    rz = "  call void @cqrt_rz_i1(i32 %24, double %29)"
-    andq = "  call void @cqrt_and_i1(i32 %23, i32 %17, i32 %24)"
-    gep = "  %22 = getelementptr inbounds i32, ptr %0, i64 %21"
-    ry = "  call void @cqrt_ry_i1(i32 %17, double %2)"
-    for t in (rz, andq, gep, ry):
+    negated. Only varied elements behind q fire the phase."""
+    rz = "  call void @cqrt_rz_i1(i32 %28, double %33)"
+    andq = "  call void @cqrt_and_i1(i32 %26, i32 %27, i32 %28)"
+    addr = "  %24 = getelementptr inbounds i8, ptr %0, i64 %23"
+    ry = "  call void @cqrt_ry_i1(i32 %19, double %2)"
+    for t in (rz, andq, addr, ry):
         if t not in ref_text:
             raise SystemExit(f"60's reference changed: {t!r} not found")
     return {"drop_phase": ref_text.replace(rz, ""),
-            "negated_phase": ref_text.replace(rz, "  %neg = fneg double %29\n  call void @cqrt_rz_i1(i32 %24, double %neg)"),
-            "control_twice": ref_text.replace(andq, "  call void @cqrt_and_i1(i32 %23, i32 %23, i32 %24)"),
-            "wrong_cell": ref_text.replace(gep, "  %22 = getelementptr inbounds i32, ptr %0, i64 %15"),
-            "negated_ry": ref_text.replace(ry, "  %ng = fneg double %2\n  call void @cqrt_ry_i1(i32 %17, double %ng)")}
+            "negated_phase": ref_text.replace(rz, "  %neg = fneg double %33\n  call void @cqrt_rz_i1(i32 %28, double %neg)"),
+            "control_twice": ref_text.replace(andq, "  call void @cqrt_and_i1(i32 %26, i32 %26, i32 %28)"),
+            "wrong_cell": ref_text.replace(addr, "  %24 = getelementptr inbounds i8, ptr %0, i64 %15"),
+            "negated_ry": ref_text.replace(ry, "  %ng = fneg double %2\n  call void @cqrt_ry_i1(i32 %19, double %ng)")}
 
 
 def main():
