@@ -43,6 +43,18 @@
 // activation whatever the value is. Any step not of this form (a clobber that is a MemoryPhi, a call,
 // a may-alias store or the function's entry; a value inside a loop; a value repeated) leaves every
 // target unproved.
+//
+// The same kind over cells (rulings 2 B, cq-b0rl): a block every backedge passes leaves the loop when a load reads a
+// constant C; the load's address is an affine AddRec of the loop (ScalarEvolution), in a top-level loop that writes no
+// memory, so its j-th read reads the memory the loop was entered with. When the last write before the loop to the
+// load's address at iteration j (MemorySSA, LLVM's alias analysis) is a must-alias store of C of the load's size,
+// outside every loop, the header runs at most j + 1 times per activation.
+//
+// With -cq-trip-named the module is the .O1.ll linked with the bodies drivers.txt defines (the program the C oracle
+// runs, gaps.trip_facts): cq-trip-name first names every block for its slot in the .O1.ll ("cqt.11" for %11), then
+// inlining and CFG-preserving forwarding expose what the callee writes, and only loops whose header bears such a name
+// report, keyed as the .O1.ll spells them. No loop pass runs in between (a rotation or a peel would change what a trip
+// count means), and a loop that calls a defined function gets no name (inlining would change its test region).
 
 #include "cq/Loops.h"
 #include "cq/Taint.h"
@@ -73,6 +85,8 @@
 using namespace llvm;
 
 static cl::opt<unsigned> TripMax("cq-trip-max", cl::init(5), cl::desc("cq-trip-facts: the largest target"));
+static cl::opt<bool> TripNamed("cq-trip-named", cl::init(false),
+                               cl::desc("cq-trip-facts: only headers cq-trip-name named, keyed by their .O1.ll slot"));
 
 namespace {
 
@@ -656,6 +670,89 @@ struct Facts {
     }
     return 0;
   }
+
+  // The most header executions any activation of L runs because a load at an affine address reads the constant that
+  // leaves the loop (the header comment), or 0 when no bound is proved.
+  unsigned cellBound(Loop *L, std::string &why) {
+    BasicBlock *Latch = L->getLoopLatch();
+    if (!Latch || L->getParentLoop())
+      return 0;
+    for (BasicBlock *B : L->blocks())
+      for (Instruction &I : *B)
+        if (I.mayWriteToMemory())
+          return 0;
+    SmallVector<BasicBlock *, 4> exiting;
+    L->getExitingBlocks(exiting);
+    for (BasicBlock *X : exiting) {
+      auto *Br = dyn_cast<BranchInst>(X->getTerminator());
+      if (!DT.dominates(X, Latch) || !Br || !Br->isConditional())
+        continue;
+      auto *C = dyn_cast<ICmpInst>(Br->getCondition());
+      if (!C || !C->isEquality() || L->contains(Br->getSuccessor(C->getPredicate() == ICmpInst::ICMP_EQ ? 0 : 1)))
+        continue;
+      auto *Ld = dyn_cast<LoadInst>(C->getOperand(0));
+      auto *Lit = dyn_cast<ConstantInt>(C->getOperand(1));
+      if (!Ld || !Lit || !L->contains(Ld) || !Ld->isSimple())
+        continue;
+      auto *AR = dyn_cast<SCEVAddRecExpr>(SE.getSCEV(Ld->getPointerOperand()));
+      MemoryUseOrDef *MU = MSSA.getMemoryAccess(Ld);
+      if (!AR || AR->getLoop() != L || !AR->isAffine() || !MU)
+        continue;
+      uint64_t Size = DL.getTypeStoreSize(Ld->getType()).getFixedValue();
+      BatchAAResults BAA(AA);
+      for (unsigned j = 0; j < TripMax; ++j) {
+        const SCEV *At = AR->evaluateAtIteration(SE.getConstant(AR->getType(), j), SE);
+        for (BasicBlock &BB : F)
+          for (Instruction &I : BB) {
+            auto *St = dyn_cast<StoreInst>(&I);
+            if (!St || !St->isSimple() || LI.getLoopFor(St->getParent()) || St->getValueOperand() != Lit ||
+                !SE.isSCEVable(St->getPointerOperand()->getType()) || SE.getSCEV(St->getPointerOperand()) != At)
+              continue;
+            // the last write to that address before the loop (nothing in the loop writes) is this store
+            MemoryLocation Loc(St->getPointerOperand(), LocationSize::precise(Size));
+            auto *Def = dyn_cast_or_null<MemoryDef>(MSSA.getWalker()->getClobberingMemoryAccess(MU, Loc, BAA));
+            if (!Def || MSSA.isLiveOnEntryDef(Def) || Def->getMemoryInst() != St)
+              continue;
+            unsigned n = j + 1;
+            why = "the load " + operandName(Ld) + " of " + operandName(L->getHeader()) + " at " + scevText(AR) +
+                  ", nothing in the loop writes memory, and a block every backedge passes leaves the loop when it reads " +
+                  operandName(Lit) + "; at iteration " + std::to_string(j) + " it reads what '" + text(St) +
+                  "' left (the last write before the loop, must-alias), so every activation runs at most " +
+                  std::to_string(n) + " header executions";
+            return n;
+          }
+      }
+    }
+    return 0;
+  }
+};
+
+// Names every block for its slot (the header comment). The names are taken first: naming shifts the later slots.
+struct TripNamePass : PassInfoMixin<TripNamePass> {
+  PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM) {
+    auto &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
+    for (Function &F : M) {
+      if (F.isDeclaration())
+        continue;
+      auto &LI = FAM.getResult<LoopAnalysis>(F);
+      SmallPtrSet<BasicBlock *, 8> skip;
+      for (Loop *L : LI.getLoopsInPreorder())
+        for (BasicBlock *B : L->blocks())
+          for (Instruction &I : *B)
+            if (auto *CB = dyn_cast<CallBase>(&I))
+              if (Function *G = CB->getCalledFunction(); G && !G->isDeclaration())
+                skip.insert(L->getHeader());
+      std::vector<std::pair<BasicBlock *, std::string>> names;
+      for (BasicBlock &B : F) {
+        std::string op = operandName(&B);
+        if (!B.hasName() && !skip.count(&B))
+          names.push_back({&B, "cqt." + op.substr(1)});
+      }
+      for (auto &[B, n] : names)
+        B->setName(n);
+    }
+    return PreservedAnalyses::all();
+  }
 };
 
 struct TripFactsPass : PassInfoMixin<TripFactsPass> {
@@ -685,13 +782,21 @@ struct TripFactsPass : PassInfoMixin<TripFactsPass> {
       for (Loop *L : LI.getLoopsInPreorder()) {
         std::string swhy;
         unsigned sbound = Fx.structureBound(L, swhy);
+        if (!sbound)
+          sbound = Fx.cellBound(L, swhy);
         bool qexit = false;
         if (Taint)
           for (const cq::Specialization &S : Taint->specializations())
             if (S.F == &F && cq::loops::classify(*L, *Taint, S) == cq::loops::Case::QuantumExit)
               qexit = true;
         Region Rg = headerRegion(L);
-        std::string key = F.getName().str() + ":" + operandName(L->getHeader());
+        std::string hdr = operandName(L->getHeader());
+        if (TripNamed) {
+          if (!StringRef(hdr).starts_with("%cqt.") || StringRef(hdr).contains(".i"))
+            continue;
+          hdr = "%" + hdr.substr(5);
+        }
+        std::string key = F.getName().str() + ":" + hdr;
         for (unsigned t = 1; t <= TripMax; ++t) {
           std::string why = Fx.valueSet(L, t, Rg, qexit, K);
           std::string kind = "value-set";
@@ -720,6 +825,10 @@ struct TripFactsPass : PassInfoMixin<TripFactsPass> {
 void cqRegisterTripFacts(PassBuilder &PB) {
   PB.registerPipelineParsingCallback(
       [](StringRef name, ModulePassManager &MPM, ArrayRef<PassBuilder::PipelineElement>) {
+        if (name == "cq-trip-name") {
+          MPM.addPass(TripNamePass());
+          return true;
+        }
         if (name != "cq-trip-facts")
           return false;
         MPM.addPass(TripFactsPass());

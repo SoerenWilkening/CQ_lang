@@ -44,7 +44,10 @@ search's evidence alone:
     finite-structure proof (cq-97oj kind 3, cq-fhoc: the loop follows a pointer loaded from the
     loop-carried pointer, writes no memory and leaves on null; the last stores before the loop, by
     MemorySSA, chain the entry pointer through n distinct pointers to null, so no activation runs
-    more than n header executions).
+    more than n header executions; or a load at an affine address leaves the loop on a constant
+    and the last store before the loop to its address at iteration j stores it: at most j + 1, rulings 2
+    B, cq-b0rl). The proofs also run on the .O1.ll linked with the drivers.txt line's function bodies,
+    part of the program (trip_facts).
 
 Every count not covered above stays MISSING when the search found none.
 """
@@ -52,9 +55,10 @@ from __future__ import annotations
 
 import re
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from cqcheck import drivers as D
 from cqcheck.contracts import DriverSpec, SampleSet
@@ -379,30 +383,66 @@ def _region_may_exit(f: "D.Function", header: str, blocks: set) -> bool:
                and s in exiting for s in succ[header])
 
 
-def trip_facts(o1: Path, llvm_bin: Path, tmax: int) -> Dict[str, Dict[int, str]]:
-    """{"<fn>:<header>": {target: proof}} from the oracle plugin's cq-trip-facts pass (TripFacts.cpp,
-    cq-97oj): LLVM's ScalarEvolution and ValueTracking on the .O1.ll (value-set and domain proofs)."""
+def _trip_fact_lines(args: List[str], o1: Path, llvm_bin: Path, tmax: int) -> str:
     from cqcheck import oracle
     plugin, _ = oracle.toolchain()
-    r = subprocess.run([str(llvm_bin / "opt"), f"-load-pass-plugin={plugin}", "-passes=cq-trip-facts",
+    r = subprocess.run([str(llvm_bin / "opt"), f"-load-pass-plugin={plugin}", *args,
                         f"-cq-trip-max={tmax}", "-disable-output", str(o1)], capture_output=True, text=True)
     if r.returncode != 0:
-        raise RuntimeError(f"opt -passes=cq-trip-facts on {o1} exited {r.returncode}: {r.stderr.strip()[:500]}")
+        raise RuntimeError(f"opt {' '.join(args)} on {o1} exited {r.returncode}: {r.stderr.strip()[:500]}")
+    return r.stdout
+
+
+# The program the C oracle runs, as far as a bound through a driver-defined body needs: inlined, forwarded, no loop pass
+# and no CFG change a trip count would notice (TripFacts.cpp, -cq-trip-named).
+_LINKED_FACTS = "cq-trip-name,cgscc(inline),function(sroa,early-cse<memssa>),cq-trip-facts"
+
+
+def _linked_with_bodies(o1: Path, bodies: List[str], llvm_bin: Path, dest: Path) -> Path:
+    """The .O1.ll linked with the drivers.txt line's prototype field, -O1 as the driver compiles it."""
+    src = dest / "bodies.c"
+    src.write_text(D.DRIVER_PRELUDE + "\n" + "\n".join(p if p.endswith("}") else p.rstrip(";") + ";"
+                                                         for p in (b.strip() for b in bodies)) + "\n")
+    triple = re.search(r'^target triple = "([^"]+)"', o1.read_text(), re.M)
+    bc, linked = dest / "bodies.ll", dest / "linked.ll"
+    for cmd in ([str(llvm_bin / "clang"), "-std=gnu17", "-O1", "-w", "-S", "-emit-llvm",
+                 *(["-target", triple.group(1)] if triple else []), str(src), "-o", str(bc)],
+                [str(llvm_bin / "llvm-link"), "-S", str(o1), str(bc), "-o", str(linked)]):
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"{cmd[0]} on {src} exited {r.returncode}: {r.stderr.strip()[:500]}")
+    return linked
+
+
+def trip_facts(o1: Path, llvm_bin: Path, tmax: int, bodies: Sequence[str] = ()) -> Dict[str, Dict[int, str]]:
+    """{"<fn>:<header>": {target: proof}} from the oracle plugin's cq-trip-facts pass (TripFacts.cpp,
+    cq-97oj): LLVM's ScalarEvolution and ValueTracking on the .O1.ll (value-set and domain proofs). `bodies`
+    is the prototype field of a drivers.txt line that defines functions, part of the C program under test: with them LLVM also
+    sees what those functions do (rulings 2 B, cq-b0rl, 203's ext_fill), and what it proves there counts too. A target
+    still unproved stays MISSING, never dead."""
+    text = _trip_fact_lines(["-passes=cq-trip-facts"], o1, llvm_bin, tmax)
+    if bodies:
+        with tempfile.TemporaryDirectory(prefix="cq-trip-") as tmp:
+            linked = _linked_with_bodies(o1, list(bodies), llvm_bin, Path(tmp))
+            text += _trip_fact_lines([f"-passes={_LINKED_FACTS}", "-cq-trip-named"], linked, llvm_bin, tmax)
     out: Dict[str, Dict[int, str]] = {}
-    for line in r.stdout.splitlines():
+    for line in text.splitlines():
         parts = line.split("\t")
         if len(parts) == 5 and parts[0] == "cq-trip-fact":
-            out.setdefault(parts[1], {})[int(parts[2])] = f"{parts[3]} proof (cq-97oj): {parts[4]}"
+            out.setdefault(parts[1], {}).setdefault(int(parts[2]), f"{parts[3]} proof (cq-97oj): {parts[4]}")
     return out
 
 
-def loop_facts(example_dir: Path, llvm_bin: Path) -> Dict[str, LoopFacts]:
-    """LoopFacts per loop of the example's .O1.ll, keyed as the trips class keys them (T1)."""
+def loop_facts(example_dir: Path, llvm_bin: Path, spec: Optional[DriverSpec] = None) -> Dict[str, LoopFacts]:
+    """LoopFacts per loop of the example's .O1.ll, keyed as the trips class keys them (T1). `spec`: its
+    drivers.txt line, whose function bodies are part of the program (trip_facts)."""
     from cqcheck import sampling
     o1 = sorted(Path(example_dir).glob("*.O1.ll"))[0]
     mod = D.read_module(o1)
     counts = scev_counts(o1, llvm_bin)
-    static = trip_facts(o1, llvm_bin, sampling.K + 1)
+    # the whole prototype field when it defines a function: a body may use what the others declare
+    bodies = list(spec.protos) if spec and any(p.strip().endswith("}") for p in spec.protos) else []
+    static = trip_facts(o1, llvm_bin, sampling.K + 1, bodies)
     ins = sampling.Instrumenter(mod, None)
     out: Dict[str, LoopFacts] = {}
     for f in mod.functions.values():
@@ -460,7 +500,7 @@ def sample_gaps(spec: DriverSpec, ss: SampleSet, example_dir: Path, llvm_bin: Pa
             kind = classify_reason(e["empty"])
             if kind == MISSING:
                 if facts is None:
-                    facts = loop_facts(example_dir, llvm_bin)
+                    facts = loop_facts(example_dir, llvm_bin, spec)
                 proof = facts.get(lp["loop"], LoopFacts()).impossible(lp["loop"], int(target))
                 if proof:
                     gaps.append(Gap(IMPOSSIBLE, where, proof))

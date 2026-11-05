@@ -4466,7 +4466,7 @@ def uncovered_targets(spec, example_dir, g: "Gen", searcher: "Searcher", out: Li
     over_all = [i for i, kr in enumerate(kruns) if budget_undecided(kr)]
     if not over_all:
         return
-    facts = gaps.loop_facts(example_dir, LLVM_BIN)
+    facts = gaps.loop_facts(example_dir, LLVM_BIN, spec)
     todo = [(lpo, t) for lpo, t in todo if not facts.get(lpo["loop"], gaps.LoopFacts()).impossible(lpo["loop"], int(t))]
     budget = cost_budget()
     for lpo, t in todo:
