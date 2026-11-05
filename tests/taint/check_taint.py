@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BUNDLE_DEPENDENT = {'169': 'cq-dav', '190': 'cq-dav'}
 # Bead cq-6ols: clone sets of constructions later flat-memory waves land (_t table clones, one recursion clone, the
 # plain-ptr byval form, needsCtl, _pure, the variadic mask). Printed, not failed, until that wave removes its entry.
-LATER_WAVE = {'67': 'W3d', '70': 'W3d', '95': 'W3d', '96': 'W4', '97': 'W4', '98': 'W4', '102': 'W4', '106': 'W6',
+LATER_WAVE = {'67': 'W3d', '70': 'W3d', '95': 'W3d', '96': 'W4', '97': 'W4', '98': 'W4', '102': 'W4',
               '109': 'W3d', '161': 'W4', '164': 'W3d', '173': 'W3d', '174': 'W3d', '194': 'W3d', '204': 'W4',
               '205': 'W4', '211': 'W4', '212': 'W4'}
 

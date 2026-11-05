@@ -1986,6 +1986,15 @@ void Analyzer::transferCall(CallBase &CB) {
       }
     }
   }
+  // Rule 24: join and the mutexes are nothing (collapseThreads), whatever a pthread_t reads as.
+  {
+    StringRef pn = G->getName();
+    if (pn.starts_with("\x01_"))
+      pn = pn.drop_front(2);
+    if (G->isDeclaration() && (pn == "pthread_join" || pn == "pthread_mutex_lock" || pn == "pthread_mutex_unlock" ||
+                               pn == "pthread_mutex_trylock" || pn == "pthread_mutex_init" || pn == "pthread_mutex_destroy"))
+      return;
+  }
   if (G->getName() == "pthread_create" && actuals.size() == 4) {
     // Single-thread collapse (rule 24): a direct call of the start routine with its argument.
     if (auto *Start = dyn_cast<Function>(actuals[2]->stripPointerCasts()))
