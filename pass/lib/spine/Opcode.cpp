@@ -16,6 +16,7 @@
 
 #include "cq/Abi.h"
 #include "cq/Calls.h"
+#include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/CFG.h"
@@ -850,6 +851,10 @@ bool deadAtCleanup(LoweringContext &ctx, Value *Y, Value *h, Instruction *at,
       // then c' = b ^ m1 is the image b is cleaned from).
       if (!sh.binds.count(ui) && !isa<LoadInst>(w) && laterUpdate(ui, w))
         return false;
+      // The header phi of the loop whose rule-6 chain ended on this rail reads it on a back edge no path from `at` takes
+      // (109: s + t after both walks cleans t).
+      if (isa<PHINode>(ui) && sh.carriedFinal.count(h) && !isPotentiallyReachable(ab, ui->getParent()))
+        continue;
       if (isa<ReturnInst>(ui) || isa<PHINode>(ui))
         return false;
       if (isa<StoreInst>(ui))

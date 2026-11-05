@@ -32,6 +32,9 @@
 //  seed minted for the loop, this function's own rail when nothing reads it once the loop is entered
 //  (lcw-h2 c2: the register before the loop), or else a copy of it. Case 3 cleans through the advancing
 //  select (125). An unrotated chain is a register only when its final value is read after the loop.
+//  An update chain may sit past a quantum arm's merge, and a merge of an arm's update with the carried value
+//  itself is cleaned with the composite inverse, its final rail kept whether read or not; a bus load copy as
+//  the initial rail is excepted on trip 0 under a classical branch (planRuleSixMerges, 109).
 //
 //  Per-trip uncompute (rule 5, as early as allowed). Before the reverse, each segment is flushed at
 //  its terminator (Uncompute::flushBefore) with the region's back edges cut, so a rail made and last
@@ -189,6 +192,10 @@ bool bijectiveIn(const Instruction &U, const Value *Y) {
   }
   if (auto *un = dyn_cast<UnaryOperator>(&U))
     return un->getOpcode() == Instruction::FNeg && un->getOperand(0) == Y;
+  if (auto *g = dyn_cast<GetElementPtrInst>(&U)) {   // rule 3: a pointer is an i64, a constant gep an add
+    APInt off(64, 0);
+    return g->getPointerOperand() == Y && g->accumulateConstantOffset(g->getDataLayout(), off);
+  }
   if (auto *II = dyn_cast<IntrinsicInst>(&U)) {
     Intrinsic::ID id = II->getIntrinsicID();
     if (id == Intrinsic::bswap || id == Intrinsic::bitreverse)
@@ -270,6 +277,12 @@ Inv inverseOf(LoweringContext &ctx, Instruction &U, const Value *Y, Operand yp) 
   if (isa<UnaryOperator>(U)) {
     spec.op = "fneg";
     return normalized(spec, {yp});
+  }
+  if (auto *g = dyn_cast<GetElementPtrInst>(&U)) {
+    APInt off(64, 0);
+    g->accumulateConstantOffset(g->getDataLayout(), off);
+    spec.op = "sub";
+    return normalized(spec, {yp, Operand{ConstantInt::get(ctx.M.getContext(), off), false}});
   }
   auto *II = cast<IntrinsicInst>(&U);
   if (II->getIntrinsicID() == Intrinsic::bswap || II->getIntrinsicID() == Intrinsic::bitreverse) {
@@ -456,6 +469,11 @@ private:
     SmallVector<Instruction *, 2> U;   // the update chain, U.back() the next value's rail
     bool rotated;
     bool initDirect;   // the initial rail is this function's own and dead after the loop entry: trip 0 cleans it
+    // A merge of an arm's update with p itself (109's overflow_arg_area): the next value is the merge, cleaned with the
+    // composite inverse a ? y' : U^-1(y'). Rule 6's rolled-loop clause: the trip predicate does not read p, the final
+    // rail stays allocated whether or not it is read, and a bus load copy as the initial rail is excepted on trip 0.
+    bool merge = false;
+    bool initLoad = false;
   };
   std::vector<R6> plan6;
   DenseSet<const Value *> keptFinal;   // the final rails of cleaned chains: read after the loop in place
@@ -466,6 +484,7 @@ private:
     return nullptr;
   }
   void planRuleSix(Loop &L, Case c);
+  void planRuleSixMerges(Loop &L);
   void cleanInvariantOnExit(Loop &L, BasicBlock *T);
   // cq-j5mq: a loop with several classical exit edges into one exit block. T's phi naming the edge taken, and per edge
   // the segment block it leaves from: the reverse starts at that segment.
@@ -528,51 +547,7 @@ void Unit::disjuncts(const Value *c, bool positive, SmallVectorImpl<Disj> &out,
   out.push_back({c, positive});
 }
 
-// Is the initial value of p a rail this function made for itself (a template result, or a classical
-// value cq_theta minted, rotated in place any number of times) that nothing reads once the loop is
-// entered? Its readers other than p and its own rotations must be phi incomings on edges no path
-// from the loop reaches (the zero-trip edge of the loop's guard).
-bool Unit::initDead(Loop &L, const Value *init, const PHINode *p) {
-  if (!isQ(init))
-    return true;   // a seed minted for the loop
-  SmallVector<const Instruction *, 4> A;
-  for (const Value *x = init;;) {
-    auto *I = dyn_cast<Instruction>(x);
-    if (!I)
-      return false;
-    A.push_back(I);
-    if (auto *CB = dyn_cast<CallInst>(I); CB && calls::classify(*CB, ctx.T, ctx.S) == calls::Class::Theta) {
-      if (isQ(CB->getArgOperand(1)))
-        return false;
-      x = CB->getArgOperand(0);
-      if (!isQ(x))
-        break;   // minted by this cq_theta
-      continue;
-    }
-    if (isa<BinaryOperator>(I) || isa<UnaryOperator>(I))
-      break;
-    return false;
-  }
-  DenseSet<const BasicBlock *> reach;
-  SmallVector<const BasicBlock *, 16> work{L.getHeader()};
-  while (!work.empty()) {
-    const BasicBlock *b = work.pop_back_val();
-    if (!reach.insert(b).second)
-      continue;
-    for (const BasicBlock *s : successors(b))
-      work.push_back(s);
-  }
-  for (const Instruction *a : A)
-    for (const Use &u : a->uses()) {
-      const User *usr = u.getUser();
-      if (usr == p || is_contained(A, usr))
-        continue;
-      auto *phi = dyn_cast<PHINode>(usr);
-      if (!phi || reach.count(phi->getIncomingBlock(u)))
-        return false;
-    }
-  return true;
-}
+bool Unit::initDead(Loop &L, const Value *init, const PHINode *p) { return exits::initDead(ctx, L, init, p); }
 
 void Unit::planRuleSix(Loop &L, Case c) {
   BasicBlock *header = L.getHeader(), *latch = L.getLoopLatch(), *pre = L.getLoopPredecessor();
@@ -583,6 +558,7 @@ void Unit::planRuleSix(Loop &L, Case c) {
   const bool c3 = c == Case::ClassicalBoundQuantumExit;
   if (!c3 && !qp(header).isTop())
     return;
+  DominatorTree &DT = spine::shared(ctx).dt(F);
   for (PHINode &p : header->phis()) {
     if (!isQ(&p) || !(p.getType()->isIntegerTy() || p.getType()->isFloatingPointTy()) || !p.hasOneUse())
       continue;
@@ -603,7 +579,9 @@ void Unit::planRuleSix(Loop &L, Case c) {
         break;
       }
       auto *W = dyn_cast<Instruction>(const_cast<User *>(*x->user_begin()));
-      if (!W || W->getParent() != header || !bijectiveIn(*W, x) || !isQ(W)) {
+      // Run on every trip at the header's predicate: the header, or a block past a quantum arm's merge (109's s).
+      if (!W || !L.contains(W) || !DT.dominates(W->getParent(), latch) || !samePred(qp(W->getParent()), qp(header)) ||
+          !bijectiveIn(*W, x) || !isQ(W)) {
         ok = false;
         break;
       }
@@ -646,6 +624,78 @@ void Unit::planRuleSix(Loop &L, Case c) {
     if (!ok || (!rotated && !live))
       continue;
     plan6.push_back({&p, ups, rotated, initDead(L, p.getIncomingValueForBlock(pre), &p)});
+  }
+}
+
+// Rule 6's rolled-loop clause on a carried value whose update is a merge in the trip: p' = phi [p, arm], [U(p), arm'] past
+// a quantum branch whose condition does not read p. The other readers of p in the trip must not feed a carried value or
+// anything else the reverse loop would undo: each is a kept store's value, or reaches only a chain planned above.
+void Unit::planRuleSixMerges(Loop &L) {
+  BasicBlock *header = L.getHeader(), *latch = L.getLoopLatch(), *pre = L.getLoopPredecessor();
+  if (!pre || !qp(header).isTop() || exits::liveExiting(L) != latch)
+    return;
+  DominatorTree &DT = spine::shared(ctx).dt(F);
+  auto chainEnd = [&](const Value *v) {
+    return any_of(plan6, [&](const R6 &r) { return r.U.back() == v; });
+  };
+  for (PHINode &p : header->phis()) {
+    if (!isQ(&p) || r6Of(&p) || !(p.getType()->isIntegerTy() || p.getType()->isPointerTy()))
+      continue;
+    auto *M = dyn_cast<PHINode>(p.getIncomingValueForBlock(latch));
+    if (!M || M->getParent() == header || !L.contains(M) || M->getNumIncomingValues() != 2 ||
+        !DT.dominates(M->getParent(), latch) || !samePred(qp(M->getParent()), qp(header)))
+      continue;
+    unsigned self = M->getIncomingValue(0) == &p ? 0 : 1;
+    auto *Up = dyn_cast<Instruction>(M->getIncomingValue(1 - self));
+    if (M->getIncomingValue(self) != &p || !Up || !L.contains(Up) || !isQ(Up) || !bijectiveIn(*Up, &p))
+      continue;
+    // The branch deciding the merge.
+    auto *node = DT.getNode(M->getParent());
+    auto *br = node && node->getIDom() ? dyn_cast<BranchInst>(node->getIDom()->getBlock()->getTerminator()) : nullptr;
+    if (!br || !br->isConditional() || !isQ(br->getCondition()))
+      continue;
+    // Does a value depend on p, inside the trip? A load or call in the way counts as a dependence.
+    bool ok = true;
+    DenseSet<const Value *> seen;
+    SmallVector<const Value *, 8> work{br->getCondition()};
+    while (ok && !work.empty()) {
+      const Value *v = work.pop_back_val();
+      auto *I = dyn_cast<Instruction>(v);
+      if (!I || !L.contains(I) || !seen.insert(v).second)
+        continue;
+      if (v == &p || I->mayReadOrWriteMemory())
+        ok = false;
+      else
+        work.append(I->op_begin(), I->op_end());
+    }
+    // Who p reaches: nothing carried but through M, nothing past the loop.
+    seen.clear();
+    work.assign({&p});
+    while (ok && !work.empty()) {
+      const Value *v = work.pop_back_val();
+      if (!seen.insert(v).second)
+        continue;
+      for (const User *usr : v->users()) {
+        auto *ui = dyn_cast<Instruction>(usr);
+        if (ui == M || chainEnd(ui))
+          continue;
+        if (auto *st = dyn_cast_or_null<StoreInst>(ui); st && st->getValueOperand() == v && L.contains(st))
+          continue;   // a kept store's value rail: no _unc reads p
+        if (!ui || !L.contains(ui) || isa<CallBase>(ui) || (isa<PHINode>(ui) && ui->getParent() == header) ||
+            isa<StoreInst>(ui)) {
+          ok = false;
+          break;
+        }
+        work.push_back(ui);
+      }
+    }
+    if (!ok)
+      continue;
+    const Value *init = p.getIncomingValueForBlock(pre);
+    R6 r{&p, {Up}, false, initDead(L, init, &p)};
+    r.merge = true;
+    r.initLoad = isa<LoadInst>(init) && isQ(init);
+    plan6.push_back(std::move(r));
   }
 }
 
@@ -1103,6 +1153,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // its state and its mirror undoes the trip), never a register of the program: no rule 6 chain keeps it.
   if (outermost && !inTrip)
     planRuleSix(L, c);
+    if (c != Case::ClassicalBoundQuantumExit)
+      planRuleSixMerges(L);
 
   // Entry: the trip predicate, the seeds.
   unsigned seedScope = 0;
@@ -1201,6 +1253,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       Value *h;
       if (!o.handle) {
         h = asHandle(o, p.getType());
+      } else if (r->initLoad) {
+        // Rule 5 sentence 1 decides the load copy: the phi names it, trip 0 does not clean it.
+        externalInits.push_back(o.v);
+        inits.push_back({o.v, true});
+        continue;
       } else if (r->initDirect) {
         h = o.v;
       } else {
@@ -1287,6 +1344,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         ctx.bind(&p, np);
       carried.push_back({&p, np, q, false});
     }
+  }
+  PHINode *notFirst = nullptr;
+  if (any_of(plan6, [&](const R6 &r) { return r.initLoad && L.contains(r.p); })) {
+    notFirst = ctx.B().CreatePHI(Type::getInt1Ty(ctx.M.getContext()), 2, "nfirst");
+    notFirst->addIncoming(ConstantInt::getFalse(ctx.M.getContext()), entryFrom);
   }
   PHINode *aPhi = nullptr;
   Value *aCur = nullptr;   // multi-exit: the trip predicate after the quantum exits so far
@@ -1452,6 +1514,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // Next values of the carried phis, computed at the latch before its terminator.
   std::vector<Value *> nexts;
   auto latchNexts = [&]() {
+    Value *notFirstNow = notFirst;
     for (Carried &cv : carried) {
       if (cv.walked) {
         // Rule 14 (affine induction, cq-e6ky): the walked pointer's trip index advances by one per trip.
@@ -1462,6 +1525,34 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       if (!cv.q) {
         if (o.handle)
           internalError("loops-classical: a classical carried value whose next is a rail", cv.orig);
+        nexts.push_back(o.v);
+      } else if (const R6 *r = r6Of(cv.orig); r && r->merge) {
+        // y' = select(c, a, b), one arm the old rail: t = c ? y' : U^-1(y') (or the arms swapped). U^-1(y') is garbage
+        // the clean-up reads (noted as a use of y so the clean-up follows it).
+        auto *sc = o.handle ? dyn_cast<CallInst>(o.v) : nullptr;
+        const unsigned nargs = sc ? sc->arg_size() : 0;
+        if (nargs != 3 || (sc->getArgOperand(1) != cv.np && sc->getArgOperand(2) != cv.np)) {
+          noteUnbuilt("loops-classical: rule 6 on a merge that is no select of the old rail", cv.orig);
+          nexts.push_back(asHandle(o, cv.orig->getType()));
+          continue;
+        }
+        bool selfTrue = sc->getArgOperand(1) == cv.np;
+        RailId old = ctx.unc().idOf(cv.np);
+        ctx.unc().setRole(ctx.unc().idOf(o.v), Role::UserRegister);
+        Inv inv = inverseOf(ctx, *r->U[0], r->p, o);
+        Value *inner = ctx.emitTemplate(inv.spec, inv.ops);
+        ctx.unc().noteUse(old, cast<Instruction>(inner));
+        abi::TemplateSpec ss;
+        ss.op = "select";
+        ss.w = railOf(cv.orig->getType());
+        Operand c{sc->getArgOperand(0), true}, y{o.v, true}, in{inner, true};
+        SmallVector<Operand, 3> ops{c, selfTrue ? y : in, selfTrue ? in : y};
+        if (r->initLoad)
+          ctx.unc().cleanupBijectiveUnder(old, notFirstNow, ss, ops, /*everyPath=*/false);
+        else
+          ctx.unc().cleanupBijective(old, ss, ops);
+        keptFinal.insert(o.v);
+        spine::shared(ctx).carriedFinal.insert(o.v);
         nexts.push_back(o.v);
       } else if (const R6 *r = r6Of(cv.orig)) {
         Operand u = ctx.operand(r->U.back());
@@ -1481,6 +1572,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
             ctx.unc().cleanupBijective(i ? ctx.unc().idOf(ctx.operand(prev).v) : old, inv.spec, inv.ops);
           }
           keptFinal.insert(o.v);
+          spine::shared(ctx).carriedFinal.insert(o.v);
           nexts.push_back(o.v);
         } else {
           // y'' = a ? f(y) : y; t = a ? f^-1(y'') : y''. The inner f^-1(y'') is garbage the clean-up
@@ -1498,6 +1590,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           ss.w = w;
           ctx.unc().cleanupBijective(old, ss, {Operand{aPhi, true}, Operand{inner, true}, Operand{sel, true}});
           keptFinal.insert(sel);
+          spine::shared(ctx).carriedFinal.insert(sel);
           nexts.push_back(sel);
         }
       } else if (c3) {
@@ -2386,6 +2479,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       internalError("loops-classical: no back edge out of the latch", latch->getTerminator());
     for (unsigned k = 0; k < carried.size(); ++k)
       carried[k].np->addIncoming(nexts[k], it->second);
+    if (notFirst)
+      notFirst->addIncoming(ConstantInt::getTrue(ctx.M.getContext()), it->second);
   }
   closeSeg();
 

@@ -22,7 +22,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
 
-namespace llvm { class Loop; class ScalarEvolution; class Value; class DominatorTree; }
+namespace llvm { class Loop; class PHINode; class ScalarEvolution; class Value; class DominatorTree; }
 namespace cq { class LoweringContext; }
 
 namespace cq::loops::exits {
@@ -91,5 +91,9 @@ void lowerNestedCutoff(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Value *see
 // after it (and, for a multi-exit case-3 loop, binds its continuation's phis); the builder is left where
 // L's exit continues.
 void lowerClassicalInTrip(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Value *trip);
+
+// CR rule 6's rolled-loop clause: is the initial value of the carried phi p a rail this function made for itself that
+// nothing reads once the loop is entered (the rail trip 0 cleans)?
+bool initDead(cq::LoweringContext &ctx, llvm::Loop &L, const llvm::Value *init, const llvm::PHINode *p);
 
 } // namespace cq::loops::exits

@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "cq/Abi.h"
+#include "cq/Bus.h"
 #include "cq/Calls.h"
 #include "cq/Common.h"
 #include "cq/Loops.h"
@@ -55,6 +56,10 @@ Function *materialize(Module &M, const Specialization &S) {
                                   abi::name(cs), &M);
   NF->setCallingConv(CallingConv::Fast);
   return NF;
+}
+// As Calls.cpp: rule 18's twin test, which the spine's rule 6 consults.
+bool hasTwin(const TaintInfo &T, const Specialization &S) {
+  return !bus::writesMemory(T, *S.F) && !T.noTwinByEffects(S);
 }
 void lowerLifted(LoweringContext &, CallBase &) { unimplemented("calls: calls::lowerLifted"); }
 void lowerLiftedVia(LoweringContext &, CallBase &, ArrayRef<unsigned>) { unimplemented("calls: calls::lowerLiftedVia"); }

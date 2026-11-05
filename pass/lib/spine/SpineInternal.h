@@ -177,6 +177,9 @@ struct Shared {
   // CR rule 6: the rails a clean-up was requested for (Opcode.cpp). A template rail reading one of them
   // is no longer garbage rule 5 can uncompute (cq-tmvo).
   llvm::DenseSet<const llvm::Value *> ruleSixCleaned;
+  // The final rail of a loop's rule-6 chain (Classical.cpp planRuleSix): the carried register. A trip's old rail is
+  // cleaned in the next trip, so the header phi it feeds is no reader once the loop has exited.
+  llvm::DenseSet<const llvm::Value *> carriedFinal;
   // cq-mgkr (CR rule 6, dead on one classical path only, through a composite update): a classical merge M
   // whose arms are bijective updates of a dead y that are garbage read only by M; y is cleaned from the
   // first bijective update of M's value instead (per path, its inverse composed with the arm's).

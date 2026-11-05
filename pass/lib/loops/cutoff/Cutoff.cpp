@@ -58,6 +58,8 @@
 #include "cq/Bus.h"
 #include "cq/Predicate.h"
 #include "cq/Uncompute.h"
+#include "cq/Calls.h"
+#include "../../spine/SpineInternal.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
@@ -927,6 +929,38 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       arms.push_back({ctx.preds().edge(u, H), opOf(h->getIncomingValueForBlock(u))});
     return Operand{selectChain(ctx, arms, tag ? RailType{Kind::Int, 32} : railOf(h->getType())), true};
   };
+  // Rule 6's rolled-loop clause (203's x, 05's n): a carried value read in the loop only by its bijective update, which
+  // runs on every trip and is the next value, is cleaned in each trip with the composite inverse a ? U^-1(y') : y'; its
+  // trip predicate cannot read it. Trip 0's old rail is the incoming rail. As in loops-classical, the chain is a register
+  // only when its final value is read after the loop.
+  DenseSet<const PHINode *> six;
+  DenseSet<const Value *> sixSeeds;   // a seed as trip 0's old rail is freed directly, not cleaned (rule 6, rule 7)
+  if (top && !multi && latches.size() == 1) {
+    DominatorTree &DT = spine::shared(ctx).dt(*H->getParent());
+    BasicBlock *pre = L.getLoopPredecessor();
+    for (PHINode *h : hphis) {
+      if (!pre || !isQ(h) || !(h->getType()->isIntegerTy() || h->getType()->isFloatingPointTy()) || !h->hasOneUse() ||
+          exitRail.count(h) || qind.count(h))
+        continue;
+      auto *Up = dyn_cast<Instruction>(h->getIncomingValueForBlock(latch));
+      if (!Up || !L.contains(Up) || *h->user_begin() != Up || !DT.dominates(Up->getParent(), latch) ||
+          !spine::inverseStep(
+              *Up, h, Operand{Up, true}, [](Value *z) { return Operand{z, false}; }, [](Value *) { return false; }))
+        continue;
+      bool live = false, ok = true;
+      for (const User *usr : Up->users()) {
+        auto *ui = dyn_cast<Instruction>(usr);
+        if (usr == h)
+          continue;
+        if (!ui || L.contains(ui))
+          ok = false;
+        else
+          live = true;
+      }
+      if (ok && live && exits::initDead(ctx, L, h->getIncomingValueForBlock(pre), h))
+        six.insert(h);
+    }
+  }
   // The state: header phis bound to their initial values (a classical initial value of a quantum phi
   // becomes a seed rail).
   for (PHINode *h : hphis) {
@@ -936,8 +970,11 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         !h->getType()->isPointerTy())   // rule 3: a pointer is carried as an i64 handle
       unimplemented("loops-cutoff: a carried value that is not a scalar (aggregates, pointers) (cq-p45s)", h);
     Operand init = initOf(h, false);
-    if (isQ(h) && !init.handle)
+    if (isQ(h) && !init.handle) {
       init = Operand{seedRail(init.v, h->getType()), true};
+      if (six.count(h))
+        sixSeeds.insert(init.v);
+    }
     if (!isQ(h) && init.handle)
       internalError("loops-cutoff: a classical header phi with a rail initial value", h);
     if (auto it = exitRail.find(h); it != exitRail.end())
@@ -949,6 +986,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (it->second.exitRail)
         it->second.exitRail = init;   // select is out of place: the start rail is the trip-0 state
     }
+    if (six.count(h) && !sixSeeds.count(init.v))
+      ctx.unc().setRole(ctx.unc().idOf(init.v), Role::UserRegister);
     set(h, init);
   }
 
@@ -1521,6 +1560,12 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     return Operand{selectChain(ctx, arms, w), true};
   };
   auto advance = [&](Value *q) {
+    // This trip's state: a rule-6 inverse reads the trip's operands, and the loop below advances them one by one.
+    DenseMap<const Value *, Operand> tripState;
+    if (!six.empty())
+      for (PHINode *h : hphis)
+        if (isQ(h))
+          tripState[h] = ctx.operand(h);
     std::vector<Operand> next;
     for (PHINode *h : hphis)
       next.push_back(nextOf(h));
@@ -1577,7 +1622,30 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       spec.w = railOf(h->getType());   // R2: the tag rail
       std::string shape = std::string(nx.handle ? "h" : "l") + "h";
       spec.shape = shape == "hh" ? "" : shape;
-      set(h, Operand{ctx.emitTemplate(spec, {Operand{q, true}, nx, cur}), true});
+      Value *sel = ctx.emitTemplate(spec, {Operand{q, true}, nx, cur});
+      set(h, Operand{sel, true});
+      if (six.count(h) && nx.handle) {
+        // t = q ? U^-1(y') : y'. The arm's U^-1(y') is garbage the clean-up reads, noted as a use of the old rail so the
+        // clean-up follows it; U itself is uncomputed first (its _unc reads the old rail).
+        ctx.unc().setRole(ctx.unc().idOf(sel), Role::UserRegister);
+        if (sixSeeds.count(cur.v))
+          continue;
+        RailId old = ctx.unc().idOf(cur.v);
+        auto *Up = cast<Instruction>(h->getIncomingValueForBlock(latch));
+        auto inv = spine::inverseStep(
+            *Up, h, Operand{sel, true},
+            [&](Value *z) {
+              auto ts = tripState.find(z);
+              return ts != tripState.end() ? ts->second : ctx.operand(z);
+            },
+            [](Value *) { return false; });
+        Value *inner = ctx.emitTemplate(inv->spec, inv->ops);
+        ctx.unc().noteUse(old, cast<Instruction>(inner));
+        abi::TemplateSpec ss;
+        ss.op = "select";
+        ss.w = railOf(h->getType());
+        ctx.unc().cleanupBijective(old, ss, {Operand{q, true}, Operand{inner, true}, Operand{sel, true}});
+      }
     }
   };
 
@@ -1702,6 +1770,54 @@ void lowerCutoff(LoweringContext &ctx, Loop &L, unsigned K, std::optional<uint64
 }
 
 namespace exits {
+
+// Is the initial value of p a rail this function made for itself (a template result, or a classical
+// value cq_theta minted, rotated in place any number of times) that nothing reads once the loop is
+// entered? Its readers other than p and its own rotations must be phi incomings on edges no path
+// from the loop reaches (the zero-trip edge of the loop's guard).
+bool initDead(LoweringContext &ctx, Loop &L, const Value *init, const PHINode *p) {
+  auto isQ = [&](const Value *v) { return !isa<Constant>(v) && ctx.T.isQuantum(v, ctx.S); };
+  if (!isQ(init))
+    return true;   // a seed minted for the loop
+  SmallVector<const Instruction *, 4> A;
+  for (const Value *x = init;;) {
+    auto *I = dyn_cast<Instruction>(x);
+    if (!I)
+      return false;
+    A.push_back(I);
+    if (auto *CB = dyn_cast<CallInst>(I); CB && calls::classify(*CB, ctx.T, ctx.S) == calls::Class::Theta) {
+      if (isQ(CB->getArgOperand(1)))
+        return false;
+      x = CB->getArgOperand(0);
+      if (!isQ(x))
+        break;   // minted by this cq_theta
+      continue;
+    }
+    if (isa<BinaryOperator>(I) || isa<UnaryOperator>(I))
+      break;
+    return false;
+  }
+  DenseSet<const BasicBlock *> reach;
+  SmallVector<const BasicBlock *, 16> work{L.getHeader()};
+  while (!work.empty()) {
+    const BasicBlock *b = work.pop_back_val();
+    if (!reach.insert(b).second)
+      continue;
+    for (const BasicBlock *s : successors(b))
+      work.push_back(s);
+  }
+  for (const Instruction *a : A)
+    for (const Use &u : a->uses()) {
+      const User *usr = u.getUser();
+      if (usr == p || is_contained(A, usr))
+        continue;
+      auto *phi = dyn_cast<PHINode>(usr);
+      if (!phi || reach.count(phi->getIncomingBlock(u)))
+        return false;
+    }
+  return true;
+}
+
 
 void lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed) {
   Function &F = *L.getHeader()->getParent();
