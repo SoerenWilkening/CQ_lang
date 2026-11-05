@@ -332,8 +332,6 @@ void lowerCall(LoweringContext &ctx, CallBase &CB) {
   case Class::TemplateIntrinsic:
     if (isa<ConstrainedFPIntrinsic>(CB))
       return fenv::lowerConstrained(ctx, CB);   // a non-raising constrained op: the template in its chain's mode
-    if (auto *II = dyn_cast<IntrinsicInst>(&CB); II && II->getIntrinsicID() == Intrinsic::ptrmask)
-      report_fatal_error("cq: unimplemented: bus: llvm.ptrmask of an address rail", /*gen_crash_diag=*/false);
     if (CB.getType()->isVectorTy() || any_of(CB.args(), [](const Use &u) { return u->getType()->isVectorTy(); }))
       return aggr::lowerVectorOp(ctx, CB);   // rule 25: a vector is its lanes
     return lowerOpcode(ctx, CB);
@@ -446,7 +444,27 @@ Instruction *copyClassical(LoweringContext &ctx, Instruction &I) {
 }
 
 
+namespace {
+void dispatchOne(LoweringContext &ctx, Instruction &I);
+}
+
+// Rule 5 Memory: an original instruction that is a memory version change notes the first instruction its lowering
+// emitted (a load copy un-copied before that point precedes the change).
 void dispatch(LoweringContext &ctx, Instruction &I) {
+  IRBuilder<> &B = ctx.B();
+  BasicBlock *bb = B.GetInsertBlock();
+  Instruction *prev = B.GetInsertPoint() == bb->begin() ? nullptr : &*std::prev(B.GetInsertPoint());
+  dispatchOne(ctx, I);
+  if (!bus::versionChange(ctx, I))
+    return;
+  // Where its code begins, also when the lowering branched away from bb. Nothing emitted: nothing changed.
+  Instruction *first = prev ? prev->getNextNode() : bb->empty() ? nullptr : &bb->front();
+  if (first)
+    ctx.unc().noteVersionChange(first);
+}
+
+namespace {
+void dispatchOne(LoweringContext &ctx, Instruction &I) {
   if (isa<DbgInfoIntrinsic>(I))
     return;   // debug records carry no semantics; the original values they name are gone
   if (auto *CB = dyn_cast<CallBase>(&I)) {
@@ -475,22 +493,23 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
     return lowerMemoryAccess(ctx, I);
   case Instruction::GetElementPtr:
   case Instruction::AddrSpaceCast:
-    // Rule 20 Address arithmetic: with nothing tainted the getelementptr stays.
-    if (q) {
+    // Rule 20 Address arithmetic: with nothing tainted the getelementptr stays (a rail measured before it: rule 2).
+    if (q && any_of(I.operands(), [&](const Use &u) { return ctx.operand(u.get()).handle; })) {
       bindOperand(ctx, &I, bus::address(ctx, &I));
       return;
     }
     bindOperand(ctx, &I, Operand{copyClassical(ctx, I), false});
     return;
   case Instruction::PtrToInt:
-    if (q) {
-      bindOperand(ctx, &I, bus::address(ctx, I.getOperand(0)));   // rule 3: identity (a pointer is an i64)
+  case Instruction::IntToPtr:
+    // Rule 21: identities at 64 bits (to or from another width the trunc/zext template).
+    if (q && I.getType()->getScalarSizeInBits() == 64 && I.getOperand(0)->getType()->getScalarSizeInBits() == 64 &&
+        !vec && ctx.operand(I.getOperand(0)).handle) {
+      bindOperand(ctx, &I, ctx.operand(I.getOperand(0)));
       return;
     }
-    break;
-  case Instruction::IntToPtr:
-    if (q) {
-      bindOperand(ctx, &I, ctx.operand(I.getOperand(0)));   // rule 3: identity (a pointer is an i64)
+    if (q && !ctx.operand(I.getOperand(0)).handle) {
+      bindOperand(ctx, &I, Operand{copyClassical(ctx, I), false});
       return;
     }
     break;
@@ -533,10 +552,6 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
     if (q && onlyFactoredConditions(ctx, I))
       return;
     break;
-  case Instruction::ICmp:
-    if (q && I.getOperand(0)->getType()->isPointerTy())
-      report_fatal_error("cq: unimplemented: bus: icmp of an address rail", /*gen_crash_diag=*/false);
-    break;
   case Instruction::LandingPad:
   case Instruction::CleanupPad:
   case Instruction::CatchPad:
@@ -557,6 +572,7 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
   if (!I.getType()->isVoidTy())
     bindOperand(ctx, &I, Operand{n, false});
 }
+} // namespace
 
 } // namespace cq::spine
 

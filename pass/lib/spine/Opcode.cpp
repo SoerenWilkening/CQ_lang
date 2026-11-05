@@ -16,7 +16,6 @@
 
 #include "cq/Abi.h"
 #include "cq/Calls.h"
-#include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/CFG.h"
@@ -32,6 +31,8 @@ namespace cq {
 namespace {
 
 RailType rt(Type *t, const Value *at) {
+  if (t->isPointerTy())
+    return RailType{Kind::Int, 64};   // rule 21: a pointer is its address, an i64
   if (!t->isIntegerTy() && !t->isHalfTy() && !t->isBFloatTy() && !t->isFloatTy() && !t->isDoubleTy() && !t->isX86_FP80Ty())
     internalError("spine: a scalar rail type asked of a vector, pointer or fp128 (rules 21, 25: routed elsewhere)", at);
   return railTypeOf(t);
@@ -259,6 +260,14 @@ void lowerIntrinsic(LoweringContext &ctx, IntrinsicInst &II) {
   Intrinsic::ID id = II.getIntrinsicID();
   if (lowerHintIntrinsic(ctx, II))
     return;
+  if (id == Intrinsic::ptrmask) {   // rule 21: an integer template over the address
+    abi::TemplateSpec spec;
+    spec.op = "and";
+    spec.w = RailType{Kind::Int, 64};
+    if (!binary(ctx, spec, II.getArgOperand(0), II.getArgOperand(1), &II))
+      spine::bindOperand(ctx, &II, Operand{spine::copyClassical(ctx, II), false});
+    return;
+  }
   std::string op = intrinsicOp(id);
   if (op.empty())
     internalError("spine: lowerOpcode on an intrinsic with no template", &II);
@@ -429,7 +438,8 @@ void lowerOpcode(LoweringContext &ctx, Instruction &I) {
   }
 
   if (auto *cmp = dyn_cast<CmpInst>(&I)) {
-    if (!cmp->getOperand(0)->getType()->isIntegerTy() && !cmp->getOperand(0)->getType()->isFloatingPointTy())
+    if (!cmp->getOperand(0)->getType()->isIntegerTy() && !cmp->getOperand(0)->getType()->isFloatingPointTy() &&
+        !cmp->getOperand(0)->getType()->isPointerTy())   // rule 21: the integer compare of the addresses
       internalError("spine: a compare of non-scalar operands reached lowerOpcode (rule 3::lowerCompare)", &I);
     Operand x = ctx.operand(cmp->getOperand(0)), y = ctx.operand(cmp->getOperand(1));
     if (!x.handle && !y.handle) {
@@ -456,6 +466,9 @@ void lowerOpcode(LoweringContext &ctx, Instruction &I) {
 
   if (auto *ci = dyn_cast<CastInst>(&I)) {
     const char *op = castName(ci->getOpcode());
+    // Rule 21: ptrtoint and inttoptr to or from another width than 64 are the trunc/zext template.
+    if (isa<PtrToIntInst>(ci) || isa<IntToPtrInst>(ci))
+      op = rt(ci->getSrcTy(), &I).bits > rt(ci->getDestTy(), &I).bits ? "trunc" : "zext";
     if (!op)
       internalError("spine: a pointer cast reached lowerOpcode (rule 3)", &I);
     Operand x = ctx.operand(ci->getOperand(0));
@@ -518,7 +531,12 @@ void lowerTheta(LoweringContext &ctx, CallInst &call) {
   RailId id = ctx.unc().idOf(h);
   // Rotated: a register from here on (38). The role comes first: on a classically merged handle it
   // keeps the chosen arm on each path, which the gate then hits (cq-bv91).
-  ctx.unc().setRole(id, Role::UserRegister);
+  // Rule 2's fallback: a load copy a rotation acted on is frozen, never un-copied.
+  if (auto *lc = dyn_cast<CallInst>(h); lc && lc->getCalledFunction() &&
+                                        lc->getCalledFunction()->getName().starts_with("cqrt_qram_load_"))
+    ctx.unc().freezeLoadCopy(id);
+  else
+    ctx.unc().setRole(id, Role::UserRegister);
   ctx.unc().noteNonDiagonal(id, ry);
   spine::bindOperand(ctx, &call, Operand{h, true});
 }
@@ -574,9 +592,22 @@ void lowerMeasure(LoweringContext &ctx, CallInst &call) {
 
 namespace {
 
+// A rail a bus load made (rule 5 sentence 1).
+bool busLoadCopy(LoweringContext &ctx, const Value *y) {
+  auto bi = spine::shared(ctx).binds.find(y);
+  if (bi == spine::shared(ctx).binds.end() || bi->second.size() != 1 || !bi->second[0].handle)
+    return false;
+  auto *c = dyn_cast<CallInst>(bi->second[0].v);
+  const Function *G = c ? c->getCalledFunction() : nullptr;
+  return G && G->getName().starts_with("cqrt_qram_load_");
+}
+
 // The old value is a rail the rule may clean: a value this function computed into a rail of its
 // own (not an argument, a load, a phi or a classical select over handles, which alias other rails).
 bool cleanable(LoweringContext &ctx, Value *y) {
+  // Rule 5: a load copy is undone by its un-copy, never by rule 6, whatever re-binds it (an extractvalue, a freeze).
+  if (busLoadCopy(ctx, y))
+    return false;
   auto &binds = spine::shared(ctx).binds;
   auto bi = binds.find(y);
   if (bi == binds.end() || bi->second.size() != 1)
@@ -1115,44 +1146,6 @@ std::optional<Affine> affineIn(LoweringContext &ctx, Value *V, Value *X, unsigne
   return std::nullopt;
 }
 
-// V evaluated at X = x by constant folding of the original instructions between them; nullopt when V
-// reads a value other than X and constants, or an instruction that does not fold.
-std::optional<APInt> evalAt(Value *V, Value *X, Constant *x, const DataLayout &DL, DenseMap<Value *, Constant *> &memo,
-                            unsigned depth = 0) {
-  std::function<Constant *(Value *, unsigned)> ev = [&](Value *v, unsigned d) -> Constant * {
-    if (v == X)
-      return x;
-    if (auto *c = dyn_cast<Constant>(v))
-      return c;
-    auto *I = dyn_cast<Instruction>(v);
-    if (!I || d > 64 || I->mayHaveSideEffects() || I->mayReadFromMemory() || isa<PHINode>(I))
-      return nullptr;
-    if (auto it = memo.find(v); it != memo.end())
-      return it->second;
-    SmallVector<Constant *, 4> ops;
-    for (Value *o : I->operands()) {
-      if (isa<Function>(o)) {
-        ops.push_back(cast<Constant>(o));
-        continue;
-      }
-      Constant *c = ev(o, d + 1);
-      if (!c)
-        return nullptr;
-      ops.push_back(c);
-    }
-    Constant *r = ConstantFoldInstOperands(I, ops, DL);
-    memo[v] = r;
-    return r;
-  };
-  Constant *r = ev(V, depth);
-  if (auto *ci = dyn_cast_or_null<ConstantInt>(r))
-    return ci->getValue();
-  if (auto *cs = dyn_cast_or_null<ConstantStruct>(r))   // *.with.overflow: the value field
-    if (auto *ci = dyn_cast<ConstantInt>(cs->getOperand(0)))
-      return ci->getValue();
-  return std::nullopt;
-}
-
 // CR rule 6 on x against the composite update y' = f(g(x), x) (cq-12cr owner ruling, 127): the
 // garbage g, computed from x, is uncomputed by rule 5 first (its _unc reads x, so Uncompute orders it
 // before x's clean-up). y' = a*x + c + sum(+-rest) is a bijection in x iff a is odd; then
@@ -1167,26 +1160,8 @@ void compositeCleanup(LoweringContext &ctx, Instruction &I, Value *X, Operand yp
     internalError("spine: rule 6 composite update of a value that is no integer", &I);
   unsigned W = VT->getIntegerBitWidth();
   std::optional<Affine> f = affineIn(ctx, &I, X, W);
-  if (!f) {
-    Type *XT = X->getType();
-    if (!XT->isIntegerTy() || XT->getIntegerBitWidth() != W || W > 16)
-      return;
-    const DataLayout &DL = ctx.M.getDataLayout();
-    uint64_t n = uint64_t(1) << W;
-    std::vector<uint64_t> inv(n, ~uint64_t(0));
-    for (uint64_t xv = 0; xv < n; ++xv) {
-      DenseMap<Value *, Constant *> memo;
-      std::optional<APInt> y = evalAt(&I, X, ConstantInt::get(XT, xv), DL, memo);
-      if (!y || y->getBitWidth() != W)
-        return;   // F reads another value or does not fold: no inverse here
-      uint64_t yv = y->getZExtValue();
-      if (inv[yv] != ~uint64_t(0))
-        return;   // a collision: F is no bijection, x is kept (rule 6)
-      inv[yv] = xv;
-    }
-    report_fatal_error("cq: unimplemented: bus: rule 6 inverse table (a constant global read at a rail index)",
-                       /*gen_crash_diag=*/false);
-  }
+  if (!f)
+    return;   // rule 6 lists no other bijection: x is kept
   if (!f->a[0])
     return;   // an even multiplier: no inverse, x is kept
   abi::TemplateSpec spec;
@@ -1658,6 +1633,10 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
   DenseMap<Value *, SmallVector<const Instruction *, 2>> dynOf;   // cq-8101
   for (Value *Y : I.operands()) {
     SmallVector<const Instruction *, 2> dl;
+    // Rule 6, both operands dead: a load copy beside a rule-5-garbage y: both are garbage, no trigger (198).
+    if (cleanable(ctx, Y) && ruleFiveGarbage(ctx, Y) &&
+        any_of(I.operands(), [&](const Use &u) { return u.get() != Y && busLoadCopy(ctx, u.get()); }))
+      continue;
     if (!is_contained(dead, Y) && cleanable(ctx, Y) && deadAtCleanup(ctx, Y, ctx.operand(Y).v, &I, {}, &dl) &&
         !neededLater(Y)) {
       dead.push_back(Y);

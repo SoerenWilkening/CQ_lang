@@ -159,3 +159,10 @@ Entries 1 to 16 are from the flat-memory rulings (`wt/flat/rulings.md`, "Entries
 - Evidence: BACKEND_ABI.md §1.10, §1.11; checker/rt/rt_bus.c `tape_cstore`, tests/rt-bus `effect_cstore`.
 - Request: 1.11 to cross-reference 1.10's sentence.
 - Bead: cq-5c33
+## 32: the reference keeps x where rule 6 cleans it
+- Rule: 6 ("the old value is kept only when no such point exists": it escapes, it is the value or control rail of a kept
+  store, it is measured, or a reader follows a non-diagonal gate on its image).
+- Example: `y' = x + c` with x's only reader the add, y' the value rail of a kept store. x itself is not the store's
+  value rail; a clean-up point exists (y' stays live), so rule 6 cleans x. The reference's header lists x as kept.
+- Input: any; the C-oracle verdict agrees either way (the permutation part is the same), the kept multisets differ by x.
+- Checked with `--oracle c` until CQ_spec regenerates 32 or rule 6 names the case.

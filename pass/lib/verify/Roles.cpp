@@ -112,8 +112,11 @@ void coreRoles(Sig &S, const CallBase &CB) {
     S.res = Res::Known;
     break;
   case Core::QramStore:
-  case Core::QramSwap:
     R.append({Role::Read, C.hl ? Role::Classical : Role::Read, Role::Read});
+    S.res = Res::None;
+    break;
+  case Core::QramSwap:
+    R.append({Role::Read, C.hl ? Role::Classical : Role::Read, Role::Swap});
     S.res = Res::None;
     break;
   case Core::QramLoad:

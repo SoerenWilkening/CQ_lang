@@ -86,7 +86,7 @@ bool isInvertMarker(const Function *F) {
 // set as spine's isLibmIntrinsic (Classify.cpp), which sends each to calls::lowerLifted. The
 // templates (CR §1.2) cover the rest (fabs, sqrt, floor, fma, ...), which stay ordinary opcodes.
 std::optional<std::string> libmNameOf(const Function *F) {
-  if (!F || !F->isIntrinsic())
+  if (!F || !F->isIntrinsic() || F->arg_empty())
     return std::nullopt;
   static const std::map<Intrinsic::ID, const char *> names = {
       {Intrinsic::exp, "exp"},     {Intrinsic::exp2, "exp2"},   {Intrinsic::exp10, "exp10"},

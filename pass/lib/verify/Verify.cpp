@@ -74,6 +74,7 @@ public:
     handleInClassicalOp();
     railStates();
     uncOperands();
+    memoryRails();
   }
 
 private:
@@ -443,6 +444,10 @@ private:
           // reset before a prep) and not_i1 (rule 8 bracket on a bare i1 flag).
           set(S, V, writeResult(st, src, hasSources));
           break;
+        case Role::Swap:
+          // After a swap the rail holds what the cells held: nothing this analysis tracks, nothing it may reject.
+          set(S, V, (st & SX) | ((st & ~SX) ? uint8_t(SK | SM | SD | SF) : 0));
+          break;
         case Role::Rotate:
           if (rep && st == SM)
             report("inplace-on-frozen", "rotation of a measured rail", I);
@@ -675,6 +680,64 @@ private:
     return CB;
   }
 
+  // ---- freed-overtaken-copy, kept-rail-released (rule 5 Memory; rulings "Every _unc must leave 0") ----
+  // A bus access this module's IR shows as a memory version change (a call of another function may be one too, read
+  // as no change: a check fires only when the violation is certain).
+  bool isVersionChange(const Instruction &I) {
+    auto *CB = dyn_cast<CallBase>(&I);
+    if (!CB)
+      return false;
+    if (const Function *G = CB->getCalledFunction(); G && G->getName() == "__cq_alloc")
+      return true;
+    const Sig &S = Sigs.get(*CB);
+    return S.kind == Kind::Core && S.core &&
+           (S.core->op == abi::Core::QramStore || S.core->op == abi::Core::QramSwap ||
+            S.core->op == abi::Core::TapeEffect || S.core->op == abi::Core::TapeEffectW);
+  }
+
+  // A change on EVERY path from A to B within A's block (the one reading a must-check needs).
+  bool changeBetween(const Instruction &A, const Instruction &B) {
+    if (A.getParent() != B.getParent() || !A.comesBefore(&B))
+      return false;
+    for (const Instruction *X = A.getNextNode(); X && X != &B; X = X->getNextNode())
+      if (isVersionChange(*X))
+        return true;
+    return false;
+  }
+
+  void memoryRails() {
+    for (const Instruction &I : instructions(F)) {
+      auto *CB = dyn_cast<CallBase>(&I);
+      const Sig *Sg = CB ? &Sigs.get(*CB) : nullptr;
+      if (!Sg || Sg->kind != Kind::Core || !Sg->core)
+        continue;
+      if (Sg->core->op == abi::Core::Free && CB->arg_size() == 1) {
+        const CallBase *Load = dyn_cast<CallBase>(CB->getArgOperand(0));
+        const Sig *LS = Load ? &Sigs.get(*Load) : nullptr;
+        if (LS && LS->kind == Kind::Core && LS->core && LS->core->op == abi::Core::QramLoad && !LS->unc &&
+            changeBetween(*Load, I))
+          report("freed-overtaken-copy", "cqrt_free of a load copy a memory version change overtook (rule 5)", I);
+        continue;
+      }
+      if (Sg->core->op != abi::Core::QramStore)
+        continue;
+      SmallVector<const Value *, 2> kept{CB->getArgOperand(CB->arg_size() - 1)};
+      if (Sg->core->ctl)
+        kept.push_back(CB->getArgOperand(0));
+      for (const Value *V : kept)
+        for (const User *U : V->users()) {
+          auto *UC = dyn_cast<CallBase>(U);
+          const Sig *US = UC ? &Sigs.get(*UC) : nullptr;
+          if (!US || !UC->getParent() || UC->getParent() != I.getParent() || !I.comesBefore(UC))
+            continue;
+          bool freed = US->kind == Kind::Core && US->core && US->core->op == abi::Core::Free;
+          bool unc = (US->kind == Kind::Template || US->kind == Kind::Core) && US->unc && UC->getArgOperand(0) == V;
+          if (freed || unc)
+            report("kept-rail-released", "the value or control rail of a kept store released after it (rule 5)", *UC);
+        }
+    }
+  }
+
   // ---- unc-operand-mismatch ----
   void uncOperands() {
     std::map<std::string, std::vector<const CallBase *>> callsTo;
@@ -732,6 +795,13 @@ private:
               });
             if (outsOk && argsMatch(*Fwd, *CB, k, nullptr))
               matched = true;
+          }
+          // CR §1.4: a _ctl twin may take the predicate first, then outs, then the other arguments (205, 98).
+          for (unsigned k = 0; S.clone->ctl && Fwd->arg_size() && k + Fwd->arg_size() <= CB->arg_size() && !matched; ++k) {
+            bool same = sameOperand(Fwd->getArgOperand(0), CB->getArgOperand(0), Role::Word);
+            for (unsigned j = 1, e = Fwd->arg_size(); j < e && same; ++j)
+              same = sameOperand(Fwd->getArgOperand(j), CB->getArgOperand(k + j), Role::Word);
+            matched = same;
           }
           if (matched)
             break;
