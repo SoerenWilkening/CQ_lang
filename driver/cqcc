@@ -25,6 +25,7 @@ The whole program is one module (NORTHSTAR principle 3): -c makes one object fro
 Options:
   -cq-k=<fn>=<k>,...   per-function loop cutoff, passed through to cq-lower (repeatable)
   -cq-k-default=<k>    global loop cutoff, passed through to cq-lower
+  -cq-k2=<fn>=<k>,...  -cq-k2-default=<k>   the K2 byte bound (CR §0), passed through to cq-lower
   --cq-roots FILE      library-build roots, one clone name per line, passed through to cq-lower (rule 27)
   --backend LIB        a backend library for the final link: a path, -lname or -Ldir (repeatable)
   --cq-check           run `cqcheck user` (the C-oracle check) on the result; its exit status is cqcc's
@@ -132,6 +133,10 @@ def parse_args(argv):
         elif a == "-v":
             global VERBOSE
             VERBOSE = True
+        elif a.startswith(("-cq-k2=", "--cq-k2=", "-cq-k2-default=", "--cq-k2-default=")):
+            o["kflags"].append("-" + a.lstrip("-"))
+        elif a in ("-cq-k2", "--cq-k2", "-cq-k2-default", "--cq-k2-default"):
+            o["kflags"].append(f"-{a.lstrip('-')}={value(a)}")
         elif a.startswith(("-cq-k=", "--cq-k=")):
             o["kflags"].append("-cq-k=" + a.split("=", 1)[1])
         elif a.startswith(("-cq-k-default=", "--cq-k-default=")):
@@ -241,6 +246,23 @@ def bundle_needed(linked: Path, bundle, work: Path) -> bool:
     return bool(defined & declared)
 
 
+def libm_decls(linked: Path, bundle, work: Path) -> dict:
+    """The libm functions the bundle defines that the module's LLVM math intrinsics stand for and no declaration names."""
+    defined = set()
+    for f in bundle:
+        defined |= nm(f, ["--defined-only"], f"llvm-nm of the injection bundle {f.name}", work)
+    text = Path(linked).read_text()
+    types = {"f32": ("float", "f"), "f64": ("double", ""), "f80": ("x86_fp80", "l")}
+    out = {}
+    for op, t in re.findall(r"(?m)^declare\b[^@]*@llvm\.(exp|exp2|exp10|log|log2|log10|sin|cos|tan|asin|acos|atan|sinh|cosh|"
+                            r"tanh|pow)\.(f32|f64|f80)\(", text):
+        ty, sfx = types[t]
+        n = op + sfx
+        if ("_" + n in defined or n in defined) and not re.search(rf"(?m)^(declare|define)\b[^@]*@{n}\(", text):
+            out[n] = f"declare {ty} @{n}({ty}, {ty})\n" if op == "pow" else f"declare {ty} @{n}({ty})\n"
+    return out
+
+
 def main(argv) -> int:
     o = parse_args(argv)
     header = SPEC_DIR / "CQ.h"
@@ -279,8 +301,19 @@ def main(argv) -> int:
         else:
             run([tool("llvm-link"), "-S", *units, "-o", linked], "llvm-link of the user units")
         bundle = bundle_files()
-        if bundle and bundle_needed(linked, bundle, tmp):
-            run([tool("llvm-link"), "-S", linked, "--only-needed", *bundle, "-o", linked],
+        libm = libm_decls(linked, bundle, tmp) if bundle else {}
+        if bundle and (libm or bundle_needed(linked, bundle, tmp)):
+            # Rule 18: a math intrinsic is lifted from the libm body the bundle has; its declaration makes it needed.
+            extra = []
+            if libm:
+                text = Path(linked).read_text()
+                head = "".join(l + "\n" for l in text.splitlines() if l.startswith(("target datalayout", "target triple")))
+                used = ", ".join(f"ptr @{n}" for n in libm)
+                unit = work / "libm.ll"
+                unit.write_text(head + "".join(libm.values()) + f"@llvm.compiler.used = appending global [{len(libm)} x ptr] "
+                                f'[{used}], section "llvm.metadata"\n')
+                extra = [unit]
+            run([tool("llvm-link"), "-S", linked, *extra, "--only-needed", *bundle, "-o", linked],
                 "llvm-link with the injection bundle")
 
         # 3. The pass, reading the module from stdin so the output does not name a temporary path.

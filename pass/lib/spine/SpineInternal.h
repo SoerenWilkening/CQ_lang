@@ -98,8 +98,7 @@ struct Shared {
   llvm::Function *out = nullptr;       // where the new IR goes
   llvm::IRBuilder<> B;
   llvm::DenseMap<const llvm::Value *, llvm::SmallVector<Operand, 4>> binds;
-  // CR §1.4 (95, 109): a variadic clone's variadic actuals (its parameters past the fixed formals),
-  // a handle where the mask's digit is 1; calls::lowerVarargs spills them at llvm.va_start.
+  // CR §1.4: a variadic clone's block formal (calls::lowerVarargs stores it at llvm.va_start).
   llvm::SmallVector<Operand, 4> varargs;
   llvm::DenseMap<const llvm::BasicBlock *, llvm::BasicBlock *> blocks;
   std::unique_ptr<Uncompute> unc;
@@ -345,6 +344,8 @@ void dispatch(LoweringContext &, llvm::Instruction &);
 // this function minted (a rail a non-diagonal gate hit), a frozen result of a call it made, or the rule-6
 // image of such a rail (a template result whose dead operand rule 6 cleaned against it)?
 bool frozenRail(Shared &, llvm::Value *h);
+// A template result whose dead operand rule 6 cleaned against it.
+bool ruleSixImage(Shared &, llvm::Value *h);
 // The record of an in-place lowering's quantum returns, read by its in-module callers (calls::lowerLifted):
 // nullptr until F's in-place specialization was constructed (the plugin constructs a callee first unless
 // the calls form a cycle); frozen when every quantum value F returns is a frozen rail; registers: how many

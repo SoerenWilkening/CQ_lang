@@ -128,6 +128,11 @@ cq::TaintOptions readTaintOptions() {
     line = line.trim();
     if (line.empty())
       continue;
+    // Rule 27: a C name is a bodiless function a root list names (Q6); a clone name is a library-build root.
+    if (!line.starts_with("__cq_q_")) {
+      TO.listed.push_back(line.str());
+      continue;
+    }
     std::optional<cq::abi::CloneSpec> spec = cq::abi::parseClone(line);
     if (!spec)
       usageError("-cq-roots: not a clone name: '" + line + "'");
@@ -275,7 +280,7 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
     cq::TaintOptions TO = readTaintOptions();
     // Read before the identity exit so a malformed flag fails on every module.
     cq::loops::KOptions KO = readKOptions();
-    if (TO.roots.empty() && !callsCqSurface(M) && !referencesDeclaredClone(M))
+    if (TO.roots.empty() && TO.listed.empty() && !callsCqSurface(M) && !referencesDeclaredClone(M))
       return PreservedAnalyses::all();
 
     FunctionAnalysisManager &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();

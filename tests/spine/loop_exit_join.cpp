@@ -9,7 +9,7 @@
 // guard's skip edge to the same exit block, and give a classical phi of the exit block its loop
 // incoming from the block the unit ended in. The function is checked with the structural verifier,
 // the LLVM verifier, and by text. A unit with two or more exit edges into an exit block with a phi
-// must stop with cq: unimplemented (cq-qjm9; the reviewer's p1.ll and p4.ll; cq-9us4's a1.ll, where the
+// gets one cq-qjm9 note and runs on (the reviewer's p1.ll and p4.ll; cq-9us4's a1.ll, where the
 // loop sits in a quantum arm), run in a forked child. A unit whose header carries a planned classical
 // guard (cq-uevr, 26's shape) must emit it before the unit, the unit in its taken block.
 //
@@ -324,11 +324,11 @@ void expectUnimplemented(const std::string &c, const char *ir, const std::string
   int status = 0;
   waitpid(pid, &status, 0);
   std::printf("---- %s\n%s", c.c_str(), out.c_str());
-  if (!(WIFEXITED(status) && WEXITSTATUS(status) != 0 && WEXITSTATUS(status) != 3))
-    return fail(c, "the lowering did not stop (status " + std::to_string(status) + ")");
-  if (out.find("cq: unimplemented: spine: a loop unit with more than one exit edge") == std::string::npos ||
+  // Owner 2026-11-05: no stop: one note names the site and the code behind it runs on.
+  (void)status;
+  if (out.find("cq: note: unbuilt: spine: a loop unit with more than one exit edge") == std::string::npos ||
       out.find("cq-qjm9") == std::string::npos)
-    fail(c, "the stop is not the cq-qjm9 unimplemented");
+    fail(c, "no cq-qjm9 note");
   if (!std::regex_search(out, std::regex(phiRx)))
     fail(c, "the message does not print the exit block's phi");
 }
@@ -405,7 +405,7 @@ exit:
 )";
 
 // cq-9us4's a1.ll: the loop sits in the quantum arm of %q, so the unit continues at next(b, exit)
-// rather than at %join; its two exit edges (%brk, %latch) into %join must still stop.
+// rather than at %join; its two exit edges (%brk, %latch) into %join are noted too.
 const char *kArmExits = R"(
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

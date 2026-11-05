@@ -33,6 +33,8 @@ using llvm::StringRef;
 namespace cq {
 
 RailType railTypeOf(llvm::Type *t) {
+  if (t->isPointerTy())
+    return {Kind::Int, 64};   // rule 21: a pointer is its 64-bit address
   if (auto *it = llvm::dyn_cast<llvm::IntegerType>(t))
     return {Kind::Int, it->getBitWidth()};
   if (t->isHalfTy())

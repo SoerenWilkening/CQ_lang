@@ -314,6 +314,39 @@ _NAME = r'([-\w$.]+|"[^"]+")'
 _DECLARED = re.compile(r'^(?:declare\b[^@]*@' + _NAME + r'\(|@' + _NAME + r' = (?:\S+ )*?external\b)', re.M)
 
 
+_LIBM_INTRINSIC = re.compile(r'^declare\b[^@]*@llvm\.(exp|exp2|exp10|log|log2|log10|sin|cos|tan|asin|acos|atan|sinh|cosh|'
+                             r'tanh|pow)\.(f32|f64|f80)\(', re.M)
+_LIBM_TYPE = {"f32": ("float", "f"), "f64": ("double", ""), "f80": ("x86_fp80", "l")}
+
+
+def _libm_intrinsics(ll_text: str) -> List[Tuple[str, str]]:
+    """The libm functions the module's LLVM math intrinsics stand for (CR rule 18): (name, its declaration)."""
+    out = []
+    for op, t in _LIBM_INTRINSIC.findall(ll_text):
+        ty, sfx = _LIBM_TYPE[t]
+        params = f"{ty}, {ty}" if op == "pow" else ty
+        out.append((op + sfx, f"declare {ty} @{op}{sfx}({params})\n"))
+    return out
+
+
+def bundle_libm_decls(ll_text: str, bundle: Sequence[Path]) -> str:
+    """One small IR unit, linked before `--only-needed`, that makes it link the bundle's body of each libm function an
+    intrinsic of the module stands for (rule 18: lifted from its body whenever the module has one after injection), which
+    no call names: declarations held by @llvm.compiler.used (llvm-link drops an unused declaration). "" when none."""
+    defined = set()
+    for b in bundle:
+        defined |= set(_bundle_info(Path(b))[0])
+    mach = "-apple-" in _triple(ll_text)
+    declared = {(a or b).strip('"') for a, b in _DECLARED.findall(ll_text)}
+    want = [(n, d) for n, d in _libm_intrinsics(ll_text) if ("_" + n if mach else n) in defined and n not in declared]
+    if not want:
+        return ""
+    head = "".join(l + "\n" for l in ll_text.splitlines() if l.startswith(("target datalayout", "target triple")))
+    used = ", ".join(f"ptr @{n}" for n, _ in want)
+    return (head + "".join(d for _, d in want) + f"@llvm.compiler.used = appending global [{len(want)} x ptr] [{used}], "
+            'section "llvm.metadata"\n')
+
+
 def bundle_for(ll_text: str) -> List[Path]:
     """The injection bundle files to link into a module (cq-b041; CR rule 18, CLAUDE.md "Pipeline"):
     every bundle/manifest.json file, linked --only-needed, when the module declares without a body
@@ -322,6 +355,7 @@ def bundle_for(ll_text: str) -> List[Path]:
     if not bundle:
         return []
     names = {(a or b).strip('"') for a, b in _DECLARED.findall(ll_text)}
+    names |= {n for n, _ in _libm_intrinsics(ll_text)}
     if "-apple-" in _triple(ll_text):  # Mach-O symbol names carry a leading underscore
         names = {"_" + n for n in names}
     if any(names & _bundle_info(b)[0] for b in bundle):
@@ -495,7 +529,10 @@ def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[in
              "compiling the host calls' wrappers")
         _run([_tool("llvm-as"), str(d / "prog.ll"), "-o", str(linked)], "llvm-as")
         if bundle:
-            _run([_tool("llvm-link"), str(linked), "--only-needed", *map(str, bundle), "-o", str(linked)],
+            libm = bundle_libm_decls(text, bundle)
+            (d / "libm.ll").write_text(libm)
+            _run([_tool("llvm-link"), str(linked), *([str(d / "libm.ll")] if libm else []), "--only-needed",
+                  *map(str, bundle), "-o", str(linked)],
                  "llvm-link with the injection bundle")
         und = _run([_tool("llvm-nm"), "--undefined-only", "--format=just-symbols", str(linked)],
                    "llvm-nm").stdout.split()

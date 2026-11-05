@@ -11,6 +11,8 @@
 
 // Effects.h  (rules 16, 17, 23, 24)
 namespace cq::tape   { void lowerHostEffect(LoweringContext &, llvm::CallBase &);
+                       // Rule 19: main returning the rail r: the effect entry exit under an alloc_i1(true) seed.
+                       void lowerMainExit(LoweringContext &, Operand r, llvm::Type *ty);
                        void lowerNoreturn(LoweringContext &, llvm::CallBase &);
                        // cq-a63l (CR rule 16, "a result the program reads"; amendment on cq-arch): before
                        // the final taint, a deferred printf/fprintf (a host effect of some specialization)

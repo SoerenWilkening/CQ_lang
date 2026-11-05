@@ -165,13 +165,17 @@ void defineTwin(Module &M, Function &twin, Function &src) {
                       src.getName().str() + " (its outs, then the clone's arguments)",
                   &twin);
   unsigned nOuts = twin.arg_size() - src.arg_size();
+  // CR §1.4: a _ctl clone's twin is _ctl_unc(pred, outs..., args...).
+  std::optional<abi::CloneSpec> tspec = abi::parseClone(twin.getName());
+  unsigned first = tspec && tspec->ctl ? 1 : 0;   // the first out
+  auto twinFormal = [&](unsigned i) { return i < first ? twin.getArg(i) : twin.getArg(i + nOuts); };
   bool handleRet = srt || (src.getReturnType() == h && nOuts == 1);
   if (!handleRet && nOuts != 0)
     internalError("calls: calls::finalize: twin @" + twin.getName().str() + " does not match the clone @" +
                       src.getName().str() + " (an i32 handle result or a struct of fields, its arguments after)",
                   &twin);
   for (unsigned i = 0; i < src.arg_size(); ++i)
-    if (twin.getArg(i + nOuts)->getType() != src.getArg(i)->getType())
+    if (twinFormal(i)->getType() != src.getArg(i)->getType())
       internalError("calls: calls::finalize: twin @" + twin.getName().str() + " argument types differ from @" +
                         src.getName().str(),
                     &twin);
@@ -181,15 +185,16 @@ void defineTwin(Module &M, Function &twin, Function &src) {
 
   ValueToValueMapTy VM;
   for (unsigned j = 0; j < nOuts; ++j)
-    twin.getArg(j)->setName(nOuts == 1 ? "out" : "out" + std::to_string(j));
+    twin.getArg(first + j)->setName(nOuts == 1 ? "out" : "out" + std::to_string(j));
   for (unsigned i = 0; i < src.arg_size(); ++i) {
-    VM[src.getArg(i)] = twin.getArg(i + nOuts);
-    twin.getArg(i + nOuts)->setName(src.getArg(i)->getName());
+    VM[src.getArg(i)] = twinFormal(i);
+    twinFormal(i)->setName(src.getArg(i)->getName());
   }
   SmallVector<ReturnInst *, 4> rets;
   CloneFunctionInto(&twin, &src, VM, CloneFunctionChangeType::LocalChangesOnly, rets);
   twin.setAttributes(AttributeList());
-  twin.setCallingConv(CallingConv::C);
+  // §1.4: a twin is a clone: it keeps the original's calling convention and unnamed_addr; internal to its module.
+  twin.setCallingConv(src.getCallingConv());
   twin.setLinkage(GlobalValue::InternalLinkage);
 
   SmallVector<Instruction *, 4> dead;
@@ -276,7 +281,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
           internalError("calls: calls::finalize: a field-wise clone return with more handle fields than its twin's outs",
                         R);
         for (Value *rv : results)
-          retarget(rv, twin.getArg(j), R);
+          retarget(rv, twin.getArg(first + j), R);
         ++j;
         if (results.front() != fields[k])
           fieldPhis.push_back(fp);
@@ -296,7 +301,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
         results.insert(ret);
       }
       for (Value *rv : results)
-        retarget(rv, twin.getArg(0), R);
+        retarget(rv, twin.getArg(first), R);
     }
     ReturnInst::Create(C, nullptr, R->getIterator());
     R->eraseFromParent();
@@ -376,6 +381,15 @@ void defineTwins(Module &M) {
     }
     for (Function *T : todo) {
       Function *fwd = M.getFunction(T->getName().drop_back(4));   // "_unc"
+      std::optional<abi::CloneSpec> ts = abi::parseClone(T->getName());
+      if (!fwd && ts->mask.find('1') == std::string::npos && !ts->table) {
+        // The all-zero mask's twin: the own symbol returns its rail as it stands, so the twin recomputes through the
+        // _pure clone, the clone form.
+        abi::CloneSpec p = *ts;
+        p.unc = false;
+        p.pure = true;
+        fwd = M.getFunction(abi::name(p));
+      }
       if (!fwd || fwd->isDeclaration())
         continue;   // rule 27: whatever is linked defines it
       defineTwin(M, *T, *twinSource(M, *fwd));
@@ -392,7 +406,42 @@ void defineTwins(Module &M) {
 
 } // namespace
 
+// §1.4: every function, parameter and return attribute that states a memory, capture, nullness, range or purity fact is
+// dropped from the definition of every clone and lowered own symbol and from every call of one; `noundef` stays.
+static void dropFacts(Function &F) {
+  static const Attribute::AttrKind kinds[] = {
+      Attribute::Memory,    Attribute::ReadNone,  Attribute::ReadOnly, Attribute::WriteOnly,  Attribute::NoCapture,
+      Attribute::NonNull,   Attribute::Dereferenceable, Attribute::DereferenceableOrNull, Attribute::NoAlias,
+      Attribute::NoFree,    Attribute::NoSync,    Attribute::WillReturn, Attribute::Speculatable, Attribute::Range,
+      Attribute::Writable,  Attribute::DeadOnUnwind, Attribute::Initializes, Attribute::NoRecurse, Attribute::MustProgress};
+  for (Attribute::AttrKind k : kinds) {
+    F.removeFnAttr(k);
+    F.removeRetAttr(k);
+    for (unsigned p = 0; p < F.arg_size(); ++p)
+      F.removeParamAttr(p, k);
+  }
+  for (User *U : F.users())
+    if (auto *CB = dyn_cast<CallBase>(U); CB && CB->getCalledOperand() == &F)
+      for (Attribute::AttrKind k : kinds) {
+        CB->removeFnAttr(k);
+        CB->removeRetAttr(k);
+        for (unsigned p = 0; p < CB->arg_size(); ++p)
+          CB->removeParamAttr(p, k);
+      }
+}
+
 void finalize(Module &M) {
+  auto lowered = [](Function &F) {
+    for (Instruction &I : instructions(F))
+      if (auto *CB = dyn_cast<CallBase>(&I))
+        if (Function *callee = CB->getCalledFunction();
+            callee && (isAbiSymbol(callee->getName()) || callee->getName().starts_with("__cq_")))
+          return true;
+    return false;
+  };
+  for (Function &F : M)
+    if (!F.isDeclaration() && (isClone(F) || lowered(F)))
+      dropFacts(F);
   SmallVector<Function *, 8> clones;
   for (Function &F : M) {
     if (!isClone(F))

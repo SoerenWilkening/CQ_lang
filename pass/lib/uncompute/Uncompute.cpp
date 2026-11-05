@@ -262,6 +262,7 @@ struct Uncompute::Impl {
     unsigned group = kNone;            // U2: the call group this rail is a member of
     bool explicitKept = false;         // U2: setRole gave this rail a kept role itself
     bool storeKept = false;            // rule 5 sentence 3: the value or control rail of a kept store
+    bool loadCall = false;             // rule 18: the result of a clone call that loads from the bus (noteLoadsBus)
     // cq-lshe (CR rule 9, §0): the kept merges that keep this rail where they choose it. It stays
     // resolvable: its item runs under the classical predicate "no keeper chose it" (a re-branch on the
     // conditions that chose the arm), placed after its own uses (not those through a keeper).
@@ -301,8 +302,10 @@ struct Uncompute::Impl {
     CallInst *fwd;
     SmallVector<RailId, 4> outs, members;
     SmallVector<Value *, 4> extra;
+    bool table = false;   // rules 19, 27: a table clone's twin frees the results itself
   };
   std::vector<CallGroup> groups;
+  DenseMap<const CallInst *, std::string> twinNames;
   // Rule 5 Memory: the memory version changes of the new IR (noteVersionChange), in the order noted.
   SmallVector<Instruction *, 16> versions;
   SmallVector<unsigned, 4> openStack;
@@ -1348,12 +1351,24 @@ struct Uncompute::Impl {
     return M.getOrInsertFunction(name, FT);
   }
 
+  // CR §1.4: a _ctl clone's twin takes the predicate first: _ctl_unc(pred, outs..., args...).
+  static bool ctlTwin(const CallInst *fwd) {
+    const Function *F = fwd->getCalledFunction();
+    std::optional<abi::CloneSpec> s = F ? abi::parseClone(F->getName()) : std::nullopt;
+    return s && s->ctl && !s->unc;
+  }
+
   // name_unc spelled from the forward call (CR §1.2, §1.3): (out, args...) or (args...).
   FunctionCallee uncOf(CallInst *fwd, bool outFirst, IRBuilder<> &B) {
     SmallVector<Type *, 6> ps;
+    ArrayRef<Type *> params = fwd->getFunctionType()->params();
+    if (outFirst && ctlTwin(fwd)) {
+      ps.push_back(params.front());
+      params = params.drop_front();
+    }
     if (outFirst)
       ps.push_back(Type::getInt32Ty(fwd->getContext()));
-    for (Type *t : fwd->getFunctionType()->params())
+    for (Type *t : params)
       ps.push_back(t);
     FunctionType *FT = FunctionType::get(Type::getVoidTy(fwd->getContext()), ps, false);
     return twinOf(fwd, FT, B);
@@ -1365,15 +1380,22 @@ struct Uncompute::Impl {
                                     {rc->getArgOperand(0), B.getInt32(2)}));
       return {FT, u};
     }
+    if (auto it = twinNames.find(fwd); it != twinNames.end())
+      return declareFn(*fwd->getModule(), it->second, FT, fwd);
     return declareFn(*fwd->getModule(), (fwd->getCalledFunction()->getName() + "_unc").str(), FT, fwd);
   }
 
   static SmallVector<Value *, 6> argsOf(CallInst *fwd, Value *outFirst) {
     SmallVector<Value *, 6> a;
-    if (outFirst)
+    bool first = true, ctl = outFirst && ctlTwin(fwd);
+    if (outFirst && !ctl)
       a.push_back(outFirst);
-    for (Value *v : fwd->args())
+    for (Value *v : fwd->args()) {
       a.push_back(v);
+      if (first && ctl)
+        a.push_back(outFirst);
+      first = false;
+    }
     return a;
   }
 
@@ -1474,13 +1496,18 @@ struct Uncompute::Impl {
       LLVMContext &C = M.getContext();
       SmallVector<Type *, 8> ps;
       SmallVector<Value *, 8> args;
+      bool ctl = ctlTwin(fwd);
+      if (ctl) {
+        ps.push_back(fwd->getArgOperand(0)->getType());
+        args.push_back(fwd->getArgOperand(0));
+      }
       for (RailId o : cg.outs) {
         ps.push_back(Type::getInt32Ty(C));
         args.push_back(rails[o].handle);
       }
-      for (Value *a : fwd->args()) {
-        ps.push_back(a->getType());
-        args.push_back(a);
+      for (unsigned k = ctl ? 1 : 0; k < fwd->arg_size(); ++k) {
+        ps.push_back(fwd->getArgOperand(k)->getType());
+        args.push_back(fwd->getArgOperand(k));
       }
       for (size_t k = 0; k < cg.extra.size(); ++k) {
         ps.push_back(cg.extra[k]->getType());
@@ -1489,7 +1516,8 @@ struct Uncompute::Impl {
       FunctionType *TT = FunctionType::get(Type::getVoidTy(C), ps, false);
       track(B.CreateCall(twinOf(fwd, TT, B), args));
       FunctionType *FT = FunctionType::get(Type::getVoidTy(C), {Type::getInt32Ty(C)}, false);
-      Instruction *last = nullptr;
+      Instruction *last = &*std::prev(B.GetInsertPoint());
+      if (!cg.table)
       for (RailId o : cg.members)
         last = o == g ? emitRelease(g, B) : track(B.CreateCall(declareFn(M, "cqrt_free", FT, rails[o].handle),
                                                                {rails[o].handle}));
@@ -1751,6 +1779,12 @@ struct Uncompute::Impl {
   // A4); constant true emits the item plainly; otherwise the item is wrapped in a block of its own.
   void placeAt(RailId g, Pos pos, bool local, bool exists = false, bool selfClear = false) {
     Rail &r = rails[g];
+    // Rule 18: a memory version change before the twin's place: the results are KEPT and no twin is called.
+    if (r.loadCall && !r.cleanup && r.creator != kNone &&
+        overtakenAt(records[r.creator].forward, pos.bb, pos.before->getIterator())) {
+      r.role = Role::Kept;
+      return;
+    }
     // cq-lshe (CR rule 6): a clean-up reads its inverse's operands, which must exist wherever the item runs; one
     // whose operand is defined on some paths to pos only (an arm) gives way to g's own uncompute.
     if (r.cleanup && r.creator != kNone &&
@@ -2877,8 +2911,6 @@ RailId Uncompute::recordMerge(Instruction *merged) {
 SmallVector<RailId, 4> Uncompute::recordCall(CallInst *fwd, ArrayRef<Value *> outs, ArrayRef<Operand> extra,
                                              bool loadsBus) {
   Impl &I = *impl;
-  if (loadsBus)
-    noteUnbuilt("bus: recordCall of a callee that loads from the bus (rule 18)", fwd);
   if (!directOrResolved(fwd) || !fwd->getParent())
     internalError("uncompute: recordCall: the forward must be a direct call in a block", fwd);
   if (outs.empty())
@@ -2905,6 +2937,7 @@ SmallVector<RailId, 4> Uncompute::recordCall(CallInst *fwd, ArrayRef<Value *> ou
       internalError("uncompute: recordCall: a result handle that is not an instruction in a block", fwd);
   RailId lead = I.newRail(outs.front(), Role::Garbage, "recordCall");
   I.rails[lead].group = gi;
+  I.rails[lead].loadCall = loadsBus;
   I.addRecord(fwd, abi::TemplateSpec{}, ops, lead, RecKind::Call, false);
   SmallVector<RailId, 4> ids{lead};
   for (size_t k = 1; k < outs.size(); ++k) {
@@ -2919,6 +2952,15 @@ SmallVector<RailId, 4> Uncompute::recordCall(CallInst *fwd, ArrayRef<Value *> ou
   cg.outs.assign(ids.begin(), ids.end());
   return ids;
 }
+
+void Uncompute::recordTableCall(CallInst *fwd, ArrayRef<Value *> outs) {
+  SmallVector<RailId, 4> ids = recordCall(fwd, outs, {});
+  impl->groups[impl->rails[ids.front()].group].table = true;
+}
+
+void Uncompute::noteTwinName(CallInst *fwd, StringRef name) { impl->twinNames[fwd] = name.str(); }
+
+void Uncompute::noteLoadsBus(RailId r) { impl->rail(r, "noteLoadsBus").loadCall = true; }
 
 RailId Uncompute::recordBusLoad(CallInst *load, ArrayRef<Operand> ops) {
   Impl &I = *impl;

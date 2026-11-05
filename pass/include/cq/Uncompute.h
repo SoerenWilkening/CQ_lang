@@ -41,6 +41,14 @@ public:
   // results are KEPT and no twin is called.
   llvm::SmallVector<RailId, 4> recordCall(llvm::CallInst *fwd, llvm::ArrayRef<llvm::Value *> outs,
                                           llvm::ArrayRef<Operand> extra, bool loadsBus = false);
+  // Rule 18, §1.4: fwd calls an own symbol; its twin is spelled `name` (the all-zero mask's _unc), not after the callee.
+  void noteTwinName(llvm::CallInst *fwd, llvm::StringRef name);
+  // Rules 19, 27: the results of a table clone call: its twin zeroes and frees them (the caller frees none), called once
+  // after their last use.
+  void recordTableCall(llvm::CallInst *fwd, llvm::ArrayRef<llvm::Value *> outs);
+  // Rule 18: the rail r is a result of a call of a clone that loads from the bus: its twin runs after the last consumer
+  // and before the next version change on every path; where that change comes first r is KEPT and no twin is called.
+  void noteLoadsBus(RailId r);
   // Rule 5 sentence 1: `load` is a new-IR cqrt_qram_load_<W>[_hl][_controlled] whose operands are ops ([c,] m, addr).
   // Item: the same call's _unc(h, ops...) right after the last reader (last consumer and its _unc; before a
   // measurement of the consumer), then cqrt_free(h) iff no version change (noteVersionChange) lies between the load

@@ -3,6 +3,7 @@
 #include "BusInternal.h"
 
 #include "cq/Calls.h"
+#include "cq/Common.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/IR/InstIterator.h"
@@ -23,6 +24,18 @@ bool isSurface(const Function &G) {
   StringRef n = G.getName();
   return G.isDeclaration() && (n.starts_with("cq_theta_") || n.starts_with("cq_measure_") || n == "cq_phi" ||
                                n.starts_with("__cq_invert_"));
+}
+
+// Rule 26, §1.4: a call by name of a variadic function or of one with a byval formal makes bus stores (the block, the
+// copy) whatever the callee does.
+bool plainForm(const Function &G) {
+  return !G.isDeclaration() && (G.isVarArg() || any_of(G.args(), [](const Argument &A) { return A.hasByValAttr(); }));
+}
+
+// Rule 5: a format entry is no change. Rule 16 makes printf one always.
+bool formatEntry(const Function &G) {
+  LibFunc lf;
+  return libFuncOf(G, lf) && lf == LibFunc_printf;
 }
 
 // Rule 16: an allocation is a change; `free` is nothing.
@@ -81,10 +94,18 @@ bool bodyWrites(const TaintInfo &T, const Function &F, SmallVectorImpl<const Fun
         w = true;
         continue;
       }
-      if (G->isDeclaration())
-        w |= hostCallWrites(*CB);
-      else
+      if (plainForm(*G))
+        w = true;
+      if (G->isDeclaration()) {
+        if (formatEntry(*G))
+          continue;
+        w |= hostCallWrites(*CB) || T.listedRoot(*G);
+        for (const Specialization &S : T.specializations())
+          if (S.F == &F && T.isEffectEntry(*CB, S))
+            w = true;
+      } else {
         callees.push_back(G);
+      }
     }
   }
   return w;
@@ -155,8 +176,15 @@ bool versionChange(const LoweringContext &ctx, const Instruction &I) {
     return false;
   if (allocates(*G))
     return true;
-  if (G->isDeclaration())
-    return hostCallWrites(*CB);
+  if (plainForm(*G))
+    return true;
+  if (G->isDeclaration()) {
+    // An effect entry notes its change at the tape_effect call itself (Tape.cpp): the readers of its fields and of what
+    // precedes are un-copied before it (99). A format entry is none.
+    if (ctx.T.isEffectEntry(*CB, ctx.S) || formatEntry(*G))
+      return false;
+    return hostCallWrites(*CB) || ctx.T.listedRoot(*G);
+  }
   return writesMemory(ctx.T, *G);
 }
 

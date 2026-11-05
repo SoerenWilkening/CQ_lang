@@ -97,7 +97,7 @@ CASES = [
     # libm_k is "lower" (no §6 run): cqcheck user does not read llvm.used, which CQ_K emits (cq-tntm).
     ("libm_k", "k1", [], "lower", [r"call i32 @__cq_q_sin_1\(i32 %\w+, i32 53\)",
                                    r"call i32 @__cq_q_atan2_10\(i32 %\w+, double %\w+, i32 77\)"]),
-    ("libm_flag", "k4", ["-cq-k=expf=9"], "pass", [r"call i32 @__cq_q_expf_1\(i32 %\w+, i32 9\)"]),
+    ("libm_flag", "k4", ["-cq-k=expf=9"], "pass", [r"call i32 @cqrt_tape_effect_f32_controlled\("]),
     # cq-dxii: a classical loop writing into a QRAM or slot object is not pure classical (it reaches loops-classical;
     # the QRAM probes stop there until loops-classical builds rule 14 over QRAM stores, then they become "pass").
     # cq-99z6: the twin's memory footprint (everything the clone may read or write, by its body): a replayed
@@ -129,18 +129,18 @@ CASES = [
     # cq-ro82 (CR rules 14, 19, 27): a call in a rule-14 trip is under the trip rail (lowerInstruction's tripFlag), which
     # currentPredicate() does not see: a declared clone there is its _ctl form (main emitted __cq_q_erf_1 unguarded in
     # tk_decl's K trips), a lifted callee with a gate its _ctl clone, a host effect a controlled tape entry.
-    ("trip_ctl", "tk_decl", [], "pass", [r"define i64 @tk_decl\((?:(?!\n}\n)[\s\S])*call i32 @__cq_q_erf_1_ctl\(i32 %\d+, i32 %\d+, i32 4\)",
+    ("trip_ctl", "tk_decl", [], "pass", [r"define i64 @tk_decl\((?:(?!\n}\n)[\s\S])*call i32 @cqrt_tape_effect_f64_controlled\(",
                                          r"define i64 @tk_decl\((?:(?!\n}\n|@__cq_q_erf_1\()[\s\S])*\n}\n"]),
     ("trip_ctl", "tk_decl_arm", [], "pass", [r"\A(?![\s\S]*@__cq_q_cbrt_1\()"]),
     ("trip_ctl", "tk_lift", [], "pass", [r"call void @__cq_q_tc_phase_1_ctl\(i32 %\d+, i32 %\d+\)"]),
     ("trip_ctl", "tk_print", [], "pass", [r"call i32 @cqrt_tape_write_i32_controlled\("]),
     # cq-ro82: loops-classical's stops on lifted and declared calls in a case-3 trip and its exit arm are gone (the call
     # under the trip rail / the arm flag); a declared clone in a case-1 trip is a call group undone by the reverse loop.
-    ("trip_ctl", "t3_decl", [], "pass", [r"call i32 @__cq_q_erf_1_ctl\(i32 %\d+, i32 %\d+, i32 4\)"]),
+    ("trip_ctl", "t3_decl", [], "pass", [r"call i32 @cqrt_tape_effect_f64_controlled\("]),
     ("trip_ctl", "t3_lift", [], "pass", [r"call void @__cq_q_tc_phase_1_ctl\(i32 %\d+, i32 %\d+\)"]),
     ("trip_ctl", "t3_arm", [], "pass", [r"call void @__cq_q_tc_phase_1_b\d+_ctl\(i32 %\d+, i32 %\d+\)",
-                                        r"call i32 @__cq_q_erf_1_ctl\(i32 %\d+, i32 %\d+, i32 4\)"]),
-    ("trip_ctl", "t1_decl", [], "pass", [r"call void @__cq_q_erf_1_unc\(i32 %\d+, i32 %\d+, i32 4\)"]),
+                                        r"call i32 @cqrt_tape_effect_f64_controlled\("]),
+    ("trip_ctl", "t1_decl", [], "pass", [r"call i32 @cqrt_tape_effect_f64_controlled\("]),
 ]
 
 

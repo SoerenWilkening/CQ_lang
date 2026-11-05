@@ -228,8 +228,10 @@ private:
   void fenvAfterCall(CallBase &CB);
 
   // Specializations.
+  bool eventPrecedes(const CallBase &CB);
+  void propagateEvents();
   SpecState *getSpec(Function *F, std::vector<Lanes> formal, std::vector<Type *> tys, bool ctl, bool pure,
-                     std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals = {});
+                     std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals = {}, bool plain = false);
   void analyze(SpecState &S);
 
   // Per-value access within cur.
@@ -512,7 +514,7 @@ std::string lanesStr(const Lanes &l) {
 
 
 SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector<Type *> tys, bool ctl, bool pure,
-                             std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals) {
+                             std::vector<uint64_t> bounds, std::vector<unsigned> boundFormals, bool plain) {
   // A bound with no formal named (a library-build root read from its name): the quantum integer formals
   // in order, the reading §1.4's name gives.
   if (boundFormals.size() != bounds.size()) {
@@ -527,7 +529,7 @@ SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector
   key += "|";
   for (unsigned i = 0; i < formal.size(); ++i)
     key += lanesStr(formal[i]) + ",";
-  key += "|" + std::to_string(ctl) + std::to_string(pure);
+  key += "|" + std::to_string(ctl) + std::to_string(pure) + std::to_string(plain);
   for (size_t i = 0; i < bounds.size(); ++i)
     key += ":b" + std::to_string(boundFormals[i]) + "=" + std::to_string(bounds[i]);
   auto it = st.byKey.find(key);
@@ -542,7 +544,8 @@ SpecState *Analyzer::getSpec(Function *F, std::vector<Lanes> formal, std::vector
   S->bounds = std::move(bounds);
   S->boundFormals = std::move(boundFormals);
   S->declared = F->isDeclaration();
-  bool zero = !ctl && !pure && S->bounds.empty();
+  S->plain = plain;
+  bool zero = !ctl && !pure && !plain && S->bounds.empty();
   for (const Lanes &l : S->formal)
     zero = zero && l.none();
   S->inPlace = zero && !S->declared;
@@ -1384,6 +1387,8 @@ void Analyzer::transferLoad(LoadInst &LI) {
   // predicate in scope (rule 20) and an observable volatile load at a classical address (rule 24).
   bool host = hostObject(ptr) && !quantumScope(LI.getParent());
   bool volatileHost = LI.isVolatile() && observableVolatile(ptr) && !L(ptr).any();
+  if (!host && !volatileHost)
+    cur->busLoad = true;
   setL(&LI, host || volatileHost ? Lanes(n) : allLanes(n));
 }
 
@@ -1440,13 +1445,28 @@ std::optional<uint64_t> Analyzer::rangeBound(const Value *V) {
 
 
 
-void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool viaIntrinsic) {
+void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool viaIntrinsic) {
   // Key of the callee specialization from the actuals' lanes (rule 18). A pointer actual is one scalar digit.
   std::vector<Lanes> formal;
   std::vector<Type *> tys;
   bool anyQ = false;
+  // §1.4, rule 16: a variadic clone's formals are the fixed ones and the block (stored by the caller, the bus's); rule
+  // 26: a byval actual is the caller's fresh copy, a classical ptr. Both forms are spelled by the grammar and are bus
+  // stores of the caller, under the predicate like the call.
+  bool plain = !G->isDeclaration() && !viaIntrinsic && (G->isVarArg() || llvm::any_of(G->args(), [](const Argument &A) {
+                 return A.hasByValAttr();
+               }));
+  ArrayRef<Value *> actuals = actualsIn;
+  if (G->isVarArg() && !G->isDeclaration() && actuals.size() > G->arg_size())
+    actuals = actuals.take_front(G->arg_size());
+  if (plain) {
+    cur->writesOuter = true;
+    cur->anyQuantum = true;
+  }
   for (unsigned i = 0; i < actuals.size(); ++i) {
     Lanes l = L(actuals[i]);
+    if (plain && i < G->arg_size() && G->getArg(i)->hasByValAttr())
+      l.reset();
     formal.push_back(l);
     tys.push_back(actuals[i]->getType());
     anyQ = anyQ || l.any();
@@ -1461,9 +1481,10 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
       bool covers = true;
       for (unsigned i = 0; i < formal.size() && covers; ++i)
         covers = m.formal[i].size() == formal[i].size() && !formal[i].test(m.formal[i]);
-      bool inPlace = !m.ctl && m.bounds.empty() && llvm::none_of(m.formal, [](const Lanes &l) { return l.any(); });
+      bool inPlace = !plain && !m.ctl && m.bounds.empty() &&
+                     llvm::none_of(m.formal, [](const Lanes &l) { return l.any(); });
       if (covers && !inPlace) {
-        SpecState *C = getSpec(G, m.formal, tys, m.ctl, false, m.bounds);
+        SpecState *C = getSpec(G, m.formal, tys, m.ctl, false, m.bounds, {}, plain);
         recordCallee(CB, C);
         if (!CB.getType()->isVoidTy())
           setL(&CB, C->declared ? allLanes(lanesOf(CB.getType())) : C->ret);
@@ -1474,7 +1495,7 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
         formal = m.formal;
     }
   }
-  if (!anyQ && !underQ) {
+  if (!anyQ && !underQ && !plain) {
     // Classical call: the in-place specialization of the callee (the function's own symbol, §1.4).
     std::vector<Lanes> z;
     for (Type *T : tys)
@@ -1491,8 +1512,8 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
   // test reads the callee's specialization without the flag.
   bool ctl = false;
   if (underQ) {
-    SpecState *probe = getSpec(G, formal, tys, false, false, {});
-    if (probe->nonPure || probe->hasTheta || probe->hasPhi || probe->hasEffect || probe->writesOuter)
+    SpecState *probe = getSpec(G, formal, tys, false, false, {}, {}, plain);
+    if (plain || probe->nonPure || probe->hasTheta || probe->hasPhi || probe->hasEffect || probe->writesOuter)
       ctl = true;
   }
   std::vector<uint64_t> bounds;
@@ -1510,7 +1531,7 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool v
     bounds.clear();
     boundFormals.clear();
   }
-  SpecState *C = getSpec(G, formal, tys, ctl, false, bounds, boundFormals);
+  SpecState *C = getSpec(G, formal, tys, ctl, false, bounds, boundFormals, plain);
   recordCallee(CB, C);
   if (!CB.getType()->isVoidTy()) {
     Lanes r = C->ret;
@@ -1543,17 +1564,23 @@ static bool mayReachLongjmp(const Function *G) {
 }
 
 
-// Rule 16, recognised by the callee's attributes and semantics, never by name: a call that may act
-// on the host beyond its pointer arguments. It may write memory other than its arguments' (a
-// stream, errno, a global the library owns), throw, or not return. A call whose only writes go
-// through its pointer arguments (frexp, modf, remquo: memory(argmem: write)) computes into the
-// caller's memory: with a quantum argument it is a declared clone (rule 27), not a tape entry.
-static bool hostEffectBeyondArgs(const CallBase &CB) {
-  MemoryEffects ME = CB.getMemoryEffects().getWithoutLoc(IRMemLocation::ArgMem);
-  return !ME.onlyReadsMemory() || CB.mayThrow() || !CB.willReturn();
-}
-
 void Analyzer::declaredClone(CallBase &CB, Function *G, ArrayRef<Value *> actuals) { lift(CB, G, actuals, false); }
+
+// Rule 16's stream calls: every <stdio.h> function, input and output alike, and the POSIX descriptor calls, except the
+// string formatters (injected and lifted when the bundle has them).
+static bool streamCall(StringRef n) {
+  static const char *names[] = {
+      "fopen",    "freopen",  "fclose",  "fflush",   "setbuf",   "setvbuf", "fprintf", "printf",  "vfprintf", "vprintf",
+      "fscanf",   "scanf",    "vfscanf", "vscanf",   "fgetc",    "getc",    "getchar", "fgets",   "gets",     "fputc",
+      "putc",     "putchar",  "fputs",   "puts",     "ungetc",   "fread",   "fwrite",  "fgetpos", "fseek",    "fsetpos",
+      "ftell",    "rewind",   "clearerr","feof",     "ferror",   "perror",  "remove",  "rename",  "tmpfile",  "tmpnam",
+      "open",     "close",    "read",    "write",    "lseek",    "getline", "getdelim","fdopen",  "fileno",   "popen",
+      "pclose",   "fseeko",   "ftello",  "dprintf",  "vdprintf", "flockfile","funlockfile"};
+  for (const char *x : names)
+    if (n == x)
+      return true;
+  return false;
+}
 
 // <fenv.h> (C17 7.6) as rule 23 rail operations (eff-fenv), never a declared clone. Point-wise:
 // fenvCur is the state before the call and becomes the state after it. A change of a fact by a
@@ -1760,6 +1787,8 @@ void Analyzer::transferCall(CallBase &CB) {
   }
   if (isMeasure(G)) {
     cur->hasMeasure = true;
+    if (blockCT(CB.getParent()) || cur->ctl)
+      cur->taintedMeasure = true;   // rulings Q3: rule 18's "measures"
     cur->anyQuantum = true;
     return;
   }
@@ -1826,10 +1855,24 @@ void Analyzer::transferCall(CallBase &CB) {
       for (Value *A : actuals)
         q = q || L(A).any();
       if (q) {
-        if (Function *Body = st.M->getFunction(*lib); Body && !Body->isDeclaration())
+        Function *Body = st.M->getFunction(*lib);
+        if (Body && !Body->isDeclaration()) {
           lift(CB, Body, actuals, true);
-        else
-          lift(CB, G, actuals, true); // declared clone named after the libm function
+          return;
+        }
+        if (llvm::is_contained(st.opts.listed, *lib)) {
+          lift(CB, G, actuals, true);   // rule 27: named after the libm function
+          return;
+        }
+        // Q5: no body after injection and on no root list: rule 16's effect entry of the libm name.
+        if (cur->effectEntries.insert(&CB).second)
+          st.changed = true;
+        cur->hasEffect = true;
+        cur->anyQuantum = true;
+        if (rn && !CB.use_empty()) {
+          setL(&CB, allLanes(rn));
+          cur->readsEffect = true;
+        }
         return;
       }
     }
@@ -1903,6 +1946,15 @@ void Analyzer::transferCall(CallBase &CB) {
       st.longjmpUnderQuantum = true;
       st.changed = true;
     }
+    if ((blockCT(CB.getParent()) || cur->ctl) && cur->aborts.insert(&CB).second)
+      st.changed = true;   // rule 16: an abort event
+    if (G->isDeclaration() && !blockCT(CB.getParent()) && !cur->ctl) {
+      bool q = false;
+      for (Value *A : actuals)
+        q = q || L(A).any();
+      if (q && cur->effectEntries.insert(&CB).second)   // rule 16: the effect entry of its name, then abort_i1
+        st.changed = true;
+    }
     return;
   }
   if (G->getName() == "raise" && actuals.size() == 1) {
@@ -1946,37 +1998,119 @@ void Analyzer::transferCall(CallBase &CB) {
     lift(CB, G, actuals, false);
     return;
   }
-  // A body-less callee: host effect (a library function the target knows, with side effects beyond
-  // its pointer arguments when the call is quantum: hostEffectBeyondArgs), or a declared clone
-  // (rule 27) when the call is quantum.
-  // Darwin spells some libc symbols "\01_name" (99: fwrite, fputs): the C name is what the target
-  // library knows.
-  LibFunc LF;
+  // A callee with no body (rule 16; a listed one is rule 27's, whatever its arguments).
   StringRef cname = G->getName();
   if (cname.starts_with("\x01_"))
     cname = cname.drop_front(2);
-  bool known = st.TLI->getLibFunc(cname, LF);
   if (isFenvCall(cname)) {
     transferFenvCall(CB, cname, actuals, rn);
     return;
   }
-  bool readNone = G->doesNotAccessMemory() || G->onlyReadsMemory();
-  bool quantumCall = false;
-  for (Value *A : actuals)
-    if (L(A).any())
-      quantumCall = true;
-  if (known && !readNone && !(quantumCall && !hostEffectBeyondArgs(CB))) {
-    cur->hasEffect = true; // tape entry (rule 16) when quantum or under a quantum predicate
-    if (quantumCall)
-      cur->anyQuantum = true;
-    return;
-  }
-  if (quantumCall) {
+  if (llvm::is_contained(st.opts.listed, cname)) {
     declaredClone(CB, G, actuals);
     return;
   }
-  if (!readNone)
-    cur->hasEffect = true;
+  bool qArg = false, ptrArg = false;
+  for (Value *A : actuals) {
+    qArg = qArg || L(A).any();
+    ptrArg = ptrArg || A->getType()->isPtrOrPtrVectorTy();
+  }
+  bool qPred = blockCT(CB.getParent()) || cur->ctl;
+  // Pure: with classical arguments under a quantum predicate it is executed unguarded and merged (rule 9).
+  if (CB.doesNotAccessMemory() && CB.willReturn() && !qArg)
+    return;
+  // Ordinary host call: made as it stands.
+  if (!qArg && !qPred && !(streamCall(cname) && ptrArg) && !eventPrecedes(CB))
+    return;
+  // Effect entry (a format entry for printf). Its result the program reads is the _<W> entry's rail, KEPT.
+  if (cur->effectEntries.insert(&CB).second)
+    st.changed = true;
+  cur->hasEffect = true;
+  cur->anyQuantum = true;
+  if (rn && !CB.use_empty()) {
+    setL(&CB, allLanes(rn));
+    cur->readsEffect = true;
+  }
+}
+
+// Rule 16: may a tape or abort event precede the call? One from which the call is reachable in its function's CFG, or
+// its function is called after an event (propagateEvents).
+bool Analyzer::eventPrecedes(const CallBase &CB) {
+  if (st.calledAfter.count(cur->F))
+    return true;
+  auto hasEvent = [&](const CallBase &X) {
+    if (cur->effectEntries.count(&X) || cur->aborts.count(&X))
+      return true;
+    auto it = cur->callees.find(&X);
+    if (it != cur->callees.end())
+      for (SpecState *C : it->second)
+        if (C->hasEventT)
+          return true;
+    if (const Function *G = X.getCalledFunction(); G && G->isDeclaration() && llvm::is_contained(st.opts.listed, G->getName()))
+      return true;   // a declared clone counts
+    if (!X.getCalledFunction() && !X.isInlineAsm())
+      return true;   // an indirect callee counts
+    return false;
+  };
+  FnInfo &fi = fn(CB.getFunction());
+  for (const BasicBlock *BB : fi.rpo)
+    for (const Instruction &I : *BB)
+      if (auto *X = dyn_cast<CallBase>(&I); X && X != &CB && hasEvent(*X) && isPotentiallyReachable(X, &CB, nullptr, fi.DT.get(), fi.LI.get()))
+        return true;
+  // A call of itself on a cycle: an entry of this very call precedes it on the next trip.
+  return cur->effectEntries.count(&CB) != 0;
+}
+
+// Rule 16: the facts of the least fixpoint, per round: which specializations have an event (themselves or through a
+// callee), whether the module has one, and which functions are called after one.
+void Analyzer::propagateEvents() {
+  bool any = false;
+  for (auto &S : st.specs) {
+    bool ev = S->hasEventT || !S->effectEntries.empty() || !S->aborts.empty();
+    for (auto &[CB, v] : S->callees)
+      for (SpecState *C : v)
+        ev = ev || C->hasEventT;
+    if (!S->declared)
+      for (const BasicBlock &BB : *S->F)
+        for (const Instruction &I : BB)
+          if (auto *X = dyn_cast<CallBase>(&I)) {
+            if (const Function *G = X->getCalledFunction()) {
+              if (G->isDeclaration() && llvm::is_contained(st.opts.listed, G->getName()))
+                ev = true;
+            } else if (!X->isInlineAsm()) {
+              ev = true;
+            }
+          }
+    if (ev != S->hasEventT) {
+      S->hasEventT = ev;
+      st.changed = true;
+    }
+    any = any || ev;
+  }
+  if (any && !st.moduleHasEvent) {
+    st.moduleHasEvent = true;
+    st.changed = true;
+  }
+  if (!st.moduleHasEvent)
+    return;
+  auto add = [&](const Function *F) {
+    if (st.calledAfter.insert(F).second)
+      st.changed = true;
+  };
+  for (Function &F : *st.M)
+    if (!F.isDeclaration() && (!F.hasLocalLinkage() || F.hasAddressTaken()))
+      add(&F);
+  for (auto &S : st.specs) {
+    if (S->declared)
+      continue;
+    SpecState *saved = cur;
+    cur = S.get();
+    for (auto &[CB, v] : S->callees)
+      for (SpecState *C : v)
+        if (!C->declared && (st.calledAfter.count(S->F) || eventPrecedes(*CB)))
+          add(C->F);
+    cur = saved;
+  }
 }
 
 void Analyzer::transfer(Instruction &I) {
@@ -2279,6 +2413,8 @@ void Analyzer::resetAnalysis() {
   st.byKey.clear();
   st.changed = false;
   st.longjmpUnderQuantum = false;
+  st.calledAfter.clear();
+  st.moduleHasEvent = false;
   st.fenvSaved.clear();
   cur = nullptr;
   localChanged = false;
@@ -2417,8 +2553,20 @@ void Analyzer::solve() {
     for (SpecState *S : reached())
       if (!done.count(S))
         st.changed = true;
+    propagateEvents();
     // Transitive gate facts (rule 19's non-pure test, effects).
     for (auto &S : st.specs) {
+      bool bl = S->busLoad, nt = S->taintedMeasure || S->readsEffect;
+      for (auto &[CB, v] : S->callees)
+        for (SpecState *C : v) {
+          bl = bl || C->busLoadT;
+          nt = nt || C->noTwinT;
+        }
+      if (bl != S->busLoadT || nt != S->noTwinT) {
+        S->busLoadT = bl;
+        S->noTwinT = nt;
+        st.changed = true;
+      }
       bool np = S->hasTheta || S->hasPhi || S->hasEffect || S->writesOuter;
       for (auto &[CB, v] : S->callees)
         for (SpecState *C : v)
@@ -2522,6 +2670,8 @@ std::string Analyzer::buildMask(SpecState &S) {
     }
     m += l.any() ? '1' : '0';
   }
+  if (S.plain && S.F->isVarArg())
+    m += '0';   // §1.4: the block, a classical ptr
   return m;
 }
 
@@ -2596,7 +2746,8 @@ void Analyzer::finish() {
     SmallVector<SpecState *, 16> w;
     for (auto &S : st.specs) {
       // cq-s2zz (rule 18): an effectful clone whose own result needs its twin recomputes through its _pure.
-      if (S->reachable && S->needsTwin && S->effectful && !S->declared && !S->inPlace)
+      // Rule 18, §1.4: an own symbol's twin always recomputes through its _pure clone (the own symbol returns its rail).
+      if (S->reachable && S->needsTwin && (S->effectful || S->inPlace) && !S->declared)
         w.push_back(S.get());
       if (S->reachable && S->needsTwin && !S->declared)
         for (auto &[CB, v] : S->callees)
@@ -2627,6 +2778,7 @@ void Analyzer::finish() {
     P.pure = pure;
     P.bounds = S->bounds;
     P.boundFormals = S->boundFormals;
+    P.plain = S->plain;
     st.published.push_back(P);
     st.publishedState.push_back(S);
   };
@@ -2647,7 +2799,7 @@ void Analyzer::finish() {
     st.tainted.insert(S->F);
   }
   for (SpecState *S : pureNeeded)
-    if (S->reachable && !S->inPlace)
+    if (S->reachable)
       publish(S, true);
 }
 
@@ -2660,7 +2812,7 @@ namespace cq {
 using namespace taintimpl;
 
 bool Specialization::isEntry() const {
-  if (!F || F->isDeclaration() || ctl || pure || !bounds.empty())
+  if (!F || F->isDeclaration() || ctl || pure || plain || !bounds.empty())
     return false;
   return mask.find('1') == std::string::npos;
 }
@@ -2989,10 +3141,27 @@ const llvm::Value *TaintInfo::hostObjectOf(const llvm::Instruction &access, cons
 }
 
 bool TaintInfo::afterEvent(const llvm::CallBase &CB, const Specialization &S) const {
-  (void)stateOf(needImpl(impl), S);
-  (void)CB;
-  report_fatal_error("cq: unimplemented: bus: afterEvent", /*gen_crash_diag=*/false);
+  const ImplState &I = needImpl(impl);
+  const SpecState *SS = stateOf(I, S);
+  return SS->effectEntries.count(&CB) || I.calledAfter.count(SS->F);
 }
+
+bool TaintInfo::isEffectEntry(const llvm::CallBase &CB, const Specialization &S) const {
+  return stateOf(needImpl(impl), S)->effectEntries.count(&CB) != 0;
+}
+
+bool TaintInfo::listedRoot(const llvm::Function &F) const {
+  if (!F.isDeclaration())
+    return false;
+  llvm::StringRef n = F.getName();
+  if (n.starts_with("\x01_"))
+    n = n.drop_front(2);
+  return llvm::is_contained(needImpl(impl).opts.listed, n);
+}
+
+bool TaintInfo::loadsBus(const Specialization &S) const { return stateOf(needImpl(impl), S)->busLoadT; }
+
+bool TaintInfo::noTwinByEffects(const Specialization &S) const { return stateOf(needImpl(impl), S)->noTwinT; }
 
 bool TaintInfo::needsCtl(const llvm::Function &F) const {
   const ImplState &I = needImpl(impl);

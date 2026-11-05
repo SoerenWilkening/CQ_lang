@@ -1270,14 +1270,9 @@ bool Walker::emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigne
   Type *rty = rv->getType();
   bool fieldwise = false;
   unsigned nLeaves = 0;
-  bool fat = rty->isPointerTy() && ctx.T.resultQuantum(ctx.S, 0);   // rule 21 (85): {tag, idx}
   // Rule 26 (cq-jkq8): the fields are the union of the returns' packings, this return's value split there.
   SmallVector<unsigned, 4> pcuts = rty->isIntegerTy() ? spine::resultIntCuts(*ctx.S.F) : SmallVector<unsigned, 4>{};
-  if (fat) {
-    pcuts.clear();
-    nLeaves = 2;
-    fieldwise = true;
-  } else if (pcuts.size() > 2 && st) {
+  if (pcuts.size() > 2 && st) {
     nLeaves = pcuts.size() - 1;   // cq-0umd: a packed integer result's fields
     fieldwise = true;
   } else if (rty->isAggregateType() || rty->isVectorTy()) {
@@ -1297,8 +1292,6 @@ bool Walker::emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigne
     SmallVector<Operand, 4> leaves;
     leaves = pcuts.size() > 2 ? spine::packFields(ctx, rv, pcuts) : aggregateFields(ret, rv);
     auto leafTy = [&](unsigned k) -> Type * {
-      if (fat)
-        return Type::getInt32Ty(ctx.M.getContext());
       if (pcuts.size() > 2)
         return IntegerType::get(ctx.M.getContext(), pcuts[k + 1] - pcuts[k]);
       return spine::resultFieldTypes(*ctx.S.F)[k];
@@ -1308,7 +1301,7 @@ bool Walker::emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigne
     for (unsigned k = 0; k < leaves.size(); ++k) {
       const Operand &o = leaves[k];
       Value *v = o.v;
-      bool rq = fat || ctx.T.resultQuantum(ctx.S, k);
+      bool rq = ctx.T.resultQuantum(ctx.S, k);
       if (o.handle && !rq)
         internalError("spine: a clone result field that is a rail where taint records it classical", ret);
       if (!o.handle && rq) {
@@ -1464,6 +1457,19 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
       // Copied out on each incoming edge already (returnCopyOut): v is the phi of the result rails.
       if (!op.handle || CRT != handleTy(ctx.M.getContext()))
         internalError("spine: a return phi copied out per edge that is not a handle of the clone's type", ret);
+    } else if (!op.handle && CRT == handleTy(ctx.M.getContext()) && ctx.T.resultQuantum(ctx.S, 0)) {
+      // A classical value on this path of a result taint records quantum: a seed rail holding it (rule 7).
+      Value *lit = v;
+      if (lit->getType()->isPointerTy())
+        lit = B.CreatePtrToInt(lit, Type::getInt64Ty(ctx.M.getContext()));
+      CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(lit->getType())}, {lit});
+      ctx.unc().setRole(ctx.unc().recordSeed(f), Role::Result);
+      v = f;
+    } else if (op.handle && spine::ruleSixImage(sh, op.v) && !calls::hasTwin(ctx.T, ctx.S)) {
+      // 204: a result that is a rule-6 image cannot be uncomputed: it is returned directly (no twin reads it).
+      if (CRT != handleTy(ctx.M.getContext()))
+        internalError("spine: a clone with a quantum result whose return type is not the handle type", ret);
+      ctx.unc().setRole(ctx.unc().idOf(op.v), Role::Result);
     } else if (op.handle) {
       if (CRT != handleTy(ctx.M.getContext()))
         internalError("spine: a clone with a quantum result whose return type is not the handle type", ret);
@@ -1701,7 +1707,12 @@ void Walker::emitTerminator(BasicBlock *b) {
     } else if (Value *rv = ret->getReturnValue()) {
       Operand op = ctx.operand(rv);
       Value *v = op.v;
-      if (op.handle) {
+      if (op.handle && sh.orig->getName() == "main") {
+        // Rule 19: a main that returns a rail makes the effect entry exit with it as its field under an alloc_i1(true)
+        // seed, then returns 0.
+        tape::lowerMainExit(ctx, op, rv->getType());
+        v = ConstantInt::get(sh.out->getReturnType(), 0);
+      } else if (op.handle) {
         // Rule 19 (cq-i9wk): an in-module caller keeps a frozen result as its own register; any other
         // result is a clone's, cleaned by its twin.
         noteEntryReturn(spine::frozenRail(sh, op.v), t);
@@ -1930,10 +1941,9 @@ void Walker::emitBlock(BasicBlock *b) {
           }))
         continue;
       if (count_if(exits, [&](const auto &e) { return e.second == to; }) > 1 && !to->phis().empty())
-        cq::unimplementedAt(__FILE__, __LINE__,
-                            "spine: a loop unit with more than one exit edge into an exit block with a phi the loop "
-                            "module did not bind (the loop contract does not say which exit edge was taken; cq-qjm9)",
-                            &*to->phis().begin());
+        noteUnbuilt("spine: a loop unit with more than one exit edge into an exit block with a phi the loop module did "
+                    "not bind (the loop contract does not say which exit edge was taken; cq-qjm9)",
+                    &*to->phis().begin());
     }
     // Every exiting block's output block is where the loop module left the builder, the block the
     // exit edges leave from (cq-qctz): a phi of an exit block the loop module did not bind (a
@@ -2341,28 +2351,11 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
       else
         classicalComposites.push_back({A, ops});   // rebuilt as one value in the entry block (below)
     }
-    if (F.isVarArg()) {
-      // CR §1.4 (95, 109; cq-tqev): the variadic actuals after the fixed formals' fields, fields of the clone's
-      // formal list like the fixed ones (calls::formalLayout): a scalar is one parameter, its digit the mask's
-      // next; a pointer is a pointer formal of taint's T4 ABI, the caller's raw pointer (its digits describe the
-      // pointee) or, where its address is no host pointer, the triple. Each is the value llvm.va_start spills
-      // into the save area (calls::lowerVarargs), where the va_arg code reads it back.
-      size_t d = 0;
-      for (unsigned j = 0; j < F.arg_size(); ++j) {
-        Argument *Aj = F.getArg(j);
-        SmallVector<unsigned, 4> cj = Aj->getType()->isIntegerTy() ? spine::unpackCuts(Aj) : SmallVector<unsigned, 4>{};
-        d += cj.size() > 2 ? cj.size() - 1 : T.fieldMask(Aj, S).size();
-      }
-      SmallVector<Type *, 4> vts = calls::variadicTypes(T, S, &F);
-      for (unsigned k = 0; k < vts.size(); ++k) {
-        if (p >= C->arg_size() || d >= S.mask.size())
-          internalError("spine: a clone with fewer parameters than its formals' fields", C);
-        Argument *P = C->getArg(p++);
-        bool q = S.mask[d++] == '1';
-        if (q)
-          ctx.unc().recordExternal(P, Role::UserRegister);   // the caller's rail: never freed here
-        sh.varargs.push_back(Operand{P, q});
-      }
+    if (S.plain && F.isVarArg()) {
+      // CR §1.4: the block's classical ptr, after the fixed formals (calls::lowerVarargs reads it at va_start).
+      if (p >= C->arg_size())
+        internalError("spine: a variadic clone with no block parameter", C);
+      sh.varargs.push_back(Operand{C->getArg(p++), false});
     }
     if (fenv::cloneCarriesEnv(ctx.T, S)) {
       // E1 (CR rule 23, 82): the caller's mode and flags, the two trailing parameters.
@@ -2467,6 +2460,13 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
 } // namespace cq
 
 namespace cq::spine {
+
+bool ruleSixImage(Shared &sh, Value *h) {
+  auto it = sh.hist.find(h);
+  if (it == sh.hist.end() || !it->second.tmpl)
+    return false;
+  return any_of(it->second.ops, [&](const Operand &o) { return o.handle && sh.ruleSixCleaned.count(o.v); });
+}
 
 bool frozenRail(Shared &sh, Value *h) {
   SmallPtrSet<Value *, 8> seen;

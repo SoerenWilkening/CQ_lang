@@ -1,38 +1,20 @@
 // Module eff-tape (cq-w1-eff-tape): CR rule 16, host effects and noreturn arms; BACKEND_ABI §1.11.
 //
-// lowerHostEffect: a side-effecting host call the compiler does not lift becomes one tape entry with
-// its predicate (the current block's flag, none when the quantum part is top). The host call itself
-// is never executed by the lowered program; the backend performs the entries at the end of the shot.
-//  - The tape: one cqrt_tape_alloc() per output function, at the start of its entry block, made by the
-//    first entry the function records (47: "the function's output tape").
-//  - printf (recognized by TargetLibraryInfo, name and signature, never by name alone): a format entry
-//    cqrt_tape_fmt[_controlled]([c,] t, fmt), then one field per variadic argument in order (47, 138):
-//    a quantum scalar is cqrt_tape_write_<W>[_controlled]([c,] t, h) -> h', a fresh write-only tape rail
-//    (kept, never freed or uncomputed: Role::Tape); a classical scalar is cqrt_tape_write_<W>_lit(t,
-//    lit); a classical pointer converted by %s is cqrt_tape_write_str_lit(t, s) (the backend copies the
-//    string at call time). The fields of a controlled entry are controlled by the same flag; literal
-//    fields have no controlled form (the entry's predicate covers them).
-//  - A classical host effect that a tape point precedes (owner ruling 2026-11-02, cq-t8oo / cq-64lv; the
-//    tape-order rule of calls::classify) arrives here with no predicate: printf, fputs and fwrite as above,
-//    puts(s) as the format entry "%s\n" with s a string field, putchar(c) as "%c" with c a field; any
-//    other is unimplemented below (an effect entry has only the controlled form).
-//  - Any other host effect under a quantum predicate is an effect entry (102):
-//    cqrt_tape_effect_controlled(c, t, name), name the callee as a string constant @.cq.effect.<name>,
-//    then the same fields for its arguments. Only the controlled form exists (an unconditional effect is
-//    the real host call), so an effect entry with a quantum predicate of top is unimplemented.
-//  - Unimplemented (an internal error, nothing emitted): a used result (the call never runs, so its
-//    value is unknown); a quantum or non-classical pointer argument; a classical pointer that is not a
-//    %s conversion of printf or a constant C string of a readonly parameter of an effect; a function
-//    pointer argument (a callback); kill/signal-family callees other than raise (raise(sig): the delivery
-//    entry, then the module's handler as a _ctl clone call, or the abort arm, lowerRaise, 102); an entry inside a _ctl clone. An entry inside a plain clone is
-//    the clone's own tape entry (67); inside a _pure clone (what a twin recomputes through) it is dropped.
-//
-// Orchestrator decisions under CR rule 16 / §1.3 (owner may override) are recorded on the bead.
+// lowerHostEffect (rule 16): a host call taint made an entry is one call sequence on the function's tape t (one
+// cqrt_tape_alloc at the entry of each function that records an entry; 47): the fields, then
+// cqrt_tape_effect[_<W>]_controlled(c, t, name). c is the predicate in scope or an alloc_i1(true) seed freed right after
+// the effect call. The _<W> form is used when the program reads the result, the rail it returns: KEPT. name is the C
+// identifier as @.cq.effect.<name>. The fields are the arguments in order: a classical one a tape_write_<W>_lit, a rail a
+// tape_write_<W> field (Role::Tape, kept), a pointer its address (i64), a vector its lanes; a buffer or string is never
+// expanded. printf is the format entry tape_fmt[_controlled]([c,] t, fmt) with its variadic arguments as fields by
+// promoted IR type (47, 138; rulings2 C: all of them, excess ones too). A _pure clone records nothing. The effect call
+// is the memory version change (rule 5; a format entry is none).
 #include "cq/Effects.h"
 
 
 #include "cq/Abi.h"
 #include "cq/Aggregates.h"
+#include "../../bus/BusInternal.h"
 #include "cq/Calls.h"
 #include "cq/Common.h"
 #include "cq/Predicate.h"
@@ -80,14 +62,6 @@ const Function *calleeOf(const CallBase &CB) {
 
 bool isThetaSurface(const Function *F) {
   return F && F->isDeclaration() && F->getName().starts_with("cq_theta_") && F->arg_size() == 2;
-}
-
-bool nonClassicalPointer(LoweringContext &ctx, const Value *p) {
-  if (!p->getType()->isPointerTy())
-    return false;
-  if (!isa<Constant>(p) && ctx.T.isQuantum(p, ctx.S))
-    return true;
-  return !isa<ConstantPointerNull>(p) && !ctx.T.hostObjectOf(p, ctx.S);
 }
 
 // ------------------------------------------------------------------ the tape
@@ -185,20 +159,6 @@ bool printfPlan(const Value *fmt, SmallVectorImpl<Consume> &plan, std::string &p
   return true;
 }
 
-// A constant C string with its NUL inside the object.
-bool constantCString(const Value *p) {
-  StringRef s;
-  if (!getConstantStringInfo(p, s, /*TrimAtNul=*/false))
-    return false;
-  return s.contains('\0');
-}
-
-// A classical pointer value as an i64 literal field (rule 16 fields: a FILE * or any other classical host
-// pointer is its ptrtoint, rule 25: a pointer is a 64-bit word).
-void emitPointerValue(LoweringContext &ctx, Value *p, Value *tape) {
-  Value *w = ctx.B().CreatePtrToInt(p, Type::getInt64Ty(ctx.M.getContext()));
-  ctx.emitCore(abi::CoreSpec{abi::Core::TapeWriteLit, RailType{Kind::Int, 64}}, {tape, w});
-}
 
 // One scalar field: a rail is cqrt_tape_write_<W>[_controlled] -> a fresh write-only tape rail (kept, never
 // freed or uncomputed: Role::Tape); a classical value is cqrt_tape_write_<W>_lit (the entry's predicate
@@ -234,33 +194,30 @@ void leafTypes(Type *t, SmallVectorImpl<Type *> &out) {
 
 
 
-// One field of an entry, argument a of CB. conv is printf's conversion character for it ('*' a width or
-// precision; 0 for an effect entry). A conversion that does not match its argument's type is undefined
-// behaviour (C17 7.21.6.1p9), outside the domain: the field is the argument as it is, and the backend's
-// printf reads it as the host's would.
-void emitField(LoweringContext &ctx, CallBase &CB, unsigned a, char conv, Value *tape, Value *flag) {
+// One field of an entry: the scalar argument, a pointer its address (rule 21: an i64 literal or address rail), a vector
+// its lanes, an aggregate its scalar fields.
+void emitField(LoweringContext &ctx, CallBase &CB, unsigned a, Value *tape, Value *flag) {
   Value *v = CB.getArgOperand(a);
   Type *ty = v->getType();
-  if (ty->isPointerTy())
-    report_fatal_error("cq: unimplemented: bus: a pointer field of an effect entry (rule 16)", /*gen_crash_diag=*/false);
+  Type *I64 = Type::getInt64Ty(ctx.M.getContext());
+  if (ty->isPointerTy()) {
+    scalarField(ctx, tape, flag, bus::address(ctx, v), I64);
+    return;
+  }
   if (ty->isIntegerTy() || ty->isFloatingPointTy()) {
     scalarField(ctx, tape, flag, ctx.operand(v), ty);
     return;
   }
-  // A vector is its lanes (rule 25), an aggregate its scalar fields (rule 26).
   SmallVector<Type *, 4> tys;
   leafTypes(ty, tys);
   SmallVector<Operand, 4> ops = aggr::flattenResult(ctx, v);
   if (ops.size() != tys.size())
     internalError("eff-tape: a composite field whose leaves do not match its type", &CB);
   for (unsigned k = 0; k < ops.size(); ++k) {
-    if (tys[k]->isPointerTy()) {
-      if (ops[k].handle)
-        internalError("eff-tape: a pointer leaf of a composite field bound to a rail", &CB);
-      emitPointerValue(ctx, ops[k].v, tape);
-      continue;
-    }
-    scalarField(ctx, tape, flag, ops[k], tys[k]);
+    if (tys[k]->isPointerTy() && !ops[k].handle)
+      scalarField(ctx, tape, flag, Operand{ctx.B().CreatePtrToInt(ops[k].v, I64), false}, I64);
+    else
+      scalarField(ctx, tape, flag, ops[k], tys[k]->isPointerTy() ? I64 : tys[k]);
   }
 }
 
@@ -276,50 +233,6 @@ Constant *effectName(Module &M, StringRef name) {
   gv->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
   gv->setAlignment(Align(1));
   return gv;
-}
-
-// The C stream stdout (the function's tape, 99): a load of the C library's stdout object. Orchestrator
-// decision under CR rule 16 (owner may override): the stream object is recognised by its C library
-// symbol (Darwin's __stdoutp, the ISO name stdout), as TargetLibraryInfo recognises the callee; any
-// other stream is unimplemented.
-bool isStdout(const Value *v) {
-  auto *ld = dyn_cast<LoadInst>(v);
-  auto *gv = ld ? dyn_cast<GlobalVariable>(ld->getPointerOperand()) : nullptr;
-  return gv && gv->isDeclaration() && (gv->getName() == "__stdoutp" || gv->getName() == "stdout");
-}
-
-// A private constant C string g holding f (a format the pass makes).
-Constant *formatGlobal(Module &M, StringRef g, StringRef f) {
-  if (GlobalVariable *gv = M.getNamedGlobal(g))
-    return gv;
-  Constant *init = ConstantDataArray::getString(M.getContext(), f, /*AddNull=*/true);
-  auto *gv = new GlobalVariable(M, init->getType(), /*isConstant=*/true, GlobalValue::PrivateLinkage, init, g);
-  gv->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
-  gv->setAlignment(Align(1));
-  return gv;
-}
-
-Constant *formatConstant(Module &M, StringRef f) {
-  return formatGlobal(M, f == "%c" ? ".cqfmt.putchar" : ".cqfmt.puts", f);
-}
-
-Constant *fwriteFormat(Module &M, uint64_t n) {
-  std::string g = ".cqfmt.fwrite" + std::to_string(n);
-  if (GlobalVariable *gv = M.getNamedGlobal(g))
-    return gv;
-  std::string f;
-  for (uint64_t i = 0; i < n; ++i)
-    f += "%c";
-  Constant *init = ConstantDataArray::getString(M.getContext(), f, /*AddNull=*/true);
-  auto *gv = new GlobalVariable(M, init->getType(), /*isConstant=*/true, GlobalValue::PrivateLinkage, init, g);
-  gv->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
-  gv->setAlignment(Align(1));
-  return gv;
-}
-
-bool signalFamily(StringRef n) {
-  return n == "raise" || n == "kill" || n == "signal" || n == "sigaction" || n == "pthread_kill" ||
-         n == "killpg" || n == "sigqueue";
 }
 
 // ------------------------------------------------------------------ noreturn look-ahead
@@ -485,14 +398,6 @@ SmallVector<std::pair<Value *, Type *>, 4> laterInPlaceTargets(LoweringContext &
   return out;
 }
 
-void requireEntry(LoweringContext &ctx, CallBase &CB, const char *what) {
-  if (CB.getFunction() != ctx.S.F)
-    internalError(std::string("eff-tape: ") + what + " inside an inlined callee (rule 19 inlines one-block "
-                  "callees under a top predicate only, where no call is under a quantum predicate)", &CB);
-  if (!ctx.S.isEntry())
-    unimplemented(std::string("eff-tape: ") + what + " inside a clone (its _unc twin would replay it)", &CB);
-}
-
 // The abort arm (rule 16): snapshots of the rails later modified in place, then abort_i1(flag), the flag kept.
 void abortArm(LoweringContext &ctx, CallBase &CB, Value *flag) {
   auto targets = laterInPlaceTargets(ctx, CB);
@@ -530,260 +435,79 @@ void abortArm(LoweringContext &ctx, CallBase &CB, Value *flag) {
   ctx.unc().setRole(ctx.unc().idOf(flag), Role::Abort);
 }
 
-// The default action of a signal on the target (x86-64: Darwin's <sys/signal.h>, Linux's <asm/signal.h>).
-enum class SigDefault { Terminate, Ignore, Stop };
-SigDefault signalDefault(const Module &M, int64_t sig) {
-  // A number that names no signal makes raise fail with EINVAL and deliver nothing (POSIX raise).
-  Triple t(M.getTargetTriple());
-  if (!t.isOSDarwin() && sig >= 32 && sig <= 64)
-    return SigDefault::Terminate;   // the real-time signals (SIGRTMIN..SIGRTMAX)
-  if (sig < 1 || sig > 31)
-    return SigDefault::Ignore;
-  if (t.isOSDarwin()) {
-    switch (sig) {
-    case 16: case 19: case 20: case 23: case 28: case 29:   // URG, CONT, CHLD, IO, WINCH, INFO
-      return SigDefault::Ignore;
-    case 17: case 18: case 21: case 22:                     // STOP, TSTP, TTIN, TTOU
-      return SigDefault::Stop;
-    default:
-      return SigDefault::Terminate;
-    }
-  }
-  {   // Linux, and any other x86-64 OS: the generic (asm-generic) numbering
-    switch (sig) {
-    case 17: case 18: case 23: case 28:                     // CHLD, CONT, URG, WINCH
-      return SigDefault::Ignore;
-    case 19: case 20: case 21: case 22:                     // STOP, TSTP, TTIN, TTOU
-      return SigDefault::Stop;
-    default:
-      return SigDefault::Terminate;
-    }
-  }
-}
-
-// CR rule 16 (102): raise(sig) under a quantum predicate, read against the module's signal table (the
-// signal(sig, h) calls of the module: closed world, as taint reads it). The delivery is an effect entry
-// (cqrt_tape_effect_controlled(flag, tape, "raise"), the signal number its field). Then: a handler h the
-// module installs for sig runs as h(sig) under the predicate (taint's _ctl clone of h, calls::lowerLiftedVia);
-// SIG_IGN installed (or no handler and a default action of ignore) has nothing more; SIG_DFL installed or no
-// handler, with a default action of terminate, is the abort arm (abort_i1(flag), 45).
-// Installations on the tape (rule 16 signal table): a signal/bsd_signal/sigset/sigaction call under a quantum
-// predicate (or after a tape point) is never performed on the host, so a later raise reads the handler as a
-// merged value: the installed one where the installation's predicate held, the earlier one elsewhere.
-struct TapedInstall {
-  const CallBase *call;   // the original call
-  std::optional<Pred> q;  // its quantum predicate (none: after a tape point, it always installs)
-  Value *sig;             // its signal number (new IR, classical)
-  Value *handler;         // the handler it installs (new IR, classical pointer)
-  Value *applies;         // classical i1: the call installs at all (sigaction with a non-null act), or nullptr
-};
-std::map<const Function *, std::pair<WeakVH, std::vector<TapedInstall>>> &tapedInstalls() {
-  static std::map<const Function *, std::pair<WeakVH, std::vector<TapedInstall>>> m;
-  return m;
-}
-
-bool isInstall(StringRef n) { return n == "signal" || n == "sigaction" || n == "bsd_signal" || n == "sigset"; }
-
-
-
-
-
-// CR rule 16 (102): raise(sig) under a quantum predicate. The delivery is an effect entry
-// (cqrt_tape_effect_controlled(flag, tape, "raise"), the signal number its field). Then the handler runs:
-//  - The classical-table case (102): a constant sig whose only installation in the module is one signal()
-//    call of a defined handler, SIG_IGN or SIG_DFL: the handler's _ctl clone under the predicate, nothing, or
-//    (a terminating default) the abort arm.
-//  - Otherwise (several installations, a run-time signal number, sigaction, a handler the module does not
-//    define) the handler is read from the host's table at run time and dispatched as rule 19 dispatches a
-//    function pointer over taint's candidates (TaintInfo::calleeCandidates): each candidate's _ctl clone in
-//    its own classical arm; SIG_DFL with a terminating default is the abort arm; SIG_IGN, a stop default and a
-//    host handler the module does not define have the delivery entry alone (the host handler runs when the
-//    backend performs it). A quantum signal number (taint: every handler is a candidate) enumerates the
-//    signal numbers: each one's handler is read at run time and dispatched under flag & (sig == s), the
-//    abort arm under flag & OR of the (sig == s) whose default terminates and whose table holds SIG_DFL.
-// Handlers installed under a quantum predicate are tape entries (signalTableEntry): the host table holds
-// the classical installations.
-void lowerRaise(LoweringContext &, CallBase &, Value *, bool = false) {
-  report_fatal_error("cq: unimplemented: bus: raise through the signal table (rule 16)", /*gen_crash_diag=*/false);
-}
-
-
-
-
-// A buffer argument (CR rule 16 fields: fwrite's, write's): its cells, one i8 field per byte up to the
-// length's upper bound, each _controlled under len > j when the length is quantum; a run-time classical
-// length is a classical loop of field writes. elemSize * count bytes (count the original call's operand;
-// elemSize a constant, or 0 when the byte count is count itself).
-void bufferFields(LoweringContext &, CallBase &, const Value *, const Value *, const Value *, Value *, Value *) {
-  report_fatal_error("cq: unimplemented: bus: a buffer field of an effect entry (rule 16)", /*gen_crash_diag=*/false);
-}
-
-
-// A signal-table call (signal, sigaction, bsd_signal, sigset, kill, killpg, pthread_kill, sigqueue) that
-// goes on the tape: an effect entry with its arguments as fields (rule 16). kill and its kin send a signal
-// to a process or thread the call names at replay. A table installation under a quantum predicate makes the
-// handler a merged value that a later raise of that signal dispatches over (rule 16 signal table); when the
-// module raises no signal the installation may concern, nothing reads the table in the program and the
-// entry is the whole construction.
-void signalTableEntry(LoweringContext &ctx, CallBase &CB, const Function &F) {
-  StringRef n = F.getName();
-  bool installs = isInstall(n);
-  Value *flag = ctx.currentFlag();
-  if (n == "raise" && !flag && CB.arg_size() == 1) {
-    // A classical raise on the tape (tape order): its delivery entry under the |1> seed, the handler the host
-    // table holds dispatched in program order (lowerRaise's run-time table).
-    CallInst *one = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 1}},
-                                 {ConstantInt::getTrue(ctx.M.getContext())});
-    ctx.unc().recordSeed(one);
-    lowerRaise(ctx, CB, one, /*classicalRaise=*/true);
-    return;
-  }
-  Value *ctl = flag;
-  if (!ctl) {
-    CallInst *one = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 1}},
-                                 {ConstantInt::getTrue(ctx.M.getContext())});
-    ctx.unc().recordSeed(one);
-    ctl = one;
-  }
-  Value *tape = tapeOf(ctx);
-  ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffect, {}, /*ctl=*/true}, {ctl, tape, effectName(ctx.M, n)});
-  for (unsigned a = 0; a < CB.arg_size(); ++a)
-    emitField(ctx, CB, a, 0, tape, flag);
-  if (installs && CB.arg_size() >= 2)
-    report_fatal_error("cq: unimplemented: bus: a handler installation in the signal table (rule 16)",
-                       /*gen_crash_diag=*/false);
-}
-
 } // namespace
 
 void lowerHostEffect(LoweringContext &ctx, CallBase &CB) {
-  if (!CB.getType()->isVoidTy() && !CB.use_empty())
-    unimplemented("eff-tape: awaiting owner ruling: SPEC_ISSUES A deferred host call whose result is used", &CB);
-  // A clone appends its entries to its own tape each time it runs (67: "one tape per function"). Its
-  // _unc twin recomputes through the _pure clone (CR §1.4, 119), which is the clone without its effects:
-  // tape entries are write-once and never replayed, so the _pure clone emits none. In a _ctl clone every
-  // block's predicate holds the clone's control (the _ctl entry flag), so the entry's flag is the caller's
-  // predicate and the clone's own; inside a cq_invert region the entry is lowered as anywhere else and the
-  // backend treats its writes as gates (rule 17, BACKEND_ABI 1.13). A host effect of a callee rule 19 inlines is an entry of the caller's tape
-  // under the caller's predicate in scope.
   if (ctx.S.pure)
     return;
   const Function *F = calleeOf(CB);
   if (!F)
     internalError("eff-tape: a host effect with no direct callee", &CB);
-  Value *flag = ctx.currentFlag();
+  Value *flag = bus::accessControl(ctx);
   LLVMContext &C = ctx.M.getContext();
-  auto openFmt = [&](Value *tape, Value *fmt) {
+
+  // A format at an address rail has no ptr for tape_fmt: it falls to the effect entry printf with its address a field.
+  if (libFunc(*F, LibFunc_printf) && !bus::address(ctx, CB.getArgOperand(0)).handle) {
+    Operand f = ctx.operand(CB.getArgOperand(0));
+    Value *tape = tapeOf(ctx);
     if (flag)
-      ctx.emitCore(abi::CoreSpec{abi::Core::TapeFmt, {}, /*ctl=*/true}, {flag, tape, fmt});
+      ctx.emitCore(abi::CoreSpec{abi::Core::TapeFmt, {}, /*ctl=*/true}, {flag, tape, f.v});
     else
-      ctx.emitCore(abi::CoreSpec{abi::Core::TapeFmt}, {tape, fmt});
-  };
-
-  if (libFunc(*F, LibFunc_fwrite) && isStdout(CB.getArgOperand(3)) && isa<ConstantInt>(CB.getArgOperand(1)) &&
-      isa<ConstantInt>(CB.getArgOperand(2))) {
-    uint64_t n = cast<ConstantInt>(CB.getArgOperand(1))->getZExtValue() *
-                 cast<ConstantInt>(CB.getArgOperand(2))->getZExtValue();
-    Value *tape = tapeOf(ctx);
-    openFmt(tape, fwriteFormat(ctx.M, n));
-    bufferFields(ctx, CB, CB.getArgOperand(0), CB.getArgOperand(1), CB.getArgOperand(2), tape, flag);
-    return;
-  }
-  // fputs(s, stdout): printf("%s", s) (C17 7.21.7.4); a constant s without '%' is its own format with no
-  // fields (99).
-  if (libFunc(*F, LibFunc_fputs) && isStdout(CB.getArgOperand(1))) {
-    Value *str = CB.getArgOperand(0);
-    StringRef text;
-    Value *tape = tapeOf(ctx);
-    if (!nonClassicalPointer(ctx, str) && constantCString(str) && getConstantStringInfo(str, text) &&
-        !text.contains('%')) {
-      openFmt(tape, ctx.operand(str).v);
-      return;
-    }
-    openFmt(tape, formatGlobal(ctx.M, ".cqfmt.fputs", "%s"));
-    emitField(ctx, CB, 0, 's', tape, flag);
-    return;
-  }
-
-  if (libFunc(*F, LibFunc_printf)) {
-    Value *fmt = CB.getArgOperand(0);
-    if (nonClassicalPointer(ctx, fmt))
-      unimplemented("eff-tape: a printf format string whose bytes or address are quantum", &CB);
-    SmallVector<Consume, 8> plan;
-    std::string plain;
-    bool positional = false;
-    bool known = printfPlan(fmt, plan, plain, positional);
-    Value *tape = tapeOf(ctx);
-    Value *f = positional ? formatGlobal(ctx.M, ".cqfmt.p." + plain, plain) : ctx.operand(fmt).v;
-    openFmt(tape, f);
-    if (known) {
-      // The fields in the order printf reads them; an argument the format never reads is not printed,
-      // one it reads but the call lacks is undefined behaviour (C17 7.21.6.1p2), outside the domain.
-      for (const Consume &k : plan)
-        if (k.arg + 1 < CB.arg_size())
-          emitField(ctx, CB, k.arg + 1, k.conv, tape, flag);
-      return;
-    }
-    // A run-time classical format (rule 16 fields): the format a _lit like any pointer, the variadic
-    // arguments fields by their promoted IR type (a pointer its address; a format read at replay that does
-    // not match them is the program's own undefined behaviour, C17 7.21.6.1p9).
+      ctx.emitCore(abi::CoreSpec{abi::Core::TapeFmt}, {tape, f.v});
     for (unsigned a = 1; a < CB.arg_size(); ++a)
-      emitField(ctx, CB, a, CB.getArgOperand(a)->getType()->isPointerTy() ? 'p' : 'd', tape, flag);
+      emitField(ctx, CB, a, tape, flag);
     return;
   }
 
-  // puts(s) and putchar(c) with no quantum predicate (a classical call after a tape point, the tape-order
-  // rule of calls::classify): the format entries "%s\n" and "%c" with s / c as their field (C17 7.21.7.9,
-  // 7.21.7.8: the same characters on stdout). Under a quantum predicate they stay effect entries (102).
-  if (!flag && (libFunc(*F, LibFunc_puts) || libFunc(*F, LibFunc_putchar))) {
-    bool puts = libFunc(*F, LibFunc_puts);
-    Value *tape = tapeOf(ctx);
-    ctx.emitCore(abi::CoreSpec{abi::Core::TapeFmt}, {tape, formatConstant(ctx.M, puts ? "%s\n" : "%c")});
-    emitField(ctx, CB, 0, puts ? 's' : 'c', tape, nullptr);
-    return;
-  }
-
-  if (flag && F->getName() == "raise" && CB.arg_size() == 1) {
-    lowerRaise(ctx, CB, flag);
-    return;
-  }
-  if (signalFamily(F->getName()) || F->getName() == "bsd_signal" || F->getName() == "sigset") {
-    signalTableEntry(ctx, CB, *F);
-    return;
-  }
-  // A function pointer argument (a callback of the bodiless host call) is a classical host pointer: its
-  // address, an i64 literal; the host calls it back at replay through clone_resolve (rule 16 callback,
-  // rule 27).
-  // Any other host effect is an effect entry (102): the host call `name` recorded with its arguments. An
-  // effect with no quantum predicate in scope (a classical host effect after a tape point, the tape-order
-  // rule, or one with a quantum argument) is recorded under a constant-true predicate, a seed rail |1>
-  // (§1.11 has only the controlled form; the entry's predicate is read at call time, the seed then freed).
   Value *ctl = flag;
   if (!ctl) {
-    RailType i1{Kind::Int, 1};
-    CallInst *one = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getTrue(C)});
+    CallInst *one = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 1}}, {ConstantInt::getTrue(C)});
     ctx.unc().recordSeed(one);
     ctl = one;
   }
   Value *tape = tapeOf(ctx);
-  ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffect, {}, /*ctl=*/true}, {ctl, tape, effectName(ctx.M, F->getName())});
-  // The fields: the call's arguments in order; fwrite's and write's buffer is its cells (rule 16 fields).
-  int bufArg = -1;
-  const Value *sizeV = nullptr, *countV = nullptr;
-  if (libFunc(*F, LibFunc_fwrite)) {
-    bufArg = 0;
-    sizeV = CB.getArgOperand(1);
-    countV = CB.getArgOperand(2);
-  } else if (libFunc(*F, LibFunc_write)) {
-    bufArg = 1;
-    countV = CB.getArgOperand(2);
+  for (unsigned a = 0; a < CB.arg_size(); ++a)
+    emitField(ctx, CB, a, tape, flag);
+  Constant *name = effectName(ctx.M, calleeName(*F, &CB));
+  Type *rt = CB.getType();
+  bool reads = !rt->isVoidTy() && !CB.use_empty();
+  bool wide = reads && (rt->isAggregateType() || rt->isVectorTy());
+  reads = reads && !wide;
+  CallInst *eff = reads ? ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffectW, railTypeOf(rt), /*ctl=*/true}, {ctl, tape, name})
+                        : ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffect, {}, /*ctl=*/true}, {ctl, tape, name});
+  ctx.unc().noteVersionChange(eff);
+  if (reads) {
+    ctx.unc().recordExternal(eff, Role::Kept);   // the entry's result rail: never freed
+    ctx.bind(&CB, eff);
   }
-  for (unsigned a = 0; a < CB.arg_size(); ++a) {
-    if (int(a) == bufArg)
-      bufferFields(ctx, CB, CB.getArgOperand(a), sizeV, countV, tape, flag);
-    else
-      emitField(ctx, CB, a, 0, tape, flag);
+  if (wide) {
+    // No _<W> form for a composite: rule 16's deferred result, |0> rails.
+    SmallVector<Type *, 4> tys;
+    leafTypes(rt, tys);
+    SmallVector<Operand, 4> ops;
+    for (Type *t : tys) {
+      RailType w = railTypeOf(t);
+      CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(C, w))});
+      ctx.unc().recordExternal(z, Role::Kept);
+      ops.push_back(Operand{z, true});
+    }
+    ctx.bindFields(&CB, ops);
   }
+  // Rule 16: a noreturn callee with a rail argument and no predicate: abort_i1 of the seed.
+  if (!flag && CB.doesNotReturn())
+    abortArm(ctx, CB, ctl);
+}
+
+void lowerMainExit(LoweringContext &ctx, Operand r, Type *ty) {
+  if (ctx.S.pure)
+    return;
+  CallInst *one = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 1}},
+                               {ConstantInt::getTrue(ctx.M.getContext())});
+  ctx.unc().recordSeed(one);
+  Value *tape = tapeOf(ctx);
+  scalarField(ctx, tape, nullptr, r, ty);
+  CallInst *eff = ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffect, {}, /*ctl=*/true}, {one, tape, effectName(ctx.M, "exit")});
+  ctx.unc().noteVersionChange(eff);
 }
 
 bool rewriteDeferredResults(Module &M, const TaintInfo &T) {
@@ -909,10 +633,11 @@ void lowerVolatileStore(LoweringContext &ctx, StoreInst &SI, Operand address) {
 }
 
 void lowerNoreturn(LoweringContext &ctx, CallBase &CB) {
-  requireEntry(ctx, CB, "a noreturn arm");
+  if (ctx.S.pure)
+    return;
   // Rule 16 lowers the call to abort_i1(pred) alone: its arguments (exit's status, __assert_fail's
   // strings), classical or quantum, are dropped, as the program they would end continues uncontrolled.
-  Value *flag = ctx.currentFlag();
+  Value *flag = bus::accessControl(ctx);
   if (!flag) {
     // The quantum predicate in scope is top (the arm is reached on every branch): the abort flag is a
     // seed rail |1>, kept like any abort flag.

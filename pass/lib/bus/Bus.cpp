@@ -215,13 +215,23 @@ void emitKeptStore(LoweringContext &ctx, Type *T, Operand addr, Operand value) {
     v = seed;
   }
   Value *m = mem(ctx);
-  Value *c = accessControl(ctx);
+  // Rule 8: the false edge is an X bracket on the flag, which rule 5 keeps with the store (95).
+  Value *neg = nullptr;
+  const Pred &q = ctx.currentPredicate();
+  if (!spine::shared(ctx).tripFlag && !q.isTop())
+    neg = ctx.preds().negatedAtomRail(ctx, q);
+  Value *c = neg ? neg : accessControl(ctx);
   abi::CoreSpec spec{abi::Core::QramStore, w, /*ctl=*/c != nullptr, /*hl=*/!addr.handle};
   SmallVector<Value *, 4> args;
   if (c)
     args.push_back(c);
   args.append({m, addr.v, v});
+  abi::CoreSpec x{abi::Core::NotI1, RailType{Kind::Int, 1}};
+  if (neg)
+    ctx.emitCore(x, {neg});
   CallInst *call = ctx.emitCore(spec, args);
+  if (neg)
+    ctx.emitCore(x, {neg});
   ctx.unc().noteKeptStore(call, v, c);
   ctx.unc().noteVersionChange(call);
 }
