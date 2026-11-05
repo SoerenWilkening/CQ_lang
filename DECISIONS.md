@@ -8,7 +8,7 @@ One line per decision on what CQ_spec leaves open. OWNER-FLAG: we proceed on it,
 - Removal: big-bang cut with loud `cq: unimplemented: bus:` stubs so the tree builds and non-bus examples keep lowering; no old code behind a flag.
 - Order: evaluator validated on the references first (`tools/ref_as_ours.py`), then bus core, then in-place / alloc / calls / loops in parallel, then clone table and effects, then musl.
 - Q1: all example directories are binding witnesses; §7's "owed" table is stale (SPEC_ISSUES); a reference that disagrees with its C program or with CR text is a SPEC_ISSUES entry, never skipped, never copied.
-- Q2: OWNER-FLAG — module identity iff no CQ.h primitive call, no root list, no declared-clone reference (contradicts §0 "every body is lowered" for the CQ-free module only); inside a lowered module every function is rewritten unless it has no non-host-resident memory access, no cq_* call and no call (rule 19; 195 bump, 197 tab_set rewritten, 211 inc kept).
+- Q2: OWNER RULED 2026-11-05, reading accepted, CQ_spec §0 gets it — module identity iff no CQ.h primitive call, no root list, no declared-clone reference (contradicts §0 "every body is lowered" for the CQ-free module only); inside a lowered module every function is rewritten unless it has no non-host-resident memory access, no cq_* call and no call (rule 19; 195 bump, 197 tab_set rewritten, 211 inc kept).
 - Q3: DECIDED — "measures" in rule 18 means a tainted measurement (under a quantum predicate or in a _ctl clone); a classical-path measurement returns a seed and the clone keeps its twin (rule 2); SPEC_ISSUES asks rule 18 to say so.
 - Q4: DECIDED — rule 5 sentence 3 as written (212): the caller uncomputes/frees what it minted after the twin; 102's extra kept rails are a SPEC_ISSUES entry, not copied.
 - Q5: DECIDED — 175 needs musl libm in the v1 bundle (rule 18 "injected source"); a bodiless callee on no root list is rule 16, never an implicit declared clone (rule 27, §0); rule 18's "declared clone otherwise" and CLAUDE.md's bundle text are stale.
@@ -17,7 +17,7 @@ One line per decision on what CQ_spec leaves open. OWNER-FLAG: we proceed on it,
 - Q8: DECIDED — compare the event sequence (name, fields, predicate, order) per input on both oracles with the §6 stand-in; result rails of deferred outputs are a stated deviation, excluded only against C.
 - Q9: DECIDED — rule 16 as written; host-made blocks are a recorded deviation, no provenance check.
 - Q10: DECIDED — the aliasing call is out of the C-oracle domain (UB), compared against the reference only.
-- Q11: OWNER-FLAG — `llvm.va_copy` is a rule-22 24-byte copy when a side is bus-resident (109), against rule 16's "as it stands".
+- Q11: OWNER RULED 2026-11-05, reading accepted, CQ_spec rule 16 gets it — `llvm.va_copy` is a rule-22 24-byte copy when a side is bus-resident (109), against rule 16's "as it stands".
 - Q12: DECIDED — recursion is cut at K (rule 14, 98); min(K, B) is for loops; rule 27's wording is a SPEC_ISSUES nit.
 - Q13: DECIDED — the controlled copy is under the _ctl clone's formal predicate; an arm inside the clone adds no conjunction (rules 2, 9).
 - Q14: DECIDED — "memory(none) or memory(read)" means LLVM onlyReadsMemory/doesNotAccessMemory; any possibly-writing effect is a version change.
@@ -28,4 +28,4 @@ One line per decision on what CQ_spec leaves open. OWNER-FLAG: we proceed on it,
 - B (203): DECIDED — an unreached trip target without proof stays MISSING/`error`, never FAIL, dead or UNCOVERED without a budget stop; a bound is proved by trip facts on the O1.ll linked with the driver's bodies at -O1.
 - C (cq-kzfv): DECIDED — CR wins: excess printf arguments are the format entry's fields and ignored; the evaluator splits by the callee's known arity; an unknown callee after a surplus is a SPEC_ISSUES entry.
 - D (cq-ytux): DECIDED — INPUT bytes are classical bus stores (ABI 1.10), so fgets overwrites QUANTUM cells as C does; rt_tape.c's host_write was a bug.
-- Kept the owner's 2026-11-03 no-op `unimplemented()` macro for existing sites; new code fails loudly (report_fatal_error or internalError).
+- Stops: OWNER RULED 2026-11-05: no-fence stands. Old `unimplemented()` sites stay no-ops, new code does not stop either; no fatal error, guard or decline for an unbuilt shape; `noteUnbuilt` writes one non-fatal log line naming the site; the checker decides correctness.
