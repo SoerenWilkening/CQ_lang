@@ -1297,6 +1297,7 @@ _REAL = re.compile(
     r"|(a?(sin|cos|tan)h?|atan2|exp(2|10|m1)?|log(2|10|1p|b)?|pow|sqrt|cbrt|hypot|fabs|floor|ceil|round|trunc|rint|nearbyint"
     r"|ll?rint|ll?round|fmod|remainder|remquo|ldexp|frexp|modf|scalbl?n|ilogb|copysign|nan|nextafter|nexttoward|fdim|fmax|fmin"
     r"|fma|erfc?|[lt]gamma)[fl]?$)")
+_OWN = ("__cq", "__stack_chk")   # the lowered ABI's and the checker's own names, the stack protector's
 _DECLARE = re.compile(r'^declare\b(?P<head>[^@]*)@(?P<name>"[^"]*"|[-A-Za-z$._0-9]+)\((?P<params>.*)\)[^()]*$', re.M)
 
 
@@ -1330,7 +1331,12 @@ def effect_callees(text: str, excluded: FrozenSet[str] = frozenset()) -> Dict[st
     out = {}
     for m in _DECLARE.finditer(text):
         c = _c_name(m.group("name"))
-        if _REAL.match(c) or c in excluded:
+        if c in excluded:
+            continue
+        # `__` marks the compiler's and the runtime's real symbols, but a `declare hidden` one links statically
+        # and no host library can supply it: a libc internal with no body in the build (musl's
+        # __private_cond_signal under cnd_signal), a bodiless callee like any other (rule 16)
+        if _REAL.match(c) and not (c.startswith("__") and not c.startswith(_OWN) and re.search(r"\bhidden\b", m.group("head"))):
             continue
         head = [w for w in m.group("head").split() if not re.fullmatch(r"\S+\(.*\)|signext|zeroext|noundef|noalias|inreg|dso_local", w)]
         out[c] = (m.group("name"), head[-1] if head else "void", m.group("params"))
