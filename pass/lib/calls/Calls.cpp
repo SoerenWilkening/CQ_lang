@@ -1443,6 +1443,10 @@ void callTableTwin(Module &M, IRBuilder<> &B, Value *twin, Value *pred, ArrayRef
 // Rules 18, 19: must the value be a kept rail? Measured, stored or returned by an own symbol, or a memory version change
 // (or another block) comes before its last consumer. The twin then runs right after the copy: no change lies between.
 bool keptResult(LoweringContext &ctx, CallBase &CB) {
+  // Rule 14: in a loop the reverse reads the result, past the next trip's call (a memory version change).
+  DominatorTree DT(*CB.getFunction());
+  if (LoopInfo(DT).getLoopFor(CB.getParent()))
+    return true;
   SmallVector<const Instruction *, 8> work{&CB};
   SmallPtrSet<const Instruction *, 8> seen{&CB};
   const BasicBlock *bb = CB.getParent();
@@ -1451,7 +1455,8 @@ bool keptResult(LoweringContext &ctx, CallBase &CB) {
     const Instruction *D = work.pop_back_val();
     for (const User *U : D->users()) {
       auto *I = cast<Instruction>(U);
-      if (I->getParent() != bb || isa<PHINode>(I) || isa<StoreInst>(I))
+      // A branch's flag reads the result until the arms' merge, which the arms' memory version changes precede.
+      if (I->getParent() != bb || isa<PHINode>(I) || isa<StoreInst>(I) || I->isTerminator())
         return true;
       // The caller's next uses are behind a return. A table call writes memory, so this clone has no twin (rule 18): its result
       // is KEPT here (and returned as that rail, bindKeptValue).
