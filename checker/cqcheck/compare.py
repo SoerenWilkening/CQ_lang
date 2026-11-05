@@ -225,7 +225,9 @@ on. On an ended sample:
   capped sample at its cut: our first len(C measured) measurements are compared with them, ours may
   have more, and a lowered gate may fire after the end with any angle (the same "precedes a
   reached gate" exception applies);
-- ours must keep an i1 rail of role "abort" that reads 1.
+- ours must keep an i1 rail of role "abort" that reads 1; or, on a "raise:<sig>" sample, have an effect
+  entry raise performed (rule 16's signal table: the complement branch, 102, 212), past which the
+  stand-in's shot runs on, so the C side's effects are a prefix of ours there.
 On a sample that returns (neither ended nor capped) every kept abort-role i1 rail of ours reads 0.
 A capped sample says nothing about abort flags (an abort past the cut is unknown). The abort
 rails are read by role, which the evaluator sets on the operand of abort_i1 (BACKEND_ABI §1.2),
@@ -404,6 +406,17 @@ def _ctl_on(rec: Dict[str, Any]) -> int:
     return int(all(_int(b) for b in rec.get("ctlv", []) or []))
 
 
+def _kept_rows(rr: RunResult):
+    """The live rails of a run, each row of a run (run._compact_kept) as its rails."""
+    for k in rr.kept or []:
+        n = k.get("n")
+        if n is None:
+            yield k
+        else:
+            for i in range(n):
+                yield {"h": k["h"] + i * k["step"], "w": k.get("w"), "v": k.get("v"), "role": k.get("role")}
+
+
 def _shape_of(rr: RunResult) -> Tuple:
     """The structure of one lowered run: everything but data values."""
     rots = []
@@ -413,7 +426,7 @@ def _shape_of(rr: RunResult) -> Tuple:
             raise CompareError(f"cq: unimplemented: chk-compare: rotation event {rec!r}")
         theta = _int(rec.get("theta")) if ev in ("ry", "phase") else None
         rots.append((ev, rec.get("h"), rec.get("a"), rec.get("f"), tuple(rec.get("ctl", []) or []), theta))
-    kept = tuple(sorted((k["h"], k.get("w")) for k in rr.kept or []))
+    kept = hash(tuple(sorted((k["h"], k.get("w")) for k in _kept_rows(rr))))
     # every free in order: the setup's free events, then the sample's summary (run.py's compact trace,
     # cq-8m6v: the count and a digest of the handles), or the sample's free events when there is none
     clean = rr.clean or []
@@ -1968,7 +1981,13 @@ def _check_k2(o_runs: List[RunResult], c_runs: List[RunResult], open_end: Sequen
     return reasons
 
 
-def _check_abort(o_runs: List[RunResult], ended: Sequence[bool], capped: Sequence[bool]) -> List[str]:
+def _raised(c: RunResult) -> bool:
+    end = c.outputs.get("end") if isinstance(c.outputs, dict) else None
+    return isinstance(end, str) and end.startswith("raise:")
+
+
+def _check_abort(o_runs: List[RunResult], ended: Sequence[bool], capped: Sequence[bool],
+                 c_runs: Sequence[RunResult] = ()) -> List[str]:
     """Some kept abort-role i1 rail of ours reads 1 on every ended sample; every one reads 0 on
     every sample that returns (module docstring)."""
     flags: Dict[Any, List[int]] = {}
@@ -1979,6 +1998,9 @@ def _check_abort(o_runs: List[RunResult], ended: Sequence[bool], capped: Sequenc
     reasons = []
     for s in range(len(o_runs)):
         on = [h for h, v in flags.items() if v[s]]
+        if ended[s] and not on and c_runs and _raised(c_runs[s]) and any(
+                e.get("name") == "raise" for e in (o_runs[s].outputs or {}).get("effects", [])):
+            continue
         if ended[s] and not on:
             reasons.append(f"sample {_skey(o_runs[s].sample)}: the C program ends early (noreturn or fatal raise) "
                            f"and no kept abort flag of ours reads 1")
@@ -2157,7 +2179,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
             reasons.append(f"sample {k}: outputs {_rest(o.outputs, 'our')} != {_rest(r.outputs, 'reference')}")
         if not (oracle == "c" and (capped[k] or ended[k])):
             reasons += _memory_reasons(k, o, r, oracle)
-        reasons += _host_output(k, o, r, oracle, oracle == "c" and capped[k])
+        reasons += _host_output(k, o, r, oracle, oracle == "c" and (capped[k] or _raised(r)))
         if oracle == "ref":
             reasons += _measured_positional(k, o, r, False, nan_eq)
         else:
@@ -2260,7 +2282,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
                 reasons.append(f"{tag}: {why}")
             for why in _check_ak(o_runs, r_runs, [ended[k] for k in ks]):
                 reasons.append(f"{tag}: {why}")
-            for why in _check_abort(o_runs, [ended[k] for k in ks], [capped[k] for k in ks]):
+            for why in _check_abort(o_runs, [ended[k] for k in ks], [capped[k] for k in ks], r_runs):
                 reasons.append(f"{tag}: {why}")
             for why in _check_k2(o_runs, r_runs, [capped[k] or ended[k] for k in ks]):
                 reasons.append(f"{tag}: {why}")
@@ -2470,19 +2492,24 @@ def _kept_type(rr: RunResult, h: Any) -> Optional[str]:
 
 
 def _kept_multiset(runs: List[RunResult], against: str = "ref") -> Dict[Tuple, int]:
-    hs = [k["h"] for k in runs[0].kept or []]
-    out: Dict[Tuple, int] = {}
-    by = [_kept_by_h(rr) for rr in runs]
+    hs = [k["h"] for k in _kept_rows(runs[0])]
+    pos = {h: i for i, h in enumerate(hs)}
+    ws: List[Optional[str]] = [None] * len(hs)
+    cols: List[List[Any]] = [[] for _ in hs]
     memo: Dict[int, Any] = {}
-    for h in hs:
-        w = None
-        vals = []
-        for rr, b in zip(runs, by):
-            if h not in b:
-                raise StopIteration          # as next() over no entry raised it
-            ent = b[h][0]
-            w = w or ent.get("w")
-            vals.append((rr, _int(ent.get("v"))))
-        cls = (w, tuple(_rel_value(rr, v, w, against, memo) for rr, v in vals))
+    for rr in runs:
+        seen = 0
+        for ent in _kept_rows(rr):
+            i = pos.get(ent["h"])
+            if i is None:
+                continue
+            ws[i] = ws[i] or ent.get("w")
+            cols[i].append(_rel_value(rr, _int(ent.get("v")), ws[i], against, memo))
+            seen += 1
+        if seen != len(hs):
+            raise StopIteration          # the group's runs keep the same rails (their shapes are equal)
+    out: Dict[Tuple, int] = {}
+    for w, col in zip(ws, cols):
+        cls = (w, tuple(col))
         out[cls] = out.get(cls, 0) + 1
     return out

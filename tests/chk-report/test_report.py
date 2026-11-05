@@ -84,13 +84,13 @@ class Witnesses(unittest.TestCase):
 
     def test_rule14_cases(self):
         rows = {k: v for k, v in rows_by_rule().items() if k.startswith("14 ")}
-        self.assertEqual(len(rows), 6)
+        self.assertEqual(len(rows), 7)
         self.assertEqual(rows["14 Loops: Classical bound, quantum body"],
-                         ("25", "27", "28", "57", "62", "131", "187", "188"))
+                         ("25", "27", "57", "62", "131", "28", "187", "188"))
         self.assertEqual(rows["14 Loops: Quantum-dependent exit, cutoff K"][0], "05")
         self.assertEqual(rows["14 Loops: Quantum-dependent exit, cutoff K"][-1], "189")
-        self.assertEqual(rows["14 Loops: Classical bound with a quantum exit"], ("26", "121", "130", "139"))
-        self.assertEqual(rows["14 Loops: Recursion with quantum depth"], ("98",))
+        self.assertEqual(rows["14 Loops: Classical bound with a quantum exit"], ("26", "139", "121", "130"))
+        self.assertEqual(rows["14 Loops: Recursion with quantum depth"], ("205", "98"))
         self.assertEqual(rows["14 Loops: Irreducible control flow"], ())
 
     def test_every_witness_is_an_example(self):

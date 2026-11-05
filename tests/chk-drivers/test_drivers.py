@@ -1449,7 +1449,7 @@ class ProbeDeterminism(unittest.TestCase):
         self.assertEqual([o.end for o in a], ["exit", "oob", "oob", "exit", "timeout"])
         self.assertEqual(a[1].oob, {-1})
         self.assertEqual(a[1].hdrs, 0)
-        self.assertEqual(a[4].hdrs, S.HDR_CAP + 1)
+        self.assertEqual(a[4].hdrs, S.hdr_cap() + 1)
 
     def test_residue_and_library_ranges(self):
         """cq-z8gj: an uninitialized stack read sees the same bytes whatever sample ran before it in

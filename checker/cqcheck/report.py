@@ -426,6 +426,10 @@ def _sample_set_gaps(ex: Example, spec, ss) -> Tuple[List[str], List[str]]:
     return bad, [g.line() for g in found if g.kind != gaps.MISSING]
 
 
+# An uncut run of a trip sample (55 at m = 2^31 - 1) ends at the oracle's own caps; the hang guard stays out of it.
+UNCUT_TIMEOUT_MS = 20000
+
+
 def _trip_disagreements(ex: Example, spec, ss, c_raw: Optional[list], samples: list) -> List[str]:
     """Each trip sample's count in the C oracle's trip counters (sampling.confirm_trips), from the
     C oracle's runs of the §6 comparison, or from a run of the trip samples alone when the C
@@ -445,7 +449,8 @@ def _trip_disagreements(ex: Example, spec, ss, c_raw: Optional[list], samples: l
     import copy
     from cqcheck import sampling
     trip = [ss.samples[i] for i in idx]
-    for smp, ur in zip(trip, sibling("oracle", "run_samples")(ex.o1, spec, trip, k=sampling.uncut_k(Path(ex.o1)))):
+    for smp, ur in zip(trip, sibling("oracle", "run_samples")(ex.o1, spec, trip, timeout_ms=UNCUT_TIMEOUT_MS,
+                                                                  k=sampling.uncut_k(Path(ex.o1)))):
         key = json.dumps(smp, sort_keys=True)
         r = runs[key]
         r = runs[key] = copy.copy(r)

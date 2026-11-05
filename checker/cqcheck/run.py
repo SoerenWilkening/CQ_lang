@@ -1011,6 +1011,29 @@ _ROT_EVENTS = frozenset(("ry", "ry_qangle", "phase", "phase_qangle"))
 _STOP_WHATS = frozenset(("build", "sample", "timeout"))
 
 
+_RUN_ROLES = frozenset(("tape_slot", "store_kept"))
+
+
+def _compact_kept(live: List[dict]) -> List[dict]:
+    """The live rails with each run of a store's rails of one role, type and value, at handles in steps
+    of `step`, as one row with "n" and "step" (compare._kept_rows expands it): rule 22's K2 copy keeps
+    thousands per sample (192), and a batch holds every sample's list."""
+    out: List[dict] = []
+    tails: Dict[Tuple, dict] = {}
+    for e in live:
+        key = (e.get("role"), e.get("w"), e.get("v"), e.get("known"))
+        if e.get("role") in _RUN_ROLES:
+            t = tails.get(key)
+            if t is not None:
+                step = e["h"] - t["h"] if "n" not in t else t["step"]
+                if e["h"] == t["h"] + t.get("n", 1) * step or ("n" not in t and step > 0):
+                    t["n"], t["step"] = t.get("n", 1) + 1, step
+                    continue
+            tails[key] = e = dict(e)
+        out.append(e)
+    return out
+
+
 def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optional[int],
             extra: List[dict], freed: Optional[dict] = None) -> RunResult:
     """One pass over a sample's trace events into its RunResult. `freed`: the compact trace's summary
@@ -1058,7 +1081,7 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
             tape_out, tape_seq, deviation = _tape_shot(e)
         elif ev == "effect":
             direct_fx.append(e)
-    kept = list(last_exit["live"]) if last_exit is not None else []
+    kept = _compact_kept(last_exit["live"]) if last_exit is not None else []
     if freed is not None:
         clean.append(dict(freed))
     viol += extra
@@ -1302,13 +1325,15 @@ def _build_failure(side: str, sample: dict, e: BaseException) -> RunResult:
 # a fresh runner takes the rest.
 
 _BAD = "__bad_line"
+_UNREAD = ('{"ev":"bus"', '{"ev":"cells"')
 
 
 def _parse_lines(text: str) -> Tuple[List[dict], bool]:
     """(every trace line of a runner as an event, whether a line was torn): one json.loads over the
     whole trace, line by line only when that fails (a line torn by a killed process becomes
     {"ev": _BAD, "line"})."""
-    lines = [l for l in text.split("\n") if l.strip()]
+    # the bus and cells events (rt_bus.c) are the trace's bulk and nothing here reads them
+    lines = [l for l in text.split("\n") if l.strip() and not l.startswith(_UNREAD)]
     if not lines:
         return [], False
     try:
@@ -1365,7 +1390,7 @@ def _stream_shots(trace: Path, side: str, items: Sequence[Tuple[dict, str, Optio
         return pre, done, open_shots
     with open(trace, errors="replace") as f:
         for line in f:
-            if not line.strip():
+            if not line.strip() or line.startswith(_UNREAD):
                 continue
             try:
                 e = json.loads(line)
@@ -1575,7 +1600,7 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
     return out  # type: ignore[return-value]
 
 
-_RUNS_VERSION = "eval-runs-3"
+_RUNS_VERSION = "eval-runs-4"
 _CAP_VARS = ("CQE_SHOT_TRACE_MAX", "CQE_SHOT_OUTPUT_MAX", "CQE_FILE_MAX", "CQE_SHOT_VIOL_MAX")   # core.c's caps
 _RESULT_FIELDS = ("outputs", "measured", "rotations", "kept", "clean", "violations")
 
