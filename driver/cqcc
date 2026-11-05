@@ -25,6 +25,7 @@ The whole program is one module (NORTHSTAR principle 3): -c makes one object fro
 Options:
   -cq-k=<fn>=<k>,...   per-function loop cutoff, passed through to cq-lower (repeatable)
   -cq-k-default=<k>    global loop cutoff, passed through to cq-lower
+  -cq-k2=<fn>=<k>,...  -cq-k2-default=<k>   the K2 byte bound (CR §0), passed through to cq-lower
   --cq-roots FILE      library-build roots, one clone name per line, passed through to cq-lower (rule 27)
   --backend LIB        a backend library for the final link: a path, -lname or -Ldir (repeatable)
   --cq-check           run `cqcheck user` (the C-oracle check) on the result; its exit status is cqcc's
@@ -132,6 +133,10 @@ def parse_args(argv):
         elif a == "-v":
             global VERBOSE
             VERBOSE = True
+        elif a.startswith(("-cq-k2=", "--cq-k2=", "-cq-k2-default=", "--cq-k2-default=")):
+            o["kflags"].append("-" + a.lstrip("-"))
+        elif a in ("-cq-k2", "--cq-k2", "-cq-k2-default", "--cq-k2-default"):
+            o["kflags"].append(f"-{a.lstrip('-')}={value(a)}")
         elif a.startswith(("-cq-k=", "--cq-k=")):
             o["kflags"].append("-cq-k=" + a.split("=", 1)[1])
         elif a.startswith(("-cq-k-default=", "--cq-k-default=")):

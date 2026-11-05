@@ -1030,11 +1030,24 @@ void lowerIndirect(LoweringContext &, CallBase &) {
 // host-resident it stays. In the own symbol va_start stays the intrinsic: it fills ap with host bytes.
 void lowerVarargs(LoweringContext &ctx, Instruction &I) {
   auto *II = dyn_cast<IntrinsicInst>(&I);
-  if (!II)
-    report_fatal_error("cq: unimplemented: bus: a va_arg instruction with a rail (clang's x86-64 va_arg is -O1 code)",
-                       /*gen_crash_diag=*/false);
   LLVMContext &C = ctx.M.getContext();
   Type *I32 = Type::getInt32Ty(C), *I64 = Type::getInt64Ty(C);
+  if (!II) {
+    // A va_arg instruction (clang's x86-64 va_arg is -O1 code, so none reaches here from C): the overflow area's slot.
+    auto &VA = cast<VAArgInst>(I);
+    Operand ap = bus::address(ctx, VA.getPointerOperand());
+    Operand area = bus::offsetAddress(ctx, ap, 8);
+    Operand slot{bus::emitLoad(ctx, I64, area), true};
+    spine::bindOperand(ctx, &I, Operand{bus::emitLoad(ctx, I.getType(), slot), true});
+    abi::TemplateSpec add;
+    add.op = "add";
+    add.w = RailType{Kind::Int, 64};
+    add.shape = "hl";
+    uint64_t step = alignTo(ctx.M.getDataLayout().getTypeAllocSize(I.getType()), 8);
+    Value *next = ctx.emitTemplate(add, {slot, Operand{ConstantInt::get(I64, step), false}});
+    bus::emitKeptStore(ctx, I64, area, Operand{next, true});
+    return;
+  }
   switch (II->getIntrinsicID()) {
   case Intrinsic::vaend:
     return;
@@ -1050,10 +1063,9 @@ void lowerVarargs(LoweringContext &ctx, Instruction &I) {
   }
   case Intrinsic::vastart: {
     if (ctx.S.isEntry()) {
-      if (ctx.operand(II->getArgOperand(0)).handle)
-        report_fatal_error("cq: unimplemented: bus: an own symbol's va_start at an address rail (rule 16)",
-                           /*gen_crash_diag=*/false);
-      spine::copyClassical(ctx, I);
+      // At an address rail no host write is possible: the program's ap stays as it is.
+      if (!ctx.operand(II->getArgOperand(0)).handle)
+        spine::copyClassical(ctx, I);
       return;
     }
     spine::Shared &sh = spine::shared(ctx);

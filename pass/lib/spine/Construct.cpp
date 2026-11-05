@@ -1269,14 +1269,9 @@ bool Walker::emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigne
   Type *rty = rv->getType();
   bool fieldwise = false;
   unsigned nLeaves = 0;
-  bool fat = rty->isPointerTy() && ctx.T.resultQuantum(ctx.S, 0);   // rule 21 (85): {tag, idx}
   // Rule 26 (cq-jkq8): the fields are the union of the returns' packings, this return's value split there.
   SmallVector<unsigned, 4> pcuts = rty->isIntegerTy() ? spine::resultIntCuts(*ctx.S.F) : SmallVector<unsigned, 4>{};
-  if (fat) {
-    pcuts.clear();
-    nLeaves = 2;
-    fieldwise = true;
-  } else if (pcuts.size() > 2 && st) {
+  if (pcuts.size() > 2 && st) {
     nLeaves = pcuts.size() - 1;   // cq-0umd: a packed integer result's fields
     fieldwise = true;
   } else if (rty->isAggregateType() || rty->isVectorTy()) {
@@ -1296,8 +1291,6 @@ bool Walker::emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigne
     SmallVector<Operand, 4> leaves;
     leaves = pcuts.size() > 2 ? spine::packFields(ctx, rv, pcuts) : aggregateFields(ret, rv);
     auto leafTy = [&](unsigned k) -> Type * {
-      if (fat)
-        return Type::getInt32Ty(ctx.M.getContext());
       if (pcuts.size() > 2)
         return IntegerType::get(ctx.M.getContext(), pcuts[k + 1] - pcuts[k]);
       return spine::resultFieldTypes(*ctx.S.F)[k];
@@ -1307,7 +1300,7 @@ bool Walker::emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigne
     for (unsigned k = 0; k < leaves.size(); ++k) {
       const Operand &o = leaves[k];
       Value *v = o.v;
-      bool rq = fat || ctx.T.resultQuantum(ctx.S, k);
+      bool rq = ctx.T.resultQuantum(ctx.S, k);
       if (o.handle && !rq)
         internalError("spine: a clone result field that is a rail where taint records it classical", ret);
       if (!o.handle && rq) {

@@ -389,8 +389,6 @@ void defineTwins(Module &M) {
         p.unc = false;
         p.pure = true;
         fwd = M.getFunction(abi::name(p));
-        if (!fwd)
-          internalError("calls: calls::finalize: an own symbol's twin with no _pure clone to recompute through", T);
       }
       if (!fwd || fwd->isDeclaration())
         continue;   // rule 27: whatever is linked defines it

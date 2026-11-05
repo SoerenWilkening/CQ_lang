@@ -443,17 +443,12 @@ void lowerHostEffect(LoweringContext &ctx, CallBase &CB) {
   const Function *F = calleeOf(CB);
   if (!F)
     internalError("eff-tape: a host effect with no direct callee", &CB);
-  StringRef n = F->getName();
-  if (n == "signal" || n == "sigaction" || n == "bsd_signal" || n == "sigset" || n == "raise")
-    report_fatal_error("cq: unimplemented: bus: the signal table (rule 16)", /*gen_crash_diag=*/false);
   Value *flag = bus::accessControl(ctx);
   LLVMContext &C = ctx.M.getContext();
 
-  if (libFunc(*F, LibFunc_printf)) {
-    Value *fmt = CB.getArgOperand(0);
-    Operand f = ctx.operand(fmt);
-    if (f.handle)
-      report_fatal_error("cq: unimplemented: bus: a printf format at an address rail (rule 16)", /*gen_crash_diag=*/false);
+  // A format at an address rail has no ptr for tape_fmt: it falls to the effect entry printf with its address a field.
+  if (libFunc(*F, LibFunc_printf) && !bus::address(ctx, CB.getArgOperand(0)).handle) {
+    Operand f = ctx.operand(CB.getArgOperand(0));
     Value *tape = tapeOf(ctx);
     if (flag)
       ctx.emitCore(abi::CoreSpec{abi::Core::TapeFmt, {}, /*ctl=*/true}, {flag, tape, f.v});
@@ -476,14 +471,27 @@ void lowerHostEffect(LoweringContext &ctx, CallBase &CB) {
   Constant *name = effectName(ctx.M, calleeName(*F, &CB));
   Type *rt = CB.getType();
   bool reads = !rt->isVoidTy() && !CB.use_empty();
-  if (reads && rt->isAggregateType())
-    report_fatal_error("cq: unimplemented: bus: an aggregate result of an effect entry (rule 16)", /*gen_crash_diag=*/false);
+  bool wide = reads && (rt->isAggregateType() || rt->isVectorTy());
+  reads = reads && !wide;
   CallInst *eff = reads ? ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffectW, railTypeOf(rt), /*ctl=*/true}, {ctl, tape, name})
                         : ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffect, {}, /*ctl=*/true}, {ctl, tape, name});
   ctx.unc().noteVersionChange(eff);
   if (reads) {
     ctx.unc().recordExternal(eff, Role::Kept);   // the entry's result rail: never freed
     ctx.bind(&CB, eff);
+  }
+  if (wide) {
+    // No _<W> form for a composite: rule 16's deferred result, |0> rails.
+    SmallVector<Type *, 4> tys;
+    leafTypes(rt, tys);
+    SmallVector<Operand, 4> ops;
+    for (Type *t : tys) {
+      RailType w = railTypeOf(t);
+      CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(C, w))});
+      ctx.unc().recordExternal(z, Role::Kept);
+      ops.push_back(Operand{z, true});
+    }
+    ctx.bindFields(&CB, ops);
   }
   // Rule 16: a noreturn callee with a rail argument and no predicate: abort_i1 of the seed.
   if (!flag && CB.doesNotReturn())
