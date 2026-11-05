@@ -14,9 +14,12 @@ The owned examples' acceptance is `python3 -m cqcheck run <examples> --oracle bo
 Outputs go to build/tests/loops-classical/out/.
 """
 import argparse
+import concurrent.futures
+import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -130,6 +133,8 @@ C3IDX = ["c3_index", "c3_mixed"]
 SEED_PROBE = PROBES / "fatal_carried_seed.O1.ll"
 SEED = ["p38_seed"]
 ENTRIES = ["p_acc", "p_brk", "p_nest", "p_mod", "p_nb", "p_horner", "p_arm", "p_phase", "p_cjoin", "p_tphase", "p_bwb", "p_g2"]
+ENTRY_LIMIT = 180   # cq-1dx6: an entry with no verdict by then is a reported failure, not a silent hang
+JOBS = min(int(os.environ.get("CQCHECK_JOBS", "2")), 4)
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 
 
@@ -143,16 +148,15 @@ def check_probe(a, probe: Path, entries, out: Path) -> int:
     r = subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-lower", "-S", str(probe), "-o",
                         str(lowered)], capture_output=True, text=True)
     if r.returncode != 0:
-        print("FAIL cq-lower " + probe.name + ": " + r.stderr.strip())
+        print("FAIL cq-lower " + probe.name + ": " + (r.stderr.strip().splitlines() or ["?"])[0], flush=True)
         return 1
     v = subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-verify", "-disable-output",
                         str(lowered)], capture_output=True, text=True)
     if v.returncode != 0:
-        print("FAIL cq-verify " + probe.name + ": " + v.stderr.strip())
+        print("FAIL cq-verify " + probe.name + ": " + (v.stderr.strip().splitlines() or ["?"])[0], flush=True)
         return 1
     text = lowered.read_text()
-    failures = 0
-    for e in entries:
+    def one(e: str) -> int:
         b = body(text, e)
         why = []
         if not b:
@@ -161,13 +165,21 @@ def check_probe(a, probe: Path, entries, out: Path) -> int:
             why.append("a CQ.h surface call is left")
         if e not in MEASURED_SEC6 + NO_REVERSE and ("@cqrt_push(" not in b or "@cqrt_pop()" not in b):
             why.append("no push/pop: the reverse loop is missing")
-        c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(probe), "--lowered", str(lowered),
-                            "--entry", e], capture_output=True, text=True, cwd=ROOT / "checker")
-        if c.returncode != 0 or "PASS" not in c.stdout + c.stderr:
-            why.append("§6 against the C program: " + ((c.stdout + c.stderr).strip().splitlines() or ["?"])[-1])
-        print(("FAIL " if why else "ok   ") + e + ("" if not why else ": " + "; ".join(why)))
-        failures += bool(why)
-    return failures
+        t0 = time.time()
+        try:
+            c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(probe), "--lowered", str(lowered),
+                                "--entry", e], capture_output=True, text=True, cwd=ROOT / "checker",
+                               timeout=ENTRY_LIMIT)
+            if c.returncode != 0 or "PASS" not in c.stdout + c.stderr:
+                why.append("§6 against the C program: " + ((c.stdout + c.stderr).strip().splitlines() or ["?"])[-1])
+        except subprocess.TimeoutExpired:
+            why.append(f"§6 against the C program: no verdict in {ENTRY_LIMIT} s")
+        # cq-1dx6: every entry reports as it ends, with its time.
+        print(("FAIL " if why else "ok   ") + f"{probe.stem} {e} {time.time() - t0:.0f}s" +
+              ("" if not why else ": " + "; ".join(why)), flush=True)
+        return bool(why)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=JOBS) as pool:
+        return sum(pool.map(one, entries))
 
 
 def check_kept(probe: Path, lowered: Path, entry: str, want, pick=None) -> str:
@@ -247,12 +259,12 @@ def main() -> int:
             continue
         for e, kept in table.items():
             why = check_kept(probe, out / (probe.stem + ".lowered.ll"), e, kept)
-            print(("FAIL " if why else "ok   ") + e + " kept" + ("" if not why else ": " + why))
+            print(("FAIL " if why else "ok   ") + e + " kept" + ("" if not why else ": " + why), flush=True)
             failures += bool(why)
     if "memkeep" in want:
         for e, kept in MEMKEEP.items():
             why = check_kept(MEMKEEP_PROBE, out / (MEMKEEP_PROBE.stem + ".lowered.ll"), e, kept, lambda args: True)
-            print(("FAIL " if why else "ok   ") + e + " kept" + ("" if not why else ": " + why))
+            print(("FAIL " if why else "ok   ") + e + " kept" + ("" if not why else ": " + why), flush=True)
             failures += bool(why)
     if "measured" in want:
         for e, kept in MEASURED_NONE.items():
