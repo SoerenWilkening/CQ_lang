@@ -138,3 +138,24 @@ Entries 1 to 16 are from the flat-memory rulings (`wt/flat/rulings.md`, "Entries
 - Evidence: `cqcheck run 129_quantum_ptr_select_store --ours build/ref_as_ours --oracle c`, sample ptr_select_rmw(0, .5, 1, 2, .3, 5, .4): `cqrt_qram_store_i32_hl: 4 arguments (ABI §1.10)`, returns 0x2 != C's 0x9.
 - Request: fix the declare. Not copied; the example stays red against the reference until then.
 - Bead: cq-3s95
+
+## Rule 6: the second operand of a bijective op in two dead rails is not named as kept (109)
+- Rule: CR §6 item 1 (a rail live at exit is a leak unless a rule names it); rule 6 ("The old value is kept only when no such point exists: it escapes, it is the value or control rail of a kept store, it is measured, or a reader of it follows a non-diagonal gate on its image"); rule 5 sentence 1 (a rule-6 image is never uncomputed).
+- Disagreement: rule 6's list does not name the case `sum = s + t` with s and t both dead: rule 6 cleans one operand against the sum; the other has no inverse left and its producer's `_unc` needs rails already freed. 2(x + a) mod 2^32 loses a bit of x + a, so one garbage rail must survive. 109's header names it ("s (IR %32 of the last trip, rule 6: the operand of s + t that is not cleaned)"). Which operand is cleaned is by no stated convention (109 cleans operand 0).
+- Evidence: `examples/109_intrinsic_variants`, va_copy_q: `%105 = add(%86, %47); %106 = sub(%105, %47); copy(%106, %86); free(%86)`, `%47` stays live. The evaluator reads it as a rule-6 image (role `rule6_image`, rulings 2 A). Not a blocker: the construction and the kept rail are forced either way.
+- Request: rule 6 to name the uncleaned operand in the kept list, and which operand is cleaned.
+- Bead: cq-8h3a
+
+## ABI 1.11 vs CR rule 16: no boundary before an effect entry's fields after an over-supplied format entry
+- Rule: CR rule 16 ("`printf` is the format entry ... with its variadic arguments as fields by promoted IR type"); C11 7.21.6.1p2 (excess arguments are evaluated and otherwise ignored). CR wins over the non-normative ABI.
+- Disagreement: ABI 1.11 says a format entry "is complete ... when the fields its format string consumes are written", and an effect's arguments "are the fields written to t since the previous entry", which hands the excess to the next effect: `printf("%d", a, b); raise(sig)` would call `raise(b, sig)`. `tape_fmt` precedes its fields and `tape_effect` follows its fields, so between the two calls the fields are one stream with no marker. For a callee the backend knows by name the split is determined (the effect takes its last arity fields). For an unknown callee, a null `name` or a variadic one (fprintf, open) nothing in the ABI determines it.
+- Evidence: checker/rt/rt_tape.c `split_after_format`. On such a callee the evaluator gives the effect every waiting field and marks it `split_open`; compare.py `_split_gap` reports a C call with fewer arguments as this gap, verdict error, never FAIL (rulings 2 C).
+- Request: the owner picks a boundary: (i) `cqrt_tape_effect*` takes the field count, or (ii) a format entry closes with `cqrt_tape_fmt_end(t)`.
+- Bead: cq-6ucw
+
+## ABI 1.11 "host memory, which the bus sees through the overlay" vs 1.10 on an INPUT entry's write (cross-reference)
+- Rule: ABI 1.10 Overlay ("A write the backend itself makes for an effect entry (§1.11) is a bus store"), which governs (rulings 2 D): INPUT bytes are bus stores, classical ones leaving the cells HOST with the displaced content in a tape slot, so fgets overwrites a QUANTUM cell as C does.
+- Disagreement: 1.11's "Memory the host call reads or writes is host memory, which the bus sees through the overlay" read alone, with 1.10's "A byte host code writes at a QUANTUM cell is not seen by the bus", would leave the stale cell. Loose wording, no contradiction once 1.10's specific sentence applies.
+- Evidence: BACKEND_ABI.md §1.10, §1.11; checker/rt/rt_bus.c `tape_cstore`, tests/rt-bus `effect_cstore`.
+- Request: 1.11 to cross-reference 1.10's sentence.
+- Bead: cq-5c33
