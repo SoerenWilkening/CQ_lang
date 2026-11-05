@@ -2429,7 +2429,7 @@ def _tape_read(rr: RunResult) -> List[Any]:
             ent["fields"] = [_field_read(a, table, "ref") for a in e["fields"]]
         if "r" in e:
             ent["r"] = _field_read(e["r"], table, "ref")
-        out.append(_norm(ent))
+        out.append(ent)
     return out
 
 

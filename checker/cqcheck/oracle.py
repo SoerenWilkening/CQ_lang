@@ -471,14 +471,15 @@ def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[in
     host calls' wrappers, apart from the instrumented module, so a callee stays bodiless for its taint."""
     o1 = Path(o1)
     st = o1.stat()
-    memo = (str(o1.resolve()), st.st_mtime_ns, repr((sorted((k or {}).items()), k_default, sorted(defined))))
+    memo = (str(o1.resolve()), st.st_mtime_ns, repr((sorted((k or {}).items()), k_default, sorted(defined), os.environ.get("CQ_ROOTS_EXTRA"))))
     if memo in _PROGRAMS and _PROGRAMS[memo][0].exists():
         return _PROGRAMS[memo]
     plugin, rt = toolchain()
     text = o1.read_text()
     bundle = bundle_for(text)
     kf = _k_flags(k, k_default)
-    key = hashlib.sha256("\0".join([text, SRC_KEY, *kf, *sorted(defined)] + ([bundle_key(bundle)] if bundle else [])).encode()).hexdigest()[:20]
+    from . import drivers as _drv
+    key = hashlib.sha256("\0".join([text, SRC_KEY, *kf, *sorted(defined), *sorted(_drv.corpus_roots())] + ([bundle_key(bundle)] if bundle else [])).encode()).hexdigest()[:20]
     triple = _triple(text)
 
     def fill(d: Path) -> None:

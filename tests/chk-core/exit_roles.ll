@@ -1,5 +1,5 @@
-; cq-tt2j: exit roles the leak rule reads (CR §6 item 1): a rail whose handle a global holds at exit is
-; "output"; one held only in a dead frame's cell or in a freed heap block is "garbage"; an _exc result and
+; cq-tt2j: exit roles the leak rule reads (CR §6 item 1): a rail whose handle memory holds is nothing special:
+; "garbage" like any other; an _exc result and
 ; a rail written from it are "fenv_flags", an _rmq mode operand "fenv_mode" (rule 23); a seed is known.
 target triple = "x86_64-apple-macosx16.0.0"
 @g = global i32 0, align 4

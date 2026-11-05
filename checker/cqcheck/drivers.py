@@ -1291,9 +1291,10 @@ _DECLARE = re.compile(r'^declare\b(?P<head>[^@]*)@(?P<name>"[^"]*"|[-A-Za-z$._0-
 
 
 def corpus_roots() -> FrozenSet[str]:
-    """tools/corpus_roots.txt: the rule 27 roots of the corpus (rulings Q6), one symbol per line."""
+    """tools/corpus_roots.txt: the rule 27 roots of the corpus (rulings Q6), one symbol per line, plus $CQ_ROOTS_EXTRA."""
     p = REPO / "tools" / "corpus_roots.txt"
-    return frozenset(x.strip() for x in p.read_text().splitlines() if x.strip()) if p.exists() else frozenset()
+    roots = {x.strip() for x in p.read_text().splitlines() if x.strip()} if p.exists() else set()
+    return frozenset(roots | set(filter(None, os.environ.get("CQ_ROOTS_EXTRA", "").split(","))))  # a test's own library
 
 
 def proto_definitions(spec: DriverSpec) -> FrozenSet[str]:

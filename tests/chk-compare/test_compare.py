@@ -1794,6 +1794,31 @@ class Memory(unittest.TestCase):
         self.assertFalse(compare(o, r, QKEY, "ref").equal)
 
 
+class RailSizedAllocation(unittest.TestCase):
+    """CR §6: the kept rail n > K2 of a rail-sized allocation must read n > K2 on every input."""
+
+    def run_(self, flag):
+        rule = LeakRule()
+        o = rule.ours(lambda a, b: [rule.leak(9, flag(a, b), "i1", "garbage")] if flag else [])
+        c = rule.c_side()
+        return o, [dataclasses.replace(r, outputs=dict(r.outputs, k2=[[9000 if s & 1 else 8, 4096]])) for s, r in enumerate(c)]
+
+    def test_reads_the_predicate(self):
+        o, c = self.run_(lambda a, b: a)
+        r = compare(o, c, QKEY, "c")
+        self.assertTrue(r.equal, r.reasons)
+
+    def test_another_value_fails(self):
+        o, c = self.run_(lambda a, b: b)
+        r = compare(o, c, QKEY, "c")
+        self.assertTrue(any("reads n > K2" in x for x in r.reasons), r.reasons)
+
+    def test_no_rail_fails(self):
+        o, c = self.run_(None)
+        r = compare(o, c, QKEY, "c")
+        self.assertTrue(any("reads n > K2" in x for x in r.reasons), r.reasons)
+
+
 class FlatKept(unittest.TestCase):
     """CR §6 item 1, rule 5: tape slots and overtaken copies are kept rails; a free is legal iff the
     rail is classical-valued or reads 0 (rulings, "Every _unc must leave 0")."""
@@ -1825,6 +1850,21 @@ class FlatKept(unittest.TestCase):
         shift = [dataclasses.replace(r, kept=[dict(k, v=hex(int(k["v"], 16) + 8)) if k["h"] == 60 else k for k in r.kept])
                  for r in b]
         self.assertFalse(compare(a, shift, QKEY, "ref").equal)
+
+    def test_compact_rows_compare_as_their_rails(self):
+        # run._compact_kept: a K2 copy's thousands of slots as rows; the multiset is the rails'
+        from cqcheck.run import _compact_kept
+        def side_(name, hi):
+            def build(a, b, s):
+                live = [dict(keep(100 + i, a if i == hi else 0, "i8", "tape_slot"), known=True) for i in range(8)]
+                return dict(rots=[ry(1, 1.0), ry(2, 2.0)], kept=[keep(1, a), keep(2, b)] + _compact_kept(live))
+            return side(name, build)
+        self.assertLess(len(side_("o", 3)[0].kept), 2 + 8)
+        c = compare(side_("o", 3), side_("r", 5), QKEY, "ref")      # same multiset at other handles: rails rename
+        self.assertTrue(c.equal, c.reasons)
+        other = side("r", lambda a, b, s: dict(rots=[ry(1, 1.0), ry(2, 2.0)], kept=[keep(1, a), keep(2, b)]
+                                               + [keep(100 + i, b if i == 3 else 0, "i8", "tape_slot") for i in range(8)]))
+        self.assertFalse(compare(side_("o", 3), other, QKEY, "ref").equal)
 
     def test_free_of_a_classical_valued_rail_with_any_value(self):
         ok = side("o", lambda a, b, s: dict(rots=[ry(1, 1.0), ry(2, 2.0)], kept=[keep(1, a), keep(2, b)],

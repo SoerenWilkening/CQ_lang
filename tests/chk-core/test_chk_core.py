@@ -22,6 +22,16 @@ sys.path.insert(0, str(REPO / "checker" / "rt"))
 
 from cqcheck import drivers, run  # noqa: E402
 from cqcheck.contracts import DriverSpec, RunResult, to_json  # noqa: E402
+
+
+def to_json(r):
+    """A RunResult as compared across runs: the address tables are this process's (CR §6: host addresses
+    differ per run; compare.py reads them relationally)."""
+    import dataclasses
+    from cqcheck import contracts
+    out = {k: v for k, v in r.outputs.items() if k not in ("objects", "regions")} if isinstance(r.outputs, dict) else r.outputs
+    return contracts.to_json(dataclasses.replace(r, outputs=out))
+
 import stubgen  # noqa: E402
 
 SPEC = Path(os.environ.get("CQ_SPEC_DIR", REPO.parent / "CQ_spec"))
@@ -977,6 +987,8 @@ class StandIn(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        os.environ["CQ_ROOTS_EXTRA"] = ",".join(set(re.findall(r"\b(e_\w+)\(", STANDIN_C)))  # these tests' rule 27 library
+        cls.addClassCleanup(os.environ.pop, "CQ_ROOTS_EXTRA", None)
         from cqcheck import oracle
         cls.oracle = oracle
         cls.tmp = Path(tempfile.mkdtemp(prefix="cq-standin."))
@@ -1173,7 +1185,7 @@ class HandleReturn(unittest.TestCase):
 
 
 class ExitRoles(unittest.TestCase):
-    """cq-tt2j: the exit roles CR §6 item 1's leak rule reads (rt/core.c exit_role, mark_outputs)."""
+    """cq-tt2j: the exit roles CR §6 item 1's leak rule reads (rt/core.c exit_role)."""
 
     def test_roles(self):
         spec = DriverSpec(example="chk-core", protos=["int lk(int,double,double,int)"], setup="",
@@ -1188,12 +1200,12 @@ class ExitRoles(unittest.TestCase):
         # handles in creation order: x y a b e e2 k h cnd md (z measured)
         self.assertEqual(live[1][0], "frozen")
         self.assertEqual(live[2][0], "frozen")
-        self.assertEqual(live[3][0], "output")       # @g holds it
-        self.assertEqual(live[4], ("garbage", False))  # only a dead frame's cell holds it
+        self.assertEqual(live[3], ("garbage", False))  # a handle in memory is nothing (flat memory)
+        self.assertEqual(live[4], ("garbage", False))
         self.assertEqual(live[5][0], "fenv_flags")
         self.assertEqual(live[6][0], "fenv_flags")
         self.assertEqual(live[7], ("seed", True))
-        self.assertEqual(live[8], ("garbage", False))  # only a freed heap block holds it
+        self.assertEqual(live[8], ("garbage", False))
         self.assertEqual(live[9], ("garbage", False))
         self.assertEqual(live[10][0], "fenv_mode")
 
@@ -1209,17 +1221,21 @@ class ExitRoles(unittest.TestCase):
         # handles in creation order: x g r t s (x, t freed)
         self.assertEqual(live, {2: "garbage", 3: "frozen", 5: "garbage"})
 
-    def test_cells_module(self):
-        text = ("define void @f(ptr %p, i32 %h, i64 %n) {\n  store i32 %h, ptr %p, align 4\n"
-                "  store i64 %n, ptr %p, align 8\n  store { i32, double } zeroinitializer, ptr %p, align 8\n"
-                "  call void @llvm.memcpy.p0.p0.i64(ptr align 4 %p, ptr align 4 %p, i64 %n, i1 false)\n"
-                "  ret void\n}\n")
-        out = run.cells_module(text)
-        self.assertEqual(out.count("call void @__cqe_cell_note("), 3)
-        self.assertIn("call void @__cqe_cell_note(ptr %p, i64 ptrtoint (ptr getelementptr ({ i32, double }, "
-                      "ptr null, i32 1) to i64))", out)
-        self.assertIn("call void @__cqe_cell_note(ptr %p, i64 %n)", out)
-        self.assertIn("declare void @__cqe_cell_note(ptr, i64)", out)
+    def test_kept_copy_of_a_table_result(self):
+        # rule 19: the copy of a candidate's result is kept; an ordinary copy is not
+        text = ("define void @f(ptr %fp, i32 %x) {\n  %r = call i32 %fp(i32 %x)\n  %c = call i32 @cqrt_alloc_i32(i32 0)\n"
+                "  call void @cqrt_copy_i32(i32 %r, i32 %c)\n  call void @cqrt_copy_i32(i32 %x, i32 %c)\n  ret void\n}\n")
+        out = run.kept_copies_module(text)
+        self.assertEqual(out.count("call void @cqe__set_store_kept(i32 %c)"), 1)
+        self.assertLess(out.index("cqrt_copy_i32(i32 %r"), out.index("set_store_kept(i32 %c)"))
+        self.assertLess(out.index("set_store_kept(i32 %c)"), out.index("cqrt_copy_i32(i32 %x"))
+
+    def test_ctl_measure_named(self):
+        text = ("define i32 @p_t_ctl(i32 %c, i32 %v) {\n  %m = call i32 @cqrt_measure_i32(i32 %v)\n  ret i32 %m\n}\n"
+                "define i32 @p_t(i32 %v) {\n  %m = call i32 @cqrt_measure_i32(i32 %v)\n  ret i32 %m\n}\n")
+        out = run.ctl_measures_module(text)
+        self.assertEqual(out.count("call void @cqd_out_ctl_measure(i32 %v)"), 1)
+        self.assertLess(out.index("cqd_out_ctl_measure"), out.index("define i32 @p_t("))
 
 
 class HostClone(unittest.TestCase):
