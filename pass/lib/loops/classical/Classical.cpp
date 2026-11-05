@@ -547,51 +547,7 @@ void Unit::disjuncts(const Value *c, bool positive, SmallVectorImpl<Disj> &out,
   out.push_back({c, positive});
 }
 
-// Is the initial value of p a rail this function made for itself (a template result, or a classical
-// value cq_theta minted, rotated in place any number of times) that nothing reads once the loop is
-// entered? Its readers other than p and its own rotations must be phi incomings on edges no path
-// from the loop reaches (the zero-trip edge of the loop's guard).
-bool Unit::initDead(Loop &L, const Value *init, const PHINode *p) {
-  if (!isQ(init))
-    return true;   // a seed minted for the loop
-  SmallVector<const Instruction *, 4> A;
-  for (const Value *x = init;;) {
-    auto *I = dyn_cast<Instruction>(x);
-    if (!I)
-      return false;
-    A.push_back(I);
-    if (auto *CB = dyn_cast<CallInst>(I); CB && calls::classify(*CB, ctx.T, ctx.S) == calls::Class::Theta) {
-      if (isQ(CB->getArgOperand(1)))
-        return false;
-      x = CB->getArgOperand(0);
-      if (!isQ(x))
-        break;   // minted by this cq_theta
-      continue;
-    }
-    if (isa<BinaryOperator>(I) || isa<UnaryOperator>(I))
-      break;
-    return false;
-  }
-  DenseSet<const BasicBlock *> reach;
-  SmallVector<const BasicBlock *, 16> work{L.getHeader()};
-  while (!work.empty()) {
-    const BasicBlock *b = work.pop_back_val();
-    if (!reach.insert(b).second)
-      continue;
-    for (const BasicBlock *s : successors(b))
-      work.push_back(s);
-  }
-  for (const Instruction *a : A)
-    for (const Use &u : a->uses()) {
-      const User *usr = u.getUser();
-      if (usr == p || is_contained(A, usr))
-        continue;
-      auto *phi = dyn_cast<PHINode>(usr);
-      if (!phi || reach.count(phi->getIncomingBlock(u)))
-        return false;
-    }
-  return true;
-}
+bool Unit::initDead(Loop &L, const Value *init, const PHINode *p) { return exits::initDead(ctx, L, init, p); }
 
 void Unit::planRuleSix(Loop &L, Case c) {
   BasicBlock *header = L.getHeader(), *latch = L.getLoopLatch(), *pre = L.getLoopPredecessor();
