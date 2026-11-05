@@ -1557,9 +1557,11 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool
   bool ctl = false;
   if (underQ) {
     SpecState *probe = getSpec(G, formal, tys, false, false, {}, {}, plain);
-    // Rule 19: ... or a call cycle through itself (rule 14: the one clone with its activation counter).
+    // Rule 19: ... or a call cycle through itself (rule 14: the one clone with its activation counter). §1.4 _ctl, rule 5:
+    // a bus access under a quantum predicate is the _controlled form, a load included ("no bus access is hoisted or
+    // speculated"), so a callee that loads takes the predicate.
     if (plain || probe->nonPure || probe->hasTheta || probe->hasPhi || probe->hasEffect || probe->writesOuter ||
-        callsReach(G, G))
+        probe->busLoadT || callsReach(G, G))
       ctl = true;
   }
   std::vector<uint64_t> bounds;
