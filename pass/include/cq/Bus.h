@@ -25,6 +25,11 @@ void lowerLoad(LoweringContext &, llvm::LoadInst &);
 // Rule 5 sentence 3 (kept store, value rail a seed for a classical value, control rail kept) or, when the in-place
 // matcher matches, the in-place form. Store of a pointer is an i64 store.
 void lowerStore(LoweringContext &, llvm::StoreInst &);
+// Rule 5 In-place form: called by the spine's dispatch for every original instruction. Before: emits what the form asks
+// ahead of I (Readers: the test d and the copy before the first change of an interval; a part that ends at a reader);
+// true when I itself emits nothing (a load or step of a form). After: the copy taken right after a form's preceding store.
+bool inPlaceBefore(LoweringContext &, llvm::Instruction &);
+void inPlaceAfter(LoweringContext &, llvm::Instruction &);
 // Rule 4 cmpxchg/atomicrmw: a bus load, the templates, a bus store, by lowerStore's rules (add/sub/xor in place).
 void lowerAtomic(LoweringContext &, llvm::Instruction &);
 // Rule 22: memcpy/memmove/memset[.inline], realloc's copy, byval copy, struct assignment. Classical length: host loops

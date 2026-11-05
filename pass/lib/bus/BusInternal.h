@@ -30,6 +30,11 @@ void emitKeptStore(LoweringContext &, llvm::Type *T, Operand addr, Operand value
 // store is the kept store.
 bool isInPlaceForm(LoweringContext &, const llvm::StoreInst &);
 void lowerInPlace(LoweringContext &, llvm::StoreInst &);
+// Rule 4: an atomicrmw add, sub or xor: the in-place form, its result a plain load before the swap-out.
+void lowerInPlaceRMW(LoweringContext &, llvm::AtomicRMWInst &);
+// Rule 5 Width casts: a load of a _Bool cell used as i1 is ONE access at i1.
+bool isBoolCellLoad(LoweringContext &, const llvm::LoadInst &);
+void lowerBoolCellLoad(LoweringContext &, llvm::LoadInst &);
 
 // LLVM's range facts of an integer value: its unsigned upper bound, when it has one (rule 16, rule 22).
 std::optional<uint64_t> rangeBound(LoweringContext &, const llvm::Value *);
