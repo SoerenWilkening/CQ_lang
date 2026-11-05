@@ -24,3 +24,8 @@ One line per decision on what CQ_spec leaves open. OWNER-FLAG: we proceed on it,
 - Q15: DECIDED — exit-test loads under the reaching predicate in every quantum-exit case (117); two exit tests per trip: a_K after the K-th latch, no extra header test (189).
 - Q16: DECIDED — the C oracle rewrites allocations and allocas to a zeroing never-reusing allocator and drops lifetime markers; drivers pre-zero the stack so host-resident uninitialized reads agree by construction.
 - Q17: DECIDED — Ry breaks classical-valuedness (ABI §0 definition); extra handles are trailing outs (verify on 162/193); rule 16's full ordinary-call test governs.
+- A (109): DECIDED — `s` is a rule-6 image, kept with role `rule6_image`; the evaluator marks images on every observed rule-6 clean; no frozen carry across the bus; SPEC_ISSUES: rule 6 to name the uncleaned second operand.
+- B (203): DECIDED — an unreached trip target without proof stays MISSING/`error`, never FAIL, dead or UNCOVERED without a budget stop; a bound is proved by trip facts on the O1.ll linked with the driver's bodies at -O1.
+- C (cq-kzfv): DECIDED — CR wins: excess printf arguments are the format entry's fields and ignored; the evaluator splits by the callee's known arity; an unknown callee after a surplus is a SPEC_ISSUES entry.
+- D (cq-ytux): DECIDED — INPUT bytes are classical bus stores (ABI 1.10), so fgets overwrites QUANTUM cells as C does; rt_tape.c's host_write was a bug.
+- Kept the owner's 2026-11-03 no-op `unimplemented()` macro for existing sites; new code fails loudly (report_fatal_error or internalError).
