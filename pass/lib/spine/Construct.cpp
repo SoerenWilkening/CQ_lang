@@ -1722,6 +1722,18 @@ void Walker::emitTerminator(BasicBlock *b) {
         // Rule 19 (cq-i9wk): an in-module caller keeps a frozen result as its own register; any other
         // result is a clone's, cleaned by its twin.
         noteEntryReturn(spine::frozenRail(sh, op.v), t);
+        // Rule 14: a value read in place whose reverse loop is deferred until after its readers (the return is the last):
+        // the handle that escapes is a copy, the reverse runs before the return.
+        if (ctx.unc().deferredExit(ctx.unc().idOf(op.v))) {
+          RailType w = railTypeOf(rv->getType());
+          CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+          RailId fid = ctx.unc().recordSeed(f);
+          abi::CoreSpec cp{abi::Core::Copy, w};
+          CallInst *c = ctx.emitCore(cp, {op.v, f});
+          ctx.unc().recordCore(c, cp, {op, Operand{f, true}}, fid);
+          op.v = f;
+          v = f;
+        }
         // §1.1: an entry returns an unmeasured quantum value as its handle; the rail escapes.
         ctx.unc().setRole(ctx.unc().idOf(op.v), Role::Escaped);
         Type *rt = sh.out->getReturnType();

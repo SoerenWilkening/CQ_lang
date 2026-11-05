@@ -3062,6 +3062,24 @@ bool Uncompute::mayHit(const Value *handle, const Instruction *gate) const {
   return false;
 }
 
+bool Uncompute::deferredExit(RailId r) const {
+  for (const Impl::Deferred &d : impl->defs)
+    if (is_contained(d.exits, r))
+      return true;
+  for (RailId a : impl->rails[r].arms)   // a merge of rails: its arms'
+    if (a != r && deferredExit(a))
+      return true;
+  return false;
+}
+
+void Uncompute::mergeToRail(RailId m) {
+  Impl::Rail &x = impl->rail(m, "mergeToRail");
+  for (RailId a : x.arms)
+    llvm::erase(impl->rails[a].mergedInto, m);
+  x.arms.clear();
+  x.role = Role::Garbage;
+}
+
 std::optional<Role> Uncompute::liveRole(RailId r) const {
   const Impl::Rail &x = impl->rails[r];
   if (x.released || !x.exitsDone.empty())

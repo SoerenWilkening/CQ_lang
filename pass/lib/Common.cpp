@@ -30,6 +30,8 @@ namespace {
   os << prefix << what;
   if (at)
     os << "\n  at: " << *at;
+  if (auto *I = llvm::dyn_cast_or_null<llvm::Instruction>(at); I && I->getParent() && I->getFunction())
+    os << "\n  in: @" << I->getFunction()->getName();
   if (file) {
     llvm::StringRef f(file);
     size_t p = f.find("pass/");
