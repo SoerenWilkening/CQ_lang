@@ -874,7 +874,7 @@ Function *materialize(Module &M, const Specialization &S) {
   Type *rt = cloneResultType(C, rl, S.F->getReturnType());
   if (S.table)
     ps.push_back(Type::getInt32Ty(C));   // §1.4: the cutoff K
-  if (!S.table && fenv::cloneCarriesEnv(T, S)) {
+  if (fenv::cloneCarriesEnv(T, S)) {
     // E1 (CR rule 23, 82): the caller's mode and flags trail the parameters; the new flags handle is
     // the result's last field: i32 alone for an otherwise void clone, {result, i32} for a scalar result,
     // and for a field-wise result (CR §1.4: its literal struct of leaves, handles where quantum) that

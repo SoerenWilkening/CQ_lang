@@ -1405,7 +1405,7 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
   IRBuilder<> &B = ctx.B();
   Function *C = ctx.B().GetInsertBlock()->getParent();
   Type *CRT = C->getReturnType();
-  if (!ctx.S.table && fenv::cloneCarriesEnv(ctx.T, ctx.S)) {
+  if (fenv::cloneCarriesEnv(ctx.T, ctx.S)) {
     // E1 (CR rule 23, 82): the final flags are copied out into a fresh rail (Role::Result, as the
     // result's) and returned as the last field, after the result's (calls::materialize).
     LLVMContext &LC = ctx.M.getContext();
@@ -2376,7 +2376,7 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
         internalError("spine: a variadic clone with no block parameter", C);
       sh.varargs.push_back(Operand{C->getArg(p++), false});
     }
-    if (!S.table && fenv::cloneCarriesEnv(ctx.T, S)) {
+    if (fenv::cloneCarriesEnv(ctx.T, S)) {
       // E1 (CR rule 23, 82): the caller's mode and flags, the two trailing parameters.
       if (p + 2 > C->arg_size())
         internalError("spine: a clone carrying the environment without its mode and flags parameters", C);
