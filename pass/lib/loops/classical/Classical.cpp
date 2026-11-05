@@ -862,12 +862,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   auto inUnit = [&](const BasicBlock *b) { return UX.contains(L, b); };
   // cq-j5mq: several classical exit edges into one exit block (a `break` on a classical test): each edge is a real
   // branch to T. The exit block's phis are bound at T, over the edges.
-  const bool cx = !c3 && outermost && !inTrip && exitB && !exits::liveExiting(L);
+  const bool cx = !c3 && outermost && !exits::liveExiting(L);
   // A sub-loop's classical edges are real branches to wherever they go, in its parent or out of the unit.
-  if (!c3 && !cx && (outermost || inTrip) && (UX.multi() || !exits::liveExiting(L)))
-    report_fatal_error("cq: unimplemented: loops-classical: a classically bounded loop with several exit edges in a "
-                       "K-loop trip or into several exit blocks (cq-y7kw)",
-                       /*gen_crash_diag=*/false);
   if (outermost)
     unitExit = T;
 
@@ -2460,9 +2456,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       // a rail copied out (alloc + copy; a classical incoming the seed itself), the copy an output of the loop.
       LLVMContext &Cx = ctx.M.getContext();
       SmallVector<PHINode *, 4> xphis;
-      for (PHINode &P : exitB->phis())
-        if (any_of(P.blocks(), [&](const BasicBlock *u) { return L.contains(u); }))
-          xphis.push_back(&P);
+      if (exitB)
+        for (PHINode &P : exitB->phis())
+          if (any_of(P.blocks(), [&](const BasicBlock *u) { return L.contains(u); }))
+            xphis.push_back(&P);
       SmallVector<PHINode *, 4> nps;
       for (PHINode *P : xphis) {
         PHINode *np = PHINode::Create(isQ(P) ? handleTy(Cx) : P->getType(), 2, P->getName(), T->begin());
@@ -2471,16 +2468,22 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       exitIndex = PHINode::Create(Type::getInt32Ty(Cx), 2, "exit", T->begin());
       unsigned k = 0;
       for (BasicBlock *u : L.blocks()) {
-        if (!is_contained(successors(u), exitB))
-          continue;
-        auto ef = edgeFrom.find({u, exitB});
-        if (ef == edgeFrom.end())
-          internalError("loops-classical: an exit edge the walk did not make", u->getTerminator());
+        BasicBlock *xs = nullptr;
+        for (BasicBlock *y : successors(u))
+          if (!top.contains(y))
+            xs = y;
+        auto ef = edgeFrom.find({u, xs});
+        if (!xs || ef == edgeFrom.end() || exitIndex->getBasicBlockIndex(ef->second) >= 0 ||
+            !is_contained(predecessors(T), ef->second))
+          continue;   // no real edge out of the unit from here (an edge into a dead end needs none)
         BasicBlock *from = ef->second, *Eb = newBlock();
         from->getTerminator()->replaceSuccessorWith(T, Eb);
         ctx.B().SetInsertPoint(Eb);
         for (unsigned j = 0; j < xphis.size(); ++j) {
-          Operand o = ctx.operand(xphis[j]->getIncomingValueForBlock(u));
+          // An edge into another exit block than this phi's (its exit arm): any value serves.
+          Operand o = xphis[j]->getBasicBlockIndex(u) >= 0
+                          ? ctx.operand(xphis[j]->getIncomingValueForBlock(u))
+                          : Operand{Constant::getNullValue(xphis[j]->getType()), false};
           if (!isQ(xphis[j])) {
             if (o.handle)
               internalError("loops-classical: a classical exit phi with a rail incoming", xphis[j]);

@@ -1,94 +1,107 @@
-; cq-j5mq: classically bounded loops with several classical exit edges into one exit block (from tests/spine/loop_exit_join.cpp).
+; cq-j5mq: classically bounded loops with several classical exit edges into one exit block (shapes of tests/spine/loop_exit_join.cpp).
+; ModuleID = '/tmp/ee.bc'
 source_filename = "exit_edges.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 
 declare i32 @cq_theta_si32(i32, double)
+
 declare i32 @cq_measure_si32(i32)
+
 declare void @cq_phi(double)
 
+define i32 @two_exits(i32 %0, double %1, i32 %2, i32 %3, double %4) {
+  %6 = call i32 @cq_theta_si32(i32 %0, double %1)
+  %7 = icmp sgt i32 %2, 0
+  br i1 %7, label %12, label %8
 
-define i32 @two_exits(i32 %x0, double %th, i32 %n, i32 %k, double %phi) {
-entry:
-  %x = call i32 @cq_theta_si32(i32 %x0, double %th)
-  %g = icmp sgt i32 %n, 0
-  br i1 %g, label %body, label %exit
-exit:
-  %r = phi i32 [ 0, %entry ], [ %i1, %latch ], [ 100, %brk ]
-  %m = call i32 @cq_measure_si32(i32 %x)
-  %s = add i32 %m, %r
-  ret i32 %s
-body:
-  %i = phi i32 [ %i1, %latch ], [ 0, %entry ]
-  %c = icmp eq i32 %x, %i
-  br i1 %c, label %then, label %brk
-then:
-  call void @cq_phi(double %phi)
-  br label %brk
-brk:
-  %e = icmp eq i32 %i, %k
-  br i1 %e, label %exit, label %latch
-latch:
-  %i1 = add nuw nsw i32 %i, 1
-  %d = icmp eq i32 %i1, %n
-  br i1 %d, label %exit, label %body
+8:                                                ; preds = %18, %16, %5
+  %9 = phi i32 [ 0, %5 ], [ %19, %18 ], [ 100, %16 ]
+  %10 = call i32 @cq_measure_si32(i32 %6)
+  %11 = add i32 %10, %9
+  ret i32 %11
+
+12:                                               ; preds = %18, %5
+  %13 = phi i32 [ %19, %18 ], [ 0, %5 ]
+  %14 = icmp eq i32 %6, %13
+  br i1 %14, label %15, label %16
+
+15:                                               ; preds = %12
+  call void @cq_phi(double %4)
+  br label %16
+
+16:                                               ; preds = %15, %12
+  %17 = icmp eq i32 %13, %3
+  br i1 %17, label %8, label %18
+
+18:                                               ; preds = %16
+  %19 = add nuw nsw i32 %13, 1
+  %20 = icmp eq i32 %19, %2
+  br i1 %20, label %8, label %12
 }
 
+define i32 @arm_exits(i32 %0, double %1, i32 %2, i32 %3, double %4) {
+  %6 = call i32 @cq_theta_si32(i32 %0, double %1)
+  %7 = icmp eq i32 %6, 3
+  br i1 %7, label %9, label %8
 
-define i32 @arm_exits(i32 %x0, double %th, i32 %n, i32 %k, double %phi) {
-entry:
-  %x = call i32 @cq_theta_si32(i32 %x0, double %th)
-  %q = icmp eq i32 %x, 3
-  br i1 %q, label %body, label %els
-els:
-  br label %join
-body:
-  %i = phi i32 [ %i1, %latch ], [ 0, %entry ]
-  %c = icmp eq i32 %x, %i
-  br i1 %c, label %then, label %brk
-then:
-  call void @cq_phi(double %phi)
-  br label %brk
-brk:
-  %e = icmp eq i32 %i, %k
-  br i1 %e, label %join, label %latch
-latch:
-  %i1 = add nuw nsw i32 %i, 1
-  %d = icmp eq i32 %i1, %n
-  br i1 %d, label %join, label %body
-join:
-  %r = phi i32 [ 5, %els ], [ %i1, %latch ], [ 100, %brk ]
-  %m = call i32 @cq_measure_si32(i32 %x)
-  %s = add i32 %m, %r
-  ret i32 %s
+8:                                                ; preds = %5
+  br label %18
+
+9:                                                ; preds = %15, %5
+  %10 = phi i32 [ %16, %15 ], [ 0, %5 ]
+  %11 = icmp eq i32 %6, %10
+  br i1 %11, label %12, label %13
+
+12:                                               ; preds = %9
+  call void @cq_phi(double %4)
+  br label %13
+
+13:                                               ; preds = %12, %9
+  %14 = icmp eq i32 %10, %3
+  br i1 %14, label %18, label %15
+
+15:                                               ; preds = %13
+  %16 = add nuw nsw i32 %10, 1
+  %17 = icmp eq i32 %16, %2
+  br i1 %17, label %18, label %9
+
+18:                                               ; preds = %15, %13, %8
+  %19 = phi i32 [ 5, %8 ], [ %16, %15 ], [ 100, %13 ]
+  %20 = call i32 @cq_measure_si32(i32 %6)
+  %21 = add i32 %20, %19
+  ret i32 %21
 }
 
+define i32 @nested_exits(i32 %0, double %1, i32 %2, i32 %3, double %4) {
+  %6 = call i32 @cq_theta_si32(i32 %0, double %1)
+  %7 = icmp sgt i32 %2, 0
+  br i1 %7, label %8, label %20
 
-define i32 @nested_exits(i32 %x0, double %th, i32 %n, i32 %k, double %phi) {
-entry:
-  %x = call i32 @cq_theta_si32(i32 %x0, double %th)
-  %g = icmp sgt i32 %n, 0
-  br i1 %g, label %outer, label %exit
-outer:
-  %i = phi i32 [ %i1, %olatch ], [ 0, %entry ]
-  br label %inner
-inner:
-  %j = phi i32 [ %j1, %ilatch ], [ 0, %outer ]
-  %c = icmp eq i32 %x, %j
-  call void @cq_phi(double %phi)
-  %j1 = add i32 %j, 1
-  %e = icmp eq i32 %j1, %k
-  %e2 = icmp eq i32 %j1, %i
-  br i1 %e2, label %exit, label %ilatch
-ilatch:
-  br i1 %e, label %olatch, label %inner
-olatch:
-  %i1 = add nuw nsw i32 %i, 1
-  %d = icmp eq i32 %i1, %n
-  br i1 %d, label %exit, label %outer
-exit:
-  %r = phi i32 [ 0, %entry ], [ %i, %olatch ], [ %i, %inner ]
-  %m = call i32 @cq_measure_si32(i32 %x)
-  %s = add i32 %m, %r
-  ret i32 %s
+8:                                                ; preds = %17, %5
+  %9 = phi i32 [ %18, %17 ], [ 0, %5 ]
+  br label %10
+
+10:                                               ; preds = %16, %8
+  %11 = phi i32 [ %13, %16 ], [ 0, %8 ]
+  %12 = icmp eq i32 %6, %11
+  call void @cq_phi(double %4)
+  %13 = add i32 %11, 1
+  %14 = icmp eq i32 %13, %3
+  %15 = icmp eq i32 %13, %9
+  br i1 %15, label %20, label %16
+
+16:                                               ; preds = %10
+  br i1 %14, label %17, label %10
+
+17:                                               ; preds = %16
+  %18 = add nuw nsw i32 %9, 1
+  %19 = icmp eq i32 %18, %2
+  br i1 %19, label %20, label %8
+
+20:                                               ; preds = %17, %10, %5
+  %21 = phi i32 [ 0, %5 ], [ %9, %17 ], [ %9, %10 ]
+  %22 = call i32 @cq_measure_si32(i32 %6)
+  %23 = add i32 %22, %21
+  ret i32 %23
 }
