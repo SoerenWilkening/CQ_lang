@@ -1445,6 +1445,40 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
     return;
   }
   ReturnInst *nr;
+  ArrayRef<const CallBase *> mints = calls::mintSites(ctx.T, ctx.S);
+  if (ctx.S.table) {
+    // §1.4: a table clone pushes the registers it minted, its twin pops them.
+    for (const CallBase *site : mints) {
+      CallInst *p = ctx.emitCore(abi::CoreSpec{abi::Core::Push}, {calls::mintHandle(ctx, *site)});
+      p->setMetadata("cq.mint.push", MDNode::get(ctx.M.getContext(), {}));
+    }
+  } else if (Value *rv = ret->getReturnValue(); rv && !mints.empty()) {
+    // Rule 19: the handle of each register after the results.
+    SmallVector<Value *, 4> vals;
+    auto *st = cast<StructType>(CRT);
+    if (!rv->getType()->isAggregateType() && !rv->getType()->isVectorTy() && ctx.T.resultQuantum(ctx.S, 0) &&
+        !ctx.operand(rv).handle) {
+      // A classical value on this path of a result taint records quantum: a seed rail holding it (rule 7).
+      Value *lit = ctx.operand(rv).v;
+      if (lit->getType()->isPointerTy())
+        lit = B.CreatePtrToInt(lit, Type::getInt64Ty(ctx.M.getContext()));
+      CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(lit->getType())}, {lit});
+      ctx.unc().setRole(ctx.unc().recordSeed(f), Role::Result);
+      vals.push_back(f);
+    } else {
+      resultFields(ret, rv, st, unsigned(mints.size()), vals);
+    }
+    for (const CallBase *site : mints)
+      vals.push_back(calls::mintHandle(ctx, *site));
+    if (vals.size() != st->getNumElements())
+      internalError("spine: a clone's result type does not have its results and the registers it minted", ret);
+    Value *agg = PoisonValue::get(CRT);
+    for (unsigned k = 0; k < vals.size(); ++k)
+      agg = B.CreateInsertValue(agg, vals[k], {k});
+    nr = B.CreateRet(agg);
+    ctx.unc().flushAtExit(nr);
+    return;
+  }
   if (Value *rv = ret->getReturnValue()) {
     SmallVector<Value *, 4> vals;
     if (emitCloneFields(ret, rv, dyn_cast<StructType>(CRT), 0, vals)) {

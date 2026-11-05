@@ -10,13 +10,29 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/ModuleSlotTracker.h"
 #include "llvm/IRReader/IRReader.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
 
 int main(int argc, char **argv) {
+  cq::TaintOptions TO;
+  // --roots=<file> (rule 27, Q6): the bodiless functions the root lists name, one per line.
+  if (argc > 1 && llvm::StringRef(argv[1]).consume_front("--roots=")) {
+    auto buf = llvm::MemoryBuffer::getFile(llvm::StringRef(argv[1]).drop_front(8));
+    if (!buf) {
+      llvm::errs() << "cq_taint_dump: cannot read the root list\n";
+      return 2;
+    }
+    llvm::SmallVector<llvm::StringRef, 8> lines;
+    (*buf)->getBuffer().split(lines, '\n', -1, /*KeepEmpty=*/false);
+    for (llvm::StringRef l : lines)
+      TO.listed.push_back(l.trim().str());
+    --argc;
+    ++argv;
+  }
   bool values = argc == 3 && llvm::StringRef(argv[1]) == "--values";
   if (argc != 2 && !values) {
-    llvm::errs() << "usage: cq_taint_dump [--values] <module.ll>\n";
+    llvm::errs() << "usage: cq_taint_dump [--roots=<file>] [--values] <module.ll>\n";
     return 2;
   }
   llvm::LLVMContext Ctx;
@@ -29,11 +45,11 @@ int main(int argc, char **argv) {
   std::string a, b;
   {
     llvm::raw_string_ostream os(a);
-    cq::computeTaint(*M, {}).print(os);
+    cq::computeTaint(*M, TO).print(os);
   }
   {
     llvm::raw_string_ostream os(b);
-    cq::computeTaint(*M, {}).print(os);
+    cq::computeTaint(*M, TO).print(os);
   }
   if (a != b) {
     llvm::errs() << "cq_taint_dump: computeTaint is not a pure function of the module\n";
@@ -41,7 +57,7 @@ int main(int argc, char **argv) {
   }
   llvm::outs() << a;
   if (values) {
-    cq::TaintInfo T = cq::computeTaint(*M, {});
+    cq::TaintInfo T = cq::computeTaint(*M, TO);
     llvm::ModuleSlotTracker MST(M.get());
     for (const cq::Specialization &S : T.specializations()) {
       llvm::outs() << "spec @" << S.F->getName() << " mask=";

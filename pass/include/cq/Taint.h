@@ -78,6 +78,8 @@ public:
   // Rule 18 with rulings Q3: S has a tainted measurement or reads the result rail of an effect entry, itself or through
   // a callee: no twin. Writing memory (bus::writesMemory) is the third reason.
   bool noTwinByEffects(const Specialization &) const;
+  // Rule 18, §1.4: some call reads the clone's result other than by a measurement (a table clone always): its twin runs.
+  bool needsTwin(const Specialization &) const;
   void print(llvm::raw_ostream &) const;                               // -cq-dump-taint
   // K1: storage owned by module taint; computeTaint builds it.
 private:

@@ -27,6 +27,13 @@ void lowerRaise(LoweringContext &, llvm::CallBase &);
 // Rule 14, §1.4: the counter of a _ctl clone's live activations and the cut at K, on the clone just constructed. Nothing
 // for a clone that is no _ctl clone or a function neither on a call cycle nor with a table clone.
 void insertActivationCounter(LoweringContext &);
+// Rule 19 extra results: the rotations of a clone with a twin that the twin must not repeat: the rail each one minted comes
+// to the twin instead. mintSites: S's cq_theta calls outside a loop, in order, when a twin of S runs. noteMint, after the
+// spine lowered one (`before`: the instruction before its code, or null): tags its code for the twin. mintHandle: at a return,
+// the rail the site minted, else handle 0 (§1.1). A by-name clone returns them after its results; a table clone pushes them.
+llvm::ArrayRef<const llvm::CallBase *> mintSites(const TaintInfo &, const Specialization &);
+void noteMint(LoweringContext &, llvm::CallInst &site, llvm::BasicBlock *startBlock, llvm::Instruction *before);
+llvm::Value *mintHandle(LoweringContext &, const llvm::CallBase &site);
 // The K of the caller's enclosing function (§0): a table clone passes down the K it received.
 llvm::Value *enclosingK(LoweringContext &);
 // C1 (cq-arch 2026-11-01, CR rule 24; 106): site lowered as a direct call of T.calleeSpecialization(site, S),

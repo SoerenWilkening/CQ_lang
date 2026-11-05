@@ -1551,7 +1551,8 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool
           boundFormals.push_back(i);
         }
       }
-  if (viaIntrinsic) {
+  // §1.4: one clone per function, mask and kind, whatever the recursion depth: a call on a cycle carries no bound (204).
+  if (viaIntrinsic || callsReach(G, cur->F)) {
     bounds.clear();
     boundFormals.clear();
   }
@@ -2634,6 +2635,27 @@ void Analyzer::finish() {
       for (SpecState *C : v)
         work.push_back(C);
   }
+  // §5: what only a table clone reaches (a corpus example omits it for a function whose address it never takes).
+  {
+    for (auto &S : st.specs)
+      S->rowOnly = true;
+    SmallVector<SpecState *, 32> code;
+    for (auto &S : st.specs)
+      if (S->reachable && !S->table && (S->isRoot || (S->inPlace && (!S->F->hasLocalLinkage() || S->F->hasAddressTaken()))))
+        code.push_back(S.get());
+    while (!code.empty()) {
+      SpecState *S = code.pop_back_val();
+      if (!S->rowOnly)
+        continue;
+      S->rowOnly = false;
+      for (auto &[CB, v] : S->callees)
+        for (SpecState *C : v)
+          code.push_back(C);
+    }
+    for (auto &S : st.specs)
+      if (S->table && S->F->hasAddressTaken())
+        S->rowOnly = false;
+  }
   // Twins: a call whose quantum result is consumed by something other than a measurement (rule 18);
   // a declared clone always has one (rule 27).
   for (auto &S : st.specs) {
@@ -3109,6 +3131,8 @@ bool TaintInfo::loadsBus(const Specialization &S) const { return stateOf(needImp
 
 bool TaintInfo::noTwinByEffects(const Specialization &S) const { return stateOf(needImpl(impl), S)->noTwinT; }
 
+bool TaintInfo::needsTwin(const Specialization &S) const { return stateOf(needImpl(impl), S)->needsTwin; }
+
 bool TaintInfo::needsCtl(const llvm::Function &F) const {
   const ImplState &I = needImpl(impl);
   for (size_t k = 0; k < I.published.size(); ++k)
@@ -3133,6 +3157,12 @@ void TaintInfo::print(llvm::raw_ostream &os) const {
     C.bounds = P.bounds;
     C.ctl = P.ctl;
     C.pure = P.pure;
+    C.table = P.table;
+    if (P.F->isDeclaration()) {
+      // Rule 27: the declared clone is the table clone, every scalar actual a handle.
+      C.mask = std::string(P.mask.size(), '1');
+      C.table = true;
+    }
     std::string n = abi::name(C);
     (void)SS;
     return n;
@@ -3140,7 +3170,8 @@ void TaintInfo::print(llvm::raw_ostream &os) const {
   for (size_t k = 0; k < I.published.size(); ++k) {
     const Specialization &P = I.published[k];
     os << "cq-taint: spec " << specName(k) << " fn=@" << P.F->getName() << " mask=" << P.mask
-       << " entry=" << P.isEntry() << " declared=" << P.F->isDeclaration() << "\n";
+       << " entry=" << P.isEntry() << " declared=" << P.F->isDeclaration()
+       << " rowonly=" << I.publishedState[k]->rowOnly << "\n";
   }
   // Rule 23 (cq-pu8b): the environment state before and after every instruction that reads or
   // changes it, per specialization (MODE 'M' when the mode is a rail, FLAGS 'F' when the flags rail

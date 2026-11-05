@@ -18,6 +18,9 @@ struct TableRow {
   std::string forward, ctl;
   bool keepsResults = false;
 };
+// Rule 19: the rotations of the clone its twin does not repeat (Calls.cpp mintSites), recorded when it is materialized. The
+// forward's code of each carries !cq.mint with its index; a table clone's pushes !cq.mint.push.
+unsigned mintCount(const llvm::Function &clone);
 std::vector<TableRow> takeTableRows(const llvm::Module &);
 // The LLVM function type as a private C string (§1.3 `sig`), one per type.
 llvm::Constant *sigString(llvm::Module &, llvm::FunctionType *);

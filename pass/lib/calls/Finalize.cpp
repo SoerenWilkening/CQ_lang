@@ -166,9 +166,12 @@ void defineTwin(Module &M, Function &twin, Function &src) {
     internalError("calls: calls::finalize: twin @" + twin.getName().str() + " does not match the clone @" +
                       src.getName().str() + " (its outs, then the clone's arguments)",
                   &twin);
-  unsigned nOuts = twin.arg_size() - src.arg_size();
-  // CR §1.4: a _ctl clone's twin is _ctl_unc(pred, outs..., args...).
+  // CR §1.4: a _ctl clone's twin is _ctl_unc(pred, outs..., args...). Rule 19: the handles of the registers the clone
+  // returned after its results trail the twin's formals (Uncompute's recordCall extra); a table twin pops them.
   std::optional<abi::CloneSpec> tspec = abi::parseClone(twin.getName());
+  bool table = tspec && tspec->table;
+  unsigned mints = mintCount(src);
+  unsigned nOuts = twin.arg_size() - src.arg_size() - (table ? 0 : mints);
   unsigned first = tspec && tspec->ctl ? 1 : 0;   // the first out
   auto twinFormal = [&](unsigned i) { return i < first ? twin.getArg(i) : twin.getArg(i + nOuts); };
   bool handleRet = srt || (src.getReturnType() == h && nOuts == 1);
@@ -245,7 +248,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
       // A field-wise result: the insertvalue chain of the return; its handle fields (the copy-outs, in
       // field order) are the outs.
       SmallVector<Value *, 4> fields(srt->getNumElements(), nullptr);
-      unsigned nFields = srt->getNumElements();
+      unsigned nFields = srt->getNumElements() - (table ? 0 : mints);
       Value *v = ret;
       while (auto *iv = dyn_cast<InsertValueInst>(v)) {
         // The spine builds every field-wise return as one insertvalue chain from poison (emitCloneReturn).
@@ -319,6 +322,34 @@ void defineTwin(Module &M, Function &twin, Function &src) {
       f->eraseFromParent();
     else
       internalError("calls: calls::finalize: a clone's result rail still used after its twin rewrite", f);
+
+  // Rule 19: the rotations are not repeated: each register is the handle the forward handed over.
+  {
+    SmallVector<Value *, 2> handed(mints);
+    IRBuilder<> PB(&twin.getEntryBlock(), twin.getEntryBlock().getFirstInsertionPt());
+    for (unsigned k = 0; k < mints; ++k)
+      handed[k] = nOuts + src.arg_size() + k < twin.arg_size() && !table ? twin.getArg(nOuts + src.arg_size() + k) : nullptr;
+    if (table)
+      for (unsigned k = mints; k-- > 0;)
+        handed[k] = PB.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Pop}));
+    SmallVector<CallInst *, 4> tagged;
+    SmallVector<Instruction *, 2> pushes;
+    for (Instruction &I : instructions(twin)) {
+      if (I.getMetadata("cq.mint.push"))
+        pushes.push_back(&I);
+      if (I.getMetadata("cq.mint"))
+        tagged.push_back(cast<CallInst>(&I));
+    }
+    for (Instruction *I : pushes)
+      I->eraseFromParent();
+    for (CallInst *c : tagged) {
+      std::optional<abi::CoreSpec> a = abi::parseCore(c->getCalledFunction()->getName());
+      if (a && a->op == abi::Core::Alloc)
+        c->replaceAllUsesWith(handed[mdconst::extract<ConstantInt>(c->getMetadata("cq.mint")->getOperand(0))->getZExtValue()]);
+    }
+    for (CallInst *c : tagged)
+      c->eraseFromParent();
+  }
 
   // Rule 14's kept overflow predicate a_K = alloc_i1(0); and_i1(a_n, test, a_K), never freed, read by
   // nothing: the forward keeps it (one per activation); the twin, which only uncomputes the forward's
@@ -537,6 +568,11 @@ void finalize(Module &M) {
     return;
   defineTableClones(M);
   defineTwins(M);
+  for (Function &F : M)
+    for (Instruction &I : instructions(F)) {
+      I.setMetadata("cq.mint", nullptr);
+      I.setMetadata("cq.mint.push", nullptr);
+    }
 
   SetVector<Function *> originals;
   for (Function *C : clones)

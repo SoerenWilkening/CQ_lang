@@ -78,7 +78,27 @@ CASES = [
     # (object, tag, idx, cell count), a snapshot, the twin after the last cell read (dp_reg called the original
     # ext_sink with the handle cells before); two pointers and a classical cell are unimplemented.
     # cq-prvy (95): a variadic clone per call-site arity; its save area holds the actuals' handles.
-    # cq-5xde: a quantum-depth recursion is cut only under a proved depth bound B <= the cut level.
+    # Rule 14, §1.4: a recursion under a quantum predicate is one _ctl clone with its activation counter, cut at K (Q12).
+    ("depth_le0", "r4", [], "pass", [r"@__cq_act_"]),
+    ("depth_lt0", "r1", [], "pass", [r"@__cq_act_"]),
+    ("depth_lt_m1", "r15", [], "pass", [r"@__cq_act_"]),
+    ("depth_classical_formal", "r13", [], "pass", [r"@__cq_act_"]),
+    ("depth_other_formal", "r14", [], "pass", [r"@__cq_act_"]),
+    ("mutual", "mutual", [], "pass", [r"@__cq_act_even", r"@__cq_act_odd"]),
+    # Rule 19: a call through a function pointer: a classical pointer (measured, unmeasured with the twin at rule 18's
+    # position, under a predicate, all arguments classical), an address rail, a table clone that mints a register.
+    ("indirect_mixed", "im_struct", [], "pass", [r"@__cq_clone_resolve"]),
+    ("fp_classical", "fp_classical", [], "pass", [r"@__cq_clone_resolve"]),
+    ("fp_under_pred", "fp_under_pred", [], "pass", [r"@__cq_clone_resolve\(ptr %\w+, i32 1\)", r"@__cq_clone_resolve\(ptr %\w+, i32 3\)"]),
+    ("fp_rail_unmeasured", "fp_rail_unmeasured", [], "pass", [r"@__cq_clone_count"]),
+    ("tbl_mint", "tbl_mint", [], "pass", [r"@cqrt_push", r"@cqrt_pop"]),
+    # Rule 19: inside a _ctl clone a measurement is a controlled copy under the clone's formal, also in an arm (Q13).
+    ("ctl_measure_arm", "ctl_measure_arm", [], "pass", [r"@cqrt_copy_i32_controlled\(i32 %0, "]),
+    # Rule 16 Signal table: a result of signal and of raise the program reads; a rail signal number.
+    ("raise_read", "raise_read", [], "pass", [r"@__cq_sig"]),
+    ("sig_rail", "sig_rail", [], "pass", [r"@__cq_sig", r"@cqrt_qram_store_i64\("]),
+    # Rule 19 extra results: the twin takes the register's handle and repeats no rotation.
+    ("mint2", "mint2", [], "pass", [r"call void @__cq_q_f_100_unc\(i32 %\d+, i32 %\d+, i32 %\d+, double %\d+, i32 %\d+\)"]),
     # cq-xhv4 (169): a twin computes no rule 14 kept overflow predicate a_K of its own (the forward keeps one).
     ("twin_kept_overflow", "tk", [], "pass", []),
     # cq-c09h (owner 2026-11-02, revisits cq-kkgh): a by-value formal is a copy: the clone's cq_theta on it
