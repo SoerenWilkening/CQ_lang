@@ -109,6 +109,9 @@ void cqe__ry_forget(int32_t h);
 void cqe__mark_measured(int32_t h);
 void cqe__add_dep(int32_t h, int32_t src);
 void cqe__carry(int32_t into, const int32_t *srcs, int n); /* core.c (cq-qhow) */
+int cqe__r6_before(int32_t t, int32_t y);                  /* core.c (cq-o9mx) */
+void cqe__r6_cleaned(int32_t t, int32_t y);
+void cqe__r6_unc(int32_t t, const int32_t *ops, int n);
 int cqe__free_note(int32_t h, int known); /* core.c (cq-8m6v) */
 void cqe__free(int32_t h);
 
@@ -939,6 +942,7 @@ static void gate_copy_xorc(call_t *c, const char *w, int is_copy, int ctl) {
     log_gate(c, target, srcs, ns); /* known control 0: nothing happens on any branch */
     return;
   }
+  int r6 = is_copy && !ctl && cqe__r6_before(a, target); /* before the write stamps target */
   if (fire)
     cqe__val_xor(cqe__val(target), delta);
   if (is_copy)
@@ -948,6 +952,8 @@ static void gate_copy_xorc(call_t *c, const char *w, int is_copy, int ctl) {
     cqe__add_dep(target, srcs[i]);
   if (is_copy || ctl)
     cqe__zero_rule(target, srcs, ns);
+  if (r6)
+    cqe__r6_cleaned(a, target);
   log_gate(c, target, srcs, ns);
 }
 
@@ -1237,6 +1243,7 @@ static void template_call(call_t *c, const char *sym) {
         cqe__violation("width_mismatch", o, "%s: out rail %d is %s, the name implies %s", sym, (int)o, cqe__w(o), rw);
       cqe__val_xor(cqe__val(o), &out);
       cqe__carry(o, hs, nh);
+      cqe__r6_unc(o, hs, nh);
       cqe__mark_written(o);
       sbuf b = {0};
       sb_addf(&b, "{\"ev\":\"unc\",\"sym\":\"%s\",\"out\":%d,\"args\":%s,\"residue\":\"", sym, (int)o, ab.p);
@@ -1604,6 +1611,7 @@ static void standin(const char *sym, const char *sig, const char *csig, int32_t 
                          cqe__w(out_h), fn, wt);
         cqe__val_xor(cqe__val(out_h), &v);
         cqe__carry(out_h, hs, nh);
+        cqe__r6_unc(out_h, hs, nh);
         cqe__mark_written(out_h);
         sbuf b = {0};
         sb_addf(&b, "{\"ev\":\"unc\",\"sym\":\"%s\",\"out\":%d,\"args\":%s,\"residue\":\"", sym, (int)out_h, ab.p);

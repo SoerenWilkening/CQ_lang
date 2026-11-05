@@ -11,6 +11,35 @@
   ],
   "mutants": [
     {
+      "id": "109-rule6-no-clean",
+      "class": "leaked_garbage",
+      "example": "109_intrinsic_variants",
+      "note": "rulings 2 A (cq-o9mx): the old s is not cleaned (its copy and free removed): no rule-6 clean is observed, so the carried s rails are no images and every trip leaves one live, a leak",
+      "edits": [
+        {"old": "  call void @cqrt_copy_i32(i32 %48, i32 %36)", "new": "  ; removed copy"},
+        {"old": "  call void @cqrt_free(i32 %36)", "new": "  ; removed free"}
+      ]
+    },
+    {
+      "id": "109-garbage-from-cell",
+      "class": "leaked_garbage",
+      "example": "109_intrinsic_variants",
+      "note": "rulings 2 A (cq-o9mx): a template result of the slot's load copy (quantum cell content) left live: no rule-6 clean reads it, so the leak rule still FAILS",
+      "edits": [
+        {"old": "  %47 = call i32 @cq_template_add_i32(i32 %46, i32 %36)", "new": "  %cqmutg = call i32 @cq_template_add_i32_hl(i32 %46, i32 1)\n  %47 = call i32 @cq_template_add_i32(i32 %46, i32 %36)"}
+      ]
+    },
+    {
+      "id": "109-load-copy-no-image",
+      "class": "leaked_garbage",
+      "example": "109_intrinsic_variants",
+      "note": "rulings 2 A (cq-o9mx), rule 5: the slot's load copy, read by the rule-6 inverse, is not un-copied: a load copy is never a rule-6 image, so it is a leak",
+      "edits": [
+        {"old": "  call void @cqrt_qram_load_i32_unc(i32 %46, i32 %3, i32 %45)", "new": "  ; removed un-copy"},
+        {"old": "  call void @cqrt_free(i32 %46)", "new": "  ; removed free"}
+      ]
+    },
+    {
       "id": "04-swap-select-arms",
       "class": "swapped_select_arms",
       "example": "04_value_arm_ifelse",

@@ -64,6 +64,7 @@ int cqe__measured(int32_t h);
 void cqe__setrole(int32_t h, int role);
 void cqe__set_busz(int32_t h);
 void cqe__set_store_kept(int32_t h);
+void cqe__set_load_copy(int32_t h);
 void cqe__mark_written(int32_t h);
 void cqe__add_dep(int32_t h, int32_t src);
 int cqe__val_iszero(const cqe_val *v);
@@ -389,6 +390,7 @@ static int op_load_forward(const cqe_tname *t, const cqe_val *args, int nargs, c
   int32_t h = cqe__new(t->w, &v, x.known && cknown, 0);
   add_deps(h, &x);
   load_note(h, x.addr, x.fire);
+  cqe__set_load_copy(h); /* rule 5: never cleaned by rule 6, so no rule-6 image (core.c, cqe__r6_unc) */
   log_bus(&x, "load", !anyq, h, cqe__val(h), 0);
   cqe__val_free(&v);
   out->w[0] = (uint32_t)h;

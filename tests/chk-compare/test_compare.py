@@ -582,7 +582,7 @@ class LeakRule(unittest.TestCase):
         return dict(keep(h, v, w, role), known=known)
 
     def test_kept_roles_pass(self):
-        for role in ("measured", "abort", "tape", "tape_slot", "store_kept", "overtaken", "kept_entangled"):
+        for role in ("measured", "abort", "tape", "tape_slot", "store_kept", "overtaken", "kept_entangled", "rule6_image"):
             c = compare(self.ours(lambda a, b: [self.leak(9, a ^ b, "i8", role)]), self.c_side(), QKEY, "c")
             self.assertTrue(c.equal, (role, c.reasons))
 
