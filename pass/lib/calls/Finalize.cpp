@@ -37,6 +37,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Analysis/CFG.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/GlobalVariable.h"
@@ -48,6 +49,7 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/Local.h"
+#include "llvm/Transforms/Utils/SSAUpdater.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 
 #include <optional>
@@ -175,6 +177,121 @@ Function *twinSource(Module &M, Function &fwd) {
       return P;
   }
   return &fwd;
+}
+
+// The width of field k of a clone's result: its copy-out's alloc (a phi of them on classical paths).
+std::optional<abi::CoreSpec> resultAlloc(Function &g, unsigned k) {
+  auto allocOf = [](Value *v) -> std::optional<abi::CoreSpec> {
+    if (auto *p = dyn_cast<PHINode>(v))
+      v = p->getIncomingValue(0);
+    auto *c = dyn_cast<CallInst>(v);
+    std::optional<abi::CoreSpec> a = c && c->getCalledFunction() ? abi::parseCore(c->getCalledFunction()->getName()) : std::nullopt;
+    return a && a->op == abi::Core::Alloc ? a : std::nullopt;
+  };
+  for (BasicBlock &BB : g)
+    if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator())) {
+      for (Value *v = R->getReturnValue(); auto *iv = dyn_cast<InsertValueInst>(v); v = iv->getAggregateOperand())
+        if (iv->getIndices()[0] == k)
+          return allocOf(iv->getInsertedValueOperand());
+    }
+  return std::nullopt;
+}
+
+// Rule 19: in a twin, the call of a callee that rotates. Its own symbol's rail is one of the registers handed over. A by-name
+// clone is not called again: its twin XORs its results into fresh |0> rails from the registers it minted, which is the
+// recompute with no rotation repeated; the twin's zeroing of them, replayed from the forward, follows as there.
+void replayRegisterCall(Module &M, CallInst &c, ArrayRef<Value *> handed) {
+  MDNode *md = c.getMetadata("cq.mint.call");
+  unsigned base = unsigned(mdconst::extract<ConstantInt>(md->getOperand(0))->getZExtValue());
+  bool own = !mdconst::extract<ConstantInt>(md->getOperand(1))->isZero();
+  Function &g = *c.getCalledFunction();
+  IRBuilder<> B(&c);
+  LLVMContext &C = M.getContext();
+  Type *i32 = Type::getInt32Ty(C);
+  if (own) {
+    Value *h = handed[base];
+    c.replaceAllUsesWith(c.getType() == i32 ? h : B.CreateZExt(h, c.getType()));
+    c.eraseFromParent();
+    return;
+  }
+  unsigned n = mintCount(g);
+  auto *st = cast<StructType>(c.getType());
+  unsigned nFields = st->getNumElements() - n;
+  std::optional<abi::CloneSpec> spec = abi::parseClone(g.getName());
+  unsigned first = spec->ctl ? 1 : 0;
+  SmallVector<Value *, 4> outs(nFields, nullptr);
+  SmallVector<Value *, 8> args;
+  SmallVector<Type *, 8> ps;
+  for (unsigned i = 0; i < first; ++i)
+    args.push_back(c.getArgOperand(i));
+  for (unsigned k = 0; k < nFields; ++k) {
+    std::optional<abi::CoreSpec> a = resultAlloc(g, k);
+    if (!a) {
+      noteUnbuilt("calls: a twin's recompute through a callee that rotates, a result that is no copy-out", &c);
+      return;
+    }
+    outs[k] = B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Alloc, a->w}), {Constant::getNullValue(irTypeOf(C, a->w))});
+    args.push_back(outs[k]);
+  }
+  for (unsigned i = first; i < c.arg_size(); ++i)
+    args.push_back(c.getArgOperand(i));
+  for (unsigned j = 0; j < n; ++j)
+    args.push_back(handed[base + j]);
+  for (Value *v : args)
+    ps.push_back(v->getType());
+  std::string name = (g.getName() + "_unc").str();
+  Function *tw = M.getFunction(name);
+  if (!tw)
+    tw = Function::Create(FunctionType::get(Type::getVoidTy(C), ps, false), GlobalValue::InternalLinkage, name, &M);
+  B.CreateCall(tw, args);
+  SmallVector<ExtractValueInst *, 4> exts;
+  for (User *U : c.users())
+    exts.push_back(cast<ExtractValueInst>(U));
+  for (ExtractValueInst *e : exts) {
+    unsigned k = e->getIndices()[0];
+    e->replaceAllUsesWith(k < nFields ? outs[k] : handed[base + k - nFields]);
+    e->eraseFromParent();
+  }
+  c.eraseFromParent();
+}
+
+// Rule 19, on a clone just lowered, before its twin is made: what the forward hands over at a return. A register's handle where
+// the register was made on one path only is 0 on the others (§1.1); a register rule 6 freed from its image is no more.
+void settleRegisters(Function &F, unsigned mints) {
+  LLVMContext &C = F.getContext();
+  Constant *zero = ConstantInt::get(Type::getInt32Ty(C), 0);
+  DominatorTree DT(F);
+  auto settle = [&](Instruction *at, Use &u) {
+    auto *h = dyn_cast<Instruction>(u.get());
+    if (!h)
+      return;
+    if (any_of(h->users(), [](User *U) {
+          auto *c = dyn_cast<CallInst>(U);
+          return c && c->getCalledFunction() && c->getCalledFunction()->getName() == "cqrt_free";
+        })) {
+      u.set(zero);
+      return;
+    }
+    if (DT.dominates(h, at))
+      return;
+    SSAUpdater SU;
+    SU.Initialize(h->getType(), "cq.reg");
+    SU.AddAvailableValue(&F.getEntryBlock(), zero);
+    SU.AddAvailableValue(h->getParent(), h);
+    u.set(SU.GetValueInMiddleOfBlock(at->getParent()));
+  };
+  for (BasicBlock &BB : F)
+    for (Instruction &I : BB) {
+      if (I.getMetadata("cq.mint.push"))
+        settle(&I, cast<CallInst>(I).getArgOperandUse(0));
+      auto *R = dyn_cast<ReturnInst>(&I);
+      if (!R || !mints || !R->getReturnValue() || !R->getReturnValue()->getType()->isStructTy())
+        continue;
+      unsigned n = cast<StructType>(R->getReturnValue()->getType())->getNumElements();
+      for (Value *v = R->getReturnValue(); auto *iv = dyn_cast<InsertValueInst>(v); v = iv->getAggregateOperand())
+        if (iv->getIndices()[0] >= n - mints)
+          settle(iv, iv->getOperandUse(InsertValueInst::getInsertedValueOperandIndex()));
+    }
 }
 
 void defineTwin(Module &M, Function &twin, Function &src) {
@@ -394,23 +511,59 @@ void defineTwin(Module &M, Function &twin, Function &src) {
     if (table)
       for (unsigned k = mints; k-- > 0;)
         handed[k] = PB.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Pop}));
-    SmallVector<CallInst *, 4> tagged;
+    SmallVector<CallInst *, 4> tagged, regCalls, drops;
     SmallVector<Instruction *, 2> pushes;
     for (Instruction &I : instructions(twin)) {
       if (I.getMetadata("cq.mint.push"))
         pushes.push_back(&I);
       if (I.getMetadata("cq.mint"))
         tagged.push_back(cast<CallInst>(&I));
+      if (I.getMetadata("cq.mint.call"))
+        regCalls.push_back(cast<CallInst>(&I));
+      if (I.getMetadata("cq.mint.drop"))
+        drops.push_back(cast<CallInst>(&I));
     }
     for (Instruction *I : pushes)
       I->eraseFromParent();
-    for (CallInst *c : tagged) {
-      std::optional<abi::CoreSpec> a = abi::parseCore(c->getCalledFunction()->getName());
-      if (a && a->op == abi::Core::Alloc)
+    for (CallInst *c : drops)
+      c->eraseFromParent();   // no result: what it did stands, and nothing here reads it
+    for (CallInst *c : regCalls)
+      replayRegisterCall(M, *c, handed);
+    SmallVector<PHINode *, 2> phis;
+    for (CallInst *c : tagged)
+      if (!c->getType()->isVoidTy())
         c->replaceAllUsesWith(handed[mdconst::extract<ConstantInt>(c->getMetadata("cq.mint")->getOperand(0))->getZExtValue()]);
-    }
     for (CallInst *c : tagged)
       c->eraseFromParent();
+    // Rule 6 freed a register from its image in the forward: the twin does not do it again.
+    for (Value *h : handed) {
+      if (!h)
+        continue;
+      SmallVector<CallInst *, 2> writes;
+      for (User *U : h->users()) {
+        auto *c = dyn_cast<CallInst>(U);
+        std::optional<abi::CoreSpec> cs = c && c->getCalledFunction() ? abi::parseCore(c->getCalledFunction()->getName()) : std::nullopt;
+        if (cs && (cs->op == abi::Core::Free || (cs->op == abi::Core::Copy && !cs->ctl && c->getArgOperand(1) == h)))
+          writes.push_back(c);
+      }
+      for (CallInst *c : writes)
+        c->eraseFromParent();
+    }
+    // A merge of handed registers is the register; a result nobody reads now need not be made again.
+    for (bool changed = true; changed;) {
+      changed = false;
+      SmallVector<Instruction *, 8> gone;
+      for (Instruction &I : instructions(twin)) {
+        auto *c = dyn_cast<CallInst>(&I);
+        std::optional<abi::CloneSpec> cl = c && c->getCalledFunction() ? abi::parseClone(c->getCalledFunction()->getName()) : std::nullopt;
+        if (I.use_empty() && (isa<PHINode, ExtractValueInst>(I) || (cl && !cl->unc && !I.getType()->isVoidTy())))
+          gone.push_back(&I);
+      }
+      for (Instruction *I : gone) {
+        I->eraseFromParent();
+        changed = true;
+      }
+    }
   }
 
   // Rule 14's kept overflow predicate a_K = alloc_i1(0); and_i1(a_n, test, a_K), never freed, read by
@@ -637,12 +790,17 @@ void finalize(Module &M) {
   }
   if (clones.empty())
     return;
+  for (Function *F : clones)
+    if (!F->isDeclaration() && mintCount(*F))
+      settleRegisters(*F, std::optional<abi::CloneSpec>(abi::parseClone(F->getName()))->table ? 0 : mintCount(*F));
   defineTableClones(M);
   defineTwins(M);
   for (Function &F : M)
     for (Instruction &I : instructions(F)) {
       I.setMetadata("cq.mint", nullptr);
       I.setMetadata("cq.mint.push", nullptr);
+      I.setMetadata("cq.mint.call", nullptr);
+      I.setMetadata("cq.mint.drop", nullptr);
     }
 
   SetVector<Function *> originals;

@@ -806,6 +806,10 @@ private:
           if (matched)
             break;
         }
+        // Rule 19: a twin recomputes a callee that rotates through the callee's twin (Finalize replayRegisterCall): no forward.
+        std::optional<abi::CloneSpec> self = abi::parseClone(CB->getFunction()->getName());
+        if (Fwds.empty() && self && self->unc)
+          continue;
         if (!matched)
           report("unc-operand-mismatch",
                  Fwds.empty() ? Twine("twin with no forward call of @") + S.fwd + " in this function"
