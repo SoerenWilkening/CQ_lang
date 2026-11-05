@@ -1542,28 +1542,6 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool
   cur->anyQuantum = true;
 }
 
-// cq-wskg (rule 24): a function with a body from which a direct call of longjmp may be reached through
-// direct calls of functions with bodies.
-static bool mayReachLongjmp(const Function *G) {
-  SmallPtrSet<const Function *, 8> seen;
-  SmallVector<const Function *, 8> work{G};
-  while (!work.empty()) {
-    const Function *F = work.pop_back_val();
-    if (F->isDeclaration() || !seen.insert(F).second)
-      continue;
-    for (const BasicBlock &BB : *F)
-      for (const Instruction &I : BB)
-        if (auto *C = dyn_cast<CallBase>(&I))
-          if (const Function *H = C->getCalledFunction()) {
-            if (H->isDeclaration() && H->getName().contains("longjmp"))
-              return true;
-            work.push_back(H);
-          }
-  }
-  return false;
-}
-
-
 void Analyzer::declaredClone(CallBase &CB, Function *G, ArrayRef<Value *> actuals) { lift(CB, G, actuals, false); }
 
 // Rule 16's stream calls: every <stdio.h> function, input and output alike, and the POSIX descriptor calls, except the
@@ -1931,21 +1909,11 @@ void Analyzer::transferCall(CallBase &CB) {
   }
   if (getFreedOperand(&CB, st.TLI.get()))
     return;
-  if (CB.hasFnAttr(Attribute::ReturnsTwice)) {
-    // setjmp (rule 24): a longjmp under a quantum predicate makes its result an escaped flag.
-    if (st.longjmpUnderQuantum && rn)
-      setL(&CB, allLanes(rn));
+  // setjmp and longjmp outside rule 24's pairing are host calls: a classical result, no gate and no tape entry
+  // (abort_i1 under a quantum predicate); the pairing is rewritten before the final taint.
+  if (CB.hasFnAttr(Attribute::ReturnsTwice))
     return;
-  }
   if (CB.doesNotReturn()) {
-    // abort_i1 / the longjmp flag (rules 16, 24): neither a gate nor a tape entry, so not a non-pure
-    // body for rule 19.
-    // cq-wskg: a defined noreturn callee that may reach longjmp (a wrapper) longjmps here too.
-    if ((G->getName().contains("longjmp") || mayReachLongjmp(G)) && (blockCT(CB.getParent()) || cur->ctl) &&
-        !st.longjmpUnderQuantum) {
-      st.longjmpUnderQuantum = true;
-      st.changed = true;
-    }
     if ((blockCT(CB.getParent()) || cur->ctl) && cur->aborts.insert(&CB).second)
       st.changed = true;   // rule 16: an abort event
     if (G->isDeclaration() && !blockCT(CB.getParent()) && !cur->ctl) {
@@ -2412,7 +2380,6 @@ void Analyzer::resetAnalysis() {
   st.specs.clear();
   st.byKey.clear();
   st.changed = false;
-  st.longjmpUnderQuantum = false;
   st.calledAfter.clear();
   st.moduleHasEvent = false;
   st.fenvSaved.clear();

@@ -35,6 +35,7 @@
 // An IR shape this pass cannot handle is a fatal "cq-oracle: unimplemented: ..." error, never a skip.
 
 #include "cq/Loops.h"
+#include "cq/SetjmpPair.h"
 #include "cq/Taint.h"
 // cq/Common.h routes the pass's unimplemented()/internalError() through site-naming macros; the oracle has its own.
 #undef unimplemented
@@ -2230,6 +2231,25 @@ public:
     B.CreateCall(hook("__cqo_fx_end", Void, {}), {});
   }
 
+  // CR rule 24: a longjmp outside the one pairing under a quantum predicate is rule 16's noreturn arm: the sample
+  // ends there, on the pristine module (the pairing and the predicate as clang wrote them).
+  DenseSet<const CallBase *> ArmJumps;
+  void armLongjmps() {
+    if (!Taint)
+      return;
+    for (const cq::Specialization &S : Taint->specializations()) {
+      if (!S.F || S.F->isDeclaration())
+        continue;
+      for (Instruction &I : instructions(*S.F))
+        if (auto *CB = dyn_cast<CallBase>(&I))
+          if (cq::conc::isLongjmpCall(*CB)) {
+            auto *buf = dyn_cast<GlobalVariable>(CB->getArgOperand(0));
+            if (!(buf && cq::conc::isPairedJmpBuf(*buf)) && Taint->controlTainted(CB->getParent(), S))
+              ArmJumps.insert(CB);
+          }
+    }
+  }
+
   // ---------------------------------------------------------------- termination notes
   void notes(Function &F) {
     static const StringSet<> jumps = {"longjmp", "_longjmp", "siglongjmp", "__longjmp_chk"};
@@ -2268,9 +2288,14 @@ public:
       bool noret = CB->doesNotReturn() || (callee && callee->doesNotReturn());
       if (!noret)
         continue;
+      if (ArmJumps.contains(CB)) {
+        IRBuilder<> B(CB);
+        B.CreateCall(hook("__cqo_longjmp_arm", Void, {}), {});
+        continue;
+      }
       if (callee && (jumps.contains(callee->getName()) || !callee->isDeclaration() ||
                      callee->getName().starts_with("__cqo_")))
-        continue;  // longjmp runs natively (rule 24); a defined callee reaches its own noreturn call
+        continue;  // a longjmp with no quantum predicate runs natively (rule 24); a defined callee reaches its own noreturn call
       IRBuilder<> B(CB);
       B.CreateCall(hook("__cqo_noreturn", Void, {Ptr}),
                    {str(callee ? callee->getName() : StringRef("<indirect>"))});
@@ -2371,6 +2396,7 @@ public:
 
   void run() {
     analyseCutoffs();  // on the pristine module: taint answers for the program as clang wrote it
+    armLongjmps();
     {
       // block labels as the input spells them, before shadows() adds numbered values
       std::vector<Function *> pristine;

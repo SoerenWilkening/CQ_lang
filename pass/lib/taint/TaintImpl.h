@@ -160,7 +160,6 @@ struct ImplState {
   std::map<const llvm::Function *, std::unique_ptr<FnInfo>> fns;
   llvm::DenseMap<llvm::Type *, unsigned> laneCount;
   bool changed = false;
-  bool longjmpUnderQuantum = false;
   // Rule 16: functions called after an event (the least fixpoint, by name), and whether the module has an event.
   llvm::DenseSet<const llvm::Function *> calledAfter;
   bool moduleHasEvent = false;

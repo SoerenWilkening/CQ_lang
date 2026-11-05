@@ -45,11 +45,10 @@
 #include "Setjmp.h"
 
 #include "../../spine/SpineInternal.h"
-#include "cq/Abi.h"
 #include "cq/Common.h"
 #include "cq/Effects.h"
 #include "cq/Lowering.h"
-#include "cq/Uncompute.h"
+#include "cq/SetjmpPair.h"
 
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetVector.h"
@@ -74,45 +73,6 @@ using namespace llvm;
 
 namespace cq::conc {
 namespace {
-
-bool isLongjmpName(StringRef n) {
-  return n == "longjmp" || n == "_longjmp" || n == "siglongjmp" || n == "__longjmp_chk";
-}
-
-bool isLongjmpCall(const CallBase &CB) {
-  const Function *G = CB.getCalledFunction();
-  return G && G->isDeclaration() && isLongjmpName(G->getName()) && CB.arg_size() == 2 &&
-         CB.getArgOperand(0)->getType()->isPointerTy() && CB.getArgOperand(1)->getType()->isIntegerTy();
-}
-
-bool isReturnsTwice(const CallBase &CB) {
-  const Function *G = CB.getCalledFunction();
-  return CB.hasFnAttr(Attribute::ReturnsTwice) || (G && G->hasFnAttribute(Attribute::ReturnsTwice));
-}
-
-// setjmp, _setjmp, sigsetjmp, __sigsetjmp: returns_twice, the jmp_buf its first argument, an int result.
-bool isSetjmpCall(const CallBase &CB) {
-  return isReturnsTwice(CB) && !CB.isInlineAsm() && CB.arg_size() >= 1 &&
-         CB.getArgOperand(0)->getType()->isPointerTy() && CB.getType()->isIntegerTy();
-}
-
-// Rule 24's pairing, by operand: G internal, exactly one setjmp with G as its operand, and every other use of G in
-// the module the operand of a longjmp.
-bool pairedJmpBuf(const GlobalVariable &G) {
-  if (!G.hasLocalLinkage())
-    return false;
-  unsigned setjmps = 0;
-  for (const Use &U : G.uses()) {
-    auto *CB = dyn_cast<CallBase>(U.getUser());
-    if (!CB || U.getOperandNo() != 0)
-      return false;
-    if (isSetjmpCall(*CB))
-      ++setjmps;
-    else if (!isLongjmpCall(*CB))
-      return false;
-  }
-  return setjmps == 1;
-}
 
 // One constant, or a run-time value (Many).
 struct Lat {
@@ -666,7 +626,7 @@ SmallVector<Function *, 8> Rewriter::run() {
   SmallVector<Function *, 8> out;
   SmallVector<Function *, 4> inPlace;
   for (const GlobalVariable &G : M.globals())
-    if (pairedJmpBuf(G))
+    if (isPairedJmpBuf(G))
       paired.insert(&G);
   if (paired.empty())
     return out;
@@ -751,20 +711,13 @@ SmallVector<Function *, 8> Rewriter::run() {
 
 SmallVector<Function *, 8> explicitSetjmp(Module &M, const TaintInfo &) { return Rewriter(M).run(); }
 
-// A setjmp outside the pairing: the host call as it stands; its result is a classical value (a seed where taint made
-// it a rail). A returns_twice call with a rail operand has no host form and goes to the tape, as any such call.
+// A setjmp outside the pairing: the host call as it stands, a classical result (taint), under a quantum predicate
+// executed unguarded. A returns_twice call with a rail operand has no host form and goes to the tape, as any such call.
 void lowerSetjmp(LoweringContext &ctx, CallBase &CB) {
-  bool rail = false;
   for (const Use &U : CB.args())
-    rail |= ctx.operand(U.get()).handle;
-  if (rail)
-    return tape::lowerHostEffect(ctx, CB);
-  Instruction *h = spine::copyClassical(ctx, CB);
-  if (!ctx.T.isQuantum(&CB, ctx.S))
-    return ctx.bind(&CB, h);
-  CallInst *seed = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, railTypeOf(CB.getType())}, {h});
-  ctx.unc().recordSeed(seed);
-  ctx.bind(&CB, seed);
+    if (ctx.operand(U.get()).handle)
+      return tape::lowerHostEffect(ctx, CB);
+  ctx.bind(&CB, spine::copyClassical(ctx, CB));
 }
 
 // A longjmp outside the pairing under a quantum predicate: rule 16's noreturn arm.

@@ -30,7 +30,7 @@ sides, and nothing about it is encoded. Two things follow:
 - Every object the setup defines and a call passes is a named output: after the call the driver
   hands its address and size to `out_mem` (driver_source), the runtime's reader of the bus on the
   lowered side, plain host reads on the C side. A writable global of the module is one too, whether
-  or not it is passed (out_globals_ir), but for a jmp_buf under rule 24's pairing (paired_jmp_bufs). The
+  or not it is passed (out_globals_ir), but for a setjmp's buffer (jmp_buf_globals). The
   argument entry names the object in `"object"`.
 
 Q16 (rulings): the driver zeroes a stack region just before each call, so an uninitialized read of
@@ -1215,36 +1215,12 @@ def _constant_globals(text: str) -> List[Tuple[str, str]]:
 _DEFINE = re.compile(r'^define\b[^@]*(@(?:"[^"]*"|[-A-Za-z$._0-9]+))\(', re.M)
 
 
-_SETJMPS = r"(?:_?setjmp|sigsetjmp|__sigsetjmp)"
-_LONGJMPS = r"(?:_?longjmp|siglongjmp|__longjmp_chk)"
-
-
-def paired_jmp_bufs(o1_text: str) -> FrozenSet[str]:
-    """CR rule 24's one pairing, by operand: the internal globals with exactly one setjmp as their operand and
-    every other use the operand of a longjmp. No host call is made for either, so the bytes such a buffer holds on
-    the C side are the C library's state and name no output of the program (bead cq-nzhx)."""
-    out = set()
-    lines = [strip_comment(ln) for ln in o1_text.splitlines()]
-    for ln in lines:
-        m = _RE_GLOBAL.match(ln) if ln.startswith("@") else None
-        rhs = ln[m.end():].lstrip() if m else ""
-        if not m or not rhs.startswith("=") or not re.match(r"=\s*(internal|private)\b", rhs):
-            continue
-        name = re.escape(m.group(0))
-        use = re.compile(name + r"(?![\w.$-])")
-        arg0 = rf"\(ptr\b[^,()]*?{name}\s*[,)]"
-        setjmps, ok = 0, True
-        for other in lines:
-            if other is ln or not use.search(other):
-                continue
-            if re.search(rf"\bcall\b.*@{_SETJMPS}{arg0}", other) and len(use.findall(other)) == 1:
-                setjmps += 1
-            elif not (re.search(rf"\bcall\b.*@{_LONGJMPS}{arg0}", other) and len(use.findall(other)) == 1):
-                ok = False
-                break
-        if ok and setjmps == 1:
-            out.add(m.group(0))
-    return frozenset(out)
+def jmp_buf_globals(o1_text: str) -> FrozenSet[str]:
+    """The globals a setjmp names as its buffer. CR rule 24: under the one pairing no host call is made, and outside
+    it the host setjmp writes saved registers: either way the bytes are the C library's state and no output of the
+    program (bead cq-nzhx)."""
+    return frozenset(re.findall(r"\bcall\b[^;\n]*@(?:_?setjmp|sigsetjmp|__sigsetjmp)\(ptr\b[^,()\n]*?(@[\w.$-]+)\s*[,)]",
+                                o1_text))
 
 
 def out_globals_ir(o1_text: str, module_text: str, fn: str, hook: str, table_hook: str) -> str:
@@ -1267,9 +1243,9 @@ def out_globals_ir(o1_text: str, module_text: str, fn: str, hook: str, table_hoo
         strs.append(f'{sym} = private unnamed_addr constant [{len(c) + 1} x i8] c"{c}\\00"')
         return sym
 
-    paired = paired_jmp_bufs(o1_text)
+    jmp_bufs = jmp_buf_globals(o1_text)
     for name, t, thread in writable_globals(o1_text):
-        if name not in have or name in paired:
+        if name not in have or name in jmp_bufs:
             continue
         sym = named(name)
         addr = f"ptr {name}"
