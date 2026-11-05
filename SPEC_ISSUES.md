@@ -132,3 +132,8 @@ Entries 1 to 16 are from the flat-memory rulings (`wt/flat/rulings.md`, "Entries
 - Request: none.
 - Bead: cq-tltm
 
+## 129_quantum_ptr_select_store: the declaration of `cqrt_qram_store_i32_hl`
+
+`quantum_ptr_select_store.lowered.ll` line 232 declares `void @cqrt_qram_store_i32_hl(i32, i32, i64, i32)`, the
+controlled form's type, while its calls and CR §1.3 pass `([c,] m, addr, v)` without a control: `(i32, i64, i32)`. The
+file is not copied; `abi_corpus` reports the mismatch until CQ_spec fixes the declaration.
