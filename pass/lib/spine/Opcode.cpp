@@ -531,7 +531,12 @@ void lowerTheta(LoweringContext &ctx, CallInst &call) {
   RailId id = ctx.unc().idOf(h);
   // Rotated: a register from here on (38). The role comes first: on a classically merged handle it
   // keeps the chosen arm on each path, which the gate then hits (cq-bv91).
-  ctx.unc().setRole(id, Role::UserRegister);
+  // Rule 2's fallback: a load copy a rotation acted on is frozen, never un-copied.
+  if (auto *lc = dyn_cast<CallInst>(h); lc && lc->getCalledFunction() &&
+                                        lc->getCalledFunction()->getName().starts_with("cqrt_qram_load_"))
+    ctx.unc().freezeLoadCopy(id);
+  else
+    ctx.unc().setRole(id, Role::UserRegister);
   ctx.unc().noteNonDiagonal(id, ry);
   spine::bindOperand(ctx, &call, Operand{h, true});
 }

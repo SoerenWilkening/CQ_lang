@@ -28,6 +28,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
 CHECKS = [
+    "freed-overtaken-copy",
+    "kept-rail-released",
     "free-without-unc",
     "use-after-free",
     "inplace-on-frozen",
