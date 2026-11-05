@@ -1,6 +1,3 @@
-// Frozen interface (cq-arch, with owner amendments A2 and A4 of 2026-10-27 and freeze beads cq-k1w, cq-bq0 (U1),
-// cq-fx3s (F1), M3, U2, M3b and F1b (cq-arch 2026-11-01)).
-// Changes only under cq-arch's freeze rule.
 #pragma once
 
 #include <functional>

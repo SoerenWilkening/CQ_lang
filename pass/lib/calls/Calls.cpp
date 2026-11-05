@@ -4,19 +4,6 @@
 //
 // CONTRACT (Calls.h is frozen, so what its callers may rely on is stated here)
 //
-//  - materialize(M, S) returns the clone of S: an internal function named by CR §1.4 (abi::name of
-//    S's fields), created on the first request and returned again on every later one (the module's
-//    symbol table is the clone table: a name is accepted only when abi::parseClone reads it back to
-//    exactly S's fields, so two distinct clones can never share it; a name that does not read back
-//    is a uniquified clone, unimplemented as in finalize). Signature: the _ctl flag first (an i32
-//    handle), then one parameter per formal, an i32 handle where S's mask digit is 1, the formal's C
-//    type where it is 0; the result is an i32 handle when taint records it quantum (rule 18: "result
-//    taint is recorded per clone"), else the C type, void for void. The clone keeps the original's
-//    calling convention and carries no attributes but byval on a byval formal the callee may write
-//    (cq-09xh; the call passes a snapshot of the caller's object taken at the call, byval, and the twin
-//    gets that snapshot); a read-only byval formal is the caller's pointer. Its body is the spine's (construct()).
-//    Aggregate and pointer formals and results (rules 21, 25, 26: field digits, fat-pointer triples,
-//    flattened results) and packed integer results are unimplemented here.
 //  - materialize has no TaintInfo in its signature, but the result kind is taint's record. It is
 //    read from the TaintInfo of the run, which this module holds from the first LoweringContext it
 //    sees (a TaintInfo is a shared handle, so the copy keeps that run's analysis alive). S must be
@@ -33,10 +20,6 @@
 //    kept (measured, escaped, rule 6 cleaned it). The recorded TemplateSpec is a placeholder (op is
 //    empty, w the result's rail type); no consumer may spell a symbol from it. A classical result
 //    (a measuring callee, rule 18) is bound as it is and has no twin. A void call records nothing.
-//  - lowerDeclared(ctx, call): rule 27. Every result a handle, the _ctl form under a quantum
-//    predicate, the trailing K argument, the C calling convention; the result is recorded as above,
-//    so the twin `<clone>_unc(out, args…, K)` runs after its last use. Pointer arguments
-//    (fat-pointer triple, object-table count, snapshots) are unimplemented here.
 //  - lowerIndirect(ctx, call): rule 19, a call through a classical function pointer: a classical
 //    chain of pointer-equality tests over the static callee set (!callees, else every address-taken
 //    function of the call's type, as taint reads it), each arm calling its candidate's clone; the
@@ -181,9 +164,6 @@ void leafTypes(Type *t, SmallVectorImpl<Type *> &out, const Value *at) {
   }
 }
 
-// The clone ABI of one formal (CR §1.4): one parameter per scalar leaf, an i32 handle where taint's
-// field mask is quantum, the leaf's C type where it is classical; a pointer formal is the caller's
-// classical pointer (a pointee that holds no handle at the call, not a fat pointer).
 struct FormalLayout {
   SmallVector<Type *, 4> leaves;
   SmallVector<bool, 4> q;
@@ -274,7 +254,7 @@ std::vector<FormalLayout> formalLayout(const TaintInfo &T, const Specialization 
     f.pointer = A.getType()->isPointerTy();
     for (Type *l : f.leaves)
       if (l->isPointerTy() && !f.pointer)
-        unimplemented("calls: an aggregate formal with a pointer field (rule 21 fat-pointer fields)", &A);
+        unimplemented("calls: an aggregate formal with a pointer field (rule 21 pointer fields)", &A);
     need += f.leaves.size();
     fs.push_back(std::move(f));
   }
@@ -306,8 +286,6 @@ std::vector<FormalLayout> formalLayout(const TaintInfo &T, const Specialization 
       continue;
     }
     if (f.variadic) {
-      // A quantum scalar actual crosses as its one handle; its save-area cell holds that handle (rule 20's
-      // uniform slot array, lowerVarargs). A vector actual's digits are its lanes (rule 25, buildMask).
       f.q[0] = m[d++] == '1';
       if (f.q[0] && !vaScalar(f.leaves[0]))
         unimplemented("calls: a quantum variadic actual that is a pointer, a vector or an aggregate in memory "
@@ -369,7 +347,7 @@ ResultLayout resultLayout(const TaintInfo &T, const Specialization &S, const Val
   for (unsigned k = 0; k < r.leaves.size(); ++k) {
     r.q.push_back(T.resultQuantum(S, k));
     if (r.q.back() && !scalarRailType(r.leaves[k]))
-      unimplemented("calls: a clone result with a quantum pointer field (rule 21: fatptr)", at);
+      unimplemented("calls: a clone result with a quantum pointer field (rule 21: rule 3)", at);
   }
   return r;
 }
@@ -709,14 +687,14 @@ CallInst *emitDeclaredCall(LoweringContext &ctx, CallBase &CB, Function *Fp, Str
   SmallVector<Type *, 4> leaves;
   if (rt->isPointerTy())
     unimplemented("calls: awaiting owner ruling: SPEC_ISSUES \"rule 27: a declared clone with a pointer result "
-                  "(the provenance of a fat pointer an opaque clone returns)\"",
+                  "(the provenance of a pointer an opaque clone returns)\"",
                   &CB);
   if (isComposite(rt)) {
     leafTypes(rt, leaves, &CB);
     for (Type *l : leaves)
       if (l->isPointerTy())
         unimplemented("calls: awaiting owner ruling: SPEC_ISSUES \"rule 27: a declared clone with a pointer "
-                      "result (the provenance of a fat pointer an opaque clone returns)\"",
+                      "result (the provenance of a pointer an opaque clone returns)\"",
                       &CB);
     rt = StructType::get(C, SmallVector<Type *, 4>(leaves.size(), handleTy(C)));
   } else if (!rt->isVoidTy()) {
@@ -884,7 +862,6 @@ Function *materialize(Module &M, const Specialization &S) {
     ps.push_back(handleTy(C));
     ps.push_back(handleTy(C));
     if (rl.stores) {
-      // With QRAM stores (191): the result's leaves, one handle per store, then the flags: always the struct.
       SmallVector<Type *, 4> es;
       for (unsigned k = 0; k < rl.leaves.size(); ++k)
         es.push_back(rl.q[k] ? handleTy(C) : rl.leaves[k]);
@@ -919,9 +896,6 @@ Function *materialize(Module &M, const Specialization &S) {
     // CR §0: x86-64 only; inalloca and preallocated are the 32-bit Windows C++ ABI's.
     if (A.hasInAllocaAttr() || A.hasPreallocatedAttr())
       internalError("calls: an inalloca or preallocated formal (no x86-64 C function has one, CR §0)", &A);
-    // cq-utb8 (CR rules 5, 18): a pointer formal the C body never accesses through (readnone) is one the clone and
-    // its twin never access either (the lowering accesses only what the C body does): its pointer parameters
-    // carry readnone, so a twin's footprint leaves its object out (musl c32rtomb's ps handed to wcrtomb).
     if (A.getType()->isPointerTy() && A.hasAttribute(Attribute::ReadNone))
       for (unsigned k = 0; k < fl[A.getArgNo()].leaves.size(); ++k)
         if (fl[A.getArgNo()].leaves[k]->isPointerTy() && p + k < NF->arg_size() &&
@@ -989,28 +963,6 @@ void bindEnvResult(LoweringContext &ctx, CallBase &CB, const Specialization &S, 
   fenv::afterCloneCall(ctx, CB, flags);
 }
 
-// ---- INVERSE-UPDATE clones (cq-xivx; CR §1.4 `_inv<c>`, rule 18, rule 6) ------------------------------
-//
-// A clone that overwrites a caller cell c with a rule-6 bijection f_c of the cell's old value, the old value
-// dead in the caller after the call: the caller's rule 6 clean-up of the old rail is the call
-// `__cq_q_<fn>_<mask>_inv<c>(args..., old)` (its item, Uncompute U8), then cqrt_free(old). The _inv clone
-// loads the cell's new content y', computes f_c^-1 fresh by rule 6's per-instruction inverses
-// (spine::inverseStep: sub for add, the odd literal's inverse for mul, fshr for fshl, ...), copies it onto
-// the old rail, uncomputes and frees its own rails. c is the cell's position among the call's old cell
-// handles (the twin's trailing operands, slot order).
-//
-// Scope (narrow, owner 2026-11-01). Built: a void or single-result clone call that writes one caller slot
-// object through a raw pointer formal, no _ctl; a written integer or floating cell whose callee update is
-// one store at a constant cell offset of the formal, outside any cycle and on every path (its block
-// post-dominates the entry), of a chain of rule-6 bijections down to a load of the same cell that dominates
-// the store, each step's other operands constants or scalar formals. Not a chain of bijections (a step
-// rule 6 cannot invert, a value that does not read the old cell): no clean-up, as rule 6 asks. The old rail
-// is cleaned only when it is the caller's register (Role::UserRegister; seeds and garbage are rules 7 and
-// 5) and provably dead after the call: every original reader of it precedes the call, and it sits in no
-// other cell. Unimplemented, with the instruction: coupled cells (a swap: the group `_inv<c>_<c'>`), a
-// composite or merged update (127, 125 shapes), an operand the callee computes, two stores to the cell, a
-// conditional or looping store, a _ctl clone, a caller that writes the object again after the call, a call
-// in a cycle.
 namespace {
 
 
@@ -1186,15 +1138,6 @@ void lowerIndirect(LoweringContext &, CallBase &) {
   report_fatal_error("cq: unimplemented: bus: lowerTableCall (rule 19)", /*gen_crash_diag=*/false);
 }
 
-// CR §1.4, rules 20, 7 (95, 109): the va intrinsics of a variadic clone (per call-site arity, its
-// variadic actuals are parameters, spine Shared::varargs). llvm.va_start(ap) is the x86-64 SysV spill:
-// a register save area of 6 gp slots of 8 bytes (gp_offset = 8 * the named gp parameters, fp_offset =
-// 48) and an empty overflow area; the actuals go to the gp slots after the named ones. When one is
-// quantum the area is a slot array of handles (taint's save-area object): a classical actual is
-// promoted to a seed rail (rule 7), a quantum one is its handle. -O1's own va_arg code reads the slots
-// (lowerVaAreaLoad). va_copy copies the 24-byte va_list; va_end is nothing. Unimplemented: an fp,
-// aggregate or wider-than-64-bit actual, more gp arguments than the 6 registers, a named parameter that
-// is not one gp register, VAArgInst.
 void lowerVarargs(LoweringContext &, Instruction &) {
   report_fatal_error("cq: unimplemented: bus: varargs (rules 16, 22)", /*gen_crash_diag=*/false);
 }
@@ -1229,7 +1172,7 @@ void lowerLiftedVia(LoweringContext &ctx, llvm::CallBase &site, llvm::ArrayRef<u
   bool env = fenv::cloneCarriesEnv(ctx.T, *cs);
   CloneCall r = emitCloneCall(ctx, site, *cs, flag, argMap);
   if (r.res.qramFormal)
-    unimplemented("calls: lowerLiftedVia of a clone with a triple formal onto a QRAM object (U3: mem-qram's "
+    unimplemented("calls: lowerLiftedVia of a clone with a formal onto a bus object (U3: mem-qram's "
                   "store record through an argument map)",
                   &site);
   SmallVector<Value *, 4> outs;

@@ -21,7 +21,7 @@ enum class Role : uint8_t {
   Rotate,     // the target of ry / ry_qangle
   UncOut,     // the result rail an _unc returns to |0>
   Free,       // cqrt_free
-  BusFree,    // cqrt_qram_free
+  BusFree,
   Measure,    // cqrt_measure_<W>
   Word,       // cqrt_push: a classical word or a handle
 };
@@ -30,7 +30,7 @@ enum class Role : uint8_t {
 enum class Res : uint8_t {
   None,       // void
   Classical,  // a classical value (measure)
-  Known,      // a fresh handle in a known basis state (alloc, qram_alloc/realloc, tape_alloc)
+  Known,
   Dirty,      // a fresh handle holding a computed value (templates, qram_load, tape_write)
   Word,       // cqrt_pop, and any call that is not an ABI core gate or template
 };

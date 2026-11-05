@@ -22,21 +22,6 @@
 //               has no use is dropped with it when it carries no symbol of its own: declarations
 //               and local-linkage functions and variables.
 //
-// Twins (rule 18, CR §1.4 "a twin nobody calls is not defined"). Before the originals are read, every
-// declared `<clone>_unc` with a use whose forward clone has a body here is defined: the twin
-// recomputes, XORs the result out of `out`, uncomputes. Its body is the lowered forward clone's (the
-// _pure clone's when one exists: what the twins recompute through, 119) with the copy-out
-// `f = cqrt_alloc_<W>(0); cqrt_copy_<W>(r, f); ...; ret f` of every return (Walker::emitCloneReturn)
-// turned into `cqrt_copy_<W>(r, out); ...; ret void` (a return phi chosen classically has one such f
-// per incoming edge, Walker::returnCopyOut: each copy targets out, the phi goes; an arm seeded with a
-// classical value is unimplemented): the clone computes, copies out, uncomputes,
-// so the twin computes, XORs out, uncomputes. A twin body that calls another twin defines it in turn.
-// The body is checked to replay nothing but the pure value: no rotation, phase, measurement, tape,
-// abort or QRAM store (one into a bus of the replayed frame, which that frame pops and frees, is part of
-// the computation: frameBus), no host call that may write memory (unimplemented otherwise: a clone with
-// effects and no _pure clone). Twins use the C calling convention (Uncompute spells their calls) and
-// internal linkage. A twin of a clone with no body here (rule 27) stays a declaration.
-//
 // Shapes not lowered here (cq::unimplemented): a "__cq_q_" symbol that is not a canonical clone
 // name (a uniquified clone, CR §1.4 ruling 2026-10-27: the clone table belongs to materialize, which
 // finalize cannot see through Calls.h). An original whose body was rewritten in place (it calls an ABI

@@ -362,7 +362,7 @@ bool keeps(const CallInst &c, const Value *a, const Value *x, unsigned &atomFlip
     t = target(1);
     break;
   default:
-    return false;   // a measurement, a free, QRAM, tape, ...: not known to leave both as they are
+    return false;
   }
   return t && t != a && t != x;
 }
@@ -1599,7 +1599,7 @@ Value *lowerMerge(LoweringContext &ctx, PHINode &phi) {
   bool code = phi.getType()->isPointerTy();   // rule 3: an i64 integer
   if (!scalarRailType(phi.getType()) && !code)
     internalError("pred: lowerMerge of a vector, aggregate or pointer phi (every caller routes a composite to "
-                  "lowerMergeFields and a data pointer to fatptr, rules 21, 26)",
+                  "lowerMergeFields and a data pointer to rule 3, rules 21, 26)",
                   &phi);
 
   // Rule 9 at a58c3a4: every incoming edge chosen classically makes a classical phi over the handles.
@@ -1719,7 +1719,7 @@ SmallVector<Operand, 4> mergeFieldsOf(LoweringContext &ctx, PHINode &phi, ArrayR
       continue;
     }
     if (tys[k]->isPointerTy())
-      unimplemented("pred: a pointer field of a composite merged under a quantum predicate (rule 21's fat-pointer "
+      unimplemented("pred: a pointer field of a composite merged under a quantum predicate (rule 21's pointer "
                     "merge of a field)",
                     &phi);
     std::vector<std::pair<Pred, Operand>> chain;
@@ -1767,7 +1767,7 @@ Value *lowerSelect(LoweringContext &ctx, SelectInst &sel) {
   bool code = sel.getType()->isPointerTy();   // rule 3: an i64 integer
   if (c->getType()->isVectorTy() || (!scalarRailType(sel.getType()) && !code))
     internalError("pred: lowerSelect of a vector, aggregate or data pointer select (the spine routes them to aggr "
-                  "and fatptr)",
+                  "and rule 3)",
                   &sel);
   if (!ctx.T.isQuantum(c, ctx.S)) {
     CtxMergeSink sink(ctx);   // rule 9 at a58c3a4: a classical select over the handles, no gate

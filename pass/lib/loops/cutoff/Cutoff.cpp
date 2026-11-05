@@ -79,8 +79,6 @@
 using namespace llvm;
 
 namespace {
-// CR rule 13 (b137e75): a carried or merged code address is an i64 handle (a data pointer never reaches a rail
-// here: it is a fat pointer, rule 21).
 cq::RailType railOf(Type *t) { return t->isPointerTy() ? cq::RailType{cq::Kind::Int, 64} : cq::railTypeOf(t); }
 } // namespace
 
@@ -185,17 +183,12 @@ private:
     ctx.unc().recordSeed(s);
     return s;
   }
-  // A value of the unit read after it other than by a phi of C: its exit value, capture rails that take this trip's
-  // value where the trip leaves the loop (lowerLoop's general exit capture). A pointer's exit value is a fat pointer
-  // (rule 21): its two fields (tag i32, idx i64, fatptr exitFields) each a capture rail, bound after the loop by
-  // fatptr::bindExit. An aggregate's or vector's is one capture rail per scalar leaf (rule 26), as rule 9 merges a
-  // composite field by field (lowerMergeFields).
   struct XAcc {
     Instruction *V;
     SmallVector<Operand, 2> acc;
     SmallVector<RailType, 2> rails;
     bool ptr = false;
-    bool shaped = false;   // ptr: fatptr exitShape recorded (at the first trip, once its walked pointers are bound)
+    bool shaped = false;
   };
   // CR rule 14 (the exit value is quantum: it depends on which trip exited) with rules 21 and 26: the capture
   // rails of a value V of the unit read after it, seeded with V's value where no trip exits (0, NULL's (0, 0)).
@@ -787,8 +780,6 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   struct CPhi {
     PHINode *P;
     Operand acc;
-    // CR rules 14, 21 (cq-p45s): a data pointer joining the exits is a fat pointer; acc is then unused, accs its
-    // (tag i32, idx i64) capture rails at its exit shape (fatptr exitShape / exitFields), bound with bindExit.
     bool ptr = false;
     bool shaped = false;
     SmallVector<Operand, 2> accs;

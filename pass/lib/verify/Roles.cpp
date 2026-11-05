@@ -19,7 +19,6 @@ namespace {
   report_fatal_error(Twine(os.str()), /*gen_crash_diag=*/false);
 }
 
-// CR §1.2: [select: condition handle] [qrom: base, n (, stride)] data operands per shape [rm last].
 void templateRoles(Sig &S, const CallBase &CB, unsigned nargs) {
   const abi::TemplateSpec &T = *S.tmpl;
   SmallVector<Role, 6> fwd;

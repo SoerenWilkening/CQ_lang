@@ -230,8 +230,6 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
   if (!F) {
     if (qArg || qRes || qPred || quantumValue(T, S, CB.getCalledOperand()))
       return Class::Indirect;
-    // cq-lyzw (rule 19 with rule 20, as cq-vnh9 for a direct call): a pointer argument into a slot or QRAM
-    // object hands the candidates rails; the originals would read handles as data.
     for (const Use &u : CB.args())
       if (nonClassicalObject(T, S, u.get()))
         return Class::Indirect;
@@ -264,10 +262,6 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
     case Intrinsic::lifetime_end:
       return nonClassicalObject(T, S, CB.getArgOperand(1)) ? Class::Dealloc : Class::Classical;
     case Intrinsic::stackrestore: {
-      // A VLA's lifetime ends here (rule 20, 192) when the scope holds a slot or QRAM object and the
-      // restore runs under a quantum predicate (otherwise mem-slots keeps the scope's cells per run, 109).
-      // A scope of classical objects only restores the host stack, under any predicate (the linearized
-      // program runs it as C does).
       if (!qPred && !qArg)
         return Class::Classical;
       SmallVector<const AllocaInst *, 4> scope;
@@ -325,7 +319,6 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
   if (CB.hasFnAttr(Attribute::ReturnsTwice) || F->hasFnAttribute(Attribute::ReturnsTwice))
     return qPred || qArg || qRes ? Class::Setjmp : Class::Classical;
 
-  // Rule 16 by allockind: a QRAM or slot block is the memory modules', a classical block a host call.
   AllocFnKind ak = F->getAttributes().getFnAttrs().getAllocKind();
   if (ak != AllocFnKind::Unknown) {
     if ((ak & AllocFnKind::Free) != AllocFnKind::Unknown) {
@@ -370,8 +363,6 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
     // rotates: calls::lowerLifted), or a _ctl / merged callee under a predicate.
     if (qArg || qRes || qPred)
       return Class::Lift;
-    // cq-vnh9: every quantum input behind a pointer argument (a slot object, 52's reduce(tx, ...)):
-    // taint publishes a clone for the call, so it is lifted like any other.
     if (const Specialization *C = T.calleeSpecialization(CB, S); C && !C->isEntry())
       return Class::Lift;
     return Class::Classical;
@@ -386,8 +377,6 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
     if (!qArg)
       return Class::Classical;
   }
-  // cq-my17 (99): a pointer argument into a slot or QRAM object hands the callee rails to read
-  // (fwrite(buf, ...)): the tape entry reads the cells, so the call is quantum-involved too.
   bool qMem = false;
   for (const Use &u : CB.args())
     qMem = qMem || nonClassicalObject(T, S, u.get());
@@ -395,8 +384,6 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
     return Class::HostEffect;   // printf(x) and friends (47, 99, 138)
   if (qArg || qRes)
     return Class::Declared;     // rule 27
-  // cq-r8-d (rule 27 Pointers, 190): a pointer argument into a slot object whose cells hold handles
-  // hands the callee rails (a callee with no body and no host effect).
   if (qMem)
     return Class::Declared;
   if (qPred && mayHaveHostEffect(CB))
@@ -699,8 +686,6 @@ Case classify(const Loop &L, const TaintInfo &T, const Specialization &S) {
       return br->isConditional() && quantumValue(T, S, br->getCondition());
     if (auto *sw = dyn_cast<SwitchInst>(t))
       return quantumValue(T, S, sw->getCondition());
-    // A computed goto or an asm goto chooses its successor by its address or its asm: quantum when
-    // that operand is (rule 8's quantum branch, the address a fat pointer's tag), else classical.
     if (auto *ib = dyn_cast<IndirectBrInst>(t))
       return quantumValue(T, S, ib->getAddress());
     if (auto *cb = dyn_cast<CallBrInst>(t))

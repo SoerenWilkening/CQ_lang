@@ -287,8 +287,6 @@ private:
   void lift(CallBase &CB, Function *G, ArrayRef<Value *> actuals, bool viaIntrinsic);
   void declaredClone(CallBase &CB, Function *G, ArrayRef<Value *> actuals);
   SmallVector<SpecState *, 4> *collect = nullptr; // indirect call: gather every candidate
-  // cq-s2zz (CR rule 19): a call through a quantum function pointer (a QROM of callee tags): every candidate
-  // runs under its quantum predicate tag == k, so a candidate with a non-pure gate is its _ctl clone.
   bool candidateUnderQ = false;
   // cq-1c5j (CR rules 18, 20): a call's callee key rises with its actuals' lanes during the fixed point, and a
   // specialization reached on the way (or a non-ctl probe) keeps contributing facts (stores into the caller's

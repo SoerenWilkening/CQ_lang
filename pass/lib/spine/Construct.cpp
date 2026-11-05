@@ -1378,10 +1378,6 @@ SmallVector<Operand, 4> Walker::aggregateFields(ReturnInst *ret, Value *rv) {
   return out;
 }
 
-// The result's fields as a clone returns them before its trailing extras (the flags of E1, the escaped
-// flag of rule 24, the stored rails of M2): a field-wise or fat-pointer result's leaves (emitCloneFields,
-// `extra` trailing fields in st), else the one value: a return phi copied out per edge as it is, a
-// handle copied out into a fresh Result rail (rule 18), a classical value as it is.
 void Walker::resultFields(ReturnInst *ret, Value *rv, StructType *st, unsigned extra, SmallVectorImpl<Value *> &vals) {
   if (emitCloneFields(ret, rv, st, extra, vals))
     return;
@@ -1625,8 +1621,6 @@ Value *Walker::returnCopyOut(PHINode &phi) {
 // how many registers stay allocated, the lowered return type (spine::entryReturn).
 void Walker::noteEntryReturn(bool frozen, Instruction *t) {
   auto [er, fresh] = entryReturns.try_emplace(sh.orig);
-  // CR rule 19 (f684858): the extra results are the union over the return paths, by mint site in a fixed
-  // order; a path that did not mint one returns handle 0 for it (the kept clone's returns).
   DenseMap<const Value *, unsigned> pos;
   {
     unsigned n = 0;

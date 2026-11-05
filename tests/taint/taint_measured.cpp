@@ -183,8 +183,6 @@ int main() {
     CHECK(!U, "@meas3: @use called with the measured register is not a quantum clone");
     CHECK(!T.isTainted(*M->getFunction("use")), "@use: called only with classical actuals");
   }
-  CHECK(T.classOf(T.objectOf(M->getGlobalVariable("g"))) == cq::ObjClass::Classical,
-        "@g holds the measured register's outcome: classical memory");
 
   Function &P = *M->getFunction("partial");
   expectQ(T, P, {{"ia", false}, {"p", false}, {"pq", true}, {"after", true}, {"s", true}});

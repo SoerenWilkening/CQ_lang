@@ -93,11 +93,14 @@ int main() {
   CHECK(T.isQuantum(named(F, "q"), *S), "%q (cq_theta result) quantum");
   CHECK(T.isQuantum(named(F, "y"), *S), "%y quantum");
   // Classical instructions no taint fact touched answer 'classical', not an internal error.
-  for (const char *n : {"m", "z", "gv", "s", "r", "d"}) {
+  for (const char *n : {"m", "z", "d"}) {
     CHECK(!T.isQuantum(named(F, n), *S), "%" << n << " classical");
     auto fm = T.fieldMask(named(F, n), *S);
     CHECK(fm.size() == 1 && !fm[0], "%" << n << " fieldMask {0}");
   }
+  // Rule 3: every load is a bus load and its result a rail, the values computed from it too.
+  for (const char *n : {"gv", "s", "r"})
+    CHECK(T.isQuantum(named(F, n), *S), "%" << n << " quantum (a bus load)");
   // Arguments, a constant, a global.
   CHECK(!T.isQuantum(F.getArg(0), *S), "%x0 classical");
   CHECK(!T.isQuantum(F.getArg(2), *S), "%c classical");

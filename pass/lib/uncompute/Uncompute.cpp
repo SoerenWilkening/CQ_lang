@@ -23,22 +23,9 @@
 //  - recordTemplate(fwd, spec, ops): fwd is the forward cq_template_* call, already in the IR; ops is
 //    exactly fwd's argument list (checked operand by operand). The result is a new rail, Role::Garbage.
 //  - recordSeed(alloc): a cqrt_alloc_<W> call; a new rail, Role::Seed (rule 7).
-//  - recordCore(fwd, spec, ops, out): a reversible core gate, ops = fwd's argument list.
-//      in place on the rail `out` (out must be fwd's target operand): copy, xorc, not_i1, and_i1, or_i1,
-//        xor_i1 (involutions: undone by the same call, BACKEND_ABI §1.8, §1.9) and qram_store on the
-//        bus `out` (undone by its _unc as an item of its own, POP(k), see QRAM versions below);
-//      with a fresh result (`out` is ignored, the new rail's id is returned): qram_load (Role::Garbage,
-//        undone by its _unc(h, args...)), qram_alloc (Role::Seed, released by cqrt_qram_free),
-//        qram_realloc (cq-vtfq, CR §1.3: ops (a, classical n); a' is a bus of its own, Role::Seed, released
-//        by qram_realloc_<W>_unc(a', n_old) after every POP and load un-copy on a'; n_old is a's qram_alloc
-//        or qram_realloc size; a's qram_free, its POPs and its load un-copies follow that release; a kept a'
-//        with a resolvable item on a is unimplemented), alloc (= recordSeed). Any other core gate is not reversible and is an internal error here.
-//  - recordExternal(h, role): a rail with no producer (a formal, a clone's result, a loaded slot cell).
 //  - setRole: Garbage and Seed are resolvable; every other role is kept (never _unc'd, never freed).
 //    A Seed whose only writes are uncontrolled xorc is freed directly; a Seed with other writes is
 //    undone write by write, then freed.
-//  - noteUse(r, i): i reads r without being an IR user of r's handle (e.g. a load of a slot cell that
-//    holds r). IR users of the handle are uses automatically.
 //  - noteNonDiagonal(x, g): g is a non-diagonal gate on x (Ry, a quantum-angle Ry; the caller decides,
 //    a computational-basis measurement is not one: 42). It is a barrier for every _unc that needs x.
 //    cq-igqp: when x's handle is a phi or select over handles that is not a merge (a classically
@@ -85,41 +72,6 @@
 //        unimplemented; cleanupBijective(m) is an internal error; Role::Seed on m is an internal error.
 //      * an arm whose definition does not dominate the return where it would be resolved (a phi
 //        over arm-local garbage handles) is unimplemented (cq-ut4k).
-//  - recordCellLoad(load, mayName) (M3, cq-arch 2026-11-01; CR rules 5, 20): load is a new-IR load of
-//    a slot cell's handle that names at run time one of mayName (recorded, unfreed rails). It is a
-//    merge as above with mayName as its arms: never resolved itself, a use of it is a use of every arm,
-//    a barrier on it binds every arm. It has no join, so a kept role on it (or on a merge naming it)
-//    keeps every resolvable arm, with no edge logic. mayName empty is an internal error.
-//  - noteCellsDistinct(a, b) (M3b, cq-arch 2026-11-01; CR rules 5, 20): the loads a and b of slot cells
-//    name different rails at run time (mem-slots proved the cells different, one rail per cell). A
-//    non-diagonal gate whose target handle is a (or b) is then no AliasHit barrier on the item of a
-//    record that reads b (or a) itself: the alias hit it left on a rail b may name is skipped when that
-//    rail is reached through the read of b. A direct hit (a merge arm both loads may name) and every
-//    other route to the rail stay barriers.
-//  - recordCall(fwd, outs, slotOuts, extra) (U2, cq-arch 2026-11-01; CR §1.4, rules 18, 27): the result
-//    rails of one clone call. The first member (outs, then slotOuts) is the leader: it carries a Call
-//    record over fwd's arguments and extra (their handles are its reads) and the group's one item; every
-//    other member is a merge over the leader alone (as a cell load: a use of it is a use of the leader,
-//    a kept role on it keeps the leader). The item emits <callee>_unc(outs..., fwd args..., extra...)
-//    (C calling convention) and then cqrt_free of every member in order. Every member kept: nothing.
-//    A kept leader with a member that was not given a kept role itself is unimplemented at flushAtExit
-//    (the twin would zero the kept results); KeptEntangled (a barrier) keeps all of them. The item
-//    follows the definitions of every member and of every extra operand defined after fwd (cq-b73i).
-//    cq-necw: a group of one slotOut and no out whose member has a rule 6 clean-up emits that clean-up
-//    instead of the twin (the cell's new content cleaned like an inline update's result, CR rules 6, 18).
-//  - noteCallReads(fwd, rails) (U4, cq-arch 2026-11-01; CR rule 5): rails in caller cells the clone call
-//    fwd reads (its twin recompute-reads them). They are reads of fwd's group item, as fwd's handle
-//    arguments are: their own items follow it, and a barrier on one binds it. It may come before or
-//    after fwd's recordCall (or its recordTemplate, a clone with one result). Beyond the noted ones, a
-//    clone call (a callee that is not a cq_template_ or cqrt_ function) reads every pending rail that
-//    may sit in a cell of its twin's footprint (railCells), cq-w2a-calls: the objects its pointer
-//    arguments point to, the globals the C body accesses, and every object reachable from outside the
-//    frame when the body accesses memory through a pointer it loaded (cq-99z6). A write into the
-//    footprint between the call and its twin is a barrier of the call's item; a cell the clone writes
-//    (slotOuts) that the footprint reaches by a second route is unimplemented (cq-aqk1).
-//
-// Emission. Each resolvable rail g is resolved once, as one ITEM: its records undone in reverse
-// (or its rule 6 clean-up, or nothing for a direct seed free), then cqrt_free / cqrt_qram_free.
 //  - Order (rule 5): the item of g comes after every use of g and after the item of every rail whose
 //    item reads g (an operand outlives every _unc that reads it); a batch is emitted readers first.
 //  - Placement: as early as these allow (the corpus convention), i.e. right after the last of them.
@@ -137,15 +89,6 @@
 //    pending resolvable rail created by a record of the scope. Its operands are the forward Values;
 //    a caller that mirrors outside their dominance region (a reverse loop) remaps the instructions
 //    emitted between B's insertion point before and after the call. No barrier check is made.
-//  - QRAM versions (amendment A2, cq-w6ie). A bus's stores s_1..s_m in program order are each an item
-//    POP(k) (the store's _unc alone), which reads the store's index, value and control rails. A load
-//    made after s_k reads version v_k. POP(k) follows every use of the bus, POP(k+1) and the un-copy
-//    of every load reading v_j, j >= k; a load reading v_k is un-copied after every POP(j), j > k (the
-//    cell holds v_k again), so a later popped store is no barrier for it. The bus's item is
-//    cqrt_qram_free alone, after every POP and load un-copy (77: pop the rmw store, sum, old, the
-//    index, then the initializers). A kept bus (a global, Output) has no POP: its stores stay and stay
-//    barriers. A POP made KeptEntangled by a hit on a rail it reads keeps every earlier POP, every load
-//    reading an earlier version, and the bus.
 //  - Deferred items (F1, freeze bead cq-fx3s; CR rule 14: the reverse loop runs after the readers of the
 //    loop's exit values, 153, 178, 187, 188). recordDeferred(scopes, exits, emit, reads): the rails created
 //    by records of the (closed) scopes are OWNED by the item: no flush resolves them, emit's mirrors do.
@@ -171,14 +114,6 @@
 //    An exit rail with no IR use outside the region (it reaches later code only through memory: cell-load
 //    merges, M3) that became kept is not copied and not undone: every trip's instance keeps its role
 //    (rule 5, rule 14 case 1; 179). An owned record reading it is still undone.
-//  - F1b (cq-arch 2026-11-01; CR rule 14, §1.3: 72, 188). A QRAM store recorded in the item's scopes is
-//    popped by the item's mirror (its POP is owned) and makes the item a writer of that bus b (one the
-//    scopes do not allocate): the item follows POP(j) of every store recorded on b after the scopes and
-//    the un-copy of every load of b reading a version at or above the last owned POP, it reads b (b's
-//    release, cqrt_qram_free, follows it), and every earlier POP or load un-copy that must follow an
-//    owned POP follows the item. Every use of b after the loop anchors the item, and a later store on b
-//    that is popped before the item is no barrier of it. exitRails may be empty when b has a use after
-//    the loop; otherwise an empty list is an internal error.
 //  - resolveAt(P, rails) (U5, cq-arch 2026-11-01; CR rule 5): emits right before P, readers first, the
 //    items of the listed pending rails (kept or resolved ones are skipped), with rule 5's barrier check.
 //    Precondition, else an internal error: each rail's definition dominates P, none of its uses comes
@@ -352,9 +287,6 @@ struct Uncompute::Impl {
   DenseMap<const Value *, RailId> byHandle;
   std::vector<Scope> scopes;
   std::vector<Deferred> defs;
-  // U2: one clone call's results. members[0] (the leader, an out or else a slotOut) carries the Call
-  // record and the item; every other member is a merge over the leader alone (cellLoad, no join), so a
-  // use of it is a use of the leader and a kept role on it keeps the leader.
   struct CallGroup {
     CallInst *fwd;
     SmallVector<RailId, 4> outs, members;
@@ -724,15 +656,11 @@ struct Uncompute::Impl {
           out.push_back(x);
     return out;
   }
-  // cq-lshe (CR rule 5): the in-place write records that may lie between g's item's records and the item,
-  // on a rail the item reads or on a rail such a write reads (transitively): a write after the record
-  // that read the rail, except a QRAM store that a load's un-copy follows anyway (A2, popped first).
   SmallVector<unsigned, 4> sandwichCands(RailId g) const {
     SmallVector<unsigned, 4> out;
     const Rail &r = rails[g];
     if (r.deferred != kNone)
       return out;
-    // (rail, the record that read it, a later store on it is popped first: a QRAM load's bus, A2)
     struct Rd { RailId x; const Instruction *at; };
     SmallVector<Rd, 8> R;
     auto addReads = [&](ArrayRef<RailId> xs, const Instruction *at) {
@@ -920,8 +848,6 @@ struct Uncompute::Impl {
     if (r.creator != kNone)
       out.push_back(records[r.creator].forward);
     if (r.group != kNone && r.creator != kNone && info[r.creator].kind == RecKind::Call) {
-      // cq-b73i: the group's item names every member's handle and extra operand, so it follows their
-      // definitions even when nothing uses them (a slotOut loaded after the call and never read).
       const CallGroup &cg = groups[r.group];
       for (RailId m : cg.members)
         if (auto *i = dyn_cast<Instruction>(rails[m].handle))
@@ -1527,12 +1453,9 @@ struct Uncompute::Impl {
 
   Instruction *emitItem(RailId g, IRBuilder<> &B) {
     Rail &r = rails[g];
-    // cq-necw (CR rules 6, 18): a group whose only member is a slotOut (no result) and that rule 6 cleans (the
-    // new content of a cell an _inv<c> cleans, spine invCellImages) has no twin: its item is the clean-up.
     bool soleCellCleaned = r.cleanup && r.group != kNone && groups[r.group].outs.empty() &&
                            groups[r.group].members.size() == 1;
     if (r.group != kNone && r.creator != kNone && info[r.creator].kind == RecKind::Call && !soleCellCleaned) {
-      // U2: twin(outs..., fwd args..., extra...), then free every out and slotOut in order.
       const CallGroup &cg = groups[r.group];
       CallInst *fwd = cg.fwd;
       Module &M = *B.GetInsertBlock()->getModule();
@@ -1899,7 +1822,7 @@ struct Uncompute::Impl {
               return templateResultType(*t);
             --i;
           }
-          if (StringRef(t->op).starts_with("qrom_load") || (t->rm == abi::TemplateSpec::RmRail && i + 1 == c->arg_size()))
+          if ((t->rm == abi::TemplateSpec::RmRail && i + 1 == c->arg_size()))
             continue;
           if (t->op == "select" && i == 0)
             return RailType{Kind::Int, 1};
@@ -2049,7 +1972,6 @@ struct Uncompute::Impl {
     });
   }
 
-  // An in-place write record undone (an involution: the same call; a QRAM store: its _unc) or redone.
   CallInst *emitWrite(unsigned w, IRBuilder<> &B, bool undo) {
     CallInst *fwd = records[w].forward;
     if (fwd->getCalledFunction() && !fwd->getCalledFunction()->getName().starts_with("cqrt_")) {
@@ -2299,13 +2221,6 @@ struct Uncompute::Impl {
     return as;
   }
 
-  // cq-nqa6 (U7, CR rules 5, 8, 9): an ARM-LOCAL rail at a flush point P (flushBefore with the caller's
-  // liveness): defined in a block D that does not dominate P (a classical arm), read after the arm's join
-  // (a merge, a phase's flags), every use and reader item already before P, and no instruction lowered
-  // after P reading it (live: the caller's set, through every merge naming it). Its item is placed at P
-  // for good under D's selector, as cq-ut4k does at a return: D and P on no cycle, every path from D
-  // reaches P, the handle never reaches memory, a clone call or a return (only gate calls, merges and
-  // classical selects read it), no call group or QRAM version.
   bool spanReady(RailId g, Instruction *point, const DenseSet<RailId> &live) const {
     const Rail &r = rails[g];
     if (r.ownedBy != kNone || r.deferred != kNone || !resolvable(g) || !r.exitsDone.empty() || r.group != kNone || r.cleanup)
@@ -2477,10 +2392,6 @@ struct Uncompute::Impl {
     }
     if (!pos.before)
       internalError("uncompute: no insertion point for a deferred item", r.handle);
-    // Rule 5: every rail the item reads (and every exit rail) must still hold the value its records
-    // read. A non-diagonal gate or an in-place write after the loop that the placement does not
-    // precede would be undone against the changed rail.
-    // (rail, the handle it is read through: M3b rules out some alias hits for a read of a load).
     SmallVector<std::pair<RailId, const Value *>, 8> xs;
     for (RailId x0 : d.reads)
       for (RailId x : leaves(x0))
@@ -2554,9 +2465,6 @@ struct Uncompute::Impl {
         internalError("uncompute: the loop's exit block of a deferred item does not continue in one block",
                       X->getTerminator());
       pos = {S, &*S->getFirstInsertionPt()};
-      // cq-9o04 (CR rules 5, 14; §0): a QRAM bus the item writes is restored by it (its stores are
-      // popped), so a read of the bus after the loop must precede the item. Placed where the loop
-      // exits, every such read would follow it and see the popped cells.
     }
     // An exit rail that became kept (measured, escaped, a kept merge's arm) is kept by a copy taken
     // here, and the reverse loop undoes the rail itself (every trip's instance is undone alike).

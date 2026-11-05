@@ -12,24 +12,12 @@
 //    or constant expression) or a lifetime marker: nothing outside the program can see it (48: the
 //    internal never-written @tiny; 32: the non-escaping volatile local). LLVM's CaptureTracking is not
 //    used, because it counts every volatile access as a capture.
-//  - An unobservable access is the plain access (rule 24); a store into an unobservable object nothing
-//    loads from is dead and emits nothing (169). Otherwise, with nothing quantum (classical pointer,
-//    classical value, classical memory) it is copied without `volatile` (48's reference: "a plain
-//    classical load"); otherwise it is routed as the plain access is (rule 20): a slot object to
-//    mem::lowerSlotLoad/Store, a QRAM object to mem::lowerQramLoad/Store, a quantum offset into
-//    classical memory to mem::lowerQromLoad.
 //  - An observable access with nothing quantum is copied unchanged, `volatile` kept: the host performs
 //    it. An observable access with quantum data (rule 24 at f684858, cq-py5f) is a host effect: a store
 //    is the rule-16 effect entry `volatile_store` (tape::lowerVolatileStore: the address an i64, the value
 //    its fields, under the predicate); a load is the host read at its program point, unguarded, merged as
 //    any value (a seed rail where taint reads a quantum value; at a quantum address the plain read of
 //    every candidate, rule 21).
-//
-// lowerAtomic: an atomic load/store is the plain access (rule 24, 94): classical ones are copied
-// unchanged (the host performs the atomic op, which is the plain op single-threaded); quantum ones are
-// routed as lowerVolatile routes an unobservable access. atomicrmw and cmpxchg on a slot object are
-// mem::lowerSlotAtomic (M4, 94: load + op + store, cmpxchg's icmp eq + select + store); in QRAM or
-// classical memory with quantum data, and a call classified Atomic, they are unimplemented.
 //
 // collapseThreads (rule 24, 106): before the final taint, pthread_create(t, attr, f, p) is the call f(p)
 // in the IR, pthread_join stores its result, the mutex calls are status 0 (contract at the definition);
@@ -126,6 +114,9 @@ bool everRead(const Value *ptr) {
 }
 
 bool involvesQuantum(LoweringContext &ctx, Instruction &I, const Value *ptr) {
+  // Rule 24: a store under a quantum predicate is the effect entry `volatile_store`.
+  if (isa<StoreInst>(I) && (ctx.S.ctl || ctx.T.controlTainted(I.getParent(), ctx.S)))
+    return true;
   if (!I.getType()->isVoidTy() && ctx.T.isQuantum(&I, ctx.S))
     return true;
   for (const Use &u : I.operands())
@@ -189,7 +180,6 @@ const CallBase *joinAskingResult(const Module &M) {
   return nullptr;
 }
 
-// Rule 24 (94) on a QRAM cell: the plain read-modify-write, the old value read and the new one stored by
 
 } // namespace
 

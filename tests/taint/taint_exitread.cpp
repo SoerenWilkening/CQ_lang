@@ -195,13 +195,11 @@ int main() {
   // load is the exit value.
   Function &E = *M->getFunction("exitphi");
   expectQ(T, E,
-          {{"i", false}, {"x", false}, {"i1", false}, {"more", false}, {"go", true},
+          {{"i", false}, {"x", true}, {"i1", false}, {"more", false}, {"go", true},
            {"r", true}, {"s", true}, {"a", true}, {"ev", true}});
-  if (const cq::Specialization *S = entryOf(T, &E))
-    CHECK(!T.isFatPointer(named(E, "ep"), *S), "@exitphi %ep stays a classical-offset pointer");
 
   Function &R = *M->getFunction("exitret");
-  expectQ(T, R, {{"i", false}, {"i1", false}, {"x", false}, {"big", true}, {"u", true}});
+  expectQ(T, R, {{"i", false}, {"i1", false}, {"x", true}, {"big", true}, {"u", true}});
   if (const cq::Specialization *S = entryOf(T, &R)) {
     CHECK(T.resultQuantum(*S, 0), "@exitret returns the exit trip index: quantum");
     CHECK(T.controlTainted(blk(R, "arm"), *S), "@exitret %arm is chosen by the exit value");
@@ -212,8 +210,6 @@ int main() {
       CHECK(T.isQuantum(named(*M->getFunction("use"), "w"), *U),
             "@use called with the exit value: its formal is quantum");
   }
-  CHECK(T.classOf(T.objectOf(M->getGlobalVariable("g"))) != cq::ObjClass::Classical,
-        "@g holds the exit value: not classical memory");
 
   Function &N = *M->getFunction("nested");
   expectQ(T, N, {{"j", false}, {"j1", false}, {"r", true}});

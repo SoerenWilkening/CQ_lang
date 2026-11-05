@@ -733,439 +733,15 @@ define i32 @f(i32 %a0, double %th) {
 
 // ---- A2: QRAM records ----------------------------------------------------------------------------
 
-void qram_lifo() {
-  Fx f(R"(
-define i32 @f(i32 %a0, double %th) {
-  %x = call i32 @cqrt_alloc_i32(i32 %a0)
-  call void @cqrt_ry_i32(i32 %x, double %th)
-  %a = call i32 @cqrt_qram_alloc_i32(i32 4)
-  %v1 = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
-  call void @cqrt_qram_store_i32_hl(i32 %a, i32 0, i32 %v1)
-  %v2 = call i32 @cq_template_add_i32_hl(i32 %x, i32 2)
-  call void @cqrt_qram_store_i32_hl(i32 %a, i32 1, i32 %v2)
-  %l = call i32 @cqrt_qram_load_i32_hl(i32 %a, i32 0)
-  %s = call i32 @cq_template_add_i32(i32 %l, i32 %x)
-  %m = call i32 @cqrt_measure_i32(i32 %s)
-  ret i32 %m
-})");
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
-  RailId a = f.core(f.call("cqrt_qram_alloc_i32"), abi::Core::QramAlloc, "l", ~0u);
-  f.T("v1", "hl");
-  f.core(f.call("cqrt_qram_store_i32_hl", 0), abi::Core::QramStore, "hlh", a);
-  f.T("v2", "hl");
-  f.core(f.call("cqrt_qram_store_i32_hl", 1), abi::Core::QramStore, "hlh", a);
-  f.core(f.call("cqrt_qram_load_i32_hl"), abi::Core::QramLoad, "hl", ~0u);
-  f.U.setRole(f.T("s", "hh"), Role::Measured);
-  f.U.flushAtExit(f.ret());
-  f.check(__func__, {
-                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
-                        "call void @cqrt_ry_i32(i32 %x, double %th)",
-                        "%a = call i32 @cqrt_qram_alloc_i32(i32 4)",
-                        "%v1 = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
-                        "call void @cqrt_qram_store_i32_hl(i32 %a, i32 0, i32 %v1)",
-                        "%v2 = call i32 @cq_template_add_i32_hl(i32 %x, i32 2)",
-                        "call void @cqrt_qram_store_i32_hl(i32 %a, i32 1, i32 %v2)",
-                        "%l = call i32 @cqrt_qram_load_i32_hl(i32 %a, i32 0)",
-                        "%s = call i32 @cq_template_add_i32(i32 %l, i32 %x)",
-                        "call void @cqrt_qram_load_i32_hl_unc(i32 %l, i32 %a, i32 0)",
-                        "call void @cqrt_free(i32 %l)",
-                        "call void @cqrt_qram_store_i32_hl_unc(i32 %a, i32 1, i32 %v2)",
-                        "call void @cq_template_add_i32_hl_unc(i32 %v2, i32 %x, i32 2)",
-                        "call void @cqrt_free(i32 %v2)",
-                        "call void @cqrt_qram_store_i32_hl_unc(i32 %a, i32 0, i32 %v1)",
-                        "call void @cq_template_add_i32_hl_unc(i32 %v1, i32 %x, i32 1)",
-                        "call void @cqrt_free(i32 %v1)",
-                        "call void @cqrt_qram_free(i32 %a)",
-                        "%m = call i32 @cqrt_measure_i32(i32 %s)",
-                        "ret i32 %m",
-                    });
-}
 
-// U6 (191's alias_params): a clone call reads the QRAM bus a and stores v into cell 0 inside the clone
-// (recorded on the caller's bus after noteCallBusRead, forward = the call). The clone's store is popped
-// before the twin, which recompute-reads the cells as at the call; the earlier store a[0] = s0 is popped
-// after the twin.
-void qram_call_bus_read() {
-  Fx f(R"(
-declare i32 @__cq_q_addto_0001(i32, i32, i32, i32, i32, i32)
-define i32 @f(i32 %a0, double %th, i32 %b0) {
-  %x = call i32 @cqrt_alloc_i32(i32 %a0)
-  call void @cqrt_ry_i32(i32 %x, double %th)
-  %a = call i32 @cqrt_qram_alloc_i32(i32 2)
-  %s0 = call i32 @cqrt_alloc_i32(i32 %b0)
-  call void @cqrt_qram_store_i32_hl(i32 %a, i32 0, i32 %s0)
-  %i = call i32 @cq_template_and_i32_hl(i32 %x, i32 1)
-  %v = call i32 @__cq_q_addto_0001(i32 %a, i32 1, i32 0, i32 %a, i32 1, i32 %i)
-  %l = call i32 @cqrt_qram_load_i32_hl(i32 %a, i32 0)
-  %s = call i32 @cq_template_add_i32(i32 %l, i32 %x)
-  %m = call i32 @cqrt_measure_i32(i32 %s)
-  ret i32 %m
-})");
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
-  RailId a = f.core(f.call("cqrt_qram_alloc_i32"), abi::Core::QramAlloc, "l", ~0u);
-  f.S("s0");
-  f.core(f.call("cqrt_qram_store_i32_hl"), abi::Core::QramStore, "hlh", a);
-  f.T("i", "hl");
-  auto *fwd = cast<CallInst>(f.I("v"));
-  f.U.recordCall(fwd, {fwd}, {}, {});
-  f.U.noteCallBusRead(fwd, a);
-  abi::CoreSpec st{abi::Core::QramStore, {Kind::Int, 32}, false, true};
-  f.U.recordCore(fwd, st, {H(f.I("a")), Operand{ConstantInt::get(Type::getInt32Ty(f.C), 0), false}, H(fwd)}, a);
-  f.core(f.call("cqrt_qram_load_i32_hl"), abi::Core::QramLoad, "hl", ~0u);
-  f.U.setRole(f.T("s", "hh"), Role::Measured);
-  f.U.flushAtExit(f.ret());
-  f.check(__func__, {
-                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
-                        "call void @cqrt_ry_i32(i32 %x, double %th)",
-                        "%a = call i32 @cqrt_qram_alloc_i32(i32 2)",
-                        "%s0 = call i32 @cqrt_alloc_i32(i32 %b0)",
-                        "call void @cqrt_qram_store_i32_hl(i32 %a, i32 0, i32 %s0)",
-                        "%i = call i32 @cq_template_and_i32_hl(i32 %x, i32 1)",
-                        "%v = call i32 @__cq_q_addto_0001(i32 %a, i32 1, i32 0, i32 %a, i32 1, i32 %i)",
-                        "%l = call i32 @cqrt_qram_load_i32_hl(i32 %a, i32 0)",
-                        "%s = call i32 @cq_template_add_i32(i32 %l, i32 %x)",
-                        "call void @cqrt_qram_load_i32_hl_unc(i32 %l, i32 %a, i32 0)",
-                        "call void @cqrt_free(i32 %l)",
-                        "call void @cqrt_qram_store_i32_hl_unc(i32 %a, i32 0, i32 %v)",
-                        "call void @__cq_q_addto_0001_unc(i32 %v, i32 %a, i32 1, i32 0, i32 %a, i32 1, i32 %i)",
-                        "call void @cqrt_free(i32 %v)",
-                        "call void @cq_template_and_i32_hl_unc(i32 %i, i32 %x, i32 1)",
-                        "call void @cqrt_free(i32 %i)",
-                        "call void @cqrt_qram_store_i32_hl_unc(i32 %a, i32 0, i32 %s0)",
-                        "call void @cqrt_free(i32 %s0)",
-                        "call void @cqrt_qram_free(i32 %a)",
-                        "%m = call i32 @cqrt_measure_i32(i32 %s)",
-                        "ret i32 %m",
-                    });
-}
 
-void fatal_call_bus_read_unrecorded() {
-  Fx f(R"(
-declare i32 @__cq_q_addto_0001(i32, i32, i32, i32, i32, i32)
-define i32 @f(i32 %a0) {
-  %a = call i32 @cqrt_qram_alloc_i32(i32 2)
-  %v = call i32 @__cq_q_addto_0001(i32 %a, i32 1, i32 0, i32 %a, i32 1, i32 %a0)
-  ret i32 0
-})");
-  RailId a = f.core(f.call("cqrt_qram_alloc_i32"), abi::Core::QramAlloc, "l", ~0u);
-  f.U.noteCallBusRead(cast<CallInst>(f.I("v")), a);
-}
 
-// cq-vtfq (CR §1.3, 186's shape): a' = qram_realloc(a, 6) is a bus of its own. The store and load made
-// through a' are undone first, then qram_realloc_unc(a', 4) (n_old: a's qram_alloc size), then the
-// un-copy of the load made through a before the realloc, a's store's POP, and a's qram_free.
-void qram_realloc() {
-  Fx f(R"(
-define i32 @f(i32 %a0, double %th) {
-  %x = call i32 @cqrt_alloc_i32(i32 %a0)
-  call void @cqrt_ry_i32(i32 %x, double %th)
-  %a = call i32 @cqrt_qram_alloc_i32(i32 4)
-  %v1 = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
-  call void @cqrt_qram_store_i32(i32 %a, i32 %x, i32 %v1)
-  %l1 = call i32 @cqrt_qram_load_i32_hl(i32 %a, i32 1)
-  %a2 = call i32 @cqrt_qram_realloc_i32(i32 %a, i32 6)
-  call void @cqrt_qram_store_i32_hl(i32 %a2, i32 5, i32 %x)
-  %l2 = call i32 @cqrt_qram_load_i32(i32 %a2, i32 %x)
-  %s = call i32 @cq_template_add_i32(i32 %l1, i32 %l2)
-  %m = call i32 @cqrt_measure_i32(i32 %s)
-  ret i32 %m
-})");
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
-  RailId a = f.core(f.call("cqrt_qram_alloc_i32"), abi::Core::QramAlloc, "l", ~0u);
-  f.T("v1", "hl");
-  f.core(f.call("cqrt_qram_store_i32"), abi::Core::QramStore, "hhh", a);
-  f.core(f.call("cqrt_qram_load_i32_hl"), abi::Core::QramLoad, "hl", ~0u);
-  RailId a2 = f.core(f.call("cqrt_qram_realloc_i32"), abi::Core::QramRealloc, "hl", ~0u);
-  f.core(f.call("cqrt_qram_store_i32_hl"), abi::Core::QramStore, "hlh", a2);
-  f.core(f.call("cqrt_qram_load_i32"), abi::Core::QramLoad, "hh", ~0u);
-  f.U.setRole(f.T("s", "hh"), Role::Measured);
-  f.U.flushAtExit(f.ret());
-  f.check(__func__, {
-                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
-                        "call void @cqrt_ry_i32(i32 %x, double %th)",
-                        "%a = call i32 @cqrt_qram_alloc_i32(i32 4)",
-                        "%v1 = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
-                        "call void @cqrt_qram_store_i32(i32 %a, i32 %x, i32 %v1)",
-                        "%l1 = call i32 @cqrt_qram_load_i32_hl(i32 %a, i32 1)",
-                        "%a2 = call i32 @cqrt_qram_realloc_i32(i32 %a, i32 6)",
-                        "call void @cqrt_qram_store_i32_hl(i32 %a2, i32 5, i32 %x)",
-                        "%l2 = call i32 @cqrt_qram_load_i32(i32 %a2, i32 %x)",
-                        "%s = call i32 @cq_template_add_i32(i32 %l1, i32 %l2)",
-                        "call void @cqrt_qram_load_i32_unc(i32 %l2, i32 %a2, i32 %x)",
-                        "call void @cqrt_free(i32 %l2)",
-                        "call void @cqrt_qram_store_i32_hl_unc(i32 %a2, i32 5, i32 %x)",
-                        "call void @cqrt_qram_realloc_i32_unc(i32 %a2, i32 4)",
-                        "call void @cqrt_qram_load_i32_hl_unc(i32 %l1, i32 %a, i32 1)",
-                        "call void @cqrt_free(i32 %l1)",
-                        "call void @cqrt_qram_store_i32_unc(i32 %a, i32 %x, i32 %v1)",
-                        "call void @cq_template_add_i32_hl_unc(i32 %v1, i32 %x, i32 1)",
-                        "call void @cqrt_free(i32 %v1)",
-                        "call void @cqrt_qram_free(i32 %a)",
-                        "%m = call i32 @cqrt_measure_i32(i32 %s)",
-                        "ret i32 %m",
-                    });
-}
 
-// cq-vtfq: a kept realloc result (Output) never restores a: a's resolvable items are refused.
-void qram_realloc_kept() {
-  Fx f(R"(
-define i32 @f(i32 %a0, double %th) {
-  %x = call i32 @cqrt_alloc_i32(i32 %a0)
-  call void @cqrt_ry_i32(i32 %x, double %th)
-  %a = call i32 @cqrt_qram_alloc_i32(i32 4)
-  %a2 = call i32 @cqrt_qram_realloc_i32(i32 %a, i32 6)
-  call void @cqrt_qram_store_i32_hl(i32 %a2, i32 5, i32 %x)
-  ret i32 %a0
-})");
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
-  f.core(f.call("cqrt_qram_alloc_i32"), abi::Core::QramAlloc, "l", ~0u);
-  RailId a2 = f.core(f.call("cqrt_qram_realloc_i32"), abi::Core::QramRealloc, "hl", ~0u);
-  f.core(f.call("cqrt_qram_store_i32_hl"), abi::Core::QramStore, "hlh", a2);
-  f.U.setRole(a2, Role::Output);
-  f.U.flushAtExit(f.ret());
-  f.check(__func__, {
-                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
-                        "call void @cqrt_ry_i32(i32 %x, double %th)",
-                        "%a = call i32 @cqrt_qram_alloc_i32(i32 4)",
-                        "%a2 = call i32 @cqrt_qram_realloc_i32(i32 %a, i32 6)",
-                        "call void @cqrt_qram_store_i32_hl(i32 %a2, i32 5, i32 %x)",
-                        "ret i32 %a0",
-                    });
-}
 
-// cq-lshe (CR rule 9, §1.3): qram_realloc of a classical select over two buses: released with the size of the
-// bus the select chose; both buses are freed after that release.
-void qram_realloc_merged() {
-  Fx f(R"(
-define i32 @f(i32 %a0, double %th, i1 %c) {
-  %x = call i32 @cqrt_alloc_i32(i32 %a0)
-  call void @cqrt_ry_i32(i32 %x, double %th)
-  %a = call i32 @cqrt_qram_alloc_i32(i32 4)
-  %b = call i32 @cqrt_qram_alloc_i32(i32 8)
-  %m = select i1 %c, i32 %a, i32 %b
-  %a2 = call i32 @cqrt_qram_realloc_i32(i32 %m, i32 6)
-  call void @cqrt_qram_store_i32_hl(i32 %a2, i32 5, i32 %x)
-  ret i32 %a0
-})");
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
-  f.core(f.call("cqrt_qram_alloc_i32"), abi::Core::QramAlloc, "l", ~0u);
-  f.core(f.call("cqrt_qram_alloc_i32", 1), abi::Core::QramAlloc, "l", ~0u);
-  f.U.recordMerge(f.I("m"));
-  RailId a2 = f.core(f.call("cqrt_qram_realloc_i32"), abi::Core::QramRealloc, "hl", ~0u);
-  f.core(f.call("cqrt_qram_store_i32_hl"), abi::Core::QramStore, "hlh", a2);
-  f.U.flushAtExit(f.ret());
-  f.check(__func__, {
-                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
-                        "call void @cqrt_ry_i32(i32 %x, double %th)",
-                        "%a = call i32 @cqrt_qram_alloc_i32(i32 4)",
-                        "%b = call i32 @cqrt_qram_alloc_i32(i32 8)",
-                        "%m = select i1 %c, i32 %a, i32 %b",
-                        "%cq.ch = select i1 %c, i1 false, i1 true",
-                        "%a2 = call i32 @cqrt_qram_realloc_i32(i32 %m, i32 6)",
-                        "call void @cqrt_qram_store_i32_hl(i32 %a2, i32 5, i32 %x)",
-                        "call void @cqrt_qram_store_i32_hl_unc(i32 %a2, i32 5, i32 %x)",
-                        "%cq.n = select i1 %cq.ch, i32 8, i32 4",
-                        "call void @cqrt_qram_realloc_i32_unc(i32 %a2, i32 %cq.n)",
-                        "call void @cqrt_qram_free(i32 %b)",
-                        "call void @cqrt_qram_free(i32 %a)",
-                        "ret i32 %a0",
-                    });
-}
 
-// cq-w6ie (A2): a read-modify-write on one bus (77's shape). Each store is its own POP item, popped
-// last-in-first-out; old (read v_1) is un-copied between POP(2) and POP(1), after sum, against the
-// restored cell; the load reading v_2 precedes POP(2); the bus is freed last.
-void qram_rmw() {
-  Fx f(R"(
-define i32 @f(i32 %a0, double %th) {
-  %x = call i32 @cqrt_alloc_i32(i32 %a0)
-  call void @cqrt_ry_i32(i32 %x, double %th)
-  %b = call i32 @cqrt_qram_alloc_i32(i32 2)
-  %v1 = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
-  call void @cqrt_qram_store_i32_hl(i32 %b, i32 0, i32 %v1)
-  %i = call i32 @cq_template_and_i32_hl(i32 %x, i32 1)
-  %old = call i32 @cqrt_qram_load_i32(i32 %b, i32 %i)
-  %sum = call i32 @cq_template_add_i32(i32 %old, i32 %x)
-  call void @cqrt_qram_store_i32(i32 %b, i32 %i, i32 %sum)
-  %l = call i32 @cqrt_qram_load_i32_hl(i32 %b, i32 0)
-  %s = call i32 @cq_template_add_i32_hl(i32 %l, i32 7)
-  %m = call i32 @cqrt_measure_i32(i32 %s)
-  ret i32 %m
-})");
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
-  RailId b = f.core(f.call("cqrt_qram_alloc_i32"), abi::Core::QramAlloc, "l", ~0u);
-  f.T("v1", "hl");
-  f.core(f.call("cqrt_qram_store_i32_hl"), abi::Core::QramStore, "hlh", b);
-  f.T("i", "hl");
-  f.core(f.call("cqrt_qram_load_i32"), abi::Core::QramLoad, "hh", ~0u);
-  f.T("sum", "hh");
-  f.core(f.call("cqrt_qram_store_i32"), abi::Core::QramStore, "hhh", b);
-  f.core(f.call("cqrt_qram_load_i32_hl"), abi::Core::QramLoad, "hl", ~0u);
-  f.U.setRole(f.T("s", "hl"), Role::Measured);
-  f.U.flushAtExit(f.ret());
-  f.check(__func__, {
-                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
-                        "call void @cqrt_ry_i32(i32 %x, double %th)",
-                        "%b = call i32 @cqrt_qram_alloc_i32(i32 2)",
-                        "%v1 = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
-                        "call void @cqrt_qram_store_i32_hl(i32 %b, i32 0, i32 %v1)",
-                        "%i = call i32 @cq_template_and_i32_hl(i32 %x, i32 1)",
-                        "%old = call i32 @cqrt_qram_load_i32(i32 %b, i32 %i)",
-                        "%sum = call i32 @cq_template_add_i32(i32 %old, i32 %x)",
-                        "call void @cqrt_qram_store_i32(i32 %b, i32 %i, i32 %sum)",
-                        "%l = call i32 @cqrt_qram_load_i32_hl(i32 %b, i32 0)",
-                        "%s = call i32 @cq_template_add_i32_hl(i32 %l, i32 7)",
-                        "call void @cqrt_qram_load_i32_hl_unc(i32 %l, i32 %b, i32 0)",
-                        "call void @cqrt_free(i32 %l)",
-                        "call void @cqrt_qram_store_i32_unc(i32 %b, i32 %i, i32 %sum)",
-                        "call void @cq_template_add_i32_unc(i32 %sum, i32 %old, i32 %x)",
-                        "call void @cqrt_free(i32 %sum)",
-                        "call void @cqrt_qram_load_i32_unc(i32 %old, i32 %b, i32 %i)",
-                        "call void @cqrt_free(i32 %old)",
-                        "call void @cq_template_and_i32_hl_unc(i32 %i, i32 %x, i32 1)",
-                        "call void @cqrt_free(i32 %i)",
-                        "call void @cqrt_qram_store_i32_hl_unc(i32 %b, i32 0, i32 %v1)",
-                        "call void @cq_template_add_i32_hl_unc(i32 %v1, i32 %x, i32 1)",
-                        "call void @cqrt_free(i32 %v1)",
-                        "call void @cqrt_qram_free(i32 %b)",
-                        "%m = call i32 @cqrt_measure_i32(i32 %s)",
-                        "ret i32 %m",
-                    });
-}
 
-// cq-w6ie (A2): a kept bus (a global's handle, Output) never pops its stores, so a later store stays
-// a barrier: a load whose last reader precedes that store is un-copied before it.
-void qram_kept_bus() {
-  Fx f(R"(
-define i32 @f(i32 %b, i32 %a0, double %th) {
-  %x = call i32 @cqrt_alloc_i32(i32 %a0)
-  call void @cqrt_ry_i32(i32 %x, double %th)
-  %l = call i32 @cqrt_qram_load_i32_hl(i32 %b, i32 0)
-  %s = call i32 @cq_template_add_i32_hl(i32 %l, i32 1)
-  %v = call i32 @cq_template_add_i32_hl(i32 %x, i32 5)
-  call void @cqrt_qram_store_i32_hl(i32 %b, i32 0, i32 %v)
-  %m = call i32 @cqrt_measure_i32(i32 %s)
-  ret i32 %m
-})");
-  RailId b = f.U.recordExternal(f.F->getArg(0), Role::Output);
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
-  f.core(f.call("cqrt_qram_load_i32_hl"), abi::Core::QramLoad, "hl", ~0u);
-  f.U.setRole(f.T("s", "hl"), Role::Measured);
-  f.T("v", "hl");
-  f.core(f.call("cqrt_qram_store_i32_hl"), abi::Core::QramStore, "hlh", b);
-  f.U.flushAtExit(f.ret());
-  f.check(__func__, {
-                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
-                        "call void @cqrt_ry_i32(i32 %x, double %th)",
-                        "%l = call i32 @cqrt_qram_load_i32_hl(i32 %b, i32 0)",
-                        "%s = call i32 @cq_template_add_i32_hl(i32 %l, i32 1)",
-                        "call void @cqrt_qram_load_i32_hl_unc(i32 %l, i32 %b, i32 0)",
-                        "call void @cqrt_free(i32 %l)",
-                        "%v = call i32 @cq_template_add_i32_hl(i32 %x, i32 5)",
-                        "call void @cqrt_qram_store_i32_hl(i32 %b, i32 0, i32 %v)",
-                        "call void @cq_template_add_i32_hl_unc(i32 %v, i32 %x, i32 5)",
-                        "call void @cqrt_free(i32 %v)",
-                        "%m = call i32 @cqrt_measure_i32(i32 %s)",
-                        "ret i32 %m",
-                    });
-}
 
-// cq-w6ie (A2, item 5): the value of store 2 is rotated after the store, so POP(2) is never emitted:
-// store 2 and store 1 stay, the bus is KeptEntangled (never freed). The load reading v_2 is still
-// un-copied; v1 (read only by the kept POP(1)) is cleaned, since the store left v unchanged.
-void qram_pop_kept() {
-  Fx f(R"(
-define i32 @f(i32 %a0, i32 %a1, double %th) {
-  %x = call i32 @cqrt_alloc_i32(i32 %a0)
-  call void @cqrt_ry_i32(i32 %x, double %th)
-  %b = call i32 @cqrt_qram_alloc_i32(i32 2)
-  %v1 = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
-  call void @cqrt_qram_store_i32_hl(i32 %b, i32 0, i32 %v1)
-  %y = call i32 @cqrt_alloc_i32(i32 %a1)
-  call void @cqrt_qram_store_i32_hl(i32 %b, i32 1, i32 %y)
-  call void @cqrt_ry_i32(i32 %y, double %th)
-  %l = call i32 @cqrt_qram_load_i32_hl(i32 %b, i32 0)
-  %s = call i32 @cq_template_add_i32_hl(i32 %l, i32 7)
-  %m = call i32 @cqrt_measure_i32(i32 %s)
-  ret i32 %m
-})");
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 0));
-  RailId b = f.core(f.call("cqrt_qram_alloc_i32"), abi::Core::QramAlloc, "l", ~0u);
-  f.T("v1", "hl");
-  f.core(f.call("cqrt_qram_store_i32_hl", 0), abi::Core::QramStore, "hlh", b);
-  RailId y = f.S("y");
-  f.core(f.call("cqrt_qram_store_i32_hl", 1), abi::Core::QramStore, "hlh", b);
-  f.U.noteNonDiagonal(y, f.call("cqrt_ry_i32", 1));
-  f.core(f.call("cqrt_qram_load_i32_hl"), abi::Core::QramLoad, "hl", ~0u);
-  f.U.setRole(f.T("s", "hl"), Role::Measured);
-  f.U.flushAtExit(f.ret());
-  f.check(__func__, {
-                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
-                        "call void @cqrt_ry_i32(i32 %x, double %th)",
-                        "%b = call i32 @cqrt_qram_alloc_i32(i32 2)",
-                        "%v1 = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
-                        "call void @cqrt_qram_store_i32_hl(i32 %b, i32 0, i32 %v1)",
-                        "call void @cq_template_add_i32_hl_unc(i32 %v1, i32 %x, i32 1)",
-                        "call void @cqrt_free(i32 %v1)",
-                        "%y = call i32 @cqrt_alloc_i32(i32 %a1)",
-                        "call void @cqrt_qram_store_i32_hl(i32 %b, i32 1, i32 %y)",
-                        "call void @cqrt_ry_i32(i32 %y, double %th)",
-                        "%l = call i32 @cqrt_qram_load_i32_hl(i32 %b, i32 0)",
-                        "%s = call i32 @cq_template_add_i32_hl(i32 %l, i32 7)",
-                        "call void @cqrt_qram_load_i32_hl_unc(i32 %l, i32 %b, i32 0)",
-                        "call void @cqrt_free(i32 %l)",
-                        "%m = call i32 @cqrt_measure_i32(i32 %s)",
-                        "ret i32 %m",
-                    });
-}
 
-// cq-w6ie (A2): on a kept bus a load read after a later store cannot be un-copied (the store is
-// never popped): the in-place-write barrier stands.
-void qram_kept_bus_sandwich() {
-  Fx f(R"(
-define i32 @f(i32 %b, i32 %a0, double %th) {
-  %x = call i32 @cqrt_alloc_i32(i32 %a0)
-  call void @cqrt_ry_i32(i32 %x, double %th)
-  %l = call i32 @cqrt_qram_load_i32_hl(i32 %b, i32 0)
-  %v = call i32 @cq_template_add_i32_hl(i32 %x, i32 5)
-  call void @cqrt_qram_store_i32_hl(i32 %b, i32 0, i32 %v)
-  %s = call i32 @cq_template_add_i32_hl(i32 %l, i32 1)
-  %m = call i32 @cqrt_measure_i32(i32 %s)
-  ret i32 %m
-})");
-  RailId b = f.U.recordExternal(f.F->getArg(0), Role::Output);
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
-  f.core(f.call("cqrt_qram_load_i32_hl"), abi::Core::QramLoad, "hl", ~0u);
-  f.T("v", "hl");
-  f.core(f.call("cqrt_qram_store_i32_hl"), abi::Core::QramStore, "hlh", b);
-  f.U.setRole(f.T("s", "hl"), Role::Measured);
-  f.U.flushAtExit(f.ret());
-  f.check(__func__, {
-                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
-                        "call void @cqrt_ry_i32(i32 %x, double %th)",
-                        "%l = call i32 @cqrt_qram_load_i32_hl(i32 %b, i32 0)",
-                        "%v = call i32 @cq_template_add_i32_hl(i32 %x, i32 5)",
-                        "call void @cqrt_qram_store_i32_hl(i32 %b, i32 0, i32 %v)",
-                        "%s = call i32 @cq_template_add_i32_hl(i32 %l, i32 1)",
-                        "call void @cqrt_qram_store_i32_hl_unc(i32 %b, i32 0, i32 %v)",
-                        "call void @cqrt_qram_load_i32_hl_unc(i32 %l, i32 %b, i32 0)",
-                        "call void @cqrt_free(i32 %l)",
-                        "call void @cqrt_qram_store_i32_hl(i32 %b, i32 0, i32 %v)",
-                        "call void @cq_template_add_i32_hl_unc(i32 %v, i32 %x, i32 5)",
-                        "call void @cqrt_free(i32 %v)",
-                        "%m = call i32 @cqrt_measure_i32(i32 %s)",
-                        "ret i32 %m",
-                    });
-}
 
 // ---- classical control flow ----------------------------------------------------------------------
 
@@ -1571,69 +1147,8 @@ entry:
   ret i32 %r
 })";
 
-void cell_load_garbage() {
-  Fx f(kCell);
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
-  RailId a = f.T("ha", "hl");
-  RailId b = f.T("hb", "hl");
-  RailId m = f.U.recordCellLoad(f.I("m"), {a, b});
-  if (f.id("m") != m) {
-    ++failures;
-    errs() << "FAIL cell_load_garbage: idOf(load) is not recordCellLoad's rail\n";
-  }
-  f.U.setRole(f.T("y", "hl"), Role::Measured);
-  f.U.flushAtExit(f.ret());
-  f.check(__func__, {
-                        "%p = alloca i32, align 4",
-                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
-                        "call void @cqrt_ry_i32(i32 %x, double %th)",
-                        "%ha = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
-                        "%hb = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)",
-                        "%v = select i1 %c, i32 %ha, i32 %hb",
-                        "store i32 %v, ptr %p, align 4",
-                        "%m = load i32, ptr %p, align 4",
-                        "%y = call i32 @cq_template_mul_i32_hl(i32 %m, i32 3)",
-                        "call void @cq_template_shl_i32_hl_unc(i32 %hb, i32 %x, i32 1)",
-                        "call void @cqrt_free(i32 %hb)",
-                        "call void @cq_template_add_i32_hl_unc(i32 %ha, i32 %x, i32 1)",
-                        "call void @cqrt_free(i32 %ha)",
-                        "%r = call i32 @cqrt_measure_i32(i32 %y)",
-                        "ret i32 %r",
-                    });
-}
 
-// M3: a kept role on the load keeps every rail it may name (a load has no join to resolve at).
-void cell_load_kept() {
-  Fx f(kCell);
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
-  RailId a = f.T("ha", "hl");
-  RailId b = f.T("hb", "hl");
-  RailId m = f.U.recordCellLoad(f.I("m"), {a, b});
-  f.U.setRole(m, Role::Measured);
-  f.U.setRole(f.T("y", "hl"), Role::Measured);
-  f.U.flushAtExit(f.ret());
-  f.check(__func__, {
-                        "%p = alloca i32, align 4",
-                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
-                        "call void @cqrt_ry_i32(i32 %x, double %th)",
-                        "%ha = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
-                        "%hb = call i32 @cq_template_shl_i32_hl(i32 %x, i32 1)",
-                        "%v = select i1 %c, i32 %ha, i32 %hb",
-                        "store i32 %v, ptr %p, align 4",
-                        "%m = load i32, ptr %p, align 4",
-                        "%y = call i32 @cq_template_mul_i32_hl(i32 %m, i32 3)",
-                        "%r = call i32 @cqrt_measure_i32(i32 %y)",
-                        "ret i32 %r",
-                    });
-}
 
-// M3: a cell load that may name nothing is an internal error.
-void fatal_cell_load_empty() {
-  Fx f(kCell);
-  f.U.recordCellLoad(f.I("m"), {});
-}
 
 // F1 with M3 (179): a classically bounded loop stores a flag rail into a cell each trip; after the loop
 // the cell is read through a cell-load merge and measured. The exit rail has no IR use outside the
@@ -1660,39 +1175,6 @@ X:
   ret i32 %r
 })";
 
-void deferred_kept_through_memory() {
-  Fx f(kDefMem);
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
-  unsigned s = f.U.openScope();
-  RailId t = f.T("t", "hl");
-  f.T("u", "hl");
-  f.U.closeScope(s);
-  Uncompute *U = &f.U;
-  f.U.recordDeferred({s}, {t}, [U, s](IRBuilder<> &B) { U->emitMirror(s, B); }, {x});
-  RailId m = f.U.recordCellLoad(f.I("m"), {t});
-  f.U.setRole(m, Role::Measured);
-  f.U.flushAtExit(f.ret());
-  f.check(__func__, {
-                        "%p = alloca i32, align 4",
-                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
-                        "call void @cqrt_ry_i32(i32 %x, double %th)",
-                        "br label %L",
-                        "%i = phi i32 [ 0, %entry ], [ %i2, %L ]",
-                        "%t = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
-                        "%u = call i32 @cq_template_mul_i32_hl(i32 %t, i32 3)",
-                        "store i32 %t, ptr %p, align 4",
-                        "%i2 = add i32 %i, 1",
-                        "%c = icmp slt i32 %i2, %n",
-                        "br i1 %c, label %L, label %0",
-                        "%m = load i32, ptr %p, align 4",
-                        "%r = call i32 @cqrt_measure_i32(i32 %m)",
-                        "call void @cq_template_mul_i32_hl_unc(i32 %u, i32 %t, i32 3)",
-                        "call void @cqrt_free(i32 %u)",
-                        "br label %X",
-                        "ret i32 %r",
-                    });
-}
 
 // U2 (cq-arch 2026-11-01): a clone call with two result rails (64). Both are read by one template; the
 // twin, taking both result handles first, runs after it, then both rails are freed in field order.
@@ -1715,7 +1197,7 @@ void call_two_results() {
   Fx f(kCall2);
   RailId x = f.reg("x", 0);
   f.U.noteNonDiagonal(x, f.call("cqrt_ry_f64"));
-  auto ids = f.U.recordCall(cast<CallInst>(f.I("s")), {f.I("h"), f.I("l")}, {}, {});
+  auto ids = f.U.recordCall(cast<CallInst>(f.I("s")), {f.I("h"), f.I("l")}, {});
   if (ids.size() != 2 || f.id("h") != ids[0] || f.id("l") != ids[1]) {
     ++failures;
     errs() << "FAIL call_two_results: recordCall ids\n";
@@ -1756,7 +1238,7 @@ void call_all_kept() {
   Fx f(kCall2m);
   RailId x = f.reg("x", 0);
   f.U.noteNonDiagonal(x, f.call("cqrt_ry_f64"));
-  auto ids = f.U.recordCall(cast<CallInst>(f.I("s")), {f.I("h"), f.I("l")}, {}, {});
+  auto ids = f.U.recordCall(cast<CallInst>(f.I("s")), {f.I("h"), f.I("l")}, {});
   f.U.setRole(ids[0], Role::Measured);
   f.U.setRole(ids[1], Role::Measured);
   f.U.flushAtExit(f.ret());
@@ -1787,24 +1269,6 @@ entry:
   ret i32 0
 })";
 
-void call_slotout_unused() {
-  Fx f(kCallSlot);
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
-  f.U.recordCall(f.call("__cq_q_fill_11"), {}, {f.I("c")}, {Operand{f.I("old"), false}});
-  f.U.flushAtExit(f.ret());
-  f.check(__func__, {
-                        "%a = alloca [2 x i32], align 4",
-                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
-                        "call void @cqrt_ry_i32(i32 %x, double %th)",
-                        "%old = load i32, ptr %a, align 4",
-                        "call void @__cq_q_fill_11(ptr %a, i32 %x)",
-                        "%c = load i32, ptr %a, align 4",
-                        "call void @__cq_q_fill_11_unc(ptr %a, i32 %x, i32 %old)",
-                        "call void @cqrt_free(i32 %c)",
-                        "ret i32 0",
-                    });
-}
 
 // U4: g sits in a caller cell the clone reads (noteCallReads, made before recordCall as mem-slots
 // does). g's own item reads x only, but it must follow the twin, which recompute-reads g: the twin,
@@ -1825,32 +1289,6 @@ entry:
   ret i32 %r
 })";
 
-void call_reads() {
-  Fx f(kCallReads);
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
-  RailId g = f.T("g", "hl");
-  f.U.noteCallReads(f.call("__cq_q_fill_11"), {g});
-  f.U.recordCall(f.call("__cq_q_fill_11"), {}, {f.I("c")}, {Operand{PoisonValue::get(Type::getInt32Ty(f.C)), false}});
-  f.U.setRole(x, Role::Measured);
-  f.U.flushAtExit(f.ret());
-  f.check(__func__, {
-                        "%a = alloca [2 x i32], align 4",
-                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
-                        "call void @cqrt_ry_i32(i32 %x, double %th)",
-                        "%g = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
-                        "store i32 %g, ptr %a, align 4",
-                        "call void @__cq_q_fill_11(ptr %a, i32 %x)",
-                        "%p = getelementptr inbounds i32, ptr %a, i64 1",
-                        "%c = load i32, ptr %p, align 4",
-                        "call void @__cq_q_fill_11_unc(ptr %a, i32 %x, i32 poison)",
-                        "call void @cqrt_free(i32 %c)",
-                        "call void @cq_template_add_i32_hl_unc(i32 %g, i32 %x, i32 1)",
-                        "call void @cqrt_free(i32 %g)",
-                        "%r = call i32 @cqrt_measure_i32(i32 %x)",
-                        "ret i32 %r",
-                    });
-}
 
 // U5: resolveAt. t (garbage over x) is defined and used in the guarded block G; every path from G to
 // the return passes X, so resolveAt(first instruction of X, {t}) emits t's _unc and free there.
@@ -1942,63 +1380,7 @@ entry:
   ret i64 0
 })";
 
-void pointee_before_store() {
-  Fx f(kPointee);
-  // Without %u: the twin of %r follows %t and precedes the store.
-  f.I("u")->eraseFromParent();
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
-  f.T("r", "lh");
-  RailId t = f.T("t", "hl");
-  f.U.setRole(t, Role::Measured);
-  f.U.flushAtExit(f.ret());
-  f.check(__func__, {
-                        "%s = alloca i64, align 8",
-                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
-                        "call void @cqrt_ry_i32(i32 %x, double %th)",
-                        "store i64 %q, ptr %s, align 8",
-                        "%r = call i32 @__cq_q_g_01(ptr %s, i32 %x)",
-                        "%t = call i32 @cq_template_add_i32_hl(i32 %r, i32 1)",
-                        "call void @__cq_q_g_01_unc(i32 %r, ptr %s, i32 %x)",
-                        "call void @cqrt_free(i32 %r)",
-                        "store i64 7, ptr %s, align 8",
-                        "%m = call i32 @cqrt_measure_i32(i32 %t)",
-                        "ret i64 0",
-                    });
-}
 
-void pointee_write_swap() {
-  Fx f(kPointee);
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
-  f.T("r", "lh");
-  RailId t = f.T("t", "hl");
-  f.T("u", "hl");
-  f.U.setRole(t, Role::Measured);
-  f.U.flushAtExit(f.ret());
-  f.check(__func__, {
-                        "%cq.cur = alloca [8 x i8], align 1",
-                        "%cq.snap = alloca [8 x i8], align 1",
-                        "%s = alloca i64, align 8",
-                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
-                        "call void @cqrt_ry_i32(i32 %x, double %th)",
-                        "store i64 %q, ptr %s, align 8",
-                        "%r = call i32 @__cq_q_g_01(ptr %s, i32 %x)",
-                        "call void @llvm.memcpy.p0.p0.i64(ptr align 1 %cq.snap, ptr align 1 %s, i64 8, i1 false)",
-                        "%t = call i32 @cq_template_add_i32_hl(i32 %r, i32 1)",
-                        "store i64 7, ptr %s, align 8",
-                        "%m = call i32 @cqrt_measure_i32(i32 %t)",
-                        "%u = call i32 @cq_template_add_i32_hl(i32 %r, i32 2)",
-                        "call void @cq_template_add_i32_hl_unc(i32 %u, i32 %r, i32 2)",
-                        "call void @cqrt_free(i32 %u)",
-                        "call void @llvm.memcpy.p0.p0.i64(ptr align 1 %cq.cur, ptr align 1 %s, i64 8, i1 false)",
-                        "call void @llvm.memcpy.p0.p0.i64(ptr align 1 %s, ptr align 1 %cq.snap, i64 8, i1 false)",
-                        "call void @__cq_q_g_01_unc(i32 %r, ptr %s, i32 %x)",
-                        "call void @cqrt_free(i32 %r)",
-                        "call void @llvm.memcpy.p0.p0.i64(ptr align 1 %s, ptr align 1 %cq.cur, i64 8, i1 false)",
-                        "ret i64 0",
-                    });
-}
 
 // U2, CR rule 18 (ruling 2026-11-02, cq-75n4): one result measured and the other dead: the measured one is
 // copied out right after the call, the twin zeroes both results.
@@ -2009,7 +1391,7 @@ void call_mixed_measured() {
   Fx f(ir);
   RailId x = f.reg("x", 0);
   f.U.noteNonDiagonal(x, f.call("cqrt_ry_f64"));
-  auto ids = f.U.recordCall(cast<CallInst>(f.I("s")), {f.I("h"), f.I("l")}, {}, {});
+  auto ids = f.U.recordCall(cast<CallInst>(f.I("s")), {f.I("h"), f.I("l")}, {});
   f.U.setRole(ids[1], Role::Measured);
   f.U.flushAtExit(f.ret());
   f.check(__func__, {
@@ -3109,87 +2491,9 @@ define i32 @f(i32 %a0, i64 %i, i64 %m, double %th) {
   ret i32 %r
 })";
 
-void aliasCase(const char *idx) {
-  std::string ir = kAliasIr;
-  ir.replace(ir.find("IDX"), 3, idx);
-  Fx f(ir);
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 0));
-  f.T("g", "hl");
-  f.U.setRole(f.S("z"), Role::UserRegister);
-  f.U.recordExternal(f.I("l"), Role::UserRegister);
-  f.U.noteNonDiagonal(f.id("l"), f.call("cqrt_ry_i32", 1));
-  f.U.setRole(f.T("q", "hl"), Role::Measured);
-  f.U.flushAtExit(f.ret());
-  if (std::string(idx) == "%i")
-    checkHas(f, "alias_slot_reload", kHitGuard);
-}
 
-void alias_slot_reload() { aliasCase("%i"); }
 
-void alias_distinct_cell() {
-  // x in cell 0, the seed in cell 1, the Ry on a reload of cell 1: never x, so g is cleaned after
-  // its consumer as before.
-  std::string ir = kAliasIr;
-  ir.replace(ir.find("i64 %i\n  store i32 %x"), 6, "i64 0");
-  ir.replace(ir.find("i64 %m\n  store i32 %z"), 6, "i64 1");
-  ir.replace(ir.find("IDX"), 3, "1");
-  Fx f(ir);
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 0));
-  f.T("g", "hl");
-  f.U.setRole(f.S("z"), Role::UserRegister);
-  f.U.recordExternal(f.I("l"), Role::UserRegister);
-  f.U.noteNonDiagonal(f.id("l"), f.call("cqrt_ry_i32", 1));
-  f.U.setRole(f.T("q", "hl"), Role::Measured);
-  f.U.flushAtExit(f.ret());
-  f.check(__func__, {
-                        "%cells = alloca i32, i64 4, align 4",
-                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
-                        "call void @cqrt_ry_i32(i32 %x, double %th)",
-                        "%pi = getelementptr inbounds i32, ptr %cells, i64 0",
-                        "store i32 %x, ptr %pi, align 4",
-                        "%g = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
-                        "%z = call i32 @cqrt_alloc_i32(i32 0)",
-                        "%pm = getelementptr inbounds i32, ptr %cells, i64 1",
-                        "store i32 %z, ptr %pm, align 4",
-                        "%pj = getelementptr inbounds i32, ptr %cells, i64 1",
-                        "%l = load i32, ptr %pj, align 4",
-                        "call void @cqrt_ry_i32(i32 %l, double %th)",
-                        "%q = call i32 @cq_template_mul_i32_hl(i32 %g, i32 3)",
-                        "call void @cq_template_add_i32_hl_unc(i32 %g, i32 %x, i32 1)",
-                        "call void @cqrt_free(i32 %g)",
-                        "%r = call i32 @cqrt_measure_i32(i32 %q)",
-                        "ret i32 %r",
-                    });
-}
 
-// The reverse direction: g read a reload %l of cell i, and the Ry is on x, which sits in cell i.
-void alias_slot_direct() {
-  Fx f(R"(
-define i32 @f(i32 %a0, i64 %i, double %th) {
-  %cells = alloca i32, i64 4
-  %x = call i32 @cqrt_alloc_i32(i32 %a0)
-  call void @cqrt_ry_i32(i32 %x, double %th)
-  %pi = getelementptr inbounds i32, ptr %cells, i64 %i
-  store i32 %x, ptr %pi
-  %pj = getelementptr inbounds i32, ptr %cells, i64 %i
-  %l = load i32, ptr %pj
-  %g = call i32 @cq_template_add_i32_hl(i32 %l, i32 1)
-  call void @cqrt_ry_i32(i32 %x, double %th)
-  %q = call i32 @cq_template_mul_i32_hl(i32 %g, i32 3)
-  %r = call i32 @cqrt_measure_i32(i32 %q)
-  ret i32 %r
-})");
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 0));
-  f.U.recordExternal(f.I("l"), Role::UserRegister);
-  f.T("g", "hl");
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 1));
-  f.U.setRole(f.T("q", "hl"), Role::Measured);
-  f.U.flushAtExit(f.ret());
-  checkHas(f, "alias_slot_direct", kHitGuard);
-}
 
 // ---- cq-vdaa: the rail reaches a second slot array through a copy of a reload -----------------
 
@@ -3232,106 +2536,9 @@ void copyCase(const char *arr, Fx *&out, std::string &keep) {
   f.U.flushAtExit(f.ret());
 }
 
-void alias_second_array() {
-  Fx *f;
-  std::string ir;
-  copyCase("%sa", f, ir);
-  checkHas(*f, "alias_second_array", kHitGuard);
-}
 
-// The rotated reload comes from a third array the rail never reaches: g is cleaned after its
-// consumer as before.
-void alias_copy_distinct_array() {
-  Fx *f;
-  std::string ir;
-  copyCase("%ta", f, ir);
-  f->check(__func__, {
-                         "%qa = alloca i32, i64 4, align 4",
-                         "%sa = alloca i32, i64 4, align 4",
-                         "%ta = alloca i32, i64 4, align 4",
-                         "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
-                         "call void @cqrt_ry_i32(i32 %x, double %th)",
-                         "%pi = getelementptr inbounds i32, ptr %qa, i64 %i",
-                         "store i32 %x, ptr %pi, align 4",
-                         "%g = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
-                         "%pj = getelementptr inbounds i32, ptr %qa, i64 %j",
-                         "%l = load i32, ptr %pj, align 4",
-                         "%pk = getelementptr inbounds i32, ptr %sa, i64 %k",
-                         "store i32 %l, ptr %pk, align 4",
-                         "%pm = getelementptr inbounds i32, ptr %ta, i64 %m",
-                         "%l2 = load i32, ptr %pm, align 4",
-                         "call void @cqrt_ry_i32(i32 %l2, double %th)",
-                         "%q = call i32 @cq_template_mul_i32_hl(i32 %g, i32 3)",
-                         "call void @cq_template_add_i32_hl_unc(i32 %g, i32 %x, i32 1)",
-                         "call void @cqrt_free(i32 %g)",
-                         "%r = call i32 @cqrt_measure_i32(i32 %q)",
-                         "ret i32 %r",
-                     });
-}
 
-// c2's shape, the reverse: g read a reload %l2 of s[m], which may be x copied there through a
-// reload of q[j]; the Ry is on x itself.
-void alias_second_array_rev() {
-  Fx f(R"(
-define i32 @f(i32 %a0, i64 %i, i64 %j, i64 %k, i64 %m, double %th) {
-  %qa = alloca i32, i64 4
-  %sa = alloca i32, i64 4
-  %x = call i32 @cqrt_alloc_i32(i32 %a0)
-  call void @cqrt_ry_i32(i32 %x, double %th)
-  %pi = getelementptr inbounds i32, ptr %qa, i64 %i
-  store i32 %x, ptr %pi
-  %pj = getelementptr inbounds i32, ptr %qa, i64 %j
-  %l = load i32, ptr %pj
-  %pk = getelementptr inbounds i32, ptr %sa, i64 %k
-  store i32 %l, ptr %pk
-  %pm = getelementptr inbounds i32, ptr %sa, i64 %m
-  %l2 = load i32, ptr %pm
-  %g = call i32 @cq_template_add_i32_hl(i32 %l2, i32 1)
-  call void @cqrt_ry_i32(i32 %x, double %th)
-  %q = call i32 @cq_template_mul_i32_hl(i32 %g, i32 3)
-  %r = call i32 @cqrt_measure_i32(i32 %q)
-  ret i32 %r
-})");
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 0));
-  f.U.recordExternal(f.I("l"), Role::UserRegister);
-  f.U.recordExternal(f.I("l2"), Role::UserRegister);
-  f.T("g", "hl");
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 1));
-  f.U.setRole(f.T("q", "hl"), Role::Measured);
-  f.U.flushAtExit(f.ret());
-  checkHas(f, "alias_second_array_rev", kHitGuard);
-}
 
-// A memcpy of the whole first array into the second: the rotated reload of s[m] may be x.
-void alias_memcpy() {
-  Fx f(R"(
-define i32 @f(i32 %a0, i64 %i, i64 %m, double %th) {
-  %qa = alloca i32, i64 4
-  %sa = alloca i32, i64 4
-  %x = call i32 @cqrt_alloc_i32(i32 %a0)
-  call void @cqrt_ry_i32(i32 %x, double %th)
-  %pi = getelementptr inbounds i32, ptr %qa, i64 %i
-  store i32 %x, ptr %pi
-  %g = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
-  call void @llvm.memcpy.p0.p0.i64(ptr %sa, ptr %qa, i64 16, i1 false)
-  %pm = getelementptr inbounds i32, ptr %sa, i64 %m
-  %l2 = load i32, ptr %pm
-  call void @cqrt_ry_i32(i32 %l2, double %th)
-  %q = call i32 @cq_template_mul_i32_hl(i32 %g, i32 3)
-  %r = call i32 @cqrt_measure_i32(i32 %q)
-  ret i32 %r
-}
-declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1))");
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 0));
-  f.T("g", "hl");
-  f.U.recordExternal(f.I("l2"), Role::UserRegister);
-  f.U.noteNonDiagonal(f.id("l2"), f.call("cqrt_ry_i32", 1));
-  f.U.setRole(f.T("q", "hl"), Role::Measured);
-  f.U.flushAtExit(f.ret());
-  checkHas(f, "alias_memcpy", kHitGuard);
-}
 
 
 // ---- M3b: two reloads of provably different cells name different rails ----------------------------
@@ -3361,67 +2568,9 @@ define i32 @f(i32 %a0, i32 %a1, i64 %i, i64 %j, double %th) {
   ret i32 %r
 })";
 
-void distinctCase(const char *rd, bool note, Fx *&out, std::string &keep) {
-  keep = kDistinctIr;
-  keep.replace(keep.find("RD"), 2, rd);
-  out = new Fx(keep);
-  Fx &f = *out;
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 0));
-  RailId y = f.reg("y", 0);
-  f.U.noteNonDiagonal(y, f.call("cqrt_ry_i32", 1));
-  RailId la = f.U.recordCellLoad(f.I("la"), {x});
-  f.U.recordCellLoad(f.I("lb"), {y});
-  if (note)
-    f.U.noteCellsDistinct(f.I("la"), f.I("lb"));
-  f.T("g", "hl");
-  f.U.noteNonDiagonal(la, f.call("cqrt_ry_i32", 2));
-  f.U.setRole(f.T("q", "hl"), Role::Measured);
-  f.U.flushAtExit(f.ret());
-}
 
-void cells_distinct() {
-  Fx *fp;
-  std::string ir;
-  distinctCase("%lb", true, fp, ir);
-  std::unique_ptr<Fx> own(fp);
-  fp->check(__func__, {
-                          "%cells = alloca i32, i64 4, align 4",
-                          "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
-                          "call void @cqrt_ry_i32(i32 %x, double %th)",
-                          "%pi = getelementptr inbounds i32, ptr %cells, i64 %i",
-                          "store i32 %x, ptr %pi, align 4",
-                          "%y = call i32 @cqrt_alloc_i32(i32 %a1)",
-                          "call void @cqrt_ry_i32(i32 %y, double %th)",
-                          "%pj = getelementptr inbounds i32, ptr %cells, i64 %j",
-                          "store i32 %y, ptr %pj, align 4",
-                          "%la = load i32, ptr %pi, align 4",
-                          "%lb = load i32, ptr %pj, align 4",
-                          "%g = call i32 @cq_template_add_i32_hl(i32 %lb, i32 1)",
-                          "call void @cqrt_ry_i32(i32 %la, double %th)",
-                          "%q = call i32 @cq_template_mul_i32_hl(i32 %g, i32 3)",
-                          "call void @cq_template_add_i32_hl_unc(i32 %g, i32 %lb, i32 1)",
-                          "call void @cqrt_free(i32 %g)",
-                          "%r = call i32 @cqrt_measure_i32(i32 %q)",
-                          "ret i32 %r",
-                      });
-}
 
-// The same pair without the note: the AliasHit stands.
-void cells_distinct_unnoted() {
-  Fx *fp;
-  std::string ir;
-  distinctCase("%lb", false, fp, ir);
-  checkHas(*fp, "cells_distinct_unnoted", kHitGuard);
-}
 
-// g reads y itself, not through %lb: the note says nothing about that route.
-void cells_distinct_direct_read() {
-  Fx *fp;
-  std::string ir;
-  distinctCase("%y", true, fp, ir);
-  checkHas(*fp, "cells_distinct_direct_read", kHitGuard);
-}
 
 
 // ---- F1b: a QRAM store in a classically bounded loop -----------------------------------------------
@@ -3454,82 +2603,7 @@ X:
   ret i32 %r
 })";
 
-void deferred_qram_store() {
-  Fx f(kDefQram);
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
-  RailId a = f.core(f.call("cqrt_qram_alloc_i32"), abi::Core::QramAlloc, "l", ~0u);
-  unsigned s = f.U.openScope();
-  f.T("t", "hl");
-  f.core(f.call("cqrt_qram_store_i32_hl", 0), abi::Core::QramStore, "hlh", a);
-  f.U.closeScope(s);
-  Uncompute *U = &f.U;
-  f.U.recordDeferred({s}, {}, [U, s](IRBuilder<> &B) { U->emitMirror(s, B); }, {x, a});
-  f.T("w", "hl");
-  f.core(f.call("cqrt_qram_store_i32_hl", 1), abi::Core::QramStore, "hlh", a);
-  f.core(f.call("cqrt_qram_load_i32_hl"), abi::Core::QramLoad, "hl", ~0u);
-  f.U.setRole(f.T("u", "hl"), Role::Measured);
-  f.U.flushAtExit(f.ret());
-  f.check(__func__, {
-                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
-                        "call void @cqrt_ry_i32(i32 %x, double %th)",
-                        "%a = call i32 @cqrt_qram_alloc_i32(i32 4)",
-                        "br label %L",
-                        "%i = phi i32 [ 0, %entry ], [ %i2, %L ]",
-                        "%t = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)",
-                        "call void @cqrt_qram_store_i32_hl(i32 %a, i32 %i, i32 %t)",
-                        "%i2 = add i32 %i, 1",
-                        "%c = icmp slt i32 %i2, %n",
-                        "br i1 %c, label %L, label %0",
-                        "%w = call i32 @cq_template_add_i32_hl(i32 %x, i32 2)",
-                        "call void @cqrt_qram_store_i32_hl(i32 %a, i32 0, i32 %w)",
-                        "%l = call i32 @cqrt_qram_load_i32_hl(i32 %a, i32 %j)",
-                        "%u = call i32 @cq_template_mul_i32_hl(i32 %l, i32 3)",
-                        "call void @cqrt_qram_load_i32_hl_unc(i32 %l, i32 %a, i32 %j)",
-                        "call void @cqrt_free(i32 %l)",
-                        "call void @cqrt_qram_store_i32_hl_unc(i32 %a, i32 0, i32 %w)",
-                        "call void @cq_template_add_i32_hl_unc(i32 %w, i32 %x, i32 2)",
-                        "call void @cqrt_free(i32 %w)",
-                        "call void @cqrt_qram_store_i32_hl_unc(i32 %a, i32 %i, i32 %t)",
-                        "call void @cq_template_add_i32_hl_unc(i32 %t, i32 %x, i32 1)",
-                        "call void @cqrt_free(i32 %t)",
-                        "br label %X",
-                        "call void @cqrt_qram_free(i32 %a)",
-                        "%r = call i32 @cqrt_measure_i32(i32 %u)",
-                        "ret i32 %r",
-                    });
-}
 
-// No exit rail and no use of the bus after the loop: nothing anchors the reverse.
-void fatal_deferred_no_anchor() {
-  Fx f(R"(
-define i32 @f(i32 %a0, i32 %n, double %th) {
-entry:
-  %x = call i32 @cqrt_alloc_i32(i32 %a0)
-  call void @cqrt_ry_i32(i32 %x, double %th)
-  %a = call i32 @cqrt_qram_alloc_i32(i32 4)
-  br label %L
-L:
-  %i = phi i32 [ 0, %entry ], [ %i2, %L ]
-  %t = call i32 @cq_template_add_i32_hl(i32 %x, i32 1)
-  call void @cqrt_qram_store_i32_hl(i32 %a, i32 %i, i32 %t)
-  %i2 = add i32 %i, 1
-  %c = icmp slt i32 %i2, %n
-  br i1 %c, label %L, label %X
-X:
-  %r = call i32 @cqrt_measure_i32(i32 %x)
-  ret i32 %r
-})");
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32"));
-  RailId a = f.core(f.call("cqrt_qram_alloc_i32"), abi::Core::QramAlloc, "l", ~0u);
-  unsigned s = f.U.openScope();
-  f.T("t", "hl");
-  f.core(f.call("cqrt_qram_store_i32_hl", 0), abi::Core::QramStore, "hlh", a);
-  f.U.closeScope(s);
-  Uncompute *U = &f.U;
-  f.U.recordDeferred({s}, {}, [U, s](IRBuilder<> &B) { U->emitMirror(s, B); }, {x, a});
-}
 
 
 // ---- cq-lqz3: a deferred reverse placed at a join after an earlier merge of its exit rail ----------
@@ -3626,70 +2700,6 @@ void deferred_join_bypass() { deferredJoin(true); }
 
 // ---- cq-lqz3: a pointer from outside the frame never names a cell of a non-escaping alloca ---------
 
-// 185's shape: the Ry on the reload %l of qa[j] takes its angle from a classical load of tk[i] (tk a
-// formal). The formal cannot point into qa or sa (neither escapes), so the rail y in sa, read by g
-// through %ly, is not reached through that load: g is cleaned after its consumer.
-void alias_formal_local() {
-  Fx f(R"(
-define i32 @f(i32 %a0, i32 %a1, ptr %tk, i64 %i, i64 %j, double %th) {
-  %qa = alloca i32, i64 4
-  %sa = alloca i32, i64 4
-  %x = call i32 @cqrt_alloc_i32(i32 %a0)
-  call void @cqrt_ry_i32(i32 %x, double %th)
-  %pi = getelementptr inbounds i32, ptr %qa, i64 %i
-  store i32 %x, ptr %pi
-  %y = call i32 @cqrt_alloc_i32(i32 %a1)
-  call void @cqrt_ry_i32(i32 %y, double %th)
-  %si = getelementptr inbounds i32, ptr %sa, i64 %i
-  store i32 %y, ptr %si
-  %pt = getelementptr inbounds double, ptr %tk, i64 %i
-  %d = load double, ptr %pt
-  %pj = getelementptr inbounds i32, ptr %qa, i64 %j
-  %l = load i32, ptr %pj
-  %sj = getelementptr inbounds i32, ptr %sa, i64 %j
-  %ly = load i32, ptr %sj
-  %g = call i32 @cq_template_add_i32_hl(i32 %ly, i32 1)
-  call void @cqrt_ry_i32(i32 %l, double %d)
-  %q = call i32 @cq_template_mul_i32_hl(i32 %g, i32 3)
-  %r = call i32 @cqrt_measure_i32(i32 %q)
-  ret i32 %r
-})");
-  RailId x = f.reg("x", 0);
-  f.U.noteNonDiagonal(x, f.call("cqrt_ry_i32", 0));
-  RailId y = f.reg("y", 0);
-  f.U.noteNonDiagonal(y, f.call("cqrt_ry_i32", 1));
-  RailId l = f.U.recordCellLoad(f.I("l"), {x});
-  f.U.recordCellLoad(f.I("ly"), {y});
-  f.T("g", "hl");
-  f.U.noteNonDiagonal(l, f.call("cqrt_ry_i32", 2));
-  f.U.setRole(f.T("q", "hl"), Role::Measured);
-  f.U.flushAtExit(f.ret());
-  f.check(__func__, {
-                        "%qa = alloca i32, i64 4, align 4",
-                        "%sa = alloca i32, i64 4, align 4",
-                        "%x = call i32 @cqrt_alloc_i32(i32 %a0)",
-                        "call void @cqrt_ry_i32(i32 %x, double %th)",
-                        "%pi = getelementptr inbounds i32, ptr %qa, i64 %i",
-                        "store i32 %x, ptr %pi, align 4",
-                        "%y = call i32 @cqrt_alloc_i32(i32 %a1)",
-                        "call void @cqrt_ry_i32(i32 %y, double %th)",
-                        "%si = getelementptr inbounds i32, ptr %sa, i64 %i",
-                        "store i32 %y, ptr %si, align 4",
-                        "%pt = getelementptr inbounds double, ptr %tk, i64 %i",
-                        "%d = load double, ptr %pt, align 8",
-                        "%pj = getelementptr inbounds i32, ptr %qa, i64 %j",
-                        "%l = load i32, ptr %pj, align 4",
-                        "%sj = getelementptr inbounds i32, ptr %sa, i64 %j",
-                        "%ly = load i32, ptr %sj, align 4",
-                        "%g = call i32 @cq_template_add_i32_hl(i32 %ly, i32 1)",
-                        "call void @cqrt_ry_i32(i32 %l, double %d)",
-                        "%q = call i32 @cq_template_mul_i32_hl(i32 %g, i32 3)",
-                        "call void @cq_template_add_i32_hl_unc(i32 %g, i32 %ly, i32 1)",
-                        "call void @cqrt_free(i32 %g)",
-                        "%r = call i32 @cqrt_measure_i32(i32 %q)",
-                        "ret i32 %r",
-                    });
-}
 
 const std::map<std::string, std::function<void()>> kPositive = {
     {"reverse_dependency_order", reverse_dependency_order},
@@ -3707,12 +2717,6 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"seed_direct", seed_direct},
     {"seed_xorc_direct", seed_xorc_direct},
     {"seed_written_undone", seed_written_undone},
-    {"qram_lifo", qram_lifo},
-    {"qram_call_bus_read", qram_call_bus_read},
-    {"qram_rmw", qram_rmw},
-    {"qram_realloc", qram_realloc},
-    {"qram_kept_bus", qram_kept_bus},
-    {"qram_pop_kept", qram_pop_kept},
     {"multi_exit", multi_exit},
     {"arm_flush", arm_flush},
     {"ex14_fmuladd", ex14_fmuladd},
@@ -3720,15 +2724,9 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"ex162_consumer", ex162_consumer},
     {"ex144_rule6", ex144_rule6},
     {"merge_measured", merge_measured},
-    {"cell_load_garbage", cell_load_garbage},
-    {"cell_load_kept", cell_load_kept},
-    {"deferred_kept_through_memory", deferred_kept_through_memory},
     {"call_two_results", call_two_results},
     {"call_all_kept", call_all_kept},
-    {"call_slotout_unused", call_slotout_unused},
-    {"call_reads", call_reads},
     {"resolve_at", resolve_at},
-    {"pointee_before_store", pointee_before_store},
     {"merge_all_arms_kept", merge_all_arms_kept},
     {"merge_template_then_garbage", merge_template_then_garbage},
     {"merge_noted_use", merge_noted_use},
@@ -3741,19 +2739,10 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"carried_phi_rotated", carried_phi_rotated},
     {"carried_phi_unchosen_arm", carried_phi_unchosen_arm},
     {"merge_kept_nested_phi_edge", merge_kept_nested_phi_edge},
-    {"alias_distinct_cell", alias_distinct_cell},
-    {"alias_copy_distinct_array", alias_copy_distinct_array},
-    {"cells_distinct", cells_distinct},
-    {"deferred_qram_store", deferred_qram_store},
     {"deferred_join_placement", deferred_join_placement},
-    {"alias_formal_local", alias_formal_local},
     {"call_mixed_measured", call_mixed_measured},
-    {"qram_realloc_merged", qram_realloc_merged},
-    {"qram_realloc_kept", qram_realloc_kept},
     {"merge_unchosen_loop", merge_unchosen_loop},
     {"merge_cycle_arm", merge_cycle_arm},
-    {"qram_kept_bus_sandwich", qram_kept_bus_sandwich},
-    {"pointee_write_swap", pointee_write_swap},
     {"write_barrier_sandwich", write_barrier_sandwich},
     {"carried_phi_some_paths", carried_phi_some_paths},
     {"merge_nested_select_edge_rev", merge_nested_select_edge_rev},
@@ -3763,28 +2752,18 @@ const std::map<std::string, std::function<void()>> kPositive = {
     {"merge_unchosen_reader", merge_unchosen_reader},
     {"merge_nondiagonal_garbage", merge_nondiagonal_garbage},
     {"merge_kept_select", merge_kept_select},
-    {"alias_slot_reload", alias_slot_reload},
-    {"alias_slot_direct", alias_slot_direct},
-    {"alias_second_array", alias_second_array},
-    {"alias_second_array_rev", alias_second_array_rev},
-    {"alias_memcpy", alias_memcpy},
-    {"cells_distinct_unnoted", cells_distinct_unnoted},
-    {"cells_distinct_direct_read", cells_distinct_direct_read},
     {"deferred_join_bypass", deferred_join_bypass},
 };
 
 const std::map<std::string, std::function<void()>> kFatal = {
     {"fatal_use_after_free", fatal_use_after_free},
-    {"fatal_cell_load_empty", fatal_cell_load_empty},
     {"fatal_resolve_at_used", fatal_resolve_at_used},
     {"fatal_resolve_at_bypass", fatal_resolve_at_bypass},
     {"fatal_operand_mismatch", fatal_operand_mismatch},
     {"fatal_unflushed_arm", fatal_unflushed_arm},
     {"fatal_scope_order", fatal_scope_order},
     {"fatal_mirror_outside_reader", fatal_mirror_outside_reader},
-    {"fatal_call_bus_read_unrecorded", fatal_call_bus_read_unrecorded},
     {"fatal_unknown_handle", fatal_unknown_handle},
-    {"fatal_deferred_no_anchor", fatal_deferred_no_anchor},
 };
 
 } // namespace

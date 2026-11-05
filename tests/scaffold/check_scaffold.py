@@ -66,7 +66,7 @@ def arch_description(arch_json):
 RETIRED = re.compile(r"\b(ObjectId|ObjClass|PtrAbi|PtrFormal|OffsetKind|objectOf|classOf|mayHoldHandle|provenance|"
                      r"isFatPointer|cellsWritten|cellsRotated|cellForward|pointerFormal|isCodeAddress|QramRealloc|"
                      r"QramFree|QramSize|QramAllocHost|qram_realloc|qram_free|qram_size|qrom_load|strided|"
-                     r"TapeWriteStrLit|TapeStrBegin|TapeStrEnd|CloneRegister|CloneResolve|recordCellLoad|"
+                     r"TapeWriteStrLit|TapeStrBegin|TapeStrEnd|recordCellLoad|"
                      r"noteCallBusRead|WalkedPtr)\b")
 BUS_API = ["mem", "address", "hostAccess", "lowerLoad", "lowerStore", "lowerAtomic", "lowerMemIntrinsic", "lowerCopy",
            "lowerAlloc", "lowerRealloc", "versionChange", "writesMemory", "K2"]

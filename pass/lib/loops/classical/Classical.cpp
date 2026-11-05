@@ -33,13 +33,6 @@
 //  (lcw-h2 c2: the register before the loop), or else a copy of it. Case 3 cleans through the advancing
 //  select (125). An unrotated chain is a register only when its final value is read after the loop.
 //
-//  Slot memory (rule 20, cq-sujx). A load or store of a slot object at a classical offset goes
-//  through mem::lowerSlotLoad / lowerSlotStore once in the trip (the spine's dispatch): a cell loaded
-//  per trip is an alias (kept, never undone), a register stored back changes nothing, a seed or
-//  computed rail stored into a cell takes the role mem-slots gives it. The reverse undoes no memory:
-//  the cells hold classical handles and every mirror operand is pushed. QRAM objects and fat pointers
-//  in the trip are not built yet.
-//
 //  Per-trip uncompute (rule 5, as early as allowed). Before the reverse, each segment is flushed at
 //  its terminator (Uncompute::flushBefore) with the region's back edges cut, so a rail made and last
 //  read within one segment is undone in its own trip (60: the Toffoli flag of q[j] && q[i]); only a
@@ -72,16 +65,6 @@
 //  headers included: come-from "entry" ends that loop's reverse). The reverse of the entry edge is
 //  the block Z, where the seeds allocated in E are released (emitMirror of E's scope); the builder
 //  is left at the end of Z, where the loop's exit block continues.
-//
-// Shapes that are not built yet stop with cq::unimplemented (the instruction printed): a loop with
-// more than one exiting block or latch; a case-3 exit test not at the latch, with more than one
-// quantum disjunct, or with a sub-loop or a memory write; a classical
-// value read after a case-3 loop; calls other than classical, template intrinsics and the CQ.h
-// surface; QRAM / fat-pointer memory accesses (187, 188: wave 2); a deferred record with a
-// non-diagonal gate on a rail from outside its trip; a classical branch inside a quantum arm
-// of the body; a quantum-exit loop nested in a classically bounded one; a body block whose
-// classical factor (rule 8) the trip's path does not establish, a classical conjunct of a quantum arm
-// condition (cq-pkjc: the trip builds no classical guard).
 #include "cq/Loops.h"
 #include "../cutoff/Exits.h"
 
@@ -118,8 +101,6 @@
 using namespace llvm;
 
 namespace {
-// CR rule 13 (b137e75): a carried or merged code address is an i64 handle (a data pointer never reaches a rail
-// here: it is a fat pointer, rule 21).
 cq::RailType railOf(Type *t) { return t->isPointerTy() ? cq::RailType{cq::Kind::Int, 64} : cq::railTypeOf(t); }
 } // namespace
 
@@ -742,7 +723,7 @@ void Unit::check(Loop &L, Case c) {
   for (PHINode &p : L.getHeader()->phis())
     if (isQ(&p) && !(p.getType()->isIntegerTy() || p.getType()->isFloatingPointTy()) &&
         !p.getType()->isPointerTy())   // rule 3: a carried pointer is an i64 handle
-      unimplemented("loops-classical: a quantum carried value of non-scalar type (aggr, fatptr)", &p);
+      unimplemented("loops-classical: a quantum carried value of non-scalar type (aggr, rule 3)", &p);
   for (BasicBlock *b : L.blocks())
     for (Instruction &I : *b) {
       if (isa<DbgInfoIntrinsic>(I))
@@ -854,18 +835,14 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
             liveOut.push_back(&I);
           break;
         }
-  // Multi-exit: the latch, the exit arm, the phis of C.
-  // cq-h8y6 (CR rules 9, 21, 26): a data pointer's exit value is a fat pointer (tag i32, idx i64: fatptr exitShape /
-  // exitFields over every value the phi merges), an aggregate's or vector's one rail per scalar leaf, each field a
-  // capture rail of its own; a scalar (a code address an i64, rule 13) is one field.
   struct CPhi {
     PHINode *P;                     // a phi of C, or nullptr for a read after the loop (xreads)
     const Instruction *x = nullptr; // that read's loop value: its incoming on every unit edge into C
     SmallVector<PHINode *, 2> cap;  // the carried capture rails, one per field
     SmallVector<Value *, 2> res;    // this trip's res, one per field
     SmallVector<RailType, 2> rails; // the fields' rail types
-    bool ptr = false;               // a data pointer: a fat pointer's (tag, idx)
-    bool shaped = false;            // ptr: its fatptr exit shape is recorded (the first trip, walked pointers bound)
+    bool ptr = false;
+    bool shaped = false;
     const Value *orig() const { return P ? static_cast<const Value *>(P) : x; }
     Type *type() const { return orig()->getType(); }
     // The unit edges into C and their values.
@@ -2270,7 +2247,6 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           was.insert(&P);
       auto subOut = lowerLoop(*sl, sc, ob(sx), false);
       outerTrip = savedTrip;
-      // One entry per field, a value's fields consecutive (a fat pointer's tag and idx, a composite's leaves).
       for (size_t i = 0; i < subOut.size();) {
         const Value *v = subOut[i].first;
         SmallVector<Operand, 2> ops;
@@ -2340,13 +2316,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   }
   closeSeg();
 
-  // Exit values of the values read after the loop.
-  // One entry per field (a fat pointer's or a composite's several, in order; cq-h8y6), outW its rail type.
   std::vector<std::pair<const Value *, Operand>> out;
   std::vector<RailType> outW;
   DenseSet<const Value *> unbound;   // multi-exit: C's phis, bound here for the first time
-  DenseMap<const Value *, unsigned> nFields;   // a value of several fields (or a fat pointer): their count
-  DenseSet<const Value *> fat;                 // a fat pointer's exit value (fatptr bindExit once bound)
+  DenseMap<const Value *, unsigned> nFields;
+  DenseSet<const Value *> fat;
   for (CPhi &cp : cphis) {
     if (cp.res.empty())
       internalError("loops-classical: a continuation phi of a case-3 loop with no exit value", cp.orig());
@@ -2481,9 +2455,6 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       U.closeScope(copyScope);
       scs.push_back(copyScope);
     }
-    // M3 (CR rules 5, 20): a rail a trip made and stored into a slot cell may be read after the loop
-    // through the cell (a run-time read names it, Uncompute::recordCellLoad): it is an exit rail, so the
-    // reverse runs after those reads and the clean-ups of their readers (75, 179).
     for (unsigned sc : scs)
       for (const Record &r : U.scopeRecords(sc)) {
         if (r.forward->getType()->isVoidTy() || !std::holds_alternative<abi::TemplateSpec>(r.spec))
@@ -2833,11 +2804,6 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
     }
   }
 
-  // Rule 5's invariant across trips: the reverse loop undoes trip t's records after every later trip
-  // has run, so a non-diagonal gate in the loop must not touch a rail an undone record reads. A gate
-  // on a rail made in its own trip (by a record of the region) cannot touch an earlier trip's rails;
-  // a gate on any other rail (a slot cell loaded per trip, a carried value, a rail from before the
-  // loop) may, and then no deferred item may remain (cq-sujx).
   const Instruction *crossGate = nullptr;
   {
     DenseSet<const Value *> fresh;

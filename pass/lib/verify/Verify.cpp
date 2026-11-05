@@ -4,25 +4,6 @@
 // -passes=cq-verify) and fails with report_fatal_error listing every violation, each line naming its
 // check and the offending instruction. The checks:
 //
-//   free-without-unc            a cqrt_free whose rail is in no known basis state: neither returned to
-//                               |0> by its producer's _unc (or a clone twin) nor a seed (CR §0, rules 5, 7)
-//   use-after-free              a use of a handle after its cqrt_free / cqrt_qram_free
-//   inplace-on-frozen           a rotated rail reverse-played: the result rail of an _unc was rotated
-//                               (rule 10: frozen, never reverse-played); or a rotation of a measured rail
-//                               (CR §1.3). copy, xorc and not_i1 on a rotated rail are CR's own (rules 6,
-//                               10, 8) and are not violations.
-//   unc-operand-mismatch        an _unc (template, QRAM core, clone twin) whose operands differ from its
-//                               forward call (CR §1.2, §1.3, §1.4)
-//   handle-in-classical-op      a handle reaching a classical instruction or a classical operand slot
-//                               (a zext feeding only the return is rule 19's wide return, 193)
-//   classical-control-on-taint  a br / switch / select condition computed from a handle
-//   unwritten-measurement       a cqrt_measure the source did not write: a second measurement of a rail
-//                               already measured on every path (rule 2: a re-measurement is a classical
-//                               re-read, never a second call); and, outside reference mode, the
-//                               provenance marker (cq-arch V1): a cqrt_measure_<W> without !cq.measure, a
-//                               !cq.measure that is not the uniqued empty tuple, or one on any other
-//                               instruction. Reference mode (cq-verify<reference>) ignores the marker.
-//
 // Handles are recognised from ABI call results and operand slots (abi::parse*), closed over
 // phi/select/freeze. The rail checks are a forward must-analysis: a rail's state is the set of states
 // it may be in at a program point (known basis, measured, dirty, rotated, freed); a check fires only

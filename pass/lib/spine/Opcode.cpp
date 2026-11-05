@@ -31,9 +31,6 @@ namespace cq {
 
 namespace {
 
-// The rail type of a scalar. Every caller passes a scalar: a vector is lanes (rule 25, dispatch routes it
-// to aggr), a pointer a fat pointer (rule 21, fatptr), and fp128 is unreachable from C on this target
-// (rule 25, CR §1.1); the CQ.h surface takes scalars only (calls::classify's surface()).
 RailType rt(Type *t, const Value *at) {
   if (!t->isIntegerTy() && !t->isHalfTy() && !t->isBFloatTy() && !t->isFloatTy() && !t->isDoubleTy() && !t->isX86_FP80Ty())
     internalError("spine: a scalar rail type asked of a vector, pointer or fp128 (rules 21, 25: routed elsewhere)", at);
@@ -433,7 +430,7 @@ void lowerOpcode(LoweringContext &ctx, Instruction &I) {
 
   if (auto *cmp = dyn_cast<CmpInst>(&I)) {
     if (!cmp->getOperand(0)->getType()->isIntegerTy() && !cmp->getOperand(0)->getType()->isFloatingPointTy())
-      internalError("spine: a compare of non-scalar operands reached lowerOpcode (fatptr::lowerCompare)", &I);
+      internalError("spine: a compare of non-scalar operands reached lowerOpcode (rule 3::lowerCompare)", &I);
     Operand x = ctx.operand(cmp->getOperand(0)), y = ctx.operand(cmp->getOperand(1));
     if (!x.handle && !y.handle) {
       spine::bindOperand(ctx, &I, Operand{spine::copyClassical(ctx, I), false});
@@ -460,7 +457,7 @@ void lowerOpcode(LoweringContext &ctx, Instruction &I) {
   if (auto *ci = dyn_cast<CastInst>(&I)) {
     const char *op = castName(ci->getOpcode());
     if (!op)
-      internalError("spine: a pointer cast reached lowerOpcode (fatptr)", &I);
+      internalError("spine: a pointer cast reached lowerOpcode (rule 3)", &I);
     Operand x = ctx.operand(ci->getOperand(0));
     if (!x.handle) {
       spine::bindOperand(ctx, &I, Operand{spine::copyClassical(ctx, I), false});
@@ -953,12 +950,6 @@ APInt oddInverse(const APInt &k) {
   return x;
 }
 
-// CR rule 6's bijections: when U = f(y, ...) is a bijection in y for every value of its other
-// operands (which do not read y), the inverse computing y from yp (the rail holding f's value).
-// Nothing is emitted. The caller has established that y is cleanable and dead.
-// cq-xivx: the case analysis is inverseStepWith's, over resolvers for the other operands (operandOf) and
-// for "does this value read y" (readsY), so the _inv<c> clone (calls, CR §1.4) reuses it over a callee's
-// original body.
 std::optional<Inverse> inverseStepWith(Instruction &U, Value *Y, Operand yp,
                                        function_ref<Operand(Value *)> operandOf,
                                        function_ref<bool(Value *)> readsY) {
@@ -1177,12 +1168,6 @@ void compositeCleanup(LoweringContext &ctx, Instruction &I, Value *X, Operand yp
   unsigned W = VT->getIntegerBitWidth();
   std::optional<Affine> f = affineIn(ctx, &I, X, W);
   if (!f) {
-    // CR rule 6: the composite update y' = F(x) cleans x iff F is a bijection; its inverse is then computed
-    // fresh from y'. Beyond the affine class, F (a function of x and literals) is decided exhaustively at
-    // the widths where that is a table: a collision means no inverse (x is kept, rule 6), a bijection is
-    // inverted by a QROM of its inverse table at y' (rule 20's constant-table read). A wider F, or one that
-    // reads another value, has no inverse this rule can compute: x is kept (rule 6: "kept only when f has
-    // no inverse in y"; SPEC_ISSUES rule 6 composite updates beyond the affine ones).
     Type *XT = X->getType();
     if (!XT->isIntegerTy() || XT->getIntegerBitWidth() != W || W > 16)
       return;
@@ -1199,19 +1184,8 @@ void compositeCleanup(LoweringContext &ctx, Instruction &I, Value *X, Operand yp
         return;   // a collision: F is no bijection, x is kept (rule 6)
       inv[yv] = xv;
     }
-    LLVMContext &C = ctx.M.getContext();
-    SmallVector<Constant *, 256> elems;
-    for (uint64_t yv = 0; yv < n; ++yv)
-      elems.push_back(ConstantInt::get(VT, inv[yv]));
-    ArrayType *AT = ArrayType::get(VT, n);
-    auto *G = new GlobalVariable(ctx.M, AT, true, GlobalValue::PrivateLinkage, ConstantArray::get(AT, elems),
-                                 "cq.r6.inv");
-    G->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
-    abi::TemplateSpec qs;
-    qs.op = "qrom_load";
-    qs.w = rt(VT, &I);
-    clean(ctx, X, Inverse{qs, {Operand{G, false}, Operand{ConstantInt::get(Type::getInt64Ty(C), n), false}, yp}});
-    return;
+    report_fatal_error("cq: unimplemented: bus: rule 6 inverse table (a constant global read at a rail index)",
+                       /*gen_crash_diag=*/false);
   }
   if (!f->a[0])
     return;   // an even multiplier: no inverse, x is kept
@@ -1511,11 +1485,6 @@ void narrowRuleSix(LoweringContext &ctx, Instruction &I, ArrayRef<const Value *>
 
 namespace {
 
-// CR rules 6 and 24 on an atomic read-modify-write of a slot cell (94): mem-slots lowers
-// `old = atomicrmw add|sub|xor p, v` to y' = old op v stored into the cell, binding the instruction to
-// old's rail. y' is a bijection in old when v does not read it, so a dead old rail is cleaned from y':
-// old = y' - v, y' + v, y' ^ v. The old rail must be one this function minted (a register's or a
-// template's rail, not a formal or a merge of cell contents).
 void atomicRuleSix(LoweringContext &ctx, AtomicRMWInst &I) {
   spine::Shared &sh = spine::shared(ctx);
   const char *inverse = nullptr, *fwdOp = nullptr;
@@ -1538,7 +1507,6 @@ void atomicRuleSix(LoweringContext &ctx, AtomicRMWInst &I) {
   Operand v = ctx.operand(I.getValOperand());
   if (v.handle && railReads(sh, v.v, h))
     return;
-  // y': the template mem-slots just emitted over (old, v) in the current block.
   CallInst *yp = nullptr;
   for (User *u : h->users()) {
     auto *c = dyn_cast<CallInst>(u);
@@ -1856,11 +1824,6 @@ void ruleSixRetry(LoweringContext &ctx) {
         [&](Value *Z) { return reads(ctx, Z, e.Y); });
     if (!inv || unbound || any_of(inv->ops, [&](const Operand &o) { return o.handle && !live(o.v); }))
       continue;
-    // cq-8101: a run-time cell load that may name the old rail is not a use Uncompute sees (mem-slots
-    // records its handle as a register of its own): its new-IR load and every reader of it are noted as
-    // uses of the old rail, so the clean-up follows them. A reader whose rail rule 5 would uncompute
-    // re-reads the cell's value in its _unc, after any point a noted use gives: no clean-up point is
-    // known, stop.
     RailId yid = ctx.unc().idOf(h);
     for (const Instruction *ld : e.loads) {
       Value *lo = boundRail(ld);
@@ -1885,7 +1848,6 @@ void ruleSixRetry(LoweringContext &ctx) {
 }
 
 
-// cq-xivx (CR §1.4 _inv<c>, rule 18): rule 6's per-instruction inverse over caller-supplied resolvers.
 std::optional<InverseStep> inverseStep(Instruction &U, Value *Y, Operand yp, function_ref<Operand(Value *)> operandOf,
                                        function_ref<bool(Value *)> readsY) {
   std::optional<Inverse> inv = inverseStepWith(U, Y, yp, operandOf, readsY);

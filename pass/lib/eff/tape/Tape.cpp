@@ -12,11 +12,6 @@
 //    lit); a classical pointer converted by %s is cqrt_tape_write_str_lit(t, s) (the backend copies the
 //    string at call time). The fields of a controlled entry are controlled by the same flag; literal
 //    fields have no controlled form (the entry's predicate covers them).
-//  - fwrite(buf, size, n, stdout) with constant size and n, buf one slot object of byte cells (99): one
-//    entry with the format "%c" repeated size * n times, then one i8 field per cell (mem::readSlotCells,
-//    M4): a handle cell is cqrt_tape_write_i8[_controlled] -> a fresh tape rail, a classical cell a
-//    literal. fputs(s, stdout) of a constant string without '%': an entry with format s, no fields.
-//    stdout is the function's tape; another stream is unimplemented.
 //  - A classical host effect that a tape point precedes (owner ruling 2026-11-02, cq-t8oo / cq-64lv; the
 //    tape-order rule of calls::classify) arrives here with no predicate: printf, fputs and fwrite as above,
 //    puts(s) as the format entry "%s\n" with s a string field, putchar(c) as "%c" with c a field; any
@@ -31,25 +26,6 @@
 //    pointer argument (a callback); kill/signal-family callees other than raise (raise(sig): the delivery
 //    entry, then the module's handler as a _ctl clone call, or the abort arm, lowerRaise, 102); an entry inside a _ctl clone. An entry inside a plain clone is
 //    the clone's own tape entry (67); inside a _pure clone (what a twin recomputes through) it is dropped.
-//
-// lowerNoreturn: a noreturn call under a quantum predicate (45, 102, 108) is cqrt_abort_i1(f), f the
-// current block's flag, kept (Role::Abort: never _unc'd, never freed) and measured by the backend at the
-// end of the shot. The program continues uncontrolled. Before the call, every rail that a later
-// operation may modify IN PLACE on the abort branch is snapshotted under the flag:
-// s = cqrt_alloc_<W>(0); cqrt_copy_<W>_controlled(f, h, s), s kept (45 abort_then_rotate). In place is
-// what CR rule 4 reserves: a rotation of an existing rail (rule 2, rule 10's controlled Ry, rule 15's
-// quantum-angle Ry). "Later on the abort branch" is read on the original CFG: an instruction in a block X
-// that cannot reach the abort block and whose path predicate is compatible with the abort block's
-// (block(X) & block(abort) is not false). A rotation target is snapshotted when it is a value available
-// at the abort (an argument or an instruction dominating it); a target defined later is a fresh rail
-// unless it may alias an earlier one (phi, select, load, extractvalue, ...), which is unimplemented, as
-// is any later operation that may modify a rail in place without being a visible rotation: a QRAM store
-// or memory intrinsic into a QRAM object, a QRAM lifetime end, a call with a quantum or non-classical
-// pointer argument whose callee is opaque or may rotate (transitively) or store. Also unimplemented: a
-// noreturn inside an inlined callee or a clone (the later code is the caller's), an abort block whose
-// predecessors lie in a loop (later iterations), a quantum argument of the noreturn call. Classical
-// arguments of the noreturn call (exit's status, __assert_fail's strings) are dropped: rule 16 lowers
-// the call to abort_i1(pred) alone.
 //
 // Orchestrator decisions under CR rule 16 / §1.3 (owner may override) are recorded on the bead.
 #include "cq/Effects.h"
@@ -472,8 +448,6 @@ SmallVector<std::pair<Value *, Type *>, 4> laterInPlaceTargets(LoweringContext &
     if (!inLoop && (ctx.preds().block(&X) & pa).isBottom())
       continue;   // never runs on the abort branch
     for (Instruction &I : X) {
-      // CR rule 4: in place is a rotation of an existing rail (rules 2, 10, 15) and nothing else. A QRAM
-      // store, pop or memory intrinsic swaps and copies cells (§1.3), an atomic is a plain access (rule 24).
       auto *C = dyn_cast<CallBase>(&I);
       if (!C)
         continue;
@@ -485,8 +459,6 @@ SmallVector<std::pair<Value *, Type *>, 4> laterInPlaceTargets(LoweringContext &
       }
       if (k == Class::Lift || k == Class::Declared || k == Class::Indirect || k == Class::Asm ||
           k == Class::Thread || k == Class::Varargs) {
-        // A callee may rotate what it is handed (rule 18): its quantum scalar arguments, and the cells of
-        // slot objects behind its pointer arguments.
         SmallPtrSet<const Function *, 8> seen;
         if (k == Class::Lift && !bodyMayModifyInPlace(calleeOf(*C), seen))
           continue;
@@ -708,11 +680,6 @@ void lowerHostEffect(LoweringContext &ctx, CallBase &CB) {
       ctx.emitCore(abi::CoreSpec{abi::Core::TapeFmt}, {tape, fmt});
   };
 
-  // fwrite(buf, size, n, stdout) with a constant size * n (99): one entry of size * n raw %c bytes, one i8
-  // field per byte (C17 7.21.8.2: fputc of each byte). A slot buffer's cells (mem::readSlotCells, M4) are
-  // rails or literals; a classical buffer's bytes are read at the call (literal fields: copied at call time).
-  // Any other fwrite (another stream, a run-time or quantum length) is an effect entry below, its buffer
-  // its cells (rule 16 fields).
   if (libFunc(*F, LibFunc_fwrite) && isStdout(CB.getArgOperand(3)) && isa<ConstantInt>(CB.getArgOperand(1)) &&
       isa<ConstantInt>(CB.getArgOperand(2))) {
     uint64_t n = cast<ConstantInt>(CB.getArgOperand(1))->getZExtValue() *

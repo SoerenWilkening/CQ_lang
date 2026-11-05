@@ -180,8 +180,6 @@ struct OpInfo {
   bool hasPred;
 };
 
-// The op set of CR §1.2. "qrom_load_s" is spelled qrom_load_<W>_s (TemplateSpec::strided), so it is
-// not an op name of its own here.
 const OpInfo kOps[] = {
     {"add", Arity::Binary, Dom::Int, Comm::Int, false},
     {"sub", Arity::Binary, Dom::Int, Comm::No, false},
@@ -542,6 +540,8 @@ std::string cloneName(const CloneSpec &s) {
   std::string n = "__cq_q_" + s.fn + "_" + s.mask;
   for (size_t i = 0; i < s.bounds.size(); ++i)
     n += (i == 0 ? "_b" : "_") + std::to_string(s.bounds[i]);
+  if (s.table)
+    n += "_t";
   if (s.ctl)
     n += "_ctl";
   if (s.pure)
@@ -561,6 +561,7 @@ std::optional<CloneSpec> parseCloneImpl(StringRef sym) {
   if (n && t[n - 1] == "unc") { s.unc = true; --n; }
   if (n && t[n - 1] == "pure") { s.pure = true; --n; }
   if (n && t[n - 1] == "ctl") { s.ctl = true; --n; }
+  if (n > 1 && t[n - 1] == "t" && isMask(t[n - 2])) { s.table = true; --n; }
   if (n == 0)
     return std::nullopt;
   // Bounds: "<mask>_b<N>{_<N>}". Walk back over all-digit tokens to a "b<N>" token preceded by a mask.

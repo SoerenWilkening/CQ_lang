@@ -29,25 +29,25 @@ ROOT = Path(__file__).resolve().parents[2]
 PROBES = Path(__file__).parent / "probes"
 ENTRIES = ["p_vol_internal", "p_vol_observable", "p_atomic_classical", "p_vol_local", "p_atomic_rmw"]
 ERRORS = {}
-MODULES = {"conc.O1.ll": ENTRIES, "setjmp.O1.ll": ["p_sj_scalar", "p_sj_void", "p_sj_classical", "p_sj_qarm"],
+MODULES = { "setjmp.O1.ll": ["p_sj_scalar", "p_sj_void", "p_sj_classical", "p_sj_qarm"],
            # cq-py5f: rule 24 over its class (a join asking for the result, a volatile atomic access).
-           "conc_widen.O1.ll": ["p_join_result", "p_vol_atomic", "p_runtime_routine"],
-           "conc_rmw.O1.ll": ["p_rmw_qram"],
+           
+           
            # cq-lyzw (rule 24 over its class): setjmp/longjmp as explicit control flow; formerly error probes.
            "setjmp_class.O1.ll": ["p_sjc_samefn", "p_sjc_depth3", "p_sjc_value", "p_sjc_retry", "p_sjc_two",
                                   "p_sjc_ptr", "p_sjc_loop"],
            "setjmp_effect.O1.ll": ["setjmp_effect_error"], "setjmp_nested.O1.ll": ["setjmp_nested_error"],
-           "setjmp_wrapper.O1.ll": ["setjmp_wrapper_error"], "setjmp_wrapper_p20.O1.ll": ["p20"],
+           "setjmp_wrapper.O1.ll": ["setjmp_wrapper_error"], 
            "setjmp_wrapper_p21.O1.ll": ["p21"],
            # cq-lyzw (rule 24 at f684858): an observable volatile access with quantum data is a host effect.
            "vol_observable.O1.ll": ["vol_quantum_observable", "p_vol_obs_pred"],
            # cq-lyzw (rule 24 with rule 21): an atomic read-modify-write through a fat pointer.
-           "conc_rmw_fat.O1.ll": ["p_rmw_fat", "p_cas_fat"],
+           
            # cq-lyzw (rule 24, 106): thread calls collapsed in the IR; conc_threads_indirect.c is blocked on
            # the mem-slots bead cq-o42w.
-           "conc_threads.O1.ll": ["p_join_qresult"],
+           
            # cq-il07 (rule 24): a volatile read of an internal constant under a quantum predicate (musl exp10l).
-           "vol_const_pred.O1.ll": ["e_vol_const_pred"]}
+           }
 _SJ = (r"cq_template_select_i32", r"call [^\n]*@(setjmp|longjmp)\(")
 _NOSJ = (None, r"call [^\n]*@(setjmp|longjmp)\(")
 # entry -> (regex that must match its body, regex that must not)

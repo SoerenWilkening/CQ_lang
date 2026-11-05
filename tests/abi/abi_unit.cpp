@@ -205,11 +205,6 @@ static const TRow kTemplates[] = {
     {"cq_template_fptrunc_f64_to_f16_rmq_exc", "i32 (i32, i32)"},
     {"cq_template_fcmp_olt_f80_hl_exc", "i32 (i32, x86_fp80)"},
     // QROM, plain and strided
-    {"cq_template_qrom_load_i32", "i32 (ptr, i64, i32)"},
-    {"cq_template_qrom_load_i7", "i32 (ptr, i64, i32)"},
-    {"cq_template_qrom_load_f80", "i32 (ptr, i64, i32)"},
-    {"cq_template_qrom_load_i128_s", "i32 (ptr, i64, i64, i32)"},
-    {"cq_template_qrom_load_f16_s", "i32 (ptr, i64, i64, i32)"},
     // bf16 (CR §1.1/§1.2 at 3aaafe1, B1): every fp template, cast and suffix at bf16
     {"cq_template_fadd_bf16", "i32 (i32, i32)"},
     {"cq_template_fadd_bf16_hl", "i32 (i32, bfloat)"},
@@ -234,8 +229,6 @@ static const TRow kTemplates[] = {
     {"cq_template_bitcast_bf16_to_i16", "i32 (i32)"},
     {"cq_template_bitcast_i16_to_bf16", "i32 (i32)"},
     {"cq_template_bitcast_bf16_to_f16", "i32 (i32)"}, // LLVM bitcasts half <-> bfloat (equal size)
-    {"cq_template_qrom_load_bf16", "i32 (ptr, i64, i32)"},
-    {"cq_template_qrom_load_bf16_s", "i32 (ptr, i64, i64, i32)"},
 };
 
 // The forward signature "i32 (args)" -> the _unc signature "void (i32, args)".
@@ -298,11 +291,6 @@ static void testTemplates() {
   }
   {
     TemplateSpec s;
-    s.op = "qrom_load"; s.w = {Kind::Fp, 80}; s.strided = true;
-    CHECK(name(s, false) == "cq_template_qrom_load_f80_s", "%s", name(s, false).c_str());
-  }
-  {
-    TemplateSpec s;
     s.op = "trunc"; s.w = {Kind::Int, 64}; s.to = RailType{Kind::Int, 7};
     CHECK(name(s, false) == "cq_template_trunc_i64_to_i7", "%s", name(s, false).c_str());
     auto p = parseTemplate("cq_template_trunc_i64_to_i7", nullptr);
@@ -313,7 +301,7 @@ static void testTemplates() {
   {
     auto p = parseTemplate("cq_template_select_i8_lh_unc", nullptr);
     CHECK(p && p->op == "select" && p->shape == "lh" && p->w.bits == 8 && p->w.kind == Kind::Int &&
-              p->rm == TemplateSpec::NoRm && !p->exc && !p->strided && p->pred.empty(),
+              p->rm == TemplateSpec::NoRm && !p->exc && p->pred.empty(),
           "select fields");
     auto q = parseTemplate("cq_template_fcmps_ogt_f64_hl_exc", nullptr);
     CHECK(q && q->op == "fcmps" && q->pred == "ogt" && q->exc, "fcmps fields");
@@ -341,9 +329,6 @@ static void testTemplates() {
       "cq_template_sqrt_f64_l",           // no quantum operand without _rmq
       "cq_template_sqrt_f64_h",           // all-handle shape is bare
       "cq_template_add_i32_hll",          // shape length
-      "cq_template_qrom_load_i32_hl",     // qrom takes no shape
-      "cq_template_qrom_load_i32_rm",     // qrom takes no rounding mode
-      "cq_template_qrom_load_s_i32",      // the strided form is qrom_load_<W>_s
       "cq_template_add_i32_s",            // _s is qrom only
       "cq_template_add_f64",              // integer op on fp width
       "cq_template_fadd_i32",             // fp op on integer width
@@ -409,8 +394,6 @@ static void testTemplates() {
     CHECK(!dies([s] { name(s, true); }) && name(s, true) == "cq_template_fma_f64_lql_unc", "name(fma lql)");
   }
   CHECK(dies([] { TemplateSpec s; s.op = "icmp"; s.w = {Kind::Int, 32}; name(s, false); }), "icmp no pred");
-  CHECK(dies([] { TemplateSpec s; s.op = "qrom_load_s"; s.w = {Kind::Int, 32}; name(s, false); }),
-        "qrom_load_s op");
   CHECK(dies([] {
           llvm::Module M2("m", C);
           TemplateSpec s; s.op = "add"; s.w = {Kind::Int, 32}; s.shape = "hh";
@@ -460,23 +443,21 @@ static const TRow kCores[] = {
     {"cqrt_xorc_i100_controlled", "void (i32, i32, i100)"},
     {"cqrt_xorc_f16", "void (i32, half)"},
     {"cqrt_qram_alloc_i8", "i32 (i32)"},
-    {"cqrt_qram_alloc_f80", "i32 (i32)"},
-    {"cqrt_qram_realloc_i8", "i32 (i32, i32)"},
-    {"cqrt_qram_realloc_i8_unc", "void (i32, i32)"},
     {"cqrt_qram_store_i32", "void (i32, i32, i32)"},
-    {"cqrt_qram_store_i32_unc", "void (i32, i32, i32)"},
-    {"cqrt_qram_store_i7_hl", "void (i32, i32, i32)"},
+    {"cqrt_qram_store_i7_hl", "void (i32, i64, i32)"},
     {"cqrt_qram_store_i128_controlled", "void (i32, i32, i32, i32)"},
-    {"cqrt_qram_store_i32_hl_controlled", "void (i32, i32, i32, i32)"},
-    {"cqrt_qram_store_i32_hl_controlled_unc", "void (i32, i32, i32, i32)"},
+    {"cqrt_qram_store_i32_hl_controlled", "void (i32, i32, i64, i32)"},
+    {"cqrt_qram_swap_i32", "void (i32, i32, i32)"},
+    {"cqrt_qram_swap_i8_hl", "void (i32, i64, i32)"},
+    {"cqrt_qram_swap_i32_hl_controlled", "void (i32, i32, i64, i32)"},
+    {"cqrt_tape_effect_i32_controlled", "i32 (i32, i32, ptr)"},
     {"cqrt_qram_load_i32", "i32 (i32, i32)"},
     {"cqrt_qram_load_i32_unc", "void (i32, i32, i32)"},
-    {"cqrt_qram_load_f16_hl", "i32 (i32, i32)"},
-    {"cqrt_qram_load_i8_hl_unc", "void (i32, i32, i32)"},
+    {"cqrt_qram_load_f16_hl", "i32 (i32, i64)"},
+    {"cqrt_qram_load_i8_hl_unc", "void (i32, i32, i64)"},
     {"cqrt_qram_load_i100_controlled", "i32 (i32, i32, i32)"},
     {"cqrt_qram_load_i32_controlled_unc", "void (i32, i32, i32, i32)"},
-    {"cqrt_qram_load_i32_hl_controlled_unc", "void (i32, i32, i32, i32)"},
-    {"cqrt_qram_free", "void (i32)"},
+    {"cqrt_qram_load_i32_hl_controlled_unc", "void (i32, i32, i32, i64)"},
     {"cqrt_tape_alloc", "i32 ()"},
     {"cqrt_tape_fmt", "void (i32, ptr)"},
     {"cqrt_tape_fmt_controlled", "void (i32, i32, ptr)"},
@@ -485,7 +466,6 @@ static const TRow kCores[] = {
     {"cqrt_tape_write_i7_controlled", "i32 (i32, i32, i32)"},
     {"cqrt_tape_write_i128_lit", "void (i32, i128)"},
     {"cqrt_tape_write_f16_lit", "void (i32, half)"},
-    {"cqrt_tape_write_str_lit", "void (i32, ptr)"},
     {"cqrt_abort_i1", "void (i32)"},
     {"cqrt_push", "void (i32)"},
     {"cqrt_pop", "i32 ()"},
@@ -505,8 +485,8 @@ static void testCores() {
   }
   // Field reading.
   {
-    CoreSpec s{Core::QramStore, {Kind::Int, 32}, /*ctl=*/true, /*hl=*/true, /*unc=*/true};
-    CHECK(name(s) == "cqrt_qram_store_i32_hl_controlled_unc", "%s", name(s).c_str());
+    CoreSpec s{Core::QramLoad, {Kind::Int, 32}, /*ctl=*/true, /*hl=*/true, /*unc=*/true};
+    CHECK(name(s) == "cqrt_qram_load_i32_hl_controlled_unc", "%s", name(s).c_str());
     CoreSpec a{Core::AndI1};
     CHECK(name(a) == "cqrt_and_i1", "fixed i1 with unset width");
     auto p = parseCore("cqrt_and_i1");
@@ -515,8 +495,6 @@ static void testCores() {
     CHECK(q && q->op == Core::RyQAngle && q->w.bits == 32 && !q->ctl, "qangle fields");
     auto t = parseCore("cqrt_tape_write_i8_lit");
     CHECK(t && t->op == Core::TapeWriteLit && t->w.bits == 8, "tape_write_lit fields");
-    auto u = parseCore("cqrt_tape_write_str_lit");
-    CHECK(u && u->op == Core::TapeWriteStrLit, "tape_write_str_lit fields");
     auto x = parseCore("cqrt_xorc_i32_controlled");
     CHECK(x && x->op == Core::Xorc && x->ctl, "xorc fields");
     auto f = parseCore("cqrt_free");
@@ -560,7 +538,7 @@ static void testCores() {
 // ---------------------------------------------------------------------------------------------
 static void testClones() {
   struct Row { const char *sym; CloneSpec spec; };
-  CloneSpec all{"ext_fn", "1011", {255, 18446744073709551615ull}, true, true, 4, true, {2, 0}};
+  CloneSpec all{"ext_fn", "1011", {255, 18446744073709551615ull}, true, true, true};
   const Row rows[] = {
       {"__cq_q_f_10", {"f", "10", {}}},
       {"__cq_q___divdc3_0011", {"__divdc3", "0011", {}}},
@@ -568,16 +546,12 @@ static void testClones() {
       {"__cq_q_pick8_10", {"pick8", "10", {}}},
       {"__cq_q_f.1_1", {"f.1", "1", {}}},
       {"__cq_q_memcmp_00111001111_b3", {"memcmp", "00111001111", {3}}},
-      {"__cq_q_memcmp_00111001111_b3_unc", {"memcmp", "00111001111", {3}, false, false, 0, true}},
+      {"__cq_q_memcmp_00111001111_b3_unc", {"memcmp", "00111001111", {3}, false, false, true}},
       {"__cq_q_f_110_b3_7_0", {"f", "110", {3, 7, 0}}},
       {"__cq_q_g_0_ctl", {"g", "0", {}, true}},
       {"__cq_q_even_step_100_pure", {"even_step", "100", {}, false, true}},
-      {"__cq_q_prep_11000_inv3", {"prep", "11000", {}, false, false, 0, false, {3}}},   // cq-xivx (_adj retired, §1.4)
-      {"__cq_q_chain_10_d3", {"chain", "10", {}, false, false, 3}},
-      {"__cq_q_chain_10_d12_unc", {"chain", "10", {}, false, false, 12, true}},
-      {"__cq_q_sin_1_unc", {"sin", "1", {}, false, false, 0, true}},
-      {"__cq_q_step_1100_ctl_unc", {"step", "1100", {}, true, false, 0, true}},
-      {"__cq_q_ext_fn_1011_b255_18446744073709551615_ctl_pure_d4_inv2_0_unc", all},
+      {"__cq_q_sin_1_unc", {"sin", "1", {}, false, false, true}},
+      {"__cq_q_step_1100_ctl_unc", {"step", "1100", {}, true, false, true}},
       {"__cq_q_tick_", {"tick", "", {}}},
       {"__cq_q_asm_2b8fbda969a8aaa9_10_ctl", {"asm_2b8fbda969a8aaa9", "10", {}, true}},
   };
@@ -589,7 +563,7 @@ static void testClones() {
       continue;
     const CloneSpec &a = *p, &b = r.spec;
     CHECK(a.fn == b.fn && a.mask == b.mask && a.bounds == b.bounds && a.ctl == b.ctl && a.pure == b.pure &&
-              a.inv == b.inv && a.depth == b.depth && a.unc == b.unc,
+              a.unc == b.unc,
           "parseClone(%s) fields (fn=%s mask=%s)", r.sym, a.fn.c_str(), a.mask.c_str());
   }
   const char *bad[] = {
@@ -599,16 +573,12 @@ static void testClones() {
       "__cq_q_10",              // empty fn
       "__cq_q_f_1_b03",         // canonical decimal
       "__cq_q_f_1_b",           // empty bound
-      "__cq_q_f_1_d0",          // depth >= 1
-      "__cq_q_f_1_d01",
       "__cq_q_f_1_unc_ctl",     // suffix order
       "__cq_q_f_1_pure_ctl",    // suffix order
-      "__cq_q_f_1_unc_d2",      // suffix order
       "__cq_q_f_1_adj",         // _adj is retired (CR §1.4)
       "__cq_q_f_1_ctl_b3",      // suffix order
       "__cq_q_f_1_b99999999999999999999", // bound overflows u64
       "cq_q_f_1",               // prefix
-      "__cq_q_f_1_inv",         // unknown suffix: "inv" is not a mask
   };
   for (const char *b : bad)
     CHECK(!parseClone(b).has_value(), "parseClone accepted %s", b);
@@ -630,7 +600,7 @@ static void testClones() {
   {
     auto p = parseClone("__cq_q_my_lib_10_fn_0110_ctl_unc");
     CHECK(p && p->fn == "my_lib_10_fn" && p->mask == "0110" && p->bounds.empty() && p->ctl && !p->pure &&
-              p->inv.empty() && p->depth == 0 && p->unc,
+              p->unc,
           "rule-27 symbol fields (fn=%s mask=%s)", p ? p->fn.c_str() : "-", p ? p->mask.c_str() : "-");
     auto q = parseClone("__cq_q_strtod_r_10_ctl");
     CHECK(q && q->fn == "strtod_r" && q->mask == "10" && q->ctl && !q->unc, "rule-27 strtod_r_10_ctl");
@@ -643,7 +613,6 @@ static void testClones() {
   // Names that only look like suffixes are not ambiguous: the mask is the last token before them.
   CHECK(name(CloneSpec{"set_ctl", "1", {}}) == "__cq_q_set_ctl_1", "fn ending in a suffix word");
   CHECK(name(CloneSpec{"x_1", "", {}, true}) == "__cq_q_x_1__ctl", "empty mask after a digit token");
-  CHECK(name(CloneSpec{"a_1_d2", "1", {}}) == "__cq_q_a_1_d2_1", "fn ending in a depth-like token");
 
   // Rule 27 (3aaafe1): "asm_" + the first 16 lowercase hex digits of sha256(asm string, one NUL byte,
   // constraint string). Expected values from python3 hashlib:
@@ -657,7 +626,7 @@ static void testClones() {
   llvm::InlineAsm *mov = llvm::InlineAsm::get(llvm::FunctionType::get(i32, {i32}, false), "movl $1, $0", "=r,r",
                                               false);
   CHECK(asmCloneFn(*mov) == "asm_74108121eae7511a", "asm mov -> %s", asmCloneFn(*mov).c_str());
-  CHECK(name(CloneSpec{asmCloneFn(*mov), "1", {}, false, false, 0, true}) ==
+  CHECK(name(CloneSpec{asmCloneFn(*mov), "1", {}, false, false, true}) ==
             "__cq_q_asm_74108121eae7511a_1_unc",
         "asm clone twin name");
 }
