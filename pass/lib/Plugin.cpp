@@ -30,12 +30,15 @@
 #include "cq/Verify.h"
 #include "eff/conc/Setjmp.h"
 #include "eff/invert/Split.h"
+#include "loops/cutoff/Exits.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Analysis/LoopInfo.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstrTypes.h"
@@ -239,6 +242,126 @@ bool splitCarriedAggregates(Function &F) {
   return !phis.empty();
 }
 
+// CR rule 14 (`continue`, `return` inside a K-loop, nested K-loops: "same chain"): a sub-loop with a live exit that also
+// leaves its parent (printf_core's overflow return from its literal scan) ends through ONE block of the parent, the same
+// kind of rewrite as fix-irreducible and unifyReturns: its live exit edges meet at a hub, phis of the hub carry the values
+// their targets' phis and later readers take (poison on an edge whose value does not reach), and the hub branches on which
+// edge came in. The parent's trip then reads the sub-loop as one node ending at the hub, and the edge out of the parent is
+// the parent's own exit, taken from the parent's own block.
+bool unifySubLoopExits(Function &F) {
+  bool any = false;
+  LLVMContext &C = F.getContext();
+  for (bool changed = true; changed;) {
+    changed = false;
+    DominatorTree DT(F);
+    LoopInfo LI(DT);
+    for (Loop *S : LI.getLoopsInPreorder()) {
+      Loop *P = S->getParentLoop();
+      if (!P)
+        continue;
+      cq::loops::exits::Unit U = cq::loops::exits::unitOf(*S);
+      SmallVector<BasicBlock *, 4> targets;
+      for (BasicBlock *x : U.live)
+        targets.push_back(x);
+      if (none_of(targets, [&](BasicBlock *x) { return !P->contains(x); }) ||
+          none_of(targets, [&](BasicBlock *x) { return P->contains(x); }))
+        continue;
+      // The live exit edges, one (from, to) per pair.
+      SmallVector<std::pair<BasicBlock *, BasicBlock *>, 4> edges;
+      for (BasicBlock *u : S->blocks())
+        for (BasicBlock *x : successors(u))
+          if (is_contained(targets, x) && !is_contained(edges, std::make_pair(u, x)))
+            edges.push_back({u, x});
+      BasicBlock *E = BasicBlock::Create(C, "cq.exits", &F);
+      // Values of the loop read outside it, taken before any edge moves: per edge, whether the value reaches it.
+      SmallVector<Instruction *, 8> outs;
+      for (BasicBlock *b : S->blocks())
+        for (Instruction &I : *b)
+          if (any_of(I.uses(), [&](Use &us) {
+                auto *ui = cast<Instruction>(us.getUser());
+                if (S->contains(ui))
+                  return false;
+                // A target's phi on an exit edge is rewritten below; any other outside read is a later reader.
+                auto *ph = dyn_cast<PHINode>(ui);
+                return !(ph && S->contains(ph->getIncomingBlock(us)));
+              }))
+            outs.push_back(&I);
+      std::vector<std::vector<bool>> reaches(outs.size(), std::vector<bool>(edges.size()));
+      for (size_t k = 0; k < outs.size(); ++k)
+        for (size_t e = 0; e < edges.size(); ++e)
+          reaches[k][e] = DT.dominates(outs[k]->getParent(), edges[e].first);
+      // An edge's source in the hub: u itself, or a block of its own where u leaves for another target too.
+      SmallVector<BasicBlock *, 4> from(edges.size());
+      for (size_t e = 0; e < edges.size(); ++e) {
+        auto [u, x] = edges[e];
+        const bool shared = count_if(edges, [&](const auto &o) { return o.first == u; }) > 1;
+        BasicBlock *f = u;
+        if (shared) {
+          f = BasicBlock::Create(C, "cq.exit", &F);
+          BranchInst::Create(E, f);
+        }
+        Instruction *t = u->getTerminator();
+        for (unsigned i = 0; i < t->getNumSuccessors(); ++i)
+          if (t->getSuccessor(i) == x)
+            t->setSuccessor(i, shared ? f : E);
+        from[e] = f;
+      }
+      // The target's phis: one hub phi each.
+      for (BasicBlock *x : targets)
+        for (PHINode &P : x->phis()) {
+          PHINode *h = PHINode::Create(P.getType(), edges.size(), P.getName() + ".hub");
+          h->insertInto(E, E->end());
+          for (size_t e = 0; e < edges.size(); ++e)
+            h->addIncoming(edges[e].second == x ? P.getIncomingValueForBlock(edges[e].first) : PoisonValue::get(P.getType()),
+                           from[e]);
+          for (auto &[u, y] : edges)
+            if (y == x)
+              while (P.getBasicBlockIndex(u) >= 0)
+                P.removeIncomingValue(u, /*DeletePHIIfEmpty=*/false);
+          P.addIncoming(h, E);
+        }
+      // Later readers of the loop's values.
+      for (size_t k = 0; k < outs.size(); ++k) {
+        Instruction *I = outs[k];
+        PHINode *h = PHINode::Create(I->getType(), edges.size(), I->getName() + ".hub");
+        h->insertInto(E, E->begin());
+        for (size_t e = 0; e < edges.size(); ++e)
+          h->addIncoming(reaches[k][e] ? static_cast<Value *>(I) : PoisonValue::get(I->getType()), from[e]);
+        for (Use &us : make_early_inc_range(I->uses())) {
+          auto *ui = cast<Instruction>(us.getUser());
+          if (ui != h && !S->contains(ui) && ui->getParent() != E) {
+            if (auto *ph = dyn_cast<PHINode>(ui); ph && ph->getParent() != E)
+              if (S->contains(ph->getIncomingBlock(us)))
+                continue;   // the incoming of an edge inside the loop: a phi the loop itself owns
+            us.set(h);
+          }
+        }
+      }
+      // Which edge came in: a branch for two targets, a switch for more.
+      if (targets.size() == 2) {
+        PHINode *w = PHINode::Create(Type::getInt1Ty(C), edges.size(), "cq.which");
+        w->insertInto(E, E->begin());
+        for (size_t e = 0; e < edges.size(); ++e)
+          w->addIncoming(ConstantInt::getBool(C, edges[e].second == targets[0]), from[e]);
+        BranchInst::Create(targets[0], targets[1], w, E);
+      } else {
+        PHINode *w = PHINode::Create(Type::getInt32Ty(C), edges.size(), "cq.which");
+        w->insertInto(E, E->begin());
+        for (size_t e = 0; e < edges.size(); ++e)
+          w->addIncoming(ConstantInt::get(Type::getInt32Ty(C),
+                                          find(targets, edges[e].second) - targets.begin()),
+                         from[e]);
+        SwitchInst *sw = SwitchInst::Create(w, targets.back(), targets.size() - 1, E);
+        for (size_t i = 0; i + 1 < targets.size(); ++i)
+          sw->addCase(ConstantInt::get(Type::getInt32Ty(C), i), targets[i]);
+      }
+      changed = any = true;
+      break;   // the loops changed: LoopInfo again
+    }
+  }
+  return any;
+}
+
 // cq-jkq8 (CR rule 23): llvm.get.rounding (C's FLT_ROUNDS) and llvm.set.rounding read and write the rounding
 // mode, the environment's mode part, which C17 §7.6 reads and writes by fegetround / fesetround. In a tainted
 // function each becomes that call with x86-64's encoding change around it (FLT_ROUNDS 0 toward zero, 1 nearest,
@@ -422,6 +545,14 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
       if (!unifyReturns(*F))
         continue;
       trace("unify-returns: changed @" + F->getName());
+      CFGChanged = true;
+      FAM.invalidate(*F, PreservedAnalyses::none());
+    }
+    // 2c. A sub-loop with an exit that also leaves its parent ends through one block of the parent (unifySubLoopExits).
+    for (Function *F : Tainted) {
+      if (!unifySubLoopExits(*F))
+        continue;
+      trace("sub-loop exits: changed @" + F->getName());
       CFGChanged = true;
       FAM.invalidate(*F, PreservedAnalyses::none());
     }
