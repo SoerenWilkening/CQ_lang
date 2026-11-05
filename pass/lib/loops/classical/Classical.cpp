@@ -466,6 +466,7 @@ private:
     return nullptr;
   }
   void planRuleSix(Loop &L, Case c);
+  void cleanInvariantOnExit(Loop &L, BasicBlock *T);
   bool initDead(Loop &L, const Value *init, const PHINode *p);
   void disjuncts(const Value *v, bool pos, SmallVectorImpl<Disj> &out, SmallPtrSetImpl<const Value *> &inner);
   // Lowers L with the builder at `cur`; its exit edge goes to T. Returns the exit operand of every
@@ -640,6 +641,56 @@ void Unit::planRuleSix(Loop &L, Case c) {
     if (!ok || (!rotated && !live))
       continue;
     plan6.push_back({&p, ups, rotated, initDead(L, p.getIncomingValueForBlock(pre), &p)});
+  }
+}
+
+// CR rule 6 in a rolled loop (75): a loop-invariant kept rail x (a rotated register) whose only reader is an update
+// y = f(x, z) run in every trip, a bijection in x, with y kept in every trip (a kept store's value rail): nothing will
+// ever uncompute through x, so it is cleaned from the last trip's image on the exit edge, at T. A zero-trip path never
+// reaches T: x stays the live register there.
+void Unit::cleanInvariantOnExit(Loop &L, BasicBlock *T) {
+  BasicBlock *latch = L.getLoopLatch();
+  if (!latch || exits::liveExiting(L) != latch)
+    return;
+  DominatorTree DT(F);
+  Module &M = Mod;
+  for (BasicBlock *b : L.blocks()) {
+    if (!DT.dominates(b, latch) || !qp(b).isTop())
+      continue;
+    for (Instruction &Y : *b) {
+      if (!isQ(&Y) || !ctx.bound(&Y) || isa<PHINode>(Y))
+        continue;
+      for (Value *X : Y.operands()) {
+        if (isa<Constant>(X) || !isQ(X) || !bijectiveIn(Y, X) || !ctx.bound(X))
+          continue;
+        if (auto *XI = dyn_cast<Instruction>(X); XI && L.contains(XI))
+          continue;
+        if (!all_of(X->users(), [&](const User *u) { return u == &Y; }))
+          continue;
+        Operand xo = ctx.operand(X), yo = ctx.operand(&Y);
+        if (!xo.handle || !yo.handle || !isa<CallInst>(xo.v))
+          continue;
+        std::optional<Role> xr = U.liveRole(U.idOf(xo.v)), yr = U.liveRole(U.idOf(yo.v));
+        if (!xr || !yr || (*xr != Role::UserRegister && *xr != Role::Frozen) || *yr != Role::Kept)
+          continue;
+        Inv inv = inverseOf(ctx, Y, X, yo);
+        SmallVector<Value *, 3> args;
+        for (const Operand &o : inv.ops)
+          args.push_back(o.v);
+        IRBuilder<> &B = ctx.B();
+        Value *t = B.CreateCall(abi::declare(M, inv.spec, false), args);
+        B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Copy, railOf(Y.getType())}), {t, xo.v});
+        SmallVector<Value *, 4> uargs{t};
+        uargs.append(args.begin(), args.end());
+        B.CreateCall(abi::declare(M, inv.spec, true), uargs);
+        FunctionCallee fr = abi::declare(M, abi::CoreSpec{abi::Core::Free});
+        B.CreateCall(fr, {t});
+        B.CreateCall(fr, {xo.v});
+        for (const Operand &o : inv.ops)
+          if (o.handle)
+            U.noteUse(U.idOf(o.v), cast<Instruction>(t));
+      }
+    }
   }
 }
 
@@ -2383,6 +2434,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   }
   if (outermost) {
     ctx.B().SetInsertPoint(T);
+    if (c == Case::ClassicalBound && !nested && !inTrip)
+      cleanInvariantOnExit(L, T);
     // cq-fx3s: a value read after the loop whose exit rail is made by a record of the loop (a trip's
     // template, a seed of the entry) is read in place, and the reverse loop is deferred until after its
     // readers (Uncompute::recordDeferred, CR rule 14: 153, 178); any other (an alias of a carried value,
