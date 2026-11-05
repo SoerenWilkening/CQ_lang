@@ -455,7 +455,7 @@ void dispatch(LoweringContext &ctx, Instruction &I) {
   BasicBlock *bb = B.GetInsertBlock();
   Instruction *prev = B.GetInsertPoint() == bb->begin() ? nullptr : &*std::prev(B.GetInsertPoint());
   dispatchOne(ctx, I);
-  if (!bus::versionChange(ctx, I))
+  if (!bus::versionChange(ctx, I) || bus::notesOwnChange(ctx, I))
     return;
   // Where its code begins, also when the lowering branched away from bb. Nothing emitted: nothing changed.
   Instruction *first = prev ? prev->getNextNode() : bb->empty() ? nullptr : &bb->front();

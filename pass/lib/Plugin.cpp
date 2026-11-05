@@ -1,7 +1,8 @@
 // The cq-lower and cq-verify passes (scaffold, cq-arch "Pass pipeline").
 //
 //   opt -load-pass-plugin=build/pass/libCQLower.so -passes=cq-lower
-//       [-cq-k=<fn>=<k>,...] [-cq-k-default=<k>] [-cq-roots=<file>] [-cq-dump-taint]
+//       [-cq-k=<fn>=<k>,...] [-cq-k-default=<k>] [-cq-k2=<fn>=<k>,...] [-cq-k2-default=<k>] [-cq-roots=<file>]
+//       [-cq-dump-taint]
 //   opt -load-pass-plugin=build/pass/libCQLower.so -passes=cq-verify            (our output)
 //   opt -load-pass-plugin=build/pass/libCQLower.so -passes='cq-verify<reference>' (a reference)
 //
@@ -59,6 +60,10 @@ cl::list<std::string> KPerFunction("cq-k", cl::CommaSeparated, cl::value_desc("f
                                    cl::desc("cq: per-function loop cutoff K, e.g. -cq-k=fmod=2046,sin=53"));
 cl::opt<unsigned> KDefault("cq-k-default", cl::value_desc("k"),
                            cl::desc("cq: global loop cutoff K (built-in default 4)"));
+cl::list<std::string> K2PerFunction("cq-k2", cl::CommaSeparated, cl::value_desc("fn=k"),
+                                    cl::desc("cq: per-function allocation bound K2, e.g. -cq-k2=f=8192"));
+cl::opt<unsigned> K2Default("cq-k2-default", cl::value_desc("k"),
+                            cl::desc("cq: global allocation bound K2 (built-in default 4096)"));
 cl::opt<std::string> RootsFile("cq-roots", cl::value_desc("file"),
                                cl::desc("cq: library-build roots, one clone name (CR §1.4) per line"));
 cl::opt<bool> DumpTaint("cq-dump-taint", cl::desc("cq: print the taint result to stderr"));
@@ -94,6 +99,18 @@ cq::loops::KOptions readKOptions() {
     if (KDefault == 0)
       usageError("-cq-k-default: expected k >= 1");
     K.global = KDefault;
+  }
+  for (const std::string &item : K2PerFunction) {
+    auto [fn, k] = StringRef(item).split('=');
+    unsigned v = 0;
+    if (fn.empty() || k.empty() || k.getAsInteger(10, v) || v == 0)
+      usageError("-cq-k2: expected <fn>=<k> with k >= 1, got '" + item + "'");
+    K.k2PerFunction[fn.str()] = v;
+  }
+  if (K2Default.getNumOccurrences()) {
+    if (K2Default == 0)
+      usageError("-cq-k2-default: expected k >= 1");
+    K.k2Global = K2Default;
   }
   return K;
 }
