@@ -1323,6 +1323,8 @@ static void worker_leave(void) {
 
 /* A sample's in-process end: the driver's sigsetjmp returns again (__cqo_resume). */
 __attribute__((noreturn)) static void sample_jump(void) { siglongjmp(R->jb, 1); }
+/* CR rule 24: a longjmp outside the pairing under a quantum predicate is rule 16's noreturn arm (OracleInstr, ArmJumps). */
+void __cqo_longjmp_arm(void) { note("noreturn longjmp"); sample_jump(); }
 
 void exit(int code) {
     if (sample_running() && !isolate) { note("wait exited %d", code & 0xff); sample_jump(); }

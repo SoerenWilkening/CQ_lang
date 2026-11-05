@@ -206,7 +206,9 @@ def _src_hash() -> str:
 
 
 TOOL_KEY = _src_hash()
-SRC_KEY = hashlib.sha256((TOOL_KEY + "\0").encode() + Path(__file__).read_bytes()).hexdigest()[:16]
+# drivers.py writes the named outputs' reader into the built program (out_globals_ir).
+SRC_KEY = hashlib.sha256((TOOL_KEY + "\0").encode() + Path(__file__).read_bytes() +
+                         (Path(__file__).parent / "drivers.py").read_bytes()).hexdigest()[:16]
 
 
 def toolchain() -> Tuple[Path, Path]:

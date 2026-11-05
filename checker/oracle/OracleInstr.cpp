@@ -35,6 +35,8 @@
 // An IR shape this pass cannot handle is a fatal "cq-oracle: unimplemented: ..." error, never a skip.
 
 #include "cq/Loops.h"
+#include "cq/SetjmpPair.h"
+#include "llvm/ADT/SetVector.h"
 #include "cq/Taint.h"
 // cq/Common.h routes the pass's unimplemented()/internalError() through site-naming macros; the oracle has its own.
 #undef unimplemented
@@ -2230,6 +2232,68 @@ public:
     B.CreateCall(hook("__cqo_fx_end", Void, {}), {});
   }
 
+  // CR rule 24: a longjmp outside the one pairing under a quantum predicate is rule 16's noreturn arm: the sample
+  // ends there, on the pristine module (the pairing and the predicate as clang wrote them).
+  // Also CR rule 24: the observable volatile accesses the pass makes effect entries (the same taint, any specialization)
+  // log as those entries. Asked of taint on the pristine module, instrumented once shadows() is past (it asks taint of
+  // every instruction it meets).
+  SetVector<Instruction *> VolEntries;
+  SetVector<CallBase *> ArmJumps;
+  void armLongjmps() {
+    if (!Taint)
+      return;
+    for (const cq::Specialization &S : Taint->specializations()) {
+      if (!S.F || S.F->isDeclaration())
+        continue;
+      auto tainted = [&](const Value *v) { return Taint->isQuantum(v, S); };
+      for (Instruction &I : instructions(*S.F)) {
+        if (auto *SI = dyn_cast<StoreInst>(&I); SI && SI->isVolatile() && Taint->observableVolatile(*SI, S) &&
+            (tainted(SI->getValueOperand()) || tainted(SI->getPointerOperand()) || S.ctl || Taint->controlTainted(SI->getParent(), S)))
+          VolEntries.insert(SI);
+        if (auto *LI = dyn_cast<LoadInst>(&I); LI && LI->isVolatile() && tainted(LI->getPointerOperand()) &&
+            Taint->observableVolatile(*LI, S))
+          VolEntries.insert(LI);
+        if (auto *CB = dyn_cast<CallBase>(&I))
+          if (cq::conc::isLongjmpCall(*CB)) {
+            auto *buf = dyn_cast<GlobalVariable>(CB->getArgOperand(0));
+            if (!(buf && cq::conc::isPairedJmpBuf(*buf)) && Taint->controlTainted(CB->getParent(), S))
+              ArmJumps.insert(CB);
+          }
+      }
+    }
+  }
+
+  void instrumentRule24() {
+    for (Instruction *I : VolEntries)
+      logVolatile(I);
+    for (CallBase *CB : ArmJumps) {
+      IRBuilder<> B(CB);
+      B.CreateCall(hook("__cqo_longjmp_arm", Void, {}), {});
+    }
+  }
+
+  // The fields as the lowered side writes them: the address an i64, then a stored value's bits at their type's width.
+  void logVolatile(Instruction *I) {
+    IRBuilder<> B(I);
+    auto *SI = dyn_cast<StoreInst>(I);
+    B.CreateCall(hook("__cqo_fx_begin", Void, {Ptr}), {str(SI ? "volatile_store" : "volatile_load")});
+    B.CreateCall(hook("__cqo_fx_int", Void, {I64, I32}),
+                 {B.CreatePtrToInt(getLoadStorePointerOperand(I), I64), B.getInt32(64)});
+    if (SI) {
+      Value *V = SI->getValueOperand();
+      Type *T = V->getType();
+      if (T->isPointerTy())
+        V = B.CreatePtrToInt(V, I64);
+      else if (T->isFloatingPointTy() && T->getPrimitiveSizeInBits() <= 64)
+        V = B.CreateBitCast(V, IntegerType::get(C, T->getPrimitiveSizeInBits()));
+      if (!V->getType()->isIntegerTy() || V->getType()->getIntegerBitWidth() > 64)
+        unimplemented("volatile_store value type", I);
+      B.CreateCall(hook("__cqo_fx_int", Void, {I64, I32}),
+                   {B.CreateZExt(V, I64), B.getInt32(V->getType()->getIntegerBitWidth())});
+    }
+    B.CreateCall(hook("__cqo_fx_end", Void, {}), {});
+  }
+
   // ---------------------------------------------------------------- termination notes
   void notes(Function &F) {
     static const StringSet<> jumps = {"longjmp", "_longjmp", "siglongjmp", "__longjmp_chk"};
@@ -2270,7 +2334,7 @@ public:
         continue;
       if (callee && (jumps.contains(callee->getName()) || !callee->isDeclaration() ||
                      callee->getName().starts_with("__cqo_")))
-        continue;  // longjmp runs natively (rule 24); a defined callee reaches its own noreturn call
+        continue;  // a longjmp with no quantum predicate runs natively (rule 24); a defined callee reaches its own noreturn call
       IRBuilder<> B(CB);
       B.CreateCall(hook("__cqo_noreturn", Void, {Ptr}),
                    {str(callee ? callee->getName() : StringRef("<indirect>"))});
@@ -2371,6 +2435,7 @@ public:
 
   void run() {
     analyseCutoffs();  // on the pristine module: taint answers for the program as clang wrote it
+    armLongjmps();
     {
       // block labels as the input spells them, before shadows() adds numbered values
       std::vector<Function *> pristine;
@@ -2380,6 +2445,7 @@ public:
       spellBlocks(pristine);
     }
     shadows();         // rule 2 collapse, on the pristine module too (before stubs give bodies)
+    instrumentRule24();
     if (KI.on) {
       SpecNext = M.getGlobalVariable("__cqo_spec_next");
       if (!SpecNext)

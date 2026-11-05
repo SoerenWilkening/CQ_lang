@@ -559,11 +559,11 @@ bool rewriteDeferredResults(Module &M, const TaintInfo &T) {
   return true;
 }
 
-// CR rule 24 at f684858 (cq-py5f): an observable volatile store with quantum data is a host effect, the
-// rule-16 effect entry `volatile_store` under the predicate (a seed |1> when it is top, as any effect
-// entry): the address as an i64 field (a literal when classical; a quantum address, rule 21, a written rail
-// under the predicate), then the stored value, one field per scalar leaf (a vector's lanes, rule 25; a
-// pointer value its address as an i64 literal). As every entry, none in a _pure clone.
+// CR rule 24: an observable volatile store of a rail or under a quantum predicate is the rule-16 effect entry
+// `volatile_store`: the address as an i64 field (a literal when classical, a rail written under the predicate at an
+// address rail), the stored value one field per scalar leaf (a vector's lanes, rule 25; a pointer value its address as
+// an i64 literal), then tape_effect_controlled(c, t, name), c the predicate or a seed |1>. As every entry, none in a
+// _pure clone.
 void lowerVolatileStore(LoweringContext &ctx, StoreInst &SI, Operand address) {
   if (ctx.S.pure)
     return;
@@ -577,7 +577,9 @@ void lowerVolatileStore(LoweringContext &ctx, StoreInst &SI, Operand address) {
     ctl = one;
   }
   Value *tape = tapeOf(ctx);
-  ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffect, {}, /*ctl=*/true}, {ctl, tape, effectName(ctx.M, "volatile_store")});
+  auto entry = [&]() {
+    ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffect, {}, /*ctl=*/true}, {ctl, tape, effectName(ctx.M, "volatile_store")});
+  };
   auto write = [&](Operand op, RailType w) {
     if (!op.handle) {
       ctx.emitCore(abi::CoreSpec{abi::Core::TapeWriteLit, w}, {tape, op.v});
@@ -596,11 +598,11 @@ void lowerVolatileStore(LoweringContext &ctx, StoreInst &SI, Operand address) {
     if (p.handle)
       internalError("eff-tape: a pointer value with a handle of its own (rule 21 binds a quantum pointer's fields)", &SI);
     write(Operand{ctx.B().CreatePtrToInt(p.v, Type::getInt64Ty(C)), false}, i64);
-    return;
+    return entry();
   }
   if (ty->isIntegerTy() || ty->isFloatingPointTy()) {
     write(ctx.operand(v), railTypeOf(ty));
-    return;
+    return entry();
   }
   // A vector or aggregate: its scalar leaves in order (rule 25 lanes, rule 26 fields).
   SmallVector<Type *, 8> leaves;
@@ -630,6 +632,27 @@ void lowerVolatileStore(LoweringContext &ctx, StoreInst &SI, Operand address) {
       write(fs[i], railTypeOf(leaves[i]));
     }
   }
+  entry();
+}
+
+void lowerVolatileLoad(LoweringContext &ctx, LoadInst &LI, Operand address) {
+  LLVMContext &C = ctx.M.getContext();
+  Value *flag = ctx.currentFlag();
+  Value *ctl = flag;
+  if (!ctl) {
+    CallInst *one = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 1}}, {ConstantInt::getTrue(C)});
+    ctx.unc().recordSeed(one);
+    ctl = one;
+  }
+  Value *tape = tapeOf(ctx);
+  RailType i64{Kind::Int, 64};
+  CallInst *h = flag ? ctx.emitCore(abi::CoreSpec{abi::Core::TapeWrite, i64, /*ctl=*/true}, {flag, tape, address.v})
+                     : ctx.emitCore(abi::CoreSpec{abi::Core::TapeWrite, i64}, {tape, address.v});
+  ctx.unc().recordExternal(h, Role::Tape);
+  CallInst *r = ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffectW, railTypeOf(LI.getType()), /*ctl=*/true},
+                             {ctl, tape, effectName(ctx.M, "volatile_load")});
+  ctx.unc().recordExternal(r, Role::Tape);   // rule 16: the result rail is KEPT, it has no _unc and is never freed
+  ctx.bind(&LI, r);
 }
 
 void lowerNoreturn(LoweringContext &ctx, CallBase &CB) {

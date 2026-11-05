@@ -8,9 +8,9 @@ For probes/conc.O1.ll and probes/setjmp.O1.ll it checks, and fails on:
     atomic store and load (the host performs them);
   - every entry is §6-equal to its own C program (`python3 -m cqcheck user`, the C oracle).
 ERRORS (probes that must make cq-lower exit non-zero with a named message) is empty since cq-lyzw.
-p_sj_* (setjmp.O1.ll) are 101's construction (rule 24): a longjmp under a quantum predicate is an escaped
+p_sj_* (setjmp.O1.ll) are 101's construction (rule 24's one pairing by operand): a longjmp is an escaped
 flag the clone returns beside its result, the setjmp join a select on it; no host setjmp/longjmp call is
-left. setjmp_class.O1.ll and the former error probes (setjmp_effect, _nested, _wrapper, _wrapper_p20/p21)
+left. p_sjh_* (setjmp_host.O1.ll): outside the pairing the host calls stay. setjmp_class.O1.ll and the former error probes (setjmp_effect, _nested, _wrapper, _wrapper_p20/p21)
 are the class (cq-lyzw: explicit control flow before the final taint, Setjmp.cpp). vol_observable.O1.ll:
 an observable volatile store with quantum data is the tape entry volatile_store (rule 24 at f684858). Variants: scalar quantum result, void clone with a pure continuation, classical result, quantum
 value on the escaped arm (the != 0 test).
@@ -38,21 +38,24 @@ MODULES = {"conc.O1.ll": ENTRIES, "setjmp.O1.ll": ["p_sj_scalar", "p_sj_void", "
            # cq-py5f: rule 24 over its class (a join asking for the result, a volatile atomic access).
            
            
+           # Rule 24: outside the one pairing, the host calls as they stand; a longjmp under a quantum predicate abort_i1.
+           "setjmp_host.O1.ll": ["p_sjh_local", "p_sjh_two", "p_sjh_pred"],
            # cq-lyzw (rule 24 over its class): setjmp/longjmp as explicit control flow; formerly error probes.
            "setjmp_class.O1.ll": ["p_sjc_samefn", "p_sjc_depth3", "p_sjc_value", "p_sjc_retry", "p_sjc_two",
                                   "p_sjc_ptr", "p_sjc_loop"],
            "setjmp_effect.O1.ll": ["setjmp_effect_error"], "setjmp_nested.O1.ll": ["setjmp_nested_error"],
-           "setjmp_wrapper.O1.ll": ["setjmp_wrapper_error"], 
+           "setjmp_wrapper.O1.ll": ["setjmp_wrapper_error"], "setjmp_wrapper_p20.O1.ll": ["p20"],
            "setjmp_wrapper_p21.O1.ll": ["p21"],
            # cq-lyzw (rule 24 at f684858): an observable volatile access with quantum data is a host effect.
            "vol_observable.O1.ll": ["vol_quantum_observable", "p_vol_obs_pred"],
-           # cq-lyzw (rule 24 with rule 21): an atomic read-modify-write through a fat pointer.
-           
-           # cq-lyzw (rule 24, 106): thread calls collapsed in the IR; conc_threads_indirect.c is blocked on
-           # the mem-slots bead cq-o42w.
-           
+           "vol_rail.O1.ll": ["p_vol_rail_store", "p_vol_rail_load", "p_vol_local_rail"],
+           "conc_tls.O1.ll": ["p_tls", "p_mutex_init"],
+           # cq-lyzw (rule 24 with rule 21): an atomic read-modify-write through a pointer rail.
+           "conc_rmw_fat.O1.ll": ["p_rmw_fat", "p_cas_fat"],
+           # cq-lyzw (rule 24, 106): thread calls collapsed in the IR.
+           "conc_threads.O1.ll": ["p_join_qresult"],
            # cq-il07 (rule 24): a volatile read of an internal constant under a quantum predicate (musl exp10l).
-           }
+           "vol_const_pred.O1.ll": ["e_vol_const_pred"]}
 _SJ = (r"cq_template_select_i32", r"call [^\n]*@(setjmp|longjmp)\(")
 _NOSJ = (None, r"call [^\n]*@(setjmp|longjmp)\(")
 # entry -> (regex that must match its body, regex that must not)
@@ -72,11 +75,17 @@ SHAPES = {"p_vol_internal": (None, r"volatile"),
           "p_runtime_routine": (r"call ptr %\d+\(ptr", r"@pthread_(create|join)\("),
           "p_vol_atomic": (r"store atomic volatile i32 %\d+, ptr @vcell seq_cst", None),
           "p_sj_scalar": _SJ, "p_sj_void": _SJ, "p_sj_classical": _SJ, "p_sj_qarm": _SJ,
-          "vol_quantum_observable": (r"cqrt_tape_effect_controlled\([^\n]*@\.cq\.effect\.volatile_store\)[\s\S]*"
-                                     r"cqrt_tape_write_i64_lit\(i32 %\d+, i64 ptrtoint \(ptr @sink to i64\)\)"
-                                     r"[\s\S]*cqrt_tape_write_i32\(", r"store volatile"),
+          "vol_quantum_observable": (r"cqrt_tape_write_i64_lit\(i32 %\d+, i64 ptrtoint \(ptr @sink to i64\)\)"
+                                     r"[\s\S]*cqrt_tape_write_i32\([\s\S]*"
+                                     r"cqrt_tape_effect_controlled\([^\n]*@\.cq\.effect\.volatile_store\)", r"store volatile"),
           "p_vol_obs_pred": (r"@\.cq\.effect\.volatile_store", r"store volatile"),
+          "p_tls": (r"llvm.threadlocal.address", None), "p_mutex_init": (None, r"@pthread_"),
+          "p_vol_rail_store": (r"cqrt_tape_write_i64\([\s\S]*@\.cq\.effect\.volatile_store", r"qram_store"),
+          "p_vol_rail_load": (r"cqrt_tape_write_i64\([\s\S]*cqrt_tape_effect_i32_controlled\([^\n]*@\.cq\.effect\.volatile_load", r"qram_load"),
+          "p_vol_local_rail": (r"@\.cq\.effect\.volatile_store", r"store volatile i32 9"),
           "p_rmw_fat": (None, r"atomicrmw|cmpxchg"), "p_cas_fat": (None, r"atomicrmw|cmpxchg"),
+          "p_sjh_local": (r"call i32 @setjmp\(", None), "p_sjh_two": (r"call i32 @setjmp\(ptr[^\n]*@twice", None),
+          "p_sjh_pred": (r"call i32 @setjmp\([\s\S]*cqrt_abort_i1\(", r"call [^\n]*@longjmp\("),
           "e_vol_const_pred": (r"call i32 @__cq_q_p_vol_const_pred_\d+\(", None),
           "p_join_qresult": (r"call ptr @__cq_q_qjob_1\(", r"@\\01_pthread_join\(|@pthread_create\(")}
 for _e in MODULES["setjmp_class.O1.ll"] + ["setjmp_effect_error", "setjmp_nested_error", "setjmp_wrapper_error",

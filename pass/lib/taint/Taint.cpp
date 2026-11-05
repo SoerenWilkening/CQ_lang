@@ -142,10 +142,10 @@ bool countsAsCall(const CallBase &CB) {
   }
 }
 
-// Rule 24: every use of the global is, through getelementptrs, a load or a store through it (lifetime and debug
-// intrinsics aside).
-bool onlyAccessedThrough(const GlobalVariable &GV, bool *stored = nullptr) {
-  SmallVector<const Value *, 8> work{&GV};
+// Rule 24: every use of the object is, through getelementptrs with untainted indices, a load or a store through it
+// (lifetime and debug intrinsics aside).
+bool onlyAccessedThrough(const Value &Obj, function_ref<bool(const Value *)> tainted, bool *stored = nullptr) {
+  SmallVector<const Value *, 8> work{&Obj};
   SmallPtrSet<const Value *, 16> seen;
   while (!work.empty()) {
     const Value *V = work.pop_back_val();
@@ -153,7 +153,10 @@ bool onlyAccessedThrough(const GlobalVariable &GV, bool *stored = nullptr) {
       continue;
     for (const Use &Us : V->uses()) {
       const User *U = Us.getUser();
-      if (isa<GEPOperator>(U) && Us.getOperandNo() == 0) {
+      if (auto *G = dyn_cast<GEPOperator>(U); G && Us.getOperandNo() == 0) {
+        for (const Use &Idx : G->indices())
+          if (tainted(Idx.get()))
+            return false;
         work.push_back(U);
       } else if (isa<LoadInst>(U)) {
         continue;
@@ -177,7 +180,8 @@ bool hostGlobal(const GlobalVariable &GV) {
   if (GV.isConstant())
     return true;
   bool stored = false;
-  return GV.hasLocalLinkage() && GV.hasInitializer() && onlyAccessedThrough(GV, &stored) && !stored;
+  return GV.hasLocalLinkage() && GV.hasInitializer() &&
+         onlyAccessedThrough(GV, [](const Value *) { return false; }, &stored) && !stored;
 }
 
 // <fenv.h> (C17 7.6): the floating-point environment calls rule 23 splits into host and rail parts.
@@ -282,6 +286,14 @@ private:
   // The host-resident object p reaches, else nullptr (rule 20: no pointer is otherwise resolved).
   const Value *hostObject(const Value *ptr);
   bool quantumScope(const BasicBlock *BB) const { return blockCT(BB) || cur->ctl; }
+  // Rule 24's test of a getelementptr index: a value of another function has no answer in this specialization.
+  std::function<bool(const Value *)> ownTainted() {
+    return [this](const Value *v) {
+      auto *I = dyn_cast<Instruction>(v);
+      auto *Ar = dyn_cast<Argument>(v);
+      return !(I && I->getFunction() != cur->F) && !(Ar && Ar->getParent() != cur->F) && L(v).any();
+    };
+  }
   void transferLoad(LoadInst &LI);
   void transferStore(Instruction &I, Value *ptr, Value *val);
   void transferMemIntrinsic(MemIntrinsic &MI);
@@ -1301,6 +1313,17 @@ static bool confinedFenvObject(const AllocaInst &A) {
   return any;
 }
 
+FenvObject fenvObjectKindOf(const Value *ptr) {
+  if (auto *A = dyn_cast<AllocaInst>(ptr); A && confinedFenvObject(*A))
+    return FenvObject::Confined;
+  if (isa<Constant>(ptr)) {
+    auto *G = dyn_cast<GlobalVariable>(getUnderlyingObject(ptr));
+    if (!G || G->isConstant())
+      return FenvObject::Constant;
+  }
+  return FenvObject::Memory;
+}
+
 // Rule 20 (b): every transitive user of the alloca through getelementptrs with untainted indices.
 bool Analyzer::hostUsersOk(const AllocaInst &A) {
   if (L(A.getArraySize()).any())
@@ -1370,14 +1393,21 @@ void Analyzer::demoteAllocas(SpecState &S) {
       }
 }
 
-// Rule 24: an access is unobservable when its pointer reaches, through getelementptrs, an alloca or an internal
-// global whose every use is a load or store through it; every other volatile access is observable.
-static bool observableVolatile(const Value *ptr) {
-  const Value *b = getUnderlyingObject(ptr);
-  if (isa<AllocaInst>(b))
-    return false;
+// Rule 24: a volatile access is unobservable when its pointer operand is, through getelementptrs with untainted
+// indices, an alloca or an internal global whose every use is, through such getelementptrs, a load or a store through
+// it; every other volatile access is observable.
+bool observableVolatile(const Value *ptr, function_ref<bool(const Value *)> tainted) {
+  const Value *b = ptr;
+  while (auto *G = dyn_cast<GEPOperator>(b)) {
+    for (const Use &Idx : G->indices())
+      if (tainted(Idx.get()))
+        return true;
+    b = G->getPointerOperand();
+  }
   auto *GV = dyn_cast<GlobalVariable>(b);
-  return !(GV && GV->hasLocalLinkage() && onlyAccessedThrough(*GV));
+  if (!isa<AllocaInst>(b) && !(GV && GV->hasLocalLinkage()))
+    return true;
+  return !onlyAccessedThrough(*b, tainted);
 }
 
 void Analyzer::transferLoad(LoadInst &LI) {
@@ -1386,7 +1416,7 @@ void Analyzer::transferLoad(LoadInst &LI) {
   // Rule 3: every load is a bus load and its result a rail, except a load of a host-resident object with no quantum
   // predicate in scope (rule 20) and an observable volatile load at a classical address (rule 24).
   bool host = hostObject(ptr) && !quantumScope(LI.getParent());
-  bool volatileHost = LI.isVolatile() && observableVolatile(ptr) && !L(ptr).any();
+  bool volatileHost = LI.isVolatile() && observableVolatile(ptr, ownTainted()) && !L(ptr).any();
   if (!host && !volatileHost)
     cur->busLoad = true;
   setL(&LI, host || volatileHost ? Lanes(n) : allLanes(n));
@@ -1396,7 +1426,7 @@ void Analyzer::transferStore(Instruction &I, Value *ptr, Value *val) {
   auto *SI = dyn_cast<StoreInst>(&I);
   if (SI && hostObject(ptr) && !L(val).any() && !quantumScope(I.getParent()))
     return;   // a plain store into a host-resident object (rule 20)
-  if (SI && SI->isVolatile() && observableVolatile(ptr)) {
+  if (SI && SI->isVolatile() && observableVolatile(ptr, ownTainted())) {
     if (L(ptr).any() || L(val).any() || quantumScope(I.getParent())) {
       cur->hasEffect = true;   // rule 24: the effect entry volatile_store
       cur->anyQuantum = true;
@@ -1542,28 +1572,6 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool
   cur->anyQuantum = true;
 }
 
-// cq-wskg (rule 24): a function with a body from which a direct call of longjmp may be reached through
-// direct calls of functions with bodies.
-static bool mayReachLongjmp(const Function *G) {
-  SmallPtrSet<const Function *, 8> seen;
-  SmallVector<const Function *, 8> work{G};
-  while (!work.empty()) {
-    const Function *F = work.pop_back_val();
-    if (F->isDeclaration() || !seen.insert(F).second)
-      continue;
-    for (const BasicBlock &BB : *F)
-      for (const Instruction &I : BB)
-        if (auto *C = dyn_cast<CallBase>(&I))
-          if (const Function *H = C->getCalledFunction()) {
-            if (H->isDeclaration() && H->getName().contains("longjmp"))
-              return true;
-            work.push_back(H);
-          }
-  }
-  return false;
-}
-
-
 void Analyzer::declaredClone(CallBase &CB, Function *G, ArrayRef<Value *> actuals) { lift(CB, G, actuals, false); }
 
 // Rule 16's stream calls: every <stdio.h> function, input and output alike, and the POSIX descriptor calls, except the
@@ -1596,31 +1604,34 @@ void Analyzer::transferFenvCall(CallBase &CB, StringRef cname, ArrayRef<Value *>
   bool rail = q || underQ;
   uint8_t before = fenvCur, now = fenvNow();
   bool resQ = false;
-  // Rule 23: the objects a saving call's facts live in, by the pointer's underlying object (the confined shape, an
-  // alloca taken itself; anything else is the one union entry: its fields are on the bus, W6). A constant is
-  // musl's FE_DFL_ENV, an object never saved.
-  auto objKey = [](Value *ptr) -> const Value * {
-    const Value *o = getUnderlyingObject(ptr);
-    return isa<AllocaInst>(o) || isa<Constant>(o) ? o : nullptr;
-  };
+  // Rule 23: only a confined object's quantum part is SSA (these facts); a constant one has an empty part; any other
+  // object holds the environment in its bytes: a save merges the part through the bus, a restore loads two fields
+  // from the bus as the new flags rail and mode, and copies the object for its host call (bus stores).
+  auto kindOf = [](Value *ptr) { return fenvObjectKindOf(ptr); };
   auto savedIn = [&](Value *ptr) {
-    uint8_t b = 0;
-    if (!ptr->getType()->isPointerTy())
-      return b;
-    const Value *k = objKey(ptr);
-    for (auto &[o, bits] : st.fenvSaved)
-      if (!k || !o || o == k)
-        b |= bits;
-    return b;
+    auto it = st.fenvSaved.find(ptr);
+    return it == st.fenvSaved.end() ? uint8_t(0) : it->second;
   };
   auto saveTo = [&](Value *ptr, uint8_t bits) {
-    if (!ptr->getType()->isPointerTy())
+    if (kindOf(ptr) != FenvObject::Confined) {
+      if (bits) {
+        cur->writesOuter = true;
+        cur->anyQuantum = true;
+      }
       return;
-    uint8_t &x = st.fenvSaved[objKey(ptr)];
+    }
+    uint8_t &x = st.fenvSaved[ptr];
     if ((x | bits) != x) {
       x |= bits;
       st.changed = true;
     }
+  };
+  auto restoreMemory = [&](Value *ptr) {
+    if (kindOf(ptr) != FenvObject::Memory)
+      return false;
+    cur->writesOuter = true;
+    cur->anyQuantum = true;
+    return true;
   };
   auto bit = [](bool b) { return uint8_t(b ? 1 : 0); };
   if (cname == "fegetround") {
@@ -1643,7 +1654,7 @@ void Analyzer::transferFenvCall(CallBase &CB, StringRef cname, ArrayRef<Value *>
   } else if (cname == "fegetexceptflag") {
     saveTo(actuals[0], (now & 2) | (q ? 2 : 0));
   } else if (cname == "fesetexceptflag") {
-    fenvAssign(1, rail ? 1 : (nib(fenvCur, 1) | bit(savedIn(actuals[0]) & 2)));
+    fenvAssign(1, restoreMemory(actuals[0]) || rail ? 1 : (nib(fenvCur, 1) | bit(savedIn(actuals[0]) & 2)));
   } else if (cname == "fegetenv" || cname == "feholdexcept") {
     saveTo(actuals[0], now | (q ? 3 : 0));
     if (cname == "feholdexcept")
@@ -1651,12 +1662,13 @@ void Analyzer::transferFenvCall(CallBase &CB, StringRef cname, ArrayRef<Value *>
   } else if (cname == "fesetenv" || cname == "feupdateenv") {
     // fesetenv: the state := the object's saved part; feupdateenv: MODE := its mode, FLAGS := its
     // flags | FLAGS. An object never saved (FE_DFL_ENV) has an empty part.
+    bool mem = restoreMemory(actuals[0]);
     uint8_t sv = savedIn(actuals[0]);
-    fenvAssign(0, rail ? 1 : bit(sv & 1));
+    fenvAssign(0, mem || rail ? 1 : bit(sv & 1));
     uint8_t f = bit(sv & 2);
     if (cname == "feupdateenv")
       f |= nib(fenvCur, 1);
-    fenvAssign(1, rail ? 1 : f);
+    fenvAssign(1, mem || rail ? 1 : f);
   } else {
     // fegetexcept, feenableexcept, fedisableexcept: host calls, trapping is not modelled on rails
     // (eff-fenv); no environment fact changes.
@@ -1931,21 +1943,11 @@ void Analyzer::transferCall(CallBase &CB) {
   }
   if (getFreedOperand(&CB, st.TLI.get()))
     return;
-  if (CB.hasFnAttr(Attribute::ReturnsTwice)) {
-    // setjmp (rule 24): a longjmp under a quantum predicate makes its result an escaped flag.
-    if (st.longjmpUnderQuantum && rn)
-      setL(&CB, allLanes(rn));
+  // setjmp and longjmp outside rule 24's pairing are host calls: a classical result, no gate and no tape entry
+  // (abort_i1 under a quantum predicate); the pairing is rewritten before the final taint.
+  if (CB.hasFnAttr(Attribute::ReturnsTwice))
     return;
-  }
   if (CB.doesNotReturn()) {
-    // abort_i1 / the longjmp flag (rules 16, 24): neither a gate nor a tape entry, so not a non-pure
-    // body for rule 19.
-    // cq-wskg: a defined noreturn callee that may reach longjmp (a wrapper) longjmps here too.
-    if ((G->getName().contains("longjmp") || mayReachLongjmp(G)) && (blockCT(CB.getParent()) || cur->ctl) &&
-        !st.longjmpUnderQuantum) {
-      st.longjmpUnderQuantum = true;
-      st.changed = true;
-    }
     if ((blockCT(CB.getParent()) || cur->ctl) && cur->aborts.insert(&CB).second)
       st.changed = true;   // rule 16: an abort event
     if (G->isDeclaration() && !blockCT(CB.getParent()) && !cur->ctl) {
@@ -1983,6 +1985,15 @@ void Analyzer::transferCall(CallBase &CB) {
         return;
       }
     }
+  }
+  // Rule 24: join and the mutexes are nothing (collapseThreads), whatever a pthread_t reads as.
+  {
+    StringRef pn = G->getName();
+    if (pn.starts_with("\x01_"))
+      pn = pn.drop_front(2);
+    if (G->isDeclaration() && (pn == "pthread_join" || pn == "pthread_mutex_lock" || pn == "pthread_mutex_unlock" ||
+                               pn == "pthread_mutex_trylock" || pn == "pthread_mutex_init" || pn == "pthread_mutex_destroy"))
+      return;
   }
   if (G->getName() == "pthread_create" && actuals.size() == 4) {
     // Single-thread collapse (rule 24): a direct call of the start routine with its argument.
@@ -2412,7 +2423,6 @@ void Analyzer::resetAnalysis() {
   st.specs.clear();
   st.byKey.clear();
   st.changed = false;
-  st.longjmpUnderQuantum = false;
   st.calledAfter.clear();
   st.moduleHasEvent = false;
   st.fenvSaved.clear();
@@ -2857,6 +2867,8 @@ Lanes lanesOfValue(const ImplState &I, const SpecState &SS, const llvm::Value *V
 }
 } // namespace
 
+FenvObject fenvObjectKind(const llvm::Value *ptr) { return taintimpl::fenvObjectKindOf(ptr); }
+
 bool TaintInfo::isQuantum(const llvm::Value *V, const Specialization &S) const {
   const ImplState &I = needImpl(impl);
   return lanesOfValue(I, *stateOf(I, S), V).any();
@@ -3112,10 +3124,16 @@ bool TaintInfo::hostResident(const llvm::Value *obj, const Specialization &S) co
   const ImplState &I = needImpl(impl);
   const SpecState *SS = stateOf(I, S);
   if (auto *GV = dyn_cast<llvm::GlobalVariable>(obj))
-    return hostGlobal(*GV);
+    return I.hostGlobals.count(GV);
   if (auto *AI = dyn_cast<llvm::AllocaInst>(obj))
     return AI->getFunction() == SS->F && !SS->demoted.count(AI);
   return false;
+}
+
+bool TaintInfo::observableVolatile(const llvm::Instruction &access, const Specialization &S) const {
+  const SpecState *SS = stateOf(needImpl(impl), S);
+  auto it = SS->volObservable.find(&access);
+  return it == SS->volObservable.end() || it->second;
 }
 
 const llvm::Value *TaintInfo::hostObjectOf(const llvm::Value *p, const Specialization &S) const {
@@ -3260,6 +3278,28 @@ TaintInfo computeTaint(llvm::Module &M, const TaintOptions &opts) {
   T.impl->opts = opts;
   taintimpl::Analyzer A(*T.impl);
   A.run();
+  // The answers that read a global's uses, taken now: the module the pass then builds beside the bodies uses them too.
+  for (const llvm::GlobalVariable &GV : M.globals())
+    if (taintimpl::hostGlobal(GV))
+      T.impl->hostGlobals.insert(&GV);
+  for (auto &SS : T.impl->specs) {
+    if (!SS->F || SS->F->isDeclaration())
+      continue;
+    auto tainted = [&](const llvm::Value *v) {
+      auto *In = dyn_cast<llvm::Instruction>(v);
+      auto *Ar = dyn_cast<llvm::Argument>(v);
+      if ((In && In->getFunction() != SS->F) || (Ar && Ar->getParent() != SS->F))
+        return false;
+      return lanesOfValue(*T.impl, *SS, v).any();
+    };
+    for (const llvm::BasicBlock &BB : *SS->F)
+      for (const llvm::Instruction &X : BB) {
+        const llvm::LoadInst *LI = dyn_cast<llvm::LoadInst>(&X);
+        const llvm::StoreInst *St = dyn_cast<llvm::StoreInst>(&X);
+        if ((LI && LI->isVolatile()) || (St && St->isVolatile()))
+          SS->volObservable[&X] = taintimpl::observableVolatile(llvm::getLoadStorePointerOperand(&X), tainted);
+      }
+  }
   return T;
 }
 } // namespace cq

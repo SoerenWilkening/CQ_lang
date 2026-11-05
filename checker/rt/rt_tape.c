@@ -517,6 +517,18 @@ static void effect_line(const event *e, const char *when) {
   log_line(&b);
 }
 
+/* CR rule 24: what a resolved `volatile_load` entry reads: the bytes at its address field, on the host. */
+static uint64_t volatile_read(const event *e) {
+  uint64_t x = 0, at = e->nfields ? field_low64(&e->fields[0]) : 0;
+  unsigned bits = (unsigned)strtoul(e->rw[0] ? e->rw + 1 : "0", NULL, 10);
+  for (unsigned j = 0; g_bus && e->nfields && j < (bits + 7) / 8 && j < 8; j++) {
+    uint8_t b = 0;
+    g_bus->peek(at + j, &b);
+    x |= (uint64_t)b << (8 * j);
+  }
+  return x;
+}
+
 /* Resolves events in sequence order as far as they go. */
 static void advance(void) {
   while (!g_blocked && g_front < g_nev) {
@@ -537,7 +549,9 @@ static void advance(void) {
     if (e->cls == C_NONE) {                            /* an all-classical INPUT call took C_INPUT at its call */
       e->cls = C_RESOLVED;
       e->performed = e->pred;
-      if (e->k == E_EFFECT)
+      if (e->k == E_EFFECT && e->str && !strcmp(e->str, "volatile_load"))
+        set_result(e, e->pred ? volatile_read(e) : 0, 1);
+      else if (e->k == E_EFFECT)
         set_result(e, e->pred ? cq_fx_result(entry_hash(e, cq_fx_find(e->str)), (unsigned)strtoul(e->rw[0] ? e->rw + 1 : "0", NULL, 10)) : 0, 1);
       effect_line(e, "call");
     }
@@ -652,6 +666,22 @@ static void op_tape_fmt(int ctl, int32_t c, int32_t t, const char *s, const char
   if (!e->need) entry_complete(e);
 }
 
+/* CR rule 24: the store a `volatile_store` entry stands for (address, then the value's fields, little-endian), a write
+ * the backend makes for the entry (ABI §1.10), so later host reads and the named outputs see what the C program stored. */
+static void perform_volatile_store(event *e) {
+  if (e->nfields < 2 || !e->pred || e->behind_abort)
+    return;
+  if (!g_bus) { cqe_fail("tape: %s: a bus store with no bus linked", e->str); return; }
+  uint64_t at = field_low64(&e->fields[0]);
+  for (int i = 1; i < e->nfields; i++) {
+    const field *f = &e->fields[i];
+    unsigned bytes = f->w[0] == 'f' ? (!strcmp(f->w, "f80") ? 10 : (unsigned)strtoul(f->w + 1, NULL, 10) / 8)
+                                    : ((unsigned)strtoul(f->w + 1, NULL, 10) + 7) / 8;
+    for (unsigned j = 0; j < bytes; j++)
+      g_bus->cstore(at++, (uint8_t)(f->v.w[j / 8] >> (8 * (j % 8))));
+  }
+}
+
 /* Returns the result rail, or 0 for the bare form. */
 static int32_t op_tape_effect(int32_t c, int32_t t, const char *name, const char *rw, const char *sym) {
   ensure_exit();
@@ -675,6 +705,7 @@ static int32_t op_tape_effect(int32_t c, int32_t t, const char *name, const char
   }
   if (!name && e->nfields == 0) cqe_fail("tape: %s: a null name with no host address field", sym);
   entry_log(e, seq);
+  if (name && !strcmp(name, "volatile_store")) perform_volatile_store(e);
   if (ent && e->nfields < (int)strlen(ent->roles))
     cqe_fail("tape: %s: %s has %d fields, its arguments are %d", sym, name, e->nfields, (int)strlen(ent->roles));
   e->complete = 1;

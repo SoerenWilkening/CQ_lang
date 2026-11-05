@@ -1223,6 +1223,12 @@ static void template_call(call_t *c, const char *sym) {
     int32_t o = cqe__new(rw, &out, known && r == 0, 0);
     if (t.exc)
       cqe__setfenv(o, 1);
+    /* rule 23: a memory fenv object's fields read as the new state: and_i32_hl(field, 63 | 0xC00) */
+    if (!strcmp(t.op, "and") && nf == 2 && mask[0] == 'h' && mask[1] == 'l' && rbits == 32) {
+      int32_t lit = as_i32(&c->raw[off + 1]);
+      if (lit == 63 || lit == 3072)
+        cqe__setfenv(o, lit == 63 ? 1 : 2);
+    }
     for (int i = 0; i < nh; ++i)
       cqe__add_dep(o, hs[i]);
     sbuf b = {0};

@@ -351,6 +351,10 @@ bool Walker::pureClassical(const Loop &lp) {
 bool Walker::classicalEdgeMeets(const BasicBlock *x, const BasicBlock *s, const BasicBlock *y) {
   if (isQuantumTerm(ctx, x->getTerminator()) || !is_contained(successors(x), s))
     return false;
+  // A classical edge into a dead end (`if (c) exit(c);`) ends the path: y's predicate meets it only because a dead
+  // end does not restrict its siblings (rules 8, 16).
+  if (taint_detail::DeadEnds(F).isDeadEnd(s))
+    return false;
   const Pred &e = ctx.preds().edge(x, s), &py = ctx.preds().block(y);
   if (e.isBottom() || py.isBottom())
     return false;

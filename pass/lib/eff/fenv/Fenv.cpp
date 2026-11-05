@@ -13,7 +13,7 @@
 //  output block where it changed, and at a join of output blocks whose values differ a phi over handles
 //  (Uncompute::recordMerge, rule 9 at a58c3a4), an empty / classical incoming made a rail where its edge
 //  leaves (FLAGS: alloc_i32(0); MODE: alloc_i32 of the classical mode there). So a change on one
-//  classical path holds after the join on that path only (cq-1dlz). Saved parts of fenv_t / fexcept_t
+//  classical path holds after the join on that path only (cq-1dlz). Saved parts of confined fenv_t / fexcept_t
 //  objects are SSA variables the same way, one per object.
 //
 // CONSTRUCTIONS
@@ -51,6 +51,22 @@
 //    A quantum m (FOLD: the host flags move into the rail): h = fetestexcept(ALL), feclearexcept(ALL),
 //    T = FLAGS | h, FLAGS' = select(p, T & ~m, T) (T & ~m without a predicate).
 //  - fetestexcept(m): the host call | (FLAGS & m), a fresh i32 (65, 81, 100).
+//  - ENVIRONMENT OBJECTS (rule 23). Only the CONFINED shape (TaintInfo fenvObjectKind: an alloca whose every user is a
+//    recognised fenv call taking the alloca itself) carries its quantum part as SSA, in the next four bullets. A
+//    constant restores as the host call as it stands, its part empty (100). Every other object holds the whole
+//    environment in its own bytes (objectLoad, objectMerge, objectCopy below; the choice for this target, with no
+//    witness yet, CR §8): the exception-flag field is __mxcsr's low six bits at offset 4 of Darwin's 16-byte fenv_t,
+//    where the host keeps the flags of SSE arithmetic and feraiseexcept, and all of the 2-byte fexcept_t; the
+//    rounding-mode field is __control's bits 10-11 at offset 0, where fegetround reads the mode, FE_* values as they
+//    stand. A save: the host call, then each non-empty part merged: a bus load, `or` (for the mode `and` of the rest
+//    of the word, then `or`), a kept bus store. A restore: both fields loaded from the bus as the new flags rail and
+//    mode, then the host call on a __cq_alloc copy (rule 22) with both fields stored as 0. "As 0" here is the mode bits
+//    and the flags, in words stored classical from the live environment: the rest of each word holds the x87 and SSE
+//    exception masks, zero they trap, and a host call cannot read cells that hold rails (the host reads a QUANTUM
+//    cell's stale bytes); both words are then HOST, the masks the live ones (trap enables are not modelled). The mode
+//    the host then holds is no authority: MODE' is a rail. Under a quantum predicate the host call would act on every
+//    branch, so a save writes a fresh block and copies it `_controlled`, a restore makes no host call (FOLD below).
+//    At an address rail a save goes through that block too and a restore copies from the rail.
 //  - fegetexceptflag(o, m) / fesetexceptflag(o, m): the host calls; the object's quantum part is
 //    FLAGS & m, reinstated as (FLAGS & ~m) | (saved & m) (100's fenv_narrow_mask). A quantum m: the
 //    host save of every bit (C17 7.6.2.4: a later restore names a subset of m), the part FLAGS & m.
@@ -94,8 +110,7 @@
 // of a body that reads, clears, saves or rounds in the environment while its quantum part is live;
 // a quantum MODE passed into or returned from a clone (82's ABI carries a classical mode and returns
 // only the flags; the mode clone's name is owed, CR §8); a constrained op with no rule 4 template
-// (a libm intrinsic: its clone's mode parameter is the same owed name); a fenv_t / fexcept_t object
-// holding a quantum part that other code reads or writes. Open (cq-v1fu, needs the loop module): a
+// (a libm intrinsic: its clone's mode parameter is the same owed name). Open (cq-v1fu, needs the loop module): a
 // quantum change inside a classically bounded loop (its loop-carried state).
 #include "cq/Effects.h"
 
@@ -105,7 +120,9 @@
 #include <optional>
 #include <string>
 
+#include "../../bus/BusInternal.h"
 #include "cq/Abi.h"
+#include "cq/Bus.h"
 #include "cq/Calls.h"
 #include "cq/Loops.h"
 #include "cq/Predicate.h"
@@ -154,9 +171,8 @@ constexpr const char *kIssueModeClone =
     "awaiting owner ruling: SPEC_ISSUES rule 23: a quantum rounding mode across a clone boundary";
 constexpr const char *kIssueLibm =
     "awaiting owner ruling: SPEC_ISSUES rule 23: a constrained libm intrinsic with a quantum operand";
-constexpr const char *kIssueObject =
-    "awaiting owner ruling: SPEC_ISSUES rule 23: a fenv_t / fexcept_t object holding a quantum part that other "
-    "code reads or writes";
+// Rule 23's objects on this target's libc (Darwin x86-64, <fenv.h>; the header at the top).
+constexpr uint64_t kEnvBytes = 16, kEnvModeOff = 0, kEnvFlagsOff = 4, kXflagsBytes = 2;
 
 // --------------------------------------------------------------------------------------------
 // The <fenv.h> calls (C17 7.6), by name: a body-less callee with one of these names.
@@ -1829,45 +1845,6 @@ namespace {
 
 const Value *objectOf(const Value *p) { return getUnderlyingObject(p); }
 
-// A saved quantum part goes into an object whose host bytes the rest of the program may read or write (rule 23:
-// "any other access to its bytes reads the host part": its representation is unspecified in C, so a load or
-// store of its bytes is the host part's alone). What carries the quantum part beyond this function's fenv
-// calls is a copy of the object (memcpy: both parts) or the object crossing a call (the host part plus the
-// quantum part as two extra arguments): those need the part to travel with the bytes (kIssueObject).
-void requireSaveTarget(State &st, const Value *obj, const Instruction &I) {
-  if (!isa<AllocaInst>(obj) && !isa<GlobalVariable>(obj))
-    unimplemented(kIssueObject, &I);   // an object of the caller's (a pointer formal) or of unknown origin
-  SmallVector<const Value *, 8> work{obj};
-  SmallPtrSet<const Value *, 8> seen;
-  while (!work.empty()) {
-    const Value *v = work.pop_back_val();
-    if (!seen.insert(v).second)
-      continue;
-    for (const User *u : v->users()) {
-      if (isa<LoadInst>(u))
-        continue;
-      if (auto *si = dyn_cast<StoreInst>(u); si && si->getPointerOperand() == v)
-        continue;
-      if (isa<GetElementPtrInst>(u) || isa<BitCastInst>(u) || isa<AddrSpaceCastInst>(u)) {
-        work.push_back(u);
-        continue;
-      }
-      if (auto *CB = dyn_cast<CallBase>(u)) {
-        if (fenvFn(*CB) != FenvFn::None && CB->getFunction() == st.orig)
-          continue;
-        if (auto *II = dyn_cast<IntrinsicInst>(CB))
-          if (II->isLifetimeStartOrEnd())
-            continue;
-      }
-      if (isa<ConstantExpr>(u)) {
-        work.push_back(u);   // a constant expression over the global: its users
-        continue;
-      }
-      unimplemented(kIssueObject, u);
-    }
-  }
-}
-
 // The saved part of the object p points to (an object never saved here has an empty one). A save target
 // holding a quantum part is accessed by fenv calls only (requireSaveTarget), so a pointer whose
 // underlying object is another one never reaches it.
@@ -1878,8 +1855,6 @@ void save(LoweringContext &ctx, State &st, const Key &k, Part s, const Instructi
   bool q = s.mode || s.flags;
   if (q || prev.mode || prev.flags)
     requirePlaced(ctx, st, I);
-  if (q)
-    requireSaveTarget(st, k.first, I);
   s.saved = true;
   define(ctx, st, k, s);
 }
@@ -1909,6 +1884,98 @@ std::pair<Operand, Operand> wholeOf(LoweringContext &ctx, State &st, const Key &
     return {zero, Operand{fold(ctx, st, p.flags, probeXflags(ctx, obj, p.mask)), true}};
   auto [hm, hf] = probeEnv(ctx, st, obj);
   return {p.mode ? Operand{p.mode, true} : Operand{hm, false}, Operand{fold(ctx, st, p.flags, hf), true}};
+}
+
+// A memory object (rule 23, the header): its address on the bus.
+Operand objectAddress(LoweringContext &ctx, const Value *p) { return bus::address(ctx, p); }
+
+// A field loaded from the bus, zero-extended to the state's i32, and its bits.
+Value *objectLoad(LoweringContext &ctx, State &st, Operand addr, uint64_t off, Type *T, int64_t bits) {
+  Operand l{bus::emitLoad(ctx, T, bus::offsetAddress(ctx, addr, off)), true};
+  anchor(ctx, st, l.v);
+  Operand w = l;
+  if (T->getIntegerBitWidth() < 32) {
+    abi::TemplateSpec z;
+    z.op = "zext";
+    z.w = RailType{Kind::Int, T->getIntegerBitWidth()};
+    z.to = RailType{Kind::Int, 32};
+    w = Operand{tmpl(ctx, st, z, {l}), true};
+  }
+  return opAnd(ctx, st, w, Operand{i32(ctx, bits), false}).v;
+}
+
+// The field's word with `clear` bits cleared and `bits` (an i32 rail, or null) or'ed in, a kept bus store.
+void objectMerge(LoweringContext &ctx, State &st, Operand addr, uint64_t off, Type *T, int64_t clear, Value *bits) {
+  unsigned W = T->getIntegerBitWidth();
+  RailType wt{Kind::Int, W};
+  Operand field = bus::offsetAddress(ctx, addr, off);
+  Operand v{bus::emitLoad(ctx, T, field), true};
+  anchor(ctx, st, v.v);
+  auto op = [&](const char *name, const char *shape, ArrayRef<Operand> ops) {
+    abi::TemplateSpec t;
+    t.op = name;
+    t.w = wt;
+    t.shape = shape;
+    return Operand{tmpl(ctx, st, t, ops), true};
+  };
+  if (clear)
+    v = op("and", "hl", {v, Operand{ConstantInt::get(T, ~clear), false}});
+  if (bits) {
+    Operand b{bits, true};
+    if (W < 32) {
+      abi::TemplateSpec tr;
+      tr.op = "trunc";
+      tr.w = RailType{Kind::Int, 32};
+      tr.to = wt;
+      b = Operand{tmpl(ctx, st, tr, {b}), true};
+    }
+    v = op("or", "", {v, b});
+  }
+  bus::emitKeptStore(ctx, T, field, v);
+}
+
+// A fresh block of n bytes (rule 16), for a host fenv call.
+Value *objectBlock(LoweringContext &ctx, uint64_t n) {
+  IRBuilder<> &B = ctx.B();
+  CallInst *q = B.CreateCall(abi::declareHost(ctx.M, abi::Host::Alloc), {B.getInt64(n), B.getInt64(16)});
+  ctx.unc().noteVersionChange(q);
+  return q;
+}
+
+// A save: the host call `host(target)` on the object when it is a classical pointer and no control is in scope, else on a
+// fresh block copied over the object under the control (rule 22). Returns the call.
+template <class F> Value *objectSave(LoweringContext &ctx, const CallBase &CB, Operand addr, uint64_t n, Value *flag, F host) {
+  if (!addr.handle && !flag)
+    return host(ctx.operand(CB.getArgOperand(0)).v);
+  Value *q = objectBlock(ctx, n);
+  Value *r = host(q);
+  IRBuilder<> &B = ctx.B();
+  bus::lowerCopy(ctx, addr, Operand{B.CreatePtrToInt(q, B.getInt64Ty()), false}, Operand{B.getInt64(n), false}, flag,
+                 const_cast<CallBase &>(CB));
+  return r;
+}
+
+// A restore's host object: a __cq_alloc copy of the object (rule 22) with both fields stored as classical words, so
+// the host reads them whatever rails the object's own cells hold (the header).
+Value *objectCopy(LoweringContext &ctx, const CallBase &CB, Operand addr, uint64_t n) {
+  Value *q = objectBlock(ctx, n);
+  IRBuilder<> &B = ctx.B();
+  Operand qa{B.CreatePtrToInt(q, B.getInt64Ty()), false};
+  bus::lowerCopy(ctx, qa, addr, Operand{B.getInt64(n), false}, nullptr, const_cast<CallBase &>(CB));
+  if (n == kXflagsBytes) {
+    bus::emitKeptStore(ctx, B.getInt16Ty(), qa, Operand{B.getInt16(0), false});
+    return q;
+  }
+  // The live control word and __mxcsr, their masks the host's, with the mode bits and the flags 0.
+  Value *live = objectBlock(ctx, kEnvBytes);
+  hostFn(ctx, "fegetenv", {live});
+  Value *cw = B.CreateLoad(B.getInt16Ty(), B.CreateConstGEP1_64(B.getInt8Ty(), live, kEnvModeOff));
+  Value *mx = B.CreateLoad(B.getInt32Ty(), B.CreateConstGEP1_64(B.getInt8Ty(), live, kEnvFlagsOff));
+  bus::emitKeptStore(ctx, B.getInt16Ty(), bus::offsetAddress(ctx, qa, kEnvModeOff),
+                     Operand{B.CreateAnd(cw, B.getInt16(uint16_t(~kModeBits))), false});
+  bus::emitKeptStore(ctx, B.getInt32Ty(), bus::offsetAddress(ctx, qa, kEnvFlagsOff),
+                     Operand{B.CreateAnd(mx, B.getInt32(uint32_t(~kAllExcept))), false});
+  return q;
 }
 
 // A state value from an operand: a rail, null for the empty flags literal 0, else a seed.
@@ -2127,6 +2194,18 @@ void lowerFenvCall(LoweringContext &ctx, CallBase &CB) {
     Operand m = arg(1);
     Key k = keyOf(CB.getArgOperand(0), KXflags);
     Part c = cur(ctx, st);
+    if (fenvObjectKind(CB.getArgOperand(0)) == FenvObject::Memory) {
+      // The host save of every bit under a quantum m (a later restore names a subset); then the part, FLAGS & m.
+      Operand a = objectAddress(ctx, CB.getArgOperand(0));
+      Value *mh = m.handle ? i32(ctx, kAllExcept) : m.v;
+      Value *r = objectSave(ctx, CB, a, kXflagsBytes, flag, [&](Value *p) { return hostCall(ctx, CB, {p, mh}); });
+      if (c.flags) {
+        requirePlaced(ctx, st, CB);
+        objectMerge(ctx, st, a, 0, ctx.B().getInt16Ty(), 0, opAnd(ctx, st, Operand{c.flags, true}, m).v);
+      }
+      bindResult(ctx, CB, flag ? zero : Operand{r, false});
+      break;
+    }
     if (!control()) {
       Part s;
       if (!m.handle) {
@@ -2159,7 +2238,18 @@ void lowerFenvCall(LoweringContext &ctx, CallBase &CB) {
     Key k = keyOf(CB.getArgOperand(0), KXflags);
     Part s = readAt(ctx, st, k);
     Part c = cur(ctx, st);
-    if (!m.handle && !s.full && !control()) {
+    bool memory = fenvObjectKind(CB.getArgOperand(0)) == FenvObject::Memory;
+    if (memory && !m.handle && !control()) {
+      Operand a = objectAddress(ctx, CB.getArgOperand(0));
+      requireWritable(ctx, st, CB, true, false);
+      Value *S = objectLoad(ctx, st, a, 0, ctx.B().getInt16Ty(), kAllExcept);
+      Value *q = objectCopy(ctx, CB, a, kXflagsBytes);
+      bindResult(ctx, CB, Operand{hostCall(ctx, CB, {q, m.v}), false});
+      Value *cr = c.flags ? andLit(ctx, st, c.flags, notClassical(ctx, m.v)) : nullptr;
+      setFlags(ctx, st, orFlags(ctx, st, cr, andLit(ctx, st, S, m.v)));
+      break;
+    }
+    if (!memory && !m.handle && !s.full && !control()) {
       hostCopy();
       if (!c.flags && !s.flags)
         break;
@@ -2184,7 +2274,8 @@ void lowerFenvCall(LoweringContext &ctx, CallBase &CB) {
     // T; FLAGS' = (T & ~m) | (S & m), select(p, that, T) under the control.
     requireWritable(ctx, st, CB, true, false);
     Value *h = hostTest(ctx, i32(ctx, kAllExcept));
-    Operand S = wholeOf(ctx, st, k, s).second;
+    Operand S = memory ? Operand{objectLoad(ctx, st, objectAddress(ctx, CB.getArgOperand(0)), 0, ctx.B().getInt16Ty(), kAllExcept), true}
+                       : wholeOf(ctx, st, k, s).second;
     hostClear(ctx, i32(ctx, kAllExcept));
     Value *T = fold(ctx, st, c.flags, h);
     Operand nw = opOr(ctx, st, opAnd(ctx, st, Operand{T, true}, opNot(ctx, st, m)), opAnd(ctx, st, S, m));
@@ -2197,6 +2288,31 @@ void lowerFenvCall(LoweringContext &ctx, CallBase &CB) {
   case FenvFn::HoldExcept: {
     Key k = keyOf(CB.getArgOperand(0), KEnv);
     Part c = cur(ctx, st);
+    if (fenvObjectKind(CB.getArgOperand(0)) == FenvObject::Memory) {
+      Operand a = objectAddress(ctx, CB.getArgOperand(0));
+      // Under a control the block is saved with fegetenv: feholdexcept's clear holds where the control does (below).
+      bool hold = fn == FenvFn::HoldExcept && !flag;
+      Value *r = objectSave(ctx, CB, a, kEnvBytes, flag, [&](Value *p) -> Value * {
+        return hold ? hostFn(ctx, "feholdexcept", {p}) : hostFn(ctx, "fegetenv", {p});
+      });
+      if (c.mode || c.flags)
+        requirePlaced(ctx, st, CB);
+      if (c.mode)
+        objectMerge(ctx, st, a, kEnvModeOff, ctx.B().getInt16Ty(), kModeBits, c.mode);
+      if (c.flags)
+        objectMerge(ctx, st, a, kEnvFlagsOff, ctx.B().getInt32Ty(), 0, c.flags);
+      if (fn == FenvFn::HoldExcept && flag) {
+        requireWritable(ctx, st, CB, true, false);
+        Value *T = fold(ctx, st, c.flags, hostTest(ctx, i32(ctx, kAllExcept)));
+        hostClear(ctx, i32(ctx, kAllExcept));
+        setFlags(ctx, st, select32(ctx, st, flag, zero, Operand{T, true}));
+      } else if (hold && c.flags) {
+        requireWritable(ctx, st, CB, true, false);
+        setFlags(ctx, st, nullptr);
+      }
+      bindResult(ctx, CB, flag ? zero : Operand{r, false});
+      break;
+    }
     if (!control()) {
       hostCopy();
       Part s;
@@ -2235,6 +2351,28 @@ void lowerFenvCall(LoweringContext &ctx, CallBase &CB) {
     Key k = keyOf(CB.getArgOperand(0), KEnv);
     Part s = readAt(ctx, st, k);
     Part c = cur(ctx, st);
+    if (fenvObjectKind(CB.getArgOperand(0)) == FenvObject::Memory) {
+      requireWritable(ctx, st, CB, true, true);
+      Operand a = objectAddress(ctx, CB.getArgOperand(0));
+      Value *Sm = objectLoad(ctx, st, a, kEnvModeOff, ctx.B().getInt16Ty(), kModeBits);
+      Value *Sf = objectLoad(ctx, st, a, kEnvFlagsOff, ctx.B().getInt32Ty(), kAllExcept);
+      if (!control()) {
+        Value *q = objectCopy(ctx, CB, a, kEnvBytes);
+        bindResult(ctx, CB, Operand{hostCall(ctx, CB, {q}), false});
+        setMode(ctx, st, Sm);
+        setFlags(ctx, st, fn == FenvFn::SetEnv ? Sf : orFlags(ctx, st, Sf, c.flags));
+        break;
+      }
+      // The control's FOLD, the object's fields the saved whole value.
+      Value *T = fold(ctx, st, c.flags, hostTest(ctx, i32(ctx, kAllExcept)));
+      hostClear(ctx, i32(ctx, kAllExcept));
+      Operand nowMode = c.mode ? Operand{c.mode, true} : Operand{classicalMode(ctx, st, CB), false};
+      Operand nf = fn == FenvFn::SetEnv ? Operand{Sf, true} : opOr(ctx, st, Operand{Sf, true}, Operand{T, true});
+      setMode(ctx, st, select32(ctx, st, flag, Operand{Sm, true}, nowMode));
+      setFlags(ctx, st, select32(ctx, st, flag, nf, Operand{T, true}));
+      bindResult(ctx, CB, zero);
+      break;
+    }
     if (!s.full && !control()) {
       hostCopy();
       if (c.mode || c.flags || s.mode || s.flags)

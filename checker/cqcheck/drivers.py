@@ -30,7 +30,8 @@ sides, and nothing about it is encoded. Two things follow:
 - Every object the setup defines and a call passes is a named output: after the call the driver
   hands its address and size to `out_mem` (driver_source), the runtime's reader of the bus on the
   lowered side, plain host reads on the C side. A writable global of the module is one too, whether
-  or not it is passed (out_globals_ir). The argument entry names the object in `"object"`.
+  or not it is passed (out_globals_ir), but for a setjmp's buffer (jmp_buf_globals). The
+  argument entry names the object in `"object"`.
 
 Q16 (rulings): the driver zeroes a stack region just before each call, so an uninitialized read of
 a host-resident local gives 0 on both sides by construction.
@@ -1214,6 +1215,14 @@ def _constant_globals(text: str) -> List[Tuple[str, str]]:
 _DEFINE = re.compile(r'^define\b[^@]*(@(?:"[^"]*"|[-A-Za-z$._0-9]+))\(', re.M)
 
 
+def jmp_buf_globals(o1_text: str) -> FrozenSet[str]:
+    """The globals a setjmp names as its buffer. CR rule 24: under the one pairing no host call is made, and outside
+    it the host setjmp writes saved registers: either way the bytes are the C library's state and no output of the
+    program (bead cq-nzhx)."""
+    return frozenset(re.findall(r"\bcall\b[^;\n]*@(?:_?setjmp|sigsetjmp|__sigsetjmp)\(ptr\b[^,()\n]*?(@[\w.$-]+)\s*[,)]",
+                                o1_text))
+
+
 def out_globals_ir(o1_text: str, module_text: str, fn: str, hook: str, table_hook: str) -> str:
     """IR to append to a module: `define void @<fn>()` hands each writable global of the C program
     (o1_text's) that module_text also defines to `@<hook>(name, address, bytes)`, and each of its
@@ -1234,8 +1243,9 @@ def out_globals_ir(o1_text: str, module_text: str, fn: str, hook: str, table_hoo
         strs.append(f'{sym} = private unnamed_addr constant [{len(c) + 1} x i8] c"{c}\\00"')
         return sym
 
+    jmp_bufs = jmp_buf_globals(o1_text)
     for name, t, thread in writable_globals(o1_text):
-        if name not in have:
+        if name not in have or name in jmp_bufs:
             continue
         sym = named(name)
         addr = f"ptr {name}"
