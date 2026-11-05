@@ -605,8 +605,7 @@ Lanes Analyzer::L(const Value *V) {
 }
 
 bool Analyzer::exitRead(const Value *V) {
-  if (!curUser || cur->exitQ.empty() || curUser->getType()->isPointerTy() ||
-      V->getType()->isPointerTy())
+  if (!curUser || cur->exitQ.empty())
     return false;
   auto *I = dyn_cast<Instruction>(V);
   if (!I || I->getFunction() != curUser->getFunction())
@@ -2296,9 +2295,9 @@ void Analyzer::analyze(SpecState &S) {
     // value (rule 14): L() reads it as quantum in any reader outside the loop (exitRead). The
     // reader's result is quantum too, also where V is a pointer or the reader reads it through
     // addresses computed after the loop (the load of an address evaluated per trip, 121), or the
-    // reader's transfer does not pass operand lanes to its result (a call). A reader that computes
-    // an address stays classical-offset (121). Several returns chosen by a tainted branch merge
-    // their values.
+    // reader's transfer does not pass operand lanes to its result (a call). A pointer is an integer (rule 21): a
+    // pointer exit value and an address computed from it are rails too. Several returns chosen by a tainted branch
+    // merge their values.
     for (const BasicBlock *BB : fi.rpo)
       for (const Loop *Lp = fi.LI->getLoopFor(BB); Lp; Lp = Lp->getParentLoop()) {
         if (!S.exitQ.count(Lp))
