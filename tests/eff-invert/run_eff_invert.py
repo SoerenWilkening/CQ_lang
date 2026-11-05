@@ -14,14 +14,14 @@ between the two calls. For each probe file in CHECKED it checks, and fails on:
 The probes cover a flat region, quantum arms, nesting, regions around and between calls, classical branches
 and loops in a region, clone calls (with phases, several returns, rotating a register a region template
 reads: clone_rot), seeds a region prepares,
-a quantum arm under a classical guard (guard), clone calls and region code sharing memory (mem_clone_*),
+a quantum arm under a classical guard (guard), clone calls and region code sharing memory (mem_clone_*), a bus store
+and an effect entry as flush points, the in-place form and a load un-copied inside a region (invert_mem, rule 17 Memory),
 and a region whose value is read after it (region_output: the rail outlives the region, rule 17), and a
 measurement inside a region (invert_measure: the backend flushes the gates before it forward).
 Markers in quantum arms (CR rule 17, 2026-11-02, cq-asfn; CQ.h makes them noduplicate): dup_begin and dup_end
 (the shapes -O1 made by duplicating a marker before the attribute, now one marker in the join), invert_arm (a
 pair in one arm; a begin in an arm with its end after the join; an end in an arm with its begin before the
-branch; a begin in a nested arm). probes/*_error.O1.ll must make cq-lower exit non-zero with the message given:
-an end in each arm of a quantum branch closing one region (excl_ends_error: a proposed SPEC_ISSUES entry).
+branch; a begin in a nested arm).
 The examples' acceptance is `python3 -m cqcheck run 44 61 126 --oracle both` (cq-4593).
 Outputs go to build/tests/eff-invert/out/.
 """
@@ -35,26 +35,25 @@ ROOT = Path(__file__).resolve().parents[2]
 PROBES = Path(__file__).parent / "probes"
 CHECKED = {"invert.O1.ll": ["p_flat", "p_arms", "p_nest", "p_around", "p_two"],
            "invert2.O1.ll": ["p_inplace", "p_cbr", "p_reg", "p_cswitch"],
-           
+           "invert_loop.O1.ll": ["p_cloop"],
            "invert_adj.O1.ll": ["p_adj"],
            "invert_barrier.O1.ll": ["p_barrier"],
-           
-           
-           
-           
-           
+           "invert_seed.O1.ll": ["p_seedin", "p_seedtrip", "p_seedarm"],
+           "invert_ret.O1.ll": ["p_adjret"],
+           "invert_retq.O1.ll": ["p_adjretq"],
+           "invert_calls.O1.ll": ["p_between", "p_nested"],
+           "clone_rot.O1.ll": ["p12"],
            "invert_measure.O1.ll": ["p_meas"],
            "guard.O1.ll": ["p_guard"],
-           
-           
-           
+           "mem_clone_global.O1.ll": ["i12"],
+           "mem_clone_pair.O1.ll": ["i11"],
+           "mem_clone_qrom.O1.ll": ["i10"],
+           "invert_mem.O1.ll": ["p_store_flush", "p_inplace_cell", "p_load_inside", "p_effect_flush"],
            "region_output.O1.ll": ["p_out"],
            "dup_begin.O1.ll": ["p_dup"],
            "dup_end.O1.ll": ["p_dupend"],
            "invert_arm.O1.ll": ["p_armpair", "p_armbegin", "p_armend", "p_armnest"]}
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(|call void asm")
-# Two markers of one kind in exclusive quantum arms, neither paired in its arm: rule 17 does not say how they merge.
-EXCL = "SPEC_ISSUES: two cq_invert end markers in arms of a quantum branch that exclude each other"
 ERRORS = {}
 MARKER = re.compile(r"call void @(?:__cq|cqrt)_invert_(begin|end)\(")
 
