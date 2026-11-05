@@ -2553,7 +2553,7 @@ SmallVector<Value *, 4> liveRegisters(LoweringContext &ctx) {
     for (Instruction &I : BB) {
       if (!sh.rotations.count(&I) && !sh.frozenResults.count(&I))
         continue;
-      if (sh.ruleSixCleaned.count(&I))
+      if (sh.ruleSixCleaned.count(&I) || !ctx.unc().recorded(&I))
         continue;
       std::optional<Role> role = ctx.unc().liveRole(ctx.unc().idOf(&I));
       if (role && (*role == Role::UserRegister || *role == Role::Frozen))

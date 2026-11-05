@@ -73,6 +73,8 @@ public:
   // path; otherwise an internal error.
   void resolveAt(llvm::Instruction *P, llvm::ArrayRef<RailId> rails);
   RailId idOf(llvm::Value *handle) const;
+  // Is the handle a recorded rail? A bus cell's load rail rotated in place, say, is not.
+  bool recorded(const llvm::Value *handle) const;
   void setRole(RailId, Role);
   // Does the rail `from` hold a function of the rail `y`, through its records (control rails included), its in-place
   // writes and a merge's arms? false when either is no recorded rail.

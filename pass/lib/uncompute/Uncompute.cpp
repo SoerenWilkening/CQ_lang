@@ -476,7 +476,8 @@ struct Uncompute::Impl {
   }
 
   void checkOps(CallInst *fwd, ArrayRef<Operand> ops, const char *who) {
-    if (!fwd || !fwd->getCalledFunction())
+    // An own symbol's call has its lowered return type before the callee is rewritten (a pointer result, a handle): direct all the same.
+    if (!fwd || !isa<Function>(fwd->getCalledOperand()))
       internalError(std::string("uncompute: ") + who + ": the forward must be a direct call", fwd);
     if (ops.size() != fwd->arg_size())
       internalError(std::string("uncompute: ") + who + ": operand list differs from the forward call", fwd);
@@ -2893,7 +2894,7 @@ RailId Uncompute::recordMerge(Instruction *merged) {
 SmallVector<RailId, 4> Uncompute::recordCall(CallInst *fwd, ArrayRef<Value *> outs, ArrayRef<Operand> extra,
                                              bool loadsBus) {
   Impl &I = *impl;
-  if (!fwd || !fwd->getCalledFunction() || !fwd->getParent())
+  if (!fwd || !isa<Function>(fwd->getCalledOperand()) || !fwd->getParent())
     internalError("uncompute: recordCall: the forward must be a direct call in a block", fwd);
   if (outs.empty())
     internalError("uncompute: recordCall: a call with no result rail", fwd);
@@ -3560,6 +3561,8 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
                     ret);
   I.checkDeferredPaths(Rb);
 }
+
+bool Uncompute::recorded(const Value *handle) const { return impl->byHandle.count(handle) != 0; }
 
 void Uncompute::recordDeferred(ArrayRef<unsigned> scopes, ArrayRef<RailId> exitRails,
                                std::function<void(IRBuilder<> &)> emit, ArrayRef<RailId> reads,
