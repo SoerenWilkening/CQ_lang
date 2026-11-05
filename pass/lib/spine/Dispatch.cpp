@@ -506,8 +506,8 @@ void dispatchOne(LoweringContext &ctx, Instruction &I) {
   case Instruction::PtrToInt:
   case Instruction::IntToPtr:
     // Rule 21: identities at 64 bits (to or from another width the trunc/zext template).
-    if (q && I.getType()->getScalarSizeInBits() == 64 && I.getOperand(0)->getType()->getScalarSizeInBits() == 64 &&
-        !vec && ctx.operand(I.getOperand(0)).handle) {
+    if (q && !vec && ctx.operand(I.getOperand(0)).handle &&
+        (isa<PtrToIntInst>(I) ? I.getType() : I.getOperand(0)->getType())->isIntegerTy(64)) {
       bindOperand(ctx, &I, ctx.operand(I.getOperand(0)));
       return;
     }
