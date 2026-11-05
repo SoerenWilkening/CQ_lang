@@ -1122,7 +1122,15 @@ std::optional<Inverse> inverseStepWith(Instruction &U, Value *Y, Operand yp,
 
 std::optional<Inverse> inverseOf(LoweringContext &ctx, Instruction &U, Value *Y, Operand yp) {
   return inverseStepWith(
-      U, Y, yp, [&](Value *Z) { return ctx.operand(Z); }, [&](Value *Z) { return reads(ctx, Z, Y); });
+      U, Y, yp, [&](Value *Z) { return ctx.operand(Z); },
+      [&](Value *Z) {
+        if (reads(ctx, Z, Y))
+          return true;
+        // y' = y + z where z's rail depends on y only through a control (a bus load under a predicate that reads y,
+        // __shgetc's buf under cnt >= shlim): no bijection in y for fixed z.
+        Operand z = ctx.operand(Z), oy = ctx.operand(Y);
+        return z.handle && oy.handle && ctx.unc().railDependsOn(z.v, oy.v);
+      });
 }
 
 void clean(LoweringContext &ctx, Value *y, const Inverse &inv) {

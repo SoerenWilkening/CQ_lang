@@ -3069,6 +3069,30 @@ std::optional<Role> Uncompute::liveRole(RailId r) const {
   return x.role;
 }
 
+bool Uncompute::railDependsOn(const Value *from, const Value *y) const {
+  const Impl &I = *impl;
+  auto fi = I.byHandle.find(from), yi = I.byHandle.find(y);
+  if (fi == I.byHandle.end() || yi == I.byHandle.end())
+    return false;
+  DenseSet<RailId> seen;
+  SmallVector<RailId, 16> work{fi->second};
+  while (!work.empty()) {
+    RailId r = work.pop_back_val();
+    if (r == yi->second)
+      return true;
+    if (!seen.insert(r).second)
+      continue;
+    const Impl::Rail &x = I.rails[r];
+    work.append(x.arms.begin(), x.arms.end());
+    auto addReads = [&](unsigned rec) { work.append(I.info[rec].reads.begin(), I.info[rec].reads.end()); };
+    if (x.creator != kNone)
+      addReads(x.creator);
+    for (unsigned w : x.writes)
+      addReads(w);
+  }
+  return false;
+}
+
 void Uncompute::pin(RailId r) {
   Impl &I = *impl;
   if (I.rail(r, "pin").released)

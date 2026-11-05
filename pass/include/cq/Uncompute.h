@@ -74,6 +74,9 @@ public:
   void resolveAt(llvm::Instruction *P, llvm::ArrayRef<RailId> rails);
   RailId idOf(llvm::Value *handle) const;
   void setRole(RailId, Role);
+  // Does the rail `from` hold a function of the rail `y`, through its records (control rails included), its in-place
+  // writes and a merge's arms? false when either is no recorded rail.
+  bool railDependsOn(const llvm::Value *from, const llvm::Value *y) const;
   // cq-gujb (CR rules 5, 9, 20): a rail a construction will read again after flushes the walker places before
   // that read (a clone cell's value, read by the cell's later accesses): no flush resolves it until unpin.
   void pin(RailId);
