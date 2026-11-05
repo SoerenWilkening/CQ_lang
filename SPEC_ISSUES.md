@@ -166,3 +166,9 @@ Entries 1 to 16 are from the flat-memory rulings (`wt/flat/rulings.md`, "Entries
   value rail; a clean-up point exists (y' stays live), so rule 6 cleans x. The reference's header lists x as kept.
 - Input: any; the C-oracle verdict agrees either way (the permutation part is the same), the kept multisets differ by x.
 - Checked with `--oracle c` until CQ_spec regenerates 32 or rule 6 names the case.
+
+## 114: `%71` is a `load i8 !range [0,2)` accessed at i1, against 176, 178, 179, 185
+- Rule: CR rule 5, "used as i1 ... or a [0,2) range fact", which does not decide the shape: a `load i8 !range [0,2)` whose only user is `zext nneg i8 to i32`.
+- Disagreement: 114 `%71` uses `qram_load_i1` and labels it "SPEC GAP 2"; 176 (`%34`, `%51`), 178 (`%29`), 179 (`%17`, `%34`), 185 (`%45`) use `qram_load_i8_hl` + `zext_i8_to_i32`. Value functions coincide; only the kept rail's width differs.
+- Request: reword the parenthetical as "a trunc whose high bits a range fact proves 0" and re-emit 114 at i8. Not copied; 114 runs `--oracle c` until then.
+- Bead: cq-ssyq
