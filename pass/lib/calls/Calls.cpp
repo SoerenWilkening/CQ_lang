@@ -1418,11 +1418,10 @@ void deferValue(LoweringContext &ctx, CallBase &CB, ArrayRef<Value *> merged, Ar
   SmallVector<Value *, 4> mergedCopy(merged.begin(), merged.end());
   SmallVector<Type *, 4> leafCopy(leaves.begin(), leaves.end());
   U.recordDeferred({sc}, ids,
-                   [&M, vals, mergedCopy, leafCopy, tail](IRBuilder<> &B) {
-                     for (unsigned k = 0; k < vals.size(); ++k) {
+                   [&M, &U, sc, vals, mergedCopy, leafCopy, tail](IRBuilder<> &B) {
+                     for (unsigned k = 0; k < vals.size(); ++k)
                        B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Copy, railTypeOf(leafCopy[k])}), {mergedCopy[k], vals[k]});
-                       freeRail(M, B, vals[k]);
-                     }
+                     U.emitMirror(sc, B);   // frees the fresh rails, and tells Uncompute they are gone
                      tail(B);
                    },
                    reads);
