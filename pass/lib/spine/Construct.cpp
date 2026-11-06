@@ -272,6 +272,7 @@ private:
   // phi identified with a carried value's final state). The walker does not merge them again.
   DenseSet<const PHINode *> unitBoundPhis;
   DenseSet<const BasicBlock *> guardsShortCircuit;
+  DenseSet<const Value *> guardRecomputes;   // planGuards' literals made again at the guard
   std::vector<const Instruction *> blockDefs;           // original quantum defs in the current output block
   SmallVector<const BasicBlock *, 4> openRegions;       // ipdoms of quantum terminators not yet reached
   std::unique_ptr<TargetLibraryInfoImpl> tlii;
@@ -707,9 +708,18 @@ void Walker::planGuards() {
           const Lit &l = cands[k];
           if (auto *def = dyn_cast<Instruction>(l.v); def && !DT.dominates(def, b)) {
             const BasicBlock *db = def->getParent();
-            if (!idx.count(db) || idx.lookup(db) >= idx.lookup(b) || unitOf.count(db) || tailOf.count(db))
+            // A compare of values that dominate b is a function of them (strftime's second `n == 0`, in a unit's tail):
+            // the guard makes it again, wherever its block ran.
+            bool again = isa<CmpInst>(def) && all_of(def->operands(), [&](const Use &u) {
+              auto *o = dyn_cast<Instruction>(u.get());
+              return !o || DT.dominates(o, b);
+            });
+            if (again)
+              guardRecomputes.insert(def);
+            else if (!idx.count(db) || idx.lookup(db) >= idx.lookup(b) || unitOf.count(db) || tailOf.count(db))
               continue;
-            within.insert({k, ctx.preds().block(db).classicalProjection(ctx.T, ctx.S)});
+            else
+              within.insert({k, ctx.preds().block(db).classicalProjection(ctx.T, ctx.S)});
           }
           if ((inB & cf & l.p).isBottom() && (inB & cf & !l.p).isBottom())
             continue;
@@ -2270,7 +2280,15 @@ void Walker::emitGuard(BasicBlock *b) {
     Value *cc = nullptr;
     for (unsigned k : cube) {
       const Lit &l = cands[k];
-      Operand op = ctx.operand(l.v);
+      Operand op{nullptr, false};
+      if (guardRecomputes.count(l.v)) {
+        Instruction *again = cast<Instruction>(l.v)->clone();
+        for (Use &u : again->operands())
+          u.set(ctx.operand(u.get()).v);
+        op = Operand{B.Insert(again), false};
+      } else {
+        op = ctx.operand(l.v);
+      }
       if (op.handle)
         internalError("spine: a classical guard literal that is a rail", l.v);
       Value *v = l.dest ? B.CreateICmpEQ(B.CreatePtrToInt(op.v, B.getInt64Ty()), caseAddress(l.dest))
