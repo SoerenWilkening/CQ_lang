@@ -222,7 +222,7 @@ void closeRegionRails(LoweringContext &ctx, CallInst &origEnd) {
   SmallVector<Value *, 8> resolved = ctx.unc().resolveRegionMade(endCall, keep);
   if (resolved.empty())
     return;
-  SmallPtrSet<const Value *, 8> gone;
+  SmallSetVector<const Value *, 8> gone;   // found order: it orders the re-lowering below
   for (Value *h : resolved)
     if (auto it = origOf.find(h); it != origOf.end())
       for (const Value *V : it->second)

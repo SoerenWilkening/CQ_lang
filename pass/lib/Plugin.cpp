@@ -38,6 +38,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/SCCIterator.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/CFG.h"
@@ -276,7 +277,7 @@ void chainDispatch(Instruction *T) {
   }
   // The value each successor's phis take from B; every edge of the chain carries it.
   DenseMap<PHINode *, Value *> in;
-  SmallPtrSet<BasicBlock *, 8> succs(succ_begin(B), succ_end(B));
+  SmallSetVector<BasicBlock *, 8> succs(succ_begin(B), succ_end(B));   // a phi edit re-threads use lists: never hash order
   for (BasicBlock *s : succs)
     for (PHINode &P : s->phis()) {
       in[&P] = P.getIncomingValueForBlock(B);
@@ -358,7 +359,8 @@ bool splitSharedNoreturnArms(Function &F) {
       if (U.abort.empty())
         continue;
       auto own = [&](BasicBlock *b) { return L->contains(b) || is_contained(U.abort, b) || is_contained(U.arm, b); };
-      SmallPtrSet<BasicBlock *, 8> shared, outside;
+      SmallPtrSet<BasicBlock *, 8> shared;
+      SmallSetVector<BasicBlock *, 8> outside;   // found order, as copySet: their edits re-thread use lists
       for (BasicBlock *b : U.abort)
         for (BasicBlock *p : predecessors(b))
           if (!own(p)) {
@@ -376,7 +378,7 @@ bool splitSharedNoreturnArms(Function &F) {
           copied.push_back(b);
         }
       ValueToValueMapTy VM;
-      SmallPtrSet<BasicBlock *, 8> copySet;
+      SmallSetVector<BasicBlock *, 8> copySet;
       for (BasicBlock *b : copied) {
         BasicBlock *n = CloneBasicBlock(b, VM, ".out", &F);
         VM[b] = n;

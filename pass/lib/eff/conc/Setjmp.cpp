@@ -303,7 +303,7 @@ void Rewriter::rewrite(Function &H, const Layout *L) {
     IRBuilder<> b(LJ);
     auto *jb = cast<Constant>(LJ->getArgOperand(0));
     Value *v = b.CreateSExtOrTrunc(LJ->getArgOperand(1), valTy);
-    SmallPtrSet<BasicBlock *, 4> succs(succ_begin(B), succ_end(B));
+    SmallSetVector<BasicBlock *, 4> succs(succ_begin(B), succ_end(B));
     for (BasicBlock *S : succs)
       S->removePredecessor(B);
     while (&B->back() != LJ) {

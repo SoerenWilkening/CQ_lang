@@ -24,6 +24,7 @@
 #include "../spine/SpineInternal.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/ConstantRange.h"
@@ -138,11 +139,12 @@ void scanBetween(const Instruction &from, const Instruction &to, P pred, SmallVe
   }
   scan(std::next(from.getIterator()), FB->end());
   scan(TB->begin(), to.getIterator());
-  SmallPtrSet<const BasicBlock *, 16> fwd, back;
+  SmallSetVector<const BasicBlock *, 16> fwd;   // found order: the blocks' instructions come out in it
+  SmallPtrSet<const BasicBlock *, 16> back;
   SmallVector<const BasicBlock *, 16> w{FB};
   while (!w.empty())
     for (const BasicBlock *s : successors(w.pop_back_val()))
-      if (s != FB && s != TB && fwd.insert(s).second)
+      if (s != FB && s != TB && fwd.insert(s))
         w.push_back(s);
   w.push_back(TB);
   while (!w.empty())
