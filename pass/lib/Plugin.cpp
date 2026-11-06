@@ -37,6 +37,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/CFG.h"
@@ -55,6 +56,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/FixIrreducible.h"
 #include "llvm/Transforms/Utils/Cloning.h"
+#include "llvm/Transforms/Utils/ValueMapper.h"
 #include "llvm/IR/DataLayout.h"
 
 using namespace llvm;
@@ -241,6 +243,172 @@ bool splitCarriedAggregates(Function &F) {
     P->eraseFromParent();
   }
   return !phis.empty();
+}
+
+// CR rule 14 "Irreducible control flow" (cq-0ygtj): LLVM's fix-irreducible takes `br`, `ret` and `unreachable` only (its
+// precondition is lower-switch first; a hub over a switch predecessor crashes this release build, plain
+// `opt -passes=fix-irreducible` included). In a function with an irreducible cycle, a switch or computed goto with an edge
+// into a cycle becomes rule 13's chain: one equality test per case, the same predicates, so its edges can join the hub.
+// Every other switch keeps its form.
+void chainDispatch(Instruction *T) {
+  BasicBlock *B = T->getParent();
+  Function &F = *B->getParent();
+  LLVMContext &C = F.getContext();
+  // The tests in order, and where the last one's false edge goes.
+  SmallVector<std::pair<Constant *, BasicBlock *>, 8> tests;
+  BasicBlock *last = nullptr;
+  Value *cond;
+  if (auto *SI = dyn_cast<SwitchInst>(T)) {
+    cond = SI->getCondition();
+    for (auto &K : SI->cases())
+      tests.push_back({K.getCaseValue(), K.getCaseSuccessor()});
+    last = SI->getDefaultDest();
+  } else {
+    auto *IB = cast<IndirectBrInst>(T);
+    cond = IB->getAddress();
+    SmallVector<BasicBlock *, 8> dests;
+    for (BasicBlock *d : successors(IB))
+      if (!is_contained(dests, d))
+        dests.push_back(d);
+    last = dests.pop_back_val();
+    for (BasicBlock *d : dests)
+      tests.push_back({BlockAddress::get(&F, d), d});
+  }
+  // The value each successor's phis take from B; every edge of the chain carries it.
+  DenseMap<PHINode *, Value *> in;
+  SmallPtrSet<BasicBlock *, 8> succs(succ_begin(B), succ_end(B));
+  for (BasicBlock *s : succs)
+    for (PHINode &P : s->phis()) {
+      in[&P] = P.getIncomingValueForBlock(B);
+      P.removeIncomingValueIf([&](unsigned i) { return P.getIncomingBlock(i) == B; }, /*DeletePHIIfEmpty=*/false);
+    }
+  auto edge = [&](BasicBlock *from, BasicBlock *to) {
+    for (PHINode &P : to->phis())
+      P.addIncoming(in.lookup(&P), from);
+  };
+  BasicBlock *cur = B;
+  BasicBlock *pos = B->getNextNode();
+  T->eraseFromParent();
+  for (auto &[v, to] : tests) {
+    BasicBlock *rest = BasicBlock::Create(C, "cq.case", &F, pos);
+    IRBuilder<> IB(cur);
+    IB.CreateCondBr(IB.CreateICmpEQ(cond, v), to, rest);
+    edge(cur, to);
+    cur = rest;
+  }
+  IRBuilder<>(cur).CreateBr(last);
+  edge(cur, last);
+}
+
+bool chainIrreducibleDispatch(Function &F) {
+  DominatorTree DT(F);
+  // A graph is reducible iff the target of every retreating edge of a DFS dominates the source.
+  bool irreducible = false;
+  DenseSet<const BasicBlock *> seen, onStack;
+  std::vector<std::pair<const BasicBlock *, const_succ_iterator>> stack;
+  const BasicBlock *E = &F.getEntryBlock();
+  seen.insert(E);
+  onStack.insert(E);
+  stack.push_back({E, succ_begin(E)});
+  while (!stack.empty() && !irreducible) {
+    auto &[b, it] = stack.back();
+    if (it == succ_end(b)) {
+      onStack.erase(b);
+      stack.pop_back();
+      continue;
+    }
+    const BasicBlock *s = *it++;
+    if (onStack.count(s))
+      irreducible = !DT.dominates(s, b);
+    else if (seen.insert(s).second) {
+      onStack.insert(s);
+      stack.push_back({s, succ_begin(s)});
+    }
+  }
+  if (!irreducible)
+    return false;
+  // A nested cycle lies inside a cycle of the whole function: every block a hub can be entered from has an edge into one.
+  DenseSet<const BasicBlock *> onCycle;
+  for (auto I = scc_begin(&F); !I.isAtEnd(); ++I)
+    if (I->size() > 1)
+      onCycle.insert(I->begin(), I->end());
+  SmallVector<Instruction *, 4> todo;
+  for (BasicBlock &B : F)
+    if (isa<SwitchInst, IndirectBrInst>(B.getTerminator()) &&
+        any_of(successors(&B), [&](BasicBlock *s) { return onCycle.count(s) != 0; }))
+      todo.push_back(B.getTerminator());
+  for (Instruction *T : todo)
+    chainDispatch(T);
+  return !todo.empty();
+}
+
+// CR rule 14 "No live exit", rule 16 (cq-0etzs): -O1 merges noreturn blocks, so a loop's noreturn arm may also be entered
+// from outside the loop (the pre-header guard of `while (1) { if (t) exit(0); ... }`). The loop module lowers an arm per trip
+// for the loop's own edges and nothing else runs it, so each edge from outside would lose its abort. The outside edges get a
+// copy of the arm from the block they enter on, the same kind of rewrite as unifyReturns: there it is an ordinary dead end
+// under that edge's predicate, and the arm stays the loop's alone.
+bool splitSharedNoreturnArms(Function &F) {
+  bool any = false;
+  for (bool changed = true; changed;) {
+    changed = false;
+    DominatorTree DT(F);
+    LoopInfo LI(DT);
+    for (Loop *L : LI.getLoopsInPreorder()) {
+      cq::loops::exits::Unit U = cq::loops::exits::unitOf(*L);
+      if (U.abort.empty())
+        continue;
+      auto own = [&](BasicBlock *b) { return L->contains(b) || is_contained(U.abort, b) || is_contained(U.arm, b); };
+      SmallPtrSet<BasicBlock *, 8> shared, outside;
+      for (BasicBlock *b : U.abort)
+        for (BasicBlock *p : predecessors(b))
+          if (!own(p)) {
+            shared.insert(b);
+            outside.insert(p);
+          }
+      if (shared.empty())
+        continue;
+      SmallPtrSet<BasicBlock *, 8> entered(shared);
+      // U.abort is topological and closed under successors: what a shared block reaches is copied with it.
+      SmallVector<BasicBlock *, 8> copied;
+      for (BasicBlock *b : U.abort)
+        if (shared.count(b) || any_of(predecessors(b), [&](BasicBlock *p) { return shared.count(p) != 0; })) {
+          shared.insert(b);
+          copied.push_back(b);
+        }
+      ValueToValueMapTy VM;
+      SmallPtrSet<BasicBlock *, 8> copySet;
+      for (BasicBlock *b : copied) {
+        BasicBlock *n = CloneBasicBlock(b, VM, ".out", &F);
+        VM[b] = n;
+        copySet.insert(n);
+      }
+      for (BasicBlock *n : copySet)
+        for (Instruction &I : *n)
+          RemapInstruction(&I, VM, RF_IgnoreMissingLocals | RF_NoModuleLevelChanges);
+      // The outside edges move to the copy: each side's phis keep their own edges.
+      for (BasicBlock *n : copySet)
+        for (PHINode &P : n->phis())
+          P.removeIncomingValueIf(
+              [&](unsigned i) {
+                BasicBlock *f = P.getIncomingBlock(i);
+                return !copySet.count(f) && !outside.count(f);
+              },
+              /*DeletePHIIfEmpty=*/false);
+      for (BasicBlock *b : copied)
+        for (PHINode &P : b->phis())
+          P.removeIncomingValueIf([&](unsigned i) { return outside.count(P.getIncomingBlock(i)) != 0; },
+                                  /*DeletePHIIfEmpty=*/false);
+      for (BasicBlock *p : outside) {
+        Instruction *t = p->getTerminator();
+        for (unsigned i = 0; i < t->getNumSuccessors(); ++i)
+          if (entered.count(t->getSuccessor(i)))
+            t->setSuccessor(i, cast<BasicBlock>(VM[t->getSuccessor(i)]));
+      }
+      any = changed = true;
+      break;
+    }
+  }
+  return any;
 }
 
 // CR rule 14 (`continue`, `return` inside a K-loop, nested K-loops: "same chain"): a sub-loop whose live exits meet only
@@ -530,6 +698,11 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
     // 2. Reducible control flow, on tainted functions only (NORTHSTAR principle 1). The pass
     // returns PreservedAnalyses::all() exactly when it left the function unchanged.
     for (Function *F : Tainted) {
+      if (chainIrreducibleDispatch(*F)) {
+        trace("irreducible dispatch: changed @" + F->getName());
+        CFGChanged = true;
+        FAM.invalidate(*F, PreservedAnalyses::none());
+      }
       PreservedAnalyses PA = FixIrreduciblePass().run(*F, FAM);
       if (PA.areAllPreserved())
         continue;
@@ -558,6 +731,15 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
       if (!unifySubLoopExits(*F))
         continue;
       trace("sub-loop exits: changed @" + F->getName());
+      CFGChanged = true;
+      FAM.invalidate(*F, PreservedAnalyses::none());
+    }
+
+    // 2c. A loop's noreturn arm is the loop's alone (splitSharedNoreturnArms).
+    for (Function *F : Tainted) {
+      if (!splitSharedNoreturnArms(*F))
+        continue;
+      trace("noreturn arms: changed @" + F->getName());
       CFGChanged = true;
       FAM.invalidate(*F, PreservedAnalyses::none());
     }
