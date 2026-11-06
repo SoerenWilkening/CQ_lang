@@ -17,6 +17,7 @@ struct TableRow {
   llvm::FunctionType *type;
   std::string forward, ctl;
   bool forwardKeepsResults = false, ctlKeepsResults = false;
+  bool forwardPopsMints = false, ctlPopsMints = false;   // the twin pops a count of handles (§1.4, rulings3 F)
 };
 // Rule 19: the registers the clone's twin takes (Calls.cpp mintSites), recorded when it is materialized. The forward's code of a
 // rotation carries !cq.mint with its index; a table clone's pushes !cq.mint.push. A call of a callee that rotates carries

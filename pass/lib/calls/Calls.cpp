@@ -57,6 +57,7 @@
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PatternMatch.h"
+#include "llvm/IR/ValueSymbolTable.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
 #include "llvm/Transforms/Utils/SSAUpdater.h"
@@ -755,25 +756,6 @@ bool tableKeepsResults(const TaintInfo &T, const Specialization &S) {
   return false;
 }
 
-DenseMap<const Function *, unsigned> mintCounts;
-
-void noteTableClone(Module &M, const TaintInfo &T, const Specialization &S, const abi::CloneSpec &cs) {
-  std::vector<TableRow> &rows = tableRows[&M];
-  auto it = find_if(rows, [&](const TableRow &r) { return r.fn == cs.fn; });
-  if (it == rows.end()) {
-    rows.push_back(TableRow{cs.fn, S.F->getFunctionType(), {}, {}});
-    abi::CloneSpec f = cs;
-    f.ctl = false;
-    rows.back().forward = abi::name(f);
-    f.ctl = true;
-    rows.back().ctl = abi::name(f);
-    it = std::prev(rows.end());
-  }
-  (S.ctl ? it->ctlKeepsResults : it->forwardKeepsResults) = tableKeepsResults(T, S);
-}
-} // namespace
-
-namespace {
 // F's body rotates, itself or through a callee by name.
 bool rotates(const Function &F) {
   SmallPtrSet<const Function *, 8> seen{&F};
@@ -792,6 +774,92 @@ bool rotates(const Function &F) {
   return false;
 }
 
+// §1.4 with rule 18's no-twin case (rulings3 F): a table clone that rotates and whose twin only pops. Its registers may be minted
+// per trip, on any path, between a loop's pushes and its reverse loop's pops, so the clone lists them in its frame and pushes them
+// at its return, the count on top; the twin pops the count, then the handles.
+bool tablePopsMints(const TaintInfo &T, const Specialization &S) {
+  return S.table && !S.pure && tableKeepsResults(T, S) && rotates(*S.F);
+}
+
+constexpr const char *mintHeadName = "cq.mints";
+
+Value *mintHead(LoweringContext &ctx) {
+  Function &F = ctx.out();
+  if (Value *h = F.getValueSymbolTable()->lookup(mintHeadName))
+    return h;
+  IRBuilder<> B(&F.getEntryBlock(), F.getEntryBlock().begin());
+  PointerType *ptr = PointerType::getUnqual(ctx.M.getContext());
+  AllocaInst *h = B.CreateAlloca(ptr, nullptr, mintHeadName);
+  B.CreateStore(ConstantPointerNull::get(ptr), h);
+  return h;
+}
+
+// One node {handle, next} of the frame's list.
+void listMint(LoweringContext &ctx, Value *handle) {
+  LLVMContext &C = ctx.M.getContext();
+  Type *i32 = Type::getInt32Ty(C);
+  PointerType *ptr = PointerType::getUnqual(C);
+  StructType *node = StructType::get(i32, ptr);
+  Value *head = mintHead(ctx);
+  IRBuilder<> &B = ctx.B();
+  Value *n = B.CreateAlloca(node);
+  B.CreateStore(handle, B.CreateStructGEP(node, n, 0));
+  B.CreateStore(B.CreateLoad(ptr, head), B.CreateStructGEP(node, n, 1));
+  B.CreateStore(n, head);
+}
+
+// internal @__cq_mints_push(list): pushes every handle of the list, then their count.
+Function *mintsPush(Module &M) {
+  constexpr const char *name = "__cq_mints_push";
+  if (Function *f = M.getFunction(name))
+    return f;
+  LLVMContext &C = M.getContext();
+  Type *i32 = Type::getInt32Ty(C);
+  PointerType *ptr = PointerType::getUnqual(C);
+  StructType *node = StructType::get(i32, ptr);
+  Function *f = Function::Create(FunctionType::get(Type::getVoidTy(C), {ptr}, false), GlobalValue::InternalLinkage, name, &M);
+  BasicBlock *entry = BasicBlock::Create(C, "", f), *head = BasicBlock::Create(C, "", f), *body = BasicBlock::Create(C, "", f),
+             *done = BasicBlock::Create(C, "", f);
+  FunctionCallee push = abi::declare(M, abi::CoreSpec{abi::Core::Push});
+  IRBuilder<> B(entry);
+  B.CreateBr(head);
+  B.SetInsertPoint(head);
+  PHINode *p = B.CreatePHI(ptr, 2);
+  PHINode *n = B.CreatePHI(i32, 2);
+  p->addIncoming(f->getArg(0), entry);
+  n->addIncoming(ConstantInt::get(i32, 0), entry);
+  B.CreateCondBr(B.CreateIsNull(p), done, body);
+  B.SetInsertPoint(body);
+  B.CreateCall(push, {B.CreateLoad(i32, B.CreateStructGEP(node, p, 0))});
+  p->addIncoming(B.CreateLoad(ptr, B.CreateStructGEP(node, p, 1)), body);
+  n->addIncoming(B.CreateAdd(n, ConstantInt::get(i32, 1)), body);
+  B.CreateBr(head);
+  B.SetInsertPoint(done);
+  B.CreateCall(push, {n});
+  B.CreateRetVoid();
+  return f;
+}
+
+DenseMap<const Function *, unsigned> mintCounts;
+
+void noteTableClone(Module &M, const TaintInfo &T, const Specialization &S, const abi::CloneSpec &cs) {
+  std::vector<TableRow> &rows = tableRows[&M];
+  auto it = find_if(rows, [&](const TableRow &r) { return r.fn == cs.fn; });
+  if (it == rows.end()) {
+    rows.push_back(TableRow{cs.fn, S.F->getFunctionType(), {}, {}});
+    abi::CloneSpec f = cs;
+    f.ctl = false;
+    rows.back().forward = abi::name(f);
+    f.ctl = true;
+    rows.back().ctl = abi::name(f);
+    it = std::prev(rows.end());
+  }
+  (S.ctl ? it->ctlKeepsResults : it->forwardKeepsResults) = tableKeepsResults(T, S);
+  (S.ctl ? it->ctlPopsMints : it->forwardPopsMints) = tablePopsMints(T, S);
+}
+} // namespace
+
+namespace {
 // The rails a call hands back for the caller's twin, in slot order, per the clone being lowered.
 std::map<std::pair<const Function *, const CallBase *>, SmallVector<Value *, 2>> callRegisters;
 
@@ -809,32 +877,24 @@ void tagRegisterCall(LoweringContext &ctx, CallBase &CB, CallInst *call, bool ow
 
 ArrayRef<MintSlot> mintSites(const TaintInfo &T, const Specialization &S) {
   static std::map<std::pair<const void *, const Specialization *>, SmallVector<MintSlot, 2>> memo;
-  static std::set<const Specialization *> open;
-  static const SmallVector<MintSlot, 2> none;
   auto key = std::make_pair(static_cast<const void *>(T.specializations().data()), &S);
   auto it = memo.find(key);
   if (it != memo.end())
     return it->second;
-  if (!open.insert(&S).second)
-    return none;   // a call cycle: one clone for all its activations (noted below)
   SmallVector<MintSlot, 2> sites;
   // A table clone's twin that does something, or a by-name clone's that runs and has a result to zero.
   bool twin = S.table ? !tableKeepsResults(T, S)
                       : !S.isEntry() && !S.F->getReturnType()->isVoidTy() && T.needsTwin(S) && hasTwin(T, S) && !fenv::cloneCarriesEnv(T, S);
+  // Rule 18 (rulings3 F): a rotation in a loop, or a callee that rotates called in a loop or on a call cycle, leaves S no twin,
+  // so every site here is per call.
   if (twin) {
-    DominatorTree DT(*S.F);
-    LoopInfo LI(DT);
     for (const Instruction &I : instructions(*S.F)) {
       auto *CB = dyn_cast<CallBase>(&I);
       const Function *G = CB ? CB->getCalledFunction() : nullptr;
       if (!G)
         continue;
-      bool loop = LI.getLoopFor(CB->getParent()) != nullptr;
       if (G->isDeclaration() && G->getName().starts_with("cq_theta_")) {
-        if (loop)
-          noteUnbuilt("calls: a rotation in a loop of a clone with a twin (rule 19's registers are per site)", CB);
-        else
-          sites.push_back({CB, 0});
+        sites.push_back({CB, 0});
         continue;
       }
       if (G->isDeclaration() || G->getReturnType()->isVoidTy() || !rotates(*G))
@@ -842,10 +902,6 @@ ArrayRef<MintSlot> mintSites(const TaintInfo &T, const Specialization &S) {
       const Specialization *C = T.calleeSpecialization(*CB, S);
       if (!C)
         continue;
-      if (open.count(C) || loop) {
-        noteUnbuilt("calls: a callee that rotates, on a call cycle or in a loop of a clone with a twin (rule 19's registers are per site)", CB);
-        continue;
-      }
       if (C->isEntry()) {
         if (T.isQuantum(CB, S) && !G->getReturnType()->isStructTy())
           sites.push_back({CB, 0});
@@ -858,7 +914,6 @@ ArrayRef<MintSlot> mintSites(const TaintInfo &T, const Specialization &S) {
         sites.push_back({CB, k});
     }
   }
-  open.erase(&S);
   return memo[key] = std::move(sites);
 }
 
@@ -867,6 +922,12 @@ unsigned mintCount(const Function &clone) { return mintCounts.lookup(&clone); }
 void noteMint(LoweringContext &ctx, CallInst &site, BasicBlock *startBlock, Instruction *before) {
   if (ctx.S.isEntry())
     return;
+  if (tablePopsMints(ctx.T, ctx.S)) {
+    auto bi = spine::shared(ctx).binds.find(&site);
+    if (bi != spine::shared(ctx).binds.end() && bi->second.size() == 1 && bi->second[0].handle)
+      listMint(ctx, bi->second[0].v);
+    return;
+  }
   ArrayRef<MintSlot> sites = mintSites(ctx.T, ctx.S);
   auto at = find_if(sites, [&](const MintSlot &m) { return m.site == &site; });
   if (at == sites.end())
@@ -902,6 +963,13 @@ void noteMint(LoweringContext &ctx, CallInst &site, BasicBlock *startBlock, Inst
     else if (auto *c = dyn_cast<CallInst>(v))
       c->setMetadata("cq.mint", tag);
   }
+}
+
+void pushListedMints(LoweringContext &ctx) {
+  if (!tablePopsMints(ctx.T, ctx.S))
+    return;
+  IRBuilder<> &B = ctx.B();
+  B.CreateCall(mintsPush(ctx.M), {B.CreateLoad(PointerType::getUnqual(ctx.M.getContext()), mintHead(ctx))});
 }
 
 Value *mintHandle(LoweringContext &ctx, const MintSlot &slot) {
@@ -1001,6 +1069,8 @@ void insertActivationCounter(LoweringContext &ctx) {
   RailType i1{Kind::Int, 1};
   Value *o = zero(i1);
   B.CreateCall(abi::declare(ctx.M, abi::CoreSpec{abi::Core::Copy, i1}), {C.getArg(0), o});
+  if (tablePopsMints(ctx.T, S))
+    B.CreateCall(abi::declare(ctx.M, abi::CoreSpec{abi::Core::Push}), {ConstantInt::get(i32, 0)});   // no register listed
   if (S.table)
     for (unsigned k = 0; k < mintSites(ctx.T, S).size(); ++k) {
       CallInst *p = B.CreateCall(abi::declare(ctx.M, abi::CoreSpec{abi::Core::Push}), {ConstantInt::get(i32, 0)});
@@ -1267,6 +1337,8 @@ void lowerEntryCall(LoweringContext &ctx, CallBase &CB, const Specialization &cs
   Value *h = rt == i32 ? static_cast<Value *>(call) : ctx.B().CreateTrunc(call, i32);
   keep(h);
   callRegisters[{&ctx.out(), &CB}].push_back(h);
+  if (tablePopsMints(ctx.T, ctx.S) && rotates(F))
+    listMint(ctx, h);
   tagRegisterCall(ctx, CB, call, true);
   recordDead();
   spine::bindOperand(ctx, &CB, Operand{h, true});
@@ -1295,6 +1367,8 @@ void bindCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization &cs,
       ctx.unc().recordExternal(e, Role::Kept);
       extra.push_back(Operand{e, true});
       callRegisters[{&ctx.out(), &CB}].push_back(e);
+      if (tablePopsMints(ctx.T, ctx.S))
+        listMint(ctx, e);
     }
     tagRegisterCall(ctx, CB, r.call, false);
     ctx.unc().recordCall(r.call, outs, extra, ctx.T.loadsBus(cs));

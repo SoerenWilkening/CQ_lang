@@ -31,7 +31,8 @@ void insertActivationCounter(LoweringContext &);
 // mintSites: in order, S's cq_theta calls outside a loop and, for a call of a callee that rotates, each register that call hands
 // back (a by-name clone's extras) or its own symbol's result rail, when a twin of S runs. noteMint, after the spine lowered a
 // cq_theta (`before`: the instruction before its code, or null): tags its code for the twin. mintHandle: at a return, the
-// rail, else handle 0 (§1.1). A by-name clone returns them after its results; a table clone pushes them.
+// rail, else handle 0 (§1.1). A by-name clone returns them after its results; a table clone pushes them. A table clone with no
+// twin (§1.4; its registers may be per trip) lists them as they are minted; pushListedMints, at its return, pushes the list.
 struct MintSlot {
   const llvm::CallBase *site;
   unsigned sub;   // the register's index in the call
@@ -39,6 +40,7 @@ struct MintSlot {
 llvm::ArrayRef<MintSlot> mintSites(const TaintInfo &, const Specialization &);
 void noteMint(LoweringContext &, llvm::CallInst &site, llvm::BasicBlock *startBlock, llvm::Instruction *before);
 llvm::Value *mintHandle(LoweringContext &, const MintSlot &);
+void pushListedMints(LoweringContext &);
 // The K of the caller's enclosing function (§0): a table clone passes down the K it received.
 llvm::Value *enclosingK(LoweringContext &);
 // C1 (cq-arch 2026-11-01, CR rule 24; 106): site lowered as a direct call of T.calleeSpecialization(site, S),
@@ -48,6 +50,7 @@ void lowerLiftedVia(LoweringContext &, llvm::CallBase &site, llvm::ArrayRef<unsi
 void finalize(llvm::Module &);
 // The run's TaintInfo for materialize, read at the start of each construct().
 void noteRun(LoweringContext &);
-// Rule 18: the clone of S has a twin: no memory write, no tainted measurement, no effect result read.
+// Rule 18: the clone of S has a twin: no memory write, no tainted measurement, no effect result read, no register per trip
+// (rulings3 F).
 bool hasTwin(const TaintInfo &, const Specialization &);
 }

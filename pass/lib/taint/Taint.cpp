@@ -318,6 +318,47 @@ private:
     }
   }
   std::optional<uint64_t> rangeBound(const Value *V);
+  // Rule 18 (rulings3 F): F mints a register inside a loop, or calls a callee that rotates and returns a result (a void one hands
+  // no register, rule 19) inside a loop or on a call cycle with F.
+  std::map<const Function *, bool> mintsPerTripCache;
+  bool mintsPerTrip(const Function *F) {
+    if (F->isDeclaration())
+      return false;
+    auto [it, fresh] = mintsPerTripCache.try_emplace(F, false);
+    if (!fresh)
+      return it->second;
+    bool found = false;
+    const LoopInfo &LI = *fn(F).LI;
+    for (const BasicBlock &BB : *F)
+      for (const Instruction &I : BB)
+        if (auto *CB = dyn_cast<CallBase>(&I))
+          if (const Function *G = CB->getCalledFunction()) {
+            bool loop = LI.getLoopFor(&BB) != nullptr;
+            if (G->isDeclaration())
+              found = found || (loop && G->getName().starts_with("cq_theta_"));
+            else if (!G->getReturnType()->isVoidTy() && (loop || callsReach(G, F)) && rotatesByName(G))
+              found = true;
+          }
+    return mintsPerTripCache[F] = found;
+  }
+  // F's body rotates, itself or through a callee by name.
+  bool rotatesByName(const Function *F) {
+    SmallPtrSet<const Function *, 16> seen{F};
+    SmallVector<const Function *, 16> work{F};
+    while (!work.empty()) {
+      const Function *X = work.pop_back_val();
+      for (const BasicBlock &BB : *X)
+        for (const Instruction &I : BB)
+          if (auto *CB = dyn_cast<CallBase>(&I))
+            if (const Function *G = CB->getCalledFunction()) {
+              if (G->getName().starts_with("cq_theta_"))
+                return true;
+              if (!G->isDeclaration() && seen.insert(G).second)
+                work.push_back(G);
+            }
+    }
+    return false;
+  }
   // G reaches F through direct calls of defined functions (recursion, rule 14).
   std::map<std::pair<const Function *, const Function *>, bool> reachCache;
   bool callsReach(const Function *G, const Function *F) {
@@ -2517,6 +2558,15 @@ void Analyzer::solve() {
         S->noTwinT = nt;
         st.changed = true;
       }
+      bool pt = mintsPerTrip(S->F);
+      for (auto &[CB, v] : S->callees)
+        if (!CB->getType()->isVoidTy())
+          for (SpecState *C : v)
+            pt = pt || C->rotatesPerTrip;
+      if (pt != S->rotatesPerTrip) {
+        S->rotatesPerTrip = pt;
+        st.changed = true;
+      }
       bool np = S->hasTheta || S->hasPhi || S->hasEffect || S->writesOuter;
       for (auto &[CB, v] : S->callees)
         for (SpecState *C : v)
@@ -2720,7 +2770,7 @@ void Analyzer::finish() {
     for (auto &S : st.specs) {
       // Rule 18: a function that measures or reads the result rail of an effect entry has no twin, so nothing recomputes
       // through a _pure of it, whatever consumes its result (its effect's result rail exists only in the clone).
-      if (S->noTwinT)
+      if (S->noTwinT || S->rotatesPerTrip)
         continue;
       // cq-s2zz (rule 18): an effectful clone whose own result needs its twin recomputes through its _pure.
       // Rule 18, §1.4: an own symbol's twin always recomputes through its _pure clone (the own symbol returns its rail).
@@ -3157,7 +3207,10 @@ bool TaintInfo::listedRoot(const llvm::Function &F) const {
 
 bool TaintInfo::loadsBus(const Specialization &S) const { return stateOf(needImpl(impl), S)->busLoadT; }
 
-bool TaintInfo::noTwinByEffects(const Specialization &S) const { return stateOf(needImpl(impl), S)->noTwinT; }
+bool TaintInfo::noTwinByEffects(const Specialization &S) const {
+  const SpecState *SS = stateOf(needImpl(impl), S);
+  return SS->noTwinT || SS->rotatesPerTrip;
+}
 
 bool TaintInfo::needsTwin(const Specialization &S) const { return stateOf(needImpl(impl), S)->needsTwin; }
 
