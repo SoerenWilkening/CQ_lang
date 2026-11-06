@@ -50,6 +50,10 @@ public:
   // untainted indices, an alloca or an internal global whose every use is, through such getelementptrs, a load or a
   // store through it.
   bool observableVolatile(const llvm::Instruction &access, const Specialization &) const;
+  // Rules 19, 24: nothing loads the object ptr points into; an unobservable volatile store there (a dead local) is nothing.
+  static bool neverLoaded(const llvm::Value *ptr);
+  // The same per function, in every specialization of it, for rule 5's static writes-memory property.
+  bool deadVolatileStore(const llvm::Instruction &) const;
   llvm::ArrayRef<Specialization> specializations() const;
   const Specialization *calleeSpecialization(const llvm::CallBase &, const Specialization &caller) const;
   // cq-s2zz (CR rule 19): every candidate taint lifted for an indirect call (or raise's handlers), in its

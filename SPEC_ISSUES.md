@@ -179,3 +179,10 @@ Entries 1 to 16 are from the flat-memory rulings (`wt/flat/rulings.md`, "Entries
 - Evidence: `cqcheck run 164_byval_large --oracle both`: s6=fail, c=pass, verifier=pass, "1 rail(s) i64 ... kept on our side that the reference does not keep" (the rotated copy, value a); `--oracle c`: c=pass, verifier=pass. Permutation part and rotation list agree with the C program.
 - Request: regenerate 164 by the clause, or, if the owner wants the form there, say that a classical address computed in the interval from values live at its start counts as computed at that point. 164 runs `--oracle c` until then. Not copied.
 - Bead: cq-bj01
+
+## 175: the reference declares its libm clones only, so it pins no value or kept rail for them, against rules 14 and 18
+- Rule: rule 18 ("Library code is injected source ... lifted like any callee"; rulings Q5: musl in the v1 bundle) and rule 14 (a loop with a quantum exit runs K trips and keeps a_K). The lifted bodies hold such loops (`__rem_pio2_large`).
+- Disagreement: `libm_quantum.lowered.ll` lines 24 and 289-290 ("THE CLONE BODIES ARE DECLARED ONLY") call `__cq_q_exp_1`, `__cq_q_atan2_10`, `__cq_q_sin_1`, `__cq_q_log_1`, `__cq_q_pow_10` with no body. The reference therefore has no K cut and no a_K rail, and its value is whatever the checker's stand-in computes. It is not a §6 oracle for these two entries.
+- Evidence: `cqcheck run 175 --oracle both`: c=pass, verifier=pass, s6=fail. Input x=0xc0183da9a01f78dc, y=1: ours and C give 0xbff67a932c9a5b41 (musl atan2); the stand-in gives ...42 (host libm, cq-xuzb0). With the stand-in linked to the bundle in a local probe (not committed), the failure moves to x=0x434f45777737523b, y=0xc0103f2d152bc924: ours 0x40433415a4c865b5 (loops cut at K=4), reference 0x4043191c0437c0f2 (the uncut body). The C oracle stops that sample at K=4 at `cap:__rem_pio2_large:%32` and returns at K=8.
+- Request: give 175 the clone bodies as built from the bundle, or state that its third and fourth entries witness call sites and signatures only. Not copied; 175 runs `--oracle c` until then.
+- Bead: cq-5jrs1
