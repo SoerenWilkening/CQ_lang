@@ -1326,12 +1326,22 @@ __attribute__((noreturn)) static void sample_jump(void) { siglongjmp(R->jb, 1); 
 /* CR rule 24: a longjmp outside the pairing under a quantum predicate is rule 16's noreturn arm (OracleInstr, ArmJumps). */
 void __cqo_longjmp_arm(void) { note("noreturn longjmp"); sample_jump(); }
 
+/* An isolated sample that ends before its outputs leaves the process, so it never reaches the driver's sigsetjmp, where the
+ * others give their address table (oracle.py BEFORE_CALL; CR §6: pointer fields read relationally). */
+void __cqo_out_table(void);
+static void isolated_table(void) {
+    if (!isolate || trips_only || !sample_running()) return;
+    __cqo_out_table();
+    __cqo_out_regions();
+}
 void exit(int code) {
     if (sample_running() && !isolate) { note("wait exited %d", code & 0xff); sample_jump(); }
+    isolated_table();
     real_exit(code);
 }
 void _exit(int code) {
     if (sample_running() && !isolate) { note("wait exited %d", code & 0xff); sample_jump(); }
+    isolated_table();
     real__exit(code);
 }
 void _Exit(int code) { _exit(code); }
@@ -1343,6 +1353,7 @@ void abort(void) {
             sample_jump();
         }
     }
+    isolated_table();
     real_abort();
 }
 

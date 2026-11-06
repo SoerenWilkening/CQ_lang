@@ -2051,6 +2051,12 @@ void Walker::emitBlock(BasicBlock *b) {
       for (PHINode &phi : x.second->phis())
         if (!sh.binds.count(&phi) && !is_contained(exitPhis, &phi))
           exitPhis.push_back(&phi);
+    // cq-gv6p: every edge into C may leave from the arm's tail (the walker's edges, above), and the loop module still binds C's
+    // phis for the unit's paths: they are the unit's, joined with the outside paths' by joinUnitPhi (rule 9).
+    if (U.cont)
+      for (PHINode &phi : U.cont->phis())
+        if (!sh.binds.count(&phi) && !is_contained(exitPhis, &phi))
+          exitPhis.push_back(&phi);
     lowerUnit(lp);
     for (const PHINode *phi : exitPhis)
       if (sh.binds.count(phi))

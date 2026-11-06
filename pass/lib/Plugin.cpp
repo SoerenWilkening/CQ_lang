@@ -242,8 +242,8 @@ bool splitCarriedAggregates(Function &F) {
   return !phis.empty();
 }
 
-// CR rule 14 (`continue`, `return` inside a K-loop, nested K-loops: "same chain"): a sub-loop with a live exit that also
-// leaves its parent (printf_core's overflow return from its literal scan) ends through ONE block of the parent, the same
+// CR rule 14 (`continue`, `return` inside a K-loop, nested K-loops: "same chain"): a sub-loop whose live exits meet only
+// outside its parent (printf_core's overflow return from its literal scan) ends through ONE block of the parent, the same
 // kind of rewrite as fix-irreducible and unifyReturns: its live exit edges meet at a hub, phis of the hub carry the values
 // their targets' phis and later readers take (poison on an edge whose value does not reach), and the hub branches on which
 // edge came in. The parent's trip then reads the sub-loop as one node ending at the hub, and the edge out of the parent is
@@ -263,8 +263,9 @@ bool unifySubLoopExits(Function &F) {
       SmallVector<BasicBlock *, 4> targets;
       for (BasicBlock *x : U.live)
         targets.push_back(x);
-      if (none_of(targets, [&](BasicBlock *x) { return !P->contains(x); }) ||
-          none_of(targets, [&](BasicBlock *x) { return P->contains(x); }))
+      // Several live exits whose common post-dominator lies outside the parent: no join within the parent's trip, so the
+      // exit arm would run through the parent's own back edge (twoway_strstr's inner match scan).
+      if (!U.multi() || P->contains(U.cont))
         continue;
       // The live exit edges, one (from, to) per pair.
       SmallVector<std::pair<BasicBlock *, BasicBlock *>, 4> edges;

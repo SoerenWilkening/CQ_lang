@@ -2951,10 +2951,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
               ownedH.insert(u);
         }
     std::vector<RailId> exits;
+    std::vector<unsigned> copied;   // the values whose exit rail is no record of the loop: copied out, below
     for (unsigned oi = 0; oi < out.size(); ++oi) {
       const Value *v = out[oi].first;
       Operand op = out[oi].second;
-      RailType w = outW[oi];
       if (!op.handle)
         internalError("loops-classical: a quantum value read after the loop whose exit value is classical", v);
       if (keptFinal.count(op.v)) {
@@ -2985,37 +2985,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           exits.push_back(x);
         continue;
       }
-      if (nested || inTrip) {
-        // cq-h5uj (CR rule 14 case 1: "after the result is copied out (alloc + copy) a reverse loop pops"): a
-        // loop that runs once per trip of an enclosing loop (a trip-local sub-loop, a loop in a K-loop trip)
-        // keeps no output of its own: its copy is a record of the loop's own copy scope, an exit rail read in
-        // place after the loop, and the deferred reverse un-copies it first (reverse(): the copy scope's
-        // mirror before the last trip's).
-        if (copyScope == ~0u)
-          copyScope = U.openScope();   // closed after the last copy (below)
-        CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
-                                   {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
-        RailId fid = ctx.unc().recordSeed(f);
-        abi::CoreSpec cp{abi::Core::Copy, w};
-        CallInst *cc = ctx.emitCore(cp, {op.v, f});
-        ctx.unc().recordCore(cc, cp, {op, Operand{f, true}}, fid);
-        put(v, Operand{f, true});
-        if (!is_contained(exits, fid))
-          exits.push_back(fid);
-        continue;
-      }
-      CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
-                                 {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
-      RailId fid = ctx.unc().recordSeed(f);
-      abi::CoreSpec cp{abi::Core::Copy, w};
-      CallInst *cc = ctx.emitCore(cp, {op.v, f});
-      ctx.unc().recordCore(cc, cp, {op, Operand{f, true}}, fid);
-      ctx.unc().setRole(fid, Role::Output);
-      put(v, Operand{f, true});
-    }
-    if (copyScope != ~0u) {
-      U.closeScope(copyScope);
-      scs.push_back(copyScope);
+      copied.push_back(oi);
     }
     for (unsigned sc : scs)
       for (const Record &r : U.scopeRecords(sc)) {
@@ -3031,6 +3001,38 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         if (!is_contained(exits, x))
           exits.push_back(x);
       }
+    for (unsigned oi : copied) {
+      const Value *v = out[oi].first;
+      Operand op = out[oi].second;
+      RailType w = outW[oi];
+      CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
+                                 {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+      // cq-h5uj, cq-k7zkw (CR rule 14 case 1: "after the result is copied out (alloc + copy) a reverse loop pops"; rule 5:
+      // every rail is uncomputed after its last consumer, §6 item 1): a loop whose reverse runs after its readers anyway (one
+      // that runs per trip of an enclosing loop, or that has an exit rail read in place) keeps no output of its own: the copy
+      // is a record of the loop's own copy scope, an exit rail read in place after the loop, and the deferred reverse
+      // un-copies it first (reverse(): the copy scope's mirror before the last trip's). A reader that keeps it (a measurement,
+      // an escape) is recordDeferred's kept exit rail.
+      bool scoped = nested || inTrip || !exits.empty();
+      if (scoped && copyScope == ~0u)
+        copyScope = U.openScope();   // closed after the last copy (below)
+      RailId fid = ctx.unc().recordSeed(f);
+      abi::CoreSpec cp{abi::Core::Copy, w};
+      CallInst *cc = ctx.emitCore(cp, {op.v, f});
+      ctx.unc().recordCore(cc, cp, {op, Operand{f, true}}, fid);
+      if (!scoped)
+        ctx.unc().setRole(fid, Role::Output);
+      else {
+        ownedH.insert(f);
+        if (!is_contained(exits, fid))
+          exits.push_back(fid);
+      }
+      put(v, Operand{f, true});
+    }
+    if (copyScope != ~0u) {
+      U.closeScope(copyScope);
+      scs.push_back(copyScope);
+    }
     if (nested) {
       // Finished by the parent (Unit::flushTrips): the reverse runs in the parent's trip.
       Instruction *xt = nullptr;
