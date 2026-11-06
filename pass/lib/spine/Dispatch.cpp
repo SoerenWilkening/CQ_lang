@@ -480,6 +480,7 @@ void dispatchOne(LoweringContext &ctx, Instruction &I);
 // Rule 5 Memory: an original instruction that is a memory version change notes the first instruction its lowering
 // emitted (a load copy un-copied before that point precedes the change).
 void dispatch(LoweringContext &ctx, Instruction &I) {
+  ctx.unc().noteSourceBlock(I.getParent());
   if (bus::inPlaceBefore(ctx, I))
     return;   // rule 5: the form is emitted at its store
   IRBuilder<> &B = ctx.B();

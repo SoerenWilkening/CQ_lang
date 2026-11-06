@@ -303,6 +303,10 @@ struct Uncompute::Impl {
   DenseMap<const CallInst *, std::string> twinNames;
   // Rule 5 Memory: the memory version changes of the new IR (noteVersionChange), in the order noted.
   SmallVector<Instruction *, 16> versions;
+  // Rule 18: the original block a version change or a call was lowered from (noteSourceBlock). The arms of a quantum branch
+  // lie one after the other in the new IR; which of them can follow a call only the original CFG says.
+  const BasicBlock *srcBlock = nullptr;
+  DenseMap<const Instruction *, const BasicBlock *> srcOf;
   SmallVector<unsigned, 4> openStack;
   DenseSet<const Instruction *> emitted;
   MapVector<std::pair<RailId, const BasicBlock *>, Instruction *> itemEnd;   // insertion order: keyed by a pointer
@@ -1618,10 +1622,24 @@ struct Uncompute::Impl {
   }
 
   bool inMirror = false;   // emitMirror is resolving: the builder is in a reverse block, not linked to the forward code
+  // Rule 18's "on every path" is a path of the program: a change in an arm no path from the call enters (the other arm of a
+  // quantum branch: emitted between the call and its twin, its gates under the other arm's flag) does not come first.
+  bool offThePath(const Instruction *call, const Instruction *v) const {
+    auto from = srcOf.find(call), to = srcOf.find(v);
+    return from != srcOf.end() && to != srcOf.end() && !reaches(from->second, to->second);
+  }
+
   // Rule 5 Memory: does a memory version change lie on a path from `load` to the point (bb, at), the load not run
-  // again in between? `at` may be bb's end (a mirror's builder).
-  bool overtakenAt(const Instruction *load, const BasicBlock *bb, BasicBlock::const_iterator at) const {
+  // again in between? `at` may be bb's end (a mirror's builder). twin: `load` is a clone call and the question rule 18's.
+  bool overtakenAt(const Instruction *load, const BasicBlock *bb, BasicBlock::const_iterator at, bool twin = false) const {
     const BasicBlock *LB = load->getParent();
+    auto versions = [&] {
+      SmallVector<const Instruction *, 16> vs;
+      for (const Instruction *v : this->versions)
+        if (!twin || !offThePath(load, v))
+          vs.push_back(v);
+      return vs;
+    }();
     // A reverse loop's block (emitMirror, not linked yet): the copy of every trip waits for it, so a version change
     // anywhere the forward region can go after the load overtakes it, a later trip's included (rules 5, 14).
     if (inMirror) {
@@ -1824,7 +1842,7 @@ struct Uncompute::Impl {
     Rail &r = rails[g];
     // Rule 18: a memory version change before the twin's place: the results are KEPT and no twin is called.
     if (r.loadCall && !r.cleanup && r.creator != kNone &&
-        overtakenAt(records[r.creator].forward, pos.bb, pos.before->getIterator())) {
+        overtakenAt(records[r.creator].forward, pos.bb, pos.before->getIterator(), true)) {
       r.role = Role::Kept;
       return;
     }
@@ -3039,6 +3057,8 @@ SmallVector<RailId, 4> Uncompute::recordCall(CallInst *fwd, ArrayRef<Value *> ou
   RailId lead = I.newRail(outs.front(), Role::Garbage, "recordCall");
   I.rails[lead].group = gi;
   I.rails[lead].loadCall = loadsBus;
+  if (I.srcBlock)
+    I.srcOf[fwd] = I.srcBlock;
   I.addRecord(fwd, abi::TemplateSpec{}, ops, lead, RecKind::Call, false);
   SmallVector<RailId, 4> ids{lead};
   for (size_t k = 1; k < outs.size(); ++k) {
@@ -3061,7 +3081,12 @@ void Uncompute::recordTableCall(CallInst *fwd, ArrayRef<Value *> outs) {
 
 void Uncompute::noteTwinName(CallInst *fwd, StringRef name) { impl->twinNames[fwd] = name.str(); }
 
-void Uncompute::noteLoadsBus(RailId r) { impl->rail(r, "noteLoadsBus").loadCall = true; }
+void Uncompute::noteLoadsBus(RailId r) {
+  Impl::Rail &x = impl->rail(r, "noteLoadsBus");
+  x.loadCall = true;
+  if (impl->srcBlock && x.creator != kNone)
+    impl->srcOf[impl->records[x.creator].forward] = impl->srcBlock;
+}
 
 RailId Uncompute::recordBusLoad(CallInst *load, ArrayRef<Operand> ops) {
   Impl &I = *impl;
@@ -3081,7 +3106,11 @@ void Uncompute::noteVersionChange(Instruction *at) {
   if (!at || !at->getParent())
     internalError("uncompute: noteVersionChange needs an instruction in a block", at);
   impl->versions.push_back(at);
+  if (impl->srcBlock)
+    impl->srcOf[at] = impl->srcBlock;
 }
+
+void Uncompute::noteSourceBlock(const BasicBlock *bb) { impl->srcBlock = bb; }
 
 void Uncompute::noteCarried(Value *phi) { impl->rails[impl->lookup(phi, "noteCarried", phi)].carried = true; }
 

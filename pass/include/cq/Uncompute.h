@@ -59,6 +59,8 @@ public:
   // not memory(none|read), a call of a function that writes memory). Orders load items: an item placed after it frees
   // nothing.
   void noteVersionChange(llvm::Instruction *at);
+  // The original block whose instruction is being lowered: rule 18 asks the program's paths, not the new IR's order.
+  void noteSourceBlock(const llvm::BasicBlock *bb);
   // Rule 5 sentence 3: the value rail (a seed included) and the control rail of a kept store are kept: Role::Kept,
   // never resolved. Rule 5 sentence 1: a load copy that is the value rail is never un-copied, Role::Kept too.
   void noteKeptStore(llvm::CallInst *store, llvm::Value *value, llvm::Value *ctl);

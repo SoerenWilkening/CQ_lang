@@ -43,6 +43,10 @@ CASES = [
     ("libm_musl_llrintl", "sweep_llrintl", [], "pass", [r"%cq.hostflags = call i32 @fetestexcept\(i32 63\)"]),
     ("twin_strict", "e_twin", [], "pass", [r"%cq.hostflags = call i32 @fetestexcept\(i32 63\)",
                                            r"call i32 @feraiseexcept\(i32 %cq.hostflags\)\n  ret void"]),
+    # cq-xbpw6 (rule 18): a store in the other arm of a quantum branch lies on no path from a loading clone's call, so the twin
+    # still runs after the merge and frees the result: no rail of it stays live for §6 item 1's leak rule.
+    ("twin_other_arm_store", "other_arm", [], "pass",
+     [r"call void @__cq_q_rd_1_ctl_unc\(i32 %(\d+), i32 %(\d+), i32 %\d+\)\n  call void @cqrt_free\(i32 %\2\)"]),
     # cq-57ju (rule 18 partial measurement, rule 23 default caller): a FENV_ACCESS callee measured from a plain
     # caller (mode 0, an empty flags rail, the flags dead): the measured result is copied out before the twin.
     ("partial_flags", "sc_measure", [], "pass",
