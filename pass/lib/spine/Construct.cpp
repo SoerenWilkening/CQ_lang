@@ -1996,6 +1996,14 @@ void Walker::emitBlock(BasicBlock *b) {
   } restore{ctx, std::nullopt, false};
   if (tailOf.count(b)) {
     Pred tp = tailPredOf(b);
+    // A loop of the tail is a unit of its own whose pre-header guard's quantum skip into its continuation is one of its
+    // incomings (CR rules 9, 14; stpcpy's word loop): the guard's false edge is on the assumed paths too. The header
+    // stays under its own predicate (its block predicate holds the guard).
+    if (Loop *u = unitOf.lookup(b); u && u->getHeader() == b)
+      if (const BasicBlock *cont = units.find(u)->second.cont)
+        for (const BasicBlock *p : predecessors(b))
+          if (!u->contains(p) && tailOf.count(p) && is_contained(successors(p), cont))
+            tp = tp | tailPredOf(p);
     restore.was = ctx.preds().assume(tp, ctx.T, ctx.S);
     restore.on = true;
   }

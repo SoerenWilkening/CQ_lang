@@ -691,7 +691,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         } else {
           // An edge the paths this loop is lowered for exclude (the tail of an earlier unit, whose own path binds the phi
           // on its edge): the general capture binds the phi for these paths.
-          if (ctx.preds().edge(u, X).isBottom())
+          if (ctx.preds().edge(u, X).isBottom() || ctx.preds().block(u).isBottom())
             foreign = true;
           for (PHINode *c : hphis)
             if (startOf(c) == v &&
@@ -787,7 +787,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           continue;
         // A classical skip of the loop (its edge excludes the classical condition the unit runs under):
         // the walker joins it with the unit's value classically (joinUnitPhi, rule 9 at a58c3a4).
-        if ((ctx.preds().edge(u, C) & cH).isBottom())
+        if ((ctx.preds().edge(u, C) & cH).isBottom() || ctx.preds().block(u).isBottom())
           continue;
         if (!(ctx.preds().edge(u, C) & pH).isBottom())
           unimplemented("loops-cutoff: a phi joining a multi-exit K-loop's exits with an incoming from outside the "
