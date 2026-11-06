@@ -776,13 +776,13 @@ void rotate(LoweringContext &ctx, const CallInst &T, Value *h, Type *U, Value *c
   ctx.emitCore(spec, args);
 }
 
-void swapCell(LoweringContext &ctx, Type *U, Operand addr, Value *h, Value *c) {
+CallInst *swapCell(LoweringContext &ctx, Type *U, Operand addr, Value *h, Value *c) {
   abi::CoreSpec spec{abi::Core::QramSwap, railTypeOf(U), /*ctl=*/c != nullptr, /*hl=*/!addr.handle};
   SmallVector<Value *, 4> args;
   if (c)
     args.push_back(c);
   args.append({mem(ctx), addr.v, h});
-  ctx.emitCore(spec, args);
+  return ctx.emitCore(spec, args);
 }
 
 // One form: steps [from, to) on the cell.
@@ -799,7 +799,29 @@ void emitSteps(LoweringContext &ctx, const Form &F, unsigned from, unsigned to, 
     else
       cur = updateAndClean(ctx, st, cur, F.U, c);
   }
-  swapCell(ctx, F.U, addr, cur, c);
+  CallInst *in = swapCell(ctx, F.U, addr, cur, c);
+  // Rule 5: the steps' other operands are undone after the second swap, a bus load copy too (`*p += *q`: its un-copy at
+  // an address rail may read this cell, 191; between the swaps the cell holds |0>).
+  auto read = [&](Operand o) {
+    if (o.handle)
+      ctx.unc().noteUse(ctx.unc().idOf(o.v), in);
+  };
+  auto readUpdate = [&](const Update &u) {
+    if (u.op && u.z)
+      read(zOperand(ctx, u.z, F.U));
+  };
+  for (unsigned i = from; i < to; ++i) {
+    const Step &st = F.steps[i];
+    if (st.kind == Step::Theta) {
+      read(ctx.operand(st.theta->getArgOperand(1)));
+      continue;
+    }
+    readUpdate(st.a);
+    if (st.kind == Step::Choice) {
+      readUpdate(st.b);
+      read(ctx.operand(st.cond));
+    }
+  }
   freeRail(ctx, cur);
 }
 
