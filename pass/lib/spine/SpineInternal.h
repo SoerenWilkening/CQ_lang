@@ -135,6 +135,7 @@ struct Shared {
   // cq-99f7: the loop module's trip rail for the lowerInstruction call in progress (nullptr = none),
   // and the conjunction flag minted for it (nullptr until currentFlag() asks under a non-top predicate).
   llvm::Value *tripFlag = nullptr;
+  llvm::Value *tripZeroRail = nullptr;   // rule 14: a re-rolled K-loop's a_0, whose pre-header guard is the latch test at trip 0 by SCEV
   llvm::Value *tripConj = nullptr;
   // The predicate the trip rail implies by its seed (nullptr = none known): lowerInstruction's seedPred.
   const Pred *tripSeedPred = nullptr;

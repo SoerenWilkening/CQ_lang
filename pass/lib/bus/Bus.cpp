@@ -207,6 +207,8 @@ CallInst *emitLoad(LoweringContext &ctx, Type *T, Operand addr) {
 Value *keptControl(LoweringContext &ctx, Value *c, Value *value) {
   if (!c)
     return nullptr;
+  if (c == spine::shared(ctx).tripZeroRail)
+    return c;   // rule 14: a_0 of a re-rolled loop's chain, not an arm's false edge (91)
   Value *g = ctx.unc().negatedAtomOf(c);
   if (!g)
     return c;
