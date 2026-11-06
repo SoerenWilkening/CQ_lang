@@ -1676,8 +1676,20 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         // An exit of a classical branch nested in the arm (u's classical factor is stronger than s's):
         // the classical arms' flows are distinct output blocks and meet at s by a real edge (a mixed
         // join when s is also a quantum join).
-        if (!(cfOf(ctx.preds().block(s)) & !cfOf(ctx.preds().block(u))).isBottom())
+        if (!(cfOf(ctx.preds().block(s)) & !cfOf(ctx.preds().block(u))).isBottom()) {
+          // Quantum arms under one classical fact that meet at s (strtod's `if (i < 7) { q ? a : b; }`): the code of the
+          // later arm runs in the same open block, so only the last arm walked leaves by the real edge; the earlier ones
+          // are its linearized incomings (the mixed join).
+          const Pred uc = cfOf(ctx.preds().block(u));
+          auto at = find(rpo, u);
+          for (const BasicBlock *p : fwdPreds(s))
+            if (p != u && !termQ(p->getTerminator()) && armed(p) && find(rpo, p) > at) {
+              const Pred pc = cfOf(ctx.preds().block(p));
+              if ((pc & !uc).isBottom() && (uc & !pc).isBottom())
+                return EK::Linear;
+            }
           return EK::Real;
+        }
         return EK::Linear;
       }
       return fwdPreds(s).size() == 1 ? EK::Merge : EK::Real;
