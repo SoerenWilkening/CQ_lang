@@ -229,8 +229,14 @@ on. On an ended sample:
 - ours must keep an i1 rail of role "abort" that reads 1; or, on a "raise:<sig>" sample, have an effect
   entry raise performed (rule 16's signal table: the complement branch, 102, 212), past which the
   stand-in's shot runs on, so the C side's effects are a prefix of ours there; or have itself ended in
-  the host call (outputs["host_end"]): a noreturn callee with classical arguments and no quantum
-  predicate is rule 16's ordinary host call, made as it stands, so the circuit does end there.
+  the host call (outputs["host_end"]) with the status the C program exits with (outputs["exit_status"]):
+  a noreturn callee with classical arguments and no quantum predicate is rule 16's ordinary host call,
+  made as it stands, so the circuit does end there.
+The leak rule is skipped on a real host exit and nowhere else (_real_exits, owner ruling cq-tdqrq): such
+a call ends the shot as it stands, so rails are live by construction. Both sides must end that way with
+the same status, and no abort flag of ours reads 1. An exit under a quantum condition is no real host
+exit: among the samples with the same classical arguments and the same C measurements so far, one that
+does not make that exit shows the condition was quantum, and the leak rule stays in force.
 On a sample that returns (neither ended nor capped) every kept abort-role i1 rail of ours reads 0, and
 ours has not ended in a host call.
 A capped sample says nothing about abort flags (an abort past the cut is unknown). The abort
@@ -2023,6 +2029,41 @@ def _raised(c: RunResult) -> bool:
     return isinstance(end, str) and end.startswith("raise:")
 
 
+def _flag_on(rr: RunResult) -> bool:
+    return any(e.get("w") == "i1" and e.get("role") == "abort" and _masked(_int(e.get("v")), "i1")
+               for e in rr.kept or [])
+
+
+def _real_exits(keys: Sequence[str], o_by: Dict[str, RunResult], r_by: Dict[str, RunResult],
+                capped: Dict[str, bool], classical_key: Callable[[Any], Hashable]) -> Set[str]:
+    """The samples that end in a real host exit on both sides (module docstring, the abort rule). A
+    sample's condition for its exit is classical when every sample with the same classical arguments
+    whose C measurements extend this sample's makes the same exit."""
+    def status(k: str) -> Optional[int]:
+        o, c = o_by[k], r_by[k]
+        code = (o.outputs or {}).get("host_end")
+        return code if code is not None and code == (c.outputs or {}).get("exit_status") and not _flag_on(o) else None
+
+    seen: Dict[Tuple, Set[Optional[int]]] = {}
+    for k in keys:
+        if capped[k]:
+            continue
+        ck, code, vals = classical_key(r_by[k].sample), status(k), [m["v"] for m in r_by[k].measured or []]
+        for i in range(len(vals) + 1):
+            seen.setdefault((ck, tuple(vals[:i])), set()).add(code)
+    return {k for k in keys if not capped[k] and status(k) is not None and seen[
+        (classical_key(r_by[k].sample), tuple(m["v"] for m in r_by[k].measured or []))] == {status(k)}}
+
+
+def _exit_mismatch(k: str, o: RunResult, c: RunResult) -> List[str]:
+    """Ours ended in a host call as the first end of the shot, and the C program ended otherwise."""
+    code = (o.outputs or {}).get("host_end")
+    if code is None or _flag_on(o) or code == (c.outputs or {}).get("exit_status"):
+        return []
+    return [f"sample {k}: ours ended in a host call with status {code} and the C program ends with "
+            f"{(c.outputs or {}).get('exit_status', 'no exit')} ({(c.outputs or {}).get('end')})"]
+
+
 def _check_abort(o_runs: List[RunResult], ended: Sequence[bool], capped: Sequence[bool],
                  c_runs: Sequence[RunResult] = ()) -> List[str]:
     """Some kept abort-role i1 rail of ours reads 1, or ours itself ended in the host call, on every
@@ -2039,8 +2080,8 @@ def _check_abort(o_runs: List[RunResult], ended: Sequence[bool], capped: Sequenc
                 e.get("name") == "raise" for e in (o_runs[s].outputs or {}).get("effects", [])):
             continue
         host_end = (o_runs[s].outputs or {}).get("host_end")
-        if ended[s] and not on and host_end is not None and not (c_runs and _raised(c_runs[s])):
-            continue
+        if ended[s] and not on and host_end is not None:
+            continue                # the status: _exit_mismatch
         if not ended[s] and not capped[s] and host_end is not None:
             reasons.append(f"sample {_skey(o_runs[s].sample)}: the C program returns and ours ended in a host "
                            f"call with status {host_end}")
@@ -2209,6 +2250,8 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
     if oracle == "c":
         keys = [k for k in keys if not _deviated(o_by[k])]
 
+    real_exits = _real_exits(keys, o_by, r_by, capped, classical_key) if oracle == "c" else set()
+
     # per sample: violations, outputs, measured values, frees
     meas_opts: Dict[str, List[Tuple[FrozenSet[int], FrozenSet[int]]]] = {}
     for k in keys:
@@ -2242,8 +2285,10 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
                 if not (known is not None and _int(known)) and _int(c.get("v")) != 0:
                     reasons.append(f"sample {k}: {side} side frees rail {c.get('h')} = {c.get('v')} "
                                    f"not in a known basis state")
-        if oracle == "c":
+        if oracle == "c" and k not in real_exits:
             reasons += _leaks(k, o, r_by[k], capped[k] or ended[k], capkeys)
+        if oracle == "c" and ended[k]:
+            reasons += _exit_mismatch(k, o, r_by[k])
 
     # groups: classical arguments, then the structure of each side
     shape_of: Dict[int, Tuple] = {}
