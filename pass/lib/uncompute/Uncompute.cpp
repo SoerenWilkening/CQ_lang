@@ -3317,12 +3317,18 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
   // F1: a deferred item goes last, once every use of its exit rails after the loop lies before P in
   // P's block and every reader of them is resolved.
   if (!liveLater) {
-    for (RailId g : deferred) {
-      if (!I.deferredLocalReady(g, point))
-        continue;
-      if (any_of(I.readersOf(g), [&](RailId o) { return I.pending(o) && !I.done(o, c); }))
-        continue;
-      I.place(g, c);
+    // cq-k0v13 (rules 14, 18): the tape is one stack: items ready at one point run last loop first (order()'s ties).
+    // To a fixed point: an item may wait for an older reader.
+    for (bool progress = true; progress;) {
+      progress = false;
+      for (RailId g : reverse(deferred)) {
+        if (!I.resolvable(g) || !I.deferredLocalReady(g, point))
+          continue;
+        if (any_of(I.readersOf(g), [&](RailId o) { return I.pending(o) && !I.done(o, c); }))
+          continue;
+        I.place(g, c);
+        progress = true;
+      }
     }
     return;
   }
@@ -3346,7 +3352,7 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
         I.placeSpan(g, point);
         progress = true;
       }
-    for (RailId g = 0; g < I.rails.size(); ++g) {
+    for (RailId g = I.rails.size(); g-- > 0;) {   // cq-k0v13: last loop first, as above
       if (I.rails[g].deferred == kNone || I.frozen(g) || !I.resolvable(g) || !I.deferredLocalReady(g, point, true))
         continue;
       if (any_of(I.readersOf(g), [&](RailId o) { return I.pending(o) && !I.done(o, c); }))
