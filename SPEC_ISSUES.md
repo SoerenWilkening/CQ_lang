@@ -179,3 +179,17 @@ Entries 1 to 16 are from the flat-memory rulings (`wt/flat/rulings.md`, "Entries
 - Evidence: `cqcheck run 164_byval_large --oracle both`: s6=fail, c=pass, verifier=pass, "1 rail(s) i64 ... kept on our side that the reference does not keep" (the rotated copy, value a); `--oracle c`: c=pass, verifier=pass. Permutation part and rotation list agree with the C program.
 - Request: regenerate 164 by the clause, or, if the owner wants the form there, say that a classical address computed in the interval from values live at its start counts as computed at that point. 164 runs `--oracle c` until then. Not copied.
 - Bead: cq-bj01
+
+## 95: the reference uncomputes the carried overflow_arg_area by the reverse loop, against rule 6 *In a rolled loop* (109 follows it)
+- Rule: CR rule 6, *In a rolled loop*: "a carried value whose trip update is such a bijection and whose trip predicate does not read it ... is cleaned in the body of the same trip ... A final carried rail that nothing reads after the loop stays allocated (kept, §6)"; *Bijections*: "a select whose arms are such updates of `y` or `y` itself (125) and whose condition does not read `y`".
+- Disagreement: `examples/95_varargs/varargs.lowered.ll` line 47 (SPEC GAP: "Read here: the chain is uncomputed by the reverse loop, so its old values are not dead in the trip and rule 6 does not fire") and line 164 (`select_i64_unc` of `%45`). The update `%23 = phi ptr [%11, %16], [%21, %20]` is such a select under `gp_offset < 41`, which does not read `%11`, so rule 6 fires; its "nothing could then return it to |0>" is what the clause's last sentence answers. `examples/109_intrinsic_variants` has the same va_arg walk and follows the rule (header: "the final overflow_arg_area of each walk ... a dead rule-6 image").
+- Evidence: `cqcheck run 95_varargs --oracle both`: s6=fail, c=pass, verifier=pass, "1 rail(s) i64 with values ('heap', 40) ... kept on our side that the reference does not keep": block + 24, the final overflow_arg_area of the third trip, a rule-named kept rail and no leak. Nothing else differs.
+- Request: regenerate 95 as 109, dropping the SPEC GAP. 95 runs `--oracle c` until then. Not copied.
+- Bead: cq-h72ng
+
+## 73: memcpy_quantum's reference keeps x, against rule 6 *In a rolled loop* (75 cleans it)
+- Rule: CR rule 6, *In a rolled loop*: "A loop-invariant rail read by such an update in every trip is cleaned from the last trip's image on the exit edge, and kept on a zero-trip path (75)"; "The old value is kept only when no such point exists".
+- Disagreement: `examples/73_memcpy_array/memcpy_array.lowered.ll` line 13 lists x as kept in memcpy_quantum, and `%11` is never cleaned after line 128 (`%16 = add_i32_hl(%11, %15)`, the fill `a[i] = x + i`, a bijection in x). None of the listed exceptions holds: x is no value rail of a store (x + i is), nothing reads it later, and no non-diagonal gate acts on the image. 75 has the same loop and cleans x (`sub_i32_hl`, `copy_i32`, lines 66, 67). The fill loop runs 4 trips, so no zero-trip path exists.
+- Evidence: `cqcheck run 73_memcpy_array --oracle both`: s6=fail, c=pass, verifier=pass, "1 rail(s) i32 with values 0 0 0 0 1 1 1 1 4294967295 ... the reference keeps are not kept on our side", which is x; our rail x + 3 stays kept and x is freed at 0 (the evaluator checks it). Nothing else differs.
+- Request: regenerate 73 by the clause. 73 runs `--oracle c` until then. Not copied.
+- Bead: cq-xlqo1
