@@ -1068,6 +1068,16 @@ class JoinRepair {
   }
   std::optional<std::set<unsigned>> pointVars;
 
+  bool noJoinAbove(BasicBlock *U) {
+    SmallPtrSet<BasicBlock *, 16> seen;
+    while (BasicBlock *s = U->getUniquePredecessor()) {
+      if (!seen.insert(U).second)
+        return false;
+      U = s;
+    }
+    return pred_empty(U);
+  }
+
   // The nearest block at or above U (through unique predecessors) with several predecessors.
   BasicBlock *joinAbove(BasicBlock *U, const Value *what, const std::string &read) {
     BasicBlock *J = U;
@@ -1194,6 +1204,15 @@ class JoinRepair {
 public:
   explicit JoinRepair(LoweringContext &ctx)
       : ctx(ctx), O(taintOracle(ctx.T, ctx.S)), ql([this](unsigned v) { return quantumLike(v, *O); }) {}
+
+  bool nodeBound(unsigned n) {
+    std::set<unsigned> sup;
+    m.support(n, sup);
+    return all_of(sup, [&](unsigned v) {
+      const Atom &a = atomOf(v);
+      return a.kind == AtomKind::Entry || ctx.bound(a.v);
+    });
+  }
 
   bool nodeReachesHere(unsigned n) { return nodeReaches(n, ctx.B().GetInsertBlock(), ctx.B().GetInsertPoint()); }
 
@@ -1360,6 +1379,17 @@ public:
                const Value *what) {
     if (reaches(v, U, pt))
       return v;
+    // Rule 9: a merge arm the point's classical facts exclude, at a point with no join above it to carry it
+    // over (the entry's own classical arm, a unit there reading a binding an earlier unit made in the other
+    // arm: wcsrtombs' loops into one join). Its don't-care: a |0> seed here, or the null value (rule 7).
+    if (k.var < 0 && m.andOp(k.node, k.care) == Bdd::F && noJoinAbove(U)) {
+      Type *ty = handle ? irTypeOf(ctx.M.getContext(), w) : v->getType();
+      if (!handle)
+        return Constant::getNullValue(ty);
+      IRBuilderBase::InsertPointGuard g(ctx.B());
+      ctx.B().SetInsertPoint(U, pt);
+      return seedOf(ctx, Constant::getNullValue(ty), w);
+    }
     std::string vs;
     raw_string_ostream(vs) << *v;
     BasicBlock *J = joinAbove(U, what, (k.var < 0 ? "the merge arm " : "the atom ") + vs + " under " + describe(k.node));
@@ -1494,6 +1524,11 @@ Operand CtxMergeSink::reaching(const Operand &op, RailType w, const PHINode &phi
 } // namespace pred_detail
 
 using namespace pred_detail;
+
+bool predReadable(LoweringContext &ctx, const Pred &p) {
+  JoinRepair R(ctx);
+  return R.nodeBound(nodeOf(p));
+}
 
 Operand reachingOperand(LoweringContext &ctx, const Operand &op, RailType w, const Pred &arm, const Pred &care) {
   JoinRepair R(ctx);

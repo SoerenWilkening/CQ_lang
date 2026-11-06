@@ -61,6 +61,7 @@
 #include "cq/Calls.h"
 #include "../../spine/SpineInternal.h"
 
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SetVector.h"
@@ -159,6 +160,7 @@ private:
   DenseSet<const Value *> perTrip;
   Value *chainEnd = nullptr;                        // the last lowerLoop's last chain predicate (its a_K)
   Value *stopped = nullptr;                         // the last lowerLoop's stop rail (nullptr when none), see stopAcc
+  std::vector<std::pair<Loop *, exits::Unit>> enclosing;   // the units being lowered, outermost first
 
 
   bool isQ(const Value *v) {
@@ -343,6 +345,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   };
   // The unit (Exits.h): its continuation and exit arm; an exit into an effect-free dead end is no exit.
   exits::Unit U = exits::unitOf(L);
+  // The units this one is lowered inside of (a loop of an exit arm, a sub-loop), itself last.
+  enclosing.push_back({&L, U});
+  auto leaveUnit = make_scope_exit([&] { enclosing.pop_back(); });
   auto liveEdge = [&](const BasicBlock *s) { return !L.contains(s) && is_contained(U.live, s); };
   BasicBlock *X = U.multi() ? nullptr : U.cont;
   if (c == 0)
@@ -789,7 +794,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
                         "loop on an edge that does not exclude the loop (cq-uytx)",
                         &P);
         Value *v = P.getIncomingValue(i);
-        if (!ctx.bound(v)) {
+        if (!ctx.bound(v) || !predReadable(ctx, ctx.preds().edge(u, C))) {
           const Loop *vl = A.LI.getLoopFor(u);
           if (!vl || vl->contains(H))
             ctx.addJoinArm(&P, ctx.preds().edge(u, C), v);   // lowered after the loop: the walker selects it in
@@ -823,8 +828,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         // loop): where their facts exclude its exit edges into C the binding is a don't-care, a |0> seed at the join.
         Pred ran = Pred::bottom();
         for (unsigned i = 0; i < P.getNumIncomingValues(); ++i)
-          if (BasicBlock *u = P.getIncomingBlock(i); !inUnit(u) && A.LI.getLoopFor(u))
-            ran = ran | ctx.preds().edge(u, C);
+          if (BasicBlock *u = P.getIncomingBlock(i);
+              A.LI.getLoopFor(u) && none_of(enclosing, [&](auto &e) { return e.second.contains(*e.first, u); }))
+            ran = ran | ctx.preds().edge(u, C);   // a unit still being lowered around this one has bound nothing yet
         acc = ctx.operand(&P);
         if (acc.handle && !ran.isBottom())
           acc = reachingOperand(ctx, acc, railOf(P.getType()), ran, Pred::top());
@@ -1274,10 +1280,21 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     // The condition of the edge u -> b in this evaluation. A loop of the arm (cq-0dvv) is a unit inside
     // the arm, like a sub-loop of a trip: it always ends at its continuation, so the edge out of it is
     // taken where its header ran; an edge into its noreturn arm or a dead end is its own (its trips).
+    // Rule 14: the exit arm of a multi-exit K-loop of this arm is that loop's: it runs in that loop's own trips, where the
+    // loop's values are that trip's (musl wcsrtombs' `N-n` on the second loop's exit). Run once more here it would read
+    // them after the loop's last trip.
+    auto nestedArmOwner = [&](const BasicBlock *x) -> Loop * {
+      for (BasicBlock *h : U.arm)
+        if (Loop *S = subLoopOf(h); S && S->getHeader() == h && !S->contains(x) &&
+                                    classify(*S, ctx.T, ctx.S) == Case::QuantumExit &&
+                                    is_contained(exits::unitOf(*S).arm, x))
+          return S;
+      return nullptr;
+    };
     auto edgeIn = [&](const BasicBlock *u, const BasicBlock *b) -> std::optional<Pred> {
       if (!L.contains(u))
-        if (Loop *S = subLoopOf(u)) {
-          if (S->contains(b))
+        if (Loop *S = subLoopOf(u) ? subLoopOf(u) : nestedArmOwner(u)) {
+          if (S->contains(b) || nestedArmOwner(b) == S)
             return std::nullopt;
           auto it = armLocal.find(S->getHeader());
           if (it == armLocal.end())
@@ -1301,6 +1318,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       Loop *S = subLoopOf(b);
       if (S && S->getHeader() != b)
         continue;   // inside a loop of the arm: lowered with it
+      if (nestedArmOwner(b))
+        continue;
       Pred acc = Pred::bottom();
       for (BasicBlock *p : predecessors(b)) {
         if (S && S->contains(p))
@@ -1383,6 +1402,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     for (CPhi &cp : cphis) {
       std::vector<std::pair<Pred, Operand>> arms;
       Pred E = Pred::bottom();
+      int nestedArm = -1;
       for (unsigned i = 0; i < cp.P->getNumIncomingValues(); ++i) {
         BasicBlock *u = cp.P->getIncomingBlock(i);
         auto ei = edgeIn(u, U.cont);
@@ -1392,6 +1412,17 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         if (e.isBottom())
           continue;
         E = E | e;
+        // Rule 14: a K-loop of the arm exits into C too and bound P over all its exit edges this evaluation: one
+        // arm, under the predicate of reaching its header, whichever of its exit edges was taken.
+        if (!L.contains(u) && (subLoopOf(u) || nestedArmOwner(u)) && armBound.count(cp.P)) {
+          if (nestedArm < 0) {
+            nestedArm = int(arms.size());
+            arms.push_back({e, ctx.operand(cp.P)});
+          } else {
+            arms[nestedArm].first = arms[nestedArm].first | e;
+          }
+          continue;
+        }
         arms.push_back({e, ctx.operand(cp.P->getIncomingValue(i))});
       }
       if (arms.empty())

@@ -1454,7 +1454,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           if (inUnit(u) || (e & cH).isBottom() || !(e & hb).isBottom())
             continue;
           Value *v = cp.P->getIncomingValue(i);
-          if (!ctx.bound(v) && !isa<Constant>(v)) {
+          if ((!ctx.bound(v) && !isa<Constant>(v)) || !predReadable(ctx, e)) {
             ctx.addJoinArm(cp.P, e, v);   // lowered after the loop: the walker selects it in
             continue;
           }

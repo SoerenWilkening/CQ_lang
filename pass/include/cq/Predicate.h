@@ -107,5 +107,8 @@ llvm::Value *selectChain(LoweringContext &, llvm::ArrayRef<std::pair<Pred, Opera
 // joins above it: a don't-care (a |0> seed, or the null value) on a join edge whose facts exclude the
 // arm. Otherwise op itself.
 Operand reachingOperand(LoweringContext &, const Operand &op, RailType, const Pred &arm, const Pred &care);
+// Rule 9: has every condition atom p reads a value in the new IR yet? An edge of a block still to be lowered has not:
+// a unit lowered before it leaves that incoming to the walker's join (LoweringContext::addJoinArm).
+bool predReadable(LoweringContext &, const Pred &);
 void lowerPhase(LoweringContext &, llvm::CallInst &cqPhi);
 }
