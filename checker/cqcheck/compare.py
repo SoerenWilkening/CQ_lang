@@ -249,8 +249,11 @@ sample must be identified on another sample: matched in every embedding of some 
 call whose measured rails of ours are the same handles (the hoisted arm measurement of a register
 the C program measures on another path; its value where C did not reach it is unconstrained), or
 lie past the cut or the end of an open-ended sample. A measurement whose value never tells it from
-another of ours is not identified (conservative). Every C measurement is matched. Against the
-reference measurements are compared by position.
+another of ours is not identified (conservative). The identification holds only on a sample that
+enters the function the measurement lies in: rule 2's hoist is for an arm of that function, and a callee
+under a predicate measures rule 19's controlled copy, so a plain measurement in a function the input never
+enters is wrong (cq-ggr3p). Every C measurement is matched. Against the reference measurements are
+compared by position.
 
 x87 f80: a NaN is exponent 0x7FFF with a nonzero fraction (bits 0..62), the explicit integer bit
 ignored, so a pseudo-NaN is a NaN and a pseudo-infinity is not.
@@ -2237,9 +2240,18 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
     for k, opts in meas_opts.items():
         ident.setdefault(_pool(k), set()).update(frozenset.intersection(*(img for img, _ in opts)))
 
+    # CR rules 2, 19: the functions some input of the call enters, which the C oracle reports entries of
+    entered_any: Dict[Hashable, set] = {}
+    for k in meas_opts:
+        entered_any.setdefault(_call_key(r_by[k].sample), set()).update((r_by[k].outputs or {}).get("entered", []))
+
     def _meas_extra(k: str) -> List[str]:
-        n = len(o_by[k].measured or [])
-        known = ident[_pool(k)]
+        ms = o_by[k].measured or []
+        n = len(ms)
+        here = (r_by[k].outputs or {}).get("entered", [])
+        anywhere = entered_any[_call_key(r_by[k].sample)]
+        known = {i for i in ident[_pool(k)]
+                 if i >= n or ms[i].get("fn") not in anywhere or ms[i].get("fn") in here}
         opts = meas_opts[k]
         if any(all(i in img or i in past or i in known for i in range(n)) for img, past in opts):
             return []
@@ -2247,8 +2259,8 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
         bad = [i for i in range(n) if i not in img and i not in past and i not in known]
         hs = [o_by[k].measured[i].get("h") for i in bad]
         return [f"sample {k}: our measurement(s) {bad} (rails {hs}) match no C measurement here, and no sample "
-                f"of the call identifies them with one the C program reaches (only CR rule 2's hoisted arm "
-                f"measurement may be extra)"]
+                f"of the call identifies them with one the C program reaches in a function this input enters (only "
+                f"CR rule 2's hoisted arm measurement may be extra)"]
 
     for gk, ks in groups.items():
         tag = f"classical arguments {gk[0]} ({len(ks)} samples)"
@@ -2382,7 +2394,7 @@ def _ret(outputs: Any, side: str) -> Any:
     return outputs.get("ret", [])
 
 
-_HOST_KEYS = ("stdout", "effects", "tape", "deviation", "mem", "objects", "regions", "ctl_measured")
+_HOST_KEYS = ("stdout", "effects", "tape", "deviation", "mem", "objects", "regions", "ctl_measured", "entered")
 
 
 def _rest(outputs: Any, side: str) -> Any:

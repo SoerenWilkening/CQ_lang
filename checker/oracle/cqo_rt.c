@@ -832,6 +832,15 @@ void __cqo_site(const char *fn, int32_t site, int32_t kind, uint64_t angle, void
     else if (kind != 5) n_rotations++;
 }
 
+/* OracleInstr.cpp enters(): this input enters fn (compare._meas_extra) */
+void __cqo_enter(const char *fn) {
+    if (trips_only) return;
+    char f[300], line[340];
+    jsonstr(f, sizeof f, fn);
+    snprintf(line, sizeof line, "{\"ev\":\"enter\",\"fn\":%s}", f);
+    out_line(trace_fd, line);
+}
+
 /* ------------------------------------------------------------------ the cutoff K (CR §6, cq-8ay)
  * OracleInstr.cpp passes kq = 1 where the loop is a quantum-exit loop in the running specialization.
  * Each activation of one gets a T2 record when it ends: by an exit edge (capped false), or when the

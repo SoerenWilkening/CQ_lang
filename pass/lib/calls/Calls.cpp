@@ -348,6 +348,54 @@ Operand seedActual(LoweringContext &ctx, const Operand &o) {
   return Operand{seed, true};
 }
 
+// Rules 2, 18: does clone S measure its by-value rail formal `idx` itself: a cq_measure of the formal, or a call that hands it
+// to a clone that does, on every path of S from its entry to a return (what lowerMeasure asks; otherwise S measures a basis
+// copy and the actual stays as it was). A _ctl clone measures a controlled copy (rule 19), so never.
+bool measuresFormal(const TaintInfo &T, const Specialization &S, unsigned idx, SmallPtrSetImpl<const Specialization *> &onStack) {
+  if (S.ctl || S.F->isDeclaration() || idx >= S.F->arg_size() || !onStack.insert(&S).second)
+    return false;
+  const Argument *A = S.F->getArg(idx);
+  SmallVector<const Value *, 4> views{A};
+  bool found = false;
+  while (!views.empty() && !found) {
+    const Value *v = views.pop_back_val();
+    for (const Use &U : v->uses()) {
+      if (isa<FreezeInst>(U.getUser())) {
+        views.push_back(U.getUser());
+        continue;
+      }
+      auto *CB = dyn_cast<CallBase>(U.getUser());
+      const Function *G = CB && CB->isArgOperand(&U) ? CB->getCalledFunction() : nullptr;
+      if (!G)
+        continue;
+      if (G->isDeclaration()) {
+        found = G->getName().starts_with("cq_measure_") && spine::measuredOnEveryPath(T, S, A);
+      } else if (const Specialization *C = T.calleeSpecialization(*CB, S)) {
+        found = measuresFormal(T, *C, CB->getArgOperandNo(&U), onStack) && spine::measuredOnEveryPath(T, S, A, CB);
+      }
+      if (found)
+        break;
+    }
+  }
+  onStack.erase(&S);
+  return found;
+}
+
+// Rules 2, 5, 18: an actual the clone measures itself is the caller's measured rail from the call on: it stays allocated, no
+// gate touches it and nothing frees it. Measured on some classical paths of the caller only, it is lowered as unmeasured (rule 2,
+// collapse is static), so the clone gets a kept basis copy of it, as lowerMeasure does (rule 18's partial-measurement copy).
+Operand measuredActual(LoweringContext &ctx, const CallBase &CB, const Value *a, Operand o, bool seeded) {
+  if (seeded || spine::measuredOnEveryPath(ctx, a, &CB)) {
+    ctx.unc().setRole(ctx.unc().idOf(o.v), Role::Measured);
+    return o;
+  }
+  RailType w = railTypeOf(a->getType());
+  CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+  ctx.unc().recordExternal(c, Role::Measured);
+  ctx.emitCore(abi::CoreSpec{abi::Core::Copy, w}, {o.v, c});
+  return Operand{c, true};
+}
+
 // The fields of a non-pointer actual (CR §1.4: a scalar is one field; an aggregate or vector one per scalar
 // leaf, rules 25, 26, flattened depth first).
 SmallVector<Operand, 4> actualFields(LoweringContext &ctx, const Value *a) {
@@ -521,8 +569,14 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
       internalError("calls: an actual with another field count than its formal", &CB);
     for (unsigned k = 0; k < leaves.size(); ++k) {
       Operand o = leaves[k];
+      bool seeded = fs[i].q[k] && !o.handle;
       if (fs[i].q[k])
         o = seedActual(ctx, o);
+      if (fs[i].q[k] && leaves.size() == 1 && !isComposite(a->getType())) {
+        SmallPtrSet<const Specialization *, 8> onStack;
+        if (measuresFormal(ctx.T, S, i, onStack))
+          o = measuredActual(ctx, CB, a, o, seeded);
+      }
       if (!fs[i].q[k] && o.handle)
         internalError("calls: a rail passed where the clone's mask is classical", &CB);
       args.push_back(o.v);
@@ -1276,13 +1330,33 @@ void lowerEntryCall(LoweringContext &ctx, CallBase &CB, const Specialization &cs
     internalError("calls: an in-place callee reached under a quantum predicate (taint makes it a _ctl clone)", &CB);
   Function &F = *cs.F;
   Type *crt = CB.getType();
-  const spine::EntryReturn *er = spine::entryReturn(F);
-  if (!er)
-    unimplemented("calls: awaiting owner ruling: SPEC_ISSUES rule 19 results of an in-place callee in a cycle of "
-                  "in-place calls (its frozen record is made after the call is lowered)",
-                  &CB);
   LLVMContext &C = ctx.M.getContext();
   Type *i32 = Type::getInt32Ty(C);
+  spine::EntryReturn inCycle;
+  const spine::EntryReturn *er = spine::entryReturn(F);
+  if (!er) {
+    // Rule 19: a callee on a call cycle with this function has no record yet (the plugin constructs a callee first unless
+    // the calls form a cycle), and the records are the least fixpoint over the cycle. A FROZEN result is a register or its
+    // rule-6 image, so a body that does not rotate has none: its result is zeroed by the twin. One that rotates on a
+    // cycle has no twin (rulings3 F) and its result is KEPT, the same as frozen to this caller. The return type follows
+    // from the C one and the result's taint alone (193, rule 26).
+    inCycle.frozen = false;
+    SmallVector<bool, 4> q = ctx.T.fieldMask(&CB, ctx.S);
+    if (crt->isAggregateType() || crt->isVectorTy()) {
+      SmallVector<Type *, 4> types;
+      leafTypes(crt, types, &CB);
+      if (types.size() != q.size())
+        internalError("calls: an in-place callee's aggregate result whose field mask does not match its leaves", &CB);
+      for (unsigned k = 0; k < types.size(); ++k)
+        if (q[k])
+          types[k] = i32;
+      inCycle.ret = StructType::get(C, types);
+      inCycle.leafQ.assign(q.begin(), q.end());
+    } else {
+      inCycle.ret = crt->isIntegerTy() && crt->getIntegerBitWidth() >= 32 ? crt : i32;
+    }
+    er = &inCycle;
+  }
   Type *rt = er->ret;   // the lowered entry's return type (rule 19: the C one, the i32 handle, or the leaves)
   if (!rt)
     internalError("calls: an in-place callee's return record without its return type", &CB);

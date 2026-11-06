@@ -1937,6 +1937,10 @@ std::optional<InverseStep> inverseStep(Instruction &U, Value *Y, Operand yp, fun
 // is executed unconditionally), so a measurement anywhere in its region up to its post-dominator counts on
 // the path through it.
 bool spine::measuredOnEveryPath(LoweringContext &ctx, const Value *v, const Instruction *also) {
+  return measuredOnEveryPath(ctx.T, ctx.S, v, also);
+}
+
+bool spine::measuredOnEveryPath(const TaintInfo &T, const Specialization &S, const Value *v, const Instruction *also) {
   auto strip = [](const Value *v) {
     while (auto *f = dyn_cast<FreezeInst>(v))
       v = f->getOperand(0);
@@ -1975,11 +1979,11 @@ bool spine::measuredOnEveryPath(LoweringContext &ctx, const Value *v, const Inst
   auto quantumBranch = [&](const BasicBlock *b) {
     const Instruction *t = b->getTerminator();
     if (auto *br = dyn_cast<BranchInst>(t); br && br->isConditional())
-      return ctx.T.isQuantum(br->getCondition(), ctx.S);
+      return T.isQuantum(br->getCondition(), S);
     if (auto *sw = dyn_cast<SwitchInst>(t))
-      return ctx.T.isQuantum(sw->getCondition(), ctx.S);
+      return T.isQuantum(sw->getCondition(), S);
     if (auto *ib = dyn_cast<IndirectBrInst>(t))
-      return ctx.T.isQuantum(ib->getAddress(), ctx.S);   // rule 13: a switch on the address
+      return T.isQuantum(ib->getAddress(), S);   // rule 13: a switch on the address
     return false;
   };
   // Walk the classical choices from the end of D; a block holding a measurement ends the path (measured);
