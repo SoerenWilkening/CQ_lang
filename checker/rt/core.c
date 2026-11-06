@@ -278,7 +278,7 @@ static int keep_event(const char *s) {
     return 1;
   const char *n = s + sizeof pre - 1;
   static const char *keep[] = {"ry\"", "ry_qangle\"", "phase\"", "phase_qangle\"", "measure\"", "ret\"",
-                               "violation\"", "exit\"", "effect\"", "shot\"", "shot_end\"", "free\"",
+                               "violation\"", "exit\"", "host_end\"", "effect\"", "shot\"", "shot_end\"", "free\"",
                                "bus\"", "cells\"", "out_mem\"", "tape\",\"op\":\"shot\""};
   for (size_t i = 0; i < sizeof keep / sizeof *keep; ++i)
     if (!strncmp(n, keep[i], strlen(keep[i])))
@@ -1691,6 +1691,7 @@ void cqe__shot_end(void) { shot_finish(0, 1); }
 /* The driver's sigsetjmp returned again: the sample called exit/_exit, or raised a signal. */
 void cqe__shot_resume(void) {
   if (R->jkind == J_EXIT) {
+    cqe__logf("{\"ev\":\"host_end\",\"code\":%d}", R->code); /* rule 16: the program itself made the host exit */
     shot_finish(R->code, R->ran_fns == 0);
     return;
   }

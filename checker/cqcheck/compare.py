@@ -228,8 +228,11 @@ on. On an ended sample:
   reached gate" exception applies);
 - ours must keep an i1 rail of role "abort" that reads 1; or, on a "raise:<sig>" sample, have an effect
   entry raise performed (rule 16's signal table: the complement branch, 102, 212), past which the
-  stand-in's shot runs on, so the C side's effects are a prefix of ours there.
-On a sample that returns (neither ended nor capped) every kept abort-role i1 rail of ours reads 0.
+  stand-in's shot runs on, so the C side's effects are a prefix of ours there; or have itself ended in
+  the host call (outputs["host_end"]): a noreturn callee with classical arguments and no quantum
+  predicate is rule 16's ordinary host call, made as it stands, so the circuit does end there.
+On a sample that returns (neither ended nor capped) every kept abort-role i1 rail of ours reads 0, and
+ours has not ended in a host call.
 A capped sample says nothing about abort flags (an abort past the cut is unknown). The abort
 rails are read by role, which the evaluator sets on the operand of abort_i1 (BACKEND_ABI §1.2),
 since an abort site that never fires in a group is otherwise indistinguishable from other 0 rails.
@@ -2022,8 +2025,8 @@ def _raised(c: RunResult) -> bool:
 
 def _check_abort(o_runs: List[RunResult], ended: Sequence[bool], capped: Sequence[bool],
                  c_runs: Sequence[RunResult] = ()) -> List[str]:
-    """Some kept abort-role i1 rail of ours reads 1 on every ended sample; every one reads 0 on
-    every sample that returns (module docstring)."""
+    """Some kept abort-role i1 rail of ours reads 1, or ours itself ended in the host call, on every
+    ended sample; every flag reads 0 and ours did not end on every sample that returns (module docstring)."""
     flags: Dict[Any, List[int]] = {}
     for s, rr in enumerate(o_runs):
         for ent in rr.kept or []:
@@ -2035,6 +2038,12 @@ def _check_abort(o_runs: List[RunResult], ended: Sequence[bool], capped: Sequenc
         if ended[s] and not on and c_runs and _raised(c_runs[s]) and any(
                 e.get("name") == "raise" for e in (o_runs[s].outputs or {}).get("effects", [])):
             continue
+        host_end = (o_runs[s].outputs or {}).get("host_end")
+        if ended[s] and not on and host_end is not None and not (c_runs and _raised(c_runs[s])):
+            continue
+        if not ended[s] and not capped[s] and host_end is not None:
+            reasons.append(f"sample {_skey(o_runs[s].sample)}: the C program returns and ours ended in a host "
+                           f"call with status {host_end}")
         if ended[s] and not on:
             reasons.append(f"sample {_skey(o_runs[s].sample)}: the C program ends early (noreturn or fatal raise) "
                            f"and no kept abort flag of ours reads 1")
