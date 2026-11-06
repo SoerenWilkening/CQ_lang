@@ -1441,10 +1441,14 @@ void resultLeaves(const CallBase &CB, SmallVectorImpl<Type *> &leaves) {
     leafTypes(CB.getType(), leaves, &CB);
 }
 
-// The actual's scalar fields: a pointer its address (rule 21), a composite its leaves, classical ones not yet seeds.
+// The actual's scalar fields: a pointer its address (rule 21), a composite its leaves, classical ones not yet seeds. Only
+// the fixed formals of a variadic function type: the rest go into rule 16's block (variadicActuals).
 SmallVector<Operand, 8> tableActuals(LoweringContext &ctx, CallBase &CB) {
   SmallVector<Operand, 8> out;
+  FunctionType *FT = CB.getFunctionType();
   for (const Use &u : CB.args()) {
+    if (FT->isVarArg() && CB.getArgOperandNo(&u) >= FT->getNumParams())
+      break;
     if (u->getType()->isPointerTy()) {
       out.push_back(bus::address(ctx, u.get()));
       continue;
@@ -1453,6 +1457,13 @@ SmallVector<Operand, 8> tableActuals(LoweringContext &ctx, CallBase &CB) {
       out.push_back(o);
   }
   return out;
+}
+
+// Rules 16, 19: the table clone of a variadic function takes the block as its one classical ptr, after the handles. The
+// caller stores into it as a call by name does; a callee that turns out to be host code gets its actuals as they stand.
+Value *variadicActuals(LoweringContext &ctx, CallBase &CB) {
+  FunctionType *FT = CB.getFunctionType();
+  return FT->isVarArg() ? variadicBlock(ctx, CB, FT->getNumParams()) : nullptr;
 }
 
 // Rule 7: the handle of an actual: its rail, or a seed made here, which the caller frees (`seeds`).
@@ -1490,7 +1501,10 @@ SmallVector<Value *, 2> callTable(Module &M, IRBuilder<> &B, Value *callee, Valu
   Type *rt = leaves.empty()      ? Type::getVoidTy(C)
              : leaves.size() == 1 ? h
                                   : static_cast<Type *>(StructType::get(C, SmallVector<Type *, 4>(leaves.size(), h)));
-  FunctionType *FT = FunctionType::get(rt, SmallVector<Type *, 8>(args.size(), h), false);
+  SmallVector<Type *, 8> params;
+  for (Value *a : args)
+    params.push_back(a->getType());   // handles, K, and a variadic function's block ptr
+  FunctionType *FT = FunctionType::get(rt, params, false);
   CallInst *call = B.CreateCall(FT, callee, args);
   SmallVector<Value *, 2> out;
   if (leaves.size() == 1)
@@ -1511,7 +1525,10 @@ void callTableTwin(Module &M, IRBuilder<> &B, Value *twin, Value *pred, ArrayRef
   args.append(outs.begin(), outs.end());
   args.append(handles.begin(), handles.end());
   args.push_back(K);
-  B.CreateCall(FunctionType::get(Type::getVoidTy(C), SmallVector<Type *, 8>(args.size(), handleTy(C)), false), twin, args);
+  SmallVector<Type *, 8> params;
+  for (Value *a : args)
+    params.push_back(a->getType());
+  B.CreateCall(FunctionType::get(Type::getVoidTy(C), params, false), twin, args);
 }
 
 // Rules 18, 19: must the value be a kept rail? Measured, stored or returned by an own symbol, or a memory version change
@@ -1651,11 +1668,13 @@ void lowerClassicalPointer(LoweringContext &ctx, CallBase &CB, Value *fp) {
   SmallVector<Type *, 4> leaves;
   resultLeaves(CB, leaves);
   SmallVector<Operand, 8> actuals = tableActuals(ctx, CB);
-  bool allClassical = none_of(actuals, [](const Operand &o) { return o.handle; });
+  bool allClassical = none_of(CB.args(), [&](const Use &u) { return ctx.T.isQuantum(u.get(), ctx.S); });
   bool ordinary = allClassical && !flag && !ctx.T.afterEvent(CB, ctx.S);
   SmallVector<Value *, 8> seeds, handles;
   for (const Operand &o : actuals)
     handles.push_back(actualHandle(M, B, o, seeds));
+  if (Value *block = variadicActuals(ctx, CB))
+    handles.push_back(block);
   SmallVector<Value *, 8> readHandles;
   for (const Operand &o : actuals)
     if (o.handle)
@@ -1822,7 +1841,7 @@ struct ReverseLoop {
 // Rule 19 Address rail (and rule 16's raise): one classical loop over the registered functions of type FT, the complement
 // made by `complement` under p_n, its results returned; the reverse loop. The builder is left where the code continues.
 void dispatchOverRail(LoweringContext &ctx, CallBase &CB, FunctionType *FT, Value *rail, ArrayRef<Type *> leaves,
-                      ArrayRef<Operand> actuals, function_ref<SmallVector<Value *, 2>(Value *pn)> complement) {
+                      ArrayRef<Operand> actuals, Value *block, function_ref<SmallVector<Value *, 2>(Value *pn)> complement) {
   Module &M = ctx.M;
   IRBuilder<> &B = ctx.B();
   LLVMContext &C = M.getContext();
@@ -1873,6 +1892,8 @@ void dispatchOverRail(LoweringContext &ctx, CallBase &CB, FunctionType *FT, Valu
   SmallVector<Value *, 8> seeds, handles;
   for (const Operand &o : actuals)
     handles.push_back(actualHandle(M, B, o, seeds));
+  if (block)
+    handles.push_back(block);
   SmallVector<Value *, 2> res = callTable(M, B, resolveClone(M, B, a, kCtl), ctl, handles, K, leaves);
   SmallVector<Value *, 2> cs;
   for (unsigned j = 0; j < leaves.size(); ++j) {
@@ -2002,7 +2023,8 @@ void lowerIndirect(LoweringContext &ctx, CallBase &CB) {
   SmallVector<Type *, 4> leaves;
   resultLeaves(CB, leaves);
   SmallVector<Operand, 8> actuals = tableActuals(ctx, CB);
-  dispatchOverRail(ctx, CB, CB.getFunctionType(), fp.v, leaves, actuals, [&](Value *pn) {
+  Value *block = variadicActuals(ctx, CB);
+  dispatchOverRail(ctx, CB, CB.getFunctionType(), fp.v, leaves, actuals, block, [&](Value *pn) {
     return tape::lowerTableEffect(ctx, CB, fp, pn);
   });
 }
@@ -2038,7 +2060,7 @@ void lowerRaise(LoweringContext &ctx, CallBase &CB) {
   // A call of function type void (i32) with sig as its one actual.
   FunctionType *FT = FunctionType::get(Type::getVoidTy(C), {Type::getInt32Ty(C)}, false);
   SmallVector<Value *, 2> re;
-  dispatchOverRail(ctx, CB, FT, rail, {}, {sig}, [&](Value *pn) {
+  dispatchOverRail(ctx, CB, FT, rail, {}, {sig}, nullptr, [&](Value *pn) {
     re = tape::lowerRaiseEffect(ctx, CB, pn);
     return SmallVector<Value *, 2>{};
   });
