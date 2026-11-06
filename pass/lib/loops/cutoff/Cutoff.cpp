@@ -156,6 +156,7 @@ private:
   // the exit trip) and a division by one is not built.
   DenseSet<const Value *> perTrip;
   Value *chainEnd = nullptr;                        // the last lowerLoop's last chain predicate (its a_K)
+  Value *stopped = nullptr;                         // the last lowerLoop's stop rail (nullptr when none), see stopAcc
 
 
   bool isQ(const Value *v) {
@@ -1119,8 +1120,47 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       unitPhi[cBound[k]] = j.front();
     }
   };
+  // A noreturn arm is outside every loop around it, so an edge into one from this loop is an exit edge of each
+  // enclosing K-loop too (CR rule 14: a_K reads 1 iff the loop would run another trip; rule 16). stopAcc is the XOR
+  // of this activation's arm flags (at most one reads 1: a chain dies at the edge it takes), handed to the enclosing
+  // trip as `stopped`, whose predicate from there on excludes it. Made only inside a K-loop.
+  bool inKLoop = false;
+  for (Loop *P = L.getParentLoop(); P && !inKLoop; P = P->getParentLoop())
+    inKLoop = classify(*P, ctx.T, ctx.S) == Case::QuantumExit;
+  Value *stopAcc = nullptr;
+  auto noteStop = [&](Value *f) {
+    if (!inKLoop)
+      return;
+    RailType i1{Kind::Int, 1};
+    if (!stopAcc) {
+      CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(ctx.M.getContext())});
+      ctx.unc().recordSeed(z);
+      stopAcc = z;
+    }
+    abi::CoreSpec x{abi::Core::XorI1, i1};
+    CallInst *g = ctx.emitCore(x, {f, stopAcc});
+    ctx.unc().recordCore(g, x, {Operand{f, true}, Operand{stopAcc, true}}, ctx.unc().idOf(stopAcc));
+  };
+  // q & !s for the sub-loop just lowered, when it has a noreturn arm.
+  auto afterSub = [&](Value *q) {
+    if (!stopped)
+      return q;
+    Value *s = stopped;
+    stopped = nullptr;
+    noteStop(s);
+    RailType i1{Kind::Int, 1};
+    CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(ctx.M.getContext())});
+    RailId id = ctx.unc().recordSeed(z);
+    abi::CoreSpec no{abi::Core::NotI1, i1};
+    CallInst *n = ctx.emitCore(no, {z});
+    ctx.unc().recordCore(n, no, {Operand{z, true}}, id);
+    abi::CoreSpec x{abi::Core::XorI1, i1};
+    CallInst *g = ctx.emitCore(x, {s, z});
+    ctx.unc().recordCore(g, x, {Operand{s, true}, Operand{z, true}}, id);
+    return andRail(q, z);
+  };
   std::function<void(BasicBlock *, Value *, const Pred &)> lowerInsts;   // one block's non-phi instructions
-  auto lowerBlocks = [&](Value *q, const std::function<bool(const BasicBlock *)> &pick) {
+  auto lowerBlocks = [&](Value *&q, const std::function<bool(const BasicBlock *)> &pick) {
     boundThisTrip.clear();
     for (BasicBlock *b : order) {
       if (!pick(b))
@@ -1144,6 +1184,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         Value *s = conj(q, local.find(b)->second, b->getTerminator());
         // The sub-loop binds the phis of its exit block it identifies; they are not merged again.
         lowerLoop(*mS, s, cs, !B || *B > K, false);
+        q = afterSub(q);
         if (BasicBlock *SX = exits::unitOf(*mS).cont)
           for (PHINode &P : SX->phis())
             if (mine.count(&P))
@@ -1269,6 +1310,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         std::optional<uint64_t> Bs = exits::cutoffBound(*S, A.SE, ctx.T, ctx.S);
         unsigned cs = Bs ? unsigned(std::min<uint64_t>(K, *Bs)) : K;
         lowerLoop(*S, conj(q, acc, b->getTerminator()), cs, false, false);
+        if (stopped) {
+          noteStop(stopped);
+          stopped = nullptr;
+        }
         if (!Bs || *Bs > K) {
           RailType i1{Kind::Int, 1};
           if (!armKept) {
@@ -1417,6 +1462,9 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       for (Instruction &I : *b)
         if (!isa<PHINode>(I) && !I.isTerminator())
           lowerInstruction(ctx, I, f, seedPred ? &*seedPred : nullptr);
+      // An arm's later block is entered from its earlier ones: the flag of its entry is noted once.
+      if (none_of(predecessors(b), [&](BasicBlock *p) { return abortLocal.count(p) != 0; }))
+        noteStop(f);
     }
   };
   lowerInsts = [&](BasicBlock *b, Value *q, const Pred &lp) {
@@ -1666,6 +1714,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     ctx.unc().setRole(ctx.unc().idOf(armKept), Role::KeptOverflow);
 
   chainEnd = q;
+  stopped = stopAcc;
   // Exit values (body form): the final state of the header phi.
   auto exitOf = [&](PHINode *h) {
     if (auto qt = qind.find(h); qt != qind.end()) {
