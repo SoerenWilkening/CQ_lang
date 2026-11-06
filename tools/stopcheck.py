@@ -38,7 +38,7 @@ def prepare(name):
     protos = json.load(open(f'{OUT}/protos.json'))
     if name not in protos:
         return None
-    src, mode = ls.caller(name, protos[name])
+    src, mode, _ = ls.caller(name, protos[name])
     if src is None:
         return None
     os.makedirs(d, exist_ok=True)

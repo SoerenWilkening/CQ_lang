@@ -258,6 +258,7 @@ private:
   // lowers them per trip for the unit's paths, the walker once more for the outside paths, under tailPred.
   DenseMap<const BasicBlock *, Loop *> tailOf;
   DenseMap<const BasicBlock *, Pred> tailPreds;
+  DenseSet<const Loop *> tailCleared;
   const Pred &tailPredOf(const BasicBlock *b);
   void tailMerge(PHINode &phi);
   DenseMap<const BasicBlock *, SmallVector<BasicBlock *, 2>> outEdges;
@@ -301,9 +302,12 @@ private:
   DenseMap<std::pair<const BasicBlock *, const BasicBlock *>, Pred> edgeFacts;
   DenseMap<const BasicBlock *, Pred> guardFacts;
   struct InEdge {
-    BasicBlock *out;
+    BasicBlock *out = nullptr;
     std::optional<Pred> facts;
-    Loop *unit;
+    Loop *unit = nullptr;
+    // A unit edge: the fields of the target's phis the unit bound, as they stand on this edge (two units on classically
+    // exclusive paths into one join: a loop and the loop of its tail, each binds the phi for its own edge).
+    DenseMap<const PHINode *, SmallVector<Operand, 4>> unitFields;
   };
   DenseMap<const BasicBlock *, SmallVector<InEdge, 2>> inEdges;
   void noteIn(const BasicBlock *from, const BasicBlock *to, Loop *unit = nullptr);
@@ -840,6 +844,11 @@ void Walker::maybeFlush(Instruction *term) {
         if (o.handle)
           liveLater.push_back(o.v);
   }
+  // A rail of this output block a later instruction reads, under a binding no instruction of the block defined itself
+  // (the in-place form binds a cq_theta's value to its plain load at the store): the same as a block def read later.
+  for (Value *h : liveLater)
+    if (auto *hi = dyn_cast<Instruction>(h); hi && hi->getParent() == term->getParent())
+      return;
   ArrayRef<Value *> live(liveLater);
   ctx.unc().flushBefore(term, &live);
 }
@@ -855,8 +864,15 @@ void Walker::jump(const BasicBlock *from, const BasicBlock *to) {
 
 void Walker::noteIn(const BasicBlock *from, const BasicBlock *to, Loop *unit) {
   auto f = edgeFacts.find({from, to});
-  inEdges[to].push_back(
-      {ctx.B().GetInsertBlock(), f == edgeFacts.end() ? std::nullopt : std::optional<Pred>(f->second), unit});
+  InEdge ne;
+  ne.out = ctx.B().GetInsertBlock();
+  ne.facts = f == edgeFacts.end() ? std::nullopt : std::optional<Pred>(f->second);
+  ne.unit = unit;
+  inEdges[to].push_back(std::move(ne));
+  if (unit)
+    for (const PHINode &phi : to->phis())
+      if (auto bi = sh.binds.find(&phi); bi != sh.binds.end())
+        inEdges[to].back().unitFields[&phi] = SmallVector<Operand, 4>(bi->second.begin(), bi->second.end());
 }
 
 // cq-174f: a quantum phi whose output block is reached by several output edges (a classical guard's
@@ -1160,7 +1176,8 @@ void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in) {
   for (const InEdge &e : in) {
     if (e.unit) {
       SmallVector<Value *, 4> vs;
-      for (const Operand &o : unitVals)
+      auto uf = e.unitFields.find(&phi);
+      for (const Operand &o : uf != e.unitFields.end() ? ArrayRef<Operand>(uf->second) : ArrayRef<Operand>(unitVals))
         vs.push_back(o.v);
       inc.push_back({e.out, vs});
       continue;
@@ -1260,10 +1277,13 @@ void Walker::lowerUnit(Loop &lp) {
   for (BasicBlock *b : lp.blocks())
     for (Instruction &I : *b)
       visited.insert(&I);
-  for (auto *list : {&units.find(&lp)->second.arm, &units.find(&lp)->second.dead})
+  // A tail block is not done: the walker lowers it once more for the outside paths (cq-h8y6).
+  const loops::exits::Unit &UD = units.find(&lp)->second;
+  for (auto *list : {&UD.arm, &UD.dead})
     for (BasicBlock *b : *list)
-      for (Instruction &I : *b)
-        visited.insert(&I);
+      if (!is_contained(UD.tail, b))
+        for (Instruction &I : *b)
+          visited.insert(&I);
 }
 
 // The field-wise result of a clone's return (CR §1.4, rule 18), when rv is one: vals gets one value per
@@ -1753,6 +1773,19 @@ void Walker::emitTerminator(BasicBlock *b) {
         tape::lowerMainExit(ctx, op, rv->getType());
         v = ConstantInt::get(sh.out->getReturnType(), 0);
       } else if (op.handle) {
+        // Rule 14: a value joined over loop units (a classical choice of their exit rails, which their reverses undo) is
+        // copied out for the return; the copy escapes.
+        if (auto *jp = dyn_cast<PHINode>(rv); jp && unitBoundPhis.count(jp) && isa<PHINode>(op.v)) {
+          RailType w = jp->getType()->isPointerTy() ? RailType{Kind::Int, 64} : railTypeOf(jp->getType());
+          CallInst *f =
+              ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
+          RailId fid = ctx.unc().recordSeed(f);
+          abi::CoreSpec cp{abi::Core::Copy, w};
+          CallInst *c = ctx.emitCore(cp, {op.v, f});
+          ctx.unc().recordCore(c, cp, {op, Operand{f, true}}, fid);
+          op = Operand{f, true};
+          v = f;
+        }
         // Rule 19 (cq-i9wk): an in-module caller keeps a frozen result as its own register; any other
         // result is a clone's, cleaned by its twin.
         noteEntryReturn(spine::frozenRail(sh, op.v), t);
@@ -1895,6 +1928,21 @@ void Walker::emitTerminator(BasicBlock *b) {
 }
 
 void Walker::emitBlock(BasicBlock *b) {
+  // A tail block is lowered here for the paths from outside its unit only (cq-h8y6): every predicate under them.
+  struct Restore {
+    LoweringContext &C;
+    std::optional<Pred> was;
+    bool on;
+    ~Restore() {
+      if (on)
+        C.preds().assume(was, C.T, C.S);
+    }
+  } restore{ctx, std::nullopt, false};
+  if (tailOf.count(b)) {
+    Pred tp = tailPredOf(b);
+    restore.was = ctx.preds().assume(tp, ctx.T, ctx.S);
+    restore.on = true;
+  }
   if (merged.count(b)) {
     sh.blocks[b] = ctx.B().GetInsertBlock();
   } else {
@@ -1909,10 +1957,12 @@ void Walker::emitBlock(BasicBlock *b) {
     // cq-h8y6 (rules 8, 9): a tail block on the paths that enter it from outside its unit (the unit lowered it per
     // trip for its own paths): it runs under those paths' predicate, the loop's exit flags no part of it, and its
     // values are this lowering's (each trip's binding replaced).
-    (void)t;
     sh.curPred = tailPredOf(b).quantumPart(ctx.T, ctx.S);
-    for (Instruction &I : *b)
-      sh.binds.erase(&I);
+    // Every value of the tail is unlowered on these paths, later blocks included (a phi's incoming on a back edge).
+    if (tailCleared.insert(t).second)
+      for (BasicBlock *tb : units.find(t)->second.tail)
+        for (Instruction &I : *tb)
+          sh.binds.erase(&I);
   }
 
   if (unitOf.count(b)) {
@@ -1943,6 +1993,17 @@ void Walker::emitBlock(BasicBlock *b) {
     // The header's guard comes first: the unit runs only under it (cq-uevr).
     emitGuard(b);
     const loops::exits::Unit &U = units.find(&lp)->second;
+    // A loop of another unit's tail, on outside paths that classically exclude that unit: the phis of its continuation
+    // that unit bound hold nothing on these paths; each unit binds them for its own edge (joinUnitPhi).
+    if (Loop *t = tailOf.lookup(b); t && U.cont) {
+      std::optional<Pred> was = ctx.preds().assume(std::nullopt, ctx.T, ctx.S);
+      Pred other = ctx.preds().block(t->getHeader()).classicalFactor(ctx.T, ctx.S);
+      ctx.preds().assume(was, ctx.T, ctx.S);
+      if ((tailPredOf(b) & other).isBottom())
+        for (PHINode &phi : U.cont->phis())
+          if (any_of(phi.blocks(), [&](const BasicBlock *u) { return lp.contains(u) || is_contained(U.arm, u); }))
+            sh.binds.erase(&phi);
+    }
     // The unit's exit edges: the edges into its continuation from the loop or its exit arm (an exit
     // into an effect-free dead end is none: UB to take).
     SmallVector<std::pair<BasicBlock *, BasicBlock *>, 4> exits;
@@ -2028,7 +2089,7 @@ void Walker::emitBlock(BasicBlock *b) {
   for (PHINode &phi : b->phis()) {
     sh.cur = &phi;
     visited.insert(&phi);
-    if (tailOf.count(b) && spine::isQ(ctx, &phi)) {
+    if (tailOf.count(b) && spine::isQ(ctx, &phi) && !unitBoundPhis.count(&phi)) {   // a loop of the tail bound it: below
       tailMerge(phi);
       blockDefs.push_back(&phi);
       continue;
@@ -2153,7 +2214,10 @@ void Walker::emitGuard(BasicBlock *b) {
   }
   {
     auto gf = guardFacts.find(b);
-    inEdges[skip].push_back({from, gf == guardFacts.end() ? std::nullopt : std::optional<Pred>(gf->second), nullptr});
+    InEdge ne;
+    ne.out = from;
+    ne.facts = gf == guardFacts.end() ? std::nullopt : std::optional<Pred>(gf->second);
+    inEdges[skip].push_back(std::move(ne));
   }
   B.SetInsertPoint(cont);
   blockDefs.clear();

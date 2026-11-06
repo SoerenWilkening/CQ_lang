@@ -803,7 +803,18 @@ const Pred &PathPredicates::block(const BasicBlock *b) const {
   auto it = impl->blocks.find(b);
   if (it == impl->blocks.end())
     internalError("pred: PathPredicates::block of a block outside the computed function", b);
+  if (impl->assumed)
+    return impl->underAssumed.try_emplace({impl->assumedId, b, nullptr}, it->second & *impl->assumed).first->second;
   return it->second;
+}
+
+std::optional<Pred> PathPredicates::assume(std::optional<Pred> p, const TaintInfo &T, const Specialization &S) {
+  std::optional<Pred> was = impl->assumed;
+  impl->assumed = std::move(p);
+  if (impl->assumed)
+    impl->assumedClassical = impl->assumed->classicalFactor(T, S);
+  ++impl->assumedId;
+  return was;
 }
 
 const Pred &PathPredicates::edge(const BasicBlock *from, const BasicBlock *to) const {
@@ -812,6 +823,13 @@ const Pred &PathPredicates::edge(const BasicBlock *from, const BasicBlock *to) c
   auto it = impl->edges.find({from, to});
   if (it == impl->edges.end())
     internalError("pred: PathPredicates::edge of a pair that is no reachable CFG edge", from);
+  if (impl->assumed) {
+    // An edge on the assumed paths is under all of it; another (a quantum arm beside them) only under its classical part.
+    auto bl = impl->blocks.find(from);
+    bool on = bl != impl->blocks.end() && !(bl->second & *impl->assumed).isBottom();
+    Pred under = on ? it->second & *impl->assumed : it->second & impl->assumedClassical;
+    return impl->underAssumed.try_emplace({impl->assumedId, from, to}, under).first->second;
+  }
   return it->second;
 }
 

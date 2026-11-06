@@ -243,11 +243,8 @@ private:
   // Rule 14 exit reads (cq-1v3i): a value defined in a loop whose next trip is decided by a tainted
   // terminator is, when read outside that loop, the exit value merged over the quantum exit trip,
   // so the read is quantum whatever the instruction reading it (phi, select, store, call actual,
-  // return, branch condition). L(V) applies this to the instruction whose operands are being read
-  // (curUser). Two exceptions keep 121: a pointer V, and a reader that computes an address (pointer
-  // type), are evaluated per trip in the exit block under that trip's exit predicate, so they stay
-  // classical-offset; the reader's non-pointer users are made quantum by the post-loop rule in
-  // analyze().
+  // return, branch condition), a pointer like any other (rule 21: a pointer is an integer, one rail).
+  // L(V) applies this to the instruction whose operands are being read (curUser).
   const Instruction *curUser = nullptr;
   bool exitRead(const Value *V);
   // Rule 2 (cq-41y3): "dominated uses of the measured SSA value denote the outcome", and a value
