@@ -2937,8 +2937,13 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     DenseSet<const Value *> ownedH;
     for (unsigned sc : scs)
       for (const Record &r : U.scopeRecords(sc))
-        if (!r.forward->getType()->isVoidTy())
+        if (!r.forward->getType()->isVoidTy()) {
           ownedH.insert(r.forward);
+          // A clone with rule-19 extras returns a struct: its rails are the call's extractvalues (cq-f96c8).
+          for (const User *u : r.forward->users())
+            if (isa<ExtractValueInst>(u))
+              ownedH.insert(u);
+        }
     std::vector<RailId> exits;
     for (unsigned oi = 0; oi < out.size(); ++oi) {
       const Value *v = out[oi].first;

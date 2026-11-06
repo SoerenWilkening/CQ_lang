@@ -272,6 +272,14 @@ bool isClassicalNode(unsigned f, Oracle &O) {
 
 } // namespace pred_detail
 
+bool predReads(const Pred &p, const Pred &lit) {
+  using namespace pred_detail;
+  std::set<unsigned> a, b;
+  Bdd::get().support(nodeOf(p), a);
+  Bdd::get().support(nodeOf(lit), b);
+  return std::includes(a.begin(), a.end(), b.begin(), b.end());
+}
+
 // CR rule 13 (b137e75): a computed goto is a switch on its address. No index is recovered: where the address
 // came from is irrelevant. Destination d (each distinct one, in the destination list's order) is the case
 // `address == blockaddress(d)`; the default is unreachable (LangRef: an address outside the list), so the

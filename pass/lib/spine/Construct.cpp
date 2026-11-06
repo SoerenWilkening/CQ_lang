@@ -312,7 +312,8 @@ private:
   DenseMap<const BasicBlock *, SmallVector<InEdge, 2>> inEdges;
   void noteIn(const BasicBlock *from, const BasicBlock *to, Loop *unit = nullptr);
   Value *factoredMerge(PHINode &phi);
-  void joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in);
+  void joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in, const BasicBlock *tailHead = nullptr);
+  DenseSet<const Loop *> tailJoined;
   bool eligible(const BasicBlock *y, const BasicBlock *from) const;
   BasicBlock *out(const BasicBlock *b);
   SmallVector<Operand, 4> aggregateFields(ReturnInst *ret, Value *rv);
@@ -658,7 +659,10 @@ void Walker::planGuards() {
     bool inPure = bl && !unitOf.count(b);
     auto ii = in.find(b);
     Pred inB = ii == in.end() ? Pred::top() : ii->second;
-    const Pred &p = ctx.preds().block(b);
+    // A tail block runs here for the paths from outside its unit only (cq-h8y6): their classical factor is its guard,
+    // so the unit's own classical paths go around it.
+    const auto walkedPred = [&](const BasicBlock *x) -> Pred { return tailOf.count(x) ? tailPredOf(x) : ctx.preds().block(x); };
+    const Pred p = walkedPred(b);
     Pred cf = p.isBottom() ? Pred::top() : p.classicalFactor(ctx.T, ctx.S);
 
     // A purely classical loop keeps its CFG exactly: its classical facts are the CFG's.
@@ -688,6 +692,8 @@ void Walker::planGuards() {
             continue;
           if ((inB & cf & l.p).isBottom() && (inB & cf & !l.p).isBottom())
             continue;
+          if (!predReads(cf, l.p))
+            continue;   // no term of the factor: splitting on it only multiplies the cubes
           atoms.push_back(k);
         }
         cubes.clear();
@@ -732,7 +738,7 @@ void Walker::planGuards() {
         BasicBlock *y = L[j];
         if (!eligible(y, b))
           continue;
-        const Pred &py = ctx.preds().block(y);
+        const Pred py = walkedPred(y);
         Pred cfy = py.isBottom() ? Pred::bottom() : py.classicalFactor(ctx.T, ctx.S);
         if (!(cfy & !conj).isBottom())
           skip = y;
@@ -1140,9 +1146,9 @@ void Walker::tailMerge(PHINode &phi) {
     ctx.bindFields(&phi, out);
 }
 
-void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in) {
+void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in, const BasicBlock *tailHead) {
   const BasicBlock *b = phi.getParent();
-  BasicBlock *join = out(b);
+  BasicBlock *join = out(tailHead ? tailHead : b);
   // CR rules 9, 26: the unit may bind phi as several fields, joined field by field: a composite's scalar leaves; a
   // scalar is one field.
   SmallVector<Operand, 4> unitVals = ctx.fields(&phi);
@@ -1190,7 +1196,7 @@ void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in) {
     SmallVector<unsigned, 2> cands;
     for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i) {
       const BasicBlock *u = phi.getIncomingBlock(i);
-      if (!idx.count(u) || unitOf.count(u) || (ctx.preds().edge(u, b) & F).isBottom())
+      if (!idx.count(u) || unitOf.count(u) || (tailHead && tailOf.count(u)) || (ctx.preds().edge(u, b) & F).isBottom())
         continue;
       if (none_of(cands, [&](unsigned k) { return phi.getIncomingValue(k) == phi.getIncomingValue(i); }))
         cands.push_back(i);
@@ -1224,13 +1230,14 @@ void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in) {
               !unitOf.count(phi.getIncomingBlock(i)))
             p = p | ctx.preds().edge(phi.getIncomingBlock(i), b);
         p = p & F;
-        if (!(F & !p.classicalFactor(ctx.T, ctx.S)).isBottom())
-          unimplemented("spine: a unit-bound phi whose output edge stands for several original edges that the edge's "
-                        "classical facts do not tell apart (cq-mtt)",
-                        &phi);
+        // Under the facts the quantum part stands for the arm only when its classical factor is the facts themselves.
+        // Otherwise (an output edge standing for classical edges its facts do not tell apart: mbrtowc's error block,
+        // reached on `s == 0` and inside the arm of `s != 0`) the arm's condition keeps its classical atoms: they
+        // choose it, and an arm minted on one of those paths is a don't-care on the other (rule 9).
+        Pred armP = (F & !p.classicalFactor(ctx.T, ctx.S)).isBottom() ? p.quantumPart(ctx.T, ctx.S) : p;
         SmallVector<Operand, 4> fv = fieldsOf(phi.getIncomingValue(k));
         for (unsigned f = 0; f < ws.size(); ++f)
-          arms[f].push_back({p.quantumPart(ctx.T, ctx.S), fv[f]});
+          arms[f].push_back({armP, fv[f]});
       }
       for (unsigned f = 0; f < ws.size(); ++f)
         os.push_back(Operand{selectChain(ctx, arms[f], ws[f], F), true});
@@ -1964,6 +1971,25 @@ void Walker::emitBlock(BasicBlock *b) {
       for (BasicBlock *tb : units.find(t)->second.tail)
         for (Instruction &I : *tb)
           sh.binds.erase(&I);
+    // The unit's binding of C's phis exists only on the unit's output edge. Where other classical paths meet it at the
+    // tail's first block, the phi is joined here: the unit's value, on another edge the incomings its facts admit
+    // (those of the tail come later: the join arms over this value), a |0> seed when none (cq-sp09w: __fwritex).
+    if (auto ie = inEdges.find(b); ie != inEdges.end() && ie->second.size() > 1 &&
+                                   any_of(ie->second, [&](const InEdge &e) { return e.unit == t; }) &&
+                                   tailJoined.insert(t).second) {
+      SmallVector<InEdge, 2> in;
+      for (const InEdge &e : ie->second) {
+        in.push_back(e);
+        if (e.unit == t && units.find(t)->second.cont)
+          for (PHINode &phi : units.find(t)->second.cont->phis())
+            if (auto bi = sh.binds.find(&phi); bi != sh.binds.end())
+              in.back().unitFields[&phi] = SmallVector<Operand, 4>(bi->second.begin(), bi->second.end());
+      }
+      if (BasicBlock *C = units.find(t)->second.cont)
+        for (PHINode &phi : C->phis())
+          if (unitBoundPhis.count(&phi) && spine::isQ(ctx, &phi))
+            joinUnitPhi(phi, in, b);
+    }
   }
 
   if (unitOf.count(b)) {

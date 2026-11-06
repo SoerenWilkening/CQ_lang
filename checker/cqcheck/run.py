@@ -534,7 +534,7 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
             tot = default_env_module(tot)
         if any(Path(o).name == "host_fx.o" for o in objs):  # cq-e4jk; a test's restricted runtime may omit it
             tot = host_effects_module(tot, defined)
-        tot = ctl_measures_module(kept_results_module(kept_copies_module(tot), handle_returning_fns(canon)))
+        tot = ctl_measures_module(kept_table_results_module(kept_results_module(kept_copies_module(tot), handle_returning_fns(canon))))
         from cqcheck import drivers
         tot += drivers.out_globals_ir(ctext if ctext is not None else canon, canon, "__cqe_out_globals",
                                       "cqd_out_mem", "cqd_out_object")
@@ -1137,6 +1137,45 @@ def kept_results_module(text: str, handle_fns: Sequence[str]) -> str:
         m = _HANDLE_CALL.match(line)
         if m and m.group(4) in fns and re.match(r"^\s+\S+ = (?:tail |notail )?call (?:[^@]*\s)?i32 @", line):
             out.append(f"{m.group(1)}call void @cqe__set_store_kept(i32 {m.group(2)})")
+            used = True
+    if used and "declare void @cqe__set_store_kept" not in text:
+        out.append("declare void @cqe__set_store_kept(i32)")
+    return "\n".join(out) + "\n"
+
+
+_TABLE_TWIN = re.compile(r"^define internal void @(__cq_q_\S+_t(_ctl)?)_unc\((.*)\) ?\S* ?\{$")
+_DEFINE_ARITY = r"(?m)^define [^@\n]*@{}\(([^)]*)\)"
+
+
+def kept_table_results_module(text: str) -> str:
+    """§1.4: "For a function rule 18 gives no twin it [the table twin] does nothing else, and every result stays
+    allocated (KEPT)": a kept rail a rule names (CR §6 item 1). A table twin takes ([pred,] outs..., args..., K);
+    each out it never frees takes the kept role (the outs are the parameters it has beyond its clone's)."""
+    lines = text.splitlines()
+    out, used, i = [], False, 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        i += 1
+        m = _TABLE_TWIN.match(line)
+        if not m:
+            continue
+        fwd = re.search(_DEFINE_ARITY.format(re.escape(m.group(1))), text)
+        if not fwd:
+            continue
+        params = re.findall(r"i32 (%[-\w.$\"]+)", m.group(3))
+        arity = lambda p: len([a for a in p.split(",") if a.strip()])
+        n = arity(m.group(3)) - arity(fwd.group(1))
+        first = 1 if m.group(2) else 0
+        end = i
+        while not lines[end].startswith("}"):
+            end += 1
+        body = "\n".join(lines[i:end])
+        marks = [f"  call void @cqe__set_store_kept(i32 {h})" for h in params[first:first + n]
+                 if not re.search(rf"@cqrt_free\(i32 {re.escape(h)}\)", body)]
+        if marks:
+            # the first line of the body (a label cannot come first in a twin with an unnamed entry block)
+            out.extend(marks)
             used = True
     if used and "declare void @cqe__set_store_kept" not in text:
         out.append("declare void @cqe__set_store_kept(i32)")

@@ -3413,6 +3413,18 @@ void Uncompute::resolveAt(Instruction *P, ArrayRef<RailId> list) {
     if (!is_contained(cands, g))
       cands.push_back(g);
   }
+  // A construction's own intermediate between two listed rails (a gep's scaled index, between the index and the
+  // address, resolvePreheader's list naming only instructions' results): a pending reader nothing reads past the
+  // point goes with what it reads (rule 5). One with a later use stays the stop below.
+  for (size_t i = 0; i < cands.size(); ++i)
+    for (RailId o : I.readersOf(cands[i])) {
+      Impl::Rail &y = I.rails[o];
+      if (is_contained(cands, o) || !I.resolvable(o) || !y.exitsDone.empty() || y.released || y.ownedBy != kNone ||
+          y.deferred != kNone || I.isMerge(o))
+        continue;
+      if (none_of(I.anchors(o), [&](Instruction *a) { return a == P || Impl::after(a, P); }))
+        cands.push_back(o);
+    }
   for (RailId g : cands) {
     Impl::Rail &x = I.rails[g];
     const BasicBlock *D = I.defBlock(g);

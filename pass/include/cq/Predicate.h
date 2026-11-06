@@ -45,6 +45,8 @@ private:
 };
 // cq-pfpy: can a and b hold together on some execution? a & b is satisfiable once the switch case atoms of
 // one scrutinee with distinct values are taken as mutually exclusive (a value equals one case at most).
+// Does p read every atom of lit (lit's support within p's)?
+bool predReads(const Pred &p, const Pred &lit);
 bool predsMeet(const Pred &a, const Pred &b);
 struct EdgePreds { llvm::SmallVector<std::pair<const llvm::BasicBlock *, Pred>, 4> succ; };
 class PathPredicates {

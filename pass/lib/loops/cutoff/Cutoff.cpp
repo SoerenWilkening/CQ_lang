@@ -814,9 +814,17 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         }
       // With no incoming from outside, the value where no trip exits (the cutoff reached first) is 0.
       Operand acc;
-      if (earlier)
+      if (earlier) {
+        // A loop of an earlier unit's tail runs on classical paths that unit never took too (cq-mk4ty, stpcpy's word
+        // loop): where their facts exclude its exit edges into C the binding is a don't-care, a |0> seed at the join.
+        Pred ran = Pred::bottom();
+        for (unsigned i = 0; i < P.getNumIncomingValues(); ++i)
+          if (BasicBlock *u = P.getIncomingBlock(i); !inUnit(u) && A.LI.getLoopFor(u))
+            ran = ran | ctx.preds().edge(u, C);
         acc = ctx.operand(&P);
-      else if (outside.empty())
+        if (acc.handle && !ran.isBottom())
+          acc = reachingOperand(ctx, acc, railOf(P.getType()), ran, Pred::top());
+      } else if (outside.empty())
         acc = Operand{Constant::getNullValue(P.getType()), false};
       else if (outside.size() == 1)
         acc = outside.front().second;
