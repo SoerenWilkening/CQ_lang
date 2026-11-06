@@ -189,6 +189,10 @@ CASES = [
     ("twin_rot_in_loop", "r3", [], "lower", [
         r"define internal i32 @__cq_q_h_1_t\((?:(?!\n}\n)[\s\S])*alloca \{ i32, ptr \}(?:(?!\n}\n)[\s\S])*call void @__cq_mints_push",
         r"define internal void @__cq_q_h_1_t_unc\((?:(?!\n}\n|cqrt_ry|_unc\()[\s\S])*call i32 @cqrt_pop\(\)(?:(?!\n}\n|cqrt_free)[\s\S])*\n}\n"]),
+    # Rule 16 (rulings3 H): a by-name callee of a table clone is called after an event, its own symbol's path included.
+    ("table_called_after", "m1", [], "pass", [r"define internal fastcc i32 @g\((?:(?!\n}\n)[\s\S])*@\.cq\.effect\.srand",
+                                              r"define i32 @m1\((?:(?!\n}\n)[\s\S])*@\.cq\.effect\.srand"]),
+    ("table_called_after", "m2", [], "pass", [r"define internal fastcc i32 @__cq_q_g2_1\((?:(?!\n}\n)[\s\S])*@\.cq\.effect\.rand"]),
 ]
 
 

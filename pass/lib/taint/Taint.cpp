@@ -2110,12 +2110,22 @@ void Analyzer::propagateEvents() {
     st.moduleHasEvent = true;
     st.changed = true;
   }
-  if (!st.moduleHasEvent)
-    return;
   auto add = [&](const Function *F) {
     if (st.calledAfter.insert(F).second)
       st.changed = true;
   };
+  // Inside a table clone every function is called after an event, always (rule 16; rulings3 H): the fact is the function's, so a
+  // by-name callee of a table clone and what it reaches have it, event in the module or not.
+  for (auto &S : st.specs) {
+    if (S->declared || !(S->table || st.calledAfter.count(S->F)))
+      continue;
+    for (auto &[CB, v] : S->callees)
+      for (SpecState *C : v)
+        if (!C->declared)
+          add(C->F);
+  }
+  if (!st.moduleHasEvent)
+    return;
   for (Function &F : *st.M)
     if (!F.isDeclaration() && (!F.hasLocalLinkage() || F.hasAddressTaken()))
       add(&F);
