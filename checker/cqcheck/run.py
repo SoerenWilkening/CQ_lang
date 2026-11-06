@@ -1169,8 +1169,8 @@ _NEUTRAL_CALLEE = re.compile(r"^(cq_template_|cqrt_|__cq_mem$|__cq_mints_push$|_
 
 def _no_twin_clones(bodies: Dict[str, str]) -> Set[str]:
     """Rule 18's list read off the lowered bodies, each a function's own reason or a by-name callee's: it writes
-    memory (a bus store or swap, a plain store but the activation counter's and a frame's, __cq_alloc, an indirect
-    call, a host call), measures (Q3: tainted, a _ctl clone's or a controlled copy's rail, a classical-path
+    memory (rule 5: a bus store or swap, a plain store or memory intrinsic to a host-resident object, but the activation
+    counter's and the compiler's own frame slots, __cq_alloc, an indirect call, a host call), measures (Q3: tainted, a _ctl clone's or a controlled copy's rail, a classical-path
     measurement leaves the twin), reads an effect entry's result, or (rulings3 F) rotates per trip. A body of
     templates and rotations outside loops is not on it: its result left live is a leak."""
     def own(fn: str, body: str) -> bool:
@@ -1181,7 +1181,9 @@ def _no_twin_clones(bodies: Dict[str, str]) -> Set[str]:
             return True
         if _INDIRECT.search(body):
             return True
-        frames = set(re.findall(r"(?m)^\s+(%[-\w.$\"]+) = alloca\b", body))
+        if re.search(r"\bcall void @llvm\.mem(cpy|move|set)\.", body):
+            return True
+        frames = set(re.findall(r"(?m)^\s+(%\"?cq\.[-\w.$\"]+) = alloca\b", body))
         for m in re.finditer(r"(?m)^\s+store [^\n]*?, ptr ([@%][-\w.$\"]+)", body):
             if m.group(1) not in frames and not m.group(1).startswith("@__cq_act_") and not frame_gep(body, frames, m.group(1)):
                 return True
