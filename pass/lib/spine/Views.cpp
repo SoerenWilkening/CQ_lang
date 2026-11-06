@@ -787,9 +787,11 @@ Segs orSegs(LoweringContext &ctx, const Segs &a, const Segs &b, const Value *at)
 }
 
 // Is U a reader that takes a packed value field-wise: a call argument whose callee unpacks the formal
-// into several fields (taint's mask splits it the same way), a return, an aggregate insert (the
-// returned { i64, double } of 166)?
-bool fieldConsumer(const Use &U, bool orRooted) {
+// into several fields (taint's mask splits it the same way), a return whose clone returns fields (rule 26:
+// the returns' packings give more than one field and the clone is no table clone, which returns one rail;
+// any other return reads one rail, and its or disjoint is rule 4's template: 113's `_t_ctl`, where the measured
+// bits are rails), an aggregate insert (the returned { i64, double } of 166)?
+bool fieldConsumer(LoweringContext &ctx, const Use &U, bool orRooted) {
   const User *u = U.getUser();
   if (auto *CB = dyn_cast<CallBase>(u)) {
     const Function *F = CB->getCalledFunction();
@@ -798,7 +800,9 @@ bool fieldConsumer(const Use &U, bool orRooted) {
     unsigned i = CB->getArgOperandNo(&U);
     return i < F->arg_size() && unpackCuts(F->getArg(i)).size() > 2;
   }
-  if (isa<ReturnInst>(u) || (isa<InsertValueInst>(u) && U.getOperandNo() == 1))
+  if (isa<ReturnInst>(u))
+    return orRooted && !ctx.S.table && resultIntCuts(*ctx.S.F).size() > 2;
+  if (isa<InsertValueInst>(u) && U.getOperandNo() == 1)
     return orRooted;
   return false;
 }
@@ -827,7 +831,7 @@ bool packs(LoweringContext &ctx, const Instruction &I, unsigned depth = 0) {
     auto *u = dyn_cast<Instruction>(U.getUser());
     if (!u)
       return false;
-    if (fieldConsumer(U, isOr))
+    if (fieldConsumer(ctx, U, isOr))
       continue;
     if (auto *ob = dyn_cast<PossiblyDisjointInst>(u); ob && ob->getOpcode() == Instruction::Or && ob->isDisjoint()) {
       if (!packs(ctx, *u, depth + 1))
@@ -968,7 +972,7 @@ bool lowerPack(LoweringContext &ctx, Instruction &I) {
   // A call argument the callee unpacks takes the callee's fields (taint's mask digits).
   for (const Use &U : I.uses()) {
     auto *CB = dyn_cast<CallBase>(U.getUser());
-    if (!CB || !fieldConsumer(U, true))
+    if (!CB || !fieldConsumer(ctx, U, true))
       continue;
     SmallVector<unsigned, 4> want = unpackCuts(CB->getCalledFunction()->getArg(CB->getArgOperandNo(&U)));
     // One reader: bound at its layout. Several readers at several layouts: bound at the packing's own,

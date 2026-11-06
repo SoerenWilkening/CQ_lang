@@ -1699,6 +1699,71 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
 
 } // namespace
 
+// Rule 14: is v of the guard the latch test's operand w one step before the test of trip 0, "the same expression
+// over SCEV-equal operands, a load equal to a load of the same type at a SCEV-equal address when no memory version
+// change lies between the guard and the loop header"?
+static bool equalAtTripZero(const Value *v, const Value *w, const Loop &L, ScalarEvolution &SE, BasicBlock *guard) {
+  if (v == w)
+    return true;
+  if (v->getType() != w->getType())
+    return false;
+  auto *lv = dyn_cast<LoadInst>(v);
+  auto *lw = dyn_cast<LoadInst>(w);
+  if (lv && lw) {
+    if (lv->getParent() != guard || !equalAtTripZero(lv->getPointerOperand(), lw->getPointerOperand(), L, SE, guard))
+      return false;
+    BasicBlock *h = L.getHeader();
+    for (const BasicBlock *b = guard; b && b != h; b = b->getSingleSuccessor())
+      for (const Instruction &I : *b)
+        if (I.mayWriteToMemory() && (b != guard || lv->comesBefore(&I)))
+          return false;
+    return true;
+  }
+  if (!SE.isSCEVable(v->getType()))
+    return false;
+  const SCEV *sw = SE.getSCEV(const_cast<Value *>(w));
+  if (auto *ar = dyn_cast<SCEVAddRecExpr>(sw); ar && ar->getLoop() == &L && ar->isAffine()) {
+    const SCEV *step = ar->getStepRecurrence(SE);
+    if (!SE.isLoopInvariant(step, &L))
+      return false;
+    sw = SE.getMinusSCEV(ar->getStart(), step);
+  } else if (!SE.isLoopInvariant(sw, &L)) {
+    return false;
+  }
+  return SE.getSCEV(const_cast<Value *>(v)) == sw;
+}
+
+// Rule 14: "the pre-header guard is trip 0 of the latch test": the guard's test for entering is the latch's test for
+// another trip at the trip before the first. Else the guard stays an arm flag that seeds the chain (55).
+static bool guardIsTripZero(const Loop &L, ScalarEvolution &SE) {
+  BasicBlock *h = L.getHeader(), *latch = L.getLoopLatch(), *gb = L.getLoopPredecessor();
+  if (!latch || !gb)
+    return false;
+  BasicBlock *entry = h;
+  if (auto *ub = dyn_cast<BranchInst>(gb->getTerminator()); ub && ub->isUnconditional() && gb->getSinglePredecessor()) {
+    entry = gb;
+    gb = gb->getSinglePredecessor();
+  }
+  auto *gbr = dyn_cast<BranchInst>(gb->getTerminator());
+  auto *lbr = dyn_cast<BranchInst>(latch->getTerminator());
+  if (!gbr || !lbr || !gbr->isConditional() || !lbr->isConditional())
+    return false;
+  auto *gc = dyn_cast<ICmpInst>(gbr->getCondition());
+  auto *lc = dyn_cast<ICmpInst>(lbr->getCondition());
+  if (!gc || !lc)
+    return false;
+  bool gTrue = gbr->getSuccessor(0) == entry, lTrue = lbr->getSuccessor(0) == h;
+  if (gTrue == (gbr->getSuccessor(1) == entry) || lTrue == (lbr->getSuccessor(1) == h))
+    return false;
+  CmpInst::Predicate pg = gTrue ? gc->getPredicate() : gc->getInversePredicate();
+  CmpInst::Predicate pl = lTrue ? lc->getPredicate() : lc->getInversePredicate();
+  if (pg == pl && equalAtTripZero(gc->getOperand(0), lc->getOperand(0), L, SE, gb) &&
+      equalAtTripZero(gc->getOperand(1), lc->getOperand(1), L, SE, gb))
+    return true;
+  return pg == CmpInst::getSwappedPredicate(pl) && equalAtTripZero(gc->getOperand(0), lc->getOperand(1), L, SE, gb) &&
+         equalAtTripZero(gc->getOperand(1), lc->getOperand(0), L, SE, gb);
+}
+
 void lowerCutoff(LoweringContext &ctx, Loop &L, unsigned K, std::optional<uint64_t> B) {
   Function &F = *L.getHeader()->getParent();
   Analyses A(F);
@@ -1715,7 +1780,12 @@ void lowerCutoff(LoweringContext &ctx, Loop &L, unsigned K, std::optional<uint64
   }
   Cutoff U(ctx, A);
   U.seedPred = ctx.currentPredicate();
+  spine::Shared &sh = spine::shared(ctx);
+  Value *savedZero = sh.tripZeroRail;
+  if (guardIsTripZero(*mL, A.SE))
+    sh.tripZeroRail = seed;   // the chain's a_0 stays as the control of a kept store of trip 0 (rule 14, 91)
   U.lowerLoop(*mL, seed, c, !B || *B > K, true);
+  sh.tripZeroRail = savedZero;
 }
 
 namespace exits {
