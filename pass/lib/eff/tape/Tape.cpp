@@ -2,7 +2,7 @@
 //
 // lowerHostEffect (rule 16): a host call taint made an entry is one call sequence on the function's tape t (one
 // cqrt_tape_alloc at the entry of each function that records an entry; 47): the fields, then
-// cqrt_tape_effect[_<W>]_controlled(c, t, name). c is the predicate in scope or an alloc_i1(true) seed freed right after
+// cqrt_tape_effect[_<W>]_controlled(c, t, name, n), n the number of fields. c is the predicate in scope or an alloc_i1(true) seed freed right after
 // the effect call. The _<W> form is used when the program reads the result, the rail it returns: KEPT. name is the C
 // identifier as @.cq.effect.<name>. The fields are the arguments in order: a classical one a tape_write_<W>_lit, a rail a
 // tape_write_<W> field (Role::Tape, kept), a pointer its address (i64), a vector its lanes; a buffer or string is never
@@ -196,17 +196,18 @@ void leafTypes(Type *t, SmallVectorImpl<Type *> &out) {
 
 // One field of an entry: the scalar argument, a pointer its address (rule 21: an i64 literal or address rail), a vector
 // its lanes, an aggregate its scalar fields.
-void emitField(LoweringContext &ctx, CallBase &CB, unsigned a, Value *tape, Value *flag) {
+// Returns the number of fields written.
+unsigned emitField(LoweringContext &ctx, CallBase &CB, unsigned a, Value *tape, Value *flag) {
   Value *v = CB.getArgOperand(a);
   Type *ty = v->getType();
   Type *I64 = Type::getInt64Ty(ctx.M.getContext());
   if (ty->isPointerTy()) {
     scalarField(ctx, tape, flag, bus::address(ctx, v), I64);
-    return;
+    return 1;
   }
   if (ty->isIntegerTy() || ty->isFloatingPointTy()) {
     scalarField(ctx, tape, flag, ctx.operand(v), ty);
-    return;
+    return 1;
   }
   SmallVector<Type *, 4> tys;
   leafTypes(ty, tys);
@@ -219,6 +220,14 @@ void emitField(LoweringContext &ctx, CallBase &CB, unsigned a, Value *tape, Valu
     else
       scalarField(ctx, tape, flag, ops[k], tys[k]->isPointerTy() ? I64 : tys[k]);
   }
+  return ops.size();
+}
+
+// The effect call of an entry of n fields: the _<W> form when the program reads the result, of type rt.
+CallInst *effectCall(LoweringContext &ctx, Value *ctl, Value *tape, Constant *name, unsigned n, Type *rt, bool reads) {
+  Value *count = ConstantInt::get(Type::getInt32Ty(ctx.M.getContext()), n);
+  return reads ? ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffectW, railTypeOf(rt), /*ctl=*/true}, {ctl, tape, name, count})
+               : ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffect, {}, /*ctl=*/true}, {ctl, tape, name, count});
 }
 
 Constant *effectName(Module &M, StringRef name) {
@@ -466,15 +475,15 @@ void lowerHostEffect(LoweringContext &ctx, CallBase &CB) {
     ctl = one;
   }
   Value *tape = tapeOf(ctx);
+  unsigned fields = 0;
   for (unsigned a = 0; a < CB.arg_size(); ++a)
-    emitField(ctx, CB, a, tape, flag);
+    fields += emitField(ctx, CB, a, tape, flag);
   Constant *name = effectName(ctx.M, calleeName(*F, &CB));
   Type *rt = CB.getType();
   bool reads = !rt->isVoidTy() && !CB.use_empty();
   bool wide = reads && (rt->isAggregateType() || rt->isVectorTy());
   reads = reads && !wide;
-  CallInst *eff = reads ? ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffectW, railTypeOf(rt), /*ctl=*/true}, {ctl, tape, name})
-                        : ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffect, {}, /*ctl=*/true}, {ctl, tape, name});
+  CallInst *eff = effectCall(ctx, ctl, tape, name, fields, rt, reads);
   ctx.unc().noteVersionChange(eff);
   if (reads) {
     ctx.unc().recordExternal(eff, Role::Kept);   // the entry's result rail: never freed
@@ -507,16 +516,18 @@ SmallVector<Value *, 2> entryOnTape(LoweringContext &ctx, CallBase &CB, const Op
                        : ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 1}}, {ConstantInt::getTrue(C)});
   Value *ctl = flag ? flag : one;
   Value *tape = tapeOf(ctx);
-  if (first)
+  unsigned fields = 0;
+  if (first) {
     scalarField(ctx, tape, flag, *first, Type::getInt64Ty(C));
+    ++fields;
+  }
   for (unsigned a = 0; a < CB.arg_size(); ++a)
-    emitField(ctx, CB, a, tape, flag);
+    fields += emitField(ctx, CB, a, tape, flag);
   Type *rt = CB.getType();
   bool reads = !rt->isVoidTy() && !CB.use_empty();
   bool wide = reads && (rt->isAggregateType() || rt->isVectorTy());
   reads = reads && !wide;
-  CallInst *eff = reads ? ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffectW, railTypeOf(rt), /*ctl=*/true}, {ctl, tape, name})
-                        : ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffect, {}, /*ctl=*/true}, {ctl, tape, name});
+  CallInst *eff = effectCall(ctx, ctl, tape, name, fields, rt, reads);
   ctx.unc().noteVersionChange(eff);
   SmallVector<Value *, 2> out;
   if (reads) {
@@ -555,7 +566,7 @@ void lowerMainExit(LoweringContext &ctx, Operand r, Type *ty) {
   ctx.unc().recordSeed(one);
   Value *tape = tapeOf(ctx);
   scalarField(ctx, tape, nullptr, r, ty);
-  CallInst *eff = ctx.emitCore(abi::CoreSpec{abi::Core::TapeEffect, {}, /*ctl=*/true}, {one, tape, effectName(ctx.M, "exit")});
+  CallInst *eff = effectCall(ctx, one, tape, effectName(ctx.M, "exit"), 1, nullptr, false);
   ctx.unc().noteVersionChange(eff);
 }
 

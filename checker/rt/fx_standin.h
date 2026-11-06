@@ -52,13 +52,6 @@ static inline const cq_fx_ent *cq_fx_find(const char *name) {
   return NULL;
 }
 
-/* How many arguments a call of this callee takes, -1 when no fixed number does (printf-family's varargs, open's
- * mode): one role per argument otherwise (rulings 2 C, cq-kzfv: the split of a tape's waiting fields). */
-static inline int cq_fx_arity(const cq_fx_ent *e) {
-  if (strchr(e->roles, 'F') || !strcmp(e->name, "open")) return -1;
-  return (int)strlen(e->roles);
-}
-
 /* The hash after the name; a null name (a host address) mixes no name. */
 static inline uint64_t cq_fx_begin(const char *name) { return cq_standin_name(name ? name : "", name ? strlen(name) : 0); }
 

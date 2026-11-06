@@ -25,7 +25,7 @@ llvm::FunctionCallee declare(llvm::Module &, const TemplateSpec &, bool unc);
 std::optional<TemplateSpec> parseTemplate(llvm::StringRef symbol, bool *unc);
 enum class Core : uint8_t { Alloc, Free, Measure, Ry, RyQAngle, RzI1, RzQAngle, NotI1, AndI1, OrI1, XorI1,
   Copy, Xorc, QramAlloc, QramStore, QramLoad, QramSwap, TapeAlloc, TapeFmt, TapeEffect,
-  TapeEffectW,   // CR §1.3: tape_effect_<W>_controlled(c, t, name) -> r
+  TapeEffectW,   // CR §1.3: tape_effect_<W>_controlled(c, t, name, n) -> r
   TapeWrite, TapeWriteLit, AbortI1, Push, Pop,
   InvertBegin, InvertEnd };   // cq-4593 (cq-arch 2026-11-02): CR §1.3, rule 17
 // CR §1.3: the host symbols of the injection bundle's runtime object (rules 16, 19): i32 __cq_mem(),

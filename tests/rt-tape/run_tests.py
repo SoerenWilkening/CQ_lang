@@ -560,20 +560,18 @@ def scenarios(clang, work):
     check("percent_n", ok_shot([("ab%nc\n", True)], b"abc\n"))
     check("excess", clean(lambda tr, sh: None if (
         [len(e["fields"]) for e in sh["events"]] == [1, 0] and sh["stdout"] == "x\ny\n") else "%s" % sh["events"]))
-    def excess(fields, marks):
+    def excess(fields):
         def go(trace, sh):
             got = [[int(f["v"], 16) for f in e["fields"]] for e in sh["events"]]
             if got != fields or sh["stdout"] != "x\n":
                 return "fields %s stdout %r" % (got, sh["stdout"])
-            if [bool(e.get("split_open")) for e in sh["events"]] != marks:
-                return "marks %s" % sh["events"]
             return None
         return go
-    check("excess_effect", clean(excess([[1, 2], [3]], [False, False])))
-    check("excess_none", clean(excess([[], [3]], [False, False])))
-    check("excess_unknown", clean(excess([[], [1, 2], [5]], [False, True, False])))
+    check("excess_effect", clean(excess([[1, 2], [3]])))
+    check("excess_none", clean(excess([[], [3]])))
+    check("excess_unknown", clean(excess([[1], [2], [5]])))
     check("excess_variadic", clean(lambda tr, sh: None if (
-        [len(e["fields"]) for e in sh["events"]] == [0, 2] and sh["events"][1].get("split_open")) else "%s" % sh["events"]))
+        [len(e["fields"]) for e in sh["events"]] == [0, 2]) else "%s" % sh["events"]))
     check("retired", ok_shot([], b""))
 
     def host_fx(trace, shot):
@@ -609,6 +607,8 @@ def scenarios(clang, work):
     check("v_missing_field", violation("needs more fields"))
     check("v_bad_conv", violation("has no defined meaning"))
     check("v_effect_arity", violation("fgets has 1 fields"))
+    check("v_effect_short", violation("an effect entry of 2 fields, 1 written"))
+    check("v_effect_surplus", violation("1 fields on the tape that no entry takes"))
     check("v_null_name_empty", violation("null name with no host address"))
     check("v_effect_open_format", violation("still lacks fields"))
     check("v_width_mismatch", violation("width i32 but rail .* is i8"))

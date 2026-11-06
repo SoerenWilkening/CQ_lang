@@ -135,11 +135,11 @@ void coreRoles(Sig &S, const CallBase &CB) {
   case Core::TapeEffect:
     if (!C.ctl)  // only the _controlled form exists; its flag is argument 0 either way
       R.push_back(Role::Read);
-    R.append({Role::Read, Role::Classical});
+    R.append({Role::Read, Role::Classical, Role::Classical});
     S.res = Res::None;
     break;
-  case Core::TapeEffectW:   // CR §1.3: (c, t, name) -> r; the flag is argument 0
-    R.append({Role::Read, Role::Classical});
+  case Core::TapeEffectW:   // CR §1.3: (c, t, name, n) -> r; the flag is argument 0
+    R.append({Role::Read, Role::Classical, Role::Classical});
     S.res = Res::Known;
     break;
   case Core::TapeWrite:

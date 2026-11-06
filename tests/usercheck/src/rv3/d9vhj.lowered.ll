@@ -75,7 +75,7 @@ define i32 @f(i32 noundef %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr
 30:                                               ; preds = %14
   %31 = call i32 @cqrt_tape_write_i64_controlled(i32 %16, i32 %5, i32 %10)
   %32 = call i32 @cqrt_tape_write_i32_controlled(i32 %16, i32 %5, i32 %7)
-  %33 = call i32 @cqrt_tape_effect_i32_controlled(i32 %16, i32 %5, ptr null)
+  %33 = call i32 @cqrt_tape_effect_i32_controlled(i32 %16, i32 %5, ptr null, i32 2)
   %34 = call i32 @cq_template_select_i32(i32 %16, i32 %33, i32 %17)
   %35 = call i32 @cqrt_alloc_i32(i32 0)
   call void @cqrt_copy_i32(i32 %34, i32 %35)
@@ -134,7 +134,7 @@ define i32 @f(i32 noundef %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr
   %62 = ptrtoint ptr %53 to i64
   call void @cqrt_tape_write_i64_lit(i32 %5, i64 %62)
   %63 = call i32 @cqrt_tape_write_i32_controlled(i32 %54, i32 %5, i32 %6)
-  %64 = call i32 @cqrt_tape_effect_i32_controlled(i32 %54, i32 %5, ptr null)
+  %64 = call i32 @cqrt_tape_effect_i32_controlled(i32 %54, i32 %5, ptr null, i32 2)
   br label %65
 
 65:                                               ; preds = %61, %57
@@ -288,7 +288,7 @@ declare i32 @cqrt_tape_write_i64_controlled(i32, i32, i32)
 
 declare i32 @cqrt_tape_write_i32_controlled(i32, i32, i32)
 
-declare i32 @cqrt_tape_effect_i32_controlled(i32, i32, ptr)
+declare i32 @cqrt_tape_effect_i32_controlled(i32, i32, ptr, i32)
 
 declare i32 @cqrt_pop()
 
@@ -375,7 +375,7 @@ define internal i32 @__cq_q_f_111_t(i32 %0, i32 %1, i32 %2, i32 %3) {
 39:                                               ; preds = %23
   %40 = call i32 @cqrt_tape_write_i64_controlled(i32 %25, i32 %6, i32 %19)
   %41 = call i32 @cqrt_tape_write_i32_controlled(i32 %25, i32 %6, i32 %12)
-  %42 = call i32 @cqrt_tape_effect_i32_controlled(i32 %25, i32 %6, ptr null)
+  %42 = call i32 @cqrt_tape_effect_i32_controlled(i32 %25, i32 %6, ptr null, i32 2)
   %43 = call i32 @cq_template_select_i32(i32 %25, i32 %42, i32 %26)
   %44 = call i32 @cqrt_alloc_i32(i32 0)
   call void @cqrt_copy_i32(i32 %43, i32 %44)
@@ -458,7 +458,7 @@ define internal i32 @__cq_q_f_111_t(i32 %0, i32 %1, i32 %2, i32 %3) {
 83:                                               ; preds = %66
   %84 = call i32 @cqrt_tape_write_i64_controlled(i32 %68, i32 %6, i32 %62)
   %85 = call i32 @cqrt_tape_write_i32_controlled(i32 %68, i32 %6, i32 %7)
-  %86 = call i32 @cqrt_tape_effect_i32_controlled(i32 %68, i32 %6, ptr null)
+  %86 = call i32 @cqrt_tape_effect_i32_controlled(i32 %68, i32 %6, ptr null, i32 2)
   %87 = call i32 @cq_template_select_i32(i32 %68, i32 %86, i32 %69)
   %88 = call i32 @cqrt_alloc_i32(i32 0)
   call void @cqrt_copy_i32(i32 %87, i32 %88)
@@ -627,7 +627,7 @@ define internal i32 @__cq_q_f_111_t_ctl(i32 %0, i32 %1, i32 %2, i32 %3, i32 %4) 
 44:                                               ; preds = %27
   %45 = call i32 @cqrt_tape_write_i64_controlled(i32 %29, i32 %11, i32 %24)
   %46 = call i32 @cqrt_tape_write_i32_controlled(i32 %29, i32 %11, i32 %17)
-  %47 = call i32 @cqrt_tape_effect_i32_controlled(i32 %29, i32 %11, ptr null)
+  %47 = call i32 @cqrt_tape_effect_i32_controlled(i32 %29, i32 %11, ptr null, i32 2)
   %48 = call i32 @cq_template_select_i32(i32 %29, i32 %47, i32 %30)
   %49 = call i32 @cqrt_alloc_i32(i32 0)
   call void @cqrt_copy_i32(i32 %48, i32 %49)
@@ -711,7 +711,7 @@ define internal i32 @__cq_q_f_111_t_ctl(i32 %0, i32 %1, i32 %2, i32 %3, i32 %4) 
 89:                                               ; preds = %72
   %90 = call i32 @cqrt_tape_write_i64_controlled(i32 %74, i32 %11, i32 %67)
   %91 = call i32 @cqrt_tape_write_i32_controlled(i32 %74, i32 %11, i32 %12)
-  %92 = call i32 @cqrt_tape_effect_i32_controlled(i32 %74, i32 %11, ptr null)
+  %92 = call i32 @cqrt_tape_effect_i32_controlled(i32 %74, i32 %11, ptr null, i32 2)
   %93 = call i32 @cq_template_select_i32(i32 %74, i32 %92, i32 %75)
   %94 = call i32 @cqrt_alloc_i32(i32 0)
   call void @cqrt_copy_i32(i32 %93, i32 %94)
@@ -883,7 +883,7 @@ define internal i32 @__cq_q_f_111_t_pure(i32 %0, i32 %1, i32 %2, i32 %3) {
 31:                                               ; preds = %15
   %32 = call i32 @cqrt_tape_write_i64_controlled(i32 %17, i32 %6, i32 %11)
   %33 = call i32 @cqrt_tape_write_i32_controlled(i32 %17, i32 %6, i32 %8)
-  %34 = call i32 @cqrt_tape_effect_i32_controlled(i32 %17, i32 %6, ptr null)
+  %34 = call i32 @cqrt_tape_effect_i32_controlled(i32 %17, i32 %6, ptr null, i32 2)
   %35 = call i32 @cq_template_select_i32(i32 %17, i32 %34, i32 %18)
   %36 = call i32 @cqrt_alloc_i32(i32 0)
   call void @cqrt_copy_i32(i32 %35, i32 %36)
@@ -966,7 +966,7 @@ define internal i32 @__cq_q_f_111_t_pure(i32 %0, i32 %1, i32 %2, i32 %3) {
 75:                                               ; preds = %58
   %76 = call i32 @cqrt_tape_write_i64_controlled(i32 %60, i32 %6, i32 %54)
   %77 = call i32 @cqrt_tape_write_i32_controlled(i32 %60, i32 %6, i32 %7)
-  %78 = call i32 @cqrt_tape_effect_i32_controlled(i32 %60, i32 %6, ptr null)
+  %78 = call i32 @cqrt_tape_effect_i32_controlled(i32 %60, i32 %6, ptr null, i32 2)
   %79 = call i32 @cq_template_select_i32(i32 %60, i32 %78, i32 %61)
   %80 = call i32 @cqrt_alloc_i32(i32 0)
   call void @cqrt_copy_i32(i32 %79, i32 %80)

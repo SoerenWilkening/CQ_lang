@@ -7,14 +7,12 @@
  *
  *  - All format entries, effect entries and abort flags form ONE event sequence in call order.
  *  - A format entry is opened by tape_fmt and takes the fields its format string consumes. An effect
- *    entry takes the fields written to its tape since the previous entry, and is complete at its call.
- *    Fields past what a format consumes wait for the tape's next entry: every argument of a printf is a
- *    field of its format entry and the excess is ignored as C ignores it (CR rule 16, C11 7.21.6.1p2;
- *    rulings 2 C, cq-kzfv). A next format entry or the end of the shot gives them to the format entry
- *    they follow; an effect entry of a callee of known arity (fx_standin.h) takes its last `arity` and
- *    the earlier ones go to that format entry. For any other callee the ABI gives no boundary
- *    (SPEC_ISSUES, ABI 1.11): the effect takes them all and its object says "split_open", and
- *    compare.py reports a C call with fewer arguments as that gap, an internal error, never a verdict.
+ *    entry takes the last n fields written to its tape before the call (its argument n; ABI 1.11, rule
+ *    16, cq-6ucw), and is complete at its call. Fields past what a format consumes wait for the tape's
+ *    next entry: every argument of a printf is a field of its format entry and the excess is ignored as
+ *    C ignores it (CR rule 16, C11 7.21.6.1p2; rulings 2 C, cq-kzfv). A next format entry or the end of
+ *    the shot gives them to the format entry they follow, and so does an effect entry those fields are
+ *    earlier than its last n.
  *  - The predicate is read at the call. A classical-valued c is kept as its bit; any other c is copied
  *    to a fresh kept tape rail of the event, which the end of the shot reads.
  *  - Capture (at completion): the buffers and strings the backend knows by name (fx_standin.h roles, a
@@ -212,7 +210,6 @@ typedef struct {
   int reads_quantum;     /* a capture took a tape rail */
   int cls;
   int behind_abort;      /* an earlier abort flag read 1 */
-  int split_open;        /* effect entry: it took fields waiting behind a format entry, with no boundary known */
   int performed;         /* the entry was performed at the call (or, at the shot, will be) */
   int32_t r;             /* the result rail, 0: bare form */
   char rw[8];
@@ -589,18 +586,25 @@ static void take_pending(int ti, event *e) {
   p->n = 0;
 }
 
-/* A format entry was the tape's last and fields wait: the excess of a printf (rulings 2 C, cq-kzfv) or the arguments
- * of the effect entry e. A callee of known arity takes its last `arity`, the earlier ones close the format entry, which
- * ignores them. No arity: the ABI gives no boundary (SPEC_ISSUES, ABI 1.11), e takes them all, marked. */
-static void split_after_format(int ti, event *fmt, event *e, const cq_fx_ent *ent) {
+/* The fields waiting on tape ti before an effect entry of n fields: its last n stay for it. The earlier ones are the
+ * excess of the format entry that was the tape's last, which ignores them (rulings 2 C, cq-kzfv); no entry takes them
+ * behind anything else. */
+static void split_effect_fields(int ti, int n, const char *sym) {
   pendlist *p = &g_tape_pend[ti];
-  int arity = ent ? cq_fx_arity(ent) : -1;
-  if (arity < 0) { e->split_open = 1; return; }
-  int excess = p->n - arity;
-  if (excess <= 0) return;
-  for (int i = 0; i < excess; i++) *event_field_slot(fmt) = p->f[i];
-  memmove(p->f, p->f + excess, (size_t)arity * sizeof *p->f);
-  p->n = arity;
+  if (n < 0 || n > p->n) {
+    cqe_fail("tape: %s: an effect entry of %d fields, %d written", sym, n, p->n);
+    return;
+  }
+  int excess = p->n - n;
+  if (!excess) return;
+  if (g_tape_last[ti] < 0 || g_ev[g_tape_last[ti]].k != E_FMT) {
+    cqe_fail("tape: %s: %d fields on the tape that no entry takes", sym, excess);
+  } else {
+    event *fmt = &g_ev[g_tape_last[ti]];
+    for (int i = 0; i < excess; i++) *event_field_slot(fmt) = p->f[i];
+  }
+  memmove(p->f, p->f + excess, (size_t)n * sizeof *p->f);
+  p->n = n;
 }
 
 /* The event's copy of its predicate, read at the call. */
@@ -667,7 +671,7 @@ static const char *host_address_name(uint64_t a) {
 }
 
 /* Returns the result rail, or 0 for the bare form. */
-static int32_t op_tape_effect(int32_t c, int32_t t, const char *name, const char *rw, const char *sym) {
+static int32_t op_tape_effect(int32_t c, int32_t t, const char *name, int32_t n, const char *rw, const char *sym) {
   ensure_exit();
   int ti = tape_index(t, sym);
   event *e = new_event(E_EFFECT);
@@ -682,8 +686,7 @@ static int32_t op_tape_effect(int32_t c, int32_t t, const char *name, const char
       cqe_fail("tape: %s: format entry %d on tape %d still lacks fields", sym, g_tape_open[ti], (int)t);
       g_tape_open[ti] = -1;
     }
-    if (g_tape_pend[ti].n && g_tape_last[ti] >= 0 && g_ev[g_tape_last[ti]].k == E_FMT)
-      split_after_format(ti, &g_ev[g_tape_last[ti]], e, ent);
+    split_effect_fields(ti, n, sym);
     take_pending(ti, e);
     g_tape_last[ti] = seq;
   }
@@ -973,7 +976,6 @@ static void entry_json(sbuf *b, const event *e, const char *when) {
   sb_printf(b, "\"seq\":%d,\"kind\":\"%s\",\"t\":%d,\"pred\":%d,\"class\":\"%s\",\"performed\":%s,", (int)(e - g_ev),
             e->k == E_FMT ? "fmt" : "effect", (int)e->t, e->pred, cls[e->cls], e->performed ? "true" : "false");
   if (when) sb_printf(b, "\"when\":\"%s\",", when);
-  if (e->split_open) sb_puts(b, "\"split_open\":true,");
   sb_printf(b, "\"%s\":", e->k == E_FMT ? "fmt" : "name");
   if (e->str) sb_json_str(b, e->str, strlen(e->str));
   else sb_puts(b, "null");
@@ -1135,8 +1137,8 @@ static int tape_dispatch_(const cqe_tname *tn, const cqe_val *a, int n, cqe_val 
   }
   if (!strcmp(op, "tape_effect")) {
     FORM(ctl && !lit);   /* no uncontrolled form exists */
-    ARITY(3);
-    int32_t r = op_tape_effect(arg_i32(&a[0]), arg_i32(&a[1]), arg_ptr(&a[2]), wtok, sym);
+    ARITY(4);
+    int32_t r = op_tape_effect(arg_i32(&a[0]), arg_i32(&a[1]), arg_ptr(&a[2]), arg_i32(&a[3]), wtok, sym);
     if (!wtok[0]) return 0;
     return set_handle(out, r, sym);
   }

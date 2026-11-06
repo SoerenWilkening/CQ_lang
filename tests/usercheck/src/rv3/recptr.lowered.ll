@@ -58,7 +58,7 @@ define i32 @f(i32 noundef %0) local_unnamed_addr #2 {
   %15 = call i32 @cqrt_alloc_i1(i1 true)
   call void @cqrt_tape_write_i64_lit(i32 %2, i64 %14)
   %16 = call i32 @cqrt_tape_write_i32(i32 %2, i32 %6)
-  %17 = call i32 @cqrt_tape_effect_i32_controlled(i32 %15, i32 %2, ptr null)
+  %17 = call i32 @cqrt_tape_effect_i32_controlled(i32 %15, i32 %2, ptr null, i32 2)
   call void @cqrt_free(i32 %15)
   br label %18
 
@@ -304,7 +304,7 @@ declare void @cqrt_tape_write_i64_lit(i32, i64)
 
 declare i32 @cqrt_tape_write_i32(i32, i32)
 
-declare i32 @cqrt_tape_effect_i32_controlled(i32, i32, ptr)
+declare i32 @cqrt_tape_effect_i32_controlled(i32, i32, ptr, i32)
 
 declare i32 @cqrt_measure_i32(i32)
 
@@ -346,7 +346,7 @@ define internal i32 @__cq_q_f_1_t(i32 %0, i32 %1) {
   %20 = call i32 @cqrt_alloc_i1(i1 true)
   call void @cqrt_tape_write_i64_lit(i32 %3, i64 %19)
   %21 = call i32 @cqrt_tape_write_i32(i32 %3, i32 %11)
-  %22 = call i32 @cqrt_tape_effect_i32_controlled(i32 %20, i32 %3, ptr null)
+  %22 = call i32 @cqrt_tape_effect_i32_controlled(i32 %20, i32 %3, ptr null, i32 2)
   call void @cqrt_free(i32 %20)
   br label %23
 
@@ -455,7 +455,7 @@ define internal i32 @__cq_q_f_1_t_ctl(i32 %0, i32 %1, i32 %2) {
 39:                                               ; preds = %22
   %40 = call i32 @cqrt_tape_write_i64_controlled(i32 %24, i32 %8, i32 %18)
   %41 = call i32 @cqrt_tape_write_i32_controlled(i32 %24, i32 %8, i32 %19)
-  %42 = call i32 @cqrt_tape_effect_i32_controlled(i32 %24, i32 %8, ptr null)
+  %42 = call i32 @cqrt_tape_effect_i32_controlled(i32 %24, i32 %8, ptr null, i32 2)
   %43 = call i32 @cq_template_select_i32(i32 %24, i32 %42, i32 %25)
   %44 = call i32 @cqrt_alloc_i32(i32 0)
   call void @cqrt_copy_i32(i32 %43, i32 %44)
@@ -575,7 +575,7 @@ define internal i32 @__cq_q_f_1_t_pure(i32 %0, i32 %1) {
   %16 = call i32 @cqrt_alloc_i1(i1 true)
   call void @cqrt_tape_write_i64_lit(i32 %3, i64 %15)
   %17 = call i32 @cqrt_tape_write_i32(i32 %3, i32 %7)
-  %18 = call i32 @cqrt_tape_effect_i32_controlled(i32 %16, i32 %3, ptr null)
+  %18 = call i32 @cqrt_tape_effect_i32_controlled(i32 %16, i32 %3, ptr null, i32 2)
   call void @cqrt_free(i32 %16)
   br label %19
 

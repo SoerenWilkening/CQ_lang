@@ -1126,7 +1126,7 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
 
 _TABLE_RESULT = re.compile(r"^\s+(%[-\w.$\"]+) = (?:tail |notail )?call [^@]*?%[-\w.$\"]+\(")
 _COPY_OUT = re.compile(r"^(\s+)call void @cqrt_copy_\w+\(i32 (%[-\w.$\"]+), i32 (%[-\w.$\"]+)\)")
-_NULL_EFFECT = re.compile(r"^\s+(%[-\w.$\"]+) = call i32 @cqrt_tape_effect_\w+_controlled\(.*, ptr null\)")
+_NULL_EFFECT = re.compile(r"^\s+(%[-\w.$\"]+) = call i32 @cqrt_tape_effect_\w+_controlled\(.*, ptr null, i32 \d+\)")
 _SELECT = re.compile(r"^\s+(%[-\w.$\"]+) = call i32 @cq_template_select_\w+\(i32 [^,]+, i32 ([^,]+), i32 [^,)]+\)")
 _SELECT_UNC = re.compile(r"^\s+call void @cq_template_select_\w+_unc\(i32 (%[-\w.$\"]+),")
 _EXTRACT = re.compile(r"^\s+(%[-\w.$\"]+) = extractvalue \{[^}]*\} (%[-\w.$\"]+), \d+")
@@ -1458,10 +1458,7 @@ def _fx_arg(f: dict) -> dict:
 def _fx_event(e: dict) -> dict:
     """One {"ev":"effect"} line (rt_tape.c's entry object, host_fx.c's and fx_call.h's direct call) as
     compare reads it: what the C program does at this call."""
-    out = {"name": e.get("name"), "args": [_fx_arg(a) for a in e.get("fields", e.get("args", []))]}
-    if e.get("split_open"):
-        out["split_open"] = True   # rt_tape.c: no boundary known behind a format entry (compare._split_gap)
-    return out
+    return {"name": e.get("name"), "args": [_fx_arg(a) for a in e.get("fields", e.get("args", []))]}
 
 
 def _effects_in_order(lines: List[dict]) -> List[dict]:

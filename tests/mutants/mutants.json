@@ -436,7 +436,7 @@
       "note": "remove_cond's effect entry and its path field are deleted: remove() is never performed where x > k (review chk-h1 m4, cq-e4jk)",
       "edits": [
         {
-          "old": "  call void @cqrt_tape_effect_controlled(i32 %6, i32 %4, ptr @.cq.effect.remove)",
+          "old": "  call void @cqrt_tape_effect_controlled(i32 %6, i32 %4, ptr @.cq.effect.remove, i32 1)",
           "new": ""
         },
         {

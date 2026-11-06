@@ -569,7 +569,7 @@ static void effect_qstore(int cv) {
   C2("cqrt_tape_write_i64_lit", "void|i32,i64", t, A(inbuf));
   C2("cqrt_tape_write_i32_lit", "void|i32,i32", t, 4);
   C2("cqrt_tape_write_i64_lit", "void|i32,i64", t, 0x1000);
-  C3("cqrt_tape_effect_i64_controlled", "i32|i32,i32,ptr", c, t, A("fgets"));
+  C4("cqrt_tape_effect_i64_controlled", "i32|i32,i32,ptr,i32", c, t, A("fgets"), 3);
   CHECK(inbuf[0] == 0xA0 && inbuf[1] == 0xA1); /* no host write */
   __cqe_out_mem("inbuf", A(inbuf), 4);
 }
@@ -590,7 +590,7 @@ static void effect_cstore(void) {
   C2("cqrt_tape_write_i32_lit", "void|i32,i32", t, 4);
   C2("cqrt_tape_write_i64_lit", "void|i32,i64", t, 0x1000);
   int32_t c = seed1(1);
-  C3("cqrt_tape_effect_i64_controlled", "i32|i32,i32,ptr", c, t, A("fgets"));
+  C4("cqrt_tape_effect_i64_controlled", "i32|i32,i32,ptr,i32", c, t, A("fgets"), 3);
   CHECK(cbuf[0] >= 'a' && cbuf[0] <= 'z' && cbuf[2] >= 'a' && cbuf[2] <= 'z' && cbuf[3] == 0); /* host bytes */
   CHECK(cbuf[4] == 0xB4);
   int32_t h = LOADHL32(m, cbuf);

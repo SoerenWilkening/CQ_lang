@@ -26,7 +26,7 @@ define i32 @f(i32 noundef %0) local_unnamed_addr #0 {
   call void @cqrt_free(i32 %5)
   call void @cq_template_and_i32_hl_unc(i32 %4, i32 %3, i32 1)
   call void @cqrt_free(i32 %4)
-  call void @cqrt_tape_effect_controlled(i32 %7, i32 %2, ptr @.cq.effect.puts)
+  call void @cqrt_tape_effect_controlled(i32 %7, i32 %2, ptr @.cq.effect.puts, i32 1)
   call void @cqrt_free(i32 %7)
   %9 = call i32 @cqrt_measure_i32(i32 %3), !cq.measure !6
   ret i32 %9
@@ -51,7 +51,7 @@ declare i32 @cqrt_tape_alloc()
 
 declare i32 @cqrt_tape_write_i64(i32, i32)
 
-declare void @cqrt_tape_effect_controlled(i32, i32, ptr)
+declare void @cqrt_tape_effect_controlled(i32, i32, ptr, i32)
 
 declare i32 @cqrt_measure_i32(i32)
 
@@ -88,7 +88,7 @@ define internal i32 @__cq_q_f_1_t(i32 %0, i32 %1) {
   call void @cqrt_free(i32 %10)
   call void @cq_template_and_i32_hl_unc(i32 %9, i32 %4, i32 1)
   call void @cqrt_free(i32 %9)
-  call void @cqrt_tape_effect_controlled(i32 %12, i32 %3, ptr @.cq.effect.puts)
+  call void @cqrt_tape_effect_controlled(i32 %12, i32 %3, ptr @.cq.effect.puts, i32 1)
   call void @cqrt_free(i32 %12)
   %14 = call i32 @cqrt_measure_i32(i32 %4), !cq.measure !6
   %15 = load ptr, ptr %cq.mints, align 8
@@ -155,7 +155,7 @@ define internal i32 @__cq_q_f_1_t_ctl(i32 %0, i32 %1, i32 %2) {
   call void @cqrt_free(i32 %15)
   call void @cq_template_and_i32_hl_unc(i32 %14, i32 %9, i32 1)
   call void @cqrt_free(i32 %14)
-  call void @cqrt_tape_effect_controlled(i32 %0, i32 %8, ptr @.cq.effect.puts)
+  call void @cqrt_tape_effect_controlled(i32 %0, i32 %8, ptr @.cq.effect.puts, i32 1)
   %18 = call i32 @cqrt_alloc_i32(i32 0)
   call void @cqrt_copy_i32_controlled(i32 %0, i32 %9, i32 %18)
   %19 = call i32 @cqrt_measure_i32(i32 %18), !cq.measure !6

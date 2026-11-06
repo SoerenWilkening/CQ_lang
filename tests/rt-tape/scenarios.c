@@ -28,12 +28,12 @@ static int32_t q1(int b) { return fake_qrail("i1", fake_i(1, (uint64_t)b, 0)); }
 static int32_t q32(uint32_t x) { return fake_qrail("i32", fake_i(32, x, 0)); }
 static int32_t q64p(const void *p) { return fake_qrail("i64", fake_p(p)); }
 static int32_t r64p(const void *p) { return fake_rail("i64", fake_p(p)); }
-static void eff(int32_t c, int32_t t, const char *name) { fake_call("cqrt_tape_effect_controlled", 3, H(c), H(t), P(name)); }
-static int32_t eff32(int32_t c, int32_t t, const char *name) {
-  return fake_call("cqrt_tape_effect_i32_controlled", 3, H(c), H(t), P(name));
+static void eff(int32_t c, int32_t t, const char *name, int32_t n) { fake_call("cqrt_tape_effect_controlled", 4, H(c), H(t), P(name), H(n)); }
+static int32_t eff32(int32_t c, int32_t t, const char *name, int32_t n) {
+  return fake_call("cqrt_tape_effect_i32_controlled", 4, H(c), H(t), P(name), H(n));
 }
-static int32_t eff64(int32_t c, int32_t t, const char *name) {
-  return fake_call("cqrt_tape_effect_i64_controlled", 3, H(c), H(t), P(name));
+static int32_t eff64(int32_t c, int32_t t, const char *name, int32_t n) {
+  return fake_call("cqrt_tape_effect_i64_controlled", 4, H(c), H(t), P(name), H(n));
 }
 static void li32(int32_t t, uint32_t x) { lit("i32", t, fake_i(32, x, 0)); }
 static void li64(int32_t t, uint64_t x) { lit("i64", t, fake_i(64, x, 0)); }
@@ -122,47 +122,47 @@ int main(int argc, char **argv) {
   } else if (!strcmp(s, "effect")) {        /* classical: resolved, logged at the call, never executed */
     int32_t t = alloc();
     str(t, "/tmp/cq_rt_tape_must_not_exist");
-    eff(i1(1), t, "remove");
+    eff(i1(1), t, "remove", 1);
     li32(t, 30);
-    eff(i1(0), t, "raise");
+    eff(i1(0), t, "raise", 1);
   } else if (!strcmp(s, "res_result")) {    /* the result form: the stand-in's value, classical-valued */
     int32_t t = alloc();
     li32(t, 30);
-    int32_t r = eff32(i1(1), t, "raise");
+    int32_t r = eff32(i1(1), t, "raise", 1);
     fake_rail("i32", *cqe_rail(r));
     li32(t, 30);
-    int32_t r0 = eff32(i1(0), t, "raise");
+    int32_t r0 = eff32(i1(0), t, "raise", 1);
     fake_rail("i32", *cqe_rail(r0));
     li64(t, 5);
-    int32_t r64 = eff64(i1(1), t, "unknown_long");
+    int32_t r64 = eff64(i1(1), t, "unknown_long", 1);
     fake_rail("i64", *cqe_rail(r64));
   } else if (!strcmp(s, "addr_not_mixed")) { /* an address-range i64 is not mixed; a null name mixes no name */
     int32_t t = alloc();
     char buf[8];
     li64(t, (uint64_t)(uintptr_t)buf);
     li32(t, 7);
-    int32_t r = eff32(i1(1), t, "unknown_fn");
+    int32_t r = eff32(i1(1), t, "unknown_fn", 2);
     fake_rail("i32", *cqe_rail(r));
     li32(t, 7);
-    int32_t r2 = eff32(i1(1), t, "unknown_fn");
+    int32_t r2 = eff32(i1(1), t, "unknown_fn", 1);
     fake_rail("i32", *cqe_rail(r2));
     li64(t, (uint64_t)(uintptr_t)buf);
     li32(t, 7);
-    int32_t r3 = fake_call("cqrt_tape_effect_i32_controlled", 3, H(i1(1)), H(t), P(NULL));
+    int32_t r3 = fake_call("cqrt_tape_effect_i32_controlled", 4, H(i1(1)), H(t), P(NULL), H(2));
     fake_rail("i32", *cqe_rail(r3));
   } else if (!strcmp(s, "defer_field")) {   /* a quantum field defers it and every later output, in order */
     int32_t t = alloc();
     fmt(t, "x=%d\n");
     wr("i32", t, q32(3));
     li32(t, 10);
-    int32_t r = eff32(i1(1), t, "putchar");
+    int32_t r = eff32(i1(1), t, "putchar", 1);
     fake_rail("i32", *cqe_rail(r));
     fmt(t, "end\n");
   } else if (!strcmp(s, "resolved_then_deferred")) {
     int32_t t = alloc();
     fmt(t, "first\n");
     li32(t, 65);
-    eff(i1(1), t, "putchar");
+    eff(i1(1), t, "putchar", 1);
     fmt(t, "%d\n");
     wr("i32", t, q32(1));
   } else if (!strcmp(s, "pred_copy")) {     /* a quantum c is copied at the call; later changes do not reach it */
@@ -181,13 +181,13 @@ int main(int argc, char **argv) {
     int32_t t = alloc();
     int32_t c = i1(1);
     li32(t, 10);
-    eff(c, t, "putchar");
+    eff(c, t, "putchar", 1);
     fake_free(c);
     fmt(t, "%d");
     wr("i32", t, q32(1));
     c = i1(1);
     li32(t, 11);
-    eff(c, t, "putchar");
+    eff(c, t, "putchar", 1);
     fake_free(c);
   } else if (!strcmp(s, "abort_input")) {   /* an abort reading 1: outputs dead, input still at the call */
     cqe_tape_set_bus(&td_bus);
@@ -195,17 +195,17 @@ int main(int argc, char **argv) {
     char b[8] = {0};
     ab(i1(1));
     li32(t, 65);
-    eff(i1(1), t, "putchar");
+    eff(i1(1), t, "putchar", 1);
     li64(t, (uint64_t)(uintptr_t)b);
     li32(t, 4);
     li64(t, (uint64_t)(uintptr_t)stdin);
-    eff(i1(1), t, "fgets");
+    eff(i1(1), t, "fgets", 3);
     if (b[0] == 0 || b[3] != 0) cqe_fail("TEST: the input was not stored behind the abort");
   } else if (!strcmp(s, "abort_q")) {       /* a quantum flag reading 0 still defers what follows */
     int32_t t = alloc();
     ab(q1(0));
     li32(t, 65);
-    eff(i1(1), t, "putchar");
+    eff(i1(1), t, "putchar", 1);
   } else if (!strcmp(s, "input_classical")) { /* behind a deferred output: at the call, a classical bus store */
     cqe_tape_set_bus(&td_bus);
     int32_t t = alloc();
@@ -215,7 +215,7 @@ int main(int argc, char **argv) {
     li64(t, (uint64_t)(uintptr_t)b);
     li32(t, 3);
     li64(t, (uint64_t)(uintptr_t)stdin);
-    int32_t r = eff64(i1(1), t, "fgets");
+    int32_t r = eff64(i1(1), t, "fgets", 3);
     if (b[2] != 0 || b[3] != 'Z' || b[0] < 'a' || b[0] > 'z') cqe_fail("TEST: fgets stored %.8s", b);
     if (cqe_rail(r)->w[0] != (uint64_t)(uintptr_t)b) cqe_fail("TEST: fgets result");
     char l[64];
@@ -227,7 +227,7 @@ int main(int argc, char **argv) {
     li64(t, (uint64_t)(uintptr_t)b);
     li32(t, 3);
     li64(t, (uint64_t)(uintptr_t)stdin);
-    int32_t r = eff64(i1(0), t, "fgets");
+    int32_t r = eff64(i1(0), t, "fgets", 3);
     if (b[0] != 'Z' || cqe_rail(r)->w[0] != 0) cqe_fail("TEST: skipped fgets acted");
   } else if (!strcmp(s, "input_len_q")) {   /* 210: quantum length: stores for v = 3 over the 7 cells reached */
     cqe_tape_set_bus(&td_bus);
@@ -237,7 +237,7 @@ int main(int argc, char **argv) {
     wr("i32", t, q32(3));
     li64(t, (uint64_t)(uintptr_t)stdin);
     int32_t c = i1(1);
-    eff(c, t, "fgets");
+    eff(c, t, "fgets", 3);
     fake_free(c);
     if (b[0] != 'Z') cqe_fail("TEST: a host write under a quantum length");
   } else if (!strcmp(s, "input_addr_q")) {  /* quantum address, classical length */
@@ -247,7 +247,7 @@ int main(int argc, char **argv) {
     wr("i64", t, q64p(b));
     li32(t, 2);
     li64(t, (uint64_t)(uintptr_t)stdin);
-    int32_t r = eff64(i1(1), t, "fgets");
+    int32_t r = eff64(i1(1), t, "fgets", 3);
     if (cqe_rail(r)->w[0] != (uint64_t)(uintptr_t)b) cqe_fail("TEST: fgets result");
     fake_call("cqrt_tape_fmt", 2, H(t), P("after\n"));
   } else if (!strcmp(s, "input_pred_q")) {  /* quantum predicate: performed on both values */
@@ -257,12 +257,12 @@ int main(int argc, char **argv) {
     li64(t, (uint64_t)(uintptr_t)b);
     li32(t, 2);
     li64(t, (uint64_t)(uintptr_t)stdin);
-    int32_t r0 = eff64(q1(0), t, "fgets");
+    int32_t r0 = eff64(q1(0), t, "fgets", 3);
     if (cqe_rail(r0)->w[0] != 0) cqe_fail("TEST: r under c = 0");
     li64(t, (uint64_t)(uintptr_t)a);
     li32(t, 2);
     li64(t, (uint64_t)(uintptr_t)stdin);
-    int32_t r1 = eff64(q1(1), t, "fgets");
+    int32_t r1 = eff64(q1(1), t, "fgets", 3);
     if (cqe_rail(r1)->w[0] != (uint64_t)(uintptr_t)a) cqe_fail("TEST: r under c = 1");
   } else if (!strcmp(s, "input_ident_q")) { /* a truly quantum stream: deferred, nothing stored */
     cqe_tape_set_bus(&td_bus);
@@ -271,7 +271,7 @@ int main(int argc, char **argv) {
     li64(t, (uint64_t)(uintptr_t)b);
     li32(t, 3);
     wr("i64", t, q64p(stdin));
-    int32_t r = eff64(i1(1), t, "fgets");
+    int32_t r = eff64(i1(1), t, "fgets", 3);
     if (cqe_rail(r)->w[0] != 0 || b[0] != 'Z') cqe_fail("TEST: the deferred input acted");
   } else if (!strcmp(s, "read_fread_getc")) {
     cqe_tape_set_bus(&td_bus);
@@ -281,15 +281,15 @@ int main(int argc, char **argv) {
     li32(t, 3);
     li64(t, (uint64_t)(uintptr_t)a);
     li64(t, 20);
-    int32_t r = eff64(i1(1), t, "read");
+    int32_t r = eff64(i1(1), t, "read", 3);
     li64(t, (uint64_t)(uintptr_t)b);
     li64(t, 2);
     li64(t, 10);
     li64(t, (uint64_t)(uintptr_t)stdin);
-    int32_t f = eff64(i1(1), t, "fread");
+    int32_t f = eff64(i1(1), t, "fread", 4);
     li64(t, (uint64_t)(uintptr_t)stdin);
-    int32_t g = eff32(i1(1), t, "getc");
-    int32_t gc = eff32(i1(1), t, "getchar");
+    int32_t g = eff32(i1(1), t, "getc", 1);
+    int32_t gc = eff32(i1(1), t, "getchar", 0);
     char l[160];
     snprintf(l, sizeof l, "{\"ev\":\"probe\",\"r\":%llu,\"f\":%llu,\"g\":%llu,\"gc\":%llu,\"a6\":%d,\"b6\":%d,\"a0\":%d}",
              (unsigned long long)cqe_rail(r)->w[0], (unsigned long long)cqe_rail(f)->w[0],
@@ -305,20 +305,20 @@ int main(int argc, char **argv) {
     li64(t, 1);
     li64(t, 3);
     li64(t, (uint64_t)(uintptr_t)stdout);
-    eff(i1(1), t, "fwrite");
+    eff(i1(1), t, "fwrite", 4);
     /* captured at the entry: what happens later does not reach it */
     cells[0].b = 'Q';
     b[2] = 'Q';
     li64(t, (uint64_t)(uintptr_t)"hi\n");
     li64(t, (uint64_t)(uintptr_t)stdout);
-    eff(i1(0), t, "fputs");
+    eff(i1(0), t, "fputs", 2);
   } else if (!strcmp(s, "capture_ql")) {    /* a rail length: the buffer up to its value */
     int32_t t = alloc();
     li64(t, (uint64_t)(uintptr_t)"abcdef");
     li64(t, 1);
     wr("i64", t, fake_qrail("i64", fake_i(64, 4, 0)));
     li64(t, (uint64_t)(uintptr_t)stdout);
-    eff(i1(1), t, "fwrite");
+    eff(i1(1), t, "fwrite", 4);
   } else if (!strcmp(s, "string_rail")) {   /* %s of a pointer rail: classical-valued, then quantum */
     int32_t t = alloc();
     fmt(t, "[%s]");
@@ -338,7 +338,7 @@ int main(int argc, char **argv) {
     li64(t, (uint64_t)(uintptr_t)"%s-%d");
     str(t, "str");
     li32(t, 4);
-    eff(i1(1), t, "fprintf");
+    eff(i1(1), t, "fprintf", 4);
   } else if (!strcmp(s, "percent_n")) {     /* %n consumes its field and prints nothing (rule 16) */
     int32_t t = alloc();
     int n = 77;
@@ -350,32 +350,32 @@ int main(int argc, char **argv) {
     fmt(t, "x\n");
     li32(t, 1);
     fmt(t, "y\n");
-  } else if (!strcmp(s, "excess_effect")) { /* rulings 2 C: printf("x\\n", 1, 2); raise(3): known arity, the last field is its */
+  } else if (!strcmp(s, "excess_effect")) { /* rulings 2 C: printf("x\\n", 1, 2); raise(3): n = 1, the last field is its */
     int32_t t = alloc();
     fmt(t, "x\n");
     li32(t, 1);
     li32(t, 2);
     li32(t, 3);
-    eff(i1(1), t, "raise");
+    eff(i1(1), t, "raise", 1);
   } else if (!strcmp(s, "excess_none")) {   /* printf("x\\n"); raise(3): nothing to split */
     int32_t t = alloc();
     fmt(t, "x\n");
     li32(t, 3);
-    eff(i1(1), t, "raise");
-  } else if (!strcmp(s, "excess_unknown")) { /* an effect of no known arity behind a format: all its fields, marked */
+    eff(i1(1), t, "raise", 1);
+  } else if (!strcmp(s, "excess_unknown")) { /* a callee of no known arity behind a format: its last n fields (cq-6ucw) */
     int32_t t = alloc();
     fmt(t, "x\n");
     li32(t, 1);
     li32(t, 2);
-    eff(i1(1), t, "frob");
+    eff(i1(1), t, "frob", 1);
     li32(t, 5);
-    eff(i1(1), t, "frob");                  /* behind an effect entry the fields are its own: no mark */
-  } else if (!strcmp(s, "excess_variadic")) { /* fprintf has no fixed arity: no split, marked */
+    eff(i1(1), t, "frob", 1);
+  } else if (!strcmp(s, "excess_variadic")) { /* fprintf has no fixed arity: its n arguments */
     int32_t t = alloc();
     fmt(t, "x\n");
     li64(t, (uint64_t)(uintptr_t)stdout);
     li64(t, (uint64_t)(uintptr_t)"y\n");
-    eff(i1(1), t, "fprintf");
+    eff(i1(1), t, "fprintf", 2);
   } else if (!strcmp(s, "retired")) {       /* the str family is gone */
     alloc();
     if (fake_rc("tape_write", "tape_write_str") != 1 || fake_rc("tape_write", "tape_str_begin") != 1 ||
@@ -469,14 +469,23 @@ int main(int argc, char **argv) {
   } else if (!strcmp(s, "v_effect_arity")) {
     int32_t t = alloc();
     li64(t, 0);
-    eff(i1(1), t, "fgets");
+    eff(i1(1), t, "fgets", 1);
+  } else if (!strcmp(s, "v_effect_short")) {   /* cq-6ucw: n past what was written */
+    int32_t t = alloc();
+    li64(t, 0);
+    eff(i1(1), t, "frob", 2);
+  } else if (!strcmp(s, "v_effect_surplus")) { /* cq-6ucw: a surplus field with no format entry before it */
+    int32_t t = alloc();
+    li64(t, 0);
+    li64(t, 1);
+    eff(i1(1), t, "frob", 1);
   } else if (!strcmp(s, "v_null_name_empty")) {
     int32_t t = alloc();
-    fake_call("cqrt_tape_effect_controlled", 3, H(i1(1)), H(t), P(NULL));
+    fake_call("cqrt_tape_effect_controlled", 4, H(i1(1)), H(t), P(NULL), H(0));
   } else if (!strcmp(s, "v_effect_open_format")) {
     int32_t t = alloc();
     fmt(t, "%d");
-    eff(i1(1), t, "putchar");
+    eff(i1(1), t, "putchar", 0);
   } else if (!strcmp(s, "v_width_mismatch")) {
     int32_t t = alloc();
     fmt(t, "%d");

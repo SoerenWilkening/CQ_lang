@@ -741,8 +741,8 @@ llvm::FunctionCallee declare(llvm::Module &M, const CoreSpec &s) {
     break;
   case Core::TapeAlloc: ret = h; break;
   case Core::TapeFmt: a.append({h, p}); break;
-  case Core::TapeEffect: a.append({h, p}); break;
-  case Core::TapeEffectW: ret = h; a.append({h, p}); break;
+  case Core::TapeEffect: a.append({h, p, i32}); break;
+  case Core::TapeEffectW: ret = h; a.append({h, p, i32}); break;
   case Core::TapeWrite: ret = h; a.append({h, h}); break;
   case Core::TapeWriteLit: a.append({h, T()}); break;
   case Core::AbortI1: a.push_back(h); break;
