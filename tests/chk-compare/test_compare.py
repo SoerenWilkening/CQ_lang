@@ -1793,6 +1793,30 @@ class Memory(unittest.TestCase):
         r = res(side("r", ref_ab()), 0x500000018, 0x500000000, 0x500010000)
         self.assertFalse(compare(o, r, QKEY, "ref").equal)
 
+    def test_data_word_in_the_arena_is_data(self):
+        # cq-6b2cc: (ours, C) word of a global; the arena is ours alone, "g" and "h" name objects on each side
+        arena, g_o, h_o, g_c, h_c = 1 << 45, 0x1000, 0x1100, 0x2000, 0x2100
+
+        def res(rs, word, g, h, heap=False):
+            return [dataclasses.replace(r, outputs=dict(r.outputs or {},
+                    mem=[{"name": "cell", "addr": "0x8000", "w": "i64", "v": hex(word)}],
+                    objects=[{"name": "g", "addr": hex(g), "size": 8}, {"name": "h", "addr": hex(h), "size": 8}],
+                    regions=[{"name": "heap", "lo": hex(arena), "hi": hex(arena + (1 << 44))}] if heap else [])) for r in rs]
+
+        def same(o, c):
+            ab = AbortRule()
+            return compare(res(ab.ours(), o, g_o, h_o, True), res(ab.c(), c, g_c, h_c), QKEY, "c")
+        data = arena + 0x9c0000000a
+        self.assertTrue(same(data, data).equal)                 # the same integer, in our arena
+        self.assertFalse(same(data, data + 1).equal)            # another value
+        self.assertFalse(same(data + 1, data).equal)
+        self.assertTrue(same(g_o + 4, g_c + 4).equal)           # the same object and offset
+        self.assertFalse(same(g_o, h_c).equal)                  # another object
+        self.assertFalse(same(g_o, g_c + 4).equal)              # another offset
+        self.assertFalse(same(g_o, 5).equal)                    # a pointer and a number
+        self.assertFalse(same(data, g_c).equal)                 # our arena and an object of C's
+        self.assertFalse(same(5, g_c).equal)
+
 
 class RailSizedAllocation(unittest.TestCase):
     """CR §6: the kept rail n > K2 of a rail-sized allocation must read n > K2 on every input."""

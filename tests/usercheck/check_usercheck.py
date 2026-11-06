@@ -249,6 +249,9 @@ RV3 = {
               ("no_ak", r"  call void @cqrt_copy_i1\(i32 %0, i32 %\d+\)\n", ""),
               ("leak", r"  call void @cq_template_icmp_eq_i32_hl_unc\(i32 %4, i32 %3, i32 0\)\n  call void @cqrt_free\(i32 %4\)\n", "")],
     "rdsdj2": [], "rdsdj8": [], "recmut": [], "recptr": [], "fpcand": [],
+    # cq-6b2cc: g's word 0x279c0000000a lies in our arena; a wrong value there and a wrong pointer in cell both differ
+    "arena_word": [("wrong_value", r"cqrt_alloc_i32\(i32 10140\)", "cqrt_alloc_i32(i32 10141)"),
+                   ("wrong_pointer", r"cqrt_alloc_i64\(i64 ptrtoint \(ptr @a to i64\)\)", "cqrt_alloc_i64(i64 ptrtoint (ptr @b to i64))")],
     "2in7d": [("no_ak", r"  call void @cqrt_and_i1\(i32 %40, i32 %48, i32 %49\)\n", ""),
               ("no_xor", r"cq_template_xor_i32_hl\(", "cq_template_or_i32_hl(")],
     "li3wr": [("second_return", r"cq_template_add_i32_hl\(i32 %4, i32 6\)", "cq_template_add_i32_hl(i32 %4, i32 7)")],
