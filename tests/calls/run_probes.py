@@ -6,7 +6,9 @@ what it must give:
   - "pass": cq-lower exits 0, plain cq-verify accepts the output, every regex in `match` occurs in the
     lowered module, and the entry is §6-equal to its own C program (`python3 -m cqcheck user`, the C oracle);
   - "lower": as "pass" without the §6 run (the case says why the checker cannot run it);
-  - "fatal: <text>": cq-lower stops with that error (an unimplemented shape, never a silent output).
+  - "fatal: <text>": cq-lower stops with that error (an unimplemented shape, never a silent output);
+  - "reject: <regex>": the lowered module with every line matching the regex deleted is a wrong program, and the §6 run
+    must say so (exit 1): the checker's model of what those lines do, kept honest.
 Outputs go to build/tests/calls/out/.
 """
 import argparse
@@ -23,7 +25,8 @@ TWIN_STORE = "_unc would replay a store to memory outside the clone's frame"
 TWIN_BARRIER = ("cq: unimplemented: uncompute: a write that may change an object a clone call's pointer argument "
                 "points to")
 # §6 samples per probe where the full set takes minutes (cqcheck user --samples): the musl bodies.
-SAMPLES = {"trip_ctl": 64, "clone_cell_seq": 64, "fenv_cells": 64, "fenv_ignore_loop": 64, "store_past_object": 64, "fenv_escape": 64, "fenv_indirect": 64, "libm_musl_acosh": 16, "libm_musl_coshf": 16, "libm_musl_lrint": 16, "libm_musl_llrintl": 16, "twin_strict": 64, "libm_musl_floorfn": 32, "libm_musl_atan": 16, "libm_musl_exp": 16, "libm_musl_log": 16}
+SAMPLES = {"mp1": 64, "mp2": 64, "mst": 64, "mp4": 64, "mp5": 64, "chk1": 64, "chk3": 64, "chk4": 64, "at1": 64, "at2": 64,
+           "vaC": 64, "vaD": 64, "vaF": 64, "hc1": 64, "hc3": 64, "fe2": 64, "fe3": 64, "fe6": 64, "trip_ctl": 64, "clone_cell_seq": 64, "fenv_cells": 64, "fenv_ignore_loop": 64, "store_past_object": 64, "fenv_escape": 64, "fenv_indirect": 64, "libm_musl_acosh": 16, "libm_musl_coshf": 16, "libm_musl_lrint": 16, "libm_musl_llrintl": 16, "twin_strict": 64, "libm_musl_floorfn": 32, "libm_musl_atan": 16, "libm_musl_exp": 16, "libm_musl_log": 16}
 # (probe, entry, opt flags, expectation, regexes the lowered module must contain)
 CASES = [
     # cq-57ju (rulings 2026-11-02): plain clang -O1 callers of musl b1efda5 bodies (no -fno-builtin, no -frounding-math).
@@ -193,6 +196,37 @@ CASES = [
     ("table_called_after", "m1", [], "pass", [r"define internal fastcc i32 @g\((?:(?!\n}\n)[\s\S])*@\.cq\.effect\.srand",
                                               r"define i32 @m1\((?:(?!\n}\n)[\s\S])*@\.cq\.effect\.srand"]),
     ("table_called_after", "m2", [], "pass", [r"define internal fastcc i32 @__cq_q_g2_1\((?:(?!\n}\n)[\s\S])*@\.cq\.effect\.rand"]),
+    # cq-c7ej5 (rule 22): memset_pattern4/8/16 is a copy on the bus whose source repeats; a host-resident destination keeps the
+    # host call. The C oracle does the writes: a lowering without the stores is rejected.
+    ("mp1", "mp1", [], "pass", [r"@cqrt_qram_store_i8_hl\(", r"urem i64 %\d+, 16"]),
+    ("mp2", "mp2", [], "pass", [r"@cqrt_qram_store_i8_hl\("]),
+    ("mp2", "mp2", [], r"reject: call void @cqrt_qram_store_i8_hl\(", []),
+    ("mst", "mst", [], "pass", [r"@cqrt_qram_store_i8_hl_controlled\("]),
+    ("mst", "mst", [], r"reject: call void @cqrt_qram_store_i8_hl_controlled\(", []),
+    ("mp4", "mp4", [], "pass", [r"call void @memset_pattern16\(ptr %\d+, ptr @\.memset_pattern, i64 32\)"]),
+    ("mp5", "mp5", [], "pass", [r"icmp_ugt_i64_hl\(", r"@cqrt_qram_store_i8_hl_controlled\("]),
+    # cq-00mrg (rules 16, 22): the fortified forms are the plain ones, and bind to a body the module has. chk2 waits for a
+    # bundle with sprintf: rule 16 injects it, the version 1 bundle has none, so it is plain sprintf's effect entry (cq-cdf9z).
+    ("chk1", "chk1", [], "pass", [r"@cqrt_qram_store_i8_hl\("]),
+    ("chk4", "chk4", [], "pass", [r"@cqrt_qram_store_i8_hl_controlled\("]),
+    ("chk3", "chk3", [], "pass", [r"call i32 @__cq_q_sprintf_000\(", r"call ptr @strcpy\("]),
+    ("chk2", "chk2", [], "lower", [r"@\.cq\.effect\.sprintf = "]),
+    # cq-haf1p (rule 24): oversize atomic libcalls are the ordinary accesses.
+    ("at1", "at1", [], "pass", [r"@cqrt_qram_store_i8_hl\("]),
+    ("at2", "at2", [], "pass", [r"@cq_template_icmp_eq_i8"]),
+    # cq-xc6us (rules 16, 19): a table clone of a variadic function takes the block ptr, at both kinds of pointer.
+    ("vaD", "vaD", [], "pass", [r"call i32 %\d+\(i32 %\d+, ptr %\d+, i32 4\)", r"call void %\d+\(i32 %\d+, i32 %\d+, ptr %\d+, i32 4\)"]),
+    ("vaC", "vaC", [], "pass", [r"call i32 %\d+\(i32 %\d+, ptr %\d+, i32 4\)"]),
+    ("vaF", "vaF", [], "pass", [r"call i32 %\d+\(i32 %\d+, i32 %\d+, ptr %\d+, i32 4\)"]),
+    # cq-qmqch (rules 5, 18, §6 item 1): a plain store to a host-resident object is a memory version change, so `cal` writes
+    # memory: no twin, its results are KEPT by the caller, which §6 names.
+    ("hc1", "hc1", [], "pass", [r"call fastcc i32 @__cq_q_cal_10\("]),
+    ("hc3", "hc3", [], "pass", []),
+    # cq-nupr1 (rule 20, per clone): the entry's load of a host-resident object is classical though the table clone's is a rail;
+    # fe6 runs both in one sample.
+    ("fe3", "fe3", [], "pass", []),
+    ("fe2", "fe2", [], "pass", []),
+    ("fe6", "fe6", [], "pass", []),
 ]
 
 
@@ -220,6 +254,18 @@ def main() -> int:
                 why.append("cq-lower: " + r.stderr.strip()[:400])
         elif r.returncode != 0:
             why.append("cq-lower: " + r.stderr.strip()[:400])
+        elif expect.startswith("reject: "):
+            cut = re.compile(expect[len("reject: "):])
+            kept = [l for l in lowered.read_text().splitlines(keepends=True) if not cut.search(l)]
+            if len(kept) == len(lowered.read_text().splitlines()):
+                why.append("no line matches " + expect)
+            mutant = lowered.with_suffix(".reject.ll")
+            mutant.write_text("".join(kept))
+            c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(src), "--lowered", str(mutant),
+                                "--entry", entry, *(["--samples", str(SAMPLES[probe])] if probe in SAMPLES else [])],
+                               capture_output=True, text=True, cwd=ROOT / "checker")
+            if c.returncode != 1:
+                why.append(f"§6 exited {c.returncode}, expected the wrong program rejected")
         else:
             v = subprocess.run([a.opt, f"-load-pass-plugin={a.plugin}", "-passes=cq-verify", "-disable-output",
                                 str(lowered)], capture_output=True, text=True)
