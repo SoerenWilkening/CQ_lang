@@ -310,6 +310,9 @@ private:
     // A unit edge: the fields of the target's phis the unit bound, as they stand on this edge (two units on classically
     // exclusive paths into one join: a loop and the loop of its tail, each binds the phi for its own edge).
     DenseMap<const PHINode *, SmallVector<Operand, 4>> unitFields;
+    // A tail's edge into the unit's continuation on outside paths that classically exclude the unit: its binding is never
+    // minted there. Where the tail's own incomings are join arms over this edge's value it is a don't-care |0> seed (rule 9).
+    bool excluded = false;
   };
   DenseMap<const BasicBlock *, SmallVector<InEdge, 2>> inEdges;
   void noteIn(const BasicBlock *from, const BasicBlock *to, Loop *unit = nullptr);
@@ -919,8 +922,13 @@ void Walker::noteIn(const BasicBlock *from, const BasicBlock *to, Loop *unit) {
   // value in (the tail's first block continues the unit's own output block): on this edge C's phi is the unit's binding,
   // and the tail's own incomings are the join arms over it.
   if (!unit)
-    if (Loop *t = tailOf.lookup(from); t && units.find(t)->second.cont == to && !tailJoined.count(t))
+    if (Loop *t = tailOf.lookup(from); t && units.find(t)->second.cont == to && !tailJoined.count(t)) {
       unit = t;
+      std::optional<Pred> was = ctx.preds().assume(std::nullopt, ctx.T, ctx.S);
+      Pred unitPaths = ctx.preds().block(t->getHeader()).classicalFactor(ctx.T, ctx.S);
+      ctx.preds().assume(was, ctx.T, ctx.S);
+      ne.excluded = !predsMeet(tailPredOf(from), unitPaths);
+    }
   ne.unit = unit;
   inEdges[to].push_back(std::move(ne));
   if (unit)
@@ -1228,7 +1236,9 @@ void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in, const BasicBlock *ta
   };
   std::vector<std::pair<BasicBlock *, SmallVector<Value *, 4>>> inc;
   for (const InEdge &e : in) {
-    if (e.unit) {
+    // Excluded with no join arm over it (the taken branch's complement: strlen's aligned path): the tail's incomings are this edge's.
+    bool seedOnly = e.excluded && sh.joinArms.count(&phi);
+    if (e.unit && !e.excluded) {
       SmallVector<Value *, 4> vs;
       auto uf = e.unitFields.find(&phi);
       for (const Operand &o : uf != e.unitFields.end() ? ArrayRef<Operand>(uf->second) : ArrayRef<Operand>(unitVals))
@@ -1242,7 +1252,7 @@ void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in, const BasicBlock *ta
     // which stands for it under the facts only when its classical factor is the facts themselves.
     Pred F = e.facts ? *e.facts : Pred::top();
     SmallVector<unsigned, 2> cands;
-    for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i) {
+    for (unsigned i = 0; i < phi.getNumIncomingValues() && !seedOnly; ++i) {
       const BasicBlock *u = phi.getIncomingBlock(i);
       if (!idx.count(u) || unitOf.count(u) || (tailHead && tailOf.count(u)) || (ctx.preds().edge(u, b) & F).isBottom())
         continue;
