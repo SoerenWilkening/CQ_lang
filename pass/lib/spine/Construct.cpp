@@ -411,10 +411,15 @@ void Walker::plan() {
   // (2026-11-02, cq-asfn): of a quantum terminator's successors, those from which no __cq_invert_end is
   // reachable come first, so the other arm's gates run inside the region an end in one arm closes
   // (eff-invert's splitMarkerPaths has split the tail per region depth).
+  // Rules 8, 16 (cq-172vi): a dead end comes before its live siblings, on either edge of the branch. It has no join to
+  // wait for, so otherwise an else-arm dead end would run after the live arm, after its return tore down the flags the
+  // arm's predicate reads.
   {
     SmallPtrSet<const BasicBlock *, 16> toEnd = invert::blocksReachingInvertEnd(F);
+    taint_detail::DeadEnds dead(F);
     auto order = [&](BasicBlock *b) {
       SmallVector<BasicBlock *, 4> o(successors(b));
+      std::stable_partition(o.begin(), o.end(), [&](BasicBlock *x) { return dead.isDeadEnd(x); });
       if (!toEnd.empty() && o.size() > 1 && isQuantumTerm(ctx, b->getTerminator()))
         std::stable_partition(o.begin(), o.end(), [&](BasicBlock *x) { return !toEnd.count(x); });
       return o;
