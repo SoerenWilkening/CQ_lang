@@ -60,7 +60,8 @@ INPLACE = {
         "ip_wide_prev_change": False,    # a change of the interval may have written the high cells
         "ip_wide_prev_change_q": False,
     },
-    "inplace_loop": {"ip_loop_theta_out": False},
+    "inplace_loop": {"ip_loop_theta_out": False, "ip_loop_theta_other": False, "ip_loop_theta_measure": False,
+                     "ip_loop_theta_after": False},
 }
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 

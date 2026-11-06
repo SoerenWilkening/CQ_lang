@@ -120,7 +120,7 @@
 //    precede moves the item to where the loop exits (cq-dyef, 116: the immediate placement), which
 //    needs every exit rail kept (each is copied there, below); otherwise it is unimplemented. An exit rail that became kept (a measurement, a kept merge's arm, an
 //    escape) is copied in the loop's exit block before its first use after the loop, every such use reads
-//    the copy (which takes the role), and the item undoes the rail itself; a rotated one is unimplemented.
+//    the copy (which takes the role), and the item undoes the rail itself; one a trip rotated is read in place, never undone.
 //    An exit rail with no IR use outside the region (it reaches later code only through memory: cell-load
 //    merges, M3) that became kept is not copied and not undone: every trip's instance keeps its role
 //    (rule 5, rule 14 case 1; 179). An owned record reading it is still undone.
@@ -2683,7 +2683,12 @@ struct Uncompute::Impl {
       // freed by the reverse loop, on no trip: it needs no copy, what follows the loop reads it in place.
       if (rx.storeKept && rx.condStores.empty())
         continue;
-      // cq-4lqy: a rotated exit rail, or one with no producer, is copied out the same way: the gates after the
+      // Rules 2, 5, 14 case 1 (cq-h0cn4): an exit rail a trip rotated is a register: a rotated rail is never uncomputed
+      // (resolve's mirror leaves every trip's instance allocated), so no reverse can follow a copy-out by undoing it. What
+      // follows the loop reads it in place, an ordinary value carried out.
+      if (any_of(rx.hits, [&](Instruction *h) { return h->getParent() && beforeOrIn(d, h->getParent()); }))
+        continue;
+      // cq-4lqy: an exit rail rotated only after the loop, or one with no producer, is copied out the same way: the gates after the
       // loop act on the copy (retargetOutside moves them), the reverse loop undoes the rail itself.
       // Rule 5 (a kept rail is never uncomputed), rule 14 case 1: an exit rail that reaches later code
       // only through memory (no IR use outside the region; its readers are cell-load merges, M3) stays

@@ -4,6 +4,7 @@ target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:
 target triple = "x86_64-apple-macosx16.0.0"
 
 @g = global [8 x i32] zeroinitializer, align 16
+@h = local_unnamed_addr global [8 x i32] zeroinitializer, align 16
 
 ; Function Attrs: mustprogress nofree noinline norecurse nosync nounwind ssp willreturn memory(argmem: write) uwtable
 define void @put(ptr nocapture noundef writeonly %0, i32 noundef %1) local_unnamed_addr #0 {
@@ -37,6 +38,71 @@ declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr #2
 
 declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr #2
 
+; Function Attrs: nounwind ssp uwtable
+define i32 @ip_loop_theta_other(i32 noundef %0, i32 noundef %1, double noundef %2, double noundef %3) local_unnamed_addr #1 {
+  %5 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %2) #4
+  tail call void @put(ptr noundef nonnull @g, i32 noundef %5)
+  %6 = load i32, ptr @g, align 16, !tbaa !6
+  %7 = and i32 %1, 3
+  %8 = tail call i32 @llvm.umax.i32(i32 %7, i32 1)
+  br label %9
+
+9:                                                ; preds = %9, %4
+  %10 = phi i32 [ 0, %4 ], [ %12, %9 ]
+  %11 = tail call i32 @cq_theta_si32(i32 noundef %6, double noundef %3) #4
+  %12 = add nuw nsw i32 %10, 1
+  %13 = icmp eq i32 %12, %8
+  br i1 %13, label %14, label %9, !llvm.loop !13
+
+14:                                               ; preds = %9
+  store i32 %11, ptr @h, align 16, !tbaa !6
+  %15 = tail call i32 @cq_measure_si32(i32 noundef %11) #5
+  ret i32 %15
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @ip_loop_theta_measure(i32 noundef %0, i32 noundef %1, double noundef %2, double noundef %3) local_unnamed_addr #1 {
+  %5 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %2) #4
+  tail call void @put(ptr noundef nonnull @g, i32 noundef %5)
+  %6 = load i32, ptr @g, align 16, !tbaa !6
+  %7 = and i32 %1, 3
+  %8 = tail call i32 @llvm.umax.i32(i32 %7, i32 1)
+  br label %9
+
+9:                                                ; preds = %9, %4
+  %10 = phi i32 [ 0, %4 ], [ %12, %9 ]
+  %11 = tail call i32 @cq_theta_si32(i32 noundef %6, double noundef %3) #4
+  %12 = add nuw nsw i32 %10, 1
+  %13 = icmp eq i32 %12, %8
+  br i1 %13, label %14, label %9, !llvm.loop !14
+
+14:                                               ; preds = %9
+  %15 = tail call i32 @cq_measure_si32(i32 noundef %11) #5
+  ret i32 %15
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @ip_loop_theta_after(i32 noundef %0, i32 noundef %1, double noundef %2, double noundef %3, double noundef %4) local_unnamed_addr #1 {
+  %6 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %2) #4
+  tail call void @put(ptr noundef nonnull @g, i32 noundef %6)
+  %7 = load i32, ptr @g, align 16, !tbaa !6
+  %8 = and i32 %1, 3
+  %9 = tail call i32 @llvm.umax.i32(i32 %8, i32 1)
+  br label %10
+
+10:                                               ; preds = %10, %5
+  %11 = phi i32 [ 0, %5 ], [ %13, %10 ]
+  %12 = tail call i32 @cq_theta_si32(i32 noundef %7, double noundef %3) #4
+  %13 = add nuw nsw i32 %11, 1
+  %14 = icmp eq i32 %13, %9
+  br i1 %14, label %15, label %10, !llvm.loop !15
+
+15:                                               ; preds = %10
+  %16 = tail call i32 @cq_theta_si32(i32 noundef %12, double noundef %4) #4
+  %17 = tail call i32 @cq_measure_si32(i32 noundef %16) #5
+  ret i32 %17
+}
+
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
 declare i32 @llvm.umax.i32(i32, i32) #3
 
@@ -63,3 +129,6 @@ attributes #5 = { nounwind }
 !10 = distinct !{!10, !11, !12}
 !11 = !{!"llvm.loop.mustprogress"}
 !12 = !{!"llvm.loop.unroll.disable"}
+!13 = distinct !{!13, !11, !12}
+!14 = distinct !{!14, !11, !12}
+!15 = distinct !{!15, !11, !12}
