@@ -1002,22 +1002,77 @@ Value *cellsDisjoint(IRBuilder<> &B, Value *p, uint64_t Sp, Value *q, uint64_t S
   return B.CreateAnd(a, b);
 }
 
-// The cells a change touches at a classical address, nullptr when the change is of another kind or its address is a
-// rail or not computed yet.
-std::optional<std::pair<Value *, uint64_t>> changeCells(LoweringContext &ctx, const Plan &P, const Instruction &ch,
-                                                        const Instruction &at) {
+// Readers: a value live at `at`, one the walker has already bound.
+bool liveAt(LoweringContext &ctx, const Value *v, const Instruction &at) {
+  if (!ctx.bound(v))
+    return false;
+  auto *I = dyn_cast<Instruction>(v);
+  return !I || spine::shared(ctx).dt(*at.getFunction()).dominates(I, &at);
+}
+
+bool chainInstruction(const Instruction &I) {
+  if (I.getType()->isVectorTy())
+    return false;
+  if (isa<GetElementPtrInst>(I))
+    return true;
+  switch (I.getOpcode()) {
+  case Instruction::BitCast:
+  case Instruction::AddrSpaceCast:
+  case Instruction::PtrToInt:
+  case Instruction::IntToPtr:
+  case Instruction::Trunc:
+  case Instruction::ZExt:
+  case Instruction::SExt:
+    return true;
+  default:
+    return false;
+  }
+}
+
+// Rule 5, Readers: a classical address is computable at `at` when it is a getelementptr/cast chain over classical values
+// live there, wherever the IR places the chain.
+bool computableAt(LoweringContext &ctx, const Value *v, const Instruction &at) {
+  if (liveAt(ctx, v, at)) {
+    Operand o = ctx.operand(v);
+    return !o.handle && o.v->getType() == v->getType();
+  }
+  auto *I = dyn_cast<Instruction>(v);
+  return I && chainInstruction(*I) &&
+         all_of(I->operands(), [&](const Use &u) { return computableAt(ctx, u.get(), at); });
+}
+
+// The chain computed here. It runs ahead of its place, also on a path the program's own chain never reaches: no poison
+// flags (d is branched on).
+Value *chainValue(LoweringContext &ctx, const Value *v, const Instruction &at, DenseMap<const Value *, Value *> &done) {
+  if (liveAt(ctx, v, at))
+    return ctx.operand(v).v;
+  if (Value *c = done.lookup(v))
+    return c;
+  Instruction *c = cast<Instruction>(v)->clone();
+  c->dropPoisonGeneratingFlags();
+  for (unsigned i = 0; i < c->getNumOperands(); ++i)
+    c->setOperand(i, chainValue(ctx, cast<Instruction>(v)->getOperand(i), at, done));
+  ctx.B().Insert(c);
+  done[v] = c;
+  return c;
+}
+
+// A change the test d can see: a bus store or in-place form at an address computable at `at`.
+bool testable(LoweringContext &ctx, const Instruction &ch, const Instruction &at) {
   auto *St = dyn_cast<StoreInst>(&ch);
-  if (!St || St->isVolatile() || hostAccess(ctx, *St))
-    return std::nullopt;
+  return St && !St->isVolatile() && !hostAccess(ctx, *St) && computableAt(ctx, St->getPointerOperand(), at);
+}
+
+// The run-time address of such a change and the cells it touches.
+std::pair<Value *, uint64_t> changeCells(LoweringContext &ctx, const Instruction &ch, const Instruction &at,
+                                         DenseMap<const Value *, Value *> &done) {
+  auto *St = cast<StoreInst>(&ch);
   const Value *q = St->getPointerOperand();
-  DominatorTree &DT = spine::shared(ctx).dt(*St->getFunction());
-  if (auto *qi = dyn_cast<Instruction>(q); qi && qi != &at && !DT.dominates(qi, &at))
-    return std::nullopt;
-  Operand a = address(ctx, q);
-  if (a.handle)
-    return std::nullopt;
+  Value *a = liveAt(ctx, q, at)
+                 ? address(ctx, q).v
+                 : ctx.B().CreatePtrToInt(chainValue(ctx, q, at, done), Type::getInt64Ty(ctx.M.getContext()));
   const DataLayout &DL = ctx.M.getDataLayout();
-  return std::make_pair(a.v, uint64_t(DL.getTypeStoreSize(St->getValueOperand()->getType())));
+  return {a, uint64_t(DL.getTypeStoreSize(St->getValueOperand()->getType()))};
 }
 
 void takeCopy(LoweringContext &ctx, Form &F, const Plan &P, const Instruction &at, bool before) {
@@ -1029,21 +1084,16 @@ void takeCopy(LoweringContext &ctx, Form &F, const Plan &P, const Instruction &a
   Value *d = nullptr;
   if (!addr.handle && before) {
     uint64_t Sp = DL.getTypeStoreSize(F.U);
-    SmallVector<std::pair<Value *, uint64_t>, 2> cells;
-    bool all = true;
-    for (const Instruction *ch : F.changes) {
-      auto c = changeCells(ctx, P, *ch, at);
-      if (!c) {
-        all = false;
-        break;
-      }
-      cells.push_back(*c);
-    }
-    if (all)
+    if (all_of(F.changes, [&](const Instruction *ch) { return testable(ctx, *ch, at); })) {
+      DenseMap<const Value *, Value *> done;
+      SmallVector<std::pair<Value *, uint64_t>, 2> cells;
+      for (const Instruction *ch : F.changes)
+        cells.push_back(changeCells(ctx, *ch, at, done));
       for (auto &[q, Sq] : cells) {
         Value *t = cellsDisjoint(B, addr.v, Sp, q, Sq);
         d = d ? B.CreateAnd(d, t) : t;
       }
+    }
   }
   F.copyAddr = addr;
   F.copyCtl = accessControl(ctx);
