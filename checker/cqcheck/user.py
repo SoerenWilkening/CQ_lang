@@ -358,11 +358,39 @@ def verdict(reasons: List[str]) -> int:
     return FAIL_STATUS
 
 
+# The one thread's TLS object (CQ_spec LIBC_COVERAGE.md: musl's pthread_arch.h, __cq_tp, "provided by the bundle"), as
+# __init_tp leaves it: zero, but struct __pthread's `locale` (offset 168) at a zero locale_t, what libc.global_locale holds at
+# startup (the C locale).
+_TLS_DEF = ('@__cq_locale = internal global [6 x ptr] zeroinitializer, align 8\n'
+            '@__cq_tp = internal global <{ [168 x i8], ptr, [3920 x i8] }> <{ [168 x i8] zeroinitializer, ptr @__cq_locale, '
+            '[3920 x i8] zeroinitializer }>, align 16')
+_EXTERN_DATA = re.compile(r'^@("[^"]*"|[-A-Za-z$._0-9]+) = external (?:[a-z_]+ )*?(?:global|constant) ([^\n]*?)(, align \d+)?$', re.M)
+
+
+def define_undefined_data(text: str) -> str:
+    """A whole program defines its data: an external global the host C library does not define (a library's bundle-provided
+    object) would stop both links. It is a zeroed object on both sides (__cq_tp: _TLS_DEF; [0 x T], an unsized extern:
+    4096 bytes, as a driver object)."""
+    from cqcheck import oracle
+
+    def define(m: "re.Match[str]") -> str:
+        name, ty = m.group(1).strip('"'), m.group(2)
+        if oracle._host_defines(name):
+            return m.group(0)
+        if name == "__cq_tp":
+            return _TLS_DEF
+        if re.fullmatch(r"\[0 x .*\]", ty):
+            ty = f"[{OBJ_BYTES} x i8]"
+        return f"@{m.group(1)} = internal global {ty} zeroinitializer, align 16"
+
+    return _EXTERN_DATA.sub(define, text)
+
+
 def check(o1: Path, lowered: Path, entry: str, samples: Optional[int], work: Path) -> Tuple[int, List[str]]:
     """(status, report lines)."""
     from cqcheck import compare, oracle, run, sampling
-    o1_text = Path(o1).read_text()
-    low_text = Path(lowered).read_text()
+    o1_text = define_undefined_data(Path(o1).read_text())
+    low_text = define_undefined_data(Path(lowered).read_text())
     if _defines(o1_text, "main"):
         o1_text, low_text = rename_main(o1_text), rename_main(low_text)
         if entry == "main":

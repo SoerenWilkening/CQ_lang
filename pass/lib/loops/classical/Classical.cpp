@@ -333,7 +333,6 @@ private:
     BasicBlock *head;   // bb unless a body instruction branched inside the trip (rule 5's Readers test)
   };
   std::vector<Seg> segs;
-  DenseSet<const BasicBlock *> before;   // the output blocks from before this unit's loop
   DenseMap<const BasicBlock *, unsigned> segIdx;
   bool segOpen = false;
   BasicBlock *cur = nullptr;   // the open output block, null after a real branch
@@ -1218,11 +1217,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // Entry: the trip predicate, the seeds.
   unsigned seedScope = 0;
   Value *aInit = nullptr;
-  if (outermost) {
+  if (outermost)
     ownSeedScope = seedScope = ctx.unc().openScope();
-    for (const BasicBlock &b : Out)
-      before.insert(&b);
-  }
   // a_{-1} is minted inside the outermost loop's seed scope, so Z tears it down after the reverse (cq-t71u): under
   // a classical guard its definition does not dominate the return and no exit flush could free it. An atom rail
   // flag() returns has no record in the scope and is untouched.
@@ -2845,11 +2841,12 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   }
   if (outermost) {
     ctx.B().SetInsertPoint(T);
-    // Rules 5, 14: a rail of a block from before the loop a segment's predicate minted (a flag seed on an edge into a
-    // join above the loop) runs once; no trip undoes it (calloc).
+    // Rules 5, 14: a rail a segment's predicate minted on an edge into a join above the loop (a flag seed) runs once; no
+    // trip undoes it (calloc).
     closeSeg();
-    for (const Seg &sg : segs)
-      U.leaveScope(sg.scope, [&](const BasicBlock *b) { return before.count(b) != 0; });
+    if (!segs.empty())
+      for (const Seg &sg : segs)
+        U.leaveScope(sg.scope, segs.front().bb);
     if (c == Case::ClassicalBound && !nested && !inTrip)
       cleanInvariantOnExit(L, T);
     if (cx) {
@@ -2946,7 +2943,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     DenseSet<const Value *> ownedH;
     for (unsigned sc : scs)
       for (const Record &r : U.scopeRecords(sc))
-        if (!r.forward->getType()->isVoidTy() && (sc == seedScope || !before.count(r.forward->getParent())))
+        if (!r.forward->getType()->isVoidTy() && !U.leftScope(sc, r.forward))
           ownedH.insert(r.forward);
     std::vector<RailId> exits;
     for (unsigned oi = 0; oi < out.size(); ++oi) {

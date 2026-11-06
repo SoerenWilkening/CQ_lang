@@ -3635,15 +3635,34 @@ ArrayRef<Record> Uncompute::scopeRecords(unsigned s) const {
   return ArrayRef<Record>(impl->records).slice(sc.begin, end - sc.begin);
 }
 
-void Uncompute::leaveScope(unsigned s, function_ref<bool(const BasicBlock *)> outside) {
+void Uncompute::leaveScope(unsigned s, const BasicBlock *head) {
   Impl &I = *impl;
   if (s >= I.scopes.size())
     internalError("uncompute: no scope " + std::to_string(s));
   Impl::Scope &sc = I.scopes[s];
   unsigned end = sc.open ? I.records.size() : sc.end;
+  auto outside = [&](const CallInst *i) { return !Impl::reaches(head, i->getParent()); };
   for (unsigned rec = sc.begin; rec < end; ++rec)
-    if (isCreator(I.info[rec].kind) && I.info[rec].item != kNone && outside(I.records[rec].forward->getParent()))
-      sc.left.insert(I.info[rec].item);
+    if (isCreator(I.info[rec].kind) && I.info[rec].item != kNone && outside(I.records[rec].forward) &&
+        all_of(I.rails[I.info[rec].item].writes, [&](unsigned w) { return outside(I.records[w].forward); }))
+      sc.left.insert(I.info[rec].item);   // a rail a trip writes stays: the trip's mirror undoes those writes
+  // So does a rail that reads one that stays: an operand outlives every _unc that reads it (rule 5).
+  for (bool changed = true; changed;) {
+    changed = false;
+    for (unsigned rec = sc.begin; rec < end; ++rec) {
+      RailId g = I.info[rec].item;
+      if (!isCreator(I.info[rec].kind) || g == kNone || sc.left.count(g))
+        continue;
+      for (RailId o : I.readersOf(g))
+        if (sc.left.erase(o))
+          changed = true;
+    }
+  }
+}
+
+bool Uncompute::leftScope(unsigned s, const Value *h) const {
+  auto it = impl->byHandle.find(h);
+  return it != impl->byHandle.end() && impl->scopes[s].left.count(it->second);
 }
 
 void Uncompute::emitMirror(unsigned s, IRBuilder<> &B) {
