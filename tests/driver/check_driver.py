@@ -262,6 +262,16 @@ def test_check(tmp):
         ok(f"--cq-check runs cqcheck user (status {direct.returncode}, propagated)")
 
 
+def test_plain(tmp):
+    """cq-ezgjn, cq-ywym5: a plain program through cqcc and the checker, the entry named a1."""
+    out = tmp / "entry_a1.ll"
+    r = cqcc("-S", SRC / "entry_a1.c", "--cq-check", "--cq-entry", "a1", "--cq-samples", "16", "-o", out)
+    if r.returncode or not out.exists():
+        fail("plain program", (r.stdout + r.stderr).strip()[-600:])
+    else:
+        ok("plain program, entry a1: §6-equal under --cq-check")
+
+
 def test_link(tmp):
     backend = tmp / "toy_backend.o"
     run([LLVM / "clang", "-c", SRC / "toy_backend.c", "-o", backend])
@@ -327,6 +337,7 @@ def main():
         test_bundle(tmp)
         test_k(tmp)
         test_check(tmp)
+        test_plain(tmp)
         test_link(tmp)
         test_host_link(tmp)
     print(f"\n{len(failures)} failure(s)")

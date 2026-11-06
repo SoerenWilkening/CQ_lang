@@ -1863,10 +1863,10 @@ def _driver_main(spec: DriverSpec) -> str:
                 kp += 1
                 continue
             n = 1 if ct.bits == 1 else (10 if ct.bits == 80 else ct.bits // 8)
-            lines.append(f"        {ct.spelling} a{j}; memset(&a{j}, 0, sizeof a{j}); "
-                         f"cqd_load(&a{j}, {n}, tok[{j}]);")
+            lines.append(f"        {ct.spelling} cqd_a{j}; memset(&cqd_a{j}, 0, sizeof cqd_a{j}); "
+                         f"cqd_load(&cqd_a{j}, {n}, tok[{j}]);")
             if ct.bits == 1:
-                lines.append(f"        a{j} = (*(unsigned char *)&a{j}) & 1;")
+                lines.append(f"        cqd_a{j} = (*(unsigned char *)&cqd_a{j}) & 1;")
         lines.append(f"        CQD_CALL_{ci};")
         lines.append("        break; }")
         out += lines
@@ -2065,7 +2065,7 @@ class ProbeBuild:
                     if ident:
                         regs.append(f"__cqd_reg((void *)&{ident}, sizeof({ident}));")
                 else:
-                    actual.append(f"a{j}")
+                    actual.append(f"cqd_a{j}")
             body = body.replace(f"CQD_CALL_{ci};", f"(void){fn}({', '.join(actual)});")
         body = body.replace("    __cqd_globals();", "    __cqd_globals();\n    " + " ".join(sorted(set(regs)))
                             + "".join(f"\n    cqd_ptr[{k}] = (void *)({e});" for k, e in enumerate(ptrs)))
