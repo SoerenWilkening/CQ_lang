@@ -250,9 +250,18 @@ void __cqo_va_start(void *ap, int64_t ovf) {
 void __cqo_zero(void *p, int64_t n) { (void)p, (void)n; }
 
 /* The object an access belongs to: the one containing its base pointer, else the one containing the
- * accessed address. NULL: no object (every byte reads 0, stores are dropped). */
-static const obj *access_obj(const void *base, const void *p) {
+ * accessed address. NULL: no object (every byte reads 0, stores are dropped). A base pointer one past
+ * the end of an object A equals the lowest address of the object B placed after it, so an address
+ * names both; LLVM's pointer is based on A (the access `gep inbounds A+size, -1` is inside A), so
+ * when the access does not fit B and does fit the object ending at the base, that object is it
+ * (cq-1jvr6 row 2: musl's stdin buffer read pointer after __toread). */
+static int inside(const obj *o, uintptr_t a, uint64_t n);
+static const obj *access_obj(const void *base, const void *p, uint64_t n) {
     const obj *o = base ? find_obj((uintptr_t)base) : 0;
+    if (base && !inside(o, (uintptr_t)p, n) && (uintptr_t)base > 0) {
+        const obj *e = find_obj((uintptr_t)base - 1);
+        if (e && e->hi == (uintptr_t)base && inside(e, (uintptr_t)p, n)) return e;
+    }
     return o ? o : find_obj((uintptr_t)p);
 }
 
@@ -261,7 +270,7 @@ static int inside(const obj *o, uintptr_t a, uint64_t n) {
 }
 
 void __cqo_load(const void *p, uint64_t n, void *dst, const void *base) {
-    const obj *o = access_obj(base, p);
+    const obj *o = access_obj(base, p, n);
     uintptr_t a = (uintptr_t)p;
     if (inside(o, a, n)) { memcpy(dst, p, n); return; }
     unsigned char *d = dst;
@@ -270,7 +279,7 @@ void __cqo_load(const void *p, uint64_t n, void *dst, const void *base) {
 }
 
 void __cqo_store(void *p, uint64_t n, const void *src, const void *base) {
-    const obj *o = access_obj(base, p);
+    const obj *o = access_obj(base, p, n);
     uintptr_t a = (uintptr_t)p;
     if (inside(o, a, n)) { memcpy(p, src, n); return; }
     for (uint64_t i = 0; i < n; ++i)
@@ -284,7 +293,7 @@ void __cqo_require(const void *p, uint64_t n) {
 
 void __cqo_imemset(void *p, uint8_t v, uint64_t n, const void *base) {
     sh_clear(p, n); /* the value's node, when quantum, is set after the call (OracleInstr.cpp shadows) */
-    const obj *o = access_obj(base, p);
+    const obj *o = access_obj(base, p, n);
     uintptr_t a = (uintptr_t)p;
     if (inside(o, a, n)) { memset(p, v, n); return; }
     for (uint64_t i = 0; i < n; ++i)
@@ -293,7 +302,7 @@ void __cqo_imemset(void *p, uint8_t v, uint64_t n, const void *base) {
 }
 
 void __cqo_imemmove(void *d, const void *s, uint64_t n, const void *dbase, const void *sbase) {
-    const obj *od = access_obj(dbase, d), *os = access_obj(sbase, s);
+    const obj *od = access_obj(dbase, d, n), *os = access_obj(sbase, s, n);
     sh_move(d, s, n);
     if (inside(od, (uintptr_t)d, n) && inside(os, (uintptr_t)s, n)) { memmove(d, s, n); return; }
     unsigned char *tmp = malloc(n ? n : 1);
