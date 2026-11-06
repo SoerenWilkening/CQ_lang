@@ -199,3 +199,10 @@ Entries 1 to 16 are from the flat-memory rulings (`wt/flat/rulings.md`, "Entries
 - Evidence: `cqcheck run 73_memcpy_array --oracle both`: s6=fail, c=pass, verifier=pass, "1 rail(s) i32 with values 0 0 0 0 1 1 1 1 4294967295 ... the reference keeps are not kept on our side", which is x; our rail x + 3 stays kept and x is freed at 0 (the evaluator checks it). Nothing else differs.
 - Request: regenerate 73 by the clause. 73 runs `--oracle c` until then. Not copied.
 - Bead: cq-xlqo1
+
+## Rule 16's list of names: what clang -O1 emits for C with no such call
+- Rule: CR rule 16 "The only callees recognised by name and signature are ISO C and POSIX interfaces"; rule 27 "The compiler knows no library by name"; rule 22 names `llvm.memcpy`, `llvm.memmove`, `llvm.memset`; rule 24 names `load atomic`, `store atomic`, `cmpxchg`, `atomicrmw`.
+- Gap: on the corpus triple `clang -O1` turns a store loop into `memset_pattern4/8/16`, a fortified `<string.h>`/`<stdio.h>` call into `__memcpy_chk`, `__sprintf_chk` and friends, and an atomic wider than the inline width into `__atomic_load`, `__atomic_store`, `__atomic_exchange`, `__atomic_compare_exchange`. As rule 16's bodiless callees they read host bytes of QUANTUM cells and write bytes the bus does not see, and no CR text sends them to rule 22 or 24.
+- Done here: `pass/lib/calls/LibCalls.cpp` rewrites them before the first taint (the pass and the C oracle alike): the plain intrinsic or function, the check dropped (its overflow is undefined behaviour, outside the domain); a pattern is a rule-22 copy whose source repeats; an atomic libcall is rule-22 copies, a compare-exchange a byte compare and a diamond. §6 is unaffected: both sides run the C meaning.
+- Request: CR to name these in rules 16, 22 and 24, or say otherwise.
+- Bead: cq-oelzx

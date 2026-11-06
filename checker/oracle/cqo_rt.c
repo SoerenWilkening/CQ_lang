@@ -179,6 +179,8 @@ static int in_bounds(const void *p, uint64_t n) {
 static unsigned oob_loads, oob_stores;
 static void sh_clear(const void *p, uint64_t n);          /* rule 2 shadow cells (cq-y1ll), below */
 static void sh_move(void *d, const void *s, uint64_t n);
+static uint32_t sh_get(uintptr_t a);
+static void sh_put(uintptr_t a, uint32_t n);
 
 void __cqo_global(void *p, uint64_t n) { ov_push(&global_objs, (uintptr_t)p, (uintptr_t)p + n); }
 uint64_t __cqo_mark(void) { return stack_objs.n; }
@@ -298,6 +300,22 @@ void __cqo_imemmove(void *d, const void *s, uint64_t n, const void *dbase, const
     __cqo_load(s, n, tmp, sbase);
     __cqo_store(d, n, tmp, dbase);
     free(tmp);
+}
+
+/* memset_pattern4/8/16 (pass/lib/calls/LibCalls.h): byte i of d is byte i % period of s, the shadow cells with it. */
+void __cqo_imempattern(void *d, const void *s, uint64_t n, uint64_t period, const void *dbase, const void *sbase) {
+    unsigned char *tmp = malloc(n ? n : 1);
+    uint32_t *cells = malloc((n ? n : 1) * sizeof *cells);
+    if (!tmp || !cells) { note("internal out of memory"); _exit(95); }
+    for (uint64_t i = 0; i < n; ++i) {
+        const unsigned char *b = (const unsigned char *)s + i % period;
+        __cqo_load(b, 1, tmp + i, sbase);
+        cells[i] = sh_get((uintptr_t)b);
+    }
+    __cqo_store(d, n, tmp, dbase);
+    for (uint64_t i = 0; i < n; ++i) sh_put((uintptr_t)d + i, cells[i]);
+    free(tmp);
+    free(cells);
 }
 
 /* library entry points (the declarations they replace have no body in the module) */
@@ -718,6 +736,7 @@ static uint32_t sh_load(const void *p, uint64_t n, uint32_t addr, int rail) {
 }
 uint32_t __cqo_sh_load(const void *p, uint64_t n, uint32_t addr) { return sh_load(p, n, addr, 0); }
 uint32_t __cqo_sh_qload(const void *p, uint64_t n, uint32_t addr) { return sh_load(p, n, addr, 1); }
+uint32_t __cqo_sh_rload(const void *p, uint64_t n, uint32_t addr, int32_t rail) { return sh_load(p, n, addr, rail != 0); }
 void __cqo_sh_fill(void *p, uint64_t n, uint32_t v) {
     if (v) sh_mq = __cqo_sh_j(sh_mq, v, 0);
     for (uint64_t i = 0; i < n; ++i) sh_put((uintptr_t)p + i, v);

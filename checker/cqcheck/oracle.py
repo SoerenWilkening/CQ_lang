@@ -188,12 +188,12 @@ STANDIN = ROOT / "checker" / "rt" / "cq_standin.h"   # included by both sources 
 # nothing else of the pass.
 PASS = ROOT / "pass"
 PASS_SOURCES = [PASS / "lib" / "taint" / "Taint.cpp", PASS / "lib" / "spine" / "Classify.cpp",
-                PASS / "lib" / "Common.cpp", PASS / "lib" / "abi" / "Abi.cpp"]
+                PASS / "lib" / "Common.cpp", PASS / "lib" / "abi" / "Abi.cpp", PASS / "lib" / "calls" / "LibCalls.cpp"]
 
 
 def _pass_inputs() -> List[Path]:
     hdrs = sorted((PASS / "include").rglob("*.h")) + sorted(
-        p for d in ("taint", "spine", "abi") for p in (PASS / "lib" / d).glob("*.h"))
+        p for d in ("taint", "spine", "abi") for p in (PASS / "lib" / d).glob("*.h")) + [PASS / "lib" / "calls" / "LibCalls.h"]
     return PASS_SOURCES + hdrs
 
 

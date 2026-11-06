@@ -20,6 +20,7 @@ file(GLOB CQCHECK_TOOL_INPUTS CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/cqcheck/*.py" "${CMAKE_CURRENT_SOURCE_DIR}/native/*"
      "${CMAKE_SOURCE_DIR}/pass/lib/taint/*" "${CMAKE_SOURCE_DIR}/pass/lib/spine/*"
      "${CMAKE_SOURCE_DIR}/pass/lib/abi/*" "${CMAKE_SOURCE_DIR}/pass/lib/Common.cpp"
+     "${CMAKE_SOURCE_DIR}/pass/lib/calls/LibCalls.cpp" "${CMAKE_SOURCE_DIR}/pass/lib/calls/LibCalls.h"
      "${CMAKE_SOURCE_DIR}/pass/include/*")
 add_custom_command(OUTPUT "${CMAKE_BINARY_DIR}/cqcheck-tools/prebuild.stamp"
   COMMAND ${CMAKE_COMMAND} -E env "CQ_BUILD_DIR=${CMAKE_BINARY_DIR}"

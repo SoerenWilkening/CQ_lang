@@ -7,6 +7,7 @@
 #include "BusInternal.h"
 
 #include "cq/Abi.h"
+#include "../calls/LibCalls.h"
 #include "../spine/SpineInternal.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SetVector.h"
@@ -292,13 +293,14 @@ void resolveFinished(LoweringContext &ctx, ArrayRef<Value *> roots, ArrayRef<Val
 
 } // namespace
 
-void emitCopy(LoweringContext &ctx, const CopySpec &s) {
+// `period`: 0, or a memset_pattern's source period: byte j of the destination is byte j % period of the source (LibCalls.h).
+static void emitCopyOf(LoweringContext &ctx, const CopySpec &s, unsigned period) {
   bool quantumLength = s.length.handle;
   bool first = true;
   // Load loop: each byte under its predicate; p_j first, then the byte rail.
   hostLoop(ctx, s.trips, /*down=*/false, [&](Value *j) {
     Value *c = quantumLength ? bytePredicate(ctx, s.length.v, j, s.ctl) : s.ctl;
-    ByteAddr a = byteAddress(ctx, s.src, j);
+    ByteAddr a = byteAddress(ctx, s.src, period ? ctx.B().CreateURem(j, ctx.B().getInt64(period)) : j);
     CallInst *h = byteLoad(ctx, c, a.addr);
     endByteAddress(ctx, a);
     if (quantumLength)
@@ -336,6 +338,8 @@ void emitCopy(LoweringContext &ctx, const CopySpec &s) {
     resolveFinished(ctx, dstRoot, {});
   }
 }
+
+void emitCopy(LoweringContext &ctx, const CopySpec &s) { emitCopyOf(ctx, s, 0); }
 
 // Rule 22 memset: ONE loop of byte stores of one i8 value rail.
 static void emitSet(LoweringContext &ctx, Operand dst, Operand byte, Operand length, Value *trips, Value *ctl) {
@@ -435,7 +439,7 @@ void lowerMemIntrinsic(LoweringContext &ctx, MemIntrinsic &MI) {
   s.trips = n.handle ? quantumTrips(ctx, n, rangeBound(ctx, len), ctl) : n.v;
   s.ctl = ctl;
   s.at = &MI;
-  emitCopy(ctx, s);
+  emitCopyOf(ctx, s, calls::patternPeriod(MI));
 }
 
 void lowerCopy(LoweringContext &ctx, Operand dst, Operand src, Operand len, Value *ctl, Instruction &at) {

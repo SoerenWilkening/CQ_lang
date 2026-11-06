@@ -35,6 +35,7 @@
 // An IR shape this pass cannot handle is a fatal "cq-oracle: unimplemented: ..." error, never a skip.
 
 #include "cq/Loops.h"
+#include "../../pass/lib/calls/LibCalls.h"
 #include "cq/SetjmpPair.h"
 #include "llvm/ADT/SetVector.h"
 #include "cq/Taint.h"
@@ -174,6 +175,7 @@ public:
   struct KInfo {
     bool on = false;
     unsigned N = 0;
+    DenseMap<const cq::Specialization *, unsigned> idOf;
     DenseMap<const Function *, unsigned> entry;                 // entry specialization id
     DenseMap<const Function *, bool> entryRec;                  // it is a quantum-depth recursion
     DenseMap<const Function *, bool> hasSpec;
@@ -184,6 +186,12 @@ public:
   } KI;
   GlobalVariable *SpecNext = nullptr;
   DenseMap<Function *, AllocaInst *> specSlots;
+  // Rule 20 per clone: a load one specialization holds as a rail and another as a classical host-resident load (an externally
+  // visible function's table clone takes every formal as a handle, so its objects are bus-resident). The frame's specialization
+  // answers at run time; id 0 (reached by a call that names none: through a pointer) takes any of them. Its flag operand is
+  // set at the end of run(), when the frame slots stay put.
+  struct RailLoad { CallInst *call; Function *F; std::vector<int32_t> vals; };
+  std::vector<RailLoad> railLoads;
 
   static bool callsCqSurface(const Module &M) {
     for (const Function &F : M) {
@@ -227,7 +235,7 @@ public:
     Taint = cq::computeTaint(M, cq::TaintOptions{});  // shared with shadows() (rule 2, cq-y1ll)
     const cq::TaintInfo &T = *Taint;
     std::vector<const cq::Specialization *> byId(1, nullptr);
-    DenseMap<const cq::Specialization *, unsigned> idOf;
+    DenseMap<const cq::Specialization *, unsigned> &idOf = KI.idOf;
     for (const cq::Specialization &S : T.specializations())
       if (S.F && !S.F->isDeclaration() && !isDriverFn(*S.F)) {
         idOf[&S] = byId.size();
@@ -1086,9 +1094,23 @@ public:
         // over no rail is a fresh one, never classical; cq-425g); a variadic actual read
         // through the save areas depends on what the call passed (sh_gm, as VAArgInst)
         bool va = !q(LI) && isVaRead(LI);
-        Value *n = B.CreateCall(h(q(LI) ? "__cqo_sh_qload" : "__cqo_sh_load", I32, {In.Ptr, In.I64, I32}),
-                                {LI->getPointerOperand(), B.getInt64(bytes(LI->getType())),
-                                 get(LI->getPointerOperand())});
+        Value *n;
+        if (q(LI) && In.KI.on && llvm::any_of(specs, [&](const cq::Specialization *S) { return !T.isQuantum(LI, *S); })) {
+          std::vector<int32_t> rail(In.KI.N + 1, 0);
+          rail[0] = 1;
+          for (const cq::Specialization *S : specs)
+            if (auto id = In.KI.idOf.find(S); id != In.KI.idOf.end())
+              rail[id->second] = T.isQuantum(LI, *S);
+          auto *c = B.CreateCall(h("__cqo_sh_rload", I32, {In.Ptr, In.I64, I32, I32}),
+                                 {LI->getPointerOperand(), B.getInt64(bytes(LI->getType())),
+                                  get(LI->getPointerOperand()), B.getInt32(1)});
+          In.railLoads.push_back({c, &F, std::move(rail)});
+          n = c;
+        } else {
+          n = B.CreateCall(h(q(LI) ? "__cqo_sh_qload" : "__cqo_sh_load", I32, {In.Ptr, In.I64, I32}),
+                           {LI->getPointerOperand(), B.getInt64(bytes(LI->getType())),
+                            get(LI->getPointerOperand())});
+        }
         sh[LI] = va ? node(B, {n, call0(B, "__cqo_sh_mq_get")}) : n;
         return;
       }
@@ -1791,6 +1813,10 @@ public:
         B.CreateCall(hook("__cqo_imemmove", Void, {Ptr, Ptr, I64, Ptr, Ptr}),
                      {MI->getDest(), cast<MemTransferInst>(MI)->getSource(), n, base(MI->getDest()),
                       base(cast<MemTransferInst>(MI)->getSource())});
+      else if (unsigned period = cq::calls::patternPeriod(*MI))
+        B.CreateCall(hook("__cqo_imempattern", Void, {Ptr, Ptr, I64, I64, Ptr, Ptr}),
+                     {MI->getDest(), cast<MemTransferInst>(MI)->getSource(), n, B.getInt64(period), base(MI->getDest()),
+                      base(cast<MemTransferInst>(MI)->getSource())});
       else if (isa<MemCpyInst>(MI))
         B.CreateCall(hook("__cqo_imemmove", Void, {Ptr, Ptr, I64, Ptr, Ptr}),
                      {MI->getDest(), cast<MemTransferInst>(MI)->getSource(), n, base(MI->getDest()),
@@ -2459,6 +2485,9 @@ public:
   }
 
   void run() {
+    // The pass's own first step (rules 16, 22, 24), so taint answers for the program the pass lowers.
+    if (callsCqSurface(M))
+      cq::calls::canonicalizeLibCalls(M);
     analyseCutoffs();  // on the pristine module: taint answers for the program as clang wrote it
     armLongjmps();
     {
@@ -2513,6 +2542,10 @@ public:
     for (Function *F : defined)
       if (!isDriverFn(*F))
         specFlow(*F);
+    for (RailLoad &R : railLoads) {
+      IRBuilder<> B(R.call);
+      R.call->setArgOperand(3, perSpec(B, *R.F, R.vals));
+    }
     registerGlobals();
     // The runtime owns `main`; a program's own main stays callable under another name.
     if (Function *Mn = M.getFunction("main"))
