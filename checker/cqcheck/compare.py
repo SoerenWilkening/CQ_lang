@@ -1890,8 +1890,9 @@ def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult], ended: Sequence[
 #             a bus store's tape slot, its value rail and control rail (tape_slot, store_kept: rule 5
 #             sentence 3), an overtaken load copy (overtaken: rule 5), kept_entangled (a source received
 #             a non-diagonal gate or a measurement after the rail was written: no _unc can clean it;
-#             rules 5 and 6), rule6_image (an operand a rule-6 clean's inverse read, frozen or not: rule 5
-#             sentence 1 names a rule-6 image as never uncomputed; rt/core.c cqe__r6_unc, cq-o9mx), a result (the handle a handle-returning function returns,
+#             rules 5 and 6), rule6_image (an operand a rule-6 clean's inverse read and whose producer's _unc can no
+#             longer clean it, frozen or not: rule 5 sentence 1 names a rule-6 image as never uncomputed; rt/core.c
+#             cqe__r6_unc, cq-o9mx, cq-cuu82), a result (the handle a handle-returning function returns,
 #             run.resolve_handle_rets: "result"), a seed that received an Ry (a register whose Ry was
 #             the identity);
 #   rule 23   at most one fenv_flags rail (the final flags rail is an output) and one fenv_mode rail;

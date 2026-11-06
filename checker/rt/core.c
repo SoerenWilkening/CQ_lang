@@ -27,8 +27,8 @@
  * Exit roles (event "exit", field "role" of each live rail): measured, abort, tape (an effect entry's result
  * rail too, rt_tape.c), tape_slot (a bus store's slot, rule 5), overtaken (a load copy un-copied
  * and not freed, rule 5), frozen (rotated, not measured, or a rule-6 image carrying a rotated register's
- * content: cqe__carry, cq-qhow), rule6_image (an operand of a rule-6 clean's inverse, frozen or not: cqe__r6_unc,
- * cq-o9mx), store_kept (a value or control rail of a bus store still live, rule 5
+ * content: cqe__carry, cq-qhow), rule6_image (an operand of a rule-6 clean's inverse its producer's _unc can no longer
+ * clean, frozen or not: cqe__r6_unc, cq-o9mx, cq-cuu82), store_kept (a value or control rail of a bus store still live, rule 5
  * sentence 3), kept_entangled (cq-arch A4: a rail one of whose direct sources received
  * a non-diagonal gate or a measurement after the rail was written), fenv_mode (a rail an _rmq template took as its
  * rounding mode; rule 23), fenv_flags (an _exc template's result or a rail written from one: the
@@ -587,12 +587,23 @@ void cqe__carry(int32_t into, const int32_t *srcs, int n) {
  * the clean's images, frozen or not: the rail's content now lives only there, and a live one at exit is a rule-named
  * kept rail (role rule6_image), never a leak. The order of the _unc and free(y) is the lowering's, so whichever comes
  * second marks. t must be made after y's last write: un-copying a copy of t (copy(t, c); copy(t, c)) cleans nothing,
- * and a rail merely derived from a rotated register or a QUANTUM cell is never marked. Over-approximation, as in
- * cqe__carry: every operand of the inverse is marked. A load copy never is (rule 5). A forgotten _unc of a rail that
- * was only an ordinary template result stays a leak. */
+ * and a rail merely derived from a rotated register or a QUANTUM cell is never marked. A load copy never is (rule 5).
+ * Nor is an operand its producer's _unc can still clean (r6_cleanable): the inverse reads rule-5 garbage too, a select's
+ * condition or a template result ("its inverse reads the garbage", rule 6, 195), and rule 5 still uncomputes that after
+ * the inverse; forgetting that _unc is a leak (cq-cuu82). A forgotten _unc of a rail that was only an ordinary template
+ * result stays a leak. */
+static int r6_cleanable(const rail_t *r) {
+  for (uint32_t i = 0; i < r->ndeps; ++i) {
+    const rail_t *s = &rails[r->deps[i]];
+    if (!s->live || s->t_write > r->t_write)
+      return 0;
+  }
+  return r->ndeps > 0;
+}
+
 static void r6_mark(const int32_t *ops, uint32_t n) {
   for (uint32_t i = 0; i < n; ++i)
-    if (!rails[ops[i]].measured && !rails[ops[i]].load_copy)
+    if (!rails[ops[i]].measured && !rails[ops[i]].load_copy && !r6_cleanable(&rails[ops[i]]))
       rails[ops[i]].r6 = 1;
 }
 
