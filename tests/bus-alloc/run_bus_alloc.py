@@ -5,6 +5,8 @@ probes/alloc.O1.ll (clang -O1 -include CQ.h of alloc.c): cq-lower and cq-verify 
 hold, and the entry is §6-equal to its own C program (`python3 -m cqcheck user`, the C oracle).
 probes/k2.O1.ll: K2's resolution, structural only: a rail size or length with no bound has inputs past any K2 the
 sampler cannot compare against C.
+probes/inplace.O1.ll, probes/inplace_loop.O1.ll: rule 5's in-place form, the shapes that stay the form and the shapes that
+are a kept store instead; each entry §6-equal to its C program (`--light`).
 """
 import argparse
 import re
@@ -37,6 +39,28 @@ ENTRIES = {
     "p_realloc_pred": ([ALLOC % ("16", "16"), "@cqrt_qram_load_i64_hl_controlled\\("], []),
     "p_free_pred": ([], ["@free\\("]),
     "p_vla_loop": ([], ["stacksave", "stackrestore"]),
+}
+# Rule 5 In-place form: entry -> does its body hold the form's swaps at i32?
+SWAP = r"@cqrt_qram_swap_i32"
+INPLACE = {
+    "inplace": {
+        "ip_read_add": True,             # cq-q148y: a plain load's copy for the reader, the form at the store
+        "ip_read_theta": False,          # cq-q148y: the reader needs the swap-in before a bus load: a kept store
+        "ip_read_theta_nobus": True,
+        "ip_before_prev": False,         # cq-i2gdy: a step before the preceding store is not in the interval
+        "ip_before_prev_change": False,
+        "ip_change_reader": False,       # the second change's address is not computed before the first: d = 0
+        "ip_change_reader_d": True,
+        "ip_prev_form_reader": True,
+        "ip_loop_k": False,              # cq-5cie9: the store runs again without its load
+        "ip_loop_classical": False,
+        "ip_loop_classical_i": False,
+        "ip_narrow_prev": False,         # cq-6cup9: the preceding store does not cover the wide cell
+        "ip_wide_prev": True,
+        "ip_wide_prev_change": False,    # a change of the interval may have written the high cells
+        "ip_wide_prev_change_q": False,
+    },
+    "inplace_loop": {"ip_loop_theta_out": False},
 }
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 
@@ -105,6 +129,37 @@ def check_k2(a):
     return bad
 
 
+def check_inplace(a):
+    failures = 0
+    for name, entries in INPLACE.items():
+        chosen = [fn for fn in entries if not a.entry or fn in a.entry]
+        if not chosen:
+            continue
+        src, lowered = PROBES / f"{name}.O1.ll", OUT / f"{name}.lowered.ll"
+        e = lower(a, src, lowered)
+        if e:
+            print(f"FAIL {name}: {e}")
+            failures += len(chosen)
+            continue
+        text = lowered.read_text()
+        for fn in chosen:
+            b = body(text, fn)
+            why = []
+            if not b:
+                why.append("no lowered body")
+            if SURFACE.search(b):
+                why.append("a CQ.h surface call is left")
+            if bool(re.search(SWAP, b)) != entries[fn]:
+                why.append("the form's swaps " + ("are missing" if entries[fn] else "are there"))
+            c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(src), "--lowered", str(lowered),
+                                "--entry", fn, "--light"], capture_output=True, text=True, cwd=ROOT / "checker")
+            if c.returncode or "PASS" not in c.stdout + c.stderr:
+                why.append("§6 against the C program: " + ((c.stdout + c.stderr).strip().splitlines() or ["?"])[-1][:400])
+            print(("FAIL " if why else "ok   ") + fn + ("" if not why else ": " + "; ".join(why)))
+            failures += bool(why)
+    return failures
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--plugin", required=True)
@@ -116,6 +171,7 @@ def main():
     for why in check_k2(a):
         print("FAIL k2: " + why)
         failures += 1
+    failures += check_inplace(a)
     src, lowered = PROBES / "alloc.O1.ll", OUT / "alloc.lowered.ll"
     e = lower(a, src, lowered)
     if e:
