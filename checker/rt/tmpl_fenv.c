@@ -66,6 +66,10 @@
 #include <string.h>
 
 #include "cqe.h"
+#include "libm_next.h"
+
+CQE_LIBM_NEXT(double, log2, (double x), (x))
+CQE_LIBM_NEXT(long, lround, (double x), (x))
 
 #ifndef CQE_OP_NOT_MINE
 #define CQE_OP_NOT_MINE 1
@@ -332,7 +336,7 @@ static int fmt_of(const char *w, fmt_t *f) {
     /* IEEE 754-2008 interchange formats: round(4 log2 N) - 13. 4 log2 N is never a half
      * integer (that needs N^8 = 2^odd), and double log2 is far more precise than the distance
      * to one for N < 100000. */
-    f->ebits = (int)lround(4.0 * log2((double)n)) - 13;
+    f->ebits = (int)cqe_next_lround(4.0 * cqe_next_log2((double)n)) - 13;
   } else
     return 0;
 derived:
