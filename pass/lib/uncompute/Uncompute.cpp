@@ -43,7 +43,8 @@
 //  - noteKeptStore(store, value, ctl) (rule 5 sentence 3): the value and control rails stay, Role::Kept unless they
 //    already hold a kept role; a pending rule 6 clean-up of either is dropped. A rail a classical branch can bypass the
 //    store of is kept only where the store ran: one instance under a run flag, a rule-14 trip's instance through a copy the
-//    store reads (the reverse loop undoes the rail itself), as a carried phi always (cq-ii0vf, cq-mmdf3).
+//    store reads (the reverse loop undoes the rail itself), as a carried phi and an exit rail stored only after its loop
+//    always (cq-ii0vf, cq-mmdf3, cq-qayew).
 //  - cleanupBijective(old, inverse, ops): rule 6. Instead of its producer's _unc, `old` is cleaned by
 //    t = inverse(ops); copy_<W>(t, old); inverse_unc(t, ops); free t; free old. It overrides old's
 //    role. ops are the inverse template's forward operands.
@@ -340,6 +341,27 @@ struct Uncompute::Impl {
   }
 
   static bool keptRole(Role r) { return r != Role::Garbage && r != Role::Seed; }
+
+  // D lies on a built cycle that does not pass S: D's rail has instances a store in S never reads, a store after the loop
+  // keeping the last trip's only. A store in the trip is lowered before its back edge exists, so it never answers yes.
+  static bool repeatsWithout(const BasicBlock *D, const BasicBlock *S) {
+    if (D == S)
+      return false;
+    SmallPtrSet<const BasicBlock *, 16> seen;
+    SmallVector<const BasicBlock *, 16> work{D};
+    while (!work.empty()) {
+      const Instruction *t = work.pop_back_val()->getTerminator();
+      if (!t)
+        continue;
+      for (const BasicBlock *n : successors(t)) {
+        if (n == D)
+          return true;
+        if (n != S && seen.insert(n).second)
+          work.push_back(n);
+      }
+    }
+    return false;
+  }
 
   // A classical branch on the way from D to S has an edge from which S cannot be reached (the output CFG is built up
   // to S when S is being lowered): some path from D does not pass S.
@@ -3088,9 +3110,15 @@ void Uncompute::noteKeptStore(CallInst *store, Value *value, Value *ctl) {
     }
     // cq-guzg3, cq-ii0vf: rule 5 keeps the rail with the store that ran (§6 item 1: a store's value and control rail). Where
     // a classical branch can bypass this store the rail is a rail like any other on those paths.
-    if (!Impl::keptRole(x.role) && x.creator != kNone && x.group == kNone && !x.loadCall && !I.isMerge(r) &&
-        x.mergedInto.empty() && x.deferred == kNone && x.ownedBy == kNone &&
-        Impl::bypassed(I.defBlock(r), store->getParent())) {
+    bool plain = !Impl::keptRole(x.role) && x.creator != kNone && x.group == kNone && !x.loadCall && !I.isMerge(r) &&
+                 x.mergedInto.empty();
+    // So it is on the trips a store after the loop never reads, a rail its loop's reverse owns included (cq-qayew, rule 14
+    // case 1: the result is copied out and the reverse undoes each trip).
+    if (plain && I.inScope(x.creator) && Impl::repeatsWithout(I.defBlock(r), store->getParent())) {
+      I.keepCopyForStore(r, store, h);
+      continue;
+    }
+    if (plain && x.deferred == kNone && x.ownedBy == kNone && Impl::bypassed(I.defBlock(r), store->getParent())) {
       if (I.inScope(x.creator))
         // An instance per trip, undone by the reverse loop (rule 14), which replays no store: the store reads a copy of
         // the rail, and that copy is the value or control rail rule 5 keeps, on exactly the trips the store ran.

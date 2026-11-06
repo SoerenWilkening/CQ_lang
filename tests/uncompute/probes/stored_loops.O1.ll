@@ -530,6 +530,199 @@ define i32 @sl_arm(i32 noundef %0, i32 noundef %1, double noundef %2) local_unna
 }
 
 ; Function Attrs: nounwind ssp uwtable
+define i32 @sl_exit(i32 noundef %0, double noundef %1) local_unnamed_addr #1 {
+  %3 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %1) #3
+  tail call void @put(ptr noundef nonnull @g, i32 noundef %3)
+  %4 = add nsw i32 %3, 1
+  tail call void @put(ptr noundef nonnull getelementptr inbounds (i8, ptr @g, i64 4), i32 noundef %4)
+  %5 = xor i32 %3, 5
+  tail call void @put(ptr noundef nonnull getelementptr inbounds (i8, ptr @g, i64 8), i32 noundef %5)
+  %6 = mul nsw i32 %3, 3
+  br label %11
+
+7:                                                ; preds = %11
+  store i32 %17, ptr getelementptr inbounds (i8, ptr @g, i64 8), align 8, !tbaa !6
+  %8 = load i32, ptr @g, align 16, !tbaa !6
+  %9 = add nsw i32 %8, %17
+  %10 = tail call i32 @cq_measure_si32(i32 noundef %9) #4
+  ret i32 %10
+
+11:                                               ; preds = %2, %11
+  %12 = phi i64 [ 0, %2 ], [ %18, %11 ]
+  %13 = phi i32 [ %6, %2 ], [ %17, %11 ]
+  %14 = ashr i32 %13, 2
+  %15 = getelementptr inbounds [8 x i32], ptr @g, i64 0, i64 %12
+  store i32 %14, ptr %15, align 4, !tbaa !6
+  %16 = sub nsw i32 %13, %14
+  %17 = mul nsw i32 %16, 5
+  %18 = add nuw nsw i64 %12, 1
+  %19 = icmp eq i64 %12, 0
+  br i1 %19, label %11, label %7, !llvm.loop !26
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @sl_exit_zero(i32 noundef %0, i32 noundef %1, double noundef %2) local_unnamed_addr #1 {
+  %4 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %2) #3
+  tail call void @put(ptr noundef nonnull @g, i32 noundef %4)
+  %5 = add nsw i32 %4, 1
+  tail call void @put(ptr noundef nonnull getelementptr inbounds (i8, ptr @g, i64 4), i32 noundef %5)
+  %6 = xor i32 %4, 5
+  tail call void @put(ptr noundef nonnull getelementptr inbounds (i8, ptr @g, i64 8), i32 noundef %6)
+  %7 = mul nsw i32 %4, 3
+  %8 = and i32 %1, 3
+  %9 = icmp eq i32 %8, 0
+  br i1 %9, label %10, label %13
+
+10:                                               ; preds = %13, %3
+  %11 = phi i32 [ %7, %3 ], [ %17, %13 ]
+  store i32 %11, ptr getelementptr inbounds (i8, ptr @g, i64 16), align 16, !tbaa !6
+  %12 = tail call i32 @cq_measure_si32(i32 noundef %11) #4
+  ret i32 %12
+
+13:                                               ; preds = %3, %13
+  %14 = phi i32 [ %18, %13 ], [ 0, %3 ]
+  %15 = phi i32 [ %17, %13 ], [ %7, %3 ]
+  %16 = add nsw i32 %14, %15
+  %17 = mul nsw i32 %16, %4
+  %18 = add nuw nsw i32 %14, 1
+  %19 = icmp eq i32 %18, %8
+  br i1 %19, label %10, label %13, !llvm.loop !27
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @sl_exit_both(i32 noundef %0, double noundef %1) local_unnamed_addr #1 {
+  %3 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %1) #3
+  tail call void @put(ptr noundef nonnull @g, i32 noundef %3)
+  %4 = add nsw i32 %3, 1
+  tail call void @put(ptr noundef nonnull getelementptr inbounds (i8, ptr @g, i64 4), i32 noundef %4)
+  %5 = xor i32 %3, 5
+  tail call void @put(ptr noundef nonnull getelementptr inbounds (i8, ptr @g, i64 8), i32 noundef %5)
+  %6 = mul nsw i32 %3, 3
+  br label %11
+
+7:                                                ; preds = %11
+  store i32 %16, ptr getelementptr inbounds (i8, ptr @g, i64 8), align 8, !tbaa !6
+  %8 = load i32, ptr getelementptr inbounds (i8, ptr @g, i64 16), align 16, !tbaa !6
+  %9 = add nsw i32 %8, %16
+  %10 = tail call i32 @cq_measure_si32(i32 noundef %9) #4
+  ret i32 %10
+
+11:                                               ; preds = %2, %11
+  %12 = phi i64 [ 0, %2 ], [ %20, %11 ]
+  %13 = phi i32 [ %6, %2 ], [ %16, %11 ]
+  %14 = trunc nuw nsw i64 %12 to i32
+  %15 = add nsw i32 %13, %14
+  %16 = mul nsw i32 %15, %3
+  %17 = shl nuw nsw i64 %12, 1
+  %18 = add nuw nsw i64 %17, 4
+  %19 = getelementptr inbounds [8 x i32], ptr @g, i64 0, i64 %18
+  store i32 %16, ptr %19, align 8, !tbaa !6
+  %20 = add nuw nsw i64 %12, 1
+  %21 = icmp eq i64 %12, 0
+  br i1 %21, label %11, label %7, !llvm.loop !28
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @sl_exit_twice(i32 noundef %0, double noundef %1) local_unnamed_addr #1 {
+  %3 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %1) #3
+  tail call void @put(ptr noundef nonnull @g, i32 noundef %3)
+  %4 = add nsw i32 %3, 1
+  tail call void @put(ptr noundef nonnull getelementptr inbounds (i8, ptr @g, i64 4), i32 noundef %4)
+  %5 = xor i32 %3, 5
+  tail call void @put(ptr noundef nonnull getelementptr inbounds (i8, ptr @g, i64 8), i32 noundef %5)
+  %6 = mul nsw i32 %3, 3
+  br label %10
+
+7:                                                ; preds = %10
+  store i32 %14, ptr getelementptr inbounds (i8, ptr @g, i64 16), align 16, !tbaa !6
+  store i32 %14, ptr getelementptr inbounds (i8, ptr @g, i64 24), align 8, !tbaa !6
+  %8 = shl nsw i32 %14, 1
+  %9 = tail call i32 @cq_measure_si32(i32 noundef %8) #4
+  ret i32 %9
+
+10:                                               ; preds = %2, %10
+  %11 = phi i32 [ 0, %2 ], [ %15, %10 ]
+  %12 = phi i32 [ %6, %2 ], [ %14, %10 ]
+  %13 = add nsw i32 %11, %12
+  %14 = mul nsw i32 %13, %3
+  %15 = add nuw nsw i32 %11, 1
+  %16 = icmp eq i32 %11, 0
+  br i1 %16, label %10, label %7, !llvm.loop !29
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @sl_exit_nested(i32 noundef %0, double noundef %1) local_unnamed_addr #1 {
+  %3 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %1) #3
+  tail call void @put(ptr noundef nonnull @g, i32 noundef %3)
+  %4 = add nsw i32 %3, 1
+  tail call void @put(ptr noundef nonnull getelementptr inbounds (i8, ptr @g, i64 4), i32 noundef %4)
+  %5 = xor i32 %3, 5
+  tail call void @put(ptr noundef nonnull getelementptr inbounds (i8, ptr @g, i64 8), i32 noundef %5)
+  br label %10
+
+6:                                                ; preds = %15
+  %7 = load i32, ptr getelementptr inbounds (i8, ptr @g, i64 16), align 16, !tbaa !6
+  %8 = add nsw i32 %7, %19
+  %9 = tail call i32 @cq_measure_si32(i32 noundef %8) #4
+  ret i32 %9
+
+10:                                               ; preds = %2, %15
+  %11 = phi i64 [ 0, %2 ], [ %20, %15 ]
+  %12 = phi i32 [ 0, %2 ], [ %19, %15 ]
+  %13 = trunc i64 %11 to i32
+  %14 = add i32 %3, %13
+  br label %22
+
+15:                                               ; preds = %22
+  %16 = shl nuw nsw i64 %11, 1
+  %17 = add nuw nsw i64 %16, 4
+  %18 = getelementptr inbounds [8 x i32], ptr @g, i64 0, i64 %17
+  store i32 %26, ptr %18, align 8, !tbaa !6
+  %19 = xor i32 %26, %12
+  %20 = add nuw nsw i64 %11, 1
+  %21 = icmp eq i64 %11, 0
+  br i1 %21, label %10, label %6, !llvm.loop !30
+
+22:                                               ; preds = %10, %22
+  %23 = phi i32 [ 0, %10 ], [ %27, %22 ]
+  %24 = phi i32 [ %14, %10 ], [ %26, %22 ]
+  %25 = add nsw i32 %23, %24
+  %26 = mul nsw i32 %25, %3
+  %27 = add nuw nsw i32 %23, 1
+  %28 = icmp eq i32 %23, 0
+  br i1 %28, label %22, label %15, !llvm.loop !31
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @sl_exit_kloop(i32 noundef %0, double noundef %1) local_unnamed_addr #1 {
+  %3 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %1) #3
+  tail call void @put(ptr noundef nonnull @g, i32 noundef %3)
+  %4 = add nsw i32 %3, 1
+  tail call void @put(ptr noundef nonnull getelementptr inbounds (i8, ptr @g, i64 4), i32 noundef %4)
+  %5 = xor i32 %3, 5
+  tail call void @put(ptr noundef nonnull getelementptr inbounds (i8, ptr @g, i64 8), i32 noundef %5)
+  %6 = mul nsw i32 %3, 3
+  %7 = and i32 %3, 3
+  %8 = icmp eq i32 %7, 0
+  br i1 %8, label %9, label %12
+
+9:                                                ; preds = %12, %2
+  %10 = phi i32 [ %6, %2 ], [ %16, %12 ]
+  store i32 %10, ptr getelementptr inbounds (i8, ptr @g, i64 16), align 16, !tbaa !6
+  %11 = tail call i32 @cq_measure_si32(i32 noundef %10) #4
+  ret i32 %11
+
+12:                                               ; preds = %2, %12
+  %13 = phi i32 [ %17, %12 ], [ 0, %2 ]
+  %14 = phi i32 [ %16, %12 ], [ %6, %2 ]
+  %15 = add nsw i32 %13, %14
+  %16 = mul nsw i32 %15, %3
+  %17 = add nuw nsw i32 %13, 1
+  %18 = icmp eq i32 %17, %7
+  br i1 %18, label %9, label %12, !llvm.loop !32
+}
+
+; Function Attrs: nounwind ssp uwtable
 define i32 @sl_arm_false(i32 noundef %0, i32 noundef %1, double noundef %2) local_unnamed_addr #1 {
   %4 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef %2) #3
   tail call void @put(ptr noundef nonnull @g, i32 noundef %4)
@@ -576,7 +769,7 @@ define i32 @sl_arm_false(i32 noundef %0, i32 noundef %1, double noundef %2) loca
   %30 = phi i32 [ %28, %27 ], [ %23, %26 ], [ %23, %20 ]
   %31 = add nuw nsw i32 %16, 1
   %32 = icmp eq i32 %31, %7
-  br i1 %32, label %9, label %14, !llvm.loop !26
+  br i1 %32, label %9, label %14, !llvm.loop !33
 }
 
 attributes #0 = { mustprogress nofree noinline norecurse nosync nounwind ssp willreturn memory(argmem: write) uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
@@ -615,3 +808,10 @@ attributes #4 = { nounwind }
 !24 = distinct !{!24, !11, !12}
 !25 = distinct !{!25, !11, !12}
 !26 = distinct !{!26, !11, !12}
+!27 = distinct !{!27, !11, !12}
+!28 = distinct !{!28, !11, !12}
+!29 = distinct !{!29, !11, !12}
+!30 = distinct !{!30, !11, !12}
+!31 = distinct !{!31, !11, !12}
+!32 = distinct !{!32, !11, !12}
+!33 = distinct !{!33, !11, !12}

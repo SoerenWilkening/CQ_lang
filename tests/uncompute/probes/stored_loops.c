@@ -87,6 +87,48 @@ int sl_arm(int x0, int n, double t) {      // a trip's arm flag controls a store
   }
   return cq_measure_si32(s + g[3]);
 }
+// cq-qayew: an exit rail stored only after the loop: that store keeps the last trip's value, no earlier instance.
+int sl_exit(int x0, double t) {            // __rem_pio2's digit loop: two trips, the rest stored after the loop
+  I1 int z = x * 3;
+  for (int i = 0; i < 2; i++) { g[i] = z >> 2; z = (z - g[i]) * 5; }
+  g[2] = z;
+  return cq_measure_si32(g[0] + g[2]);
+}
+int sl_exit_zero(int x0, int n, double t) { // a zero-trip path reaches the store too
+  I1 int z = x * 3;
+  for (int i = 0; i < (n & 3); i++) z = (z + i) * x;
+  g[4] = z;
+  return cq_measure_si32(g[4]);
+}
+int sl_exit_both(int x0, double t) {       // stored in each trip and after the loop: every instance is kept
+  I1 int z = x * 3;
+  for (int i = 0; i < 2; i++) { z = (z + i) * x; g[4 + 2 * i] = z; }
+  g[2] = z;
+  return cq_measure_si32(g[4] + g[2]);
+}
+int sl_exit_twice(int x0, double t) {      // two stores after the loop, one rail
+  I1 int z = x * 3;
+  for (int i = 0; i < 2; i++) z = (z + i) * x;
+  g[4] = z;
+  g[6] = z;
+  return cq_measure_si32(g[4] + g[6]);
+}
+int sl_exit_nested(int x0, double t) {     // an inner loop's exit stored in the outer trip
+  I1 int s = 0;
+  for (int i = 0; i < 2; i++) {
+    int z = x + i;
+    for (int j = 0; j < 2; j++) z = (z + j) * x;
+    g[4 + 2 * i] = z;
+    s ^= z;
+  }
+  return cq_measure_si32(s + g[4]);
+}
+int sl_exit_kloop(int x0, double t) {      // a K-loop's exit value stored after the loop
+  I1 int z = x * 3;
+  for (int i = 0; i < (x & 3); i++) z = (z + i) * x;
+  g[4] = z;
+  return cq_measure_si32(g[4]);
+}
 int sl_arm_false(int x0, int n, double t) { // the same on the flag's false edge
   I1 int s = 0;
   for (int i = 0; i < (n & 3); i++) {
