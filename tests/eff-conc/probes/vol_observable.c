@@ -1,7 +1,5 @@
 #include "CQ.h"
-/* cq-lyzw (rule 24 at f684858, cq-py5f): an observable volatile access with quantum data is a host
-   effect: a store is the tape entry volatile_store (address, value) under the predicate, a load the
-   host read at its program point, merged. Formerly vol_quantum_observable_error. */
+/* cq-6b2i1: an observable volatile store is a bus store, `_hl`, `_controlled` under a quantum predicate. */
 volatile int sink;
 void vol_quantum_observable(int x0, double th) {
     int x = x0;

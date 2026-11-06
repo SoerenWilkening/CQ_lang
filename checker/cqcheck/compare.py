@@ -2471,20 +2471,6 @@ def _split_gap(k: str, ofx: List[Any], rfx: List[Any]) -> None:
                                f"effect of unknown arity (SPEC_ISSUES: ABI 1.11 vs rule 16, cq-kzfv)")
 
 
-def _vol_align(ours: List[Any], c: List[Any]) -> List[Any]:
-    """CR rule 24: the C oracle logs a volatile load as an entry when ANY specialization of its function reads it at an
-    address rail (OracleInstr armLongjmps: one instruction, no specialization known at run time); the clone that ran may
-    hold a classical address, where the load is the instruction as it stands and no entry (fgets, fread: stdin's lock
-    field). A read changes nothing, so a C volatile_load ours has no entry for at that position is no difference."""
-    out, i = [], 0
-    for e in c:
-        if e["name"] == "volatile_load" and not (i < len(ours) and ours[i]["name"] == "volatile_load"):
-            continue
-        out.append(e)
-        i += 1
-    return out
-
-
 def _host_output(k: str, o: RunResult, r: RunResult, oracle: str, open_end: bool) -> List[str]:
     """The host-output reasons of one sample (module docstring, Host output)."""
     other = "C" if oracle == "c" else "reference"
@@ -2496,8 +2482,6 @@ def _host_output(k: str, o: RunResult, r: RunResult, oracle: str, open_end: bool
         why.append(f"sample {k}: host stdout differs: ours {os_!r} != {other} {rs!r}"
                    + (" (the C output must be a prefix of ours on a capped sample)" if open_end else ""))
     nf, nr = _effects_read(o, ofx, oracle), _effects_read(r, rfx, oracle)
-    if oracle == "c":
-        nr = _vol_align(nf, nr)
     same = _fields_match(nf, nr) if oracle == "c" else nf == nr
     pre = open_end and (_fields_match(nf[:len(nr)], nr) if oracle == "c" else nf[:len(nr)] == nr)
     if not same and not pre:

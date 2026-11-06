@@ -2235,88 +2235,29 @@ public:
 
   // CR rule 24: a longjmp outside the one pairing under a quantum predicate is rule 16's noreturn arm: the sample
   // ends there, on the pristine module (the pairing and the predicate as clang wrote them).
-  // Also CR rule 24: the observable volatile accesses the pass makes effect entries (the same taint, any specialization)
-  // log as those entries. Asked of taint on the pristine module, instrumented once shadows() is past (it asks taint of
-  // every instruction it meets).
-  SetVector<Instruction *> VolEntries;
+  // Asked of taint on the pristine module, instrumented once shadows() is past (it asks taint of every instruction it meets).
   SetVector<CallBase *> ArmJumps;
   void armLongjmps() {
     if (!Taint)
       return;
-    // A plain observable store (a classical value at a classical address, no quantum predicate) stands in the lowered
-    // module and run.py's volatile_stores_module logs it there, whichever clones the function also has (every external
-    // function has a table clone with tainted formals, so no one specialization says what ran). A frame's or an
-    // internal global's base is logged only where a specialization makes it an effect entry; the lowered side logs
-    // no plain store to one (the same base test, drivers._vol_base_is_program_private).
-    auto programPrivate = [](const Value *Ptr) {
-      const Value *B = Ptr;
-      while (auto *G = dyn_cast<GEPOperator>(B))
-        B = G->getPointerOperand();
-      auto *GV = dyn_cast<GlobalVariable>(B);
-      return isa<AllocaInst>(B) || (GV && GV->hasLocalLinkage());
-    };
-    DenseSet<const Function *> Specialized;
-    for (const cq::Specialization &S : Taint->specializations())
-      if (S.F && !S.F->isDeclaration())
-        Specialized.insert(S.F);
-    for (Function &F : M) {
-      if (F.isDeclaration() || Specialized.count(&F) || F.getName().starts_with("__cqo") || F.getName().starts_with("cqd_"))
-        continue;
-      for (Instruction &I : instructions(F))
-        if (auto *SI = dyn_cast<StoreInst>(&I); SI && SI->isVolatile() && !programPrivate(SI->getPointerOperand()))
-          VolEntries.insert(SI);
-    }
     for (const cq::Specialization &S : Taint->specializations()) {
       if (!S.F || S.F->isDeclaration())
         continue;
-      auto tainted = [&](const Value *v) { return Taint->isQuantum(v, S); };
-      for (Instruction &I : instructions(*S.F)) {
-        if (auto *SI = dyn_cast<StoreInst>(&I); SI && SI->isVolatile() && Taint->observableVolatile(*SI, S) &&
-            (!programPrivate(SI->getPointerOperand()) || tainted(SI->getValueOperand()) || tainted(SI->getPointerOperand()) ||
-             S.ctl || Taint->controlTainted(SI->getParent(), S)))
-          VolEntries.insert(SI);
-        if (auto *LI = dyn_cast<LoadInst>(&I); LI && LI->isVolatile() && tainted(LI->getPointerOperand()) &&
-            Taint->observableVolatile(*LI, S))
-          VolEntries.insert(LI);
+      for (Instruction &I : instructions(*S.F))
         if (auto *CB = dyn_cast<CallBase>(&I))
           if (cq::conc::isLongjmpCall(*CB)) {
             auto *buf = dyn_cast<GlobalVariable>(CB->getArgOperand(0));
             if (!(buf && cq::conc::isPairedJmpBuf(*buf)) && Taint->controlTainted(CB->getParent(), S))
               ArmJumps.insert(CB);
           }
-      }
     }
   }
 
   void instrumentRule24() {
-    for (Instruction *I : VolEntries)
-      logVolatile(I);
     for (CallBase *CB : ArmJumps) {
       IRBuilder<> B(CB);
       B.CreateCall(hook("__cqo_longjmp_arm", Void, {}), {});
     }
-  }
-
-  // The fields as the lowered side writes them: the address an i64, then a stored value's bits at their type's width.
-  void logVolatile(Instruction *I) {
-    IRBuilder<> B(I);
-    auto *SI = dyn_cast<StoreInst>(I);
-    B.CreateCall(hook("__cqo_fx_begin", Void, {Ptr}), {str(SI ? "volatile_store" : "volatile_load")});
-    B.CreateCall(hook("__cqo_fx_int", Void, {I64, I32}),
-                 {B.CreatePtrToInt(getLoadStorePointerOperand(I), I64), B.getInt32(64)});
-    if (SI) {
-      Value *V = SI->getValueOperand();
-      Type *T = V->getType();
-      if (T->isPointerTy())
-        V = B.CreatePtrToInt(V, I64);
-      else if (T->isFloatingPointTy() && T->getPrimitiveSizeInBits() <= 64)
-        V = B.CreateBitCast(V, IntegerType::get(C, T->getPrimitiveSizeInBits()));
-      if (!V->getType()->isIntegerTy() || V->getType()->getIntegerBitWidth() > 64)
-        unimplemented("volatile_store value type", I);
-      B.CreateCall(hook("__cqo_fx_int", Void, {I64, I32}),
-                   {B.CreateZExt(V, I64), B.getInt32(V->getType()->getIntegerBitWidth())});
-    }
-    B.CreateCall(hook("__cqo_fx_end", Void, {}), {});
   }
 
   // ---------------------------------------------------------------- termination notes

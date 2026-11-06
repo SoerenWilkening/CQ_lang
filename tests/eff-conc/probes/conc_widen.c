@@ -2,7 +2,7 @@
 #include <pthread.h>
 #include <stdint.h>
 /* cq-py5f (rule 24): pthread_join's result is the start routine's (the sequential schedule ran it at
-   pthread_create); a volatile atomic access is both, classical here (the host performs it). */
+   pthread_create); a volatile atomic access is both, on the bus (cq-6b2i1). */
 volatile int vcell;                       /* observable, accessed volatile and atomic */
 
 static void *job(void *p) { return (void *)(intptr_t)(*(int *)p * 3 + 1); }

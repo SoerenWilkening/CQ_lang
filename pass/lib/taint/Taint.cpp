@@ -1407,6 +1407,10 @@ bool Analyzer::hostUsersOk(const AllocaInst &A) {
         return false;
       if (isa<ICmpInst>(I))
         continue;
+      // Rule 24 (cq-6b2i1): an observable volatile access is a bus access, so the object is on the bus.
+      if ((isa<LoadInst>(I) && cast<LoadInst>(I)->isVolatile()) || (isa<StoreInst>(I) && cast<StoreInst>(I)->isVolatile()))
+        if (getLoadStorePointerOperand(I) == V && observableVolatile(V, ownTainted()))
+          return false;
       if (isa<LoadInst>(I)) {
         if (quantumScope(I->getParent()))
           return false;
@@ -1493,26 +1497,20 @@ void Analyzer::transferLoad(LoadInst &LI) {
   unsigned n = lanesOf(LI.getType());
   const Value *ptr = LI.getPointerOperand();
   // Rule 3: every load is a bus load and its result a rail, except a load of a host-resident object with no quantum
-  // predicate in scope (rule 20) and an observable volatile load at a classical address (rule 24).
-  bool host = hostObject(ptr) && !quantumScope(LI.getParent());
-  bool volatileHost = LI.isVolatile() && observableVolatile(ptr, ownTainted()) && !L(ptr).any();
-  if (!host && !volatileHost)
+  // predicate in scope (rule 20). An observable volatile load is a bus load whatever its object (cq-6b2i1).
+  bool host = hostObject(ptr) && !quantumScope(LI.getParent()) &&
+              !(LI.isVolatile() && observableVolatile(ptr, ownTainted()));
+  if (!host)
     cur->busLoad = true;
-  setL(&LI, host || volatileHost ? Lanes(n) : allLanes(n));
+  setL(&LI, host ? Lanes(n) : allLanes(n));
 }
 
 void Analyzer::transferStore(Instruction &I, Value *ptr, Value *val) {
   auto *SI = dyn_cast<StoreInst>(&I);
-  if (SI && hostObject(ptr) && !L(val).any() && !quantumScope(I.getParent()))
+  bool observable = SI && SI->isVolatile() && observableVolatile(ptr, ownTainted());
+  if (SI && !observable && hostObject(ptr) && !L(val).any() && !quantumScope(I.getParent()))
     return;   // a plain store into a host-resident object (rule 20)
-  if (SI && SI->isVolatile() && observableVolatile(ptr, ownTainted())) {
-    if (L(ptr).any() || L(val).any() || quantumScope(I.getParent())) {
-      cur->hasEffect = true;   // rule 24: the effect entry volatile_store
-      cur->anyQuantum = true;
-    }
-    return;
-  }
-  if (SI && SI->isVolatile() && neverLoaded(ptr))
+  if (SI && !observable && SI->isVolatile() && neverLoaded(ptr))
     return;   // rules 19, 24: a dead local, nothing
   cur->writesOuter = true;   // a bus store (rule 5)
   cur->anyQuantum = true;

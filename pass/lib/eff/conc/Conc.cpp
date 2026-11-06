@@ -9,11 +9,11 @@
 //  - UNOBSERVABLE: the qualifier is dropped and the access is rule 20's: the plain one on a host-resident object, else
 //    the bus (32). Such a store into an object nothing reads is dead and is nothing (169's FORCE_EVAL in ilogb, stored
 //    volatile under a quantum predicate).
-//  - OBSERVABLE, on the host, never on the bus. With a classical address, an untainted value and no quantum predicate
-//    it is the instruction as it stands. A store of a rail, or under a quantum predicate, is the rule-16 effect entry
-//    `volatile_store` (tape::lowerVolatileStore); a load under a quantum predicate is the host read unguarded, merged
-//    as any classical arm value (taint: classical). At an address rail the store is the same entry and the load the
-//    effect entry `volatile_load`, whose result rail is the value.
+//  - OBSERVABLE, on the bus (cq-6b2i1, against rule 24's "never on the bus", SPEC_ISSUES): the overlay is what makes it a
+//    host access, a HOST cell "is the host byte at that address, read at each access and never snapshotted" (ABI §1.10),
+//    and a QUANTUM cell reads and writes as the program wrote it. A store is rule 20's, seed and `_controlled` as any.
+//    A load at a classical address under a quantum predicate is the same `_hl` load executed unguarded (rule 24), merged
+//    as a rule-9 arm value; every other load is rule 20's.
 //
 // collapseThreads (rule 24, 106): before the final taint, pthread_create(t, attr, f, p) is the call f(p)
 // in the IR, pthread_join stores its result, the mutex calls are status 0 (contract at the definition);
@@ -81,21 +81,9 @@ void lowerVolatile(LoweringContext &ctx, Instruction &I) {
       ctx.bind(ld, n);
     return;
   }
-  bool qAddr = tainted(ptr);
-  auto address = [&]() -> Operand {
-    if (qAddr)
-      return bus::address(ctx, ptr);
-    return Operand{ctx.B().CreatePtrToInt(ctx.operand(ptr).v, Type::getInt64Ty(ctx.M.getContext())), false};
-  };
-  if (st) {
-    if (qValue || qAddr || ctx.S.ctl || ctx.T.controlTainted(st->getParent(), ctx.S))
-      return tape::lowerVolatileStore(ctx, *st, address());
-    spine::copyClassical(ctx, I);
-    return;
-  }
-  if (qAddr)
-    return tape::lowerVolatileLoad(ctx, *ld, address());
-  ctx.bind(ld, spine::copyClassical(ctx, I));
+  if (st)
+    return bus::lowerStore(ctx, *st);
+  bus::lowerLoad(ctx, *ld, /*unguarded=*/!tainted(ptr));
 }
 
 // Rule 24 (106): the thread primitives of a tainted function, collapsed to the sequential schedule in the

@@ -187,9 +187,9 @@ Operand offsetAddress(LoweringContext &ctx, Operand addr, uint64_t off) {
   return Operand{ctx.emitTemplate(add, {addr, Operand{k, false}}), true};
 }
 
-CallInst *emitLoad(LoweringContext &ctx, Type *T, Operand addr) {
+CallInst *emitLoad(LoweringContext &ctx, Type *T, Operand addr, bool unguarded) {
   Value *m = mem(ctx);
-  Value *c = accessControl(ctx);
+  Value *c = unguarded ? nullptr : accessControl(ctx);
   abi::CoreSpec spec{abi::Core::QramLoad, accessType(ctx.M.getContext(), T), /*ctl=*/c != nullptr, /*hl=*/!addr.handle};
   SmallVector<Value *, 3> args;
   SmallVector<Operand, 3> ops;
@@ -263,21 +263,21 @@ void emitKeptStore(LoweringContext &ctx, Type *T, Operand addr, Operand value) {
   ctx.unc().noteVersionChange(call);
 }
 
-void lowerLoad(LoweringContext &ctx, LoadInst &L) {
+void lowerLoad(LoweringContext &ctx, LoadInst &L, bool unguarded) {
   if (isBoolCellLoad(ctx, L))
     return lowerBoolCellLoad(ctx, L);
   const DataLayout &DL = ctx.M.getDataLayout();
   Type *T = L.getType();
   Operand addr = address(ctx, L.getPointerOperand());
   if (!T->isAggregateType() && !T->isVectorTy()) {
-    spine::bindOperand(ctx, &L, Operand{emitLoad(ctx, T, addr), true});
+    spine::bindOperand(ctx, &L, Operand{emitLoad(ctx, T, addr, unguarded), true});
     return;
   }
   SmallVector<Leaf, 4> leaves;
   scalarLeaves(DL, T, 0, leaves);
   SmallVector<Operand, 4> fields;
   for (const Leaf &f : leaves)
-    fields.push_back(Operand{emitLoad(ctx, f.type, offsetAddress(ctx, addr, f.offset)), true});
+    fields.push_back(Operand{emitLoad(ctx, f.type, offsetAddress(ctx, addr, f.offset), unguarded), true});
   ctx.bindFields(&L, fields);
 }
 

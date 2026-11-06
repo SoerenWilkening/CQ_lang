@@ -1,7 +1,6 @@
 #include "CQ.h"
-/* Rule 24: an observable volatile access at an address rail: the store the entry volatile_store, the load the entry
-   volatile_load, whose result rail is the value. A local volatile array indexed by a rail is observable too: its
-   pointer operand is not reached through untainted indices. */
+/* cq-6b2i1: an observable volatile access at an address rail is rule 20's rail column. A local volatile array indexed
+   by a rail is observable too: its pointer operand is not reached through untainted indices. */
 volatile int vtab[4];
 void p_vol_rail_store(int x0, double th, int v) {
     int i = x0 & 3;

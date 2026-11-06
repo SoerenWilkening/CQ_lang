@@ -199,3 +199,11 @@ Entries 1 to 16 are from the flat-memory rulings (`wt/flat/rulings.md`, "Entries
 - Evidence: `cqcheck run 73_memcpy_array --oracle both`: s6=fail, c=pass, verifier=pass, "1 rail(s) i32 with values 0 0 0 0 1 1 1 1 4294967295 ... the reference keeps are not kept on our side", which is x; our rail x + 3 stays kept and x is freed at 0 (the evaluator checks it). Nothing else differs.
 - Request: regenerate 73 by the clause. 73 runs `--oracle c` until then. Not copied.
 - Bead: cq-xlqo1
+
+## Rule 24 (with rules 3, 5, 20): "never on the bus" and the `volatile_store`/`volatile_load` entries contradict §6 for a volatile lvalue over a non-volatile object
+- Rule: §6 item 1 (the lowered program computes what the C program computes); ABI §1.10 Overlay: a HOST cell "is the host byte at that address, read at each access and never snapshotted".
+- Disagreement: Rule 24 Observable reads off the pointer operand alone and makes the access "on the host, never on the bus", classical at a classical address (rule 3's exception, rule 20's). A volatile lvalue over a non-volatile object whose cell holds a rail has a C-defined value, and the host byte at a QUANTUM cell is unspecified (§1.10). The text read literally loses it. Ours: every observable access is rule 20's table (`_hl` or the rail column, a seed for a classical value, `_controlled` stores). A load at a classical address under a quantum predicate is the `_hl` load unguarded and merged (rule 24's words; rule 5's "no bus access is hoisted or speculated" read as yielding to them). No `volatile_store`/`volatile_load` entry. The overlay makes this the host access rule 24 wants on a HOST cell, and the correct one on a QUANTUM cell.
+- Deviation it leaves: the load's `_unc` is a second read of the address, visible only to a destructively-read device, which neither oracle models.
+- Evidence: `int a = x + 1; rd(&a)` through `volatile int *`: returned 0 != 9 at x=8; `g = x; *(volatile int *)&g`: 0 != 0xe; `g = x; *(volatile int *)&g = 5`: g byte 0 was 13 != 5. All in tests/eff-conc/probes/vol_lvalue.c (v1, v2, v3).
+- Request: rule 24 Observable to say the access is on the bus through the overlay, with rule 3's and rule 20's exceptions and its two effect entries dropped to match.
+- Bead: cq-6b2i1

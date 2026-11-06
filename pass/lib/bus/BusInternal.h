@@ -21,7 +21,8 @@ void scalarLeaves(const llvm::DataLayout &, llvm::Type *, uint64_t offset, llvm:
 Operand offsetAddress(LoweringContext &, Operand addr, uint64_t off);
 
 // One qram_load_<W>[_hl][_controlled] at addr, recorded (Uncompute::recordBusLoad). T is the leaf's type (a ptr is i64).
-llvm::CallInst *emitLoad(LoweringContext &, llvm::Type *T, Operand addr);
+// `unguarded` takes no control, whatever predicate is in scope (rule 24).
+llvm::CallInst *emitLoad(LoweringContext &, llvm::Type *T, Operand addr, bool unguarded = false);
 // One kept qram_store_<W>[_hl][_controlled] of `value` at addr (a classical value first the seed alloc_<W>), noted
 // (Uncompute::noteKeptStore). Rule 5 sentence 3.
 void emitKeptStore(LoweringContext &, llvm::Type *T, Operand addr, Operand value);

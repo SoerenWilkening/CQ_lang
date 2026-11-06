@@ -4,15 +4,15 @@
 For probes/conc.O1.ll and probes/setjmp.O1.ll it checks, and fails on:
   - cq-lower (with its built-in structural verifier) exits 0, and plain cq-verify accepts the output;
   - p_vol_internal drops `volatile` (an unobservable access is the plain one), while
-    p_vol_observable keeps both volatile accesses to @obs_counter and p_atomic_classical keeps its
+    p_vol_observable puts both volatile accesses to @obs_counter on the bus (cq-6b2i1) and p_atomic_classical keeps its
     atomic store and load (the host performs them);
   - every entry is §6-equal to its own C program (`python3 -m cqcheck user`, the C oracle).
 ERRORS (probes that must make cq-lower exit non-zero with a named message) is empty since cq-lyzw.
 p_sj_* (setjmp.O1.ll) are 101's construction (rule 24's one pairing by operand): a longjmp is an escaped
 flag the clone returns beside its result, the setjmp join a select on it; no host setjmp/longjmp call is
 left. p_sjh_* (setjmp_host.O1.ll): outside the pairing the host calls stay. setjmp_class.O1.ll and the former error probes (setjmp_effect, _nested, _wrapper, _wrapper_p20/p21)
-are the class (cq-lyzw: explicit control flow before the final taint, Setjmp.cpp). vol_observable.O1.ll:
-an observable volatile store with quantum data is the tape entry volatile_store (rule 24 at f684858). Variants: scalar quantum result, void clone with a pure continuation, classical result, quantum
+are the class (cq-lyzw: explicit control flow before the final taint, Setjmp.cpp). vol_observable.O1.ll, vol_rail.O1.ll, vol_lvalue.O1.ll:
+an observable volatile access is a bus access (cq-6b2i1, SPEC_ISSUES). Variants: scalar quantum result, void clone with a pure continuation, classical result, quantum
 value on the escaped arm (the != 0 test).
 p_vol_local is 32's shape (cq-r4cz): the unobservable volatile slot pair forwards as the plain access;
 p_atomic_rmw is 94's (M4): atomicrmw on a slot cell is load + add + store.
@@ -46,9 +46,11 @@ MODULES = {"conc.O1.ll": ENTRIES, "setjmp.O1.ll": ["p_sj_scalar", "p_sj_void", "
            "setjmp_effect.O1.ll": ["setjmp_effect_error"], "setjmp_nested.O1.ll": ["setjmp_nested_error"],
            "setjmp_wrapper.O1.ll": ["setjmp_wrapper_error"], "setjmp_wrapper_p20.O1.ll": ["p20"],
            "setjmp_wrapper_p21.O1.ll": ["p21"],
-           # cq-lyzw (rule 24 at f684858): an observable volatile access with quantum data is a host effect.
+           # cq-6b2i1: an observable volatile access is a bus access; the overlay makes it a host access.
            "vol_observable.O1.ll": ["vol_quantum_observable", "p_vol_obs_pred"],
            "vol_rail.O1.ll": ["p_vol_rail_store", "p_vol_rail_load", "p_vol_local_rail"],
+           "vol_lvalue.O1.ll": ["v1", "v2", "v3", "vl1", "vl3", "vl5", "vp_host", "vp_quantum", "vp_ctl", "vp_rail",
+                                "vs_pred", "vc"],
            "conc_tls.O1.ll": ["p_tls", "p_mutex_init"],
            # cq-lyzw (rule 24 with rule 21): an atomic read-modify-write through a pointer rail.
            "conc_rmw_fat.O1.ll": ["p_rmw_fat", "p_cas_fat"],
@@ -58,10 +60,11 @@ MODULES = {"conc.O1.ll": ENTRIES, "setjmp.O1.ll": ["p_sj_scalar", "p_sj_void", "
            "vol_const_pred.O1.ll": ["e_vol_const_pred"]}
 _SJ = (r"cq_template_select_i32", r"call [^\n]*@(setjmp|longjmp)\(")
 _NOSJ = (None, r"call [^\n]*@(setjmp|longjmp)\(")
+_NOVOLFX = r"volatile"   # no plain volatile access and no `volatile_store`/`volatile_load` effect entry
 # entry -> (regex that must match its body, regex that must not)
 SHAPES = {"p_vol_internal": (None, r"volatile"),
-          "p_vol_observable": (r"load volatile i32, ptr @obs_counter[\s\S]*store volatile i32 %\d+, ptr @obs_counter",
-                               None),
+          "p_vol_observable": (r"cqrt_qram_load_i32_hl\([^\n]*@obs_counter[\s\S]*cqrt_qram_store_i32_hl\([^\n]*@obs_counter",
+                               r"volatile"),
           "p_atomic_classical": (r"store atomic i32 %\d+, ptr @acell seq_cst[\s\S]*load atomic i32, ptr @acell seq_cst",
                                  None),
           "p_vol_local": (None, r"volatile"),
@@ -73,16 +76,26 @@ SHAPES = {"p_vol_internal": (None, r"volatile"),
           "p_join_result": (r"call ptr @job\(", r"@pthread_(create|join)\("),
           "p_rmw_qram": (r"cqrt_qram_swap_i32\(i32 %\d+, i32 %\d+, i32 %\d+\)[\s\S]*cqrt_qram_store_i32\(", r"atomicrmw|cmpxchg"),
           "p_runtime_routine": (r"call ptr %\d+\(ptr", r"@pthread_(create|join)\("),
-          "p_vol_atomic": (r"store atomic volatile i32 %\d+, ptr @vcell seq_cst", None),
+          "p_vol_atomic": (r"cqrt_qram_store_i32_hl\([^\n]*@vcell[\s\S]*cqrt_qram_load_i32_hl\([^\n]*@vcell", r"volatile"),
           "p_sj_scalar": _SJ, "p_sj_void": _SJ, "p_sj_classical": _SJ, "p_sj_qarm": _SJ,
-          "vol_quantum_observable": (r"cqrt_tape_write_i64_lit\(i32 %\d+, i64 ptrtoint \(ptr @sink to i64\)\)"
-                                     r"[\s\S]*cqrt_tape_write_i32\([\s\S]*"
-                                     r"cqrt_tape_effect_controlled\([^\n]*@\.cq\.effect\.volatile_store\)", r"store volatile"),
-          "p_vol_obs_pred": (r"@\.cq\.effect\.volatile_store", r"store volatile"),
+          "vol_quantum_observable": (r"cqrt_qram_store_i32_hl\([^\n]*@sink", _NOVOLFX),
+          "p_vol_obs_pred": (r"cqrt_qram_store_i32_hl_controlled\([^\n]*@sink", _NOVOLFX),
           "p_tls": (r"llvm.threadlocal.address", None), "p_mutex_init": (None, r"@pthread_"),
-          "p_vol_rail_store": (r"cqrt_tape_write_i64\([\s\S]*@\.cq\.effect\.volatile_store", r"qram_store"),
-          "p_vol_rail_load": (r"cqrt_tape_write_i64\([\s\S]*cqrt_tape_effect_i32_controlled\([^\n]*@\.cq\.effect\.volatile_load", r"qram_load"),
-          "p_vol_local_rail": (r"@\.cq\.effect\.volatile_store", r"store volatile i32 9"),
+          "p_vol_rail_store": (r"cqrt_qram_store_i32\(", _NOVOLFX),
+          "p_vol_rail_load": (r"cqrt_qram_load_i32\(", _NOVOLFX),
+          "p_vol_local_rail": (r"cqrt_qram_store_i32\(", _NOVOLFX),
+          "v1": (None, _NOVOLFX), "v2": (r"cqrt_qram_load_i32_hl\([^\n]*@g2", _NOVOLFX),
+          "v3": (r"cqrt_qram_store_i32_hl\([^\n]*@g3[\s\S]*cqrt_qram_store_i32_hl\([^\n]*@g3", _NOVOLFX),
+          "vl1": (r"cqrt_qram_store_i32_hl\([^\n]*@gv1[\s\S]*cqrt_qram_load_i32_hl\([^\n]*@gv1", _NOVOLFX),
+          "vl3": (None, _NOVOLFX), "vl5": (r"cqrt_qram_load_i32_hl\([^\n]*@gv5", _NOVOLFX),
+          # rule 24: at a classical address under a quantum predicate the load is not `_controlled`, nor is its un-copy
+          "vp_host": (r"cqrt_qram_load_i32_hl\([^\n]*@gp[\s\S]*cqrt_qram_load_i32_hl_unc\(", _NOVOLFX + r"|qram_load_i32_hl_controlled"),
+          "vp_quantum": (r"cqrt_qram_load_i32_hl\([^\n]*@gq[\s\S]*cqrt_qram_store_i32_hl_controlled\([^\n]*@gq",
+                         _NOVOLFX + r"|qram_load_i32_hl_controlled"),
+          "vp_ctl": (None, _NOVOLFX),
+          "vp_rail": (r"cqrt_qram_load_i32_controlled\([\s\S]*cqrt_qram_store_i32_controlled\(", _NOVOLFX),
+          "vs_pred": (r"cqrt_qram_store_i32_hl_controlled\([^\n]*@gs", _NOVOLFX),
+          "vc": (r"cqrt_qram_load_i32_hl\(", _NOVOLFX),
           "p_rmw_fat": (None, r"atomicrmw|cmpxchg"), "p_cas_fat": (None, r"atomicrmw|cmpxchg"),
           "p_sjh_local": (r"call i32 @setjmp\(", None), "p_sjh_two": (r"call i32 @setjmp\(ptr[^\n]*@twice", None),
           "p_sjh_pred": (r"call i32 @setjmp\([\s\S]*cqrt_abort_i1\(", r"call [^\n]*@longjmp\("),

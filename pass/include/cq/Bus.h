@@ -20,8 +20,9 @@ Operand address(LoweringContext &, const llvm::Value *p);
 // Rule 20 (a)/(b) through TaintInfo::hostObjectOf: the access stays the plain LLVM instruction (copied classical).
 bool hostAccess(LoweringContext &, const llvm::Instruction &access);
 // Rule 20 table + rule 5 sentence 1: one qram_load_<W>[_hl][_controlled], recorded as a BusLoad (Uncompute); binds the
-// load. A _Bool cell read as i1 is ONE access at i1. Vector/aggregate: one access per lane/scalar field.
-void lowerLoad(LoweringContext &, llvm::LoadInst &);
+// load. A _Bool cell read as i1 is ONE access at i1. Vector/aggregate: one access per lane/scalar field. `unguarded`
+// (rule 24, an observable volatile load at a classical address): no `_controlled` form, whatever predicate is in scope.
+void lowerLoad(LoweringContext &, llvm::LoadInst &, bool unguarded = false);
 // Rule 5 sentence 3 (kept store, value rail a seed for a classical value, control rail kept) or, when the in-place
 // matcher matches, the in-place form. Store of a pointer is an i64 store.
 void lowerStore(LoweringContext &, llvm::StoreInst &);
