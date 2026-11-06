@@ -1227,13 +1227,14 @@ void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in) {
               !unitOf.count(phi.getIncomingBlock(i)))
             p = p | ctx.preds().edge(phi.getIncomingBlock(i), b);
         p = p & F;
-        if (!(F & !p.classicalFactor(ctx.T, ctx.S)).isBottom())
-          unimplemented("spine: a unit-bound phi whose output edge stands for several original edges that the edge's "
-                        "classical facts do not tell apart (cq-mtt)",
-                        &phi);
+        // Under the facts the quantum part stands for the arm only when its classical factor is the facts themselves.
+        // Otherwise (an output edge standing for classical edges its facts do not tell apart: mbrtowc's error block,
+        // reached on `s == 0` and inside the arm of `s != 0`) the arm's condition keeps its classical atoms: they
+        // choose it, and an arm minted on one of those paths is a don't-care on the other (rule 9).
+        Pred armP = (F & !p.classicalFactor(ctx.T, ctx.S)).isBottom() ? p.quantumPart(ctx.T, ctx.S) : p;
         SmallVector<Operand, 4> fv = fieldsOf(phi.getIncomingValue(k));
         for (unsigned f = 0; f < ws.size(); ++f)
-          arms[f].push_back({p.quantumPart(ctx.T, ctx.S), fv[f]});
+          arms[f].push_back({armP, fv[f]});
       }
       for (unsigned f = 0; f < ws.size(); ++f)
         os.push_back(Operand{selectChain(ctx, arms[f], ws[f], F), true});
