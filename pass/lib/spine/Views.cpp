@@ -912,6 +912,14 @@ void bindPacked(LoweringContext &ctx, const Value *orig, ArrayRef<unsigned> cuts
   sh.packs[orig] = SmallVector<unsigned, 4>(cuts.begin(), cuts.end());
 }
 
+// Rule 26: a reader that takes the packed integer whole (cq_measure of musl div's coerced result): the fields joined,
+// by ordinary templates (rule 4).
+Operand packedWhole(LoweringContext &ctx, const Value *v) {
+  if (!fieldwise(ctx, v))
+    internalError("spine: a whole read of a value that is not packed", v);
+  return rangeOf(ctx, segsOfPacked(ctx, v), 0, widthOf(v), v);
+}
+
 SmallVector<Operand, 4> packFieldsOf(LoweringContext &ctx, Operand whole, unsigned W, ArrayRef<unsigned> cuts,
                                      const Value *at) {
   if (cuts.size() < 2 || cuts.front() != 0 || cuts.back() != W)

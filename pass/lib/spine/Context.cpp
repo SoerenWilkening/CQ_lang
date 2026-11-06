@@ -161,6 +161,8 @@ Operand LoweringContext::operand(const Value *orig) {
       return Operand{const_cast<Value *>(orig), false};
     internalError("spine: operand of an unexpected kind", orig);
   }
+  if (it->second.size() != 1 && orig->getType()->isIntegerTy())
+    return spine::packedWhole(*this, orig);
   if (it->second.size() != 1)
     internalError("spine: operand() of a value with " + std::to_string(it->second.size()) +
                       " fields (use fields())",

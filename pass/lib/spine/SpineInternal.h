@@ -318,6 +318,7 @@ void readingUses(Shared &, const llvm::Value *v, llvm::SmallVectorImpl<const llv
 bool lowerPack(LoweringContext &, llvm::Instruction &);
 void bindPacked(LoweringContext &, const llvm::Value *orig, llvm::ArrayRef<unsigned> cuts,
                 llvm::ArrayRef<Operand> fields);
+Operand packedWhole(LoweringContext &, const llvm::Value *);
 llvm::SmallVector<Operand, 4> packFields(LoweringContext &, const llvm::Value *v, llvm::ArrayRef<unsigned> cuts);
 // The field boundaries of a packed integer as its readers unpack it (a trunc to C bits, an lshr by C,
 // a trunc of that lshr: 159's callee formal and caller result), {0, ..., N}; {0, N} when they cut
