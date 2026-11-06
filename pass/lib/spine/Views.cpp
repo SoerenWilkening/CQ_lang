@@ -790,7 +790,8 @@ Segs orSegs(LoweringContext &ctx, const Segs &a, const Segs &b, const Value *at)
 // into several fields (taint's mask splits it the same way), a return whose clone returns fields (rule 26:
 // the returns' packings give more than one field and the clone is no table clone, which returns one rail;
 // any other return reads one rail, and its or disjoint is rule 4's template: 113's `_t_ctl`, where the measured
-// bits are rails), an aggregate insert (the returned { i64, double } of 166)?
+// bits are rails; so does an own symbol's, rule 19: one handle in the C return type, cq-stmvu), an aggregate insert
+// (the returned { i64, double } of 166)?
 bool fieldConsumer(LoweringContext &ctx, const Use &U, bool orRooted) {
   const User *u = U.getUser();
   if (auto *CB = dyn_cast<CallBase>(u)) {
@@ -801,7 +802,7 @@ bool fieldConsumer(LoweringContext &ctx, const Use &U, bool orRooted) {
     return i < F->arg_size() && unpackCuts(F->getArg(i)).size() > 2;
   }
   if (isa<ReturnInst>(u))
-    return orRooted && !ctx.S.table && resultIntCuts(*ctx.S.F).size() > 2;
+    return orRooted && !ctx.S.table && !ctx.S.wholeIntResult() && resultIntCuts(*ctx.S.F).size() > 2;
   if (isa<InsertValueInst>(u) && U.getOperandNo() == 1)
     return orRooted;
   return false;

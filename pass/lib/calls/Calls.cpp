@@ -266,7 +266,9 @@ ResultLayout resultLayout(const TaintInfo &T, const Specialization &S, const Val
   // Every other return type of C on x86-64 is a scalar rail type, a composite or a (classical) pointer.
   if (!isComposite(rt) && !scalarRailType(rt) && !rt->isPointerTy())
     internalError("calls: a clone result type no C function on x86-64 returns", at);
-  bool packed = !S.table && packedIntegerResult(*S.F);   // §1.4: a table clone's ABI follows from the C signature alone
+  // §1.4: a table clone's ABI follows from the C signature alone; rule 19: an own symbol's integer result is one handle
+  // (cq-stmvu), and the _pure clone its twin recomputes through has its layout.
+  bool packed = !S.table && !(rt->isIntegerTy() && S.wholeIntResult()) && packedIntegerResult(*S.F);
   if (packed && !rt->isIntegerTy()) {
     // cq-0umd (166, rule 26): a leaf packed from fields (the coerced inner struct) crosses as its fields.
     for (const SmallVector<unsigned, 4> &c : spine::resultLeafCuts(*S.F))

@@ -2313,6 +2313,10 @@ void Analyzer::transfer(Instruction &I) {
     if (Value *V = RI->getReturnValue()) {
       if (orInto(cur->ret, L(V)))
         st.changed = true;
+      // Rule 19 (cq-stmvu): an own symbol's quantum integer result is ONE handle in the C return type, so every lane of it
+      // reads that rail, also where the body leaves the lane classical (a small struct coerced to an integer, rule 26).
+      if (cur->inPlace && V->getType()->isIntegerTy() && cur->ret.any() && orInto(cur->ret, allLanes(cur->ret.size())))
+        st.changed = true;
     }
     return;
   }
@@ -2884,6 +2888,12 @@ using namespace taintimpl;
 
 bool Specialization::isEntry() const {
   if (!F || F->isDeclaration() || ctl || pure || plain || table || !bounds.empty())
+    return false;
+  return mask.find('1') == std::string::npos;
+}
+
+bool Specialization::wholeIntResult() const {
+  if (!F || F->isDeclaration() || ctl || plain || table || !bounds.empty())
     return false;
   return mask.find('1') == std::string::npos;
 }

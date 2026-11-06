@@ -133,6 +133,19 @@ CASES = [
     ("rec_bus_mutual", "f", [], "pass", []),
     ("rec_bus_pair", "f", [], "pass", []),
     ("rec_rot_own", "f", [], "pass", []),
+    # cq-y4lav (rule 14): a purely classical loop in an own symbol keeps its CFG, an exit tested first included (the exit
+    # block's predicate, the loop's own, must not take the edge into the loop body).
+    ("own_loop_theta", "f", [], "pass", [r"br i1 %\d+, label %(\d+), label %(?!\1\b)\d+"]),
+    ("own_loop_two_exits", "f", [], "pass", []),
+    ("own_loop_after_arm", "f", [], "pass", []),
+    ("own_loop_after_qarm", "f", [], "pass", []),
+    # cq-stmvu (rules 19, 26): an own symbol's integer result is one handle, every lane of it, a coerced struct's too; the
+    # _pure clone its twin recomputes through has the same layout.
+    ("own_small_struct", "f", [], "pass", [r"call i32 @cq_template_or_i64_hl", r"call void @__cq_q_q_0_unc"]),
+    ("own_small_struct_rec", "f", [], "pass", []),
+    ("own_small_struct_caller", "f", [], "pass", []),
+    ("own_small_widen", "f", [], "pass", []),
+    ("own_small_mixed_ret", "f", [], "pass", []),
     # Rule 16 Signal table: a result of signal and of raise the program reads; a rail signal number.
     ("raise_read", "raise_read", [], "pass", [r"@__cq_sig"]),
     ("sig_rail", "sig_rail", [], "pass", [r"@__cq_sig", r"@cqrt_qram_store_i64\("]),

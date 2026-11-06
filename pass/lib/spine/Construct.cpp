@@ -369,10 +369,18 @@ bool Walker::classicalEdgeMeets(const BasicBlock *x, const BasicBlock *s, const 
 BasicBlock *Walker::next(const BasicBlock *x, const BasicBlock *s) {
   unsigned i = idx.lookup(x);
   const Loop *xl = LI.getLoopFor(x);
+  // Rule 14 (cq-y4lav): a purely classical loop keeps its CFG exactly. An edge inside it goes where it goes, and an edge
+  // leaving it enters none of its blocks: no arm runs inside it, and its exit block's predicate (the loop's own, rule
+  // 14's unit) says nothing about one trip's branch, so it must not read as a block this edge's facts admit.
+  const Loop *pure = s && xl && pureHeaders.count(xl->getHeader()) ? xl->getOutermostLoop() : nullptr;
+  if (pure && pure->contains(s))
+    return const_cast<BasicBlock *>(s);
   for (unsigned j = i + 1; j < L.size(); ++j) {
     BasicBlock *y = L[j];
     if (s ? y == s : is_contained(successors(x), y))
       return y;
+    if (pure && pure->contains(y))
+      continue;
     // Arm heads only: a block inside a loop the edge does not enter is reached through its header.
     const Loop *yl = LI.getLoopFor(y);
     if (yl && yl->getHeader() != y && !(xl && yl->contains(xl)))
@@ -1307,7 +1315,7 @@ bool Walker::emitCloneFields(ReturnInst *ret, Value *rv, StructType *st, unsigne
   bool fieldwise = false;
   unsigned nLeaves = 0;
   // Rule 26 (cq-jkq8): the fields are the union of the returns' packings, this return's value split there.
-  SmallVector<unsigned, 4> pcuts = rty->isIntegerTy() && !ctx.S.table ? spine::resultIntCuts(*ctx.S.F) : SmallVector<unsigned, 4>{};
+  SmallVector<unsigned, 4> pcuts = rty->isIntegerTy() && !ctx.S.table && !ctx.S.wholeIntResult() ? spine::resultIntCuts(*ctx.S.F) : SmallVector<unsigned, 4>{};
   if (pcuts.size() > 2 && st) {
     nLeaves = pcuts.size() - 1;   // cq-0umd: a packed integer result's fields
     fieldwise = true;

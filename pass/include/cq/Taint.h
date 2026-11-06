@@ -21,6 +21,9 @@
 namespace cq {
 struct Specialization { llvm::Function *F; Mask mask; bool ctl = false, pure = false;
                         std::vector<uint64_t> bounds; bool isEntry() const;
+                        // Rule 19: the own symbol or its _pure clone, the form its twin recomputes through: an integer
+                        // result is ONE rail (the handle in the C return type), never a coerced struct's fields.
+                        bool wholeIntResult() const;
                         // cq-qc70 (CR §1.4): boundFormals[i] is the formal index bounds[i] bounds (a clone's
                         // name spells only the values; the clone table is keyed by the fields).
                         std::vector<unsigned> boundFormals;
