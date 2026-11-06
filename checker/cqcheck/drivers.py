@@ -1346,11 +1346,12 @@ def effect_callees(text: str, excluded: FrozenSet[str] = frozenset()) -> Dict[st
 
 
 def rename_effects(text: str, callees: Dict[str, Tuple[str, str, str]]) -> str:
-    """text with each named callee's declaration gone and its calls sent to its wrapper."""
+    """text with each named callee's declaration gone and every use of it, a call or its address (rule 19: a function
+    pointer may denote host code, cq-d9vhj), sent to its wrapper."""
     for c, (spell, _, _) in callees.items():
         sym = "@" + spell
         text = re.sub(r"(?m)^declare\b[^\n]*" + re.escape(sym) + r"\([^\n]*\n?", "", text)
-        text = text.replace(sym + "(", f"@{FX_PREFIX}{c}(")
+        text = re.sub(re.escape(sym) + r"(?![-A-Za-z$._0-9])", f"@{FX_PREFIX}{c}", text)
     return text
 
 
@@ -1416,6 +1417,10 @@ def effect_wrappers_ir(callees: Dict[str, Tuple[str, str, str]]) -> str:
         else:
             body += [f"  %t = trunc i64 %r to {ret}", f"  ret {ret} %t"]
         out += body + ["}"]
+    # rule 19: an effect entry with a null name has the host address as its first field; rt_tape.c names it from these rows,
+    # as §6's stand-in is a function of the name
+    rows = [f"[2 x ptr] [ptr @{FX_PREFIX}{c}, ptr {lit(c, 'fxn')}]" for c in callees] + ["[2 x ptr] [ptr null, ptr null]"]
+    out.append(f"@cqd_fx_addr_rows = constant [{len(rows)} x [2 x ptr]] [{', '.join(rows)}]")
     return "\n".join(list(tokens.values()) + out) + "\n"
 
 

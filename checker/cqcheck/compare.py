@@ -137,7 +137,8 @@ record self-contained; values are hex bit patterns or ints):
   outputs["stdout"] and outputs["effects"] are compared as host output and every other key as above.
 - violations: a list; any entry fails the comparison.
 - outputs["loops"] (C oracle side only; the cutoff records of the a_K rule below, bead cq-9rt): a
-  list, missing = []. One record per activation of a quantum-exit loop or quantum-depth recursion
+  list, missing = []. One record per activation (act: its identity over the samples, the call sites leading
+  to it and the how-many-th there, cqo_rt.c next_act; no order) of a quantum-exit loop or quantum-depth recursion
   that the C program begins:
     {"loop": id, "act": int, "n": int, "capped": bool, "cut": int, "mcut": int}
   loop is the T1 loop id "<fn>:<header>" (a recursion is "<fn>:recursion", cq-arch T2; compare reads
@@ -1898,7 +1899,10 @@ def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult], ended: Sequence[
 #             cqe__r6_unc, cq-o9mx, cq-cuu82), a result (the handle a handle-returning function returns,
 #             run.resolve_handle_rets: "result"), a seed that received an Ry (a register whose Ry was
 #             the identity);
-#   rule 23   at most one fenv_flags rail (the final flags rail is an output) and one fenv_mode rail;
+#   rule 23   at most one fenv_flags rail (the final flags rail is an output) and one fenv_mode rail. The first rail of a
+#             feraiseexcept under a quantum predicate is the flags rail while it is empty (81) and carries no _exc lineage, so
+#             a program that touches the environment and has no such rail may keep one "garbage" i32 rail that reads the
+#             C program's final flags (_final_flags, cq-f8m9n);
 #   known     a rail in a known classical basis state (owner ruling 2026-11-01 on cq-tt2j: not a
 #             leak; LIVE_KNOWN_IS_LEAK below flips it);
 #   a_K, n>K2 a "garbage" i1 rail, at most one per activation the C oracle recorded on the sample whose
@@ -1907,7 +1911,10 @@ def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult], ended: Sequence[
 #             as far as the samples show, which include a K+1-trip search per loop), and at most one
 #             per rail-sized block the C program allocated on the sample (outputs["k2"]; rule 20's kept n > K2
 #             of a rail-sized allocation), any number on a capped or ended sample (activations past
-#             the cut are not recorded);
+#             the cut are not recorded). Rule 14 keeps one a_K per cut activation of a quantum-depth recursion, and every
+#             recursion that ran reaches its cut on every branch, a forward clone a twin calls to recompute included, so such
+#             rails are not one per record: where the C oracle recorded a recursion activation on an uncapped sample any
+#             number of them may stay, each reading 0 as §6 demands there (cq-rdsdj);
 #   leak      anything else: a rail its sources could still clean, left live.
 LIVE_KNOWN_IS_LEAK = False   # owner ruling 2026-11-01 (cq-tt2j): a live rail in a known basis state is no leak
 _KEPT_ROLES = frozenset(("measured", "frozen", "abort", "tape", "tape_slot", "store_kept", "overtaken",
@@ -1915,9 +1922,28 @@ _KEPT_ROLES = frozenset(("measured", "frozen", "abort", "tape", "tape_slot", "st
 _FENV_ROLES = ("fenv_flags", "fenv_mode")
 
 
+_ALL_FLAGS = 0x3d    # the five IEEE bits of x86-64: INVALID 1, DIVBYZERO 4, OVERFLOW 8, UNDERFLOW 16, INEXACT 32
+
+
+def _final_flags(ent: Dict[str, Any], o: RunResult, c: RunResult, cut: bool) -> bool:
+    """Whether a live i32 rail can be rule 23's final flags rail: exception bits only, and together with the host part (the
+    host environment at our exit, which only ever adds bits) exactly the C program's final flags. A sample that stops
+    early has no final flags to read."""
+    want = c.outputs.get("fenv_flags") if isinstance(c.outputs, dict) else None
+    v = _int(ent.get("v"))
+    if want is None or v is None or v & ~_ALL_FLAGS:
+        return False
+    if cut:
+        return True
+    host = (o.outputs or {}).get("host_flags") or 0
+    return not v & ~want and not want & ~(v | host)
+
+
 def _leaks(k: str, o: RunResult, c: RunResult, cut: bool, capkeys: Set[Tuple[str, int]] = frozenset()) -> List[str]:
     rotated = {e.get("h") for e in o.rotations or [] if isinstance(e, dict) and e.get("ev") in ("ry", "ry_qangle")}
     acts = len({(r["loop"], r["act"]) for r in _loops(c)} & set(capkeys))
+    rec = any(r["loop"].endswith(":recursion") for r in _loops(c))
+    flagged = any(e.get("role") == "fenv_flags" for e in o.kept or [])
     allocs = len(c.outputs.get("k2", [])) if isinstance(c.outputs, dict) else 0
     i1 = 0
     fenv: Dict[str, int] = {}
@@ -1934,8 +1960,11 @@ def _leaks(k: str, o: RunResult, c: RunResult, cut: bool, capkeys: Set[Tuple[str
                 continue
         elif role == "garbage" and ent.get("w") == "i1":
             i1 += 1
-            if cut or i1 <= acts + allocs:
+            if cut or i1 <= acts + allocs or (rec and not _int(ent.get("v"))):
                 continue
+        elif role == "garbage" and ent.get("w") == "i32" and not flagged and _final_flags(ent, o, c, cut):
+            flagged = True
+            continue
         bad.append(f"{ent.get('h')} ({ent.get('w')} = {ent.get('v')}, {role})")
     if not bad:
         return []
@@ -2029,9 +2058,13 @@ def _addr_table(rr: RunResult) -> Tuple[List[Tuple[int, int, str]], List[Tuple[i
 
 def _addr_token(v: int, table: Tuple[list, list], against: str) -> Any:
     """What a 64-bit value reads as relationally (module docstring): v itself unless it lies in a known
-    object or region of its run."""
+    object or region of its run. An object's own bytes come first: one past the end of an object is the
+    first byte of the next where the linker placed them adjacent (cq-l1fc8), and that differs per link."""
     for lo, hi, name in table[0]:
-        if lo <= v <= hi:
+        if lo <= v < hi:
+            return (name, v - lo)
+    for lo, hi, name in table[0]:
+        if v == hi:
             return (name, v - lo)
     for lo, hi, name in table[1]:
         if lo <= v < hi:
@@ -2394,7 +2427,7 @@ def _ret(outputs: Any, side: str) -> Any:
     return outputs.get("ret", [])
 
 
-_HOST_KEYS = ("stdout", "effects", "tape", "deviation", "mem", "objects", "regions", "ctl_measured", "entered")
+_HOST_KEYS = ("stdout", "effects", "tape", "deviation", "mem", "objects", "regions", "ctl_measured", "entered", "host_flags")
 
 
 def _rest(outputs: Any, side: str) -> Any:

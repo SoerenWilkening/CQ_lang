@@ -1114,7 +1114,8 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
     return RunResult(side=side, sample=sample, outputs={"ret": rets, "stdout": stdout + tape_out, "exit": code,
                                                     "effects": _effects_in_order(direct_fx), "tape": tape_seq,
                                                     "deviation": deviation, "mem": mem, "objects": objects,
-                                                    "regions": regions, "ctl_measured": ctl_measured},
+                                                    "regions": regions, "ctl_measured": ctl_measured,
+                                                    "host_flags": (last_exit or {}).get("host_flags")},
                      measured=measured, rotations=rots, kept=kept, clean=clean, violations=viol)
 
 
@@ -1884,7 +1885,7 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
     return out  # type: ignore[return-value]
 
 
-_RUNS_VERSION = "eval-runs-4"
+_RUNS_VERSION = "eval-runs-5"
 _CAP_VARS = ("CQE_SHOT_TRACE_MAX", "CQE_SHOT_OUTPUT_MAX", "CQE_FILE_MAX", "CQE_SHOT_VIOL_MAX")   # core.c's caps
 _RESULT_FIELDS = ("outputs", "measured", "rotations", "kept", "clean", "violations")
 

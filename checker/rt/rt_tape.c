@@ -68,6 +68,7 @@
  * ptr as a 64-bit 'i' holding the address, a literal in its own type). Return: 0 computed,
  * CQE_OP_NOT_MINE for an op outside the family, -1 after cqe_fail.
  */
+#include <dlfcn.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -652,6 +653,19 @@ static void op_tape_fmt(int ctl, int32_t c, int32_t t, const char *s, const char
   if (!e->need) entry_complete(e);
 }
 
+/* §6's stand-in is a function of the name: a null name's host address (rule 19, its first field) is named by the driver's
+ * wrapper rows (drivers.effect_wrappers_ir), or, for a function the host really has, by the host's own symbol table. An
+ * address neither knows stays a null name. */
+__attribute__((weak)) const void *const cqd_fx_addr_rows[][2] = {{0, 0}};
+static const char *host_address_name(uint64_t a) {
+  for (int i = 0; cqd_fx_addr_rows[i][0]; i++)
+    if ((uint64_t)(uintptr_t)cqd_fx_addr_rows[i][0] == a) return (const char *)cqd_fx_addr_rows[i][1];
+  Dl_info info;
+  if (a && dladdr((const void *)(uintptr_t)a, &info) && info.dli_sname && (uint64_t)(uintptr_t)info.dli_saddr == a)
+    return info.dli_sname;
+  return NULL;
+}
+
 /* Returns the result rail, or 0 for the bare form. */
 static int32_t op_tape_effect(int32_t c, int32_t t, const char *name, const char *rw, const char *sym) {
   ensure_exit();
@@ -674,6 +688,12 @@ static int32_t op_tape_effect(int32_t c, int32_t t, const char *name, const char
     g_tape_last[ti] = seq;
   }
   if (!name && e->nfields == 0) cqe_fail("tape: %s: a null name with no host address field", sym);
+  if (!name && e->nfields && (name = host_address_name(e->fields[0].v.w[0]))) {
+    e->str = dupstr(name);
+    ent = cq_fx_find(name);
+    e->nfields--;
+    memmove(e->fields, e->fields + 1, (size_t)e->nfields * sizeof *e->fields);
+  }
   entry_log(e, seq);
   if (ent && e->nfields < (int)strlen(ent->roles))
     cqe_fail("tape: %s: %s has %d fields, its arguments are %d", sym, name, e->nfields, (int)strlen(ent->roles));

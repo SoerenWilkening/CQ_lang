@@ -37,6 +37,7 @@
 #include "cq/Loops.h"
 #include "../../pass/lib/calls/LibCalls.h"
 #include "cq/SetjmpPair.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetVector.h"
 #include "cq/Taint.h"
 // cq/Common.h routes the pass's unimplemented()/internalError() through site-naming macros; the oracle has its own.
@@ -167,11 +168,14 @@ public:
   //  - A loop is capped where classify says QuantumExit (ClassicalBound and
   //    ClassicalBoundQuantumExit run to completion; rule 14 gives them no cutoff).
   //  - A recursive call (callee in the caller's call-graph cycle) is a level of a quantum-depth
-  //    recursion when taint makes it one: under a quantum predicate, or in a level clone already
-  //    (depth > 0). An activation is entered by a call from outside the cycle whose callee
-  //    specialization reaches such a level call through the cycle (or by the driver's call of a
-  //    cycle member whose entry specialization does).
-  // Indirect calls carry 0 (calleeSpecialization is asked for direct calls only).
+  //    recursion when taint makes it one: under a quantum predicate, or in a `_ctl` clone already.
+  //    An activation is entered by a call from outside the cycle whose callee specialization
+  //    reaches such a level call through the cycle (or by the driver's call of a cycle member whose
+  //    entry specialization does). Rule 14: only `_ctl` activations count, per function (cqo_rt.c
+  //    __cqo_rec_down), so an entry under a quantum predicate is the first one counted (cq-rdsdj).
+  //  - An indirect call is always a call of a table clone (rule 19): it stores -2 (`_t`) or -3
+  //    (`_t_ctl`: a predicate in scope or an address rail), the frame takes its function's table
+  //    specialization, and K is the caller's (__cqo_ptr_enter; cq-2in7d).
   struct KInfo {
     bool on = false;
     unsigned N = 0;
@@ -183,6 +187,10 @@ public:
     DenseMap<const CallBase *, std::vector<int32_t>> callee;    // call -> callee spec id per spec id
     DenseMap<const CallBase *, std::vector<int32_t>> level;     // call -> recursion level per spec id
     DenseMap<const CallBase *, std::vector<int32_t>> recEntry;  // call -> enters an activation
+    DenseMap<const CallBase *, std::vector<int32_t>> entryCtl;  // that entry's callee is a `_ctl` clone
+    DenseMap<const CallBase *, std::vector<int32_t>> viaPtr;    // indirect call -> -2 or -3 per spec id
+    DenseMap<const Function *, unsigned> tableT, tableCtl;      // the table specializations' ids
+    DenseMap<const Function *, bool> tableRec;                  // reached through a row it is a quantum-depth recursion
   } KI;
   GlobalVariable *SpecNext = nullptr;
   DenseMap<Function *, AllocaInst *> specSlots;
@@ -190,7 +198,7 @@ public:
   // visible function's table clone takes every formal as a handle, so its objects are bus-resident). The frame's specialization
   // answers at run time; id 0 (reached by a call that names none: through a pointer) takes any of them. Its flag operand is
   // set at the end of run(), when the frame slots stay put.
-  struct RailLoad { CallInst *call; Function *F; std::vector<int32_t> vals; };
+  struct RailLoad { CallInst *call; Function *F; std::vector<int32_t> vals; unsigned arg = 3; };
   std::vector<RailLoad> railLoads;
 
   static bool callsCqSurface(const Module &M) {
@@ -277,6 +285,8 @@ public:
         const cq::Specialization &S = *byId[i];
         if (S.isEntry())
           KI.entry[&F] = i;
+        if (S.table)
+          (S.ctl ? KI.tableCtl : KI.tableT)[&F] = i;
         for (Loop *L : LI.getLoopsInPreorder())
           if (cq::loops::classify(*L, T, S) == cq::loops::Case::QuantumExit) {
             auto &v = KI.qexit[L->getHeader()];
@@ -285,6 +295,12 @@ public:
           }
         for (Instruction &I : instructions(F)) {
           auto *CB = dyn_cast<CallBase>(&I);
+          if (CB && !CB->getCalledFunction() && !CB->isInlineAsm()) {
+            auto &v = KI.viaPtr[CB];
+            v.resize(W, -2);
+            if (S.ctl || T.controlTainted(CB->getParent(), S) || T.isQuantum(CB->getCalledOperand(), S))
+              v[i] = -3;
+          }
           if (!CB || !directBody(*CB))
             continue;
           const Function *G = CB->getCalledFunction();
@@ -292,7 +308,7 @@ public:
           int32_t c = 0;
           if (cs && idOf.count(cs))
             c = idOf[cs];
-          bool lvl = recursive(&F, G) && T.controlTainted(CB->getParent(), S);
+          bool lvl = recursive(&F, G) && (S.ctl || T.controlTainted(CB->getParent(), S));
           if (lvl && c == 0 && G == &F)
             c = i;  // a level past the clones taint built: the frame keeps its specialization
           if (c) {
@@ -351,11 +367,18 @@ public:
           auto &e = KI.recEntry[CB];
           e.resize(W, 0);
           e[i] = 1;
+          auto &ec = KI.entryCtl[CB];
+          ec.resize(W, 0);
+          ec[i] = byId[v[i]]->ctl;
         }
     }
     for (auto &[F, i] : KI.entry)
       if (scc.count(F) && isQDepth(i))
         KI.entryRec[F] = true;
+    for (auto *tab : {&KI.tableT, &KI.tableCtl})
+      for (auto &[F, i] : *tab)
+        if (scc.count(F) && isQDepth(i))
+          KI.tableRec[F] = true;
   }
 
   // vals[spec id] at run time: a constant when they agree, else a load from a constant table.
@@ -385,11 +408,18 @@ public:
     Value *s0 = B.CreateLoad(I32, SpecNext);
     Value *fromDriver = B.CreateICmpEQ(s0, B.getInt32(-1));
     Value *s = B.CreateSelect(fromDriver, B.getInt32(KI.entry.lookup(&F)), s0);
+    // through a pointer: its table clone (rule 19), of either kind where the other has no row
+    unsigned idT = KI.tableT.lookup(&F), idC = KI.tableCtl.lookup(&F);
+    Value *viaT = B.CreateICmpEQ(s0, B.getInt32(-2)), *viaC = B.CreateICmpEQ(s0, B.getInt32(-3));
+    s = B.CreateSelect(viaT, B.getInt32(idT ? idT : idC), s);
+    s = B.CreateSelect(viaC, B.getInt32(idC ? idC : idT), s);
     B.CreateStore(s, slot);
-    if (KI.entryRec.lookup(&F))
-      B.CreateCall(hook("__cqo_rec_enter", Void, {Ptr, I64, I32}),
-                   {str((F.getName() + ":recursion").str()), B.getInt64(resolveK(F)),
-                    B.CreateZExt(fromDriver, I32)});
+    Value *on = KI.entryRec.lookup(&F) ? fromDriver : B.getFalse();
+    if (KI.tableRec.lookup(&F))
+      on = B.CreateOr(on, B.CreateOr(viaT, viaC));
+    if (KI.entryRec.lookup(&F) || KI.tableRec.lookup(&F))
+      B.CreateCall(hook("__cqo_rec_enter", Void, {Ptr, I32, I32}),
+                   {str((F.getName() + ":recursion").str()), B.CreateZExt(on, I32), B.CreateZExt(viaC, I32)});
     specSlots[&F] = slot;
     return slot;
   }
@@ -411,30 +441,54 @@ public:
             continue;
         calls.push_back(CB);
       }
-    FunctionCallee enter = hook("__cqo_rec_enter", Void, {Ptr, I64, I32});
+    FunctionCallee enter = hook("__cqo_rec_enter", Void, {Ptr, I32, I32});
     FunctionCallee exitH = hook("__cqo_rec_exit", Void, {I32});
-    FunctionCallee down = hook("__cqo_rec_down", Void, {I32});
-    FunctionCallee up = hook("__cqo_rec_up", Void, {I32});
+    FunctionCallee down = hook("__cqo_rec_down", Void, {Ptr, I64, I32});
+    FunctionCallee up = hook("__cqo_rec_up", Void, {Ptr, I32});
+    FunctionCallee ptrEnter = hook("__cqo_ptr_enter", I64, {I64});
+    FunctionCallee ptrLeave = hook("__cqo_ptr_leave", Void, {I64});
+    FunctionCallee pathEnter = hook("__cqo_path_enter", I64, {I64});
+    FunctionCallee pathLeave = hook("__cqo_path_leave", Void, {I64});
+    uint64_t site = hash_value(F.getName());
     for (CallBase *CB : calls) {
       IRBuilder<> B(CB);
+      // the call sites an activation is reached through name it (cqo_rt.c next_act); a host call reaches none
+      ++site;
+      if (!isa<InvokeInst>(CB) && !isa<CallBrInst>(CB) && (!CB->getCalledFunction() || directBody(*CB))) {
+        Value *savedPath = B.CreateCall(pathEnter, {B.getInt64(site * 0x9E3779B97F4A7C15ULL)});
+        IRBuilder<> A(CB->getNextNode());
+        A.CreateCall(pathLeave, {savedPath});
+      }
       auto c = KI.callee.find(CB);
-      B.CreateStore(c == KI.callee.end() ? (Value *)B.getInt32(0) : perSpec(B, F, c->second), SpecNext);
+      auto vp = KI.viaPtr.find(CB);
+      bool indirect = !CB->getCalledFunction() && !CB->isInlineAsm();
+      Value *next = c != KI.callee.end() ? perSpec(B, F, c->second)
+                    : vp != KI.viaPtr.end() ? perSpec(B, F, vp->second)
+                    : indirect ? (Value *)B.getInt32(-2) : (Value *)B.getInt32(0);
+      B.CreateStore(next, SpecNext);
       if (isa<InvokeInst>(CB) || isa<CallBrInst>(CB))
         continue;  // notes() already refused them
+      if (indirect) {
+        Value *saved = B.CreateCall(ptrEnter, {B.getInt64(resolveK(F))});
+        IRBuilder<> A(CB->getNextNode());
+        A.CreateCall(ptrLeave, {saved});
+      }
       auto e = KI.recEntry.find(CB);
       if (e != KI.recEntry.end()) {
         Function *G = CB->getCalledFunction();
         Value *on = perSpec(B, F, e->second);
-        B.CreateCall(enter, {str((G->getName() + ":recursion").str()), B.getInt64(resolveK(*G)), on});
+        B.CreateCall(enter, {str((G->getName() + ":recursion").str()), on, perSpec(B, F, KI.entryCtl[CB])});
         IRBuilder<> A(CB->getNextNode());
         A.CreateCall(exitH, {on});
       }
       auto l = KI.level.find(CB);
       if (l != KI.level.end()) {
         Value *on = perSpec(B, F, l->second);
-        B.CreateCall(down, {on});
+        Function *G = CB->getCalledFunction();
+        Constant *gn = str((G->getName() + ":recursion").str());
+        B.CreateCall(down, {gn, B.getInt64(resolveK(*G)), on});
         IRBuilder<> A(CB->getNextNode());
-        A.CreateCall(up, {on});
+        A.CreateCall(up, {gn, on});
       }
     }
   }
@@ -2203,9 +2257,15 @@ public:
         // an exit from the header's test region (above).
         add(from, to, Rep{cid, cnt, regionExits && region.count(from), kq});
       }
-      // Guard skip: an entering edge whose branch's other successor is an exit block reports 0.
+      // Guard skip: an entering edge whose branch's other successor is an exit block, or the block an exit block goes on to
+      // unconditionally (a store of a carried value sinks there: the guard's skip joins after it, cq-2in7d), reports 0: the
+      // circuit runs the guarded loop's activation under the arm flag (rule 14), so it has its record and a_K whatever the guard.
       SmallVector<BasicBlock *, 4> exitBlocks;
       L->getExitBlocks(exitBlocks);
+      for (size_t x = 0; x < exitBlocks.size(); ++x)
+        if (BasicBlock *next = exitBlocks[x]->getSingleSuccessor();
+            next && !L->contains(next) && !is_contained(exitBlocks, next))
+          exitBlocks.push_back(next);
       // The guard may reach the header through out-of-loop blocks that each have a single
       // predecessor and branch unconditionally on (a preheader): the guard's taken edge is then
       // the only way into that chain, so its not-taken edge bypasses the header.
@@ -2290,9 +2350,11 @@ public:
   }
 
   // CR rule 24: a longjmp outside the one pairing under a quantum predicate is rule 16's noreturn arm: the sample
-  // ends there, on the pristine module (the pairing and the predicate as clang wrote them).
+  // ends there, on the pristine module (the pairing and the predicate as clang wrote them). The predicate is the running
+  // specialization's: the same longjmp on a classical path of the frame runs natively (rule 24; a table clone's
+  // every formal is a rail, cq-li3wr); id 0 (a frame no call named: host code's) takes any of them.
   // Asked of taint on the pristine module, instrumented once shadows() is past (it asks taint of every instruction it meets).
-  SetVector<CallBase *> ArmJumps;
+  MapVector<CallBase *, std::vector<int32_t>> ArmJumps;
   void armLongjmps() {
     if (!Taint)
       return;
@@ -2303,16 +2365,22 @@ public:
         if (auto *CB = dyn_cast<CallBase>(&I))
           if (cq::conc::isLongjmpCall(*CB)) {
             auto *buf = dyn_cast<GlobalVariable>(CB->getArgOperand(0));
-            if (!(buf && cq::conc::isPairedJmpBuf(*buf)) && Taint->controlTainted(CB->getParent(), S))
-              ArmJumps.insert(CB);
+            if (!(buf && cq::conc::isPairedJmpBuf(*buf)) && Taint->controlTainted(CB->getParent(), S)) {
+              auto &v = ArmJumps[CB];
+              v.resize(KI.N + 1, 0);
+              v[0] = 1;
+              if (auto id = KI.idOf.find(&S); id != KI.idOf.end())
+                v[id->second] = 1;
+            }
           }
     }
   }
 
   void instrumentRule24() {
-    for (CallBase *CB : ArmJumps) {
+    for (auto &[CB, vals] : ArmJumps) {
       IRBuilder<> B(CB);
-      B.CreateCall(hook("__cqo_longjmp_arm", Void, {}), {});
+      CallInst *arm = B.CreateCall(hook("__cqo_longjmp_arm", Void, {I32}), {B.getInt32(1)});
+      railLoads.push_back({arm, CB->getFunction(), vals, 0});
     }
   }
 
@@ -2516,7 +2584,7 @@ public:
         specFlow(*F);
     for (RailLoad &R : railLoads) {
       IRBuilder<> B(R.call);
-      R.call->setArgOperand(3, perSpec(B, *R.F, R.vals));
+      R.call->setArgOperand(R.arg, perSpec(B, *R.F, R.vals));
     }
     registerGlobals();
     // The runtime owns `main`; a program's own main stays callable under another name.

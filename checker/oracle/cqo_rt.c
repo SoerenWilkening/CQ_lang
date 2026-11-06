@@ -845,20 +845,35 @@ void __cqo_enter(const char *fn) {
  * OracleInstr.cpp passes kq = 1 where the loop is a quantum-exit loop in the running specialization.
  * Each activation of one gets a T2 record when it ends: by an exit edge (capped false), or when the
  * trip counter reaches K+1 trips begun (capped true, n = K, cut/mcut = entries so far); the capped
- * one ends the sample. A quantum-depth recursion is counted by the level calls along the chain. */
+ * one ends the sample. A quantum-depth recursion counts its `_ctl` activations per function (below). */
 int32_t __cqo_spec_next; /* the callee's specialization id; -1: the driver's call (its entry spec) */
 
-#define MAXACT 256
-static struct { const char *id; long n; } acts[MAXACT];
+/* An activation's identity, the same on every sample that reaches it: the call sites leading to it and the how-many-th there.
+ * A count over the whole sample would name another activation whenever a quantum arm the C program skips holds an earlier one,
+ * and the circuit makes both whatever the arm (rule 14: one a_K of its own; cq-rdsdj). */
+#define MAXACT 1024
+static struct { const char *id; uint64_t path; long n; } acts[MAXACT];
 static int nacts;
+static uint64_t act_path;
 
-static long next_act(const char *id) {
-    for (int i = 0; i < nacts; ++i)
-        if (!strcmp(acts[i].id, id)) return acts[i].n++;
-    if (nacts == MAXACT) { note("internal more than %d cutoff loops", MAXACT); _exit(95); }
-    acts[nacts].id = id, acts[nacts].n = 1;
-    nacts++;
-    return 0;
+int64_t __cqo_path_enter(int64_t site) {
+    uint64_t saved = act_path;
+    act_path = (act_path ^ (uint64_t)site) * UINT64_C(0x100000001b3);
+    return (int64_t)saved;
+}
+void __cqo_path_leave(int64_t saved) { act_path = (uint64_t)saved; }
+
+static long next_act(const char *id, uint64_t path) {
+    long n = 0;
+    int i;
+    for (i = 0; i < nacts; ++i)
+        if (acts[i].path == path && !strcmp(acts[i].id, id)) { n = acts[i].n++; break; }
+    if (i == nacts) {
+        if (nacts == MAXACT) { note("internal more than %d cutoff activations", MAXACT); _exit(95); }
+        acts[nacts].id = id, acts[nacts].path = path, acts[nacts].n = 1;
+        nacts++;
+    }
+    return (long)((path ^ (uint64_t)n * UINT64_C(0x9E3779B97F4A7C15)) >> 1);
 }
 
 /* trip mode: the (loop, n, kind) pairs written so far in this sample (__DATA: put back per sample) */
@@ -873,11 +888,11 @@ static int trip_seen(const char *id, long long n, int kind) {
 }
 
 static uint64_t ticks;
-static void kloop_record(const char *id, long long n, int capped) {
+static void kloop_record(const char *id, long long n, int capped, uint64_t path) {
     char l[300], line[600];
-    if (trips_only && !capped && trip_seen(id, n, 1)) { next_act(id); return; }
+    if (trips_only && !capped && trip_seen(id, n, 1)) { next_act(id, path); return; }
     jsonstr(l, sizeof l, id);
-    long act = next_act(id);
+    long act = next_act(id, path);
     if (capped)
         snprintf(line, sizeof line,
                  "{\"ev\":\"kloop\",\"loop\":%s,\"act\":%ld,\"n\":%lld,\"capped\":true,\"cut\":%ld,\"mcut\":%ld}",
@@ -888,8 +903,8 @@ static void kloop_record(const char *id, long long n, int capped) {
     out_line(trace_fd, line);
 }
 
-static void kcap(const char *id, long long K) {
-    kloop_record(id, K, 1);
+static void kcap(const char *id, long long K, uint64_t path) {
+    kloop_record(id, K, 1, path);
     note("cap %s", id);
     _exit(0);
 }
@@ -905,43 +920,74 @@ void __cqo_trip(const char *loop, int64_t n, int32_t kq) {
             snprintf(line, sizeof line, "{\"ev\":\"trip\",\"loop\":%s,\"n\":%lld}", l, (long long)n);
         out_line(trace_fd, line);
     }
-    if (kq) kloop_record(loop, n, 0);
+    if (kq) kloop_record(loop, n, 0, act_path);
 }
 
 /* cnt trips begun (the counter after this header run, or before entering the body of a loop that
  * tests at its header): one more than K means the exit test after the K-th body admitted trip K+1. */
+static int64_t k_recv; /* the K a table clone received (rule 19: the caller's; rule 27: its by-name callees too), 0: none */
 void __cqo_kcheck(const char *loop, int64_t cnt, int64_t K, int32_t kq) {
-    if (kq && cnt > K) kcap(loop, K);
+    if (k_recv) K = k_recv;
+    if (kq && cnt > K) kcap(loop, K, act_path);
 }
 
+/* CR rule 14, §1.4: only `_ctl` activations count, per function: an activation reads d, the live `_ctl` activations of its
+ * function, and is cut at d = K. The one that enters with no quantum predicate in scope does not count, so up to K bodies
+ * run under a quantum predicate either way, and the (K+1)-th `_ctl` activation is the cut. */
 #define MAXREC 64
-static struct { const char *id; long long K, depth, max; } recs[MAXREC];
+#define RECFN 16
+static struct { const char *id; uint64_t path; long long max; int nfn; struct { const char *fn; long long d; } fn[RECFN]; } recs[MAXREC];
 static int nrecs;
 
-void __cqo_rec_enter(const char *id, int64_t K, int32_t on) {
+static long long *rec_count(const char *fn) {
+    int top = nrecs - 1;
+    for (int i = 0; i < recs[top].nfn; ++i)
+        if (!strcmp(recs[top].fn[i].fn, fn)) return &recs[top].fn[i].d;
+    if (recs[top].nfn == RECFN) { note("internal more than %d functions on one call cycle", RECFN); _exit(95); }
+    recs[top].fn[recs[top].nfn].fn = fn, recs[top].fn[recs[top].nfn].d = 0;
+    return &recs[top].fn[recs[top].nfn++].d;
+}
+
+void __cqo_rec_enter(const char *id, int32_t on, int32_t ctl) {
     if (!on) return;
     if (nrecs == MAXREC) { note("internal recursion activations nested deeper than %d", MAXREC); _exit(95); }
-    recs[nrecs].id = id, recs[nrecs].K = K, recs[nrecs].depth = 0, recs[nrecs].max = 0;
+    recs[nrecs].id = id, recs[nrecs].path = act_path, recs[nrecs].max = ctl ? 1 : 0, recs[nrecs].nfn = 0;
     nrecs++;
+    if (ctl) *rec_count(id) = 1;
 }
 
 void __cqo_rec_exit(int32_t on) {
     if (!on) return;
     if (nrecs == 0) { note("internal recursion exit outside an activation"); _exit(95); }
     nrecs--;
-    kloop_record(recs[nrecs].id, recs[nrecs].max, 0);
+    kloop_record(recs[nrecs].id, recs[nrecs].max, 0, recs[nrecs].path);
 }
 
-void __cqo_rec_down(int32_t on) {
+void __cqo_rec_down(const char *fn, int64_t K, int32_t on) {
     if (!on) return;
     if (nrecs == 0) { note("internal recursion level outside an activation"); _exit(95); }
-    long long d = ++recs[nrecs - 1].depth;
-    if (d > recs[nrecs - 1].K) kcap(recs[nrecs - 1].id, recs[nrecs - 1].K);
-    if (d > recs[nrecs - 1].max) recs[nrecs - 1].max = d;
+    if (k_recv) K = k_recv;
+    long long *d = rec_count(fn);
+    if (*d >= K) kcap(recs[nrecs - 1].id, K, recs[nrecs - 1].path);
+    ++*d;
+    if (*d > recs[nrecs - 1].max) recs[nrecs - 1].max = *d;
 }
 
-void __cqo_rec_up(int32_t on) {
-    if (on && nrecs) recs[nrecs - 1].depth--;
+void __cqo_rec_up(const char *fn, int32_t on) {
+    if (on && nrecs) --*rec_count(fn);
+}
+
+/* An indirect call (rule 19). K is the K of the caller's enclosing function, read by the table clone and what it calls by
+ * name; an activation the table clone entered ends with the call. Returns what __cqo_ptr_leave puts back. */
+int64_t __cqo_ptr_enter(int64_t K) {
+    int64_t saved = (k_recv << 8) | nrecs;
+    if (!k_recv) k_recv = K;
+    return saved;
+}
+
+void __cqo_ptr_leave(int64_t saved) {
+    while (nrecs > (int)(saved & 0xff)) __cqo_rec_exit(1);
+    k_recv = saved >> 8;
 }
 
 /* the step budget: loop-header executions of one sample (the setup's do not count; cq-u9al) */
@@ -1352,13 +1398,21 @@ static void worker_leave(void) {
 /* A sample's in-process end: the driver's sigsetjmp returns again (__cqo_resume). */
 __attribute__((noreturn)) static void sample_jump(void) { siglongjmp(R->jb, 1); }
 /* CR rule 24: a longjmp outside the pairing under a quantum predicate is rule 16's noreturn arm (OracleInstr, ArmJumps). */
-void __cqo_longjmp_arm(void) { note("noreturn longjmp"); sample_jump(); }
+void __cqo_longjmp_arm(int32_t on) { if (on) { note("noreturn longjmp"); sample_jump(); } }
 
 /* An isolated sample that ends before its outputs leaves the process, so it never reaches the driver's sigsetjmp, where the
  * others give their address table (oracle.py BEFORE_CALL; CR §6: pointer fields read relationally). */
 void __cqo_out_table(void);
+/* The sample's final exception flags, rule 23's output (compare._leaks; meaningful where the program touches the environment:
+ * OracleInstr.cpp defaultEnv keeps every other operation's flags out). */
+static void out_final_flags(void) {
+    char line[48];
+    snprintf(line, sizeof line, "{\"ev\":\"fenv\",\"flags\":%d}", fetestexcept(CQO_FE_IEEE));
+    out_line(trace_fd, line);
+}
 static void isolated_table(void) {
     if (!isolate || trips_only || !sample_running()) return;
+    out_final_flags();
     __cqo_out_table();
     __cqo_out_regions();
 }
@@ -1611,6 +1665,8 @@ static void sample_finish(void) {
         char line[80];
         snprintf(line, sizeof line, "{\"ev\":\"ticks\",\"n\":%llu}", (unsigned long long)ticks);
         out_line(trace_fd, line);
+    } else {
+        out_final_flags();
     }
     emit_stdout();
     R->next = R->cur + 1; /* before in_sample drops: the server never runs a finished sample again */

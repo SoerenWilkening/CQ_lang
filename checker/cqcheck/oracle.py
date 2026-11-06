@@ -639,6 +639,7 @@ class SampleRun:
     objects: List[Dict[str, Any]] = field(default_factory=list)  # its address table (outputs["objects"])
     regions: List[Dict[str, Any]] = field(default_factory=list)  # (outputs["regions"])
     k2: List[List[int]] = field(default_factory=list)  # its rail-sized blocks, [n, K2] (outputs["k2"])
+    fenv: Optional[int] = None   # the exception flags at the sample's end (cqo_rt.c; outputs["fenv_flags"], rule 23)
 
 
 def _classify(sr: SampleRun) -> None:
@@ -909,9 +910,9 @@ MEMO_EVENTS = 50_000          # trace events kept per executable's memo
 _MEMO_LOCK = threading.Lock()
 
 
-_RUNS_VERSION = "oracle-runs-1"
+_RUNS_VERSION = "oracle-runs-3"
 _RUN_FIELDS = ("events", "outcome", "failed", "reason", "notes", "loops", "stdout", "effects", "mem", "objects",
-               "regions", "k2")
+               "regions", "k2", "fenv")
 
 
 def _run_batch(exe: Path, spec: DriverSpec, samples: Sequence[Dict[str, Any]], timeout_ms: int, tripcap: int,
@@ -992,6 +993,8 @@ def _parse_runs(samples: Sequence[Dict[str, Any]], trace, status: str) -> List[S
             pass
         elif e.get("ev") == "k2":
             runs[i].k2.append([int(e["n"]), int(e["k2"])])
+        elif e.get("ev") == "fenv":
+            runs[i].fenv = int(e["flags"])
         else:
             runs[i].events.append(e)
     for line in status.splitlines():
@@ -1095,6 +1098,17 @@ def _effects_of(sr: SampleRun) -> List[dict]:
     return [e for e in sr.effects if e.get("name") != "raise" or fatal]
 
 
+_TOUCHES_FENV: Dict[str, bool] = {}
+
+
+def _touches_fenv(o1: Path) -> bool:
+    k = str(o1)
+    if k not in _TOUCHES_FENV:
+        from .run import touches_fenv
+        _TOUCHES_FENV[k] = touches_fenv(Path(o1).read_text())
+    return _TOUCHES_FENV[k]
+
+
 def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
     """A sample under the C oracle as the side 'c' RunResult (cq-arch T1.5).
 
@@ -1103,7 +1117,8 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
     did not return give no record), "end": outcome, "loops": the T2 cutoff records, "stdout": the
     program's stdout, "effects": its host-effect calls (cq-e4jk), "mem", "objects", "regions":
     the module docstring's; "k2": the rail-sized blocks, [n, K2] (_k2_sites); "entered": the functions this
-    input enters among those with a cq_measure or a call chain to one (compare._meas_extra)}; measured: [{"h": None, "w": the register's rail
+    input enters among those with a cq_measure or a call chain to one (compare._meas_extra); "fenv_flags": the final exception
+    flags of a program that touches the environment (rule 23; run.touches_fenv), else absent}; measured: [{"h": None, "w": the register's rail
     type, "v": hex}] per reached measure site that is a gate (not a rule 2 classical read), in order; rotations: the site events of kind theta,
     phi, invert_begin and invert_end verbatim, in order, each with "nmeas", the number of entries of
     measured before it (cq-459d); kept/clean: None (the C program has no
@@ -1125,7 +1140,8 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
                               "stdout": sr.stdout, "effects": _effects_of(sr),
                               "mem": list(sr.mem), "objects": list(sr.objects), "regions": list(sr.regions),
                               "k2": list(sr.k2), "reads": reads,
-                              "entered": sorted({e["fn"] for e in sr.events if e.get("ev") == "enter"})},
+                              "entered": sorted({e["fn"] for e in sr.events if e.get("ev") == "enter"}),
+                              **({"fenv_flags": sr.fenv} if sr.fenv is not None and _touches_fenv(o1) else {})},
                      measured=measured, rotations=rotations, kept=None, clean=None,
                      violations=[{"what": "c_oracle", "h": None, "msg": sr.reason}] if sr.failed else [])
 

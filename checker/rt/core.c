@@ -714,7 +714,7 @@ static const char *exit_role(int32_t h) {
   }
   if (r->fenv & 2)
     return "fenv_mode";
-  if (r->fenv & 1)
+  if ((r->fenv & 1) && !strcmp(r->w, "i32")) /* rule 23's flags are i32 bits; an i1 written from a flags-looking rail is not */
     return "fenv_flags";
   if (r->seed && !r->written)
     return "seed";
@@ -750,7 +750,8 @@ static void at_exit_handler(void) {
     free(hx);
     first = 0;
   }
-  APPEND("],\"violations\":%lu}", nviolations);
+  APPEND("],\"violations\":%lu,\"host_flags\":%d}", nviolations, /* the host part of rule 23's flags, compare._final_flags */
+         fetestexcept(FE_INVALID | FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INEXACT));
 #undef APPEND
   cqe_log(buf);
   free(buf);

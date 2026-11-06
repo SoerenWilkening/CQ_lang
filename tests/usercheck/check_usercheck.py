@@ -25,6 +25,12 @@ Fails on any of:
             un-prep before an in-place second cq_theta, NaN or finite (b_mut, b2_mut; cq-yzuc); from
             src/leak, a garbage rail live at exit, rejected by CR §6 item 1's leak rule (m1_leak, m1_flat_leak,
             m1_flat_r6_leak, c8_leak, c7_leak; m1_good, m1_flat_good green; cq-tt2j, cq-cuu82)
+  rv3       the fixtures of src/rv3 (each a C program, its -O1 module and the pass's lowering) are not green, or a wrong
+            lowering of one is not rejected: rule 14's cut of a recursion entered under a predicate, a level early or late,
+            with its a_K dropped or a garbage rail beside it (cq-rdsdj); a K-loop behind a function pointer with its a_K
+            dropped (cq-2in7d); a classical unpaired longjmp's second return wrong (cq-li3wr); rule 19's host complement with
+            the callee swapped (cq-d9vhj); rule 23's final flags rail wrong or with a second rail like it (cq-f8m9n); a
+            literal adjacent in the link with other bytes (cq-l1fc8). --rv3 runs this group alone
   error     a missing entry or main(argc, argv) is not an error (exit 2)
 
 Every run goes through the CLI (`python3 -m cqcheck user` from checker/), as cqcc --cq-check runs it.
@@ -59,9 +65,9 @@ def ok(test, msg=""):
     print(f"ok   {test}" + (f": {msg}" if msg else ""))
 
 
-def user(o1, low, entry, samples=None):
+def user(o1, low, entry, samples=None, light=False):
     r = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(o1), "--lowered", str(low),
-                        "--entry", entry] + (["--samples", str(samples)] if samples else []),
+                        "--entry", entry] + (["--samples", str(samples)] if samples else []) + (["--light"] if light else []),
                        cwd=ROOT / "checker", capture_output=True, text=True)
     return r.returncode, (r.stdout + r.stderr).strip()
 
@@ -236,15 +242,60 @@ def mutants60(ref_text):
             "negated_ry": ref_text.replace(ry, "  %ng = fneg double %2\n  call void @cqrt_ry_i1(i32 %19, double %ng)")}
 
 
+# name -> [(mutant, regular expression, its replacement)]: every occurrence, in the forward code and its twins
+RV3 = {
+    "rdsdj": [("cut_early", "icmp ult i32 %3, 4", "icmp ult i32 %3, 3"),
+              ("cut_late", "icmp ult i32 %3, 4", "icmp ult i32 %3, 5"),
+              ("no_ak", r"  call void @cqrt_copy_i1\(i32 %0, i32 %\d+\)\n", ""),
+              ("leak", r"  call void @cq_template_icmp_eq_i32_hl_unc\(i32 %4, i32 %3, i32 0\)\n  call void @cqrt_free\(i32 %4\)\n", "")],
+    "rdsdj2": [], "rdsdj8": [], "recmut": [], "recptr": [], "fpcand": [],
+    "2in7d": [("no_ak", r"  call void @cqrt_and_i1\(i32 %40, i32 %48, i32 %49\)\n", ""),
+              ("no_xor", r"cq_template_xor_i32_hl\(", "cq_template_or_i32_hl(")],
+    "li3wr": [("second_return", r"cq_template_add_i32_hl\(i32 %4, i32 6\)", "cq_template_add_i32_hl(i32 %4, i32 7)")],
+    "d9vhj": [("classical_swap", "select i1 %52, ptr @abs, ptr @fa", "select i1 %52, ptr @fa, ptr @abs"),
+              ("rail_swap", r"i64 ptrtoint \(ptr @fa to i64\), i64 ptrtoint \(ptr @abs to i64\)",
+               "i64 ptrtoint (ptr @abs to i64), i64 ptrtoint (ptr @fa to i64)")],
+    "f8m9n": [("wrong_flags", r"%9 = call i32 @cq_template_select_i32_ll\(i32 %8, i32 32, i32 0\)",
+               "%9 = call i32 @cq_template_select_i32_ll(i32 %8, i32 16, i32 0)"),
+              ("two_flags", r"  %9 = call i32 @cq_template_select_i32_ll\(i32 %8, i32 32, i32 0\)\n",
+               "  %9 = call i32 @cq_template_select_i32_ll(i32 %8, i32 32, i32 0)\n"
+               "  %again = call i32 @cq_template_select_i32_ll(i32 %8, i32 32, i32 0)\n")],
+    "l1fc8": [("other_bytes", r'c"k\\00"', 'c"q\\00"')],
+}
+
+
+def rv3(tmp, only=()):
+    d = SRC / "rv3"
+    for name, muts in RV3.items():
+        if only and name not in only:
+            continue
+        o1, low = d / f"{name}.O1.ll", d / f"{name}.lowered.ll"
+        expect(f"program rv3 {name} (f)", 0, user(o1, low, "f", light=True))
+        text = low.read_text()
+        for m, old, new in muts:
+            if not re.search(old, text):
+                raise SystemExit(f"rv3 {name}: {old!r} is not in its lowering")
+            p = tmp / f"rv3_{name}_{m}.ll"
+            p.write_text(re.sub(old, lambda _: new, text))
+            expect(f"mutant rv3 {name} {m}", 1, user(o1, p, "f", light=True))
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--rv3", nargs="*", help="only the src/rv3 group, or these of it")
     ap.add_argument("--spec", type=Path, default=ROOT.parent / "CQ_spec")
     ap.add_argument("--examples", nargs="*", default=DEFAULT_EXAMPLES)
     a = ap.parse_args()
     spec = a.spec.resolve()
+    if a.rv3 is not None:
+        with tempfile.TemporaryDirectory(prefix="cqu-test-") as t:
+            rv3(Path(t), a.rv3)
+        print(f"{len(failures)} failures" if failures else "all rv3 tests passed")
+        return 1 if failures else 0
     unit(spec)
     with tempfile.TemporaryDirectory(prefix="cqu-test-") as t:
         tmp = Path(t)
+        rv3(tmp)
         for name, entry in PROGRAMS:
             d = tmp / name
             r = subprocess.run([sys.executable, str(CQCC), "-S", str(SRC / f"{name}.c"), "--save-temps", str(d),
