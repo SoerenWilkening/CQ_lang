@@ -1139,6 +1139,9 @@ std::optional<Inverse> inverseOf(LoweringContext &ctx, Instruction &U, Value *Y,
 
 void clean(LoweringContext &ctx, Value *y, const Inverse &inv) {
   Value *h = ctx.operand(y).v;
+  for (const Operand &o : inv.ops)
+    if (o.handle)
+      spine::shared(ctx).ruleSixReads[h].push_back(o.v);
   if (PHINode *np = keptMerge(ctx, y)) {
     // The rail freed through the phi: a seed arm is freed here on the paths that did not choose it.
     SmallVector<std::pair<CallInst *, unsigned>, 2> seeds;
@@ -1386,6 +1389,20 @@ void classicalMergeStop(LoweringContext &ctx, Instruction &M, ArrayRef<Value *> 
           also.push_back(V);
       if (!deadAtCleanup(ctx, Y, ctx.operand(Y).v, &M, also))
         continue;
+      // CR rule 6, both operands dead: one is cleaned from U's image, the other kept (strncmp's `a - b` into the classical
+      // phi): cleaning both, each would read the rail the other frees.
+      if (any_of(perY, [&](const auto &e) {
+            return e.first != Y && any_of(e.second, [&](const Alt &a) { return a.arm == U; });
+          }))
+        continue;
+      auto &rd = spine::shared(ctx).ruleSixReads;
+      if (any_of(U->operands(), [&](Value *Z) {
+            if (Z == Y || !spine::shared(ctx).binds.count(Z))
+              return false;
+            auto it = rd.find(spine::shared(ctx).binds.find(Z)->second.front().v);
+            return it != rd.end() && is_contained(it->second, img.v);
+          }))
+        continue;   // the other operand was cleaned from U's image at U
       Value *guard = choseArm(ctx, M, img.v);
       if (!guard)
         continue;   // U's rail is M on every path (an ordinary update, its own rule 6) or on none

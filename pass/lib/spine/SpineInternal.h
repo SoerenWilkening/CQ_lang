@@ -180,6 +180,7 @@ struct Shared {
   // CR rule 6: the rails a clean-up was requested for (Opcode.cpp). A template rail reading one of them
   // is no longer garbage rule 5 can uncompute (cq-tmvo).
   llvm::DenseSet<const llvm::Value *> ruleSixCleaned;
+  llvm::DenseMap<llvm::Value *, llvm::SmallVector<llvm::Value *, 2>> ruleSixReads;   // a cleaned rail -> the rails its inverse reads
   // The final rail of a loop's rule-6 chain (Classical.cpp planRuleSix): the carried register. A trip's old rail is
   // cleaned in the next trip, so the header phi it feeds is no reader once the loop has exited.
   llvm::DenseSet<const llvm::Value *> carriedFinal;
