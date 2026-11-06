@@ -41,7 +41,9 @@
 //    Role::Overtaken. A kept role (Measured, UserRegister, Frozen, Kept) means no item at all.
 //  - noteVersionChange(at): at is the first new-IR instruction of a memory version change (rule 5 Memory).
 //  - noteKeptStore(store, value, ctl) (rule 5 sentence 3): the value and control rails stay, Role::Kept unless they
-//    already hold a kept role; a pending rule 6 clean-up of either is dropped.
+//    already hold a kept role; a pending rule 6 clean-up of either is dropped. A rail a classical branch can bypass the
+//    store of is kept only where the store ran: one instance under a run flag, a rule-14 trip's instance through a copy the
+//    store reads (the reverse loop undoes the rail itself), as a carried phi always (cq-ii0vf, cq-mmdf3).
 //  - cleanupBijective(old, inverse, ops): rule 6. Instead of its producer's _unc, `old` is cleaned by
 //    t = inverse(ops); copy_<W>(t, old); inverse_unc(t, ops); free t; free old. It overrides old's
 //    role. ops are the inverse template's forward operands.
@@ -249,6 +251,7 @@ struct Uncompute::Impl {
     unsigned group = kNone;            // U2: the call group this rail is a member of
     bool explicitKept = false;         // U2: setRole gave this rail a kept role itself
     bool storeKept = false;            // rule 5 sentence 3: the value or control rail of a kept store
+    bool carried = false;              // noteCarried: a rule-14 header phi over handles, no rule 6 register
     // cq-guzg3 (rule 5 sentence 3, §6 item 1): a rail stored only on some classical paths from its definition: kept
     // where a store in here ran, a rail like any other on the paths that bypass them (placeAt's run flag).
     SmallVector<Instruction *, 1> condStores;
@@ -299,7 +302,6 @@ struct Uncompute::Impl {
   DenseMap<const CallInst *, std::string> twinNames;
   // Rule 5 Memory: the memory version changes of the new IR (noteVersionChange), in the order noted.
   SmallVector<Instruction *, 16> versions;
-  bool sourceLoops = false;   // noteSourceLoops: the function has a loop, a rail may have an instance per pass
   SmallVector<unsigned, 4> openStack;
   DenseSet<const Instruction *> emitted;
   DenseMap<std::pair<RailId, const BasicBlock *>, Instruction *> itemEnd;
@@ -1942,6 +1944,44 @@ struct Uncompute::Impl {
       wraps.push_back({g, first, end, cond});
   }
 
+  // Is this record in a scope some reverse (emitMirror) undoes: a rule-14 trip or a loop's seeds?
+  bool inScope(unsigned rec) const {
+    return any_of(scopes, [&](const Scope &sc) { return rec >= sc.begin && (sc.open || rec < sc.end); });
+  }
+
+  // cq-ii0vf: a kept store reads a fresh copy of h instead (alloc + copy right before it, outside its X bracket when h is
+  // the bracketed control): the copy is the rail rule 5 keeps, h stays a rail like any other.
+  void keepCopyForStore(RailId r, CallInst *store, Value *h) {
+    Instruction *open = store->getPrevNode(), *close = store->getNextNode();
+    auto bracket = [&](Instruction *i) {
+      auto *c = dyn_cast_or_null<CallInst>(i);
+      auto k = c && c->getCalledFunction() ? abi::parseCore(c->getCalledFunction()->getName()) : std::nullopt;
+      return k && k->op == abi::Core::NotI1 && c->getArgOperand(0) == h;
+    };
+    bool bracketed = bracket(open) && bracket(close);
+    Module &M = *store->getModule();
+    std::optional<RailType> w;
+    if (auto *cf = store->getCalledFunction())
+      if (auto k = abi::parseCore(cf->getName()); k && h == store->getArgOperand(store->arg_size() - 1))
+        w = k->w;
+    if (!w)
+      w = h == store->getArgOperand(0) ? std::optional<RailType>(RailType{Kind::Int, 1}) : handleWidth(h);
+    if (!w)
+      internalError("uncompute: a kept store's rail whose width no runtime call names", h);
+    IRBuilder<> B(bracketed ? open : store);
+    CallInst *f = track(B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Alloc, *w}),
+                                     {Constant::getNullValue(irTypeOf(M.getContext(), *w))}));
+    CallInst *cp = track(B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Copy, *w}), {h, f}));
+    store->replaceUsesOfWith(h, f);
+    if (bracketed) {
+      open->replaceUsesOfWith(h, f);
+      close->replaceUsesOfWith(h, f);
+    }
+    RailId fid = newRail(f, Role::Kept, "noteKeptStore");
+    rails[fid].storeKept = true;
+    rails[r].uses.push_back(cp);
+  }
+
   // The logical width of the rail behind handle h, read off a runtime call that takes it (CR §1.2, §1.3:
   // the operand's width is spelled in the callee's name), through phis, selects and freezes of handles.
   static std::optional<RailType> handleWidth(Value *h) {
@@ -2639,6 +2679,10 @@ struct Uncompute::Impl {
       Rail &rx = rails[x];
       if (!keptRole(rx.role) && !copyAll)
         continue;
+      // Rule 5 sentence 3, rule 14 case 1 (cq-mmdf3): a kept store's value or control rail is neither uncomputed nor
+      // freed by the reverse loop, on no trip: it needs no copy, what follows the loop reads it in place.
+      if (rx.storeKept && rx.condStores.empty())
+        continue;
       // cq-4lqy: a rotated exit rail, or one with no producer, is copied out the same way: the gates after the
       // loop act on the copy (retargetOutside moves them), the reverse loop undoes the rail itself.
       // Rule 5 (a kept rail is never uncomputed), rule 14 case 1: an exit rail that reaches later code
@@ -3011,6 +3055,8 @@ void Uncompute::noteVersionChange(Instruction *at) {
   impl->versions.push_back(at);
 }
 
+void Uncompute::noteCarried(Value *phi) { impl->rails[impl->lookup(phi, "noteCarried", phi)].carried = true; }
+
 void Uncompute::noteKeptStore(CallInst *store, Value *value, Value *ctl) {
   Impl &I = *impl;
   if (!store || !store->getParent())
@@ -3028,13 +3074,26 @@ void Uncompute::noteKeptStore(CallInst *store, Value *value, Value *ctl) {
         llvm::erase(I.rails[y].cleanupReaders, r);
       x.cleanup.reset();
     }
-    // cq-guzg3: rule 5 keeps the rail with the store that ran. Where a classical branch can bypass this store the rail
-    // stays a rail with an item, under the run flag "no store of it ran" (placeAt).
-    if (!I.sourceLoops && !Impl::keptRole(x.role) && x.creator != kNone && x.group == kNone && !x.loadCall &&
-        !I.isMerge(r) && x.mergedInto.empty() && x.deferred == kNone && x.ownedBy == kNone &&
+    // Rule 5 sentence 3, rule 14 (cq-mmdf3): a carried phi names the previous trip's rail, which the reverse loop undoes (the
+    // last trip's is stored by no trip): the store reads a copy, and that copy is the rail kept for the trip that stored it.
+    if (x.carried) {
+      I.keepCopyForStore(r, store, h);
+      continue;
+    }
+    // cq-guzg3, cq-ii0vf: rule 5 keeps the rail with the store that ran (§6 item 1: a store's value and control rail). Where
+    // a classical branch can bypass this store the rail is a rail like any other on those paths.
+    if (!Impl::keptRole(x.role) && x.creator != kNone && x.group == kNone && !x.loadCall && !I.isMerge(r) &&
+        x.mergedInto.empty() && x.deferred == kNone && x.ownedBy == kNone &&
         Impl::bypassed(I.defBlock(r), store->getParent())) {
-      x.condStores.push_back(store);
-      x.storeKept = true;
+      if (I.inScope(x.creator))
+        // An instance per trip, undone by the reverse loop (rule 14), which replays no store: the store reads a copy of
+        // the rail, and that copy is the value or control rail rule 5 keeps, on exactly the trips the store ran.
+        I.keepCopyForStore(r, store, h);
+      else {
+        // One instance: it stays a rail with an item, under the run flag "no store of it ran" (placeAt).
+        x.condStores.push_back(store);
+        x.storeKept = true;
+      }
       continue;
     }
     if (!Impl::keptRole(x.role))
@@ -3042,8 +3101,6 @@ void Uncompute::noteKeptStore(CallInst *store, Value *value, Value *ctl) {
     I.rails[r].storeKept = true;
   }
 }
-
-void Uncompute::noteSourceLoops() { impl->sourceLoops = true; }
 
 Value *Uncompute::negatedAtomOf(Value *flag) const {
   const Impl &I = *impl;
