@@ -167,8 +167,8 @@ CASES = [
         r"define internal void @__cq_q_g_11_t_unc\(i32 %out(?:(?!\n}\n)[\s\S])*call void @cqrt_copy_i32\(i32 %\d+, i32 %out\)"
         r"(?:(?!\n}\n)[\s\S])*call void @cqrt_free\(i32 %out\)",
         r"define internal void @__cq_q_g_11_t_ctl_unc\(i32 %0(?:(?!\n}\n|@cqrt_)[\s\S])*\n}\n"]),
-    # e_rail lowers: its _t_ctl result is KEPT by the ruling; cqcheck user calls that kept rail a leak (cq-tt2j's rule, checker).
-    ("table_twin_measure", "e_rail", [], "lower", []),
+    # e_rail: its _t_ctl result is KEPT by the ruling (§1.4; run.kept_results_module).
+    ("table_twin_measure", "e_rail", [], "pass", []),
     # Rule 19, cq-ylng: a twin's recompute through a by-name callee that rotates goes through the callee's twin on the registers
     # handed up (no Ry in any twin), a call of an own symbol's rail is one register, a void one is not repeated.
     ("twin_rotating_callee", "y2a", [], "pass", [r"define internal fastcc void @__cq_q_f_11_unc\((?:(?!\n}\n)[\s\S])*call void @__cq_q_rot_1_unc\(i32 (%\d+)(?:(?!\n}\n)[\s\S])*call void @__cq_q_rot_1_unc\(i32 \1"]),
@@ -183,10 +183,10 @@ CASES = [
     ("twin_register_kinds", "l5", [], "pass", []),
     # Rule 18 (rulings3 F): a rotation in a loop of a by-name callee: no twin of it, of its caller that reads its result either, the
     # results KEPT. Through a rail: _t lists a register per trip, pushes them at its return after its reverse loop, the twin only
-    # pops. r3 lowers: its _t_ctl result is KEPT by the ruling; cqcheck user calls that kept rail a leak, as for e_rail above.
+    # pops. r3: its result is KEPT by the ruling, as for e_rail above.
     ("twin_rot_in_loop", "r1", [], "pass", [r"\A(?![\s\S]*@__cq_q_f_1_unc)"]),
     ("twin_rot_in_loop", "r2", [], "pass", [r"\A(?![\s\S]*@__cq_q_g_1_unc)(?![\s\S]*@__cq_q_f_1_unc)"]),
-    ("twin_rot_in_loop", "r3", [], "lower", [
+    ("twin_rot_in_loop", "r3", [], "pass", [
         r"define internal i32 @__cq_q_h_1_t\((?:(?!\n}\n)[\s\S])*alloca \{ i32, ptr \}(?:(?!\n}\n)[\s\S])*call void @__cq_mints_push",
         r"define internal void @__cq_q_h_1_t_unc\((?:(?!\n}\n|cqrt_ry|_unc\()[\s\S])*call i32 @cqrt_pop\(\)(?:(?!\n}\n|cqrt_free)[\s\S])*\n}\n"]),
     # Rule 16 (rulings3 H): a by-name callee of a table clone is called after an event, its own symbol's path included.
