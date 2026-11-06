@@ -1852,14 +1852,15 @@ public:
                                   "fetestexcept", "feclearexcept", "feraiseexcept", "fegetexceptflag",
                                   "fesetexceptflag", "fesetround", "feupdateenv"};
     for (const char *n : names) {
-      Function *F = M.getFunction(n);
-      if (!F)
-        continue;
-      if (!F->isDeclaration())
-        continue;  // a body in the module (injected source) is instrumented like any code
       std::string repl = std::string("__cqo_") + n;
-      FunctionCallee R = M.getOrInsertFunction(repl, F->getFunctionType());
-      F->replaceAllUsesWith(R.getCallee());
+      // Darwin's asm-label spelling is the same function (<pthread.h>: @"\01_pthread_join"; cq-cj4r)
+      for (std::string spelled : {std::string(n), std::string("\x01_") + n}) {
+        Function *F = M.getFunction(spelled);
+        if (!F || !F->isDeclaration())
+          continue;  // a body in the module (injected source) is instrumented like any code
+        FunctionCallee R = M.getOrInsertFunction(repl, F->getFunctionType());
+        F->replaceAllUsesWith(R.getCallee());
+      }
     }
   }
 
@@ -2242,13 +2243,37 @@ public:
   void armLongjmps() {
     if (!Taint)
       return;
+    // A plain observable store (a classical value at a classical address, no quantum predicate) stands in the lowered
+    // module and run.py's volatile_stores_module logs it there, whichever clones the function also has (every external
+    // function has a table clone with tainted formals, so no one specialization says what ran). A frame's or an
+    // internal global's base is logged only where a specialization makes it an effect entry; the lowered side logs
+    // no plain store to one (the same base test, drivers._vol_base_is_program_private).
+    auto programPrivate = [](const Value *Ptr) {
+      const Value *B = Ptr;
+      while (auto *G = dyn_cast<GEPOperator>(B))
+        B = G->getPointerOperand();
+      auto *GV = dyn_cast<GlobalVariable>(B);
+      return isa<AllocaInst>(B) || (GV && GV->hasLocalLinkage());
+    };
+    DenseSet<const Function *> Specialized;
+    for (const cq::Specialization &S : Taint->specializations())
+      if (S.F && !S.F->isDeclaration())
+        Specialized.insert(S.F);
+    for (Function &F : M) {
+      if (F.isDeclaration() || Specialized.count(&F) || F.getName().starts_with("__cqo") || F.getName().starts_with("cqd_"))
+        continue;
+      for (Instruction &I : instructions(F))
+        if (auto *SI = dyn_cast<StoreInst>(&I); SI && SI->isVolatile() && !programPrivate(SI->getPointerOperand()))
+          VolEntries.insert(SI);
+    }
     for (const cq::Specialization &S : Taint->specializations()) {
       if (!S.F || S.F->isDeclaration())
         continue;
       auto tainted = [&](const Value *v) { return Taint->isQuantum(v, S); };
       for (Instruction &I : instructions(*S.F)) {
         if (auto *SI = dyn_cast<StoreInst>(&I); SI && SI->isVolatile() && Taint->observableVolatile(*SI, S) &&
-            (tainted(SI->getValueOperand()) || tainted(SI->getPointerOperand()) || S.ctl || Taint->controlTainted(SI->getParent(), S)))
+            (!programPrivate(SI->getPointerOperand()) || tainted(SI->getValueOperand()) || tainted(SI->getPointerOperand()) ||
+             S.ctl || Taint->controlTainted(SI->getParent(), S)))
           VolEntries.insert(SI);
         if (auto *LI = dyn_cast<LoadInst>(&I); LI && LI->isVolatile() && tainted(LI->getPointerOperand()) &&
             Taint->observableVolatile(*LI, S))

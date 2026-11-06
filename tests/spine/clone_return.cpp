@@ -71,9 +71,10 @@ void lowerSignal(LoweringContext &, CallBase &) { unimplemented("calls: calls::l
 void lowerRaise(LoweringContext &, CallBase &) { unimplemented("calls: calls::lowerRaise"); }
 void noteRun(LoweringContext &) {}
 void insertActivationCounter(LoweringContext &) {}
-ArrayRef<const CallBase *> mintSites(const TaintInfo &, const Specialization &) { return {}; }
+ArrayRef<MintSlot> mintSites(const TaintInfo &, const Specialization &) { return {}; }
 void noteMint(LoweringContext &, CallInst &, BasicBlock *, Instruction *) {}
-Value *mintHandle(LoweringContext &, const CallBase &) { return nullptr; }
+Value *mintHandle(LoweringContext &, const MintSlot &) { return nullptr; }
+void pushListedMints(LoweringContext &) {}
 unsigned mintCount(const Function &) { return 0; }
 std::vector<TableRow> takeTableRows(const Module &) { return {}; }
 Constant *sigString(Module &, FunctionType *) { return nullptr; }

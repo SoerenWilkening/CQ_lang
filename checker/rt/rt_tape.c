@@ -202,7 +202,7 @@ typedef struct {
   int32_t t, c, f;       /* tape, predicate rail (-1: uncontrolled), abort flag */
   int pred;              /* predicate at the call (entry) or flag value at the call (abort) */
   int pred_known;        /* classical-valued at the call */
-  int32_t prail;         /* the event's copy of a c that is not classical-valued, else 0 */
+  int32_t prail;         /* the event's copy of a c, under a control; else 0 */
   char *str;             /* fmt or effect name, NULL: a null name */
   field *fields;
   int nfields, capfields;
@@ -626,11 +626,11 @@ static void capture_pred(event *e, int ctl, int32_t c, const char *sym) {
   if (pv < 0) { e->pred = 0; return; }
   e->pred = pv;
   e->pred_known = cqe__known(c) != 0;
-  if (!e->pred_known) {
-    uint64_t word = (uint64_t)pv;
-    tval tv = {1, 'i', 1, &word};
-    e->prail = new_tape_rail("i1", &tv, 0);
-  }
+  /* always, a known c included: a rail's known-ness is per sample (and_i1 under a 0 leaves its seed known), and the
+   * rails a shot allocates must not vary with the quantum inputs (cq-ytx8) */
+  uint64_t word = (uint64_t)pv;
+  tval tv = {1, 'i', 1, &word};
+  e->prail = new_tape_rail("i1", &tv, 0);
 }
 
 static void entry_log(const event *e, int seq) {
