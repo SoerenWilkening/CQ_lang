@@ -8,6 +8,7 @@
 #include "cq/Abi.h"
 #include "cq/Common.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Function.h"
@@ -19,6 +20,11 @@
 
 // Taint.h  (rule 3; rule 20 Host-resident)
 namespace cq {
+
+// CR rule 2: every path of the source function from the definition of v to a return passes a cq_measure of v (or `also`, a
+// measuring call). A branch isQuantum holds of is no choice: its arms all run.
+bool measuredOnEveryPath(llvm::function_ref<bool(const llvm::Value *)> isQuantum, const llvm::Value *v,
+                         const llvm::Instruction *also = nullptr);
 struct Specialization { llvm::Function *F; Mask mask; bool ctl = false, pure = false;
                         std::vector<uint64_t> bounds; bool isEntry() const;
                         // Rule 19: the own symbol or its _pure clone, the form its twin recomputes through: an integer
@@ -85,7 +91,8 @@ public:
   // Rule 18 with rulings Q3: S has a tainted measurement or reads the result rail of an effect entry, itself or through
   // a callee: no twin. Writing memory (bus::writesMemory) is the third reason.
   bool noTwinByEffects(const Specialization &) const;
-  // Rule 18, §1.4: some call reads the clone's result other than by a measurement (a table clone always): its twin runs.
+  // Rule 18, §1.4: some call reads the clone's result other than by a measurement of that very rail (a table clone always):
+  // its twin runs.
   bool needsTwin(const Specialization &) const;
   void print(llvm::raw_ostream &) const;                               // -cq-dump-taint
   // K1: storage owned by module taint; computeTaint builds it.

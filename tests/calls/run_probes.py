@@ -134,6 +134,9 @@ CASES = [
     # in a K-loop (f) and in an arm (g).
     ("meas_table_t_paths", "f", [], "pass", [r"define internal void @__cq_q_sumin_11_t_unc\(i32 %0, i32 %1, i32 %2, i32 %3\) \{\n  ret void\n}\n"]),
     ("meas_table_t_paths", "g", [], "pass", [r"define internal void @__cq_q_some_11_t_unc\(i32 %0, i32 %1, i32 %2, i32 %3\) \{\n  ret void\n}\n"]),
+    # Rules 2, 18: a result read only by a measurement of a copy (f: in _t; g: also on some classical paths) has its twin emitted.
+    ("meas_own_twin", "f", [], "pass", [r"define internal void @__cq_q_rd_0_unc\("]),
+    ("meas_own_twin", "g", [], "pass", [r"define internal void @__cq_q_rd_0_unc\("]),
     # cq-p4ob6 (rules 18, 19): the own symbol of a function on a call cycle, whose record is the least fixpoint: not rotating, its
     # result (read from the bus) is zeroed by the twin; rotating, KEPT (rulings3 F). Direct, mutual, and an aggregate return.
     ("rec_bus_own", "f", [], "pass", [r"call void @__cq_q_r_0_unc\("]),
