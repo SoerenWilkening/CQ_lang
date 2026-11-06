@@ -1231,7 +1231,8 @@ def _no_twin_clones(bodies: Dict[str, str]) -> Set[str]:
             if f not in rotates and not f.endswith("_unc") and calls(b) & rotates:
                 rotates.add(f)
                 changed = True
-    # cq-t2jj2: a table clone measures a copy, itself or through a by-name callee: no replay, its results stay allocated
+    # A table clone with no predicate keeps its twin for a measurement (rule 18), which re-reads the copy it pushed; a copy per trip
+    # leaves it none, as a rotation per trip does.
     measures = {f for f, b in bodies.items() if _MEASURED_RAIL.search(b) and not f.endswith("_unc")}
     changed = True
     while changed:
@@ -1241,7 +1242,7 @@ def _no_twin_clones(bodies: Dict[str, str]) -> Set[str]:
                 measures.add(f)
                 changed = True
     out = {f for f, b in bodies.items()
-           if own(f, b) or (f in rotates and has_loop(b)) or (_TABLE_CLONE.match(f) and f in measures)}
+           if own(f, b) or (f in rotates and has_loop(b)) or (_TABLE_CLONE.match(f) and f in measures and has_loop(b))}
     changed = True
     while changed:
         changed = False

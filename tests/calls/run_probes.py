@@ -120,13 +120,16 @@ CASES = [
     ("meas_byvalue_kloop", "f", [], "pass", [r"call i32 @__cq_q_in_1_ctl\("]),
     ("meas_byvalue_indirect", "f", [], "pass", []),
     # cq-t2jj2: _t measures a fresh copy of its formal and leaves the formal to the caller: the bead's probe (f), a formal read and
-    # measured again after a measurement (g), a by-name callee that measures the formal (h).
+    # measured again after a measurement (g), a by-name callee that measures the formal (h). Rule 18, §1.4: the outcome is classical,
+    # a seed rail, and the clone keeps its rule-18 twin, which leaves the seed alone (f) and zeroes a rail result (h).
     ("meas_table_t", "f", [], "pass", [
         r"define internal i32 @__cq_q_in_1_t\(i32 %0, i32 %1\) \{\n  %3 = call i32 @cqrt_alloc_i32\(i32 0\)\n"
         r"  call void @cqrt_copy_i32\(i32 %0, i32 %3\)\n  %4 = call i32 @cqrt_measure_i32\(i32 %3\)",
-        r"define internal void @__cq_q_in_1_t_unc\(i32 %0, i32 %1, i32 %2\) \{\n  ret void\n}\n"]),
+        r"define internal void @__cq_q_in_1_t_unc\(i32 %out, i32 %0, i32 %1\) \{\n  %\d+ = call i32 @cqrt_pop\(\)\n  ret void\n}\n"]),
     ("meas_table_t", "g", [], "pass", []),
-    ("meas_table_t", "h", [], "pass", [r"define internal void @__cq_q_outer_1_t_unc\(i32 %0, i32 %1, i32 %2\) \{\n  ret void\n}\n"]),
+    ("meas_table_t", "h", [], "pass", [
+        r"define internal void @__cq_q_outer_1_t_unc\(i32 %out(?:(?!\n}\n)[\s\S])*call void @cqrt_copy_i32\(i32 %\d+, i32 %out\)"
+        r"(?:(?!\n}\n)[\s\S])*call void @cqrt_free\(i32 %out\)"]),
     # cq-p4ob6 (rules 18, 19): the own symbol of a function on a call cycle, whose record is the least fixpoint: not rotating, its
     # result (read from the bus) is zeroed by the twin; rotating, KEPT (rulings3 F). Direct, mutual, and an aggregate return.
     ("rec_bus_own", "f", [], "pass", [r"call void @__cq_q_r_0_unc\("]),
@@ -213,10 +216,11 @@ CASES = [
     ("trip_ctl", "t3_arm", [], "pass", [r"call void @__cq_q_tc_phase_1_b\d+_ctl\(i32 %\d+, i32 %\d+\)",
                                         r"call i32 @cqrt_tape_effect_f64_controlled\("]),
     ("trip_ctl", "t1_decl", [], "pass", [r"call i32 @cqrt_tape_effect_f64_controlled\("]),
-    # cq-t2jj2 (over rulings3 E's _t half): one body serves _t and _t_ctl: each measures a copy, so neither has a rule-18 twin;
-    # _t_unc is empty, _t_ctl_unc only counts, and the result is kept.
+    # Rule 18, §1.4, rule 2: a classical-path measurement leaves _t its rule-18 twin, which zeroes and frees the add rail; in _t_ctl
+    # the measurement is the controlled copy, tainted, so its twin only counts and the result is kept.
     ("table_twin_measure", "e_cl", [], "pass", [
-        r"define internal void @__cq_q_g_11_t_unc\(i32 %0, i32 %1, i32 %2, i32 %3\) \{\n  ret void\n}\n",
+        r"define internal void @__cq_q_g_11_t_unc\(i32 %out(?:(?!\n}\n)[\s\S])*call void @cqrt_copy_i32\(i32 %\d+, i32 %out\)"
+        r"(?:(?!\n}\n)[\s\S])*call void @cqrt_free\(i32 %out\)",
         r"define internal void @__cq_q_g_11_t_ctl_unc\(i32 %0(?:(?!\n}\n|@cqrt_)[\s\S])*\n}\n"]),
     # e_rail: its _t_ctl result is KEPT by the ruling (§1.4; run.kept_results_module).
     ("table_twin_measure", "e_rail", [], "pass", []),

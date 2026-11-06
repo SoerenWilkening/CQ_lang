@@ -338,6 +338,38 @@ private:
           }
     return mintsPerTripCache[F] = found;
   }
+  bool measuresInLoop(const Function *F) {
+    if (F->isDeclaration())
+      return false;
+    const LoopInfo &LI = *fn(F).LI;
+    for (const BasicBlock &BB : *F) {
+      if (!LI.getLoopFor(&BB))
+        continue;
+      for (const Instruction &I : BB)
+        if (auto *CB = dyn_cast<CallBase>(&I))
+          if (const Function *G = CB->getCalledFunction())
+            if (G->isDeclaration() ? G->getName().starts_with("cq_measure_") : measuresByName(G))
+              return true;
+    }
+    return false;
+  }
+  bool measuresByName(const Function *F) {
+    SmallPtrSet<const Function *, 16> seen{F};
+    SmallVector<const Function *, 16> work{F};
+    while (!work.empty()) {
+      const Function *X = work.pop_back_val();
+      for (const BasicBlock &BB : *X)
+        for (const Instruction &I : BB)
+          if (auto *CB = dyn_cast<CallBase>(&I))
+            if (const Function *G = CB->getCalledFunction()) {
+              if (G->isDeclaration() && G->getName().starts_with("cq_measure_"))
+                return true;
+              if (!G->isDeclaration() && seen.insert(G).second)
+                work.push_back(G);
+            }
+    }
+    return false;
+  }
   // F's body rotates, itself or through a callee by name.
   bool rotatesByName(const Function *F) {
     SmallPtrSet<const Function *, 16> seen{F};
@@ -1835,11 +1867,10 @@ void Analyzer::transferCall(CallBase &CB) {
   if (isMeasure(G)) {
     cur->hasMeasure = true;
     cur->measuresRail = cur->measuresRail || L(actuals[0]).any();
-    if (blockCT(CB.getParent()) || cur->ctl || (cur->table && L(actuals[0]).any()))
-      cur->taintedMeasure = true;   // rulings Q3: rule 18's "measures"
+    if (blockCT(CB.getParent()) || cur->ctl)
+      cur->taintedMeasure = true;   // rule 18: a measurement whose outcome is tainted; a classical-path one keeps the twin (rule 2)
     // Rule 19: inside a _ctl clone the measured rail is a controlled copy: the outcome is tainted, the rail is the value.
-    // cq-t2jj2: likewise in _t, a copy with the predicate true.
-    if ((cur->ctl || cur->table) && L(actuals[0]).any())
+    if (cur->ctl && L(actuals[0]).any())
       setL(&CB, allLanes(rn));
     cur->anyQuantum = true;
     return;
@@ -2599,7 +2630,8 @@ void Analyzer::solve() {
         S->noTwinT = nt;
         st.changed = true;
       }
-      bool pt = mintsPerTrip(S->F);
+      // A table clone's measured copy is a rail it mints (cq-t2jj2): per trip, no finite list holds them.
+      bool pt = mintsPerTrip(S->F) || (S->table && !S->ctl && S->nonPure && measuresInLoop(S->F));
       for (auto &[CB, v] : S->callees)
         if (!CB->getType()->isVoidTy())
           for (SpecState *C : v)

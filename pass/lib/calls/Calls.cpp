@@ -387,7 +387,7 @@ bool measuresFormal(const TaintInfo &T, const Specialization &S, unsigned idx, S
 // gate touches it and nothing frees it. Measured on some classical paths of the caller only, it is lowered as unmeasured (rule 2,
 // collapse is static), so the clone gets a kept basis copy of it, as lowerMeasure does (rule 18's partial-measurement copy).
 // A table clone always copies (cq-t2jj2): the rail may be its formal, which is the caller's.
-Operand measuredActual(LoweringContext &ctx, const CallBase &CB, const Value *a, Operand o, bool seeded) {
+Operand measuredActual(LoweringContext &ctx, const CallBase &CB, unsigned arg, const Value *a, Operand o, bool seeded) {
   if (seeded || (!ctx.S.table && spine::measuredOnEveryPath(ctx, a, &CB))) {
     ctx.unc().setRole(ctx.unc().idOf(o.v), Role::Measured);
     return o;
@@ -395,7 +395,9 @@ Operand measuredActual(LoweringContext &ctx, const CallBase &CB, const Value *a,
   RailType w = railTypeOf(a->getType());
   CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
   ctx.unc().recordExternal(c, Role::Measured);
-  ctx.emitCore(abi::CoreSpec{abi::Core::Copy, w}, {o.v, c});
+  CallInst *cp = ctx.emitCore(abi::CoreSpec{abi::Core::Copy, w}, {o.v, c});
+  if (ctx.S.table)
+    noteMeasuredCopy(ctx, CB, arg, c, cp);
   return Operand{c, true};
 }
 
@@ -578,7 +580,7 @@ CloneCall emitCloneCall(LoweringContext &ctx, CallBase &CB, const Specialization
       if (fs[i].q[k] && leaves.size() == 1 && !isComposite(a->getType())) {
         SmallPtrSet<const Specialization *, 8> onStack;
         if (measuresFormal(ctx.T, S, i, onStack))
-          o = measuredActual(ctx, CB, a, o, seeded);
+          o = measuredActual(ctx, CB, i, a, o, seeded);
       }
       if (!fs[i].q[k] && o.handle)
         internalError("calls: a rail passed where the clone's mask is classical", &CB);
@@ -788,12 +790,14 @@ namespace {
 // the lowered own symbols replaced the originals.
 std::map<const Module *, std::vector<TableRow>> tableRows;
 
-// §1.4: a table clone's twin does nothing but count and pop when rule 18 gives it none: a tainted measurement (Q3), which
-// is every measurement in a table clone, itself or in a callee by name (rule 19's copy, with the predicate true in _t,
-// cq-t2jj2): a replay would measure again.
+// §1.4: a table clone's twin does nothing but count and pop when rule 18 gives it none: a tainted measurement, which is every
+// measurement in a _ctl clone (rule 19's controlled copy), itself or in a callee by name. A measurement on a classical path of the
+// clone with no predicate keeps its rule-18 twin; the outcome's seed stays allocated (rule 2, Finalize's defineTwin).
 bool tableKeepsResults(const TaintInfo &T, const Specialization &S) {
   if (!hasTwin(T, S))
     return true;
+  if (!S.ctl)
+    return false;
   SmallPtrSet<const Function *, 8> seen{S.F};
   SmallVector<const Function *, 8> work{S.F};
   while (!work.empty()) {
@@ -915,13 +919,16 @@ void noteTableClone(Module &M, const TaintInfo &T, const Specialization &S, cons
 } // namespace
 
 namespace {
+// A slot's sub from here up is a measured copy of the call's formal (sub - kMeasuredCopy), not a register the callee hands back.
+constexpr unsigned kMeasuredCopy = 1u << 16;
+std::map<std::tuple<const Function *, const CallBase *, unsigned>, Value *> measuredCopies;
 // The rails a call hands back for the caller's twin, in slot order, per the clone being lowered.
 std::map<std::pair<const Function *, const CallBase *>, SmallVector<Value *, 2>> callRegisters;
 
 // Rule 19: a call whose callee rotates carries its slots' indices for the twin (Finalize's replay).
 void tagRegisterCall(LoweringContext &ctx, CallBase &CB, CallInst *call, bool ownSymbol) {
   ArrayRef<MintSlot> slots = mintSites(ctx.T, ctx.S);
-  auto at = find_if(slots, [&](const MintSlot &m) { return m.site == &CB; });
+  auto at = find_if(slots, [&](const MintSlot &m) { return m.site == &CB && m.sub < kMeasuredCopy; });
   if (at == slots.end())
     return;
   Type *i32 = Type::getInt32Ty(ctx.M.getContext());
@@ -968,6 +975,25 @@ ArrayRef<MintSlot> mintSites(const TaintInfo &T, const Specialization &S) {
       for (unsigned k = 0; k < n; ++k)
         sites.push_back({CB, k});
     }
+    // Rule 18, §1.4: the measured copies of a table clone with no predicate, after the registers (tagRegisterCall reads a call's first).
+    if (S.table && !S.ctl)
+      for (const Instruction &I : instructions(*S.F)) {
+        auto *CB = dyn_cast<CallBase>(&I);
+        const Function *G = CB ? CB->getCalledFunction() : nullptr;
+        if (!G)
+          continue;
+        if (G->isDeclaration()) {
+          if (G->getName().starts_with("cq_measure_") && T.isQuantum(CB->getArgOperand(0), S))
+            sites.push_back({CB, kMeasuredCopy});
+          continue;
+        }
+        const Specialization *C = T.calleeSpecialization(*CB, S);
+        for (unsigned i = 0; C && i < G->arg_size(); ++i) {
+          SmallPtrSet<const Specialization *, 8> onStack;
+          if (measuresFormal(T, *C, i, onStack))
+            sites.push_back({CB, kMeasuredCopy + i});
+        }
+      }
   }
   return memo[key] = std::move(sites);
 }
@@ -1027,8 +1053,24 @@ void pushListedMints(LoweringContext &ctx) {
   B.CreateCall(mintsPush(ctx.M), {B.CreateLoad(PointerType::getUnqual(ctx.M.getContext()), mintHead(ctx))});
 }
 
+void noteMeasuredCopy(LoweringContext &ctx, const CallBase &site, unsigned arg, CallInst *alloc, CallInst *copy) {
+  ArrayRef<MintSlot> sites = mintSites(ctx.T, ctx.S);
+  auto at = find_if(sites, [&](const MintSlot &m) { return m.site == &site && m.sub == kMeasuredCopy + arg; });
+  if (at == sites.end())
+    return;
+  measuredCopies[{&ctx.out(), &site, arg}] = alloc;
+  Type *i32 = Type::getInt32Ty(ctx.M.getContext());
+  MDNode *tag = MDNode::get(ctx.M.getContext(), ConstantAsMetadata::get(ConstantInt::get(i32, at - sites.begin())));
+  alloc->setMetadata("cq.mint", tag);
+  copy->setMetadata("cq.mint", tag);
+}
+
 Value *mintHandle(LoweringContext &ctx, const MintSlot &slot) {
   Value *zero = ConstantInt::get(Type::getInt32Ty(ctx.M.getContext()), 0);
+  if (slot.sub >= kMeasuredCopy) {
+    auto it = measuredCopies.find({&ctx.out(), slot.site, slot.sub - kMeasuredCopy});
+    return it != measuredCopies.end() ? it->second : zero;
+  }
   if (auto it = callRegisters.find({&ctx.out(), slot.site}); it != callRegisters.end())
     return slot.sub < it->second.size() ? it->second[slot.sub] : zero;
   spine::Shared &sh = spine::shared(ctx);

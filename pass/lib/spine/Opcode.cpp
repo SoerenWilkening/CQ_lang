@@ -552,17 +552,13 @@ void lowerMeasure(LoweringContext &ctx, CallInst &call) {
     spine::bindOperand(ctx, &call, x);
     return;
   }
-  if (ctx.S.ctl || ctx.S.table) {
+  if (ctx.S.ctl) {
     // Rule 19, Q13: inside a _ctl clone cq_measure measures a controlled copy under the clone's formal: t is the measured
     // rail, h is not collapsed where the predicate is 0, the outcome is tainted, and no classical collapse applies.
-    // cq-t2jj2: _t is the same body with the predicate true; its formal is the caller's rail, which the caller uncomputes.
     RailType cw = rt(call.getArgOperand(0)->getType(), &call);
     CallInst *t = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, cw}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), cw))});
     ctx.unc().recordExternal(t, Role::Measured);
-    if (ctx.S.ctl)
-      ctx.emitCore(abi::CoreSpec{abi::Core::Copy, cw, /*ctl=*/true}, {ctx.out().getArg(0), x.v, t});
-    else
-      ctx.emitCore(abi::CoreSpec{abi::Core::Copy, cw}, {x.v, t});
+    ctx.emitCore(abi::CoreSpec{abi::Core::Copy, cw, /*ctl=*/true}, {ctx.out().getArg(0), x.v, t});
     CallInst *m = ctx.emitCore(abi::CoreSpec{abi::Core::Measure, cw}, {t});
     m->setMetadata("cq.measure", MDNode::get(ctx.M.getContext(), {}));
     spine::shared(ctx).ctlMeasured.insert(t);
@@ -583,13 +579,17 @@ void lowerMeasure(LoweringContext &ctx, CallInst &call) {
   // a value measured on some classical paths only is lowered as unmeasured. Its rail keeps its role and is
   // uncomputed as usual (on a measured path it holds the outcome, where its _unc is exact); the measurement
   // reads a basis copy of it (alloc + copy_<W>, rule 18's partial-measurement copy), which is kept.
+  // cq-t2jj2: in a table clone with no predicate the outcome is classical (§1.4), and the copy is measured on every path: the
+  // formal is the caller's rail, which the caller, with no record of the callee, uncomputes and frees (rule 19).
   Value *target = x.v;
-  bool every = spine::measuredOnEveryPath(ctx, call.getArgOperand(0));
+  bool every = !ctx.S.table && spine::measuredOnEveryPath(ctx, call.getArgOperand(0));
   if (!every) {
     CallInst *c = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), w))});
     ctx.unc().recordExternal(c, Role::Measured);
-    ctx.emitCore(abi::CoreSpec{abi::Core::Copy, w}, {x.v, c});
+    CallInst *cp = ctx.emitCore(abi::CoreSpec{abi::Core::Copy, w}, {x.v, c});
     target = c;
+    if (ctx.S.table)
+      calls::noteMeasuredCopy(ctx, call, 0, c, cp);
   }
   CallInst *m = ctx.emitCore(abi::CoreSpec{abi::Core::Measure, w}, {target});
   // V1 (cq-7p6): a measurement the user wrote carries !cq.measure, the uniqued empty tuple.
