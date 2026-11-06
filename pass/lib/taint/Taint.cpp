@@ -27,6 +27,7 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/IR/InlineAsm.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Operator.h"
@@ -2818,8 +2819,18 @@ void Analyzer::finish() {
         continue;
       bool other = false;
       for (const User *U : CB->users()) {
+        // Rules 2, 18, 19: only a measurement of the result itself leaves no twin to run. A table or _ctl clone and a value
+        // measured on some classical paths measure a copy, and the result is then uncomputed like any other (lowerMeasure).
         if (auto *UC = dyn_cast<CallBase>(U))
-          if (isMeasure(UC->getCalledFunction()))
+          if (isMeasure(UC->getCalledFunction()) && !S->table && !S->ctl &&
+              measuredOnEveryPath(
+                  [&](const Value *x) {
+                    if (auto *A = dyn_cast<Argument>(x))
+                      return S->formal[A->getArgNo()].any();
+                    auto l = S->lanes.find(x);
+                    return l != S->lanes.end() && l->second.any();
+                  },
+                  CB))
             continue;
         if (isa<ReturnInst>(U) && S->inPlace)
           continue;
@@ -2917,6 +2928,103 @@ void Analyzer::finish() {
 
 namespace cq {
 using namespace taintimpl;
+
+// CR rule 2, spine::measuredOnEveryPath: taint asks it before TaintInfo is published (rule 18, its twins).
+bool measuredOnEveryPath(function_ref<bool(const Value *)> isQuantum, const Value *v, const Instruction *also) {
+  auto strip = [](const Value *v) {
+    while (auto *f = dyn_cast<FreezeInst>(v))
+      v = f->getOperand(0);
+    return v;
+  };
+  const Value *root = strip(v);
+  if (!isa<Argument>(root) && !isa<Instruction>(root))
+    return true;
+  const Function &F = *(also ? also->getFunction()
+                             : isa<Argument>(root) ? cast<Argument>(root)->getParent()
+                                                   : cast<Instruction>(root)->getFunction());
+  SmallPtrSet<const BasicBlock *, 8> mblocks;
+  for (const Instruction &I : instructions(F))
+    if (auto *c = dyn_cast<CallInst>(&I); c && c->getCalledFunction() &&
+                                          c->getCalledFunction()->getName().starts_with("cq_measure") &&
+                                          c->arg_size() == 1 && strip(c->getArgOperand(0)) == root)
+      mblocks.insert(I.getParent());
+  if (also)
+    mblocks.insert(also->getParent());
+  // A value read from memory names a rail stored before it (rules 20, 21): its paths begin at the entry.
+  const auto *defI = isa<LoadInst>(root) || isa<AtomicRMWInst>(root) || isa<AtomicCmpXchgInst>(root) ||
+                             (isa<ExtractValueInst>(root) && isa<AtomicCmpXchgInst>(cast<ExtractValueInst>(root)->getAggregateOperand()))
+                         ? nullptr
+                         : dyn_cast<Instruction>(root);
+  const BasicBlock *D = defI ? defI->getParent() : &F.getEntryBlock();
+  // A measurement after the definition in its own block covers every path.
+  if (mblocks.count(D))
+    for (const Instruction *I = defI ? defI->getNextNode() : &D->front(); I; I = I->getNextNode())
+      if (auto *c = dyn_cast<CallInst>(I); c && c->getCalledFunction() &&
+                                           c->getCalledFunction()->getName().starts_with("cq_measure") &&
+                                           c->arg_size() == 1 && strip(c->getArgOperand(0)) == root)
+        return true;
+  if (also && also->getParent() == D && (!defI || defI->comesBefore(also)))
+    return true;
+  PostDominatorTree PDT(const_cast<Function &>(F));
+  auto quantumBranch = [&](const BasicBlock *b) {
+    const Instruction *t = b->getTerminator();
+    if (auto *br = dyn_cast<BranchInst>(t); br && br->isConditional())
+      return isQuantum(br->getCondition());
+    if (auto *sw = dyn_cast<SwitchInst>(t))
+      return isQuantum(sw->getCondition());
+    if (auto *ib = dyn_cast<IndirectBrInst>(t))
+      return isQuantum(ib->getAddress());   // rule 13: a switch on the address
+    return false;
+  };
+  // Walk the classical choices from the end of D; a block holding a measurement ends the path (measured);
+  // reaching D again starts a new instance (its paths are this walk's); a return reached ends it unmeasured.
+  SmallPtrSet<const BasicBlock *, 16> seen;
+  SmallVector<const BasicBlock *, 16> work;
+  auto push = [&](const BasicBlock *b) {
+    if (b != D && seen.insert(b).second)
+      work.push_back(b);
+  };
+  auto next = [&](const BasicBlock *b) -> bool {   // false: an unmeasured return
+    if (isa<ReturnInst>(b->getTerminator()))
+      return false;
+    if (!quantumBranch(b)) {
+      for (const BasicBlock *s : successors(b))
+        push(s);
+      return true;
+    }
+    // The region of a quantum branch, up to its post-dominator: every block of it runs on this path.
+    const BasicBlock *J = PDT.getNode(b) && PDT.getNode(b)->getIDom() ? PDT.getNode(b)->getIDom()->getBlock() : nullptr;
+    SmallPtrSet<const BasicBlock *, 16> reg;
+    SmallVector<const BasicBlock *, 16> w(succ_begin(b), succ_end(b));
+    bool measured = false, ret = false;
+    while (!w.empty()) {
+      const BasicBlock *x = w.pop_back_val();
+      if (x == J || x == b || !reg.insert(x).second)
+        continue;
+      measured = measured || mblocks.count(x);
+      ret = ret || isa<ReturnInst>(x->getTerminator());
+      for (const BasicBlock *s : successors(x))
+        w.push_back(s);
+    }
+    if (measured)
+      return true;
+    if (ret)
+      return false;
+    if (J)
+      push(J);
+    return true;
+  };
+  if (!next(D))
+    return false;
+  while (!work.empty()) {
+    const BasicBlock *b = work.pop_back_val();
+    if (mblocks.count(b))
+      continue;
+    if (!next(b))
+      return false;
+  }
+  return true;
+}
 
 bool Specialization::isEntry() const {
   if (!F || F->isDeclaration() || ctl || pure || plain || table || !bounds.empty())
