@@ -4,7 +4,8 @@ cq_lowering_viewer.html  the viewer page (published at https://claude.ai/artifac
                          it loads corpus.json = [{name,cname,irname,lowname,c,ir,low,trace}] built from examples/ + traces/
 traces/NN_name.txt       reference trace per example; first line "# driver: calls", "# call: fn(args)" before each call
 drivers.txt              (the one home of driver lines; there is no per-example drivers.d/) per example: "NN_name|prototypes|call;call[|extra]" used to build the trace driver; the optional
-                         4th field is C run in main before the calls (e.g. defining the host array a pointer argument addresses)
+                         4th field is C run in main before the calls (e.g. defining the host array a pointer argument addresses); the optional 5th field
+                         roots=f[,g] is the CR rule 27 root list the example links (161, 190; the 4th may be empty)
 trace_stubs.c            stub runtime for symbols the trace stub runtime archives lack (push/pop, not/and/xor_i1, select_*, abort,
                          tape_fmt/_lit); with -DCQ_BUS the bus forms, always the effect entries and the injection bundle (MEMORY MODEL below)
 trace_check.py           allocation check + uncompute pairing (every _unc matches an earlier forward call with the same
@@ -56,7 +57,7 @@ Darwin x86-64, so the shape is unreachable from C here.
 Example 142 widens 132's two-arm angle select to the multi-way case: a select of selects, a switch over a quantum
 scrutinee and a constant table read at a quantum index. Each is a QUANTUM ANGLE (rule 11): the angle is computed into
 an f64 rail (select_f64 chain, a bus load of the table cell) and consumed by ONE cqrt_ry_<W>_qangle(h, A); the compiler
-never expands it into per-arm controlled rotations. 142: regeneration owed (flat memory).
+never expands it into per-arm controlled rotations. 
 Example 143 (2026-10-25): a lifted call's quantum int result (conditional values, merged in the clone) as (a) the register
 of a second cq_theta: a plain Ry on the result rail; (b) the ANGLE of cq_theta and (c) the angle of cq_phi: the angle is
 computed into an f64 register by ordinary templates, then ONE primitive reads it (cqrt_ry_<W>_qangle(h, A),
@@ -87,8 +88,7 @@ ptrtoint/inttoptr are identities. Bus-resident objects are allocated by the bund
 (zeroed, an address never reused); free is nothing.
 Retired: per-object buses, cqrt_qram_alloc_host[_s], @g.qram, cqrt_qram_realloc[_unc], cqrt_qram_size, cqrt_qram_free,
 slot arrays, store _unc (the store pop), QROM (cq_template_qrom_load[_s]), fat pointers, object tables, range decoding, bound checks, cell counts.
-Witnesses: 195-204 (owed). No corpus example holds a bus-form lowering yet; the 73 examples marked "regeneration owed
-(flat memory)" in CONSTRUCTION_RULES.md §7 are not normative for memory.
+Witnesses: 195-213 and the examples regenerated 2026-11-05.
 TRACING A BUS EXAMPLE (2026-11-05). Write examples/NN_name/{base.c, base.O1.ll, base.lowered.ll}, add the line
 "NN_name|prototypes|call;call[|extra]" to drivers.txt (or drivers.d/NN_name.txt), then `python3 _tools/make_trace.py
 NN_name`. An example whose lowered module references @__cq_mem is a BUS example: make_trace.py compiles trace_stubs.c
@@ -113,7 +113,7 @@ TOOL STATUS: sample_check.py and sample_rt.c are RETIRED for bus examples (owner
 per-object memory and are kept only for examples with no memory access. Bus examples are checked here by the trace path
 above; their semantic check is the implementing compiler's own evaluator (CQ_lang2 checker), which reports a reference
 that disagrees with its C program as a spec issue.
-A QUANTUM ANGLE (79, 132, 141, 143; 142 and 185: regeneration owed) is one backend primitive for exactness reasons (rule 15).
+A QUANTUM ANGLE (79, 132, 141, 143; 142, 185) is one backend primitive for exactness reasons (rule 15).
 seq_locals.py FILE.ll    makes a hand-written file's local numbering sequential per function (LLVM refuses gaps) before
                          renumber_locals.py; keeps comments.
 sample_check.py [NN_name | NN_name:mutant.lowered.ll ...]   §6.1 basis-input SAMPLE check (not a simulator, not exhaustive):

@@ -79,7 +79,7 @@ define i32 @indirect_call(i32 noundef %0, double noundef %1, i32 noundef %2) {
   %16 = ptrtoint ptr %7 to i64    ; IR: %6 as a classical i64 (rule 21)
   call void @cqrt_tape_write_i64_lit(i32 %4, i64 %16)    ; IR: %7  [field 0: the callee's address, classical (rule 19)]
   %17 = call i32 @cqrt_tape_write_i32(i32 %4, i32 %5)    ; IR: %7  [field 1: the argument rail x (KEPT tape rail)]
-  %18 = call i32 @cqrt_tape_effect_i32_controlled(i32 %15, i32 %4, ptr null)    ; IR: %7  [the effect entry with a null name: r_e, its result rail, KEPT (rule 16)]
+  %18 = call i32 @cqrt_tape_effect_i32_controlled(i32 %15, i32 %4, ptr null, i32 2)    ; IR: %7  [the effect entry with a null name: r_e, its result rail, KEPT (rule 16)]
   call void @cqrt_free(i32 %15)    ; IR: release the seed (|1>, never written: freed directly, rule 7)
   br label %19    ; IR: %7
 
@@ -247,7 +247,7 @@ declare void @cqrt_free(i32)
 declare i32 @cqrt_tape_alloc()
 declare void @cqrt_tape_write_i64_lit(i32, i64)
 declare i32 @cqrt_tape_write_i32(i32, i32)
-declare i32 @cqrt_tape_effect_i32_controlled(i32, i32, ptr)
+declare i32 @cqrt_tape_effect_i32_controlled(i32, i32, ptr, i32)
 declare i32 @cq_template_shl_i32_hl(i32, i32)
 declare void @cq_template_shl_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_mul_i32(i32, i32)

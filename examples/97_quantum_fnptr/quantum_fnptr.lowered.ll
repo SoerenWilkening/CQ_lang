@@ -123,7 +123,7 @@ define i32 @quantum_fnptr(i32 noundef %0, double noundef %1, i32 noundef %2) {
 32:
   %33 = call i32 @cqrt_tape_write_i64_controlled(i32 %18, i32 %5, i32 %11)    ; IR: %10 = call i32 %8(i32 %9)  [under p_n, the complement of the flags: the entry's first field, the callee's address, the rail fp (rule 19)]
   %34 = call i32 @cqrt_tape_write_i32_controlled(i32 %18, i32 %5, i32 %12)    ; the argument c + x
-  %35 = call i32 @cqrt_tape_effect_i32_controlled(i32 %18, i32 %5, ptr null)    ; IR: %10 = call i32 %8(i32 %9)  [fp is host code: the effect entry with a null name; r_e, its result rail, KEPT (rule 16)]
+  %35 = call i32 @cqrt_tape_effect_i32_controlled(i32 %18, i32 %5, ptr null, i32 2)    ; IR: %10 = call i32 %8(i32 %9)  [fp is host code: the effect entry with a null name; r_e, its result rail, KEPT (rule 16)]
   call void @cq_template_add_i32_hl_unc(i32 %12, i32 %6, i32 %2)    ; IR: uncompute %9  [after its last reader, the entry's field (rule 5)]
   call void @cqrt_free(i32 %12)    ; IR: release the %9 rail (|0>)
   %36 = call i32 @cq_template_select_i32(i32 %18, i32 %35, i32 %19)    ; IR: %10 = call i32 %8(i32 %9)  [the call's value: the complement's r_e where p_n, else the candidates' merge]  ; SPEC GAP: the complement is an arm of this outer select (header)
@@ -313,7 +313,7 @@ declare void @cqrt_qram_load_i64_unc(i32, i32, i32)
 declare i32 @cqrt_tape_alloc()
 declare i32 @cqrt_tape_write_i64_controlled(i32, i32, i32)
 declare i32 @cqrt_tape_write_i32_controlled(i32, i32, i32)
-declare i32 @cqrt_tape_effect_i32_controlled(i32, i32, ptr)
+declare i32 @cqrt_tape_effect_i32_controlled(i32, i32, ptr, i32)
 declare i32 @cq_template_and_i32_hl(i32, i32)
 declare void @cq_template_and_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_zext_i32_to_i64(i32)

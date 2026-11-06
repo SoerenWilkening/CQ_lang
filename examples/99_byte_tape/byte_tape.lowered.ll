@@ -70,7 +70,7 @@ define i32 @byte_tape(i8 noundef zeroext %0, double noundef %1, i32 noundef %2) 
   %18 = call i32 @cqrt_tape_write_i64(i32 %5, i32 %16)    ; IR: %11 = fwrite(..., %10): argument 3, the stream: the address rail copied onto a fresh tape rail (kept)
   call void @cqrt_qram_load_i64_hl_unc(i32 %16, i32 %4, i64 ptrtoint (ptr @__stdoutp to i64))    ; IR: un-copy %10 (rule 5 sentence 1: its last reader is the tape field, before the entry, the next memory version change)
   call void @cqrt_free(i32 %16)    ; IR: release the %10 rail (|0>)
-  call void @cqrt_tape_effect_controlled(i32 %17, i32 %5, ptr @.cq.effect.fwrite)    ; IR: %11 = fwrite(%4, 1, 3, %10): the effect entry, complete after its fields; bare form, the result %11 is unused. The backend captures buf's cells here (BACKEND_ABI §1.11)
+  call void @cqrt_tape_effect_controlled(i32 %17, i32 %5, ptr @.cq.effect.fwrite, i32 4)    ; IR: %11 = fwrite(%4, 1, 3, %10): the effect entry, complete after its fields; bare form, the result %11 is unused. The backend captures buf's cells here (BACKEND_ABI §1.11)
   call void @cqrt_free(i32 %17)    ; IR: release the seed (|1>, never written: freed directly, rule 7); the backend read the predicate at the effect call
   %19 = call i32 @cq_template_icmp_sgt_i32_hl(i32 %9, i32 %2)    ; IR: %12 = icmp sgt i32 %7, %2  [path predicate of block %13]
   %20 = call i32 @cqrt_qram_load_i64_hl_controlled(i32 %19, i32 %4, i64 ptrtoint (ptr @__stdoutp to i64))    ; IR: block %13: %14 = load ptr, ptr @__stdoutp: stdout  (a bus load under the predicate)
@@ -78,7 +78,7 @@ define i32 @byte_tape(i8 noundef zeroext %0, double noundef %1, i32 noundef %2) 
   %21 = call i32 @cqrt_tape_write_i64_controlled(i32 %19, i32 %5, i32 %20)    ; IR: %15 = fputs(..., %14): argument 1, the stream rail copied under the predicate onto a fresh tape rail (kept)
   call void @cqrt_qram_load_i64_hl_controlled_unc(i32 %20, i32 %19, i32 %4, i64 ptrtoint (ptr @__stdoutp to i64))    ; IR: un-copy %14 under the predicate it was loaded with (rule 5 sentence 1: before the entry)
   call void @cqrt_free(i32 %20)    ; IR: release the %14 rail (|0>)
-  call void @cqrt_tape_effect_controlled(i32 %19, i32 %5, ptr @.cq.effect.fputs)    ; IR: block %13: %15 = fputs(@.str, %14): the effect entry under the predicate; bare form, the result %15 is unused
+  call void @cqrt_tape_effect_controlled(i32 %19, i32 %5, ptr @.cq.effect.fputs, i32 2)    ; IR: block %13: %15 = fputs(@.str, %14): the effect entry under the predicate; bare form, the result %15 is unused
   call void @cq_template_icmp_sgt_i32_hl_unc(i32 %19, i32 %9, i32 %2)    ; IR: uncompute %12 (the backend captured it at the entry)
   call void @cqrt_free(i32 %19)    ; IR: release the %12 rail (|0>)
   call void @cq_template_zext_i8_to_i32_unc(i32 %9, i32 %8)    ; IR: uncompute %7
@@ -94,7 +94,7 @@ declare i32 @cqrt_tape_alloc()
 declare i32 @cqrt_tape_write_i64(i32, i32)
 declare i32 @cqrt_tape_write_i64_controlled(i32, i32, i32)
 declare void @cqrt_tape_write_i64_lit(i32, i64)
-declare void @cqrt_tape_effect_controlled(i32, i32, ptr)
+declare void @cqrt_tape_effect_controlled(i32, i32, ptr, i32)
 declare i32 @cqrt_alloc_i8(i8)
 declare i32 @cqrt_alloc_i1(i1)
 declare void @cqrt_ry_i8(i32, double)

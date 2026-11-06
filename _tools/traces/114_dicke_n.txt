@@ -55,8 +55,8 @@ cqrt_free(h18)
 cqrt_qram_load_i1_hl_unc(h16, m1, P0+1)
 cqrt_qram_load_i1_hl(m1, P0+3) -> h20
 cq_template_select_i32_ll(h20, 2, 0) -> h100000
-cqrt_qram_load_i1_hl(m1, P0+2) -> h21
-cq_template_zext_i1_to_i32(h21) -> h22
+cqrt_qram_load_i8_hl(m1, P0+2) -> h21
+cq_template_zext_i8_to_i32(h21) -> h22
 cq_template_or_i32(h100000, h22) -> h23
 cq_template_icmp_eq_i32_hl(h23, 3) -> h24
 cqrt_alloc_i1(0) -> h25
@@ -68,8 +68,8 @@ cq_template_icmp_eq_i32_hl_unc(h24, h23, 3)
 cqrt_free(h24)
 cq_template_or_i32_unc(h23, h100000, h22)
 cqrt_free(h23)
-cq_template_zext_i1_to_i32_unc(h22, h21)
-cqrt_qram_load_i1_hl_unc(h21, m1, P0+2)
+cq_template_zext_i8_to_i32_unc(h22, h21)
+cqrt_qram_load_i8_hl_unc(h21, m1, P0+2)
 cqrt_free(h22)
 cq_template_select_i32_ll_unc(h100000, h20, 2, 0)
 cqrt_qram_load_i1_hl_unc(h20, m1, P0+3)
@@ -131,8 +131,8 @@ cqrt_free(h42)
 cqrt_qram_load_i1_hl_unc(h40, m1, P0)
 cqrt_qram_load_i1_hl(m1, P0+2) -> h44
 cq_template_select_i32_ll(h44, 2, 0) -> h100001
-cqrt_qram_load_i1_hl(m1, P0+1) -> h45
-cq_template_zext_i1_to_i32(h45) -> h46
+cqrt_qram_load_i8_hl(m1, P0+1) -> h45
+cq_template_zext_i8_to_i32(h45) -> h46
 cq_template_or_i32(h100001, h46) -> h47
 cq_template_icmp_eq_i32_hl(h47, 3) -> h48
 cqrt_alloc_i1(0) -> h49
@@ -144,8 +144,8 @@ cq_template_icmp_eq_i32_hl_unc(h48, h47, 3)
 cqrt_free(h48)
 cq_template_or_i32_unc(h47, h100001, h46)
 cqrt_free(h47)
-cq_template_zext_i1_to_i32_unc(h46, h45)
-cqrt_qram_load_i1_hl_unc(h45, m1, P0+1)
+cq_template_zext_i8_to_i32_unc(h46, h45)
+cqrt_qram_load_i8_hl_unc(h45, m1, P0+1)
 cqrt_free(h46)
 cq_template_select_i32_ll_unc(h100001, h44, 2, 0)
 cqrt_qram_load_i1_hl_unc(h44, m1, P0+2)
@@ -258,8 +258,8 @@ cqrt_free(h85)
 cqrt_qram_load_i1_hl_unc(h83, m1, P0+2)
 cqrt_qram_load_i1_hl(m1, P0+4) -> h87
 cq_template_select_i32_ll(h87, 2, 0) -> h100002
-cqrt_qram_load_i1_hl(m1, P0+3) -> h88
-cq_template_zext_i1_to_i32(h88) -> h89
+cqrt_qram_load_i8_hl(m1, P0+3) -> h88
+cq_template_zext_i8_to_i32(h88) -> h89
 cq_template_or_i32(h100002, h89) -> h90
 cq_template_icmp_eq_i32_hl(h90, 3) -> h91
 cqrt_alloc_i1(0) -> h92
@@ -271,8 +271,8 @@ cq_template_icmp_eq_i32_hl_unc(h91, h90, 3)
 cqrt_free(h91)
 cq_template_or_i32_unc(h90, h100002, h89)
 cqrt_free(h90)
-cq_template_zext_i1_to_i32_unc(h89, h88)
-cqrt_qram_load_i1_hl_unc(h88, m1, P0+3)
+cq_template_zext_i8_to_i32_unc(h89, h88)
+cqrt_qram_load_i8_hl_unc(h88, m1, P0+3)
 cqrt_free(h89)
 cq_template_select_i32_ll_unc(h100002, h87, 2, 0)
 cqrt_qram_load_i1_hl_unc(h87, m1, P0+4)
@@ -334,8 +334,8 @@ cqrt_free(h109)
 cqrt_qram_load_i1_hl_unc(h107, m1, P0+1)
 cqrt_qram_load_i1_hl(m1, P0+3) -> h111
 cq_template_select_i32_ll(h111, 2, 0) -> h100003
-cqrt_qram_load_i1_hl(m1, P0+2) -> h112
-cq_template_zext_i1_to_i32(h112) -> h113
+cqrt_qram_load_i8_hl(m1, P0+2) -> h112
+cq_template_zext_i8_to_i32(h112) -> h113
 cq_template_or_i32(h100003, h113) -> h114
 cq_template_icmp_eq_i32_hl(h114, 3) -> h115
 cqrt_alloc_i1(0) -> h116
@@ -347,8 +347,8 @@ cq_template_icmp_eq_i32_hl_unc(h115, h114, 3)
 cqrt_free(h115)
 cq_template_or_i32_unc(h114, h100003, h113)
 cqrt_free(h114)
-cq_template_zext_i1_to_i32_unc(h113, h112)
-cqrt_qram_load_i1_hl_unc(h112, m1, P0+2)
+cq_template_zext_i8_to_i32_unc(h113, h112)
+cqrt_qram_load_i8_hl_unc(h112, m1, P0+2)
 cqrt_free(h113)
 cq_template_select_i32_ll_unc(h100003, h111, 2, 0)
 cqrt_qram_load_i1_hl_unc(h111, m1, P0+3)
@@ -410,8 +410,8 @@ cqrt_free(h133)
 cqrt_qram_load_i1_hl_unc(h131, m1, P0)
 cqrt_qram_load_i1_hl(m1, P0+2) -> h135
 cq_template_select_i32_ll(h135, 2, 0) -> h100004
-cqrt_qram_load_i1_hl(m1, P0+1) -> h136
-cq_template_zext_i1_to_i32(h136) -> h137
+cqrt_qram_load_i8_hl(m1, P0+1) -> h136
+cq_template_zext_i8_to_i32(h136) -> h137
 cq_template_or_i32(h100004, h137) -> h138
 cq_template_icmp_eq_i32_hl(h138, 3) -> h139
 cqrt_alloc_i1(0) -> h140
@@ -423,8 +423,8 @@ cq_template_icmp_eq_i32_hl_unc(h139, h138, 3)
 cqrt_free(h139)
 cq_template_or_i32_unc(h138, h100004, h137)
 cqrt_free(h138)
-cq_template_zext_i1_to_i32_unc(h137, h136)
-cqrt_qram_load_i1_hl_unc(h136, m1, P0+1)
+cq_template_zext_i8_to_i32_unc(h137, h136)
+cqrt_qram_load_i8_hl_unc(h136, m1, P0+1)
 cqrt_free(h137)
 cq_template_select_i32_ll_unc(h100004, h135, 2, 0)
 cqrt_qram_load_i1_hl_unc(h135, m1, P0+2)
@@ -539,8 +539,8 @@ cqrt_free(h177)
 cqrt_qram_load_i1_hl_unc(h175, m1, P0+2)
 cqrt_qram_load_i1_hl(m1, P0+4) -> h179
 cq_template_select_i32_ll(h179, 2, 0) -> h100005
-cqrt_qram_load_i1_hl(m1, P0+3) -> h180
-cq_template_zext_i1_to_i32(h180) -> h181
+cqrt_qram_load_i8_hl(m1, P0+3) -> h180
+cq_template_zext_i8_to_i32(h180) -> h181
 cq_template_or_i32(h100005, h181) -> h182
 cq_template_icmp_eq_i32_hl(h182, 3) -> h183
 cqrt_alloc_i1(0) -> h184
@@ -552,8 +552,8 @@ cq_template_icmp_eq_i32_hl_unc(h183, h182, 3)
 cqrt_free(h183)
 cq_template_or_i32_unc(h182, h100005, h181)
 cqrt_free(h182)
-cq_template_zext_i1_to_i32_unc(h181, h180)
-cqrt_qram_load_i1_hl_unc(h180, m1, P0+3)
+cq_template_zext_i8_to_i32_unc(h181, h180)
+cqrt_qram_load_i8_hl_unc(h180, m1, P0+3)
 cqrt_free(h181)
 cq_template_select_i32_ll_unc(h100005, h179, 2, 0)
 cqrt_qram_load_i1_hl_unc(h179, m1, P0+4)
@@ -584,8 +584,8 @@ cqrt_free(h191)
 cqrt_qram_load_i1_hl_unc(h189, m1, P0+1)
 cqrt_qram_load_i1_hl(m1, P0+4) -> h193
 cq_template_select_i32_ll(h193, 2, 0) -> h100006
-cqrt_qram_load_i1_hl(m1, P0+2) -> h194
-cq_template_zext_i1_to_i32(h194) -> h195
+cqrt_qram_load_i8_hl(m1, P0+2) -> h194
+cq_template_zext_i8_to_i32(h194) -> h195
 cq_template_or_i32(h100006, h195) -> h196
 cq_template_icmp_eq_i32_hl(h196, 3) -> h197
 cqrt_alloc_i1(0) -> h198
@@ -597,8 +597,8 @@ cq_template_icmp_eq_i32_hl_unc(h197, h196, 3)
 cqrt_free(h197)
 cq_template_or_i32_unc(h196, h100006, h195)
 cqrt_free(h196)
-cq_template_zext_i1_to_i32_unc(h195, h194)
-cqrt_qram_load_i1_hl_unc(h194, m1, P0+2)
+cq_template_zext_i8_to_i32_unc(h195, h194)
+cqrt_qram_load_i8_hl_unc(h194, m1, P0+2)
 cqrt_free(h195)
 cq_template_select_i32_ll_unc(h100006, h193, 2, 0)
 cqrt_qram_load_i1_hl_unc(h193, m1, P0+4)
@@ -660,8 +660,8 @@ cqrt_free(h215)
 cqrt_qram_load_i1_hl_unc(h213, m1, P0+1)
 cqrt_qram_load_i1_hl(m1, P0+3) -> h217
 cq_template_select_i32_ll(h217, 2, 0) -> h100007
-cqrt_qram_load_i1_hl(m1, P0+2) -> h218
-cq_template_zext_i1_to_i32(h218) -> h219
+cqrt_qram_load_i8_hl(m1, P0+2) -> h218
+cq_template_zext_i8_to_i32(h218) -> h219
 cq_template_or_i32(h100007, h219) -> h220
 cq_template_icmp_eq_i32_hl(h220, 3) -> h221
 cqrt_alloc_i1(0) -> h222
@@ -673,8 +673,8 @@ cq_template_icmp_eq_i32_hl_unc(h221, h220, 3)
 cqrt_free(h221)
 cq_template_or_i32_unc(h220, h100007, h219)
 cqrt_free(h220)
-cq_template_zext_i1_to_i32_unc(h219, h218)
-cqrt_qram_load_i1_hl_unc(h218, m1, P0+2)
+cq_template_zext_i8_to_i32_unc(h219, h218)
+cqrt_qram_load_i8_hl_unc(h218, m1, P0+2)
 cqrt_free(h219)
 cq_template_select_i32_ll_unc(h100007, h217, 2, 0)
 cqrt_qram_load_i1_hl_unc(h217, m1, P0+3)
@@ -705,8 +705,8 @@ cqrt_free(h229)
 cqrt_qram_load_i1_hl_unc(h227, m1, P0)
 cqrt_qram_load_i1_hl(m1, P0+3) -> h231
 cq_template_select_i32_ll(h231, 2, 0) -> h100008
-cqrt_qram_load_i1_hl(m1, P0+1) -> h232
-cq_template_zext_i1_to_i32(h232) -> h233
+cqrt_qram_load_i8_hl(m1, P0+1) -> h232
+cq_template_zext_i8_to_i32(h232) -> h233
 cq_template_or_i32(h100008, h233) -> h234
 cq_template_icmp_eq_i32_hl(h234, 3) -> h235
 cqrt_alloc_i1(0) -> h236
@@ -718,8 +718,8 @@ cq_template_icmp_eq_i32_hl_unc(h235, h234, 3)
 cqrt_free(h235)
 cq_template_or_i32_unc(h234, h100008, h233)
 cqrt_free(h234)
-cq_template_zext_i1_to_i32_unc(h233, h232)
-cqrt_qram_load_i1_hl_unc(h232, m1, P0+1)
+cq_template_zext_i8_to_i32_unc(h233, h232)
+cqrt_qram_load_i8_hl_unc(h232, m1, P0+1)
 cqrt_free(h233)
 cq_template_select_i32_ll_unc(h100008, h231, 2, 0)
 cqrt_qram_load_i1_hl_unc(h231, m1, P0+3)
@@ -781,8 +781,8 @@ cqrt_free(h253)
 cqrt_qram_load_i1_hl_unc(h251, m1, P0)
 cqrt_qram_load_i1_hl(m1, P0+2) -> h255
 cq_template_select_i32_ll(h255, 2, 0) -> h100009
-cqrt_qram_load_i1_hl(m1, P0+1) -> h256
-cq_template_zext_i1_to_i32(h256) -> h257
+cqrt_qram_load_i8_hl(m1, P0+1) -> h256
+cq_template_zext_i8_to_i32(h256) -> h257
 cq_template_or_i32(h100009, h257) -> h258
 cq_template_icmp_eq_i32_hl(h258, 3) -> h259
 cqrt_alloc_i1(0) -> h260
@@ -794,8 +794,8 @@ cq_template_icmp_eq_i32_hl_unc(h259, h258, 3)
 cqrt_free(h259)
 cq_template_or_i32_unc(h258, h100009, h257)
 cqrt_free(h258)
-cq_template_zext_i1_to_i32_unc(h257, h256)
-cqrt_qram_load_i1_hl_unc(h256, m1, P0+1)
+cq_template_zext_i8_to_i32_unc(h257, h256)
+cqrt_qram_load_i8_hl_unc(h256, m1, P0+1)
 cqrt_free(h257)
 cq_template_select_i32_ll_unc(h100009, h255, 2, 0)
 cqrt_qram_load_i1_hl_unc(h255, m1, P0+2)

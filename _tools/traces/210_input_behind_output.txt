@@ -16,7 +16,7 @@ cqrt_alloc_i1(1) -> h8
 cqrt_tape_write_i64_lit(t2, P0)
 cqrt_tape_write_i32(t2, h7) -> h9
 cqrt_tape_write_i64_lit(t2, P1)
-cqrt_tape_effect_controlled(h8, t2, "fgets")
+cqrt_tape_effect_controlled(h8, t2, "fgets", 3)
 cqrt_free(h8)
 cq_template_and_i32_hl_unc(h7, h3, 7)
 cqrt_free(h7)

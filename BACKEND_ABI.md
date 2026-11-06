@@ -14,10 +14,8 @@ questions this file raised, each with its ruling.
   an extension must meet.
 - **Counts** come from the commands shown, run from the `CQ_spec/` root on 2026-11-05 over all 194
   examples (the "ex" counts of §2 and of the template rows of §4: 2026-10-27, 192 examples). The
-  73 examples CR §7 lists as "regeneration owed (flat memory)" are counted with their retired
-  memory symbols (§0) and are not normative for memory: this file gives no count for the bus
-  (§1.10), and a memory witness is one of 195–213 (CR §8, not counted here) or is cited
-  "(regeneration owed)".
+  memory symbol counts predate the 2026-11-05 regeneration: this file gives no count for the bus
+  (§1.10); its witnesses are the regenerated examples and 195–213.
 
 ```sh
 ls -d examples/*/ | wc -l                                                            # 194 examples
@@ -61,8 +59,8 @@ translator of the IR. A call never returns before its gates are appended in prog
 - **Classical-valued.** A rail or a bus cell is *classical-valued* while it holds one basis value
   that the backend knows, with no superposition and no entanglement. The backend allocates qubits
   lazily: a classical-valued rail is classical bits, and qubits exist only from the first gate
-  that forces them. The backend tracks this at least through `cqrt_alloc`, every core gate,
-  template and bus access whose operands, controls and cells are all classical-valued (the
+  that forces them. The backend tracks this at least through `cqrt_alloc`, every core gate
+  other than an Ry (§1.4, §1.5: their definition governs), template and bus access whose operands, controls and cells are all classical-valued (the
   result is classical-valued), and `cqrt_measure_<W>` (the rail is classical-valued afterwards).
   The overlay (§1.10) and the tape (§1.11) are defined by it.
 - **Rail value encoding.** Integers are two's complement on W bits. `f16`/`f32`/`f64` are IEEE
@@ -198,7 +196,7 @@ h. "Unchanged" means the rail is not touched. "Ex" lists 2–3 witness examples.
 - **Rails.** A is read only and unchanged (then uncomputed by its producer's `_unc`). h is rotated
   in place and frozen.
 - **§2.** A non-finite val(A) is the identity on that branch. **Ref.** No reference implementation.
-  **Ex.** 79, 132; 142 (regeneration owed). Corpus: `cqrt_ry_i32_qangle` (6 examples), `cqrt_ry_i1_qangle` (58, 59, 115, 120, 185).
+  **Ex.** 79, 132, 142. Corpus: `cqrt_ry_i32_qangle` (6 examples), `cqrt_ry_i1_qangle` (58, 59, 115, 120, 185).
 
 ### 1.6 `cqrt_rz_i1`
 - **Sig.** `void @cqrt_rz_i1(i32 f, double θ)`.
@@ -248,7 +246,7 @@ h. "Unchanged" means the rail is not touched. "Ex" lists 2–3 witness examples.
 - **§2.** None.
 - **Ref.** BJ `src/bennett_transform.jl:_emit_copy_gates!` and `src/fast_copy.jl:emit_fast_copy!`;
   controlled forms per `src/controlled.jl:controlled` (adds a control to every gate).
-- **Ex.** copy 05, 07; 120 (regeneration owed) (93 examples; widths f16 f32 f64 f80 i1 i7 i8 i32 i64; `_controlled`
+- **Ex.** copy 05, 07, 120 (93 examples; widths f16 f32 f64 f80 i1 i7 i8 i32 i64; `_controlled`
   i32: 45 only). xorc: `cqrt_xorc_i32_controlled` in 133 only. The uncontrolled `xorc` is not in
   the corpus.
 
@@ -330,7 +328,7 @@ circuit.
   cells), 201, 208, 213 (`__cq_alloc`, `realloc`, K2), 202 (a load copy un-copied at once, a
   kept load copy, a kept store), 203 (a host-resident object next to bus loads), 204
   (addresses never reused), 205–207 (`swap_i1`, the in-place form, a rotated load copy). 30,
-  84, 160 (regeneration owed).
+  84, 160.
 
 ### 1.11 Tape and abort: `cqrt_tape_*`, `cqrt_abort_i1`
 The deferred-measurement model (CR §1.3, rule 16). Tape rails and abort flags are never freed.
@@ -349,7 +347,8 @@ its fields; a format entry when the fields its format string consumes are writte
   the call of the host address in the first field, with the remaining fields). The backend
   performs every entry with the host C library the lowered program is linked against, never
   with a lowered symbol; that library made every `FILE` the program holds. Memory the host
-  call reads or writes is host memory, which the bus sees through the overlay (§1.10).
+  call reads or writes is host memory, which the bus sees through the overlay (§1.10); a write the
+  backend itself makes for an effect entry is a bus store (§1.10).
 - **The host-boundary table.** An effect entry. The first and the last two rows apply when
   every earlier event is resolved; the four INPUT rows apply at the call whatever precedes
   (input is never held behind a deferred output; only the order of outputs is kept):
@@ -390,7 +389,7 @@ its fields; a format entry when the fields its format string consumes are writte
 |---|---|
 | `i32 @cqrt_tape_alloc()` → t | A new empty tape. In the corpus each function that records entries allocates its own (47). |
 | `void @cqrt_tape_fmt(i32 t, ptr fmt)` and `void @cqrt_tape_fmt_controlled(i32 c, i32 t, ptr fmt)` | Opens a `printf` entry with host format string `fmt` and predicate c (1 if uncontrolled). The entry is always appended, so the tape length is classical. |
-| `void @cqrt_tape_effect_controlled(i32 c, i32 t, ptr name)` and `i32 @cqrt_tape_effect_<W>_controlled(i32 c, i32 t, ptr name)` → r | The effect entry of the host call `name` (`raise`, `remove`, `read`, …; a host string) under predicate c. Its arguments are the fields written to t since the previous entry. `<W>` is the width token of the callee's result type (a pointer: `i64`); the bare form is emitted when the callee has no result or the program does not read it (CR rule 16). r is a fresh rail: the call's result when the entry is performed at this call, `\|0⟩` when it is skipped or deferred. No uncontrolled form exists: the compiler passes a `cqrt_alloc_i1(true)` seed (CR rule 16). |
+| `void @cqrt_tape_effect_controlled(i32 c, i32 t, ptr name, i32 n)` and `i32 @cqrt_tape_effect_<W>_controlled(i32 c, i32 t, ptr name, i32 n)` → r | The effect entry of the host call `name` (`raise`, `remove`, `read`, …; a host string) under predicate c. Its arguments are the last n fields written to t before the call; fields of a preceding format entry beyond those its format string uses are ignored. `<W>` is the width token of the callee's result type (a pointer: `i64`); the bare form is emitted when the callee has no result or the program does not read it (CR rule 16). r is a fresh rail: the call's result when the entry is performed at this call, `\|0⟩` when it is skipped or deferred. No uncontrolled form exists: the compiler passes a `cqrt_alloc_i1(true)` seed (CR rule 16). |
 | `i32 @cqrt_tape_write_<W>(i32 t, i32 h)` → h′ and `i32 @cqrt_tape_write_<W>_controlled(i32 c, i32 t, i32 h)` → h′ | Appends a field. h′ is a fresh write-only tape rail with h′ ^= h (`_controlled`: h′ ^= c ? h : 0). h is unchanged. h′ stays entangled with h and is never freed or uncomputed *(corpus, 47; sample_check)*. |
 | `void @cqrt_tape_write_<W>_lit(i32 t, <T> lit)` | Appends a classical field. |
 | `void @cqrt_abort_i1(i32 f)` | Marks f as an abort flag: kept, and an event of the sequence. f = 1 means this branch aborted at this program point. The host program keeps running; rails later modified in place were snapshotted by the compiler (rule 16). |
@@ -433,7 +432,7 @@ its fields; a format entry when the fields its format string consumes are writte
   then holds the arm's controlled gates, whose inverses are the controlled inverses (CR rule
   17).
 - **Rails.** None of its own. **§2.** None. **Ref.** BJ `src/circuit.jl:adjoint` (reverse the gate
-  list, invert each gate). **Ex.** 44; 61, 126 (regeneration owed).
+  list, invert each gate). **Ex.** 44, 61, 126.
 
 ### 1.14 The clone table: `__cq_clone_register`, `__cq_clone_resolve`, `__cq_clone_count`, `__cq_clone_at`
 Injection-bundle code, listed here because lowered code calls it; the backend does not implement
@@ -607,8 +606,7 @@ Rule 27 is the only part that touches the link step:
 - A lowered library is the same compiler run over library source with a list of root names. It
   exports each root's table clone, `_ctl` and twins, and registers them (§1.14). A library that
   calls back into the program (`qsort`, `bsearch`) must itself be lowered. Witnesses: 161
-  (`__cq_q_ext_fn_11_t` with the classical c as a seed, and K), 200 (a pointer as one scalar), 190
-  (regeneration owed).
+  (`__cq_q_ext_fn_11_t` with the classical c as a seed, and K), 200 (a pointer as one scalar), 190.
 
 ---
 

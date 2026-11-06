@@ -37,7 +37,7 @@ cqrt_not_i1(h16)
 cq_template_select_i32(h16, h18, h100000) -> h100001
 cqrt_tape_write_i64_controlled(h19, t2, h9) -> h20
 cqrt_tape_write_i32_controlled(h19, t2, h4) -> h21
-cqrt_tape_effect_i32_controlled(h19, t2, null) -> h22
+cqrt_tape_effect_i32_controlled(h19, t2, null, 2) -> h22
 cq_template_select_i32(h19, h22, h100001) -> h100002
 cqrt_alloc_i32(0) -> h23
 cqrt_copy_i32(h100002, h23)

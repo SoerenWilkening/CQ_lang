@@ -17,7 +17,7 @@
 ; overtaken, a memory version change lies between the load and its un-copy): per m-trip three load copies, the copy of
 ; q[m-2] the first xor reads (IR %34), the copy of q[m-1] that is the CRy flag (IR %37, read after the swap-in), the
 ; copy of q[m-2] the second xor reads (IR %51); per l-trip four: the copy of q[m-1-l] the first xor reads (IR %64), the
-; copy of q[m-1] the select reads (IR %66, read after the swap-in), the copy of q[m-l] (IR %71), the copy of q[m-1-l]
+; copy of q[m-1] the select reads (IR %66, read after the swap-in), the i8 copy of q[m-l] (IR %71), the copy of q[m-1-l]
 ; the second xor reads (IR %87). Each is un-copied right after its last reader (the rule-6 _unc of t, the controlled
 ; swap-in, or the flag chain's _unc).
 ; Rotations: per trip m = n .. 2: (CRy, the cell q[m-2], 2*acos(sqrt(1/m)), q[m-1] ^ q[m-2]) (the copy of q[m-1] after
@@ -51,16 +51,12 @@
 ; never asks this, so the rail is not freed. Every copy is thus disentangled from the cells, which hold the pure
 ; |D^n_k> before the measure loop (the fixed-model lowering's state); the measured distribution of dicke_n(4,2), (5,2),
 ; (5,3) is uniform over the weight-k strings (1/C(n,k) each).
-; SPEC GAPS (each marked at its line; the choice is the one that needs least from an implementer):
+; SPEC GAP (marked at its lines; the choice is the one that needs least from an implementer):
 ;  1. Rule 5's Width-casts clause names `trunc T y to U`; -O1 instead compares the two _Bool cells as `icmp ne i8` over
 ;     loads with !range [0, 2) and stores `zext i1 to i8` (no trunc). Chosen: a load of T whose range fact
 ;     (!range [0, 2)) makes it a 0/1 value counts as `trunc nuw T y to i1`, and `zext (icmp ne T y, x) to T` with x
 ;     also such a load is the step xor_i1(x, y), so `*p ^= *q` on _Bool cells is the in-place form at U = i1
 ;     (qram_swap_i1_hl; the template the fixed-width lowering already used).
-;  2. The width of a bare plain load of a _Bool cell (`load i8`, !range [0, 2), no trunc) whose every use reads it as a
-;     Boolean (an icmp ne operand or `zext nneg to i32`; a `trunc nuw to i1` reader is rule 5 Width casts). Chosen:
-;     qram_load_i1_hl (the low bit, §1.3), as 205's Readers load, so the templates stay xor_i1 / zext_i1_to_i32 and no
-;     trunc template is emitted.
 source_filename = "dicke_n.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
@@ -118,7 +114,7 @@ define i32 @dicke_n(i32 noundef %0, i32 noundef %1) {
   %35 = call i32 @llvm.smin.i32(i32 %34, i32 %1)    ; IR: %32 = kk = min(k, m - 1)  (classical)
   %36 = getelementptr i8, ptr %12, i64 %32    ; IR: %33  (&q[m-2], classical)
   %37 = ptrtoint ptr %36 to i64    ; the run-time address of q[m-2] (rule 21)
-  %38 = call i32 @cqrt_qram_load_i1_hl(i32 %3, i64 %37)    ; IR: %34 = load i8, ptr %33  (a plain load of q[m-2] before the swap-out; overtaken by the form: un-copied after its last reader, not freed, rule 5)  SPEC GAP 2
+  %38 = call i32 @cqrt_qram_load_i1_hl(i32 %3, i64 %37)    ; IR: %34 = load i8, ptr %33  (a plain load of q[m-2] before the swap-out; overtaken by the form: un-copied after its last reader, not freed, rule 5)  SPEC GAP 1
   %39 = getelementptr inbounds i8, ptr %5, i64 %33    ; IR: %35  (&q[m-1], classical)
   %40 = ptrtoint ptr %39 to i64    ; the run-time address of q[m-1] (rule 21)
   %41 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: %36 = load i8, ptr %35: in-place form at width i1 on q[m-1], the swap rail (|0>)  SPEC GAP 1
@@ -145,7 +141,7 @@ define i32 @dicke_n(i32 noundef %0, i32 noundef %1) {
   call void @cqrt_qram_swap_i1_hl_controlled(i32 %44, i32 %3, i64 %37, i32 %51)    ; IR: %49 = zext; store i8 %49, ptr %33: swap-in under the flag: the cell holds the rotated q[m-2]
   call void @cqrt_qram_load_i1_hl_unc(i32 %44, i32 %3, i64 %40)    ; IR: un-copy the flag copy of q[m-1] after its last reader (the controlled swap-in): a memory version change lies between (the form on q[m-2]), so it is not freed (rule 5 sentence 1)
   call void @cqrt_free(i32 %51)    ; IR: release the swap rail (|0> on both branches of the flag)
-  %52 = call i32 @cqrt_qram_load_i1_hl(i32 %3, i64 %37)    ; IR: %51 = load i8, ptr %33  (a plain load of q[m-2] before the swap-out; overtaken by the form: un-copied after its last reader, not freed)  SPEC GAP 2
+  %52 = call i32 @cqrt_qram_load_i1_hl(i32 %3, i64 %37)    ; IR: %51 = load i8, ptr %33  (a plain load of q[m-2] before the swap-out; overtaken by the form: un-copied after its last reader, not freed)  SPEC GAP 1
   %53 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: %52 = load i8, ptr %35: in-place form at width i1 on q[m-1], the swap rail (|0>)
   call void @cqrt_qram_swap_i1_hl(i32 %3, i64 %40, i32 %53)    ; IR: %52 = load i8, ptr %35: swap-out
   %54 = call i32 @cq_template_xor_i1(i32 %52, i32 %53)    ; IR: %53 = icmp ne i8 %52, %51: q[m-1] ^= q[m-2], into a fresh rail  [the step]
@@ -171,7 +167,7 @@ define i32 @dicke_n(i32 noundef %0, i32 noundef %1) {
   %63 = sub nsw i64 %33, %62    ; IR: %62 = m - 1 - l  (classical)
   %64 = getelementptr inbounds i8, ptr %5, i64 %63    ; IR: %63  (&q[m-1-l], classical)
   %65 = ptrtoint ptr %64 to i64    ; the run-time address of q[m-1-l] (rule 21)
-  %66 = call i32 @cqrt_qram_load_i1_hl(i32 %3, i64 %65)    ; IR: %64 = load i8, ptr %63  (a plain load of q[m-1-l] before the swap-out; overtaken by the form: un-copied after its last reader, not freed)  SPEC GAP 2
+  %66 = call i32 @cqrt_qram_load_i1_hl(i32 %3, i64 %65)    ; IR: %64 = load i8, ptr %63  (a plain load of q[m-1-l] before the swap-out; overtaken by the form: un-copied after its last reader, not freed)  SPEC GAP 1
   %67 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: %65 = load i8, ptr %35: in-place form at width i1 on q[m-1], the swap rail (|0>)
   call void @cqrt_qram_swap_i1_hl(i32 %3, i64 %40, i32 %67)    ; IR: %65 = load i8, ptr %35: swap-out
   %68 = call i32 @cq_template_xor_i1(i32 %66, i32 %67)    ; IR: %66 = icmp ne i8 %65, %64: q[m-1] ^= q[m-1-l], into a fresh rail  [the step]
@@ -188,8 +184,8 @@ define i32 @dicke_n(i32 noundef %0, i32 noundef %1) {
   %72 = sub nsw i64 %32, %62    ; IR: %69 = m - l  (classical)
   %73 = getelementptr inbounds i8, ptr %5, i64 %72    ; IR: %70  (&q[m-l], classical)
   %74 = ptrtoint ptr %73 to i64    ; the run-time address of q[m-l] (rule 21)
-  %75 = call i32 @cqrt_qram_load_i1_hl(i32 %3, i64 %74)    ; IR: %71 = load i8, ptr %70  (a plain load of q[m-l]; a flag-chain source, overtaken by the CCRy form: un-copied after its reader's _unc, not freed)  SPEC GAP 2
-  %76 = call i32 @cq_template_zext_i1_to_i32(i32 %75)    ; IR: %72 = zext nneg i8 %71 to i32
+  %75 = call i32 @cqrt_qram_load_i8_hl(i32 %3, i64 %74)    ; IR: %71 = load i8, ptr %70  (a plain load of q[m-l] at i8: its user is a zext, not a trunc to i1, so the access width is the loaded type, as 176/178/179/185; a flag-chain source, overtaken by the CCRy form: un-copied after its reader's _unc, not freed)
+  %76 = call i32 @cq_template_zext_i8_to_i32(i32 %75)    ; IR: %72 = zext nneg i8 %71 to i32
   %77 = call i32 @cq_template_or_i32(i32 %71, i32 %76)    ; IR: %73 = or disjoint i32 %68, %72  (s)
   %78 = call i32 @cq_template_icmp_eq_i32_hl(i32 %77, i32 3)    ; IR: %74 = icmp eq i32 %73, 3  [the CCRy flag]
   %79 = trunc nuw nsw i64 %62 to i32    ; IR: %78  (classical)
@@ -207,13 +203,13 @@ define i32 @dicke_n(i32 noundef %0, i32 noundef %1) {
   call void @cqrt_free(i32 %78)    ; IR: release the %74 rail (|0>)
   call void @cq_template_or_i32_unc(i32 %77, i32 %71, i32 %76)    ; IR: uncompute %73
   call void @cqrt_free(i32 %77)    ; IR: release the %73 rail (|0>)
-  call void @cq_template_zext_i1_to_i32_unc(i32 %76, i32 %75)    ; IR: uncompute %72
-  call void @cqrt_qram_load_i1_hl_unc(i32 %75, i32 %3, i64 %74)    ; IR: un-copy %71 (q[m-l]) after its last reader (the zext's _unc): a memory version change lies between (the CCRy form on q[m-1-l]), so it is not freed (rule 5 sentence 1)
+  call void @cq_template_zext_i8_to_i32_unc(i32 %76, i32 %75)    ; IR: uncompute %72
+  call void @cqrt_qram_load_i8_hl_unc(i32 %75, i32 %3, i64 %74)    ; IR: un-copy %71 (q[m-l]) after its last reader (the zext's _unc): a memory version change lies between (the CCRy form on q[m-1-l]), so it is not freed (rule 5 sentence 1)
   call void @cqrt_free(i32 %76)    ; IR: release the %72 rail (|0>)
   call void @cq_template_select_i32_ll_unc(i32 %71, i32 %70, i32 2, i32 0)    ; IR: uncompute %68
   call void @cqrt_qram_load_i1_hl_unc(i32 %70, i32 %3, i64 %40)    ; IR: un-copy the copy of q[m-1] after its last reader (the select's _unc): a memory version change lies between (the CCRy form on q[m-1-l]), so it is not freed (rule 5 sentence 1)
   call void @cqrt_free(i32 %71)    ; IR: release the %68 rail (|0>)
-  %86 = call i32 @cqrt_qram_load_i1_hl(i32 %3, i64 %65)    ; IR: %87 = load i8, ptr %63  (a plain load of q[m-1-l] before the swap-out; overtaken by the form: un-copied after its last reader, not freed)  SPEC GAP 2
+  %86 = call i32 @cqrt_qram_load_i1_hl(i32 %3, i64 %65)    ; IR: %87 = load i8, ptr %63  (a plain load of q[m-1-l] before the swap-out; overtaken by the form: un-copied after its last reader, not freed)  SPEC GAP 1
   %87 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: %88 = load i8, ptr %35: in-place form at width i1 on q[m-1], the swap rail (|0>)
   call void @cqrt_qram_swap_i1_hl(i32 %3, i64 %40, i32 %87)    ; IR: %88 = load i8, ptr %35: swap-out
   %88 = call i32 @cq_template_xor_i1(i32 %86, i32 %87)    ; IR: %89 = icmp ne i8 %88, %87: q[m-1] ^= q[m-1-l], into a fresh rail  [the step]
@@ -259,6 +255,8 @@ declare i32 @cqrt_alloc_i8(i8)
 declare void @cqrt_qram_store_i8_hl(i32, i64, i32)
 declare i32 @cqrt_qram_load_i1_hl(i32, i64)
 declare void @cqrt_qram_load_i1_hl_unc(i32, i32, i64)
+declare i32 @cqrt_qram_load_i8_hl(i32, i64)
+declare void @cqrt_qram_load_i8_hl_unc(i32, i32, i64)
 declare void @cqrt_qram_swap_i1_hl(i32, i64, i32)
 declare void @cqrt_qram_swap_i1_hl_controlled(i32, i32, i64, i32)
 declare void @cqrt_ry_i1_controlled(i32, i32, double)
@@ -267,8 +265,8 @@ declare i32 @cq_template_xor_i1(i32, i32)
 declare void @cq_template_xor_i1_unc(i32, i32, i32)
 declare i1 @cqrt_measure_i1(i32)
 declare void @cqrt_free(i32)
-declare i32 @cq_template_zext_i1_to_i32(i32)
-declare void @cq_template_zext_i1_to_i32_unc(i32, i32)
+declare i32 @cq_template_zext_i8_to_i32(i32)
+declare void @cq_template_zext_i8_to_i32_unc(i32, i32)
 declare i32 @cq_template_select_i32_ll(i32, i32, i32)
 declare void @cq_template_select_i32_ll_unc(i32, i32, i32, i32)
 declare i32 @cq_template_or_i32(i32, i32)

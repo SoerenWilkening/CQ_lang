@@ -50,7 +50,7 @@ define internal fastcc void @mark(i32 noundef %0) {
   %2 = call i32 @cqrt_tape_alloc()    ; IR: the function's tape, allocated once at entry as in 47 (mark records an entry: it is called after an event, so its putchar is not an ordinary host call)
   %3 = call i32 @cqrt_alloc_i1(i1 true)    ; IR: %2 = putchar(%0): no predicate in scope, the |1> seed
   call void @cqrt_tape_write_i32_lit(i32 %2, i32 %0)    ; IR: %2 = putchar(%0): argument 0, classical: a _lit field, <W> the width token of the argument's IR type at the call (i32)
-  call void @cqrt_tape_effect_controlled(i32 %3, i32 %2, ptr @.cq.effect.putchar)    ; IR: %2 = putchar(%0): the effect entry, complete after its fields; bare form, the result is unused
+  call void @cqrt_tape_effect_controlled(i32 %3, i32 %2, ptr @.cq.effect.putchar, i32 1)    ; IR: %2 = putchar(%0): the effect entry, complete after its fields; bare form, the result is unused
   call void @cqrt_free(i32 %3)    ; IR: release the seed (|1>, never written: freed directly, rule 7); the backend captured the predicate at the effect call (BACKEND_ABI §1.11), so the deferred entry does not read this rail again
   ret void    ; IR: ret void
 }
@@ -59,7 +59,7 @@ declare i32 @cqrt_tape_alloc()
 declare void @cqrt_tape_fmt(i32, ptr)
 declare i32 @cqrt_tape_write_i32(i32, i32)
 declare void @cqrt_tape_write_i32_lit(i32, i32)
-declare void @cqrt_tape_effect_controlled(i32, i32, ptr)
+declare void @cqrt_tape_effect_controlled(i32, i32, ptr, i32)
 declare i32 @cqrt_alloc_i32(i32)
 declare i32 @cqrt_alloc_i1(i1)
 declare void @cqrt_ry_i32(i32, double)

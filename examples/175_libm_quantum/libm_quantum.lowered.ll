@@ -1,10 +1,13 @@
 ; HAND-WRITTEN. Rules: 18, 20, 3, 4, 5, 8, 9, 2 (and 1).
-; Checked: cbrt(x) (measured, %56 -> %57); scalbn(x, n) (measured, %33 -> %34); exp(x) + atan2(x, y) (measured, %7 -> %8);
-; sin(x) + log(x) + pow(x, y) (measured, %9 -> %10).
+; Checked: cbrt(x) (measured, %56 -> %57); scalbn(x, n) (measured, %33 -> %34). The third and fourth entries
+; (exp(x) + atan2(x, y), measured %7 -> %8; sin(x) + log(x) + pow(x, y), measured %9 -> %10) are NOT value witnesses:
+; see THIRD AND FOURTH ENTRIES below.
 ; Clean: every flag, select and arithmetic rail of the four entries, the two clone result rails of the third and the three
 ; of the fourth (zeroed by the _unc twins, then freed), and the partial sum %7 of the fourth, all freed before each
 ; measurement.
-; Kept: the registers (x %3; x %5 and n %6; x %4; x %4) and the four measured result rails (%56, %33, %7, %9).
+; Kept: the registers (x %3; x %5 and n %6; x %4; x %4) and the four measured result rails (%56, %33, %7, %9). For the
+; third and fourth entries this lists the caller's rails only: whatever the lifted clone bodies keep (a rule-14 cut's
+; a_K rail, a kept store's rails) is not shown and not pinned here.
 ; Rotations: (Ry, x, tx, 1) in libm_cbrt_q; (Ry, x, tx, 1), (Ry, n, tn, 1) (cqrt_ry_i32 on the integer register) in
 ; libm_scalbn_qq; (Ry, x, tx, 1) in libm_exp_atan2_q; (Ry, x, tx, 1) in libm_sin_log_pow_q.
 ; cbrt_musl and scalbn_musl are static and clang -O1 inlines them, so their musl bodies lower in the entries: the
@@ -21,8 +24,11 @@
 ; callee with a quantum argument: the lowering shows the clone calls __cq_q_exp_1(x), __cq_q_sin_1(x), __cq_q_log_1(x)
 ; (mask 1) and __cq_q_atan2_10(x, y), __cq_q_pow_10(x, y) (mask 10, y a classical double), each returning a fresh result
 ; rail (copy-out, rule 18), and their _unc twins zero those rails after the last sum read them; the caller then frees them.
-; THE CLONE BODIES ARE DECLARED ONLY: this example witnesses the call sites, the masks and the clone/twin signatures; 184
-; shows one lifted libm body (musl atan) in full. For the trace, _tools/trace_stubs.c (exp, atan2) and
+; THIRD AND FOURTH ENTRIES (libm_exp_atan2_q, libm_sin_log_pow_q): they witness call sites and clone signatures only.
+; The bodies of __cq_q_exp_1, __cq_q_atan2_10, __cq_q_sin_1, __cq_q_log_1 and __cq_q_pow_10 (and their twins) come from
+; the injected musl bundle; they are declared here and not shown, so this file pins no value and no kept rail for these
+; two entries (no rule-14 cut at K, no a_K rail of their loops); a checker compares them against the C program, not
+; against this file. 184 shows one lifted libm body (musl atan) in full. For the trace, _tools/trace_stubs.c (exp, atan2) and
 ; _tools/stubs.d/175_libm_quantum.c (sin, log, pow) print the clone and twin calls so the trace links. Everything but the
 ; result rails is uncomputed LIFO before each measurement; in the fourth entry the partial sum %7 is uncomputed before the
 ; sin and log rails it reads (rule 5: an operand rail outlives every _unc that reads it).

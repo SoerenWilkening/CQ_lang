@@ -63,7 +63,7 @@ define i32 @input_behind_output(i32 noundef %0, double noundef %1, i32 noundef %
   %16 = call i32 @cqrt_tape_write_i32(i32 %7, i32 %14)    ; IR: %11 = fgets(..., %10, ...): argument 1, the length rail copied onto a fresh tape rail (kept)
   %17 = ptrtoint ptr %4 to i64    ; IR: the stream's address (a host FILE, classical)
   call void @cqrt_tape_write_i64_lit(i32 %7, i64 %17)    ; IR: %11 = fgets(..., %4): argument 2, the stream: its address, a _lit field
-  call void @cqrt_tape_effect_controlled(i32 %15, i32 %7, ptr @.cq.effect.fgets)    ; IR: %11 = fgets(%6, %10, %4): the effect entry, complete after its fields; bare form, the result %11 is unused. The backend performs the input here, one host call at its K2, behind the deferred printf, and stores what fgets with length v would have stored under %10 = v (a memory version change)
+  call void @cqrt_tape_effect_controlled(i32 %15, i32 %7, ptr @.cq.effect.fgets, i32 3)    ; IR: %11 = fgets(%6, %10, %4): the effect entry, complete after its fields; bare form, the result %11 is unused. The backend performs the input here, one host call at its K2, behind the deferred printf, and stores what fgets with length v would have stored under %10 = v (a memory version change)
   call void @cqrt_free(i32 %15)    ; IR: release the seed (|1>, never written: freed directly, rule 7); the backend read the predicate at the effect call (BACKEND_ABI §1.11) and does not use this handle again
   call void @cq_template_and_i32_hl_unc(i32 %14, i32 %10, i32 7)    ; IR: uncompute %10 (its last consumer is the entry; the tape rail %16 keeps the copy)
   call void @cqrt_free(i32 %14)    ; IR: release the %10 rail (|0>)
@@ -79,7 +79,7 @@ declare i32 @cqrt_tape_alloc()
 declare void @cqrt_tape_fmt(i32, ptr)
 declare i32 @cqrt_tape_write_i32(i32, i32)
 declare void @cqrt_tape_write_i64_lit(i32, i64)
-declare void @cqrt_tape_effect_controlled(i32, i32, ptr)
+declare void @cqrt_tape_effect_controlled(i32, i32, ptr, i32)
 declare i32 @cqrt_alloc_i32(i32)
 declare i32 @cqrt_alloc_i64(i64)
 declare i32 @cqrt_alloc_i1(i1)

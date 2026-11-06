@@ -141,7 +141,7 @@ define i32 @fnptr_rail_measuring(i32 noundef %0, double noundef %1, i32 noundef 
 33:
   %34 = call i32 @cqrt_tape_write_i64_controlled(i32 %19, i32 %6, i32 %13)    ; IR: %11 = call i32 %10(i32 %6)  [under p_n, the complement of the flags: the entry's first field, the callee's address, the rail fp (rule 19)]
   %35 = call i32 @cqrt_tape_write_i32_controlled(i32 %19, i32 %6, i32 %8)    ; the argument x
-  %36 = call i32 @cqrt_tape_effect_i32_controlled(i32 %19, i32 %6, ptr null)    ; IR: %11 = call i32 %10(i32 %6)  [fp is host code: the effect entry with a null name; r_e, its result rail, KEPT (rule 16)]
+  %36 = call i32 @cqrt_tape_effect_i32_controlled(i32 %19, i32 %6, ptr null, i32 2)    ; IR: %11 = call i32 %10(i32 %6)  [fp is host code: the effect entry with a null name; r_e, its result rail, KEPT (rule 16)]
   %37 = call i32 @cq_template_select_i32(i32 %19, i32 %36, i32 %20)    ; IR: %11 = call i32 %10(i32 %6)  [the call's value: the complement's r_e where p_n, else the candidates' merge]  ; SPEC GAP: the complement is an arm of this outer select (header)
   %38 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: %11 = call i32 %10(i32 %6)  [copied-out result R (rule 14)]
   call void @cqrt_copy_i32(i32 %37, i32 %38)    ; IR: %11
@@ -321,7 +321,7 @@ declare void @cqrt_qram_load_i64_unc(i32, i32, i32)
 declare i32 @cqrt_tape_alloc()
 declare i32 @cqrt_tape_write_i64_controlled(i32, i32, i32)
 declare i32 @cqrt_tape_write_i32_controlled(i32, i32, i32)
-declare i32 @cqrt_tape_effect_i32_controlled(i32, i32, ptr)
+declare i32 @cqrt_tape_effect_i32_controlled(i32, i32, ptr, i32)
 declare i32 @cq_template_and_i32_hl(i32, i32)
 declare void @cq_template_and_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_zext_i32_to_i64(i32)

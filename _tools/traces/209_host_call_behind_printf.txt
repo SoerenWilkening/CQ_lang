@@ -8,6 +8,6 @@ cqrt_tape_write_i32(t0, h1) -> h2
 cqrt_tape_alloc() -> t3
 cqrt_alloc_i1(1) -> h4
 cqrt_tape_write_i32_lit(t3, 10)
-cqrt_tape_effect_controlled(h4, t3, "putchar")
+cqrt_tape_effect_controlled(h4, t3, "putchar", 1)
 cqrt_free(h4)
 cqrt_measure_i32(h1) -> 0

@@ -12,16 +12,18 @@
 ; backend on the shots where it reads 1 (P = 0.797654), and the default action of SIGABRT terminates there.
 ; remove_cond(0, .5, 1): the effect entry remove("/tmp/cq_x") is performed where x > 1 (P = 0.797654).
 ; Clean: raise_handled and raise_default: the dead result of signal (raise_handled only: the load copy of
-; __cq_sig[30], un-copied before the store); the arm flag x > k; per candidate of the dispatch: its flag f_i and the
-; complement predicate p_{i+1}, pushed and uncomputed by the reverse loop. remove_cond: the predicate flag (x > k).
+; __cq_sig[30], un-copied before the store); the arm flag x > k; per candidate of the dispatch: the conjunction
+; f & f_i and the |sig> argument seed (uncomputed and freed right after the twin: rule 5 sentence 3, the caller treats
+; what it passed by its own rules, as 212), its flag f_i and the complement predicate p_{i+1}, pushed and uncomputed by
+; the reverse loop. remove_cond: the predicate flag (x > k).
 ; Kept: the user register x of each function (rotated, measured); raise_handled: the load copy of hit (measured), by
 ; rule 5 sentence 3 the tape slot and the value seed (the i64 address of h) of the store into __cq_sig[30];
 ; raise_handled and raise_default: the load copy of the signal cell under the arm flag (the address rail of the
 ; dispatch), un-copied under the arm flag after the reverse loop, its last reader, and left allocated (the table clone
-; call is a memory version change between, rule 5 sentence 1), per candidate the conjunction
-; f & f_i and the |sig> argument seed (the control rail and the value rail of the kept store h's _ctl table clone
-; makes, rules 5, 7, 8; SPEC GAP below), and the tape slot of that store (one per candidate call, also under a
-; control that reads 0); the function's tape (each function). h: the tape slot and the value seed of its store.
+; call is a memory version change between, rule 5 sentence 1), per candidate the tape slot of the kept store h's
+; _ctl table clone makes (one per candidate call, also under a control that reads 0); the function's tape (each
+; function). h: the tape slot and the value seed of its store. __cq_q_h_1_t and __cq_q_h_1_t_ctl keep the tape slot of
+; their store; its value and control rails are the caller's formals, which the caller treats by its own rules.
 ; At the cutoff (not reached here) __cq_q_h_1_t_ctl keeps one overflow predicate rail (rule 14).
 ; Rotations: (Ry, x, th, 1) in each function.
 ; CLASSICAL EFFECTS UNDER A QUANTUM PREDICATE (rule 16). A host effect cannot happen "in superposition", and executing
@@ -53,14 +55,10 @@
 ; store (rule 5 sentence 3) of the seed alloc_i32(s) in the own symbol, of the formal rail s in __cq_q_h_1_t, and the
 ; _hl_controlled store under the predicate in __cq_q_h_1_t_ctl. h writes memory, so rule 18 gives it no twin: the
 ; table twins pop nothing; the _ctl twin counts its activation like the clone.
-; SPEC GAP: rule 5 sentence 3 lets a caller that passed a store's value or control rail to a storing callee treat it
-; by its own rules, and the dispatch caller has no record of the callee (rule 19), so its own rules would uncompute
-; the conjunction f & f_i after the twin and free the |sig> seed (as 212 does for its non-storing handler). Here the
-; callee stores both, and _tools/trace_check.py reports a free of a store's value or control rail without function
-; boundaries; this example KEEPS the conjunction and the seed of every candidate call (rule 8: a flag that controls a
-; kept store is kept with it; rule 7: the seed a store of a classical value mints is kept with it). Both readings leave
-; the measured distribution unchanged: the conjunction is a function of f and f_i, and the seed is an unentangled
-; basis state.
+; CALLER'S RAILS (rule 5 sentence 3). The callee keeps its store; the conjunction f & f_i and the |sig> seed are rails
+; the caller minted and passed as the `_ctl` predicate and an argument, so the caller treats them by its own rules: the
+; conjunction is uncomputed (and_i1 again: f and f_i are untouched by the call) and freed after the twin, and the seed,
+; never written, is freed (a basis state, unentangled), as 212.
 ; SPEC GAP: rule 16's ordinary-host-call test makes every externally visible function "called after an event" when
 ; the module contains one; the signal-table bullet asks only for classical arguments and no predicate in scope and
 ; wins (212): the host call is made as it stands.
@@ -112,12 +110,15 @@ define i32 @raise_handled(i32 noundef %0, double noundef %1, i32 noundef %2) {
   %19 = ptrtoint ptr %18 to i64    ; IR: a_i as its run-time address
   %20 = call i32 @cq_template_icmp_eq_i64_hl(i32 %11, i64 %19)    ; IR: %8 = raise(30): f_i = (address rail == a_i)
   %21 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: %8 = raise(30): fresh |0> for the conjunction
-  call void @cqrt_and_i1(i32 %10, i32 %20, i32 %21)    ; IR: %8 = raise(30): f & f_i, the predicate of candidate i  [kept: the control rail of the callee's store, SPEC GAP]
-  %22 = call i32 @cqrt_alloc_i32(i32 30)    ; IR: %8 = raise(30): the classical actual 30 as a seed (table clone ABI: every formal a handle)  [kept: the value rail of the callee's store, SPEC GAP]
+  call void @cqrt_and_i1(i32 %10, i32 %20, i32 %21)    ; IR: %8 = raise(30): f & f_i, the predicate of candidate i
+  %22 = call i32 @cqrt_alloc_i32(i32 30)    ; IR: %8 = raise(30): the classical actual 30 as a seed (table clone ABI: every formal a handle)
   %23 = call ptr @__cq_clone_resolve(ptr %18, i32 1)    ; IR: %8 = raise(30): the _ctl table clone of a_i (kind 1)
   call void %23(i32 %21, i32 %22, i32 4)    ; IR: %8 = raise(30): the handler under f & f_i  [K]  (a memory version change)
   %24 = call ptr @__cq_clone_resolve(ptr %18, i32 3)    ; IR: %8 = raise(30): the _ctl twin of a_i (kind 3)
   call void %24(i32 %21, i32 %22, i32 4)    ; IR: %8 = raise(30): the twin, called exactly once (no result: right after the call)  [K]
+  call void @cqrt_free(i32 %22)    ; IR: release the seed (|30>, never written; minted here, so by rule 5 sentence 3 the caller treats it by its own rules after the twin, as 212)
+  call void @cqrt_and_i1(i32 %10, i32 %20, i32 %21)    ; IR: uncompute the conjunction (after its last controlled call; rule 5 sentence 3, as 212)
+  call void @cqrt_free(i32 %21)    ; IR: release the conjunction (|0>)
   %25 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: %8 = raise(30): fresh |0> for p_{i+1}
   call void @cqrt_not_i1(i32 %20)    ; IR: X bracket: NOT f_i
   call void @cqrt_and_i1(i32 %15, i32 %20, i32 %25)    ; IR: %8 = raise(30): p_{i+1} = p_i & NOT f_i
@@ -128,7 +129,7 @@ define i32 @raise_handled(i32 noundef %0, double noundef %1, i32 noundef %2) {
   br label %13
 27:
   call void @cqrt_tape_write_i32_lit(i32 %5, i32 30)    ; IR: %8 = raise(30): argument 0 of the effect entry, the signal number (classical): a _lit field
-  call void @cqrt_tape_effect_controlled(i32 %15, i32 %5, ptr @.cq.effect.raise)    ; IR: %8 = raise(30): the complement branch (no registered function), the effect entry raise under p_n; bare form, %8 is unused
+  call void @cqrt_tape_effect_controlled(i32 %15, i32 %5, ptr @.cq.effect.raise, i32 1)    ; IR: %8 = raise(30): the complement branch (no registered function), the effect entry raise under p_n; bare form, %8 is unused
   br label %28
 28:
   %29 = phi i32 [ %12, %27 ], [ %33, %32 ]    ; IR: candidates still to undo, from n down to 0
@@ -226,12 +227,15 @@ define i32 @raise_default(i32 noundef %0, double noundef %1, i32 noundef %2) {
   %16 = ptrtoint ptr %15 to i64    ; IR: a_i as its run-time address
   %17 = call i32 @cq_template_icmp_eq_i64_hl(i32 %8, i64 %16)    ; IR: %7 = raise(6): f_i = (address rail == a_i)
   %18 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: %7 = raise(6): fresh |0> for the conjunction
-  call void @cqrt_and_i1(i32 %7, i32 %17, i32 %18)    ; IR: %7 = raise(6): f & f_i, the predicate of candidate i  [kept: the control rail of the callee's store, SPEC GAP]
-  %19 = call i32 @cqrt_alloc_i32(i32 6)    ; IR: %7 = raise(6): the classical actual 6 as a seed (table clone ABI)  [kept: the value rail of the callee's store, SPEC GAP]
+  call void @cqrt_and_i1(i32 %7, i32 %17, i32 %18)    ; IR: %7 = raise(6): f & f_i, the predicate of candidate i
+  %19 = call i32 @cqrt_alloc_i32(i32 6)    ; IR: %7 = raise(6): the classical actual 6 as a seed (table clone ABI)
   %20 = call ptr @__cq_clone_resolve(ptr %15, i32 1)    ; IR: %7 = raise(6): the _ctl table clone of a_i (kind 1)
   call void %20(i32 %18, i32 %19, i32 4)    ; IR: %7 = raise(6): the candidate under f & f_i  [K]  (a memory version change)
   %21 = call ptr @__cq_clone_resolve(ptr %15, i32 3)    ; IR: %7 = raise(6): the _ctl twin of a_i (kind 3)
   call void %21(i32 %18, i32 %19, i32 4)    ; IR: %7 = raise(6): the twin, called exactly once  [K]
+  call void @cqrt_free(i32 %19)    ; IR: release the seed (|6>, never written; rule 5 sentence 3, as 212)
+  call void @cqrt_and_i1(i32 %7, i32 %17, i32 %18)    ; IR: uncompute the conjunction (after its last controlled call; rule 5 sentence 3, as 212)
+  call void @cqrt_free(i32 %18)    ; IR: release the conjunction (|0>)
   %22 = call i32 @cqrt_alloc_i1(i1 false)    ; IR: %7 = raise(6): fresh |0> for p_{i+1}
   call void @cqrt_not_i1(i32 %17)    ; IR: X bracket: NOT f_i
   call void @cqrt_and_i1(i32 %12, i32 %17, i32 %22)    ; IR: %7 = raise(6): p_{i+1} = p_i & NOT f_i
@@ -242,7 +246,7 @@ define i32 @raise_default(i32 noundef %0, double noundef %1, i32 noundef %2) {
   br label %10
 24:
   call void @cqrt_tape_write_i32_lit(i32 %5, i32 6)    ; IR: %7 = raise(6): argument 0, the signal number (classical): a _lit field
-  call void @cqrt_tape_effect_controlled(i32 %12, i32 %5, ptr @.cq.effect.raise)    ; IR: %7 = raise(6): the complement branch, the effect entry raise under p_n (performed by the backend: SIGABRT's default action terminates); bare form, %7 is unused
+  call void @cqrt_tape_effect_controlled(i32 %12, i32 %5, ptr @.cq.effect.raise, i32 1)    ; IR: %7 = raise(6): the complement branch, the effect entry raise under p_n (performed by the backend: SIGABRT's default action terminates); bare form, %7 is unused
   br label %25
 25:
   %26 = phi i32 [ %9, %24 ], [ %30, %29 ]    ; IR: candidates still to undo, from n down to 0
@@ -276,7 +280,7 @@ define i32 @remove_cond(i32 noundef %0, double noundef %1, i32 noundef %2) {
   call void @cqrt_ry_i32(i32 %5, double %1)    ; IR: %4 = cq_theta_si32(%0, %1)  [Ry]
   %6 = call i32 @cq_template_icmp_sgt_i32_hl(i32 %5, i32 %2)    ; IR: %5 = icmp sgt i32 %4, %2  [predicate of block %6]
   call void @cqrt_tape_write_i64_lit(i32 %4, i64 ptrtoint (ptr @.str to i64))    ; IR: %7 = remove(@.str): argument 0, the path: a pointer is its address, classical: a _lit field (the string is not expanded into fields)
-  call void @cqrt_tape_effect_controlled(i32 %6, i32 %4, ptr @.cq.effect.remove)    ; IR: block %6: %7 = remove(@.str): the effect entry under the predicate, complete after its field; the host call is not executed; bare form, %7 is unused
+  call void @cqrt_tape_effect_controlled(i32 %6, i32 %4, ptr @.cq.effect.remove, i32 1)    ; IR: block %6: %7 = remove(@.str): the effect entry under the predicate, complete after its field; the host call is not executed; bare form, %7 is unused
   call void @cq_template_icmp_sgt_i32_hl_unc(i32 %6, i32 %5, i32 %2)    ; IR: uncompute %5
   call void @cqrt_free(i32 %6)    ; IR: release the %5 rail (|0>)
   %7 = call i32 @cqrt_measure_i32(i32 %5)    ; IR: %9 = cq_measure_si32(%4)
@@ -317,7 +321,7 @@ declare void @cqrt_qram_store_i32_hl_controlled(i32, i32, i64, i32)
 declare i32 @cqrt_tape_alloc()
 declare void @cqrt_tape_write_i32_lit(i32, i32)
 declare void @cqrt_tape_write_i64_lit(i32, i64)
-declare void @cqrt_tape_effect_controlled(i32, i32, ptr)
+declare void @cqrt_tape_effect_controlled(i32, i32, ptr, i32)
 declare i32 @cq_template_icmp_sgt_i32_hl(i32, i32)
 declare void @cq_template_icmp_sgt_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_icmp_eq_i64_hl(i32, i64)

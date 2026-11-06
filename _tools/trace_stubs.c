@@ -121,7 +121,7 @@ int cq_template_fadd_f64_ll_rmq_exc(double a, double b, int m) { int h = nh++; p
 void cq_template_fadd_f64_ll_rmq_exc_unc(int o, double a, double b, int m) { printf("cq_template_fadd_f64_ll_rmq_exc_unc(h%d, %a, %a, h%d)\n", o, a, b, m); }
 
 /* --- 102: effects under a quantum predicate (cqrt_tape_effect_controlled, accepted by the owner 2026-10-20) --- */
-void cqrt_tape_effect_controlled(int c, int t, const char *name) { if (name) printf("cqrt_tape_effect_controlled(h%d, t%d, \"%s\")\n", c, t, name); else printf("cqrt_tape_effect_controlled(h%d, t%d, null)\n", c, t); }
+void cqrt_tape_effect_controlled(int c, int t, const char *name, int n) { if (name) printf("cqrt_tape_effect_controlled(h%d, t%d, \"%s\", %d)\n", c, t, name, n); else printf("cqrt_tape_effect_controlled(h%d, t%d, null, %d)\n", c, t, n); }
 void cqrt_tape_write_str_lit(int t, const char *s) { printf("cqrt_tape_write_str_lit(t%d, \"", t); pfmt(s); printf("\")\n"); }
 
 /* --- 103-105: fp classification intrinsic (llvm.is.fpclass -> cq_template_is_fpclass_<W>_hl(h, mask), an i1 rail) --- */
@@ -226,8 +226,8 @@ BUS(i1) BUS(i7) BUS(i8) BUS(i16) BUS(i32) BUS(i64) BUS(i80) BUS(i100) BUS(i128) 
 #endif
 
 /* Effect entries (§1.11): the result form of every width, and the field writes the archive lacks. r / h' are fresh rails. */
-#define EFFW(W) int cqrt_tape_effect_##W##_controlled(int c, int t, const char *name) { int r = cqrt_alloc_handle(); \
-    if (name) printf("cqrt_tape_effect_" #W "_controlled(h%d, t%d, \"%s\") -> h%d\n", c, t, name, r); else printf("cqrt_tape_effect_" #W "_controlled(h%d, t%d, null) -> h%d\n", c, t, r); return r; }
+#define EFFW(W) int cqrt_tape_effect_##W##_controlled(int c, int t, const char *name, int n) { int r = cqrt_alloc_handle(); \
+    if (name) printf("cqrt_tape_effect_" #W "_controlled(h%d, t%d, \"%s\", %d) -> h%d\n", c, t, name, n, r); else printf("cqrt_tape_effect_" #W "_controlled(h%d, t%d, null, %d) -> h%d\n", c, t, n, r); return r; }
 EFFW(i1) EFFW(i8) EFFW(i16) EFFW(i32) EFFW(i64) EFFW(i128) EFFW(f16) EFFW(f32) EFFW(f64) EFFW(f80)
 #define TWR(W) int cqrt_tape_write_##W(int t, int s) { int h = cqrt_alloc_handle(); printf("cqrt_tape_write_" #W "(t%d, h%d) -> h%d\n", t, s, h); return h; }
 #define TWRC(W) int cqrt_tape_write_##W##_controlled(int c, int t, int s) { int h = cqrt_alloc_handle(); printf("cqrt_tape_write_" #W "_controlled(h%d, t%d, h%d) -> h%d\n", c, t, s, h); return h; }

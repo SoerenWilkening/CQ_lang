@@ -124,7 +124,7 @@ define i32 @signal_table(i32 noundef %0, double noundef %1, i32 noundef %2) {
   br label %13
 27:
   call void @cqrt_tape_write_i32_lit(i32 %5, i32 30)    ; IR: %8 = raise(30): argument 0 of the effect entry, classical: a _lit field
-  call void @cqrt_tape_effect_controlled(i32 %15, i32 %5, ptr @.cq.effect.raise)    ; IR: %8 = raise(30): the complement branch (no registered function), the effect entry raise under p_n; bare form, %8 is unused
+  call void @cqrt_tape_effect_controlled(i32 %15, i32 %5, ptr @.cq.effect.raise, i32 1)    ; IR: %8 = raise(30): the complement branch (no registered function), the effect entry raise under p_n; bare form, %8 is unused
   br label %28
 28:
   %29 = phi i32 [ %12, %27 ], [ %33, %32 ]    ; IR: candidates still to undo, from n down to 0
@@ -269,7 +269,7 @@ declare void @cqrt_qram_swap_i32_hl(i32, i64, i32)
 declare void @cqrt_qram_swap_i32_hl_controlled(i32, i32, i64, i32)
 declare i32 @cqrt_tape_alloc()
 declare void @cqrt_tape_write_i32_lit(i32, i32)
-declare void @cqrt_tape_effect_controlled(i32, i32, ptr)
+declare void @cqrt_tape_effect_controlled(i32, i32, ptr, i32)
 declare i32 @cq_template_icmp_sgt_i32_hl(i32, i32)
 declare void @cq_template_icmp_sgt_i32_hl_unc(i32, i32, i32)
 declare i32 @cq_template_icmp_eq_i64_hl(i32, i64)

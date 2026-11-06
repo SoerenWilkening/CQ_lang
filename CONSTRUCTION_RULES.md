@@ -4,7 +4,7 @@ This document and `examples/` are the specification of the CQ compiler. A compil
 for every example, the circuit it emits from `name.c` compiled with `clang -O1` (x86-64) is
 semantically equal to `name.lowered.ll` under §6. The lowered files are hand-written witnesses;
 where one disagrees with this document, the document wins and the example is to be fixed (§7). An
-example §7 lists as "regeneration owed (flat memory)" is not normative for memory until regenerated.
+example §7 lists as regeneration owed is not normative for the construction it names until regenerated.
 
 ## 0. Scope and fixed decisions
 
@@ -22,7 +22,11 @@ example §7 lists as "regeneration owed (flat memory)" is not normative for memo
   which objects exist, or how large one is. A pointer is its x86-64 address, a classical value or
   a 64-bit rail (§1.1), and all memory is one bus indexed by that address (§1.3, rule 20).
 - **Every body is lowered**; none is called unlowered. The lowering for all-classical arguments is
-  the function's own symbol (§1.4). The only bodies never lifted are those rule 16 names.
+  the function's own symbol (§1.4). The only bodies never lifted are those rule 16 names and the
+  bundle's host symbols `__cq_mem`, `__cq_alloc`, `__cq_clone_*` and `__cq_sig`: classical host C
+  shipped with the runtime, one definition per process. A
+  module with no `cq_*` call, no root list and no reference to a declared clone (rule 27) is not
+  lowered at all: it passes through unchanged, and a call into it is a host call (rule 16).
 - **Qubits are allocated lazily.** A rail is classical bits in the backend until a gate forces
   qubits. The lowered program never asks whether a rail is classical: no such symbol exists.
 - **Garbage policy.** Garbage that compute–copy–uncompute can clean must be cleaned. A rail that
@@ -179,8 +183,8 @@ qram_swap_<W>[_hl][_controlled]([c,] m, addr, h)
                                   One call per access: a wide access is never spelled as byte accesses
 tape_alloc() -> t
 tape_fmt[_controlled]([c,] t, fmt)
-tape_effect[_<W>]_controlled(c, t, name) [-> r]
-                                  the effect entry of the host call `name` with the fields written to t; the _<W>
+tape_effect[_<W>]_controlled(c, t, name, n) [-> r]
+                                  the effect entry of the host call `name` with the last n fields written to t; the _<W>
                                   form returns a fresh rail r of the callee's result type (below). A null `name`:
                                   the callee is the host address in the entry's first field (rule 19)
 tape_write_<W>[_controlled]([c,] t, h) -> h', tape_write_<W>_lit(t, lit)
@@ -401,12 +405,11 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
    classical paths returns the outcome there as a seed rail; its twin leaves that rail alone
    and the caller frees it after the twin (a table clone's results stay allocated, §1.4).
    Example owed (§8).
-   — 01, 38, 42, 65, 128, 136, 140, 155, 195, 205, 207, 211; 120 (regeneration owed).
+   — 01, 38, 42, 65, 128, 136, 140, 155, 195, 205, 207, 211; 120.
 
 3. **Taint propagation.** Forward over SSA, and through calls per rule 18.
-   - *Through memory.* Every load is a bus load and its result is a rail; the exceptions are a
-     load of a host-resident object (rule 20) and an observable `volatile` load at a classical
-     address (rule 24), which are classical. Nothing is asked about what the cell holds: a
+   - *Through memory.* Every load is a bus load and its result is a rail; the exception is a
+     load of a host-resident object (rule 20), which is classical. Nothing is asked about what the cell holds: a
      classical value or a measured outcome that was stored and is loaded again is a rail.
      Over-taint is accepted (§0: such a rail costs no qubit).
    - *Pointers.* A pointer is tainted iff it is computed from a rail, and is then one 64-bit
@@ -416,7 +419,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
 
    The angle operand of a rotation is classical unless rule 15 applies. Casts, `freeze`,
    `insertvalue`/`extractvalue`/`shufflevector` on handles are representation changes and emit no
-   gate for lane moves. — 17, 18, 26, 56, 103, 195, 203; 63 (regeneration owed).
+   gate for lane moves. — 17, 18, 26, 56, 103, 195, 203; 63.
 
 4. **Opcode lowering, always out of place.** A tainted opcode becomes
    `cq_template_<op>[_<pred>]_<W>[_shape]` into a fresh rail (§1.2). A classical operand is a
@@ -426,7 +429,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
    if written (an `add`, `sub` or `xor` is the in-place form, its result a plain load before the swap-out). There is no in-place
    template; in-place is reserved for rule 2 (rotation of an existing rail), rule 10 (controlled
    Ry), `xorc` on a basis-state seed and rule 5's in-place form on a memory cell. — 10, 11, 13,
-   14, 56, 92, 112; 94, 130 (regeneration owed).
+   14, 56, 92, 112; 94, 130.
 
 5. **Uncompute spine.** Every rail that is not a user register, a result, a tape/abort rail, an
    output or a rail kept below is uncomputed by its producer's `_unc(out, operands…)` and freed.
@@ -440,8 +443,9 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
    the compiler: no rule asks at compile time whether two addresses differ (the one run-time test of two
    classical addresses is the in-place form's *Readers* clause). A *memory version change* is a bus
    store, an in-place form, a plain store or memory intrinsic to a host-resident object (rule
-   20), an observable `volatile` store (rule 24), an allocation (rule 16), an effect entry or a host call that is
-   not `memory(none)` or `memory(read)` (rule 16; a format entry is none), a call of a table
+   20), an observable `volatile` store (rule 24), an allocation (rule 16), an effect entry or a host call unless
+   LLVM's memory attribute marks the callee as writing no memory (`memory(none)`, `memory(read)`,
+   `memory(argmem: read)` and the like) (rule 16; a format entry is none), a call of a table
    clone (rules 19, 27), or a call of a function that *writes memory*: one whose body contains
    any of these (a static property, the least fixpoint over calls by name). Three sentences
    are the whole of memory uncomputation:
@@ -493,8 +497,10 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
    - *Width casts.* `y = load T p; trunc T y to U` (`nuw`, or a range fact that the high bits
      are 0), the steps at `U`, `zext U to T; store T, p` is the form at width `U` (a `_Bool`
      cell: `qram_swap_i1`, `ry_i1`, `qram_swap_i1`); the high bits stay in the cells (§1.3).
-     Every load of a `_Bool` cell used as `i1` (`trunc nuw` to `i1`, or a `[0,2)` range fact) is
-     ONE access at `i1` (`qram_load_i1`), never `qram_load_i8` and a trunc template; `zext (icmp
+     Every load of a `_Bool` cell read through a `trunc` to `i1` (or an `icmp ne 0` a `[0,2)` range
+     fact makes equivalent) is ONE access at `i1` (`qram_load_i1`), never `qram_load_i8` and a trunc
+     template; a `load i8 !range [0,2)` whose user is a `zext` is an `i8` load and the `zext`
+     template (176, 178, 179, 185); `zext (icmp
      ne x, y)` of two such loads is the step `xor_i1`, so `*p ^= *q` on `_Bool` cells is the form at `i1`.
    - *Readers.* `y` may be the value -O1 forwarded from the preceding store to `p`: each store
      closes its own form, and the interval then runs from that store. Where `y` is the result
@@ -512,7 +518,9 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
      load taken after the swap-in when d = 1 and the copy rail when d = 0, joined by a
      classical `phi` of handles. With several changes in the interval `d` is the AND of their
      tests, computed before the first of them, where the one copy is taken; a change of any
-     other kind, a change whose address is not yet computed at that point, or an address rail `p`, makes `d` the constant 0 (the copy, no branch).
+     other kind, a change whose address is not computable at that point, or an address rail `p`, makes `d` the constant 0 (the copy, no branch). A classical address is computable at that point when it is a
+     `getelementptr`/cast chain over values live there, wherever the IR places the chain: the
+     compiler computes it there (164).
      Another reader of `y`, or of a step value before the first `cq_theta` step, reads a plain
      load taken before the swap-out (the bijections recomputed on that copy); every later reader
      of `y'` (no branch) ONE plain load taken right after the swap-in. A value at or
@@ -547,7 +555,8 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
      incoming that is a seed is freed by the same clean-up (204).
      The old value is kept only when no such point exists: it escapes (`ret`, a call argument
      the callee keeps), it is the value or control rail of a kept store (rule 5), it is
-     measured (rule 2 instead), or a reader of it follows a non-diagonal gate on its image.
+     measured (rule 2 instead), it is operand 1 of an update whose operands are both dead
+     (`sum = s + t`: `s` is cleaned against the sum, `t` kept; below), or a reader of it follows a non-diagonal gate on its image.
      A kept old value is a which-path record of the rail that replaced it: a later
      non-diagonal gate on `y'` or on an operand of `f` acts on a dephased register (162).
    - *Bijections:* `add`, `sub`, `xor` with any other operand (classical or a rail), `sub 0, y`,
@@ -584,7 +593,8 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
      when both operands are garbage rule 6 has no trigger (198). When the garbage's
      `_unc` reads the other operand, the garbage is uncomputed first and rule 6 asks the
      composite update (127: `g = 2x`, `y' = g + x` is `y' = 3x`, so `x` is cleaned). When
-     neither is such garbage, operand 0 of the IR instruction is cleaned and the other kept.
+     neither is such garbage, operand 0 of the IR instruction is cleaned against the result and
+     operand 1 is kept.
    - *Dead on one classical path only* (a classical `select` or `phi` between `y'` and `y`:
      `c > 1 ? x + 7 : x`): the clean-up runs under a classical branch on that path's condition
      at the clean-up point; on the other path the old rail is the live value. Example owed (§8).
@@ -594,7 +604,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
 7. **Seed rails.** A rail minted from a classical constant or parameter and never written is in a
    known basis state and is freed directly (§0), whatever its value (`alloc_i1(true)`). The seed a store of a classical value mints
    is that store's value rail and is kept with it (rule 5; a basis state costs no qubit).
-   — 25, 57, 62; 28, 94, 95 (regeneration owed).
+   — 25, 57, 62; 28, 94, 95.
 
 8. **Branch flags.** A tainted `br` condition becomes a flag rail: the compare template's result,
    or the bare `i1` rail. A conjunction of flags is `and_i1` into a fresh `|0⟩`; a disjunction
@@ -607,7 +617,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
    (rule 7) and joins by `and_i1`/`or_i1`. A purely classical condition is always a classical
    branch, also inside a clone; a clone body is never flattened as a whole. The flag is
    uncomputed after its last controlled gate; a flag that controls a kept store is kept with
-   it (rule 5). — 03, 08, 21, 23, 69, 137, 138, 146, 154; 59 (regeneration owed).
+   it (rule 5). — 03, 08, 21, 23, 69, 137, 138, 146, 154; 59.
 
 9. **Value arms.** Pure arm code (templates on SSA values) is hoisted and computed unguarded into
    fresh rails. A bus access is never hoisted: it stays in its arm as the `_controlled` form under
@@ -634,7 +644,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     On a memory cell the controlled Ry is rule 5's in-place form with `ry_<W>_controlled(flag, h,
     θ)` on the swapped-out rail, and the cell is the register. `r = c;` before a prep of a cell
     is a kept store: its tape slot holds the displaced content, so whether anything read the
-    cell in between is never asked. — 39, 66, 125, 133, 141; 120 (regeneration owed).
+    cell in between is never asked. — 39, 66, 125, 133, 141; 120.
 
 11. **Angle select is a quantum angle.** An angle that depends on quantum data in any way (a
     `select` or `phi` on a quantum flag, a `switch` over a quantum scrutinee, a value loaded from
@@ -643,7 +653,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     controlled rotations. A `cq_phi` whose angle -O1 merged into one `phi` over the edges of a
     quantum `switch` or diamond (22 `switch_phase`) is this case: the `phi` is the rule 9/13
     select chain of its incoming values, and the phase fires as `rz_qangle_controlled` under
-    the shared block's predicate. — 22, 132, 141; 142 (regeneration owed).
+    the shared block's predicate. — 22, 132, 141; 142.
 
 12. **Phase deletion.** `cq_phi(θ)` is deleted only when no quantum predicate is in scope at any
     call depth. Inside a `_ctl` clone or a callee reached from a quantum arm it is
@@ -662,8 +672,8 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     default is `unreachable` (LangRef), so the last destination is the complement of the
     others. The lowered function keeps every destination block distinct (a stand-in with its
     own code is acceptable), and every `blockaddress` constant in the module denotes the
-    lowered block. `callbr` (`asm goto`) is inline asm (rule 27). — 22, 49, 123, 131; 142
-    (regeneration owed); examples owed for a computed `goto` and a reachable default (§8).
+    lowered block. `callbr` (`asm goto`) is inline asm (rule 27). — 22, 49, 123, 131; 142;
+    examples owed for a computed `goto` and a reachable default (§8).
 
 14. **Loops.**
     - *Classical bound, quantum body*: the loop stays a classical loop. The bound is classical only
@@ -674,7 +684,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       out (`alloc` + `copy`) a reverse loop pops and uncomputes each trip. A rail rule 5 keeps
       that a reverse-loop `_unc` reads is reached by pushing its handle per trip (`cqrt_push`/
       `cqrt_pop`), never by recomputing it, and is neither uncomputed nor freed. Rule 5 decides each
-      load as anywhere. — 25, 27, 57, 62, 131; 28, 187, 188 (regeneration owed).
+      load as anywhere. — 25, 27, 57, 62, 131; 28, 187, 188.
     - *Quantum-dependent exit, cutoff K*: a loop whose exit test reads a rail, a value loaded from
       the bus included (the user raises K, §0). The loop is re-rolled so the pre-header guard is
       trip 0 of the latch test (equality by SCEV: the same expression over SCEV-equal
@@ -707,7 +717,9 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       `a_K` and is uncomputed by the reverse loop like every earlier one; a predicate that
       controls a kept store, and every other trip rail rule 5 keeps, is not pushed but for its handle (first bullet). A test-at-bottom
       loop (`do … while`) runs trip 0 under the `|1⟩` seed and computes `a_{j+1}` after the
-      body (150). Where -O1 tests at the loop header with no pre-header guard (09, 37, 54) the
+      body (150). A trip with two exit tests (a header test, the body, a latch test) chains a predicate
+      per test, and `a_K` is the predicate of reaching the header after the K-th latch test; no
+      header test of a (K+1)-th trip is made (189). Where -O1 tests at the loop header with no pre-header guard (09, 37, 54) the
       first header test is trip 0 of the chain, computed before the loop, and each of the K
       trips is body then test. Where the pre-header guard is not the latch test at trip 0 by
       SCEV (a pointer chase `while (n) { …; n = n->next; }`), the guard stays a classical
@@ -717,13 +729,15 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       `_unc` after the chain, never as a seed (153). Nested K-loops keep one inner `a_K` per
       outer trip plus the outer one (68, 153). A carried value whose exit `phi` -O1 folded to
       a literal is copied out from the carried rail (149). — 05, 09, 37, 53, 54, 68, 149, 150,
-      151, 152, 153, 169; 203 (an exit on a loaded value); 55, 87, 189 (regeneration owed).
+      151, 152, 153, 169; 203 (an exit on a loaded value); 55, 87, 189.
     - *Classical bound with a quantum exit* (`for (i = 0; i < n; i++) if (q) break;`, a mixed exit
       `c_classical || q`): no cutoff applies. The loop is a classical loop over the classical bound,
       `q` feeds the predicate chain, and **every** predicate, the last included, is a function of
       the inputs and is uncomputed by the reverse loop (one that controls a kept store is kept,
       rule 5). The chain's `|1⟩` seed is minted after the classical zero-trip test, where a trip
-      can run, never on the skip path (26). — 26, 139; 121, 130 (regeneration owed).
+      can run, never on the skip path (26). A bus load an exit test reads is under the predicate of
+      reaching that test as in a K-loop (the predicate in scope for trip 0's), pushed with its trip's
+      rails and un-copied by the reverse loop under the same rail (117). — 26, 139; 121, 130.
     - *Recursion with quantum depth* (a function re-entered under a quantum predicate,
       directly, through other functions or through a function-pointer rail): ONE clone per
       function, mask and kind. A `_ctl` clone that has a depth `d` (§1.4) counts it against
@@ -739,7 +753,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       recursion and its own bus-resident locals by `__cq_alloc`. Clone and twin are rule 18's
       like any other; the twin makes the same cut, and its cut activation mints nothing and calls no gate; a table twin still
       frees the cut activation's `|0⟩` result rails (§1.4, 211). A forward clone that a twin calls to recompute is an activation like any other
-      and keeps its overflow copy at the cut. — 205; 98 (regeneration owed).
+      and keeps its overflow copy at the cut. — 205; 98.
     - `continue`, `return` inside a K-loop, nested K-loops: same chain, inner chain seeded by the
       outer trip predicate. — 149, 151, 153.
     - *No live exit*: a K-loop whose every exit edge leads only to a `noreturn` arm runs its K
@@ -767,7 +781,11 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     `__cq_vfscanf`, lifted like any body, so no stream call by name remains in a lifted
     body); `signal`, `raise`; rule 23's
     fenv functions; rule 24's `setjmp`, `longjmp` and `pthread_*`. `stdin`, `stdout`, `stderr`
-    and every `FILE` are the host C library's objects.
+    and every `FILE` are the host C library's objects. What clang -O1 emits in place of a memory
+    operation is that operation: `memset_pattern4/8/16` is a rule-22 fill whose source repeats, a
+    fortified `__*_chk` call the plain function with the check dropped, and `__atomic_load`/`store`/
+    `exchange`/`compare_exchange` rule-22 copies (a compare-exchange a byte compare and its two
+    arms, rule 24).
     - *Ordinary host call*: every argument classical, no quantum predicate in scope, not a
       stream call with a pointer argument (the backend alone sees whether a buffer's cells are
       QUANTUM), and no tape or abort event can precede it: none from which the call is
@@ -782,7 +800,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     - *Effect entry*: every other call that is in no class below, an unknown callee included
       (it is never dropped). It is ONE call sequence on the function's tape `t` (one
       `tape_alloc` at the entry of each function that records an entry; 47): the fields, then
-      `tape_effect[_<W>]_controlled(c, t, name)`. `c` is the predicate in scope or an
+      `tape_effect[_<W>]_controlled(c, t, name, n)`, n the number of fields. `c` is the predicate in scope or an
       `alloc_i1(true)` seed (rule 7: freed right after the effect call); the entry captures
       `c`, which is uncomputed afterwards like any flag. The `_<W>` form is used when the
       program reads the result, which is the rail it returns: KEPT, it has no `_unc` and is
@@ -828,15 +846,17 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       its trip bound the new block's size (`n`, or K2) in place of min(K2, B), with no overflow predicate of its own (the
       length exceeds the bound only where the allocation's kept `n > K2` rail reads 1, §6); nothing for `p`. Allocating
       first lets `s` be un-copied before the copy's first store (rule 5). The size is always
-      this bus load, a rail (rule 3), also for a classical `p` and `n`: never a host read.
+      this bus load, a rail (rule 3), also for a classical `p` and `n`: never a host read. A block
+      not made by `__cq_alloc` has no size header: `realloc` of it reads whatever word precedes it
+      (a stated deviation).
     - *Deallocation*: `free` is nothing, under any predicate. `llvm.lifetime.*` and
       `llvm.stacksave`/`stackrestore` are dropped for bus-resident objects.
     - *Variadic calls.* The caller of a variadic clone (§1.4) stores every variadic argument
       into a `__cq_alloc` block in the SysV overflow-area layout (in order, 8-byte slots at
       the promoted type, 16-byte-aligned types in 16) and passes the block's address as the
       clone's last formal. In the clone `va_start(ap)` is the bus stores of `{gp_offset = 48,
-      fp_offset = 176, overflow_arg_area = block, reg_save_area = 0}` into `ap`; `va_arg`,
-      `va_copy` and `va_end` are the -O1 code as it stands. In the own symbol of a variadic
+      fp_offset = 176, overflow_arg_area = block, reg_save_area = 0}` into `ap`; `va_arg` and
+      `va_end` are the -O1 code as it stands; `llvm.va_copy(d, s)` is `memcpy(d, s, 24)` (rule 22; 109). In the own symbol of a variadic
       function `va_start` stays the intrinsic: it fills `ap` with host bytes.
     - *Signal table.* The bundle has a host array `__cq_sig` of one `i64` per signal number.
       `signal(sig, h)` is the bus load of the cell `&__cq_sig[sig]` (its result; emitted
@@ -854,7 +874,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     - *Callback.* A library that calls back into the program (`qsort`, `bsearch`) must itself be
       lowered: injected (rule 18) or a lowered library (rule 27).
 
-    — 45, 47, 138, 201, 208, 209, 210, 212, 213; 91, 99, 102, 108, 186 (regeneration owed).
+    — 45, 47, 138, 201, 208, 209, 210, 212, 213; 91, 99, 102, 108, 186.
 
 17. **`cq_invert`.** The markers are the run-time primitives `invert_begin()` / `invert_end()`
     (§1.3): the code between them is lowered exactly as it would be anywhere else, and the
@@ -889,7 +909,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     - *Markers that do not pair on a path* are the C program's own error and are lowered as
       they stand.
 
-    Examples owed (§8). — 44; 61, 126 (regeneration owed).
+    Examples owed (§8). — 44; 61, 126.
 
 18. **Function lifting.** Every function with a body is lowered (rule 19), once per taint mask of
     its scalar formals that a call uses (§1.4); the all-zero mask is the function itself. A
@@ -902,8 +922,10 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     **Twin.** `_unc` recomputes the results (templates, bus loads, its callees' clones and
     twins), XORs each out with `copy_<W>` and uncomputes; the caller frees the result rails
     after it. It repeats no phase and no tape or abort event (it recomputes through `_pure`,
-    §1.4) and makes no memory version change: a function that writes memory (rule 5),
-    measures or reads the result rail of an effect entry has no twin (its table clone's is
+    §1.4) and makes no memory version change: a function that writes memory (rule 5), has a
+    measurement whose outcome is tainted (under a quantum predicate, or rule 19's controlled
+    copy) or reads the result rail of an effect entry has no twin (a classical-path measurement
+    keeps it, rule 2; its table clone's is
     §1.4's), and its rail results are KEPT by the caller. The twin reads memory again, so the call of a clone that loads
     from the bus, itself or through a callee, is a load for rule 5: its twin runs after the
     results' last consumer and before the next memory version change after the call on every
@@ -916,8 +938,8 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     **Library code** is injected source (musl, linked before lowering) and lifted like any
     callee. An LLVM math intrinsic on a quantum operand (`llvm.exp.f64`, `llvm.sin.f64`, …) is
     the call of the libm function of the same name (`llvm.<f>.f32` is `<f>f`, `llvm.<f>.f80`
-    is `<f>l`), lifted from its body whenever the module has one after injection and a
-    declared clone otherwise (175; 184, regeneration owed). On `half`/`bfloat` it binds to the
+    is `<f>l`), lifted from its body whenever the module has one after injection; a bodiless one is its
+    declared clone on a root list (rule 27; 175, 184) and the host boundary otherwise (rule 16). On `half`/`bfloat` it binds to the
     `float` body around `fpext`/`fptrunc`, on a vector operand per lane (rule 25), and a
     constrained intrinsic is `llvm.<f>` under its exception behaviour (rule 23: ignore and
     maytrap bind to the plain body, strict to 82's ABI). The rule-23 flags rail is an argument
@@ -928,14 +950,15 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     Result taint is recorded per clone (an `i32` return is a handle or a classical int by that
     record, not by its type); a result computed from a bus load is a rail (rule 3), also in the
     all-zero mask. Recursion with classical depth is ordinary calls; with quantum depth it is
-    rule 14. — 06, 07, 33, 34, 64, 82, 119, 136, 195, 200, 204; 36, 51, 95, 109 (regeneration owed).
+    rule 14. — 06, 07, 33, 34, 64, 82, 119, 136, 195, 200, 204; 36, 51, 95, 109.
 
 19. **Indirect and opaque callees.**
     **Every body is lowered** (§0). The own symbol (§1.4) is what an all-classical call and
     host code reach, and a clone that would coincide with it is it (162). A body with no bus
-    access, no `cq_*` call and no call is its own lowering. **The compiler never inlines**: a
+    access, no `cq_*` call and no call (opcode-like, lifetime and debug intrinsics are not calls)
+    is its own lowering. **The compiler never inlines**: a
     callee reached with a quantum argument is a rule-18 clone, whatever it returns and however
-    it returns it (musl's `__rem_pio2(x, &y)` inside `sin`; 31, 163, regeneration owed).
+    it returns it (musl's `__rem_pio2(x, &y)` inside `sin`; 31, 163).
     **Results.** A function's own symbol that returns an unmeasured quantum value returns the
     handle (escaped, never freed): its parameter list keeps the C ABI, and its return type is
     the C return type when that is an integer of 32 bits or more (the handle zero-extended,
@@ -945,7 +968,8 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     rule-6 image, is FROZEN, and the caller keeps it like its own registers (162). Every other
     result is zeroed by the twin, and so that the twin can, the clone returns the handle of
     each register it minted that is still allocated at its return as an extra `i32` result
-    after the results, the twin taking those handles first. The extra results are the union
+    after the results, and the twin takes them there too, after the results and before the
+    arguments (§1.4's `_unc(outs…, args…)`). The extra results are the union
     over the callee's return paths in mint-site order; on a classical path that did not mint
     one the callee returns handle 0 (§1.1), which the twin, replaying the same path, never
     reads. In a cycle of callees the records are the least fixpoint over the cycle.
@@ -999,7 +1023,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     its results merged like any classical arm value (rule 9), a call with no quantum argument
     included (musl's `__math_oflow(0)` in `exp`; a `volatile` access to a dead local inside it
     is nothing, rule 24; example owed, §8). A callee with no body follows rules 16 and 27.
-    — 162, 193; 197, 200, 211, 212; 96, 97, 102, 117, 124 (regeneration owed).
+    — 162, 193; 197, 200, 211, 212; 96, 97, 102, 117, 124.
 
 20. **Memory.** All memory of the program is the one bus `M` (§1.3). Nothing is known about an
     address: not the object it lies in, its extent, or what its cells hold. Globals, `static` and
@@ -1015,7 +1039,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
 
     - **Every load is a bus load and its result is a rail; every store is a bus store** (the
       exceptions: a host-resident object, below, except as the source of a rule-22 copy into
-      bus memory, and rule 24's observable `volatile`). `p` is the pointer's run-time `i64`,
+      bus memory). `p` is the pointer's run-time `i64`,
       spelled `ptrtoint` of the pointer: the instruction for an instruction-valued pointer
       (for a pointer argument at any point that dominates its uses, the position not compared; 206 places it once at function entry, after `__cq_mem()`), the
       constant expression `ptrtoint (ptr @G to i64)` for a global, also inside an `_hl`
@@ -1060,8 +1084,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       are dropped (rule 16), so a block-scoped bus-resident object is one block whose cells
       carry over from trip to trip, and the end of its lifetime undoes nothing.
 
-    — 195, 196, 197, 199, 203, 204; 29, 30, 50, 58, 67, 71, 74, 75, 76, 77, 78, 160, 168
-    (regeneration owed).
+    — 195, 196, 197, 199, 203, 204; 29, 30, 50, 58, 67, 71, 74, 75, 76, 77, 78, 160, 168.
 
 21. **Pointers.** A pointer is an integer, its x86-64 address: a classical `ptr`/`i64`, or ONE
     handle to a 64-bit rail iff it is computed from a rail (rule 3: loaded from the bus, merged
@@ -1086,7 +1109,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       pointer handed to host code is its address.
 
     Pointer values are compared only relationally (§6).
-    — 198, 200, 208; 84, 85, 86, 88, 89, 105, 107, 129, 167, 189 (regeneration owed).
+    — 198, 200, 208; 84, 85, 86, 88, 89, 105, 107, 129, 167, 189.
 
 22. **Memory intrinsics.** `llvm.memcpy`, `llvm.memmove` and `llvm.memset` (`.inline` forms
     included) are byte accesses on the bus, `qram_load_i8` and `qram_store_i8`: `_hl` at a
@@ -1121,7 +1144,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     A struct assignment, a `byval` copy (rule 26) and `realloc`'s copy are this copy; padding
     bytes are bytes. `memcmp`, `strlen`, `strcmp` and the other string and memory functions are
     library calls, lifted by rule 18.
-    — 196, 200 (a `memset`), 201, 208 (a rail length); 202, 72, 73, 90, 190 (regeneration owed).
+    — 196, 200 (a `memset`), 201, 208 (a rail length); 202, 72, 73, 90, 190.
 
 23. **Floating-point environment.** The C17 §7.6 functions (`fegetround`, `fesetround`,
     `feclearexcept`, `feraiseexcept`, `fetestexcept`, `fegetexceptflag`, `fesetexceptflag`,
@@ -1182,27 +1205,26 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       through such `getelementptr`s, a load or a store through it, lifetime and debug intrinsics aside. The qualifier is dropped
       and the access is rule 20's. Such a global that no instruction stores to is
       host-resident like a constant (48).
-    - *Observable.* Every other `volatile` access is made on the host, never on the bus. With a
-      classical address, an untainted value and no quantum predicate in scope it is the
-      instruction as it stands. A store of a rail, or under a quantum predicate, is the
-      rule-16 effect entry `volatile_store` (fields: the address, the value); a load under a
-      quantum predicate is a host read executed unguarded and merged (rule 19). At an address
-      rail the store is the same entry and the load the effect entry `volatile_load`, whose
-      result rail is the value.
+    - *Observable.* Every other `volatile` access is rule 20's bus access like any load or
+      store (the `_hl` form at a classical address, the `_controlled` store under a quantum
+      predicate); the overlay (§1.3) makes it the host access on a HOST cell and the cell's
+      value on a QUANTUM one. A load at a classical address under a quantum predicate is the
+      `_hl` load unguarded, its value merged (rule 19). No tape entry is made. Stated
+      deviation: the load's `_unc` reads the address a second time.
 
     `setjmp` and `longjmp` are host calls as they stand, and a `longjmp` under a quantum
     predicate is rule 16's `noreturn` arm. One pairing is made, by operand and never by what a
     pointer might reach: when exactly one `setjmp` in the module has an internal global `G` as
     its operand and every other use of `G` in the module is the operand of a `longjmp`, each
     such `longjmp` is an escaped-flag result merged at that `setjmp`'s diamond, and no host
-    call is made for either (101). — 48, 101; 32, 94, 106 (regeneration owed).
+    call is made for either (101). — 48, 101; 32, 94, 106.
 
 25. **Widths and ABI extras.** `i128`, `_BitInt`, `_Float16`, `x86_fp80` are width variants;
     `<2 x T>` is a pair of lanes, in memory one access per lane (rule 20); `signext`/`zeroext`
     are ABI notes. IR the pinned pipeline (§0) cannot emit (`fp128`, scalable or pointer
     vectors, `invoke`/`landingpad`/`resume`, `inalloca`, `va_arg` instructions, a non-x86-64
     `va_start`) is not an input: meeting it is an internal error that names §0, never a stop.
-    — 19, 93, 103, 110, 111; 63 (regeneration owed).
+    — 19, 93, 103, 110, 111; 63.
 
 26. **Aggregates and complex.** An SSA aggregate is one rail per quantum scalar field, classical
     fields stay classical; the mask is applied field-wise; `extractvalue`/`insertvalue` on handles
@@ -1220,7 +1242,7 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     `_Complex` arithmetic follows clang's Annex G IR: the inlined fast path lowers by rule 4, the
     `__mul*c3`/`__div*c3` fallback is injected and cloned by rule 18, and its `fcmp uno` branches
     are quantum control by rule 8. — 64, 69, 103, 159, 165, 166, 169; 70, 78, 107, 122, 163,
-    164 (regeneration owed).
+    164.
 
 27. **Callees without a body: declared clones.** The compiler knows no library by name (rule
     16's ISO C interfaces excepted). Which bodiless functions are lowered code is a build
@@ -1239,8 +1261,8 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       twin `_unc(outs…, args…)` is called, and frees the results, as rule 19 says for a table
       clone. Under a quantum predicate the call is `_t_ctl(pred, …)` and the results merge by
       `select`. Default C calling convention, not `fastcc`.
-    - *Cutoff.* Every quantum-exit loop and quantum-depth recursion inside the clone and its
-      callees runs min(K, B) trips (rule 14); no K variant of a library exists.
+    - *Cutoff.* Inside the clone and its callees every quantum-exit loop runs min(K, B) trips
+      and quantum-depth recursion is cut at K (rule 14); no K variant of a library exists.
     - *The table.* The same symbol is the row a function pointer reaches (rule 19); a declared
       clone handed a function pointer calls back through the table.
     - *Inline asm.* An `asm` statement with a quantum operand is a callee without a body, named
@@ -1252,9 +1274,10 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
     - *Library build.* The same compiler run over the library source with a list of roots:
       each root's table clone, with its `_ctl` form and twins, is exported and registered;
       calls inside the library are rule 18's and pass the received K down; each own symbol
-      serves host callers. Root lists and recommended K values are build inputs.
+      serves host callers. Root lists and recommended K values are build inputs (a corpus example's list is
+      the `roots=` field of its `_tools/drivers.txt` line: 161, 190).
 
-    — 161, 190 (regeneration owed); a callback through the table and an inline asm owed (§8).
+    — 161, 190; a callback through the table and an inline asm owed (§8).
 
 ## 4. Metadata and non-normative artefacts
 
@@ -1326,7 +1349,8 @@ rail-sized allocation must read `n > K2` on every input; where it reads 1 the re
 K2 bytes as the circuit does, and an access at or beyond byte K2 of that block is outside the block
 on both sides (totalized by §2, not compared against C). A function with no body (rules 16, 27) is
 modelled on both sides by one deterministic stand-in of the name and argument bits; the model is the
-checker's, not the spec's.
+checker's, not the spec's. An input on which the C program is undefined (206's call that violates
+`restrict`) is compared against the reference only.
 
 An indeterminate value the C program reads is what its cell holds on the bus: 0 for a cell never
 written since its `__cq_alloc` (`malloc`, an uninitialized bus-resident local, the grown part of a
@@ -1335,7 +1359,9 @@ left there (rule 20: one block). The classical reference models both. An
 uninitialized cell of a host-resident `alloca` (host stack memory) is not compared.
 
 Pointer values (`ptrtoint`, printed addresses) are compared only relationally (equality and
-order): host addresses differ per run. Byte identity of traces is never required.
+order): host addresses differ per run. Byte identity of traces is never required. The tape is
+compared per input as the sequence of its entries in order (name or format, fields, predicate);
+the `|0⟩` result rail of a deferred output is a stated deviation, not compared against the C program.
 
 The circuit compared is the one the backend builds from the lowered program's execution (§0): the
 gates between `invert_begin()` and `invert_end()` enter it reversed and inverted (rule 17), so the
@@ -1352,35 +1378,8 @@ Only a target proved dead from range facts is dead. The budget is the checker's,
 
 Every example not listed below conforms.
 
-**Regeneration owed (flat memory).** The lowered files of the 73 examples below show memory in
-forms these rules do not have. Until regenerated, an example is not normative for its bus
-accesses, pointers, memory intrinsics, allocation, the pointer arguments and results of its
-clones, and the uncompute around them. The 121 other examples stay normative.
+101 conforms to rule 24 as it stands.
 
-| what the lowered file shows | examples | owed under |
-|---|---|---|
-| a pointer that depends on quantum data | 84, 85, 86, 87, 88, 89, 90, 91, 105, 107, 129, 167, 186, 189, 190, 191 | rule 21: one 64-bit address rail, one bus access per dereference |
-| an array or a global accessed at a quantum index | 30, 55, 72, 73, 77, 160, 168, 188, 192 | rule 20: the one bus, the address by templates; rule 22 |
-| a pointer argument, out-parameter, `sret` or `byval` of a clone | 31, 36, 51, 52, 61, 70, 106, 108, 109, 117, 122, 124, 163, 164 | §1.4, rules 18, 26: one scalar per pointer; what a clone stores is kept (rule 5) |
-| a heap block | 75 | rule 16: `__cq_alloc` |
-| a global or `static` object | 67, 71, 99, 102 | rule 20: bus accesses at the object's host address |
-| a table of classical data read at a quantum index | 29, 50, 74, 76, 78, 97, 120, 142, 184 | rule 20: a bus load at an address rail |
-| a local array or cell of registers | 58, 59, 60, 94, 95, 114, 115, 116, 121, 176, 177, 178, 179, 185, 187 | rule 20: a bus-resident `alloca`; rules 2, 5: the in-place form |
-| a local whose address does not escape, holding a rail | 32, 63 | rule 20 (b): bus-resident |
-| a load through a host pointer parameter | 28, 126, 130 | rule 3: the load is a rail |
-
-Four of the 73 also change outside memory: 95 (rule 16: the variadic block, `__cq_q_sum3_00` in
-place of the per-signature clone), 97 (rule 19: candidates enumerated from the clone table, their
-`_t_ctl` clones under address compares), 99 (rule 16: `fwrite` and `fputs` are one effect entry
-each, the buffer is not expanded into fields), 102 (rule 16: `signal` and `raise` through the
-`__cq_sig` cells and rule 19; `raise` with no handler is the effect entry, not an abort arm).
-
-**Regeneration owed (clone ABI).** Three of the 121 are not normative for one construction each:
-96 (rule 19: a classical function pointer resolved through the clone table to a `_t` clone), 98
-(rule 14: one clone with a per-function activation count in place of one clone per depth), 161
-(rule 27: `__cq_q_ext_fn_11_t` with the K argument). 101 conforms to rule 24 as it stands.
-**Regeneration owed (rule 22).** 202 unrolls its constant-length copy into SSA handles; the one
-spelling is the rolled loops with `cqrt_push`/`cqrt_pop` (196; 200's `memset` is already rolled).
 
 ## 8. Examples written 2026-10-26 (144–180)
 

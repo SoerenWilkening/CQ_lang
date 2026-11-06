@@ -19,7 +19,7 @@ cqrt_tape_write_i64_lit(t2, 3)
 cqrt_tape_write_i64(t2, h7) -> h9
 cqrt_qram_load_i64_hl_unc(h7, m1, P1)
 cqrt_free(h7)
-cqrt_tape_effect_controlled(h8, t2, "fwrite")
+cqrt_tape_effect_controlled(h8, t2, "fwrite", 4)
 cqrt_free(h8)
 cq_template_icmp_sgt_i32_hl(h4, 1) -> h10
 cqrt_qram_load_i64_hl_controlled(h10, m1, P1) -> h11
@@ -27,7 +27,7 @@ cqrt_tape_write_i64_lit(t2, P2)
 cqrt_tape_write_i64_controlled(h10, t2, h11) -> h12
 cqrt_qram_load_i64_hl_controlled_unc(h11, h10, m1, P1)
 cqrt_free(h11)
-cqrt_tape_effect_controlled(h10, t2, "fputs")
+cqrt_tape_effect_controlled(h10, t2, "fputs", 2)
 cq_template_icmp_sgt_i32_hl_unc(h10, h4, 1)
 cqrt_free(h10)
 cq_template_zext_i8_to_i32_unc(h4, h3)
