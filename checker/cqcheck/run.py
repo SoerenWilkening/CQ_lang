@@ -1231,8 +1231,9 @@ def _no_twin_clones(bodies: Dict[str, str]) -> Set[str]:
             if f not in rotates and not f.endswith("_unc") and calls(b) & rotates:
                 rotates.add(f)
                 changed = True
-    # A table clone with no predicate keeps its twin for a measurement (rule 18), which re-reads the copy it pushed; a copy per trip
-    # leaves it none, as a rotation per trip does.
+    # A table clone with no predicate keeps its twin for a classical-path measurement (rule 18), which re-reads the copy it pushed. A
+    # copy per trip leaves it none, as a rotation per trip does, and so does a measurement under a quantum predicate: every formal of
+    # _t is a rail, so its branches are quantum and their merges are select templates.
     measures = {f for f, b in bodies.items() if _MEASURED_RAIL.search(b) and not f.endswith("_unc")}
     changed = True
     while changed:
@@ -1242,7 +1243,8 @@ def _no_twin_clones(bodies: Dict[str, str]) -> Set[str]:
                 measures.add(f)
                 changed = True
     out = {f for f, b in bodies.items()
-           if own(f, b) or (f in rotates and has_loop(b)) or (_TABLE_CLONE.match(f) and f in measures and has_loop(b))}
+           if own(f, b) or (f in rotates and has_loop(b))
+           or (_TABLE_CLONE.match(f) and f in measures and (has_loop(b) or "@cq_template_select_" in b))}
     changed = True
     while changed:
         changed = False

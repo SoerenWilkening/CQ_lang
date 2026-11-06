@@ -9,7 +9,7 @@
 //  - UNOBSERVABLE: the qualifier is dropped and the access is rule 20's: the plain one on a host-resident object, else
 //    the bus (32). Such a store into an object nothing reads is dead and is nothing (169's FORCE_EVAL in ilogb, stored
 //    volatile under a quantum predicate).
-//  - OBSERVABLE, on the bus (cq-6b2i1, against rule 24's "never on the bus", SPEC_ISSUES): the overlay is what makes it a
+//  - OBSERVABLE, on the bus (rule 24): the overlay is what makes it a
 //    host access, a HOST cell "is the host byte at that address, read at each access and never snapshotted" (ABI §1.10),
 //    and a QUANTUM cell reads and writes as the program wrote it. A store is rule 20's, seed and `_controlled` as any.
 //    A load at a classical address under a quantum predicate is the same `_hl` load executed unguarded (rule 24), merged

@@ -177,7 +177,7 @@ enum class RecKind : uint8_t {
   Template,  // fresh out, undone by name_unc(out, args...)
   Seed,      // cqrt_alloc: nothing to undo, released by cqrt_free
   Involution,// in place on out, undone by the same call
-  Call,      // U2: a clone call's results, undone together by name_unc(outs..., args..., extra...)
+  Call,      // U2: a clone call's results, undone together by name_unc(outs..., extra..., args...)
   BusLoad,   // rule 5 sentence 1: fresh out, un-copied by name_unc(out, args...), freed iff no version change between
 };
 
@@ -1525,13 +1525,14 @@ struct Uncompute::Impl {
         ps.push_back(Type::getInt32Ty(C));
         args.push_back(rails[o].handle);
       }
-      for (unsigned k = ctl ? 1 : 0; k < fwd->arg_size(); ++k) {
-        ps.push_back(fwd->getArgOperand(k)->getType());
-        args.push_back(fwd->getArgOperand(k));
-      }
+      // Rule 19: the registers' handles after the results and before the arguments.
       for (size_t k = 0; k < cg.extra.size(); ++k) {
         ps.push_back(cg.extra[k]->getType());
         args.push_back(cg.extra[k]);
+      }
+      for (unsigned k = ctl ? 1 : 0; k < fwd->arg_size(); ++k) {
+        ps.push_back(fwd->getArgOperand(k)->getType());
+        args.push_back(fwd->getArgOperand(k));
       }
       FunctionType *TT = FunctionType::get(Type::getVoidTy(C), ps, false);
       track(B.CreateCall(twinOf(fwd, TT, B), args));

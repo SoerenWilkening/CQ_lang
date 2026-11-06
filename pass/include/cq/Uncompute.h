@@ -35,7 +35,7 @@ public:
   // U2 (CR §1.4, rules 18, 27): the result rails of one clone call fwd, undone together by its twin. outs: one handle
   // per quantum result field in field order (fwd itself for a single i32 result, else extractvalues of fwd); extra:
   // twin operands after fwd's arguments. Each out is a new rail, Role::Garbage. The item follows every use of every
-  // out and emits <callee>_unc(outs..., fwd args..., extra...), then cqrt_free of each out. Every one kept: nothing
+  // out and emits <callee>_unc(outs..., extra..., fwd args...), then cqrt_free of each out. Every one kept: nothing
   // emitted; some kept and some not: unimplemented. Returns outs' ids. Rule 18: loadsBus: the callee loads from the
   // bus, so the results are loads for rule 5: the twin runs before the next version change on every path or the
   // results are KEPT and no twin is called.

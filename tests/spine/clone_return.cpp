@@ -73,6 +73,7 @@ void noteRun(LoweringContext &) {}
 void insertActivationCounter(LoweringContext &) {}
 ArrayRef<MintSlot> mintSites(const TaintInfo &, const Specialization &) { return {}; }
 void noteMint(LoweringContext &, CallInst &, BasicBlock *, Instruction *) {}
+void noteMeasuredCopy(LoweringContext &, const CallBase &, unsigned, CallInst *, CallInst *) {}
 Value *mintHandle(LoweringContext &, const MintSlot &) { return nullptr; }
 void pushListedMints(LoweringContext &) {}
 unsigned mintCount(const Function &) { return 0; }

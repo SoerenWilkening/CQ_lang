@@ -130,6 +130,10 @@ CASES = [
     ("meas_table_t", "h", [], "pass", [
         r"define internal void @__cq_q_outer_1_t_unc\(i32 %out(?:(?!\n}\n)[\s\S])*call void @cqrt_copy_i32\(i32 %\d+, i32 %out\)"
         r"(?:(?!\n}\n)[\s\S])*call void @cqrt_free\(i32 %out\)"]),
+    # Every formal of _t is a rail, so a branch on one is quantum: the measurement under it is tainted and _t has no twin (rule 18),
+    # in a K-loop (f) and in an arm (g).
+    ("meas_table_t_paths", "f", [], "pass", [r"define internal void @__cq_q_sumin_11_t_unc\(i32 %0, i32 %1, i32 %2, i32 %3\) \{\n  ret void\n}\n"]),
+    ("meas_table_t_paths", "g", [], "pass", [r"define internal void @__cq_q_some_11_t_unc\(i32 %0, i32 %1, i32 %2, i32 %3\) \{\n  ret void\n}\n"]),
     # cq-p4ob6 (rules 18, 19): the own symbol of a function on a call cycle, whose record is the least fixpoint: not rotating, its
     # result (read from the bus) is zeroed by the twin; rotating, KEPT (rulings3 F). Direct, mutual, and an aggregate return.
     ("rec_bus_own", "f", [], "pass", [r"call void @__cq_q_r_0_unc\("]),

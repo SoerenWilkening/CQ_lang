@@ -234,10 +234,10 @@ void replayRegisterCall(Module &M, CallInst &c, ArrayRef<Value *> handed) {
     outs[k] = B.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Alloc, a->w}), {Constant::getNullValue(irTypeOf(C, a->w))});
     args.push_back(outs[k]);
   }
-  for (unsigned i = first; i < c.arg_size(); ++i)
-    args.push_back(c.getArgOperand(i));
   for (unsigned j = 0; j < n; ++j)
     args.push_back(handed[base + j]);
+  for (unsigned i = first; i < c.arg_size(); ++i)
+    args.push_back(c.getArgOperand(i));
   for (Value *v : args)
     ps.push_back(v->getType());
   std::string name = (g.getName() + "_unc").str();
@@ -307,13 +307,14 @@ void defineTwin(Module &M, Function &twin, Function &src) {
                       src.getName().str() + " (its outs, then the clone's arguments)",
                   &twin);
   // CR §1.4: a _ctl clone's twin is _ctl_unc(pred, outs..., args...). Rule 19: the handles of the registers the clone
-  // returned after its results trail the twin's formals (Uncompute's recordCall extra); a table twin pops them.
+  // returned after its results come after the outs and before the arguments (Uncompute's recordCall extra); a table twin pops them.
   std::optional<abi::CloneSpec> tspec = abi::parseClone(twin.getName());
   bool table = tspec && tspec->table;
   unsigned mints = mintCount(src);
   unsigned nOuts = twin.arg_size() - src.arg_size() - (table ? 0 : mints);
   unsigned first = tspec && tspec->ctl ? 1 : 0;   // the first out
-  auto twinFormal = [&](unsigned i) { return i < first ? twin.getArg(i) : twin.getArg(i + nOuts); };
+  unsigned nExtra = table ? 0 : mints;
+  auto twinFormal = [&](unsigned i) { return i < first ? twin.getArg(i) : twin.getArg(i + nOuts + nExtra); };
   bool handleRet = srt || (src.getReturnType() == h && nOuts == 1);
   if (!handleRet && nOuts != 0)
     internalError("calls: calls::finalize: twin @" + twin.getName().str() + " does not match the clone @" +
@@ -508,7 +509,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
     SmallVector<Value *, 2> handed(mints);
     IRBuilder<> PB(&twin.getEntryBlock(), twin.getEntryBlock().getFirstInsertionPt());
     for (unsigned k = 0; k < mints; ++k)
-      handed[k] = nOuts + src.arg_size() + k < twin.arg_size() && !table ? twin.getArg(nOuts + src.arg_size() + k) : nullptr;
+      handed[k] = table ? nullptr : twin.getArg(first + nOuts + k);
     if (table)
       for (unsigned k = mints; k-- > 0;)
         handed[k] = PB.CreateCall(abi::declare(M, abi::CoreSpec{abi::Core::Pop}));
