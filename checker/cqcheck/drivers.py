@@ -1336,7 +1336,9 @@ def effect_callees(text: str, excluded: FrozenSet[str] = frozenset()) -> Dict[st
         # `__` marks the compiler's and the runtime's real symbols, but a `declare hidden` one links statically
         # and no host library can supply it: a libc internal with no body in the build (musl's
         # __private_cond_signal under cnd_signal), a bodiless callee like any other (rule 16)
-        if _REAL.match(c) and not (c.startswith("__") and not c.startswith(_OWN) and re.search(r"\bhidden\b", m.group("head"))):
+        # __cq_syscall, the musl arch hook (CQ_spec _tools/musl_arch_cq, LIBC_COVERAGE): "a host call", bodiless: rule 16
+        # on the lowered side, so the same stand-in on the C side
+        if c != "__cq_syscall" and _REAL.match(c) and not (c.startswith("__") and not c.startswith(_OWN) and re.search(r"\bhidden\b", m.group("head"))):
             continue
         head = [w for w in m.group("head").split() if not re.fullmatch(r"\S+\(.*\)|signext|zeroext|noundef|noalias|inreg|dso_local", w)]
         out[c] = (m.group("name"), head[-1] if head else "void", m.group("params"))

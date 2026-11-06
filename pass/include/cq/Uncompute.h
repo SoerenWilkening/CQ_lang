@@ -126,6 +126,11 @@ public:
   unsigned openScope(); void closeScope(unsigned);
   llvm::ArrayRef<Record> scopeRecords(unsigned) const;
   void emitMirror(unsigned scope, llvm::IRBuilder<> &);
+  // CR rules 5, 14: a rail created by a record of the scope in a block the region (from `head`) does not reach (the flag
+  // seed a predicate read in the region mints on an edge into a join above it) runs once, not per trip: it leaves the
+  // scope, so neither its mirror nor a deferred item over the scope resolves it; a flush does, like any rail of its block.
+  void leaveScope(unsigned scope, const llvm::BasicBlock *head);
+  bool leftScope(unsigned scope, const llvm::Value *handle) const;
   // F1 (freeze bead cq-fx3s, CR rule 14): a deferred item, the reverse loop of a classically bounded
   // loop placed after the readers of the loop's exit values. The rails created by records of `scopes`
   // are owned by the item (no flush resolves them; emit mirrors them); exitRails (owned) are read after

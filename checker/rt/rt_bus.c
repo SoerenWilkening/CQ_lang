@@ -554,6 +554,8 @@ static int op_qram_swap(const cqe_tname *t, const cqe_val *args, int nargs, cqe_
     cqe__mark_written(h);
   }
   if (!x.fire && x.ctl_known) {
+    if (cqe__val_iszero(cqe__val(h)))
+      cqe__set_busz(h);
     log_bus(&x, "swap", 1, h, cqe__val(h), 0);
     return 0;
   }

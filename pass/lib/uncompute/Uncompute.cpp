@@ -275,6 +275,7 @@ struct Uncompute::Impl {
   struct Scope {
     unsigned begin, end;
     bool open;
+    DenseSet<RailId> left = {};   // leaveScope: rails the scope's time span holds and its region does not
   };
 
   std::vector<Record> records;
@@ -3590,8 +3591,9 @@ void Uncompute::recordDeferred(ArrayRef<unsigned> scopes, ArrayRef<RailId> exitR
     if (s >= I.scopes.size() || I.scopes[s].open)
       internalError("uncompute: recordDeferred over a scope that is not closed: " + std::to_string(s));
     for (unsigned rec = I.scopes[s].begin; rec < I.scopes[s].end; ++rec) {
-      d.region.insert(I.records[rec].forward->getParent());
-      if (isCreator(I.info[rec].kind) && I.info[rec].item != kNone) {
+      if (I.info[rec].item == kNone || !I.scopes[s].left.count(I.info[rec].item))
+        d.region.insert(I.records[rec].forward->getParent());
+      if (isCreator(I.info[rec].kind) && I.info[rec].item != kNone && !I.scopes[s].left.count(I.info[rec].item)) {
         I.rails[I.info[rec].item].ownedBy = di;
       }
     }
@@ -3645,6 +3647,36 @@ ArrayRef<Record> Uncompute::scopeRecords(unsigned s) const {
   return ArrayRef<Record>(impl->records).slice(sc.begin, end - sc.begin);
 }
 
+void Uncompute::leaveScope(unsigned s, const BasicBlock *head) {
+  Impl &I = *impl;
+  if (s >= I.scopes.size())
+    internalError("uncompute: no scope " + std::to_string(s));
+  Impl::Scope &sc = I.scopes[s];
+  unsigned end = sc.open ? I.records.size() : sc.end;
+  auto outside = [&](const CallInst *i) { return !Impl::reaches(head, i->getParent()); };
+  for (unsigned rec = sc.begin; rec < end; ++rec)
+    if (isCreator(I.info[rec].kind) && I.info[rec].item != kNone && outside(I.records[rec].forward) &&
+        all_of(I.rails[I.info[rec].item].writes, [&](unsigned w) { return outside(I.records[w].forward); }))
+      sc.left.insert(I.info[rec].item);   // a rail a trip writes stays: the trip's mirror undoes those writes
+  // So does a rail that reads one that stays: an operand outlives every _unc that reads it (rule 5).
+  for (bool changed = true; changed;) {
+    changed = false;
+    for (unsigned rec = sc.begin; rec < end; ++rec) {
+      RailId g = I.info[rec].item;
+      if (!isCreator(I.info[rec].kind) || g == kNone || sc.left.count(g))
+        continue;
+      for (RailId o : I.readersOf(g))
+        if (sc.left.erase(o))
+          changed = true;
+    }
+  }
+}
+
+bool Uncompute::leftScope(unsigned s, const Value *h) const {
+  auto it = impl->byHandle.find(h);
+  return it != impl->byHandle.end() && impl->scopes[s].left.count(it->second);
+}
+
 void Uncompute::emitMirror(unsigned s, IRBuilder<> &B) {
   impl->pruneCleanups();
   if (s >= impl->scopes.size())
@@ -3656,7 +3688,7 @@ void Uncompute::emitMirror(unsigned s, IRBuilder<> &B) {
   SmallVector<RailId, 16> cands;
   for (RailId g = 0; g < I.rails.size(); ++g) {
     unsigned cr = I.rails[g].creator;
-    if (cr != kNone && cr >= sc.begin && cr < end && I.resolvable(g))
+    if (cr != kNone && cr >= sc.begin && cr < end && !sc.left.count(g) && I.resolvable(g))
       cands.push_back(g);
   }
   I.inMirror = true;

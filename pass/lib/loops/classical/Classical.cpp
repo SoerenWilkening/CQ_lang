@@ -2841,6 +2841,12 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   }
   if (outermost) {
     ctx.B().SetInsertPoint(T);
+    // Rules 5, 14: a rail a segment's predicate minted on an edge into a join above the loop (a flag seed) runs once; no
+    // trip undoes it (calloc).
+    closeSeg();
+    if (!segs.empty())
+      for (const Seg &sg : segs)
+        U.leaveScope(sg.scope, segs.front().bb);
     if (c == Case::ClassicalBound && !nested && !inTrip)
       cleanInvariantOnExit(L, T);
     if (cx) {
@@ -2937,7 +2943,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     DenseSet<const Value *> ownedH;
     for (unsigned sc : scs)
       for (const Record &r : U.scopeRecords(sc))
-        if (!r.forward->getType()->isVoidTy()) {
+        if (!r.forward->getType()->isVoidTy() && !U.leftScope(sc, r.forward)) {
           ownedH.insert(r.forward);
           // A clone with rule-19 extras returns a struct: its rails are the call's extractvalues (cq-f96c8).
           for (const User *u : r.forward->users())
