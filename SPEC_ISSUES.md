@@ -213,3 +213,9 @@ Entries 1 to 16 are from the flat-memory rulings (`wt/flat/rulings.md`, "Entries
 - Done here: `pass/lib/calls/LibCalls.cpp` rewrites them before the first taint (the pass and the C oracle alike): the plain intrinsic or function, the check dropped (its overflow is undefined behaviour, outside the domain); a pattern is a rule-22 copy whose source repeats; an atomic libcall is rule-22 copies, a compare-exchange a byte compare and a diamond. §6 is unaffected: both sides run the C meaning.
 - Request: CR to name these in rules 16, 22 and 24, or say otherwise.
 - Bead: cq-oelzx
+## §1.4, rule 2, 211: `_t` measures the argument rail itself
+- Rule: §1.4 "in the clone without a predicate the outcome is classical and is returned as a seed rail like any classical result (211)"; rule 2's seed-rail sentence for a clone that measures on some classical paths; 211 lines 178-182 (`__cq_q_peek_1_t`); rule 18 "no measured rail is ever gated"; rule 19 "The caller has no record of the callee".
+- Contradiction: for a call through a classical pointer whose actual is a garbage rail, a `_t` measuring its formal measures the caller's rail, and the caller, with no record of the callee, uncomputes and frees it. Rule 19 plus rule 18 make that unlowerable. Probe: `int in(int x){ return cq_measure(x)+1; }` called as `p(a+1)`: `cqrt_free: rail 2 is a measured rail` (tests/calls/probes/meas_table_t.c).
+- Ours: `_t` is `_t_ctl`'s body with the predicate true: `t = alloc_W(0); copy_W(h, t); measure_W(t)`. `h` is untouched; `t` is the measured rail and the result. Rule 18 then gives `_t` no twin: `_t_unc` leaves every result allocated, for a measurement in a by-name callee too. The caller uncomputes and frees its actual as today. The reference's `__cq_q_peek_1_t` body is not copied. This replaces the `_t` half of rulings3 E (a classical-path measurement keeps `_t` its rule-18 twin).
+- Request: §1.4, rule 2 and 211 to say so.
+- Bead: cq-t2jj2

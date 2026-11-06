@@ -552,13 +552,17 @@ void lowerMeasure(LoweringContext &ctx, CallInst &call) {
     spine::bindOperand(ctx, &call, x);
     return;
   }
-  if (ctx.S.ctl) {
+  if (ctx.S.ctl || ctx.S.table) {
     // Rule 19, Q13: inside a _ctl clone cq_measure measures a controlled copy under the clone's formal: t is the measured
     // rail, h is not collapsed where the predicate is 0, the outcome is tainted, and no classical collapse applies.
+    // cq-t2jj2: _t is the same body with the predicate true; its formal is the caller's rail, which the caller uncomputes.
     RailType cw = rt(call.getArgOperand(0)->getType(), &call);
     CallInst *t = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, cw}, {Constant::getNullValue(irTypeOf(ctx.M.getContext(), cw))});
     ctx.unc().recordExternal(t, Role::Measured);
-    ctx.emitCore(abi::CoreSpec{abi::Core::Copy, cw, /*ctl=*/true}, {ctx.out().getArg(0), x.v, t});
+    if (ctx.S.ctl)
+      ctx.emitCore(abi::CoreSpec{abi::Core::Copy, cw, /*ctl=*/true}, {ctx.out().getArg(0), x.v, t});
+    else
+      ctx.emitCore(abi::CoreSpec{abi::Core::Copy, cw}, {x.v, t});
     CallInst *m = ctx.emitCore(abi::CoreSpec{abi::Core::Measure, cw}, {t});
     m->setMetadata("cq.measure", MDNode::get(ctx.M.getContext(), {}));
     spine::shared(ctx).ctlMeasured.insert(t);

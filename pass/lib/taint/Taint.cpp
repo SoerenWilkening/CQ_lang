@@ -1835,10 +1835,11 @@ void Analyzer::transferCall(CallBase &CB) {
   if (isMeasure(G)) {
     cur->hasMeasure = true;
     cur->measuresRail = cur->measuresRail || L(actuals[0]).any();
-    if (blockCT(CB.getParent()) || cur->ctl)
+    if (blockCT(CB.getParent()) || cur->ctl || (cur->table && L(actuals[0]).any()))
       cur->taintedMeasure = true;   // rulings Q3: rule 18's "measures"
     // Rule 19: inside a _ctl clone the measured rail is a controlled copy: the outcome is tainted, the rail is the value.
-    if (cur->ctl && L(actuals[0]).any())
+    // cq-t2jj2: likewise in _t, a copy with the predicate true.
+    if ((cur->ctl || cur->table) && L(actuals[0]).any())
       setL(&CB, allLanes(rn));
     cur->anyQuantum = true;
     return;
