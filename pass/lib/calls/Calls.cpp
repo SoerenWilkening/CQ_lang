@@ -384,8 +384,9 @@ bool measuresFormal(const TaintInfo &T, const Specialization &S, unsigned idx, S
 // Rules 2, 5, 18: an actual the clone measures itself is the caller's measured rail from the call on: it stays allocated, no
 // gate touches it and nothing frees it. Measured on some classical paths of the caller only, it is lowered as unmeasured (rule 2,
 // collapse is static), so the clone gets a kept basis copy of it, as lowerMeasure does (rule 18's partial-measurement copy).
+// A table clone always copies (cq-t2jj2): the rail may be its formal, which is the caller's.
 Operand measuredActual(LoweringContext &ctx, const CallBase &CB, const Value *a, Operand o, bool seeded) {
-  if (seeded || spine::measuredOnEveryPath(ctx, a, &CB)) {
+  if (seeded || (!ctx.S.table && spine::measuredOnEveryPath(ctx, a, &CB))) {
     ctx.unc().setRole(ctx.unc().idOf(o.v), Role::Measured);
     return o;
   }
@@ -786,13 +787,11 @@ namespace {
 std::map<const Module *, std::vector<TableRow>> tableRows;
 
 // §1.4: a table clone's twin does nothing but count and pop when rule 18 gives it none: a tainted measurement (Q3), which
-// is every measurement in a _ctl clone (rule 19's controlled copy). A measurement on a classical path of the clone with no
-// predicate keeps its rule-18 twin; the outcome's seed stays allocated (rule 2, rulings3 E, Finalize's defineTwin).
+// is every measurement in a table clone, itself or in a callee by name (rule 19's copy, with the predicate true in _t,
+// cq-t2jj2): a replay would measure again.
 bool tableKeepsResults(const TaintInfo &T, const Specialization &S) {
   if (!hasTwin(T, S))
     return true;
-  if (!S.ctl)
-    return false;
   SmallPtrSet<const Function *, 8> seen{S.F};
   SmallVector<const Function *, 8> work{S.F};
   while (!work.empty()) {
