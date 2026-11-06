@@ -1857,13 +1857,19 @@ def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult], ended: Sequence[
                 f.append(None)       # past another activation's cut: unknown
         want[k] = f
     cands: Dict[Any, Tuple] = {}
+    by_h: List[Dict[Any, Any]] = []
+    for rr in o_runs:
+        m: Dict[Any, Any] = {}
+        for e in rr.kept or []:
+            m.setdefault(e["h"], e)      # first match wins
+        by_h.append(m)
     for ent in o_runs[0].kept or []:
         if ent.get("w") != "i1" or ent.get("role") in _NOT_AK_ROLES:
             continue
         h = ent["h"]
         vals = []
-        for rr in o_runs:
-            e2 = next((e for e in rr.kept or [] if e["h"] == h), None)
+        for m in by_h:
+            e2 = m.get(h)
             if e2 is None:
                 break
             vals.append(_masked(_int(e2.get("v")), "i1"))
