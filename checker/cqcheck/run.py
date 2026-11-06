@@ -1448,8 +1448,16 @@ def _tape_entry(x: dict) -> dict:
 
 def _tape_shot(e: dict) -> Tuple[str, List[dict], bool]:
     """Of rt_tape.c's end-of-shot event: the text it printed, the event sequence, and rule 16's deviation."""
+    # rulings Q8: an entry for a function the C oracle runs for real (drivers._REAL: libm's, say) has the stand-in's
+    # result here, resolved at the call or deferred (|0>): the program's read of it is the same stated deviation
     return (_bytes_text(e.get("stdout", "")), [_tape_entry(x) for x in e.get("events", [])],
-            bool(e.get("deviation")))
+            bool(e.get("deviation")) or any(x.get("kind") == "effect" and x.get("performed") and "r" in x
+                                            and _drv_real(x.get("name")) for x in e.get("events", [])))
+
+
+def _drv_real(name: Optional[str]) -> bool:
+    from cqcheck import drivers
+    return bool(name) and bool(drivers._REAL.match(name))
 
 
 def _parse_trace(text: str) -> Tuple[List[dict], List[dict]]:
