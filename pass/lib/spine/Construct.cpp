@@ -886,6 +886,12 @@ void Walker::noteIn(const BasicBlock *from, const BasicBlock *to, Loop *unit) {
   InEdge ne;
   ne.out = ctx.B().GetInsertBlock();
   ne.facts = f == edgeFacts.end() ? std::nullopt : std::optional<Pred>(f->second);
+  // Rule 14 (cq-h8y6): the tail's edge into its unit's continuation, where no join at the tail's head took the unit's
+  // value in (the tail's first block continues the unit's own output block): on this edge C's phi is the unit's binding,
+  // and the tail's own incomings are the join arms over it.
+  if (!unit)
+    if (Loop *t = tailOf.lookup(from); t && units.find(t)->second.cont == to && !tailJoined.count(t))
+      unit = t;
   ne.unit = unit;
   inEdges[to].push_back(std::move(ne));
   if (unit)
@@ -1983,7 +1989,8 @@ void Walker::emitBlock(BasicBlock *b) {
     if (tailCleared.insert(t).second)
       for (BasicBlock *tb : units.find(t)->second.tail)
         for (Instruction &I : *tb)
-          sh.binds.erase(&I);
+          if (!(isa<PHINode>(I) && unitBoundPhis.count(cast<PHINode>(&I))))   // an earlier unit's value for these paths
+            sh.binds.erase(&I);
     // The unit's binding of C's phis exists only on the unit's output edge. Where other classical paths meet it at the
     // tail's first block, the phi is joined here: the unit's value, on another edge the incomings its facts admit
     // (those of the tail come later: the join arms over this value), a |0> seed when none (cq-sp09w: __fwritex).
@@ -2070,7 +2077,17 @@ void Walker::emitBlock(BasicBlock *b) {
       for (PHINode &phi : U.cont->phis())
         if (!sh.binds.count(&phi) && !is_contained(exitPhis, &phi))
           exitPhis.push_back(&phi);
+    // Rule 14 (cq-h8y6): the unit evaluates its tail per trip for its own paths, and the walker lowers the tail again for
+    // the paths from outside. A tail phi an earlier unit bound (its exits enter the tail: mbsrtowcs' two scan loops into
+    // one error block) keeps that unit's value for those paths, whatever the per-trip evaluation left bound.
+    std::vector<std::pair<const PHINode *, SmallVector<Operand, 4>>> tailBinds;
+    for (BasicBlock *tb : U.tail)
+      for (const PHINode &phi : tb->phis())
+        if (auto bi = sh.binds.find(&phi); bi != sh.binds.end() && unitBoundPhis.count(&phi))
+          tailBinds.push_back({&phi, SmallVector<Operand, 4>(bi->second.begin(), bi->second.end())});
     lowerUnit(lp);
+    for (auto &[phi, fields] : tailBinds)
+      sh.binds[phi].assign(fields.begin(), fields.end());
     for (const PHINode *phi : exitPhis)
       if (sh.binds.count(phi))
         unitBoundPhis.insert(phi);

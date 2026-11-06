@@ -832,8 +832,40 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
               A.LI.getLoopFor(u) && none_of(enclosing, [&](auto &e) { return e.second.contains(*e.first, u); }))
             ran = ran | ctx.preds().edge(u, C);   // a unit still being lowered around this one has bound nothing yet
         acc = ctx.operand(&P);
+        Value *boundRail = acc.v;
         if (acc.handle && !ran.isBottom())
           acc = reachingOperand(ctx, acc, railOf(P.getType()), ran, Pred::top());
+        // The earlier unit ran on classical paths that exclude this one, so its binding saw none of this path's incomings
+        // (mbsrtowcs: the pre-header's quantum skip, the tail's edges). They are this unit's, as with no earlier unit.
+        if (acc.v != boundRail) {
+          std::vector<std::pair<Pred, Operand>> mineOut;
+          Pred E = Pred::bottom();
+          for (unsigned i = 0; i < P.getNumIncomingValues(); ++i) {
+            BasicBlock *u = P.getIncomingBlock(i);
+            const Pred &e = ctx.preds().edge(u, C);
+            if (inUnit(u) || A.LI.getLoopFor(u) || (e & cH).isBottom() || !(e & pH).isBottom())
+              continue;
+            Value *v = P.getIncomingValue(i);
+            if (!ctx.bound(v) || !predReadable(ctx, e)) {
+              ctx.addJoinArm(&P, e, v);
+              continue;
+            }
+            E = E | e;
+            mineOut.push_back({e, ctx.operand(v)});
+          }
+          for (unsigned i = 0; i < P.getNumIncomingValues(); ++i) {
+            BasicBlock *u = P.getIncomingBlock(i);
+            if (!is_contained(U.tail, u))
+              continue;
+            Pred e = exits::tailPred(ctx, L, U, u, A.DT) & ctx.preds().edge(u, C);
+            if (!e.isBottom() && !(e & cH).isBottom())
+              ctx.addJoinArm(&P, e, P.getIncomingValue(i));
+          }
+          if (!mineOut.empty()) {
+            mineOut.push_back({!E, acc});
+            acc = Operand{selectChain(ctx, mineOut, railOf(P.getType())), true};
+          }
+        }
       } else if (outside.empty())
         acc = Operand{Constant::getNullValue(P.getType()), false};
       else if (outside.size() == 1)

@@ -35,3 +35,9 @@ add_test(NAME loops-cutoff-widened
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/bus_kloop.O1.ll
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/join_units.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-z6nkx: musl mbsrtowcs' two scan loops into one tail. Lowers; the §6 check FAILS until the bead closes.
+add_test(NAME loops-cutoff-tail-phis
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/tail_phis.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

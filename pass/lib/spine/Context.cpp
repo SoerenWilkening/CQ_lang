@@ -221,7 +221,11 @@ void LoweringContext::bindFields(const Value *orig, ArrayRef<Operand> ops) {
 }
 
 void LoweringContext::addJoinArm(const PHINode *P, const Pred &edge, const Value *v) {
-  impl->sh->joinArms[P].push_back({edge, v});
+  auto &arms = impl->sh->joinArms[P];
+  for (auto &[e, x] : arms)
+    if (x == v && (e & !edge).isBottom() && (edge & !e).isBottom())
+      return;   // two units left it to the walker: one arm
+  arms.push_back({edge, v});
 }
 
 std::vector<std::pair<Pred, const Value *>> LoweringContext::takeJoinArms(const PHINode *P) {

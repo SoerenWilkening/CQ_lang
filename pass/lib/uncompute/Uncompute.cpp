@@ -1215,6 +1215,10 @@ struct Uncompute::Impl {
         made.push_back(np);
         for (unsigned i = 0; i < cp->getNumIncomingValues(); ++i) {
           BasicBlock *p = cp->getIncomingBlock(i);
+          if (int seen = np->getBasicBlockIndex(p); seen >= 0) {   // both edges of one branch into b: one value
+            np->addIncoming(np->getIncomingValue(seen), p);
+            continue;
+          }
           Value *vi = vp ? vp->getIncomingValueForBlock(p) : v;
           np->addIncoming(clearWith(vi, cp->getIncomingValue(i), p->getTerminator(), p), p);
         }
