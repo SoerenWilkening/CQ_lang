@@ -2822,7 +2822,10 @@ void Analyzer::finish() {
         S->rowOnly = false;
   }
   // Twins: a call whose quantum result is consumed by something other than a measurement (rule 18);
-  // a declared clone always has one (rule 27).
+  // a declared clone always has one (rule 27). To a fixpoint: an own symbol that returns a callee's result hands the rail on, but
+  // when its own twin runs (through its _pure clone) that result is its garbage, so the callee needs a twin too.
+  for (bool grew = true; grew;) {
+  grew = false;
   for (auto &S : st.specs) {
     if (!S->reachable)
       continue;
@@ -2849,7 +2852,7 @@ void Analyzer::finish() {
                   },
                   CB))
             continue;
-        if (isa<ReturnInst>(U) && S->inPlace)
+        if (isa<ReturnInst>(U) && S->inPlace && !S->needsTwin)
           continue;
         other = true;
       }
@@ -2860,8 +2863,12 @@ void Analyzer::finish() {
           other = true;
       if (other)
         for (SpecState *C : v)
-          C->needsTwin = true;
+          if (!C->needsTwin) {
+            C->needsTwin = true;
+            grew = true;
+          }
     }
+  }
   }
   // _pure: what a twin recomputes through when the callee has effects (119).
   std::vector<SpecState *> pureNeeded;

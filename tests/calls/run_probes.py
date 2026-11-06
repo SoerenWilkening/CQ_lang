@@ -43,6 +43,8 @@ CASES = [
     ("libm_musl_llrintl", "sweep_llrintl", [], "pass", [r"%cq.hostflags = call i32 @fetestexcept\(i32 63\)"]),
     ("twin_strict", "e_twin", [], "pass", [r"%cq.hostflags = call i32 @fetestexcept\(i32 63\)",
                                            r"call i32 @feraiseexcept\(i32 %cq.hostflags\)\n  ret void"]),
+    # Rules 18, 19: an own symbol returning a callee's result as it stands; its twin recomputes through _pure, so the callee's twin exists.
+    ("own_ret_chain", "orc", [], "pass", [r"define internal fastcc void @__cq_q_inner_0_unc\(", r"define internal fastcc void @__cq_q_mid_0_unc\("]),
     # cq-xbpw6 (rule 18): a store in the other arm of a quantum branch lies on no path from a loading clone's call, so the twin
     # still runs after the merge and frees the result: no rail of it stays live for §6 item 1's leak rule.
     ("twin_other_arm_store", "other_arm", [], "pass",
