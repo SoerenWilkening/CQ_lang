@@ -312,11 +312,13 @@ public:
   // enclosing quantum-exit loop, under that trip's rail `trip` (its effects controlled by it, a case-3 chain
   // seeded by it), on the classical path loops-cutoff branched on. Its reverse is deferred after the readers
   // of its exit values, guarded by "the loop's exit was passed" (the trip may skip the loop classically).
-  void runInTrip(Case c, Value *trip) {
+  Value *runInTrip(Case c, Value *trip) {
     outerTrip = trip;
     inTrip = true;
     run(c);
+    return stopFinal;
   }
+  Value *stopFinal = nullptr;   // the XOR of the arm flags of this unit, for the enclosing K-loop (nullptr: none)
 
 private:
   LoweringContext &ctx;   // only while lowerClassical runs: a deferred reverse (cq-fx3s) uses Mod, Out, U
@@ -352,6 +354,7 @@ private:
   BasicBlock *resetAt = nullptr;
   Value *outerTrip = nullptr;
   bool inTrip = false;     // cq-h5uj: lowered inside a K-loop trip (runInTrip)
+  Value *stopCur = nullptr;   // the stop rail at the builder (see the mint in lowerLoop), nullptr when this unit has none
   unsigned copyScope = ~0u;   // cq-h5uj: the copies of exit values a per-trip loop reads in place
   bool deferred = false;   // the outermost loop's reverse is an Uncompute deferred item   // while a sub-loop of a case-3 trip is walked: that trip's rail a_{j-1}
   bool reversed = false;
@@ -554,7 +557,7 @@ void Unit::planRuleSix(Loop &L, Case c) {
   BasicBlock *header = L.getHeader(), *latch = L.getLoopLatch(), *pre = L.getLoopPredecessor();
   if (!pre)
     return;   // several entries: the initial value is a merge of them, undone by the reverse like any record
-  if (exits::liveExiting(L) != latch)
+  if (exits::liveExiting(L) != latch || !exits::unitOf(L).abort.empty())
     return;   // a trip may end before the update: the exit value is not the chain's
   const bool c3 = c == Case::ClassicalBoundQuantumExit;
   if (!c3 && !qp(header).isTop())
@@ -633,7 +636,7 @@ void Unit::planRuleSix(Loop &L, Case c) {
 // anything else the reverse loop would undo: each is a kept store's value, or reaches only a chain planned above.
 void Unit::planRuleSixMerges(Loop &L) {
   BasicBlock *header = L.getHeader(), *latch = L.getLoopLatch(), *pre = L.getLoopPredecessor();
-  if (!pre || !qp(header).isTop() || exits::liveExiting(L) != latch)
+  if (!pre || !qp(header).isTop() || exits::liveExiting(L) != latch || !exits::unitOf(L).abort.empty())
     return;
   DominatorTree &DT = spine::shared(ctx).dt(F);
   auto chainEnd = [&](const Value *v) {
@@ -706,7 +709,7 @@ void Unit::planRuleSixMerges(Loop &L) {
 // reaches T: x stays the live register there.
 void Unit::cleanInvariantOnExit(Loop &L, BasicBlock *T) {
   BasicBlock *latch = L.getLoopLatch();
-  if (!latch || exits::liveExiting(L) != latch)
+  if (!latch || exits::liveExiting(L) != latch || !exits::unitOf(L).abort.empty())
     return;
   DominatorTree DT(F);
   Module &M = Mod;
@@ -902,8 +905,29 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // last trip's res is P's exit value (the reference 121's r_i chain and its final select). Every rail is
   // a record of its trip, uncomputed by the mirror (nothing kept, case 3). The walker joins P with a
   // classical skip edge of the loop (its zero-trip guard) itself.
+  // A quantum exit into a noreturn arm (rule 16) has this form too: e = a & f is the arm's flag, its abort_i1 made at the
+  // exit test (the arm is no part of the continuation), the trip going on under a' = a & NOT f.
   exits::Unit UX = exits::unitOf(L);
-  const bool mx = c3 && (UX.multi() || exits::liveExiting(L) != latch);
+  const bool mx = c3 && (UX.multi() || exits::liveExiting(L) != latch || !UX.abort.empty());
+  // With every quantum exit into a noreturn arm the trip that leaves for C is the last one the classical bound gives, so a
+  // classical value of the loop keeps its classical exit value (taint's dead-end rule, 45): no capture.
+  bool noLiveQ = true;
+  {
+    SmallVector<BasicBlock *, 4> exiting;
+    L.getExitingBlocks(exiting);
+    for (BasicBlock *u : exiting) {
+      const Instruction *t = u->getTerminator();
+      const Value *cnd = nullptr;
+      if (auto *br = dyn_cast<BranchInst>(t); br && br->isConditional())
+        cnd = br->getCondition();
+      else if (auto *sw = dyn_cast<SwitchInst>(t))
+        cnd = sw->getCondition();
+      else if (auto *ib = dyn_cast<IndirectBrInst>(t))
+        cnd = ib->getAddress();
+      if (cnd && isQ(cnd) && any_of(successors(u), [&](BasicBlock *x) { return !L.contains(x) && is_contained(UX.live, x); }))
+        noLiveQ = false;
+    }
+  }
   if (!mx && (!exits::liveExiting(L) || !exitB))
     unimplemented("loops-classical: a rule-14 loop with more than one exiting block or exit block",
                   header->getTerminator());
@@ -935,6 +959,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
               (UX.contains(L, ui->getParent()) || (xp && xp->getParent() == UX.cont && inUnit(xp->getIncomingBlock(us)))))
             continue;   // read by the exit arm (it runs in the exit edge's segment) or by C's phi on a unit edge
           if (mx) {
+            if (noLiveQ && !isQ(&I))
+              continue;
             auto *phi = dyn_cast<PHINode>(ui);
             if (UX.contains(L, ui->getParent()) ||
                 (phi && phi->getParent() == UX.cont && inUnit(phi->getIncomingBlock(us))))
@@ -1003,23 +1029,24 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   BasicBlock *tgtFrom = nullptr;                    // the block whose terminator is being emitted
   SmallVector<Disj, 4> mixedDs;   // cq-h8y6: the classical disjuncts of a mixed exit test at cxb (empty: cxb is classical)
   auto buildArmUnits = [&]() {
-    if (UX.arm.empty() || mxLI)
+    if ((UX.arm.empty() && UX.abort.empty()) || mxLI)
       return;
     mxLI = std::make_unique<LoopInfo>(*mxDT);
-    for (BasicBlock *a : UX.arm) {
-      Loop *l = mxLI->getLoopFor(a), *last = nullptr;
-      for (; l && !l->contains(header); l = l->getParentLoop())
-        last = l;
-      if (!last || armUnit.count(last->getHeader()))
-        continue;
-      exits::Unit SU = exits::unitOf(*last);
-      for (BasicBlock *b : last->blocks())
-        armUnit[b] = last;
-      for (auto *list : {&SU.arm, &SU.abort, &SU.dead})
-        for (BasicBlock *b : *list)
-          if (is_contained(UX.arm, b) && b != UX.cont)
-            armUnit[b] = last;
-    }
+    for (auto *blocks : {&UX.arm, &UX.abort})
+      for (BasicBlock *a : *blocks) {
+        Loop *l = mxLI->getLoopFor(a), *last = nullptr;
+        for (; l && !l->contains(header); l = l->getParentLoop())
+          last = l;
+        if (!last || armUnit.count(last->getHeader()))
+          continue;
+        exits::Unit SU = exits::unitOf(*last);
+        for (BasicBlock *b : last->blocks())
+          armUnit[b] = last;
+        for (auto *list : {&SU.arm, &SU.abort, &SU.dead})
+          for (BasicBlock *b : *list)
+            if (is_contained(*blocks, b) && b != UX.cont)
+              armUnit[b] = last;
+      }
   };
   // cq-y7kw (CR rule 14 case 1 with rules 8, 9): a classically bounded loop whose classical exits reach several exit
   // blocks. Each exit edge is a real branch; an exit into the arm runs the arm in a segment of its own, under the loop's
@@ -1039,9 +1066,18 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   if (mx) {
     SmallVector<BasicBlock *, 4> exiting;
     L.getExitingBlocks(exiting);
+    SmallVector<BasicBlock *, 2> abortTests;   // purely classical tests with an edge into a noreturn arm
     for (BasicBlock *u : exiting) {
-      if (none_of(successors(u), [&](BasicBlock *s) { return !L.contains(s) && is_contained(UX.live, s); }))
-        continue;   // only into dead ends (UB to reach)
+      if (none_of(successors(u), [&](BasicBlock *s) { return !L.contains(s) && is_contained(UX.live, s); })) {
+        // Only into dead ends: an effect-free one is UB to reach; a noreturn arm on a classical test is below.
+        const Instruction *ut = u->getTerminator();
+        auto *ubr = dyn_cast<BranchInst>(ut);
+        const Value *uc = ubr ? (ubr->isConditional() ? ubr->getCondition() : nullptr)
+                              : isa<SwitchInst>(ut) ? cast<SwitchInst>(ut)->getCondition() : nullptr;
+        if (uc && !isQ(uc) && any_of(successors(u), [&](BasicBlock *s) { return is_contained(UX.abort, s); }))
+          abortTests.push_back(u);
+        continue;
+      }
       auto *br = dyn_cast<BranchInst>(u->getTerminator());
       if (br && br->isConditional() && isQ(br->getCondition()))
         continue;
@@ -1064,14 +1100,17 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     for (BasicBlock *u : exiting)
       if (!is_contained(byPref, u))
         byPref.push_back(u);
-    if (!cxb)
+    // A mixed test into a noreturn arm is the bound only where no mixed test into a live exit is.
+    for (bool intoAbort : {false, true})
       for (BasicBlock *u : byPref) {
           if (cxb || !is_contained(exiting, u))
             continue;
           auto *br = dyn_cast<BranchInst>(u->getTerminator());
           if (!br || !br->isConditional() || !isQ(br->getCondition()) ||
               L.contains(br->getSuccessor(0)) == L.contains(br->getSuccessor(1)) ||
-              none_of(successors(u), [&](BasicBlock *x) { return !L.contains(x) && is_contained(UX.live, x); }))
+              none_of(successors(u), [&](BasicBlock *x) {
+                return !L.contains(x) && (is_contained(UX.live, x) || (intoAbort && is_contained(UX.abort, x)));
+              }))
             continue;
           SmallVector<Disj, 4> d;
           SmallPtrSet<const Value *, 8> inner;
@@ -1084,6 +1123,16 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
             continue;
           cxb = u;
           mixedDs = c;
+        }
+    // With no other classical exit a classical test into a noreturn arm is the bound itself (rule 14 "No live exit"): the
+    // arm is the segment after the trips on that real edge. Any other such test is abortTest below, inside the trip.
+    if (!cxb)
+      for (BasicBlock *u : byPref)
+        if (!cxb && is_contained(abortTests, u)) {
+          cxb = u;
+          for (BasicBlock *x : successors(u))
+            if (is_contained(UX.abort, x))
+              cxArm = x;
         }
     if (cxb && cxb != latch && cxb != header)
       unimplemented("loops-classical: a multi-exit case-3 loop whose classical exit test is neither its latch's nor "
@@ -1129,10 +1178,13 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           }
       }
     const Pred hb = ctx.preds().block(header);
+    if (UX.cont)
     for (PHINode &P : UX.cont->phis()) {
       bool fromUnit = any_of(P.blocks(), [&](const BasicBlock *u) { return inUnit(u); });
       if (!fromUnit)
         continue;
+      if (noLiveQ && !isQ(&P))
+        continue;   // its classical exit value: the walker binds it
       // A classical phi whose every incoming is one value from before the loop is that value wherever the loop exits
       // (the walker binds it); any other phi joining the exits holds the value of the edge the exiting trip took,
       // which depends on the quantum exit (rule 14: quantum), whatever its type: captured per field below.
@@ -1242,6 +1294,13 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   }
   if (c3 && !aInit)
     aInit = seed(ConstantInt::getTrue(ctx.M.getContext()), RailType{Kind::Int, 1});
+  // CR rules 14, 16: inside a K-loop's trip an edge into a noreturn arm is an exit edge of that K-loop too (a_K, cq-9isy0).
+  // The stop rail is the XOR of this unit's arm flags (at most one reads 1), an exit rail handed to the K-loop: carried like
+  // the trip predicate, a fresh rail per arm flag (gates on fresh rails only).
+  if (outermost && inTrip && exits::hasNoreturnArm(L)) {
+    stopCur = seed(ConstantInt::getFalse(ctx.M.getContext()), RailType{Kind::Int, 1});
+    externalInits.push_back(stopCur);
+  }
   else if (aInit && outermost)
     externalInits.push_back(aInit);
   BasicBlock *entryFrom = cur;
@@ -1476,6 +1535,14 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       }
   }
 
+  PHINode *stopPhi = nullptr;
+  if (stopCur) {
+    stopPhi = ctx.B().CreatePHI(handleTy(ctx.M.getContext()), 2, "stop");
+    stopPhi->addIncoming(stopCur, entryFrom);
+    ctx.unc().recordExternal(stopPhi, Role::UserRegister);
+    stopCur = stopPhi;
+  }
+
   // cq-h8y6: a value's fields as the continuation phi (or read after the loop) cp takes it, at the builder: a data
   // pointer's fat (tag, idx) at cp's exit shape (rule 21), an aggregate's or vector's scalar leaves (rule 26), a
   // scalar itself (a classical code address as its i64, rule 13).
@@ -1516,7 +1583,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // exit is a real branch into C, its C phis bound by it.
   for (Loop *s : L.getSubLoops())
     if (Case sc = classify(*s, ctx.T, ctx.S);
-        sc == Case::QuantumExit || (sc == Case::ClassicalBoundQuantumExit && exits::unitOf(*s).multi())) {
+        sc == Case::QuantumExit ||
+        (sc == Case::ClassicalBoundQuantumExit && (exits::unitOf(*s).multi() || !exits::unitOf(*s).abort.empty()))) {
       exits::Unit SU = exits::unitOf(*s);
       for (BasicBlock *b : s->blocks())
         kOf[b] = s;
@@ -1561,6 +1629,21 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // A K-unit's edges into its continuation C: one linearized edge (the unit's code runs in the open block,
   // under its seed), unless C is also entered by a real edge from outside the unit (a classical skip of the
   // loop): then the unit ends in a real branch to C, a classical join.
+  // A classical test with an edge into a noreturn arm that is not the bound (cxb): the arm runs in the trip, at the test,
+  // and the test leaves no other trace (abortTest): its one other successor continues the trip.
+  auto isAbortTest = [&](const BasicBlock *u) {
+    return !termQ(u->getTerminator()) && !(u == cxb && cxArm && is_contained(UX.abort, cxArm)) &&
+           any_of(successors(u), [&](const BasicBlock *x) { return is_contained(UX.abort, x); });
+  };
+  auto abortTestNext = [&](const BasicBlock *u) -> BasicBlock * {
+    auto *br = dyn_cast<BranchInst>(u->getTerminator());
+    if (!br || !br->isConditional() || !isAbortTest(u))
+      return nullptr;
+    BasicBlock *a = br->getSuccessor(0), *b = br->getSuccessor(1);
+    if (is_contained(UX.abort, a) == is_contained(UX.abort, b))
+      return nullptr;
+    return is_contained(UX.abort, a) ? b : a;
+  };
   std::function<EK(const BasicBlock *, const BasicBlock *)> edgeKind;
   auto kReal = [&](Loop *k) {
     if (classify(*k, ctx.T, ctx.S) != Case::QuantumExit)
@@ -1581,7 +1664,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     const Instruction *t = u->getTerminator();
     if (termQ(t))
       return EK::Linear;
-    if (auto *br = dyn_cast<BranchInst>(t); br && !br->isConditional()) {
+    if (auto *br = dyn_cast<BranchInst>(t); br && (!br->isConditional() || abortTestNext(u))) {
       // A classical join inside a quantum arm (rule 8: the classical branch nested in the arm stays a
       // classical branch, and its arms meet again under the same quantum predicate) is a real join.
       if (armed(u)) {
@@ -1609,6 +1692,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         return e.Y;
     if (L.contains(s) || top.contains(s))
       return ob(s);
+    // A classical switch's edge into a noreturn arm: abortTest ran the arm; the switch stands for its other edges.
+    if (tgtFrom && is_contained(UX.abort, s) && isa<SwitchInst>(tgtFrom->getTerminator()))
+      for (BasicBlock *o : successors(tgtFrom))
+        if (!is_contained(UX.abort, o))
+          return o == header ? H : (L.contains(o) || top.contains(o)) ? ob(o) : unitExit;
     return unitExit;   // cq-j5mq: an edge out of the whole unit, also from a sub-loop
   };
 
@@ -2013,6 +2101,14 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     }
   };
 
+  auto noteStop = [&](Value *f) {
+    if (!f || !stopCur)
+      return;
+    Value *n = seed(ConstantInt::getFalse(ctx.M.getContext()), RailType{Kind::Int, 1});
+    gate(abi::Core::XorI1, {stopCur, n});
+    gate(abi::Core::XorI1, {f, n});
+    stopCur = n;
+  };
   // One evaluation of the exit arm: the flags of the edges it enters by (a quantum exit edge's e in a trip, the trip
   // predicate on a classical exit), of its blocks and of their edges.
   struct ArmEval {
@@ -2076,7 +2172,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // order, its phis rule 9's selects over the edges taken, its instructions under its flag, a loop of the arm one node
   // (rule 14 nested in this evaluation: its chain seeded by the block's flag). A block no entered edge reaches is no
   // part of this evaluation.
-  auto walkArm = [&](ArmEval &ev) {
+  auto walkArm = [&](ArmEval &ev, const SmallVectorImpl<BasicBlock *> &armBlocks) {
     LLVMContext &Cx = ctx.M.getContext();
     // The lowering branched inside the arm (a loop of the arm, rule 5's Readers test): the segment goes on where it joined.
     auto followBuilder = [&]() {
@@ -2086,7 +2182,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         cur = now;
       }
     };
-    for (BasicBlock *b : UX.arm) {
+    for (BasicBlock *b : armBlocks) {
       Loop *S = armUnit.lookup(b);
       if (S && S->getHeader() != b)
         continue;   // lowered with its loop
@@ -2127,9 +2223,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           if (Pred hp = qp(b); !hp.isTop())
             sf = ctx.preds().flag(ctx, hp);
         if (classify(*S, ctx.T, ctx.S) == Case::QuantumExit) {
-          exits::lowerNestedCutoff(ctx, *S, sf);
+          noteStop(exits::lowerNestedCutoff(ctx, *S, sf));
         } else {
-          exits::lowerClassicalInTrip(ctx, *S, sf);
+          noteStop(exits::lowerClassicalInTrip(ctx, *S, sf));
           followBuilder();
         }
         for (PHINode *P : contPhis)
@@ -2213,7 +2309,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     ArmEval ev;
     for (auto &[e, f] : exitFlag)
       ev.entry[e] = f;
-    walkArm(ev);
+    walkArm(ev, UX.arm);
     for (CPhi &cp : cphis) {
       SmallVector<Value *, 2> c(cp.cap.begin(), cp.cap.end());
       SmallVector<Operand, 2> vl;
@@ -2264,10 +2360,81 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     }
   };
 
+  // The noreturn arm on the edge u -> x under its flag e: rule 16's abort arm, here in the trip.
+  auto noreturnArm = [&](BasicBlock *u, BasicBlock *x, Value *e) {
+    ArmEval ev;
+    ev.entry[{u, x}] = e;
+    walkArm(ev, UX.abort);
+    noteStop(e);
+  };
+  auto followInsert = [&]() {
+    if (BasicBlock *now = ctx.B().GetInsertBlock(); now != cur) {
+      segIdx[now] = segs.size() - 1;
+      segs.back().bb = now;
+      cur = now;
+    }
+  };
+  // Rule 16 on a classical test with an edge into a noreturn arm, in the trip. Under a quantum predicate (the trip's chain,
+  // an enclosing trip, the block's own): e = trip & the edge's flag, its classical terms seeded (rule 8). With none: the
+  // real branch to the arm, the ordinary call (cq-o75xb); the segment goes on where it rejoins.
+  auto abortTest = [&](BasicBlock *u) {
+    SmallVector<BasicBlock *, 2> xs;
+    for (BasicBlock *x : successors(u))
+      if (is_contained(UX.abort, x) && !is_contained(xs, x))
+        xs.push_back(x);
+    LLVMContext &Cx = ctx.M.getContext();
+    Value *trip = aCur ? aCur : outerTrip;
+    const bool noExit = cx && UX.live.empty();   // nothing else ends the classical loop: this edge leaves it as well
+    for (BasicBlock *x : xs) {
+      Value *cnd = exits::classicalEdge(ctx, u, x);
+      Pred qu = qp(u);
+      BasicBlock *N = nullptr;
+      if (trip || !qu.isTop()) {
+        Value *f = ctx.preds().flag(ctx, qu & exits::tripEdge(u, x));
+        if (!f)
+          internalError("loops-classical: a noreturn arm's classical test with no flag", u->getTerminator());
+        Value *e = seed(ConstantInt::getFalse(Cx), RailType{Kind::Int, 1});
+        if (trip)
+          gate(abi::Core::AndI1, {trip, f, e});
+        else
+          gate(abi::Core::XorI1, {f, e});
+        noreturnArm(u, x, e);
+        followInsert();
+        if (!noExit)
+          continue;
+        N = newBlock();
+        ctx.B().CreateCondBr(cnd, unitExit, N);
+        edgeFrom[{u, x}] = cur;
+      } else {
+        BasicBlock *Y = newBlock();
+        N = newBlock();
+        ctx.B().CreateCondBr(cnd, Y, N);
+        ctx.B().SetInsertPoint(Y);
+        followInsert();
+        std::optional<Pred> wasAssumed = ctx.preds().assume(ctx.preds().edge(u, x), ctx.T, ctx.S);
+        ArmEval ev;
+        ev.plain = ConstantInt::getTrue(Cx);
+        ev.entry[{u, x}] = ev.plain;
+        walkArm(ev, UX.abort);
+        ctx.preds().assume(wasAssumed, ctx.T, ctx.S);
+        if (noExit) {
+          ctx.B().CreateBr(unitExit);
+          edgeFrom[{u, x}] = ctx.B().GetInsertBlock();
+        } else {
+          ctx.B().CreateBr(N);
+        }
+      }
+      ctx.B().SetInsertPoint(N);
+      followInsert();
+    }
+  };
+
   Value *aAtCx = nullptr;   // the trip predicate at cxb's classical exit test
   auto emitTerminator = [&](BasicBlock *u) {
     tgtFrom = u;
     Instruction *t = u->getTerminator();
+    if (isAbortTest(u))
+      abortTest(u);
     const bool qExit = mx && termQ(t) && any_of(successors(u), [&](const BasicBlock *s) { return !L.contains(s); });
     if (u == latch && !qExit)
       latchNexts();
@@ -2277,12 +2444,18 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       headerRes();
     if (u == cxb)
       aAtCx = aCur;
+    if (u == cxb && cxArm && u != header && u != latch) {
+      noteUnbuilt("loops-classical: a case-3 loop whose only classical exit, into its exit or noreturn arm, is mid-trip", t);
+      for (CPhi &cp : cphis)
+        cp.atCx.assign(cp.cap.begin(), cp.cap.end());
+    }
     if (qExit) {
       // A quantum exit before the latch: e = a & f, a' = a & NOT f; the trip goes on in the loop. A quantum
       // switch with exit cases (rule 13) is one such exit per exit block x: f_x the flag of its edge's quantum
       // predicate, e_x = a & f_x, a' = a ^ sum_x (a & f_x) (its edges are disjoint). An edge into an
       // effect-free dead end is UB to take: no exit.
       SmallVector<BasicBlock *, 4> xs;
+      SmallVector<std::pair<BasicBlock *, Value *>, 2> intoArm;   // the noreturn arms' edges (rule 16) and their e
       for (BasicBlock *s : successors(u))
         if (!L.contains(s) && (is_contained(UX.live, s) || UX.contains(L, s)) && !is_contained(xs, s))
           xs.push_back(s);
@@ -2305,7 +2478,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         } else if (auto *ib = dyn_cast<IndirectBrInst>(t)) {
           ex = qp(u) & computedGotoEdge(*ib, x);   // rule 13: the address cases into x
         } else {
-          ex = ctx.preds().edge(u, x).quantumPart(ctx.T, ctx.S);
+          ex = UX.abort.empty() ? ctx.preds().edge(u, x).quantumPart(ctx.T, ctx.S) : qp(u) & exits::tripEdge(u, x);
         }
         Value *f = ctx.preds().flag(ctx, ex);
         if (!f)
@@ -2313,7 +2486,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         Value *e = seed(ConstantInt::getFalse(ctx.M.getContext()), RailType{Kind::Int, 1});
         gate(abi::Core::AndI1, {aCur, f, e});
         gate(abi::Core::AndI1, {aCur, f, a2});
-        exitFlag[{u, x}] = e;
+        if (is_contained(UX.abort, x))
+          intoArm.push_back({x, e});
+        else
+          exitFlag[{u, x}] = e;
       }
       aCur = a2;
       if (br)
@@ -2322,6 +2498,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         sw::lowerSwitch(ctx, *sw);
       else if (!isa<IndirectBrInst>(t))   // rule 13: a quantum computed goto's edges are pred's; nothing to emit
         internalError("loops-classical: a quantum exit terminator other than br, switch or computed goto", t);
+      for (auto &[x, e] : intoArm)
+        noreturnArm(u, x, e);
+      followInsert();
       // cq-h8y6: a mixed exit test (cxb with classical disjuncts) leaves the loop classically where one of them
       // holds: there its flag is 1, so this trip's exit took its value under a (the captures, or res).
       Value *cExit = nullptr;
@@ -2388,8 +2567,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       return;
     }
     if (auto *br = dyn_cast<BranchInst>(t)) {
-      if (!br->isConditional()) {
-        BasicBlock *s = br->getSuccessor(0);
+      if (BasicBlock *next = abortTestNext(u); next || !br->isConditional()) {
+        BasicBlock *s = next ? next : br->getSuccessor(0);
         EK k = (s == header || !L.contains(s)) ? EK::Real : edgeKind(u, s);
         edgeFrom[{u, s}] = cur;
         if (k != EK::Real)
@@ -2501,6 +2680,35 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     }
   };
 
+  // The trip predicate and the stop rail at the end of each walked block.
+  DenseMap<const BasicBlock *, Value *> aOut, stopOut;
+  auto joinTrip = [&](BasicBlock *b, DenseMap<const BasicBlock *, Value *> &outOf, Value *&var, Value *fallback) {
+    SmallVector<std::pair<BasicBlock *, Value *>, 4> in;
+    bool differ = false;
+    for (const BasicBlock *p : fwdPreds(b)) {
+      Value *v = outOf.lookup(p);
+      if (!v)
+        v = fallback;   // the exit of a sub-loop, whose walk had no entry here
+      auto ef = edgeFrom.find({p, b});
+      if (ef == edgeFrom.end())
+        continue;
+      differ |= !in.empty() && in.front().second != v;
+      in.push_back({ef->second, v});
+    }
+    if (!in.empty())
+      var = in.front().second;
+    if (!differ)
+      return;
+    PHINode *ph = ctx.B().CreatePHI(handleTy(ctx.M.getContext()), unsigned(in.size()));
+    for (BasicBlock *pb : predecessors(ob(b)))
+      for (auto &[from, v] : in)
+        if (from == pb) {
+          ph->addIncoming(v, pb);
+          break;
+        }
+    ctx.unc().recordMerge(ph);
+    var = ph;
+  };
   // The header (its phis are the carried values above). The outermost header runs under the spine's
   // guard; a sub-loop's header fact is set by its parent's walk.
   if (outermost)
@@ -2508,6 +2716,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   requireFact(header);
   emitInstructions(header);
   emitTerminator(header);
+  aOut[header] = aCur;
+  stopOut[header] = stopCur;
   // The walk order (rule 8 inside a trip). A block entered by classical edges only starts a segment of
   // its own and needs no open block; a block entered by linearized edges only continues the open block,
   // which must run exactly where the block's classical factor holds (a quantum arm's code runs on every
@@ -2548,6 +2758,12 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       for (const BasicBlock *p : fwdPreds(b))
         f = f | edgeFact(p, b);
       curFact = f;
+      // The trip predicate and the stop rail at a classical join: an exit taken in one classical arm of the trip is in that
+      // arm's only.
+      if (aPhi)
+        joinTrip(b, aOut, aCur, aPhi);
+      if (stopPhi)
+        joinTrip(b, stopOut, stopCur, stopCur);
     } else if (!cur) {
       internalError("loops-classical: a linearized block walked with no open block", &*b->begin());
     }
@@ -2582,7 +2798,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           if (ctx.bound(&P))
             was.insert(&P);
         BasicBlock *at = cur;
-        exits::lowerNestedCutoff(ctx, *sl, sd);
+        noteStop(exits::lowerNestedCutoff(ctx, *sl, sd));
         if (ctx.B().GetInsertBlock() != at)
           internalError("loops-classical: a nested K-loop left the trip's open block", sl->getHeader()->getTerminator());
         for (PHINode &P : C->phis())
@@ -2611,7 +2827,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       BasicBlock *sx = SU.multi() ? SU.cont : exits::liveExit(*sl);
       if (!sx || !L.contains(sx))
         unimplemented("loops-classical: a sub-loop that leaves its parent loop", sl->getHeader()->getTerminator());
-      if (!c3 && sc == Case::ClassicalBound && anyReal && sl->getExitingBlock() && tripLocal(*sl, L)) {
+      if (!c3 && sc == Case::ClassicalBound && anyReal && sl->getExitingBlock() && SU.abort.empty() && tripLocal(*sl, L)) {
         // A trip-local sub-loop (176): its own unit, entered from the segment just opened at its header.
         BasicBlock *entry = cur;
         size_t nb = Out.size();
@@ -2652,7 +2868,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         else
           ctx.bindFields(v, ops);   // a phi of the multi-exit sub-loop's continuation (its exit value)
       }
-      if (SU.multi() && sc != Case::ClassicalBound) {
+      if ((SU.multi() || !SU.abort.empty()) && sc != Case::ClassicalBound) {
         for (PHINode &P : sx->phis())
           if (!was.count(&P) && ctx.bound(&P))
             kBound.insert(&P);
@@ -2671,6 +2887,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     emitPhis(b, anyReal);
     emitInstructions(b);
     emitTerminator(b);
+    aOut[b] = aCur;
+    stopOut[b] = stopCur;
   };
   for (BasicBlock *b : rpo) {
     if (b == header || !L.contains(b))
@@ -2710,6 +2928,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       carried[k].np->addIncoming(nexts[k], it->second);
     if (notFirst)
       notFirst->addIncoming(ConstantInt::getTrue(ctx.M.getContext()), it->second);
+    if (stopPhi)
+      stopPhi->addIncoming(stopOut.lookup(latch), it->second);
   }
   // CR rule 14 case 3 with rules 8, 9: the classical exit test left into the exit arm. It holds once per activation, on
   // a real branch, so the arm on that edge runs once, in a segment of its own, under the trip predicate at the test (a
@@ -2717,6 +2937,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // the quantum exits. Its records are mirrored first by the reverse (the segment precedes the exit).
   for (ArmExit &ax : armExits) {
     startSeg(ax.Y);
+    if (stopPhi)
+      stopCur = stopOut.lookup(ax.u);
     ArmEval ev;
     if (mx) {
       if (!aAtCx)
@@ -2733,21 +2955,25 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     }
     // The arm runs here for this edge's paths only: every predicate under it.
     std::optional<Pred> wasAssumed = ctx.preds().assume(ctx.preds().edge(ax.u, ax.x), ctx.T, ctx.S);
-    walkArm(ev);
+    const bool intoAbort = is_contained(UX.abort, ax.x);
+    walkArm(ev, intoAbort ? UX.abort : UX.arm);
     ctx.preds().assume(wasAssumed, ctx.T, ctx.S);
+    if (intoAbort && mx)
+      noteStop(ev.entry[{ax.u, ax.x}]);
     for (CPhi &cp : cphis) {
       SmallVector<Value *, 2> c(cp.atCx.begin(), cp.atCx.end());
-      for (auto &[u, val] : cp.incomings(inUnit, UX.cont)) {
-        Value *g = flagOfEdge(ev, u, UX.cont);
-        if (!g)
-          continue;
-        SmallVector<Operand, 2> fv = contFields(ev, cp, val);
-        for (unsigned f = 0; f < c.size(); ++f)
-          c[f] = select(g, fv[f], Operand{c[f], true}, cp.rails[f]);
-      }
+      if (UX.cont)
+        for (auto &[u, val] : cp.incomings(inUnit, UX.cont)) {
+          Value *g = flagOfEdge(ev, u, UX.cont);
+          if (!g)
+            continue;
+          SmallVector<Operand, 2> fv = contFields(ev, cp, val);
+          for (unsigned f = 0; f < c.size(); ++f)
+            c[f] = select(g, fv[f], Operand{c[f], true}, cp.rails[f]);
+        }
       cp.res.assign(c.begin(), c.end());
     }
-    if (!mx)
+    if (!mx && UX.cont)
       for (PHINode &P : UX.cont->phis()) {
         // Case 1: the value on this edge: its one reached incoming, or rule 9's select chain over their flags.
         std::vector<std::pair<const Value *, Value *>> in;
@@ -2776,14 +3002,22 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         }
         ax.contVal[&P] = o;
       }
-    for (BasicBlock *p : predecessors(UX.cont))
-      if (inUnit(p) && !L.contains(p))
-        edgeFrom[{p, UX.cont}] = cur;
+    if (UX.cont)
+      for (BasicBlock *p : predecessors(UX.cont))
+        if (inUnit(p) && !L.contains(p))
+          edgeFrom[{p, UX.cont}] = cur;
     ax.end = cur;
     ctx.B().CreateBr(T ? T : unitExit);
     cur = nullptr;
   }
   closeSeg();
+  // The stop rail where the loop leaves for T.
+  if (stopPhi && (cx || armExits.size() > 1 || (armExits.empty() && !(mx ? cxb : exits::liveExiting(L))))) {
+    noteUnbuilt("loops-classical: the stop rail of a loop with several exit edges misses the leaving trip's arm flags", header->getTerminator());
+    stopCur = stopPhi;
+  } else if (stopPhi && armExits.empty()) {
+    stopCur = stopOut.lookup(mx ? cxb : exits::liveExiting(L));
+  }
 
   std::vector<std::pair<const Value *, Operand>> out;
   std::vector<RailType> outW;
@@ -2955,6 +3189,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
               ownedH.insert(u);
         }
     std::vector<RailId> exits;
+    if (stopCur) {
+      stopFinal = stopCur;
+      exits.push_back(U.idOf(stopCur));   // read in place by the enclosing K-loop's predicate
+    }
     std::vector<unsigned> copied;   // the values whose exit rail is no record of the loop: copied out, below
     for (unsigned oi = 0; oi < out.size(); ++oi) {
       const Value *v = out[oi].first;
@@ -3796,30 +4034,17 @@ void Unit::resolvePreheader() {
 void lowerClassical(LoweringContext &ctx, Loop &L, Case c) {
   if (c == Case::QuantumExit)
     internalError("loops-classical: lowerClassical of a quantum-exit loop (loops-cutoff)", L.getHeader()->getTerminator());
-  // An exit into a noreturn arm (exits::Unit::abort, CR rule 16) is rule 16's abort arm under the exit's
-  // predicate; this module does not lower one yet (loops-cutoff does, per trip), and the walker never runs
-  // its blocks, so it is no exit to drop.
-  for (Loop *l : L.getLoopsInPreorder())
-    if (exits::Unit U = exits::unitOf(*l); !U.abort.empty())
-      unimplemented("loops-classical: an exit of a classical-bound rule-14 loop into a noreturn arm (rule 16 "
-                    "abort arm per trip; cq-8i5g)",
-                    U.abort.front()->getTerminator());
   std::make_shared<Unit>(ctx, L)->run(c);
 }
 
 namespace exits {
 
-void lowerClassicalInTrip(LoweringContext &ctx, Loop &L, Value *trip) {
+Value *lowerClassicalInTrip(LoweringContext &ctx, Loop &L, Value *trip) {
   Case c = classify(L, ctx.T, ctx.S);
   if (c == Case::QuantumExit)
     internalError("loops-classical: lowerClassicalInTrip of a quantum-exit loop (loops-cutoff)", L.getHeader()->getTerminator());
   if (!trip)
     internalError("loops-classical: a loop in a K-loop trip with no trip rail", L.getHeader()->getTerminator());
-  for (Loop *l : L.getLoopsInPreorder())
-    if (Unit U = unitOf(*l); !U.abort.empty())
-      unimplemented("loops-classical: an exit of a classical-bound rule-14 loop into a noreturn arm (rule 16 "
-                    "abort arm per trip; cq-8i5g)",
-                    U.abort.front()->getTerminator());
   // The unit is lowered once per unrolled trip: its phis (and the continuation phis a multi-exit case-3 unit
   // binds) still name the previous trip's lowering, which this one replaces (as lowerInstruction does, cq-lx8f).
   spine::Shared &sh = spine::shared(ctx);
@@ -3832,11 +4057,12 @@ void lowerClassicalInTrip(LoweringContext &ctx, Loop &L, Value *trip) {
     forget(b);
   for (BasicBlock *b : SU.arm)
     forget(b);
-  if (c == Case::ClassicalBoundQuantumExit && SU.cont && (SU.multi() || liveExiting(L) != L.getLoopLatch()))
+  if (c == Case::ClassicalBoundQuantumExit && SU.cont &&
+      (SU.multi() || liveExiting(L) != L.getLoopLatch() || !SU.abort.empty()))
     for (PHINode &p : SU.cont->phis())
       if (any_of(p.blocks(), [&](const BasicBlock *u) { return SU.contains(L, u); }))
         sh.binds.erase(&p);
-  std::make_shared<cq::loops::Unit>(ctx, L)->runInTrip(c, trip);
+  return std::make_shared<cq::loops::Unit>(ctx, L)->runInTrip(c, trip);
 }
 
 } // namespace exits

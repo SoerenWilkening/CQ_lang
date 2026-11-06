@@ -145,6 +145,7 @@ public:
   Cutoff(LoweringContext &ctx, Analyses &A) : ctx(ctx), A(A) {}
   void lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top);
   std::optional<Pred> seedPred;   // the predicate of the top loop's seed, which every trip rail implies (rule 14)
+  Value *stopRail() const { return stopped; }   // the last lowerLoop's XOR of its noreturn arms' flags
 
 private:
   LoweringContext &ctx;
@@ -1010,7 +1011,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     auto inSub = [&](const BasicBlock *b) { return SU.contains(S, b); };
     SmallVector<PHINode *, 4> cBound;
     if (sc == Case::ClassicalBoundQuantumExit && SU.cont &&
-        (SU.multi() || exits::liveExiting(S) != S.getLoopLatch()))
+        (SU.multi() || exits::liveExiting(S) != S.getLoopLatch() || !SU.abort.empty()))
       for (PHINode &P : SU.cont->phis())
         if (any_of(P.blocks(), inSub))
           cBound.push_back(&P);
@@ -1035,7 +1036,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       internalError("loops-cutoff: a sub-loop lowered where the trip's classical path never reaches it", at);
     if (gc) {
       // No classical guard: S runs wherever the trip runs.
-      exits::lowerClassicalInTrip(ctx, S, trip);
+      stopped = exits::lowerClassicalInTrip(ctx, S, trip);
       for (PHINode *P : cBound) {
         unitPhi.erase(P);
         boundThisTrip.insert(P);
@@ -1085,13 +1086,27 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       skipPhi.push_back(skipFields(P, P->getType()));
     BasicBlock *Run = BasicBlock::Create(Cx, "", &ctx.out()), *Skip = BasicBlock::Create(Cx, "", &ctx.out()),
                *Join = BasicBlock::Create(Cx, "", &ctx.out());
+    // Where S is skipped it took no noreturn arm.
+    Value *noStop = nullptr;
+    if (exits::hasNoreturnArm(S)) {
+      CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, RailType{Kind::Int, 1}}, {ConstantInt::getFalse(Cx)});
+      ctx.unc().recordSeed(z);
+      noStop = z;
+    }
     ctx.B().CreateCondBr(g, Run, Skip);
     ctx.B().SetInsertPoint(Run);
-    exits::lowerClassicalInTrip(ctx, S, trip);
+    Value *subStop = exits::lowerClassicalInTrip(ctx, S, trip);
     BasicBlock *ran = ctx.B().GetInsertBlock();
     ctx.B().CreateBr(Join);
     BranchInst::Create(Join, Skip);
     ctx.B().SetInsertPoint(Join);
+    if (subStop && noStop) {
+      PHINode *ph = ctx.B().CreatePHI(subStop->getType(), 2);
+      ph->addIncoming(subStop, ran);
+      ph->addIncoming(noStop, Skip);
+      ctx.unc().recordMerge(ph);
+      stopped = ph;
+    }
     auto join = [&](const Value *v, ArrayRef<Operand> skip) {
       SmallVector<Operand, 4> run = ctx.fields(v), out;
       if (run.size() != skip.size())
@@ -1176,6 +1191,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         Loop *mS = A.LI.getLoopFor(b);
         if (classify(*mS, ctx.T, ctx.S) != Case::QuantumExit) {
           classicalSub(*mS, q, local.find(b)->second, b->getTerminator());
+          q = afterSub(q);
           continue;
         }
         unsigned K = ctx.K(S);
@@ -1300,6 +1316,10 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         // classically bounded loop of the arm under that flag (cq-h5uj).
         if (classify(*S, ctx.T, ctx.S) != Case::QuantumExit) {
           classicalSub(*S, q, acc, b->getTerminator());
+          if (stopped) {
+            noteStop(stopped);
+            stopped = nullptr;
+          }
           if (BasicBlock *SX = exits::unitOf(*S).cont)
             for (PHINode &P : SX->phis())
               if (mine.count(&P))
@@ -1887,7 +1907,7 @@ bool initDead(LoweringContext &ctx, Loop &L, const Value *init, const PHINode *p
 }
 
 
-void lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed) {
+Value *lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed) {
   Function &F = *L.getHeader()->getParent();
   Analyses A(F);
   Loop *mL = A.LI.getLoopFor(L.getHeader());
@@ -1898,7 +1918,28 @@ void lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed) {
   unsigned K = ctx.K(mL);
   std::optional<uint64_t> B = cutoffBound(*mL, A.SE, ctx.T, ctx.S);
   unsigned c = B ? unsigned(std::min<uint64_t>(K, *B)) : K;
-  Cutoff(ctx, A).lowerLoop(*mL, seed, c, !B || *B > K, false);
+  Cutoff C(ctx, A);
+  C.lowerLoop(*mL, seed, c, !B || *B > K, false);
+  return C.stopRail();
+}
+
+bool hasNoreturnArm(const Loop &L) {
+  BasicBlock *h = L.getHeader();
+  DominatorTree DT(*h->getParent());
+  LoopInfo LI(DT);
+  SmallVector<BasicBlock *, 16> blocks(L.blocks().begin(), L.blocks().end());
+  Unit top = unitOf(L);
+  blocks.append(top.arm.begin(), top.arm.end());
+  for (BasicBlock *b : blocks)
+    for (Loop *l = LI.getLoopFor(b); l; l = l->getParentLoop()) {
+      if (l->contains(h) && l->getHeader() != h)
+        break;
+      if (!unitOf(*l).abort.empty())
+        return true;
+      if (l->getHeader() == h)
+        break;
+    }
+  return false;
 }
 
 Pred tripEdge(const BasicBlock *p, const BasicBlock *b) {

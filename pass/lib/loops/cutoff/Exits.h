@@ -88,7 +88,8 @@ std::optional<uint64_t> cutoffBound(const llvm::Loop &L, llvm::ScalarEvolution &
 // is known, every other rail a record of the current Uncompute scope. Binds every phi of its continuation
 // that has an incoming from the unit (cq::LoweringContext::addJoinArm for an incoming not lowered yet) and
 // rebinds its values read after it; the builder stays in the block it was in.
-void lowerNestedCutoff(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Value *seed);
+// Returns the XOR of the flags of the noreturn arms it took (a rail, nullptr when none or no K-loop encloses L).
+llvm::Value *lowerNestedCutoff(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Value *seed);
 
 // CR rule 14 (case 1 or 3 inside a quantum-exit loop's trip, cq-h5uj): a classically bounded loop L of one
 // unrolled trip of a K-loop (a sub-loop of its body or a loop of its exit arm), lowered by loops-classical
@@ -99,7 +100,12 @@ void lowerNestedCutoff(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Value *see
 // that is no rail of its own is copied by a record the reverse undoes first). Rebinds the values of L read
 // after it (and, for a multi-exit case-3 loop, binds its continuation's phis); the builder is left where
 // L's exit continues.
-void lowerClassicalInTrip(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Value *trip);
+// Returns the XOR of the flags of the noreturn arms of L's nest (hasNoreturnArm; nullptr when none), an exit rail: an edge
+// into such an arm is an exit edge of the K-loop too (CR rules 14, 16).
+llvm::Value *lowerClassicalInTrip(cq::LoweringContext &ctx, llvm::Loop &L, llvm::Value *trip);
+
+// Has L, a loop inside L, or a loop of L's exit arm a noreturn arm?
+bool hasNoreturnArm(const llvm::Loop &L);
 
 // CR rule 6's rolled-loop clause: is the initial value of the carried phi p a rail this function made for itself that
 // nothing reads once the loop is entered (the rail trip 0 cleans)?
