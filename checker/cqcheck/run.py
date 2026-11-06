@@ -106,7 +106,7 @@ import sys
 import tempfile
 import threading
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from cqcheck.compare import HOST_EFFECTS
 from cqcheck.contracts import DriverSpec, RunResult
@@ -534,7 +534,7 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
             tot = default_env_module(tot)
         if any(Path(o).name == "host_fx.o" for o in objs):  # cq-e4jk; a test's restricted runtime may omit it
             tot = host_effects_module(tot, defined)
-        tot = ctl_measures_module(kept_table_results_module(kept_results_module(kept_copies_module(tot), handle_returning_fns(canon))))
+        tot = ctl_measures_module(kept_results_module(kept_copies_module(tot), handle_returning_fns(canon)))
         from cqcheck import drivers
         tot += drivers.out_globals_ir(ctext if ctext is not None else canon, canon, "__cqe_out_globals",
                                       "cqd_out_mem", "cqd_out_object")
@@ -966,7 +966,9 @@ def resolve_handle_rets(r: RunResult, fns: Sequence[str]) -> RunResult:
     """r with each ret of a function in fns resolved from its handle to the rail's value; see above."""
     if not fns or not r.outputs or not r.outputs.get("ret"):
         return r
-    live = {k.get("h"): k for k in (r.kept or []) if isinstance(k, dict)}
+    # a row of _compact_kept stands for "n" rails, every "step"-th handle from "h"
+    live = {k.get("h") + i * k.get("step", 0): k for k in (r.kept or []) if isinstance(k, dict)
+            for i in range(k.get("n", 1))}
     rets, viol = [], list(r.violations)
     results = set()
     for e in r.outputs["ret"]:
@@ -986,8 +988,20 @@ def resolve_handle_rets(r: RunResult, fns: Sequence[str]) -> RunResult:
         rets.append(dict(e, v={"w": v["w"], "v": rail["v"]}))
         results.add(h)
     # cq-tt2j: the returned rail is a result (CR §1.1), kept at exit by design (compare._leaks)
-    kept = [dict(k, result=True) if isinstance(k, dict) and k.get("h") in results else k for k in r.kept or []] \
-        if results else r.kept
+    kept = r.kept
+    if results:
+        kept = []
+        for k in r.kept or []:
+            if not isinstance(k, dict):
+                kept.append(k)
+                continue
+            n, step = k.get("n", 1), k.get("step", 0)
+            hs = [k.get("h") + i * step for i in range(n)]
+            if not results.intersection(hs):
+                kept.append(k)
+                continue
+            one = {f: v for f, v in k.items() if f not in ("n", "step")}
+            kept.extend(dict(one, h=h, result=True) if h in results else dict(one, h=h) for h in hs)
     return RunResult(side=r.side, sample=r.sample, outputs=dict(r.outputs, ret=rets), measured=r.measured,
                      rotations=r.rotations, kept=kept, clean=r.clean, violations=viol)
 
@@ -1096,23 +1110,40 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
 
 _TABLE_RESULT = re.compile(r"^\s+(%[-\w.$\"]+) = (?:tail |notail )?call [^@]*?%[-\w.$\"]+\(")
 _COPY_OUT = re.compile(r"^(\s+)call void @cqrt_copy_\w+\(i32 (%[-\w.$\"]+), i32 (%[-\w.$\"]+)\)")
+_NULL_EFFECT = re.compile(r"^\s+(%[-\w.$\"]+) = call i32 @cqrt_tape_effect_\w+_controlled\(.*, ptr null\)")
+_SELECT = re.compile(r"^\s+(%[-\w.$\"]+) = call i32 @cq_template_select_\w+\(i32 [^,]+, i32 ([^,]+), i32 [^,)]+\)")
+_SELECT_UNC = re.compile(r"^\s+call void @cq_template_select_\w+_unc\(i32 (%[-\w.$\"]+),")
+_EXTRACT = re.compile(r"^\s+(%[-\w.$\"]+) = extractvalue \{[^}]*\} (%[-\w.$\"]+), \d+")
 
 
 def kept_copies_module(text: str) -> str:
-    """Rule 19: at a table dispatch the copy of a candidate's result (its result is zeroed by the twin) is
-    kept across the next memory version change: a kept rail a rule names (CR §6 item 1). Each copy out of
-    the result of an indirect call of a lowered clone takes the kept role a rule's value rail has."""
-    out, results = [], set()
+    """Rule 19's two copies at a table dispatch, kept rails a rule names (CR §6 item 1): the copy c_i of a
+    candidate's result (its result is zeroed by the twin, the call is a memory version change), and the final copy
+    of the call's value select_<W>(p_n, r_e, out_n), `r_e` the null-named effect entry's result, taken right before
+    that select's uncompute ("copied out where it is measured or kept"). Any other copy of that select, or of any
+    other select, stays a leak."""
+    lines = text.splitlines()
+    out, results, effects, finals = [], set(), set(), set()
     used = False
-    for line in text.splitlines():
+    for i, line in enumerate(lines):
         out.append(line)
         if line.startswith("}"):
-            results = set()
+            results, effects, finals = set(), set(), set()
         m = _TABLE_RESULT.match(line)
         if m:
             results.add(m.group(1))
-        m = _COPY_OUT.match(line)
+        m = _EXTRACT.match(line)
         if m and m.group(2) in results:
+            results.add(m.group(1))
+        m = _NULL_EFFECT.match(line)
+        if m:
+            effects.add(m.group(1))
+        m = _SELECT.match(line)
+        if m and m.group(2) in effects:
+            finals.add(m.group(1))
+        m = _COPY_OUT.match(line)
+        if m and (m.group(2) in results or (m.group(2) in finals and i + 1 < len(lines)
+                                            and (_SELECT_UNC.match(lines[i + 1]) or [0, 0])[1] == m.group(2))):
             out.append(f"{m.group(1)}call void @cqe__set_store_kept(i32 {m.group(3)})")
             used = True
     if used:
@@ -1121,21 +1152,160 @@ def kept_copies_module(text: str) -> str:
 
 
 _HANDLE_CALL = re.compile(r"^(\s+)(%[-\w.$\"]+) = (?:tail |notail )?call [^@]*@(\"?)([-\w.$]+)\3\(")
+_FN_BODY = re.compile(r"(?ms)^define\b[^\n]*?@\"?([-\w.$]+)\"?\([^\n]*\{\n(.*?)^\}$")
+_TABLE_CLONE = re.compile(r"^__cq_q_.*_t(_ctl)?$")
+_TWIN_OF_CLONE = re.compile(r"^__cq_q_.*(_unc|_pure)$")
+_CALLED = re.compile(r"\bcall [^@%\n]*@\"?([-\w.$]+)\"?\(")
+_INDIRECT = re.compile(r"\bcall [^@\n]*%[-\w.$\"]+\(")
+_BACK_LABEL = re.compile(r"\blabel %([-\w.$\"]+)")
+_BLOCK = re.compile(r"(?m)^([-\w.$\"]+):")
+_CTL_MEASURE = re.compile(r"@cqrt_copy_\w+_controlled\(i32 [^,]+, i32 [^,]+, i32 (%[-\w.$\"]+)\)")
+_MEASURED_RAIL = re.compile(r"@cqrt_measure_\w+\(i32 (%[-\w.$\"]+)\)")
+# Callees that are none of rule 18's reasons for no twin by themselves (the bus stores and effect entries among
+# cqrt_* are read separately); a callee with no body, a declared clone included, is a host call.
+_NEUTRAL_CALLEE = re.compile(r"^(cq_template_|cqrt_|__cq_mem$|__cq_mints_push$|__cq_clone_|__cq_free$|llvm\.)")
+
+
+def _no_twin_clones(bodies: Dict[str, str]) -> Set[str]:
+    """Rule 18's list read off the lowered bodies, each a function's own reason or a by-name callee's: it writes
+    memory (a bus store or swap, a plain store but the activation counter's and a frame's, __cq_alloc, an indirect
+    call, a host call), measures (Q3: tainted, a _ctl clone's or a controlled copy's rail, a classical-path
+    measurement leaves the twin), reads an effect entry's result, or (rulings3 F) rotates per trip. A body of
+    templates and rotations outside loops is not on it: its result left live is a leak."""
+    def own(fn: str, body: str) -> bool:
+        ctl = {m.group(1) for m in _CTL_MEASURE.finditer(body)}
+        if re.search(r"@cqrt_(qram_(store|swap)|tape_effect)", body):
+            return True
+        if any("_ctl" in fn or m.group(1) in ctl for m in _MEASURED_RAIL.finditer(body)):
+            return True
+        if _INDIRECT.search(body):
+            return True
+        frames = set(re.findall(r"(?m)^\s+(%[-\w.$\"]+) = alloca\b", body))
+        for m in re.finditer(r"(?m)^\s+store [^\n]*?, ptr ([@%][-\w.$\"]+)", body):
+            if m.group(1) not in frames and not m.group(1).startswith("@__cq_act_") and not frame_gep(body, frames, m.group(1)):
+                return True
+        return any(not _NEUTRAL_CALLEE.match(c) and c not in bodies for c in _CALLED.findall(body))
+
+    def frame_gep(body: str, frames: Set[str], p: str) -> bool:
+        m = re.search(rf"(?m)^\s+{re.escape(p)} = getelementptr [^\n]*?, ptr (%[-\w.$\"]+)", body)
+        return bool(m) and m.group(1) in frames
+
+    def has_loop(body: str) -> bool:
+        seen: Set[str] = set()
+        for line in body.splitlines():
+            m = _BLOCK.match(line)
+            if m:
+                seen.add(m.group(1))
+            elif re.match(r"\s+(br|switch)\b", line):
+                if any(lab in seen for lab in _BACK_LABEL.findall(line)):
+                    return True
+        return False
+
+    def calls(body: str) -> Set[str]:
+        return {c for c in _CALLED.findall(body) if c in bodies and not c.endswith("_unc")}
+
+    # rotation, itself or through a by-name callee; a loop around it mints per trip
+    rotates = {f for f, b in bodies.items() if re.search(r"@cqrt_ry_", b) and not f.endswith("_unc")}
+    changed = True
+    while changed:
+        changed = False
+        for f, b in bodies.items():
+            if f not in rotates and not f.endswith("_unc") and calls(b) & rotates:
+                rotates.add(f)
+                changed = True
+    out = {f for f, b in bodies.items() if own(f, b) or (f in rotates and has_loop(b))}
+    changed = True
+    while changed:
+        changed = False
+        for f, b in bodies.items():
+            if f not in out and calls(b) & out:
+                out.add(f)
+                changed = True
+    return out
+
+
+def _pop_only(body: str) -> bool:
+    """A twin of §1.4's no-twin form: pops what the clone pushed and counts its activation, nothing else."""
+    return not re.search(r"@cqrt_(copy|free)|@cq_template_|_unc\(|_pure\(", body)
+
+
+def _flat_fields(ty: str) -> List[int]:
+    """The field indices of a literal struct of i32s; other fields are no handle."""
+    inner = ty.strip()[1:-1]
+    return [i for i, f in enumerate(_split_top(inner)) if f.strip() == "i32"]
+
+
+def _ret_handles(body: str, is_rail) -> List[str]:
+    """Text lines marking each returned rail of one clone body, inserted before its rets (kept_results_module).
+    A classical field of a struct result is left alone (rule 18: the record is per clone, not by type)."""
+    defs = dict(m.groups() for m in re.finditer(r"(?m)^\s+(%[-\w.$\"]+) = (.*)$", body))
+    out: List[str] = []
+    for line in body.splitlines(keepends=True):
+        m = _RET.match(line.rstrip("\n"))
+        if m and m.group(1) == "i32":
+            v = m.group(2).strip()
+            if is_rail(v):
+                out.append(f"  call void @cqe__set_store_kept(i32 {v})\n")
+        else:
+            ms = re.match(r"^\s+ret (\{[^}]*\}) (%[-\w.$\"]+)", line)
+            if ms:
+                fields: Dict[int, str] = {}
+                v = ms.group(2)
+                while v in defs and defs[v].startswith("insertvalue"):
+                    mi = re.match(r"insertvalue \{[^}]*\} (\S+), \S+ (\S+), (\d+)", defs[v])
+                    if not mi:
+                        break
+                    fields.setdefault(int(mi.group(3)), mi.group(2))
+                    v = mi.group(1)
+                for i in _flat_fields(ms.group(1)):
+                    if i in fields and is_rail(fields[i]):
+                        out.append(f"  call void @cqe__set_store_kept(i32 {fields[i]})\n")
+        out.append(line)
+    return out
 
 
 def kept_results_module(text: str, handle_fns: Sequence[str]) -> str:
-    """Rule 18: a function that writes memory has no twin and its rail results are KEPT by the caller; rule 19:
-    an own symbol's rail result is escaped, never freed. Kept rails a rule names (CR §6 item 1): the result of a
-    call of a defined handle-returning function with no `_unc` in the module takes the kept role. A callee with a
-    twin is not touched: a result its twin should have zeroed and did not stays a leak."""
-    fns = {f for f in handle_fns if not re.search(rf"(?m)^(?:define|declare)\b[^@\n]*@\"?{re.escape(f)}_unc\"?\(", text)}
-    if not fns:
+    """Kept results a rule names (CR §6 item 1), each marked by its rule, no other:
+    - rule 19: the call of an own symbol's rail result (escaped, never freed);
+    - rule 18: the results of a by-name clone on rule 18's no-twin list (_no_twin_clones) with no `_unc` in the module,
+      its {res, flags} struct included; or of one that loads from the bus (kept where a version change overtakes it);
+    - §1.4: the results of a table clone on that list whose twin is the pop-only form ("every result stays allocated").
+    A callee with a twin is not touched, and neither is a clone off the list with no twin (its twin's call was
+    lost): a result that should be zeroed and is not stays a leak, as does anything else the clone left live."""
+    bodies = {m.group(1): m.group(2) for m in _FN_BODY.finditer(text)}
+    no_twin = _no_twin_clones(bodies)
+    keep: Set[str] = set()
+    for f, b in bodies.items():
+        if _TWIN_OF_CLONE.match(f) or not f.startswith("__cq_q_"):
+            continue
+        twin = bodies.get(f + "_unc")
+        if _TABLE_CLONE.match(f):
+            if f in no_twin and twin is not None and _pop_only(twin):
+                keep.add(f)
+        elif not re.search(rf"(?m)^(?:define|declare)\b[^@\n]*@\"?{re.escape(f)}_unc\"?\(", text) and (
+                f in no_twin or _loads_bus(f, bodies)):
+            keep.add(f)
+    own = {f for f in handle_fns if not f.startswith("__cq_q_")
+           and not re.search(rf"(?m)^(?:define|declare)\b[^@\n]*@\"?{re.escape(f)}_unc\"?\(", text)}
+    if not keep and not own:
         return text
-    out, used = [], False
+    out, used, cur = [], False, None
     for line in text.splitlines():
+        if line.startswith("define"):
+            m = DEFINE_NAME.match(line)
+            cur = m.group(2) if m and m.group(2) in keep and line.rstrip().endswith("{") else None
+            out.append(line)
+            if cur:
+                out.extend(ln.rstrip("\n") for ln in _ret_handles(bodies[cur], _rail_tester(bodies[cur], handle_fns)))
+                used = True
+            continue
+        if line.startswith("}"):
+            cur = None
+        if cur:
+            continue
         out.append(line)
         m = _HANDLE_CALL.match(line)
-        if m and m.group(4) in fns and re.match(r"^\s+\S+ = (?:tail |notail )?call (?:[^@]*\s)?i32 @", line):
+        if m and m.group(4) in own and re.match(r"^\s+\S+ = (?:tail |notail )?call (?:[^@]*\s)?i32 @", line):
             out.append(f"{m.group(1)}call void @cqe__set_store_kept(i32 {m.group(2)})")
             used = True
     if used and "declare void @cqe__set_store_kept" not in text:
@@ -1143,43 +1313,47 @@ def kept_results_module(text: str, handle_fns: Sequence[str]) -> str:
     return "\n".join(out) + "\n"
 
 
-_TABLE_TWIN = re.compile(r"^define internal void @(__cq_q_\S+_t(_ctl)?)_unc\((.*)\) ?\S* ?\{$")
-_DEFINE_ARITY = r"(?m)^define [^@\n]*@{}\(([^)]*)\)"
+def _loads_bus(f: str, bodies: Dict[str, str]) -> bool:
+    seen: Set[str] = set()
+    work = [f]
+    while work:
+        g = work.pop()
+        if g in seen or g not in bodies:
+            continue
+        seen.add(g)
+        if "@cqrt_qram_load_" in bodies[g]:
+            return True
+        work.extend(_CALLED.findall(bodies[g]))
+    return False
 
 
-def kept_table_results_module(text: str) -> str:
-    """§1.4: "For a function rule 18 gives no twin it [the table twin] does nothing else, and every result stays
-    allocated (KEPT)": a kept rail a rule names (CR §6 item 1). A table twin takes ([pred,] outs..., args..., K);
-    each out it never frees takes the kept role (the outs are the parameters it has beyond its clone's)."""
-    lines = text.splitlines()
-    out, used, i = [], False, 0
-    while i < len(lines):
-        line = lines[i]
-        out.append(line)
-        i += 1
-        m = _TABLE_TWIN.match(line)
-        if not m:
-            continue
-        fwd = re.search(_DEFINE_ARITY.format(re.escape(m.group(1))), text)
-        if not fwd:
-            continue
-        params = re.findall(r"i32 (%[-\w.$\"]+)", m.group(3))
-        arity = lambda p: len([a for a in p.split(",") if a.strip()])
-        n = arity(m.group(3)) - arity(fwd.group(1))
-        first = 1 if m.group(2) else 0
-        end = i
-        while not lines[end].startswith("}"):
-            end += 1
-        body = "\n".join(lines[i:end])
-        marks = [f"  call void @cqe__set_store_kept(i32 {h})" for h in params[first:first + n]
-                 if not re.search(rf"@cqrt_free\(i32 {re.escape(h)}\)", body)]
-        if marks:
-            # the first line of the body (a label cannot come first in a twin with an unnamed entry block)
-            out.extend(marks)
-            used = True
-    if used and "declare void @cqe__set_store_kept" not in text:
-        out.append("declare void @cqe__set_store_kept(i32)")
-    return "\n".join(out) + "\n"
+def _rail_tester(body: str, handle_fns: Sequence[str]):
+    """Is this value of one clone body a rail it holds: not a constant, not a classical computation. A formal
+    (%0, ...) is a rail only when returned as a handle; a clone returns fresh copies (rule 18), so it is not marked."""
+    defs = dict(m.groups() for m in re.finditer(r"(?m)^\s+(%[-\w.$\"]+) = (.*)$", body))
+    hf = set(handle_fns)
+
+    def rail(v: str, seen: Set[str]) -> bool:
+        if v not in defs or v in seen:
+            return False
+        seen.add(v)
+        rhs = defs[v]
+        op = rhs.split(" ", 1)[0]
+        if op == "phi":
+            return any(rail(a.strip(), seen) for a in re.findall(r"\[\s*([^,\]]+),", rhs))
+        if op == "extractvalue":
+            mm = re.match(r"extractvalue \{[^}]*\} (\S+), (\d+)", rhs)
+            return bool(mm) and rail(mm.group(1), seen)
+        m = _CALLEE.search(rhs)
+        if not m or not re.match(r"^(tail |musttail |notail )?call\b", rhs):
+            return False
+        c = m.group(2)
+        if c.startswith("cq_template_"):
+            return not c.endswith("_unc")
+        if c.startswith("cqrt_"):
+            return c.startswith(_RAIL_CALLS) or c.startswith("cqrt_tape_effect_")
+        return c in hf or (c.startswith("__cq_q_") and not c.endswith("_unc"))
+    return lambda v: rail(v, set())
 
 
 _MEASURE = re.compile(r"^(\s+)%[-\w.$\"]+ = call \S+ @cqrt_measure_\w+\(i32 (%[-\w.$\"]+)\)")
