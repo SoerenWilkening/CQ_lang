@@ -658,7 +658,10 @@ void Walker::planGuards() {
     bool inPure = bl && !unitOf.count(b);
     auto ii = in.find(b);
     Pred inB = ii == in.end() ? Pred::top() : ii->second;
-    const Pred &p = ctx.preds().block(b);
+    // A tail block runs here for the paths from outside its unit only (cq-h8y6): their classical factor is its guard,
+    // so the unit's own classical paths go around it.
+    const auto walkedPred = [&](const BasicBlock *x) -> Pred { return tailOf.count(x) ? tailPredOf(x) : ctx.preds().block(x); };
+    const Pred p = walkedPred(b);
     Pred cf = p.isBottom() ? Pred::top() : p.classicalFactor(ctx.T, ctx.S);
 
     // A purely classical loop keeps its CFG exactly: its classical facts are the CFG's.
@@ -732,7 +735,7 @@ void Walker::planGuards() {
         BasicBlock *y = L[j];
         if (!eligible(y, b))
           continue;
-        const Pred &py = ctx.preds().block(y);
+        const Pred py = walkedPred(y);
         Pred cfy = py.isBottom() ? Pred::bottom() : py.classicalFactor(ctx.T, ctx.S);
         if (!(cfy & !conj).isBottom())
           skip = y;
