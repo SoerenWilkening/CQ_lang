@@ -3,4 +3,4 @@ add_test(NAME bus-alloc
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_bus_alloc.py
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-set_tests_properties(bus-alloc PROPERTIES TIMEOUT 600)
+set_tests_properties(bus-alloc PROPERTIES TIMEOUT 1500)

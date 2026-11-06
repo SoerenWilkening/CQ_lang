@@ -30,6 +30,9 @@ void emitKeptStore(LoweringContext &, llvm::Type *T, Operand addr, Operand value
 // g's false edge, read inside an X bracket around the store (rule 8, cq-5aus); else c. nullptr when c is.
 llvm::Value *keptControl(LoweringContext &, llvm::Value *c, llvm::Value *value);
 
+// A call of the CQ.h surface (cq_theta, cq_measure, cq_phi, the invert markers): no bus access.
+bool isSurfaceCall(const llvm::CallBase &);
+
 // Rule 5 In-place form (InPlace.cpp): is this store the end of the form? A store that is lowers there; every other
 // store is the kept store.
 bool isInPlaceForm(LoweringContext &, const llvm::StoreInst &);

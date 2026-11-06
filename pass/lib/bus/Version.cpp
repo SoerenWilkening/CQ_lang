@@ -145,6 +145,11 @@ bool writesMemory(const TaintInfo &T, const Function &F) {
   return cache.writes.count(&F) != 0;
 }
 
+bool isSurfaceCall(const CallBase &CB) {
+  const Function *G = calleeOf(CB);
+  return G && isSurface(*G);
+}
+
 bool notesOwnChange(const LoweringContext &ctx, const Instruction &I) {
   if (auto *A = dyn_cast<AllocaInst>(&I))
     return !ctx.T.hostResident(A, ctx.S);

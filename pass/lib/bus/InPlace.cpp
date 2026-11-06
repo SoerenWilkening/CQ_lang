@@ -9,6 +9,14 @@
 // The plan is one per lowered body: the form's load and steps emit nothing where the walker meets them
 // (inPlaceBefore), and the form is emitted at the store's position. Its rails are no business of Uncompute: nothing of
 // the form outlives its second swap. The readers of its operands are the IR uses of the raw calls.
+//
+// The form is an optimisation of the general load, steps, kept store: a shape its conditions do not cover is not matched
+// and the store lowers as a kept store (rule 5's last sentence). Not matched: a store that runs again without its load,
+// or a step that runs again without the store (the store itself is the change between the load and the store); a step
+// computed before the preceding store (the interval runs from that store); a forwarded y whose store does not cover the
+// cell or, at a width cast, whose high bits a change of the interval may have written; a value at or after a cq_theta
+// with a reader before the store when a bus access or a change lies between that value and the store (the reader needs
+// the swap-in there, and the form may not run before that access).
 #include "BusInternal.h"
 
 #include "cq/Abi.h"
@@ -90,6 +98,7 @@ struct Form {
   SmallVector<const Instruction *, 2> changes;   // Readers: the changes of the interval from Prev to S
   // Part ends: a step index at or after the first cq_theta whose value has another reader (the last step's included).
   SmallVector<unsigned, 2> ends;
+  int normalUpTo = -1;                  // steps[0..normalUpTo] lowered at their own position and recomputed in the form
   // State of the walk, Readers only:
   Value *d = nullptr;                   // the classical disjointness test; nullptr: the constant 0 (the copy)
   Value *copy = nullptr;                // y's copy: a load, or a classical phi with a poison incoming when d
@@ -114,13 +123,13 @@ thread_local DenseMap<const Function *, std::unique_ptr<Plan>> plans;
 // -------------------------------------------------------------------------------------------------------------------
 // The matcher.
 
-// Every memory version change of the original function on a path from `from` to `to`, both excluded.
-void changesBetween(LoweringContext &ctx, const Instruction &from, const Instruction &to,
-                    SmallVectorImpl<const Instruction *> &out) {
+// Every instruction satisfying `pred` on a path from `from` to `to`, both excluded.
+template <typename P>
+void scanBetween(const Instruction &from, const Instruction &to, P pred, SmallVectorImpl<const Instruction *> &out) {
   const BasicBlock *FB = from.getParent(), *TB = to.getParent();
   auto scan = [&](BasicBlock::const_iterator a, BasicBlock::const_iterator b) {
     for (; a != b; ++a)
-      if (&*a != &to && versionChange(ctx, *a))
+      if (&*a != &to && pred(*a))
         out.push_back(&*a);
   };
   if (FB == TB && from.comesBefore(&to)) {
@@ -143,6 +152,42 @@ void changesBetween(LoweringContext &ctx, const Instruction &from, const Instruc
   for (const BasicBlock *b : fwd)
     if (back.count(b))
       scan(b->begin(), b->end());
+}
+
+// Every memory version change of the original function on a path from `from` to `to`, both excluded.
+void changesBetween(LoweringContext &ctx, const Instruction &from, const Instruction &to,
+                    SmallVectorImpl<const Instruction *> &out) {
+  scanBetween(from, to, [&](const Instruction &I) { return versionChange(ctx, I); }, out);
+}
+
+// A bus access of the original function: a version change, a bus load, a call that may read memory.
+bool busAccess(LoweringContext &ctx, const Instruction &I) {
+  if (versionChange(ctx, I))
+    return true;
+  if (auto *L = dyn_cast<LoadInst>(&I))
+    return !hostAccess(ctx, *L);
+  auto *CB = dyn_cast<CallBase>(&I);
+  if (!CB || isSurfaceCall(*CB))
+    return false;
+  if (auto *II = dyn_cast<IntrinsicInst>(CB); II && II->isAssumeLikeIntrinsic())
+    return false;
+  return CB->mayReadFromMemory();
+}
+
+// A path from `from` back to `from` that does not pass `stop`: what is in `from` runs again without what is in `stop`.
+bool cycleAvoiding(const BasicBlock *from, const BasicBlock *stop) {
+  if (from == stop)
+    return false;
+  SmallPtrSet<const BasicBlock *, 16> seen;
+  SmallVector<const BasicBlock *, 16> w{from};
+  while (!w.empty())
+    for (const BasicBlock *s : successors(w.pop_back_val())) {
+      if (s == from)
+        return true;
+      if (s != stop && seen.insert(s).second)
+        w.push_back(s);
+    }
+  return false;
 }
 
 // The preceding store to `ptr` on the one path that reaches S: back through S's block and single predecessors.
@@ -168,7 +213,7 @@ bool holds(const Value *stored, const Value *v) {
   if (auto *z = dyn_cast<ZExtInst>(stored); z && z->getOperand(0) == v)
     return true;
   auto *a = dyn_cast<ConstantInt>(stored), *b = dyn_cast<ConstantInt>(v);
-  return a && b && a->getValue() == b->getValue().zext(a->getBitWidth());
+  return a && b && a->getBitWidth() >= b->getBitWidth() && a->getValue() == b->getValue().zext(a->getBitWidth());
 }
 
 // `v` reads a value of `set`, through instructions.
@@ -260,7 +305,11 @@ struct Matcher {
 
   // Is v where the form starts? (the load, a trunc of it, or a forwarded value)
   bool start(const Value *v) {
-    if (prevStore && holds(prevStore->getValueOperand(), v)) {
+    // Readers: the preceding store wrote every cell of the access (Width casts: the high bits it wrote are 0, holds).
+    const DataLayout &DL = S.getDataLayout();
+    if (prevStore && v->getType() == U &&
+        DL.getTypeStoreSize(prevStore->getValueOperand()->getType()) >= DL.getTypeStoreSize(F.T) &&
+        holds(prevStore->getValueOperand(), v)) {
       F.Prev = prevStore;
       F.y = v;
       return true;
@@ -445,13 +494,28 @@ std::unique_ptr<Form> matchStore(LoweringContext &ctx, StoreInst &S) {
   for (const Step &st : F->steps)
     if (st.theta && !samePred(ctx.preds().block(st.theta->getParent()), sp))
       return nullptr;
+  // One execution of the store is one of the form: a step that runs again without it is several updates.
+  for (const Step &st : F->steps)
+    if (auto *def = dyn_cast<Instruction>(st.def); def && cycleAvoiding(def->getParent(), S.getParent()))
+      return nullptr;
   if (F->L) {
+    // The store itself is a version change between the load and its next execution.
+    if (cycleAvoiding(S.getParent(), F->L->getParent()))
+      return nullptr;
     SmallVector<const Instruction *, 2> ch;
     changesBetween(ctx, *F->L, S, ch);
     if (!ch.empty())
       return nullptr;   // an update that is not this shape: rule 2's copy, a kept store
   } else {
+    // The interval runs from the preceding store: a step computed before it is not in the interval.
+    auto *first = dyn_cast<Instruction>(F->steps.front().def);
+    if (!first || !spine::shared(ctx).dt(*S.getFunction()).dominates(F->Prev, first))
+      return nullptr;
     changesBetween(ctx, *F->Prev, S, F->changes);
+    // Width casts: the high bits stay in the cells only while they are known 0; a change may have written them.
+    const DataLayout &DL = S.getDataLayout();
+    if (!F->changes.empty() && DL.getTypeStoreSize(F->U) < DL.getTypeStoreSize(F->T))
+      return nullptr;
   }
   return F;
 }
@@ -465,6 +529,41 @@ bool afterStore(LoweringContext &ctx, const StoreInst &S, const Use &U) {
   return DT.dominates(&S, I);
 }
 
+// A value at or after a cq_theta step with a reader before the store ends its form at that step (Readers): the form then
+// runs at the step, which is only the store's position when nothing between them sees the cell.
+bool needsSwapInTooEarly(LoweringContext &ctx, const Form &F) {
+  const unsigned n = F.steps.size();
+  bool theta = false;
+  for (unsigned i = 0; i < n; ++i) {
+    theta |= F.steps[i].kind == Step::Theta;
+    if (!theta)
+      continue;
+    const Value *def = F.steps[i].def;
+    const User *next = i + 1 < n ? cast<User>(F.steps[i + 1].def) : (F.zext ? cast<User>(F.zext) : cast<User>(F.S));
+    auto reads = [&](const Use &u) {
+      const User *x = u.getUser();
+      if (x == next || x == F.S || (i + 1 < n && is_contained(F.steps[i + 1].arms, dyn_cast<Instruction>(x))))
+        return false;
+      return !afterStore(ctx, *F.S, u);
+    };
+    bool before = any_of(def->uses(), reads);
+    if (i + 1 == n && F.zext)
+      before |= any_of(F.zext->uses(), reads);
+    if (!before)
+      continue;
+    if (!F.changes.empty())
+      return true;
+    auto *at = dyn_cast<Instruction>(def);
+    if (!at)
+      return true;
+    SmallVector<const Instruction *, 2> bus;
+    scanBetween(*at, *F.S, [&](const Instruction &I) { return busAccess(ctx, I); }, bus);
+    if (!bus.empty())
+      return true;
+  }
+  return false;
+}
+
 Plan &plan(LoweringContext &ctx) {
   Function *out = &ctx.out();
   auto &p = plans[out];
@@ -475,16 +574,16 @@ Plan &plan(LoweringContext &ctx) {
   p->orig = ctx.S.F;
   for (Instruction &I : instructions(*const_cast<Function *>(ctx.S.F)))
     if (auto *S = dyn_cast<StoreInst>(&I))
-      if (auto F = matchStore(ctx, *S)) {
+      if (auto F = matchStore(ctx, *S); F && !needsSwapInTooEarly(ctx, *F)) {
         p->ofStore[S] = F.get();
         p->forms.push_back(std::move(F));
       }
   DominatorTree &DT = spine::shared(ctx).dt(*ctx.S.F);
   // The first step of the next form on the same pointer reads the previous y' through the cell.
-  DenseSet<const Instruction *> nextFirst;
+  DenseMap<const StoreInst *, SmallVector<const Value *, 1>> nextFirst;
   for (auto &F : p->forms)
     if (F->Prev && p->ofStore.count(F->Prev))
-      nextFirst.insert(dyn_cast<Instruction>(F->steps.front().def));
+      nextFirst[F->Prev].push_back(F->steps.front().def);
 
   for (auto &Fp : p->forms) {
     Form &F = *Fp;
@@ -495,12 +594,16 @@ Plan &plan(LoweringContext &ctx) {
         ft = i;
         break;
       }
+    auto isNextFirst = [&](const User *x) {
+      auto it = nextFirst.find(F.S);
+      return it != nextFirst.end() && is_contained(it->second, cast<Value>(x));
+    };
     // The uses of a chain value that are not the chain, S, or the next form's first step.
     auto others = [&](const Value *v, const User *next) {
       SmallVector<const Use *, 2> r;
       for (const Use &u : v->uses()) {
         const User *x = u.getUser();
-        if (x == next || x == F.S || nextFirst.count(dyn_cast<Instruction>(x)))
+        if (x == next || x == F.S || isNextFirst(x))
           continue;
         r.push_back(&u);
       }
@@ -551,7 +654,7 @@ Plan &plan(LoweringContext &ctx) {
       SmallVector<const Use *, 2> r = rest(F.steps[i].def, i);
       if (i == n - 1 && F.zext)
         for (const Use &u : F.zext->uses())
-          if (u.getUser() != F.S && !nextFirst.count(dyn_cast<Instruction>(u.getUser())))
+          if (u.getUser() != F.S && !isNextFirst(u.getUser()))
             r.push_back(&u);
       if (r.empty())
         continue;
@@ -567,6 +670,7 @@ Plan &plan(LoweringContext &ctx) {
     }
     if (normalUpTo >= 0)
       lowerY = true;
+    F.normalUpTo = normalUpTo;
     if (ends.empty() || ends.back() != n - 1)
       ends.push_back(n - 1);
     F.ends = ends;
@@ -584,25 +688,24 @@ Plan &plan(LoweringContext &ctx) {
       for (const Instruction *a : F.steps[i].arms)
         p->claimed.insert(a);
     }
-    if (F.zext) {
-      bool wideBefore = any_of(F.zext->uses(), [&](const Use &u) { return u.getUser() != F.S && !afterStore(ctx, *F.S, u); });
-      if (wideBefore && ft == n)
-        ;   // lowered at its own position, on the recomputed copy
-      else
-        p->claimed.insert(F.zext);
-    }
+    // The zext of a last step lowered at its own position is lowered at its own position, on the recomputed copy.
+    if (F.zext && normalUpTo != int(n) - 1)
+      p->claimed.insert(F.zext);
 
-    // A part that ends before S with a reader before S is emitted at that step (no bus access may lie between).
-    for (unsigned k = 0; k + 1 <= F.ends.size(); ++k) {
+    // A part that ends before S with a reader before S is emitted at that step: needsSwapInTooEarly found no bus access
+    // between. A step lowered at its own position has its value there; its form stays at S.
+    for (unsigned k = 0; k < F.ends.size(); ++k) {
       unsigned e = F.ends[k];
-      SmallVector<const Use *, 2> r = rest(F.steps[e].def, e);
-      bool early = any_of(r, [&](const Use *u) { return !afterStore(ctx, *F.S, *u); });
-      if (!early)
+      if (int(e) <= normalUpTo)
         continue;
-      auto *def = dyn_cast<Instruction>(F.steps[e].def);
-      if (!F.changes.empty())
-        continue;   // the whole chain runs at the store, on the form or the copy
-      p->earlyAt[def] = {&F, k};
+      SmallVector<const Use *, 2> r = rest(F.steps[e].def, e);
+      if (e + 1 == n && F.zext)
+        for (const Use &u : F.zext->uses())
+          if (u.getUser() != F.S)
+            r.push_back(&u);
+      bool early = any_of(r, [&](const Use *u) { return !afterStore(ctx, *F.S, *u); });
+      if (early)
+        p->earlyAt[dyn_cast<Instruction>(F.steps[e].def)] = {&F, k};
     }
 
     // Readers: where the copy of y is taken.
@@ -835,7 +938,7 @@ bool hasReader(const Form &F, const Value *v, const Plan &P) {
       if (chain)
         continue;
       bool next = any_of(P.forms, [&](const std::unique_ptr<Form> &o) {
-        return o->Prev && o->Prev == F.S && o->steps.front().def == I;
+        return o->Prev && o->Prev == F.S && o->normalUpTo < 0 && o->steps.front().def == I;
       });
       if (next)
         continue;
@@ -848,6 +951,8 @@ bool hasReader(const Form &F, const Value *v, const Plan &P) {
 // The plain load after the swap-in that a later reader reads (rule 5, Readers: at the form's width), bound. A reader of
 // the zext that reads it at the form's width (a compare at i1, a form's step) reads that one load too.
 void bindReaders(LoweringContext &ctx, const Form &F, const Plan &P, unsigned e, Operand addr) {
+  if (int(e) <= F.normalUpTo)
+    return;   // lowered at its own position: its readers read that rail
   const Value *v = F.steps[e].def;
   bool narrow = hasReader(F, v, P), wide = false;
   if (e + 1 == F.steps.size() && F.zext)
@@ -858,7 +963,7 @@ void bindReaders(LoweringContext &ctx, const Form &F, const Plan &P, unsigned e,
       bool step = false, next = false;
       for (const std::unique_ptr<Form> &o : P.forms) {
         step |= any_of(o->steps, [&](const Step &st) { return st.def == x && st.a.z == F.zext; });
-        next |= o->Prev == F.S && o->steps.front().def == x;
+        next |= o->Prev == F.S && o->normalUpTo < 0 && o->steps.front().def == x;
       }
       if (next)
         continue;
@@ -912,10 +1017,7 @@ std::optional<std::pair<Value *, uint64_t>> changeCells(LoweringContext &ctx, co
   if (a.handle)
     return std::nullopt;
   const DataLayout &DL = ctx.M.getDataLayout();
-  Type *w = St->getValueOperand()->getType();
-  if (auto fi = P.ofStore.find(St); fi != P.ofStore.end())
-    w = fi->second->U;
-  return std::make_pair(a.v, uint64_t(DL.getTypeStoreSize(w)));
+  return std::make_pair(a.v, uint64_t(DL.getTypeStoreSize(St->getValueOperand()->getType())));
 }
 
 void takeCopy(LoweringContext &ctx, Form &F, const Plan &P, const Instruction &at, bool before) {
@@ -1038,7 +1140,7 @@ void lowerWithChanges(LoweringContext &ctx, Form &F, const Plan &P) {
   if (!F.d) {
     stepsOnCopy(ctx, F, F.copy, /*phiCopy=*/false, rails);
     for (unsigned e : F.ends)
-      if (hasReader(F, F.steps[e].def, P))
+      if (int(e) > F.normalUpTo && hasReader(F, F.steps[e].def, P))
         spine::bindOperand(ctx, F.steps[e].def, Operand{rails[e], true});
     return;
   }
@@ -1057,7 +1159,7 @@ void lowerWithChanges(LoweringContext &ctx, Form &F, const Plan &P) {
   for (unsigned e : F.ends) {
     emitSteps(ctx, F, from, e + 1, addr, fc);
     from = e + 1;
-    if (hasReader(F, F.steps[e].def, P))
+    if (int(e) > F.normalUpTo && hasReader(F, F.steps[e].def, P))
       loaded.push_back({e, emitLoad(ctx, F.U, addr)});
   }
   BasicBlock *formEnd = B.GetInsertBlock();
@@ -1126,7 +1228,8 @@ bool inPlaceBefore(LoweringContext &ctx, Instruction &I) {
     for (Form *F : it->second)
       takeCopy(ctx, *F, P, I, /*before=*/true);
   if (auto it = P.earlyAt.find(&I); it != P.earlyAt.end()) {
-    emitPart(ctx, *it->second.first, P, it->second.second);
+    for (unsigned k = 0; k <= it->second.second; ++k)
+      emitPart(ctx, *it->second.first, P, k);
     return true;
   }
   return P.claimed.count(&I) != 0;
