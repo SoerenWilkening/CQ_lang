@@ -70,7 +70,7 @@ bool bodyWrites(const TaintInfo &T, const Function &F, SmallVectorImpl<const Fun
   bool w = false;
   for (const Instruction &I : instructions(F)) {
     if (isa<StoreInst>(I) || isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I)) {
-      w = true;
+      w |= !T.deadVolatileStore(I);
     } else if (auto *A = dyn_cast<AllocaInst>(&I)) {
       // A bus-resident alloca is an allocation (rule 16): the object is host-resident in every clone or it is not.
       for (const Specialization &S : T.specializations())
@@ -161,7 +161,7 @@ bool notesOwnChange(const LoweringContext &ctx, const Instruction &I) {
 
 bool versionChange(const LoweringContext &ctx, const Instruction &I) {
   if (isa<StoreInst>(I) || isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I))
-    return true;
+    return !ctx.T.deadVolatileStore(I);
   if (auto *A = dyn_cast<AllocaInst>(&I))
     return !ctx.T.hostResident(A, ctx.S);
   auto *CB = dyn_cast<CallBase>(&I);

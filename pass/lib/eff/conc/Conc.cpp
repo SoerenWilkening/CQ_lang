@@ -44,25 +44,6 @@ using namespace llvm;
 namespace cq::conc {
 namespace {
 
-// Does anything read the unobservable object ptr points into (a load through any derived address)?
-bool everRead(const Value *ptr) {
-  const Value *obj = getUnderlyingObject(ptr, /*MaxLookup=*/0);
-  SmallVector<const Value *, 8> work{obj};
-  SmallPtrSet<const Value *, 16> seen{obj};
-  while (!work.empty()) {
-    const Value *v = work.pop_back_val();
-    for (const User *usr : v->users()) {
-      if (isa<LoadInst>(usr))
-        return true;
-      if ((isa<GEPOperator>(usr) || isa<BitCastOperator>(usr) || isa<AddrSpaceCastOperator>(usr) ||
-           isa<PHINode>(usr) || isa<SelectInst>(usr)) &&
-          seen.insert(usr).second)
-        work.push_back(usr);
-    }
-  }
-  return false;
-}
-
 // A pthread_join of the module that asks for the start routine's result (a non-null second argument).
 const CallBase *joinAskingResult(const Module &M) {
   for (const Function &G : M)
@@ -87,7 +68,7 @@ void lowerVolatile(LoweringContext &ctx, Instruction &I) {
   auto tainted = [&](const Value *v) { return ctx.T.isQuantum(v, ctx.S); };
   bool qValue = st && tainted(st->getValueOperand());
   if (!ctx.T.observableVolatile(I, ctx.S)) {
-    if (st && !everRead(ptr))
+    if (st && TaintInfo::neverLoaded(ptr))
       return;
     if (!bus::hostAccess(ctx, I) || qValue || (ld && tainted(ld)))
       return ld ? bus::lowerLoad(ctx, *ld) : bus::lowerStore(ctx, *st);

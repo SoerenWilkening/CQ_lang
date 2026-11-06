@@ -1376,6 +1376,9 @@ FenvObject fenvObjectKindOf(const Value *ptr) {
   return FenvObject::Memory;
 }
 
+bool observableVolatile(const Value *ptr, function_ref<bool(const Value *)> tainted);
+bool neverLoaded(const Value *ptr);
+
 // Rule 20 (b): every transitive user of the alloca through getelementptrs with untainted indices.
 bool Analyzer::hostUsersOk(const AllocaInst &A) {
   if (L(A.getArraySize()).any())
@@ -1410,6 +1413,9 @@ bool Analyzer::hostUsersOk(const AllocaInst &A) {
         continue;
       }
       if (auto *SI = dyn_cast<StoreInst>(I)) {
+        // Rules 19, 24: a dead local's volatile store is nothing, so it demotes nothing.
+        if (SI->getPointerOperand() == V && SI->isVolatile() && !observableVolatile(V, ownTainted()) && neverLoaded(V))
+          continue;
         if (SI->getPointerOperand() != V || L(SI->getValueOperand()).any() || quantumScope(I->getParent()))
           return false;
         continue;
@@ -1462,6 +1468,27 @@ bool observableVolatile(const Value *ptr, function_ref<bool(const Value *)> tain
   return !onlyAccessedThrough(*b, tainted);
 }
 
+// Rule 19, rule 24: nothing loads the object `ptr` points into. An unobservable volatile store into such an object (a dead
+// local) is nothing: no bus store, no memory version change, no effect (169's FORCE_EVAL in ilogb; rule 23 gives that
+// logb clone a twin).
+bool neverLoaded(const Value *ptr) {
+  const Value *obj = getUnderlyingObject(ptr, /*MaxLookup=*/0);
+  SmallVector<const Value *, 8> work{obj};
+  SmallPtrSet<const Value *, 16> seen{obj};
+  while (!work.empty()) {
+    const Value *v = work.pop_back_val();
+    for (const User *usr : v->users()) {
+      if (isa<LoadInst>(usr))
+        return false;
+      if ((isa<GEPOperator>(usr) || isa<BitCastOperator>(usr) || isa<AddrSpaceCastOperator>(usr) || isa<PHINode>(usr) ||
+           isa<SelectInst>(usr)) &&
+          seen.insert(usr).second)
+        work.push_back(usr);
+    }
+  }
+  return true;
+}
+
 void Analyzer::transferLoad(LoadInst &LI) {
   unsigned n = lanesOf(LI.getType());
   const Value *ptr = LI.getPointerOperand();
@@ -1485,6 +1512,8 @@ void Analyzer::transferStore(Instruction &I, Value *ptr, Value *val) {
     }
     return;
   }
+  if (SI && SI->isVolatile() && neverLoaded(ptr))
+    return;   // rules 19, 24: a dead local, nothing
   cur->writesOuter = true;   // a bus store (rule 5)
   cur->anyQuantum = true;
 }
@@ -3169,6 +3198,19 @@ bool TaintInfo::observableVolatile(const llvm::Instruction &access, const Specia
   const SpecState *SS = stateOf(needImpl(impl), S);
   auto it = SS->volObservable.find(&access);
   return it == SS->volObservable.end() || it->second;
+}
+
+bool TaintInfo::neverLoaded(const llvm::Value *ptr) { return taintimpl::neverLoaded(ptr); }
+
+bool TaintInfo::deadVolatileStore(const llvm::Instruction &I) const {
+  auto *SI = dyn_cast<llvm::StoreInst>(&I);
+  if (!SI || !SI->isVolatile() || !taintimpl::neverLoaded(SI->getPointerOperand()) ||
+      taintimpl::observableVolatile(SI->getPointerOperand(), [](const llvm::Value *) { return false; }))
+    return false;
+  for (const Specialization &S : specializations())
+    if (S.F == SI->getFunction() && observableVolatile(I, S))
+      return false;
+  return true;
 }
 
 const llvm::Value *TaintInfo::hostObjectOf(const llvm::Value *p, const Specialization &S) const {
