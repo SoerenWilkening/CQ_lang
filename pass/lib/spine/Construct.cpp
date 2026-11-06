@@ -2179,7 +2179,9 @@ void Walker::emitBlock(BasicBlock *b) {
     if (unitBoundPhis.count(&phi) && !spine::isQ(ctx, &phi)) {
       // cq-j5mq: a classical phi the loop module bound over its exit edges: its one value on the unit's output edge.
       Operand uv = ctx.operand(&phi);
-      PHINode *np = ctx.B().CreatePHI(phi.getType(), phi.getNumIncomingValues(), phi.getName());
+      // With the block's phis: a quantum phi before it may have emitted its seeds at the builder (powl).
+      PHINode *np = PHINode::Create(phi.getType(), phi.getNumIncomingValues(), phi.getName(),
+                                    ctx.B().GetInsertBlock()->getFirstNonPHIIt());
       classicalPhis.push_back({&phi, np});
       unitClassical[&phi] = uv.v;
       ctx.rebind(&phi, {Operand{np, false}});
@@ -2241,7 +2243,9 @@ void Walker::emitBlock(BasicBlock *b) {
       blockDefs.push_back(&phi);
       continue;
     }
-    PHINode *np = ctx.B().CreatePHI(phi.getType(), phi.getNumIncomingValues(), phi.getName());
+    // With the block's phis: a quantum phi before it may have emitted its seeds at the builder (powl).
+      PHINode *np = PHINode::Create(phi.getType(), phi.getNumIncomingValues(), phi.getName(),
+                                    ctx.B().GetInsertBlock()->getFirstNonPHIIt());
     classicalPhis.push_back({&phi, np});
     spine::bindOperand(ctx, &phi, Operand{np, false});
   }

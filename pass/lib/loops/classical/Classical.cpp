@@ -2478,7 +2478,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         } else if (auto *ib = dyn_cast<IndirectBrInst>(t)) {
           ex = qp(u) & computedGotoEdge(*ib, x);   // rule 13: the address cases into x
         } else {
-          ex = UX.abort.empty() ? ctx.preds().edge(u, x).quantumPart(ctx.T, ctx.S) : qp(u) & exits::tripEdge(u, x);
+          // Rule 13: the function-wide edge stands for the loop as a unit: with one live exit block its quantum part is
+          // the loop's own (true outside any arm), no test of this trip. The trip's test is the cases into x.
+          ex = ctx.preds().edge(u, x).quantumPart(ctx.T, ctx.S);
+          if (!UX.abort.empty() || ex.isTop())
+            ex = qp(u) & exits::tripEdge(u, x);
         }
         Value *f = ctx.preds().flag(ctx, ex);
         if (!f)

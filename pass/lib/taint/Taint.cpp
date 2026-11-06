@@ -1325,6 +1325,22 @@ void Analyzer::transferCast(CastInst &CI) {
     return;
   case Instruction::BitCast:
   case Instruction::AddrSpaceCast:
+    // Rules 3, 26: a bitcast between vectors of one element count maps element to element (<2 x float> to <2 x i32>,
+    // the spine lowers it per lane): a classical element stays classical.
+    if (auto *SV = dyn_cast<FixedVectorType>(Src->getType()), *DV = dyn_cast<FixedVectorType>(CI.getType());
+        SV && DV && SV->getNumElements() == DV->getNumElements()) {
+      unsigned e = SV->getNumElements(), sp = unsigned(s.size()) / e, dp = n / e;
+      Lanes l(n);
+      for (unsigned k = 0; k < e; ++k)
+        for (unsigned i = 0; i < sp; ++i)
+          if (s.test(k * sp + i)) {
+            for (unsigned j = 0; j < dp; ++j)
+              l.set(k * dp + j);
+            break;
+          }
+      setL(&CI, l);
+      return;
+    }
     if (lanesOf(Src->getType()) == n && CI.getType()->isPointerTy() == Src->getType()->isPointerTy()) {
       Lanes l = s;
       l.resize(n);
