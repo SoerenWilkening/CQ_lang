@@ -266,6 +266,8 @@ llvm::Value *calleeCollapse(LoweringContext &, llvm::Value *handle, const llvm::
 // definition of v to a return passes a cq_measure of v (or `also`, a measuring call); quantum branches
 // are no choice (their arms all run).
 bool measuredOnEveryPath(LoweringContext &, const llvm::Value *v, const llvm::Instruction *also = nullptr);
+// The same answer in the specialization S, the one a caller of S reads (calls: does a clone measure its formal itself?).
+bool measuredOnEveryPath(const TaintInfo &, const Specialization &S, const llvm::Value *v, const llvm::Instruction *also = nullptr);
 
 // cq-s32y (PreRotation.cpp). Before a cq_theta on an existing rail h is lowered: when a use of its
 // operand v (or of another value bound to h) is not before the rotation, h is copied into a fresh

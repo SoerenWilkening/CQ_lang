@@ -8,7 +8,8 @@ what it must give:
   - "lower": as "pass" without the §6 run (the case says why the checker cannot run it);
   - "fatal: <text>": cq-lower stops with that error (an unimplemented shape, never a silent output);
   - "reject: <regex>": the lowered module with every line matching the regex deleted is a wrong program, and the §6 run
-    must say so (exit 1): the checker's model of what those lines do, kept honest.
+    must say so (exit 1): the checker's model of what those lines do, kept honest;
+  - "wrong: <file>": probes/<file> is a frozen wrong lowering of the probe, and the §6 run must say so (exit 1).
 Outputs go to build/tests/calls/out/.
 """
 import argparse
@@ -97,6 +98,33 @@ CASES = [
     ("tbl_mint", "tbl_mint", [], "pass", [r"@cqrt_push", r"@cqrt_pop"]),
     # Rule 19: inside a _ctl clone a measurement is a controlled copy under the clone's formal, also in an arm (Q13).
     ("ctl_measure_arm", "ctl_measure_arm", [], "pass", [r"@cqrt_copy_i32_controlled\(i32 %0, "]),
+    # cq-ggr3p (rules 2, 19, §1.4): a callee whose only non-template is a measurement takes the predicate: its measurement is the
+    # controlled copy and the clone has no twin. The frozen unguarded lowering (rule 2's hoist is for an arm of the same function,
+    # never for a callee the input does not enter) must fail §6.
+    ("meas_only_ctl", "f", [], "pass", [r"call i32 @__cq_q_mm_1_ctl\(", r"@cqrt_copy_i32_controlled\(i32 %0, "]),
+    ("meas_only_ctl_k", "f", [], "pass", [r"call i32 @__cq_q_mm_10_ctl\(", r"@cqrt_copy_i32_controlled\(i32 %0, "]),
+    ("meas_only_ctl_qbranch", "f", [], "pass", [r"call i32 @__cq_q_mm_1_ctl\("]),
+    ("meas_only_ctl_qbranch", "f", [], "wrong: meas_only_ctl_qbranch.unguarded.ll", []),
+    # cq-ej44t (rules 2, 5, 18): an actual the clone measures itself is the caller's measured rail, never uncomputed or freed: a
+    # computed one, a chain of clones, a seed of an earlier outcome, a measurement that a quantum branch does not make partial,
+    # per trip of a classical loop, in a clone with a twin. Measured on some classical paths of the caller or of the callee only
+    # it is lowered as unmeasured and the measurement reads a kept basis copy. Under a predicate it is cq-ggr3p's controlled copy.
+    ("meas_byvalue", "f", [], "pass", []),
+    ("meas_byvalue_chain", "f", [], "pass", []),
+    ("meas_byvalue_seed", "f", [], "pass", []),
+    ("meas_byvalue_qbranch", "f", [], "pass", []),
+    ("meas_byvalue_loop", "f", [], "pass", []),
+    ("meas_byvalue_twin", "f", [], "pass", []),
+    ("meas_byvalue_path", "f", [], "pass", [r"call void @cqrt_copy_i32\("]),
+    ("meas_byvalue_some", "f", [], "pass", []),
+    ("meas_byvalue_kloop", "f", [], "pass", [r"call i32 @__cq_q_in_1_ctl\("]),
+    ("meas_byvalue_indirect", "f", [], "pass", []),
+    # cq-p4ob6 (rules 18, 19): the own symbol of a function on a call cycle, whose record is the least fixpoint: not rotating, its
+    # result (read from the bus) is zeroed by the twin; rotating, KEPT (rulings3 F). Direct, mutual, and an aggregate return.
+    ("rec_bus_own", "f", [], "pass", [r"call void @__cq_q_r_0_unc\("]),
+    ("rec_bus_mutual", "f", [], "pass", []),
+    ("rec_bus_pair", "f", [], "pass", []),
+    ("rec_rot_own", "f", [], "pass", []),
     # Rule 16 Signal table: a result of signal and of raise the program reads; a rail signal number.
     ("raise_read", "raise_read", [], "pass", [r"@__cq_sig"]),
     ("sig_rail", "sig_rail", [], "pass", [r"@__cq_sig", r"@cqrt_qram_store_i64\("]),
@@ -254,6 +282,13 @@ def main() -> int:
                 why.append("cq-lower: " + r.stderr.strip()[:400])
         elif r.returncode != 0:
             why.append("cq-lower: " + r.stderr.strip()[:400])
+        elif expect.startswith("wrong: "):
+            c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(src), "--lowered",
+                                str(PROBES / expect[len("wrong: "):]), "--entry", entry,
+                                *(["--samples", str(SAMPLES[probe])] if probe in SAMPLES else [])],
+                               capture_output=True, text=True, cwd=ROOT / "checker")
+            if c.returncode != 1:
+                why.append(f"§6 exited {c.returncode}, expected the wrong program rejected")
         elif expect.startswith("reject: "):
             cut = re.compile(expect[len("reject: "):])
             kept = [l for l in lowered.read_text().splitlines(keepends=True) if not cut.search(l)]

@@ -705,6 +705,10 @@ void noteCalleeMeasures(LoweringContext &ctx, const CallBase &orig, BasicBlock *
     // measurement: nothing is re-read.
     if (m != Meas::Always)
       continue;
+    // Rule 2: measured on some classical paths of this function only, the rail is lowered as unmeasured: the clone measured
+    // a kept basis copy of it (calls::emitCloneCall), so there is nothing to re-read.
+    if (!measuredOnEveryPath(ctx, a, &orig))
+      continue;
     Shared::CalleeMeasure cm;
     cm.call = &orig;
     cm.arg = a;

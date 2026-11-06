@@ -1102,7 +1102,8 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
     C width, fp {"w": "f32"|"f64"|"f80"|...}, an aggregate bare hex; void, pointer and samples that
     did not return give no record), "end": outcome, "loops": the T2 cutoff records, "stdout": the
     program's stdout, "effects": its host-effect calls (cq-e4jk), "mem", "objects", "regions":
-    the module docstring's; "k2": the rail-sized blocks, [n, K2] (_k2_sites)}; measured: [{"h": None, "w": the register's rail
+    the module docstring's; "k2": the rail-sized blocks, [n, K2] (_k2_sites); "entered": the functions this
+    input enters among those with a cq_measure or a call chain to one (compare._meas_extra)}; measured: [{"h": None, "w": the register's rail
     type, "v": hex}] per reached measure site that is a gate (not a rule 2 classical read), in order; rotations: the site events of kind theta,
     phi, invert_begin and invert_end verbatim, in order, each with "nmeas", the number of entries of
     measured before it (cq-459d); kept/clean: None (the C program has no
@@ -1123,7 +1124,8 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
                      outputs={"ret": _typed_ret(spec, sr), "end": sr.outcome, "loops": list(sr.loops),
                               "stdout": sr.stdout, "effects": _effects_of(sr),
                               "mem": list(sr.mem), "objects": list(sr.objects), "regions": list(sr.regions),
-                              "k2": list(sr.k2), "reads": reads},
+                              "k2": list(sr.k2), "reads": reads,
+                              "entered": sorted({e["fn"] for e in sr.events if e.get("ev") == "enter"})},
                      measured=measured, rotations=rotations, kept=None, clean=None,
                      violations=[{"what": "c_oracle", "h": None, "msg": sr.reason}] if sr.failed else [])
 

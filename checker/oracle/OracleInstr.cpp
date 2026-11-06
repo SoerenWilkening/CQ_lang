@@ -1944,6 +1944,36 @@ public:
     unimplemented("register type of a cq_theta/cq_measure site", at);
   }
 
+  // CR rules 2, 19: which functions this input enters, for a measurement of the lowered program's that the C program does
+  // not reach (compare._meas_extra): an arm's measurement hoisted in its own function is legal, one in a function the input
+  // never enters is not. Only the functions with a cq_measure or a direct call chain to one, where a rule-2 re-read can land.
+  void enters(ArrayRef<Function *> defined) {
+    DenseSet<const Function *> reach;
+    for (bool changed = true; changed;) {
+      changed = false;
+      for (Function *F : defined) {
+        if (reach.count(F) || isDriverFn(*F))
+          continue;
+        for (Instruction &I : instructions(*F)) {
+          auto *CB = dyn_cast<CallBase>(&I);
+          const Function *G = CB ? CB->getCalledFunction() : nullptr;
+          if (G && (G->getName().starts_with("cq_measure_") || reach.count(G))) {
+            reach.insert(F);
+            changed = true;
+            break;
+          }
+        }
+      }
+    }
+    FunctionCallee enter = hook("__cqo_enter", Void, {Ptr});
+    for (Function *F : defined)
+      if (reach.count(F)) {
+        BasicBlock &E = F->getEntryBlock();
+        IRBuilder<> B(&E, E.getFirstInsertionPt());
+        B.CreateCall(enter, {str(F->getName())});
+      }
+  }
+
   void sites(Function &F) {
     std::vector<CallInst *> calls;
     for (Instruction &I : instructions(F))
@@ -2467,6 +2497,7 @@ public:
           if (!CB || CB->getCalledOperand() != &F)
             unimplemented("cq_* function used other than as a direct callee", U);
         }
+    enters(defined);
     for (Function *F : defined)
       if (!isDriverFn(*F))
         sites(*F);

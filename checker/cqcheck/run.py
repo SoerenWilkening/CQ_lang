@@ -305,6 +305,11 @@ void cqd_out_ctl_measure(int h) {
   snprintf(b, sizeof b, "{\"ev\":\"out_mem\",\"table\":\"ctl_measure\",\"h\":%d}", h);
   cqe_log(b);
 }
+void cqd_out_meas_fn(const char *fn) {
+  char b[400];
+  snprintf(b, sizeof b, "{\"ev\":\"out_mem\",\"table\":\"meas_fn\",\"fn\":\"%s\"}", fn);
+  cqe_log(b);
+}
 static void cqd_out_regions(void) {
   char b[160];
   unsigned long long sp = (unsigned long long)__builtin_frame_address(0);
@@ -1061,6 +1066,7 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
     objects: List[dict] = []
     regions: List[dict] = []
     ctl_measured: List[int] = []
+    meas_fn: Optional[str] = None
     direct_fx: List[dict] = []
     tape_out, tape_seq, deviation = "", [], False
     last_exit: Optional[dict] = None
@@ -1075,6 +1081,8 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
             clean.append(c)
         elif ev == "measure":
             measured.append({"h": e["h"], "w": e.get("w"), "v": e["v"]})
+            if meas_fn is not None:
+                measured[-1]["fn"], meas_fn = meas_fn, None
         elif ev == "ret":
             rets.append({"call": e.get("call"), "fn": e.get("fn"),
                          "v": {"w": e["w"], "v": e.get("v")} if e.get("w") else e.get("v")})
@@ -1089,6 +1097,8 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
                 regions.append({k: e[k] for k in ("name", "lo", "hi") if k in e})
             elif e.get("table") == "ctl_measure":
                 ctl_measured.append(e.get("h"))
+            elif e.get("table") == "meas_fn":
+                meas_fn = e.get("fn")
             else:
                 mem.append({k: e[k] for k in ("name", "addr", "off", "w", "v") if k in e})
         elif ev == "tape" and e.get("op") == "shot":
@@ -1368,22 +1378,40 @@ def _rail_tester(body: str, handle_fns: Sequence[str]):
 _MEASURE = re.compile(r"^(\s+)%[-\w.$\"]+ = call \S+ @cqrt_measure_\w+\(i32 (%[-\w.$\"]+)\)")
 
 
+# §1.4's clone grammar without its _ctl word, read right to left: the C function a clone is the lowering of.
+_CLONE_FN = re.compile(r"^__cq_q_(.+)_(?:v|[01]+)(?:_b\d+(?:_\d+)*)?(?:_t)?(?:_pure)?(?:_unc)?$")
+_DEFINE_NAME = re.compile(r'^define [^@]*@"?([-\w.$]+)"?\(')
+
+
 def ctl_measures_module(text: str) -> str:
     """Rule 19: inside a _ctl clone a cq_measure is a controlled copy, measured whatever the predicate; where
     it reads 0 the predicate may be 0 and the C program never reached it (compare._meas_options). Each such
-    measurement names its rail to the trace."""
+    measurement names its rail to the trace. Any other measurement names the C function it lies in: rule 2 runs an
+    arm's measurement unconditionally in that function, so the input must enter it (compare._meas_extra)."""
     out = []
+    fns: Dict[str, int] = {}
     in_ctl = used = False
+    fn = None
     for line in text.splitlines():
         if line.startswith("define"):
-            in_ctl = bool(re.search(r"@\S*_ctl\(", line))
-        m = _MEASURE.match(line) if in_ctl else None
-        if m:
+            in_ctl = bool(re.search(r"@\S*_ctl(?:_unc)?\(", line))
+            d = _DEFINE_NAME.match(line)
+            fn = d.group(1) if d else None
+            c = _CLONE_FN.match(fn) if fn else None
+            fn = c.group(1) if c else fn
+        m = _MEASURE.match(line)
+        if m and in_ctl:
             out.append(f"{m.group(1)}call void @cqd_out_ctl_measure(i32 {m.group(2)})")
             used = True
+        elif m and fn:
+            out.append(f"{m.group(1)}call void @cqd_out_meas_fn(ptr @.cqd.fn.{fns.setdefault(fn, len(fns))})")
         out.append(line)
     if used:
         out.append("declare void @cqd_out_ctl_measure(i32)")
+    if fns:
+        out.append("declare void @cqd_out_meas_fn(ptr)")
+        for name, i in fns.items():
+            out.append(f'@.cqd.fn.{i} = private unnamed_addr constant [{len(name) + 1} x i8] c"{name}\\00"')
     return "\n".join(out) + "\n"
 
 

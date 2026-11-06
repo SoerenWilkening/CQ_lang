@@ -1624,9 +1624,10 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool
     SpecState *probe = getSpec(G, formal, tys, false, false, {}, {}, plain);
     // Rule 19: ... or a call cycle through itself (rule 14: the one clone with its activation counter). §1.4 _ctl, rule 5:
     // a bus access under a quantum predicate is the _controlled form, a load included ("no bus access is hoisted or
-    // speculated"), so a callee that loads takes the predicate.
+    // speculated"), so a callee that loads takes the predicate. A measurement is no template either: rule 19's controlled
+    // copy, so the register is not collapsed where the predicate is 0 (§1.4, rule 2).
     if (plain || probe->nonPure || probe->hasTheta || probe->hasPhi || probe->hasEffect || probe->writesOuter ||
-        probe->busLoadT || callsReach(G, G))
+        probe->measuresRail || probe->busLoadT || callsReach(G, G))
       ctl = true;
   }
   std::vector<uint64_t> bounds;
@@ -1833,6 +1834,7 @@ void Analyzer::transferCall(CallBase &CB) {
   }
   if (isMeasure(G)) {
     cur->hasMeasure = true;
+    cur->measuresRail = cur->measuresRail || L(actuals[0]).any();
     if (blockCT(CB.getParent()) || cur->ctl)
       cur->taintedMeasure = true;   // rulings Q3: rule 18's "measures"
     // Rule 19: inside a _ctl clone the measured rail is a controlled copy: the outcome is tainted, the rail is the value.
@@ -2601,7 +2603,7 @@ void Analyzer::solve() {
         S->rotatesPerTrip = pt;
         st.changed = true;
       }
-      bool np = S->hasTheta || S->hasPhi || S->hasEffect || S->writesOuter;
+      bool np = S->hasTheta || S->hasPhi || S->hasEffect || S->writesOuter || S->measuresRail;
       for (auto &[CB, v] : S->callees)
         for (SpecState *C : v)
           np = np || C->nonPure;
