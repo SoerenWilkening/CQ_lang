@@ -249,6 +249,9 @@ struct Uncompute::Impl {
     unsigned group = kNone;            // U2: the call group this rail is a member of
     bool explicitKept = false;         // U2: setRole gave this rail a kept role itself
     bool storeKept = false;            // rule 5 sentence 3: the value or control rail of a kept store
+    // cq-guzg3 (rule 5 sentence 3, §6 item 1): a rail stored only on some classical paths from its definition: kept
+    // where a store in here ran, a rail like any other on the paths that bypass them (placeAt's run flag).
+    SmallVector<Instruction *, 1> condStores;
     bool loadCall = false;             // rule 18: the result of a clone call that loads from the bus (noteLoadsBus)
     // cq-lshe (CR rule 9, §0): the kept merges that keep this rail where they choose it. It stays
     // resolvable: its item runs under the classical predicate "no keeper chose it" (a re-branch on the
@@ -296,6 +299,7 @@ struct Uncompute::Impl {
   DenseMap<const CallInst *, std::string> twinNames;
   // Rule 5 Memory: the memory version changes of the new IR (noteVersionChange), in the order noted.
   SmallVector<Instruction *, 16> versions;
+  bool sourceLoops = false;   // noteSourceLoops: the function has a loop, a rail may have an instance per pass
   SmallVector<unsigned, 4> openStack;
   DenseSet<const Instruction *> emitted;
   DenseMap<std::pair<RailId, const BasicBlock *>, Instruction *> itemEnd;
@@ -334,6 +338,36 @@ struct Uncompute::Impl {
   }
 
   static bool keptRole(Role r) { return r != Role::Garbage && r != Role::Seed; }
+
+  // A classical branch on the way from D to S has an edge from which S cannot be reached (the output CFG is built up
+  // to S when S is being lowered): some path from D does not pass S.
+  static bool bypassed(const BasicBlock *D, const BasicBlock *S) {
+    SmallPtrSet<const BasicBlock *, 16> toS{S};
+    SmallVector<const BasicBlock *, 16> work{S};
+    while (!work.empty())
+      for (const BasicBlock *p : predecessors(work.pop_back_val()))
+        if (toS.insert(p).second)
+          work.push_back(p);
+    if (D == S || !toS.count(D))
+      return false;
+    SmallPtrSet<const BasicBlock *, 16> seen{D};
+    work.push_back(D);
+    while (!work.empty()) {
+      const BasicBlock *b = work.pop_back_val();
+      if (b == S)
+        continue;
+      const Instruction *t = b->getTerminator();
+      if (!t)
+        continue;
+      for (const BasicBlock *n : successors(t)) {
+        if (!toS.count(n))
+          return true;
+        if (seen.insert(n).second)
+          work.push_back(n);
+      }
+    }
+    return false;
+  }
 
   // g and every merge that may name it (transitively), g first.
   SmallVector<RailId, 4> names(RailId g) const {
@@ -1808,6 +1842,9 @@ struct Uncompute::Impl {
     for (RailId m : r.keepers)
       if (auto *mi = dyn_cast<Instruction>(rails[m].handle); mi && mi->getParent())
         evs.push_back({mi, false, m, g});
+    for (Instruction *st : r.condStores)
+      if (beforePos(st))
+        evs.push_back({st, false});
     SmallVector<RailId, 8> xs{g};
     for (RailId x0 : itemReads(g))
       for (RailId x : leaves(x0))
@@ -1827,6 +1864,14 @@ struct Uncompute::Impl {
       cond = flagAt(pos.before, evs, !def);
       if (auto *k = dyn_cast<ConstantInt>(cond)) {
         if (k->isZero()) {
+          // cq-guzg3: a store ran on every path to this point: kept here; another return may be reached without one.
+          if (!r.condStores.empty() && !gated && r.keepers.empty()) {
+            if (local)
+              r.role = Role::Kept;
+            else
+              r.exitsDone.insert(pos.bb);
+            return;
+          }
           // Kept on every path to pos: entangled (A4), or chosen by a keeper on each of them.
           if (gated || r.keepers.empty()) {
             r.role = Role::KeptEntangled;
@@ -2983,11 +3028,22 @@ void Uncompute::noteKeptStore(CallInst *store, Value *value, Value *ctl) {
         llvm::erase(I.rails[y].cleanupReaders, r);
       x.cleanup.reset();
     }
+    // cq-guzg3: rule 5 keeps the rail with the store that ran. Where a classical branch can bypass this store the rail
+    // stays a rail with an item, under the run flag "no store of it ran" (placeAt).
+    if (!I.sourceLoops && !Impl::keptRole(x.role) && x.creator != kNone && x.group == kNone && !x.loadCall &&
+        !I.isMerge(r) && x.mergedInto.empty() && x.deferred == kNone && x.ownedBy == kNone &&
+        Impl::bypassed(I.defBlock(r), store->getParent())) {
+      x.condStores.push_back(store);
+      x.storeKept = true;
+      continue;
+    }
     if (!Impl::keptRole(x.role))
       setRole(r, Role::Kept);
     I.rails[r].storeKept = true;
   }
 }
+
+void Uncompute::noteSourceLoops() { impl->sourceLoops = true; }
 
 Value *Uncompute::negatedAtomOf(Value *flag) const {
   const Impl &I = *impl;

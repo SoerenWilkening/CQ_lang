@@ -2520,6 +2520,8 @@ void construct(Module &M, const TaintInfo &T, const Specialization &S, const loo
 
   DominatorTree &DT = sh.dt(F);
   LoopInfo LI(DT);
+  if (!LI.empty())
+    ctx.unc().noteSourceLoops();
   ctx.preds().compute(F, LI, T, S, entryFlag);
   ctx.B().SetInsertPoint(BasicBlock::Create(M.getContext(), "", sh.out));
   // CR §1.4: a composite formal crosses as one parameter per leaf; with no quantum leaf it is a classical
