@@ -1223,7 +1223,7 @@ def jmp_buf_globals(o1_text: str) -> FrozenSet[str]:
                                 o1_text))
 
 
-def out_globals_ir(o1_text: str, module_text: str, fn: str, hook: str, table_hook: str) -> str:
+def out_globals_ir(o1_text: str, module_text: str, fn: str, hook: str, table_hook: str, tag: str = "") -> str:
     """IR to append to a module: `define void @<fn>()` hands each writable global of the C program
     (o1_text's) that module_text also defines to `@<hook>(name, address, bytes)`, and each of its
     constants and functions the module defines to `@<table_hook>(name, address, bytes)`, the address
@@ -1239,7 +1239,7 @@ def out_globals_ir(o1_text: str, module_text: str, fn: str, hook: str, table_hoo
 
     def named(name: str) -> str:
         c = name[1:].strip('"')
-        sym = f"@.cqd.gname.{len(strs)}"
+        sym = f"@.cqd.gname{tag}.{len(strs)}"
         strs.append(f'{sym} = private unnamed_addr constant [{len(c) + 1} x i8] c"{c}\\00"')
         return sym
 

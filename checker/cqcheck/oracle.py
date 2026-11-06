@@ -554,8 +554,10 @@ def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[in
         # the named outputs' reader joins after the instrumentation: its uses of the globals' addresses
         # are no escape of the program's (rule 2's collapse reads them), and its accesses no program access
         inst = (d / "prog.inst.ll").read_text()
-        (d / "prog.inst.ll").write_text(inst + drivers.out_globals_ir(text, inst, "__cqo_out_globals", "__cqo_out_mem",
-                                                                       "__cqo_out_object"))
+        inst += drivers.out_globals_ir(text, inst, "__cqo_out_globals", "__cqo_out_mem", "__cqo_out_object")
+        # the same objects by address alone, for a sample that ends before its outputs (BEFORE_CALL)
+        (d / "prog.inst.ll").write_text(inst + drivers.out_globals_ir(text, inst, "__cqo_out_table", "__cqo_out_object",
+                                                                       "__cqo_out_object", tag=".t"))
         _run([_tool("clang"), "-target", triple, "-O0", "-Wno-override-module", "-c", str(d / "prog.inst.ll"),
               "-o", str(d / "prog.o")], "compiling the instrumented program")
 
@@ -571,8 +573,11 @@ DRIVER_PRELUDE = ("#include <setjmp.h>\n#include <stdint.h>\n#include <string.h>
                   "int __cqo_sample_begin(int); void __cqo_sample_end(void);\n"
                   "void __cqo_out_mem(const char *, const void *, unsigned long long); void __cqo_out_globals(void); "
                   "void __cqo_out_regions(void); void __cqo_out_globals_tls(void);\n"
-                  "static void __cqo_out_all(void) { __cqo_out_globals(); __cqo_out_regions(); }\n")
-BEFORE_CALL = ("if (sigsetjmp(*__cqo_jb(), 1) != 0) __cqo_resume(); "
+                  "static void __cqo_out_all(void) { __cqo_out_globals(); __cqo_out_regions(); }\n"
+                  "void __cqo_out_table(void);\n")
+# A sample that ended before the driver's outputs (a cut, exit, abort) still reads its pointer fields relationally (CR §6;
+# compare.py "Pointers"), so the address table goes out; its named outputs do not (a capped or ended sample has none).
+BEFORE_CALL = ("if (sigsetjmp(*__cqo_jb(), 1) != 0) { __cqo_out_table(); __cqo_out_regions(); __cqo_resume(); } "
                "else if (__cqo_sample_begin(CQD_SAMPLE)) {")
 AFTER_CALL = "__cqo_sample_end(); }"
 DRIVER_MAIN = "__cqo_drv_main"
