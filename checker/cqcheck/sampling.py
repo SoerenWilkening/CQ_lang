@@ -555,6 +555,14 @@ void __cqd_pst(void *a, void *v, uint32_t id) {
         }
     }
 }
+/* va_start(ap) on x86-64 SysV: the register save area (6 GP + 8 SSE registers, 176 bytes) at ap+16 is an
+ * object of the frame, as the oracle's __cqo_va_start has it (cq-1jvr6); the pointer stored there carries its
+ * serial, so a va_arg load through it is placed in that object and not in the nearest object below. */
+void __cqd_vastart(void *ap) {
+    void *regs; memcpy(&regs, (char *)ap + 16, sizeof regs);
+    uint32_t id = cqd_reg((uintptr_t)regs, 176, 0, 0);
+    __cqd_pst((char *)ap + 16, regs, id);
+}
 uint32_t __cqd_pld(void *a, void *v) {
     uintptr_t k = (uintptr_t)a; size_t h = cqd_ph(k);
     for (int n = 0; n < NPT && S->pta[h]; n++, h = (h + 1) & (NPT - 1))
@@ -1558,7 +1566,7 @@ class Instrumenter:
              "declare void @__cqd_m(i32, ptr, ptr, i64, i32)", "declare void @__cqd_mi(ptr, ptr, i64, i32)",
              "declare i64 @__cqd_ms(ptr, ptr, i32)", "declare i32 @__cqd_regs(ptr, i64)",
              "declare i32 @__cqd_rega(ptr, i64, i32)", "declare void @__cqd_regg(ptr, i64, i32)",
-             "declare void @__cqd_pst(ptr, ptr, i32)", "declare i32 @__cqd_pld(ptr, ptr)",
+             "declare void @__cqd_pst(ptr, ptr, i32)", "declare void @__cqd_vastart(ptr)", "declare i32 @__cqd_pld(ptr, ptr)",
              "@__cqd_afn = internal global ptr null", "@__cqd_rid = internal global i32 0",
              f"@__cqd_aid = internal global [{self.NAID} x i32] zeroinitializer",
              "declare void @__cqd_hdr(i32, i1)", "declare void @__cqd_ctx(i32)", "declare void @__cqd_fn()"]
@@ -1700,6 +1708,8 @@ class Instrumenter:
             if c == "@cq_phi":
                 s = self.add_site(f, ins, "angle", c, pairs[0:1])
                 return self.probe(s.id, pairs[0:1], None), []
+            if c.startswith("@llvm.va_start"):
+                return [], [f"call void @__cqd_vastart(ptr {pairs[0][1]})"]
             if c in _LIB_N:
                 # the C library's memory functions (cq-z8gj): their n bytes, as the intrinsics'
                 d, rest = _LIB_N[c]
