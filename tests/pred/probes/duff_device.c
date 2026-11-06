@@ -1,6 +1,5 @@
 #include "CQ.h"
 // USERCHECK f
-// O1TWIN lower-switch,fix-irreducible
 // cq-0ygtj: Duff's device, rule 14 "Irreducible control flow": a switch entering a cycle at several blocks.
 int g;
 char d[16];

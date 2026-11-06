@@ -47,18 +47,8 @@ def main() -> int:
                                 str(dest)], capture_output=True, text=True)
             if v.returncode != 0:
                 reasons.append("cq-verify: " + first(v.stderr))
-            # An irreducible C program: the checker's trip counters take natural loops only (cq-0ygtj), so `// O1TWIN <passes>`
-            # is the same program through those plain LLVM passes, the C side of the §6 run, from `// O1TWINSRC <file>` when
-            # the probe's own IR cannot go through them. The lowering still reads o1.
-            oracle = o1
-            twin = re.search(r"^(?://|;) O1TWIN (\S+)$", c.read_text(), re.M)
-            if twin:
-                src = re.search(r"^(?://|;) O1TWINSRC (\S+)$", c.read_text(), re.M)
-                oracle = OUT / (name + ".twin.ll")
-                subprocess.run([a.opt, f"-passes={twin.group(1)}", "-S", str(probes / src.group(1) if src else o1),
-                                "-o", str(oracle)], check=True)
             for fn in re.findall(r"^(?://|;) USERCHECK (\w+)$", c.read_text(), re.M):
-                u = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(oracle), "--lowered", str(dest),
+                u = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(o1), "--lowered", str(dest),
                                     "--entry", fn], capture_output=True, text=True, cwd=ROOT / "checker")
                 if u.returncode != 0 or "PASS" not in u.stdout + u.stderr:
                     reasons.append(f"{fn}: §6 against the C program: " + first(u.stdout + u.stderr))

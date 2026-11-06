@@ -1,6 +1,5 @@
 #include "CQ.h"
 // USERCHECK h
-// O1TWIN lower-switch,fix-irreducible
 // cq-0ygtj: rule 14 "Irreducible control flow": a plain goto into a loop body from a quantum test, and a switch elsewhere in
 // the function that keeps its form.
 int h(int a, int c) {

@@ -1108,6 +1108,63 @@ class ClassicalValues:
         return True
 
 
+class IrreducibleCycle(RuntimeError):
+    """The trip counters take natural loops: the C side of an irreducible program is natural_cycles' first."""
+
+
+def _indirectbr_chain(text: str, mod: D.Module) -> str:
+    """Each indirectbr of the module as an equality chain over its destinations' addresses (the same program:
+    an address that is no destination is undefined behaviour), `br` terminators being all fix-irreducible reads."""
+    for f in mod.functions.values():
+        for ins in [i for i in f.insts() if i.op == "indirectbr"]:
+            at = ins.text.split(",", 1)[0].split()[-1]
+            dests = list(dict.fromkeys(ins.successors()))
+            tag = f"cqi.{ins.index}"
+            chain, phis = [], []
+            for k, d in enumerate(dests):
+                if k + 1 == len(dests):
+                    chain.append(f"  br label {d}")
+                else:
+                    addr = f"blockaddress({f.name}, {d})"
+                    chain += [f"  %{tag}.t{k} = icmp eq ptr {at}, {addr}", f"  br i1 %{tag}.t{k}, label {d}, label %{tag}.b{k + 1}"]
+                if k + 1 < len(dests):
+                    chain.append(f"{tag}.b{k + 1}:")
+                if k:
+                    phis.append((d, f"%{tag}.b{k}"))
+            head = text.index(f.header)
+            end = text.index("\n}", head)
+            body = text[head:end]
+            line = next(ln for ln in body.splitlines() if ln.strip().split(";")[0].strip() == ins.text)
+            body = body.replace(line, "\n".join(chain), 1)
+            for d, pred in phis:
+                for phi in f.blocks[d]:
+                    if phi.op != "phi":
+                        break
+                    new = re.sub(r"(\[\s*[^\[\]]*,\s*)" + re.escape(ins.block) + r"(\s*\])", lambda m: m.group(1) + pred + m.group(2), phi.text)
+                    body = body.replace(phi.text, new, 1)
+            text = text[:head] + body + text[end:]
+    return text
+
+
+def natural_cycles(text: str, work: Path) -> str:
+    """CR rule 14 "Irreducible control flow": the module with every cycle a natural loop, by the pipeline's own LLVM
+    pass (`lower-switch,fix-irreducible`), when it has an irreducible cycle, else the module as it is: the C program the
+    trip counters read, as the lowered program's K-loops read it."""
+    scan = work / "irreducible.scan.ll"
+    scan.write_text(text)
+    mod = D.read_module(scan)
+    try:
+        for f in mod.functions.values():
+            Instrumenter.find_loops(None, f)
+        return text
+    except IrreducibleCycle:
+        pass
+    scan.write_text(_indirectbr_chain(text, mod))
+    out = work / "irreducible.natural.ll"
+    subprocess.run([str(LLVM_BIN / "opt"), "-passes=lower-switch,fix-irreducible", "-S", str(scan), "-o", str(out)], check=True)
+    return out.read_text()
+
+
 class Instrumenter:
     """Rewrites a .O1.ll into the probe build."""
 
@@ -1452,7 +1509,7 @@ class Instrumenter:
             for s in f.blocks[b][-1].successors():
                 if s in num and num[s] <= num[b]:
                     if not dominates(s, b):
-                        D.unimplemented(f"irreducible cycle in {f.name} ({b} -> {s})")
+                        raise IrreducibleCycle(f"cq: unimplemented: chk-drivers: irreducible cycle in {f.name} ({b} -> {s})")
                     body = loops.setdefault(s, {s})
                     work = [b]
                     while work:
