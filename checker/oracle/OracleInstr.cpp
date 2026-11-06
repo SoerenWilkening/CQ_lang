@@ -510,6 +510,10 @@ public:
   // node is classical (then the site logs kind "read" and counts no measurement), else marks it
   // measured. Wherever the instrumentation cannot see a source it errs to "quantum": that is the
   // measurement the oracle counted before this rule.
+  // The function's body is shared by its specializations (cq-gsms2): what taint holds as a rail in some of them and as
+  // classical in the frame's is that frame's classical value (CR rule 2: "`cq_measure` of a value that never was a rail is
+  // that value: no gate"), its node 0, and a condition quantum only in another specialization decides no quantum merge or
+  // implicit write here. The frame's specialization answers at run time (railPick).
   std::optional<cq::TaintInfo> Taint;
 
   struct Shadow {
@@ -626,6 +630,27 @@ public:
         if (T.isQuantum(V, *S))
           return true;
       return false;
+    }
+    // The frame's specialization chooses: `a` where some value of `vs` is quantum in it (id 0, a frame no call named: `a`),
+    // else `b`. Plainly `a` when that holds in every specialization.
+    Value *railPick(IRBuilder<> &B, ArrayRef<const Value *> vs, Value *a, Value *b) {
+      if (!In.KI.on)
+        return a;
+      std::vector<int32_t> rail(In.KI.N + 1, 0);
+      rail[0] = 1;
+      bool mixed = false;
+      for (const cq::Specialization *S : specs) {
+        auto id = In.KI.idOf.find(S);
+        if (id == In.KI.idOf.end())
+          continue;
+        rail[id->second] = any_of(vs, [&](const Value *v) { return T.isQuantum(v, *S); });
+        mixed |= !rail[id->second];
+      }
+      if (!mixed)
+        return a;
+      auto *c = B.CreateCall(h("__cqo_sh_pick", I32, {I32, I32, I32}), {a, b, B.getInt32(1)});
+      In.railLoads.push_back({c, &F, std::move(rail), 2});
+      return c;
     }
     Value *zero() { return ConstantInt::get(I32, 0); }
     Value *opaque() { return ConstantInt::get(I32, 1); }
@@ -963,6 +988,7 @@ public:
             }
             IRBuilder<> B(&*BB->getFirstInsertionPt());
             Value *X = nullptr;
+            std::vector<const Value *> condVals(conds.begin(), conds.end());
             if (!conds.empty()) {
               std::vector<Value *> deps;
               for (Value *c : conds)
@@ -975,21 +1001,19 @@ public:
             }
             for (PHINode *P : mine) {
               PHINode *s = phiSh[P];
-              if (X) {
-                sh[P] = B.CreateCall(h3("__cqo_sh_v"), {s, X, zero()});
-                continue;
+              Value *merge = X ? B.CreateCall(h3("__cqo_sh_v"), {s, X, zero()}) : nullptr;
+              Value *chosen = s;   // carried only (extra): the incoming the sample ran
+              if (q(P)) {
+                std::vector<Value *> inc;
+                for (unsigned i = 0; i < P->getNumIncomingValues(); ++i)
+                  if (reachable.count(P->getIncomingBlock(i)))
+                    inc.push_back(soFar(P->getIncomingValue(i), B, [&](Instruction *J) {
+                      return DT.properlyDominates(J->getParent(), BB);
+                    }));
+                chosen = nonZero(B, s, inc);
               }
-              if (!q(P)) {  // carried only (extra): the incoming the sample ran
-                sh[P] = s;
-                continue;
-              }
-              std::vector<Value *> inc;
-              for (unsigned i = 0; i < P->getNumIncomingValues(); ++i)
-                if (reachable.count(P->getIncomingBlock(i)))
-                  inc.push_back(soFar(P->getIncomingValue(i), B, [&](Instruction *J) {
-                    return DT.properlyDominates(J->getParent(), BB);
-                  }));
-              sh[P] = nonZero(B, s, inc);
+              Value *n = merge ? railPick(B, condVals, merge, chosen) : chosen;
+              sh[P] = q(P) ? railPick(B, {P}, n, zero()) : n;
             }
           }
         }
@@ -1078,6 +1102,15 @@ public:
             }
       }
       visitOne(I, retMerge, rets, qconds);
+      if (!I->isTerminator() && !I->getType()->isVoidTy() && q(I))
+        if (auto it = sh.find(I); it != sh.end() && !isZero(it->second)) {
+          // after its node when visitOne just made it, which then lies right after I
+          auto *at = dyn_cast<Instruction>(it->second);
+          bool fresh = at && at->getParent() == I->getParent() && I->comesBefore(at);
+          IRBuilder<> B(fresh ? at->getNextNode() : I->getNextNode());
+          Value *n = railPick(B, {I}, it->second, zero());
+          sh[I] = n;
+        }
       for (auto it = saved.rbegin(); it != saved.rend(); ++it) {
         if (it->second)
           sh[it->first] = *it->second;
@@ -1092,16 +1125,8 @@ public:
         IRBuilder<> B(I);
         if (auto *R = dyn_cast<ReturnInst>(I)) {
           if (Value *v = R->getReturnValue()) {
-            Value *s = get(v);
-            if (retMerge) {
-              std::vector<Value *> deps{s};
-              for (ReturnInst *O : rets)
-                if (O != R)
-                  deps.push_back(availAt(O->getReturnValue(), R));
-              for (Value *c : qconds)
-                deps.push_back(availAt(c, R));
-              s = node(B, deps);
-            } else if (rets.size() > 1) {
+            Value *s = get(v), *s0 = s;
+            if (rets.size() > 1) {
               bool qret = false;
               for (ReturnInst *O : rets)
                 qret |= q(O->getReturnValue());
@@ -1111,8 +1136,20 @@ public:
                   inc.push_back(O == R ? s : soFar(O->getReturnValue(), B, [&](Instruction *J) {
                     return DT.dominates(J, R);
                   }));
-                s = nonZero(B, s, inc);
+                s0 = nonZero(B, s, inc);
               }
+            }
+            if (retMerge) {
+              std::vector<Value *> deps{s};
+              for (ReturnInst *O : rets)
+                if (O != R)
+                  deps.push_back(availAt(O->getReturnValue(), R));
+              for (Value *c : qconds)
+                deps.push_back(availAt(c, R));
+              std::vector<const Value *> cs(qconds.begin(), qconds.end());
+              s = railPick(B, cs, node(B, deps), s0);
+            } else {
+              s = s0;
             }
             B.CreateCall(h("__cqo_sh_ret_set", In.Void, {I32}), {s});
           }
@@ -1130,6 +1167,8 @@ public:
               deps.push_back(call0(B, "__cqo_sh_gf_get"));
             }
             Value *d = join(B, deps);
+            if (!isZero(d))
+              d = railPick(B, {c}, d, zero());
             if (R.mem)
               B.CreateCall(h("__cqo_sh_gm", In.Void, {I32}), {d});
             if (R.fenv)
