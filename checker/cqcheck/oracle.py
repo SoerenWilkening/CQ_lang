@@ -667,6 +667,15 @@ def _classify(sr: SampleRun) -> None:
         sr.failed, sr.reason = True, f"{wait} with no explaining note (a trap the oracle did not totalize)"
 
 
+def _exit_status(sr: SampleRun) -> Optional[int]:
+    """The status of a sample that ended in a noreturn call by a process exit (exit, _exit, _Exit); else None.
+    Read from the notes, which the run cache holds (a longjmp arm or an abort leaves no "wait exited")."""
+    if not sr.outcome.startswith("noreturn:"):
+        return None
+    wait = next((n for n in reversed(sr.notes) if n.startswith("wait ")), "")
+    return int(wait.split()[2]) if wait.startswith("wait exited ") else None
+
+
 def subst_values(val: Any) -> List[int]:
     """The per-reach values of one "subst" entry (cq-arch Z4): a hex string (every reach) or a
     non-empty list of them (reach r takes entry r mod len)."""
@@ -1114,7 +1123,7 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
 
     outputs: {"ret": [{"call", "fn", "v"}] in run.py's encoding (integer returns {"w": "i<N>"} at the
     C width, fp {"w": "f32"|"f64"|"f80"|...}, an aggregate bare hex; void, pointer and samples that
-    did not return give no record), "end": outcome, "loops": the T2 cutoff records, "stdout": the
+    did not return give no record), "end": outcome, "exit_status": the status of a sample that ended in a process exit, else absent, "loops": the T2 cutoff records, "stdout": the
     program's stdout, "effects": its host-effect calls (cq-e4jk), "mem", "objects", "regions":
     the module docstring's; "k2": the rail-sized blocks, [n, K2] (_k2_sites); "entered": the functions this
     input enters among those with a cq_measure or a call chain to one (compare._meas_extra); "fenv_flags": the final exception
@@ -1124,6 +1133,7 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
     measured before it (cq-459d); kept/clean: None (the C program has no
     rails); violations: [] or [{"what": "c_oracle", "h": None, "msg": reason}]."""
     measured, rotations, reads = [], [], []
+    status = _exit_status(sr)
     for e in sr.events:
         if e.get("ev") != "site":
             continue
@@ -1141,7 +1151,8 @@ def run_result(sr: SampleRun, spec: DriverSpec, o1: Path) -> RunResult:
                               "mem": list(sr.mem), "objects": list(sr.objects), "regions": list(sr.regions),
                               "k2": list(sr.k2), "reads": reads,
                               "entered": sorted({e["fn"] for e in sr.events if e.get("ev") == "enter"}),
-                              **({"fenv_flags": sr.fenv} if sr.fenv is not None and _touches_fenv(o1) else {})},
+                              **({"fenv_flags": sr.fenv} if sr.fenv is not None and _touches_fenv(o1) else {}),
+                              **({"exit_status": status} if status is not None else {})},
                      measured=measured, rotations=rotations, kept=None, clean=None,
                      violations=[{"what": "c_oracle", "h": None, "msg": sr.reason}] if sr.failed else [])
 
