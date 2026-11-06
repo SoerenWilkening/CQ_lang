@@ -175,6 +175,181 @@ define i32 @siblings(i32 noundef %0, i32 noundef %1) local_unnamed_addr #0 {
   br label %11, !llvm.loop !14
 }
 
+; Function Attrs: noreturn nounwind ssp uwtable
+define noundef i32 @classical_guard(i32 noundef %0, i32 noundef %1) local_unnamed_addr #4 {
+  %3 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef 1.000000e+00) #5
+  %4 = and i32 %1, 1
+  %5 = icmp eq i32 %4, 0
+  br i1 %5, label %6, label %11
+
+6:                                                ; preds = %2
+  %7 = and i32 %3, -2
+  %8 = icmp eq i32 %7, 6
+  br i1 %8, label %13, label %9
+
+9:                                                ; preds = %6
+  %10 = load i32, ptr @g, align 4, !tbaa !6
+  br label %14
+
+11:                                               ; preds = %2
+  tail call void @exit(i32 noundef 0) #8
+  unreachable
+
+12:                                               ; preds = %14
+  store i32 %17, ptr @g, align 4, !tbaa !6
+  br label %13
+
+13:                                               ; preds = %12, %6
+  tail call void @exit(i32 noundef 0) #8
+  unreachable
+
+14:                                               ; preds = %9, %14
+  %15 = phi i32 [ %18, %14 ], [ 1, %9 ]
+  %16 = phi i32 [ %17, %14 ], [ %10, %9 ]
+  %17 = add nsw i32 %16, 1
+  %18 = add nuw nsw i32 %15, 1
+  %19 = ashr i32 %3, %18
+  %20 = icmp eq i32 %19, 3
+  br i1 %20, label %12, label %14, !llvm.loop !15
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @nested_inner(i32 noundef %0, i32 noundef %1) local_unnamed_addr #0 {
+  %3 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef 1.000000e+00) #5
+  %4 = tail call i32 @cq_theta_si32(i32 noundef %1, double noundef 1.000000e+00) #5
+  %5 = icmp eq i32 %3, 0
+  br i1 %5, label %9, label %6
+
+6:                                                ; preds = %2, %16
+  %7 = phi i32 [ %17, %16 ], [ 0, %2 ]
+  %8 = phi i32 [ %13, %16 ], [ 0, %2 ]
+  br label %12
+
+9:                                                ; preds = %16, %2
+  %10 = phi i32 [ 0, %2 ], [ %13, %16 ]
+  %11 = tail call i32 @cq_measure_si32(i32 noundef %10) #7
+  ret i32 %11
+
+12:                                               ; preds = %6, %21
+  %13 = phi i32 [ %22, %21 ], [ %8, %6 ]
+  %14 = phi i32 [ %23, %21 ], [ 0, %6 ]
+  %15 = ashr i32 %4, %14
+  switch i32 %15, label %21 [
+    i32 0, label %16
+    i32 5, label %20
+  ]
+
+16:                                               ; preds = %12
+  %17 = add nuw nsw i32 %7, 1
+  %18 = ashr i32 %3, %17
+  %19 = icmp eq i32 %18, 0
+  br i1 %19, label %9, label %6, !llvm.loop !16
+
+20:                                               ; preds = %12
+  tail call void @abort() #6
+  unreachable
+
+21:                                               ; preds = %12
+  %22 = add nsw i32 %13, 1
+  %23 = add nuw nsw i32 %14, 1
+  br label %12, !llvm.loop !17
+}
+
+; Function Attrs: noreturn nounwind ssp uwtable
+define void @nested_no_live_exit(i32 noundef %0) local_unnamed_addr #4 {
+  %2 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef 1.000000e+00) #5
+  %3 = load i32, ptr @g, align 4, !tbaa !6
+  br label %4
+
+4:                                                ; preds = %14, %1
+  %5 = phi i32 [ %3, %1 ], [ %15, %14 ]
+  %6 = phi i32 [ 0, %1 ], [ %16, %14 ]
+  %7 = ashr i32 %2, %6
+  switch i32 %7, label %11 [
+    i32 0, label %8
+    i32 5, label %10
+  ]
+
+8:                                                ; preds = %4
+  %9 = add nsw i32 %5, 2
+  store i32 %9, ptr @g, align 4, !tbaa !6
+  br label %14
+
+10:                                               ; preds = %4
+  tail call void @abort() #6
+  unreachable
+
+11:                                               ; preds = %4
+  %12 = add nsw i32 %5, 1
+  store i32 %12, ptr @g, align 4, !tbaa !6
+  %13 = add nuw nsw i32 %6, 1
+  br label %14
+
+14:                                               ; preds = %11, %8
+  %15 = phi i32 [ %12, %11 ], [ %9, %8 ]
+  %16 = phi i32 [ %13, %11 ], [ 0, %8 ]
+  br label %4, !llvm.loop !18
+}
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @nested_three(i32 noundef %0, i32 noundef %1, i32 noundef %2) local_unnamed_addr #0 {
+  %4 = tail call i32 @cq_theta_si32(i32 noundef %0, double noundef 1.000000e+00) #5
+  %5 = tail call i32 @cq_theta_si32(i32 noundef %1, double noundef 1.000000e+00) #5
+  %6 = tail call i32 @cq_theta_si32(i32 noundef %2, double noundef 1.000000e+00) #5
+  %7 = icmp eq i32 %4, 0
+  br i1 %7, label %13, label %8
+
+8:                                                ; preds = %3
+  %9 = icmp eq i32 %5, 0
+  br label %10
+
+10:                                               ; preds = %8, %19
+  %11 = phi i32 [ 0, %8 ], [ %21, %19 ]
+  %12 = phi i32 [ 0, %8 ], [ %20, %19 ]
+  br i1 %9, label %19, label %16
+
+13:                                               ; preds = %19, %3
+  %14 = phi i32 [ 0, %3 ], [ %20, %19 ]
+  %15 = tail call i32 @cq_measure_si32(i32 noundef %14) #7
+  ret i32 %15
+
+16:                                               ; preds = %10, %28
+  %17 = phi i32 [ %29, %28 ], [ 0, %10 ]
+  %18 = phi i32 [ %25, %28 ], [ %12, %10 ]
+  br label %24
+
+19:                                               ; preds = %28, %10
+  %20 = phi i32 [ %12, %10 ], [ %25, %28 ]
+  %21 = add nuw nsw i32 %11, 1
+  %22 = ashr i32 %4, %21
+  %23 = icmp eq i32 %22, 0
+  br i1 %23, label %13, label %10, !llvm.loop !19
+
+24:                                               ; preds = %16, %33
+  %25 = phi i32 [ %34, %33 ], [ %18, %16 ]
+  %26 = phi i32 [ %35, %33 ], [ 0, %16 ]
+  %27 = ashr i32 %6, %26
+  switch i32 %27, label %33 [
+    i32 0, label %28
+    i32 5, label %32
+  ]
+
+28:                                               ; preds = %24
+  %29 = add nuw nsw i32 %17, 1
+  %30 = ashr i32 %5, %29
+  %31 = icmp eq i32 %30, 0
+  br i1 %31, label %19, label %16, !llvm.loop !20
+
+32:                                               ; preds = %24
+  tail call void @abort() #6
+  unreachable
+
+33:                                               ; preds = %24
+  %34 = add nsw i32 %25, 1
+  %35 = add nuw nsw i32 %26, 1
+  br label %24, !llvm.loop !21
+}
+
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #1 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #2 = { cold noreturn nounwind "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
@@ -188,7 +363,7 @@ attributes #8 = { noreturn nounwind }
 !llvm.module.flags = !{!0, !1, !2, !3, !4}
 !llvm.ident = !{!5}
 
-!0 = !{i32 2, !"SDK Version", [2 x i32] [i32 26, i32 2]}
+!0 = !{i32 2, !"SDK Version", [2 x i32] [i32 26, i32 4]}
 !1 = !{i32 1, !"wchar_size", i32 4}
 !2 = !{i32 8, !"PIC Level", i32 2}
 !3 = !{i32 7, !"uwtable", i32 2}
@@ -203,3 +378,10 @@ attributes #8 = { noreturn nounwind }
 !12 = distinct !{!12, !13, !11}
 !13 = !{!"llvm.loop.mustprogress"}
 !14 = distinct !{!14, !13, !11}
+!15 = distinct !{!15, !11}
+!16 = distinct !{!16, !13, !11}
+!17 = distinct !{!17, !13, !11}
+!18 = distinct !{!18, !11}
+!19 = distinct !{!19, !13, !11}
+!20 = distinct !{!20, !13, !11}
+!21 = distinct !{!21, !13, !11}

@@ -56,7 +56,8 @@ RunResult fields (JSON-serializable):
   sample      the sample dict as given
   outputs     {"ret": [{"call", "fn", "v"}], "stdout": str, "exit": int, "effects": [...], "tape": [...],
               "deviation": bool, "mem": [...], "objects": [...], "regions": [...]}; "tape" is the shot's event
-              sequence (rt_tape.c, _tape_entry), "deviation" rule 16's stated deviation; "mem" is the named outputs in memory, read from the bus
+              sequence (rt_tape.c, _tape_entry), "deviation" rule 16's stated deviation; "host_end", present only when the sample ended in the program's own
+              exit, _exit or _Exit, its status (rule 16's ordinary host call of a noreturn callee); "mem" is the named outputs in memory, read from the bus
               after the driver call (CR §6 item 1, drivers.py "Driver objects"; rt_bus.c's {"ev":"out_mem",
               "name","addr","w","v"[,"off"]}); "objects" the address table of the module's globals and
               functions ({"ev":"out_mem","table":"object","name","addr","size"}) and "regions" the host ranges a pointer may
@@ -1070,6 +1071,7 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
     direct_fx: List[dict] = []
     tape_out, tape_seq, deviation = "", [], False
     last_exit: Optional[dict] = None
+    host_end: Optional[int] = None
     for e in events:
         ev = e.get("ev")
         if ev in _ROT_EVENTS:
@@ -1090,6 +1092,8 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
             viol.append({"what": e.get("what"), "h": e.get("h"), "msg": e.get("msg")})
         elif ev == "exit":
             last_exit = e
+        elif ev == "host_end":
+            host_end = e.get("code")
         elif ev == "out_mem":
             if e.get("table") == "object":      # the driver's lines (_OUT_PRELUDE), kept by the same compact filter
                 objects.append({k: e[k] for k in ("name", "addr", "size") if k in e})
@@ -1111,11 +1115,12 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
     viol += extra
     if last_exit is None and code is not None and not any(v["what"] in _STOP_WHATS for v in extra):
         viol.append({"what": "no_exit", "h": None, "msg": f"process ended (status {code}) without the exit event"})
-    return RunResult(side=side, sample=sample, outputs={"ret": rets, "stdout": stdout + tape_out, "exit": code,
-                                                    "effects": _effects_in_order(direct_fx), "tape": tape_seq,
-                                                    "deviation": deviation, "mem": mem, "objects": objects,
-                                                    "regions": regions, "ctl_measured": ctl_measured,
-                                                    "host_flags": (last_exit or {}).get("host_flags")},
+    outputs = {"ret": rets, "stdout": stdout + tape_out, "exit": code, "effects": _effects_in_order(direct_fx),
+               "tape": tape_seq, "deviation": deviation, "mem": mem, "objects": objects, "regions": regions,
+               "ctl_measured": ctl_measured, "host_flags": (last_exit or {}).get("host_flags")}
+    if host_end is not None:
+        outputs["host_end"] = host_end
+    return RunResult(side=side, sample=sample, outputs=outputs,
                      measured=measured, rotations=rots, kept=kept, clean=clean, violations=viol)
 
 

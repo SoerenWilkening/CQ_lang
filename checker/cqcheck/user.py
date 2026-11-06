@@ -389,7 +389,7 @@ def define_undefined_data(text: str) -> str:
 def check(o1: Path, lowered: Path, entry: str, samples: Optional[int], work: Path) -> Tuple[int, List[str]]:
     """(status, report lines)."""
     from cqcheck import compare, oracle, run, sampling
-    o1_text = define_undefined_data(Path(o1).read_text())
+    o1_text = sampling.natural_cycles(define_undefined_data(Path(o1).read_text()), work)
     low_text = define_undefined_data(Path(lowered).read_text())
     if _defines(o1_text, "main"):
         o1_text, low_text = rename_main(o1_text), rename_main(low_text)

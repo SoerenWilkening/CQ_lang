@@ -5,6 +5,10 @@
 // USERCHECK in_arm
 // USERCHECK status_phi
 // USERCHECK siblings
+// USERCHECK classical_guard
+// USERCHECK nested_inner
+// USERCHECK nested_no_live_exit
+// USERCHECK nested_three
 // cq-172vi, cq-0etzs: noreturn arms around them. -O1 merges the aborts of two_tests into one block with two false edges.
 int g;
 int two_tests(int a) {
@@ -57,5 +61,54 @@ int siblings(int a, int b) {
     if ((b >> j) == 5) abort();
     s += 2;
   }
+  return cq_measure(s);
+}
+// cq-o75xb: a classical guard into a noreturn arm: rule 16's ordinary host call, the program really exits there.
+int classical_guard(int a, int c) {
+  cq_theta(&a, 1.0);
+  if (c & 1) exit(0);
+  int i = 0;
+  while (1) {
+    i++;
+    if ((a >> i) == 3) exit(0);
+    g += 1;
+  }
+  return 0;
+}
+// cq-9isy0: the inner loop's edge into the arm is an exit edge of the outer loop too: its a_K reads 0 once the arm fired.
+int nested_inner(int a, int b) {
+  cq_theta(&a, 1.0);
+  cq_theta(&b, 1.0);
+  int s = 0;
+  for (int i = 0; (a >> i) != 0; i++)
+    for (int j = 0; (b >> j) != 0; j++) {
+      if ((b >> j) == 5) abort();
+      s += 1;
+    }
+  return cq_measure(s);
+}
+// The same, the outer loop's only way out being the inner loop's arm.
+void nested_no_live_exit(int b) {
+  cq_theta(&b, 1.0);
+  for (;;) {
+    for (int j = 0; (b >> j) != 0; j++) {
+      if ((b >> j) == 5) abort();
+      g += 1;
+    }
+    g += 2;
+  }
+}
+// Three levels: the arm stops both enclosing chains.
+int nested_three(int a, int b, int d) {
+  cq_theta(&a, 1.0);
+  cq_theta(&b, 1.0);
+  cq_theta(&d, 1.0);
+  int s = 0;
+  for (int i = 0; (a >> i) != 0; i++)
+    for (int j = 0; (b >> j) != 0; j++)
+      for (int k = 0; (d >> k) != 0; k++) {
+        if ((d >> k) == 5) abort();
+        s += 1;
+      }
   return cq_measure(s);
 }
