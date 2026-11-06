@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """tests/chk-kept (cq-71g9): rails CR §6 item 1 names as kept, against the leak rule.
 
-Each GOOD program is green under `cqcheck user`: a no-twin clone's {res, flags} result (rule 18; q1, q4b, q4c), the
+Each GOOD program is green under `cqcheck user`: a no-twin clone's {res, flags} result (rule 18; q1, q4b, q4c), a loading
+clone's result a memory version change overtook before its twin (rule 18; q5), the
 dispatch's final copy-out (rule 19; q3), a no-twin table clone's result through its pop-only twin (§1.4; e_rail, r3).
 Each MUTANT is a real leak of that shape, and must be rejected by the leak rule, not merely rejected (rule24_*: by the
 effect comparison).
@@ -74,7 +75,15 @@ def second_copy(text):
     return in_fn("q3", edit, text)
 
 
-GOOD = [(SRC / "q1", "q1"), (SRC / "q3", "q3"), (SRC / "q4", "q4b"), (SRC / "q4", "q4c"),
+def lost_twin(fn, twin, text):
+    """A call of a loading clone loses its twin though nothing overtakes it, its result left live."""
+    def edit(body):
+        m = re.search(rf"  call void @{twin}\(i32 %\d+, i32 (%\d+),[^\n]*\n", body)
+        return body.replace(m.group(0), "").replace(f"  call void @cqrt_free(i32 {m.group(1)})\n", "")
+    return in_fn(fn, edit, text)
+
+
+GOOD = [(SRC / "q1", "q1"), (SRC / "q3", "q3"), (SRC / "q4", "q4b"), (SRC / "q4", "q4c"), (SRC / "q5", "q5"),
         (CALLS / "table_twin_measure", "e_rail"), (CALLS / "twin_rot_in_loop", "r3")]
 MUTANTS = [
     ("rule18_dropped_twin_struct", CALLS / "partial_flags", "sc_measure", dropped_twin_struct),
@@ -84,6 +93,11 @@ MUTANTS = [
     # a classical-path measurement leaves the twin (Q3, rulings3 E): this `_t` is off the no-twin list
     ("t14_empty_twin_classical_measure", CALLS / "table_twin_measure", "e_cl", lambda t: empty_twin("__cq_q_g_11_t_unc", t)),
     ("rule19_second_copy", SRC / "q3", "q3", second_copy),
+    # rule 18, cq-xbpw6: the C program overtakes no call here, the store is in the other arm, though it is emitted before the twin
+    ("rule18_lost_twin_other_arm", CALLS / "twin_other_arm_store", "other_arm",
+     lambda t: lost_twin("other_arm", "__cq_q_rd_1_ctl_unc", t)),
+    # rule 18: the C program overtakes one of the two calls, and a second one lost its twin
+    ("rule18_lost_twin_beside_overtaken", SRC / "q5", "q5", lambda t: lost_twin("q5", "__cq_q_rd_1_ctl_unc", t)),
     # an observable volatile store is a bus store (cq-6b2i1): one lost is the bytes lost; nothing but the memory comparison
     # sees it, the entry returns nothing
     ("rule24_lost_volatile_store", ROOT / "tests" / "eff-conc" / "probes" / "vol_observable", "vol_quantum_observable",

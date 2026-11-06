@@ -540,7 +540,7 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
             tot = default_env_module(tot)
         if any(Path(o).name == "host_fx.o" for o in objs):  # cq-e4jk; a test's restricted runtime may omit it
             tot = host_effects_module(tot, defined)
-        tot = ctl_measures_module(kept_results_module(kept_copies_module(tot), handle_returning_fns(canon)))
+        tot = ctl_measures_module(overtaken_twin_module(kept_results_module(kept_copies_module(tot), handle_returning_fns(canon)), ctext))
         from cqcheck import drivers
         tot += drivers.out_globals_ir(ctext if ctext is not None else canon, canon, "__cqe_out_globals",
                                       "cqd_out_mem", "cqd_out_object")
@@ -1363,6 +1363,199 @@ def _loads_bus(f: str, bodies: Dict[str, str]) -> bool:
             return True
         work.extend(_CALLED.findall(bodies[g]))
     return False
+
+
+# ---------------- rule 18: a loading clone's result that a memory version change overtook before its twin (CR §6 item 1)
+
+_CLONE_NAME = re.compile(r"^__cq_q_(.+)_[01v]+(?:_t)?(?:_ctl)?$")
+_O1_INTRINSIC_WRITES = re.compile(r"^llvm\.(memcpy|memmove|memset|memcpy\.inline|memset\.inline|va_start|va_copy)\b")
+_O1_VALUE = re.compile(r"%[-\w.$]+|%\"[^\"]*\"")
+_O1_DEF = re.compile(r"^\s+(%[-\w.$\"]+) = ")
+_O1_STORE_PTR = re.compile(r"^\s+store (?:atomic )?(volatile )?[^\n]*, ptr ([%@][-\w.$\"]+)")
+_O1_ATOMIC = re.compile(r"\b(atomicrmw|cmpxchg)\b")
+_O1_FN = re.compile(r"(?ms)^define\b[^\n]*?@\"?([-\w.$]+)\"?\([^\n]*\{\n(.*?)^\}$")
+
+
+def _o1_blocks(body: str) -> List[Tuple[str, List[str], List[str]]]:
+    """(label, instruction lines, successor labels) per basic block of one body; the entry block's label is ""."""
+    out: List[Tuple[str, List[str], List[str]]] = [("", [], [])]
+    for line in body.splitlines():
+        m = _BLOCK.match(line)
+        if m:
+            out.append((m.group(1).strip('"'), [], []))
+        elif line.strip() and not line.lstrip().startswith(";"):
+            out[-1][1].append(line)
+            if re.match(r"\s+(br|switch|indirectbr|invoke|callbr)\b", line) or re.match(r"\s+\d+, label", line) \
+                    or re.match(r"\s+i\d+ [-\d]+, label", line):
+                out[-1][2].extend(x.strip('"') for x in _BACK_LABEL.findall(line))
+    return out
+
+
+def _o1_store_changes(line: str, body: str) -> bool:
+    """Rule 5: a store is a memory version change, but for a volatile store into a local nothing ever loads (rules 19, 24)."""
+    m = _O1_STORE_PTR.match(line)
+    if not m or not m.group(1) or not re.search(rf"(?m)^\s+{re.escape(m.group(2))} = alloca\b", body):
+        return True
+    return bool(re.search(rf"\bload [^\n]*ptr {re.escape(m.group(2))}\b", body))
+
+
+def _o1_writers(fns: Dict[str, str], ctext: str) -> Tuple[Set[str], Any]:
+    """Rule 5's static property read off the C module: the functions that write memory (the least fixpoint over calls by name),
+    and the test of one instruction line: is it a memory version change?"""
+    attrs = dict(re.findall(r"(?m)^attributes (#\d+) = \{([^\n]*)\}", ctext))
+    decls = dict((m.group(1), m.group(0)) for m in re.finditer(r"(?m)^declare\b[^\n]*?@\"?([-\w.$]+)\"?\([^\n]*$", ctext))
+
+    def reads_only(line: str, callee: str) -> bool:
+        """LLVM's memory attribute marks the host callee as writing no memory, at the call or on its declaration."""
+        for text in (line.split(")")[-1], decls.get(callee, "").split(")")[-1]):
+            for a in re.findall(r"#\d+", text):
+                mem = re.search(r"\bmemory\(([^)]*)\)", attrs.get(a, ""))
+                if mem and "write" not in mem.group(1):
+                    return True
+        return False
+
+    def local_change(line: str, body: str, writes: Set[str]) -> bool:
+        s = line.lstrip()
+        if s.startswith("store ") or re.match(r"(%\S+ = )?store ", s):
+            return _o1_store_changes(line, body)
+        if _O1_ATOMIC.search(line):
+            return True
+        if not re.search(r"\b(call|invoke)\b", line):
+            return False
+        names = _CALLED.findall(line)
+        if not names:
+            return bool(_INDIRECT.search(line))    # a table clone's call (rule 19)
+        g = names[0]
+        if g.startswith("llvm."):
+            return bool(_O1_INTRINSIC_WRITES.match(g))
+        if g.startswith("cq_") or g.startswith("__cq_invert_") or g == "free":
+            return False
+        if g in fns:
+            return g in writes
+        return not reads_only(line, g)
+
+    writes: Set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for f, b in fns.items():
+            if f not in writes and any(local_change(ln, b, writes) for ln in b.splitlines()):
+                writes.add(f)
+                changed = True
+    return writes, lambda line, body: local_change(line, body, writes)
+
+
+def _overtaken_calls(ctext: str) -> Dict[Tuple[str, str], int]:
+    """(C function F, callee g) -> how many calls of g in F a memory version change overtakes on a path of the C program: the
+    change is reachable from the call and is, or comes before, a reader of the result (its SSA users, transitively). Asked of the
+    C program's CFG because the lowered one lays a quantum branch's arms one after the other (rule 18, cq-xbpw6): a change in the
+    other arm is emitted between a call and its twin, and overtakes nothing."""
+    fns = {m.group(1): m.group(2) for m in _O1_FN.finditer(ctext)}
+    _, changes = _o1_writers(fns, ctext)
+    out: Dict[Tuple[str, str], int] = {}
+    for f, body in fns.items():
+        blocks = _o1_blocks(body)
+        succ = {lab: ss for lab, _, ss in blocks}
+        where = [(lab, i, ln) for lab, lines, _ in blocks for i, ln in enumerate(lines)]
+        vchanges = [(lab, i) for lab, i, ln in where if changes(ln, body)]
+
+        def after(a: Tuple[str, int], b: Tuple[str, int]) -> bool:
+            """A path of the CFG runs from instruction a to instruction b."""
+            if a[0] == b[0] and a[1] < b[1]:
+                return True
+            seen: Set[str] = set()
+            work = list(succ.get(a[0], []))
+            while work:
+                x = work.pop()
+                if x == b[0]:
+                    return True
+                if x not in seen:
+                    seen.add(x)
+                    work.extend(succ.get(x, []))
+            return False
+
+        for lab, i, ln in where:
+            names = _CALLED.findall(ln)
+            d = _O1_DEF.match(ln)
+            if not names or not d or names[0].startswith("llvm."):
+                continue
+            slice_, readers, grew = {d.group(1)}, [], True
+            while grew:
+                grew = False
+                for lab2, j, ln2 in where:
+                    if (lab2, j) in readers or not slice_ & set(_O1_VALUE.findall(ln2.split(" = ", 1)[-1])):
+                        continue
+                    readers.append((lab2, j))
+                    d2 = _O1_DEF.match(ln2)
+                    if d2 and d2.group(1) not in slice_:
+                        slice_.add(d2.group(1))
+                    grew = True
+            at = (lab, i)
+            if any(after(at, v) and (v in readers or any(after(v, r) for r in readers)) for v in vchanges):
+                out[(f, names[0])] = out.get((f, names[0]), 0) + 1
+    return out
+
+
+def overtaken_twin_module(text: str, ctext: Optional[str]) -> str:
+    """Rule 18, a kept rail CR §6 item 1 names: "a result of a clone that loads that one overtook before its twin". The clone has
+    a twin (another call of it may run it), so kept_results_module leaves it alone. Each call of it in one lowered body with no
+    twin call on its result is marked when the C program has at least as many overtaken calls of that callee in that function
+    (_overtaken_calls); one more call without its twin than the C program overtakes marks none, and the lost twin stays a leak,
+    as does a clone whose C function the check cannot see."""
+    if not ctext or "@__cq_q_" not in text:
+        return text
+    bodies = {m.group(1): m.group(2) for m in _FN_BODY.finditer(text)}
+    allowed: Optional[Dict[Tuple[str, str], int]] = None
+    marks: Dict[str, List[Tuple[str, str]]] = {}
+    for f, b in bodies.items():
+        if _TWIN_OF_CLONE.match(f) or not b:
+            continue
+        sites: Dict[str, List[Tuple[str, str]]] = {}
+        for line in b.splitlines():
+            m = _HANDLE_CALL.match(line)
+            if not m or not _CLONE_NAME.match(m.group(4)) or _TABLE_CLONE.match(m.group(4)):
+                continue
+            g, r = m.group(4), m.group(2)
+            if g + "_unc" not in bodies or not _loads_bus(g, bodies):
+                continue
+            rs = [r] + [e.group(1) for e in re.finditer(rf"(?m)^\s+(%[-\w.$\"]+) = extractvalue [^\n]*? {re.escape(r)}, \d+", b)]
+            twin = re.compile(rf"@\"?{re.escape(g)}_unc\"?\(([^\n]*)\)")
+            if any(set(rs) & set(_O1_VALUE.findall(t.group(1))) for t in twin.finditer(b)):
+                continue
+            sites.setdefault(_CLONE_NAME.match(g).group(1), []).append((line, r))
+        if not sites:
+            continue
+        if allowed is None:
+            allowed = _overtaken_calls(ctext)
+        cm = _CLONE_NAME.match(f)
+        cf = cm.group(1) if cm else f
+        for cg, ss in sites.items():
+            if len(ss) <= allowed.get((cf, cg), 0):
+                marks.setdefault(f, []).extend(ss)
+    if not marks:
+        return text
+    out, cur = [], None
+    for line in text.splitlines():
+        out.append(line)
+        if line.startswith("define"):
+            m = DEFINE_NAME.match(line)
+            cur = marks.get(m.group(2)) if m else None
+        elif line.startswith("}"):
+            cur = None
+        elif cur:
+            for site, r in cur:
+                if line == site:
+                    ind = re.match(r"\s+", line).group(0)
+                    head = re.match(r"^\s+\S+ = (?:tail |notail )?call (?:[^@]*\s)?(i32|\{[^}]*\}) @", line)
+                    if head and head.group(1) == "i32":
+                        out.append(f"{ind}call void @cqe__set_store_kept(i32 {r})")
+                    elif head:
+                        for k in _flat_fields(head.group(1)):
+                            out.append(f"{ind}%cqe.ovt.{r.lstrip('%').strip(chr(34))}.{k} = extractvalue {head.group(1)} {r}, {k}")
+                            out.append(f"{ind}call void @cqe__set_store_kept(i32 %cqe.ovt.{r.lstrip('%').strip(chr(34))}.{k})")
+    if "declare void @cqe__set_store_kept" not in text:
+        out.append("declare void @cqe__set_store_kept(i32)")
+    return "\n".join(out) + "\n"
 
 
 def _rail_tester(body: str, handle_fns: Sequence[str]):
