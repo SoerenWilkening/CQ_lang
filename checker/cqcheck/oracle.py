@@ -67,7 +67,7 @@ address of a heap block comes back; a load outside every object (globals,
 allocas, heap blocks, byval parameter copies, the register save and overflow areas va_start points
 at) reads 0 and a store there is dropped. Threads collapse (rule 24).
 
-A rule 27 root (tools/corpus_roots.txt) or another function neither libc nor the driver defines and
+A rule 27 root (the `roots=` field of drivers.txt) or another function neither libc nor the driver defines and
 drivers.effect_callees leaves gets the checker's model (OracleInstr.cpp ``stubs``):
 FNV-1a-64 over the name bytes, then ``h = (h ^ w) * 0x100000001b3`` per 64-bit word of each non-pointer
 argument; the result is the low W bits; no memory effect.

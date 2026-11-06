@@ -12,7 +12,7 @@ One line per decision on what CQ_spec leaves open. OWNER-FLAG: we proceed on it,
 - Q3: DECIDED — "measures" in rule 18 means a tainted measurement (under a quantum predicate or in a _ctl clone); a classical-path measurement returns a seed and the clone keeps its twin (rule 2); SPEC_ISSUES asks rule 18 to say so.
 - Q4: DECIDED — rule 5 sentence 3 as written (212): the caller uncomputes/frees what it minted after the twin; 102's extra kept rails are a SPEC_ISSUES entry, not copied.
 - Q5: DECIDED — 175 needs musl libm in the v1 bundle (rule 18 "injected source"); a bodiless callee on no root list is rule 16, never an implicit declared clone (rule 27, §0); rule 18's "declared clone otherwise" and CLAUDE.md's bundle text are stale.
-- Q6: DECIDED — roots are a cqcc input (`--cq-roots`); corpus table: 161 ext_fn, 190 ext_sink, nothing else; the stand-in is the checker's.
+- Q6: DECIDED — roots are a cqcc input (`--cq-roots`); corpus table: `roots=` in drivers.txt, 161 ext_fn, 190 ext_sink; the stand-in is the checker's.
 - Q7: DECIDED — `__cq_mem/__cq_alloc/__cq_clone_*/__cq_sig` are a runtime object linked after the pass, never lowered; the pre-pass bundle holds only bodies to lift.
 - Q8: DECIDED — compare the event sequence (name, fields, predicate, order) per input on both oracles with the §6 stand-in; result rails of deferred outputs are a stated deviation, excluded only against C.
 - Q9: DECIDED — rule 16 as written; host-made blocks are a recorded deviation, no provenance check.

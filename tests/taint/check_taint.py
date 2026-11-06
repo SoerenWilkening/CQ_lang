@@ -22,6 +22,7 @@ import argparse
 import re
 import subprocess
 import sys
+import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -90,7 +91,13 @@ def expected(ex):
 
 def run(dump, ex):
     o1, clones, rewritten, kept = expected(ex)
-    p = subprocess.run([dump, '--roots=' + str(ROOT / 'tools' / 'corpus_roots.txt'), str(o1)], capture_output=True, text=True)
+    # CR rule 27: the root list is the `roots=` field of the example's drivers.txt line.
+    drv = ex.parent.parent / '_tools' / 'drivers.txt'
+    m = re.search(r'(?m)^' + re.escape(ex.name) + r'\|.*\|roots=([^|\n]*)$', drv.read_text())
+    with tempfile.NamedTemporaryFile('w', suffix='.roots') as tf:
+        tf.write(m.group(1).replace(',', '\n') + '\n' if m else '')
+        tf.flush()
+        p = subprocess.run([dump, *(['--roots=' + tf.name] if m else []), str(o1)], capture_output=True, text=True)
     if p.returncode != 0:
         err = (p.stderr.strip().splitlines() or ['exit %d' % p.returncode])
         return ex.name, ['stopped: ' + ' | '.join(err[:2])], ''

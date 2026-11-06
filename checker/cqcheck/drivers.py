@@ -83,6 +83,7 @@ class DriverLine:
     protos: List[str]
     calls: List[str]
     setup: str          # the fourth field, "" when absent
+    roots: List[str] = field(default_factory=list)   # the fifth field, roots=f[,g]: the rule 27 root list the example links
 
 
 def _split_top(s: str, sep: str) -> List[str]:
@@ -160,7 +161,10 @@ def read_drivers_txt(path: Optional[Path] = None) -> Dict[str, DriverLine]:
     for raw in path.read_text().splitlines():
         if not raw.strip():
             continue
-        parts = raw.split("|", 3)
+        # The optional fifth field ends the line; the setup before it may hold a C `|`.
+        rm = re.search(r"\|roots=([^|]*)$", raw.rstrip())
+        roots = [r.strip() for r in rm.group(1).split(",") if r.strip()] if rm else []
+        parts = (raw.rstrip()[:rm.start()] if rm else raw).split("|", 3)
         if len(parts) < 3:
             unimplemented(f"drivers.txt line with {len(parts)} fields: {raw!r}")
         name, protos, calls = parts[0], parts[1], parts[2]
@@ -172,6 +176,7 @@ def read_drivers_txt(path: Optional[Path] = None) -> Dict[str, DriverLine]:
             protos=split_protos(protos),
             calls=[c.strip() for c in _split_top(calls, ";") if c.strip()],
             setup=setup.strip(),
+            roots=roots,
         )
     return lines
 
@@ -1302,9 +1307,8 @@ _DECLARE = re.compile(r'^declare\b(?P<head>[^@]*)@(?P<name>"[^"]*"|[-A-Za-z$._0-
 
 
 def corpus_roots() -> FrozenSet[str]:
-    """tools/corpus_roots.txt: the rule 27 roots of the corpus (rulings Q6), one symbol per line, plus $CQ_ROOTS_EXTRA."""
-    p = REPO / "tools" / "corpus_roots.txt"
-    roots = {x.strip() for x in p.read_text().splitlines() if x.strip()} if p.exists() else set()
+    """The rule 27 roots of the corpus (CR rule 27: the `roots=` fields of drivers.txt), plus $CQ_ROOTS_EXTRA."""
+    roots = {r for line in read_drivers_txt().values() for r in line.roots}
     return frozenset(roots | set(filter(None, os.environ.get("CQ_ROOTS_EXTRA", "").split(","))))  # a test's own library
 
 

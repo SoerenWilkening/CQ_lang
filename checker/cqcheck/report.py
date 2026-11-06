@@ -214,7 +214,6 @@ def _publish_entry(final: Path, files: Dict[str, bytes]) -> None:
 
 
 # Rule 27, rulings Q6: the corpus's root lists, a build input of the lowering.
-CORPUS_ROOTS = Path(__file__).resolve().parents[2] / "tools" / "corpus_roots.txt"
 
 
 def lower(ex: Example, dest: Path) -> Tuple[Optional[Path], str]:
@@ -235,7 +234,7 @@ def lower(ex: Example, dest: Path) -> Tuple[Optional[Path], str]:
     # cached by (plugin, toolchain, K, input, the bundle linked into it): every file the run leaves
     # and its result
     # (the paths too: opt writes its input's path into the module, and messages name them)
-    entry = _tool_cache("lower", f"-cq-k-default={K_CHECK}", CORPUS_ROOTS.read_text(), str(src), str(dest), text,
+    entry = _tool_cache("lower", f"-cq-k-default={K_CHECK}", "\n".join(_example_roots(ex)), str(src), str(dest), text,
                         oracle.bundle_key(bundle) if bundle else "")
     linked_name = f"{ex.base}.linked.ll"
     if not (entry / "result").exists():
@@ -256,6 +255,13 @@ def lower(ex: Example, dest: Path) -> Tuple[Optional[Path], str]:
     return dest, ""
 
 
+def _example_roots(ex: Example) -> list:
+    """CR rule 27: the root list this example links, the `roots=` field of its drivers.txt line."""
+    from cqcheck import drivers
+    line = drivers.read_drivers_txt().get(ex.name)
+    return list(line.roots) if line else []
+
+
 def _lower_uncached(ex: Example, src: Path, bundle: List[Path], dest: Path) -> Tuple[Optional[Path], str]:
     if bundle:
         from cqcheck import oracle
@@ -268,8 +274,13 @@ def _lower_uncached(ex: Example, src: Path, bundle: List[Path], dest: Path) -> T
         if r.returncode != 0:
             return None, f"llvm-link with the injection bundle exited {r.returncode}: {_first_error_line(r.stderr)}"
         src = linked
+    # CR rule 27, §0: a root list is an input of this example alone; with none a module with no cq_* call passes through.
+    roots = _example_roots(ex)
+    rootsf = dest.parent / f"{ex.base}.roots"
+    if roots:
+        rootsf.write_text("\n".join(roots) + "\n")
     r = _run([str(LLVM_BIN / "opt"), f"-load-pass-plugin={plugin_path()}", "-passes=cq-lower",
-              f"-cq-k-default={K_CHECK}", f"-cq-roots={CORPUS_ROOTS}", "-S", str(src), "-o", str(dest)])
+              f"-cq-k-default={K_CHECK}", *([f"-cq-roots={rootsf}"] if roots else []), "-S", str(src), "-o", str(dest)])
     if r.returncode != 0:
         if dest.exists():
             dest.unlink()
