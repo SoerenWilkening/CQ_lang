@@ -271,6 +271,7 @@ private:
   // cq-lx8f: quantum phis of a unit's exit blocks that the loop module bound (rule 14 case 2: an exit
   // phi identified with a carried value's final state). The walker does not merge them again.
   DenseSet<const PHINode *> unitBoundPhis;
+  DenseSet<const BasicBlock *> guardsShortCircuit;
   std::vector<const Instruction *> blockDefs;           // original quantum defs in the current output block
   SmallVector<const BasicBlock *, 4> openRegions;       // ipdoms of quantum terminators not yet reached
   std::unique_ptr<TargetLibraryInfoImpl> tlii;
@@ -699,10 +700,17 @@ void Walker::planGuards() {
         // of classical branch-condition terms; the cover is that function, evaluated at b).
         size_t half = cands.size() / 2;   // cands[k + half] is cands[k] negated
         std::vector<unsigned> atoms;
+        // Rule 8: a literal that does not dominate b (fmal's `!c1 || !c2`, c2 tested only where c1 holds) is read only in
+        // a cube whose facts already admit the block defining it: the walk ran that block on those paths.
+        DenseMap<unsigned, Pred> within;
         for (unsigned k = 0; k < half; ++k) {
           const Lit &l = cands[k];
-          if (auto *def = dyn_cast<Instruction>(l.v); def && !DT.dominates(def, b))
-            continue;
+          if (auto *def = dyn_cast<Instruction>(l.v); def && !DT.dominates(def, b)) {
+            const BasicBlock *db = def->getParent();
+            if (!idx.count(db) || idx.lookup(db) >= idx.lookup(b) || unitOf.count(db) || tailOf.count(db))
+              continue;
+            within.insert({k, ctx.preds().block(db).classicalProjection(ctx.T, ctx.S)});
+          }
           if ((inB & cf & l.p).isBottom() && (inB & cf & !l.p).isBottom())
             continue;
           if (!predReads(cf, l.p))
@@ -724,6 +732,10 @@ void Walker::planGuards() {
                 return;
               }
               unsigned k = atoms[next];
+              if (auto w = within.find(k); w != within.end() && !(inB & c & !w->second).isBottom()) {
+                cover(cube, c, next + 1);   // not defined on every path of this cube
+                return;
+              }
               for (unsigned lit : {k, unsigned(k + half)}) {
                 cube.push_back(lit);
                 cover(cube, c & cands[lit].p, next + 1);
@@ -760,6 +772,13 @@ void Walker::planGuards() {
         internalError("spine: a classical guard with nothing to skip to", b->getTerminator());
       // A classical phi of skip takes the skip edge's value from the original edges its facts admit
       // (run(): classical phis are completed per output edge).
+      if (any_of(cubes, [&](const std::vector<unsigned> &cb) {
+            return any_of(cb, [&](unsigned k) {
+              auto *def = dyn_cast<Instruction>(cands[k].v);
+              return def && !DT.dominates(def, b);
+            });
+          }))
+        guardsShortCircuit.insert(b);
       guards[b] = {cubes, skip};
       add(skip, inB & !conj);
       guardFacts.insert({b, inB & !conj});
@@ -2241,6 +2260,8 @@ void Walker::emitGuard(BasicBlock *b) {
   IRBuilder<> &B = ctx.B();
   sh.cur = &*b->getFirstNonPHIIt();
   Value *cond = nullptr;
+  // A literal not defined on every path (planGuards) is poison on the others: and/or would pass that on, a select does not.
+  const bool shortCircuit = guardsShortCircuit.count(b);
   for (const std::vector<unsigned> &cube : g->second.first) {
     Value *cc = nullptr;
     for (unsigned k : cube) {
@@ -2253,11 +2274,11 @@ void Walker::emitGuard(BasicBlock *b) {
                         : op.v;
       if (l.neg)
         v = B.CreateNot(v);
-      cc = cc ? B.CreateAnd(cc, v) : v;
+      cc = !cc ? v : shortCircuit ? B.CreateSelect(cc, v, B.getFalse()) : B.CreateAnd(cc, v);
     }
     if (!cc)
       cc = B.getTrue();
-    cond = cond ? B.CreateOr(cond, cc) : cc;
+    cond = !cond ? cc : shortCircuit ? B.CreateSelect(cond, B.getTrue(), cc) : B.CreateOr(cond, cc);
   }
   if (!cond)
     cond = B.getFalse();

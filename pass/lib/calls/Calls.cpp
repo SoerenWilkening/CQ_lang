@@ -1258,8 +1258,9 @@ Function *materialize(Module &M, const Specialization &S) {
     // CR §0: x86-64 only; inalloca and preallocated are the 32-bit Windows C++ ABI's.
     if (A.hasInAllocaAttr() || A.hasPreallocatedAttr())
       internalError("calls: an inalloca or preallocated formal (no x86-64 C function has one, CR §0)", &A);
-    // Rule 26: `sret` stays on the classical ptr formal, an ABI note.
-    if (!S.table && A.hasStructRetAttr() && NF->getArg(p)->getType()->isPointerTy())
+    // Rule 26: `sret` stays on the classical ptr formal, an ABI note. LLVM allows it only on a void return, so a clone
+    // that returns something (a _ctl clone's flags, the environment) has the plain pointer formal.
+    if (!S.table && A.hasStructRetAttr() && rt->isVoidTy() && NF->getArg(p)->getType()->isPointerTy())
       NF->addParamAttr(p, Attribute::getWithStructRetType(C, A.getParamStructRetType()));
     p += unsigned(fl[A.getArgNo()].leaves.size());
   }
