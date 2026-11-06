@@ -19,6 +19,7 @@
 #include <set>
 
 #include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
@@ -452,7 +453,7 @@ FnInfo &Analyzer::fn(const Function *F) {
       v.push_back(A);
   };
   for (const BasicBlock *A : info->rpo) {
-    SmallPtrSet<const BasicBlock *, 4> succs;
+    SmallSetVector<const BasicBlock *, 4> succs;
     for (const BasicBlock *S : successors(A))
       succs.insert(S);
     if (succs.size() < 2)

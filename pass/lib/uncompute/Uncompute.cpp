@@ -305,7 +305,7 @@ struct Uncompute::Impl {
   SmallVector<Instruction *, 16> versions;
   SmallVector<unsigned, 4> openStack;
   DenseSet<const Instruction *> emitted;
-  DenseMap<std::pair<RailId, const BasicBlock *>, Instruction *> itemEnd;
+  MapVector<std::pair<RailId, const BasicBlock *>, Instruction *> itemEnd;   // insertion order: keyed by a pointer
   // cq-ut4k: rails pending at the return being flushed whose definition does not dominate it (an arm
   // of a classical branch, often of a merge: a phi over arm-local handles), and the items placed for
   // them there, each run under its own selector (wrapArmItems).

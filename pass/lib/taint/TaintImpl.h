@@ -23,6 +23,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/LoopInfo.h"
@@ -140,7 +141,8 @@ struct SpecState {
   uint8_t fenvWrites = 0;  // facts this specialization (with its callees) may change: 1 mode, 2 flags
   // State before and after each instruction that reads or changes the environment (the dump).
   llvm::DenseMap<const llvm::Instruction *, std::pair<uint8_t, uint8_t>> fenvAt;
-  llvm::DenseMap<const llvm::CallBase *, llvm::SmallVector<SpecState *, 2>> callees;
+  // First-seen order, never pointer hash order: it orders the twins and so the module's functions (cq-fm68i).
+  llvm::MapVector<const llvm::CallBase *, llvm::SmallVector<SpecState *, 2>> callees;
 
   // Post-fixpoint.
   bool reachable = false;

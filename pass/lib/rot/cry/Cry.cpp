@@ -69,6 +69,7 @@
 #include "cq/Uncompute.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/CFG.h"
@@ -111,7 +112,7 @@ struct FnState {
   std::unique_ptr<DominatorTree> dt;     // over the original function
   const Function *orig = nullptr;
   std::vector<std::unique_ptr<Register>> regs;
-  DenseMap<const Value *, Register *> of;   // original cq_theta calls and phis -> register
+  MapVector<const Value *, Register *> of;   // original cq_theta calls and phis -> register, in insertion order
 };
 
 // One state per output function under construction; a WeakVH notices a reused address.

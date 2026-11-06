@@ -66,6 +66,7 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/IR/Dominators.h"
@@ -97,7 +98,8 @@ struct Shared {
   llvm::Function *orig = nullptr;      // S.F of the construct() run
   llvm::Function *out = nullptr;       // where the new IR goes
   llvm::IRBuilder<> B;
-  llvm::DenseMap<const llvm::Value *, llvm::SmallVector<Operand, 4>> binds;
+  // Insertion order, never pointer hash order: several walks over it emit (cq-fm68i).
+  llvm::MapVector<const llvm::Value *, llvm::SmallVector<Operand, 4>> binds;
   // CR §1.4: a variadic clone's block formal (calls::lowerVarargs stores it at llvm.va_start).
   llvm::SmallVector<Operand, 4> varargs;
   llvm::DenseMap<const llvm::BasicBlock *, llvm::BasicBlock *> blocks;
@@ -166,7 +168,7 @@ struct Shared {
     unsigned bits = 0;
     bool cell = false;
   };
-  llvm::DenseMap<const llvm::Value *, View> views;
+  llvm::MapVector<const llvm::Value *, View> views;   // insertion order, as binds
   llvm::DenseSet<const llvm::Value *> narrowSkipped;
   // cq-0umd (Views.cpp): rule 26 packed integers. A value bound field-wise as the fields of an ABI
   // coercion (159: struct { int, int } as one i64) maps here to its field boundaries in bits, low

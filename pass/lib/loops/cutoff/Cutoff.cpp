@@ -63,6 +63,7 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/LoopInfo.h"
@@ -472,10 +473,11 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     cont = cont | (local.find(l)->second & edgeCond(l, H));
   Pred regionCont = Pred::bottom();                               // region form
   if (regionForm)
-    for (const BasicBlock *r : region)
-      for (BasicBlock *s : successors(const_cast<BasicBlock *>(r)))
-        if (L.contains(s) && !region.count(s))
-          regionCont = regionCont | (local.find(r)->second & edgeCond(const_cast<BasicBlock *>(r), s));
+    for (const BasicBlock *r : L.blocks())   // the loop's order: a first edgeCond may number an atom
+      if (region.count(r))
+        for (BasicBlock *s : successors(const_cast<BasicBlock *>(r)))
+          if (L.contains(s) && !region.count(s))
+            regionCont = regionCont | (local.find(r)->second & edgeCond(const_cast<BasicBlock *>(r), s));
 
   // Values of the loop read after it, and the exit-block phis identified with a header phi.
   std::vector<PHINode *> hphis;
@@ -2046,7 +2048,8 @@ Unit unitOf(const Loop &L) {
     // one with an effect is a noreturn arm (rule 16), run per trip under its exit flag.
     bool live = false, effect = false;
     SmallVector<BasicBlock *, 8> work{x};
-    SmallPtrSet<BasicBlock *, 8> seen{x};
+    SmallSetVector<BasicBlock *, 8> seen;   // found order: U.dead comes out in it
+    seen.insert(x);
     while (!work.empty() && !live) {
       BasicBlock *b = work.pop_back_val();
       if (L.contains(b) || isa<ReturnInst>(b->getTerminator())) {
@@ -2062,7 +2065,7 @@ Unit unitOf(const Loop &L) {
           effect = true;
       }
       for (BasicBlock *s : successors(b))
-        if (seen.insert(s).second)
+        if (seen.insert(s))
           work.push_back(s);
     }
     if (live) {

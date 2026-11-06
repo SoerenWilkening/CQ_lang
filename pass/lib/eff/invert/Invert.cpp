@@ -51,6 +51,7 @@
 #include "cq/Uncompute.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Dominators.h"
@@ -432,7 +433,7 @@ bool splitFunction(Function &F, const TaintInfo &T) {
   for (BasicBlock *b : orig) {
     if (in[b].size() < 2)
       continue;
-    std::map<Instruction *, std::vector<std::pair<int, Instruction *>>> ends;   // orig end -> (depth, copy)
+    MapVector<Instruction *, std::vector<std::pair<int, Instruction *>>> ends;   // orig end -> (depth, copy), in program order
     for (int s : in[b]) {
       BasicBlock *cb = copy[{b, s}];
       int d = s;
