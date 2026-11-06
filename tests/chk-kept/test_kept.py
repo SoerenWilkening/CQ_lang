@@ -3,7 +3,8 @@
 
 Each GOOD program is green under `cqcheck user`: a no-twin clone's {res, flags} result (rule 18; q1, q4b, q4c), the
 dispatch's final copy-out (rule 19; q3), a no-twin table clone's result through its pop-only twin (§1.4; e_rail, r3).
-Each MUTANT is a real leak of that shape, and must be rejected by the leak rule, not merely rejected.
+Each MUTANT is a real leak of that shape, and must be rejected by the leak rule, not merely rejected (rule24_*: by the
+effect comparison).
 """
 import argparse
 import re
@@ -83,6 +84,9 @@ MUTANTS = [
     # a classical-path measurement leaves the twin (Q3, rulings3 E): this `_t` is off the no-twin list
     ("t14_empty_twin_classical_measure", CALLS / "table_twin_measure", "e_cl", lambda t: empty_twin("__cq_q_g_11_t_unc", t)),
     ("rule19_second_copy", SRC / "q3", "q3", second_copy),
+    # both sides log a plain observable volatile store (cq-g4oj): one lost is an effect lost
+    ("rule24_lost_volatile_store", ROOT / "tests" / "eff-conc" / "probes" / "conc_widen", "p_vol_atomic",
+     lambda t: sub1(r"  store atomic volatile i32 %\d+, ptr @vcell seq_cst, align 4\n", "", t)),
 ]
 
 
@@ -119,7 +123,7 @@ def main():
             low = lower(stem, tmp)
             low.write_text(mutate(low.read_text()))
             rc, text = user(stem, low, entry)
-            good = rc == 1 and "a leak; cq-tt2j" in text
+            good = rc == 1 and (("host effects differ" if name.startswith("rule24") else "a leak; cq-tt2j") in text)
             print(("ok   " if good else "FAIL ") + f"mutant {name}" + ("" if good else f": exit {rc}: " + text.strip()[-400:]))
             bad += not good
     print("FAILED" if bad else "ok")

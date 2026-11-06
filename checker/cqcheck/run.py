@@ -533,7 +533,8 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
         if touches_fenv(canon):  # cq-6ady
             tot = default_env_module(tot)
         if any(Path(o).name == "host_fx.o" for o in objs):  # cq-e4jk; a test's restricted runtime may omit it
-            tot = host_effects_module(tot, defined)
+            from cqcheck import drivers as _drv
+            tot = _drv.volatile_stores_module(host_effects_module(tot, defined))
         tot = ctl_measures_module(kept_results_module(kept_copies_module(tot), handle_returning_fns(canon)))
         from cqcheck import drivers
         tot += drivers.out_globals_ir(ctext if ctext is not None else canon, canon, "__cqe_out_globals",
