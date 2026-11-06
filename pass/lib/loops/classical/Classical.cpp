@@ -2856,6 +2856,18 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       for (PHINode *P : xphis) {
         PHINode *np = PHINode::Create(isQ(P) ? handleTy(Cx) : P->getType(), 2, P->getName(), T->begin());
         nps.push_back(np);
+        // Rule 9: an incoming from outside the unit on a quantum edge that excludes the loop (a pre-header guard): the
+        // walker selects it in over this binding, where its edge holds; a classical skip is its classical join.
+        if (isQ(P)) {
+          const Pred hb = ctx.preds().block(header);
+          const Pred cH = hb.classicalFactor(ctx.T, ctx.S);
+          for (unsigned i = 0; i < P->getNumIncomingValues(); ++i) {
+            BasicBlock *u = P->getIncomingBlock(i);
+            const Pred &e = ctx.preds().edge(u, P->getParent());
+            if (!inUnit(u) && !(e & cH).isBottom() && (e & hb).isBottom())
+              ctx.addJoinArm(P, e, P->getIncomingValue(i));
+          }
+        }
       }
       exitIndex = PHINode::Create(Type::getInt32Ty(Cx), 2, "exit", T->begin());
       unsigned k = 0;
@@ -2877,6 +2889,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
                                      {o.handle ? Constant::getNullValue(irTypeOf(Cx, w)) : o.v});
           if (o.handle)
             U.noteUse(U.idOf(o.v), ctx.emitCore(abi::CoreSpec{abi::Core::Copy, w}, {o.v, f}));
+          U.recordExternal(f, Role::Output);
           nps[j]->addIncoming(f, Eb);
         }
         exitIndex->addIncoming(ConstantInt::get(Type::getInt32Ty(Cx), k++), Eb);
