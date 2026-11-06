@@ -29,6 +29,7 @@
 #include "cq/Abi.h"
 #include "cq/Calls.h"
 #include "CallsInternal.h"
+#include "LibCalls.h"
 #include "cq/Common.h"
 #include "../spine/SpineInternal.h"
 
@@ -789,6 +790,7 @@ static void dropFacts(Function &F) {
 }
 
 void finalize(Module &M) {
+  restoreHostPatterns(M);
   auto lowered = [](Function &F) {
     for (Instruction &I : instructions(F))
       if (auto *CB = dyn_cast<CallBase>(&I))

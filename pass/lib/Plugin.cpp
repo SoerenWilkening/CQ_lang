@@ -28,6 +28,7 @@
 #include "cq/Loops.h"
 #include "cq/Taint.h"
 #include "cq/Verify.h"
+#include "calls/LibCalls.h"
 #include "eff/conc/Setjmp.h"
 #include "eff/invert/Split.h"
 #include "loops/cutoff/Exits.h"
@@ -469,6 +470,9 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
       return PreservedAnalyses::all();
 
     FunctionAnalysisManager &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
+
+    // 0. Rules 16, 22, 24: library calls that are memory operations under another name (calls/LibCalls.h).
+    cq::calls::canonicalizeLibCalls(M);
 
     // 1. Preliminary taint. Read only for isTainted(F): which functions step 2 may touch.
     trace("taint: preliminary");
