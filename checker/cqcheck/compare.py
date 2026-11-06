@@ -170,7 +170,10 @@ outputs["mem"] entries themselves. One in a run's outputs["regions"] ({"name", "
 allocation arena "heap" and the "stack") reads as ("heap", offset from lo) against the reference,
 and as the one class "<mem>" against the C oracle, where a local lives on the stack that lives in the
 arena on our side. Every other value is itself. So a kept rail or a cell holding the address of
-another object than the reference's differs, and so does one holding a data word.
+another object than the reference's differs. In a named output a word is a pointer only where both
+sides read it as one: anywhere else it is data compared byte for byte (cq-6b2cc), so an integer that
+happens to lie in one run's arena equals the same integer on the other side, and differs from any other
+value, a real pointer of that side included.
 
 Host output (cq-e4jk; CR rule 16 and §1.3). outputs["stdout"] (str, missing = "") and
 outputs["effects"] (missing = []) on every side: what the run printed and the host-effect calls it
@@ -2091,38 +2094,37 @@ def _mem_bytes(m: Dict[str, Any]) -> int:
     return (b + 7) // 8
 
 
-def _memory(rr: RunResult, against: str) -> Dict[Tuple[str, int], Any]:
-    """The named outputs of one run: (name, byte offset) -> the byte, or, at an aligned word that holds a
-    pointer of this run (module docstring), its relational token at the word's offset and None at the
-    other seven bytes."""
+def _memory(rr: RunResult, against: str) -> Tuple[Dict[Tuple[str, int], int], Dict[Tuple[str, int], Any]]:
+    """The named outputs of one run: (name, byte offset) -> the byte, and (name, word offset) -> the
+    relational token of each aligned word that reads as an address of this run (module docstring)."""
     out = rr.outputs if isinstance(rr.outputs, dict) else {}
     table = _addr_table(rr)
     addr_of = {o["name"]: _int(o["addr"]) for o in out.get("objects", [])}
-    cells: Dict[Tuple[str, int], Any] = {}
+    cells: Dict[Tuple[str, int], int] = {}
+    words: Dict[Tuple[str, int], Any] = {}
     for m in out.get("mem", []):
         name, off, n = m["name"], int(m.get("off", 0)), _mem_bytes(m)
         val = _int(m["v"]) or 0
         base = _int(m["addr"]) if "addr" in m else addr_of.get(name)
         if base is not None:
-            base += int(m.get("off", 0))
-        i = 0
-        while i < n:
+            base += off
+        for i in range(n):
+            cells[(name, off + i)] = (val >> (8 * i)) & 0xFF
             if base is not None and (base + i) % 8 == 0 and i + 8 <= n:
                 word = (val >> (8 * i)) & ((1 << 64) - 1)
                 tok = _addr_token(word, table, against)
                 if tok != word:
-                    cells[(name, off + i)] = tok
-                    for j in range(1, 8):
-                        cells[(name, off + i + j)] = None
-                    i += 8
-                    continue
-            cells[(name, off + i)] = (val >> (8 * i)) & 0xFF
-            i += 1
-    return cells
+                    words[(name, off + i)] = tok
+    return cells, words
 
 
 def _memory_reasons(k: str, o: RunResult, r: RunResult, against: str) -> List[str]:
-    co, cr = _memory(o, against), _memory(r, against)
+    (co, wo), (cr, wr) = _memory(o, against), _memory(r, against)
+    # a word is a pointer only where both sides read it as one; anywhere else its bytes decide (cq-6b2cc)
+    for (name, off) in wo.keys() & wr.keys():
+        for j in range(1, 8):
+            co[(name, off + j)] = cr[(name, off + j)] = None
+        co[(name, off)], cr[(name, off)] = wo[(name, off)], wr[(name, off)]
     if co == cr:
         return []
     names = sorted({n for n, _ in co} | {n for n, _ in cr})
