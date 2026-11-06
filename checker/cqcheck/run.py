@@ -1290,7 +1290,7 @@ def kept_results_module(text: str, handle_fns: Sequence[str]) -> str:
            and not re.search(rf"(?m)^(?:define|declare)\b[^@\n]*@\"?{re.escape(f)}_unc\"?\(", text)}
     if not keep and not own:
         return text
-    out, used, cur = [], False, None
+    out, used, cur, nkept = [], False, None, 0
     for line in text.splitlines():
         if line.startswith("define"):
             m = DEFINE_NAME.match(line)
@@ -1306,8 +1306,15 @@ def kept_results_module(text: str, handle_fns: Sequence[str]) -> str:
             continue
         out.append(line)
         m = _HANDLE_CALL.match(line)
-        if m and m.group(4) in own and re.match(r"^\s+\S+ = (?:tail |notail )?call (?:[^@]*\s)?i32 @", line):
+        ty = re.match(r"^\s+\S+ = (?:tail |notail )?call (?:[^@]*\s)?i(\d+) @", line) if m and m.group(4) in own else None
+        if ty and int(ty.group(1)) == 32:
             out.append(f"{m.group(1)}call void @cqe__set_store_kept(i32 {m.group(2)})")
+            used = True
+        elif ty and int(ty.group(1)) > 32:
+            # rule 19: the C return type when an integer of 32 bits or more, the handle zero-extended (162, 193; strlen's i64)
+            nkept += 1
+            out.append(f"{m.group(1)}%cqe.own.{nkept} = trunc i{ty.group(1)} {m.group(2)} to i32")
+            out.append(f"{m.group(1)}call void @cqe__set_store_kept(i32 %cqe.own.{nkept})")
             used = True
     if used and "declare void @cqe__set_store_kept" not in text:
         out.append("declare void @cqe__set_store_kept(i32)")
