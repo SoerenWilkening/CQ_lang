@@ -615,7 +615,7 @@ void defineTwin(Module &M, Function &twin, Function &src) {
 }
 
 // The table twins of the module that leave the results allocated, by symbol (defineTableClones).
-std::set<std::string> keepsResults;
+std::set<std::string> keepsResults, popsMints;
 
 // §1.4: a table twin. For a function rule 18 gives no twin it does nothing but count its activation and pop; otherwise it
 // is rule 18's twin that frees the results it zeroes.
@@ -632,6 +632,24 @@ void defineTableTwin(Module &M, Function &twin, Function &fwd) {
       B.CreateStore(B.CreateAdd(d, ConstantInt::get(i32, 1)), act);
       Value *n = B.CreateLoad(i32, act);
       B.CreateStore(B.CreateAdd(n, ConstantInt::get(i32, -1, true)), act);
+    }
+    if (popsMints.count(twin.getName().str())) {
+      // The count of registers the clone pushed, then the handles (§1.4, rulings3 F).
+      Type *i32 = Type::getInt32Ty(C);
+      FunctionCallee pop = abi::declare(M, abi::CoreSpec{abi::Core::Pop});
+      BasicBlock *entry = B.GetInsertBlock(), *head = BasicBlock::Create(C, "", &twin), *body = BasicBlock::Create(C, "", &twin),
+                 *done = BasicBlock::Create(C, "", &twin);
+      Value *count = B.CreateCall(pop);
+      B.CreateBr(head);
+      B.SetInsertPoint(head);
+      PHINode *n = B.CreatePHI(i32, 2);
+      n->addIncoming(count, entry);
+      B.CreateCondBr(B.CreateICmpEQ(n, ConstantInt::get(i32, 0)), done, body);
+      B.SetInsertPoint(body);
+      B.CreateCall(pop);
+      n->addIncoming(B.CreateSub(n, ConstantInt::get(i32, 1)), body);
+      B.CreateBr(head);
+      B.SetInsertPoint(done);
     }
     B.CreateRetVoid();
     twin.setLinkage(GlobalValue::InternalLinkage);
@@ -661,6 +679,7 @@ void defineTableTwin(Module &M, Function &twin, Function &fwd) {
 void defineTableClones(Module &M) {
   std::vector<TableRow> rows = takeTableRows(M);
   keepsResults.clear();
+  popsMints.clear();
   if (rows.empty())
     return;
   LLVMContext &C = M.getContext();
@@ -692,6 +711,10 @@ void defineTableClones(Module &M) {
       keepsResults.insert(tu->getName().str());
     if (r.ctlKeepsResults)
       keepsResults.insert(tcu->getName().str());
+    if (r.forwardPopsMints)
+      popsMints.insert(tu->getName().str());
+    if (r.ctlPopsMints)
+      popsMints.insert(tcu->getName().str());
     B.CreateCall(add, {fn, sigString(M, r.type), t, tc, tu, tcu});
   }
   B.CreateRetVoid();

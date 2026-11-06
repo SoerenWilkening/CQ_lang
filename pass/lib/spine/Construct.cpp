@@ -1468,6 +1468,7 @@ void Walker::emitCloneReturn(ReturnInst *ret) {
   ArrayRef<calls::MintSlot> mints = calls::mintSites(ctx.T, ctx.S);
   if (ctx.S.table) {
     // §1.4: a table clone pushes the registers it minted, its twin pops them.
+    calls::pushListedMints(ctx);
     for (const calls::MintSlot &site : mints) {
       CallInst *p = ctx.emitCore(abi::CoreSpec{abi::Core::Push}, {calls::mintHandle(ctx, site)});
       p->setMetadata("cq.mint.push", MDNode::get(ctx.M.getContext(), {}));

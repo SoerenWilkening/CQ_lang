@@ -119,6 +119,7 @@ struct SpecState {
   bool hasCall = false;   // Q2: a call for rule 19's own-lowering test
   bool busLoad = false, busLoadT = false;   // rule 18: a bus load, itself / transitively
   bool taintedMeasure = false, readsEffect = false, noTwinT = false;   // rule 18, Q3: what forbids a twin besides a write
+  bool rotatesPerTrip = false;   // rule 18 (rulings3 F): registers no finite extras list holds, itself / through a result it reads
   // Rule 16: the effect entries (format entries included) of this specialization; the events a later host call of
   // its function may not overtake are these and the calls of callees with an event.
   llvm::DenseSet<const llvm::CallBase *> effectEntries;

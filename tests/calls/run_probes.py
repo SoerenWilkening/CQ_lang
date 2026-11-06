@@ -181,6 +181,18 @@ CASES = [
     ("twin_register_kinds", "l3", [], "pass", []),
     ("twin_register_kinds", "l4", [], "pass", []),
     ("twin_register_kinds", "l5", [], "pass", []),
+    # Rule 18 (rulings3 F): a rotation in a loop of a by-name callee: no twin of it, of its caller that reads its result either, the
+    # results KEPT. Through a rail: _t lists a register per trip, pushes them at its return after its reverse loop, the twin only
+    # pops. r3 lowers: its _t_ctl result is KEPT by the ruling; cqcheck user calls that kept rail a leak, as for e_rail above.
+    ("twin_rot_in_loop", "r1", [], "pass", [r"\A(?![\s\S]*@__cq_q_f_1_unc)"]),
+    ("twin_rot_in_loop", "r2", [], "pass", [r"\A(?![\s\S]*@__cq_q_g_1_unc)(?![\s\S]*@__cq_q_f_1_unc)"]),
+    ("twin_rot_in_loop", "r3", [], "lower", [
+        r"define internal i32 @__cq_q_h_1_t\((?:(?!\n}\n)[\s\S])*alloca \{ i32, ptr \}(?:(?!\n}\n)[\s\S])*call void @__cq_mints_push",
+        r"define internal void @__cq_q_h_1_t_unc\((?:(?!\n}\n|cqrt_ry|_unc\()[\s\S])*call i32 @cqrt_pop\(\)(?:(?!\n}\n|cqrt_free)[\s\S])*\n}\n"]),
+    # Rule 16 (rulings3 H): a by-name callee of a table clone is called after an event, its own symbol's path included.
+    ("table_called_after", "m1", [], "pass", [r"define internal fastcc i32 @g\((?:(?!\n}\n)[\s\S])*@\.cq\.effect\.srand",
+                                              r"define i32 @m1\((?:(?!\n}\n)[\s\S])*@\.cq\.effect\.srand"]),
+    ("table_called_after", "m2", [], "pass", [r"define internal fastcc i32 @__cq_q_g2_1\((?:(?!\n}\n)[\s\S])*@\.cq\.effect\.rand"]),
 ]
 
 
