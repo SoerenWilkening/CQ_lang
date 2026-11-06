@@ -35,6 +35,10 @@ CASES = [
     # CR rule 18 twin point (cq-4lqy): a live result of a clone call is copied out before the twin (was: 'a call
     # whose results are partly kept').
     ("copy_out", "co", [], "pass", [r"call void @__cq_q_two_1_unc"]),
+    # CR rules 5 (sentence 3), 14: rails kept-stored in or around a loop (cq-mmdf3, cq-gr5vw, cq-ii0vf).
+    *[("stored_loops", e, [], "pass", []) for e in (
+        "sl_each", "sl_each_rot", "sl_each_meas", "sl_phi", "sl_walk", "sl_before", "sl_after", "sl_in", "sl_guard",
+        "sl_trip", "sl_acc", "sl_phi_some", "sl_kloop", "sl_arm", "sl_arm_false")],
     # CR §1.3 (cq-4lqy): a POP kept on some paths keeps the earlier POPs and the bus on the same paths.
     # kp, kq (a measured merge whose arm t is measured again as t * 7): bead cq-g72r (rule 2 collapse of t * 7 where
     # the merge measured t); listed once it is fixed.

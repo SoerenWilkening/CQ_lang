@@ -376,6 +376,7 @@ private:
   // cq-pfpy: a composite phi's value per field at a mixed join's real edge (rule 26 over rule 9).
   DenseMap<std::pair<const PHINode *, const BasicBlock *>, SmallVector<Operand, 4>> edgeFieldsM;
 
+  bool readersKeep(const Value *v);
   bool isQ(const Value *v) {
     if (isa<Constant>(v) || isa<BasicBlock>(v) || isa<MetadataAsValue>(v))
       return false;
@@ -1430,8 +1431,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       auto [v, q] = inits[k++];
       PHINode *np = ctx.B().CreatePHI(q ? handleTy(ctx.M.getContext()) : v->getType(), 2, p.getName());
       np->addIncoming(v, entryFrom);
-      if (q)
+      if (q) {
         ctx.unc().recordExternal(np, Role::UserRegister);
+        if (!r6Of(&p))
+          ctx.unc().noteCarried(np);
+      }
       if (ctx.bound(&p))
         ctx.rebind(&p, {Operand{np, q}});   // the spine's classical choice of several starts (its operand above)
       else
@@ -3013,7 +3017,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       // is a record of the loop's own copy scope, an exit rail read in place after the loop, and the deferred reverse
       // un-copies it first (reverse(): the copy scope's mirror before the last trip's). A reader that keeps it (a measurement,
       // an escape) is recordDeferred's kept exit rail.
-      bool scoped = nested || inTrip || !exits.empty();
+      // The same for a copy some reader only computes from (cq-ii0vf: a trip's join of handles, read by a template): rule 5
+      // uncomputes it after that reader, and nothing can once the reverse has run.
+      bool scoped = nested || inTrip || !exits.empty() || !readersKeep(v);
       if (scoped && copyScope == ~0u)
         copyScope = U.openScope();   // closed after the last copy (below)
       RailId fid = ctx.unc().recordSeed(f);
@@ -3114,6 +3120,33 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     return {};
   }
   return out;
+}
+
+// Is v read after the loop only by what keeps its rail (rule 5, §6 item 1): a measurement, a return, the value of a store?
+bool Unit::readersKeep(const Value *v) {
+  SmallVector<const Value *, 4> work{v};
+  SmallPtrSet<const Value *, 8> seen{v};
+  while (!work.empty()) {
+    const Value *x = work.pop_back_val();
+    for (const User *u : x->users()) {
+      auto *ui = dyn_cast<Instruction>(u);
+      if (!ui || top.contains(ui))
+        continue;
+      if (auto *P = dyn_cast<PHINode>(ui)) {
+        if (seen.insert(P).second)
+          work.push_back(P);
+        continue;
+      }
+      if (isa<ReturnInst>(ui))
+        continue;
+      if (auto *st = dyn_cast<StoreInst>(ui); st && st->getValueOperand() == x)
+        continue;
+      if (auto *CB = dyn_cast<CallBase>(ui); CB && calls::classify(*CB, ctx.T, ctx.S) == calls::Class::Measure)
+        continue;
+      return false;
+    }
+  }
+  return true;
 }
 
 // ---- the reverse --------------------------------------------------------------------------------
@@ -3545,6 +3578,14 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
     R[i] = newBlock();
   Instruction *anchor = nullptr;   // a reverse instruction for the uses of the external initial rails
 
+  // cq-h5uj: the copies of the exit values are undone first (they read the last trip's rails, a trip's merge's arms included).
+  BasicBlock *copyBlock = nullptr;
+  if (copyScope != ~0u) {
+    copyBlock = newBlock();
+    IRBuilder<> Bc(copyBlock);
+    U.emitMirror(copyScope, Bc);
+  }
+
   for (unsigned i = n; i-- > 0;) {
     IRBuilder<> B(R[i]);
     U.emitMirror(segs[i].scope, B);
@@ -3609,7 +3650,6 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
   // loop ran: the value "the loop's exit block was passed" (false at the function's entry, true at
   // X), read at the start of the item.
   BasicBlock *join = nullptr;
-  BasicBlock *copyBlock = nullptr;
   BasicBlock *guardBlock = BX.GetInsertBlock();
   {
     BasicBlock *start;
@@ -3631,12 +3671,8 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
       }
       start = R[segOf.lookup(exitSeg)];
     }
-    if (copyScope != ~0u) {
-      // cq-h5uj: the copies of the exit values are undone first (they read the last trip's rails).
-      copyBlock = newBlock();
-      IRBuilder<> Bc(copyBlock);
-      U.emitMirror(copyScope, Bc);
-      Bc.CreateBr(start);
+    if (copyBlock) {
+      BranchInst::Create(start, copyBlock);
       start = copyBlock;
     }
     Value *ran = ConstantInt::getTrue(C);
