@@ -312,7 +312,8 @@ private:
   DenseMap<const BasicBlock *, SmallVector<InEdge, 2>> inEdges;
   void noteIn(const BasicBlock *from, const BasicBlock *to, Loop *unit = nullptr);
   Value *factoredMerge(PHINode &phi);
-  void joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in);
+  void joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in, const BasicBlock *tailHead = nullptr);
+  DenseSet<const Loop *> tailJoined;
   bool eligible(const BasicBlock *y, const BasicBlock *from) const;
   BasicBlock *out(const BasicBlock *b);
   SmallVector<Operand, 4> aggregateFields(ReturnInst *ret, Value *rv);
@@ -691,6 +692,8 @@ void Walker::planGuards() {
             continue;
           if ((inB & cf & l.p).isBottom() && (inB & cf & !l.p).isBottom())
             continue;
+          if (!predReads(cf, l.p))
+            continue;   // no term of the factor: splitting on it only multiplies the cubes
           atoms.push_back(k);
         }
         cubes.clear();
@@ -1143,9 +1146,9 @@ void Walker::tailMerge(PHINode &phi) {
     ctx.bindFields(&phi, out);
 }
 
-void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in) {
+void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in, const BasicBlock *tailHead) {
   const BasicBlock *b = phi.getParent();
-  BasicBlock *join = out(b);
+  BasicBlock *join = out(tailHead ? tailHead : b);
   // CR rules 9, 26: the unit may bind phi as several fields, joined field by field: a composite's scalar leaves; a
   // scalar is one field.
   SmallVector<Operand, 4> unitVals = ctx.fields(&phi);
@@ -1193,7 +1196,7 @@ void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in) {
     SmallVector<unsigned, 2> cands;
     for (unsigned i = 0; i < phi.getNumIncomingValues(); ++i) {
       const BasicBlock *u = phi.getIncomingBlock(i);
-      if (!idx.count(u) || unitOf.count(u) || (ctx.preds().edge(u, b) & F).isBottom())
+      if (!idx.count(u) || unitOf.count(u) || (tailHead && tailOf.count(u)) || (ctx.preds().edge(u, b) & F).isBottom())
         continue;
       if (none_of(cands, [&](unsigned k) { return phi.getIncomingValue(k) == phi.getIncomingValue(i); }))
         cands.push_back(i);
@@ -1968,6 +1971,25 @@ void Walker::emitBlock(BasicBlock *b) {
       for (BasicBlock *tb : units.find(t)->second.tail)
         for (Instruction &I : *tb)
           sh.binds.erase(&I);
+    // The unit's binding of C's phis exists only on the unit's output edge. Where other classical paths meet it at the
+    // tail's first block, the phi is joined here: the unit's value, on another edge the incomings its facts admit
+    // (those of the tail come later: the join arms over this value), a |0> seed when none (cq-sp09w: __fwritex).
+    if (auto ie = inEdges.find(b); ie != inEdges.end() && ie->second.size() > 1 &&
+                                   any_of(ie->second, [&](const InEdge &e) { return e.unit == t; }) &&
+                                   tailJoined.insert(t).second) {
+      SmallVector<InEdge, 2> in;
+      for (const InEdge &e : ie->second) {
+        in.push_back(e);
+        if (e.unit == t && units.find(t)->second.cont)
+          for (PHINode &phi : units.find(t)->second.cont->phis())
+            if (auto bi = sh.binds.find(&phi); bi != sh.binds.end())
+              in.back().unitFields[&phi] = SmallVector<Operand, 4>(bi->second.begin(), bi->second.end());
+      }
+      if (BasicBlock *C = units.find(t)->second.cont)
+        for (PHINode &phi : C->phis())
+          if (unitBoundPhis.count(&phi) && spine::isQ(ctx, &phi))
+            joinUnitPhi(phi, in, b);
+    }
   }
 
   if (unitOf.count(b)) {
