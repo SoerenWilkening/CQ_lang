@@ -112,6 +112,9 @@ struct Shared {
   std::vector<bool> gateLogOpen;
   // Rule 2: rail handle -> (the original cq_measure call, the classical outcome).
   llvm::DenseMap<const llvm::Value *, std::pair<const llvm::Instruction *, llvm::Value *>> measured;
+  // Rules 2, 14 (owner, cq-2z29a): a loop-carried value's rail once measured: it stays the value every template of the trip reads (its next value,
+  // the exit test), and only a cq_measure of it, or of a rail computed from it, is a classical re-read (classicalRead).
+  llvm::DenseSet<const llvm::Value *> carriedMeasured;
   // cq-ihlt (Collapse.cpp): a rail passed to a rule 18 clone whose callee measures that formal. `call`
   // is the original call; `out` the last instruction the call's lowering emitted (the re-read goes right
   // after it), nullptr when the lowering ended at the start of `endBlock`; `arg` the original actual,

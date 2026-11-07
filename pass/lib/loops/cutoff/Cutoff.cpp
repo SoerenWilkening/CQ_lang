@@ -1707,14 +1707,14 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         continue;
       }
       Operand cur = ctx.operand(h);
-      if (!cur.handle)
-        internalError("loops-cutoff: a quantum carried value with no rail", h);
+      // A carried value this trip measured reads as its outcome (rule 2; owner, cq-2z29a: once per trip): where the trip predicate is 0 it
+      // keeps that literal.
       if (nx.handle && nx.v == cur.v)
         continue;
       abi::TemplateSpec spec;
       spec.op = "select";
       spec.w = railOf(h->getType());   // R2: the tag rail
-      std::string shape = std::string(nx.handle ? "h" : "l") + "h";
+      std::string shape = std::string(nx.handle ? "h" : "l") + (cur.handle ? "h" : "l");
       spec.shape = shape == "hh" ? "" : shape;
       Value *sel = ctx.emitTemplate(spec, {Operand{q, true}, nx, cur});
       set(h, Operand{sel, true});

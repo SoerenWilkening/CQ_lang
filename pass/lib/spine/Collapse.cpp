@@ -140,9 +140,9 @@ enum Cls : uint8_t { No = 0, Classical = 1, Measured = 2 };
 // cq-ihlt: `assumed` (when given) collects the rails a clone call measured that the classification
 // treats as measured: a rail noted in Shared::calleeMeasured whose clone call is before the builder's
 // point.
-Cls classify(Shared &sh, Value *h, DenseMap<Value *, Cls> &memo, SetVector<Value *> *assumed = nullptr) {
+Cls classify(Shared &sh, Value *h, DenseMap<Value *, Cls> &memo, SetVector<Value *> *assumed = nullptr, bool forRead = false) {
   if (outcomeAt(sh, h))
-    return Measured;
+    return forRead || !sh.carriedMeasured.count(h) ? Measured : No;
   if (assumed) {
     auto cm = sh.calleeMeasured.find(h);
     if (cm != sh.calleeMeasured.end() && sh.dominatesCurrent(cm->second.call) &&
@@ -163,7 +163,7 @@ Cls classify(Shared &sh, Value *h, DenseMap<Value *, Cls> &memo, SetVector<Value
     return No;
   Cls c = Classical;
   auto join = [&](Value *v, const Instruction *at) {
-    Cls k = staleRead(sh, v, at) ? No : classify(sh, v, memo, assumed);
+    Cls k = staleRead(sh, v, at) ? No : classify(sh, v, memo, assumed, forRead);
     c = k == No || c == No ? No : std::max(c, k);
   };
   if (r.tmpl) {
@@ -528,6 +528,12 @@ Value *recompute(LoweringContext &ctx, Value *h) {
                 b->second.front().v == h;
       if (auto *cb = dyn_cast<CallBase>(oi))
         viaOrig &= cb->getCalledFunction() && cb->getCalledFunction()->isIntrinsic();
+      // An operand still a rail where it is read (a loop-carried measured value's, ctx.operand gives the rail): the record reads it
+      // through recompute instead.
+      if (viaOrig)
+        for (const Use &u : oi->operands())
+          if (!isa<BasicBlock, MetadataAsValue>(u.get()) && ctx.operand(u.get()).handle)
+            viaOrig = false;
     }
     if (viaOrig && isa<ConstrainedFPIntrinsic>(oi))
       v = fromConstrained(ctx, r, *cast<ConstrainedFPIntrinsic>(const_cast<Instruction *>(oi)));
@@ -622,13 +628,15 @@ Value *classicalRead(LoweringContext &ctx, Value *handle) {
   if (Value *m = outcomeAt(sh, handle))
     return m;
   DenseMap<Value *, Cls> memo;
-  if (classify(sh, handle, memo) == No)
+  if (classify(sh, handle, memo, nullptr, /*forRead=*/true) == No)
     return nullptr;
   return recompute(ctx, handle);
 }
 
 Value *collapse(LoweringContext &ctx, Value *handle) {
   Shared &sh = shared(ctx);
+  if (sh.carriedMeasured.count(handle))
+    return nullptr;
   if (Value *m = outcomeAt(sh, handle))
     return m;
   DenseMap<Value *, Cls> memo;

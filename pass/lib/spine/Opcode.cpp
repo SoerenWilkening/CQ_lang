@@ -599,6 +599,9 @@ void lowerMeasure(LoweringContext &ctx, CallInst &call) {
   if (every)
     ctx.unc().setRole(ctx.unc().idOf(x.v), Role::Measured);
   spine::shared(ctx).measured[x.v] = {&call, m};
+  if (auto *cp = dyn_cast<PHINode>(call.getArgOperand(0));
+      cp && any_of(cp->blocks(), [&](const BasicBlock *u) { return spine::shared(ctx).dt(*cp->getFunction()).dominates(cp->getParent(), u); }))
+    spine::shared(ctx).carriedMeasured.insert(x.v);
   spine::bindOperand(ctx, &call, Operand{m, false});
 }
 
