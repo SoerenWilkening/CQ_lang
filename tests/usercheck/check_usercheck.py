@@ -30,7 +30,7 @@ Fails on any of:
             with its a_K dropped or a garbage rail beside it (cq-rdsdj); a K-loop behind a function pointer with its a_K
             dropped (cq-2in7d); a classical unpaired longjmp's second return wrong (cq-li3wr); rule 19's host complement with
             the callee swapped (cq-d9vhj); rule 23's final flags rail wrong or with a second rail like it (cq-f8m9n); a
-            literal adjacent in the link with other bytes (cq-l1fc8); a read through a pointer one past an object's end with another object after it, wrong byte (cq-985fi); a switch whose default is `unreachable`, a wrong arm (cq-by8qu). --rv3 runs this group alone
+            literal adjacent in the link with other bytes (cq-l1fc8); a read through a pointer one past an object's end with another object after it, wrong byte (cq-985fi); a switch whose default is `unreachable`, a wrong arm (cq-by8qu); exit(c) on a classical path, its effect entry's status or abort wrong (cq-byjad). --rv3 runs this group alone
   error     a missing entry or main(argc, argv) is not an error (exit 2)
 
 Every run goes through the CLI (`python3 -m cqcheck user` from checker/), as cqcc --cq-check runs it.
@@ -258,6 +258,9 @@ RV3 = {
     "vaovf": [],
     # cq-by8qu: the inputs that reach `unreachable` are outside the domain; the wrong arm of the others is rejected
     "unreach": [("wrong_arm", r"cq_template_xor_i8_hl\(i32 %2, i8 5\)", "cq_template_xor_i8_hl(i32 %2, i8 6)")],
+    # cq-byjad: rule 16's effect entry of a noreturn call with a rail argument; a wrong status field, no abort
+    "exitrail": [("wrong_status", r"cqrt_tape_write_i32\(i32 %2, i32 %11\)", "cqrt_tape_write_i32(i32 %2, i32 %12)"),
+                 ("no_abort", r"  call void @cqrt_abort_i1\(i32 %12\)\n", "")],
     "2in7d": [("no_ak", r"  call void @cqrt_and_i1\(i32 %40, i32 %48, i32 %49\)\n", ""),
               ("no_xor", r"cq_template_xor_i32_hl\(", "cq_template_or_i32_hl(")],
     "li3wr": [("second_return", r"cq_template_add_i32_hl\(i32 %4, i32 6\)", "cq_template_add_i32_hl(i32 %4, i32 7)")],

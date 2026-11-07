@@ -2568,6 +2568,31 @@ def _deviated(o: RunResult) -> bool:
     return bool((o.outputs or {}).get("deviation"))
 
 
+_EXITS = ("exit", "_exit", "_Exit")
+
+
+def _without_exit_entry(o: RunResult, c: RunResult, nf: List[Any], nr: List[Any]) -> List[Any]:
+    """Rule 16 (cq-byjad): a noreturn call with a rail argument and no quantum predicate is the effect entry of its
+    name under an alloc_i1(true) seed, then abort_i1 of that seed. The C program ends in that call
+    (outputs["end"] "noreturn:<callee>") and the oracle logs no effect for it, so ours has exactly one more effect
+    entry, the last, named by the callee; for a process exit its status field must be the C program's exit status
+    (its low 8 bits). Ours without that entry, or with any other difference, is left to the comparison."""
+    end = str((c.outputs or {}).get("end") or "")
+    if not end.startswith("noreturn:") or len(nf) != len(nr) + 1:
+        return nf
+    callee = end.split(":", 1)[1]
+    last = nf[-1]
+    if last["name"] != callee:
+        return nf
+    if callee in _EXITS:
+        st = (c.outputs or {}).get("exit_status")
+        a = last["args"]
+        v = _int(a[0].get("v")) if len(a) == 1 else None
+        if v is None or st is None or (v & 0xFF) != (st & 0xFF):
+            return nf
+    return nf[:-1]
+
+
 def _host_output(k: str, o: RunResult, r: RunResult, oracle: str, open_end: bool) -> List[str]:
     """The host-output reasons of one sample (module docstring, Host output)."""
     other = "C" if oracle == "c" else "reference"
@@ -2577,6 +2602,8 @@ def _host_output(k: str, o: RunResult, r: RunResult, oracle: str, open_end: bool
         why.append(f"sample {k}: host stdout differs: ours {os_!r} != {other} {rs!r}"
                    + (" (the C output must be a prefix of ours on a capped sample)" if open_end else ""))
     nf, nr = _effects_read(o, ofx, oracle), _effects_read(r, rfx, oracle)
+    if oracle == "c":
+        nf = _without_exit_entry(o, r, nf, nr)
     same = _fields_match(nf, nr) if oracle == "c" else nf == nr
     pre = open_end and (_fields_match(nf[:len(nr)], nr) if oracle == "c" else nf[:len(nr)] == nr)
     if not same and not pre:
