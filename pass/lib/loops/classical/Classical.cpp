@@ -494,6 +494,10 @@ private:
   // the segment block it leaves from: the reverse starts at that segment.
   PHINode *exitIndex = nullptr;
   std::vector<BasicBlock *> exitSegs;
+  // cq-v0a5c: per exit edge, the scope of the edge's copies of exit values something undoes after the loop (~0u: none), and
+  // their rails. The reverse is deferred after their readers and starts by un-copying the edge's.
+  std::vector<unsigned> exitEdgeScope;
+  std::vector<RailId> exitEdgeRails;
   BasicBlock *unitExit = nullptr;   // the outermost loop's T
   bool initDead(Loop &L, const Value *init, const PHINode *p);
   void disjuncts(const Value *v, bool pos, SmallVectorImpl<Disj> &out, SmallPtrSetImpl<const Value *> &inner);
@@ -3137,6 +3141,24 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           if (any_of(P.blocks(), [&](const BasicBlock *u) { return inUnit(u); }))
             xphis.push_back(&P);
       SmallVector<PHINode *, 4> nps;
+      // Rule 5, rule 14 case 1: an exit value something still computes from, or a clone's result (rule 18 copies it out once
+      // more at the return, and its twin needs that copy), is no output of the loop: rule 5 uncomputes it after its readers.
+      DenseSet<const PHINode *> undone;
+      for (PHINode *P : xphis) {
+        SmallVector<const Value *, 4> work{P};
+        SmallPtrSet<const Value *, 8> seen{P};
+        bool returned = false;
+        while (!work.empty()) {
+          const Value *x = work.pop_back_val();
+          for (const User *u : x->users()) {
+            returned |= isa<ReturnInst>(u);
+            if (isa<PHINode>(u) && !top.contains(cast<Instruction>(u)) && seen.insert(u).second)
+              work.push_back(u);
+          }
+        }
+        if (isQ(P) && (!readersKeep(P) || (returned && !ctx.S.isEntry())))
+          undone.insert(P);
+      }
       for (PHINode *P : xphis) {
         PHINode *np = PHINode::Create(isQ(P) ? handleTy(Cx) : P->getType(), 2, P->getName(), T->begin());
         nps.push_back(np);
@@ -3160,6 +3182,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         BasicBlock *Eb = newBlock();
         from->getTerminator()->replaceSuccessorWith(T, Eb);
         ctx.B().SetInsertPoint(Eb);
+        unsigned edgeScope = undone.empty() ? ~0u : U.openScope();
         for (unsigned j = 0; j < xphis.size(); ++j) {
           Operand o = valueOf(xphis[j]);
           if (!isQ(xphis[j])) {
@@ -3171,11 +3194,25 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           RailType w = railOf(xphis[j]->getType());
           CallInst *f = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w},
                                      {o.handle ? Constant::getNullValue(irTypeOf(Cx, w)) : o.v});
+          if (undone.count(xphis[j])) {
+            RailId fid = U.recordSeed(f);
+            if (o.handle) {
+              abi::CoreSpec cp{abi::Core::Copy, w};
+              CallInst *cc = ctx.emitCore(cp, {o.v, f});
+              U.recordCore(cc, cp, {o, Operand{f, true}}, fid);
+            }
+            exitEdgeRails.push_back(fid);
+            nps[j]->addIncoming(f, Eb);
+            continue;
+          }
           if (o.handle)
             U.noteUse(U.idOf(o.v), ctx.emitCore(abi::CoreSpec{abi::Core::Copy, w}, {o.v, f}));
           U.recordExternal(f, Role::Output);
           nps[j]->addIncoming(f, Eb);
         }
+        if (edgeScope != ~0u)
+          U.closeScope(edgeScope);
+        exitEdgeScope.push_back(edgeScope);
         exitIndex->addIncoming(ConstantInt::get(Type::getInt32Ty(Cx), k++), Eb);
         exitSegs.push_back(from);
         ctx.B().CreateBr(T);
@@ -3203,7 +3240,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       ctx.B().SetInsertPoint(T);
       for (unsigned j = 0; j < xphis.size(); ++j) {
         bool q = isQ(xphis[j]);
-        if (q)
+        if (q && undone.count(xphis[j]))
+          U.recordMerge(nps[j]);
+        else if (q)
           U.recordExternal(nps[j], Role::Output);
         if (ctx.bound(xphis[j]))
           ctx.rebind(xphis[j], {Operand{nps[j], q}});
@@ -3218,6 +3257,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     std::vector<unsigned> scs{seedScope};
     for (const Seg &sg : segs)
       scs.push_back(sg.scope);
+    for (unsigned sc : exitEdgeScope)
+      if (sc != ~0u)
+        scs.push_back(sc);
     DenseSet<const Value *> ownedH;
     for (unsigned sc : scs)
       for (const Record &r : U.scopeRecords(sc))
@@ -3283,6 +3325,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         if (!is_contained(exits, x))
           exits.push_back(x);
       }
+    for (RailId x : exitEdgeRails)
+      if (!is_contained(exits, x))
+        exits.push_back(x);
     for (unsigned oi : copied) {
       const Value *v = out[oi].first;
       Operand op = out[oi].second;
@@ -3864,6 +3909,18 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
     U.emitMirror(copyScope, Bc);
   }
 
+  // cq-v0a5c: likewise each exit edge's copies, before the segment they read.
+  SmallVector<BasicBlock *, 2> edgeCopyOf;
+  for (unsigned sc : exitEdgeScope) {
+    BasicBlock *cb = nullptr;
+    if (sc != ~0u) {
+      cb = newBlock();
+      IRBuilder<> Bc(cb);
+      U.emitMirror(sc, Bc);
+    }
+    edgeCopyOf.push_back(cb);
+  }
+
   for (unsigned i = n; i-- > 0;) {
     IRBuilder<> B(R[i]);
     U.emitMirror(segs[i].scope, B);
@@ -3949,9 +4006,18 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
       start = newBlock();
       Value *ix = guarded ? carryTo(guardBlock, X, exitIndex, PoisonValue::get(exitIndex->getType()), "exit", resetAt)
                           : static_cast<Value *>(exitIndex);
-      SwitchInst *sw = SwitchInst::Create(ix, R[segOf.lookup(exitSegs[0])], exitSegs.size() - 1, start);
+      // Each exit edge's copies are undone first (they read the rails of the segment the edge leaves).
+      auto startOf = [&](unsigned k) -> BasicBlock * {
+        BasicBlock *r = R[segOf.lookup(exitSegs[k])];
+        BasicBlock *cb = k < edgeCopyOf.size() ? edgeCopyOf[k] : nullptr;
+        if (!cb)
+          return r;
+        BranchInst::Create(r, cb);
+        return cb;
+      };
+      SwitchInst *sw = SwitchInst::Create(ix, startOf(0), exitSegs.size() - 1, start);
       for (unsigned k = 1; k < exitSegs.size(); ++k)
-        sw->addCase(ConstantInt::get(i32, k), R[segOf.lookup(exitSegs[k])]);
+        sw->addCase(ConstantInt::get(i32, k), startOf(k));
     } else {
       BasicBlock *exitSeg = nullptr;
       for (BasicBlock *p : predecessors(X)) {
@@ -3997,6 +4063,11 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
       rev.insert(copyBlock);
       revBlocks.push_back(copyBlock);
     }
+    for (BasicBlock *cb : edgeCopyOf)
+      if (cb) {
+        rev.insert(cb);
+        revBlocks.push_back(cb);
+      }
     std::vector<Use *> outside;
     for (BasicBlock *b : revBlocks)
       for (Instruction &I : *b)
