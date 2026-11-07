@@ -361,7 +361,9 @@ void inv_q(int x0, double t) { int x = x0; cq_invert_begin(); cq_theta(&x, t); c
         for x, n in [(0, 0), (1, 0), (3, 1), (4, 2), (31, 4)]:   # at most K = 4 trips: run to the end
             ev = tr({"call": 0, "args": [i32(x), HALF, pa]})
             self.assertEqual(trips(ev), [n], (x, ev))
-            self.assertEqual(ev[0], {"ev": "site", "fn": "loop_q", "site": 0, "kind": "theta",
+            # a trace starts with the `enter` of the function the driver calls (compare._meas_extra: the functions an input enters)
+            self.assertEqual(ev[0], {"ev": "enter", "fn": "loop_q"})
+            self.assertEqual(ev[1], {"ev": "site", "fn": "loop_q", "site": 0, "kind": "theta",
                                      "angle": HALF, "reg": hex(x), "pre": hex(x)})   # pre: cq-3o3v
             phis = [e for e in ev if e["ev"] == "site" and e["kind"] == "phi"]
             self.assertEqual(len(phis), 1 if n == 2 else 0)
@@ -372,7 +374,7 @@ void inv_q(int x0, double t) { int x = x0; cq_invert_begin(); cq_theta(&x, t); c
         for x, n in [(0, 0), (1, 1), (7, 3), (0xF, 4)]:
             self.assertEqual(trips(tr({"call": 1, "args": [i32(x), HALF]})), [n], x)
         ev = tr({"call": 2, "args": [i32(3), HALF]})
-        self.assertEqual([e.get("kind", e["ev"]) for e in ev], ["invert_begin", "theta", "invert_end", "ret"])
+        self.assertEqual([e.get("kind", e["ev"]) for e in ev], ["invert_begin", "theta", "invert_end", "ret"])   # no cq_measure in inv_q: no enter
         self.assertIsNone(ev[-1]["v"])
         rr = oracle.run_sample(o1, sp, {"call": 0, "args": [i32(4), HALF, pa]})
         self.assertEqual(rr.side, "c")
@@ -385,7 +387,8 @@ void inv_q(int x0, double t) { int x = x0; cq_invert_begin(); cq_theta(&x, t); c
         self.assertEqual(_no_mem(rr.outputs), {"ret": [{"call": 0, "fn": "loop_q", "v": {"w": "i32", "v": "0x2"}}],
                                                "end": "ret",
                                                "loops": [{"loop": "loop_q:%6", "act": 0, "n": 2, "capped": False}],
-                                               "stdout": "", "effects": []})
+                                               "stdout": "", "effects": [],
+                                               "entered": ["loop_q"]})   # the functions this input enters
         self.assertEqual(rr.violations, [])
         self.assertIsNone(rr.kept)
         self.assertIsNone(rr.clean)
@@ -645,7 +648,9 @@ class Cutoff(unittest.TestCase):
         self.assertEqual(rr.outputs["end"], f"cap:{lid}")
         self.assertEqual(len(rr.rotations), rr.outputs["loops"][0]["cut"])
         ev = oracle.trace_sample(self.o1, self.sp, {"call": 0, "args": [i32(32), HALF, HALF]})
-        self.assertEqual([e["kind"] for e in ev], ["theta"] + ["phi"] * 4)
+        # the trace also holds the `enter` of the called function (compare._meas_extra): the sites are what is compared
+        self.assertEqual([e["ev"] for e in ev if e["ev"] == "enter"], ["enter"])
+        self.assertEqual([e["kind"] for e in ev if e["ev"] != "enter"], ["theta"] + ["phi"] * 4)
 
     def test_nonterminating_capped(self):
         for x in (0, 2, 6):
@@ -679,12 +684,16 @@ class Cutoff(unittest.TestCase):
         r = self.run1("nest_q", i32(1), HALF, i32(4))
         self.assertEqual(r.outcome, "ret")
         lid = r.loops[0]["loop"]
-        self.assertEqual(r.loops, [{"loop": lid, "act": i, "n": i, "capped": False} for i in range(4)])
+        # an activation's identity is the call path leading to it hashed with its how-many-th there, the same on every
+        # sample that reaches it (cqo_rt.c next_act, cq-rdsdj); nest_q's loop is entered from the driver's call: path 0
+        act = lambda i: ((i * 0x9E3779B97F4A7C15) & (2**64 - 1)) >> 1
+        self.assertEqual(r.loops, [{"loop": lid, "act": act(i), "n": i, "capped": False} for i in range(4)])
         self.assertEqual(r.events[-1]["v"], hex(0 + 1 + 2 + 3))
         r = self.run1("nest_q", i32(1), HALF, i32(9))
         self.assertEqual(r.outcome, f"cap:{lid}")
         self.assertEqual([(l["act"], l["n"], l["capped"]) for l in r.loops],
-                         [(0, 0, False), (1, 1, False), (2, 2, False), (3, 3, False), (4, 4, False), (5, 4, True)])
+                         [(act(0), 0, False), (act(1), 1, False), (act(2), 2, False), (act(3), 3, False),
+                          (act(4), 4, False), (act(5), 4, True)])
 
     def test_classical_and_quantum_call_of_one_function(self):
         # steps(27) = 111 trips on the classical call: never cut; steps(x) on the quantum call is.
@@ -698,16 +707,19 @@ class Cutoff(unittest.TestCase):
         self.assertIn("steps", next(e["loop"] for e in r.events if e["ev"] == "trip"))  # the classical one ran
 
     def test_quantum_depth_recursion(self):
+        # the recursion's activation is named by the call path to it (a hash, cqo_rt.c next_act): the same on every
+        # sample that reaches it, whatever n is
+        act = self.run1("rec_q", i32(1), HALF, i32(10)).loops[0]["act"]
         for n in (-3, 0, 1, 4):
             r = self.run1("rec_q", i32(n), HALF, i32(10))
             self.assertEqual(r.outcome, "ret", r.reason)
-            self.assertEqual(r.loops, [{"loop": "chain:recursion", "act": 0, "n": max(n, 0), "capped": False}])
+            self.assertEqual(r.loops, [{"loop": "chain:recursion", "act": act, "n": max(n, 0), "capped": False}])
         self.assertEqual(self.run1("rec_q", i32(4), HALF, i32(10)).events[-1]["v"],
                          hex(10 - (11 - (12 - (13 - 14)))))
         for n in (5, 1000):
             r = self.run1("rec_q", i32(n), HALF, i32(10))
             self.assertEqual(r.outcome, "cap:chain:recursion", r.reason)
-            self.assertEqual(r.loops, [{"loop": "chain:recursion", "act": 0, "n": 4, "capped": True,
+            self.assertEqual(r.loops, [{"loop": "chain:recursion", "act": act, "n": 4, "capped": True,
                                         "cut": 1, "mcut": 0}])
         for n, capped in [(0, False), (3, False), (4, False), (6, True)]:
             r = self.run1("selfrec_q", i32(n), HALF, i32(1))
