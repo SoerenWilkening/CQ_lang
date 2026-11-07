@@ -365,6 +365,10 @@ bool Walker::classicalEdgeMeets(const BasicBlock *x, const BasicBlock *s, const 
   // end does not restrict its siblings (rules 8, 16).
   if (taint_detail::DeadEnds(F).isDeadEnd(s))
     return false;
+  // cq-s78ap: the edges of one classical terminator exclude each other. y entered only from x runs on no other edge of x, though the
+  // last live successor's predicate is the complement of its siblings' and so meets a dead-end sibling's (Predicate.cpp).
+  if (y->getUniquePredecessor() == x)
+    return false;
   const Pred &e = ctx.preds().edge(x, s), &py = ctx.preds().block(y);
   if (e.isBottom() || py.isBottom())
     return false;

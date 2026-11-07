@@ -1,0 +1,1 @@
+int e(int k){ char a=0,q=0; cq_theta(&a,.3); cq_theta(&q,.7); int r; switch(k&3){case 0: r=a+1; break; case 1: r=q&1?a^5:a; break; case 2: r=a+9; if(q&2) r=r*3; break; case 3: r=a*a; break;} return cq_measure(r); }

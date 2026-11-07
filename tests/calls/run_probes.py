@@ -30,6 +30,14 @@ SAMPLES = {"mp1": 64, "mp2": 64, "mst": 64, "mp4": 64, "mp5": 64, "chk1": 64, "c
            "vaC": 64, "vaD": 64, "vaF": 64, "hc1": 64, "hc3": 64, "fe2": 64, "fe3": 64, "fe6": 64, "trip_ctl": 64, "clone_cell_seq": 64, "fenv_cells": 64, "fenv_ignore_loop": 64, "store_past_object": 64, "fenv_escape": 64, "fenv_indirect": 64, "libm_musl_acosh": 16, "libm_musl_coshf": 16, "libm_musl_lrint": 16, "libm_musl_llrintl": 16, "twin_strict": 64, "libm_musl_floorfn": 32, "libm_musl_atan": 16, "libm_musl_exp": 16, "libm_musl_log": 16}
 # (probe, entry, opt flags, expectation, regexes the lowered module must contain)
 CASES = [
+    # cq-s78ap (rules 8, 9, 16): a classical switch with a dead-end default: the last live arm's complement predicate meets the default's,
+    # but the edges of one classical terminator exclude each other. switch_unreachable_default lowers but gets no §6 run: its k >= 3 hit
+    # `unreachable`, UB outside the domain, and the checker still compares them (reported).
+    ("switch_unreachable_default", "e", [], "lower", []),
+    ("switch_unreachable_o1_default", "e", [], "pass", []),
+    ("switch_noreturn_default", "e", [], "pass", []),
+    ("switch_unreachable_o1_quantum_arms", "e", [], "pass", []),
+    ("branch_unreachable_else", "e", [], "pass", []),
     # cq-zo7ja (rules 9, 26): a packed integer's classical phi: its whole is made on the arm, no gate reads the other arm's poison.
     ("packed_phi_call_arms", "e", [], "pass", []),
     ("packed_phi_const_arm", "e", [], "pass", []),
