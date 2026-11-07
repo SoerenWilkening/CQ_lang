@@ -2677,7 +2677,8 @@ void Analyzer::solve() {
         S->nonPure = np;
         st.changed = true;
       }
-      bool ef = S->hasPhi || S->hasEffect;
+      // Rule 18: the twin "repeats no phase and no tape or abort event": an abort arm recomputes through _pure.
+      bool ef = S->hasPhi || S->hasEffect || !S->aborts.empty() || !S->effectEntries.empty();
       for (auto &[CB, v] : S->callees)
         for (SpecState *C : v)
           ef = ef || C->effectful;

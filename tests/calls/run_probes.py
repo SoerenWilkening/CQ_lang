@@ -37,6 +37,13 @@ CASES = [
     ("abort_classical_arm_ctl", "e", [], "pass", [r"call void @__cq_q_f_0_ctl\("]),
     ("abort_arm_ctl_nested", "e", [], "pass", [r"call void @__cq_q_f_1_ctl\("]),
     ("abort_arm_ctl_defined", "e", [], "pass", [r"call void @__cq_q_f_1_ctl\("]),
+    # cq-mc20u (rule 18): an abort is no reason to have no twin; the twin recomputes through _pure and repeats no abort event. exit,
+    # abort, __builtin_trap, under a predicate, and a loading callee.
+    ("abort_arm_twin_exit", "e", [], "pass", [r"call void @__cq_q_f_1_unc\(", r"define [^\n]*@__cq_q_f_1_pure\("]),
+    ("abort_arm_twin_abort", "e", [], "pass", [r"call void @__cq_q_f_1_unc\("]),
+    ("abort_arm_twin_trap", "e", [], "pass", [r"call void @__cq_q_f_1_unc\("]),
+    ("abort_arm_twin_ctl", "e", [], "pass", [r"call void @__cq_q_f_1_ctl_unc\("]),
+    ("abort_arm_twin_load", "e", [], "pass", [r"call void @__cq_q_f_1_unc\("]),
     # cq-57ju (rulings 2026-11-02): plain clang -O1 callers of musl b1efda5 bodies (no -fno-builtin, no -frounding-math).
     # llvm.<f> binds to the injected body (cq-odjk); fpexcept.ignore ops are plain templates and the clone takes no
     # mode and no flags (rule 23, cq-75n4); __math_oflow / __math_divzero under a quantum predicate stay host calls,
