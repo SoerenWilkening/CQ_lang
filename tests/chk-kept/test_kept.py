@@ -62,7 +62,8 @@ def no_twin_inner(text):
     def edit(body):
         m = re.search(r"  call void @cq_template_add_i32_unc\(i32 (%\d+),[^\n]*\n", body)
         return body.replace(m.group(0), "").replace(f"  call void @cqrt_free(i32 {m.group(1)})\n", "")
-    return in_fn("__cq_q_f_10_ctl", edit, text)
+    # the clone suffix is a numbering of the pass, not a property: find f's _ctl clone by shape
+    return in_fn(re.search(r"@(__cq_q_f_\d+_ctl)\(", text).group(1), edit, text)
 
 
 def second_copy(text):
