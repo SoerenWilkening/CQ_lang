@@ -888,6 +888,12 @@ struct Uncompute::Impl {
       // F1: a reader owned by a deferred item not yet placed is undone by that item.
       if (unsigned di = rails[o].ownedBy; di != kNone && rails[g].ownedBy != di && !rails[defs[di].pseudo].released)
         o = defs[di].pseudo;
+      // Rule 14: an exit rail of a deferred loop is undone by that loop's reverse: that item is the reader.
+      for (const Deferred &d : defs)
+        if (d.pseudo != g && !rails[d.pseudo].released && is_contained(d.exits, o) && !is_contained(d.exits, g)) {
+          o = d.pseudo;
+          break;
+        }
       if (o != g && !is_contained(out, o))
         out.push_back(o);
     }
@@ -2619,7 +2625,14 @@ struct Uncompute::Impl {
           rel.push_back(a);
       pos = afterLatest(Rb, rel, g);
     } else {
-      internalError("uncompute: a deferred item inside a mirror", r.handle);
+      // Rule 14: a loop in a scope being mirrored (a loop of a classical exit's arm): its reverse runs here, after the
+      // scope's readers of its exit rails and before the rails its seed reads.
+      r.released = true;
+      d.emit(*c.mirror);
+      for (RailId x : d.exits)
+        if (!rails[x].released && !keptRole(rails[x].role))
+          internalError("uncompute: the deferred reverse loop did not undo its exit rail", rails[x].handle);
+      return;
     }
     if (!pos.before)
       internalError("uncompute: no insertion point for a deferred item", r.handle);
@@ -3808,6 +3821,14 @@ void Uncompute::recordDeferred(ArrayRef<unsigned> scopes, ArrayRef<RailId> exitR
     }
   }
   I.defs.push_back(std::move(d));
+  // Rule 14: a loop's reverse inside this item's scopes (a loop of a classical exit's arm) is part of this item: placed in
+  // its mirror, never by itself at a return.
+  for (unsigned e = 0; e < di; ++e) {
+    Impl::Rail &pe = I.rails[I.defs[e].pseudo];
+    if (!pe.released && pe.ownedBy == kNone &&
+        any_of(I.defs[e].exits, [&](RailId x) { return I.rails[x].ownedBy == di; }))
+      pe.ownedBy = di;
+  }
 }
 
 unsigned Uncompute::openScope() {
@@ -3863,6 +3884,8 @@ bool Uncompute::leftScope(unsigned s, const Value *h) const {
   return it != impl->byHandle.end() && impl->scopes[s].left.count(it->second);
 }
 
+bool Uncompute::mirroring() const { return impl->inMirror; }
+
 void Uncompute::emitMirror(unsigned s, IRBuilder<> &B) {
   impl->pruneCleanups();
   if (s >= impl->scopes.size())
@@ -3877,9 +3900,20 @@ void Uncompute::emitMirror(unsigned s, IRBuilder<> &B) {
     if (cr != kNone && cr >= sc.begin && cr < end && !sc.left.count(g) && I.resolvable(g))
       cands.push_back(g);
   }
+  bool wasInMirror = I.inMirror;
   I.inMirror = true;
+  for (bool grew = true; grew;) {
+    grew = false;
+    for (unsigned k = 0; k < cands.size() && !grew; ++k)
+      for (RailId o : I.readersOf(cands[k]))
+        if (I.rails[o].deferred != kNone && I.resolvable(o) && !is_contained(cands, o)) {
+          cands.push_back(o);
+          grew = true;
+          break;
+        }
+  }
   I.resolve(cands, c);
-  I.inMirror = false;
+  I.inMirror = wasInMirror;
 }
 
 } // namespace cq

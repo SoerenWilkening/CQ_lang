@@ -129,6 +129,8 @@ public:
                                                         llvm::function_ref<bool(llvm::Value *)> keep);
   unsigned openScope(); void closeScope(unsigned);
   llvm::ArrayRef<Record> scopeRecords(unsigned) const;
+  // Is a mirror being emitted? A deferred reverse placed in one runs in the scope's own reverse, under no guard of its own.
+  bool mirroring() const;
   void emitMirror(unsigned scope, llvm::IRBuilder<> &);
   // CR rules 5, 14: a rail created by a record of the scope in a block the region (from `head`) does not reach (the flag
   // seed a predicate read in the region mints on an edge into a join above it) runs once, not per trip: it leaves the

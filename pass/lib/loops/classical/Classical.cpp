@@ -3334,7 +3334,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           if (RailId x = self->U.idOf(h); !ownedH.count(h) && !is_contained(reads, x))
             reads.push_back(x);
         self->U.recordDeferred(scs, exits,
-                               [self, T, seedScope](IRBuilder<> &B) { self->reverse(B, T, seedScope, true); },
+                               [self, T, seedScope](IRBuilder<> &B) { self->reverse(B, T, seedScope, !self->U.mirroring()); },
                                reads, self->hostScopes);
       };
       ctx.B().SetInsertPoint(Cont);
@@ -3375,7 +3375,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     auto self = shared_from_this();
     deferred = true;
     U.recordDeferred(scs, exits,
-                     [self, T, seedScope](IRBuilder<> &B) { self->reverse(B, T, seedScope, true); }, reads, {});
+                     [self, T, seedScope](IRBuilder<> &B) { self->reverse(B, T, seedScope, !self->U.mirroring()); }, reads, {});
     ctx.B().SetInsertPoint(Cont);
     return {};
   }
@@ -3851,14 +3851,27 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
     U.emitMirror(segs[i].scope, B);
     checkUndoneReads(R[i]);
     checkDeferred(R[i], R[i]->begin());
+    // The mirror, with the reverse of any loop of the segment placed in it (its own blocks, B's block last).
     std::vector<Instruction *> mirror;
-    for (Instruction &I : *R[i])
-      mirror.push_back(&I);
+    {
+      SmallVector<BasicBlock *, 8> work{R[i]};
+      SmallPtrSet<BasicBlock *, 8> seen{R[i]};
+      while (!work.empty()) {
+        BasicBlock *mb = work.pop_back_val();
+        for (Instruction &I : *mb)
+          mirror.push_back(&I);
+        if (mb->getTerminator())
+          for (BasicBlock *sb : successors(mb))
+            if (seen.insert(sb).second)
+              work.push_back(sb);
+      }
+    }
     // The forward values the mirror reads: popped here, pushed at the end of the segment.
     std::vector<Value *> needs;
     for (Instruction *I : mirror)
       for (Use &u : I->operands())
-        if (auto *d = dyn_cast<Instruction>(u.get()); d && region.count(d->getParent()) && !is_contained(needs, d)) {
+        if (auto *d = dyn_cast<Instruction>(u.get()); d && region.count(d->getParent()) && segOf.count(d->getParent()) &&
+                                                      !is_contained(needs, d)) {
           if (!dom[i].test(segOf.lookup(d->getParent())))
             internalError("loops-classical: a mirror item reads a value defined in a segment that does not dominate "
                           "its own",
