@@ -1270,6 +1270,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   // Entry: the trip predicate, the seeds.
   unsigned seedScope = 0;
   Value *aInit = nullptr;
+  BasicBlock *seedHead = ctx.B().GetInsertBlock();
   if (outermost)
     ownSeedScope = seedScope = ctx.unc().openScope();
   // a_{-1} is minted inside the outermost loop's seed scope, so Z tears it down after the reverse (cq-t71u): under
@@ -1480,6 +1481,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   ctx.B().CreateBr(H);
   if (outermost) {
     ctx.unc().closeScope(seedScope);
+    // Rules 5, 9, 14: a rail the entry's predicate minted on an edge into a join above the loop (a don't-care seed of a carried
+    // flag: mbsrtowcs) exists on that edge's paths only, which the reverse's end does not imply; a flush frees it under its run flag.
+    ctx.unc().leaveScope(seedScope, seedHead);
     segOpen = false;
   }
   startSeg(H);

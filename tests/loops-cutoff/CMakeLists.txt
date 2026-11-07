@@ -49,4 +49,5 @@ add_test(NAME loops-cutoff-tail-phis
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/tail_excl.O1.ll
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/tail_skip.O1.ll
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/tail_guard2_ir.O1.ll
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/seed_arm_ir.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
