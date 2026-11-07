@@ -1458,10 +1458,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           for (unsigned i = 0; i < cp.P->getNumIncomingValues(); ++i)
             if (BasicBlock *u = cp.P->getIncomingBlock(i); !inUnit(u) && LI.getLoopFor(u))
               ran = ran | ctx.preds().edge(u, UX.cont);
-          if (!ran.isBottom())
-            acc = reachingOperand(ctx, acc, cp.rails.front(), ran, Pred::top());
-          capInits.push_back(acc.v);
-          continue;
+          // A sibling on classically exclusive paths (tail_phis) has its own value: the walker joins the two.
+          if (predsMeet(ran, ctx.preds().block(header).classicalFactor(ctx.T, ctx.S))) {
+            capInits.push_back(reachingOperand(ctx, acc, cp.rails.front(), ran, Pred::top()).v);
+            continue;
+          }
         }
       }
       if (cp.P && cp.rails.size() == 1) {
@@ -1471,7 +1472,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           BasicBlock *u = cp.P->getIncomingBlock(i);
           const Pred &e = ctx.preds().edge(u, UX.cont);
           // predsMeet: two case atoms of one scrutinee exclude each other (clang's cleanup-dest switch after a loop).
-          if (inUnit(u) || (e & cH).isBottom() || predsMeet(e, hb))
+          if (inUnit(u) || !predsMeet(e, cH) || predsMeet(e, hb))
             continue;
           Value *v = cp.P->getIncomingValue(i);
           if ((!ctx.bound(v) && !isa<Constant>(v)) || !predReadable(ctx, e)) {
@@ -3147,7 +3148,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           for (unsigned i = 0; i < P->getNumIncomingValues(); ++i) {
             BasicBlock *u = P->getIncomingBlock(i);
             const Pred &e = ctx.preds().edge(u, P->getParent());
-            if (!inUnit(u) && !(e & cH).isBottom() && !predsMeet(e, hb))
+            if (!inUnit(u) && predsMeet(e, cH) && !predsMeet(e, hb))
               ctx.addJoinArm(P, e, P->getIncomingValue(i));
           }
         }

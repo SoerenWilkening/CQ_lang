@@ -1745,6 +1745,20 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
 
   const Instruction *at = H->getTerminator();
   Value *q = seed;
+  // Rules 9, 14: a phi of a trip's blocks holds nothing from the last trip. Left bound, a nested loop's continuation phi would read as
+  // an earlier unit's binding (`earlier`), so the skip of the nested loop would give the last trip's value (mbsrtowcs' word loop).
+  auto forgetLastTrip = [&]() {
+    auto &binds = spine::shared(ctx).binds;
+    auto forget = [&](BasicBlock *b) {
+      if (b != H)
+        for (PHINode &P : b->phis())
+          binds.erase(&P);
+    };
+    for (BasicBlock *b : L.blocks())
+      forget(b);
+    for (BasicBlock *b : U.arm)
+      forget(b);
+  };
   if (regionForm) {
     auto inRegion = [&](const BasicBlock *b) { return region.count(b) != 0; };
     auto inBody = [&](const BasicBlock *b) { return region.count(b) == 0; };
@@ -1759,6 +1773,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       capture(q, inRegion);
     q = conj(q, regionCont, at);
     for (unsigned j = 0; j < c; ++j) {
+      if (j)
+        forgetLastTrip();
       lowerBlocks(q, inBody);
       abortArms(q, inBody);
       if (multi)
@@ -1780,6 +1796,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   } else {
     auto all = [](const BasicBlock *) { return true; };
     for (unsigned j = 0; j < c; ++j) {
+      if (j)
+        forgetLastTrip();
       lowerBlocks(q, all);
       abortArms(q, all);
       if (multi)
