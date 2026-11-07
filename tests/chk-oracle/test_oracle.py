@@ -313,6 +313,27 @@ int update_q(int x0, double t) { int x = x0; cq_theta(&x, t); fenv_t e; fecleare
                                "0x30", "0x20", "0x8"])
 
 
+class ShadowPerSpecialization(unittest.TestCase):
+    """CR rule 2 (cq-gsms2): one body, two specializations. The result of a call whose specialization holds it classical never
+    was a rail, a read; the same function's result in the specialization that holds it as a rail is a measurement."""
+
+    def test_read_and_measure_of_one_callee(self):
+        o1 = compile_c("specsh", """
+__attribute__((noinline)) static int pick(int x) { int r; if (x & 1) r = x * 3; else r = x + 1; return r; }
+int both(int a, int b, double t) {
+    int q = b;
+    cq_theta(&q, t);
+    int c = pick(a), d = pick(q);
+    return cq_measure(c) + cq_measure(d);
+}
+""")
+        sp = spec("specsh", "int both(int,int,double)", [("both", ["int", "int", "double"])])
+        for a in (0, 1, 6, 7):
+            ev = oracle.trace_sample(o1, sp, {"call": 0, "args": [i32(a), i32(a + 1), HALF]})
+            kinds = [e["kind"] for e in ev if e["ev"] == "site" and e["kind"] != "theta"]
+            self.assertEqual(kinds, ["read", "measure"], (a, ev))
+
+
 class Events(unittest.TestCase):
     def test_sites_trips_ret(self):
         o1 = compile_c("ev", """

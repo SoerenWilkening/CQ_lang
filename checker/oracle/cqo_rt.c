@@ -737,6 +737,8 @@ static uint32_t sh_load(const void *p, uint64_t n, uint32_t addr, int rail) {
 uint32_t __cqo_sh_load(const void *p, uint64_t n, uint32_t addr) { return sh_load(p, n, addr, 0); }
 uint32_t __cqo_sh_qload(const void *p, uint64_t n, uint32_t addr) { return sh_load(p, n, addr, 1); }
 uint32_t __cqo_sh_rload(const void *p, uint64_t n, uint32_t addr, int32_t rail) { return sh_load(p, n, addr, rail != 0); }
+/* the frame's specialization chooses between two nodes (OracleInstr.cpp, railPick) */
+uint32_t __cqo_sh_pick(uint32_t a, uint32_t b, int32_t rail) { return rail ? a : b; }
 void __cqo_sh_fill(void *p, uint64_t n, uint32_t v) {
     if (v) sh_mq = __cqo_sh_j(sh_mq, v, 0);
     for (uint64_t i = 0; i < n; ++i) sh_put((uintptr_t)p + i, v);
