@@ -707,7 +707,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         else
           id = h;
       }
-      if (ok && !foreign && id && ctx.preds().block(H).classicalFactor(ctx.T, ctx.S).isTop()) {
+      // A loop nested in a trip's arm is run under that arm's flag: what its classical factor skips is the arm's own business.
+      if (ok && !foreign && id && (!top || ctx.preds().block(H).classicalFactor(ctx.T, ctx.S).isTop())) {
         exitPhis.push_back({&P, id});
         continue;
       }
