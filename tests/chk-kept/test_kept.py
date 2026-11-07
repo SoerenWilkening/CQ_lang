@@ -76,6 +76,38 @@ def second_copy(text):
     return in_fn("q3", edit, text)
 
 
+def lost_rd_twin(fn, nth, text):
+    """The nth call of rd's twin in fn is lost, and the free of its result (review, cq-yz4hw, cq-41lsp, cq-0r50n)."""
+    def edit(body):
+        ms = list(re.finditer(r"  call void @__cq_q_rd_1(_ctl)?_unc\(([^)]*)\)\n", body))
+        m = ms[nth]
+        args = re.findall(r"i32 (%\w+)", m.group(2))
+        r = args[1] if m.group(1) else args[0]
+        return sub1(rf"  call void @cqrt_free\(i32 {r}\)\n", "", body.replace(m.group(0), ""))
+    return in_fn(fn, edit, text)
+
+
+def every_rd_twin_lost(text):
+    """Every call of rd's twin in the module is lost, so canonicalization drops its definition (cq-534kh)."""
+    out, cur = [], None
+    lines = text.splitlines(True)
+    drop = set()
+    for i, ln in enumerate(lines):
+        m = re.match(r"\s+call void @__cq_q_rd_1(_ctl)?_unc\(([^)]*)\)", ln)
+        if m:
+            args = re.findall(r"i32 (%\w+)", m.group(2))
+            r = args[1] if m.group(1) else args[0]
+            drop.add(i)
+            for j in range(i + 1, len(lines)):
+                if lines[j].startswith("}"):
+                    break
+                if lines[j].strip() == f"call void @cqrt_free(i32 {r})":
+                    drop.add(j)
+                    break
+    assert drop
+    return "".join(ln for i, ln in enumerate(lines) if i not in drop)
+
+
 def lost_twin(fn, twin, text):
     """A call of a loading clone loses its twin though nothing overtakes it, its result left live."""
     def edit(body):
@@ -85,6 +117,7 @@ def lost_twin(fn, twin, text):
 
 
 GOOD = [(SRC / "q1", "q1"), (SRC / "q1c", "q1c"), (SRC / "q3", "q3"), (SRC / "q4", "q4b"), (SRC / "q4", "q4c"), (SRC / "q5", "q5"),
+        (SRC / "p3", "p3"), (SRC / "p4", "p4"), (SRC / "p5", "p5"), (SRC / "p6", "p6"),
         (CALLS / "table_twin_measure", "e_rail"), (CALLS / "twin_rot_in_loop", "r3")]
 MUTANTS = [
     ("rule18_dropped_twin_struct", CALLS / "partial_flags", "sc_measure", dropped_twin_struct),
@@ -102,6 +135,14 @@ MUTANTS = [
      lambda t: lost_twin("other_arm", "__cq_q_rd_1_ctl_unc", t)),
     # rule 18: the C program overtakes one of the two calls, and a second one lost its twin
     ("rule18_lost_twin_beside_overtaken", SRC / "q5", "q5", lambda t: lost_twin("q5", "__cq_q_rd_1_ctl_unc", t)),
+    # cq-yz4hw: a classical call of rd is overtaken; the quantum call after the store is not
+    ("rule18_lost_twin_after_store", SRC / "p3", "p3", lambda t: lost_rd_twin("p3", 0, t)),
+    # cq-534kh: no store in the program, and no twin left to define
+    ("rule18_every_twin_lost_no_store", SRC / "p4", "p4", every_rd_twin_lost),
+    # cq-41lsp: the store comes after the consumer is measured; what the outcome feeds reads no rail
+    ("rule18_lost_twin_before_store_measured", SRC / "p5", "p5", lambda t: lost_rd_twin("p5", 0, t)),
+    # cq-0r50n: the store ends the trip; the next trip's readers read the next call's result
+    ("rule18_lost_twin_in_loop", SRC / "p6", "p6", lambda t: lost_rd_twin("p6", 0, t)),
     # an observable volatile store is a bus store (cq-6b2i1): one lost is the bytes lost; nothing but the memory comparison
     # sees it, the entry returns nothing
     ("rule24_lost_volatile_store", ROOT / "tests" / "eff-conc" / "probes" / "vol_observable", "vol_quantum_observable",
