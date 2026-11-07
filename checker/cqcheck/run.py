@@ -120,11 +120,11 @@ LLVM_BIN = Path(os.environ.get("CQ_LLVM_BIN", "/usr/local/opt/llvm@19/bin"))
 CLANG = str(LLVM_BIN / "clang")
 LLVM_LINK = str(LLVM_BIN / "llvm-link")
 OPT = str(LLVM_BIN / "opt")
-DEFAULT_TIMEOUT = 30.0
+DEFAULT_TIMEOUT = float(os.environ.get("CQCHECK_SAMPLE_TIMEOUT") or 30.0)
 # The step budget (cq-o4ul): a sample that enters more than this many basic blocks of the lowered
 # module is a 'timeout', deterministically (core.c, shots). `timeout` (seconds) is only a backstop and
 # counts the worker's CPU time, never wall time: no result depends on the machine's load.
-STEP_BUDGET = 1 << 28
+STEP_BUDGET = int(os.environ.get("CQCHECK_STEP_BUDGET") or 1 << 28)   # both overrides: for one heavy row at a time
 _VERSION = "chk-core-7"
 
 
