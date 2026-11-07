@@ -1527,6 +1527,11 @@ bool observableVolatile(const Value *ptr, function_ref<bool(const Value *)> tain
 // logb clone a twin).
 bool neverLoaded(const Value *ptr) {
   const Value *obj = getUnderlyingObject(ptr, /*MaxLookup=*/0);
+  // Rule 24 drops a dead *local*'s store (rule 19). A global outlives the function: its final value is memory the
+  // program leaves behind (CR §6 item 1), so a store to it is rule 20's ordinary one (cq-1jvr6, musl signal's
+  // __eintr_valid_flag).
+  if (!isa<AllocaInst>(obj))
+    return false;
   SmallVector<const Value *, 8> work{obj};
   SmallPtrSet<const Value *, 16> seen{obj};
   while (!work.empty()) {

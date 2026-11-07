@@ -58,6 +58,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "libm_next.h"
+
 #include "cqe.h"
 
 #ifndef CQE_OP_NOT_MINE
@@ -674,13 +676,21 @@ static int find_op(const char *op) {
 /* Does this template belong to the f80 family? */
 static int is_f80_template(const cqe_tname *t) { return !strcmp(t->w, "f80") || !strcmp(t->to, "f80"); }
 
+CQE_LIBM_NEXT(long double, floorl, (long double x), (x))
+CQE_LIBM_NEXT(long double, ceill, (long double x), (x))
+CQE_LIBM_NEXT(long double, truncl, (long double x), (x))
+CQE_LIBM_NEXT(long double, roundl, (long double x), (x))
+CQE_LIBM_NEXT(long double, rintl, (long double x), (x))
+CQE_LIBM_NEXT(long double, fmodl, (long double a, long double b), (a, b))
+CQE_LIBM_NEXT(long double, fmal, (long double a, long double b, long double c), (a, b, c))
+
 static long double un_op(const char *op, long double x) {
   if (!strcmp(op, "sqrt")) return sqrtl(x);
-  if (!strcmp(op, "floor")) return floorl(x);
-  if (!strcmp(op, "ceil")) return ceill(x);
-  if (!strcmp(op, "trunc")) return truncl(x);
-  if (!strcmp(op, "round")) return roundl(x);
-  return rintl(x); /* rint: called in the template's mode (CR §2: the current mode, _rm/_rmq's) */
+  if (!strcmp(op, "floor")) return cqe_next_floorl(x);
+  if (!strcmp(op, "ceil")) return cqe_next_ceill(x);
+  if (!strcmp(op, "trunc")) return cqe_next_truncl(x);
+  if (!strcmp(op, "round")) return cqe_next_roundl(x);
+  return cqe_next_rintl(x); /* rint: called in the template's mode (CR §2: the current mode, _rm/_rmq's) */
 }
 
 static long double bin_op(const char *op, long double a, long double b) {
@@ -689,7 +699,7 @@ static long double bin_op(const char *op, long double a, long double b) {
   case 's': return a - b; /* fsub */
   case 'm': return a * b; /* fmul */
   case 'd': return a / b; /* fdiv */
-  default: return fmodl(a, b); /* frem: IEEE fmod, exact (CR §2) */
+  default: return cqe_next_fmodl(a, b); /* frem: IEEE fmod, exact (CR §2) */
   }
 }
 
@@ -781,7 +791,7 @@ static int f80_eval(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val 
       else if (k == K_UN)
         v = un_op(t->op, ld_of(in[0]));
       else
-        v = fmal(ld_of(in[0]), ld_of(in[1]), ld_of(in[2]));
+        v = cqe_next_fmal(ld_of(in[0]), ld_of(in[1]), ld_of(in[2]));
       exc = fpu_leave(&f);
       r = bits_of(v);
       /* CR §2 NaN row, normative over the x87 (larger-significand) and libm choices: the first

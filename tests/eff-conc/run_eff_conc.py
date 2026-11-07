@@ -32,6 +32,7 @@ ERRORS = {}
 MODULES = {"conc.O1.ll": ENTRIES, "setjmp.O1.ll": ["p_sj_scalar", "p_sj_void", "p_sj_classical", "p_sj_qarm"],
            "conc_widen.O1.ll": ["p_join_result", "p_vol_atomic", "p_runtime_routine"],
            "conc_rmw.O1.ll": ["p_rmw_qram"],
+           "conc_vglobal.O1.ll": ["p_vol_global_store"],   # cq-1jvr6
            # Rule 5's in-place form over its class, against the C program.
            "inplace_forms.O1.ll": ["f_add_cells", "f_old", "f_new", "f_chain", "f_ends", "f_under", "f_select", "f_bool",
                                    "f_fneg", "f_fwd"],
@@ -99,6 +100,7 @@ SHAPES = {"p_vol_internal": (None, r"volatile"),
           "p_rmw_fat": (None, r"atomicrmw|cmpxchg"), "p_cas_fat": (None, r"atomicrmw|cmpxchg"),
           "p_sjh_local": (r"call i32 @setjmp\(", None), "p_sjh_two": (r"call i32 @setjmp\(ptr[^\n]*@twice", None),
           "p_sjh_pred": (r"call i32 @setjmp\([\s\S]*cqrt_abort_i1\(", r"call [^\n]*@longjmp\("),
+          "p_vol_global_store": (r"cqrt_qram_store_i32\w*\(", None),   # cq-1jvr6
           "e_vol_const_pred": (r"call i32 @__cq_q_p_vol_const_pred_\d+\(", None),
           "p_join_qresult": (r"call ptr @__cq_q_qjob_1\(", r"@\\01_pthread_join\(|@pthread_create\(")}
 for _e in MODULES["setjmp_class.O1.ll"] + ["setjmp_effect_error", "setjmp_nested_error", "setjmp_wrapper_error",
