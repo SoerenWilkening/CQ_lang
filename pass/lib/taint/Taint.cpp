@@ -2042,6 +2042,10 @@ void Analyzer::transferCall(CallBase &CB) {
   if (CB.hasFnAttr(Attribute::ReturnsTwice))
     return;
   if (CB.doesNotReturn()) {
+    if (!cur->hasNoreturn) {
+      cur->hasNoreturn = true;
+      st.changed = true;
+    }
     if ((blockCT(CB.getParent()) || cur->ctl) && cur->aborts.insert(&CB).second)
       st.changed = true;   // rule 16: an abort event
     if (G->isDeclaration() && !blockCT(CB.getParent()) && !cur->ctl) {
@@ -2663,7 +2667,9 @@ void Analyzer::solve() {
         S->rotatesPerTrip = pt;
         st.changed = true;
       }
-      bool np = S->hasTheta || S->hasPhi || S->hasEffect || S->writesOuter || S->measuresRail;
+      // Rule 19: "a tape or abort event". A noreturn call on a classical path of the callee counts: under the caller's predicate
+      // it is abort_i1 of that predicate, the host call would end programs C lets continue.
+      bool np = S->hasTheta || S->hasPhi || S->hasEffect || S->writesOuter || S->measuresRail || S->hasNoreturn;
       for (auto &[CB, v] : S->callees)
         for (SpecState *C : v)
           np = np || C->nonPure;
@@ -2671,7 +2677,8 @@ void Analyzer::solve() {
         S->nonPure = np;
         st.changed = true;
       }
-      bool ef = S->hasPhi || S->hasEffect;
+      // Rule 18: the twin "repeats no phase and no tape or abort event": an abort arm recomputes through _pure.
+      bool ef = S->hasPhi || S->hasEffect || !S->aborts.empty() || !S->effectEntries.empty();
       for (auto &[CB, v] : S->callees)
         for (SpecState *C : v)
           ef = ef || C->effectful;

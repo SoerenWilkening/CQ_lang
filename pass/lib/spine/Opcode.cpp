@@ -1371,6 +1371,22 @@ void classicalMergeStop(LoweringContext &ctx, Instruction &M, ArrayRef<Value *> 
   // Per old value y: the arms that are bijective updates of a dead y, each with its guard.
   struct Alt { Value *guard; Inverse inv; Value *arm; };
   MapVector<Value *, SmallVector<Alt, 2>> perY;
+  // cq-nbtxu (rule 6, both operands dead): y's clean-up from an arm reads that arm's other operand. A chain of such reads back to y
+  // (a - b on one arm, b ^ a on the other) has no order, though the guards exclude each other: y is then kept on this arm too.
+  DenseMap<Value *, SmallVector<Value *, 2>> cleanReads;
+  auto readsBack = [&](Value *From, Value *To) {
+    SmallPtrSet<Value *, 4> seen;
+    SmallVector<Value *, 4> work{From};
+    while (!work.empty()) {
+      Value *x = work.pop_back_val();
+      if (x == To)
+        return true;
+      if (seen.insert(x).second)
+        if (auto it = cleanReads.find(x); it != cleanReads.end())
+          work.append(it->second.begin(), it->second.end());
+    }
+    return false;
+  };
   for (Instruction *U : updates)
     for (Value *Y : U->operands()) {
       if (!cleanable(ctx, Y))
@@ -1403,9 +1419,14 @@ void classicalMergeStop(LoweringContext &ctx, Instruction &M, ArrayRef<Value *> 
             return it != rd.end() && is_contained(it->second, img.v);
           }))
         continue;   // the other operand was cleaned from U's image at U
+      if (any_of(U->operands(), [&](Value *Z) { return Z != Y && readsBack(Z, Y); }))
+        continue;
       Value *guard = choseArm(ctx, M, img.v);
       if (!guard)
         continue;   // U's rail is M on every path (an ordinary update, its own rule 6) or on none
+      for (Value *Z : U->operands())
+        if (Z != Y && !isa<Constant>(Z))
+          cleanReads[Y].push_back(Z);
       auto &v = perY[Y];
       if (none_of(v, [&](const Alt &a) { return a.arm == U; }))
         v.push_back({guard, *inv, U});
@@ -1713,6 +1734,9 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
   // cq-mgkr (CR rule 6, composite through a classical merge): I = f(M, ...) a bijection in M, M a classical
   // merge of bijective updates of a dead y with nothing else reading M: y is cleaned from I's image, on the
   // path that chose arm U by t = U^-1(f^-1(I)), f^-1(I) a fresh garbage rail (compositeCleanup's inner step).
+  // f^-1 reads f's other operand, so that one is kept (cq-nbtxu, rule 6 both operands dead: one is cleaned): its own clean-up from
+  // I would read M, which is y on the other path, and each clean-up would wait for the other.
+  SmallPtrSet<Value *, 2> readByComposite;
   for (Value *Z : I.operands()) {
     auto ms = spine::shared(ctx).mergeSix.find(Z);
     if (ms == spine::shared(ctx).mergeSix.end() || !deadAfter(ctx, Z, &I))
@@ -1741,12 +1765,16 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
       ctx.unc().cleanupBijectiveUnder(yid, g, iu.spec, iu.ops, m.every);
     ctx.unc().noteUse(yid, cast<Instruction>(t1));
     // A merge of the same arms may name y's rail where it chose y itself: that path keeps y (plain part).
-    (void)Z;
+    for (Value *O : I.operands())
+      if (O != Z)
+        readByComposite.insert(O);
   }
   SmallVector<Value *, 3> dead;
   DenseMap<Value *, SmallVector<const Instruction *, 2>> dynOf;   // cq-8101
   for (Value *Y : I.operands()) {
     SmallVector<const Instruction *, 2> dl;
+    if (readByComposite.count(Y))
+      continue;
     // Rule 6, both operands dead: a load copy beside a rule-5-garbage y: both are garbage, no trigger (198).
     if (cleanable(ctx, Y) && ruleFiveGarbage(ctx, Y) &&
         any_of(I.operands(), [&](const Use &u) { return u.get() != Y && busLoadCopy(ctx, u.get()); }))

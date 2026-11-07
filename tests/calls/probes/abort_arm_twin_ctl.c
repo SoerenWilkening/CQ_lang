@@ -1,0 +1,3 @@
+#include <stdlib.h>
+__attribute__((noinline)) int f(int x){ if(x==3) exit(4); return x+2; }
+int e(void){ char c=0; cq_theta(&c,.5); int r=0; if(c&1) r=f(c); int z=r*r; return cq_measure(z); }

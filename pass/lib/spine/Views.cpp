@@ -917,7 +917,31 @@ void bindPacked(LoweringContext &ctx, const Value *orig, ArrayRef<unsigned> cuts
 Operand packedWhole(LoweringContext &ctx, const Value *v) {
   if (!fieldwise(ctx, v))
     internalError("spine: a whole read of a value that is not packed", v);
+  Shared &sh = shared(ctx);
+  if (auto m = sh.packedForPhi.find(v); m != sh.packedForPhi.end()) {
+    auto b = sh.binds.find(v);
+    if (b != sh.binds.end() && b->second.size() == m->second.first.size() &&
+        equal(b->second, m->second.first, [](const Operand &o, Value *f) { return o.v == f; }))
+      return m->second.second;
+  }
   return rangeOf(ctx, segsOfPacked(ctx, v), 0, widthOf(v), v);
+}
+
+// Rule 26 (cq-zo7ja): a classical merge reads its incoming values at the join (merge clean-ups, rule 6's stops), where an arm's
+// fields do not reach. A single rail read there is only looked at; a whole read would emit its joining templates over the phis
+// of the fields, poison on the other arm. So the whole a phi reads is made once, right after the value.
+void mintPackedForPhi(LoweringContext &ctx, const Instruction &I) {
+  Shared &sh = shared(ctx);
+  auto b = sh.binds.find(&I);
+  if (!I.getType()->isIntegerTy() || b == sh.binds.end() || b->second.size() < 2 || !fieldwise(ctx, &I) ||
+      none_of(I.users(), [](const User *U) { return isa<PHINode>(U); }))
+    return;
+  sh.packedForPhi.erase(&I);
+  Operand whole = packedWhole(ctx, &I);
+  SmallVector<Value *, 2> fields;
+  for (const Operand &o : sh.binds.find(&I)->second)
+    fields.push_back(o.v);
+  sh.packedForPhi[&I] = {fields, whole};
 }
 
 SmallVector<Operand, 4> packFieldsOf(LoweringContext &ctx, Operand whole, unsigned W, ArrayRef<unsigned> cuts,

@@ -50,6 +50,16 @@ bool frees(const Function &G) {
 // Rulings Q14: a host call is no change iff LLVM says it does not write memory.
 bool hostCallWrites(const CallBase &CB) { return !CB.onlyReadsMemory(); }
 
+// Rule 16: a noreturn host call is an abort event or the end of the program, no memory version change and no reason for rule 18's
+// "no twin" (its list names memory writes, tainted measurements and effect results, never an abort). longjmp comes back at its
+// setjmp and a thread's exit leaves the others running: those stay what LLVM says of them.
+bool endsProgram(const CallBase &CB, const Function &G) {
+  if (!CB.doesNotReturn() && !G.doesNotReturn())
+    return false;
+  StringRef n = G.getName();
+  return n != "longjmp" && n != "_longjmp" && n != "siglongjmp" && n != "__longjmp_chk" && n != "pthread_exit" && n != "thrd_exit";
+}
+
 bool intrinsicWrites(const IntrinsicInst &II) {
   switch (II.getIntrinsicID()) {
   case Intrinsic::memcpy:
@@ -98,6 +108,8 @@ bool bodyWrites(const TaintInfo &T, const Function &F, SmallVectorImpl<const Fun
         w = true;
       if (G->isDeclaration()) {
         if (formatEntry(*G))
+          continue;
+        if (endsProgram(*CB, *G) && !T.listedRoot(*G))
           continue;
         w |= hostCallWrites(*CB) || T.listedRoot(*G);
         for (const Specialization &S : T.specializations())
@@ -187,6 +199,8 @@ bool versionChange(const LoweringContext &ctx, const Instruction &I) {
     // An effect entry notes its change at the tape_effect call itself (Tape.cpp): the readers of its fields and of what
     // precedes are un-copied before it (99). A format entry is none.
     if (ctx.T.isEffectEntry(*CB, ctx.S) || formatEntry(*G))
+      return false;
+    if (endsProgram(*CB, *G) && !ctx.T.listedRoot(*G))
       return false;
     return hostCallWrites(*CB) || ctx.T.listedRoot(*G);
   }

@@ -30,6 +30,33 @@ SAMPLES = {"mp1": 64, "mp2": 64, "mst": 64, "mp4": 64, "mp5": 64, "chk1": 64, "c
            "vaC": 64, "vaD": 64, "vaF": 64, "hc1": 64, "hc3": 64, "fe2": 64, "fe3": 64, "fe6": 64, "trip_ctl": 64, "clone_cell_seq": 64, "fenv_cells": 64, "fenv_ignore_loop": 64, "store_past_object": 64, "fenv_escape": 64, "fenv_indirect": 64, "libm_musl_acosh": 16, "libm_musl_coshf": 16, "libm_musl_lrint": 16, "libm_musl_llrintl": 16, "twin_strict": 64, "libm_musl_floorfn": 32, "libm_musl_atan": 16, "libm_musl_exp": 16, "libm_musl_log": 16}
 # (probe, entry, opt flags, expectation, regexes the lowered module must contain)
 CASES = [
+    # cq-s78ap (rules 8, 9, 16): a classical switch with a dead-end default: the last live arm's complement predicate meets the default's,
+    # but the edges of one classical terminator exclude each other. switch_unreachable_default lowers but gets no §6 run: its k >= 3 hit
+    # `unreachable`, UB outside the domain, and the checker still compares them (reported).
+    ("switch_unreachable_default", "e", [], "lower", []),
+    ("switch_unreachable_o1_default", "e", [], "pass", []),
+    ("switch_noreturn_default", "e", [], "pass", []),
+    ("switch_unreachable_o1_quantum_arms", "e", [], "pass", []),
+    ("branch_unreachable_else", "e", [], "pass", []),
+    # cq-zo7ja (rules 9, 26): a packed integer's classical phi: its whole is made on the arm, no gate reads the other arm's poison.
+    ("packed_phi_call_arms", "e", [], "pass", []),
+    ("packed_phi_const_arm", "e", [], "pass", []),
+    ("packed_phi_whole_read", "e", [], "pass", []),
+    ("packed_phi_field_arm", "e", [], "pass", []),
+    # cq-x95qv (rule 19, "a tape or abort event"): a callee with a noreturn arm is a _ctl clone under a quantum predicate: the arm
+    # on a rail condition, the arm on a classical condition (rule 16: that path then returns zero-valued results), through a callee
+    # by name, through a defined noreturn callee.
+    ("abort_arm_ctl", "e", [], "pass", [r"call void @__cq_q_f_1_ctl\("]),
+    ("abort_classical_arm_ctl", "e", [], "pass", [r"call void @__cq_q_f_0_ctl\("]),
+    ("abort_arm_ctl_nested", "e", [], "pass", [r"call void @__cq_q_f_1_ctl\("]),
+    ("abort_arm_ctl_defined", "e", [], "pass", [r"call void @__cq_q_f_1_ctl\("]),
+    # cq-mc20u (rule 18): an abort is no reason to have no twin; the twin recomputes through _pure and repeats no abort event. exit,
+    # abort, __builtin_trap, under a predicate, and a loading callee.
+    ("abort_arm_twin_exit", "e", [], "pass", [r"call void @__cq_q_f_1_unc\(", r"define [^\n]*@__cq_q_f_1_pure\("]),
+    ("abort_arm_twin_abort", "e", [], "pass", [r"call void @__cq_q_f_1_unc\("]),
+    ("abort_arm_twin_trap", "e", [], "pass", [r"call void @__cq_q_f_1_unc\("]),
+    ("abort_arm_twin_ctl", "e", [], "pass", [r"call void @__cq_q_f_1_ctl_unc\("]),
+    ("abort_arm_twin_load", "e", [], "pass", [r"call void @__cq_q_f_1_unc\("]),
     # cq-57ju (rulings 2026-11-02): plain clang -O1 callers of musl b1efda5 bodies (no -fno-builtin, no -frounding-math).
     # llvm.<f> binds to the injected body (cq-odjk); fpexcept.ignore ops are plain templates and the clone takes no
     # mode and no flags (rule 23, cq-75n4); __math_oflow / __math_divzero under a quantum predicate stay host calls,
