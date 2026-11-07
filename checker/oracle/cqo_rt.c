@@ -629,6 +629,7 @@ uint32_t __cqo_sh_nz(uint32_t s, uint32_t inc) {
 }
 /* a frame slot of a quantum value: node + 1, 0 when not computed in this activation */
 uint32_t __cqo_sh_slot(uint32_t v) { return v ? v - 1 : SH_OPAQUE; }
+uint32_t __cqo_sh_slot0(uint32_t v) { return v ? v - 1 : 0; }
 uint32_t __cqo_sh_leaf(void) { return sh_new(0, 0, SH_LEAF); }
 uint32_t __cqo_sh_opaque(void) { return SH_OPAQUE; }
 
@@ -660,6 +661,11 @@ static int sh_uniform(uintptr_t p, uint64_t len, uint32_t *node, uint32_t *ep);
 static void sh_pin(uint32_t n);
 void __cqo_sh_measure(uint32_t n) {
     sh_pending_read = sh_classical(n);
+    if (!sh_pending_read && n > SH_OPAQUE && n < sh_nn) sh_n[n].fl |= SH_MEASURED, sh_pin(n);
+}
+
+/* The incoming a measured loop-carried value took this trip: the same rail, measured with it. */
+void __cqo_sh_mark(uint32_t n) {
     if (!sh_pending_read && n > SH_OPAQUE && n < sh_nn) sh_n[n].fl |= SH_MEASURED, sh_pin(n);
 }
 

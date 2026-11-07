@@ -878,6 +878,24 @@ double fenv_tested(double x0, double th, double c, double k) {
             self.assertEqual(len(rr.measured), gates, smp)
             self.assertFalse(any(r.get("kind") == "read" for r in rr.rotations), smp)
 
+    def test_measure_in_a_loop_body(self):
+        """Owner, cq-2z29a, cq-47f8h: a loop-carried value with a rail incoming is a rail. What is computed from the measured rail alone is a read on the
+        later trips; a quantum condition no measurement fixes keeps it a rail, and each trip's cq_measure a measurement."""
+        o1 = compile_c("loopbody", """
+int body(unsigned x0, double t) { unsigned v = x0; cq_theta(&v, t); int n = 0; while (v & 1) { n += cq_measure(v); v >>= 1; } return n; }
+int qexit(unsigned x0, unsigned y0, double t) { unsigned x = x0, y = y0; cq_theta(&x, t); cq_theta(&y, t); int n = 0;
+    while ((x & 1) && !(y & 1)) { n += cq_measure(x); x >>= 1; } return n; }
+""")
+        sp = spec("loopbody", "int body(unsigned,double);int qexit(unsigned,unsigned,double)",
+                  [("body", ["unsigned", "double"]), ("qexit", ["unsigned", "unsigned", "double"])])
+        S = lambda c, *a: {"call": c, "args": list(a)}
+        for smp, gates, reads in [(S(0, i32(1), HALF), 1, 0), (S(0, i32(3), HALF), 1, 1), (S(0, i32(7), HALF), 1, 2),
+                                  (S(1, i32(1), i32(0), HALF), 1, 0), (S(1, i32(3), i32(0), HALF), 2, 0),
+                                  (S(1, i32(7), i32(0), HALF), 3, 0)]:
+            ev = oracle.trace_sample(o1, sp, smp)
+            got = [e["kind"] for e in ev if e["ev"] == "site" and e["kind"] in ("measure", "read")]
+            self.assertEqual((got.count("measure"), got.count("read")), (gates, reads), (smp, ev))
+
 
 class ExitRead(unittest.TestCase):
     """Bead cq-4asj (CR rule 14 f981c89, taint's exitRead, cq-rmaf): a value of a loop whose exit is

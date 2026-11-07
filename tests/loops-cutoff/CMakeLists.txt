@@ -91,3 +91,28 @@ add_test(NAME loops-cutoff-measure-two
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures 2
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_two.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME loops-cutoff-measure-body
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in f=4 --measures-in __cq_q_f_1_t_ctl=4
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_body.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME loops-cutoff-measure-reread
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in f=1 --measures-in __cq_q_f_1_t_ctl=4
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_reread.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME loops-cutoff-measure-rail
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in f=2 --measures-in __cq_q_f_1_t_ctl=5
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_rail.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME loops-cutoff-measure-outer
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in f=1
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_outer.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME loops-cutoff-measure-arm
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in f=4
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_arm.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

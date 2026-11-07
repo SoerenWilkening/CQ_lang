@@ -525,6 +525,7 @@ public:
     PostDominatorTree PDT;
     LoopInfo LI;
     DenseMap<const Value *, Value *> sh;
+    DenseMap<const Value *, Value *> carriedIn;  // a loop header's phi -> the shadow of the incoming it took
     SmallPtrSet<const Instruction *, 32> orig;  // the function as clang wrote it: taint knows only these
     Type *I32;
     // Values taint calls classical that still carry a shadow (cq-425g): a read of a variadic
@@ -986,21 +987,44 @@ public:
                 for (BasicBlock *P : predecessors(X))
                   work.push_back(P);
             }
+            // Owner, cq-47f8h (rules 2, 14): a loop-carried value with a rail incoming is a rail: its trips run under the loop's predicate chain,
+            // seeded by the arm flag, so the conditions the loop's entry depends on decide it too. Only a value of measured rails and classical
+            // values alone is classical; a quantum b1 in a loop's condition keeps it a rail, and each trip's cq_measure a measurement.
+            if (Loop *HL = LI.getLoopFor(BB); HL && HL->getHeader() == BB)
+              for (DomTreeNode *a = DT.getNode(BB) ? DT.getNode(BB)->getIDom() : nullptr; a; a = a->getIDom())
+                if (BasicBlock *A = a->getBlock(); reachable.count(A) && !PDT.dominates(BB, A))
+                  if (Value *c = quantumCond(A); c && !is_contained(conds, c))
+                    conds.push_back(c);
             IRBuilder<> B(&*BB->getFirstInsertionPt());
             Value *X = nullptr;
             std::vector<const Value *> condVals(conds.begin(), conds.end());
             if (!conds.empty()) {
               std::vector<Value *> deps;
+              // At a loop's header a value of the loop is last trip's, as computed so far; on the first trip nothing depends on it (no node).
+              // `read` on a later trip needs it (owner, cq-2z29a: `while (v & 1)` re-reads what is computed from the measured rail alone).
+              Loop *HL = LI.getLoopFor(BB);
+              bool header = HL && HL->getHeader() == BB;
+              auto dep = [&](Value *v) -> Value * {
+                auto *J = dyn_cast<Instruction>(v);
+                if (!header || !J || !carried(J) || DT.properlyDominates(J->getParent(), BB))
+                  return availIn(v, BB);
+                AllocaInst *&a = slots[J];
+                if (!a)
+                  a = In.entryAlloca(F, I32);
+                return B.CreateCall(h("__cqo_sh_slot0", I32, {I32}), {B.CreateLoad(I32, a)});
+              };
               for (Value *c : conds)
-                deps.push_back(availIn(c, BB));
+                deps.push_back(dep(c));
               for (PHINode *P : mine)
                 for (unsigned i = 0; i < P->getNumIncomingValues(); ++i)
                   if (reachable.count(P->getIncomingBlock(i)))
-                    deps.push_back(availIn(P->getIncomingValue(i), BB));
+                    deps.push_back(dep(P->getIncomingValue(i)));
               X = join(B, deps);
             }
             for (PHINode *P : mine) {
               PHINode *s = phiSh[P];
+              if (Loop *HL = LI.getLoopFor(BB); HL && HL->getHeader() == BB)
+                carriedIn[P] = s;
               Value *merge = X ? B.CreateCall(h3("__cqo_sh_v"), {s, X, zero()}) : nullptr;
               Value *chosen = s;   // carried only (extra): the incoming the sample ran
               if (q(P)) {
@@ -1301,6 +1325,10 @@ public:
         } else if (k == KMeasure) {
           IRBuilder<> Bb(CB);
           Bb.CreateCall(h("__cqo_sh_measure", In.Void, {I32}), {args[0]});
+          // A loop-carried value's rail this trip is the incoming it took: that one is measured too (owner, cq-2z29a: the later trips re-read
+          // what is computed from it alone).
+          if (auto ci = carriedIn.find(CB->getArgOperand(0)); ci != carriedIn.end())
+            Bb.CreateCall(h("__cqo_sh_mark", In.Void, {I32}), {ci->second});
           sh[CB] = args[0];  // dominated uses denote the outcome: the measured node, classical now
         }
         return;
@@ -1792,9 +1820,14 @@ public:
           unimplemented("scalable load", LI);
         IRBuilder<> LB(LI);
         AllocaInst *t = tmpFor(T);
-        LB.CreateCall(hook("__cqo_load", Void, {Ptr, I64, Ptr, Ptr}),
-                      {LI->getPointerOperand(), LB.getInt64(bytes(T)), t, base(LI->getPointerOperand())});
+        CallInst *lc = LB.CreateCall(hook("__cqo_load", Void, {Ptr, I64, Ptr, Ptr}),
+                                     {LI->getPointerOperand(), LB.getInt64(bytes(T)), t, base(LI->getPointerOperand())});
         LoadInst *nl = LB.CreateLoad(T, t);
+        // A shadow's slot access is no access of the program: the trips' test region (below) must not see it.
+        if (MDNode *sh = LI->getMetadata("cqo.sh")) {
+          lc->setMetadata("cqo.sh", sh);
+          nl->setMetadata("cqo.sh", sh);
+        }
         LI->replaceAllUsesWith(nl);
         nl->takeName(LI);
         LI->eraseFromParent();
@@ -1804,9 +1837,13 @@ public:
           unimplemented("scalable store", SI);
         IRBuilder<> SB(SI);
         AllocaInst *t = tmpFor(T);
-        SB.CreateStore(SI->getValueOperand(), t);
-        SB.CreateCall(hook("__cqo_store", Void, {Ptr, I64, Ptr, Ptr}),
-                      {SI->getPointerOperand(), SB.getInt64(bytes(T)), t, base(SI->getPointerOperand())});
+        StoreInst *ts = SB.CreateStore(SI->getValueOperand(), t);
+        CallInst *sc = SB.CreateCall(hook("__cqo_store", Void, {Ptr, I64, Ptr, Ptr}),
+                                     {SI->getPointerOperand(), SB.getInt64(bytes(T)), t, base(SI->getPointerOperand())});
+        if (MDNode *sh = SI->getMetadata("cqo.sh")) {
+          ts->setMetadata("cqo.sh", sh);
+          sc->setMetadata("cqo.sh", sh);
+        }
         SI->eraseFromParent();
       } else if (auto *RMW = dyn_cast<AtomicRMWInst>(I)) {
         IRBuilder<> AB(RMW);

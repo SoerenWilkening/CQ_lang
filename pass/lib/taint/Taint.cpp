@@ -700,6 +700,15 @@ bool Analyzer::measuredRead(const Value *V) {
   } else {
     return false;
   }
+  // Rule 19: inside a _ctl clone the measured rail is a controlled copy; `h` is not collapsed where the predicate is 0 and rule 2's
+  // classical collapse does not apply to it, so a later read of it is still quantum.
+  if (cur->ctl)
+    return false;
+  // Rules 2, 14 (owner, cq-2z29a): a loop-carried value with a rail among its incoming values is a rail in every trip. Rule 2's "computed only
+  // from measured rails and classical values" speaks of a value whose every operand is such; a phi with a rail incoming is not.
+  if (auto *P = dyn_cast<PHINode>(V))
+    if (const Loop *Lp = fn(cur->F).LI->getLoopFor(P->getParent()); Lp && Lp->getHeader() == P->getParent())
+      return false;
   SmallVector<const CallBase *, 2> meas;
   for (const User *U : V->users())
     if (auto *CB = dyn_cast<CallBase>(U))
