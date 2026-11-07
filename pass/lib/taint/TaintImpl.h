@@ -126,6 +126,7 @@ struct SpecState {
   // its function may not overtake are these and the calls of callees with an event.
   llvm::DenseSet<const llvm::CallBase *> effectEntries;
   llvm::DenseSet<const llvm::CallBase *> aborts;   // a noreturn call under a quantum predicate
+  bool hasNoreturn = false;   // a noreturn call on any path: an abort event once the clone takes a predicate (rule 19)
   bool hasEventT = false;
   // Rule 20 (b): the allocas of F this specialization demoted (bus-resident); every other is host-resident.
   llvm::SmallPtrSet<const llvm::AllocaInst *, 4> demoted;

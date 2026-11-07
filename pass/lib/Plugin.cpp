@@ -186,6 +186,50 @@ bool unifyReturns(Function &F) {
   return true;
 }
 
+// Rule 16: "The `unreachable` after an unconditional `noreturn` call is a return of zero-valued results". A noreturn call on a
+// classical path that some clone lowers to abort_i1 (a _ctl clone's predicate, an effect entry's seed) comes back: where that
+// flag reads 0 the program goes on, so the path returns instead of running into `unreachable`. A call another clone keeps as
+// the host call never gets there. Runs before unifyReturns. A loop that any clone runs on a quantum condition keeps its arm
+// (rule 14's abort arm under the trip's flag), and longjmp and a thread's exit are rule 24's.
+bool returnFromClassicalAborts(Function &F, const cq::TaintInfo &T, const LoopInfo &LI) {
+  if (F.doesNotReturn())
+    return false;
+  bool changed = false;
+  SmallVector<const cq::Specialization *, 4> specs;
+  for (const cq::Specialization &S : T.specializations())
+    if (S.F == &F)
+      specs.push_back(&S);
+  for (BasicBlock &BB : F) {
+    auto *U = dyn_cast<UnreachableInst>(BB.getTerminator());
+    auto *CB = U ? dyn_cast_or_null<CallBase>(U->getPrevNonDebugInstruction()) : nullptr;
+    const Function *G = CB ? CB->getCalledFunction() : nullptr;
+    if (!G || !CB->doesNotReturn() || CB->hasFnAttr(Attribute::ReturnsTwice))
+      continue;
+    StringRef n = G->getName();
+    if (n == "longjmp" || n == "_longjmp" || n == "siglongjmp" || n == "__longjmp_chk" || n == "pthread_exit" || n == "thrd_exit")
+      continue;
+    if (none_of(specs, [&](const cq::Specialization *S) {
+          return !T.controlTainted(&BB, *S) && (S->ctl || T.isEffectEntry(*CB, *S));
+        }))
+      continue;
+    bool quantumLoop = false;
+    if (const Loop *L = LI.getLoopFor(&BB))
+      for (const BasicBlock *X : L->getOutermostLoop()->blocks())
+        for (const cq::Specialization *S : specs)
+          quantumLoop = quantumLoop || T.controlTainted(X, *S);
+    if (quantumLoop)
+      continue;
+    Type *RT = F.getReturnType();
+    ReturnInst::Create(F.getContext(), RT->isVoidTy() ? nullptr : Constant::getNullValue(RT), U->getIterator());
+    U->eraseFromParent();
+    changed = true;
+  }
+  if (changed)
+    for (Attribute::AttrKind A : {Attribute::Range, Attribute::NonNull, Attribute::Dereferenceable, Attribute::DereferenceableOrNull})
+      F.removeRetAttr(A);   // the zero result of the new path
+  return changed;
+}
+
 // Rule 26: an aggregate is its scalar fields. A loop-carried aggregate (a cmpxchg's { i32, i1 } carried round musl's
 // __lockfile) is one phi per field, so the loop modules carry scalars only. No CFG change.
 bool splitCarriedAggregates(Function &F) {
@@ -718,6 +762,13 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
       if (!rewriteRoundingIntrinsics(*F))
         continue;
       trace("rounding intrinsics: changed @" + F->getName());
+      CFGChanged = true;
+      FAM.invalidate(*F, PreservedAnalyses::none());
+    }
+    for (Function *F : Tainted) {
+      if (!returnFromClassicalAborts(*F, T, FAM.getResult<LoopAnalysis>(*F)))
+        continue;
+      trace("classical abort arms: changed @" + F->getName());
       CFGChanged = true;
       FAM.invalidate(*F, PreservedAnalyses::none());
     }
