@@ -1148,7 +1148,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     // The classical exit test may leave into the exit arm (strlen's alignment loop, strcpy's): a classical exit runs
     // once per activation, so the arm on that edge is no part of a trip. It is one more segment after the trips,
     // entered by the real branch and run under the trip predicate at that test (lowerClassicalExitArm below).
-    if (cxb && mixedDs.empty())
+    // A mixed test at the header into the arm likewise (`while (q && m < N)`): where a classical disjunct holds the loop
+    // leaves at the test, before the latch where the trip's quantum exits walk the arm.
+    if (cxb && (mixedDs.empty() || (cxb == header && cxb != latch)))
       for (BasicBlock *x : successors(cxb))
         if (!L.contains(x) && x != UX.cont && is_contained(UX.live, x))
           cxArm = x;
@@ -2552,7 +2554,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
             in = s;
         for (BasicBlock *s : successors(u))
           mintEdgeSeeds(u, s);
-        ctx.B().CreateCondBr(cExit, T, target(in));
+        ctx.B().CreateCondBr(cExit, cxArm ? target(cxArm) : T, target(in));
         cur = nullptr;
       }
       return;
