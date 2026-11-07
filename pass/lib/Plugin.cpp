@@ -56,6 +56,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/FixIrreducible.h"
+#include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 #include "llvm/IR/DataLayout.h"
@@ -150,6 +151,39 @@ cq::TaintOptions readTaintOptions() {
 }
 
 // The CQ.h surface: cq_theta_*, cq_measure_*, cq_phi, __cq_invert_begin, __cq_invert_end.
+// CR rules 13, 14: a switch on a phi of constants that are all among its cases never takes its default (clang's cleanup-dest switch after a
+// loop that leaves by goto). The dead edge would count as a live exit of an enclosing loop, moving that loop's continuation past the code
+// after the join. The same kind of rewrite as unifyReturns: the default goes to the first case's block, its target loses this predecessor.
+bool dropDeadSwitchDefaults(Function &F) {
+  bool any = false;
+  for (BasicBlock &BB : F) {
+    auto *sw = dyn_cast<SwitchInst>(BB.getTerminator());
+    auto *p = sw ? dyn_cast<PHINode>(sw->getCondition()) : nullptr;
+    if (!p || sw->getNumCases() == 0)
+      continue;
+    bool covered = all_of(p->incoming_values(), [&](Value *v) {
+      auto *c = dyn_cast<ConstantInt>(v);
+      return c && sw->findCaseValue(c) != sw->case_default();
+    });
+    BasicBlock *dflt = sw->getDefaultDest(), *first = sw->case_begin()->getCaseSuccessor();
+    if (!covered || dflt == first)
+      continue;
+    bool otherEdge = any_of(sw->cases(), [&](auto &k) { return k.getCaseSuccessor() == dflt; });
+    if (!otherEdge)
+      dflt->removePredecessor(&BB);
+    Value *firstIn = nullptr;
+    sw->setDefaultDest(first);
+    for (PHINode &q : first->phis()) {
+      firstIn = q.getIncomingValueForBlock(&BB);
+      q.addIncoming(firstIn, &BB);
+    }
+    any = true;
+  }
+  if (any)
+    removeUnreachableBlocks(F);
+  return any;
+}
+
 // cq-jkq8: one return block per tainted function, the same kind of rewrite as fix-irreducible (CR rule 14:
 // a semantics-preserving CFG rewrite before the final taint; §6 compares semantics, never CFG shape). Each
 // return becomes a branch to one block returning the phi of their values, so a return under a quantum
@@ -718,6 +752,13 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
       if (!rewriteRoundingIntrinsics(*F))
         continue;
       trace("rounding intrinsics: changed @" + F->getName());
+      CFGChanged = true;
+      FAM.invalidate(*F, PreservedAnalyses::none());
+    }
+    for (Function *F : Tainted) {
+      if (!dropDeadSwitchDefaults(*F))
+        continue;
+      trace("dead switch defaults: changed @" + F->getName());
       CFGChanged = true;
       FAM.invalidate(*F, PreservedAnalyses::none());
     }
