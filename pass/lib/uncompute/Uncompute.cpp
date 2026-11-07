@@ -715,6 +715,18 @@ struct Uncompute::Impl {
           out.push_back(x);
       if (r.role != Role::Garbage || r.cleanup->everyPath)
         return out;   // a guarded clean-up's plain part undoes the rail's records (below)
+      // cq-dw87k: undone() answers nothing for a rail with a clean-up, so the plain part's reads go in by hand.
+      if (!directRelease(g)) {
+        SmallVector<unsigned, 4> recs;
+        if (r.creator != kNone)
+          recs.push_back(r.creator);
+        recs.append(r.writes.begin(), r.writes.end());
+        for (unsigned rec : recs)
+          for (RailId x : info[rec].reads)
+            if (x != g && !is_contained(out, x))
+              out.push_back(x);
+      }
+      return out;
     }
     for (unsigned rec : undone(g))
       for (RailId x : info[rec].reads)
@@ -769,7 +781,10 @@ struct Uncompute::Impl {
     return garbageReadsAt(x, g, 0, failed);
   }
   bool garbageReadsAt(RailId x, RailId g, unsigned depth, DenseMap<RailId, unsigned> &failed) const {
-    if (depth > 64 || rails[x].cleanup || rails[x].role != Role::Garbage || rails[x].released)
+    // cq-dw87k: a clean-up under a guard that does not cover every path leaves x's plain item, which reads what it reads, on the
+    // other paths: x is still a garbage reader of g.
+    bool cleaned = rails[x].cleanup && (rails[x].cleanup->alts.empty() || rails[x].cleanup->everyPath);
+    if (depth > 64 || cleaned || rails[x].role != Role::Garbage || rails[x].released)
       return false;
     if (auto f = failed.find(x); f != failed.end() && f->second <= depth)
       return false;

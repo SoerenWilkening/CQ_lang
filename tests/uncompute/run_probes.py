@@ -19,6 +19,11 @@ PROBES = Path(__file__).parent / "probes"
 
 # (probe, entry, opt flags, expectation, regexes the lowered module must contain)
 CASES = [
+    # cq-dw87k (rule 6): y' with a clean-up guarded on one classical arm keeps its plain item on the other paths, which reads y: y is not
+    # cleaned from y' (was: use-after-free on a phi incoming, since 8370d05).
+    ("rule6_guarded_garbage_q", "e", [], "pass", []),
+    ("rule6_guarded_garbage_xor", "e", [], "pass", []),
+    ("rule6_guarded_garbage_two", "e", [], "pass", []),
     # cq-nbtxu (rule 6, both operands dead): a classical choice between updates of the same two rails: one is cleaned, the other kept.
     ("rule6_sel_sub_add", "e", [], "pass", []),
     ("rule6_sel_rsub_add", "e", [], "pass", []),
