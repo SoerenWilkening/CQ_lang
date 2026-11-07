@@ -704,6 +704,9 @@ static void cqd_sig(int s) {
     /* the hang guard (HANG_CPU_S of CPU time): the checker raises ProbeError, never an outcome */
     cqd_stop(s == SIGPROF ? "hang" : "signal", s);
 }
+/* an `unreachable` instruction reached: C undefined as LLVM defines it, so the sample ends here and is outside the
+ * domain (CLAUDE.md Domain, cq-by8qu) */
+void __cqd_ub(void) { C->in = 0; cqd_stop("ub", -1); }
 static void cqd_atexit(void) { if (C->in) { C->in = 0; cqd_finish("exit", 0); } }
 
 /* main's frame and everything above it (the setup's locals, which a sample may be passed) */
@@ -1602,7 +1605,7 @@ class Instrumenter:
              "declare void @__cqd_m(i32, ptr, ptr, i64, i32)", "declare void @__cqd_mi(ptr, ptr, i64, i32)",
              "declare i64 @__cqd_ms(ptr, ptr, i32)", "declare i32 @__cqd_regs(ptr, i64)",
              "declare i32 @__cqd_rega(ptr, i64, i32)", "declare void @__cqd_regg(ptr, i64, i32)",
-             "declare void @__cqd_pst(ptr, ptr, i32)", "declare void @__cqd_vastart(ptr)", "declare void @__cqd_vacall(i64, i64, i64)", "declare void @__cqd_vacopy(ptr, ptr)", "declare i32 @__cqd_pld(ptr, ptr)",
+             "declare void @__cqd_pst(ptr, ptr, i32)", "declare void @__cqd_vastart(ptr)", "declare void @__cqd_ub()", "declare void @__cqd_vacall(i64, i64, i64)", "declare void @__cqd_vacopy(ptr, ptr)", "declare i32 @__cqd_pld(ptr, ptr)",
              "@__cqd_afn = internal global ptr null", "@__cqd_rid = internal global i32 0",
              f"@__cqd_aid = internal global [{self.NAID} x i32] zeroinitializer",
              "declare void @__cqd_hdr(i32, i1)", "declare void @__cqd_ctx(i32)", "declare void @__cqd_fn()"]
@@ -1699,6 +1702,8 @@ class Instrumenter:
         return gp, sse, (off + 8 if off else 0)
 
     def instrument(self, f: D.Function, ins: D.Inst) -> Tuple[List[str], List[str]]:
+        if ins.op == "unreachable":
+            return ["call void @__cqd_ub()"], []
         before, after = self.instrument1(f, ins)
         if ins.op == "call" and ins.callee != "@llvm.va_start.p0":
             info = self.va_call_info(ins)
@@ -2713,7 +2718,9 @@ def _ub_rows(rows_by_site: Dict[int, List[Row]]) -> Dict[int, List[Row]]:
 
 
 def _ub(o: "Obs", rows_by_site: Dict[int, List[Row]]) -> bool:
-    """The sample executes an operation whose operands hit an LLVM-undefined row (ub_row)."""
+    """The sample executes an operation whose operands hit an LLVM-undefined row (ub_row), or reaches `unreachable`."""
+    if o.end == "ub":                      # an `unreachable` was reached (cq-by8qu)
+        return True
     ub = _ub_rows(rows_by_site)
     if not ub:
         return False

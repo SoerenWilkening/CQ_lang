@@ -87,7 +87,7 @@ identity.
 
 Sample outcome: ``ret`` (returned), ``noreturn:<callee>`` (abort, exit, __builtin_trap, ...),
 ``raise:<sig>`` (the program raised a fatal signal), ``cap:<loop>`` (stopped after K trips). Anything else is a failure with a reason, never
-dropped: ``unreachable`` reached, an out-of-bounds atomic, the runaway trip cap, a signal no hook
+dropped: ``unreachable`` reached (a failure of the oracle run; the sampler keeps no such input, its probe ends the sample at the instruction as undefined, cq-by8qu), an out-of-bounds atomic, the runaway trip cap, a signal no hook
 explains (a trap the totalization should have prevented), a bad sample.
 
 Determinism (cq-sqn6; orchestrator decision under determinism, owner may override): no sample's
