@@ -99,6 +99,10 @@ bool bodyWrites(const TaintInfo &T, const Function &F, SmallVectorImpl<const Fun
       if (G->isDeclaration()) {
         if (formatEntry(*G))
           continue;
+        // Rules 16, 18: a noreturn arm (exit, abort) is an abort event: nothing after it reads memory, and the twin
+        // recomputes through _pure, which repeats no abort event. No write that takes the twin away.
+        if (CB->doesNotReturn() || G->doesNotReturn())
+          continue;
         w |= hostCallWrites(*CB) || T.listedRoot(*G);
         for (const Specialization &S : T.specializations())
           if (S.F == &F && T.isEffectEntry(*CB, S))
