@@ -100,6 +100,8 @@ struct Shared {
   llvm::IRBuilder<> B;
   // Insertion order, never pointer hash order: several walks over it emit (cq-fm68i).
   llvm::MapVector<const llvm::Value *, llvm::SmallVector<Operand, 4>> binds;
+  // Rule 26 (cq-zo7ja): a packed integer a phi reads: its whole, minted where its fields are live, and the fields it was minted from.
+  llvm::DenseMap<const llvm::Value *, std::pair<llvm::SmallVector<llvm::Value *, 2>, Operand>> packedForPhi;
   // CR §1.4: a variadic clone's block formal (calls::lowerVarargs stores it at llvm.va_start).
   llvm::SmallVector<Operand, 4> varargs;
   llvm::DenseMap<const llvm::BasicBlock *, llvm::BasicBlock *> blocks;
@@ -320,6 +322,7 @@ bool lowerPack(LoweringContext &, llvm::Instruction &);
 void bindPacked(LoweringContext &, const llvm::Value *orig, llvm::ArrayRef<unsigned> cuts,
                 llvm::ArrayRef<Operand> fields);
 Operand packedWhole(LoweringContext &, const llvm::Value *);
+void mintPackedForPhi(LoweringContext &, const llvm::Instruction &);
 llvm::SmallVector<Operand, 4> packFields(LoweringContext &, const llvm::Value *v, llvm::ArrayRef<unsigned> cuts);
 // The field boundaries of a packed integer as its readers unpack it (a trunc to C bits, an lshr by C,
 // a trunc of that lshr: 159's callee formal and caller result), {0, ..., N}; {0, N} when they cut

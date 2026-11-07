@@ -2349,6 +2349,7 @@ void Walker::emitBody(BasicBlock *b) {
     if (sh.hoisted.count(&I))
       continue;   // lowered before an in-place rotation that -O1 placed it after (cq-su3p)
     spine::dispatch(ctx, I);
+    spine::mintPackedForPhi(ctx, I);
     spine::ruleSixAfter(ctx, I);
     spine::ruleSixRetry(ctx);
     for (const Instruction *h : sh.hoistedDefs)
