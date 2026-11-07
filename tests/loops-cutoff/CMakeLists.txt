@@ -73,6 +73,7 @@ add_test(NAME loops-cutoff-tail-nest
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/tl_h1.O1.ll
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/tl_a4.O1.ll
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/tl_k1.O1.ll
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/trip_merge.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-oiclq (owner): one cq_measure is one cqrt_measure: a measurement in a K-loop's exit arm runs once after the trips.
 add_test(NAME loops-cutoff-measure-one

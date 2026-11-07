@@ -158,6 +158,14 @@ private:
   // are computed too, so their copies carry no poison-generating flags (start + j*step may wrap past
   // the exit trip) and a division by one is not built.
   DenseSet<const Value *> perTrip;
+  // Rule 9: the phis of a continuation that the loop unit just lowered bound itself. `mine` does not say so: a phi the trip merged
+  // on an earlier trip is in it too, and that phi is merged again on this trip (cq-uang6: printf_core's %275).
+  DenseSet<const PHINode *> unitBound;
+  void forgetUnitBound(const BasicBlock *cont) {
+    if (cont)
+      for (const PHINode &P : cont->phis())
+        unitBound.erase(&P);
+  }
   Value *chainEnd = nullptr;                        // the last lowerLoop's last chain predicate (its a_K)
   Value *stopped = nullptr;                         // the last lowerLoop's stop rail (nullptr when none), see stopAcc
   std::vector<std::pair<Loop *, exits::Unit>> enclosing;   // the units being lowered, outermost first
@@ -1090,6 +1098,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       for (PHINode *P : cBound) {
         unitPhi.erase(P);
         boundThisTrip.insert(P);
+        unitBound.insert(P);
         mine.insert(P);
       }
       for (Instruction *I : outs)
@@ -1249,11 +1258,12 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         unsigned cs = B ? unsigned(std::min<uint64_t>(K, *B)) : K;
         Value *s = conj(q, local.find(b)->second, b->getTerminator());
         // The sub-loop binds the phis of its exit block it identifies; they are not merged again.
+        forgetUnitBound(exits::unitOf(*mS).cont);
         lowerLoop(*mS, s, cs, !B || *B > K, false);
         q = afterSub(q);
         if (BasicBlock *SX = exits::unitOf(*mS).cont)
           for (PHINode &P : SX->phis())
-            if (mine.count(&P))
+            if (unitBound.count(&P))
               boundThisTrip.insert(&P);
         continue;
       }
@@ -1378,6 +1388,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (S) {
         // A loop of the arm: rule 14 inside this trip's arm, seeded by the arm's flag (nested K-loops), or a
         // classically bounded loop of the arm under that flag (cq-h5uj).
+        forgetUnitBound(exits::unitOf(*S).cont);
         if (classify(*S, ctx.T, ctx.S) != Case::QuantumExit) {
           classicalSub(*S, q, acc, b->getTerminator());
           if (stopped) {
@@ -1386,7 +1397,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           }
           if (BasicBlock *SX = exits::unitOf(*S).cont)
             for (PHINode &P : SX->phis())
-              if (mine.count(&P))
+              if (unitBound.count(&P))
                 armBound.insert(&P);
           continue;
         }
@@ -1411,7 +1422,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         }
         if (BasicBlock *SX = exits::unitOf(*S).cont)
           for (PHINode &P : SX->phis())
-            if (mine.count(&P))
+            if (unitBound.count(&P))
               armBound.insert(&P);
         continue;
       }
@@ -1844,12 +1855,14 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     ctx.rebind(v, {exitOf(h)});
   for (auto &[P, h] : exitPhis) {
     Operand f = exitOf(h);
+    unitBound.insert(P);
     if (top)
       ctx.bindFields(P, {f});
     else
       set(P, f);
   }
   for (CPhi &cp : cphis) {
+    unitBound.insert(cp.P);
     if (!top)
       set(cp.P, cp.acc);   // a nested unit: bound once per outer trip
     else if (ctx.bound(cp.P))
