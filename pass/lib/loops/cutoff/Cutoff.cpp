@@ -840,7 +840,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         for (unsigned i = 0; i < P.getNumIncomingValues(); ++i)
           if (BasicBlock *u = P.getIncomingBlock(i);
               A.LI.getLoopFor(u) && none_of(enclosing, [&](auto &e) { return e.second.contains(*e.first, u); }))
-            ran = ran | ctx.preds().edge(u, C);   // a unit still being lowered around this one has bound nothing yet
+            ran = ran | outsideEdge(u);   // a unit still being lowered around this one has bound nothing yet
         acc = ctx.operand(&P);
         Value *boundRail = acc.v;
         if (acc.handle && !ran.isBottom())
@@ -2278,7 +2278,10 @@ bool inTailLoopUnit(const Loop &L, const Unit &U, const BasicBlock *u, const Loo
     while (l->getParentLoop() && !l->getParentLoop()->contains(L.getHeader()))
       l = l->getParentLoop();
     Unit tu = unitOf(*l);
-    if (tu.contains(*l, u))
+    SmallVector<BasicBlock *, 4> exiting;
+    l->getExitingBlocks(exiting);
+    // A one-exit loop with no arm reads its exit value as an edge: nothing else binds the phi, and its values after the loop are that value.
+    if (tu.contains(*l, u) && (!tu.arm.empty() || exiting.size() > 1))
       return true;
   }
   return false;

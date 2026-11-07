@@ -1238,7 +1238,11 @@ void Walker::joinUnitPhi(PHINode &phi, ArrayRef<InEdge> in, const BasicBlock *ta
   for (const InEdge &e : in) {
     // Excluded with no join arm over it (the taken branch's complement: strlen's aligned path): the tail's incomings are this edge's.
     bool seedOnly = e.excluded && sh.joinArms.count(&phi);
-    if (e.unit && !e.excluded) {
+    // At a tail's head, another loop's exit into the tail (K-loops on two classical arms) bound nothing of the first unit's continuation.
+    bool ownEdge = e.unit && (!tailHead || any_of(phi.blocks(), [&](const BasicBlock *u) {
+                     return units.find(e.unit)->second.contains(*e.unit, u);
+                   }));
+    if (ownEdge && !e.excluded) {
       SmallVector<Value *, 4> vs;
       auto uf = e.unitFields.find(&phi);
       for (const Operand &o : uf != e.unitFields.end() ? ArrayRef<Operand>(uf->second) : ArrayRef<Operand>(unitVals))
