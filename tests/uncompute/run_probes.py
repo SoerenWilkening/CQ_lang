@@ -19,6 +19,12 @@ PROBES = Path(__file__).parent / "probes"
 
 # (probe, entry, opt flags, expectation, regexes the lowered module must contain)
 CASES = [
+    # cq-nbtxu (rule 6, both operands dead): a classical choice between updates of the same two rails: one is cleaned, the other kept.
+    ("rule6_sel_sub_add", "e", [], "pass", []),
+    ("rule6_sel_rsub_add", "e", [], "pass", []),
+    ("rule6_merge_sub_xor", "e", [], "pass", []),
+    ("rule6_merge_chain", "e", [], "pass", []),
+    ("rule6_merge_three", "e", [], "pass", []),
     # CR rule 9: a kept classical select over two garbage arms keeps the chosen arm and cleans the other under
     # the select's condition (was: 'a kept role on a classical select over handles').
     ("kept_merge", "ks", [], "pass", [r"br i1 %cq\.not"]),
