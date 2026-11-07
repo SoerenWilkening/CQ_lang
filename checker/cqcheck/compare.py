@@ -1910,7 +1910,8 @@ def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult], ended: Sequence[
 #   kept      measured, frozen (rotated, or a rule-6 image carrying a rotated register's content: rule 19's
 #             FROZEN result a caller keeps, rt/core.c cqe__carry; cq-qhow), abort and tape rails (rule 16),
 #             a bus store's tape slot, its value rail and control rail (tape_slot, store_kept: rule 5
-#             sentence 3), an overtaken load copy (overtaken: rule 5), kept_entangled (a source received
+#             sentence 3), a loading clone's result a change overtook before its twin (rule 18, marked store_kept:
+#             run.overtaken_twin_module), an overtaken load copy (overtaken: rule 5), kept_entangled (a source received
 #             a non-diagonal gate or a measurement after the rail was written: no _unc can clean it;
 #             rules 5 and 6), rule6_image (an operand a rule-6 clean's inverse read and whose producer's _unc can no
 #             longer clean it, frozen or not: rule 5 sentence 1 names a rule-6 image as never uncomputed; rt/core.c
