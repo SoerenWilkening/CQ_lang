@@ -612,6 +612,184 @@ bool unifySubLoopExits(Function &F) {
   return any;
 }
 
+// CR rules 2, 14 (owner, cq-oiclq): one cq_measure is one measurement. A measurement in the exit arm of a loop with a quantum exit, the
+// loop also leaving past it (a `return` in the loop), runs once after the trips, on the arm's value merged across them, unconditionally:
+// the paths past it are measured too, rule 2's deviation. The same kind of rewrite as unifySubLoopExits: the edges from the unit past the
+// measurement meet it at a hub, whose phis carry what their targets and later readers take (poison where a value does not reach), and
+// the hub then branches on which edge came in. The hub is the loop's continuation, so the measurement is no part of a trip. A measurement
+// inside a loop stays that loop's.
+bool measureAfterTrips(Function &F, const cq::TaintInfo &T) {
+  auto quantum = [&](const Value *v) {
+    return any_of(T.specializations(), [&](const cq::Specialization &S) { return S.F == &F && T.isQuantum(v, S); });
+  };
+  LLVMContext &C = F.getContext();
+  bool any = false;
+  SmallPtrSet<CallInst *, 4> done;   // its hub phi has no taint answer yet
+  auto measureOf = [&](Instruction &I) -> CallInst * {
+    auto *c = dyn_cast<CallInst>(&I);
+    Function *g = c ? c->getCalledFunction() : nullptr;
+    return g && g->isDeclaration() && g->getName().starts_with("cq_measure_") && c->arg_size() == 1 ? c : nullptr;
+  };
+  auto reachable = [](BasicBlock *from) {
+    SmallPtrSet<BasicBlock *, 32> seen{from};
+    SmallVector<BasicBlock *, 16> work{from};
+    while (!work.empty())
+      for (BasicBlock *x : successors(work.pop_back_val()))
+        if (seen.insert(x).second)
+          work.push_back(x);
+    return seen;
+  };
+  for (bool changed = true; changed;) {
+    changed = false;
+    DominatorTree DT(F);
+    LoopInfo LI(DT);
+    for (BasicBlock &BB : F) {
+      if (LI.getLoopFor(&BB))
+        continue;
+      CallInst *cm = nullptr;
+      for (Instruction &I : BB)
+        if (CallInst *c = measureOf(I); c && !cm && !done.count(c) && quantum(c->getArgOperand(0)))
+          cm = c;
+      if (!cm)
+        continue;
+      // The top-level loop whose exit arm holds the block, by a quantum exit.
+      Loop *L = nullptr;
+      cq::loops::exits::Unit U;
+      for (Loop *l : LI) {
+        cq::loops::exits::Unit u = cq::loops::exits::unitOf(*l);
+        if (!is_contained(u.arm, &BB))
+          continue;
+        SmallVector<BasicBlock *, 4> exiting;
+        l->getExitingBlocks(exiting);
+        if (any_of(exiting, [&](BasicBlock *e) {
+              Instruction *t = e->getTerminator();
+              auto *br = dyn_cast<BranchInst>(t);
+              auto *sw = dyn_cast<SwitchInst>(t);
+              return (br && br->isConditional() && quantum(br->getCondition())) || (sw && quantum(sw->getCondition()));
+            })) {
+          L = l;
+          U = std::move(u);
+          break;
+        }
+      }
+      if (!L)
+        continue;
+      // The edges from the unit past the block, in the function's order.
+      SmallVector<std::pair<BasicBlock *, BasicBlock *>, 4> edges;
+      {
+        SmallPtrSet<BasicBlock *, 32> toM;
+        for (BasicBlock &b : F)
+          if (reachable(&b).count(&BB))
+            toM.insert(&b);
+        for (BasicBlock &u : F) {
+          if (&u == &BB || !U.contains(*L, &u) || !toM.count(&u))
+            continue;   // the block's own edges follow the measurement
+          for (BasicBlock *x : successors(&u))
+            if (!toM.count(x) && !is_contained(U.dead, x) && !is_contained(U.abort, x) &&
+                !is_contained(edges, std::make_pair(&u, x)))
+              edges.push_back({&u, x});
+        }
+      }
+      if (edges.empty())
+        continue;
+      // Dominance before any edge moves: per edge, whether a value reaches it.
+      DominatorTree Old(F);
+      Instruction *firstAfter = cm->getNextNode();
+      BasicBlock *rest = BB.splitBasicBlock(firstAfter, BB.getName() + ".cq.rest");
+      BasicBlock *E = BasicBlock::Create(C, "cq.measure", &F);
+      cm->moveBefore(*E, E->end());
+      BB.getTerminator()->setSuccessor(0, E);
+      SmallVector<BasicBlock *, 4> from;
+      SmallVector<BasicBlock *, 4> to;
+      from.push_back(&BB);
+      to.push_back(rest);
+      for (auto [u, x] : edges) {
+        // A block of its own per edge: u may leave for the measurement too.
+        BasicBlock *f = BasicBlock::Create(C, "cq.past", &F);
+        BranchInst::Create(E, f);
+        Instruction *t = u->getTerminator();
+        for (unsigned i = 0; i < t->getNumSuccessors(); ++i)
+          if (t->getSuccessor(i) == x)
+            t->setSuccessor(i, f);
+        from.push_back(f);
+        to.push_back(x);
+      }
+      SmallVector<BasicBlock *, 4> targets;
+      for (BasicBlock *x : to)
+        if (!is_contained(targets, x))
+          targets.push_back(x);
+      // The measured value: the arm's, poison on the paths past it (any value refines it, rule 9).
+      {
+        Value *arg = cm->getArgOperand(0);
+        PHINode *h = PHINode::Create(arg->getType(), from.size(), arg->getName() + ".hub");
+        h->insertBefore(cm);
+        for (size_t e = 0; e < from.size(); ++e)
+          h->addIncoming(e ? static_cast<Value *>(PoisonValue::get(arg->getType())) : arg, from[e]);
+        cm->setArgOperand(0, h);
+      }
+      // The targets' phis: one hub phi each.
+      for (BasicBlock *x : targets)
+        for (PHINode &P : x->phis()) {
+          PHINode *h = PHINode::Create(P.getType(), from.size(), P.getName() + ".hub");
+          h->insertBefore(cm);
+          for (size_t e = 0; e < from.size(); ++e)
+            h->addIncoming(e && to[e] == x ? P.getIncomingValueForBlock(edges[e - 1].first) : PoisonValue::get(P.getType()), from[e]);
+          for (size_t e = 1; e < from.size(); ++e)
+            if (to[e] == x)
+              while (P.getBasicBlockIndex(edges[e - 1].first) >= 0)
+                P.removeIncomingValue(edges[e - 1].first, /*DeletePHIIfEmpty=*/false);
+          P.addIncoming(h, E);
+        }
+      // Which edge came in.
+      if (targets.size() == 2) {
+        PHINode *w = PHINode::Create(Type::getInt1Ty(C), from.size(), "cq.which");
+        w->insertBefore(cm);
+        for (size_t e = 0; e < from.size(); ++e)
+          w->addIncoming(ConstantInt::getBool(C, to[e] == targets[0]), from[e]);
+        BranchInst::Create(targets[0], targets[1], w, E);
+      } else {
+        PHINode *w = PHINode::Create(Type::getInt32Ty(C), from.size(), "cq.which");
+        w->insertBefore(cm);
+        for (size_t e = 0; e < from.size(); ++e)
+          w->addIncoming(ConstantInt::get(Type::getInt32Ty(C), find(targets, to[e]) - targets.begin()), from[e]);
+        SwitchInst *sw = SwitchInst::Create(w, targets.back(), targets.size() - 1, E);
+        for (size_t i = 0; i + 1 < targets.size(); ++i)
+          sw->addCase(ConstantInt::get(Type::getInt32Ty(C), i), targets[i]);
+      }
+      // Later readers: a value that no longer dominates a use is read through a hub phi.
+      DominatorTree New(F);
+      SmallVector<Instruction *, 16> insts;
+      for (BasicBlock &b : F)
+        for (Instruction &I : b)
+          if (!I.getType()->isVoidTy())
+            insts.push_back(&I);
+      for (Instruction *I : insts) {
+        PHINode *h = nullptr;
+        for (Use &us : make_early_inc_range(I->uses())) {
+          auto *ui = dyn_cast<Instruction>(us.getUser());
+          if (!ui || !New.isReachableFromEntry(ui->getParent()) || New.dominates(I, us))
+            continue;
+          if (!h) {
+            h = PHINode::Create(I->getType(), from.size(), I->getName() + ".hub");
+            h->insertBefore(&E->front());
+            for (size_t e = 0; e < from.size(); ++e) {
+              BasicBlock *src = e ? edges[e - 1].first : &BB;
+              bool reach = I->getParent() == src ? true : Old.dominates(I->getParent(), src);
+              h->addIncoming(reach ? static_cast<Value *>(I) : PoisonValue::get(I->getType()), from[e]);
+            }
+          }
+          us.set(h);
+        }
+      }
+      done.insert(cm);
+      cm->setMetadata("cq.after.trips", MDNode::get(C, {}));
+      changed = any = true;
+      break;   // the loops changed: LoopInfo again
+    }
+  }
+  return any;
+}
+
 // cq-jkq8 (CR rule 23): llvm.get.rounding (C's FLT_ROUNDS) and llvm.set.rounding read and write the rounding
 // mode, the environment's mode part, which C17 §7.6 reads and writes by fegetround / fesetround. In a tainted
 // function each becomes that call with x86-64's encoding change around it (FLT_ROUNDS 0 toward zero, 1 nearest,
@@ -856,6 +1034,21 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
       T = cq::computeTaint(M, TO);
     } else {
       trace("taint: final (preliminary, CFG unchanged)");
+    }
+    // 3b. A measurement in a loop's exit arm runs once after the trips: which ones is a question of taint, and the rewrite leaves the
+    // loops' own CFG as it is, so taint afresh once more.
+    {
+      bool moved = false;
+      for (Function *F : Tainted)
+        if (measureAfterTrips(*F, T)) {
+          trace("measure after trips: changed @" + F->getName());
+          moved = true;
+          FAM.invalidate(*F, PreservedAnalyses::none());
+        }
+      if (moved) {
+        T = cq::TaintInfo();
+        T = cq::computeTaint(M, TO);
+      }
     }
     const cq::TaintInfo &Final = T;
     if (DumpTaint)

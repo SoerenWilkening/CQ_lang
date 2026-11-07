@@ -51,6 +51,11 @@ def one(a, probe: Path) -> int:
             why.append("no lowered body")
         if SURFACE.search(b):
             why.append("a CQ.h surface call is left")
+        if a.measures is not None and len(re.findall(r"call [^@]*@cqrt_measure_", b)) != a.measures:
+            why.append(f"{len(re.findall(r'call [^@]*@cqrt_measure_', b))} cqrt_measure calls, not {a.measures}")
+        if a.measures is not None and re.search(r"^define [^\n]*_unc\(.*?^}", mod, re.S | re.M) and any(
+                "cqrt_measure" in t for t in re.findall(r"^define [^\n]*_unc\(.*?^}", mod, re.S | re.M)):
+            why.append("a twin measures")
         try:
             c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(probe), "--lowered",
                                 str(lowered), "--entry", e], capture_output=True, text=True, cwd=ROOT / "checker",
@@ -69,6 +74,7 @@ def main() -> int:
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", required=True)
     ap.add_argument("--entry", action="append")
+    ap.add_argument("--measures", type=int, help="the cqrt_measure calls each entry must hold; no twin may hold one")
     ap.add_argument("probes", nargs="+")
     a = ap.parse_args()
     fails = sum(one(a, Path(p).resolve()) for p in a.probes)
