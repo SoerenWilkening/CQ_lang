@@ -2048,10 +2048,13 @@ void Walker::emitBlock(BasicBlock *b) {
             if (auto bi = sh.binds.find(&phi); bi != sh.binds.end())
               in.back().unitFields[&phi] = SmallVector<Operand, 4>(bi->second.begin(), bi->second.end());
       }
+      // The edges into C from outside the tail lie off the tail's assumption (a quantum edge that skips the tail: its value is lost).
+      std::optional<Pred> assumed = ctx.preds().assume(std::nullopt, ctx.T, ctx.S);
       if (BasicBlock *C = units.find(t)->second.cont)
         for (PHINode &phi : C->phis())
           if (unitBoundPhis.count(&phi) && spine::isQ(ctx, &phi))
             joinUnitPhi(phi, in, b);
+      ctx.preds().assume(assumed, ctx.T, ctx.S);
     }
   }
 
