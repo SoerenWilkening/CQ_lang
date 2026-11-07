@@ -1590,9 +1590,22 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   const Pred hq = qp(header);
   // Multi-exit: a block on every path of a trip that goes on (it dominates the latch) is in no arm: its
   // predicate's extra conjuncts are the negated quantum exits, which the trip predicate a carries.
+  // cq-t30vh (CR rule 14 with rules 8, 9; the spine's cq-h8y6 inside a trip): a sub-unit's TAIL (Exits.h). The unit lowers it per
+  // trip for its own paths. On the paths that enter it from outside the unit it is a part of this trip like any other block,
+  // walked after the unit under those paths' predicate (kTailPred), its values this walk's. inTail: that assumption is on.
+  DenseMap<const BasicBlock *, Loop *> kTail;
+  DenseMap<const BasicBlock *, Pred> kTailPred;
+  std::optional<Pred> baseAssumed;
+  bool inTail = false;
   auto armed = [&](const BasicBlock *u) {
     if (mx && mxDT->dominates(u, latch))
       return false;
+    if (auto tp = kTailPred.find(u); tp != kTailPred.end()) {
+      std::optional<Pred> was = ctx.preds().assume(tp->second, ctx.T, ctx.S);
+      bool r = !samePred(qp(u), hq);
+      ctx.preds().assume(was, ctx.T, ctx.S);
+      return r;
+    }
     return !samePred(qp(u), hq);
   };
   auto subOf = [&](const BasicBlock *b) -> Loop * {
@@ -1621,7 +1634,36 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           if (L.contains(b))
             kOf[b] = s;
     }
+  {
+    SmallVector<Loop *, 4> kLoops;
+    for (Loop *s : L.getSubLoops())
+      if (any_of(s->blocks(), [&](const BasicBlock *b) { return kOf.count(b) != 0; }))
+        kLoops.push_back(s);
+    for (Loop *s : kLoops) {
+      exits::Unit SU = exits::unitOf(*s);
+      for (BasicBlock *b : SU.tail) {
+        if (!L.contains(b))
+          continue;
+        if (kTailPred.empty()) {
+          baseAssumed = ctx.preds().assume(std::nullopt, ctx.T, ctx.S);
+          ctx.preds().assume(baseAssumed, ctx.T, ctx.S);
+        }
+        kTail.try_emplace(b, s);
+        kTailPred.try_emplace(b, exits::tailPred(ctx, *s, SU, b, spine::shared(ctx).dt(*header->getParent())));
+        // A loop of the tail (or its exit arm) stays a unit of its own; any other tail block is a block of this trip.
+        kOf.erase(b);
+        for (Loop *o : kLoops)
+          if (o != s && exits::unitOf(*o).contains(*o, b))
+            kOf[b] = o;
+      }
+    }
+  }
   auto kunit = [&](const BasicBlock *b) -> Loop * { return kOf.lookup(b); };
+  // The unit's own edge into its tail block s: no edge of this walk (the unit's trips took it).
+  auto unitEdgeIntoTail = [&](const BasicBlock *p, const BasicBlock *s) {
+    Loop *t = kTail.lookup(s);
+    return t && kunit(p) == t;
+  };
   // The classical fact on the edge p -> b where p's flow ran (rule 8): p's fact and the edge's classical
   // factor; a K-unit's edge into its continuation holds wherever the unit ran (it always ends there).
   auto edgeFact = [&](const BasicBlock *p, const BasicBlock *b) {
@@ -1640,7 +1682,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     Loop *sl = subOf(s);
     Loop *ks = kunit(s);
     for (const BasicBlock *p : predecessors(s))
-      if (!(sl && sl->contains(p)) && !(ks && kunit(p) == ks) && !is_contained(ps, p))
+      if (!(sl && sl->contains(p)) && !(ks && kunit(p) == ks) && !unitEdgeIntoTail(p, s) && !is_contained(ps, p))
         ps.push_back(p);
     return ps;
   };
@@ -1673,16 +1715,58 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     return is_contained(UX.abort, a) ? b : a;
   };
   std::function<EK(const BasicBlock *, const BasicBlock *)> edgeKind;
+  // A tail block entered from outside the unit both by a linearized edge (a quantum skip of the loop, in the unit's classical
+  // arm) and by a real one: the open flow runs on through it, so the K-unit ends in a real branch to it, not to C.
+  auto kInto = [&](Loop *k) -> BasicBlock * {
+    if (classify(*k, ctx.T, ctx.S) != Case::QuantumExit)
+      return nullptr;
+    for (BasicBlock *tb : exits::unitOf(*k).tail) {
+      if (kTail.lookup(tb) != k)
+        continue;
+      bool anyReal = false, anyLin = false;
+      for (const BasicBlock *p : fwdPreds(tb))
+        if (kTail.lookup(p) != k)
+          (edgeKind(p, tb) == EK::Real ? anyReal : anyLin) = true;
+      if (anyReal && anyLin)
+        return tb;
+    }
+    return nullptr;
+  };
   auto kReal = [&](Loop *k) {
     if (classify(*k, ctx.T, ctx.S) != Case::QuantumExit)
       return true;   // a classically bounded unit leaves by its classical exit
+    if (kInto(k))
+      return false;   // its flow reaches C through the tail
     BasicBlock *C = exits::unitOf(*k).cont;
     for (const BasicBlock *p : fwdPreds(C))
-      if (!kunit(p) && edgeKind(p, C) == EK::Real)   // another K-unit's edge into C never makes this one real
+      if (!kunit(p) && edgeKind(p, C) == EK::Real) {   // another K-unit's edge into C never makes this one real
+        // Its tail's edge on paths that share the unit's classical facts: a mixed join, the unit's edge linearized.
+        if (auto tp = kTailPred.find(p); tp != kTailPred.end() && kTail.lookup(p) == k &&
+                                         !(cfOf(tp->second) & cfOf(ctx.preds().block(k->getHeader()))).isBottom())
+          continue;
         return true;
+      }
+    // A classical edge into the unit's tail: the unit's paths leave by a real branch past the tail.
+    for (BasicBlock *tb : exits::unitOf(*k).tail)
+      if (kTail.lookup(tb) == k)
+        for (const BasicBlock *p : fwdPreds(tb))
+          if (kTail.lookup(p) != k && edgeKind(p, tb) == EK::Real)
+            return true;
     return false;
   };
+  std::function<EK(const BasicBlock *, const BasicBlock *)> edgeKindAt;
+  // The form of an edge is one fact of the program, whichever block's walk asks: never read under a tail's assumption.
   edgeKind = [&](const BasicBlock *u, const BasicBlock *s) {
+    if (!inTail)
+      return edgeKindAt(u, s);
+    inTail = false;
+    std::optional<Pred> was = ctx.preds().assume(baseAssumed, ctx.T, ctx.S);
+    EK k = edgeKindAt(u, s);
+    ctx.preds().assume(was, ctx.T, ctx.S);
+    inTail = true;
+    return k;
+  };
+  edgeKindAt = [&](const BasicBlock *u, const BasicBlock *s) {
     if (Loop *k = kunit(u); k && kunit(s) != k)
       return kReal(k) ? EK::Real : EK::Linear;
     if (subOf(u))
@@ -1704,11 +1788,14 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         // An exit of a classical branch nested in the arm (u's classical factor is stronger than s's):
         // the classical arms' flows are distinct output blocks and meet at s by a real edge (a mixed
         // join when s is also a quantum join).
-        if (!(cfOf(ctx.preds().block(s)) & !cfOf(ctx.preds().block(u))).isBottom()) {
+        // (A tail block's flow here is its outside paths'.)
+        auto tu = kTailPred.find(u);
+        const Pred uFact = tu != kTailPred.end() ? tu->second.classicalProjection(ctx.T, ctx.S) : cfOf(ctx.preds().block(u));
+        if (!(cfOf(ctx.preds().block(s)) & !uFact).isBottom()) {
           // Quantum arms under one classical fact that meet at s (strtod's `if (i < 7) { q ? a : b; }`): the code of the
           // later arm runs in the same open block, so only the last arm walked leaves by the real edge; the earlier ones
           // are its linearized incomings (the mixed join).
-          const Pred uc = cfOf(ctx.preds().block(u));
+          const Pred uc = uFact;
           auto at = find(rpo, u);
           for (const BasicBlock *p : fwdPreds(s))
             if (p != u && !termQ(p->getTerminator()) && armed(p) && find(rpo, p) > at) {
@@ -1836,9 +1923,48 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   DenseMap<std::pair<const PHINode *, const BasicBlock *>, Value *> &edgeSeed = edgeSeedM;
   // Mixed joins: the value of each phi of b on the real edge u -> b (mintEdgeSeeds).
   DenseMap<std::pair<const PHINode *, const BasicBlock *>, Value *> &edgeVal = edgeValM;
+  // The value of a tail phi on the open flow a K-unit's real branch carries into it (kInto).
+  DenseMap<const PHINode *, std::pair<BasicBlock *, Value *>> kFlowVal;
   auto emitPhis = [&](BasicBlock *b, bool real) {
+    Loop *tk = kTail.lookup(b);
     for (PHINode &p : b->phis()) {
       bool q = isQ(&p);
+      if (tk && !kBound.count(&p) && !real) {
+        // cq-t30vh (the spine's tailMerge): a tail phi on the outside paths merges those paths' incomings only, each under its
+        // edge's predicate on them.
+        std::vector<std::pair<Pred, const Value *>> kept;
+        for (unsigned i = 0; i < p.getNumIncomingValues(); ++i) {
+          const BasicBlock *u = p.getIncomingBlock(i);
+          if (kunit(u) == tk)
+            continue;
+          auto tu = kTailPred.find(u);
+          Pred e = kTail.lookup(u) == tk && tu != kTailPred.end() ? tu->second & ctx.preds().edge(u, b) : ctx.preds().edge(u, b);
+          const Value *v = p.getIncomingValue(i);
+          auto same = find_if(kept, [&](const auto &k) { return k.second == v; });
+          if (same != kept.end())
+            same->first = same->first | e;
+          else
+            kept.push_back({e, v});
+        }
+        const bool composite = p.getType()->isAggregateType() || p.getType()->isVectorTy();
+        if (kept.size() == 1 && composite) {
+          ctx.bindFields(&p, aggr::flattenResult(ctx, kept.front().second));
+          continue;
+        }
+        if (kept.size() == 1) {
+          Operand o = ctx.operand(kept.front().second);
+          ctx.bind(&p, q ? asHandle(o, p.getType()) : o.v);
+          continue;
+        }
+        if (!composite && q && !kept.empty()) {
+          std::vector<std::pair<Pred, Operand>> arms;
+          for (auto &[e, v] : kept)
+            arms.push_back({e, ctx.operand(v)});
+          ctx.bind(&p, selectChain(ctx, arms, railOf(p.getType())));
+          continue;
+        }
+        noteUnbuilt("loops-classical: a phi of a sub-unit's tail that merges a composite on the outside paths", &p);
+      }
       if (kBound.count(&p)) {
         // A phi a nested K-unit bound: its value where the unit ran (rule 14), with the incomings it could
         // not read (lowered after it, on edges that exclude the loop) selected in where their edges hold
@@ -1847,11 +1973,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         std::vector<std::pair<Pred, const Value *>> ja = ctx.takeJoinArms(&p);
         Operand uo = ctx.operand(&p);
         RailType w = railOf(p.getType());
-        if (!ja.empty()) {
-          if (real)
-            internalError("loops-classical: a join arm of a K-unit's phi at a classical join (the unit's real "
-                          "form is taken only where C is entered by a real edge, and a join arm's edge is linear)",
-                          &p);
+        // At a mixed join each real edge's value already holds them (mixedEdge).
+        if (!ja.empty() && !real) {
           std::vector<std::pair<Pred, Operand>> arms;
           Pred E = Pred::bottom();
           for (auto &[e, v] : ja) {
@@ -1896,6 +2019,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           }
           ins.push_back({it->second, v});
         }
+        if (auto kf = kFlowVal.find(&p); kf != kFlowVal.end())
+          ins.push_back(kf->second);
         np->insertInto(ob(b), ob(b)->getFirstNonPHIIt());
         for (auto &[from, v] : ins)
           np->addIncoming(v, from);
@@ -1946,7 +2071,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       DenseMap<BasicBlock *, BasicBlock *> from;
       for (unsigned i = 0; i < p.getNumIncomingValues(); ++i) {
         BasicBlock *u = p.getIncomingBlock(i);
-        if (edgeKind(u, b) != EK::Real)
+        if (unitEdgeIntoTail(u, b) || edgeKind(u, b) != EK::Real)
           continue;   // absorbed by the linearization: its flow reaches b through a real edge
         auto it = edgeFrom.find({u, b});
         if (it == edgeFrom.end())
@@ -1967,6 +2092,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
             in.f[0] = Operand{e->second, true};
         ins.push_back(std::move(in));
       }
+      if (auto kf = kFlowVal.find(&p); kf != kFlowVal.end())
+        ins.push_back(In{kf->second.first, {Operand{kf->second.second, isQ(&p)}}});
       if (ins.empty())
         internalError("loops-classical: a real join with no real edge", &p);
       const unsigned nf = ins[0].f.size();
@@ -2020,13 +2147,24 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     auto factAt = [&](const BasicBlock *p) { return edgeFact(p, s); };
     const Pred uf = factAt(u);
     for (PHINode &p : s->phis()) {
-      if (edgeVal.count({&p, u}) || edgeFieldsM.count({&p, u}) || kBound.count(&p))
+      if (edgeVal.count({&p, u}) || edgeFieldsM.count({&p, u}))
         continue;
+      // A phi a K-unit bound, whose real edges are all from outside it: the unit's value where none of this edge's arms holds.
+      Loop *kp = nullptr;
+      if (kBound.count(&p)) {
+        for (const BasicBlock *pi : p.blocks())
+          if (Loop *k = kunit(pi) ? kunit(pi) : kTail.lookup(pi); k && !kp && !kReal(k))
+            kp = k;
+        if (!kp)
+          continue;
+      }
       const bool composite = p.getType()->isAggregateType() || p.getType()->isVectorTy();
       std::vector<std::pair<Pred, Operand>> arms;
       SmallVector<const Value *, 4> vals;
       for (unsigned i = 0; i < p.getNumIncomingValues(); ++i) {
         BasicBlock *pi = p.getIncomingBlock(i);
+        if (unitEdgeIntoTail(pi, s) || (kp && kunit(pi) == kp))
+          continue;
         if (pi != u) {
           if (edgeKind(pi, s) == EK::Real)
             continue;   // another classical arm: not on u's path
@@ -2041,6 +2179,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
                           &p);
         }
         Pred e = ctx.preds().edge(pi, s).quantumPart(ctx.T, ctx.S);
+        if (auto tp = kTailPred.find(pi); kp && tp != kTailPred.end())
+          e = tp->second & ctx.preds().edge(pi, s);   // its classical atoms too: the unit's value is read where they exclude it
         const Value *v = p.getIncomingValue(i);
         if (auto k = find(vals, v); k != vals.end()) {
           arms[k - vals.begin()].first = arms[k - vals.begin()].first | e;
@@ -2048,6 +2188,13 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         }
         vals.push_back(v);
         arms.push_back({e, composite ? Operand{nullptr, false} : ctx.operand(v)});
+      }
+      if (kp) {
+        Pred E = Pred::bottom();
+        for (auto &a : arms)
+          E = E | a.first;
+        if (!E.isTop())
+          arms.push_back({!E, ctx.operand(&p)});
       }
       if (arms.empty())
         internalError("loops-classical: a real edge into a mixed join carries no incoming", &p);
@@ -2125,6 +2272,10 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       bool lin = false;
       for (const BasicBlock *p : fwdPreds(s))
         lin |= edgeKind(p, s) != EK::Real;
+      // A K-unit's flow that went through its tail (kInto) has no edge of its own here: its value comes in the same way.
+      for (const BasicBlock *p : fwdPreds(s))
+        if (Loop *k = kTail.lookup(p); k && exits::unitOf(*k).cont == s && !kReal(k))
+          lin = true;
       if (lin)
         mixedEdge(u, s);
     }
@@ -2776,7 +2927,30 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
   };
   std::vector<BasicBlock *> pending;
   DenseSet<const BasicBlock *> pendSet;
+  DenseSet<const Loop *> walkedUnits;
+  // The unit's trips left their own bindings on its tail's values: on the outside paths they are unlowered (a phi another unit
+  // bound keeps that unit's value, restored by the caller of the snapshot).
+  auto tailBindsOf = [&](Loop *k) {
+    std::vector<std::pair<const PHINode *, SmallVector<Operand, 4>>> keep;
+    spine::Shared &sh = spine::shared(ctx);
+    for (BasicBlock *tb : exits::unitOf(*k).tail)
+      for (const PHINode &phi : tb->phis())
+        if (auto bi = sh.binds.find(&phi); bi != sh.binds.end() && kBound.count(&phi))
+          keep.push_back({&phi, SmallVector<Operand, 4>(bi->second.begin(), bi->second.end())});
+    return keep;
+  };
+  auto clearTail = [&](Loop *k, const std::vector<std::pair<const PHINode *, SmallVector<Operand, 4>>> &keep) {
+    spine::Shared &sh = spine::shared(ctx);
+    walkedUnits.insert(k);
+    for (BasicBlock *tb : exits::unitOf(*k).tail)
+      for (Instruction &I : *tb)
+        sh.binds.erase(&I);
+    for (auto &[phi, fields] : keep)
+      sh.binds[phi].assign(fields.begin(), fields.end());
+  };
   auto mustWait = [&](BasicBlock *b) {
+    if (Loop *t = kTail.lookup(b); t && (pendSet.count(t->getHeader()) || !walkedUnits.count(t)))
+      return true;
     for (const BasicBlock *p : fwdPreds(b))
       if (pendSet.count(p) && p != b)
         return true;
@@ -2811,6 +2985,24 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
     } else if (!cur) {
       internalError("loops-classical: a linearized block walked with no open block", &*b->begin());
     }
+    // A tail block runs here for the paths from outside its unit only: every predicate under them.
+    struct TailScope {
+      LoweringContext &C;
+      bool &in;
+      std::optional<Pred> was;
+      bool on, wasIn;
+      ~TailScope() {
+        if (on) {
+          C.preds().assume(was, C.T, C.S);
+          in = wasIn;
+        }
+      }
+    } tailScope{ctx, inTail, std::nullopt, false, inTail};
+    if (auto tp = kTailPred.find(b); tp != kTailPred.end()) {
+      tailScope.was = ctx.preds().assume(tp->second, ctx.T, ctx.S);
+      tailScope.on = true;
+      inTail = true;
+    }
     if (!sl)
       requireFact(b);
     if (sl) {
@@ -2842,7 +3034,9 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           if (ctx.bound(&P))
             was.insert(&P);
         BasicBlock *at = cur;
+        auto keepTail = tailBindsOf(sl);
         noteStop(exits::lowerNestedCutoff(ctx, *sl, sd));
+        clearTail(sl, keepTail);
         if (ctx.B().GetInsertBlock() != at)
           internalError("loops-classical: a nested K-loop left the trip's open block", sl->getHeader()->getTerminator());
         for (PHINode &P : C->phis())
@@ -2858,8 +3052,53 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
             if (!rep)
               rep = p;
           }
-        if (!rep)
-          internalError("loops-classical: a K-unit with no edge into its continuation", sl->getHeader()->getTerminator());
+        if (BasicBlock *tb = kInto(sl)) {
+          // The open flow goes on through the tail: a tail phi's value on it is its linearized incomings (the quantum skip).
+          for (PHINode &P : tb->phis()) {
+            if (kBound.count(&P))
+              continue;
+            std::vector<std::pair<Pred, const Value *>> kept;
+            for (unsigned i = 0; i < P.getNumIncomingValues(); ++i) {
+              const BasicBlock *u = P.getIncomingBlock(i);
+              if (unitEdgeIntoTail(u, tb) || edgeKind(u, tb) == EK::Real || (edgeFact(u, tb) & curFact).isBottom())
+                continue;
+              Pred e = ctx.preds().edge(u, tb).quantumPart(ctx.T, ctx.S);
+              const Value *v = P.getIncomingValue(i);
+              auto same = find_if(kept, [&](const auto &k) { return k.second == v; });
+              if (same != kept.end())
+                same->first = same->first | e;
+              else
+                kept.push_back({e, v});
+            }
+            Value *fv;
+            if (kept.size() == 1 && isQ(&P)) {
+              fv = asHandle(ctx.operand(kept.front().second), P.getType());
+            } else if (kept.size() == 1) {
+              fv = ctx.operand(kept.front().second).v;
+            } else if (kept.empty()) {
+              fv = isQ(&P) ? seed(Constant::getNullValue(irTypeOf(ctx.M.getContext(), railOf(P.getType()))), railOf(P.getType()))
+                           : static_cast<Value *>(Constant::getNullValue(P.getType()));
+            } else {
+              std::vector<std::pair<Pred, Operand>> arms;
+              for (auto &[e, v] : kept)
+                arms.push_back({e, ctx.operand(v)});
+              fv = selectChain(ctx, arms, railOf(P.getType()));
+            }
+            kFlowVal[&P] = {cur, fv};
+          }
+          ctx.B().CreateBr(ob(tb));
+          cur = nullptr;
+          return;
+        }
+        if (!rep) {
+          // Every edge of the unit into C leaves from its tail, whose walk continues this block.
+          if (none_of(SU.tail, [&](const BasicBlock *t) { return kTail.lookup(t) == sl; }))
+            internalError("loops-classical: a K-unit with no edge into its continuation", sl->getHeader()->getTerminator());
+          if (kReal(sl))
+            noteUnbuilt("loops-classical: a K-unit under a classical skip whose every edge into its continuation is its tail's",
+                        sl->getHeader()->getTerminator());
+          return;
+        }
         kRep[sl] = rep;
         if (edgeKind(rep, C) == EK::Real) {
           ctx.B().CreateBr(ob(C));
@@ -2899,9 +3138,11 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       for (PHINode &P : sx->phis())
         if (ctx.bound(&P))
           was.insert(&P);
+      auto keepTail = tailBindsOf(sl);
       // A case-1 sub-loop's continuation may lie outside this loop (cq-j5mq): its edges are real branches (target).
       auto subOut = lowerLoop(*sl, sc, sx && L.contains(sx) ? ob(sx) : nullptr, false);
       outerTrip = savedTrip;
+      clearTail(sl, keepTail);
       for (size_t i = 0; i < subOut.size();) {
         const Value *v = subOut[i].first;
         SmallVector<Operand, 2> ops;

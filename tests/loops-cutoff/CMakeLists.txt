@@ -57,6 +57,12 @@ add_test(NAME loops-cutoff-tail-phis
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/tail_guard2_ir.O1.ll
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/seed_arm_ir.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-t30vh: a K-loop's tail inside another loop's trip on the paths that skip the loop.
+add_test(NAME loops-cutoff-tail-trip
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/tail_trip.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # Nested loop tails (review of eda902b..096db1c): tail bindings and assumptions composed, one entry each.
 add_test(NAME loops-cutoff-tail-nest
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py

@@ -418,11 +418,19 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
   // a noreturn arm): the outermost loop of the arm holding it (a loop not containing L's header).
   // A sub-loop with several live exits (cq-lgkx) is a unit with an exit arm of its own (Exits.h): the arm
   // blocks inside L belong to that unit, one node of the trip that ends at its continuation.
-  DenseMap<const BasicBlock *, Loop *> subArm;
-  for (Loop *S : L.getSubLoops())
-    for (BasicBlock *b : exits::unitOf(*S).arm)
-      if (L.contains(b))
-        subArm[b] = S;
+  // Its TAIL (Exits.h, cq-t30vh) is not: the sub-unit lowers it for its own paths, and on the paths that enter it from outside
+  // that unit it is a block of this trip like any other, whose edges into the continuation are selected in over the unit's value.
+  DenseMap<const BasicBlock *, Loop *> subArm, subTail;
+  for (Loop *S : L.getSubLoops()) {
+    exits::Unit SU = exits::unitOf(*S);
+    for (BasicBlock *b : SU.arm)
+      if (L.contains(b)) {
+        if (is_contained(SU.tail, b))
+          subTail[b] = S;
+        else
+          subArm[b] = S;
+      }
+  }
   auto subLoopOf = [&](const BasicBlock *b) -> Loop * {
     if (Loop *S = subArm.lookup(b))
       return S;
@@ -1259,13 +1267,36 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       }
       if (b != H)
         for (PHINode &P : b->phis()) {
-          if (boundThisTrip.count(&P))
+          if (boundThisTrip.count(&P)) {
+            // cq-t30vh: the sub-unit bound P on its own paths; its tail's edges into its continuation hold on the others.
+            std::vector<std::pair<Pred, Operand>> tailArms;
+            Pred E = Pred::bottom();
+            for (unsigned i = 0; i < P.getNumIncomingValues(); ++i) {
+              BasicBlock *u = P.getIncomingBlock(i);
+              if (!subTail.count(u) || subLoopOf(u))
+                continue;
+              Pred e = contribution(u, b);
+              if (e.isBottom())
+                continue;
+              E = E | e;
+              tailArms.push_back({e, ctx.operand(P.getIncomingValue(i))});
+            }
+            if (!tailArms.empty()) {
+              for (auto &[e, v] : ctx.takeJoinArms(&P))
+                if (none_of(P.blocks(), [&, v = v](const BasicBlock *u) {
+                      return subTail.count(u) && P.getIncomingValueForBlock(u) == v;
+                    }))
+                  ctx.addJoinArm(&P, e, v);
+              tailArms.push_back({!E, ctx.operand(&P)});
+              set(&P, Operand{selectChain(ctx, tailArms, railOf(P.getType())), true});
+            }
             continue;
+          }
           if (!isQ(&P)) {
             classicalPhi(P);
             continue;
           }
-          if (!classicalTerms) {
+          if (!classicalTerms && !subTail.count(b)) {
             if (P.getType()->isAggregateType() || P.getType()->isVectorTy()) {
               // cq-pfpy: a composite merges field by field (rule 26), bound or rebound per trip.
               bool first = mine.insert(&P).second;
