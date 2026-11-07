@@ -30,7 +30,7 @@ Fails on any of:
             with its a_K dropped or a garbage rail beside it (cq-rdsdj); a K-loop behind a function pointer with its a_K
             dropped (cq-2in7d); a classical unpaired longjmp's second return wrong (cq-li3wr); rule 19's host complement with
             the callee swapped (cq-d9vhj); rule 23's final flags rail wrong or with a second rail like it (cq-f8m9n); a
-            literal adjacent in the link with other bytes (cq-l1fc8). --rv3 runs this group alone
+            literal adjacent in the link with other bytes (cq-l1fc8); a read through a pointer one past an object's end with another object after it, wrong byte (cq-985fi). --rv3 runs this group alone
   error     a missing entry or main(argc, argv) is not an error (exit 2)
 
 Every run goes through the CLI (`python3 -m cqcheck user` from checker/), as cqcc --cq-check runs it.
@@ -252,6 +252,8 @@ RV3 = {
     # cq-6b2cc: g's word 0x279c0000000a lies in our arena; a wrong value there and a wrong pointer in cell both differ
     "arena_word": [("wrong_value", r"cqrt_alloc_i32\(i32 10140\)", "cqrt_alloc_i32(i32 10141)"),
                    ("wrong_pointer", r"cqrt_alloc_i64\(i64 ptrtoint \(ptr @a to i64\)\)", "cqrt_alloc_i64(i64 ptrtoint (ptr @b to i64))")],
+    # cq-985fi: the probe keeps a read through a pointer one past A's end, B placed after it, in the domain
+    "onepast": [("wrong_byte", r"cq_template_xor_i32_hl\(i32 %9, i32 -1\)", "cq_template_xor_i32_hl(i32 %9, i32 -2)")],
     "2in7d": [("no_ak", r"  call void @cqrt_and_i1\(i32 %40, i32 %48, i32 %49\)\n", ""),
               ("no_xor", r"cq_template_xor_i32_hl\(", "cq_template_or_i32_hl(")],
     "li3wr": [("second_return", r"cq_template_add_i32_hl\(i32 %4, i32 6\)", "cq_template_add_i32_hl(i32 %4, i32 7)")],
