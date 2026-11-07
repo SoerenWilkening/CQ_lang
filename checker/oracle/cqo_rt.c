@@ -50,6 +50,7 @@
 #include <unistd.h>
 
 #include "../rt/cq_standin.h"
+#include "../rt/libm_next.h"
 
 
 /* ------------------------------------------------------------------ output */

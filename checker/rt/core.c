@@ -47,6 +47,8 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+
+#include "libm_next.h"
 #include <sys/wait.h>
 #include <unistd.h>
 

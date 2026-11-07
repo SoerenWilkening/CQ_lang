@@ -71,6 +71,7 @@
 #include <string.h>
 
 #include "cqe.h"
+#include "libm_next.h"
 
 /* cq-mgi / cq-arch M1: not this family's template; no cqe_fail, out untouched. */
 #ifndef CQE_OP_NOT_MINE
