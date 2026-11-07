@@ -1806,6 +1806,20 @@ Value *lowerSelect(LoweringContext &ctx, SelectInst &sel) {
                   &sel);
   if (!ctx.T.isQuantum(c, ctx.S)) {
     CtxMergeSink sink(ctx);   // rule 9 at a58c3a4: a classical select over the handles, no gate
+    // Rule 14: a classical per-trip value read after a quantum-exit loop is its exit value, a rail (exit capture; the
+    // induction's test in musl-shaped `i != 0` after the loop): no atom of any predicate, one select on that rail.
+    if (Operand cr = ctx.operand(c); cr.handle) {
+      RailType w = mergeRail(sel.getType());
+      auto handle = [&](const Value *v) {
+        Operand o = code ? addressAsInt(ctx, ctx.operand(v)) : ctx.operand(v);
+        return o.handle ? o : Operand{sink.seed(o.v, w), true};
+      };
+      abi::TemplateSpec spec;
+      spec.op = "select";
+      spec.w = w;
+      Operand t = handle(sel.getTrueValue()), f = handle(sel.getFalseValue());
+      return ctx.emitTemplate(spec, {cr, t, f});
+    }
     return classicalSelect(sel, ctx.B(), sink);
   }
   Pred p = Pred::atom(c);
