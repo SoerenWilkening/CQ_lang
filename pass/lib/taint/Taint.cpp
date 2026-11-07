@@ -700,6 +700,10 @@ bool Analyzer::measuredRead(const Value *V) {
   } else {
     return false;
   }
+  // Rule 19: inside a _ctl clone the measured rail is a controlled copy; `h` is not collapsed where the predicate is 0 and rule 2's
+  // classical collapse does not apply to it, so a later read of it is still quantum.
+  if (cur->ctl)
+    return false;
   SmallVector<const CallBase *, 2> meas;
   for (const User *U : V->users())
     if (auto *CB = dyn_cast<CallBase>(U))

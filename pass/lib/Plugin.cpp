@@ -616,8 +616,8 @@ bool unifySubLoopExits(Function &F) {
 // loop also leaving past it (a `return` in the loop), runs once after the trips, on the arm's value merged across them, unconditionally:
 // the paths past it are measured too, rule 2's deviation. The same kind of rewrite as unifySubLoopExits: the edges from the unit past the
 // measurement meet it at a hub, whose phis carry what their targets and later readers take (poison where a value does not reach), and
-// the hub then branches on which edge came in. The hub is the loop's continuation, so the measurement is no part of a trip. A measurement
-// inside a loop stays that loop's.
+// the hub then branches on which edge came in. The hub is the loop's continuation, so the measurement is no part of a trip. Inside an outer
+// loop the same holds for one of its trips: once per outer trip, after the inner loop's trips (owner, cq-2z29a).
 bool measureAfterTrips(Function &F, const cq::TaintInfo &T) {
   auto quantum = [&](const Value *v) {
     return any_of(T.specializations(), [&](const cq::Specialization &S) { return S.F == &F && T.isQuantum(v, S); });
@@ -630,13 +630,18 @@ bool measureAfterTrips(Function &F, const cq::TaintInfo &T) {
     Function *g = c ? c->getCalledFunction() : nullptr;
     return g && g->isDeclaration() && g->getName().starts_with("cq_measure_") && c->arg_size() == 1 ? c : nullptr;
   };
-  auto reachable = [](BasicBlock *from) {
+  // Within one trip of every loop around `at`: a back edge to one of their headers starts another trip, another measurement.
+  auto reachable = [](BasicBlock *from, Loop *at) {
     SmallPtrSet<BasicBlock *, 32> seen{from};
     SmallVector<BasicBlock *, 16> work{from};
     while (!work.empty())
-      for (BasicBlock *x : successors(work.pop_back_val()))
-        if (seen.insert(x).second)
+      for (BasicBlock *x : successors(work.pop_back_val())) {
+        bool backEdge = false;
+        for (Loop *l = at; l && !backEdge; l = l->getParentLoop())
+          backEdge = l->getHeader() == x;
+        if (!backEdge && seen.insert(x).second)
           work.push_back(x);
+      }
     return seen;
   };
   for (bool changed = true; changed;) {
@@ -644,18 +649,18 @@ bool measureAfterTrips(Function &F, const cq::TaintInfo &T) {
     DominatorTree DT(F);
     LoopInfo LI(DT);
     for (BasicBlock &BB : F) {
-      if (LI.getLoopFor(&BB))
-        continue;
+      Loop *Host = LI.getLoopFor(&BB);   // a measurement in an outer loop's body stays that loop's: once per its trips
       CallInst *cm = nullptr;
       for (Instruction &I : BB)
         if (CallInst *c = measureOf(I); c && !cm && !done.count(c) && quantum(c->getArgOperand(0)))
           cm = c;
       if (!cm)
         continue;
-      // The top-level loop whose exit arm holds the block, by a quantum exit.
+      // The loop beside the block whose exit arm holds it, by a quantum exit.
       Loop *L = nullptr;
       cq::loops::exits::Unit U;
-      for (Loop *l : LI) {
+      SmallVector<Loop *, 4> siblings(Host ? Host->begin() : LI.begin(), Host ? Host->end() : LI.end());
+      for (Loop *l : siblings) {
         cq::loops::exits::Unit u = cq::loops::exits::unitOf(*l);
         if (!is_contained(u.arm, &BB))
           continue;
@@ -679,7 +684,7 @@ bool measureAfterTrips(Function &F, const cq::TaintInfo &T) {
       {
         SmallPtrSet<BasicBlock *, 32> toM;
         for (BasicBlock &b : F)
-          if (reachable(&b).count(&BB))
+          if (reachable(&b, Host).count(&BB))
             toM.insert(&b);
         for (BasicBlock &u : F) {
           if (&u == &BB || !U.contains(*L, &u) || !toM.count(&u))
