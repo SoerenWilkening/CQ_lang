@@ -1454,7 +1454,8 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
         for (unsigned i = 0; i < cp.P->getNumIncomingValues(); ++i) {
           BasicBlock *u = cp.P->getIncomingBlock(i);
           const Pred &e = ctx.preds().edge(u, UX.cont);
-          if (inUnit(u) || (e & cH).isBottom() || !(e & hb).isBottom())
+          // predsMeet: two case atoms of one scrutinee exclude each other (clang's cleanup-dest switch after a loop).
+          if (inUnit(u) || (e & cH).isBottom() || predsMeet(e, hb))
             continue;
           Value *v = cp.P->getIncomingValue(i);
           if ((!ctx.bound(v) && !isa<Constant>(v)) || !predReadable(ctx, e)) {
@@ -3130,7 +3131,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
           for (unsigned i = 0; i < P->getNumIncomingValues(); ++i) {
             BasicBlock *u = P->getIncomingBlock(i);
             const Pred &e = ctx.preds().edge(u, P->getParent());
-            if (!inUnit(u) && !(e & cH).isBottom() && (e & hb).isBottom())
+            if (!inUnit(u) && !(e & cH).isBottom() && !predsMeet(e, hb))
               ctx.addJoinArm(P, e, P->getIncomingValue(i));
           }
         }
