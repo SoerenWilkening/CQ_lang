@@ -84,13 +84,16 @@ def lost_twin(fn, twin, text):
     return in_fn(fn, edit, text)
 
 
-GOOD = [(SRC / "q1", "q1"), (SRC / "q3", "q3"), (SRC / "q4", "q4b"), (SRC / "q4", "q4c"), (SRC / "q5", "q5"),
+GOOD = [(SRC / "q1", "q1"), (SRC / "q1c", "q1c"), (SRC / "q3", "q3"), (SRC / "q4", "q4b"), (SRC / "q4", "q4c"), (SRC / "q5", "q5"),
         (CALLS / "table_twin_measure", "e_rail"), (CALLS / "twin_rot_in_loop", "r3")]
 MUTANTS = [
     ("rule18_dropped_twin_struct", CALLS / "partial_flags", "sc_measure", dropped_twin_struct),
     ("rule18_no_twin_inner", SRC / "q4", "q4b", no_twin_inner),
     ("t14_empty_twin_rail", CALLS / "table_twin_measure", "e_rail", lambda t: empty_twin("__cq_q_h_11_t_ctl_unc", t)),
-    ("t14_empty_twin_ptr", SRC / "q1", "q1", lambda t: empty_twin("__cq_q_inc_1_t_unc", t)),
+    # q1's pointer is a volatile load, an address rail (rules 20, 24; since e8788b4): the dispatch calls _t_ctl and its twin, never
+    # _t_unc, which only a classical pointer reaches (rule 19): q1c
+    ("t14_empty_twin_ptr", SRC / "q1", "q1", lambda t: empty_twin("__cq_q_inc_1_t_ctl_unc", t)),
+    ("t14_empty_twin_classical_ptr", SRC / "q1c", "q1c", lambda t: empty_twin("__cq_q_inc_1_t_unc", t)),
     # a classical-path measurement leaves the twin (Q3, rulings3 E): this `_t` is off the no-twin list
     ("t14_empty_twin_classical_measure", CALLS / "table_twin_measure", "e_cl", lambda t: empty_twin("__cq_q_g_11_t_unc", t)),
     ("rule19_second_copy", SRC / "q3", "q3", second_copy),
