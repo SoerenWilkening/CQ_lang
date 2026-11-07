@@ -1890,7 +1890,8 @@ void Analyzer::transferCall(CallBase &CB) {
   if (isMeasure(G)) {
     cur->hasMeasure = true;
     cur->measuresRail = cur->measuresRail || L(actuals[0]).any();
-    if (blockCT(CB.getParent()) || cur->ctl)
+    // A measurement moved after a loop's trips (Plugin's measureAfterTrips) merges with the paths past it under a quantum choice: tainted too.
+    if (blockCT(CB.getParent()) || cur->ctl || CB.getMetadata("cq.after.trips"))
       cur->taintedMeasure = true;   // rule 18: a measurement whose outcome is tainted; a classical-path one keeps the twin (rule 2)
     // Rule 19: inside a _ctl clone the measured rail is a controlled copy: the outcome is tainted, the rail is the value.
     if (cur->ctl && L(actuals[0]).any())
