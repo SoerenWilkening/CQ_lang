@@ -306,9 +306,9 @@ void cqd_out_ctl_measure(int h) {
   snprintf(b, sizeof b, "{\"ev\":\"out_mem\",\"table\":\"ctl_measure\",\"h\":%d}", h);
   cqe_log(b);
 }
-void cqd_out_meas_fn(const char *fn) {
+void cqd_out_meas_fn(const char *fn, int site) {
   char b[400];
-  snprintf(b, sizeof b, "{\"ev\":\"out_mem\",\"table\":\"meas_fn\",\"fn\":\"%s\"}", fn);
+  snprintf(b, sizeof b, "{\"ev\":\"out_mem\",\"table\":\"meas_fn\",\"fn\":\"%s\",\"site\":%d}", fn, site);
   cqe_log(b);
 }
 static void cqd_out_regions(void) {
@@ -1068,6 +1068,7 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
     regions: List[dict] = []
     ctl_measured: List[int] = []
     meas_fn: Optional[str] = None
+    meas_site: Optional[int] = None
     direct_fx: List[dict] = []
     tape_out, tape_seq, deviation = "", [], False
     last_exit: Optional[dict] = None
@@ -1085,6 +1086,8 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
             measured.append({"h": e["h"], "w": e.get("w"), "v": e["v"]})
             if meas_fn is not None:
                 measured[-1]["fn"], meas_fn = meas_fn, None
+                if meas_site is not None:
+                    measured[-1]["site"], meas_site = meas_site, None
         elif ev == "ret":
             rets.append({"call": e.get("call"), "fn": e.get("fn"),
                          "v": {"w": e["w"], "v": e.get("v")} if e.get("w") else e.get("v")})
@@ -1102,7 +1105,7 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
             elif e.get("table") == "ctl_measure":
                 ctl_measured.append(e.get("h"))
             elif e.get("table") == "meas_fn":
-                meas_fn = e.get("fn")
+                meas_fn, meas_site = e.get("fn"), e.get("site")
             else:
                 mem.append({k: e[k] for k in ("name", "addr", "off", "w", "v") if k in e})
         elif ev == "tape" and e.get("op") == "shot":
@@ -1675,6 +1678,70 @@ _CLONE_FN = re.compile(r"^__cq_q_(.+)_(?:v|[01]+)(?:_b\d+(?:_\d+)*)?(?:_t)?(?:_p
 _DEFINE_NAME = re.compile(r'^define [^@]*@"?([-\w.$]+)"?\(')
 
 
+_MEAS_WINDOW = 6
+
+
+def _canon(line: str, operand: str = "", result: str = "") -> str:
+    """An instruction with its SSA names and metadata erased: callee, constants and types stay; the measured rail
+    reads M and the measurement's result R, so the data flow through the measurement is part of the shape."""
+    def name(m: "re.Match[str]") -> str:
+        return "%M" if m.group(0) == operand else "%R" if m.group(0) == result else "%"
+    return re.sub(r"%[-\w.$\"]+", name, re.sub(r", !cq\.measure !\d+", "", line.strip()))
+
+
+def measure_site_classes(text: str) -> Dict[int, int]:
+    """Line index of each cqrt_measure call of the lowered module -> its call-site class (cq-47f8h, owner 2026-11-07:
+    measurements are identified by call site). The pass unrolls a K-loop's body, one measure call per trip (cq-9kcq);
+    the copies are one site of the C program. Two calls of one function and one width are copies of one site when
+    the six instructions before them, or the six after them, read alike with SSA names erased (the measured rail and
+    the result kept apart: the data flow through the measurement is part of the shape) (the first copy has another prologue and the last another epilogue, the middle ones
+    both); the classes are the closure of that relation."""
+    lines = text.splitlines()
+    parent: Dict[int, int] = {}
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    fn_start = None
+    bodies: List[Tuple[int, int]] = []
+    for i, ln in enumerate(lines):
+        if ln.startswith("define"):
+            fn_start = i
+        elif ln.startswith("}") and fn_start is not None:
+            bodies.append((fn_start, i))
+            fn_start = None
+    for a, b in bodies:
+        definer: Dict[str, str] = {}
+        for i in range(a, b):
+            m = re.match(r"^\s+(%[-\w.$\"]+) = (?:call \S+ )?@?(\w+)?", lines[i])
+            if m:
+                c = re.match(r"^\s+(%[-\w.$\"]+) = call \S+ @([-\w.$]+)", lines[i])
+                definer[m.group(1)] = c.group(2) if c else "?"
+        keys: Dict[Tuple, int] = {}
+        for i in range(a, b):
+            m = _MEASURE.match(lines[i])
+            if not m:
+                continue
+            parent[i] = i
+            w = re.search(r"@cqrt_measure_(\w+)\(", lines[i]).group(1)
+            res = re.match(r"^\s+(%[-\w.$\"]+) =", lines[i]).group(1)
+            d = "-"
+            pre = tuple(_canon(x, m.group(2), res) for x in lines[max(a + 1, i - _MEAS_WINDOW):i])
+            suf = tuple(_canon(x, m.group(2), res) for x in lines[i + 1:min(b, i + 1 + _MEAS_WINDOW)])
+            for k in (("pre", w, d, pre) if len(pre) == _MEAS_WINDOW else None,
+                      ("suf", w, d, suf) if len(suf) == _MEAS_WINDOW else None):
+                if k is None:
+                    continue
+                if k in keys:
+                    parent[find(i)] = find(keys[k])
+                else:
+                    keys[k] = i
+    return {i: find(i) for i in parent}
+
+
 def ctl_measures_module(text: str) -> str:
     """Rule 19: inside a _ctl clone a cq_measure is a controlled copy, measured whatever the predicate; where
     it reads 0 the predicate may be 0 and the C program never reached it (compare._meas_options). Each such
@@ -1684,7 +1751,8 @@ def ctl_measures_module(text: str) -> str:
     fns: Dict[str, int] = {}
     in_ctl = used = False
     fn = None
-    for line in text.splitlines():
+    sites = measure_site_classes(text)
+    for ln_i, line in enumerate(text.splitlines()):
         if line.startswith("define"):
             in_ctl = bool(re.search(r"@\S*_ctl(?:_unc)?\(", line))
             d = _DEFINE_NAME.match(line)
@@ -1696,12 +1764,12 @@ def ctl_measures_module(text: str) -> str:
             out.append(f"{m.group(1)}call void @cqd_out_ctl_measure(i32 {m.group(2)})")
             used = True
         elif m and fn:
-            out.append(f"{m.group(1)}call void @cqd_out_meas_fn(ptr @.cqd.fn.{fns.setdefault(fn, len(fns))})")
+            out.append(f"{m.group(1)}call void @cqd_out_meas_fn(ptr @.cqd.fn.{fns.setdefault(fn, len(fns))}, i32 {sites.get(ln_i, -1)})")
         out.append(line)
     if used:
         out.append("declare void @cqd_out_ctl_measure(i32)")
     if fns:
-        out.append("declare void @cqd_out_meas_fn(ptr)")
+        out.append("declare void @cqd_out_meas_fn(ptr, i32)")
         for name, i in fns.items():
             out.append(f'@.cqd.fn.{i} = private unnamed_addr constant [{len(name) + 1} x i8] c"{name}\\00"')
     return "\n".join(out) + "\n"

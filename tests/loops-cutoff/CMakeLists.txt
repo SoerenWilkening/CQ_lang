@@ -116,3 +116,10 @@ add_test(NAME loops-cutoff-measure-arm
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in f=4
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_arm.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-47f8h (owner 2026-11-07): measurements are identified by call site: the K copies on trips no sample of the C program
+# reaches execute the site C does reach; run_probes.py MUTANTS: an extra site, another shape, a wrong value are rejected.
+add_test(NAME loops-cutoff-measure-site
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in f=4 --measures-in g=4
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_site.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

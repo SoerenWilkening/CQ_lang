@@ -2333,8 +2333,17 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
     def _pool(k: str) -> Tuple:
         return (_call_key(r_by[k].sample), tuple(m.get("h") for m in o_by[k].measured or []))
 
+    # cq-47f8h (owner 2026-11-07): measurements are identified by call site. A measurement of ours is identified when
+    # the C program reaches its site (a class of copies of one cq_measure, run.measure_site_classes) on some sample of
+    # the call, matched in every embedding; the other copies of the site, on trips no sample of the C program
+    # reaches, are then no difference. Any other site is.
+    ident_sites: Dict[Hashable, set] = {}
     for k, opts in meas_opts.items():
-        ident.setdefault(_pool(k), set()).update(frozenset.intersection(*(img for img, _ in opts)))
+        m_ = frozenset.intersection(*(img for img, _ in opts))
+        ident.setdefault(_pool(k), set()).update(m_)
+        ms_ = o_by[k].measured or []
+        ident_sites.setdefault(_call_key(r_by[k].sample), set()).update(
+            ms_[i]["site"] for i in m_ if i < len(ms_) and ms_[i].get("site") is not None)
 
     # CR rules 2, 19: the functions some input of the call enters, which the C oracle reports entries of
     entered_any: Dict[Hashable, set] = {}
@@ -2346,8 +2355,12 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
         n = len(ms)
         here = (r_by[k].outputs or {}).get("entered", [])
         anywhere = entered_any[_call_key(r_by[k].sample)]
+        sites = ident_sites.get(_call_key(r_by[k].sample), set())
         known = {i for i in ident[_pool(k)]
-                 if i >= n or ms[i].get("fn") not in anywhere or ms[i].get("fn") in here}
+                 if i >= n or (ms[i].get("site") is None
+                               and (ms[i].get("fn") not in anywhere or ms[i].get("fn") in here))}
+        known |= {i for i in range(n) if ms[i].get("site") is not None and ms[i]["site"] in sites
+                  and (ms[i].get("fn") not in anywhere or ms[i].get("fn") in here)}
         opts = meas_opts[k]
         if any(all(i in img or i in past or i in known for i in range(n)) for img, past in opts):
             return []

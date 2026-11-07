@@ -18,6 +18,45 @@ ROOT = Path(__file__).resolve().parents[2]
 SURFACE = re.compile(r"call [^@]*@(cq_theta_\w+|cq_measure_\w+|cq_phi|__cq_invert_\w+)\(")
 
 
+# probe -> [(entry, mutant, regex over the entry's lowered body, its replacement)]: the mutant must be REJECTED by the
+# §6 check against the C program (exit 1). me_site (cq-47f8h, owner 2026-11-07: measurements are identified by call
+# site): an extra measurement at a site the C program has no counterpart of, a copy that measures another rail than
+# the site's (on a trip no sample reaches), and a wrong value at the site's first trip, which C reaches.
+MUTANTS = {
+    "me_site": [
+        ("f", "extra_site", r"(  ret i32 %[\w.]+\n)", r"  %cq.a = call i32 @cqrt_alloc_i32(i32 7)\n  %cq.mx = call i32 @cqrt_measure_i32(i32 %cq.a), !cq.measure !6\n\1"),
+        # a trip-2 copy with other instructions (a clean add of 0, uncomputed) around it: a call site of another shape,
+        # on a trip no sample reaches
+        ("f", "other_site", r"  (%40 = call i32 @cqrt_measure_i32\(i32 %39\), !cq.measure !6\n)",
+         r"  %d0 = call i32 @cq_template_add_i32_hl(i32 %39, i32 0)\n  call void @cq_template_add_i32_hl_unc(i32 %d0, i32 %39, i32 0)\n"
+         r"  call void @cqrt_free(i32 %d0)\n  \1"
+         r"  %d1 = call i32 @cq_template_add_i32_hl(i32 %39, i32 0)\n  call void @cq_template_add_i32_hl_unc(i32 %d1, i32 %39, i32 0)\n"
+         r"  call void @cqrt_free(i32 %d1)\n"),
+        # v's bit 3 (b3) set as 16 instead of 8, forward and uncomputation alike: the first trip, which C reaches, measures another v
+        ("f", "wrong_value", r"i32 8, i32 0\)", "i32 16, i32 0)"),
+    ],
+}
+
+
+def mutants(a, probe: Path, mod: str, out: Path) -> int:
+    failures = 0
+    for e, name, old, new in MUTANTS.get(probe.name.replace(".O1.ll", ""), []):
+        b = body(mod, e)
+        if not re.search(old, b):
+            print(f"FAIL {probe.name} mutant {name}: {old!r} is not in @{e}")
+            failures += 1
+            continue
+        low = out / probe.name.replace(".O1.ll", f".{name}.ll")
+        low.write_text(mod.replace(b, re.sub(old, new, b, count=(0 if name == "wrong_value" else 1)), 1))
+        c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(probe), "--lowered", str(low),
+                            "--entry", e], capture_output=True, text=True, cwd=ROOT / "checker", timeout=240)
+        rejected = c.returncode == 1 and "FAIL" in c.stdout
+        print(("ok   " if rejected else "FAIL ") + f"{probe.name} mutant {name}: "
+              + ((c.stdout + c.stderr).strip().splitlines() or ["?"])[-1][:200])
+        failures += not rejected
+    return failures
+
+
 def body(module: str, fn: str) -> str:
     m = re.search(r"^define [^\n]*@" + re.escape(fn) + r"\(.*?^}", module, re.S | re.M)
     return m.group(0) if m else ""
@@ -71,7 +110,7 @@ def one(a, probe: Path) -> int:
             why.append("§6 against the C program: timed out")
         print(("FAIL " if why else "ok   ") + probe.name + " " + e + ("" if not why else ": " + "; ".join(why)))
         failures += bool(why)
-    return failures
+    return failures + mutants(a, probe, mod, out)
 
 
 def main() -> int:
