@@ -1586,7 +1586,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           // (edgeCond), so it is computed whole even where pred factored its condition (`stop || q`).
           bool tripAtom = I.getType()->isIntegerTy(1) && isQ(&I) && any_of(I.users(), [&](const User *u) {
                             auto *br = dyn_cast<BranchInst>(u);
-                            return br && br->isConditional() && br->getCondition() == &I && L.contains(br->getParent());
+                            return br && br->isConditional() && br->getCondition() == &I &&
+                                   U.contains(L, br->getParent());   // an arm's edge conditions are read whole too
                           });
           if (tripAtom)
             lowerConditionAsData(ctx, I);

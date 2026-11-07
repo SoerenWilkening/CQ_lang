@@ -33,6 +33,8 @@ add_test(NAME loops-cutoff-widened
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/noexit.O1.ll 
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/b_bound_pos.O1.ll ${CMAKE_CURRENT_SOURCE_DIR}/probes/arm_loop.O1.ll
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/bus_kloop.O1.ll
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/hoisted_test.O1.ll
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/arm_test.O1.ll
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/trip_arms.O1.ll
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/tail_guard.O1.ll
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/both_dead_merge.O1.ll

@@ -41,6 +41,22 @@ bool onlyFactoredConditions(LoweringContext &ctx, const Instruction &I) {
     auto *br = dyn_cast<BranchInst>(u);
     if (!br || !br->isConditional() || br->getCondition() != &I || br->getFunction() != I.getFunction())
       return false;
+    // Rule 14: a trip of a loop reads its test whole, as one atom of the trip's predicates (cq-s7c4). A test made
+    // before the loop (-O1 hoists `c && q`, q and c invariant) has no later place to be computed in.
+    {
+      SmallPtrSet<const BasicBlock *, 16> seen;
+      SmallVector<const BasicBlock *, 16> work(succ_begin(br->getParent()), succ_end(br->getParent()));
+      bool cycle = false, backToDef = false;
+      while (!work.empty()) {
+        const BasicBlock *x = work.pop_back_val();
+        cycle |= x == br->getParent();
+        backToDef |= x == I.getParent();
+        if (seen.insert(x).second)
+          work.append(succ_begin(x), succ_end(x));
+      }
+      if (cycle && !backToDef)
+        return false;
+    }
     for (const BasicBlock *s : br->successors()) {
       const Pred &e = ctx.preds().edge(br->getParent(), s);
       if (e.isBottom())
