@@ -254,6 +254,8 @@ RV3 = {
                    ("wrong_pointer", r"cqrt_alloc_i64\(i64 ptrtoint \(ptr @a to i64\)\)", "cqrt_alloc_i64(i64 ptrtoint (ptr @b to i64))")],
     # cq-985fi: the probe keeps a read through a pointer one past A's end, B placed after it, in the domain
     "onepast": [("wrong_byte", r"cq_template_xor_i32_hl\(i32 %9, i32 -1\)", "cq_template_xor_i32_hl(i32 %9, i32 -2)")],
+    # cq-for9u: a va_arg from the overflow area is in the domain
+    "vaovf": [],
     "2in7d": [("no_ak", r"  call void @cqrt_and_i1\(i32 %40, i32 %48, i32 %49\)\n", ""),
               ("no_xor", r"cq_template_xor_i32_hl\(", "cq_template_or_i32_hl(")],
     "li3wr": [("second_return", r"cq_template_add_i32_hl\(i32 %4, i32 6\)", "cq_template_add_i32_hl(i32 %4, i32 7)")],
@@ -285,6 +287,13 @@ def rv3(tmp, only=()):
             expect(f"mutant rv3 {name} {m}", 1, user(o1, p, "f", light=True))
 
 
+def rv3_undefined(tmp):
+    """cq-for9u: a program that reads more variadic arguments than were passed is C undefined: no sample is in the
+    domain, so the check is an error (2), not a comparison against the garbage it reads."""
+    d = SRC / "rv3"
+    expect("program rv3 vaub (f)", 2, user(d / "vaub.O1.ll", d / "vaub.lowered.ll", "f", light=True))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rv3", nargs="*", help="only the src/rv3 group, or these of it")
@@ -295,12 +304,15 @@ def main():
     if a.rv3 is not None:
         with tempfile.TemporaryDirectory(prefix="cqu-test-") as t:
             rv3(Path(t), a.rv3)
+            if not a.rv3 or "vaub" in a.rv3:
+                rv3_undefined(Path(t))
         print(f"{len(failures)} failures" if failures else "all rv3 tests passed")
         return 1 if failures else 0
     unit(spec)
     with tempfile.TemporaryDirectory(prefix="cqu-test-") as t:
         tmp = Path(t)
         rv3(tmp)
+        rv3_undefined(tmp)
         for name, entry in PROGRAMS:
             d = tmp / name
             r = subprocess.run([sys.executable, str(CQCC), "-S", str(SRC / f"{name}.c"), "--save-temps", str(d),

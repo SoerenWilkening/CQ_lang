@@ -555,13 +555,34 @@ void __cqd_pst(void *a, void *v, uint32_t id) {
         }
     }
 }
-/* va_start(ap) on x86-64 SysV: the register save area (6 GP + 8 SSE registers, 176 bytes) at ap+16 is an
- * object of the frame, as the oracle's __cqo_va_start has it (cq-1jvr6); the pointer stored there carries its
- * serial, so a va_arg load through it is placed in that object and not in the nearest object below. */
+/* va_start(ap) on x86-64 SysV. The caller's outgoing arguments decide what the callee may read: __cqd_vacall
+ * (before each call of a variadic function) records the registers its arguments take (gp: general registers,
+ * sse: vector registers) and the bytes they put in the overflow area, as the oracle's variadicStackBytes does.
+ * The register save area is one object as large as the registers passed (the gp slots, or through the last sse
+ * slot when sse registers were passed), so a va_arg past the passed arguments leaves it (C undefined,
+ * cq-for9u); the overflow area at ap+8 is an object of the bytes passed. Each pointer stored in the va_list
+ * carries its serial, so a va_arg load through it is placed in that object and not in the nearest object
+ * below (cq-1jvr6); va_copy copies both (cq-for9u). */
+uint32_t __cqd_pld(void *a, void *v);
+static uint64_t cqd_vg, cqd_vs, cqd_vo;
+void __cqd_vacall(uint64_t gp, uint64_t sse, uint64_t ovf) { cqd_vg = gp; cqd_vs = sse; cqd_vo = ovf; }
 void __cqd_vastart(void *ap) {
-    void *regs; memcpy(&regs, (char *)ap + 16, sizeof regs);
-    uint32_t id = cqd_reg((uintptr_t)regs, 176, 0, 0);
+    void *regs, *ovf;
+    memcpy(&ovf, (char *)ap + 8, sizeof ovf);
+    memcpy(&regs, (char *)ap + 16, sizeof regs);
+    uint32_t id = cqd_reg((uintptr_t)regs, cqd_vs ? 48 + 16 * cqd_vs : 8 * cqd_vg, 0, 0);
     __cqd_pst((char *)ap + 16, regs, id);
+    if (cqd_vo) {
+        uint32_t oid = cqd_reg((uintptr_t)ovf, cqd_vo, 0, 0);
+        __cqd_pst((char *)ap + 8, ovf, oid);
+    }
+}
+void __cqd_vacopy(void *dst, void *src) {
+    for (int o = 8; o <= 16; o += 8) {
+        void *v; memcpy(&v, (char *)src + o, sizeof v);
+        uint32_t id = __cqd_pld((char *)src + o, v);
+        __cqd_pst((char *)dst + o, v, id);
+    }
 }
 uint32_t __cqd_pld(void *a, void *v) {
     uintptr_t k = (uintptr_t)a; size_t h = cqd_ph(k);
@@ -571,7 +592,18 @@ uint32_t __cqd_pld(void *a, void *v) {
 }
 static void cqd_finish(const char *how, int code);
 static void cqd_stop(const char *how, int code);
-static int cqd_find(uintptr_t r, uint32_t id) {
+static int cqd_find0(uintptr_t r, uint32_t id);
+/* A root one past the end of object A is also the base of the object B placed after it. When the root's
+ * provenance names an object that ends at the root and the access lies inside it, that object is meant
+ * (LLVM: the pointer is based on A), as the oracle's access_obj has it (cq-985fi). */
+static int cqd_find(uintptr_t r, uint32_t id, uintptr_t addr, uint64_t n) {
+    int best = cqd_find0(r, id);
+    if (id && best >= 0 && S->ob[best] == r)
+        for (int i = 0; i < S->nob; i++)
+            if (S->oi[i] == id && S->ob[i] + S->os[i] == r && addr >= S->ob[i] && addr + n <= r) return i;
+    return best;
+}
+static int cqd_find0(uintptr_t r, uint32_t id) {
     int best = -1, nbest = 0, match = -1;
     for (int i = 0; i < S->nob; i++) {
         if (S->ob[i] > r) continue;
@@ -598,7 +630,7 @@ static void cqd_stop(const char *how, int code) {
  * on the memory layout, not on the input. Its record is written past the per-site cap. An address
  * under no known object only makes the worker dirty. */
 void __cqd_m(int site, void *root, void *addr, uint64_t nbytes, uint32_t id) {
-    int best = cqd_find((uintptr_t)root, id);
+    int best = cqd_find((uintptr_t)root, id, (uintptr_t)addr, nbytes);
     long long off = best < 0 ? 0 : (long long)((intptr_t)addr - (intptr_t)S->ob[best]);
     int out = best >= 0 && (off < 0 || (unsigned long long)off + nbytes > S->os[best]);
     if (out) {
@@ -616,7 +648,7 @@ void __cqd_m(int site, void *root, void *addr, uint64_t nbytes, uint32_t id) {
  * here as "oob" with code -1 (no mem site); under no known object, the worker is dirty. */
 void __cqd_mi(void *root, void *dst, uint64_t n, uint32_t id) {
     if (!n) return;
-    int best = cqd_find((uintptr_t)root, id);
+    int best = cqd_find((uintptr_t)root, id, (uintptr_t)dst, n);
     if (best < 0) { C->dirty = 1; return; }
     long long off = (long long)((intptr_t)dst - (intptr_t)S->ob[best]);
     if (off < 0 || (unsigned long long)off + n > S->os[best]) {
@@ -628,7 +660,7 @@ void __cqd_mi(void *root, void *dst, uint64_t n, uint32_t id) {
 /* A C string's length, before a library string function reads it: no NUL inside its object ends
  * the sample here as "oob" with code -1, as a memory intrinsic past its object does (cq-z8gj). */
 uint64_t __cqd_ms(void *root, const char *p, uint32_t id) {
-    int best = cqd_find((uintptr_t)root, id);
+    int best = cqd_find((uintptr_t)root, id, (uintptr_t)p, 1);
     if (best < 0) { C->dirty = 1; return strlen(p); }
     long long off = (long long)((intptr_t)p - (intptr_t)S->ob[best]);
     const char *e = (off >= 0 && (unsigned long long)off < S->os[best])
@@ -1377,7 +1409,11 @@ class Instrumenter:
         elif callee not in self.mod.functions:
             return []
         out = []
-        for k, (ty, v) in enumerate(_operand_pairs(", ".join(ins.call_args))):
+        for k, a in enumerate(D.split_operands(", ".join(ins.call_args))):
+            ty, rest = split_type(a)
+            v = rest.split()[-1] if rest.split() else ""
+            if "(" in rest:     # a constant expression (`getelementptr inbounds (i8, ptr @A, i64 4)`), cq-985fi
+                v = rest
             if ty != "ptr" or k >= self.NAID:
                 continue
             sid = self.site_id(f, self.addr_root(f, v)[0]) if v.startswith("%") else self.sid(f, v)
@@ -1566,7 +1602,7 @@ class Instrumenter:
              "declare void @__cqd_m(i32, ptr, ptr, i64, i32)", "declare void @__cqd_mi(ptr, ptr, i64, i32)",
              "declare i64 @__cqd_ms(ptr, ptr, i32)", "declare i32 @__cqd_regs(ptr, i64)",
              "declare i32 @__cqd_rega(ptr, i64, i32)", "declare void @__cqd_regg(ptr, i64, i32)",
-             "declare void @__cqd_pst(ptr, ptr, i32)", "declare void @__cqd_vastart(ptr)", "declare i32 @__cqd_pld(ptr, ptr)",
+             "declare void @__cqd_pst(ptr, ptr, i32)", "declare void @__cqd_vastart(ptr)", "declare void @__cqd_vacall(i64, i64, i64)", "declare void @__cqd_vacopy(ptr, ptr)", "declare i32 @__cqd_pld(ptr, ptr)",
              "@__cqd_afn = internal global ptr null", "@__cqd_rid = internal global i32 0",
              f"@__cqd_aid = internal global [{self.NAID} x i32] zeroinitializer",
              "declare void @__cqd_hdr(i32, i1)", "declare void @__cqd_ctx(i32)", "declare void @__cqd_fn()"]
@@ -1627,7 +1663,50 @@ class Instrumenter:
                 prev = ins
         return body
 
+    @staticmethod
+    def va_call_info(ins: D.Inst) -> Optional[Tuple[int, int, int]]:
+        """(gp registers, sse registers, overflow bytes) the arguments of a call of a variadic function take: the
+        SysV classification over the IR argument types, as the oracle's variadicStackBytes (a byval argument
+        counts 4096 bytes: its size is not read here)."""
+        m = re.search(r"\bcall\b[^@%]*?\(([^()]*\.\.\.)\)\s*[@%]", ins.text)
+        if not m:
+            return None
+        named = len([x for x in D.split_operands(m.group(1)[:-3]) if x.strip()])
+        gp = sse = off = 0
+        for i, (ty, _v) in enumerate(_operand_pairs(", ".join(ins.call_args))):
+            stack, sz, al = False, 0, 8
+            if "byval" in ty:
+                stack, sz = True, 4096
+            elif ty == "ptr" or (re.fullmatch(r"i\d+", ty) and int(ty[1:]) <= 64):
+                if gp < 6:
+                    gp += 1
+                else:
+                    stack, sz = True, 8
+            elif ty == "i128":
+                if gp < 5:
+                    gp += 2
+                else:
+                    stack, sz, al = True, 16, 16
+            elif ty in ("float", "double", "half", "bfloat"):
+                if sse < 8:
+                    sse += 1
+                else:
+                    stack, sz = True, 8
+            else:                                    # x86_fp80 and anything else: memory class
+                stack, sz, al = True, 16, 16
+            if stack and i >= named:
+                off = (off + al - 1) // al * al + (sz + 7) // 8 * 8
+        return gp, sse, (off + 8 if off else 0)
+
     def instrument(self, f: D.Function, ins: D.Inst) -> Tuple[List[str], List[str]]:
+        before, after = self.instrument1(f, ins)
+        if ins.op == "call" and ins.callee != "@llvm.va_start.p0":
+            info = self.va_call_info(ins)
+            if info:
+                before = [f"call void @__cqd_vacall(i64 {info[0]}, i64 {info[1]}, i64 {info[2]})"] + before
+        return before, after
+
+    def instrument1(self, f: D.Function, ins: D.Inst) -> Tuple[List[str], List[str]]:
         op = ins.op
         rhs = ins.text.split("=", 1)[1].strip() if ins.dest else ins.text
         if op in ("udiv", "sdiv", "urem", "srem", "shl", "lshr", "ashr", "fadd", "fsub", "fmul", "fdiv", "frem"):
@@ -1710,6 +1789,8 @@ class Instrumenter:
                 return self.probe(s.id, pairs[0:1], None), []
             if c.startswith("@llvm.va_start"):
                 return [], [f"call void @__cqd_vastart(ptr {pairs[0][1]})"]
+            if c.startswith("@llvm.va_copy"):
+                return [], [f"call void @__cqd_vacopy(ptr {pairs[0][1]}, ptr {pairs[1][1]})"]
             if c in _LIB_N:
                 # the C library's memory functions (cq-z8gj): their n bytes, as the intrinsics'
                 d, rest = _LIB_N[c]
