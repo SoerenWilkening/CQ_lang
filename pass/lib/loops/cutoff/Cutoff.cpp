@@ -691,7 +691,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         } else {
           // An edge the paths this loop is lowered for exclude (the tail of an earlier unit, whose own path binds the phi
           // on its edge): the general capture binds the phi for these paths.
-          if (ctx.preds().edge(u, X).isBottom() || ctx.preds().block(u).isBottom())
+          if (ctx.preds().edge(u, X).isBottom())
             foreign = true;
           for (PHINode *c : hphis)
             if (startOf(c) == v &&
@@ -781,26 +781,35 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       Pred cH = pH.classicalFactor(ctx.T, ctx.S);
       std::vector<std::pair<Pred, Operand>> outside;
       bool earlier = ctx.bound(&P);
+      // A loop of an earlier unit's tail runs under the assumption of its header's paths, and an incoming that skips the loop
+      // (stpcpy: a pre-header guard where the first word already holds the zero) lies outside it. That edge is read under the
+      // assumption's classical part only: the classical facts of the tail's paths, not the quantum branches into the header.
+      auto outsideEdge = [&](BasicBlock *u) {
+        std::optional<Pred> was = ctx.preds().assume(std::nullopt, ctx.T, ctx.S);
+        Pred e = ctx.preds().edge(u, C);
+        ctx.preds().assume(was, ctx.T, ctx.S);
+        return was ? e & was->classicalFactor(ctx.T, ctx.S) : e;
+      };
       for (unsigned i = 0; i < P.getNumIncomingValues() && !earlier; ++i) {
         BasicBlock *u = P.getIncomingBlock(i);
         if (inUnit(u))
           continue;
         // A classical skip of the loop (its edge excludes the classical condition the unit runs under):
         // the walker joins it with the unit's value classically (joinUnitPhi, rule 9 at a58c3a4).
-        if ((ctx.preds().edge(u, C) & cH).isBottom() || ctx.preds().block(u).isBottom())
+        if ((outsideEdge(u) & cH).isBottom())
           continue;
-        if (!(ctx.preds().edge(u, C) & pH).isBottom())
+        if (!(outsideEdge(u) & pH).isBottom())
           unimplemented("loops-cutoff: a phi joining a multi-exit K-loop's exits with an incoming from outside the "
                         "loop on an edge that does not exclude the loop (cq-uytx)",
                         &P);
         Value *v = P.getIncomingValue(i);
-        if (!ctx.bound(v) || !predReadable(ctx, ctx.preds().edge(u, C))) {
+        if (!ctx.bound(v) || !predReadable(ctx, outsideEdge(u))) {
           const Loop *vl = A.LI.getLoopFor(u);
           if (!vl || vl->contains(H))
-            ctx.addJoinArm(&P, ctx.preds().edge(u, C), v);   // lowered after the loop: the walker selects it in
+            ctx.addJoinArm(&P, outsideEdge(u), v);   // lowered after the loop: the walker selects it in
           continue;   // or another loop unit's exit: it selects its value in over this binding when lowered
         }
-        Pred e = ctx.preds().edge(u, C);
+        Pred e = outsideEdge(u);
         auto same = find_if(outside, [&](const std::pair<Pred, Operand> &a) { return a.second.v == ctx.operand(v).v; });
         if (same != outside.end())
           same->first = same->first | e;
