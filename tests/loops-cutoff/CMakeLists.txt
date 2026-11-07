@@ -56,3 +56,20 @@ add_test(NAME loops-cutoff-tail-phis
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/tail_guard2_ir.O1.ll
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/seed_arm_ir.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# Nested loop tails (review of eda902b..096db1c): tail bindings and assumptions composed, one entry each.
+add_test(NAME loops-cutoff-tail-nest
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/tl_a1.O1.ll
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/tl_f4.O1.ll
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/tl_f2.O1.ll
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/tl_i1.O1.ll
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/tl_j2.O1.ll
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/tl_j1.O1.ll
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/tl_h3.O1.ll
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/tl_g5.O1.ll
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/tl_h5.O1.ll
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/tl_h1.O1.ll
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/tl_a4.O1.ll
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/tl_k1.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
