@@ -823,7 +823,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       if (!earlier)
         for (unsigned i = 0; i < P.getNumIncomingValues(); ++i) {
           BasicBlock *u = P.getIncomingBlock(i);
-          if (!is_contained(U.tail, u))
+          if (!is_contained(U.tail, u) || exits::inTailLoopUnit(L, U, u, A.LI))
             continue;
           Pred e = exits::tailPred(ctx, L, U, u, A.DT) & ctx.preds().edge(u, C);
           if (e.isBottom() || (e & cH).isBottom())
@@ -864,7 +864,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           }
           for (unsigned i = 0; i < P.getNumIncomingValues(); ++i) {
             BasicBlock *u = P.getIncomingBlock(i);
-            if (!is_contained(U.tail, u))
+            if (!is_contained(U.tail, u) || exits::inTailLoopUnit(L, U, u, A.LI))
               continue;
             Pred e = exits::tailPred(ctx, L, U, u, A.DT) & ctx.preds().edge(u, C);
             if (!e.isBottom() && !(e & cH).isBottom())
@@ -1327,7 +1327,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     auto nestedArmOwner = [&](const BasicBlock *x) -> Loop * {
       for (BasicBlock *h : U.arm)
         if (Loop *S = subLoopOf(h); S && S->getHeader() == h && !S->contains(x) &&
-                                    classify(*S, ctx.T, ctx.S) == Case::QuantumExit &&
+                                    (classify(*S, ctx.T, ctx.S) == Case::QuantumExit ||
+                                     classify(*S, ctx.T, ctx.S) == Case::ClassicalBoundQuantumExit) &&
                                     is_contained(exits::unitOf(*S).arm, x))
           return S;
       return nullptr;
@@ -2248,6 +2249,20 @@ Unit unitOf(const Loop &L) {
       U.tail.push_back(*it);
   }
   return U;
+}
+
+bool inTailLoopUnit(const Loop &L, const Unit &U, const BasicBlock *u, const LoopInfo &LI) {
+  for (const BasicBlock *t : U.tail) {
+    const Loop *l = LI.getLoopFor(t);
+    if (!l || l->contains(L.getHeader()))
+      continue;
+    while (l->getParentLoop() && !l->getParentLoop()->contains(L.getHeader()))
+      l = l->getParentLoop();
+    Unit tu = unitOf(*l);
+    if (tu.contains(*l, u))
+      return true;
+  }
+  return false;
 }
 
 Pred tailPred(LoweringContext &ctx, const Loop &L, const Unit &U, const BasicBlock *b, const DominatorTree &DT) {

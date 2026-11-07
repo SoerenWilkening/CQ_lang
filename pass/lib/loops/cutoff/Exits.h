@@ -73,6 +73,11 @@ Unit unitOf(const llvm::Loop &L);
 Pred tailPred(cq::LoweringContext &ctx, const llvm::Loop &L, const Unit &U, const llvm::BasicBlock *b,
               const llvm::DominatorTree &DT);
 
+// CR rules 9, 14: does tail block u of U lie in the unit of a loop of the tail (the loop, or that loop's exit arm)? Its edge into C is
+// that unit's, which selects its own exits over C's phi per trip: read as an edge at the walker's join it would give the values
+// after the loop's last trip. Only an edge of the tail outside such a unit is a join arm.
+bool inTailLoopUnit(const llvm::Loop &L, const Unit &U, const llvm::BasicBlock *u, const llvm::LoopInfo &LI);
+
 // The cutoff bound B of a quantum-exit loop (CR rule 14): the least of loops::tripBound and, in
 // a clone with `_b` bounds (CR §1.4: "a clone's loop cutoffs use only these bounds and its own range
 // facts"; 190's memcmp `_b3`), the trip count's maximum over the bounded formals' ranges [0, b]. With

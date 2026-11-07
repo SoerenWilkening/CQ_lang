@@ -1199,7 +1199,7 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       // cq-h8y6: an incoming from a tail block (Exits.h) on the outside paths, not classically excluded from the
       // unit: the walker selects it in over this binding (the unit's capture), a classical one it joins.
       for (unsigned i = 0; i < P.getNumIncomingValues(); ++i)
-        if (BasicBlock *u = P.getIncomingBlock(i); is_contained(UX.tail, u)) {
+        if (BasicBlock *u = P.getIncomingBlock(i); is_contained(UX.tail, u) && !exits::inTailLoopUnit(L, UX, u, LoopInfo(*mxDT))) {
           Pred e = exits::tailPred(ctx, L, UX, u, *mxDT) & ctx.preds().edge(u, UX.cont);
           if (!e.isBottom() && !(e & hb.classicalFactor(ctx.T, ctx.S)).isBottom())
             ctx.addJoinArm(&P, e, P.getIncomingValue(i));
@@ -1448,6 +1448,22 @@ std::vector<std::pair<const Value *, Operand>> Unit::lowerLoop(Loop &L, Case c, 
       // that excludes the loop (a pre-header guard, strlen's `!*s`) are taken exactly where the trip predicate is 0 from
       // the start: rule 9's select chain over those edges, built here; a classical skip is the walker's join.
       std::vector<std::pair<Pred, Operand>> outside;
+      // Rules 9, 14: a phi an earlier unit bound (this loop lies in that unit's tail): where no trip exits it keeps that unit's value.
+      // Its incomings from other loops are that unit's: read here they would give those loops' values after their last trip.
+      if (cp.P && cp.rails.size() == 1 && outermost && !inTrip && ctx.bound(cp.P)) {
+        Operand acc = ctx.operand(cp.P);
+        if (acc.handle) {
+          LoopInfo LI(*mxDT);
+          Pred ran = Pred::bottom();
+          for (unsigned i = 0; i < cp.P->getNumIncomingValues(); ++i)
+            if (BasicBlock *u = cp.P->getIncomingBlock(i); !inUnit(u) && LI.getLoopFor(u))
+              ran = ran | ctx.preds().edge(u, UX.cont);
+          if (!ran.isBottom())
+            acc = reachingOperand(ctx, acc, cp.rails.front(), ran, Pred::top());
+          capInits.push_back(acc.v);
+          continue;
+        }
+      }
       if (cp.P && cp.rails.size() == 1) {
         const Pred hb = ctx.preds().block(header);
         const Pred cH = hb.classicalFactor(ctx.T, ctx.S);
