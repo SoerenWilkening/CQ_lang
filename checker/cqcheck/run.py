@@ -54,9 +54,9 @@ encoding (scalars "0x" + bit pattern, pointers a C expression) that drivers rend
 RunResult fields (JSON-serializable):
   side        the side argument ('ours' or 'ref')
   sample      the sample dict as given
-  outputs     {"ret": [{"call", "fn", "v"}], "stdout": str, "exit": int, "effects": [...], "tape": [...],
+  outputs     {"ret": [{"call", "fn", "v"}], "stdout": str, "exit": int, "effects": [...], "tape": {...},
               "deviation": bool, "mem": [...], "objects": [...], "regions": [...]}; "tape" is the shot's event
-              sequence (rt_tape.c, _tape_entry), "deviation" rule 16's stated deviation; "host_end", present only when the sample ended in the program's own
+              sequence (rt_tape.c, _tape_entry) as compared, packed: {"n","sha","z"} (compare.tape_pack, cq-92sw6), "deviation" rule 16's stated deviation; "host_end", present only when the sample ended in the program's own
               exit, _exit or _Exit, its status (rule 16's ordinary host call of a noreturn callee); "mem" is the named outputs in memory, read from the bus
               after the driver call (CR §6 item 1, drivers.py "Driver objects"; rt_bus.c's {"ev":"out_mem",
               "name","addr","w","v"[,"off"]}); "objects" the address table of the module's globals and
@@ -81,7 +81,8 @@ RunResult fields (JSON-serializable):
               reads): ry {ev, h, theta, ctl, ctlv, w, v}, ry_qangle {ev, h, a, aval, ctl, ctlv, w, v},
               phase {ev, f, fv, theta}, phase_qangle {ev, a, aval, ctl, ctlv}; theta is the hex bit
               pattern of the double; w and v are the Ry target's type and value at the gate
-  kept        the exit event's live rails [{"h", "w", "v", "role"}], the tape slots of bus stores
+  kept        the exit event's live rails [{"h", "w", "v", "role"}] as rows: a row with "n" and "step" stands
+              for n rails of one width, value, role and known flag (cqcheck.kept, cq-pckdl), the tape slots of bus stores
               (role tape_slot) and overtaken load copies (role overtaken) among them; each also has
               "known" (classical-valued, BACKEND_ABI §0) and the roles of rt/core.c's header (store_kept,
               fenv_flags, fenv_mode among them, cq-tt2j); a rail a handle-returning function returns
@@ -111,6 +112,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from cqcheck.compare import HOST_EFFECTS
+from cqcheck import kept as kept_mod
 from cqcheck.contracts import DriverSpec, RunResult
 
 REPO = Path(__file__).resolve().parents[2]
@@ -974,9 +976,8 @@ def resolve_handle_rets(r: RunResult, fns: Sequence[str]) -> RunResult:
     """r with each ret of a function in fns resolved from its handle to the rail's value; see above."""
     if not fns or not r.outputs or not r.outputs.get("ret"):
         return r
-    # a row of _compact_kept stands for "n" rails, every "step"-th handle from "h"
-    live = {k.get("h") + i * k.get("step", 0): k for k in (r.kept or []) if isinstance(k, dict)
-            for i in range(k.get("n", 1))}
+    # a row stands for "n" rails, every "step"-th handle from "h" (cqcheck.kept); looked up, never expanded
+    live = kept_mod.KeptIndex(r.kept)
     rets, viol = [], list(r.violations)
     results = set()
     for e in r.outputs["ret"]:
@@ -998,18 +999,7 @@ def resolve_handle_rets(r: RunResult, fns: Sequence[str]) -> RunResult:
     # cq-tt2j: the returned rail is a result (CR §1.1), kept at exit by design (compare._leaks)
     kept = r.kept
     if results:
-        kept = []
-        for k in r.kept or []:
-            if not isinstance(k, dict):
-                kept.append(k)
-                continue
-            n, step = k.get("n", 1), k.get("step", 0)
-            hs = [k.get("h") + i * step for i in range(n)]
-            if not results.intersection(hs):
-                kept.append(k)
-                continue
-            one = {f: v for f, v in k.items() if f not in ("n", "step")}
-            kept.extend(dict(one, h=h, result=True) if h in results else dict(one, h=h) for h in hs)
+        kept = kept_mod.mark_results(r.kept, results)
     return RunResult(side=r.side, sample=r.sample, outputs=dict(r.outputs, ret=rets), measured=r.measured,
                      rotations=r.rotations, kept=kept, clean=r.clean, violations=viol)
 
@@ -1056,62 +1046,10 @@ def _compact_kept(live: List[dict]) -> List[dict]:
     return out
 
 
-def _kept_of_exit(live: List[dict]) -> List[dict]:
-    """_compact_kept(_exit_live(live)), without expanding a merged row of a run role into its rails (cq-kcn5i: a replayed
-    clone's tape slots and kept stores come in rows of thousands): such a row extends the open row of its key as its rails
-    one by one would, and a row of any other role is expanded (its consumers read one rail per entry)."""
-    out: List[dict] = []
-    tails: Dict[Tuple, dict] = {}
-    for e in live:
-        if "n" not in e or e.get("role") not in _RUN_ROLES:
-            for one in (_exit_live([e]) if "n" in e else [e]):
-                key = (one.get("role"), one.get("w"), one.get("v"), one.get("known"))
-                if one.get("role") in _RUN_ROLES:
-                    t = tails.get(key)
-                    if t is not None:
-                        step = one["h"] - t["h"] if "n" not in t else t["step"]
-                        if one["h"] == t["h"] + t.get("n", 1) * step or ("n" not in t and step > 0):
-                            t["n"], t["step"] = t.get("n", 1) + 1, step
-                            continue
-                    tails[key] = one = dict(one)
-                out.append(one)
-            continue
-        key = (e.get("role"), e.get("w"), e.get("v"), e.get("known"))
-        h, n, st = e["h"], e["n"], e["step"]
-        t = tails.get(key)
-        if t is not None:   # the row's first rail continues the open row, as _compact_kept would take it
-            step = h - t["h"] if "n" not in t else t["step"]
-            if h == t["h"] + t.get("n", 1) * step or ("n" not in t and step > 0):
-                t["n"], t["step"] = t.get("n", 1) + 1, step
-                if step == st:          # and so does every later rail of the row
-                    t["n"] += n - 1
-                    continue
-                h, n = h + st, n - 1    # a row of another step: its rest opens the next row, as one by one
-                if n == 0:
-                    continue
-                # the rail after a continued tail is no continuation of it (another step): it starts a new row
-        one = {k: v for k, v in e.items() if k not in ("n", "step")}
-        one["h"] = h
-        if n > 1:
-            one["n"], one["step"] = n, st
-        tails[key] = one
-        out.append(one)
-    return out
-
-
-def _exit_live(live: List[dict]) -> List[dict]:
-    """The exit event's live list with each run row of a compact trace ({"h","n","step",...}: core.c
-    at_exit_handler, cq-9hzgh) as its n rails h, h + step, ...: the list the trace held before."""
-    if not any("n" in e for e in live):
-        return live
-    out: List[dict] = []
-    for e in live:
-        if "n" not in e:
-            out.append(e)
-            continue
-        one = {k: v for k, v in e.items() if k not in ("n", "step")}
-        out.extend(dict(one, h=e["h"] + i * e["step"]) for i in range(e["n"]))
-    return out
+def _kept_of_exit(e: dict) -> List[dict]:
+    """The exit event's live list as the run's kept list (cqcheck.kept: rows and patterns, never one entry per rail;
+    cq-pckdl). An event read row by row (_exit_event) comes with it built."""
+    return e["kept"] if "kept" in e else kept_mod.build(e.get("live") or [])
 
 
 def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optional[int],
@@ -1172,7 +1110,7 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
             tape_out, tape_seq, deviation = _tape_shot(e)
         elif ev == "effect":
             direct_fx.append(e)
-    kept = _kept_of_exit(last_exit["live"]) if last_exit is not None else []
+    kept = _kept_of_exit(last_exit) if last_exit is not None else []
     if freed is not None:
         clean.append(dict(freed))
     viol += extra
@@ -1183,8 +1121,12 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
                "ctl_measured": ctl_measured, "host_flags": (last_exit or {}).get("host_flags")}
     if host_end is not None:
         outputs["host_end"] = host_end
-    return RunResult(side=side, sample=sample, outputs=outputs,
-                     measured=measured, rotations=rots, kept=kept, clean=clean, violations=viol)
+    rr = RunResult(side=side, sample=sample, outputs=outputs,
+                   measured=measured, rotations=rots, kept=kept, clean=clean, violations=viol)
+    if tape_seq:      # cq-92sw6: the sequence as compared, packed (compare.tape_pack); never the entries themselves
+        from cqcheck.compare import tape_pack
+        outputs["tape"] = tape_pack(rr)
+    return rr
 
 
 _TABLE_RESULT = re.compile(r"^\s+(%[-\w.$\"]+) = (?:tail |notail )?call [^@]*?%[-\w.$\"]+\(")
@@ -1764,7 +1706,8 @@ def overtaken_twin_module(text: str) -> str:
 # __cq_q_<fn>_<mask>[_b...][_ctl] (no _t, no twin: _unc, _pure) with scalar parameters (iN up to 64, ptr, half, float,
 # double; one per ABI argument: the _ctl predicate, then one per mask digit, a 1 an i32 handle) and a void or scalar
 # result, whose body and every clone it calls by name hold only templates (no _rm, _rmq, _exc), cqrt_ alloc, free,
-# the i1 gates, copy, xorc and bus load/store/swap, __cq_mem, the module's totalisation helpers, pure llvm
+# the i1 gates, copy, xorc, bus load/store/swap, push and pop (cq-mxe2q, owner 2026-11-08: the runtime records only a
+# window whose pops take only its own pushes and that ends at the depth it began at, dispatch.c), __cq_mem, the module's totalisation helpers, pure llvm
 # intrinsics and cqe__set_store_kept; no load, store or other memory instruction, no indirect call, no inline asm.
 # The runtime checks again what the text cannot show (a rail outside the call's arguments, a trace line, a
 # violation, an argument changed: no record). The wrapper is never instrumented (nosanitize_coverage): steps are
@@ -1774,7 +1717,8 @@ _RP_CLONE = re.compile(r"^__cq_q_(.+)_(v|[01]+)(?:_b\d+(?:_\d+)*)?(_ctl)?$")
 _RP_HEAD = re.compile(r'^define\s+(?P<pre>[^@]*?)\s*@(?P<name>[-\w.$]+)\(')
 _RP_CC = re.compile(r"\b(fastcc|coldcc|ccc|tailcc|swiftcc|swifttailcc|cc \d+)\b")
 _RP_SCALAR = re.compile(r"^(?:i(\d+)|ptr|half|float|double)$")
-_RP_CQRT_OK = re.compile(r"^cqrt_(?:alloc_\w+|free|(?:not|and|or|xor)_i1(?:_unc)?|copy_\w+|xorc_\w+|qram_(?:load|store|swap)_\w+)$")
+_RP_CQRT_OK = re.compile(r"^cqrt_(?:alloc_\w+|free|push|pop|(?:not|and|or|xor)_i1(?:_unc)?|copy_\w+|xorc_\w+|"
+                         r"qram_(?:load|store|swap)_\w+)$")
 _RP_LLVM_OK = re.compile(r"^llvm\.(?:smax|smin|umax|umin|abs|ctlz|cttz|ctpop|bswap|bitreverse|fshl|fshr|"
                          r"[su](?:add|sub|mul)\.with\.overflow|[su](?:add|sub)\.sat|[su]shl\.sat|assume|expect|"
                          r"lifetime\.(?:start|end))(?:\.|$)")
@@ -2340,6 +2284,89 @@ def _with_bad(events: List[dict], torn: bool = True) -> Tuple[List[dict], List[d
     return good, bad
 
 
+_LINE_CHUNK = 1 << 20
+_EXIT_HEAD = '{"ev":"exit","live":['
+
+
+def _trace_events(f) -> Iterable[Tuple[str, Optional[dict]]]:
+    """The lines of a trace as (line, None), and each exit event as ("", the event) read row by row (_exit_event)."""
+    while True:
+        line = f.readline(_LINE_CHUNK)
+        if not line:
+            return
+        if line.startswith(_EXIT_HEAD) and not line.endswith("\n"):
+            yield "", _exit_event(f, line)
+            continue
+        while not line.endswith("\n"):
+            more = f.readline(_LINE_CHUNK)
+            if not more:
+                break
+            line += more
+        yield line, None
+
+
+def _exit_event(f, head: str) -> dict:
+    """The exit event whose line starts with `head` (no newline in it yet), read from f one row at a time (cq-pckdl:
+    the line is never held whole; a replayed run's once reached 10 GB). A line that does not parse (torn by a kill)
+    gives {"ev": _BAD, "line": its first characters}, as a line read whole does."""
+    dec = json.JSONDecoder()
+    buf, i, ended = head, len(_EXIT_HEAD), False
+    live = kept_mod.Builder()
+
+    def more() -> bool:
+        nonlocal buf, i, ended
+        if ended:
+            return False
+        chunk = f.readline(_LINE_CHUNK)
+        if not chunk:
+            ended = True
+            return False
+        ended = chunk.endswith("\n")
+        buf, i = buf[i:] + chunk, 0
+        return True
+
+    def bad() -> dict:
+        while more():
+            buf_cut()
+        return {"ev": _BAD, "line": head[:400].strip()}
+
+    def buf_cut() -> None:       # a torn line is drained without holding it
+        nonlocal buf, i
+        buf, i = buf[-64:], 0
+
+    while True:
+        while True:
+            while i < len(buf) and buf[i] in " \t\r,":
+                i += 1
+            if i < len(buf) or not more():
+                break
+        if i >= len(buf):
+            return bad()
+        if buf[i] == "]":
+            rest = buf[i + 1:]
+            buf, i = "", 0
+            while more():
+                rest += buf
+                buf, i = "", 0
+            try:
+                tail = json.loads("{" + rest.strip().lstrip(","))
+            except json.JSONDecodeError:
+                return bad()
+            if not isinstance(tail, dict):
+                return bad()
+            return {**tail, "ev": "exit", "kept": live.kept()}
+        try:
+            row, j = dec.raw_decode(buf, i)
+        except json.JSONDecodeError:
+            if more():
+                continue
+            return bad()
+        if not isinstance(row, dict) or ("use" in row and row["use"] not in live.pats):
+            return bad()
+        live.add(row)
+        i = j
+
+
 def _stream_shots(trace: Path, side: str, items: Sequence[Tuple[dict, str, Optional[str]]], setup_out: str,
                   timeout: float) -> Tuple[List[dict], Dict[int, RunResult], Dict[int, List[dict]]]:
     """One pass over a runner's trace, line by line: (the events before its first shot, k -> the
@@ -2352,13 +2379,14 @@ def _stream_shots(trace: Path, side: str, items: Sequence[Tuple[dict, str, Optio
     if not trace.exists():
         return pre, done, open_shots
     with open(trace, errors="replace") as f:
-        for line in f:
-            if not line.strip() or line.startswith(_UNREAD):
-                continue
-            try:
-                e = json.loads(line)
-            except json.JSONDecodeError:
-                e = {"ev": _BAD, "line": line.strip()}
+        for line, e in _trace_events(f):
+            if e is None:
+                if not line.strip() or line.startswith(_UNREAD):
+                    continue
+                try:
+                    e = json.loads(line)
+                except json.JSONDecodeError:
+                    e = {"ev": _BAD, "line": line.strip()}
             ev = e.get("ev") if isinstance(e, dict) else None
             if ev == "shot":
                 cur = open_shots[e["k"]] = []
@@ -2569,7 +2597,7 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
     return out  # type: ignore[return-value]
 
 
-_RUNS_VERSION = "eval-runs-5"
+_RUNS_VERSION = "eval-runs-7"   # cq-pckdl: kept rows of any role, merged in core.c; cq-92sw6: tape packed
 _CAP_VARS = ("CQE_SHOT_TRACE_MAX", "CQE_SHOT_OUTPUT_MAX", "CQE_FILE_MAX", "CQE_SHOT_VIOL_MAX",   # core.c's caps
              "CQE_REPLAY", "CQE_REPLAY_CHECK", "CQE_REPLAY_TAMPER", "CQE_REPLAY_MAX_MB")   # rt_replay.c (cq-kcn5i)
 _RESULT_FIELDS = ("outputs", "measured", "rotations", "kept", "clean", "violations")

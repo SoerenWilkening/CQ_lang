@@ -21,6 +21,7 @@ sys.path.insert(0, str(REPO / "checker"))
 sys.path.insert(0, str(REPO / "checker" / "rt"))
 
 from cqcheck import drivers, run  # noqa: E402
+from cqcheck import kept as kept_mod  # noqa: E402
 from cqcheck.contracts import DriverSpec, RunResult, to_json  # noqa: E402
 
 
@@ -35,7 +36,8 @@ def to_json(r):
 import stubgen  # noqa: E402
 
 SPEC = Path(os.environ.get("CQ_SPEC_DIR", REPO.parent / "CQ_spec"))
-RT = [REPO / "checker" / "rt" / "core.c", REPO / "checker" / "rt" / "dispatch.c"]
+# core.c reaches the bus (rt_bus.c, cqe__bus_load_of; it needs rt_tape.c) and clone replay (rt_replay.c, cqe__rp_put) since cq-kcn5i
+RT = [REPO / "checker" / "rt" / f for f in ("core.c", "dispatch.c", "rt_bus.c", "rt_tape.c", "rt_replay.c")]
 FAM = [HERE / "testfam.c"]
 LLVM = run.LLVM_BIN
 
@@ -1196,7 +1198,7 @@ class ExitRoles(unittest.TestCase):
         rs = run.run_samples(HERE / "exit_roles.ll", spec, [{"call": 0, "args": [3, 0.5, 2.0, 7]}], "ours")
         r = rs[0]
         self.assertEqual(r.violations, [])
-        live = {k["h"]: (k["role"], k.get("known")) for k in r.kept}
+        live = {k["h"]: (k["role"], k.get("known")) for k in kept_mod.expand(r.kept)}   # one entry per rail
         # handles in creation order: x y a b e e2 k h cnd md (z measured)
         self.assertEqual(live[1][0], "frozen")
         self.assertEqual(live[2][0], "frozen")
@@ -1217,7 +1219,7 @@ class ExitRoles(unittest.TestCase):
                                                         {"ctype": "int", "quantum": False}]}])
         r = run.run_samples(HERE / "frozen_image.ll", spec, [{"call": 0, "args": [3, 0.5, 4]}], "ours")[0]
         self.assertEqual(r.violations, [])
-        live = {k["h"]: k["role"] for k in r.kept}
+        live = {k["h"]: k["role"] for k in kept_mod.expand(r.kept)}
         # handles in creation order: x g r t s (x, t freed)
         self.assertEqual(live, {2: "garbage", 3: "frozen", 5: "garbage"})
 
@@ -1229,7 +1231,7 @@ class ExitRoles(unittest.TestCase):
                                                         {"ctype": "int", "quantum": False}]}])
         r = run.run_samples(HERE / "rule6_image.ll", spec, [{"call": 0, "args": [3, 4]}], "ours")[0]
         self.assertEqual(r.violations, [])
-        roles = sorted((k["v"], k["role"]) for k in r.kept)
+        roles = sorted((k["v"], k["role"]) for k in kept_mod.expand(r.kept))
         vals = {"s": 3 + 1 + 3 + 4, "vv": 4, "g": 22, "q": 5, "l": 3, "s2": 3 + 8}
         self.assertEqual({v: role for v, role in roles if role != "frozen"},
                          {hex(vals["s"]): "rule6_image", hex(vals["vv"]): "rule6_image", hex(vals["g"]): "garbage",
@@ -1324,10 +1326,13 @@ class HostOutput(unittest.TestCase):
             {"name": "fgets", "args": [{"w": "i32", "v": "0x1e"}]},
             {"name": "unlink", "args": [{"w": "i64", "v": "0x2000", "cap": "/a"}]}])
         self.assertTrue(r.outputs["deviation"])
-        self.assertEqual([e.get("name", e.get("fmt", e["kind"])) for e in r.outputs["tape"]],
+        from cqcheck.compare import _tape_read   # cq-92sw6: kept packed, read back as compared
+        self.assertEqual(r.outputs["tape"]["n"], 5)
+        tape = _tape_read(r)
+        self.assertEqual([e.get("name", e.get("fmt", e["kind"])) for e in tape],
                          ["big %d\n", "remove", "raise", "fgets", "abort"])
-        self.assertEqual(r.outputs["tape"][3]["r"], {"w": "i64", "v": "0x0"})
-        self.assertNotIn("h", r.outputs["tape"][3]["fields"][0])
+        self.assertEqual(tape[3]["r"], {"w": "i64", "v": 0})
+        self.assertNotIn("h", tape[3]["fields"][0])
         r = run._result("ours", {}, [{"ev": "exit", "live": []}], "", 0, [])
         self.assertEqual((r.outputs["stdout"], r.outputs["effects"]), ("", []))
 

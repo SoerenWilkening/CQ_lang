@@ -1674,6 +1674,11 @@ class HostOutput(unittest.TestCase):
         self.check(same, tape(lambda s: [e(1, s)]), "ref", False, "event sequence differs")
         self.check(same, tape(lambda s: [e(s & 1, s + 1)]), "ref", False, "event sequence differs")
         self.check(same, tape(lambda s: []), "ref", False, "event sequence differs")
+        # cq-92sw6: a run keeps its sequence packed (run._result); packed and listed read alike
+        from cqcheck.compare import tape_pack
+        packed = [dataclasses.replace(r, outputs=dict(r.outputs, tape=tape_pack(r))) for r in same]
+        self.check(packed, same, "ref", True)
+        self.check(packed, tape(lambda s: [e(1, s)]), "ref", False, "event sequence differs")
 
     def test_capture_compared(self):
         fx = lambda cap: (lambda s: [{"name": "fwrite", "args": [{"w": "i64", "v": "0x0", "cap": cap}]}])
@@ -1903,6 +1908,92 @@ class FlatKept(unittest.TestCase):
         dirty = side("o", lambda a, b, s: dict(rots=[ry(1, 1.0), ry(2, 2.0)], kept=[keep(1, a), keep(2, b)],
                                                clean=[{"h": 9, "v": hex(a & b), "known": 0}]))
         self.assertTrue(any("known basis state" in r for r in compare(dirty, self.ref("r"), QKEY, "ref").reasons))
+
+
+class KeptRows(unittest.TestCase):
+    """cq-pckdl: a kept row of n rails (cqcheck.kept, any role) is read as its n rails, never expanded."""
+
+    @staticmethod
+    def rails(rows):
+        from cqcheck import kept
+        return [dict(kept.rail(r, h)) for r in rows for h in kept.handles(r)]
+
+    def test_leak_rule_counts_rows_as_rails(self):
+        from cqcheck.compare import _leaks
+        rec = [{"loop": "f:%7", "act": a, "n": 2, "capped": False} for a in range(3)]
+        c = LeakRule().c_side(rec)[0]
+        rows = [{"h": 20, "n": 5, "step": 3, "w": "i1", "v": "0x1", "role": "garbage", "known": False},
+                {"h": 21, "n": 4, "step": 3, "w": "i64", "v": "0x7", "role": "garbage", "known": False},
+                {"h": 22, "n": 9, "step": 3, "w": "i32", "v": "0x2", "role": "store_kept", "known": False}]
+        caps = {("f:%7", a) for a in range(3)}
+        for kept in (rows, self.rails(rows)):
+            o = run("o", 0, [], kept)
+            got = _leaks("s", o, c, False, caps)
+            self.assertEqual(len(got), 1)
+            self.assertIn("leaves 6 rail(s)", got[0])           # 2 of the 5 i1 rails past the 3 a_K, the 4 i64
+            self.assertIn("29 (i1 = 0x1, garbage)", got[0])
+            self.assertNotIn("20 (i1", got[0])
+
+    def test_shape_does_not_depend_on_the_rows(self):
+        from cqcheck.compare import _shape_of
+        rows = [{"h": 5, "n": 6, "step": 2, "w": "i32", "v": "0x0", "role": "tape_slot", "known": True},
+                {"h": 6, "n": 3, "step": 2, "w": "i32", "v": "0x1", "role": "store_kept", "known": False}]
+        self.assertEqual(_shape_of(run("o", 0, [], rows)), _shape_of(run("o", 0, [], self.rails(rows))))
+        moved = [dict(rows[0], h=7), rows[1]]
+        self.assertNotEqual(_shape_of(run("o", 0, [], rows)), _shape_of(run("o", 0, [], moved)))
+
+    def test_handle_return_inside_a_row(self):
+        from cqcheck.run import resolve_handle_rets
+        rows = [{"h": 10, "n": 5, "step": 2, "w": "i32", "v": "0x9", "role": "garbage", "known": False}]
+        r = run("o", 0, [], rows, outputs={"ret": [{"call": 0, "fn": "g", "v": {"w": "i32", "v": hex(14)}}]})
+        got = resolve_handle_rets(r, ["g"])
+        self.assertEqual(got.outputs["ret"][0]["v"], {"w": "i32", "v": "0x9"})
+        self.assertEqual(sorted(e["h"] for e in self.rails(got.kept)), [10, 12, 14, 16, 18])
+        self.assertEqual([e["h"] for e in got.kept if e.get("result")], [14])
+        self.assertEqual(len(got.kept), 3)
+
+    def test_exit_event_read_row_by_row(self):
+        import io
+        import json
+        from cqcheck import run as run_mod
+        live = [{"h": 1 + i, "n": 3, "step": 7, "w": "i32", "v": hex(i), "role": "tape_slot", "known": True}
+                for i in range(50)]
+        line = json.dumps({"ev": "exit", "live": live, "violations": 0, "host_flags": 32}, separators=(",", ":"))
+        old = run_mod._LINE_CHUNK
+        run_mod._LINE_CHUNK = 64
+        try:
+            got = list(run_mod._trace_events(io.StringIO('{"ev":"shot","k":0}\n' + line + "\n")))
+            torn = list(run_mod._trace_events(io.StringIO(line[:-40])))
+        finally:
+            run_mod._LINE_CHUNK = old
+        want = json.loads(line)
+        self.assertEqual(got[1][1]["kept"], sorted(want["live"], key=lambda e: e["h"]))
+        self.assertEqual((got[1][1]["violations"], got[1][1]["host_flags"]), (0, 32))
+        self.assertEqual(torn[0][1]["ev"], run_mod._BAD)
+
+    def test_patterns_read_as_their_rails(self):
+        # core.c's chunks: a stretch written in full, then a def and its uses (cqcheck.kept)
+        from cqcheck import kept
+        from cqcheck.compare import _leaks, _shape_of
+        row = lambda h, w, v, role, **k: dict({"h": h, "w": w, "v": v, "role": role, "known": True}, **k)
+        live = [row(10, "i32", "0x0", "store_kept"), row(11, "i64", "0x5", "garbage", known=False),
+                {"def": 0, "rows": [row(0, "i32", "0x0", "store_kept"), row(1, "i64", "0x5", "garbage", known=False)]},
+                {"use": 0, "h": 20}, {"use": 0, "h": 30, "n": 3, "step": 10}]
+        k = kept.build(live)
+        flat = sorted(((e["h"], e["w"], e["role"]) for e in kept.expand(k)))
+        self.assertEqual(flat, sorted([(b, "i32", "store_kept") for b in (10, 20, 30, 40, 50)]
+                                      + [(b + 1, "i64", "garbage") for b in (10, 20, 30, 40, 50)]))
+        singles = [dict(e) for e in kept.expand(k)]
+        self.assertEqual(_shape_of(run("o", 0, [], k)), _shape_of(run("o", 0, [], singles)))
+        ix = kept.KeptIndex(k)
+        self.assertEqual(ix.get(41)["w"], "i64")
+        self.assertIsNone(ix.get(42))
+        c = LeakRule().c_side()[0]
+        got = _leaks("s", run("o", 0, [], k), c, False)
+        self.assertIn("leaves 5 rail(s)", got[0])
+        marked = kept.mark_results(k, [31])
+        self.assertEqual(sorted(e["h"] for e in kept.expand(marked)), sorted(e["h"] for e in singles))
+        self.assertEqual([e["h"] for e, _ in kept.leaves(marked) if e.get("result")], [31])
 
 
 if __name__ == "__main__":

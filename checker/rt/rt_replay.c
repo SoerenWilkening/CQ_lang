@@ -2,7 +2,7 @@
  * verification gate, the 1-in-64 spot check kept).
  *
  * A call to an eligible clone (run.py replay_module, DESIGN §4: templates, alloc/free, the i1 gates, copy/xorc, bus
- * load/store/swap and calls of eligible clones only; no rotation, measurement, tape, abort, host call, memory access
+ * load/store/swap, balanced push/pop (cq-mxe2q) and calls of eligible clones only; no rotation, measurement, tape, abort, host call, memory access
  * outside the bus, fenv template, twin or indirect call) goes through a wrapper run.py writes:
  *   hit = __cqe_rp_enter(id, desc, args, &ret); if (hit) return ret; ret = S.real(args...); __cqe_rp_leave(id, &ret);
  * The wrapper is not instrumented (nosanitize_coverage): it adds no step.
