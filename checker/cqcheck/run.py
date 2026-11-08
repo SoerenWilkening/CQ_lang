@@ -1056,6 +1056,49 @@ def _compact_kept(live: List[dict]) -> List[dict]:
     return out
 
 
+def _kept_of_exit(live: List[dict]) -> List[dict]:
+    """_compact_kept(_exit_live(live)), without expanding a merged row of a run role into its rails (cq-kcn5i: a replayed
+    clone's tape slots and kept stores come in rows of thousands): such a row extends the open row of its key as its rails
+    one by one would, and a row of any other role is expanded (its consumers read one rail per entry)."""
+    out: List[dict] = []
+    tails: Dict[Tuple, dict] = {}
+    for e in live:
+        if "n" not in e or e.get("role") not in _RUN_ROLES:
+            for one in (_exit_live([e]) if "n" in e else [e]):
+                key = (one.get("role"), one.get("w"), one.get("v"), one.get("known"))
+                if one.get("role") in _RUN_ROLES:
+                    t = tails.get(key)
+                    if t is not None:
+                        step = one["h"] - t["h"] if "n" not in t else t["step"]
+                        if one["h"] == t["h"] + t.get("n", 1) * step or ("n" not in t and step > 0):
+                            t["n"], t["step"] = t.get("n", 1) + 1, step
+                            continue
+                    tails[key] = one = dict(one)
+                out.append(one)
+            continue
+        key = (e.get("role"), e.get("w"), e.get("v"), e.get("known"))
+        h, n, st = e["h"], e["n"], e["step"]
+        t = tails.get(key)
+        if t is not None:   # the row's first rail continues the open row, as _compact_kept would take it
+            step = h - t["h"] if "n" not in t else t["step"]
+            if h == t["h"] + t.get("n", 1) * step or ("n" not in t and step > 0):
+                t["n"], t["step"] = t.get("n", 1) + 1, step
+                if step == st:          # and so does every later rail of the row
+                    t["n"] += n - 1
+                    continue
+                h, n = h + st, n - 1    # a row of another step: its rest opens the next row, as one by one
+                if n == 0:
+                    continue
+                # the rail after a continued tail is no continuation of it (another step): it starts a new row
+        one = {k: v for k, v in e.items() if k not in ("n", "step")}
+        one["h"] = h
+        if n > 1:
+            one["n"], one["step"] = n, st
+        tails[key] = one
+        out.append(one)
+    return out
+
+
 def _exit_live(live: List[dict]) -> List[dict]:
     """The exit event's live list with each run row of a compact trace ({"h","n","step",...}: core.c
     at_exit_handler, cq-9hzgh) as its n rails h, h + step, ...: the list the trace held before."""
@@ -1129,7 +1172,7 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
             tape_out, tape_seq, deviation = _tape_shot(e)
         elif ev == "effect":
             direct_fx.append(e)
-    kept = _compact_kept(_exit_live(last_exit["live"])) if last_exit is not None else []
+    kept = _kept_of_exit(last_exit["live"]) if last_exit is not None else []
     if freed is not None:
         clean.append(dict(freed))
     viol += extra
