@@ -128,7 +128,8 @@ def main():
             text = low["rp_pure"].read_text()
             m.write_text(fn_edit(text, "__cq_q_f_10", "  %3 = call i32 @cq_template_mul_i32(i32 %0, i32 %0)\n",
                                  "  call void @cqrt_xorc_i32(i32 %0, i32 0)\n"
-                                 "  %3 = call i32 @cq_template_mul_i32(i32 %0, i32 %0)\n"))
+                                 "  %3 = call i32 @cq_template_mul_i32(i32 %0, i32 %0)\n")
+                     + "declare void @cqrt_xorc_i32(i32, i32)\n")
             code, out, _, s = c.user("rp_pure", m, "dirty", CQE_REPLAY=1)
             ok = code == 0 and s.get("records", 1) == 0 and s.get("hits", 1) == 0 and s.get("dirty", 0) == s.get("calls", -1) > 0
             print(f"{'ok  ' if ok else 'FAIL'} dirty record: exit {code}, replay {s}", flush=True)
