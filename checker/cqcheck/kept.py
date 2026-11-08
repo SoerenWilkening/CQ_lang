@@ -30,12 +30,21 @@ class Builder:
         self.rows: List[Row] = []
         self.pats: Dict[Any, Row] = {}
         self.order: List[Row] = []
+        self.strs: Dict[str, str] = {}
+
+    def _own(self, e: Row) -> Row:
+        """e with its width, value and role strings shared with every other entry's (a run keeps 10^5 rows)."""
+        for f in ("w", "v", "role"):
+            x = e.get(f)
+            if isinstance(x, str):
+                e[f] = self.strs.setdefault(x, x)
+        return e
 
     def add(self, e: Row) -> None:
         if "pat" in e:                       # a pattern entry of a list built before (a cached run)
             self.order.append({"pat": e["pat"], "at": list(e["at"])})
         elif "def" in e:
-            p = {"pat": e["rows"], "at": []}
+            p = {"pat": [self._own(r) for r in e["rows"]], "at": []}
             self.pats[e["def"]] = p
             self.order.append(p)
         elif "use" in e:
@@ -46,7 +55,7 @@ class Builder:
             else:
                 p["at"].append(e["h"])
         else:
-            self.rows.append(e)
+            self.rows.append(self._own(e))
 
     def kept(self) -> List[Row]:
         for p in self.order:
