@@ -4087,6 +4087,68 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
     }
     return false;
   };
+  // cq-wyu4 (CR rule 5's scheduling invariant, rule 6's kept old value, rule 10: "a flag that read the rotated
+  // register stays allocated"; A4): a template record whose item the reverse loop undoes reads a rail that a
+  // non-diagonal gate of the region may rotate after the record, on the instance it read (later in the trip, or in
+  // a later trip). On a run where such a gate did act after the record, no point lies between the record's last
+  // consumer and the gate: the record is a which-path record of the rotated rail and stays allocated (A4); where
+  // none did, it is garbage and the reverse loop undoes it. Which one is a run-time fact: each such gate counts its
+  // runs in a classical counter (every run, whatever its angle: the gate is non-diagonal by the program's text, as the
+  // straight-line spine keeps such a record), the record reads the counters right after it (pushed with its trip), and its item in the reverse loop runs
+  // under a classical branch on "no counter moved since". Its consumers' items read it in either case. Another
+  // record (an in-place write) so hit is kept (KeptEntangled). Decided before any mirror is emitted.
+  struct GuardedItem {
+    CallInst *f;
+    unsigned seg;
+    SmallVector<std::pair<AllocaInst *, Value *>, 2> snaps; // (counter, its value right after f)
+  };
+  std::vector<GuardedItem> guardedItems;
+  SmallVector<std::pair<CallInst *, AllocaInst *>, 2> counters; // gate -> its run counter (program order)
+  auto counterOf = [&](CallInst *G) -> AllocaInst * {
+    for (auto &kv : counters)
+      if (kv.first == G)
+        return kv.second;
+    BasicBlock &EB = Out.getEntryBlock();
+    IRBuilder<> EBld(&EB, EB.getFirstInsertionPt());
+    AllocaInst *ctr = EBld.CreateAlloca(i32, nullptr, "cq.gates");
+    EBld.CreateStore(ConstantInt::get(i32, 0), ctr);
+    IRBuilder<> GB(G->getNextNode());
+    GB.CreateStore(GB.CreateAdd(GB.CreateLoad(i32, ctr), ConstantInt::get(i32, 1)), ctr);
+    counters.push_back({G, ctr});
+    return ctr;
+  };
+  if (!gates.empty())
+    for (unsigned si = 0; si < n; ++si)
+      for (const Record &rec : U.scopeRecords(segs[si].scope)) {
+        CallInst *f = rec.forward;
+        if (!U.liveRole(rec.out) || *U.liveRole(rec.out) != Role::Garbage)
+          continue;
+        SmallVector<CallInst *, 2> hits;
+        for (Value *a : f->args()) {
+          if (a->getType() != i32 || isa<Constant>(a) || (U.recorded(a) && U.idOf(a) == rec.out))
+            continue;
+          for (Value *l : leavesOf(a))
+            for (const Gate &g : gates)
+              for (Value *t : leavesOf(g.target))
+                if (t == l && g.call != f && !is_contained(hits, g.call) && runsAfter(f, g.call, l))
+                  hits.push_back(g.call);
+        }
+        if (hits.empty())
+          continue;
+        if (!std::holds_alternative<abi::TemplateSpec>(rec.spec) || f->getType() != i32) {
+          U.setRole(rec.out, Role::KeptEntangled);
+          continue;
+        }
+        GuardedItem gi{f, si, {}};
+        IRBuilder<> SB(f->getNextNode());
+        for (CallInst *G : hits) {
+          AllocaInst *ctr = counterOf(G);
+          gi.snaps.push_back({ctr, SB.CreateLoad(i32, ctr, "cq.gates.at")});
+        }
+        guardedItems.push_back(std::move(gi));
+      }
+  std::vector<BasicBlock *> guardBlocks;
+  DenseSet<const Instruction *> guardedCalls;
   auto checkUndoneReads = [&](BasicBlock *bb) {
     if (gates.empty())
       return;
@@ -4111,6 +4173,8 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
         if (same || withOut)
           anchors.push_back(fwd);
       }
+      if (guardedCalls.count(m))
+        continue; // cq-wyu4: it runs only where no gate acted after its record
       if (anchors.empty()) {
         // A free (or an item with no forward call of its own): its rails are read from their
         // definitions on.
@@ -4140,6 +4204,75 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
   std::vector<BasicBlock *> R(n);
   for (unsigned i = 0; i < n; ++i)
     R[i] = newBlock();
+  // After a segment's mirror: each guarded item of the segment, `<template>_unc(f, …)` through `cqrt_free(f)`, moves
+  // into a block of its own entered only where no counter it reads moved since the record.
+  auto guardItems = [&](unsigned si, IRBuilder<> &B) {
+    for (const GuardedItem &gi : guardedItems) {
+      if (gi.seg != si)
+        continue;
+      std::string uname = (gi.f->getCalledFunction()->getName() + "_unc").str();
+      CallInst *unc = nullptr, *fr = nullptr;
+      SmallVector<BasicBlock *, 8> work{R[si]};
+      SmallPtrSet<BasicBlock *, 8> seen{R[si]};
+      while (!work.empty() && !unc) {
+        BasicBlock *mb = work.pop_back_val();
+        for (Instruction &I : *mb) {
+          auto *c = dyn_cast<CallInst>(&I);
+          Function *cf = c ? c->getCalledFunction() : nullptr;
+          if (!cf)
+            continue;
+          if (!unc && cf->getName() == uname && c->arg_size() >= 1 && c->getArgOperand(0) == gi.f)
+            unc = c;
+          else if (unc && cf->getName() == "cqrt_free" && c->getArgOperand(0) == gi.f) {
+            fr = c;
+            break;
+          }
+        }
+        if (unc)
+          break;
+        if (mb->getTerminator())
+          for (BasicBlock *sb : successors(mb))
+            if (seen.insert(sb).second)
+              work.push_back(sb);
+      }
+      if (!unc || !fr)
+        continue; // no item of this spelling here (rule 6 cleaned it, say): checkUndoneReads judges it
+      BasicBlock *head = unc->getParent();
+      bool atB = head == B.GetInsertBlock();
+      BasicBlock *mid = newBlock(), *tail = newBlock();
+      std::vector<Instruction *> moveMid, moveTail;
+      bool inMid = false, inTail = false;
+      for (Instruction &I : *head) {
+        if (&I == unc)
+          inMid = true;
+        if (inTail)
+          moveTail.push_back(&I);
+        else if (inMid)
+          moveMid.push_back(&I);
+        if (&I == fr)
+          inTail = true;
+      }
+      for (Instruction *I : moveMid)
+        I->moveBefore(*mid, mid->end());
+      for (Instruction *I : moveTail)
+        I->moveBefore(*tail, tail->end());
+      if (tail->getTerminator())
+        for (BasicBlock *s : successors(tail))
+          s->replacePhiUsesWith(head, tail);
+      IRBuilder<> HB(head);
+      Value *ok = ConstantInt::getTrue(C);
+      for (auto &[ctr, at] : gi.snaps)
+        ok = HB.CreateAnd(ok, HB.CreateICmpEQ(HB.CreateLoad(i32, ctr, "cq.gates.now"), at));
+      HB.CreateCondBr(ok, mid, tail);
+      BranchInst::Create(tail, mid);
+      guardBlocks.push_back(mid);
+      guardBlocks.push_back(tail);
+      guardedCalls.insert(unc);
+      guardedCalls.insert(fr);
+      if (atB)
+        B.SetInsertPoint(tail);
+    }
+  };
   Instruction *anchor = nullptr;   // a reverse instruction for the uses of the external initial rails
 
   // cq-h5uj: the copies of the exit values are undone first (they read the last trip's rails, a trip's merge's arms included).
@@ -4165,6 +4298,7 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
   for (unsigned i = n; i-- > 0;) {
     IRBuilder<> B(R[i]);
     U.emitMirror(segs[i].scope, B);
+    guardItems(i, B);
     checkUndoneReads(R[i]);
     checkDeferred(R[i], R[i]->begin());
     // The mirror, with the reverse of any loop of the segment placed in it (its own blocks, B's block last).
@@ -4309,6 +4443,10 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
         rev.insert(cb);
         revBlocks.push_back(cb);
       }
+    for (BasicBlock *gb : guardBlocks) {
+      rev.insert(gb);
+      revBlocks.push_back(gb);
+    }
     std::vector<Use *> outside;
     for (BasicBlock *b : revBlocks)
       for (Instruction &I : *b)
