@@ -2556,11 +2556,11 @@ def _effects_read(rr: RunResult, fx: List[Any], oracle: str) -> List[Any]:
     return [{"name": e["name"], "args": [_field_read(a, table, oracle) for a in e["args"]]} for e in fx]
 
 
-def _tape_read(rr: RunResult) -> List[Any]:
-    """The shot's event sequence as compared against the reference."""
+def _tape_rel(rr: RunResult, seq: List[Any]) -> List[Any]:
+    """An event sequence as compared against the reference: every pointer-valued field read relationally."""
     table = _addr_table(rr)
     out = []
-    for e in (rr.outputs or {}).get("tape", []):
+    for e in seq:
         ent = dict(e)
         if "fields" in e:
             ent["fields"] = [_field_read(a, table, "ref") for a in e["fields"]]
@@ -2568,6 +2568,32 @@ def _tape_read(rr: RunResult) -> List[Any]:
             ent["r"] = _field_read(e["r"], table, "ref")
         out.append(ent)
     return out
+
+
+def tape_pack(rr: RunResult) -> Dict[str, Any]:
+    """outputs["tape"] of a run as kept (cq-92sw6): the compared sequence (_tape_rel; it depends only on the run) as
+    canonical JSON, its length, its sha256 and the text zlib-compressed (base64). A shot's sequence once held 141k
+    entries, 257 MB in Python per sample; the comparison needs the digest, and the entries only to name the first
+    that differs."""
+    import base64
+    import hashlib
+    import zlib
+    rel = _tape_rel(rr, (rr.outputs or {}).get("tape", []))
+    text = json.dumps(rel, sort_keys=True, separators=(",", ":"))
+    return {"n": len(rel), "sha": hashlib.sha256(text.encode()).hexdigest(),
+            "z": base64.b64encode(zlib.compress(text.encode(), 6)).decode()}
+
+
+def _tape_packed(rr: RunResult) -> Dict[str, Any]:
+    t = (rr.outputs or {}).get("tape", [])
+    return t if isinstance(t, dict) else tape_pack(rr)
+
+
+def _tape_read(rr: RunResult) -> List[Any]:
+    """The shot's event sequence as compared against the reference."""
+    import base64
+    import zlib
+    return json.loads(zlib.decompress(base64.b64decode(_tape_packed(rr)["z"])))
 
 
 def _fields_match(ours: List[Any], other: List[Any]) -> bool:
@@ -2637,7 +2663,9 @@ def _host_output(k: str, o: RunResult, r: RunResult, oracle: str, open_end: bool
         why.append(f"sample {k}: host effects differ: ours {ofx} != {other} {rfx}"
                    + (" (the C effects must be a prefix of ours on a capped sample)" if open_end else ""))
     if oracle == "ref":
-        to, tr = _tape_read(o), _tape_read(r)
+        to = tr = None
+        if _tape_packed(o)["sha"] != _tape_packed(r)["sha"]:     # equal digests: equal sequences (cq-92sw6)
+            to, tr = _tape_read(o), _tape_read(r)
         if to != tr:
             i = next((j for j, (x, y) in enumerate(zip(to, tr)) if x != y), min(len(to), len(tr)))
             why.append(f"sample {k}: the event sequence differs at entry {i}: ours {to[i:i + 1]} != reference {tr[i:i + 1]} "

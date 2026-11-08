@@ -1674,6 +1674,11 @@ class HostOutput(unittest.TestCase):
         self.check(same, tape(lambda s: [e(1, s)]), "ref", False, "event sequence differs")
         self.check(same, tape(lambda s: [e(s & 1, s + 1)]), "ref", False, "event sequence differs")
         self.check(same, tape(lambda s: []), "ref", False, "event sequence differs")
+        # cq-92sw6: a run keeps its sequence packed (run._result); packed and listed read alike
+        from cqcheck.compare import tape_pack
+        packed = [dataclasses.replace(r, outputs=dict(r.outputs, tape=tape_pack(r))) for r in same]
+        self.check(packed, same, "ref", True)
+        self.check(packed, tape(lambda s: [e(1, s)]), "ref", False, "event sequence differs")
 
     def test_capture_compared(self):
         fx = lambda cap: (lambda s: [{"name": "fwrite", "args": [{"w": "i64", "v": "0x0", "cap": cap}]}])

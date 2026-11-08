@@ -1326,10 +1326,13 @@ class HostOutput(unittest.TestCase):
             {"name": "fgets", "args": [{"w": "i32", "v": "0x1e"}]},
             {"name": "unlink", "args": [{"w": "i64", "v": "0x2000", "cap": "/a"}]}])
         self.assertTrue(r.outputs["deviation"])
-        self.assertEqual([e.get("name", e.get("fmt", e["kind"])) for e in r.outputs["tape"]],
+        from cqcheck.compare import _tape_read   # cq-92sw6: kept packed, read back as compared
+        self.assertEqual(r.outputs["tape"]["n"], 5)
+        tape = _tape_read(r)
+        self.assertEqual([e.get("name", e.get("fmt", e["kind"])) for e in tape],
                          ["big %d\n", "remove", "raise", "fgets", "abort"])
-        self.assertEqual(r.outputs["tape"][3]["r"], {"w": "i64", "v": "0x0"})
-        self.assertNotIn("h", r.outputs["tape"][3]["fields"][0])
+        self.assertEqual(tape[3]["r"], {"w": "i64", "v": 0})
+        self.assertNotIn("h", tape[3]["fields"][0])
         r = run._result("ours", {}, [{"ev": "exit", "live": []}], "", 0, [])
         self.assertEqual((r.outputs["stdout"], r.outputs["effects"]), ("", []))
 

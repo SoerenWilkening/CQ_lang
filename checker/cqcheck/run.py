@@ -54,9 +54,9 @@ encoding (scalars "0x" + bit pattern, pointers a C expression) that drivers rend
 RunResult fields (JSON-serializable):
   side        the side argument ('ours' or 'ref')
   sample      the sample dict as given
-  outputs     {"ret": [{"call", "fn", "v"}], "stdout": str, "exit": int, "effects": [...], "tape": [...],
+  outputs     {"ret": [{"call", "fn", "v"}], "stdout": str, "exit": int, "effects": [...], "tape": {...},
               "deviation": bool, "mem": [...], "objects": [...], "regions": [...]}; "tape" is the shot's event
-              sequence (rt_tape.c, _tape_entry), "deviation" rule 16's stated deviation; "host_end", present only when the sample ended in the program's own
+              sequence (rt_tape.c, _tape_entry) as compared, packed: {"n","sha","z"} (compare.tape_pack, cq-92sw6), "deviation" rule 16's stated deviation; "host_end", present only when the sample ended in the program's own
               exit, _exit or _Exit, its status (rule 16's ordinary host call of a noreturn callee); "mem" is the named outputs in memory, read from the bus
               after the driver call (CR §6 item 1, drivers.py "Driver objects"; rt_bus.c's {"ev":"out_mem",
               "name","addr","w","v"[,"off"]}); "objects" the address table of the module's globals and
@@ -1121,8 +1121,12 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
                "ctl_measured": ctl_measured, "host_flags": (last_exit or {}).get("host_flags")}
     if host_end is not None:
         outputs["host_end"] = host_end
-    return RunResult(side=side, sample=sample, outputs=outputs,
-                     measured=measured, rotations=rots, kept=kept, clean=clean, violations=viol)
+    rr = RunResult(side=side, sample=sample, outputs=outputs,
+                   measured=measured, rotations=rots, kept=kept, clean=clean, violations=viol)
+    if tape_seq:      # cq-92sw6: the sequence as compared, packed (compare.tape_pack); never the entries themselves
+        from cqcheck.compare import tape_pack
+        outputs["tape"] = tape_pack(rr)
+    return rr
 
 
 _TABLE_RESULT = re.compile(r"^\s+(%[-\w.$\"]+) = (?:tail |notail )?call [^@]*?%[-\w.$\"]+\(")
@@ -2593,7 +2597,7 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
     return out  # type: ignore[return-value]
 
 
-_RUNS_VERSION = "eval-runs-6"   # cq-pckdl: kept rows of any role, merged in core.c
+_RUNS_VERSION = "eval-runs-7"   # cq-pckdl: kept rows of any role, merged in core.c; cq-92sw6: tape packed
 _CAP_VARS = ("CQE_SHOT_TRACE_MAX", "CQE_SHOT_OUTPUT_MAX", "CQE_FILE_MAX", "CQE_SHOT_VIOL_MAX",   # core.c's caps
              "CQE_REPLAY", "CQE_REPLAY_CHECK", "CQE_REPLAY_TAMPER", "CQE_REPLAY_MAX_MB")   # rt_replay.c (cq-kcn5i)
 _RESULT_FIELDS = ("outputs", "measured", "rotations", "kept", "clean", "violations")
