@@ -3,15 +3,16 @@
 Branch `flat-memory` at 8c3b8d5, CQ_spec 4d08ffa, LLVM 19.1.7, K = 4. Per-row results: [`libc_results.tsv`](libc_results.tsv).
 A row is one libc function, or one function@mask when the mask names which inputs are quantum. The check is `cqcheck user --light` (16 samples): a smoke test, not a proof, and once it hid a miscompile.
 
-## Numbers (829 rows, one verdict per row)
+## Numbers (813 comparable rows)
 
-| | before (old memory model, main) | after (8c3b8d5) |
+There are 829 rows. The 16 SKIP rows can get no verdict whatever the pass does (listed below), so they are left out of the comparison; they are the same 16 before and after.
+
+| of 813 | before (old memory model, main) | after (8c3b8d5) |
 |---|---|---|
-| PASS | 426 | **770** |
+| PASS | 426 (52.4%) | **770 (94.7%)** |
 | FAIL | 74 | 0 |
 | ICE (internal error) | 285 | 0 |
 | ERROR | 28 | 3 |
-| SKIP | 16 | 16 |
 | DEFERRED (no verdict yet) | – | 40 |
 
 The final plugin lowers all 813 non-SKIP rows with no internal error and no timeout (1500 s per row).
@@ -40,10 +41,10 @@ How the after column was made: all 829 rows were swept once on the new model. Th
 - **Measurement identity:** the checker identifies a measurement by its call site (cq-47f8h). This is weak when one site measures values of different shape.
 - **Rule 18:** "program paths" is read as the paths of the lowered program.
 
-## Not run yet
+## Checks
 
 - **Combined example run:** the checker has changed since the last combined run over the CQ_spec examples. That run was at 3e5a052: 211 ok, 117 UNCOVERED, and 175 fail only against the C oracle. It moves to the later batch, together with `tests/determinism` and the 40 deferred rows.
-- **Self-test on 8c3b8d5's checker:** the last result, at bf722eb, was 39/39 mutants rejected, 213/213 empty outputs rejected and 23/23 controls green. RESULT PENDING.
+- **Self-test on 8c3b8d5's checker:** passed. 39/39 mutants were rejected, 213/213 empty outputs were rejected and 23/23 controls are green. It needed `HEAVY_MAX_MB=10240` with two jobs: at 6 GB with four jobs the process tree grew past its cap.
 
 ## Spec issues
 
