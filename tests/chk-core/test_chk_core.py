@@ -21,6 +21,7 @@ sys.path.insert(0, str(REPO / "checker"))
 sys.path.insert(0, str(REPO / "checker" / "rt"))
 
 from cqcheck import drivers, run  # noqa: E402
+from cqcheck import kept as kept_mod  # noqa: E402
 from cqcheck.contracts import DriverSpec, RunResult, to_json  # noqa: E402
 
 
@@ -1196,7 +1197,7 @@ class ExitRoles(unittest.TestCase):
         rs = run.run_samples(HERE / "exit_roles.ll", spec, [{"call": 0, "args": [3, 0.5, 2.0, 7]}], "ours")
         r = rs[0]
         self.assertEqual(r.violations, [])
-        live = {k["h"]: (k["role"], k.get("known")) for k in r.kept}
+        live = {k["h"]: (k["role"], k.get("known")) for k in kept_mod.expand(r.kept)}   # one entry per rail
         # handles in creation order: x y a b e e2 k h cnd md (z measured)
         self.assertEqual(live[1][0], "frozen")
         self.assertEqual(live[2][0], "frozen")
@@ -1217,7 +1218,7 @@ class ExitRoles(unittest.TestCase):
                                                         {"ctype": "int", "quantum": False}]}])
         r = run.run_samples(HERE / "frozen_image.ll", spec, [{"call": 0, "args": [3, 0.5, 4]}], "ours")[0]
         self.assertEqual(r.violations, [])
-        live = {k["h"]: k["role"] for k in r.kept}
+        live = {k["h"]: k["role"] for k in kept_mod.expand(r.kept)}
         # handles in creation order: x g r t s (x, t freed)
         self.assertEqual(live, {2: "garbage", 3: "frozen", 5: "garbage"})
 
@@ -1229,7 +1230,7 @@ class ExitRoles(unittest.TestCase):
                                                         {"ctype": "int", "quantum": False}]}])
         r = run.run_samples(HERE / "rule6_image.ll", spec, [{"call": 0, "args": [3, 4]}], "ours")[0]
         self.assertEqual(r.violations, [])
-        roles = sorted((k["v"], k["role"]) for k in r.kept)
+        roles = sorted((k["v"], k["role"]) for k in kept_mod.expand(r.kept))
         vals = {"s": 3 + 1 + 3 + 4, "vv": 4, "g": 22, "q": 5, "l": 3, "s2": 3 + 8}
         self.assertEqual({v: role for v, role in roles if role != "frozen"},
                          {hex(vals["s"]): "rule6_image", hex(vals["vv"]): "rule6_image", hex(vals["g"]): "garbage",

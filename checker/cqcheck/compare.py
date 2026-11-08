@@ -120,7 +120,8 @@ record self-contained; values are hex bit patterns or ints):
   reached site of kind theta, phi, invert_begin or invert_end (the markers' angle and reg null; a
   theta site's "pre" its register before the substitution, cq-3o3v), in
   execution order.
-- kept: the exit event's live list, [{"h","w","v","role"}].
+- kept: the exit event's live list, [{"h","w","v","role"}]; a row with "n" and "step" stands for n rails (cqcheck.kept,
+  cq-pckdl), and every reader takes it as those rails without expanding it, but the reference's kept multiset.
 - clean: the free events, [{"h","v","known"}]. From run.py's compact trace (cq-8m6v): the setup's
   free events, the sample's dirty ones (tagged "shot"), then one summary {"freed": n, "fdig": hex}
   of all the sample's frees (count, FNV-1a-64 of the handles in order), which stands for them in the
@@ -275,6 +276,7 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import itertools
 import json
 import os
 import re
@@ -285,6 +287,7 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 from typing import Any, Callable, Dict, FrozenSet, Hashable, List, Optional, Sequence, Set, Tuple
 
+from . import kept as kept_mod
 from .contracts import DriverSpec, RunResult
 
 
@@ -423,14 +426,14 @@ def _ctl_on(rec: Dict[str, Any]) -> int:
 
 
 def _kept_rows(rr: RunResult):
-    """The live rails of a run, each row of a run (run._compact_kept) as its rails."""
-    for k in rr.kept or []:
-        n = k.get("n")
-        if n is None:
+    """The live rails of a run, each row (cqcheck.kept) as its rails: only for a reader that needs every rail by its
+    handle (the reference's kept multiset, CQ_spec examples)."""
+    for k, at in kept_mod.leaves(rr.kept):
+        if "n" not in k and at is None:
             yield k
         else:
-            for i in range(n):
-                yield {"h": k["h"] + i * k["step"], "w": k.get("w"), "v": k.get("v"), "role": k.get("role")}
+            for h in kept_mod.handles(k, at):
+                yield {"h": h, "w": k.get("w"), "v": k.get("v"), "role": k.get("role")}
 
 
 def _shape_of(rr: RunResult) -> Tuple:
@@ -442,7 +445,7 @@ def _shape_of(rr: RunResult) -> Tuple:
             raise CompareError(f"cq: unimplemented: chk-compare: rotation event {rec!r}")
         theta = _int(rec.get("theta")) if ev in ("ry", "phase") else None
         rots.append((ev, rec.get("h"), rec.get("a"), rec.get("f"), tuple(rec.get("ctl", []) or []), theta))
-    kept = hash(tuple(sorted((k["h"], k.get("w")) for k in _kept_rows(rr))))
+    kept = kept_mod.handle_digest(rr.kept)   # the set of (handle, width), however it is cut into rows (cq-pckdl)
     # every free in order: the setup's free events, then the sample's summary (run.py's compact trace,
     # cq-8m6v: the count and a digest of the handles), or the sample's free events when there is none
     clean = rr.clean or []
@@ -471,29 +474,26 @@ class _Ev:
     pre: Optional[Tuple] = None      # Ry: the target's value just before the gate where it fires (cq-3o3v)
 
 
-def _kept_by_h(rr: RunResult, memo: Optional[Dict[int, Dict[Any, List[Dict[str, Any]]]]] = None
-               ) -> Dict[Any, List[Dict[str, Any]]]:
-    """The run's kept entries by handle, each handle's in kept order (performance, cq-8m6v)."""
+def _kept_by_h(rr: RunResult, memo: Optional[Dict[int, kept_mod.KeptIndex]] = None) -> kept_mod.KeptIndex:
+    """The run's kept entries by handle (performance, cq-8m6v; rows looked up, never expanded: cq-pckdl)."""
     if memo is not None and id(rr) in memo:
         return memo[id(rr)]
-    by: Dict[Any, List[Dict[str, Any]]] = {}
-    for k in rr.kept or []:
-        by.setdefault(k["h"], []).append(k)
+    by = kept_mod.KeptIndex(rr.kept)
     if memo is not None:
         memo[id(rr)] = by
     return by
 
 
-def _target_value(rr: RunResult, rec: Dict[str, Any], kept_by: Optional[Dict[Any, List[Dict[str, Any]]]] = None
+def _target_value(rr: RunResult, rec: Dict[str, Any], kept_by: Optional[kept_mod.KeptIndex] = None
                   ) -> Tuple[Optional[str], int]:
     h = rec["h"]
     w = rec.get("w")
     v = rec.get("v")
-    for k in (kept_by.get(h, ()) if kept_by is not None else rr.kept or []):
-        if k["h"] == h:
-            w = w or k.get("w")
-            if v is None:
-                v = k.get("v")
+    k = (kept_by if kept_by is not None else kept_mod.KeptIndex(rr.kept)).get(h)
+    if k is not None:
+        w = w or k.get("w")
+        if v is None:
+            v = k.get("v")
     if v is None:
         for m in rr.measured or []:
             if m.get("h") == h:
@@ -1857,15 +1857,9 @@ def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult], ended: Sequence[
                 f.append(None)       # past another activation's cut: unknown
         want[k] = f
     cands: Dict[Any, Tuple] = {}
-    by_h: List[Dict[Any, Any]] = []
-    for rr in o_runs:
-        m: Dict[Any, Any] = {}
-        for e in rr.kept or []:
-            m.setdefault(e["h"], e)      # first match wins
-        by_h.append(m)
-    for ent in o_runs[0].kept or []:
-        if ent.get("w") != "i1" or ent.get("role") in _NOT_AK_ROLES:
-            continue
+    by_h = [kept_mod.KeptIndex(rr.kept) for rr in o_runs]
+    for ent in (e for row, at in kept_mod.leaves(o_runs[0].kept)
+                if row.get("w") == "i1" and row.get("role") not in _NOT_AK_ROLES for e in kept_mod.rails(row, at)):
         h = ent["h"]
         vals = []
         for m in by_h:
@@ -1958,37 +1952,55 @@ def _final_flags(ent: Dict[str, Any], o: RunResult, c: RunResult, cut: bool) -> 
     return not v & ~want and not want & ~(v | host)
 
 
+_LEAKS_NAMED = 1000   # leaked rails a reason names one by one; it counts every one
+
+
 def _leaks(k: str, o: RunResult, c: RunResult, cut: bool, capkeys: Set[Tuple[str, int]] = frozenset()) -> List[str]:
     rotated = {e.get("h") for e in o.rotations or [] if isinstance(e, dict) and e.get("ev") in ("ry", "ry_qangle")}
     acts = len({(r["loop"], r["act"]) for r in _loops(c)} & set(capkeys))
     rec = any(r["loop"].endswith(":recursion") for r in _loops(c))
-    flagged = any(e.get("role") == "fenv_flags" for e in o.kept or [])
+    flagged = any(e.get("role") == "fenv_flags" for e, _ in kept_mod.leaves(o.kept))
     allocs = len(c.outputs.get("k2", [])) if isinstance(c.outputs, dict) else 0
     i1 = 0
     fenv: Dict[str, int] = {}
     bad = []
-    for ent in o.kept or []:
-        role = ent.get("role")
-        if role in _KEPT_ROLES or ent.get("result") or (role == "seed" and ent.get("h") in rotated):
+    # a row of n rails (cqcheck.kept) is read as its rails one by one would be, without expanding it (cq-pckdl): its rails
+    # share width, value, role and known flag, so only the counters below tell them apart
+    for row, at in kept_mod.leaves(o.kept):
+        role, n = row.get("role"), kept_mod.count(row, at)
+        if role in _KEPT_ROLES or row.get("result"):
             continue
-        if not LIVE_KNOWN_IS_LEAK and (ent.get("known") is True or role == "seed"):
+        if role == "seed" and any(h in rotated for h in kept_mod.handles(row, at)):
+            for ent in kept_mod.rails(row, at):  # rails a seed row holds that received an Ry are kept, the others not
+                if ent["h"] not in rotated and not (not LIVE_KNOWN_IS_LEAK and (ent.get("known") is True or role == "seed")):
+                    bad.append((ent, None, 0, 1))
             continue
+        if not LIVE_KNOWN_IS_LEAK and (row.get("known") is True or role == "seed"):
+            continue
+        ok = 0                                   # how many of the row's first rails are allowed
         if role in _FENV_ROLES:
-            fenv[role] = fenv.get(role, 0) + 1
-            if fenv[role] == 1:
-                continue
-        elif role == "garbage" and ent.get("w") == "i1":
-            i1 += 1
-            if cut or i1 <= acts + allocs or (rec and not _int(ent.get("v"))):
-                continue
-        elif role == "garbage" and ent.get("w") == "i32" and not flagged and _final_flags(ent, o, c, cut):
+            ok = 1 if not fenv.get(role) else 0
+            fenv[role] = fenv.get(role, 0) + n
+        elif role == "garbage" and row.get("w") == "i1":
+            ok = n if cut or (rec and not _int(row.get("v"))) else max(0, min(n, acts + allocs - i1))
+            i1 += n
+        elif role == "garbage" and row.get("w") == "i32" and not flagged and _final_flags(row, o, c, cut):
             flagged = True
-            continue
-        bad.append(f"{ent.get('h')} ({ent.get('w')} = {ent.get('v')}, {role})")
+            ok = 1
+        if ok < n:
+            bad.append((row, at, ok, n - ok))
     if not bad:
         return []
-    return [f"sample {k}: our side leaves {len(bad)} rail(s) live at exit that are no frozen register, "
-            f"measured value, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): {', '.join(bad)}"
+    nbad = sum(m for _, _, _, m in bad)
+    names: List[str] = []
+    for row, at, skip, _ in bad:                 # every leaked rail by name, up to _LEAKS_NAMED of them
+        for ent in itertools.islice(kept_mod.rails(row, at), skip, None):
+            if len(names) == _LEAKS_NAMED:
+                break
+            names.append(f"{ent.get('h')} ({ent.get('w')} = {ent.get('v')}, {ent.get('role')})")
+    listed = ", ".join(names) + (f" and {nbad - len(names)} more" if nbad > len(names) else "")
+    return [f"sample {k}: our side leaves {nbad} rail(s) live at exit that are no frozen register, "
+            f"measured value, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): {listed}"
             + (f"; {acts} K-cut loop activation(s) allow as many a_K rails" if acts else "")
             + (f"; {allocs} allocation(s) allow as many n > K2 rails" if allocs else "")]
 
@@ -2012,10 +2024,12 @@ def _check_k2(o_runs: List[RunResult], c_runs: List[RunResult], open_end: Sequen
     if not maxk:
         return []
     rails: Dict[Any, Tuple[int, ...]] = {}
-    for h in {e["h"] for rr in o_runs for e in rr.kept or [] if e.get("w") == "i1" and e.get("role") == "garbage"}:
+    idx = [kept_mod.KeptIndex(rr.kept) for rr in o_runs]
+    for h in {h for rr in o_runs for row, at in kept_mod.leaves(rr.kept)
+              if row.get("w") == "i1" and row.get("role") == "garbage" for h in kept_mod.handles(row, at)}:
         vals = []
-        for rr in o_runs:
-            ent = next((e for e in rr.kept or [] if e["h"] == h), None)
+        for ix in idx:
+            ent = ix.get(h)
             vals.append(_masked(_int(ent["v"]), "i1") if ent else None)
         rails[h] = tuple(vals)
     reasons = []
@@ -2041,7 +2055,7 @@ def _raised(c: RunResult) -> bool:
 
 def _flag_on(rr: RunResult) -> bool:
     return any(e.get("w") == "i1" and e.get("role") == "abort" and _masked(_int(e.get("v")), "i1")
-               for e in rr.kept or [])
+               for e, _ in kept_mod.leaves(rr.kept))     # a row's rails share their value
 
 
 def _real_exits(keys: Sequence[str], o_by: Dict[str, RunResult], r_by: Dict[str, RunResult],
@@ -2080,9 +2094,9 @@ def _check_abort(o_runs: List[RunResult], ended: Sequence[bool], capped: Sequenc
     ended sample; every flag reads 0 and ours did not end on every sample that returns (module docstring)."""
     flags: Dict[Any, List[int]] = {}
     for s, rr in enumerate(o_runs):
-        for ent in rr.kept or []:
-            if ent.get("w") == "i1" and ent.get("role") == "abort":
-                flags.setdefault(ent["h"], [0] * len(o_runs))[s] = _masked(_int(ent.get("v")), "i1")
+        for ent in (e for row, at in kept_mod.leaves(rr.kept) if row.get("w") == "i1" and row.get("role") == "abort"
+                    for e in kept_mod.rails(row, at)):
+            flags.setdefault(ent["h"], [0] * len(o_runs))[s] = _masked(_int(ent.get("v")), "i1")
     reasons = []
     for s in range(len(o_runs)):
         on = [h for h, v in flags.items() if v[s]]
@@ -2635,10 +2649,8 @@ def _kept_type(rr: RunResult, h: Any) -> Optional[str]:
     """The type of handle h in rr's kept list (a measured rail stays live), or None."""
     if h is None:
         return None
-    for k in rr.kept or []:
-        if k.get("h") == h and k.get("w"):
-            return k["w"]
-    return None
+    k = kept_mod.KeptIndex(rr.kept).get(h)
+    return k["w"] if k is not None and k.get("w") else None
 
 
 def _kept_multiset(runs: List[RunResult], against: str = "ref") -> Dict[Tuple, int]:
