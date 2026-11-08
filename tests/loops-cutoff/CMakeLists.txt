@@ -63,6 +63,12 @@ add_test(NAME loops-cutoff-tail-trip
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/tail_trip.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-quhmu: a loop of a K-loop's exit arm whose tail the K-loop's trips also enter (musl printf_core's inval).
+add_test(NAME loops-cutoff-arm-tail
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT}
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/arm_tail.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # Nested loop tails (review of eda902b..096db1c): tail bindings and assumptions composed, one entry each.
 add_test(NAME loops-cutoff-tail-nest
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py

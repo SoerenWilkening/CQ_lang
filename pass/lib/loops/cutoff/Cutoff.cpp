@@ -1375,8 +1375,33 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           return S;
       return nullptr;
     };
+    // cq-quhmu (rules 9, 14, as cq-t30vh for a sub-loop of the trip): the TAIL of such a loop's unit (Exits.h) is that loop's on its
+    // own paths only. On the paths that enter it from this evaluation (an exit of the trip into a block that a loop of the arm also
+    // exits into: printf_core's `inval`, reached from the format scan and from the nl_type scan after it) it is a block of this
+    // evaluation like any other, under their predicate, its edges into the continuation selected in over that loop's binding. The
+    // loop leaves those paths to the walker (addJoinArm), which would read the predicate after the K-loop's last trip.
+    auto nestedTailOwner = [&](const BasicBlock *x) -> Loop * {
+      Loop *S = nestedArmOwner(x);
+      return S && !subLoopOf(x) && is_contained(exits::unitOf(*S).tail, x) ? S : nullptr;
+    };
+    // The walker's arms S left for its tail's outside paths (the loops modules' addJoinArm): those paths are this evaluation's.
+    auto reclaimTail = [&](Loop &S) {
+      const Case sc = classify(S, ctx.T, ctx.S);
+      if (sc != Case::QuantumExit && sc != Case::ClassicalBoundQuantumExit)
+        return;
+      exits::Unit SU = exits::unitOf(S);
+      if (!SU.cont)
+        return;
+      auto ours = [&](const BasicBlock *u) {
+        return is_contained(SU.tail, u) && is_contained(U.arm, u) && !is_contained(U.tail, u);
+      };
+      for (PHINode &P : SU.cont->phis())
+        for (auto &[e, v] : ctx.takeJoinArms(&P))
+          if (none_of(P.blocks(), [&, v = v](const BasicBlock *u) { return ours(u) && P.getIncomingValueForBlock(u) == v; }))
+            ctx.addJoinArm(&P, e, v);
+    };
     auto edgeIn = [&](const BasicBlock *u, const BasicBlock *b) -> std::optional<Pred> {
-      if (!L.contains(u))
+      if (!L.contains(u) && !nestedTailOwner(u))
         if (Loop *S = subLoopOf(u) ? subLoopOf(u) : nestedArmOwner(u)) {
           if (S->contains(b) || nestedArmOwner(b) == S)
             return std::nullopt;
@@ -1402,7 +1427,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       Loop *S = subLoopOf(b);
       if (S && S->getHeader() != b)
         continue;   // inside a loop of the arm: lowered with it
-      if (nestedArmOwner(b))
+      if (nestedArmOwner(b) && !nestedTailOwner(b))
         continue;
       Pred acc = Pred::bottom();
       for (BasicBlock *p : predecessors(b)) {
@@ -1426,6 +1451,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
             noteStop(stopped);
             stopped = nullptr;
           }
+          reclaimTail(*S);
           if (BasicBlock *SX = exits::unitOf(*S).cont)
             for (PHINode &P : SX->phis())
               if (unitBound.count(&P))
@@ -1440,6 +1466,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           noteStop(stopped);
           stopped = nullptr;
         }
+        reclaimTail(*S);
         if (!Bs || *Bs > K) {
           RailType i1{Kind::Int, 1};
           if (!armKept) {
@@ -1458,8 +1485,26 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         continue;
       }
       for (PHINode &P : b->phis()) {
-        if (armBound.count(&P))
+        if (armBound.count(&P)) {
+          // cq-quhmu: the loop bound P on its own paths; its tail's edges into its continuation hold on this evaluation's.
+          std::vector<std::pair<Pred, Operand>> tailArms;
+          Pred E = Pred::bottom();
+          for (unsigned i = 0; i < P.getNumIncomingValues(); ++i) {
+            BasicBlock *u = P.getIncomingBlock(i);
+            if (!nestedTailOwner(u))
+              continue;
+            auto e = edgeIn(u, b);
+            if (!e || e->isBottom())
+              continue;
+            E = E | *e;
+            tailArms.push_back({*e, ctx.operand(P.getIncomingValue(i))});
+          }
+          if (!tailArms.empty()) {
+            tailArms.push_back({!E, ctx.operand(&P)});
+            set(&P, Operand{selectChain(ctx, tailArms, railOf(P.getType())), true});
+          }
           continue;
+        }
         if (!isQ(&P)) {
           classicalPhi(P);
           continue;
@@ -1490,6 +1535,18 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       int nestedArm = -1;
       for (unsigned i = 0; i < cp.P->getNumIncomingValues(); ++i) {
         BasicBlock *u = cp.P->getIncomingBlock(i);
+        // cq-quhmu: a tail block's edge holds on this evaluation's paths into the tail (its own arm, below); the loop's paths
+        // through it are the loop's, the nested arm under the predicate of reaching its header.
+        if (Loop *S = nestedTailOwner(u); S && armBound.count(cp.P))
+          if (auto it = armLocal.find(S->getHeader()); it != armLocal.end() && !it->second.isBottom()) {
+            E = E | it->second;
+            if (nestedArm < 0) {
+              nestedArm = int(arms.size());
+              arms.push_back({it->second, ctx.operand(cp.P)});
+            } else {
+              arms[nestedArm].first = arms[nestedArm].first | it->second;
+            }
+          }
         auto ei = edgeIn(u, U.cont);
         if (!ei)
           continue;
@@ -1499,7 +1556,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         E = E | e;
         // Rule 14: a K-loop of the arm exits into C too and bound P over all its exit edges this evaluation: one
         // arm, under the predicate of reaching its header, whichever of its exit edges was taken.
-        if (!L.contains(u) && (subLoopOf(u) || nestedArmOwner(u)) && armBound.count(cp.P)) {
+        if (!L.contains(u) && (subLoopOf(u) || (nestedArmOwner(u) && !nestedTailOwner(u))) && armBound.count(cp.P)) {
           if (nestedArm < 0) {
             nestedArm = int(arms.size());
             arms.push_back({e, ctx.operand(cp.P)});
