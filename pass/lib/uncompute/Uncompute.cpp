@@ -3394,6 +3394,16 @@ void Uncompute::cleanupBijective(RailId oldRail, const abi::TemplateSpec &invers
   impl->rails[oldRail].cleanup = std::move(cl);
 }
 
+bool Uncompute::withdrawCleanup(RailId oldRail) {
+  Impl::Rail &x = impl->rail(oldRail, "withdrawCleanup");
+  if (!x.cleanup || !x.cleanup->alts.empty() || x.released || !x.exitsDone.empty())
+    return false;
+  for (RailId y : x.cleanup->reads)
+    llvm::erase(impl->rails[y].cleanupReaders, oldRail);
+  x.cleanup.reset();
+  return true;
+}
+
 void Uncompute::cleanupBijectiveUnder(RailId oldRail, Value *guard, const abi::TemplateSpec &inverse,
                                       ArrayRef<Operand> ops, bool everyPath) {
   Impl::Rail &x = impl->rail(oldRail, "cleanupBijectiveUnder");

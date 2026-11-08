@@ -30,6 +30,11 @@ CASES = [
     ("rule6_merge_sub_xor", "e", [], "pass", []),
     ("rule6_merge_chain", "e", [], "pass", []),
     ("rule6_merge_three", "e", [], "pass", []),
+    # cq-2p9g (rule 6, composite update): x cleaned from c = x + k, then c's update reads garbage computed from x: c is
+    # cleaned from the new image and x against the composite update (g3: not a bijection, x kept; g3a: 3x + k, cleaned).
+    # Was: 'cyclic uncompute dependency through rule 6'.
+    ("rule6_superseded_image", "g3", [], "pass", []),
+    ("rule6_superseded_image", "g3a", [], "pass", [r"call i32 @cq_template_mul_i32_hl\(i32 %[0-9a-z.]+, i32 -1431655765\)"]),
     # CR rule 9: a kept classical select over two garbage arms keeps the chosen arm and cleans the other under
     # the select's condition (was: 'a kept role on a classical select over handles').
     ("kept_merge", "ks", [], "pass", [r"br i1 %cq\.not"]),

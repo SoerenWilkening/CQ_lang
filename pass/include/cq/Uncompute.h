@@ -108,6 +108,9 @@ public:
   // everyPath: the guards of all the calls for oldRail cover every path (no plain part).
   void cleanupBijectiveUnder(RailId oldRail, llvm::Value *guard, const abi::TemplateSpec &inverse,
                              llvm::ArrayRef<Operand>, bool everyPath = false);
+  // cq-2p9g (CR rule 6, the composite update): withdraws oldRail's unguarded clean-up while nothing has placed it yet;
+  // false (nothing changed) otherwise.
+  bool withdrawCleanup(RailId oldRail);
   void flushBefore(llvm::Instruction *point);       // due _unc + cqrt_free, reverse dependency order
   // U7 (cq-nqa6, CR rules 5, 8, 9): flushBefore, and also, before P, the item of each arm-local rail (defined
   // in a block that does not dominate P, every use and reader item before P, every path from its block

@@ -1810,10 +1810,40 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
     if (!is_contained(merges, u))
       merges.push_back(u);
   }
+  // cq-2p9g (CR rule 6: a chain is cleaned step by step; an old value still needed to uncompute other rails is
+  // cleaned after them, against the composite update): Y is the image an earlier X was cleaned from, and I's other
+  // operand reads X (`c = x + k; c ^= x < 9 ? k : 0`). Y's clean-up from I reads that operand, whose undoing reads X,
+  // so X's clean-up from Y could run neither before Y's (X is still read) nor after it (Y is gone): X is cleaned
+  // from I's image instead, by the composite update X -> I, and kept when that is no bijection in X.
+  auto recompose = [&](Value *Y) {
+    auto *YI = dyn_cast<Instruction>(Y);
+    auto &sh = spine::shared(ctx);
+    auto yb = sh.binds.find(Y);
+    if (!YI || yb == sh.binds.end() || yb->second.size() != 1)
+      return;
+    Value *hy = yb->second.front().v;
+    SmallVector<Value *, 2> done;
+    for (Value *X : YI->operands()) {
+      auto xb = sh.binds.find(X);
+      if (is_contained(done, X) || xb == sh.binds.end() || xb->second.size() != 1 || !xb->second.front().handle)
+        continue;
+      Value *hx = xb->second.front().v;
+      auto rd = sh.ruleSixReads.find(hx);
+      if (rd == sh.ruleSixReads.end() || !is_contained(rd->second, hy) ||
+          none_of(I.operands(), [&](Value *Z) { return Z != Y && reads(ctx, Z, X); }))
+        continue;
+      if (!ctx.unc().withdrawCleanup(ctx.unc().idOf(hx)))
+        continue;
+      done.push_back(X);
+      sh.ruleSixReads.erase(rd);
+      compositeCleanup(ctx, I, X, yp);
+    }
+  };
   auto cleanOrDefer = [&](Value *Y, const Inverse &inv) {
     auto dl = dynOf.find(Y);
     if (merges.empty() && dl == dynOf.end()) {
       clean(ctx, Y, inv);
+      recompose(Y);
       return;
     }
     SmallVector<Value *, 2> bl = blockersOf(Y);
