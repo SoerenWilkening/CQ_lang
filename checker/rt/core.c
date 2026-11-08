@@ -268,10 +268,12 @@ static void trace_count(size_t n) {
 static void at_exit_handler(void);
 
 /* Compact trace (cq-8m6v, $CQE_COMPACT=1, set by run.py's runner): only the events run.py reads
- * reach the trace (rotations, measure, ret, violation, exit, effect, the shot frames, rt-bus's bus,
- * cells and out_mem events, rt-tape's end-of-shot events, and the free events of the setup and the dirty ones of a sample);
- * a sample's frees are summed up in its shot_end frame (cqe__free_note). Without it every event is
- * written, as before. */
+ * reach the trace (rotations, measure, ret, violation, exit, effect, the shot frames, rt-bus's out_mem
+ * events, rt-tape's end-of-shot events, and the free events of the setup and the dirty ones of a sample);
+ * a sample's frees are summed up in its shot_end frame (cqe__free_note), and the exit event's live list
+ * comes in runs (at_exit_handler). Without it every event is written, as before. rt-bus's bus and cells
+ * events are not in a compact trace (cq-9hzgh): run.py's only reader of the trace (_stream_shots) skipped
+ * them unread. */
 static int compact;
 
 static int keep_event(const char *s) {
@@ -281,11 +283,20 @@ static int keep_event(const char *s) {
   const char *n = s + sizeof pre - 1;
   static const char *keep[] = {"ry\"", "ry_qangle\"", "phase\"", "phase_qangle\"", "measure\"", "ret\"",
                                "violation\"", "exit\"", "host_end\"", "effect\"", "shot\"", "shot_end\"", "free\"",
-                               "bus\"", "cells\"", "out_mem\"", "tape\",\"op\":\"shot\""};
+                               "out_mem\"", "tape\",\"op\":\"shot\""};
   for (size_t i = 0; i < sizeof keep / sizeof *keep; ++i)
     if (!strncmp(n, keep[i], strlen(keep[i])))
       return 1;
   return 0;
+}
+
+/* cq-9hzgh: 1 when an event outside the compact set above reaches the trace (no compact trace, not muted).
+ * A writer of such an event (gate, tmpl, unc, alloc, push, pop, standin, bus, cells, tape bookkeeping)
+ * builds it only then: in a compact trace it would be formatted and dropped. */
+void cqe__init(void);
+int cqe__trace_all(void) {
+  cqe__init();
+  return !compact && !shot_muted;
 }
 
 void cqe__init(void) {
@@ -395,9 +406,25 @@ unsigned long cqe__violations(void) { return nviolations; }
 
 /* ---- rails ------------------------------------------------------------------------------- */
 
+/* What few rails need (cq-9hzgh): kept out of rail_t, made at the first use. */
 typedef struct {
-  char w[8];
+  int32_t *r6_ops;   /* the old rail of a rule-6 clean whose t's _unc ran first: t's operands, till its free */
+  uint32_t r6_nops;
+  uint64_t ry_t, ry_ang;  /* cq-3o3v: the last firing Ry on the rail (clock after it, angle bits) */
+  uint64_t *ry_pre, *ry_post; /* its target's value before and after it (v.nw words each) */
+} rail_ext;
+
+typedef struct {
   cqe_val v;
+  uint64_t inl;  /* cq-9hzgh: the value of a rail of 64 bits or fewer (v.w points here); a wider one is allocated */
+  uint64_t t_create, t_write, t_nd, t_meas;                       /* event clock; 0 = never */
+  union {
+    int32_t in[2]; /* capdeps 0: up to two sources, here */
+    int32_t *p;    /* capdeps > 0: an allocated list */
+  } deps;
+  uint32_t ndeps, capdeps;
+  int32_t r6_old;    /* cq-o9mx: the inverse t of a rule-6 clean: the dead rail its copy left at known |0> */
+  char w[8];
   uint8_t live, known, measured, frozen, written, seed;
   uint8_t role;  /* 0 none, 1 abort, 2 tape, 4 tape_slot, 5 overtaken */
   uint8_t busz;  /* a bus swap left it at 0 and nothing wrote it since (cqe__set_busz) */
@@ -406,20 +433,42 @@ typedef struct {
   uint8_t image; /* cq-qhow: carries a frozen register's content (cqe__carry): a rule-6 image, FROZEN */
   uint8_t r6;    /* cq-o9mx: an operand a rule-6 clean's inverse read: a rule-6 image, kept (cqe__r6_unc) */
   uint8_t load_copy; /* a bus load's copy: rule 5, "A load copy is never cleaned by rule 6", so never an image */
-  int32_t r6_old;    /* cq-o9mx: the inverse t of a rule-6 clean: the dead rail its copy left at known |0> */
-  int32_t *r6_ops;   /* the old rail of a rule-6 clean whose t's _unc ran first: t's operands, till its free */
-  uint32_t r6_nops;
-  uint64_t t_create, t_write, t_nd, t_meas;                       /* event clock; 0 = never */
-  uint64_t ry_t, ry_ang;  /* cq-3o3v: the last firing Ry on the rail (clock after it, angle bits) */
-  uint64_t *ry_pre, *ry_post; /* its target's value before and after it (v.nw words each) */
-  int32_t *deps;
-  uint32_t ndeps, capdeps;
+  rail_ext *ext;
 } rail_t;
 
 #define CQE_RAIL_LIMIT 0x51000000u /* rail handles stay below the bus handle (rt_bus.c) */
-static rail_t *rails; /* rails[h], h >= 1 */
-static uint32_t nrails, caprails;
+/* The rail table (cq-9hzgh): chunks of RCH rails that never move (a rail's value may live inside it, and
+ * growing copies nothing), found through a two-level directory whose top level is a static array. A chunk
+ * (512 * sizeof(rail_t)) and a directory block (4096 pointers) stay below SETUP_BIG, so every block the
+ * setup makes lies in the setup arena a sample's restore puts back. Handles are never reused (cqe.h C1;
+ * use_after_free and compare's rails across samples read them). */
+#define RCH_BITS 9
+#define RDIR_BITS 12
+#define RCH (1u << RCH_BITS)
+#define RDIR (1u << RDIR_BITS)
+static rail_t **rail_dir[(CQE_RAIL_LIMIT >> (RCH_BITS + RDIR_BITS)) + 1];
+#define RL(h) (&rail_dir[(uint32_t)(h) >> (RCH_BITS + RDIR_BITS)][((uint32_t)(h) >> RCH_BITS) & (RDIR - 1)] \
+                       [(uint32_t)(h) & (RCH - 1)])
+static uint32_t nrails;
 static uint64_t clock_;
+
+static inline int32_t *deps_of(rail_t *r) { return r->capdeps ? r->deps.p : r->deps.in; }
+
+static rail_ext *ext_of(rail_t *r) {
+  if (!r->ext)
+    r->ext = xcalloc(1, sizeof *r->ext);
+  return r->ext;
+}
+
+/* The storage of rail h (h = nrails + 1), made when its chunk is new. */
+static void rail_grow(uint32_t h) {
+  rail_t ***d = &rail_dir[h >> (RCH_BITS + RDIR_BITS)];
+  if (!*d)
+    *d = xcalloc(RDIR, sizeof **d);
+  rail_t **c = &(*d)[(h >> RCH_BITS) & (RDIR - 1)];
+  if (!*c)
+    *c = xcalloc(RCH, sizeof **c);
+}
 
 uint64_t cqe__tick(void) { return ++clock_; }
 uint32_t cqe__nrails_peek(void) { return nrails; }
@@ -432,7 +481,7 @@ void cqe__prealloc(int32_t h) { prealloc_h = h; }
 /* The replayed compute of a reserved rail: the rail's value is made now (its known-basis reference). */
 void cqe__recreated(int32_t h) {
   if (h >= 1 && (uint32_t)h <= nrails)
-    rails[h].t_create = rails[h].t_write = cqe__tick();
+    (*RL(h)).t_create = (*RL(h)).t_write = cqe__tick();
 }
 
 int32_t cqe__new(const char *w, const cqe_val *init, int known, int seed) {
@@ -440,15 +489,15 @@ int32_t cqe__new(const char *w, const cqe_val *init, int known, int seed) {
   if (prealloc_h > 0) {
     int32_t h = prealloc_h;
     prealloc_h = 0;
-    if ((uint32_t)h > nrails || !rails[h].live) {
+    if ((uint32_t)h > nrails || !(*RL(h)).live) {
       cqe__violation("bad_handle", h, "cq_invert replay: rail %d is not live", (int)h);
     } else {
-      if (w && strcmp(rails[h].w, w) != 0)
-        cqe__violation("width_mismatch", h, "cq_invert replay: rail %d is %s, the gate makes %s", (int)h, rails[h].w, w);
+      if (w && strcmp((*RL(h)).w, w) != 0)
+        cqe__violation("width_mismatch", h, "cq_invert replay: rail %d is %s, the gate makes %s", (int)h, (*RL(h)).w, w);
       if (init)
-        cqe__val_xor(&rails[h].v, init);
-      rails[h].known = rails[h].known && known;
-      rails[h].t_write = cqe__tick();
+        cqe__val_xor(&(*RL(h)).v, init);
+      (*RL(h)).known = (*RL(h)).known && known;
+      (*RL(h)).t_write = cqe__tick();
       return h;
     }
   }
@@ -460,22 +509,21 @@ int32_t cqe__new(const char *w, const cqe_val *init, int known, int seed) {
     kind = 'i';
     w = "i1";
   }
-  if (nrails + 2 > caprails) {
-    caprails = caprails ? 2 * caprails : 256;
-    rails = realloc(rails, caprails * sizeof *rails);
-    if (!rails)
-      abort();
-  }
   if (nrails + 1 >= CQE_RAIL_LIMIT) {
     fprintf(stderr, "cq: chk-core: rail handles exhausted (limit 0x%x, the bus handle)\n",
             (unsigned)CQE_RAIL_LIMIT);
     abort();
   }
+  rail_grow(nrails + 1);
   int32_t h = (int32_t)++nrails;
-  rail_t *r = &rails[h];
+  rail_t *r = &(*RL(h));
   memset(r, 0, sizeof *r);
-  snprintf(r->w, sizeof r->w, "%s", w);
-  cqe__val_init(&r->v, bits, kind);
+  size_t wl = strnlen(w, sizeof r->w - 1);
+  memcpy(r->w, w, wl);
+  r->v.bits = bits;
+  r->v.kind = kind;
+  r->v.nw = cqe__nwords(bits);
+  r->v.w = r->v.nw == 1 ? &r->inl : xcalloc(r->v.nw, sizeof *r->v.w);
   if (init)
     cqe__val_xor(&r->v, init);
   r->live = 1;
@@ -496,7 +544,7 @@ int cqe__check(int32_t h, const char *ctx) {
     cqe__violation("bad_handle", h > 0 ? h : -1, "%s: handle %d names no rail", ctx, (int)h);
     return -1;
   }
-  if (!rails[h].live) {
+  if (!(*RL(h)).live) {
     cqe__violation("use_after_free", h, "%s: rail %d was freed", ctx, (int)h);
     return 1;
   }
@@ -506,65 +554,70 @@ int cqe__check(int32_t h, const char *ctx) {
 /* Quiet existence test (no violation). */
 int cqe__exists(int32_t h) { return h >= 1 && (uint32_t)h <= nrails; }
 
-cqe_val *cqe__val(int32_t h) { return &rails[h].v; }
-const char *cqe__w(int32_t h) { return rails[h].w; }
-int cqe__known(int32_t h) { return rails[h].known; }
-void cqe__setknown(int32_t h, int k) { rails[h].known = k ? 1 : 0; }
-uint64_t cqe__created(int32_t h) { return rails[h].t_create; }
-uint64_t cqe__last_nd(int32_t h) { return rails[h].t_nd; }
-int cqe__measured(int32_t h) { return rails[h].measured; }
-int cqe__frozen(int32_t h) { return rails[h].frozen; }
-int cqe__role(int32_t h) { return rails[h].role; }
-void cqe__setfenv(int32_t h, int bits) { rails[h].fenv |= (uint8_t)bits; }
-void cqe__setrole(int32_t h, int role) { rails[h].role = (uint8_t)role; }
-void cqe__set_busz(int32_t h) { rails[h].busz = 1; }
-int cqe__busz(int32_t h) { return rails[h].busz; }
-void cqe__set_store_kept(int32_t h) { rails[h].store_kept = 1; }
+cqe_val *cqe__val(int32_t h) { return &(*RL(h)).v; }
+const char *cqe__w(int32_t h) { return (*RL(h)).w; }
+int cqe__known(int32_t h) { return (*RL(h)).known; }
+void cqe__setknown(int32_t h, int k) { (*RL(h)).known = k ? 1 : 0; }
+uint64_t cqe__created(int32_t h) { return (*RL(h)).t_create; }
+uint64_t cqe__last_nd(int32_t h) { return (*RL(h)).t_nd; }
+int cqe__measured(int32_t h) { return (*RL(h)).measured; }
+int cqe__frozen(int32_t h) { return (*RL(h)).frozen; }
+int cqe__role(int32_t h) { return (*RL(h)).role; }
+void cqe__setfenv(int32_t h, int bits) { (*RL(h)).fenv |= (uint8_t)bits; }
+void cqe__setrole(int32_t h, int role) { (*RL(h)).role = (uint8_t)role; }
+void cqe__set_busz(int32_t h) { (*RL(h)).busz = 1; }
+int cqe__busz(int32_t h) { return (*RL(h)).busz; }
+void cqe__set_store_kept(int32_t h) { (*RL(h)).store_kept = 1; }
 
 void cqe__mark_written(int32_t h) {
-  rails[h].written = 1;
-  rails[h].busz = 0;
-  rails[h].t_write = cqe__tick();
+  (*RL(h)).written = 1;
+  (*RL(h)).busz = 0;
+  (*RL(h)).t_write = cqe__tick();
 }
 /* cq-3o3v: a firing Ry on h that took a C reach changed its value from pre to the reach's value. A
  * later firing Ry on h with the negated angle, with h neither written nor changed since and no C
  * reach of its own, is that Ry's adjoint in this branch (CR rule 10's un-prep): Ry(-θ)·Ry(θ) = I, so
  * h holds pre again (cqe__ry_unprep). */
 void cqe__ry_note(int32_t h, uint64_t angle, const cqe_val *pre) {
-  rail_t *r = &rails[h];
+  rail_t *r = &(*RL(h));
+  rail_ext *x = ext_of(r);
   uint32_t nw = r->v.nw;
-  if (!r->ry_pre) {
-    r->ry_pre = xcalloc(nw ? nw : 1, sizeof *r->ry_pre);
-    r->ry_post = xcalloc(nw ? nw : 1, sizeof *r->ry_post);
+  if (!x->ry_pre) {
+    x->ry_pre = xcalloc(nw ? nw : 1, sizeof *x->ry_pre);
+    x->ry_post = xcalloc(nw ? nw : 1, sizeof *x->ry_post);
   }
-  memcpy(r->ry_pre, pre->w, nw * sizeof *r->ry_pre);
-  memcpy(r->ry_post, r->v.w, nw * sizeof *r->ry_post);
-  r->ry_ang = angle;
-  r->ry_t = cqe__tick();
+  memcpy(x->ry_pre, pre->w, nw * sizeof *x->ry_pre);
+  memcpy(x->ry_post, r->v.w, nw * sizeof *x->ry_post);
+  x->ry_ang = angle;
+  x->ry_t = cqe__tick();
 }
 int cqe__ry_unprep(int32_t h, uint64_t angle) {
-  rail_t *r = &rails[h];
-  if (!r->ry_t || r->t_write > r->ry_t || angle != (r->ry_ang ^ (1ULL << 63)) ||
-      memcmp(r->ry_post, r->v.w, r->v.nw * sizeof *r->ry_post) != 0)
+  rail_t *r = &(*RL(h));
+  rail_ext *x = r->ext;
+  if (!x || !x->ry_t || r->t_write > x->ry_t || angle != (x->ry_ang ^ (1ULL << 63)) ||
+      memcmp(x->ry_post, r->v.w, r->v.nw * sizeof *x->ry_post) != 0)
     return 0;
-  memcpy(r->v.w, r->ry_pre, r->v.nw * sizeof *r->ry_pre);
-  r->ry_t = 0;
+  memcpy(r->v.w, x->ry_pre, r->v.nw * sizeof *x->ry_pre);
+  x->ry_t = 0;
   return 1;
 }
-void cqe__ry_forget(int32_t h) { rails[h].ry_t = 0; }
+void cqe__ry_forget(int32_t h) {
+  if ((*RL(h)).ext)
+    (*RL(h)).ext->ry_t = 0;
+}
 void cqe__mark_nd(int32_t h) {
-  rails[h].frozen = 1;
-  rails[h].busz = 0;
-  rails[h].t_nd = cqe__tick();
+  (*RL(h)).frozen = 1;
+  (*RL(h)).busz = 0;
+  (*RL(h)).t_nd = cqe__tick();
 }
 /* CR rule 2, BACKEND_ABI 1.3 (cq-ihlt): measuring a measured rail again is a classical re-read of
  * its outcome; the rail's measurement (and its time, which kept_entangled reads) stays the first. */
 void cqe__mark_measured(int32_t h) {
-  if (rails[h].measured)
+  if ((*RL(h)).measured)
     return;
-  rails[h].measured = 1;
-  rails[h].known = 1;
-  rails[h].t_meas = cqe__tick();
+  (*RL(h)).measured = 1;
+  (*RL(h)).known = 1;
+  (*RL(h)).t_meas = cqe__tick();
 }
 /* CR rule 19 / §6 item 1 (cq-qhow): a frozen register (rotated) is never written in place again
  * except to clean it, and rule 6 cleans a dead register x against its image r: t = g(r); x ^= t
@@ -575,12 +628,12 @@ void cqe__mark_measured(int32_t h) {
  * across calls, since the facts are the run's, not the function's. A measured rail is classical and
  * carries nothing. Over-approximation: an _unc with several quantum operands marks them all. */
 void cqe__carry(int32_t into, const int32_t *srcs, int n) {
-  rail_t *d = &rails[into];
+  rail_t *d = &(*RL(into));
   if (d->measured || !(d->frozen || d->image))
     return;
   for (int i = 0; i < n; ++i)
-    if (srcs[i] != into && !rails[srcs[i]].measured)
-      rails[srcs[i]].image = 1;
+    if (srcs[i] != into && !(*RL(srcs[i])).measured)
+      (*RL(srcs[i])).image = 1;
 }
 
 /* CR rule 5 sentence 1 ("A consumer that is never uncomputed (a measured, returned, kept or carried rail, a rule-6
@@ -594,9 +647,10 @@ void cqe__carry(int32_t into, const int32_t *srcs, int n) {
  * condition or a template result ("its inverse reads the garbage", rule 6, 195), and rule 5 still uncomputes that after
  * the inverse; forgetting that _unc is a leak (cq-cuu82). A forgotten _unc of a rail that was only an ordinary template
  * result stays a leak. */
-static int r6_cleanable(const rail_t *r) {
+static int r6_cleanable(rail_t *r) {
+  const int32_t *deps = deps_of(r);
   for (uint32_t i = 0; i < r->ndeps; ++i) {
-    const rail_t *s = &rails[r->deps[i]];
+    const rail_t *s = &(*RL(deps[i]));
     if (!s->live || s->t_write > r->t_write)
       return 0;
   }
@@ -605,67 +659,82 @@ static int r6_cleanable(const rail_t *r) {
 
 static void r6_mark(const int32_t *ops, uint32_t n) {
   for (uint32_t i = 0; i < n; ++i)
-    if (!rails[ops[i]].measured && !rails[ops[i]].load_copy && !r6_cleanable(&rails[ops[i]]))
-      rails[ops[i]].r6 = 1;
+    if (!(*RL(ops[i])).measured && !(*RL(ops[i])).load_copy && !r6_cleanable(&(*RL(ops[i]))))
+      (*RL(ops[i])).r6 = 1;
 }
 
-void cqe__set_load_copy(int32_t h) { rails[h].load_copy = 1; }
+void cqe__set_load_copy(int32_t h) { (*RL(h)).load_copy = 1; }
 
 /* Before the XOR of copy(t, y): may this copy be a rule-6 clean of y? */
-int cqe__r6_before(int32_t t, int32_t y) { return rails[t].t_create > rails[y].t_write; }
+int cqe__r6_before(int32_t t, int32_t y) { return (*RL(t)).t_create > (*RL(y)).t_write; }
 
 /* After it, and the known-basis rule: y reads known |0>, so t is the inverse of a rule-6 clean. */
 void cqe__r6_cleaned(int32_t t, int32_t y) {
-  if (cqe__val_iszero(&rails[y].v) && rails[y].known)
-    rails[t].r6_old = y;
+  if (cqe__val_iszero(&(*RL(y)).v) && (*RL(y)).known)
+    (*RL(t)).r6_old = y;
 }
 
 /* t's _unc, reading the rails ops. */
 void cqe__r6_unc(int32_t t, const int32_t *ops, int n) {
-  int32_t y = rails[t].r6_old;
+  int32_t y = (*RL(t)).r6_old;
   if (!y)
     return;
-  rails[t].r6_old = 0;
-  if (!rails[y].live) {
+  (*RL(t)).r6_old = 0;
+  if (!(*RL(y)).live) {
     r6_mark(ops, (uint32_t)n);
     return;
   }
-  int32_t *keep = realloc(rails[y].r6_ops, (size_t)(n ? n : 1) * sizeof *keep);
+  rail_ext *x = ext_of(&(*RL(y)));
+  int32_t *keep = realloc(x->r6_ops, (size_t)(n ? n : 1) * sizeof *keep);
   if (!keep)
     abort();
   memcpy(keep, ops, (size_t)n * sizeof *keep);
-  rails[y].r6_ops = keep;
-  rails[y].r6_nops = (uint32_t)n;
+  x->r6_ops = keep;
+  x->r6_nops = (uint32_t)n;
 }
 
 void cqe__add_dep(int32_t h, int32_t src) {
-  rail_t *r = &rails[h];
-  r->fenv |= rails[src].fenv & 1; /* cq-tt2j: a rail written from the flags is flags (rule 23 lineage) */
+  rail_t *r = &(*RL(h));
+  r->fenv |= (*RL(src)).fenv & 1; /* cq-tt2j: a rail written from the flags is flags (rule 23 lineage) */
+  int32_t *deps = deps_of(r);
   for (uint32_t i = 0; i < r->ndeps; ++i)
-    if (r->deps[i] == src)
+    if (deps[i] == src)
       return;
-  if (r->ndeps == r->capdeps) {
-    r->capdeps = r->capdeps ? 2 * r->capdeps : 4;
-    r->deps = realloc(r->deps, r->capdeps * sizeof *r->deps);
-    if (!r->deps)
+  if (!r->capdeps && r->ndeps < 2) { /* cq-9hzgh: the first two in the rail */
+    r->deps.in[r->ndeps++] = src;
+    return;
+  }
+  if (!r->capdeps) {
+    int32_t *p = malloc(4 * sizeof *p);
+    if (!p)
+      abort();
+    memcpy(p, r->deps.in, 2 * sizeof *p);
+    r->deps.p = p;
+    r->capdeps = 4;
+  } else if (r->ndeps == r->capdeps) {
+    r->capdeps *= 2;
+    r->deps.p = realloc(r->deps.p, r->capdeps * sizeof *r->deps.p);
+    if (!r->deps.p)
       abort();
   }
-  r->deps[r->ndeps++] = src;
+  r->deps.p[r->ndeps++] = src;
 }
 
 void cqe__free(int32_t h) {
-  rails[h].live = 0;
-  if (rails[h].r6_ops) {
-    r6_mark(rails[h].r6_ops, rails[h].r6_nops);
-    free(rails[h].r6_ops);
-    rails[h].r6_ops = NULL;
+  rail_t *r = &(*RL(h));
+  r->live = 0;
+  if (r->ext && r->ext->r6_ops) {
+    r6_mark(r->ext->r6_ops, r->ext->r6_nops);
+    free(r->ext->r6_ops);
+    r->ext->r6_ops = NULL;
   }
   /* a freed rail's role is never asked (the exit event lists live rails); its dependency list goes
    * back to the sample arena's free lists for the next rail (cq-8m6v). Its event times stay: a live
    * rail's role reads them. */
-  free(rails[h].deps);
-  rails[h].deps = NULL;
-  rails[h].ndeps = rails[h].capdeps = 0;
+  if (r->capdeps)
+    free(r->deps.p);
+  r->deps.p = NULL;
+  r->ndeps = r->capdeps = 0;
 }
 
 /* ---- cqe.h rail API (families) ------------------------------------------------------------- */
@@ -675,26 +744,26 @@ int32_t cqe_new_rail(const char *w, const cqe_val *init, int known) { return cqe
 const cqe_val *cqe_rail(int32_t h) {
   if (cqe__check(h, "cqe_rail") != 0) /* C1: a freed or unknown handle is a violation and NULL */
     return NULL;
-  return &rails[h].v;
+  return &(*RL(h)).v;
 }
 
 void cqe_xor_into(int32_t h, const cqe_val *v) {
   if (cqe__check(h, "cqe_xor_into") < 0 || !v)
     return;
-  cqe__val_xor(&rails[h].v, v);
+  cqe__val_xor(&(*RL(h)).v, v);
   cqe__mark_written(h);
 }
 
 void cqe_set_known(int32_t h, int known) {
   if (cqe__check(h, "cqe_set_known") < 0)
     return;
-  rails[h].known = known ? 1 : 0;
+  (*RL(h)).known = known ? 1 : 0;
 }
 
 /* ---- exit -------------------------------------------------------------------------------- */
 
 static const char *exit_role(int32_t h) {
-  rail_t *r = &rails[h];
+  rail_t *r = &(*RL(h));
   if (r->measured)
     return "measured";
   if (r->role == 1)
@@ -709,8 +778,9 @@ static const char *exit_role(int32_t h) {
     return "frozen";
   if (r->store_kept)
     return "store_kept";
+  const int32_t *deps = deps_of(r);
   for (uint32_t i = 0; i < r->ndeps; ++i) {
-    rail_t *s = &rails[r->deps[i]];
+    rail_t *s = &(*RL(deps[i]));
     if ((s->t_nd && s->t_nd > r->t_write) || (s->t_meas && s->t_meas > r->t_write))
       return "kept_entangled";
   }
@@ -725,38 +795,88 @@ static const char *exit_role(int32_t h) {
   return "garbage";
 }
 
+/* One row of the exit event's live list (cq-9hzgh): n rails at handles h, h + step, ... (n > 1 only in a
+ * compact trace) of one width, value, role and known flag. */
+typedef struct {
+  uint32_t h, n, step;
+  const char *w, *role;
+  int known;
+  char *v;
+  size_t vcap;
+} live_row;
+
+static unsigned long long live_put(const live_row *r, int first) {
+  int n;
+  if (r->n > 1)
+    n = fprintf(trace_f, "%s{\"h\":%u,\"n\":%u,\"step\":%u,\"w\":\"%s\",\"v\":\"%s\",\"role\":\"%s\",\"known\":%s}",
+                first ? "" : ",", r->h, r->n, r->step, r->w, r->v, r->role, r->known ? "true" : "false");
+  else
+    n = fprintf(trace_f, "%s{\"h\":%u,\"w\":\"%s\",\"v\":\"%s\",\"role\":\"%s\",\"known\":%s}", first ? "" : ",",
+                r->h, r->w, r->v, r->role, r->known ? "true" : "false");
+  return n > 0 ? (unsigned long long)n : 0;
+}
+
+/* The exit event, written straight to the trace (cq-9hzgh: never built in memory; a looping sample's list
+ * once reached 6 GB). Its live list holds every live rail {"h","w","v","role","known"} in handle order;
+ * in a compact trace consecutive entries of one width, value, role and known flag whose handles step
+ * evenly are one row {"h","n","step","w","v","role","known"} (run.py _exit_live expands it back), the
+ * same information. Counted against the trace cap as one line, as cqe_log counts it. */
 static void at_exit_handler(void) {
   if (shot_muted)
     return;
-  size_t cap = 64, len = 0;
-  char *buf = xcalloc(cap, 1);
-#define APPEND(...)                                                                                \
-  do {                                                                                             \
-    int need_ = snprintf(NULL, 0, __VA_ARGS__);                                                    \
-    while (len + (size_t)need_ + 1 > cap) {                                                        \
-      cap *= 2;                                                                                    \
-      buf = realloc(buf, cap);                                                                     \
-      if (!buf)                                                                                    \
-        abort();                                                                                   \
-    }                                                                                              \
-    len += (size_t)snprintf(buf + len, cap - len, __VA_ARGS__);                                    \
-  } while (0)
-  APPEND("{\"ev\":\"exit\",\"live\":[");
+  /* the host part of rule 23's flags, compare._final_flags (read first: nothing below touches them) */
+  int host_flags = fetestexcept(FE_INVALID | FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INEXACT);
+  unsigned long long len = 0;
+  static const char head[] = "{\"ev\":\"exit\",\"live\":[";
+  if (fputs(head, trace_f) >= 0)
+    len += sizeof head - 1;
+  live_row cur = {0}, nx = {0};
+  char vb[3 + 16 * 2 + 1];
   int first = 1;
   for (uint32_t h = 1; h <= nrails; ++h) {
-    if (!rails[h].live)
+    rail_t *r = &(*RL(h));
+    if (!r->live)
       continue;
-    char *hx = cqe__hexa(&rails[h].v);
-    APPEND("%s{\"h\":%u,\"w\":\"%s\",\"v\":\"%s\",\"role\":\"%s\",\"known\":%s}", first ? "" : ",", h,
-           rails[h].w, hx, exit_role((int32_t)h), rails[h].known ? "true" : "false");
-    free(hx);
-    first = 0;
+    char *hx = r->v.nw <= 2 ? cqe__hex(&r->v, vb) : cqe__hexa(&r->v);
+    nx.h = h;
+    nx.n = 1;
+    nx.step = 0;
+    nx.w = r->w;
+    nx.role = exit_role((int32_t)h);
+    nx.known = r->known;
+    if (compact && cur.n && cur.known == nx.known && !strcmp(cur.w, nx.w) && !strcmp(cur.role, nx.role) &&
+        !strcmp(cur.v, hx) && (cur.n == 1 || h == cur.h + cur.n * cur.step)) {
+      if (cur.n == 1)
+        cur.step = h - cur.h;
+      cur.n++;
+    } else {
+      if (cur.n) {
+        len += live_put(&cur, first);
+        first = 0;
+      }
+      char *keepv = cur.v;
+      size_t keepcap = cur.vcap, need = strlen(hx) + 1;
+      cur = nx;
+      if (need > keepcap) {
+        free(keepv);
+        keepcap = need > 64 ? need : 64;
+        keepv = xcalloc(keepcap, 1);
+      }
+      memcpy(keepv, hx, need);
+      cur.v = keepv;
+      cur.vcap = keepcap;
+    }
+    if (hx != vb)
+      free(hx);
   }
-  APPEND("],\"violations\":%lu,\"host_flags\":%d}", nviolations, /* the host part of rule 23's flags, compare._final_flags */
-         fetestexcept(FE_INVALID | FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW | FE_INEXACT));
-#undef APPEND
-  cqe_log(buf);
-  free(buf);
+  if (cur.n)
+    len += live_put(&cur, first);
+  free(cur.v);
+  int n1 = fprintf(trace_f, "],\"violations\":%lu,\"host_flags\":%d}\n", nviolations, host_flags);
+  len += n1 > 0 ? (unsigned long long)n1 : 0;
+  if (!shot_buffered)
+    fflush(trace_f);
+  trace_count((size_t)len);
   if (shot_buffered) /* a shot worker's sample ends here; the trace stays open for the next */
     return;
   if (trace_f && trace_f != stderr)
@@ -887,6 +1007,7 @@ static void *arena_alloc(arena_t *a, size_t reserve, size_t n) {
 }
 
 static int sample_running(void);
+static void pid_atfork_child(void);
 static void shot_mark_dirty(void);
 
 void *malloc(size_t n) {
@@ -962,6 +1083,7 @@ int atexit(void (*fn)(void)) {
 }
 
 void cqe__invert_close_all(void) __attribute__((weak)); /* dispatch.c (cq-4593) */
+void cqe__sites_resolve(void) __attribute__((weak)); /* dispatch.c (cq-9hzgh) */
 /* bundle/host/cq_host.c: its __cq_alloc arena; these weak definitions are for a runtime linked without that file */
 __attribute__((weak)) void __cq_host_snapshot(void) {}
 __attribute__((weak)) void __cq_host_restore(void) {}
@@ -992,6 +1114,7 @@ __attribute__((constructor(100))) static void shot_ctor(void) {
     abort();
   }
   __cxa_atexit(libc_exit_hook, NULL, NULL);
+  pthread_atfork(NULL, NULL, pid_atfork_child);
 }
 
 /* -- the shared state -- */
@@ -1045,7 +1168,17 @@ typedef struct { long k; const char *p; size_t n; } theta_block;
 static theta_block *theta_blocks;
 static size_t theta_nblocks;
 
-static int sample_running(void) { return R && R->in_sample && getpid() == R->worker; }
+/* This process's pid, cached (cq-9hzgh: malloc and free ask sample_running at every block, and getpid is a
+ * system call); a forked child forgets it (pid_atfork_child, registered by shot_ctor). */
+static pid_t self_pid;
+static void pid_atfork_child(void) { self_pid = 0; }
+static pid_t my_pid(void) {
+  if (!self_pid)
+    self_pid = getpid();
+  return self_pid;
+}
+
+static int sample_running(void) { return R && R->in_sample && my_pid() == R->worker; }
 static void shot_mark_dirty(void) { R->dirty = 1; }
 
 static void shot_die(const char *what) {
@@ -1609,6 +1742,8 @@ static void server_wait(void) {
 sigjmp_buf *cqe__shot_jb(void) {
   cqe__init();
   if (!R) {
+    if (cqe__sites_resolve)
+      cqe__sites_resolve(); /* cq-9hzgh: every call site parsed once, before the setup's snapshot */
     fflush(NULL);
     server_setup();
     __cxa_atexit(server_cleanup, NULL, NULL);

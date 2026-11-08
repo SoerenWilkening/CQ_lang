@@ -83,6 +83,7 @@
 
 /* core.c's rail attributes (the family path's only use: classical-valuedness and exit roles) */
 int cqe__known(int32_t h);
+int cqe__trace_all(void); /* core.c (cq-9hzgh): the tape bookkeeping events are not in a compact trace */
 void cqe__setrole(int32_t h, int role);
 #define ROLE_TAPE 2
 
@@ -565,9 +566,11 @@ static int32_t op_tape_alloc(void) {
   g_tape_last[g_ntapes] = -1;
   memset(&g_tape_pend[g_ntapes], 0, sizeof(pendlist));
   int32_t t = TAPE_BASE + g_ntapes++;
-  sbuf b = {0};
-  sb_printf(&b, "{\"ev\":\"tape\",\"op\":\"alloc\",\"t\":%d}", (int)t);
-  log_line(&b);
+  if (cqe__trace_all()) {
+    sbuf b = {0};
+    sb_printf(&b, "{\"ev\":\"tape\",\"op\":\"alloc\",\"t\":%d}", (int)t);
+    log_line(&b);
+  }
   return t;
 }
 
@@ -625,6 +628,8 @@ static void capture_pred(event *e, int ctl, int32_t c, const char *sym) {
 }
 
 static void entry_log(const event *e, int seq) {
+  if (!cqe__trace_all())
+    return;
   sbuf b = {0};
   sb_printf(&b, "{\"ev\":\"tape\",\"op\":\"%s\",\"seq\":%d,\"t\":%d,\"c\":%d,\"cv\":%d,\"cq\":%d,\"%s\":",
             e->k == E_FMT ? "fmt" : "effect", seq, (int)e->t, (int)e->c, e->pred, e->pred_known,
@@ -778,13 +783,15 @@ static int32_t op_tape_write(int ctl, int32_t c, int32_t t, int32_t h, const cha
   int32_t hp = cqe_new_rail(w, &init, known);
   int seq = -1, fi = -1;
   field *f = new_field(t, sym, &seq, &fi);
-  sbuf b = {0};
-  sb_printf(&b, "{\"ev\":\"tape\",\"op\":\"write\",\"seq\":%d,\"t\":%d,\"field\":%d,\"c\":%d,\"cv\":%d,"
-                "\"src\":%d,\"h\":%d,\"w\":\"%s\",\"v\":",
-            seq, (int)t, fi, (int)c, cv, (int)h, (int)hp, w);
-  sb_hex(&b, &v);
-  sb_puts(&b, "}");
-  log_line(&b);
+  if (cqe__trace_all()) {
+    sbuf b = {0};
+    sb_printf(&b, "{\"ev\":\"tape\",\"op\":\"write\",\"seq\":%d,\"t\":%d,\"field\":%d,\"c\":%d,\"cv\":%d,"
+                  "\"src\":%d,\"h\":%d,\"w\":\"%s\",\"v\":",
+              seq, (int)t, fi, (int)c, cv, (int)h, (int)hp, w);
+    sb_hex(&b, &v);
+    sb_puts(&b, "}");
+    log_line(&b);
+  }
   if (f) {
     f->k = F_RAIL; f->h = hp; f->src = h; f->c = c; f->cv = cv; f->known = known; f->v = v;
     memcpy(f->w, w, 8);
@@ -804,12 +811,14 @@ static void op_tape_write_lit(int32_t t, const cqe_val *lit, const char *wtok, c
     cqe_fail("tape: %s: width %s but the literal is %s", sym, wtok, w);
   int seq = -1, fi = -1;
   field *f = new_field(t, sym, &seq, &fi);
-  sbuf b = {0};
-  sb_printf(&b, "{\"ev\":\"tape\",\"op\":\"write_lit\",\"seq\":%d,\"t\":%d,\"field\":%d,\"w\":\"%s\",\"v\":",
-            seq, (int)t, fi, w);
-  sb_hex(&b, &v);
-  sb_puts(&b, "}");
-  log_line(&b);
+  if (cqe__trace_all()) {
+    sbuf b = {0};
+    sb_printf(&b, "{\"ev\":\"tape\",\"op\":\"write_lit\",\"seq\":%d,\"t\":%d,\"field\":%d,\"w\":\"%s\",\"v\":",
+              seq, (int)t, fi, w);
+    sb_hex(&b, &v);
+    sb_puts(&b, "}");
+    log_line(&b);
+  }
   if (f) {
     f->k = F_LIT; f->known = 1; f->v = v; memcpy(f->w, w, 8);
     field_done(t);
@@ -827,9 +836,11 @@ static void op_abort(int32_t fh, const char *sym) {
   e->pred_known = fv < 0 ? 1 : cqe__known(fh) != 0;
   e->complete = 1;
   if (e->pred) g_abort_seen = 1;
-  sbuf b = {0};
-  sb_printf(&b, "{\"ev\":\"abort\",\"f\":%d,\"fv\":\"0x%d\",\"seq\":%d}", (int)fh, e->pred, g_nev - 1);
-  log_line(&b);
+  if (cqe__trace_all()) {
+    sbuf b = {0};
+    sb_printf(&b, "{\"ev\":\"abort\",\"f\":%d,\"fv\":\"0x%d\",\"seq\":%d}", (int)fh, e->pred, g_nev - 1);
+    log_line(&b);
+  }
   advance();
 }
 

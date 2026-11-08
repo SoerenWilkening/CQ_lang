@@ -92,6 +92,8 @@ void cqe__setrole(int32_t h, int role) {
 }
 
 void cqe_log(const char *json) { fprintf(tr(), "%s\n", json); fflush(tr()); }
+/* core.c (cq-9hzgh): every event is written here (no compact trace) */
+int cqe__trace_all(void) { return 1; }
 
 void cqe_fail(const char *fmt, ...) {
   char buf[1024];
