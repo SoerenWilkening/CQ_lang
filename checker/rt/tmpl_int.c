@@ -192,7 +192,8 @@ static int op_code_(const char *op) {
 
 static int binary_(int op, const char *name, tw_ t, const cqe_val *args, cqe_val *out) {
   uint32_t n = nwords_(t.bits), bits = t.bits;
-  uint64_t *buf = (uint64_t *)calloc((size_t)n * 6u, sizeof(uint64_t));
+  uint64_t small[12] = {0}; /* cq-9hzgh: a value of up to two words needs no allocation */
+  uint64_t *buf = n <= 2 ? small : (uint64_t *)calloc((size_t)n * 6u, sizeof(uint64_t));
   if (!buf) { cqe_fail("tmpl_int: %s: out of memory", name); return -1; }
   uint64_t *a = buf, *b = buf + n, *o = buf + 2 * n, *t1 = buf + 3 * n, *t2 = buf + 4 * n,
            *t3 = buf + 5 * n;
@@ -245,16 +246,17 @@ static int binary_(int op, const char *name, tw_ t, const cqe_val *args, cqe_val
     }
     ok = write_out_(name, out, t, o);
   }
-  free(buf);
+  if (buf != small) free(buf);
   return ok ? 0 : -1;
 }
 
 static int cast_(int op, const char *name, tw_ from, tw_ to, const cqe_val *args, cqe_val *out) {
   uint32_t nf = nwords_(from.bits), nt = nwords_(to.bits);
   uint32_t nmax = nf > nt ? nf : nt;
-  uint64_t *a = (uint64_t *)calloc(nmax, sizeof(uint64_t));
-  uint64_t *o = (uint64_t *)calloc(nmax, sizeof(uint64_t));
-  if (!a || !o) { free(a); free(o); cqe_fail("tmpl_int: %s: out of memory", name); return -1; }
+  uint64_t sa[2] = {0}, so[2] = {0}; /* cq-9hzgh: up to two words need no allocation */
+  uint64_t *a = nmax <= 2 ? sa : (uint64_t *)calloc(nmax, sizeof(uint64_t));
+  uint64_t *o = nmax <= 2 ? so : (uint64_t *)calloc(nmax, sizeof(uint64_t));
+  if (!a || !o) { if (a != sa) free(a); if (o != so) free(o); cqe_fail("tmpl_int: %s: out of memory", name); return -1; }
   int ok = 1;
   switch (op) {
   case OP_ZEXT:
@@ -290,8 +292,8 @@ static int cast_(int op, const char *name, tw_ from, tw_ to, const cqe_val *args
     /* zext: zero fill is already there; trunc: write_out_ masks to to.bits; bitcast: same bits */
     ok = write_out_(name, out, to, o);
   }
-  free(a);
-  free(o);
+  if (a != sa) free(a);
+  if (o != so) free(o);
   return ok ? 0 : -1;
 }
 

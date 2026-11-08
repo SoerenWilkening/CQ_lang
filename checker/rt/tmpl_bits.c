@@ -67,10 +67,11 @@ static uint64_t *tb_alloc(uint32_t n) {
   return r;
 }
 
-/* Copy the low W bits of v into a fresh zero-extended buffer of tb_nwords(W) words. */
-static uint64_t *tb_read(const cqe_val *v, uint32_t W) {
+/* Copy the low W bits of v into a zero-extended buffer of tb_nwords(W) words: small (two zeroed words)
+ * when they fit (cq-9hzgh), else a fresh one. */
+static uint64_t *tb_read(const cqe_val *v, uint32_t W, uint64_t *small) {
   uint32_t nw = tb_nwords(W);
-  uint64_t *r = tb_alloc(nw);
+  uint64_t *r = nw <= 2 ? small : tb_alloc(nw);
   uint32_t have = v->nw < nw ? v->nw : nw;
   if (have && v->w)
     memcpy(r, v->w, have * sizeof *r);
@@ -150,11 +151,12 @@ static int tb_eval(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *
       return -1;
     }
 
-  uint64_t *a = tb_read(&args[0], W);
-  uint64_t *b = nargs > 1 ? tb_read(&args[1], W) : NULL;
-  uint64_t *c = nargs > 2 ? tb_read(&args[2], W) : NULL;
-  uint64_t *r = tb_alloc(nw);
-  uint64_t *u = tb_alloc(nw);
+  uint64_t sm[5][2] = {{0}}; /* cq-9hzgh: values of up to two words need no allocation */
+  uint64_t *a = tb_read(&args[0], W, sm[0]);
+  uint64_t *b = nargs > 1 ? tb_read(&args[1], W, sm[1]) : NULL;
+  uint64_t *c = nargs > 2 ? tb_read(&args[2], W, sm[2]) : NULL;
+  uint64_t *r = nw <= 2 ? sm[3] : tb_alloc(nw);
+  uint64_t *u = nw <= 2 ? sm[4] : tb_alloc(nw);
 
   switch (op) {
   case TB_AND:
@@ -226,11 +228,13 @@ static int tb_eval(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *
   }
 
   memcpy(out->w, r, nw * sizeof *r); /* every word; r is canonical (bits above W zero) */
-  free(a);
-  free(b);
-  free(c);
-  free(r);
-  free(u);
+  if (nw > 2) {
+    free(a);
+    free(b);
+    free(c);
+    free(r);
+    free(u);
+  }
   return 0;
 }
 
