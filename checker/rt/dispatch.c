@@ -879,7 +879,7 @@ static void gate_ry(call_t *c, const char *w, int q, int ctl) {
   if (cqe__measured(h))
     cqe__violation("rotate_after_measure", h, "%s: rail %d was measured", c->sym, (int)h);
   char fields[256];
-  int finite, undo = 0;
+  int undo = 0;
   uint64_t ang;
   char *pre = NULL; /* the target's value before a firing gate (cq-3o3v) */
   if (q) {
@@ -889,7 +889,6 @@ static void gate_ry(call_t *c, const char *w, int q, int ctl) {
     if (!distinct(c, h, &a, 1))
       return;
     double av = as_f64(cqe__val(a));
-    finite = isfinite(av);
     memcpy(&ang, &av, 8);
     if (!ctl || (cqe__val(cf)->w[0] & 1))
       pre = ry_fire(h, ang, &undo);
@@ -899,8 +898,6 @@ static void gate_ry(call_t *c, const char *w, int q, int ctl) {
     log_rot("ry_qangle", c, h, cf, fields, pre);
     cqe__add_dep(h, a);
   } else {
-    double th = as_f64(&c->raw[n - 1]);
-    finite = isfinite(th);
     ang = c->raw[n - 1].w[0];
     if (!ctl || (cqe__val(cf)->w[0] & 1))
       pre = ry_fire(h, ang, &undo);
@@ -912,13 +909,9 @@ static void gate_ry(call_t *c, const char *w, int q, int ctl) {
     cqe__logf("{\"ev\":\"ry_unprep\",\"h\":%d}", (int)h);
   if (ctl)
     cqe__add_dep(h, cf);
-  /* A non-finite literal angle is the identity on every branch; an angle rail may be finite on
-   * another branch, so it always counts as a non-diagonal gate. */
-  if (q || finite) {
-    cqe__mark_nd(h);
-    if (!(ctl && cqe__known(cf) && (cqe__val(cf)->w[0] & 1) == 0))
-      cqe__setknown(h, 0);
-  }
+  cqe__mark_nd(h);
+  if (!(ctl && cqe__known(cf) && (cqe__val(cf)->w[0] & 1) == 0))
+    cqe__setknown(h, 0);
 }
 
 static void gate_rz_i1(call_t *c) {
