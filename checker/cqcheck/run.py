@@ -1702,7 +1702,8 @@ def overtaken_twin_module(text: str) -> str:
 # __cq_q_<fn>_<mask>[_b...][_ctl] (no _t, no twin: _unc, _pure) with scalar parameters (iN up to 64, ptr, half, float,
 # double; one per ABI argument: the _ctl predicate, then one per mask digit, a 1 an i32 handle) and a void or scalar
 # result, whose body and every clone it calls by name hold only templates (no _rm, _rmq, _exc), cqrt_ alloc, free,
-# the i1 gates, copy, xorc and bus load/store/swap, __cq_mem, the module's totalisation helpers, pure llvm
+# the i1 gates, copy, xorc, bus load/store/swap, push and pop (cq-mxe2q, owner 2026-11-08: the runtime records only a
+# window whose pops take only its own pushes and that ends at the depth it began at, dispatch.c), __cq_mem, the module's totalisation helpers, pure llvm
 # intrinsics and cqe__set_store_kept; no load, store or other memory instruction, no indirect call, no inline asm.
 # The runtime checks again what the text cannot show (a rail outside the call's arguments, a trace line, a
 # violation, an argument changed: no record). The wrapper is never instrumented (nosanitize_coverage): steps are
@@ -1712,7 +1713,8 @@ _RP_CLONE = re.compile(r"^__cq_q_(.+)_(v|[01]+)(?:_b\d+(?:_\d+)*)?(_ctl)?$")
 _RP_HEAD = re.compile(r'^define\s+(?P<pre>[^@]*?)\s*@(?P<name>[-\w.$]+)\(')
 _RP_CC = re.compile(r"\b(fastcc|coldcc|ccc|tailcc|swiftcc|swifttailcc|cc \d+)\b")
 _RP_SCALAR = re.compile(r"^(?:i(\d+)|ptr|half|float|double)$")
-_RP_CQRT_OK = re.compile(r"^cqrt_(?:alloc_\w+|free|(?:not|and|or|xor)_i1(?:_unc)?|copy_\w+|xorc_\w+|qram_(?:load|store|swap)_\w+)$")
+_RP_CQRT_OK = re.compile(r"^cqrt_(?:alloc_\w+|free|push|pop|(?:not|and|or|xor)_i1(?:_unc)?|copy_\w+|xorc_\w+|"
+                         r"qram_(?:load|store|swap)_\w+)$")
 _RP_LLVM_OK = re.compile(r"^llvm\.(?:smax|smin|umax|umin|abs|ctlz|cttz|ctpop|bswap|bitreverse|fshl|fshr|"
                          r"[su](?:add|sub|mul)\.with\.overflow|[su](?:add|sub)\.sat|[su]shl\.sat|assume|expect|"
                          r"lifetime\.(?:start|end))(?:\.|$)")
