@@ -4,10 +4,13 @@
 Emits one LLVM IR definition per cqrt_* and cq_template_* function the input modules declare (and
 do not define). Each definition stores its arguments to memory and calls
 
-    void cqe_dispatch(ptr sym, ptr sig, i32 nargs, ptr args, ptr ret)
+    void cqe_call(ptr site, ptr args, ptr ret)
 
-(checker/rt/dispatch.c), then loads and returns the result. sig is "<ret>|<t0>,<t1>,..." in LLVM
-type spellings. Return and parameter extension attributes (signext/zeroext) are kept so a narrow
+(checker/rt/dispatch.c), then loads and returns the result. site is the symbol's call site, an internal
+{ptr sym, ptr sig, i32 nargs, i32 0, ptr null}: sig is "<ret>|<t0>,<t1>,..." in LLVM type spellings, and
+the runtime keeps what it parsed from the name and the signature in the last field, so a call never parses
+them again (cq-9hzgh). A constructor hands the table of every site to cqe_sites(ptr table, i32 n), and
+the runtime parses them all once before the batch runner's setup snapshot. Return and parameter extension attributes (signext/zeroext) are kept so a narrow
 result is extended the way the declaration promises (BACKEND_ABI §0, CR §1.2).
 
 cqrt_qram_alloc_i8 is the one runtime symbol never stubbed: the injection bundle's __cq_mem (bundle/host/cq_host.c)
@@ -206,11 +209,13 @@ def emit(decls, triple, layout, csigs=None, host_fns=()):
     if triple:
         out.append(f'target triple = "{triple}"')
     out.append("")
-    out.append("declare void @cqe_dispatch(ptr, ptr, i32, ptr, ptr)")
+    out.append("declare void @cqe_call(ptr, ptr, ptr)")
+    out.append("declare void @cqe_sites(ptr, i32)")
     out.append("declare void @cqe_standin(ptr, ptr, ptr, i32, ptr, ptr)")
     out.append("declare void @cqe_standin_host(ptr, ptr, ptr, i32, ptr, ptr, ptr)")
     out.append("")
     host_decls = {}
+    sites = []
     for k, (name, ret, rattrs, params) in enumerate(decls):
         sig = ret + "|" + ",".join(t for t, _ in params)
         out.append(f"@.cqe.sym.{k} = private unnamed_addr constant {_cstr(name)}")
@@ -242,7 +247,10 @@ def emit(decls, triple, layout, csigs=None, host_fns=()):
             body.append(f"  call void @cqe_standin(ptr @.cqe.sym.{k}, ptr @.cqe.sig.{k}, ptr @.cqe.csig.{k}, i32 {n}, "
                         f"ptr %args, ptr %r)")
         else:
-            body.append(f"  call void @cqe_dispatch(ptr @.cqe.sym.{k}, ptr @.cqe.sig.{k}, i32 {n}, ptr %args, ptr %r)")
+            out.append(f"@.cqe.site.{k} = internal global {{ ptr, ptr, i32, i32, ptr }} "
+                       f"{{ ptr @.cqe.sym.{k}, ptr @.cqe.sig.{k}, i32 {n}, i32 0, ptr null }}")
+            sites.append(k)
+            body.append(f"  call void @cqe_call(ptr @.cqe.site.{k}, ptr %args, ptr %r)")
         if ret == "void":
             body.append("  ret void")
         else:
@@ -252,6 +260,16 @@ def emit(decls, triple, layout, csigs=None, host_fns=()):
         out.extend(body)
         out.append("")
     out.extend(host_decls[f] for f in sorted(host_decls))
+    if sites:
+        out.append(f"@.cqe.sites = internal global [{len(sites)} x ptr] "
+                   f"[{', '.join(f'ptr @.cqe.site.{k}' for k in sites)}]")
+        out.append("define internal void @.cqe.sites.init() {")
+        out.append("entry:")
+        out.append(f"  call void @cqe_sites(ptr @.cqe.sites, i32 {len(sites)})")
+        out.append("  ret void")
+        out.append("}")
+        out.append("@llvm.global_ctors = appending global [1 x { i32, ptr, ptr }] "
+                   "[{ i32, ptr, ptr } { i32 65535, ptr @.cqe.sites.init, ptr null }]")
     return "\n".join(out) + "\n"
 
 

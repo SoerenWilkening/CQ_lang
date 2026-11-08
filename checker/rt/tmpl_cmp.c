@@ -341,13 +341,15 @@ static int tmpl_cmp_op(const cqe_tname *t, const cqe_val *args, int nargs, cqe_v
     return -1;
   }
   /* a, b, r: W.nw words each; p: 2 W.nw words (the full product). */
-  uint64_t *buf = calloc(5 * (size_t)W.nw, sizeof(uint64_t));
+  uint64_t small[10] = {0}; /* cq-9hzgh: up to two words need no allocation */
+  uint64_t *buf = W.nw <= 2 ? small : calloc(5 * (size_t)W.nw, sizeof(uint64_t));
   if (!buf) {
     cqe_fail("tmpl_cmp: out of memory at %s", t->w);
     return -1;
   }
   int rc = eval(OPS[k].op, t, args, W, out, buf, buf + W.nw, buf + 2 * W.nw, buf + 3 * W.nw);
-  free(buf);
+  if (buf != small)
+    free(buf);
   return rc;
 }
 

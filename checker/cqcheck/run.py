@@ -1055,6 +1055,21 @@ def _compact_kept(live: List[dict]) -> List[dict]:
     return out
 
 
+def _exit_live(live: List[dict]) -> List[dict]:
+    """The exit event's live list with each run row of a compact trace ({"h","n","step",...}: core.c
+    at_exit_handler, cq-9hzgh) as its n rails h, h + step, ...: the list the trace held before."""
+    if not any("n" in e for e in live):
+        return live
+    out: List[dict] = []
+    for e in live:
+        if "n" not in e:
+            out.append(e)
+            continue
+        one = {k: v for k, v in e.items() if k not in ("n", "step")}
+        out.extend(dict(one, h=e["h"] + i * e["step"]) for i in range(e["n"]))
+    return out
+
+
 def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optional[int],
             extra: List[dict], freed: Optional[dict] = None) -> RunResult:
     """One pass over a sample's trace events into its RunResult. `freed`: the compact trace's summary
@@ -1113,7 +1128,7 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
             tape_out, tape_seq, deviation = _tape_shot(e)
         elif ev == "effect":
             direct_fx.append(e)
-    kept = _compact_kept(last_exit["live"]) if last_exit is not None else []
+    kept = _compact_kept(_exit_live(last_exit["live"])) if last_exit is not None else []
     if freed is not None:
         clean.append(dict(freed))
     viol += extra
@@ -2030,7 +2045,7 @@ def _parse_lines(text: str) -> Tuple[List[dict], bool]:
     """(every trace line of a runner as an event, whether a line was torn): one json.loads over the
     whole trace, line by line only when that fails (a line torn by a killed process becomes
     {"ev": _BAD, "line"})."""
-    # the bus and cells events (rt_bus.c) are the trace's bulk and nothing here reads them
+    # the bus and cells events (rt_bus.c; only in a trace with CQE_COMPACT=0, cq-9hzgh) are unread
     lines = [l for l in text.split("\n") if l.strip() and not l.startswith(_UNREAD)]
     if not lines:
         return [], False

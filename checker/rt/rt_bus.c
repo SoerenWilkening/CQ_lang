@@ -51,6 +51,7 @@ uint32_t cqe__wtok_bits(const char *w, char *kind);
 char *cqe__hexa(const cqe_val *v);
 void cqe__init(void);
 void cqe__logf(const char *fmt, ...);
+int cqe__trace_all(void); /* core.c (cq-9hzgh): bus and cells events are not in a compact trace */
 void cqe__violation(const char *what, int32_t h, const char *fmt, ...);
 int32_t cqe__new(const char *w, const cqe_val *init, int known, int seed);
 int cqe__check(int32_t h, const char *ctx);
@@ -300,6 +301,8 @@ static int access_parse(access_t *x, const cqe_tname *t, const cqe_val *args, in
 }
 
 static void log_bus(const access_t *x, const char *op, int host, int32_t h, const cqe_val *v, int32_t slot) {
+  if (!cqe__trace_all())
+    return;
   char *hx = cqe__hexa(v);
   char c[8], extra[32] = "";
   snprintf(c, sizeof c, "%d", x->ctl ? x->fire : -1);
@@ -663,7 +666,7 @@ static int cell_cmp(const void *a, const void *b) {
 }
 
 static void bus_at_exit(void) {
-  if (!bus_minted)
+  if (!bus_minted || !cqe__trace_all())
     return;
   cell_t *q = calloc(cells_quantum ? cells_quantum : 1, sizeof *q);
   size_t n = 0;
