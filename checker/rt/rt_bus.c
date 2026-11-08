@@ -44,6 +44,7 @@
 #include <string.h>
 
 #include "cqe.h"
+#include "rt_replay.h"
 #include "rt_tape.h"
 
 /* core.c, dispatch.c */
@@ -179,13 +180,17 @@ static int host_writable(uint64_t a, wr_region *r) {
 
 /* ---- the cells of one access -------------------------------------------------------------- */
 
-/* The S cells at addr into buf. Returns 1 iff all are classical-valued; *anyq: one of them is QUANTUM. */
+/* The S cells at addr into buf. Returns 1 iff all are classical-valued; *anyq: one of them is QUANTUM. A clone replay
+ * window (cq-kcn5i, rt_replay.c) logs every byte read: its key. */
 static int cells_read(uint64_t addr, uint32_t S, uint8_t *buf, int *anyq) {
   int known = 1;
   *anyq = 0;
   host_read(addr, S, buf);
-  if (!cells_quantum)
+  if (!cells_quantum) {
+    for (uint32_t i = 0; cqe__rp_window && i < S; ++i)
+      cqe__rp_cell_read(addr + i, buf[i], 0, 1);
     return 1;
+  }
   for (uint32_t i = 0; i < S; ++i) {
     const cell_t *c = cell_find(addr + i);
     if (c) {
@@ -193,6 +198,8 @@ static int cells_read(uint64_t addr, uint32_t S, uint8_t *buf, int *anyq) {
       known = known && c->known;
       *anyq = 1;
     }
+    if (cqe__rp_window)
+      cqe__rp_cell_read(addr + i, buf[i], c != NULL, c ? c->known : 1);
   }
   return known;
 }
@@ -205,13 +212,18 @@ static int cells_write(uint64_t addr, uint32_t S, const uint8_t *buf, int classi
   for (uint32_t i = 0; i < S; ++i) {
     uint64_t a = addr + i;
     int cl = i + 1 == S ? top_classical : classical;
-    if (cl && host_writable(a, &r)) {
+    int wr = cl && host_writable(a, &r);
+    if (cl && cqe__rp_window)
+      cqe__rp_cell_wcheck(a, wr);
+    if (wr) {
       memcpy((void *)(uintptr_t)a, &buf[i], 1);
       cell_host(a);
     } else {
       cell_quantum(a, buf[i], cl);
       host = 0;
     }
+    if (cqe__rp_window)
+      cqe__rp_cell_wrote(a, wr);
   }
   return host;
 }
@@ -221,12 +233,19 @@ static void cells_reach(uint64_t addr, uint32_t S) {
   uint8_t b;
   for (uint32_t i = 0; i < S; ++i) {
     uint64_t a = addr + i;
-    if (cell_find(a)) {
-      cell_quantum(a, cell_find(a)->value, 0);
-      continue;
+    const cell_t *c = cell_find(a);
+    if (c) {
+      if (cqe__rp_window)
+        cqe__rp_cell_read(a, c->value, 1, c->known);
+      cell_quantum(a, c->value, 0);
+    } else {
+      host_read(a, 1, &b);
+      if (cqe__rp_window)
+        cqe__rp_cell_read(a, b, 0, 1);
+      cell_quantum(a, b, 0);
     }
-    host_read(a, 1, &b);
-    cell_quantum(a, b, 0);
+    if (cqe__rp_window)
+      cqe__rp_cell_wrote(a, 0);
   }
 }
 
@@ -355,10 +374,62 @@ static void load_note(int32_t h, uint64_t addr, int fire) {
 }
 
 static const load_rec *load_of(int32_t h) {
-  if (!loads_cap)
-    return NULL;
-  const load_rec *r = &loads[load_slot(loads, loads_cap, h)];
-  return r->h ? r : NULL;
+  const load_rec *r = loads_cap ? &loads[load_slot(loads, loads_cap, h)] : NULL;
+  if (r && r->h)
+    return r;
+  uint64_t a;
+  int fire;
+  if (cqe__rp_block_load(h, &a, &fire)) { /* a rail of a replayed clone call (cq-kcn5i): the load its record holds */
+    load_note(h, a, fire);
+    return &loads[load_slot(loads, loads_cap, h)];
+  }
+  return NULL;
+}
+
+/* ---- clone replay (cq-kcn5i, rt_replay.c): this file's state as a window's record reads and writes it ---- */
+
+int cqe__bus_load_of(int32_t h, uint64_t *addr, int *fire) {
+  const load_rec *r = loads_cap ? &loads[load_slot(loads, loads_cap, h)] : NULL;
+  if (!r || !r->h)
+    return 0;
+  *addr = r->addr;
+  *fire = r->fire;
+  return 1;
+}
+
+/* Cell a as an access reads it: QUANTUM (its value and known flag) or HOST (the host byte, known). */
+void cqe__bus_cell_state(uint64_t a, int *q, uint8_t *v, int *known) {
+  const cell_t *c = cell_find(a);
+  if (c) {
+    *q = 1;
+    *v = c->value;
+    *known = c->known;
+    return;
+  }
+  *q = 0;
+  host_read(a, 1, v);
+  *known = 1;
+}
+
+uint8_t cqe__bus_host_byte(uint64_t a) {
+  uint8_t b = 0;
+  host_read(a, 1, &b);
+  return b;
+}
+
+int cqe__bus_writable(uint64_t a) {
+  wr_region r = {0, 0};
+  return host_writable(a, &r);
+}
+
+/* Cell a takes a window's final state: the host byte the window wrote (host_changed), then QUANTUM or HOST. */
+void cqe__bus_cell_set(uint64_t a, int q, uint8_t v, int known, int host_changed, uint8_t hostv) {
+  if (host_changed)
+    memcpy((void *)(uintptr_t)a, &hostv, 1);
+  if (q)
+    cell_quantum(a, v, known);
+  else
+    cell_host(a);
 }
 
 static uint8_t *bytes_buf(uint32_t S) {

@@ -53,6 +53,7 @@
 #include <unistd.h>
 
 #include "cqe.h"
+#include "rt_replay.h"
 
 /* ---- CR §2 fp -> int for the lowered module's classical fptosi/fptoui (cq-ltoq) --------------
  * run.py (totalize_module) rewrites each classical fptosi/fptoui of the lowered module to a call of
@@ -225,6 +226,9 @@ char *cqe__hexa(const cqe_val *v) { return cqe__hex(v, xcalloc(3 + 16 * (size_t)
 
 static FILE *trace_f;
 static int inited;
+/* cq-kcn5i (rt_replay.c): a clone replay window is open; anything written to the trace or any violation in it means the
+ * window's run cannot be recorded */
+int cqe__rp_window, cqe__rp_dirty;
 static unsigned long nviolations;
 static int shot_muted;    /* a batch runner's own end (shots, end of file): nothing more is logged */
 static int shot_buffered; /* a shot worker: the trace is flushed at the end of each sample, not per line */
@@ -335,6 +339,8 @@ void cqe_log(const char *json_object) {
   cqe__init();
   if (shot_muted || !keep_event(json_object))
     return;
+  if (cqe__rp_window)
+    cqe__rp_dirty = 1;
   fputs(json_object, trace_f);
   fputc('\n', trace_f);
   if (!shot_buffered)
@@ -347,6 +353,8 @@ void cqe__logf(const char *fmt, ...) {
   cqe__init();
   if (shot_muted || !keep_event(fmt)) /* every format starts with its literal {"ev":"<kind>" */
     return;
+  if (cqe__rp_window)
+    cqe__rp_dirty = 1;
   va_list ap;
   va_start(ap, fmt);
   int n = vfprintf(trace_f, fmt, ap);
@@ -383,6 +391,8 @@ void cqe__violation(const char *what, int32_t h, const char *fmt, ...) {
   vsnprintf(msg, sizeof msg, fmt ? fmt : "", ap);
   va_end(ap);
   char *e = json_escape(msg);
+  if (cqe__rp_window)
+    cqe__rp_dirty = 1;
   ++nviolations;
   if (h > 0)
     cqe__logf("{\"ev\":\"violation\",\"what\":\"%s\",\"h\":%d,\"msg\":\"%s\"}", what, (int)h, e);
@@ -572,20 +582,67 @@ static rail_t *rail_materialize(uint32_t h) {
  * "no rail" 0 among them, reads zeros); cqe__new gives a handle made later a fresh one. */
 static rail_t *rail_blank(uint32_t h) {
   uint32_t s;
+  DIR_GROW(map_dir, h, MAP_BITS);
   rail_t *r = pool_take(&s);
   *MAP(h) = s + 1;
   return r;
 }
 
+/* ---- clone replay (cq-kcn5i, rt_replay.c): the rail store's part ---------------------------------------------
+ * Watch. While a window records, a handle at or below its base that is not one of the call's handle arguments is
+ * outside the clone's reach: touching it (any read or write through the map) makes the window dirty.
+ * Blocks. A replayed call adds one block (its base, the window's record, its clock start, its handle arguments) and
+ * advances the handle counter and the event clock; its rails have no map entry until touched, when the block's
+ * record makes the rail (rp_materialize) exactly as the real run left it. The exit event reads an untouched block rail
+ * from the record without making it. */
+static int rp_watch;
+static uint32_t rp_wbase;
+static const int32_t *rp_wargs;
+static int rp_wnargs;
+typedef struct {
+  uint32_t base, n;
+  uint64_t c0;
+  const cqe_rp_rails *rr;
+  const int32_t *args;
+} rp_block;
+static rp_block *rp_blocks;
+static size_t rp_nblocks, rp_capblocks;
+static uint64_t rp_nmat; /* block rails made since the sample began */
+
+static void rp_outside(uint32_t h) {
+  for (int i = 0; i < rp_wnargs; ++i)
+    if ((uint32_t)rp_wargs[i] == h)
+      return;
+  cqe__rp_dirty = 1;
+}
+
+/* The map entry of h, 0 when its leaf or entry is not made. */
+static inline uint32_t map_peek(uint32_t h) {
+  uint32_t **d = map_dir[h >> (MAP_BITS + LEAF_BITS)];
+  if (!d)
+    return 0;
+  uint32_t *l = d[(h >> MAP_BITS) & ((1u << LEAF_BITS) - 1)];
+  return l ? l[h & ((1u << MAP_BITS) - 1)] : 0;
+}
+static uint32_t rp_materialize(uint32_t h);
+static inline uint32_t map_get(uint32_t h) {
+  if (rp_watch && h <= rp_wbase)
+    rp_outside(h);
+  uint32_t m = map_peek(h);
+  if (!m && rp_nblocks && h && h <= nrails)
+    m = rp_materialize(h);
+  return m;
+}
+
 /* Rail h's record. */
 static inline rail_t *rail_rec(uint32_t h) {
-  uint32_t m = *MAP(h);
+  uint32_t m = map_get(h);
   return m & MAP_TOMB ? rail_materialize(h) : m ? &(*SLOT(m - 1)) : rail_blank(h);
 }
 #define RL(h) (rail_rec((uint32_t)(h)))
 /* Rail h's tombstone, NULL when it has a record. */
 static inline tomb_t *rail_tomb(uint32_t h) {
-  uint32_t m = *MAP(h);
+  uint32_t m = map_get(h);
   return m & MAP_TOMB ? &(*TOMB(m & ~MAP_TOMB)) : NULL;
 }
 static inline int rail_live(uint32_t h) { return !rail_tomb(h) && RL(h)->live; }
@@ -975,8 +1032,21 @@ void cqe_set_known(int32_t h, int known) {
 
 /* ---- exit -------------------------------------------------------------------------------- */
 
-static const char *exit_role(int32_t h) {
-  rail_t *r = RL(h);
+/* A source of a rail written at t_write received a non-diagonal gate or a measurement after it (the map peeked: a
+ * tombstone's and an untouched block rail's t_nd and t_meas are 0, cqe__rp_encode). */
+static int deps_entangled(const int32_t *deps, uint32_t nd, uint64_t t_write) {
+  for (uint32_t i = 0; i < nd; ++i) {
+    uint32_t m = map_peek((uint32_t)deps[i]);
+    if (!m || (m & MAP_TOMB))
+      continue;
+    const rail_ext *s = (*SLOT(m - 1)).ext;
+    if (s && ((s->t_nd && s->t_nd > t_write) || (s->t_meas && s->t_meas > t_write)))
+      return 1;
+  }
+  return 0;
+}
+
+static const char *exit_role_r(const rail_t *r, const int32_t *deps) {
   if (r->measured)
     return "measured";
   if (r->role == 1)
@@ -991,14 +1061,8 @@ static const char *exit_role(int32_t h) {
     return "frozen";
   if (r->store_kept)
     return "store_kept";
-  const int32_t *deps = deps_of(r);
-  for (uint32_t i = 0; i < r->ndeps; ++i) {
-    if (rail_tomb((uint32_t)deps[i])) /* a tombstone's t_nd and t_meas are 0 */
-      continue;
-    const rail_ext *s = RL(deps[i])->ext;
-    if (s && ((s->t_nd && s->t_nd > r->t_write) || (s->t_meas && s->t_meas > r->t_write)))
-      return "kept_entangled";
-  }
+  if (deps_entangled(deps, r->ndeps, r->t_write))
+    return "kept_entangled";
   if (r->fenv & 2)
     return "fenv_mode";
   if ((r->fenv & 1) && !strcmp(wtab[r->wi], "i32")) /* rule 23's flags are i32 bits; an i1 written from a flags-looking rail is not */
@@ -1010,6 +1074,11 @@ static const char *exit_role(int32_t h) {
   return "garbage";
 }
 
+static const char *exit_role(int32_t h) {
+  rail_t *r = RL(h);
+  return exit_role_r(r, deps_of(r));
+}
+
 /* One row of the exit event's live list (cq-9hzgh): n rails at handles h, h + step, ... (n > 1 only in a
  * compact trace) of one width, value, role and known flag. */
 typedef struct {
@@ -1019,6 +1088,42 @@ typedef struct {
   char *v;
   size_t vcap;
 } live_row;
+
+static unsigned long long live_put(const live_row *r, int first);
+
+/* One live rail into the exit event's list: merged into the running row when it continues it (compact trace). */
+static void exit_feed(live_row *cur, int *first, unsigned long long *len, uint32_t h, const char *w, const char *hx,
+                      const char *role, int known) {
+  if (compact && cur->n && cur->known == known && !strcmp(cur->w, w) && !strcmp(cur->role, role) && !strcmp(cur->v, hx) &&
+      (cur->n == 1 || h == cur->h + cur->n * cur->step)) {
+    if (cur->n == 1)
+      cur->step = h - cur->h;
+    cur->n++;
+    return;
+  }
+  if (cur->n) {
+    *len += live_put(cur, *first);
+    *first = 0;
+  }
+  char *keepv = cur->v;
+  size_t keepcap = cur->vcap, need = strlen(hx) + 1;
+  cur->h = h;
+  cur->n = 1;
+  cur->step = 0;
+  cur->w = w;
+  cur->role = role;
+  cur->known = known;
+  if (need > keepcap) {
+    free(keepv);
+    keepcap = need > 64 ? need : 64;
+    keepv = xcalloc(keepcap, 1);
+  }
+  memcpy(keepv, hx, need);
+  cur->v = keepv;
+  cur->vcap = keepcap;
+}
+
+static int rp_exit_rail(const rp_block *b, uint32_t h, live_row *cur, int *first, unsigned long long *len);
 
 static unsigned long long live_put(const live_row *r, int first) {
   int n;
@@ -1045,44 +1150,24 @@ static void at_exit_handler(void) {
   static const char head[] = "{\"ev\":\"exit\",\"live\":[";
   if (fputs(head, trace_f) >= 0)
     len += sizeof head - 1;
-  live_row cur = {0}, nx = {0};
+  live_row cur = {0};
   char vb[3 + 16 * 2 + 1];
   int first = 1;
+  size_t bi = 0; /* cq-kcn5i: the next replay block */
   for (uint32_t h = 1; h <= nrails; ++h) {
+    while (bi < rp_nblocks && rp_blocks[bi].base + rp_blocks[bi].n < h)
+      ++bi;
+    if (bi < rp_nblocks && h > rp_blocks[bi].base && !map_peek(h)) { /* an untouched rail of a replayed call */
+      rp_exit_rail(&rp_blocks[bi], h, &cur, &first, &len);
+      continue;
+    }
     if (rail_tomb(h))
       continue;
     rail_t *r = RL(h);
     if (!r->live)
       continue;
     char *hx = r->v.nw <= 2 ? cqe__hex(&r->v, vb) : cqe__hexa(&r->v);
-    nx.h = h;
-    nx.n = 1;
-    nx.step = 0;
-    nx.w = wtab[r->wi];
-    nx.role = exit_role((int32_t)h);
-    nx.known = r->known;
-    if (compact && cur.n && cur.known == nx.known && !strcmp(cur.w, nx.w) && !strcmp(cur.role, nx.role) &&
-        !strcmp(cur.v, hx) && (cur.n == 1 || h == cur.h + cur.n * cur.step)) {
-      if (cur.n == 1)
-        cur.step = h - cur.h;
-      cur.n++;
-    } else {
-      if (cur.n) {
-        len += live_put(&cur, first);
-        first = 0;
-      }
-      char *keepv = cur.v;
-      size_t keepcap = cur.vcap, need = strlen(hx) + 1;
-      cur = nx;
-      if (need > keepcap) {
-        free(keepv);
-        keepcap = need > 64 ? need : 64;
-        keepv = xcalloc(keepcap, 1);
-      }
-      memcpy(keepv, hx, need);
-      cur.v = keepv;
-      cur.vcap = keepcap;
-    }
+    exit_feed(&cur, &first, &len, h, wtab[r->wi], hx, exit_role((int32_t)h), r->known);
     if (hx != vb)
       free(hx);
   }
@@ -1369,7 +1454,10 @@ struct shot_state {
 /* A cqrt_free of rail h with its known flag: counted into the running sample's summary; whether its
  * free event is written (always outside a sample and without the compact trace; in a sample of a
  * compact trace only a dirty one, which compare reports). */
+static void rp_free_log(int32_t h); /* cq-kcn5i, the end of this file */
 int cqe__free_note(int32_t h, int known) {
+  if (cqe__rp_window)
+    rp_free_log(h);
   if (!sample_running())
     return 1;
   R->freed_n++;
@@ -2060,4 +2148,538 @@ void cqe__shot_resume(void) {
     funlockfile(stdout);
   }
   real__exit(0);
+}
+
+/* ---- clone replay (cq-kcn5i): the rail store's side (rt_replay.c has the design) ------------------------------ */
+
+/* One rail of a window's record (cqe_rp_rails.blob), 8-byte aligned: this header, its nw value words, its ndeps
+ * sources and nr6 rule-6 operands (each an encoded handle, rp_enc), padding to 8 bytes, and with RF_LOAD the address
+ * of the bus load that made it. Clocks are relative to the window's start (0: never). */
+typedef struct {
+  uint32_t flags; /* tomb_flags | RF_* */
+  uint16_t wi, pad_;
+  uint32_t nw, ndeps, nr6;
+  int32_t r6_old;
+  uint32_t tc, tw;
+} rp_rail;
+_Static_assert(sizeof(rp_rail) == 32, "rp_rail: 32 bytes");
+#define RF_LIVE (1u << 16)
+#define RF_TOMB (1u << 17)
+#define RF_EXT (1u << 18)
+#define RF_R6OPS (1u << 19)
+#define RF_LOAD (1u << 20)
+#define RF_FIRE (1u << 21)
+
+/* A handle as a record holds it: 0 none; > 0 the window's rail base + e; < 0 the call's handle argument -e - 1. *ok
+ * drops to 0 for any other rail (outside the clone's reach: the window is not recordable). */
+static int32_t rp_enc(int32_t h, uint32_t base, const int32_t *args, int nargs, int *ok) {
+  if (h == 0)
+    return 0;
+  if ((uint32_t)h > base && (uint32_t)h <= nrails && h > 0)
+    return (int32_t)((uint32_t)h - base);
+  for (int i = 0; i < nargs; ++i)
+    if (args[i] == h)
+      return -i - 1;
+  *ok = 0;
+  return 0;
+}
+int32_t cqe__rp_enc_handle(int32_t h, uint32_t base, const int32_t *args, int nargs, int *ok) {
+  return rp_enc(h, base, args, nargs, ok);
+}
+int32_t cqe__rp_dec_handle(int32_t e, uint32_t base, const int32_t *args) {
+  return e > 0 ? (int32_t)(base + (uint32_t)e) : e < 0 ? args[-e - 1] : 0;
+}
+
+static uint32_t rp_rel(uint64_t t, uint64_t c0, int *ok) {
+  if (!t)
+    return 0;
+  if (t <= c0 || t - c0 > UINT32_MAX) {
+    *ok = 0;
+    return 0;
+  }
+  return (uint32_t)(t - c0);
+}
+static inline uint64_t rp_abs(uint32_t rel, uint64_t c0) { return rel ? c0 + rel : 0; }
+
+static inline const rp_rail *rp_hdr(const cqe_rp_rails *rr, uint32_t i) {
+  return (const rp_rail *)(const void *)(rr->blob.p + rr->off[i]);
+}
+static inline const uint64_t *rp_words(const rp_rail *e) { return (const uint64_t *)(const void *)(e + 1); }
+static inline const int32_t *rp_refs(const rp_rail *e) { return (const int32_t *)(const void *)(rp_words(e) + e->nw); }
+static inline const uint64_t *rp_loadaddr(const rp_rail *e) {
+  size_t refs = 4 * ((size_t)e->ndeps + e->nr6);
+  return (const uint64_t *)(const void *)((const uint8_t *)rp_refs(e) + ((refs + 7) & ~(size_t)7));
+}
+
+/* The window's frees, base-relative, in order (cqe__free_note). */
+static uint32_t *rp_fl;
+static size_t rp_fln, rp_flcap;
+static void rp_free_log(int32_t h) {
+  if (h <= 0 || (uint32_t)h <= rp_wbase || (uint32_t)h > nrails) {
+    cqe__rp_dirty = 1;
+    return;
+  }
+  if (rp_fln == rp_flcap) {
+    rp_flcap = rp_flcap ? 2 * rp_flcap : 256;
+    rp_fl = realloc(rp_fl, rp_flcap * sizeof *rp_fl);
+    if (!rp_fl)
+      abort();
+  }
+  rp_fl[rp_fln++] = (uint32_t)h - rp_wbase;
+}
+const uint32_t *cqe__rp_frees(size_t *n) {
+  *n = rp_fln;
+  return rp_fl;
+}
+void cqe__rp_frees_apply(const uint32_t *rel, size_t n, uint32_t base) {
+  if (!sample_running())
+    return;
+  R->freed_n += (long)n;
+  for (size_t i = 0; i < n; ++i)
+    R->freed_dig = (R->freed_dig ^ (base + rel[i])) * 0x100000001b3ULL;
+}
+
+void cqe__rp_watch(uint32_t base, const int32_t *args, int nargs, int on) {
+  rp_watch = cqe__rp_window = on;
+  if (on) {
+    rp_wbase = base;
+    rp_wargs = args;
+    rp_wnargs = nargs;
+    rp_fln = 0;
+  }
+}
+
+uint32_t cqe__rp_nrails(void) { return nrails; }
+uint64_t cqe__rp_clock(void) { return clock_; }
+unsigned long long cqe__rp_steps(void) { return shot_steps; }
+int32_t cqe__rp_prealloc(void) { return prealloc_h; }
+long cqe__rp_shot_k(void) { return R ? R->base + R->cur : 0; }
+uint64_t cqe__rp_materialized(void) { return rp_nmat; }
+
+/* d more basic blocks, as the real run's __sanitizer_cov_trace_pc calls would have counted them. */
+void cqe__rp_steps_add(unsigned long long d) {
+  unsigned long long before = shot_steps;
+  if (shot_step_cap != ~0ULL && before + d > shot_step_cap) {
+    if (sample_running()) {
+      shot_steps = shot_step_cap;
+      shot_over_budget();
+    }
+    shot_steps = (before + d) % (shot_step_cap + 1); /* the setup: every crossing restarts the count */
+  } else {
+    shot_steps = before + d;
+  }
+  if ((before >> 16) != (shot_steps >> 16))
+    shot_output_check();
+}
+
+/* The key part of the call's handle arguments: per argument the index of an earlier equal one, or its rail as the
+ * clone can read it (width, value, flags, liveness, sources and rule-6 operands as argument indices, extension times)
+ * with every event clock replaced by its rank among the arguments' clocks: a rail the window makes is later than all
+ * of them, so the ranks decide every clock comparison the clone can make. absolute: the raw clocks and handles (the
+ * snapshot a window's end compares, to see an argument changed). */
+static void rp_key_put(cqe_rp_buf *o, uint64_t x) { cqe__rp_put(o, &x, sizeof x); }
+static uint64_t rp_rank(uint64_t t, const uint64_t *ck, size_t nc, int absolute) {
+  if (!t || absolute)
+    return t;
+  size_t lo = 0, hi = nc;
+  while (lo < hi) {
+    size_t mid = (lo + hi) / 2;
+    if (ck[mid] < t)
+      lo = mid + 1;
+    else
+      hi = mid;
+  }
+  return lo + 1;
+}
+static uint64_t rp_argref(int32_t d, const int32_t *hs, int n, int absolute) {
+  if (absolute)
+    return (uint32_t)d;
+  for (int j = 0; j < n; ++j)
+    if (hs[j] == d)
+      return (uint64_t)j;
+  return 0xffffffffULL;
+}
+void cqe__rp_argkey(const int32_t *hs, int n, int absolute, cqe_rp_buf *o) {
+  uint64_t ck[64 * 5];
+  size_t nc = 0;
+  for (int i = 0; i < n && !absolute; ++i) {
+    uint32_t h = (uint32_t)hs[i];
+    if (hs[i] <= 0 || h > nrails)
+      continue;
+    tomb_t *t = rail_tomb(h);
+    if (t) {
+      ck[nc++] = t->a & TOMB_CLOCK_MAX;
+      ck[nc++] = t->b & TOMB_CLOCK_MAX;
+      continue;
+    }
+    rail_t *r = RL(h);
+    ck[nc++] = r->t_create;
+    ck[nc++] = r->t_write;
+    if (r->ext) {
+      ck[nc++] = r->ext->t_nd;
+      ck[nc++] = r->ext->t_meas;
+      ck[nc++] = r->ext->ry_t;
+    }
+  }
+  for (size_t i = 1; i < nc; ++i) /* insertion sort: qsort may be the program's (rt_replay.h) */
+    for (size_t j = i; j > 0 && ck[j - 1] > ck[j]; --j) {
+      uint64_t t = ck[j];
+      ck[j] = ck[j - 1];
+      ck[j - 1] = t;
+    }
+  size_t u = 0;
+  for (size_t i = 0; i < nc; ++i)
+    if (ck[i] && (!u || ck[u - 1] != ck[i]))
+      ck[u++] = ck[i];
+  nc = u;
+  for (int i = 0; i < n; ++i) {
+    int al = -1;
+    for (int j = 0; j < i && al < 0; ++j)
+      if (hs[j] == hs[i])
+        al = j;
+    if (al >= 0) {
+      rp_key_put(o, 0xa11a5000ULL | (uint64_t)al);
+      continue;
+    }
+    uint32_t h = (uint32_t)hs[i];
+    if (hs[i] <= 0 || h > nrails) {
+      rp_key_put(o, 0xbad0000000000000ULL | h);
+      continue;
+    }
+    tomb_t *t = rail_tomb(h);
+    if (t) {
+      rp_key_put(o, 0x70b0000000000000ULL | (t->a >> 48) | (uint64_t)tf_get(t) << 16);
+      rp_key_put(o, rp_rank(t->a & TOMB_CLOCK_MAX, ck, nc, absolute));
+      rp_key_put(o, rp_rank(t->b & TOMB_CLOCK_MAX, ck, nc, absolute));
+      continue;
+    }
+    rail_t *r = RL(h);
+    rp_key_put(o, 0x5ec0000000000000ULL | r->wi | (uint64_t)tomb_flags(r) << 16 | (uint64_t)r->live << 40 |
+                      (uint64_t)(r->ext != NULL) << 41 | (uint64_t)(r->ext && r->ext->r6_ops) << 42);
+    rp_key_put(o, rp_rank(r->t_create, ck, nc, absolute));
+    rp_key_put(o, rp_rank(r->t_write, ck, nc, absolute));
+    rp_key_put(o, r->v.nw);
+    cqe__rp_put(o, r->v.w, (size_t)r->v.nw * sizeof *r->v.w);
+    rp_key_put(o, r->ndeps);
+    const int32_t *deps = deps_of(r);
+    for (uint32_t k = 0; k < r->ndeps; ++k)
+      rp_key_put(o, rp_argref(deps[k], hs, n, absolute));
+    if (r->ext) {
+      const rail_ext *x = r->ext;
+      rp_key_put(o, rp_rank(x->t_nd, ck, nc, absolute));
+      rp_key_put(o, rp_rank(x->t_meas, ck, nc, absolute));
+      rp_key_put(o, rp_rank(x->ry_t, ck, nc, absolute));
+      rp_key_put(o, x->ry_ang);
+      rp_key_put(o, x->r6_old ? rp_argref(x->r6_old, hs, n, absolute) : 0xfffffffeULL);
+      rp_key_put(o, x->r6_nops);
+      for (uint32_t k = 0; x->r6_ops && k < x->r6_nops; ++k)
+        rp_key_put(o, rp_argref(x->r6_ops[k], hs, n, absolute));
+      if (x->ry_t) {
+        cqe__rp_put(o, x->ry_pre, (size_t)r->v.nw * sizeof *x->ry_pre);
+        cqe__rp_put(o, x->ry_post, (size_t)r->v.nw * sizeof *x->ry_post);
+      }
+    }
+  }
+}
+
+/* The rails base+1 .. nrails a window made, as its record holds them. -1: one refers to a rail outside the clone's
+ * reach, or carries what a record does not (a non-diagonal gate's or measurement's time): not recordable. */
+int cqe__rp_encode(uint32_t base, uint64_t c0, const int32_t *args, int nargs, cqe_rp_rails *out) {
+  int ok = 1;
+  cqe__rp_zero(out, sizeof *out);
+  out->n = nrails - base;
+  out->ticks = clock_ - c0;
+  out->off = malloc((out->n ? out->n : 1) * sizeof *out->off);
+  if (!out->off)
+    abort();
+  for (uint32_t i = 0; i < out->n && ok; ++i) {
+    uint32_t h = base + 1 + i;
+    out->off[i] = (uint32_t)out->blob.n;
+    if (out->blob.n > UINT32_MAX - (1u << 24)) {
+      ok = 0;
+      break;
+    }
+    rp_rail e;
+    cqe__rp_zero(&e, sizeof e);
+    uint32_t m = map_peek(h);
+    uint64_t la = 0;
+    int fire = 0, load = cqe__bus_load_of((int32_t)h, &la, &fire);
+    const rail_t *r = NULL;
+    int32_t refs[66], *rf = refs;
+    if (m & MAP_TOMB) {
+      const tomb_t *t = &(*TOMB(m & ~MAP_TOMB));
+      e.flags = tf_get(t) | RF_TOMB;
+      e.wi = (uint16_t)(t->a >> 48);
+      e.tc = rp_rel(t->a & TOMB_CLOCK_MAX, c0, &ok);
+      e.tw = rp_rel(t->b & TOMB_CLOCK_MAX, c0, &ok);
+    } else if (m) {
+      r = &(*SLOT(m - 1));
+      e.flags = tomb_flags(r) | (r->live ? RF_LIVE : 0);
+      e.wi = r->wi;
+      e.nw = r->v.nw;
+      e.ndeps = r->ndeps;
+      e.tc = rp_rel(r->t_create, c0, &ok);
+      e.tw = rp_rel(r->t_write, c0, &ok);
+      if (r->ext) {
+        const rail_ext *x = r->ext;
+        e.flags |= RF_EXT;
+        if (x->t_nd || x->t_meas || x->ry_t)
+          ok = 0;
+        e.r6_old = rp_enc(x->r6_old, base, args, nargs, &ok);
+        if (x->r6_ops) {
+          e.flags |= RF_R6OPS;
+          e.nr6 = x->r6_nops;
+        }
+      }
+      if ((size_t)e.ndeps + e.nr6 > sizeof refs / sizeof *refs) {
+        rf = malloc(((size_t)e.ndeps + e.nr6) * sizeof *rf);
+        if (!rf)
+          abort();
+      }
+      const int32_t *deps = deps_of((rail_t *)r);
+      for (uint32_t k = 0; k < e.ndeps; ++k)
+        rf[k] = rp_enc(deps[k], base, args, nargs, &ok);
+      for (uint32_t k = 0; k < e.nr6; ++k)
+        rf[e.ndeps + k] = rp_enc(r->ext->r6_ops[k], base, args, nargs, &ok);
+    } else {
+      ok = 0;
+    }
+    if (load)
+      e.flags |= RF_LOAD | (fire ? RF_FIRE : 0);
+    cqe__rp_put(&out->blob, &e, sizeof e);
+    if (r)
+      cqe__rp_put(&out->blob, r->v.w, (size_t)e.nw * sizeof *r->v.w);
+    size_t nref = (size_t)e.ndeps + e.nr6;
+    cqe__rp_put(&out->blob, rf, nref * sizeof *rf);
+    static const uint8_t zero[8];
+    cqe__rp_put(&out->blob, zero, ((nref * 4 + 7) & ~(size_t)7) - nref * 4);
+    if (load)
+      cqe__rp_put(&out->blob, &la, sizeof la);
+    if (rf != refs)
+      free(rf);
+  }
+  if (!ok) {
+    free(out->off);
+    free(out->blob.p);
+    cqe__rp_zero(out, sizeof *out);
+    return -1;
+  }
+  cqe__rp_derive(out);
+  return 0;
+}
+
+/* The exit event's view of a record: each live rail's value in hex. */
+void cqe__rp_derive(cqe_rp_rails *rr) {
+  free(rr->hexoff);
+  free(rr->hexpool);
+  rr->hexoff = malloc((rr->n ? rr->n : 1) * sizeof *rr->hexoff);
+  if (!rr->hexoff)
+    abort();
+  size_t cap = 64, len = 0;
+  char *pool = malloc(cap);
+  if (!pool)
+    abort();
+  for (uint32_t i = 0; i < rr->n; ++i) {
+    const rp_rail *e = rp_hdr(rr, i);
+    rr->hexoff[i] = UINT32_MAX;
+    if (!(e->flags & RF_LIVE) || (e->flags & RF_TOMB))
+      continue;
+    cqe_val v = {0, 'i', e->nw, (uint64_t *)rp_words(e)};
+    char *hx = cqe__hexa(&v);
+    size_t need = 1;
+    while (hx[need - 1])
+      ++need;
+    while (len + need > cap) {
+      cap *= 2;
+      pool = realloc(pool, cap);
+      if (!pool)
+        abort();
+    }
+    cqe__rp_cpy(pool + len, hx, need);
+    rr->hexoff[i] = (uint32_t)len;
+    len += need;
+    free(hx);
+  }
+  rr->hexpool = pool;
+}
+
+/* The tampered-record self-check (CQE_REPLAY_TAMPER, rt_replay.c): bit 0 of the first live rail's value flipped. */
+int cqe__rp_tamper(cqe_rp_rails *rr) {
+  for (uint32_t i = 0; i < rr->n; ++i) {
+    rp_rail *e = (rp_rail *)(void *)(rr->blob.p + rr->off[i]);
+    if ((e->flags & RF_LIVE) && !(e->flags & RF_TOMB) && e->nw) {
+      ((uint64_t *)(void *)(e + 1))[0] ^= 1;
+      cqe__rp_derive(rr);
+      return 1;
+    }
+  }
+  return 0;
+}
+
+/* A replayed call: its rails are base+1 .. base+n, untouched (one block); the handle counter and the clock advance as
+ * the real run advanced them. Returns base. */
+uint32_t cqe__rp_apply(const cqe_rp_rails *rr, const int32_t *args, int nargs) {
+  uint32_t base = nrails;
+  if (nrails + (uint64_t)rr->n + 1 >= CQE_RAIL_LIMIT) {
+    fprintf(stderr, "cq: chk-core: rail handles exhausted (limit 0x%x, the bus handle)\n", (unsigned)CQE_RAIL_LIMIT);
+    abort();
+  }
+  if (rr->n) {
+    if (rp_nblocks == rp_capblocks) {
+      rp_capblocks = rp_capblocks ? 2 * rp_capblocks : 1024;
+      rp_blocks = realloc(rp_blocks, rp_capblocks * sizeof *rp_blocks);
+      if (!rp_blocks)
+        abort();
+    }
+    int32_t *a = NULL;
+    if (nargs) {
+      a = malloc((size_t)nargs * sizeof *a);
+      if (!a)
+        abort();
+      cqe__rp_cpy(a, args, (size_t)nargs * sizeof *a);
+    }
+    rp_blocks[rp_nblocks++] = (rp_block){base, rr->n, clock_, rr, a};
+  }
+  nrails += rr->n;
+  clock_ += rr->ticks;
+  return base;
+}
+
+static const rp_block *rp_find(uint32_t h) {
+  size_t lo = 0, hi = rp_nblocks;
+  while (lo < hi) { /* the first block whose base is >= h */
+    size_t mid = (lo + hi) / 2;
+    if (rp_blocks[mid].base < h)
+      lo = mid + 1;
+    else
+      hi = mid;
+  }
+  if (!lo)
+    return NULL;
+  const rp_block *b = &rp_blocks[lo - 1];
+  return h > b->base && h <= b->base + b->n ? b : NULL;
+}
+
+/* Block rail h made from its record, exactly as the real run left it; its map entry. 0: h is in no block. */
+static uint32_t rp_materialize(uint32_t h) {
+  const rp_block *b = rp_find(h);
+  if (!b)
+    return 0;
+  const rp_rail *e = rp_hdr(b->rr, h - b->base - 1);
+  DIR_GROW(map_dir, h, MAP_BITS);
+  ++rp_nmat;
+  if (e->flags & RF_TOMB) {
+    uint32_t t = tomb_n++;
+    if (tomb_n > MAP_TOMB) {
+      fprintf(stderr, "cq: chk-core: rail tombstones exhausted\n");
+      abort();
+    }
+    DIR_GROW(tomb_dir, t, TOMB_BITS);
+    tomb_t *tb = &(*TOMB(t));
+    tb->a = rp_abs(e->tc, b->c0) | (uint64_t)e->wi << 48;
+    tb->b = rp_abs(e->tw, b->c0);
+    tf_set(tb, e->flags & 0xffff);
+    *MAP(h) = t | MAP_TOMB;
+    return *MAP(h);
+  }
+  uint32_t s, f = e->flags;
+  rail_t *r = pool_take(&s);
+  r->wi = e->wi;
+  char kind = 'i';
+  r->v.bits = cqe__wtok_bits(wtab[r->wi], &kind);
+  r->v.kind = kind;
+  r->v.nw = e->nw;
+  r->v.w = e->nw == 1 ? &r->inl : xcalloc(e->nw, sizeof *r->v.w);
+  cqe__rp_cpy(r->v.w, rp_words(e), (size_t)e->nw * sizeof *r->v.w);
+  r->t_create = rp_abs(e->tc, b->c0);
+  r->t_write = rp_abs(e->tw, b->c0);
+  r->known = f >> TF_KNOWN & 1;
+  r->measured = f >> TF_MEASURED & 1;
+  r->frozen = f >> TF_FROZEN & 1;
+  r->written = f >> 3 & 1;
+  r->seed = f >> 4 & 1;
+  r->busz = f >> TF_BUSZ & 1;
+  r->store_kept = f >> TF_STORE_KEPT & 1;
+  r->image = f >> TF_IMAGE & 1;
+  r->r6 = f >> TF_R6 & 1;
+  r->load_copy = f >> TF_LOAD_COPY & 1;
+  r->role = f >> TF_ROLE & 7;
+  r->fenv = f >> TF_FENV & 3;
+  r->live = (f & RF_LIVE) != 0;
+  const int32_t *refs = rp_refs(e);
+  r->ndeps = e->ndeps;
+  int32_t *deps = r->deps.in;
+  if (e->ndeps > 2) {
+    deps = r->deps.p = malloc(deps_cap(e->ndeps) * sizeof *deps);
+    if (!deps)
+      abort();
+  }
+  for (uint32_t k = 0; k < e->ndeps; ++k)
+    deps[k] = cqe__rp_dec_handle(refs[k], b->base, b->args);
+  if (f & RF_EXT) {
+    rail_ext *x = ext_of(r);
+    x->r6_old = cqe__rp_dec_handle(e->r6_old, b->base, b->args);
+    if (f & RF_R6OPS) {
+      x->r6_ops = malloc((e->nr6 ? e->nr6 : 1) * sizeof *x->r6_ops);
+      if (!x->r6_ops)
+        abort();
+      for (uint32_t k = 0; k < e->nr6; ++k)
+        x->r6_ops[k] = cqe__rp_dec_handle(refs[e->ndeps + k], b->base, b->args);
+      x->r6_nops = e->nr6;
+    }
+  }
+  *MAP(h) = s + 1;
+  return s + 1;
+}
+
+/* The load that made block rail h (rt_bus.c asks when its own table has no entry). */
+int cqe__rp_block_load(int32_t h, uint64_t *addr, int *fire) {
+  if (h <= 0 || !rp_nblocks)
+    return 0;
+  const rp_block *b = rp_find((uint32_t)h);
+  if (!b)
+    return 0;
+  const rp_rail *e = rp_hdr(b->rr, (uint32_t)h - b->base - 1);
+  if (!(e->flags & RF_LOAD))
+    return 0;
+  cqe__rp_cpy(addr, rp_loadaddr(e), sizeof *addr);
+  *fire = (e->flags & RF_FIRE) != 0;
+  return 1;
+}
+
+/* An untouched rail of block b at the exit event: its row, read from the record (the rail is not made). */
+static int rp_exit_rail(const rp_block *b, uint32_t h, live_row *cur, int *first, unsigned long long *len) {
+  uint32_t i = h - b->base - 1;
+  const rp_rail *e = rp_hdr(b->rr, i);
+  if (!(e->flags & RF_LIVE) || (e->flags & RF_TOMB))
+    return 0;
+  uint32_t f = e->flags;
+  rail_t r;
+  cqe__rp_zero(&r, sizeof r);
+  r.wi = e->wi;
+  r.measured = f >> TF_MEASURED & 1;
+  r.frozen = f >> TF_FROZEN & 1;
+  r.written = f >> 3 & 1;
+  r.seed = f >> 4 & 1;
+  r.store_kept = f >> TF_STORE_KEPT & 1;
+  r.image = f >> TF_IMAGE & 1;
+  r.r6 = f >> TF_R6 & 1;
+  r.role = f >> TF_ROLE & 7;
+  r.fenv = f >> TF_FENV & 3;
+  r.ndeps = e->ndeps;
+  r.t_write = rp_abs(e->tw, b->c0);
+  int32_t dbuf[64], *deps = dbuf;
+  if (e->ndeps > 64) {
+    deps = malloc(e->ndeps * sizeof *deps);
+    if (!deps)
+      abort();
+  }
+  const int32_t *refs = rp_refs(e);
+  for (uint32_t k = 0; k < e->ndeps; ++k)
+    deps[k] = cqe__rp_dec_handle(refs[k], b->base, b->args);
+  const char *role = exit_role_r(&r, deps);
+  if (deps != dbuf)
+    free(deps);
+  exit_feed(cur, first, len, h, wtab[e->wi], b->rr->hexpool + b->rr->hexoff[i], role, f >> TF_KNOWN & 1);
+  return 1;
 }

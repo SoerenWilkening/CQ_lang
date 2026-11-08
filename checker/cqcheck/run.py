@@ -542,6 +542,7 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
         if any(Path(o).name == "host_fx.o" for o in objs):  # cq-e4jk; a test's restricted runtime may omit it
             tot = host_effects_module(tot, defined)
         tot = ctl_measures_module(overtaken_twin_module(kept_results_module(kept_copies_module(tot), handle_returning_fns(canon))))
+        tot = replay_module(tot, handle_returning_fns(canon))  # cq-kcn5i
         from cqcheck import drivers
         tot += drivers.out_globals_ir(ctext if ctext is not None else canon, canon, "__cqe_out_globals",
                                       "cqd_out_mem", "cqd_out_object")
@@ -1713,6 +1714,212 @@ def overtaken_twin_module(text: str) -> str:
     return "\n".join(out) + "\n"
 
 
+# ---- clone replay (cq-kcn5i; DECISIONS 2026-11-08, owner option (a)) ---------------------------------------
+#
+# replay_module wraps every eligible clone (DESIGN §4) so that the evaluator runs each distinct call once and replays
+# it exactly afterwards (checker/rt/rt_replay.c has the runtime and the key). Eligible: a forward clone
+# __cq_q_<fn>_<mask>[_b...][_ctl] (no _t, no twin: _unc, _pure) with scalar parameters (iN up to 64, ptr, half, float,
+# double; one per ABI argument: the _ctl predicate, then one per mask digit, a 1 an i32 handle) and a void or scalar
+# result, whose body and every clone it calls by name hold only templates (no _rm, _rmq, _exc), cqrt_ alloc, free,
+# the i1 gates, copy, xorc and bus load/store/swap, __cq_mem, the module's totalisation helpers, pure llvm
+# intrinsics and cqe__set_store_kept; no load, store or other memory instruction, no indirect call, no inline asm.
+# The runtime checks again what the text cannot show (a rail outside the call's arguments, a trace line, a
+# violation, an argument changed: no record). The wrapper is never instrumented (nosanitize_coverage): steps are
+# the real body's, replayed or run.
+
+_RP_CLONE = re.compile(r"^__cq_q_(.+)_(v|[01]+)(?:_b\d+(?:_\d+)*)?(_ctl)?$")
+_RP_HEAD = re.compile(r'^define\s+(?P<pre>[^@]*?)\s*@(?P<name>[-\w.$]+)\(')
+_RP_CC = re.compile(r"\b(fastcc|coldcc|ccc|tailcc|swiftcc|swifttailcc|cc \d+)\b")
+_RP_SCALAR = re.compile(r"^(?:i(\d+)|ptr|half|float|double)$")
+_RP_CQRT_OK = re.compile(r"^cqrt_(?:alloc_\w+|free|(?:not|and|or|xor)_i1(?:_unc)?|copy_\w+|xorc_\w+|qram_(?:load|store|swap)_\w+)$")
+_RP_LLVM_OK = re.compile(r"^llvm\.(?:smax|smin|umax|umin|abs|ctlz|cttz|ctpop|bswap|bitreverse|fshl|fshr|"
+                         r"[su](?:add|sub|mul)\.with\.overflow|[su](?:add|sub)\.sat|[su]shl\.sat|assume|expect|"
+                         r"lifetime\.(?:start|end))(?:\.|$)")
+_RP_HELPER_OK = re.compile(r"^(?:__cqe_tot\.|__cqe_fpto(?:64|80)$|__cqe_fpdfl_(?:enter|leave)$|cqe__set_store_kept$|__cq_mem$)")
+_RP_BAD = re.compile(r"(?m)^\s+(?:%[-\w.$\"]+ = )?(?:load|store|atomicrmw|cmpxchg|va_arg|fence|invoke|callbr|landingpad|"
+                     r"resume|indirectbr)\b|\basm\b")
+
+
+def _rp_scalar(t: str) -> bool:
+    m = _RP_SCALAR.match(t)
+    return bool(m) and (m.group(1) is None or 1 <= int(m.group(1)) <= 64)
+
+
+def _rp_head(line: str) -> Optional[Tuple[str, str, str]]:
+    """A define line with a body: (pre, name, the parameter list's text)."""
+    m = _RP_HEAD.match(line)
+    if not m or not line.rstrip().endswith("{"):
+        return None
+    depth, i = 1, m.end()
+    while i < len(line) and depth:
+        depth += {"(": 1, ")": -1}.get(line[i], 0)
+        i += 1
+    return (m.group("pre"), m.group("name"), line[m.end():i - 1]) if not depth else None
+
+
+def _rp_params(params: str) -> Optional[List[Tuple[str, str]]]:
+    out = []
+    for p in _split_top(params) if params.strip() else []:
+        toks = p.split()
+        if len(toks) < 2 or not toks[-1].startswith("%"):
+            return None
+        out.append((toks[0], toks[-1]))
+    return out
+
+
+def replay_clones(text: str, handle_fns: Sequence[str]) -> Dict[str, dict]:
+    """The eligible clones of a lowered module: name -> {head, params, kinds, rk, cc, rty} (module comment above)."""
+    bodies = {m.group(1): m.group(2) for m in _FN_BODY.finditer(text)}
+    heads = {}
+    for line in text.splitlines():
+        if line.startswith("define"):
+            h = _rp_head(line)
+            if h:
+                heads[h[1]] = h
+    cand: Dict[str, dict] = {}
+    for f, b in bodies.items():
+        c = _RP_CLONE.match(f)
+        if not c or f not in heads or c.group(1).endswith("_t"):
+            continue
+        pre_s, _, ptext = heads[f]
+        pre = pre_s.split()
+        rty = pre[-1] if pre else ""
+        params = _rp_params(ptext)
+        if params is None or len(params) > 32 or not (rty == "void" or _rp_scalar(rty)):
+            continue
+        kinds = ("h" if c.group(3) else "") + "".join("h" if d == "1" else "c" for d in (c.group(2) if c.group(2) != "v" else ""))
+        if len(kinds) != len(params) or any(not _rp_scalar(t) or (k == "h" and t != "i32") for (t, _), k in zip(params, kinds)):
+            continue
+        if _RP_BAD.search(b) or _INDIRECT.search(b):
+            continue
+        callees = set(_CALLED.findall(b))
+        ok = True
+        for g in callees:
+            if g.startswith("cq_template_"):
+                if set(g.split("_")) & {"rm", "rmq", "exc"}:
+                    ok = False
+            elif g.startswith("cqrt_"):
+                ok = ok and bool(_RP_CQRT_OK.match(g))
+            elif g.startswith("llvm."):
+                ok = ok and bool(_RP_LLVM_OK.match(g))
+            elif not (_RP_HELPER_OK.match(g) or g.startswith("__cq_q_")):
+                ok = False
+        if not ok:
+            continue
+        pnames = [n for _, n in params]
+        if rty == "void":
+            rk = "v"
+        elif rty != "i32":
+            rk = "c"
+        else:
+            is_rail = _rail_tester(b, handle_fns)
+            ks = set()
+            for r in re.finditer(r"(?m)^\s+ret i32 (%[-\w.$\"]+|-?\d+)", b):
+                v = r.group(1)
+                if v in pnames:
+                    ks.add(kinds[pnames.index(v)])
+                elif re.fullmatch(r"-?\d+", v):
+                    ks.add("0" if v == "0" else "c")
+                else:
+                    ks.add("h" if is_rail(v) else "c")
+            ks.discard("0")
+            if len(ks) > 1:
+                continue
+            rk = "h" if ks == {"h"} else "i"   # i: a classical i32 (rt_replay.c never records one that names a rail made inside)
+        ccm = _RP_CC.search(pre_s)
+        cand[f] = {"ptext": ptext, "pre": pre_s, "params": params, "kinds": kinds, "rk": rk, "rty": rty,
+                   "cc": ccm.group(1) + " " if ccm else "", "calls": {g for g in callees if g.startswith("__cq_q_")}}
+    changed = True
+    while changed:
+        changed = False
+        for f in sorted(cand):
+            if any(g not in cand for g in cand[f]["calls"]):
+                del cand[f]
+                changed = True
+    return cand
+
+
+def _rp_to64(t: str, v: str, tag: str, out: List[str]) -> str:
+    if t == "i64":
+        return v
+    if t == "ptr":
+        out.append(f"  %cqe.{tag} = ptrtoint ptr {v} to i64")
+    elif t == "double":
+        out.append(f"  %cqe.{tag} = bitcast double {v} to i64")
+    elif t in ("float", "half"):
+        w = 32 if t == "float" else 16
+        out.append(f"  %cqe.{tag}.b = bitcast {t} {v} to i{w}")
+        out.append(f"  %cqe.{tag} = zext i{w} %cqe.{tag}.b to i64")
+    else:
+        out.append(f"  %cqe.{tag} = zext {t} {v} to i64")
+    return f"%cqe.{tag}"
+
+
+def _rp_from64(t: str, v: str, tag: str, out: List[str]) -> str:
+    if t == "i64":
+        return v
+    if t == "ptr":
+        out.append(f"  %cqe.{tag} = inttoptr i64 {v} to ptr")
+    elif t == "double":
+        out.append(f"  %cqe.{tag} = bitcast i64 {v} to double")
+    elif t in ("float", "half"):
+        w = 32 if t == "float" else 16
+        out.append(f"  %cqe.{tag}.b = trunc i64 {v} to i{w}")
+        out.append(f"  %cqe.{tag} = bitcast i{w} %cqe.{tag}.b to {t}")
+    else:
+        out.append(f"  %cqe.{tag} = trunc i64 {v} to {t}")
+    return f"%cqe.{tag}"
+
+
+def replay_module(text: str, handle_fns: Sequence[str]) -> str:
+    """text with every eligible clone S renamed S.real and a wrapper S that asks the runtime for a replay first
+    (rt_replay.c __cqe_rp_enter / __cqe_rp_leave). The clone ids are their sorted order: deterministic."""
+    cand = replay_clones(text, handle_fns)
+    if not cand:
+        return text
+    lines = text.splitlines()
+    ids = {f: i for i, f in enumerate(sorted(cand))}
+    for i, line in enumerate(lines):
+        if line.startswith("define"):
+            h = _rp_head(line)
+            if h and h[1] in cand:
+                lines[i] = line.replace(f"@{h[1]}(", f"@{h[1]}.real(", 1)
+    out = ["\n".join(lines)]
+    for f in sorted(cand):
+        c, k = cand[f], ids[f]
+        params, rty = c["params"], c["rty"]
+        n = max(len(params), 1)
+        desc = f"{f}|{c['kinds']}|{c['rk']}"
+        out.append(f'@.cqe.rp.{k} = private unnamed_addr constant [{len(desc) + 1} x i8] c"{desc}\\00"')
+        w = [f"define {c['pre']} @{f}({c['ptext']}) nosanitize_coverage {{",
+             "cqe.entry:", f"  %cqe.a = alloca [{n} x i64], align 8", "  %cqe.r = alloca i64, align 8",
+             "  store i64 0, ptr %cqe.r, align 8"]
+        for i, (t, v) in enumerate(params):
+            w.append(f"  %cqe.p{i} = getelementptr inbounds [{n} x i64], ptr %cqe.a, i64 0, i64 {i}")
+            x = _rp_to64(t, v, f"x{i}", w)
+            w.append(f"  store i64 {x}, ptr %cqe.p{i}, align 8")
+        w += [f"  %cqe.hit = call i32 @__cqe_rp_enter(i32 {k}, ptr @.cqe.rp.{k}, ptr %cqe.a, ptr %cqe.r)",
+              "  %cqe.c = icmp ne i32 %cqe.hit, 0", "  br i1 %cqe.c, label %cqe.replay, label %cqe.run", "cqe.replay:"]
+        if rty == "void":
+            w.append("  ret void")
+        else:
+            w.append("  %cqe.v = load i64, ptr %cqe.r, align 8")
+            w.append(f"  ret {rty} {_rp_from64(rty, '%cqe.v', 'rv', w)}")
+        w.append("cqe.run:")
+        call = f"call {c['cc']}{rty} @{f}.real({', '.join(f'{t} {v}' for t, v in params)})"
+        if rty == "void":
+            w.append(f"  {call}")
+        else:
+            w.append(f"  %cqe.y = {call}")
+            w.append(f"  store i64 {_rp_to64(rty, '%cqe.y', 'y64', w)}, ptr %cqe.r, align 8")
+        w.append(f"  call void @__cqe_rp_leave(i32 {k}, ptr %cqe.r)")
+        w.append("  ret void" if rty == "void" else f"  ret {rty} %cqe.y")
+        w.append("}")
+        out.append("\n".join(w))
+    out.append("declare i32 @__cqe_rp_enter(i32, ptr, ptr, ptr)\ndeclare void @__cqe_rp_leave(i32, ptr)")
+    return "\n".join(out) + "\n"
+
+
 def _rail_tester(body: str, handle_fns: Sequence[str]):
     """Is this value of one clone body a rail it holds: not a constant, not a classical computation. A formal
     (%0, ...) is a rail only when returned as a handle; a clone returns fresh copies (rule 18), so it is not marked."""
@@ -2207,7 +2414,8 @@ def _run_part(prog: Path, items: Sequence[Tuple[dict, str, Optional[str]]], side
         # samples in one runner overflowed it, an OverflowError for 56 and 156)
         budget = min((2 * timeout + 2) * (len(items) - pos) + 60, 2_000_000.0)
         try:
-            p = subprocess.run([str(prog)], cwd=wd, env=env, capture_output=True, timeout=budget,
+            wrap = os.environ.get("CQCHECK_RUN_WRAPPER")   # cq-kcn5i: a diagnostic launcher (the replay proof's no-ASLR one)
+            p = subprocess.run([*([wrap] if wrap else []), str(prog)], cwd=wd, env=env, capture_output=True, timeout=budget,
                                input=stdin.encode())
             code, killed = p.returncode, False
             setup_out, err = p.stdout.decode(errors="replace"), p.stderr.decode(errors="replace")
@@ -2216,6 +2424,11 @@ def _run_part(prog: Path, items: Sequence[Tuple[dict, str, Optional[str]]], side
             setup_out, err = (e.stdout or b"").decode(errors="replace"), (e.stderr or b"").decode(errors="replace")
         # the trace is read one line and one shot at a time (cq-8m6v): a finished shot becomes its
         # RunResult and its events are dropped, so memory holds one sample's events at a time
+        keep = os.environ.get("CQCHECK_KEEP_TRACES")   # cq-kcn5i: a diagnostic copy, named by what the batch ran
+        if keep and trace.exists():
+            tag = hashlib.sha256(f"{prog.parent.name}\0{side}\0{stdin}".encode()).hexdigest()[:16]
+            Path(keep).mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(trace, Path(keep) / f"{side}.{tag}.{pos}.jsonl")
         pre, done, open_shots = _stream_shots(trace, side, items, setup_out, timeout)
         while pos < len(items) and pos in done:
             out.append(done.pop(pos))
@@ -2294,10 +2507,10 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
     # not kept
     key = [_RUNS_VERSION, prog.parent.name, side, float(timeout), STEP_BUDGET, os.environ.get("CQE_COMPACT") == "0",
            [[preps[i][1], theta.get(i)] for i in todo]]
-    caps = [os.environ.get(v) for v in _CAP_VARS]   # cq-3fjt: a cap the caller set changes results
+    caps = [os.environ.get(v) for v in _CAP_VARS]   # cq-3fjt: a cap the caller set changes results (cq-kcn5i: replay's too)
     if any(caps):
         key.append(caps)
-    got = load_runs("eval", key)
+    got = None if os.environ.get("CQCHECK_KEEP_TRACES") else load_runs("eval", key)   # cq-kcn5i: a kept trace is run
     if got is not None:
         for i, d in zip(todo, got):
             out[i] = RunResult(side=side, sample=samples[i], **d)
@@ -2314,7 +2527,8 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
 
 
 _RUNS_VERSION = "eval-runs-5"
-_CAP_VARS = ("CQE_SHOT_TRACE_MAX", "CQE_SHOT_OUTPUT_MAX", "CQE_FILE_MAX", "CQE_SHOT_VIOL_MAX")   # core.c's caps
+_CAP_VARS = ("CQE_SHOT_TRACE_MAX", "CQE_SHOT_OUTPUT_MAX", "CQE_FILE_MAX", "CQE_SHOT_VIOL_MAX",   # core.c's caps
+             "CQE_REPLAY", "CQE_REPLAY_CHECK", "CQE_REPLAY_TAMPER", "CQE_REPLAY_MAX_MB")   # rt_replay.c (cq-kcn5i)
 _RESULT_FIELDS = ("outputs", "measured", "rotations", "kept", "clean", "violations")
 
 

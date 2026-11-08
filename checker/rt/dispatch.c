@@ -71,6 +71,7 @@
 
 #include "cq_standin.h"
 #include "cqe.h"
+#include "rt_replay.h"
 
 
 /* core.c internals */
@@ -541,6 +542,16 @@ static int iv_quiet_unc;
 
 static int32_t *stack_;
 static size_t nstack, capstack;
+
+/* cq-kcn5i (rt_replay.c): a replay window may push and pop its own words only; popping one pushed before it began, or
+ * ending with another depth, makes it dirty. */
+static size_t rp_floor;
+static int rp_floor_on;
+void cqe__rp_stack_mark(int on) {
+  rp_floor_on = on;
+  rp_floor = nstack;
+}
+int cqe__rp_stack_same(void) { return nstack == rp_floor; }
 
 typedef struct {
   const char *sym;
@@ -1051,6 +1062,8 @@ static void gate_pop(call_t *c) {
   int32_t w = 0;
   if (c->nargs != 0 || strcmp(c->rty->ty, "i32") != 0)
     cqe__violation("malformed_call", -1, "%s: expected () -> i32", c->sym);
+  if (rp_floor_on && nstack <= rp_floor)
+    cqe__rp_dirty = 1;
   if (nstack == 0)
     cqe__violation("pop_empty", -1, "%s: the word stack is empty", c->sym);
   else
@@ -1123,6 +1136,8 @@ static int core_parse(const char *s, core_cls *k) {
 }
 
 static void core_run(call_t *c, const core_cls *k) {
+  if (cqe__rp_window && (k->gate == G_RY || k->gate == G_RZ_I1 || k->gate == G_RZ_QANGLE || k->gate == G_MEASURE))
+    cqe__rp_dirty = 1; /* cq-kcn5i: never in a replayed clone (rt_replay.c) */
   switch (k->gate) {
   case G_FREE:
     gate_free(c);
@@ -1294,6 +1309,8 @@ static site_res *site_resolve(const char *sym, const char *sig, int32_t nargs) {
 }
 
 static void family_call(call_t *c, const cqe_tname *t, hlist *hl) {
+  if (cqe__rp_window && strncmp(t->op, "qram_", 5) != 0) /* cq-kcn5i: tape, abort: never in a replayed clone */
+    cqe__rp_dirty = 1;
   cqe_val out;
   uint64_t oinl;
   val_in(&out, c->rty->kind == 'v' ? 0 : c->rty->bits, c->rty->kind == 'f' ? 'f' : 'i', &oinl);
@@ -1620,6 +1637,8 @@ void cqe_standin_host(const char *sym, const char *sig, const char *csig, int32_
 static void standin(const char *sym, const char *sig, const char *csig, int32_t nargs, void **argv, void *ret,
                     standin_thunk thunk) {
   cqe__init();
+  if (cqe__rp_window) /* cq-kcn5i: a host call, never in a replayed clone */
+    cqe__rp_dirty = 1;
   if (iv_intercept(sym, sig, csig, nargs, argv, ret, (void *)thunk))
     return; /* a declared clone's XOR into its result rail, recorded in an open cq_invert region */
   _Alignas(16) uint8_t cbuf[64][16]; /* the C arguments of fn, for thunk */
@@ -2028,6 +2047,8 @@ void cqe__invert_close_all(void) {
 
 static int iv_intercept(const char *sym, const char *sig, const char *csig, int32_t nargs, void **argv, void *ret,
                         void *thunk) {
+  if (cqe__rp_window && !csig && !strncmp(sym, "cqrt_invert_", 12)) /* cq-kcn5i: never in a replayed clone */
+    cqe__rp_dirty = 1;
   if (!csig && !strcmp(sym, "cqrt_invert_begin")) {
     if (nargs != 0)
       cqe__violation("malformed_call", -1, "%s: expected ()", sym);
@@ -2273,3 +2294,6 @@ int cqe__classify(const char *sym, char *cls, size_t ncls) {
   }
   return -1;
 }
+
+/* cq-kcn5i (rt_replay.c): no cq_invert region is open or replaying, so a gate is applied where it is called. */
+int cqe__rp_dispatch_idle(void) { return iv_nopen == 0 && iv_replaying == 0; }
