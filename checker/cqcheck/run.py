@@ -95,6 +95,7 @@ RunResult fields (JSON-serializable):
 """
 from __future__ import annotations
 
+import bisect
 import functools
 import hashlib
 import json
@@ -1376,6 +1377,13 @@ _I1_GATE = re.compile(r"^\s+(?:(%[-\w.$\"]+) = )?call [^@\n]*@(cqrt_(?:and|or|xo
 _CONTROLLED = re.compile(r"@\"?[-\w.$]+_controlled\"?\(i32 (%[-\w.$\"]+),")
 _MAX_ATOMS = 16
 _LOW_DEF = re.compile(r"^\s+(%[-\w.$\"]+) = ")
+_TERMINATOR = re.compile(r"\s+(br|switch|indirectbr|callbr)\b")
+_FLOW_DEF = re.compile(r"^\s+\S+ = (phi|extractvalue|select i1) ")
+_STORE = re.compile(r"^\s+store ")
+_CALL_WORD = re.compile(r"\b(call|invoke)\b")
+_RMW_WORD = re.compile(r"\b(atomicrmw|cmpxchg)\b")
+_BUS_WRITE = re.compile(r"@cqrt_(qram_(store|swap)|tape_effect)")
+_MEM_INTRINSIC = re.compile(r"\bcall void @llvm\.mem(cpy|move|set)\.")
 
 
 def _writes_memory(bodies: Dict[str, str], text: str) -> Any:
@@ -1410,11 +1418,11 @@ def _writes_memory(bodies: Dict[str, str], text: str) -> Any:
         return True
 
     def change(line: str, body: str, writes: Set[str]) -> bool:
-        if re.match(r"^\s+store ", line):
+        if _STORE.match(line):
             return store_changes(line, body)
-        if not re.search(r"\b(call|invoke)\b", line):
-            return bool(re.search(r"\b(atomicrmw|cmpxchg)\b", line))
-        if re.search(r"@cqrt_(qram_(store|swap)|tape_effect)", line) or re.search(r"\bcall void @llvm\.mem(cpy|move|set)\.", line):
+        if not _CALL_WORD.search(line):
+            return bool(_RMW_WORD.search(line))
+        if _BUS_WRITE.search(line) or _MEM_INTRINSIC.search(line):
             return True
         names = _CALLED.findall(line)
         if not names:
@@ -1485,7 +1493,8 @@ class _Flags:
             return False
         size = 1 << len(atoms)
         full = (1 << size) - 1
-        table = {i: sum(1 << s for s in range(size) if s >> i & 1) for i in atoms.values()}
+        # atom i's truth table: bit s set when bit i of s is, the block of 2^i ones over 2^i zeros repeated (a repunit product)
+        table = {i: (((1 << (1 << i)) - 1) << (1 << i)) * (full // ((1 << (2 << i)) - 1)) for i in atoms.values()}
         memo.clear()
 
         def ev(e: Any) -> int:
@@ -1507,12 +1516,17 @@ class _Flags:
         return not ev(p) & ev(q)
 
 
-def _overtaken_sites(body: str, bodies: Dict[str, str], changes: Any) -> List[Tuple[str, str]]:
+def _overtaken_sites(body: str, bodies: Dict[str, str], changes: Any, loads_bus: Any = None) -> List[Tuple[str, str]]:
     """The calls of one lowered body whose results rule 18 keeps, each (its line, its result): a call of a clone that loads, no twin
     call on its result, and a memory version change after the call and before a reader of the result. The change is on a path from
     the call that does not run the call again (rule 5 sentence 1), its predicate can hold together with the call's (the other arm of
     a quantum branch is emitted in between and overtakes nothing, cq-xbpw6), and a reader is what names the rail: a consumer and
-    that consumer's _unc, so a consumer that is never uncomputed has none to wait for (rule 5 sentence 1)."""
+    that consumer's _unc, so a consumer that is never uncomputed has none to wait for (rule 5 sentence 1).
+    The body's def-use and control-flow data are built once; each site is then judged on blocks (cq-mx98w): the lines after the call
+    on a path that does not reach the call again are the rest of its block and every block reachable from there, the call's own
+    block entered again only up to the call."""
+    if loads_bus is None:
+        loads_bus = lambda g: _loads_bus(g, bodies)  # noqa: E731
     blocks: List[List[str]] = [[]]
     for line in body.splitlines():
         if _BLOCK.match(line):
@@ -1525,43 +1539,32 @@ def _overtaken_sites(body: str, bodies: Dict[str, str], changes: Any) -> List[Tu
         out: List[int] = []
         in_term = False
         for ln in b:
-            if re.match(r"\s+(br|switch|indirectbr|callbr)\b", ln):
+            if _TERMINATOR.match(ln):
                 in_term = True
             if in_term:
                 out.extend(labels[x.strip('"')] for x in _BACK_LABEL.findall(ln) if x.strip('"') in labels)
         succ.append(out)
-
-    def reach(start: Tuple[int, int], stop: Tuple[int, int]) -> List[Tuple[int, int]]:
-        """The lines after `start` on a path that does not reach `stop` (the call) again."""
-        out: List[Tuple[int, int]] = []
-        seen: Set[int] = set()
-
-        def walk(bi: int, frm: int) -> None:
-            for li in range(frm, len(blocks[bi])):
-                if (bi, li) == stop:
-                    return
-                out.append((bi, li))
-            for s in succ[bi]:
-                if s not in seen:
-                    seen.add(s)
-                    work.append(s)
-
-        work: List[int] = []
-        walk(start[0], start[1] + 1)
-        while work:
-            walk(work.pop(), 0)
-        return out
+    preds: List[List[int]] = [[] for _ in blocks]
+    for bi, ss in enumerate(succ):
+        for s in ss:
+            preds[s].append(bi)
 
     flags = _Flags()
     pred_at: Dict[Tuple[int, int], Any] = {}
     sites = []
+    changing: List[List[int]] = [[] for _ in blocks]      # per block, the indices of its memory version changes
+    users: Dict[str, List[Tuple[int, int]]] = {}          # value -> the lines that name it right of their " = "
+    flows: Dict[str, List[str]] = {}                      # value -> the phi/extractvalue/select i1 results it flows into
     for bi, b in enumerate(blocks):
         for li, ln in enumerate(b):
             m = _HANDLE_CALL.match(ln)
-            if m and _CLONE_NAME.match(m.group(4)) and not _TABLE_CLONE.match(m.group(4)) and _loads_bus(m.group(4), bodies):
+            if m and _CLONE_NAME.match(m.group(4)) and not _TABLE_CLONE.match(m.group(4)) and loads_bus(m.group(4)):
                 sites.append((bi, li, m.group(2), m.group(4)))
                 pred_at[(bi, li)] = flags.of(_LOW_VALUE.search(ln.split("(", 1)[1]).group(0)) if m.group(4).endswith("_ctl") else None
+                if changes(ln, body):
+                    changing[bi].append(li)
             elif changes(ln, body):
+                changing[bi].append(li)
                 c = _CONTROLLED.search(ln)
                 name = _CALLED.findall(ln)
                 if c:
@@ -1571,32 +1574,77 @@ def _overtaken_sites(body: str, bodies: Dict[str, str], changes: Any) -> List[Tu
                 else:
                     pred_at[(bi, li)] = None
             flags.read(ln)
+            vals = set(_LOW_VALUE.findall(ln.split(" = ", 1)[-1]))
+            for v in vals:
+                users.setdefault(v, []).append((bi, li))
+            d = _LOW_DEF.match(ln)
+            if d and _FLOW_DEF.match(ln):
+                for v in set(_LOW_VALUE.findall(ln.split(" = ", 1)[1])):
+                    flows.setdefault(v, []).append(d.group(1))
+    if not sites:
+        return []
+    twins: Dict[str, List[Set[str]]] = {}
     out: List[Tuple[str, str]] = []
     for bi, li, r, g in sites:
         line = blocks[bi][li]
         names = {r}
-        grew = True
-        while grew:
-            grew = False
-            for b in blocks:
-                for ln in b:
-                    d = _LOW_DEF.match(ln)
-                    if d and d.group(1) not in names and re.match(r"^\s+\S+ = (phi|extractvalue|select i1) ", ln) \
-                            and names & set(_LOW_VALUE.findall(ln.split(" = ", 1)[1])):
-                        names.add(d.group(1))
-                        grew = True
-        twin = re.compile(rf"@\"?{re.escape(g)}_unc\"?\(([^\n]*)\)")
-        if any(names & set(_LOW_VALUE.findall(t.group(1))) for t in twin.finditer(body)):
+        work = [r]
+        while work:
+            for d in flows.get(work.pop(), ()):
+                if d not in names:
+                    names.add(d)
+                    work.append(d)
+        if g not in twins:
+            twin = re.compile(rf"@\"?{re.escape(g)}_unc\"?\(([^\n]*)\)")
+            twins[g] = [set(_LOW_VALUE.findall(t.group(1))) for t in twin.finditer(body)] if f"{g}_unc" in body else []
+        if any(names & t for t in twins[g]):
             continue
-        after = reach((bi, li), (bi, li))
+        # the readers of the result, per block (sorted line indices)
+        rd: Dict[int, List[int]] = {}
+        for n in names:
+            for x, y in users.get(n, ()):
+                rd.setdefault(x, []).append(y)
+        for v in rd.values():
+            v.sort()
+        # can: entering the block reaches a reader before reaching the call again; the call's block ends at the call
+        can: Set[int] = set()
+        work_b = []
+        for x, ys in rd.items():
+            if x != bi or ys[0] < li:
+                can.add(x)
+                work_b.append(x)
+        while work_b:
+            for q in preds[work_b.pop()]:
+                if q not in can and q != bi:
+                    can.add(q)
+                    work_b.append(q)
+        # the blocks reachable after the call on a path that does not run it again
+        seen: Set[int] = set()
+        stack = list(succ[bi])
+        while stack:
+            s = stack.pop()
+            if s not in seen:
+                seen.add(s)
+                if s != bi:
+                    stack.extend(succ[s])
         p = pred_at[(bi, li)]
-        for at in after:
-            if not changes(blocks[at[0]][at[1]], body) or _Flags.disjoint(p, pred_at.get(at)):
-                continue
-            if any(names & set(_LOW_VALUE.findall(blocks[x][y].split(" = ", 1)[-1]))
-                   for x, y in [at] + reach(at, (bi, li))):
-                out.append((line, r))
-                break
+
+        def judged(x: int, ys: Sequence[int], before_call: bool = False) -> bool:
+            """A change at (x, y) for y in ys whose predicate meets the call's and from which a reader is reached: in its own
+            block at or after it (before the call, when it precedes the call in the call's block), or through a successor."""
+            ry = rd.get(x, [])
+            via = not before_call and any(s in can for s in succ[x])
+            for y in ys:
+                k = bisect.bisect_left(ry, y)
+                if via or (k < len(ry) and (not before_call or ry[k] < li)):
+                    if not _Flags.disjoint(p, pred_at.get((x, y))):
+                        return True
+            return False
+
+        if judged(bi, [y for y in changing[bi] if y > li]) \
+                or (bi in seen and judged(bi, [y for y in changing[bi] if y < li], True)) \
+                or any(judged(x, changing[x]) for x in sorted(seen) if x != bi and changing[x]):
+            out.append((line, r))
     return out
 
 
@@ -1608,10 +1656,16 @@ def overtaken_twin_module(text: str) -> str:
         return text
     bodies = {m.group(1): m.group(2) for m in _FN_BODY.finditer(text)}
     changes = _writes_memory(bodies, text)
+    loads: Dict[str, bool] = {}
+
+    def loads_bus(g: str) -> bool:
+        if g not in loads:
+            loads[g] = _loads_bus(g, bodies)
+        return loads[g]
     marks: Dict[str, List[Tuple[str, str]]] = {}
     for f, b in bodies.items():
         if b and not _TWIN_OF_CLONE.match(f) and "@__cq_q_" in b:
-            ss = _overtaken_sites(b, bodies, changes)
+            ss = _overtaken_sites(b, bodies, changes, loads_bus)
             if ss:
                 marks[f] = ss
     if not marks:
@@ -1621,21 +1675,24 @@ def overtaken_twin_module(text: str) -> str:
         out.append(line)
         if line.startswith("define"):
             m = DEFINE_NAME.match(line)
-            cur = marks.get(m.group(2)) if m else None
+            cur = None
+            if m and m.group(2) in marks:
+                cur = {}
+                for site, r in marks[m.group(2)]:
+                    cur.setdefault(site, []).append(r)
         elif line.startswith("}"):
             cur = None
-        elif cur:
-            for site, r in cur:
-                if line == site:
-                    ind = re.match(r"\s+", line).group(0)
-                    head = re.match(r"^\s+\S+ = (?:tail |notail )?call (?:[^@]*\s)?(i32|\{[^}]*\}) @", line)
-                    tag = r.lstrip("%").strip('"')
-                    if head and head.group(1) == "i32":
-                        out.append(f"{ind}call void @cqe__set_store_kept(i32 {r})")
-                    elif head:
-                        for k in _flat_fields(head.group(1)):
-                            out.append(f"{ind}%cqe.ovt.{tag}.{k} = extractvalue {head.group(1)} {r}, {k}")
-                            out.append(f"{ind}call void @cqe__set_store_kept(i32 %cqe.ovt.{tag}.{k})")
+        elif cur and line in cur:
+            for r in cur[line]:
+                ind = re.match(r"\s+", line).group(0)
+                head = re.match(r"^\s+\S+ = (?:tail |notail )?call (?:[^@]*\s)?(i32|\{[^}]*\}) @", line)
+                tag = r.lstrip("%").strip('"')
+                if head and head.group(1) == "i32":
+                    out.append(f"{ind}call void @cqe__set_store_kept(i32 {r})")
+                elif head:
+                    for k in _flat_fields(head.group(1)):
+                        out.append(f"{ind}%cqe.ovt.{tag}.{k} = extractvalue {head.group(1)} {r}, {k}")
+                        out.append(f"{ind}call void @cqe__set_store_kept(i32 %cqe.ovt.{tag}.{k})")
     if "declare void @cqe__set_store_kept" not in text:
         out.append("declare void @cqe__set_store_kept(i32)")
     return "\n".join(out) + "\n"
