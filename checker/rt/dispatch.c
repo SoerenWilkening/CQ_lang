@@ -1510,8 +1510,10 @@ static size_t iv_nopen;
 static int iv_replaying;
 
 /* One call of a runtime symbol through its resolved site. */
+uint64_t cqe__ncalls; /* runtime calls dispatched (rt_replay.c's statistics, cq-kcn5i) */
 static void dispatch_res(const char *sym, const char *sig, site_res *R, int32_t nargs, void **argv, void *ret) {
   cqe__init();
+  ++cqe__ncalls;
   if ((R->route == R_INV_BEGIN || R->route == R_INV_END || (iv_nopen && !iv_replaying)) &&
       iv_intercept(sym, sig, NULL, nargs, argv, ret, NULL))
     return; /* cq_invert (BACKEND_ABI 1.13): a marker, or a gate recorded in an open region */

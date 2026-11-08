@@ -504,6 +504,50 @@
           "new": ""
         }
       ]
+    },
+    {
+      "id": "31-clone-dropped-kept-store",
+      "class": "bus_dropped_kept_store",
+      "example": "31_pointer_out_param",
+      "note": "cq-kcn5i (DESIGN §6): inside the replay-eligible clone split_100 the kept store of *hi is deleted: still rejected with clone replay on",
+      "edits": [
+        {
+          "old": "  call void @cqrt_qram_store_i32_hl(i32 %4, i64 %5, i32 %6)",
+          "new": "  ; removed kept store"
+        }
+      ]
+    },
+    {
+      "id": "163-clone-store-other-address",
+      "class": "clone_store_other_address",
+      "example": "163_sret_return",
+      "note": "cq-kcn5i (DESIGN §6): inside the replay-eligible clone mk_010 the store of r.b goes to r.a's address: still rejected with clone replay on",
+      "edits": [
+        {
+          "old": "call void @cqrt_qram_store_i64_hl(i32 %4, i64 %8, i32 %9)",
+          "new": "call void @cqrt_qram_store_i64_hl(i32 %4, i64 %5, i32 %9)"
+        }
+      ]
+    },
+    {
+      "id": "24-clone-swapped-select",
+      "class": "swapped_select_arms",
+      "example": "24_early_return",
+      "note": "cq-kcn5i (DESIGN §6): inside the replay-eligible clone clamp_scale_1000 the select of the second early return takes the other arm (forward and uncompute alike): a wrong result select, still rejected with clone replay on",
+      "edits": [
+        {
+          "old": "%8 = call i32 @cq_template_select_i32_lh(i32 %6, i32 %2, i32 %7)",
+          "new": "%8 = call i32 @cq_template_select_i32_hl(i32 %6, i32 %7, i32 %2)"
+        },
+        {
+          "old": "call void @cq_template_select_i32_lh_unc(i32 %8, i32 %6, i32 %2, i32 %7)",
+          "new": "call void @cq_template_select_i32_hl_unc(i32 %8, i32 %6, i32 %7, i32 %2)"
+        },
+        {
+          "old": "declare i32 @cq_template_select_i32_lh(i32, i32, i32)",
+          "new": "declare i32 @cq_template_select_i32_lh(i32, i32, i32)\ndeclare i32 @cq_template_select_i32_hl(i32, i32, i32)\ndeclare void @cq_template_select_i32_hl_unc(i32, i32, i32, i32)"
+        }
+      ]
     }
   ]
 }

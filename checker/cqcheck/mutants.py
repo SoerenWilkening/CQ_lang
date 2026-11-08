@@ -32,6 +32,12 @@ mutated reference and an empty output are both rejected. Three parts:
 3. Empty output. For every example of the corpus (counted from the directory), an empty lowered
    module (zero bytes: the pass emitted nothing) is evaluated as our output (reference_mode=False)
    and must FAIL both §6 checks, each with a reason that names the missing definition.
+4. Clone replay (cq-kcn5i, DESIGN §6; checker/rt/rt_replay.c). The evaluator replays a call of an eligible clone
+   from the record of its first run with the same key, and the mutants above run with it on (the default). Its own
+   checks run tests/replay/test_replay.py on probes that replay: in-body mutants of a replayed clone (a wrong store
+   address, a dropped kept store, a store under the wrong control, a wrong result select) are still rejected; a
+   tampered record is caught by the spot check (summary_mismatch); a clone that writes its argument rail never
+   records. A full self-test only (not with `only` or `empty`).
 
 Every mutant class must have at least one mutant (a class without one is a failure). The verdicts
 are written to $CQ_BUILD_DIR/cqcheck/selftest/ (JSON lines), never to `run`'s verdict store.
@@ -61,6 +67,7 @@ from cqcheck import report
 from cqcheck.contracts import Verdict, to_json
 
 MUTANTS_FILE = report.ROOT / "tests" / "mutants" / "mutants.json"
+REPLAY_TEST = report.ROOT / "tests" / "replay" / "test_replay.py"
 
 _ROT_REF = r"rotation list differs"
 _ROT_C = (r"C site .* (has no lowered gate|reached .*)|lowered gate #\d+ .* corresponds to no C site|C order puts"
@@ -122,6 +129,10 @@ CLASSES: Dict[str, Tuple[str, str, Optional[str]]] = {
                           rf"violations on our side|{_MEAS}|{_RET_C}|{_ROT_C}|{_MEM}"),
     "bus_dropped_kept_store": ("a kept bus store is deleted: the cell, its tape slot and the value rail's role change",
                                rf"rail\(s\) .* are not kept on our side|{_MEAS}|{_OUT_REF}", rf"{_MEAS}|{_RET_C}|a leak; cq-tt2j"),
+    # cq-kcn5i (DESIGN §6): a store inside a clone the evaluator replays (rt_replay.c) goes to another address of the same
+    # object: the cells, and what is read back from them, change
+    "clone_store_other_address": ("a bus store inside a replayed clone goes to another address of its object",
+                                  rf"{_MEAS}|{_OUT_REF}|{_MEM}", rf"{_MEAS}|{_RET_C}|{_MEM}"),
 }
 
 # Classes whose evaluation may FAIL on an output difference before the rotation list: each must also
@@ -425,10 +436,25 @@ def selftest(only: Optional[Sequence[str]] = None, empty: Optional[Sequence[str]
         for f in futs:
             outcomes += f.result()
 
+    if not restricted:
+        outcomes += replay_checks(lambda o: _record(store, o, lock))
     print(summary(outcomes, missing, len(every), restricted))
     ok = all(o.ok for o in outcomes) and not missing and \
         sum(1 for o in outcomes if o.kind == "empty") == len(empty_set)
     return 0 if ok else 1
+
+
+def replay_checks(emit) -> List[Outcome]:
+    """Part 4 of the module docstring: tests/replay/test_replay.py's rejection cases, one outcome each."""
+    out: List[Outcome] = []
+    for case in ("mutants", "tampered", "dirty"):
+        r = subprocess.run([sys.executable, str(REPLAY_TEST), "--plugin", str(report.plugin_path()),
+                            "--opt", str(report.LLVM_BIN / "opt"), "--only", case], capture_output=True, text=True)
+        o = Outcome("replay", case, "tests/replay", "clone_replay", r.returncode == 0,
+                    [] if r.returncode == 0 else [(r.stdout + r.stderr)[-800:]])
+        emit(o)
+        out.append(o)
+    return out
 
 
 def summary(outcomes: Sequence[Outcome], missing: Sequence[str], n_examples: int, restricted: bool) -> str:
@@ -442,6 +468,9 @@ def summary(outcomes: Sequence[Outcome], missing: Sequence[str], n_examples: int
     lines.append(f"controls green: {sum(o.ok for o in ctl)}/{len(ctl)}")
     lines.append(f"empty output rejected: {sum(o.ok for o in emp)}/{len(emp)} "
                  f"(corpus: {n_examples} examples)")
+    rp = [o for o in outcomes if o.kind == "replay"]
+    if rp:
+        lines.append(f"clone replay self-checks: {sum(o.ok for o in rp)}/{len(rp)} ({', '.join(o.id for o in rp)})")
     if missing:
         lines.append(f"classes without a mutant: {', '.join(missing)}")
     bad = [o for o in outcomes if not o.ok]

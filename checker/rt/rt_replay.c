@@ -36,7 +36,7 @@
  * cq_invert region. $CQE_REPLAY=0 turns it off (every call runs real; the wrapper adds nothing).
  *
  * Self-checks: $CQE_REPLAY_TAMPER=1 flips a bit in the first record's first live rail, which the spot check must
- * report; $CQE_REPLAY_STATS=<file> appends one JSON line per sample (and every 2^20 calls) with the counts. */
+ * report; $CQE_REPLAY_STATS=<file> appends one JSON line per sample (and every 2^26 runtime calls) with the counts. */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -359,10 +359,12 @@ static void stats_line(const char *when) {
   if (!f)
     return;
   fprintf(f, "{\"when\":\"%s\",\"k\":%ld,\"calls\":%llu,\"hits\":%llu,\"records\":%llu,\"dirty\":%llu,\"checks\":%llu,"
-             "\"mismatch\":%llu,\"rails_replayed\":%llu,\"materialized\":%llu,\"rails\":%u,\"record_bytes\":%zu,\"clones\":[",
+             "\"mismatch\":%llu,\"rails_replayed\":%llu,\"materialized\":%llu,\"rails\":%u,\"record_bytes\":%zu,"
+             "\"runtime_calls\":%llu,\"clones\":[",
           when, cqe__rp_shot_k(), (unsigned long long)n_calls, (unsigned long long)n_hits, (unsigned long long)n_recs,
           (unsigned long long)n_dirty, (unsigned long long)n_checks, (unsigned long long)n_mism,
-          (unsigned long long)n_rails, (unsigned long long)cqe__rp_materialized(), cqe__rp_nrails(), rec_bytes);
+          (unsigned long long)n_rails, (unsigned long long)cqe__rp_materialized(), cqe__rp_nrails(), rec_bytes,
+          (unsigned long long)cqe__ncalls);
   int first = 1;
   for (size_t i = 0; i < nclones; ++i) {
     const rp_clone *c = &clones[i];
@@ -541,8 +543,11 @@ int32_t __cqe_rp_enter(int32_t id, const char *desc, const uint64_t *argv, uint6
       stats_hooked = 1;
       atexit(stats_at_exit);
     }
-    if (!(n_calls & 0xfffff))
+    static uint64_t last;
+    if (cqe__ncalls - last >= (1u << 26)) { /* a line per 2^26 runtime calls: a sample that never ends still says */
+      last = cqe__ncalls;
       stats_line("progress");
+    }
   }
   /* run real, outside any window: off, an unparsed clone, inside an open window, a full trace, cq_invert, prealloc */
   int open = 0;

@@ -82,6 +82,7 @@ void cqe__rp_cell_wcheck(uint64_t a, int writable);
 void cqe__rp_cell_wrote(uint64_t a, int host);
 
 /* ---- dispatch.c ---- */
+extern uint64_t cqe__ncalls;                /* runtime calls dispatched */
 int cqe__rp_dispatch_idle(void);            /* no cq_invert region open or replaying */
 void cqe__rp_stack_mark(int on);            /* the word stack's depth at a window's start; a pop below it is dirty */
 int cqe__rp_stack_same(void);               /* the word stack is back at that depth */
