@@ -3,8 +3,11 @@
 
 Probes (probes/<name>.c, clang -O1 into <name>.O1.ll) call one eligible clone four times with the same key, so a sample
 replays three calls. For each:
-  same       `cqcheck user` (full samples) with CQE_REPLAY=0 and =1 gives the same verdict (PASS) and byte-identical
-             evaluator traces (run without ASLR: noaslr.c, so that addresses agree), and the replay run hit;
+  same       `cqcheck user` (full samples) with CQE_REPLAY=0 and =1 gives the same verdict (PASS) and the same
+             evaluator traces (run without ASLR: noaslr.c, so that addresses agree), and the replay run hit: every event
+             byte-identical but the exit event, whose kept list is compared expanded (one (h, w, v, role, known) per
+             rail) with its other fields: a replayed call is written as a use of its record's rows, a different cut of
+             the same list (Fable ruling 2026-11-09);
   mutants    an in-body mutant of the clone (DESIGN §6: a wrong store address, a dropped kept store, a store under the
              wrong control, a wrong result select) is still rejected with replay on, and the run replayed the mutant;
   tampered   CQE_REPLAY_TAMPER=1 (the first record's first live rail flipped) with every hit spot-checked
@@ -26,6 +29,22 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PROBES = Path(__file__).parent / "probes"
 LLVM = Path("/usr/local/opt/llvm@19/bin")
+
+
+def trace_view(data):
+    """A trace as its events: each line but an exit event as its bytes, each exit event as its fields with the kept
+    list expanded and sorted (cqcheck.kept)."""
+    sys.path.insert(0, str(ROOT / "checker"))
+    import io
+    from cqcheck import kept as kept_mod, run as run_mod
+    out = []
+    for line, ev in run_mod._trace_events(io.StringIO(data.decode())):
+        if ev is None:
+            out.append(line)
+            continue
+        kept = sorted((e["h"], e["w"], e["v"], e["role"], e.get("known")) for e in kept_mod.expand(ev.pop("kept")))
+        out.append((sorted(ev.items()), kept))
+    return out
 
 
 def fn_edit(text, name, old, new):
@@ -99,8 +118,9 @@ def main():
             for p in PROBE_NAMES:
                 c0, o0, t0, _ = c.user(p, low[p], f"{p}.0", CQE_REPLAY=0)
                 c1, o1, t1, s1 = c.user(p, low[p], f"{p}.1", CQE_REPLAY=1)
-                ok = c0 == 0 and c1 == 0 and t0 and t0 == t1 and s1.get("hits", 0) > 0
-                print(f"{'ok  ' if ok else 'FAIL'} same {p}: exit {c0}/{c1}, traces {'identical' if t0 == t1 else 'DIFFER'}"
+                same = t0.keys() == t1.keys() and all(trace_view(t0[k]) == trace_view(t1[k]) for k in t0)
+                ok = c0 == 0 and c1 == 0 and t0 and same and s1.get("hits", 0) > 0
+                print(f"{'ok  ' if ok else 'FAIL'} same {p}: exit {c0}/{c1}, traces {'identical' if same else 'DIFFER'}"
                       f" ({len(t0)} file(s)), replay {s1}", flush=True)
                 if not ok:
                     bad.append(f"same {p}")
