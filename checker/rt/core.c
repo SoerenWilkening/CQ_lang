@@ -637,12 +637,16 @@ static int rp_wnargs;
 typedef struct {
   uint32_t base, n;
   uint32_t below; /* the handles of the blocks before it (hclass) */
+  uint32_t args;  /* its handle arguments: rp_argpool + args (RP_ARGS) */
   uint64_t c0;
   const cqe_rp_rails *rr;
-  const int32_t *args;
 } rp_block;
+_Static_assert(sizeof(rp_block) == 32, "rp_block: 32 bytes");
 static rp_block *rp_blocks;
 static size_t rp_nblocks, rp_capblocks;
+static int32_t *rp_argpool; /* every block's handle arguments, one after another */
+static size_t rp_nargpool, rp_capargpool;
+#define RP_ARGS(b) (rp_argpool + (b)->args)
 static size_t rp_hint; /* the block hclass found last */
 static uint64_t rp_nmat; /* block rails made since the sample began */
 
@@ -2961,15 +2965,22 @@ uint32_t cqe__rp_apply(const cqe_rp_rails *rr, const int32_t *args, int nargs) {
       if (!rp_blocks)
         abort();
     }
-    int32_t *a = NULL;
-    if (nargs) {
-      a = malloc((size_t)nargs * sizeof *a);
-      if (!a)
+    if (rp_nargpool + (size_t)nargs > rp_capargpool) {
+      while (rp_nargpool + (size_t)nargs > rp_capargpool)
+        rp_capargpool = rp_capargpool ? 2 * rp_capargpool : 4096;
+      rp_argpool = realloc(rp_argpool, rp_capargpool * sizeof *rp_argpool);
+      if (!rp_argpool)
         abort();
-      cqe__rp_cpy(a, args, (size_t)nargs * sizeof *a);
     }
+    if (rp_nargpool + (size_t)nargs > UINT32_MAX) {
+      fprintf(stderr, "cq: chk-core: replay argument pool exhausted\n");
+      abort();
+    }
+    if (nargs)
+      cqe__rp_cpy(rp_argpool + rp_nargpool, args, (size_t)nargs * sizeof *rp_argpool);
     uint32_t below = rp_nblocks ? rp_blocks[rp_nblocks - 1].below + rp_blocks[rp_nblocks - 1].n : 0;
-    rp_blocks[rp_nblocks++] = (rp_block){base, rr->n, below, clock_, rr, a};
+    rp_blocks[rp_nblocks++] = (rp_block){base, rr->n, below, (uint32_t)rp_nargpool, clock_, rr};
+    rp_nargpool += (size_t)nargs;
   }
   nrails += rr->n;
   clock_ += rr->ticks;
@@ -3027,16 +3038,16 @@ static uint32_t rp_materialize(uint32_t h) {
   r->live = (f & RF_LIVE) != 0;
   const int32_t *refs = rp_refs(e);
   for (uint32_t k = 0; k < e->ndeps; ++k)
-    deps_append(r, cqe__rp_dec_handle(refs[k], b->base, b->args));
+    deps_append(r, cqe__rp_dec_handle(refs[k], b->base, RP_ARGS(b)));
   if (f & RF_EXT) {
     rail_ext *x = ext_of(r);
-    x->r6_old = cqe__rp_dec_handle(e->r6_old, b->base, b->args);
+    x->r6_old = cqe__rp_dec_handle(e->r6_old, b->base, RP_ARGS(b));
     if (f & RF_R6OPS) {
       x->r6_ops = malloc((e->nr6 ? e->nr6 : 1) * sizeof *x->r6_ops);
       if (!x->r6_ops)
         abort();
       for (uint32_t k = 0; k < e->nr6; ++k)
-        x->r6_ops[k] = cqe__rp_dec_handle(refs[e->ndeps + k], b->base, b->args);
+        x->r6_ops[k] = cqe__rp_dec_handle(refs[e->ndeps + k], b->base, RP_ARGS(b));
       x->r6_nops = e->nr6;
     }
   }
@@ -3087,7 +3098,7 @@ static int rp_exit_rail(const rp_block *b, uint32_t h) {
   }
   const int32_t *refs = rp_refs(e);
   for (uint32_t k = 0; k < e->ndeps; ++k)
-    deps[k] = cqe__rp_dec_handle(refs[k], b->base, b->args);
+    deps[k] = cqe__rp_dec_handle(refs[k], b->base, RP_ARGS(b));
   const char *role = exit_role_r(&r, deps, e->ndeps);
   if (deps != dbuf)
     free(deps);
