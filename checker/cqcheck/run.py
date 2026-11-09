@@ -85,7 +85,7 @@ RunResult fields (JSON-serializable):
               for n rails of one width, value, role and known flag (cqcheck.kept, cq-pckdl), the tape slots of bus stores
               (role tape_slot) and overtaken load copies (role overtaken) among them; each also has
               "known" (classical-valued, BACKEND_ABI §0) and the roles of rt/core.c's header (store_kept,
-              fenv_flags, fenv_mode among them, cq-tt2j); a rail a handle-returning function returns
+              fenv_flags, fenv_mode among them, cq-tt2j; a_K, kept_ak_module, cq-1leyz); a rail a handle-returning function returns
               also has "result": true (cq-tt2j)
   clean       the free events [{"h", "v", "known", "w"}]
   violations  the trace's violation events [{"what", "h", "msg"}] plus run failures:
@@ -543,7 +543,7 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
             tot = default_env_module(tot)
         if any(Path(o).name == "host_fx.o" for o in objs):  # cq-e4jk; a test's restricted runtime may omit it
             tot = host_effects_module(tot, defined)
-        tot = ctl_measures_module(overtaken_twin_module(kept_results_module(kept_copies_module(tot), handle_returning_fns(canon))))
+        tot = kept_ak_module(ctl_measures_module(overtaken_twin_module(kept_results_module(kept_copies_module(tot), handle_returning_fns(canon)))))
         tot = replay_module(tot, handle_returning_fns(canon))  # cq-kcn5i
         from cqcheck import drivers
         tot += drivers.out_globals_ir(ctext if ctext is not None else canon, canon, "__cqe_out_globals",
@@ -1700,6 +1700,77 @@ def overtaken_twin_module(text: str) -> str:
     return "\n".join(out) + "\n"
 
 
+_AK_ALLOC = re.compile(r"^\s+(%[-\w.$]+) = (?:tail |notail )?call i32 @cqrt_alloc_i1\(i1 (?:false|0)\)\s*$")
+_AK_TOKEN = re.compile(r"%[-\w.$]+")
+# the gates that write an i1 rail named last and read only the others: and_i1(a, b, t), copy_i1(a, t), xor_i1(a, t)
+_AK_WRITE = re.compile(r"^\s+(?:tail |notail )?call void @cqrt_(?:and_i1\(i32 (%[-\w.$]+), i32 (%[-\w.$]+)|"
+                       r"(?:copy|xor)_i1\(i32 (%[-\w.$]+)), i32 (%[-\w.$]+)\)\s*$")
+
+
+def _ak_allocs(lines: List[str], lo: int, hi: int) -> List[int]:
+    """The line indices in lines[lo:hi] (one function body) of the a_K allocs of kept_ak_module. Every line is read
+    for uses, a phi before the alloc included (a back edge)."""
+    cand: Dict[str, int] = {}
+    for i in range(lo, hi):
+        m = _AK_ALLOC.match(lines[i])
+        if m:
+            cand[m.group(1)] = i
+    if not cand:
+        return []
+    at = set(cand.values())
+    written: Set[str] = set()
+    bad: Set[str] = set()
+    for i in range(lo, hi):
+        line = lines[i]
+        if i in at:
+            continue
+        toks = [t for t in _AK_TOKEN.findall(line) if t in cand]
+        if not toks:
+            continue
+        w = _AK_WRITE.match(line)
+        tgt = w.group(4) if w else None
+        reads = [t for t in (w.groups()[:3] if w else ()) if t]
+        for t in toks:
+            if w and t == tgt and t not in reads and toks.count(t) == 1:
+                written.add(t)
+            else:
+                bad.add(t)               # read, uncomputed, freed or anything else: no a_K
+    return [cand[v] for v in sorted(written - bad, key=cand.get)]
+
+
+def kept_ak_module(text: str) -> str:
+    """Rule 14's kept overflow predicate a_K, a kept rail CR §6 item 1 names (owner 2026-11-09, cq-1leyz: identified
+    structurally in the lowered program): a rail alloc_i1(0) whose every use is as the written rail of and_i1(a, b, t),
+    copy_i1(a, t) or xor_i1(a, t). Nothing reads it, nothing uncomputes or frees it: the K-th chain predicate
+    `a_{K-1} & cond_K` of a K-loop with B > K (pass loops/cutoff andRail, kept as Role::KeptOverflow), the XOR of an
+    exit arm's sub-loop chain ends (armKept), a recursion's overflow predicate its first outside caller keeps (cq-ew5z)
+    and the copy_i1 of the predicate at an activation counter's cut (calls/Calls.cpp: rule 14's kept overflow predicate
+    of a quantum-depth recursion). The pass's own reading of a kept a_K is the same (calls/Finalize.cpp, keptK). Each such rail gets the exit
+    role a_K (rt/core.c cqe__set_kept_ak). A rail anything reads, uncomputes or frees is not one, whatever it reads at
+    exit."""
+    if "@cqrt_alloc_i1(i1 false)" not in text and "@cqrt_alloc_i1(i1 0)" not in text:
+        return text
+    lines = text.splitlines()
+    marks: Set[int] = set()     # the line indices of the a_K allocs
+    start = None
+    for i, line in enumerate(lines):
+        if line.startswith("define"):
+            start = i + 1
+        elif line.startswith("}") and start is not None:
+            marks.update(_ak_allocs(lines, start, i))
+            start = None
+    if not marks:
+        return text
+    out = []
+    for i, line in enumerate(lines):
+        out.append(line)
+        if i in marks:
+            ind = re.match(r"\s+", line).group(0)
+            out.append(f"{ind}call void @cqe__set_kept_ak(i32 {_AK_ALLOC.match(line).group(1)})")
+    out.append("declare void @cqe__set_kept_ak(i32)")
+    return "\n".join(out) + "\n"
+
+
 # ---- clone replay (cq-kcn5i; DECISIONS 2026-11-08, owner option (a)) ---------------------------------------
 #
 # replay_module wraps every eligible clone (DESIGN §4) so that the evaluator runs each distinct call once and replays
@@ -1709,7 +1780,7 @@ def overtaken_twin_module(text: str) -> str:
 # result, whose body and every clone it calls by name hold only templates (no _rm, _rmq, _exc), cqrt_ alloc, free,
 # the i1 gates, copy, xorc, bus load/store/swap, push and pop (cq-mxe2q, owner 2026-11-08: the runtime records only a
 # window whose pops take only its own pushes and that ends at the depth it began at, dispatch.c), __cq_mem, the module's totalisation helpers, pure llvm
-# intrinsics and cqe__set_store_kept; no load, store or other memory instruction, no indirect call, no inline asm.
+# intrinsics, cqe__set_store_kept and cqe__set_kept_ak; no load, store or other memory instruction, no indirect call, no inline asm.
 # The runtime checks again what the text cannot show (a rail outside the call's arguments, a trace line, a
 # violation, an argument changed: no record). The wrapper is never instrumented (nosanitize_coverage): steps are
 # the real body's, replayed or run.
@@ -1723,7 +1794,7 @@ _RP_CQRT_OK = re.compile(r"^cqrt_(?:alloc_\w+|free|push|pop|(?:not|and|or|xor)_i
 _RP_LLVM_OK = re.compile(r"^llvm\.(?:smax|smin|umax|umin|abs|ctlz|cttz|ctpop|bswap|bitreverse|fshl|fshr|"
                          r"[su](?:add|sub|mul)\.with\.overflow|[su](?:add|sub)\.sat|[su]shl\.sat|assume|expect|"
                          r"lifetime\.(?:start|end))(?:\.|$)")
-_RP_HELPER_OK = re.compile(r"^(?:__cqe_tot\.|__cqe_fpto(?:64|80)$|__cqe_fpdfl_(?:enter|leave)$|cqe__set_store_kept$|__cq_mem$)")
+_RP_HELPER_OK = re.compile(r"^(?:__cqe_tot\.|__cqe_fpto(?:64|80)$|__cqe_fpdfl_(?:enter|leave)$|cqe__set_store_kept$|cqe__set_kept_ak$|__cq_mem$)")
 _RP_BAD = re.compile(r"(?m)^\s+(?:%[-\w.$\"]+ = )?(?:load|store|atomicrmw|cmpxchg|va_arg|fence|invoke|callbr|landingpad|"
                      r"resume|indirectbr)\b|\basm\b")
 
