@@ -795,6 +795,147 @@ bool measureAfterTrips(Function &F, const cq::TaintInfo &T) {
   return any;
 }
 
+// CR rules 3, 14 (owner, cq-os2bx, 2026-11-09 Q1): code after a loop runs once, after the loop. A loop with a quantum exit whose
+// exit arm (Exits.h: the blocks between its live exits and their common post-dominator) holds a call or a write to memory never
+// runs that arm per trip: each copy would leave its own kept store or tape entry. Its live exit edges meet at ONE hub, the same
+// kind of rewrite as unifySubLoopExits: phis of the hub carry what the targets' phis and the later readers take (poison on an
+// edge a value does not reach), and the hub branches on which edge came in. The loop then has one live exit; the hub's phis are
+// values defined by the loop and read after it, rails (rule 3): the select chain over the exit flags, as 121's quantum_strlen
+// builds r_i = select(e_i, i, r_(i-1)). The arm is lowered once, after the loop, under the flags of the hub's branch. An arm that
+// keeps nothing (121's quantum_strcmp: a bus load) stays per trip.
+bool armOnceAfterTrips(Function &F, const cq::TaintInfo &T) {
+  auto quantum = [&](const Value *v) {
+    return any_of(T.specializations(), [&](const cq::Specialization &S) { return S.F == &F && T.isQuantum(v, S); });
+  };
+  // Does I leave something kept per execution: a call, or a write to memory (a bus store, a memory intrinsic, an atomic)?
+  auto keeps = [](const Instruction &I) {
+    if (auto *II = dyn_cast<IntrinsicInst>(&I)) {
+      if (II->isLifetimeStartOrEnd() || isa<DbgInfoIntrinsic>(II) || isa<AssumeInst>(II) ||
+          II->getIntrinsicID() == Intrinsic::experimental_noalias_scope_decl)
+        return false;
+      return II->mayWriteToMemory();
+    }
+    return isa<CallBase>(I) || I.mayWriteToMemory();
+  };
+  LLVMContext &C = F.getContext();
+  bool any = false;
+  SmallPtrSet<const Value *, 8> fresh;   // values this rewrite made: no taint answer for them yet
+  for (bool changed = true; changed;) {
+    changed = false;
+    DominatorTree Old(F);
+    LoopInfo LI(Old);
+    for (Loop *L : LI.getLoopsInPreorder()) {
+      cq::loops::exits::Unit U = cq::loops::exits::unitOf(*L);
+      if (!U.multi() || !U.cont)
+        continue;
+      if (none_of(U.arm, [&](BasicBlock *b) { return any_of(*b, keeps); }))
+        continue;   // an arm that keeps nothing may run per trip (121)
+      SmallVector<BasicBlock *, 4> exiting;
+      L->getExitingBlocks(exiting);
+      if (none_of(exiting, [&](BasicBlock *e) {
+            Instruction *t = e->getTerminator();
+            auto *br = dyn_cast<BranchInst>(t);
+            auto *sw = dyn_cast<SwitchInst>(t);
+            Value *c = br && br->isConditional() ? br->getCondition() : sw ? sw->getCondition() : nullptr;
+            return c && !fresh.count(c) && quantum(c);
+          }))
+        continue;   // no quantum exit: the loop's exits are classical branches, its arm runs once already
+      SmallVector<BasicBlock *, 4> targets(U.live.begin(), U.live.end());
+      // The live exit edges, one (from, to) per pair, in the loop's block order.
+      SmallVector<std::pair<BasicBlock *, BasicBlock *>, 4> edges;
+      for (BasicBlock *u : L->blocks())
+        for (BasicBlock *x : successors(u))
+          if (is_contained(targets, x) && !is_contained(edges, std::make_pair(u, x)))
+            edges.push_back({u, x});
+      // A target also entered from outside the loop (a tail, Exits.h) keeps that edge: the walker joins it with the hub's.
+      BasicBlock *E = BasicBlock::Create(C, "cq.exits", &F);
+      // An edge's source in the hub: u itself, or a block of its own where u leaves for another target too.
+      SmallVector<BasicBlock *, 4> from(edges.size());
+      for (size_t e = 0; e < edges.size(); ++e) {
+        auto [u, x] = edges[e];
+        const bool shared = count_if(edges, [&](const auto &o) { return o.first == u; }) > 1;
+        BasicBlock *f = u;
+        if (shared) {
+          f = BasicBlock::Create(C, "cq.exit", &F);
+          BranchInst::Create(E, f);
+        }
+        Instruction *t = u->getTerminator();
+        for (unsigned i = 0; i < t->getNumSuccessors(); ++i)
+          if (t->getSuccessor(i) == x)
+            t->setSuccessor(i, shared ? f : E);
+        from[e] = f;
+      }
+      // The targets' phis: one hub phi each.
+      for (BasicBlock *x : targets)
+        for (PHINode &P : x->phis()) {
+          PHINode *h = PHINode::Create(P.getType(), edges.size(), P.getName() + ".hub");
+          h->insertInto(E, E->end());
+          fresh.insert(h);
+          for (size_t e = 0; e < edges.size(); ++e)
+            h->addIncoming(edges[e].second == x ? P.getIncomingValueForBlock(edges[e].first) : PoisonValue::get(P.getType()),
+                           from[e]);
+          for (auto &[u, y] : edges)
+            if (y == x)
+              while (P.getBasicBlockIndex(u) >= 0)
+                P.removeIncomingValue(u, /*DeletePHIIfEmpty=*/false);
+          P.addIncoming(h, E);
+        }
+      // Which edge came in: a branch for two targets, a switch for more.
+      PHINode *w;
+      if (targets.size() == 2) {
+        w = PHINode::Create(Type::getInt1Ty(C), edges.size(), "cq.which");
+        w->insertInto(E, E->end());
+        for (size_t e = 0; e < edges.size(); ++e)
+          w->addIncoming(ConstantInt::getBool(C, edges[e].second == targets[0]), from[e]);
+        BranchInst::Create(targets[0], targets[1], w, E);
+      } else {
+        w = PHINode::Create(Type::getInt32Ty(C), edges.size(), "cq.which");
+        w->insertInto(E, E->end());
+        for (size_t e = 0; e < edges.size(); ++e)
+          w->addIncoming(ConstantInt::get(Type::getInt32Ty(C), find(targets, edges[e].second) - targets.begin()), from[e]);
+        SwitchInst *sw = SwitchInst::Create(w, targets.back(), targets.size() - 1, E);
+        for (size_t i = 0; i + 1 < targets.size(); ++i)
+          sw->addCase(ConstantInt::get(Type::getInt32Ty(C), i), targets[i]);
+      }
+      fresh.insert(w);
+      // Later readers of the loop's values: every read the hub dominates goes through a hub phi, so that the loop's value
+      // read after it is a phi of its continuation (the exiting trip's value on each edge, rule 3), also where the value
+      // still dominates the read. A read the hub does not dominate (a noreturn arm's) keeps its path out of the loop.
+      DominatorTree New(F);
+      SmallVector<Instruction *, 16> insts;
+      for (BasicBlock *b : L->blocks())
+        for (Instruction &I : *b)
+          if (!I.getType()->isVoidTy())
+            insts.push_back(&I);
+      for (Instruction *I : insts) {
+        PHINode *h = nullptr;
+        for (Use &us : make_early_inc_range(I->uses())) {
+          auto *ui = dyn_cast<Instruction>(us.getUser());
+          if (!ui || ui == h || ui->getParent() == E || !New.isReachableFromEntry(ui->getParent()))
+            continue;
+          auto *uphi = dyn_cast<PHINode>(ui);
+          BasicBlock *at = uphi ? uphi->getIncomingBlock(us) : ui->getParent();
+          if (L->contains(at) || !New.dominates(E, at))
+            continue;
+          if (!h) {
+            h = PHINode::Create(I->getType(), edges.size(), I->getName() + ".hub");
+            h->insertBefore(&E->front());
+            fresh.insert(h);
+            for (size_t e = 0; e < edges.size(); ++e)
+              h->addIncoming(Old.dominates(I->getParent(), edges[e].first) ? static_cast<Value *>(I)
+                                                                          : PoisonValue::get(I->getType()),
+                             from[e]);
+          }
+          us.set(h);
+        }
+      }
+      changed = any = true;
+      break;   // the loops changed: LoopInfo again
+    }
+  }
+  return any;
+}
+
 // cq-jkq8 (CR rule 23): llvm.get.rounding (C's FLT_ROUNDS) and llvm.set.rounding read and write the rounding
 // mode, the environment's mode part, which C17 §7.6 reads and writes by fegetround / fesetround. In a tainted
 // function each becomes that call with x86-64's encoding change around it (FLT_ROUNDS 0 toward zero, 1 nearest,
@@ -1047,6 +1188,21 @@ struct CQLowerPass : PassInfoMixin<CQLowerPass> {
       for (Function *F : Tainted)
         if (measureAfterTrips(*F, T)) {
           trace("measure after trips: changed @" + F->getName());
+          moved = true;
+          FAM.invalidate(*F, PreservedAnalyses::none());
+        }
+      if (moved) {
+        T = cq::TaintInfo();
+        T = cq::computeTaint(M, TO);
+      }
+    }
+    // 3c. An exit arm with a call or a write to memory runs once after the loop (armOnceAfterTrips, cq-os2bx): which loops have a
+    // quantum exit is a question of taint, so taint afresh once more when it rewrote anything.
+    {
+      bool moved = false;
+      for (Function *F : Tainted)
+        if (armOnceAfterTrips(*F, T)) {
+          trace("exit arm after trips: changed @" + F->getName());
           moved = true;
           FAM.invalidate(*F, PreservedAnalyses::none());
         }

@@ -2427,10 +2427,18 @@ void Walker::run() {
             ie = &x;
       const Value *v = nullptr;
       const BasicBlock *vu = nullptr;
+      // cq-os2bx (cq-j5mq): an incoming from a loop unit that bound this classical phi over its exit edges (a hub after the
+      // loop, Plugin.cpp armOnceAfterTrips) has the unit's one value on the unit's output edge, not that edge's own constant.
+      auto uc = unitClassical.find(op);
+      bool fromUnit = false;
       for (unsigned i = 0; i < op->getNumIncomingValues(); ++i) {
         const BasicBlock *u = op->getIncomingBlock(i);
         if (!idx.count(u) || inUnit(u) || (ie && ie->facts && (ctx.preds().edge(u, blk) & *ie->facts).isBottom()))
           continue;
+        if (uc != unitClassical.end() && unitOf.count(u)) {
+          fromUnit = true;
+          continue;
+        }
         if (v && v != op->getIncomingValue(i))
           unimplemented("spine: a classical phi whose output edge the linearization made stands for several "
                         "original edges with different incomings (cq-mtt, cq-bq0)",
@@ -2439,7 +2447,11 @@ void Walker::run() {
         vu = u;
       }
       Value *nv;
-      if (!v) {
+      if (fromUnit && v)
+        unimplemented("spine: a classical phi whose output edge stands for a loop unit's exit edges and another edge", op);
+      if (fromUnit && !v) {
+        nv = uc->second;
+      } else if (!v) {
         // An output edge whose classical facts admit no original edge into blk: under those facts the C
         // program never reaches blk (a linearized region whose quantum arms all left it, e.g. by an
         // early return under a _ctl clone's entry predicate), so the block's quantum predicate is false

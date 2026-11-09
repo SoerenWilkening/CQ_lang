@@ -9,7 +9,9 @@
 // nearest common post-dominator and the unit also holds the EXIT ARM: the blocks outside the loop
 // between the live exits and C. The loop module lowers the exit arm with the loop (each trip's exit
 // through it, rule 9 inside the trip) and binds every phi of C that has an incoming from the unit; on
-// return the builder sits where C continues. An arm block also entered from outside the loop starts the
+// return the builder sits where C continues. Only an arm that keeps nothing runs per trip (121): a loop with a quantum exit
+// whose arm holds a call or a write to memory has its exits met at one hub before the constructions (Plugin.cpp
+// armOnceAfterTrips, cq-os2bx, rules 3 and 14), so that arm runs once after the loop. An arm block also entered from outside the loop starts the
 // arm's TAIL (Unit::tail), which the walker lowers once more for those outside paths (cq-h8y6).
 #pragma once
 
