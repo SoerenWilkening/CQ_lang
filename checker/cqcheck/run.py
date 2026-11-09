@@ -1372,7 +1372,8 @@ def _loads_bus(f: str, bodies: Dict[str, str]) -> bool:
 
 # ---------------- rule 18: a loading clone's result that a memory version change overtook before its twin (CR §6 item 1)
 
-_CLONE_NAME = re.compile(r"^__cq_q_(.+)_[01v]+(?:_t)?(?:_ctl)?$")
+# a forward clone by §1.4's grammar, its `_b` bounds included (cq-usir7: `__cq_q_strnlen_11_b2147483647_ctl`)
+_CLONE_NAME = re.compile(r"^__cq_q_(.+)_[01v]+(?:_b\d+(?:_\d+)*)?(?:_t)?(?:_ctl)?$")
 _LOW_VALUE = re.compile(r"%[-\w.$]+|%\"[^\"]*\"")
 _I1_GATE = re.compile(r"^\s+(?:(%[-\w.$\"]+) = )?call [^@\n]*@(cqrt_(?:and|or|xor|not|copy|alloc)_i1|cq_template_(?:and|or|xor)_i1)\(([^\n]*)\)")
 _CONTROLLED = re.compile(r"@\"?[-\w.$]+_controlled\"?\(i32 (%[-\w.$\"]+),")

@@ -2,7 +2,8 @@
 """tests/chk-kept (cq-71g9): rails CR §6 item 1 names as kept, against the leak rule.
 
 Each GOOD program is green under `cqcheck user`: a no-twin clone's {res, flags} result (rule 18; q1, q4b, q4c), a loading
-clone's result a memory version change overtook before its twin (rule 18; q5), the
+clone's result a memory version change overtook before its twin (rule 18; q5, and q6 through a clone whose name has `_b`
+bounds, cq-usir7), the
 dispatch's final copy-out (rule 19; q3), a no-twin table clone's result through its pop-only twin (§1.4; e_rail, r3).
 Each MUTANT is a real leak of that shape, and must be rejected by the leak rule, not merely rejected (rule24_*: by the
 effect comparison).
@@ -116,7 +117,7 @@ def lost_twin(fn, twin, text):
     return in_fn(fn, edit, text)
 
 
-GOOD = [(SRC / "q1", "q1"), (SRC / "q1c", "q1c"), (SRC / "q3", "q3"), (SRC / "q4", "q4b"), (SRC / "q4", "q4c"), (SRC / "q5", "q5"),
+GOOD = [(SRC / "q1", "q1"), (SRC / "q1c", "q1c"), (SRC / "q3", "q3"), (SRC / "q4", "q4b"), (SRC / "q4", "q4c"), (SRC / "q5", "q5"), (SRC / "q6", "q6"),
         (SRC / "p3", "p3"), (SRC / "p4", "p4"), (SRC / "p5", "p5"), (SRC / "p6", "p6"),
         (CALLS / "table_twin_measure", "e_rail"), (CALLS / "twin_rot_in_loop", "r3")]
 MUTANTS = [
@@ -135,6 +136,8 @@ MUTANTS = [
      lambda t: lost_twin("other_arm", "__cq_q_rd_1_ctl_unc", t)),
     # rule 18: the C program overtakes one of the two calls, and a second one lost its twin
     ("rule18_lost_twin_beside_overtaken", SRC / "q5", "q5", lambda t: lost_twin("q5", "__cq_q_rd_1_ctl_unc", t)),
+    # cq-usir7: the same with a bounded clone (§1.4 `_b`): the second arm's call loses its twin
+    ("rule18_lost_twin_bounded_clone", SRC / "q6", "q6", lambda t: lost_twin("q6", "__cq_q_rd_1_b3_ctl_unc", t)),
     # cq-yz4hw: a classical call of rd is overtaken; the quantum call after the store is not
     ("rule18_lost_twin_after_store", SRC / "p3", "p3", lambda t: lost_rd_twin("p3", 0, t)),
     # cq-534kh: no store in the program, and no twin left to define
