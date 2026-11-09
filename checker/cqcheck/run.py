@@ -267,6 +267,14 @@ int cqe__shot_enter(int idx);
 void cqe__shot_end(void);
 void cqe__shot_resume(void);
 __attribute__((weak)) long long cqe__hname(int h);   /* core.c: a handle's rail name (owner 2026-11-09) */
+/* The functions whose result is a rail handle (handle_returning_fns), each name NUL-terminated, the list ended by an
+   empty name: the module defines it when there is one (_build_into, hret_names_ir); this empty default otherwise. */
+__attribute__((weak)) const char __cqe_hret_names[1] = {0};
+static int cqd_hret(const char *fn) {
+  for (const char *s = __cqe_hret_names; *s; s += strlen(s) + 1)
+    if (!strcmp(s, fn)) return 1;
+  return 0;
+}
 static void cqd_ret(int call, const char *fn, const char *w, const void *p, size_t n, unsigned bits) {
   unsigned char b[64] = {0};
   memcpy(b, p, n < sizeof b ? n : sizeof b);
@@ -279,7 +287,9 @@ static void cqd_ret(int call, const char *fn, const char *w, const void *p, size
   }
   *q = 0;
   char line[320], hn[40] = "";
-  if (cqe__hname && n == 4) {   /* an i32 result may be a handle: its rail's name too (resolve_handle_rets) */
+  /* a handle result's rail name (resolve_handle_rets); only for a function that returns a handle: any other i32
+     result is a value, and the name of the rail whose real handle equals it varies with replay (cq-r4nh-hn) */
+  if (cqe__hname && n == 4 && cqd_hret(fn)) {
     int h; memcpy(&h, p, 4);
     snprintf(hn, sizeof hn, ",\"hn\":%lld", cqe__hname(h));
   }
@@ -554,6 +564,7 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
         tot += drivers.out_globals_ir(ctext if ctext is not None else canon, canon, "__cqe_out_globals",
                                       "cqd_out_mem", "cqd_out_object")
         (tmp / "lowered.tot.ll").write_text(tot)
+        tot += hret_names_ir(handle_returning_fns(canon))
         (tmp / "handle_rets.json").write_text(json.dumps(handle_returning_fns(canon)))  # cq-n6a0
     except _Unimpl as e:
         raise BuildError(f"cq: unimplemented: {e}")
@@ -917,6 +928,16 @@ DEFINE_NAME = re.compile(r"^define\b[^@]*@(\"?)([-\w.$]+)\1\(")
 _RAIL_CALLS = ("cqrt_alloc_", "cqrt_qram_load_", "cqrt_tape_alloc")
 _DEF = re.compile(r"^\s+(%[-\w.$\"]+) = (.*)$")
 _RET = re.compile(r"^\s+ret (\S+) (.+?)(?:, !.*)?$")
+
+
+def hret_names_ir(fns: Sequence[str]) -> str:
+    """The driver's list of handle-returning functions (_RESULT_PRELUDE's __cqe_hret_names), overriding its empty weak
+    default; nothing when fns is empty."""
+    if not fns:
+        return ""
+    data = b"".join(f.encode() + b"\0" for f in fns) + b"\0"
+    esc = "".join(chr(c) if 32 <= c < 127 and c not in (34, 92) else f"\\{c:02X}" for c in data)
+    return f'\n@__cqe_hret_names = constant [{len(data)} x i8] c"{esc}"\n'
 
 
 def handle_returning_fns(text: str) -> List[str]:
