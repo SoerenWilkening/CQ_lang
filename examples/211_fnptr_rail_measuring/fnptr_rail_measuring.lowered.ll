@@ -46,8 +46,9 @@
 ; register). inc is one template: its clones return the template's rail, its twins are that template's _unc and the
 ; free (the caller frees no result of a table clone). A _ctl clone guards gates, and inc has only a template, so
 ; __cq_q_inc_1_t_ctl computes unguarded (rule 9) and the caller's select does the rest. peek measures, so it has no
-; rule-18 twin: both its twins do nothing and its result stays allocated. In __cq_q_peek_1_t the argument rail itself
-; is measured and the outcome returned as a seed rail. In __cq_q_peek_1_t_ctl the measurement is of a CONTROLLED COPY
+; rule-18 twin: both its twins do nothing and its result stays allocated. In __cq_q_peek_1_t a kept copy of the
+; argument rail is measured (t = alloc_i32(0); copy_i32(v, t); measure_i32(t), §1.4; the caller's rail is never a
+; measured rail) and the outcome returned as a seed rail. In __cq_q_peek_1_t_ctl the measurement is of a CONTROLLED COPY
 ; (rule 19): t = alloc_i32(0); copy_i32_controlled(pred, v, t); measure_i32(t). x is not collapsed where the flag is 0,
 ; and t, which holds the tainted outcome, is the result. Every _t_ctl clone and _t_ctl_unc twin reads its function's
 ; activation counter d on entry, adds 1 and subtracts 1 at its return (§1.4); at d >= K the clone returns a |0> rail
@@ -254,9 +255,11 @@ define internal void @__cq_q_inc_1_t_ctl_unc(i32 %0, i32 %1, i32 %2, i32 %3) {
 }
 
 define internal i32 @__cq_q_peek_1_t(i32 %0, i32 %1) {
-  %3 = call i32 @cqrt_measure_i32(i32 %0)    ; IR: %2 = cq_measure_si32(%0)  (table clone, no predicate: the argument rail is measured, rule 2)
-  %4 = call i32 @cqrt_alloc_i32(i32 %3)    ; IR: ret i32 %2  [the classical outcome as a seed rail: every result of a table clone is a handle (§1.4)]
-  ret i32 %4    ; IR: ret i32 %2
+  %3 = call i32 @cqrt_alloc_i32(i32 0)    ; IR: %2 = cq_measure_si32(%0)  [t: in a table clone without a predicate a formal is measured through a kept copy (§1.4)]
+  call void @cqrt_copy_i32(i32 %0, i32 %3)    ; IR: %2 = cq_measure_si32(%0)  [t ^= v; the caller's rail v is not the measured rail and is uncomputed by the caller as always]
+  %4 = call i32 @cqrt_measure_i32(i32 %3)    ; IR: %2 = cq_measure_si32(%0)  [t is measured and stays allocated (rule 2); not pushed]
+  %5 = call i32 @cqrt_alloc_i32(i32 %4)    ; IR: ret i32 %2  [the classical outcome as a seed rail: every result of a table clone is a handle (§1.4)]
+  ret i32 %5    ; IR: ret i32 %2
 }
 
 define internal void @__cq_q_peek_1_t_unc(i32 %0, i32 %1, i32 %2) {

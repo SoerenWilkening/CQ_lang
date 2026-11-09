@@ -306,8 +306,11 @@ minted (rule 19) on `cqrt_push`. Its `_unc` twin always exists and pops those ha
 function rule 18 gives no twin it does nothing else, and every result stays allocated (KEPT);
 otherwise it is rule 18's twin, frees the results it zeroes and leaves a FROZEN result (rule 19)
 allocated. The caller frees no result of a table clone. A result that is rule 19's controlled-copy
-rail (a `cq_measure` inside a `_ctl` clone) is returned as that rail, not copied and not pushed; in the clone without
-a predicate the outcome is classical and is returned as a seed rail like any classical result (211).
+rail (a `cq_measure` inside a `_ctl` clone) is returned as that rail, not copied and not pushed. In the clone without
+a predicate a `cq_measure` of a formal measures a kept copy, `t = alloc_<W>(0); copy_<W>(h, t); measure_<W>(t)`:
+`t` stays allocated and is not pushed, `h` is left to the caller, which has no record of the callee (rule 19) and
+uncomputes and frees it as always; the outcome is classical and is returned as a seed rail like any classical
+result (211).
 `_t_ctl` and `_t_ctl_unc` take the predicate first; a table twin is `_unc([pred,] outs…, args…,
 K)`. A `_ctl` table clone whose body is only templates on SSA values computes unguarded and reads
 its predicate only for the cut. A call by name of a function whose body is in
@@ -387,7 +390,8 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
    measurement inside a quantum arm is never conditioned on quantum data: it is executed
    unconditionally at its program point, so the measured register is collapsed on every branch
    (a deviation from the C program that is the user's responsibility; the compiler may warn).
-   Inside a `_ctl` clone the measurement is rule 19's controlled copy instead. The arm flag is never measured. The outcome merges with the other incoming values by
+   Inside a `_ctl` clone the measurement is rule 19's controlled copy instead; inside a table clone without a
+   predicate a measurement of a formal is of a kept copy (§1.4), so the caller's rail is never a measured rail. The arm flag is never measured. The outcome merges with the other incoming values by
    `select` under the flag, so the value the C program reads is tainted. Measurements of one
    rail in several arms are one measurement.
    **Classical collapse.** A value computed only from measured rails and classical values is
@@ -1015,7 +1019,9 @@ Each rule names its witness examples. "Fresh" always means a `|0⟩` rail alloca
       (table or by name; a `_ctl` clone may be reached from the dispatch)
       `cq_measure(h)` measures a controlled copy, `t = alloc_<W>(0); copy_<W>_controlled(pred,
       h, t); measure_<W>(t)`: `t` is the measured rail, `h` is not collapsed where pred = 0,
-      the outcome is tainted, and rule 2's classical collapse does not apply to `h` there.
+      the outcome is tainted, and rule 2's classical collapse does not apply to `h` there. A `_t`
+      clone measures a formal the same way without the predicate (`copy_<W>(h, t); measure_<W>(t)`,
+      §1.4): the caller's rail is never the measured one, so rules 18 and 19 hold for it.
 
     **Under a quantum predicate** a callee becomes a `_ctl` clone iff its body, itself or through
     its callees, has anything but templates on SSA values: a rotation, a phase, a bus access,
