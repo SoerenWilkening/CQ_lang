@@ -2669,7 +2669,7 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
     return out  # type: ignore[return-value]
 
 
-_RUNS_VERSION = "eval-runs-7"   # cq-pckdl: kept rows of any role, merged in core.c; cq-92sw6: tape packed
+_RUNS_VERSION = "eval-runs-8"   # cq-pckdl: kept rows of any role, merged in core.c; cq-92sw6: tape packed; replayed calls as uses with skip
 _CAP_VARS = ("CQE_SHOT_TRACE_MAX", "CQE_SHOT_OUTPUT_MAX", "CQE_FILE_MAX", "CQE_SHOT_VIOL_MAX",   # core.c's caps
              "CQE_REPLAY", "CQE_REPLAY_CHECK", "CQE_REPLAY_TAMPER", "CQE_REPLAY_MAX_MB")   # rt_replay.c (cq-kcn5i)
 _RESULT_FIELDS = ("outputs", "measured", "rotations", "kept", "clean", "violations")

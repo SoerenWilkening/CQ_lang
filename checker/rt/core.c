@@ -1384,6 +1384,257 @@ static void exit_finish(void) {
 
 static int rp_exit_rail(const rp_block *b, uint32_t h);
 
+/* ---- the exit event's replayed blocks (cq-kcn5i; Fable ruling 2026-11-09, DECISIONS) -----------------------------
+ *
+ * In a compact trace an untouched replayed call is never fed rail by rail: its rails are its record's, so the record
+ * is the pattern. Per record (once per sample, at the first block of it that writes a use) {"def":id,"rows":[...]}
+ * holds the record's rails live at its end, handles relative to the block base, roles as exit_role_r gives them when
+ * no source of the rail received a gate or measurement after its write; each block then writes
+ * {"use":id,"h":base[,"n","step"][,"skip":[rel,...]]}: skip names the def's rails the caller made (map_peek), which
+ * are written as rows of their own from the rail table (or not at all once freed). Blocks of one record at one stride
+ * with one skip set fold into one use run. A block where a source of a live record rail (an argument or a made block
+ * rail) received a non-diagonal gate or a measurement takes the per-rail path instead (rp_exit_rail): its roles may
+ * differ from the def's. The handle set is every live rail exactly once, as before. No chunk spans a block (the
+ * chunker is cut at each), so no two uses overlap except a use run's hull (cqcheck.kept.KeptIndex). */
+typedef struct {
+  const cqe_rp_rails *rr;
+  int64_t id;               /* its def's id once written, else -1 */
+  uint32_t nlive, *live;    /* indices of the record's rails live at its end */
+  uint32_t nrefs;
+  int32_t *refs;            /* the distinct nonzero source refs of those rails, as the record holds them */
+  uint32_t u_h, u_n, u_step; /* the open use run (u_n 0: none) and its skip set */
+  uint32_t u_nskip, *u_skip, u_capskip;
+} xrec;
+static struct {
+  xrec *recs;
+  uint32_t nrecs, caprecs, *slot, nslot;
+  uint32_t *skip, capskip;
+} XR;
+
+static int rp_exit_key(const cqe_rp_rails *rr, uint32_t i, live_row *row, const int32_t **refs, uint32_t *nrefs);
+
+static uint32_t xr_ptr_hash(const void *p) { return (uint32_t)mix64((uint64_t)(uintptr_t)p); }
+
+/* The block table entry of record rr, made (and its live rails and refs read) at its first block. */
+static xrec *exit_rec(const cqe_rp_rails *rr) {
+  if (2 * (XR.nrecs + 1) > XR.nslot) { /* grow and rehash */
+    uint32_t n = XR.nslot ? 2 * XR.nslot : 1024;
+    uint32_t *s = xcalloc(n, sizeof *s);
+    for (uint32_t j = 0; j < XR.nrecs; ++j) {
+      uint32_t i = xr_ptr_hash(XR.recs[j].rr) & (n - 1);
+      while (s[i])
+        i = (i + 1) & (n - 1);
+      s[i] = j + 1;
+    }
+    free(XR.slot);
+    XR.slot = s;
+    XR.nslot = n;
+  }
+  uint32_t i = xr_ptr_hash(rr) & (XR.nslot - 1);
+  while (XR.slot[i] && XR.recs[XR.slot[i] - 1].rr != rr)
+    i = (i + 1) & (XR.nslot - 1);
+  if (XR.slot[i])
+    return &XR.recs[XR.slot[i] - 1];
+  XR.recs = exit_grow(XR.recs, &XR.caprecs, XR.nrecs + 1, sizeof *XR.recs);
+  xrec *x = &XR.recs[XR.nrecs];
+  XR.slot[i] = ++XR.nrecs;
+  cqe__rp_zero(x, sizeof *x);
+  x->rr = rr;
+  x->id = -1;
+  x->live = xcalloc(rr->n ? rr->n : 1, sizeof *x->live);
+  uint32_t capr = 0, nset = 0, *set = NULL; /* the refs seen, open addressing on ref + 1 */
+  for (uint32_t k = 0; k < rr->n; ++k) {
+    live_row row;
+    const int32_t *refs;
+    uint32_t nr;
+    if (!rp_exit_key(rr, k, &row, &refs, &nr))
+      continue;
+    x->live[x->nlive++] = k;
+    for (uint32_t j = 0; j < nr; ++j) {
+      if (!refs[j])
+        continue;
+      if (2 * (x->nrefs + 1) > nset) {
+        uint32_t n = nset ? 2 * nset : 64;
+        free(set);
+        set = xcalloc(n, sizeof *set);
+        nset = n;
+        for (uint32_t q = 0; q < x->nrefs; ++q) {
+          uint32_t s = (uint32_t)mix64((uint32_t)x->refs[q]) & (n - 1);
+          while (set[s])
+            s = (s + 1) & (n - 1);
+          set[s] = q + 1;
+        }
+      }
+      uint32_t s = (uint32_t)mix64((uint32_t)refs[j]) & (nset - 1);
+      while (set[s] && x->refs[set[s] - 1] != refs[j])
+        s = (s + 1) & (nset - 1);
+      if (set[s])
+        continue;
+      x->refs = exit_grow(x->refs, &capr, x->nrefs + 1, sizeof *x->refs);
+      x->refs[x->nrefs] = refs[j];
+      set[s] = ++x->nrefs;
+    }
+  }
+  free(set);
+  return x;
+}
+
+/* A source rail d received a non-diagonal gate or a measurement at any time (deps_entangled's test, without its
+ * after-the-write part: when this is 0 for every source, deps_entangled is 0 for every rail of the block). */
+static int exit_dep_touched(int32_t d) {
+  uint32_t m = map_peek((uint32_t)d);
+  if (!m || (m & MAP_TOMB))
+    return 0;
+  const rail_ext *s = (*SLOT(m - 1)).ext;
+  return s && (s->t_nd || s->t_meas);
+}
+
+/* A live rail of the rail table at the exit event: fed to the chunker, or with plain its own row. */
+static void exit_table_rail(uint32_t h, int plain) {
+  if (rail_tomb(h))
+    return;
+  rail_t *r = RL(h);
+  if (!r->live)
+    return;
+  char vb[3 + 16 * 2 + 1];
+  char *hx = r->v.nw <= 2 ? cqe__hex(&r->v, vb) : cqe__hexa(&r->v);
+  if (plain) {
+    live_row one = {h, 1, 0, wtab[r->wi], exit_role((int32_t)h), r->known, hx};
+    live_put(&one, -1);
+  } else {
+    exit_feed(h, wtab[r->wi], hx, exit_role((int32_t)h), r->known);
+  }
+  if (hx != vb)
+    free(hx);
+}
+
+/* The def of record x: its live rails' rows, n rails of one key at one stride folded into one row, in the order they
+ * open (the keys' table is the def's own: width and role are static strings, compared by address). */
+static void exit_def_put(xrec *x) {
+  x->id = XM.next_id++;
+  fprintf(trace_f, "%s{\"def\":%lld,\"rows\":[", XM.first ? "" : ",", (long long)x->id);
+  XM.first = 0;
+  uint32_t n = x->nlive, ns = 16;
+  while (ns < 2 * n)
+    ns *= 2;
+  uint32_t *open = xcalloc(ns, sizeof *open); /* key slot -> its open row + 1 */
+  live_row *rows = xcalloc(n ? n : 1, sizeof *rows);
+  uint32_t nr = 0;
+  for (uint32_t k = 0; k < n; ++k) {
+    live_row r;
+    const int32_t *refs;
+    uint32_t nrf;
+    rp_exit_key(x->rr, x->live[k], &r, &refs, &nrf);
+    r.h = x->live[k] + 1;
+    r.n = 1;
+    r.step = 0;
+    uint32_t s = (uint32_t)mix64(str_hash(r.v) ^ (uint64_t)(uintptr_t)r.w * 31 ^ (uint64_t)(uintptr_t)r.role * 7 ^
+                                 (uint64_t)r.known) & (ns - 1);
+    for (; open[s]; s = (s + 1) & (ns - 1)) {
+      const live_row *o = &rows[open[s] - 1];
+      if (o->w == r.w && o->role == r.role && o->known == r.known && !strcmp(o->v, r.v))
+        break;
+    }
+    if (open[s]) {
+      live_row *o = &rows[open[s] - 1];
+      if (o->n == 1 || r.h == o->h + o->n * o->step) {
+        if (o->n == 1)
+          o->step = r.h - o->h;
+        o->n++;
+        continue;
+      }
+    }
+    rows[nr] = r;
+    open[s] = ++nr;
+  }
+  XM.first = 1;
+  for (uint32_t i = 0; i < nr; ++i)
+    live_put(&rows[i], -1);
+  XM.first = 0;
+  fputs("]}", trace_f);
+  free(rows);
+  free(open);
+}
+
+static void exit_use_run_put(xrec *x) {
+  fprintf(trace_f, "%s{\"use\":%lld,\"h\":%u", XM.first ? "" : ",", (long long)x->id, x->u_h);
+  if (x->u_n > 1)
+    fprintf(trace_f, ",\"n\":%u,\"step\":%u", x->u_n, x->u_step);
+  if (x->u_nskip) {
+    fputs(",\"skip\":[", trace_f);
+    for (uint32_t i = 0; i < x->u_nskip; ++i)
+      fprintf(trace_f, "%s%u", i ? "," : "", x->u_skip[i]);
+    fputc(']', trace_f);
+  }
+  fputc('}', trace_f);
+  XM.first = 0;
+  x->u_n = 0;
+}
+
+/* Replayed block b at the exit event. */
+static void exit_block(const rp_block *b) {
+  exit_chunk_end(); /* no chunk spans a block */
+  xrec *x = exit_rec(b->rr);
+  int touched = 0;
+  for (uint32_t j = 0; j < x->nrefs && !touched; ++j)
+    touched = exit_dep_touched(cqe__rp_dec_handle(x->refs[j], b->base, b->args));
+  if (touched) { /* a role may depend on the caller: rail by rail, as without a def */
+    for (uint32_t h = b->base + 1; h <= b->base + b->n; ++h) {
+      if (!map_peek(h))
+        rp_exit_rail(b, h);
+      else
+        exit_table_rail(h, 0);
+    }
+    exit_chunk_end();
+    return;
+  }
+  uint32_t nskip = 0;
+  if (rp_nmat) /* some block rail was made this sample */
+    for (uint32_t k = 0; k < x->nlive; ++k) {
+      uint32_t h = b->base + 1 + x->live[k];
+      if (!map_peek(h))
+        continue;
+      XR.skip = exit_grow(XR.skip, &XR.capskip, nskip + 1, sizeof *XR.skip);
+      XR.skip[nskip++] = x->live[k] + 1;
+      exit_table_rail(h, 1);
+    }
+  if (nskip == x->nlive)
+    return; /* every live rail of it made: rows of their own */
+  if (x->id < 0)
+    exit_def_put(x);
+  if (x->u_n && nskip == x->u_nskip && cqe__rp_eq(XR.skip, x->u_skip, nskip * sizeof *XR.skip) &&
+      (x->u_n == 1 ? b->base > x->u_h : b->base == x->u_h + x->u_n * x->u_step)) {
+    if (x->u_n == 1)
+      x->u_step = b->base - x->u_h;
+    x->u_n++;
+    return;
+  }
+  if (x->u_n)
+    exit_use_run_put(x);
+  x->u_h = b->base;
+  x->u_n = 1;
+  x->u_skip = exit_grow(x->u_skip, &x->u_capskip, nskip ? nskip : 1, sizeof *x->u_skip);
+  cqe__rp_cpy(x->u_skip, XR.skip, nskip * sizeof *XR.skip);
+  x->u_nskip = nskip;
+}
+
+/* Every open use run written; the table freed. */
+static void exit_blocks_finish(void) {
+  for (uint32_t i = 0; i < XR.nrecs; ++i) {
+    xrec *x = &XR.recs[i];
+    if (x->u_n)
+      exit_use_run_put(x);
+    free(x->live);
+    free(x->refs);
+    free(x->u_skip);
+  }
+  free(XR.recs);
+  free(XR.slot);
+  free(XR.skip);
+  cqe__rp_zero(&XR, sizeof XR);
+}
+
+
 /* The exit event, written straight to the trace (cq-9hzgh: never built in memory; a looping sample's list
  * once reached 6 GB). Its live list holds every live rail exactly once, as rows, defs and uses (the live list
  * section above, cq-pckdl). Not counted against the running sample's trace cap (cq-pckdl): that cap stops a sample that logs without end
@@ -1398,25 +1649,24 @@ static void at_exit_handler(void) {
   static const char head[] = "{\"ev\":\"exit\",\"live\":[";
   fputs(head, trace_f);
   XM.first = 1;
-  char vb[3 + 16 * 2 + 1];
   size_t bi = 0; /* cq-kcn5i: the next replay block */
   for (uint32_t h = 1; h <= nrails; ++h) {
     while (bi < rp_nblocks && rp_blocks[bi].base + rp_blocks[bi].n < h)
       ++bi;
-    if (bi < rp_nblocks && h > rp_blocks[bi].base && !map_peek(h)) { /* an untouched rail of a replayed call */
-      rp_exit_rail(&rp_blocks[bi], h);
-      continue;
+    if (bi < rp_nblocks && h > rp_blocks[bi].base) {
+      if (compact) { /* a replayed call: a use of its record's def (exit_block) */
+        exit_block(&rp_blocks[bi]);
+        h = rp_blocks[bi].base + rp_blocks[bi].n;
+        continue;
+      }
+      if (!map_peek(h)) { /* an untouched rail of a replayed call */
+        rp_exit_rail(&rp_blocks[bi], h);
+        continue;
+      }
     }
-    if (rail_tomb(h))
-      continue;
-    rail_t *r = RL(h);
-    if (!r->live)
-      continue;
-    char *hx = r->v.nw <= 2 ? cqe__hex(&r->v, vb) : cqe__hexa(&r->v);
-    exit_feed(h, wtab[r->wi], hx, exit_role((int32_t)h), r->known);
-    if (hx != vb)
-      free(hx);
+    exit_table_rail(h, 0);
   }
+  exit_blocks_finish();
   exit_finish();
   fprintf(trace_f, "],\"violations\":%lu,\"host_flags\":%d}\n", nviolations, host_flags);
   if (!shot_buffered)
@@ -2923,5 +3173,31 @@ static int rp_exit_rail(const rp_block *b, uint32_t h) {
   if (deps != dbuf)
     free(deps);
   exit_feed(h, wtab[e->wi], b->rr->hexpool + b->rr->hexoff[i], role, f >> TF_KNOWN & 1);
+  return 1;
+}
+
+/* Rail i of record rr at the exit event, read-only: 0 when it is not live at the record's end; else its width, value
+ * and known flag in row, its role as exit_role_r gives it when no source received a gate after the write (no deps),
+ * and its source refs as the record holds them. */
+static int rp_exit_key(const cqe_rp_rails *rr, uint32_t i, live_row *row, const int32_t **refs, uint32_t *nrefs) {
+  const rp_rail *e = rp_hdr(rr, i);
+  if (!(e->flags & RF_LIVE) || (e->flags & RF_TOMB))
+    return 0;
+  uint32_t f = e->flags;
+  rail_t r;
+  cqe__rp_zero(&r, sizeof r);
+  r.wi = e->wi;
+  r.measured = f >> TF_MEASURED & 1;
+  r.frozen = f >> TF_FROZEN & 1;
+  r.written = f >> 3 & 1;
+  r.seed = f >> 4 & 1;
+  r.store_kept = f >> TF_STORE_KEPT & 1;
+  r.image = f >> TF_IMAGE & 1;
+  r.r6 = f >> TF_R6 & 1;
+  r.role = f >> TF_ROLE & 7;
+  r.fenv = f >> TF_FENV & 3;
+  *row = (live_row){0, 1, 0, wtab[e->wi], exit_role_r(&r, NULL), f >> TF_KNOWN & 1, rr->hexpool + rr->hexoff[i]};
+  *refs = rp_refs(e);
+  *nrefs = e->ndeps;
   return 1;
 }
