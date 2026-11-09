@@ -39,6 +39,9 @@ def trace_view(data):
     from cqcheck import kept as kept_mod, run as run_mod
     out = []
     for line, ev in run_mod._trace_events(io.StringIO(data.decode())):
+        if ev is None and line.startswith(run_mod._EXIT_HEAD):   # a short exit line comes whole
+            ev = json.loads(line)
+            ev["kept"] = kept_mod.build(ev.pop("live"))
         if ev is None:
             out.append(line)
             continue
