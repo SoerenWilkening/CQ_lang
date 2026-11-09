@@ -56,3 +56,4 @@ One line per decision on what CQ_spec leaves open. OWNER-FLAG: we proceed on it,
 - 2026-11-08, owner, cq-kcn5i: option (a): exact replay applies to every eligible clone (DESIGN §4), with no verification gate; the 1-in-64 spot check stays.
 - 2026-11-08, owner, cq-mxe2q: clones with balanced push/pop are eligible for replay (a replay is exact, so no verdict can change).
 - 2026-11-09, owner, cq-1leyz: the checker accepts a rule-14 kept overflow predicate a_K identified structurally in the lowered program (CR §6 item 1 names a_K as kept), not only one per loop activation the C program recorded as cut.
+- 2026-11-09, owner, cq-0ldab: the checker accepts a rule-20 kept n > K2 predicate identified structurally in the lowered program (CR §6 item 1), not only one per allocation the C program made.
