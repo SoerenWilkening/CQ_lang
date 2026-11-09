@@ -26,7 +26,8 @@
  *
  * Exit roles (event "exit", field "role" of each live rail): measured, abort, tape (an effect entry's result
  * rail too, rt_tape.c), tape_slot (a bus store's slot, rule 5), overtaken (a load copy un-copied
- * and not freed, rule 5), a_K (rule 14's kept overflow predicate, marked by run.kept_ak_module, cq-1leyz), frozen (rotated, not measured, or a rule-6 image carrying a rotated register's
+ * and not freed, rule 5), a_K (rule 14's kept overflow predicate, marked by run.kept_ak_module, cq-1leyz), n>K2 (rule 20's kept overflow
+ * predicate of a rail-sized allocation, marked by run.kept_k2_module, cq-0ldab), frozen (rotated, not measured, or a rule-6 image carrying a rotated register's
  * content: cqe__carry, cq-qhow), rule6_image (an operand of a rule-6 clean's inverse its producer's _unc can no longer
  * clean, frozen or not: cqe__r6_unc, cq-o9mx, cq-cuu82), store_kept (a value or control rail of a bus store still live, rule 5
  * sentence 3), kept_entangled (cq-arch A4: a rail one of whose direct sources received
@@ -443,7 +444,7 @@ typedef struct {
   uint32_t image : 1;      /* cq-qhow: carries a frozen register's content (cqe__carry): a rule-6 image, FROZEN */
   uint32_t r6 : 1;         /* cq-o9mx: an operand a rule-6 clean's inverse read: a rule-6 image, kept (cqe__r6_unc) */
   uint32_t load_copy : 1;  /* a bus load's copy: rule 5, "A load copy is never cleaned by rule 6", so never an image */
-  uint32_t role : 3;       /* 0 none, 1 abort, 2 tape, 4 tape_slot, 5 overtaken, 6 a_K (cq-1leyz) */
+  uint32_t role : 3;       /* 0 none, 1 abort, 2 tape, 4 tape_slot, 5 overtaken, 6 a_K (cq-1leyz), 7 n>K2 (cq-0ldab) */
   uint32_t fenv : 2;       /* cq-tt2j, rule 23: 1 flags lineage (an _exc result or written from one), 2 a mode operand */
   rail_ext *ext;
 } rail_t;
@@ -817,6 +818,8 @@ int cqe__busz(int32_t h) {
 void cqe__set_store_kept(int32_t h) { (*RL(h)).store_kept = 1; }
 /* cq-1leyz: rule 14's kept overflow predicate a_K, as run.kept_ak_module identifies it in the lowered program */
 void cqe__set_kept_ak(int32_t h) { (*RL(h)).role = 6; }
+/* cq-0ldab: rule 20's kept overflow predicate n > K2, as run.kept_k2_module identifies it in the lowered program */
+void cqe__set_kept_k2(int32_t h) { (*RL(h)).role = 7; }
 
 void cqe__mark_written(int32_t h) {
   (*RL(h)).written = 1;
@@ -1061,6 +1064,8 @@ static const char *exit_role_r(const rail_t *r, const int32_t *deps) {
     return "overtaken";
   if (r->role == 6)
     return "a_K";
+  if (r->role == 7)
+    return "n>K2";
   if (r->frozen || r->image)
     return "frozen";
   if (r->store_kept)
