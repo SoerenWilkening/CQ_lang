@@ -1918,10 +1918,11 @@ def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult], ended: Sequence[
 #             C program's final flags (_final_flags, cq-f8m9n);
 #   known     a rail in a known classical basis state (owner ruling 2026-11-01 on cq-tt2j: not a
 #             leak; LIVE_KNOWN_IS_LEAK below flips it);
-#   a_K, n>K2 a "garbage" i1 rail, at most one per activation the C oracle recorded on the sample whose
-#             (loop, act) it capped after K trips on some sample of the comparison (rule 14's output
-#             predicate, kept only when the bound B exceeds K: an activation never capped has B <= K
-#             as far as the samples show, which include a K+1-trip search per loop), and at most one
+#   a_K       role a_K: rule 14's kept overflow predicate, identified structurally in the lowered program (owner
+#             2026-11-09, cq-1leyz; run.kept_ak_module: an alloc_i1(0) only ever written by and_i1, copy_i1 or xor_i1,
+#             never read, uncomputed or freed), kept whether or not the C program ran its loop on the sample (a clone
+#             called in an arm not taken keeps its a_K too; _check_ak still asks each capped activation for its rail);
+#   n>K2      a "garbage" i1 rail, at most one
 #             per rail-sized block the C program allocated on the sample (outputs["k2"]; rule 20's kept n > K2
 #             of a rail-sized allocation), any number on a capped or ended sample (activations past
 #             the cut are not recorded). Rule 14 keeps one a_K per cut activation of a quantum-depth recursion, and every
@@ -1931,7 +1932,7 @@ def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult], ended: Sequence[
 #   leak      anything else: a rail its sources could still clean, left live.
 LIVE_KNOWN_IS_LEAK = False   # owner ruling 2026-11-01 (cq-tt2j): a live rail in a known basis state is no leak
 _KEPT_ROLES = frozenset(("measured", "frozen", "abort", "tape", "tape_slot", "store_kept", "overtaken",
-                         "kept_entangled", "rule6_image"))
+                         "kept_entangled", "rule6_image", "a_K"))
 _FENV_ROLES = ("fenv_flags", "fenv_mode")
 
 
@@ -1955,9 +1956,8 @@ def _final_flags(ent: Dict[str, Any], o: RunResult, c: RunResult, cut: bool) -> 
 _LEAKS_NAMED = 1000   # leaked rails a reason names one by one; it counts every one
 
 
-def _leaks(k: str, o: RunResult, c: RunResult, cut: bool, capkeys: Set[Tuple[str, int]] = frozenset()) -> List[str]:
+def _leaks(k: str, o: RunResult, c: RunResult, cut: bool) -> List[str]:
     rotated = {e.get("h") for e in o.rotations or [] if isinstance(e, dict) and e.get("ev") in ("ry", "ry_qangle")}
-    acts = len({(r["loop"], r["act"]) for r in _loops(c)} & set(capkeys))
     rec = any(r["loop"].endswith(":recursion") for r in _loops(c))
     flagged = any(e.get("role") == "fenv_flags" for e, _ in kept_mod.leaves(o.kept))
     allocs = len(c.outputs.get("k2", [])) if isinstance(c.outputs, dict) else 0
@@ -1982,7 +1982,7 @@ def _leaks(k: str, o: RunResult, c: RunResult, cut: bool, capkeys: Set[Tuple[str
             ok = 1 if not fenv.get(role) else 0
             fenv[role] = fenv.get(role, 0) + n
         elif role == "garbage" and row.get("w") == "i1":
-            ok = n if cut or (rec and not _int(row.get("v"))) else max(0, min(n, acts + allocs - i1))
+            ok = n if cut or (rec and not _int(row.get("v"))) else max(0, min(n, allocs - i1))
             i1 += n
         elif role == "garbage" and row.get("w") == "i32" and not flagged and _final_flags(row, o, c, cut):
             flagged = True
@@ -2001,7 +2001,6 @@ def _leaks(k: str, o: RunResult, c: RunResult, cut: bool, capkeys: Set[Tuple[str
     listed = ", ".join(names) + (f" and {nbad - len(names)} more" if nbad > len(names) else "")
     return [f"sample {k}: our side leaves {nbad} rail(s) live at exit that are no frozen register, "
             f"measured value, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): {listed}"
-            + (f"; {acts} K-cut loop activation(s) allow as many a_K rails" if acts else "")
             + (f"; {allocs} allocation(s) allow as many n > K2 rails" if allocs else "")]
 
 
@@ -2259,10 +2258,8 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
     # the a_K rule: a capped C sample is read through its cut (module docstring)
     capped: Dict[str, bool] = {}
     ended: Dict[str, bool] = {}          # the abort rule: a C sample that ended in noreturn/raise
-    capkeys: Set[Tuple[str, int]] = set()   # the leak rule's a_K: (loop, act) the C oracle capped on some sample
     if oracle == "c":
         for k in keys:
-            capkeys.update((r["loop"], r["act"]) for r in _loops(r_by[k]) if r["capped"])
             ended[k] = _ended(r_by[k])
             cap = _cap(r_by[k])
             capped[k] = cap is not None
@@ -2309,7 +2306,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
                     reasons.append(f"sample {k}: {side} side frees rail {c.get('h')} = {c.get('v')} "
                                    f"not in a known basis state")
         if oracle == "c" and k not in real_exits:
-            reasons += _leaks(k, o, r_by[k], capped[k] or ended[k], capkeys)
+            reasons += _leaks(k, o, r_by[k], capped[k] or ended[k])
         if oracle == "c" and ended[k]:
             reasons += _exit_mismatch(k, o, r_by[k])
 
