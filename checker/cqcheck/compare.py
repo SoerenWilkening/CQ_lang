@@ -1922,9 +1922,11 @@ def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult], ended: Sequence[
 #             2026-11-09, cq-1leyz; run.kept_ak_module: an alloc_i1(0) only ever written by and_i1, copy_i1 or xor_i1,
 #             never read, uncomputed or freed), kept whether or not the C program ran its loop on the sample (a clone
 #             called in an arm not taken keeps its a_K too; _check_ak still asks each capped activation for its rail);
-#   n>K2      a "garbage" i1 rail, at most one
-#             per rail-sized block the C program allocated on the sample (outputs["k2"]; rule 20's kept n > K2
-#             of a rail-sized allocation), any number on a capped or ended sample (activations past
+#   n>K2      role n>K2: rule 20's kept overflow predicate n > K2 of a rail-sized allocation, identified structurally in
+#             the lowered program (owner 2026-11-09, cq-0ldab; run.kept_k2_module: an icmp_ugt_i64_hl(n, K2) followed by
+#             __cq_alloc(K2, ...), never read, uncomputed or freed), kept whether or not the C program made the allocation
+#             on the sample (a clone called in an arm not taken keeps it too; _check_k2 still asks each block for its rail);
+#   garbage i1 any number on a capped or ended sample (activations past
 #             the cut are not recorded). Rule 14 keeps one a_K per cut activation of a quantum-depth recursion, and every
 #             recursion that ran reaches its cut on every branch, a forward clone a twin calls to recompute included, so such
 #             rails are not one per record: where the C oracle recorded a recursion activation on an uncapped sample any
@@ -1932,7 +1934,7 @@ def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult], ended: Sequence[
 #   leak      anything else: a rail its sources could still clean, left live.
 LIVE_KNOWN_IS_LEAK = False   # owner ruling 2026-11-01 (cq-tt2j): a live rail in a known basis state is no leak
 _KEPT_ROLES = frozenset(("measured", "frozen", "abort", "tape", "tape_slot", "store_kept", "overtaken",
-                         "kept_entangled", "rule6_image", "a_K"))
+                         "kept_entangled", "rule6_image", "a_K", "n>K2"))
 _FENV_ROLES = ("fenv_flags", "fenv_mode")
 
 
@@ -1960,8 +1962,6 @@ def _leaks(k: str, o: RunResult, c: RunResult, cut: bool) -> List[str]:
     rotated = {e.get("h") for e in o.rotations or [] if isinstance(e, dict) and e.get("ev") in ("ry", "ry_qangle")}
     rec = any(r["loop"].endswith(":recursion") for r in _loops(c))
     flagged = any(e.get("role") == "fenv_flags" for e, _ in kept_mod.leaves(o.kept))
-    allocs = len(c.outputs.get("k2", [])) if isinstance(c.outputs, dict) else 0
-    i1 = 0
     fenv: Dict[str, int] = {}
     bad = []
     # a row of n rails (cqcheck.kept) is read as its rails one by one would be, without expanding it (cq-pckdl): its rails
@@ -1982,8 +1982,7 @@ def _leaks(k: str, o: RunResult, c: RunResult, cut: bool) -> List[str]:
             ok = 1 if not fenv.get(role) else 0
             fenv[role] = fenv.get(role, 0) + n
         elif role == "garbage" and row.get("w") == "i1":
-            ok = n if cut or (rec and not _int(row.get("v"))) else max(0, min(n, allocs - i1))
-            i1 += n
+            ok = n if cut or (rec and not _int(row.get("v"))) else 0
         elif role == "garbage" and row.get("w") == "i32" and not flagged and _final_flags(row, o, c, cut):
             flagged = True
             ok = 1
@@ -2000,8 +1999,7 @@ def _leaks(k: str, o: RunResult, c: RunResult, cut: bool) -> List[str]:
             names.append(f"{ent.get('h')} ({ent.get('w')} = {ent.get('v')}, {ent.get('role')})")
     listed = ", ".join(names) + (f" and {nbad - len(names)} more" if nbad > len(names) else "")
     return [f"sample {k}: our side leaves {nbad} rail(s) live at exit that are no frozen register, "
-            f"measured value, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): {listed}"
-            + (f"; {allocs} allocation(s) allow as many n > K2 rails" if allocs else "")]
+            f"measured value, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): {listed}"]
 
 
 # ---------------------------------------------------------------- the abort rule (against "c")
@@ -2025,7 +2023,8 @@ def _check_k2(o_runs: List[RunResult], c_runs: List[RunResult], open_end: Sequen
     rails: Dict[Any, Tuple[int, ...]] = {}
     idx = [kept_mod.KeptIndex(rr.kept) for rr in o_runs]
     for h in {h for rr in o_runs for row, at in kept_mod.leaves(rr.kept)
-              if row.get("w") == "i1" and row.get("role") == "garbage" for h in kept_mod.handles(row, at)}:
+              if row.get("w") == "i1" and row.get("role") in ("garbage", "n>K2")
+              for h in kept_mod.handles(row, at)}:
         vals = []
         for ix in idx:
             ent = ix.get(h)

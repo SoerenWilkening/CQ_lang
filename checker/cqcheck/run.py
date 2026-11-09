@@ -85,7 +85,7 @@ RunResult fields (JSON-serializable):
               for n rails of one width, value, role and known flag (cqcheck.kept, cq-pckdl), the tape slots of bus stores
               (role tape_slot) and overtaken load copies (role overtaken) among them; each also has
               "known" (classical-valued, BACKEND_ABI §0) and the roles of rt/core.c's header (store_kept,
-              fenv_flags, fenv_mode among them, cq-tt2j; a_K, kept_ak_module, cq-1leyz); a rail a handle-returning function returns
+              fenv_flags, fenv_mode among them, cq-tt2j; a_K, kept_ak_module, cq-1leyz; n>K2, kept_k2_module, cq-0ldab); a rail a handle-returning function returns
               also has "result": true (cq-tt2j)
   clean       the free events [{"h", "v", "known", "w"}]
   violations  the trace's violation events [{"what", "h", "msg"}] plus run failures:
@@ -543,7 +543,7 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
             tot = default_env_module(tot)
         if any(Path(o).name == "host_fx.o" for o in objs):  # cq-e4jk; a test's restricted runtime may omit it
             tot = host_effects_module(tot, defined)
-        tot = kept_ak_module(ctl_measures_module(overtaken_twin_module(kept_results_module(kept_copies_module(tot), handle_returning_fns(canon)))))
+        tot = kept_k2_module(kept_ak_module(ctl_measures_module(overtaken_twin_module(kept_results_module(kept_copies_module(tot), handle_returning_fns(canon))))))
         tot = replay_module(tot, handle_returning_fns(canon))  # cq-kcn5i
         from cqcheck import drivers
         tot += drivers.out_globals_ir(ctext if ctext is not None else canon, canon, "__cqe_out_globals",
@@ -1768,6 +1768,67 @@ def kept_ak_module(text: str) -> str:
             ind = re.match(r"\s+", line).group(0)
             out.append(f"{ind}call void @cqe__set_kept_ak(i32 {_AK_ALLOC.match(line).group(1)})")
     out.append("declare void @cqe__set_kept_ak(i32)")
+    return "\n".join(out) + "\n"
+
+
+_K2_CMP = re.compile(r"^\s+(%[-\w.$]+) = (?:tail |notail )?call i32 @cq_template_icmp_ugt_i64_hl\(i32 %[-\w.$]+, i64 (\d+)\)\s*$")
+_K2_ALLOC = re.compile(r"^\s+%[-\w.$]+ = (?:tail |notail )?call (?:noalias )?ptr @__cq_alloc\(i64 (\d+), i64 [^)]*\)\s*$")
+# what the uncompute spine may emit between the two once the compare was the size's last consumer: its producers' _unc
+# (a template's or a twin's) and their frees
+_K2_SPINE = re.compile(r"^\s+(?:tail |notail )?call void @(?:[-\w.$]+_unc|cqrt_free)\(")
+
+
+def _k2_cmps(lines: List[str], lo: int, hi: int) -> List[int]:
+    """The line indices in lines[lo:hi] (one function body) of the n > K2 compares of kept_k2_module."""
+    cand: Dict[str, int] = {}
+    for i in range(lo, hi):
+        m = _K2_CMP.match(lines[i])
+        if not m:
+            continue
+        j = i + 1
+        while j < hi and _K2_SPINE.match(lines[j]) and m.group(1) not in _AK_TOKEN.findall(lines[j]):
+            j += 1
+        a = _K2_ALLOC.match(lines[j]) if j < hi else None
+        if a and a.group(1) == m.group(2):
+            cand[m.group(1)] = i
+    if not cand:
+        return []
+    at = set(cand.values())
+    used: Set[str] = set()               # read, uncomputed, freed or anything else: no n > K2
+    for i in range(lo, hi):
+        if i not in at:
+            used.update(t for t in _AK_TOKEN.findall(lines[i]) if t in cand)
+    return sorted(cand[v] for v in cand if v not in used)
+
+
+def kept_k2_module(text: str) -> str:
+    """Rule 20's kept overflow predicate n > K2 of a rail-sized allocation, a kept rail CR §6 item 1 names (owner
+    2026-11-09, cq-0ldab: identified structurally in the lowered program): a rail `icmp_ugt_i64_hl(n, K2)` followed by
+    `__cq_alloc(K2, align)` of the same K2, with nothing between them but the uncompute spine's _unc and frees, and that
+    nothing reads, uncomputes or frees. The pass's own emission is the same (bus/Alloc.cpp sizeOperand: the compare,
+    Role::KeptOverflow, then the call with K2 as its size; lowerAlloc, lowerRealloc). Each such rail gets the exit role
+    n>K2 (rt/core.c cqe__set_kept_k2). A look-alike compare anything reads, or one no such allocation follows, is not
+    one, whatever it reads at exit."""
+    if "@cq_template_icmp_ugt_i64_hl(" not in text or "@__cq_alloc(" not in text:
+        return text
+    lines = text.splitlines()
+    marks: Set[int] = set()
+    start = None
+    for i, line in enumerate(lines):
+        if line.startswith("define"):
+            start = i + 1
+        elif line.startswith("}") and start is not None:
+            marks.update(_k2_cmps(lines, start, i))
+            start = None
+    if not marks:
+        return text
+    out = []
+    for i, line in enumerate(lines):
+        out.append(line)
+        if i in marks:
+            ind = re.match(r"\s+", line).group(0)
+            out.append(f"{ind}call void @cqe__set_kept_k2(i32 {_K2_CMP.match(line).group(1)})")
+    out.append("declare void @cqe__set_kept_k2(i32)")
     return "\n".join(out) + "\n"
 
 

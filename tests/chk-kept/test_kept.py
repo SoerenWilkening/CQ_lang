@@ -5,7 +5,8 @@ Each GOOD program is green under `cqcheck user`: a no-twin clone's {res, flags} 
 clone's result a memory version change overtook before its twin (rule 18; q5, and q6 through a clone whose name has `_b`
 bounds, cq-usir7), the
 dispatch's final copy-out (rule 19; q3), a no-twin table clone's result through its pop-only twin (§1.4; e_rail, r3),
-rule 14's kept overflow predicate a_K of a K-loop in a clone called in an arm the C program does not take (q7, cq-1leyz).
+rule 14's kept overflow predicate a_K of a K-loop in a clone called in an arm the C program does not take (q7, cq-1leyz),
+rule 20's kept overflow predicate n > K2 of a rail-sized allocation in such a clone (q8, cq-0ldab).
 Each MUTANT is a real leak of that shape, and must be rejected by the leak rule, not merely rejected (rule24_*: by the
 effect comparison).
 """
@@ -119,6 +120,15 @@ def kept_chain_pred(text):
     return in_fn("__cq_q_steps_1_ctl", edit, text)
 
 
+def k2_lookalike(text):
+    """A second icmp_ugt_i64_hl(n, K2) of the allocation's size, just before the kept one, left live: it reads what the
+    kept n > K2 reads, but no allocation follows it, so the n > K2 identification must not take it (cq-0ldab)."""
+    def edit(body):
+        return sub1(r"(  %\d+ = call i32 @cq_template_icmp_ugt_i64_hl\(i32 (%\d+), i64 4096\)\n)",
+                    r"  %cq.look = call i32 @cq_template_icmp_ugt_i64_hl(i32 \2, i64 4096)\n\1", body)
+    return in_fn("__cq_q_fill_1_ctl", edit, text)
+
+
 def lost_twin(fn, twin, text):
     """A call of a loading clone loses its twin though nothing overtakes it, its result left live."""
     def edit(body):
@@ -128,7 +138,7 @@ def lost_twin(fn, twin, text):
 
 
 GOOD = [(SRC / "q1", "q1"), (SRC / "q1c", "q1c"), (SRC / "q3", "q3"), (SRC / "q4", "q4b"), (SRC / "q4", "q4c"), (SRC / "q5", "q5"), (SRC / "q6", "q6"),
-        (SRC / "q7", "q7"),
+        (SRC / "q7", "q7"), (SRC / "q8", "q8"),
         (SRC / "p3", "p3"), (SRC / "p4", "p4"), (SRC / "p5", "p5"), (SRC / "p6", "p6"),
         (CALLS / "table_twin_measure", "e_rail"), (CALLS / "twin_rot_in_loop", "r3")]
 MUTANTS = [
@@ -151,6 +161,8 @@ MUTANTS = [
     ("rule18_lost_twin_bounded_clone", SRC / "q6", "q6", lambda t: lost_twin("q6", "__cq_q_rd_1_b3_ctl_unc", t)),
     # cq-1leyz: a K-loop's chain predicate other than a_K left live is still a leak
     ("rule14_kept_chain_pred", SRC / "q7", "q7", kept_chain_pred),
+    # cq-0ldab: an i1 that looks like rule 20's n > K2 but precedes no allocation, left live, is still a leak
+    ("rule20_k2_lookalike", SRC / "q8", "q8", k2_lookalike),
     # cq-yz4hw: a classical call of rd is overtaken; the quantum call after the store is not
     ("rule18_lost_twin_after_store", SRC / "p3", "p3", lambda t: lost_rd_twin("p3", 0, t)),
     # cq-534kh: no store in the program, and no twin left to define
