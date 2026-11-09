@@ -55,14 +55,15 @@ void cqe__rp_argkey(const int32_t *hs, int n, int absolute, cqe_rp_buf *out);
 int cqe__rp_encode(uint32_t base, uint64_t c0, const int32_t *args, int nargs, cqe_rp_rails *out);
 void cqe__rp_derive(cqe_rp_rails *rr);
 int32_t cqe__rp_enc_handle(int32_t h, uint32_t base, const int32_t *args, int nargs, int *ok);
-uint32_t cqe__rp_apply(const cqe_rp_rails *rr, const int32_t *args, int nargs);
-int32_t cqe__rp_dec_handle(int32_t e, uint32_t base, const int32_t *args);
+int32_t cqe__rp_apply(const cqe_rp_rails *rr, const int32_t *args, int nargs, const uint32_t *frees, size_t nfrees,
+                      int32_t ret_e);
+void cqe__rp_occ(int open); /* a top-level wrapper call begins (1) or ends (0): rail names (core.c) */
+int cqe__rp_named(void);    /* an occurrence is open (only in a compact trace): a replay names its rails in it */
 uint32_t cqe__rp_nrails(void);
 uint64_t cqe__rp_clock(void);
 unsigned long long cqe__rp_steps(void);
 void cqe__rp_steps_add(unsigned long long d);
 const uint32_t *cqe__rp_frees(size_t *n);
-void cqe__rp_frees_apply(const uint32_t *rel, size_t n, uint32_t base);
 long cqe__rp_shot_k(void);
 int32_t cqe__rp_prealloc(void);
 int cqe__rp_block_load(int32_t h, uint64_t *addr, int *fire);

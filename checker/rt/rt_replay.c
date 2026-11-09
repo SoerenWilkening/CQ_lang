@@ -23,9 +23,14 @@
  * it left and its result. A dirty window keeps nothing: the next call with that key runs real again.
  *
  * A hit applies the record: the steps (a step budget passed ends the sample as the real run would), one block of
- * untouched rails (core.c: the handle counter and the clock advance; a rail is made from the record when something
- * touches it; the exit event reads untouched ones from the record), the bus bytes, the free digest, the fp environment
+ * untouched rails (core.c: no handle is taken, owner 2026-11-09; the rails are named in the open occurrence and the
+ * clock advances; a rail gets a handle when the caller reaches it and is made from the record when something reads
+ * it; the exit event reads the others from the record), the bus bytes, the free digest (by name), the fp environment
  * and the result. Nothing the real run would have logged is lost: a recordable run logs nothing.
+ *
+ * Names (core.c, rail names). A call made while no wrapper call runs opens an occurrence (cqe__rp_occ) that ends with
+ * it; every rail made in it, by a real run or a replay, is named by the occurrence and its place in it, so a rail's
+ * name does not depend on whether a call hit, recorded, was spot-checked, closed or dirty, which depend on values.
  *
  * Spot check. One hit in 64 (FNV of the sample's k and the hit's index; $CQE_REPLAY_CHECK=N for one in N, 0 never)
  * runs the real clone instead, in a window, and compares the record it makes with the stored one field by field; any
@@ -516,15 +521,14 @@ static int spot_check(void) {
 
 static void apply(rp_rec *r, rp_clone *c, const int32_t *hs, int nh, uint64_t *ret) {
   cqe__rp_steps_add(r->steps);
-  uint32_t base = cqe__rp_apply(&r->rails, hs, nh);
+  int32_t rh = cqe__rp_apply(&r->rails, hs, nh, r->frees, r->nfrees, c->rk == 'h' ? r->ret_h : 0);
   for (size_t i = 0; i < r->nwrites; ++i) {
     const rp_write *w = &r->writes[i];
     cqe__bus_cell_set(w->a, w->q, w->v, w->k, w->hc, w->hv);
   }
-  cqe__rp_frees_apply(r->frees, r->nfrees, base);
   fenv_put(r->fcw, r->fsw, r->mxcsr);
   if (c->rk == 'h')
-    *ret = (uint32_t)cqe__rp_dec_handle(r->ret_h, base, hs);
+    *ret = (uint32_t)rh;
   else if (c->rk == 'c' || c->rk == 'i')
     *ret = r->ret_raw;
   c->rails += r->rails.n;
@@ -535,6 +539,11 @@ int32_t __cqe_rp_enter(int32_t id, const char *desc, const uint64_t *argv, uint6
   cqe__init();
   settings();
   rp_clone *c = clone_of(id, desc);
+  /* owner 2026-11-09: a call made while no wrapper call runs is an occurrence: its rails are named by it, however it
+   * runs (core.c, rail names); it ends at its leave, or here for a hit (the wrapper calls no leave then) */
+  int top = dn == 0;
+  if (top)
+    cqe__rp_occ(1);
   ++n_calls;
   if (c)
     ++c->calls;
@@ -549,11 +558,13 @@ int32_t __cqe_rp_enter(int32_t id, const char *desc, const uint64_t *argv, uint6
       stats_line("progress");
     }
   }
-  /* run real, outside any window: off, an unparsed clone, inside an open window, a full trace, cq_invert, prealloc */
+  /* run real, outside any window: off, an unparsed clone, inside an open window, a full trace, no occurrence (no
+   * compact trace: rail names), cq_invert, prealloc */
   int open = 0;
   for (size_t i = 0; i < dn && !open; ++i)
     open = dstack[i] != M_NONE;
-  if (!st_on || !c || c->nargs < 0 || open || cqe__trace_all() || !cqe__rp_dispatch_idle() || cqe__rp_prealloc()) {
+  if (!st_on || !c || c->nargs < 0 || open || cqe__trace_all() || !cqe__rp_named() || !cqe__rp_dispatch_idle() ||
+      cqe__rp_prealloc()) {
     dpush(M_NONE);
     return 0;
   }
@@ -591,6 +602,8 @@ int32_t __cqe_rp_enter(int32_t id, const char *desc, const uint64_t *argv, uint6
       return 0;
     }
     apply(hit, c, hs, nh, ret);
+    if (top)
+      cqe__rp_occ(0);
     return 1;
   }
   /* a miss records, unless the clone's keys do not repeat or the records' heap is full (efficiency only) */
@@ -610,4 +623,6 @@ void __cqe_rp_leave(int32_t id, const uint64_t *ret) {
   uint8_t m = dstack[--dn];
   if (m != M_NONE)
     close_window(m, ret);
+  if (!dn)
+    cqe__rp_occ(0);
 }

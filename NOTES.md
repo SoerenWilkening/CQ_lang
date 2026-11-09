@@ -1,6 +1,11 @@
 # r4-nohandle: stopped at a §6 obstacle (2026-11-09)
 
-Done: reading and design only; no code changed. Left: everything (C runtime, kept.py, run.py, tests/replay), pending a decision on the obstacle below.
+Status (owner: continue, option 1 below): implemented, built only (rt/*.c with -Wall, the driver prelude
+-fsyntax-only); no test or check run (owner). Runtime: core.c rail names (cn_runs, occurrences, cqe__name/cqe__hname),
+blocks without handles (rp_touch, rp_tch, rp_materialize, cqe__rp_apply), exit list by name, frees digest by name;
+names in violation/free/measure/ry/phase/tape events (dispatch.c, rt_tape.c); rt_replay.c opens and closes occurrences
+and replays only inside one. Python: run.py logs and uses "hn" (a result's rail name) and drops it; eval-runs-9.
+tests/replay "same" should now hold unchanged (names do not depend on CQE_REPLAY). Left: running the checks.
 
 
 Ruling under implementation: DECISIONS 2026-11-09 (a1a99c9), "a replayed call reserves no rail handles; its kept rails

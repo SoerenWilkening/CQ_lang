@@ -619,9 +619,9 @@ static void log_gate(const call_t *c, int32_t h, const int32_t *srcs, int ns) {
 static void log_rot(const char *ev, const call_t *c, int32_t h, int32_t ctl, const char *angle_fields,
                     const char *pre) {
   sbuf b = {0};
-  sb_addf(&b, "{\"ev\":\"%s\",\"h\":%d,%s,\"ctl\":[", ev, (int)h, angle_fields);
+  sb_addf(&b, "{\"ev\":\"%s\",\"h\":%lld,%s,\"ctl\":[", ev, cqe__hname(h), angle_fields);
   if (ctl > 0)
-    sb_addf(&b, "%d", (int)ctl);
+    sb_addf(&b, "%lld", cqe__hname(ctl));
   sb_add(&b, "],\"ctlv\":[");
   if (ctl > 0)
     sb_addf(&b, "%d", (int)(cqe__val(ctl)->w[0] & 1));
@@ -693,7 +693,7 @@ static void gate_free(call_t *c) {
   int known = cqe__known(h) || cqe__busz(h);
   if (cqe__free_note(h, known)) {
     char hb[3 + 16 * 2 + 1], *hx = cqe__val(h)->nw <= 2 ? cqe__hex(cqe__val(h), hb) : cqe__hexa(cqe__val(h));
-    cqe__logf("{\"ev\":\"free\",\"h\":%d,\"v\":\"%s\",\"known\":%s,\"w\":\"%s\"}", (int)h, hx, known ? "true" : "false",
+    cqe__logf("{\"ev\":\"free\",\"h\":%lld,\"v\":\"%s\",\"known\":%s,\"w\":\"%s\"}", cqe__hname(h), hx, known ? "true" : "false",
             cqe__w(h));
     if (hx != hb)
       free(hx);
@@ -716,7 +716,7 @@ static void gate_measure(call_t *c, const char *w) {
   cqe__mark_measured(h);
   if (!reread) {
     char hb[3 + 16 * 2 + 1], *hx = cqe__val(h)->nw <= 2 ? cqe__hex(cqe__val(h), hb) : cqe__hexa(cqe__val(h));
-    cqe__logf("{\"ev\":\"measure\",\"h\":%d,\"v\":\"%s\",\"w\":\"%s\"}", (int)h, hx, w);
+    cqe__logf("{\"ev\":\"measure\",\"h\":%lld,\"v\":\"%s\",\"w\":\"%s\"}", cqe__hname(h), hx, w);
     if (hx != hb)
       free(hx);
   }
@@ -904,7 +904,7 @@ static void gate_ry(call_t *c, const char *w, int q, int ctl) {
     if (!ctl || (cqe__val(cf)->w[0] & 1))
       pre = ry_fire(h, ang, &undo);
     char *hx = cqe__hexa(cqe__val(a));
-    snprintf(fields, sizeof fields, "\"a\":%d,\"aval\":\"%s\"", (int)a, hx);
+    snprintf(fields, sizeof fields, "\"a\":%lld,\"aval\":\"%s\"", cqe__hname(a), hx);
     free(hx);
     log_rot("ry_qangle", c, h, cf, fields, pre);
     cqe__add_dep(h, a);
@@ -931,7 +931,7 @@ static void gate_rz_i1(call_t *c) {
   int32_t f = as_i32(&c->raw[0]);
   if (!operand(c, f, "i1"))
     return;
-  cqe__logf("{\"ev\":\"phase\",\"f\":%d,\"fv\":%d,\"theta\":\"0x%llx\"}", (int)f, (int)(cqe__val(f)->w[0] & 1),
+  cqe__logf("{\"ev\":\"phase\",\"f\":%lld,\"fv\":%d,\"theta\":\"0x%llx\"}", cqe__hname(f), (int)(cqe__val(f)->w[0] & 1),
             (unsigned long long)c->raw[1].w[0]);
 }
 
@@ -944,11 +944,11 @@ static void gate_rz_qangle(call_t *c, int ctl) {
   if (!operand(c, a, "f64"))
     return;
   sbuf b = {0};
-  sb_addf(&b, "{\"ev\":\"phase_qangle\",\"a\":%d,\"aval\":\"", (int)a);
+  sb_addf(&b, "{\"ev\":\"phase_qangle\",\"a\":%lld,\"aval\":\"", cqe__hname(a));
   sb_hex(&b, cqe__val(a));
   sb_add(&b, "\",\"ctl\":[");
   if (ctl)
-    sb_addf(&b, "%d", (int)cf);
+    sb_addf(&b, "%lld", cqe__hname(cf));
   sb_add(&b, "],\"ctlv\":[");
   if (ctl)
     sb_addf(&b, "%d", (int)(cqe__val(cf)->w[0] & 1));
