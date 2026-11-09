@@ -466,10 +466,21 @@ typedef struct { uint64_t a, b; } tomb_t; /* a: t_create | wi << 48; b: t_write 
 #define MAP_TOMB 0x80000000u /* map entry: the tombstone index | MAP_TOMB, or the pool slot + 1 */
 
 #define LEAF_BITS 12 /* directory blocks: 4096 pointers */
-#define MAP_BITS 12  /* a map leaf: 4096 handles (16 KiB) */
+#define MAP_BITS 12  /* a map leaf: 4096 real handles (16 KiB) */
 #define POOL_BITS 9  /* a pool leaf: 512 records (36 KiB) */
 #define TOMB_BITS 11 /* a tombstone leaf: 2048 (32 KiB) */
+#define SIDE_BITS 10 /* a side-table leaf: 1024 entries (12 KiB) */
+#define SIDE_HEAD_BITS 14
+#define SIDE_HEADS (1u << SIDE_HEAD_BITS)
+/* The map (cq-ism39, 2026-11-09 memory plan): a real handle's entry (one cqe__new made) lies in map_dir at the
+ * handle's rank among the real handles (hclass), so a replayed call's handles (a block, below) take no map space.
+ * A block rail something touched, and a handle that names no rail (rail_blank), has its entry in the side table: a
+ * hash of chains through side_dir's nodes (each block of either stays below SETUP_BIG). */
 static uint32_t **map_dir[(CQE_RAIL_LIMIT >> (MAP_BITS + LEAF_BITS)) + 1];
+typedef struct { uint32_t h, m, next; } side_node;
+static side_node **side_dir[(CQE_RAIL_LIMIT >> (SIDE_BITS + LEAF_BITS)) + 2];
+static uint32_t side_head[SIDE_HEADS]; /* node index + 1, 0 none */
+static uint32_t side_n;
 static rail_t **pool_dir[(CQE_RAIL_LIMIT >> (POOL_BITS + LEAF_BITS)) + 1];
 static tomb_t **tomb_dir[(CQE_RAIL_LIMIT >> (TOMB_BITS + LEAF_BITS)) + 1];
 static uint32_t pool_n, pool_free; /* records made; the free list's head (slot + 1, 0 none), linked through inl */
@@ -479,7 +490,8 @@ static uint64_t clock_;
 
 #define DIR_AT(dir, i, bits) (&(dir)[(uint32_t)(i) >> ((bits) + LEAF_BITS)][((uint32_t)(i) >> (bits)) & ((1u << LEAF_BITS) - 1)] \
                                     [(uint32_t)(i) & ((1u << (bits)) - 1)])
-#define MAP(h) DIR_AT(map_dir, h, MAP_BITS)
+#define MAP(d) DIR_AT(map_dir, d, MAP_BITS) /* d: a real handle's dense index (hclass) */
+#define SIDE(i) DIR_AT(side_dir, i, SIDE_BITS)
 #define SLOT(s) DIR_AT(pool_dir, s, POOL_BITS)
 #define TOMB(t) DIR_AT(tomb_dir, t, TOMB_BITS)
 
@@ -547,9 +559,12 @@ static rail_t *pool_take(uint32_t *slot) {
   return r;
 }
 
+static uint32_t map_peek(uint32_t h);
+static void map_put(uint32_t h, uint32_t m);
+
 /* The record of tombstoned rail h, rebuilt (and kept: h maps to it from now on). */
 static rail_t *rail_materialize(uint32_t h) {
-  tomb_t t = (*TOMB(*MAP(h) & ~MAP_TOMB));
+  tomb_t t = (*TOMB(map_peek(h) & ~MAP_TOMB));
   uint32_t s;
   rail_t *r = pool_take(&s);
   uint32_t f = tf_get(&t);
@@ -573,7 +588,7 @@ static rail_t *rail_materialize(uint32_t h) {
   r->load_copy = f >> TF_LOAD_COPY & 1;
   r->role = f >> TF_ROLE & 7;
   r->fenv = f >> TF_FENV & 3;
-  *MAP(h) = s + 1;
+  map_put(h, s + 1);
   return r;
 }
 
@@ -582,9 +597,8 @@ static rail_t *rail_materialize(uint32_t h) {
  * "no rail" 0 among them, reads zeros); cqe__new gives a handle made later a fresh one. */
 static rail_t *rail_blank(uint32_t h) {
   uint32_t s;
-  DIR_GROW(map_dir, h, MAP_BITS);
   rail_t *r = pool_take(&s);
-  *MAP(h) = s + 1;
+  map_put(h, s + 1);
   return r;
 }
 
@@ -601,12 +615,14 @@ static const int32_t *rp_wargs;
 static int rp_wnargs;
 typedef struct {
   uint32_t base, n;
+  uint32_t below; /* the handles of the blocks before it (hclass) */
   uint64_t c0;
   const cqe_rp_rails *rr;
   const int32_t *args;
 } rp_block;
 static rp_block *rp_blocks;
 static size_t rp_nblocks, rp_capblocks;
+static size_t rp_hint; /* the block hclass found last */
 static uint64_t rp_nmat; /* block rails made since the sample began */
 
 static void rp_outside(uint32_t h) {
@@ -616,20 +632,99 @@ static void rp_outside(uint32_t h) {
   cqe__rp_dirty = 1;
 }
 
-/* The map entry of h, 0 when its leaf or entry is not made. */
-static inline uint32_t map_peek(uint32_t h) {
-  uint32_t **d = map_dir[h >> (MAP_BITS + LEAF_BITS)];
-  if (!d)
+/* Where handle h lies: 1 a real handle, *d its dense index (its rank among the real handles, from 1); 2 a rail of
+ * block *b; 0 neither (handle 0, or one not made yet). */
+static inline int hclass(uint32_t h, uint32_t *d, const rp_block **b) {
+  if (!h || h > nrails)
     return 0;
-  uint32_t *l = d[(h >> MAP_BITS) & ((1u << LEAF_BITS) - 1)];
-  return l ? l[h & ((1u << MAP_BITS) - 1)] : 0;
+  if (!rp_nblocks) {
+    *d = h;
+    return 1;
+  }
+  const rp_block *last = &rp_blocks[rp_nblocks - 1];
+  if (h > last->base + last->n) {
+    *d = h - last->below - last->n;
+    return 1;
+  }
+  size_t i = rp_hint;
+  if (!(i < rp_nblocks && rp_blocks[i].base < h && (i + 1 == rp_nblocks || rp_blocks[i + 1].base >= h))) {
+    size_t lo = 0, hi = rp_nblocks;
+    while (lo < hi) { /* the first block whose base is >= h */
+      size_t mid = (lo + hi) / 2;
+      if (rp_blocks[mid].base < h)
+        lo = mid + 1;
+      else
+        hi = mid;
+    }
+    if (!lo) { /* below every block */
+      *d = h;
+      return 1;
+    }
+    rp_hint = i = lo - 1;
+  }
+  const rp_block *k = &rp_blocks[i];
+  if (h <= k->base + k->n) {
+    *b = k;
+    return 2;
+  }
+  *d = h - k->below - k->n;
+  return 1;
+}
+
+static uint32_t side_get(uint32_t h) {
+  for (uint32_t i = side_head[(h * 0x9E3779B1u) >> (32 - SIDE_HEAD_BITS)]; i; i = (*SIDE(i - 1)).next)
+    if ((*SIDE(i - 1)).h == h)
+      return (*SIDE(i - 1)).m;
+  return 0;
+}
+static void side_put(uint32_t h, uint32_t m) {
+  uint32_t *head = &side_head[(h * 0x9E3779B1u) >> (32 - SIDE_HEAD_BITS)];
+  for (uint32_t i = *head; i; i = (*SIDE(i - 1)).next)
+    if ((*SIDE(i - 1)).h == h) {
+      (*SIDE(i - 1)).m = m;
+      return;
+    }
+  uint32_t i = side_n++;
+  DIR_GROW(side_dir, i, SIDE_BITS);
+  *SIDE(i) = (side_node){h, m, *head};
+  *head = i + 1;
+}
+
+/* The entry of dense index d, 0 when its leaf is not made. */
+static inline uint32_t dense_peek(uint32_t d) {
+  uint32_t **dir = map_dir[d >> (MAP_BITS + LEAF_BITS)];
+  if (!dir)
+    return 0;
+  uint32_t *l = dir[(d >> MAP_BITS) & ((1u << LEAF_BITS) - 1)];
+  return l ? l[d & ((1u << MAP_BITS) - 1)] : 0;
+}
+/* The map entry of h, 0 when none is made. */
+static inline uint32_t map_peek(uint32_t h) {
+  uint32_t d = 0;
+  const rp_block *b = NULL;
+  return hclass(h, &d, &b) == 1 ? dense_peek(d) : side_get(h);
+}
+static void map_put(uint32_t h, uint32_t m) {
+  uint32_t d = 0;
+  const rp_block *b = NULL;
+  if (hclass(h, &d, &b) != 1) {
+    side_put(h, m);
+    return;
+  }
+  DIR_GROW(map_dir, d, MAP_BITS);
+  *MAP(d) = m;
 }
 static uint32_t rp_materialize(uint32_t h);
 static inline uint32_t map_get(uint32_t h) {
   if (rp_watch && h <= rp_wbase)
     rp_outside(h);
-  uint32_t m = map_peek(h);
-  if (!m && rp_nblocks && h && h <= nrails)
+  uint32_t d = 0;
+  const rp_block *b = NULL;
+  int c = hclass(h, &d, &b);
+  if (c == 1)
+    return dense_peek(d);
+  uint32_t m = side_get(h);
+  if (!m && c == 2)
     m = rp_materialize(h);
   return m;
 }
@@ -670,10 +765,10 @@ static void rail_bury(uint32_t h) {
   tb->a = r->t_create | (uint64_t)r->wi << 48;
   tb->b = r->t_write;
   tf_set(tb, tomb_flags(r));
-  uint32_t s = *MAP(h) - 1;
+  uint32_t s = map_peek(h) - 1;
   r->inl = pool_free;
   pool_free = s + 1;
-  *MAP(h) = t | MAP_TOMB;
+  map_put(h, t | MAP_TOMB);
 }
 
 static inline int32_t *deps_of(rail_t *r) { return r->ndeps > 2 ? r->deps.p : r->deps.in; }
@@ -734,11 +829,10 @@ int32_t cqe__new(const char *w, const cqe_val *init, int known, int seed) {
             (unsigned)CQE_RAIL_LIMIT);
     abort();
   }
-  DIR_GROW(map_dir, nrails + 1, MAP_BITS);
   int32_t h = (int32_t)++nrails;
   uint32_t s;
   rail_t *r = pool_take(&s);
-  *MAP(h) = s + 1;
+  map_put((uint32_t)h, s + 1);
   r->wi = w_intern(w);
   r->v.bits = bits;
   r->v.kind = kind;
@@ -2780,7 +2874,8 @@ uint32_t cqe__rp_apply(const cqe_rp_rails *rr, const int32_t *args, int nargs) {
         abort();
       cqe__rp_cpy(a, args, (size_t)nargs * sizeof *a);
     }
-    rp_blocks[rp_nblocks++] = (rp_block){base, rr->n, clock_, rr, a};
+    uint32_t below = rp_nblocks ? rp_blocks[rp_nblocks - 1].below + rp_blocks[rp_nblocks - 1].n : 0;
+    rp_blocks[rp_nblocks++] = (rp_block){base, rr->n, below, clock_, rr, a};
   }
   nrails += rr->n;
   clock_ += rr->ticks;
@@ -2788,18 +2883,9 @@ uint32_t cqe__rp_apply(const cqe_rp_rails *rr, const int32_t *args, int nargs) {
 }
 
 static const rp_block *rp_find(uint32_t h) {
-  size_t lo = 0, hi = rp_nblocks;
-  while (lo < hi) { /* the first block whose base is >= h */
-    size_t mid = (lo + hi) / 2;
-    if (rp_blocks[mid].base < h)
-      lo = mid + 1;
-    else
-      hi = mid;
-  }
-  if (!lo)
-    return NULL;
-  const rp_block *b = &rp_blocks[lo - 1];
-  return h > b->base && h <= b->base + b->n ? b : NULL;
+  uint32_t d = 0;
+  const rp_block *b = NULL;
+  return hclass(h, &d, &b) == 2 ? b : NULL;
 }
 
 /* Block rail h made from its record, exactly as the real run left it; its map entry. 0: h is in no block. */
@@ -2808,7 +2894,6 @@ static uint32_t rp_materialize(uint32_t h) {
   if (!b)
     return 0;
   const rp_rail *e = rp_hdr(b->rr, h - b->base - 1);
-  DIR_GROW(map_dir, h, MAP_BITS);
   ++rp_nmat;
   if (e->flags & RF_TOMB) {
     uint32_t t = tomb_n++;
@@ -2821,8 +2906,8 @@ static uint32_t rp_materialize(uint32_t h) {
     tb->a = rp_abs(e->tc, b->c0) | (uint64_t)e->wi << 48;
     tb->b = rp_abs(e->tw, b->c0);
     tf_set(tb, e->flags & 0xffff);
-    *MAP(h) = t | MAP_TOMB;
-    return *MAP(h);
+    map_put(h, t | MAP_TOMB);
+    return t | MAP_TOMB;
   }
   uint32_t s, f = e->flags;
   rail_t *r = pool_take(&s);
@@ -2870,7 +2955,7 @@ static uint32_t rp_materialize(uint32_t h) {
       x->r6_nops = e->nr6;
     }
   }
-  *MAP(h) = s + 1;
+  map_put(h, s + 1);
   return s + 1;
 }
 
