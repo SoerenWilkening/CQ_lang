@@ -80,6 +80,7 @@ void    cqe_xor_into(int32_t h, const cqe_val *v);
 void    cqe_set_known(int32_t h, int known);
 void    cqe_log(const char *json_object);              /* one trace line */
 void    cqe_fail(const char *fmt, ...);                /* a violation: logged, run marked failed */
+long long cqe__hname(int32_t h);                       /* a handle as an event writes it: the rail's name (core.c) */
 
 #ifdef __cplusplus
 }

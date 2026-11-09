@@ -384,6 +384,9 @@ static char *json_escape(const char *s) {
   return o;
 }
 
+long long cqe__hname(int32_t h); /* a handle as an event writes it: the rail's name (rail names, below) */
+uint64_t cqe__name(uint32_t h);
+
 /* A violation: {"ev":"violation","what","h"} plus an additive "msg". h < 0 is written as null. */
 void cqe__violation(const char *what, int32_t h, const char *fmt, ...) {
   char msg[1024];
@@ -396,7 +399,7 @@ void cqe__violation(const char *what, int32_t h, const char *fmt, ...) {
     cqe__rp_dirty = 1;
   ++nviolations;
   if (h > 0)
-    cqe__logf("{\"ev\":\"violation\",\"what\":\"%s\",\"h\":%d,\"msg\":\"%s\"}", what, (int)h, e);
+    cqe__logf("{\"ev\":\"violation\",\"what\":\"%s\",\"h\":%lld,\"msg\":\"%s\"}", what, cqe__hname(h), e);
   else
     cqe__logf("{\"ev\":\"violation\",\"what\":\"%s\",\"h\":null,\"msg\":\"%s\"}", what, e);
   free(e);
@@ -486,9 +489,8 @@ typedef struct { uint64_t a, b; } tomb_t; /* a: t_create | wi << 48; b: t_write 
 #define SIDE_BITS 10 /* a side-table leaf: 1024 entries (12 KiB) */
 #define SIDE_HEAD_BITS 14
 #define SIDE_HEADS (1u << SIDE_HEAD_BITS)
-/* The map (cq-ism39, 2026-11-09 memory plan): a real handle's entry (one cqe__new made) lies in map_dir at the
- * handle's rank among the real handles (hclass), so a replayed call's handles (a block, below) take no map space.
- * A block rail something touched, and a handle that names no rail (rail_blank), has its entry in the side table: a
+/* The map (cq-ism39, 2026-11-09 memory plan): a real handle's entry lies in map_dir at the handle (a replayed call
+ * takes no handle, owner 2026-11-09). A handle that names no rail (rail_blank) has its entry in the side table: a
  * hash of chains through side_dir's nodes (each block of either stays below SETUP_BIG). */
 static uint32_t **map_dir[(CQE_RAIL_LIMIT >> (MAP_BITS + LEAF_BITS)) + 1];
 typedef struct { uint32_t h, m, next; } side_node;
@@ -504,7 +506,7 @@ static uint64_t clock_;
 
 #define DIR_AT(dir, i, bits) (&(dir)[(uint32_t)(i) >> ((bits) + LEAF_BITS)][((uint32_t)(i) >> (bits)) & ((1u << LEAF_BITS) - 1)] \
                                     [(uint32_t)(i) & ((1u << (bits)) - 1)])
-#define MAP(d) DIR_AT(map_dir, d, MAP_BITS) /* d: a real handle's dense index (hclass) */
+#define MAP(d) DIR_AT(map_dir, d, MAP_BITS) /* d: a real handle */
 #define SIDE(i) DIR_AT(side_dir, i, SIDE_BITS)
 #define SLOT(s) DIR_AT(pool_dir, s, POOL_BITS)
 #define TOMB(t) DIR_AT(tomb_dir, t, TOMB_BITS)
@@ -624,21 +626,98 @@ static rail_t *rail_blank(uint32_t h) {
   return r;
 }
 
+/* ---- rail names (owner 2026-11-09: a function already checked is not checked again) ------------------------------
+ * A replayed call reserves no handles, so a handle number depends on which calls were replayed, and that depends on
+ * the sample's values (the replay key holds argument values) and on the spot check (the sample's k). The checker never
+ * sees a handle: every handle it reads (the exit list, rotations, measurements, frees and their digest, violations,
+ * tape rails, a returned handle) carries the rail's NAME, which does not depend on how a call ran:
+ *   - an occurrence is a call of a replay wrapper made while no other wrapper call runs (rt_replay.c), in a compact
+ *     trace; occurrence o's rails, in the order they are made (by its clone run real, by calls inside it run real or
+ *     replayed), are named (o + 1) << 32 | row, row 1, 2, ...: a replayed call's rails are named from its record's
+ *     rows, which are the real run's rails in the same order;
+ *   - any other rail is named by its rank among the rails made outside occurrences (1, 2, ...), below 2^32.
+ * Without a compact trace no occurrence opens and a rail's name is its handle. Real handles stay sequential: cqe__new
+ * and the handle a touched rail of a replayed call gets (rp_touch). cn_runs maps a real handle to its name, in runs of
+ * consecutive handles with consecutive names. */
+#define RP_NAME(o, row) ((((uint64_t)(o) + 1) << 32) | (uint64_t)(row))
+typedef struct { uint32_t h0, n; uint64_t name0; } cn_run;
+static cn_run *cn_runs;
+static size_t cn_n, cn_cap, cn_hint;
+static uint32_t cn_plain;        /* rails named outside occurrences */
+static int oc_open;              /* an occurrence is open (rt_replay.c: cqe__rp_occ) */
+static uint64_t oc_n, oc_cur;    /* occurrences begun; the open one */
+static uint32_t oc_rows;         /* rails named in the open one */
+
+static void cn_note(uint32_t h, uint64_t name) {
+  if (cn_n) {
+    cn_run *l = &cn_runs[cn_n - 1];
+    if (l->h0 + l->n == h && l->name0 + l->n == name && (name >> 32) == (l->name0 >> 32)) {
+      l->n++;
+      return;
+    }
+  }
+  if (cn_n == cn_cap) {
+    cn_cap = cn_cap ? 2 * cn_cap : 256;
+    cn_runs = realloc(cn_runs, cn_cap * sizeof *cn_runs);
+    if (!cn_runs)
+      abort();
+  }
+  cn_runs[cn_n++] = (cn_run){h, 1, name};
+}
+/* The name of a new rail made by cqe__new. */
+static uint64_t cn_new_name(void) { return oc_open ? RP_NAME(oc_cur, ++oc_rows) : (uint64_t)++cn_plain; }
+
+/* The name of real handle h (1 .. nrails); h itself for any other value. */
+uint64_t cqe__name(uint32_t h) {
+  if (!h || h > nrails || !cn_n)
+    return h;
+  size_t i = cn_hint < cn_n ? cn_hint : cn_n - 1;
+  if (!(cn_runs[i].h0 <= h && (i + 1 == cn_n || cn_runs[i + 1].h0 > h))) {
+    size_t lo = 0, hi = cn_n;
+    while (lo < hi) { /* the first run that starts above h */
+      size_t mid = (lo + hi) / 2;
+      if (cn_runs[mid].h0 <= h)
+        lo = mid + 1;
+      else
+        hi = mid;
+    }
+    if (!lo)
+      return h;
+    cn_hint = i = lo - 1;
+  }
+  const cn_run *r = &cn_runs[i];
+  return h < r->h0 + r->n ? r->name0 + (h - r->h0) : h;
+}
+/* A handle as an event writes it: the rail's name, or the value itself when it names no rail (0, negative, unmade). */
+long long cqe__hname(int32_t h) { return h > 0 ? (long long)cqe__name((uint32_t)h) : (long long)h; }
+
+int cqe__rp_named(void) { return oc_open; }
+void cqe__rp_occ(int open) {
+  if (open && compact && !oc_open) {
+    oc_open = 1;
+    oc_cur = oc_n++;
+    oc_rows = 0;
+  } else if (!open) {
+    oc_open = 0;
+  }
+}
+
 /* ---- clone replay (cq-kcn5i, rt_replay.c): the rail store's part ---------------------------------------------
  * Watch. While a window records, a handle at or below its base that is not one of the call's handle arguments is
  * outside the clone's reach: touching it (any read or write through the map) makes the window dirty.
- * Blocks. A replayed call adds one block (its base, the window's record, its clock start, its handle arguments) and
- * advances the handle counter and the event clock; its rails have no map entry until touched, when the block's
- * record makes the rail (rp_materialize) exactly as the real run left it. The exit event reads an untouched block rail
- * from the record without making it. */
+ * Blocks. A replayed call adds one block (its first rail's name less 1, the window's record, its clock start, its
+ * handle arguments), names its rails in the open occurrence and advances the event clock; it takes no handle. A rail
+ * of a block gets a real handle when the caller reaches it (rp_touch: the call's result, or a source of a rail made
+ * from the record); the handle maps to (block, row) until something reads it, when the record makes the rail
+ * (rp_materialize) exactly as the real run left it. The exit event reads every other block rail from the record. */
 static int rp_watch;
 static uint32_t rp_wbase;
 static const int32_t *rp_wargs;
 static int rp_wnargs;
 typedef struct {
-  uint32_t base, n;
-  uint32_t below; /* the handles of the blocks before it (hclass) */
+  uint64_t name0; /* rail i (0-based) of the record is named name0 + 1 + i */
   uint32_t args;  /* its handle arguments: rp_argpool + args (RP_ARGS) */
+  uint32_t pad;
   uint64_t c0;
   const cqe_rp_rails *rr;
 } rp_block;
@@ -648,8 +727,13 @@ static size_t rp_nblocks, rp_capblocks;
 static int32_t *rp_argpool; /* every block's handle arguments, one after another */
 static size_t rp_nargpool, rp_capargpool;
 #define RP_ARGS(b) (rp_argpool + (b)->args)
-static size_t rp_hint; /* the block hclass found last */
 static uint64_t rp_nmat; /* block rails made since the sample began */
+/* The touched block rails: their handles ascending (handles are given in order), and (block, row) -> handle. */
+typedef struct { uint32_t h, b, row; } rp_tch_e;
+static rp_tch_e *rp_tch;
+static size_t rp_ntch, rp_captch;
+static uint32_t *rp_tslot; /* open addressing on (b, row): index + 1 */
+static size_t rp_ntslot;
 
 static void rp_outside(uint32_t h) {
   for (int i = 0; i < rp_wnargs; ++i)
@@ -658,43 +742,78 @@ static void rp_outside(uint32_t h) {
   cqe__rp_dirty = 1;
 }
 
-/* Where handle h lies: 1 a real handle, *d its dense index (its rank among the real handles, from 1); 2 a rail of
- * block *b; 0 neither (handle 0, or one not made yet). */
-static inline int hclass(uint32_t h, uint32_t *d, const rp_block **b) {
-  if (!h || h > nrails)
+static inline uint32_t rp_tslot_of(uint32_t b, uint32_t row) {
+  return (uint32_t)(((uint64_t)b * 0x9E3779B97F4A7C15ULL ^ (uint64_t)row * 0xC2B2AE3D27D4EB4FULL) >> 20);
+}
+/* The handle block b's row was given, 0 none. */
+static uint32_t rp_touched(uint32_t b, uint32_t row) {
+  if (!rp_ntslot)
     return 0;
-  if (!rp_nblocks) {
-    *d = h;
-    return 1;
+  for (size_t i = rp_tslot_of(b, row) & (rp_ntslot - 1); rp_tslot[i]; i = (i + 1) & (rp_ntslot - 1)) {
+    const rp_tch_e *e = &rp_tch[rp_tslot[i] - 1];
+    if (e->b == b && e->row == row)
+      return e->h;
   }
-  const rp_block *last = &rp_blocks[rp_nblocks - 1];
-  if (h > last->base + last->n) {
-    *d = h - last->below - last->n;
-    return 1;
+  return 0;
+}
+/* The touched entry of real handle h, NULL when h is no touched block rail. */
+static const rp_tch_e *rp_tch_of(uint32_t h) {
+  if (!rp_ntch || h < rp_tch[0].h || h > rp_tch[rp_ntch - 1].h)
+    return NULL;
+  size_t lo = 0, hi = rp_ntch;
+  while (lo < hi) {
+    size_t mid = (lo + hi) / 2;
+    if (rp_tch[mid].h < h)
+      lo = mid + 1;
+    else
+      hi = mid;
   }
-  size_t i = rp_hint;
-  if (!(i < rp_nblocks && rp_blocks[i].base < h && (i + 1 == rp_nblocks || rp_blocks[i + 1].base >= h))) {
-    size_t lo = 0, hi = rp_nblocks;
-    while (lo < hi) { /* the first block whose base is >= h */
-      size_t mid = (lo + hi) / 2;
-      if (rp_blocks[mid].base < h)
-        lo = mid + 1;
-      else
-        hi = mid;
+  return lo < rp_ntch && rp_tch[lo].h == h ? &rp_tch[lo] : NULL;
+}
+/* Block b's row (1-based) reached by the caller: its handle, given now when it has none. */
+static uint32_t rp_touch(uint32_t b, uint32_t row) {
+  uint32_t h = rp_touched(b, row);
+  if (h)
+    return h;
+  if (nrails + 1 >= CQE_RAIL_LIMIT) {
+    fprintf(stderr, "cq: chk-core: rail handles exhausted (limit 0x%x, the bus handle)\n", (unsigned)CQE_RAIL_LIMIT);
+    abort();
+  }
+  h = ++nrails;
+  cn_note(h, rp_blocks[b].name0 + row);
+  if (rp_ntch == rp_captch) {
+    rp_captch = rp_captch ? 2 * rp_captch : 256;
+    rp_tch = realloc(rp_tch, rp_captch * sizeof *rp_tch);
+    if (!rp_tch)
+      abort();
+  }
+  rp_tch[rp_ntch++] = (rp_tch_e){h, b, row};
+  if (2 * rp_ntch > rp_ntslot) { /* grow and rehash */
+    size_t n = rp_ntslot ? 2 * rp_ntslot : 1024;
+    free(rp_tslot);
+    rp_tslot = xcalloc(n, sizeof *rp_tslot);
+    rp_ntslot = n;
+    for (size_t j = 0; j < rp_ntch; ++j) {
+      size_t i = rp_tslot_of(rp_tch[j].b, rp_tch[j].row) & (n - 1);
+      while (rp_tslot[i])
+        i = (i + 1) & (n - 1);
+      rp_tslot[i] = (uint32_t)j + 1;
     }
-    if (!lo) { /* below every block */
-      *d = h;
-      return 1;
-    }
-    rp_hint = i = lo - 1;
+  } else {
+    size_t i = rp_tslot_of(b, row) & (rp_ntslot - 1);
+    while (rp_tslot[i])
+      i = (i + 1) & (rp_ntslot - 1);
+    rp_tslot[i] = (uint32_t)rp_ntch;
   }
-  const rp_block *k = &rp_blocks[i];
-  if (h <= k->base + k->n) {
-    *b = k;
-    return 2;
-  }
-  *d = h - k->below - k->n;
-  return 1;
+  return h;
+}
+/* A ref of block b's record as a handle the caller holds: > 0 a row of the block (touched now), < 0 an argument. */
+static int32_t rp_dec(uint32_t b, int32_t e) {
+  return e > 0 ? (int32_t)rp_touch(b, (uint32_t)e) : e < 0 ? RP_ARGS(&rp_blocks[b])[-e - 1] : 0;
+}
+/* The same, read-only: a row with no handle is 0 (untouched: no gate reached it after the call). */
+static int32_t rp_dec_peek(uint32_t b, int32_t e) {
+  return e > 0 ? (int32_t)rp_touched(b, (uint32_t)e) : e < 0 ? RP_ARGS(&rp_blocks[b])[-e - 1] : 0;
 }
 
 static uint32_t side_get(uint32_t h) {
@@ -716,7 +835,7 @@ static void side_put(uint32_t h, uint32_t m) {
   *head = i + 1;
 }
 
-/* The entry of dense index d, 0 when its leaf is not made. */
+/* The entry of real handle h, 0 when its leaf is not made. */
 static inline uint32_t dense_peek(uint32_t d) {
   uint32_t **dir = map_dir[d >> (MAP_BITS + LEAF_BITS)];
   if (!dir)
@@ -724,33 +843,25 @@ static inline uint32_t dense_peek(uint32_t d) {
   uint32_t *l = dir[(d >> MAP_BITS) & ((1u << LEAF_BITS) - 1)];
   return l ? l[d & ((1u << MAP_BITS) - 1)] : 0;
 }
-/* The map entry of h, 0 when none is made. */
-static inline uint32_t map_peek(uint32_t h) {
-  uint32_t d = 0;
-  const rp_block *b = NULL;
-  return hclass(h, &d, &b) == 1 ? dense_peek(d) : side_get(h);
-}
+/* The map entry of h, 0 when none is made. A real handle (1 .. nrails) has its entry in map_dir at h; a handle that
+ * names no rail (rail_blank) in the side table. */
+static inline uint32_t map_peek(uint32_t h) { return h && h <= nrails ? dense_peek(h) : side_get(h); }
 static void map_put(uint32_t h, uint32_t m) {
-  uint32_t d = 0;
-  const rp_block *b = NULL;
-  if (hclass(h, &d, &b) != 1) {
+  if (!h || h > nrails) {
     side_put(h, m);
     return;
   }
-  DIR_GROW(map_dir, d, MAP_BITS);
-  *MAP(d) = m;
+  DIR_GROW(map_dir, h, MAP_BITS);
+  *MAP(h) = m;
 }
 static uint32_t rp_materialize(uint32_t h);
 static inline uint32_t map_get(uint32_t h) {
   if (rp_watch && h <= rp_wbase)
     rp_outside(h);
-  uint32_t d = 0;
-  const rp_block *b = NULL;
-  int c = hclass(h, &d, &b);
-  if (c == 1)
-    return dense_peek(d);
-  uint32_t m = side_get(h);
-  if (!m && c == 2)
+  if (!h || h > nrails)
+    return side_get(h);
+  uint32_t m = dense_peek(h);
+  if (!m && rp_ntch)
     m = rp_materialize(h);
   return m;
 }
@@ -923,6 +1034,7 @@ int32_t cqe__new(const char *w, const cqe_val *init, int known, int seed) {
     abort();
   }
   int32_t h = (int32_t)++nrails;
+  cn_note((uint32_t)h, cn_new_name());
   uint32_t s;
   rail_t *r = pool_take(&s);
   map_put((uint32_t)h, s + 1);
@@ -1279,25 +1391,25 @@ static const char *exit_role(int32_t h) {
 
 /* ---- the exit event's live list (cq-9hzgh, cq-pckdl) ----------------------------------------------------------
  *
- * Every live rail at exit is in the list exactly once. Without a compact trace each rail is its own entry
- * {"h","w","v","role","known"}, in handle order. In a compact trace the list is cut into chunks and each chunk is
- * written once in full and then by reference (cq-pckdl: a replayed snprintf left 145M live rails at exit, in a stream
- * that repeats every ~950 handles with a few counters in it; no row of evenly spaced rails of one key covers more
- * than a handful of them):
- *   - a chunk is a run of consecutive live rails, cut where a rolling hash of the last rails' keys and handle gaps
+ * Every live rail at exit is in the list exactly once, by its name (rail names, above: owner 2026-11-09; without a
+ * compact trace a name is the handle). Without a compact trace each rail is its own entry {"h","w","v","role","known"},
+ * in handle order. In a compact trace the list is cut into chunks and each chunk is written once in full and then by
+ * reference (cq-pckdl: a replayed snprintf left 145M live rails at exit, in a stream that repeats every ~950 handles
+ * with a few counters in it; no row of evenly spaced rails of one key covers more than a handful of them):
+ *   - a chunk is a run of consecutive live rails, cut where a rolling hash of the last rails' keys and name gaps
  *     (gear hash, about 64 rails) hits a mark, between EXIT_CHUNK_MIN and EXIT_CHUNK_MAX rails: the cuts follow the
- *     content, so a stretch that repeats is cut the same way each time, wherever it starts;
- *   - its content is its rails' handles relative to its first and their keys (width, value, role, known flag);
+ *     content, so a stretch that repeats is cut the same way each time, wherever it starts; a chunk also ends where
+ *     the names stop ascending or leave one occurrence (their high 32 bits change);
+ *   - its content is its rails' names relative to its first and their keys (width, value, role, known flag);
  *   - the first chunk of a content is written as rows {"h","w","v","role","known"} or, for n rails at h, h + step,
  *     ... of one key, {"h","n","step","w","v","role","known"} (one open row per key within the chunk);
  *   - a later chunk of the same content writes, at its first, the content's rows once as {"def":id,"rows":[...]}
  *     with "h" relative to the chunk's first rail, and every chunk of that content after it as a use
  *     {"use":id,"h":first} or, for chunks at first, first + step, ..., {"use":id,"h":first,"n":n,"step":step}
  *     (one open use run per content; written when the next chunk does not continue it, or at the end).
- * A use stands for the def's rows moved to its first handle: the rails it covers are exactly the def's, shifted.
- * run.py reads the list row by row (cqcheck.kept). The output depends only on the sequence of live rails (handles,
- * widths, values, roles, known flags), never on how a rail was made: a replayed call's rails give the bytes the real
- * calls give (tests/replay compares the traces), and nothing in it depends on an address. The contents kept for
+ * A use stands for the def's rows moved to its first name: the rails it covers are exactly the def's, shifted.
+ * run.py reads the list row by row (cqcheck.kept). The output depends only on the live rails' names, widths, values,
+ * roles and known flags, never on how a rail was made, and nothing in it depends on an address. The contents kept for
  * matching are bounded (EXIT_ARENA_MAX rails, EXIT_KEYS_MAX keys): past the bound a chunk is only written in full. */
 #define EXIT_CHUNK_MIN 32u
 #define EXIT_CHUNK_MAX 1024u
@@ -1305,9 +1417,11 @@ static const char *exit_role(int32_t h) {
 #define EXIT_KEYS_MAX (1u << 22)
 #define EXIT_PATS_MAX (1u << 20)
 
-/* One row: n rails at handles h, h + step, ... of one width, value, role and known flag. */
+/* One row: n rails named h, h + step, ... of one width, value, role and known flag. */
 typedef struct {
-  uint32_t h, n, step;
+  uint64_t h;
+  uint32_t n;
+  uint64_t step;
   const char *w, *role;
   int known;
   const char *v;
@@ -1320,13 +1434,14 @@ typedef struct {
   uint64_t hash; /* of the content: width, value, role, known */
 } xkey;
 typedef struct {
-  uint32_t h, key; /* a handle (relative to its chunk's first in the arena) and a key */
+  uint32_t h, key; /* a name relative to its chunk's first, and a key */
 } xtok;
 typedef struct {
   uint64_t hash;
   uint32_t off, len; /* its content in the arena */
   int64_t id;        /* its def's id once written, else -1 */
-  uint32_t u_h, u_n, u_step; /* the open use run (u_n 0: none) */
+  uint64_t u_h, u_step; /* the open use run (u_n 0: none) */
+  uint32_t u_n;
 } xpat;
 static struct {
   int first; /* no entry written yet */
@@ -1334,6 +1449,7 @@ static struct {
   uint32_t nkeys, capkeys, *kslot, nkslot;
   xtok *chunk;
   uint32_t nchunk;
+  uint64_t chunk_base; /* the name of the chunk's first rail */
   xpat *pats;
   uint32_t npats, cappats, *pslot, npslot;
   xtok *arena;
@@ -1342,7 +1458,7 @@ static struct {
   live_row *rows;
   uint32_t caprows;
   uint64_t gear;
-  uint32_t last_h;
+  uint64_t last_h;
   int64_t next_id;
 } XM;
 
@@ -1384,21 +1500,22 @@ static void *exit_grow(void *p, uint32_t *cap, uint32_t need, size_t sz) {
   return p;
 }
 
-static void live_put(const live_row *r, int64_t rel_of) {
+/* One row; with rel, its name relative to rel_of (a def's rows). */
+static void live_put(const live_row *r, int rel, uint64_t rel_of) {
   const char *sep = XM.first ? "" : ",";
   XM.first = 0;
-  long long h = rel_of >= 0 ? (long long)r->h - rel_of : (long long)r->h;
+  unsigned long long h = (unsigned long long)(rel ? r->h - rel_of : r->h);
   if (r->n > 1)
-    fprintf(trace_f, "%s{\"h\":%lld,\"n\":%u,\"step\":%u,\"w\":\"%s\",\"v\":\"%s\",\"role\":\"%s\",\"known\":%s}", sep, h,
-            r->n, r->step, r->w, r->v, r->role, r->known ? "true" : "false");
+    fprintf(trace_f, "%s{\"h\":%llu,\"n\":%u,\"step\":%llu,\"w\":\"%s\",\"v\":\"%s\",\"role\":\"%s\",\"known\":%s}", sep,
+            h, r->n, (unsigned long long)r->step, r->w, r->v, r->role, r->known ? "true" : "false");
   else
-    fprintf(trace_f, "%s{\"h\":%lld,\"w\":\"%s\",\"v\":\"%s\",\"role\":\"%s\",\"known\":%s}", sep, h, r->w, r->v,
+    fprintf(trace_f, "%s{\"h\":%llu,\"w\":\"%s\",\"v\":\"%s\",\"role\":\"%s\",\"known\":%s}", sep, h, r->w, r->v,
             r->role, r->known ? "true" : "false");
 }
 
-/* The rows of n rails (handles h + base, keys), one open row per key, written in the order they open; with rel, their
- * handles relative to base (a def's rows: the entries carry no separator of their own, the def's list does). */
-static void exit_rows(const xtok *t, uint32_t n, uint32_t base, int rel) {
+/* The rows of n rails (names t.h + base, keys), one open row per key, written in the order they open; with rel, their
+ * names relative to base (a def's rows: the entries carry no separator of their own, the def's list does). */
+static void exit_rows(const xtok *t, uint32_t n, uint64_t base, int rel) {
   if (++XM.epoch == 0) { /* the stamps wrapped: forget them all */
     cqe__rp_zero(XM.stamp, (size_t)XM.capkeys * sizeof *XM.stamp);
     XM.epoch = 1;
@@ -1406,7 +1523,8 @@ static void exit_rows(const xtok *t, uint32_t n, uint32_t base, int rel) {
   XM.rows = exit_grow(XM.rows, &XM.caprows, n, sizeof *XM.rows);
   uint32_t nr = 0;
   for (uint32_t i = 0; i < n; ++i) {
-    uint32_t h = t[i].h + base, k = t[i].key;
+    uint64_t h = t[i].h + base;
+    uint32_t k = t[i].key;
     if (XM.stamp[k] == XM.epoch) {
       live_row *o = &XM.rows[XM.open[k]];
       if (o->n == 1 || h == o->h + o->n * o->step) {
@@ -1425,16 +1543,16 @@ static void exit_rows(const xtok *t, uint32_t n, uint32_t base, int rel) {
   for (uint32_t i = 0; i < nr; ++i) {
     if (rel && i == 0)
       XM.first = 1; /* the first row of a def's list */
-    live_put(&XM.rows[i], rel ? (int64_t)base : -1);
+    live_put(&XM.rows[i], rel, base);
   }
   if (rel)
     XM.first = was;
 }
 
 static void exit_use_put(const xpat *p) {
-  fprintf(trace_f, "%s{\"use\":%lld,\"h\":%u", XM.first ? "" : ",", (long long)p->id, p->u_h);
+  fprintf(trace_f, "%s{\"use\":%lld,\"h\":%llu", XM.first ? "" : ",", (long long)p->id, (unsigned long long)p->u_h);
   if (p->u_n > 1)
-    fprintf(trace_f, ",\"n\":%u,\"step\":%u", p->u_n, p->u_step);
+    fprintf(trace_f, ",\"n\":%u,\"step\":%llu", p->u_n, (unsigned long long)p->u_step);
   fputc('}', trace_f);
   XM.first = 0;
 }
@@ -1468,12 +1586,10 @@ static void exit_chunk_end(void) {
   if (!n)
     return;
   XM.nchunk = 0;
-  uint32_t base = XM.chunk[0].h;
+  uint64_t base = XM.chunk_base;
   uint64_t x = mix64(n);
-  for (uint32_t i = 0; i < n; ++i) {
-    XM.chunk[i].h -= base;
+  for (uint32_t i = 0; i < n; ++i)
     x = mix64(x ^ ((uint64_t)XM.chunk[i].h << 32 | XM.chunk[i].key));
-  }
   if (!XM.pslot) {
     XM.npslot = 2 * EXIT_PATS_MAX;
     XM.pslot = xcalloc(XM.npslot, sizeof *XM.pslot);
@@ -1514,11 +1630,11 @@ static void exit_chunk_end(void) {
   XM.pslot[sl] = ++XM.npats;
 }
 
-/* One live rail into the exit event's list (hx is the caller's: copied when kept). */
-static void exit_feed(uint32_t h, const char *w, const char *hx, const char *role, int known) {
+/* One live rail, named h, into the exit event's list (hx is the caller's: copied when kept). */
+static void exit_feed(uint64_t h, const char *w, const char *hx, const char *role, int known) {
   if (!compact) { /* every rail its own entry, in handle order */
     live_row one = {h, 1, 0, w, role, known, hx};
-    live_put(&one, -1);
+    live_put(&one, 0, 0);
     return;
   }
   if (!XM.kslot) {
@@ -1551,11 +1667,16 @@ static void exit_feed(uint32_t h, const char *w, const char *hx, const char *rol
   }
 #undef KEY_EQ
   uint32_t k = XM.kslot[sl] - 1;
-  XM.gear = (XM.gear << 1) + mix64(kh ^ (uint64_t)(h - XM.last_h) * 0x9E3779B97F4A7C15ull);
+  /* a chunk holds ascending names of one occurrence (or none): relative names fit 32 bits */
+  if (XM.nchunk && (h <= XM.last_h || (h >> 32) != (XM.chunk_base >> 32)))
+    exit_chunk_end();
+  XM.gear = (XM.gear << 1) + mix64(kh ^ (h - XM.last_h) * 0x9E3779B97F4A7C15ull);
   XM.last_h = h;
   if (!XM.chunk)
     XM.chunk = xcalloc(EXIT_CHUNK_MAX, sizeof *XM.chunk);
-  XM.chunk[XM.nchunk++] = (xtok){h, k};
+  if (!XM.nchunk)
+    XM.chunk_base = h;
+  XM.chunk[XM.nchunk++] = (xtok){(uint32_t)(h - XM.chunk_base), k};
   if (XM.nchunk == EXIT_CHUNK_MAX || (XM.nchunk >= EXIT_CHUNK_MIN && XM.gear >> 57 == 0))
     exit_chunk_end();
 }
@@ -1576,27 +1697,28 @@ static void exit_finish(void) {
   cqe__rp_zero(&XM, sizeof XM);
 }
 
-static int rp_exit_rail(const rp_block *b, uint32_t h);
+static int rp_exit_rail(uint32_t b, uint32_t row, uint64_t name);
 
-/* ---- the exit event's replayed blocks (cq-kcn5i; Fable ruling 2026-11-09, DECISIONS) -----------------------------
+/* ---- the exit event's replayed blocks (cq-kcn5i; Fable ruling 2026-11-09 and owner 2026-11-09, DECISIONS) ---------
  *
- * In a compact trace an untouched replayed call is never fed rail by rail: its rails are its record's, so the record
- * is the pattern. Per record (once per sample, at the first block of it that writes a use) {"def":id,"rows":[...]}
- * holds the record's rails live at its end, handles relative to the block base, roles as exit_role_r gives them when
- * no source of the rail received a gate or measurement after its write; each block then writes
- * {"use":id,"h":base[,"n","step"][,"skip":[rel,...]]}: skip names the def's rails the caller made (map_peek), which
- * are written as rows of their own from the rail table (or not at all once freed). Blocks of one record at one stride
- * with one skip set fold into one use run. A block where a source of a live record rail (an argument or a made block
- * rail) received a non-diagonal gate or a measurement takes the per-rail path instead (rp_exit_rail): its roles may
- * differ from the def's. The handle set is every live rail exactly once, as before. No chunk spans a block (the
- * chunker is cut at each), so no two uses overlap except a use run's hull (cqcheck.kept.KeptIndex). */
+ * In a compact trace an untouched rail of a replayed call is never fed rail by rail: its rails are its record's, so
+ * the record is the pattern. Per record (once per sample, at the first block of it that writes a use)
+ * {"def":id,"rows":[...]} holds the record's rails live at its end, names relative to the block's (row 1, 2, ...),
+ * roles as exit_role_r gives them when no source of the rail received a gate or measurement after its write; each
+ * block then writes {"use":id,"h":name0[,"n","step"][,"skip":[row,...]]}: name0 is the block's first rail's name less
+ * 1 ((occurrence + 1) << 32 | rows before it in the occurrence), and skip names the def's rails the caller reached
+ * (rp_touch: they have a handle and are written as rows of their own, by the same name, or not at all once freed).
+ * Blocks of one record at one name stride with one skip set fold into one use run. A block where a source of a live
+ * record rail (an argument or a touched block rail) received a non-diagonal gate or a measurement takes the per-rail
+ * path instead (rp_exit_rail): its roles may differ from the def's. Every live rail is in the list exactly once. */
 typedef struct {
   const cqe_rp_rails *rr;
   int64_t id;               /* its def's id once written, else -1 */
   uint32_t nlive, *live;    /* indices of the record's rails live at its end */
   uint32_t nrefs;
   int32_t *refs;            /* the distinct nonzero source refs of those rails, as the record holds them */
-  uint32_t u_h, u_n, u_step; /* the open use run (u_n 0: none) and its skip set */
+  uint64_t u_h, u_step;     /* the open use run (u_n 0: none) and its skip set */
+  uint32_t u_n;
   uint32_t u_nskip, *u_skip, u_capskip;
 } xrec;
 static struct {
@@ -1683,8 +1805,8 @@ static int exit_dep_touched(int32_t d) {
   return s && (s->t_nd || s->t_meas);
 }
 
-/* A live rail of the rail table at the exit event: fed to the chunker, or with plain its own row. */
-static void exit_table_rail(uint32_t h, int plain) {
+/* A live rail of the rail table at the exit event, fed to the chunker by its name. */
+static void exit_table_rail(uint32_t h) {
   if (rail_tomb(h))
     return;
   rail_t *r = RL(h);
@@ -1693,12 +1815,7 @@ static void exit_table_rail(uint32_t h, int plain) {
   char vb[3 + 16 * 2 + 1];
   cqe_val v = rail_v(r);
   char *hx = v.nw <= 2 ? cqe__hex(&v, vb) : cqe__hexa(&v);
-  if (plain) {
-    live_row one = {h, 1, 0, wtab[r->wi], exit_role((int32_t)h), r->known, hx};
-    live_put(&one, -1);
-  } else {
-    exit_feed(h, wtab[r->wi], hx, exit_role((int32_t)h), r->known);
-  }
+  exit_feed(cqe__name(h), wtab[r->wi], hx, exit_role((int32_t)h), r->known);
   if (hx != vb)
     free(hx);
 }
@@ -1744,7 +1861,7 @@ static void exit_def_put(xrec *x) {
   }
   XM.first = 1;
   for (uint32_t i = 0; i < nr; ++i)
-    live_put(&rows[i], -1);
+    live_put(&rows[i], 0, 0);
   XM.first = 0;
   fputs("]}", trace_f);
   free(rows);
@@ -1752,9 +1869,9 @@ static void exit_def_put(xrec *x) {
 }
 
 static void exit_use_run_put(xrec *x) {
-  fprintf(trace_f, "%s{\"use\":%lld,\"h\":%u", XM.first ? "" : ",", (long long)x->id, x->u_h);
+  fprintf(trace_f, "%s{\"use\":%lld,\"h\":%llu", XM.first ? "" : ",", (long long)x->id, (unsigned long long)x->u_h);
   if (x->u_n > 1)
-    fprintf(trace_f, ",\"n\":%u,\"step\":%u", x->u_n, x->u_step);
+    fprintf(trace_f, ",\"n\":%u,\"step\":%llu", x->u_n, (unsigned long long)x->u_step);
   if (x->u_nskip) {
     fputs(",\"skip\":[", trace_f);
     for (uint32_t i = 0; i < x->u_nskip; ++i)
@@ -1766,47 +1883,44 @@ static void exit_use_run_put(xrec *x) {
   x->u_n = 0;
 }
 
-/* Replayed block b at the exit event. */
-static void exit_block(const rp_block *b) {
+/* Replayed block bi at the exit event: its rails that have no handle (a touched one is a row of its own). */
+static void exit_block(uint32_t bi) {
+  const rp_block *b = &rp_blocks[bi];
   exit_chunk_end(); /* no chunk spans a block */
   xrec *x = exit_rec(b->rr);
   int touched = 0;
   for (uint32_t j = 0; j < x->nrefs && !touched; ++j)
-    touched = exit_dep_touched(cqe__rp_dec_handle(x->refs[j], b->base, RP_ARGS(b)));
+    touched = exit_dep_touched(rp_dec_peek(bi, x->refs[j]));
   if (touched) { /* a role may depend on the caller: rail by rail, as without a def */
-    for (uint32_t h = b->base + 1; h <= b->base + b->n; ++h) {
-      if (!map_peek(h))
-        rp_exit_rail(b, h);
-      else
-        exit_table_rail(h, 0);
-    }
+    for (uint32_t i = 0; i < b->rr->n; ++i)
+      if (!rp_touched(bi, i + 1))
+        rp_exit_rail(bi, i + 1, b->name0 + i + 1);
     exit_chunk_end();
     return;
   }
   uint32_t nskip = 0;
-  if (rp_nmat) /* some block rail was made this sample */
+  if (rp_ntch) /* some block rail was touched this sample */
     for (uint32_t k = 0; k < x->nlive; ++k) {
-      uint32_t h = b->base + 1 + x->live[k];
-      if (!map_peek(h))
+      if (!rp_touched(bi, x->live[k] + 1))
         continue;
       XR.skip = exit_grow(XR.skip, &XR.capskip, nskip + 1, sizeof *XR.skip);
       XR.skip[nskip++] = x->live[k] + 1;
-      exit_table_rail(h, 1);
     }
   if (nskip == x->nlive)
-    return; /* every live rail of it made: rows of their own */
+    return; /* every live rail of it touched: rows of their own */
   if (x->id < 0)
     exit_def_put(x);
+  uint64_t base = b->name0;
   if (x->u_n && nskip == x->u_nskip && cqe__rp_eq(XR.skip, x->u_skip, nskip * sizeof *XR.skip) &&
-      (x->u_n == 1 ? b->base > x->u_h : b->base == x->u_h + x->u_n * x->u_step)) {
+      (x->u_n == 1 ? base > x->u_h : base == x->u_h + x->u_n * x->u_step)) {
     if (x->u_n == 1)
-      x->u_step = b->base - x->u_h;
+      x->u_step = base - x->u_h;
     x->u_n++;
     return;
   }
   if (x->u_n)
     exit_use_run_put(x);
-  x->u_h = b->base;
+  x->u_h = base;
   x->u_n = 1;
   x->u_skip = exit_grow(x->u_skip, &x->u_capskip, nskip ? nskip : 1, sizeof *x->u_skip);
   cqe__rp_cpy(x->u_skip, XR.skip, nskip * sizeof *XR.skip);
@@ -1832,10 +1946,12 @@ static void exit_blocks_finish(void) {
 
 /* The exit event, written straight to the trace (cq-9hzgh: never built in memory; a looping sample's list
  * once reached 6 GB). Its live list holds every live rail exactly once, as rows, defs and uses (the live list
- * section above, cq-pckdl). Not counted against the running sample's trace cap (cq-pckdl): that cap stops a sample that logs without end
- * (cq-3fjt), and the exit event comes once, after the sample's code ended; counted, it could only turn a finished
- * sample into a trace_cap failure after the event is already written. The file cap ($CQE_FILE_MAX) still bounds the
- * trace; the chunks keep the event to about one entry per repeated stretch (snprintf@0: 145M rails, 18 MB). */
+ * section above, cq-pckdl): first every real handle in order (a touched block rail not made yet from its record),
+ * then every replayed block's rails that have no handle. Not counted against the running sample's trace cap
+ * (cq-pckdl): that cap stops a sample that logs without end (cq-3fjt), and the exit event comes once, after the
+ * sample's code ended; counted, it could only turn a finished sample into a trace_cap failure after the event is
+ * already written. The file cap ($CQE_FILE_MAX) still bounds the trace; the chunks keep the event to about one entry
+ * per repeated stretch (snprintf@0: 145M rails, 18 MB). */
 static void at_exit_handler(void) {
   if (shot_muted)
     return;
@@ -1844,23 +1960,18 @@ static void at_exit_handler(void) {
   static const char head[] = "{\"ev\":\"exit\",\"live\":[";
   fputs(head, trace_f);
   XM.first = 1;
-  size_t bi = 0; /* cq-kcn5i: the next replay block */
+  size_t ti = 0; /* cq-kcn5i: the next touched block rail */
   for (uint32_t h = 1; h <= nrails; ++h) {
-    while (bi < rp_nblocks && rp_blocks[bi].base + rp_blocks[bi].n < h)
-      ++bi;
-    if (bi < rp_nblocks && h > rp_blocks[bi].base) {
-      if (compact) { /* a replayed call: a use of its record's def (exit_block) */
-        exit_block(&rp_blocks[bi]);
-        h = rp_blocks[bi].base + rp_blocks[bi].n;
-        continue;
-      }
-      if (!map_peek(h)) { /* an untouched rail of a replayed call */
-        rp_exit_rail(&rp_blocks[bi], h);
-        continue;
-      }
+    while (ti < rp_ntch && rp_tch[ti].h < h)
+      ++ti;
+    if (!map_peek(h) && ti < rp_ntch && rp_tch[ti].h == h) { /* a touched rail of a replayed call, not made */
+      rp_exit_rail(rp_tch[ti].b, rp_tch[ti].row, cqe__name(h));
+      continue;
     }
-    exit_table_rail(h, 0);
+    exit_table_rail(h);
   }
+  for (size_t bi = 0; bi < rp_nblocks; ++bi) /* replayed calls (blocks exist only in a compact trace) */
+    exit_block((uint32_t)bi);
   exit_blocks_finish();
   exit_finish();
   fprintf(trace_f, "],\"violations\":%lu,\"host_flags\":%d}\n", nviolations, host_flags);
@@ -2148,7 +2259,7 @@ int cqe__free_note(int32_t h, int known) {
   if (!sample_running())
     return 1;
   R->freed_n++;
-  R->freed_dig = (R->freed_dig ^ (uint32_t)h) * 0x100000001b3ULL;
+  R->freed_dig = (R->freed_dig ^ cqe__name((uint32_t)h)) * 0x100000001b3ULL; /* by name (owner 2026-11-09) */
   return !compact || !known;
 }
 
@@ -2873,9 +2984,6 @@ static int32_t rp_enc(int32_t h, uint32_t base, const int32_t *args, int nargs, 
 int32_t cqe__rp_enc_handle(int32_t h, uint32_t base, const int32_t *args, int nargs, int *ok) {
   return rp_enc(h, base, args, nargs, ok);
 }
-int32_t cqe__rp_dec_handle(int32_t e, uint32_t base, const int32_t *args) {
-  return e > 0 ? (int32_t)(base + (uint32_t)e) : e < 0 ? args[-e - 1] : 0;
-}
 
 static uint32_t rp_rel(uint64_t t, uint64_t c0, int *ok) {
   if (!t)
@@ -2918,12 +3026,13 @@ const uint32_t *cqe__rp_frees(size_t *n) {
   *n = rp_fln;
   return rp_fl;
 }
-void cqe__rp_frees_apply(const uint32_t *rel, size_t n, uint32_t base) {
+/* A replayed call's frees into the sample's summary, by name as cqe__free_note counts a real run's. */
+static void rp_frees_apply(const uint32_t *rel, size_t n, uint64_t name0) {
   if (!sample_running())
     return;
   R->freed_n += (long)n;
   for (size_t i = 0; i < n; ++i)
-    R->freed_dig = (R->freed_dig ^ (base + rel[i])) * 0x100000001b3ULL;
+    R->freed_dig = (R->freed_dig ^ (name0 + rel[i])) * 0x100000001b3ULL;
 }
 
 void cqe__rp_watch(uint32_t base, const int32_t *args, int nargs, int on) {
@@ -3205,14 +3314,16 @@ int cqe__rp_tamper(cqe_rp_rails *rr) {
   return 0;
 }
 
-/* A replayed call: its rails are base+1 .. base+n, untouched (one block); the handle counter and the clock advance as
- * the real run advanced them. Returns base. */
-uint32_t cqe__rp_apply(const cqe_rp_rails *rr, const int32_t *args, int nargs) {
-  uint32_t base = nrails;
-  if (nrails + (uint64_t)rr->n + 1 >= CQE_RAIL_LIMIT) {
-    fprintf(stderr, "cq: chk-core: rail handles exhausted (limit 0x%x, the bus handle)\n", (unsigned)CQE_RAIL_LIMIT);
-    abort();
-  }
+/* A replayed call (owner 2026-11-09: no handles): one block whose rails are named in the open occurrence after the
+ * rails it named so far, untouched; the event clock advances as the real run advanced it; the record's frees go into
+ * the sample's summary by name. Returns the call's result as a handle the caller holds (ret_e as the record holds it:
+ * a row of the block is touched now). */
+int32_t cqe__rp_apply(const cqe_rp_rails *rr, const int32_t *args, int nargs, const uint32_t *frees, size_t nfrees,
+                      int32_t ret_e) {
+  uint64_t name0 = oc_open ? RP_NAME(oc_cur, oc_rows) : 0;
+  if (oc_open)
+    oc_rows += rr->n;
+  int32_t ret = ret_e < 0 ? args[-ret_e - 1] : 0;
   if (rr->n) {
     if (rp_nblocks == rp_capblocks) {
       rp_capblocks = rp_capblocks ? 2 * rp_capblocks : 1024;
@@ -3227,34 +3338,32 @@ uint32_t cqe__rp_apply(const cqe_rp_rails *rr, const int32_t *args, int nargs) {
       if (!rp_argpool)
         abort();
     }
-    if (rp_nargpool + (size_t)nargs > UINT32_MAX) {
-      fprintf(stderr, "cq: chk-core: replay argument pool exhausted\n");
+    if (rp_nargpool + (size_t)nargs > UINT32_MAX || rp_nblocks >= UINT32_MAX) {
+      fprintf(stderr, "cq: chk-core: replay blocks exhausted\n");
       abort();
     }
     if (nargs)
       cqe__rp_cpy(rp_argpool + rp_nargpool, args, (size_t)nargs * sizeof *rp_argpool);
-    uint32_t below = rp_nblocks ? rp_blocks[rp_nblocks - 1].below + rp_blocks[rp_nblocks - 1].n : 0;
-    rp_blocks[rp_nblocks++] = (rp_block){base, rr->n, below, (uint32_t)rp_nargpool, clock_, rr};
+    rp_blocks[rp_nblocks++] = (rp_block){name0, (uint32_t)rp_nargpool, 0, clock_, rr};
     rp_nargpool += (size_t)nargs;
+    if (ret_e > 0)
+      ret = rp_dec((uint32_t)(rp_nblocks - 1), ret_e);
   }
-  nrails += rr->n;
+  rp_frees_apply(frees, nfrees, name0);
   clock_ += rr->ticks;
   clock_check();
-  return base;
+  return ret;
 }
 
-static const rp_block *rp_find(uint32_t h) {
-  uint32_t d = 0;
-  const rp_block *b = NULL;
-  return hclass(h, &d, &b) == 2 ? b : NULL;
-}
-
-/* Block rail h made from its record, exactly as the real run left it; its map entry. 0: h is in no block. */
+/* Touched block rail h made from its record, exactly as the real run left it; its map entry. 0: h is no touched block
+ * rail. Its sources that are rails of the block are touched now (they get handles, not records). */
 static uint32_t rp_materialize(uint32_t h) {
-  const rp_block *b = rp_find(h);
-  if (!b)
+  const rp_tch_e *te = rp_tch_of(h);
+  if (!te)
     return 0;
-  const rp_rail *e = rp_hdr(b->rr, h - b->base - 1);
+  uint32_t bi = te->b, row = te->row; /* rp_touch below may move rp_tch */
+  const rp_block *b = &rp_blocks[bi];
+  const rp_rail *e = rp_hdr(b->rr, row - 1);
   ++rp_nmat;
   if (e->flags & RF_TOMB) {
     uint32_t t = tomb_n++;
@@ -3272,6 +3381,7 @@ static uint32_t rp_materialize(uint32_t h) {
   }
   uint32_t s, f = e->flags;
   rail_t *r = pool_take(&s);
+  map_put(h, s + 1); /* first: a source touched below is a later handle, never h */
   r->wi = e->wi; /* e->nw is the token's word count (cqe__rp_encode) */
   if (e->nw > 1)
     r->val.wide = xcalloc(e->nw, sizeof *r->val.wide);
@@ -3293,31 +3403,30 @@ static uint32_t rp_materialize(uint32_t h) {
   r->live = (f & RF_LIVE) != 0;
   const int32_t *refs = rp_refs(e);
   for (uint32_t k = 0; k < e->ndeps; ++k)
-    deps_append(r, cqe__rp_dec_handle(refs[k], b->base, RP_ARGS(b)));
+    deps_append(r, rp_dec(bi, refs[k]));
   if (f & RF_EXT) {
     rail_ext *x = ext_of(r);
-    x->r6_old = cqe__rp_dec_handle(e->r6_old, b->base, RP_ARGS(b));
+    x->r6_old = rp_dec(bi, e->r6_old);
     if (f & RF_R6OPS) {
       x->r6_ops = malloc((e->nr6 ? e->nr6 : 1) * sizeof *x->r6_ops);
       if (!x->r6_ops)
         abort();
       for (uint32_t k = 0; k < e->nr6; ++k)
-        x->r6_ops[k] = cqe__rp_dec_handle(refs[e->ndeps + k], b->base, RP_ARGS(b));
+        x->r6_ops[k] = rp_dec(bi, refs[e->ndeps + k]);
       x->r6_nops = e->nr6;
     }
   }
-  map_put(h, s + 1);
   return s + 1;
 }
 
 /* The load that made block rail h (rt_bus.c asks when its own table has no entry). */
 int cqe__rp_block_load(int32_t h, uint64_t *addr, int *fire) {
-  if (h <= 0 || !rp_nblocks)
+  if (h <= 0 || !rp_ntch)
     return 0;
-  const rp_block *b = rp_find((uint32_t)h);
-  if (!b)
+  const rp_tch_e *te = rp_tch_of((uint32_t)h);
+  if (!te)
     return 0;
-  const rp_rail *e = rp_hdr(b->rr, (uint32_t)h - b->base - 1);
+  const rp_rail *e = rp_hdr(rp_blocks[te->b].rr, te->row - 1);
   if (!(e->flags & RF_LOAD))
     return 0;
   cqe__rp_cpy(addr, rp_loadaddr(e), sizeof *addr);
@@ -3325,9 +3434,10 @@ int cqe__rp_block_load(int32_t h, uint64_t *addr, int *fire) {
   return 1;
 }
 
-/* An untouched rail of block b at the exit event: its row, read from the record (the rail is not made). */
-static int rp_exit_rail(const rp_block *b, uint32_t h) {
-  uint32_t i = h - b->base - 1;
+/* Row `row` of block bi at the exit event, named `name`: read from the record (the rail is not made). */
+static int rp_exit_rail(uint32_t bi, uint32_t row, uint64_t name) {
+  const rp_block *b = &rp_blocks[bi];
+  uint32_t i = row - 1;
   const rp_rail *e = rp_hdr(b->rr, i);
   if (!(e->flags & RF_LIVE) || (e->flags & RF_TOMB))
     return 0;
@@ -3353,11 +3463,11 @@ static int rp_exit_rail(const rp_block *b, uint32_t h) {
   }
   const int32_t *refs = rp_refs(e);
   for (uint32_t k = 0; k < e->ndeps; ++k)
-    deps[k] = cqe__rp_dec_handle(refs[k], b->base, RP_ARGS(b));
+    deps[k] = rp_dec_peek(bi, refs[k]); /* a row with no handle: untouched since the call, no gate after the write */
   const char *role = exit_role_r(&r, deps, e->ndeps);
   if (deps != dbuf)
     free(deps);
-  exit_feed(h, wtab[e->wi], b->rr->hexpool + b->rr->hexoff[i], role, f >> TF_KNOWN & 1);
+  exit_feed(name, wtab[e->wi], b->rr->hexpool + b->rr->hexoff[i], role, f >> TF_KNOWN & 1);
   return 1;
 }
 

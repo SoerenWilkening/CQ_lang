@@ -994,7 +994,7 @@ static void entry_json(sbuf *b, const event *e, const char *when) {
   for (int j = 0; j < e->nfields; j++) {
     const field *f = &e->fields[j];
     if (j) sb_puts(b, ",");
-    if (f->k == F_RAIL) sb_printf(b, "{\"k\":\"rail\",\"h\":%d,\"w\":\"%s\",\"v\":", (int)f->h, f->w);
+    if (f->k == F_RAIL) sb_printf(b, "{\"k\":\"rail\",\"h\":%lld,\"w\":\"%s\",\"v\":", cqe__hname(f->h), f->w);
     else sb_printf(b, "{\"k\":\"lit\",\"w\":\"%s\",\"v\":", f->w);
     sb_hex(b, &f->v);
     if (f->cap.done) { sb_puts(b, ",\"cap\":"); sb_json_str(b, (const char *)f->cap.b, f->cap.n); }
@@ -1011,7 +1011,7 @@ static void entry_json(sbuf *b, const event *e, const char *when) {
   }
   if (e->r) {
     const cqe_val *v = cqe_rail(e->r);
-    sb_printf(b, ",\"r\":{\"h\":%d,\"w\":\"%s\",\"v\":", (int)e->r, e->rw);
+    sb_printf(b, ",\"r\":{\"h\":%lld,\"w\":\"%s\",\"v\":", cqe__hname(e->r), e->rw);
     if (v) { tval tv = tv_copy(v); sb_hex(b, &tv); free(tv.w); }
     else sb_puts(b, "null");
     sb_puts(b, "}");
@@ -1071,7 +1071,7 @@ static void shot(void) {
                      e->pred, fv);
         }
       }
-      sb_printf(&b, "{\"seq\":%d,\"kind\":\"abort\",\"f\":%d,\"fv\":\"0x%d\"}", i, (int)e->f, fv);
+      sb_printf(&b, "{\"seq\":%d,\"kind\":\"abort\",\"f\":%lld,\"fv\":\"0x%d\"}", i, cqe__hname(e->f), fv);
       if (fv && !aborted) { aborted = 1; abort_seq = i; }
       continue;
     }
