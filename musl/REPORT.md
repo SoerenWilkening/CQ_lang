@@ -9,11 +9,11 @@ There are 829 rows. The 16 SKIP rows can get no verdict whatever the pass does (
 
 | of 813 | before (old memory model, main) | after (8c3b8d5) |
 |---|---|---|
-| PASS | 426 (52.4%) | **770 (94.7%)** |
-| FAIL | 74 | 0 |
+| PASS | 426 (52.4%) | **774 (95.2%)** |
+| FAIL | 74 | 8 |
 | ICE (internal error) | 285 | 0 |
-| ERROR | 28 | 3 |
-| DEFERRED (no verdict yet) | – | 40 |
+| ERROR | 28 | 4 |
+| DEFERRED (no verdict yet) | – | 27 |
 
 The final plugin lowers all 813 non-SKIP rows with no internal error and no timeout (1500 s per row).
 
@@ -21,11 +21,13 @@ How the after column was made: all 829 rows were swept once on the new model. Th
 
 ## Rows without a PASS
 
-**DEFERRED, 40 rows: lowered, not yet checked.** They run in a later batch with a higher per-sample budget.
-- 18 hit the evaluator's per-sample limit (2^28 steps or 30 s CPU) on some sample, so no comparison was made. These are not comparison failures: snprintf@0/1/01, sprintf@0/1/01, vsnprintf@0/1/01, vsprintf@0/1/01, printf, fprintf, vprintf, vfprintf, asctime and vswprintf@1.
-- 22 were not run because the batch was stopped for time: vswprintf@0/01, swprintf@0/1/01, vfwprintf, fwprintf, vwprintf, wprintf, fwscanf, vfwscanf, wscanf, vwscanf, swscanf, vswscanf, strftime@0/1/01, wcsftime@0/1/01 and ctime. Several of these hit the per-sample limit or the memory cap in earlier runs.
+**Deferred batch (2026-11-09, checker at 33f4804 with exact clone replay).** The 40 rows deferred above ran two at a time with a 7 GB footprint cap per row, 2400 s for the check stage and 300 s per sample.
+- PASS, 4 rows: snprintf@0, sprintf@0, vsnprintf@0, vsprintf@0.
+- FAIL, 8 rows (cq-usir7): snprintf, sprintf, vsnprintf and vsprintf at masks @1 and @01. Our side leaves 5 rails live at exit (for example i64 = 0x7fffffff and an i1), which CR §6 item 1 calls a leak. These rows never had a verdict before, so this is a first finding, not a regression.
+- ERROR, 1 row: ctime, no sample inside the C program's domain, like localtime and mktime.
+- DEFERRED, 27 rows, still no verdict: 26 hit the 7 GB footprint cap (printf, fprintf, vprintf, vfprintf, the wprintf family of 10 rows, strftime@0/1/01, wcsftime@0/1/01 and the 6 wscanf rows), and asctime ran past 2400 s.
 
-**ERROR, 3 rows.**
+**ERROR, 4 rows** (ctime above, and:)
 - localtime and mktime: no sample is inside the C program's domain. This is correct, not a defect.
 - setvbuf: its one sample is outside the C domain. This is probably the oracle; it is unconfirmed.
 

@@ -11,7 +11,7 @@ acosl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5
 aligned_alloc@0	-	SKIP	-	no definition in the IR build (asm only, or outside these directories)
 aligned_alloc@01	-	SKIP	-	no definition in the IR build (asm only, or outside these directories)
 aligned_alloc@1	-	SKIP	-	no definition in the IR build (asm only, or outside these directories)
-asctime	time	DEFERRED	8c3b8d5	per-sample limit of the evaluator (no comparison made): sample {"args":[],"call":0}: violations on our side: [{'what': 'timeout', 'h': None, 'msg': 'no exit within 268435456 steps or 30.0s of CPU time'}]
+asctime	time	DEFERRED	33f4804	check stage over 2400 s
 asin	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 asinf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 asinh	math	PASS	8c3b8d5 targeted run	
@@ -170,7 +170,7 @@ ctanh	complex	PASS	8c3b8d5 targeted run
 ctanhf	complex	PASS	8c3b8d5 targeted run	
 ctanhl	complex	PASS	8c3b8d5 targeted run	
 ctanl	complex	PASS	8c3b8d5 targeted run	
-ctime	time	DEFERRED	8c3b8d5	not run: deferred to the batch with a higher per-sample budget
+ctime	time	ERROR	33f4804	cqcheck user: entry sweep_ctime: no sample inside the C program's domain; reasons: no scalar argument of this call flows into a cq_theta_* register; every cq_theta_* register is computed inside the program; substituted cq_theta sites: no floating-point register among the substituted
 difftime@0	time	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 difftime@01	time	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 difftime@1	time	PASS	earlier run; lowering byte-identical on 8c3b8d5	
@@ -281,7 +281,7 @@ fmodl@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5
 fmodl@01	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 fmodl@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 fopen	stdio	PASS	8c3b8d5 targeted run	
-fprintf	stdio	DEFERRED	8c3b8d5	per-sample limit of the evaluator (no comparison made): sample {"args":["0x00000000"],"call":0}: violations on our side: [{'what': 'timeout', 'h': None, 'msg': 'no exit within 268435456 steps or 30.0s of CPU time'}]
+fprintf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7481 MB > 7168 MB cap) (2 rows at a time)
 fputc	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 fputs	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 fputwc	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
@@ -305,9 +305,9 @@ fseek@1	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5
 fsetpos	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 ftell	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 fwide	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-fwprintf	stdio	DEFERRED	8c3b8d5	not run: deferred to the batch with a higher per-sample budget
+fwprintf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7773 MB > 7168 MB cap) (2 rows at a time)
 fwrite	stdio	PASS	8c3b8d5 targeted run	
-fwscanf	stdio	DEFERRED	8c3b8d5	not run: deferred to the batch with a higher per-sample budget
+fwscanf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7225 MB > 7168 MB cap) (2 rows at a time)
 getc	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 getchar	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 getenv	env	PASS	8c3b8d5 targeted run	
@@ -510,7 +510,7 @@ powf@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5
 powl@0	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 powl@01	math	PASS	8c3b8d5 targeted run	
 powl@1	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-printf	stdio	DEFERRED	8c3b8d5	per-sample limit of the evaluator (no comparison made): sample {"args":["0x00000000"],"call":0}: violations on our side: [{'what': 'timeout', 'h': None, 'msg': 'no exit within 268435456 steps or 30.0s of CPU time'}]
+printf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7200 MB > 7168 MB cap) (2 rows at a time)
 putc	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 putchar	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 puts	stdio	PASS	earlier run; lowering byte-identical on 8c3b8d5	
@@ -594,12 +594,12 @@ sinh	math	PASS	earlier run; lowering byte-identical on 8c3b8d5
 sinhf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 sinhl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 sinl	math	PASS	8c3b8d5 targeted run	
-snprintf@0	stdio	DEFERRED	8c3b8d5	per-sample limit of the evaluator (no comparison made): sample {"args":["0x00","0x00000000"],"call":0}: violations on our side: [{'what': 'timeout', 'h': None, 'msg': 'no exit within 268435456 steps or 30.0s of CPU t
-snprintf@01	stdio	DEFERRED	8c3b8d5	per-sample limit of the evaluator (no comparison made): sample {"args":["0x00","0x00000000"],"call":0}: violations on our side: [{'what': 'timeout', 'h': None, 'msg': 'no exit within 268435456 steps or 30.0s of CPU t
-snprintf@1	stdio	DEFERRED	8c3b8d5	per-sample limit of the evaluator (no comparison made): sample {"args":["0x00","0x00000000"],"call":0}: violations on our side: [{'what': 'timeout', 'h': None, 'msg': 'no exit within 268435456 steps or 30.0s of CPU t
-sprintf@0	stdio	DEFERRED	8c3b8d5	per-sample limit of the evaluator (no comparison made): sample {"args":["0x00","0x00000000"],"call":0}: violations on our side: [{'what': 'timeout', 'h': None, 'msg': 'no exit within 268435456 steps or 30.0s of CPU t
-sprintf@01	stdio	DEFERRED	8c3b8d5	per-sample limit of the evaluator (no comparison made): sample {"args":["0x00","0x00000000"],"call":0}: violations on our side: [{'what': 'timeout', 'h': None, 'msg': 'no exit within 268435456 steps or 30.0s of CPU t
-sprintf@1	stdio	DEFERRED	8c3b8d5	per-sample limit of the evaluator (no comparison made): sample {"args":["0x00","0x00000000"],"call":0}: violations on our side: [{'what': 'timeout', 'h': None, 'msg': 'no exit within 268435456 steps or 30.0s of CPU t
+snprintf@0	stdio	PASS	33f4804	
+snprintf@01	stdio	FAIL	33f4804	sample {"args":["0x00","0x00000000"],"call":0}: our side leaves 5 rail(s) live at exit that are no frozen register, measured value, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): 296835463 (i64 = 0x7fffffff, garbage), 308927694 (i1 = 0x0, garbage), 348306912 (i64 = 0x7fffffff, garbage), 3
+snprintf@1	stdio	FAIL	33f4804	sample {"args":["0x00","0x00000000"],"call":0}: our side leaves 5 rail(s) live at exit that are no frozen register, measured value, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): 296835462 (i64 = 0x7fffffff, garbage), 308927693 (i1 = 0x0, garbage), 348306911 (i64 = 0x7fffffff, garbage), 3
+sprintf@0	stdio	PASS	33f4804	
+sprintf@01	stdio	FAIL	33f4804	sample {"args":["0x00","0x00000000"],"call":0}: our side leaves 5 rail(s) live at exit that are no frozen register, measured value, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): 296835463 (i64 = 0x7fffffff, garbage), 308927694 (i1 = 0x0, garbage), 348306912 (i64 = 0x7fffffff, garbage), 3
+sprintf@1	stdio	FAIL	33f4804	sample {"args":["0x00","0x00000000"],"call":0}: our side leaves 5 rail(s) live at exit that are no frozen register, measured value, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): 296835462 (i64 = 0x7fffffff, garbage), 308927693 (i1 = 0x0, garbage), 348306911 (i64 = 0x7fffffff, garbage), 3
 sqrt	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 sqrtf	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 sqrtl	math	PASS	earlier run; lowering byte-identical on 8c3b8d5	
@@ -624,9 +624,9 @@ strcspn@0	string	PASS	8c3b8d5 targeted run
 strcspn@01	string	PASS	8c3b8d5 targeted run	
 strcspn@1	string	PASS	8c3b8d5 targeted run	
 strerror	errno	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-strftime@0	time	DEFERRED	8c3b8d5	not run: deferred to the batch with a higher per-sample budget
-strftime@01	time	DEFERRED	8c3b8d5	not run: deferred to the batch with a higher per-sample budget
-strftime@1	time	DEFERRED	8c3b8d5	not run: deferred to the batch with a higher per-sample budget
+strftime@0	time	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7188 MB > 7168 MB cap) (2 rows at a time)
+strftime@01	time	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7251 MB > 7168 MB cap) (2 rows at a time)
+strftime@1	time	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7236 MB > 7168 MB cap) (2 rows at a time)
 strlen	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 strncat@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 strncat@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
@@ -664,10 +664,10 @@ strtoumax	stdlib	PASS	8c3b8d5 targeted run
 strxfrm@0	locale	PASS	8c3b8d5 targeted run	
 strxfrm@01	locale	PASS	8c3b8d5 targeted run	
 strxfrm@1	locale	PASS	8c3b8d5 targeted run	
-swprintf@0	stdio	DEFERRED	8c3b8d5	not run: deferred to the batch with a higher per-sample budget
-swprintf@01	stdio	DEFERRED	8c3b8d5	not run: deferred to the batch with a higher per-sample budget
-swprintf@1	stdio	DEFERRED	8c3b8d5	not run: deferred to the batch with a higher per-sample budget
-swscanf	stdio	DEFERRED	8c3b8d5	not run: deferred to the batch with a higher per-sample budget
+swprintf@0	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7188 MB > 7168 MB cap) (2 rows at a time)
+swprintf@01	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7188 MB > 7168 MB cap) (2 rows at a time)
+swprintf@1	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7183 MB > 7168 MB cap) (2 rows at a time)
+swscanf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7184 MB > 7168 MB cap) (2 rows at a time)
 system	-	SKIP	-	no definition in the IR build (asm only, or outside these directories)
 tan	math	PASS	8c3b8d5 targeted run	
 tanf	math	PASS	8c3b8d5 targeted run	
@@ -712,25 +712,25 @@ tss_set@01	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5
 tss_set@1	thread	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 ungetc	stdio	PASS	8c3b8d5 targeted run	
 ungetwc	stdio	PASS	8c3b8d5 targeted run	
-vfprintf	stdio	DEFERRED	8c3b8d5	per-sample limit of the evaluator (no comparison made): sample {"args":["0x00000000"],"call":0}: violations on our side: [{'what': 'timeout', 'h': None, 'msg': 'no exit within 268435456 steps or 30.0s of CPU time'}]
+vfprintf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7306 MB > 7168 MB cap) (2 rows at a time)
 vfscanf	stdio	PASS	8c3b8d5 targeted run	
-vfwprintf	stdio	DEFERRED	8c3b8d5	not run: deferred to the batch with a higher per-sample budget
-vfwscanf	stdio	DEFERRED	8c3b8d5	not run: deferred to the batch with a higher per-sample budget
-vprintf	stdio	DEFERRED	8c3b8d5	per-sample limit of the evaluator (no comparison made): sample {"args":["0x00000000"],"call":0}: violations on our side: [{'what': 'timeout', 'h': None, 'msg': 'no exit within 268435456 steps or 30.0s of CPU time'}]
+vfwprintf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7412 MB > 7168 MB cap) (2 rows at a time)
+vfwscanf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7204 MB > 7168 MB cap) (2 rows at a time)
+vprintf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7277 MB > 7168 MB cap) (2 rows at a time)
 vscanf	stdio	PASS	8c3b8d5 targeted run	
-vsnprintf@0	stdio	DEFERRED	8c3b8d5	per-sample limit of the evaluator (no comparison made): sample {"args":["0x00","0x00000000"],"call":0}: violations on our side: [{'what': 'timeout', 'h': None, 'msg': 'no exit within 268435456 steps or 30.0s of CPU t
-vsnprintf@01	stdio	DEFERRED	8c3b8d5	per-sample limit of the evaluator (no comparison made): sample {"args":["0x00","0x00000000"],"call":0}: violations on our side: [{'what': 'timeout', 'h': None, 'msg': 'no exit within 268435456 steps or 30.0s of CPU t
-vsnprintf@1	stdio	DEFERRED	8c3b8d5	per-sample limit of the evaluator (no comparison made): sample {"args":["0x00","0x00000000"],"call":0}: violations on our side: [{'what': 'timeout', 'h': None, 'msg': 'no exit within 268435456 steps or 30.0s of CPU t
-vsprintf@0	stdio	DEFERRED	8c3b8d5	per-sample limit of the evaluator (no comparison made): sample {"args":["0x00","0x00000000"],"call":0}: violations on our side: [{'what': 'timeout', 'h': None, 'msg': 'no exit within 268435456 steps or 30.0s of CPU t
-vsprintf@01	stdio	DEFERRED	8c3b8d5	per-sample limit of the evaluator (no comparison made): sample {"args":["0x00","0x00000000"],"call":0}: violations on our side: [{'what': 'timeout', 'h': None, 'msg': 'no exit within 268435456 steps or 30.0s of CPU t
-vsprintf@1	stdio	DEFERRED	8c3b8d5	per-sample limit of the evaluator (no comparison made): sample {"args":["0x00","0x00000000"],"call":0}: violations on our side: [{'what': 'timeout', 'h': None, 'msg': 'no exit within 268435456 steps or 30.0s of CPU t
+vsnprintf@0	stdio	PASS	33f4804	
+vsnprintf@01	stdio	FAIL	33f4804	sample {"args":["0x00","0x00000000"],"call":0}: our side leaves 5 rail(s) live at exit that are no frozen register, measured value, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): 296835463 (i64 = 0x7fffffff, garbage), 308927694 (i1 = 0x0, garbage), 348306912 (i64 = 0x7fffffff, garbage), 3
+vsnprintf@1	stdio	FAIL	33f4804	sample {"args":["0x00","0x00000000"],"call":0}: our side leaves 5 rail(s) live at exit that are no frozen register, measured value, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): 296835462 (i64 = 0x7fffffff, garbage), 308927693 (i1 = 0x0, garbage), 348306911 (i64 = 0x7fffffff, garbage), 3
+vsprintf@0	stdio	PASS	33f4804	
+vsprintf@01	stdio	FAIL	33f4804	sample {"args":["0x00","0x00000000"],"call":0}: our side leaves 5 rail(s) live at exit that are no frozen register, measured value, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): 296835463 (i64 = 0x7fffffff, garbage), 308927694 (i1 = 0x0, garbage), 348306912 (i64 = 0x7fffffff, garbage), 3
+vsprintf@1	stdio	FAIL	33f4804	sample {"args":["0x00","0x00000000"],"call":0}: our side leaves 5 rail(s) live at exit that are no frozen register, measured value, result or rule-kept rail (CR §6 item 1, a leak; cq-tt2j): 296835462 (i64 = 0x7fffffff, garbage), 308927693 (i1 = 0x0, garbage), 348306911 (i64 = 0x7fffffff, garbage), 3
 vsscanf	stdio	PASS	8c3b8d5 targeted run	
-vswprintf@0	stdio	DEFERRED	8c3b8d5	not run: deferred to the batch with a higher per-sample budget
-vswprintf@01	stdio	DEFERRED	8c3b8d5	not run: deferred to the batch with a higher per-sample budget
-vswprintf@1	stdio	DEFERRED	8c3b8d5	per-sample limit of the evaluator (no comparison made): sample {"args":["0x00000000","0x00000000"],"call":0}: violations on our side: [{'what': 'timeout', 'h': None, 'msg': 'no exit within 268435456 steps or 30.0s of
-vswscanf	stdio	DEFERRED	8c3b8d5	not run: deferred to the batch with a higher per-sample budget
-vwprintf	stdio	DEFERRED	8c3b8d5	not run: deferred to the batch with a higher per-sample budget
-vwscanf	stdio	DEFERRED	8c3b8d5	not run: deferred to the batch with a higher per-sample budget
+vswprintf@0	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7169 MB > 7168 MB cap) (2 rows at a time)
+vswprintf@01	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7180 MB > 7168 MB cap) (2 rows at a time)
+vswprintf@1	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7184 MB > 7168 MB cap) (2 rows at a time)
+vswscanf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7201 MB > 7168 MB cap) (2 rows at a time)
+vwprintf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7752 MB > 7168 MB cap) (2 rows at a time)
+vwscanf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7195 MB > 7168 MB cap) (2 rows at a time)
 wcrtomb@0	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 wcrtomb@01	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 wcrtomb@012	multibyte	PASS	earlier run; lowering byte-identical on 8c3b8d5	
@@ -756,9 +756,9 @@ wcscpy@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5
 wcscspn@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 wcscspn@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 wcscspn@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wcsftime@0	time	DEFERRED	8c3b8d5	not run: deferred to the batch with a higher per-sample budget
-wcsftime@01	time	DEFERRED	8c3b8d5	not run: deferred to the batch with a higher per-sample budget
-wcsftime@1	time	DEFERRED	8c3b8d5	not run: deferred to the batch with a higher per-sample budget
+wcsftime@0	time	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7232 MB > 7168 MB cap) (2 rows at a time)
+wcsftime@01	time	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7204 MB > 7168 MB cap) (2 rows at a time)
+wcsftime@1	time	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7179 MB > 7168 MB cap) (2 rows at a time)
 wcslen	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 wcsncat@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 wcsncat@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
@@ -826,5 +826,5 @@ wmemmove@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5
 wmemset@0	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 wmemset@01	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
 wmemset@1	string	PASS	earlier run; lowering byte-identical on 8c3b8d5	
-wprintf	stdio	DEFERRED	8c3b8d5	not run: deferred to the batch with a higher per-sample budget
-wscanf	stdio	DEFERRED	8c3b8d5	not run: deferred to the batch with a higher per-sample budget
+wprintf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7739 MB > 7168 MB cap) (2 rows at a time)
+wscanf	stdio	DEFERRED	33f4804	no verdict: heavy.sh: KILLED (memory footprint 7232 MB > 7168 MB cap) (2 rows at a time)
