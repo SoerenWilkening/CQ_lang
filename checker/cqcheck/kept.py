@@ -10,6 +10,11 @@ An entry is one of
     recurs once in full and then by reference, and a replayed call as a use of its record's rows (a replayed
     snprintf left 145M live rails at exit, cq-kcn5i); a skipped rail is one the caller touched, written as a row of
     its own or not at all.
+Every "h" is a rail's NAME, never its handle (rt/core.c, rail names; owner 2026-11-09: a replayed call reserves no
+handles): a rail made inside occurrence o (a top-level call of a replayable clone, however it ran) is (o + 1) << 32 |
+row, row its place among the occurrence's rails; any other rail its rank among the rails made outside occurrences.
+Names do not depend on which calls were replayed, so two samples on one path name their rails alike, as handles did
+before. A replayed call's use has its base at (o + 1) << 32 | rows before it, so its def's row r is that name + r.
 No handle is in two places. A reader goes through leaves(): (row, uses) pairs, uses None for a row of its own and
 a Uses for a pattern's row; the pair stands for count(row, uses) rails that share the row's width, value, role and
 known flag (a pattern row none of whose rails is left is not a leaf). A reader that

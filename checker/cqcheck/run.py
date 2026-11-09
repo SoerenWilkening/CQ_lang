@@ -266,6 +266,7 @@ sigjmp_buf *cqe__shot_jb(void);   /* core.c, shots (cq-e2i9) */
 int cqe__shot_enter(int idx);
 void cqe__shot_end(void);
 void cqe__shot_resume(void);
+__attribute__((weak)) long long cqe__hname(int h);   /* core.c: a handle's rail name (owner 2026-11-09) */
 static void cqd_ret(int call, const char *fn, const char *w, const void *p, size_t n, unsigned bits) {
   unsigned char b[64] = {0};
   memcpy(b, p, n < sizeof b ? n : sizeof b);
@@ -277,8 +278,12 @@ static void cqd_ret(int call, const char *fn, const char *w, const void *p, size
     q += sprintf(q, started ? "%02x" : "%x", b[i]); started = 1;
   }
   *q = 0;
-  char line[256];
-  snprintf(line, sizeof line, "{\"ev\":\"ret\",\"v\":\"%s\",\"w\":\"%s\",\"call\":%d,\"fn\":\"%s\"}", hex, w, call, fn);
+  char line[320], hn[40] = "";
+  if (cqe__hname && n == 4) {   /* an i32 result may be a handle: its rail's name too (resolve_handle_rets) */
+    int h; memcpy(&h, p, 4);
+    snprintf(hn, sizeof hn, ",\"hn\":%lld", cqe__hname(h));
+  }
+  snprintf(line, sizeof line, "{\"ev\":\"ret\",\"v\":\"%s\",\"w\":\"%s\",\"call\":%d,\"fn\":\"%s\"%s}", hex, w, call, fn, hn);
   cqe_log(line);
 }
 #define CQD_RESULT(call, fn, w, p, n, bits) \
@@ -972,10 +977,21 @@ def handle_returning_fns(text: str) -> List[str]:
     return sorted(f for f in fns if returns_handle(f))
 
 
-def resolve_handle_rets(r: RunResult, fns: Sequence[str]) -> RunResult:
-    """r with each ret of a function in fns resolved from its handle to the rail's value; see above."""
-    if not fns or not r.outputs or not r.outputs.get("ret"):
+def _drop_hn(r: RunResult) -> RunResult:
+    """r without the rail names of its results (the driver logs one with every i32 result: "hn")."""
+    if not r.outputs or not any(isinstance(e, dict) and "hn" in e for e in r.outputs.get("ret") or []):
         return r
+    rets = [{k: v for k, v in e.items() if k != "hn"} if isinstance(e, dict) else e for e in r.outputs["ret"]]
+    return RunResult(side=r.side, sample=r.sample, outputs=dict(r.outputs, ret=rets), measured=r.measured,
+                     rotations=r.rotations, kept=r.kept, clean=r.clean, violations=r.violations)
+
+
+def resolve_handle_rets(r: RunResult, fns: Sequence[str]) -> RunResult:
+    """r with each ret of a function in fns resolved from its handle to the rail's value; see above. The kept list
+    names a rail by its name, not its handle (rt/core.c, rail names: owner 2026-11-09), so a result is looked up by
+    the name the driver logged with it ("hn"); "hn" is dropped from every ret."""
+    if not fns or not r.outputs or not r.outputs.get("ret"):
+        return _drop_hn(r)
     # a row stands for "n" rails, every "step"-th handle from "h" (cqcheck.kept); looked up, never expanded
     live = kept_mod.KeptIndex(r.kept)
     rets, viol = [], list(r.violations)
@@ -985,8 +1001,12 @@ def resolve_handle_rets(r: RunResult, fns: Sequence[str]) -> RunResult:
         if e.get("fn") not in fns or not isinstance(v, dict):
             rets.append(e)
             continue
-        h = int(v["v"], 16)
-        h = h - (1 << 32) if h >= 1 << 31 else h
+        if "hn" in e:
+            h = e["hn"]
+        else:
+            h = int(v["v"], 16)
+            h = h - (1 << 32) if h >= 1 << 31 else h
+        e = {k: x for k, x in e.items() if k != "hn"}
         rail = live.get(h)
         if rail is None or rail.get("w") != v.get("w"):
             what = "names no live rail at exit" if rail is None else f"names a {rail.get('w')} rail"
@@ -996,6 +1016,7 @@ def resolve_handle_rets(r: RunResult, fns: Sequence[str]) -> RunResult:
             continue
         rets.append(dict(e, v={"w": v["w"], "v": rail["v"]}))
         results.add(h)
+    rets = [{k: x for k, x in e.items() if k != "hn"} if isinstance(e, dict) else e for e in rets]
     # cq-tt2j: the returned rail is a result (CR §1.1), kept at exit by design (compare._leaks)
     kept = r.kept
     if results:
@@ -1089,6 +1110,8 @@ def _result(side: str, sample: Any, events: List[dict], stdout: str, code: Optio
         elif ev == "ret":
             rets.append({"call": e.get("call"), "fn": e.get("fn"),
                          "v": {"w": e["w"], "v": e.get("v")} if e.get("w") else e.get("v")})
+            if "hn" in e:
+                rets[-1]["hn"] = e["hn"]     # the result as a handle: its rail's name (resolve_handle_rets drops it)
         elif ev == "violation":
             viol.append({"what": e.get("what"), "h": e.get("h"), "msg": e.get("msg")})
         elif ev == "exit":
@@ -2725,12 +2748,11 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
         if not any(v.get("what") in ("timeout", "runner") for r in done for v in (r.violations or [])):
             save_runs("eval", key, [{f: getattr(r, f) for f in _RESULT_FIELDS} for r in done])
     hfns = json.loads((prog.parent / "handle_rets.json").read_text())   # cq-n6a0
-    if hfns:
-        out = [resolve_handle_rets(r, hfns) if r.violations is not None else r for r in out]
+    out = [resolve_handle_rets(r, hfns) if r.violations is not None else _drop_hn(r) for r in out]
     return out  # type: ignore[return-value]
 
 
-_RUNS_VERSION = "eval-runs-8"   # cq-pckdl: kept rows of any role, merged in core.c; cq-92sw6: tape packed; replayed calls as uses with skip
+_RUNS_VERSION = "eval-runs-9"   # cq-pckdl: kept rows of any role, merged in core.c; cq-92sw6: tape packed; replayed calls as uses with skip; rails by name (owner 2026-11-09)
 _CAP_VARS = ("CQE_SHOT_TRACE_MAX", "CQE_SHOT_OUTPUT_MAX", "CQE_FILE_MAX", "CQE_SHOT_VIOL_MAX",   # core.c's caps
              "CQE_REPLAY", "CQE_REPLAY_CHECK", "CQE_REPLAY_TAMPER", "CQE_REPLAY_MAX_MB")   # rt_replay.c (cq-kcn5i)
 _RESULT_FIELDS = ("outputs", "measured", "rotations", "kept", "clean", "violations")
