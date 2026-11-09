@@ -68,7 +68,8 @@ void    cqe_register_op(const char *op, cqe_op_fn);   /* a family registers from
  *   a tape_write call becomes role "tape". The exit event reports such a live rail with that role,
  *   as kept. A cqrt_free of a tape or abort rail is a violation (free_forbidden) whatever its value
  *   and known flag, also after an _unc returned it to 0. Handles are never reused; cqe_rail of a
- *   freed or unknown handle records a violation and returns NULL.
+ *   freed or unknown handle records a violation and returns NULL. Its result is a view of the rail's value (the
+ *   words are the rail's), valid until 256 more cqe_rail calls: use it at once.
  * End of shot. Every cqe_* entry, cqe_register_op included, initializes the core first, and the core
  *   registers its exit handler with atexit when it initializes. A family's atexit handler registered
  *   after its first cqe_* call therefore runs before the exit event, with cqe_rail, cqe_log and
