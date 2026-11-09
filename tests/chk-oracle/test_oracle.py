@@ -483,8 +483,9 @@ class Outcomes(unittest.TestCase):
 int abort_q(int x0, double t, int k) { int x = x0; cq_theta(&x, t); if (x == k) abort(); return cq_measure(x); }
 int trap_q(int x0, double t, int k) { int x = x0; cq_theta(&x, t); if (x == k) __builtin_trap(); return x; }
 int raise_q(int x0, double t, int k) { int x = x0; cq_theta(&x, t); if (x == k) raise(SIGABRT); return x; }
-volatile int sink;
-int spin_q(unsigned x0, double t, unsigned c) { unsigned x = x0; cq_theta(&x, t); while (c != 0) { c += 2; sink++; }
+/* cq-rjagm (owner Q3): a runaway loop that does not allocate (no memory access: no shadow node per trip); the constant
+   controlling expression keeps it from being assumed to terminate (no mustprogress). */
+int spin_q(unsigned x0, double t, unsigned c) { unsigned x = x0; cq_theta(&x, t); for (;;) { if (c == 0) break; c += 2; }
     return x + c; }
 """)
         sp = spec("term", "int abort_q(int,double,int);int trap_q(int,double,int);int raise_q(int,double,int);"
@@ -511,7 +512,8 @@ int spin_q(unsigned x0, double t, unsigned c) { unsigned x = x0; cq_theta(&x, t)
         self.assertIn("nonterminating", rr.violations[0]["msg"])
         self.assertEqual(rr.outputs["ret"], [])
         rr = oracle.run_sample(o1, sp, {"call": 0, "args": [i32(2), HALF, i32(2)]})
-        self.assertEqual(_no_mem(rr.outputs), {"ret": [], "end": "noreturn:abort", "loops": [], "stdout": "", "effects": []})
+        self.assertEqual(_no_mem(rr.outputs), {"ret": [], "end": "noreturn:abort", "loops": [], "stdout": "", "effects": [],
+                                                 "entered": ["abort_q"]})
         self.assertEqual(rr.violations, [])
 
     def test_no_wall_clock_outcome(self):
