@@ -426,28 +426,41 @@ typedef struct {
   uint64_t *ry_pre, *ry_post; /* its target's value before and after it (v.nw words each) */
 } rail_ext;
 
-/* A rail's record (cq-ism39: 72 bytes, was 120). Its width token is interned (wtab); the flags are bits. */
+/* What a rail with an extension or a source list that does not fit the record has (rail_t.aux). */
 typedef struct {
-  cqe_val v;
-  uint64_t inl;  /* cq-9hzgh: the value of a rail of 64 bits or fewer (v.w points here); a wider one is allocated */
-  uint64_t t_create, t_write;                                     /* event clock; 0 = never */
-  union {
-    int32_t in[2]; /* ndeps <= 2: the sources, here */
-    int32_t *p;    /* ndeps > 2: an allocated list of deps_cap(ndeps) entries */
-  } deps;
-  uint32_t ndeps;
-  uint32_t wi : 16;  /* the width token: wtab[wi] */
-  uint32_t live : 1, known : 1, measured : 1, frozen : 1, written : 1, seed : 1;
-  uint32_t busz : 1;       /* a bus swap left it at 0 and nothing wrote it since (cqe__set_busz) */
-  uint32_t store_kept : 1; /* the value or control rail of a bus store (rule 5 sentence 3) */
-  uint32_t image : 1;      /* cq-qhow: carries a frozen register's content (cqe__carry): a rule-6 image, FROZEN */
-  uint32_t r6 : 1;         /* cq-o9mx: an operand a rule-6 clean's inverse read: a rule-6 image, kept (cqe__r6_unc) */
-  uint32_t load_copy : 1;  /* a bus load's copy: rule 5, "A load copy is never cleaned by rule 6", so never an image */
-  uint32_t role : 3;       /* 0 none, 1 abort, 2 tape, 4 tape_slot, 5 overtaken, 6 a_K (cq-1leyz) */
-  uint32_t fenv : 2;       /* cq-tt2j, rule 23: 1 flags lineage (an _exc result or written from one), 2 a mode operand */
   rail_ext *ext;
+  int32_t *deps; /* the sources: deps_cap(ndeps) entries, NULL while there are none */
+  uint32_t ndeps;
+} rail_aux;
+
+/* A rail's record (cq-ism39: 72 bytes, was 120; 2026-11-09 memory plan: 32). Its width token is interned (wtab: the
+ * width, kind and word count are the token's); the clocks are 48 bits (cqe__tick), the flags are bits. */
+typedef struct {
+  uint64_t t_create : 48;  /* event clock; 0 = never */
+  uint64_t wi : 12;        /* the width token: wtab[wi] */
+  uint64_t live : 1;
+  uint64_t aux : 1;        /* d.x is in use, else d.in */
+  uint64_t : 2;
+  uint64_t t_write : 48;   /* event clock; 0 = never */
+  uint64_t known : 1, measured : 1, frozen : 1, written : 1, seed : 1;
+  uint64_t busz : 1;       /* a bus swap left it at 0 and nothing wrote it since (cqe__set_busz) */
+  uint64_t store_kept : 1; /* the value or control rail of a bus store (rule 5 sentence 3) */
+  uint64_t image : 1;      /* cq-qhow: carries a frozen register's content (cqe__carry): a rule-6 image, FROZEN */
+  uint64_t r6 : 1;         /* cq-o9mx: an operand a rule-6 clean's inverse read: a rule-6 image, kept (cqe__r6_unc) */
+  uint64_t load_copy : 1;  /* a bus load's copy: rule 5, "A load copy is never cleaned by rule 6", so never an image */
+  uint64_t role : 3;       /* 0 none, 1 abort, 2 tape, 4 tape_slot, 5 overtaken, 6 a_K (cq-1leyz) */
+  uint64_t fenv : 2;       /* cq-tt2j, rule 23: 1 flags lineage (an _exc result or written from one), 2 a mode operand */
+  uint64_t : 1;
+  union {
+    uint64_t inl;   /* cq-9hzgh: the value of a rail of 64 bits or fewer (rail_w); the pool's free list link */
+    uint64_t *wide; /* a wider one's words, allocated */
+  } val;
+  union {
+    int32_t in[2]; /* !aux: up to two sources, none 0, the rest of in 0 */
+    rail_aux *x;   /* aux: the extension and the source list */
+  } d;
 } rail_t;
-_Static_assert(sizeof(rail_t) == 72, "rail_t: 72 bytes (cq-ism39)");
+_Static_assert(sizeof(rail_t) == 32, "rail_t: 32 bytes (2026-11-09 memory plan)");
 
 #define CQE_RAIL_LIMIT 0x51000000u /* rail handles stay below the bus handle (rt_bus.c) */
 
@@ -507,22 +520,35 @@ static uint64_t clock_;
   } while (0)
 
 /* Width tokens, interned: a record holds the index. */
-#define WTAB_MAX 4096
+#define WTAB_MAX 4096 /* rail_t.wi: 12 bits */
 static char wtab[WTAB_MAX][8];
-static uint32_t wtab_n = 1; /* wtab[0] is "", the width of a blank record (rail_blank) */
-static uint16_t w_intern(const char *w) {
+static uint32_t w_bits[WTAB_MAX], w_nw[WTAB_MAX]; /* per token: a value's bits and words (0 for wtab[0]) */
+static char w_kind[WTAB_MAX];
+static uint32_t wtab_n = 1; /* wtab[0] is "", the width of a blank record (rail_blank): no value */
+static uint16_t w_intern(const char *w, uint32_t bits, char kind) {
   char k[8] = {0};
   memcpy(k, w, strnlen(w, sizeof k - 1));
-  for (uint32_t i = 0; i < wtab_n; ++i)
-    if (!memcmp(wtab[i], k, sizeof k))
+  for (uint32_t i = 1; i < wtab_n; ++i)
+    if (!memcmp(wtab[i], k, sizeof k) && w_bits[i] == bits && w_kind[i] == kind)
       return (uint16_t)i;
   if (wtab_n == WTAB_MAX) {
     fprintf(stderr, "cq: chk-core: more than %d rail width tokens\n", WTAB_MAX);
     abort();
   }
   memcpy(wtab[wtab_n], k, sizeof k);
+  w_bits[wtab_n] = bits;
+  w_kind[wtab_n] = kind;
+  w_nw[wtab_n] = cqe__nwords(bits);
   return (uint16_t)wtab_n++;
 }
+
+/* A rail's value words (NULL for a blank record), and its value as a cqe_val over them. */
+static inline uint64_t *rail_w(rail_t *r) {
+  uint32_t nw = w_nw[r->wi];
+  return nw > 1 ? r->val.wide : nw ? &r->val.inl : NULL;
+}
+static inline uint32_t rail_nw(const rail_t *r) { return w_nw[r->wi]; }
+static inline cqe_val rail_v(rail_t *r) { return (cqe_val){w_bits[r->wi], w_kind[r->wi], w_nw[r->wi], rail_w(r)}; }
 
 static uint32_t tomb_flags(const rail_t *r) {
   return (uint32_t)r->known | (uint32_t)r->measured << 1 | (uint32_t)r->frozen << 2 | (uint32_t)r->written << 3 |
@@ -548,7 +574,7 @@ static rail_t *pool_take(uint32_t *slot) {
   uint32_t s;
   if (pool_free) {
     s = pool_free - 1;
-    pool_free = (uint32_t)(*SLOT(s)).inl;
+    pool_free = (uint32_t)(*SLOT(s)).val.inl;
   } else {
     s = pool_n++;
     DIR_GROW(pool_dir, s, POOL_BITS);
@@ -568,12 +594,7 @@ static rail_t *rail_materialize(uint32_t h) {
   uint32_t s;
   rail_t *r = pool_take(&s);
   uint32_t f = tf_get(&t);
-  r->wi = (uint16_t)(t.a >> 48);
-  char kind = 'i';
-  r->v.bits = cqe__wtok_bits(wtab[r->wi], &kind);
-  r->v.kind = kind;
-  r->v.nw = 1;
-  r->v.w = &r->inl;
+  r->wi = (uint16_t)(t.a >> 48); /* a tombstone's value is one word, 0 */
   r->t_create = t.a & TOMB_CLOCK_MAX;
   r->t_write = t.b & TOMB_CLOCK_MAX;
   r->known = f >> TF_KNOWN & 1;
@@ -745,15 +766,24 @@ static inline int rail_live(uint32_t h) { return !rail_tomb(h) && RL(h)->live; }
 /* Freed rail h's record to a tombstone when one holds it exactly (above). */
 static void rail_bury(uint32_t h) {
   rail_t *r = RL(h);
-  rail_ext *x = r->ext;
-  if (x && !x->r6_ops && !x->r6_old && !x->t_nd && !x->t_meas && !x->ry_t) {
-    /* nothing in use: ry_pre, ry_post and ry_ang are read only while ry_t is set, and ry_note rewrites them */
-    free(x->ry_pre);
-    free(x->ry_post);
-    free(x);
-    r->ext = x = NULL;
+  if (r->aux) {
+    rail_aux *a = r->d.x;
+    rail_ext *x = a->ext;
+    if (x && !x->r6_ops && !x->r6_old && !x->t_nd && !x->t_meas && !x->ry_t) {
+      /* nothing in use: ry_pre, ry_post and ry_ang are read only while ry_t is set, and ry_note rewrites them */
+      free(x->ry_pre);
+      free(x->ry_post);
+      free(x);
+      a->ext = NULL;
+    }
+    if (!a->ext && !a->ndeps) { /* nothing left in it */
+      free(a->deps);
+      free(a);
+      r->aux = 0;
+      r->d.in[0] = r->d.in[1] = 0;
+    }
   }
-  if (r->live || x || r->ndeps || r->v.nw != 1 || r->inl || r->t_create > TOMB_CLOCK_MAX || r->t_write > TOMB_CLOCK_MAX)
+  if (r->live || r->aux || r->d.in[0] || rail_nw(r) != 1 || r->val.inl)
     return;
   uint32_t t = tomb_n++;
   if (tomb_n > MAP_TOMB) {
@@ -766,12 +796,14 @@ static void rail_bury(uint32_t h) {
   tb->b = r->t_write;
   tf_set(tb, tomb_flags(r));
   uint32_t s = map_peek(h) - 1;
-  r->inl = pool_free;
+  r->val.inl = pool_free;
   pool_free = s + 1;
   map_put(h, t | MAP_TOMB);
 }
 
-static inline int32_t *deps_of(rail_t *r) { return r->ndeps > 2 ? r->deps.p : r->deps.in; }
+static inline int32_t *deps_of(rail_t *r) { return r->aux ? r->d.x->deps : r->d.in; }
+static inline uint32_t rail_nd(const rail_t *r) { return r->aux ? r->d.x->ndeps : (r->d.in[0] != 0) + (r->d.in[1] != 0); }
+static inline rail_ext *rail_x(const rail_t *r) { return r->aux ? r->d.x->ext : NULL; } /* the extension, NULL none */
 static uint32_t deps_cap(uint32_t n) {
   uint32_t c = 4;
   while (c < n)
@@ -779,13 +811,67 @@ static uint32_t deps_cap(uint32_t n) {
   return c;
 }
 
-static rail_ext *ext_of(rail_t *r) {
-  if (!r->ext)
-    r->ext = xcalloc(1, sizeof *r->ext);
-  return r->ext;
+static rail_aux *aux_of(rail_t *r) {
+  if (!r->aux) {
+    rail_aux *a = xcalloc(1, sizeof *a);
+    uint32_t n = rail_nd(r);
+    if (n) {
+      a->deps = malloc(deps_cap(n) * sizeof *a->deps);
+      if (!a->deps)
+        abort();
+      memcpy(a->deps, r->d.in, n * sizeof *a->deps);
+    }
+    a->ndeps = n;
+    r->d.x = a;
+    r->aux = 1;
+  }
+  return r->d.x;
 }
 
-uint64_t cqe__tick(void) { return ++clock_; }
+static rail_ext *ext_of(rail_t *r) {
+  rail_aux *a = aux_of(r);
+  if (!a->ext)
+    a->ext = xcalloc(1, sizeof *a->ext);
+  return a->ext;
+}
+
+/* src after r's sources (cq-9hzgh: the first two in the record when neither is 0). */
+static void deps_append(rail_t *r, int32_t src) {
+  if (!r->aux && src) {
+    if (!r->d.in[0]) {
+      r->d.in[0] = src;
+      return;
+    }
+    if (!r->d.in[1]) {
+      r->d.in[1] = src;
+      return;
+    }
+  }
+  rail_aux *a = aux_of(r);
+  if (!a->deps) {
+    a->deps = malloc(deps_cap(1) * sizeof *a->deps);
+    if (!a->deps)
+      abort();
+  } else if (a->ndeps >= 4 && a->ndeps == deps_cap(a->ndeps)) {
+    a->deps = realloc(a->deps, 2 * (size_t)a->ndeps * sizeof *a->deps);
+    if (!a->deps)
+      abort();
+  }
+  a->deps[a->ndeps++] = src;
+}
+
+/* The event clock: a record holds 48 bits of it. */
+static void clock_check(void) {
+  if (clock_ > TOMB_CLOCK_MAX) {
+    fprintf(stderr, "cq: chk-core: the event clock passed 2^48\n");
+    abort();
+  }
+}
+uint64_t cqe__tick(void) {
+  ++clock_;
+  clock_check();
+  return clock_;
+}
 uint32_t cqe__nrails_peek(void) { return nrails; }
 
 /* cq-4593 (BACKEND_ABI 1.13): a gate recorded inside a cq_invert region whose forward form makes a fresh
@@ -809,8 +895,10 @@ int32_t cqe__new(const char *w, const cqe_val *init, int known, int seed) {
     } else {
       if (w && strcmp(wtab[(*RL(h)).wi], w) != 0)
         cqe__violation("width_mismatch", h, "cq_invert replay: rail %d is %s, the gate makes %s", (int)h, wtab[(*RL(h)).wi], w);
-      if (init)
-        cqe__val_xor(&(*RL(h)).v, init);
+      if (init) {
+        cqe_val v = rail_v(RL(h));
+        cqe__val_xor(&v, init);
+      }
       (*RL(h)).known = (*RL(h)).known && known;
       (*RL(h)).t_write = cqe__tick();
       return h;
@@ -833,13 +921,13 @@ int32_t cqe__new(const char *w, const cqe_val *init, int known, int seed) {
   uint32_t s;
   rail_t *r = pool_take(&s);
   map_put((uint32_t)h, s + 1);
-  r->wi = w_intern(w);
-  r->v.bits = bits;
-  r->v.kind = kind;
-  r->v.nw = cqe__nwords(bits);
-  r->v.w = r->v.nw == 1 ? &r->inl : xcalloc(r->v.nw, sizeof *r->v.w);
-  if (init)
-    cqe__val_xor(&r->v, init);
+  r->wi = w_intern(w, bits, kind);
+  if (rail_nw(r) > 1)
+    r->val.wide = xcalloc(rail_nw(r), sizeof *r->val.wide);
+  if (init) {
+    cqe_val v = rail_v(r);
+    cqe__val_xor(&v, init);
+  }
   r->live = 1;
   r->known = known ? 1 : 0;
   r->seed = seed ? 1 : 0;
@@ -869,7 +957,17 @@ int cqe__check(int32_t h, const char *ctx) {
 int cqe__exists(int32_t h) { return h >= 1 && (uint32_t)h <= nrails; }
 
 /* The getters read a tombstone where it holds the answer; the rest get the record. */
-cqe_val *cqe__val(int32_t h) { return &(*RL(h)).v; }
+/* A rail's value as a cqe_val: one of the last VAL_RING views (the record holds no cqe_val); its words are the rail's,
+ * so a write through it writes the rail. A caller uses it at once (never across VAL_RING more of them). */
+#define VAL_RING 256
+static cqe_val val_ring[VAL_RING];
+static uint32_t val_ring_i;
+static cqe_val *val_view(rail_t *r) {
+  cqe_val *v = &val_ring[val_ring_i++ % VAL_RING];
+  *v = rail_v(r);
+  return v;
+}
+cqe_val *cqe__val(int32_t h) { return val_view(RL(h)); }
 const char *cqe__w(int32_t h) {
   tomb_t *t = rail_tomb((uint32_t)h);
   return wtab[t ? (uint16_t)(t->a >> 48) : (*RL(h)).wi];
@@ -887,7 +985,7 @@ uint64_t cqe__last_nd(int32_t h) {
   if (rail_tomb((uint32_t)h))
     return 0;
   rail_t *r = RL(h);
-  return r->ext ? r->ext->t_nd : 0;
+  return rail_x(r) ? rail_x(r)->t_nd : 0;
 }
 int cqe__measured(int32_t h) {
   tomb_t *t = rail_tomb((uint32_t)h);
@@ -924,13 +1022,13 @@ void cqe__mark_written(int32_t h) {
 void cqe__ry_note(int32_t h, uint64_t angle, const cqe_val *pre) {
   rail_t *r = RL(h);
   rail_ext *x = ext_of(r);
-  uint32_t nw = r->v.nw;
+  uint32_t nw = rail_nw(r);
   if (!x->ry_pre) {
     x->ry_pre = xcalloc(nw ? nw : 1, sizeof *x->ry_pre);
     x->ry_post = xcalloc(nw ? nw : 1, sizeof *x->ry_post);
   }
   memcpy(x->ry_pre, pre->w, nw * sizeof *x->ry_pre);
-  memcpy(x->ry_post, r->v.w, nw * sizeof *x->ry_post);
+  memcpy(x->ry_post, rail_w(r), nw * sizeof *x->ry_post);
   x->ry_ang = angle;
   x->ry_t = cqe__tick();
 }
@@ -938,19 +1036,19 @@ int cqe__ry_unprep(int32_t h, uint64_t angle) {
   if (rail_tomb((uint32_t)h)) /* a tombstone has no Ry in use */
     return 0;
   rail_t *r = RL(h);
-  rail_ext *x = r->ext;
+  rail_ext *x = rail_x(r);
   if (!x || !x->ry_t || r->t_write > x->ry_t || angle != (x->ry_ang ^ (1ULL << 63)) ||
-      memcmp(x->ry_post, r->v.w, r->v.nw * sizeof *x->ry_post) != 0)
+      memcmp(x->ry_post, rail_w(r), rail_nw(r) * sizeof *x->ry_post) != 0)
     return 0;
-  memcpy(r->v.w, x->ry_pre, r->v.nw * sizeof *x->ry_pre);
+  memcpy(rail_w(r), x->ry_pre, rail_nw(r) * sizeof *x->ry_pre);
   x->ry_t = 0;
   return 1;
 }
 void cqe__ry_forget(int32_t h) {
   if (rail_tomb((uint32_t)h)) /* a tombstone has no Ry in use */
     return;
-  if ((*RL(h)).ext)
-    (*RL(h)).ext->ry_t = 0;
+  if (rail_x(RL(h)))
+    rail_x(RL(h))->ry_t = 0;
 }
 void cqe__mark_nd(int32_t h) {
   (*RL(h)).frozen = 1;
@@ -1004,11 +1102,12 @@ void cqe__carry(int32_t into, const int32_t *srcs, int n) {
  * result stays a leak. */
 static int r6_cleanable(rail_t *r) {
   const int32_t *deps = deps_of(r);
-  for (uint32_t i = 0; i < r->ndeps; ++i) {
+  uint32_t nd = rail_nd(r);
+  for (uint32_t i = 0; i < nd; ++i) {
     if (!rail_live((uint32_t)deps[i]) || RL(deps[i])->t_write > r->t_write)
       return 0;
   }
-  return r->ndeps > 0;
+  return nd > 0;
 }
 
 static void r6_mark(const int32_t *ops, uint32_t n) {
@@ -1030,7 +1129,8 @@ int cqe__r6_before(int32_t t, int32_t y) { return (*RL(t)).t_create > (*RL(y)).t
 
 /* After it, and the known-basis rule: y reads known |0>, so t is the inverse of a rule-6 clean. */
 void cqe__r6_cleaned(int32_t t, int32_t y) {
-  if (cqe__val_iszero(&(*RL(y)).v) && (*RL(y)).known)
+  cqe_val yv = rail_v(RL(y));
+  if (cqe__val_iszero(&yv) && (*RL(y)).known)
     ext_of(RL(t))->r6_old = y;
 }
 
@@ -1038,7 +1138,7 @@ void cqe__r6_cleaned(int32_t t, int32_t y) {
 void cqe__r6_unc(int32_t t, const int32_t *ops, int n) {
   if (rail_tomb((uint32_t)t)) /* a tombstone's r6_old is 0 */
     return;
-  rail_ext *tx = RL(t)->ext;
+  rail_ext *tx = rail_x(RL(t));
   int32_t y = tx ? tx->r6_old : 0;
   if (!y)
     return;
@@ -1062,25 +1162,11 @@ void cqe__add_dep(int32_t h, int32_t src) {
   /* cq-tt2j: a rail written from the flags is flags (rule 23 lineage) */
   r->fenv |= (st ? tf_get(st) >> TF_FENV : (*RL(src)).fenv) & 1;
   int32_t *deps = deps_of(r);
-  for (uint32_t i = 0; i < r->ndeps; ++i)
+  uint32_t nd = rail_nd(r);
+  for (uint32_t i = 0; i < nd; ++i)
     if (deps[i] == src)
       return;
-  if (r->ndeps < 2) { /* cq-9hzgh: the first two in the rail */
-    r->deps.in[r->ndeps++] = src;
-    return;
-  }
-  if (r->ndeps == 2) {
-    int32_t *p = malloc(4 * sizeof *p);
-    if (!p)
-      abort();
-    memcpy(p, r->deps.in, 2 * sizeof *p);
-    r->deps.p = p;
-  } else if (r->ndeps == deps_cap(r->ndeps)) {
-    r->deps.p = realloc(r->deps.p, 2 * (size_t)r->ndeps * sizeof *r->deps.p);
-    if (!r->deps.p)
-      abort();
-  }
-  r->deps.p[r->ndeps++] = src;
+  deps_append(r, src);
 }
 
 void cqe__free(int32_t h) {
@@ -1088,18 +1174,22 @@ void cqe__free(int32_t h) {
     return;
   rail_t *r = RL(h);
   r->live = 0;
-  if (r->ext && r->ext->r6_ops) {
-    r6_mark(r->ext->r6_ops, r->ext->r6_nops);
-    free(r->ext->r6_ops);
-    r->ext->r6_ops = NULL;
+  rail_ext *x = rail_x(r);
+  if (x && x->r6_ops) {
+    r6_mark(x->r6_ops, x->r6_nops);
+    free(x->r6_ops);
+    x->r6_ops = NULL;
   }
   /* a freed rail's role is never asked (the exit event lists live rails); its dependency list goes
    * back to the sample arena's free lists for the next rail (cq-8m6v). Its event times stay: a live
    * rail's role reads them. */
-  if (r->ndeps > 2)
-    free(r->deps.p);
-  r->deps.p = NULL;
-  r->ndeps = 0;
+  if (r->aux) {
+    free(r->d.x->deps);
+    r->d.x->deps = NULL;
+    r->d.x->ndeps = 0;
+  } else {
+    r->d.in[0] = r->d.in[1] = 0;
+  }
   rail_bury((uint32_t)h);
 }
 
@@ -1110,13 +1200,14 @@ int32_t cqe_new_rail(const char *w, const cqe_val *init, int known) { return cqe
 const cqe_val *cqe_rail(int32_t h) {
   if (cqe__check(h, "cqe_rail") != 0) /* C1: a freed or unknown handle is a violation and NULL */
     return NULL;
-  return &(*RL(h)).v;
+  return val_view(RL(h));
 }
 
 void cqe_xor_into(int32_t h, const cqe_val *v) {
   if (cqe__check(h, "cqe_xor_into") < 0 || !v)
     return;
-  cqe__val_xor(&(*RL(h)).v, v);
+  cqe_val rv = rail_v(RL(h));
+  cqe__val_xor(&rv, v);
   cqe__mark_written(h);
 }
 
@@ -1135,14 +1226,14 @@ static int deps_entangled(const int32_t *deps, uint32_t nd, uint64_t t_write) {
     uint32_t m = map_peek((uint32_t)deps[i]);
     if (!m || (m & MAP_TOMB))
       continue;
-    const rail_ext *s = (*SLOT(m - 1)).ext;
+    const rail_ext *s = rail_x(&(*SLOT(m - 1)));
     if (s && ((s->t_nd && s->t_nd > t_write) || (s->t_meas && s->t_meas > t_write)))
       return 1;
   }
   return 0;
 }
 
-static const char *exit_role_r(const rail_t *r, const int32_t *deps) {
+static const char *exit_role_r(const rail_t *r, const int32_t *deps, uint32_t nd) {
   if (r->measured)
     return "measured";
   if (r->role == 1)
@@ -1159,7 +1250,7 @@ static const char *exit_role_r(const rail_t *r, const int32_t *deps) {
     return "frozen";
   if (r->store_kept)
     return "store_kept";
-  if (deps_entangled(deps, r->ndeps, r->t_write))
+  if (deps_entangled(deps, nd, r->t_write))
     return "kept_entangled";
   if (r->fenv & 2)
     return "fenv_mode";
@@ -1174,7 +1265,7 @@ static const char *exit_role_r(const rail_t *r, const int32_t *deps) {
 
 static const char *exit_role(int32_t h) {
   rail_t *r = RL(h);
-  return exit_role_r(r, deps_of(r));
+  return exit_role_r(r, deps_of(r), rail_nd(r));
 }
 
 /* ---- the exit event's live list (cq-9hzgh, cq-pckdl) ----------------------------------------------------------
@@ -1506,7 +1597,8 @@ static void at_exit_handler(void) {
     rail_t *r = RL(h);
     if (!r->live)
       continue;
-    char *hx = r->v.nw <= 2 ? cqe__hex(&r->v, vb) : cqe__hexa(&r->v);
+    cqe_val v = rail_v(r);
+    char *hx = v.nw <= 2 ? cqe__hex(&v, vb) : cqe__hexa(&v);
     exit_feed(h, wtab[r->wi], hx, exit_role((int32_t)h), r->known);
     if (hx != vb)
       free(hx);
@@ -2651,10 +2743,10 @@ void cqe__rp_argkey(const int32_t *hs, int n, int absolute, cqe_rp_buf *o) {
     rail_t *r = RL(h);
     ck[nc++] = r->t_create;
     ck[nc++] = r->t_write;
-    if (r->ext) {
-      ck[nc++] = r->ext->t_nd;
-      ck[nc++] = r->ext->t_meas;
-      ck[nc++] = r->ext->ry_t;
+    if (rail_x(r)) {
+      ck[nc++] = rail_x(r)->t_nd;
+      ck[nc++] = rail_x(r)->t_meas;
+      ck[nc++] = rail_x(r)->ry_t;
     }
   }
   for (size_t i = 1; i < nc; ++i) /* insertion sort: qsort may be the program's (rt_replay.h) */
@@ -2690,18 +2782,20 @@ void cqe__rp_argkey(const int32_t *hs, int n, int absolute, cqe_rp_buf *o) {
       continue;
     }
     rail_t *r = RL(h);
+    const rail_ext *rx = rail_x(r);
     rp_key_put(o, 0x5ec0000000000000ULL | r->wi | (uint64_t)tomb_flags(r) << 16 | (uint64_t)r->live << 40 |
-                      (uint64_t)(r->ext != NULL) << 41 | (uint64_t)(r->ext && r->ext->r6_ops) << 42);
+                      (uint64_t)(rx != NULL) << 41 | (uint64_t)(rx && rx->r6_ops) << 42);
     rp_key_put(o, rp_rank(r->t_create, ck, nc, absolute));
     rp_key_put(o, rp_rank(r->t_write, ck, nc, absolute));
-    rp_key_put(o, r->v.nw);
-    cqe__rp_put(o, r->v.w, (size_t)r->v.nw * sizeof *r->v.w);
-    rp_key_put(o, r->ndeps);
+    rp_key_put(o, rail_nw(r));
+    cqe__rp_put(o, rail_w(r), (size_t)rail_nw(r) * sizeof(uint64_t));
+    uint32_t nd = rail_nd(r);
+    rp_key_put(o, nd);
     const int32_t *deps = deps_of(r);
-    for (uint32_t k = 0; k < r->ndeps; ++k)
+    for (uint32_t k = 0; k < nd; ++k)
       rp_key_put(o, rp_argref(deps[k], hs, n, absolute));
-    if (r->ext) {
-      const rail_ext *x = r->ext;
+    if (rx) {
+      const rail_ext *x = rx;
       rp_key_put(o, rp_rank(x->t_nd, ck, nc, absolute));
       rp_key_put(o, rp_rank(x->t_meas, ck, nc, absolute));
       rp_key_put(o, rp_rank(x->ry_t, ck, nc, absolute));
@@ -2711,8 +2805,8 @@ void cqe__rp_argkey(const int32_t *hs, int n, int absolute, cqe_rp_buf *o) {
       for (uint32_t k = 0; x->r6_ops && k < x->r6_nops; ++k)
         rp_key_put(o, rp_argref(x->r6_ops[k], hs, n, absolute));
       if (x->ry_t) {
-        cqe__rp_put(o, x->ry_pre, (size_t)r->v.nw * sizeof *x->ry_pre);
-        cqe__rp_put(o, x->ry_post, (size_t)r->v.nw * sizeof *x->ry_post);
+        cqe__rp_put(o, x->ry_pre, (size_t)rail_nw(r) * sizeof *x->ry_pre);
+        cqe__rp_put(o, x->ry_post, (size_t)rail_nw(r) * sizeof *x->ry_post);
       }
     }
   }
@@ -2752,12 +2846,12 @@ int cqe__rp_encode(uint32_t base, uint64_t c0, const int32_t *args, int nargs, c
       r = &(*SLOT(m - 1));
       e.flags = tomb_flags(r) | (r->live ? RF_LIVE : 0);
       e.wi = r->wi;
-      e.nw = r->v.nw;
-      e.ndeps = r->ndeps;
+      e.nw = rail_nw(r);
+      e.ndeps = rail_nd(r);
       e.tc = rp_rel(r->t_create, c0, &ok);
       e.tw = rp_rel(r->t_write, c0, &ok);
-      if (r->ext) {
-        const rail_ext *x = r->ext;
+      if (rail_x(r)) {
+        const rail_ext *x = rail_x(r);
         e.flags |= RF_EXT;
         if (x->t_nd || x->t_meas || x->ry_t)
           ok = 0;
@@ -2776,7 +2870,7 @@ int cqe__rp_encode(uint32_t base, uint64_t c0, const int32_t *args, int nargs, c
       for (uint32_t k = 0; k < e.ndeps; ++k)
         rf[k] = rp_enc(deps[k], base, args, nargs, &ok);
       for (uint32_t k = 0; k < e.nr6; ++k)
-        rf[e.ndeps + k] = rp_enc(r->ext->r6_ops[k], base, args, nargs, &ok);
+        rf[e.ndeps + k] = rp_enc(rail_x(r)->r6_ops[k], base, args, nargs, &ok);
     } else {
       ok = 0;
     }
@@ -2784,7 +2878,7 @@ int cqe__rp_encode(uint32_t base, uint64_t c0, const int32_t *args, int nargs, c
       e.flags |= RF_LOAD | (fire ? RF_FIRE : 0);
     cqe__rp_put(&out->blob, &e, sizeof e);
     if (r)
-      cqe__rp_put(&out->blob, r->v.w, (size_t)e.nw * sizeof *r->v.w);
+      cqe__rp_put(&out->blob, rail_w((rail_t *)r), (size_t)e.nw * sizeof(uint64_t));
     size_t nref = (size_t)e.ndeps + e.nr6;
     cqe__rp_put(&out->blob, rf, nref * sizeof *rf);
     static const uint8_t zero[8];
@@ -2879,6 +2973,7 @@ uint32_t cqe__rp_apply(const cqe_rp_rails *rr, const int32_t *args, int nargs) {
   }
   nrails += rr->n;
   clock_ += rr->ticks;
+  clock_check();
   return base;
 }
 
@@ -2911,13 +3006,10 @@ static uint32_t rp_materialize(uint32_t h) {
   }
   uint32_t s, f = e->flags;
   rail_t *r = pool_take(&s);
-  r->wi = e->wi;
-  char kind = 'i';
-  r->v.bits = cqe__wtok_bits(wtab[r->wi], &kind);
-  r->v.kind = kind;
-  r->v.nw = e->nw;
-  r->v.w = e->nw == 1 ? &r->inl : xcalloc(e->nw, sizeof *r->v.w);
-  cqe__rp_cpy(r->v.w, rp_words(e), (size_t)e->nw * sizeof *r->v.w);
+  r->wi = e->wi; /* e->nw is the token's word count (cqe__rp_encode) */
+  if (e->nw > 1)
+    r->val.wide = xcalloc(e->nw, sizeof *r->val.wide);
+  cqe__rp_cpy(rail_w(r), rp_words(e), (size_t)e->nw * sizeof(uint64_t));
   r->t_create = rp_abs(e->tc, b->c0);
   r->t_write = rp_abs(e->tw, b->c0);
   r->known = f >> TF_KNOWN & 1;
@@ -2934,15 +3026,8 @@ static uint32_t rp_materialize(uint32_t h) {
   r->fenv = f >> TF_FENV & 3;
   r->live = (f & RF_LIVE) != 0;
   const int32_t *refs = rp_refs(e);
-  r->ndeps = e->ndeps;
-  int32_t *deps = r->deps.in;
-  if (e->ndeps > 2) {
-    deps = r->deps.p = malloc(deps_cap(e->ndeps) * sizeof *deps);
-    if (!deps)
-      abort();
-  }
   for (uint32_t k = 0; k < e->ndeps; ++k)
-    deps[k] = cqe__rp_dec_handle(refs[k], b->base, b->args);
+    deps_append(r, cqe__rp_dec_handle(refs[k], b->base, b->args));
   if (f & RF_EXT) {
     rail_ext *x = ext_of(r);
     x->r6_old = cqe__rp_dec_handle(e->r6_old, b->base, b->args);
@@ -2993,7 +3078,6 @@ static int rp_exit_rail(const rp_block *b, uint32_t h) {
   r.r6 = f >> TF_R6 & 1;
   r.role = f >> TF_ROLE & 7;
   r.fenv = f >> TF_FENV & 3;
-  r.ndeps = e->ndeps;
   r.t_write = rp_abs(e->tw, b->c0);
   int32_t dbuf[64], *deps = dbuf;
   if (e->ndeps > 64) {
@@ -3004,7 +3088,7 @@ static int rp_exit_rail(const rp_block *b, uint32_t h) {
   const int32_t *refs = rp_refs(e);
   for (uint32_t k = 0; k < e->ndeps; ++k)
     deps[k] = cqe__rp_dec_handle(refs[k], b->base, b->args);
-  const char *role = exit_role_r(&r, deps);
+  const char *role = exit_role_r(&r, deps, e->ndeps);
   if (deps != dbuf)
     free(deps);
   exit_feed(h, wtab[e->wi], b->rr->hexpool + b->rr->hexoff[i], role, f >> TF_KNOWN & 1);
