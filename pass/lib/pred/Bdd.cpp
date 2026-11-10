@@ -30,11 +30,24 @@ unsigned Bdd::mk(unsigned v, unsigned l, unsigned h) {
 }
 
 unsigned Bdd::cofactor(unsigned f, unsigned v, bool val) {
-  if (terminal(f) || var(f) > v)
-    return f;
-  if (var(f) == v)
-    return val ? hi(f) : lo(f);
-  return mk(var(f), cofactor(lo(f), v, val), cofactor(hi(f), v, val));
+  // cq-g3h1i: memoized per call, so the walk is linear in f's nodes and not in its paths. A node is still
+  // made the first time its children are done, low child first: the node numbers are the unmemoized walk's.
+  std::unordered_map<unsigned, unsigned> memo;
+  std::function<unsigned(unsigned)> go = [&](unsigned n) -> unsigned {
+    if (terminal(n) || var(n) > v)
+      return n;
+    if (var(n) == v)
+      return val ? hi(n) : lo(n);
+    auto it = memo.find(n);
+    if (it != memo.end())
+      return it->second;
+    unsigned l = go(lo(n));
+    unsigned h = go(hi(n));
+    unsigned r = mk(var(n), l, h);
+    memo.emplace(n, r);
+    return r;
+  };
+  return go(f);
 }
 
 unsigned Bdd::ite(unsigned f, unsigned g, unsigned h) {
