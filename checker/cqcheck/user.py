@@ -424,6 +424,33 @@ def turned_angles(c_module: Path, spec: DriverSpec, samples: List[dict]):
     return turned
 
 
+EXTRA_PER_GROUP = 256         # cq-pdstc: samples added per classical group with an unidentified measurement
+_UNIDENTIFIED = re.compile(r"sample (\{)")
+
+
+def _unidentified_extras(reasons: List[str], chosen: List[dict], samples: List[dict], key) -> List[dict]:
+    """The samples of the set, not compared yet, of the classical groups in which a measurement of ours went
+    unidentified (cq-pdstc): at most EXTRA_PER_GROUP per group, in a seeded order."""
+    from cqcheck import compare
+    bad = set()
+    for r in reasons:
+        m = _UNIDENTIFIED.search(r)
+        if m and "match no C measurement here" in r:
+            try:
+                bad.add(key(json.JSONDecoder().raw_decode(r, m.start(1))[0]))
+            except (ValueError, KeyError, TypeError):
+                continue
+    if not bad:
+        return []
+    have = {compare._skey(s) for s in chosen}
+    out: List[dict] = []
+    for k in sorted(bad, key=repr):
+        rest = [s for s in samples if key(s) == k and compare._skey(s) not in have]
+        random.Random(SUBSET_SEED + 2).shuffle(rest)
+        out += rest[:EXTRA_PER_GROUP]
+    return out
+
+
 # ------------------------------------------------------------------------------------------------
 # The check
 
@@ -509,8 +536,20 @@ def check(o1: Path, lowered: Path, entry: str, samples: Optional[int], work: Pat
         raise UserCheckError(f"cqcheck user: {len(ours)} lowered and {len(cres)} C results "
                              f"for {len(chosen)} samples")
     from cqcheck import drivers as D
-    reasons = list(compare.compare(ours, cres, "c", classical_key=ckey,
-                                   registers=D.theta_registers(D.read_module(c_module))))
+    regs = D.theta_registers(D.read_module(c_module))
+    reasons = list(compare.compare(ours, cres, "c", classical_key=ckey, registers=regs))
+    # cq-pdstc: a measurement of ours is identified only from samples of its classical arguments (cq-1ye9c). A
+    # subset (--samples, --light) may hold too few of a group to show C taking the quantum arm: the group's other
+    # samples of the set (domain-filtered like every sample) are compared too, at most EXTRA_PER_GROUP per group, in a
+    # seeded order, before such a measurement is reported.
+    extra = _unidentified_extras(reasons, chosen, ss.samples, ckey)
+    if extra:
+        chosen = chosen + extra
+        ours += run.run_samples(low, spec, extra, "ours", jobs, c_module=c_module)
+        cres += [oracle.run_result(r, spec, c_module) for r in oracle.run_samples(c_module, spec, extra)]
+        reasons = list(compare.compare(ours, cres, "c", classical_key=ckey, registers=regs))
+        lines.append(f"cqcheck user: {len(extra)} more samples of {len({ckey(s) for s in extra})} classical "
+                     f"group(s) compared, where a measurement was unidentified (cq-pdstc; now {len(chosen)} samples)")
     status = verdict(reasons)
     if status == ERROR_STATUS:
         lines.append(f"cqcheck user: UNDECIDED: the gate matching against the C program ran out of its "
