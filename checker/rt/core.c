@@ -299,6 +299,7 @@ static int keep_event(const char *s) {
  * A writer of such an event (gate, tmpl, unc, alloc, push, pop, standin, bus, cells, tape bookkeeping)
  * builds it only then: in a compact trace it would be formatted and dropped. */
 void cqe__init(void);
+static void store_init(void); /* rails, below */
 int cqe__trace_all(void) {
   cqe__init();
   return !compact && !shot_muted;
@@ -331,6 +332,7 @@ void cqe__init(void) {
   } else {
     trace_f = stderr;
   }
+  store_init();
   atexit(at_exit_handler);
 }
 
@@ -468,48 +470,79 @@ _Static_assert(sizeof(rail_t) == 32, "rail_t: 32 bytes (2026-11-09 memory plan)"
 
 #define CQE_RAIL_LIMIT 0x51000000u /* rail handles stay below the bus handle (rt_bus.c) */
 
-/* The rail store (cq-ism39). Handles are never reused (cqe.h C1; use_after_free and compare's rails across
- * samples read them), but a record is: a handle maps to a record in the pool while the rail is live, and a
- * freed rail's record goes back to the pool once its content fits a 16-byte tombstone exactly (tomb_fits):
- * value 0 in one word, no extension in use, no sources (cqe__free drops them). Everything a record holds
- * after its free is in the tombstone (its width, flags and two clocks; the rest is 0), so reading a freed rail
- * reads what it held: the cheap readers (cqe__check, the flag getters, a live rail's role, rule 6's marks)
- * read the tombstone, and anything that needs the record (a freed handle used after the use_after_free
- * violation, a cq_invert replay's read of a freed out rail) gets it rebuilt from the tombstone
- * (rail_materialize). Every block stays below SETUP_BIG (a sample's restore puts the setup arena back), and
- * the directories' top levels are static. */
-typedef struct { uint64_t a, b; } tomb_t; /* a: t_create | wi << 48; b: t_write | flags << 48 */
-#define TOMB_CLOCK_MAX ((1ULL << 48) - 1)
-#define MAP_TOMB 0x80000000u /* map entry: the tombstone index | MAP_TOMB, or the pool slot + 1 */
+/* The rail store (cq-ism39; flat since r6-core). Handles are never reused (cqe.h C1; use_after_free and compare's
+ * rails across samples read them) and are given in order, 1, 2, ...; a record is reused.
+ *   - map_base[h] is real handle h's entry (h in 1 .. nrails): slot + 2 of its record in the pool; MAP_PENDING for a
+ *     touched rail of a replayed call that is not made yet (rp_touch); or, for a freed rail whose record went back to
+ *     the pool, MAP_DEAD with its width token and flags (the entry IS what is left of it).
+ *   - pool_base[slot] is a record. A freed rail's record goes back to the pool (rail_bury) when its value is 0, no
+ *     extension is in use and it has no sources (cqe__free drops them): a dead rail. A dead rail keeps its width and
+ *     its flags as its free left them, exactly; its two event clocks are not kept (they read 0, "never") and no
+ *     later mark reaches it (cqe__carry, r6_mark). Nothing reads either of a rail that was freed except the gates
+ *     that run on after the use_after_free violation, which cqe__check still gives for every use of a dead handle
+ *     (the entry says dead), and a replay key, which holds the same on both sides. A dead rail used again gets a
+ *     record back (rail_materialize: value 0, not live).
+ *   - A map page (PG_N handles, 4 KiB) whose handles are all given and of which at most PG_KEEP are not dead is
+ *     compacted (pg_compact): its dead entries become a dictionary of their distinct values and a packed index per
+ *     handle, the others an exception list (handle index, entry), sorted, written in place from then on; the page's
+ *     memory goes back to the system and is never touched again (pg_base[page].blk says the page is compact, and
+ *     every reader asks it first). So a dead rail costs a fraction of a byte and a use after its free is still seen.
+ * The three tables are reservations of address space made once (store_init), outside the arenas: a sample's end
+ * puts back the pages it used and the setup's prefix of each (store_snapshot, store_recycle). The side table (a
+ * handle that names no rail, rail_blank) stays in directory blocks below SETUP_BIG. */
+#define MAP_DEAD 0x80000000u
+#define MAP_PENDING 1u
+#define DEAD_WI(m) ((uint16_t)((m) & 0xfffu))
+#define DEAD_F(m) (((m) >> 12) & 0x7fffu)
+#define DEAD_OF(wi, f) (MAP_DEAD | (uint32_t)(wi) | (uint32_t)(f) << 12)
+static inline int ent_rec(uint32_t m) { return m - 2u < MAP_DEAD - 2u; } /* the entry names a record: slot m - 2 */
+
+#define PG_BITS 10
+#define PG_N (1u << PG_BITS)
+#define PG_KEEP 64u      /* a page with at most this many entries that are not dead is compacted */
+#define PG_DICT_MAX 256u /* and at most this many distinct dead entries */
+/* A compact page: dict[ndict], xval[nx], xidx[nx] (ascending), then PG_N indices of `bits` bits each. */
+typedef struct { uint16_t nx; uint8_t bits, pad; uint32_t ndict; } pg_blk;
+typedef struct {
+  pg_blk *blk;     /* compact: the page's memory is not read */
+  uint32_t ndead;  /* raw: its MAP_DEAD entries */
+  uint32_t nocomp; /* raw: more than PG_DICT_MAX distinct dead entries when last tried */
+} pg_t;
+_Static_assert(sizeof(pg_t) == 16, "pg_t: 16 bytes");
 
 #define LEAF_BITS 12 /* directory blocks: 4096 pointers */
-#define MAP_BITS 12  /* a map leaf: 4096 real handles (16 KiB) */
-#define POOL_BITS 9  /* a pool leaf: 512 records (36 KiB) */
-#define TOMB_BITS 11 /* a tombstone leaf: 2048 (32 KiB) */
 #define SIDE_BITS 10 /* a side-table leaf: 1024 entries (12 KiB) */
 #define SIDE_HEAD_BITS 14
 #define SIDE_HEADS (1u << SIDE_HEAD_BITS)
-/* The map (cq-ism39, 2026-11-09 memory plan): a real handle's entry lies in map_dir at the handle (a replayed call
- * takes no handle, owner 2026-11-09). A handle that names no rail (rail_blank) has its entry in the side table: a
- * hash of chains through side_dir's nodes (each block of either stays below SETUP_BIG). */
-static uint32_t **map_dir[(CQE_RAIL_LIMIT >> (MAP_BITS + LEAF_BITS)) + 1];
 typedef struct { uint32_t h, m, next; } side_node;
 static side_node **side_dir[(CQE_RAIL_LIMIT >> (SIDE_BITS + LEAF_BITS)) + 2];
 static uint32_t side_head[SIDE_HEADS]; /* node index + 1, 0 none */
 static uint32_t side_n;
-static rail_t **pool_dir[(CQE_RAIL_LIMIT >> (POOL_BITS + LEAF_BITS)) + 1];
-static tomb_t **tomb_dir[(CQE_RAIL_LIMIT >> (TOMB_BITS + LEAF_BITS)) + 1];
+static uint32_t *map_base; /* CQE_RAIL_LIMIT entries */
+static rail_t *pool_base;  /* CQE_RAIL_LIMIT records */
+static pg_t *pg_base;      /* one per map page */
 static uint32_t pool_n, pool_free; /* records made; the free list's head (slot + 1, 0 none), linked through inl */
-static uint32_t tomb_n;
 static uint32_t nrails;
 static uint64_t clock_;
+static uint64_t st_compacted, st_buried; /* pages compacted, rails buried (statistics) */
+
+#define STORE_MAP_BYTES ((size_t)CQE_RAIL_LIMIT * sizeof(uint32_t))
+#define STORE_POOL_BYTES ((size_t)CQE_RAIL_LIMIT * sizeof(rail_t))
+#define STORE_PG_BYTES ((((size_t)CQE_RAIL_LIMIT >> PG_BITS) + 1) * sizeof(pg_t))
+static void *store_reserve(size_t n);       /* shots, below (sys/mman.h) */
+static void store_page_drop(void *at, size_t n);
+static void store_init(void) {
+  if (map_base)
+    return;
+  map_base = store_reserve(STORE_MAP_BYTES);
+  pool_base = store_reserve(STORE_POOL_BYTES);
+  pg_base = store_reserve(STORE_PG_BYTES);
+}
 
 #define DIR_AT(dir, i, bits) (&(dir)[(uint32_t)(i) >> ((bits) + LEAF_BITS)][((uint32_t)(i) >> (bits)) & ((1u << LEAF_BITS) - 1)] \
                                     [(uint32_t)(i) & ((1u << (bits)) - 1)])
-#define MAP(d) DIR_AT(map_dir, d, MAP_BITS) /* d: a real handle */
 #define SIDE(i) DIR_AT(side_dir, i, SIDE_BITS)
-#define SLOT(s) DIR_AT(pool_dir, s, POOL_BITS)
-#define TOMB(t) DIR_AT(tomb_dir, t, TOMB_BITS)
+#define SLOT(s) (&pool_base[s])
 
 /* The leaf of entry i in dir, made when new. */
 #define DIR_GROW(dir, i, bits)                                                                          \
@@ -568,38 +601,8 @@ static uint32_t tomb_flags(const rail_t *r) {
 #define TF_LOAD_COPY 9
 #define TF_ROLE 10
 #define TF_FENV 13
-static inline uint32_t tf_get(const tomb_t *t) { return (uint32_t)(t->b >> 48); }
-static inline void tf_set(tomb_t *t, uint32_t f) { t->b = (t->b & TOMB_CLOCK_MAX) | (uint64_t)(f & 0xffff) << 48; }
-static inline int tf_bit(const tomb_t *t, int b) { return (int)(tf_get(t) >> b) & 1; }
-
-/* A record from the pool, zeroed; *slot its index. */
-static rail_t *pool_take(uint32_t *slot) {
-  uint32_t s;
-  if (pool_free) {
-    s = pool_free - 1;
-    pool_free = (uint32_t)(*SLOT(s)).val.inl;
-  } else {
-    s = pool_n++;
-    DIR_GROW(pool_dir, s, POOL_BITS);
-  }
-  rail_t *r = &(*SLOT(s));
-  memset(r, 0, sizeof *r);
-  *slot = s;
-  return r;
-}
-
-static uint32_t map_peek(uint32_t h);
-static void map_put(uint32_t h, uint32_t m);
-
-/* The record of tombstoned rail h, rebuilt (and kept: h maps to it from now on). */
-static rail_t *rail_materialize(uint32_t h) {
-  tomb_t t = (*TOMB(map_peek(h) & ~MAP_TOMB));
-  uint32_t s;
-  rail_t *r = pool_take(&s);
-  uint32_t f = tf_get(&t);
-  r->wi = (uint16_t)(t.a >> 48); /* a tombstone's value is one word, 0 */
-  r->t_create = t.a & TOMB_CLOCK_MAX;
-  r->t_write = t.b & TOMB_CLOCK_MAX;
+/* r's flags from tomb_flags' bits. */
+static void flags_put(rail_t *r, uint32_t f) {
   r->known = f >> TF_KNOWN & 1;
   r->measured = f >> TF_MEASURED & 1;
   r->frozen = f >> TF_FROZEN & 1;
@@ -612,17 +615,51 @@ static rail_t *rail_materialize(uint32_t h) {
   r->load_copy = f >> TF_LOAD_COPY & 1;
   r->role = f >> TF_ROLE & 7;
   r->fenv = f >> TF_FENV & 3;
-  map_put(h, s + 1);
+}
+
+/* A record from the pool, zeroed; *slot its index. */
+static rail_t *pool_take(uint32_t *slot) {
+  uint32_t s;
+  if (pool_free) {
+    s = pool_free - 1;
+    pool_free = (uint32_t)pool_base[s].val.inl;
+  } else {
+    if (pool_n >= CQE_RAIL_LIMIT - 2) {
+      fprintf(stderr, "cq: chk-core: rail records exhausted\n");
+      abort();
+    }
+    s = pool_n++;
+  }
+  rail_t *r = &pool_base[s];
+  memset(r, 0, sizeof *r);
+  *slot = s;
   return r;
 }
 
-/* A record for a handle in a map leaf that names no rail (handle 0, or one not made yet): all zero, its own,
- * as such a handle's record was in the rail table before (a reader that does not check the handle, CR §1.1's
- * "no rail" 0 among them, reads zeros); cqe__new gives a handle made later a fresh one. */
+static uint32_t map_peek(uint32_t h);
+static void map_put(uint32_t h, uint32_t m);
+static inline void real_new(uint32_t h, uint32_t m);
+
+/* The record of dead rail h (entry dv), made again (and kept: h maps to it from now on): its width and flags, value
+ * 0, not live, never created or written by the clock. */
+static rail_t *rail_materialize(uint32_t h, uint32_t dv) {
+  uint32_t s;
+  rail_t *r = pool_take(&s);
+  r->wi = DEAD_WI(dv);
+  if (w_nw[r->wi] > 1)
+    r->val.wide = xcalloc(w_nw[r->wi], sizeof *r->val.wide);
+  flags_put(r, DEAD_F(dv));
+  map_put(h, s + 2);
+  return r;
+}
+
+/* A record for a handle that names no rail (handle 0, or one not made yet): all zero, its own, as such a handle's
+ * record was in the rail table before (a reader that does not check the handle, CR §1.1's "no rail" 0 among them,
+ * reads zeros); cqe__new gives a handle made later a fresh one. */
 static rail_t *rail_blank(uint32_t h) {
   uint32_t s;
   rail_t *r = pool_take(&s);
-  map_put(h, s + 1);
+  map_put(h, s + 2);
   return r;
 }
 
@@ -780,6 +817,7 @@ static uint32_t rp_touch(uint32_t b, uint32_t row) {
     abort();
   }
   h = ++nrails;
+  real_new(h, MAP_PENDING);
   cn_note(h, rp_blocks[b].name0 + row);
   if (rp_ntch == rp_captch) {
     rp_captch = rp_captch ? 2 * rp_captch : 256;
@@ -835,53 +873,205 @@ static void side_put(uint32_t h, uint32_t m) {
   *head = i + 1;
 }
 
-/* The entry of real handle h, 0 when its leaf is not made. */
-static inline uint32_t dense_peek(uint32_t d) {
-  uint32_t **dir = map_dir[d >> (MAP_BITS + LEAF_BITS)];
-  if (!dir)
-    return 0;
-  uint32_t *l = dir[(d >> MAP_BITS) & ((1u << LEAF_BITS) - 1)];
-  return l ? l[d & ((1u << MAP_BITS) - 1)] : 0;
+/* -- compact map pages -- */
+static inline uint32_t *blk_dict(pg_blk *b) { return (uint32_t *)(void *)(b + 1); }
+static inline uint32_t *blk_xval(pg_blk *b) { return blk_dict(b) + b->ndict; }
+static inline uint16_t *blk_xidx(pg_blk *b) { return (uint16_t *)(void *)(blk_xval(b) + b->nx); }
+static inline uint8_t *blk_pack(pg_blk *b) { return (uint8_t *)(blk_xidx(b) + b->nx); }
+static size_t blk_size(uint32_t ndict, uint32_t nx, uint32_t bits) {
+  return sizeof(pg_blk) + 4 * (size_t)ndict + 6 * (size_t)nx + (PG_N * (size_t)bits + 7) / 8;
 }
-/* The map entry of h, 0 when none is made. A real handle (1 .. nrails) has its entry in map_dir at h; a handle that
- * names no rail (rail_blank) in the side table. */
-static inline uint32_t map_peek(uint32_t h) { return h && h <= nrails ? dense_peek(h) : side_get(h); }
-static void map_put(uint32_t h, uint32_t m) {
-  if (!h || h > nrails) {
-    side_put(h, m);
+/* The exception entry of index i in compact page b, NULL when i is one of its dead rails. */
+static uint32_t *blk_xfind(pg_blk *b, uint32_t i) {
+  const uint16_t *xi = blk_xidx(b);
+  uint32_t lo = 0, hi = b->nx;
+  while (lo < hi) {
+    uint32_t mid = (lo + hi) / 2;
+    if (xi[mid] < i)
+      lo = mid + 1;
+    else
+      hi = mid;
+  }
+  return lo < b->nx && xi[lo] == i ? &blk_xval(b)[lo] : NULL;
+}
+/* The dead entry of index i (no exception). */
+static uint32_t blk_dead(pg_blk *b, uint32_t i) {
+  uint32_t k = 0;
+  if (b->bits) {
+    uint32_t at = i * b->bits;
+    k = (uint32_t)(blk_pack(b)[at >> 3] >> (at & 7)) & ((1u << b->bits) - 1);
+  }
+  return blk_dict(b)[k];
+}
+/* An exception entry for index i of compact page g (a dead rail of it used again): the block made again with it. */
+static uint32_t *blk_xinsert(pg_t *g, uint32_t i) {
+  pg_blk *o = g->blk;
+  pg_blk *b = xcalloc(1, blk_size(o->ndict, o->nx + 1u, o->bits));
+  b->nx = (uint16_t)(o->nx + 1);
+  b->bits = o->bits;
+  b->ndict = o->ndict;
+  memcpy(blk_dict(b), blk_dict(o), 4 * (size_t)o->ndict);
+  memcpy(blk_pack(b), blk_pack(o), (PG_N * (size_t)o->bits + 7) / 8);
+  uint32_t k = 0, at = 0;
+  for (; k < o->nx && blk_xidx(o)[k] < i; ++k) {
+    blk_xidx(b)[k] = blk_xidx(o)[k];
+    blk_xval(b)[k] = blk_xval(o)[k];
+  }
+  at = k;
+  blk_xidx(b)[at] = (uint16_t)i;
+  blk_xval(b)[at] = blk_dead(o, i);
+  for (; k < o->nx; ++k) {
+    blk_xidx(b)[k + 1] = blk_xidx(o)[k];
+    blk_xval(b)[k + 1] = blk_xval(o)[k];
+  }
+  g->blk = b;
+  free(o);
+  return &blk_xval(b)[at];
+}
+/* Page p to its compact form when it qualifies (the store's header). */
+static void pg_compact(uint32_t p) {
+  pg_t *g = &pg_base[p];
+  if (g->blk || g->nocomp || !p || g->ndead < PG_N - PG_KEEP || (((uint64_t)p + 1) << PG_BITS) - 1 > nrails)
+    return;
+  uint32_t *e = map_base + ((size_t)p << PG_BITS);
+  uint32_t dict[PG_DICT_MAX], nd = 0, nx = 0, last = 0;
+  uint16_t xi[PG_KEEP];
+  uint8_t code[PG_N];
+  for (uint32_t i = 0; i < PG_N; ++i) {
+    uint32_t m = e[i];
+    code[i] = 0;
+    if (!(m & MAP_DEAD)) {
+      if (nx == PG_KEEP)
+        return;
+      xi[nx++] = (uint16_t)i;
+      continue;
+    }
+    uint32_t k = last;
+    if (!nd || dict[k] != m)
+      for (k = 0; k < nd && dict[k] != m; ++k)
+        ;
+    if (k == nd) {
+      if (nd == PG_DICT_MAX) {
+        g->nocomp = 1;
+        return;
+      }
+      dict[nd++] = m;
+    }
+    code[i] = (uint8_t)(last = k);
+  }
+  uint32_t bits = nd <= 1 ? 0 : nd <= 2 ? 1 : nd <= 4 ? 2 : nd <= 16 ? 4 : 8;
+  pg_blk *b = xcalloc(1, blk_size(nd, nx, bits));
+  b->nx = (uint16_t)nx;
+  b->bits = (uint8_t)bits;
+  b->ndict = nd;
+  memcpy(blk_dict(b), dict, 4 * (size_t)nd);
+  for (uint32_t k = 0; k < nx; ++k) {
+    blk_xidx(b)[k] = xi[k];
+    blk_xval(b)[k] = e[xi[k]];
+  }
+  if (bits)
+    for (uint32_t i = 0; i < PG_N; ++i)
+      blk_pack(b)[(i * bits) >> 3] |= (uint8_t)(code[i] << ((i * bits) & 7));
+  g->blk = b;
+  g->ndead = 0;
+  ++st_compacted;
+  store_page_drop(e, PG_N * sizeof *e);
+}
+
+/* The entry of real handle h (1 .. nrails). */
+static inline uint32_t real_peek(uint32_t h) {
+  pg_blk *b = pg_base[h >> PG_BITS].blk;
+  if (!b)
+    return map_base[h];
+  uint32_t *x = blk_xfind(b, h & (PG_N - 1));
+  return x ? *x : blk_dead(b, h & (PG_N - 1));
+}
+static void real_put(uint32_t h, uint32_t m) {
+  pg_t *g = &pg_base[h >> PG_BITS];
+  if (g->blk) {
+    uint32_t *x = blk_xfind(g->blk, h & (PG_N - 1));
+    if (!x)
+      x = blk_xinsert(g, h & (PG_N - 1));
+    *x = m;
     return;
   }
-  DIR_GROW(map_dir, h, MAP_BITS);
-  *MAP(h) = m;
+  uint32_t old = map_base[h];
+  map_base[h] = m;
+  if ((m ^ old) & MAP_DEAD) {
+    if (m & MAP_DEAD) {
+      g->ndead++;
+      if (g->ndead >= PG_N - PG_KEEP)
+        pg_compact(h >> PG_BITS);
+    } else {
+      g->ndead--;
+    }
+  }
+}
+/* Handle h was just given (nrails == h): entry m. The last handle of a page lets the page be compacted. */
+static inline void real_new(uint32_t h, uint32_t m) {
+  map_base[h] = m;
+  if ((h & (PG_N - 1)) == PG_N - 1)
+    pg_compact(h >> PG_BITS);
+}
+
+/* The map entry of h, 0 when none is made. A real handle (1 .. nrails) has its entry in the map; a handle that
+ * names no rail (rail_blank) in the side table. */
+static inline uint32_t map_peek(uint32_t h) { return h - 1u < nrails ? real_peek(h) : side_get(h); }
+static void map_put(uint32_t h, uint32_t m) {
+  if (h - 1u < nrails)
+    real_put(h, m);
+  else
+    side_put(h, m);
 }
 static uint32_t rp_materialize(uint32_t h);
-static inline uint32_t map_get(uint32_t h) {
+
+/* The slow part of rail_look: a compact page, a touched block rail not made yet, a dead rail. */
+static rail_t *rail_look_slow(uint32_t h, uint32_t *dv) {
+  uint32_t m = real_peek(h);
+  if (m == MAP_PENDING)
+    m = rp_materialize(h);
+  if (m & MAP_DEAD) {
+    *dv = m;
+    return NULL;
+  }
+  return ent_rec(m) ? &pool_base[m - 2] : rail_blank(h);
+}
+static rail_t *rail_look_side(uint32_t h) {
+  uint32_t m = side_get(h);
+  return m ? &pool_base[m - 2] : rail_blank(h);
+}
+/* Rail h's record, or NULL when h is dead: *dv is then its entry (width and flags, DEAD_WI and DEAD_F). One read of
+ * the page's state, one of the map and the record itself. */
+static inline rail_t *rail_look(uint32_t h, uint32_t *dv) {
   if (rp_watch && h <= rp_wbase)
     rp_outside(h);
-  if (!h || h > nrails)
-    return side_get(h);
-  uint32_t m = dense_peek(h);
-  if (!m && rp_ntch)
-    m = rp_materialize(h);
-  return m;
+  if (h - 1u < nrails) {
+    if (!pg_base[h >> PG_BITS].blk) {
+      uint32_t m = map_base[h];
+      if (ent_rec(m))
+        return &pool_base[m - 2];
+    }
+    return rail_look_slow(h, dv);
+  }
+  return rail_look_side(h);
 }
 
-/* Rail h's record. */
+/* Rail h's record (a dead rail's is made again). */
 static inline rail_t *rail_rec(uint32_t h) {
-  uint32_t m = map_get(h);
-  return m & MAP_TOMB ? rail_materialize(h) : m ? &(*SLOT(m - 1)) : rail_blank(h);
+  uint32_t dv = 0;
+  rail_t *r = rail_look(h, &dv);
+  return r ? r : rail_materialize(h, dv);
 }
 #define RL(h) (rail_rec((uint32_t)(h)))
-/* Rail h's tombstone, NULL when it has a record. */
-static inline tomb_t *rail_tomb(uint32_t h) {
-  uint32_t m = map_get(h);
-  return m & MAP_TOMB ? &(*TOMB(m & ~MAP_TOMB)) : NULL;
+static inline int rail_live(uint32_t h) {
+  uint32_t dv = 0;
+  rail_t *r = rail_look(h, &dv);
+  return r && r->live;
 }
-static inline int rail_live(uint32_t h) { return !rail_tomb(h) && RL(h)->live; }
 
-/* Freed rail h's record to a tombstone when one holds it exactly (above). */
-static void rail_bury(uint32_t h) {
-  rail_t *r = RL(h);
+/* Freed rail h's record r back to the pool when the entry holds all of it (the store's header): value 0 (a wide
+ * rail's words are freed), no extension in use, no sources. */
+static void rail_bury(uint32_t h, rail_t *r) {
   if (r->aux) {
     rail_aux *a = r->d.x;
     rail_ext *x = a->ext;
@@ -899,22 +1089,27 @@ static void rail_bury(uint32_t h) {
       r->d.in[0] = r->d.in[1] = 0;
     }
   }
-  if (r->live || r->aux || r->d.in[0] || rail_nw(r) != 1 || r->val.inl)
+  uint32_t nw = rail_nw(r);
+  if (r->live || r->aux || r->d.in[0] || !nw)
     return;
-  uint32_t t = tomb_n++;
-  if (tomb_n > MAP_TOMB) {
-    fprintf(stderr, "cq: chk-core: rail tombstones exhausted\n");
-    abort();
+  if (nw == 1) {
+    if (r->val.inl)
+      return;
+  } else {
+    for (uint32_t i = 0; i < nw; ++i)
+      if (r->val.wide[i])
+        return;
   }
-  DIR_GROW(tomb_dir, t, TOMB_BITS);
-  tomb_t *tb = &(*TOMB(t));
-  tb->a = r->t_create | (uint64_t)r->wi << 48;
-  tb->b = r->t_write;
-  tf_set(tb, tomb_flags(r));
-  uint32_t s = map_peek(h) - 1;
+  uint32_t m = map_peek(h);
+  if (!ent_rec(m) || &pool_base[m - 2] != r || h - 1u >= nrails)
+    return;
+  if (nw > 1)
+    free(r->val.wide);
+  uint32_t dv = DEAD_OF(r->wi, tomb_flags(r));
   r->val.inl = pool_free;
-  pool_free = s + 1;
-  map_put(h, t | MAP_TOMB);
+  pool_free = m - 2 + 1;
+  ++st_buried;
+  map_put(h, dv);
 }
 
 static inline int32_t *deps_of(rail_t *r) { return r->aux ? r->d.x->deps : r->d.in; }
@@ -978,7 +1173,7 @@ static void deps_append(rail_t *r, int32_t src) {
 
 /* The event clock: a record holds 48 bits of it. */
 static void clock_check(void) {
-  if (clock_ > TOMB_CLOCK_MAX) {
+  if (clock_ > ((1ULL << 48) - 1)) {
     fprintf(stderr, "cq: chk-core: the event clock passed 2^48\n");
     abort();
   }
@@ -997,8 +1192,35 @@ static int32_t prealloc_h;
 void cqe__prealloc(int32_t h) { prealloc_h = h; }
 /* The replayed compute of a reserved rail: the rail's value is made now (its known-basis reference). */
 void cqe__recreated(int32_t h) {
-  if (h >= 1 && (uint32_t)h <= nrails)
-    (*RL(h)).t_create = (*RL(h)).t_write = cqe__tick();
+  if (h >= 1 && (uint32_t)h <= nrails) {
+    rail_t *r = RL(h);
+    r->t_create = r->t_write = cqe__tick();
+  }
+}
+
+/* The width token w's index, 0 when it is malformed. The last tokens asked are remembered by their text. */
+static uint16_t w_index(const char *w) {
+  static struct { uint64_t key; uint16_t wi; } memo[64];
+  uint64_t key = 0;
+  uint32_t n = 0;
+  if (w)
+    for (; n < 8 && w[n]; ++n)
+      key |= (uint64_t)(uint8_t)w[n] << (8 * n);
+  if (!w || n == 8)
+    key = 0;
+  uint32_t at = (uint32_t)((key * 0x9E3779B97F4A7C15ULL) >> 58);
+  if (key && memo[at].key == key)
+    return memo[at].wi;
+  char kind = 0;
+  uint32_t bits = cqe__wtok_bits(w, &kind);
+  if (!bits)
+    return 0;
+  uint16_t wi = w_intern(w, bits, kind);
+  if (key) {
+    memo[at].key = key;
+    memo[at].wi = wi;
+  }
+  return wi;
 }
 
 int32_t cqe__new(const char *w, const cqe_val *init, int known, int seed) {
@@ -1006,27 +1228,26 @@ int32_t cqe__new(const char *w, const cqe_val *init, int known, int seed) {
   if (prealloc_h > 0) {
     int32_t h = prealloc_h;
     prealloc_h = 0;
-    if ((uint32_t)h > nrails || !rail_live((uint32_t)h)) {
+    uint32_t dv = 0;
+    rail_t *r = (uint32_t)h > nrails ? NULL : rail_look((uint32_t)h, &dv);
+    if (!r || !r->live) {
       cqe__violation("bad_handle", h, "cq_invert replay: rail %d is not live", (int)h);
     } else {
-      if (w && strcmp(wtab[(*RL(h)).wi], w) != 0)
-        cqe__violation("width_mismatch", h, "cq_invert replay: rail %d is %s, the gate makes %s", (int)h, wtab[(*RL(h)).wi], w);
+      if (w && strcmp(wtab[r->wi], w) != 0)
+        cqe__violation("width_mismatch", h, "cq_invert replay: rail %d is %s, the gate makes %s", (int)h, wtab[r->wi], w);
       if (init) {
-        cqe_val v = rail_v(RL(h));
+        cqe_val v = rail_v(r);
         cqe__val_xor(&v, init);
       }
-      (*RL(h)).known = (*RL(h)).known && known;
-      (*RL(h)).t_write = cqe__tick();
+      r->known = r->known && known;
+      r->t_write = cqe__tick();
       return h;
     }
   }
-  char kind = 0;
-  uint32_t bits = cqe__wtok_bits(w, &kind);
-  if (!bits) {
+  uint16_t wi = w_index(w);
+  if (!wi) {
     cqe__violation("bad_width", -1, "rail width token '%s' is not i<N>, f16, f32, f64, f80 or bf16", w ? w : "(null)");
-    bits = 1;
-    kind = 'i';
-    w = "i1";
+    wi = w_index("i1");
   }
   if (nrails + 1 >= CQE_RAIL_LIMIT) {
     fprintf(stderr, "cq: chk-core: rail handles exhausted (limit 0x%x, the bus handle)\n",
@@ -1037,8 +1258,8 @@ int32_t cqe__new(const char *w, const cqe_val *init, int known, int seed) {
   cn_note((uint32_t)h, cn_new_name());
   uint32_t s;
   rail_t *r = pool_take(&s);
-  map_put((uint32_t)h, s + 1);
-  r->wi = w_intern(w, bits, kind);
+  real_new((uint32_t)h, s + 2);
+  r->wi = wi;
   if (rail_nw(r) > 1)
     r->val.wide = xcalloc(rail_nw(r), sizeof *r->val.wide);
   if (init) {
@@ -1073,7 +1294,6 @@ int cqe__check(int32_t h, const char *ctx) {
 /* Quiet existence test (no violation). */
 int cqe__exists(int32_t h) { return h >= 1 && (uint32_t)h <= nrails; }
 
-/* The getters read a tombstone where it holds the answer; the rest get the record. */
 /* A rail's value as a cqe_val: one of the last VAL_RING views (the record holds no cqe_val); its words are the rail's,
  * so a write through it writes the rail. A caller uses it at once (never across VAL_RING more of them). */
 #define VAL_RING 256
@@ -1085,43 +1305,45 @@ static cqe_val *val_view(rail_t *r) {
   return v;
 }
 cqe_val *cqe__val(int32_t h) { return val_view(RL(h)); }
+/* The getters read a dead rail's entry where it holds the answer; the rest get the record. */
+#define LOOK(h)        \
+  uint32_t dv = 0;     \
+  rail_t *r = rail_look((uint32_t)(h), &dv)
 const char *cqe__w(int32_t h) {
-  tomb_t *t = rail_tomb((uint32_t)h);
-  return wtab[t ? (uint16_t)(t->a >> 48) : (*RL(h)).wi];
+  LOOK(h);
+  return wtab[r ? r->wi : DEAD_WI(dv)];
 }
 int cqe__known(int32_t h) {
-  tomb_t *t = rail_tomb((uint32_t)h);
-  return t ? tf_bit(t, TF_KNOWN) : (*RL(h)).known;
+  LOOK(h);
+  return r ? (int)r->known : (int)(DEAD_F(dv) >> TF_KNOWN & 1);
 }
 void cqe__setknown(int32_t h, int k) { (*RL(h)).known = k ? 1 : 0; }
 uint64_t cqe__created(int32_t h) {
-  tomb_t *t = rail_tomb((uint32_t)h);
-  return t ? t->a & TOMB_CLOCK_MAX : (*RL(h)).t_create;
+  LOOK(h);
+  return r ? r->t_create : 0; /* a dead rail's clocks are not kept */
 }
 uint64_t cqe__last_nd(int32_t h) {
-  if (rail_tomb((uint32_t)h))
-    return 0;
-  rail_t *r = RL(h);
-  return rail_x(r) ? rail_x(r)->t_nd : 0;
+  LOOK(h);
+  return r && rail_x(r) ? rail_x(r)->t_nd : 0;
 }
 int cqe__measured(int32_t h) {
-  tomb_t *t = rail_tomb((uint32_t)h);
-  return t ? tf_bit(t, TF_MEASURED) : (*RL(h)).measured;
+  LOOK(h);
+  return r ? (int)r->measured : (int)(DEAD_F(dv) >> TF_MEASURED & 1);
 }
 int cqe__frozen(int32_t h) {
-  tomb_t *t = rail_tomb((uint32_t)h);
-  return t ? tf_bit(t, TF_FROZEN) : (*RL(h)).frozen;
+  LOOK(h);
+  return r ? (int)r->frozen : (int)(DEAD_F(dv) >> TF_FROZEN & 1);
 }
 int cqe__role(int32_t h) {
-  tomb_t *t = rail_tomb((uint32_t)h);
-  return t ? (int)(tf_get(t) >> TF_ROLE & 7) : (*RL(h)).role;
+  LOOK(h);
+  return r ? (int)r->role : (int)(DEAD_F(dv) >> TF_ROLE & 7);
 }
 void cqe__setfenv(int32_t h, int bits) { (*RL(h)).fenv |= (uint8_t)bits; }
 void cqe__setrole(int32_t h, int role) { (*RL(h)).role = (uint8_t)role; }
 void cqe__set_busz(int32_t h) { (*RL(h)).busz = 1; }
 int cqe__busz(int32_t h) {
-  tomb_t *t = rail_tomb((uint32_t)h);
-  return t ? tf_bit(t, TF_BUSZ) : (*RL(h)).busz;
+  LOOK(h);
+  return r ? (int)r->busz : (int)(DEAD_F(dv) >> TF_BUSZ & 1);
 }
 void cqe__set_store_kept(int32_t h) { (*RL(h)).store_kept = 1; }
 /* cq-1leyz: rule 14's kept overflow predicate a_K, as run.kept_ak_module identifies it in the lowered program */
@@ -1130,9 +1352,10 @@ void cqe__set_kept_ak(int32_t h) { (*RL(h)).role = 6; }
 void cqe__set_kept_k2(int32_t h) { (*RL(h)).role = 7; }
 
 void cqe__mark_written(int32_t h) {
-  (*RL(h)).written = 1;
-  (*RL(h)).busz = 0;
-  (*RL(h)).t_write = cqe__tick();
+  rail_t *r = RL(h);
+  r->written = 1;
+  r->busz = 0;
+  r->t_write = cqe__tick();
 }
 /* cq-3o3v: a firing Ry on h that took a C reach changed its value from pre to the reach's value. A
  * later firing Ry on h with the negated angle, with h neither written nor changed since and no C
@@ -1152,9 +1375,9 @@ void cqe__ry_note(int32_t h, uint64_t angle, const cqe_val *pre) {
   x->ry_t = cqe__tick();
 }
 int cqe__ry_unprep(int32_t h, uint64_t angle) {
-  if (rail_tomb((uint32_t)h)) /* a tombstone has no Ry in use */
+  LOOK(h);
+  if (!r) /* a dead rail has no Ry in use */
     return 0;
-  rail_t *r = RL(h);
   rail_ext *x = rail_x(r);
   if (!x || !x->ry_t || r->t_write > x->ry_t || angle != (x->ry_ang ^ (1ULL << 63)) ||
       memcmp(x->ry_post, rail_w(r), rail_nw(r) * sizeof *x->ry_post) != 0)
@@ -1164,24 +1387,25 @@ int cqe__ry_unprep(int32_t h, uint64_t angle) {
   return 1;
 }
 void cqe__ry_forget(int32_t h) {
-  if (rail_tomb((uint32_t)h)) /* a tombstone has no Ry in use */
-    return;
-  if (rail_x(RL(h)))
-    rail_x(RL(h))->ry_t = 0;
+  LOOK(h);
+  if (r && rail_x(r)) /* a dead rail has no Ry in use */
+    rail_x(r)->ry_t = 0;
 }
 void cqe__mark_nd(int32_t h) {
-  (*RL(h)).frozen = 1;
-  (*RL(h)).busz = 0;
-  ext_of(RL(h))->t_nd = cqe__tick();
+  rail_t *r = RL(h);
+  r->frozen = 1;
+  r->busz = 0;
+  ext_of(r)->t_nd = cqe__tick();
 }
 /* CR rule 2, BACKEND_ABI 1.3 (cq-ihlt): measuring a measured rail again is a classical re-read of
  * its outcome; the rail's measurement (and its time, which kept_entangled reads) stays the first. */
 void cqe__mark_measured(int32_t h) {
-  if ((*RL(h)).measured)
+  rail_t *r = RL(h);
+  if (r->measured)
     return;
-  (*RL(h)).measured = 1;
-  (*RL(h)).known = 1;
-  ext_of(RL(h))->t_meas = cqe__tick();
+  r->measured = 1;
+  r->known = 1;
+  ext_of(r)->t_meas = cqe__tick();
 }
 /* CR rule 19 / §6 item 1 (cq-qhow): a frozen register (rotated) is never written in place again
  * except to clean it, and rule 6 cleans a dead register x against its image r: t = g(r); x ^= t
@@ -1198,13 +1422,10 @@ void cqe__carry(int32_t into, const int32_t *srcs, int n) {
   for (int i = 0; i < n; ++i) {
     if (srcs[i] == into)
       continue;
-    tomb_t *t = rail_tomb((uint32_t)srcs[i]);
-    if (t) {
-      if (!tf_bit(t, TF_MEASURED))
-        tf_set(t, tf_get(t) | 1u << TF_IMAGE);
-    } else if (!(*RL(srcs[i])).measured) {
-      (*RL(srcs[i])).image = 1;
-    }
+    uint32_t dv = 0;
+    rail_t *s = rail_look((uint32_t)srcs[i], &dv);
+    if (s && !s->measured) /* a dead rail takes no mark (the store's header) */
+      s->image = 1;
   }
 }
 
@@ -1223,7 +1444,9 @@ static int r6_cleanable(rail_t *r) {
   const int32_t *deps = deps_of(r);
   uint32_t nd = rail_nd(r);
   for (uint32_t i = 0; i < nd; ++i) {
-    if (!rail_live((uint32_t)deps[i]) || RL(deps[i])->t_write > r->t_write)
+    uint32_t dv = 0;
+    rail_t *s = rail_look((uint32_t)deps[i], &dv);
+    if (!s || !s->live || s->t_write > r->t_write)
       return 0;
   }
   return nd > 0;
@@ -1231,13 +1454,10 @@ static int r6_cleanable(rail_t *r) {
 
 static void r6_mark(const int32_t *ops, uint32_t n) {
   for (uint32_t i = 0; i < n; ++i) {
-    tomb_t *t = rail_tomb((uint32_t)ops[i]);
-    if (t) { /* no sources: never r6_cleanable */
-      if (!tf_bit(t, TF_MEASURED) && !tf_bit(t, TF_LOAD_COPY))
-        tf_set(t, tf_get(t) | 1u << TF_R6);
-    } else if (!(*RL(ops[i])).measured && !(*RL(ops[i])).load_copy && !r6_cleanable(RL(ops[i]))) {
-      (*RL(ops[i])).r6 = 1;
-    }
+    uint32_t dv = 0;
+    rail_t *o = rail_look((uint32_t)ops[i], &dv);
+    if (o && !o->measured && !o->load_copy && !r6_cleanable(o)) /* a dead rail takes no mark (the store's header) */
+      o->r6 = 1;
   }
 }
 
@@ -1248,16 +1468,19 @@ int cqe__r6_before(int32_t t, int32_t y) { return (*RL(t)).t_create > (*RL(y)).t
 
 /* After it, and the known-basis rule: y reads known |0>, so t is the inverse of a rule-6 clean. */
 void cqe__r6_cleaned(int32_t t, int32_t y) {
-  cqe_val yv = rail_v(RL(y));
-  if (cqe__val_iszero(&yv) && (*RL(y)).known)
+  rail_t *ry = RL(y);
+  cqe_val yv = rail_v(ry);
+  if (cqe__val_iszero(&yv) && ry->known)
     ext_of(RL(t))->r6_old = y;
 }
 
 /* t's _unc, reading the rails ops. */
 void cqe__r6_unc(int32_t t, const int32_t *ops, int n) {
-  if (rail_tomb((uint32_t)t)) /* a tombstone's r6_old is 0 */
+  uint32_t tdv = 0;
+  rail_t *tr = rail_look((uint32_t)t, &tdv);
+  if (!tr) /* a dead rail's r6_old is 0 */
     return;
-  rail_ext *tx = rail_x(RL(t));
+  rail_ext *tx = rail_x(tr);
   int32_t y = tx ? tx->r6_old : 0;
   if (!y)
     return;
@@ -1277,9 +1500,10 @@ void cqe__r6_unc(int32_t t, const int32_t *ops, int n) {
 
 void cqe__add_dep(int32_t h, int32_t src) {
   rail_t *r = RL(h);
-  tomb_t *st = rail_tomb((uint32_t)src);
+  uint32_t sdv = 0;
+  rail_t *sr = rail_look((uint32_t)src, &sdv);
   /* cq-tt2j: a rail written from the flags is flags (rule 23 lineage) */
-  r->fenv |= (st ? tf_get(st) >> TF_FENV : (*RL(src)).fenv) & 1;
+  r->fenv |= (sr ? (uint32_t)sr->fenv : DEAD_F(sdv) >> TF_FENV) & 1;
   int32_t *deps = deps_of(r);
   uint32_t nd = rail_nd(r);
   for (uint32_t i = 0; i < nd; ++i)
@@ -1289,9 +1513,10 @@ void cqe__add_dep(int32_t h, int32_t src) {
 }
 
 void cqe__free(int32_t h) {
-  if (rail_tomb((uint32_t)h)) /* freed before: nothing left to drop */
+  uint32_t dv = 0;
+  rail_t *r = rail_look((uint32_t)h, &dv);
+  if (!r) /* freed before: nothing left to drop */
     return;
-  rail_t *r = RL(h);
   r->live = 0;
   rail_ext *x = rail_x(r);
   if (x && x->r6_ops) {
@@ -1309,7 +1534,7 @@ void cqe__free(int32_t h) {
   } else {
     r->d.in[0] = r->d.in[1] = 0;
   }
-  rail_bury((uint32_t)h);
+  rail_bury((uint32_t)h, r);
 }
 
 /* ---- cqe.h rail API (families) ------------------------------------------------------------- */
@@ -1339,13 +1564,13 @@ void cqe_set_known(int32_t h, int known) {
 /* ---- exit -------------------------------------------------------------------------------- */
 
 /* A source of a rail written at t_write received a non-diagonal gate or a measurement after it (the map peeked: a
- * tombstone's and an untouched block rail's t_nd and t_meas are 0, cqe__rp_encode). */
+ * dead rail's and an untouched block rail's t_nd and t_meas are 0, cqe__rp_encode). */
 static int deps_entangled(const int32_t *deps, uint32_t nd, uint64_t t_write) {
   for (uint32_t i = 0; i < nd; ++i) {
     uint32_t m = map_peek((uint32_t)deps[i]);
-    if (!m || (m & MAP_TOMB))
+    if (!ent_rec(m))
       continue;
-    const rail_ext *s = rail_x(&(*SLOT(m - 1)));
+    const rail_ext *s = rail_x(SLOT(m - 2));
     if (s && ((s->t_nd && s->t_nd > t_write) || (s->t_meas && s->t_meas > t_write)))
       return 1;
   }
@@ -1382,11 +1607,6 @@ static const char *exit_role_r(const rail_t *r, const int32_t *deps, uint32_t nd
   if (r->r6)
     return "rule6_image";
   return "garbage";
-}
-
-static const char *exit_role(int32_t h) {
-  rail_t *r = RL(h);
-  return exit_role_r(r, deps_of(r), rail_nd(r));
 }
 
 /* ---- the exit event's live list (cq-9hzgh, cq-pckdl) ----------------------------------------------------------
@@ -1799,23 +2019,20 @@ static xrec *exit_rec(const cqe_rp_rails *rr) {
  * after-the-write part: when this is 0 for every source, deps_entangled is 0 for every rail of the block). */
 static int exit_dep_touched(int32_t d) {
   uint32_t m = map_peek((uint32_t)d);
-  if (!m || (m & MAP_TOMB))
+  if (!ent_rec(m))
     return 0;
-  const rail_ext *s = rail_x(&(*SLOT(m - 1)));
+  const rail_ext *s = rail_x(SLOT(m - 2));
   return s && (s->t_nd || s->t_meas);
 }
 
 /* A live rail of the rail table at the exit event, fed to the chunker by its name. */
-static void exit_table_rail(uint32_t h) {
-  if (rail_tomb(h))
-    return;
-  rail_t *r = RL(h);
+static void exit_table_rail(uint32_t h, rail_t *r) {
   if (!r->live)
     return;
   char vb[3 + 16 * 2 + 1];
   cqe_val v = rail_v(r);
   char *hx = v.nw <= 2 ? cqe__hex(&v, vb) : cqe__hexa(&v);
-  exit_feed(cqe__name(h), wtab[r->wi], hx, exit_role((int32_t)h), r->known);
+  exit_feed(cqe__name(h), wtab[r->wi], hx, exit_role_r(r, deps_of(r), rail_nd(r)), r->known);
   if (hx != vb)
     free(hx);
 }
@@ -1961,20 +2178,38 @@ static void at_exit_handler(void) {
   fputs(head, trace_f);
   XM.first = 1;
   size_t ti = 0; /* cq-kcn5i: the next touched block rail */
-  for (uint32_t h = 1; h <= nrails; ++h) {
-    while (ti < rp_ntch && rp_tch[ti].h < h)
-      ++ti;
-    if (!map_peek(h) && ti < rp_ntch && rp_tch[ti].h == h) { /* a touched rail of a replayed call, not made */
-      rp_exit_rail(rp_tch[ti].b, rp_tch[ti].row, cqe__name(h));
-      continue;
+  /* every handle in order, page by page: a compact page's dead rails are not live, so only its exceptions are read */
+  for (uint32_t p = 0; nrails && p <= nrails >> PG_BITS; ++p) {
+    for (uint32_t k = 0;; ++k) {
+      pg_blk *b = pg_base[p].blk;
+      if (k >= (b ? b->nx : PG_N))
+        break;
+      uint32_t h = (p << PG_BITS) | (b ? blk_xidx(b)[k] : k);
+      if (!h || h > nrails)
+        continue;
+      uint32_t m = b ? blk_xval(b)[k] : map_base[h];
+      if (m == MAP_PENDING) { /* a touched rail of a replayed call, not made */
+        while (ti < rp_ntch && rp_tch[ti].h < h)
+          ++ti;
+        if (ti < rp_ntch && rp_tch[ti].h == h)
+          rp_exit_rail(rp_tch[ti].b, rp_tch[ti].row, cqe__name(h));
+      } else if (ent_rec(m)) {
+        exit_table_rail(h, SLOT(m - 2));
+      }
     }
-    exit_table_rail(h);
   }
   for (size_t bi = 0; bi < rp_nblocks; ++bi) /* replayed calls (blocks exist only in a compact trace) */
     exit_block((uint32_t)bi);
   exit_blocks_finish();
   exit_finish();
   fprintf(trace_f, "],\"violations\":%lu,\"host_flags\":%d}\n", nviolations, host_flags);
+  const char *sst = getenv("CQE_STORE_STATS"); /* the rail store's counts at the exit event, appended to that file */
+  FILE *sf = sst && *sst ? fopen(sst, "a") : NULL;
+  if (sf) {
+    fprintf(sf, "store: %u handles, %u records, %llu buried, %llu pages compact\n", (unsigned)nrails, (unsigned)pool_n,
+            (unsigned long long)st_buried, (unsigned long long)st_compacted);
+    fclose(sf);
+  }
   if (!shot_buffered)
     fflush(trace_f);
   if (shot_buffered) /* a shot worker's sample ends here; the trace stays open for the next */
@@ -2076,6 +2311,34 @@ static int arena_map(arena_t *a, size_t reserve) {
     a->end = a->base + reserve;
   }
   return 1;
+}
+
+/* -- the rail store's tables (rails, above) -- */
+
+static void *store_reserve(size_t n) {
+  void *m = mmap(NULL, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | MAP_NORESERVE, -1, 0);
+  if (m == MAP_FAILED) {
+    fprintf(stderr, "cq: chk-core: mmap of the rail store (%zu bytes): %s\n", n, strerror(errno));
+    abort();
+  }
+  return m;
+}
+/* The pages of [at, at + n) back to the system; they are not read again before store_fresh. */
+static void store_page_drop(void *at, size_t n) {
+#ifdef MADV_FREE_REUSABLE
+  if (madvise(at, n, MADV_FREE_REUSABLE) == 0)
+    return;
+#endif
+  madvise(at, n, MADV_FREE);
+}
+/* The first n bytes of a table as fresh zero pages. */
+static void store_fresh(void *at, size_t n) {
+  size_t pg = (size_t)getpagesize();
+  n = (n + pg - 1) & ~(pg - 1);
+  if (n && mmap(at, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | MAP_NORESERVE | MAP_FIXED, -1, 0) == MAP_FAILED) {
+    fprintf(stderr, "cq: chk-core: mmap of the rail store: %s\n", strerror(errno));
+    abort();
+  }
 }
 
 static void *arena_alloc(arena_t *a, size_t reserve, size_t n) {
@@ -2241,6 +2504,9 @@ struct shot_state {
   fenv_t fenv;
   char *stack_lo, *stack_copy;
   size_t stack_n, stack_cap;
+  /* the rail store's tables at the snapshot: what the setup made of each */
+  char *st_map, *st_pool, *st_pg;
+  size_t st_map_n, st_pool_n, st_pg_n;
   int out_fd, err_fd; /* read ends of the capture files */
   long freed_n;           /* the running sample's cqrt_free calls (cq-8m6v), and */
   unsigned long long freed_dig; /* FNV-1a-64 of their handles in order: the shot_end frame's summary */
@@ -2619,6 +2885,21 @@ static void snapshot_take(void) {
   R->setup_copy = sys_alloc(R->setup_n);
   if (R->setup_n)
     memcpy(R->setup_copy, a_setup.base, R->setup_n);
+  store_init();
+  R->st_map_n = ((size_t)nrails + 1) * sizeof *map_base;
+  R->st_pool_n = (size_t)pool_n * sizeof *pool_base;
+  R->st_pg_n = (((size_t)nrails >> PG_BITS) + 1) * sizeof *pg_base;
+  R->st_map = sys_alloc(R->st_map_n);
+  R->st_pool = sys_alloc(R->st_pool_n);
+  R->st_pg = sys_alloc(R->st_pg_n);
+  memcpy(R->st_pg, pg_base, R->st_pg_n);
+  memcpy(R->st_pool, pool_base, R->st_pool_n);
+  /* a compact page's memory is not read (the setup's blocks lie in the setup arena, put back with it) */
+  for (size_t p = 0; p <= (size_t)nrails >> PG_BITS; ++p) {
+    size_t lo = p << PG_BITS, hi = lo + PG_N <= (size_t)nrails + 1 ? lo + PG_N : (size_t)nrails + 1;
+    if (!pg_base[p].blk)
+      memcpy(R->st_map + lo * sizeof *map_base, map_base + lo, (hi - lo) * sizeof *map_base);
+  }
   fegetenv(&R->fenv);
   __cq_host_snapshot();
   /* every flag the worker sets is set before this copy, so the copy keeps it */
@@ -2638,8 +2919,24 @@ static void arena_recycle(void) {
     shot_die("mmap of the sample arena");
 }
 
+/* The rail store's tables as the setup left them: the pages the sample used go back to the system. Before __DATA is
+ * put back (the sample's nrails and pool_n say what it used). */
+static void store_recycle(void) {
+  store_fresh(map_base, ((size_t)nrails + 1) * sizeof *map_base);
+  store_fresh(pool_base, (size_t)pool_n * sizeof *pool_base);
+  store_fresh(pg_base, (((size_t)nrails >> PG_BITS) + 1) * sizeof *pg_base);
+  memcpy(pg_base, R->st_pg, R->st_pg_n);
+  memcpy(pool_base, R->st_pool, R->st_pool_n);
+  for (size_t p = 0; p * sizeof *pg_base < R->st_pg_n; ++p) {
+    size_t lo = p << PG_BITS, hi = lo + PG_N <= R->st_map_n / sizeof *map_base ? lo + PG_N : R->st_map_n / sizeof *map_base;
+    if (!pg_base[p].blk)
+      memcpy(map_base + lo, R->st_map + lo * sizeof *map_base, (hi - lo) * sizeof *map_base);
+  }
+}
+
 static void snapshot_restore(void) {
   __cq_host_restore(); /* reads the sample's own statics: before __DATA is put back */
+  store_recycle();
   for (int i = 0; i < R->nsect; ++i)
     memcpy(R->sect[i].at, R->sect[i].copy, R->sect[i].n);
   if (R->setup_n)
@@ -3102,13 +3399,10 @@ void cqe__rp_argkey(const int32_t *hs, int n, int absolute, cqe_rp_buf *o) {
     uint32_t h = (uint32_t)hs[i];
     if (hs[i] <= 0 || h > nrails)
       continue;
-    tomb_t *t = rail_tomb(h);
-    if (t) {
-      ck[nc++] = t->a & TOMB_CLOCK_MAX;
-      ck[nc++] = t->b & TOMB_CLOCK_MAX;
+    uint32_t dv = 0;
+    rail_t *r = rail_look(h, &dv);
+    if (!r) /* dead: no clocks */
       continue;
-    }
-    rail_t *r = RL(h);
     ck[nc++] = r->t_create;
     ck[nc++] = r->t_write;
     if (rail_x(r)) {
@@ -3142,14 +3436,12 @@ void cqe__rp_argkey(const int32_t *hs, int n, int absolute, cqe_rp_buf *o) {
       rp_key_put(o, 0xbad0000000000000ULL | h);
       continue;
     }
-    tomb_t *t = rail_tomb(h);
-    if (t) {
-      rp_key_put(o, 0x70b0000000000000ULL | (t->a >> 48) | (uint64_t)tf_get(t) << 16);
-      rp_key_put(o, rp_rank(t->a & TOMB_CLOCK_MAX, ck, nc, absolute));
-      rp_key_put(o, rp_rank(t->b & TOMB_CLOCK_MAX, ck, nc, absolute));
+    uint32_t dv = 0;
+    rail_t *r = rail_look(h, &dv);
+    if (!r) { /* dead: its width and flags are all a clone can read of it */
+      rp_key_put(o, 0x70b0000000000000ULL | DEAD_WI(dv) | (uint64_t)DEAD_F(dv) << 16);
       continue;
     }
-    rail_t *r = RL(h);
     const rail_ext *rx = rail_x(r);
     rp_key_put(o, 0x5ec0000000000000ULL | r->wi | (uint64_t)tomb_flags(r) << 16 | (uint64_t)r->live << 40 |
                       (uint64_t)(rx != NULL) << 41 | (uint64_t)(rx && rx->r6_ops) << 42);
@@ -3204,14 +3496,11 @@ int cqe__rp_encode(uint32_t base, uint64_t c0, const int32_t *args, int nargs, c
     int fire = 0, load = cqe__bus_load_of((int32_t)h, &la, &fire);
     const rail_t *r = NULL;
     int32_t refs[66], *rf = refs;
-    if (m & MAP_TOMB) {
-      const tomb_t *t = &(*TOMB(m & ~MAP_TOMB));
-      e.flags = tf_get(t) | RF_TOMB;
-      e.wi = (uint16_t)(t->a >> 48);
-      e.tc = rp_rel(t->a & TOMB_CLOCK_MAX, c0, &ok);
-      e.tw = rp_rel(t->b & TOMB_CLOCK_MAX, c0, &ok);
-    } else if (m) {
-      r = &(*SLOT(m - 1));
+    if (m & MAP_DEAD) { /* dead: its width and flags */
+      e.flags = DEAD_F(m) | RF_TOMB;
+      e.wi = DEAD_WI(m);
+    } else if (ent_rec(m)) {
+      r = SLOT(m - 2);
       e.flags = tomb_flags(r) | (r->live ? RF_LIVE : 0);
       e.wi = r->wi;
       e.nw = rail_nw(r);
@@ -3366,40 +3655,20 @@ static uint32_t rp_materialize(uint32_t h) {
   const rp_rail *e = rp_hdr(b->rr, row - 1);
   ++rp_nmat;
   if (e->flags & RF_TOMB) {
-    uint32_t t = tomb_n++;
-    if (tomb_n > MAP_TOMB) {
-      fprintf(stderr, "cq: chk-core: rail tombstones exhausted\n");
-      abort();
-    }
-    DIR_GROW(tomb_dir, t, TOMB_BITS);
-    tomb_t *tb = &(*TOMB(t));
-    tb->a = rp_abs(e->tc, b->c0) | (uint64_t)e->wi << 48;
-    tb->b = rp_abs(e->tw, b->c0);
-    tf_set(tb, e->flags & 0xffff);
-    map_put(h, t | MAP_TOMB);
-    return t | MAP_TOMB;
+    uint32_t dv = DEAD_OF(e->wi, e->flags & 0x7fffu);
+    map_put(h, dv);
+    return dv;
   }
   uint32_t s, f = e->flags;
   rail_t *r = pool_take(&s);
-  map_put(h, s + 1); /* first: a source touched below is a later handle, never h */
+  map_put(h, s + 2); /* first: a source touched below is a later handle, never h */
   r->wi = e->wi; /* e->nw is the token's word count (cqe__rp_encode) */
   if (e->nw > 1)
     r->val.wide = xcalloc(e->nw, sizeof *r->val.wide);
   cqe__rp_cpy(rail_w(r), rp_words(e), (size_t)e->nw * sizeof(uint64_t));
   r->t_create = rp_abs(e->tc, b->c0);
   r->t_write = rp_abs(e->tw, b->c0);
-  r->known = f >> TF_KNOWN & 1;
-  r->measured = f >> TF_MEASURED & 1;
-  r->frozen = f >> TF_FROZEN & 1;
-  r->written = f >> 3 & 1;
-  r->seed = f >> 4 & 1;
-  r->busz = f >> TF_BUSZ & 1;
-  r->store_kept = f >> TF_STORE_KEPT & 1;
-  r->image = f >> TF_IMAGE & 1;
-  r->r6 = f >> TF_R6 & 1;
-  r->load_copy = f >> TF_LOAD_COPY & 1;
-  r->role = f >> TF_ROLE & 7;
-  r->fenv = f >> TF_FENV & 3;
+  flags_put(r, f);
   r->live = (f & RF_LIVE) != 0;
   const int32_t *refs = rp_refs(e);
   for (uint32_t k = 0; k < e->ndeps; ++k)
@@ -3416,7 +3685,7 @@ static uint32_t rp_materialize(uint32_t h) {
       x->r6_nops = e->nr6;
     }
   }
-  return s + 1;
+  return s + 2;
 }
 
 /* The load that made block rail h (rt_bus.c asks when its own table has no entry). */
