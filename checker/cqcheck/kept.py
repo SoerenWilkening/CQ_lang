@@ -69,7 +69,15 @@ def intern_row(e: Row) -> Row:
 class Pat(list):
     """A pattern's rows (a list, as JSON reads it), interned; its derived tables made on first use."""
 
-    __slots__ = ("_offs", "_first", "_digest", "_width")
+    __slots__ = ("_offs", "_first", "_digest", "_width", "_ids")
+
+    def ids(self) -> frozenset:
+        """The ids of its rows."""
+        try:
+            return self._ids
+        except AttributeError:
+            self._ids = frozenset(id(r) for r in self)
+            return self._ids
 
     def offs(self) -> Dict[int, List[Row]]:
         """Relative handle -> the rows that hold it, in row order."""
@@ -232,17 +240,18 @@ class Uses:
         self.rowskip: Optional[Dict[int, int]] = None   # id(row of pat) -> the rails of it the bases leave out
 
     def _rowskip(self, row: Row) -> Optional[int]:
-        """What count subtracts for `row`, from the pattern's offset table (None: row is not one of the pattern's)."""
-        if self.pat is None:
+        """What count subtracts for `row`, from the pattern's offset table (None: row is not one of the pattern's). Only
+        the rows a base leaves rails of are held (a run keeps a Uses per pattern entry)."""
+        if self.pat is None or id(row) not in self.pat.ids():
             return None
         if self.rowskip is None:
             offs = self.pat.offs()
-            rs: Dict[int, int] = {id(r): 0 for r in self.pat}
+            rs: Dict[int, int] = {}
             for o, m in self.skipped.items():
                 for i in {id(r) for r in offs.get(o, ())}:    # each row once, as count reads each row once
-                    rs[i] += m
+                    rs[i] = rs.get(i, 0) + m
             self.rowskip = rs
-        return self.rowskip.get(id(row))
+        return self.rowskip.get(id(row), 0)
 
     def __len__(self) -> int:
         return self.n
