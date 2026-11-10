@@ -29,6 +29,7 @@
 #include <string.h>
 
 #include "cqe.h"
+#include "cqe_plan.h"
 
 #define TB_WBITS 64u
 
@@ -82,6 +83,8 @@ static uint64_t *tb_read(const cqe_val *v, uint32_t W, uint64_t *small) {
 
 /* x mod W, x a W-bit unsigned value in tb_nwords(W) words. */
 static uint32_t tb_mod(const uint64_t *x, uint32_t W) {
+  if (W <= TB_WBITS) /* one word (r7-fuse): the same remainder, no 128-bit division */
+    return (uint32_t)(x[0] % W);
   unsigned __int128 r = 0;
   for (uint32_t i = tb_nwords(W); i-- > 0;)
     r = ((r << 64) | x[i]) % W;
@@ -90,6 +93,11 @@ static uint32_t tb_mod(const uint64_t *x, uint32_t W) {
 
 /* r = (x << s) truncated to W bits; 0 <= s; r and x distinct. */
 static void tb_shl(uint64_t *r, const uint64_t *x, uint32_t s, uint32_t W) {
+  if (W <= TB_WBITS) { /* one word (r7-fuse): bit i of r is bit i - s of x for s <= i < W, as the loop below sets it */
+    uint64_t m = W < TB_WBITS ? ((uint64_t)1 << W) - 1 : ~(uint64_t)0;
+    r[0] = s < W ? (x[0] << s) & m : 0;
+    return;
+  }
   memset(r, 0, tb_nwords(W) * sizeof *r);
   for (uint32_t i = s; i < W; ++i)
     tb_setbit(r, i, tb_bit(x, i - s));
@@ -97,6 +105,12 @@ static void tb_shl(uint64_t *r, const uint64_t *x, uint32_t s, uint32_t W) {
 
 /* r = x >> s (logical when fill = 0, else the vacated bits take fill); r and x distinct. */
 static void tb_shr(uint64_t *r, const uint64_t *x, uint32_t s, uint32_t W, int fill) {
+  if (W <= TB_WBITS) { /* one word (r7-fuse): bit i of r is bit i + s of x for i + s < W, else fill, as the loop below */
+    uint64_t m = W < TB_WBITS ? ((uint64_t)1 << W) - 1 : ~(uint64_t)0;
+    uint64_t kept = s < W ? m >> s : 0; /* the bits i with i + s < W */
+    r[0] = (s < W ? (x[0] & m) >> s : 0) | (fill ? m & ~kept : 0);
+    return;
+  }
   memset(r, 0, tb_nwords(W) * sizeof *r);
   for (uint32_t i = 0; i < W; ++i)
     tb_setbit(r, i, i + s < W ? tb_bit(x, i + s) : fill);
@@ -114,7 +128,40 @@ static const struct {
     {"bswap", TB_BSWAP, 1}, {"bitreverse", TB_BITREVERSE, 1}, {"ctlz", TB_CTLZ, 1}, {"cttz", TB_CTTZ, 1}, {"ctpop", TB_CTPOP, 1},
 };
 
+/* The call site's plan (cqe_plan.h): bit 0 set, the index in tb_ops (4 bits) and W: what tb_name works out from the
+ * name and the operand count. */
+static int tb_name(const cqe_tname *t, int nargs, int *kp, uint32_t *Wp);
+static int tb_run(enum tb_op op, uint32_t W, const cqe_val *args, int nargs, cqe_val *out);
 static int tb_eval(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *out) {
+  uintptr_t *slot = cqe__plan_take();
+  uintptr_t plan = slot ? *slot : 0;
+  int k;
+  uint32_t W;
+  if (plan) {
+    k = (int)(plan >> 1 & 15);
+    W = (uint32_t)(plan >> 5);
+  } else {
+    int rc = tb_name(t, nargs, &k, &W);
+    if (rc)
+      return rc;
+    if (slot)
+      *slot = 1u | (uintptr_t)k << 1 | (uintptr_t)W << 5;
+  }
+  enum tb_op op = tb_ops[k].op;
+  uint32_t nw = tb_nwords(W);
+  if (!out || !out->w || out->nw != nw || out->bits != W || out->kind != 'i') {
+    cqe_fail("tmpl_bits: %s_%s: the core's result is not a preallocated i%u value", t->op, t->w, W);
+    return -1;
+  }
+  for (int i = 0; i < nargs; ++i)
+    if (args[i].nw && !args[i].w) {
+      cqe_fail("tmpl_bits: %s_%s: operand %d has no storage", t->op, t->w, i);
+      return -1;
+    }
+  return tb_run(op, W, args, nargs, out);
+}
+
+static int tb_name(const cqe_tname *t, int nargs, int *kp, uint32_t *Wp) {
   int k = -1;
   for (size_t i = 0; i < sizeof tb_ops / sizeof tb_ops[0]; ++i)
     if (strcmp(t->op, tb_ops[i].name) == 0)
@@ -140,17 +187,12 @@ static int tb_eval(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *
     cqe_fail("tmpl_bits: bswap_%s: bswap is defined for W a multiple of 16 only", t->w);
     return -1;
   }
-  uint32_t nw = tb_nwords(W);
-  if (!out || !out->w || out->nw != nw || out->bits != W || out->kind != 'i') {
-    cqe_fail("tmpl_bits: %s_%s: the core's result is not a preallocated i%u value", t->op, t->w, W);
-    return -1;
-  }
-  for (int i = 0; i < nargs; ++i)
-    if (args[i].nw && !args[i].w) {
-      cqe_fail("tmpl_bits: %s_%s: operand %d has no storage", t->op, t->w, i);
-      return -1;
-    }
+  *kp = k, *Wp = W;
+  return 0;
+}
 
+static int tb_run(enum tb_op op, uint32_t W, const cqe_val *args, int nargs, cqe_val *out) {
+  uint32_t nw = tb_nwords(W);
   uint64_t sm[5][2] = {{0}}; /* cq-9hzgh: values of up to two words need no allocation */
   uint64_t *a = tb_read(&args[0], W, sm[0]);
   uint64_t *b = nargs > 1 ? tb_read(&args[1], W, sm[1]) : NULL;

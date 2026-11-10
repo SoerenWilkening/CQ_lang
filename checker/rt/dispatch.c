@@ -71,6 +71,8 @@
 
 #include "cq_standin.h"
 #include "cqe.h"
+#include "cqe_plan.h"
+#include "cqe_site.h"
 #include "rt_replay.h"
 
 
@@ -267,12 +269,18 @@ void cqe_register_op(const char *op, cqe_op_fn fn) {
 typedef struct {
   size_t gen;
   int n;          /* -1: more than HCACHE, scan the registry */
+  uint32_t declined; /* r7-fuse: bit i: fn[i] returned CQE_OP_NOT_MINE for this site. cqe.h M1: that is "decided from
+                      * tname and nargs alone", with no cqe_fail, no cqe_log and no rail touched, so it is the handler's
+                      * answer at every call of the site and the handler is not asked again. */
   cqe_op_fn fn[HCACHE];
+  uintptr_t plan[HCACHE]; /* r7-fuse: fn[i]'s plan for this site (cqe_plan.h), 0 none */
 } hlist;
 
 static void hlist_fill(hlist *l, const char *op) {
   l->gen = reg_gen + 1; /* never 0: a zeroed list is unfilled */
   l->n = 0;
+  l->declined = 0;
+  memset(l->plan, 0, sizeof l->plan);
   for (size_t i = 0; i < nregs; ++i) {
     if (strcmp(regs[i].op, op) != 0)
       continue;
@@ -298,12 +306,16 @@ static int run_handlers(const char *sym, const cqe_tname *t, const cqe_val *args
     if (!l && strcmp(regs[i].op, t->op) != 0)
       continue;
     seen = 1;
+    if (l && (l->declined >> i & 1))
+      continue;
     if (out->nw == 1)
       out->w[0] = 0;
     else
       memset(out->w, 0, out->nw * sizeof *out->w);
     cqe_val pre = *out;
+    cqe__plan_slot = l ? &l->plan[i] : NULL;
     int r = fn(t, args, nargs, out);
+    cqe__plan_slot = NULL;
     if (out->w != pre.w || out->bits != pre.bits || out->kind != pre.kind || out->nw != pre.nw) {
       /* M1: the handler leaves out->w, bits, kind and nw as preset */
       cqe__violation("result_width", -1, "%s: handler changed the result buffer (bits %u->%u, kind %c->%c, nw %u->%u%s)",
@@ -312,8 +324,11 @@ static int run_handlers(const char *sym, const cqe_tname *t, const cqe_val *args
       *out = pre;
       return -1;
     }
-    if (r == CQE_OP_NOT_MINE)
+    if (r == CQE_OP_NOT_MINE) {
+      if (l)
+        l->declined |= 1u << i;
       continue;
+    }
     if (r == 0) {
       vmask_(out);
       return 0;
@@ -1376,8 +1391,7 @@ static int parse_sig(const char *sig, lty *rty, lty *ty, int *n);
 
 typedef struct site_res site_res;
 /* A call site's gate over its argument words (cq-r6-dispatch; fast_pick): the result as the stub returns it. */
-struct cqe_site_;
-typedef uint64_t (*fast_fn)(struct cqe_site_ *s, site_res *R, const uint64_t *a);
+typedef uint64_t (*fast_fn)(cqe_site *s, site_res *R, const uint64_t *a);
 struct site_res {
   int route, nargs;
   fast_fn fast;    /* non-NULL: the site's signature is its core gate's own, every value of at most 64 bits */
@@ -1401,14 +1415,18 @@ struct site_res {
 
 static fast_fn fast_pick(const site_res *R);
 static int fast_template_ok(const site_res *R);
-static uint64_t fast_template(struct cqe_site_ *s, site_res *R, const uint64_t *a);
+static uint64_t fast_template(cqe_site *s, site_res *R, const uint64_t *a);
+static uint32_t site_kind(const site_res *R);
+static site_res *site_resolve(const char *sym, const char *sig, int32_t nargs);
+/* Site s resolved: its descriptor and its kind. */
+static site_res *site_bind(cqe_site *s) {
+  site_res *R = site_resolve(s->sym, s->sig, s->nargs);
+  s->kind = site_kind(R);
+  s->res = R;
+  return R;
+}
 
-/* A stub's call site (stubgen.py emits one per runtime symbol it defines, internal to the program). */
-typedef struct cqe_site_ {
-  const char *sym, *sig;
-  int32_t nargs, pad_;
-  site_res *res; /* NULL until resolved */
-} cqe_site;
+/* A stub's call site (stubgen.py emits one per runtime symbol it defines, internal to the program): cqe_site.h. */
 
 static site_res *site_resolve(const char *sym, const char *sig, int32_t nargs) {
   int na = nargs > 0 && nargs <= 64 ? nargs : 0;
@@ -1675,7 +1693,8 @@ static int parse_sig(const char *sig, lty *rty, lty *ty, int *n) {
 
 static int iv_intercept(const char *sym, const char *sig, const char *csig, int32_t nargs, void **argv, void *ret,
                         void *thunk);
-static size_t iv_nopen;
+#define iv_nopen cqe__iv_nopen /* cqe_site.h: core.c's word entries read it */
+size_t iv_nopen;
 static int iv_replaying;
 
 uint64_t cqe__ncalls; /* runtime calls dispatched (rt_replay.c's statistics, cq-kcn5i) */
@@ -1738,7 +1757,7 @@ void cqe_dispatch(const char *sym, const char *sig, int32_t nargs, void **argv, 
 void cqe_call(cqe_site *s, void **argv, void *ret) {
   cqe__init();
   if (!s->res)
-    s->res = site_resolve(s->sym, s->sig, s->nargs);
+    site_bind(s);
   dispatch_res(s->sym, s->sig, s->res, s->nargs, argv, ret);
 }
 
@@ -1979,9 +1998,23 @@ static uint64_t fast_template(cqe_site *s, site_res *R, const uint64_t *a) {
                      sym, (int)o, (int)o);
     }
   }
-  free(ab.p);
+  if (full)
+    free(ab.p);
   return ret;
 }
+
+/* The kind of a resolved site (cqe_site.h). */
+static uint32_t site_kind(const site_res *R) {
+  if (R->fast == fast_logic)
+    return R->nargs == 1 ? CK_NOT : R->nargs == 2 ? CK_XOR : R->core.lop == LOP_AND ? CK_AND : CK_OR;
+  if (R->fast == fast_free)
+    return CK_FREE;
+  if (R->fast == fast_alloc && R->core.wi && R->ty[0].bits >= 1 && R->ty[0].bits <= 64 &&
+      R->ty[0].mask == (R->ty[0].bits == 64 ? ~0ULL : (1ULL << R->ty[0].bits) - 1))
+    return CK_ALLOC | (uint32_t)R->core.wi << 8 | R->ty[0].bits << 20;
+  return CK_NONE;
+}
+uint64_t cqe__cw_counted(cqe_site *s, const uint64_t *a) { return s->res->fast(s, s->res, a); }
 
 /* cqe_cw for every other site: the call marshalled from the words. */
 __attribute__((noinline)) static uint64_t call_words(cqe_site *s, site_res *R, const uint64_t *a) {
@@ -2011,13 +2044,40 @@ uint64_t cqe_cw(cqe_site *s, const uint64_t *a) {
   site_res *R = s->res;
   if (__builtin_expect(!R, 0)) {
     cqe__init();
-    R = s->res = site_resolve(s->sym, s->sig, s->nargs);
+    R = site_bind(s);
   }
   if (R->fast && !iv_nopen) {
     ++cqe__ncalls;
     return R->fast(s, R, a);
   }
   return call_words(s, R, a);
+}
+
+/* The word entries stubgen.py gives the stubs of push, pop and the templates (r7-fuse): cqe_cw for a site whose fast
+ * gate is the one named, called by name (the one indirect jump of cqe_cw serves every site and is rarely predicted). */
+uint64_t cqe_cw_push(cqe_site *s, const uint64_t *a) {
+  site_res *R = s->res;
+  if (__builtin_expect(R && R->fast == fast_push && !iv_nopen, 1)) {
+    ++cqe__ncalls;
+    return fast_push(s, R, a);
+  }
+  return cqe_cw(s, a);
+}
+uint64_t cqe_cw_pop(cqe_site *s, const uint64_t *a) {
+  site_res *R = s->res;
+  if (__builtin_expect(R && R->fast == fast_pop && !iv_nopen, 1)) {
+    ++cqe__ncalls;
+    return fast_pop(s, R, a);
+  }
+  return cqe_cw(s, a);
+}
+uint64_t cqe_cw_tmpl(cqe_site *s, const uint64_t *a) {
+  site_res *R = s->res;
+  if (__builtin_expect(R && R->fast == fast_template && !iv_nopen, 1)) {
+    ++cqe__ncalls;
+    return fast_template(s, R, a);
+  }
+  return cqe_cw(s, a);
 }
 
 /* The program's sites (stubgen.py's constructor hands them over); cqe__sites_resolve resolves every one
@@ -2034,7 +2094,7 @@ void cqe__sites_resolve(void) {
   for (int32_t i = 0; i < nsites_; ++i) {
     cqe_site *s = sites_[i];
     if (!s->res)
-      s->res = site_resolve(s->sym, s->sig, s->nargs);
+      site_bind(s);
     if ((s->res->route == R_TEMPLATE && s->res->tok) || s->res->route == R_FAMILY)
       hlist_fill(&s->res->handlers, s->res->t.op);
   }
@@ -2382,7 +2442,7 @@ typedef struct {
   size_t n, cap;
 } iv_list;
 static iv_list *iv_open;
-static size_t iv_nopen, iv_capopen;
+static size_t iv_capopen;
 static int iv_replaying;
 static int32_t *iv_pend;
 static size_t iv_npend, iv_cappend;

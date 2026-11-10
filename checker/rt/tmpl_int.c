@@ -26,6 +26,7 @@
 #include <string.h>
 
 #include "cqe.h"
+#include "cqe_plan.h"
 
 #define CQE_OP_NOT_MINE 1
 
@@ -297,7 +298,8 @@ static int cast_(int op, const char *name, tw_ from, tw_ to, const cqe_val *args
   return ok ? 0 : -1;
 }
 
-static int tmpl_int_op_(const cqe_tname *tn, const cqe_val *args, int nargs, cqe_val *out) {
+/* The name's checks: the op, its width W and, for a cast, the _to_ width. 0: the call goes on (cast_ or binary_). */
+static int tmpl_int_plan_(const cqe_tname *tn, int nargs, int *opp, tw_ *wp, tw_ *top) {
   int op = op_code_(tn->op);
   if (op == OP_NONE) return CQE_OP_NOT_MINE;
   int is_cast = op >= OP_ZEXT;
@@ -307,7 +309,7 @@ static int tmpl_int_op_(const cqe_tname *tn, const cqe_val *args, int nargs, cqe
              tn->op);
     return -1;
   }
-  tw_ w, to;
+  tw_ w, to = {0, 0};
   if (!parse_width_(tn->w, &w)) {
     cqe_fail("tmpl_int: %s: malformed width '%s'", tn->op, tn->w);
     return -1;
@@ -330,13 +332,37 @@ static int tmpl_int_op_(const cqe_tname *tn, const cqe_val *args, int nargs, cqe
       cqe_fail("tmpl_int: %s_%s: missing or malformed _to_ width '%s'", tn->op, tn->w, tn->to);
       return -1;
     }
-    return cast_(op, tn->op, w, to, args, out);
-  }
-  if (tn->to[0] || w.kind != 'i') {
+  } else if (tn->to[0] || w.kind != 'i') {
     cqe_fail("tmpl_int: %s_%s%s%s: an integer binary op takes one i<N> width", tn->op, tn->w,
              tn->to[0] ? "_to_" : "", tn->to);
     return -1;
   }
+  *opp = op, *wp = w, *top = to;
+  return 0;
+}
+
+/* The call site's plan (cqe_plan.h): bit 0 set, the op (4 bits), W's kind (1 bit: 'f') and bits (24), the _to_
+ * width's kind and bits (a cast). */
+static int tmpl_int_op_(const cqe_tname *tn, const cqe_val *args, int nargs, cqe_val *out) {
+  uintptr_t *slot = cqe__plan_take();
+  uint64_t plan = slot ? (uint64_t)*slot : 0;
+  int op;
+  tw_ w, to;
+  if (plan) {
+    op = (int)(plan >> 1 & 15);
+    w.kind = plan >> 5 & 1 ? 'f' : 'i';
+    w.bits = (uint32_t)(plan >> 6 & 0xffffff);
+    to.kind = plan >> 30 & 1 ? 'f' : 'i';
+    to.bits = (uint32_t)(plan >> 31 & 0xffffff);
+  } else {
+    int rc = tmpl_int_plan_(tn, nargs, &op, &w, &to);
+    if (rc) return rc;
+    if (slot && sizeof(uintptr_t) >= 8)
+      *slot = (uintptr_t)(1u | (uint64_t)op << 1 | (uint64_t)(w.kind == 'f') << 5 | (uint64_t)w.bits << 6 |
+                          (uint64_t)(to.kind == 'f') << 30 | (uint64_t)to.bits << 31);
+  }
+  if (op >= OP_ZEXT)
+    return cast_(op, tn->op, w, to, args, out);
   return binary_(op, tn->op, w, args, out);
 }
 

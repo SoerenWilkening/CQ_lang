@@ -54,6 +54,7 @@
 #include <unistd.h>
 
 #include "cqe.h"
+#include "cqe_site.h"
 #include "rt_replay.h"
 
 /* ---- CR §2 fp -> int for the lowered module's classical fptosi/fptoui (cq-ltoq) --------------
@@ -444,21 +445,32 @@ typedef struct {
 /* A rail's record (cq-ism39: 72 bytes, was 120; 2026-11-09 memory plan: 32). Its width token is interned (wtab: the
  * width, kind and word count are the token's); the clocks are 48 bits (cqe__tick), the flags are bits. */
 typedef struct {
-  uint64_t t_create : 48;  /* event clock; 0 = never */
-  uint64_t wi : 12;        /* the width token: wtab[wi] */
-  uint64_t live : 1;
-  uint64_t aux : 1;        /* d.x is in use, else d.in */
-  uint64_t : 2;
-  uint64_t t_write : 48;   /* event clock; 0 = never */
-  uint64_t known : 1, measured : 1, frozen : 1, written : 1, seed : 1;
-  uint64_t busz : 1;       /* a bus swap left it at 0 and nothing wrote it since (cqe__set_busz) */
-  uint64_t store_kept : 1; /* the value or control rail of a bus store (rule 5 sentence 3) */
-  uint64_t image : 1;      /* cq-qhow: carries a frozen register's content (cqe__carry): a rule-6 image, FROZEN */
-  uint64_t r6 : 1;         /* cq-o9mx: an operand a rule-6 clean's inverse read: a rule-6 image, kept (cqe__r6_unc) */
-  uint64_t load_copy : 1;  /* a bus load's copy: rule 5, "A load copy is never cleaned by rule 6", so never an image */
-  uint64_t role : 3;       /* 0 none, 1 abort, 2 tape, 4 tape_slot, 5 overtaken, 6 a_K (cq-1leyz), 7 n>K2 (cq-0ldab) */
-  uint64_t fenv : 2;       /* cq-tt2j, rule 23: 1 flags lineage (an _exc result or written from one), 2 a mode operand */
-  uint64_t : 1;
+  union {
+    struct {
+      uint64_t t_create : 48;  /* event clock; 0 = never */
+      uint64_t wi : 12;        /* the width token: wtab[wi] */
+      uint64_t live : 1;
+      uint64_t aux : 1;        /* d.x is in use, else d.in */
+      uint64_t : 2;
+    };
+    uint64_t w0; /* the same word (r7-fuse: the fused gates test and write several fields at once; W0_*, store_init
+                  * checks the layout) */
+  };
+  union {
+    struct {
+      uint64_t t_write : 48;   /* event clock; 0 = never */
+      uint64_t known : 1, measured : 1, frozen : 1, written : 1, seed : 1;
+      uint64_t busz : 1;       /* a bus swap left it at 0 and nothing wrote it since (cqe__set_busz) */
+      uint64_t store_kept : 1; /* the value or control rail of a bus store (rule 5 sentence 3) */
+      uint64_t image : 1;      /* cq-qhow: carries a frozen register's content (cqe__carry): a rule-6 image, FROZEN */
+      uint64_t r6 : 1;         /* cq-o9mx: an operand a rule-6 clean's inverse read: a rule-6 image, kept (cqe__r6_unc) */
+      uint64_t load_copy : 1;  /* a bus load's copy: rule 5, "A load copy is never cleaned by rule 6", so never an image */
+      uint64_t role : 3;       /* 0 none, 1 abort, 2 tape, 4 tape_slot, 5 overtaken, 6 a_K (cq-1leyz), 7 n>K2 (cq-0ldab) */
+      uint64_t fenv : 2;       /* cq-tt2j, rule 23: 1 flags lineage (an _exc result or written from one), 2 a mode operand */
+      uint64_t : 1;
+    };
+    uint64_t w1; /* the same word (W1_*) */
+  };
   union {
     uint64_t inl;   /* cq-9hzgh: the value of a rail of 64 bits or fewer (rail_w); the pool's free list link */
     uint64_t *wide; /* a wider one's words, allocated */
@@ -469,6 +481,38 @@ typedef struct {
   } d;
 } rail_t;
 _Static_assert(sizeof(rail_t) == 32, "rail_t: 32 bytes (2026-11-09 memory plan)");
+/* The fields of w0 and w1 as masks (the layout the compiler gives the bit-fields above; rail_layout_check). */
+#define W_CLOCK ((1ULL << 48) - 1)   /* t_create in w0, t_write in w1 */
+#define W0_WI_SHIFT 48
+#define W0_LIVE (1ULL << 60)
+#define W0_AUX (1ULL << 61)
+#define W1_KNOWN (1ULL << 48)
+#define W1_MEASURED (1ULL << 49)
+#define W1_FROZEN (1ULL << 50)
+#define W1_WRITTEN (1ULL << 51)
+#define W1_SEED (1ULL << 52)
+#define W1_BUSZ (1ULL << 53)
+#define W1_IMAGE (1ULL << 55)
+#define W1_ROLE_SHIFT 58
+#define W1_FENV1 (1ULL << 61) /* fenv's bit 0: flags lineage */
+static void rail_layout_check(void) {
+  rail_t a = {0}, b = {0};
+  a.t_create = W_CLOCK, a.wi = 0xabc, a.live = 1;
+  b.w0 = W_CLOCK | 0xabcULL << W0_WI_SHIFT | W0_LIVE;
+  int ok = a.w0 == b.w0;
+  a.aux = 1, b.w0 |= W0_AUX;
+  ok = ok && a.w0 == b.w0;
+  a.t_write = W_CLOCK, a.known = 1, a.frozen = 1, a.seed = 1, a.image = 1, a.fenv = 1;
+  b.w1 = W_CLOCK | W1_KNOWN | W1_FROZEN | W1_SEED | W1_IMAGE | W1_FENV1;
+  ok = ok && a.w1 == b.w1;
+  a.measured = 1, a.written = 1, a.busz = 1, a.role = 5, a.fenv = 3;
+  b.w1 |= W1_MEASURED | W1_WRITTEN | W1_BUSZ | 5ULL << W1_ROLE_SHIFT | W1_FENV1 << 1;
+  ok = ok && a.w1 == b.w1;
+  if (!ok) {
+    fprintf(stderr, "cq: chk-core: rail_t's bit-fields are not laid out as W0_*/W1_* say\n");
+    abort();
+  }
+}
 
 #define CQE_RAIL_LIMIT 0x51000000u /* rail handles stay below the bus handle (rt_bus.c) */
 
@@ -536,6 +580,7 @@ static void store_page_drop(void *at, size_t n);
 static void store_init(void) {
   if (map_base)
     return;
+  rail_layout_check();
   map_base = store_reserve(STORE_MAP_BYTES);
   pool_base = store_reserve(STORE_POOL_BYTES);
   pg_base = store_reserve(STORE_PG_BYTES);
@@ -619,6 +664,22 @@ static void flags_put(rail_t *r, uint32_t f) {
   r->fenv = f >> TF_FENV & 3;
 }
 
+/* A record from the pool, its bytes whatever they were (the caller writes all of it); *slot its index. */
+static inline rail_t *pool_take_raw(uint32_t *slot) {
+  uint32_t s;
+  if (pool_free) {
+    s = pool_free - 1;
+    pool_free = (uint32_t)pool_base[s].val.inl;
+  } else {
+    if (pool_n >= CQE_RAIL_LIMIT - 2) {
+      fprintf(stderr, "cq: chk-core: rail records exhausted\n");
+      abort();
+    }
+    s = pool_n++;
+  }
+  *slot = s;
+  return &pool_base[s];
+}
 /* A record from the pool, zeroed; *slot its index. */
 static rail_t *pool_take(uint32_t *slot) {
   uint32_t s;
@@ -1552,10 +1613,8 @@ void cqe__r6_unc(int32_t t, const int32_t *ops, int n) {
   x->r6_nops = (uint32_t)n;
 }
 
-/* src (fenv lineage bit sf) joins r's sources. */
-static inline void dep_add(rail_t *r, uint32_t sf, int32_t src) {
-  /* cq-tt2j: a rail written from the flags is flags (rule 23 lineage) */
-  r->fenv |= sf & 1;
+/* src joins r's sources. */
+static inline void dep_only(rail_t *r, int32_t src) {
   if (!r->aux && src) { /* the two sources in the record: in[1] is set only after in[0] */
     if (r->d.in[0] == src || r->d.in[1] == src)
       return;
@@ -1574,6 +1633,12 @@ static inline void dep_add(rail_t *r, uint32_t sf, int32_t src) {
     if (deps[i] == src)
       return;
   deps_append(r, src);
+}
+/* src (fenv lineage bit sf) joins r's sources. */
+static inline void dep_add(rail_t *r, uint32_t sf, int32_t src) {
+  /* cq-tt2j: a rail written from the flags is flags (rule 23 lineage) */
+  r->fenv |= sf & 1;
+  dep_only(r, src);
 }
 void cqe__add_dep(int32_t h, int32_t src) {
   rail_t *r = RL(h);
@@ -2632,25 +2697,32 @@ static void shot_mark_dirty(void) { R->dirty = 1; }
  * (dispatch.c zero_rule_v), the rule-6 note, cqe__free_note and cqe__free, cqe__new. */
 static uint16_t wi_i1_;
 
-/* The record of live rail h, NULL in every other case (no rail, freed, pending, a page whose entry is not at hand):
- * the watch as rail_look keeps it, nothing else touched. */
-__attribute__((always_inline)) static inline rail_t *live_rec(uint32_t h) {
+/* The record of rail h when its map entry is at hand and names one, NULL in every other case (no rail, a freed rail
+ * whose record went back, pending, a compact page with nothing remembered): the watch as rail_look keeps it, nothing
+ * else touched. */
+__attribute__((noinline, cold)) static void rp_outside_cold(uint32_t h) { rp_outside(h); }
+__attribute__((always_inline)) static inline rail_t *rec_(uint32_t h) {
   if (__builtin_expect(h - 1u >= nrails, 0))
     return NULL;
   if (__builtin_expect(rp_watch, 0) && h <= rp_wbase)
-    rp_outside(h);
-  rail_t *r;
+    rp_outside_cold(h);
   if (__builtin_expect(!pg_base[h >> PG_BITS].blk, 1)) {
     uint32_t m = map_base[h];
-    if (__builtin_expect(!ent_rec(m), 0))
-      return NULL;
-    r = &pool_base[m - 2];
-  } else if (look_memo[h & (LOOK_MEMO - 1)].h == h) {
-    r = look_memo[h & (LOOK_MEMO - 1)].r;
-  } else {
-    return NULL;
+    return __builtin_expect(ent_rec(m), 1) ? &pool_base[m - 2] : NULL;
   }
-  return __builtin_expect(r->live, 1) ? r : NULL;
+  return look_memo[h & (LOOK_MEMO - 1)].h == h ? look_memo[h & (LOOK_MEMO - 1)].r : NULL;
+}
+/* The record of live rail h, NULL in every other case. */
+__attribute__((always_inline)) static inline rail_t *live_rec(uint32_t h) {
+  rail_t *r = rec_(h);
+  return r && __builtin_expect((r->w0 & W0_LIVE) != 0, 1) ? r : NULL;
+}
+/* The record of live rail h of the width token wi (lw: LW_OF(wi)), NULL in every other case. */
+#define LW_MASK (W0_LIVE | 0xfffULL << W0_WI_SHIFT)
+#define LW_OF(wi) (W0_LIVE | (uint64_t)(wi) << W0_WI_SHIFT)
+__attribute__((always_inline)) static inline rail_t *live_w(uint32_t h, uint64_t lw) {
+  rail_t *r = rec_(h);
+  return r && __builtin_expect((r->w0 & LW_MASK) == lw, 1) ? r : NULL;
 }
 static inline uint64_t tick_(void) {
   if (__builtin_expect(++clock_ > ((1ULL << 48) - 1), 0))
@@ -2658,11 +2730,11 @@ static inline uint64_t tick_(void) {
   return clock_;
 }
 static inline void written_(rail_t *r) { /* cqe__mark_written */
-  r->written = 1;
-  r->busz = 0;
-  r->t_write = tick_();
+  r->w1 = (r->w1 & ~(W_CLOCK | W1_BUSZ)) | W1_WRITTEN | tick_();
 }
-static inline uint64_t nd_of(const rail_t *r) { return r->aux && r->d.x->ext ? r->d.x->ext->t_nd : 0; } /* cqe__last_nd */
+static inline uint64_t nd_of(const rail_t *r) { /* cqe__last_nd */
+  return __builtin_expect((r->w0 & W0_AUX) != 0, 0) && r->d.x->ext ? r->d.x->ext->t_nd : 0;
+}
 static inline uint64_t wmask_(uint32_t bits) { return bits >= 64 ? ~0ULL : ((uint64_t)1 << bits) - 1; }
 /* cqe__carry(t, {s}, 1), s another live rail. */
 static inline void carry1_(const rail_t *t, rail_t *s) {
@@ -2696,41 +2768,62 @@ static inline void zero_rule_r(rail_t *t, const rail_t *s0, const rail_t *s1) {
 /* A width token's index for a call site (0: none, the site's gates are not fused): the token as a record holds it. */
 uint16_t cqe__wi_of(const char *w) { return w && strlen(w) < 7 ? w_index(w) : 0; }
 
-/* not/and/or/xor_i1 over the n handles a[] (the last one the target); is_and: n == 3 and the gate is and_i1. */
-int cqe__f_logic(int is_and, int n, const uint64_t *a) {
+/* not/and/or/xor_i1 over the n handles a[] (the last one the target); is_and: n == 3 and the gate is and_i1. In line
+ * with n and is_and constants: one body per gate (cqe_cw_and, ...), one for the general call (cqe__f_logic). The
+ * fields of the target's second word are written once, with the same values the accessors would leave. */
+__attribute__((always_inline)) static inline int logic_(int is_and, int n, const uint64_t *a) {
   if (__builtin_expect(!wi_i1_, 0))
     wi_i1_ = w_index("i1");
-  uint16_t wi = wi_i1_;
+  const uint64_t lw = LW_OF(wi_i1_);
   uint32_t h0 = 0, h1 = 0, ht = (uint32_t)a[n - 1];
   rail_t *s0 = NULL, *s1 = NULL, *t;
   if (n > 1) {
     h0 = (uint32_t)a[0];
-    if (!(s0 = live_rec(h0)) || s0->wi != wi)
+    if (!(s0 = live_w(h0, lw)))
       return 0;
   }
   if (n > 2) {
     h1 = (uint32_t)a[1];
-    if (!(s1 = live_rec(h1)) || s1->wi != wi)
+    if (!(s1 = live_w(h1, lw)))
       return 0;
   }
-  if (!(t = live_rec(ht)) || t->wi != wi || ht == h0 || ht == h1)
+  if (!(t = live_w(ht, lw)) || ht == h0 || ht == h1)
     return 0;
   uint64_t x = s0 ? s0->val.inl & 1 : 0, y = s1 ? s1->val.inl & 1 : 0;
-  t->val.inl ^= n == 1 ? 1 : n == 2 ? x : is_and ? (x & y) : (x | y);
-  if (!t->measured && (t->frozen || t->image)) { /* cqe__carry */
-    if (s0 && !s0->measured)
-      s0->image = 1;
-    if (s1 && !s1->measured)
-      s1->image = 1;
+  uint64_t v = t->val.inl ^ (n == 1 ? 1 : n == 2 ? x : is_and ? (x & y) : (x | y));
+  t->val.inl = v;
+  uint64_t w1 = t->w1;
+  if (__builtin_expect(!(w1 & W1_MEASURED) && (w1 & (W1_FROZEN | W1_IMAGE)), 0)) { /* cqe__carry */
+    if (s0 && !(s0->w1 & W1_MEASURED))
+      s0->w1 |= W1_IMAGE;
+    if (s1 && !(s1->w1 & W1_MEASURED))
+      s1->w1 |= W1_IMAGE;
   }
-  written_(t);
-  if (s0)
-    dep_add(t, s0->fenv, (int32_t)h0);
+  w1 = (w1 & ~(W_CLOCK | W1_BUSZ)) | W1_WRITTEN | tick_(); /* cqe__mark_written */
+  int k;                                                    /* the known-basis rule (zero_rule_v) */
+  if (!v) {
+    uint64_t ref = t->w0 & W_CLOCK;
+    if (s0 && (s0->w0 & W_CLOCK) > ref)
+      ref = s0->w0 & W_CLOCK;
+    if (s1 && (s1->w0 & W_CLOCK) > ref)
+      ref = s1->w0 & W_CLOCK;
+    k = nd_of(t) <= ref && (!s0 || nd_of(s0) <= ref) && (!s1 || nd_of(s1) <= ref);
+  } else {
+    k = (w1 & W1_KNOWN) && (!s0 || (s0->w1 & W1_KNOWN)) && (!s1 || (s1->w1 & W1_KNOWN));
+  }
+  w1 = k ? w1 | W1_KNOWN : w1 & ~W1_KNOWN;
+  if (s0) /* cqe__add_dep: the flags lineage (cq-tt2j), then the source */
+    w1 |= s0->w1 & W1_FENV1;
   if (s1)
-    dep_add(t, s1->fenv, (int32_t)h1);
-  zero_rule_r(t, s0, s1);
+    w1 |= s1->w1 & W1_FENV1;
+  t->w1 = w1;
+  if (s0)
+    dep_only(t, (int32_t)h0);
+  if (s1)
+    dep_only(t, (int32_t)h1);
   return 1;
 }
+int cqe__f_logic(int is_and, int n, const uint64_t *a) { return logic_(is_and, n, a); }
 
 /* copy_<W>([cf,] s, d), W the token of index wi. */
 int cqe__f_copy(uint16_t wi, int ctl, const uint64_t *a) {
@@ -2817,14 +2910,13 @@ static inline rail_t *new_rec(uint16_t wi, uint64_t val, int known, int seed, in
   if (!(h & 0xffffff))
     store_stats();
   uint32_t s;
-  rail_t *r = pool_take(&s);
+  rail_t *r = pool_take_raw(&s);
   real_new((uint32_t)h, s + 2);
-  r->wi = wi;
+  uint64_t t = tick_();
+  r->w0 = t | LW_OF(wi); /* created now, wi, live, no aux */
+  r->w1 = t | (known ? W1_KNOWN : 0) | (seed ? W1_SEED : 0); /* written (by the clock) now; every other flag 0 */
   r->val.inl = val & wmask_(w_bits[wi]);
-  r->live = 1;
-  r->known = known ? 1 : 0;
-  r->seed = seed ? 1 : 0;
-  r->t_create = r->t_write = tick_();
+  r->d.in[0] = r->d.in[1] = 0;
   *hp = h;
   return r;
 }
@@ -2906,6 +2998,51 @@ int cqe__f_tunc(uint32_t o, void *orec, uint64_t val, int r_ok, int nh, const ui
       ok = 0;
   t->known = ok && r_ok;
   return !ok && r_ok ? 2 : 0;
+}
+
+/* The word entries of the i1 gates, free and alloc (cqe_site.h; stubgen.py picks them by the symbol): the fused gate
+ * at once for a site of that kind while no cq_invert region is open and the gate's event is not written; in every
+ * other case the call any site makes (cqe_cw; cqe__cw_counted when the fused gate left the call to its general
+ * body). */
+#define ENTRY_OK(s, K) \
+  (__builtin_expect(CK_KIND((s)->kind) == (K), 1) && __builtin_expect(!cqe__iv_nopen, 1) && (compact || shot_muted))
+uint64_t cqe_cw_and(cqe_site *s, const uint64_t *a) {
+  if (!ENTRY_OK(s, CK_AND))
+    return cqe_cw(s, a);
+  ++cqe__ncalls;
+  return __builtin_expect(logic_(1, 3, a), 1) ? 0 : cqe__cw_counted(s, a);
+}
+uint64_t cqe_cw_or(cqe_site *s, const uint64_t *a) {
+  if (!ENTRY_OK(s, CK_OR))
+    return cqe_cw(s, a);
+  ++cqe__ncalls;
+  return __builtin_expect(logic_(0, 3, a), 1) ? 0 : cqe__cw_counted(s, a);
+}
+uint64_t cqe_cw_xor(cqe_site *s, const uint64_t *a) {
+  if (!ENTRY_OK(s, CK_XOR))
+    return cqe_cw(s, a);
+  ++cqe__ncalls;
+  return __builtin_expect(logic_(0, 2, a), 1) ? 0 : cqe__cw_counted(s, a);
+}
+uint64_t cqe_cw_not(cqe_site *s, const uint64_t *a) {
+  if (!ENTRY_OK(s, CK_NOT))
+    return cqe_cw(s, a);
+  ++cqe__ncalls;
+  return __builtin_expect(logic_(0, 1, a), 1) ? 0 : cqe__cw_counted(s, a);
+}
+uint64_t cqe_cw_free(cqe_site *s, const uint64_t *a) {
+  if (!ENTRY_OK(s, CK_FREE))
+    return cqe_cw(s, a);
+  ++cqe__ncalls;
+  return __builtin_expect(cqe__f_free((uint32_t)a[0]), 1) ? 0 : cqe__cw_counted(s, a);
+}
+uint64_t cqe_cw_alloc(cqe_site *s, const uint64_t *a) {
+  uint32_t k = s->kind;
+  if (!ENTRY_OK(s, CK_ALLOC))
+    return cqe_cw(s, a);
+  ++cqe__ncalls;
+  int32_t h = cqe__f_alloc(CK_WI(k), a[0] & wmask_(CK_LITBITS(k)));
+  return __builtin_expect(h != 0, 1) ? (uint32_t)h : cqe__cw_counted(s, a);
 }
 
 static void shot_die(const char *what) {

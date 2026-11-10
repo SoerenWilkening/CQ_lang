@@ -218,6 +218,8 @@ def emit(decls, triple, layout, csigs=None, host_fns=()):
     out.append("")
     out.append("declare void @cqe_call(ptr, ptr, ptr)")
     out.append("declare i64 @cqe_cw(ptr, ptr)")
+    for e in sorted(set(_ENTRY.values()) | {"cqe_cw_alloc", "cqe_cw_tmpl"}):
+        out.append(f"declare i64 @{e}(ptr, ptr)")
     out.append("declare void @cqe_sites(ptr, i32)")
     out.append("declare void @cqe_standin(ptr, ptr, ptr, i32, ptr, ptr)")
     out.append("declare void @cqe_standin_host(ptr, ptr, ptr, i32, ptr, ptr, ptr)")
@@ -239,7 +241,7 @@ def emit(decls, triple, layout, csigs=None, host_fns=()):
             out.append(f"@.cqe.site.{k} = internal global {{ ptr, ptr, i32, i32, ptr }} "
                        f"{{ ptr @.cqe.sym.{k}, ptr @.cqe.sig.{k}, i32 {n}, i32 0, ptr null }}")
             sites.append(k)
-            out.extend(body + _word_body(k, ret, params))
+            out.extend(body + _word_body(k, ret, params, _entry(name)))
             out.append("")
             continue
         body.append(f"  %args = alloca [{max(n, 1)} x ptr]")
@@ -296,7 +298,23 @@ def _word(t):
     return t in ("void", "ptr") or t in _FP_BITS or (t[0] == "i" and int(t[1:]) <= 64)
 
 
-def _word_body(k, ret, params):
+# The word entry of a stub, by its symbol (r7-fuse): cqe_cw serves any site; the others are cqe_cw for a site of one
+# gate, called by name (dispatch.c, core.c: each checks that the resolved site is its gate's and goes to cqe_cw if not).
+_ENTRY = {"cqrt_free": "cqe_cw_free", "cqrt_push": "cqe_cw_push", "cqrt_pop": "cqe_cw_pop", "cqrt_not_i1": "cqe_cw_not",
+          "cqrt_xor_i1": "cqe_cw_xor", "cqrt_and_i1": "cqe_cw_and", "cqrt_or_i1": "cqe_cw_or"}
+
+
+def _entry(name):
+    if name in _ENTRY:
+        return _ENTRY[name]
+    if name.startswith("cqrt_alloc_"):
+        return "cqe_cw_alloc"
+    if name.startswith("cq_template_"):
+        return "cqe_cw_tmpl"
+    return "cqe_cw"
+
+
+def _word_body(k, ret, params, entry="cqe_cw"):
     """The body of a word stub: every argument zero-extended into %w, the result word truncated."""
     n = len(params)
     b = [f"  %w = alloca [{max(n, 1)} x i64]"]
@@ -315,7 +333,7 @@ def _word_body(k, ret, params):
                 x = f"%x{i}"
         b.append(f"  %g{i} = getelementptr [{max(n, 1)} x i64], ptr %w, i64 0, i64 {i}")
         b.append(f"  store i64 {x}, ptr %g{i}")
-    b.append(f"  %r = call i64 @cqe_cw(ptr @.cqe.site.{k}, ptr %w)")
+    b.append(f"  %r = call i64 @{entry}(ptr @.cqe.site.{k}, ptr %w)")
     if ret == "void":
         b.append("  ret void")
     elif ret == "ptr":
