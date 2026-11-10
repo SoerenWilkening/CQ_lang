@@ -33,7 +33,9 @@
  *  - An abort flag is kept. End of shot (process exit via return from main or exit(); _Exit loses the
  *    tape): deferred entries are read and those with predicate 1 and no earlier abort reading 1 count
  *    as performed. A format entry is rendered with printf semantics, never printed; so is a performed
- *    fprintf effect entry on the host's stdout, into the same text (stream_text, cq-8bq66).
+ *    fprintf effect entry on the host's stdout, into the same text (stream_text, cq-8bq66), and a vfprintf or
+ *    vprintf entry's, whose arguments the capture read through its va_list (capture_va, cq-83c9c), and the wide
+ *    family's (fwprintf, wprintf, vfwprintf, vwprintf: wformat_text).
  *
  * Violations (cqe_fail): a field that no entry takes, a tape handle not returned by cqrt_tape_alloc, a
  * predicate or abort flag that is not a live i1 rail, a width token that disagrees with the rail, an _unc
@@ -215,6 +217,10 @@ typedef struct {
   int performed;         /* the entry was performed at the call (or, at the shot, will be) */
   int32_t r;             /* the result rail, 0: bare form */
   char rw[8];
+  field *va;             /* a va_list entry (role v): the arguments its format consumes, read through the va_list */
+  int nva;
+  capture *vcap;         /* the va_list and argument slots as read (their tape rails) */
+  int nvcap;
 } event;
 
 typedef struct { field *f; int n, cap; } pendlist;
@@ -354,34 +360,47 @@ static uint64_t field_low64(const field *f) { return f->v.w[0]; }
 
 #define CAP_MAX (UINT64_C(1) << 24)
 
-/* Reads the extent into f->cap under the event's predicate. len < 0: a NUL-terminated string. */
-static void capture_field(event *e, field *f, int64_t len) {
-  if (f->cap.done || (e->pred_known && !e->pred)) return;
+/* Reads the extent at addr into cap under the event's predicate; known: addr is classical-valued. len < 0: a
+ * NUL-terminated string of unit-byte characters (1, or 4 for a wchar_t string, cq-83c9c: up to its first null wide
+ * character or K2 characters). */
+static void capture_at_u(event *e, capture *cap, uint64_t addr, int known, int64_t len, int unit) {
+  if (cap->done || (e->pred_known && !e->pred)) return;
   if (len >= 0 && (uint64_t)len > CAP_MAX) {
     cqe_fail("tape: entry %d: a buffer of %lld bytes is more than the evaluator captures", (int)(e - g_ev), (long long)len);
     return;
   }
-  f->cap.done = 1;
-  uint64_t addr = field_low64(f);
-  size_t limit = len >= 0 ? (size_t)len : CQ_FX_K2;
-  f->cap.b = malloc(limit ? limit : 1);
-  f->cap.rail = calloc(limit ? limit : 1, sizeof(int32_t));
+  cap->done = 1;
+  size_t limit = len >= 0 ? (size_t)len : (size_t)CQ_FX_K2 * (size_t)unit;
+  cap->b = malloc(limit ? limit : 1);
+  cap->rail = calloc(limit ? limit : 1, sizeof(int32_t));
+  int zero = 1, hostzero = 1;                       /* the current character's bytes so far: all 0, all HOST 0 */
   for (size_t j = 0; j < limit; j++) {
     uint8_t byte = 0;
-    int q = peek(addr + j, &byte) || !f->known;
-    if (len < 0 && !q && byte == 0) break;          /* the first HOST 0 */
-    if (len < 0 && !f->known && byte == 0) break;   /* a quantum address: the string this sample reaches */
+    int q = peek(addr + j, &byte) || !known;
+    if (j % (size_t)unit == 0) zero = hostzero = 1;
+    zero &= byte == 0;
+    hostzero &= !q && byte == 0;
+    int last = j % (size_t)unit == (size_t)unit - 1;
+    if (len < 0 && unit == 1 && hostzero) break;            /* the first HOST 0 */
+    if (len < 0 && unit == 1 && !known && zero) break;      /* a quantum address: the string this sample reaches */
     if (q) {
       uint64_t word = e->pred ? byte : 0;
       tval tv = {8, 'i', 1, &word};
-      f->cap.rail[j] = new_tape_rail("i8", &tv, 0);
+      cap->rail[j] = new_tape_rail("i8", &tv, 0);
       byte = (uint8_t)word;
       e->reads_quantum = 1;
     }
-    f->cap.b[j] = byte;
-    f->cap.n = j + 1;
+    cap->b[j] = byte;
+    cap->n = j + 1;
+    if (len < 0 && unit > 1 && last && (hostzero || (!known && zero))) break;   /* kept: its null ends the text */
   }
 }
+static void capture_at(event *e, capture *cap, uint64_t addr, int known, int64_t len) {
+  capture_at_u(e, cap, addr, known, len, 1);
+}
+
+/* Reads the extent into f->cap under the event's predicate. len < 0: a NUL-terminated string. */
+static void capture_field(event *e, field *f, int64_t len) { capture_at(e, &f->cap, field_low64(f), f->known, len); }
 
 /* The product of the length fields from field i on, capped at K2 when one of them is a rail. */
 static int64_t length_of(const event *e, const char *roles, int i, int *lknown) {
@@ -403,14 +422,123 @@ static int64_t length_of(const event *e, const char *roles, int i, int *lknown) 
   return v > (uint64_t)INT64_MAX ? INT64_MAX : (int64_t)v;
 }
 
-/* A format's %s fields, from field index first on. */
+/* A format's %s fields, from field index first on; a %ls field is a wchar_t string. */
 static void capture_format(event *e, const char *fmt, int first) {
   conv_t c;
   int next = first;
   for (const char *p = fmt; (p = next_conv(p, NULL, &c)) != NULL;) {
     next += c.wstar + c.pstar;
-    if (c.conv == 's' && next < e->nfields) capture_field(e, &e->fields[next], -1);
+    if (c.conv == 's' && next < e->nfields)
+      capture_at_u(e, &e->fields[next].cap, field_low64(&e->fields[next]), e->fields[next].known, -1, c.len[0] == 'l' ? 4 : 1);
     next++;
+  }
+}
+
+/* The wchar_t characters of a capture up to its first null (cq-83c9c: a wide format, a %ls string). */
+static wchar_t *wide_chars(const capture *cap, size_t *n) {
+  size_t m = cap->n / 4, k = 0;
+  wchar_t *w = calloc(m + 1, sizeof(wchar_t));
+  for (; k < m; k++) {
+    uint32_t x;
+    memcpy(&x, cap->b + 4 * k, 4);
+    if (!x) break;
+    w[k] = (wchar_t)x;
+  }
+  if (n) *n = k;
+  return w;
+}
+
+/* A wide format as the conversions' parser reads it: each character below 0x80 as itself, any other as 0x01 (literal
+ * text; every conversion is ASCII). */
+static char *wide_parse_copy(const capture *cap) {
+  size_t n;
+  wchar_t *w = wide_chars(cap, &n);
+  char *f = calloc(n + 1, 1);
+  for (size_t k = 0; k < n; k++) f[k] = (uint32_t)w[k] < 0x80 ? (char)w[k] : 1;
+  free(w);
+  return f;
+}
+
+/* cq-83c9c: a va_list the format's arguments come from (role v: vprintf, vfprintf). The field is its address (CR rule 16: a
+ * pointer argument is its address; rule 16's variadic calls: a lowered clone's va_start stores {gp_offset 48, fp_offset 176,
+ * overflow_arg_area, reg_save_area 0} on the bus, an own symbol's fills host bytes). The host call reads the va_list and the
+ * arguments it points to as va_arg does on x86-64 SysV, so the capture (ABI §1.11) reads those cells at completion: the
+ * va_list's 24 bytes, then one slot per argument the format consumes, in order and at the type the conversion expects (an int
+ * class from the register save area while gp_offset <= 40, else the overflow area, 8-byte slots; a double from the save area
+ * while fp_offset <= 160, else the overflow area; a long double at the overflow area aligned to 16), and a %s argument's
+ * string. Each read is capture_at's: a HOST cell as its byte, a QUANTUM cell or a cell at an address that is not
+ * classical-valued into a fresh kept i8 tape rail. The arguments become e->va, the fields format_text renders. ap is
+ * indeterminate after the call (C11 7.21.6.8p2 note): nothing is written back. */
+typedef struct { uint32_t gp, fp; uint64_t ov, rs; int known; } va_state;
+
+/* n <= 24 bytes at addr into out, as capture_at reads them, kept in e->vcap. Returns 1 when addr and every byte were
+ * classical-valued. */
+static int va_read(event *e, uint64_t addr, int known, size_t n, uint8_t *out) {
+  capture c = {0};
+  capture_at(e, &c, addr, known, (int64_t)n);
+  int k = known && c.done;
+  memset(out, 0, n);
+  for (size_t j = 0; j < c.n; j++) {
+    out[j] = c.b[j];
+    if (c.rail[j]) k = 0;
+  }
+  e->vcap = realloc(e->vcap, (size_t)(e->nvcap + 1) * sizeof(capture));
+  e->vcap[e->nvcap++] = c;
+  return k;
+}
+
+/* The next argument, cls 'i' (int class), 'd' (double) or 'L' (long double), of size bytes. */
+static field *va_next(event *e, va_state *s, char cls, int size) {
+  uint64_t addr;
+  if (cls == 'i' && s->gp <= 40) { addr = s->rs + s->gp; s->gp += 8; }
+  else if (cls == 'd' && s->fp <= 160) { addr = s->rs + s->fp; s->fp += 16; }
+  else {
+    if (cls == 'L') s->ov = (s->ov + 15) & ~UINT64_C(15);
+    addr = s->ov;
+    s->ov += cls == 'L' ? 16 : 8;
+  }
+  uint8_t b[16];
+  int k = va_read(e, addr, s->known, (size_t)size, b);
+  e->va = realloc(e->va, (size_t)(e->nva + 1) * sizeof(field));
+  field *f = &e->va[e->nva++];
+  memset(f, 0, sizeof *f);
+  f->k = F_LIT;
+  f->h = f->src = f->c = -1;
+  f->known = k;
+  f->v = tv_zero(cls == 'L' ? 80 : (uint32_t)size * 8, cls == 'i' ? 'i' : 'f');
+  memcpy(f->v.w, b, (size_t)size);
+  width_token(&f->v, f->w);
+  return f;
+}
+
+static uint64_t le_bytes(const uint8_t *b, int n) {
+  uint64_t x = 0;
+  for (int i = n - 1; i >= 0; i--) x = x << 8 | b[i];
+  return x;
+}
+
+static void capture_va(event *e, const char *fmt, const field *apf) {
+  if (e->pred_known && !e->pred) return;
+  uint8_t b[24];
+  va_state s;
+  s.known = va_read(e, field_low64(apf), apf->known, 24, b);
+  s.gp = (uint32_t)le_bytes(b, 4);
+  s.fp = (uint32_t)le_bytes(b + 4, 4);
+  s.ov = le_bytes(b + 8, 8);
+  s.rs = le_bytes(b + 16, 8);
+  conv_t c;
+  for (const char *p = fmt; (p = next_conv(p, NULL, &c)) != NULL;) {
+    if (!c.conv) return;                                 /* format_text reports it */
+    for (int j = 0; j < c.wstar + c.pstar; j++) va_next(e, &s, 'i', 4);
+    const char *len = c.len;
+    if (strchr("fFeEgGaA", c.conv)) va_next(e, &s, len[0] == 'L' ? 'L' : 'd', len[0] == 'L' ? 10 : 8);
+    else if (strchr("psn", c.conv) || (c.conv != 'c' && len[0] && strcmp(len, "h") && strcmp(len, "hh"))) {
+      field *f = va_next(e, &s, 'i', 8);
+      if (c.conv == 's') {
+        uint64_t ptr = f->v.w[0];
+        capture_at_u(e, &f->cap, ptr, f->known, -1, len[0] == 'l' ? 4 : 1);
+      }
+    } else va_next(e, &s, 'i', 4);
   }
 }
 
@@ -422,13 +550,18 @@ static void capture_event(event *e) {
     char role = ent->roles[i];
     if (role == 's' || role == 'p') capture_field(e, &e->fields[i], -1);
     else if (role == 'B') capture_field(e, &e->fields[i], length_of(e, ent->roles, i + 1, NULL));
-    else if (role == 'F') {
+    else if (role == 'F' || role == 'G') {
       field *f = &e->fields[i];
-      capture_field(e, f, -1);
+      capture_at_u(e, &f->cap, field_low64(f), f->known, -1, role == 'G' ? 4 : 1);
       if (f->cap.done) {
-        char *fmt = calloc(f->cap.n + 1, 1);
-        memcpy(fmt, f->cap.b, f->cap.n);
-        capture_format(e, fmt, i + 1);
+        char *fmt;
+        if (role == 'G') fmt = wide_parse_copy(&f->cap);
+        else { fmt = calloc(f->cap.n + 1, 1); memcpy(fmt, f->cap.b, f->cap.n); }
+        if (ent->roles[i + 1] == 'v') {
+          if (i + 1 < e->nfields) capture_va(e, fmt, &e->fields[i + 1]);
+        } else {
+          capture_format(e, fmt, i + 1);
+        }
         free(fmt);
       }
     }
@@ -902,9 +1035,9 @@ static double field_d(const tval *v) {
  * an fp field is converted to double, or to long double under L; %s prints the captured bytes up to the
  * first 0; %n consumes its field and prints nothing (CR rule 16: the program's %n is the lifted snprintf).
  * Returns 0 after a violation. */
-static int format_text(const event *e, const char *fmt, int first, sbuf *out) {
+static int format_text(const event *e, const char *fmt, const field *fs, int nfs, sbuf *out) {
   const char *p = fmt;
-  int next = first, idx = (int)(e - g_ev);
+  int next = 0, idx = (int)(e - g_ev);
   conv_t c;
   while ((p = next_conv(p, out, &c)) != NULL) {
     if (!c.conv) {
@@ -912,20 +1045,20 @@ static int format_text(const event *e, const char *fmt, int first, sbuf *out) {
                (int)(c.end - c.start), c.start);
       return 0;
     }
-    if (next + c.wstar + c.pstar >= e->nfields) {
-      cqe_fail("tape: entry %d: format \"%s\" needs more fields than the entry has (%d)", idx, fmt, e->nfields);
+    if (next + c.wstar + c.pstar >= nfs) {
+      cqe_fail("tape: entry %d: format \"%s\" needs more fields than the entry has (%d)", idx, fmt, nfs);
       return 0;
     }
     char spec[96], num[32];
     snprintf(spec, sizeof spec, "%%%s", c.flags);
-    if (c.wstar) { snprintf(num, sizeof num, "%d", (int)(uint32_t)low64(&e->fields[next++].v)); strlcat(spec, num, sizeof spec); }
+    if (c.wstar) { snprintf(num, sizeof num, "%d", (int)(uint32_t)low64(&fs[next++].v)); strlcat(spec, num, sizeof spec); }
     else strlcat(spec, c.width, sizeof spec);
     if (c.has_prec) {
       strlcat(spec, ".", sizeof spec);
-      if (c.pstar) { snprintf(num, sizeof num, "%d", (int)(uint32_t)low64(&e->fields[next++].v)); strlcat(spec, num, sizeof spec); }
+      if (c.pstar) { snprintf(num, sizeof num, "%d", (int)(uint32_t)low64(&fs[next++].v)); strlcat(spec, num, sizeof spec); }
       else strlcat(spec, c.prec, sizeof spec);
     }
-    const field *f = &e->fields[next++];
+    const field *f = &fs[next++];
     const tval *v = &f->v;
     char conv = c.conv;
     const char *len = c.len;
@@ -983,28 +1116,192 @@ static int format_text(const event *e, const char *fmt, int first, sbuf *out) {
   return 1;
 }
 
-static int format_entry(const event *e, sbuf *out) { return format_text(e, e->str, 0, out); }
+/* cq-83c9c: the text of a wide format (fwprintf, wprintf and their v forms): wf its characters, pf wide_parse_copy's parse of
+ * them, the arguments fs as format_text reads them (%s a narrow string, %ls a wchar_t string, %c an int, %lc a wint_t).
+ * Each conversion is the host's swprintf of that argument; the wide text is written as the host's wide output writes it,
+ * each character by wcrtomb in the evaluator's locale (the C program's, the default C locale), stopping at the first
+ * character it cannot encode. Returns 0 after a violation. */
+typedef struct { wchar_t *p; size_t n, cap; } wbuf;
+static void wb_put(wbuf *b, const wchar_t *s, size_t n) {
+  if (b->n + n + 1 > b->cap) {
+    size_t cap = b->cap ? b->cap : 256;
+    while (cap < b->n + n + 1) cap *= 2;
+    wchar_t *p = realloc(b->p, cap * sizeof(wchar_t));
+    if (!p) { fprintf(stderr, "cq: rt_tape: out of memory\n"); abort(); }
+    b->p = p; b->cap = cap;
+  }
+  memcpy(b->p + b->n, s, n * sizeof(wchar_t));
+  b->n += n;
+  b->p[b->n] = 0;
+}
+#define WPRINT(nfmt, arg) do {                                                     \
+    wchar_t wspec[128];                                                            \
+    size_t k_ = 0;                                                                 \
+    for (; (nfmt)[k_] && k_ + 1 < 128; k_++) wspec[k_] = (wchar_t)(unsigned char)(nfmt)[k_]; \
+    wspec[k_] = 0;                                                                 \
+    int r_ = -1;                                                                   \
+    for (size_t sz_ = 256; sz_ <= ((size_t)1 << 22); sz_ *= 2) {                    \
+      wchar_t *t_ = malloc(sz_ * sizeof(wchar_t));                                 \
+      r_ = swprintf(t_, sz_, wspec, arg);                                          \
+      if (r_ >= 0) { wb_put(&w, t_, (size_t)r_); free(t_); break; }                 \
+      free(t_);                                                                    \
+    }                                                                              \
+    if (r_ < 0) goto encode;                                                       \
+  } while (0)
+static int wformat_text(const event *e, const wchar_t *wf, const char *pf, const field *fs, int nfs, sbuf *out) {
+  wbuf w = {0};
+  size_t i = 0;
+  int next = 0, idx = (int)(e - g_ev), ok = 1;
+  while (pf[i]) {
+    if (pf[i] != '%') { wb_put(&w, &wf[i], 1); i++; continue; }
+    if (pf[i + 1] == '%') { wb_put(&w, L"%", 1); i += 2; continue; }
+    conv_t c;
+    const char *p = next_conv(pf + i, NULL, &c);
+    i = (size_t)(p - pf);
+    if (!c.conv) {
+      cqe_fail("tape: entry %d: wide format: conversion \"%.*s\" has no defined meaning", idx, (int)(c.end - c.start), c.start);
+      ok = 0;
+      goto encode;
+    }
+    if (next + c.wstar + c.pstar >= nfs) {
+      cqe_fail("tape: entry %d: a wide format needs more fields than the entry has (%d)", idx, nfs);
+      ok = 0;
+      goto encode;
+    }
+    char spec[96], num[32], full[112];
+    snprintf(spec, sizeof spec, "%%%s", c.flags);
+    if (c.wstar) { snprintf(num, sizeof num, "%d", (int)(uint32_t)low64(&fs[next++].v)); strlcat(spec, num, sizeof spec); }
+    else strlcat(spec, c.width, sizeof spec);
+    if (c.has_prec) {
+      strlcat(spec, ".", sizeof spec);
+      if (c.pstar) { snprintf(num, sizeof num, "%d", (int)(uint32_t)low64(&fs[next++].v)); strlcat(spec, num, sizeof spec); }
+      else strlcat(spec, c.prec, sizeof spec);
+    }
+    const field *f = &fs[next++];
+    const tval *v = &f->v;
+    const char *len = c.len;
+    uint64_t u = low64(v);
+    switch (c.conv) {
+    case 'n': break;
+    case 's':
+      if (len[0] == 'l') {
+        wchar_t *ws = wide_chars(&f->cap, NULL);
+        snprintf(full, sizeof full, "%sls", spec);
+        WPRINT(full, ws);
+        free(ws);
+      } else {
+        char *text = calloc(f->cap.n + 1, 1);
+        if (f->cap.n) memcpy(text, f->cap.b, f->cap.n);
+        snprintf(full, sizeof full, "%ss", spec);
+        WPRINT(full, text);
+        free(text);
+      }
+      break;
+    case 'd': case 'i': {
+      long long x;
+      if (!strcmp(len, "hh")) x = (signed char)u;
+      else if (!strcmp(len, "h")) x = (short)u;
+      else if (len[0] == 0) x = (int)(uint32_t)u;
+      else x = (long long)u;
+      snprintf(full, sizeof full, "%sll%c", spec, c.conv);
+      WPRINT(full, x);
+      break;
+    }
+    case 'u': case 'o': case 'x': case 'X': {
+      unsigned long long x;
+      if (!strcmp(len, "hh")) x = (unsigned char)u;
+      else if (!strcmp(len, "h")) x = (unsigned short)u;
+      else if (len[0] == 0) x = (uint32_t)u;
+      else x = u;
+      snprintf(full, sizeof full, "%sll%c", spec, c.conv);
+      WPRINT(full, x);
+      break;
+    }
+    case 'c':
+      if (len[0] == 'l') { snprintf(full, sizeof full, "%slc", spec); WPRINT(full, (wint_t)(uint32_t)u); }
+      else { snprintf(full, sizeof full, "%sc", spec); WPRINT(full, (int)(uint32_t)u); }
+      break;
+    case 'p':
+      snprintf(full, sizeof full, "%sp", spec);
+      WPRINT(full, (void *)(uintptr_t)u);
+      break;
+    default:
+      if (len[0] == 'L') { snprintf(full, sizeof full, "%sL%c", spec, c.conv); WPRINT(full, field_ld(v)); }
+      else { snprintf(full, sizeof full, "%s%c", spec, c.conv); WPRINT(full, field_d(v)); }
+      break;
+    }
+  }
+encode:
+  {
+    mbstate_t st;
+    memset(&st, 0, sizeof st);
+    char mb[16];
+    for (size_t k = 0; k < w.n; k++) {
+      size_t r = wcrtomb(mb, w.p[k], &st);
+      if (r == (size_t)-1) break;
+      sb_put(out, mb, r);
+    }
+  }
+  free(w.p);
+  return ok;
+}
+#undef WPRINT
+
+static int format_entry(const event *e, sbuf *out) { return format_text(e, e->str, e->fields, e->nfields, out); }
 
 /* cq-8bq66 (CR rule 16, BACKEND_ABI §1.11): the backend performs an effect entry as the host call `name` with its fields as
  * the arguments, with the host C library. The checker makes the printing family real on both sides and compares its text as
  * stdout (drivers.py, direct host calls; the C oracle calls the host fprintf), so a performed fprintf entry on the host's
  * stdout is that text: its format is the bytes captured for field 1 (role F, fx_standin.h), its arguments the fields after
- * it. On the host's stderr it is text neither side compares. Returns 1 (stdout), 2 (stderr) or 0 (any other stream: the
- * stand-in's entry, logged as an effect). */
+ * it. On the host's stderr it is text neither side compares. cq-83c9c: so is a vfprintf entry, and a vprintf entry is on
+ * stdout, their arguments those read through the va_list (capture_va); and the wide ones, fwprintf, vfwprintf, and wprintf
+ * and vwprintf on stdout, their format a wchar_t string (role G, wformat_text). Returns 1 (stdout), 2 (stderr) or 0 (any
+ * other stream: the stand-in's entry, logged as an effect). */
+typedef struct { const char *name; int stream; int fmt; } stream_form;   /* stream: its field, -1: stdout */
+static const stream_form g_stream_forms[] = {
+    {"fprintf", 0, 1}, {"vfprintf", 0, 1}, {"vprintf", -1, 0},
+    {"fwprintf", 0, 1}, {"vfwprintf", 0, 1}, {"wprintf", -1, 0}, {"vwprintf", -1, 0},
+};
+static const stream_form *stream_form_of(const event *e) {
+  if (e->k != E_EFFECT || !e->str) return NULL;
+  for (size_t i = 0; i < sizeof g_stream_forms / sizeof g_stream_forms[0]; i++)
+    if (!strcmp(e->str, g_stream_forms[i].name)) {
+      const stream_form *sf = &g_stream_forms[i];
+      int va = strchr(sf->name, 'v') == sf->name;
+      if (e->nfields < sf->fmt + 1 + va || !e->fields[sf->fmt].cap.done) return NULL;
+      return sf;
+    }
+  return NULL;
+}
 static int stream_text(const event *e) {
-  if (e->k != E_EFFECT || !e->str || strcmp(e->str, "fprintf") || e->nfields < 2 || !e->fields[1].cap.done) return 0;
-  uint64_t s = field_low64(&e->fields[0]);
+  const stream_form *sf = stream_form_of(e);
+  if (!sf) return 0;
+  if (sf->stream < 0) return 1;
+  uint64_t s = field_low64(&e->fields[sf->stream]);
   if (s == (uint64_t)(uintptr_t)stdout) return 1;
   if (s == (uint64_t)(uintptr_t)stderr) return 2;
   return 0;
 }
 
-/* The text a performed fprintf entry prints (stream_text). */
+/* The text a performed entry of g_stream_forms prints (stream_text). */
 static void stream_entry_text(const event *e, sbuf *out) {
-  const field *f = &e->fields[1];
+  const stream_form *sf = stream_form_of(e);
+  if (!sf) return;
+  const field *f = &e->fields[sf->fmt];
+  int va = sf->name[0] == 'v';
+  const field *fs = va ? e->va : e->fields + sf->fmt + 1;
+  int nfs = va ? e->nva : e->nfields - sf->fmt - 1;
+  if (strstr(sf->name, "wprintf")) {
+    wchar_t *wf = wide_chars(&f->cap, NULL);
+    char *pf = wide_parse_copy(&f->cap);
+    wformat_text(e, wf, pf, fs, nfs, out);
+    free(wf);
+    free(pf);
+    return;
+  }
   char *fmt = calloc(f->cap.n + 1, 1);
   if (f->cap.n) memcpy(fmt, f->cap.b, f->cap.n);
-  format_text(e, fmt, 2, out);
+  format_text(e, fmt, fs, nfs, out);
   free(fmt);
 }
 
@@ -1062,6 +1359,15 @@ static void check_rails(const event *e, int i) {
       const cqe_val *v = cqe_rail(f->cap.rail[x]);
       if (!v) cqe_fail("tape: capture rail %d (event %d field %d) is gone at the end of the shot", (int)f->cap.rail[x], i, j);
       else if ((uint8_t)v->w[0] != f->cap.b[x]) cqe_fail("tape: capture rail %d (event %d field %d) changed", (int)f->cap.rail[x], i, j);
+    }
+  }
+  for (int j = 0; j < e->nvcap + e->nva; j++) {          /* a va_list entry's reads (capture_va), as field -1 */
+    const capture *cp = j < e->nvcap ? &e->vcap[j] : &e->va[j - e->nvcap].cap;
+    for (size_t x = 0; x < cp->n; x++) {
+      if (!cp->rail[x]) continue;
+      const cqe_val *v = cqe_rail(cp->rail[x]);
+      if (!v) cqe_fail("tape: capture rail %d (event %d field -1) is gone at the end of the shot", (int)cp->rail[x], i);
+      else if ((uint8_t)v->w[0] != cp->b[x]) cqe_fail("tape: capture rail %d (event %d field -1) changed", (int)cp->rail[x], i);
     }
   }
   if (e->prail) {
