@@ -61,6 +61,10 @@ private:
   };
   std::vector<Node> nodes;
   std::unordered_map<Key3, unsigned, Hash3> unique, iteMemo;
+  // cq-g3h1i: per-walk marks of cofactor and support: seenAt[n] == stamp says n was visited by the current walk
+  // (memoVal[n]: cofactor's result for it).
+  mutable std::vector<unsigned> seenAt, memoVal;
+  mutable unsigned stamp = 0;
 };
 
 } // namespace cq::pred_detail
