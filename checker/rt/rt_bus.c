@@ -419,32 +419,35 @@ static void add_deps(int32_t h, const access_t *x) {
 
 /* The load that made a rail: the forward values its _unc must see (ABI §1.10). Keyed by handle. */
 /* (r7-fuse) Handles are given in order and a load notes its copy as soon as it is made, so the loads come with
- * ascending handles: they are one array in that order (16 bytes a load, found from its end: an _unc and a replay
- * window ask for recent rails). A handle that is not above the last one noted (a touched rail of a replayed call,
+ * ascending handles: they are one sequence in that order (16 bytes a load, in blocks of LSEQ_N that never move, found
+ * from its end: an _unc and a replay window ask for recent rails). A handle that is not above the last one noted (a touched rail of a replayed call,
  * load_of; a rail a cq_invert replay computes again) is rewritten in the array if it is there, else kept in the small
  * hash table. A handle is in one of the two, never both. */
 typedef struct { uint64_t addr; int32_t h; uint8_t fire; } load_rec;
 _Static_assert(sizeof(load_rec) == 16, "load_rec: 16 bytes");
-static load_rec *lseq; /* ascending h */
-static size_t lseq_n, lseq_cap;
+#define LSEQ_BITS 16
+#define LSEQ_N ((size_t)1 << LSEQ_BITS)
+static load_rec **lseq_blk; /* ascending h: entry i is LSEQ(i) */
+static size_t lseq_n, lseq_nblk, lseq_capblk;
+#define LSEQ(i) (lseq_blk[(i) >> LSEQ_BITS][(i) & (LSEQ_N - 1)])
 static load_rec *loads; /* the others: open addressing on h */
 static size_t loads_cap, loads_n;
 
 static load_rec *lseq_find(int32_t h) {
   size_t n = lseq_n, step = 1;
-  if (!n || h > lseq[n - 1].h || h < lseq[0].h)
+  if (!n || h > LSEQ(n - 1).h || h < LSEQ(0).h)
     return NULL;
-  while (step <= n && lseq[n - step].h > h)
+  while (step <= n && LSEQ(n - step).h > h)
     step <<= 1;
   size_t lo = step <= n ? n - step : 0, hi = n - (step >> 1); /* the first entry not below h is in [lo, hi] */
   while (lo < hi) {
     size_t mid = lo + (hi - lo) / 2;
-    if (lseq[mid].h < h)
+    if (LSEQ(mid).h < h)
       lo = mid + 1;
     else
       hi = mid;
   }
-  return lo < n && lseq[lo].h == h ? &lseq[lo] : NULL;
+  return lo < n && LSEQ(lo).h == h ? &LSEQ(lo) : NULL;
 }
 
 static size_t load_slot(const load_rec *tab, size_t cap, int32_t h) {
@@ -455,14 +458,19 @@ static size_t load_slot(const load_rec *tab, size_t cap, int32_t h) {
 }
 
 static void load_note(int32_t h, uint64_t addr, int fire) {
-  if (!lseq_n || h > lseq[lseq_n - 1].h) {
-    if (lseq_n == lseq_cap) {
-      lseq_cap = lseq_cap ? 2 * lseq_cap : 1024;
-      lseq = realloc(lseq, lseq_cap * sizeof *lseq);
-      if (!lseq)
+  if (!lseq_n || h > LSEQ(lseq_n - 1).h) {
+    if (lseq_n == lseq_nblk << LSEQ_BITS) { /* a new block */
+      if (lseq_nblk == lseq_capblk) {
+        lseq_capblk = lseq_capblk ? 2 * lseq_capblk : 64;
+        lseq_blk = realloc(lseq_blk, lseq_capblk * sizeof *lseq_blk);
+        if (!lseq_blk)
+          abort();
+      }
+      if (!(lseq_blk[lseq_nblk++] = malloc(LSEQ_N * sizeof **lseq_blk)))
         abort();
     }
-    lseq[lseq_n++] = (load_rec){addr, h, (uint8_t)fire};
+    LSEQ(lseq_n) = (load_rec){addr, h, (uint8_t)fire};
+    ++lseq_n;
     return;
   }
   load_rec *e = lseq_find(h);

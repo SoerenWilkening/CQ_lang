@@ -269,9 +269,6 @@ void cqe_register_op(const char *op, cqe_op_fn fn) {
 typedef struct {
   size_t gen;
   int n;          /* -1: more than HCACHE, scan the registry */
-  uint32_t declined; /* r7-fuse: bit i: fn[i] returned CQE_OP_NOT_MINE for this site. cqe.h M1: that is "decided from
-                      * tname and nargs alone", with no cqe_fail, no cqe_log and no rail touched, so it is the handler's
-                      * answer at every call of the site and the handler is not asked again. */
   cqe_op_fn fn[HCACHE];
   uintptr_t plan[HCACHE]; /* r7-fuse: fn[i]'s plan for this site (cqe_plan.h), 0 none */
 } hlist;
@@ -279,7 +276,6 @@ typedef struct {
 static void hlist_fill(hlist *l, const char *op) {
   l->gen = reg_gen + 1; /* never 0: a zeroed list is unfilled */
   l->n = 0;
-  l->declined = 0;
   memset(l->plan, 0, sizeof l->plan);
   for (size_t i = 0; i < nregs; ++i) {
     if (strcmp(regs[i].op, op) != 0)
@@ -306,8 +302,6 @@ static int run_handlers(const char *sym, const cqe_tname *t, const cqe_val *args
     if (!l && strcmp(regs[i].op, t->op) != 0)
       continue;
     seen = 1;
-    if (l && (l->declined >> i & 1))
-      continue;
     if (out->nw == 1)
       out->w[0] = 0;
     else
@@ -324,11 +318,8 @@ static int run_handlers(const char *sym, const cqe_tname *t, const cqe_val *args
       *out = pre;
       return -1;
     }
-    if (r == CQE_OP_NOT_MINE) {
-      if (l)
-        l->declined |= 1u << i;
+    if (r == CQE_OP_NOT_MINE)
       continue;
-    }
     if (r == 0) {
       vmask_(out);
       return 0;
