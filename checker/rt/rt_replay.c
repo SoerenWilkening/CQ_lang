@@ -41,7 +41,8 @@
  * cq_invert region. $CQE_REPLAY=0 turns it off (every call runs real; the wrapper adds nothing).
  *
  * Self-checks: $CQE_REPLAY_TAMPER=1 flips a bit in the first record's first live rail, which the spot check must
- * report; $CQE_REPLAY_STATS=<file> appends one JSON line per sample (and every 2^26 runtime calls) with the counts. */
+ * report; $CQE_REPLAY_STATS=<file> appends one JSON line per sample (and every 2^26 runtime calls, or 2^N with
+ * $CQE_REPLAY_STATS_LOG2=N) with the counts and the basic blocks stepped so far (replayed ones included). */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -82,6 +83,7 @@ void cqe__rp_put(cqe_rp_buf *b, const void *x, size_t n) {
 static int st_read, st_on = 1, st_tamper;
 static unsigned long st_every = 64;
 static const char *st_stats;
+static uint64_t st_stats_every = (uint64_t)1 << 26;
 static size_t st_max_bytes = (size_t)1 << 30;
 
 static void settings(void) {
@@ -97,6 +99,9 @@ static void settings(void) {
   st_tamper = e && !strcmp(e, "1");
   e = getenv("CQE_REPLAY_STATS");
   st_stats = e && *e ? e : NULL;
+  e = getenv("CQE_REPLAY_STATS_LOG2"); /* a progress line per 2^N runtime calls (default 26) */
+  if (e && *e)
+    st_stats_every = (uint64_t)1 << (strtoul(e, NULL, 10) & 63);
   e = getenv("CQE_REPLAY_MAX_MB");
   if (e && *e)
     st_max_bytes = (size_t)strtoull(e, NULL, 10) << 20;
@@ -365,11 +370,11 @@ static void stats_line(const char *when) {
     return;
   fprintf(f, "{\"when\":\"%s\",\"k\":%ld,\"calls\":%llu,\"hits\":%llu,\"records\":%llu,\"dirty\":%llu,\"checks\":%llu,"
              "\"mismatch\":%llu,\"rails_replayed\":%llu,\"materialized\":%llu,\"rails\":%u,\"record_bytes\":%zu,"
-             "\"runtime_calls\":%llu,\"clones\":[",
+             "\"runtime_calls\":%llu,\"steps\":%llu,\"clones\":[",
           when, cqe__rp_shot_k(), (unsigned long long)n_calls, (unsigned long long)n_hits, (unsigned long long)n_recs,
           (unsigned long long)n_dirty, (unsigned long long)n_checks, (unsigned long long)n_mism,
           (unsigned long long)n_rails, (unsigned long long)cqe__rp_materialized(), cqe__rp_nrails(), rec_bytes,
-          (unsigned long long)cqe__ncalls);
+          (unsigned long long)cqe__ncalls, cqe__rp_steps());
   int first = 1;
   for (size_t i = 0; i < nclones; ++i) {
     const rp_clone *c = &clones[i];
@@ -553,7 +558,7 @@ int32_t __cqe_rp_enter(int32_t id, const char *desc, const uint64_t *argv, uint6
       atexit(stats_at_exit);
     }
     static uint64_t last;
-    if (cqe__ncalls - last >= (1u << 26)) { /* a line per 2^26 runtime calls: a sample that never ends still says */
+    if (cqe__ncalls - last >= st_stats_every) { /* a line per 2^26 runtime calls: a sample that never ends still says */
       last = cqe__ncalls;
       stats_line("progress");
     }
