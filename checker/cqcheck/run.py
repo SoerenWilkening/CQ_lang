@@ -85,7 +85,7 @@ RunResult fields (JSON-serializable):
               for n rails of one width, value, role and known flag (cqcheck.kept, cq-pckdl), the tape slots of bus stores
               (role tape_slot) and overtaken load copies (role overtaken) among them; each also has
               "known" (classical-valued, BACKEND_ABI §0) and the roles of rt/core.c's header (store_kept,
-              fenv_flags, fenv_mode among them, cq-tt2j; a_K, kept_ak_module, cq-1leyz; n>K2, kept_k2_module, cq-0ldab); a rail a handle-returning function returns
+              fenv_flags, fenv_mode among them, cq-tt2j; a_K, kept_ak_module, cq-1leyz; n>K2, kept_k2_module, cq-0ldab, cq-dl7da); a rail a handle-returning function returns
               also has "result": true (cq-tt2j)
   clean       the free events [{"h", "v", "known", "w"}]
   violations  the trace's violation events [{"what", "h", "msg"}] plus run failures:
@@ -1820,16 +1820,57 @@ def kept_ak_module(text: str) -> str:
     return "\n".join(out) + "\n"
 
 
-_K2_CMP = re.compile(r"^\s+(%[-\w.$]+) = (?:tail |notail )?call i32 @cq_template_icmp_ugt_i64_hl\(i32 %[-\w.$]+, i64 (\d+)\)\s*$")
+_K2_CMP = re.compile(r"^\s+(%[-\w.$]+) = (?:tail |notail )?call i32 @cq_template_icmp_ugt_i64_hl\(i32 (%[-\w.$]+), i64 (\d+)\)\s*$")
 _K2_ALLOC = re.compile(r"^\s+%[-\w.$]+ = (?:tail |notail )?call (?:noalias )?ptr @__cq_alloc\(i64 (\d+), i64 [^)]*\)\s*$")
 # what the uncompute spine may emit between the two once the compare was the size's last consumer: its producers' _unc
 # (a template's or a twin's) and their frees
 _K2_SPINE = re.compile(r"^\s+(?:tail |notail )?call void @(?:[-\w.$]+_unc|cqrt_free)\(")
+# rule 22 (cq-dl7da): a memory intrinsic's rail length n takes K2 trips: after the compare (and a memset's seed of its
+# classical byte) the host loop's entry branch, its counter from 0, the byte predicate p_j = icmp_ugt_i64_hl(n, j) of the
+# same n, and the exit test against K2 (bus/Intrinsics.cpp quantumTrips, emitSet, emitCopyOf, hostLoop)
+_K2_SEED = re.compile(r"^\s+%[-\w.$]+ = (?:tail |notail )?call i32 @cqrt_alloc_i8\(i8 -?\d+\)\s*$")
+_K2_BR = re.compile(r"^\s+br label %([-\w.$]+)\s*$")
+_K2_PHI = re.compile(r"^\s+(%[-\w.$]+) = phi i64 \[ 0, %[-\w.$]+ \], \[ %[-\w.$]+, %([-\w.$]+) \]\s*$")
+_K2_LOOP_BR = re.compile(r"^\s+br i1 %[-\w.$]+, label %[-\w.$]+, label %([-\w.$]+)\s*$")
+
+
+_K2_LABEL = re.compile(r"([-\w.$]+):(?:\s|$)")
+
+
+def _k2_trips(lines: List[str], j: int, hi: int, labels: Dict[str, int], n: str, k2: str) -> bool:
+    """Whether lines[j:] (in a function body ending at hi, its block labels at labels) are rule 22's K2 trips of a rail
+    length n right after its n > K2 compare: a memset's seed at most, then the branch into a host loop whose block counts
+    j from 0, computes icmp_ugt_i64_hl(n, j) and leaves after K2 trips."""
+    while j < hi and _K2_SEED.match(lines[j]):
+        j += 1
+    b = _K2_BR.match(lines[j]) if j < hi else None
+    if not b:
+        return False
+    head = labels.get(b.group(1))
+    if head is None or head + 1 >= hi:
+        return False
+    phi = _K2_PHI.match(lines[head + 1])
+    if not phi or phi.group(2) != b.group(1):
+        return False
+    pred = re.compile(rf"^\s+%[-\w.$]+ = (?:tail |notail )?call i32 @cq_template_icmp_ugt_i64_hl\(i32 {re.escape(n)}, "
+                      rf"i64 {re.escape(phi.group(1))}\)\s*$")
+    done = re.compile(rf"^\s+%[-\w.$]+ = icmp eq i64 %[-\w.$]+, {k2}\s*$")
+    seen_pred = seen_done = False
+    for i in range(head + 2, hi):
+        if _K2_LABEL.match(lines[i]) or _K2_BR.match(lines[i]):
+            return False
+        e = _K2_LOOP_BR.match(lines[i])
+        if e:
+            return e.group(1) == b.group(1) and seen_pred and seen_done
+        seen_pred = seen_pred or bool(pred.match(lines[i]))
+        seen_done = seen_done or bool(done.match(lines[i]))
+    return False
 
 
 def _k2_cmps(lines: List[str], lo: int, hi: int) -> List[int]:
     """The line indices in lines[lo:hi] (one function body) of the n > K2 compares of kept_k2_module."""
     cand: Dict[str, int] = {}
+    labels: Optional[Dict[str, int]] = None
     for i in range(lo, hi):
         m = _K2_CMP.match(lines[i])
         if not m:
@@ -1838,7 +1879,12 @@ def _k2_cmps(lines: List[str], lo: int, hi: int) -> List[int]:
         while j < hi and _K2_SPINE.match(lines[j]) and m.group(1) not in _AK_TOKEN.findall(lines[j]):
             j += 1
         a = _K2_ALLOC.match(lines[j]) if j < hi else None
-        if a and a.group(1) == m.group(2):
+        if a and a.group(1) == m.group(3):
+            cand[m.group(1)] = i
+            continue
+        if labels is None:               # once per function, only where a constant compare is
+            labels = {lb.group(1): k for k in range(lo, hi) for lb in [_K2_LABEL.match(lines[k])] if lb}
+        if _k2_trips(lines, i + 1, hi, labels, m.group(2), m.group(3)):
             cand[m.group(1)] = i
     if not cand:
         return []
@@ -1855,10 +1901,12 @@ def kept_k2_module(text: str) -> str:
     2026-11-09, cq-0ldab: identified structurally in the lowered program): a rail `icmp_ugt_i64_hl(n, K2)` followed by
     `__cq_alloc(K2, align)` of the same K2, with nothing between them but the uncompute spine's _unc and frees, and that
     nothing reads, uncomputes or frees. The pass's own emission is the same (bus/Alloc.cpp sizeOperand: the compare,
-    Role::KeptOverflow, then the call with K2 as its size; lowerAlloc, lowerRealloc). Each such rail gets the exit role
-    n>K2 (rt/core.c cqe__set_kept_k2). A look-alike compare anything reads, or one no such allocation follows, is not
-    one, whatever it reads at exit."""
-    if "@cq_template_icmp_ugt_i64_hl(" not in text or "@__cq_alloc(" not in text:
+    Role::KeptOverflow, then the call with K2 as its size; lowerAlloc, lowerRealloc). Likewise rule 22's n > K2 of a
+    memory intrinsic whose length is a rail, unpredicated (cq-dl7da): the compare followed by the intrinsic's K2 trips
+    (_k2_trips; bus/Intrinsics.cpp quantumTrips with no predicate in scope, Role::KeptOverflow). Each such rail gets the
+    exit role n>K2 (rt/core.c cqe__set_kept_k2). A look-alike compare anything reads, or one neither such an allocation
+    nor such trips follow, is not one, whatever it reads at exit."""
+    if "@cq_template_icmp_ugt_i64_hl(" not in text:
         return text
     lines = text.splitlines()
     marks: Set[int] = set()
