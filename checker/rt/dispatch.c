@@ -129,8 +129,8 @@ int cqe__f_copy(uint16_t wi, int ctl, const uint64_t *a);
 int cqe__f_xorc(uint16_t wi, int ctl, const uint64_t *a, uint64_t lit);
 int cqe__f_free(uint32_t h);
 int32_t cqe__f_alloc(uint16_t wi, uint64_t lit);
-int cqe__f_ops(int n, const uint32_t *hs, void **recs, uint64_t *v, uint32_t *bits, char *kind, int *known, int unc,
-               uint32_t o, uint16_t owi, void **orec);
+int cqe__f_ops(int n, const uint32_t *hs, const uint8_t *pos, void **recs, cqe_val *args, uint64_t *ainl, int *known,
+               int unc, uint32_t o, uint16_t owi, void **orec);
 int32_t cqe__f_tnew(uint16_t wi, uint64_t val, int known, int nh, const uint32_t *hs, void *const *recs);
 int cqe__f_tunc(uint32_t o, void *orec, uint64_t val, int r_ok, int nh, const uint32_t *hs, void *const *recs);
 
@@ -1409,6 +1409,8 @@ struct site_res {
   uint32_t rbits;
   char rkind;
   uint16_t rwi;    /* rw's index in core.c's width table (cqe__wi_of), 0 none (r7-fuse: fast_template) */
+  uint8_t ft_nh, ft_nl;         /* fast_template: the handle and the literal operands among the nf forward ones, */
+  uint8_t ft_hpos[8], ft_lpos[8]; /* and their indices in order */
   hlist handlers;  /* the handlers registered for t.op */
   lty ty[];        /* nargs parameter types */
 };
@@ -1461,6 +1463,12 @@ static site_res *site_resolve(const char *sym, const char *sig, int32_t nargs) {
       r->and_hl32 = !strcmp(r->t.op, "and") && r->nf == 2 && r->layout_ok && r->mask[0] == 'h' && r->mask[1] == 'l' &&
                     r->rbits == 32;
       r->rwi = r->rbits ? cqe__wi_of(r->rw) : 0;
+      for (int i = 0; r->layout_ok && r->nf <= 8 && i < r->nf; ++i) {
+        if (r->mask[i] == 'h')
+          r->ft_hpos[r->ft_nh++] = (uint8_t)i;
+        else
+          r->ft_lpos[r->ft_nl++] = (uint8_t)i;
+      }
     }
   } else if (!strncmp(sym, "cqrt_", 5)) {
     if (core_parse(sym + 5, &r->core))
@@ -1901,7 +1909,7 @@ __attribute__((noinline)) static uint64_t words_route(cqe_site *s, site_res *R, 
 #define FT_MAX 8
 static int fast_template_ok(const site_res *R) {
   const cqe_tname *t = &R->t;
-  if (!R->small || !R->tok || !R->layout_ok || R->nf > FT_MAX || !R->rwi || R->rbits > 64 || t->exc || t->rm == 2 ||
+  if (!R->small || !R->tok || !R->layout_ok || R->nf > FT_MAX || R->ft_nh + R->ft_nl != R->nf || !R->rwi || R->rbits > 64 || t->exc || t->rm == 2 ||
       R->and_hl32)
     return 0;
   if (t->unc ? (R->nargs < 1 || !R->ty[0].is_i32 || R->rty.kind != 'v') : !R->rty_i32)
@@ -1914,48 +1922,40 @@ static int fast_template_ok(const site_res *R) {
 static uint64_t fast_template(cqe_site *s, site_res *R, const uint64_t *a) {
   const char *sym = s->sym;
   const cqe_tname *t = &R->t;
-  int off = R->off, nf = R->nf, nh = 0, known = 1;
-  uint32_t hs[FT_MAX], hb[FT_MAX];
-  uint64_t hv[FT_MAX], ainl[FT_MAX];
-  char hk[FT_MAX];
-  void *recs[FT_MAX], *orec = NULL;
-  for (int i = 0; i < nf; ++i)
-    if (R->mask[i] == 'h')
-      hs[nh++] = (uint32_t)a[off + i];
-  if (!cqe__f_ops(nh, hs, recs, hv, hb, hk, &known, t->unc, t->unc ? (uint32_t)a[0] : 0, R->rwi, &orec))
-    return words_route(s, R, a);
-  int full = trace_all_();
+  int off = R->off, nf = R->nf, nh = R->ft_nh, known = 1;
+  uint32_t hs[FT_MAX];
+  uint64_t ainl[FT_MAX];
   cqe_val args[FT_MAX];
+  void *recs[FT_MAX], *orec = NULL;
+  for (int k = 0; k < nh; ++k)
+    hs[k] = (uint32_t)a[off + R->ft_hpos[k]];
+  if (!cqe__f_ops(nh, hs, R->ft_hpos, recs, args, ainl, &known, t->unc, t->unc ? (uint32_t)a[0] : 0, R->rwi, &orec))
+    return words_route(s, R, a);
+  for (int k = 0; k < R->ft_nl; ++k) {
+    int i = R->ft_lpos[k];
+    const lty *ty = &R->ty[off + i];
+    ainl[i] = a[off + i] & ty->mask;
+    args[i] = (cqe_val){ty->bits, ty->kind == 'f' ? 'f' : 'i', 1, &ainl[i]};
+  }
+  int full = trace_all_();
   sbuf ab = {0};
-  if (full)
+  if (full) { /* the event's operand list, as template_call writes it: a rail by its value as it stands */
     sb_add(&ab, "[");
-  for (int i = 0, k = 0; i < nf; ++i) {
-    if (i && full)
-      sb_add(&ab, ",");
-    if (R->mask[i] == 'h') {
-      cqe_val rv = {hb[k], hk[k], 1, &hv[k]};
-      ainl[i] = hv[k];
-      args[i] = (cqe_val){hb[k], hk[k], 1, &ainl[i]};
-      vmask_(&args[i]);
-      if (full) {
-        sb_addf(&ab, "{\"h\":%d,\"v\":\"", (int)hs[k]);
-        sb_hex(&ab, &rv);
+    for (int i = 0; i < nf; ++i) {
+      if (i)
+        sb_add(&ab, ",");
+      if (R->mask[i] == 'h') {
+        sb_addf(&ab, "{\"h\":%d,\"v\":\"", (int)(uint32_t)a[off + i]);
+        sb_hex(&ab, cqe__val((int32_t)(uint32_t)a[off + i]));
         sb_add(&ab, "\"}");
-      }
-      ++k;
-    } else {
-      const lty *ty = &R->ty[off + i];
-      ainl[i] = a[off + i] & ty->mask;
-      args[i] = (cqe_val){ty->bits, ty->kind == 'f' ? 'f' : 'i', 1, &ainl[i]};
-      if (full) {
+      } else {
         sb_add(&ab, "{\"lit\":\"");
         sb_hex(&ab, &args[i]);
         sb_add(&ab, "\"}");
       }
     }
-  }
-  if (full)
     sb_add(&ab, "]");
+  }
   uint32_t rbits = R->rbits;
   uint64_t oinl = 0;
   cqe_val out = {rbits, R->rkind ? R->rkind : 'i', 1, &oinl};

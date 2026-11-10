@@ -495,6 +495,7 @@ _Static_assert(sizeof(rail_t) == 32, "rail_t: 32 bytes (2026-11-09 memory plan)"
 #define W1_IMAGE (1ULL << 55)
 #define W1_ROLE_SHIFT 58
 #define W1_FENV1 (1ULL << 61) /* fenv's bit 0: flags lineage */
+static uint32_t tomb_flags(const rail_t *r); /* below: a rail's flags as a dead rail's map entry holds them */
 static void rail_layout_check(void) {
   rail_t a = {0}, b = {0};
   a.t_create = W_CLOCK, a.wi = 0xabc, a.live = 1;
@@ -508,6 +509,8 @@ static void rail_layout_check(void) {
   a.measured = 1, a.written = 1, a.busz = 1, a.role = 5, a.fenv = 3;
   b.w1 |= W1_MEASURED | W1_WRITTEN | W1_BUSZ | 5ULL << W1_ROLE_SHIFT | W1_FENV1 << 1;
   ok = ok && a.w1 == b.w1;
+  a.store_kept = 1, a.r6 = 1, a.load_copy = 1;
+  ok = ok && tomb_flags(&a) == ((uint32_t)(a.w1 >> 48) & 0x7fffu) && tomb_flags(&a) == 0x7fffu - (2u << 10); /* role 5 */
   if (!ok) {
     fprintf(stderr, "cq: chk-core: rail_t's bit-fields are not laid out as W0_*/W1_* say\n");
     abort();
@@ -773,16 +776,21 @@ uint64_t cqe__name(uint32_t h) {
     return h;
   size_t i = cn_hint < cn_n ? cn_hint : cn_n - 1;
   if (!(cn_runs[i].h0 <= h && (i + 1 == cn_n || cn_runs[i + 1].h0 > h))) {
-    size_t lo = 0, hi = cn_n;
-    while (lo < hi) { /* the first run that starts above h */
-      size_t mid = (lo + hi) / 2;
+    /* the first run that starts above h, searched from the end (r7-fuse: a rail that is asked for is mostly a
+     * recent one): the runs are in ascending order of h0 (handles are given in order) */
+    size_t n = cn_n, step = 1;
+    while (step <= n && cn_runs[n - step].h0 > h)
+      step <<= 1;
+    if (step > n && cn_runs[0].h0 > h)
+      return h; /* no run starts at or below h */
+    size_t lo = (step <= n ? n - step : 0) + 1, hi = n - (step >> 1); /* it is in [lo, hi] */
+    while (lo < hi) {
+      size_t mid = lo + (hi - lo) / 2;
       if (cn_runs[mid].h0 <= h)
         lo = mid + 1;
       else
         hi = mid;
     }
-    if (!lo)
-      return h;
     cn_hint = i = lo - 1;
   }
   const cn_run *r = &cn_runs[i];
@@ -2887,18 +2895,41 @@ int cqe__f_xorc(uint16_t wi, int ctl, const uint64_t *a, uint64_t lit) {
   return 1;
 }
 
-/* cqrt_free(h) of a classical-valued rail that is free to free (a one-word value): no violation to write. */
+/* cqrt_free(h) of a classical-valued rail that is free to free (a one-word value): no violation to write. The steps
+ * of g_free (dispatch.c): cqe__free_note and the free event when it is written, then cqe__free, whose work for a rail
+ * with nothing beside its record (no extension, no source list) is in line: not live, its sources dropped, and, at
+ * value 0, the record back to the pool with the map entry holding its width and flags (rail_bury). */
 int cqe__f_free(uint32_t h) {
   rail_t *r = live_rec(h);
-  if (!r || !(r->known || r->busz) || r->measured || r->role == 1 || r->role == 2 || w_nw[r->wi] != 1)
+  if (!r)
     return 0;
-  if (cqe__free_note((int32_t)h, 1)) { /* the free event, as dispatch.c's g_free writes it */
+  uint64_t w1 = r->w1;
+  uint32_t role = (uint32_t)(w1 >> W1_ROLE_SHIFT) & 7, wi = (uint32_t)(r->w0 >> W0_WI_SHIFT) & 0xfff;
+  if (!(w1 & (W1_KNOWN | W1_BUSZ)) || (w1 & W1_MEASURED) || role == 1 || role == 2 || w_nw[wi] != 1)
+    return 0;
+  if (cqe__free_note((int32_t)h, 1)) { /* the free event, as g_free writes it */
     char hb[3 + 16 + 1];
     cqe_val v = rail_v(r);
     cqe__logf("{\"ev\":\"free\",\"h\":%lld,\"v\":\"%s\",\"known\":true,\"w\":\"%s\"}", cqe__hname((int32_t)h), cqe__hex(&v, hb),
-              wtab[r->wi]);
+              wtab[wi]);
   }
-  free_rec((int32_t)h, r);
+  if (__builtin_expect((r->w0 & W0_AUX) != 0, 0)) {
+    free_rec((int32_t)h, r);
+    return 1;
+  }
+  r->w0 &= ~W0_LIVE;
+  r->d.in[0] = r->d.in[1] = 0;
+  if (r->val.inl)
+    return 1; /* the record stays: it holds the value */
+  uint32_t m = real_peek(h);
+  if (!ent_rec(m) || &pool_base[m - 2] != r)
+    return 1;
+  uint32_t dv = DEAD_OF(wi, (uint32_t)(w1 >> 48) & 0x7fffu); /* tomb_flags: the flags are w1's bits 48 .. 62 */
+  r->w0 &= ~(0xfffULL << W0_WI_SHIFT); /* a record on the free list has no width */
+  r->val.inl = pool_free;
+  pool_free = m - 2 + 1;
+  ++st_buried;
+  real_put(h, dv);
   return 1;
 }
 
@@ -2932,30 +2963,34 @@ int32_t cqe__f_alloc(uint16_t wi, uint64_t lit) {
 
 /* A template call's handle operands hs[n] (dispatch.c fast_template): 1 when each is a live rail of a one-word value
  * and, for an _unc, its out rail o is a live rail of width token owi; for a forward call, when cqe__new would make a
- * new rail. Then recs[i], v[i] (the value word), bits[i] and kind[i] are operand i's, *known says every operand is
+ * new rail. Then recs[i] is operand i's record and its value is the handler's argument args[pos[i]], in the word
+ * ainl[pos[i]] (the low bits of the rail's width, as template_call copies it); *known says every operand is
  * classical-valued and *orec is o's record. 0: nothing is set that the caller may use, and nothing was changed. */
-int cqe__f_ops(int n, const uint32_t *hs, void **recs, uint64_t *v, uint32_t *bits, char *kind, int *known, int unc,
-               uint32_t o, uint16_t owi, void **orec) {
-  int k = 1;
+int cqe__f_ops(int n, const uint32_t *hs, const uint8_t *pos, void **recs, cqe_val *args, uint64_t *ainl, int *known,
+               int unc, uint32_t o, uint16_t owi, void **orec) {
+  uint64_t k = W1_KNOWN;
   for (int i = 0; i < n; ++i) {
     rail_t *r = live_rec(hs[i]);
-    if (!r || w_nw[r->wi] != 1)
+    if (!r)
+      return 0;
+    uint32_t wi = (uint32_t)(r->w0 >> W0_WI_SHIFT) & 0xfff;
+    if (w_nw[wi] != 1)
       return 0;
     recs[i] = r;
-    v[i] = r->val.inl;
-    bits[i] = w_bits[r->wi];
-    kind[i] = w_kind[r->wi];
-    k = k && r->known;
+    uint32_t p = pos[i], bits = w_bits[wi];
+    ainl[p] = r->val.inl & wmask_(bits);
+    args[p] = (cqe_val){bits, w_kind[wi], 1, &ainl[p]};
+    k &= r->w1;
   }
   if (unc) {
-    rail_t *r = live_rec(o);
-    if (!r || r->wi != owi || w_nw[owi] != 1)
+    rail_t *r = live_w(o, LW_OF(owi));
+    if (!r || w_nw[owi] != 1)
       return 0;
     *orec = r;
   } else if (!new_ok_() || w_nw[owi] != 1) {
     return 0;
   }
-  *known = k;
+  *known = k != 0;
   return 1;
 }
 

@@ -44,6 +44,7 @@
 #include <string.h>
 
 #include "cqe.h"
+#include "cqe_plan.h"
 #include "rt_replay.h"
 #include "rt_tape.h"
 
@@ -327,8 +328,28 @@ static const access_name *access_name_of(const cqe_tname *t) {
   return e;
 }
 
-static int access_parse(access_t *x, const cqe_tname *t, const cqe_val *args, int nargs, int i, int extra) {
+/* (r7-fuse) A call site's access keeps its own copy of the entry in the site's plan word (cqe_plan.h: the word belongs
+ * to this handler and this name for as long as the site stands), so that two sites sharing a slot of the table above do
+ * not format their names again at every call. An access parsed a second time in one call, or with no site, asks the
+ * table. */
+static const access_name *access_name_site(const cqe_tname *t) {
+  uintptr_t *slot = cqe__plan_take();
+  if (slot && *slot)
+    return (const access_name *)*slot;
   const access_name *nm = access_name_of(t);
+  if (slot) {
+    access_name *own = malloc(sizeof *own);
+    if (own) {
+      *own = *nm;
+      *slot = (uintptr_t)own;
+      return own;
+    }
+  }
+  return nm;
+}
+
+static int access_parse(access_t *x, const cqe_tname *t, const cqe_val *args, int nargs, int i, int extra) {
+  const access_name *nm = access_name_site(t);
   *x = (access_t){0};
   x->t = t;
   x->sym = nm->sym;
@@ -397,9 +418,34 @@ static void add_deps(int32_t h, const access_t *x) {
 /* ---- ops ---------------------------------------------------------------------------------- */
 
 /* The load that made a rail: the forward values its _unc must see (ABI §1.10). Keyed by handle. */
-typedef struct { int32_t h; uint64_t addr; uint8_t fire; } load_rec;
-static load_rec *loads;
+/* (r7-fuse) Handles are given in order and a load notes its copy as soon as it is made, so the loads come with
+ * ascending handles: they are one array in that order (16 bytes a load, found from its end: an _unc and a replay
+ * window ask for recent rails). A handle that is not above the last one noted (a touched rail of a replayed call,
+ * load_of; a rail a cq_invert replay computes again) is rewritten in the array if it is there, else kept in the small
+ * hash table. A handle is in one of the two, never both. */
+typedef struct { uint64_t addr; int32_t h; uint8_t fire; } load_rec;
+_Static_assert(sizeof(load_rec) == 16, "load_rec: 16 bytes");
+static load_rec *lseq; /* ascending h */
+static size_t lseq_n, lseq_cap;
+static load_rec *loads; /* the others: open addressing on h */
 static size_t loads_cap, loads_n;
+
+static load_rec *lseq_find(int32_t h) {
+  size_t n = lseq_n, step = 1;
+  if (!n || h > lseq[n - 1].h || h < lseq[0].h)
+    return NULL;
+  while (step <= n && lseq[n - step].h > h)
+    step <<= 1;
+  size_t lo = step <= n ? n - step : 0, hi = n - (step >> 1); /* the first entry not below h is in [lo, hi] */
+  while (lo < hi) {
+    size_t mid = lo + (hi - lo) / 2;
+    if (lseq[mid].h < h)
+      lo = mid + 1;
+    else
+      hi = mid;
+  }
+  return lo < n && lseq[lo].h == h ? &lseq[lo] : NULL;
+}
 
 static size_t load_slot(const load_rec *tab, size_t cap, int32_t h) {
   size_t i = ((size_t)(uint32_t)h * 0x9E3779B1u) & (cap - 1);
@@ -409,6 +455,21 @@ static size_t load_slot(const load_rec *tab, size_t cap, int32_t h) {
 }
 
 static void load_note(int32_t h, uint64_t addr, int fire) {
+  if (!lseq_n || h > lseq[lseq_n - 1].h) {
+    if (lseq_n == lseq_cap) {
+      lseq_cap = lseq_cap ? 2 * lseq_cap : 1024;
+      lseq = realloc(lseq, lseq_cap * sizeof *lseq);
+      if (!lseq)
+        abort();
+    }
+    lseq[lseq_n++] = (load_rec){addr, h, (uint8_t)fire};
+    return;
+  }
+  load_rec *e = lseq_find(h);
+  if (e) {
+    *e = (load_rec){addr, h, (uint8_t)fire};
+    return;
+  }
   if (2 * (loads_n + 1) > loads_cap) {
     size_t cap = loads_cap ? 2 * loads_cap : 256;
     load_rec *tab = calloc(cap, sizeof *tab);
@@ -423,18 +484,27 @@ static void load_note(int32_t h, uint64_t addr, int fire) {
   }
   load_rec *r = &loads[load_slot(loads, loads_cap, h)];
   loads_n += !r->h;
-  *r = (load_rec){h, addr, (uint8_t)fire};
+  *r = (load_rec){addr, h, (uint8_t)fire};
+}
+
+/* The load noted for h, NULL none. */
+static const load_rec *load_noted(int32_t h) {
+  const load_rec *r = lseq_find(h);
+  if (r)
+    return r;
+  r = loads_cap ? &loads[load_slot(loads, loads_cap, h)] : NULL;
+  return r && r->h ? r : NULL;
 }
 
 static const load_rec *load_of(int32_t h) {
-  const load_rec *r = loads_cap ? &loads[load_slot(loads, loads_cap, h)] : NULL;
-  if (r && r->h)
+  const load_rec *r = load_noted(h);
+  if (r)
     return r;
   uint64_t a;
   int fire;
   if (cqe__rp_block_load(h, &a, &fire)) { /* a rail of a replayed clone call (cq-kcn5i): the load its record holds */
     load_note(h, a, fire);
-    return &loads[load_slot(loads, loads_cap, h)];
+    return load_noted(h);
   }
   return NULL;
 }
@@ -442,8 +512,8 @@ static const load_rec *load_of(int32_t h) {
 /* ---- clone replay (cq-kcn5i, rt_replay.c): this file's state as a window's record reads and writes it ---- */
 
 int cqe__bus_load_of(int32_t h, uint64_t *addr, int *fire) {
-  const load_rec *r = loads_cap ? &loads[load_slot(loads, loads_cap, h)] : NULL;
-  if (!r || !r->h)
+  const load_rec *r = load_noted(h);
+  if (!r)
     return 0;
   *addr = r->addr;
   *fire = r->fire;
