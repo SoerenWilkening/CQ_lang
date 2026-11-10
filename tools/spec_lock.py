@@ -23,7 +23,7 @@ HEADER = ('# CQ_spec pin, written by tools/spec_lock.py --write. Spec: examples/
 def locked_paths(spec):
     paths = [spec / f for f in FILES]
     for d in DIRS:
-        paths += sorted(p for p in (spec / d).rglob('*') if p.is_file())
+        paths += sorted(p for p in (spec / d).rglob('*') if p.is_file() and p.name != '.DS_Store')  # Finder metadata, not spec
     return sorted(paths)
 
 

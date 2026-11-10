@@ -1,9 +1,9 @@
 # CQ_spec pin, written by tools/spec_lock.py --write. Spec: examples/, CONSTRUCTION_RULES.md, CQ.h.
 # Also locked because we consume them: BACKEND_ABI.md (non-normative, CONSTRUCTION_RULES.md wins over it)
 # and _tools/drivers.txt (input data). A drift in either of those two is a re-pin, not a spec issue.
-commit 4d08ffa25f58ec175571f0194cb78ae6065e89fa
+commit 96c7bc5f9f04b98670a153bc3e3df554f0d91a38
 85926a8eadf571cd8a02b7d58631c4238ed45d53b7d1805aa1b3bc12f569edc4  BACKEND_ABI.md
-eb698875049f6c5ee4f94c98d29408eb3e2b96c2b7d6eb549959702d5d492cd6  CONSTRUCTION_RULES.md
+cfae6301ce89ded28919c75e9cde872a88abfab0fcab1a2135df7e1af394971e  CONSTRUCTION_RULES.md
 a277b3618e436d7404ea74f7234976fd1ba9dc5e1f108845b3f8ce4bd9427d23  CQ.h
 904904550a0ef6a4605b08e17db4740cfe31db8b6fb6589f59603a0fb818f740  _tools/drivers.txt
 721d422960294e2fe9c8821f9365f47679bd71dc815f2594c84f2cd3de8f7611  examples/01_add_classical_const/add_classical_const.O1.ll
@@ -401,7 +401,7 @@ e9296d0be967b60a199a1f3c5b11cc6a6f58d300922918bf66762b803c00f42c  examples/210_i
 324563c4f2d8dec7337fdc56012425caace9dc5fd98cba4ab6d2c46698ed95e1  examples/210_input_behind_output/input_behind_output.lowered.ll
 ead3b4b1c3fdf44b93ab62166ce06226482fe1ed7c393fb1b6d24259528ac5af  examples/211_fnptr_rail_measuring/fnptr_rail_measuring.O1.ll
 80c9085f650f2efa55604193b2f6e6503271dbaae8213dbb99b820b5ca160c79  examples/211_fnptr_rail_measuring/fnptr_rail_measuring.c
-859b2069440baa44d747fe139b5ce14e32447901af28e72784d0c2951377dfd7  examples/211_fnptr_rail_measuring/fnptr_rail_measuring.lowered.ll
+d3fd72da684e63734e7b6d7ef5b4e8f611296dda15d006f7bdab23fc13356453  examples/211_fnptr_rail_measuring/fnptr_rail_measuring.lowered.ll
 64557353aa897390bc1834d6fb21a3822ac34b1807616bde43aab8fad90ef25e  examples/212_signal_table/signal_table.O1.ll
 adacbce1461b2c0dae6485abd2510d1c4431bed8a78120e0d669634f46fc0b67  examples/212_signal_table/signal_table.c
 5010b32063cd09ff6f7a84f981107812423ded196583a9a15845e5baca0a3907  examples/212_signal_table/signal_table.lowered.ll
