@@ -130,6 +130,13 @@ add_test(NAME loops-cutoff-measure-site
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in f=4 --measures-in g=4
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_site.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-v8cn7, cq-1ye9c (CR rules 2, 8, 14): a measurement behind a classical branch, in a K-loop's trips and without a loop;
+# run_probes.py MUTANTS: a trip copy measuring another register, measurements hoisted above the classical br, rejected.
+add_test(NAME loops-cutoff-measure-cbr
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in h=4 --measures-in g=1
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_cbr.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # cq-jws5r (CR rule 8 with rule 14): a purely classical branch inside a K-trip stays a `br` in every trip copy (the arm
 # C does not take emits nothing; the taken arm's effects sit under the trip predicate alone), in a clone, a _ctl clone
 # and a twin; a sub-loop, a noreturn arm and a measurement behind one. Each entry §6-checked against its C program.

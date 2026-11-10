@@ -35,19 +35,46 @@ MUTANTS = {
         # v's bit 3 (b3) set as 16 instead of 8, forward and uncomputation alike: the first trip, which C reaches, measures another v
         ("f", "wrong_value", r"i32 8, i32 0\)", "i32 16, i32 0)"),
     ],
+    # me_cbr (cq-v8cn7, cq-1ye9c; CR rules 2, 8, 14): a measurement behind a classical branch runs only where the
+    # classical arguments take it; a trip copy is the site only if it measures the site's register.
+    "me_cbr": [
+        # the last trip copy (trip 3, which no sample reaches) measures a copy of v (the rail trip 0 shifts), not w
+        ("h", "other_register", r"(?s)(lshr_i32_hl\(i32 (%[\w.]+), i32 1\).*)(call void @cqrt_copy_i32\(i32 )%[\w.]+"
+         r"(, i32 %[\w.]+\)\n  %[\w.]+ = call i32 @cqrt_measure_i32)", r"\1\3\2\4"),
+        # every trip copy's measurement moved above its classical br, so it runs also where (c & 1) is 0
+        ("h", "hoist_trips", r"(  br i1 %[\w.]+, label %[\w.]+, label %[\w.]+\n\n[\w.]+:[^\n]*\n)"
+         r"(  %[\w.]+ = call i32 @cqrt_alloc_i32\(i32 0\)\n  call void @cqrt_copy_i32[^\n]*\n"
+         r"  %[\w.]+ = call i32 @cqrt_measure_i32[^\n]*\n)", r"\2\1"),
+        # g's measurement (and the w it measures) moved above the classical br on (c & 1)
+        ("g", "hoist_branch", r"(  br i1 %[\w.]+, label %[\w.]+, label %[\w.]+\n\n[\w.]+:[^\n]*\n  %[\w.]+ = phi[^\n]*\n"
+         r"  ret i32 %[\w.]+\n\n[\w.]+:[^\n]*\n)((?:  [^\n]*\n)*?  %[\w.]+ = call i32 @cqrt_measure_i32[^\n]*\n)",
+         r"\2\1"),
+    ],
 }
+_ALL = ("wrong_value", "hoist_trips")      # mutants applied at every match, not the first only
+NAMED = ("me_cbr",)                        # probes whose lowered module is mutated after opt -passes=instnamer
 
 
 def mutants(a, probe: Path, mod: str, out: Path) -> int:
     failures = 0
-    for e, name, old, new in MUTANTS.get(probe.name.replace(".O1.ll", ""), []):
+    stem = probe.name.replace(".O1.ll", "")
+    if stem in NAMED and MUTANTS.get(stem):
+        # a mutant that moves instructions across blocks needs named values (numbered ones must stay in order)
+        mod = subprocess.run([a.opt, "-passes=instnamer", "-S", "-"], input=mod, capture_output=True, text=True,
+                             check=True).stdout
+    for e, name, old, new in MUTANTS.get(stem, []):
         b = body(mod, e)
         if not re.search(old, b):
             print(f"FAIL {probe.name} mutant {name}: {old!r} is not in @{e}")
             failures += 1
             continue
         low = out / probe.name.replace(".O1.ll", f".{name}.ll")
-        low.write_text(mod.replace(b, re.sub(old, new, b, count=(0 if name == "wrong_value" else 1)), 1))
+        low.write_text(mod.replace(b, re.sub(old, new, b, count=(0 if name in _ALL else 1)), 1))
+        v = subprocess.run([a.opt, "-passes=verify", "-disable-output", str(low)], capture_output=True, text=True)
+        if v.returncode != 0:            # a rejection must come from §6, not from a module that does not parse
+            print(f"FAIL {probe.name} mutant {name}: not valid IR: " + (v.stderr.strip().splitlines() or ["?"])[0])
+            failures += 1
+            continue
         c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(probe), "--lowered", str(low),
                             "--entry", e], capture_output=True, text=True, cwd=ROOT / "checker", timeout=a.timeout)
         rejected = c.returncode == 1 and "FAIL" in c.stdout
