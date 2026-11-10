@@ -2609,6 +2609,8 @@ struct Uncompute::Impl {
     std::vector<BasicBlock *> armFirst;
     std::vector<unsigned> ord;                         // order of the block (kNo: none)
     std::vector<unsigned> dia, diaU;                   // the diamond's head and middle block; kNo none, kNo - 1 not read
+    std::vector<unsigned> diaRoot, diaDepth, midOf;    // the end of a run of diamonds and the distance to it; the
+                                                       // diamond a block is the middle of (kNo none)
     std::vector<unsigned> memoVal, memoStamp;
     unsigned stamp = 0;
   };
@@ -2734,6 +2736,9 @@ struct Uncompute::Impl {
         V.ord.push_back(facts ? orderOf(x) : kNo);
         V.dia.push_back(kNo - 1);
         V.diaU.push_back(kNo);
+        V.diaRoot.push_back(kNo - 1);
+        V.diaDepth.push_back(0);
+        V.midOf.push_back(kNo);
         V.memoVal.push_back(0);
         V.memoStamp.push_back(0);
       }
@@ -2777,12 +2782,34 @@ struct Uncompute::Impl {
             if (un == 1 && V.predIds[uo] == h && V.ord[x] != kNo && V.ord[h] != kNo && V.ord[h] > V.ord[x]) {
               V.dia[x] = h;
               V.diaU[x] = u;
+              V.midOf[u] = x;
               break;
             }
           }
         }
       }
       return V.dia[x];
+    };
+    // A run of diamonds (each head the join of the next, a simple path: a head has one join below it) is passed in one
+    // step to its first head that is no diamond's join, unless D lies inside it (as a head or a middle block).
+    auto rootOf = [&](unsigned x) {
+      SmallVector<unsigned, 16> path;
+      unsigned y = x;
+      while (V.diaRoot[y] == kNo - 1) {
+        unsigned h = diamondOf(y);
+        if (h == kNo) {
+          V.diaRoot[y] = y;
+          V.diaDepth[y] = 0;
+          break;
+        }
+        path.push_back(y);
+        y = h;
+      }
+      for (auto it = path.rbegin(); it != path.rend(); ++it) {
+        V.diaRoot[*it] = V.diaRoot[V.dia[*it]];
+        V.diaDepth[*it] = V.diaDepth[V.dia[*it]] + 1;
+      }
+      return V.diaRoot[x];
     };
     auto notAfterD = [&](unsigned x) {
       if (!facts)
@@ -2854,8 +2881,19 @@ struct Uncompute::Impl {
             stack.push_back({cur, Single, 0, 0, 0});
             cur = V.predIds[off];
           } else if (unsigned h = facts ? diamondOf(cur) : kNo; h != kNo && V.bb[V.diaU[cur]] != D) {
-            if (!nameRef.empty())
+            if (!nameRef.empty()) {
               phis.push_back({cur, {}, true});
+            } else {
+              unsigned r = rootOf(cur), dep = V.diaDepth[cur];
+              bool inside = false;
+              if (auto it = V.id.find(D); it != V.id.end()) {
+                unsigned d = it->second, m = V.midOf[d];
+                inside = (V.diaRoot[d] == r && V.diaDepth[d] > 0 && V.diaDepth[d] < dep) ||
+                         (m != kNo && V.diaRoot[m] == r && V.diaDepth[m] <= dep);
+              }
+              if (!inside)
+                h = r;
+            }
             stack.push_back({cur, Single, 0, 0, 0});
             cur = h;
           } else {
