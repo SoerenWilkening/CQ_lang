@@ -365,6 +365,35 @@ def bundle_for(ll_text: str) -> List[Path]:
     return []
 
 
+# CR rule 16's stream calls by C name, as pass/lib/Common.cpp streamName lists them: every <stdio.h> function and the
+# five POSIX descriptor calls, never the string formatters. Only a prefilter for host_streams: the plugin decides.
+_STREAM_NAMES = frozenset((
+    "fopen freopen fclose fflush setbuf setvbuf fprintf printf vfprintf vprintf fscanf scanf vfscanf vscanf fgetc getc "
+    "getchar fgets gets fputc putc putchar fputs puts ungetc fread fwrite fgetpos fseek fsetpos ftell rewind clearerr "
+    "feof ferror perror remove rename tmpfile tmpnam getline getdelim fdopen fileno popen pclose fseeko ftello dprintf "
+    "vdprintf flockfile funlockfile ftrylockfile getc_unlocked getchar_unlocked putc_unlocked putchar_unlocked ctermid "
+    "fmemopen open_memstream renameat tempnam open close read write lseek").split())
+_DEFINED = re.compile(r'(?m)^define\b[^@\n]*@("[^"]*"|[-A-Za-z$._0-9]+)\(')
+
+
+def host_streams(text: str) -> str:
+    """cq-8bq66 (CR rule 16): the C program with every stream call the module defines made a declaration, so a call of it
+    by name is the host's function, as on the lowered side, where it is rule 16's host boundary and its body is never
+    lifted for the call (BACKEND_ABI §1.11: the backend performs the entry with the host C library). Recognised by name
+    and signature as cq-lower does (OracleInstr.cpp, cq-oracle-host-streams). A module that defines none is text as it
+    stands."""
+    from . import drivers
+    if not {drivers._c_name(n) for n in _DEFINED.findall(text)} & _STREAM_NAMES:
+        return text
+    plugin, _ = toolchain()
+    with tempfile.TemporaryDirectory(prefix="cqo-streams.") as d:
+        src, dst = Path(d) / "in.ll", Path(d) / "out.ll"
+        src.write_text(text)
+        _run([_tool("opt"), f"-load-pass-plugin={plugin}", "-passes=cq-oracle-host-streams", "-S", str(src), "-o", str(dst)],
+             "the stream calls' bodies (cq-oracle-host-streams)")
+        return dst.read_text()
+
+
 def bundle_key(files: Sequence[Path]) -> str:
     """A cache-key part for the bundle files actually linked: their paths and contents."""
     return "\0".join(f"{b}:{_bundle_info(Path(b))[1]}" for b in files)
@@ -526,8 +555,9 @@ def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[in
         linked = d / "linked.bc"
         # no direct host call runs for real (rulings Q8)
         from . import drivers
-        callees = drivers.effect_callees(text, frozenset(defined) | drivers.corpus_roots())
-        renamed = _k2_sites(drivers.rename_effects(text, callees), text)
+        host = host_streams(text)    # cq-8bq66: a stream call by name is the host's, whatever the module defines
+        callees = drivers.effect_callees(host, frozenset(defined) | drivers.corpus_roots())
+        renamed = _k2_sites(drivers.rename_effects(host, callees), host)
         decls = "".join(f"declare {r} @{drivers.FX_PREFIX}{c}({p})\n" for c, (_, r, p) in callees.items())
         (d / "prog.ll").write_text(renamed + decls)
         (d / "fx.ll").write_text(f'target triple = "{triple}"\n' + drivers.effect_wrappers_ir(callees))

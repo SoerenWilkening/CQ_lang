@@ -553,6 +553,11 @@ def _build_into(tmp: Path, lowered: Path, drv: str, triple: str, objs: Sequence[
     _sh([LLVM_LINK, "-S", "lowered.ll", "-o", "lowered.canon.ll"], cwd=tmp)
     try:
         canon = (tmp / "lowered.canon.ll").read_text()
+        # cq-8bq66 (CR rule 16, BACKEND_ABI §1.11): the backend performs an entry with the host C library, never with a
+        # lowered symbol; a stream function's own body the module keeps would interpose on the host's for the whole
+        # evaluator (its own trace writes included), so it is a declaration here, as in the C oracle
+        from cqcheck import oracle as _oracle
+        canon = _oracle.host_streams(canon)
         tot = totalize_module(canon)
         if touches_fenv(canon):  # cq-6ady
             tot = default_env_module(tot)
