@@ -117,6 +117,20 @@ int cqe__free_note(int32_t h, int known); /* core.c (cq-8m6v) */
 void cqe__free(int32_t h);
 char *cqe__hex(const cqe_val *v, char *buf);
 int cqe__trace_all(void); /* core.c (cq-9hzgh): an event outside the compact set is written */
+/* The same once the core is initialized (every gate body below runs after cqe__init), without the call (r7-fuse). */
+extern int cqe__compact, cqe__shot_muted;
+static inline int trace_all_(void) { return !cqe__compact && !cqe__shot_muted; }
+/* core.c's fused gates (r7-fuse): 0 (alloc: handle 0) when the gate's general body must run; nothing is changed then. */
+uint16_t cqe__wi_of(const char *w);
+int cqe__f_logic(int is_and, int n, const uint64_t *a);
+int cqe__f_copy(uint16_t wi, int ctl, const uint64_t *a);
+int cqe__f_xorc(uint16_t wi, int ctl, const uint64_t *a, uint64_t lit);
+int cqe__f_free(uint32_t h);
+int32_t cqe__f_alloc(uint16_t wi, uint64_t lit);
+int cqe__f_ops(int n, const uint32_t *hs, void **recs, uint64_t *v, uint32_t *bits, char *kind, int *known, int unc,
+               uint32_t o, uint16_t owi, void **orec);
+int32_t cqe__f_tnew(uint16_t wi, uint64_t val, int known, int nh, const uint32_t *hs, void *const *recs);
+int cqe__f_tunc(uint32_t o, void *orec, uint64_t val, int r_ok, int nh, const uint32_t *hs, void *const *recs);
 
 /* ---- values in place (cq-9hzgh) ---------------------------------------------------------------
  * A value of 64 bits or fewer the dispatcher holds for one call (an argument, a copy of a rail's value,
@@ -696,7 +710,7 @@ static void log_gate_full(const char *sym, int32_t h, const int32_t *srcs, int n
   free(b.p);
 }
 static inline void log_gate_(const char *sym, int32_t h, const int32_t *srcs, int ns) {
-  if (cqe__trace_all()) /* cq-9hzgh: not in a compact trace */
+  if (trace_all_()) /* cq-9hzgh: not in a compact trace */
     log_gate_full(sym, h, srcs, ns);
 }
 
@@ -758,7 +772,7 @@ static int suffixes(const char *s, int allow_q, int allow_c, int allow_u, int *q
  * gate's own calls them straight from its words (the fast_* functions further down). One body, both ways. */
 static inline int32_t g_alloc(const char *w, const cqe_val *lit) {
   int32_t h = cqe__new(w, lit, 1, 1);
-  if (cqe__trace_all()) { /* cq-9hzgh: not in a compact trace */
+  if (trace_all_()) { /* cq-9hzgh: not in a compact trace */
     char *hx = cqe__hexa(cqe__val(h));
     cqe__logf("{\"ev\":\"alloc\",\"h\":%d,\"w\":\"%s\",\"v\":\"%s\",\"known\":true}", (int)h, w, hx);
     free(hx);
@@ -1158,7 +1172,7 @@ static inline void g_push(int32_t v) {
       abort();
   }
   stack_[nstack++] = v;
-  if (cqe__trace_all())
+  if (trace_all_())
     cqe__logf("{\"ev\":\"push\",\"word\":%d}", (int)v);
 }
 
@@ -1178,7 +1192,7 @@ static inline int32_t g_pop(const char *sym) {
     cqe__violation("pop_empty", -1, "%s: the word stack is empty", sym);
   else
     w = stack_[--nstack];
-  if (cqe__trace_all())
+  if (trace_all_())
     cqe__logf("{\"ev\":\"pop\",\"word\":%d}", (int)w);
   return w;
 }
@@ -1195,6 +1209,7 @@ typedef struct {
   int gate, q, ctl, is_copy, lop;
   uint32_t wbits; /* w's bits and kind as wspec_of gives them (the fast gates) */
   char wkind;
+  uint16_t wi;    /* w's index in core.c's width table (cqe__wi_of), 0 none: the fused gates (r7-fuse) */
   char w[8];
   const char *name; /* the classification's gate: "free", "ry_qangle", "and", "copy", ... */
 } core_cls;
@@ -1361,7 +1376,8 @@ static int parse_sig(const char *sig, lty *rty, lty *ty, int *n);
 
 typedef struct site_res site_res;
 /* A call site's gate over its argument words (cq-r6-dispatch; fast_pick): the result as the stub returns it. */
-typedef uint64_t (*fast_fn)(const site_res *R, const char *sym, const uint64_t *a);
+struct cqe_site_;
+typedef uint64_t (*fast_fn)(struct cqe_site_ *s, site_res *R, const uint64_t *a);
 struct site_res {
   int route, nargs;
   fast_fn fast;    /* non-NULL: the site's signature is its core gate's own, every value of at most 64 bits */
@@ -1378,14 +1394,17 @@ struct site_res {
   const char *rw;  /* its result width token (result_w) */
   uint32_t rbits;
   char rkind;
+  uint16_t rwi;    /* rw's index in core.c's width table (cqe__wi_of), 0 none (r7-fuse: fast_template) */
   hlist handlers;  /* the handlers registered for t.op */
   lty ty[];        /* nargs parameter types */
 };
 
 static fast_fn fast_pick(const site_res *R);
+static int fast_template_ok(const site_res *R);
+static uint64_t fast_template(struct cqe_site_ *s, site_res *R, const uint64_t *a);
 
 /* A stub's call site (stubgen.py emits one per runtime symbol it defines, internal to the program). */
-typedef struct {
+typedef struct cqe_site_ {
   const char *sym, *sig;
   int32_t nargs, pad_;
   site_res *res; /* NULL until resolved */
@@ -1423,6 +1442,7 @@ static site_res *site_resolve(const char *sym, const char *sig, int32_t nargs) {
       r->layout_ok = cqe__template_layout(&r->t, r->nf, r->mask) == 0;
       r->and_hl32 = !strcmp(r->t.op, "and") && r->nf == 2 && r->layout_ok && r->mask[0] == 'h' && r->mask[1] == 'l' &&
                     r->rbits == 32;
+      r->rwi = r->rbits ? cqe__wi_of(r->rw) : 0;
     }
   } else if (!strncmp(sym, "cqrt_", 5)) {
     if (core_parse(sym + 5, &r->core))
@@ -1440,6 +1460,7 @@ static site_res *site_resolve(const char *sym, const char *sig, int32_t nargs) {
   if (r->route == R_CORE && r->core.w[0]) {
     wspec W = wspec_of(r->core.w);
     r->core.wbits = W.bits, r->core.wkind = W.kind;
+    r->core.wi = cqe__wi_of(r->core.w);
   }
   r->small = r->rty.kind == 'v' || r->rty.bits <= 64;
   for (int i = 0; i < nargs; ++i)
@@ -1729,43 +1750,72 @@ void cqe_call(cqe_site *s, void **argv, void *ret) {
  * copy in or out. A site with fast set (fast_pick: a core gate whose stub signature is the gate's own) runs its gate
  * with nothing between: every check of the signature was made once, when the site was resolved, and every check
  * of the operands is the gate's own body (g_*), the one the generic entry runs. */
-static uint64_t fast_free(const site_res *R, const char *sym, const uint64_t *a) {
+static uint64_t fast_free(cqe_site *s, site_res *R, const uint64_t *a) {
+  const char *sym = s->sym;
   (void)R;
-  g_free(sym, (int32_t)(uint32_t)a[0]);
+  if (!cqe__f_free((uint32_t)a[0]))
+    g_free(sym, (int32_t)(uint32_t)a[0]);
   return 0;
 }
-static uint64_t fast_push(const site_res *R, const char *sym, const uint64_t *a) {
+static uint64_t fast_push(cqe_site *s, site_res *R, const uint64_t *a) {
+  const char *sym = s->sym;
   (void)R, (void)sym;
   g_push((int32_t)(uint32_t)a[0]);
   return 0;
 }
-static uint64_t fast_pop(const site_res *R, const char *sym, const uint64_t *a) {
+static uint64_t fast_pop(cqe_site *s, site_res *R, const uint64_t *a) {
+  const char *sym = s->sym;
   (void)R, (void)a;
   return (uint32_t)g_pop(sym);
 }
-static uint64_t fast_alloc(const site_res *R, const char *sym, const uint64_t *a) {
+static uint64_t fast_alloc(cqe_site *s, site_res *R, const uint64_t *a) {
+  const char *sym = s->sym;
   (void)sym;
   uint64_t x = a[0] & R->ty[0].mask;
   cqe_val lit = {R->ty[0].bits, R->ty[0].kind == 'f' ? 'f' : 'i', 1, &x};
-  return (uint32_t)g_alloc(R->core.w, &lit);
+  int32_t h = R->core.wi ? cqe__f_alloc(R->core.wi, x) : 0;
+  if (!h)
+    return (uint32_t)g_alloc(R->core.w, &lit);
+  if (trace_all_()) { /* g_alloc's event */
+    char *hx = cqe__hexa(cqe__val(h));
+    cqe__logf("{\"ev\":\"alloc\",\"h\":%d,\"w\":\"%s\",\"v\":\"%s\",\"known\":true}", (int)h, R->core.w, hx);
+    free(hx);
+  }
+  return (uint32_t)h;
 }
-static uint64_t fast_logic(const site_res *R, const char *sym, const uint64_t *a) {
+static uint64_t fast_logic(cqe_site *s, site_res *R, const uint64_t *a) {
+  const char *sym = s->sym;
   int n = R->nargs;
   int32_t hs[3];
   for (int i = 0; i < n; ++i)
     hs[i] = (int32_t)(uint32_t)a[i];
-  g_logic(sym, R->core.lop, n, hs);
+  if (!cqe__f_logic(R->core.lop == LOP_AND, n, a))
+    g_logic(sym, R->core.lop, n, hs);
+  else
+    log_gate_(sym, hs[n - 1], hs, n - 1);
   return 0;
 }
-static uint64_t fast_copy(const site_res *R, const char *sym, const uint64_t *a) {
+static uint64_t fast_copy(cqe_site *s, site_res *R, const uint64_t *a) {
+  const char *sym = s->sym;
   int ctl = R->core.ctl;
+  if (R->core.wi && cqe__f_copy(R->core.wi, ctl, a)) {
+    int32_t srcs[2] = {(int32_t)(uint32_t)a[ctl], ctl ? (int32_t)(uint32_t)a[0] : 0};
+    log_gate_(sym, (int32_t)(uint32_t)a[ctl + 1], srcs, 1 + ctl);
+    return 0;
+  }
   wspec W = {R->core.w, R->core.wbits, R->core.wkind};
   g_copy_xorc(sym, &W, 1, ctl, ctl ? (int32_t)(uint32_t)a[0] : 0, (int32_t)(uint32_t)a[ctl], (int32_t)(uint32_t)a[ctl + 1], NULL);
   return 0;
 }
-static uint64_t fast_xorc(const site_res *R, const char *sym, const uint64_t *a) {
+static uint64_t fast_xorc(cqe_site *s, site_res *R, const uint64_t *a) {
+  const char *sym = s->sym;
   int ctl = R->core.ctl;
   uint64_t x = a[ctl + 1] & R->ty[ctl + 1].mask;
+  if (R->core.wi && cqe__f_xorc(R->core.wi, ctl, a, x)) {
+    int32_t srcs[1] = {ctl ? (int32_t)(uint32_t)a[0] : 0};
+    log_gate_(sym, (int32_t)(uint32_t)a[ctl], srcs, ctl);
+    return 0;
+  }
   cqe_val lit = {R->ty[ctl + 1].bits, R->ty[ctl + 1].kind == 'f' ? 'f' : 'i', 1, &x};
   wspec W = {R->core.w, R->core.wbits, R->core.wkind};
   g_copy_xorc(sym, &W, 0, ctl, ctl ? (int32_t)(uint32_t)a[0] : 0, (int32_t)(uint32_t)a[ctl], 0, &lit);
@@ -1775,6 +1825,8 @@ static uint64_t fast_xorc(const site_res *R, const char *sym, const uint64_t *a)
 /* The fast gate of a resolved site, or NULL: only where the generic entry's signature checks (want_args and the
  * gates' own) all pass, so that it has no violation to write before the gate's body. */
 static fast_fn fast_pick(const site_res *R) {
+  if (R->route == R_TEMPLATE)
+    return fast_template_ok(R) ? fast_template : NULL;
   if (R->route != R_CORE || !R->small)
     return NULL;
   const core_cls *k = &R->core;
@@ -1805,6 +1857,132 @@ static fast_fn fast_pick(const site_res *R) {
   }
 }
 
+/* A counted call of a small site with no cq_invert region open, marshalled from the words to its route. */
+__attribute__((noinline)) static uint64_t words_route(cqe_site *s, site_res *R, const uint64_t *a) {
+  int32_t nargs = s->nargs;
+  uint64_t ret = 0;
+  const lty *ty = R->ty;
+  cqe_val raw[64];
+  uint64_t rinl[64];
+  for (int i = 0; i < nargs; ++i) {
+    rinl[i] = a[i] & ty[i].mask;
+    raw[i] = (cqe_val){ty[i].bits, ty[i].kind == 'f' ? 'f' : 'i', 1, &rinl[i]};
+  }
+  call_t c = {s->sym, nargs, ty, raw, &R->rty, &ret};
+  route_call(&c, s->sym, R);
+  return ret;
+}
+
+/* A template call of one-word values over its operands' records (r7-fuse; core.c "fused gates"). fast_template_ok says
+ * the site passes every check template_call makes of the name and the signature, so that none of its violations is due
+ * before the operands are read; a call whose operands are not all live one-word rails (cqe__f_ops) goes to
+ * template_call unchanged. Otherwise this is template_call step by step: the operand values, the handlers, then the
+ * result rail (cqe__f_tnew) or the out rail's XOR, residue and known-basis rule (cqe__f_tunc), and the same events
+ * and violations in the same order. */
+#define FT_MAX 8
+static int fast_template_ok(const site_res *R) {
+  const cqe_tname *t = &R->t;
+  if (!R->small || !R->tok || !R->layout_ok || R->nf > FT_MAX || !R->rwi || R->rbits > 64 || t->exc || t->rm == 2 ||
+      R->and_hl32)
+    return 0;
+  if (t->unc ? (R->nargs < 1 || !R->ty[0].is_i32 || R->rty.kind != 'v') : !R->rty_i32)
+    return 0;
+  for (int i = 0; i < R->nf; ++i)
+    if (R->mask[i] == 'h' && !R->ty[R->off + i].is_i32)
+      return 0;
+  return 1;
+}
+static uint64_t fast_template(cqe_site *s, site_res *R, const uint64_t *a) {
+  const char *sym = s->sym;
+  const cqe_tname *t = &R->t;
+  int off = R->off, nf = R->nf, nh = 0, known = 1;
+  uint32_t hs[FT_MAX], hb[FT_MAX];
+  uint64_t hv[FT_MAX], ainl[FT_MAX];
+  char hk[FT_MAX];
+  void *recs[FT_MAX], *orec = NULL;
+  for (int i = 0; i < nf; ++i)
+    if (R->mask[i] == 'h')
+      hs[nh++] = (uint32_t)a[off + i];
+  if (!cqe__f_ops(nh, hs, recs, hv, hb, hk, &known, t->unc, t->unc ? (uint32_t)a[0] : 0, R->rwi, &orec))
+    return words_route(s, R, a);
+  int full = trace_all_();
+  cqe_val args[FT_MAX];
+  sbuf ab = {0};
+  if (full)
+    sb_add(&ab, "[");
+  for (int i = 0, k = 0; i < nf; ++i) {
+    if (i && full)
+      sb_add(&ab, ",");
+    if (R->mask[i] == 'h') {
+      cqe_val rv = {hb[k], hk[k], 1, &hv[k]};
+      ainl[i] = hv[k];
+      args[i] = (cqe_val){hb[k], hk[k], 1, &ainl[i]};
+      vmask_(&args[i]);
+      if (full) {
+        sb_addf(&ab, "{\"h\":%d,\"v\":\"", (int)hs[k]);
+        sb_hex(&ab, &rv);
+        sb_add(&ab, "\"}");
+      }
+      ++k;
+    } else {
+      const lty *ty = &R->ty[off + i];
+      ainl[i] = a[off + i] & ty->mask;
+      args[i] = (cqe_val){ty->bits, ty->kind == 'f' ? 'f' : 'i', 1, &ainl[i]};
+      if (full) {
+        sb_add(&ab, "{\"lit\":\"");
+        sb_hex(&ab, &args[i]);
+        sb_add(&ab, "\"}");
+      }
+    }
+  }
+  if (full)
+    sb_add(&ab, "]");
+  uint32_t rbits = R->rbits;
+  uint64_t oinl = 0;
+  cqe_val out = {rbits, R->rkind ? R->rkind : 'i', 1, &oinl};
+  int r = run_handlers(sym, t, args, nf, &out, &R->handlers);
+  if (r == 0 && out.bits != rbits) {
+    cqe__violation("result_width", -1, "%s: handler produced %u bits, the name implies %u", sym, out.bits, rbits);
+    r = -1;
+  }
+  if (r != 0)
+    oinl = 0;
+  uint64_t ret = 0;
+  if (!t->unc) {
+    int32_t o = cqe__f_tnew(R->rwi, oinl, known && r == 0, nh, hs, recs);
+    if (full) {
+      sbuf b = {0};
+      sb_addf(&b, "{\"ev\":\"tmpl\",\"sym\":\"%s\",\"out\":%d,\"args\":%s,\"w\":\"%s\",\"v\":\"", sym, (int)o, ab.p, R->rw);
+      sb_hex(&b, cqe__val(o));
+      sb_addf(&b, "\",\"known\":%s}", cqe__known(o) ? "true" : "false");
+      cqe_log(b.p);
+      free(b.p);
+    }
+    ret = (uint32_t)o;
+  } else {
+    int32_t o = (int32_t)(uint32_t)a[0];
+    int st = cqe__f_tunc((uint32_t)o, orec, oinl, r == 0, nh, hs, recs);
+    if (full) {
+      sbuf b = {0};
+      sb_addf(&b, "{\"ev\":\"unc\",\"sym\":\"%s\",\"out\":%d,\"args\":%s,\"residue\":\"", sym, (int)o, ab.p);
+      sb_hex(&b, cqe__val(o));
+      sb_add(&b, "\"}");
+      cqe_log(b.p);
+      free(b.p);
+    }
+    if (st == 1) {
+      char *hx = cqe__hexa(cqe__val(o));
+      cqe__violation("unc_residue", o, "%s: out rail %d holds %s after its _unc", sym, (int)o, hx);
+      free(hx);
+    } else if (st == 2) {
+      cqe__violation("unc_after_nondiagonal", o, "%s: rail %d or an operand took a non-diagonal gate after rail %d was computed",
+                     sym, (int)o, (int)o);
+    }
+  }
+  free(ab.p);
+  return ret;
+}
+
 /* cqe_cw for every other site: the call marshalled from the words. */
 __attribute__((noinline)) static uint64_t call_words(cqe_site *s, site_res *R, const uint64_t *a) {
   cqe__init();
@@ -1826,16 +2004,7 @@ __attribute__((noinline)) static uint64_t call_words(cqe_site *s, site_res *R, c
     return ret;
   }
   ++cqe__ncalls;
-  const lty *ty = R->ty;
-  cqe_val raw[64];
-  uint64_t rinl[64];
-  for (int i = 0; i < nargs; ++i) {
-    rinl[i] = a[i] & ty[i].mask;
-    raw[i] = (cqe_val){ty[i].bits, ty[i].kind == 'f' ? 'f' : 'i', 1, &rinl[i]};
-  }
-  call_t c = {s->sym, nargs, ty, raw, &R->rty, &ret};
-  route_call(&c, s->sym, R);
-  return ret;
+  return words_route(s, R, a);
 }
 
 uint64_t cqe_cw(cqe_site *s, const uint64_t *a) {
@@ -1846,7 +2015,7 @@ uint64_t cqe_cw(cqe_site *s, const uint64_t *a) {
   }
   if (R->fast && !iv_nopen) {
     ++cqe__ncalls;
-    return R->fast(R, s->sym, a);
+    return R->fast(s, R, a);
   }
   return call_words(s, R, a);
 }

@@ -231,7 +231,8 @@ static int inited;
  * window's run cannot be recorded */
 int cqe__rp_window, cqe__rp_dirty;
 static unsigned long nviolations;
-static int shot_muted;    /* a batch runner's own end (shots, end of file): nothing more is logged */
+int cqe__shot_muted;      /* a batch runner's own end (shots, end of file): nothing more is logged */
+#define shot_muted cqe__shot_muted /* read by dispatch.c too (r7-fuse: no call per gate to ask cqe__trace_all) */
 static int shot_buffered; /* a shot worker: the trace is flushed at the end of each sample, not per line */
 
 /* Disk caps (cq-3fjt: one run's trace once reached 15 GB, a sample that looped over violations).
@@ -279,7 +280,8 @@ static void at_exit_handler(void);
  * comes in runs (at_exit_handler). Without it every event is written, as before. rt-bus's bus and cells
  * events are not in a compact trace (cq-9hzgh): run.py's only reader of the trace (_stream_shots) skipped
  * them unread. */
-static int compact;
+int cqe__compact;
+#define compact cqe__compact /* read by dispatch.c too (r7-fuse) */
 
 static int keep_event(const char *s) {
   static const char pre[] = "{\"ev\":\"";
@@ -1550,12 +1552,22 @@ void cqe__r6_unc(int32_t t, const int32_t *ops, int n) {
   x->r6_nops = (uint32_t)n;
 }
 
-void cqe__add_dep(int32_t h, int32_t src) {
-  rail_t *r = RL(h);
-  uint32_t sdv = 0;
-  rail_t *sr = rail_look((uint32_t)src, &sdv);
+/* src (fenv lineage bit sf) joins r's sources. */
+static inline void dep_add(rail_t *r, uint32_t sf, int32_t src) {
   /* cq-tt2j: a rail written from the flags is flags (rule 23 lineage) */
-  r->fenv |= (sr ? (uint32_t)sr->fenv : DEAD_F(sdv) >> TF_FENV) & 1;
+  r->fenv |= sf & 1;
+  if (!r->aux && src) { /* the two sources in the record: in[1] is set only after in[0] */
+    if (r->d.in[0] == src || r->d.in[1] == src)
+      return;
+    if (!r->d.in[0]) {
+      r->d.in[0] = src;
+      return;
+    }
+    if (!r->d.in[1]) {
+      r->d.in[1] = src;
+      return;
+    }
+  }
   int32_t *deps = deps_of(r);
   uint32_t nd = rail_nd(r);
   for (uint32_t i = 0; i < nd; ++i)
@@ -1563,12 +1575,15 @@ void cqe__add_dep(int32_t h, int32_t src) {
       return;
   deps_append(r, src);
 }
+void cqe__add_dep(int32_t h, int32_t src) {
+  rail_t *r = RL(h);
+  uint32_t sdv = 0;
+  rail_t *sr = rail_look((uint32_t)src, &sdv);
+  dep_add(r, sr ? (uint32_t)sr->fenv : DEAD_F(sdv) >> TF_FENV, src);
+}
 
-void cqe__free(int32_t h) {
-  uint32_t dv = 0;
-  rail_t *r = rail_look((uint32_t)h, &dv);
-  if (!r) /* freed before: nothing left to drop */
-    return;
+/* cqe__free over rail h's record r. */
+static void free_rec(int32_t h, rail_t *r) {
   r->live = 0;
   rail_ext *x = rail_x(r);
   if (x && x->r6_ops) {
@@ -1587,6 +1602,13 @@ void cqe__free(int32_t h) {
     r->d.in[0] = r->d.in[1] = 0;
   }
   rail_bury((uint32_t)h, r);
+}
+void cqe__free(int32_t h) {
+  uint32_t dv = 0;
+  rail_t *r = rail_look((uint32_t)h, &dv);
+  if (!r) /* freed before: nothing left to drop */
+    return;
+  free_rec(h, r);
 }
 
 /* ---- cqe.h rail API (families) ------------------------------------------------------------- */
@@ -2597,6 +2619,294 @@ static pid_t my_pid(void) {
 
 static int sample_running(void) { return R && R->in_sample && my_pid() == R->worker; }
 static void shot_mark_dirty(void) { R->dirty = 1; }
+
+/* ---- fused gates (r7-fuse) ------------------------------------------------------------------------------------
+ * The core gates of a call site whose signature is the gate's own (dispatch.c fast_*), over the records of their
+ * operands: each handle is resolved once (live_rec) and every check, read, write and mark of the gate is made on the
+ * record. A fused gate runs only the common case: every operand a live rail of the gate's width in a one-word value,
+ * the target distinct from the others, and nothing to write to the trace beyond what its caller writes. In any other
+ * case it returns 0 BEFORE it changes anything and the caller runs the gate's general body (g_* in dispatch.c),
+ * which makes every check and writes every violation as before. What a fused gate does in its case is, step by step,
+ * what that body does through the cqe__* accessors: operand checks in the same order (so a replay window's watch sees
+ * the same handles, rail_look), the value, cqe__carry, cqe__mark_written, cqe__add_dep, the known-basis rule
+ * (dispatch.c zero_rule_v), the rule-6 note, cqe__free_note and cqe__free, cqe__new. */
+static uint16_t wi_i1_;
+
+/* The record of live rail h, NULL in every other case (no rail, freed, pending, a page whose entry is not at hand):
+ * the watch as rail_look keeps it, nothing else touched. */
+__attribute__((always_inline)) static inline rail_t *live_rec(uint32_t h) {
+  if (__builtin_expect(h - 1u >= nrails, 0))
+    return NULL;
+  if (__builtin_expect(rp_watch, 0) && h <= rp_wbase)
+    rp_outside(h);
+  rail_t *r;
+  if (__builtin_expect(!pg_base[h >> PG_BITS].blk, 1)) {
+    uint32_t m = map_base[h];
+    if (__builtin_expect(!ent_rec(m), 0))
+      return NULL;
+    r = &pool_base[m - 2];
+  } else if (look_memo[h & (LOOK_MEMO - 1)].h == h) {
+    r = look_memo[h & (LOOK_MEMO - 1)].r;
+  } else {
+    return NULL;
+  }
+  return __builtin_expect(r->live, 1) ? r : NULL;
+}
+static inline uint64_t tick_(void) {
+  if (__builtin_expect(++clock_ > ((1ULL << 48) - 1), 0))
+    clock_check();
+  return clock_;
+}
+static inline void written_(rail_t *r) { /* cqe__mark_written */
+  r->written = 1;
+  r->busz = 0;
+  r->t_write = tick_();
+}
+static inline uint64_t nd_of(const rail_t *r) { return r->aux && r->d.x->ext ? r->d.x->ext->t_nd : 0; } /* cqe__last_nd */
+static inline uint64_t wmask_(uint32_t bits) { return bits >= 64 ? ~0ULL : ((uint64_t)1 << bits) - 1; }
+/* cqe__carry(t, {s}, 1), s another live rail. */
+static inline void carry1_(const rail_t *t, rail_t *s) {
+  if (!t->measured && (t->frozen || t->image) && !s->measured)
+    s->image = 1;
+}
+/* dispatch.c's zero_rule_v for target t (one-word value) and the sources s0, s1 (NULL: none). */
+static inline void zero_rule_r(rail_t *t, const rail_t *s0, const rail_t *s1) {
+  if (!t->val.inl) {
+    uint64_t ref = t->t_create;
+    if (s0 && s0->t_create > ref)
+      ref = s0->t_create;
+    if (s1 && s1->t_create > ref)
+      ref = s1->t_create;
+    int ok = nd_of(t) <= ref;
+    if (s0 && nd_of(s0) > ref)
+      ok = 0;
+    if (s1 && nd_of(s1) > ref)
+      ok = 0;
+    t->known = ok;
+  } else {
+    int k = t->known;
+    if (s0)
+      k = k && s0->known;
+    if (s1)
+      k = k && s1->known;
+    t->known = k;
+  }
+}
+
+/* A width token's index for a call site (0: none, the site's gates are not fused): the token as a record holds it. */
+uint16_t cqe__wi_of(const char *w) { return w && strlen(w) < 7 ? w_index(w) : 0; }
+
+/* not/and/or/xor_i1 over the n handles a[] (the last one the target); is_and: n == 3 and the gate is and_i1. */
+int cqe__f_logic(int is_and, int n, const uint64_t *a) {
+  if (__builtin_expect(!wi_i1_, 0))
+    wi_i1_ = w_index("i1");
+  uint16_t wi = wi_i1_;
+  uint32_t h0 = 0, h1 = 0, ht = (uint32_t)a[n - 1];
+  rail_t *s0 = NULL, *s1 = NULL, *t;
+  if (n > 1) {
+    h0 = (uint32_t)a[0];
+    if (!(s0 = live_rec(h0)) || s0->wi != wi)
+      return 0;
+  }
+  if (n > 2) {
+    h1 = (uint32_t)a[1];
+    if (!(s1 = live_rec(h1)) || s1->wi != wi)
+      return 0;
+  }
+  if (!(t = live_rec(ht)) || t->wi != wi || ht == h0 || ht == h1)
+    return 0;
+  uint64_t x = s0 ? s0->val.inl & 1 : 0, y = s1 ? s1->val.inl & 1 : 0;
+  t->val.inl ^= n == 1 ? 1 : n == 2 ? x : is_and ? (x & y) : (x | y);
+  if (!t->measured && (t->frozen || t->image)) { /* cqe__carry */
+    if (s0 && !s0->measured)
+      s0->image = 1;
+    if (s1 && !s1->measured)
+      s1->image = 1;
+  }
+  written_(t);
+  if (s0)
+    dep_add(t, s0->fenv, (int32_t)h0);
+  if (s1)
+    dep_add(t, s1->fenv, (int32_t)h1);
+  zero_rule_r(t, s0, s1);
+  return 1;
+}
+
+/* copy_<W>([cf,] s, d), W the token of index wi. */
+int cqe__f_copy(uint16_t wi, int ctl, const uint64_t *a) {
+  if (w_nw[wi] != 1)
+    return 0;
+  if (__builtin_expect(!wi_i1_, 0))
+    wi_i1_ = w_index("i1");
+  uint32_t hc = 0, hs = (uint32_t)a[ctl], ht = (uint32_t)a[ctl + 1];
+  rail_t *c = NULL, *s, *t;
+  if (ctl) {
+    hc = (uint32_t)a[0];
+    if (!(c = live_rec(hc)) || c->wi != wi_i1_)
+      return 0;
+  }
+  if (!(s = live_rec(hs)) || s->wi != wi)
+    return 0;
+  if (!(t = live_rec(ht)) || t->wi != wi || ht == hs || ht == hc)
+    return 0;
+  int fire = !ctl || (c->val.inl & 1);
+  if (ctl && c->known && !fire)
+    return 1; /* known control 0: nothing happens on any branch */
+  int r6 = !ctl && s->t_create > t->t_write; /* cqe__r6_before, before the write stamps the target */
+  if (fire)
+    t->val.inl = (t->val.inl ^ s->val.inl) & wmask_(w_bits[wi]);
+  carry1_(t, s); /* the data source, not the control */
+  written_(t);
+  dep_add(t, s->fenv, (int32_t)hs);
+  if (ctl)
+    dep_add(t, c->fenv, (int32_t)hc);
+  zero_rule_r(t, s, c);
+  if (r6 && !t->val.inl && t->known) /* cqe__r6_cleaned */
+    ext_of(s)->r6_old = (int32_t)ht;
+  return 1;
+}
+
+/* xorc_<W>([cf,] t, lit), lit the literal's word under its own type's mask. */
+int cqe__f_xorc(uint16_t wi, int ctl, const uint64_t *a, uint64_t lit) {
+  if (w_nw[wi] != 1)
+    return 0;
+  if (__builtin_expect(!wi_i1_, 0))
+    wi_i1_ = w_index("i1");
+  uint32_t hc = 0, ht = (uint32_t)a[ctl];
+  rail_t *c = NULL, *t;
+  if (ctl) {
+    hc = (uint32_t)a[0];
+    if (!(c = live_rec(hc)) || c->wi != wi_i1_)
+      return 0;
+  }
+  if (!(t = live_rec(ht)) || t->wi != wi || ht == hc)
+    return 0;
+  int fire = !ctl || (c->val.inl & 1);
+  if (ctl && c->known && !fire)
+    return 1;
+  if (fire)
+    t->val.inl = (t->val.inl ^ lit) & wmask_(w_bits[wi]);
+  written_(t);
+  if (ctl) {
+    dep_add(t, c->fenv, (int32_t)hc);
+    zero_rule_r(t, c, NULL);
+  }
+  return 1;
+}
+
+/* cqrt_free(h) of a classical-valued rail that is free to free (a one-word value): no violation to write. */
+int cqe__f_free(uint32_t h) {
+  rail_t *r = live_rec(h);
+  if (!r || !(r->known || r->busz) || r->measured || r->role == 1 || r->role == 2 || w_nw[r->wi] != 1)
+    return 0;
+  if (cqe__free_note((int32_t)h, 1)) { /* the free event, as dispatch.c's g_free writes it */
+    char hb[3 + 16 + 1];
+    cqe_val v = rail_v(r);
+    cqe__logf("{\"ev\":\"free\",\"h\":%lld,\"v\":\"%s\",\"known\":true,\"w\":\"%s\"}", cqe__hname((int32_t)h), cqe__hex(&v, hb),
+              wtab[r->wi]);
+  }
+  free_rec((int32_t)h, r);
+  return 1;
+}
+
+/* cqe__new for a one-word rail of width token wi when no reserved rail waits (the caller asked: new_ok_). */
+static inline int new_ok_(void) { return prealloc_h <= 0 && nrails + 1 < CQE_RAIL_LIMIT; }
+static inline rail_t *new_rec(uint16_t wi, uint64_t val, int known, int seed, int32_t *hp) {
+  int32_t h = (int32_t)++nrails;
+  cn_note((uint32_t)h, cn_new_name());
+  if (!(h & 0xffffff))
+    store_stats();
+  uint32_t s;
+  rail_t *r = pool_take(&s);
+  real_new((uint32_t)h, s + 2);
+  r->wi = wi;
+  r->val.inl = val & wmask_(w_bits[wi]);
+  r->live = 1;
+  r->known = known ? 1 : 0;
+  r->seed = seed ? 1 : 0;
+  r->t_create = r->t_write = tick_();
+  *hp = h;
+  return r;
+}
+
+/* cqrt_alloc_<W>(lit): the new rail's handle, 0 when the general body runs (cqe__new). */
+int32_t cqe__f_alloc(uint16_t wi, uint64_t lit) {
+  if (!new_ok_() || w_nw[wi] != 1)
+    return 0;
+  int32_t h;
+  new_rec(wi, lit, 1, 1, &h);
+  return h;
+}
+
+/* A template call's handle operands hs[n] (dispatch.c fast_template): 1 when each is a live rail of a one-word value
+ * and, for an _unc, its out rail o is a live rail of width token owi; for a forward call, when cqe__new would make a
+ * new rail. Then recs[i], v[i] (the value word), bits[i] and kind[i] are operand i's, *known says every operand is
+ * classical-valued and *orec is o's record. 0: nothing is set that the caller may use, and nothing was changed. */
+int cqe__f_ops(int n, const uint32_t *hs, void **recs, uint64_t *v, uint32_t *bits, char *kind, int *known, int unc,
+               uint32_t o, uint16_t owi, void **orec) {
+  int k = 1;
+  for (int i = 0; i < n; ++i) {
+    rail_t *r = live_rec(hs[i]);
+    if (!r || w_nw[r->wi] != 1)
+      return 0;
+    recs[i] = r;
+    v[i] = r->val.inl;
+    bits[i] = w_bits[r->wi];
+    kind[i] = w_kind[r->wi];
+    k = k && r->known;
+  }
+  if (unc) {
+    rail_t *r = live_rec(o);
+    if (!r || r->wi != owi || w_nw[owi] != 1)
+      return 0;
+    *orec = r;
+  } else if (!new_ok_() || w_nw[owi] != 1) {
+    return 0;
+  }
+  *known = k;
+  return 1;
+}
+
+/* A forward template's result rail: cqe__new(W, val, known, 0), then cqe__add_dep of every operand in order. */
+int32_t cqe__f_tnew(uint16_t wi, uint64_t val, int known, int nh, const uint32_t *hs, void *const *recs) {
+  int32_t h;
+  rail_t *r = new_rec(wi, val, known, 0, &h);
+  for (int i = 0; i < nh; ++i)
+    dep_add(r, ((const rail_t *)recs[i])->fenv, (int32_t)hs[i]);
+  return h;
+}
+
+/* An _unc's work on its out rail o (record orec) once the handlers computed val (r_ok: they did): the XOR, cqe__carry,
+ * cqe__r6_unc, cqe__mark_written, then the residue and the known-basis rule. 0: o is back at 0 and what the rule says;
+ * 1: o holds a residue (not known); 2: o is 0 but a rail took a non-diagonal gate since (not known; the caller writes
+ * unc_after_nondiagonal, which the general body writes only when r_ok). */
+int cqe__f_tunc(uint32_t o, void *orec, uint64_t val, int r_ok, int nh, const uint32_t *hs, void *const *recs) {
+  rail_t *t = orec;
+  t->val.inl = (t->val.inl ^ val) & wmask_(w_bits[t->wi]);
+  if (!t->measured && (t->frozen || t->image)) /* cqe__carry */
+    for (int i = 0; i < nh; ++i) {
+      rail_t *s = recs[i];
+      if (hs[i] != o && !s->measured)
+        s->image = 1;
+    }
+  if (t->aux && t->d.x->ext && t->d.x->ext->r6_old)
+    cqe__r6_unc((int32_t)o, (const int32_t *)hs, nh);
+  written_(t);
+  if (t->val.inl) {
+    t->known = 0;
+    return 1;
+  }
+  uint64_t ref = t->t_create;
+  for (int i = 0; i < nh; ++i)
+    if (((const rail_t *)recs[i])->t_create > ref)
+      ref = ((const rail_t *)recs[i])->t_create;
+  int ok = nd_of(t) <= ref;
+  for (int i = 0; i < nh; ++i)
+    if (nd_of(recs[i]) > ref)
+      ok = 0;
+  t->known = ok && r_ok;
+  return !ok && r_ok ? 2 : 0;
+}
 
 static void shot_die(const char *what) {
   fprintf(stderr, "cq: chk-core: %s: %s\n", what, strerror(errno));
