@@ -2,7 +2,9 @@
 """tests/replay (cq-kcn5i): exact clone replay in the evaluator (checker/rt/rt_replay.c, run.py replay_module).
 
 Probes (probes/<name>.c, clang -O1 into <name>.O1.ll) call one eligible clone four times with the same key, so a sample
-replays three calls. For each:
+replays three calls. rp_rec's clone recurses to a quantum depth (the activation counter, its twin called inside the
+window), rp_arg's stores under its predicate argument itself (the argument becomes store_kept) and calls a pure helper
+of the module. For each:
   same       `cqcheck user` (full samples) with CQE_REPLAY=0 and =1 gives the same verdict (PASS) and the same
              evaluator traces (run without ASLR: noaslr.c, so that addresses agree), and the replay run hit: every event
              byte-identical but the exit event, whose kept list is compared expanded (one (h, w, v, role, known) per
@@ -90,7 +92,7 @@ class Ctx:
         return r.returncode, r.stdout + r.stderr, traces, stats
 
 
-PROBE_NAMES = ["rp_pure", "rp_bus", "rp_sel"]
+PROBE_NAMES = ["rp_pure", "rp_bus", "rp_sel", "rp_rec", "rp_arg"]
 
 # (id, probe, clone, old text, new text, what the run must say besides FAIL)
 MUTANTS = [
@@ -104,6 +106,15 @@ MUTANTS = [
      None),
     ("wrong_result_select", "rp_sel", "__cq_q_pick_10", "%6 = call i32 @cq_template_select_i32(i32 %3, i32 %4, i32 %5)",
      "%6 = call i32 @cq_template_select_i32(i32 %3, i32 %5, i32 %4)", None),
+    # the extensions: counters and twins inside a window (rp_rec), a store-kept argument and a pure helper (rp_arg)
+    ("rec_counter_not_restored", "rp_rec", "__cq_q_chain_10_ctl",
+     "  store i32 %18, ptr @__cq_act_chain, align 4\n  ret i32 %16", "  ret i32 %16", None),
+    ("rec_wrong_classical_argument", "rp_rec", "__cq_q_chain_10_ctl", "%10 = add nsw i32 %2, 1", "%10 = add nsw i32 %2, 2", None),
+    ("arg_store_other_address", "rp_arg", "__cq_q_put_00_ctl", "%16 = ptrtoint ptr %11 to i64", "%16 = ptrtoint ptr %12 to i64", None),
+    ("arg_store_wrong_control", "rp_arg", "__cq_q_put_00_ctl",
+     "  call void @cqrt_qram_store_i8_hl_controlled(i32 %0, i32 %8, i64 %16, i32 %15)\n",
+     "  %cqm = call i32 @cqrt_alloc_i1(i1 true)\n  call void @cqrt_qram_store_i8_hl_controlled(i32 %cqm, i32 %8, i64 %16, i32 %15)\n",
+     None),
 ]
 
 
@@ -112,13 +123,15 @@ def main():
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", default=str(LLVM / "opt"))
     ap.add_argument("--only", help="one case: same, mutants, tampered, dirty")
+    ap.add_argument("--probe", help="same and mutants: this probe only")
+    ap.add_argument("--mutant", help="mutants: this one only")
     a = ap.parse_args()
     bad = []
     with tempfile.TemporaryDirectory(prefix="cq-replay.") as t:
         c = Ctx(a.plugin, a.opt, Path(t))
         low = {p: c.lower(p) for p in PROBE_NAMES}
         if a.only in (None, "same"):
-            for p in PROBE_NAMES:
+            for p in [p for p in PROBE_NAMES if a.probe in (None, p)]:
                 c0, o0, t0, _ = c.user(p, low[p], f"{p}.0", CQE_REPLAY=0)
                 c1, o1, t1, s1 = c.user(p, low[p], f"{p}.1", CQE_REPLAY=1)
                 same = t0.keys() == t1.keys() and all(trace_view(t0[k]) == trace_view(t1[k]) for k in t0)
@@ -129,7 +142,7 @@ def main():
                     bad.append(f"same {p}")
                     print(o0[-1500:], o1[-1500:])
         if a.only in (None, "mutants"):
-            for mid, p, fn, old, new, _ in MUTANTS:
+            for mid, p, fn, old, new, _ in [m for m in MUTANTS if a.probe in (None, m[1]) and a.mutant in (None, m[0])]:
                 m = c.work / f"{mid}.lowered.ll"
                 m.write_text(fn_edit(low[p].read_text(), fn, old, new))
                 code, out, _, s = c.user(p, m, f"m.{mid}", CQE_REPLAY=1)
