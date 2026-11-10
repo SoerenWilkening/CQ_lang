@@ -13,7 +13,9 @@
 #include "cq/Verify.h"
 #include "cq/Order.h"
 
+#include <cstring>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -337,7 +339,34 @@ private:
   }
 
   // ---- rail states: free-without-unc, use-after-free, inplace-on-frozen, unwritten-measurement ----
-  using State = std::vector<uint8_t>;
+  // cq-4tkb4: a state is a vector of fixed-size chunks shared between blocks, copied on the first write (a block's
+  // state differs from its predecessor's in a few handles; one dense vector per block took 2.3 GB on a function of
+  // 76k blocks and 30k handles). The values are those of one dense vector per block.
+  static constexpr unsigned kChunk = 256;
+  struct ChunkArena {
+    std::vector<std::unique_ptr<uint8_t[]>> pool;
+    uint8_t *make(const uint8_t *from) {
+      pool.push_back(std::make_unique<uint8_t[]>(kChunk));
+      std::memcpy(pool.back().get(), from, kChunk);
+      return pool.back().get();
+    }
+  };
+  struct State {
+    std::vector<const uint8_t *> c;
+    std::vector<char> mine;    // a chunk this state made and may write in place
+    ChunkArena *arena = nullptr;
+    uint8_t operator[](size_t i) const { return c[i / kChunk][i % kChunk]; }
+    void put(size_t i, uint8_t v) {
+      size_t k = i / kChunk;
+      if (c[k][i % kChunk] == v)
+        return;
+      if (!mine[k]) {
+        c[k] = arena->make(c[k]);
+        mine[k] = 1;
+      }
+      const_cast<uint8_t *>(c[k])[i % kChunk] = v;
+    }
+  };
 
   uint8_t get(const State &S, const Value *V) const {
     auto It = Idx.find(V);
@@ -353,8 +382,8 @@ private:
     unsigned i = It->second;
     if (ClassOf[i] >= 0)
       for (unsigned p : Classes[ClassOf[i]])
-        S[p] = STop;
-    S[i] = bits;
+        S.put(p, STop);
+    S.put(i, bits);
   }
 
   // Result of an in-place XOR-type write (not/and/or/xor target, copy/xorc target), per concrete pair
@@ -497,14 +526,19 @@ private:
     }
   }
 
-  void blockEntry(const BasicBlock &BB, State &S, const DenseMap<const BasicBlock *, State> &OutS, bool rep) {
+  void blockEntry(const BasicBlock &BB, State &S, const DenseMap<const BasicBlock *, std::vector<const uint8_t *>> &OutS,
+                  bool rep) {
     for (const PHINode &P : BB.phis()) {
       if (!H.count(&P))
         continue;
       uint8_t st = 0;
       for (unsigned i = 0, e = P.getNumIncomingValues(); i < e; ++i) {
         auto It = OutS.find(P.getIncomingBlock(i));
-        uint8_t in = It == OutS.end() ? 0 : get(It->second, P.getIncomingValue(i));
+        uint8_t in = 0;
+        if (It != OutS.end()) {
+          auto Ix = Idx.find(P.getIncomingValue(i));
+          in = Ix == Idx.end() ? STop : It->second[Ix->second / kChunk][Ix->second % kChunk];
+        }
         if (!H.count(P.getIncomingValue(i)))
           in = STop;
         if (rep && in == SX)
@@ -519,21 +553,54 @@ private:
     if (Vals.empty() || F.isDeclaration())
       return;
     ReversePostOrderTraversal<const Function *> RPO(&F);
-    DenseMap<const BasicBlock *, State> OutS;
+    using Chunks = std::vector<const uint8_t *>;
+    DenseMap<const BasicBlock *, Chunks> OutS;
+    ChunkArena arena;
+    const size_t nc = (Vals.size() + kChunk - 1) / kChunk;
+    std::vector<uint8_t> zeros(kChunk, 0);
+    const uint8_t *zero = zeros.data();
     auto entryState = [&](const BasicBlock *BB) {
-      State S(Vals.size(), 0);
+      State S;
+      S.arena = &arena;
+      S.c.assign(nc, zero);
+      S.mine.assign(nc, 0);
+      SmallVector<const Chunks *, 4> in;
+      for (const BasicBlock *P : predecessors(BB))
+        if (auto It = OutS.find(P); It != OutS.end())
+          in.push_back(&It->second);
+      for (size_t k = 0; k < nc && !in.empty(); ++k) {
+        const uint8_t *first = (*in[0])[k];
+        bool same = all_of(in, [&](const Chunks *o) { return (*o)[k] == first; });
+        if (same) {
+          S.c[k] = first;
+          continue;
+        }
+        uint8_t buf[kChunk];
+        std::memcpy(buf, first, kChunk);
+        for (size_t j = 1; j < in.size(); ++j)
+          for (unsigned x = 0; x < kChunk; ++x)
+            buf[x] |= (*in[j])[k][x];
+        S.c[k] = arena.make(buf);
+        S.mine[k] = 1;
+      }
       if (BB == &F.getEntryBlock())
         for (const Argument &A : F.args())
           if (H.count(&A))
-            S[Idx[&A]] = STop;
-      for (const BasicBlock *P : predecessors(BB)) {
-        auto It = OutS.find(P);
-        if (It == OutS.end())
-          continue;
-        for (size_t i = 0; i < S.size(); ++i)
-          S[i] |= It->second[i];
-      }
+            S.put(Idx[&A], uint8_t(S[Idx[&A]] | STop));
       return S;
+    };
+    // The chunks of S equal to o's in content take o's (a state that did not change keeps its chunks).
+    auto sameAs = [&](State &S, const Chunks &o) {
+      bool eq = true;
+      for (size_t k = 0; k < nc; ++k) {
+        if (S.c[k] == o[k])
+          continue;
+        if (std::memcmp(S.c[k], o[k], kChunk) == 0)
+          S.c[k] = o[k];
+        else
+          eq = false;
+      }
+      return eq;
     };
     bool changed = true;
     while (changed) {
@@ -545,8 +612,8 @@ private:
           if (!isa<PHINode>(I))
             transfer(I, S, false);
         auto It = OutS.find(BB);
-        if (It == OutS.end() || It->second != S) {
-          OutS[BB] = std::move(S);
+        if (It == OutS.end() || !sameAs(S, It->second)) {
+          OutS[BB] = std::move(S.c);
           changed = true;
         }
       }

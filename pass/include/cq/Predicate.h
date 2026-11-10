@@ -110,5 +110,8 @@ Operand reachingOperand(LoweringContext &, const Operand &op, RailType, const Pr
 // Rule 9: has every condition atom p reads a value in the new IR yet? An edge of a block still to be lowered has not:
 // a unit lowered before it leaves that incoming to the walker's join (LoweringContext::addJoinArm).
 bool predReadable(LoweringContext &, const Pred &);
+// cq-jws5r (rule 8: a purely classical condition is a classical branch): the i1 of a predicate with no quantum atom,
+// at the builder, its atoms read through their current bindings.
+llvm::Value *classicalValue(LoweringContext &, const Pred &);
 void lowerPhase(LoweringContext &, llvm::CallInst &cqPhi);
 }

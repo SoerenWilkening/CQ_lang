@@ -3039,6 +3039,29 @@ bool measuredOnEveryPath(function_ref<bool(const Value *)> isQuantum, const Valu
       for (const BasicBlock *s : successors(x))
         w.push_back(s);
     }
+    // cq-jws5r (rule 8: a purely classical condition is a classical branch, also inside a quantum arm and inside a rule-14
+    // trip): a classical branch inside the region is a choice like any other, so a measurement behind one is not on every
+    // path. Only a block the region reaches through quantum branches counts; a classical branch is passed at its
+    // post-dominator (one with none, its arms ending apart, as before).
+    if (measured) {
+      measured = false;
+      SmallPtrSet<const BasicBlock *, 16> sure;
+      SmallVector<const BasicBlock *, 16> ws(succ_begin(b), succ_end(b));
+      while (!ws.empty()) {
+        const BasicBlock *x = ws.pop_back_val();
+        if (x == J || x == b || !reg.count(x) || !sure.insert(x).second)
+          continue;
+        measured = measured || mblocks.count(x);
+        const Instruction *t = x->getTerminator();
+        if (t->getNumSuccessors() > 1 && !quantumBranch(x))
+          if (auto *n = PDT.getNode(x); n && n->getIDom() && n->getIDom()->getBlock()) {
+            ws.push_back(n->getIDom()->getBlock());
+            continue;
+          }
+        for (const BasicBlock *s2 : successors(x))
+          ws.push_back(s2);
+      }
+    }
     if (measured)
       return true;
     if (ret)

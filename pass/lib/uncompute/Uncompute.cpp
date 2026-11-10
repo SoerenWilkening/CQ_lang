@@ -149,6 +149,7 @@
 #include <utility>
 #include <vector>
 
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -162,6 +163,8 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/SCCIterator.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/Analysis/CaptureTracking.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Support/raw_ostream.h"
@@ -386,6 +389,26 @@ struct Uncompute::Impl {
 
   // A classical branch on the way from D to S has an edge from which S cannot be reached (the output CFG is built up
   // to S when S is being lowered): some path from D does not pass S.
+  // cq-jws5r: join block -> the empty block of its skip edge, for each classical arm a loop module noted (flagAt).
+  DenseMap<const BasicBlock *, const BasicBlock *> armJoins;
+  // The block whose conditional branch enters the noted arm that ends at join b, and the arm's first block; nullptr
+  // where b is no such join (any more: an item wrapped since may have split it).
+  BasicBlock *armBranch(BasicBlock *b, BasicBlock *&first) const {
+    auto it = armJoins.find(b);
+    if (it == armJoins.end())
+      return nullptr;
+    BasicBlock *S = const_cast<BasicBlock *>(it->second);
+    if (pred_size(b) != 2 || !is_contained(predecessors(b), S) || S->size() != 1 || S->getSingleSuccessor() != b)
+      return nullptr;
+    BasicBlock *pre = S->getSinglePredecessor();
+    auto *br = pre ? dyn_cast_or_null<BranchInst>(pre->getTerminator()) : nullptr;
+    if (!br || !br->isConditional())
+      return nullptr;
+    first = br->getSuccessor(0) == S ? br->getSuccessor(1) : br->getSuccessor(0);
+    if (first == S || first == b)
+      return nullptr;
+    return pre;
+  }
   static bool bypassed(const BasicBlock *D, const BasicBlock *S) {
     SmallPtrSet<const BasicBlock *, 16> toS{S};
     SmallVector<const BasicBlock *, 16> work{S};
@@ -602,9 +625,106 @@ struct Uncompute::Impl {
 
   // ---- CFG helpers -----------------------------------------------------------------------------
 
+  // cq-4tkb4: reachability and dominance in one function while its CFG does not change (a return's flush: its
+  // candidates and resolve, a deferred item's placement excepted, ReachScope), read from the strongly connected
+  // components' order, each target's set of blocks with a path to it (made on first use) and one dominator tree.
+  // The answers are those of the walks below: the successors are the terminators' (a block without one has none).
+  struct ReachCache {
+    static constexpr unsigned kNo = ~0u;
+    const Function *F = nullptr;
+    bool dirty = true;
+    DenseMap<const BasicBlock *, unsigned> idx;
+    std::vector<unsigned> ord;                      // the component's position (kNo: not reachable from the entry)
+    std::vector<SmallVector<unsigned, 2>> rev;      // the blocks with an edge to each block
+    DenseMap<unsigned, BitVector> to;               // per target: the blocks with a path of length >= 1 to it
+    std::unique_ptr<DominatorTree> DT;
+    void build() {
+      dirty = false;
+      idx.clear();
+      ord.clear();
+      rev.clear();
+      to.clear();
+      DT.reset();
+      Function &Fn = const_cast<Function &>(*F);
+      for (const BasicBlock &b : Fn)
+        idx.try_emplace(&b, unsigned(idx.size()));
+      ord.assign(idx.size(), kNo);
+      rev.resize(idx.size());
+      for (const BasicBlock &b : Fn)
+        if (const Instruction *t = b.getTerminator())
+          for (const BasicBlock *n : successors(t))
+            if (auto it = idx.find(n); it != idx.end())
+              rev[it->second].push_back(idx[&b]);
+      unsigned k = 0;
+      for (scc_iterator<Function *> it = scc_begin(&Fn); !it.isAtEnd(); ++it, ++k)
+        for (BasicBlock *b : *it)
+          ord[idx[b]] = k;
+    }
+    // nullopt: a block it does not know (the walk answers).
+    std::optional<bool> reaches(const BasicBlock *from, const BasicBlock *t) {
+      if (dirty)
+        build();
+      auto fi = idx.find(from), ti = idx.find(t);
+      if (fi == idx.end() || ti == idx.end())
+        return std::nullopt;
+      unsigned i = fi->second, j = ti->second;
+      if (ord[i] != kNo && ord[j] != kNo) {
+        if (ord[i] < ord[j])
+          return false;
+        if (ord[i] == ord[j])
+          return true;   // one component of two or more blocks (from != t)
+      }
+      auto [it, fresh] = to.try_emplace(j);
+      BitVector &bv = it->second;
+      if (fresh) {
+        bv.resize(unsigned(idx.size()));
+        SmallVector<unsigned, 32> w{j};
+        while (!w.empty())
+          for (unsigned p : rev[w.pop_back_val()])
+            if (!bv.test(p)) {
+              bv.set(p);
+              w.push_back(p);
+            }
+      }
+      return bv.test(i);
+    }
+    bool dominates(const BasicBlock *d, const BasicBlock *b) {
+      if (dirty)
+        build();
+      if (!DT)
+        DT = std::make_unique<DominatorTree>(const_cast<Function &>(*F));
+      return DT->dominates(d, b);
+    }
+  };
+  static ReachCache *&activeReach() {
+    static ReachCache *active = nullptr;
+    return active;
+  }
+  // The cache answers for F's blocks while it lives; Suspend (a CFG change) turns it off and has it rebuilt after.
+  struct ReachScope {
+    ReachCache rc, *prev;
+    explicit ReachScope(const Function &F) : prev(activeReach()) {
+      rc.F = &F;
+      activeReach() = &rc;
+    }
+    ~ReachScope() { activeReach() = prev; }
+  };
+  struct ReachSuspend {
+    ReachCache *rc;
+    ReachSuspend() : rc(activeReach()) { activeReach() = nullptr; }
+    ~ReachSuspend() {
+      if (rc)
+        rc->dirty = true;
+      activeReach() = rc;
+    }
+  };
+
   static bool reaches(const BasicBlock *from, const BasicBlock *to) {
     if (from == to)
       return true;
+    if (ReachCache *rc = activeReach(); rc && from->getParent() == rc->F && to->getParent() == rc->F)
+      if (std::optional<bool> r = rc->reaches(from, to))
+        return *r;
     SmallPtrSet<const BasicBlock *, 16> seen;
     SmallVector<const BasicBlock *, 16> work{from};
     seen.insert(from);
@@ -630,6 +750,8 @@ struct Uncompute::Impl {
     const BasicBlock *entry = &b->getParent()->getEntryBlock();
     if (entry == d)
       return true;
+    if (ReachCache *rc = activeReach(); rc && d->getParent() == rc->F && b->getParent() == rc->F)
+      return rc->dominates(d, b);
     SmallPtrSet<const BasicBlock *, 16> seen;
     SmallVector<const BasicBlock *, 16> work{entry};
     seen.insert(entry);
@@ -1266,6 +1388,36 @@ struct Uncompute::Impl {
     std::vector<Instruction *> ops;   // and/xor made here
     DenseMap<BasicBlock *, Value *> startOf, endOf;
     SmallPtrSet<BasicBlock *, 8> busy;
+    // cq-jws5r (CR rules 8, 14): a function whose K-loop trips branch on classical conditions has one join per branch and
+    // trip copy, and the walk below visits every one of them for every flag. Two facts cut it short there, each giving
+    // the value the walk would fold its phis to: a block no event block reaches starts at dflt; and the join of a
+    // noted classical arm (noteClassicalArm) whose arm reaches no event block starts with the value its branch ends
+    // with (every path into the join leaves that branch, and none passes an event).
+    const bool arms = !armJoins.empty();
+    SmallPtrSet<const BasicBlock *, 32> reachEvent, afterEvent;
+    if (arms) {
+      SmallVector<const BasicBlock *, 32> w;
+      for (auto &kv : byBlock) {
+        reachEvent.insert(kv.first);
+        w.push_back(kv.first);
+      }
+      while (!w.empty())
+        for (const BasicBlock *p : predecessors(w.pop_back_val()))
+          if (reachEvent.insert(p).second)
+            w.push_back(p);
+      for (auto &kv : byBlock)
+        w.push_back(kv.first);
+      while (!w.empty())
+        if (const Instruction *t = w.pop_back_val()->getTerminator())
+          for (const BasicBlock *n : successors(t))
+            if (afterEvent.insert(n).second)
+              w.push_back(n);
+    }
+    auto armEntry = [&](BasicBlock *b) -> BasicBlock * {
+      BasicBlock *first = nullptr;
+      BasicBlock *pre = arms ? armBranch(b, first) : nullptr;
+      return pre && !reachEvent.count(first) ? pre : nullptr;
+    };
     std::function<Value *(Value *, Value *, Instruction *, BasicBlock *)> clearWith =
         [&](Value *v, Value *c, Instruction *ip, BasicBlock *b) -> Value * {
       if (auto *k = dyn_cast<ConstantInt>(c))
@@ -1334,6 +1486,26 @@ struct Uncompute::Impl {
       SmallVector<BasicBlock *, 4> ps(predecessors(b));
       if (b->isEntryBlock() || ps.empty())
         return startOf[b] = dflt ? T : F;
+      if (arms && !afterEvent.count(b))
+        return startOf[b] = dflt ? T : F;
+      if (BasicBlock *pre = armEntry(b)) {
+        // The joins straight above it that are such joins too and hold no event: one value for all of them.
+        SmallVector<BasicBlock *, 16> js{b};
+        while (!byBlock.count(pre) && !startOf.count(pre) && !endOf.count(pre)) {
+          BasicBlock *up = armEntry(pre);
+          if (!up)
+            break;
+          js.push_back(pre);
+          pre = up;
+        }
+        Value *v = endV(pre);
+        for (size_t k = 0; k < js.size(); ++k) {
+          startOf[js[k]] = v;
+          if (k)
+            endOf[js[k]] = v;
+        }
+        return v;
+      }
       if (ps.size() == 1) {
         if (!busy.insert(b).second)
           return F;   // a cycle of single-predecessor blocks is unreachable
@@ -2408,13 +2580,46 @@ struct Uncompute::Impl {
       made.push_back(U);
     }
     armItems.clear();
+    // cq-jws5r: every item block is split off by now and the carries below add phis only, so one dominator tree and one
+    // order of the blocks serve them all (a function with noted classical arms has an item block per arm-local rail).
+    CfgFacts facts;
+    if (!armJoins.empty() && !made.empty()) {
+      facts.DT = std::make_unique<DominatorTree>(F);
+      unsigned k = 0;
+      for (scc_iterator<Function *> it = scc_begin(&F); !it.isAtEnd(); ++it, ++k)
+        for (BasicBlock *b : *it)
+          facts.order[b] = k;
+    }
     for (BasicBlock *U : made)
-      carryOperands(U);
+      carryOperands(U, facts.DT ? &facts : nullptr);
   }
 
   // Every operand of an item block U that does not dominate it, carried to it (poison where it is not
   // defined; the run flag is false there).
-  void carryOperands(BasicBlock *U) {
+  // The CFG as it stands while nothing but phis is added: its dominator tree, and each reachable block's position in
+  // the reverse topological order of the strongly connected components (x reaches y only if order[x] >= order[y]).
+  // cq-4tkb4: and the blocks carryTo has met, numbered, with their predecessors and noted arms read once (none of them
+  // changes while only phis are added).
+  struct CarryView {
+    static constexpr unsigned kNo = ~0u;
+    DenseMap<const BasicBlock *, unsigned> id;
+    std::vector<BasicBlock *> bb;
+    std::vector<unsigned> predOff, predCnt, predIds;   // predOff kNo: not read yet
+    std::vector<unsigned> armPre;                      // the arm's branch block; kNo none, kNo - 1 not read yet
+    std::vector<BasicBlock *> armFirst;
+    std::vector<unsigned> ord;                         // order of the block (kNo: none)
+    std::vector<unsigned> dia, diaU;                   // the diamond's head and middle block; kNo none, kNo - 1 not read
+    std::vector<unsigned> diaRoot, diaDepth, midOf;    // the end of a run of diamonds and the distance to it; the
+                                                       // diamond a block is the middle of (kNo none)
+    std::vector<unsigned> memoVal, memoStamp;
+    unsigned stamp = 0;
+  };
+  struct CfgFacts {
+    std::unique_ptr<DominatorTree> DT;
+    DenseMap<const BasicBlock *, unsigned> order;
+    mutable CarryView view;
+  };
+  void carryOperands(BasicBlock *U, const CfgFacts *facts = nullptr) {
     Function &F = *U->getParent();
     BasicBlock *entry = &F.getEntryBlock();
     DenseMap<Value *, Value *> carried;
@@ -2429,13 +2634,14 @@ struct Uncompute::Impl {
     for (Instruction &I : *U)
       for (Use &u : I.operands()) {
         auto *op = dyn_cast<Instruction>(u.get());
-        if (!op || op->getParent() == U || dominatesU(op->getParent()))
+        if (!op || op->getParent() == U ||
+            (facts ? facts->DT->dominates(op->getParent(), U) : dominatesU(op->getParent())))
           continue;
         Value *&c = carried[op];
         if (!c) {
           if (op->getParent() == entry)
             internalError("uncompute: an arm item operand in the entry that does not dominate the item", op);
-          c = carryTo(U, false, op->getParent(), op, PoisonValue::get(op->getType()), op->getName());
+          c = carryTo(U, false, op->getParent(), op, PoisonValue::get(op->getType()), op->getName(), facts);
         }
         u.set(c);
       }
@@ -2472,64 +2678,332 @@ struct Uncompute::Impl {
   // block D and `dflt` at the entry: phis at the joins (over the real predecessors: a spine phi still
   // waiting for its incomings must not hide a block's predecessors, as SSAUpdater's lookup through a
   // leading phi would), trivial ones folded.
-  Value *carryTo(BasicBlock *at, bool atEnd, BasicBlock *D, Value *v, Value *dflt, const Twine &name) {
-    DenseMap<BasicBlock *, Value *> memo;
-    std::vector<PHINode *> made;
-    std::function<Value *(BasicBlock *)> end = [&](BasicBlock *b) -> Value * {
-      if (b == D)
-        return v;
-      if (auto it = memo.find(b); it != memo.end())
-        return it->second;
-      SmallVector<BasicBlock *, 4> ps(predecessors(b));
-      if (ps.empty())
-        return memo[b] = dflt;
-      if (ps.size() == 1)
-        return memo[b] = end(ps[0]);
-      PHINode *phi = PHINode::Create(v->getType(), ps.size(), name);
-      phi->insertInto(b, b->begin());
-      memo[b] = phi;
-      made.push_back(phi);
-      for (BasicBlock *p : ps)
-        phi->addIncoming(end(p), p);
-      return phi;
+  //
+  // cq-4tkb4: the walk runs on block numbers with an explicit stack (its depth is the length of a path, unbounded), and
+  // its phis are built symbolically first: the trivial ones are folded there, and only the phis that survive are made,
+  // in the order the walk made them, each inserted at the top of its block. A folded phi still takes its name's unique
+  // number when the walk reaches it, as the phi the walk used to make and erase did, so every name stays the same.
+  Value *carryTo(BasicBlock *at, bool atEnd, BasicBlock *D, Value *v, Value *dflt, const Twine &name,
+                 const CfgFacts *facts = nullptr) {
+    constexpr unsigned kNo = CarryView::kNo;
+    const bool arms = !armJoins.empty();
+    // cq-jws5r: as flagAt, with D the one event: a block D does not reach ends with dflt, and a noted classical arm
+    // that does not reach D is passed at its branch.
+    SmallPtrSet<const BasicBlock *, 32> reachD, afterD;
+    // With the CFG's facts at hand the two questions are read from the order instead of two walks per carry.
+    unsigned orderD = 0;
+    if (facts) {
+      auto it = facts->order.find(D);
+      if (it == facts->order.end())
+        facts = nullptr;
+      else
+        orderD = it->second;
+    }
+    CarryView local;
+    CarryView &V = facts ? facts->view : local;
+    auto orderOf = [&](const BasicBlock *x) {
+      auto it = facts->order.find(x);
+      return it == facts->order.end() ? kNo : it->second;
     };
-    Value *r;
+    auto cannotReachD = [&](const BasicBlock *x) {
+      if (!facts)
+        return !reachD.count(x);
+      unsigned o = orderOf(x);
+      return o != kNo && o < orderD;
+    };
+    if (arms && !facts) {
+      SmallVector<const BasicBlock *, 32> w{D};
+      reachD.insert(D);
+      while (!w.empty())
+        for (const BasicBlock *p : predecessors(w.pop_back_val()))
+          if (reachD.insert(p).second)
+            w.push_back(p);
+      w.push_back(D);
+      while (!w.empty())
+        if (const Instruction *t = w.pop_back_val()->getTerminator())
+          for (const BasicBlock *n : successors(t))
+            if (afterD.insert(n).second)
+              w.push_back(n);
+    }
+    auto idOf = [&](BasicBlock *x) -> unsigned {
+      auto [it, fresh] = V.id.try_emplace(x, unsigned(V.bb.size()));
+      if (fresh) {
+        V.bb.push_back(x);
+        V.predOff.push_back(kNo);
+        V.predCnt.push_back(0);
+        V.armPre.push_back(kNo - 1);
+        V.armFirst.push_back(nullptr);
+        V.ord.push_back(facts ? orderOf(x) : kNo);
+        V.dia.push_back(kNo - 1);
+        V.diaU.push_back(kNo);
+        V.diaRoot.push_back(kNo - 1);
+        V.diaDepth.push_back(0);
+        V.midOf.push_back(kNo);
+        V.memoVal.push_back(0);
+        V.memoStamp.push_back(0);
+      }
+      return it->second;
+    };
+    auto predsOf = [&](unsigned x) -> std::pair<unsigned, unsigned> {
+      if (V.predOff[x] == kNo) {
+        SmallVector<BasicBlock *, 4> ps(predecessors(V.bb[x]));
+        SmallVector<unsigned, 4> ids;
+        for (BasicBlock *p : ps)
+          ids.push_back(idOf(p));
+        V.predOff[x] = unsigned(V.predIds.size());
+        V.predCnt[x] = unsigned(ids.size());
+        V.predIds.insert(V.predIds.end(), ids.begin(), ids.end());
+      }
+      return {V.predOff[x], V.predCnt[x]};
+    };
+    auto armOf = [&](unsigned x) -> unsigned {
+      if (V.armPre[x] == kNo - 1) {
+        BasicBlock *first = nullptr;
+        BasicBlock *pre = armBranch(V.bb[x], first);
+        V.armPre[x] = pre ? idOf(pre) : kNo;
+        V.armFirst[x] = first;
+      }
+      return V.armPre[x];
+    };
+    // A join x whose two predecessors are a block h on an earlier strongly connected component and a block u whose only
+    // predecessor is h (an item block wrapArmItems split off, X -> U -> C): both incomings of its phi are h's value
+    // unless u is D, so the phi folds to it. The walk goes on at h as through a single predecessor (a stand-in keeps the
+    // folded phi's place for its name). Only with the CFG's facts (the order tells x apart from h's component).
+    auto diamondOf = [&](unsigned x) -> unsigned {
+      if (V.dia[x] == kNo - 1) {
+        V.dia[x] = kNo;
+        auto [off, n] = predsOf(x);
+        if (n == 2 && armOf(x) == kNo) {
+          unsigned p0 = V.predIds[off], p1 = V.predIds[off + 1];
+          for (auto [h, u] : {std::pair<unsigned, unsigned>{p0, p1}, {p1, p0}}) {
+            if (h == u)
+              break;
+            auto [uo, un] = predsOf(u);
+            if (un == 1 && V.predIds[uo] == h && V.ord[x] != kNo && V.ord[h] != kNo && V.ord[h] > V.ord[x]) {
+              V.dia[x] = h;
+              V.diaU[x] = u;
+              V.midOf[u] = x;
+              break;
+            }
+          }
+        }
+      }
+      return V.dia[x];
+    };
+    // A run of diamonds (each head the join of the next, a simple path: a head has one join below it) is passed in one
+    // step to its first head that is no diamond's join, unless D lies inside it (as a head or a middle block).
+    auto rootOf = [&](unsigned x) {
+      SmallVector<unsigned, 16> path;
+      unsigned y = x;
+      while (V.diaRoot[y] == kNo - 1) {
+        unsigned h = diamondOf(y);
+        if (h == kNo) {
+          V.diaRoot[y] = y;
+          V.diaDepth[y] = 0;
+          break;
+        }
+        path.push_back(y);
+        y = h;
+      }
+      for (auto it = path.rbegin(); it != path.rend(); ++it) {
+        V.diaRoot[*it] = V.diaRoot[V.dia[*it]];
+        V.diaDepth[*it] = V.diaDepth[V.dia[*it]] + 1;
+      }
+      return V.diaRoot[x];
+    };
+    auto notAfterD = [&](unsigned x) {
+      if (!facts)
+        return !afterD.count(V.bb[x]);
+      return V.ord[x] != kNo && V.ord[x] > orderD;
+    };
+    // Symbolic values: 0 dflt, 1 v, 2 + k the k-th phi made.
+    if (++V.stamp == 0) {
+      std::fill(V.memoStamp.begin(), V.memoStamp.end(), 0);
+      V.stamp = 1;
+    }
+    const unsigned st = V.stamp;
+    auto hasMemo = [&](unsigned x) { return V.memoStamp[x] == st; };
+    auto setMemo = [&](unsigned x, unsigned val) {
+      V.memoStamp[x] = st;
+      V.memoVal[x] = val;
+    };
+    struct Phi { unsigned b; std::vector<unsigned> in; bool ghost = false; };
+    const bool named = !name.isTriviallyEmpty();
+    SmallVector<char, 64> nameBuf;
+    StringRef nameRef = named ? name.toStringRef(nameBuf) : StringRef();
+    std::vector<Phi> phis;
+    enum : unsigned { Chain, Single, Join };
+    struct Frame { unsigned b, kind, i, sym, jsBeg; };
+    std::vector<Frame> stack;
+    std::vector<unsigned> js;
+    unsigned cur;
     if (atEnd) {
-      r = end(at);
+      cur = idOf(at);
     } else {
       SmallVector<BasicBlock *, 4> ps(predecessors(at));
       if (ps.size() != 1)
         internalError("uncompute: an arm item block with other than one predecessor", at->getTerminator());
-      r = end(ps[0]);
+      cur = idOf(ps[0]);
     }
+    unsigned ret = 0;
+    for (;;) {
+      // Enter cur: either its value is known (ret) or a frame is pushed and the walk goes on at a predecessor.
+      bool known = true;
+      if (V.bb[cur] == D) {
+        ret = 1;
+      } else if (hasMemo(cur)) {
+        ret = V.memoVal[cur];
+      } else {
+        auto [off, n] = predsOf(cur);
+        if (n == 0) {
+          setMemo(cur, 0);
+          ret = 0;
+        } else if (arms && notAfterD(cur)) {
+          setMemo(cur, 0);
+          ret = 0;
+        } else {
+          known = false;
+          unsigned x = cur, jb = unsigned(js.size());
+          if (arms)
+            while (V.bb[x] != D && !hasMemo(x)) {
+              unsigned pre = armOf(x);
+              if (pre != kNo && cannotReachD(V.armFirst[x])) {
+                js.push_back(x);
+                x = pre;
+              } else {
+                break;
+              }
+            }
+          if (js.size() > jb) {
+            stack.push_back({cur, Chain, 0, 0, jb});
+            cur = x;
+          } else if (n == 1) {
+            stack.push_back({cur, Single, 0, 0, 0});
+            cur = V.predIds[off];
+          } else if (unsigned h = facts ? diamondOf(cur) : kNo; h != kNo && V.bb[V.diaU[cur]] != D) {
+            if (!nameRef.empty()) {
+              phis.push_back({cur, {}, true});
+            } else {
+              unsigned r = rootOf(cur), dep = V.diaDepth[cur];
+              bool inside = false;
+              if (auto it = V.id.find(D); it != V.id.end()) {
+                unsigned d = it->second, m = V.midOf[d];
+                inside = (V.diaRoot[d] == r && V.diaDepth[d] > 0 && V.diaDepth[d] < dep) ||
+                         (m != kNo && V.diaRoot[m] == r && V.diaDepth[m] <= dep);
+              }
+              if (!inside)
+                h = r;
+            }
+            stack.push_back({cur, Single, 0, 0, 0});
+            cur = h;
+          } else {
+            unsigned k = unsigned(phis.size());
+            phis.push_back({cur, {}});
+            phis.back().in.reserve(n);
+            setMemo(cur, 2 + k);
+            stack.push_back({cur, Join, 0, k, 0});
+            cur = V.predIds[off];
+          }
+        }
+      }
+      if (!known)
+        continue;
+      // Return ret to the frames waiting for it.
+      bool more = false;
+      while (!stack.empty()) {
+        Frame &f = stack.back();
+        if (f.kind == Chain) {
+          for (unsigned i = f.jsBeg; i < js.size(); ++i)
+            setMemo(js[i], ret);
+          js.resize(f.jsBeg);
+        } else if (f.kind == Single) {
+          setMemo(f.b, ret);
+        } else {
+          phis[f.sym].in.push_back(ret);
+          auto [off, n] = predsOf(f.b);
+          if (++f.i < n) {
+            cur = V.predIds[off + f.i];
+            more = true;
+            break;
+          }
+          ret = 2 + f.sym;
+        }
+        stack.pop_back();
+      }
+      if (!more)
+        break;
+    }
+    // Fold the trivial phis, as the made phis were folded: in order, again until nothing changes.
+    const unsigned np = unsigned(phis.size());
+    std::vector<unsigned> rep(np, kNo);
+    for (unsigned k = 0; k < np; ++k)
+      if (phis[k].ghost)
+        rep[k] = 0;
+    auto res = [&](unsigned s) {
+      unsigned r = s;
+      while (r >= 2 && rep[r - 2] != kNo)
+        r = rep[r - 2];
+      while (s >= 2 && rep[s - 2] != kNo) {
+        unsigned n = rep[s - 2];
+        rep[s - 2] = r;
+        s = n;
+      }
+      return r;
+    };
     bool changed = true;
     while (changed) {
       changed = false;
-      for (PHINode *&phi : made) {
-        if (!phi)
+      for (unsigned k = 0; k < np; ++k) {
+        if (rep[k] != kNo)
           continue;
-        Value *same = nullptr;
+        unsigned same = kNo;
         bool trivial = true;
-        for (Value *in : phi->incoming_values()) {
-          if (in == phi || in == same)
+        for (unsigned in : phis[k].in) {
+          unsigned x = res(in);
+          if (x == 2 + k || x == same)
             continue;
-          if (same) {
+          if (same != kNo) {
             trivial = false;
             break;
           }
-          same = in;
+          same = x;
         }
-        if (!trivial || !same)
+        if (!trivial || same == kNo)
           continue;
-        phi->replaceAllUsesWith(same);
-        if (r == phi)
-          r = same;
-        phi->eraseFromParent();
-        phi = nullptr;
+        rep[k] = same;
         changed = true;
       }
     }
-    return r;
+    // Make the survivors in the walk's order; a folded phi takes its name's unique number on a stand-in.
+    std::vector<PHINode *> made(np, nullptr);
+    PHINode *standIn = nullptr;
+    for (unsigned k = 0; k < np; ++k) {
+      if (rep[k] == kNo) {
+        PHINode *phi = PHINode::Create(v->getType(), unsigned(phis[k].in.size()), nameRef);
+        BasicBlock *b = V.bb[phis[k].b];
+        phi->insertInto(b, b->begin());
+        made[k] = phi;
+      } else if (!nameRef.empty()) {
+        if (!standIn) {
+          standIn = PHINode::Create(v->getType(), 0);
+          standIn->insertInto(at, at->begin());
+        }
+        standIn->setName(nameRef);
+      }
+    }
+    if (standIn)
+      standIn->eraseFromParent();
+    auto value = [&](unsigned s) -> Value * {
+      s = res(s);
+      return s == 0 ? dflt : s == 1 ? v : made[s - 2];
+    };
+    for (unsigned k = 0; k < np; ++k)
+      if (PHINode *phi = made[k]) {
+        auto [off, n] = predsOf(phis[k].b);
+        for (unsigned i = 0; i < n; ++i)
+          phi->addIncoming(value(phis[k].in[i]), V.bb[V.predIds[off + i]]);
+      }
+    return value(ret);
   }
 
   // ---- deferred items (F1, cq-fx3s) --------------------------------------------------------------
@@ -2713,6 +3187,7 @@ struct Uncompute::Impl {
   // original block, which keeps the tail and the terminator (so a caller's references to it as an
   // edge's source stay valid).
   void placeDeferred(RailId g, const Ctx &c) {
+    ReachSuspend cfgChanges;   // cq-4tkb4: its split, and the reverse loop its emitter builds
     Rail &r = rails[g];
     Deferred &d = defs[r.deferred];
     SmallVector<Instruction *, 12> as = deferredAnchors(d);
@@ -3238,6 +3713,8 @@ void Uncompute::noteVersionChange(Instruction *at) {
 }
 
 void Uncompute::noteSourceBlock(const BasicBlock *bb) { impl->srcBlock = bb; }
+
+void Uncompute::noteClassicalArm(BasicBlock *join, BasicBlock *skip) { impl->armJoins[join] = skip; }
 
 void Uncompute::noteCarried(Value *phi) { impl->rails[impl->lookup(phi, "noteCarried", phi)].carried = true; }
 
@@ -3853,6 +4330,9 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
   Impl::Ctx c{Impl::Mode::Exit, ret, nullptr};
   BasicBlock *Rb = ret->getParent();
   SmallVector<RailId, 16> cands, defc;
+  // cq-4tkb4: nothing below changes the CFG until wrapLocal but a deferred item's placement (which suspends the cache).
+  std::optional<Impl::ReachScope> reach;
+  reach.emplace(*Rb->getParent());
   for (RailId g = 0; g < I.rails.size(); ++g) {
     if (!I.resolvable(g) || I.done(g, c) || I.rails[g].ownedBy != kNone)
       continue;
@@ -3889,6 +4369,7 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
   }
   I.resolve(cands, c);
   I.resolveUnmeasured(Rb); // cq-8lf8
+  reach.reset();
   I.wrapLocal();
   I.wrapArmItems(*Rb->getParent());
   I.armLocal.clear();

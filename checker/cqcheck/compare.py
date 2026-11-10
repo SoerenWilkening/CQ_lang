@@ -2354,6 +2354,11 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
         ms_ = o_by[k].measured or []
         ident_sites.setdefault(_call_key(r_by[k].sample), set()).update(
             ms_[i]["site"] for i in m_ if i < len(ms_) and ms_[i].get("site") is not None)
+        # cq-jws5r: the copies of one site are interchangeable where they measure one value (a loop-invariant register
+        # measured behind a classical branch of a K-loop's trip: one copy per trip copy, CR rules 2, 8), so no single
+        # copy lies in every embedding although every embedding matches the site: the site is reached all the same.
+        ident_sites[_call_key(r_by[k].sample)].update(set.intersection(*(
+            {ms_[i]["site"] for i in img if i < len(ms_) and ms_[i].get("site") is not None} for img, _ in opts)))
 
     # CR rules 2, 19: the functions some input of the call enters, which the C oracle reports entries of
     entered_any: Dict[Hashable, set] = {}
