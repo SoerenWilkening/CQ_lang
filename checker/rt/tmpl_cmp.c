@@ -28,6 +28,7 @@
 #include <string.h>
 
 #include "cqe.h"
+#include "cqe_plan.h"
 
 
 typedef struct {
@@ -214,23 +215,34 @@ static const struct { const char *name; enum op_t op; int nargs; } OPS[] = {
 };
 #define NOPS (sizeof OPS / sizeof OPS[0])
 
-static int icmp(const char *pred, const uint64_t *a, const uint64_t *b, width_t W, int *res) {
+/* An icmp predicate's code (r7-fuse: found once per call site, cqe_plan.h); P_NONE for any other text. */
+enum { P_EQ, P_NE, P_UGT, P_UGE, P_ULT, P_ULE, P_SGT, P_SGE, P_SLT, P_SLE, P_NONE };
+static int pred_code(const char *pred) {
+  static const char *const names[] = {"eq", "ne", "ugt", "uge", "ult", "ule", "sgt", "sge", "slt", "sle"};
+  for (int i = 0; i < P_NONE; ++i)
+    if (!strcmp(pred, names[i])) return i;
+  return P_NONE;
+}
+
+static int icmp(int pred, const uint64_t *a, const uint64_t *b, width_t W, int *res) {
   int u = ucmp(a, b, W.nw), s = scmp(a, b, W);
-  if (!strcmp(pred, "eq")) *res = u == 0;
-  else if (!strcmp(pred, "ne")) *res = u != 0;
-  else if (!strcmp(pred, "ugt")) *res = u > 0;
-  else if (!strcmp(pred, "uge")) *res = u >= 0;
-  else if (!strcmp(pred, "ult")) *res = u < 0;
-  else if (!strcmp(pred, "ule")) *res = u <= 0;
-  else if (!strcmp(pred, "sgt")) *res = s > 0;
-  else if (!strcmp(pred, "sge")) *res = s >= 0;
-  else if (!strcmp(pred, "slt")) *res = s < 0;
-  else if (!strcmp(pred, "sle")) *res = s <= 0;
-  else return -1;
+  switch (pred) {
+  case P_EQ: *res = u == 0; break;
+  case P_NE: *res = u != 0; break;
+  case P_UGT: *res = u > 0; break;
+  case P_UGE: *res = u >= 0; break;
+  case P_ULT: *res = u < 0; break;
+  case P_ULE: *res = u <= 0; break;
+  case P_SGT: *res = s > 0; break;
+  case P_SGE: *res = s >= 0; break;
+  case P_SLT: *res = s < 0; break;
+  case P_SLE: *res = s <= 0; break;
+  default: return -1;
+  }
   return 0;
 }
 
-static int eval(enum op_t op, const cqe_tname *t, const cqe_val *args, width_t W, cqe_val *out,
+static int eval(enum op_t op, int pred, const cqe_tname *t, const cqe_val *args, width_t W, cqe_val *out,
                 uint64_t *a, uint64_t *b, uint64_t *r, uint64_t *p) {
   if (op == OP_SELECT) {
     width_t I1 = {1, 'i', 1};
@@ -248,7 +260,7 @@ static int eval(enum op_t op, const cqe_tname *t, const cqe_val *args, width_t W
   switch (op) {
   case OP_ICMP: {
     int res;
-    if (icmp(t->pred, a, b, W, &res)) {
+    if (icmp(pred, a, b, W, &res)) {
       cqe_fail("tmpl_cmp: unknown icmp predicate '%s'", t->pred);
       return -1;
     }
@@ -319,26 +331,42 @@ static int eval(enum op_t op, const cqe_tname *t, const cqe_val *args, width_t W
   return -1;
 }
 
+/* The call site's plan (cqe_plan.h): bit 0 set, the index in OPS (5 bits), the predicate's code (4 bits), W's kind
+ * (1 bit: 'f') and W's bits: everything the checks below work out from the name and the operand count. */
 static int tmpl_cmp_op(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *out) {
+  uintptr_t *slot = cqe__plan_take();
+  uintptr_t plan = slot ? *slot : 0;
   size_t k = 0;
-  while (k < NOPS && strcmp(OPS[k].name, t->op)) ++k;
-  if (k == NOPS) return CQE_OP_NOT_MINE;
-  if (nargs != OPS[k].nargs) {
-    cqe_fail("tmpl_cmp: %s takes %d data operands, got %d", t->op, OPS[k].nargs, nargs);
-    return -1;
-  }
-  if (OPS[k].op != OP_ICMP && t->pred[0]) {
-    cqe_fail("tmpl_cmp: %s takes no predicate, got '%s'", t->op, t->pred);
-    return -1;
-  }
-  if (t->to[0]) {
-    cqe_fail("tmpl_cmp: %s takes no _to_ width, got '%s'", t->op, t->to);
-    return -1;
-  }
+  int pred;
   width_t W;
-  if (parse_width(t->w, &W)) {
-    cqe_fail("tmpl_cmp: bad width '%s' in %s", t->w, t->op);
-    return -1;
+  if (plan) {
+    k = plan >> 1 & 31;
+    pred = (int)(plan >> 6 & 15);
+    W.kind = plan >> 10 & 1 ? 'f' : 'i';
+    W.bits = (uint32_t)(plan >> 11);
+    W.nw = (W.bits + 63) / 64;
+  } else {
+    while (k < NOPS && strcmp(OPS[k].name, t->op)) ++k;
+    if (k == NOPS) return CQE_OP_NOT_MINE;
+    if (nargs != OPS[k].nargs) {
+      cqe_fail("tmpl_cmp: %s takes %d data operands, got %d", t->op, OPS[k].nargs, nargs);
+      return -1;
+    }
+    if (OPS[k].op != OP_ICMP && t->pred[0]) {
+      cqe_fail("tmpl_cmp: %s takes no predicate, got '%s'", t->op, t->pred);
+      return -1;
+    }
+    if (t->to[0]) {
+      cqe_fail("tmpl_cmp: %s takes no _to_ width, got '%s'", t->op, t->to);
+      return -1;
+    }
+    if (parse_width(t->w, &W)) {
+      cqe_fail("tmpl_cmp: bad width '%s' in %s", t->w, t->op);
+      return -1;
+    }
+    pred = pred_code(t->pred);
+    if (slot)
+      *slot = 1u | (uintptr_t)k << 1 | (uintptr_t)pred << 6 | (uintptr_t)(W.kind == 'f') << 10 | (uintptr_t)W.bits << 11;
   }
   /* a, b, r: W.nw words each; p: 2 W.nw words (the full product). */
   uint64_t small[10] = {0}; /* cq-9hzgh: up to two words need no allocation */
@@ -347,7 +375,7 @@ static int tmpl_cmp_op(const cqe_tname *t, const cqe_val *args, int nargs, cqe_v
     cqe_fail("tmpl_cmp: out of memory at %s", t->w);
     return -1;
   }
-  int rc = eval(OPS[k].op, t, args, W, out, buf, buf + W.nw, buf + 2 * W.nw, buf + 3 * W.nw);
+  int rc = eval(OPS[k].op, pred, t, args, W, out, buf, buf + W.nw, buf + 2 * W.nw, buf + 3 * W.nw);
   if (buf != small)
     free(buf);
   return rc;
