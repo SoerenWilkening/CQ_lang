@@ -1231,11 +1231,14 @@ class Instrumenter:
         return str(self.alloca_ids.setdefault((f.name, v), len(self.alloca_ids) + 1))
 
     def registered_globals(self) -> List[Tuple[str, str]]:
-        """(global, its value type) of every global __cqd_globals registers, in order."""
+        """(global, its value type) of every global __cqd_globals registers, in order. An `llvm.`
+        global (`@llvm.used`, `@llvm.compiler.used`, `@llvm.global_ctors`: appending, section
+        "llvm.metadata") is the linker's list, no object of the program, and has no symbol to take
+        the address of (cq-xon8i: a `CQ_K(f, k)` line's `@llvm.used`)."""
         out = []
         for g, line in self.mod.globals.items():
             m = re.search(r"\b(?:global|constant)\s+(.*)$", D.strip_comment(line))
-            if not m or "thread_local" in line:
+            if not m or "thread_local" in line or D.is_llvm_list(g, line):
                 continue
             out.append((g, split_type(m.group(1))[0]))
         return out

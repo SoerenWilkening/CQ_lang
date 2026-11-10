@@ -1167,6 +1167,13 @@ def global_type(line: str) -> Optional[str]:
     return lead_type(rhs[m.end():])[0]
 
 
+def is_llvm_list(name: str, line: str) -> bool:
+    """`@llvm.used`, `@llvm.compiler.used`, `@llvm.global_ctors` and the other `llvm.`-named globals
+    (LangRef, "Intrinsic Global Variables"): lists for the compiler and linker, appending, in section
+    "llvm.metadata", never emitted as program objects."""
+    return name.startswith("@llvm.") or bool(re.search(r"=\s*(?:[a-z_]+\s+)*appending\b", strip_comment(line)))
+
+
 def lead_type(s: str) -> Tuple[str, str]:
     """(the type that starts s, the rest): a bracketed aggregate or vector type, else the first token."""
     s = s.lstrip()
