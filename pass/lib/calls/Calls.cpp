@@ -766,7 +766,7 @@ bool reaches(const Function *G, const Function *F) {
           if (const Function *Y = C->getCalledFunction()) {
             if (Y == F)
               return true;
-            if (!Y->isDeclaration() && seen.insert(Y).second)
+            if (!hostCallee(*Y) && seen.insert(Y).second)
               work.push_back(Y);
           }
   }
@@ -808,7 +808,7 @@ bool tableKeepsResults(const TaintInfo &T, const Specialization &S) {
           if (const Function *G = CB->getCalledFunction()) {
             if (G->isDeclaration() && G->getName().starts_with("cq_measure_"))
               return true;
-            if (!G->isDeclaration() && seen.insert(G).second)
+            if (!hostCallee(*G) && seen.insert(G).second)
               work.push_back(G);
           }
   }
@@ -826,7 +826,7 @@ bool rotates(const Function &F) {
         if (const Function *G = CB->getCalledFunction()) {
           if (G->getName().starts_with("cq_theta_"))
             return true;
-          if (!G->isDeclaration() && seen.insert(G).second)
+          if (!hostCallee(*G) && seen.insert(G).second)
             work.push_back(G);
         }
   }

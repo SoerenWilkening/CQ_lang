@@ -478,7 +478,7 @@ SmallVector<unsigned, 4> binderCuts(const Value *v) {
   }
   auto *CB = dyn_cast<CallBase>(call);
   const Function *F = CB ? CB->getCalledFunction() : nullptr;
-  if (!F || F->isDeclaration())
+  if (!F || hostCallee(*F))
     return {};
   if (idx.empty())
     return resultIntCuts(*F);   // the union of the returns' packings (cq-jkq8)
@@ -796,7 +796,7 @@ bool fieldConsumer(LoweringContext &ctx, const Use &U, bool orRooted) {
   const User *u = U.getUser();
   if (auto *CB = dyn_cast<CallBase>(u)) {
     const Function *F = CB->getCalledFunction();
-    if (!F || F->isIntrinsic() || F->isDeclaration() || !CB->isArgOperand(&U))
+    if (!F || F->isIntrinsic() || hostCallee(*F) || !CB->isArgOperand(&U))
       return false;
     unsigned i = CB->getArgOperandNo(&U);
     return i < F->arg_size() && unpackCuts(F->getArg(i)).size() > 2;
