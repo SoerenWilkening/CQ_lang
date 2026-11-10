@@ -3519,6 +3519,13 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
         continue;
       if (any_of(I.readersOf(g), [&](RailId o) { return I.pending(o) && !I.done(o, c); }))
         continue;
+      // cq-73zea (rule 5; rule 14 case 1 with Q1): an exit rail a later instruction still reads (the loop's exit value
+      // a classical join below takes in, its phi not built yet: a zero-trip skip into C) holds the item back, as
+      // spanReady holds a live rail; the item frees its exit rails.
+      if (any_of(I.defs[I.rails[g].deferred].exits, [&](RailId x) {
+            return any_of(I.names(x), [&](RailId n) { return live.count(n) != 0; });
+          }))
+        continue;
       I.place(g, c);
       progress = true;
     }
