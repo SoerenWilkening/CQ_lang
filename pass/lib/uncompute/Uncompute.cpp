@@ -311,6 +311,22 @@ struct Uncompute::Impl {
   SmallVector<unsigned, 4> openStack;
   DenseSet<const Instruction *> emitted;
   MapVector<std::pair<RailId, const BasicBlock *>, Instruction *> itemEnd;   // insertion order: keyed by a pointer
+  // cq-g3h1i: per rail, the positions of its itemEnd entries (in insertion order; no entry is ever removed), so
+  // "the item ends of rail o" is no scan of every item placed so far.
+  DenseMap<RailId, SmallVector<unsigned, 2>> itemEndOf;
+  void setItemEnd(RailId g, const BasicBlock *bb, Instruction *end) {
+    auto [it, fresh] = itemEnd.insert({{g, bb}, end});
+    if (fresh)
+      itemEndOf[g].push_back(unsigned(itemEnd.size() - 1));
+    else
+      it->second = end;
+  }
+  // as += the item ends of o, in itemEnd's order.
+  void itemEndsOf(RailId o, SmallVectorImpl<Instruction *> &as) const {
+    if (auto it = itemEndOf.find(o); it != itemEndOf.end())
+      for (unsigned k : it->second)
+        as.push_back((itemEnd.begin() + k)->second);
+  }
   // cq-ut4k: rails pending at the return being flushed whose definition does not dominate it (an arm
   // of a classical branch, often of a merge: a phi over arm-local handles), and the items placed for
   // them there, each run under its own selector (wrapArmItems).
@@ -1882,15 +1898,13 @@ struct Uncompute::Impl {
       }
       Instruction *end = emitItem(g, *c.mirror);
       r.released = true;
-      itemEnd[{g, end->getParent()}] = end;
+      setItemEnd(g, end->getParent(), end);
       return;
     }
     BasicBlock *D = const_cast<BasicBlock *>(defBlock(g));
     SmallVector<Instruction *, 12> as = anchors(g);
     for (RailId o : readersOf(g))
-      for (auto &kv : itemEnd)
-        if (kv.first.first == o)
-          as.push_back(kv.second);
+      itemEndsOf(o, as);
     bool local = all_of(as, [&](Instruction *a) { return a->getParent() == D; });
     if (!local && cycleArm.count(g)) {
       // cq-lshe: an arm defined on a cycle, pending at a return its definition does not dominate. Each
@@ -2062,7 +2076,7 @@ struct Uncompute::Impl {
         }
         wraps.push_back({g, sg.first, sg.last, c});
       }
-      itemEnd[{g, pos.bb}] = end;
+      setItemEnd(g, pos.bb, end);
       if (local)
         r.released = true;
       else
@@ -2072,7 +2086,7 @@ struct Uncompute::Impl {
     Instruction *last = end;
     for (unsigned k = 0; k < sandwich.size(); ++k)
       last = guarded(wcond[k], [&] { return emitWrite(sandwich[k], B, /*undo=*/false); });
-    itemEnd[{g, pos.bb}] = last;
+    setItemEnd(g, pos.bb, last);
     if (local)
       r.released = true;
     else
@@ -2568,9 +2582,7 @@ struct Uncompute::Impl {
     }
     SmallVector<Instruction *, 12> as = anchors(g);
     for (RailId o : readersOf(g))
-      for (auto &kv : itemEnd)
-        if (kv.first.first == o)
-          as.push_back(kv.second);
+      itemEndsOf(o, as);
     for (Instruction *a : as) {
       const BasicBlock *A = a->getParent();
       if (!A)
@@ -2697,9 +2709,7 @@ struct Uncompute::Impl {
     Deferred &d = defs[r.deferred];
     SmallVector<Instruction *, 12> as = deferredAnchors(d);
     for (RailId o : readersOf(g))
-      for (auto &kv : itemEnd)
-        if (kv.first.first == o)
-          as.push_back(kv.second);
+      itemEndsOf(o, as);
     Pos pos;
     if (c.mode == Mode::Local) {
       pos = afterLatest(c.point->getParent(), as, g);
@@ -2917,7 +2927,7 @@ struct Uncompute::Impl {
       internalError("uncompute: a deferred item left its builder in a terminated block", rails[g].handle);
     BranchInst *br = BranchInst::Create(P, B.GetInsertBlock());
     emitted.insert(br);
-    itemEnd[{g, br->getParent()}] = br;
+    setItemEnd(g, br->getParent(), br);
     d.placedAt = P;
   }
 
