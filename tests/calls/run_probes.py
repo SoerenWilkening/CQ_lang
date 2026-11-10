@@ -196,6 +196,10 @@ CASES = [
     ("stream_body_by_name", "stream_body", [], "lower",
      [r"call void @cqrt_tape_effect_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.fprintf, i32 3\)",
       r"define noundef i32 @fprintf\(ptr noalias nocapture noundef %0, ptr noalias nocapture noundef readonly %1, \.\.\.\)"]),
+    # cq-ojgho (rule 16, owner 2026-11-10): a <wchar.h> stream call by name (fputwc) is the host boundary as well. "lower" as above.
+    ("stream_wide_body_by_name", "stream_wide_body", [], "lower",
+     [r"call void @cqrt_tape_effect_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.fputwc, i32 2\)",
+      r"define noundef i32 @fputwc\(i32 noundef %0, ptr nocapture noundef %1\)"]),
     ("raise_read", "raise_read", [], "pass", [r"@__cq_sig"]),
     ("sig_rail", "sig_rail", [], "pass", [r"@__cq_sig", r"@cqrt_qram_store_i64\("]),
     # Rule 19 extra results: the twin takes the register's handle and repeats no rotation.
