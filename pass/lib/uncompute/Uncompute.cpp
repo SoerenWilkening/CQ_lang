@@ -694,12 +694,31 @@ struct Uncompute::Impl {
     SmallVector<RailId, 4> out = ownReads(g);
     // cq-lshe: the rails the sandwich of the item reads (the operands of in-place writes it may undo and
     // redo around itself) outlive it too.
-    if (rails[g].deferred == kNone)
-      for (unsigned w : sandwichCands(g))
-        for (RailId x : info[w].reads)
-          if (x != g && !is_contained(out, x))
-            out.push_back(x);
+    if (rails[g].deferred == kNone) {
+      SmallVector<unsigned, 4> ws = sandwichCands(g);
+      if (!ws.empty()) {
+        SmallDenseSet<RailId, 16> seen(out.begin(), out.end());   // cq-g3h1i: a sandwich may read many rails
+        for (unsigned w : ws)
+          for (RailId x : info[w].reads)
+            if (x != g && seen.insert(x).second)
+              out.push_back(x);
+      }
+    }
     return out;
+  }
+  // cq-g3h1i: itemReads(g) holds one of ns, answered without building the list: g's own reads first, the
+  // sandwich only when they hold none.
+  bool itemReadsAny(RailId g, ArrayRef<RailId> ns) const {
+    SmallVector<RailId, 4> own = ownReads(g);
+    if (any_of(ns, [&](RailId n) { return is_contained(own, n); }))
+      return true;
+    if (rails[g].deferred != kNone)
+      return false;
+    for (unsigned w : sandwichCands(g))
+      for (RailId x : info[w].reads)
+        if (x != g && is_contained(ns, x))
+          return true;
+    return false;
   }
   SmallVector<RailId, 4> ownReads(RailId g) const {
     const Rail &r = rails[g];
@@ -754,12 +773,14 @@ struct Uncompute::Impl {
       for (unsigned rec : undone(g))
         addReads(info[rec].reads, records[rec].forward);
     }
+    SmallDenseSet<unsigned, 16> taken;   // cq-g3h1i: out's members
     for (unsigned i = 0; i < R.size(); ++i) {
       Rd rd = R[i];
       for (unsigned w : rails[rd.x].writes) {
         const Instruction *f = records[w].forward;
-        if (is_contained(out, w) || !f->getParent() || (rd.at && (f == rd.at || !after(f, rd.at))))
+        if (taken.count(w) || !f->getParent() || (rd.at && (f == rd.at || !after(f, rd.at))))
           continue;
+        taken.insert(w);
         out.push_back(w);
         for (RailId y0 : info[w].reads)
           for (RailId y : leaves(y0))
@@ -904,19 +925,16 @@ struct Uncompute::Impl {
     for (RailId o : cand) {
       if (o == g)
         continue;
-      SmallVector<RailId, 4> own;
-      const SmallVector<RailId, 4> *rdp = &own;
       if (readsMemo) {
         auto [it, fresh] = readsMemo->try_emplace(o);
         if (fresh)
           it->second = itemReads(o);
-        rdp = &it->second;   // nothing below adds to the memo
-      } else {
-        own = itemReads(o);
-      }
-      const SmallVector<RailId, 4> &rd = *rdp;
-      if (!any_of(ns, [&](RailId n) { return is_contained(rd, n); }))
+        const SmallVector<RailId, 4> &rd = it->second;
+        if (!any_of(ns, [&](RailId n) { return is_contained(rd, n); }))
+          continue;
+      } else if (!itemReadsAny(o, ns)) {
         continue;
+      }
       // F1: a reader owned by a deferred item not yet placed is undone by that item.
       if (unsigned di = rails[o].ownedBy; di != kNone && rails[g].ownedBy != di && !rails[defs[di].pseudo].released)
         o = defs[di].pseudo;
