@@ -860,6 +860,10 @@ struct Uncompute::Impl {
     return true;
   }
 
+  // cq-g3h1i: itemReads per rail, kept while resolve only reads the rails (dropBlocked and order: no record,
+  // rail or instruction changes between their calls); null outside.
+  mutable DenseMap<RailId, SmallVector<RailId, 4>> *readsMemo = nullptr;
+
   // Rails whose item reads g, directly or through a merge that may name g (U1).
   SmallVector<RailId, 4> readersOf(RailId g) const {
     if (rails[g].deferred != kNone) {
@@ -877,16 +881,18 @@ struct Uncompute::Impl {
     // cq-lshe: an in-place write reading g is in the sandwich of the items that read its target (or, in
     // turn, a rail another such write reads): those items read g too (itemReads), so they are candidates.
     SmallVector<RailId, 4> targets;
+    // cq-g3h1i: membership through a set beside each list (a rail many records read has many candidates).
+    SmallDenseSet<RailId, 16> candSet, targetSet;
     auto addCands = [&](RailId n) {
       for (unsigned rec : rails[n].readerRecs) {
-        if (!is_contained(cand, info[rec].item))
+        if (candSet.insert(info[rec].item).second)
           cand.push_back(info[rec].item);
         if (!isCreator(info[rec].kind))
-          if (RailId t = records[rec].out; t < rails.size() && !is_contained(targets, t))
+          if (RailId t = records[rec].out; t < rails.size() && targetSet.insert(t).second)
             targets.push_back(t);
       }
       for (RailId o : rails[n].cleanupReaders)
-        if (!is_contained(cand, o))
+        if (candSet.insert(o).second)
           cand.push_back(o);
     };
     for (RailId n : ns)
@@ -898,7 +904,17 @@ struct Uncompute::Impl {
     for (RailId o : cand) {
       if (o == g)
         continue;
-      SmallVector<RailId, 4> rd = itemReads(o);
+      SmallVector<RailId, 4> own;
+      const SmallVector<RailId, 4> *rdp = &own;
+      if (readsMemo) {
+        auto [it, fresh] = readsMemo->try_emplace(o);
+        if (fresh)
+          it->second = itemReads(o);
+        rdp = &it->second;   // nothing below adds to the memo
+      } else {
+        own = itemReads(o);
+      }
+      const SmallVector<RailId, 4> &rd = *rdp;
       if (!any_of(ns, [&](RailId n) { return is_contained(rd, n); }))
         continue;
       // F1: a reader owned by a deferred item not yet placed is undone by that item.
@@ -1751,7 +1767,7 @@ struct Uncompute::Impl {
   }
 
   // Readers first; ties by most recent rail first.
-  SmallVector<RailId, 16> order(ArrayRef<RailId> cands) const {
+  SmallVector<RailId, 16> order(ArrayRef<RailId> cands, const DenseMap<RailId, SmallVector<RailId, 4>> *readers = nullptr) const {
     DenseSet<RailId> in(cands.begin(), cands.end());
     DenseMap<RailId, int> state; // 1 visiting, 2 done
     SmallVector<RailId, 16> out;
@@ -1765,7 +1781,12 @@ struct Uncompute::Impl {
         internalError("uncompute: cyclic uncompute dependency through rule 6", rails[g].handle);
       }
       s = 1;
-      SmallVector<RailId, 4> rd = readersOf(g);
+      SmallVector<RailId, 4> rd;
+      auto known = readers ? readers->find(g) : decltype(readers->find(g))();
+      if (readers && known != readers->end())
+        rd = known->second;
+      else
+        rd = readersOf(g);
       llvm::sort(rd, [](RailId a, RailId b) { return a > b; });
       for (RailId o : rd)
         if (in.count(o))
@@ -1783,16 +1804,22 @@ struct Uncompute::Impl {
   // so the survivors are one fixed point whatever the order of the drops. The readers of each candidate are
   // read once (nothing here changes them) and the passes repeat over them until none drops; the first drop found
   // is the one a scan restarted after every drop finds first (the fatal message names it).
-  void dropBlocked(SmallVectorImpl<RailId> &cands, const Ctx &c, bool fatal) const {
+  // `readers` (when given) receives readersOf of every candidate, for order().
+  void dropBlocked(SmallVectorImpl<RailId> &cands, const Ctx &c, bool fatal,
+                   DenseMap<RailId, SmallVector<RailId, 4>> *readers = nullptr) const {
     DenseSet<RailId> in(cands.begin(), cands.end());
     DenseMap<RailId, unsigned> copies;   // a rail listed twice stays in the set until its last copy drops
     for (RailId g : cands)
       ++copies[g];
     std::vector<SmallVector<RailId, 4>> blockers(cands.size());
-    for (unsigned i = 0; i < cands.size(); ++i)
-      for (RailId o : readersOf(cands[i]))
+    for (unsigned i = 0; i < cands.size(); ++i) {
+      SmallVector<RailId, 4> rd = readersOf(cands[i]);
+      for (RailId o : rd)
         if (pending(o) && !done(o, c))
           blockers[i].push_back(o);
+      if (readers)
+        readers->try_emplace(cands[i], std::move(rd));
+    }
     std::vector<char> dropped(cands.size(), 0);
     for (bool changed = true; changed;) {
       changed = false;
@@ -2978,8 +3005,14 @@ struct Uncompute::Impl {
   }
 
   void resolve(SmallVectorImpl<RailId> &cands, const Ctx &c) {
-    dropBlocked(cands, c, c.mode == Mode::Mirror);
-    for (RailId g : order(cands))
+    // cq-g3h1i: dropBlocked and order read the same rails with nothing changed in between: each candidate's
+    // readers and each reader's itemReads are computed once for both.
+    DenseMap<RailId, SmallVector<RailId, 4>> readers, reads;
+    readsMemo = &reads;
+    dropBlocked(cands, c, c.mode == Mode::Mirror, &readers);
+    SmallVector<RailId, 16> ord = order(cands, &readers);
+    readsMemo = nullptr;
+    for (RailId g : ord)
       place(g, c);
   }
 };
