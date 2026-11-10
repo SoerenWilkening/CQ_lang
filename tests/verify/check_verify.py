@@ -37,6 +37,7 @@ CHECKS = [
     "handle-in-classical-op",
     "classical-control-on-taint",
     "unwritten-measurement",
+    "cc-mismatch",
 ]
 EXPECT = re.compile(r"^; EXPECT: (\S+)$")
 EXPECT_REF = re.compile(r"^; EXPECT<reference>: (\S+)$")
