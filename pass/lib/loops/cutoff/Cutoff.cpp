@@ -64,6 +64,7 @@
 #include "cq/Predicate.h"
 #include "cq/Uncompute.h"
 #include "cq/Calls.h"
+#include "cq/Order.h"
 #include "../../spine/SpineInternal.h"
 
 #include "llvm/ADT/ScopeExit.h"
@@ -2176,7 +2177,7 @@ static bool equalAtTripZero(const Value *v, const Value *w, const Loop &L, Scala
     BasicBlock *h = L.getHeader();
     for (const BasicBlock *b = guard; b && b != h; b = b->getSingleSuccessor())
       for (const Instruction &I : *b)
-        if (I.mayWriteToMemory() && (b != guard || lv->comesBefore(&I)))
+        if (I.mayWriteToMemory() && (b != guard || cq::comesBefore(lv, &I)))
           return false;
     return true;
   }

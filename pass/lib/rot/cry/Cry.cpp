@@ -57,6 +57,7 @@
 // (two registers, a straight-through edge a prep or rotation may precede, a register of a classical
 // guard) is rule 9's over the handles (pred::lowerMerge).
 #include "cq/Rotation.h"
+#include "cq/Order.h"
 
 #include <memory>
 #include <optional>
@@ -534,7 +535,7 @@ DenseSet<const BasicBlock *> reachFrom(const Instruction &T, const Value *def, b
 }
 
 bool isAfter(const Instruction &T, const DenseSet<const BasicBlock *> &reach, const Instruction *I) {
-  if (I->getParent() == T.getParent() && I != &T && T.comesBefore(I))
+  if (I->getParent() == T.getParent() && I != &T && cq::comesBefore(&T, I))
     return true;
   return reach.count(I->getParent());
 }

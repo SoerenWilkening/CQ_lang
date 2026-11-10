@@ -12,6 +12,7 @@
 //   4. reachability from the roots, twins and _pure variants, masks, names, the published list.
 // No state outlives the call: computeTaint is safe to call twice on one module (cq-5k5, option a).
 #include "TaintImpl.h"
+#include "cq/Order.h"
 
 #include <algorithm>
 #include <functional>
@@ -2995,7 +2996,7 @@ bool measuredOnEveryPath(function_ref<bool(const Value *)> isQuantum, const Valu
                                            c->getCalledFunction()->getName().starts_with("cq_measure") &&
                                            c->arg_size() == 1 && strip(c->getArgOperand(0)) == root)
         return true;
-  if (also && also->getParent() == D && (!defI || defI->comesBefore(also)))
+  if (also && also->getParent() == D && (!defI || cq::comesBefore(defI, also)))
     return true;
   PostDominatorTree PDT(const_cast<Function &>(F));
   auto quantumBranch = [&](const BasicBlock *b) {

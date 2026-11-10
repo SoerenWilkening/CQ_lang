@@ -16,6 +16,7 @@
 #include "PredInternal.h"
 
 #include "cq/Aggregates.h"
+#include "cq/Order.h"
 #include "cq/Common.h"
 #include "cq/Rotation.h"
 #include "llvm/ADT/PostOrderIterator.h"
@@ -847,7 +848,7 @@ class JoinRepair {
       return true;
     BasicBlock *D = I->getParent();
     if (D == U)
-      return pt == U->end() || (&*pt != I && I->comesBefore(&*pt));
+      return pt == U->end() || (&*pt != I && cq::comesBefore(I, &*pt));
     // The chain of unique predecessors needs no tree.
     SmallPtrSet<BasicBlock *, 16> seen{U};
     for (BasicBlock *b = U->getUniquePredecessor(); b && seen.insert(b).second; b = b->getUniquePredecessor())

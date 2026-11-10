@@ -2,6 +2,7 @@
 #include "BusInternal.h"
 
 #include "cq/Abi.h"
+#include "cq/Order.h"
 #include "cq/Aggregates.h"
 #include "cq/Predicate.h"
 #include "../spine/SpineInternal.h"
@@ -36,7 +37,7 @@ Value *classicalAddress(LoweringContext &ctx, Value *p) {
   for (User *u : p->users())
     if (auto *pi = dyn_cast<PtrToIntInst>(u);
         pi && pi->getParent() == bb && pi->getType() == I64 &&
-        (B.GetInsertPoint() == bb->end() || pi->comesBefore(&*B.GetInsertPoint())))
+        (B.GetInsertPoint() == bb->end() || cq::comesBefore(pi, &*B.GetInsertPoint())))
       return pi;
   return B.CreatePtrToInt(p, I64);
 }

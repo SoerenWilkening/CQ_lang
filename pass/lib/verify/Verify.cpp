@@ -11,6 +11,7 @@
 // reached only through memory, the push/pop stack or parameters start in "anything"; every other
 // alias of a rail written through one name (phi/select class) becomes "anything" at that write.
 #include "cq/Verify.h"
+#include "cq/Order.h"
 
 #include <map>
 #include <optional>
@@ -701,7 +702,7 @@ private:
 
   // A change on EVERY path from A to B within A's block (the one reading a must-check needs).
   bool changeBetween(const Instruction &A, const Instruction &B) {
-    if (A.getParent() != B.getParent() || !A.comesBefore(&B))
+    if (A.getParent() != B.getParent() || !cq::comesBefore(&A, &B))
       return false;
     for (const Instruction *X = A.getNextNode(); X && X != &B; X = X->getNextNode())
       if (isVersionChange(*X))
@@ -732,7 +733,7 @@ private:
         for (const User *U : V->users()) {
           auto *UC = dyn_cast<CallBase>(U);
           const Sig *US = UC ? &Sigs.get(*UC) : nullptr;
-          if (!US || !UC->getParent() || UC->getParent() != I.getParent() || !I.comesBefore(UC))
+          if (!US || !UC->getParent() || UC->getParent() != I.getParent() || !cq::comesBefore(&I, UC))
             continue;
           bool freed = US->kind == Kind::Core && US->core && US->core->op == abi::Core::Free;
           bool unc = (US->kind == Kind::Template || US->kind == Kind::Core) && US->unc && UC->getArgOperand(0) == V;
