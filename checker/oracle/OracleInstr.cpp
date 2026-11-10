@@ -2677,6 +2677,25 @@ struct OraclePass : PassInfoMixin<OraclePass> {
   }
 };
 
+// cq-8bq66 (CR rule 16): "a body the bundle has for one of [the stream calls] is never lifted for the call", which is the
+// host boundary. -passes=cq-oracle-host-streams makes every such function a declaration, recognised by name and signature
+// exactly as cq-lower recognises it (cq::streamCallee), so the C program calls the host's function, as the backend
+// performs the entry (BACKEND_ABI §1.11: "with the host C library ..., never with a lowered symbol"). oracle.py
+// host_streams runs it before the direct host calls are sent to their stand-ins (drivers.effect_callees).
+struct HostStreamsPass : PassInfoMixin<HostStreamsPass> {
+  PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
+    bool changed = false;
+    for (Function &F : M)
+      if (!F.isDeclaration() && cq::streamCallee(F)) {
+        F.deleteBody();
+        F.setComdat(nullptr);
+        F.setVisibility(GlobalValue::DefaultVisibility);
+        changed = true;
+      }
+    return changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
+  }
+};
+
 }  // namespace
 
 void cqRegisterTripFacts(PassBuilder &PB);   // TripFacts.cpp: -passes=cq-trip-facts (cq-97oj)
@@ -2686,6 +2705,10 @@ extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
             cqRegisterTripFacts(PB);
             PB.registerPipelineParsingCallback(
                 [](StringRef name, ModulePassManager &MPM, ArrayRef<PassBuilder::PipelineElement>) {
+                  if (name == "cq-oracle-host-streams") {
+                    MPM.addPass(HostStreamsPass());
+                    return true;
+                  }
                   if (name != "cq-oracle")
                     return false;
                   MPM.addPass(OraclePass());

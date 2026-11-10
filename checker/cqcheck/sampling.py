@@ -2159,10 +2159,13 @@ class ProbeBuild:
         ll = re.sub(r"@pthread_(create|join|detach)\b", r"@__cqd_pthread_\1", ll)
         # rulings Q8: no direct host call runs for real here either (a real fgets would read the server's
         # own batch pipe: 210); the same stand-ins as the C oracle, so the same inputs reach the same paths
+        # cq-8bq66 (CR rule 16): a stream call by name is the host's whatever the module defines, as in the C oracle
+        from cqcheck import oracle as _oracle
+        ll = _oracle.host_streams(ll + "\n" + "\n".join(stubs) + "\n")
         callees = D.effect_callees(ll, D.proto_definitions(self.spec) | D.corpus_roots())
         ll = D.rename_effects(ll, callees) + D.effect_wrappers_ir(callees)
         self.fx = bool(callees)
-        (w / "probe.ll").write_text(ll + "\n" + "\n".join(stubs) + "\n")
+        (w / "probe.ll").write_text(ll)
         (w / "driver.c").write_text(_driver_main(self.spec)
                                     + f"const int cqd_nsites = {max(1, len(self.ins.sites))}, "
                                       f"cqd_nloops = {max(1, len(self.ins.loops))}, "
