@@ -40,9 +40,10 @@ struct MintSlot {
 llvm::ArrayRef<MintSlot> mintSites(const TaintInfo &, const Specialization &);
 void noteMint(LoweringContext &, llvm::CallInst &site, llvm::BasicBlock *startBlock, llvm::Instruction *before);
 llvm::Value *mintHandle(LoweringContext &, const MintSlot &);
-// Rule 18, §1.4, cq-t2jj2: a table clone with its twin measures a kept copy of a rail (lowerMeasure; arg 0) or hands one to a by-name
-// callee that measures formal `arg` (emitCloneCall). The copy is a register it minted: it pushes the handle, and the twin re-reads
-// that rail (rule 2) instead of making and measuring another.
+// Rule 18, §1.4, cq-t2jj2: a table clone with its twin measures a kept copy of a rail that is not its formal (lowerMeasure; arg 0)
+// or hands one to a by-name callee that measures formal `arg` (emitCloneCall). The copy is a register it minted: it pushes the
+// handle, and the twin re-reads that rail (rule 2) instead of making and measuring another. A copy of a formal is not pushed and
+// leaves the clone no twin (§1.4, CQ_spec 96c7bc5), so it never reaches here with a slot.
 void noteMeasuredCopy(LoweringContext &, const llvm::CallBase &site, unsigned arg, llvm::CallInst *alloc, llvm::CallInst *copy);
 void pushListedMints(LoweringContext &);
 // The K of the caller's enclosing function (§0): a table clone passes down the K it received.
