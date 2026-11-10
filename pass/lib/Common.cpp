@@ -107,7 +107,9 @@ std::string calleeName(const Function &F, const Value *at) {
 }
 
 bool streamName(StringRef n) {
-  // C17 7.21 and POSIX.1-2017 <stdio.h>, less the string formatters; CR rule 16's five descriptor calls.
+  // C17 7.21 and POSIX.1-2017 <stdio.h>, less the string formatters; the stream functions of C17 7.29 and
+  // POSIX.1-2017 <wchar.h>, less the wide string formatters swprintf, vswprintf, swscanf, vswscanf (cq-ojgho, owner
+  // 2026-11-10); CR rule 16's five descriptor calls.
   static const char *names[] = {
       "fopen",       "freopen",      "fclose",         "fflush",          "setbuf",         "setvbuf",
       "fprintf",     "printf",       "vfprintf",       "vprintf",         "fscanf",         "scanf",
@@ -120,7 +122,10 @@ bool streamName(StringRef n) {
       "dprintf",     "vdprintf",     "flockfile",      "funlockfile",     "ftrylockfile",   "getc_unlocked",
       "getchar_unlocked", "putc_unlocked", "putchar_unlocked", "ctermid", "fmemopen",       "open_memstream",
       "renameat",    "tempnam",      "open",           "close",           "read",           "write",
-      "lseek"};
+      "lseek",       "fwprintf",     "wprintf",        "vfwprintf",       "vwprintf",       "fwscanf",
+      "wscanf",      "vfwscanf",     "vwscanf",        "fgetwc",          "fgetws",         "fputwc",
+      "fputws",      "fwide",        "getwc",          "getwchar",        "putwc",          "putwchar",
+      "ungetwc",     "open_wmemstream"};
   for (const char *x : names)
     if (n == x)
       return true;

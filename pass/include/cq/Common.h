@@ -37,9 +37,9 @@ struct Operand { llvm::Value *v; bool handle; };    // a rail handle, or a class
 // cq-my17 (rule 16, 99): F is a library function LLVM knows (TargetLibraryInfo for the module's triple,
 // prototype checked), its LibFunc in lf; a Mach-O asm label "\01_n" names C function n.
 bool libFuncOf(const llvm::Function &F, llvm::LibFunc &lf);
-// CR rule 16's stream calls by C name (a leading "\01_" removed): every <stdio.h> function, input and output alike,
-// and the POSIX descriptor calls open, close, read, write, lseek; never the string formatters sprintf, snprintf,
-// sscanf and their v forms (injected and lifted).
+// CR rule 16's stream calls by C name (a leading "\01_" removed): every <stdio.h> and <wchar.h> stream function, input
+// and output alike, and the POSIX descriptor calls open, close, read, write, lseek; never the string formatters
+// sprintf, snprintf, sscanf, swprintf, swscanf and their v forms (injected and lifted; cq-ojgho).
 bool streamName(llvm::StringRef cname);
 // cq-pt57w (CR rule 16): F is a stream call recognised by name and signature (its prototype checked where LLVM's
 // TargetLibraryInfo knows the name). "A body the bundle has for one of them is never lifted for the call."
