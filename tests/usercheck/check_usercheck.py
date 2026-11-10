@@ -11,7 +11,8 @@ Fails on any of:
             groups run out of the matching budget (cq-sujz); 61 calls prep inside a cq_invert region
             and 133's prep_twice overwrites a prep with a NaN angle (cq-mopw)
   unit      in process: the verdict of out-of-budget reasons is undecided (2), never differs; a
-            --samples subset keeps classical groups whole, spread over their sizes; cq-mopw: the sites a cq_invert region may reach (61:
+            --samples subset keeps classical groups whole, spread over their sizes, and always holds a
+            sample with a cq_theta substitution when the set has one (cq-jqjf); cq-mopw: the sites a cq_invert region may reach (61:
             prep's two and invert_theta's second, not invert_call's), and an Ry whose angle is the
             identity still counts as the overwriting prep of a rule-10 un-prep where the C program
             overwrites j's register by an identity reach after j's (cq-q15r, cq-ia96)
@@ -120,6 +121,17 @@ def unit(spec_root):
     one = [{"call": 0, "args": [f"0x{v:08x}"]} for v in range(10)]
     got = len(U.subset(one, 5, key=lambda s: (0,), spec=spec))
     (ok if got == 5 else fail)("unit subset one group", f"{got}")
+    # cq-jqjf: a subset always compares a sample with a cq_theta substitution when the set has one: sample 0 (no
+    # substitution) gives way at n = 1, and a first group with none takes one from another group
+    smp = [{"call": 0, "args": ["0x00000000"]}] + [{"call": 0, "args": ["0x00000000"], "subst": {"s": f"{k}"}} for k in range(4)]
+    for n in (1, 2):
+        got = U.subset(smp, n, key=lambda s: tuple(s["args"]), spec=spec)
+        (ok if len(got) == n and any("subst" in s for s in got) else fail)(f"unit subset substituted {n}", f"{got}")
+    smp = [{"call": 0, "args": ["0x00000000"]}, {"call": 0, "args": ["0x00000000"]}] + \
+          [{"call": 0, "args": ["0x00000003"]}] + [{"call": 0, "args": ["0x00000003"], "subst": {"s": f"{k}"}} for k in range(4)]
+    for n in (1, 2, 3):
+        got = U.subset(smp, n, key=lambda s: tuple(s["args"]), spec=spec)
+        (ok if len(got) == n and any("subst" in s for s in got) else fail)(f"unit subset substituted elsewhere {n}", f"{got}")
     (ok if U._spread(0) == [] else fail)("unit spread 0", f"{U._spread(0)}")
     for m in (1, 2, 3, 7, 8, 107):
         got = U._spread(m)
@@ -341,6 +353,10 @@ def main():
             p = tmp / f"mutant_{name}.ll"
             p.write_text(text)
             expect(f"mutant {name}", 1, user(o1, p, "add_classical"))
+        # cq-jqjf: at --samples 1 the one sample compared has a cq_theta substitution (sample 0 has none, and
+        # there the measured rail and its classical input agree)
+        expect("mutant measure_classical_input (--samples 1)", 1,
+               user(o1, tmp / "mutant_measure_classical_input.ll", "add_classical", 1))
 
         d60 = spec / "examples" / "60_qft"
         for name, text in mutants60((d60 / "qft.lowered.ll").read_text()).items():

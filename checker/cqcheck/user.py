@@ -320,19 +320,34 @@ def subset(samples: List[dict], n: Optional[int], key=None, spec: Optional[Drive
     down to one sample leaves equal-looking rails it cannot match within its budget, and a large
     program (117 at nq = t = 7) has more gates than the budget can order; fewer samples, never a
     bigger budget. A first group larger than n is cut to sample 0 and a seeded choice of its others
-    (the report names the cut)."""
+    (the report names the cut).
+
+    cq-jqjf: when the set has a sample with a cq_theta substitution, so does the subset. CR §6 item 1
+    runs the circuit "on basis inputs (each cq_theta input replaced by a chosen bit pattern)", and a
+    sampling checker "never narrows the claim" (CR §6): a subset of unsubstituted samples only would
+    compare the program at the values the C program gives its quantum registers, never at a chosen
+    one (sample 0, the all-zero baseline, has no substitution). So a cut first group whose seeded
+    choice holds none swaps its last sample (sample 0 at n = 1) for a seeded substituted one of the
+    group, and a subset still without one takes a seeded substituted sample of another group, in a
+    free place or in place of the last sample taken. A subset that already holds one is unchanged."""
     if n is None or n >= len(samples):
         return list(samples)
     if n < 1:
         raise UserCheckError(f"cqcheck user: --samples {n}: at least one sample is compared")
     key = key or (lambda s: json.dumps([s["call"], s["args"]]))
+    subst = lambda i: "subst" in samples[i]      # noqa: E731
     groups: Dict[object, List[int]] = {}
     for i, s in enumerate(samples):
         groups.setdefault(key(s), []).append(i)
     first = groups.pop(key(samples[0]))
     rng = random.Random(SUBSET_SEED)
     if len(first) > n:
-        first = [first[0]] + sorted(rng.sample(first[1:], n - 1))
+        cut = [first[0]] + sorted(rng.sample(first[1:], n - 1))
+        theta = [i for i in first if subst(i)]
+        if theta and not any(subst(i) for i in cut):
+            cut[-1] = rng.choice(theta)         # the last of the seeded others, or sample 0 at n = 1
+            cut = [cut[0]] + sorted(cut[1:]) if n > 1 else cut
+        first = cut
     take = list(first)
     rest = list(groups.values())
     rng.shuffle(rest)
@@ -340,6 +355,13 @@ def subset(samples: List[dict], n: Optional[int], key=None, spec: Optional[Drive
     for g in (rest[i] for i in _spread(len(rest))):
         if len(take) + len(g) <= n:
             take += g
+    if not any(subst(i) for i in take):
+        theta = [i for i in range(len(samples)) if subst(i)]
+        if theta:
+            one = rng.choice(theta)
+            if len(take) >= n:
+                take.pop()          # the last taken: sample 0 stays unless it is the only one
+            take.append(one)
     return [samples[i] for i in sorted(take)]
 
 
