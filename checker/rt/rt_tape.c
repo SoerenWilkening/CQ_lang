@@ -32,7 +32,8 @@
  *    predicate is 1, else |0>. It is kept (role tape) and classical-valued when everything was.
  *  - An abort flag is kept. End of shot (process exit via return from main or exit(); _Exit loses the
  *    tape): deferred entries are read and those with predicate 1 and no earlier abort reading 1 count
- *    as performed. A format entry is rendered with printf semantics, never printed.
+ *    as performed. A format entry is rendered with printf semantics, never printed; so is a performed
+ *    fprintf effect entry on the host's stdout, into the same text (stream_text, cq-8bq66).
  *
  * Violations (cqe_fail): a field that no entry takes, a tape handle not returned by cqrt_tape_alloc, a
  * predicate or abort flag that is not a live i1 rail, a width token that disagrees with the rail, an _unc
@@ -507,8 +508,10 @@ static void perform_input(event *e, const cq_fx_ent *ent) {
 /* ---------- classification ---------- */
 
 static void entry_json(sbuf *b, const event *e, const char *when);
+static int stream_text(const event *e);
+/* An fprintf entry on the host's stdout or stderr is no effect line: its text is the shot's stdout (stream_text). */
 static void effect_line(const event *e, const char *when) {
-  if (!e->pred || e->behind_abort) return;
+  if (!e->pred || e->behind_abort || stream_text(e)) return;
   sbuf b = {0};
   sb_puts(&b, "{\"ev\":\"effect\",");
   entry_json(&b, e, when);
@@ -899,18 +902,18 @@ static double field_d(const tval *v) {
  * an fp field is converted to double, or to long double under L; %s prints the captured bytes up to the
  * first 0; %n consumes its field and prints nothing (CR rule 16: the program's %n is the lifted snprintf).
  * Returns 0 after a violation. */
-static int format_entry(const event *e, sbuf *out) {
-  const char *p = e->str;
-  int next = 0, idx = (int)(e - g_ev);
+static int format_text(const event *e, const char *fmt, int first, sbuf *out) {
+  const char *p = fmt;
+  int next = first, idx = (int)(e - g_ev);
   conv_t c;
   while ((p = next_conv(p, out, &c)) != NULL) {
     if (!c.conv) {
-      cqe_fail("tape: entry %d: format \"%s\": conversion \"%.*s\" has no defined meaning", idx, e->str,
+      cqe_fail("tape: entry %d: format \"%s\": conversion \"%.*s\" has no defined meaning", idx, fmt,
                (int)(c.end - c.start), c.start);
       return 0;
     }
     if (next + c.wstar + c.pstar >= e->nfields) {
-      cqe_fail("tape: entry %d: format \"%s\" needs more fields than the entry has (%d)", idx, e->str, e->nfields);
+      cqe_fail("tape: entry %d: format \"%s\" needs more fields than the entry has (%d)", idx, fmt, e->nfields);
       return 0;
     }
     char spec[96], num[32];
@@ -978,6 +981,31 @@ static int format_entry(const event *e, sbuf *out) {
     }
   }
   return 1;
+}
+
+static int format_entry(const event *e, sbuf *out) { return format_text(e, e->str, 0, out); }
+
+/* cq-8bq66 (CR rule 16, BACKEND_ABI §1.11): the backend performs an effect entry as the host call `name` with its fields as
+ * the arguments, with the host C library. The checker makes the printing family real on both sides and compares its text as
+ * stdout (drivers.py, direct host calls; the C oracle calls the host fprintf), so a performed fprintf entry on the host's
+ * stdout is that text: its format is the bytes captured for field 1 (role F, fx_standin.h), its arguments the fields after
+ * it. On the host's stderr it is text neither side compares. Returns 1 (stdout), 2 (stderr) or 0 (any other stream: the
+ * stand-in's entry, logged as an effect). */
+static int stream_text(const event *e) {
+  if (e->k != E_EFFECT || !e->str || strcmp(e->str, "fprintf") || e->nfields < 2 || !e->fields[1].cap.done) return 0;
+  uint64_t s = field_low64(&e->fields[0]);
+  if (s == (uint64_t)(uintptr_t)stdout) return 1;
+  if (s == (uint64_t)(uintptr_t)stderr) return 2;
+  return 0;
+}
+
+/* The text a performed fprintf entry prints (stream_text). */
+static void stream_entry_text(const event *e, sbuf *out) {
+  const field *f = &e->fields[1];
+  char *fmt = calloc(f->cap.n + 1, 1);
+  if (f->cap.n) memcpy(fmt, f->cap.b, f->cap.n);
+  format_text(e, fmt, 2, out);
+  free(fmt);
 }
 
 /* ---------- the entry object ---------- */
@@ -1091,6 +1119,12 @@ static void shot(void) {
       sbuf t = {0};
       sb_reserve(&t, 0);
       format_entry(e, &t);
+      sb_put(&text, t.p, t.n);
+      free(t.p);
+    } else if (stream_text(e) == 1 && e->pred && !aborted) {
+      sbuf t = {0};
+      sb_reserve(&t, 0);
+      stream_entry_text(e, &t);
       sb_put(&text, t.p, t.n);
       free(t.p);
     }
