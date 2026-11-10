@@ -109,7 +109,7 @@ import sys
 import tempfile
 import threading
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from cqcheck.compare import HOST_EFFECTS
 from cqcheck import kept as kept_mod
@@ -2955,7 +2955,7 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
     caps = [os.environ.get(v) for v in _CAP_VARS]   # cq-3fjt: a cap the caller set changes results (cq-kcn5i: replay's too)
     if any(caps):
         key.append(caps)
-    got = None if os.environ.get("CQCHECK_KEEP_TRACES") else load_runs("eval", key)   # cq-kcn5i: a kept trace is run
+    got = None if os.environ.get("CQCHECK_KEEP_TRACES") else load_runs("eval", key, _interned)   # cq-kcn5i: a kept trace is run
     if got is not None:
         for i, d in zip(todo, got):
             out[i] = RunResult(side=side, sample=samples[i], **d)
@@ -2964,10 +2964,17 @@ def run_samples(lowered: Path, spec: DriverSpec, samples: Iterable[dict], side: 
         _run_todo(prog, samples, preps, theta, todo, out, side, jobs, timeout)
         done = [out[i] for i in todo]
         if not any(v.get("what") in ("timeout", "runner") for r in done for v in (r.violations or [])):
-            save_runs("eval", key, [{f: getattr(r, f) for f in _RESULT_FIELDS} for r in done])
+            save_runs("eval", key, ({f: getattr(r, f) for f in _RESULT_FIELDS} for r in done))
     hfns = json.loads((prog.parent / "handle_rets.json").read_text())   # cq-n6a0
     out = [resolve_handle_rets(r, hfns) if r.violations is not None else _drop_hn(r) for r in out]
     return out  # type: ignore[return-value]
+
+
+def _interned(d: dict) -> dict:
+    """A cached result with its kept list's rows and row lists shared (kept.intern_kept)."""
+    if isinstance(d.get("kept"), list):
+        d["kept"] = kept_mod.intern_kept(d["kept"])
+    return d
 
 
 _RUNS_VERSION = "eval-runs-9"   # cq-pckdl: kept rows of any role, merged in core.c; cq-92sw6: tape packed; replayed calls as uses with skip; rails by name (owner 2026-11-09)
@@ -2978,26 +2985,52 @@ _RESULT_FIELDS = ("outputs", "measured", "rotations", "kept", "clean", "violatio
 
 def _runs_path(kind: str, key: Any) -> Path:
     h = hashlib.sha256(json.dumps(key, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:32]
-    return _cache_root() / "runs" / kind / h[:2] / f"{h}.json.z"
+    return _cache_root() / "runs" / kind / h[:2] / f"{h}.jsonl.z"
 
 
-def load_runs(kind: str, key: Any) -> Optional[List[dict]]:
-    """The cached results of one batch (save_runs), or None."""
+_CHUNK = 1 << 20
+
+
+def load_runs(kind: str, key: Any, post: Optional[Callable[[dict], Any]] = None) -> Optional[List[Any]]:
+    """The cached results of one batch (save_runs), or None; each through `post` as it is read (cq-v0u99: one result
+    at a time is held as JSON reads it, never the batch)."""
     import zlib
     p = _runs_path(kind, key)
     try:
-        data = p.read_bytes()
+        f = open(p, "rb")
     except OSError:
         return None
-    return json.loads(zlib.decompress(data))
+    out: List[Any] = []
+    z = zlib.decompressobj()
+    tail = b""
+    with f:
+        while True:
+            chunk = f.read(_CHUNK)
+            data = z.decompress(chunk) if chunk else z.flush()
+            lines = (tail + data).split(b"\n")
+            tail = lines.pop()
+            for line in lines:
+                d = json.loads(line)
+                out.append(post(d) if post else d)
+            if not chunk:
+                break
+    if tail.strip():
+        d = json.loads(tail)
+        out.append(post(d) if post else d)
+    return out
 
 
-def save_runs(kind: str, key: Any, results: List[dict]) -> None:
+def save_runs(kind: str, key: Any, results: Iterable[dict]) -> None:
+    """One JSON line per result, compressed as it is written (cq-v0u99: never the batch as one string)."""
     import zlib
     p = _runs_path(kind, key)
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_name(f"{p.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-    tmp.write_bytes(zlib.compress(json.dumps(results, separators=(",", ":")).encode(), 1))
+    z = zlib.compressobj(1)
+    with open(tmp, "wb") as f:
+        for r in results:
+            f.write(z.compress(json.dumps(r, separators=(",", ":")).encode() + b"\n"))
+        f.write(z.flush())
     os.replace(tmp, p)
 
 

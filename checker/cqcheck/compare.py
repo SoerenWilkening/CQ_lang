@@ -1859,19 +1859,22 @@ def _check_ak(o_runs: List[RunResult], c_runs: List[RunResult], ended: Sequence[
             else:
                 f.append(None)       # past another activation's cut: unknown
         want[k] = f
-    cands: Dict[Any, Tuple] = {}
-    by_h = [kept_mod.KeptIndex(rr.kept) for rr in o_runs]
+    # each candidate's value in every run, the runs' indexes made one at a time (cq-v0u99: a batch's indexes at once held
+    # every run's tables together); a candidate some run does not keep is none
+    vals_of: Dict[Any, List[Any]] = {}
     for ent in (e for row, at in kept_mod.leaves(o_runs[0].kept)
                 if row.get("w") == "i1" and row.get("role") not in _NOT_AK_ROLES for e in kept_mod.rails(row, at)):
-        h = ent["h"]
-        vals = []
-        for m in by_h:
+        vals_of[ent["h"]] = []
+    for rr in o_runs:
+        m = kept_mod.KeptIndex(rr.kept)
+        for h in list(vals_of):
             e2 = m.get(h)
             if e2 is None:
-                break
-            vals.append(_masked(_int(e2.get("v")), "i1"))
-        else:
-            cands[h] = tuple(vals)
+                del vals_of[h]
+            else:
+                vals_of[h].append(_masked(_int(e2.get("v")), "i1"))
+        del m
+    cands: Dict[Any, Tuple] = {h: tuple(v) for h, v in vals_of.items()}
     fits = {k: [h for h, v in cands.items() if all(x is None or x == y for x, y in zip(want[k], v))]
             for k in keys}
     owner: Dict[Any, Tuple] = {}
@@ -1970,9 +1973,10 @@ def _leaks(k: str, o: RunResult, c: RunResult, cut: bool) -> List[str]:
     # a row of n rails (cqcheck.kept) is read as its rails one by one would be, without expanding it (cq-pckdl): its rails
     # share width, value, role and known flag, so only the counters below tell them apart
     for row, at in kept_mod.leaves(o.kept):
-        role, n = row.get("role"), kept_mod.count(row, at)
+        role = row.get("role")
         if role in _KEPT_ROLES or row.get("result"):
             continue
+        n = kept_mod.count(row, at)
         if role == "seed" and any(h in rotated for h in kept_mod.handles(row, at)):
             for ent in kept_mod.rails(row, at):  # rails a seed row holds that received an Ry are kept, the others not
                 if ent["h"] not in rotated and not (not LIVE_KNOWN_IS_LEAK and (ent.get("known") is True or role == "seed")):

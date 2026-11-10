@@ -33,6 +33,117 @@ from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tupl
 Row = Dict[str, Any]
 
 
+# Interning (cq-v0u99): a run's patterns repeat a few thousand distinct rows half a million times (swscanf: 514902 rows
+# of 23764 patterns, 4317 distinct rows, 511 distinct row lists), and the samples of one path repeat them again. Every
+# row and every pattern's row list is one shared object per distinct content in the process, never copied: no reader
+# changes a row or a row list in place (each change makes a new one: rail, split, mark_results). A Pat carries what
+# the readers derive from its rows (offsets, widths, digest terms), computed once.
+_ROWS: Dict[Tuple, Row] = {}
+_PATS: Dict[Tuple, "Pat"] = {}
+_INTERN_MAX = 1 << 21     # entries of either table; past it both start afresh (sharing is lost, never a value)
+
+
+def _row_key(e: Row) -> Optional[Tuple]:
+    try:
+        k = (tuple(e.items()), tuple(map(type, e.values())))    # the types tell True from 1
+        hash(k)
+        return k
+    except TypeError:
+        return None
+
+
+def intern_row(e: Row) -> Row:
+    """The one row of the process equal to e (same fields in the same order, same values and value types)."""
+    k = _row_key(e)
+    if k is None:
+        return e
+    r = _ROWS.get(k)
+    if r is None:
+        if len(_ROWS) >= _INTERN_MAX:
+            _ROWS.clear()
+            _PATS.clear()
+        r = _ROWS[k] = e
+    return r
+
+
+class Pat(list):
+    """A pattern's rows (a list, as JSON reads it), interned; its derived tables made on first use."""
+
+    __slots__ = ("_offs", "_first", "_digest", "_width", "_ids")
+
+    def ids(self) -> frozenset:
+        """The ids of its rows."""
+        try:
+            return self._ids
+        except AttributeError:
+            self._ids = frozenset(id(r) for r in self)
+            return self._ids
+
+    def offs(self) -> Dict[int, List[Row]]:
+        """Relative handle -> the rows that hold it, in row order."""
+        try:
+            return self._offs
+        except AttributeError:
+            d: Dict[int, List[Row]] = {}
+            for r in self:
+                for o in _offsets(r):
+                    d.setdefault(o, []).append(r)
+            self._offs = d
+            return d
+
+    def first(self) -> Tuple[Dict[int, Row], int]:
+        """(relative handle -> the first row that holds it, the largest relative handle or 0)."""
+        try:
+            return self._first
+        except AttributeError:
+            f = {o: rs[0] for o, rs in self.offs().items()}
+            self._first = (f, max(f, default=0))
+            return self._first
+
+    def width(self) -> Dict[int, Any]:
+        """Relative handle -> the width of the first row that holds it."""
+        try:
+            return self._width
+        except AttributeError:
+            self._width = {o: r.get("w") for o, r in self.first()[0].items()}
+            return self._width
+
+    def digest(self) -> List[Tuple[Any, int, Tuple[int, ...]]]:
+        """Per width, in order of first appearance: (width, rails of one use, the sum of _geo(r, h, n, step) over the
+        rows of that width mod _P, for each r of _BASES)."""
+        try:
+            return self._digest
+        except AttributeError:
+            acc: Dict[Any, List[int]] = {}
+            for row in self:
+                a = acc.setdefault(row.get("w"), [0] + [0] * len(_BASES))
+                a[0] += row.get("n", 1)
+                for j, r in enumerate(_BASES):
+                    a[1 + j] = (a[1 + j] + _geo(r, row["h"], row.get("n", 1), row.get("step", 0))) % _P
+            self._digest = [(w, a[0], tuple(a[1:])) for w, a in acc.items()]
+            return self._digest
+
+
+def intern_pat(rows: Sequence[Row], interned: bool = False) -> Pat:
+    """The one Pat of the process with these rows (interned: the rows are intern_row's already)."""
+    if not interned:
+        rows = [intern_row(r) for r in rows]
+    k = tuple(id(r) for r in rows)
+    p = _PATS.get(k)
+    if p is None or len(p) != len(rows) or any(a is not b for a, b in zip(p, rows)):
+        if len(_PATS) >= _INTERN_MAX:
+            _PATS.clear()
+        p = _PATS[k] = Pat(rows)
+    return p
+
+
+class PatEntry(dict):
+    """A pattern entry ({"pat", "at"[, "skip"]}, a dict as JSON reads it) that keeps its Uses once made (uses_of).
+    Its "at" and "skip" are never changed after the Builder made it."""
+
+    __slots__ = ("_uses",)
+
+
 class Builder:
     """The kept list of one exit event, from its entries one at a time."""
 
@@ -50,14 +161,19 @@ class Builder:
                 e[f] = self.strs.setdefault(x, x)
         return e
 
+    def _pat(self, rows: Sequence[Row]) -> "Pat":
+        """A pattern's rows, shared with every equal row list (intern_pat): its rows' handles are relative, so they
+        recur; a row of its own (a distinct handle each) is not interned."""
+        return intern_pat([intern_row(self._own(r)) for r in rows], interned=True)
+
     def add(self, e: Row) -> None:
         if "pat" in e:                       # a pattern entry of a list built before (a cached run)
-            p = {"pat": e["pat"], "at": list(e["at"])}
+            p = PatEntry(pat=self._pat(e["pat"]), at=list(e["at"]))
             if e.get("skip"):
                 p["skip"] = list(e["skip"])
             self.order.append(p)
         elif "def" in e:
-            p = {"pat": [self._own(r) for r in e["rows"]], "at": []}
+            p = PatEntry(pat=self._pat(e["rows"]), at=[])
             self.pats[e["def"]] = p
             self.order.append(p)
         elif "use" in e:
@@ -75,6 +191,18 @@ class Builder:
             if "skip" in p:
                 p["skip"].sort(key=lambda t: t[0])
         return sorted(self.rows, key=lambda e: e["h"]) + [p for p in self.order if p["at"]]
+
+
+def intern_kept(kept: List[Row]) -> List[Row]:
+    """A kept list as JSON read it back (a cached run) with its patterns' rows and row lists shared (intern_pat) and its
+    pattern entries PatEntry, entry and key order kept."""
+    out: List[Row] = []
+    for e in kept:
+        if isinstance(e, dict) and isinstance(e.get("pat"), list):
+            out.append(PatEntry((k, intern_pat(v) if k == "pat" else v) for k, v in e.items()))
+        else:
+            out.append(e)
+    return out
 
 
 def build(entries: Iterable[Row]) -> List[Row]:
@@ -96,7 +224,7 @@ def _run(u: Any) -> Tuple[int, int, int]:
 class Uses:
     """The bases of one pattern (its "at" and "skip"), as leaves() hands them to count, handles and rails."""
 
-    __slots__ = ("at", "skip", "n", "skipped")
+    __slots__ = ("at", "skip", "n", "skipped", "pat", "rowskip")
 
     def __init__(self, at: Sequence[Any], skip: Optional[Sequence[Any]] = None):
         self.at = at
@@ -108,6 +236,22 @@ class Uses:
             if rels:
                 for o in rels:
                     self.skipped[o] = self.skipped.get(o, 0) + _run(u)[1]
+        self.pat: Optional[Pat] = None
+        self.rowskip: Optional[Dict[int, int]] = None   # id(row of pat) -> the rails of it the bases leave out
+
+    def _rowskip(self, row: Row) -> Optional[int]:
+        """What count subtracts for `row`, from the pattern's offset table (None: row is not one of the pattern's). Only
+        the rows a base leaves rails of are held (a run keeps a Uses per pattern entry)."""
+        if self.pat is None or id(row) not in self.pat.ids():
+            return None
+        if self.rowskip is None:
+            offs = self.pat.offs()
+            rs: Dict[int, int] = {}
+            for o, m in self.skipped.items():
+                for i in {id(r) for r in offs.get(o, ())}:    # each row once, as count reads each row once
+                    rs[i] = rs.get(i, 0) + m
+            self.rowskip = rs
+        return self.rowskip.get(id(row), 0)
 
     def __len__(self) -> int:
         return self.n
@@ -125,7 +269,17 @@ class Uses:
 
 
 def uses_of(e: Row) -> Uses:
-    return Uses(e["at"], e.get("skip"))
+    if isinstance(e, PatEntry):
+        try:
+            return e._uses
+        except AttributeError:
+            pass
+    u = Uses(e["at"], e.get("skip"))
+    if isinstance(e.get("pat"), Pat):
+        u.pat = e["pat"]
+    if isinstance(e, PatEntry):
+        e._uses = u
+    return u
 
 
 def _uses(at: Any) -> Uses:
@@ -151,8 +305,11 @@ def count(row: Row, at: Optional[Any] = None) -> int:
     u = _uses(at)
     n = row.get("n", 1) * len(u)
     if u.skipped:
-        offs = _offsets(row)
-        n -= sum(m for o, m in u.skipped.items() if o in offs)
+        m = u._rowskip(row)
+        if m is None:
+            offs = _offsets(row)
+            m = sum(m for o, m in u.skipped.items() if o in offs)
+        n -= m
     return n
 
 
@@ -241,53 +398,82 @@ def split_from(row: Row, k: int) -> Row:
     return out
 
 
+_SMALL_RUN = 16   # a row of at most this many rails is looked up by its handles (KeptIndex.small)
+
+
 class KeptIndex:
-    """Handle -> the entry of that rail in one run's kept list, without expanding its rows or patterns."""
+    """Handle -> the entry of that rail in one run's kept list, without expanding its patterns or long rows. No handle is
+    in two places (module docstring), so a lookup has one answer whichever table holds it."""
 
     def __init__(self, kept: Optional[Sequence[Row]]):
         self.one: Dict[int, Row] = {}
         runs: Dict[Tuple[int, int], List[Tuple[int, int, Row]]] = {}
+        small: List[Tuple[int, int, Row]] = []
         self.pats: List[Tuple[Dict[int, Row], Uses, int]] = []
         for e in kept or []:
             if not isinstance(e, dict):
                 continue
             if "pat" in e:
-                offs: Dict[int, Row] = {}
-                for r in e["pat"]:
-                    for o in _offsets(r):
-                        offs.setdefault(o, r)
-                self.pats.append((offs, uses_of(e), max(offs, default=0)))
+                pat = e["pat"]
+                offs, span = (pat if isinstance(pat, Pat) else Pat(pat)).first()   # shared by every use of an interned one
+                self.pats.append((offs, uses_of(e), span))
             elif e.get("n", 1) <= 1:
                 self.one.setdefault(e["h"], e)     # first match wins, as a scan of the list
+            elif e["n"] <= _SMALL_RUN:
+                small.append((e["step"], len(small), e))
             else:
                 st = e["step"]
                 runs.setdefault((st, e["h"] % st), []).append((e["h"], e["h"] + (e["n"] - 1) * st, e))
+        # cq-v0u99: a short row's rails by handle (a scan of every step's runs per lookup cost 300 dict reads for 302
+        # steps); by ascending step, as the scan went
+        self.small: Dict[int, Tuple[int, Row]] = {}
+        for st, _, e in sorted(small, key=lambda t: (t[0], t[1])):
+            for h in range(e["h"], e["h"] + e["n"] * st, st):
+                self.small.setdefault(h, (st, e))
         self.runs: Dict[Tuple[int, int], Tuple[List[int], List[Tuple[int, int, Row]]]] = {}
         for k, lst in runs.items():
             lst.sort(key=lambda t: t[0])
             self.runs[k] = ([t[0] for t in lst], lst)
         self.steps = sorted({k[0] for k in self.runs})
-        self._starts: Optional[Tuple[List[int], List[Tuple[int, int, int, frozenset]], List[int],
-                                     List[Tuple[int, int, int, frozenset]], List[int]]] = None
+        self._starts: Optional[Tuple] = None
 
     def _uses(self):
-        """Every use of every pattern: the single bases ascending (with their pattern index and skip), and the runs
-        by first base with the furthest handle any run up to each reaches (a run's hull may hold other uses)."""
+        """Every use of every pattern: the single bases ascending (with their pattern index and skip), and every base of
+        every run ascending, with the pattern index, the run's skip, how far above it a handle may lie for this base to
+        be its run's nearest base at or below it, and the furthest handle the hulls of the bases up to it reach. Runs
+        are cut into their bases (cq-v0u99): a run's hull spans its whole step range (a replayed call's run steps over
+        occurrences, 2^33 handles), so a walk over run hulls read every run below a handle."""
         if self._starts is None:
+            from array import array
             one, many = [], []
+            skips: List[frozenset] = [frozenset()]
+            sk_ix: Dict[int, int] = {}
             for i, (_, u, span) in enumerate(self.pats):
                 for b, n, st, sk in u.runs():
                     if n == 1:
                         one.append((b, i, 0, sk))
                     else:
-                        many.append((b, i, n, st, sk, b + (n - 1) * st + span))
+                        j = 0
+                        if sk:
+                            j = sk_ix.get(id(sk))
+                            if j is None:
+                                j = sk_ix[id(sk)] = len(skips)
+                                skips.append(sk)
+                        for k in range(n):
+                            many.append((b + k * st, i, j, st if k < n - 1 else -1, span))
             one.sort(key=lambda t: t[0])
             many.sort(key=lambda t: t[0])
-            reach, m = [], -1
-            for t in many:
-                m = max(m, t[5])
+            base, pix, six, lim, reach = array("q"), array("q"), array("q"), array("q"), array("q")
+            m = -1
+            for b, i, j, st, span in many:
+                base.append(b)
+                pix.append(i)
+                six.append(j)
+                lim.append(st)
+                m = max(m, b + span)
                 reach.append(m)
-            self._starts = ([t[0] for t in one], one, [t[0] for t in many], many, reach)
+            del many
+            self._starts = ([t[0] for t in one], one, base, pix, six, lim, reach, skips)
         return self._starts
 
     def get(self, h: Any) -> Optional[Row]:
@@ -296,6 +482,9 @@ class KeptIndex:
         e = self.one.get(h)
         if e is not None:
             return e
+        sm = self.small.get(h)
+        if sm is not None:
+            return rail(sm[1], h)
         for st in self.steps:
             r = self.runs.get((st, h % st))
             if r is None:
@@ -304,7 +493,7 @@ class KeptIndex:
             if i >= 0 and r[1][i][1] >= h:
                 return rail(r[1][i][2], h)
         if self.pats:
-            bases, one, starts, many, reach = self._uses()
+            bases, one, base, pix, six, lim, reach, skips = self._uses()
             i = bisect.bisect_right(bases, h) - 1
             # single uses do not overlap (each covers one stretch of consecutive live rails, and none spans a
             # replayed call's), so only the last base at or below h can hold it; rows of their own lie between uses
@@ -314,18 +503,17 @@ class KeptIndex:
                     r = self.pats[p][0].get(h - b)
                     if r is not None:
                         return rail(r, h)
-            j = bisect.bisect_right(starts, h) - 1
-            while j >= 0 and reach[j] >= h:   # every run whose hull may hold h
-                b, p, n, st, sk, end = many[j]
+            j = bisect.bisect_right(base, h) - 1
+            while j >= 0 and reach[j] >= h:   # every base whose hull may hold h: of each run, its nearest base at or below h
+                b = base[j]
+                o = h - b
+                if lim[j] < 0 or o < lim[j]:
+                    p = pix[j]
+                    if o <= self.pats[p][2] and o not in skips[six[j]]:
+                        r = self.pats[p][0].get(o)
+                        if r is not None:
+                            return rail(r, h)
                 j -= 1
-                if end < h:
-                    continue
-                k = min((h - b) // st, n - 1)
-                o = h - (b + k * st)
-                if o not in sk:
-                    r = self.pats[p][0].get(o)
-                    if r is not None:
-                        return rail(r, h)
         return None
 
 
@@ -371,7 +559,7 @@ def mark_results(kept: Optional[Sequence[Row]], results: Iterable[int]) -> List[
                 out.append(e)
                 continue
             if rest:
-                out.append(dict({"pat": e["pat"], "at": rest}, **({"skip": skip} if skip else {})))
+                out.append(PatEntry({"pat": e["pat"], "at": rest}, **({"skip": skip} if skip else {})))
             for b in sorted(hit):
                 for r in e["pat"]:
                     moved = dict(r, h=r["h"] + b)
@@ -388,15 +576,24 @@ _P = (1 << 61) - 1
 _BASES = (0x5DEECE66D, 0x2545F4914F6CDD1D % _P)
 
 
+_QINV: Dict[Tuple[int, int], Tuple[int, Optional[int]]] = {}   # (r, step) -> (r^step, (r^step - 1)^-1) mod _P
+
+
 def _geo(r: int, h: int, n: int, st: int) -> int:
     """sum of r^(h + i st) for i < n, mod _P."""
     first = pow(r, h, _P)
     if n == 1:
         return first
-    q = pow(r, st, _P)
+    t = _QINV.get((r, st))
+    if t is None:
+        q = pow(r, st, _P)
+        if len(_QINV) >= _INTERN_MAX:
+            _QINV.clear()
+        t = _QINV[(r, st)] = (q, None if q == 1 else pow(q - 1, _P - 2, _P))
+    q, inv = t
     if q == 1:
         return first * n % _P
-    return first * (pow(q, n, _P) - 1) % _P * pow(q - 1, _P - 2, _P) % _P
+    return first * (pow(q, n, _P) - 1) % _P * inv % _P
 
 
 def handle_digest(kept: Optional[Sequence[Row]]) -> Tuple:
@@ -412,16 +609,15 @@ def handle_digest(kept: Optional[Sequence[Row]]) -> Tuple:
         if "pat" in e:
             u = uses_of(e)
             sums = [sum(_geo(r, b, n, st) for b, n, st, _ in u.runs()) % _P for r in _BASES]
-            for row in e["pat"]:
-                a = acc.setdefault(row.get("w"), [0, 0, 0])
-                a[0] += row.get("n", 1) * len(u)
-                for j, r in enumerate(_BASES):
-                    a[1 + j] = (a[1 + j] + sums[j] * _geo(r, row["h"], row.get("n", 1), row.get("step", 0))) % _P
+            pat = e["pat"] if isinstance(e["pat"], Pat) else Pat(e["pat"])
+            # each row adds sums * _geo(row) at its width: per width, sums * (the rows' sum), made once per pattern
+            for w, cnt, gs in pat.digest():
+                a = acc.setdefault(w, [0, 0, 0])
+                a[0] += cnt * len(u)
+                for j in range(len(_BASES)):
+                    a[1 + j] = (a[1 + j] + sums[j] * gs[j]) % _P
             if u.skip:                               # less the (handle, width) of each rail a use leaves out
-                width = {}
-                for row in e["pat"]:
-                    for o in _offsets(row):
-                        width.setdefault(o, row.get("w"))
+                width = pat.width()
                 for b, n, st, sk in u.runs():
                     for o in sk:
                         a = acc.setdefault(width.get(o), [0, 0, 0])
