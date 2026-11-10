@@ -1704,11 +1704,9 @@ struct Uncompute::Impl {
         return reach.count(v->getParent()) || (v->getParent() == LB && cq::comesBefore(load, v));
       });
     }
+    // v is one of bb's instructions before `at` (cq-g3h1i: by order, not by a scan of the block up to `at`).
     auto before = [&](const Instruction *v) {
-      for (auto it = bb->begin(); it != at; ++it)
-        if (&*it == v)
-          return true;
-      return false;
+      return v->getParent() == bb && (at == bb->end() || (v != &*at && cq::comesBefore(v, &*at)));
     };
     bool linear = LB == bb && (at == bb->end() || cq::comesBefore(load, &*at));
     if (linear) {
