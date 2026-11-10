@@ -35,6 +35,7 @@
 //    A constrained FP op (rule 23) is recomputed in the mode it was lowered with and with the host
 //    environment restored after it (fromConstrained).
 #include "SpineInternal.h"
+#include "cq/Order.h"
 
 #include "llvm/ADT/SetVector.h"
 #include "llvm/IR/CFG.h"
@@ -57,7 +58,7 @@ bool outAvailable(Shared &sh, const Instruction *def) {
     return false;
   if (def->getParent() == cur) {
     BasicBlock::iterator ip = sh.B.GetInsertPoint();
-    return ip == cur->end() || def->comesBefore(&*ip);
+    return ip == cur->end() || cq::comesBefore(def, &*ip);
   }
   SmallPtrSet<BasicBlock *, 8> seen;
   for (BasicBlock *b = cur->getSinglePredecessor(); b && seen.insert(b).second; b = b->getSinglePredecessor())
@@ -74,7 +75,7 @@ bool outAvailable(Shared &sh, const Instruction *def) {
 bool outBefore(const Instruction *a, const Instruction *b) {
   const BasicBlock *ab = a->getParent(), *bb = b->getParent();
   if (ab == bb)
-    return a != b && a->comesBefore(b);
+    return a != b && cq::comesBefore(a, b);
   SmallPtrSet<const BasicBlock *, 16> seen;
   SmallVector<const BasicBlock *, 16> work{bb};
   seen.insert(bb);

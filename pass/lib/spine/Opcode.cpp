@@ -15,6 +15,7 @@
 #include <optional>
 
 #include "cq/Abi.h"
+#include "cq/Order.h"
 #include "cq/Calls.h"
 #include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/PostDominators.h"
@@ -1628,7 +1629,7 @@ void atomicRuleSix(LoweringContext &ctx, AtomicRMWInst &I) {
     if (!t || unc || t->op != fwdOp || c->getParent() != ctx.B().GetInsertBlock() || c->getArgOperand(0) != h ||
         c->arg_size() != 2 || c->getArgOperand(1) != v.v)
       continue;
-    if (!yp || yp->comesBefore(c))
+    if (!yp || cq::comesBefore(yp, c))
       yp = c;
   }
   if (!yp)
@@ -1696,7 +1697,7 @@ void ruleSixAfter(LoweringContext &ctx, Instruction &I) {
     for (User *u : c->users()) {
       auto *q = dyn_cast<SelectInst>(u);
       if (!q || q == sel || q->getCondition() != c || q->getTrueValue() != B || q->getFalseValue() != A ||
-          !q->comesBefore(sel) || A == B)
+          !cq::comesBefore(q, sel) || A == B)
         continue;
       if (!sel->getType()->isIntegerTy() || !cleanable(ctx, A) || !cleanable(ctx, B) ||
           !deadAtCleanup(ctx, A, ctx.operand(A).v, &I, {q}) || !deadAtCleanup(ctx, B, ctx.operand(B).v, &I, {q}))

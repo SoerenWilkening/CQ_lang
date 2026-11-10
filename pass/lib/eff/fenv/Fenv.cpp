@@ -113,6 +113,7 @@
 // (a libm intrinsic: its clone's mode parameter is the same owed name). Open (cq-v1fu, needs the loop module): a
 // quantum change inside a classically bounded loop (its loop-carried state).
 #include "cq/Effects.h"
+#include "cq/Order.h"
 
 #include <array>
 #include <map>
@@ -1327,7 +1328,7 @@ void settle(LoweringContext &ctx, State &st, const Instruction &I) {
 // in between that may change it)?
 bool cacheValid(const State &st, const Instruction &I) {
   if (!st.modeVal || !st.modeValAt || st.modeValAt->getParent() != I.getParent() ||
-      !st.modeValAt->comesBefore(&I))
+      !cq::comesBefore(st.modeValAt, &I))
     return false;
   for (const Instruction *n = st.modeValAt->getNextNode(); n && n != &I; n = n->getNextNode()) {
     auto *CB = dyn_cast<CallBase>(n);

@@ -43,6 +43,7 @@
 // References: Bennett.jl 824458d src/bennett_transform.jl:_bennett_default replays a gate list in reverse
 // order, each gate by its inverse; BACKEND_ABI 1.13 cites src/circuit.jl:adjoint for the backend's half.
 #include "cq/Effects.h"
+#include "cq/Order.h"
 #include "Split.h"
 
 #include "cq/Abi.h"
@@ -245,7 +246,7 @@ void checkExclusiveMarkers(Function &F, const TaintInfo &T, const DominatorTree 
       auto paired = [&](Instruction *m, decltype(f1) &f, decltype(r1) &r, decltype(f1) &fo, decltype(r1) &ro) {
         BasicBlock *b = m->getParent();
         for (Instruction &I : *b)
-          if (delta(I) == -k && (k > 0 ? m->comesBefore(&I) : I.comesBefore(m)))
+          if (delta(I) == -k && (k > 0 ? cq::comesBefore(m, &I) : cq::comesBefore(&I, m)))
             return true;
         for (Instruction &I : instructions(F))
           if (delta(I) == -k && I.getParent() != b && own(I.getParent(), f, r, fo, ro) &&

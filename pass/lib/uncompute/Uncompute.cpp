@@ -140,6 +140,7 @@
 // identical to the forward by construction. Rule 6 has no forward call to copy from and declares its
 // inverse template and copy through abi::declare.
 #include "cq/Uncompute.h"
+#include "cq/Order.h"
 
 #include <algorithm>
 #include <functional>
@@ -633,7 +634,7 @@ struct Uncompute::Impl {
   // a executes after b on some path (acyclic reading).
   static bool after(const Instruction *a, const Instruction *b) {
     if (a->getParent() == b->getParent())
-      return b->comesBefore(a);
+      return cq::comesBefore(b, a);
     return reaches(b->getParent(), a->getParent());
   }
 
@@ -940,7 +941,7 @@ struct Uncompute::Impl {
         if (auto *i = dyn_cast<Instruction>(rails[m].handle))
           out.push_back(i);
       for (Value *e : cg.extra)
-        if (auto *i = dyn_cast<Instruction>(e); i && i->getParent() && !(i->getParent() == cg.fwd->getParent() && i->comesBefore(cg.fwd)))
+        if (auto *i = dyn_cast<Instruction>(e); i && i->getParent() && !(i->getParent() == cg.fwd->getParent() && cq::comesBefore(i, cg.fwd)))
           out.push_back(i);
     }
     for (unsigned w : r.writes)
@@ -964,7 +965,7 @@ struct Uncompute::Impl {
   Pos afterLatest(BasicBlock *bb, ArrayRef<Instruction *> as, RailId g) {
     Instruction *latest = nullptr;
     for (Instruction *a : as)
-      if (a->getParent() == bb && (!latest || latest->comesBefore(a)))
+      if (a->getParent() == bb && (!latest || cq::comesBefore(latest, a)))
         latest = a;
     Instruction *before;
     if (!latest) {
@@ -1209,7 +1210,7 @@ struct Uncompute::Impl {
         byBlock[evs[i].at->getParent()].push_back(i);
     for (auto &kv : byBlock)
       llvm::stable_sort(kv.second, [&](unsigned x, unsigned y) {
-        return evs[x].at != evs[y].at && evs[x].at->comesBefore(evs[y].at);
+        return evs[x].at != evs[y].at && cq::comesBefore(evs[x].at, evs[y].at);
       });
     std::vector<PHINode *> made;
     std::vector<Instruction *> ops;   // and/xor made here
@@ -1258,7 +1259,7 @@ struct Uncompute::Impl {
       SmallVector<unsigned, 4> es;
       if (auto it = byBlock.find(b); it != byBlock.end())
         for (unsigned i : it->second)
-          if (!limit || (evs[i].at != limit && evs[i].at->comesBefore(limit)))
+          if (!limit || (evs[i].at != limit && cq::comesBefore(evs[i].at, limit)))
             es.push_back(i);
       int lastSet = -1;
       for (unsigned k = 0; k < es.size(); ++k)
@@ -1684,7 +1685,7 @@ struct Uncompute::Impl {
             if (reach.insert(s).second)
               work.push_back(s);
       return any_of(versions, [&](const Instruction *v) {
-        return reach.count(v->getParent()) || (v->getParent() == LB && load->comesBefore(v));
+        return reach.count(v->getParent()) || (v->getParent() == LB && cq::comesBefore(load, v));
       });
     }
     auto before = [&](const Instruction *v) {
@@ -1693,10 +1694,10 @@ struct Uncompute::Impl {
           return true;
       return false;
     };
-    bool linear = LB == bb && (at == bb->end() || load->comesBefore(&*at));
+    bool linear = LB == bb && (at == bb->end() || cq::comesBefore(load, &*at));
     if (linear) {
       for (const Instruction *v : versions)
-        if (v->getParent() == LB && load->comesBefore(v) && before(v))
+        if (v->getParent() == LB && cq::comesBefore(load, v) && before(v))
           return true;
       return false;
     }
@@ -1720,7 +1721,7 @@ struct Uncompute::Impl {
     for (const Instruction *v : versions) {
       const BasicBlock *VB = v->getParent();
       if (VB == LB) {
-        if (load->comesBefore(v))
+        if (cq::comesBefore(load, v))
           return true;
       } else if (VB == bb) {
         if (fwd.count(bb) && before(v))
@@ -1884,7 +1885,7 @@ struct Uncompute::Impl {
     if (r.cleanup && r.creator != kNone &&
         any_of(r.cleanup->reads, [&](RailId x) {
           auto *h = dyn_cast<Instruction>(rails[x].handle);
-          return h && (!dominates(h->getParent(), pos.bb) || (h->getParent() == pos.bb && !h->comesBefore(pos.before)));
+          return h && (!dominates(h->getParent(), pos.bb) || (h->getParent() == pos.bb && !cq::comesBefore(h, pos.before)));
         })) {
       for (RailId x : r.cleanup->reads)
         llvm::erase(rails[x].cleanupReaders, g);
@@ -1895,7 +1896,7 @@ struct Uncompute::Impl {
       evs.push_back({pos.before, false});
     bool gated = false;
     auto beforePos = [&](const Instruction *e) {
-      return e->getParent() == pos.bb ? (e != pos.before && e->comesBefore(pos.before)) : reaches(e->getParent(), pos.bb);
+      return e->getParent() == pos.bb ? (e != pos.before && cq::comesBefore(e, pos.before)) : reaches(e->getParent(), pos.bb);
     };
     bool written = false;
     for (auto [e, kind] : barriers(g)) {
@@ -2227,7 +2228,7 @@ struct Uncompute::Impl {
     llvm::stable_sort(out, [&](unsigned a, unsigned b) {
       const Instruction *x = records[a].forward, *y = records[b].forward;
       if (x->getParent() == y->getParent())
-        return x->comesBefore(y);
+        return cq::comesBefore(x, y);
       return reaches(x->getParent(), y->getParent()) && !reaches(y->getParent(), x->getParent());
     });
   }
@@ -2513,7 +2514,7 @@ struct Uncompute::Impl {
       if (!A)
         return false;
       if (A == P) {
-        if (!a->comesBefore(point))
+        if (!cq::comesBefore(a, point))
           return false;
         continue;
       }
@@ -2559,7 +2560,7 @@ struct Uncompute::Impl {
     bool earlier = false;
     for (Instruction *a : as) {
       if (a->getParent() == point->getParent()) {
-        if (!a->comesBefore(point))
+        if (!cq::comesBefore(a, point))
           return false;
         continue;
       }
@@ -2677,7 +2678,7 @@ struct Uncompute::Impl {
       for (Instruction *e : evs) {
         if (!e->getParent() || !afterRegion(d, e->getParent()))
           continue;
-        bool violated = e->getParent() == pos.bb ? !(pos.before == e || pos.before->comesBefore(e))
+        bool violated = e->getParent() == pos.bb ? !(pos.before == e || cq::comesBefore(pos.before, e))
                                                  : reaches(e->getParent(), pos.bb);
         if (violated && !barrier) {
           barrier = e;
@@ -2698,7 +2699,7 @@ struct Uncompute::Impl {
         for (Instruction *v : versions) {
           if (!v->getParent() || !afterRegion(d, v->getParent()))
             continue;
-          if (v->getParent() == pos.bb ? !(pos.before == v || pos.before->comesBefore(v))
+          if (v->getParent() == pos.bb ? !(pos.before == v || cq::comesBefore(pos.before, v))
                                        : reaches(v->getParent(), pos.bb)) {
             barrier = v;
             break;
@@ -3226,7 +3227,7 @@ Value *Uncompute::negatedAtomOf(Value *flag) const {
     return nullptr;
   // A gate on g since the flag was computed: g no longer holds what the flag negates.
   for (Instruction *h : I.rails[gt->second].hits)
-    if (h->getParent() == x->getParent() && x->comesBefore(h))
+    if (h->getParent() == x->getParent() && cq::comesBefore(x, h))
       return nullptr;
   return g;
 }
@@ -3473,7 +3474,7 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
       continue;
     bool ok = true;
     for (Instruction *a : I.anchors(g))
-      if (a->getParent() != P || !a->comesBefore(point) ||
+      if (a->getParent() != P || !cq::comesBefore(a, point) ||
           (!isa<CallBase>(a) && !I.emitted.count(a) && !I.isMergeHandle(a))) {
         ok = false;
         break;
@@ -3669,7 +3670,7 @@ void Uncompute::resolveAt(Instruction *P, ArrayRef<RailId> list) {
     Impl::Rail &x = I.rails[g];
     const BasicBlock *D = I.defBlock(g);
     const Instruction *def = x.creator != kNone ? I.records[x.creator].forward : dyn_cast<Instruction>(x.handle);
-    if (!Impl::dominates(D, Pb) || (D == Pb && def && !def->comesBefore(P)))
+    if (!Impl::dominates(D, Pb) || (D == Pb && def && !cq::comesBefore(def, P)))
       internalError("uncompute: resolveAt: the definition of " + describe(x.handle) + " does not dominate the point", P);
     for (Instruction *a : I.anchors(g))
       if (a == P || Impl::after(a, P))
