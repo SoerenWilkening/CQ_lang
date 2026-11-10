@@ -26,6 +26,7 @@
 #include "cq/Effects.h"
 #include "cq/Lowering.h"
 #include "cq/Loops.h"
+#include "cq/Order.h"
 #include "cq/Taint.h"
 #include "cq/Verify.h"
 #include "calls/LibCalls.h"
@@ -1035,6 +1036,10 @@ std::vector<const cq::Specialization *> constructionOrder(const cq::TaintInfo &T
 
 struct CQLowerPass : PassInfoMixin<CQLowerPass> {
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM) {
+    // cq-g3h1i: the order labels (cq/Order.h) live for one run.
+    struct OrderScope {
+      ~OrderScope() { cq::orderReset(); }
+    } orderScope;
     cq::TaintOptions TO = readTaintOptions();
     // Read before the identity exit so a malformed flag fails on every module.
     cq::loops::KOptions KO = readKOptions();

@@ -34,7 +34,38 @@ unsigned Bdd::cofactor(unsigned f, unsigned v, bool val) {
     return f;
   if (var(f) == v)
     return val ? hi(f) : lo(f);
-  return mk(var(f), cofactor(lo(f), v, val), cofactor(hi(f), v, val));
+  // cq-g3h1i: memoized per call (a stamp per node), so the walk is linear in f's nodes and not in its paths.
+  // A node is still made the first time its children are done, low child first: the node numbers are the
+  // unmemoized walk's.
+  if (++stamp == 0) {
+    std::fill(seenAt.begin(), seenAt.end(), 0u);
+    stamp = 1;
+  }
+  const unsigned call = stamp;
+  if (seenAt.size() < nodes.size()) {   // nodes made during the walk are results, never looked up
+    seenAt.resize(nodes.size(), 0u);
+    memoVal.resize(nodes.size(), 0u);
+  }
+  struct Walk {
+    Bdd &m;
+    unsigned v, call;
+    bool val;
+    unsigned go(unsigned n) {
+      if (m.terminal(n) || m.var(n) > v)
+        return n;
+      if (m.var(n) == v)
+        return val ? m.hi(n) : m.lo(n);
+      if (m.seenAt[n] == call)
+        return m.memoVal[n];
+      unsigned l = go(m.lo(n));
+      unsigned h = go(m.hi(n));
+      unsigned r = m.mk(m.var(n), l, h);
+      m.seenAt[n] = call;
+      m.memoVal[n] = r;
+      return r;
+    }
+  } walk{*this, v, call, val};
+  return walk.go(f);
 }
 
 unsigned Bdd::ite(unsigned f, unsigned g, unsigned h) {
@@ -108,14 +139,25 @@ unsigned Bdd::restrict(unsigned f, unsigned c) {
 }
 
 void Bdd::support(unsigned f, std::set<unsigned> &out) const {
+  // cq-g3h1i: the visited set is a stamp per node, and a variable goes into `out` once per run of equal ones.
+  if (++stamp == 0) {
+    std::fill(seenAt.begin(), seenAt.end(), 0u);
+    stamp = 1;
+  }
+  if (seenAt.size() < nodes.size()) {
+    seenAt.resize(nodes.size(), 0u);
+    memoVal.resize(nodes.size(), 0u);
+  }
   std::vector<unsigned> stack{f};
-  std::set<unsigned> seen;
+  unsigned last = NoVar;
   while (!stack.empty()) {
     unsigned n = stack.back();
     stack.pop_back();
-    if (terminal(n) || !seen.insert(n).second)
+    if (terminal(n) || seenAt[n] == stamp)
       continue;
-    out.insert(var(n));
+    seenAt[n] = stamp;
+    if (var(n) != last)
+      out.insert(last = var(n));
     stack.push_back(lo(n));
     stack.push_back(hi(n));
   }

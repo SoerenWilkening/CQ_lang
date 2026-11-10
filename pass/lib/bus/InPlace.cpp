@@ -20,6 +20,7 @@
 #include "BusInternal.h"
 
 #include "cq/Abi.h"
+#include "cq/Order.h"
 #include "cq/Predicate.h"
 #include "../spine/SpineInternal.h"
 #include "llvm/ADT/DenseMap.h"
@@ -133,7 +134,7 @@ void scanBetween(const Instruction &from, const Instruction &to, P pred, SmallVe
       if (&*a != &to && pred(*a))
         out.push_back(&*a);
   };
-  if (FB == TB && from.comesBefore(&to)) {
+  if (FB == TB && cq::comesBefore(&from, &to)) {
     scan(std::next(from.getIterator()), to.getIterator());
     return;
   }
