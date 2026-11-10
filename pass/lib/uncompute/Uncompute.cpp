@@ -1779,28 +1779,47 @@ struct Uncompute::Impl {
   }
 
   // Drop every candidate a pending resolvable non-candidate reader still needs.
+  // cq-g3h1i: a candidate is dropped when a reader outside the set is pending, and dropping only shrinks the set,
+  // so the survivors are one fixed point whatever the order of the drops. The readers of each candidate are
+  // read once (nothing here changes them) and the passes repeat over them until none drops; the first drop found
+  // is the one a scan restarted after every drop finds first (the fatal message names it).
   void dropBlocked(SmallVectorImpl<RailId> &cands, const Ctx &c, bool fatal) const {
-    bool changed = true;
-    while (changed) {
+    DenseSet<RailId> in(cands.begin(), cands.end());
+    DenseMap<RailId, unsigned> copies;   // a rail listed twice stays in the set until its last copy drops
+    for (RailId g : cands)
+      ++copies[g];
+    std::vector<SmallVector<RailId, 4>> blockers(cands.size());
+    for (unsigned i = 0; i < cands.size(); ++i)
+      for (RailId o : readersOf(cands[i]))
+        if (pending(o) && !done(o, c))
+          blockers[i].push_back(o);
+    std::vector<char> dropped(cands.size(), 0);
+    for (bool changed = true; changed;) {
       changed = false;
-      DenseSet<RailId> in(cands.begin(), cands.end());
       for (unsigned i = 0; i < cands.size(); ++i) {
+        if (dropped[i])
+          continue;
         RailId g = cands[i];
-        for (RailId o : readersOf(g)) {
-          if (in.count(o) || !pending(o) || done(o, c))
+        for (RailId o : blockers[i]) {
+          if (in.count(o))
             continue;
           if (fatal)
             internalError("uncompute: mirror would free " + describe(rails[g].handle) +
                               " while a rail outside the scope still reads it",
                           rails[o].handle);
-          cands.erase(cands.begin() + i);
+          dropped[i] = 1;
+          if (--copies[g] == 0)
+            in.erase(g);
           changed = true;
           break;
         }
-        if (changed)
-          break;
       }
     }
+    unsigned n = 0;
+    for (unsigned i = 0; i < cands.size(); ++i)
+      if (!dropped[i])
+        cands[n++] = cands[i];
+    cands.truncate(n);
   }
 
   void place(RailId g, const Ctx &c) {
