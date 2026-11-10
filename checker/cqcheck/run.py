@@ -1958,7 +1958,7 @@ def kept_k2_module(text: str) -> str:
 #
 # replay_module wraps every eligible clone (DESIGN §4) so that the evaluator runs each distinct call once and replays
 # it exactly afterwards (checker/rt/rt_replay.c has the runtime and the key). Eligible: a forward clone
-# __cq_q_<fn>_<mask>[_b...][_ctl] (no _t, no twin: _unc, _pure) with scalar parameters (iN up to 64, ptr, half, float,
+# __cq_q_<fn>_<mask>[_b...][_t][_ctl] (no twin: _unc, _pure) with scalar parameters (iN up to 64, ptr, half, float,
 # double; one per ABI argument: the _ctl predicate, then one per mask digit, a 1 an i32 handle) and a void or scalar
 # result, whose body and every clone it calls by name hold only templates (no _rm, _rmq, _exc), cqrt_ alloc, free,
 # the i1 gates, copy, xorc, bus load/store/swap, push and pop (cq-mxe2q, owner 2026-11-08: the runtime records only a
@@ -1967,8 +1967,27 @@ def kept_k2_module(text: str) -> str:
 # The runtime checks again what the text cannot show (a rail outside the call's arguments, a trace line, a
 # violation, an argument changed: no record). The wrapper is never instrumented (nosanitize_coverage): steps are
 # the real body's, replayed or run.
+#
+# cq-kcn5i extensions (each argued in its commit):
+#   pure helpers   a call of a module function that is not a clone and whose body, and every body it calls, has no
+#                  memory instruction (load, store, alloca, ...), no indirect call, no asm and no call but pure llvm
+#                  intrinsics and such helpers, and whose definition the link cannot replace (not weak, linkonce,
+#                  available_externally or common): its result is a function of its arguments and of link-time addresses
+#                  only, and it touches nothing the evaluator holds but the step count, which the record carries
+#                  (musl's __errno_location, `ret ptr @__cq_tp + 52`, in mbtowc).
+#   counters       a plain i32 or i64 load or store of a whole pass-minted counter (@__cq_act_<f>, rule 14's activation counter,
+#                  and @__cq_k) goes through __cqe_rp_gload_iN / __cqe_rp_gstore_iN in every eligible body: a window
+#                  logs the value of each counter it read before writing it (the record applies only where each reads
+#                  the same) and the final value of each it wrote (a hit stores them); rt_replay.c.
+#   twins          a clone that is not wrapped (a twin: _unc, _pure) may be called by name from an eligible body when
+#                  its own body meets the same conditions: it then runs inside the caller's window, where the runtime
+#                  watches it as it watches the body (rails outside the arguments, the word stack, the bus, counters).
+#   table clones   __cq_q_<fn>_<mask>_t[_ctl] (rule 19's dispatch targets) under the same conditions on the body; the
+#                  received K, their last parameter, is a classical argument and so part of the key.
+#   alloca         a body with an alloca is never eligible: its address is the recording run's stack, and a replay
+#                  from another depth would read and write that old address.
 
-_RP_CLONE = re.compile(r"^__cq_q_(.+)_(v|[01]+)(?:_b\d+(?:_\d+)*)?(_ctl)?$")
+_RP_CLONE = re.compile(r"^__cq_q_(.+)_(v|[01]+)(?:_b\d+(?:_\d+)*)?(_t)?(_ctl)?$")
 _RP_HEAD = re.compile(r'^define\s+(?P<pre>[^@]*?)\s*@(?P<name>[-\w.$]+)\(')
 _RP_CC = re.compile(r"\b(fastcc|coldcc|ccc|tailcc|swiftcc|swifttailcc|cc \d+)\b")
 _RP_SCALAR = re.compile(r"^(?:i(\d+)|ptr|half|float|double)$")
@@ -1977,9 +1996,53 @@ _RP_CQRT_OK = re.compile(r"^cqrt_(?:alloc_\w+|free|push|pop|(?:not|and|or|xor)_i
 _RP_LLVM_OK = re.compile(r"^llvm\.(?:smax|smin|umax|umin|abs|ctlz|cttz|ctpop|bswap|bitreverse|fshl|fshr|"
                          r"[su](?:add|sub|mul)\.with\.overflow|[su](?:add|sub)\.sat|[su]shl\.sat|assume|expect|"
                          r"lifetime\.(?:start|end))(?:\.|$)")
-_RP_HELPER_OK = re.compile(r"^(?:__cqe_tot\.|__cqe_fpto(?:64|80)$|__cqe_fpdfl_(?:enter|leave)$|cqe__set_store_kept$|cqe__set_kept_ak$|__cq_mem$)")
-_RP_BAD = re.compile(r"(?m)^\s+(?:%[-\w.$\"]+ = )?(?:load|store|atomicrmw|cmpxchg|va_arg|fence|invoke|callbr|landingpad|"
-                     r"resume|indirectbr)\b|\basm\b")
+_RP_HELPER_OK = re.compile(r"^(?:__cqe_rp_g(?:load|store)_i(?:32|64)$|__cqe_tot\.|__cqe_fpto(?:64|80)$|__cqe_fpdfl_(?:enter|leave)$|cqe__set_store_kept$|cqe__set_kept_ak$|__cq_mem$)")
+_RP_BAD = re.compile(r"(?m)^\s+(?:%[-\w.$\"]+ = )?(?:load|store|alloca|atomicrmw|cmpxchg|va_arg|fence|invoke|callbr|"
+                     r"landingpad|resume|indirectbr)\b|\basm\b")
+_RP_GNAME = r"(?:__cq_act_[-\w.$]+|__cq_k)"
+_RP_GDEF = re.compile(rf"(?m)^@({_RP_GNAME}) = [^\n]*?\bglobal (i32|i64) ")
+_RP_GLOAD = re.compile(rf"(?m)^(\s+%[-\w.$\"]+ = )load (i32|i64), ptr @({_RP_GNAME})(?:, align \d+)?$")
+_RP_GSTORE = re.compile(rf"(?m)^(\s+)store (i32|i64) ([^\s,]+), ptr @({_RP_GNAME})(?:, align \d+)?$")
+
+
+def _rp_counters(body: str, gty: Dict[str, str]) -> str:
+    """body with every plain whole-width load and store of a pass-minted counter as a call of the runtime's hook."""
+    def ld(m):
+        return (f"{m.group(1)}call {m.group(2)} @__cqe_rp_gload_{m.group(2)}(ptr @{m.group(3)})"
+                if gty.get(m.group(3)) == m.group(2) else m.group(0))
+
+    def st(m):
+        return (f"{m.group(1)}call void @__cqe_rp_gstore_{m.group(2)}(ptr @{m.group(4)}, {m.group(2)} {m.group(3)})"
+                if gty.get(m.group(4)) == m.group(2) else m.group(0))
+    if "@__cq_" not in body:
+        return body
+    return _RP_GSTORE.sub(st, _RP_GLOAD.sub(ld, body))
+
+
+_RP_INTERPOSABLE = re.compile(r"\b(?:weak|weak_odr|linkonce|linkonce_odr|available_externally|extern_weak|common)\b")
+
+
+def _rp_pure_helpers(bodies: Dict[str, str], pres: Dict[str, str]) -> Set[str]:
+    """The module's pure helpers (module comment above): the greatest set closed under 'calls only pure intrinsics
+    and members'. pres: per function the text of its define line before the name (its linkage)."""
+    calls: Dict[str, Set[str]] = {}
+    for f, b in bodies.items():
+        if f not in pres or _RP_INTERPOSABLE.search(pres[f]):
+            continue   # the link may give the name another body
+        if f.startswith(("__cq_q_", "cq_", "cqrt_", "cqe_", "__cqe_", "llvm.")) or _RP_BAD.search(b) or _INDIRECT.search(b):
+            continue
+        cs = set(_CALLED.findall(b))
+        if any(g.startswith("llvm.") and not _RP_LLVM_OK.match(g) for g in cs):
+            continue
+        calls[f] = {g for g in cs if not g.startswith("llvm.")}
+    changed = True
+    while changed:
+        changed = False
+        for f in sorted(calls):
+            if any(g not in calls for g in calls[f]):
+                del calls[f]
+                changed = True
+    return set(calls)
 
 
 def _rp_scalar(t: str) -> bool:
@@ -2018,20 +2081,15 @@ def replay_clones(text: str, handle_fns: Sequence[str]) -> Dict[str, dict]:
             h = _rp_head(line)
             if h:
                 heads[h[1]] = h
-    cand: Dict[str, dict] = {}
+    gty = dict(_RP_GDEF.findall(text))
+    pure = _rp_pure_helpers(bodies, {f: h[0] for f, h in heads.items()})
+    # safe: the clones (forward, table, twins) whose body may run inside a window; calls: their by-name clone callees
+    calls: Dict[str, Set[str]] = {}
+    safe_body: Dict[str, str] = {}
     for f, b in bodies.items():
-        c = _RP_CLONE.match(f)
-        if not c or f not in heads or c.group(1).endswith("_t"):
+        if not f.startswith("__cq_q_"):
             continue
-        pre_s, _, ptext = heads[f]
-        pre = pre_s.split()
-        rty = pre[-1] if pre else ""
-        params = _rp_params(ptext)
-        if params is None or len(params) > 32 or not (rty == "void" or _rp_scalar(rty)):
-            continue
-        kinds = ("h" if c.group(3) else "") + "".join("h" if d == "1" else "c" for d in (c.group(2) if c.group(2) != "v" else ""))
-        if len(kinds) != len(params) or any(not _rp_scalar(t) or (k == "h" and t != "i32") for (t, _), k in zip(params, kinds)):
-            continue
+        b = _rp_counters(b, gty)
         if _RP_BAD.search(b) or _INDIRECT.search(b):
             continue
         callees = set(_CALLED.findall(b))
@@ -2044,9 +2102,33 @@ def replay_clones(text: str, handle_fns: Sequence[str]) -> Dict[str, dict]:
                 ok = ok and bool(_RP_CQRT_OK.match(g))
             elif g.startswith("llvm."):
                 ok = ok and bool(_RP_LLVM_OK.match(g))
-            elif not (_RP_HELPER_OK.match(g) or g.startswith("__cq_q_")):
+            elif not (_RP_HELPER_OK.match(g) or g.startswith("__cq_q_") or g in pure):
                 ok = False
-        if not ok:
+        if ok:
+            calls[f] = {g for g in callees if g.startswith("__cq_q_")}
+            safe_body[f] = b
+    changed = True
+    while changed:
+        changed = False
+        for f in sorted(calls):
+            if any(g not in calls for g in calls[f]):
+                del calls[f]
+                changed = True
+    cand: Dict[str, dict] = {}
+    for f in calls:
+        b = safe_body[f]
+        c = _RP_CLONE.match(f)
+        if not c or f not in heads:
+            continue
+        pre_s, _, ptext = heads[f]
+        pre = pre_s.split()
+        rty = pre[-1] if pre else ""
+        params = _rp_params(ptext)
+        if params is None or len(params) > 32 or not (rty == "void" or _rp_scalar(rty)):
+            continue
+        kinds = (("h" if c.group(4) else "") + "".join("h" if d == "1" else "c" for d in (c.group(2) if c.group(2) != "v" else ""))
+                 + ("c" if c.group(3) else ""))   # a table clone's last parameter is the received K (rule 19), classical
+        if len(kinds) != len(params) or any(not _rp_scalar(t) or (k == "h" and t != "i32") for (t, _), k in zip(params, kinds)):
             continue
         pnames = [n for _, n in params]
         if rty == "void":
@@ -2070,14 +2152,7 @@ def replay_clones(text: str, handle_fns: Sequence[str]) -> Dict[str, dict]:
             rk = "h" if ks == {"h"} else "i"   # i: a classical i32 (rt_replay.c never records one that names a rail made inside)
         ccm = _RP_CC.search(pre_s)
         cand[f] = {"ptext": ptext, "pre": pre_s, "params": params, "kinds": kinds, "rk": rk, "rty": rty,
-                   "cc": ccm.group(1) + " " if ccm else "", "calls": {g for g in callees if g.startswith("__cq_q_")}}
-    changed = True
-    while changed:
-        changed = False
-        for f in sorted(cand):
-            if any(g not in cand for g in cand[f]["calls"]):
-                del cand[f]
-                changed = True
+                   "cc": ccm.group(1) + " " if ccm else "", "safe": set(calls)}
     return cand
 
 
@@ -2121,12 +2196,25 @@ def replay_module(text: str, handle_fns: Sequence[str]) -> str:
         return text
     lines = text.splitlines()
     ids = {f: i for i, f in enumerate(sorted(cand))}
+    gty = dict(_RP_GDEF.findall(text))
+    safe = next(iter(cand.values()))["safe"]   # every body that may run inside a window
+    inside, hooks = False, False
     for i, line in enumerate(lines):
         if line.startswith("define"):
+            m = _RP_HEAD.match(line)
+            inside = bool(m and m.group("name") in safe)
             h = _rp_head(line)
             if h and h[1] in cand:
                 lines[i] = line.replace(f"@{h[1]}(", f"@{h[1]}.real(", 1)
+        elif line == "}":
+            inside = False
+        elif inside and gty and "@__cq_" in line:   # the counters of such a body through the runtime's hooks
+            lines[i] = _rp_counters(line, gty)
+            hooks = hooks or lines[i] != line
     out = ["\n".join(lines)]
+    if hooks:
+        out.append("\n".join(f"declare i{w} @__cqe_rp_gload_i{w}(ptr)\ndeclare void @__cqe_rp_gstore_i{w}(ptr, i{w})"
+                             for w in (32, 64)))
     for f in sorted(cand):
         c, k = cand[f], ids[f]
         params, rty = c["params"], c["rty"]

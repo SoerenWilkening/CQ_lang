@@ -2,9 +2,12 @@
 """tests/replay (cq-kcn5i): exact clone replay in the evaluator (checker/rt/rt_replay.c, run.py replay_module).
 
 Probes (probes/<name>.c, clang -O1 into <name>.O1.ll) call one eligible clone four times with the same key, so a sample
-replays three calls. For each:
+replays three calls. rp_rec's clone recurses to a quantum depth (the activation counter, its twin called inside the
+window), rp_arg's stores under its predicate argument itself (the argument becomes store_kept) and calls a pure helper
+of the module. For each:
   same       `cqcheck user` (full samples) with CQE_REPLAY=0 and =1 gives the same verdict (PASS) and the same
-             evaluator traces (run without ASLR: noaslr.c, so that addresses agree), and the replay run hit: every event
+             evaluator traces (run without ASLR: noaslr.c, so that addresses agree; stack addresses as offsets in
+             the sample's stack region, stack_relative), and the replay run hit: every event
              byte-identical but the exit event, whose kept list is compared expanded (one (h, w, v, role, known) per
              rail) with its other fields: a replayed call is written as a use of its record's rows, a different cut of
              the same list (Fable ruling 2026-11-09);
@@ -47,6 +50,51 @@ def trace_view(data):
             continue
         kept = sorted((e["h"], e["w"], e["v"], e["role"], e.get("known")) for e in kept_mod.expand(ev.pop("kept")))
         out.append((sorted(ev.items()), kept))
+    return stack_relative(out)
+
+
+_STACK = re.compile(r'^\{"ev":"out_mem","table":"region","name":"stack","lo":"0x([0-9a-f]+)","hi":"0x([0-9a-f]+)"\}')
+_HEX = re.compile(r"0x[0-9a-f]+")
+
+
+def stack_relative(events):
+    """events with every host stack address as its offset in the sample's stack region. The driver logs that region
+    from its own frame address (run.py cqd_out_regions), and where the kernel puts the stack depends on the bytes of
+    the process's environment and arguments, with ASLR off too: one more character of environment can move it by 16.
+    CR §6 compares pointer values only relationally and compare.py reads an address in a region as (region, offset
+    from lo) (compare.py "Pointers"); this view does the same for the one region whose place is not the program's."""
+    out, start = list(events), 0
+    for i, e in enumerate(events):
+        if isinstance(e, str) and e.startswith('{"ev":"shot",'):
+            start = i
+        m = _STACK.match(e) if isinstance(e, str) else None
+        if not m:
+            continue
+        lo, hi = int(m.group(1), 16), int(m.group(2), 16)
+        end = next((j for j in range(i, len(events)) if isinstance(events[j], str) and events[j].startswith('{"ev":"shot_end"')),
+                   len(events) - 1)
+
+        def rel(t):
+            return _HEX.sub(lambda x: f"<stack+{int(x.group(0), 16) - lo:#x}>" if lo <= int(x.group(0), 16) < hi else x.group(0), t)
+        for j in range(start, end + 1):
+            if j == i:
+                out[j] = f'{{"ev":"out_mem","table":"region","name":"stack","size":{hi - lo}}}'
+            elif isinstance(events[j], str):
+                out[j] = rel(events[j])
+            else:
+                items, kept = events[j]
+                out[j] = (items, sorted((h, w, rel(v) if isinstance(v, str) else v, role, known) for h, w, v, role, known in kept))
+    return out
+
+
+def first_differences(a, b, n=3):
+    """Up to n places where two views differ, for the log."""
+    out = [f"{len(a)} and {len(b)} events"] if len(a) != len(b) else []
+    for i, (x, y) in enumerate(zip(a, b)):
+        if x != y:
+            out += [f"event {i} off: {str(x)[:600]}", f"event {i} on:  {str(y)[:600]}"]
+            if len(out) >= 2 * n:
+                break
     return out
 
 
@@ -90,7 +138,7 @@ class Ctx:
         return r.returncode, r.stdout + r.stderr, traces, stats
 
 
-PROBE_NAMES = ["rp_pure", "rp_bus", "rp_sel"]
+PROBE_NAMES = ["rp_pure", "rp_bus", "rp_sel", "rp_rec", "rp_arg"]
 
 # (id, probe, clone, old text, new text, what the run must say besides FAIL)
 MUTANTS = [
@@ -104,6 +152,15 @@ MUTANTS = [
      None),
     ("wrong_result_select", "rp_sel", "__cq_q_pick_10", "%6 = call i32 @cq_template_select_i32(i32 %3, i32 %4, i32 %5)",
      "%6 = call i32 @cq_template_select_i32(i32 %3, i32 %5, i32 %4)", None),
+    # the extensions: counters and twins inside a window (rp_rec), a store-kept argument and a pure helper (rp_arg)
+    ("rec_counter_not_restored", "rp_rec", "__cq_q_chain_10_ctl",
+     "  store i32 %18, ptr @__cq_act_chain, align 4\n  ret i32 %16", "  ret i32 %16", None),
+    ("rec_wrong_classical_argument", "rp_rec", "__cq_q_chain_10_ctl", "%10 = add nsw i32 %2, 1", "%10 = add nsw i32 %2, 2", None),
+    ("arg_store_other_address", "rp_arg", "__cq_q_put_00_ctl", "%16 = ptrtoint ptr %11 to i64", "%16 = ptrtoint ptr %12 to i64", None),
+    ("arg_store_wrong_control", "rp_arg", "__cq_q_put_00_ctl",
+     "  call void @cqrt_qram_store_i8_hl_controlled(i32 %0, i32 %8, i64 %16, i32 %15)\n",
+     "  %cqm = call i32 @cqrt_alloc_i1(i1 true)\n  call void @cqrt_qram_store_i8_hl_controlled(i32 %cqm, i32 %8, i64 %16, i32 %15)\n",
+     None),
 ]
 
 
@@ -112,24 +169,36 @@ def main():
     ap.add_argument("--plugin", required=True)
     ap.add_argument("--opt", default=str(LLVM / "opt"))
     ap.add_argument("--only", help="one case: same, mutants, tampered, dirty")
+    ap.add_argument("--probe", help="same and mutants: this probe only")
+    ap.add_argument("--mutant", help="mutants: this one only")
     a = ap.parse_args()
     bad = []
     with tempfile.TemporaryDirectory(prefix="cq-replay.") as t:
         c = Ctx(a.plugin, a.opt, Path(t))
         low = {p: c.lower(p) for p in PROBE_NAMES}
         if a.only in (None, "same"):
-            for p in PROBE_NAMES:
+            for p in [p for p in PROBE_NAMES if a.probe in (None, p)]:
                 c0, o0, t0, _ = c.user(p, low[p], f"{p}.0", CQE_REPLAY=0)
                 c1, o1, t1, s1 = c.user(p, low[p], f"{p}.1", CQE_REPLAY=1)
                 same = t0.keys() == t1.keys() and all(trace_view(t0[k]) == trace_view(t1[k]) for k in t0)
                 ok = c0 == 0 and c1 == 0 and t0 and same and s1.get("hits", 0) > 0
                 print(f"{'ok  ' if ok else 'FAIL'} same {p}: exit {c0}/{c1}, traces {'identical' if same else 'DIFFER'}"
-                      f" ({len(t0)} file(s)), replay {s1}", flush=True)
+                      f" ({len(t0)} and {len(t1)} file(s)), replay {s1}", flush=True)
                 if not ok:
                     bad.append(f"same {p}")
                     print(o0[-1500:], o1[-1500:])
+                if not same:   # never lose a difference: both runs' raw traces are kept and its first places said
+                    keep = Path(tempfile.mkdtemp(prefix=f"cq-replay-differ.{p}."))
+                    for tag, t in (("off", t0), ("on", t1)):
+                        (keep / tag).mkdir()
+                        for k, data in t.items():
+                            (keep / tag / k).write_bytes(data)
+                    print(f"  raw traces kept in {keep}; files off {sorted(t0)}, on {sorted(t1)}")
+                    for k in sorted(set(t0) & set(t1)):
+                        for line in first_differences(trace_view(t0[k]), trace_view(t1[k])):
+                            print(f"  {k}: {line}")
         if a.only in (None, "mutants"):
-            for mid, p, fn, old, new, _ in MUTANTS:
+            for mid, p, fn, old, new, _ in [m for m in MUTANTS if a.probe in (None, m[1]) and a.mutant in (None, m[0])]:
                 m = c.work / f"{mid}.lowered.ll"
                 m.write_text(fn_edit(low[p].read_text(), fn, old, new))
                 code, out, _, s = c.user(p, m, f"m.{mid}", CQE_REPLAY=1)
