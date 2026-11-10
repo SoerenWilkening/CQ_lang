@@ -1794,7 +1794,8 @@ def kept_ak_module(text: str) -> str:
     `a_{K-1} & cond_K` of a K-loop with B > K (pass loops/cutoff andRail, kept as Role::KeptOverflow), the XOR of an
     exit arm's sub-loop chain ends (armKept), a recursion's overflow predicate its first outside caller keeps (cq-ew5z)
     and the copy_i1 of the predicate at an activation counter's cut (calls/Calls.cpp: rule 14's kept overflow predicate
-    of a quantum-depth recursion). The pass's own reading of a kept a_K is the same (calls/Finalize.cpp, keptK). Each such rail gets the exit
+    of a quantum-depth recursion), and rule 22's n > K2 of a memory intrinsic's rail length under a predicate c in scope,
+    and_i1(n > K2, c, t) with the raw compare undone (bus/Intrinsics.cpp quantumTrips, cq-cwl9g). The pass's own reading of a kept a_K is the same (calls/Finalize.cpp, keptK). Each such rail gets the exit
     role a_K (rt/core.c cqe__set_kept_ak). A rail anything reads, uncomputes or frees is not one, whatever it reads at
     exit."""
     if "@cqrt_alloc_i1(i1 false)" not in text and "@cqrt_alloc_i1(i1 0)" not in text:

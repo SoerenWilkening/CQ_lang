@@ -7,7 +7,8 @@ bounds, cq-usir7), the
 dispatch's final copy-out (rule 19; q3), a no-twin table clone's result through its pop-only twin (§1.4; e_rail, r3),
 rule 14's kept overflow predicate a_K of a K-loop in a clone called in an arm the C program does not take (q7, cq-1leyz),
 rule 20's kept overflow predicate n > K2 of a rail-sized allocation in such a clone (q8, cq-0ldab), rule 22's unpredicated
-n > K2 of a memset and a memcpy whose length is a rail (q9, cq-dl7da).
+n > K2 of a memset and a memcpy whose length is a rail (q9, cq-dl7da), and the same under an arm's predicate c, the kept
+(n > K2) & c read as an a_K by kept_ak_module (q10, cq-cwl9g).
 Each MUTANT is a real leak of that shape, and must be rejected by the leak rule, not merely rejected (rule24_*: by the
 effect comparison).
 """
@@ -149,7 +150,7 @@ def lost_twin(fn, twin, text):
 
 
 GOOD = [(SRC / "q1", "q1"), (SRC / "q1c", "q1c"), (SRC / "q3", "q3"), (SRC / "q4", "q4b"), (SRC / "q4", "q4c"), (SRC / "q5", "q5"), (SRC / "q6", "q6"),
-        (SRC / "q7", "q7"), (SRC / "q8", "q8"), (SRC / "q9", "q9"),
+        (SRC / "q7", "q7"), (SRC / "q8", "q8"), (SRC / "q9", "q9"), (SRC / "q10", "q10"),
         (SRC / "p3", "p3"), (SRC / "p4", "p4"), (SRC / "p5", "p5"), (SRC / "p6", "p6"),
         (CALLS / "table_twin_measure", "e_rail"), (CALLS / "twin_rot_in_loop", "r3")]
 MUTANTS = [
