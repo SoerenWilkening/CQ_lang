@@ -32,7 +32,7 @@ Fails on any of:
             with its a_K dropped or a garbage rail beside it (cq-rdsdj); a K-loop behind a function pointer with its a_K
             dropped (cq-2in7d); a classical unpaired longjmp's second return wrong (cq-li3wr); rule 19's host complement with
             the callee swapped (cq-d9vhj); rule 23's final flags rail wrong or with a second rail like it (cq-f8m9n); a
-            literal adjacent in the link with other bytes (cq-l1fc8); a read through a pointer one past an object's end with another object after it, wrong byte (cq-985fi); a switch whose default is `unreachable`, a wrong arm (cq-by8qu); exit(c) on a classical path, its effect entry's status or abort wrong (cq-byjad); a wrong value, classical or measured, stored through a pointer parameter or into a global (cq-jqjf). --rv3 runs this group alone
+            literal adjacent in the link with other bytes (cq-l1fc8); a recursion with a CQ_K(f, k) line lowered at the default K instead of k (cq-xon8i); a read through a pointer one past an object's end with another object after it, wrong byte (cq-985fi); a switch whose default is `unreachable`, a wrong arm (cq-by8qu); exit(c) on a classical path, its effect entry's status or abort wrong (cq-byjad); a wrong value, classical or measured, stored through a pointer parameter or into a global (cq-jqjf). --rv3 runs this group alone
   error     a missing entry or main(argc, argv) is not an error (exit 2)
 
 Every run goes through the CLI (`python3 -m cqcheck user` from checker/), as cqcc --cq-check runs it.
@@ -306,6 +306,9 @@ RV3 = {
               ("cut_late", "icmp ult i32 %3, 4", "icmp ult i32 %3, 5"),
               ("no_ak", r"  call void @cqrt_copy_i1\(i32 %0, i32 %\d+\)\n", ""),
               ("leak", r"  call void @cq_template_icmp_eq_i32_hl_unc\(i32 %4, i32 %3, i32 0\)\n  call void @cqrt_free\(i32 %4\)\n", "")],
+    # cq-xon8i: a CQ_K(r, 2) line (its @llvm.used and @__cq_k_r): both sides cut r at depth 2; the lowering at the
+    # default K = 4 (what cq-lower -cq-k=r=4 emits) is rejected, so the C oracle cut at the line's 2
+    "xon8i": [("k_default", "icmp ult i32 %3, 2", "icmp ult i32 %3, 4")],
     "rdsdj2": [], "rdsdj8": [], "recmut": [], "recptr": [], "fpcand": [],
     # cq-6b2cc: g's word 0x279c0000000a lies in our arena; a wrong value there and a wrong pointer in cell both differ
     "arena_word": [("wrong_value", r"cqrt_alloc_i32\(i32 10140\)", "cqrt_alloc_i32(i32 10141)"),
