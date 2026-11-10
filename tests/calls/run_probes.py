@@ -203,10 +203,15 @@ CASES = [
     ("stream_vforms", "stream_vforms", [], "pass",
      [r"call void @cqrt_tape_effect_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.vprintf, i32 2\)",
       r"call void @cqrt_tape_effect_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.vfprintf, i32 3\)"]),
-    # cq-ojgho (rule 16, owner 2026-11-10): a <wchar.h> stream call by name (fputwc) is the host boundary as well. "lower": the evaluator performs only fprintf entries so far (cq-8bq66).
-    ("stream_wide_body_by_name", "stream_wide_body", [], "lower",
+    # cq-ojgho (rule 16, owner 2026-11-10): a <wchar.h> stream call by name (fputwc) is the host boundary as well; the C oracle
+    # drops the module's body (oracle._STREAM_NAMES), so the call is the stand-in's effect on both sides, as fputc's (cq-83c9c).
+    ("stream_wide_body_by_name", "stream_wide_body", [], "pass",
      [r"call void @cqrt_tape_effect_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.fputwc, i32 2\)",
       r"define noundef i32 @fputwc\(i32 noundef %0, ptr nocapture noundef %1\)"]),
+    # cq-83c9c: the wide printing family (fwprintf, wprintf, vfwprintf, vwprintf) on stdout is stdout text, on stderr none.
+    ("stream_wide_forms", "stream_wide_forms", [], "pass",
+     [r"call void @cqrt_tape_effect_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.vwprintf, i32 2\)",
+      r"call void @cqrt_tape_effect_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.wprintf, i32 4\)"]),
     ("raise_read", "raise_read", [], "pass", [r"@__cq_sig"]),
     ("sig_rail", "sig_rail", [], "pass", [r"@__cq_sig", r"@cqrt_qram_store_i64\("]),
     # Rule 19 extra results: the twin takes the register's handle and repeats no rotation.

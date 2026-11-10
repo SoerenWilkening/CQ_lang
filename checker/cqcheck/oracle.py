@@ -372,7 +372,10 @@ _STREAM_NAMES = frozenset((
     "getchar fgets gets fputc putc putchar fputs puts ungetc fread fwrite fgetpos fseek fsetpos ftell rewind clearerr "
     "feof ferror perror remove rename tmpfile tmpnam getline getdelim fdopen fileno popen pclose fseeko ftello dprintf "
     "vdprintf flockfile funlockfile ftrylockfile getc_unlocked getchar_unlocked putc_unlocked putchar_unlocked ctermid "
-    "fmemopen open_memstream renameat tempnam open close read write lseek").split())
+    "fmemopen open_memstream renameat tempnam open close read write lseek "
+    # cq-ojgho: the <wchar.h> stream functions (pass/lib/Common.cpp streamName)
+    "fwprintf wprintf vfwprintf vwprintf fwscanf wscanf vfwscanf vwscanf fgetwc fgetws fputwc fputws fwide getwc getwchar "
+    "putwc putwchar ungetwc open_wmemstream").split())
 _DEFINED = re.compile(r'(?m)^define\b[^@\n]*@("[^"]*"|[-A-Za-z$._0-9]+)\(')
 
 

@@ -1298,7 +1298,7 @@ _REAL = re.compile(
     r"^(llvm\.|cq_|cqrt_|cqd_|__|malloc$|calloc$|realloc$|reallocf$|free$|aligned_alloc$|valloc$|posix_memalign$"
     r"|mem(cpy|move|set|cmp|chr)$|memset_pattern(4|8|16)$|bcmp$|bzero$|bcopy$|str[a-z]*$|wcs[a-z]*$|wmem[a-z]*$"
     r"|fe[a-z]+$|_?setjmp$|_?longjmp$|sig[a-z]*$|raise$|abort$|exit$|_exit$|_Exit$|atexit$|pthread_[a-z_]+$|thrd_[a-z]+$"
-    r"|v?[sf]?n?printf$|v?asprintf$"
+    r"|v?[sf]?n?printf$|v?asprintf$|v?f?wprintf$"
     r"|(a?(sin|cos|tan)h?|atan2|exp(2|10|m1)?|log(2|10|1p|b)?|pow|sqrt|cbrt|hypot|fabs|floor|ceil|round|trunc|rint|nearbyint"
     r"|ll?rint|ll?round|fmod|remainder|remquo|ldexp|frexp|modf|scalbl?n|ilogb|copysign|nan|nextafter|nexttoward|fdim|fmax|fmin"
     r"|fma|erfc?|[lt]gamma)[fl]?$)")
