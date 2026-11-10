@@ -20,6 +20,7 @@
  * Roles, one character per argument (past the string: none):
  *   W buffer the call writes  B buffer the call reads, length the following n's  n a length factor
  *   s string the call reads   p string that identifies (a path)   F format string, the varargs follow
+ *   v the va_list the format's arguments come from (after F; rt_tape.c capture_va, cq-83c9c)
  *   f identifying (stream, descriptor)   - other
  * C17 and C++17 (header only, static). */
 #ifndef CQ_FX_STANDIN_H
@@ -42,7 +43,7 @@ static const cq_fx_ent cq_fx_table[] = {
     {"fprintf", 'O', "fF"}, {"perror", 'O', "s"},   {"putchar", 'O', "-"}, {"putc", 'O', "-f"},   {"fputc", 'O', "-f"},
     {"fflush", 'O', "f"},   {"fclose", 'O', "f"},   {"fopen", 'O', "pp"},  {"open", 'O', "p"},     {"close", 'O', "f"},
     {"lseek", 'O', "f--"},  {"remove", 'O', "p"},   {"unlink", 'O', "p"},  {"rename", 'O', "pp"},
-    {"raise", 'O', "-"},
+    {"raise", 'O', "-"},    {"vfprintf", 'O', "fFv"}, {"vprintf", 'O', "Fv"},
 };
 
 static inline const cq_fx_ent *cq_fx_find(const char *name) {
@@ -59,7 +60,7 @@ static inline uint64_t cq_fx_begin(const char *name) { return cq_standin_name(na
 static inline uint64_t cq_fx_arg(uint64_t h, const cq_fx_ent *e, int idx, unsigned bits, const uint64_t *w, int nw) {
   if (e && idx < (int)strlen(e->roles)) {
     char role = e->roles[idx];
-    if (role == 'W' || role == 'B' || role == 's' || role == 'p' || role == 'F') return h;
+    if (role == 'W' || role == 'B' || role == 's' || role == 'p' || role == 'F' || role == 'v') return h;
     if (role == 'n' && e->cls == 'I') return h;
   }
   if (bits == 64 && w[0] >= (UINT64_C(1) << 32) && w[0] < (UINT64_C(1) << 47)) return h;

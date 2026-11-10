@@ -198,6 +198,11 @@ CASES = [
       r"define noundef i32 @fprintf\(ptr noalias nocapture noundef %0, ptr noalias nocapture noundef readonly %1, \.\.\.\)"]),
     ("stream_body_differs", "stream_body_differs", [], "pass",
      [r"call void @cqrt_tape_effect_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.fprintf, i32 3\)"]),
+    # cq-83c9c: vprintf and vfprintf from a variadic wrapper with a quantum argument: the evaluator reads the va_list on the
+    # bus and prints a performed entry on stdout; one on stderr is no effect line, as the C oracle's host call is none.
+    ("stream_vforms", "stream_vforms", [], "pass",
+     [r"call void @cqrt_tape_effect_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.vprintf, i32 2\)",
+      r"call void @cqrt_tape_effect_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.vfprintf, i32 3\)"]),
     ("raise_read", "raise_read", [], "pass", [r"@__cq_sig"]),
     ("sig_rail", "sig_rail", [], "pass", [r"@__cq_sig", r"@cqrt_qram_store_i64\("]),
     # Rule 19 extra results: the twin takes the register's handle and repeats no rotation.
