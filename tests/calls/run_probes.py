@@ -57,6 +57,11 @@ CASES = [
     ("abort_arm_twin_trap", "e", [], "pass", [r"call void @__cq_q_f_1_unc\("]),
     ("abort_arm_twin_ctl", "e", [], "pass", [r"call void @__cq_q_f_1_ctl_unc\("]),
     ("abort_arm_twin_load", "e", [], "pass", [r"call void @__cq_q_f_1_unc\("]),
+    # cq-5yuk9 (§1.4): `internal fastcc` helpers: every clone and twin is fastcc and so is every call of one, the reverse calls
+    # included (a C-convention call of a fastcc definition is undefined behaviour; cq-verify names it cc-mismatch).
+    ("fastcc_twins", "e", [], "pass", [r"call fastcc void @__cq_q_h_11_unc\(", r"call fastcc void @__cq_q_g_1_unc\(",
+                                       r"call fastcc void @__cq_q_w_01_ctl_unc\(",
+                                       r"define internal fastcc void @__cq_q_w_01_ctl_unc\("]),
     # cq-57ju (rulings 2026-11-02): plain clang -O1 callers of musl b1efda5 bodies (no -fno-builtin, no -frounding-math).
     # llvm.<f> binds to the injected body (cq-odjk); fpexcept.ignore ops are plain templates and the clone takes no
     # mode and no flags (rule 23, cq-75n4); __math_oflow / __math_divzero under a quantum predicate stay host calls,

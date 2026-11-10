@@ -1418,6 +1418,14 @@ struct Uncompute::Impl {
     return c;
   }
 
+  // CR §1.4: a clone keeps the original's calling convention and its calls keep it (`internal fastcc` stays, and its
+  // calls stay `fastcc`); a twin is defined with its forward's (calls::finalize). A reverse call of `fwd`, or of
+  // its twin, is spelled with the forward call's convention (cq-5yuk9).
+  CallInst *trackLike(CallInst *c, const CallInst *fwd) {
+    c->setCallingConv(fwd->getCallingConv());
+    return track(c);
+  }
+
   static FunctionCallee declareFn(Module &M, StringRef name, FunctionType *FT, const Value *at) {
     if (Function *ex = M.getFunction(name)) {
       if (ex->getFunctionType() != FT)
@@ -1586,7 +1594,7 @@ struct Uncompute::Impl {
         args.push_back(fwd->getArgOperand(k));
       }
       FunctionType *TT = FunctionType::get(Type::getVoidTy(C), ps, false);
-      track(B.CreateCall(twinOf(fwd, TT, B), args));
+      trackLike(B.CreateCall(twinOf(fwd, TT, B), args), fwd);
       FunctionType *FT = FunctionType::get(Type::getVoidTy(C), {Type::getInt32Ty(C)}, false);
       Instruction *last = &*std::prev(B.GetInsertPoint());
       if (!cg.table)
@@ -1625,10 +1633,10 @@ struct Uncompute::Impl {
         switch (info[*it].kind) {
         case RecKind::Template:
         case RecKind::BusLoad:
-          track(B.CreateCall(uncOf(fwd, true, B), argsOf(fwd, fwd)));
+          trackLike(B.CreateCall(uncOf(fwd, true, B), argsOf(fwd, fwd)), fwd);
           break;
         case RecKind::Involution:
-          track(B.CreateCall(fwd->getFunctionType(), fwd->getCalledOperand(), argsOf(fwd, nullptr)));
+          trackLike(B.CreateCall(fwd->getFunctionType(), fwd->getCalledOperand(), argsOf(fwd, nullptr)), fwd);
           break;
         case RecKind::Call:
           internalError("uncompute: a call group's record outside its leader's item", fwd);
@@ -2235,7 +2243,7 @@ struct Uncompute::Impl {
         args.push_back(o.v);
       return track(B.CreateCall(abi::declare(*B.GetInsertBlock()->getModule(), spec), args));
     }
-    return track(B.CreateCall(fwd->getFunctionType(), fwd->getCalledOperand(), argsOf(fwd, nullptr)));
+    return trackLike(B.CreateCall(fwd->getFunctionType(), fwd->getCalledOperand(), argsOf(fwd, nullptr)), fwd);
   }
 
 

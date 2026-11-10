@@ -244,7 +244,8 @@ void replayRegisterCall(Module &M, CallInst &c, ArrayRef<Value *> handed) {
   Function *tw = M.getFunction(name);
   if (!tw)
     tw = Function::Create(FunctionType::get(Type::getVoidTy(C), ps, false), GlobalValue::InternalLinkage, name, &M);
-  B.CreateCall(tw, args);
+  // §1.4: the twin is defined with its forward's calling convention (defineTwin), and its calls carry it (cq-5yuk9).
+  B.CreateCall(tw, args)->setCallingConv(g.getCallingConv());
   SmallVector<ExtractValueInst *, 4> exts;
   for (User *U : c.users())
     exts.push_back(cast<ExtractValueInst>(U));

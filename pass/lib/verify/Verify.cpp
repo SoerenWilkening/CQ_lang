@@ -834,6 +834,15 @@ void verifyLowered(const Module &M, const VerifyOptions &Opts) {
     if (F.isDeclaration())
       continue;
     FunctionVerifier(F, Sigs, Out, Opts.reference).run();
+    // CR §1.4: "A clone called by name and a lowered own symbol keep the original's linkage, calling convention and
+    // unnamed_addr (`internal fastcc` stays, and its calls stay `fastcc`)". A direct call whose convention differs from
+    // its defined callee's is undefined behaviour in LLVM, and LLVM's own verifier accepts it (cq-5yuk9).
+    for (const Instruction &I : instructions(F))
+      if (auto *CB = dyn_cast<CallBase>(&I))
+        if (const Function *G = CB->getCalledFunction())
+          if (!G->isDeclaration() && CB->getCallingConv() != G->getCallingConv())
+            Out.push_back({"cc-mismatch", ("a call's calling convention differs from its defined callee's, @" +
+                                           G->getName() + "\n    " + where(I)).str()});
   }
   if (Out.empty())
     return;
