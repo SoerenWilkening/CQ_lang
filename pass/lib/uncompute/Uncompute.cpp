@@ -2418,10 +2418,18 @@ struct Uncompute::Impl {
     Function &F = *U->getParent();
     BasicBlock *entry = &F.getEntryBlock();
     DenseMap<Value *, Value *> carried;
+    // cq-g3h1i: one dominance walk per defining block, not per operand (carryTo adds phis, no block or edge).
+    DenseMap<const BasicBlock *, bool> doms;
+    auto dominatesU = [&](const BasicBlock *D) {
+      auto [it, fresh] = doms.try_emplace(D, false);
+      if (fresh)
+        it->second = dominates(D, U);
+      return it->second;
+    };
     for (Instruction &I : *U)
       for (Use &u : I.operands()) {
         auto *op = dyn_cast<Instruction>(u.get());
-        if (!op || op->getParent() == U || dominates(op->getParent(), U))
+        if (!op || op->getParent() == U || dominatesU(op->getParent()))
           continue;
         Value *&c = carried[op];
         if (!c) {
