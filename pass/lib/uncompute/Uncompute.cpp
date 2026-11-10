@@ -149,6 +149,7 @@
 #include <utility>
 #include <vector>
 
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -624,9 +625,106 @@ struct Uncompute::Impl {
 
   // ---- CFG helpers -----------------------------------------------------------------------------
 
+  // cq-4tkb4: reachability and dominance in one function while its CFG does not change (a return's flush: its
+  // candidates and resolve, a deferred item's placement excepted, ReachScope), read from the strongly connected
+  // components' order, each target's set of blocks with a path to it (made on first use) and one dominator tree.
+  // The answers are those of the walks below: the successors are the terminators' (a block without one has none).
+  struct ReachCache {
+    static constexpr unsigned kNo = ~0u;
+    const Function *F = nullptr;
+    bool dirty = true;
+    DenseMap<const BasicBlock *, unsigned> idx;
+    std::vector<unsigned> ord;                      // the component's position (kNo: not reachable from the entry)
+    std::vector<SmallVector<unsigned, 2>> rev;      // the blocks with an edge to each block
+    DenseMap<unsigned, BitVector> to;               // per target: the blocks with a path of length >= 1 to it
+    std::unique_ptr<DominatorTree> DT;
+    void build() {
+      dirty = false;
+      idx.clear();
+      ord.clear();
+      rev.clear();
+      to.clear();
+      DT.reset();
+      Function &Fn = const_cast<Function &>(*F);
+      for (const BasicBlock &b : Fn)
+        idx.try_emplace(&b, unsigned(idx.size()));
+      ord.assign(idx.size(), kNo);
+      rev.resize(idx.size());
+      for (const BasicBlock &b : Fn)
+        if (const Instruction *t = b.getTerminator())
+          for (const BasicBlock *n : successors(t))
+            if (auto it = idx.find(n); it != idx.end())
+              rev[it->second].push_back(idx[&b]);
+      unsigned k = 0;
+      for (scc_iterator<Function *> it = scc_begin(&Fn); !it.isAtEnd(); ++it, ++k)
+        for (BasicBlock *b : *it)
+          ord[idx[b]] = k;
+    }
+    // nullopt: a block it does not know (the walk answers).
+    std::optional<bool> reaches(const BasicBlock *from, const BasicBlock *t) {
+      if (dirty)
+        build();
+      auto fi = idx.find(from), ti = idx.find(t);
+      if (fi == idx.end() || ti == idx.end())
+        return std::nullopt;
+      unsigned i = fi->second, j = ti->second;
+      if (ord[i] != kNo && ord[j] != kNo) {
+        if (ord[i] < ord[j])
+          return false;
+        if (ord[i] == ord[j])
+          return true;   // one component of two or more blocks (from != t)
+      }
+      auto [it, fresh] = to.try_emplace(j);
+      BitVector &bv = it->second;
+      if (fresh) {
+        bv.resize(unsigned(idx.size()));
+        SmallVector<unsigned, 32> w{j};
+        while (!w.empty())
+          for (unsigned p : rev[w.pop_back_val()])
+            if (!bv.test(p)) {
+              bv.set(p);
+              w.push_back(p);
+            }
+      }
+      return bv.test(i);
+    }
+    bool dominates(const BasicBlock *d, const BasicBlock *b) {
+      if (dirty)
+        build();
+      if (!DT)
+        DT = std::make_unique<DominatorTree>(const_cast<Function &>(*F));
+      return DT->dominates(d, b);
+    }
+  };
+  static ReachCache *&activeReach() {
+    static ReachCache *active = nullptr;
+    return active;
+  }
+  // The cache answers for F's blocks while it lives; Suspend (a CFG change) turns it off and has it rebuilt after.
+  struct ReachScope {
+    ReachCache rc, *prev;
+    explicit ReachScope(const Function &F) : prev(activeReach()) {
+      rc.F = &F;
+      activeReach() = &rc;
+    }
+    ~ReachScope() { activeReach() = prev; }
+  };
+  struct ReachSuspend {
+    ReachCache *rc;
+    ReachSuspend() : rc(activeReach()) { activeReach() = nullptr; }
+    ~ReachSuspend() {
+      if (rc)
+        rc->dirty = true;
+      activeReach() = rc;
+    }
+  };
+
   static bool reaches(const BasicBlock *from, const BasicBlock *to) {
     if (from == to)
       return true;
+    if (ReachCache *rc = activeReach(); rc && from->getParent() == rc->F && to->getParent() == rc->F)
+      if (std::optional<bool> r = rc->reaches(from, to))
+        return *r;
     SmallPtrSet<const BasicBlock *, 16> seen;
     SmallVector<const BasicBlock *, 16> work{from};
     seen.insert(from);
@@ -652,6 +750,8 @@ struct Uncompute::Impl {
     const BasicBlock *entry = &b->getParent()->getEntryBlock();
     if (entry == d)
       return true;
+    if (ReachCache *rc = activeReach(); rc && d->getParent() == rc->F && b->getParent() == rc->F)
+      return rc->dominates(d, b);
     SmallPtrSet<const BasicBlock *, 16> seen;
     SmallVector<const BasicBlock *, 16> work{entry};
     seen.insert(entry);
@@ -2508,6 +2608,7 @@ struct Uncompute::Impl {
     std::vector<unsigned> armPre;                      // the arm's branch block; kNo none, kNo - 1 not read yet
     std::vector<BasicBlock *> armFirst;
     std::vector<unsigned> ord;                         // order of the block (kNo: none)
+    std::vector<unsigned> dia, diaU;                   // the diamond's head and middle block; kNo none, kNo - 1 not read
     std::vector<unsigned> memoVal, memoStamp;
     unsigned stamp = 0;
   };
@@ -2631,6 +2732,8 @@ struct Uncompute::Impl {
         V.armPre.push_back(kNo - 1);
         V.armFirst.push_back(nullptr);
         V.ord.push_back(facts ? orderOf(x) : kNo);
+        V.dia.push_back(kNo - 1);
+        V.diaU.push_back(kNo);
         V.memoVal.push_back(0);
         V.memoStamp.push_back(0);
       }
@@ -2657,6 +2760,30 @@ struct Uncompute::Impl {
       }
       return V.armPre[x];
     };
+    // A join x whose two predecessors are a block h on an earlier strongly connected component and a block u whose only
+    // predecessor is h (an item block wrapArmItems split off, X -> U -> C): both incomings of its phi are h's value
+    // unless u is D, so the phi folds to it. The walk goes on at h as through a single predecessor (a stand-in keeps the
+    // folded phi's place for its name). Only with the CFG's facts (the order tells x apart from h's component).
+    auto diamondOf = [&](unsigned x) -> unsigned {
+      if (V.dia[x] == kNo - 1) {
+        V.dia[x] = kNo;
+        auto [off, n] = predsOf(x);
+        if (n == 2 && armOf(x) == kNo) {
+          unsigned p0 = V.predIds[off], p1 = V.predIds[off + 1];
+          for (auto [h, u] : {std::pair<unsigned, unsigned>{p0, p1}, {p1, p0}}) {
+            if (h == u)
+              break;
+            auto [uo, un] = predsOf(u);
+            if (un == 1 && V.predIds[uo] == h && V.ord[x] != kNo && V.ord[h] != kNo && V.ord[h] > V.ord[x]) {
+              V.dia[x] = h;
+              V.diaU[x] = u;
+              break;
+            }
+          }
+        }
+      }
+      return V.dia[x];
+    };
     auto notAfterD = [&](unsigned x) {
       if (!facts)
         return !afterD.count(V.bb[x]);
@@ -2673,7 +2800,10 @@ struct Uncompute::Impl {
       V.memoStamp[x] = st;
       V.memoVal[x] = val;
     };
-    struct Phi { unsigned b; std::vector<unsigned> in; };
+    struct Phi { unsigned b; std::vector<unsigned> in; bool ghost = false; };
+    const bool named = !name.isTriviallyEmpty();
+    SmallVector<char, 64> nameBuf;
+    StringRef nameRef = named ? name.toStringRef(nameBuf) : StringRef();
     std::vector<Phi> phis;
     enum : unsigned { Chain, Single, Join };
     struct Frame { unsigned b, kind, i, sym, jsBeg; };
@@ -2723,6 +2853,11 @@ struct Uncompute::Impl {
           } else if (n == 1) {
             stack.push_back({cur, Single, 0, 0, 0});
             cur = V.predIds[off];
+          } else if (unsigned h = facts ? diamondOf(cur) : kNo; h != kNo && V.bb[V.diaU[cur]] != D) {
+            if (!nameRef.empty())
+              phis.push_back({cur, {}, true});
+            stack.push_back({cur, Single, 0, 0, 0});
+            cur = h;
           } else {
             unsigned k = unsigned(phis.size());
             phis.push_back({cur, {}});
@@ -2763,6 +2898,9 @@ struct Uncompute::Impl {
     // Fold the trivial phis, as the made phis were folded: in order, again until nothing changes.
     const unsigned np = unsigned(phis.size());
     std::vector<unsigned> rep(np, kNo);
+    for (unsigned k = 0; k < np; ++k)
+      if (phis[k].ghost)
+        rep[k] = 0;
     auto res = [&](unsigned s) {
       unsigned r = s;
       while (r >= 2 && rep[r - 2] != kNo)
@@ -2801,9 +2939,6 @@ struct Uncompute::Impl {
     // Make the survivors in the walk's order; a folded phi takes its name's unique number on a stand-in.
     std::vector<PHINode *> made(np, nullptr);
     PHINode *standIn = nullptr;
-    const bool named = !name.isTriviallyEmpty();
-    SmallVector<char, 64> nameBuf;
-    StringRef nameRef = named ? name.toStringRef(nameBuf) : StringRef();
     for (unsigned k = 0; k < np; ++k) {
       if (rep[k] == kNo) {
         PHINode *phi = PHINode::Create(v->getType(), unsigned(phis[k].in.size()), nameRef);
@@ -3014,6 +3149,7 @@ struct Uncompute::Impl {
   // original block, which keeps the tail and the terminator (so a caller's references to it as an
   // edge's source stay valid).
   void placeDeferred(RailId g, const Ctx &c) {
+    ReachSuspend cfgChanges;   // cq-4tkb4: its split, and the reverse loop its emitter builds
     Rail &r = rails[g];
     Deferred &d = defs[r.deferred];
     SmallVector<Instruction *, 12> as = deferredAnchors(d);
@@ -4156,6 +4292,9 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
   Impl::Ctx c{Impl::Mode::Exit, ret, nullptr};
   BasicBlock *Rb = ret->getParent();
   SmallVector<RailId, 16> cands, defc;
+  // cq-4tkb4: nothing below changes the CFG until wrapLocal but a deferred item's placement (which suspends the cache).
+  std::optional<Impl::ReachScope> reach;
+  reach.emplace(*Rb->getParent());
   for (RailId g = 0; g < I.rails.size(); ++g) {
     if (!I.resolvable(g) || I.done(g, c) || I.rails[g].ownedBy != kNone)
       continue;
@@ -4192,6 +4331,7 @@ void Uncompute::flushAtExit(ReturnInst *ret) {
   }
   I.resolve(cands, c);
   I.resolveUnmeasured(Rb); // cq-8lf8
+  reach.reset();
   I.wrapLocal();
   I.wrapArmItems(*Rb->getParent());
   I.armLocal.clear();
