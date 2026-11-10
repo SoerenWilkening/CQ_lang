@@ -324,7 +324,7 @@ private:
             if (S.kind == Kind::Clone)
               continue;
             const Function *Callee = CB->getCalledFunction();
-            if (!Callee || !Callee->isDeclaration())
+            if (!Callee || !hostCallee(*Callee))
               continue;  // an in-module function, or a dispatch through a pointer
             report("handle-in-classical-op", "handle passed to the external function @" + Callee->getName(), I);
             continue;

@@ -106,6 +106,48 @@ std::string calleeName(const Function &F, const Value *at) {
   return base;
 }
 
+bool streamName(StringRef n) {
+  // C17 7.21 and POSIX.1-2017 <stdio.h>, less the string formatters; CR rule 16's five descriptor calls.
+  static const char *names[] = {
+      "fopen",       "freopen",      "fclose",         "fflush",          "setbuf",         "setvbuf",
+      "fprintf",     "printf",       "vfprintf",       "vprintf",         "fscanf",         "scanf",
+      "vfscanf",     "vscanf",       "fgetc",          "getc",            "getchar",        "fgets",
+      "gets",        "fputc",        "putc",           "putchar",         "fputs",          "puts",
+      "ungetc",      "fread",        "fwrite",         "fgetpos",         "fseek",          "fsetpos",
+      "ftell",       "rewind",       "clearerr",       "feof",            "ferror",         "perror",
+      "remove",      "rename",       "tmpfile",        "tmpnam",          "getline",        "getdelim",
+      "fdopen",      "fileno",       "popen",          "pclose",          "fseeko",         "ftello",
+      "dprintf",     "vdprintf",     "flockfile",      "funlockfile",     "ftrylockfile",   "getc_unlocked",
+      "getchar_unlocked", "putc_unlocked", "putchar_unlocked", "ctermid", "fmemopen",       "open_memstream",
+      "renameat",    "tempnam",      "open",           "close",           "read",           "write",
+      "lseek"};
+  for (const char *x : names)
+    if (n == x)
+      return true;
+  return false;
+}
+
+static StringRef cName(const Function &F) {
+  StringRef n = F.getName();
+  if (n.starts_with("\01_"))
+    n = n.drop_front(2);
+  return n;
+}
+
+bool streamCallee(const Function &F) {
+  if (F.isIntrinsic() || !streamName(cName(F)))
+    return false;
+  LibFunc lf;
+  if (libFuncOf(F, lf))
+    return true;
+  // A name TargetLibraryInfo knows with another prototype is the program's own function of that name; one it does
+  // not know (lseek, getline, dprintf, ...) is recognised by name.
+  static const TargetLibraryInfoImpl names{Triple()};
+  return !names.getLibFunc(cName(F), lf);
+}
+
+bool hostCallee(const Function &F) { return F.isDeclaration() || streamCallee(F); }
+
 bool libFuncOf(const Function &F, LibFunc &lf) {
   static thread_local std::unique_ptr<TargetLibraryInfoImpl> impl;
   static thread_local std::string triple;

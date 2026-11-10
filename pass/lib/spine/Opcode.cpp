@@ -773,7 +773,7 @@ bool effectFree(const Function &F, SmallPtrSetImpl<const Function *> &seen) {
           continue;
         return false;
       }
-      if (G->isDeclaration() || G->isVarArg() || !effectFree(*G, seen))
+      if (hostCallee(*G) || G->isVarArg() || !effectFree(*G, seen))
         return false;
       continue;
     }
@@ -785,7 +785,7 @@ bool effectFree(const Function &F, SmallPtrSetImpl<const Function *> &seen) {
 
 bool pureCloneReader(LoweringContext &ctx, const CallBase &cb, unsigned argNo) {
   const Function *F = cb.getCalledFunction();
-  if (!F || F->isDeclaration() || F->isIntrinsic() || F->isVarArg() || !cb.isArgOperand(&cb.getOperandUse(argNo)) ||
+  if (!F || hostCallee(*F) || F->isIntrinsic() || F->isVarArg() || !cb.isArgOperand(&cb.getOperandUse(argNo)) ||
       argNo >= F->arg_size() || F->getFunctionType() != cb.getFunctionType())
     return false;
   Type *ty = cb.getArgOperand(argNo)->getType();

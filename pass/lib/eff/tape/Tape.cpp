@@ -248,8 +248,8 @@ Constant *effectName(Module &M, StringRef name) {
 
 // May a call to F (with a quantum or non-classical pointer argument) modify a caller's rail in place?
 bool bodyMayModifyInPlace(const Function *F, SmallPtrSetImpl<const Function *> &seen) {
-  if (!F || F->isDeclaration())
-    return true;   // opaque (rule 27)
+  if (!F || hostCallee(*F))
+    return true;   // opaque (rule 27; a rule-16 stream call)
   if (!seen.insert(F).second)
     return false;
   for (const BasicBlock &bb : *F)
@@ -271,7 +271,7 @@ bool bodyMayModifyInPlace(const Function *F, SmallPtrSetImpl<const Function *> &
           return true;
         continue;
       }
-      if (G->isDeclaration()) {
+      if (hostCallee(*G)) {
         StringRef n = G->getName();
         if (n.starts_with("cq_measure_") || n == "cq_phi")
           continue;

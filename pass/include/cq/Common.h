@@ -37,6 +37,16 @@ struct Operand { llvm::Value *v; bool handle; };    // a rail handle, or a class
 // cq-my17 (rule 16, 99): F is a library function LLVM knows (TargetLibraryInfo for the module's triple,
 // prototype checked), its LibFunc in lf; a Mach-O asm label "\01_n" names C function n.
 bool libFuncOf(const llvm::Function &F, llvm::LibFunc &lf);
+// CR rule 16's stream calls by C name (a leading "\01_" removed): every <stdio.h> function, input and output alike,
+// and the POSIX descriptor calls open, close, read, write, lseek; never the string formatters sprintf, snprintf,
+// sscanf and their v forms (injected and lifted).
+bool streamName(llvm::StringRef cname);
+// cq-pt57w (CR rule 16): F is a stream call recognised by name and signature (its prototype checked where LLVM's
+// TargetLibraryInfo knows the name). "A body the bundle has for one of them is never lifted for the call."
+bool streamCallee(const llvm::Function &F);
+// CR rule 16: a call of F by name is at the host boundary: F has no body, or it is a stream call whose body is never
+// lifted. Rule 16 classifies the call; nothing descends into F's body for it.
+bool hostCallee(const llvm::Function &F);
 // The C name of a callee: the function's own, or the libm function an LLVM math intrinsic stands for (rule 18).
 std::string calleeName(const llvm::Function &F, const llvm::Value *at);
 // cq-z6q1 (CR rule 14; 189): the exit of the loop headed by `header` from block `exiting` has an exit count

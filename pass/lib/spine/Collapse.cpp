@@ -653,7 +653,7 @@ namespace {
 enum class Meas : uint8_t { None, Some, Always };
 
 Meas formalMeasured(Shared &sh, const Function &F, unsigned idx, SmallPtrSet<const Function *, 8> &onStack) {
-  if (F.isDeclaration() || idx >= F.arg_size() || !onStack.insert(&F).second)
+  if (hostCallee(F) || idx >= F.arg_size() || !onStack.insert(&F).second)
     return Meas::None;
   const Argument *A = F.getArg(idx);
   SmallVector<const ReturnInst *, 4> rets;
@@ -692,7 +692,7 @@ Meas formalMeasured(Shared &sh, const Function &F, unsigned idx, SmallPtrSet<con
 void noteCalleeMeasures(LoweringContext &ctx, const CallBase &orig, BasicBlock *, Instruction *) {
   Shared &sh = shared(ctx);
   const Function *F = orig.getCalledFunction();
-  if (!F || F->isDeclaration())
+  if (!F || hostCallee(*F))
     return;
   // Rule 19: a _ctl clone measures a controlled copy: the actual is not collapsed. A table clone hands its callee a copy
   // (cq-t2jj2, calls::measuredActual): neither is its actual.

@@ -29,7 +29,7 @@ bool isSurface(const Function &G) {
 // Rule 26, §1.4: a call by name of a variadic function or of one with a byval formal makes bus stores (the block, the
 // copy) whatever the callee does.
 bool plainForm(const Function &G) {
-  return !G.isDeclaration() && (G.isVarArg() || any_of(G.args(), [](const Argument &A) { return A.hasByValAttr(); }));
+  return !hostCallee(G) && (G.isVarArg() || any_of(G.args(), [](const Argument &A) { return A.hasByValAttr(); }));
 }
 
 // Rule 5: a format entry is no change. Rule 16 makes printf one always.
@@ -106,7 +106,7 @@ bool bodyWrites(const TaintInfo &T, const Function &F, SmallVectorImpl<const Fun
       }
       if (plainForm(*G))
         w = true;
-      if (G->isDeclaration()) {
+      if (hostCallee(*G)) {   // cq-pt57w: a stream call by name is rule 16's, its body never lifted
         if (formatEntry(*G))
           continue;
         if (endsProgram(*CB, *G) && !T.listedRoot(*G))
@@ -195,7 +195,7 @@ bool versionChange(const LoweringContext &ctx, const Instruction &I) {
     return true;
   if (plainForm(*G))
     return true;
-  if (G->isDeclaration()) {
+  if (hostCallee(*G)) {
     // An effect entry notes its change at the tape_effect call itself (Tape.cpp): the readers of its fields and of what
     // precedes are un-copied before it (99). A format entry is none.
     if (ctx.T.isEffectEntry(*CB, ctx.S) || formatEntry(*G))

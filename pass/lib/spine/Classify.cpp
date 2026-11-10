@@ -357,7 +357,7 @@ static Class classifyBase(const CallBase &CB, const TaintInfo &T, const Speciali
                   &CB);
   }
 
-  if (!F->isDeclaration()) {
+  if (!hostCallee(*F)) {
     // A callee with a body: lifted (rule 18), called as it is (rule 19, no quantum argument, a body that
     // rotates: calls::lowerLifted), or a _ctl / merged callee under a predicate.
     if (qArg || qRes || qPred)

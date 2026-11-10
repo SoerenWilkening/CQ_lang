@@ -333,7 +333,7 @@ private:
         if (auto *CB = dyn_cast<CallBase>(&I))
           if (const Function *G = CB->getCalledFunction()) {
             bool loop = LI.getLoopFor(&BB) != nullptr;
-            if (G->isDeclaration())
+            if (hostCallee(*G))
               found = found || (loop && G->getName().starts_with("cq_theta_"));
             else if (!G->getReturnType()->isVoidTy() && (loop || callsReach(G, F)) && rotatesByName(G))
               found = true;
@@ -350,7 +350,7 @@ private:
       for (const Instruction &I : BB)
         if (auto *CB = dyn_cast<CallBase>(&I))
           if (const Function *G = CB->getCalledFunction())
-            if (G->isDeclaration() ? G->getName().starts_with("cq_measure_") : measuresByName(G))
+            if (hostCallee(*G) ? G->getName().starts_with("cq_measure_") : measuresByName(G))
               return true;
     }
     return false;
@@ -366,7 +366,7 @@ private:
             if (const Function *G = CB->getCalledFunction()) {
               if (G->isDeclaration() && G->getName().starts_with("cq_measure_"))
                 return true;
-              if (!G->isDeclaration() && seen.insert(G).second)
+              if (!hostCallee(*G) && seen.insert(G).second)
                 work.push_back(G);
             }
     }
@@ -384,7 +384,7 @@ private:
             if (const Function *G = CB->getCalledFunction()) {
               if (G->getName().starts_with("cq_theta_"))
                 return true;
-              if (!G->isDeclaration() && seen.insert(G).second)
+              if (!hostCallee(*G) && seen.insert(G).second)
                 work.push_back(G);
             }
     }
@@ -402,7 +402,7 @@ private:
     bool found = false;
     while (!work.empty() && !found) {
       const Function *X = work.pop_back_val();
-      if (X->isDeclaration())
+      if (hostCallee(*X))
         continue;
       for (const BasicBlock &BB : *X)
         for (const Instruction &I : BB)
@@ -1723,22 +1723,6 @@ void Analyzer::lift(CallBase &CB, Function *G, ArrayRef<Value *> actualsIn, bool
 
 void Analyzer::declaredClone(CallBase &CB, Function *G, ArrayRef<Value *> actuals) { lift(CB, G, actuals, false); }
 
-// Rule 16's stream calls: every <stdio.h> function, input and output alike, and the POSIX descriptor calls, except the
-// string formatters (injected and lifted when the bundle has them).
-static bool streamCall(StringRef n) {
-  static const char *names[] = {
-      "fopen",    "freopen",  "fclose",  "fflush",   "setbuf",   "setvbuf", "fprintf", "printf",  "vfprintf", "vprintf",
-      "fscanf",   "scanf",    "vfscanf", "vscanf",   "fgetc",    "getc",    "getchar", "fgets",   "gets",     "fputc",
-      "putc",     "putchar",  "fputs",   "puts",     "ungetc",   "fread",   "fwrite",  "fgetpos", "fseek",    "fsetpos",
-      "ftell",    "rewind",   "clearerr","feof",     "ferror",   "perror",  "remove",  "rename",  "tmpfile",  "tmpnam",
-      "open",     "close",    "read",    "write",    "lseek",    "getline", "getdelim","fdopen",  "fileno",   "popen",
-      "pclose",   "fseeko",   "ftello",  "dprintf",  "vdprintf", "flockfile","funlockfile"};
-  for (const char *x : names)
-    if (n == x)
-      return true;
-  return false;
-}
-
 // <fenv.h> (C17 7.6) as rule 23 rail operations (eff-fenv), never a declared clone. Point-wise:
 // fenvCur is the state before the call and becomes the state after it. A change of a fact by a
 // quantum operand or under a quantum predicate makes it a rail (select(p, new, old) is one); a
@@ -2107,11 +2091,12 @@ void Analyzer::transferCall(CallBase &CB) {
         return;
       }
   }
-  if (!G->isDeclaration()) {
+  // cq-pt57w (rule 16): a stream call by name is the host boundary although the bundle has its body, never lifted.
+  if (!hostCallee(*G)) {
     lift(CB, G, actuals, false);
     return;
   }
-  // A callee with no body (rule 16; a listed one is rule 27's, whatever its arguments).
+  // A callee with no body or a stream call (rule 16; a listed one is rule 27's, whatever its arguments).
   StringRef cname = G->getName();
   if (cname.starts_with("\x01_"))
     cname = cname.drop_front(2);
@@ -2133,7 +2118,7 @@ void Analyzer::transferCall(CallBase &CB) {
   if (CB.doesNotAccessMemory() && CB.willReturn() && !qArg)
     return;
   // Ordinary host call: made as it stands.
-  if (!qArg && !qPred && !(streamCall(cname) && ptrArg) && !eventPrecedes(CB))
+  if (!qArg && !qPred && !(streamName(cname) && ptrArg) && !eventPrecedes(CB))
     return;
   // Effect entry (a format entry for printf). Its result the program reads is the _<W> entry's rail, KEPT.
   if (cur->effectEntries.insert(&CB).second)
@@ -2571,9 +2556,10 @@ void Analyzer::computeReachable() {
 void Analyzer::solve() {
   Module &M = *st.M;
 
-  // Roots: in-place specializations of every externally reachable function; library-build roots.
+  // Roots: in-place specializations of every externally reachable function; library-build roots. A stream call's body
+  // is classical host C, never lowered (CR "Every body is lowered": the only bodies never lifted are rule 16's).
   for (Function &F : M) {
-    if (F.isDeclaration())
+    if (hostCallee(F))
       continue;
     if (!F.hasLocalLinkage() || F.hasAddressTaken()) {
       std::vector<Lanes> z;

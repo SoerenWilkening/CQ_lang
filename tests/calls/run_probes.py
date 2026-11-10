@@ -190,6 +190,12 @@ CASES = [
     ("own_small_widen", "f", [], "pass", []),
     ("own_small_mixed_ret", "f", [], "pass", []),
     # Rule 16 Signal table: a result of signal and of raise the program reads; a rail signal number.
+    # cq-pt57w (rule 16): a stream call by name is the host boundary although the module has its body (the musl bundle's
+    # fprintf): rule 16's effect entry, the body never lifted nor lowered. "lower": §6 cannot judge it yet, the checker
+    # performs no deferred fprintf entry and runs the C program's own body (cq-i17u, bead filed with cq-pt57w).
+    ("stream_body_by_name", "stream_body", [], "lower",
+     [r"call void @cqrt_tape_effect_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.fprintf, i32 3\)",
+      r"define noundef i32 @fprintf\(ptr noalias nocapture noundef %0, ptr noalias nocapture noundef readonly %1, \.\.\.\)"]),
     ("raise_read", "raise_read", [], "pass", [r"@__cq_sig"]),
     ("sig_rail", "sig_rail", [], "pass", [r"@__cq_sig", r"@cqrt_qram_store_i64\("]),
     # Rule 19 extra results: the twin takes the register's handle and repeats no rotation.

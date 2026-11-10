@@ -160,7 +160,7 @@ void scanHostFlags(Function &F, SmallPtrSetImpl<Function *> &seen, bool &hostFla
       continue;
     }
     Function *G = CB->getCalledFunction();
-    if (!G || G->isDeclaration())
+    if (!G || hostCallee(*G))
       continue;
     if (std::optional<abi::CloneSpec> c = abi::parseClone(G->getName()); c && c->unc)
       continue;   // a twin is scanned when it is defined
