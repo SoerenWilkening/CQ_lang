@@ -1285,7 +1285,8 @@ def _no_twin_clones(bodies: Dict[str, str]) -> Set[str]:
             if f not in rotates and not f.endswith("_unc") and calls(b) & rotates:
                 rotates.add(f)
                 changed = True
-    # A table clone with no predicate keeps its twin for a classical-path measurement (rule 18), which re-reads the copy it pushed. A
+    # A table clone with no predicate keeps its twin for a classical-path measurement of a rail that is not its formal (rule 18), which
+    # re-reads the copy it pushed; one of a formal leaves it none (measures_formal_copy). A
     # copy per trip leaves it none, as a rotation per trip does, and so does a measurement under a quantum predicate: every formal of
     # _t is a rail, so its branches are quantum and their merges are select templates.
     measures = {f for f, b in bodies.items() if _MEASURED_RAIL.search(b) and not f.endswith("_unc")}
@@ -1296,9 +1297,32 @@ def _no_twin_clones(bodies: Dict[str, str]) -> Set[str]:
             if f not in measures and not f.endswith("_unc") and calls(b) & measures:
                 measures.add(f)
                 changed = True
+    def measures_formal_copy(fn: str, body: str) -> bool:
+        """§1.4 (CQ_spec 96c7bc5): a table clone with no predicate measures a formal through a kept copy t, `alloc_<W>(0);
+        copy_<W>(h, t); measure_<W>(t)` (or hands t to a by-name callee that measures it); t is not pushed, so no twin can
+        re-read it and the clone has no rule-18 twin (211's __cq_q_peek_1_t_unc)."""
+        if not re.match(r"^__cq_q_.*_t$", fn):
+            return False
+        defs = [int(n) for n in re.findall(r"(?m)^\s+%(\d+) = ", body)]
+        if not defs:
+            return False
+        nformals = min(defs) - 1   # unnamed formals %0..%(n-1), then the entry block
+        fresh = set(re.findall(r"(?m)^\s+(%\d+) = call i32 @cqrt_alloc_\w+\(i\d+ 0\)", body))
+        for m in re.finditer(r"@cqrt_copy_\w+\(i32 %(\d+), i32 (%\d+)\)", body):
+            if int(m.group(1)) >= nformals or m.group(2) not in fresh:
+                continue
+            t = re.escape(m.group(2))
+            if re.search(rf"@cqrt_measure_\w+\(i32 {t}\)", body):
+                return True
+            for c in re.finditer(rf"(?m)\bcall [^@%\n]*@\"?([-\w.$]+)\"?\(([^\n]*)$", body):
+                if c.group(1) in measures and re.search(rf"\bi32 {t}[,)]", c.group(2)):
+                    return True
+        return False
+
     out = {f for f, b in bodies.items()
            if own(f, b) or (f in rotates and has_loop(b))
-           or (_TABLE_CLONE.match(f) and f in measures and (has_loop(b) or "@cq_template_select_" in b))}
+           or (_TABLE_CLONE.match(f) and f in measures and (has_loop(b) or "@cq_template_select_" in b))
+           or measures_formal_copy(f, b)}
     changed = True
     while changed:
         changed = False

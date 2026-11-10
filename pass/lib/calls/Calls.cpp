@@ -790,14 +790,49 @@ namespace {
 // the lowered own symbols replaced the originals.
 std::map<const Module *, std::vector<TableRow>> tableRows;
 
+// §1.4 (ruling cq-t2jj2, CQ_spec 96c7bc5): in a table clone with no predicate a cq_measure of a formal measures a kept copy t
+// that stays allocated and is not pushed. A twin would have to re-read t (rule 2 never measures again) and has no handle of it,
+// so such a clone has no rule-18 twin: its twin only pops and its results stay allocated (211's __cq_q_peek_1_t_unc). The same
+// holds for a by-name callee that measures the formal on every path: _t hands it such a copy (measuredActual).
+bool measuresFormalCopy(const TaintInfo &T, const Specialization &S) {
+  if (!S.table || S.ctl || S.F->isDeclaration())
+    return false;
+  for (const Argument &A : S.F->args()) {
+    SmallVector<const Value *, 4> views{&A};
+    while (!views.empty()) {
+      const Value *v = views.pop_back_val();
+      for (const Use &U : v->uses()) {
+        if (isa<FreezeInst>(U.getUser())) {
+          views.push_back(U.getUser());
+          continue;
+        }
+        auto *CB = dyn_cast<CallBase>(U.getUser());
+        const Function *G = CB && CB->isArgOperand(&U) ? CB->getCalledFunction() : nullptr;
+        if (!G)
+          continue;
+        if (G->isDeclaration()) {
+          if (G->getName().starts_with("cq_measure_") && T.isQuantum(v, S))
+            return true;
+        } else if (const Specialization *C = T.calleeSpecialization(*CB, S)) {
+          SmallPtrSet<const Specialization *, 8> onStack;
+          if (measuresFormal(T, *C, CB->getArgOperandNo(&U), onStack))
+            return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 // §1.4: a table clone's twin does nothing but count and pop when rule 18 gives it none: a tainted measurement, which is every
-// measurement in a _ctl clone (rule 19's controlled copy), itself or in a callee by name. A measurement on a classical path of the
-// clone with no predicate keeps its rule-18 twin; the outcome's seed stays allocated (rule 2, Finalize's defineTwin).
+// measurement in a _ctl clone (rule 19's controlled copy), itself or in a callee by name, or a measurement of a formal in the clone
+// with no predicate (measuresFormalCopy). Any other measurement on a classical path of the clone with no predicate keeps its
+// rule-18 twin; the outcome's seed stays allocated (rule 2, Finalize's defineTwin).
 bool tableKeepsResults(const TaintInfo &T, const Specialization &S) {
   if (!hasTwin(T, S))
     return true;
   if (!S.ctl)
-    return false;
+    return measuresFormalCopy(T, S);
   SmallPtrSet<const Function *, 8> seen{S.F};
   SmallVector<const Function *, 8> work{S.F};
   while (!work.empty()) {

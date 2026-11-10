@@ -20,3 +20,10 @@ int h(int a,int k){
   int r=p(a+1);
   return r+cq_measure(a);
 }
+__attribute__((noinline)) int inner(int x){ return cq_measure(x+1)+x; }
+int n(int a,int k){
+  int (*p)(int) = k ? inner : in;
+  cq_theta(&a, 1.0);
+  int r=p(a+1);
+  return r+cq_measure(a);
+}
