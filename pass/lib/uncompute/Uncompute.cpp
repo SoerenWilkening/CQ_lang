@@ -140,6 +140,7 @@
 // identical to the forward by construction. Rule 6 has no forward call to copy from and declares its
 // inverse template and copy through abi::declare.
 #include "cq/Uncompute.h"
+#include "cq/Order.h"
 
 #include <algorithm>
 #include <functional>
@@ -310,6 +311,22 @@ struct Uncompute::Impl {
   SmallVector<unsigned, 4> openStack;
   DenseSet<const Instruction *> emitted;
   MapVector<std::pair<RailId, const BasicBlock *>, Instruction *> itemEnd;   // insertion order: keyed by a pointer
+  // cq-g3h1i: per rail, the positions of its itemEnd entries (in insertion order; no entry is ever removed), so
+  // "the item ends of rail o" is no scan of every item placed so far.
+  DenseMap<RailId, SmallVector<unsigned, 2>> itemEndOf;
+  void setItemEnd(RailId g, const BasicBlock *bb, Instruction *end) {
+    auto [it, fresh] = itemEnd.insert({{g, bb}, end});
+    if (fresh)
+      itemEndOf[g].push_back(unsigned(itemEnd.size() - 1));
+    else
+      it->second = end;
+  }
+  // as += the item ends of o, in itemEnd's order.
+  void itemEndsOf(RailId o, SmallVectorImpl<Instruction *> &as) const {
+    if (auto it = itemEndOf.find(o); it != itemEndOf.end())
+      for (unsigned k : it->second)
+        as.push_back((itemEnd.begin() + k)->second);
+  }
   // cq-ut4k: rails pending at the return being flushed whose definition does not dominate it (an arm
   // of a classical branch, often of a merge: a phi over arm-local handles), and the items placed for
   // them there, each run under its own selector (wrapArmItems).
@@ -633,7 +650,7 @@ struct Uncompute::Impl {
   // a executes after b on some path (acyclic reading).
   static bool after(const Instruction *a, const Instruction *b) {
     if (a->getParent() == b->getParent())
-      return b->comesBefore(a);
+      return cq::comesBefore(b, a);
     return reaches(b->getParent(), a->getParent());
   }
 
@@ -693,12 +710,31 @@ struct Uncompute::Impl {
     SmallVector<RailId, 4> out = ownReads(g);
     // cq-lshe: the rails the sandwich of the item reads (the operands of in-place writes it may undo and
     // redo around itself) outlive it too.
-    if (rails[g].deferred == kNone)
-      for (unsigned w : sandwichCands(g))
-        for (RailId x : info[w].reads)
-          if (x != g && !is_contained(out, x))
-            out.push_back(x);
+    if (rails[g].deferred == kNone) {
+      SmallVector<unsigned, 4> ws = sandwichCands(g);
+      if (!ws.empty()) {
+        SmallDenseSet<RailId, 16> seen(out.begin(), out.end());   // cq-g3h1i: a sandwich may read many rails
+        for (unsigned w : ws)
+          for (RailId x : info[w].reads)
+            if (x != g && seen.insert(x).second)
+              out.push_back(x);
+      }
+    }
     return out;
+  }
+  // cq-g3h1i: itemReads(g) holds one of ns, answered without building the list: g's own reads first, the
+  // sandwich only when they hold none.
+  bool itemReadsAny(RailId g, ArrayRef<RailId> ns) const {
+    SmallVector<RailId, 4> own = ownReads(g);
+    if (any_of(ns, [&](RailId n) { return is_contained(own, n); }))
+      return true;
+    if (rails[g].deferred != kNone)
+      return false;
+    for (unsigned w : sandwichCands(g))
+      for (RailId x : info[w].reads)
+        if (x != g && is_contained(ns, x))
+          return true;
+    return false;
   }
   SmallVector<RailId, 4> ownReads(RailId g) const {
     const Rail &r = rails[g];
@@ -753,12 +789,14 @@ struct Uncompute::Impl {
       for (unsigned rec : undone(g))
         addReads(info[rec].reads, records[rec].forward);
     }
+    SmallDenseSet<unsigned, 16> taken;   // cq-g3h1i: out's members
     for (unsigned i = 0; i < R.size(); ++i) {
       Rd rd = R[i];
       for (unsigned w : rails[rd.x].writes) {
         const Instruction *f = records[w].forward;
-        if (is_contained(out, w) || !f->getParent() || (rd.at && (f == rd.at || !after(f, rd.at))))
+        if (taken.count(w) || !f->getParent() || (rd.at && (f == rd.at || !after(f, rd.at))))
           continue;
+        taken.insert(w);
         out.push_back(w);
         for (RailId y0 : info[w].reads)
           for (RailId y : leaves(y0))
@@ -859,6 +897,10 @@ struct Uncompute::Impl {
     return true;
   }
 
+  // cq-g3h1i: itemReads per rail, kept while resolve only reads the rails (dropBlocked and order: no record,
+  // rail or instruction changes between their calls); null outside.
+  mutable DenseMap<RailId, SmallVector<RailId, 4>> *readsMemo = nullptr;
+
   // Rails whose item reads g, directly or through a merge that may name g (U1).
   SmallVector<RailId, 4> readersOf(RailId g) const {
     if (rails[g].deferred != kNone) {
@@ -876,16 +918,18 @@ struct Uncompute::Impl {
     // cq-lshe: an in-place write reading g is in the sandwich of the items that read its target (or, in
     // turn, a rail another such write reads): those items read g too (itemReads), so they are candidates.
     SmallVector<RailId, 4> targets;
+    // cq-g3h1i: membership through a set beside each list (a rail many records read has many candidates).
+    SmallDenseSet<RailId, 16> candSet, targetSet;
     auto addCands = [&](RailId n) {
       for (unsigned rec : rails[n].readerRecs) {
-        if (!is_contained(cand, info[rec].item))
+        if (candSet.insert(info[rec].item).second)
           cand.push_back(info[rec].item);
         if (!isCreator(info[rec].kind))
-          if (RailId t = records[rec].out; t < rails.size() && !is_contained(targets, t))
+          if (RailId t = records[rec].out; t < rails.size() && targetSet.insert(t).second)
             targets.push_back(t);
       }
       for (RailId o : rails[n].cleanupReaders)
-        if (!is_contained(cand, o))
+        if (candSet.insert(o).second)
           cand.push_back(o);
     };
     for (RailId n : ns)
@@ -897,9 +941,16 @@ struct Uncompute::Impl {
     for (RailId o : cand) {
       if (o == g)
         continue;
-      SmallVector<RailId, 4> rd = itemReads(o);
-      if (!any_of(ns, [&](RailId n) { return is_contained(rd, n); }))
+      if (readsMemo) {
+        auto [it, fresh] = readsMemo->try_emplace(o);
+        if (fresh)
+          it->second = itemReads(o);
+        const SmallVector<RailId, 4> &rd = it->second;
+        if (!any_of(ns, [&](RailId n) { return is_contained(rd, n); }))
+          continue;
+      } else if (!itemReadsAny(o, ns)) {
         continue;
+      }
       // F1: a reader owned by a deferred item not yet placed is undone by that item.
       if (unsigned di = rails[o].ownedBy; di != kNone && rails[g].ownedBy != di && !rails[defs[di].pseudo].released)
         o = defs[di].pseudo;
@@ -940,7 +991,7 @@ struct Uncompute::Impl {
         if (auto *i = dyn_cast<Instruction>(rails[m].handle))
           out.push_back(i);
       for (Value *e : cg.extra)
-        if (auto *i = dyn_cast<Instruction>(e); i && i->getParent() && !(i->getParent() == cg.fwd->getParent() && i->comesBefore(cg.fwd)))
+        if (auto *i = dyn_cast<Instruction>(e); i && i->getParent() && !(i->getParent() == cg.fwd->getParent() && cq::comesBefore(i, cg.fwd)))
           out.push_back(i);
     }
     for (unsigned w : r.writes)
@@ -964,7 +1015,7 @@ struct Uncompute::Impl {
   Pos afterLatest(BasicBlock *bb, ArrayRef<Instruction *> as, RailId g) {
     Instruction *latest = nullptr;
     for (Instruction *a : as)
-      if (a->getParent() == bb && (!latest || latest->comesBefore(a)))
+      if (a->getParent() == bb && (!latest || cq::comesBefore(latest, a)))
         latest = a;
     Instruction *before;
     if (!latest) {
@@ -1209,7 +1260,7 @@ struct Uncompute::Impl {
         byBlock[evs[i].at->getParent()].push_back(i);
     for (auto &kv : byBlock)
       llvm::stable_sort(kv.second, [&](unsigned x, unsigned y) {
-        return evs[x].at != evs[y].at && evs[x].at->comesBefore(evs[y].at);
+        return evs[x].at != evs[y].at && cq::comesBefore(evs[x].at, evs[y].at);
       });
     std::vector<PHINode *> made;
     std::vector<Instruction *> ops;   // and/xor made here
@@ -1258,7 +1309,7 @@ struct Uncompute::Impl {
       SmallVector<unsigned, 4> es;
       if (auto it = byBlock.find(b); it != byBlock.end())
         for (unsigned i : it->second)
-          if (!limit || (evs[i].at != limit && evs[i].at->comesBefore(limit)))
+          if (!limit || (evs[i].at != limit && cq::comesBefore(evs[i].at, limit)))
             es.push_back(i);
       int lastSet = -1;
       for (unsigned k = 0; k < es.size(); ++k)
@@ -1684,19 +1735,17 @@ struct Uncompute::Impl {
             if (reach.insert(s).second)
               work.push_back(s);
       return any_of(versions, [&](const Instruction *v) {
-        return reach.count(v->getParent()) || (v->getParent() == LB && load->comesBefore(v));
+        return reach.count(v->getParent()) || (v->getParent() == LB && cq::comesBefore(load, v));
       });
     }
+    // v is one of bb's instructions before `at` (cq-g3h1i: by order, not by a scan of the block up to `at`).
     auto before = [&](const Instruction *v) {
-      for (auto it = bb->begin(); it != at; ++it)
-        if (&*it == v)
-          return true;
-      return false;
+      return v->getParent() == bb && (at == bb->end() || (v != &*at && cq::comesBefore(v, &*at)));
     };
-    bool linear = LB == bb && (at == bb->end() || load->comesBefore(&*at));
+    bool linear = LB == bb && (at == bb->end() || cq::comesBefore(load, &*at));
     if (linear) {
       for (const Instruction *v : versions)
-        if (v->getParent() == LB && load->comesBefore(v) && before(v))
+        if (v->getParent() == LB && cq::comesBefore(load, v) && before(v))
           return true;
       return false;
     }
@@ -1720,7 +1769,7 @@ struct Uncompute::Impl {
     for (const Instruction *v : versions) {
       const BasicBlock *VB = v->getParent();
       if (VB == LB) {
-        if (load->comesBefore(v))
+        if (cq::comesBefore(load, v))
           return true;
       } else if (VB == bb) {
         if (fwd.count(bb) && before(v))
@@ -1750,7 +1799,7 @@ struct Uncompute::Impl {
   }
 
   // Readers first; ties by most recent rail first.
-  SmallVector<RailId, 16> order(ArrayRef<RailId> cands) const {
+  SmallVector<RailId, 16> order(ArrayRef<RailId> cands, const DenseMap<RailId, SmallVector<RailId, 4>> *readers = nullptr) const {
     DenseSet<RailId> in(cands.begin(), cands.end());
     DenseMap<RailId, int> state; // 1 visiting, 2 done
     SmallVector<RailId, 16> out;
@@ -1764,7 +1813,12 @@ struct Uncompute::Impl {
         internalError("uncompute: cyclic uncompute dependency through rule 6", rails[g].handle);
       }
       s = 1;
-      SmallVector<RailId, 4> rd = readersOf(g);
+      SmallVector<RailId, 4> rd;
+      auto known = readers ? readers->find(g) : decltype(readers->find(g))();
+      if (readers && known != readers->end())
+        rd = known->second;
+      else
+        rd = readersOf(g);
       llvm::sort(rd, [](RailId a, RailId b) { return a > b; });
       for (RailId o : rd)
         if (in.count(o))
@@ -1778,28 +1832,53 @@ struct Uncompute::Impl {
   }
 
   // Drop every candidate a pending resolvable non-candidate reader still needs.
-  void dropBlocked(SmallVectorImpl<RailId> &cands, const Ctx &c, bool fatal) const {
-    bool changed = true;
-    while (changed) {
+  // cq-g3h1i: a candidate is dropped when a reader outside the set is pending, and dropping only shrinks the set,
+  // so the survivors are one fixed point whatever the order of the drops. The readers of each candidate are
+  // read once (nothing here changes them) and the passes repeat over them until none drops; the first drop found
+  // is the one a scan restarted after every drop finds first (the fatal message names it).
+  // `readers` (when given) receives readersOf of every candidate, for order().
+  void dropBlocked(SmallVectorImpl<RailId> &cands, const Ctx &c, bool fatal,
+                   DenseMap<RailId, SmallVector<RailId, 4>> *readers = nullptr) const {
+    DenseSet<RailId> in(cands.begin(), cands.end());
+    DenseMap<RailId, unsigned> copies;   // a rail listed twice stays in the set until its last copy drops
+    for (RailId g : cands)
+      ++copies[g];
+    std::vector<SmallVector<RailId, 4>> blockers(cands.size());
+    for (unsigned i = 0; i < cands.size(); ++i) {
+      SmallVector<RailId, 4> rd = readersOf(cands[i]);
+      for (RailId o : rd)
+        if (pending(o) && !done(o, c))
+          blockers[i].push_back(o);
+      if (readers)
+        readers->try_emplace(cands[i], std::move(rd));
+    }
+    std::vector<char> dropped(cands.size(), 0);
+    for (bool changed = true; changed;) {
       changed = false;
-      DenseSet<RailId> in(cands.begin(), cands.end());
       for (unsigned i = 0; i < cands.size(); ++i) {
+        if (dropped[i])
+          continue;
         RailId g = cands[i];
-        for (RailId o : readersOf(g)) {
-          if (in.count(o) || !pending(o) || done(o, c))
+        for (RailId o : blockers[i]) {
+          if (in.count(o))
             continue;
           if (fatal)
             internalError("uncompute: mirror would free " + describe(rails[g].handle) +
                               " while a rail outside the scope still reads it",
                           rails[o].handle);
-          cands.erase(cands.begin() + i);
+          dropped[i] = 1;
+          if (--copies[g] == 0)
+            in.erase(g);
           changed = true;
           break;
         }
-        if (changed)
-          break;
       }
     }
+    unsigned n = 0;
+    for (unsigned i = 0; i < cands.size(); ++i)
+      if (!dropped[i])
+        cands[n++] = cands[i];
+    cands.truncate(n);
   }
 
   void place(RailId g, const Ctx &c) {
@@ -1819,15 +1898,13 @@ struct Uncompute::Impl {
       }
       Instruction *end = emitItem(g, *c.mirror);
       r.released = true;
-      itemEnd[{g, end->getParent()}] = end;
+      setItemEnd(g, end->getParent(), end);
       return;
     }
     BasicBlock *D = const_cast<BasicBlock *>(defBlock(g));
     SmallVector<Instruction *, 12> as = anchors(g);
     for (RailId o : readersOf(g))
-      for (auto &kv : itemEnd)
-        if (kv.first.first == o)
-          as.push_back(kv.second);
+      itemEndsOf(o, as);
     bool local = all_of(as, [&](Instruction *a) { return a->getParent() == D; });
     if (!local && cycleArm.count(g)) {
       // cq-lshe: an arm defined on a cycle, pending at a return its definition does not dominate. Each
@@ -1884,7 +1961,7 @@ struct Uncompute::Impl {
     if (r.cleanup && r.creator != kNone &&
         any_of(r.cleanup->reads, [&](RailId x) {
           auto *h = dyn_cast<Instruction>(rails[x].handle);
-          return h && (!dominates(h->getParent(), pos.bb) || (h->getParent() == pos.bb && !h->comesBefore(pos.before)));
+          return h && (!dominates(h->getParent(), pos.bb) || (h->getParent() == pos.bb && !cq::comesBefore(h, pos.before)));
         })) {
       for (RailId x : r.cleanup->reads)
         llvm::erase(rails[x].cleanupReaders, g);
@@ -1895,7 +1972,7 @@ struct Uncompute::Impl {
       evs.push_back({pos.before, false});
     bool gated = false;
     auto beforePos = [&](const Instruction *e) {
-      return e->getParent() == pos.bb ? (e != pos.before && e->comesBefore(pos.before)) : reaches(e->getParent(), pos.bb);
+      return e->getParent() == pos.bb ? (e != pos.before && cq::comesBefore(e, pos.before)) : reaches(e->getParent(), pos.bb);
     };
     bool written = false;
     for (auto [e, kind] : barriers(g)) {
@@ -1999,7 +2076,7 @@ struct Uncompute::Impl {
         }
         wraps.push_back({g, sg.first, sg.last, c});
       }
-      itemEnd[{g, pos.bb}] = end;
+      setItemEnd(g, pos.bb, end);
       if (local)
         r.released = true;
       else
@@ -2009,7 +2086,7 @@ struct Uncompute::Impl {
     Instruction *last = end;
     for (unsigned k = 0; k < sandwich.size(); ++k)
       last = guarded(wcond[k], [&] { return emitWrite(sandwich[k], B, /*undo=*/false); });
-    itemEnd[{g, pos.bb}] = last;
+    setItemEnd(g, pos.bb, last);
     if (local)
       r.released = true;
     else
@@ -2227,7 +2304,7 @@ struct Uncompute::Impl {
     llvm::stable_sort(out, [&](unsigned a, unsigned b) {
       const Instruction *x = records[a].forward, *y = records[b].forward;
       if (x->getParent() == y->getParent())
-        return x->comesBefore(y);
+        return cq::comesBefore(x, y);
       return reaches(x->getParent(), y->getParent()) && !reaches(y->getParent(), x->getParent());
     });
   }
@@ -2341,10 +2418,18 @@ struct Uncompute::Impl {
     Function &F = *U->getParent();
     BasicBlock *entry = &F.getEntryBlock();
     DenseMap<Value *, Value *> carried;
+    // cq-g3h1i: one dominance walk per defining block, not per operand (carryTo adds phis, no block or edge).
+    DenseMap<const BasicBlock *, bool> doms;
+    auto dominatesU = [&](const BasicBlock *D) {
+      auto [it, fresh] = doms.try_emplace(D, false);
+      if (fresh)
+        it->second = dominates(D, U);
+      return it->second;
+    };
     for (Instruction &I : *U)
       for (Use &u : I.operands()) {
         auto *op = dyn_cast<Instruction>(u.get());
-        if (!op || op->getParent() == U || dominates(op->getParent(), U))
+        if (!op || op->getParent() == U || dominatesU(op->getParent()))
           continue;
         Value *&c = carried[op];
         if (!c) {
@@ -2505,15 +2590,13 @@ struct Uncompute::Impl {
     }
     SmallVector<Instruction *, 12> as = anchors(g);
     for (RailId o : readersOf(g))
-      for (auto &kv : itemEnd)
-        if (kv.first.first == o)
-          as.push_back(kv.second);
+      itemEndsOf(o, as);
     for (Instruction *a : as) {
       const BasicBlock *A = a->getParent();
       if (!A)
         return false;
       if (A == P) {
-        if (!a->comesBefore(point))
+        if (!cq::comesBefore(a, point))
           return false;
         continue;
       }
@@ -2559,7 +2642,7 @@ struct Uncompute::Impl {
     bool earlier = false;
     for (Instruction *a : as) {
       if (a->getParent() == point->getParent()) {
-        if (!a->comesBefore(point))
+        if (!cq::comesBefore(a, point))
           return false;
         continue;
       }
@@ -2634,9 +2717,7 @@ struct Uncompute::Impl {
     Deferred &d = defs[r.deferred];
     SmallVector<Instruction *, 12> as = deferredAnchors(d);
     for (RailId o : readersOf(g))
-      for (auto &kv : itemEnd)
-        if (kv.first.first == o)
-          as.push_back(kv.second);
+      itemEndsOf(o, as);
     Pos pos;
     if (c.mode == Mode::Local) {
       pos = afterLatest(c.point->getParent(), as, g);
@@ -2677,7 +2758,7 @@ struct Uncompute::Impl {
       for (Instruction *e : evs) {
         if (!e->getParent() || !afterRegion(d, e->getParent()))
           continue;
-        bool violated = e->getParent() == pos.bb ? !(pos.before == e || pos.before->comesBefore(e))
+        bool violated = e->getParent() == pos.bb ? !(pos.before == e || cq::comesBefore(pos.before, e))
                                                  : reaches(e->getParent(), pos.bb);
         if (violated && !barrier) {
           barrier = e;
@@ -2698,7 +2779,7 @@ struct Uncompute::Impl {
         for (Instruction *v : versions) {
           if (!v->getParent() || !afterRegion(d, v->getParent()))
             continue;
-          if (v->getParent() == pos.bb ? !(pos.before == v || pos.before->comesBefore(v))
+          if (v->getParent() == pos.bb ? !(pos.before == v || cq::comesBefore(pos.before, v))
                                        : reaches(v->getParent(), pos.bb)) {
             barrier = v;
             break;
@@ -2854,7 +2935,7 @@ struct Uncompute::Impl {
       internalError("uncompute: a deferred item left its builder in a terminated block", rails[g].handle);
     BranchInst *br = BranchInst::Create(P, B.GetInsertBlock());
     emitted.insert(br);
-    itemEnd[{g, br->getParent()}] = br;
+    setItemEnd(g, br->getParent(), br);
     d.placedAt = P;
   }
 
@@ -2958,8 +3039,14 @@ struct Uncompute::Impl {
   }
 
   void resolve(SmallVectorImpl<RailId> &cands, const Ctx &c) {
-    dropBlocked(cands, c, c.mode == Mode::Mirror);
-    for (RailId g : order(cands))
+    // cq-g3h1i: dropBlocked and order read the same rails with nothing changed in between: each candidate's
+    // readers and each reader's itemReads are computed once for both.
+    DenseMap<RailId, SmallVector<RailId, 4>> readers, reads;
+    readsMemo = &reads;
+    dropBlocked(cands, c, c.mode == Mode::Mirror, &readers);
+    SmallVector<RailId, 16> ord = order(cands, &readers);
+    readsMemo = nullptr;
+    for (RailId g : ord)
       place(g, c);
   }
 };
@@ -3226,7 +3313,7 @@ Value *Uncompute::negatedAtomOf(Value *flag) const {
     return nullptr;
   // A gate on g since the flag was computed: g no longer holds what the flag negates.
   for (Instruction *h : I.rails[gt->second].hits)
-    if (h->getParent() == x->getParent() && x->comesBefore(h))
+    if (h->getParent() == x->getParent() && cq::comesBefore(x, h))
       return nullptr;
   return g;
 }
@@ -3473,7 +3560,7 @@ void Uncompute::flushBefore(Instruction *point, ArrayRef<Value *> *liveLater) {
       continue;
     bool ok = true;
     for (Instruction *a : I.anchors(g))
-      if (a->getParent() != P || !a->comesBefore(point) ||
+      if (a->getParent() != P || !cq::comesBefore(a, point) ||
           (!isa<CallBase>(a) && !I.emitted.count(a) && !I.isMergeHandle(a))) {
         ok = false;
         break;
@@ -3669,7 +3756,7 @@ void Uncompute::resolveAt(Instruction *P, ArrayRef<RailId> list) {
     Impl::Rail &x = I.rails[g];
     const BasicBlock *D = I.defBlock(g);
     const Instruction *def = x.creator != kNone ? I.records[x.creator].forward : dyn_cast<Instruction>(x.handle);
-    if (!Impl::dominates(D, Pb) || (D == Pb && def && !def->comesBefore(P)))
+    if (!Impl::dominates(D, Pb) || (D == Pb && def && !cq::comesBefore(def, P)))
       internalError("uncompute: resolveAt: the definition of " + describe(x.handle) + " does not dominate the point", P);
     for (Instruction *a : I.anchors(g))
       if (a == P || Impl::after(a, P))

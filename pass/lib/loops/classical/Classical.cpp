@@ -69,6 +69,7 @@
 //  the block Z, where the seeds allocated in E are released (emitMirror of E's scope); the builder
 //  is left at the end of Z, where the loop's exit block continues.
 #include "cq/Loops.h"
+#include "cq/Order.h"
 #include "../cutoff/Exits.h"
 
 #include <functional>
@@ -4063,7 +4064,7 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
   auto runsAfter = [&](const Instruction *f, const Instruction *G, const Value *rail) {
     if (!f || !region.count(f->getParent()))
       return true;
-    if (f->getParent() == G->getParent() && f->comesBefore(G))
+    if (f->getParent() == G->getParent() && cq::comesBefore(f, G))
       return true;
     auto *d = dyn_cast<Instruction>(rail);
     const BasicBlock *db = d && region.count(d->getParent()) ? d->getParent() : nullptr;
@@ -4076,7 +4077,7 @@ void Unit::reverse(IRBuilder<> &BX, BasicBlock *X, unsigned seedScope, bool guar
       if (!(region.count(b) || subBlocks.count(b)) || !seen.insert(b).second)
         continue;
       if (b == db) {
-        if (G->getParent() == b && G->comesBefore(d))
+        if (G->getParent() == b && cq::comesBefore(G, d))
           return true;
         continue;
       }

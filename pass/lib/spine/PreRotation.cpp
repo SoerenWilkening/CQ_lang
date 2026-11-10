@@ -42,6 +42,7 @@
 #include "SpineInternal.h"
 
 #include "cq/Abi.h"
+#include "cq/Order.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/CFG.h"
@@ -90,7 +91,7 @@ DenseSet<const BasicBlock *> reachFrom(const Instruction *P, const Value *def, b
 }
 
 bool isAfter(const Instruction *P, const DenseSet<const BasicBlock *> &reach, const Instruction *point) {
-  if (point->getParent() == P->getParent() && point != P && P->comesBefore(point))
+  if (point->getParent() == P->getParent() && point != P && cq::comesBefore(P, point))
     return true;
   return reach.count(point->getParent());
 }
@@ -98,7 +99,7 @@ bool isAfter(const Instruction *P, const DenseSet<const BasicBlock *> &reach, co
 // Does I come before P on some path that does not pass def's block after I (I would read another
 // instance of def's value otherwise)? I in P's block before P, or P's block reachable from I's.
 bool precedes(const Instruction *I, const Instruction *P, const Value *def) {
-  if (I->getParent() == P->getParent() && I != P && I->comesBefore(P))
+  if (I->getParent() == P->getParent() && I != P && cq::comesBefore(I, P))
     return true;
   const BasicBlock *db = nullptr;
   if (auto *D = dyn_cast<Instruction>(def))

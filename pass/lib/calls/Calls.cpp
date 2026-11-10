@@ -26,6 +26,7 @@
 //  - lowerVarargs: the va intrinsics of a variadic clone (rule 16 block form); lowerAsm waits on
 //    CQ_spec's inline-asm example (build step 3, rule 27).
 #include "cq/Calls.h"
+#include "cq/Order.h"
 #include "CallsInternal.h"
 
 #include "cq/Abi.h"
@@ -1711,7 +1712,7 @@ bool keptResult(LoweringContext &ctx, CallBase &CB) {
         if (!G || G->getName().starts_with("cq_measure_"))
           return true;
       }
-      if (last->comesBefore(I))
+      if (cq::comesBefore(last, I))
         last = I;
       if (!I->getType()->isVoidTy() && seen.insert(I).second)
         work.push_back(I);

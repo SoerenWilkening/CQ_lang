@@ -35,6 +35,7 @@
 //    A constrained FP op (rule 23) is recomputed in the mode it was lowered with and with the host
 //    environment restored after it (fromConstrained).
 #include "SpineInternal.h"
+#include "cq/Order.h"
 
 #include "llvm/ADT/SetVector.h"
 #include "llvm/IR/CFG.h"
@@ -57,7 +58,7 @@ bool outAvailable(Shared &sh, const Instruction *def) {
     return false;
   if (def->getParent() == cur) {
     BasicBlock::iterator ip = sh.B.GetInsertPoint();
-    return ip == cur->end() || def->comesBefore(&*ip);
+    return ip == cur->end() || cq::comesBefore(def, &*ip);
   }
   SmallPtrSet<BasicBlock *, 8> seen;
   for (BasicBlock *b = cur->getSinglePredecessor(); b && seen.insert(b).second; b = b->getSinglePredecessor())
@@ -74,7 +75,7 @@ bool outAvailable(Shared &sh, const Instruction *def) {
 bool outBefore(const Instruction *a, const Instruction *b) {
   const BasicBlock *ab = a->getParent(), *bb = b->getParent();
   if (ab == bb)
-    return a != b && a->comesBefore(b);
+    return a != b && cq::comesBefore(a, b);
   SmallPtrSet<const BasicBlock *, 16> seen;
   SmallVector<const BasicBlock *, 16> work{bb};
   seen.insert(bb);
@@ -162,22 +163,31 @@ Cls classify(Shared &sh, Value *h, DenseMap<Value *, Cls> &memo, SetVector<Value
   if (r.opaque || !outAvailable(sh, r.def))
     return No;
   Cls c = Classical;
+  // cq-g3h1i: No is final (nothing below raises it), and without `assumed` the walk has no other effect: it
+  // stops at the first No instead of classifying the rest of the rail's history.
+  const bool stopAtNo = !assumed;
   auto join = [&](Value *v, const Instruction *at) {
     Cls k = staleRead(sh, v, at) ? No : classify(sh, v, memo, assumed, forRead);
     c = k == No || c == No ? No : std::max(c, k);
   };
   if (r.tmpl) {
     for (const Operand &o : r.ops)
-      if (o.handle)
+      if (o.handle) {
         join(o.v, r.def);
+        if (stopAtNo && c == No)
+          return No;
+      }
   } else if (!r.seed || !availableValue(sh, r.seed)) {
     return No;
   }
   for (const RailHist::Write &w : r.writes) {
     if (!outAvailable(sh, w.call))
       return memo[h] = No;
-    for (Value *a : writeReads(w))
+    for (Value *a : writeReads(w)) {
       join(a, w.call);
+      if (stopAtNo && c == No)
+        return No;
+    }
   }
   return memo[h] = c;
 }
