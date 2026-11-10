@@ -3425,6 +3425,50 @@ def reach_samples(g: "Gen", spec: DriverSpec, example_dir: Path, searcher: "Sear
     return out
 
 
+GROUP_CROSS = 16             # cq-pdstc: a classical group's edge values are crossed up to this many combinations
+
+
+def group_cover(g: "Gen", searcher: "Searcher", rng: random.Random) -> Dict[int, List[int]]:
+    """cq-pdstc: per call, the samples that give every classical group (the comparison's classical key: the call and
+    its classical arguments) of the set so far the quantum edge values and CROSS_Q seeded quantum values. compare.py
+    identifies a measurement of ours that C does not make on a sample only from samples of the same classical
+    arguments (CR rule 8, cq-1ye9c), so a group must hold quantum inputs that take a quantum arm and inputs that do
+    not; a tuple a search found (totalization, trips, reach) held one sample, plus at most one substitution.
+    Per group at most: the edge values crossed when their product is at most GROUP_CROSS, else each input over its
+    edge values alone plus max-length diagonal rows (as the edge class), then CROSS_Q random values. Kept only when
+    in the domain (probe)."""
+    out: Dict[int, List[int]] = {}
+    for ci in range(len(g.spec.calls)):
+        qs = g.quantum_slots(ci) + g.fill_slots(ci)
+        if not qs:
+            continue
+        quantum = [a["quantum"] for a in g.spec.calls[ci]["args"]]
+        firsts: Dict[Tuple[str, ...], List[str]] = {}
+        for sm in g.samples:
+            if sm["call"] == ci:
+                firsts.setdefault(tuple(v for v, q in zip(sm["args"], quantum) if not q), sm["args"])
+        sets = [int_edges(g.slot_ctype(ci, j)) if g.slot_ctype(ci, j).kind == "i" else fp_edges(g.slot_ctype(ci, j))
+                for j in qs]
+        combos = _cross(sets, GROUP_CROSS)
+        if not combos:
+            combos = [[None] * i + [v] + [None] * (len(qs) - i - 1) for i, vs in enumerate(sets) for v in vs]
+            combos += [[vs[t % len(vs)] for vs in sets] for t in range(max(len(vs) for vs in sets))]
+        cands = []
+        for a0 in firsts.values():
+            for c in combos:
+                cands.append((ci, g.set_values(ci, a0, {j: v for j, v in zip(qs, c) if v is not None})))
+            for _ in range(CROSS_Q):
+                cands.append((ci, g.set_values(ci, a0, {j: g.random_quantum(rng, g.slot_ctype(ci, j)) for j in qs})))
+        cands = [c for c in dict.fromkeys((c, tuple(a)) for c, a in cands) if c not in g.index]
+        if not cands:
+            continue
+        obs = searcher.observe([(c, list(a)) for c, a in cands])
+        idx = [g.add(c, list(a)) for (c, a), o in zip(cands, obs) if searcher.valid(o)]
+        if idx:
+            out[ci] = idx
+    return out
+
+
 def _merge_class(cls: Dict[str, dict], extra: Dict[str, dict]) -> None:
     """Fold a call's substitution samples into its per-call class entry (edge, specials, random)."""
     for key, e in extra.items():
@@ -3930,6 +3974,16 @@ def build_sample_set(spec: DriverSpec, example_dir: Path, exempt_baseline: bool 
                 e["reach"] = len(idx)
             elif idx:
                 pc["edge"][str(ci)] = {"samples": sorted(set(idx)), "reach": len(idx)}
+
+        # cq-pdstc: every classical group carries the quantum edge set and CROSS_Q seeded quantum values
+        group_extra = group_cover(g, searcher, random.Random(seed + 5))
+        for ci, idx in group_extra.items():
+            e = pc["edge"].get(str(ci))
+            if e is not None and "samples" in e:
+                e["samples"] = sorted(set(e["samples"]) | set(idx))
+                e["group_cover"] = len(idx)
+            elif idx:
+                pc["edge"][str(ci)] = {"samples": sorted(set(idx)), "group_cover": len(idx)}
 
     # cq_theta substitution (cq-6m2): appended after every search, which reads samples by (call, args)
     mod = D.read_module(sorted(example_dir.glob("*.O1.ll"))[0])

@@ -260,8 +260,11 @@ unconditionally at its program point, so on a sample where the C program does no
 side measures once more. Within each comparison group each sample's C measurements are matched, in
 order, to our measurements reading the same value (and type). One of ours left unmatched on a
 sample must be identified on another sample: matched in every embedding of some sample of the same
-call whose measured rails of ours are the same handles (the hoisted arm measurement of a register
-the C program measures on another path; its value where C did not reach it is unconstrained), or
+classical arguments (a classical branch runs a site only on the path it takes, CR rule 8; cq-1ye9c) whose
+measured rails of ours are the same handles (the hoisted arm measurement of a register
+the C program measures on another path; its value where C did not reach it is unconstrained), or of
+the same call site (run.measure_site_classes: one shape and one register over rule 14's trips, cq-47f8h,
+cq-v8cn7) reached by the C program in every embedding of such a sample, or
 lie past the cut or the end of an open-ended sample. A measurement whose value never tells it from
 another of ours is not identified (conservative). The identification holds only on a sample that
 enters the function the measurement lies in: rule 2's hoist is for an arm of that function, and a callee
@@ -2340,24 +2343,29 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
     # with the same measured rails of ours (the C program measures that register on another path)
     ident: Dict[Tuple, set] = {}
 
+    # cq-1ye9c: identification is per classical arguments (classical_key, the call and every classical argument),
+    # never pooled over them: CR rule 8, "A purely classical condition is always a classical branch", so a site behind
+    # a classical branch runs only where the classical path takes it, on both sides; only rule 2's quantum arm runs
+    # its measurement unconditionally.
     def _pool(k: str) -> Tuple:
-        return (_call_key(r_by[k].sample), tuple(m.get("h") for m in o_by[k].measured or []))
+        return (classical_key(r_by[k].sample), tuple(m.get("h") for m in o_by[k].measured or []))
 
     # cq-47f8h (owner 2026-11-07): measurements are identified by call site. A measurement of ours is identified when
     # the C program reaches its site (a class of copies of one cq_measure, run.measure_site_classes) on some sample of
-    # the call, matched in every embedding; the other copies of the site, on trips no sample of the C program
+    # the same classical arguments (cq-1ye9c), matched in every embedding; the other copies of the site, on trips no sample of the C program
     # reaches, are then no difference. Any other site is.
     ident_sites: Dict[Hashable, set] = {}
     for k, opts in meas_opts.items():
         m_ = frozenset.intersection(*(img for img, _ in opts))
         ident.setdefault(_pool(k), set()).update(m_)
         ms_ = o_by[k].measured or []
-        ident_sites.setdefault(_call_key(r_by[k].sample), set()).update(
+        ident_sites.setdefault(classical_key(r_by[k].sample), set()).update(
             ms_[i]["site"] for i in m_ if i < len(ms_) and ms_[i].get("site") is not None)
-        # cq-jws5r: the copies of one site are interchangeable where they measure one value (a loop-invariant register
-        # measured behind a classical branch of a K-loop's trip: one copy per trip copy, CR rules 2, 8), so no single
-        # copy lies in every embedding although every embedding matches the site: the site is reached all the same.
-        ident_sites[_call_key(r_by[k].sample)].update(set.intersection(*(
+        # cq-jws5r, cq-v8cn7: a site every embedding matches through one of its copies is reached, though no single copy
+        # lies in every embedding (one register measured on several trips, each trip copy behind a classical branch,
+        # CR rules 2, 8). Sound only because a site's copies measure one register (run.measure_site_classes: shape
+        # AND register through rule 14's carried select): a copy measuring another register is a site of its own.
+        ident_sites[classical_key(r_by[k].sample)].update(set.intersection(*(
             {ms_[i]["site"] for i in img if i < len(ms_) and ms_[i].get("site") is not None} for img, _ in opts)))
 
     # CR rules 2, 19: the functions some input of the call enters, which the C oracle reports entries of
@@ -2370,7 +2378,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
         n = len(ms)
         here = (r_by[k].outputs or {}).get("entered", [])
         anywhere = entered_any[_call_key(r_by[k].sample)]
-        sites = ident_sites.get(_call_key(r_by[k].sample), set())
+        sites = ident_sites.get(classical_key(r_by[k].sample), set())
         known = {i for i in ident[_pool(k)]
                  if i >= n or (ms[i].get("site") is None
                                and (ms[i].get("fn") not in anywhere or ms[i].get("fn") in here))}
@@ -2383,7 +2391,7 @@ def compare(ours: Sequence[RunResult], other: Sequence[RunResult], against: str,
         bad = [i for i in range(n) if i not in img and i not in past and i not in known]
         hs = [o_by[k].measured[i].get("h") for i in bad]
         return [f"sample {k}: our measurement(s) {bad} (rails {hs}) match no C measurement here, and no sample "
-                f"of the call identifies them with one the C program reaches in a function this input enters (only "
+                f"of these classical arguments identifies them with one the C program reaches in a function this input enters (only "
                 f"CR rule 2's hoisted arm measurement may be extra)"]
 
     for gk, ks in groups.items():

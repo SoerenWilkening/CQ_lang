@@ -2280,6 +2280,10 @@ def _rail_tester(body: str, handle_fns: Sequence[str]):
 
 
 _MEASURE = re.compile(r"^(\s+)%[-\w.$\"]+ = call \S+ @cqrt_measure_\w+\(i32 (%[-\w.$\"]+)\)")
+# a select template on three rails (no literal operand) and a copy_<W> (not the _controlled form): run.measure_site_classes
+_SELECT3 = re.compile(r"^\s+(%[-\w.$\"]+) = call \S+ @cq_template_select_[a-z0-9]+\(i32 %[-\w.$\"]+, "
+                      r"i32 %[-\w.$\"]+, i32 (%[-\w.$\"]+)\)")
+_COPY = re.compile(r"@cqrt_copy_[a-z0-9]+\(i32 (%[-\w.$\"]+), i32 (%[-\w.$\"]+)\)")
 
 
 # §1.4's clone grammar without its _ctl word, read right to left: the C function a clone is the lowering of.
@@ -2306,7 +2310,8 @@ def measure_site_classes(text: str) -> Dict[int, int]:
     the copies are one site of the C program. Two calls of one function and one width are copies of one site when
     the six instructions before them, or the six after them, read alike with SSA names erased (the measured rail and
     the result kept apart: the data flow through the measurement is part of the shape) (the first copy has another prologue and the last another epilogue, the middle ones
-    both); the classes are the closure of that relation."""
+    both), and they measure one register (cq-v8cn7: `root`, through a kept copy and rule 14's carried select; the
+    shape alone does not tell which register is measured); the classes are the closure of that relation."""
     lines = text.splitlines()
     parent: Dict[int, int] = {}
 
@@ -2326,11 +2331,35 @@ def measure_site_classes(text: str) -> Dict[int, int]:
             fn_start = None
     for a, b in bodies:
         definer: Dict[str, str] = {}
+        carried: Dict[str, str] = {}         # a rule-14 carried advance select(a_j, next, prev): its prev
+        copied: Dict[str, List[Tuple[int, str]]] = {}   # a rail -> (line, source) of each copy_<W> into it
         for i in range(a, b):
             m = re.match(r"^\s+(%[-\w.$\"]+) = (?:call \S+ )?@?(\w+)?", lines[i])
             if m:
                 c = re.match(r"^\s+(%[-\w.$\"]+) = call \S+ @([-\w.$]+)", lines[i])
                 definer[m.group(1)] = c.group(2) if c else "?"
+            s = _SELECT3.match(lines[i])
+            if s:
+                carried[s.group(1)] = s.group(2)
+            cp = _COPY.search(lines[i])
+            if cp:
+                copied.setdefault(cp.group(2), []).append((i, cp.group(1)))
+
+        def root(v: str, at: int) -> str:
+            """cq-v8cn7: the register a measurement at line `at` reads, through rule 2's / §1.4's kept copy
+            (copy_<W>(h, t); measure(t)) and rule 14's carried advance select(a_j, next, prev) (CR rule 14: "every
+            carried value advances by a select on a_j"): one register over the trips, a different one for any other."""
+            seen = set()
+            while v not in seen:
+                seen.add(v)
+                srcs = [src for ln, src in copied.get(v, ()) if ln < at]
+                if srcs:
+                    v = srcs[-1]
+                elif v in carried:
+                    v = carried[v]
+                else:
+                    break
+            return v
         keys: Dict[Tuple, int] = {}
         for i in range(a, b):
             m = _MEASURE.match(lines[i])
@@ -2339,8 +2368,8 @@ def measure_site_classes(text: str) -> Dict[int, int]:
             parent[i] = i
             w = re.search(r"@cqrt_measure_(\w+)\(", lines[i]).group(1)
             res = re.match(r"^\s+(%[-\w.$\"]+) =", lines[i]).group(1)
-            d = "-"
-            pre = tuple(_canon(x, m.group(2), res) for x in lines[max(a + 1, i - _MEAS_WINDOW):i])
+            d = root(m.group(2), i)
+            pre =tuple(_canon(x, m.group(2), res) for x in lines[max(a + 1, i - _MEAS_WINDOW):i])
             suf = tuple(_canon(x, m.group(2), res) for x in lines[i + 1:min(b, i + 1 + _MEAS_WINDOW)])
             for k in (("pre", w, d, pre) if len(pre) == _MEAS_WINDOW else None,
                       ("suf", w, d, suf) if len(suf) == _MEAS_WINDOW else None):
