@@ -121,10 +121,40 @@ int cqe__trace_all(void); /* core.c (cq-9hzgh): an event outside the compact set
 /* ---- values in place (cq-9hzgh) ---------------------------------------------------------------
  * A value of 64 bits or fewer the dispatcher holds for one call (an argument, a copy of a rail's value,
  * a result) lives in a word the caller provides; a wider one is allocated. val_drop frees only that. */
-static void val_in(cqe_val *v, uint32_t bits, char kind, uint64_t *inl) {
+/* One-word forms of core.c's value operations, in line (cq-r6-dispatch): the same results, no call. A value of more
+ * than one word goes to core.c. */
+static inline uint32_t nwords_(uint32_t bits) { return bits ? (bits + 63) / 64 : 1; }
+static inline void vmask_(cqe_val *v) {
+  if (v->nw == 1) {
+    if (v->bits == 0)
+      v->w[0] = 0;
+    else if (v->bits < 64)
+      v->w[0] &= ((uint64_t)1 << v->bits) - 1;
+  } else {
+    cqe__val_mask(v);
+  }
+}
+static inline void vxor_(cqe_val *dst, const cqe_val *src) {
+  if (dst->nw == 1) {
+    if (src->nw)
+      dst->w[0] ^= src->w[0];
+    vmask_(dst);
+  } else {
+    cqe__val_xor(dst, src);
+  }
+}
+static inline int viszero_(const cqe_val *v) { return v->nw == 1 ? !v->w[0] : cqe__val_iszero(v); }
+/* strcmp(a, b) == 0 for the short tokens of a call (a width token, a type spelling). */
+static inline int streq_(const char *a, const char *b) {
+  while (*a && *a == *b)
+    ++a, ++b;
+  return *a == *b;
+}
+
+static inline void val_in(cqe_val *v, uint32_t bits, char kind, uint64_t *inl) {
   v->bits = bits;
   v->kind = kind;
-  v->nw = cqe__nwords(bits);
+  v->nw = nwords_(bits);
   if (v->nw == 1) {
     *inl = 0;
     v->w = inl;
@@ -133,7 +163,7 @@ static void val_in(cqe_val *v, uint32_t bits, char kind, uint64_t *inl) {
   }
 }
 
-static void val_drop(cqe_val *v, const uint64_t *inl) {
+static inline void val_drop(cqe_val *v, const uint64_t *inl) {
   if (v->w == inl) {
     v->w = NULL;
     v->nw = 0;
@@ -254,7 +284,10 @@ static int run_handlers(const char *sym, const cqe_tname *t, const cqe_val *args
     if (!l && strcmp(regs[i].op, t->op) != 0)
       continue;
     seen = 1;
-    memset(out->w, 0, out->nw * sizeof *out->w);
+    if (out->nw == 1)
+      out->w[0] = 0;
+    else
+      memset(out->w, 0, out->nw * sizeof *out->w);
     cqe_val pre = *out;
     int r = fn(t, args, nargs, out);
     if (out->w != pre.w || out->bits != pre.bits || out->kind != pre.kind || out->nw != pre.nw) {
@@ -268,7 +301,7 @@ static int run_handlers(const char *sym, const cqe_tname *t, const cqe_val *args
     if (r == CQE_OP_NOT_MINE)
       continue;
     if (r == 0) {
-      cqe__val_mask(out);
+      vmask_(out);
       return 0;
     }
     return -1;
@@ -422,6 +455,8 @@ typedef struct {
   char ty[16];
   uint32_t bits, bytes;
   char kind; /* 'i', 'f', 'p', 'v' */
+  uint8_t is_i32, is_double; /* ty is "i32", "double" (cq-r6-dispatch: read per call in place of a strcmp) */
+  uint64_t mask;             /* the low bits of a value of at most 64 bits */
 } lty;
 
 static int parse_lty(const char *s, size_t n, lty *t) {
@@ -456,6 +491,9 @@ static int parse_lty(const char *s, size_t n, lty *t) {
     return -1;
   }
   t->bytes = (t->bits + 7) / 8;
+  t->is_i32 = !strcmp(t->ty, "i32");
+  t->is_double = !strcmp(t->ty, "double");
+  t->mask = t->bits >= 64 ? ~(uint64_t)0 : ((uint64_t)1 << t->bits) - 1;
   return 0;
 }
 
@@ -466,10 +504,10 @@ static void load_val(cqe_val *v, const lty *t, const void *mem) {
 }
 
 /* load_val into an in-place word when it fits (val_in). */
-static void load_val_in(cqe_val *v, const lty *t, const void *mem, uint64_t *inl) {
+static inline void load_val_in(cqe_val *v, const lty *t, const void *mem, uint64_t *inl) {
   val_in(v, t->bits, t->kind == 'f' ? 'f' : 'i', inl);
   memcpy(v->w, mem, t->bytes);
-  cqe__val_mask(v);
+  vmask_(v);
 }
 
 static void store_val(void *mem, const lty *t, const cqe_val *v) {
@@ -514,8 +552,8 @@ static double as_f64(const cqe_val *v) {
  * known iff no rail among d and the sources took a non-diagonal gate after the latest creation of
  * d and the sources (returns 0 when that test fails, 1 otherwise); if d is nonzero it is known iff
  * d and every source were known. */
-int cqe__zero_rule(int32_t d, const int32_t *src, int ns) {
-  if (cqe__val_iszero(cqe__val(d))) {
+static inline int zero_rule_v(int32_t d, const cqe_val *dv, const int32_t *src, int ns) {
+  if (viszero_(dv)) {
     uint64_t ref = cqe__created(d);
     for (int i = 0; i < ns; ++i)
       if (cqe__created(src[i]) > ref)
@@ -533,6 +571,8 @@ int cqe__zero_rule(int32_t d, const int32_t *src, int ns) {
   cqe__setknown(d, k);
   return 1;
 }
+static inline int zero_rule_(int32_t d, const int32_t *src, int ns) { return zero_rule_v(d, cqe__val(d), src, ns); }
+int cqe__zero_rule(int32_t d, const int32_t *src, int ns) { return zero_rule_(d, src, ns); }
 
 /* ---- core gates -------------------------------------------------------------------------- */
 
@@ -569,11 +609,11 @@ static int want_args(const call_t *c, int n, const char *types) {
     return 0;
   }
   for (int i = 0; i < n; ++i) {
-    if (types[i] == 'h' && strcmp(c->ty[i].ty, "i32") != 0) {
+    if (types[i] == 'h' && !c->ty[i].is_i32) {
       cqe__violation("malformed_call", -1, "%s: argument %d is %s, expected an i32 handle", c->sym, i, c->ty[i].ty);
       return 0;
     }
-    if (types[i] == 'd' && strcmp(c->ty[i].ty, "double") != 0) {
+    if (types[i] == 'd' && !c->ty[i].is_double) {
       cqe__violation("malformed_call", -1, "%s: argument %d is %s, expected double", c->sym, i, c->ty[i].ty);
       return 0;
     }
@@ -582,31 +622,71 @@ static int want_args(const call_t *c, int n, const char *types) {
 }
 
 /* Check a handle operand is live and (if w) of width w. 1 usable. */
-static int operand(const call_t *c, int32_t h, const char *w) {
-  int r = cqe__check(h, c->sym);
+static inline int operand_(const char *sym, int32_t h, const char *w) {
+  int r = cqe__check(h, sym);
   if (r < 0)
     return 0;
-  if (w && strcmp(cqe__w(h), w) != 0) {
-    cqe__violation("width_mismatch", h, "%s: rail %d is %s, expected %s", c->sym, (int)h, cqe__w(h), w);
+  if (w && !streq_(cqe__w(h), w)) {
+    cqe__violation("width_mismatch", h, "%s: rail %d is %s, expected %s", sym, (int)h, cqe__w(h), w);
     return 0;
   }
   return 1;
 }
+static int operand(const call_t *c, int32_t h, const char *w) { return operand_(c->sym, h, w); }
 
-static int distinct(const call_t *c, int32_t target, const int32_t *others, int n) {
+/* A width token with its bits and kind (cq-r6-dispatch). kind 0: the token alone tells (f16 and bf16 share bits and
+ * kind; core.c keeps 7 characters of a token). */
+typedef struct {
+  const char *w;
+  uint32_t bits;
+  char kind;
+} wspec;
+static const wspec W_I1 = {"i1", 1, 'i'};
+static inline wspec wspec_of(const char *w) {
+  wspec s = {w, 0, 0};
+  char kind = 0;
+  uint32_t bits = cqe__wtok_bits(w, &kind);
+  if (bits && strlen(w) < 7 && !(kind == 'f' && bits == 16))
+    s.bits = bits, s.kind = kind;
+  return s;
+}
+
+/* operand_ for a rail whose value the gate reads next: *v is the rail's value (cqe__val), read for the width as
+ * well, so a live rail of the right width costs one look at its record less. The same verdicts and violations: a
+ * live rail has width token W iff its value has W's bits and kind (W.kind set); a freed rail, a mismatch and a W
+ * that only its token tells are decided by the token, as operand_ decides them. */
+static inline int operand_v(const char *sym, int32_t h, const wspec *W, cqe_val **v) {
+  int r = cqe__check(h, sym);
+  if (r < 0)
+    return 0;
+  if (r == 0 && W->kind) {
+    cqe_val *x = cqe__val(h);
+    if (x->bits == W->bits && x->kind == W->kind) {
+      *v = x;
+      return 1;
+    }
+  }
+  if (!streq_(cqe__w(h), W->w)) {
+    cqe__violation("width_mismatch", h, "%s: rail %d is %s, expected %s", sym, (int)h, cqe__w(h), W->w);
+    return 0;
+  }
+  *v = cqe__val(h);
+  return 1;
+}
+
+static inline int distinct_(const char *sym, int32_t target, const int32_t *others, int n) {
   for (int i = 0; i < n; ++i)
     if (others[i] == target) {
-      cqe__violation("target_aliases_operand", target, "%s: in-place target %d is also operand", c->sym, (int)target);
+      cqe__violation("target_aliases_operand", target, "%s: in-place target %d is also operand", sym, (int)target);
       return 0;
     }
   return 1;
 }
+static int distinct(const call_t *c, int32_t target, const int32_t *others, int n) { return distinct_(c->sym, target, others, n); }
 
-static void log_gate(const call_t *c, int32_t h, const int32_t *srcs, int ns) {
-  if (!cqe__trace_all()) /* cq-9hzgh: not in a compact trace */
-    return;
+static void log_gate_full(const char *sym, int32_t h, const int32_t *srcs, int ns) {
   sbuf b = {0};
-  sb_addf(&b, "{\"ev\":\"gate\",\"sym\":\"%s\",\"h\":%d,\"v\":\"", c->sym, (int)h);
+  sb_addf(&b, "{\"ev\":\"gate\",\"sym\":\"%s\",\"h\":%d,\"v\":\"", sym, (int)h);
   sb_hex(&b, cqe__val(h));
   sb_addf(&b, "\",\"known\":%s,\"args\":[", cqe__known(h) ? "true" : "false");
   for (int i = 0; i < ns; ++i)
@@ -614,6 +694,10 @@ static void log_gate(const call_t *c, int32_t h, const int32_t *srcs, int ns) {
   sb_add(&b, "]}");
   cqe_log(b.p);
   free(b.p);
+}
+static inline void log_gate_(const char *sym, int32_t h, const int32_t *srcs, int ns) {
+  if (cqe__trace_all()) /* cq-9hzgh: not in a compact trace */
+    log_gate_full(sym, h, srcs, ns);
 }
 
 static void log_rot(const char *ev, const call_t *c, int32_t h, int32_t ctl, const char *angle_fields,
@@ -669,25 +753,29 @@ static int suffixes(const char *s, int allow_q, int allow_c, int allow_u, int *q
   return *s ? -1 : 0;
 }
 
-static void gate_alloc(call_t *c, const char *w) {
-  if (c->nargs != 1 || strcmp(c->rty->ty, "i32") != 0) {
-    cqe__violation("malformed_call", -1, "%s: expected (lit) -> i32", c->sym);
-    return;
-  }
-  int32_t h = cqe__new(w, &c->raw[0], 1, 1);
+/* The gates below (alloc, free, not/and/or/xor_i1, copy, xorc, push, pop) are written over their typed operands
+ * (cq-r6-dispatch): the generic entry checks the stub's signature and calls them, a call site whose signature is the
+ * gate's own calls them straight from its words (the fast_* functions further down). One body, both ways. */
+static inline int32_t g_alloc(const char *w, const cqe_val *lit) {
+  int32_t h = cqe__new(w, lit, 1, 1);
   if (cqe__trace_all()) { /* cq-9hzgh: not in a compact trace */
     char *hx = cqe__hexa(cqe__val(h));
     cqe__logf("{\"ev\":\"alloc\",\"h\":%d,\"w\":\"%s\",\"v\":\"%s\",\"known\":true}", (int)h, w, hx);
     free(hx);
   }
-  store_word(c->ret, c->rty, (uint32_t)h);
+  return h;
 }
 
-static void gate_free(call_t *c) {
-  if (!want_args(c, 1, "h"))
+static void gate_alloc(call_t *c, const char *w) {
+  if (c->nargs != 1 || !c->rty->is_i32) {
+    cqe__violation("malformed_call", -1, "%s: expected (lit) -> i32", c->sym);
     return;
-  int32_t h = as_i32(&c->raw[0]);
-  if (cqe__check(h, c->sym) != 0)
+  }
+  store_word(c->ret, c->rty, (uint32_t)g_alloc(w, &c->raw[0]));
+}
+
+static inline void g_free(const char *sym, int32_t h) {
+  if (cqe__check(h, sym) != 0)
     return;
   /* ABI §1.2: a classical-valued rail in any basis value; ABI §1.10 Undo 2: the rail the cells' 0 went to */
   int known = cqe__known(h) || cqe__busz(h);
@@ -698,12 +786,18 @@ static void gate_free(call_t *c) {
     if (hx != hb)
       free(hx);
   }
-  if (cqe__measured(h) || cqe__role(h) == 1 || cqe__role(h) == 2)
-    cqe__violation("free_forbidden", h, "%s: rail %d is a %s rail", c->sym, (int)h,
-                   cqe__measured(h) ? "measured" : cqe__role(h) == 1 ? "abort" : "tape");
+  int meas = cqe__measured(h), role = meas ? 0 : cqe__role(h);
+  if (meas || role == 1 || role == 2)
+    cqe__violation("free_forbidden", h, "%s: rail %d is a %s rail", sym, (int)h, meas ? "measured" : role == 1 ? "abort" : "tape");
   if (!known)
-    cqe__violation("dirty_free", h, "%s: rail %d is not classical-valued and does not read 0 by a bus swap", c->sym, (int)h);
+    cqe__violation("dirty_free", h, "%s: rail %d is not classical-valued and does not read 0 by a bus swap", sym, (int)h);
   cqe__free(h);
+}
+
+static void gate_free(call_t *c) {
+  if (!want_args(c, 1, "h"))
+    return;
+  g_free(c->sym, as_i32(&c->raw[0]));
 }
 
 static void gate_measure(call_t *c, const char *w) {
@@ -957,34 +1051,86 @@ static void gate_rz_qangle(call_t *c, int ctl) {
   free(b.p);
 }
 
-/* not/and/or/xor_i1 */
-static void gate_logic(call_t *c, const char *op) {
-  int n = !strcmp(op, "not") ? 1 : !strcmp(op, "xor") ? 2 : 3;
-  if (!want_args(c, n, n == 1 ? "h" : n == 2 ? "hh" : "hhh"))
-    return;
-  int32_t hs[3];
-  for (int i = 0; i < n; ++i) {
-    hs[i] = as_i32(&c->raw[i]);
-    if (!operand(c, hs[i], "i1"))
+/* not/and/or/xor_i1 on the n handles hs (the last one the target). lop: LOP_*. */
+enum { LOP_NOT, LOP_AND, LOP_OR, LOP_XOR };
+static inline void g_logic(const char *sym, int lop, int n, const int32_t *hs) {
+  cqe_val *v[3];
+  for (int i = 0; i < n; ++i)
+    if (!operand_v(sym, hs[i], &W_I1, &v[i]))
       return;
-  }
   int32_t t = hs[n - 1];
-  if (!distinct(c, t, hs, n - 1))
+  if (!distinct_(sym, t, hs, n - 1))
     return;
-  uint64_t a = n > 1 ? cqe__val(hs[0])->w[0] & 1 : 0, b = n > 2 ? cqe__val(hs[1])->w[0] & 1 : 0, d;
+  uint64_t a = n > 1 ? v[0]->w[0] & 1 : 0, b = n > 2 ? v[1]->w[0] & 1 : 0, d;
   if (n == 1)
     d = 1;
   else if (n == 2)
     d = a;
   else
-    d = !strcmp(op, "and") ? (a & b) : (a | b);
-  cqe__val(t)->w[0] ^= d;
+    d = lop == LOP_AND ? (a & b) : (a | b);
+  v[n - 1]->w[0] ^= d;
   cqe__carry(t, hs, n - 1);
   cqe__mark_written(t);
   for (int i = 0; i < n - 1; ++i)
     cqe__add_dep(t, hs[i]);
-  cqe__zero_rule(t, hs, n - 1);   /* not_i1 too: a flag an X returns to 0 is known again (cq-aypc) */
-  log_gate(c, t, hs, n - 1);
+  zero_rule_v(t, v[n - 1], hs, n - 1);   /* not_i1 too: a flag an X returns to 0 is known again (cq-aypc) */
+  log_gate_(sym, t, hs, n - 1);
+}
+static inline int logic_n(int lop) { return lop == LOP_NOT ? 1 : lop == LOP_XOR ? 2 : 3; }
+
+static void gate_logic(call_t *c, int lop) {
+  int n = logic_n(lop);
+  if (!want_args(c, n, n == 1 ? "h" : n == 2 ? "hh" : "hhh"))
+    return;
+  int32_t hs[3];
+  for (int i = 0; i < n; ++i)
+    hs[i] = as_i32(&c->raw[i]);
+  g_logic(c->sym, lop, n, hs);
+}
+
+/* copy_<W>(a, d) / xorc_<W>(a, lit), under the control cf when ctl. */
+static inline void g_copy_xorc(const char *sym, const wspec *W, int is_copy, int ctl, int32_t cf, int32_t a, int32_t d,
+                               const cqe_val *lit) {
+  cqe_val *cv = NULL, *av, *tv;
+  if (ctl && !operand_v(sym, cf, &W_I1, &cv))
+    return;
+  int32_t target, srcs[2];
+  int ns = 0;
+  const cqe_val *delta;
+  if (is_copy) {
+    if (!operand_v(sym, a, W, &av) || !operand_v(sym, d, W, &tv))
+      return;
+    target = d;
+    srcs[ns++] = a;
+    delta = av;
+  } else {
+    if (!operand_v(sym, a, W, &tv))
+      return;
+    target = a;
+    delta = lit;
+  }
+  if (ctl)
+    srcs[ns++] = cf;
+  if (!distinct_(sym, target, srcs, ns))
+    return;
+  int fire = !ctl || (cv->w[0] & 1);
+  if (ctl && cqe__known(cf) && !fire) {
+    log_gate_(sym, target, srcs, ns); /* known control 0: nothing happens on any branch */
+    return;
+  }
+  int r6 = is_copy && !ctl && cqe__r6_before(a, target); /* before the write stamps target */
+  if (fire)
+    vxor_(tv, delta);
+  if (is_copy)
+    cqe__carry(target, srcs, 1); /* the data source, not the control */
+  cqe__mark_written(target);
+  for (int i = 0; i < ns; ++i)
+    cqe__add_dep(target, srcs[i]);
+  if (is_copy || ctl)
+    zero_rule_v(target, tv, srcs, ns);
+  if (r6)
+    cqe__r6_cleaned(a, target);
+  log_gate_(sym, target, srcs, ns);
 }
 
 /* copy_<W>(s, d), xorc_<W>(h, lit), with optional control first. */
@@ -1000,83 +1146,55 @@ static void gate_copy_xorc(call_t *c, const char *w, int is_copy, int ctl) {
     return;
   int32_t cf = ctl ? as_i32(&c->raw[0]) : 0;
   int32_t a = as_i32(&c->raw[ctl ? 1 : 0]);
-  if (ctl && !operand(c, cf, "i1"))
-    return;
-  int32_t target, srcs[2];
-  int ns = 0;
-  const cqe_val *delta;
-  if (is_copy) {
-    int32_t d = as_i32(&c->raw[n - 1]);
-    if (!operand(c, a, w) || !operand(c, d, w))
-      return;
-    target = d;
-    srcs[ns++] = a;
-    delta = cqe__val(a);
-  } else {
-    if (!operand(c, a, w))
-      return;
-    target = a;
-    delta = &c->raw[n - 1];
-  }
-  if (ctl)
-    srcs[ns++] = cf;
-  if (!distinct(c, target, srcs, ns))
-    return;
-  int fire = !ctl || (cqe__val(cf)->w[0] & 1);
-  if (ctl && cqe__known(cf) && !fire) {
-    log_gate(c, target, srcs, ns); /* known control 0: nothing happens on any branch */
-    return;
-  }
-  int r6 = is_copy && !ctl && cqe__r6_before(a, target); /* before the write stamps target */
-  if (fire)
-    cqe__val_xor(cqe__val(target), delta);
-  if (is_copy)
-    cqe__carry(target, srcs, 1); /* the data source, not the control */
-  cqe__mark_written(target);
-  for (int i = 0; i < ns; ++i)
-    cqe__add_dep(target, srcs[i]);
-  if (is_copy || ctl)
-    cqe__zero_rule(target, srcs, ns);
-  if (r6)
-    cqe__r6_cleaned(a, target);
-  log_gate(c, target, srcs, ns);
+  wspec W = wspec_of(w);
+  g_copy_xorc(c->sym, &W, is_copy, ctl, cf, a, is_copy ? as_i32(&c->raw[n - 1]) : 0, &c->raw[n - 1]);
 }
 
-static void gate_push(call_t *c) {
-  if (c->nargs != 1 || strcmp(c->ty[0].ty, "i32") != 0) {
-    cqe__violation("malformed_call", -1, "%s: expected (i32)", c->sym);
-    return;
-  }
+static inline void g_push(int32_t v) {
   if (nstack == capstack) {
     capstack = capstack ? 2 * capstack : 256;
     stack_ = realloc(stack_, capstack * sizeof *stack_);
     if (!stack_)
       abort();
   }
-  stack_[nstack++] = as_i32(&c->raw[0]);
+  stack_[nstack++] = v;
   if (cqe__trace_all())
-    cqe__logf("{\"ev\":\"push\",\"word\":%d}", (int)as_i32(&c->raw[0]));
+    cqe__logf("{\"ev\":\"push\",\"word\":%d}", (int)v);
 }
 
-static void gate_pop(call_t *c) {
+static void gate_push(call_t *c) {
+  if (c->nargs != 1 || !c->ty[0].is_i32) {
+    cqe__violation("malformed_call", -1, "%s: expected (i32)", c->sym);
+    return;
+  }
+  g_push(as_i32(&c->raw[0]));
+}
+
+static inline int32_t g_pop(const char *sym) {
   int32_t w = 0;
-  if (c->nargs != 0 || strcmp(c->rty->ty, "i32") != 0)
-    cqe__violation("malformed_call", -1, "%s: expected () -> i32", c->sym);
   if (rp_floor_on && nstack <= rp_floor)
     cqe__rp_dirty = 1;
   if (nstack == 0)
-    cqe__violation("pop_empty", -1, "%s: the word stack is empty", c->sym);
+    cqe__violation("pop_empty", -1, "%s: the word stack is empty", sym);
   else
     w = stack_[--nstack];
   if (cqe__trace_all())
     cqe__logf("{\"ev\":\"pop\",\"word\":%d}", (int)w);
-  store_word(c->ret, c->rty, (uint32_t)w);
+  return w;
+}
+
+static void gate_pop(call_t *c) {
+  if (c->nargs != 0 || !c->rty->is_i32)
+    cqe__violation("malformed_call", -1, "%s: expected () -> i32", c->sym);
+  store_word(c->ret, c->rty, (uint32_t)g_pop(c->sym));
 }
 
 /* A cqrt_* core gate's name, parsed (cq-9hzgh: once per call site, dispatch_site). */
 enum { G_FREE = 1, G_PUSH, G_POP, G_ALLOC, G_MEASURE, G_RY, G_RZ_I1, G_RZ_QANGLE, G_LOGIC, G_COPY_XORC };
 typedef struct {
-  int gate, q, ctl, is_copy;
+  int gate, q, ctl, is_copy, lop;
+  uint32_t wbits; /* w's bits and kind as wspec_of gives them (the fast gates) */
+  char wkind;
   char w[8];
   const char *name; /* the classification's gate: "free", "ry_qangle", "and", "copy", ... */
 } core_cls;
@@ -1122,7 +1240,7 @@ static int core_parse(const char *s, core_cls *k) {
   for (int i = 0; i < 4; ++i) {
     size_t n = strlen(logic[i]);
     if (!strncmp(s, logic[i], n) && !strncmp(s + n, "_i1", 3) && !suffixes(s + n + 3, 0, 0, 1, &k->q, &k->ctl, &unc)) {
-      k->gate = G_LOGIC, k->name = logic[i];
+      k->gate = G_LOGIC, k->name = logic[i], k->lop = i; /* logic[] is in LOP_* order */
       return 1;
     }
   }
@@ -1164,7 +1282,7 @@ static void core_run(call_t *c, const core_cls *k) {
     gate_rz_qangle(c, k->ctl);
     break;
   case G_LOGIC:
-    gate_logic(c, k->name);
+    gate_logic(c, k->lop);
     break;
   case G_COPY_XORC:
     gate_copy_xorc(c, k->w, k->is_copy, k->ctl);
@@ -1241,8 +1359,15 @@ enum { R_BADSIG = 1, R_INV_BEGIN, R_INV_END, R_TEMPLATE, R_CORE, R_FAMILY, R_UNK
 
 static int parse_sig(const char *sig, lty *rty, lty *ty, int *n);
 
-typedef struct {
+typedef struct site_res site_res;
+/* A call site's gate over its argument words (cq-r6-dispatch; fast_pick): the result as the stub returns it. */
+typedef uint64_t (*fast_fn)(const site_res *R, const char *sym, const uint64_t *a);
+struct site_res {
   int route, nargs;
+  fast_fn fast;    /* non-NULL: the site's signature is its core gate's own, every value of at most 64 bits */
+  int small;       /* every parameter and the result fit a word: the word entry (cqe_cw) can marshal the call */
+  int fam_qram, fam_abort, fam_tape_write; /* R_FAMILY: t.op is qram_*, "abort", "tape_write" */
+  int and_hl32;    /* a parsed template and_i32_hl (rule 23, template_call) */
   lty rty;
   int rty_i32;
   core_cls core;   /* R_CORE */
@@ -1255,7 +1380,9 @@ typedef struct {
   char rkind;
   hlist handlers;  /* the handlers registered for t.op */
   lty ty[];        /* nargs parameter types */
-} site_res;
+};
+
+static fast_fn fast_pick(const site_res *R);
 
 /* A stub's call site (stubgen.py emits one per runtime symbol it defines, internal to the program). */
 typedef struct {
@@ -1294,33 +1421,49 @@ static site_res *site_resolve(const char *sym, const char *sig, int32_t nargs) {
       r->rw = result_w(&r->t);
       r->rbits = cqe__wtok_bits(r->rw, &r->rkind);
       r->layout_ok = cqe__template_layout(&r->t, r->nf, r->mask) == 0;
+      r->and_hl32 = !strcmp(r->t.op, "and") && r->nf == 2 && r->layout_ok && r->mask[0] == 'h' && r->mask[1] == 'l' &&
+                    r->rbits == 32;
     }
   } else if (!strncmp(sym, "cqrt_", 5)) {
     if (core_parse(sym + 5, &r->core))
       r->route = R_CORE;
-    else if (parse_family(sym + 5, &r->t) == 0)
+    else if (parse_family(sym + 5, &r->t) == 0) {
       r->route = R_FAMILY;
-    else
+      r->fam_qram = !strncmp(r->t.op, "qram_", 5);
+      r->fam_abort = !strcmp(r->t.op, "abort");
+      r->fam_tape_write = !strcmp(r->t.op, "tape_write");
+    } else
       r->route = R_UNKNOWN_CQRT;
   } else {
     r->route = R_UNKNOWN;
   }
+  if (r->route == R_CORE && r->core.w[0]) {
+    wspec W = wspec_of(r->core.w);
+    r->core.wbits = W.bits, r->core.wkind = W.kind;
+  }
+  r->small = r->rty.kind == 'v' || r->rty.bits <= 64;
+  for (int i = 0; i < nargs; ++i)
+    if (r->ty[i].bits > 64)
+      r->small = 0;
+  r->fast = fast_pick(r);
   return r;
 }
 
-static void family_call(call_t *c, const cqe_tname *t, hlist *hl) {
-  if (cqe__rp_window && strncmp(t->op, "qram_", 5) != 0) /* cq-kcn5i: tape, abort: never in a replayed clone */
+static void family_call(call_t *c, site_res *R) {
+  const cqe_tname *t = &R->t;
+  hlist *hl = &R->handlers;
+  if (cqe__rp_window && !R->fam_qram) /* cq-kcn5i: tape, abort: never in a replayed clone */
     cqe__rp_dirty = 1;
   cqe_val out;
   uint64_t oinl;
   val_in(&out, c->rty->kind == 'v' ? 0 : c->rty->bits, c->rty->kind == 'f' ? 'f' : 'i', &oinl);
-  if (!strcmp(t->op, "abort") && c->nargs >= 1 && cqe__exists(as_i32(&c->raw[0])))
+  if (R->fam_abort && c->nargs >= 1 && cqe__exists(as_i32(&c->raw[0])))
     cqe__setrole(as_i32(&c->raw[0]), 1);
   /* rails the family creates during this call get the family's exit role */
   int32_t before = (int32_t)cqe__nrails_peek();
   int r = run_handlers(c->sym, t, c->raw, c->nargs, &out, hl);
   int32_t after = (int32_t)cqe__nrails_peek() + 1;
-  int role = !strcmp(t->op, "tape_write") ? 2 : 0;
+  int role = R->fam_tape_write ? 2 : 0;
   if (role)
     for (int32_t h = before + 1; h < after; ++h)
       cqe__setrole(h, role);
@@ -1348,7 +1491,7 @@ static void template_call(call_t *c, const char *sym, site_res *R) {
   int ok = R->layout_ok;
   if (!ok)
     cqe__violation("malformed_call", -1, "%s: %d forward arguments do not fit the name", sym, nf);
-  if (t->unc && (c->nargs < 1 || strcmp(c->ty[0].ty, "i32") || c->rty->kind != 'v')) {
+  if (t->unc && (c->nargs < 1 || !c->ty[0].is_i32 || c->rty->kind != 'v')) {
     cqe__violation("malformed_call", -1, "%s: an _unc takes (i32 out, args...) and returns void", sym);
     ok = 0;
   }
@@ -1357,7 +1500,7 @@ static void template_call(call_t *c, const char *sym, site_res *R) {
     ok = 0;
   }
   for (int i = 0; ok && i < nf; ++i)
-    if (mask[i] == 'h' && strcmp(c->ty[off + i].ty, "i32") != 0) {
+    if (mask[i] == 'h' && !c->ty[off + i].is_i32) {
       cqe__violation("malformed_call", -1, "%s: handle argument %d is %s", sym, i, c->ty[off + i].ty);
       ok = 0;
     }
@@ -1366,9 +1509,7 @@ static void template_call(call_t *c, const char *sym, site_res *R) {
   cqe_val args[64];
   uint64_t ainl[64];
   char owned[64];
-  int nfa = nf > 0 ? nf : 0;
-  memset(args, 0, (size_t)nfa * sizeof *args);
-  memset(owned, 0, (size_t)nfa);
+  int nres = 0; /* arguments resolved: args[i] and owned[i] are set for i < nres (nothing is zeroed ahead) */
   int32_t hs[66];
   int nh = 0, known = 1;
   sbuf ab = {0};
@@ -1388,7 +1529,12 @@ static void template_call(call_t *c, const char *sym, site_res *R) {
       known = known && cqe__known(h);
       const cqe_val *rv = cqe__val(h); /* M1: a copy of the rail's value */
       val_in(&args[i], rv->bits, rv->kind, &ainl[i]);
-      cqe__val_copy_into(&args[i], rv);
+      if (args[i].nw == 1) { /* cqe__val_copy_into for one word */
+        ainl[i] = rv->nw ? rv->w[0] : 0;
+        vmask_(&args[i]);
+      } else {
+        cqe__val_copy_into(&args[i], rv);
+      }
       owned[i] = 1;
       if (full) {
         sb_addf(&ab, "{\"h\":%d,\"v\":\"", (int)h);
@@ -1397,12 +1543,14 @@ static void template_call(call_t *c, const char *sym, site_res *R) {
       }
     } else {
       args[i] = *raw;
+      owned[i] = 0;
       if (full) {
         sb_add(&ab, "{\"lit\":\"");
         sb_hex(&ab, raw);
         sb_add(&ab, "\"}");
       }
     }
+    nres = i + 1;
   }
   if (full)
     sb_add(&ab, "]");
@@ -1425,7 +1573,7 @@ static void template_call(call_t *c, const char *sym, site_res *R) {
     if (t->exc)
       cqe__setfenv(o, 1);
     /* rule 23: a memory fenv object's fields read as the new state: and_i32_hl(field, 63 | 0xC00) */
-    if (!strcmp(t->op, "and") && nf == 2 && mask[0] == 'h' && mask[1] == 'l' && rbits == 32) {
+    if (R->and_hl32) {
       int32_t lit = as_i32(&c->raw[off + 1]);
       if (lit == 63 || lit == 3072)
         cqe__setfenv(o, lit == 63 ? 1 : 2);
@@ -1444,9 +1592,9 @@ static void template_call(call_t *c, const char *sym, site_res *R) {
   } else if (c->nargs >= 1) {
     int32_t o = as_i32(&c->raw[0]);
     if (cqe__check(o, sym) == 0) {
-      if (strcmp(cqe__w(o), rw) != 0)
+      if (!streq_(cqe__w(o), rw))
         cqe__violation("width_mismatch", o, "%s: out rail %d is %s, the name implies %s", sym, (int)o, cqe__w(o), rw);
-      cqe__val_xor(cqe__val(o), &out);
+      vxor_(cqe__val(o), &out);
       cqe__carry(o, hs, nh);
       cqe__r6_unc(o, hs, nh);
       cqe__mark_written(o);
@@ -1458,12 +1606,12 @@ static void template_call(call_t *c, const char *sym, site_res *R) {
         cqe_log(b.p);
         free(b.p);
       }
-      if (!cqe__val_iszero(cqe__val(o))) {
+      if (!viszero_(cqe__val(o))) {
         char *hx = cqe__hexa(cqe__val(o));
         cqe__violation("unc_residue", o, "%s: out rail %d holds %s after its _unc", sym, (int)o, hx);
         free(hx);
         cqe__setknown(o, 0);
-      } else if (!cqe__zero_rule(o, hs, nh) || r != 0) {
+      } else if (!zero_rule_(o, hs, nh) || r != 0) {
         if (r == 0)
           cqe__violation("unc_after_nondiagonal", o,
                          "%s: rail %d or an operand took a non-diagonal gate after rail %d was computed", sym, (int)o,
@@ -1473,7 +1621,7 @@ static void template_call(call_t *c, const char *sym, site_res *R) {
     }
   }
   free(ab.p);
-  for (int i = 0; i < nfa; ++i)
+  for (int i = 0; i < nres; ++i)
     if (owned[i])
       val_drop(&args[i], &ainl[i]);
   val_drop(&out, &oinl);
@@ -1509,8 +1657,30 @@ static int iv_intercept(const char *sym, const char *sig, const char *csig, int3
 static size_t iv_nopen;
 static int iv_replaying;
 
-/* One call of a runtime symbol through its resolved site. */
 uint64_t cqe__ncalls; /* runtime calls dispatched (rt_replay.c's statistics, cq-kcn5i) */
+
+/* The call c of a resolved site, by its route. */
+static inline void route_call(call_t *c, const char *sym, site_res *R) {
+  switch (R->route) {
+  case R_TEMPLATE:
+    template_call(c, sym, R);
+    break;
+  case R_CORE:
+    core_run(c, &R->core);
+    break;
+  case R_FAMILY:
+    family_call(c, R);
+    break;
+  case R_UNKNOWN_CQRT:
+    cqe__violation("unknown_symbol", -1, "%s: not a cqrt_* symbol of BACKEND_ABI §1", sym);
+    break;
+  default:
+    cqe__violation("unknown_symbol", -1, "%s: not a runtime symbol", sym);
+    break;
+  }
+}
+
+/* One call of a runtime symbol through its resolved site, its arguments in memory. */
 static void dispatch_res(const char *sym, const char *sig, site_res *R, int32_t nargs, void **argv, void *ret) {
   cqe__init();
   ++cqe__ncalls;
@@ -1529,23 +1699,7 @@ static void dispatch_res(const char *sym, const char *sig, site_res *R, int32_t 
   if (R->rty.kind != 'v')
     store_word(ret, &R->rty, 0);
   call_t c = {sym, nargs, ty, raw, &R->rty, ret};
-  switch (R->route) {
-  case R_TEMPLATE:
-    template_call(&c, sym, R);
-    break;
-  case R_CORE:
-    core_run(&c, &R->core);
-    break;
-  case R_FAMILY:
-    family_call(&c, &R->t, &R->handlers);
-    break;
-  case R_UNKNOWN_CQRT:
-    cqe__violation("unknown_symbol", -1, "%s: not a cqrt_* symbol of BACKEND_ABI §1", sym);
-    break;
-  default:
-    cqe__violation("unknown_symbol", -1, "%s: not a runtime symbol", sym);
-    break;
-  }
+  route_call(&c, sym, R);
   for (int i = 0; i < nargs; ++i)
     val_drop(&raw[i], &rinl[i]);
 }
@@ -1558,12 +1712,143 @@ void cqe_dispatch(const char *sym, const char *sig, int32_t nargs, void **argv, 
   free(R);
 }
 
-/* The entry every stub stubgen.py generates calls (cq-9hzgh): its site, resolved once. */
+/* The entry of a stub whose signature has a value wider than a word (stubgen.py; cq-9hzgh): its site, resolved once,
+ * the arguments in memory. */
 void cqe_call(cqe_site *s, void **argv, void *ret) {
   cqe__init();
   if (!s->res)
     s->res = site_resolve(s->sym, s->sig, s->nargs);
   dispatch_res(s->sym, s->sig, s->res, s->nargs, argv, ret);
+}
+
+/* ---- the word entry (cq-r6-dispatch) ----------------------------------------------------------
+ * A stub whose parameters and result all fit 64 bits (every i1 and small-width gate, alloc, free, push, pop, and
+ * the templates and bus accesses of such widths) passes its arguments as words, a[i] the i-th argument zero-extended
+ * (an fp value by its bits, a ptr by its address), and returns the word cqe_cw returns, truncated to its result type.
+ * What cqe_call does per call from the stub's memory, cqe_cw does from the words: no argument array of 64 values, no
+ * copy in or out. A site with fast set (fast_pick: a core gate whose stub signature is the gate's own) runs its gate
+ * with nothing between: every check of the signature was made once, when the site was resolved, and every check
+ * of the operands is the gate's own body (g_*), the one the generic entry runs. */
+static uint64_t fast_free(const site_res *R, const char *sym, const uint64_t *a) {
+  (void)R;
+  g_free(sym, (int32_t)(uint32_t)a[0]);
+  return 0;
+}
+static uint64_t fast_push(const site_res *R, const char *sym, const uint64_t *a) {
+  (void)R, (void)sym;
+  g_push((int32_t)(uint32_t)a[0]);
+  return 0;
+}
+static uint64_t fast_pop(const site_res *R, const char *sym, const uint64_t *a) {
+  (void)R, (void)a;
+  return (uint32_t)g_pop(sym);
+}
+static uint64_t fast_alloc(const site_res *R, const char *sym, const uint64_t *a) {
+  (void)sym;
+  uint64_t x = a[0] & R->ty[0].mask;
+  cqe_val lit = {R->ty[0].bits, R->ty[0].kind == 'f' ? 'f' : 'i', 1, &x};
+  return (uint32_t)g_alloc(R->core.w, &lit);
+}
+static uint64_t fast_logic(const site_res *R, const char *sym, const uint64_t *a) {
+  int n = R->nargs;
+  int32_t hs[3];
+  for (int i = 0; i < n; ++i)
+    hs[i] = (int32_t)(uint32_t)a[i];
+  g_logic(sym, R->core.lop, n, hs);
+  return 0;
+}
+static uint64_t fast_copy(const site_res *R, const char *sym, const uint64_t *a) {
+  int ctl = R->core.ctl;
+  wspec W = {R->core.w, R->core.wbits, R->core.wkind};
+  g_copy_xorc(sym, &W, 1, ctl, ctl ? (int32_t)(uint32_t)a[0] : 0, (int32_t)(uint32_t)a[ctl], (int32_t)(uint32_t)a[ctl + 1], NULL);
+  return 0;
+}
+static uint64_t fast_xorc(const site_res *R, const char *sym, const uint64_t *a) {
+  int ctl = R->core.ctl;
+  uint64_t x = a[ctl + 1] & R->ty[ctl + 1].mask;
+  cqe_val lit = {R->ty[ctl + 1].bits, R->ty[ctl + 1].kind == 'f' ? 'f' : 'i', 1, &x};
+  wspec W = {R->core.w, R->core.wbits, R->core.wkind};
+  g_copy_xorc(sym, &W, 0, ctl, ctl ? (int32_t)(uint32_t)a[0] : 0, (int32_t)(uint32_t)a[ctl], 0, &lit);
+  return 0;
+}
+
+/* The fast gate of a resolved site, or NULL: only where the generic entry's signature checks (want_args and the
+ * gates' own) all pass, so that it has no violation to write before the gate's body. */
+static fast_fn fast_pick(const site_res *R) {
+  if (R->route != R_CORE || !R->small)
+    return NULL;
+  const core_cls *k = &R->core;
+  int n = R->nargs;
+  switch (k->gate) {
+  case G_FREE:
+    return n == 1 && R->ty[0].is_i32 ? fast_free : NULL;
+  case G_PUSH:
+    return n == 1 && R->ty[0].is_i32 ? fast_push : NULL;
+  case G_POP:
+    return n == 0 && R->rty.is_i32 ? fast_pop : NULL;
+  case G_ALLOC:
+    return n == 1 && R->rty.is_i32 ? fast_alloc : NULL;
+  case G_LOGIC:
+    if (n != logic_n(k->lop))
+      return NULL;
+    for (int i = 0; i < n; ++i)
+      if (!R->ty[i].is_i32)
+        return NULL;
+    return fast_logic;
+  case G_COPY_XORC:
+    if (n != (k->ctl ? 3 : 2) || (k->ctl && !R->ty[0].is_i32) || !R->ty[k->ctl].is_i32 ||
+        (k->is_copy && !R->ty[k->ctl + 1].is_i32))
+      return NULL;
+    return k->is_copy ? fast_copy : fast_xorc;
+  default:
+    return NULL;
+  }
+}
+
+/* cqe_cw for every other site: the call marshalled from the words. */
+__attribute__((noinline)) static uint64_t call_words(cqe_site *s, site_res *R, const uint64_t *a) {
+  cqe__init();
+  int32_t nargs = s->nargs;
+  uint64_t ret = 0;
+  int marker = R->route == R_INV_BEGIN || R->route == R_INV_END || R->route == R_BADSIG;
+  if (!marker && !R->small) { /* stubgen.py never emits it */
+    ++cqe__ncalls;
+    cqe__violation("malformed_call", -1, "%s: a value wider than 64 bits through the word entry", s->sym);
+    return 0;
+  }
+  if (marker || (iv_nopen && !iv_replaying)) {
+    /* a cq_invert marker, a bad signature or a gate an open region may record: the memory entry (a word is its
+     * value's memory, little-endian) */
+    void *argv[64];
+    for (int i = 0; i < nargs && i < 64; ++i)
+      argv[i] = (void *)(uintptr_t)&a[i];
+    dispatch_res(s->sym, s->sig, R, nargs, argv, &ret);
+    return ret;
+  }
+  ++cqe__ncalls;
+  const lty *ty = R->ty;
+  cqe_val raw[64];
+  uint64_t rinl[64];
+  for (int i = 0; i < nargs; ++i) {
+    rinl[i] = a[i] & ty[i].mask;
+    raw[i] = (cqe_val){ty[i].bits, ty[i].kind == 'f' ? 'f' : 'i', 1, &rinl[i]};
+  }
+  call_t c = {s->sym, nargs, ty, raw, &R->rty, &ret};
+  route_call(&c, s->sym, R);
+  return ret;
+}
+
+uint64_t cqe_cw(cqe_site *s, const uint64_t *a) {
+  site_res *R = s->res;
+  if (__builtin_expect(!R, 0)) {
+    cqe__init();
+    R = s->res = site_resolve(s->sym, s->sig, s->nargs);
+  }
+  if (R->fast && !iv_nopen) {
+    ++cqe__ncalls;
+    return R->fast(R, s->sym, a);
+  }
+  return call_words(s, R, a);
 }
 
 /* The program's sites (stubgen.py's constructor hands them over); cqe__sites_resolve resolves every one

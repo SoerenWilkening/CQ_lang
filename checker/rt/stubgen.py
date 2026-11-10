@@ -2,11 +2,18 @@
 """stubgen.py <module.ll> [more.ll ...] [--c-module name.O1.ll ...] -o stubs.ll   (cq-w0-chk-core)
 
 Emits one LLVM IR definition per cqrt_* and cq_template_* function the input modules declare (and
-do not define). Each definition stores its arguments to memory and calls
+do not define). A definition whose parameters and result all fit 64 bits (cq-r6-dispatch: every i1 and
+small-width gate, alloc, free, push, pop, and the templates and bus accesses of such widths) stores its
+arguments as words, each zero-extended to i64 (an fp value by its bits, a ptr by its address), and calls
+
+    i64 cqe_cw(ptr site, ptr words)
+
+(checker/rt/dispatch.c), then returns the result word truncated to its type. Any other definition (an
+x86_fp80 or an integer wider than 64 bits in its signature) stores its arguments to memory and calls
 
     void cqe_call(ptr site, ptr args, ptr ret)
 
-(checker/rt/dispatch.c), then loads and returns the result. site is the symbol's call site, an internal
+then loads and returns the result. site is the symbol's call site, an internal
 {ptr sym, ptr sig, i32 nargs, i32 0, ptr null}: sig is "<ret>|<t0>,<t1>,..." in LLVM type spellings, and
 the runtime keeps what it parsed from the name and the signature in the last field, so a call never parses
 them again (cq-9hzgh). A constructor hands the table of every site to cqe_sites(ptr table, i32 n), and
@@ -210,6 +217,7 @@ def emit(decls, triple, layout, csigs=None, host_fns=()):
         out.append(f'target triple = "{triple}"')
     out.append("")
     out.append("declare void @cqe_call(ptr, ptr, ptr)")
+    out.append("declare i64 @cqe_cw(ptr, ptr)")
     out.append("declare void @cqe_sites(ptr, i32)")
     out.append("declare void @cqe_standin(ptr, ptr, ptr, i32, ptr, ptr)")
     out.append("declare void @cqe_standin_host(ptr, ptr, ptr, i32, ptr, ptr, ptr)")
@@ -227,6 +235,13 @@ def emit(decls, triple, layout, csigs=None, host_fns=()):
         head = " ".join(rattrs + [ret])
         body = [f"define {head} @{name}({plist}) {{", "entry:"]
         n = len(params)
+        if not clone and _word(ret) and all(_word(t) for t, _ in params):
+            out.append(f"@.cqe.site.{k} = internal global {{ ptr, ptr, i32, i32, ptr }} "
+                       f"{{ ptr @.cqe.sym.{k}, ptr @.cqe.sig.{k}, i32 {n}, i32 0, ptr null }}")
+            sites.append(k)
+            out.extend(body + _word_body(k, ret, params))
+            out.append("")
+            continue
         body.append(f"  %args = alloca [{max(n, 1)} x ptr]")
         for i, (t, _) in enumerate(params):
             body.append(f"  %p{i} = alloca {t}")
@@ -271,6 +286,53 @@ def emit(decls, triple, layout, csigs=None, host_fns=()):
         out.append("@llvm.global_ctors = appending global [1 x { i32, ptr, ptr }] "
                    "[{ i32, ptr, ptr } { i32 65535, ptr @.cqe.sites.init, ptr null }]")
     return "\n".join(out) + "\n"
+
+
+_FP_BITS = {"half": 16, "bfloat": 16, "float": 32, "double": 64}
+
+
+def _word(t):
+    """A value of type t fits a word (the word entry cqe_cw)."""
+    return t in ("void", "ptr") or t in _FP_BITS or (t[0] == "i" and int(t[1:]) <= 64)
+
+
+def _word_body(k, ret, params):
+    """The body of a word stub: every argument zero-extended into %w, the result word truncated."""
+    n = len(params)
+    b = [f"  %w = alloca [{max(n, 1)} x i64]"]
+    for i, (t, _) in enumerate(params):
+        if t == "ptr":
+            b.append(f"  %x{i} = ptrtoint ptr %a{i} to i64")
+            x = f"%x{i}"
+        else:
+            bits, v = (int(t[1:]), f"%a{i}") if t not in _FP_BITS else (_FP_BITS[t], f"%b{i}")
+            if t in _FP_BITS:
+                b.append(f"  %b{i} = bitcast {t} %a{i} to i{bits}")
+            if bits == 64:
+                x = v
+            else:
+                b.append(f"  %x{i} = zext i{bits} {v} to i64")
+                x = f"%x{i}"
+        b.append(f"  %g{i} = getelementptr [{max(n, 1)} x i64], ptr %w, i64 0, i64 {i}")
+        b.append(f"  store i64 {x}, ptr %g{i}")
+    b.append(f"  %r = call i64 @cqe_cw(ptr @.cqe.site.{k}, ptr %w)")
+    if ret == "void":
+        b.append("  ret void")
+    elif ret == "ptr":
+        b.append("  %v = inttoptr i64 %r to ptr")
+        b.append("  ret ptr %v")
+    else:
+        bits = _FP_BITS.get(ret) or int(ret[1:])
+        v = "%r"
+        if bits != 64:
+            b.append(f"  %t = trunc i64 %r to i{bits}")
+            v = "%t"
+        if ret in _FP_BITS:
+            b.append(f"  %v = bitcast i{bits} {v} to {ret}")
+            v = "%v"
+        b.append(f"  ret {ret} {v}")
+    b.append("}")
+    return b
 
 
 def _thunk(k, fn, cret, cps):

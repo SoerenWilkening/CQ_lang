@@ -253,7 +253,10 @@ static void cells_reach(uint64_t addr, uint32_t S) {
 
 typedef struct {
   const cqe_tname *t;
-  char sym[64];
+  const char *sym; /* the access's symbol, for a violation's text: the name cache's (access_name), valid for the call */
+  char kind;       /* W's kind */
+  const char *slotw; /* a store's slot width token (the name cache's): W when W fills its cells, else the cells' i<8S> */
+  char skind;
   uint32_t bits, S;
   int32_t ctl_h, addr_h;
   uint64_t addr;
@@ -265,10 +268,17 @@ typedef struct {
 
 static int32_t arg_h(const cqe_val *v) { return (int32_t)(uint32_t)v->w[0]; }
 
+/* strcmp(a, b) == 0 for a width token. */
+static inline int tok_eq(const char *a, const char *b) {
+  while (*a && *a == *b)
+    ++a, ++b;
+  return *a == *b;
+}
+
 static int rail_ok(const access_t *x, int32_t h, const char *w) {
   if (cqe__check(h, x->sym) != 0)
     return 0;
-  if (strcmp(cqe__w(h), w) != 0) {
+  if (!tok_eq(cqe__w(h), w)) {
     cqe__violation("width_mismatch", h, "%s: rail %d is %s, expected %s", x->sym, (int)h, cqe__w(h), w);
     return 0;
   }
@@ -276,20 +286,63 @@ static int rail_ok(const access_t *x, int32_t h, const char *w) {
 }
 
 /* args from index i: [c,] m, addr. The next index, -1 after a violation. */
-static int access_parse(access_t *x, const cqe_tname *t, const cqe_val *args, int nargs, int i, int extra) {
-  memset(x, 0, sizeof *x);
-  x->t = t;
-  snprintf(x->sym, sizeof x->sym, "cqrt_%s_%s%s%s%s", t->op, t->w, t->shape[0] ? "_hl" : "", t->pred[0] ? "_controlled" : "",
+/* What an access reads from its name alone (cq-r6-dispatch): the symbol as a violation spells it and W's bits and
+ * kind, formatted and parsed once per name and kept. An entry is found by the cqe_tname's address (a call site's
+ * is the same at every call) and holds for the op, W, shape, control and _unc it was made from, which are compared:
+ * an address that comes back with another name (cqe_dispatch's per-call one) is made again. */
+typedef struct {
+  const cqe_tname *t;
+  char op[24], w[8], shape[8];
+  uint8_t pred, unc, kind, skind;
+  uint32_t bits;
+  char sym[64], slotw[16];
+} access_name;
+#define ACCESS_NAMES 64
+static access_name access_names[ACCESS_NAMES];
+
+static const access_name *access_name_of(const cqe_tname *t) {
+  access_name *e = &access_names[(((uintptr_t)t >> 4) * 0x9E3779B1u >> 16) % ACCESS_NAMES];
+  if (e->t == t && e->pred == (t->pred[0] != 0) && e->unc == (t->unc != 0) && tok_eq(e->w, t->w) && tok_eq(e->shape, t->shape) &&
+      tok_eq(e->op, t->op))
+    return e;
+  e->t = t;
+  memcpy(e->op, t->op, sizeof e->op);
+  memcpy(e->w, t->w, sizeof e->w);
+  memcpy(e->shape, t->shape, sizeof e->shape);
+  e->pred = t->pred[0] != 0;
+  e->unc = t->unc != 0;
+  snprintf(e->sym, sizeof e->sym, "cqrt_%s_%s%s%s%s", t->op, t->w, t->shape[0] ? "_hl" : "", t->pred[0] ? "_controlled" : "",
            t->unc ? "_unc" : "");
   char kind = 0;
-  x->bits = cqe__wtok_bits(t->w, &kind);
+  e->bits = cqe__wtok_bits(t->w, &kind);
+  e->kind = (uint8_t)kind;
+  uint32_t S = (e->bits + 7) / 8;
+  if (e->bits == 8 * S)
+    snprintf(e->slotw, sizeof e->slotw, "%s", t->w);
+  else
+    snprintf(e->slotw, sizeof e->slotw, "i%u", 8 * S);
+  char skind = 0;
+  cqe__wtok_bits(e->slotw, &skind);
+  e->skind = (uint8_t)skind;
+  return e;
+}
+
+static int access_parse(access_t *x, const cqe_tname *t, const cqe_val *args, int nargs, int i, int extra) {
+  const access_name *nm = access_name_of(t);
+  *x = (access_t){0};
+  x->t = t;
+  x->sym = nm->sym;
+  x->kind = (char)nm->kind;
+  x->slotw = nm->slotw;
+  x->skind = (char)nm->skind;
+  x->bits = nm->bits;
   if (!x->bits) {
     cqe__violation("malformed_call", -1, "%s: no width token", x->sym);
     return -1;
   }
   x->S = (x->bits + 7) / 8;
   x->ctl = t->pred[0] != 0;
-  if (nargs != i + x->ctl + 2 + extra || (t->shape[0] && strcmp(t->shape, "hl") != 0)) {
+  if (nargs != i + x->ctl + 2 + extra || (t->shape[0] && !tok_eq(t->shape, "hl"))) {
     cqe__violation("malformed_call", -1, "%s: %d arguments (ABI §1.10)", x->sym, nargs);
     return -1;
   }
@@ -439,34 +492,78 @@ static uint8_t *bytes_buf(uint32_t S) {
   return b;
 }
 
+/* The S zeroed bytes of one access (cq-r6-dispatch): in the caller's frame when they fit `local`, else bytes_buf's. */
+#define BYTES_LOCAL 16
+static inline uint8_t *bytes_in(uint8_t *local, uint32_t S) {
+  if (S > BYTES_LOCAL)
+    return bytes_buf(S);
+  for (uint32_t i = 0; i < BYTES_LOCAL; ++i)
+    local[i] = 0;
+  return local;
+}
+static inline void bytes_out(uint8_t *b, const uint8_t *local) {
+  if (b != local)
+    free(b);
+}
+
+/* A value of `bits` bits for one access: in the caller's word when it fits, else allocated (zeroed either way). */
+static inline void val_local(cqe_val *v, uint32_t bits, char kind, uint64_t *word) {
+  if (bits && bits <= 64) {
+    *word = 0;
+    *v = (cqe_val){bits, kind, 1, word};
+  } else {
+    cqe__val_init(v, bits, kind);
+  }
+}
+static inline void val_unlocal(cqe_val *v, const uint64_t *word) {
+  if (v->w != word)
+    cqe__val_free(v);
+}
+
 /* The low bits of the S bytes at buf into v (v's bits above its width zero). */
 static void bytes_to_val(cqe_val *v, const uint8_t *buf, uint32_t S) {
+  if (v->nw == 1 && S <= 8) {
+    uint64_t x = 0;
+    for (uint32_t i = 0; i < S; ++i)
+      x |= (uint64_t)buf[i] << (8 * i);
+    v->w[0] = v->bits == 0 ? 0 : v->bits < 64 ? x & (((uint64_t)1 << v->bits) - 1) : x;
+    return;
+  }
   memset(v->w, 0, v->nw * sizeof *v->w);
   memcpy(v->w, buf, S);
   cqe__val_mask(v);
+}
+
+/* The low S bytes of v's words into buf (S at most 8 * v->nw, as the access's width gives). */
+static inline void val_to_bytes(uint8_t *buf, const cqe_val *v, uint32_t S) {
+  if (S <= 8 && v->nw >= 1) {
+    for (uint32_t i = 0; i < S; ++i)
+      buf[i] = (uint8_t)(v->w[0] >> (8 * i));
+    return;
+  }
+  memcpy(buf, v->w, S);
 }
 
 static int op_load_forward(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *out) {
   access_t x;
   if (access_parse(&x, t, args, nargs, 0, 0) < 0)
     return -1;
-  char kind = 0;
-  cqe__wtok_bits(t->w, &kind);
   cqe_val v;
-  cqe__val_init(&v, x.bits, kind);
+  uint64_t vword;
+  val_local(&v, x.bits, x.kind, &vword);
   int cknown = 1, anyq = 0;
   if (x.fire) {
-    uint8_t *buf = bytes_buf(x.S);
+    uint8_t local[BYTES_LOCAL], *buf = bytes_in(local, x.S);
     cknown = cells_read(x.addr, x.S, buf, &anyq);
     bytes_to_val(&v, buf, x.S);
-    free(buf);
+    bytes_out(buf, local);
   }
   int32_t h = cqe__new(t->w, &v, x.known && cknown, 0);
   add_deps(h, &x);
   load_note(h, x.addr, x.fire);
   cqe__set_load_copy(h); /* rule 5: never cleaned by rule 6, so no rule-6 image (core.c, cqe__r6_unc) */
   log_bus(&x, "load", !anyq, h, cqe__val(h), 0);
-  cqe__val_free(&v);
+  val_unlocal(&v, &vword);
   out->w[0] = (uint32_t)h;
   return 0;
 }
@@ -491,16 +588,15 @@ static int op_load_unc(const cqe_tname *t, const cqe_val *args, int nargs) {
                    x.sym, (int)h, (unsigned long long)r->addr, (int)r->fire, (unsigned long long)x.addr, x.fire);
   int cknown = 1, anyq = 0;
   if (x.fire) {
-    char kind = 0;
-    cqe__wtok_bits(t->w, &kind);
     cqe_val v;
-    cqe__val_init(&v, x.bits, kind);
-    uint8_t *buf = bytes_buf(x.S);
+    uint64_t vword;
+    val_local(&v, x.bits, x.kind, &vword);
+    uint8_t local[BYTES_LOCAL], *buf = bytes_in(local, x.S);
     cknown = cells_read(x.addr, x.S, buf, &anyq);
     bytes_to_val(&v, buf, x.S);
-    free(buf);
+    bytes_out(buf, local);
     cqe_xor_into(h, &v);
-    cqe__val_free(&v);
+    val_unlocal(&v, &vword);
   }
   cqe__mark_written(h);
   add_deps(h, &x);
@@ -524,14 +620,6 @@ static int op_qram_load(const cqe_tname *t, const cqe_val *args, int nargs, cqe_
   return t->unc ? op_load_unc(t, args, nargs) : op_load_forward(t, args, nargs, out);
 }
 
-/* The slot's width token: W when W fills its cells, else the cells' i<8S>. */
-static const char *slot_w(const access_t *x, char *buf, size_t n) {
-  if (x->bits == 8 * x->S)
-    return x->t->w;
-  snprintf(buf, n, "i%u", 8 * x->S);
-  return buf;
-}
-
 static int op_qram_store(const cqe_tname *t, const cqe_val *args, int nargs, cqe_val *out) {
   (void)out;
   access_t x;
@@ -548,19 +636,17 @@ static int op_qram_store(const cqe_tname *t, const cqe_val *args, int nargs, cqe
   cqe__set_store_kept(vh);
   if (x.ctl_h)
     cqe__set_store_kept(x.ctl_h);
-  char sw[16], skind = 0;
-  const char *slotw = slot_w(&x, sw, sizeof sw);
-  cqe__wtok_bits(slotw, &skind);
+  const char *slotw = x.slotw;
+  char skind = x.skind;
   cqe_val disp;
-  cqe__val_init(&disp, 8 * x.S, skind);
+  uint64_t dword;
+  val_local(&disp, 8 * x.S, skind, &dword);
   int cknown = 1, anyq = 0, host = 1;
-  uint8_t *buf = bytes_buf(x.S);
+  uint8_t local[BYTES_LOCAL], *buf = bytes_in(local, x.S);
   if (x.fire) {
     cknown = cells_read(x.addr, x.S, buf, &anyq);
-    memcpy(disp.w, buf, x.S);
-    cqe__val_mask(&disp);
-    memset(buf, 0, x.S);
-    memcpy(buf, cqe__val(vh)->w, x.S);
+    bytes_to_val(&disp, buf, x.S); /* 8 * S bits: every byte */
+    val_to_bytes(buf, cqe__val(vh), x.S);
     int cl = x.known && cqe__known(vh);
     host = cells_write(x.addr, x.S, buf, cl, cl);
   } else if (!x.ctl_known) {
@@ -578,8 +664,8 @@ static int op_qram_store(const cqe_tname *t, const cqe_val *args, int nargs, cqe
     log_bus(&x, "store", host, vh, &zero, slot);
     cqe__val_free(&zero);
   }
-  free(buf);
-  cqe__val_free(&disp);
+  bytes_out(buf, local);
+  val_unlocal(&disp, &dword);
   return 0;
 }
 
@@ -602,11 +688,11 @@ static int op_qram_swap(const cqe_tname *t, const cqe_val *args, int nargs, cqe_
   }
   int host = 1, anyq = 0;
   if (x.fire) {
-    uint8_t *buf = bytes_buf(x.S), *nw = bytes_buf(x.S);
+    uint8_t local[BYTES_LOCAL], local2[BYTES_LOCAL], *buf = bytes_in(local, x.S), *nw = bytes_in(local2, x.S);
     int cknown = cells_read(x.addr, x.S, buf, &anyq);
     cqe_val *hv = cqe__val(h);
     /* the cells' new content: h, and the high bits of a partial top cell where they are */
-    memcpy(nw, hv->w, x.S);
+    val_to_bytes(nw, hv, x.S);
     int top_known = 1;
     if (x.bits % 8) {
       uint8_t mask = (uint8_t)((1u << (x.bits % 8)) - 1);
@@ -618,8 +704,8 @@ static int op_qram_swap(const cqe_tname *t, const cqe_val *args, int nargs, cqe_
     bytes_to_val(hv, buf, x.S);
     host = cells_write(x.addr, x.S, nw, cl, cl && top_known);
     cqe__setknown(h, x.known && cknown);
-    free(buf);
-    free(nw);
+    bytes_out(buf, local);
+    bytes_out(nw, local2);
     cqe__mark_written(h);
   } else if (!x.ctl_known) {
     cells_reach(x.addr, x.S);
