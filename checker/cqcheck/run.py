@@ -2207,7 +2207,9 @@ def _canon(line: str, operand: str = "", result: str = "") -> str:
     reads M and the measurement's result R, so the data flow through the measurement is part of the shape."""
     def name(m: "re.Match[str]") -> str:
         return "%M" if m.group(0) == operand else "%R" if m.group(0) == result else "%"
-    return re.sub(r"%[-\w.$\"]+", name, re.sub(r", !cq\.measure !\d+", "", line.strip()))
+    # cq-jws5r: a block label is an SSA name too (a trip copy with a classical branch has blocks of its own, rule 8)
+    line = re.sub(r"^[-\w.$\"]+:(?=\s|$)", "%:", line.strip())
+    return re.sub(r"%[-\w.$\"]+", name, re.sub(r", !cq\.measure !\d+", "", line))
 
 
 def measure_site_classes(text: str) -> Dict[int, int]:
