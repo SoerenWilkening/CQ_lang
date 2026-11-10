@@ -986,8 +986,12 @@ static inline uint32_t real_peek(uint32_t h) {
   uint32_t *x = blk_xfind(b, h & (PG_N - 1));
   return x ? *x : blk_dead(b, h & (PG_N - 1));
 }
+#define LOOK_MEMO 1024u
+static struct { uint32_t h; rail_t *r; } look_memo[LOOK_MEMO];
 static void real_put(uint32_t h, uint32_t m) {
   pg_t *g = &pg_base[h >> PG_BITS];
+  if (look_memo[h & (LOOK_MEMO - 1)].h == h)
+    look_memo[h & (LOOK_MEMO - 1)].h = 0;
   if (g->blk) {
     uint32_t *x = blk_xfind(g->blk, h & (PG_N - 1));
     if (!x)
@@ -1025,9 +1029,15 @@ static void map_put(uint32_t h, uint32_t m) {
 }
 static uint32_t rp_materialize(uint32_t h);
 
-/* The slow part of rail_look: a compact page, a touched block rail not made yet, a dead rail. */
-static rail_t *rail_look_slow(uint32_t h, uint32_t *dv) {
+/* The slow part of rail_look: a compact page, a touched block rail not made yet, a dead rail. A record found in a
+ * compact page is remembered (look_memo): a handle's record changes only through real_put, which forgets it. */
+__attribute__((noinline)) static rail_t *rail_look_slow(uint32_t h, uint32_t *dv) {
   uint32_t m = real_peek(h);
+  if (ent_rec(m) && pg_base[h >> PG_BITS].blk) {
+    look_memo[h & (LOOK_MEMO - 1)].h = h;
+    look_memo[h & (LOOK_MEMO - 1)].r = &pool_base[m - 2];
+    return &pool_base[m - 2];
+  }
   if (m == MAP_PENDING)
     m = rp_materialize(h);
   if (m & MAP_DEAD) {
@@ -1036,13 +1046,13 @@ static rail_t *rail_look_slow(uint32_t h, uint32_t *dv) {
   }
   return ent_rec(m) ? &pool_base[m - 2] : rail_blank(h);
 }
-static rail_t *rail_look_side(uint32_t h) {
+__attribute__((noinline)) static rail_t *rail_look_side(uint32_t h) {
   uint32_t m = side_get(h);
   return m ? &pool_base[m - 2] : rail_blank(h);
 }
 /* Rail h's record, or NULL when h is dead: *dv is then its entry (width and flags, DEAD_WI and DEAD_F). One read of
  * the page's state, one of the map and the record itself. */
-static inline rail_t *rail_look(uint32_t h, uint32_t *dv) {
+__attribute__((always_inline)) static inline rail_t *rail_look(uint32_t h, uint32_t *dv) {
   if (rp_watch && h <= rp_wbase)
     rp_outside(h);
   if (h - 1u < nrails) {
@@ -1050,6 +1060,8 @@ static inline rail_t *rail_look(uint32_t h, uint32_t *dv) {
       uint32_t m = map_base[h];
       if (ent_rec(m))
         return &pool_base[m - 2];
+    } else if (look_memo[h & (LOOK_MEMO - 1)].h == h) {
+      return look_memo[h & (LOOK_MEMO - 1)].r;
     }
     return rail_look_slow(h, dv);
   }
@@ -1106,6 +1118,7 @@ static void rail_bury(uint32_t h, rail_t *r) {
   if (nw > 1)
     free(r->val.wide);
   uint32_t dv = DEAD_OF(r->wi, tomb_flags(r));
+  r->wi = 0; /* a record on the free list has no width */
   r->val.inl = pool_free;
   pool_free = m - 2 + 1;
   ++st_buried;
@@ -1198,6 +1211,43 @@ void cqe__recreated(int32_t h) {
   }
 }
 
+static size_t store_arena_used(void); /* shots, below */
+/* $CQE_STORE_STATS=<file> (debugging; nothing reads it): the rail store's counts, appended at the exit event and
+ * every 2^24 handles. */
+static void store_stats(void) {
+  const char *sst = getenv("CQE_STORE_STATS");
+  FILE *sf = sst && *sst ? fopen(sst, "a") : NULL;
+  if (!sf)
+    return;
+  uint32_t nfree = 0, live = 0, aux = 0, wide = 0, val = 0, zero = 0, meas = 0, froz = 0, nd0 = 0, nd1 = 0, nd2 = 0, unk = 0;
+  for (uint32_t i = 0; i < pool_n; ++i) {
+    const rail_t *r = &pool_base[i];
+    if (!r->wi)
+      ++nfree;
+    else if (r->live) {
+      ++live;
+      aux += r->aux;
+      wide += w_nw[r->wi] > 1;
+      meas += r->measured;
+      froz += r->frozen || r->image;
+      unk += !r->known;
+      if (!r->aux) {
+        nd0 += !r->d.in[0];
+        nd1 += r->d.in[0] && !r->d.in[1];
+        nd2 += r->d.in[1] != 0;
+        zero += w_nw[r->wi] == 1 && !r->val.inl;
+      }
+    } else
+      ++val;
+  }
+  fprintf(sf, "store: %u handles, %u records (%u free or blank, %u live, %u freed and kept), %llu buried, %llu pages compact of %u; "
+              "live: %u aux, %u wide, %u measured, %u frozen/image, %u not known, sources 0/1/2: %u/%u/%u, %u zero no aux; "
+              "sample arena %zu MiB\n",
+          (unsigned)nrails, (unsigned)pool_n, nfree, live, val, (unsigned long long)st_buried,
+          (unsigned long long)st_compacted, (unsigned)(nrails >> PG_BITS) + 1, aux, wide, meas, froz, unk, nd0, nd1, nd2, zero, store_arena_used() >> 20);
+  fclose(sf);
+}
+
 /* The width token w's index, 0 when it is malformed. The last tokens asked are remembered by their text. */
 static uint16_t w_index(const char *w) {
   static struct { uint64_t key; uint16_t wi; } memo[64];
@@ -1256,6 +1306,8 @@ int32_t cqe__new(const char *w, const cqe_val *init, int known, int seed) {
   }
   int32_t h = (int32_t)++nrails;
   cn_note((uint32_t)h, cn_new_name());
+  if (!(h & 0xffffff))
+    store_stats();
   uint32_t s;
   rail_t *r = pool_take(&s);
   real_new((uint32_t)h, s + 2);
@@ -2203,13 +2255,7 @@ static void at_exit_handler(void) {
   exit_blocks_finish();
   exit_finish();
   fprintf(trace_f, "],\"violations\":%lu,\"host_flags\":%d}\n", nviolations, host_flags);
-  const char *sst = getenv("CQE_STORE_STATS"); /* the rail store's counts at the exit event, appended to that file */
-  FILE *sf = sst && *sst ? fopen(sst, "a") : NULL;
-  if (sf) {
-    fprintf(sf, "store: %u handles, %u records, %llu buried, %llu pages compact\n", (unsigned)nrails, (unsigned)pool_n,
-            (unsigned long long)st_buried, (unsigned long long)st_compacted);
-    fclose(sf);
-  }
+  store_stats();
   if (!shot_buffered)
     fflush(trace_f);
   if (shot_buffered) /* a shot worker's sample ends here; the trace stays open for the next */
@@ -2314,6 +2360,8 @@ static int arena_map(arena_t *a, size_t reserve) {
 }
 
 /* -- the rail store's tables (rails, above) -- */
+
+static size_t store_arena_used(void) { return a_sample.base ? (size_t)(a_sample.top - a_sample.base) : 0; }
 
 static void *store_reserve(size_t n) {
   void *m = mmap(NULL, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | MAP_NORESERVE, -1, 0);
