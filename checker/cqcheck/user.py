@@ -309,7 +309,8 @@ def _spread(m: int) -> List[int]:
     return order
 
 
-def subset(samples: List[dict], n: Optional[int], key=None, spec: Optional[DriverSpec] = None) -> List[dict]:
+def subset(samples: List[dict], n: Optional[int], key=None, spec: Optional[DriverSpec] = None,
+           turned=None) -> List[dict]:
     """At most n samples, in set order: whole classical groups (`key`, the comparison's classical
     key: the samples sharing the entry's arguments and differing in their cq_theta substitutions),
     sample 0's group first, then the others spread over their size range (`_magnitude`, ties in a
@@ -329,7 +330,13 @@ def subset(samples: List[dict], n: Optional[int], key=None, spec: Optional[Drive
     one (sample 0, the all-zero baseline, has no substitution). So a cut first group whose seeded
     choice holds none swaps its last sample (sample 0 at n = 1) for a seeded substituted one of the
     group, and a subset still without one takes a seeded substituted sample of another group, in a
-    free place or in place of the last sample taken. A subset that already holds one is unchanged."""
+    free place or in place of the last sample taken. A subset that already holds one is unchanged.
+
+    cq-7is3f (owner 2026-11-10): a sampled PASS also compares a substituted sample with a nonzero angle;
+    a subset confined to the all-zero-angle group (the baseline's, which holds the edge, specials and
+    exhaustive substitutions and fills small n alone) narrows the claim: 01's negated Ry passed. With
+    `turned` (`turned_angles`, the C oracle's angles) such a sample is taken when the set has one
+    (`_take_turned`); a subset that already holds one is unchanged."""
     if n is None or n >= len(samples):
         return list(samples)
     if n < 1:
@@ -362,7 +369,59 @@ def subset(samples: List[dict], n: Optional[int], key=None, spec: Optional[Drive
             if len(take) >= n:
                 take.pop()          # the last taken: sample 0 stays unless it is the only one
             take.append(one)
+    if turned is not None:
+        _take_turned(samples, n, take, turned, subst, key)
     return [samples[i] for i in sorted(take)]
+
+
+TURNED_BATCH = 32     # candidates asked of `turned` at a time (cq-7is3f)
+
+
+def _take_turned(samples: List[dict], n: int, take: List[int], turned, subst, key) -> None:
+    """cq-7is3f (owner 2026-11-10): `take` holds a substituted sample with a nonzero angle when the set
+    has one. `turned(indices) -> [bool]` says which samples have a substituted cq_theta reach with a
+    nonzero angle (`turned_angles`). A subset that holds one is unchanged; else the first one in a seeded
+    order (the samples of classical groups the subset does not compare first, then the others) replaces
+    the last sample taken (sample 0 stays unless it is the only one), or fills a free place."""
+    mine = [i for i in take if subst(i)]
+    if mine and any(turned(mine)):
+        return
+    groups_in = {key(samples[i]) for i in take}
+    taken = set(take)
+    rest = [i for i in range(len(samples)) if subst(i) and i not in taken]
+    random.Random(SUBSET_SEED + 1).shuffle(rest)
+    rest.sort(key=lambda i: key(samples[i]) in groups_in)      # stable: ties keep the seeded order
+    for at in range(0, len(rest), TURNED_BATCH):
+        part = rest[at:at + TURNED_BATCH]
+        hit = next((i for i, t in zip(part, turned(part)) if t), None)
+        if hit is not None:
+            if len(take) >= n:
+                take.pop()
+            take.append(hit)
+            return
+
+
+def _turned_angle(bits) -> bool:
+    """An f64 angle bit pattern (T1.1) that is neither ±0 nor a NaN: its sign shows in an Ry."""
+    if bits is None:
+        return False
+    v = int(bits, 16) if isinstance(bits, str) else int(bits)
+    mag = v & 0x7FFF_FFFF_FFFF_FFFF
+    return mag != 0 and mag <= 0x7FF0_0000_0000_0000
+
+
+def turned_angles(c_module: Path, spec: DriverSpec, samples: List[dict]):
+    """The `turned` of `subset` for the C program: runs the asked samples in the C oracle and says of each
+    whether one of its substituted cq_theta sites ("subst" keys) is reached with a nonzero angle."""
+    from cqcheck import oracle
+
+    def turned(idx: List[int]) -> List[bool]:
+        runs = oracle.run_samples(c_module, spec, [samples[i] for i in idx])
+        return [not r.failed and any(e.get("ev") == "site" and e.get("kind") == "theta"
+                                     and f"{e.get('fn')}:{e.get('site')}" in samples[i]["subst"]
+                                     and _turned_angle(e.get("angle")) for e in r.events)
+                for i, r in zip(idx, runs)]
+    return turned
 
 
 # ------------------------------------------------------------------------------------------------
@@ -432,7 +491,7 @@ def check(o1: Path, lowered: Path, entry: str, samples: Optional[int], work: Pat
         raise UserCheckError(f"cqcheck user: entry {entry}: no sample inside the C program's domain"
                              + ("; reasons: " + " | ".join(whys) if whys else ""))
     ckey = compare.classical_key_from_driver(spec)
-    chosen = subset(ss.samples, samples, ckey, spec)
+    chosen = subset(ss.samples, samples, ckey, spec, turned_angles(c_module, spec, ss.samples))
     nsubst = sum(1 for s in chosen if "subst" in s)
     # a subset is a sampled verdict and says so (owner 2026-11-01)
     size = collections.Counter(ckey(s) for s in ss.samples)

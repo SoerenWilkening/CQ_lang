@@ -12,7 +12,8 @@ Fails on any of:
             and 133's prep_twice overwrites a prep with a NaN angle (cq-mopw)
   unit      in process: the verdict of out-of-budget reasons is undecided (2), never differs; a
             --samples subset keeps classical groups whole, spread over their sizes, and always holds a
-            sample with a cq_theta substitution when the set has one (cq-jqjf); cq-mopw: the sites a cq_invert region may reach (61:
+            sample with a cq_theta substitution when the set has one (cq-jqjf), and one with a nonzero angle
+            when the set has one (cq-7is3f); cq-mopw: the sites a cq_invert region may reach (61:
             prep's two and invert_theta's second, not invert_call's), and an Ry whose angle is the
             identity still counts as the overwriting prep of a rule-10 un-prep where the C program
             overwrites j's register by an identity reach after j's (cq-q15r, cq-ia96)
@@ -132,6 +133,51 @@ def unit(spec_root):
     for n in (1, 2, 3):
         got = U.subset(smp, n, key=lambda s: tuple(s["args"]), spec=spec)
         (ok if len(got) == n and any("subst" in s for s in got) else fail)(f"unit subset substituted elsewhere {n}", f"{got}")
+    # cq-7is3f: a subset also compares a substituted sample with a nonzero angle when the set has one. Here a sample's
+    # angle is its args[1] (the baseline group's is 0), and `turned` says which substituted samples have a nonzero one
+    def turned_of(smp):
+        asked = []
+
+        def turned(idx):
+            asked.append(list(idx))
+            return [int(smp[i]["args"][1], 16) != 0 for i in idx]
+        return turned, asked
+    k2 = lambda s: tuple(s["args"])      # noqa: E731
+    base = [{"call": 0, "args": ["0x00000000", "0x00000000"]}] + \
+           [{"call": 0, "args": ["0x00000000", "0x00000000"], "subst": {"s": f"{k}"}} for k in range(40)]
+    others = []
+    for v in (1, 2, 3):
+        others += [{"call": 0, "args": [f"0x{v:08x}", "0x00000000"]},
+                   {"call": 0, "args": [f"0x{v:08x}", "0x00000000"], "subst": {"s": "1"}}]
+    smp = base + others + [{"call": 0, "args": ["0x00000007", "0x00000005"]},
+                           {"call": 0, "args": ["0x00000007", "0x00000005"], "subst": {"s": "1"}},
+                           {"call": 0, "args": ["0x00000007", "0x00000005"], "subst": {"s": "2"}}]
+    for n in (1, 2, 5, 20):
+        turned, _ = turned_of(smp)
+        got = U.subset(smp, n, key=k2, spec=None, turned=turned)
+        hit = [s for s in got if "subst" in s and s["args"][1] != "0x00000000"]
+        (ok if len(got) == n and hit and (n == 1 or got[0] is smp[0]) else fail)(f"unit subset turned {n}", f"{got}")
+        again = U.subset(smp, n, key=k2, spec=None, turned=turned_of(smp)[0])
+        (ok if again == got else fail)(f"unit subset turned {n} deterministic", f"{again}")
+    # unchanged when the subset already holds one (turned is asked about its own substituted samples only) ...
+    smp2 = [{"call": 0, "args": ["0x00000000", "0x00000005"]}] + \
+           [{"call": 0, "args": ["0x00000000", "0x00000005"], "subst": {"s": f"{k}"}} for k in range(10)] + others
+    for n in (1, 3):
+        turned, asked = turned_of(smp2)
+        got = U.subset(smp2, n, key=k2, spec=None, turned=turned)
+        want = U.subset(smp2, n, key=k2, spec=None)
+        (ok if got == want and len(asked) == 1 else fail)(f"unit subset turned already {n}", f"{got} asked {asked}")
+    # ... and when the set has none
+    smp3 = base + others
+    for n in (1, 5):
+        got = U.subset(smp3, n, key=k2, spec=None, turned=turned_of(smp3)[0])
+        want = U.subset(smp3, n, key=k2, spec=None)
+        (ok if got == want else fail)(f"unit subset turned none {n}", f"{got}")
+    for bits, want in (("0x0", False), ("0x8000000000000000", False), ("0x7ff8000000000000", False), (None, False),
+                       ("0x3fe0000000000000", True), ("0xbfe0000000000000", True), ("0x7ff0000000000000", True),
+                       ("0x1", True)):
+        got = U._turned_angle(bits)
+        (ok if got == want else fail)(f"unit turned angle {bits}", f"{got}")
     (ok if U._spread(0) == [] else fail)("unit spread 0", f"{U._spread(0)}")
     for m in (1, 2, 3, 7, 8, 107):
         got = U._spread(m)
@@ -365,6 +411,11 @@ def main():
         # there the measured rail and its classical input agree)
         expect("mutant measure_classical_input (--samples 1)", 1,
                user(o1, tmp / "mutant_measure_classical_input.ll", "add_classical", 1))
+        # cq-7is3f: the subset also compares a substituted sample with a nonzero angle (the baseline group, whose angle
+        # is 0, alone fills these n: there -0 and 0 agree)
+        for n in (1, 5, 20):
+            expect(f"mutant negated_angle (--samples {n})", 1,
+                   user(o1, tmp / "mutant_negated_angle.ll", "add_classical", n))
 
         d60 = spec / "examples" / "60_qft"
         for name, text in mutants60((d60 / "qft.lowered.ll").read_text()).items():
