@@ -130,3 +130,15 @@ add_test(NAME loops-cutoff-measure-site
           --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --measures-in f=4 --measures-in g=4
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/me_site.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-jws5r (CR rule 8 with rule 14): a purely classical branch inside a K-trip stays a `br` in every trip copy (the arm
+# C does not take emits nothing; the taken arm's effects sit under the trip predicate alone), in a clone, a _ctl clone
+# and a twin; a sub-loop, a noreturn arm and a measurement behind one. Each entry §6-checked against its C program.
+add_test(NAME loops-cutoff-trip-cbr
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
+          --br-in __cq_q_pa_loop_100=4 --calls-in __cq_q_pa_loop_100=cqrt_alloc_i1=4
+          --br-in __cq_q_pa_loop2_100=4 --br-in pb_call=8 --calls-in pb_call=__cq_q_pb_note_11_b2147483647_ctl=4
+          --br-in __cq_q_pc_inner_1000_ctl=4 --br-in pd_trip=4 --br-in __cq_q_pe_f_100=8 --br-in __cq_q_pe_f_100_unc=8
+          --br-in pf_nested=8 --br-in pg_abort=8 --br-in ph_measure=8
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/trip_cbr.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

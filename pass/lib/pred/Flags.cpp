@@ -1553,6 +1553,11 @@ Value *PathPredicates::flag(LoweringContext &ctx, const Pred &p) {
   return materialize(n, sink, quantumLikeFn(ctx, O));
 }
 
+Value *classicalValue(LoweringContext &ctx, const Pred &p) {
+  CtxSink sink(ctx);
+  return sink.classical(nodeOf(p));
+}
+
 namespace {
 Value *selectChainAt(LoweringContext &ctx, ArrayRef<std::pair<Pred, Operand>> arms, RailType w, unsigned care,
                      const Value *what);

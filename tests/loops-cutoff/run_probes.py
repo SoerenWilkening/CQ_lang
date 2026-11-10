@@ -49,7 +49,7 @@ def mutants(a, probe: Path, mod: str, out: Path) -> int:
         low = out / probe.name.replace(".O1.ll", f".{name}.ll")
         low.write_text(mod.replace(b, re.sub(old, new, b, count=(0 if name == "wrong_value" else 1)), 1))
         c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(probe), "--lowered", str(low),
-                            "--entry", e], capture_output=True, text=True, cwd=ROOT / "checker", timeout=240)
+                            "--entry", e], capture_output=True, text=True, cwd=ROOT / "checker", timeout=a.timeout)
         rejected = c.returncode == 1 and "FAIL" in c.stdout
         print(("ok   " if rejected else "FAIL ") + f"{probe.name} mutant {name}: "
               + ((c.stdout + c.stderr).strip().splitlines() or ["?"])[-1][:200])
@@ -95,6 +95,16 @@ def one(a, probe: Path) -> int:
             got = len(re.findall(r"call [^@]*@cqrt_measure_", body(mod, fn)))
             if got != int(n):
                 why.append(f"{got} cqrt_measure calls in @{fn}, not {n}")
+        for spec in a.br_in or []:
+            fn, n = spec.split("=")
+            got = len(re.findall(r"^  br i1 ", body(mod, fn), re.M))
+            if got < int(n):
+                why.append(f"{got} conditional br in @{fn}, fewer than {n}")
+        for spec in a.calls_in or []:
+            fn, callee, n = spec.split("=")
+            got = len(re.findall(r"call [^@\n]*@" + re.escape(callee) + r"\(", body(mod, fn)))
+            if got != int(n):
+                why.append(f"{got} calls of @{callee} in @{fn}, not {n}")
         if a.measures is not None and len(re.findall(r"call [^@]*@cqrt_measure_", b)) != a.measures:
             why.append(f"{len(re.findall(r'call [^@]*@cqrt_measure_', b))} cqrt_measure calls, not {a.measures}")
         if a.measures is not None and re.search(r"^define [^\n]*_unc\(.*?^}", mod, re.S | re.M) and any(
@@ -103,7 +113,7 @@ def one(a, probe: Path) -> int:
         try:
             c = subprocess.run([sys.executable, "-m", "cqcheck", "user", "--o1", str(probe), "--lowered",
                                 str(lowered), "--entry", e], capture_output=True, text=True, cwd=ROOT / "checker",
-                               timeout=240)
+                               timeout=a.timeout)
             if c.returncode != 0 or "PASS" not in c.stdout + c.stderr:
                 why.append("§6 against the C program: " + ((c.stdout + c.stderr).strip().splitlines() or ["?"])[-1])
         except subprocess.TimeoutExpired:
@@ -120,6 +130,9 @@ def main() -> int:
     ap.add_argument("--entry", action="append")
     ap.add_argument("--measures", type=int, help="the cqrt_measure calls each entry must hold; no twin may hold one")
     ap.add_argument("--measures-in", action="append", help="NAME=N: the cqrt_measure calls function NAME must hold")
+    ap.add_argument("--timeout", type=int, default=240, help="seconds for one entry's §6 check")
+    ap.add_argument("--br-in", action="append", help="NAME=N: function NAME must hold at least N conditional br (cq-jws5r)")
+    ap.add_argument("--calls-in", action="append", help="NAME=CALLEE=N: the calls of CALLEE function NAME must hold")
     ap.add_argument("probes", nargs="+")
     a = ap.parse_args()
     fails = sum(one(a, Path(p).resolve()) for p in a.probes)

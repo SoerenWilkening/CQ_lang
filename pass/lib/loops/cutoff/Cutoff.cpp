@@ -39,9 +39,14 @@
 // An instruction with effects in the body (a call, a bus access, an allocation, a phase or a rotation) is
 // lowered under the trip predicate q_j & its block's trip-local predicate (rule 14 case 2, cq-99f7's
 // tripFlag); a pure instruction is computed in every trip.
-// A trip is any acyclic code (cq-b58q): classical and quantum branches and switches are its predicates (a
-// classical term seeded, rule 8), a classical phi a classical select (rule 9), several latches end a trip on
-// one back edge, several header entries merge a quantum start (rule 9). A read after a top-level loop that
+// A trip is any acyclic code (cq-b58q): its quantum branches and switches are its predicates, a classical phi a
+// classical select (rule 9), several latches end a trip on one back edge, several header entries merge a quantum
+// start (rule 9). A purely classical condition stays a classical branch in every trip copy (rule 8, cq-jws5r:
+// underClassical): the part of the trip behind it (a block, a sub-loop's unit, a noreturn arm) runs under a real `br`
+// on the classical paths that reach it, its effects under the quantum part of its predicate alone. What stays a seed
+// rail (rule 7) is a classical term of a predicate read as data outside such a branch: the chain's exit test, a
+// merge's select condition, a term rule 8 cannot factor out (`c || q`), and every classical term of a K-loop that
+// is one node of a classically bounded loop's trip (oneBlock: that loop's reverse replays one block per segment). A read after a top-level loop that
 // the single-exit forms cannot express takes the multi-exit form's GENERAL EXIT CAPTURE.
 // Not built yet (each stop names its bead): nested loops in the general forms, a classical-bound sub-loop,
 // pointer and aggregate values across the loop, the unit shapes exits::unitOf rejects.
@@ -147,6 +152,9 @@ public:
   Cutoff(LoweringContext &ctx, Analyses &A) : ctx(ctx), A(A) {}
   void lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top);
   std::optional<Pred> seedPred;   // the predicate of the top loop's seed, which every trip rail implies (rule 14)
+  // cq-jws5r: the unit is one node of a classically bounded loop's trip (lowerNestedCutoff from loops-classical), whose
+  // reverse replays one output block per segment: the trips stay in the block they start in, a classical term a seed.
+  bool oneBlock = false;
   Value *stopRail() const { return stopped; }   // the last lowerLoop's XOR of its noreturn arms' flags
 
 private:
@@ -266,11 +274,11 @@ private:
   Value *conj(Value *q, const Pred &p, const Instruction *at) {
     if (p.isBottom())
       internalError("loops-cutoff: a trip predicate conjoined with false", at);
-    // The trip is unrolled into straight-line code, so a classical term of p (a classical branch or
-    // switch inside the trip, rules 8 and 13) is no classical branch here: pred's flag synthesis
-    // seeds it from its classical value in this trip (rule 7) and joins it by and_i1/or_i1, as rule 8
-    // does for a classical term it cannot factor out. The conjunction with the trip predicate is
-    // quantum, so the effects under it are the quantum-predicate forms of rules 16 and 19.
+    // A classical term still in p (underClassical branches on the classical paths and hands the quantum part on;
+    // the chain's exit test, a merge and a oneBlock unit keep theirs) is seeded by pred's flag synthesis from its
+    // classical value in this trip (rule 7) and joined by and_i1/or_i1, as rule 8 does for a classical term it
+    // cannot factor out. The conjunction with the trip predicate is quantum, so the effects under it are the
+    // quantum-predicate forms of rules 16 and 19.
     (void)at;
     Value *f = ctx.preds().flag(ctx, p);
     if (!f)
@@ -1241,6 +1249,149 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
     ctx.unc().recordCore(g, x, {Operand{s, true}, Operand{z, true}}, id);
     return andRail(q, z);
   };
+  // cq-jws5r (CR rule 8: "A purely classical condition is always a classical branch, also inside a clone"; NORTHSTAR
+  // principle 2: a branch not taken emits no gates). A part of a trip copy (a block, a sub-loop's unit) whose trip-local
+  // predicate lp has a classical condition runs under a real branch on it: g is lp with its quantum atoms quantified
+  // away (the classical paths of this trip that reach the part), read from this trip's classical values, and inside the
+  // branch the part's predicate is lp's quantum part alone (g implies lp's classical factor), so with a purely classical
+  // lp the effects sit under the trip predicate itself. The trip stays straight-line code around it, as around a
+  // classically bounded sub-loop (classicalSub): each value the part binds that is read outside it is joined by a phi
+  // with a |0> seed (a classical value: 0) minted before the branch, which the trip reads on a false classical edge
+  // only. `phis`: phis outside the part it may bind (a sub-loop's continuation); `flags`: i1 rails the body leaves for
+  // the code after it (nullptr where none), |0> on the skip path. The reverse needs no record of the branch: the
+  // uncompute spine places each item of the part under its block's run flag.
+  auto underClassical = [&](const Pred &lp, ArrayRef<BasicBlock *> blocks, ArrayRef<PHINode *> phis,
+                            ArrayRef<Value **> flags, const std::function<void(const Pred &)> &body) {
+    Pred cg = (oneBlock || lp.isBottom()) ? Pred::top() : lp.classicalProjection(ctx.T, ctx.S);
+    if (cg.isTop()) {
+      body(lp);
+      return;
+    }
+    LLVMContext &Cx = ctx.M.getContext();
+    Value *g = classicalValue(ctx, cg);
+    SmallPtrSet<const BasicBlock *, 8> in(blocks.begin(), blocks.end());
+    SmallVector<Instruction *, 16> outs;
+    for (BasicBlock *bb : blocks)
+      for (Instruction &I : *bb) {
+        if (I.getType()->isVoidTy())
+          continue;
+        if (any_of(I.users(), [&](const User *u) {
+              auto *ui = cast<Instruction>(u);
+              return ui->isTerminator() || !in.count(ui->getParent());
+            }))
+          outs.push_back(&I);
+      }
+    for (PHINode *P : phis)
+      outs.push_back(P);
+    auto fieldsOf = [&](const Value *v) -> std::optional<SmallVector<Operand, 4>> {
+      if (!ctx.bound(v))
+        return std::nullopt;
+      return ctx.fields(v);
+    };
+    auto same = [](const std::optional<SmallVector<Operand, 4>> &a, const std::optional<SmallVector<Operand, 4>> &b) {
+      if (!a || !b || a->size() != b->size())
+        return !a && !b;
+      for (size_t k = 0; k < a->size(); ++k)
+        if ((*a)[k].v != (*b)[k].v || (*a)[k].handle != (*b)[k].handle)
+          return false;
+      return true;
+    };
+    std::vector<std::optional<SmallVector<Operand, 4>>> before;
+    for (Instruction *I : outs)
+      before.push_back(fieldsOf(I));
+    BasicBlock *Run = BasicBlock::Create(Cx, "", &ctx.out()), *Skip = BasicBlock::Create(Cx, "", &ctx.out()),
+               *Join = BasicBlock::Create(Cx, "", &ctx.out());
+    // The branch first: the uncompute spine reads the output CFG where the part is lowered (a store a classical branch can
+    // bypass keeps its rails only where it ran, rule 5).
+    BranchInst *br = ctx.B().CreateCondBr(g, Run, Skip);
+    BranchInst::Create(Join, Skip);
+    ctx.unc().noteClassicalArm(Join, Skip);
+    ctx.B().SetInsertPoint(Run);
+    {
+      // A classical reachability value made inside the branch does not reach the code after it: forgotten again.
+      DenseMap<const BasicBlock *, Value *> reachBefore = creach;
+      body(lp.quantumPart(ctx.T, ctx.S));
+      creach = std::move(reachBefore);
+    }
+    BasicBlock *ran = ctx.B().GetInsertBlock();
+    ctx.B().CreateBr(Join);
+    // The skip path's values, minted where the branch leaves from.
+    ctx.B().SetInsertPoint(br);
+    auto zero = [&](RailType w) -> Value * {
+      CallInst *z = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, w}, {Constant::getNullValue(irTypeOf(Cx, w))});
+      ctx.unc().recordSeed(z);
+      return z;
+    };
+    struct J {
+      Instruction *I;
+      SmallVector<Operand, 4> run, skip;
+    };
+    std::vector<J> joins;
+    for (size_t k = 0; k < outs.size(); ++k) {
+      auto now = fieldsOf(outs[k]);
+      if (!now || same(before[k], now))
+        continue;
+      SmallVector<Type *, 4> leaves;
+      std::function<void(Type *)> walk = [&](Type *t) {
+        if (auto *st = dyn_cast<StructType>(t)) {
+          for (Type *e : st->elements())
+            walk(e);
+        } else if (auto *a = dyn_cast<ArrayType>(t)) {
+          for (uint64_t n = 0; n < a->getNumElements(); ++n)
+            walk(a->getElementType());
+        } else if (auto *vt = dyn_cast<FixedVectorType>(t)) {
+          for (unsigned n = 0; n < vt->getNumElements(); ++n)
+            leaves.push_back(vt->getElementType());
+        } else {
+          leaves.push_back(t);
+        }
+      };
+      walk(outs[k]->getType());
+      J j{outs[k], *now, {}};
+      bool ok = true;
+      for (size_t f = 0; f < now->size() && ok; ++f) {
+        const Operand &r = (*now)[f];
+        if (!r.handle)
+          j.skip.push_back(Operand{Constant::getNullValue(r.v->getType()), false});
+        else if (now->size() == leaves.size())
+          j.skip.push_back(Operand{zero(railOf(leaves[f])), true});
+        else if (now->size() == 1 && (outs[k]->getType()->isIntegerTy() || outs[k]->getType()->isFloatingPointTy() ||
+                                      outs[k]->getType()->isPointerTy()))
+          j.skip.push_back(Operand{zero(railOf(outs[k]->getType())), true});
+        else
+          ok = false;
+      }
+      if (ok)
+        joins.push_back(std::move(j));
+    }
+    SmallVector<Value *, 2> flagSkip;
+    for (Value **f : flags)
+      flagSkip.push_back(*f ? zero(RailType{Kind::Int, 1}) : nullptr);
+    ctx.B().SetInsertPoint(Join);
+    auto phiOf = [&](Value *run, Value *skip, bool rail) {
+      PHINode *ph = ctx.B().CreatePHI(run->getType(), 2);
+      ph->addIncoming(run, ran);
+      ph->addIncoming(skip, Skip);
+      if (rail && ctx.unc().recorded(run) && ctx.unc().recorded(skip))
+        ctx.unc().recordMerge(ph);
+      return ph;
+    };
+    std::vector<SmallVector<Operand, 4>> joined;
+    for (J &j : joins) {
+      SmallVector<Operand, 4> out;
+      for (size_t f = 0; f < j.run.size(); ++f)
+        out.push_back(Operand{phiOf(j.run[f].v, j.skip[f].v, j.run[f].handle), j.run[f].handle});
+      joined.push_back(std::move(out));
+    }
+    for (size_t k = 0; k < flags.size(); ++k)
+      if (flagSkip[k])
+        *flags[k] = phiOf(*flags[k], flagSkip[k], true);
+    for (size_t k = 0; k < joins.size(); ++k) {
+      ctx.rebind(joins[k].I, joined[k]);
+      if (!isQ(joins[k].I))
+        perTrip.insert(joins[k].I);
+    }
+  };
   std::function<void(BasicBlock *, Value *, const Pred &)> lowerInsts;   // one block's non-phi instructions
   auto lowerBlocks = [&](Value *&q, const std::function<bool(const BasicBlock *)> &pick) {
     boundThisTrip.clear();
@@ -1264,17 +1415,41 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         unsigned K = ctx.K(S);
         std::optional<uint64_t> B = exits::cutoffBound(*mS, A.SE, ctx.T, ctx.S);
         unsigned cs = B ? unsigned(std::min<uint64_t>(K, *B)) : K;
-        Value *s = conj(q, local.find(b)->second, b->getTerminator());
-        // The sub-loop binds the phis of its exit block it identifies; they are not merged again.
-        forgetUnitBound(exits::unitOf(*mS).cont);
-        lowerLoop(*mS, s, cs, !B || *B > K, false);
+        exits::Unit SU = exits::unitOf(*mS);
+        SmallVector<BasicBlock *, 16> unitBlocks(mS->blocks().begin(), mS->blocks().end());
+        unitBlocks.append(SU.arm.begin(), SU.arm.end());
+        SmallVector<PHINode *, 4> contPhis;
+        if (SU.cont)
+          for (PHINode &P : SU.cont->phis())
+            contPhis.push_back(&P);
+        const Pred &lpS = local.find(b)->second;
+        // cq-jws5r: behind a classical condition of the trip the sub-loop is skipped by a real branch. Its continuation's
+        // phis are then the unit's value only where it ran: the trip's merge selects it in on the unit's edges (unitPhi,
+        // as for a classically bounded sub-loop) over the phi's other incomings.
+        bool branched = !oneBlock && !lpS.isBottom() && !lpS.classicalProjection(ctx.T, ctx.S).isTop() && SU.cont &&
+                        L.contains(SU.cont);
+        stopped = nullptr;
+        underClassical(branched ? lpS : Pred::top(), unitBlocks, contPhis, {&stopped}, [&](const Pred &lp) {
+          Value *s = conj(q, branched ? lp : lpS, b->getTerminator());
+          // The sub-loop binds the phis of its exit block it identifies; they are not merged again.
+          forgetUnitBound(SU.cont);
+          lowerLoop(*mS, s, cs, !B || *B > K, false);
+        });
         q = afterSub(q);
-        if (BasicBlock *SX = exits::unitOf(*mS).cont)
-          for (PHINode &P : SX->phis())
-            if (unitBound.count(&P))
-              boundThisTrip.insert(&P);
+        for (PHINode *P : contPhis)
+          if (unitBound.count(P)) {
+            if (branched) {
+              unitPhi[P] = ctx.operand(P);
+              unitBound.erase(P);
+            } else {
+              unitPhi.erase(P);
+              boundThisTrip.insert(P);
+            }
+          }
         continue;
       }
+      // cq-jws5r: a block behind a classical condition of the trip runs under a real branch on it (rule 8).
+      underClassical(local.find(b)->second, {b}, {}, {}, [&](const Pred &lpb) {
       if (b != H)
         for (PHINode &P : b->phis()) {
           if (boundThisTrip.count(&P)) {
@@ -1338,7 +1513,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
           }
           set(&P, Operand{selectChain(ctx, arms, railOf(P.getType())), true});
         }
-      lowerInsts(b, q, local.find(b)->second);
+      lowerInsts(b, q, lpb);
+      });
     }
   };
   // A loop of the exit arm runs once in the C program (after the trip that exits into the arm), but once per
@@ -1484,6 +1660,7 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
               armBound.insert(&P);
         continue;
       }
+      underClassical(acc, {b}, {}, {}, [&](const Pred &lpb) {   // cq-jws5r
       for (PHINode &P : b->phis()) {
         if (armBound.count(&P)) {
           // cq-quhmu: the loop bound P on its own paths; its tail's edges into its continuation hold on this evaluation's.
@@ -1527,7 +1704,8 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         }
         set(&P, Operand{selectChain(ctx, arms, railOf(P.getType())), true});
       }
-      lowerInsts(b, q, acc);
+      lowerInsts(b, q, lpb);
+      });
     }
     for (CPhi &cp : cphis) {
       std::vector<std::pair<Pred, Operand>> arms;
@@ -1641,6 +1819,11 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
       abortLocal.insert({b, acc});
       evaluated.insert(b);
       creach.erase(b);
+      // cq-jws5r: an arm behind a classical condition of the trip is entered by a real branch (rule 8); its flag reads
+      // |0> where the branch skips it.
+      Value *f = nullptr;
+      BasicBlock *before = ctx.B().GetInsertBlock();
+      underClassical(acc, {b}, {}, {&f}, [&](const Pred &lpb) {
       for (PHINode &P : b->phis()) {
         if (!isQ(&P)) {
           classicalPhi(P);
@@ -1653,10 +1836,23 @@ void Cutoff::lowerLoop(Loop &L, Value *seed, unsigned c, bool keep, bool top) {
         set(&P, Operand{selectChain(ctx, arms, railOf(P.getType())), true});
       }
       // Every instruction of the arm runs only where the arm is taken: under the flag.
-      Value *f = conj(q, acc, b->getTerminator());
+      f = conj(q, lpb, b->getTerminator());
+      if (f == q && ctx.B().GetInsertBlock() != before) {
+        // Rule 16 keeps the arm's flag (abort_i1 never frees it). Behind the branch the flag is the trip predicate itself,
+        // which the paths that skip the arm still uncompute: the kept flag is a copy made where the arm runs (as the
+        // no-live-exit form's copy of the seed, 45).
+        RailType i1{Kind::Int, 1};
+        CallInst *k = ctx.emitCore(abi::CoreSpec{abi::Core::Alloc, i1}, {ConstantInt::getFalse(ctx.M.getContext())});
+        RailId kid = ctx.unc().recordSeed(k);
+        abi::CoreSpec cp{abi::Core::Copy, i1};
+        CallInst *cpy = ctx.emitCore(cp, {q, k});
+        ctx.unc().recordCore(cpy, cp, {Operand{q, true}, Operand{k, true}}, kid);
+        f = k;
+      }
       for (Instruction &I : *b)
         if (!isa<PHINode>(I) && !I.isTerminator())
           lowerInstruction(ctx, I, f, seedPred ? &*seedPred : nullptr);
+      });
       // An arm's later block is entered from its earlier ones: the flag of its entry is noted once.
       if (none_of(predecessors(b), [&](BasicBlock *p) { return abortLocal.count(p) != 0; }))
         noteStop(f);
@@ -2115,6 +2311,7 @@ Value *lowerNestedCutoff(LoweringContext &ctx, Loop &L, Value *seed) {
   std::optional<uint64_t> B = cutoffBound(*mL, A.SE, ctx.T, ctx.S);
   unsigned c = B ? unsigned(std::min<uint64_t>(K, *B)) : K;
   Cutoff C(ctx, A);
+  C.oneBlock = true;
   C.lowerLoop(*mL, seed, c, !B || *B > K, false);
   return C.stopRail();
 }

@@ -161,6 +161,8 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/SCCIterator.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/Analysis/CaptureTracking.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Support/raw_ostream.h"
@@ -369,6 +371,26 @@ struct Uncompute::Impl {
 
   // A classical branch on the way from D to S has an edge from which S cannot be reached (the output CFG is built up
   // to S when S is being lowered): some path from D does not pass S.
+  // cq-jws5r: join block -> the empty block of its skip edge, for each classical arm a loop module noted (flagAt).
+  DenseMap<const BasicBlock *, const BasicBlock *> armJoins;
+  // The block whose conditional branch enters the noted arm that ends at join b, and the arm's first block; nullptr
+  // where b is no such join (any more: an item wrapped since may have split it).
+  BasicBlock *armBranch(BasicBlock *b, BasicBlock *&first) const {
+    auto it = armJoins.find(b);
+    if (it == armJoins.end())
+      return nullptr;
+    BasicBlock *S = const_cast<BasicBlock *>(it->second);
+    if (pred_size(b) != 2 || !is_contained(predecessors(b), S) || S->size() != 1 || S->getSingleSuccessor() != b)
+      return nullptr;
+    BasicBlock *pre = S->getSinglePredecessor();
+    auto *br = pre ? dyn_cast_or_null<BranchInst>(pre->getTerminator()) : nullptr;
+    if (!br || !br->isConditional())
+      return nullptr;
+    first = br->getSuccessor(0) == S ? br->getSuccessor(1) : br->getSuccessor(0);
+    if (first == S || first == b)
+      return nullptr;
+    return pre;
+  }
   static bool bypassed(const BasicBlock *D, const BasicBlock *S) {
     SmallPtrSet<const BasicBlock *, 16> toS{S};
     SmallVector<const BasicBlock *, 16> work{S};
@@ -1215,6 +1237,36 @@ struct Uncompute::Impl {
     std::vector<Instruction *> ops;   // and/xor made here
     DenseMap<BasicBlock *, Value *> startOf, endOf;
     SmallPtrSet<BasicBlock *, 8> busy;
+    // cq-jws5r (CR rules 8, 14): a function whose K-loop trips branch on classical conditions has one join per branch and
+    // trip copy, and the walk below visits every one of them for every flag. Two facts cut it short there, each giving
+    // the value the walk would fold its phis to: a block no event block reaches starts at dflt; and the join of a
+    // noted classical arm (noteClassicalArm) whose arm reaches no event block starts with the value its branch ends
+    // with (every path into the join leaves that branch, and none passes an event).
+    const bool arms = !armJoins.empty();
+    SmallPtrSet<const BasicBlock *, 32> reachEvent, afterEvent;
+    if (arms) {
+      SmallVector<const BasicBlock *, 32> w;
+      for (auto &kv : byBlock) {
+        reachEvent.insert(kv.first);
+        w.push_back(kv.first);
+      }
+      while (!w.empty())
+        for (const BasicBlock *p : predecessors(w.pop_back_val()))
+          if (reachEvent.insert(p).second)
+            w.push_back(p);
+      for (auto &kv : byBlock)
+        w.push_back(kv.first);
+      while (!w.empty())
+        if (const Instruction *t = w.pop_back_val()->getTerminator())
+          for (const BasicBlock *n : successors(t))
+            if (afterEvent.insert(n).second)
+              w.push_back(n);
+    }
+    auto armEntry = [&](BasicBlock *b) -> BasicBlock * {
+      BasicBlock *first = nullptr;
+      BasicBlock *pre = arms ? armBranch(b, first) : nullptr;
+      return pre && !reachEvent.count(first) ? pre : nullptr;
+    };
     std::function<Value *(Value *, Value *, Instruction *, BasicBlock *)> clearWith =
         [&](Value *v, Value *c, Instruction *ip, BasicBlock *b) -> Value * {
       if (auto *k = dyn_cast<ConstantInt>(c))
@@ -1283,6 +1335,26 @@ struct Uncompute::Impl {
       SmallVector<BasicBlock *, 4> ps(predecessors(b));
       if (b->isEntryBlock() || ps.empty())
         return startOf[b] = dflt ? T : F;
+      if (arms && !afterEvent.count(b))
+        return startOf[b] = dflt ? T : F;
+      if (BasicBlock *pre = armEntry(b)) {
+        // The joins straight above it that are such joins too and hold no event: one value for all of them.
+        SmallVector<BasicBlock *, 16> js{b};
+        while (!byBlock.count(pre) && !startOf.count(pre) && !endOf.count(pre)) {
+          BasicBlock *up = armEntry(pre);
+          if (!up)
+            break;
+          js.push_back(pre);
+          pre = up;
+        }
+        Value *v = endV(pre);
+        for (size_t k = 0; k < js.size(); ++k) {
+          startOf[js[k]] = v;
+          if (k)
+            endOf[js[k]] = v;
+        }
+        return v;
+      }
       if (ps.size() == 1) {
         if (!busy.insert(b).second)
           return F;   // a cycle of single-predecessor blocks is unreachable
@@ -2331,26 +2403,43 @@ struct Uncompute::Impl {
       made.push_back(U);
     }
     armItems.clear();
+    // cq-jws5r: every item block is split off by now and the carries below add phis only, so one dominator tree and one
+    // order of the blocks serve them all (a function with noted classical arms has an item block per arm-local rail).
+    CfgFacts facts;
+    if (!armJoins.empty() && !made.empty()) {
+      facts.DT = std::make_unique<DominatorTree>(F);
+      unsigned k = 0;
+      for (scc_iterator<Function *> it = scc_begin(&F); !it.isAtEnd(); ++it, ++k)
+        for (BasicBlock *b : *it)
+          facts.order[b] = k;
+    }
     for (BasicBlock *U : made)
-      carryOperands(U);
+      carryOperands(U, facts.DT ? &facts : nullptr);
   }
 
   // Every operand of an item block U that does not dominate it, carried to it (poison where it is not
   // defined; the run flag is false there).
-  void carryOperands(BasicBlock *U) {
+  // The CFG as it stands while nothing but phis is added: its dominator tree, and each reachable block's position in
+  // the reverse topological order of the strongly connected components (x reaches y only if order[x] >= order[y]).
+  struct CfgFacts {
+    std::unique_ptr<DominatorTree> DT;
+    DenseMap<const BasicBlock *, unsigned> order;
+  };
+  void carryOperands(BasicBlock *U, const CfgFacts *facts = nullptr) {
     Function &F = *U->getParent();
     BasicBlock *entry = &F.getEntryBlock();
     DenseMap<Value *, Value *> carried;
     for (Instruction &I : *U)
       for (Use &u : I.operands()) {
         auto *op = dyn_cast<Instruction>(u.get());
-        if (!op || op->getParent() == U || dominates(op->getParent(), U))
+        if (!op || op->getParent() == U ||
+            (facts ? facts->DT->dominates(op->getParent(), U) : dominates(op->getParent(), U)))
           continue;
         Value *&c = carried[op];
         if (!c) {
           if (op->getParent() == entry)
             internalError("uncompute: an arm item operand in the entry that does not dominate the item", op);
-          c = carryTo(U, false, op->getParent(), op, PoisonValue::get(op->getType()), op->getName());
+          c = carryTo(U, false, op->getParent(), op, PoisonValue::get(op->getType()), op->getName(), facts);
         }
         u.set(c);
       }
@@ -2387,9 +2476,48 @@ struct Uncompute::Impl {
   // block D and `dflt` at the entry: phis at the joins (over the real predecessors: a spine phi still
   // waiting for its incomings must not hide a block's predecessors, as SSAUpdater's lookup through a
   // leading phi would), trivial ones folded.
-  Value *carryTo(BasicBlock *at, bool atEnd, BasicBlock *D, Value *v, Value *dflt, const Twine &name) {
+  Value *carryTo(BasicBlock *at, bool atEnd, BasicBlock *D, Value *v, Value *dflt, const Twine &name,
+                 const CfgFacts *facts = nullptr) {
     DenseMap<BasicBlock *, Value *> memo;
     std::vector<PHINode *> made;
+    // cq-jws5r: as flagAt, with D the one event: a block D does not reach ends with dflt, and a noted classical arm
+    // that does not reach D is passed at its branch.
+    SmallPtrSet<const BasicBlock *, 32> reachD, afterD;
+    // With the CFG's facts at hand the two questions are read from the order instead of two walks per carry.
+    unsigned orderD = 0;
+    if (facts) {
+      auto it = facts->order.find(D);
+      if (it == facts->order.end())
+        facts = nullptr;
+      else
+        orderD = it->second;
+    }
+    auto cannotReachD = [&](const BasicBlock *x) {
+      if (!facts)
+        return !reachD.count(x);
+      auto it = facts->order.find(x);
+      return it != facts->order.end() && it->second < orderD;
+    };
+    auto notAfterD = [&](const BasicBlock *x) {
+      if (!facts)
+        return !afterD.count(x);
+      auto it = facts->order.find(x);
+      return it != facts->order.end() && it->second > orderD;
+    };
+    if (!armJoins.empty() && !facts) {
+      SmallVector<const BasicBlock *, 32> w{D};
+      reachD.insert(D);
+      while (!w.empty())
+        for (const BasicBlock *p : predecessors(w.pop_back_val()))
+          if (reachD.insert(p).second)
+            w.push_back(p);
+      w.push_back(D);
+      while (!w.empty())
+        if (const Instruction *t = w.pop_back_val()->getTerminator())
+          for (const BasicBlock *n : successors(t))
+            if (afterD.insert(n).second)
+              w.push_back(n);
+    }
     std::function<Value *(BasicBlock *)> end = [&](BasicBlock *b) -> Value * {
       if (b == D)
         return v;
@@ -2398,6 +2526,25 @@ struct Uncompute::Impl {
       SmallVector<BasicBlock *, 4> ps(predecessors(b));
       if (ps.empty())
         return memo[b] = dflt;
+      if (!armJoins.empty()) {
+        if (notAfterD(b))
+          return memo[b] = dflt;
+        SmallVector<BasicBlock *, 16> js;
+        BasicBlock *x = b, *first = nullptr;
+        while (x != D && !memo.count(x))
+          if (BasicBlock *pre = armBranch(x, first); pre && cannotReachD(first)) {
+            js.push_back(x);
+            x = pre;
+          } else {
+            break;
+          }
+        if (!js.empty()) {
+          Value *r = end(x);
+          for (BasicBlock *j : js)
+            memo[j] = r;
+          return r;
+        }
+      }
       if (ps.size() == 1)
         return memo[b] = end(ps[0]);
       PHINode *phi = PHINode::Create(v->getType(), ps.size(), name);
@@ -3151,6 +3298,8 @@ void Uncompute::noteVersionChange(Instruction *at) {
 }
 
 void Uncompute::noteSourceBlock(const BasicBlock *bb) { impl->srcBlock = bb; }
+
+void Uncompute::noteClassicalArm(BasicBlock *join, BasicBlock *skip) { impl->armJoins[join] = skip; }
 
 void Uncompute::noteCarried(Value *phi) { impl->rails[impl->lookup(phi, "noteCarried", phi)].carried = true; }
 
