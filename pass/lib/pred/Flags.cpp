@@ -868,6 +868,15 @@ class JoinRepair {
     return ctx.operand(a.v).v;
   }
 
+  // The rail type of the value atomValue reads (cq-7jd1z): a condition is an i1, a case atom its scrutinee's
+  // own type (rule 13: the equality is taken on the scrutinee), a computed goto atom its 64-bit address.
+  RailType atomRailType(unsigned var) {
+    const Atom &a = atomOf(var);
+    if (a.kind == AtomKind::Eq || a.kind == AtomKind::Addr)
+      return railTypeOf(a.v->getType());
+    return RailType{Kind::Int, 1};
+  }
+
   bool nodeReaches(unsigned n, BasicBlock *U, BasicBlock::iterator pt) {
     std::set<unsigned> sup;
     m.support(n, sup);
@@ -1269,7 +1278,7 @@ public:
       std::map<unsigned, Value *> over;
       for (unsigned v : sup)
         if (Value *a = atomValue(v); a && !reaches(a, U, pt))
-          over[v] = carry(a, false, RailType{Kind::Int, 1}, Carry{live[k].second, c, int(v)}, U, pt, &phi);
+          over[v] = carry(a, false, atomRailType(v), Carry{live[k].second, c, int(v)}, U, pt, &phi);
       IRBuilderBase::InsertPointGuard g(ctx.B());
       ctx.B().SetInsertPoint(U, pt);
       CtxSink sink(ctx, &over);
@@ -1317,7 +1326,7 @@ public:
         std::map<unsigned, Value *> over;
         for (unsigned v : sup)
           if (Value *x = atomValue(v); x && !reaches(x, U, pt))
-            over[v] = carry(x, ql(v), RailType{Kind::Int, 1}, Carry{n, care, int(v)}, U, pt, what);
+            over[v] = carry(x, ql(v), atomRailType(v), Carry{n, care, int(v)}, U, pt, what);
         IRBuilderBase::InsertPointGuard g2(ctx.B());
         ctx.B().SetInsertPoint(U, pt);
         CtxSink sink(ctx, &over);

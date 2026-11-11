@@ -149,3 +149,11 @@ add_test(NAME loops-cutoff-trip-cbr
           --br-in pf_nested=8 --br-in pg_abort=8 --br-in ph_measure=8
           ${CMAKE_CURRENT_SOURCE_DIR}/probes/trip_cbr.O1.ll
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# cq-7jd1z (CR rules 8, 9, 13 with rule 14): a quantum switch's case atom carried to a classical join is a phi in the
+# scrutinee's own type (musl wcsrtombs: the exit hub of a K-loop behind a classical bound test); switches in a K-trip on
+# a narrowed and a widened scrutinee, a default arm, two cases sharing a successor. Each entry §6-checked.
+add_test(NAME loops-cutoff-trip-switch
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_probes.py
+          --plugin $<TARGET_FILE:CQLower> --opt ${CQ_OPT} --timeout 900
+          ${CMAKE_CURRENT_SOURCE_DIR}/probes/trip_switch.O1.ll
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
