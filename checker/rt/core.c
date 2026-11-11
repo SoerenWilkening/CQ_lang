@@ -1947,6 +1947,30 @@ static void exit_reset(int clear) {
     i_;                                                                                                                \
   })
 
+/* cq-p9pty: the key and content tables start small and double (rehashed) at half load, up to the bound's size
+ * (2 * EXIT_KEYS_MAX, 2 * EXIT_PATS_MAX slots); a slot's position never reaches the output (keys and contents are
+ * numbered in insertion order), so the list is the same as with the full table, without zeroing 40 MB per sample. */
+#define XM_SLOTS0 1024u
+static uint32_t *xm_regrow(uint32_t *slots, uint32_t *nslots, uint32_t used, uint32_t maxslots, int keys) {
+  if (slots && ((uint64_t)used + 1) * 2 <= *nslots)
+    return slots;
+  uint32_t n = slots ? *nslots : XM_SLOTS0;
+  while (((uint64_t)used + 1) * 2 > n && n < maxslots)
+    n *= 2;
+  if (slots && n == *nslots)
+    return slots;
+  free(slots);
+  slots = xcalloc(n, sizeof *slots);
+  *nslots = n;
+  for (uint32_t j = 0; j < used; ++j) {
+    uint32_t i = (uint32_t)(keys ? XM.keys[j].hash : XM.pats[j].hash) & (n - 1);
+    while (slots[i])
+      i = (i + 1) & (n - 1);
+    slots[i] = j + 1;
+  }
+  return slots;
+}
+
 /* The chunk being cut ends: written in full, as a def and a use, or as a use. */
 static void exit_chunk_end(void) {
   uint32_t n = XM.nchunk;
@@ -1957,10 +1981,7 @@ static void exit_chunk_end(void) {
   uint64_t x = mix64(n);
   for (uint32_t i = 0; i < n; ++i)
     x = mix64(x ^ ((uint64_t)XM.chunk[i].h << 32 | XM.chunk[i].key));
-  if (!XM.pslot) {
-    XM.npslot = 2 * EXIT_PATS_MAX;
-    XM.pslot = xcalloc(XM.npslot, sizeof *XM.pslot);
-  }
+  XM.pslot = xm_regrow(XM.pslot, &XM.npslot, XM.npats, 2 * EXIT_PATS_MAX, 0);
 #define PAT_EQ(j)                                                                                                      \
   (XM.pats[j].hash == x && XM.pats[j].len == n && cqe__rp_eq(XM.arena + XM.pats[j].off, XM.chunk, n * sizeof(xtok)))
   uint32_t sl = XM_FIND(XM.pslot, XM.npslot, x, PAT_EQ);
@@ -2004,10 +2025,7 @@ static void exit_feed(uint64_t h, const char *w, const char *hx, const char *rol
     live_put(&one, 0, 0);
     return;
   }
-  if (!XM.kslot) {
-    XM.nkslot = 2 * EXIT_KEYS_MAX;
-    XM.kslot = xcalloc(XM.nkslot, sizeof *XM.kslot);
-  }
+  XM.kslot = xm_regrow(XM.kslot, &XM.nkslot, XM.nkeys, 2 * EXIT_KEYS_MAX, 1);
   uint64_t kh = mix64(str_hash(w) ^ mix64(str_hash(hx)) ^ mix64(str_hash(role) + (uint64_t)known));
 #define KEY_EQ(j)                                                                                                      \
   (XM.keys[j].hash == kh && XM.keys[j].known == known && !strcmp(XM.keys[j].w, w) && !strcmp(XM.keys[j].role, role) && \
