@@ -1403,6 +1403,27 @@ static void stream_entry_text(const event *e, sbuf *out) {
 
 /* ---------- the entry object ---------- */
 
+/* cq-xdscs (BACKEND_ABI §1.11): the bytes of field j's capture the host call `name` reads when the entry is performed. The
+ * capture of a NUL-terminated string runs to its first HOST 0 (a QUANTUM cell holding 0 does not end it, its value being
+ * unknown at the call), but the call performed at the end of the shot reads the measured string up to its first 0 byte
+ * (role s, p, F) or through its first null wchar_t (role G, as fx_call.h logs it). Every other capture is read whole. */
+static size_t cap_read_len(const event *e, int j) {
+  const capture *c = &e->fields[j].cap;
+  const cq_fx_ent *ent = e->k == E_EFFECT ? cq_fx_find(e->str) : NULL;
+  if (!ent || j >= (int)strlen(ent->roles)) return c->n;
+  char role = ent->roles[j];
+  if (role == 's' || role == 'p' || role == 'F') {
+    const uint8_t *z = memchr(c->b, 0, c->n);
+    return z ? (size_t)(z - c->b) : c->n;
+  }
+  if (role == 'G')
+    for (size_t k = 0; k + 4 <= c->n; k += 4)
+      if (!c->b[k] && !c->b[k + 1] && !c->b[k + 2] && !c->b[k + 3]) return k + 4;
+  return c->n;
+}
+
+/* The entry object; when != NULL it is an effect line, the call as performed, whose captures are what it reads
+ * (cap_read_len); the shot's event sequence (when == NULL) keeps each capture as made. */
 static void entry_json(sbuf *b, const event *e, const char *when) {
   static const char *const cls[] = {"none", "resolved", "input", "deferred"};
   sb_printf(b, "\"seq\":%d,\"kind\":\"%s\",\"t\":%d,\"pred\":%d,\"class\":\"%s\",\"performed\":%s,", (int)(e - g_ev),
@@ -1418,7 +1439,7 @@ static void entry_json(sbuf *b, const event *e, const char *when) {
     if (f->k == F_RAIL) sb_printf(b, "{\"k\":\"rail\",\"h\":%lld,\"w\":\"%s\",\"v\":", cqe__hname(f->h), f->w);
     else sb_printf(b, "{\"k\":\"lit\",\"w\":\"%s\",\"v\":", f->w);
     sb_hex(b, &f->v);
-    if (f->cap.done) { sb_puts(b, ",\"cap\":"); sb_json_str(b, (const char *)f->cap.b, f->cap.n); }
+    if (f->cap.done) { sb_puts(b, ",\"cap\":"); sb_json_str(b, (const char *)f->cap.b, when ? cap_read_len(e, j) : f->cap.n); }
     sb_puts(b, "}");
   }
   sb_puts(b, "]");
