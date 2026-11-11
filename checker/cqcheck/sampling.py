@@ -2165,9 +2165,11 @@ class ProbeBuild:
         # cq-8bq66 (CR rule 16): a stream call by name is the host's whatever the module defines, as in the C oracle
         from cqcheck import oracle as _oracle
         ll = _oracle.host_streams(ll + "\n" + "\n".join(stubs) + "\n")
+        # cq-tgl3i: the scanf family, the host's on the checker's empty input (fx_call.h cqd_in_*), never this pipe
+        ll = D.route_scans(ll)
         callees = D.effect_callees(ll, D.proto_definitions(self.spec) | D.corpus_roots())
+        self.fx = bool(callees) or f"@{D.SCAN_PREFIX}" in ll
         ll = D.rename_effects(ll, callees) + D.effect_wrappers_ir(callees)
-        self.fx = bool(callees)
         (w / "probe.ll").write_text(ll)
         (w / "driver.c").write_text(_driver_main(self.spec)
                                     + f"const int cqd_nsites = {max(1, len(self.ins.sites))}, "

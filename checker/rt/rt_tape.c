@@ -542,6 +542,20 @@ static void capture_va(event *e, const char *fmt, const field *apf) {
   }
 }
 
+/* cq-tgl3i: the pointers a scanf-family entry's va_list holds (role v after F or G), one int-class slot per pointer its
+ * format consumes (fx_standin.h cq_fx_scan_nptr), read as capture_va reads a printf's: they become e->va. */
+static void capture_scan_va(event *e, const char *fmt, const field *apf) {
+  if (e->pred_known && !e->pred) return;
+  uint8_t b[24];
+  va_state s;
+  s.known = va_read(e, field_low64(apf), apf->known, 24, b);
+  s.gp = (uint32_t)le_bytes(b, 4);
+  s.fp = (uint32_t)le_bytes(b + 4, 4);
+  s.ov = le_bytes(b + 8, 8);
+  s.rs = le_bytes(b + 16, 8);
+  for (size_t k = cq_fx_scan_nptr(fmt); k > 0; k--) va_next(e, &s, 'i', 8);
+}
+
 static void capture_event(event *e) {
   if (e->k == E_FMT) { capture_format(e, e->str, 0); return; }
   const cq_fx_ent *ent = cq_fx_find(e->str);
@@ -550,7 +564,17 @@ static void capture_event(event *e) {
     char role = ent->roles[i];
     if (role == 's' || role == 'p') capture_field(e, &e->fields[i], -1);
     else if (role == 'B') capture_field(e, &e->fields[i], length_of(e, ent->roles, i + 1, NULL));
-    else if (role == 'F' || role == 'G') {
+    else if ((role == 'F' || role == 'G') && cq_fx_scan(ent)) {   /* a scanf format: its arguments are destinations */
+      field *f = &e->fields[i];
+      capture_at_u(e, &f->cap, field_low64(f), f->known, -1, role == 'G' ? 4 : 1);
+      if (f->cap.done && ent->roles[i + 1] == 'v' && i + 1 < e->nfields) {
+        char *fmt;
+        if (role == 'G') fmt = wide_parse_copy(&f->cap);
+        else { fmt = calloc(f->cap.n + 1, 1); memcpy(fmt, f->cap.b, f->cap.n); }
+        capture_scan_va(e, fmt, &e->fields[i + 1]);
+        free(fmt);
+      }
+    } else if (role == 'F' || role == 'G') {
       field *f = &e->fields[i];
       capture_at_u(e, &f->cap, field_low64(f), f->known, -1, role == 'G' ? 4 : 1);
       if (f->cap.done) {
@@ -636,6 +660,72 @@ static void perform_input(event *e, const cq_fx_ent *ent) {
   set_result(e, r, classical);
   e->cls = C_INPUT;
   e->performed = !(e->pred_known && !cv);
+}
+
+/* cq-tgl3i: performs a scanf-family INPUT entry now (BACKEND_ABI §1.11's INPUT rows, as perform_input): the host's vfscanf
+ * or vfwscanf on the checker's empty input (fx_standin.h cq_fx_scan_host, what the C program's call runs: fx_call.h
+ * cqd_in_*), its format the bytes captured, its arguments the pointers the entry passes (the fields after the format, or for
+ * a v-form those its va_list holds, capture_scan_va). The host writes into a temporary buffer per pointer, filled 0x00 in
+ * one run and 0xFF in a second (the input is the same): a byte one of the runs changed is a byte the call stores, and the
+ * backend makes that write as a bus store (§1.10), cstore when everything is classical, else qstore under the predicate
+ * (the call is performed unconditionally and its bytes merged, the INPUT row under a quantum predicate). The result rail is
+ * the call's result under the predicate, |0> when it reads 0. */
+#define SCAN_BUF ((size_t)CQ_FX_K2 + 64)
+static void perform_scan(event *e, const cq_fx_ent *ent) {
+  int fi = (int)(strpbrk(ent->roles, "FG") - ent->roles);
+  int wide = ent->roles[fi] == 'G', va = ent->roles[fi + 1] == 'v';
+  int cv = e->pred;
+  int classical = e->pred_known && fields_known(e);
+  e->cls = C_INPUT;
+  e->performed = !(e->pred_known && !cv);
+  if (!e->performed || fi >= e->nfields || !e->fields[fi].cap.done) {   /* classical predicate 0: skipped */
+    set_result(e, 0, classical);
+    return;
+  }
+  const capture *fc = &e->fields[fi].cap;
+  void *fmt;
+  char *parse;
+  if (wide) {
+    fmt = wide_chars(fc, NULL);
+    parse = wide_parse_copy(fc);
+  } else {
+    parse = calloc(fc->n + 1, 1);
+    if (fc->n) memcpy(parse, fc->b, fc->n);
+    fmt = parse;
+  }
+  for (size_t k = 0; k < fc->n; k++)
+    if (fc->rail[k]) classical = 0;
+  size_t need = cq_fx_scan_nptr(parse);
+  size_t given = va ? (size_t)e->nva : (size_t)(e->nfields > fi + 1 ? e->nfields - fi - 1 : 0);
+  if (va)
+    for (int k = 0; k < e->nva; k++) classical &= e->va[k].known;
+  size_t n = need > given ? need : given;
+  uint8_t **a = calloc(n + 1, sizeof *a), **b = calloc(n + 1, sizeof *b);
+  for (size_t k = 0; k < n; k++) {
+    a[k] = calloc(SCAN_BUF, 1);
+    b[k] = malloc(SCAN_BUF);
+    memset(b[k], 0xFF, SCAN_BUF);
+  }
+  int r = cq_fx_scan_host(wide, fmt, (void *const *)a);
+  (void)cq_fx_scan_host(wide, fmt, (void *const *)b);
+  for (size_t k = 0; k < given && k < n; k++) {
+    const field *p = va ? &e->va[k] : &e->fields[fi + 1 + k];
+    uint64_t addr = field_low64(p);
+    for (size_t j = 0; j < SCAN_BUF; j++) {
+      if (a[k][j] == 0 && b[k][j] == 0xFF) continue;   /* neither run wrote it */
+      uint8_t byte = a[k][j];
+      if (!g_bus) { cqe_fail("tape: %s: a bus store with no bus linked", e->str); goto done; }
+      if (classical) { if (cv) g_bus->cstore(addr + j, byte); }
+      else g_bus->qstore(addr + j, byte, cv);
+    }
+  }
+done:
+  for (size_t k = 0; k < n; k++) free(a[k]), free(b[k]);
+  free(a);
+  free(b);
+  if (wide) free(fmt);
+  free(parse);
+  set_result(e, cv ? (uint64_t)(int64_t)r : 0, classical);
 }
 
 /* ---------- classification ---------- */
@@ -847,6 +937,12 @@ static int32_t op_tape_effect(int32_t c, int32_t t, const char *name, int32_t n,
   if (ent)
     for (int i = 0; ent->roles[i] && i < e->nfields; i++)
       if (ent->roles[i] == 'f' && e->fields[i].k == F_RAIL && !e->fields[i].known) ident_quantum = 1;
+  if (ent && cq_fx_scan(ent) && !ident_quantum) {
+    perform_scan(e, ent);
+    effect_line(e, "call");
+    advance();
+    return e->r;
+  }
   if (ent && ent->cls == 'I' && !ident_quantum) {
     perform_input(e, ent);
     effect_line(e, "call");

@@ -2682,16 +2682,156 @@ struct OraclePass : PassInfoMixin<OraclePass> {
 // exactly as cq-lower recognises it (cq::streamCallee), so the C program calls the host's function, as the backend
 // performs the entry (BACKEND_ABI §1.11: "with the host C library ..., never with a lowered symbol"). oracle.py
 // host_streams runs it before the direct host calls are sent to their stand-ins (drivers.effect_callees).
+//
+// cq-xkmrm: the declaration is the host C library's function as a C header declares it, so nothing of the module's own
+// definition stays on it: external linkage, default visibility and DLL storage, not dso_local (the host library is
+// another image: a dso_local RIP-relative reference to it cannot be bound, the probe link of 8 printf-family rows), no
+// comdat, section, alignment, unnamed_addr or GC; the C calling convention (a host libc function's, also at every call
+// site). Of its attributes only what the C prototype gives the ABI stays (signext, zeroext, inreg, byval, sret, byref,
+// inalloca, preallocated, their alignment, noundef) and nounwind (C has no exceptions); every fact LLVM inferred from the
+// module's body (memory(...), willreturn, nofree, nosync, nocapture, readonly, nonnull, returned, ...) is dropped, at the
+// call sites too, since it describes a body that is no longer what the call runs.
+static AttributeSet hostABIAttrs(LLVMContext &C, AttributeSet S) {
+  bool byPtr = S.hasAttribute(Attribute::ByVal) || S.hasAttribute(Attribute::ByRef) ||
+               S.hasAttribute(Attribute::StructRet) || S.hasAttribute(Attribute::InAlloca) ||
+               S.hasAttribute(Attribute::Preallocated);
+  AttrBuilder B(C);
+  for (Attribute A : S) {
+    if (A.isStringAttribute())
+      continue;
+    switch (A.getKindAsEnum()) {
+    case Attribute::SExt:
+    case Attribute::ZExt:
+    case Attribute::InReg:
+    case Attribute::ByVal:
+    case Attribute::ByRef:
+    case Attribute::StructRet:
+    case Attribute::InAlloca:
+    case Attribute::Preallocated:
+    case Attribute::NoUndef:
+      B.addAttribute(A);
+      break;
+    case Attribute::Alignment:
+      if (byPtr)
+        B.addAttribute(A);
+      break;
+    default:
+      break;
+    }
+  }
+  return AttributeSet::get(C, B);
+}
+
+static AttributeList hostABIList(LLVMContext &C, AttributeList L, unsigned nargs, AttributeSet fn) {
+  SmallVector<AttributeSet, 8> params;
+  for (unsigned i = 0; i < nargs; ++i)
+    params.push_back(hostABIAttrs(C, L.getParamAttrs(i)));
+  return AttributeList::get(C, fn, hostABIAttrs(C, L.getRetAttrs()), params);
+}
+
+// cq-tgl3i: then what only the dropped bodies reached goes (musl's __stdin_FILE, its buffer and locks: the host library's
+// objects, CR rule 16, no named output of the program's), as it goes from the lowered module, where the checker's llvm-link
+// (run.py's canon) keeps only what the external definitions reach, and what rule 19's clone table reaches: every function
+// whose address the module takes is registered there, so it is kept with what it reaches. Its roots here are the same: the
+// non-local definitions, the llvm.used lists and the functions whose address the module took before the bodies went.
+static void globalsIn(const Value *V, SmallVectorImpl<GlobalValue *> &out, SmallPtrSetImpl<const Constant *> &seen) {
+  if (auto *GV = dyn_cast<GlobalValue>(V)) {
+    out.push_back(const_cast<GlobalValue *>(GV));
+    return;
+  }
+  auto *C = dyn_cast<Constant>(V);
+  if (!C || !seen.insert(C).second)
+    return;
+  for (const Value *Op : C->operands())
+    globalsIn(Op, out, seen);
+}
+
+static void dropUnreached(Module &M, const SmallPtrSetImpl<Function *> &taken) {
+  SmallPtrSet<GlobalValue *, 32> live;
+  SmallVector<GlobalValue *, 64> work;
+  auto root = [&](GlobalValue *G) {
+    if (live.insert(G).second)
+      work.push_back(G);
+  };
+  for (GlobalValue &G : M.global_values())
+    if (!G.hasLocalLinkage() && !G.isDeclaration())
+      root(&G);
+  for (Function *F : taken)
+    root(F);
+  for (const char *n : {"llvm.used", "llvm.compiler.used", "llvm.global_ctors", "llvm.global_dtors"})
+    if (GlobalVariable *U = M.getNamedGlobal(n))
+      root(U);
+  SmallPtrSet<const Constant *, 32> seen;
+  while (!work.empty()) {
+    GlobalValue *G = work.pop_back_val();
+    SmallVector<GlobalValue *, 16> refs;
+    if (auto *GVar = dyn_cast<GlobalVariable>(G)) {
+      if (GVar->hasInitializer())
+        globalsIn(GVar->getInitializer(), refs, seen);
+    } else if (auto *GA = dyn_cast<GlobalAlias>(G)) {
+      globalsIn(GA->getAliasee(), refs, seen);
+    } else if (auto *F = dyn_cast<Function>(G)) {
+      for (Instruction &I : instructions(*F))
+        for (const Value *Op : I.operands())
+          globalsIn(Op, refs, seen);
+    }
+    for (GlobalValue *R : refs)
+      root(R);
+  }
+  SmallVector<GlobalValue *, 32> dead;
+  for (GlobalValue &G : M.global_values())
+    if (G.hasLocalLinkage() && !live.count(&G))
+      dead.push_back(&G);
+  for (GlobalValue *G : dead)
+    G->dropAllReferences();
+  for (GlobalValue *G : dead) {
+    G->replaceAllUsesWith(PoisonValue::get(G->getType()));
+    G->eraseFromParent();
+  }
+}
+
 struct HostStreamsPass : PassInfoMixin<HostStreamsPass> {
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
     bool changed = false;
+    SmallPtrSet<Function *, 32> taken;
+    for (Function &F : M)
+      if (!F.isDeclaration() && !cq::streamCallee(F) && F.hasAddressTaken())
+        taken.insert(&F);
     for (Function &F : M)
       if (!F.isDeclaration() && cq::streamCallee(F)) {
+        LLVMContext &C = M.getContext();
         F.deleteBody();
-        F.setComdat(nullptr);
+        F.setLinkage(GlobalValue::ExternalLinkage);
         F.setVisibility(GlobalValue::DefaultVisibility);
+        F.setDLLStorageClass(GlobalValue::DefaultStorageClass);
+        F.setDSOLocal(false);
+        F.setComdat(nullptr);
+        F.setSection("");
+        F.setAlignment(MaybeAlign());
+        F.setUnnamedAddr(GlobalValue::UnnamedAddr::None);
+        F.clearGC();
+        F.setCallingConv(CallingConv::C);
+        AttrBuilder fnB(C);
+        fnB.addAttribute(Attribute::NoUnwind);
+        F.setAttributes(hostABIList(C, F.getAttributes(), F.arg_size(), AttributeSet::get(C, fnB)));
+        for (User *U : F.users())
+          if (auto *CB = dyn_cast<CallBase>(U))
+            if (CB->getCalledOperand() == &F) {
+              CB->setCallingConv(CallingConv::C);
+              AttributeList L = CB->getAttributes();
+              AttributeMask drop;
+              for (Attribute::AttrKind k : {Attribute::Memory, Attribute::WillReturn, Attribute::NoFree, Attribute::NoSync,
+                                            Attribute::ReadNone, Attribute::ReadOnly, Attribute::WriteOnly,
+                                            Attribute::Speculatable, Attribute::NoRecurse, Attribute::MustProgress,
+                                            Attribute::NoCallback})
+                drop.addAttribute(k);
+              AttributeSet fn = L.getFnAttrs().removeAttributes(C, drop);
+              CB->setAttributes(hostABIList(C, L, CB->arg_size(), fn));
+            }
         changed = true;
       }
+    if (changed)
+      dropUnreached(M, taken);
     return changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
   }
 };

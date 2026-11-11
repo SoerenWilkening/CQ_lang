@@ -384,7 +384,8 @@ def host_streams(text: str) -> str:
     by name is the host's function, as on the lowered side, where it is rule 16's host boundary and its body is never
     lifted for the call (BACKEND_ABI §1.11: the backend performs the entry with the host C library). Recognised by name
     and signature as cq-lower does (OracleInstr.cpp, cq-oracle-host-streams). A module that defines none is text as it
-    stands."""
+    stands. cq-tgl3i: what only those bodies reached goes too (musl's __stdin_FILE, its buffer, its locks: the host
+    library's objects, CR rule 16, no named output of the program's, §6 item 1), as it goes from the lowered module."""
     from . import drivers
     if not {drivers._c_name(n) for n in _DEFINED.findall(text)} & _STREAM_NAMES:
         return text
@@ -417,7 +418,7 @@ def _host_defines(name: str) -> bool:
 
 
 # Provided by the instrumentation or the runtime, never modelled.
-_PROVIDED = re.compile(r"^(llvm\.|__cqo_|cqd_fx_|cq_theta_|cq_measure_|cq_phi$|__cq_invert_)")
+_PROVIDED = re.compile(r"^(llvm\.|__cqo_|cqd_fx_|cqd_in_|cq_theta_|cq_measure_|cq_phi$|__cq_invert_)")
 
 
 def _k_flags(k: Optional[Dict[str, int]], k_default: Optional[int]) -> List[str]:
@@ -559,6 +560,7 @@ def program(o1: Path, k: Optional[Dict[str, int]] = None, k_default: Optional[in
         # no direct host call runs for real (rulings Q8)
         from . import drivers
         host = host_streams(text)    # cq-8bq66: a stream call by name is the host's, whatever the module defines
+        host = drivers.route_scans(host)   # cq-tgl3i: the scanf family, the host's on the checker's empty input
         callees = drivers.effect_callees(host, frozenset(defined) | drivers.corpus_roots())
         renamed = _k2_sites(drivers.rename_effects(host, callees), host)
         decls = "".join(f"declare {r} @{drivers.FX_PREFIX}{c}({p})\n" for c, (_, r, p) in callees.items())
