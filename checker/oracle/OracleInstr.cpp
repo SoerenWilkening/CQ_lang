@@ -2682,14 +2682,87 @@ struct OraclePass : PassInfoMixin<OraclePass> {
 // exactly as cq-lower recognises it (cq::streamCallee), so the C program calls the host's function, as the backend
 // performs the entry (BACKEND_ABI §1.11: "with the host C library ..., never with a lowered symbol"). oracle.py
 // host_streams runs it before the direct host calls are sent to their stand-ins (drivers.effect_callees).
+//
+// cq-xkmrm: the declaration is the host C library's function as a C header declares it, so nothing of the module's own
+// definition stays on it: external linkage, default visibility and DLL storage, not dso_local (the host library is
+// another image: a dso_local RIP-relative reference to it cannot be bound, the probe link of 8 printf-family rows), no
+// comdat, section, alignment, unnamed_addr or GC; the C calling convention (a host libc function's, also at every call
+// site). Of its attributes only what the C prototype gives the ABI stays (signext, zeroext, inreg, byval, sret, byref,
+// inalloca, preallocated, their alignment, noundef) and nounwind (C has no exceptions); every fact LLVM inferred from the
+// module's body (memory(...), willreturn, nofree, nosync, nocapture, readonly, nonnull, returned, ...) is dropped, at the
+// call sites too, since it describes a body that is no longer what the call runs.
+static AttributeSet hostABIAttrs(LLVMContext &C, AttributeSet S) {
+  bool byPtr = S.hasAttribute(Attribute::ByVal) || S.hasAttribute(Attribute::ByRef) ||
+               S.hasAttribute(Attribute::StructRet) || S.hasAttribute(Attribute::InAlloca) ||
+               S.hasAttribute(Attribute::Preallocated);
+  AttrBuilder B(C);
+  for (Attribute A : S) {
+    if (A.isStringAttribute())
+      continue;
+    switch (A.getKindAsEnum()) {
+    case Attribute::SExt:
+    case Attribute::ZExt:
+    case Attribute::InReg:
+    case Attribute::ByVal:
+    case Attribute::ByRef:
+    case Attribute::StructRet:
+    case Attribute::InAlloca:
+    case Attribute::Preallocated:
+    case Attribute::NoUndef:
+      B.addAttribute(A);
+      break;
+    case Attribute::Alignment:
+      if (byPtr)
+        B.addAttribute(A);
+      break;
+    default:
+      break;
+    }
+  }
+  return AttributeSet::get(C, B);
+}
+
+static AttributeList hostABIList(LLVMContext &C, AttributeList L, unsigned nargs, AttributeSet fn) {
+  SmallVector<AttributeSet, 8> params;
+  for (unsigned i = 0; i < nargs; ++i)
+    params.push_back(hostABIAttrs(C, L.getParamAttrs(i)));
+  return AttributeList::get(C, fn, hostABIAttrs(C, L.getRetAttrs()), params);
+}
+
 struct HostStreamsPass : PassInfoMixin<HostStreamsPass> {
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
     bool changed = false;
     for (Function &F : M)
       if (!F.isDeclaration() && cq::streamCallee(F)) {
+        LLVMContext &C = M.getContext();
         F.deleteBody();
-        F.setComdat(nullptr);
+        F.setLinkage(GlobalValue::ExternalLinkage);
         F.setVisibility(GlobalValue::DefaultVisibility);
+        F.setDLLStorageClass(GlobalValue::DefaultStorageClass);
+        F.setDSOLocal(false);
+        F.setComdat(nullptr);
+        F.setSection("");
+        F.setAlignment(MaybeAlign());
+        F.setUnnamedAddr(GlobalValue::UnnamedAddr::None);
+        F.clearGC();
+        F.setCallingConv(CallingConv::C);
+        AttrBuilder fnB(C);
+        fnB.addAttribute(Attribute::NoUnwind);
+        F.setAttributes(hostABIList(C, F.getAttributes(), F.arg_size(), AttributeSet::get(C, fnB)));
+        for (User *U : F.users())
+          if (auto *CB = dyn_cast<CallBase>(U))
+            if (CB->getCalledOperand() == &F) {
+              CB->setCallingConv(CallingConv::C);
+              AttributeList L = CB->getAttributes();
+              AttributeMask drop;
+              for (Attribute::AttrKind k : {Attribute::Memory, Attribute::WillReturn, Attribute::NoFree, Attribute::NoSync,
+                                            Attribute::ReadNone, Attribute::ReadOnly, Attribute::WriteOnly,
+                                            Attribute::Speculatable, Attribute::NoRecurse, Attribute::MustProgress,
+                                            Attribute::NoCallback})
+                drop.addAttribute(k);
+              AttributeSet fn = L.getFnAttrs().removeAttributes(C, drop);
+              CB->setAttributes(hostABIList(C, L, CB->arg_size(), fn));
+            }
         changed = true;
       }
     return changed ? PreservedAnalyses::none() : PreservedAnalyses::all();

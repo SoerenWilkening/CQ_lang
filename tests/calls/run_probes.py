@@ -220,6 +220,12 @@ CASES = [
     ("stream_wide_forms", "stream_wide_forms", [], "pass",
      [r"call void @cqrt_tape_effect_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.vwprintf, i32 2\)",
       r"call void @cqrt_tape_effect_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.wprintf, i32 4\)"]),
+    # cq-xkmrm (rule 16): an `internal` printf body (the musl bundle's, internalized) is turned into the host's printf by the
+    # checker as a clean external declaration (not dso_local: the probe and the C oracle bind it to the host library); the
+    # lowered text is stdout. The mutant prints x where the C program prints x + 2.
+    ("stream_internal_host", "stream_internal_host", [], "pass",
+     [r"call void @cqrt_tape_fmt\(i32 %\d+, ptr @\.str\.2\)", r"define internal noundef i32 @printf\("]),
+    ("stream_internal_host", "stream_internal_host", [], "wrong: stream_internal_host.wrongarg.ll", []),
     ("raise_read", "raise_read", [], "pass", [r"@__cq_sig"]),
     ("sig_rail", "sig_rail", [], "pass", [r"@__cq_sig", r"@cqrt_qram_store_i64\("]),
     # Rule 19 extra results: the twin takes the register's handle and repeats no rotation.
