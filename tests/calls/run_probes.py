@@ -226,6 +226,15 @@ CASES = [
     ("stream_internal_host", "stream_internal_host", [], "pass",
      [r"call void @cqrt_tape_fmt\(i32 %\d+, ptr @\.str\.2\)", r"define internal noundef i32 @printf\("]),
     ("stream_internal_host", "stream_internal_host", [], "wrong: stream_internal_host.wrongarg.ll", []),
+    # cq-tgl3i (rule 16, BACKEND_ABI §1.11): scanf (variadic, under a quantum predicate) and vscanf (through a variadic
+    # wrapper's va_list) are INPUT entries the evaluator performs with the host's vfscanf on the checker's empty input, as the
+    # C oracle's call does; %n stores before the input failure, through the bus. Mutants: the pointers swapped; the call
+    # dropped (its result taken as EOF).
+    ("stream_scanf", "stream_scanf", [], "pass",
+     [r"call i32 @cqrt_tape_effect_i32_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.scanf, i32 3\)",
+      r"call i32 @cqrt_tape_effect_i32_controlled\(i32 %\d+, i32 %\d+, ptr @\.cq\.effect\.vscanf, i32 2\)"]),
+    ("stream_scanf", "stream_scanf", [], "wrong: stream_scanf.wrongptr.ll", []),
+    ("stream_scanf", "stream_scanf", [], "wrong: stream_scanf.noscan.ll", []),
     ("raise_read", "raise_read", [], "pass", [r"@__cq_sig"]),
     ("sig_rail", "sig_rail", [], "pass", [r"@__cq_sig", r"@cqrt_qram_store_i64\("]),
     # Rule 19 extra results: the twin takes the register's handle and repeats no rotation.

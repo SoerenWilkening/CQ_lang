@@ -2729,9 +2729,74 @@ static AttributeList hostABIList(LLVMContext &C, AttributeList L, unsigned nargs
   return AttributeList::get(C, fn, hostABIAttrs(C, L.getRetAttrs()), params);
 }
 
+// cq-tgl3i: then what only the dropped bodies reached goes (musl's __stdin_FILE, its buffer and locks: the host library's
+// objects, CR rule 16, no named output of the program's), as it goes from the lowered module, where the checker's llvm-link
+// (run.py's canon) keeps only what the external definitions reach, and what rule 19's clone table reaches: every function
+// whose address the module takes is registered there, so it is kept with what it reaches. Its roots here are the same: the
+// non-local definitions, the llvm.used lists and the functions whose address the module took before the bodies went.
+static void globalsIn(const Value *V, SmallVectorImpl<GlobalValue *> &out, SmallPtrSetImpl<const Constant *> &seen) {
+  if (auto *GV = dyn_cast<GlobalValue>(V)) {
+    out.push_back(const_cast<GlobalValue *>(GV));
+    return;
+  }
+  auto *C = dyn_cast<Constant>(V);
+  if (!C || !seen.insert(C).second)
+    return;
+  for (const Value *Op : C->operands())
+    globalsIn(Op, out, seen);
+}
+
+static void dropUnreached(Module &M, const SmallPtrSetImpl<Function *> &taken) {
+  SmallPtrSet<GlobalValue *, 32> live;
+  SmallVector<GlobalValue *, 64> work;
+  auto root = [&](GlobalValue *G) {
+    if (live.insert(G).second)
+      work.push_back(G);
+  };
+  for (GlobalValue &G : M.global_values())
+    if (!G.hasLocalLinkage() && !G.isDeclaration())
+      root(&G);
+  for (Function *F : taken)
+    root(F);
+  for (const char *n : {"llvm.used", "llvm.compiler.used", "llvm.global_ctors", "llvm.global_dtors"})
+    if (GlobalVariable *U = M.getNamedGlobal(n))
+      root(U);
+  SmallPtrSet<const Constant *, 32> seen;
+  while (!work.empty()) {
+    GlobalValue *G = work.pop_back_val();
+    SmallVector<GlobalValue *, 16> refs;
+    if (auto *GVar = dyn_cast<GlobalVariable>(G)) {
+      if (GVar->hasInitializer())
+        globalsIn(GVar->getInitializer(), refs, seen);
+    } else if (auto *GA = dyn_cast<GlobalAlias>(G)) {
+      globalsIn(GA->getAliasee(), refs, seen);
+    } else if (auto *F = dyn_cast<Function>(G)) {
+      for (Instruction &I : instructions(*F))
+        for (const Value *Op : I.operands())
+          globalsIn(Op, refs, seen);
+    }
+    for (GlobalValue *R : refs)
+      root(R);
+  }
+  SmallVector<GlobalValue *, 32> dead;
+  for (GlobalValue &G : M.global_values())
+    if (G.hasLocalLinkage() && !live.count(&G))
+      dead.push_back(&G);
+  for (GlobalValue *G : dead)
+    G->dropAllReferences();
+  for (GlobalValue *G : dead) {
+    G->replaceAllUsesWith(PoisonValue::get(G->getType()));
+    G->eraseFromParent();
+  }
+}
+
 struct HostStreamsPass : PassInfoMixin<HostStreamsPass> {
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
     bool changed = false;
+    SmallPtrSet<Function *, 32> taken;
+    for (Function &F : M)
+      if (!F.isDeclaration() && !cq::streamCallee(F) && F.hasAddressTaken())
+        taken.insert(&F);
     for (Function &F : M)
       if (!F.isDeclaration() && cq::streamCallee(F)) {
         LLVMContext &C = M.getContext();
@@ -2765,6 +2830,8 @@ struct HostStreamsPass : PassInfoMixin<HostStreamsPass> {
             }
         changed = true;
       }
+    if (changed)
+      dropUnreached(M, taken);
     return changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
   }
 };

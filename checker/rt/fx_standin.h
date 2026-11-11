@@ -27,9 +27,12 @@
 #ifndef CQ_FX_STANDIN_H
 #define CQ_FX_STANDIN_H
 
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
+#include <wchar.h>
 
 #include "cq_standin.h"
 
@@ -46,6 +49,9 @@ static const cq_fx_ent cq_fx_table[] = {
     {"lseek", 'O', "f--"},  {"remove", 'O', "p"},   {"unlink", 'O', "p"},  {"rename", 'O', "pp"},
     {"raise", 'O', "-"},    {"vfprintf", 'O', "fFv"}, {"vprintf", 'O', "Fv"},
     {"fwprintf", 'O', "fG"}, {"wprintf", 'O', "G"},    {"vfwprintf", 'O', "fGv"}, {"vwprintf", 'O', "Gv"},
+    /* cq-tgl3i: the scanf family, INPUT calls the host performs (cq_fx_scan below), not the stand-in's line */
+    {"scanf", 'I', "F"},    {"fscanf", 'I', "fF"},  {"vscanf", 'I', "Fv"},  {"vfscanf", 'I', "fFv"},
+    {"wscanf", 'I', "G"},   {"fwscanf", 'I', "fG"}, {"vwscanf", 'I', "Gv"}, {"vfwscanf", 'I', "fGv"},
 };
 
 static inline const cq_fx_ent *cq_fx_find(const char *name) {
@@ -104,6 +110,76 @@ static inline uint64_t cq_fx_input_result(const cq_fx_ent *e, uint64_t h, uint64
   if (!strcmp(e->name, "fread")) return size ? cq_fx_input_stored(e, v) / size : 0;
   if (!strcmp(e->name, "read")) return cq_fx_input_stored(e, v);
   return cq_fx_line_byte(h, 0);    /* fgetc, getc, getchar */
+}
+
+/* cq-tgl3i: the scanf family (scanf, fscanf, vscanf, vfscanf and the wide four) is a rule-16 stream call by name (CR rule
+ * 16: every <stdio.h> and <wchar.h> stream function, input and output alike), performed with the host C library
+ * (BACKEND_ABI §1.11), on both sides: the C program's call (fx_call.h cqd_in_*) and the evaluator's INPUT entry (rt_tape.c
+ * perform_scan) run the same host vfscanf / vfwscanf, never a stand-in. Under the checker every stream such a call reads is
+ * empty (at end of file at once, whatever the FILE argument): what the musl bodies these rows lifted before cq-pt57w read
+ * through the __cq_syscall stand-in (readv: 0), the same on every run and side, and never the checker's own pipes (the
+ * sampler serves its batches on stdin). A conversion before the first input failure still writes (%n).
+ * A role F or G entry of this table with class 'I' is one of them. */
+static inline int cq_fx_scan(const cq_fx_ent *e) { return e && e->cls == 'I' && strpbrk(e->roles, "FG") != NULL; }
+
+/* The pointer arguments a scanf format consumes (C17 7.21.6.2): one per conversion without '*' (%n too), none for %%; with
+ * POSIX n$ positions, the highest position. fmt is narrow (a wide format's parse copy: its ASCII characters). */
+static inline size_t cq_fx_scan_nptr(const char *fmt) {
+  size_t n = 0, maxpos = 0;
+  for (const char *p = fmt; *p;) {
+    if (*p++ != '%') continue;
+    if (*p == '%') { p++; continue; }
+    size_t pos = 0;
+    const char *q = p;
+    while (*q >= '0' && *q <= '9') pos = pos * 10 + (size_t)(*q++ - '0');
+    if (*q == '$' && q != p) p = q + 1;
+    else pos = 0;
+    int suppress = *p == '*';
+    if (suppress) p++;
+    while (*p >= '0' && *p <= '9') p++;
+    if (*p == 'm') p++;
+    while (*p && strchr("hljztLq", *p)) p++;
+    if (!*p) break;
+    char c = *p++;
+    if (c == '[') {
+      if (*p == '^') p++;
+      if (*p == ']') p++;
+      while (*p && *p != ']') p++;
+      if (*p) p++;
+    }
+    if (suppress) continue;
+    if (pos) maxpos = pos > maxpos ? pos : maxpos;
+    else n++;
+  }
+  return maxpos > n ? maxpos : n;
+}
+
+/* The host's vfscanf (wide: vfwscanf on a wchar_t format) on an empty stream, its arguments the n pointers ptrs, passed as
+ * a va_list whose every slot is in the overflow area (x86-64 SysV: gp_offset 48, fp_offset 176, as CR rule 16's variadic
+ * clones fill one). Its result. */
+static inline int cq_fx_scan_host(int wide, const void *fmt, void *const *ptrs) {
+#if defined(__x86_64__)
+  struct cq_va { unsigned gp, fp; void *ov, *rs; };
+  va_list ap;
+  struct cq_va *v = (struct cq_va *)(void *)ap;
+  v->gp = 48, v->fp = 176, v->ov = (void *)ptrs, v->rs = NULL;
+#else
+#error "cq_fx_scan_host: the va_list layout of x86-64 SysV"
+#endif
+  FILE *in = fopen("/dev/null", "r");
+  if (!in) return EOF;
+  int r = wide ? vfwscanf(in, (const wchar_t *)fmt, ap) : vfscanf(in, (const char *)fmt, ap);
+  fclose(in);
+  return r;
+}
+
+/* The same call from a va_list the C program passed (fx_call.h). */
+static inline int cq_fx_scan_host_va(int wide, const void *fmt, va_list ap) {
+  FILE *in = fopen("/dev/null", "r");
+  if (!in) return EOF;
+  int r = wide ? vfwscanf(in, (const wchar_t *)fmt, ap) : vfscanf(in, (const char *)fmt, ap);
+  fclose(in);
+  return r;
 }
 
 #endif

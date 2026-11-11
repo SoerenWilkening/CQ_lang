@@ -1336,13 +1336,26 @@ def _c_name(ir_name: str) -> str:
     return n[len("\\01_"):] if n.startswith("\\01_") else n
 
 
+_SYM_USE = re.compile(r'@("[^"]*"|[-A-Za-z$._0-9]+)')
+
+
+def _live_symbols(text: str) -> Dict[str, int]:
+    """How often each global symbol is spelled in text (its declaration line included)."""
+    out: Dict[str, int] = {}
+    for s in _SYM_USE.findall(text):
+        out[s] = out.get(s, 0) + 1
+    return out
+
+
 def effect_callees(text: str, excluded: FrozenSet[str] = frozenset()) -> Dict[str, Tuple[str, str, str]]:
     """C name -> (the name as the module spells it, return type, parameter text) of every declared callee
-    of a module that is §6's stand-in (above)."""
+    of a module that is §6's stand-in (above). A declaration nothing uses is no callee (cq-tgl3i: the declarations
+    host_streams leaves of a stream function the dropped bodies called)."""
     out = {}
+    uses = _live_symbols(text)
     for m in _DECLARE.finditer(text):
         c = _c_name(m.group("name"))
-        if c in excluded:
+        if c in excluded or uses.get(m.group("name"), 0) < 2:
             continue
         # `__` marks the compiler's and the runtime's real symbols, but a `declare hidden` one links statically
         # and no host library can supply it: a libc internal with no body in the build (musl's
@@ -1354,6 +1367,59 @@ def effect_callees(text: str, excluded: FrozenSet[str] = frozenset()) -> Dict[st
         head = [w for w in m.group("head").split() if not re.fullmatch(r"\S+\(.*\)|signext|zeroext|noundef|noalias|inreg|dso_local", w)]
         out[c] = (m.group("name"), head[-1] if head else "void", m.group("params"))
     return out
+
+
+# cq-tgl3i (CR rule 16, BACKEND_ABI §1.11): the scanf family is a stream call by name, performed with the host C library on
+# both sides, never a stand-in: checker/oracle/fx_call.h cqd_in_<name> runs the host's vfscanf / vfwscanf on the checker's
+# empty input (fx_standin.h cq_fx_scan) and logs the call as the evaluator logs the lowered program's INPUT entry. A direct
+# call of a variadic one carries its number of arguments first (the log's fields are the call's arguments, as the entry's);
+# any other use goes to cqd_in_<name>_a, which logs the arguments its format consumes. A v-form keeps its signature.
+_SCANS_VAR = {"scanf": "ptr", "wscanf": "ptr", "fscanf": "ptr, ptr", "fwscanf": "ptr, ptr"}
+_SCANS_V = {"vscanf": "ptr, ptr", "vwscanf": "ptr, ptr", "vfscanf": "ptr, ptr, ptr", "vfwscanf": "ptr, ptr, ptr"}
+SCAN_PREFIX = "cqd_in_"
+
+
+def route_scans(text: str) -> str:
+    """text with every declared scanf-family callee's uses sent to its checker wrapper (above); a declaration nothing uses
+    goes."""
+    uses = _live_symbols(text)
+    decls = []
+    for m in list(_DECLARE.finditer(text)):
+        c = _c_name(m.group("name"))
+        if c not in _SCANS_VAR and c not in _SCANS_V:
+            continue
+        sym = "@" + m.group("name")
+        text = re.sub(r"(?m)^declare\b[^\n]*" + re.escape(sym) + r"\([^\n]*\n?", "", text)
+        if uses.get(m.group("name"), 0) < 2:
+            continue
+        if c in _SCANS_V:
+            text = re.sub(re.escape(sym) + r"(?![-A-Za-z$._0-9])", f"@{SCAN_PREFIX}{c}", text)
+            decls.append(f"declare i32 @{SCAN_PREFIX}{c}({_SCANS_V[c]})")
+            continue
+        fixed = _SCANS_VAR[c]
+        call = re.compile(r"\(" + re.escape(fixed) + r", \.\.\.\) " + re.escape(sym) + r"\(")
+        out, pos = [], 0
+        for k in call.finditer(text):
+            start = k.end()
+            depth, j, q = 1, start, False
+            while j < len(text) and depth:
+                ch = text[j]
+                if ch == '"':
+                    q = not q
+                elif not q and ch in "([{<":
+                    depth += 1
+                elif not q and ch in ")]}>":
+                    depth -= 1
+                j += 1
+            n = len(split_operands(text[start:j - 1]))
+            out.append(text[pos:k.start()])
+            out.append(f"(i32, {fixed}, ...) @{SCAN_PREFIX}{c}(i32 {n}, ")
+            pos = start
+        text = "".join(out) + text[pos:]
+        text = re.sub(re.escape(sym) + r"(?![-A-Za-z$._0-9])", f"@{SCAN_PREFIX}{c}_a", text)
+        decls.append(f"declare i32 @{SCAN_PREFIX}{c}(i32, {fixed}, ...)")
+        decls.append(f"declare i32 @{SCAN_PREFIX}{c}_a({fixed}, ...)")
+    return text + "".join(d + "\n" for d in decls)
 
 
 def rename_effects(text: str, callees: Dict[str, Tuple[str, str, str]]) -> str:

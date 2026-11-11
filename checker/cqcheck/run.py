@@ -2424,6 +2424,7 @@ def host_effects_module(text: str, defined: Sequence[str] = ()) -> str:
     for name in HOST_EFFECTS:
         if re.search(rf"(?m)^declare\b[^\n]*@{name}\(", text):
             text = re.sub(rf"@{name}(?=\()", f"@__cqe_fx_{name}", text)
+    text = drivers.route_scans(text)   # cq-tgl3i: a direct scanf-family call, the host's on the empty input (fx_call.h)
     callees = drivers.effect_callees(text, frozenset(defined) | frozenset(HOST_EFFECTS))
     return drivers.rename_effects(text, callees) + drivers.effect_wrappers_ir(callees)
 

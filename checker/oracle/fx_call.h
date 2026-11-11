@@ -8,13 +8,16 @@
 #ifndef CQ_FX_CALL_H
 #define CQ_FX_CALL_H
 
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 
 #include "../rt/fx_standin.h"
 
-#define FXC_MAX 16
+#define FXC_MAX 256
 typedef struct { uint64_t w[2]; unsigned bits; const char *token; int ptr; } fxc_arg;
 static const char *fxc_name;
 static fxc_arg fxc_args[FXC_MAX];
@@ -61,8 +64,8 @@ static uint64_t fxc_length(const char *roles, int i) {
   return v > (uint64_t)INT64_MAX ? (uint64_t)INT64_MAX : v;
 }
 
-uint64_t cqd_fxc_done(unsigned rbits) {
-  const cq_fx_ent *e = cq_fx_find(fxc_name);
+/* Logs the call begun by cqd_fxc_begin (the line above) and returns the stand-in's hash over its arguments. */
+static uint64_t fxc_log(const cq_fx_ent *e) {
   uint64_t h = cq_fx_begin(fxc_name);
   char b[128];
   fxc_len = 0, fxc_line[0] = 0;
@@ -83,6 +86,9 @@ uint64_t cqd_fxc_done(unsigned rbits) {
     const unsigned char *p = (const unsigned char *)(uintptr_t)a->w[0];
     if (p && (role == 's' || role == 'p' || role == 'F')) {
       fxc_put(",\"cap\":"), fxc_str(p, strnlen((const char *)p, 4096));
+    } else if (p && role == 'G') {   /* a wchar_t format: its bytes and its null character, as rt_tape.c captures it */
+      size_t k = wcsnlen((const wchar_t *)(const void *)p, CQ_FX_K2);
+      fxc_put(",\"cap\":"), fxc_str(p, (k < CQ_FX_K2 ? k + 1 : k) * sizeof(wchar_t));
     } else if (p && role == 'B') {
       uint64_t n = fxc_length(e->roles, i + 1);
       fxc_put(",\"cap\":"), fxc_str(p, n > 4096 ? 4096 : (size_t)n);
@@ -91,6 +97,12 @@ uint64_t cqd_fxc_done(unsigned rbits) {
   }
   fxc_put("]}");
   FX_LOG(fxc_line, fxc_len);
+  return h;
+}
+
+uint64_t cqd_fxc_done(unsigned rbits) {
+  const cq_fx_ent *e = cq_fx_find(fxc_name);
+  uint64_t h = fxc_log(e);
   if (!e || e->cls != 'I') return cq_fx_result(h, rbits);
   int bi = -1, li = -1;
   for (int i = 0; e->roles[i]; i++) {
@@ -105,6 +117,87 @@ uint64_t cqd_fxc_done(unsigned rbits) {
   }
   uint64_t size = bi >= 0 && li + 1 < fxc_n && e->roles[li + 1] == 'n' ? fxc_args[li].w[0] : 1;
   return cq_fx_input_result(e, h, addr, v, size);
+}
+
+/* cq-tgl3i: the scanf family (fx_standin.h cq_fx_scan): drivers.route_scans sends the C program's call of scanf, fscanf,
+ * wscanf or fwscanf to cqd_in_<name>(n, args...) with n its number of arguments (a use that is no direct call, to
+ * cqd_in_<name>_a, whose arguments are those its format consumes), and of a v-form to cqd_in_<name>(args), its signature.
+ * The call is logged as an effect with its arguments (the format captured, role F or G), as rt_tape.c logs the INPUT entry
+ * the lowered program makes of it, and performed by the host C library on the empty stream (cq_fx_scan_host_va); its
+ * conversions write through the program's own pointers. */
+static int fxc_scan(const char *name, int wide, int has_f, const void *f, const void *fmt, int nv, va_list ap,
+                    const void *va_addr) {
+  cqd_fxc_begin(name);
+  if (has_f) cqd_fxc_ptr(f);
+  cqd_fxc_ptr(fmt);
+  if (va_addr) {
+    cqd_fxc_ptr(va_addr);
+  } else {
+    va_list cp;
+    va_copy(cp, ap);
+    for (int i = 0; i < nv; i++) cqd_fxc_ptr(va_arg(cp, void *));
+    va_end(cp);
+  }
+  fxc_log(cq_fx_find(name));
+  return cq_fx_scan_host_va(wide, fmt, ap);
+}
+
+/* The arguments a format consumes, for a use of the function that is no direct call. */
+static int fxc_scan_nv(int wide, const void *fmt) {
+  if (!wide) return (int)cq_fx_scan_nptr((const char *)fmt);
+  size_t k = wcslen((const wchar_t *)fmt);
+  char *pc = (char *)malloc(k + 1);
+  if (!pc) return 0;
+  for (size_t j = 0; j < k; j++) {
+    wchar_t c = ((const wchar_t *)fmt)[j];
+    pc[j] = (uint32_t)c < 0x80 ? (char)c : 1;
+  }
+  pc[k] = 0;
+  int n = (int)cq_fx_scan_nptr(pc);
+  free(pc);
+  return n;
+}
+
+#define FXC_SCAN_VAR(name, wide, FT)                                                                      \
+  int cqd_in_##name(int n, const FT *fmt, ...) {                                                          \
+    va_list ap;                                                                                           \
+    va_start(ap, fmt);                                                                                    \
+    int r = fxc_scan(#name, wide, 0, NULL, fmt, n - 1, ap, NULL);                                         \
+    va_end(ap);                                                                                           \
+    return r;                                                                                             \
+  }                                                                                                       \
+  int cqd_in_##name##_a(const FT *fmt, ...) {                                                             \
+    va_list ap;                                                                                           \
+    va_start(ap, fmt);                                                                                    \
+    int r = fxc_scan(#name, wide, 0, NULL, fmt, fxc_scan_nv(wide, fmt), ap, NULL);                        \
+    va_end(ap);                                                                                           \
+    return r;                                                                                             \
+  }
+#define FXC_SCAN_FVAR(name, wide, FT)                                                                     \
+  int cqd_in_##name(int n, void *f, const FT *fmt, ...) {                                                 \
+    va_list ap;                                                                                           \
+    va_start(ap, fmt);                                                                                    \
+    int r = fxc_scan(#name, wide, 1, f, fmt, n - 2, ap, NULL);                                            \
+    va_end(ap);                                                                                           \
+    return r;                                                                                             \
+  }                                                                                                       \
+  int cqd_in_##name##_a(void *f, const FT *fmt, ...) {                                                    \
+    va_list ap;                                                                                           \
+    va_start(ap, fmt);                                                                                    \
+    int r = fxc_scan(#name, wide, 1, f, fmt, fxc_scan_nv(wide, fmt), ap, NULL);                           \
+    va_end(ap);                                                                                           \
+    return r;                                                                                             \
+  }
+FXC_SCAN_VAR(scanf, 0, char)
+FXC_SCAN_FVAR(fscanf, 0, char)
+FXC_SCAN_VAR(wscanf, 1, wchar_t)
+FXC_SCAN_FVAR(fwscanf, 1, wchar_t)
+/* A va_list parameter is the address of the caller's va_list (x86-64 SysV), the field the lowered entry passes. */
+int cqd_in_vscanf(const char *fmt, va_list ap) { return fxc_scan("vscanf", 0, 0, NULL, fmt, 0, ap, (const void *)ap); }
+int cqd_in_vfscanf(void *f, const char *fmt, va_list ap) { return fxc_scan("vfscanf", 0, 1, f, fmt, 0, ap, (const void *)ap); }
+int cqd_in_vwscanf(const wchar_t *fmt, va_list ap) { return fxc_scan("vwscanf", 1, 0, NULL, fmt, 0, ap, (const void *)ap); }
+int cqd_in_vfwscanf(void *f, const wchar_t *fmt, va_list ap) {
+  return fxc_scan("vfwscanf", 1, 1, f, fmt, 0, ap, (const void *)ap);
 }
 
 #endif
